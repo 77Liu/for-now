@@ -49,7 +49,7 @@ fi
 
 systemctl restart for-now.service
 for attempt in $(seq 1 30); do
-  if curl -fsS http://127.0.0.1:4173/readyz >/dev/null; then
+  if curl -fsS http://127.0.0.1:4173/readyz >/dev/null 2>&1; then
     find "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -rn | tail -n +6 | cut -d' ' -f2- | xargs -r rm -rf
     echo "Deployed ${commit:0:12}"
     exit 0
