@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>应用入口</title>
+  <style>
+    :root{font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;color:#29332f;background:#eef1ef}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px}
+    main{width:min(720px,100%)}header{margin-bottom:28px;border-left:4px solid #72877e;padding-left:16px}
+    h1{margin:0;font:650 2rem/1.2 ui-serif,"Songti SC",serif}p{margin:7px 0 0;color:#74807b}
+    nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border:1px solid #d5ddd9;border-radius:8px;background:#fff;overflow:hidden}
+    a{min-height:150px;display:grid;align-content:center;gap:8px;padding:24px;color:inherit;text-decoration:none}
+    a+a{border-left:1px solid #d5ddd9}a:hover{background:#f7f9f8}strong{font-size:1.08rem}span{color:#7a8580;font-size:.82rem;line-height:1.55}
+    @media(max-width:560px){nav{grid-template-columns:1fr}a+a{border-left:0;border-top:1px solid #d5ddd9}}
+  </style>
+</head>
+<body>
+  <main>
+    <header><h1>应用入口</h1><p>选择要打开的服务</p></header>
+    <nav aria-label="服务器应用">
+      <a href="/"><strong>大衍筮法</strong><span>返回当前主页应用</span></a>
+      <a href="/now/"><strong>此刻</strong><span>个人成长、记录与复盘</span></a>
+    </nav>
+  </main>
+</body>
+</html>

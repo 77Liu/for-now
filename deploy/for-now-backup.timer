@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly For Now backup
+
+[Timer]
+OnCalendar=*-*-* 03:20:00 Asia/Shanghai
+Persistent=true
+RandomizedDelaySec=10m
+Unit=for-now-backup.service
+
+[Install]
+WantedBy=timers.target

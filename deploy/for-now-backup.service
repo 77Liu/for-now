@@ -1,0 +1,6 @@
+[Unit]
+Description=Create and upload a consistent For Now backup
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/for-now-backup

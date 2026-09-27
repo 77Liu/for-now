@@ -1,0 +1,27 @@
+[Unit]
+Description=For Now personal growth tracker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=for-now
+Group=for-now
+WorkingDirectory=/opt/for-now/app
+EnvironmentFile=/etc/for-now.env
+ExecStart=/usr/bin/node server.mjs
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/for-now/data
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=for-now
+
+[Install]
+WantedBy=multi-user.target

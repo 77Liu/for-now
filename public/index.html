@@ -1,0 +1,584 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="本地优先的个人成长、捕念、日记与思考追踪工具">
+  <title>此刻 · 个人成长追踪</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%2337433f'/%3E%3Cpath d='M18 40c9-1 13-7 14-20 7 7 12 14 14 24' fill='none' stroke='%23f8faf9' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='18' cy='40' r='4' fill='%23d8b468'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="drift.css">
+</head>
+<body>
+  <div class="auth-gate" id="auth-gate" hidden>
+    <section class="auth-panel" aria-labelledby="auth-title">
+      <div class="auth-brand"><span class="brand-mark">此</span><div><h1 id="auth-title">此刻</h1><p>进入你的个人成长记录</p></div></div>
+      <div class="auth-tabs" role="tablist" aria-label="账户操作">
+        <button class="active" type="button" role="tab" data-auth-tab="login" aria-selected="true">登录</button>
+        <button type="button" role="tab" data-auth-tab="register" aria-selected="false">注册</button>
+      </div>
+      <form class="auth-form" id="login-form">
+        <label><span>用户名</span><input name="username" autocomplete="username" minlength="3" maxlength="32" required></label>
+        <label><span>密码</span><input name="password" type="password" autocomplete="current-password" minlength="10" maxlength="128" required></label>
+        <button class="primary-button full" type="submit">登录</button>
+      </form>
+      <form class="auth-form" id="register-form" hidden>
+        <label><span>用户名</span><input name="username" autocomplete="username" minlength="3" maxlength="32" required></label>
+        <label><span>密码</span><input name="password" type="password" autocomplete="new-password" minlength="10" maxlength="128" required></label>
+        <label><span>内测码</span><input name="invitation" type="password" autocomplete="off" required></label>
+        <button class="primary-button full" type="submit">创建账户</button>
+      </form>
+      <p class="auth-status" id="auth-status" role="status" aria-live="polite"></p>
+    </section>
+  </div>
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark">此</span><span>此刻</span></div>
+    <nav aria-label="主导航">
+      <button class="nav-button active" data-view="today" aria-current="page"><span>◌</span>今天</button>
+      <button class="nav-button" data-view="captures"><span>＋</span>捕念</button>
+      <button class="nav-button" data-view="journals"><span>▧</span>日记</button>
+      <button class="nav-button" data-view="thoughts"><span>⌘</span>思绪</button>
+      <button class="nav-button" data-view="review"><span>∿</span>回顾</button>
+      <button class="nav-button" data-view="books"><span>▤</span>读书</button>
+      <button class="nav-button" data-view="keepsakes"><span>◇</span>小物</button>
+      <button class="nav-button" data-view="quotes"><span>“</span>善言</button>
+      <button class="nav-button" data-view="settings"><span>⚙</span>设置</button>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="account-control" id="account-control" hidden><span id="account-name"></span><button id="logout-button" type="button">退出</button></div>
+      <button class="about-button" type="button" data-view="about" aria-label="关于此刻"><span aria-hidden="true">i</span>关于</button>
+      <p class="local-note">● 本地持久化</p>
+    </div>
+  </aside>
+
+  <main>
+    <section class="view active" id="view-today">
+      <header class="page-header">
+        <div><p class="eyebrow" id="today-date-label"></p><h1 id="today-heading">今天，你感觉怎么样？</h1></div>
+        <label class="date-peek" title="为过去某天补充记录"><span>◷</span><input type="date" id="active-date" aria-label="选择记录日期"></label>
+      </header>
+
+      <div class="today-grid">
+        <form class="card checkin-card" id="checkin-form">
+          <div class="card-heading"><div><span class="section-number">01</span><h2>此刻状态</h2></div><span class="time-hint">约 25 秒</span></div>
+          <div id="sliders"></div>
+          <label class="factor-field"><span>今天的因素 / 活动</span><input id="checkin-factors" placeholder="例：运动、咖啡、加班（空格分隔）"></label>
+          <button class="primary-button full" type="submit">记下此刻</button>
+          <p class="status" id="checkin-status" role="status"></p>
+        </form>
+
+        <form class="card chain-card" id="chain-form">
+          <div class="card-heading"><div><span class="section-number">02</span><h2>记下一条思考</h2></div><span class="time-hint">问题 · 想法 · 回答</span></div>
+          <label class="field"><span>问题 <b>必填</b> <i>支持 Markdown</i></span><textarea id="chain-question" rows="2" placeholder="你真正想问的是什么？" required></textarea></label>
+          <label class="field"><span>初步想法 <i>可空 · 支持 Markdown</i></span><textarea id="chain-idea" rows="4" placeholder="你现在怎么看？"></textarea></label>
+          <label class="field"><span class="field-title"><span>回答 <i>可空 · 支持 Markdown</i></span><button class="answer-draft-button" id="draft-answer-button" type="button">✦ 给我回答</button></span><textarea id="chain-answer" rows="5" placeholder="可以自己填写，也可先让 DeepSeek 生成草稿，再按你的判断修改"></textarea></label>
+          <p class="draft-note" id="draft-note">模型草稿只有在你提交整套思考后才会保存；你修改了什么，也会成为日后认知复盘的线索。</p>
+          <div class="capture-footer"><div class="tag-composer" id="chain-tag-composer"><div class="tag-chip-list" id="chain-tag-list"></div><label class="tag-input"><span>#</span><input id="chain-tags" list="tag-suggestions" placeholder="输入标签后回车"></label><datalist id="tag-suggestions"></datalist></div><button class="primary-button" type="submit">收进思绪箱</button></div>
+          <p class="status" id="chain-status" role="status"></p>
+        </form>
+      </div>
+
+      <section class="card daily-record-card" id="daily-records">
+        <div class="section-title daily-record-heading">
+          <div><span class="section-number">03</span><h2>每日记录</h2></div>
+          <span class="time-hint">睡眠 · 心率 · 体重 · 运动</span>
+        </div>
+        <div class="daily-record-tabs" role="tablist" aria-label="每日记录类型">
+          <button class="active" type="button" role="tab" data-daily-tab="sleep" aria-selected="true">睡眠</button>
+          <button type="button" role="tab" data-daily-tab="heartRate" aria-selected="false">心率</button>
+          <button type="button" role="tab" data-daily-tab="weight" aria-selected="false">体重</button>
+          <button type="button" role="tab" data-daily-tab="exercise" aria-selected="false">运动</button>
+        </div>
+
+        <div class="health-image-workflow" id="health-image-workflow">
+          <label class="health-upload-box" id="health-upload-box" tabindex="0">
+            <input type="file" id="health-images" accept="image/png,image/jpeg,image/webp" multiple aria-describedby="health-upload-hint">
+            <span class="health-upload-icon" aria-hidden="true">⌁</span>
+            <span id="health-upload-title">优先上传 1–2 张睡眠截图</span>
+            <small id="health-upload-hint">点击、粘贴或拖入 · PNG / JPEG / WebP · 合计不超过 8 MB</small>
+          </label>
+          <div class="health-image-previews" id="health-image-previews"></div>
+          <div class="health-parse-row"><button class="quiet-button" id="parse-health-images" type="button" disabled>识别并回填</button><p class="status" id="health-parse-status" role="status" aria-live="polite"></p></div>
+        </div>
+
+        <div class="daily-form-panels">
+          <form class="daily-record-form active" data-daily-form="sleep">
+            <input type="hidden" name="recordId"><input type="hidden" name="attachmentPaths">
+            <div class="daily-field-grid">
+              <label><span>记录时间</span><input type="datetime-local" step="1" name="occurredAt" required></label>
+              <label><span>入睡时间</span><input type="datetime-local" step="1" name="bedtime"></label>
+              <label><span>醒来时间</span><input type="datetime-local" step="1" name="wakeTime"></label>
+              <label><span>总睡眠（分钟）</span><input type="number" min="0" max="1440" step="1" name="totalMinutes"></label>
+              <label><span>深睡（分钟）</span><input type="number" min="0" max="1440" step="1" name="deepMinutes"></label>
+              <label><span>深睡比例（%）</span><input type="number" min="0" max="100" step="0.1" name="deepPercent"></label>
+              <label><span>浅睡（分钟）</span><input type="number" min="0" max="1440" step="1" name="lightMinutes"></label>
+              <label><span>浅睡比例（%）</span><input type="number" min="0" max="100" step="0.1" name="lightPercent"></label>
+              <label><span>快速眼动（分钟）</span><input type="number" min="0" max="1440" step="1" name="remMinutes"></label>
+              <label><span>快速眼动比例（%）</span><input type="number" min="0" max="100" step="0.1" name="remPercent"></label>
+              <label><span>清醒次数</span><input type="number" min="0" max="100" step="1" name="awakeCount"></label>
+              <label><span>清醒时长（分钟）</span><input type="number" min="0" max="1440" step="1" name="awakeMinutes"></label>
+              <label><span>睡眠平均心率</span><input type="number" min="20" max="250" step="0.1" name="averageHeartRate"></label>
+              <label><span>睡眠平均血氧（%）</span><input type="number" min="50" max="100" step="0.1" name="averageOxygen"></label>
+              <label><span>睡眠呼吸率（次/分）</span><input type="number" min="1" max="80" step="0.1" name="respiratoryRate"></label>
+            </div>
+            <div class="daily-form-actions"><button class="text-button" type="button" data-daily-cancel hidden>取消编辑</button><button class="primary-button" type="submit">保存睡眠</button></div>
+            <p class="status" role="status"></p>
+          </form>
+
+          <form class="daily-record-form" data-daily-form="heartRate" hidden>
+            <input type="hidden" name="recordId"><input type="hidden" name="attachmentPaths">
+            <div class="daily-field-grid">
+              <label><span>记录时间</span><input type="datetime-local" step="1" name="occurredAt" required></label>
+              <label><span>最低心率</span><input type="number" min="20" max="250" step="0.1" name="minimum"></label>
+              <label><span>最高心率</span><input type="number" min="20" max="250" step="0.1" name="maximum"></label>
+              <label><span>平均心率</span><input type="number" min="20" max="250" step="0.1" name="average"></label>
+              <label><span>静息心率</span><input type="number" min="20" max="250" step="0.1" name="resting"></label>
+              <label><span>睡眠平均心率</span><input type="number" min="20" max="250" step="0.1" name="sleepAverage"></label>
+            </div>
+            <label class="daily-wide-field"><span>当天趋势</span><textarea name="trendAnalysis" rows="3" placeholder="可手动概括，也可由截图柱状图识别后回填"></textarea></label>
+            <input type="hidden" name="trendSegments">
+            <div class="daily-form-actions"><button class="text-button" type="button" data-daily-cancel hidden>取消编辑</button><button class="primary-button" type="submit">保存心率</button></div>
+            <p class="status" role="status"></p>
+          </form>
+
+          <form class="daily-record-form" data-daily-form="weight" hidden>
+            <input type="hidden" name="recordId">
+            <div class="daily-field-grid weight-fields">
+              <label><span>记录时间</span><input type="datetime-local" step="1" name="occurredAt" required></label>
+              <label><span>秤上体重（kg）</span><input type="number" min="20" max="400" step="0.01" name="measuredWeight" required></label>
+            </div>
+            <fieldset class="clothing-options"><legend>称重衣物</legend><label><input type="radio" name="clothing" value="none" checked><span>不穿衣</span></label><label><input type="radio" name="clothing" value="light"><span>轻便衣物</span></label><label><input type="radio" name="clothing" value="heavy"><span>厚重衣物</span></label></fieldset>
+            <p class="weight-model-note">校正暂定：轻便衣物扣 0.5 kg，厚重衣物扣 1.5 kg；穿衣记录同时显示衣物不确定性对应的 95% 估计区间。</p>
+            <div class="daily-form-actions"><button class="text-button" type="button" data-daily-cancel hidden>取消编辑</button><button class="primary-button" type="submit">保存体重</button></div>
+            <p class="status" role="status"></p>
+          </form>
+
+          <form class="daily-record-form" data-daily-form="exercise" hidden>
+            <input type="hidden" name="recordId">
+            <label class="daily-wide-field"><span>记录时间</span><input type="datetime-local" step="1" name="occurredAt" required></label>
+            <label class="daily-wide-field"><span>运动描述</span><textarea name="description" rows="4" placeholder="例：慢跑 5 公里，约 35 分钟；后半程呼吸偏急。" required></textarea></label>
+            <div class="daily-form-actions"><button class="text-button" type="button" data-daily-cancel hidden>取消编辑</button><button class="primary-button" type="submit">保存运动</button></div>
+            <p class="status" role="status"></p>
+          </form>
+        </div>
+
+        <section class="daily-record-history">
+          <div class="daily-history-heading"><h3 id="daily-history-title">睡眠记录</h3><span id="daily-history-count">0 条</span></div>
+          <div id="daily-record-chart"></div>
+          <div class="daily-record-list" id="daily-record-list"></div>
+        </section>
+      </section>
+
+      <section class="card state-chart-card">
+        <div class="section-title"><div><span class="section-number">04</span><h2>状态时间线</h2></div><div class="chart-controls"><select id="chart-range" aria-label="图表时间范围"><option value="7">7 天</option><option value="30" selected>30 天</option><option value="90">90 天</option></select></div></div>
+        <div id="state-chart"></div>
+      </section>
+
+      <section class="today-chat card">
+        <div class="card-heading"><div><span class="section-number">05</span><h2>带着记录，一起想想</h2></div><span class="time-hint" id="chat-model-label">DeepSeek 长期对话</span></div>
+        <div class="chat-history" id="chat-history"></div>
+        <form class="chat-form" id="chat-form"><textarea id="chat-input" rows="2" placeholder="例如：我最近反复在纠结什么？" required></textarea><button class="primary-button" type="submit">发送</button></form>
+        <p class="status" id="chat-status" role="status"></p>
+      </section>
+
+      <section class="recent-section"><div class="section-title"><h2>这一天的思绪</h2><button class="text-button" data-go="thoughts">查看全部 →</button></div><div class="thought-list compact thought-timeline" id="today-thoughts"></div></section>
+    </section>
+
+    <section class="view" id="view-captures">
+      <header class="page-header"><div><p class="eyebrow">碎片收集箱</p><h1>先捕捉，不急着想完整</h1></div><span class="record-count" id="capture-count"></span></header>
+      <form class="card quick-capture-form" id="capture-form">
+        <input type="hidden" id="capture-id">
+        <label class="field capture-main-field"><span>此刻冒出来的东西</span><textarea id="capture-content" rows="4" placeholder="一句话、一个念头、一段素材，原样放进来就好。" required></textarea></label>
+        <div class="record-form-footer">
+          <div class="inline-inputs compact-inputs">
+            <div class="tag-composer" id="capture-tag-composer"><div class="tag-chip-list" id="capture-tag-list"></div><label class="tag-input"><span>#</span><input id="capture-tags" list="capture-tag-suggestions" placeholder="输入关键词后回车"></label><datalist id="capture-tag-suggestions"></datalist></div>
+            <input id="capture-date" type="datetime-local" step="1" aria-label="捕念日期与时间" required>
+          </div>
+          <div class="form-actions"><button class="text-button" id="capture-cancel" type="button" hidden>取消编辑</button><button class="primary-button" id="capture-submit" type="submit">收下</button></div>
+        </div>
+        <p class="form-shortcut">按 ⌘ / Ctrl + Enter 也可保存</p>
+        <p class="status" id="capture-status" role="status"></p>
+      </form>
+      <div class="capture-list" id="capture-list"></div>
+    </section>
+
+    <section class="view" id="view-journals">
+      <header class="page-header"><div><p class="eyebrow">日记助手</p><h1>把今天写清楚，不必写漂亮</h1></div><span class="record-count" id="journal-count"></span></header>
+      <section class="journal-workspace">
+        <form class="card journal-form" id="journal-form">
+          <input type="hidden" id="journal-id">
+          <div class="journal-meta-inputs"><input id="journal-title" placeholder="给今天一个标题，可空"><input id="journal-date" type="datetime-local" step="1" aria-label="日记日期与时间" required></div>
+          <div class="journal-prompts" aria-label="写作引导">
+            <span>不知道写什么？点一句开始</span>
+            <div>
+              <button type="button" data-journal-prompt="今天最值得留下的一个瞬间是什么？">一个瞬间</button>
+              <button type="button" data-journal-prompt="现在最明显的感受是什么？身体有什么反应？">感受与身体</button>
+              <button type="button" data-journal-prompt="事实是什么？我给这件事的解释又是什么？">事实与解释</button>
+              <button type="button" data-journal-prompt="我真正重视、需要或害怕失去的是什么？">需要与在意</button>
+              <button type="button" data-journal-prompt="明天最小、最现实的一步是什么？">明天一步</button>
+            </div>
+          </div>
+          <div class="journal-ai-tools" aria-label="AI 写作辅助">
+            <span>需要一个继续写下去的锚点？</span>
+            <div>
+              <button type="button" data-journal-assist="lead">✦ 给我引子</button>
+              <button type="button" data-journal-assist="structure">✦ 给我结构</button>
+              <button type="button" data-journal-assist="topic">✦ 给我一个话题</button>
+            </div>
+            <p id="journal-assist-status" role="status" aria-live="polite"></p>
+          </div>
+          <textarea id="journal-content" class="journal-editor" rows="13" placeholder="从任何地方开始。写发生了什么，也可以只写一句真实的话。" required></textarea>
+          <div class="record-form-footer">
+            <input id="journal-tags" class="journal-tags" placeholder="# 标签，可空">
+            <div class="form-actions"><button class="text-button" id="journal-cancel" type="button" hidden>取消编辑</button><button class="primary-button" id="journal-submit" type="submit">保存日记</button></div>
+          </div>
+          <p class="journal-privacy">先保存你的原文；需要时再让助手回望。助手不会改写日记，也不会把推断当成事实。</p>
+          <p class="status" id="journal-status" role="status"></p>
+        </form>
+        <aside class="journal-companion">
+          <h2>写的时候，可以留意</h2>
+          <ol>
+            <li><b>发生了什么</b><span>尽量写可观察的事实</span></li>
+            <li><b>我有什么感受</b><span>情绪和身体反应可以不同</span></li>
+            <li><b>我如何解释</b><span>解释不是事实，也不一定错</span></li>
+            <li><b>我需要什么</b><span>价值、边界、连接或休息</span></li>
+          </ol>
+        </aside>
+      </section>
+      <div class="journal-list" id="journal-list"></div>
+    </section>
+
+    <section class="view" id="view-thoughts">
+      <header class="page-header"><div><p class="eyebrow">主题思考</p><h1>从问题、初步想法，到回答</h1></div></header>
+      <div class="filter-row" id="thought-filters" aria-label="按标签筛选"></div>
+      <div class="thought-list thought-timeline" id="all-thoughts"></div>
+    </section>
+
+    <section class="view" id="view-review">
+      <header class="page-header"><div><p class="eyebrow">趋势、实验与认知复盘</p><h1>别急着得出结论</h1></div><button class="quiet-button" id="run-analysis">立即做一次认知复盘</button></header>
+      <div class="review-intro card"><p>延迟相关会同时看当天和次日；样本不足时只显示“线索”。“没问过”只是盲区假设，不是回避的证据。</p></div>
+      <div class="summary-strip" id="weekly-summary"></div>
+      <div class="review-grid"><section class="card panel"><div class="section-title"><h2>长期趋势</h2><span class="time-hint">近 7 次 vs 前 7 次</span></div><div id="trend-list"></div></section><section class="card panel"><div class="section-title"><h2>延迟相关线索</h2><span class="time-hint">非因果</span></div><div id="association-list"></div><div id="association-flow"></div></section></div>
+      <section class="card panel"><div class="section-title"><h2>问题聚类与取舍</h2></div><div class="cluster-grid" id="cluster-grid"></div></section>
+      <div class="review-grid">
+        <section class="card panel"><h2>个人实验</h2><div class="experiment-guide"><span><b>1</b>写一个可验证假设</span><span><b>2</b>每天照常记录并填同名因素</span><span><b>3</b>对比“有/无因素”的结果，只把它当线索</span></div><form class="mini-form" id="experiment-form"><input id="experiment-hypothesis" placeholder="例如：睡前阅读会改善第二天精力" required><div class="inline-inputs"><input id="experiment-factor" placeholder="唯一因素：睡前阅读" required><select id="experiment-outcome" aria-label="观察结果"><option value="sleep">观察：睡眠</option><option value="energy">观察：精力</option><option value="mood">观察：情绪</option><option value="stress">观察：压力</option></select><select id="experiment-duration"><option value="14">14 天</option><option value="30" selected>30 天</option><option value="60">60 天</option></select></div><button class="quiet-button" type="submit">开始实验</button></form><div id="experiment-list"></div></section>
+        <section class="card panel"><h2>自定义指标</h2><form class="mini-form" id="metric-form"><input id="metric-name" placeholder="指标名，例如专注度" required><div class="inline-inputs"><input id="metric-low" placeholder="1 的体感"><input id="metric-high" placeholder="5 的体感"></div><button class="quiet-button" type="submit">添加到每日记录</button></form><div id="metric-list"></div></section>
+      </div>
+      <section class="card panel analysis-panel"><div class="section-title"><h2>认知复盘历史</h2><div class="analysis-heading-meta"><b id="analysis-count">0 份</b><span class="time-hint">每周自动尝试，服务需运行</span></div></div><p class="status" id="analysis-status"></p><div id="analysis-list"></div></section>
+    </section>
+
+    <section class="view" id="view-books">
+      <header class="page-header">
+        <div><p class="eyebrow">读书笔记</p><h1>每本书，留下你自己的索引</h1></div>
+        <div class="book-header-actions" id="book-header-actions"><span class="record-count" id="book-count"></span><button class="quiet-button" id="book-create-toggle" type="button" hidden>＋ 添加书目</button></div>
+      </header>
+      <section class="card book-create" id="book-create-panel">
+        <div class="book-media-fields">
+          <div class="book-image-pair">
+            <div class="book-upload">
+              <div class="book-upload-heading"><b>书籍封面</b><span>用于书架展示</span></div>
+              <div class="book-upload-control">
+                <label class="upload-box" id="book-cover-upload-box" tabindex="0">
+                  <input type="file" id="book-cover-image" accept="image/png,image/jpeg,image/webp" aria-describedby="book-cover-upload-hint">
+                  <img id="book-cover-preview" alt="" hidden>
+                  <span id="book-cover-upload-title">选择、粘贴或拖入封面</span>
+                  <small id="book-cover-upload-hint">PNG / JPEG / WebP · 不超过 8 MB</small>
+                </label>
+                <button class="book-image-remove" id="book-cover-remove" type="button" title="移除封面" aria-label="移除封面" hidden>×</button>
+              </div>
+            </div>
+            <button class="book-image-swap" id="book-image-swap" type="button" title="交换封面与识别图" aria-label="交换封面与识别图" disabled>⇄</button>
+            <div class="book-upload">
+              <div class="book-upload-heading"><b>信息识别图</b><span>封面、版权页或购书页</span></div>
+              <div class="book-upload-control">
+                <label class="upload-box" id="book-recognition-upload-box" tabindex="0">
+                  <input type="file" id="book-recognition-image" accept="image/png,image/jpeg,image/webp" aria-describedby="book-recognition-upload-hint">
+                  <img id="book-recognition-preview" alt="" hidden>
+                  <span id="book-recognition-upload-title">选择、粘贴或拖入识别图</span>
+                  <small id="book-recognition-upload-hint">PNG / JPEG / WebP · 不超过 8 MB</small>
+                </label>
+                <button class="book-image-remove" id="book-recognition-remove" type="button" title="移除识别图" aria-label="移除识别图" hidden>×</button>
+              </div>
+              <button class="quiet-button" id="parse-book" type="button" disabled>识别并回填</button>
+            </div>
+          </div>
+          <p class="status" id="book-parse-status" role="status" aria-live="polite"></p>
+        </div>
+        <form class="book-form" id="book-form">
+          <div class="book-form-heading"><h2 id="book-form-title">创建书目</h2><button class="text-button" id="book-edit-cancel" type="button" hidden>取消编辑</button></div>
+          <input id="book-title" placeholder="书名 *" required>
+          <input id="book-author" placeholder="作者">
+          <div class="inline-inputs"><input id="book-publisher" placeholder="出版社"><input id="book-isbn" placeholder="ISBN"></div>
+          <div class="book-reading-fields">
+            <label><span>开始阅读 <b>必填</b></span><input id="book-reading-start" type="date" required></label>
+            <label><span>结束阅读 <i>可空</i></span><input id="book-reading-end" type="date"></label>
+          </div>
+          <textarea id="book-description" rows="3" placeholder="一句话简介"></textarea>
+          <input type="hidden" id="book-image-path">
+          <button class="primary-button" id="book-submit" type="submit">创建书目</button>
+        </form>
+      </section>
+      <section id="book-library" hidden>
+        <section class="book-memory-sky" id="book-memory-sky" aria-label="随机回顾读书笔记"></section>
+        <div class="book-library-heading"><div><p class="eyebrow">我的书架</p><h2>继续读，或回到一条旧笔记</h2></div><span id="book-note-count"></span></div>
+        <div class="book-grid" id="book-grid"></div>
+      </section>
+      <article class="book-detail" id="book-detail" hidden></article>
+    </section>
+
+    <section class="view" id="view-keepsakes">
+      <header class="page-header">
+        <div><p class="eyebrow">小物收集</p><h1>留下形状，放下实物</h1></div>
+        <div class="keepsake-header-actions"><span class="record-count" id="keepsake-count"></span><button class="quiet-button" id="keepsake-create-toggle" type="button">＋ 收一件小物</button></div>
+      </header>
+
+      <section class="card keepsake-workspace" id="keepsake-workspace" hidden>
+        <header class="keepsake-workspace-heading">
+          <div><p class="eyebrow" id="keepsake-editor-eyebrow">新建留存</p><h2 id="keepsake-editor-title">拍下或放入一张照片</h2></div>
+          <button class="text-button" id="keepsake-editor-close" type="button">收起</button>
+        </header>
+
+        <label class="keepsake-upload-box" id="keepsake-upload-box" tabindex="0">
+          <input type="file" id="keepsake-image" accept="image/png,image/jpeg,image/webp">
+          <span class="keepsake-upload-icon" aria-hidden="true">⌁</span>
+          <strong id="keepsake-upload-title">选择、粘贴或拖入小物照片</strong>
+          <small id="keepsake-upload-hint">PNG / JPEG / WebP · 不超过 8 MB</small>
+        </label>
+
+        <div class="keepsake-editor" id="keepsake-editor" hidden>
+          <div class="keepsake-stage-column">
+            <div class="keepsake-toolbar" role="toolbar" aria-label="轮廓编辑工具">
+              <div class="segmented-control" aria-label="画笔模式">
+                <button class="active" id="keepsake-brush-keep" type="button" aria-pressed="true">＋ 保留</button>
+                <button id="keepsake-brush-erase" type="button" aria-pressed="false">－ 擦除</button>
+              </div>
+              <label class="keepsake-brush-size"><span>笔刷</span><input id="keepsake-brush-size" type="range" min="4" max="120" value="32"><output id="keepsake-brush-output">32</output></label>
+              <button class="icon-button" id="keepsake-undo" type="button" title="撤销上一步" aria-label="撤销上一步" disabled>↶</button>
+              <button class="icon-button" id="keepsake-reset-mask" type="button" title="清空轮廓" aria-label="清空轮廓">⌫</button>
+            </div>
+            <div class="keepsake-canvas-wrap" id="keepsake-canvas-wrap">
+              <canvas id="keepsake-mask-canvas" aria-label="小物主体轮廓编辑画布"></canvas>
+              <span class="keepsake-canvas-cursor" id="keepsake-canvas-cursor" hidden></span>
+            </div>
+            <div class="keepsake-segment-actions">
+              <button class="quiet-button" id="keepsake-auto-segment" type="button">✦ 自动识别主体</button>
+              <label class="keepsake-edge-control"><span>场景边缘</span><input id="keepsake-edge-expansion" type="range" min="0" max="20" value="8"><output id="keepsake-edge-output">8</output></label>
+              <p class="status" id="keepsake-segment-status" role="status" aria-live="polite"></p>
+            </div>
+          </div>
+
+          <div class="keepsake-preview-column">
+            <div class="keepsake-preview-heading"><b>透明轮廓</b><span>棋盘格表示透明</span></div>
+            <div class="keepsake-cutout-preview"><canvas id="keepsake-preview-canvas" aria-label="透明轮廓预览"></canvas></div>
+            <form class="keepsake-form" id="keepsake-form">
+              <input type="hidden" id="keepsake-id">
+              <label><span>名称 <b>必填</b></span><input id="keepsake-title" placeholder="例：展览门票" maxlength="120" required></label>
+              <div class="keepsake-meta-fields">
+                <label><span>类型</span><select id="keepsake-category"><option value="小票">小票</option><option value="纸品">纸品</option><option value="立牌">立牌</option><option value="小物">小物</option><option value="其他">其他</option></select></label>
+                <label><span>留存时间</span><input id="keepsake-datetime" type="datetime-local" step="1" required></label>
+              </div>
+              <label><span>备注</span><textarea id="keepsake-note" rows="3" placeholder="它从哪里来，为什么暂时想记住"></textarea></label>
+              <div class="keepsake-form-actions"><button class="text-button" id="keepsake-cancel-edit" type="button" hidden>取消编辑</button><button class="primary-button" id="keepsake-save" type="submit">保存小物</button></div>
+              <p class="status" id="keepsake-save-status" role="status" aria-live="polite"></p>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <section class="keepsake-library">
+        <div class="keepsake-library-heading"><div><p class="eyebrow">数字留存</p><h2>轮廓陈列</h2></div><span id="keepsake-library-count"></span></div>
+        <div class="keepsake-grid" id="keepsake-grid"></div>
+      </section>
+    </section>
+
+    <section class="view" id="view-quotes">
+      <header class="page-header"><div><p class="eyebrow">善言收集</p><h1>让好句子偶尔再次出现</h1></div></header>
+      <section class="quote-sky" id="quote-sky"><button class="quote-refresh" id="quote-refresh" type="button" title="换一组善言" aria-label="换一组善言">↻</button><div class="quote-sky-content" id="quote-sky-content"></div></section>
+      <form class="card quote-form" id="quote-form">
+        <input type="hidden" id="quote-id">
+        <label class="field quote-source-field"><span>来源 <b>必填</b></span><input id="quote-source" placeholder="作者、书名、讲话或链接" required></label>
+        <label class="field quote-content-field"><span>内容 <b>必填</b></span><textarea id="quote-content" rows="4" placeholder="把这句话留下来" required></textarea></label>
+        <div class="quote-meta-fields"><label class="field"><span>标签</span><input id="quote-tags" placeholder="多个标签用空格分隔"></label><label class="field"><span>记录时间</span><input id="quote-datetime" type="datetime-local" step="1" required></label></div>
+        <div class="quote-form-actions"><button class="text-button" id="quote-cancel" type="button" hidden>取消编辑</button><button class="primary-button" id="quote-submit" type="submit">收藏</button></div>
+        <p class="status" id="quote-status" role="status"></p>
+      </form>
+      <section class="quote-timeline" id="quote-timeline"></section>
+    </section>
+
+    <section class="view" id="view-settings">
+      <header class="page-header"><div><p class="eyebrow">模型设置</p><h1>按任务分配合适的力度</h1></div></header>
+      <form class="card settings-card" id="llm-settings-form">
+        <div class="settings-heading"><div><h2>DeepSeek API</h2><p>档位决定思考投入；每个场景另有篇幅与表达约束，不会因档位高就默认写得更长。</p></div><span class="connection-badge" id="llm-key-state">未配置密钥</span></div>
+        <section class="settings-section">
+          <div class="settings-section-heading"><h3>档位配置</h3><p>每档都可独立选择模型与思考强度。</p></div>
+          <div class="profile-grid">
+            <fieldset class="profile-config"><legend>Lite</legend><label>模型<select data-profile-model="lite"><option value="deepseek-flash">Flash · V4.1</option><option value="deepseek-v4-pro">Pro · V4</option></select></label><label>思考<select data-profile-effort="lite"><option value="none">关闭</option><option value="high">High</option><option value="max">Max</option></select></label></fieldset>
+            <fieldset class="profile-config"><legend>Mid</legend><label>模型<select data-profile-model="mid"><option value="deepseek-flash">Flash · V4.1</option><option value="deepseek-v4-pro">Pro · V4</option></select></label><label>思考<select data-profile-effort="mid"><option value="none">关闭</option><option value="high">High</option><option value="max">Max</option></select></label></fieldset>
+            <fieldset class="profile-config"><legend>High</legend><label>模型<select data-profile-model="high"><option value="deepseek-flash">Flash · V4.1</option><option value="deepseek-v4-pro">Pro · V4</option></select></label><label>思考<select data-profile-effort="high"><option value="none">关闭</option><option value="high">High</option><option value="max">Max</option></select></label></fieldset>
+            <fieldset class="profile-config"><legend>Ultra</legend><label>模型<select data-profile-model="ultra"><option value="deepseek-flash">Flash · V4.1</option><option value="deepseek-v4-pro">Pro · V4</option></select></label><label>思考<select data-profile-effort="ultra"><option value="none">关闭</option><option value="high">High</option><option value="max">Max</option></select></label></fieldset>
+          </div>
+        </section>
+        <section class="settings-section">
+          <div class="settings-section-heading"><h3>场景档位</h3><p>默认让严肃判断充分思考，让写作提示与识别任务快速完成。</p></div>
+          <div class="scenario-grid">
+            <label><span>思考草稿</span><select data-ai-scenario="thoughtDraft"></select></label>
+            <label><span>思考回答</span><select data-ai-scenario="thoughtAnswer"></select></label>
+            <label><span>追问回答</span><select data-ai-scenario="followUpAnswer"></select></label>
+            <label><span>长期对话</span><select data-ai-scenario="chat"></select></label>
+            <label><span>日记 · 引子</span><select data-ai-scenario="diaryLead"></select></label>
+            <label><span>日记 · 结构</span><select data-ai-scenario="diaryStructure"></select></label>
+            <label><span>日记 · 话题</span><select data-ai-scenario="diaryTopic"></select></label>
+            <label><span>日记回望</span><select data-ai-scenario="diaryReflection"></select></label>
+            <label><span>批注神鸡</span><select data-ai-scenario="annotationShenji"></select></label>
+            <label><span>认知复盘</span><select data-ai-scenario="analysis"></select></label>
+            <label><span>书目识别</span><select data-ai-scenario="bookRecognition"></select></label>
+            <label><span>健康截图识别</span><select data-ai-scenario="healthRecognition"></select></label>
+          </div>
+        </section>
+        <label class="field"><span>API 密钥 <i id="llm-key-hint">仅保存在本机</i></span><input id="llm-api-key" type="password" autocomplete="new-password" placeholder="sk-…（留空则保留已保存的密钥）"></label>
+        <p class="settings-note">密钥只写入本机数据目录，页面只显示脱敏提示。书目与健康截图识别会使用各自场景的思考强度，并自动切换到支持图像输入的 Flash。</p>
+        <div class="settings-actions"><button class="primary-button" type="submit">保存设置</button><label class="test-tier">测试档位<select id="llm-test-tier"><option value="lite">Lite</option><option value="mid">Mid</option><option value="high">High</option><option value="ultra">Ultra</option></select></label><button class="quiet-button" type="button" id="test-llm">测试连接</button></div>
+        <p class="status" id="llm-settings-status" role="status" aria-live="polite"></p>
+      </form>
+      <div class="settings-account" id="settings-account" hidden><span>当前账户 <b id="settings-account-name"></b></span><button type="button" id="logout-button-mobile">退出登录</button></div>
+      <button class="settings-about-link" type="button" data-view="about"><span aria-hidden="true">i</span><span><b>关于此刻</b><small>产品定位、价值主张与设计原则</small></span><span aria-hidden="true">→</span></button>
+    </section>
+
+    <section class="view" id="view-about">
+      <header class="about-hero">
+        <div class="about-wordmark" aria-hidden="true">此</div>
+        <div class="about-hero-copy">
+          <p class="eyebrow">关于此刻</p>
+          <h1>此刻</h1>
+          <p class="about-subtitle">一套可纠正的个人成长系统</p>
+          <p class="about-proposition">把零散记录变成更懂你的回答、可验证的成长建议，以及下一次真正做得不同的机会。</p>
+        </div>
+        <p class="about-local"><span></span>本地优先 · 由你掌握</p>
+      </header>
+
+      <section class="about-keywords" aria-label="产品关键词">
+        <span>自进化</span><span>成长记录</span><span>长期语境</span><span>内观</span><span>习惯养成</span><span>知识漏洞</span><span>打破信息茧房</span>
+      </section>
+
+      <section class="about-section about-loop-section">
+        <div class="about-section-heading">
+          <p class="eyebrow">不是存档，而是闭环</p>
+          <h2>每次记录，都应对未来有用</h2>
+          <p>系统不只保存你说过什么，也接住你后来的取舍、修改与行动结果，让新的证据持续修正旧判断。</p>
+        </div>
+        <ol class="about-loop" aria-label="系统闭环">
+          <li><b>01</b><strong>记录</strong><span>状态、经历、问题与原始想法</span></li>
+          <li><b>02</b><strong>回答</strong><span>带着长期个人语境回应当下</span></li>
+          <li><b>03</b><strong>反馈</strong><span>编辑、追问、保留、舍弃或行动</span></li>
+          <li><b>04</b><strong>学习</strong><span>识别偏好、模式、缺口与反证</span></li>
+          <li><b>05</b><strong>更新</strong><span>修正建议、重点与个人模型</span></li>
+        </ol>
+      </section>
+
+      <section class="about-section about-positioning">
+        <div class="about-section-heading">
+          <p class="eyebrow">产品定位</p>
+          <h2>它更像一面会更新的镜子</h2>
+        </div>
+        <div class="about-position-grid">
+          <div>
+            <span class="about-position-label">它要做的</span>
+            <p>把散落在日常里的状态、念头、经历和判断连起来，在需要时给出有个人语境、有证据、可落地的回应。</p>
+          </div>
+          <div>
+            <span class="about-position-label muted">它不做的</span>
+            <p>不把你压缩成固定标签，不把相关性包装成因果，也不让模型的推断越过你的确认，成为关于你的“事实”。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="about-section">
+        <div class="about-section-heading split">
+          <div><p class="eyebrow">四种记录</p><h2>不同心智负担，不同去处</h2></div>
+          <p>不是每个念头都值得立刻想完整。系统先尊重记录当下的真实成本，再允许内容自然生长。</p>
+        </div>
+        <div class="about-records">
+          <article><b>状态</b><span>可比较</span><p>记录睡眠、情绪、压力与精力随时间的变化。</p></article>
+          <article><b>捕念</b><span>低负担</span><p>先收下碎片，不要求问题、结构或结论。</p></article>
+          <article><b>日记</b><span>忠于原文</span><p>保存经历与内观；AI 可以回望，但不替你改写。</p></article>
+          <article><b>思考</b><span>有主题</span><p>沿着问题、初步想法、回答与追问逐步深入。</p></article>
+        </div>
+      </section>
+
+      <section class="about-section about-principles-section">
+        <div class="about-section-heading">
+          <p class="eyebrow">设计原则</p>
+          <h2>系统可以更懂你，但不能替你定义你</h2>
+        </div>
+        <div class="about-principles">
+          <article><span>01</span><h3>动态</h3><p>状态与判断都有时间维度，历史标签不是永久结论。</p></article>
+          <article><span>02</span><h3>分层</h3><p>原始记录、统计线索、模型解释与确认结论彼此区分。</p></article>
+          <article><span>03</span><h3>带置信度</h3><p>洞察附着证据量与不确定性，样本不足时明确说不足。</p></article>
+          <article><span>04</span><h3>可修正</h3><p>你可以编辑、否定与补充，新证据可以覆盖旧判断。</p></article>
+        </div>
+      </section>
+
+      <footer class="about-closing">
+        <div><span class="about-closing-mark">此</span><p><b>此刻属于记录者。</b><br>数据留在本机，判断保留来路，最终解释权始终在你。</p></div>
+        <button type="button" data-view="today">回到今天 <span aria-hidden="true">→</span></button>
+      </footer>
+    </section>
+  </main>
+
+  <div class="selection-tools" id="selection-tools" role="toolbar" aria-label="选中文本操作" hidden><button type="button" data-selection-action="comment">评论</button><button type="button" data-selection-action="quote">善言</button><button type="button" data-selection-action="highlight">划线</button></div>
+  <aside class="comment-panel" id="comment-panel" aria-label="正文评论" hidden>
+    <header><div><p class="eyebrow">评论</p><h2>正文批注</h2></div><button id="comment-panel-close" type="button" aria-label="关闭评论面板">×</button></header>
+    <form class="comment-composer" id="comment-composer" hidden><blockquote id="comment-quote"></blockquote><textarea id="comment-text" rows="3" placeholder="写下你对这段文字的评论…" required></textarea><div><span class="status" id="comment-status"></span><button class="primary-button" type="submit">评论</button></div></form>
+    <div class="comment-panel-list" id="comment-panel-list"></div>
+  </aside>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <div class="modal-backdrop" id="selection-quote-modal" hidden>
+    <form class="modal card selection-quote-form" id="selection-quote-form" role="dialog" aria-modal="true" aria-labelledby="selection-quote-title">
+      <button class="modal-close" type="button" id="selection-quote-close" aria-label="关闭">×</button>
+      <p class="eyebrow">从正文收藏</p><h2 id="selection-quote-title">收为善言</h2>
+      <label class="field"><span>内容 <b>必填</b></span><textarea id="selection-quote-content" rows="5" required></textarea></label>
+      <label class="field"><span>来源 <b>必填</b></span><input id="selection-quote-source" required></label>
+      <label class="field"><span>标签</span><input id="selection-quote-tags" placeholder="多个标签用空格分隔"></label>
+      <label class="field"><span>记录时间</span><input id="selection-quote-datetime" type="datetime-local" step="1" required></label>
+      <button class="primary-button full" type="submit">收藏善言</button><p class="status" id="selection-quote-status"></p>
+    </form>
+  </div>
+
+  <div class="modal-backdrop keepsake-lightbox-backdrop" id="keepsake-lightbox" hidden>
+    <section class="keepsake-lightbox" role="dialog" aria-modal="true" aria-labelledby="keepsake-lightbox-title">
+      <button class="modal-close" id="keepsake-lightbox-close" type="button" aria-label="关闭">×</button>
+      <header><div><p class="eyebrow" id="keepsake-lightbox-category"></p><h2 id="keepsake-lightbox-title"></h2></div><div class="segmented-control"><button class="active" type="button" data-keepsake-view="original" aria-pressed="true">原图</button><button type="button" data-keepsake-view="cutout" aria-pressed="false">轮廓</button></div></header>
+      <div class="keepsake-lightbox-image"><img id="keepsake-lightbox-image" alt=""></div>
+      <p id="keepsake-lightbox-note"></p>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="edit-chain-modal" hidden><form class="modal card edit-chain-form" id="edit-chain-form"><button class="modal-close" type="button" aria-label="关闭">×</button><p class="eyebrow">编辑整套思考</p><input type="hidden" id="edit-chain-id"><label class="field"><span>日期与时间</span><input id="edit-chain-datetime" type="datetime-local" step="1" required></label><label class="field"><span>问题 <i>支持 Markdown</i></span><textarea id="edit-chain-question" rows="2" required></textarea></label><label class="field"><span>初步想法 <i>支持 Markdown</i></span><textarea id="edit-chain-idea" rows="4"></textarea></label><label class="field"><span>回答 <i>支持 Markdown</i></span><textarea id="edit-chain-answer" rows="5"></textarea></label><label class="field"><span>标签</span><input id="edit-chain-tags" placeholder="多个标签用空格分隔"></label><button class="primary-button full" type="submit">保存修改</button><p class="status" id="edit-chain-status"></p></form></div>
+  <div class="modal-backdrop" id="ai-answer-modal" hidden>
+    <section class="modal card ai-answer-modal" role="dialog" aria-modal="true" aria-labelledby="ai-answer-title">
+      <button class="modal-close" id="ai-answer-close" type="button" aria-label="关闭">×</button>
+      <p class="eyebrow">DeepSeek 回答</p>
+      <h2 id="ai-answer-title">正在回答</h2>
+      <ol class="answer-progress" id="ai-answer-progress">
+        <li data-step="context">整理完整上下文</li>
+        <li data-step="thinking">模型思考</li>
+        <li data-step="answer">生成回答</li>
+        <li data-step="done">回答完成</li>
+      </ol>
+      <p class="status answer-modal-status" id="ai-answer-status" role="status" aria-live="polite"></p>
+      <details class="answer-reasoning" id="ai-answer-reasoning" open hidden>
+        <summary><span>模型思考</span><small id="ai-answer-reasoning-state">生成中</small></summary>
+        <div class="answer-reasoning-body markdown-content" id="ai-answer-reasoning-content"></div>
+      </details>
+      <section class="answer-output" id="ai-answer-output" hidden>
+        <h3>回答</h3>
+        <div class="markdown-content answer-modal-result" id="ai-answer-result"></div>
+      </section>
+    </section>
+  </div>
+  <script src="vendor/katex/katex.min.js"></script>
+  <script src="app.js" type="module"></script>
+</body>
+</html>
