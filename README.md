@@ -17,7 +17,7 @@
 
 macOS 双击 `启动.command`，或执行 `./启动.command`，然后打开 <http://127.0.0.1:4173/>。
 
-本机使用云端正式数据时设置 `UPSTREAM_ORIGIN=http://<服务器的 Tailscale IP>/now` 后启动。云端安装、Gitee 发布、Nginx 路由、数据迁移与 OSS 备份见 `deploy/README.md`。
+本机使用云端正式数据时设置 `UPSTREAM_ORIGIN=https://123.57.140.24/now` 后启动。云端安装、Gitee 发布、Nginx 路由、数据迁移与 OSS 备份见 `deploy/README.md`。
 
 ## 当前状态
 

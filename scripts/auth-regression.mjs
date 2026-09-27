@@ -62,7 +62,7 @@ await fs.writeFile(path.join(dataDir, "store.json"), `${JSON.stringify(legacySto
 
 const child = spawn(process.execPath, ["server.mjs"], {
   cwd: ROOT,
-  env: { ...process.env, DATA_DIR: dataDir, PORT: String(port), APP_BASE_PATH: "/now", INVITE_CODE_HASH: invitationHash },
+  env: { ...process.env, DATA_DIR: dataDir, PORT: String(port), APP_BASE_PATH: "/now", INVITE_CODE_HASH: invitationHash, COOKIE_SECURE: "1" },
   stdio: ["ignore", "pipe", "pipe"]
 });
 let errors = "";
@@ -73,6 +73,13 @@ try {
   assert.equal((await fetch(`${base}/now`, { redirect: "manual" })).status, 308);
   assert.equal((await fetch(`${base}/now/styles.css`)).status, 200);
   assert.equal((await fetch(`${base}/now/api/state`)).status, 401);
+
+  const crossSite = await jsonRequest(`${base}/now/api/auth/register`, {
+    method: "POST",
+    headers: { "sec-fetch-site": "cross-site" },
+    body: JSON.stringify({ username: "attacker", password: "cross-site-password", invitation })
+  });
+  assert.equal(crossSite.response.status, 403);
 
   const rejected = await jsonRequest(`${base}/now/api/auth/register`, {
     method: "POST",
@@ -85,7 +92,9 @@ try {
     body: JSON.stringify({ username: "owner", password: "correct-horse-battery", invitation })
   });
   assert.equal(registered.response.status, 201);
-  const ownerCookie = registered.response.headers.get("set-cookie").split(";")[0];
+  const ownerSetCookie = registered.response.headers.get("set-cookie");
+  assert.match(ownerSetCookie, /;\s*Secure(?:;|$)/i);
+  const ownerCookie = ownerSetCookie.split(";")[0];
   const ownerState = await jsonRequest(`${base}/now/api/state`, { headers: { cookie: ownerCookie } });
   assert.equal(ownerState.body.captures[0].content, "legacy-owner-data");
 
@@ -105,7 +114,7 @@ try {
   const loggedOut = await jsonRequest(`${base}/now/api/auth/logout`, { method: "POST", headers: { cookie: ownerCookie }, body: "{}" });
   const clearedCookie = loggedOut.response.headers.get("set-cookie").split(";")[0];
   assert.equal((await fetch(`${base}/now/api/state`, { headers: { cookie: clearedCookie } })).status, 401);
-  console.log("Auth checks passed: invite gate, scrypt sessions, legacy ownership, subpath assets, logout, and per-user isolation.");
+  console.log("Auth checks passed: cross-site rejection, invite gate, secure scrypt sessions, legacy ownership, subpath assets, logout, and per-user isolation.");
 } finally {
   child.kill("SIGTERM");
   await fs.rm(dataDir, { recursive: true, force: true });

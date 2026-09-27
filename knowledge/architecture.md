@@ -80,9 +80,9 @@
 
 设置 `INVITE_CODE_HASH` 后启用认证。密码使用独立盐值的 scrypt 哈希；会话令牌只以 SHA-256 摘要持久化，浏览器使用 HttpOnly、SameSite=Lax Cookie。首个邀请码注册账户自动接管迁移进根数据目录的既有记录；后续账户分别使用 `data/users/<user-id>/` 下的 store、模型设置和附件。未登录请求不得读取 API 或附件。
 
-云服务器由 systemd 托管 Node，Nginx 在现有 80 端口下增加 `/now/` 路径并关闭响应缓冲以支持 SSE。无域名阶段只允许 Tailscale 地址段访问该路径；Tailscale 提供传输加密，应用账户提供身份与数据隔离。`/apps/` 可作为多应用入口，原有根路径服务保持不变。
+云服务器由 systemd 托管 Node，Nginx 保留现有根路径服务，并将 HTTP `/now/` 重定向到公网 IP HTTPS；443 上的 `/now/` 关闭响应缓冲以支持 SSE。Let's Encrypt 短期 IP 证书提供传输加密，应用账户提供身份与数据隔离。`/apps/` 可作为多应用入口。
 
-本机默认使用隔离数据。设置 `UPSTREAM_ORIGIN=http://<tailscale-ip>/now` 时，本机 Node 只提供当前工作区前端，并流式代理认证、API、SSE 与附件到云端，以相同的云端数据验证本地修改。部署使用不可变发布目录和原子软链接切换，健康检查失败时恢复上一版本。备份短暂停止服务形成完整压缩快照，恢复服务后通过 ECS RAM 角色和北京内网 Endpoint 上传 OSS；不保存长期 AccessKey。
+本机默认使用隔离数据。设置 `UPSTREAM_ORIGIN=https://123.57.140.24/now` 时，本机 Node 只提供当前工作区前端，并流式代理认证、API、SSE 与附件到云端，以相同的云端数据验证本地修改。部署使用不可变发布目录和原子软链接切换，健康检查失败时恢复上一版本。备份短暂停止服务形成完整压缩快照，恢复服务后通过 ECS RAM 角色和北京内网 Endpoint 上传 OSS；不保存长期 AccessKey。
 
 ## 安全与验证
 

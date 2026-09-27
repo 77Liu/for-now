@@ -44,6 +44,10 @@ install -o root -g root -m 0644 "$release/deploy/for-now-backup.timer" /etc/syst
 install -o root -g root -m 0755 "$release/deploy/backup-to-oss.sh" /usr/local/sbin/for-now-backup
 install -o root -g root -m 0644 "$release/deploy/portal.html" /var/www/app-portal/index.html
 install -o root -g root -m 0644 "$release/deploy/nginx-for-now.conf" /etc/nginx/snippets/for-now.conf
+install -o root -g root -m 0644 "$release/deploy/nginx-acme-challenge.conf" /etc/nginx/snippets/acme-challenge.conf
+if [ -f /etc/letsencrypt/live/123.57.140.24/fullchain.pem ]; then
+  install -o root -g root -m 0644 "$release/deploy/nginx-dysf.conf" /etc/nginx/sites-available/dysf
+fi
 systemctl daemon-reload
 nginx -t
 ln -sfn "$release" "$base/.app-next"

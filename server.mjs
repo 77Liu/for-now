@@ -1881,12 +1881,12 @@ http.createServer(async (req, res) => {
     }
     if (url.pathname === "/healthz" || url.pathname === "/readyz") return sendJson(res, 200, { ok: true, version: process.env.APP_VERSION || "development" });
     if (UPSTREAM_ORIGIN && (url.pathname.startsWith("/api/") || url.pathname.startsWith("/attachments/"))) return await proxyToUpstream(req, res, url);
+    const unsafe = !["GET", "HEAD", "OPTIONS"].includes(req.method || "GET");
+    if (unsafe && String(req.headers["sec-fetch-site"] || "") === "cross-site") return sendJson(res, 403, { error: "跨站请求已拒绝" });
     if (url.pathname.startsWith("/api/auth/")) return await authApi(req, res, url);
     const user = await requestUser(req);
     if (url.pathname.startsWith("/api/") && !user) return sendJson(res, 401, { error: "请先登录", code: "AUTH_REQUIRED" });
     if (url.pathname.startsWith("/attachments/") && !user) return sendJson(res, 401, { error: "请先登录", code: "AUTH_REQUIRED" });
-    const unsafe = !["GET", "HEAD", "OPTIONS"].includes(req.method || "GET");
-    if (unsafe && String(req.headers["sec-fetch-site"] || "") === "cross-site") return sendJson(res, 403, { error: "跨站请求已拒绝" });
     const context = { user, dataDir: AUTH_REQUIRED && user ? userDataDir(user) : DATA_DIR };
     return await requestStorage.run(context, async () => {
       if (req.method === "GET" && url.pathname === "/api/meta") return sendJson(res, 200, { version: process.env.APP_VERSION || "development", user: publicUser(user) });
