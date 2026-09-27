@@ -36,8 +36,8 @@ if [ ! -d "$release" ]; then
   chown -R for-now:for-now "$release"
 fi
 
-/usr/bin/node --check "$release/server.mjs"
-/usr/bin/node --check "$release/public/app.js"
+/usr/local/bin/node --check "$release/server.mjs"
+/usr/local/bin/node --check "$release/public/app.js"
 ln -sfn "$release" "$base/.app-next"
 mv -Tf "$base/.app-next" "$current"
 

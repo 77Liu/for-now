@@ -32,9 +32,9 @@ if [ ! -f /etc/for-now.env ]; then
 fi
 systemctl daemon-reload
 
-if ! command -v node >/dev/null 2>&1; then
-  echo "Node.js 20 or newer must be installed as /usr/bin/node before deployment." >&2
-elif [ "$(node -p 'Number(process.versions.node.split(\".\")[0])')" -lt 20 ]; then
+if [ ! -x /usr/local/bin/node ]; then
+  echo "Node.js 20 or newer must be installed as /usr/local/bin/node before deployment." >&2
+elif [ "$(/usr/local/bin/node -p 'Number(process.versions.node.split(\".\")[0])')" -lt 20 ]; then
   echo "Current Node.js is too old. Install Node.js 20 or newer before deployment." >&2
 fi
 
