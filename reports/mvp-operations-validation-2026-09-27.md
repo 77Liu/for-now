@@ -2,17 +2,20 @@
 
 ## 当前结论
 
-结论：**生产部分完成，完整发布仍为 BLOCKED**。
+结论：**生产技术发布完成，当前服务 GO**。
 
 - 已在生产直接收紧现有数据目录权限，并完成功能冒烟。
-- 已从 OSS 最新备份执行真实隔离恢复演练。
-- OSS 附件、调用边界、最低飞书告警和恢复工具已在本地实现并通过专项回归。
-- 代码已提交并推送 Gitee `main`：`ca47f6cfb838e0522e12499403521d1fe5fbc26b`。
-- 服务器部署器已单独升级并通过 SHA-256 校验；正式应用尚未切换。生产 OSS 附件写入被 RAM 权限阻断，飞书真实投递缺少 webhook。
+- 已从 OSS 最新备份执行两次真实隔离恢复演练。
+- OSS 附件、调用边界、最低飞书告警、恢复工具及三类日志已通过本地和生产验证。
+- 代码已提交并推送 Gitee `main`：`908004b50d3f1bba2de49cbb172913913c6543dd`。
+- 生产已部署同一提交，Nginx、systemd、应用健康检查和监控定时器正常。
+- 8 个现有附件已迁移至私有 OSS，逐文件下载比对一致；本地副本保留作为本次发布回滚材料。
 
-生产当前应用版本仍为 `9eb7f067d52b`。
+生产当前应用版本为 `908004b50d3f`。
 
-生产 `/etc/for-now.env` 已写入限流、额度、OSS 元数据和告警阈值，`ATTACHMENT_STORAGE=local`；这些新增变量不影响当前旧版本。部署器预检在任何 release 构建或服务重启前因缺少 `FEISHU_ALERT_WEBHOOK` 正确退出，活动服务继续健康。
+生产 `/etc/for-now.env` 已启用限流、用户额度、私有 OSS 附件和告警阈值，`ATTACHMENT_STORAGE=oss`。飞书测试、真实服务停止告警和恢复通知均投递成功。
+
+技术发布完成不等于可以无条件扩大外部邀请。当前实例仍只建议 5～10 名低并发邀请用户；邀请项目成员以外的用户前，仍应完成 `knowledge/privacy-notice.md` 中的运营主体、联系方式、同意记录、导出和删除路径。
 
 ## 生产验证
 
@@ -31,6 +34,15 @@
 - 恢复结果：1 个账户、42 条业务记录、4 个附件引用。
 - 使用临时认证会话读取 `/api/state` 成功；附件 HTTP 内容与恢复文件逐字节一致。
 - 临时进程和目录已清理，活动生产数据未被替换。
+- 部署后再次生成 `for-now-20260927T131012Z.tar.gz` 并演练恢复：1 个账户、42 条记录、4 个附件引用，OSS 附件认证代理读取通过。
+
+### 私有 OSS 附件
+
+- 首次权限验证发现 Bucket 为公共读，测试对象及备份归档可匿名读取；迁移当即暂停。
+- Bucket 改为私有并开启阻止公共访问后，旧备份公网访问返回 `403`。
+- RAM 角色真实完成随机对象 put/get/delete，匿名访问返回 `403`，测试对象无残留。
+- 迁移 8 个本地附件、共 1,417,946 字节；远端对象数和字节数一致，且每个对象下载后与本地副本逐字节相同。
+- 应用级 OSS 冒烟通过：上传写入 OSS、应用代理读取一致、实例不落持久文件、匿名访问 `403`，测试对象随后删除。
 
 ### 实例容量
 
@@ -55,6 +67,13 @@
 - 系统日志包含 DeepSeek、`SegmentHDCommonImage`、`GetAsyncJobResult` 和结果下载成功事件；操作日志包含图片上传；AI 审计同时包含 DeepSeek 与阿里云开始/终态。
 - 共核对 8 个临时数据文件均为 `0600`。临时进程和目录已清理。
 
+### 告警与生产日志
+
+- 飞书 `open.larkoffice.com` 官方 webhook 域名已纳入精确白名单，签名投递测试成功。
+- 受控停止 `for-now.service` 后，监控检测到 critical 并发送“严重告警”；应用恢复后发送“已恢复”，监控状态重新为 success。
+- 生产无效登录请求生成同一 trace 的系统和操作日志；两类日志权限均为 `0600`，测试密码、飞书 webhook 和 secret 均未出现。
+- 真实 DeepSeek 与阿里云 AI 审计已在生产机隔离实例中验证；活动账户需在用户下一次主动 AI 操作后产生正式账户流水。
+
 ## 本地实现与自动化验证
 
 | 能力 | 自动化证据 | 结果 |
@@ -77,37 +96,11 @@
 
 供应商上限记录、费用边界和多实例限制见 `knowledge/operations-capacity.md`。
 
-## 外部阻断
+## 发布后状态
 
-### OSS RAM 权限
-
-实际测试确认 ECS RAM 角色能列出 `for-now-attachments` 前缀，但 `PutObject` 返回 `403 AccessDenied`。需要为 `acs:oss:*:*:for-now/for-now-attachments/*` 增加最小 `GetObject/PutObject/DeleteObject` 权限，并限制桶级 `ListObjects` 到该前缀。
-
-权限更新后的验收顺序：
-
-1. 在服务器执行 `scripts/oss-attachment-smoke.mjs`，真实验证 put/get/匿名拒绝/delete。
-2. 停止应用写入，执行 `for-now-migrate-attachments`。
-3. 核对对象数和字节数后设置 `ATTACHMENT_STORAGE=oss`。
-4. 启动应用，验证上传、鉴权读取、书封、健康截图和小物原图/轮廓。
-5. 保留本地附件作为本次发布回滚副本。
-
-### 飞书
-
-服务器尚无 `FEISHU_ALERT_WEBHOOK`。需要用户创建飞书自定义机器人并提供 webhook；若机器人开启签名校验，同时提供 secret。配置写入服务器 `/etc/for-now.env`，不得写入 Git、报告或聊天回显。
-
-配置后的验收顺序：
-
-1. 执行 `monitor-health.mjs --test-alert` 并确认用户实际收到。
-2. 启动 monitor service，核对状态文件为 `0600`。
-3. 通过受控测试触发服务失败告警，再恢复并确认恢复消息。
-
-## 发布后必验
-
-- `/readyz`、版本号、注册/登录、现有账户和记录。
-- 通过应用链路再次调用 DeepSeek Flash/Pro，并核对官方 usage 落入账户账本。
-- 通过部署后的应用 API 再次完成阿里云分割，并核对三类日志关联。
-- OSS 新图片 put/get、匿名拒绝、delete 和旧本地附件回退。
-- 系统、操作、AI 三类日志的权限、脱敏及 `traceId / callGroupId / callId` 关联。
-- 飞书真实告警与恢复通知。
-- 最新备份后的第二次恢复演练。
-- 30 分钟观察窗口内无持久化错误、账户串写、持续失败、OOM 或异常费用。
+- 公网 `/now/readyz=200`，未登录附件请求 `401`，OSS 备份与附件匿名访问 `403`。
+- `for-now.service`、`for-now-backup.timer`、`for-now-monitor.timer` 均 active；应用 `NRestarts=0`。
+- 应用内存约 34 MiB，`MemoryHigh=512 MiB`、`MemoryMax=768 MiB`、`TasksMax=128` 已生效。
+- `/srv/for-now/data` 目录和文件分别保持 `0700/0600`。
+- 部署后 journal 未发现 OOM、未捕获异常、存储读写失败或日志写入失败。
+- 工作区另有用户正在进行的产品图和文档修改，本次未改动、未提交或回退。
