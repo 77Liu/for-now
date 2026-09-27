@@ -1,5 +1,7 @@
 # 本地应用架构
 
+图示更新时间：2026-09-27 20:54（Asia/Shanghai）。[系统架构 · 260927-2045](../assets/系统架构-260927-2045.png)；[本版说明](../reports/product-visuals-260927-2045.md)。
+
 ## 运行与数据
 
 - `server.mjs`：无框架 Node HTTP 服务、JSON API、DeepSeek 调用、阿里云图片分割与统计计算。

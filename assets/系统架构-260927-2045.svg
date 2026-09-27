@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1500" viewBox="0 0 2000 1500"><title>此刻 · 系统架构：模块、依赖与运行边界 · 260927-2045</title><defs><marker id="tip" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L7 4 L0 8" fill="#47675f"/></marker></defs>
+<g font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif">
+<rect x="0" y="0" width="2000" height="1500" rx="0" fill="#f3f5f4" stroke="#f3f5f4"/>
+<rect x="64" y="42" width="43" height="43" rx="8" fill="#37433f" stroke="#37433f"/>
+<text x="73" y="73" fill="#d8b468" font-size="28" font-weight="600" font-family="Songti SC, STSong, serif">此</text>
+<text x="124" y="73" fill="#29312f" font-size="27" font-weight="600">此刻</text>
+<text x="214" y="73" fill="#707a76" font-size="22" font-weight="400">工程视图</text>
+<text x="1680" y="73" fill="#47675f" font-size="25" font-weight="400">260927-2045</text>
+<rect x="64" y="120" width="4" height="105" rx="0" fill="#47675f" stroke="#47675f"/>
+<text x="88" y="167" fill="#29312f" font-size="51" font-weight="600" font-family="Songti SC, STSong, serif">系统架构：模块、依赖与运行边界</text>
+<text x="88" y="213" fill="#707a76" font-size="26" font-weight="400">按当前运行项目核对；服务端为单体 Node 应用，下列为逻辑模块，并非独立微服务。</text>
+<rect x="64" y="256" width="1872" height="157" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<text x="86" y="293" fill="#47675f" font-size="22" font-weight="600">客户端 · public/index.html / app.js / styles.css</text>
+<text x="88" y="339" fill="#29312f" font-size="28" font-weight="600">今日</text>
+<text x="88" y="379" fill="#707a76" font-size="23" font-weight="400">此刻 · 共参 · 每日</text>
+<text x="548" y="339" fill="#29312f" font-size="28" font-weight="600">所见</text>
+<text x="548" y="379" fill="#707a76" font-size="23" font-weight="400">念起 · 书间 · 拾句 · 小物</text>
+<text x="1008" y="339" fill="#29312f" font-size="28" font-weight="600">所思</text>
+<text x="1008" y="379" fill="#707a76" font-size="23" font-weight="400">思绪 · 日记 · 回顾</text>
+<text x="1468" y="339" fill="#29312f" font-size="28" font-weight="600">我的</text>
+<text x="1468" y="379" fill="#707a76" font-size="23" font-weight="400">统计 · 账户 · 设置 · 关于</text>
+<path d="M790 416 V450" fill="none" stroke="#47675f" stroke-width="2" marker-end="url(#tip)"/>
+<text x="822" y="440" fill="#47675f" font-size="22" font-weight="400">JSON API / SSE · 生产入口 HTTPS → Nginx /now/</text>
+<rect x="64" y="460" width="1420" height="595" rx="8" fill="#e8f0ed" stroke="#d9dfdc"/>
+<text x="86" y="499" fill="#47675f" font-size="22" font-weight="600">应用服务 · server.mjs</text>
+<text x="544" y="499" fill="#707a76" font-size="22" font-weight="400">请求身份贯穿业务、附件与日志</text>
+<rect x="86" y="526" width="442" height="205" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<rect x="106" y="551" width="3" height="26" rx="0" fill="#47675f" stroke="#47675f"/>
+<text x="123" y="573" fill="#29312f" font-size="29" font-weight="600">账户与访问</text>
+<text x="110" y="616" fill="#707a76" font-size="24" font-weight="400">邀请码注册 / scrypt 密码哈希</text>
+<text x="110" y="654" fill="#707a76" font-size="24" font-weight="400">Cookie 会话 / 用户目录隔离</text>
+<text x="110" y="692" fill="#707a76" font-size="24" font-weight="400">AsyncLocalStorage 请求上下文</text>
+<rect x="550" y="526" width="442" height="205" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<rect x="570" y="551" width="3" height="26" rx="0" fill="#47675f" stroke="#47675f"/>
+<text x="587" y="573" fill="#29312f" font-size="29" font-weight="600">记录与素材</text>
+<text x="574" y="616" fill="#707a76" font-size="24" font-weight="400">状态 / 健康 / 捕念 / 日记 / 思绪</text>
+<text x="574" y="654" fill="#707a76" font-size="24" font-weight="400">书籍笔记 / 善言 / 小物</text>
+<text x="574" y="692" fill="#707a76" font-size="24" font-weight="400">发生时间、版本迁移、原文持久化</text>
+<rect x="1014" y="526" width="448" height="205" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<rect x="1034" y="551" width="3" height="26" rx="0" fill="#47675f" stroke="#47675f"/>
+<text x="1051" y="573" fill="#29312f" font-size="29" font-weight="600">批注与校正</text>
+<text x="1038" y="616" fill="#707a76" font-size="24" font-weight="400">评论 / 划线 / 追问 / 取舍</text>
+<text x="1038" y="654" fill="#707a76" font-size="24" font-weight="400">通用资源批注 + @神鸡</text>
+<text x="1038" y="692" fill="#707a76" font-size="24" font-weight="400">编辑重定位；失效批注进入漂流箱</text>
+<rect x="86" y="751" width="442" height="272" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<rect x="106" y="776" width="3" height="26" rx="0" fill="#667a88" stroke="#667a88"/>
+<text x="123" y="798" fill="#29312f" font-size="29" font-weight="600">模型编排</text>
+<text x="110" y="841" fill="#707a76" font-size="24" font-weight="400">场景契约 → SP / UP → 模型调用</text>
+<text x="110" y="879" fill="#707a76" font-size="24" font-weight="400">Lite / Mid / High / Ultra 档位</text>
+<text x="110" y="917" fill="#707a76" font-size="24" font-weight="400">完整追问链；推理另存不回灌</text>
+<text x="110" y="955" fill="#707a76" font-size="24" font-weight="400">流式结束校验 / 独立后台生成</text>
+<rect x="550" y="751" width="442" height="272" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<rect x="570" y="776" width="3" height="26" rx="0" fill="#667a88" stroke="#667a88"/>
+<text x="587" y="798" fill="#29312f" font-size="29" font-weight="600">统计与回顾</text>
+<text x="574" y="841" fill="#707a76" font-size="24" font-weight="400">日级趋势 / 相关线索 / 主题聚类</text>
+<text x="574" y="879" fill="#707a76" font-size="24" font-weight="400">个人实验 / 日记回望 / 认知复盘</text>
+<text x="574" y="917" fill="#707a76" font-size="24" font-weight="400">记录覆盖、留痕率、主动校正</text>
+<text x="574" y="955" fill="#707a76" font-size="24" font-weight="400">Token、调用、费用与场景统计</text>
+<rect x="1014" y="751" width="448" height="272" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<rect x="1034" y="776" width="3" height="26" rx="0" fill="#667a88" stroke="#667a88"/>
+<text x="1051" y="798" fill="#29312f" font-size="29" font-weight="600">图片与附件</text>
+<text x="1038" y="841" fill="#707a76" font-size="24" font-weight="400">健康 / 书目识别后由用户确认</text>
+<text x="1038" y="879" fill="#707a76" font-size="24" font-weight="400">小物分割、透明蒙版与手动修正</text>
+<text x="1038" y="917" fill="#707a76" font-size="24" font-weight="400">attachment-storage.mjs 统一读写</text>
+<text x="1038" y="955" fill="#707a76" font-size="24" font-weight="400">本地后端 / 私有 OSS 后端</text>
+<rect x="1564" y="460" width="372" height="172" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<rect x="1584" y="485" width="3" height="26" rx="0" fill="#47675f" stroke="#47675f"/>
+<text x="1601" y="507" fill="#29312f" font-size="29" font-weight="600">DeepSeek API</text>
+<text x="1588" y="550" fill="#707a76" font-size="24" font-weight="400">由模型编排模块统一调用</text>
+<text x="1588" y="588" fill="#707a76" font-size="24" font-weight="400">文本回答 / 回望 / 复盘</text>
+<text x="1588" y="626" fill="#707a76" font-size="24" font-weight="400">Flash 图片识别</text>
+<rect x="1564" y="652" width="372" height="185" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<rect x="1584" y="677" width="3" height="26" rx="0" fill="#47675f" stroke="#47675f"/>
+<text x="1601" y="699" fill="#29312f" font-size="29" font-weight="600">阿里云视觉分割</text>
+<text x="1588" y="742" fill="#707a76" font-size="24" font-weight="400">SegmentHDCommonImage</text>
+<text x="1588" y="780" fill="#707a76" font-size="24" font-weight="400">GetAsyncJobResult → PNG</text>
+<text x="1588" y="818" fill="#707a76" font-size="24" font-weight="400">仅小物分割；ECS RAM 角色</text>
+<rect x="1564" y="857" width="372" height="198" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<rect x="1584" y="882" width="3" height="26" rx="0" fill="#47675f" stroke="#47675f"/>
+<text x="1601" y="904" fill="#29312f" font-size="29" font-weight="600">私有 OSS 附件</text>
+<text x="1588" y="947" fill="#707a76" font-size="24" font-weight="400">8 个附件已迁移并逐文件比对</text>
+<text x="1588" y="985" fill="#707a76" font-size="24" font-weight="400">账户前缀 + 应用鉴权读取</text>
+<text x="1588" y="1023" fill="#707a76" font-size="24" font-weight="400">Bucket 私有；本地副本保留回滚</text>
+<path d="M1488 551 H1552" fill="none" stroke="#47675f" stroke-width="2" marker-end="url(#tip)"/>
+<path d="M1488 744 H1552" fill="none" stroke="#47675f" stroke-width="2" marker-end="url(#tip)"/>
+<path d="M1488 952 H1552" fill="none" stroke="#47675f" stroke-width="2" marker-end="url(#tip)"/>
+<text x="1510" y="1090" fill="#707a76" font-size="20" font-weight="400">实线：已验证调用关系</text>
+<text x="64" y="1100" fill="#47675f" font-size="22" font-weight="600">共享基础设施 · 支撑全部业务模块</text>
+<rect x="64" y="1123" width="446" height="235" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<rect x="84" y="1148" width="3" height="26" rx="0" fill="#47675f" stroke="#47675f"/>
+<text x="101" y="1170" fill="#29312f" font-size="29" font-weight="600">持久化</text>
+<text x="88" y="1213" fill="#707a76" font-size="24" font-weight="400">用户目录：store / settings / usage</text>
+<text x="88" y="1251" fill="#707a76" font-size="24" font-weight="400">账户根目录：auth.json</text>
+<text x="88" y="1289" fill="#707a76" font-size="24" font-weight="400">串行写入、原子替换、损坏保护</text>
+<rect x="536" y="1123" width="446" height="235" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<rect x="556" y="1148" width="3" height="26" rx="0" fill="#47675f" stroke="#47675f"/>
+<text x="573" y="1170" fill="#29312f" font-size="29" font-weight="600">可观测与调用边界</text>
+<text x="560" y="1213" fill="#707a76" font-size="24" font-weight="400">logging.mjs · trace / call 关联</text>
+<text x="560" y="1251" fill="#707a76" font-size="24" font-weight="400">系统 / 操作 / AI 审计日志</text>
+<text x="560" y="1289" fill="#707a76" font-size="24" font-weight="400">限流、费用、附件额度：已部署</text>
+<rect x="1008" y="1123" width="446" height="235" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<rect x="1028" y="1148" width="3" height="26" rx="0" fill="#47675f" stroke="#47675f"/>
+<text x="1045" y="1170" fill="#29312f" font-size="29" font-weight="600">备份与恢复</text>
+<text x="1032" y="1213" fill="#707a76" font-size="24" font-weight="400">ECS RAM → OSS 一致性快照</text>
+<text x="1032" y="1251" fill="#707a76" font-size="24" font-weight="400">定时备份 + 隔离恢复已验证</text>
+<text x="1032" y="1289" fill="#707a76" font-size="24" font-weight="400">附件对象与备份快照分开管理</text>
+<rect x="1480" y="1123" width="456" height="235" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<rect x="1500" y="1148" width="3" height="26" rx="0" fill="#47675f" stroke="#47675f"/>
+<text x="1517" y="1170" fill="#29312f" font-size="29" font-weight="600">发布与告警</text>
+<text x="1504" y="1213" fill="#707a76" font-size="24" font-weight="400">Gitee → release → systemd</text>
+<text x="1504" y="1251" fill="#707a76" font-size="24" font-weight="400">readyz 检查 / 失败回滚</text>
+<text x="1504" y="1289" fill="#707a76" font-size="24" font-weight="400">飞书测试、严重告警与恢复已投递</text>
+<text x="85" y="1400" fill="#47675f" font-size="24" font-weight="400">生产基线 908004b50d3f；OSS 附件、限流、告警和日志增强已部署并验证。</text>
+<path d="M64 1432 H1936" fill="none" stroke="#47675f" stroke-width="2"/>
+<text x="64" y="1470" fill="#707a76" font-size="20" font-weight="400">依据：当前 Codex 项目源码与 2026-09-27 生产运行验证报告。</text>
+<text x="1680" y="1470" fill="#707a76" font-size="22" font-weight="400">2026.09.27 20:45</text>
+</g></svg>

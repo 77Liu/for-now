@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1500" viewBox="0 0 2000 1500"><title>此刻 · 开发路线：先收口，再扩展 · 260927-2045</title><defs><marker id="tip" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L7 4 L0 8" fill="#47675f"/></marker></defs>
+<g font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif">
+<rect x="0" y="0" width="2000" height="1500" rx="0" fill="#f3f5f4" stroke="#f3f5f4"/>
+<rect x="64" y="42" width="43" height="43" rx="8" fill="#37433f" stroke="#37433f"/>
+<text x="73" y="73" fill="#d8b468" font-size="28" font-weight="600" font-family="Songti SC, STSong, serif">此</text>
+<text x="124" y="73" fill="#29312f" font-size="27" font-weight="600">此刻</text>
+<text x="214" y="73" fill="#707a76" font-size="22" font-weight="400">内部规划 · 开发与优化</text>
+<text x="1680" y="73" fill="#47675f" font-size="25" font-weight="400">260927-2045</text>
+<rect x="64" y="120" width="4" height="105" rx="0" fill="#47675f" stroke="#47675f"/>
+<text x="88" y="167" fill="#29312f" font-size="51" font-weight="600" font-family="Songti SC, STSong, serif">开发路线：先收口，再扩展</text>
+<text x="88" y="213" fill="#707a76" font-size="26" font-weight="400">把工作拆成可验收的结果。状态依据当前代码、README-TODO 与运行验证报告。</text>
+<rect x="64" y="265" width="1872" height="93" rx="8" fill="#e8f0ed" stroke="#e8f0ed"/>
+<text x="89" y="305" fill="#47675f" font-size="29" font-weight="600">当前技术发布：GO</text>
+<text x="680" y="304" fill="#29312f" font-size="26" font-weight="400">生产 908004b50d3f ｜ 运维增强已部署验证</text>
+<text x="89" y="340" fill="#707a76" font-size="23" font-weight="400">保持生产基线，先完成外部邀请所需的隐私路径，再验证内容复用和长期价值。</text>
+<text x="90" y="405" fill="#47675f" font-size="22" font-weight="600">优先级 / 状态</text>
+<text x="347" y="405" fill="#47675f" font-size="22" font-weight="600">要完成什么</text>
+<text x="1067" y="405" fill="#47675f" font-size="22" font-weight="600">完成条件 / 验收</text>
+<rect x="64" y="430" width="1872" height="158" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<text x="90" y="478" fill="#47675f" font-size="32" font-weight="600">P0</text>
+<text x="90" y="519" fill="#47675f" font-size="24" font-weight="400">已完成</text>
+<text x="347" y="475" fill="#29312f" font-size="28" font-weight="600">OSS 附件迁移 + 告警真实投递</text>
+<text x="347" y="517" fill="#707a76" font-size="23" font-weight="400">私有桶、RAM 读写与应用 OSS 后端已启用</text>
+<text x="347" y="553" fill="#707a76" font-size="23" font-weight="400">8 个附件逐文件校验；本地副本保留回滚</text>
+<text x="1067" y="479" fill="#29312f" font-size="24" font-weight="400">上传 / 鉴权读 / 匿名拒绝 / 删除均通过</text>
+<text x="1067" y="521" fill="#29312f" font-size="24" font-weight="400">测试、服务严重告警与恢复通知均送达</text>
+<rect x="64" y="603" width="1872" height="158" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<text x="90" y="651" fill="#a77d35" font-size="32" font-weight="600">P0</text>
+<text x="90" y="692" fill="#a77d35" font-size="24" font-weight="400">外部邀请前</text>
+<text x="347" y="648" fill="#29312f" font-size="28" font-weight="600">完成隐私与数据退出路径</text>
+<text x="347" y="690" fill="#707a76" font-size="23" font-weight="400">明确运营主体、联系入口、第三方与备份周期</text>
+<text x="347" y="726" fill="#707a76" font-size="23" font-weight="400">落实同意记录、退出、导出和账户删除流程</text>
+<text x="1067" y="652" fill="#29312f" font-size="24" font-weight="400">隐私文档中的邀请阻断项逐条关闭</text>
+<text x="1067" y="694" fill="#29312f" font-size="24" font-weight="400">确认云端、附件、审计和备份的处理边界</text>
+<rect x="64" y="776" width="1872" height="158" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<text x="90" y="824" fill="#47675f" font-size="32" font-weight="600">P1</text>
+<text x="90" y="865" fill="#47675f" font-size="24" font-weight="400">稳定性</text>
+<text x="347" y="821" fill="#29312f" font-size="28" font-weight="600">失败可恢复，记录不串写、不丢失</text>
+<text x="347" y="863" fill="#707a76" font-size="23" font-weight="400">覆盖编辑 / 删除 / 流式中断 / 上传失败 / 模型失败</text>
+<text x="347" y="899" fill="#707a76" font-size="23" font-weight="400">补充证书续期、部署结果通知与发布门槛</text>
+<text x="1067" y="825" fill="#29312f" font-size="24" font-weight="400">API + UI 回归通过；账户隔离和断流路径受测</text>
+<text x="1067" y="867" fill="#29312f" font-size="24" font-weight="400">健康检查、回滚、恢复演练可重复执行</text>
+<rect x="64" y="949" width="1872" height="158" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<text x="90" y="997" fill="#667a88" font-size="32" font-weight="600">P2</text>
+<text x="90" y="1038" fill="#667a88" font-size="24" font-weight="400">体验实验</text>
+<text x="347" y="994" fill="#29312f" font-size="28" font-weight="600">先让已有记录被再次使用</text>
+<text x="347" y="1036" fill="#707a76" font-size="23" font-weight="400">捕念批量整理；日记周期回望；低样本复盘校准</text>
+<text x="347" y="1072" fill="#707a76" font-size="23" font-weight="400">结合真实使用反馈迭代，不先扩张模块数量</text>
+<text x="1067" y="998" fill="#29312f" font-size="24" font-weight="400">验证记录覆盖、回访、留痕率与主动校正</text>
+<text x="1067" y="1040" fill="#29312f" font-size="24" font-weight="400">新增整理、回望操作可追溯且保留原文</text>
+<rect x="64" y="1122" width="1872" height="158" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<text x="90" y="1170" fill="#667a88" font-size="32" font-weight="600">P2</text>
+<text x="90" y="1211" fill="#667a88" font-size="24" font-weight="400">后续拓展</text>
+<text x="347" y="1167" fill="#29312f" font-size="28" font-weight="600">主题写作 → 有证据的关系线索</text>
+<text x="347" y="1209" fill="#707a76" font-size="23" font-weight="400">材料归集、观点版本、大纲与引用来源</text>
+<text x="347" y="1245" fill="#707a76" font-size="23" font-weight="400">捕念图谱 / 发散建议保留时间、证据和置信度</text>
+<text x="1067" y="1171" fill="#29312f" font-size="24" font-weight="400">一条思考可发展为带来源的主题草稿</text>
+<text x="1067" y="1213" fill="#29312f" font-size="24" font-weight="400">关系能被纠正、合并和删除，不自动确认为事实</text>
+<rect x="64" y="1322" width="1872" height="77" rx="8" fill="#eef2f0" stroke="#eef2f0"/>
+<text x="88" y="1368" fill="#47675f" font-size="27" font-weight="600">暂不抢跑：自动部署、习惯系统、结构化数字分身；先通过发布门槛与真实使用验证。</text>
+<path d="M64 1432 H1936" fill="none" stroke="#47675f" stroke-width="2"/>
+<text x="64" y="1470" fill="#707a76" font-size="20" font-weight="400">优先级细化与验收为本版建议；不改变现有部署授权规则，不构成上线排期承诺。</text>
+<text x="1680" y="1470" fill="#707a76" font-size="22" font-weight="400">2026.09.27 20:45</text>
+</g></svg>

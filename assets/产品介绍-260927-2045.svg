@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1500" viewBox="0 0 2000 1500"><title>此刻 · 此刻，让个人记录成为长期理解 · 260927-2045</title><defs><marker id="tip" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L7 4 L0 8" fill="#47675f"/></marker></defs>
+<g font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif">
+<rect x="0" y="0" width="2000" height="1500" rx="0" fill="#f3f5f4" stroke="#f3f5f4"/>
+<rect x="64" y="42" width="43" height="43" rx="8" fill="#37433f" stroke="#37433f"/>
+<text x="73" y="73" fill="#d8b468" font-size="28" font-weight="600" font-family="Songti SC, STSong, serif">此</text>
+<text x="124" y="73" fill="#29312f" font-size="27" font-weight="600">此刻</text>
+<text x="214" y="73" fill="#707a76" font-size="22" font-weight="400">产品介绍 · VC</text>
+<text x="1680" y="73" fill="#47675f" font-size="25" font-weight="400">260927-2045</text>
+<rect x="64" y="120" width="4" height="105" rx="0" fill="#47675f" stroke="#47675f"/>
+<text x="88" y="167" fill="#29312f" font-size="51" font-weight="600" font-family="Songti SC, STSong, serif">此刻，让个人记录成为长期理解</text>
+<text x="88" y="213" fill="#707a76" font-size="26" font-weight="400">从零散的日常输入，到带依据的回答与用户校正，建立持续回访的成长场景。</text>
+<rect x="64" y="266" width="588" height="355" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<text x="88" y="306" fill="#a77d35" font-size="22" font-weight="600">切入人群 · 待验证假设</text>
+<text x="88" y="357" fill="#29312f" font-size="32" font-weight="600" font-family="Songti SC, STSong, serif">持续阅读、写作、复盘的人</text>
+<text x="88" y="409" fill="#707a76" font-size="26" font-weight="400">想留下自己的变化，</text>
+<text x="88" y="454" fill="#707a76" font-size="26" font-weight="400">却把生活散落在日记、笔记与对话里。</text>
+<text x="88" y="499" fill="#707a76" font-size="26" font-weight="400">下次提问，又要重新解释自己。</text>
+<path d="M88 550 H626" fill="none" stroke="#47675f" stroke-width="2"/>
+<text x="88" y="590" fill="#47675f" font-size="24" font-weight="400">核心需求：过去的记录，能参与今天的判断。</text>
+<rect x="684" y="266" width="1252" height="355" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<text x="710" y="306" fill="#47675f" font-size="22" font-weight="600">产品如何解决</text>
+<text x="710" y="363" fill="#a77d35" font-size="32" font-weight="600" font-family="Songti SC, STSong, serif">一</text>
+<text x="755" y="363" fill="#29312f" font-size="30" font-weight="600">低负担留下</text>
+<text x="710" y="418" fill="#707a76" font-size="24" font-weight="400">状态与健康、捕念与日记</text>
+<text x="710" y="461" fill="#707a76" font-size="24" font-weight="400">书摘、善言与小物</text>
+<text x="1120" y="363" fill="#a77d35" font-size="32" font-weight="600" font-family="Songti SC, STSong, serif">二</text>
+<text x="1165" y="363" fill="#29312f" font-size="30" font-weight="600">带着上下文想</text>
+<text x="1120" y="418" fill="#707a76" font-size="24" font-weight="400">共参、思考追问、日记回望</text>
+<text x="1120" y="461" fill="#707a76" font-size="24" font-weight="400">在具体原文上调用 @神鸡</text>
+<text x="1530" y="363" fill="#a77d35" font-size="32" font-weight="600" font-family="Songti SC, STSong, serif">三</text>
+<text x="1575" y="363" fill="#29312f" font-size="30" font-weight="600">用自己的判断校正</text>
+<text x="1530" y="418" fill="#707a76" font-size="24" font-weight="400">修改、批注、取舍与复盘</text>
+<text x="1530" y="461" fill="#707a76" font-size="24" font-weight="400">保留原文与用户反馈</text>
+<path d="M1057 372 H1091" fill="none" stroke="#47675f" stroke-width="2" marker-end="url(#tip)"/>
+<path d="M1467 372 H1501" fill="none" stroke="#47675f" stroke-width="2" marker-end="url(#tip)"/>
+<path d="M710 510 H1909" fill="none" stroke="#47675f" stroke-width="2"/>
+<text x="710" y="555" fill="#47675f" font-size="29" font-weight="600">当前差异点：记录、AI 回答与用户修正共处一条可追溯的思考链。</text>
+<text x="710" y="592" fill="#707a76" font-size="24" font-weight="400">长期价值假设：积累的是个人证据与校正历史；结构化个人模型仍待建设。</text>
+<rect x="64" y="653" width="907" height="295" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<rect x="84" y="678" width="3" height="26" rx="0" fill="#47675f" stroke="#47675f"/>
+<text x="101" y="700" fill="#29312f" font-size="29" font-weight="600">已经具备的产品基础</text>
+<text x="88" y="743" fill="#707a76" font-size="24" font-weight="400">跨状态、健康、文字与图片的记录入口已实现</text>
+<text x="88" y="781" fill="#707a76" font-size="24" font-weight="400">批注、神鸡、日记回望、低样本复盘已实现</text>
+<text x="88" y="819" fill="#707a76" font-size="24" font-weight="400">邀请码账户隔离、HTTPS、备份恢复已有验证</text>
+<text x="88" y="857" fill="#707a76" font-size="24" font-weight="400">阶段：早期 MVP；运维基线已闭环，外部邀请门槛待收口</text>
+<rect x="995" y="653" width="941" height="295" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<rect x="1015" y="678" width="3" height="26" rx="0" fill="#47675f" stroke="#47675f"/>
+<text x="1032" y="700" fill="#29312f" font-size="29" font-weight="600">下一轮要证明的事</text>
+<text x="1019" y="743" fill="#707a76" font-size="24" font-weight="400">用户是否反复回来：7 日记录覆盖 + 周留存（待补）</text>
+<text x="1019" y="781" fill="#707a76" font-size="24" font-weight="400">AI 是否带来主动思考：30 日留痕率 + 主动校正</text>
+<text x="1019" y="819" fill="#707a76" font-size="24" font-weight="400">价值是否超过使用成本：付费意愿 + 单用户模型费用</text>
+<text x="1019" y="857" fill="#707a76" font-size="24" font-weight="400">关注真实复用与校正，不把自动生成数量当成成长</text>
+<rect x="64" y="980" width="1872" height="337" rx="8" fill="#fcfdfc" stroke="#d9dfdc"/>
+<text x="89" y="1022" fill="#a77d35" font-size="22" font-weight="600">商业化与增长 · 提案，尚未验证</text>
+<text x="89" y="1078" fill="#29312f" font-size="29" font-weight="600" font-family="Songti SC, STSong, serif">先验证愿付费的场景</text>
+<text x="89" y="1125" fill="#707a76" font-size="25" font-weight="400">从阅读、写作、复盘小群体开始</text>
+<text x="89" y="1168" fill="#707a76" font-size="25" font-weight="400">人工邀请与访谈，定位重复需求</text>
+<text x="89" y="1211" fill="#707a76" font-size="25" font-weight="400">在稳定性与隐私门槛完成后试用</text>
+<text x="702" y="1078" fill="#29312f" font-size="29" font-weight="600" font-family="Songti SC, STSong, serif">再验证可持续的收费</text>
+<text x="702" y="1125" fill="#707a76" font-size="25" font-weight="400">个人订阅：长期回顾与深度助手</text>
+<text x="702" y="1168" fill="#707a76" font-size="25" font-weight="400">模型用量设边界，观察毛利结构</text>
+<text x="702" y="1211" fill="#707a76" font-size="25" font-weight="400">价格、套餐与转化率均待实验</text>
+<text x="1315" y="1078" fill="#29312f" font-size="29" font-weight="600" font-family="Songti SC, STSong, serif">最后扩展长期价值</text>
+<text x="1315" y="1125" fill="#707a76" font-size="25" font-weight="400">捕念整理 → 主题写作 → 关系线索</text>
+<text x="1315" y="1168" fill="#707a76" font-size="25" font-weight="400">以证据和用户确认形成个人模型</text>
+<text x="1315" y="1211" fill="#707a76" font-size="25" font-weight="400">不以“越用越懂你”替代效果验证</text>
+<text x="89" y="1282" fill="#47675f" font-size="26" font-weight="400">待验证的长期壁垒：高质量、可修正的个人上下文，以及跨场景持续使用形成的反馈积累。</text>
+<text x="64" y="1383" fill="#707a76" font-size="23" font-weight="400">本图不主张已验证的市场规模、用户增长、营收或留存；这些数据尚未形成可引用证据。</text>
+<path d="M64 1432 H1936" fill="none" stroke="#47675f" stroke-width="2"/>
+<text x="64" y="1470" fill="#707a76" font-size="20" font-weight="400">产品事实来自当前实现；客群、增长与订阅路径为讨论假设。</text>
+<text x="1680" y="1470" fill="#707a76" font-size="22" font-weight="400">2026.09.27 20:45</text>
+</g></svg>
