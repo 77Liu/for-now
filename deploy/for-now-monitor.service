@@ -1,0 +1,20 @@
+[Unit]
+Description=Check For Now health and send Feishu alerts
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=for-now
+Group=for-now
+WorkingDirectory=/opt/for-now/app
+EnvironmentFile=/etc/for-now.env
+ExecStart=/usr/local/bin/node scripts/monitor-health.mjs
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/for-now-monitor
+StateDirectory=for-now-monitor
+StateDirectoryMode=0700
+UMask=0077

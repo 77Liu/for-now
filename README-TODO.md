@@ -2,12 +2,6 @@
 
 本文件只记录已经明确、但尚未实现的产品拓展。完成后应移入 README 当日 Iteration，并从这里删除。
 
-## 小物收集
-
-- 阿里云高清分割验证：为 ECS RAM 角色补齐 `viapi-imageseg:SegmentHDCommonImage`、`viapi-imageseg:RefineMask` 和 `viapi:GetAsyncJobResult` 最小权限，先用当前两张样图验证效果，测试通过后再正式配置。
-- 分割链路：原图上传 OSS，DeepSeek 只生成主体框、前景点、背景点和非敏感名称；`SegmentHDCommonImage` 返回透明 PNG，必要时再用 `RefineMask` 精细化边缘。
-- Alpha 蒙版继续接入现有的保留/擦除画笔、撤销、清空和边缘膨胀；任何分割失败都不得破坏或覆盖原图。
-
 ## 思考
 
 - 主题写作：让一组“问题—初步想法—回答—追问”继续发展为长期主题，支持材料归集、观点版本、文章大纲、草稿与引用来源。
@@ -27,4 +21,4 @@
 
 - 统一删除、编辑、流式中断、上传失败和模型失败后的恢复行为，并补齐对应 API 与 UI 回归。
 - 在回归覆盖稳定后评估 Gitee CI/Webhook 自动部署；自动流程必须先通过检查、保持生产数据目录不变，并沿用现有健康检查与失败回滚。
-- 增加 OSS 备份恢复演练、Let's Encrypt 证书续期告警和部署结果通知。
+- 增加 Let's Encrypt 证书续期告警和部署结果通知。

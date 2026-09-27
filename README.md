@@ -18,19 +18,11 @@
 
 ## 产品全景
 
-```mermaid
-flowchart TB
-    RECORD["多源记录<br/>状态 · 健康 · 捕念 · 日记 · 思考 · 阅读"] --> CONTEXT["长期个人语境<br/>原始事实优先"]
-    CONTEXT --> AI["分场景模型能力<br/>回答 · 追问 · 回望 · 复盘"]
-    AI --> REVIEW["用户校正<br/>编辑 · 反馈 · 批注 · 保留/舍弃"]
-    REVIEW --> CONTEXT
-    REVIEW --> OUTCOME["成长输出<br/>行动线索 · 个人实验 · 认知更新"]
-    OUTCOME --> RECORD
-```
+![产品全景](assets/产品介绍-260927-1640)
 
 ## 启动
 
-macOS 双击 `启动.command`，或执行 `./启动.command`，然后打开 <http://127.0.0.1:4173/>。
+首次运行需 Node.js 20+ 与 npm，先执行 `npm ci` 安装锁定依赖。macOS 双击 `启动.command`，或执行 `./启动.command`，然后打开 <http://127.0.0.1:4173/>。
 
 本机使用云端正式数据时设置 `UPSTREAM_ORIGIN=https://123.57.140.24/now` 后启动。云端安装、Gitee 发布、Nginx 路由、数据迁移与 OSS 备份见 `deploy/README.md`。
 
@@ -47,29 +39,23 @@ macOS 双击 `启动.command`，或执行 `./启动.command`，然后打开 <htt
 4. **学习**：系统保留原始事实、用户修正、模型结论及置信边界，不把模型推断自动写成事实。
 5. **更新**：新的回答、习惯建议和认知复盘基于已验证的长期记录继续演进。
 
-```mermaid
-flowchart LR
-    A["记录<br/>发生了什么"] --> B["回答<br/>形成可追问判断"]
-    B --> C["反馈<br/>用户主动校正"]
-    C --> D["学习<br/>保留证据与边界"]
-    D --> E["更新<br/>影响后续行动"]
-    E --> A
-```
+![核心体验](assets/核心体验-260927-1640.png)
 
 ## 已完成
 
 ### 核心记录与回顾
 
 - 本地 JSON 持久化已运行；原始数据位于 `data/store.json`。
-- “今天”支持 1–5 此刻状态、睡眠/心率/体重/运动每日记录、由问题—初步想法—回答组成的主题思考，以及长期对话；睡眠和心率可从截图识别后确认入库。
+- “今日”的三个子视图分别承载即时状态与主题思考、长期记录对谈、健康日常；具体信息架构见 `knowledge/architecture.md`，栏目命名见 `knowledge/cultural-content-preferences.md`。
 - “捕念”是低负担的碎片收集箱，支持快捷保存、多关键词、精确发生时间、编辑删除，并可带入初步想法继续展开成思考。
 - “日记”支持自由原文、可选写作引导、Markdown、标签与历史编辑；可基于已写文字追加 AI 引子、结构或主题，保存后可生成流式回望。
 - “思绪”支持时间线、多标签、Markdown/LaTeX、折叠回答、追问答对、编辑删除、备注与选文评论；编辑正文时批注会重定位，失效项进入评论漂流箱。
-- 状态图按自然日汇总，同日多次逐项取均值，并显示多指标浅色线和综合分。
-- “回顾”支持长期趋势、延迟相关线索、问题聚类、个人实验、自定义指标和持久化认知复盘历史。
+- 状态图位于“所思 → 回顾 → 长期趋势”，按自然日汇总，同日多次逐项取均值，并显示多指标浅色线和综合分；图下可逐次编辑发生时间、量表、备注和当天因素。
+- “回顾”支持低样本当前观察、渐进式趋势与延迟相关线索、问题聚类、个人实验、自定义指标和持久化认知复盘历史。
 - “读书笔记”支持零记录冷启动、书籍画廊、随机笔记回顾与书籍详情；书目记录阅读起止日期，详情以笔记时间线为主，支持完整时间、三档收藏、增删改查及批注。
-- “小物收集”将小票、纸品、立牌与小物照片保存为原图和透明轮廓图；支持自动主体识别、少量场景边缘外扩、保留接触手指，以及手动画笔增删蒙版。
-- “善言收集”“设置”页面已具备基础工作流；“关于”页集中说明产品主张、记录闭环、能力边界与设计原则，桌面端从侧栏左下角进入，移动端从设置页进入。
+- “小物收集”将小票、纸品、立牌与小物照片保存为原图和透明轮廓图；自动主体识别只使用阿里云 `SegmentHDCommonImage`，并支持少量场景边缘外扩与手动画笔增删蒙版。陈列采用瀑布流，卡片记录日期时间、标题、备注与标签；图片以 15% 原图托底、100% 主体叠放，点入页内详情可切换完整原图。
+- “善言收集”“设置”页面已具备基础工作流；“关于”页集中说明产品主张、记录闭环、能力边界与设计原则，从“我的”的组内导航进入。
+- 主导航已收拢为四个一级入口，各组功能通过组内导航进入；具体命名与分组分别见 `knowledge/cultural-content-preferences.md` 和 `knowledge/architecture.md`。
 - 模型能力统一使用 DeepSeek；Lite/Mid/High/Ultra 四档均可独立配置 Flash/Pro 与思考强度，每个 AI 场景独立选择档位，并以场景契约单独控制篇幅与表达。
 - 所有“给我回答”统一使用流式思考/回答弹窗；弹窗可关闭且任务继续在后台生成，完成后按数据域增量刷新。模型思考独立持久化、默认折叠且不进入后续上下文。
 - 日期归属与午夜切换使用本地自然日，时间以 00–23 小时制显示；业务记录保存完整、可编辑的发生时间。
@@ -86,28 +72,25 @@ flowchart LR
 
 - 公网 IP HTTPS、Nginx `/now/` 反向代理、`/apps/` 应用入口和 Let's Encrypt IP 证书自动续期已完成。
 - 邀请码注册、scrypt 独立盐值密码哈希、HttpOnly/SameSite Cookie、多用户数据隔离和登录边界已完成。
-- 云端正式数据独立保存在 `/srv/for-now/data`，代码、运行数据与 OSS 备份彼此分离；正式数据和附件不进入 Git。
+- 云端文字、结构化数据与日志独立保存在 `/srv/for-now/data`，持久图片迁移后保存到私有 OSS 附件前缀；代码、运行数据、附件与 OSS 备份彼此分离，均不进入 Git。
 - ECS 使用 RAM 角色向 OSS 写入一致性快照，不在服务器保存长期 AccessKey；定时备份已启用。
 - Gitee 主分支发布、不可变 release 目录、原子软链接切换、systemd 重启、`/readyz` 健康检查和失败回滚已完成。
 
 ## 当前系统架构
 
-```mermaid
-flowchart LR
-    DEV["本地工作区<br/>代码修改与测试"] -->|commit / push| GIT["Gitee 私有仓库<br/>main"]
-    GIT -->|人工触发 for-now-deploy| RELEASE["ECS 不可变 release<br/>语法检查与原子切换"]
-    RELEASE --> APP["Node 服务<br/>127.0.0.1:4173"]
-    WEB["桌面 / 手机浏览器"] -->|HTTPS :443| NGINX["Nginx<br/>/now/"]
-    NGINX --> APP
-    APP --> DATA["正式数据<br/>/srv/for-now/data"]
-    DATA -->|一致性快照| OSS["OSS<br/>for-now-backups"]
-    LOCAL["本地云数据模式<br/>UPSTREAM_ORIGIN"] -->|代理 API / SSE / 附件| NGINX
-```
+![系统架构](assets/系统架构-260927-1640)
 
 - **代码源**：Gitee `main`；服务器不直接改代码。
-- **正式数据源**：云端 `/srv/for-now/data`；本地默认使用隔离数据，需要时通过代理访问云端数据。
-- **备份源**：OSS 只接收云端一致性快照，不与运行目录双向同步。
+- **正式数据源**：云端 `/srv/for-now/data` 保存文字和结构化数据；私有 OSS 附件前缀保存持久图片。本地默认使用隔离数据，需要时通过代理访问云端数据。
+- **OSS**：`for-now-backups` 保存一致性快照，`for-now-attachments/<user-id>` 保存图片；两者都不与运行目录双向同步。
 - **模型调用**：应用服务端统一调用 DeepSeek；模型设置与密钥按用户保存在正式数据目录。
+- **小物分割**：应用服务端通过 ECS RAM 角色调用阿里云 `SegmentHDCommonImage`，用同类目 `GetAsyncJobResult` 查询异步结果并立即下载临时透明 PNG；不调用 DeepSeek 或 `RefineMask`。
+- **日志与审计**：系统日志、用户操作摘要、DeepSeek 用量及 AI 开始/终态审计已在本地接通；阿里云分割独立留痕。字段、隐私、保留和未关闭边界统一见 `knowledge/observability.md`。
+- **运行边界**：DeepSeek 全局 20 QPS/20 在途，图片分割全局 5 QPS/5 在途；每用户每日 200 次/$2、附件 1 GiB。阈值来源和扩容条件见 `knowledge/operations-capacity.md`。
+
+## 当前检查状态
+
+2026-09-27 已在生产热修复附件目录/文件权限为 `0700/0600`，并完成最新 OSS 快照的隔离恢复演练：恢复 1 个账户、42 条记录和 4 个附件。DeepSeek Flash/Pro 与阿里云 `SegmentHDCommonImage → GetAsyncJobResult → PNG 下载` 均已真实成功。当前业务版本仍为 `9eb7f067d52b`，本工作区的 OSS 附件、限流、告警和日志增强尚未部署。附件迁移受 RAM 角色 `PutObject` 权限阻断，飞书真实投递等待 webhook。当前证据及剩余发布条件见 `reports/mvp-operations-validation-2026-09-27.md`，较早两轮代码检查见 `reports/release-readiness-2026-09-27.md`。
 
 ## 发布与同步
 
@@ -124,6 +107,13 @@ flowchart LR
 npm run check
 npm test
 npm run test:auth
+npm run test:observability
+npm run test:deploy
+npm run test:storage
+npm run test:boundaries
+npm run test:monitor
+npm run test:restore
+# 页面变更另需启动隔离测试服务，再运行 npm run test:ui
 ```
 
 推送后触发服务器更新：
@@ -134,21 +124,19 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
   sudo /usr/local/sbin/for-now-deploy
 ```
 
-智能体可以在本地测试通过后执行上述提交、推送和部署命令，所以技术上可以做到“一次任务完成后同步服务器”。但目前仓库没有监听本地文件或 Gitee push 的自动触发器；未明确要求部署时，智能体不会自行更新正式环境。推荐继续保留这个人工发布闸门，待回归测试覆盖稳定后再接入 Gitee CI/Webhook 自动部署。
+只有用户明确要求时才提交、推送或部署；本地测试通过不构成自动授权。仓库没有监听本地文件或 Gitee push 的自动触发器。首次引入 SDK 依赖前还需按 `deploy/README.md` 升级旧部署器。
 
 ## 当前 TODO
 
 ### P0：正在验证
 
-- 为 ECS RAM 角色补齐阿里云 VIAPI 最小权限，使用当前两张样图闭环测试 `SegmentHDCommonImage`；只有效果通过后才正式接入“小物收集”。
-- 若高清分割边缘仍不理想，再接入 `RefineMask`；输出 Alpha 蒙版继续复用现有涂抹、擦除、膨胀和原图保护流程。
 - 补齐删除、编辑、流式中断、上传失败和模型失败后的错误恢复一致性，并扩大对应回归覆盖。
 
 ### P1：稳定与自动化
 
 - 为生产发布定义自动化门槛：全量检查通过、主分支无未提交改动、部署后健康检查成功、失败自动回滚并通知。
 - 在数据量足够后校准长期趋势、问题聚类、缺席主题和延迟相关阈值，继续明确“相关线索不等于因果”。
-- 增加备份恢复演练、证书续期告警和部署结果通知，避免只有定时任务而没有可见反馈。
+- 增加证书续期告警和部署结果通知；最低服务、磁盘、备份与 AI 告警已经实现，待配置飞书 webhook 后做真实投递。
 
 ### P2：产品拓展
 
@@ -160,13 +148,7 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
 
 ## 产品路线图
 
-```mermaid
-flowchart LR
-    A["阶段 1 · 已完成<br/>核心记录与模型闭环"] --> B["阶段 2 · 已完成<br/>公网 HTTPS、认证、备份与回滚"]
-    B --> C["阶段 3 · 当前<br/>高清分割验证、错误恢复与回归"]
-    C --> D["阶段 4 · 下一步<br/>发布自动化、阈值校准与恢复演练"]
-    D --> E["阶段 5 · 后续<br/>主题写作、知识图谱与可修正数字分身"]
-```
+![产品路线图](assets/产品路线图-260927-1640.png)
 
 ## 关键约束
 
@@ -175,26 +157,32 @@ flowchart LR
 - 追问必须携带完整原始链；SP/UP 结构以 `knowledge/prompt-architecture.md` 为准。
 - 初始化可全量渲染，写操作不得导致整页刷新和无关状态重置。
 - 聚类、缺席主题与延迟相关只提供线索，不构成因果、人格判断或医疗诊断。
-- API Key 只存本机 `data/llm-settings.json`，不得进入项目文档或聊天。
+- API Key 只存运行数据目录内的账户模型设置，密钥不得进入 Git、文档、日志或聊天。
 
 ## 文档地图
 
 - `PROJECT_RULES.md`：长期项目规则；复杂任务和跨会话工作的必读文件。
 - `one-mistake-one-rule.md`：复发风险错误与对应行为规则。
 - `knowledge/engineering-rules.md`：代码范围、设计原则、验证、提交与发布规则。
+- `knowledge/development-release-checklist.md`：新功能测试完成、准备上线时执行的阻断式自查清单。
+- `knowledge/observability.md`：系统日志、用户操作日志与 AI 调用审计的现状、字段、隐私和未完成项。
+- `knowledge/operations-capacity.md`：生产容量、调用/存储边界、OSS 权限、飞书告警和恢复演练。
+- `knowledge/privacy-notice.md`：邀请用户注册后的隐私告知草案、确认流程和上线阻断项。
 - `knowledge/architecture.md`：运行结构、增量更新、模型交互与验证边界。
+- `knowledge/cultural-content-preferences.md`：文化表达与界面命名偏好的单一事实来源。
 - `knowledge/metrics.md`：量表、同日均值、综合分和延迟相关口径。
 - `knowledge/prompt-architecture.md`：DeepSeek 的 SP/UP 与完整追问链规则。
 - `knowledge/product-definition.md`：产品关键词、记录重点、闭环、核心功能、记录边界与价值主张。
 - `knowledge/iteration-history.md`：按日期保存的重要迭代历史。
 - `README-TODO.md`：已明确但尚未实现的产品拓展，不与当前能力混写。
 - `server.mjs`：服务端、持久化、统计和模型调用。
+- `logging.mjs`：统一脱敏、日志写入与资源变更摘要。
 - `public/`：交互页面实现。
 
 ## 数据与设置
 
-- `data/store.json` 保存用户原始记录，修改前先备份；`data/llm-settings.json` 保存本机模型设置与密钥，权限 0600，不应纳入版本控制。
-- 云端启用邀请码账户后，各用户数据位于 `data/users/<user-id>/`；`auth.json` 只保存密码哈希和会话摘要。正式数据与附件不进入 Git。
+- `data/store.json` 保存用户原始记录，修改前先备份；`data/llm-settings.json` 保存本机模型设置与密钥；`data/ai-usage.json` 保存 AI 用量元数据，`data/logs/ai-audit-*.ndjson` 保存默认 30 天的完整 AI 调用审计。敏感文件权限为 0600，均不应纳入版本控制。
+- 云端启用邀请码账户后，各用户文字与结构化数据位于 `data/users/<user-id>/`；`auth.json` 只保存密码哈希和会话摘要。持久图片迁移后位于私有 OSS；正式数据与附件不进入 Git。
 
 ## Iteration
 当前日期的重要变化及完整历史统一维护在 `knowledge/iteration-history.md`。

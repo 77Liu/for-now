@@ -5,9 +5,25 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "check": "node --check server.mjs && node --check public/app.js",
-    "test": "node scripts/segmentation-regression.mjs && node scripts/regression.mjs",
+    "check": "node --check server.mjs && node --check logging.mjs && node --check public/app.js",
+    "test": "node scripts/regression.mjs",
     "test:auth": "node scripts/auth-regression.mjs",
-    "test:ui": "node scripts/ui-regression.mjs"
+    "test:ui": "node scripts/ui-regression.mjs",
+    "test:observability": "node scripts/observability-regression.mjs",
+    "test:deploy": "node scripts/deploy-regression.mjs",
+    "test:storage": "node scripts/attachment-storage-regression.mjs",
+    "test:oss": "node scripts/oss-attachment-smoke.mjs",
+    "test:aliyun": "node scripts/aliyun-segmentation-smoke.mjs",
+    "test:boundaries": "node scripts/boundaries-regression.mjs",
+    "test:monitor": "node scripts/monitor-regression.mjs",
+    "test:restore": "node scripts/restore-validation-regression.mjs"
+  },
+  "dependencies": {
+    "@alicloud/credentials": "2.4.7",
+    "@alicloud/imageseg20191230": "4.0.1",
+    "@alicloud/openapi-client": "0.4.15",
+    "@alicloud/tea-util": "1.4.11",
+    "@alicloud/viapi20230117": "2.0.1",
+    "ali-oss": "6.23.0"
   }
 }

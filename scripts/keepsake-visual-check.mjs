@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import http from "node:http";
+import path from "node:path";
 
 const imagePath = process.argv[2];
 if (!imagePath) throw new Error("Usage: node scripts/keepsake-visual-check.mjs <image>");
+const outputPrefix = process.argv[3] || "/tmp/keepsake-real-check";
 const appUrl = process.env.APP_URL || "http://127.0.0.1:4173/";
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -71,10 +73,10 @@ try {
   const startedAt = Date.now();
   await cdp.send("DOM.setFileInputFiles", { objectId: input.result.objectId, files: [imagePath] });
   let status = "";
-  for (let attempt = 0; attempt < 160; attempt += 1) {
+  for (let attempt = 0; attempt < 700; attempt += 1) {
     const result = await cdp.send("Runtime.evaluate", { expression: `document.querySelector("#keepsake-segment-status").textContent`, returnByValue: true });
     status = result.result.value || "";
-    if (/复杂轮廓已生成|AI 锚点未返回/.test(status)) break;
+    if (/自动轮廓已生成|自动提取未完成/.test(status)) break;
     await sleep(100);
   }
   const metrics = (await cdp.send("Runtime.evaluate", {
@@ -87,8 +89,16 @@ try {
     })()`,
     returnByValue: true
   })).result.value;
+  const presentation = await cdp.send("Runtime.evaluate", {
+    expression: `document.querySelector("#keepsake-preview-canvas").toDataURL("image/png")`,
+    returnByValue: true
+  });
   const screenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true });
-  await fs.writeFile("/tmp/keepsake-real-check.png", Buffer.from(screenshot.data, "base64"));
+  await fs.mkdir(path.dirname(outputPrefix), { recursive: true });
+  await Promise.all([
+    fs.writeFile(`${outputPrefix}-presentation.png`, Buffer.from(presentation.result.value.split(",")[1], "base64")),
+    fs.writeFile(`${outputPrefix}-ui.png`, Buffer.from(screenshot.data, "base64"))
+  ]);
   console.log(JSON.stringify({ elapsedMs: Date.now() - startedAt, ...metrics }, null, 2));
   assert.ok(metrics.count > 0, "mask should not be empty");
   assert.ok(metrics.fillRatio < .93, "mask still resembles a filled rectangle");

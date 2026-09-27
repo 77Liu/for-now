@@ -14,6 +14,7 @@ fi
 install -d -o for-now -g for-now -m 0750 /opt/for-now /opt/for-now/releases
 install -d -o for-now -g for-now -m 0700 /srv/for-now/data /home/for-now/.ssh
 install -d -o root -g root -m 0700 /var/backups/for-now
+install -d -o for-now -g for-now -m 0700 /var/lib/for-now-monitor
 install -d -o root -g root -m 0755 /var/www/app-portal /var/www/letsencrypt /etc/nginx/snippets
 
 if [ ! -f /home/for-now/.ssh/gitee_deploy ]; then
@@ -23,8 +24,12 @@ fi
 install -o root -g root -m 0644 "$script_dir/for-now.service" /etc/systemd/system/for-now.service
 install -o root -g root -m 0644 "$script_dir/for-now-backup.service" /etc/systemd/system/for-now-backup.service
 install -o root -g root -m 0644 "$script_dir/for-now-backup.timer" /etc/systemd/system/for-now-backup.timer
+install -o root -g root -m 0644 "$script_dir/for-now-monitor.service" /etc/systemd/system/for-now-monitor.service
+install -o root -g root -m 0644 "$script_dir/for-now-monitor.timer" /etc/systemd/system/for-now-monitor.timer
 install -o root -g root -m 0755 "$script_dir/deploy.sh" /usr/local/sbin/for-now-deploy
 install -o root -g root -m 0755 "$script_dir/backup-to-oss.sh" /usr/local/sbin/for-now-backup
+install -o root -g root -m 0755 "$script_dir/restore-drill.sh" /usr/local/sbin/for-now-restore-drill
+install -o root -g root -m 0755 "$script_dir/migrate-attachments-to-oss.sh" /usr/local/sbin/for-now-migrate-attachments
 install -o root -g root -m 0644 "$script_dir/portal.html" /var/www/app-portal/index.html
 install -o root -g root -m 0644 "$script_dir/nginx-for-now.conf" /etc/nginx/snippets/for-now.conf
 install -o root -g root -m 0644 "$script_dir/nginx-acme-challenge.conf" /etc/nginx/snippets/acme-challenge.conf

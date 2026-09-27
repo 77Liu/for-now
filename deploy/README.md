@@ -17,13 +17,17 @@ inbound TCP 80 and 443.
 
 ## Initial server setup
 
-1. Install Node.js 20 or newer, Git, Nginx, Certbot 5.4 or newer, and ossutil 2.
-2. Attach an ECS RAM role that can write only to
-   `acs:oss:*:*:for-now/for-now-backups/*` and list the `for-now` bucket.
+1. Install Node.js 20 or newer and npm at `/usr/local/bin/node` and
+   `/usr/local/bin/npm`, plus Git, Nginx, Certbot 5.4 or newer, and ossutil 2.
+2. Attach an ECS RAM role with separate least-privilege access to
+   `for-now-backups/*` and `for-now-attachments/*`. The exact attachment policy
+   is documented in `knowledge/operations-capacity.md`.
 3. Run `sudo deploy/prepare-server.sh`.
 4. Add the printed public key to Gitee as a read-only deploy key.
-5. Set `INVITE_CODE_HASH` in `/etc/for-now.env`. Store only the SHA-256 digest,
-   not the invitation plaintext, and keep `COOKIE_SECURE=1`.
+5. Set `INVITE_CODE_HASH`, OSS attachment settings and
+   `FEISHU_ALERT_WEBHOOK` in `/etc/for-now.env`. Store only the invitation
+   SHA-256 digest, not its plaintext, and keep `COOKIE_SECURE=1`. Keep
+   `ATTACHMENT_STORAGE=local` until the migration sequence below succeeds.
 6. Include `/etc/nginx/snippets/acme-challenge.conf` in the port-80 server,
    reload Nginx, then issue the IP certificate:
 
@@ -41,9 +45,59 @@ inbound TCP 80 and 443.
    `deploy/migrate-data.sh user@server`.
 10. Verify `sudo /usr/local/sbin/for-now-backup`, then enable the timer with
    `sudo systemctl enable --now for-now-backup.timer`.
+11. Complete the private attachment migration below, run
+   `sudo /usr/local/sbin/for-now-restore-drill`, and send one real Feishu test
+   alert before enabling invitations.
 
 ossutil uses `--mode EcsRamRole` and the Beijing internal endpoint from
 `/etc/for-now.env`; no long-lived AccessKey is stored on disk.
+
+## Private attachment migration
+
+The OSS bucket must remain private. After the RAM role can list, put, get and
+delete only under `for-now-attachments/*`, run a harmless object probe, then
+copy existing local images while writes are stopped:
+
+```bash
+sudo /bin/bash -c '
+  set -a
+  source /etc/for-now.env
+  set +a
+  exec runuser --preserve-environment -u for-now -- \
+    /usr/local/bin/node /opt/for-now/app/scripts/oss-attachment-smoke.mjs
+'
+sudo systemctl stop for-now.service
+sudo /usr/local/sbin/for-now-migrate-attachments
+sudo sed -i 's/^ATTACHMENT_STORAGE=.*/ATTACHMENT_STORAGE=oss/' /etc/for-now.env
+sudo systemctl start for-now.service
+curl -fsS http://127.0.0.1:4173/readyz
+```
+
+Do not delete the local attachment directories during this release. They are
+the rollback copy and the application can read them when an old object is not
+yet present. Verify authenticated upload/read, record pages, and a restore drill
+before scheduling any cleanup.
+
+## Monitoring and restore
+
+`for-now-monitor.timer` checks the service, disk, backup age, consecutive AI
+failures and daily AI cost every five minutes. The deployment enables it after a
+healthy application restart. Test the Feishu channel without printing its
+webhook or secret:
+
+```bash
+sudo /bin/bash -c '
+  set -a
+  source /etc/for-now.env
+  set +a
+  exec runuser --preserve-environment -u for-now -- \
+    /usr/local/bin/node /opt/for-now/app/scripts/monitor-health.mjs --test-alert
+'
+sudo /usr/local/sbin/for-now-restore-drill
+```
+
+Thresholds, test expectations, current production capacity and the last real
+restore result are maintained in `knowledge/operations-capacity.md`.
 
 ## Deploy updates
 
@@ -53,9 +107,39 @@ Push code to the `main` branch, then run:
 sudo for-now-deploy
 ```
 
-The deploy command builds an immutable release directory, validates JavaScript,
-switches the active symlink, restarts systemd, checks `/readyz`, and restores the
-previous release if the health check fails.
+The deploy command builds dependencies in a new candidate directory, validates
+JavaScript, marks that immutable release ready, switches the active symlink,
+restarts systemd, and checks `/readyz`. Re-running the same commit never runs
+`npm ci` inside the active release. Failure after configuration
+installation restores the previous code, managed service/Nginx files, deployment
+tools, and `/etc/for-now.env` (including `APP_VERSION`). An unhealthy recovery is
+reported explicitly; the deployment remains failed. Data is not rolled back by
+this script. Take and verify a data backup before a release with migrations.
+
+The older installed deployer does not install npm dependencies and cannot update
+itself until a release succeeds. Before the first deployment containing the
+Alibaba Cloud SDK and `logging.mjs`, bootstrap the deployer from the reviewed,
+pushed commit; merely pushing the new script is insufficient:
+
+```bash
+# Replace with the reviewed full commit ID; do not export uncommitted files.
+release_commit=REVIEWED_COMMIT_ID
+git show "$release_commit:deploy/deploy.sh" > /tmp/for-now-deploy-reviewed
+scp -i .secrets/for-now-deploy /tmp/for-now-deploy-reviewed \
+  root@123.57.140.24:/tmp/for-now-deploy-reviewed
+ssh -i .secrets/for-now-deploy root@123.57.140.24 \
+  'install -o root -g root -m 0755 /tmp/for-now-deploy-reviewed /usr/local/sbin/for-now-deploy'
+```
+
+Then run the usual deploy command after checking that `main` still points to the
+reviewed commit. These are future release instructions, not evidence of a
+deployment. Local rollback control flow is covered by `npm run test:deploy`;
+real systemd/Nginx recovery still requires target-environment validation.
+Production RAM credentials have completed a real
+`SegmentHDCommonImage → GetAsyncJobResult → PNG download` smoke test.
+
+Log locations, retention, privacy and remaining operational checks are maintained
+in `knowledge/observability.md`.
 
 For local UI development against canonical cloud data:
 

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const modelRequests = [];
+const mockSegmentCutout = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lR2nWQAAAABJRU5ErkJggg==";
 
 async function freePort() {
   const server = http.createServer();
@@ -25,32 +26,33 @@ function mockDeepSeek() {
     const input = JSON.parse(Buffer.concat(chunks).toString("utf8"));
     assert.doesNotMatch(JSON.stringify(input.messages), /DO_NOT_LEAK_REASONING/);
     modelRequests.push(input);
+    const usage = { prompt_tokens: 1000, prompt_cache_hit_tokens: 200, prompt_cache_miss_tokens: 800, completion_tokens: 500, completion_tokens_details: { reasoning_tokens: 300 } };
     if (!input.stream) {
       res.writeHead(200, { "content-type": "application/json" });
       const messages = JSON.stringify(input.messages);
-      if (messages.includes("同一次睡眠记录")) return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ date: "2026-09-27", bedtime: "2026-09-27T02:58:00", wakeTime: "2026-09-27T10:40:00", totalMinutes: 462, deepMinutes: 134, deepPercent: 29, lightMinutes: 221, lightPercent: 48, remMinutes: 107, remPercent: 23, awakeCount: null, awakeMinutes: null, averageHeartRate: 49, averageOxygen: 98, respiratoryRate: 15, verification: "两张图已合并" }) } }] }));
-      if (messages.includes("心率日视图")) return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ date: "2026-09-26", minimum: 46, maximum: 82, average: 60, resting: 52, sleepAverage: 50, trendAnalysis: "凌晨下降，午后与晚间出现两次抬升，夜间回落。", trendSegments: [{ period: "00:00-06:00", direction: "下降", approximateRange: "约46-64" }], verification: "今日概览可直接核对" }) } }] }));
-      if (messages.includes("书籍截图")) return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ title: "测试书", author: "测试作者", verification: "图片已识别" }) } }] }));
-      if (messages.includes("本地图形分割算法")) return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ suggestedTitle: "测试票券", category: "纸品", subjectDescription: "一张纸质票券", includeHand: true, confidence: .82, subjectBox: [120, 90, 880, 900], foregroundPoints: [[500, 300], [500, 700]], backgroundPoints: [[20, 20], [980, 20], [20, 980], [980, 980]] }) } }] }));
-      return res.end(JSON.stringify({ choices: [{ message: { content: "同步回答", reasoning_content: "同步模型思考" } }] }));
+      if (messages.includes("同一次睡眠记录")) return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ date: "2026-09-27", bedtime: "2026-09-27T02:58:00", wakeTime: "2026-09-27T10:40:00", totalMinutes: 462, deepMinutes: 134, deepPercent: 29, lightMinutes: 221, lightPercent: 48, remMinutes: 107, remPercent: 23, awakeCount: null, awakeMinutes: null, averageHeartRate: 49, averageOxygen: 98, respiratoryRate: 15, verification: "两张图已合并" }) } }], usage }));
+      if (messages.includes("心率日视图")) return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ date: "2026-09-26", minimum: 46, maximum: 82, average: 60, resting: 52, sleepAverage: 50, trendAnalysis: "凌晨下降，午后与晚间出现两次抬升，夜间回落。", trendSegments: [{ period: "00:00-06:00", direction: "下降", approximateRange: "约46-64" }], verification: "今日概览可直接核对" }) } }], usage }));
+      if (messages.includes("书籍截图")) return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ title: "测试书", author: "测试作者", verification: "图片已识别" }) } }], usage }));
+      return res.end(JSON.stringify({ choices: [{ message: { content: "同步回答", reasoning_content: "同步模型思考" } }], usage }));
     }
     assert.equal(input.stream, true);
     res.writeHead(200, { "content-type": "text/event-stream" });
-    const isDiaryTopic = JSON.stringify(input.messages).includes("只输出一个主题句和一个问句");
+    const serializedMessages = JSON.stringify(input.messages), isDiaryAssist = serializedMessages.includes("<current_draft priority"), isDiaryTopic = serializedMessages.includes("只输出一个主题句和一个问句");
     if (isDiaryTopic && input.thinking?.type === "enabled") {
-      res.write(`data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: "思考已经耗尽首轮输出预算。" }, finish_reason: "length" }] })}\n\n`);
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: "思考已经耗尽首轮输出预算。" }, finish_reason: "length" }], usage })}\n\n`);
       return res.end("data: [DONE]\n\n");
     }
     const events = [
       { choices: [{ delta: { reasoning_content: "先核对问题。" } }] },
       { choices: [{ delta: { reasoning_content: "再形成判断。" } }] },
-      { choices: [{ delta: { content: "**结论**：" } }] },
-      { choices: [{ delta: { content: "流式回答已完成。" } }] }
+      { choices: [{ delta: { content: isDiaryAssist ? "第一行写作锚点。" : "**结论**：" } }] },
+      { choices: [{ delta: { content: isDiaryAssist ? "\n第二行写作锚点。" : "流式回答已完成。" } }] }
     ];
     for (const event of events) {
       res.write(`data: ${JSON.stringify(event)}\n\n`);
       await sleep(60);
     }
+    res.write(`data: ${JSON.stringify({ choices: [], usage })}\n\n`);
     res.end("data: [DONE]\n\n");
   });
 }
@@ -93,7 +95,7 @@ const mockPort = await freePort(), appPort = await freePort();
 await new Promise((resolve, reject) => mock.once("error", reject).listen(mockPort, "127.0.0.1", resolve));
 await fs.writeFile(path.join(dataDir, "store.json"), `${JSON.stringify({
   version: 3,
-  checkins: [{ id: "checkin-1", createdAt: "2026-09-26T16:56:18.237Z", occurredOn: "2026-09-26", mood: 3, energy: 3, stress: 3, sleep: 3 }],
+  checkins: [{ id: "checkin-1", createdAt: "2026-09-26T16:56:18.237Z", occurredOn: "2026-09-26", mood: 3, energy: 3, stress: 3, sleep: 3, factors: ["冷启动因素"] }],
   thoughts: [
     { id: "question-1", createdAt: "2026-09-26T16:56:18.237Z", occurredOn: "2026-09-26", type: "question", content: "测试后台生成", tags: [], relatedTo: null },
     { id: "markdown-question", createdAt: "2026-09-26T15:30:00.000Z", occurredOn: "2026-09-26", type: "question", content: "历史**问题**", tags: [], relatedTo: null },
@@ -117,7 +119,7 @@ await fs.writeFile(path.join(dataDir, "llm-settings.json"), `${JSON.stringify({
 
 const app = spawn(process.execPath, ["server.mjs"], {
   cwd: ROOT,
-  env: { ...process.env, TZ: "Asia/Shanghai", PORT: String(appPort), DATA_DIR: dataDir, DEEPSEEK_API_URL: `http://127.0.0.1:${mockPort}/chat/completions` },
+  env: { ...process.env, NODE_ENV: "test", TZ: "Asia/Shanghai", PORT: String(appPort), DATA_DIR: dataDir, DEEPSEEK_API_URL: `http://127.0.0.1:${mockPort}/chat/completions`, KEEPSAKE_SEGMENT_MOCK_RESULT: mockSegmentCutout },
   stdio: ["ignore", "pipe", "pipe"]
 });
 let appError = "";
@@ -136,6 +138,8 @@ try {
   assert.deepEqual(migrated.captures, []);
   assert.deepEqual(migrated.journals, []);
   assert.deepEqual(migrated.keepsakes, []);
+  assert.equal(migrated.journalDraft, null);
+  assert.equal(Object.hasOwn(migrated, "bookDraft"), false);
   assert.equal(migrated.checkins[0].occurredOn, "2026-09-27");
   assert.equal(migrated.checkins[0].occurredAt, "2026-09-26T16:56:18.237Z");
   assert.equal(migrated.thoughts[0].occurredOn, "2026-09-27");
@@ -149,8 +153,8 @@ try {
     activeDays7: migrated.insights.weekly.activeDays7,
     pairedDays30: migrated.insights.weekly.pairedDays30,
     rootCount30: migrated.insights.weekly.rootCount30,
-    answeredRoots30: migrated.insights.weekly.answeredRoots30,
-    closureRate30: migrated.insights.weekly.closureRate30,
+    tracedRoots30: migrated.insights.weekly.tracedRoots30,
+    traceRate30: migrated.insights.weekly.traceRate30,
     correctionActions30: migrated.insights.weekly.correctionActions30,
     reviewAgeDays: migrated.insights.weekly.reviewAgeDays,
     analysisCount: migrated.insights.weekly.analysisCount
@@ -158,18 +162,23 @@ try {
     activeDays7: 2,
     pairedDays30: 0,
     rootCount30: 3,
-    answeredRoots30: 1,
-    closureRate30: 33,
+    tracedRoots30: 1,
+    traceRate30: 33,
     correctionActions30: 0,
     reviewAgeDays: null,
     analysisCount: 0
   });
+  assert.deepEqual(migrated.insights.aiOnlyThoughtIds, []);
+  assert.deepEqual(migrated.insights.trends.map(item => [item.metric, item.currentCount, item.previousCount]), [
+    ["mood", 1, 0], ["energy", 1, 0], ["stress", 1, 0], ["sleep", 1, 0]
+  ]);
+  assert.deepEqual(migrated.insights.associations.map(item => [item.factor, item.withCount, item.confidence]), [["冷启动因素", 1, "单日观察"]]);
   assert.equal((await fs.readdir(dataDir)).some(name => name.includes("v3-pre-v12") && name.endsWith(".bak")), true);
   const migratedSettings = await (await fetch(`${base}/api/settings`)).json();
   assert.equal(migratedSettings.version, 4);
   assert.deepEqual(Object.keys(migratedSettings.profiles), ["lite", "mid", "high", "ultra"]);
   assert.deepEqual(migratedSettings.scenarios, {
-    thoughtDraft: "high", thoughtAnswer: "ultra", followUpAnswer: "ultra", chat: "high",
+    thoughtPrompt: "lite", thoughtDraft: "high", thoughtAnswer: "ultra", followUpAnswer: "ultra", chat: "high",
     diaryLead: "lite", diaryStructure: "mid", diaryTopic: "high", diaryReflection: "ultra",
     annotationShenji: "high", analysis: "ultra", bookRecognition: "mid", healthRecognition: "mid"
   });
@@ -177,6 +186,13 @@ try {
   assert.equal(storedSettings.version, 4);
   assert.equal(storedSettings.apiKey, "test-key");
   assert.equal((await fs.readdir(dataDir)).some(name => name.includes("v2-pre-v4") && name.endsWith(".bak")), true);
+  const initialStatistics = await (await fetch(`${base}/api/statistics`)).json();
+  assert.equal(initialStatistics.ai.summary.calls, 0);
+  assert.equal(initialStatistics.ai.daily.length, 7);
+  assert.equal(initialStatistics.records.content.find(item => item.key === "thoughts").count, 3);
+  assert.equal(initialStatistics.records.content.find(item => item.key === "bookNotes").count, 1);
+  assert.equal(initialStatistics.records.interactions.find(item => item.key === "shenji").count, 0);
+  assert.equal(JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"), "utf8")).version, 2);
 
   const profileSettings = {
     profiles: {
@@ -186,7 +202,7 @@ try {
       ultra: { model: "deepseek-v4-pro", effort: "max" }
     },
     scenarios: {
-      thoughtDraft: "high", thoughtAnswer: "ultra", followUpAnswer: "ultra", chat: "high",
+      thoughtPrompt: "lite", thoughtDraft: "high", thoughtAnswer: "ultra", followUpAnswer: "ultra", chat: "high",
       diaryLead: "lite", diaryStructure: "mid", diaryTopic: "high", diaryReflection: "ultra",
       annotationShenji: "high", analysis: "ultra", bookRecognition: "mid", healthRecognition: "mid"
     },
@@ -200,6 +216,21 @@ try {
   assert.equal(savedSettings.scenarios.diaryTopic, "high");
   assert.equal(savedSettings.hasApiKey, true);
 
+  const originalCheckinCreatedAt = migrated.checkins[0].createdAt;
+  const checkinEditResponse = await fetch(`${base}/api/checkins/checkin-1`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ occurredAt: "2026-09-27T09:08:07", mood: 4, energy: 2, stress: 5, sleep: 3, factors: ["补记因素", "散步"], custom: {}, notes: { mood: "实际比刚才轻松" } })
+  });
+  assert.equal(checkinEditResponse.status, 200);
+  const editedCheckin = await checkinEditResponse.json();
+  assert.equal(editedCheckin.createdAt, originalCheckinCreatedAt);
+  assert.equal(editedCheckin.occurredAt, "2026-09-27T01:08:07.000Z");
+  assert.equal(editedCheckin.occurredOn, "2026-09-27");
+  assert.deepEqual(editedCheckin.factors, ["补记因素", "散步"]);
+  assert.equal(editedCheckin.notes.mood, "实际比刚才轻松");
+
+  const journalAssistMarkers = { lead: "🗃", structure: "🏷", topic: "💬" };
   for (const mode of ["lead", "structure", "topic"]) {
     const response = await fetch(`${base}/api/journals/assist`, {
       method: "POST",
@@ -208,7 +239,8 @@ try {
     });
     const assistEvents = await readEvents(response);
     assert.equal(assistEvents.at(-1).result.mode, mode);
-    assert.equal(assistEvents.at(-1).result.content, "**结论**：流式回答已完成。");
+    assert.equal(assistEvents.at(-1).result.content, `${journalAssistMarkers[mode]} 第一行写作锚点。\n${journalAssistMarkers[mode]} 第二行写作锚点。`);
+    assert.equal(assistEvents.at(-1).result.content.split("\n").every(line => line.startsWith(`${journalAssistMarkers[mode]} `)), true);
   }
   const assistRequests = modelRequests.slice(-4);
   assert.deepEqual(assistRequests.map(item => [item.model, item.reasoning_effort]), [
@@ -219,7 +251,27 @@ try {
   ]);
   assert.equal(assistRequests[2].max_tokens, 2000);
   assert.equal(assistRequests[3].thinking.type, "disabled");
+  assert.equal(assistRequests.every(item => item.stream_options?.include_usage === true), true);
   for (const request of assistRequests) assert.match(JSON.stringify(request.messages), /我已经写下的文字/);
+  const usageAfterAssist = (await (await fetch(`${base}/api/statistics`)).json()).ai;
+  assert.equal(usageAfterAssist.summary.calls, 4);
+  assert.equal(usageAfterAssist.summary.successfulCalls, 3);
+  assert.equal(usageAfterAssist.summary.failedCalls, 1);
+  assert.deepEqual(usageAfterAssist.summary.tokens, { input: 4000, cacheHit: 800, cacheMiss: 3200, reasoning: 1200, answer: 800, output: 2000 });
+  assert.deepEqual(usageAfterAssist.models.map(item => [item.model, item.calls]), [["deepseek-flash", 2], ["deepseek-v4-pro", 2]]);
+  assert.ok(usageAfterAssist.summary.costsUsd.total > 0);
+
+  const thoughtPromptResponse = await fetch(`${base}/api/thought-prompts`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ occurredAt: "2026-09-27T20:00:00" })
+  });
+  assert.equal(thoughtPromptResponse.status, 200);
+  assert.deepEqual(await thoughtPromptResponse.json(), { prompt: "同步回答", hasHistory: true });
+  const thoughtPromptRequest = modelRequests.at(-1);
+  assert.deepEqual([thoughtPromptRequest.model, thoughtPromptRequest.reasoning_effort, thoughtPromptRequest.max_tokens], ["deepseek-flash", "none", 400]);
+  assert.match(thoughtPromptRequest.messages[0].content, /18～55/);
+  assert.match(JSON.stringify(thoughtPromptRequest.messages), /曾经的问题|状态因素/);
 
   const questionAnnotationResponse = await fetch(`${base}/api/thoughts/markdown-question/annotations`, {
     method: "POST",
@@ -268,13 +320,31 @@ try {
   assert.equal(captureAfterEdit.annotations.length, 0);
   assert.equal(captureAfterEdit.annotationDrift.length, 1);
 
+  const newJournalDraftResponse = await fetch(`${base}/api/journal-draft`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ journalId: "", title: "尚未完成的标题", content: "跨端继续写的正文。", occurredAt: "2020-01-01T00:00:00", tags: ["不应保存"] })
+  });
+  assert.equal(newJournalDraftResponse.status, 200);
+  const newJournalDraft = await newJournalDraftResponse.json();
+  assert.deepEqual(Object.keys(newJournalDraft).sort(), ["content", "journalId", "title", "updatedAt"]);
+  assert.equal(newJournalDraft.title, "尚未完成的标题");
+  assert.equal((await (await fetch(`${base}/api/state`)).json()).journalDraft.content, "跨端继续写的正文。");
+
   const createdJournal = await (await fetch(`${base}/api/journals`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ occurredAt: "2026-09-27T21:22:23", title: "测试日记", content: "今天发生了一件事，我还在分辨事实和解释。", tags: ["复盘"] })
   })).json();
   assert.equal(createdJournal.occurredAt, "2026-09-27T13:22:23.000Z");
+  assert.equal((await (await fetch(`${base}/api/state`)).json()).journalDraft, null);
   const journalCreatedAt = createdJournal.createdAt;
+  const editJournalDraft = await (await fetch(`${base}/api/journal-draft`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ journalId: createdJournal.id, title: "测试日记（草稿）", content: "尚未正式保存的修改。" })
+  })).json();
+  assert.equal(editJournalDraft.journalId, createdJournal.id);
   const reflectionResponse = await fetch(`${base}/api/journals/${createdJournal.id}/reflect`, {
     method: "POST",
     headers: { "content-type": "application/json", accept: "text/event-stream" },
@@ -297,6 +367,7 @@ try {
   assert.equal(journalEdit.status, 200);
   const afterJournal = await (await fetch(`${base}/api/state`)).json();
   const persistedJournal = afterJournal.journals.find(item => item.id === createdJournal.id);
+  assert.equal(afterJournal.journalDraft, null);
   assert.equal(persistedJournal.reflections.length, 1);
   assert.equal(persistedJournal.occurredAt, "2026-09-27T14:23:24.000Z");
   assert.equal(persistedJournal.createdAt, journalCreatedAt);
@@ -365,7 +436,14 @@ try {
   assert.match(answerRequest.messages[0].content, /禁止用“核心判断”/);
   assert.match(answerRequest.messages[0].content, /500～900/);
   assert.match(answerRequest.messages.at(-1).content, /哲学或抽象主题先补足/);
+  assert.deepEqual(persisted.insights.aiOnlyThoughtIds, ["question-1"]);
+  assert.equal(persisted.insights.weekly.tracedRoots30, 2);
+  assert.equal(persisted.insights.weekly.traceRate30, 67);
   assert.equal((await addHighlight("thought", "question-1", "question:question-1", "测试")).status, 201);
+  const tracedAfterHighlight = await (await fetch(`${base}/api/state`)).json();
+  assert.deepEqual(tracedAfterHighlight.insights.aiOnlyThoughtIds, []);
+  assert.equal(tracedAfterHighlight.insights.weekly.tracedRoots30, 3);
+  assert.equal(tracedAfterHighlight.insights.weekly.traceRate30, 100);
 
   const chat = await (await fetch(`${base}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ occurredAt: "2026-09-27T11:12:13", message: "测试同步回答" }) })).json();
   assert.equal(chat.answer, "同步回答");
@@ -415,6 +493,10 @@ try {
   assert.match(JSON.stringify(modelRequests.at(-1).messages), /认知复盘/);
   assert.match(JSON.stringify(modelRequests.at(-1).messages), /这条复盘判断可能遗漏了什么/);
   assert.match(modelRequests.at(-1).messages[0].content, /第一段直接判断标记内容/);
+  const interactionStatistics = (await (await fetch(`${base}/api/statistics`)).json()).records.interactions;
+  assert.ok(interactionStatistics.find(item => item.key === "highlights").count >= 4);
+  assert.ok(interactionStatistics.find(item => item.key === "comments").count >= 1);
+  assert.equal(interactionStatistics.find(item => item.key === "shenji").count, 1);
 
   const pixel = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB";
   const uploadedCoverResponse = await fetch(`${base}/api/images/upload`, {
@@ -500,6 +582,8 @@ try {
     body: JSON.stringify({ kind: "sleep", images: [pixel, pixel] })
   });
   assert.equal(parsedSleepResponse.status, 200);
+  const sleepTraceId = parsedSleepResponse.headers.get("x-request-id");
+  assert.match(sleepTraceId, /^[a-f0-9-]{36}$/);
   const parsedSleep = await parsedSleepResponse.json();
   assert.equal(parsedSleep.totalMinutes, 462);
   assert.equal(parsedSleep.deepPercent, 29);
@@ -525,32 +609,79 @@ try {
   })).json();
   assert.deepEqual([heartParsed.minimum, heartParsed.maximum, heartParsed.average, heartParsed.resting, heartParsed.sleepAverage], [46, 82, 60, 52, 50]);
   assert.match(heartParsed.trendAnalysis, /午后与晚间/);
+  const imageUsage = JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"), "utf8"));
+  const sleepUsage = imageUsage.entries.find(item => item.traceId === sleepTraceId);
+  assert.deepEqual({
+    version: imageUsage.version,
+    status: sleepUsage.status,
+    modality: sleepUsage.modality,
+    imageCount: sleepUsage.imageCount,
+    imageTypes: sleepUsage.imageTypes,
+    imageDimensions: sleepUsage.imageDimensions,
+    scene: sleepUsage.scene,
+    stream: sleepUsage.stream,
+    responseFormat: sleepUsage.responseFormat,
+    usageKnown: sleepUsage.usageKnown
+  }, {
+    version: 2,
+    status: "success",
+    modality: "vision",
+    imageCount: 2,
+    imageTypes: ["image/png"],
+    imageDimensions: [{ width: 1, height: 1 }, { width: 1, height: 1 }],
+    scene: "healthRecognition",
+    stream: false,
+    responseFormat: "json_object",
+    usageKnown: true
+  });
+  assert.ok(sleepUsage.imageBytes > 0);
+  assert.ok(sleepUsage.durationMs >= 0);
+  assert.deepEqual(sleepUsage.rawUsage, { prompt_tokens: 1000, prompt_cache_hit_tokens: 200, prompt_cache_miss_tokens: 800, completion_tokens: 500, completion_tokens_details: { reasoning_tokens: 300 } });
+  const imageStatistics = (await (await fetch(`${base}/api/statistics`)).json()).ai;
+  assert.equal(imageStatistics.summary.visionCalls, 3);
+  assert.equal(imageStatistics.summary.imageCount, 4);
+  assert.equal(imageStatistics.modalities.find(item => item.modality === "vision").calls, 3);
+  const auditFiles = (await fs.readdir(path.join(dataDir, "logs"))).filter(name => name.startsWith("ai-audit-"));
+  const auditEntries = (await Promise.all(auditFiles.map(async name => (await fs.readFile(path.join(dataDir, "logs", name), "utf8")).trim().split("\n").filter(Boolean).map(JSON.parse)))).flat();
+  const sleepAudit = auditEntries.find(item => item.traceId === sleepTraceId && item.status !== "started");
+  assert.ok(auditEntries.some(item => item.callId === sleepAudit.callId && item.status === "started"));
+  assert.equal(sleepAudit.schemaVersion, 1);
+  assert.equal(sleepAudit.actor.userId, "local");
+  assert.equal(sleepAudit.request.images.length, 2);
+  assert.equal(sleepAudit.request.images[0].sha256.length, 64);
+  assert.match(sleepAudit.request.userPrompt, /同一次睡眠记录/);
+  assert.match(sleepAudit.response.content, /totalMinutes/);
+  const diaryTopicAudits = auditEntries.filter(item => item.scene === "diaryTopic" && item.status !== "started");
+  assert.equal(diaryTopicAudits.length, 2);
+  assert.equal(new Set(diaryTopicAudits.map(item => item.callGroupId)).size, 1);
+  assert.deepEqual(diaryTopicAudits.map(item => [item.attempt, item.status, item.retryScheduled]), [[1, "failed", true], [2, "success", false]]);
+  assert.doesNotMatch(JSON.stringify(auditEntries), /test-key|data:image/);
 
-  const segmented = await (await fetch(`${base}/api/keepsakes/segment`, {
+  const segmentedResponse = await fetch(`${base}/api/keepsakes/segment`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ image: pixel })
-  })).json();
-  assert.equal(segmented.suggestedTitle, "测试票券");
-  assert.equal(segmented.includeHand, true);
-  assert.deepEqual(segmented.subjectBox, [120, 90, 880, 900]);
-  assert.deepEqual(segmented.foregroundPoints[0], [500, 300]);
-  assert.equal(segmented.backgroundPoints.length, 4);
+  });
+  assert.equal(segmentedResponse.status, 200);
+  const segmented = await segmentedResponse.json();
+  assert.deepEqual(segmented, { cutout: mockSegmentCutout, provider: "aliyun-segment-hd" });
   const keepsake = await (await fetch(`${base}/api/keepsakes`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ occurredAt: "2026-09-27T10:20:30", title: "展览票券", category: "纸品", note: "测试留存", originalPath: "/attachments/original.png", cutoutPath: "/attachments/cutout.png", source: "auto", edgeExpansion: 8 })
+    body: JSON.stringify({ occurredAt: "2026-09-27T10:20:30", title: "展览票券", category: "纸品", note: "测试留存", tags: ["展览", "票券"], originalPath: "/attachments/original.png", cutoutPath: "/attachments/cutout.png", source: "auto", edgeExpansion: 8 })
   })).json();
   assert.equal(keepsake.occurredOn, "2026-09-27");
   assert.equal(keepsake.source, "auto");
+  assert.deepEqual(keepsake.tags, ["展览", "票券"]);
   const keepsakeCreatedAt = keepsake.createdAt;
   const editedKeepsake = await (await fetch(`${base}/api/keepsakes/${keepsake.id}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ occurredAt: "2026-09-27T11:22:33", title: "修改后的票券", category: "其他", note: "", originalPath: keepsake.originalPath, cutoutPath: keepsake.cutoutPath, source: "manual", edgeExpansion: 5 })
+    body: JSON.stringify({ occurredAt: "2026-09-27T11:22:33", title: "修改后的票券", category: "其他", note: "", tags: ["纪念"], originalPath: keepsake.originalPath, cutoutPath: keepsake.cutoutPath, source: "manual", edgeExpansion: 5 })
   })).json();
   assert.equal(editedKeepsake.createdAt, keepsakeCreatedAt);
   assert.equal(editedKeepsake.title, "修改后的票券");
+  assert.deepEqual(editedKeepsake.tags, ["纪念"]);
   assert.equal((await fetch(`${base}/api/keepsakes/${keepsake.id}`, { method: "DELETE" })).status, 200);
 
   const weightRecord = await (await fetch(`${base}/api/daily-records`, {
@@ -572,6 +703,31 @@ try {
 
   assert.equal((await fetch(`${base}/api/captures/${createdCapture.id}`, { method: "DELETE" })).status, 200);
   assert.equal((await fetch(`${base}/api/journals/${createdJournal.id}`, { method: "DELETE" })).status, 200);
+
+  const lowSampleStore = JSON.parse(await fs.readFile(path.join(dataDir, "store.json"), "utf8"));
+  lowSampleStore.thoughts = lowSampleStore.thoughts.filter(item => item.id === "question-1");
+  lowSampleStore.analyses = [];
+  lowSampleStore.checkins = Array.from({ length: 30 }, (_, index) => {
+    const date = new Date(Date.UTC(2026, 7, index + 1)).toISOString().slice(0, 10);
+    const factors = [
+      ...(index < 10 ? ["高置信因素"] : []),
+      ...(index < 5 ? ["中样本因素"] : []),
+      ...([10, 11].includes(index) ? ["强差异因素"] : []),
+      ...(index === 12 ? ["单日因素"] : [])
+    ];
+    return { id: `ranking-${index}`, createdAt: `${date}T08:00:00.000Z`, occurredAt: `${date}T08:00:00.000Z`, occurredOn: date, mood: index < 10 ? 5 : [10, 11].includes(index) ? 1 : 3, energy: 3, stress: 3, sleep: 3, factors };
+  });
+  await fs.writeFile(path.join(dataDir, "store.json"), `${JSON.stringify(lowSampleStore, null, 2)}\n`);
+  const lowSampleAnalysis = await fetch(`${base}/api/analysis/run`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+  assert.equal(lowSampleAnalysis.status, 201, await lowSampleAnalysis.clone().text());
+  assert.match(JSON.stringify(modelRequests.at(-1).messages), /冷启动低样本/);
+  const rankedAssociations = (await (await fetch(`${base}/api/state`)).json()).insights.associations;
+  assert.deepEqual(rankedAssociations.map(item => [item.factor, item.confidence]), [
+    ["高置信因素", "可观察"],
+    ["中样本因素", "初步线索"],
+    ["强差异因素", "初步线索"]
+  ]);
+  assert.equal(rankedAssociations.some(item => item.factor === "单日因素"), false);
 
   const midnight = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23", timeZone: "Asia/Shanghai" }).format(new Date("2026-09-26T16:56:18.237Z"));
   assert.equal(midnight, "00:56:18");

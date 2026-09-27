@@ -18,6 +18,16 @@ if [ ! -f "$ssh_key" ]; then
   echo "Missing $ssh_key. Run prepare-server.sh and add its public key as a read-only Gitee deploy key." >&2
   exit 1
 fi
+for key in OSS_ATTACHMENT_BUCKET OSS_ENDPOINT OSS_REGION FEISHU_ALERT_WEBHOOK; do
+  if ! grep -Eq "^${key}=.+" /etc/for-now.env; then
+    echo "Missing $key in /etc/for-now.env." >&2
+    exit 1
+  fi
+done
+if ! grep -Eq '^FEISHU_ALERT_WEBHOOK=https://(open\.feishu\.cn|open\.larksuite\.com)/open-apis/bot/v2/hook/[A-Za-z0-9_-]+/?$' /etc/for-now.env; then
+  echo "FEISHU_ALERT_WEBHOOK must be an HTTPS Feishu custom-bot webhook." >&2
+  exit 1
+fi
 
 mkdir -p "$releases"
 chown -R for-now:for-now "$base"
@@ -30,18 +40,95 @@ fi
 commit=$(sudo -u for-now git --git-dir="$mirror" rev-parse "refs/heads/$branch")
 release="$releases/$commit"
 previous=$(readlink -f "$current" 2>/dev/null || true)
-if [ ! -d "$release" ]; then
-  mkdir -p "$release"
-  sudo -u for-now git --git-dir="$mirror" archive "$commit" | tar -x -C "$release"
-  chown -R for-now:for-now "$release"
+if [ ! -f "$release/.deploy-ready" ]; then
+  candidate=$(mktemp -d "$releases/.${commit}.XXXXXX")
+  cleanup_candidate() { rm -rf "$candidate"; }
+  trap cleanup_candidate EXIT
+  sudo -u for-now git --git-dir="$mirror" archive "$commit" | tar -x -C "$candidate"
+  chown -R for-now:for-now "$candidate"
+  sudo -u for-now /usr/local/bin/npm --prefix "$candidate" ci --omit=dev
+  /usr/local/bin/node --check "$candidate/server.mjs"
+  /usr/local/bin/node --check "$candidate/logging.mjs"
+  /usr/local/bin/node --check "$candidate/attachment-storage.mjs"
+  /usr/local/bin/node --check "$candidate/public/app.js"
+  /usr/local/bin/node --check "$candidate/scripts/monitor-health.mjs"
+  /usr/local/bin/node --check "$candidate/scripts/validate-restored-data.mjs"
+  /usr/local/bin/node --check "$candidate/scripts/oss-attachment-smoke.mjs"
+  /usr/local/bin/node --check "$candidate/scripts/aliyun-segmentation-smoke.mjs"
+  /bin/bash -n "$candidate/deploy/backup-to-oss.sh" "$candidate/deploy/restore-drill.sh" \
+    "$candidate/deploy/migrate-attachments-to-oss.sh"
+  touch "$candidate/.deploy-ready"
+  chown -R for-now:for-now "$candidate"
+  if [ -e "$release" ]; then
+    release="$releases/${commit}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  fi
+  mv "$candidate" "$release"
+  trap - EXIT
 fi
 
-/usr/local/bin/node --check "$release/server.mjs"
-/usr/local/bin/node --check "$release/public/app.js"
+# Keep config and version together with the previous code on every failure path.
+rollback_dir=$(mktemp -d "$base/.deploy-rollback.XXXXXX")
+managed_files=(
+  /etc/for-now.env
+  /etc/systemd/system/for-now.service
+  /etc/systemd/system/for-now-backup.service
+  /etc/systemd/system/for-now-backup.timer
+  /etc/systemd/system/for-now-monitor.service
+  /etc/systemd/system/for-now-monitor.timer
+  /usr/local/sbin/for-now-backup
+  /usr/local/sbin/for-now-restore-drill
+  /usr/local/sbin/for-now-migrate-attachments
+  /var/www/app-portal/index.html
+  /etc/nginx/snippets/for-now.conf
+  /etc/nginx/snippets/acme-challenge.conf
+  /etc/nginx/sites-available/dysf
+  /usr/local/sbin/for-now-deploy
+)
+for index in "${!managed_files[@]}"; do
+  file=${managed_files[$index]}
+  if [ -e "$file" ]; then cp -p "$file" "$rollback_dir/$index"; fi
+done
+switched=0
+monitor_was_enabled=0
+if systemctl is-enabled --quiet for-now-monitor.timer 2>/dev/null; then monitor_was_enabled=1; fi
+rollback() {
+  status=$?
+  trap - EXIT
+  set +e
+  for index in "${!managed_files[@]}"; do
+    file=${managed_files[$index]}
+    if [ -e "$rollback_dir/$index" ]; then cp -p "$rollback_dir/$index" "$file"; else rm -f "$file"; fi
+  done
+  systemctl daemon-reload
+  if [ "$monitor_was_enabled" -eq 1 ]; then systemctl enable --now for-now-monitor.timer
+  else systemctl disable --now for-now-monitor.timer; fi
+  if [ "$switched" -eq 1 ]; then
+    if [ -n "$previous" ] && [ -d "$previous" ]; then
+      ln -sfn "$previous" "$base/.app-rollback"
+      mv -Tf "$base/.app-rollback" "$current"
+      if ! systemctl restart for-now.service || ! curl -fsS http://127.0.0.1:4173/readyz >/dev/null 2>&1; then
+        echo "Previous release restored but recovery is unhealthy; inspect for-now.service." >&2
+      fi
+    else
+      rm -f "$current"
+      systemctl stop for-now.service
+      echo "No previous release exists; service stopped." >&2
+    fi
+  fi
+  nginx -t && systemctl reload nginx
+  rm -rf "$rollback_dir"
+  echo "Deployment failed; code/config rollback attempted." >&2
+  exit "$status"
+}
+trap rollback EXIT
 install -o root -g root -m 0644 "$release/deploy/for-now.service" /etc/systemd/system/for-now.service
 install -o root -g root -m 0644 "$release/deploy/for-now-backup.service" /etc/systemd/system/for-now-backup.service
 install -o root -g root -m 0644 "$release/deploy/for-now-backup.timer" /etc/systemd/system/for-now-backup.timer
+install -o root -g root -m 0644 "$release/deploy/for-now-monitor.service" /etc/systemd/system/for-now-monitor.service
+install -o root -g root -m 0644 "$release/deploy/for-now-monitor.timer" /etc/systemd/system/for-now-monitor.timer
 install -o root -g root -m 0755 "$release/deploy/backup-to-oss.sh" /usr/local/sbin/for-now-backup
+install -o root -g root -m 0755 "$release/deploy/restore-drill.sh" /usr/local/sbin/for-now-restore-drill
+install -o root -g root -m 0755 "$release/deploy/migrate-attachments-to-oss.sh" /usr/local/sbin/for-now-migrate-attachments
 install -o root -g root -m 0644 "$release/deploy/portal.html" /var/www/app-portal/index.html
 install -o root -g root -m 0644 "$release/deploy/nginx-for-now.conf" /etc/nginx/snippets/for-now.conf
 install -o root -g root -m 0644 "$release/deploy/nginx-acme-challenge.conf" /etc/nginx/snippets/acme-challenge.conf
@@ -52,6 +139,7 @@ systemctl daemon-reload
 nginx -t
 ln -sfn "$release" "$base/.app-next"
 mv -Tf "$base/.app-next" "$current"
+switched=1
 
 if grep -q '^APP_VERSION=' /etc/for-now.env; then
   sed -i "s/^APP_VERSION=.*/APP_VERSION=${commit:0:12}/" /etc/for-now.env
@@ -63,18 +151,19 @@ systemctl restart for-now.service
 for attempt in $(seq 1 30); do
   if curl -fsS http://127.0.0.1:4173/readyz >/dev/null 2>&1; then
     systemctl reload nginx
+    systemctl enable --now for-now-monitor.timer
     install -o root -g root -m 0755 "$release/deploy/deploy.sh" /usr/local/sbin/for-now-deploy
-    find "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -rn | tail -n +6 | cut -d' ' -f2- | xargs -r rm -rf
+    trap - EXIT
+    rm -rf "$rollback_dir"
+    # Keep both the active release and the immediate rollback target.
+    while IFS= read -r stale; do
+      if [ "$stale" != "$release" ] && [ "$stale" != "$previous" ]; then rm -rf "$stale"; fi
+    done < <(find "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -rn | tail -n +6 | cut -d' ' -f2-)
     echo "Deployed ${commit:0:12}"
     exit 0
   fi
   sleep 1
 done
 
-if [ -n "$previous" ] && [ -d "$previous" ]; then
-  ln -sfn "$previous" "$base/.app-rollback"
-  mv -Tf "$base/.app-rollback" "$current"
-  systemctl restart for-now.service
-fi
-echo "Health check failed; previous release restored." >&2
+echo "Health check failed." >&2
 exit 1

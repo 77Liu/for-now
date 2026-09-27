@@ -1,5 +1,7 @@
 data/*
 !data/.gitkeep
+node_modules/
 .DS_Store
 .secrets/
 deploy/*.local
+reports/keepsake-segmentation-preview/

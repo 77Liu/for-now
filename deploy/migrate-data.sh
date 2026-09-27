@@ -29,11 +29,15 @@ if sudo test -f /srv/for-now/data/store.json; then
 fi
 sudo tar -xzf - -C /srv/for-now/data
 sudo chown -R for-now:for-now /srv/for-now/data
-sudo chmod 0700 /srv/for-now/data
-sudo find /srv/for-now/data -type f -name "*.json" -exec chmod 0600 {} +
+sudo find /srv/for-now/data -type d -exec chmod 0700 {} +
+sudo find /srv/for-now/data -type f -exec chmod 0600 {} +
 '
 
-COPYFILE_DISABLE=1 tar --exclude='._*' -C "$root/data" -czf - store.json llm-settings.json attachments \
+items=(store.json llm-settings.json attachments)
+[ -e "$root/data/ai-usage.json" ] && items+=(ai-usage.json)
+[ -e "$root/data/logs" ] && items+=(logs)
+
+COPYFILE_DISABLE=1 tar --exclude='._*' -C "$root/data" -czf - "${items[@]}" \
   | ssh "${ssh_args[@]}" "$target" "$remote_prepare"
 
 echo "Data and attachments migrated. The first invited account will become their owner."

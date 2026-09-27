@@ -40,4 +40,8 @@ trap - EXIT
 
 ossutil cp "$archive" "$OSS_DESTINATION/" --mode EcsRamRole --endpoint "$OSS_ENDPOINT" --region "$OSS_REGION"
 ossutil cp "$checksum" "$OSS_DESTINATION/" --mode EcsRamRole --endpoint "$OSS_ENDPOINT" --region "$OSS_REGION"
+install -d -o for-now -g for-now -m 0700 /var/lib/for-now-monitor
+touch /var/lib/for-now-monitor/last-backup-success
+chown for-now:for-now /var/lib/for-now-monitor/last-backup-success
+chmod 0600 /var/lib/for-now-monitor/last-backup-success
 find "$backup_dir" -type f -name 'for-now-*.tar.gz*' -mtime +7 -delete

@@ -82,9 +82,14 @@ const mockFetch = `
   window.__capturePayloads = [];
   window.__capturePatchPayloads = [];
   window.__journalSaves = 0;
+  window.__journalPatches = 0;
+  window.__journalDraft = { journalId: "journal-1", title: "跨端恢复的标题", content: "跨端恢复的正文。", updatedAt: "2026-09-27T08:18:19.000Z" };
+  window.__journalDraftSaves = 0;
+  window.__journalDraftPayloads = [];
   window.__journalAssistPayloads = [];
   window.__bookParses = 0;
   window.__bookUploads = 0;
+  window.__keepsakeUploads = 0;
   window.__bookSaves = 0;
   window.__bookPatches = 0;
   window.__bookPayloads = [];
@@ -93,18 +98,40 @@ const mockFetch = `
   window.__quoteSaves = 0;
   window.__quotePatches = 0;
   window.__settingsSaves = 0;
+  window.__usernameChanges = 0;
+  window.__passwordChanges = 0;
+  window.__accountUser = { id: "user-1", username: "owner", createdAt: "2026-09-27T00:00:00.000Z" };
   window.__dailySaves = 0;
   window.__dailyPatches = 0;
+  window.__checkinPatches = 0;
+  window.__thoughtPrompts = 0;
   window.__healthParses = 0;
   window.__annotationSaves = 0;
+  window.__thoughtAnnotationSaves = 0;
   window.__shenjiSaves = 0;
   window.__savedPayloads = [];
-  window.__keepsakes = [{
-    id: "keepsake-1", createdAt: "2026-09-27T01:30:00.000Z", occurredAt: "2026-09-27T09:30:00.000Z", occurredOn: "2026-09-27",
-    title: "旧展览票", category: "纸品", note: "已完成数字留存", source: "auto", edgeExpansion: 8,
-    originalPath: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='220'%3E%3Crect width='320' height='220' fill='%23d76455'/%3E%3C/svg%3E",
-    cutoutPath: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='220'%3E%3Crect x='40' y='30' width='240' height='160' rx='8' fill='%23d76455'/%3E%3C/svg%3E"
-  }];
+  window.__imageUploads = [];
+  window.__keepsakePayloads = [];
+  window.__keepsakes = [
+    {
+      id: "keepsake-1", createdAt: "2026-09-27T01:30:00.000Z", occurredAt: "2026-09-27T09:30:00.000Z", occurredOn: "2026-09-27",
+      title: "旧展览票", category: "纸品", note: "在秋天看过的一场展，背面还留着同行人的一句话。", tags: ["展览", "同行"], source: "auto", edgeExpansion: 8,
+      originalPath: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='220'%3E%3Crect width='320' height='220' fill='%23d76455'/%3E%3C/svg%3E",
+      cutoutPath: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='220'%3E%3Crect x='40' y='30' width='240' height='160' rx='8' fill='%23d76455'/%3E%3C/svg%3E"
+    },
+    {
+      id: "keepsake-2", createdAt: "2026-09-26T01:30:00.000Z", occurredAt: "2026-09-26T18:20:00.000Z", occurredOn: "2026-09-26",
+      title: "咖啡纸袋", category: "纸品", note: "第一次独自去那条街。", tags: ["散步"], source: "auto", edgeExpansion: 8,
+      originalPath: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='360'%3E%3Crect width='240' height='360' fill='%2391a88c'/%3E%3C/svg%3E",
+      cutoutPath: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='360'%3E%3Crect x='35' y='28' width='170' height='304' rx='10' fill='%2391a88c'/%3E%3C/svg%3E"
+    },
+    {
+      id: "keepsake-3", createdAt: "2026-09-25T01:30:00.000Z", occurredAt: "2026-09-25T14:05:00.000Z", occurredOn: "2026-09-25",
+      title: "车站小票", category: "小票", note: "", tags: ["远行"], source: "auto", edgeExpansion: 8,
+      originalPath: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='420'%3E%3Crect width='260' height='420' fill='%23d8b468'/%3E%3C/svg%3E",
+      cutoutPath: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='420'%3E%3Crect x='34' y='42' width='192' height='336' rx='5' fill='%23d8b468'/%3E%3C/svg%3E"
+    }
+  ];
   window.__captures = [
     { id: "capture-1", createdAt: "2026-09-27T01:12:00.000Z", occurredAt: "2026-09-27T07:08:09.000Z", occurredOn: "2026-09-27", content: "**这个念头**先不要想完整", tags: ["灵感", "可展开"] },
     { id: "capture-long", createdAt: "2026-09-27T01:10:00.000Z", occurredAt: "2026-09-27T07:05:09.000Z", occurredOn: "2026-09-27", content: "这是一条需要验证四行折叠的长捕念。\\n- 第一项内容\\n- 第二项内容\\n- 第三项内容\\n- 第四项内容\\n- 第五项内容\\n- 第六项内容", tags: ["职业规划"] }
@@ -124,24 +151,64 @@ const mockFetch = `
   window.__dailyRecords = [
     { id: "weight-existing", type: "weight", createdAt: "2026-09-26T01:00:00.000Z", occurredAt: "2026-09-26T07:30:00.000Z", occurredOn: "2026-09-26", source: "manual", attachmentPaths: [], measuredWeight: 70, clothing: "light", adjustmentMean: .5, adjustedWeight: 69.5, lower95: 69.1, upper95: 69.9 }
   ];
+  window.__checkins = [
+    { id: "checkin-latest", createdAt: "2026-09-27T08:00:00.000Z", occurredAt: "2026-09-27T08:00:00.000Z", occurredOn: "2026-09-27", mood: 4, energy: 2, stress: 4, sleep: 5, factors: [], custom: {}, notes: {} },
+    { id: "checkin-previous", createdAt: "2026-09-26T08:00:00.000Z", occurredAt: "2026-09-26T08:00:00.000Z", occurredOn: "2026-09-26", mood: 3, energy: 3, stress: 3, sleep: 2, factors: [], custom: {}, notes: {} }
+  ];
   window.fetch = (input, init = {}) => {
     const url = typeof input === "string" ? input : input.url;
+    if (url === "/api/auth/me") return json({ authenticated: true, authRequired: true, registrationAvailable: true, user: window.__accountUser, userCount: 1 });
+    if (url === "/api/auth/username" && init.method === "PATCH") {
+      window.__usernameChanges += 1;
+      window.__accountUser = { ...window.__accountUser, username: JSON.parse(init.body).username };
+      return json({ authenticated: true, user: window.__accountUser });
+    }
+    if (url === "/api/auth/password" && init.method === "PATCH") {
+      window.__passwordChanges += 1;
+      return json({ authenticated: true, user: window.__accountUser });
+    }
+    if (url === "/api/auth/logout") return json({ authenticated: false });
+    if (url.startsWith("/api/statistics")) {
+      const dates = ["2026-09-21","2026-09-22","2026-09-23","2026-09-24","2026-09-25","2026-09-26","2026-09-27"];
+      const blank = () => ({ calls: 0, successfulCalls: 0, failedCalls: 0, unknownStatusCalls: 0, usageUnknownCalls: 0, durationMs: 0, durationKnownCalls: 0, maxDurationMs: 0, visionCalls: 0, imageCount: 0, imageBytes: 0, tokens: { input: 0, cacheHit: 0, cacheMiss: 0, reasoning: 0, answer: 0, output: 0 }, costsUsd: { input: 0, cacheHit: 0, reasoning: 0, output: 0, total: 0 } });
+      const daily = dates.map((date,index) => {
+        const flash = blank(), pro = blank();
+        flash.calls = index % 3;flash.successfulCalls=flash.calls;flash.durationMs=840*flash.calls;flash.durationKnownCalls=flash.calls;flash.maxDurationMs=flash.calls?840:0;flash.visionCalls=index===5?1:0;flash.imageCount=flash.visionCalls*2;flash.imageBytes=flash.imageCount*2048;flash.tokens = { input: 1200*flash.calls, cacheHit: 400*flash.calls, cacheMiss: 800*flash.calls, reasoning: 180*flash.calls, answer: 320*flash.calls, output: 500*flash.calls };flash.costsUsd = { input: .00024*flash.calls, cacheHit: .0000024*flash.calls, reasoning: .000216*flash.calls, output: .000384*flash.calls, total: .0008424*flash.calls };
+        pro.calls = index % 2;pro.successfulCalls=pro.calls;pro.durationMs=1350*pro.calls;pro.durationKnownCalls=pro.calls;pro.maxDurationMs=pro.calls?1350:0;pro.tokens = { input: 1800*pro.calls, cacheHit: 600*pro.calls, cacheMiss: 1200*pro.calls, reasoning: 500*pro.calls, answer: 600*pro.calls, output: 1100*pro.calls };pro.costsUsd = { input: .001584*pro.calls, cacheHit: .0000264*pro.calls, reasoning: .00198*pro.calls, output: .002376*pro.calls, total: .0059664*pro.calls };
+        const total = blank();for(const item of[flash,pro]){for(const key of["calls","successfulCalls","failedCalls","unknownStatusCalls","usageUnknownCalls","durationMs","durationKnownCalls","visionCalls","imageCount","imageBytes"])total[key]+=item[key];total.maxDurationMs=Math.max(total.maxDurationMs,item.maxDurationMs);for(const key in total.tokens)total.tokens[key]+=item.tokens[key];for(const key in total.costsUsd)total.costsUsd[key]+=item.costsUsd[key]}
+        return { date, ...total, models: { "deepseek-flash": flash, "deepseek-v4-pro": pro } };
+      });
+      const sum = items => { const total=blank();for(const item of items){for(const key of["calls","successfulCalls","failedCalls","unknownStatusCalls","usageUnknownCalls","durationMs","durationKnownCalls","visionCalls","imageCount","imageBytes"])total[key]+=item[key];total.maxDurationMs=Math.max(total.maxDurationMs,item.maxDurationMs);for(const key in total.tokens)total.tokens[key]+=item.tokens[key];for(const key in total.costsUsd)total.costsUsd[key]+=item.costsUsd[key]}return total };
+      const flash=sum(daily.map(item=>item.models["deepseek-flash"])),pro=sum(daily.map(item=>item.models["deepseek-v4-pro"])),summary=sum(daily);
+      const vision={...blank(),calls:summary.visionCalls,successfulCalls:summary.visionCalls,visionCalls:summary.visionCalls,imageCount:summary.imageCount,imageBytes:summary.imageBytes,durationMs:840*summary.visionCalls,durationKnownCalls:summary.visionCalls,tokens:{...blank().tokens,input:2400,output:1000},costsUsd:{...blank().costsUsd,total:.0016848}},text={...summary,calls:summary.calls-vision.calls,successfulCalls:summary.successfulCalls-vision.successfulCalls,durationMs:summary.durationMs-vision.durationMs,durationKnownCalls:summary.durationKnownCalls-vision.durationKnownCalls,visionCalls:0,imageCount:0,imageBytes:0};
+      return json({
+        records: { total: 41, contentTotal: 31, interactionTotal: 10, content: [{ key:"checkins",label:"状态",count:4 },{ key:"sleep",label:"睡眠",count:2 },{ key:"heartRate",label:"心率",count:1 },{ key:"weight",label:"体重",count:1 },{ key:"exercise",label:"运动",count:0 },{ key:"captures",label:"捕念",count:2 },{ key:"journals",label:"日记",count:1 },{ key:"thoughts",label:"思考主题",count:2 },{ key:"chats",label:"长期对话",count:1 },{ key:"books",label:"书目",count:1 },{ key:"bookNotes",label:"读书记录",count:5 },{ key:"quotes",label:"善言",count:4 },{ key:"keepsakes",label:"小物",count:1 },{ key:"experiments",label:"个人实验",count:2 },{ key:"analyses",label:"认知复盘",count:4 }], interactions: [{ key:"highlights",label:"划线",count:3 },{ key:"comments",label:"评论",count:2 },{ key:"commentReplies",label:"评论回复",count:1 },{ key:"shenji",label:"@神鸡",count:2 },{ key:"followUps",label:"思考追问",count:1 },{ key:"remarks",label:"思考备注",count:1 },{ key:"reflections",label:"日记回望",count:0 }] },
+        ai: { from:dates[0],to:dates.at(-1),trackingStartedAt:"2026-09-21T01:00:00.000Z",summary,daily,models:[{model:"deepseek-flash",label:"DeepSeek Flash",...flash},{model:"deepseek-v4-pro",label:"DeepSeek Pro",...pro}],modalities:[{modality:"text",label:"纯文本",...text},{modality:"vision",label:"图片理解",...vision}],scenes:[{scene:"thoughtAnswer",calls:4},{scene:"chat",calls:2},{scene:"annotationShenji",calls:1}],pricing:{source:"https://api-docs.deepseek.com/quick_start/pricing/",checkedAt:"2026-09-27",currency:"USD",unitTokens:1000000,models:{"deepseek-flash":{label:"DeepSeek Flash",offPeak:{cacheHit:.003,cacheMiss:.15,output:.6},peak:{cacheHit:.006,cacheMiss:.3,output:1.2}},"deepseek-v4-pro":{label:"DeepSeek Pro",offPeak:{cacheHit:.022,cacheMiss:.66,output:1.98},peak:{cacheHit:.044,cacheMiss:1.32,output:3.96}}},estimateNote:"费用按官方单价估算。"} }
+      });
+    }
     if (url === "/api/state") return json({
-      version: 12, checkins: [
-        { id: "checkin-latest", createdAt: "2026-09-27T08:00:00.000Z", occurredAt: "2026-09-27T08:00:00.000Z", occurredOn: "2026-09-27", mood: 4, energy: 2, stress: 4, sleep: 5, factors: [] },
-        { id: "checkin-previous", createdAt: "2026-09-26T08:00:00.000Z", occurredAt: "2026-09-26T08:00:00.000Z", occurredOn: "2026-09-26", mood: 3, energy: 3, stress: 3, sleep: 2, factors: [] }
-      ], dailyRecords: window.__dailyRecords, captures: window.__captures, journals: window.__journals, thoughts: [
-        { id: "answer-kept", createdAt: "2026-09-27T01:10:00.000Z", occurredAt: "2026-09-27T04:10:00.000Z", occurredOn: "2026-09-27", type: "answer", content: "**核心判断**\\n第一行\\n第二行\\n第三行\\n第四行\\n第五行\\n第六行", reasoningContent: "**持久化**的模型思考", tags: [], relatedTo: "kept-root", disposition: "kept" },
-        { id: "kept-root", createdAt: "2026-09-27T01:09:00.000Z", occurredAt: "2026-09-27T04:09:00.000Z", occurredOn: "2026-09-27", type: "question", content: "没有**初步想法**的问题", tags: [], relatedTo: null, disposition: "kept", remarks: [], followUps: [], annotations: [], annotationDrift: [] },
+      version: 12, checkins: window.__checkins, dailyRecords: window.__dailyRecords, captures: window.__captures, journals: window.__journals, thoughts: [
+        { id: "answer-kept", createdAt: "2026-09-27T01:10:00.000Z", occurredAt: "2026-09-27T04:10:00.000Z", occurredOn: "2026-09-27", type: "answer", content: "**核心判断**\\n第一行\\n第二行\\n第三行\\n第四行\\n第五行\\n第六行", modelDraft: "**核心判断**\\n第一行\\n第二行\\n第三行\\n第四行\\n第五行\\n第六行", editedFromModel: false, origin: "deepseek", reasoningContent: "**持久化**的模型思考", tags: [], relatedTo: "kept-root", disposition: "kept" },
+        { id: "kept-root", createdAt: "2026-09-27T01:09:00.000Z", occurredAt: "2026-09-27T04:09:00.000Z", occurredOn: "2026-09-27", type: "question", content: "没有**初步想法**的问题", tags: ["待回看"], relatedTo: null, disposition: "kept", remarks: [], followUps: [], annotations: [], annotationDrift: [] },
         { id: "discarded-root", createdAt: "2026-09-27T01:08:00.000Z", occurredAt: "2026-09-27T04:08:00.000Z", occurredOn: "2026-09-27", type: "question", content: "已舍弃的问题", tags: [], relatedTo: null, disposition: "discarded", remarks: [], followUps: [], annotations: [], annotationDrift: [] }
-      ], chats: [{ id: "chat-1", createdAt: "2026-09-27T01:15:00.000Z", occurredAt: "2026-09-27T04:15:00.000Z", occurredOn: "2026-09-27", message: "**用户问题**", answer: "## 模型回答" }], books: window.__books, keepsakes: window.__keepsakes, quotes: window.__quotes,
+      ], chats: [{ id: "chat-1", createdAt: "2026-09-27T01:15:00.000Z", occurredAt: "2026-09-27T04:15:00.000Z", occurredOn: "2026-09-27", message: "**用户问题**", answer: "## 模型回答" }], books: window.__books, journalDraft: window.__journalDraft, keepsakes: window.__keepsakes, quotes: window.__quotes,
       experiments: [], analyses: window.__analyses, customMetrics: [], clusters: [],
-      insights: { trends: [], associations: [], weekly: { activeDays7: 4, pairedDays30: 2, rootCount30: 5, answeredRoots30: 4, closureRate30: 80, correctionActions30: 7, reviewAgeDays: 0, analysisCount: 2 } }
+      insights: { trends: [
+        { metric: "mood", current: 3.5, previous: null, currentCount: 2, previousCount: 0 },
+        { metric: "energy", current: 2.5, previous: null, currentCount: 2, previousCount: 0 },
+        { metric: "stress", current: 3.5, previous: null, currentCount: 2, previousCount: 0 },
+        { metric: "sleep", current: 3.5, previous: null, currentCount: 2, previousCount: 0 }
+      ], associations: [
+        {factor:"重点一",withCount:12,withoutCount:18,nextDayCount:8,sameDay:4.2,baseline:3.1,nextDay:4.1,confidence:"可观察"},
+        {factor:"重点二",withCount:6,withoutCount:12,nextDayCount:5,sameDay:3.9,baseline:3.2,nextDay:3.8,confidence:"初步线索"},
+        {factor:"重点三",withCount:3,withoutCount:9,nextDayCount:2,sameDay:2.4,baseline:3.4,nextDay:2.6,confidence:"初步线索"},
+        {factor:"不应显示",withCount:1,withoutCount:11,nextDayCount:1,sameDay:5,baseline:3.3,nextDay:5,confidence:"单日观察"}
+      ], aiOnlyThoughtIds: ["kept-root"], weekly: { checkins: 2, activeDays7: 4, pairedDays30: 2, rootCount30: 5, tracedRoots30: 3, traceRate30: 60, correctionActions30: 7, reviewAgeDays: 0, analysisCount: 2 } }
     });
     if (url === "/api/settings" && (!init.method || init.method === "GET")) return json({
       version: 4, provider: "deepseek",
       profiles: { lite: { model: "deepseek-flash", effort: "none" }, mid: { model: "deepseek-flash", effort: "high" }, high: { model: "deepseek-v4-pro", effort: "high" }, ultra: { model: "deepseek-v4-pro", effort: "max" } },
-      scenarios: { thoughtDraft: "high", thoughtAnswer: "ultra", followUpAnswer: "ultra", chat: "high", diaryLead: "lite", diaryStructure: "mid", diaryTopic: "high", diaryReflection: "ultra", annotationShenji: "high", analysis: "ultra", bookRecognition: "mid", healthRecognition: "mid" },
+      scenarios: { thoughtPrompt: "lite", thoughtDraft: "high", thoughtAnswer: "ultra", followUpAnswer: "ultra", chat: "high", diaryLead: "lite", diaryStructure: "mid", diaryTopic: "high", diaryReflection: "ultra", annotationShenji: "high", analysis: "ultra", bookRecognition: "mid", healthRecognition: "mid" },
       hasApiKey: true, keyHint: "tes••••test"
     });
     if (url === "/api/settings" && init.method === "POST") {
@@ -150,6 +217,17 @@ const mockFetch = `
       return json({ version: 4, provider: "deepseek", ...payload, hasApiKey: true, keyHint: "tes••••test" });
     }
     if (url === "/api/settings/test") return json({ ok: true, reply: "连接成功" });
+    if (url === "/api/thought-prompts") {
+      window.__thoughtPrompts += 1;
+      if (window.__holdPrompt) return new Promise(resolve => { window.__resolvePrompt=()=>resolve(json({prompt:"迟到的引子",hasHistory:true})); });
+      return json({ prompt: "之前那件还没想完的事，现在最想往前推哪一步？", hasHistory: true });
+    }
+    if (/^\\/api\\/checkins\\/[^/]+$/.test(url) && init.method === "PATCH") {
+      window.__checkinPatches += 1;
+      const item = window.__checkins.find(value => url.endsWith(value.id)), payload = JSON.parse(init.body);
+      Object.assign(item, payload, { occurredAt: new Date(payload.occurredAt).toISOString(), occurredOn: payload.occurredAt.slice(0, 10), updatedAt: new Date().toISOString() });
+      return json(item);
+    }
     if (url === "/api/captures" && init.method === "POST") {
       window.__captureSaves += 1;
       const payload = JSON.parse(init.body), item = { id: "capture-new-" + window.__captureSaves, createdAt: new Date().toISOString(), ...payload, occurredAt: new Date(payload.occurredAt).toISOString(), occurredOn: payload.occurredAt.slice(0, 10) };
@@ -163,15 +241,25 @@ const mockFetch = `
       Object.assign(item, payload, { occurredAt: new Date(payload.occurredAt).toISOString(), occurredOn: payload.occurredAt.slice(0, 10), updatedAt: new Date().toISOString() });
       return json(item);
     }
+    if (url === "/api/journal-draft" && init.method === "PUT") {
+      window.__journalDraftSaves += 1;
+      const payload = JSON.parse(init.body);
+      window.__journalDraftPayloads.push(payload);
+      window.__journalDraft = { ...payload, updatedAt: "2026-09-27T09:18:19.000Z" };
+      return json(window.__journalDraft);
+    }
     if (url === "/api/journals" && init.method === "POST") {
       window.__journalSaves += 1;
       const payload = JSON.parse(init.body), item = { id: "journal-new-" + window.__journalSaves, createdAt: new Date().toISOString(), reflections: [], ...payload, occurredAt: new Date(payload.occurredAt).toISOString(), occurredOn: payload.occurredAt.slice(0, 10) };
       window.__journals.unshift(item);
+      if (!window.__journalDraft?.journalId) window.__journalDraft = null;
       return json(item);
     }
     if (/^\\/api\\/journals\\/[^/]+$/.test(url) && init.method === "PATCH") {
       const item = window.__journals.find(value => url.endsWith(value.id)), payload = JSON.parse(init.body);
+      window.__journalPatches += 1;
       Object.assign(item, payload, { occurredAt: new Date(payload.occurredAt).toISOString(), occurredOn: payload.occurredAt.slice(0, 10), updatedAt: new Date().toISOString() });
+      if (window.__journalDraft?.journalId === item.id) window.__journalDraft = null;
       return json(item);
     }
     if (/^\\/api\\/journals\\/[^/]+\\/reflect$/.test(url)) {
@@ -183,7 +271,8 @@ const mockFetch = `
     if (url === "/api/journals/assist") {
       const payload = JSON.parse(init.body);
       window.__journalAssistPayloads.push(payload);
-      return streamResponse({ mode: payload.mode, content: "AI 追加的写作锚点。" });
+      const marker = { lead: "🗃", structure: "🏷", topic: "💬" }[payload.mode];
+      return streamResponse({ mode: payload.mode, content: marker + " 第一行写作锚点。\\n" + marker + " 第二行写作锚点。" });
     }
     if (url === "/api/images/parse") {
       const payload = JSON.parse(init.body);
@@ -194,10 +283,22 @@ const mockFetch = `
       return json({ title: "粘贴识别成功", author: "测试作者", publisher: "测试出版社", isbn: "9780000000000", description: "**识别结果**", attachmentPaths: ["/attachments/mock.png"], verification: "图片已识别，请确认" });
     }
     if (url === "/api/images/upload") {
+      const image = JSON.parse(init.body).image;
+      window.__imageUploads.push(image);
+      if (document.querySelector("#view-keepsakes")?.classList.contains("active")) {
+        window.__keepsakeUploads += 1;
+        return json({ attachmentPath: "/attachments/keepsake-" + window.__keepsakeUploads + ".png" }, 201);
+      }
       window.__bookUploads += 1;
       return json({ attachmentPath: "/attachments/cover-" + window.__bookUploads + ".png" }, 201);
     }
-    if (url === "/api/keepsakes/segment") return json({ suggestedTitle: "自动识别票券", category: "纸品", subjectDescription: "测试主体", includeHand: true, confidence: .9, subjectBox: [120,120,880,880], foregroundPoints: [[500,350],[500,650]], backgroundPoints: [[20,20],[980,20],[20,980],[980,980]] });
+    if (url === "/api/keepsakes/segment") return json({ cutout: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='36'%3E%3Crect width='24' height='36' fill='%23d76455'/%3E%3C/svg%3E", provider: "aliyun-segment-hd" });
+    if (url === "/api/keepsakes" && init.method === "POST") {
+      const payload = JSON.parse(init.body), item = { id: "keepsake-new", createdAt: new Date().toISOString(), ...payload, originalPath: window.__imageUploads.at(-2), cutoutPath: window.__imageUploads.at(-1), occurredAt: new Date(payload.occurredAt).toISOString(), occurredOn: payload.occurredAt.slice(0, 10) };
+      window.__keepsakePayloads.push(payload);
+      window.__keepsakes.unshift(item);
+      return json(item);
+    }
     if (url === "/api/daily-records" && init.method === "POST") {
       window.__dailySaves += 1;
       const payload = JSON.parse(init.body), item = { id: "daily-" + window.__dailySaves, createdAt: new Date().toISOString(), ...payload, occurredAt: new Date(payload.occurredAt).toISOString(), occurredOn: payload.occurredAt.slice(0, 10) };
@@ -259,6 +360,11 @@ const mockFetch = `
       const id = url.split("/").at(-1);window.__quotes = window.__quotes.filter(item => item.id !== id);return json({ removed: 1 });
     }
     if (url === "/api/answer-drafts") return streamResponse({ draft: "**结论**：后台完成。", reasoningContent: "持久化的模型思考" });
+    if (url === "/api/annotations/thought/kept-root" && init.method === "POST") {
+      window.__thoughtAnnotationSaves += 1;
+      const payload = JSON.parse(init.body);
+      return json({ id: "thought-highlight-1", createdAt: "2026-09-27T03:29:00.000Z", resolved: false, replies: [], ...payload }, 201);
+    }
     if (url === "/api/annotations/analysis/analysis-1" && init.method === "POST") {
       window.__annotationSaves += 1;
       const payload = JSON.parse(init.body), annotation = { id: "analysis-annotation-1", createdAt: "2026-09-27T03:30:00.000Z", resolved: false, replies: [], ...payload };
@@ -322,36 +428,82 @@ try {
     return false;
   };
   assert.equal(await waitUntil(`document.querySelector("#today-date-label")?.textContent.length > 0`), true);
+  const associationLimit = await evaluate(`(() => {
+    const rows=[...document.querySelectorAll("#association-list .association-row")];
+    return {count:rows.length,factors:rows.map(row=>row.querySelector("b").textContent),omitted:!document.querySelector("#association-list").textContent.includes("不应显示")};
+  })()`);
+  assert.deepEqual(associationLimit, { count: 3, factors: ["重点一","重点二","重点三"], omitted: true });
   const desktopNavigation = await evaluate(`(() => {
     const sidebar=document.querySelector(".sidebar"),main=document.querySelector("main"),active=document.querySelector(".nav-button.active"),style=getComputedStyle(sidebar);
     return {
       compact:Math.round(sidebar.getBoundingClientRect().width)===176&&Math.round(parseFloat(getComputedStyle(main).marginLeft))===176,
       lightGlass:style.backgroundColor.startsWith("rgba")&&style.backdropFilter.includes("blur"),
-      current:active.dataset.view==="today"&&active.getAttribute("aria-current")==="page",
-      inactive:[...document.querySelectorAll(".nav-button:not(.active)")].every(button=>button.getAttribute("aria-current")!=="page")
+      labels:[...document.querySelectorAll(".nav-button")].map(button=>button.textContent.trim()),
+      current:active.dataset.section==="today"&&active.getAttribute("aria-current")==="page",
+      inactive:[...document.querySelectorAll(".nav-button:not(.active)")].every(button=>button.getAttribute("aria-current")!=="page"),
+      sectionHidden:document.querySelector("#section-nav").hidden,
+      secondary:[...document.querySelector("[data-section-links='today']").querySelectorAll("button")].map(button=>button.textContent)
     };
   })()`);
-  assert.deepEqual(desktopNavigation, { compact: true, lightGlass: true, current: true, inactive: true });
+  assert.deepEqual(desktopNavigation, { compact: true, lightGlass: true, labels: ["◌今日","◇所见","∿所思","○我的"], current: true, inactive: true, sectionHidden: false, secondary: ["此刻","共参","每日"] });
+  await evaluate(`document.querySelector('[data-section="seen"]').click(); true`);
+  assert.deepEqual(await evaluate(`({
+    activeView:document.querySelector(".view.active").id,
+    primary:document.querySelector(".nav-button.active").textContent.trim(),
+    secondary:[...document.querySelector("[data-section-links='seen']").querySelectorAll("button")].map(button=>button.textContent),
+    selected:document.querySelector(".section-nav button.active").textContent
+  })`), { activeView: "view-captures", primary: "◇所见", secondary: ["念起","书间","拾句","小物"], selected: "念起" });
   await evaluate(`document.querySelector('[data-view="keepsakes"]').click(); true`);
-  assert.equal(await evaluate(`document.querySelectorAll(".keepsake-card").length === 1 && document.querySelector("#keepsake-count").textContent === "1 件"`), true);
+  assert.deepEqual(await evaluate(`(() => {
+    const grid=document.querySelector(".keepsake-grid"),card=document.querySelector(".keepsake-card"),original=card.querySelector(".keepsake-image-original"),cutout=card.querySelector(".keepsake-image-cutout");
+    return {count:document.querySelectorAll(".keepsake-card").length,label:document.querySelector("#keepsake-count").textContent,columns:getComputedStyle(grid).columnCount,avoids:getComputedStyle(card).breakInside==="avoid",originalOpacity:getComputedStyle(original).opacity,cutoutOpacity:getComputedStyle(cutout).opacity,tags:card.querySelector(".keepsake-tags").textContent};
+  })()`), { count: 3, label: "3 件", columns: "3", avoids: true, originalOpacity: "0.15", cutoutOpacity: "1", tags: "#展览#同行" });
   await evaluate(`document.querySelector("[data-keepsake-open]").click(); true`);
-  assert.equal(await evaluate(`!document.querySelector("#keepsake-lightbox").hidden && document.querySelector('[data-keepsake-view="original"]').classList.contains("active") && document.querySelector("#keepsake-lightbox-image").src.includes("svg")`), true);
-  await evaluate(`document.querySelector("#keepsake-lightbox-close").click(); document.querySelector("#keepsake-create-toggle").click(); true`);
+  assert.deepEqual(await evaluate(`(() => {
+    const detail=document.querySelector("#keepsake-detail"),image=detail.querySelector(".keepsake-detail-image");
+    return {visible:!detail.hidden,libraryHidden:document.querySelector(".keepsake-library").hidden,presentation:detail.querySelector('[data-keepsake-view="presentation"]').classList.contains("active"),layers:image.querySelectorAll("img").length,title:detail.querySelector("h2").textContent,tags:detail.querySelector(".keepsake-tags").textContent};
+  })()`), { visible: true, libraryHidden: true, presentation: true, layers: 2, title: "旧展览票", tags: "#展览#同行" });
+  await sleep(220);
+  const keepsakeDetailScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  await fs.writeFile("/tmp/growth-keepsake-detail-desktop.png", Buffer.from(keepsakeDetailScreenshot.data, "base64"));
+  await evaluate(`document.querySelector('[data-keepsake-view="original"]').click(); true`);
+  assert.deepEqual(await evaluate(`(() => { const image=document.querySelector(".keepsake-detail-image");return {original:image.classList.contains("show-original"),originalOpacity:getComputedStyle(image.querySelector(".keepsake-image-original")).opacity,cutoutDisplay:getComputedStyle(image.querySelector(".keepsake-image-cutout")).display}; })()`), { original: true, originalOpacity: "1", cutoutDisplay: "none" });
+  await evaluate(`document.querySelector("[data-keepsake-back]").click(); document.querySelector("#keepsake-create-toggle").click(); true`);
   await evaluate(`(async()=>{const canvas=document.createElement("canvas");canvas.width=48;canvas.height=36;const ctx=canvas.getContext("2d");ctx.fillStyle="#d76455";ctx.fillRect(0,0,48,36);const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"));const file=new File([blob],"ticket.png",{type:"image/png"}),transfer=new DataTransfer();transfer.items.add(file);const input=document.querySelector("#keepsake-image");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
-  assert.equal(await waitUntil(`document.querySelector("#keepsake-segment-status").textContent.includes("复杂轮廓已生成")`), true);
-  const keepsakeEditorState = await evaluate(`(() => { const preview=document.querySelector("#keepsake-preview-canvas"),ctx=preview.getContext("2d"),pixels=ctx.getImageData(0,0,preview.width,preview.height).data;let opaque=0;for(let i=3;i<pixels.length;i+=4)if(pixels[i]>0)opaque++;return {editorVisible:!document.querySelector("#keepsake-editor").hidden,title:document.querySelector("#keepsake-title").value,opaque,overflow:document.documentElement.scrollWidth>window.innerWidth}; })()`);
+  assert.equal(await waitUntil(`document.querySelector("#keepsake-segment-status").textContent.includes("自动轮廓已生成")`), true);
+  const keepsakeEditorState = await evaluate(`(() => { const preview=document.querySelector("#keepsake-preview-canvas"),ctx=preview.getContext("2d");return {editorVisible:!document.querySelector("#keepsake-editor").hidden,title:document.querySelector("#keepsake-title").value,subjectAlpha:ctx.getImageData(8,18,1,1).data[3],backgroundAlpha:ctx.getImageData(40,18,1,1).data[3],overflow:document.documentElement.scrollWidth>window.innerWidth}; })()`);
   assert.equal(keepsakeEditorState.editorVisible, true);
-  assert.equal(keepsakeEditorState.title, "自动识别票券");
-  assert.ok(keepsakeEditorState.opaque > 0);
+  assert.equal(keepsakeEditorState.title, "");
+  assert.equal(keepsakeEditorState.subjectAlpha, 255);
+  assert.ok(keepsakeEditorState.backgroundAlpha >= 37 && keepsakeEditorState.backgroundAlpha <= 39);
   assert.equal(keepsakeEditorState.overflow, false);
   const keepsakeScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-keepsakes-desktop.png", Buffer.from(keepsakeScreenshot.data, "base64"));
+  await evaluate(`document.querySelector("#keepsake-title").value="新票根";document.querySelector("#keepsake-tags").value="纪念 周末";document.querySelector("#keepsake-form").requestSubmit();true`);
+  assert.equal(await waitUntil(`window.__keepsakePayloads.length===1 && window.__imageUploads.length>=2`), true);
+  assert.deepEqual(await evaluate(`window.__keepsakePayloads[0].tags`), ["纪念", "周末"]);
+  const savedCutoutAlpha = await evaluate(`(async()=>{const image=new Image();await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=reject;image.src=window.__imageUploads.at(-1)});const canvas=document.createElement("canvas");canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;const ctx=canvas.getContext("2d");ctx.drawImage(image,0,0);return {subject:ctx.getImageData(8,18,1,1).data[3],background:ctx.getImageData(40,18,1,1).data[3]}})()`);
+  assert.equal(savedCutoutAlpha.subject, 255);
+  assert.equal(savedCutoutAlpha.background, 0);
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await sleep(100);
-  assert.equal(await evaluate(`document.documentElement.scrollWidth<=window.innerWidth && getComputedStyle(document.querySelector(".keepsake-grid")).gridTemplateColumns.split(" ").length===2`), true);
+  assert.equal(await evaluate(`document.documentElement.scrollWidth<=window.innerWidth && getComputedStyle(document.querySelector(".keepsake-grid")).columnCount==="2"`), true);
   const keepsakeMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-keepsakes-mobile.png", Buffer.from(keepsakeMobileScreenshot.data, "base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
+  await evaluate(`(() => {
+    const NativeImage=window.Image;window.__releaseImage=null;window.__releasedImageLoaded=false;
+    window.Image=class extends NativeImage {
+      set src(value){window.Image=NativeImage;this.addEventListener("load",()=>{window.__releasedImageLoaded=true},{once:true});window.__releaseImage=()=>{super.src=value}}
+    };
+    document.querySelector("[data-keepsake-edit]").click();
+  })()`);
+  assert.equal(await waitUntil(`typeof window.__releaseImage==="function"`), true);
+  await evaluate(`document.querySelector("#keepsake-editor-close").click();document.querySelector("#keepsake-create-toggle").click();document.querySelector("#keepsake-title").value="新的留存";window.__releaseImage();true`);
+  assert.equal(await waitUntil(`window.__releasedImageLoaded`), true);
+  await sleep(100);
+  assert.deepEqual(await evaluate(`({hidden:document.querySelector("#keepsake-editor").hidden,title:document.querySelector("#keepsake-title").value,id:document.querySelector("#keepsake-id").value})`), { hidden: true, title: "新的留存", id: "" });
+  await evaluate(`document.querySelector("#keepsake-editor-close").click();true`);
   await evaluate(`document.querySelector('[data-view="review"]').click(); true`);
   const reviewSignals = await evaluate(`(() => {
     const cards=[...document.querySelectorAll(".summary-signal")],firstStyle=getComputedStyle(cards[0]),tops=cards.map(card=>Math.round(card.getBoundingClientRect().top));
@@ -363,11 +515,56 @@ try {
       compactRadius:firstStyle.borderRadius==="8px"
     };
   })()`);
-  assert.deepEqual(reviewSignals.labels, ["近 7 日记录覆盖","近 30 日身心同日","近 30 日思考闭环率","近 30 日主动校正","距上次认知复盘"]);
-  assert.deepEqual(reviewSignals.values, ["4/ 7 天","2天","80%","7次","今天"]);
+  assert.deepEqual(reviewSignals.labels, ["近 7 日记录覆盖","近 30 日身心同日","近 30 日思考留痕率","近 30 日主动校正","距上次认知复盘"]);
+  assert.deepEqual(reviewSignals.values, ["4/ 7 天","2天","60%","7次","今天"]);
   assert.equal(reviewSignals.fiveColumns, true);
   assert.equal(reviewSignals.light, true);
   assert.equal(reviewSignals.compactRadius, true);
+  const coldStartReview = await evaluate(`(() => {
+    const panels=[...document.querySelectorAll(".review-primary-grid>.panel")],flowModal=document.querySelector("#association-flow-modal"),button=document.querySelector("#association-flow-toggle"),fills=[...document.querySelectorAll("#trend-list .trend-bar span")],backgrounds=fills.map(item=>getComputedStyle(item).backgroundImage);
+    return {
+      trendObservation:document.querySelector("#trend-list").textContent.includes("当前均值"),
+      gradientBars:backgrounds.every(value=>value.includes("linear-gradient"))&&new Set(backgrounds).size===4,
+      valueBrightness:getComputedStyle(fills[0]).filter!==getComputedStyle(fills[1]).filter,
+      flowHidden:flowModal.hidden,
+      toggleCollapsed:button.getAttribute("aria-expanded")==="false",
+      equalHeight:Math.abs(panels[0].getBoundingClientRect().height-panels[1].getBoundingClientRect().height)<2
+    };
+  })()`);
+  assert.deepEqual(coldStartReview, { trendObservation: true, gradientBars: true, valueBrightness: true, flowHidden: true, toggleCollapsed: true, equalHeight: true });
+  await evaluate(`document.querySelector("#association-flow-toggle").click(); true`);
+  assert.equal(await evaluate(`(() => { const panels=[...document.querySelectorAll(".review-primary-grid>.panel")]; return !document.querySelector("#association-flow-modal").hidden && document.querySelector("#association-flow").textContent.includes("按自然日聚合") && document.querySelector("#association-flow-toggle").getAttribute("aria-expanded")==="true" && Math.abs(panels[0].getBoundingClientRect().height-panels[1].getBoundingClientRect().height)<2; })()`), true);
+  const associationFlowScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  await fs.writeFile("/tmp/growth-association-flow-modal.png", Buffer.from(associationFlowScreenshot.data, "base64"));
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await sleep(100);
+  assert.equal(await evaluate(`(() => { const modal=document.querySelector(".association-flow-modal").getBoundingClientRect();return modal.left>=0&&modal.right<=window.innerWidth&&modal.top>=0&&modal.bottom<=window.innerHeight&&document.documentElement.scrollWidth<=window.innerWidth; })()`), true);
+  const associationFlowMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  await fs.writeFile("/tmp/growth-association-flow-modal-mobile.png", Buffer.from(associationFlowMobileScreenshot.data, "base64"));
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
+  await evaluate(`document.querySelector("#association-flow-close").click(); true`);
+  assert.equal(await evaluate(`document.querySelector("#association-flow-modal").hidden && document.querySelector("#association-flow-toggle").getAttribute("aria-expanded")==="false"`), true);
+  const checkinReview = await evaluate(`({
+    nestedInTrend:Boolean(document.querySelector(".trend-panel #state-chart")),
+    removedFromToday:!document.querySelector("#view-today #state-chart"),
+    entries:document.querySelectorAll("#checkin-history .checkin-history-entry").length,
+    editButtons:document.querySelectorAll("#checkin-history [data-edit-checkin]").length
+  })`);
+  assert.deepEqual(checkinReview, { nestedInTrend: true, removedFromToday: true, entries: 2, editButtons: 2 });
+  await evaluate(`document.querySelector('[data-edit-checkin="checkin-latest"]').click(); true`);
+  const checkinEditState = await evaluate(`(() => { const date=new Date(window.__checkins[0].occurredAt),pad=value=>String(value).padStart(2,"0"),expected=(date.getFullYear()+"-"+pad(date.getMonth()+1)+"-"+pad(date.getDate())+"T"+pad(date.getHours())+":"+pad(date.getMinutes())+":"+pad(date.getSeconds())).replace(/:00$/,"");return { hidden:document.querySelector("#edit-checkin-modal").hidden,datetime:document.querySelector("#edit-checkin-datetime").value,expected,metrics:document.querySelectorAll("[data-edit-checkin-metric]").length }; })()`);
+  assert.deepEqual(checkinEditState, { hidden: false, datetime: checkinEditState.expected, expected: checkinEditState.expected, metrics: 4 });
+  const checkinEditScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  await fs.writeFile("/tmp/growth-checkin-edit.png", Buffer.from(checkinEditScreenshot.data, "base64"));
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await sleep(100);
+  assert.equal(await evaluate(`(() => { const modal=document.querySelector(".edit-checkin-form").getBoundingClientRect();return modal.left>=0&&modal.right<=window.innerWidth&&modal.top>=0&&modal.bottom<=window.innerHeight&&document.documentElement.scrollWidth<=window.innerWidth; })()`), true);
+  const checkinEditMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  await fs.writeFile("/tmp/growth-checkin-edit-mobile.png", Buffer.from(checkinEditMobileScreenshot.data, "base64"));
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
+  await evaluate(`document.querySelector("#edit-checkin-factors").value="散步 咖啡"; document.querySelector('[data-edit-checkin-metric="mood"]').value="5"; document.querySelector("#edit-checkin-form").requestSubmit(); true`);
+  assert.equal(await waitUntil(`window.__checkinPatches===1&&document.querySelector('[data-edit-checkin="checkin-latest"]')`), true);
+  assert.equal(await evaluate(`window.__checkins[0].createdAt==="2026-09-27T08:00:00.000Z"&&window.__checkins[0].mood===5&&window.__checkins[0].factors.join("、")==="散步、咖啡"`), true);
   await evaluate(`document.querySelector("#weekly-summary").scrollIntoView({ block: "start" }); true`);
   await sleep(120);
   const reviewSignalsScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
@@ -386,9 +583,38 @@ try {
   const reviewMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-review-signals-mobile.png", Buffer.from(reviewMobileScreenshot.data, "base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
-  await evaluate(`document.querySelector('[data-view="today"]').click(); true`);
+  await evaluate(`document.querySelector('[data-view="together"]').click(); true`);
   assert.equal(await evaluate(`Boolean(document.querySelector(".chat-message.user strong")) && document.querySelector(".chat-message.agent h2")?.textContent === "模型回答"`), true);
   assert.equal(await evaluate(`[...document.querySelectorAll(".chat-message>.markdown-content")].every(item => item.classList.contains("commentable"))`), true);
+  assert.equal(await evaluate(`document.querySelector("#view-together").classList.contains("active")&&document.querySelector("[data-section-links='today'] [data-view='together']").classList.contains("active")&&document.querySelector("#view-together h2").textContent==="共参"&&document.querySelector("#view-together .recent-section h2").textContent==="一日心迹"`), true);
+  await sleep(100);
+  const togetherScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  await fs.writeFile("/tmp/growth-together.png", Buffer.from(togetherScreenshot.data, "base64"));
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await sleep(100);
+  assert.equal(await evaluate(`document.documentElement.scrollWidth<=window.innerWidth&&document.querySelector("#view-together .today-chat").getBoundingClientRect().right<=window.innerWidth`), true);
+  const togetherMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  await fs.writeFile("/tmp/growth-together-mobile.png", Buffer.from(togetherMobileScreenshot.data, "base64"));
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
+  await evaluate(`document.querySelector('[data-view="today"]').click(); true`);
+  await evaluate(`document.querySelector("#thought-prompt-button").click(); true`);
+  assert.equal(await waitUntil(`window.__thoughtPrompts===1&&document.querySelector("#chain-question").value.length>0`), true);
+  assert.equal(await evaluate(`document.querySelector("#chain-question").value`), "之前那件还没想完的事，现在最想往前推哪一步？");
+  assert.match(await evaluate(`document.querySelector("#thought-prompt-status").textContent`), /只是引子/);
+  for (const reset of [false, true]) {
+    await evaluate(`(() => {
+      window.__holdPrompt=true;window.__resolvePrompt=null;
+      const question=document.querySelector("#chain-question");question.value="";
+      document.querySelector("#thought-prompt-button").click();
+    })()`);
+    assert.equal(await waitUntil(`typeof window.__resolvePrompt==="function"`), true);
+    await evaluate(reset
+      ? `document.querySelector("#chain-form").reset();window.__resolvePrompt();true`
+      : `document.querySelector("#chain-question").value="我刚写的新问题";document.querySelector("#chain-question").dispatchEvent(new Event("input"));window.__resolvePrompt();true`);
+    assert.equal(await waitUntil(`!document.querySelector("#thought-prompt-button").disabled`), true);
+    assert.equal(await evaluate(`document.querySelector("#chain-question").value`), reset ? "" : "我刚写的新问题");
+  }
+  await evaluate(`window.__holdPrompt=false;true`);
   const metricHistory = await evaluate(`(() => {
     const metric=document.querySelector("#metric-energy").closest(".metric"),input=metric.querySelector('[type="range"]'),previous=metric.querySelector(".metric-history-marker.previous"),average=metric.querySelector(".metric-history-marker.average"),track=input.getBoundingClientRect(),previousRect=previous.getBoundingClientRect(),averageRect=average.getBoundingClientRect(),expectedAverage=track.left+11+(track.width-22)*.375;
     return {
@@ -415,6 +641,8 @@ try {
   const metricHistoryMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-metric-history-mobile.png", Buffer.from(metricHistoryMobileScreenshot.data, "base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
+  await evaluate(`document.querySelector('[data-view="daily"]').click(); true`);
+  assert.equal(await evaluate(`document.querySelector("#view-daily").classList.contains("active")&&document.querySelector("#view-daily .daily-record-card h2").textContent==="日录"&&!document.querySelector("#view-daily .today-chat")&&!document.querySelector("#view-daily #today-thoughts")`), true);
   const healthUpload = await evaluate(`(() => {
     const bytes=Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="),value=>value.charCodeAt(0));
     const paste=file=>{const event=new Event("paste",{bubbles:true,cancelable:true});Object.defineProperty(event,"clipboardData",{value:{files:[file]}});document.body.dispatchEvent(event)};
@@ -439,8 +667,9 @@ try {
   const dailyMobileScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
   await fs.writeFile("/tmp/growth-daily-records-mobile.png",Buffer.from(dailyMobileScreenshot.data,"base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
+  await evaluate(`document.querySelector('[data-view="together"]').click(); true`);
   const todayThoughtTimeline = await evaluate(`(() => {
-    const list=document.querySelector("#today-thoughts"),entries=[...list.querySelectorAll(".thought-timeline-entry")],cards=entries.map(entry=>entry.querySelector(".chain-record")),cardRects=cards.map(card=>card.getBoundingClientRect()),contentRects=cards.map(card=>card.querySelector(".summary-content").getBoundingClientRect()),date=entries[0].querySelector(".timeline-date").getBoundingClientRect(),meta=entries[0].querySelector(".thought-entry-meta").getBoundingClientRect();
+    const list=document.querySelector("#today-thoughts"),entries=[...list.querySelectorAll(".thought-timeline-entry")],cards=entries.map(entry=>entry.querySelector(".chain-record")),cardRects=cards.map(card=>card.getBoundingClientRect()),contentRects=cards.map(card=>card.querySelector(".summary-content").getBoundingClientRect()),date=entries[0].querySelector(".timeline-date").getBoundingClientRect(),meta=entries[0].querySelector(".thought-entry-meta").getBoundingClientRect(),pending=entries[0].querySelector(".thought-trace-pending"),tags=entries[0].querySelector(".thought-entry-tags").getBoundingClientRect();
     return {
       cards:cards.length,
       nonemptyDates:[...list.querySelectorAll(".timeline-date")].filter(item=>item.textContent.trim()).length,
@@ -448,12 +677,15 @@ try {
       contentAligned:contentRects.every(rect=>Math.abs(rect.left-contentRects[0].left)<1),
       dateOutside:date.right<cardRects[0].left,
       metaOutside:meta.bottom<=cardRects[0].top,
+      pendingText:pending?.textContent,
+      pendingBesideTags:tags.right<=pending?.getBoundingClientRect().left,
+      unansweredUnmarked:!entries[1].querySelector(".thought-trace-pending"),
       hasAxis:getComputedStyle(list,"::before").content!=="none",
       hasNodes:entries.every(entry=>getComputedStyle(entry,"::after").content!=="none"),
       summaryColumns:getComputedStyle(cards[0].querySelector(".chain-summary")).gridTemplateColumns.split(" ").length
     };
   })()`);
-  assert.deepEqual(todayThoughtTimeline, { cards: 2, nonemptyDates: 1, cardsAligned: true, contentAligned: true, dateOutside: true, metaOutside: true, hasAxis: true, hasNodes: true, summaryColumns: 2 });
+  assert.deepEqual(todayThoughtTimeline, { cards: 2, nonemptyDates: 1, cardsAligned: true, contentAligned: true, dateOutside: true, metaOutside: true, pendingText: "📫没有你的痕迹⏳", pendingBesideTags: true, unansweredUnmarked: true, hasAxis: true, hasNodes: true, summaryColumns: 2 });
   await evaluate(`document.querySelector("#today-thoughts").scrollIntoView({ block: "start" }); true`);
   const todayThoughtScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-today-thoughts.png", Buffer.from(todayThoughtScreenshot.data, "base64"));
@@ -464,13 +696,13 @@ try {
   await fs.writeFile("/tmp/growth-today-thoughts-mobile.png", Buffer.from(todayThoughtMobileScreenshot.data, "base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
   const viewThemeColors = await evaluate(`Object.fromEntries([...document.querySelectorAll(".view")].map(view => [view.id, getComputedStyle(view.querySelector(".eyebrow")).color]))`);
-  assert.equal(new Set(Object.values(viewThemeColors)).size, 10);
+  assert.equal(new Set(Object.values(viewThemeColors)).size, 11);
   await evaluate(`document.querySelector('[data-view="captures"]').click(); true`);
   assert.equal(await evaluate(`document.querySelector("#view-captures").classList.contains("active") && Boolean(document.querySelector('[data-capture-id="capture-1"] strong'))`), true);
   assert.equal(await evaluate(`document.querySelector('[data-capture-id="capture-1"] .markdown-content').classList.contains("commentable")`), true);
   const captureInitial = await evaluate(`({
     inputType: document.querySelector("#capture-date").type,
-    hasSeconds: /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}$/.test(document.querySelector("#capture-date").value),
+    hasSeconds: document.querySelector("#capture-date").step === "1" && /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(?::\\d{2})?$/.test(document.querySelector("#capture-date").value),
     shownTime: document.querySelector('[data-capture-id="capture-1"] .capture-entry-time').textContent,
     dateLabels: [...document.querySelectorAll(".capture-date")].filter(item => item.textContent.trim()).length,
     dateOutsideCard: (() => { const card = document.querySelector('[data-capture-id="capture-1"]').getBoundingClientRect(), date = document.querySelector('[data-capture-id="capture-1"] .capture-date').getBoundingClientRect(); return date.right < card.left; })(),
@@ -483,24 +715,27 @@ try {
   assert.equal(captureInitial.dateOutsideCard, true);
   assert.equal(captureInitial.timeOnRight, true);
   assert.equal(await waitUntil(`!document.querySelector('[data-capture-id="capture-long"] [data-capture-expand]').hidden`), true);
+  assert.equal(await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-capture-expand]').hidden`), true);
   const captureCardLayout = await evaluate(`(() => {
-    const card=document.querySelector('[data-capture-id="capture-long"]'),copy=card.querySelector(".capture-copy"),viewport=card.querySelector(".capture-content-viewport"),time=card.querySelector(".capture-entry-time"),tags=card.querySelector(".capture-inline-tags"),buttons=[...card.querySelectorAll(":scope > .record-actions button")],lineHeight=parseFloat(getComputedStyle(viewport).lineHeight);
-    const buttonRects=buttons.map(button=>button.getBoundingClientRect());
+    const card=document.querySelector('[data-capture-id="capture-long"]'),item=card.querySelector(".capture-item"),viewport=card.querySelector(".capture-content-viewport"),meta=card.querySelector(".capture-meta"),time=card.querySelector(".capture-entry-time"),tags=card.querySelector(".capture-top-tags"),actions=card.querySelector(".capture-actions"),buttons=[...actions.querySelectorAll("button")],lineHeight=parseFloat(getComputedStyle(viewport).lineHeight);
+    const buttonRects=buttons.map(button=>button.getBoundingClientRect()),metaRect=meta.getBoundingClientRect(),timeRect=time.getBoundingClientRect(),itemRect=item.getBoundingClientRect();
     return {
       capped: viewport.scrollHeight>viewport.clientHeight && viewport.clientHeight<=lineHeight*4+1,
-      contentTimeAligned: Math.abs(copy.getBoundingClientRect().top-time.getBoundingClientRect().top)<2,
+      timeInMeta: metaRect.top<=timeRect.top && timeRect.bottom<=metaRect.bottom+1,
+      metaAboveCard: metaRect.bottom<=itemRect.top+1,
       actionRows: buttonRects[0].bottom<=buttonRects[1].top+1 && Math.abs(buttonRects[1].top-buttonRects[2].top)<2,
       actionsCompact: buttonRects[2].bottom-buttonRects[0].top<42,
       actionsRightAligned: Math.abs(buttonRects[0].right-buttonRects[2].right)<2,
-      tagsFirst: viewport.firstElementChild===tags,
-      tagsFloat: getComputedStyle(tags).float==="left"
+      actionsFloatRight: getComputedStyle(actions).float==="right",
+      tagsInMeta: meta.contains(tags)
     };
   })()`);
-  assert.deepEqual(captureCardLayout, { capped: true, contentTimeAligned: true, actionRows: true, actionsCompact: true, actionsRightAligned: true, tagsFirst: true, tagsFloat: true });
+  assert.deepEqual(captureCardLayout, { capped: true, timeInMeta: true, metaAboveCard: true, actionRows: true, actionsCompact: true, actionsRightAligned: true, actionsFloatRight: true, tagsInMeta: true });
   const collapsedCaptureHeight = await evaluate(`document.querySelector('[data-capture-id="capture-long"] .capture-content-viewport').clientHeight`);
+  await evaluate(`document.querySelector('[data-capture-id="capture-long"] .capture-item').click(); true`);
+  assert.equal(await evaluate(`(() => { const card=document.querySelector('[data-capture-id="capture-long"]'),item=card.querySelector(".capture-item"),viewport=card.querySelector(".capture-content-viewport"),button=card.querySelector("[data-capture-expand]"); return viewport.clientHeight>${collapsedCaptureHeight}&&item.classList.contains("is-expanded")&&button.getAttribute("aria-expanded")==="true"&&button.textContent.trim()==="⌄"; })()`), true);
   await evaluate(`document.querySelector('[data-capture-id="capture-long"] [data-capture-expand]').click(); true`);
-  assert.equal(await evaluate(`(() => { const card=document.querySelector('[data-capture-id="capture-long"]'),viewport=card.querySelector(".capture-content-viewport"),button=card.querySelector("[data-capture-expand]"); return viewport.clientHeight>${collapsedCaptureHeight}&&button.getAttribute("aria-expanded")==="true"&&button.textContent==="收起"; })()`), true);
-  await evaluate(`document.querySelector('[data-capture-id="capture-long"] [data-capture-expand]').click(); true`);
+  assert.equal(await evaluate(`!document.querySelector('[data-capture-id="capture-long"] .capture-item').classList.contains("is-expanded")`), true);
   await evaluate(`document.querySelector("#capture-content").value = "快捷收下的新捕念"; const input = document.querySelector("#capture-tags"); input.value = "测试"; input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })); true`);
   assert.equal(await evaluate(`document.querySelector("#capture-tag-list .tag-chip")?.textContent.includes("测试")`), true);
   await evaluate(`document.querySelector("#capture-form").requestSubmit(); true`);
@@ -521,8 +756,8 @@ try {
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await sleep(100);
   assert.equal(await evaluate(`document.documentElement.scrollWidth <= window.innerWidth && document.querySelector("#capture-date").getBoundingClientRect().right <= window.innerWidth`), true);
-  assert.equal(await evaluate(`(() => { const card = document.querySelector('[data-capture-id="capture-1"]'), date = card.querySelector(".capture-date").getBoundingClientRect(), time = card.querySelector(".capture-entry-time").getBoundingClientRect(); return date.left < time.left && Math.abs(date.top - time.top) < 8; })()`), true);
-  assert.equal(await evaluate(`(() => { const buttons=[...document.querySelectorAll('[data-capture-id="capture-long"] > .record-actions button')].map(item=>item.getBoundingClientRect()); return buttons[0].bottom<=buttons[1].top+1&&Math.abs(buttons[1].top-buttons[2].top)<2&&buttons[2].bottom-buttons[0].top<42; })()`), true);
+  assert.equal(await evaluate(`(() => { const card=document.querySelector('[data-capture-id="capture-1"]'),date=card.querySelector(".capture-date").getBoundingClientRect(),meta=card.querySelector(".capture-meta").getBoundingClientRect(),time=card.querySelector(".capture-entry-time").getBoundingClientRect(); return date.bottom<=meta.top+1&&meta.left<=time.left&&time.right<=meta.right+1; })()`), true);
+  assert.equal(await evaluate(`(() => { const buttons=[...document.querySelectorAll('[data-capture-id="capture-long"] .capture-actions button')].map(item=>item.getBoundingClientRect()); return buttons[0].bottom<=buttons[1].top+1&&Math.abs(buttons[1].top-buttons[2].top)<2&&buttons[2].bottom-buttons[0].top<42; })()`), true);
   const captureMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-captures-mobile.png", Buffer.from(captureMobileScreenshot.data, "base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
@@ -532,17 +767,32 @@ try {
   assert.equal(promoted.idea, "**这个念头**先不要想完整");
   assert.match(promoted.status, /补上一个明确问题/);
 
-  await evaluate(`document.querySelector('[data-view="journals"]').click(); document.querySelector('[data-journal-prompt]').click(); true`);
+  await evaluate(`document.querySelector('[data-view="journals"]').click(); true`);
+  const restoredJournalDraft = await evaluate(`({id:document.querySelector("#journal-id").value,title:document.querySelector("#journal-title").value,content:document.querySelector("#journal-content").value,tags:document.querySelector("#journal-tags").value,date:document.querySelector("#journal-date").value,status:document.querySelector("#journal-status").textContent})`);
+  assert.equal(restoredJournalDraft.id, "journal-1");
+  assert.equal(restoredJournalDraft.title, "跨端恢复的标题");
+  assert.equal(restoredJournalDraft.content, "跨端恢复的正文。");
+  assert.equal(restoredJournalDraft.tags, "#日常");
+  assert.ok(restoredJournalDraft.date);
+  assert.match(restoredJournalDraft.status, /已恢复/);
+  await evaluate(`document.querySelector("#journal-title").value += "（续写）"; document.querySelector("#journal-content").value += "继续写。"; document.querySelector("#journal-draft-save").click(); true`);
+  assert.equal(await waitUntil(`window.__journalDraftSaves === 1 && document.querySelector("#journal-status").textContent.includes("草稿已保存")`), true);
+  assert.deepEqual(await evaluate(`Object.keys(window.__journalDraftPayloads[0]).sort()`), ["content","journalId","title"]);
+  assert.equal(await evaluate(`window.__journalDraftPayloads[0].journalId === "journal-1" && !("occurredAt" in window.__journalDraftPayloads[0]) && !("tags" in window.__journalDraftPayloads[0])`), true);
+  await evaluate(`document.querySelector('[data-journal-prompt]').click(); true`);
   assert.match(await evaluate(`document.querySelector("#journal-content").value`), /今天最值得留下/);
   const journalBeforeAssist = await evaluate(`document.querySelector("#journal-content").value += "我已经写下这一段。"; document.querySelector("#journal-content").value`);
   await evaluate(`document.querySelector('[data-journal-assist="lead"]').click(); true`);
-  assert.equal(await waitUntil(`window.__journalAssistPayloads.length === 1 && document.querySelector("#journal-content").value.includes("AI 追加的写作锚点")`, 80, 25), true);
+  assert.equal(await waitUntil(`window.__journalAssistPayloads.length === 1 && document.querySelector("#journal-content").value.includes("🗃 第一行写作锚点")`, 80, 25), true);
   const journalAfterAssist = await evaluate(`({ value: document.querySelector("#journal-content").value, payload: window.__journalAssistPayloads[0], status: document.querySelector("#journal-assist-status").textContent })`);
   assert.equal(journalAfterAssist.value.startsWith(journalBeforeAssist), true);
-  assert.equal(journalAfterAssist.value.endsWith("AI 追加的写作锚点。"), true);
+  assert.equal(journalAfterAssist.value.endsWith("🗃 第二行写作锚点。"), true);
+  assert.equal(journalAfterAssist.value.slice(journalBeforeAssist.length).trim().split("\n").every(line => line.startsWith("🗃 ")), true);
   assert.equal(journalAfterAssist.payload.content, journalBeforeAssist);
   assert.match(journalAfterAssist.status, /已追加/);
-  await evaluate(`document.querySelector("#journal-title").value = "新日记"; document.querySelector("#journal-content").value += "\\n我写下了真实感受。"; document.querySelector("#journal-form").requestSubmit(); true`);
+  await evaluate(`document.querySelector("#journal-content").value += "\\n我写下了真实感受。"; document.querySelector("#journal-form").requestSubmit(); true`);
+  assert.equal(await waitUntil(`window.__journalPatches === 1 && window.__journalDraft === null && document.querySelector("#journal-id").value === ""`), true);
+  await evaluate(`document.querySelector("#journal-title").value = "新日记"; document.querySelector("#journal-content").value = "新建日记正文。"; document.querySelector("#journal-form").requestSubmit(); true`);
   assert.equal(await waitUntil(`window.__journalSaves === 1 && document.querySelector('[data-journal-id="journal-new-1"]')`), true);
   await evaluate(`document.querySelector('[data-journal-id="journal-1"]').open = true; document.querySelector('[data-journal-id="journal-1"] [data-journal-reflect]').click(); true`);
   assert.equal(await waitUntil(`document.querySelector('[data-journal-id="journal-1"] .journal-reflection')`, 80, 25), true);
@@ -551,11 +801,17 @@ try {
   await evaluate(`document.querySelector("#ai-answer-close").click(); true`);
   const journalScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-journal.png", Buffer.from(journalScreenshot.data, "base64"));
+  await evaluate(`document.querySelector('[data-journal-id="journal-1"] [data-journal-edit]').click(); document.querySelector("#journal-title").value="布局检查草稿"; document.querySelector("#journal-content").value="检查保存草稿按钮在不同宽度下不会挤压其他操作。"; document.querySelector("#journal-form .record-form-footer").scrollIntoView({block:"center"}); true`);
+  await sleep(120);
+  assert.equal(await evaluate(`(() => { const buttons=[...document.querySelectorAll("#journal-form .form-actions button:not([hidden])")],rects=buttons.map(button=>button.getBoundingClientRect());return buttons.length===3&&rects.every((rect,index)=>index===0||rect.left>=rects[index-1].right-1)&&document.documentElement.scrollWidth<=window.innerWidth; })()`), true);
+  const journalActionsScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  await fs.writeFile("/tmp/growth-journal-draft-actions.png", Buffer.from(journalActionsScreenshot.data, "base64"));
 
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await sleep(100);
   assert.equal(await evaluate(`document.documentElement.scrollWidth <= window.innerWidth`), true);
-  assert.equal(await evaluate(`document.querySelectorAll(".sidebar .nav-button").length`), 9);
+  assert.equal(await evaluate(`document.querySelectorAll(".sidebar .nav-button").length`), 4);
+  assert.equal(await evaluate(`(() => { const buttons=[...document.querySelectorAll("#journal-form .form-actions button:not([hidden])")],rects=buttons.map(button=>button.getBoundingClientRect());return buttons.length===3&&rects.every((rect,index)=>index===0||rect.left>=rects[index-1].right-1)&&rects.at(-1).right<=window.innerWidth; })()`), true);
   const journalMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-journal-mobile.png", Buffer.from(journalMobileScreenshot.data, "base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
@@ -597,6 +853,11 @@ try {
   assert.equal(cardState.followupBeforeRemark, true);
   assert.equal(await evaluate(`document.querySelector('[data-chain-id="kept-root"] .chain-part .markdown-content').classList.contains("commentable") && document.querySelector('[data-chain-id="kept-root"] .model-answer-content>.markdown-content').classList.contains("commentable")`), true);
   assert.equal(await evaluate(`[...document.querySelectorAll("#all-thoughts .timeline-date")].filter(item => item.textContent.trim()).length`), 1);
+  await evaluate(`document.querySelector('[data-view="thoughts"]').click(); true`);
+  await evaluate(`(() => { const card=document.querySelector('#all-thoughts [data-chain-id="kept-root"]');card.open=true;const text=card.querySelector('.chain-part .markdown-content p').firstChild,range=document.createRange(),selection=getSelection();range.setStart(text,0);range.setEnd(text,2);selection.removeAllRanges();selection.addRange(range);document.dispatchEvent(new MouseEvent("mouseup",{bubbles:true}));return true; })()`);
+  assert.equal(await waitUntil(`!document.querySelector("#selection-tools").hidden`), true);
+  await evaluate(`document.querySelector('[data-selection-action="highlight"]').click(); true`);
+  assert.equal(await waitUntil(`window.__thoughtAnnotationSaves===1&&!document.querySelector('[data-chain-id="kept-root"] .thought-trace-pending')`), true);
   await evaluate(`document.querySelector('[data-view="review"]').click(); true`);
   const reviewMarkdown = await evaluate(`({ bold: Boolean(document.querySelector(".analysis-content strong")), heading: document.querySelector(".analysis-content h2")?.textContent, rawMarkers: document.querySelector(".analysis-content").textContent.includes("**") })`);
   assert.equal(reviewMarkdown.bold, true);
@@ -680,9 +941,11 @@ try {
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
   await evaluate(`document.querySelector("#book-title").value = "流行的真相：从Labubu到AI，人类为什么上瘾？（轻访谈与长期观察）"; true`);
   await evaluate(`document.querySelector("#book-reading-start").value = "2026-09-01"; true`);
+  const bookUploadsBeforeSave = await evaluate(`window.__bookUploads`), createdBookCoverPath = `/attachments/cover-${bookUploadsBeforeSave + 1}.png`, editedBookCoverPath = `/attachments/cover-${bookUploadsBeforeSave + 2}.png`;
   await evaluate(`document.querySelector("#book-form").requestSubmit(); true`);
-  assert.equal(await waitUntil(`window.__bookUploads === 1 && window.__bookSaves === 1 && document.querySelector(".book-card") && document.querySelector("#book-create-panel").hidden`), true);
-  assert.equal(await evaluate(`window.__bookPayloads[0].imagePath`), "/attachments/cover-1.png");
+  const bookSaveCompleted = await waitUntil(`window.__bookUploads === ${bookUploadsBeforeSave + 1} && window.__bookSaves === 1 && document.querySelector(".book-card") && document.querySelector("#book-create-panel").hidden`);
+  assert.equal(bookSaveCompleted, true, JSON.stringify(await evaluate(`({uploads:window.__bookUploads,saves:window.__bookSaves,title:document.querySelector("#book-title").value,start:document.querySelector("#book-reading-start").value,end:document.querySelector("#book-reading-end").value,status:document.querySelector("#book-parse-status").textContent,valid:document.querySelector("#book-form").checkValidity(),panelHidden:document.querySelector("#book-create-panel").hidden})`)));
+  assert.equal(await evaluate(`window.__bookPayloads[0].imagePath`), createdBookCoverPath);
   assert.equal(await evaluate(`window.__bookPayloads[0].readingStartedOn === "2026-09-01" && window.__bookPayloads[0].readingFinishedOn === ""`), true);
   const galleryState = await evaluate(`({ libraryVisible: !document.querySelector("#book-library").hidden, cardCount: document.querySelectorAll(".book-card").length, memoryEmpty: document.querySelector(".book-memory-placeholder")?.textContent.includes("旧笔记") })`);
   assert.equal(galleryState.libraryVisible, true);
@@ -692,26 +955,38 @@ try {
   await fs.writeFile("/tmp/growth-book-gallery.png", Buffer.from(bookGalleryScreenshot.data, "base64"));
   await sleep(150);
   const longBookTitle = await evaluate(`(() => {
-    const frame=document.querySelector(".book-title-frame"),title=frame.querySelector(".book-title"),track=frame.querySelector(".book-title-scroll-track"),style=getComputedStyle(title);
+    const frame=document.querySelector(".book-title-frame"),title=frame.querySelector(".book-title"),viewport=frame.querySelector(".book-title-scroll"),track=frame.querySelector(".book-title-scroll-track"),lines=[...frame.querySelectorAll(".book-title-scroll-line")],style=getComputedStyle(title),rects=lines.map(line=>line.getBoundingClientRect());
+    const travel=parseFloat(frame.style.getPropertyValue("--book-title-travel")),duration=parseFloat(frame.style.getPropertyValue("--book-title-duration"));
     return {
       overflowing:frame.classList.contains("is-overflowing"),
-      rows:title.children.length,
+      oneTrack:title.children.length===1&&viewport?.firstElementChild===track,
+      rows:lines.length,
+      rowsAligned:Math.abs(rects[0].left-rects[1].left)<1&&Math.abs(rects[0].width-rects[1].width)<1,
+      trackAnimated:getComputedStyle(track).animationName==="book-title-pan",
       maxTwoLines:frame.clientHeight<=parseFloat(style.lineHeight)*2+1&&title.scrollHeight<=frame.clientHeight+1,
-      travel:parseFloat(frame.style.getPropertyValue("--book-title-travel")),
-      duration:parseFloat(frame.style.getPropertyValue("--book-title-duration")),
+      travel,
+      duration,
+      doubleSpeed:Math.abs(duration-Math.min(9,Math.max(4,3.5+Math.abs(travel)/40)))<.11,
       noPageOverflow:document.documentElement.scrollWidth<=window.innerWidth
     };
   })()`);
   assert.equal(longBookTitle.overflowing, true);
+  assert.equal(longBookTitle.oneTrack, true);
   assert.equal(longBookTitle.rows, 2);
+  assert.equal(longBookTitle.rowsAligned, true);
+  assert.equal(longBookTitle.trackAnimated, true);
   assert.equal(longBookTitle.maxTwoLines, true);
   assert.equal(longBookTitle.travel < 0, true);
-  assert.equal(longBookTitle.duration >= 8, true);
+  assert.equal(longBookTitle.duration >= 4 && longBookTitle.duration <= 9, true);
+  assert.equal(longBookTitle.doubleSpeed, true);
   assert.equal(longBookTitle.noPageOverflow, true);
+  await evaluate(`document.querySelector(".book-title-frame").scrollIntoView({block:"center"}); true`);
+  await sleep(900);
   const longBookTitleScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-book-title.png", Buffer.from(longBookTitleScreenshot.data, "base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
-  await sleep(150);
+  await evaluate(`document.querySelector(".book-title-frame").scrollIntoView({block:"center"}); true`);
+  await sleep(900);
   assert.equal(await evaluate(`document.querySelector(".book-title-frame").classList.contains("is-overflowing")&&document.documentElement.scrollWidth<=window.innerWidth`), true);
   const longBookTitleMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-book-title-mobile.png", Buffer.from(longBookTitleMobileScreenshot.data, "base64"));
@@ -719,7 +994,7 @@ try {
   await evaluate(`document.querySelector("[data-open-book]").click(); true`);
   assert.equal(await evaluate(`!document.querySelector("#book-detail").hidden && Boolean(document.querySelector(".book-description strong")) && document.querySelector(".book-description").classList.contains("commentable") && !document.querySelector("#view-books").classList.contains("book-detail-condensed") && !document.querySelector("#book-detail").textContent.includes("书籍内页") && document.querySelector(".book-reading-range").textContent.includes("2026年9月1日")`), true);
   await evaluate(`document.querySelector("[data-book-edit]").click(); true`);
-  assert.equal(await evaluate(`!document.querySelector("#book-create-panel").hidden && document.querySelector("#book-form-title").textContent === "编辑书目" && document.querySelector("#book-title").value.includes("Labubu") && document.querySelector("#book-reading-start").value === "2026-09-01" && document.querySelector("#book-cover-preview").src.endsWith("/attachments/cover-1.png")`), true);
+  assert.equal(await evaluate(`!document.querySelector("#book-create-panel").hidden && document.querySelector("#book-form-title").textContent === "编辑书目" && document.querySelector("#book-title").value.includes("Labubu") && document.querySelector("#book-reading-start").value === "2026-09-01" && document.querySelector("#book-cover-preview").src.endsWith(${JSON.stringify(createdBookCoverPath)})`), true);
   await evaluate(`(() => {
     document.querySelector("#book-title").value = "编辑后的书名";
     document.querySelector("#book-reading-end").value = "2026-09-27";
@@ -732,8 +1007,8 @@ try {
     document.querySelector("#book-form").requestSubmit();
     return true;
   })()`);
-  assert.equal(await waitUntil(`window.__bookUploads === 2 && window.__bookPatches === 1 && !document.querySelector("#book-detail").hidden && document.querySelector(".book-detail-copy h2").textContent === "编辑后的书名"`), true);
-  assert.equal(await evaluate(`window.__bookPayloads[1].imagePath === "/attachments/cover-2.png" && window.__bookPayloads[1].readingFinishedOn === "2026-09-27" && document.querySelector(".book-detail-cover").src.endsWith("/attachments/cover-2.png")`), true);
+  assert.equal(await waitUntil(`window.__bookUploads === ${bookUploadsBeforeSave + 2} && window.__bookPatches === 1 && !document.querySelector("#book-detail").hidden && document.querySelector(".book-detail-copy h2").textContent === "编辑后的书名"`), true);
+  assert.equal(await evaluate(`window.__bookPayloads[1].imagePath === ${JSON.stringify(editedBookCoverPath)} && window.__bookPayloads[1].readingFinishedOn === "2026-09-27" && document.querySelector(".book-detail-cover").src.endsWith(${JSON.stringify(editedBookCoverPath)})`), true);
   await evaluate(`(() => { const form = document.querySelector("[data-book-entry-form]"); form.elements.type.value = "thought"; form.elements.favorite.value = "star"; form.elements.occurredAt.value = "2026-09-27T09:10:11"; form.elements.content.value = "## 我的理解\\n\\n这条内容值得继续生长。"; form.requestSubmit(); return true; })()`);
   assert.equal(await waitUntil(`window.__bookNoteSaves === 1 && document.querySelector('[data-note-id="note-1"]')`), true);
   const bookEntryState = await evaluate(`(() => { const entry = document.querySelector('[data-note-id="note-1"]'), card = entry.querySelector(".book-entry-card").getBoundingClientRect(), date = entry.querySelector(".book-entry-date").getBoundingClientRect(); return { heading: entry.querySelector(".book-note h2")?.textContent, type: entry.querySelector(".book-entry-type").textContent, favorite: entry.querySelector(".book-favorite").textContent, time: entry.querySelector("header time").textContent, dateOutside: date.right < card.left, commentable: entry.querySelector(".book-note").classList.contains("commentable") }; })()`);
@@ -801,8 +1076,19 @@ try {
   assert.equal(await evaluate(`document.querySelector("[data-test-long-quote] .quote-content-viewport").clientHeight>${collapsedQuoteHeight}&&document.querySelector("[data-test-long-quote] [data-quote-expand]").getAttribute("aria-expanded")==="true"`), true);
   await evaluate(`document.querySelector("[data-test-long-quote] [data-quote-expand]").click(); true`);
   assert.equal(await evaluate(`[...document.querySelectorAll("#quote-timeline blockquote")].every(item => item.classList.contains("commentable"))`), true);
-  const quoteSky = await evaluate(`(() => { const items=[...document.querySelectorAll(".quote-bubble")],rects=items.map(item=>item.getBoundingClientRect()),overlap=rects.some((a,i)=>rects.some((b,j)=>i<j&&a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top));return {count:items.length,overlap,distinctTags:new Set(items.flatMap(item=>[...item.querySelectorAll(".quote-tags span")].map(tag=>tag.textContent))).size,whiteSpace:getComputedStyle(items[0].querySelector("p")).whiteSpace,font:getComputedStyle(items[0].querySelector("p")).fontFamily,ids:items.map(item=>item.dataset.quoteId).join(",")}; })()`);
-  assert.deepEqual({count:quoteSky.count,overlap:quoteSky.overlap,whiteSpace:quoteSky.whiteSpace},{count:3,overlap:false,whiteSpace:"pre-wrap"});
+  await evaluate(`(() => { for(let index=0;index<4&&!document.querySelector('[data-quote-id="quote-1"]');index++)document.querySelector("#quote-refresh").click(); return true; })()`);await sleep(80);
+  const quoteSky = await evaluate(`(() => { const items=[...document.querySelectorAll(".quote-bubble")],rects=items.map(item=>item.getBoundingClientRect()),overlap=rects.some((a,i)=>rects.some((b,j)=>i<j&&a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top)),limits=items.map(item=>Number(item.dataset.visibleLines)),bodies=items.map(item=>item.querySelector("p")),longBody=document.querySelector('[data-quote-id="quote-1"] p'),shortBody=[...bodies].sort((a,b)=>a.scrollHeight-b.scrollHeight)[0];return {count:items.length,overlap,distinctTags:new Set(items.flatMap(item=>[...item.querySelectorAll(".quote-tags span")].map(tag=>tag.textContent))).size,whiteSpace:getComputedStyle(bodies[0]).whiteSpace,font:getComputedStyle(bodies[0]).fontFamily,ids:items.map(item=>item.dataset.quoteId).join(","),limitsInRange:limits.every(value=>Number.isInteger(value)&&value>=3&&value<=5),heightsCapped:bodies.every((body,index)=>body.clientHeight<=parseFloat(getComputedStyle(body).lineHeight)*limits[index]+1),longScrollable:longBody.scrollHeight>longBody.clientHeight,shortNatural:shortBody.scrollHeight<=shortBody.clientHeight+1,autoScrolling:longBody.classList.contains("is-auto-scrolling")&&getComputedStyle(longBody).overflowY==="auto",scrollbarHidden:getComputedStyle(longBody).scrollbarWidth==="none",initialScrollTop:longBody.scrollTop}; })()`);
+  assert.deepEqual({count:quoteSky.count,overlap:quoteSky.overlap,whiteSpace:quoteSky.whiteSpace,limitsInRange:quoteSky.limitsInRange,heightsCapped:quoteSky.heightsCapped,longScrollable:quoteSky.longScrollable,shortNatural:quoteSky.shortNatural,autoScrolling:quoteSky.autoScrolling,scrollbarHidden:quoteSky.scrollbarHidden},{count:3,overlap:false,whiteSpace:"pre-wrap",limitsInRange:true,heightsCapped:true,longScrollable:true,shortNatural:true,autoScrolling:true,scrollbarHidden:true});
+  await sleep(1800);
+  assert.equal(await evaluate(`document.querySelector('[data-quote-id="quote-1"] p').scrollTop>${quoteSky.initialScrollTop}+.5`),true);
+  await evaluate(`(() => { const body=document.querySelector('[data-quote-id="quote-1"] p');body.scrollTop=0;body.dispatchEvent(new WheelEvent("wheel",{bubbles:true,deltaY:30}));return true; })()`);
+  await sleep(700);
+  assert.equal(await evaluate(`(() => { const body=document.querySelector('[data-quote-id="quote-1"] p');return body.scrollTop===0&&body.classList.contains("is-user-scrolling")&&getComputedStyle(body).scrollbarWidth!=="none"; })()`),true);
+  await sleep(5000);
+  assert.equal(await evaluate(`(() => { const body=document.querySelector('[data-quote-id="quote-1"] p');return body.scrollTop>.5&&!body.classList.contains("is-user-scrolling")&&getComputedStyle(body).scrollbarWidth==="none"; })()`),true);
+  const quoteBottom=await evaluate(`(() => { const body=document.querySelector('[data-quote-id="quote-1"] p');body.scrollTop=body.scrollHeight;body.dispatchEvent(new WheelEvent("wheel",{bubbles:true,deltaY:30}));return body.scrollTop; })()`);
+  await sleep(6500);
+  assert.equal(await evaluate(`document.querySelector('[data-quote-id="quote-1"] p').scrollTop<${quoteBottom}-.5`),true);
   assert.equal(quoteSky.distinctTags>=3,true);
   assert.match(quoteSky.font,/Kaiti|KaiTi|STKaiti/);
   await evaluate(`document.querySelector("#quote-refresh").click(); true`);
@@ -880,8 +1166,63 @@ try {
   assert.match(await evaluate(`document.querySelector("#chain-status").textContent`), /后台生成/);
   await evaluate(`document.querySelector("#ai-answer-close").click(); document.querySelector("#chain-question").value = "第二条不应被阻塞"; document.querySelector("#chain-answer").value = "手写回答"; document.querySelector("#chain-form").requestSubmit(); true`);
   assert.equal(await waitUntil(`window.__thoughtSaves === 3 && !document.querySelector('#chain-form [type="submit"]').disabled && document.querySelector("#chain-question").value === ""`, 80, 25), true);
+  await evaluate(`document.querySelector('[data-section="mine"]').click(); true`);
+  assert.equal(await waitUntil(`document.querySelectorAll("#ai-kpis article").length === 8`), true);
+  const statisticsDesktop = await evaluate(`(() => ({
+    active:document.querySelector("#view-statistics").classList.contains("active"),
+    secondary:[...document.querySelectorAll("[data-section-links='mine'] button")].map(button=>button.textContent),
+    recordTotal:document.querySelector("#record-total strong").textContent,
+    charts:document.querySelectorAll("#view-statistics .analytics-svg").length,
+    models:document.querySelectorAll("#ai-model-summary tbody tr").length,
+    modalities:document.querySelectorAll("#ai-modality-summary tbody tr").length,
+    imageKpi:[...document.querySelectorAll("#ai-kpis article")].find(item=>item.querySelector("span").textContent==="图片理解")?.querySelector("strong").textContent,
+    noOverflow:document.documentElement.scrollWidth<=window.innerWidth
+  }))()`);
+  assert.deepEqual(statisticsDesktop, { active:true, secondary:["统计","账户","设置","关于"], recordTotal:"41", charts:4, models:2, modalities:2, imageKpi:"1", noOverflow:true });
+  await evaluate(`document.querySelector("#toast").hidden=true; window.scrollTo(0,0); true`);
+  await sleep(250);
+  const statisticsDesktopScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  await fs.writeFile("/tmp/growth-statistics-desktop.png", Buffer.from(statisticsDesktopScreenshot.data, "base64"));
+  await evaluate(`document.querySelector("#ai-calls-chart").scrollIntoView({block:"start"}); true`);
+  await sleep(150);
+  assert.equal(await evaluate(`[...document.querySelectorAll("#view-statistics .analytics-svg")].every(svg=>svg.getBoundingClientRect().width>250&&svg.getBoundingClientRect().height>100)`), true);
+  const statisticsChartsDesktopScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  await fs.writeFile("/tmp/growth-statistics-charts-desktop.png", Buffer.from(statisticsChartsDesktopScreenshot.data, "base64"));
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await evaluate(`window.scrollTo(0,0); true`);
+  await sleep(120);
+  assert.equal(await evaluate(`document.documentElement.scrollWidth<=window.innerWidth&&getComputedStyle(document.querySelector(".ai-kpis")).gridTemplateColumns.split(" ").length===2`), true);
+  const statisticsMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  await fs.writeFile("/tmp/growth-statistics-mobile.png", Buffer.from(statisticsMobileScreenshot.data, "base64"));
+  await evaluate(`document.querySelector("#ai-calls-chart").scrollIntoView({block:"start"}); true`);
+  await sleep(150);
+  assert.equal(await evaluate(`[...document.querySelectorAll("#view-statistics .analytics-svg")].every(svg=>svg.getBoundingClientRect().width>250&&svg.getBoundingClientRect().height>100)&&document.documentElement.scrollWidth<=window.innerWidth`), true);
+  const statisticsChartsMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  await fs.writeFile("/tmp/growth-statistics-charts-mobile.png", Buffer.from(statisticsChartsMobileScreenshot.data, "base64"));
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
+  await evaluate(`document.querySelector('[data-view="account"]').click(); true`);
+  assert.deepEqual(await evaluate(`({
+    active:document.querySelector("#view-account").classList.contains("active"),
+    authenticated:!document.querySelector("#account-authenticated").hidden,
+    localHidden:document.querySelector("#account-local-mode").hidden,
+    username:document.querySelector("#account-username").value
+  })`), { active: true, authenticated: true, localHidden: true, username: "owner" });
+  await evaluate(`document.querySelector("#toast").hidden=true; true`);
+  await sleep(250);
+  const accountDesktopScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  await fs.writeFile("/tmp/growth-account-desktop.png", Buffer.from(accountDesktopScreenshot.data, "base64"));
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await sleep(120);
+  assert.equal(await evaluate(`document.documentElement.scrollWidth<=window.innerWidth&&getComputedStyle(document.querySelector(".account-settings")).gridTemplateColumns.split(" ").length===1`), true);
+  const accountMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  await fs.writeFile("/tmp/growth-account-mobile.png", Buffer.from(accountMobileScreenshot.data, "base64"));
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
+  await evaluate(`document.querySelector("#account-username").value="keeper"; document.querySelector("#username-form").requestSubmit(); true`);
+  assert.equal(await waitUntil(`window.__usernameChanges===1&&document.querySelector("#account-page-name").textContent==="keeper"`), true);
+  await evaluate(`document.querySelector("#password-form [name='currentPassword']").value="old-password-1"; document.querySelector("#password-form [name='newPassword']").value="new-password-2"; document.querySelector("#password-form [name='confirmPassword']").value="new-password-2"; document.querySelector("#password-form").requestSubmit(); true`);
+  assert.equal(await waitUntil(`window.__passwordChanges===1&&document.querySelector("#password-status").textContent.includes("密码已更新")`), true);
   await evaluate(`document.querySelector('[data-view="settings"]').click(); true`);
-  assert.equal(await evaluate(`document.querySelectorAll("[data-profile-model]").length === 4 && document.querySelectorAll("[data-profile-effort]").length === 4 && document.querySelectorAll("[data-ai-scenario]").length === 12`), true);
+  assert.equal(await evaluate(`document.querySelectorAll("[data-profile-model]").length === 4 && document.querySelectorAll("[data-profile-effort]").length === 4 && document.querySelectorAll("[data-ai-scenario]").length === 13`), true);
   await evaluate(`document.querySelector('[data-profile-model="lite"]').value = "deepseek-v4-pro"; document.querySelector('[data-profile-effort="lite"]').value = "max"; document.querySelector('[data-ai-scenario="diaryLead"]').value = "ultra"; document.querySelector("#llm-settings-form").requestSubmit(); true`);
   assert.equal(await waitUntil(`window.__settingsSaves === 1`), true);
   const savedSettings = await evaluate(`window.__lastSettings = undefined; ({ model: document.querySelector('[data-profile-model="lite"]').value, effort: document.querySelector('[data-profile-effort="lite"]').value, scene: document.querySelector('[data-ai-scenario="diaryLead"]').value })`);
@@ -895,8 +1236,8 @@ try {
   assert.equal(await evaluate(`document.documentElement.scrollWidth <= window.innerWidth`), true);
   const settingsMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-tier-settings-mobile.png", Buffer.from(settingsMobileScreenshot.data, "base64"));
-  assert.equal(await evaluate(`getComputedStyle(document.querySelector(".settings-about-link")).display !== "none"`), true);
-  await evaluate(`document.querySelector(".settings-about-link").click(); true`);
+  assert.equal(await evaluate(`!document.querySelector("#section-nav").hidden && !document.querySelector("[data-section-links='mine']").hidden`), true);
+  await evaluate(`document.querySelector('[data-section-links="mine"] [data-view="about"]').click(); true`);
   const aboutMobile = await evaluate(`({
     active: document.querySelector("#view-about").classList.contains("active"),
     loopSteps: document.querySelectorAll(".about-loop li").length,
@@ -911,29 +1252,25 @@ try {
   const aboutMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-about-mobile.png", Buffer.from(aboutMobileScreenshot.data, "base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
-  await evaluate(`document.querySelector('[data-view="today"]').click(); document.querySelector(".about-button").click(); true`);
+  await evaluate(`document.querySelector('[data-view="today"]').click(); document.querySelector('[data-section="mine"]').click(); document.querySelector('[data-section-links="mine"] [data-view="about"]').click(); true`);
   const aboutDesktop = await evaluate(`(() => {
-    const button = document.querySelector(".about-button").getBoundingClientRect();
-    const local = document.querySelector(".local-note").getBoundingClientRect();
     return {
-      active: document.querySelector("#view-about").classList.contains("active") && document.querySelector(".about-button").classList.contains("active"),
+      active: document.querySelector("#view-about").classList.contains("active") && document.querySelector('[data-section="mine"]').classList.contains("active") && document.querySelector('[data-section-links="mine"] [data-view="about"]').classList.contains("active"),
       heading: document.querySelector("#view-about h1").textContent,
       proposition: document.querySelector(".about-proposition").textContent,
-      lowPresencePosition: button.top < local.top && local.bottom < window.innerHeight,
       noOverflow: document.documentElement.scrollWidth <= window.innerWidth
     };
   })()`);
   assert.equal(aboutDesktop.active, true);
   assert.equal(aboutDesktop.heading, "此刻");
   assert.match(aboutDesktop.proposition, /零散记录/);
-  assert.equal(aboutDesktop.lowPresencePosition, true);
   assert.equal(aboutDesktop.noOverflow, true);
   await evaluate(`window.scrollTo(0, 0); true`);
   await sleep(300);
   await evaluate(`document.querySelector("#toast").hidden = true; true`);
   const aboutDesktopScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-about-desktop.png", Buffer.from(aboutDesktopScreenshot.data, "base64"));
-  console.log("UI regression passed: diary assistance, tiered settings, responsive navigation, About page, persisted reasoning, and concurrent answer streaming.");
+  console.log("UI regression passed: Today subviews, editable check-ins, thought prompts, diary assistance, responsive navigation, and concurrent answer streaming.");
 } finally {
   cdp?.socket.close();
   chrome.kill("SIGKILL");
