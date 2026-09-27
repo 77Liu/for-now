@@ -129,7 +129,7 @@ function feishuSignature(timestamp, secret) {
 export function validateFeishuWebhook(webhook) {
   let url;
   try { url = new URL(webhook); } catch {}
-  const validHost = ["open.feishu.cn", "open.larksuite.com"].includes(url?.hostname);
+  const validHost = ["open.feishu.cn", "open.larkoffice.com", "open.larksuite.com"].includes(url?.hostname);
   const validPath = /^\/open-apis\/bot\/v2\/hook\/[A-Za-z0-9_-]+\/?$/.test(url?.pathname || "");
   if (!url || url.protocol !== "https:" || !validHost || !validPath || url.username || url.password || url.search || url.hash) {
     throw Object.assign(new Error("FEISHU_ALERT_WEBHOOK must be an official HTTPS custom-bot webhook"), { code: "FEISHU_INVALID_WEBHOOK" });

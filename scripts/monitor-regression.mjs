@@ -38,6 +38,7 @@ globalThis.fetch = (input, options) => nativeFetch(
 );
 try {
   assert.equal(validateFeishuWebhook("https://open.feishu.cn/open-apis/bot/v2/hook/test-hook"), "https://open.feishu.cn/open-apis/bot/v2/hook/test-hook");
+  assert.equal(validateFeishuWebhook("https://open.larkoffice.com/open-apis/bot/v2/hook/test-hook"), "https://open.larkoffice.com/open-apis/bot/v2/hook/test-hook");
   assert.equal(validateFeishuWebhook("https://open.larksuite.com/open-apis/bot/v2/hook/test-hook"), "https://open.larksuite.com/open-apis/bot/v2/hook/test-hook");
   assert.throws(() => validateFeishuWebhook(`${base}/webhook`), error => error.code === "FEISHU_INVALID_WEBHOOK");
   assert.throws(() => validateFeishuWebhook("https://open.feishu.cn.evil.example/open-apis/bot/v2/hook/test"), error => error.code === "FEISHU_INVALID_WEBHOOK");

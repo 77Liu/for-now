@@ -24,7 +24,7 @@ for key in OSS_ATTACHMENT_BUCKET OSS_ENDPOINT OSS_REGION FEISHU_ALERT_WEBHOOK; d
     exit 1
   fi
 done
-if ! grep -Eq '^FEISHU_ALERT_WEBHOOK=https://(open\.feishu\.cn|open\.larksuite\.com)/open-apis/bot/v2/hook/[A-Za-z0-9_-]+/?$' /etc/for-now.env; then
+if ! grep -Eq '^FEISHU_ALERT_WEBHOOK=https://(open\.feishu\.cn|open\.larkoffice\.com|open\.larksuite\.com)/open-apis/bot/v2/hook/[A-Za-z0-9_-]+/?$' /etc/for-now.env; then
   echo "FEISHU_ALERT_WEBHOOK must be an HTTPS Feishu custom-bot webhook." >&2
   exit 1
 fi
