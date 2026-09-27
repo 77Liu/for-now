@@ -33,7 +33,7 @@ sudo chmod 0700 /srv/for-now/data
 sudo find /srv/for-now/data -type f -name "*.json" -exec chmod 0600 {} +
 '
 
-tar -C "$root/data" -czf - store.json llm-settings.json attachments \
+COPYFILE_DISABLE=1 tar --exclude='._*' -C "$root/data" -czf - store.json llm-settings.json attachments \
   | ssh "${ssh_args[@]}" "$target" "$remote_prepare"
 
 echo "Data and attachments migrated. The first invited account will become their owner."

@@ -11,6 +11,7 @@ set +a
 : "${DATA_DIR:=/srv/for-now/data}"
 : "${OSS_DESTINATION:?OSS_DESTINATION is required}"
 : "${OSS_ENDPOINT:?OSS_ENDPOINT is required}"
+: "${OSS_REGION:?OSS_REGION is required}"
 
 backup_dir=/var/backups/for-now
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
@@ -37,6 +38,6 @@ restore_service
 service_was_active=0
 trap - EXIT
 
-ossutil cp "$archive" "$OSS_DESTINATION/" --mode EcsRamRole --endpoint "$OSS_ENDPOINT"
-ossutil cp "$checksum" "$OSS_DESTINATION/" --mode EcsRamRole --endpoint "$OSS_ENDPOINT"
+ossutil cp "$archive" "$OSS_DESTINATION/" --mode EcsRamRole --endpoint "$OSS_ENDPOINT" --region "$OSS_REGION"
+ossutil cp "$checksum" "$OSS_DESTINATION/" --mode EcsRamRole --endpoint "$OSS_ENDPOINT" --region "$OSS_REGION"
 find "$backup_dir" -type f -name 'for-now-*.tar.gz*' -mtime +7 -delete
