@@ -34,7 +34,7 @@ systemctl daemon-reload
 
 if [ ! -x /usr/local/bin/node ]; then
   echo "Node.js 20 or newer must be installed as /usr/local/bin/node before deployment." >&2
-elif [ "$(/usr/local/bin/node -p 'Number(process.versions.node.split(\".\")[0])')" -lt 20 ]; then
+elif [ "$(/usr/local/bin/node -p 'Number(process.versions.node.split(".")[0])')" -lt 20 ]; then
   echo "Current Node.js is too old. Install Node.js 20 or newer before deployment." >&2
 fi
 
