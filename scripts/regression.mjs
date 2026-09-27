@@ -31,7 +31,7 @@ function mockDeepSeek() {
       if (messages.includes("同一次睡眠记录")) return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ date: "2026-09-27", bedtime: "2026-09-27T02:58:00", wakeTime: "2026-09-27T10:40:00", totalMinutes: 462, deepMinutes: 134, deepPercent: 29, lightMinutes: 221, lightPercent: 48, remMinutes: 107, remPercent: 23, awakeCount: null, awakeMinutes: null, averageHeartRate: 49, averageOxygen: 98, respiratoryRate: 15, verification: "两张图已合并" }) } }] }));
       if (messages.includes("心率日视图")) return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ date: "2026-09-26", minimum: 46, maximum: 82, average: 60, resting: 52, sleepAverage: 50, trendAnalysis: "凌晨下降，午后与晚间出现两次抬升，夜间回落。", trendSegments: [{ period: "00:00-06:00", direction: "下降", approximateRange: "约46-64" }], verification: "今日概览可直接核对" }) } }] }));
       if (messages.includes("书籍截图")) return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ title: "测试书", author: "测试作者", verification: "图片已识别" }) } }] }));
-      if (messages.includes("纸质实物数字留存")) return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ suggestedTitle: "测试票券", category: "纸品", subjectDescription: "一张纸质票券", includeHand: true, confidence: .82, polygons: [[[120, 90], [880, 110], [850, 900], [140, 880]]] }) } }] }));
+      if (messages.includes("本地图形分割算法")) return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ suggestedTitle: "测试票券", category: "纸品", subjectDescription: "一张纸质票券", includeHand: true, confidence: .82, subjectBox: [120, 90, 880, 900], foregroundPoints: [[500, 300], [500, 700]], backgroundPoints: [[20, 20], [980, 20], [20, 980], [980, 980]] }) } }] }));
       return res.end(JSON.stringify({ choices: [{ message: { content: "同步回答", reasoning_content: "同步模型思考" } }] }));
     }
     assert.equal(input.stream, true);
@@ -533,7 +533,9 @@ try {
   })).json();
   assert.equal(segmented.suggestedTitle, "测试票券");
   assert.equal(segmented.includeHand, true);
-  assert.deepEqual(segmented.polygons[0][0], [120, 90]);
+  assert.deepEqual(segmented.subjectBox, [120, 90, 880, 900]);
+  assert.deepEqual(segmented.foregroundPoints[0], [500, 300]);
+  assert.equal(segmented.backgroundPoints.length, 4);
   const keepsake = await (await fetch(`${base}/api/keepsakes`, {
     method: "POST",
     headers: { "content-type": "application/json" },

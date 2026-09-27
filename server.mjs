@@ -624,49 +624,62 @@ async function parseImageRequest(input, kind) {
 }
 
 const KEEPSAKE_CATEGORIES = ["小票", "纸品", "立牌", "小物", "其他"];
-function normalizedKeepsakePolygons(value) {
-  return (Array.isArray(value) ? value : []).slice(0, 5).map(polygon =>
-    (Array.isArray(polygon) ? polygon : []).slice(0, 64).map(point => {
-      const x = Math.round(Number(Array.isArray(point) ? point[0] : point?.x));
-      const y = Math.round(Number(Array.isArray(point) ? point[1] : point?.y));
-      return [Math.max(0, Math.min(1000, x)), Math.max(0, Math.min(1000, y))];
-    }).filter(point => point.every(Number.isFinite))
-  ).filter(polygon => polygon.length >= 3);
+function normalizedKeepsakePoints(value, limit = 24) {
+  return (Array.isArray(value) ? value : []).slice(0, limit).map(point => {
+    const x = Math.round(Number(Array.isArray(point) ? point[0] : point?.x));
+    const y = Math.round(Number(Array.isArray(point) ? point[1] : point?.y));
+    return [Math.max(0, Math.min(1000, x)), Math.max(0, Math.min(1000, y))];
+  }).filter(point => point.every(Number.isFinite));
+}
+
+function normalizedKeepsakeBox(value) {
+  if (!Array.isArray(value) || value.length !== 4) return [];
+  const points = value.map(item => Math.round(Number(item)));
+  if (!points.every(Number.isFinite)) return [];
+  const [x1, y1, x2, y2] = points;
+  return [Math.max(0, Math.min(1000, Math.min(x1, x2))), Math.max(0, Math.min(1000, Math.min(y1, y2))), Math.max(0, Math.min(1000, Math.max(x1, x2))), Math.max(0, Math.min(1000, Math.max(y1, y2)))];
 }
 
 async function segmentKeepsakeImage(input) {
   const images = Array.isArray(input.images) ? input.images : input.image ? [input.image] : [];
   const { files } = await saveImageDataUrls(images, 1);
-  const prompt = `你在为“纸质实物数字留存”功能标注主体轮廓。请识别照片里最值得留存的一个主体，例如小票、纸卡、立牌或小物，并输出 JSON：
+  const prompt = `你只为本地图形分割算法提供少量锚点，不负责绘制轮廓。识别照片里最值得留存的一个主体，例如小票、纸卡、立牌或小物，并输出 JSON：
 {
   "suggestedTitle": "不含隐私信息的简短名称",
   "category": "小票|纸品|立牌|小物|其他",
   "subjectDescription": "一句话说明主体",
   "includeHand": true,
   "confidence": 0.0,
-  "polygons": [[[x,y], ...]]
+  "subjectBox": [left, top, right, bottom],
+  "foregroundPoints": [[x,y], ...],
+  "backgroundPoints": [[x,y], ...]
 }
-坐标使用 0～1000 的归一化整数，原点在左上角。每个多边形按轮廓顺序给出 12～48 个点，最多 5 个多边形。
+坐标使用 0～1000 的归一化整数，原点在左上角。
 规则：
-1. 轮廓必须覆盖主体外缘，不要只给矩形框；不要描内部文字或孔洞。
-2. 与主体直接接触、托举或夹持的手指可以保留，最多延伸至指根附近；不要包含整只手掌、手腕或手臂。
-3. 主体边缘外不要主动保留背景，系统会另做少量外扩。
-4. 小票、地址、手机号、金额等正文不要写进 suggestedTitle 或 subjectDescription。
-5. 只输出 JSON。`;
+1. subjectBox 是需要保留的整体范围，包含主体及允许保留的接触手指，但不要扩大到背景。
+2. foregroundPoints 给 8～16 个确定在主体内部的点，分散覆盖主体的不同颜色和材质；若保留接触手指，也在手指内部给点。
+3. backgroundPoints 给 12～20 个确定属于背景的点，既覆盖四周，也贴近主体各侧边缘；不要把阴影误标成主体。
+4. 与主体直接接触、托举或夹持的少量手指可以保留，最多到指根；不要包含整只手掌、手腕或手臂。
+5. 小票、地址、手机号、金额等正文不要写进 suggestedTitle 或 subjectDescription。
+6. 不输出多边形、轮廓线或像素蒙版，只输出 JSON。`;
   try {
-    const raw = await runDeepSeek(prompt, { scene: "bookRecognition", imagePaths: files, json: true, maxTokens: 5000, retryWithoutThinking: true });
+    const raw = await runDeepSeek(prompt, { scene: "lite", imagePaths: files, json: true, maxTokens: 1200, timeoutMs: 20000 });
     let parsed = {};
     try { parsed = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || "{}"); }
-    catch { throw new Error("已识别图片，但轮廓格式无法解析，请重试或手动涂抹"); }
-    const polygons = normalizedKeepsakePolygons(parsed.polygons);
-    if (!polygons.length) throw new Error("没有获得可用主体轮廓，请重试或手动涂抹");
+    catch { throw new Error("已识别图片，但锚点格式无法解析"); }
+    const foregroundPoints = normalizedKeepsakePoints(parsed.foregroundPoints, 20);
+    const backgroundPoints = normalizedKeepsakePoints(parsed.backgroundPoints, 24);
+    const subjectBox = normalizedKeepsakeBox(parsed.subjectBox);
+    if (foregroundPoints.length < 2 || backgroundPoints.length < 4 || subjectBox.length !== 4) throw new Error("没有获得足够的前景与背景锚点");
     return {
       suggestedTitle: safeText(parsed.suggestedTitle, 80) || "未命名小物",
       category: KEEPSAKE_CATEGORIES.includes(parsed.category) ? parsed.category : "其他",
       subjectDescription: safeText(parsed.subjectDescription, 200),
       includeHand: Boolean(parsed.includeHand),
       confidence: Math.max(0, Math.min(1, Number(parsed.confidence) || 0)),
-      polygons
+      subjectBox,
+      foregroundPoints,
+      backgroundPoints
     };
   } finally {
     await Promise.all(files.map(file => fs.unlink(file).catch(() => {})));
@@ -1218,7 +1231,7 @@ async function readDeepSeekStream(response, onDelta) {
   return { content, reasoningContent };
 }
 
-async function runDeepSeek(prompt, { imagePath = null, imagePaths = null, history = [], settingsOverride = null, scene = "thoughtAnswer", json = false, systemPrompt = SYSTEM_PROMPT, onDelta = null, captureReasoning = false, maxTokens = 16000, retryWithoutThinking = false } = {}) {
+async function runDeepSeek(prompt, { imagePath = null, imagePaths = null, history = [], settingsOverride = null, scene = "thoughtAnswer", json = false, systemPrompt = SYSTEM_PROMPT, onDelta = null, captureReasoning = false, maxTokens = 16000, retryWithoutThinking = false, timeoutMs = 300000 } = {}) {
   const settings = llmSettingsForScene(settingsOverride || await readLlmSettings(), scene);
   if (!settings.apiKey) throw new Error("尚未配置 DeepSeek API 密钥，请先到“设置”中填写并保存");
   const effectiveSystemPrompt = systemPromptForScene(systemPrompt, scene);
@@ -1231,7 +1244,7 @@ async function runDeepSeek(prompt, { imagePath = null, imagePaths = null, histor
     }));
     userContent = [{ type: "text", text: prompt }, ...images];
   }
-  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 300000);
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const efforts = [settings.effort, ...(retryWithoutThinking && settings.effort !== "none" ? ["none"] : [])];
     for (let attempt = 0; attempt < efforts.length; attempt += 1) {
@@ -1260,7 +1273,7 @@ async function runDeepSeek(prompt, { imagePath = null, imagePaths = null, histor
       return captureReasoning ? { content, reasoningContent } : content;
     }
   } catch (error) {
-    if (error.name === "AbortError") throw new Error("DeepSeek 回答超过 5 分钟，已停止；请稍后重试");
+    if (error.name === "AbortError") throw new Error(`DeepSeek 请求超过 ${Math.round(timeoutMs / 1000)} 秒，已停止`);
     if (/fetch failed|ENOTFOUND|ECONN/i.test(error.message)) throw new Error("无法连接 DeepSeek API，请检查网络后重试");
     throw error;
   } finally { clearTimeout(timer); }

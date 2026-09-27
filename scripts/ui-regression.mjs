@@ -197,7 +197,7 @@ const mockFetch = `
       window.__bookUploads += 1;
       return json({ attachmentPath: "/attachments/cover-" + window.__bookUploads + ".png" }, 201);
     }
-    if (url === "/api/keepsakes/segment") return json({ suggestedTitle: "自动识别票券", category: "纸品", subjectDescription: "测试主体", includeHand: true, confidence: .9, polygons: [[[120,120],[880,120],[880,880],[120,880]]] });
+    if (url === "/api/keepsakes/segment") return json({ suggestedTitle: "自动识别票券", category: "纸品", subjectDescription: "测试主体", includeHand: true, confidence: .9, subjectBox: [120,120,880,880], foregroundPoints: [[500,350],[500,650]], backgroundPoints: [[20,20],[980,20],[20,980],[980,980]] });
     if (url === "/api/daily-records" && init.method === "POST") {
       window.__dailySaves += 1;
       const payload = JSON.parse(init.body), item = { id: "daily-" + window.__dailySaves, createdAt: new Date().toISOString(), ...payload, occurredAt: new Date(payload.occurredAt).toISOString(), occurredOn: payload.occurredAt.slice(0, 10) };
@@ -338,7 +338,7 @@ try {
   assert.equal(await evaluate(`!document.querySelector("#keepsake-lightbox").hidden && document.querySelector('[data-keepsake-view="original"]').classList.contains("active") && document.querySelector("#keepsake-lightbox-image").src.includes("svg")`), true);
   await evaluate(`document.querySelector("#keepsake-lightbox-close").click(); document.querySelector("#keepsake-create-toggle").click(); true`);
   await evaluate(`(async()=>{const canvas=document.createElement("canvas");canvas.width=48;canvas.height=36;const ctx=canvas.getContext("2d");ctx.fillStyle="#d76455";ctx.fillRect(0,0,48,36);const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"));const file=new File([blob],"ticket.png",{type:"image/png"}),transfer=new DataTransfer();transfer.items.add(file);const input=document.querySelector("#keepsake-image");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
-  assert.equal(await waitUntil(`document.querySelector("#keepsake-segment-status").textContent.includes("主体初稿已生成")`), true);
+  assert.equal(await waitUntil(`document.querySelector("#keepsake-segment-status").textContent.includes("复杂轮廓已生成")`), true);
   const keepsakeEditorState = await evaluate(`(() => { const preview=document.querySelector("#keepsake-preview-canvas"),ctx=preview.getContext("2d"),pixels=ctx.getImageData(0,0,preview.width,preview.height).data;let opaque=0;for(let i=3;i<pixels.length;i+=4)if(pixels[i]>0)opaque++;return {editorVisible:!document.querySelector("#keepsake-editor").hidden,title:document.querySelector("#keepsake-title").value,opaque,overflow:document.documentElement.scrollWidth>window.innerWidth}; })()`);
   assert.equal(keepsakeEditorState.editorVisible, true);
   assert.equal(keepsakeEditorState.title, "自动识别票券");

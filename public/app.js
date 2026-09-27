@@ -1,3 +1,5 @@
+import { defaultKeepsakeHints, segmentKeepsakePixels } from "./keepsake-segmentation.js";
+
 const appBasePath=new URL(".",import.meta.url).pathname.replace(/\/$/,"");
 const appUrl=value=>typeof value==="string"&&value.startsWith("/")&&appBasePath?`${appBasePath}${value}`:value;
 const baseMetrics={mood:{label:"情绪",anchors:["非常难受","有些低落","平稳、无明显起伏","感觉不错","轻盈而愉快"]},energy:{label:"精力",anchors:["几乎耗尽","勉强支撑","够用，但有限","精力较好","充沛、想行动"]},stress:{label:"压力",anchors:["快要撑不住","很紧绷","压力明显但可应对","有一点紧绷","身心松弛"]},sleep:{label:"睡眠",anchors:["几乎没休息好","明显不足","基本够用","睡得不错","充分恢复"]}};
@@ -9,7 +11,7 @@ const defaultLlmScenarios={thoughtDraft:"high",thoughtAnswer:"ultra",followUpAns
 let currentLocalDate=localDateKey();
 let state={checkins:[],dailyRecords:[],captures:[],journals:[],thoughts:[],chats:[],books:[],keepsakes:[],quotes:[],experiments:[],analyses:[],customMetrics:[],clusters:[],insights:{trends:[],associations:[],weekly:{}}},llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},hasApiKey:false,keyHint:""};
 let activeDate=currentLocalDate,activeDailyType="sleep",healthFiles={sleep:[],heartRate:[]},healthPreviewUrls=[],thoughtFilter="all",quoteTimer,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,currentUser=null;
-const keepsakeEditor={file:null,sourceDataUrl:"",sourceImage:null,sourceCanvas:null,maskCanvas:null,autoBase:null,history:[],mode:"keep",drawing:false,lastPoint:null,source:"manual",originalPath:"",cutoutPath:"",renderFrame:0};
+const keepsakeEditor={file:null,sourceDataUrl:"",sourceImage:null,sourceCanvas:null,maskCanvas:null,autoBase:null,history:[],mode:"keep",drawing:false,lastPoint:null,source:"manual",originalPath:"",cutoutPath:"",renderFrame:0,segmentSerial:0};
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const escapeHtml=t=>String(t??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
 function inlineMarkdown(value){
@@ -509,15 +511,37 @@ function dilatedMask(imageData,radius){
   for(let y=0;y<height;y++){const top=Math.max(0,y-r),bottom=Math.min(height-1,y+r);for(let x=0;x<width;x++){const left=Math.max(0,x-r),right=Math.min(width-1,x+r),count=integral[(bottom+1)*stride+right+1]-integral[top*stride+right+1]-integral[(bottom+1)*stride+left]+integral[top*stride+left];if(count){const i=(y*width+x)*4;pixels[i]=pixels[i+1]=pixels[i+2]=pixels[i+3]=255}}}
   return output;
 }
+function softenedMask(imageData,radius=1){
+  const {width,height,data}=imageData,r=Math.max(1,Math.round(radius)),stride=width+1,integral=new Uint32Array((height+1)*stride);
+  for(let y=0;y<height;y++){let row=0;for(let x=0;x<width;x++){row+=data[(y*width+x)*4+3];integral[(y+1)*stride+x+1]=integral[y*stride+x+1]+row}}
+  const output=new ImageData(width,height),pixels=output.data;
+  for(let y=0;y<height;y++){const top=Math.max(0,y-r),bottom=Math.min(height-1,y+r);for(let x=0;x<width;x++){const left=Math.max(0,x-r),right=Math.min(width-1,x+r),count=(bottom-top+1)*(right-left+1),alpha=Math.round((integral[(bottom+1)*stride+right+1]-integral[top*stride+right+1]-integral[(bottom+1)*stride+left]+integral[top*stride+left])/count),i=(y*width+x)*4;pixels[i]=pixels[i+1]=pixels[i+2]=255;pixels[i+3]=alpha}}
+  return output;
+}
 function applyKeepsakeExpansion({history=false}={}){
   if(!keepsakeEditor.autoBase||!keepsakeEditor.maskCanvas)return;
   if(history)pushKeepsakeHistory();
   const value=Number($("#keepsake-edge-expansion").value),radius=Math.round(Math.max(keepsakeEditor.maskCanvas.width,keepsakeEditor.maskCanvas.height)*value/1000);
-  keepsakeEditor.maskCanvas.getContext("2d").putImageData(dilatedMask(keepsakeEditor.autoBase,radius),0,0);
+  keepsakeEditor.maskCanvas.getContext("2d").putImageData(softenedMask(dilatedMask(keepsakeEditor.autoBase,radius),Math.max(1,Math.round(Math.max(keepsakeEditor.maskCanvas.width,keepsakeEditor.maskCanvas.height)/800))),0,0);
   scheduleKeepsakeRender();
 }
+function keepsakeWorkingImage(maxSide){
+  const source=keepsakeEditor.sourceCanvas,scale=Math.min(1,maxSide/Math.max(source.width,source.height)),width=Math.max(1,Math.round(source.width*scale)),height=Math.max(1,Math.round(source.height*scale)),canvas=blankCanvas(width,height);
+  canvas.getContext("2d").drawImage(source,0,0,width,height);
+  return canvas;
+}
+async function applyGraphicKeepsakeMask(hints){
+  const working=keepsakeWorkingImage(360),input=working.getContext("2d",{willReadFrequently:true}).getImageData(0,0,working.width,working.height),result=segmentKeepsakePixels(input,hints);
+  const smallMask=blankCanvas(result.width,result.height);
+  smallMask.getContext("2d").putImageData(new ImageData(result.data,result.width,result.height),0,0);
+  const target=keepsakeEditor.maskCanvas,ctx=target.getContext("2d");ctx.clearRect(0,0,target.width,target.height);ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality="high";ctx.drawImage(smallMask,0,0,target.width,target.height);
+  keepsakeEditor.autoBase=maskImageDataFromCanvas(target);keepsakeEditor.source="auto";applyKeepsakeExpansion();
+}
+function keepsakeAnalysisDataUrl(){
+  return keepsakeWorkingImage(768).toDataURL("image/jpeg",.78);
+}
 function resetKeepsakeEditor({close=false}={}){
-  keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.source="manual";keepsakeEditor.originalPath="";keepsakeEditor.cutoutPath="";keepsakeEditor.drawing=false;keepsakeEditor.lastPoint=null;
+  keepsakeEditor.segmentSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.source="manual";keepsakeEditor.originalPath="";keepsakeEditor.cutoutPath="";keepsakeEditor.drawing=false;keepsakeEditor.lastPoint=null;
   keepsakeEditor.mode="keep";$("#keepsake-brush-keep").classList.add("active");$("#keepsake-brush-erase").classList.remove("active");$("#keepsake-brush-keep").setAttribute("aria-pressed","true");$("#keepsake-brush-erase").setAttribute("aria-pressed","false");
   clearKeepsakeHistory();$("#keepsake-form").reset();$("#keepsake-id").value="";$("#keepsake-datetime").value=localDateTimeForDate(activeDate);$("#keepsake-edge-expansion").value="8";$("#keepsake-edge-output").value="8";$("#keepsake-image").value="";$("#keepsake-editor").hidden=true;$("#keepsake-upload-box").hidden=false;$("#keepsake-upload-box").classList.remove("dragging","has-image");$("#keepsake-upload-title").textContent="选择、粘贴或拖入小物照片";$("#keepsake-upload-hint").textContent="PNG / JPEG / WebP · 不超过 8 MB";$("#keepsake-segment-status").textContent="";$("#keepsake-save-status").textContent="";$("#keepsake-save").textContent="保存小物";$("#keepsake-cancel-edit").hidden=true;$("#keepsake-editor-eyebrow").textContent="新建留存";$("#keepsake-editor-title").textContent="拍下或放入一张照片";
   if(close)$("#keepsake-workspace").hidden=true;
@@ -536,17 +560,17 @@ async function setKeepsakeFile(file,source="本地文件"){
 }
 async function segmentCurrentKeepsake(){
   const button=$("#keepsake-auto-segment"),status=$("#keepsake-segment-status");if(!keepsakeEditor.sourceDataUrl)return status.textContent="请先放入一张照片。";
-  button.disabled=true;status.textContent="正在寻找主体轮廓…";
+  const serial=++keepsakeEditor.segmentSerial;button.disabled=true;status.textContent="正在用图形学提取主体…";pushKeepsakeHistory();
   try{
-    const result=await request("/api/keepsakes/segment",{method:"POST",body:JSON.stringify({image:keepsakeEditor.sourceDataUrl})}),canvas=keepsakeEditor.maskCanvas,ctx=canvas.getContext("2d");
-    pushKeepsakeHistory();ctx.clearRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#fff";
-    for(const polygon of result.polygons||[]){ctx.beginPath();polygon.forEach(([x,y],index)=>{const px=x/1000*canvas.width,py=y/1000*canvas.height;if(index)ctx.lineTo(px,py);else ctx.moveTo(px,py)});ctx.closePath();ctx.fill()}
-    keepsakeEditor.autoBase=maskImageDataFromCanvas(canvas);keepsakeEditor.source="auto";applyKeepsakeExpansion();
+    await new Promise(resolve=>requestAnimationFrame(resolve));await applyGraphicKeepsakeMask(defaultKeepsakeHints());status.textContent="本地图形轮廓已生成，正在用 AI 锚点校准…";
+    const result=await request("/api/keepsakes/segment",{method:"POST",body:JSON.stringify({image:keepsakeAnalysisDataUrl()})});
+    if(serial!==keepsakeEditor.segmentSerial)return;
+    await applyGraphicKeepsakeMask(result);
     if(!$("#keepsake-title").value||$("#keepsake-title").value==="未命名小物")$("#keepsake-title").value=result.suggestedTitle||"未命名小物";
     if(keepsakeCategories.includes(result.category))$("#keepsake-category").value=result.category;
-    status.textContent=`主体初稿已生成${result.includeHand?"，保留了直接接触主体的少量手指":""}。可继续涂抹修正。`;
-  }catch(error){status.textContent=`自动识别未完成：${error.message}。仍可用“保留”笔刷手动涂抹。`}
-  finally{button.disabled=false}
+    status.textContent=`复杂轮廓已生成${result.includeHand?"，包含直接接触主体的少量手指":""}。可继续涂抹修正。`;
+  }catch(error){if(serial===keepsakeEditor.segmentSerial)status.textContent=keepsakeEditor.autoBase?`本地图形轮廓已生成；AI 锚点未返回：${error.message}`:`自动提取未完成：${error.message}。仍可手动涂抹。`}
+  finally{if(serial===keepsakeEditor.segmentSerial)button.disabled=false}
 }
 function keepsakeCanvasPoint(event){
   const canvas=$("#keepsake-mask-canvas"),rect=canvas.getBoundingClientRect();
