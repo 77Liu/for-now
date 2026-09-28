@@ -4006,7 +4006,7 @@ async function api(req, res, url) {
         const item = { id: crypto.randomUUID(), createdAt: now(), ...eventTime, type, content, tags, relatedTo: question.id, disposition: "kept", remarks: [], origin: modelDraft ? "deepseek-edited" : "manual", authorType: modelDraft ? "ai" : "user", version: 1, clientRequestId, requestHash, ...(modelDraft ? { modelDraft, editedFromModel: modelDraft !== content } : {}), ...(reasoningContent ? { reasoningContent } : {}) };
         store.thoughts.unshift(item); items.push(item);
       }
-      const taskResult = generateAnswer ? createThoughtAnswerTask(store, { targetId: question.id, inputVersion: question.version, clientRequestId: `${clientRequestId || question.id}:answer` }) : null;
+      const taskResult = generateAnswer ? createAiTask(store, { kind: "thoughtAnswer", targetId: question.id, inputVersion: question.version, clientRequestId: `${clientRequestId || question.id}:answer` }) : null;
       return { items, task: taskResult?.task || null, duplicate: false };
     });
     if (created.conflict) return sendJson(res, 409, { error: "同一请求标识不能用于不同内容", code: "IDEMPOTENCY_KEY_REUSED" });

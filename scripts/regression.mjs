@@ -1328,6 +1328,37 @@ try {
   ]);
   assert.equal(rankedAssociations.some(item => item.factor === "单日因素"), false);
 
+  const automaticChainModelCount = modelRequests.length;
+  const automaticChainInput = {
+    clientRequestId: "automatic-chain-answer",
+    occurredAt: "2026-09-27T20:05:00",
+    question: "收集页自动回答回归",
+    idea: "保存思绪时创建后台回答任务",
+    answer: "",
+    tags: ["回归"],
+    generateAnswer: true
+  };
+  const automaticChainResponse = await fetch(`${base}/api/thought-chains`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(automaticChainInput)
+  });
+  assert.equal(automaticChainResponse.status, 201);
+  const automaticChain = await automaticChainResponse.json();
+  assert.equal(automaticChain.task.kind, "thoughtAnswer");
+  const duplicateAutomaticChainResponse = await fetch(`${base}/api/thought-chains`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(automaticChainInput)
+  });
+  assert.equal(duplicateAutomaticChainResponse.status, 200);
+  const duplicateAutomaticChain = await duplicateAutomaticChainResponse.json();
+  assert.equal(duplicateAutomaticChain.task.id, automaticChain.task.id);
+  assert.equal((await waitForTask(base, automaticChain.task.id)).status, "succeeded");
+  assert.equal(modelRequests.length - automaticChainModelCount, 1);
+  const stateAfterAutomaticChain = await (await fetch(`${base}/api/state`)).json();
+  assert.equal(stateAfterAutomaticChain.thoughts.filter(item => item.sourceTaskId === automaticChain.task.id).length, 1);
+
   const midnight = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23", timeZone: "Asia/Shanghai" }).format(new Date("2026-09-26T16:56:18.237Z"));
   assert.equal(midnight, "00:56:18");
   console.log("Regression checks passed: v14 onboarding, trash recovery, retryable attachment cleanup, concurrent AI idempotency, target-version invalidation, thought blocks, image parsing, local dates, and reasoning isolation.");
