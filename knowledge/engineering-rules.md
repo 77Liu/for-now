@@ -106,6 +106,7 @@ npm test
 - 提交前检查 `git diff`、`git status` 和验证结果，只暂存本任务文件。
 - 推荐 Conventional Commits：`feat:`、`fix:`、`perf:`、`refactor:`、`test:`、`docs:`、`build:`。
 - 主题行尽量不超过 72 个字符并表达具体结果；正文解释原因、取舍和不明显的影响，不写 `update file`、`fix bug` 等无信息内容。
+- Git 发布版本时必须附中文更新说明，详细写明用户可见变化、关键技术与数据变化、配置迁移、测试证据、已知限制和回滚方式；仅有英文提交标题不构成完整版本说明。具体格式以 `knowledge/pre-launch-confirmation.md` 为准。
 - 不为了追求“小步”把一个不可独立验证的改动机械拆成大量提交。
 
 ### 5.2 当前主分支策略

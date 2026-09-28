@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createAttachmentStorage } from "./attachment-storage.mjs";
+import { buildAdminSnapshot } from "./admin-snapshot.mjs";
 import { appendPrivateJsonLine, changedResources, createLogger, errorMetadata, pruneLogs, redact } from "./logging.mjs";
 import Imageseg from "@alicloud/imageseg20191230";
 import Viapi from "@alicloud/viapi20230117";
@@ -23,11 +24,23 @@ if (AUTH_REQUIRED && !/^[a-f0-9]{64}$/.test(INVITE_CODE_HASH)) throw new Error("
 const COOKIE_SECURE = process.env.COOKIE_SECURE === "1";
 const APP_BASE_PATH = `/${String(process.env.APP_BASE_PATH || "").replace(/^\/+|\/+$/g, "")}`;
 const UPSTREAM_ORIGIN = String(process.env.UPSTREAM_ORIGIN || "").replace(/\/+$/, "");
+const LOCAL_TEST_MODE = process.env.LOCAL_TEST_MODE === "1";
+const LOCAL_TEST_CONTROL_FILE = path.join(DATA_DIR, "local-test-mode.json");
+const LOCAL_TEST_WORKSPACES_DIR = path.join(DATA_DIR, "local-test-workspaces");
+const LOCAL_TEST_MAIN_USER_ID = String(process.env.LOCAL_TEST_MAIN_USER_ID || "").trim();
+if (LOCAL_TEST_MODE && process.env.NODE_ENV === "production") throw new Error("LOCAL_TEST_MODE cannot run with NODE_ENV=production");
+if (LOCAL_TEST_MODE && AUTH_REQUIRED) throw new Error("LOCAL_TEST_MODE uses upstream authentication and cannot enable local AUTH_REQUIRED");
 const SESSION_COOKIE = "for_now_session";
 const SESSION_TTL_MS = 30 * 86400000;
 const requestStorage = new AsyncLocalStorage();
 const logEvent = createLogger({ rootDir: DATA_DIR, getContext: () => requestStorage.getStore() });
 const attachmentStorage = createAttachmentStorage();
+if (LOCAL_TEST_MODE && attachmentStorage.mode === "oss") throw new Error("LOCAL_TEST_MODE cannot use OSS attachment storage");
+const PLATFORM_SERVICE_TOKEN_HASH = String(process.env.PLATFORM_SERVICE_TOKEN_HASH || "").toLowerCase();
+if (PLATFORM_SERVICE_TOKEN_HASH && !/^[a-f0-9]{64}$/.test(PLATFORM_SERVICE_TOKEN_HASH)) {
+  throw new Error("PLATFORM_SERVICE_TOKEN_HASH must be a 64-character SHA-256 digest");
+}
+const BACKUP_STATUS_FILE = String(process.env.BACKUP_STATUS_FILE || "/var/lib/for-now-monitor/last-backup-success");
 const storagePaths = () => {
   const dataDir = requestStorage.getStore()?.dataDir || DATA_DIR;
   return {
@@ -36,7 +49,8 @@ const storagePaths = () => {
     logsDir: path.join(dataDir, "logs"),
     storeFile: path.join(dataDir, "store.json"),
     llmSettingsFile: path.join(dataDir, "llm-settings.json"),
-    aiUsageFile: path.join(dataDir, "ai-usage.json")
+    aiUsageFile: path.join(dataDir, "ai-usage.json"),
+    aiCostPlanFile: path.join(dataDir, "ai-cost-plan.json")
   };
 };
 const DEEPSEEK_API_URL = process.env.DEEPSEEK_API_URL || "https://api.deepseek.com/chat/completions";
@@ -44,13 +58,97 @@ const ALIYUN_REGION = "cn-shanghai";
 const ALIYUN_SEGMENT_TIMEOUT_MS = 60_000;
 const ALIYUN_SEGMENT_RESULT_MAX_BYTES = 24 * 1024 * 1024;
 const PORT = Number(process.env.PORT || 4173);
-const STORE_VERSION = 12;
-const emptyStore = { version: STORE_VERSION, checkins: [], dailyRecords: [], captures: [], journals: [], journalDraft: null, thoughts: [], chats: [], books: [], keepsakes: [], quotes: [], experiments: [], analyses: [], customMetrics: [] };
-const LLM_SETTINGS_VERSION = 4;
+const STORE_VERSION = 14;
+const TRASH_RETENTION_DAYS = 30;
+const COMMERCIALIZATION_VERSION = 3;
+const commercialStageKeys = ["internal", "mvp", "growth", "influence", "market"];
+const commercialModelKeys = ["validation", "subscription", "delivery", "usagePack"];
+const commercialUsageProfileKeys = ["low", "medium", "high", "full"];
+const commercialStagePresets = {
+  validation: [
+    { participants: 5, rewardPerParticipantCny: 100, testDays: 14, tasksPerParticipant: 3, validSuggestionsPerParticipant: 2, interviewMinutesPerParticipant: 45, developmentHoursTotal: 12, aiCallsPerParticipant: 20, imageCallsPerParticipant: 2 },
+    { participants: 20, rewardPerParticipantCny: 120, testDays: 21, tasksPerParticipant: 5, validSuggestionsPerParticipant: 2, interviewMinutesPerParticipant: 45, developmentHoursTotal: 60, aiCallsPerParticipant: 30, imageCallsPerParticipant: 3 },
+    { participants: 100, rewardPerParticipantCny: 150, testDays: 30, tasksPerParticipant: 6, validSuggestionsPerParticipant: 2, interviewMinutesPerParticipant: 40, developmentHoursTotal: 240, aiCallsPerParticipant: 40, imageCallsPerParticipant: 4 },
+    { participants: 300, rewardPerParticipantCny: 180, testDays: 30, tasksPerParticipant: 6, validSuggestionsPerParticipant: 2, interviewMinutesPerParticipant: 35, developmentHoursTotal: 600, aiCallsPerParticipant: 50, imageCallsPerParticipant: 5 },
+    { participants: 1000, rewardPerParticipantCny: 200, testDays: 45, tasksPerParticipant: 8, validSuggestionsPerParticipant: 2, interviewMinutesPerParticipant: 30, developmentHoursTotal: 2000, aiCallsPerParticipant: 60, imageCallsPerParticipant: 6 }
+  ],
+  subscription: [
+    { dailyActiveUsers: 5, monthlyActiveUsers: 20, payingUsers: 5, newPaidUsersPerMonth: 2, simulationMonths: 6, monthlyPriceCny: 39, paymentFeePct: 1, refundPct: 3, fixedMonthlyCostCny: 100, operationsHoursPerMonth: 6, developmentHoursPerMonth: 20, acquisitionCostPerNewUserCny: 30, monthlyChurnPct: 8 },
+    { dailyActiveUsers: 100, monthlyActiveUsers: 400, payingUsers: 50, newPaidUsersPerMonth: 30, simulationMonths: 12, monthlyPriceCny: 49, paymentFeePct: 1, refundPct: 3, fixedMonthlyCostCny: 5000, operationsHoursPerMonth: 40, developmentHoursPerMonth: 120, acquisitionCostPerNewUserCny: 60, monthlyChurnPct: 7 },
+    { dailyActiveUsers: 10000, monthlyActiveUsers: 40000, payingUsers: 4000, newPaidUsersPerMonth: 600, simulationMonths: 18, monthlyPriceCny: 49, paymentFeePct: 1, refundPct: 3, fixedMonthlyCostCny: 200000, operationsHoursPerMonth: 600, developmentHoursPerMonth: 1800, acquisitionCostPerNewUserCny: 100, monthlyChurnPct: 6 },
+    { dailyActiveUsers: 25000, monthlyActiveUsers: 100000, payingUsers: 10000, newPaidUsersPerMonth: 1800, simulationMonths: 24, monthlyPriceCny: 59, paymentFeePct: 0.8, refundPct: 2.5, fixedMonthlyCostCny: 650000, operationsHoursPerMonth: 1800, developmentHoursPerMonth: 4800, acquisitionCostPerNewUserCny: 140, monthlyChurnPct: 5 },
+    { dailyActiveUsers: 46000, monthlyActiveUsers: 184000, payingUsers: 18400, newPaidUsersPerMonth: 3000, simulationMonths: 24, monthlyPriceCny: 59, paymentFeePct: 0.8, refundPct: 2.5, fixedMonthlyCostCny: 1200000, operationsHoursPerMonth: 3200, developmentHoursPerMonth: 8000, acquisitionCostPerNewUserCny: 180, monthlyChurnPct: 5 }
+  ],
+  delivery: [
+    { ordersPerMonth: 4, serviceFeePerOrderCny: 299, byokPct: 60, hostedPrepaidPerOrderCny: 100, maintenanceMarkupPct: 20, prepaidUtilizationPct: 70, deliveryHoursPerOrder: 2, supportHoursPerOrder: 0.5, developmentHoursPerMonth: 8, paymentFeePct: 1, refundPct: 3, acquisitionCostPerOrderCny: 20 },
+    { ordersPerMonth: 30, serviceFeePerOrderCny: 399, byokPct: 65, hostedPrepaidPerOrderCny: 120, maintenanceMarkupPct: 20, prepaidUtilizationPct: 70, deliveryHoursPerOrder: 1.5, supportHoursPerOrder: 0.4, developmentHoursPerMonth: 80, paymentFeePct: 1, refundPct: 3, acquisitionCostPerOrderCny: 60 },
+    { ordersPerMonth: 800, serviceFeePerOrderCny: 499, byokPct: 70, hostedPrepaidPerOrderCny: 150, maintenanceMarkupPct: 18, prepaidUtilizationPct: 75, deliveryHoursPerOrder: 0.35, supportHoursPerOrder: 0.15, developmentHoursPerMonth: 900, paymentFeePct: 0.8, refundPct: 2.5, acquisitionCostPerOrderCny: 100 },
+    { ordersPerMonth: 5000, serviceFeePerOrderCny: 599, byokPct: 75, hostedPrepaidPerOrderCny: 180, maintenanceMarkupPct: 15, prepaidUtilizationPct: 80, deliveryHoursPerOrder: 0.18, supportHoursPerOrder: 0.08, developmentHoursPerMonth: 3000, paymentFeePct: 0.8, refundPct: 2, acquisitionCostPerOrderCny: 140 },
+    { ordersPerMonth: 15000, serviceFeePerOrderCny: 699, byokPct: 80, hostedPrepaidPerOrderCny: 200, maintenanceMarkupPct: 12, prepaidUtilizationPct: 85, deliveryHoursPerOrder: 0.12, supportHoursPerOrder: 0.05, developmentHoursPerMonth: 6000, paymentFeePct: 0.6, refundPct: 2, acquisitionCostPerOrderCny: 180 }
+  ],
+  usagePack: [
+    { buyersPerMonth: 10, packsPerBuyer: 1, pricePerPackCny: 29, includedAiCallsPerPack: 80, includedImageCallsPerPack: 10, utilizationPct: 70, supportHoursPerMonth: 2, paymentFeePct: 1, refundPct: 3, acquisitionCostPerBuyerCny: 10 },
+    { buyersPerMonth: 80, packsPerBuyer: 1, pricePerPackCny: 35, includedAiCallsPerPack: 100, includedImageCallsPerPack: 12, utilizationPct: 72, supportHoursPerMonth: 16, paymentFeePct: 1, refundPct: 3, acquisitionCostPerBuyerCny: 35 },
+    { buyersPerMonth: 4000, packsPerBuyer: 1.2, pricePerPackCny: 39, includedAiCallsPerPack: 120, includedImageCallsPerPack: 15, utilizationPct: 75, supportHoursPerMonth: 320, paymentFeePct: 0.8, refundPct: 2.5, acquisitionCostPerBuyerCny: 70 },
+    { buyersPerMonth: 15000, packsPerBuyer: 1.25, pricePerPackCny: 45, includedAiCallsPerPack: 140, includedImageCallsPerPack: 18, utilizationPct: 78, supportHoursPerMonth: 900, paymentFeePct: 0.8, refundPct: 2, acquisitionCostPerBuyerCny: 100 },
+    { buyersPerMonth: 36800, packsPerBuyer: 1.3, pricePerPackCny: 49, includedAiCallsPerPack: 160, includedImageCallsPerPack: 20, utilizationPct: 80, supportHoursPerMonth: 1800, paymentFeePct: 0.6, refundPct: 2, acquisitionCostPerBuyerCny: 130 }
+  ]
+};
+const defaultCommercialization = {
+  version: COMMERCIALIZATION_VERSION,
+  updatedAt: "",
+  assumptions: {
+    stageByModel: { validation: 0, subscription: 0, delivery: 0, usagePack: 0 },
+    stagePresets: commercialStagePresets,
+    validation: commercialStagePresets.validation[0],
+    subscription: commercialStagePresets.subscription[0],
+    delivery: commercialStagePresets.delivery[0],
+    usagePack: commercialStagePresets.usagePack[0],
+    usageProfiles: {
+      low: { sharePct: 40, activeDaysPerMonth: 4, requestsPerActiveDay: 2, foregroundAiCallsPerActiveDay: 0.5, backgroundAiCallsPerActiveDay: 0.25, imageCallsPerMonth: 1 },
+      medium: { sharePct: 35, activeDaysPerMonth: 10, requestsPerActiveDay: 3, foregroundAiCallsPerActiveDay: 1.5, backgroundAiCallsPerActiveDay: 0.6, imageCallsPerMonth: 3 },
+      high: { sharePct: 20, activeDaysPerMonth: 20, requestsPerActiveDay: 6, foregroundAiCallsPerActiveDay: 6.5, backgroundAiCallsPerActiveDay: 2, imageCallsPerMonth: 8 },
+      full: { sharePct: 5, activeDaysPerMonth: 30, requestsPerActiveDay: 10, foregroundAiCallsPerActiveDay: 10, backgroundAiCallsPerActiveDay: 5, imageCallsPerMonth: 20 }
+    },
+    common: {
+      usdCny: 7.2,
+      aiCostFloorPerCallCny: 0.03,
+      segmentationCostPerImageCny: 0.01,
+      laborHourlyCny: 80
+    }
+  }
+};
+const ONBOARDING_QUESTIONNAIRE_VERSION = 1;
+const onboardingQuestions = [
+  { id: "evidence", tier: "quick", dimension: "认识世界", prompt: "面对重要判断但信息不完整时，你通常更依赖什么？", options: [{ value: "evidence", label: "先找可核对证据", insight: "重要判断倾向先核对证据" }, { value: "experience", label: "参考亲身经验", insight: "判断时重视亲身经验" }, { value: "trusted", label: "咨询可信的人", insight: "判断时重视可信关系与专业意见" }, { value: "intuition", label: "先相信直觉", insight: "信息不足时愿意先依直觉行动" }] },
+  { id: "revision", tier: "quick", dimension: "认识世界", prompt: "新证据与原有观点冲突时，你更接近哪种反应？", options: [{ value: "revise", label: "尽快修正观点", insight: "新证据出现时愿意较快修正观点" }, { value: "verify", label: "继续核对再决定", insight: "观点修正前会继续交叉核对" }, { value: "retain", label: "优先保留原判断", insight: "更重视原有判断的连续性" }, { value: "context", label: "视具体问题而定", insight: "是否修正观点高度取决于具体语境" }] },
+  { id: "truth_harmony", tier: "quick", dimension: "价值判断", prompt: "事实澄清可能破坏关系和谐时，你通常如何取舍？", options: [{ value: "truth", label: "优先把事实说清", insight: "事实与和谐冲突时更偏向事实清晰" }, { value: "gentle_truth", label: "换方式但仍说清", insight: "重视事实，也重视表达方式" }, { value: "harmony", label: "优先维持关系", insight: "冲突场景更重视关系稳定" }, { value: "delay", label: "等待更合适时机", insight: "倾向选择合适时机处理真实分歧" }] },
+  { id: "autonomy", tier: "quick", dimension: "人生选择", prompt: "个人选择与重要关系期待冲突时，你更看重什么？", options: [{ value: "self", label: "个人自主", insight: "人生选择更重视个人自主" }, { value: "balance", label: "协商平衡", insight: "倾向在自主与关系间协商平衡" }, { value: "belonging", label: "关系与责任", insight: "人生选择更重视关系承诺" }, { value: "case", label: "看责任大小", insight: "会依据具体责任判断自主与关系的优先级" }] },
+  { id: "stability", tier: "quick", dimension: "行动取向", prompt: "面对有吸引力但不确定的新机会，你通常会怎么做？", options: [{ value: "explore", label: "尽快尝试", insight: "面对机会更偏向探索" }, { value: "small_bet", label: "先做小规模试验", insight: "偏好用小规模试验管理不确定性" }, { value: "prepare", label: "准备充分再行动", insight: "行动前更重视准备与确定性" }, { value: "stability", label: "优先保持稳定", insight: "机会与稳定冲突时更偏向稳定" }] },
+  { id: "achievement", tier: "quick", dimension: "人生选择", prompt: "成就与身心状态发生冲突时，你更接近哪种选择？", options: [{ value: "achievement", label: "阶段性冲刺", insight: "必要时愿意用短期身心成本换取成就" }, { value: "sustainable", label: "保持可持续", insight: "更重视可持续的成就节奏" }, { value: "wellbeing", label: "优先身心状态", insight: "冲突时更优先保护身心状态" }, { value: "meaning", label: "取决于是否值得", insight: "愿意为有意义的目标承担成本" }] },
+  { id: "control", tier: "quick", dimension: "行动取向", prompt: "遇到无法完全控制的局面时，你更倾向于？", options: [{ value: "act", label: "先找可控行动", insight: "不确定中会先寻找可控行动" }, { value: "understand", label: "先理解全局", insight: "行动前倾向先形成整体理解" }, { value: "accept", label: "接纳不可控部分", insight: "重视区分可控与不可控并接纳后者" }, { value: "support", label: "先寻求支持", insight: "压力情境下倾向先连接支持资源" }] },
+  { id: "meaning", tier: "quick", dimension: "世界观", prompt: "你更接近哪种对“有意义生活”的理解？", options: [{ value: "create", label: "意义由行动创造", insight: "倾向认为意义由选择和行动创造" }, { value: "discover", label: "意义需要被发现", insight: "倾向认为意义来自对自身与世界的发现" }, { value: "relation", label: "意义来自关系", insight: "倾向从关系与贡献中理解意义" }, { value: "plural", label: "没有唯一答案", insight: "接受意义来源多元且会随阶段变化" }] },
+  { id: "rules", tier: "detailed", dimension: "价值判断", prompt: "规则与具体情境冲突时，你更倾向于？", options: [{ value: "rule", label: "维护一致规则", insight: "价值判断更重视规则一致性" }, { value: "context", label: "根据情境调整", insight: "价值判断更重视具体情境" }, { value: "principle", label: "守原则但调方法", insight: "倾向保持原则并灵活调整方法" }, { value: "impact", label: "看实际影响", insight: "倾向依据实际影响调整规则" }] },
+  { id: "responsibility", tier: "detailed", dimension: "价值判断", prompt: "评价一个行为时，你更看重什么？", options: [{ value: "intent", label: "行为动机", insight: "评价行为时较重视动机" }, { value: "outcome", label: "实际结果", insight: "评价行为时较重视结果" }, { value: "process", label: "过程是否正当", insight: "评价行为时较重视过程正当性" }, { value: "combined", label: "三者一起看", insight: "倾向综合动机、过程与结果" }] },
+  { id: "fairness", tier: "detailed", dimension: "社会判断", prompt: "资源有限时，怎样分配更公平？", options: [{ value: "equal", label: "尽量平均", insight: "公平观更偏向平均分配" }, { value: "need", label: "优先照顾需要", insight: "公平观更偏向按需要分配" }, { value: "contribution", label: "依据贡献", insight: "公平观更偏向按贡献分配" }, { value: "hybrid", label: "保障底线后看贡献", insight: "公平观倾向底线保障与贡献并重" }] },
+  { id: "freedom", tier: "detailed", dimension: "社会判断", prompt: "自由与安全难以兼得时，你更倾向于？", options: [{ value: "freedom", label: "优先自由", insight: "公共取舍中更偏向自由" }, { value: "guardrail", label: "自由加明确底线", insight: "倾向以明确底线保护自由" }, { value: "security", label: "优先安全", insight: "公共取舍中更偏向安全" }, { value: "risk", label: "按风险程度决定", insight: "自由与安全的取舍依赖风险等级" }] },
+  { id: "tradition", tier: "detailed", dimension: "世界观", prompt: "传统经验与新方法冲突时，你更倾向于？", options: [{ value: "innovation", label: "优先尝试新方法", insight: "传统与创新冲突时更偏向创新" }, { value: "test", label: "小范围验证新方法", insight: "倾向通过试验连接传统与创新" }, { value: "tradition", label: "优先保留传统", insight: "更重视传统经验的连续性" }, { value: "purpose", label: "看哪种更符合目的", insight: "不预设传统或创新的固定优先级" }] },
+  { id: "individual", tier: "detailed", dimension: "社会判断", prompt: "个人利益与群体利益冲突时，你更接近？", options: [{ value: "individual", label: "保护个人边界", insight: "群体取舍中更重视个人边界" }, { value: "collective", label: "承担群体责任", insight: "群体取舍中更重视共同责任" }, { value: "rights", label: "先守权利底线", insight: "倾向先保护基本权利再协商利益" }, { value: "case", label: "按影响范围判断", insight: "个人与群体的取舍依赖影响范围" }] },
+  { id: "conflict", tier: "detailed", dimension: "关系方式", prompt: "出现重要分歧时，你通常更愿意？", options: [{ value: "direct", label: "直接讨论", insight: "重要分歧中倾向直接讨论" }, { value: "reflect", label: "想清楚后再谈", insight: "重要分歧中倾向先独立整理" }, { value: "mediate", label: "寻找中间方案", insight: "重要分歧中倾向寻找可接受的中间方案" }, { value: "distance", label: "先拉开距离", insight: "重要分歧中倾向先降低互动强度" }] },
+  { id: "horizon", tier: "detailed", dimension: "行动取向", prompt: "做重要选择时，你通常采用多长的时间尺度？", options: [{ value: "present", label: "先解决当下", insight: "重要选择更关注当前可行动性" }, { value: "year", label: "看未来一两年", insight: "重要选择常以一至两年为尺度" }, { value: "long", label: "看长期方向", insight: "重要选择更重视长期方向一致性" }, { value: "layers", label: "同时看短中长期", insight: "倾向同时平衡短中长期影响" }] },
+  { id: "failure", tier: "detailed", dimension: "成长方式", prompt: "一次明显失败后，你更自然的第一步是？", options: [{ value: "review", label: "复盘原因", insight: "失败后倾向先复盘原因" }, { value: "retry", label: "尽快再试", insight: "失败后倾向通过再次行动学习" }, { value: "recover", label: "先恢复状态", insight: "失败后倾向先恢复身心状态" }, { value: "feedback", label: "寻求外部反馈", insight: "失败后倾向先获取外部反馈" }] },
+  { id: "success", tier: "detailed", dimension: "人生选择", prompt: "你更愿意用什么判断一段经历是否成功？", options: [{ value: "goal", label: "是否达成目标", insight: "更常以目标达成判断成功" }, { value: "growth", label: "是否有所成长", insight: "更常以能力和认知成长判断成功" }, { value: "experience", label: "过程是否值得", insight: "更常以过程体验判断成功" }, { value: "impact", label: "是否帮助他人", insight: "更常以对他人的积极影响判断成功" }] }
+];
+const onboardingInterests = ["身心状态", "学习成长", "工作创造", "技术", "商业", "关系生活", "社会观察", "哲学", "阅读", "艺术", "运动", "旅行"];
+const defaultOnboarding = { status: "pending", questionnaireVersion: ONBOARDING_QUESTIONNAIRE_VERSION, questionnaireMode: "quick", answers: {}, profile: { gender: "", region: "", occupation: "", major: "", school: "", introduction: "", works: "" }, interests: [], material: "", understanding: "", updatedAt: "" };
+const emptyStore = { version: STORE_VERSION, checkins: [], dailyRecords: [], captures: [], journals: [], journalDraft: null, thoughts: [], chats: [], books: [], keepsakes: [], quotes: [], experiments: [], analyses: [], customMetrics: [], trash: [], attachmentCleanup: [], aiTasks: [], notifications: [], onboarding: defaultOnboarding, commercialization: defaultCommercialization };
+const LLM_SETTINGS_VERSION = 5;
 const LLM_MODELS = ["deepseek-flash", "deepseek-v4-pro"];
 const LLM_EFFORTS = ["none", "high", "max"];
 const LLM_TIERS = ["lite", "mid", "high", "ultra"];
 const LLM_SCENARIOS = ["thoughtPrompt", "thoughtDraft", "thoughtAnswer", "followUpAnswer", "chat", "diaryLead", "diaryStructure", "diaryTopic", "diaryReflection", "annotationShenji", "analysis", "bookRecognition", "healthRecognition"];
+const RESPONSE_STYLES = ["concise", "standard", "deep", "structured", "exploratory"];
+const RESPONSE_STYLE_SCENARIOS = ["thoughtDraft", "thoughtAnswer", "followUpAnswer", "chat", "diaryReflection", "annotationShenji", "analysis"];
 const AI_USAGE_VERSION = 2;
 const AI_AUDIT_VERSION = 1;
 const AI_AUDIT_RETENTION_DAYS = Math.max(1, Math.min(3650, Number(process.env.AI_AUDIT_RETENTION_DAYS) || 30));
@@ -60,7 +158,9 @@ const AI_GLOBAL_CONCURRENCY = Math.max(1, Math.min(100, Number(process.env.AI_GL
 const SEGMENTATION_GLOBAL_QPS = Math.max(1, Math.min(100, Number(process.env.SEGMENTATION_GLOBAL_QPS) || 5));
 const SEGMENTATION_GLOBAL_CONCURRENCY = Math.max(1, Math.min(20, Number(process.env.SEGMENTATION_GLOBAL_CONCURRENCY) || 5));
 const AI_USER_DAILY_CALL_LIMIT = Math.max(1, Math.round(Number(process.env.AI_USER_DAILY_CALL_LIMIT) || 200));
-const AI_USER_DAILY_COST_LIMIT_USD = Math.max(0.01, Number(process.env.AI_USER_DAILY_COST_LIMIT_USD) || 2);
+const AI_COST_CNY_PER_USD = Math.max(0.01, Number(process.env.AI_COST_CNY_PER_USD) || 7.2);
+const legacyAiUserDailyCostLimitUsd = Number(process.env.AI_USER_DAILY_COST_LIMIT_USD);
+const AI_USER_DAILY_COST_LIMIT_CNY = Math.max(0.01, Number(process.env.AI_USER_DAILY_COST_LIMIT_CNY) || (Number.isFinite(legacyAiUserDailyCostLimitUsd) ? legacyAiUserDailyCostLimitUsd * AI_COST_CNY_PER_USD : 14.4));
 const ATTACHMENT_USER_QUOTA_BYTES = Math.max(process.env.NODE_ENV === "test" ? 1 : 1024 * 1024, Math.round(Number(process.env.ATTACHMENT_USER_QUOTA_BYTES) || 1024 * 1024 * 1024));
 const STANDARD_BODY_MAX_BYTES = 12_000_000;
 const ATTACHMENT_UPLOAD_BODY_MAX_BYTES = 36_000_000;
@@ -83,6 +183,22 @@ const DEEPSEEK_PRICING = {
       peak: { cacheHit: 0.044, cacheMiss: 1.32, output: 3.96 }
     }
   }
+};
+const AI_COST_PLAN_VERSION = 1;
+const AI_COST_SCENARIO_DEFAULTS = {
+  thoughtPrompt: { callsPerMonth: 20, avgInputTokens: 4000, cacheHitPct: 20, avgReasoningTokens: 0, avgAnswerTokens: 120 },
+  thoughtDraft: { callsPerMonth: 15, avgInputTokens: 12000, cacheHitPct: 20, avgReasoningTokens: 2500, avgAnswerTokens: 1200 },
+  thoughtAnswer: { callsPerMonth: 20, avgInputTokens: 24000, cacheHitPct: 25, avgReasoningTokens: 6000, avgAnswerTokens: 2500 },
+  followUpAnswer: { callsPerMonth: 8, avgInputTokens: 18000, cacheHitPct: 25, avgReasoningTokens: 4000, avgAnswerTokens: 1800 },
+  chat: { callsPerMonth: 15, avgInputTokens: 16000, cacheHitPct: 25, avgReasoningTokens: 3000, avgAnswerTokens: 1600 },
+  diaryLead: { callsPerMonth: 12, avgInputTokens: 8000, cacheHitPct: 30, avgReasoningTokens: 0, avgAnswerTokens: 180 },
+  diaryStructure: { callsPerMonth: 8, avgInputTokens: 10000, cacheHitPct: 30, avgReasoningTokens: 1200, avgAnswerTokens: 700 },
+  diaryTopic: { callsPerMonth: 8, avgInputTokens: 10000, cacheHitPct: 30, avgReasoningTokens: 1800, avgAnswerTokens: 500 },
+  diaryReflection: { callsPerMonth: 6, avgInputTokens: 22000, cacheHitPct: 25, avgReasoningTokens: 5000, avgAnswerTokens: 2200 },
+  annotationShenji: { callsPerMonth: 15, avgInputTokens: 10000, cacheHitPct: 25, avgReasoningTokens: 2200, avgAnswerTokens: 1000 },
+  analysis: { callsPerMonth: 4, avgInputTokens: 30000, cacheHitPct: 20, avgReasoningTokens: 8000, avgAnswerTokens: 3500 },
+  bookRecognition: { callsPerMonth: 3, avgInputTokens: 5000, cacheHitPct: 0, avgReasoningTokens: 600, avgAnswerTokens: 400 },
+  healthRecognition: { callsPerMonth: 8, avgInputTokens: 6000, cacheHitPct: 0, avgReasoningTokens: 800, avgAnswerTokens: 500 }
 };
 const defaultLlmSettings = {
   version: LLM_SETTINGS_VERSION,
@@ -108,11 +224,19 @@ const defaultLlmSettings = {
     bookRecognition: "mid",
     healthRecognition: "mid"
   },
+  assistantName: "神鸡",
+  responseStyles: Object.fromEntries(RESPONSE_STYLE_SCENARIOS.map(scene => [scene, "standard"])),
   apiKey: ""
 };
 
 const clone = value => structuredClone(value);
 const now = () => new Date().toISOString();
+const recordVersion = value => Math.max(1, Math.round(Number(value) || 1));
+const authorTypeFor = item => {
+  if (["question", "idea", "record"].includes(item?.type)) return "user";
+  if (item?.type === "answer" && !/^(?:deepseek|codex)/.test(String(item?.origin || "")) && !item?.modelDraft && !item?.reasoningContent) return "user";
+  return item?.type === "answer" ? "ai" : "user";
+};
 const localDateKey = (value = new Date()) => {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
@@ -121,6 +245,10 @@ const localDateKey = (value = new Date()) => {
 };
 const today = () => localDateKey();
 const safeText = (value, max = 12000) => String(value ?? "").trim().slice(0, max);
+const requestBinding = input => {
+  const requestId = safeText(input?.requestId, 100), targetId = safeText(input?.targetId, 100);
+  return requestId && targetId ? { requestId, targetId, inputVersion: Math.max(0, Math.round(Number(input.inputVersion) || 0)) } : {};
+};
 const stripThoughtAnswerLead = value => String(value ?? "").replace(/^\s*(?:#{1,6}\s*)?(?:\*\*|__)?(?:核心判断|给我判断|给你(?:一个)?判断|我的判断|结论)(?:\*\*|__)?(?:\s*[：:]|\s*\n+)\s*/u, "").trimStart();
 const safeDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value || "") ? value : today();
 const strictDateKey = value => {
@@ -167,6 +295,7 @@ const nullableNumber = (value, min = -Infinity, max = Infinity, integer = false)
   const bounded = Math.min(max, Math.max(min, number));
   return integer ? Math.round(bounded) : round(bounded);
 };
+const commercialNumber = (value, fallback, min, max, integer = false) => nullableNumber(value, min, max, integer) ?? fallback;
 const safeIso = value => {
   if (!value) return "";
   const parsed = new Date(value);
@@ -234,21 +363,222 @@ function normalizedEventTime(item, previousVersion) {
   return { occurredAt: occurredAt || now(), occurredOn: localDateKey(occurredAt) || legacyDate };
 }
 
+function normalizeCommercialValidation(input = {}, fallback = commercialStagePresets.validation[0], previousVersion = COMMERCIALIZATION_VERSION) {
+  return {
+    participants: commercialNumber(input.participants, fallback.participants, 1, 1_000_000, true),
+    rewardPerParticipantCny: commercialNumber(input.rewardPerParticipantCny ?? (previousVersion < 2 ? input.feePerParticipantCny : null), fallback.rewardPerParticipantCny, 0, 1_000_000),
+    testDays: commercialNumber(input.testDays, fallback.testDays, 1, 3650, true),
+    tasksPerParticipant: commercialNumber(input.tasksPerParticipant, fallback.tasksPerParticipant, 1, 10_000, true),
+    validSuggestionsPerParticipant: commercialNumber(input.validSuggestionsPerParticipant, fallback.validSuggestionsPerParticipant, 1, 10_000, true),
+    interviewMinutesPerParticipant: commercialNumber(input.interviewMinutesPerParticipant, fallback.interviewMinutesPerParticipant, 0, 10_000, true),
+    developmentHoursTotal: commercialNumber(input.developmentHoursTotal, fallback.developmentHoursTotal, 0, 1_000_000),
+    aiCallsPerParticipant: commercialNumber(input.aiCallsPerParticipant, fallback.aiCallsPerParticipant, 0, 100_000, true),
+    imageCallsPerParticipant: commercialNumber(input.imageCallsPerParticipant, fallback.imageCallsPerParticipant, 0, 100_000, true)
+  };
+}
+
+function normalizeCommercialSubscription(input = {}, fallback = commercialStagePresets.subscription[0]) {
+  const payingUsers = commercialNumber(input.payingUsers, fallback.payingUsers, 0, 100_000_000, true);
+  return {
+    dailyActiveUsers: commercialNumber(input.dailyActiveUsers, fallback.dailyActiveUsers, 0, 100_000_000, true),
+    monthlyActiveUsers: commercialNumber(input.monthlyActiveUsers, Math.max(fallback.monthlyActiveUsers, payingUsers), 0, 100_000_000, true),
+    payingUsers,
+    newPaidUsersPerMonth: commercialNumber(input.newPaidUsersPerMonth, fallback.newPaidUsersPerMonth, 0, 100_000_000, true),
+    simulationMonths: commercialNumber(input.simulationMonths, fallback.simulationMonths, 1, 120, true),
+    monthlyPriceCny: commercialNumber(input.monthlyPriceCny, fallback.monthlyPriceCny, 0, 1_000_000),
+    paymentFeePct: commercialNumber(input.paymentFeePct, fallback.paymentFeePct, 0, 100),
+    refundPct: commercialNumber(input.refundPct, fallback.refundPct, 0, 100),
+    fixedMonthlyCostCny: commercialNumber(input.fixedMonthlyCostCny, fallback.fixedMonthlyCostCny, 0, 1_000_000_000),
+    operationsHoursPerMonth: commercialNumber(input.operationsHoursPerMonth, fallback.operationsHoursPerMonth, 0, 1_000_000),
+    developmentHoursPerMonth: commercialNumber(input.developmentHoursPerMonth, fallback.developmentHoursPerMonth, 0, 1_000_000),
+    acquisitionCostPerNewUserCny: commercialNumber(input.acquisitionCostPerNewUserCny, fallback.acquisitionCostPerNewUserCny, 0, 10_000_000),
+    monthlyChurnPct: commercialNumber(input.monthlyChurnPct, fallback.monthlyChurnPct, 0, 100)
+  };
+}
+
+function normalizeCommercialDelivery(input = {}, fallback = commercialStagePresets.delivery[0], previousVersion = COMMERCIALIZATION_VERSION) {
+  return {
+    ordersPerMonth: commercialNumber(input.ordersPerMonth, fallback.ordersPerMonth, 0, 100_000_000, true),
+    serviceFeePerOrderCny: commercialNumber(input.serviceFeePerOrderCny ?? (previousVersion < 3 ? input.pricePerOrderCny : null), fallback.serviceFeePerOrderCny, 0, 10_000_000),
+    byokPct: commercialNumber(input.byokPct, fallback.byokPct, 0, 100),
+    hostedPrepaidPerOrderCny: commercialNumber(input.hostedPrepaidPerOrderCny, fallback.hostedPrepaidPerOrderCny, 0, 10_000_000),
+    maintenanceMarkupPct: commercialNumber(input.maintenanceMarkupPct, fallback.maintenanceMarkupPct, 0, 1000),
+    prepaidUtilizationPct: commercialNumber(input.prepaidUtilizationPct, fallback.prepaidUtilizationPct, 0, 100),
+    deliveryHoursPerOrder: commercialNumber(input.deliveryHoursPerOrder, fallback.deliveryHoursPerOrder, 0, 100_000),
+    supportHoursPerOrder: commercialNumber(input.supportHoursPerOrder, fallback.supportHoursPerOrder, 0, 100_000),
+    developmentHoursPerMonth: commercialNumber(input.developmentHoursPerMonth, fallback.developmentHoursPerMonth, 0, 1_000_000),
+    paymentFeePct: commercialNumber(input.paymentFeePct, fallback.paymentFeePct, 0, 100),
+    refundPct: commercialNumber(input.refundPct, fallback.refundPct, 0, 100),
+    acquisitionCostPerOrderCny: commercialNumber(input.acquisitionCostPerOrderCny, fallback.acquisitionCostPerOrderCny, 0, 10_000_000)
+  };
+}
+
+function normalizeCommercialUsagePack(input = {}, fallback = commercialStagePresets.usagePack[0]) {
+  return {
+    buyersPerMonth: commercialNumber(input.buyersPerMonth, fallback.buyersPerMonth, 0, 100_000_000, true),
+    packsPerBuyer: commercialNumber(input.packsPerBuyer, fallback.packsPerBuyer, 0, 100_000),
+    pricePerPackCny: commercialNumber(input.pricePerPackCny, fallback.pricePerPackCny, 0, 10_000_000),
+    includedAiCallsPerPack: commercialNumber(input.includedAiCallsPerPack, fallback.includedAiCallsPerPack, 0, 100_000, true),
+    includedImageCallsPerPack: commercialNumber(input.includedImageCallsPerPack, fallback.includedImageCallsPerPack, 0, 100_000, true),
+    utilizationPct: commercialNumber(input.utilizationPct, fallback.utilizationPct, 0, 100),
+    supportHoursPerMonth: commercialNumber(input.supportHoursPerMonth, fallback.supportHoursPerMonth, 0, 1_000_000),
+    paymentFeePct: commercialNumber(input.paymentFeePct, fallback.paymentFeePct, 0, 100),
+    refundPct: commercialNumber(input.refundPct, fallback.refundPct, 0, 100),
+    acquisitionCostPerBuyerCny: commercialNumber(input.acquisitionCostPerBuyerCny, fallback.acquisitionCostPerBuyerCny, 0, 10_000_000)
+  };
+}
+
+function normalizeCommercialization(value = {}) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const assumptions = source.assumptions && typeof source.assumptions === "object" ? source.assumptions : {};
+  const previousVersion = Number(source.version || 1);
+  const legacySubscription = assumptions.subscription || {};
+  const legacyDelivery = assumptions.delivery || {};
+  const hasLegacySubscriptionUsage = previousVersion < 3
+    && ["activeDaysPerMonth", "aiCallsPerActiveDay", "imageCallsPerUserMonth"].some(key => hasOwn(legacySubscription, key));
+  const hasLegacyDeliveryUsage = previousVersion < 3
+    && ["aiCallsPerOrder", "imageCallsPerOrder"].some(key => hasOwn(legacyDelivery, key));
+  const normalizers = {
+    validation: (input, fallback) => normalizeCommercialValidation(input, fallback, previousVersion),
+    subscription: normalizeCommercialSubscription,
+    delivery: (input, fallback) => normalizeCommercialDelivery(input, fallback, previousVersion),
+    usagePack: normalizeCommercialUsagePack
+  };
+  const stageByModel = Object.fromEntries(commercialModelKeys.map(model => [
+    model,
+    commercialNumber(assumptions.stageByModel?.[model], 0, 0, commercialStageKeys.length - 1, true)
+  ]));
+  const stagePresets = Object.fromEntries(commercialModelKeys.map(model => [
+    model,
+    commercialStagePresets[model].map((fallback, index) => {
+      const stored = assumptions.stagePresets?.[model]?.[index];
+      const selectedAlias = index === stageByModel[model] ? assumptions[model] : null;
+      return normalizers[model](selectedAlias || stored || {}, fallback);
+    })
+  ]));
+  const usageProfiles = Object.fromEntries(commercialUsageProfileKeys.map(key => {
+    const fallback = defaultCommercialization.assumptions.usageProfiles[key];
+    const input = assumptions.usageProfiles?.[key] || (hasLegacySubscriptionUsage ? {
+      ...fallback,
+      activeDaysPerMonth: legacySubscription.activeDaysPerMonth,
+      foregroundAiCallsPerActiveDay: legacySubscription.aiCallsPerActiveDay,
+      backgroundAiCallsPerActiveDay: 0,
+      imageCallsPerMonth: legacySubscription.imageCallsPerUserMonth
+    } : {});
+    return [key, {
+      sharePct: commercialNumber(input.sharePct, fallback.sharePct, 0, 100),
+      activeDaysPerMonth: commercialNumber(input.activeDaysPerMonth, fallback.activeDaysPerMonth, 0, 31, true),
+      requestsPerActiveDay: commercialNumber(input.requestsPerActiveDay, fallback.requestsPerActiveDay, 0, 100_000),
+      foregroundAiCallsPerActiveDay: commercialNumber(input.foregroundAiCallsPerActiveDay, fallback.foregroundAiCallsPerActiveDay, 0, 100_000),
+      backgroundAiCallsPerActiveDay: commercialNumber(input.backgroundAiCallsPerActiveDay, fallback.backgroundAiCallsPerActiveDay, 0, 100_000),
+      imageCallsPerMonth: commercialNumber(input.imageCallsPerMonth, fallback.imageCallsPerMonth, 0, 100_000)
+    }];
+  }));
+  const common = assumptions.common || {};
+  const legacyV2 = source.legacyV2 && typeof source.legacyV2 === "object"
+    ? clone(source.legacyV2)
+    : (hasLegacySubscriptionUsage || hasLegacyDeliveryUsage ? {
+      migratedFromVersion: previousVersion,
+      subscription: hasLegacySubscriptionUsage ? {
+        activeDaysPerMonth: commercialNumber(legacySubscription.activeDaysPerMonth, 0, 0, 31, true),
+        aiCallsPerActiveDay: commercialNumber(legacySubscription.aiCallsPerActiveDay, 0, 0, 100_000),
+        imageCallsPerUserMonth: commercialNumber(legacySubscription.imageCallsPerUserMonth, 0, 0, 100_000)
+      } : null,
+      delivery: hasLegacyDeliveryUsage ? {
+        aiCallsPerOrder: commercialNumber(legacyDelivery.aiCallsPerOrder, 0, 0, 100_000),
+        imageCallsPerOrder: commercialNumber(legacyDelivery.imageCallsPerOrder, 0, 0, 100_000)
+      } : null
+    } : null);
+  return {
+    version: COMMERCIALIZATION_VERSION,
+    updatedAt: safeIso(source.updatedAt),
+    assumptions: {
+      stageByModel,
+      stagePresets,
+      ...Object.fromEntries(commercialModelKeys.map(model => [model, stagePresets[model][stageByModel[model]]])),
+      usageProfiles,
+      common: {
+        usdCny: commercialNumber(common.usdCny, defaultCommercialization.assumptions.common.usdCny, 0.01, 1000),
+        aiCostFloorPerCallCny: commercialNumber(common.aiCostFloorPerCallCny, defaultCommercialization.assumptions.common.aiCostFloorPerCallCny, 0, 100_000),
+        segmentationCostPerImageCny: commercialNumber(common.segmentationCostPerImageCny, defaultCommercialization.assumptions.common.segmentationCostPerImageCny, 0, 100_000),
+        laborHourlyCny: commercialNumber(common.laborHourlyCny, defaultCommercialization.assumptions.common.laborHourlyCny, 0, 1_000_000)
+      }
+    },
+    ...(legacyV2 ? { legacyV2 } : {})
+  };
+}
+
+function onboardingQuestionIds(mode) {
+  return onboardingQuestions.filter(question => question.tier === "quick" || mode === "detailed").map(question => question.id);
+}
+
+function normalizeOnboarding(value = {}) {
+  const profile = value.profile || {}, mode = value.questionnaireMode === "detailed" ? "detailed" : "quick", answers = {};
+  const required = new Set(onboardingQuestionIds(mode));
+  for (const question of onboardingQuestions.filter(item => required.has(item.id))) {
+    const selected = safeText(value.answers?.[question.id], 40);
+    if (question.options.some(option => option.value === selected)) answers[question.id] = selected;
+  }
+  return {
+    status: ["pending", "completed", "dismissed"].includes(value.status) ? value.status : "pending",
+    questionnaireVersion: ONBOARDING_QUESTIONNAIRE_VERSION,
+    questionnaireMode: mode,
+    answers,
+    profile: {
+      gender: safeText(profile.gender, 40),
+      region: safeText(profile.region, 80),
+      occupation: safeText(profile.occupation, 120),
+      major: safeText(profile.major, 120),
+      school: safeText(profile.school, 160),
+      introduction: safeText(profile.introduction, 4000),
+      works: safeText(profile.works, 12000)
+    },
+    interests: (Array.isArray(value.interests) ? value.interests : []).map(item => safeText(item, 40)).filter(Boolean).slice(0, 20),
+    material: safeText(value.material, 20000),
+    understanding: safeText(value.understanding, 6000),
+    updatedAt: safeIso(value.updatedAt)
+  };
+}
+
+function onboardingSubmission(input = {}) {
+  const onboarding = normalizeOnboarding(input), required = onboardingQuestionIds(onboarding.questionnaireMode);
+  const missing = required.filter(id => !onboarding.answers[id]);
+  return { onboarding, missing };
+}
+
+function onboardingUnderstanding(onboarding) {
+  const profileLabels = { gender: "性别", region: "地区", occupation: "职业", major: "专业", school: "学校" };
+  const background = Object.entries(profileLabels).map(([key, label]) => onboarding.profile[key] ? `${label}：${onboarding.profile[key]}` : "").filter(Boolean);
+  const tendencies = onboardingQuestionIds(onboarding.questionnaireMode).map(id => {
+    const question = onboardingQuestions.find(item => item.id === id), option = question?.options.find(item => item.value === onboarding.answers[id]);
+    return option ? `- ${question.dimension}：${option.insight}` : "";
+  }).filter(Boolean);
+  return [
+    `问卷：${onboarding.questionnaireMode === "detailed" ? "详细版" : "快速版"}（仅作为可修正的初始线索）`,
+    background.length ? `可选背景：${background.join("；")}` : "",
+    onboarding.interests.length ? `当前兴趣：${onboarding.interests.join("、")}` : "",
+    onboarding.profile.introduction ? `自我介绍：${onboarding.profile.introduction}` : "",
+    onboarding.profile.works ? `代表作品或材料：${onboarding.profile.works}` : "",
+    tendencies.length ? `初步倾向：\n${tendencies.join("\n")}` : "",
+    "这些内容来自用户本次主动填写与选择，不是人格定论；后续真实记录、修改和否定拥有更高优先级。"
+  ].filter(Boolean).join("\n");
+}
+
 function normalizeStore(value = {}) {
   const previousVersion = Number(value.version || 1), store = { ...clone(emptyStore), ...value, version: STORE_VERSION };
-  for (const key of ["checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics"]) if (!Array.isArray(store[key])) store[key] = [];
-  store.checkins = store.checkins.map(item => ({ factors: [], custom: {}, notes: {}, ...item, ...normalizedEventTime(item, previousVersion), sleep: item.sleep || 3, stress: previousVersion < 3 ? 6 - clamp5(item.stress) : clamp5(item.stress) }));
+  for (const key of ["checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "trash", "attachmentCleanup", "aiTasks", "notifications"]) if (!Array.isArray(store[key])) store[key] = [];
+  store.checkins = store.checkins.map(item => ({ factors: [], custom: {}, notes: {}, ...item, ...normalizedEventTime(item, previousVersion), sleep: item.sleep || 3, stress: previousVersion < 3 ? 6 - clamp5(item.stress) : clamp5(item.stress), version: recordVersion(item.version) }));
   store.dailyRecords = store.dailyRecords.map(item => {
-    const normalized = { source: "manual", attachmentPaths: [], ...item, ...normalizedEventTime(item, previousVersion) };
+    const normalized = { source: "manual", attachmentPaths: [], ...item, ...normalizedEventTime(item, previousVersion), version: recordVersion(item.version) };
     if (normalized.type === "weight") {
       const model = WEIGHT_CLOTHING_MODEL[normalized.clothing] || WEIGHT_CLOTHING_MODEL.none;
       const measuredWeight = nullableNumber(normalized.measuredWeight, 20, 400);
       return { ...normalized, clothing: WEIGHT_CLOTHING_MODEL[normalized.clothing] ? normalized.clothing : "none", measuredWeight, adjustmentMean: model.mean, adjustedWeight: measuredWeight == null ? null : round(measuredWeight - model.mean), lower95: measuredWeight == null ? null : round(measuredWeight - model.upper), upper95: measuredWeight == null ? null : round(measuredWeight - model.lower) };
     }
     return normalized;
-  }).filter(item => ["sleep", "heartRate", "weight", "exercise"].includes(item.type));
-  store.captures = store.captures.map(item => ({ tags: [], annotations: [], annotationDrift: [], ...item, ...normalizedEventTime(item, previousVersion) }));
-  store.journals = store.journals.map(item => ({ tags: [], reflections: [], annotations: [], annotationDrift: [], ...item, ...normalizedEventTime(item, previousVersion) }));
+  }).map(item => ["sleep", "heartRate", "weight", "exercise"].includes(item.type) ? item : { ...item, validationState: "invalid" });
+  store.captures = store.captures.map(item => ({ tags: [], annotations: [], annotationDrift: [], ...item, ...normalizedEventTime(item, previousVersion), version: recordVersion(item.version) }));
+  store.journals = store.journals.map(item => ({ tags: [], reflections: [], annotations: [], annotationDrift: [], ...item, ...normalizedEventTime(item, previousVersion), version: recordVersion(item.version) }));
   if (store.journalDraft && typeof store.journalDraft === "object") {
     const journalId = safeText(store.journalDraft.journalId, 100);
     store.journalDraft = {
@@ -259,8 +589,13 @@ function normalizeStore(value = {}) {
     };
   } else store.journalDraft = null;
   delete store.bookDraft;
-  store.thoughts = store.thoughts.map(item => ({ disposition: "pending", remarks: [], tags: [], followUps: [], annotations: [], annotationDrift: [], ...item, ...normalizedEventTime(item, previousVersion), type: item.type === "record" ? "answer" : item.type }));
-  store.chats = store.chats.map(item => ({ annotations: [], annotationDrift: [], ...item, ...normalizedEventTime(item, previousVersion) }));
+  store.thoughts = store.thoughts.map(item => {
+    const normalized = { disposition: "pending", remarks: [], tags: [], followUps: [], annotations: [], annotationDrift: [], ...item, ...normalizedEventTime(item, previousVersion), type: ["question", "idea", "answer", "record"].includes(item.type) ? item.type : "question", authorType: ["user", "ai", "system"].includes(item.authorType) ? item.authorType : authorTypeFor(item), version: recordVersion(item.version) };
+    normalized.remarks = normalized.remarks.map(remark => ({ ...remark, version: recordVersion(remark.version) }));
+    normalized.followUps = normalized.followUps.map(followUp => ({ ...followUp, version: recordVersion(followUp.version) }));
+    return normalized;
+  });
+  store.chats = store.chats.map(item => ({ annotations: [], annotationDrift: [], ...item, ...normalizedEventTime(item, previousVersion), version: recordVersion(item.version) }));
   store.books = store.books.map(item => {
     const readingStartedOn = strictDateKey(item.readingStartedOn) || "";
     const normalizedFinishedOn = strictDateKey(item.readingFinishedOn) || "";
@@ -270,7 +605,8 @@ function normalizeStore(value = {}) {
       annotationDrift: [],
       ...item,
       readingStartedOn,
-      readingFinishedOn: readingStartedOn && normalizedFinishedOn >= readingStartedOn ? normalizedFinishedOn : ""
+      readingFinishedOn: readingStartedOn && normalizedFinishedOn >= readingStartedOn ? normalizedFinishedOn : "",
+      version: recordVersion(item.version)
     };
     book.notes = book.notes.map(note => ({
       ...note,
@@ -287,12 +623,35 @@ function normalizeStore(value = {}) {
     source: "manual",
     ...item,
     ...normalizedEventTime(item, previousVersion),
+    version: recordVersion(item.version),
     tags: (Array.isArray(item.tags) ? item.tags : []).map(tag => safeText(tag, 30)).filter(Boolean).slice(0, 8),
     originalPath: cleanAttachmentPaths([item.originalPath])[0] || "",
     cutoutPath: cleanAttachmentPaths([item.cutoutPath])[0] || ""
-  })).filter(item => item.originalPath && item.cutoutPath);
-  store.quotes = store.quotes.map(item => ({ tags: [], annotations: [], annotationDrift: [], ...item, ...normalizedEventTime(item, previousVersion) }));
-  store.analyses = store.analyses.map(item => ({ annotations: [], annotationDrift: [], ...item }));
+  })).map(item => item.originalPath && item.cutoutPath ? item : { ...item, validationState: "invalid" });
+  store.quotes = store.quotes.map(item => ({ tags: [], annotations: [], annotationDrift: [], ...item, ...normalizedEventTime(item, previousVersion), version: recordVersion(item.version) }));
+  store.analyses = store.analyses.map(item => ({ annotations: [], annotationDrift: [], ...item, version: recordVersion(item.version) }));
+  store.experiments = store.experiments.map(item => ({ ...item, version: recordVersion(item.version) }));
+  store.trash = store.trash.filter(item => item && item.id && item.payload && item.type).map(item => ({
+    ...item,
+    deletedAt: safeIso(item.deletedAt) || now(),
+    purgeAfter: safeIso(item.purgeAfter) || new Date(Date.now() + TRASH_RETENTION_DAYS * 86400000).toISOString()
+  }));
+  store.attachmentCleanup = store.attachmentCleanup.filter(item => item && /^\/attachments\/[\w.-]+$/.test(item.path)).map(item => ({
+    path: item.path,
+    createdAt: safeIso(item.createdAt) || now(),
+    lastAttemptAt: safeIso(item.lastAttemptAt),
+    attempts: Math.max(0, Math.round(Number(item.attempts) || 0)),
+    errorCode: safeText(item.errorCode, 100)
+  }));
+  store.aiTasks = store.aiTasks.filter(item => item && item.id && item.kind);
+  store.notifications = store.notifications.filter(item => item && item.id);
+  store.onboarding = normalizeOnboarding(store.onboarding);
+  if (previousVersion < 14 && !Object.keys(store.onboarding.answers).length) {
+    const hasRecords = ["checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books", "keepsakes", "quotes"].some(key => store[key].length);
+    if (hasRecords) store.onboarding.status = "completed";
+    else if (store.onboarding.status === "dismissed") store.onboarding.status = "pending";
+  }
+  store.commercialization = normalizeCommercialization(store.commercialization);
   return store;
 }
 
@@ -321,6 +680,112 @@ async function readStoredJson(file, fallback) {
   }
 }
 
+const localTestModes = new Set(["simulation", "cold"]);
+let localTestControlQueue = Promise.resolve();
+
+function localTestWorkspaceDir(mode) {
+  return path.join(LOCAL_TEST_WORKSPACES_DIR, mode === "simulation" ? "simulation" : "cold");
+}
+
+function normalizeLocalTestControl(value = {}) {
+  return {
+    mode: localTestModes.has(value.mode) ? value.mode : "cold",
+    switchedAt: safeIso(value.switchedAt),
+    snapshotAt: safeIso(value.snapshotAt),
+    sourceUser: value.sourceUser && typeof value.sourceUser === "object" ? {
+      id: safeText(value.sourceUser.id, 100),
+      username: safeText(value.sourceUser.username, 100)
+    } : null,
+    recordCount: Math.max(0, Math.round(Number(value.recordCount) || 0))
+  };
+}
+
+async function readLocalTestControl() {
+  return normalizeLocalTestControl(await readStoredJson(LOCAL_TEST_CONTROL_FILE, { mode: "cold" }));
+}
+
+async function writeLocalTestControl(value) {
+  await fs.mkdir(DATA_DIR, { recursive: true, mode: 0o700 });
+  await fs.chmod(DATA_DIR, 0o700);
+  await writeJsonAtomic(LOCAL_TEST_CONTROL_FILE, normalizeLocalTestControl(value));
+}
+
+async function upstreamJson(req, pathname) {
+  if (!UPSTREAM_ORIGIN) throw Object.assign(new Error("尚未配置线上只读数据源"), { statusCode: 503, code: "LOCAL_TEST_UPSTREAM_MISSING" });
+  const headers = { accept: "application/json", "x-request-id": requestStorage.getStore()?.traceId || crypto.randomUUID() };
+  for (const name of ["cookie", "user-agent"]) if (req.headers[name]) headers[name] = req.headers[name];
+  const response = await fetch(`${UPSTREAM_ORIGIN}${pathname}`, { method: "GET", headers, redirect: "manual" });
+  let value = {};
+  try { value = await response.json(); } catch {}
+  if (!response.ok) throw Object.assign(new Error(response.status === 401 ? "请先登录线上主账户" : safeText(value.error, 300) || "线上数据读取失败"), { statusCode: response.status, code: response.status === 401 ? "AUTH_REQUIRED" : "LOCAL_TEST_UPSTREAM_FAILED" });
+  return value;
+}
+
+function localTestSnapshot(state, trash) {
+  const snapshot = clone(emptyStore);
+  for (const key of ["checkins", "dailyRecords", "captures", "journals", "journalDraft", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "onboarding", "commercialization"]) {
+    if (hasOwn(state, key)) snapshot[key] = clone(state[key]);
+  }
+  snapshot.trash = clone(Array.isArray(trash?.items) ? trash.items : []);
+  snapshot.aiTasks = [];
+  snapshot.notifications = [];
+  snapshot.attachmentCleanup = [];
+  return normalizeStore(snapshot);
+}
+
+async function resetLocalTestWorkspace(mode, store, settings = null) {
+  const dataDir = localTestWorkspaceDir(mode), storeFile = path.join(dataDir, "store.json"), pending = storeWriteQueues.get(storeFile);
+  if (pending) await pending;
+  const current = await readStoredJson(storeFile, null);
+  const currentSettings = await readStoredJson(path.join(dataDir, "llm-settings.json"), null);
+  if (current?.aiTasks?.some(task => ["queued", "running"].includes(task.status))) {
+    throw Object.assign(new Error("该测试空间仍有后台任务，请等待完成后再切换"), { statusCode: 409, code: "LOCAL_TEST_TASKS_ACTIVE" });
+  }
+  await fs.mkdir(dataDir, { recursive: true, mode: 0o700 });
+  await Promise.all(["attachments", "logs"].map(name => fs.rm(path.join(dataDir, name), { recursive: true, force: true })));
+  await Promise.all(["ai-usage.json", "ai-cost-plan.json"].map(name => fs.rm(path.join(dataDir, name), { force: true })));
+  if (mode === "cold") await fs.rm(path.join(dataDir, "llm-settings.json"), { force: true });
+  await requestStorage.run({ ...(requestStorage.getStore() || {}), user: { id: `local-test-${mode}`, username: mode === "simulation" ? "使用模拟" : "冷启测试", createdAt: "" }, dataDir }, async () => {
+    await ensureStore();
+    await writeJsonAtomic(storagePaths().storeFile, normalizeStore(store));
+    await ensureLlmSettings();
+    if (settings) await writeLlmSettings(normalizeLlmSettings({ ...settings, apiKey: safeText(currentSettings?.apiKey, 300) }));
+    await ensureAiUsage();
+    await ensureAuditLogs();
+  });
+}
+
+function localTestRecordCount(store) {
+  return ["checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses"].reduce((sum, key) => sum + (store[key]?.length || 0), 0);
+}
+
+function switchLocalTestMode(req, mode) {
+  const operation = localTestControlQueue.then(async () => {
+    if (!localTestModes.has(mode)) throw Object.assign(new Error("本地测试模式无效"), { statusCode: 400, code: "LOCAL_TEST_MODE_INVALID" });
+    if (mode === "simulation") {
+      const session = await upstreamJson(req, "/api/auth/me");
+      if (!session.authenticated || !session.user) throw Object.assign(new Error("请先登录线上主账户"), { statusCode: 401, code: "AUTH_REQUIRED" });
+      if (LOCAL_TEST_MAIN_USER_ID && session.user.id !== LOCAL_TEST_MAIN_USER_ID) throw Object.assign(new Error("当前登录账户不是配置的线上主账户"), { statusCode: 403, code: "LOCAL_TEST_MAIN_ACCOUNT_REQUIRED" });
+      const [state, trash, settings] = await Promise.all([upstreamJson(req, "/api/state"), upstreamJson(req, "/api/trash"), upstreamJson(req, "/api/settings")]);
+      const snapshot = localTestSnapshot(state, trash);
+      await resetLocalTestWorkspace(mode, snapshot, settings);
+      const control = { mode, switchedAt: now(), snapshotAt: now(), sourceUser: session.user, recordCount: localTestRecordCount(snapshot) };
+      await writeLocalTestControl(control);
+      return normalizeLocalTestControl(control);
+    }
+    await resetLocalTestWorkspace(mode, emptyStore);
+    const control = { mode, switchedAt: now(), snapshotAt: "", sourceUser: null, recordCount: 0 };
+    await writeLocalTestControl(control);
+    return normalizeLocalTestControl(control);
+  });
+  localTestControlQueue = operation.catch(() => {});
+  return operation;
+}
+
+function publicLocalTestControl(control) {
+  return { enabled: LOCAL_TEST_MODE, upstreamConfigured: Boolean(UPSTREAM_ORIGIN), ...normalizeLocalTestControl(control) };
+}
+
 async function auditChanges(before, after) {
   const context = requestStorage.getStore();
   if (!context?.traceId) return;
@@ -347,6 +812,8 @@ function legacyLlmTier(model, effort) {
 function normalizeLlmSettings(value = {}) {
   const settings = clone(defaultLlmSettings);
   settings.apiKey = safeText(value.apiKey, 300);
+  settings.assistantName = safeText(value.assistantName, 24) || defaultLlmSettings.assistantName;
+  for (const scene of RESPONSE_STYLE_SCENARIOS) settings.responseStyles[scene] = RESPONSE_STYLES.includes(value.responseStyles?.[scene]) ? value.responseStyles[scene] : "standard";
   if (!value.profiles || !value.scenarios) {
     const model = LLM_MODELS.includes(value.model) ? value.model : settings.profiles.ultra.model;
     const effort = LLM_EFFORTS.includes(value.effort) ? value.effort : settings.profiles.ultra.effort;
@@ -378,12 +845,12 @@ async function writeLlmSettings(value) {
 
 function publicLlmSettings(value) {
   const settings = normalizeLlmSettings(value), primary = settings.profiles[settings.scenarios.thoughtAnswer];
-  return { version: LLM_SETTINGS_VERSION, provider: "deepseek", profiles: settings.profiles, scenarios: settings.scenarios, model: primary.model, effort: primary.effort, hasApiKey: Boolean(settings.apiKey), keyHint: settings.apiKey ? `${settings.apiKey.slice(0, 3)}••••${settings.apiKey.slice(-4)}` : "" };
+  return { version: LLM_SETTINGS_VERSION, provider: "deepseek", profiles: settings.profiles, scenarios: settings.scenarios, assistantName: settings.assistantName, responseStyles: settings.responseStyles, model: primary.model, effort: primary.effort, hasApiKey: Boolean(settings.apiKey), keyHint: settings.apiKey ? `${settings.apiKey.slice(0, 3)}••••${settings.apiKey.slice(-4)}` : "" };
 }
 
 function llmSettingsForScene(settings, scene = "thoughtAnswer") {
   const normalized = normalizeLlmSettings(settings), tier = LLM_TIERS.includes(scene) ? scene : normalized.scenarios[scene] || "high";
-  return { provider: "deepseek", apiKey: normalized.apiKey, tier, ...normalized.profiles[tier] };
+  return { provider: "deepseek", apiKey: normalized.apiKey, tier, assistantName: normalized.assistantName, responseStyle: normalized.responseStyles[scene] || "standard", ...normalized.profiles[tier] };
 }
 
 async function ensureLlmSettings() {
@@ -417,6 +884,260 @@ function updateStore(mutator) {
   });
   storeWriteQueues.set(storeFile, operation.catch(() => {}));
   return operation;
+}
+
+function trashEntry(type, payload, location) {
+  const deletedAt = now();
+  return {
+    id: crypto.randomUUID(),
+    type,
+    resourceId: safeText(payload?.id, 100),
+    deletedAt,
+    purgeAfter: new Date(new Date(deletedAt).getTime() + TRASH_RETENTION_DAYS * 86400000).toISOString(),
+    location,
+    payload: clone(payload)
+  };
+}
+
+function existingTrashItem(store, type, resourceId) {
+  return store.trash.find(item => item.type === type && item.resourceId === resourceId) || null;
+}
+
+function moveCollectionItemToTrash(store, collection, type, id) {
+  const items = store[collection], index = items.findIndex(item => item.id === id);
+  if (index < 0) return existingTrashItem(store, type, id);
+  const [payload] = items.splice(index, 1), entry = trashEntry(type, payload, { kind: "collection", collection, index });
+  store.trash.unshift(entry);
+  return entry;
+}
+
+function detachTargetAnnotations(parent, targetKeys) {
+  const keys = new Set(targetKeys);
+  if (!keys.size) return { annotations: [], annotationDrift: [] };
+  const annotations = (parent.annotations || []).filter(item => keys.has(item.targetKey));
+  const annotationDrift = (parent.annotationDrift || []).filter(item => keys.has(item.targetKey) || keys.has(item.originalTargetKey));
+  parent.annotations = (parent.annotations || []).filter(item => !keys.has(item.targetKey));
+  parent.annotationDrift = (parent.annotationDrift || []).filter(item => !keys.has(item.targetKey) && !keys.has(item.originalTargetKey));
+  return { annotations, annotationDrift };
+}
+
+function moveNestedItemToTrash(store, { parentCollection, parentId, field, type, id, annotationTargetKeys = [] }) {
+  const parent = store[parentCollection]?.find(item => item.id === parentId);
+  if (!parent) return existingTrashItem(store, type, id);
+  const items = Array.isArray(parent[field]) ? parent[field] : [], index = items.findIndex(item => item.id === id);
+  if (index < 0) return existingTrashItem(store, type, id);
+  const [payload] = items.splice(index, 1), entry = trashEntry(type, payload, { kind: "nested", parentCollection, parentId, field, index });
+  entry.dependents = detachTargetAnnotations(parent, annotationTargetKeys);
+  store.trash.unshift(entry);
+  parent.version = recordVersion(parent.version) + 1;
+  parent.updatedAt = now();
+  return entry;
+}
+
+function moveThoughtChainToTrash(store, id) {
+  const indexed = store.thoughts.map((item, index) => ({ item, index })).filter(({ item }) => item.id === id || item.relatedTo === id);
+  if (!indexed.length) return existingTrashItem(store, "thoughtChain", id);
+  const ids = new Set(indexed.map(({ item }) => item.id));
+  store.thoughts = store.thoughts.filter(item => !ids.has(item.id));
+  const entry = trashEntry("thoughtChain", { id, items: indexed.map(({ item, index }) => ({ item, index })) }, { kind: "thoughtChain" });
+  store.trash.unshift(entry);
+  return entry;
+}
+
+function restoreTrashEntry(store, id) {
+  const trashIndex = store.trash.findIndex(item => item.id === id);
+  if (trashIndex < 0) return { missing: true };
+  const entry = store.trash[trashIndex], location = entry.location || {};
+  if (location.kind === "collection") {
+    const items = store[location.collection];
+    if (!Array.isArray(items)) return { invalid: true };
+    if (items.some(item => item.id === entry.payload.id)) return { conflict: true };
+    const parent = entry.type === "thoughtBlock" && location.parentId ? store.thoughts.find(item => item.id === location.parentId && item.type === "question") : null;
+    if (entry.type === "thoughtBlock" && location.parentId && !parent) return { parentMissing: true };
+    items.splice(Math.min(Math.max(0, Number(location.index) || 0), items.length), 0, clone(entry.payload));
+    if (parent) {
+      parent.annotations = [...(parent.annotations || []), ...(entry.dependents?.annotations || [])];
+      parent.annotationDrift = [...(parent.annotationDrift || []), ...(entry.dependents?.annotationDrift || [])];
+      parent.version = recordVersion(parent.version) + 1;
+      parent.updatedAt = now();
+    }
+  } else if (location.kind === "nested") {
+    const parent = store[location.parentCollection]?.find(item => item.id === location.parentId);
+    if (!parent) return { parentMissing: true };
+    parent[location.field] ||= [];
+    if (parent[location.field].some(item => item.id === entry.payload.id)) return { conflict: true };
+    parent[location.field].splice(Math.min(Math.max(0, Number(location.index) || 0), parent[location.field].length), 0, clone(entry.payload));
+    parent.annotations = [...(parent.annotations || []), ...(entry.dependents?.annotations || [])];
+    parent.annotationDrift = [...(parent.annotationDrift || []), ...(entry.dependents?.annotationDrift || [])];
+    parent.version = recordVersion(parent.version) + 1;
+    parent.updatedAt = now();
+  } else if (location.kind === "thoughtChain") {
+    const records = Array.isArray(entry.payload?.items) ? entry.payload.items : [];
+    const ids = new Set(records.map(record => record.item?.id).filter(Boolean));
+    if (!records.length) return { invalid: true };
+    if (store.thoughts.some(item => ids.has(item.id))) return { conflict: true };
+    for (const record of [...records].sort((a, b) => Number(a.index) - Number(b.index))) {
+      const restored = clone(record.item);
+      if (restored.id === entry.resourceId && restored.type === "question") {
+        restored.version = recordVersion(restored.version) + 1;
+        restored.updatedAt = now();
+      }
+      store.thoughts.splice(Math.min(Math.max(0, Number(record.index) || 0), store.thoughts.length), 0, restored);
+    }
+  } else return { invalid: true };
+  store.trash.splice(trashIndex, 1);
+  return { value: entry };
+}
+
+function moveThoughtBlockToTrash(store, id) {
+  const item = store.thoughts.find(value => value.id === id);
+  if (!item || item.type === "question") return existingTrashItem(store, "thoughtBlock", id);
+  const root = store.thoughts.find(value => value.id === item.relatedTo && value.type === "question");
+  const dependents = root ? detachTargetAnnotations(root, [`${item.type}:${item.id}`]) : { annotations: [], annotationDrift: [] };
+  const entry = moveCollectionItemToTrash(store, "thoughts", "thoughtBlock", id);
+  if (entry) {
+    entry.location.parentId = item.relatedTo;
+    entry.dependents = dependents;
+  }
+  if (root) { root.version = recordVersion(root.version) + 1; root.updatedAt = now(); }
+  return entry;
+}
+
+function collectAttachmentPaths(value, output = new Set()) {
+  if (typeof value === "string") {
+    if (/^\/attachments\/[\w.-]+$/.test(value)) output.add(value);
+    return output;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectAttachmentPaths(item, output);
+    return output;
+  }
+  if (value && typeof value === "object") for (const item of Object.values(value)) collectAttachmentPaths(item, output);
+  return output;
+}
+
+async function removeUnreferencedAttachments(candidates, store = null) {
+  if (!candidates.size) return [];
+  const source = store || await readStore(), visibleStore = { ...source };
+  delete visibleStore.attachmentCleanup;
+  const referenced = collectAttachmentPaths(visibleStore), removed = [];
+  for (const attachmentPath of candidates) {
+    if (referenced.has(attachmentPath)) continue;
+    const name = attachmentPath.slice("/attachments/".length);
+    await attachmentStorage.remove({ ownerId: attachmentOwnerId(), name, localFile: path.join(storagePaths().attachmentsDir, name) });
+    removed.push(attachmentPath);
+  }
+  return removed;
+}
+
+const attachmentCleanupTimers = new Map();
+
+function scheduleAttachmentCleanupRetry() {
+  const context = { ...(requestStorage.getStore() || {}) }, key = storagePaths().storeFile;
+  if (attachmentCleanupTimers.has(key)) return;
+  const timer = setTimeout(() => {
+    attachmentCleanupTimers.delete(key);
+    requestStorage.run(context, () => void resumeAttachmentCleanup().catch(error => {
+      logEvent("system", "trash.attachment_cleanup_retry_failed", { level: "error", error: errorMetadata(error) });
+      scheduleAttachmentCleanupRetry();
+    }));
+  }, 60_000);
+  timer.unref();
+  attachmentCleanupTimers.set(key, timer);
+}
+
+async function drainAttachmentCleanup(store) {
+  if (!store.attachmentCleanup.length) return { removed: [], pending: 0 };
+  const { attachmentCleanup, ...visibleStore } = store, referenced = collectAttachmentPaths(visibleStore), removed = [], pending = [];
+  for (const item of attachmentCleanup) {
+    if (referenced.has(item.path)) continue;
+    try {
+      const [attachmentPath] = await removeUnreferencedAttachments(new Set([item.path]), visibleStore);
+      if (attachmentPath) removed.push(attachmentPath);
+    } catch (error) {
+      pending.push({ ...item, attempts: item.attempts + 1, lastAttemptAt: now(), errorCode: safeText(error.code || error.name || "ATTACHMENT_DELETE_FAILED", 100) });
+    }
+  }
+  store.attachmentCleanup = pending;
+  return { removed, pending: pending.length };
+}
+
+function resumeAttachmentCleanup() {
+  const { storeFile } = storagePaths(), queue = storeWriteQueues.get(storeFile) || Promise.resolve();
+  const operation = queue.then(async () => {
+    const store = await readStore();
+    if (!store.attachmentCleanup.length) return { removed: [], pending: 0 };
+    const before = clone(store), result = await drainAttachmentCleanup(store);
+    await writeJsonAtomic(storeFile, store);
+    await auditChanges(before, store);
+    await logEvent("system", result.pending ? "trash.attachment_cleanup_pending" : "trash.attachment_cleanup_completed", {
+      level: result.pending ? "error" : "info",
+      removedCount: result.removed.length,
+      pendingCount: result.pending
+    });
+    if (result.pending) scheduleAttachmentCleanupRetry();
+    return result;
+  });
+  storeWriteQueues.set(storeFile, operation.catch(() => {}));
+  return operation;
+}
+
+function trashPlan(entries) {
+  const items = entries.map(item => ({ id: item.id, type: item.type, resourceId: item.resourceId, deletedAt: item.deletedAt })).sort((a, b) => a.id.localeCompare(b.id));
+  return { items, planHash: sha256(JSON.stringify(items)) };
+}
+
+function expandedTrashEntries(store, requestedIds) {
+  const selected = new Set(requestedIds), parentIds = new Set();
+  for (const entry of store.trash) if (selected.has(entry.id)) parentIds.add(entry.resourceId);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const entry of store.trash) {
+      if (!selected.has(entry.id) && entry.location?.parentId && parentIds.has(entry.location.parentId)) {
+        selected.add(entry.id);
+        parentIds.add(entry.resourceId);
+        changed = true;
+      }
+    }
+  }
+  return store.trash.filter(item => selected.has(item.id));
+}
+
+function purgeTrashWithLock(ids, expectedPlanHash) {
+  const { storeFile } = storagePaths(), queue = storeWriteQueues.get(storeFile) || Promise.resolve();
+  const operation = queue.then(async () => {
+    const store = await readStore(), before = clone(store), entries = expandedTrashEntries(store, ids), plan = trashPlan(entries);
+    if (!entries.length) return { missing: true };
+    if (expectedPlanHash !== plan.planHash) return { changed: true, plan };
+    const selected = new Set(entries.map(item => item.id)), candidates = collectAttachmentPaths(entries);
+    store.trash = store.trash.filter(item => !selected.has(item.id));
+    const { attachmentCleanup, ...visibleStore } = store, referenced = collectAttachmentPaths(visibleStore);
+    for (const attachmentPath of candidates) {
+      if (!referenced.has(attachmentPath) && !attachmentCleanup.some(item => item.path === attachmentPath)) {
+        attachmentCleanup.push({ path: attachmentPath, createdAt: now(), lastAttemptAt: "", attempts: 0, errorCode: "" });
+      }
+    }
+    await writeJsonAtomic(storeFile, store);
+    await auditChanges(before, store);
+    let cleanup = { removed: [], pending: 0 };
+    if (store.attachmentCleanup.length) {
+      const cleanupBefore = clone(store);
+      cleanup = await drainAttachmentCleanup(store);
+      await writeJsonAtomic(storeFile, store);
+      await auditChanges(cleanupBefore, store);
+    }
+    if (cleanup.pending) scheduleAttachmentCleanupRetry();
+    return { entries, plan, attachments: cleanup.removed, attachmentCleanupPending: cleanup.pending };
+  });
+  storeWriteQueues.set(storeFile, operation.catch(() => {}));
+  return operation;
+}
+
+async function sendTrashResult(res, entry, missingMessage) {
+  if (!entry) return sendJson(res, 404, { error: missingMessage });
+  await logEvent("operation", "trash.moved", { trashId: entry.id, resourceType: entry.type, resourceId: entry.resourceId });
+  return sendJson(res, 200, { removed: 1, trashId: entry.id, purgeAfter: entry.purgeAfter });
 }
 
 async function ensureStore() {
@@ -511,6 +1232,84 @@ async function readAiUsage() {
   return normalizeAiUsage(await readStoredJson(storagePaths().aiUsageFile, {}));
 }
 
+function defaultAiCostPlan(settings, usage) {
+  const normalizedSettings = normalizeLlmSettings(settings);
+  const from = shiftDateKey(today(), -29);
+  const recentEntries = (usage?.entries || []).filter(item => localDateKey(item.createdAt) >= from);
+  return {
+    version: AI_COST_PLAN_VERSION,
+    updatedAt: "",
+    monthlyBudgetCny: 30,
+    contingencyPct: 15,
+    cnyPerUsd: AI_COST_CNY_PER_USD,
+    scenarios: LLM_SCENARIOS.map(scene => {
+      const fallback = AI_COST_SCENARIO_DEFAULTS[scene];
+      const entries = recentEntries.filter(item => item.scene === scene);
+      const known = entries.filter(item => item.usageKnown);
+      const total = known.reduce((sum, item) => {
+        sum.input += Number(item.tokens?.input) || 0;
+        sum.cacheHit += Number(item.tokens?.cacheHit) || 0;
+        sum.reasoning += Number(item.tokens?.reasoning) || 0;
+        sum.answer += Number(item.tokens?.answer) || 0;
+        return sum;
+      }, { input: 0, cacheHit: 0, reasoning: 0, answer: 0 });
+      const modelCounts = new Map();
+      for (const item of entries) modelCounts.set(item.model, (modelCounts.get(item.model) || 0) + 1);
+      const observedModel = [...modelCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+      return {
+        scene,
+        enabled: true,
+        model: observedModel || llmSettingsForScene(normalizedSettings, scene).model,
+        pricingPeriod: "peak",
+        callsPerMonth: entries.length || fallback.callsPerMonth,
+        avgInputTokens: known.length ? Math.round(total.input / known.length) : fallback.avgInputTokens,
+        cacheHitPct: total.input ? Math.round(total.cacheHit / total.input * 1000) / 10 : fallback.cacheHitPct,
+        avgReasoningTokens: known.length ? Math.round(total.reasoning / known.length) : fallback.avgReasoningTokens,
+        avgAnswerTokens: known.length ? Math.round(total.answer / known.length) : fallback.avgAnswerTokens
+      };
+    })
+  };
+}
+
+function normalizeAiCostPlan(value, settings, usage) {
+  const fallback = defaultAiCostPlan(settings, usage);
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const supplied = new Map((Array.isArray(source.scenarios) ? source.scenarios : []).map(item => [item?.scene, item]));
+  return {
+    version: AI_COST_PLAN_VERSION,
+    updatedAt: safeIso(source.updatedAt),
+    monthlyBudgetCny: commercialNumber(source.monthlyBudgetCny, fallback.monthlyBudgetCny, 0, 10_000_000),
+    contingencyPct: commercialNumber(source.contingencyPct, fallback.contingencyPct, 0, 500),
+    cnyPerUsd: commercialNumber(source.cnyPerUsd, fallback.cnyPerUsd, 0.01, 1000),
+    scenarios: fallback.scenarios.map(defaultRow => {
+      const row = supplied.get(defaultRow.scene) || {};
+      return {
+        scene: defaultRow.scene,
+        enabled: row.enabled == null ? defaultRow.enabled : Boolean(row.enabled),
+        model: LLM_MODELS.includes(row.model) ? row.model : defaultRow.model,
+        pricingPeriod: row.pricingPeriod === "offPeak" ? "offPeak" : "peak",
+        callsPerMonth: commercialNumber(row.callsPerMonth, defaultRow.callsPerMonth, 0, 10_000_000),
+        avgInputTokens: commercialNumber(row.avgInputTokens, defaultRow.avgInputTokens, 0, 5_000_000, true),
+        cacheHitPct: commercialNumber(row.cacheHitPct, defaultRow.cacheHitPct, 0, 100),
+        avgReasoningTokens: commercialNumber(row.avgReasoningTokens, defaultRow.avgReasoningTokens, 0, 1_000_000, true),
+        avgAnswerTokens: commercialNumber(row.avgAnswerTokens, defaultRow.avgAnswerTokens, 0, 1_000_000, true)
+      };
+    })
+  };
+}
+
+async function readAiCostPlan() {
+  const [settings, usage] = await Promise.all([readLlmSettings(), readAiUsage()]);
+  return normalizeAiCostPlan(await readStoredJson(storagePaths().aiCostPlanFile, null), settings, usage);
+}
+
+async function writeAiCostPlan(value) {
+  const { aiCostPlanFile } = storagePaths();
+  const before = await readAiCostPlan();
+  await writeJsonAtomic(aiCostPlanFile, value);
+  await auditChanges(before, value);
+}
+
 const aiUsageWriteQueues = new Map();
 function updateAiUsage(mutator) {
   const { aiUsageFile } = storagePaths();
@@ -545,8 +1344,8 @@ async function reserveAiAttempt() {
   if (entries.length + reserved >= AI_USER_DAILY_CALL_LIMIT) {
     throw Object.assign(new Error("今日 AI 调用次数已达到上限，请明天再试"), { statusCode: 429, code: "AI_DAILY_CALL_LIMIT" });
   }
-  const cost = entries.reduce((sum, item) => sum + Number(item.costsUsd?.total || 0), 0);
-  if (cost >= AI_USER_DAILY_COST_LIMIT_USD) {
+  const costCny = entries.reduce((sum, item) => sum + Number(item.costsUsd?.total || 0), 0) * AI_COST_CNY_PER_USD;
+  if (costCny >= AI_USER_DAILY_COST_LIMIT_CNY) {
     throw Object.assign(new Error("今日 AI 费用额度已达到上限，请明天再试"), { statusCode: 429, code: "AI_DAILY_COST_LIMIT" });
   }
   aiQuotaReservations.set(key, reserved + 1);
@@ -645,6 +1444,45 @@ async function respondWithModel(req, res, { prompt, options = {}, complete = (co
   }
 }
 
+const activeBoundModelRequests = new Map();
+
+async function respondWithBoundModel(req, res, { operation, clientRequestId, requestHash, run, status = 200 }) {
+  const key = `${storagePaths().storeFile}:${operation}:${clientRequestId || crypto.randomUUID()}`;
+  let entry = activeBoundModelRequests.get(key);
+  if (entry && entry.requestHash !== requestHash) return sendJson(res, 409, { error: "同一请求标识不能用于不同内容", code: "IDEMPOTENCY_KEY_REUSED" });
+  if (!entry) {
+    entry = { requestHash, listeners: new Set() };
+    entry.promise = Promise.resolve().then(() => run(event => {
+      for (const listener of entry.listeners) listener(event);
+    }));
+    activeBoundModelRequests.set(key, entry);
+    entry.promise.finally(() => {
+      if (activeBoundModelRequests.get(key) === entry) activeBoundModelRequests.delete(key);
+    }).catch(() => {});
+  }
+  if (!wantsEventStream(req)) return sendJson(res, status, await entry.promise);
+  res.writeHead(200, {
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-cache, no-store",
+    connection: "keep-alive",
+    "x-accel-buffering": "no"
+  });
+  sendStreamEvent(res, { type: "phase", phase: "context" });
+  const listener = event => sendStreamEvent(res, event);
+  entry.listeners.add(listener);
+  try {
+    sendStreamEvent(res, { type: "done", result: await entry.promise });
+  } catch (error) {
+    const context = requestStorage.getStore();
+    if (context) { context.applicationStatus = 500; context.errorCode = error.code || "MODEL_RESPONSE_FAILED"; }
+    await logEvent("system", "response.stream_failed", { level: "error", error: errorMetadata(error) });
+    sendStreamEvent(res, { type: "error", error: redact(error.message || "模型回答失败", context?.secrets || []) });
+  } finally {
+    entry.listeners.delete(listener);
+    if (!res.destroyed && !res.writableEnded) res.end();
+  }
+}
+
 async function bodyJson(req, maxBytes = STANDARD_BODY_MAX_BYTES) {
   const chunks = [];
   let bytes = 0;
@@ -688,7 +1526,10 @@ async function proxyToUpstream(req, res, url) {
   const cookies = response.headers.getSetCookie?.() || (response.headers.get("set-cookie") ? [response.headers.get("set-cookie")] : []);
   if (cookies.length) {
     const localPath = APP_BASE_PATH === "/" ? "/" : APP_BASE_PATH;
-    responseHeaders["set-cookie"] = cookies.map(cookie => cookie.replace(/Path=\/now(?=;|$)/i, `Path=${localPath}`));
+    responseHeaders["set-cookie"] = cookies.map(cookie => {
+      const localCookie = cookie.replace(/Path=\/now(?=;|$)/i, `Path=${localPath}`);
+      return LOCAL_TEST_MODE ? localCookie.replace(/;\s*Secure(?=;|$)/gi, "") : localCookie;
+    });
   }
   res.writeHead(response.status, responseHeaders);
   if (!response.body) return res.end();
@@ -713,6 +1554,19 @@ const passwordMatches = (password, encoded) => new Promise(resolve => {
   });
 });
 const sha256 = value => crypto.createHash("sha256").update(String(value)).digest("hex");
+const isDirectLoopbackRequest = req => {
+  const remote = String(req.socket.remoteAddress || "");
+  return ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(remote)
+    && !req.headers["x-forwarded-for"];
+};
+const serviceTokenMatches = req => {
+  if (!PLATFORM_SERVICE_TOKEN_HASH) return false;
+  const match = /^Bearer ([A-Za-z0-9._~-]{32,512})$/.exec(String(req.headers.authorization || ""));
+  if (!match) return false;
+  const actual = Buffer.from(sha256(match[1]), "hex");
+  const expected = Buffer.from(PLATFORM_SERVICE_TOKEN_HASH, "hex");
+  return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+};
 const usernameError = username => /^[\p{L}\p{N}_.-]{3,32}$/u.test(username) ? "" : "用户名需为 3–32 位文字、数字、点、横线或下划线";
 const passwordError = password => password.length >= 8 && password.length <= 128 && /[A-Za-z]/.test(password) && /\d/.test(password) ? "" : "密码需为 8–128 位，且同时包含字母和数字";
 const publicUser = user => ({ id: user.id, username: user.username, createdAt: user.createdAt });
@@ -776,6 +1630,25 @@ async function issueSession(res, user, auth = null) {
   if (auth) auth.sessions.push(session);
   else await updateAuth(value => value.sessions.push(session));
   res.setHeader("set-cookie", sessionCookie(token));
+}
+
+async function adminSnapshotApi(req, res, url) {
+  if (url.pathname !== "/api/admin/v1/snapshot") return false;
+  if (req.method !== "GET") return sendJson(res, 405, { error: "Method not allowed" });
+  if (!PLATFORM_SERVICE_TOKEN_HASH) return sendJson(res, 404, { error: "Not found" });
+  if (!isDirectLoopbackRequest(req)) return sendJson(res, 403, { error: "管理员数据接口只允许本机服务访问" });
+  if (!serviceTokenMatches(req)) return sendJson(res, 401, { error: "服务凭据无效" });
+  const snapshot = await buildAdminSnapshot({
+    dataDir: DATA_DIR,
+    version: process.env.APP_VERSION || "development",
+    cnyPerUsd: AI_COST_CNY_PER_USD,
+    dailyCostLimitCny: AI_USER_DAILY_COST_LIMIT_CNY,
+    attachmentQuotaBytes: ATTACHMENT_USER_QUOTA_BYTES,
+    attachmentMode: attachmentStorage.mode,
+    attachmentUsageBytes: (ownerId, localDir) => attachmentStorage.usageBytes({ ownerId, localDir }),
+    backupStatusFile: BACKUP_STATUS_FILE
+  });
+  return sendJson(res, 200, snapshot);
 }
 
 async function initializeUserStorage(user, importLegacy = false) {
@@ -1550,9 +2423,17 @@ const IMAGE_PARSE_CONFIG = {
   }
 };
 
-function systemPromptForScene(systemPrompt, scene) {
+function systemPromptForScene(systemPrompt, scene, settings = {}) {
   const contract = SCENE_RESPONSE_CONTRACTS[scene];
-  return contract ? `${systemPrompt}\n\n${contract}` : systemPrompt;
+  const styles = {
+    concise: "回答风格：简短直接，只保留改变判断所需的信息。",
+    standard: "回答风格：自然、适中，先给判断，再给必要依据。",
+    deep: "回答风格：深入分析关键前提、反例和适用边界，但避免重复。",
+    structured: "回答风格：使用清楚的小标题或列表组织信息，先结论后展开。",
+    exploratory: "回答风格：开放探索多个可信解释，明确不确定性，不急于替用户定论。"
+  };
+  const identity = settings.assistantName ? `你的称呼是“${settings.assistantName}”。仅在自然需要时使用，不要反复自称。` : "";
+  return [systemPrompt, contract, styles[settings.responseStyle], identity].filter(Boolean).join("\n\n");
 }
 
 function diaryActivityContext(store, occurredOn) {
@@ -1601,15 +2482,36 @@ function describeDailyRecord(item) {
   return `运动：${item.description}`;
 }
 
+function onboardingContext(store) {
+  const onboarding = normalizeOnboarding(store.onboarding);
+  if (onboarding.status !== "completed") return "（尚未完成冷启动问卷）";
+  const profileLabels = { gender: "性别", region: "地区", occupation: "职业", major: "专业", school: "学校" };
+  const profile = Object.entries(profileLabels).map(([key, label]) => onboarding.profile[key] ? `${label}：${onboarding.profile[key]}` : "").filter(Boolean);
+  const answers = onboardingQuestionIds(onboarding.questionnaireMode).map(id => {
+    const question = onboardingQuestions.find(item => item.id === id), option = question?.options.find(item => item.value === onboarding.answers[id]);
+    return question && option ? `${question.prompt} ${option.label}` : "";
+  }).filter(Boolean);
+  return [
+    profile.length ? `用户自填背景：${profile.join("；")}` : "",
+    onboarding.interests.length ? `用户选择的兴趣：${onboarding.interests.join("、")}` : "",
+    onboarding.profile.introduction ? `用户自我介绍：${safeText(onboarding.profile.introduction, 1200)}` : "",
+    onboarding.profile.works ? `用户提供的作品或材料：${safeText(onboarding.profile.works, 2000)}` : "",
+    onboarding.material ? `用户导入材料：${safeText(onboarding.material, 2000)}` : "",
+    answers.length ? `用户问卷原始选择：\n${answers.join("\n")}` : "",
+    onboarding.understanding ? `可修正的初始理解：\n${safeText(onboarding.understanding, 3000)}` : ""
+  ].filter(Boolean).join("\n");
+}
+
 function userAnswerContext(store) {
   const roots = store.thoughts.filter(item => item.type === "question").slice(0, 40);
   const tagCounts = new Map();
-  for (const item of store.thoughts) for (const tag of item.tags || []) tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+  for (const item of store.thoughts.filter(item => item.authorType !== "ai")) for (const tag of item.tags || []) tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
   const focus = [...tagCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([tag]) => tag);
   const recent = roots.map((root, index) => {
     const ideas = store.thoughts.filter(item => item.relatedTo === root.id && item.type === "idea").map(item => item.content).join("\n");
-    const answers = store.thoughts.filter(item => item.relatedTo === root.id && item.type === "answer").map(item => item.content).join("\n");
-    return `${index + 1}. 问题：${root.content}\n初步想法：${ideas || "（无）"}\n已保留回答：${answers || "（无）"}\n标签：${(root.tags || []).join("、") || "（无）"}`;
+    const records = store.thoughts.filter(item => item.relatedTo === root.id && item.type === "record").map(item => item.content).join("\n");
+    const userAnswers = store.thoughts.filter(item => item.relatedTo === root.id && item.type === "answer" && item.authorType === "user").map(item => item.content).join("\n");
+    return `${index + 1}. 用户问题：${root.content}\n用户初步想法：${ideas || "（无）"}\n用户后续记录：${records || "（无）"}\n用户亲自写下的回答：${userAnswers || "（无）"}\n标签：${(root.tags || []).join("、") || "（无）"}`;
   }).join("\n\n");
   const recentCheckins = store.checkins.slice(0, 30).map(item => `${item.occurredOn} 情绪${item.mood}/精力${item.energy}/压力状态${item.stress}/睡眠${item.sleep}${item.factors?.length ? `；因素：${item.factors.join("、")}` : ""}`).join("\n");
   const recentDailyRecords = store.dailyRecords.slice(0, 40).map(item => `${item.occurredOn} ${describeDailyRecord(item)}`).join("\n");
@@ -1619,6 +2521,8 @@ function userAnswerContext(store) {
 - 风格：结论先行，以判断密度而非篇幅体现深度；只保留最关键的论点，避免重复总结。抽象问题补足必要背景并明确表态，不能只抛问题。
 - 关注：重视原理、证据、权威信息、不同思想框架之间的比较，以及结论背后的适用边界。
 - 校正：不要只顺着用户已有观点；主动检查前提、反例、遗漏利益相关者、信息茧房与可能的认知偏差。必须把“有记录支持的观察”和“待验证猜测”分开，缺席本身不能证明回避。
+  - 冷启动资料（用户原始选择优先，初始理解仅为可修正推断）：
+${onboardingContext(store)}
 - 当前高频标签：${focus.length ? focus.join("、") : "尚未形成"}。
 - 最近状态（最多30次）：
 ${recentCheckins || "（暂无）"}
@@ -1628,7 +2532,7 @@ ${recentDailyRecords || "（暂无）"}
 ${recentCaptures || "（暂无）"}
 - 最近日记（最多12篇）：
 ${recentJournals || "（暂无）"}
-- 最近思绪（最多40套，保留完整文本）：
+  - 最近思绪（最多40套；只包含用户原文，不把 AI 回答视为用户观点）：
 ${recent || "（暂无）"}
 </personal_context>`;
 }
@@ -2023,7 +2927,7 @@ async function readDeepSeekStream(response, onDelta) {
 async function runDeepSeek(prompt, { imagePath = null, imagePaths = null, history = [], settingsOverride = null, scene = "thoughtAnswer", json = false, systemPrompt = SYSTEM_PROMPT, onDelta = null, captureReasoning = false, maxTokens = 16000, retryWithoutThinking = false, timeoutMs = 300000 } = {}) {
   const settings = llmSettingsForScene(settingsOverride || await readLlmSettings(), scene);
   if (!settings.apiKey) throw new Error("尚未配置 DeepSeek API 密钥，请先到“设置”中填写并保存");
-  const effectiveSystemPrompt = systemPromptForScene(systemPrompt, scene);
+  const effectiveSystemPrompt = systemPromptForScene(systemPrompt, scene, settings);
   const visualPaths = [...(Array.isArray(imagePaths) ? imagePaths : []), ...(imagePath ? [imagePath] : [])];
   const imageInputs = await Promise.all(visualPaths.map(deepSeekImageInput));
   const imageAudit = imageInputs.map(item => item.audit);
@@ -2233,6 +3137,237 @@ async function runDeepSeek(prompt, { imagePath = null, imagePaths = null, histor
   } finally { clearTimeout(timer); }
 }
 
+const runningAiTasks = new Set();
+
+function publicAiTask(task) {
+  return {
+    id: task.id,
+    kind: task.kind,
+    resourceType: task.resourceType || (task.kind === "thoughtAnswer" || task.kind === "followUpAnswer" ? "thought" : ""),
+    targetId: task.targetId,
+    subtargetId: task.subtargetId || "",
+    inputVersion: task.inputVersion,
+    subtargetVersion: task.subtargetVersion || 0,
+    status: task.status,
+    createdAt: task.createdAt,
+    startedAt: task.startedAt || "",
+    completedAt: task.completedAt || "",
+    resultId: task.resultId || "",
+    error: task.error || "",
+    retryOf: task.retryOf || ""
+  };
+}
+
+const aiTaskTitles = { thoughtAnswer: "思绪回答", followUpAnswer: "追问回答", annotationShenji: "批注神鸡" };
+const aiTaskSuccessMessages = { thoughtAnswer: "回答已生成", followUpAnswer: "追问回答已生成", annotationShenji: "批注回复已生成" };
+
+function upsertTaskNotification(store, task, status, message) {
+  let notification = store.notifications.find(item => item.taskId === task.id);
+  if (!notification) {
+    notification = {
+      id: crypto.randomUUID(), taskId: task.id, kind: "aiTask",
+      resourceType: task.resourceType || (task.kind === "thoughtAnswer" || task.kind === "followUpAnswer" ? "thought" : ""),
+      targetId: task.targetId, subtargetId: task.subtargetId || "", createdAt: now(), readAt: ""
+    };
+    store.notifications.unshift(notification);
+  }
+  Object.assign(notification, {
+    status,
+    title: aiTaskTitles[task.kind] || "AI 任务",
+    message: safeText(message, 500),
+    updatedAt: now(),
+    readAt: ["succeeded", "failed", "stale"].includes(status) ? "" : notification.readAt
+  });
+  return notification;
+}
+
+function annotationTaskWork(store, task) {
+  const resourceType = safeText(task.resourceType, 40), root = annotationResource(store, resourceType, task.targetId);
+  const annotation = root?.annotations?.find(item => item.id === task.subtargetId);
+  if (!root || !annotation) return null;
+  const source = annotationResourceSource(store, resourceType, root, annotation.targetKey);
+  if (!source || !source.includes(annotation.quote)) return null;
+  const message = safeText(task.payload?.message, 6000), excerpt = annotationExcerpt(source, annotation), context = annotationResourceContext(resourceType, root);
+  const previousItems = (annotation.shenji || []).map(item => ({ id: item.id, message: item.message || "", answer: item.answer || "", reasoningContent: item.reasoningContent || "" }));
+  const previous = previousItems.map((item, index) => `<turn index="${index + 1}">\n<user>${item.message || "（未追加问题，直接询问标记内容）"}</user>\n<shenji>${item.answer}</shenji>\n</turn>`).join("\n");
+  const rootContext = resourceType === "thought" ? `<original_question>${root.content}</original_question>` : `<source_type>${context.label}</source_type>\n<source_title>${context.title}</source_title>`;
+  const prompt = `${userAnswerContext(store)}\n\n<annotation_context>\n${rootContext}\n<annotation_kind>${annotation.kind === "highlight" ? "划线" : "评论"}</annotation_kind>\n<source_before>${excerpt.before}</source_before>\n<focus priority="highest">${excerpt.focus}</focus>\n<source_after>${excerpt.after}</source_after>\n<comment_text>${annotation.text || "（无）"}</comment_text>\n</annotation_context>\n\n<previous_shenji_dialogue>${previous || "（无）"}</previous_shenji_dialogue>\n\n<current_user_prompt priority="highest">${message || "请直接分析被标记的内容：判断它是否准确、是否存在概念问题或潜在矛盾，并给出真正有用的建议。"}</current_user_prompt>`;
+  const inputHash = sha256(JSON.stringify({
+    resourceType, targetId: task.targetId, annotationId: annotation.id, targetKey: annotation.targetKey,
+    source, quote: annotation.quote, text: annotation.text || "", previous: previousItems, message
+  }));
+  return { root, annotation, prompt, inputHash, scene: "annotationShenji", systemPrompt: SHENJI_SYSTEM_PROMPT };
+}
+
+function aiTaskWork(store, task) {
+  if (task.kind === "thoughtAnswer") {
+    const root = store.thoughts.find(item => item.id === task.targetId && item.type === "question");
+    if (!root) return null;
+    const inputVersion = recordVersion(root.version);
+    const prompt = userPrompt({ context: userAnswerContext(store), chain: thoughtChainContext(store, root), task: "回答原始问题。直接写出明确主张，再用最关键的理由、反例和边界支撑；不要添加“核心判断”“结论”“我的判断”“给我判断”“给你一个判断”等元标签。该下判断时不要只抛问题。哲学或抽象主题先补足理解主张所必需的背景，避免只罗列流派。时效性事实若无法实时核实，明确说明。" });
+    return { root, inputVersion, inputHash: sha256(JSON.stringify({ targetId: root.id, inputVersion })), prompt, scene: "thoughtAnswer" };
+  }
+  if (task.kind === "followUpAnswer") {
+    const root = store.thoughts.find(item => item.id === task.targetId && item.type === "question"), followUp = root?.followUps?.find(item => item.id === task.subtargetId);
+    if (!root || !followUp) return null;
+    const inputVersion = recordVersion(root.version), subtargetVersion = recordVersion(followUp.version);
+    const chain = thoughtChainContext(store, root, followUp.id);
+    const prompt = userPrompt({ context: userAnswerContext(store), chain, task: "回答标记为 current=true 的当前追问。完整理解整条链，但不要机械重述原始回答；只保留支撑当前答案所需的前后文，并把事实、推断和建议分开。" });
+    const inputHash = sha256(JSON.stringify({ targetId: root.id, inputVersion, subtargetId: followUp.id, subtargetVersion, chain }));
+    return { root, followUp, inputVersion, subtargetVersion, inputHash, prompt, scene: "followUpAnswer" };
+  }
+  if (task.kind === "annotationShenji") return annotationTaskWork(store, task);
+  return null;
+}
+
+function aiTaskRequestHash(normalized) {
+  if (normalized.kind === "thoughtAnswer") return sha256(JSON.stringify({ kind: normalized.kind, targetId: normalized.targetId, inputVersion: normalized.requestedInputVersion }));
+  if (normalized.kind === "followUpAnswer") return sha256(JSON.stringify({ kind: normalized.kind, targetId: normalized.targetId, subtargetId: normalized.subtargetId, inputVersion: normalized.requestedInputVersion, subtargetVersion: normalized.requestedSubtargetVersion }));
+  return sha256(JSON.stringify({ kind: normalized.kind, resourceType: normalized.resourceType, targetId: normalized.targetId, subtargetId: normalized.subtargetId, payload: normalized.payload }));
+}
+
+function createAiTask(store, input = {}) {
+  const kind = safeText(input.kind, 40), targetId = safeText(input.targetId, 100), subtargetId = safeText(input.subtargetId, 100), clientRequestId = safeText(input.clientRequestId, 100);
+  if (!["thoughtAnswer", "followUpAnswer", "annotationShenji"].includes(kind)) return { unsupported: true };
+  if (!clientRequestId) return { invalid: true };
+  const resourceType = kind === "annotationShenji" ? safeText(input.resourceType, 40) : "thought";
+  const payload = kind === "annotationShenji" ? { message: safeText(input.payload?.message ?? input.message, 6000) } : {};
+  const requestedInputVersion = Number(input.inputVersion) > 0 ? Math.round(Number(input.inputVersion)) : 0;
+  const requestedSubtargetVersion = Number(input.subtargetVersion) > 0 ? Math.round(Number(input.subtargetVersion)) : 0;
+  const normalized = { kind, resourceType, targetId, subtargetId, payload, requestedInputVersion, requestedSubtargetVersion };
+  const requestHash = aiTaskRequestHash(normalized);
+  const duplicate = store.aiTasks.find(item => item.clientRequestId === clientRequestId);
+  if (duplicate) return duplicate.requestHash === requestHash ? { task: duplicate, duplicate: true } : { conflict: true };
+  const work = aiTaskWork(store, normalized);
+  if (!work) return { missing: true };
+  if (kind === "followUpAnswer" && work.followUp.answer) return { alreadyAnswered: true };
+  if (requestedInputVersion && requestedInputVersion !== work.inputVersion) return { versionConflict: true, currentVersion: work.inputVersion };
+  if (requestedSubtargetVersion && requestedSubtargetVersion !== work.subtargetVersion) return { subtargetVersionConflict: true, currentVersion: work.subtargetVersion };
+  const task = {
+    id: crypto.randomUUID(), kind, resourceType, targetId, subtargetId,
+    inputVersion: work.inputVersion || 0, subtargetVersion: work.subtargetVersion || 0, inputHash: work.inputHash,
+    payload, clientRequestId, requestHash, status: "queued", createdAt: now(), updatedAt: now(), attempt: 0
+  };
+  store.aiTasks.unshift(task);
+  upsertTaskNotification(store, task, "queued", "已进入后台队列");
+  return { task, duplicate: false };
+}
+
+async function enqueueAiTask(input) {
+  const created = await updateStore(store => createAiTask(store, input));
+  if (!created.duplicate && created.task?.status === "queued") scheduleAiTask(created.task.id);
+  return created;
+}
+
+function sendAiTaskCreation(res, created) {
+  if (created.unsupported) return sendJson(res, 400, { error: "不支持这种后台任务" });
+  if (created.missing) return sendJson(res, 404, { error: "任务目标不存在或正文已变化" });
+  if (created.invalid) return sendJson(res, 400, { error: "任务缺少幂等标识", code: "IDEMPOTENCY_KEY_REQUIRED" });
+  if (created.conflict) return sendJson(res, 409, { error: "同一请求标识不能用于不同任务", code: "IDEMPOTENCY_KEY_REUSED" });
+  if (created.alreadyAnswered) return sendJson(res, 409, { error: "目标已经有回答", code: "TARGET_ALREADY_ANSWERED" });
+  if (created.versionConflict || created.subtargetVersionConflict) return sendJson(res, 409, { error: "目标已经更新，请刷新后重试", code: "VERSION_CONFLICT", currentVersion: created.currentVersion });
+  return sendJson(res, created.duplicate ? 200 : 202, publicAiTask(created.task));
+}
+
+function scheduleAiTask(taskId) {
+  const context = { ...(requestStorage.getStore() || {}) };
+  setImmediate(() => {
+    requestStorage.run(context, () => void runAiTask(taskId).catch(error => logEvent("system", "ai_task.failed", { level: "error", taskId, error: errorMetadata(error) })));
+  });
+}
+
+async function runAiTask(taskId) {
+  const runKey = `${requestStorage.getStore()?.dataDir || DATA_DIR}:${taskId}`;
+  if (runningAiTasks.has(runKey)) return;
+  runningAiTasks.add(runKey);
+  try {
+    const claimed = await updateStore(store => {
+      const task = store.aiTasks.find(item => item.id === taskId);
+      if (!task || task.status !== "queued") return null;
+      task.status = "running"; task.startedAt ||= now(); task.updatedAt = now(); task.attempt = Math.max(0, Number(task.attempt) || 0) + 1;
+      upsertTaskNotification(store, task, "running", "正在生成");
+      return clone(task);
+    });
+    if (!claimed) return;
+    const store = await readStore(), task = store.aiTasks.find(item => item.id === taskId);
+    const work = task && aiTaskWork(store, task);
+    const versionChanged = task?.kind === "thoughtAnswer" && work && recordVersion(work.root.version) !== task.inputVersion;
+    const followUpChanged = task?.kind === "followUpAnswer" && work && (work.inputVersion !== task.inputVersion || work.subtargetVersion !== task.subtargetVersion || Boolean(work.followUp.answer));
+    const hashChanged = task?.inputHash && work && task.inputHash !== work.inputHash;
+    if (!task || !work || versionChanged || followUpChanged || hashChanged) {
+      await updateStore(value => {
+        const current = value.aiTasks.find(item => item.id === taskId); if (!current) return;
+        current.status = "stale"; current.completedAt = now(); current.updatedAt = current.completedAt; current.error = "目标已修改或删除";
+        upsertTaskNotification(value, current, "stale", "目标已变化，结果未写入");
+      });
+      return;
+    }
+    const result = await runDeepSeek(work.prompt, { scene: work.scene, systemPrompt: work.systemPrompt || SYSTEM_PROMPT, captureReasoning: true });
+    await updateStore(value => {
+      const currentTask = value.aiTasks.find(item => item.id === taskId), currentWork = currentTask && aiTaskWork(value, currentTask);
+      if (!currentTask) return;
+      const currentVersionChanged = currentTask.kind === "thoughtAnswer" && currentWork && recordVersion(currentWork.root.version) !== task.inputVersion;
+      const currentFollowUpChanged = currentTask.kind === "followUpAnswer" && currentWork && (currentWork.inputVersion !== task.inputVersion || currentWork.subtargetVersion !== task.subtargetVersion || Boolean(currentWork.followUp.answer));
+      if (!currentWork || currentVersionChanged || currentFollowUpChanged || (task.inputHash && currentWork.inputHash !== task.inputHash)) {
+        currentTask.status = "stale"; currentTask.completedAt = now(); currentTask.updatedAt = currentTask.completedAt; currentTask.error = "目标已修改或删除";
+        upsertTaskNotification(value, currentTask, "stale", "目标已经变化，生成结果未写入");
+        return;
+      }
+      let resultId = currentTask.resultId || "";
+      if (currentTask.kind === "thoughtAnswer") {
+        let answer = value.thoughts.find(item => item.sourceTaskId === taskId);
+        if (!answer) {
+          const currentRoot = currentWork.root, generation = value.thoughts.filter(item => item.relatedTo === currentRoot.id && item.type === "answer").length + 1, content = stripThoughtAnswerLead(result.content);
+          answer = { id: crypto.randomUUID(), createdAt: now(), occurredAt: currentRoot.occurredAt, occurredOn: currentRoot.occurredOn, type: "answer", content, modelDraft: content, editedFromModel: false, tags: currentRoot.tags, relatedTo: currentRoot.id, disposition: currentRoot.disposition || "kept", remarks: [], origin: "deepseek", authorType: "ai", version: 1, sourceVersion: task.inputVersion, generation, sourceTaskId: taskId, ...(result.reasoningContent ? { reasoningContent: result.reasoningContent } : {}) };
+          value.thoughts.unshift(answer);
+        }
+        resultId = answer.id;
+      } else if (currentTask.kind === "followUpAnswer") {
+        const currentRoot = currentWork.root, current = currentWork.followUp;
+        current.answer = result.content; current.modelDraft = result.content; current.answeredAt = now(); current.origin = "deepseek"; current.authorType = "ai"; current.version = recordVersion(current.version) + 1; current.clientRequestId = task.clientRequestId; current.sourceTaskId = taskId;
+        if (result.reasoningContent) current.reasoningContent = result.reasoningContent;
+        currentRoot.version = recordVersion(currentRoot.version) + 1; currentRoot.updatedAt = now(); resultId = current.id;
+      } else {
+        const current = currentWork.annotation;
+        let exchange = (current.shenji || []).find(item => item.sourceTaskId === taskId);
+        if (!exchange) {
+          exchange = { id: crypto.randomUUID(), createdAt: now(), message: safeText(task.payload?.message, 6000), answer: result.content, sourceTaskId: taskId, clientRequestId: task.clientRequestId, ...(result.reasoningContent ? { reasoningContent: result.reasoningContent } : {}) };
+          current.shenji ||= []; current.shenji.push(exchange);
+        }
+        resultId = exchange.id;
+      }
+      currentTask.status = "succeeded"; currentTask.resultId = resultId; currentTask.completedAt = now(); currentTask.updatedAt = currentTask.completedAt; currentTask.error = "";
+      upsertTaskNotification(value, currentTask, "succeeded", aiTaskSuccessMessages[currentTask.kind] || "任务已完成");
+    });
+  } catch (error) {
+    await updateStore(store => {
+      const task = store.aiTasks.find(item => item.id === taskId); if (!task) return;
+      task.status = "failed"; task.completedAt = now(); task.updatedAt = task.completedAt; task.error = safeText(error.message, 500);
+      upsertTaskNotification(store, task, "failed", task.error || "生成失败");
+    });
+  } finally {
+    runningAiTasks.delete(runKey);
+  }
+}
+
+async function resumeAiTasks() {
+  const queuedIds = await updateStore(store => {
+    const queued = [];
+    for (const task of store.aiTasks) {
+      if (task.status === "queued") queued.push(task.id);
+      else if (task.status === "running") {
+        task.status = "failed";
+        task.completedAt = now();
+        task.updatedAt = task.completedAt;
+        task.error = "服务在任务运行期间重启；为避免重复计费，请确认后重试";
+        upsertTaskNotification(store, task, "failed", task.error);
+      }
+    }
+    return queued;
+  });
+  for (const taskId of queuedIds) scheduleAiTask(taskId);
+}
+
 async function generateReflection(reason = "manual") {
   const store = await readStore();
   const thoughtRoots = store.thoughts.filter(item => item.type === "question");
@@ -2306,12 +3441,63 @@ function recordStatistics(store) {
     { key: "remarks", label: "思考备注", count: store.thoughts.reduce((sum, item) => sum + (item.remarks || []).length, 0) },
     { key: "reflections", label: "日记回望", count: store.journals.reduce((sum, item) => sum + (item.reflections || []).length, 0) }
   ];
+  const contentByKey = Object.fromEntries(content.map(item => [item.key, item]));
+  const interactionByKey = Object.fromEntries(interactions.map(item => [item.key, item]));
+  const module = (key, label, keys, source = contentByKey) => ({
+    key,
+    label,
+    items: keys.map(itemKey => source[itemKey]).filter(Boolean)
+  });
+  const groups = [
+    {
+      key: "today",
+      label: "今日",
+      modules: [
+        module("moment", "此刻", ["checkins"]),
+        module("together", "共参", ["chats"]),
+        module("daily", "每日", ["sleep", "heartRate", "weight", "exercise"])
+      ]
+    },
+    {
+      key: "seen",
+      label: "所见",
+      modules: [
+        module("captures", "念起", ["captures"]),
+        module("books", "书间", ["books", "bookNotes"]),
+        module("quotes", "拾句", ["quotes"]),
+        module("keepsakes", "小物", ["keepsakes"])
+      ]
+    },
+    {
+      key: "thought",
+      label: "所思",
+      modules: [
+        module("thoughts", "思绪", ["thoughts"]),
+        module("journals", "日记", ["journals"]),
+        module("review", "回顾", ["experiments", "analyses"])
+      ]
+    },
+    {
+      key: "interaction",
+      label: "互动",
+      modules: [
+        module("annotations", "正文批注", ["highlights", "comments", "commentReplies", "shenji"], interactionByKey),
+        module("thoughtInteractions", "思绪", ["followUps", "remarks"], interactionByKey),
+        module("journalInteractions", "日记", ["reflections"], interactionByKey)
+      ]
+    }
+  ];
+  for (const group of groups) {
+    for (const item of group.modules) item.total = item.items.reduce((sum, entry) => sum + entry.count, 0);
+    group.total = group.modules.reduce((sum, item) => sum + item.total, 0);
+  }
   return {
     total: [...content, ...interactions].reduce((sum, item) => sum + item.count, 0),
     contentTotal: content.reduce((sum, item) => sum + item.count, 0),
     interactionTotal: interactions.reduce((sum, item) => sum + item.count, 0),
     content,
-    interactions
+    interactions,
+    groups
   };
 }
 
@@ -2352,7 +3538,7 @@ function addUsageAggregate(target, entry) {
   return target;
 }
 
-function usageDashboard(usage, from, to) {
+function usageDashboard(usage, from, to, cnyPerUsd = AI_COST_CNY_PER_USD) {
   const dayCount = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000) + 1;
   const days = Array.from({ length: dayCount }, (_, index) => shiftDateKey(from, index));
   const entries = usage.entries.filter(item => {
@@ -2379,6 +3565,10 @@ function usageDashboard(usage, from, to) {
     label: modality === "vision" ? "图片理解" : modality === "text" ? "纯文本" : "历史未知",
     ...entries.filter(item => item.modality === modality).reduce(addUsageAggregate, blankUsageAggregate())
   }));
+  const rate = Math.max(0.01, Number(cnyPerUsd) || AI_COST_CNY_PER_USD);
+  const sortedCostsCny = entries.map(item => (Number(item.costsUsd?.total) || 0) * rate).sort((a, b) => a - b);
+  const percentile = proportion => sortedCostsCny.length ? sortedCostsCny[Math.min(sortedCostsCny.length - 1, Math.ceil(sortedCostsCny.length * proportion) - 1)] : 0;
+  const activeDays = new Set(entries.map(item => localDateKey(item.createdAt)).filter(Boolean)).size;
   return {
     from,
     to,
@@ -2388,10 +3578,55 @@ function usageDashboard(usage, from, to) {
     models,
     scenes,
     modalities,
+    calibration: {
+      activeDays,
+      averageCallsPerActiveDay: activeDays ? entries.length / activeDays : 0,
+      averageInputTokens: entries.length ? summary.tokens.input / entries.length : 0,
+      maxInputTokens: entries.reduce((maximum, item) => Math.max(maximum, Number(item.tokens?.input) || 0), 0),
+      averageRequestChars: entries.length ? entries.reduce((sum, item) => sum + (Number(item.requestChars) || 0), 0) / entries.length : 0,
+      maxRequestChars: entries.reduce((maximum, item) => Math.max(maximum, Number(item.requestChars) || 0), 0),
+      medianCostCny: percentile(0.5),
+      p90CostCny: percentile(0.9),
+      maxCostCny: percentile(1)
+    },
     pricing: {
       ...DEEPSEEK_PRICING,
+      displayCurrency: "CNY",
+      cnyPerUsd: rate,
       estimateNote: "费用按请求发生时固化的官方单价估算；中国法定节假日若落在工作日峰值时段，实际账单可能更低。"
     }
+  };
+}
+
+async function operationDashboard(logsDir, from, to) {
+  let names = [];
+  try {
+    names = await fs.readdir(logsDir);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  const files = names.filter(name => {
+    const match = /^operation-(\d{4}-\d{2}-\d{2})\.ndjson$/.exec(name);
+    return match && match[1] >= from && match[1] <= to;
+  });
+  const entries = [];
+  for (const name of files) {
+    const text = await fs.readFile(path.join(logsDir, name), "utf8");
+    for (const line of text.split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const item = JSON.parse(line);
+        if (item.event === "request.completed" && item.result === "success") entries.push(item);
+      } catch {}
+    }
+  }
+  const actions = new Map();
+  for (const item of entries) actions.set(item.action || "unknown", (actions.get(item.action || "unknown") || 0) + 1);
+  return {
+    completedWrites: entries.length,
+    activeDays: new Set(entries.map(item => localDateKey(item.timestamp)).filter(Boolean)).size,
+    segmentationRequests: entries.filter(item => /\/(?:segment|keepsakes\/segment)(?:\/|$)/.test(item.action || "")).length,
+    topActions: [...actions.entries()].map(([action, count]) => ({ action, count })).sort((a, b) => b.count - a.count || a.action.localeCompare(b.action)).slice(0, 8)
   };
 }
 
@@ -2404,8 +3639,22 @@ async function api(req, res, url) {
     const dayCount = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000) + 1;
     if (dayCount > 3660) return sendJson(res, 400, { error: "单次最多统计 10 年" });
     await ensureAiUsage();
-    const [store, usage] = await Promise.all([readStore(), readAiUsage()]);
-    return sendJson(res, 200, { records: recordStatistics(store), ai: usageDashboard(usage, from, to) });
+    const [store, usage, service] = await Promise.all([readStore(), readAiUsage(), operationDashboard(storagePaths().logsDir, from, to)]);
+    return sendJson(res, 200, {
+      records: recordStatistics(store),
+      ai: usageDashboard(usage, from, to, store.commercialization?.assumptions?.common?.usdCny),
+      service
+    });
+  }
+  if (req.method === "GET" && url.pathname === "/api/ai-cost-plan") {
+    return sendJson(res, 200, await readAiCostPlan());
+  }
+  if (req.method === "PATCH" && url.pathname === "/api/ai-cost-plan") {
+    const input = await bodyJson(req);
+    const [settings, usage] = await Promise.all([readLlmSettings(), readAiUsage()]);
+    const plan = normalizeAiCostPlan({ ...input, updatedAt: now() }, settings, usage);
+    await writeAiCostPlan(plan);
+    return sendJson(res, 200, plan);
   }
   if (req.method === "GET" && url.pathname === "/api/settings") {
     return sendJson(res, 200, publicLlmSettings(await readLlmSettings()));
@@ -2417,7 +3666,7 @@ async function api(req, res, url) {
       const tier = current.scenarios.thoughtAnswer;
       profiles[tier] = { model: input.model || profiles[tier].model, effort: input.effort || profiles[tier].effort };
     }
-    const settings = normalizeLlmSettings({ version: LLM_SETTINGS_VERSION, provider: "deepseek", profiles, scenarios: input.scenarios || current.scenarios, apiKey });
+    const settings = normalizeLlmSettings({ version: LLM_SETTINGS_VERSION, provider: "deepseek", profiles, scenarios: input.scenarios || current.scenarios, assistantName: input.assistantName ?? current.assistantName, responseStyles: input.responseStyles || current.responseStyles, apiKey });
     await writeLlmSettings(settings);
     return sendJson(res, 200, publicLlmSettings(settings));
   }
@@ -2426,8 +3675,116 @@ async function api(req, res, url) {
     const reply = await runDeepSeek("只回复：连接成功。不要添加其他内容。", { scene: tier, maxTokens: 40 });
     return sendJson(res, 200, { ok: true, reply: safeText(reply, 80), tier, settings: publicLlmSettings(await readLlmSettings()) });
   }
+  if (req.method === "GET" && url.pathname === "/api/onboarding/schema") {
+    return sendJson(res, 200, {
+      version: ONBOARDING_QUESTIONNAIRE_VERSION,
+      modes: [
+        { id: "quick", label: "快速版", questionCount: onboardingQuestionIds("quick").length },
+        { id: "detailed", label: "详细版", questionCount: onboardingQuestionIds("detailed").length }
+      ],
+      interests: onboardingInterests,
+      questions: onboardingQuestions.map(question => ({ id: question.id, tier: question.tier, dimension: question.dimension, prompt: question.prompt, options: question.options.map(({ value, label }) => ({ value, label })) }))
+    });
+  }
+  if (req.method === "POST" && url.pathname === "/api/onboarding/preview") {
+    const input = await bodyJson(req), submission = onboardingSubmission(input);
+    if (submission.missing.length) return sendJson(res, 400, { error: `还有 ${submission.missing.length} 道必答题未完成`, code: "ONBOARDING_ANSWERS_REQUIRED", missing: submission.missing });
+    return sendJson(res, 200, { understanding: onboardingUnderstanding(submission.onboarding) });
+  }
+  if (req.method === "PATCH" && url.pathname === "/api/onboarding") {
+    const input = await bodyJson(req);
+    if (input.status === "dismissed") return sendJson(res, 400, { error: "可跳过资料，但必须完成价值判断题", code: "ONBOARDING_ANSWERS_REQUIRED" });
+    const submission = onboardingSubmission({ ...input, status: input.status === "completed" ? "completed" : "pending" });
+    if (submission.onboarding.status === "completed" && submission.missing.length) return sendJson(res, 400, { error: `还有 ${submission.missing.length} 道必答题未完成`, code: "ONBOARDING_ANSWERS_REQUIRED", missing: submission.missing });
+    if (!submission.onboarding.understanding && !submission.missing.length) submission.onboarding.understanding = onboardingUnderstanding(submission.onboarding);
+    submission.onboarding.updatedAt = now();
+    const onboarding = await updateStore(store => {
+      store.onboarding = submission.onboarding;
+      return store.onboarding;
+    });
+    return sendJson(res, 200, onboarding);
+  }
+  if (req.method === "PATCH" && url.pathname === "/api/commercialization") {
+    const input = await bodyJson(req), updatedAt = now();
+    const report = await updateStore(store => {
+      store.commercialization = normalizeCommercialization({ ...store.commercialization, assumptions: input.assumptions, updatedAt });
+      return store.commercialization;
+    });
+    return sendJson(res, 200, report);
+  }
+  if (req.method === "POST" && url.pathname === "/api/ai-tasks") {
+    const input = await bodyJson(req);
+    return sendAiTaskCreation(res, await enqueueAiTask(input));
+  }
+  if (req.method === "GET" && url.pathname === "/api/ai-tasks") {
+    const store = await readStore();
+    return sendJson(res, 200, { items: store.aiTasks.map(publicAiTask) });
+  }
+  if (req.method === "GET" && /^\/api\/ai-tasks\/[^/]+$/.test(url.pathname)) {
+    const id = url.pathname.split("/")[3], task = (await readStore()).aiTasks.find(item => item.id === id);
+    return task ? sendJson(res, 200, publicAiTask(task)) : sendJson(res, 404, { error: "任务不存在" });
+  }
+  if (req.method === "POST" && /^\/api\/ai-tasks\/[^/]+\/retry$/.test(url.pathname)) {
+    const id = url.pathname.split("/")[3], retried = await updateStore(store => {
+      const previous = store.aiTasks.find(item => item.id === id);
+      if (!previous || !["failed", "stale"].includes(previous.status)) return { missing: true };
+      const existing = store.aiTasks.find(item => item.retryOf === previous.id);
+      if (existing) return { task: existing, duplicate: true };
+      const created = createAiTask(store, {
+        kind: previous.kind, resourceType: previous.resourceType, targetId: previous.targetId, subtargetId: previous.subtargetId,
+        payload: previous.payload, clientRequestId: `retry:${previous.id}`
+      });
+      if (created.task) created.task.retryOf = previous.id;
+      return created;
+    });
+    if (!retried.task) return sendJson(res, 409, { error: "当前任务不可重试，请回到原记录重新发起" });
+    if (!retried.duplicate) scheduleAiTask(retried.task.id);
+    return sendJson(res, retried.duplicate ? 200 : 202, publicAiTask(retried.task));
+  }
+  if (req.method === "GET" && url.pathname === "/api/notifications") {
+    const store = await readStore();
+    return sendJson(res, 200, { unread: store.notifications.filter(item => !item.readAt && ["succeeded", "failed", "stale"].includes(item.status)).length, items: store.notifications });
+  }
+  if (req.method === "PATCH" && /^\/api\/notifications\/[^/]+\/read$/.test(url.pathname)) {
+    const id = url.pathname.split("/")[3], notification = await updateStore(store => { const item = store.notifications.find(value => value.id === id); if (!item) return null; item.readAt = now(); return item; });
+    return notification ? sendJson(res, 200, notification) : sendJson(res, 404, { error: "通知不存在" });
+  }
+  if (req.method === "POST" && url.pathname === "/api/notifications/read-all") {
+    const count = await updateStore(store => { let updated = 0; for (const item of store.notifications) if (!item.readAt) { item.readAt = now(); updated += 1; } return updated; });
+    return sendJson(res, 200, { updated: count });
+  }
+  if (req.method === "GET" && url.pathname === "/api/trash") {
+    const store = await readStore();
+    return sendJson(res, 200, { retentionDays: TRASH_RETENTION_DAYS, items: store.trash });
+  }
+  if (req.method === "POST" && /^\/api\/trash\/[^/]+\/restore$/.test(url.pathname)) {
+    const id = url.pathname.split("/")[3], restored = await updateStore(store => restoreTrashEntry(store, id));
+    if (restored.missing) return sendJson(res, 404, { error: "回收站中没有这条记录" });
+    if (restored.parentMissing) return sendJson(res, 409, { error: "请先恢复它所属的上级记录", code: "TRASH_PARENT_MISSING" });
+    if (restored.conflict) return sendJson(res, 409, { error: "当前数据中已存在同一条记录，未执行恢复", code: "TRASH_RESTORE_CONFLICT" });
+    if (restored.invalid) return sendJson(res, 409, { error: "这条回收记录结构异常，未执行恢复", code: "TRASH_ENTRY_INVALID" });
+    await logEvent("operation", "trash.restored", { trashId: id, resourceType: restored.value.type, resourceId: restored.value.resourceId });
+    return sendJson(res, 200, { restored: restored.value });
+  }
+  if (req.method === "POST" && url.pathname === "/api/trash/purge-preview") {
+    const input = await bodyJson(req), ids = [...new Set((Array.isArray(input.ids) ? input.ids : []).map(value => safeText(value, 100)).filter(Boolean))];
+    const store = await readStore(), entries = expandedTrashEntries(store, ids.length ? ids : store.trash.map(item => item.id));
+    const plan = trashPlan(entries);
+    return sendJson(res, 200, { ...plan, attachmentPaths: [...collectAttachmentPaths(entries)], requiresConfirmation: "永久删除" });
+  }
+  if (req.method === "POST" && url.pathname === "/api/trash/purge") {
+    const input = await bodyJson(req), ids = [...new Set((Array.isArray(input.ids) ? input.ids : []).map(value => safeText(value, 100)).filter(Boolean))];
+    if (!ids.length || input.confirmation !== "永久删除") return sendJson(res, 400, { error: "永久清理需要选中记录并输入“永久删除”" });
+    const purged = await purgeTrashWithLock(ids, safeText(input.planHash, 100));
+    if (purged.missing) return sendJson(res, 404, { error: "选中的回收记录已不存在" });
+    if (purged.changed) return sendJson(res, 409, { error: "回收站内容已变化，请重新确认", code: "TRASH_PLAN_CHANGED", ...purged.plan });
+    await logEvent("operation", "trash.purged", { trashIds: purged.entries.map(item => item.id), resourceCount: purged.entries.length, attachmentCount: purged.attachments.length, attachmentCleanupPending: purged.attachmentCleanupPending, planHash: purged.plan.planHash });
+    if (purged.attachmentCleanupPending) await logEvent("system", "trash.attachment_cleanup_pending", { level: "error", pendingCount: purged.attachmentCleanupPending });
+    return sendJson(res, 200, { purged: purged.entries.length, attachmentsPurged: purged.attachments.length, attachmentCleanupPending: purged.attachmentCleanupPending });
+  }
   if (req.method === "GET" && url.pathname === "/api/state") {
-    const store = await readStore(); return sendJson(res, 200, { ...store, clusters: clusters(store), insights: insights(store) });
+    const store = await readStore(), { trash, attachmentCleanup, ...visible } = store;
+    return sendJson(res, 200, { ...visible, aiTasks: store.aiTasks.slice(0, 100).map(publicAiTask), notificationUnread: store.notifications.filter(item => !item.readAt && ["succeeded", "failed", "stale"].includes(item.status)).length, clusters: clusters(store), insights: insights(store), trashCount: trash.length });
   }
   if (req.method === "POST" && url.pathname === "/api/images/upload") {
     const input = await bodyJson(req, ATTACHMENT_UPLOAD_BODY_MAX_BYTES), images = Array.isArray(input.images) ? input.images : input.image ? [input.image] : [];
@@ -2443,7 +3800,7 @@ async function api(req, res, url) {
   if (req.method === "POST" && url.pathname === "/api/images/parse") {
     const input = await bodyJson(req), kind = ["sleep", "heartRate", "book"].includes(input.kind) ? input.kind : "";
     if (!kind) return sendJson(res, 400, { error: "截图类型无效" });
-    try { return sendJson(res, 200, await parseImageRequest(input, kind)); }
+    try { return sendJson(res, 200, { ...await parseImageRequest(input, kind), ...requestBinding(input) }); }
     catch (error) {
       if (/图片|截图|支持|大小/.test(error.message)) return sendJson(res, 400, { error: error.message });
       throw error;
@@ -2452,7 +3809,7 @@ async function api(req, res, url) {
   if (req.method === "POST" && url.pathname === "/api/keepsakes/segment") {
     const input = await bodyJson(req);
     const release = await segmentationGate.acquire();
-    try { return sendJson(res, 200, await segmentKeepsakeImage(input)); }
+    try { return sendJson(res, 200, { ...await segmentKeepsakeImage(input), ...requestBinding(input) }); }
     catch (error) {
       const status = /请选择|图片格式|图片大小|不支持/.test(error.message) ? 400 : 502;
       return sendJson(res, status, { error: error.message });
@@ -2484,12 +3841,8 @@ async function api(req, res, url) {
   }
   if (req.method === "DELETE" && /^\/api\/daily-records\/[^/]+$/.test(url.pathname)) {
     const id = url.pathname.split("/")[3];
-    const removed = await updateStore(store => {
-      const before = store.dailyRecords.length;
-      store.dailyRecords = store.dailyRecords.filter(item => item.id !== id);
-      return before - store.dailyRecords.length;
-    });
-    return removed ? sendJson(res, 200, { removed }) : sendJson(res, 404, { error: "这条每日记录不存在" });
+    const entry = await updateStore(store => moveCollectionItemToTrash(store, "dailyRecords", "dailyRecord", id));
+    return sendTrashResult(res, entry, "这条每日记录不存在");
   }
   if (req.method === "POST" && url.pathname === "/api/checkins") {
     const input = await bodyJson(req), eventTime = eventTimeFields(input);
@@ -2520,6 +3873,10 @@ async function api(req, res, url) {
     if (updated.error) return sendJson(res, 400, { error: updated.error });
     return sendJson(res, 200, updated.value);
   }
+  if (req.method === "DELETE" && /^\/api\/checkins\/[^/]+$/.test(url.pathname)) {
+    const id = url.pathname.split("/")[3], entry = await updateStore(store => moveCollectionItemToTrash(store, "checkins", "checkin", id));
+    return sendTrashResult(res, entry, "这次状态记录不存在");
+  }
   if (req.method === "POST" && url.pathname === "/api/captures") {
     const input = await bodyJson(req), content = safeText(input.content, 12000), eventTime = eventTimeFields(input);
     if (!content) return sendJson(res, 400, { error: "先记下一点什么" });
@@ -2540,8 +3897,8 @@ async function api(req, res, url) {
   }
   if (req.method === "DELETE" && /^\/api\/captures\/[^/]+$/.test(url.pathname)) {
     const id = url.pathname.split("/")[3];
-    const removed = await updateStore(store => { const before = store.captures.length; store.captures = store.captures.filter(item => item.id !== id); return before - store.captures.length; });
-    return removed ? sendJson(res, 200, { removed }) : sendJson(res, 404, { error: "这条捕念不存在" });
+    const entry = await updateStore(store => moveCollectionItemToTrash(store, "captures", "capture", id));
+    return sendTrashResult(res, entry, "这条捕念不存在");
   }
   if (req.method === "PUT" && url.pathname === "/api/journal-draft") {
     const input = await bodyJson(req), title = safeText(input.title, 120), content = safeText(input.content, 50000);
@@ -2573,8 +3930,13 @@ async function api(req, res, url) {
   }
   if (req.method === "DELETE" && /^\/api\/journals\/[^/]+$/.test(url.pathname)) {
     const id = url.pathname.split("/")[3];
-    const removed = await updateStore(store => { const before = store.journals.length; store.journals = store.journals.filter(item => item.id !== id); return before - store.journals.length; });
-    return removed ? sendJson(res, 200, { removed }) : sendJson(res, 404, { error: "这篇日记不存在" });
+    const entry = await updateStore(store => moveCollectionItemToTrash(store, "journals", "journal", id));
+    return sendTrashResult(res, entry, "这篇日记不存在");
+  }
+  if (req.method === "DELETE" && /^\/api\/journals\/[^/]+\/reflections\/[^/]+$/.test(url.pathname)) {
+    const parts = url.pathname.split("/"), journalId = parts[3], reflectionId = parts[5];
+    const entry = await updateStore(store => moveNestedItemToTrash(store, { parentCollection: "journals", parentId: journalId, field: "reflections", type: "journalReflection", id: reflectionId, annotationTargetKeys: [`reflection:${reflectionId}`] }));
+    return sendTrashResult(res, entry, "这条日记回望不存在");
   }
   if (req.method === "POST" && url.pathname === "/api/journals/assist") {
     const input = await bodyJson(req), mode = ["lead", "structure", "topic"].includes(input.mode) ? input.mode : "";
@@ -2597,7 +3959,7 @@ async function api(req, res, url) {
     return respondWithModel(req, res, {
       prompt,
       options: { scene, systemPrompt: DIARY_ASSIST_SYSTEM_PROMPT, maxTokens: 2000, retryWithoutThinking: true },
-      complete: content => ({ mode, content: markJournalAssistContent(mode, content) })
+      complete: content => ({ mode, content: markJournalAssistContent(mode, content), ...requestBinding(input) })
     });
   }
   if (req.method === "POST" && /^\/api\/journals\/[^/]+\/reflect$/.test(url.pathname)) {
@@ -2626,32 +3988,35 @@ async function api(req, res, url) {
     if (!questionText) return sendJson(res, 400, { error: "请填写问题" });
     const eventTime = eventTimeFields(input);
     if (!eventTime) return sendJson(res, 400, { error: "发生时间格式不正确" });
-    const tags = (input.tags || []).map(value => safeText(value, 30)).filter(Boolean); const clientRequestId = safeText(input.clientRequestId, 100);
+    const tags = (input.tags || []).map(value => safeText(value, 30)).filter(Boolean), clientRequestId = safeText(input.clientRequestId, 100), generateAnswer = Boolean(input.generateAnswer);
+    const requestHash = sha256(JSON.stringify({ question: questionText, idea: safeText(input.idea), answer: safeText(input.answer), modelDraft: safeText(input.modelDraft), occurredAt: eventTime.occurredAt, tags, generateAnswer }));
     const created = await updateStore(store => {
       if (clientRequestId) {
         const existing = store.thoughts.filter(item => item.clientRequestId === clientRequestId);
-        if (existing.length) return { items: existing, duplicate: true };
+        if (existing.length) {
+          const task = store.aiTasks.find(item => item.clientRequestId === `${clientRequestId}:answer`);
+          return existing.every(item => !item.requestHash || item.requestHash === requestHash) ? { items: existing, task, duplicate: true } : { conflict: true };
+        }
       }
-      const question = { id: crypto.randomUUID(), createdAt: now(), ...eventTime, type: "question", content: questionText, tags, relatedTo: null, disposition: "kept", remarks: [], origin: "manual", clientRequestId };
+      const question = { id: crypto.randomUUID(), createdAt: now(), ...eventTime, type: "question", content: questionText, tags, relatedTo: null, disposition: "kept", remarks: [], origin: "manual", authorType: "user", version: 1, clientRequestId, requestHash };
       store.thoughts.unshift(question); const items = [question];
       for (const [type, content] of [["idea", safeText(input.idea)], ["answer", safeText(input.answer)]]) {
         const modelDraft = type === "answer" ? safeText(input.modelDraft) : "", reasoningContent = type === "answer" && modelDraft ? safeText(input.modelReasoning, 50000) : "";
         if (!content && !modelDraft) continue;
-        const item = { id: crypto.randomUUID(), createdAt: now(), ...eventTime, type, content, tags, relatedTo: question.id, disposition: "kept", remarks: [], origin: modelDraft ? "deepseek-edited" : "manual", clientRequestId, ...(modelDraft ? { modelDraft, editedFromModel: modelDraft !== content } : {}), ...(reasoningContent ? { reasoningContent } : {}) };
+        const item = { id: crypto.randomUUID(), createdAt: now(), ...eventTime, type, content, tags, relatedTo: question.id, disposition: "kept", remarks: [], origin: modelDraft ? "deepseek-edited" : "manual", authorType: modelDraft ? "ai" : "user", version: 1, clientRequestId, requestHash, ...(modelDraft ? { modelDraft, editedFromModel: modelDraft !== content } : {}), ...(reasoningContent ? { reasoningContent } : {}) };
         store.thoughts.unshift(item); items.push(item);
       }
-      return { items, duplicate: false };
+      const taskResult = generateAnswer ? createThoughtAnswerTask(store, { targetId: question.id, inputVersion: question.version, clientRequestId: `${clientRequestId || question.id}:answer` }) : null;
+      return { items, task: taskResult?.task || null, duplicate: false };
     });
-    return sendJson(res, created.duplicate ? 200 : 201, created);
+    if (created.conflict) return sendJson(res, 409, { error: "同一请求标识不能用于不同内容", code: "IDEMPOTENCY_KEY_REUSED" });
+    if (!created.duplicate && created.task) scheduleAiTask(created.task.id);
+    return sendJson(res, created.duplicate ? 200 : 201, { ...created, task: created.task ? publicAiTask(created.task) : null });
   }
   if (req.method === "DELETE" && /^\/api\/thought-chains\/[^/]+$/.test(url.pathname)) {
     const id = url.pathname.split("/")[3];
-    const removed = await updateStore(store => {
-      const before = store.thoughts.length;
-      store.thoughts = store.thoughts.filter(item => item.id !== id && item.relatedTo !== id);
-      return before - store.thoughts.length;
-    });
-    return removed ? sendJson(res, 200, { removed }) : sendJson(res, 404, { error: "这套思考不存在" });
+    const entry = await updateStore(store => moveThoughtChainToTrash(store, id));
+    return sendTrashResult(res, entry, "这套思考不存在");
   }
   if (req.method === "PATCH" && /^\/api\/thought-chains\/[^/]+$/.test(url.pathname)) {
     const id = url.pathname.split("/")[3]; const input = await bodyJson(req); const questionText = safeText(input.question);
@@ -2660,24 +4025,28 @@ async function api(req, res, url) {
     if (changesEventTime && !eventTimeFields(input)) return sendJson(res, 400, { error: "日期时间格式不正确" });
     const updated = await updateStore(store => {
       const question = store.thoughts.find(item => item.id === id && item.type === "question"); if (!question) return null;
-      const tags = (input.tags || []).map(value => safeText(value, 30)).filter(Boolean).slice(0, 8); const chainItems = store.thoughts.filter(item => item.id === id || item.relatedTo === id); reanchorAnnotations(question, `question:${id}`, question.content, questionText); question.content = questionText; question.tags = tags; question.updatedAt = now();
+      const tags = (input.tags || []).map(value => safeText(value, 30)).filter(Boolean).slice(0, 8), chainItems = store.thoughts.filter(item => item.id === id || item.relatedTo === id);
+      for (const type of ["idea", "answer"]) if (hasOwn(input, type) && store.thoughts.filter(item => item.relatedTo === id && item.type === type).length > 1) return { conflict: true };
+      reanchorAnnotations(question, `question:${id}`, question.content, questionText); question.content = questionText; question.tags = tags; question.updatedAt = now(); question.version = recordVersion(question.version) + 1;
       if (changesEventTime) { const eventTime = eventTimeFields(input, question); for (const item of chainItems) Object.assign(item, eventTime); }
       for (const [type, content] of [["idea", safeText(input.idea)], ["answer", safeText(input.answer)]]) {
+        if (!hasOwn(input, type)) continue;
         const matches = store.thoughts.filter(item => item.relatedTo === id && item.type === type); const first = matches[0];
-        if (content && first) { reanchorAnnotations(question, `${type}:${first.id}`, first.content, content); first.content = content; first.tags = tags; first.updatedAt = now(); if (type === "answer" && first.modelDraft) first.editedFromModel = first.modelDraft !== content; const extras = matches.slice(1); for (const item of extras) reanchorAnnotations(question, `${type}:${item.id}`, item.content, "", "重复内容在编辑时被合并"); const extraIds = new Set(extras.map(item => item.id)); if (extraIds.size) store.thoughts = store.thoughts.filter(item => !extraIds.has(item.id)); }
-        else if (content) store.thoughts.unshift({ id: crypto.randomUUID(), createdAt: now(), occurredAt: question.occurredAt, occurredOn: question.occurredOn, type, content, tags, relatedTo: id, disposition: question.disposition || "kept", remarks: [], origin: "manual" });
-        else if (first) { for (const item of matches) reanchorAnnotations(question, `${type}:${item.id}`, item.content, "", `${type === "idea" ? "初步想法" : "回答"}已删除`); store.thoughts = store.thoughts.filter(item => !(item.relatedTo === id && item.type === type)); }
+        if (content && first) { reanchorAnnotations(question, `${type}:${first.id}`, first.content, content); first.content = content; first.tags = tags; first.updatedAt = now(); first.version = recordVersion(first.version) + 1; if (type === "answer" && first.modelDraft) first.editedFromModel = first.modelDraft !== content; }
+        else if (content) store.thoughts.unshift({ id: crypto.randomUUID(), createdAt: now(), occurredAt: question.occurredAt, occurredOn: question.occurredOn, type, content, tags, relatedTo: id, disposition: question.disposition || "kept", remarks: [], origin: "manual", authorType: "user", version: 1 });
+        else if (first) moveThoughtBlockToTrash(store, first.id);
       }
       return question;
     });
+    if (updated?.conflict) return sendJson(res, 409, { error: "这套思考已有多个同类内容，请逐条编辑，未做任何合并", code: "THOUGHT_BLOCKS_REQUIRE_INDIVIDUAL_EDIT" });
     return updated ? sendJson(res, 200, updated) : sendJson(res, 404, { error: "这套思考不存在" });
   }
   if (req.method === "POST" && url.pathname === "/api/answer-drafts") {
-    const input = await bodyJson(req); const question = safeText(input.question); const idea = safeText(input.idea);
+    const input = await bodyJson(req); const question = safeText(input.question); const idea = safeText(input.idea), requestId = safeText(input.requestId, 100) || crypto.randomUUID(), targetId = safeText(input.targetId, 100) || `legacy-draft:${requestId}`, inputVersion = Math.max(0, Math.round(Number(input.inputVersion) || 0));
     if (!question) return sendJson(res, 400, { error: "请先填写问题" });
     const store = await readStore();
     const prompt = userPrompt({ context: userAnswerContext(store), chain: `<draft_thought>\n<question>${question}</question>\n<initial_idea>${idea || "（暂无）"}</initial_idea>\n</draft_thought>`, task: "为尚未提交的思考生成可编辑回答草稿。直接回答问题，再给关键理由、反例或适用边界；不要添加“核心判断”“结论”“我的判断”“给我判断”“给你一个判断”等元标签。区分事实、推断和价值判断。不要替用户决定个人价值选择，但不能因此回避给观点。行动建议仅在适用时给一个最小下一步。" });
-    return respondWithModel(req, res, { prompt, options: { scene: "thoughtDraft" }, complete: (draft, reasoningContent) => ({ draft: stripThoughtAnswerLead(draft), reasoningContent }) });
+    return respondWithModel(req, res, { prompt, options: { scene: "thoughtDraft" }, complete: (draft, reasoningContent) => ({ requestId, targetId, inputVersion, draft: stripThoughtAnswerLead(draft), reasoningContent }) });
   }
   if (req.method === "POST" && url.pathname === "/api/thought-prompts") {
     const input = await bodyJson(req), eventTime = eventTimeFields(input);
@@ -2694,39 +4063,70 @@ ${context.text}
     return respondWithModel(req, res, {
       prompt,
       options: { scene: "thoughtPrompt", systemPrompt: THOUGHT_PROMPT_SYSTEM_PROMPT, maxTokens: 400, retryWithoutThinking: true, timeoutMs: 30000 },
-      complete: content => ({ prompt: safeText(content, 160).replace(/\s+/g, " "), hasHistory: context.hasHistory })
+      complete: content => ({ prompt: safeText(content, 160).replace(/\s+/g, " "), hasHistory: context.hasHistory, ...requestBinding(input) })
     });
   }
   if (req.method === "POST" && url.pathname === "/api/thoughts") {
     const input = await bodyJson(req); const content = safeText(input.content), eventTime = eventTimeFields(input);
     if (!content) return sendJson(res, 400, { error: "请先写下内容" });
     if (!eventTime) return sendJson(res, 400, { error: "发生时间格式不正确" });
-    const entry = { id: crypto.randomUUID(), createdAt: now(), ...eventTime, type: ["question", "idea", "answer"].includes(input.type) ? input.type : "question", content, tags: (input.tags || []).map(tag => safeText(tag, 30)).filter(Boolean).slice(0, 8), relatedTo: safeText(input.relatedTo, 80) || null, disposition: "kept", remarks: [], origin: input.origin || "manual" };
-    await updateStore(store => store.thoughts.unshift(entry)); return sendJson(res, 201, entry);
+    const type = ["question", "idea", "answer", "record"].includes(input.type) ? input.type : "question", relatedTo = safeText(input.relatedTo, 80) || null;
+    const entry = { id: crypto.randomUUID(), createdAt: now(), ...eventTime, type, content, tags: (input.tags || []).map(tag => safeText(tag, 30)).filter(Boolean).slice(0, 8), relatedTo, disposition: "kept", remarks: [], origin: "manual", authorType: "user", version: 1 };
+    const saved = await updateStore(store => {
+      const root = relatedTo ? store.thoughts.find(item => item.id === relatedTo && item.type === "question") : null;
+      if (relatedTo && !root) return false;
+      store.thoughts.unshift(entry);
+      if (root) { root.version = recordVersion(root.version) + 1; root.updatedAt = now(); }
+      return true;
+    });
+    return saved ? sendJson(res, 201, entry) : sendJson(res, 404, { error: "所属思绪不存在" });
+  }
+  if (req.method === "PATCH" && /^\/api\/thoughts\/[^/]+$/.test(url.pathname)) {
+    const id = url.pathname.split("/")[3], input = await bodyJson(req), content = safeText(input.content);
+    if (!content) return sendJson(res, 400, { error: "内容不能为空" });
+    const updated = await updateStore(store => {
+      const item = store.thoughts.find(value => value.id === id);
+      if (!item || item.type === "question") return null;
+      if (hasOwn(input, "expectedVersion") && Number(input.expectedVersion) !== recordVersion(item.version)) return { conflict: true, currentVersion: recordVersion(item.version) };
+      const root = store.thoughts.find(value => value.id === item.relatedTo && value.type === "question");
+      if (root) reanchorAnnotations(root, `${item.type}:${item.id}`, item.content, content);
+      const eventTime = eventTimeFields(input, item); if (!eventTime) return { invalidTime: true };
+      item.content = content; Object.assign(item, eventTime); item.updatedAt = now(); item.version = recordVersion(item.version) + 1;
+      if (item.type === "answer" && item.modelDraft) item.editedFromModel = item.modelDraft !== content;
+      if (root) { root.version = recordVersion(root.version) + 1; root.updatedAt = now(); }
+      return item;
+    });
+    if (updated?.conflict) return sendJson(res, 409, { error: "内容已在其他位置更新，请刷新后重试", code: "VERSION_CONFLICT", currentVersion: updated.currentVersion });
+    if (updated?.invalidTime) return sendJson(res, 400, { error: "发生时间格式不正确" });
+    return updated ? sendJson(res, 200, updated) : sendJson(res, 404, { error: "内容块不存在" });
+  }
+  if (req.method === "DELETE" && /^\/api\/thoughts\/[^/]+$/.test(url.pathname)) {
+    const id = url.pathname.split("/")[3], entry = await updateStore(store => moveThoughtBlockToTrash(store, id));
+    return sendTrashResult(res, entry, "内容块不存在");
   }
   if (req.method === "PATCH" && /^\/api\/thoughts\/[^/]+\/disposition$/.test(url.pathname)) {
     const id = url.pathname.split("/")[3]; const input = await bodyJson(req);
     if (!["pending", "kept", "discarded"].includes(input.disposition)) return sendJson(res, 400, { error: "状态无效" });
-    const item = await updateStore(store => { const found = store.thoughts.find(value => value.id === id); if (!found) return null; for (const value of store.thoughts.filter(value => value.id === id || value.relatedTo === id)) { value.disposition = input.disposition; value.dispositionAt = now(); } return found; });
+    const item = await updateStore(store => { const found = store.thoughts.find(value => value.id === id); if (!found) return null; const updatedAt = now(); for (const value of store.thoughts.filter(value => value.id === id || value.relatedTo === id)) { value.disposition = input.disposition; value.dispositionAt = updatedAt; value.updatedAt = updatedAt; value.version = recordVersion(value.version) + 1; } return found; });
     return item ? sendJson(res, 200, item) : sendJson(res, 404, { error: "记录不存在" });
   }
   if (req.method === "POST" && /^\/api\/thoughts\/[^/]+\/remarks$/.test(url.pathname)) {
     const id = url.pathname.split("/")[3]; const input = await bodyJson(req); const text = safeText(input.text, 1000);
     if (!text) return sendJson(res, 400, { error: "备注不能为空" });
-    const remark = { id: crypto.randomUUID(), text, createdAt: now() };
-    const ok = await updateStore(store => { const item = store.thoughts.find(value => value.id === id); if (!item) return false; item.remarks.push(remark); return true; });
+    const remark = { id: crypto.randomUUID(), text, createdAt: now(), version: 1 };
+    const ok = await updateStore(store => { const item = store.thoughts.find(value => value.id === id); if (!item) return false; item.remarks.push(remark); item.version = recordVersion(item.version) + 1; item.updatedAt = now(); return true; });
     return ok ? sendJson(res, 201, remark) : sendJson(res, 404, { error: "记录不存在" });
   }
   if (req.method === "PATCH" && /^\/api\/thoughts\/[^/]+\/remarks\/[^/]+$/.test(url.pathname)) {
     const [, , , id, , remarkId] = url.pathname.split("/"); const input = await bodyJson(req); const text = safeText(input.text, 1000);
     if (!text) return sendJson(res, 400, { error: "备注不能为空" });
-    const remark = await updateStore(store => { const item = store.thoughts.find(value => value.id === id); const found = item?.remarks.find(value => value.id === remarkId); if (!found) return null; found.text = text; found.updatedAt = now(); return found; });
+    const remark = await updateStore(store => { const item = store.thoughts.find(value => value.id === id); const found = item?.remarks.find(value => value.id === remarkId); if (!found) return null; found.text = text; found.updatedAt = now(); found.version = recordVersion(found.version) + 1; item.version = recordVersion(item.version) + 1; item.updatedAt = now(); return found; });
     return remark ? sendJson(res, 200, remark) : sendJson(res, 404, { error: "备注不存在" });
   }
   if (req.method === "DELETE" && /^\/api\/thoughts\/[^/]+\/remarks\/[^/]+$/.test(url.pathname)) {
     const [, , , id, , remarkId] = url.pathname.split("/");
-    const removed = await updateStore(store => { const item = store.thoughts.find(value => value.id === id); if (!item) return false; const before = item.remarks.length; item.remarks = item.remarks.filter(value => value.id !== remarkId); return item.remarks.length < before; });
-    return removed ? sendJson(res, 200, { removed: 1 }) : sendJson(res, 404, { error: "备注不存在" });
+    const entry = await updateStore(store => moveNestedItemToTrash(store, { parentCollection: "thoughts", parentId: id, field: "remarks", type: "thoughtRemark", id: remarkId }));
+    return sendTrashResult(res, entry, "备注不存在");
   }
   if (req.method === "POST" && /^\/api\/annotations\/[^/]+\/[^/]+$/.test(url.pathname)) {
     const [, , , resourceType, resourceId] = url.pathname.split("/"), input = await bodyJson(req), kind = input.kind === "highlight" ? "highlight" : "comment", targetKey = safeText(input.targetKey, 160), quote = safeText(input.quote, 1000), text = safeText(input.text, 4000), start = Math.max(0, Number(input.start) || 0), end = Math.max(start, Number(input.end) || start);
@@ -2742,15 +4142,12 @@ ${context.text}
     return saved ? sendJson(res, 201, annotation) : sendJson(res, 404, { error: "选中的正文已变化，请重新选择" });
   }
   if (req.method === "POST" && /^\/api\/annotations\/[^/]+\/[^/]+\/[^/]+\/shenji$/.test(url.pathname)) {
-    const [, , , resourceType, resourceId, annotationId] = url.pathname.split("/"), input = await bodyJson(req), message = safeText(input.message, 6000), store = await readStore();
-    const root = annotationResource(store, resourceType, resourceId), annotation = root?.annotations?.find(item => item.id === annotationId);
-    if (!root || !annotation) return sendJson(res, 404, { error: "评论或划线不存在" });
-    const source = annotationResourceSource(store, resourceType, root, annotation.targetKey), excerpt = annotationExcerpt(source, annotation), context = annotationResourceContext(resourceType, root), previous = (annotation.shenji || []).map((item, index) => `<turn index="${index + 1}">\n<user>${item.message || "（未追加问题，直接询问标记内容）"}</user>\n<shenji>${item.answer}</shenji>\n</turn>`).join("\n");
-    const prompt = `${userAnswerContext(store)}\n\n<annotation_context>\n<source_type>${context.label}</source_type>\n<source_title>${context.title}</source_title>\n<annotation_kind>${annotation.kind === "highlight" ? "划线" : "评论"}</annotation_kind>\n<source_before>${excerpt.before}</source_before>\n<focus priority="highest">${excerpt.focus}</focus>\n<source_after>${excerpt.after}</source_after>\n<comment_text>${annotation.text || "（无）"}</comment_text>\n</annotation_context>\n\n<previous_shenji_dialogue>${previous || "（无）"}</previous_shenji_dialogue>\n\n<current_user_prompt priority="highest">${message || "请直接分析被标记的内容：判断它是否准确、是否存在概念问题或潜在矛盾，并给出真正有用的建议。"}</current_user_prompt>`;
-    const result = await runDeepSeek(prompt, { scene: "annotationShenji", systemPrompt: SHENJI_SYSTEM_PROMPT, captureReasoning: true });
-    const exchange = { id: crypto.randomUUID(), createdAt: now(), message, answer: result.content, ...(result.reasoningContent ? { reasoningContent: result.reasoningContent } : {}) };
-    const saved = await updateStore(value => { const currentRoot = annotationResource(value, resourceType, resourceId), current = currentRoot?.annotations?.find(item => item.id === annotationId); if (!current) return false; current.shenji ||= []; current.shenji.push(exchange); return true; });
-    return saved ? sendJson(res, 201, exchange) : sendJson(res, 409, { error: "评论或划线状态已变化，请重试" });
+    const [, , , resourceType, resourceId, annotationId] = url.pathname.split("/"), input = await bodyJson(req);
+    const created = await enqueueAiTask({
+      kind: "annotationShenji", resourceType, targetId: resourceId, subtargetId: annotationId,
+      payload: { message: input.message }, clientRequestId: input.clientRequestId
+    });
+    return sendAiTaskCreation(res, created);
   }
   if (req.method === "POST" && /^\/api\/annotations\/[^/]+\/[^/]+\/[^/]+\/replies$/.test(url.pathname)) {
     const [, , , resourceType, resourceId, annotationId] = url.pathname.split("/"), input = await bodyJson(req), text = safeText(input.text, 4000);
@@ -2761,13 +4158,15 @@ ${context.text}
   }
   if (req.method === "DELETE" && /^\/api\/annotations\/[^/]+\/[^/]+\/drift\/[^/]+$/.test(url.pathname)) {
     const [, , , resourceType, resourceId, , driftId] = url.pathname.split("/");
-    const removed = await updateStore(store => { const root = annotationResource(store, resourceType, resourceId); if (!root) return false; root.annotationDrift ||= []; const before = root.annotationDrift.length; root.annotationDrift = root.annotationDrift.filter(item => item.id !== driftId); return root.annotationDrift.length < before; });
-    return removed ? sendJson(res, 200, { removed: 1 }) : sendJson(res, 404, { error: "漂流批注不存在" });
+    const parentCollection = resourceType === "thought" ? "thoughts" : ({ capture: "captures", journal: "journals", chat: "chats", analysis: "analyses", book: "books", quote: "quotes" })[resourceType];
+    const entry = parentCollection ? await updateStore(store => moveNestedItemToTrash(store, { parentCollection, parentId: resourceId, field: "annotationDrift", type: "annotationDrift", id: driftId })) : null;
+    return sendTrashResult(res, entry, "漂流批注不存在");
   }
   if (req.method === "DELETE" && /^\/api\/annotations\/[^/]+\/[^/]+\/[^/]+$/.test(url.pathname)) {
     const [, , , resourceType, resourceId, annotationId] = url.pathname.split("/");
-    const removed = await updateStore(store => { const root = annotationResource(store, resourceType, resourceId); if (!root) return false; root.annotations ||= []; const before = root.annotations.length; root.annotations = root.annotations.filter(item => item.id !== annotationId); return root.annotations.length < before; });
-    return removed ? sendJson(res, 200, { removed: 1 }) : sendJson(res, 404, { error: "评论不存在" });
+    const parentCollection = resourceType === "thought" ? "thoughts" : ({ capture: "captures", journal: "journals", chat: "chats", analysis: "analyses", book: "books", quote: "quotes" })[resourceType];
+    const entry = parentCollection ? await updateStore(store => moveNestedItemToTrash(store, { parentCollection, parentId: resourceId, field: "annotations", type: "annotation", id: annotationId })) : null;
+    return sendTrashResult(res, entry, "评论不存在");
   }
   if (req.method === "POST" && /^\/api\/thoughts\/[^/]+\/annotations$/.test(url.pathname)) {
     const id = url.pathname.split("/")[3], input = await bodyJson(req), kind = input.kind === "highlight" ? "highlight" : "comment", targetKey = safeText(input.targetKey, 160), quote = safeText(input.quote, 1000), text = safeText(input.text, 4000), start = Math.max(0, Number(input.start) || 0), end = Math.max(start, Number(input.end) || start);
@@ -2777,15 +4176,12 @@ ${context.text}
     return saved ? sendJson(res, 201, annotation) : sendJson(res, 404, { error: "选中的正文已变化，请重新选择" });
   }
   if (req.method === "POST" && /^\/api\/thoughts\/[^/]+\/annotations\/[^/]+\/shenji$/.test(url.pathname)) {
-    const parts = url.pathname.split("/"), id = parts[3], annotationId = parts[5], input = await bodyJson(req), message = safeText(input.message, 6000), store = await readStore();
-    const root = store.thoughts.find(item => item.id === id && item.type === "question"), annotation = root?.annotations?.find(item => item.id === annotationId);
-    if (!root || !annotation) return sendJson(res, 404, { error: "评论或划线不存在" });
-    const source = annotationSourceText(store, root, annotation.targetKey), excerpt = annotationExcerpt(source, annotation), previous = (annotation.shenji || []).map((item, index) => `<turn index="${index + 1}">\n<user>${item.message || "（未追加问题，直接询问标记内容）"}</user>\n<shenji>${item.answer}</shenji>\n</turn>`).join("\n");
-    const prompt = `${userAnswerContext(store)}\n\n<annotation_context>\n<original_question>${root.content}</original_question>\n<annotation_kind>${annotation.kind === "highlight" ? "划线" : "评论"}</annotation_kind>\n<source_before>${excerpt.before}</source_before>\n<focus priority="highest">${excerpt.focus}</focus>\n<source_after>${excerpt.after}</source_after>\n<comment_text>${annotation.text || "（无）"}</comment_text>\n</annotation_context>\n\n<previous_shenji_dialogue>${previous || "（无）"}</previous_shenji_dialogue>\n\n<current_user_prompt priority="highest">${message || "请直接分析被标记的内容：判断它是否准确、是否存在概念问题或潜在矛盾，并给出真正有用的建议。"}</current_user_prompt>`;
-    const result = await runDeepSeek(prompt, { scene: "annotationShenji", systemPrompt: SHENJI_SYSTEM_PROMPT, captureReasoning: true });
-    const exchange = { id: crypto.randomUUID(), createdAt: now(), message, answer: result.content, ...(result.reasoningContent ? { reasoningContent: result.reasoningContent } : {}) };
-    const saved = await updateStore(value => { const currentRoot = value.thoughts.find(item => item.id === id && item.type === "question"), current = currentRoot?.annotations?.find(item => item.id === annotationId); if (!current) return false; current.shenji ||= []; current.shenji.push(exchange); return true; });
-    return saved ? sendJson(res, 201, exchange) : sendJson(res, 409, { error: "评论或划线状态已变化，请重试" });
+    const parts = url.pathname.split("/"), id = parts[3], annotationId = parts[5], input = await bodyJson(req);
+    const created = await enqueueAiTask({
+      kind: "annotationShenji", resourceType: "thought", targetId: id, subtargetId: annotationId,
+      payload: { message: input.message }, clientRequestId: input.clientRequestId
+    });
+    return sendAiTaskCreation(res, created);
   }
   if (req.method === "POST" && /^\/api\/thoughts\/[^/]+\/annotations\/[^/]+\/replies$/.test(url.pathname)) {
     const parts = url.pathname.split("/"), id = parts[3], annotationId = parts[5], input = await bodyJson(req), text = safeText(input.text, 4000);
@@ -2796,31 +4192,44 @@ ${context.text}
   }
   if (req.method === "DELETE" && /^\/api\/thoughts\/[^/]+\/annotations\/[^/]+$/.test(url.pathname)) {
     const parts = url.pathname.split("/"), id = parts[3], annotationId = parts[5];
-    const removed = await updateStore(store => { const root = store.thoughts.find(item => item.id === id && item.type === "question"); if (!root) return false; root.annotations ||= []; const before = root.annotations.length; root.annotations = root.annotations.filter(item => item.id !== annotationId); return root.annotations.length < before; });
-    return removed ? sendJson(res, 200, { removed: 1 }) : sendJson(res, 404, { error: "评论不存在" });
+    const entry = await updateStore(store => moveNestedItemToTrash(store, { parentCollection: "thoughts", parentId: id, field: "annotations", type: "annotation", id: annotationId }));
+    return sendTrashResult(res, entry, "评论不存在");
   }
   if (req.method === "DELETE" && /^\/api\/thoughts\/[^/]+\/annotation-drift\/[^/]+$/.test(url.pathname)) {
     const parts = url.pathname.split("/"), id = parts[3], driftId = parts[5];
-    const removed = await updateStore(store => { const root = store.thoughts.find(item => item.id === id && item.type === "question"); if (!root) return false; root.annotationDrift ||= []; const before = root.annotationDrift.length; root.annotationDrift = root.annotationDrift.filter(item => item.id !== driftId); return root.annotationDrift.length < before; });
-    return removed ? sendJson(res, 200, { removed: 1 }) : sendJson(res, 404, { error: "漂流批注不存在" });
+    const entry = await updateStore(store => moveNestedItemToTrash(store, { parentCollection: "thoughts", parentId: id, field: "annotationDrift", type: "annotationDrift", id: driftId }));
+    return sendTrashResult(res, entry, "漂流批注不存在");
   }
   if (req.method === "POST" && /^\/api\/thoughts\/[^/]+\/answer$/.test(url.pathname)) {
-    const id = url.pathname.split("/")[3]; const store = await readStore(); const question = store.thoughts.find(item => item.id === id && item.type === "question");
-    if (!question) return sendJson(res, 404, { error: "问题不存在" });
-    if (store.thoughts.some(item => item.relatedTo === id && item.type === "answer")) return sendJson(res, 409, { error: "这套思考已经有回答" });
-    const prompt = userPrompt({ context: userAnswerContext(store), chain: thoughtChainContext(store, question), task: "回答原始问题。直接写出明确主张，再用最关键的理由、反例和边界支撑；不要添加“核心判断”“结论”“我的判断”“给我判断”“给你一个判断”等元标签。该下判断时不要只抛问题。哲学或抽象主题先补足理解主张所必需的背景，避免只罗列流派。时效性事实若无法实时核实，明确说明。" });
-    return respondWithModel(req, res, {
-      prompt,
+    const id = url.pathname.split("/")[3], input = await bodyJson(req), clientRequestId = safeText(input.clientRequestId, 100);
+    if (!clientRequestId) return sendJson(res, 400, { error: "回答请求缺少幂等标识", code: "IDEMPOTENCY_KEY_REQUIRED" });
+    return respondWithBoundModel(req, res, {
+      operation: "thoughtAnswer",
+      clientRequestId,
+      requestHash: sha256(JSON.stringify({ id })),
       status: 201,
-      options: { scene: "thoughtAnswer" },
-      complete: async (content, reasoningContent) => {
-        content = stripThoughtAnswerLead(content);
-        const answer = { id: crypto.randomUUID(), createdAt: now(), occurredAt: question.occurredAt, occurredOn: question.occurredOn, type: "answer", content, modelDraft: content, editedFromModel: false, tags: question.tags, relatedTo: id, disposition: question.disposition || "kept", remarks: [], origin: "deepseek", ...(reasoningContent ? { reasoningContent } : {}) };
+      run: async onDelta => {
+        const store = await readStore();
+        const duplicate = store.thoughts.find(item => item.type === "answer" && item.clientRequestId === clientRequestId);
+        if (duplicate) {
+          if (duplicate.relatedTo !== id) throw Object.assign(new Error("同一请求标识不能用于不同内容"), { statusCode: 409, code: "IDEMPOTENCY_KEY_REUSED" });
+          return duplicate;
+        }
+        const question = store.thoughts.find(item => item.id === id && item.type === "question");
+        if (!question) throw Object.assign(new Error("问题不存在"), { statusCode: 404, code: "THOUGHT_NOT_FOUND" });
+        const sourceVersion = recordVersion(question.version), generation = store.thoughts.filter(item => item.relatedTo === id && item.type === "answer").length + 1;
+        const prompt = userPrompt({ context: userAnswerContext(store), chain: thoughtChainContext(store, question), task: "回答原始问题。直接写出明确主张，再用最关键的理由、反例和边界支撑；不要添加“核心判断”“结论”“我的判断”“给我判断”“给你一个判断”等元标签。该下判断时不要只抛问题。哲学或抽象主题先补足理解主张所必需的背景，避免只罗列流派。时效性事实若无法实时核实，明确说明。" });
+        const result = await runDeepSeek(prompt, { scene: "thoughtAnswer", captureReasoning: true, onDelta });
+        const content = stripThoughtAnswerLead(result.content);
+        const reasoningContent = result.reasoningContent;
+        const answer = { id: crypto.randomUUID(), createdAt: now(), occurredAt: question.occurredAt, occurredOn: question.occurredOn, type: "answer", content, modelDraft: content, editedFromModel: false, tags: question.tags, relatedTo: id, disposition: question.disposition || "kept", remarks: [], origin: "deepseek", authorType: "ai", version: 1, sourceVersion, generation, clientRequestId, ...(reasoningContent ? { reasoningContent } : {}) };
         const saved = await updateStore(value => {
-          if (value.thoughts.some(item => item.relatedTo === id && item.type === "answer")) return null;
+          const current = value.thoughts.find(item => item.id === id && item.type === "question");
+          if (!current || recordVersion(current.version) !== sourceVersion) return null;
+          if (clientRequestId && value.thoughts.some(item => item.relatedTo === id && item.type === "answer" && item.clientRequestId === clientRequestId)) return value.thoughts.find(item => item.relatedTo === id && item.type === "answer" && item.clientRequestId === clientRequestId);
           value.thoughts.unshift(answer); return answer;
         });
-        if (!saved) throw new Error("这套思考已经有回答");
+        if (!saved) throw Object.assign(new Error("问题已被修改或删除，本次回答未写入"), { code: "STALE_AI_RESULT" });
         return saved;
       }
     });
@@ -2828,42 +4237,31 @@ ${context.text}
   if (req.method === "POST" && /^\/api\/thoughts\/[^/]+\/follow-ups$/.test(url.pathname)) {
     const id = url.pathname.split("/")[3]; const input = await bodyJson(req); const text = safeText(input.question, 6000), answer = safeText(input.answer, 20000);
     if (!text) return sendJson(res, 400, { error: "请先写下追问" });
-    const followUp = { id: crypto.randomUUID(), createdAt: now(), question: text, answer, ...(answer ? { answeredAt: now() } : {}), origin: "manual" };
-    const saved = await updateStore(store => { const root = store.thoughts.find(item => item.id === id && item.type === "question"); if (!root) return false; root.followUps ||= []; root.followUps.push(followUp); return true; });
+    const followUp = { id: crypto.randomUUID(), createdAt: now(), question: text, answer, ...(answer ? { answeredAt: now() } : {}), origin: "manual", version: 1 };
+    const saved = await updateStore(store => { const root = store.thoughts.find(item => item.id === id && item.type === "question"); if (!root) return false; root.followUps ||= []; root.followUps.push(followUp); root.version = recordVersion(root.version) + 1; root.updatedAt = now(); return true; });
     return saved ? sendJson(res, 201, followUp) : sendJson(res, 404, { error: "问题不存在" });
   }
   if (req.method === "PATCH" && /^\/api\/thoughts\/[^/]+\/follow-ups\/[^/]+$/.test(url.pathname)) {
     const parts = url.pathname.split("/"), id = parts[3], followUpId = parts[5], input = await bodyJson(req), hasQuestion = Object.prototype.hasOwnProperty.call(input, "question"), hasAnswer = Object.prototype.hasOwnProperty.call(input, "answer"), question = hasQuestion ? safeText(input.question, 6000) : null, answer = hasAnswer ? safeText(input.answer, 20000) : null;
     if (!hasQuestion && !hasAnswer) return sendJson(res, 400, { error: "没有需要更新的内容" });
     if (hasQuestion && !question) return sendJson(res, 400, { error: "追问问题不能为空" });
-    const updated = await updateStore(store => { const root = store.thoughts.find(item => item.id === id && item.type === "question"), followUp = root?.followUps?.find(item => item.id === followUpId); if (!followUp) return null; if (hasQuestion) { reanchorAnnotations(root, `followup-question:${followUpId}`, followUp.question, question); followUp.question = question; } if (hasAnswer) { reanchorAnnotations(root, `followup-answer:${followUpId}`, followUp.answer || "", answer); followUp.answer = answer; followUp.answeredAt = answer ? now() : null; if (followUp.modelDraft) followUp.editedFromModel = followUp.modelDraft !== answer; followUp.origin = "manual"; } followUp.updatedAt = now(); return followUp; });
+    const updated = await updateStore(store => { const root = store.thoughts.find(item => item.id === id && item.type === "question"), followUp = root?.followUps?.find(item => item.id === followUpId); if (!followUp) return null; if (hasOwn(input, "expectedVersion") && Number(input.expectedVersion) !== recordVersion(followUp.version)) return { conflict: true }; if (hasQuestion) { reanchorAnnotations(root, `followup-question:${followUpId}`, followUp.question, question); followUp.question = question; } if (hasAnswer) { reanchorAnnotations(root, `followup-answer:${followUpId}`, followUp.answer || "", answer); followUp.answer = answer; followUp.answeredAt = answer ? now() : null; if (followUp.modelDraft) followUp.editedFromModel = followUp.modelDraft !== answer; followUp.origin = "manual"; } followUp.updatedAt = now(); followUp.version = recordVersion(followUp.version) + 1; root.version = recordVersion(root.version) + 1; root.updatedAt = now(); return followUp; });
+    if (updated?.conflict) return sendJson(res, 409, { error: "追问已在其他位置更新，请刷新后重试", code: "VERSION_CONFLICT" });
     return updated ? sendJson(res, 200, updated) : sendJson(res, 404, { error: "追问不存在" });
   }
   if (req.method === "DELETE" && /^\/api\/thoughts\/[^/]+\/follow-ups\/[^/]+$/.test(url.pathname)) {
     const parts = url.pathname.split("/"), id = parts[3], followUpId = parts[5];
-    const removed = await updateStore(store => { const root = store.thoughts.find(item => item.id === id && item.type === "question"); if (!root) return false; root.followUps ||= []; const current = root.followUps.find(item => item.id === followUpId), before = root.followUps.length; if (current) { reanchorAnnotations(root, `followup-question:${followUpId}`, current.question, "", "追问已删除"); reanchorAnnotations(root, `followup-answer:${followUpId}`, current.answer || "", "", "追问已删除"); } root.followUps = root.followUps.filter(item => item.id !== followUpId); return root.followUps.length < before; });
-    return removed ? sendJson(res, 200, { removed: 1 }) : sendJson(res, 404, { error: "追问不存在" });
+    const entry = await updateStore(store => moveNestedItemToTrash(store, { parentCollection: "thoughts", parentId: id, field: "followUps", type: "thoughtFollowUp", id: followUpId, annotationTargetKeys: [`followup-question:${followUpId}`, `followup-answer:${followUpId}`] }));
+    return sendTrashResult(res, entry, "追问不存在");
   }
   if (req.method === "POST" && /^\/api\/thoughts\/[^/]+\/follow-ups\/[^/]+\/answer$/.test(url.pathname)) {
-    const parts = url.pathname.split("/"), id = parts[3], followUpId = parts[5], store = await readStore();
-    const root = store.thoughts.find(item => item.id === id && item.type === "question"), followUp = root?.followUps?.find(item => item.id === followUpId);
-    if (!root || !followUp) return sendJson(res, 404, { error: "追问不存在" });
-    if (followUp.answer) return sendJson(res, 409, { error: "这条追问已经有回答" });
-    const prompt = userPrompt({ context: userAnswerContext(store), chain: thoughtChainContext(store, root, followUpId), task: "回答标记为 current=true 的当前追问。完整理解整条链，但不要机械重述原始回答；只保留支撑当前答案所需的前后文，并把事实、推断和建议分开。" });
-    return respondWithModel(req, res, {
-      prompt,
-      status: 201,
-      options: { scene: "followUpAnswer" },
-      complete: async (content, reasoningContent) => {
-        const updated = await updateStore(value => {
-          const currentRoot = value.thoughts.find(item => item.id === id && item.type === "question"), current = currentRoot?.followUps?.find(item => item.id === followUpId);
-          if (!current || current.answer) return null;
-          current.answer = content; current.modelDraft = content; current.answeredAt = now(); current.origin = "deepseek"; if (reasoningContent) current.reasoningContent = reasoningContent; return current;
-        });
-        if (!updated) throw new Error("追问状态已变更，请刷新后重试");
-        return updated;
-      }
+    const parts = url.pathname.split("/"), id = parts[3], followUpId = parts[5], input = await bodyJson(req);
+    const created = await enqueueAiTask({
+      kind: "followUpAnswer", targetId: id, subtargetId: followUpId,
+      inputVersion: input.inputVersion, subtargetVersion: input.subtargetVersion,
+      clientRequestId: input.clientRequestId
     });
+    return sendAiTaskCreation(res, created);
   }
   if (req.method === "POST" && url.pathname === "/api/chat") {
     const input = await bodyJson(req); const message = safeText(input.message); if (!message) return sendJson(res, 400, { error: "请先写下问题" });
@@ -2873,7 +4271,15 @@ ${context.text}
     const result = await runDeepSeek(userPrompt({ context: userAnswerContext(store), task: message }), { scene: "chat", history, captureReasoning: true }); const chat = { id: crypto.randomUUID(), createdAt: now(), ...eventTime, message, answer: result.content, annotations: [], annotationDrift: [], ...(result.reasoningContent ? { reasoningContent: result.reasoningContent } : {}) };
     await updateStore(store => store.chats.unshift(chat)); return sendJson(res, 200, chat);
   }
+  if (req.method === "DELETE" && /^\/api\/chats\/[^/]+$/.test(url.pathname)) {
+    const id = url.pathname.split("/")[3], entry = await updateStore(store => moveCollectionItemToTrash(store, "chats", "chat", id));
+    return sendTrashResult(res, entry, "这段对话不存在");
+  }
   if (req.method === "POST" && url.pathname === "/api/analysis/run") return sendJson(res, 201, await generateReflection("manual"));
+  if (req.method === "DELETE" && /^\/api\/analyses\/[^/]+$/.test(url.pathname)) {
+    const id = url.pathname.split("/")[3], entry = await updateStore(store => moveCollectionItemToTrash(store, "analyses", "analysis", id));
+    return sendTrashResult(res, entry, "这次复盘不存在");
+  }
   if (req.method === "POST" && url.pathname === "/api/custom-metrics") {
     const input = await bodyJson(req); const name = safeText(input.name, 40); if (!name) return sendJson(res, 400, { error: "请填写指标名" });
     const metric = { id: crypto.randomUUID(), name, low: safeText(input.low, 60) || "很低", high: safeText(input.high, 60) || "很高", createdAt: now() };
@@ -2884,6 +4290,14 @@ ${context.text}
     const outcome = ["mood", "energy", "stress", "sleep"].includes(input.outcome) ? input.outcome : "mood";
     const experiment = { id: crypto.randomUUID(), createdAt: now(), hypothesis, factor, outcome, duration: [14, 30, 60].includes(Number(input.duration)) ? Number(input.duration) : 30, status: "active" };
     await updateStore(store => store.experiments.unshift(experiment)); return sendJson(res, 201, experiment);
+  }
+  if (req.method === "DELETE" && /^\/api\/experiments\/[^/]+$/.test(url.pathname)) {
+    const id = url.pathname.split("/")[3], entry = await updateStore(store => moveCollectionItemToTrash(store, "experiments", "experiment", id));
+    return sendTrashResult(res, entry, "这个实验不存在");
+  }
+  if (req.method === "DELETE" && /^\/api\/custom-metrics\/[^/]+$/.test(url.pathname)) {
+    const id = url.pathname.split("/")[3], entry = await updateStore(store => moveCollectionItemToTrash(store, "customMetrics", "customMetric", id));
+    return sendTrashResult(res, entry, "这个自定义指标不存在");
   }
   if (req.method === "POST" && url.pathname === "/api/books/parse") {
     const input = await bodyJson(req), parsed = await parseImageRequest(input, "book");
@@ -2927,6 +4341,10 @@ ${context.text}
     if (updated?.validationError) return sendJson(res, 400, { error: updated.validationError });
     return updated ? sendJson(res, 200, updated) : sendJson(res, 404, { error: "书目不存在" });
   }
+  if (req.method === "DELETE" && /^\/api\/books\/[^/]+$/.test(url.pathname)) {
+    const id = url.pathname.split("/")[3], entry = await updateStore(store => moveCollectionItemToTrash(store, "books", "book", id));
+    return sendTrashResult(res, entry, "书目不存在");
+  }
   if (req.method === "POST" && /^\/api\/books\/[^/]+\/notes$/.test(url.pathname)) {
     const id = url.pathname.split("/")[3]; const input = await bodyJson(req); const content = safeText(input.content); if (!content) return sendJson(res, 400, { error: "内容不能为空" });
     const eventTime = eventTimeFields(input);
@@ -2953,14 +4371,8 @@ ${context.text}
   }
   if (req.method === "DELETE" && /^\/api\/books\/[^/]+\/notes\/[^/]+$/.test(url.pathname)) {
     const [, , , bookId, , noteId] = url.pathname.split("/");
-    const removed = await updateStore(store => {
-      const book = store.books.find(item => item.id === bookId), note = book?.notes?.find(item => item.id === noteId);
-      if (!book || !note) return false;
-      reanchorAnnotations(book, `note:${noteId}`, note.content, "", "读书记录已删除");
-      book.notes = book.notes.filter(item => item.id !== noteId);
-      return true;
-    });
-    return removed ? sendJson(res, 200, { removed: 1 }) : sendJson(res, 404, { error: "书目记录不存在" });
+    const entry = await updateStore(store => moveNestedItemToTrash(store, { parentCollection: "books", parentId: bookId, field: "notes", type: "bookNote", id: noteId, annotationTargetKeys: [`note:${noteId}`] }));
+    return sendTrashResult(res, entry, "书目记录不存在");
   }
   if (req.method === "POST" && url.pathname === "/api/keepsakes") {
     const input = await bodyJson(req), parsed = keepsakePayload(input);
@@ -2984,12 +4396,8 @@ ${context.text}
     return sendJson(res, 200, updated.value);
   }
   if (req.method === "DELETE" && /^\/api\/keepsakes\/[^/]+$/.test(url.pathname)) {
-    const id = url.pathname.split("/")[3], removed = await updateStore(store => {
-      const before = store.keepsakes.length;
-      store.keepsakes = store.keepsakes.filter(item => item.id !== id);
-      return before - store.keepsakes.length;
-    });
-    return removed ? sendJson(res, 200, { removed }) : sendJson(res, 404, { error: "这件小物不存在" });
+    const id = url.pathname.split("/")[3], entry = await updateStore(store => moveCollectionItemToTrash(store, "keepsakes", "keepsake", id));
+    return sendTrashResult(res, entry, "这件小物不存在");
   }
   if (req.method === "POST" && url.pathname === "/api/quotes") {
     const input = await bodyJson(req); const source = safeText(input.source, 500); const content = safeText(input.content, 5000); if (!source || !content) return sendJson(res, 400, { error: "来源和内容都必须填写" });
@@ -3016,21 +4424,34 @@ ${context.text}
     return updated ? sendJson(res, 200, updated) : sendJson(res, 404, { error: "善言不存在或时间格式不正确" });
   }
   if (req.method === "DELETE" && /^\/api\/quotes\/[^/]+$/.test(url.pathname)) {
-    const id = url.pathname.split("/")[3], removed = await updateStore(store => {
-      const before = store.quotes.length;
-      store.quotes = store.quotes.filter(item => item.id !== id);
-      return before - store.quotes.length;
-    });
-    return removed ? sendJson(res, 200, { removed }) : sendJson(res, 404, { error: "善言不存在" });
+    const id = url.pathname.split("/")[3], entry = await updateStore(store => moveCollectionItemToTrash(store, "quotes", "quote", id));
+    return sendTrashResult(res, entry, "善言不存在");
   }
   return sendJson(res, 404, { error: "Not found" });
 }
 
-const mime = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
-await ensureStore();
-await ensureLlmSettings();
-await ensureAiUsage();
-await ensureAuditLogs();
+const mime = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
+if (LOCAL_TEST_MODE) {
+  await fs.mkdir(LOCAL_TEST_WORKSPACES_DIR, { recursive: true, mode: 0o700 });
+  await fs.chmod(LOCAL_TEST_WORKSPACES_DIR, 0o700);
+  const control = await readLocalTestControl();
+  await writeLocalTestControl(control);
+  await requestStorage.run({ user: { id: `local-test-${control.mode}`, username: control.mode === "simulation" ? "使用模拟" : "冷启测试", createdAt: "" }, dataDir: localTestWorkspaceDir(control.mode) }, async () => {
+    await ensureStore();
+    await ensureLlmSettings();
+    await ensureAiUsage();
+    await ensureAuditLogs();
+    await resumeAttachmentCleanup();
+    await resumeAiTasks();
+  });
+} else {
+  await ensureStore();
+  await ensureLlmSettings();
+  await ensureAiUsage();
+  await ensureAuditLogs();
+  await resumeAttachmentCleanup();
+  await resumeAiTasks();
+}
 await fs.mkdir(USERS_DIR, { recursive: true, mode: 0o700 });
 await fs.chmod(USERS_DIR, 0o700);
 if (AUTH_REQUIRED) {
@@ -3041,12 +4462,16 @@ if (AUTH_REQUIRED) {
       await ensureLlmSettings();
       await ensureAiUsage();
       await ensureAuditLogs();
+      await resumeAttachmentCleanup();
+      await resumeAiTasks();
     });
   }
 }
 const periodicFailure = error => logEvent("system", "scheduler.failed", { level: "error", error: errorMetadata(error) });
-setTimeout(() => void runPeriodicAnalyses().catch(periodicFailure), 5000).unref();
-setInterval(() => void runPeriodicAnalyses().catch(periodicFailure), 3600000).unref();
+if (!LOCAL_TEST_MODE) {
+  setTimeout(() => void runPeriodicAnalyses().catch(periodicFailure), 5000).unref();
+  setInterval(() => void runPeriodicAnalyses().catch(periodicFailure), 3600000).unref();
+}
 http.createServer((req, res) => {
   const suppliedTraceId = safeText(req.headers["x-request-id"], 128);
   const traceId = /^[A-Za-z0-9_.:-]{8,128}$/.test(suppliedTraceId) ? suppliedTraceId : crypto.randomUUID();
@@ -3070,7 +4495,29 @@ http.createServer((req, res) => {
     if (url.pathname === "/healthz" || url.pathname === "/readyz") return sendJson(res, 200, { ok: true, version: process.env.APP_VERSION || "development" });
     const unsafe = !["GET", "HEAD", "OPTIONS"].includes(req.method || "GET");
     if (unsafe && String(req.headers["sec-fetch-site"] || "") === "cross-site") return sendJson(res, 403, { error: "跨站请求已拒绝" });
-    if (UPSTREAM_ORIGIN && (url.pathname.startsWith("/api/") || url.pathname.startsWith("/attachments/"))) return await proxyToUpstream(req, res, url);
+    if (LOCAL_TEST_MODE && url.pathname === "/api/local-test-mode") {
+      if (req.method === "GET") return sendJson(res, 200, publicLocalTestControl(await readLocalTestControl()));
+      if (req.method === "POST") {
+        const input = await bodyJson(req), control = await switchLocalTestMode(req, safeText(input.mode, 40));
+        return sendJson(res, 200, publicLocalTestControl(control));
+      }
+      return sendJson(res, 405, { error: "Method not allowed" });
+    }
+    if (LOCAL_TEST_MODE && UPSTREAM_ORIGIN && url.pathname.startsWith("/api/auth/")) {
+      const allowed = (req.method === "GET" && url.pathname === "/api/auth/me")
+        || (req.method === "POST" && ["/api/auth/login", "/api/auth/logout"].includes(url.pathname));
+      return allowed ? await proxyToUpstream(req, res, url) : sendJson(res, 403, { error: "本地测试版禁止修改线上账户", code: "LOCAL_TEST_READ_ONLY" });
+    }
+    if (LOCAL_TEST_MODE) {
+      const control = await readLocalTestControl();
+      context.localTestMode = control.mode;
+      context.dataDir = localTestWorkspaceDir(control.mode);
+    }
+    if (url.pathname.startsWith("/api/admin/")) {
+      const handled = await adminSnapshotApi(req, res, url);
+      return handled === false ? sendJson(res, 404, { error: "Not found" }) : handled;
+    }
+    if (UPSTREAM_ORIGIN && !LOCAL_TEST_MODE && (url.pathname.startsWith("/api/") || url.pathname.startsWith("/attachments/"))) return await proxyToUpstream(req, res, url);
     const user = await requestUser(req);
     if (url.pathname.startsWith("/api/auth/")) {
       const handled = await authApi(req, res, url);
@@ -3081,10 +4528,18 @@ http.createServer((req, res) => {
       if (req.method === "GET" && url.pathname === "/api/meta") return sendJson(res, 200, { version: process.env.APP_VERSION || "development", user: publicUser(user) });
       if (url.pathname.startsWith("/api/")) return await api(req, res, url);
       if (url.pathname.startsWith("/attachments/")) {
+        if (!["GET", "HEAD"].includes(req.method || "GET")) return sendJson(res, 405, { error: "Method not allowed" });
         const name = url.pathname.replace("/attachments/", "");
         if (!/^[\w.-]+$/.test(name)) return sendJson(res, 403, { error: "Forbidden" });
         const localFile = path.join(storagePaths().attachmentsDir, name);
-        const data = await attachmentStorage.get({ ownerId: attachmentOwnerId(), name, localFile });
+        let data;
+        try {
+          data = await attachmentStorage.get({ ownerId: attachmentOwnerId(), name, localFile });
+        } catch (error) {
+          const missing = ["ENOENT", "NoSuchKey"].includes(error?.code) || Number(error?.status) === 404;
+          if (LOCAL_TEST_MODE && context.localTestMode === "simulation" && UPSTREAM_ORIGIN && missing) return await proxyToUpstream(req, res, url);
+          throw error;
+        }
         res.writeHead(200, { "content-type": mime[path.extname(name).toLowerCase()] || "application/octet-stream", "cache-control": "private, no-store" });
         return res.end(req.method === "HEAD" ? undefined : data);
       }

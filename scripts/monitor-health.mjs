@@ -14,6 +14,9 @@ const numberEnv = (name, fallback) => {
 };
 
 async function serviceActive(name) {
+  if (process.env.NODE_ENV === "test" && name === "for-now-platform.service" && process.env.MONITOR_TEST_PLATFORM_ACTIVE) {
+    return process.env.MONITOR_TEST_PLATFORM_ACTIVE === "1";
+  }
   if (process.env.NODE_ENV === "test" && process.env.MONITOR_TEST_SERVICE_ACTIVE) return process.env.MONITOR_TEST_SERVICE_ACTIVE === "1";
   try {
     await execFile("/usr/bin/systemctl", ["is-active", "--quiet", name]);
@@ -89,10 +92,22 @@ export async function collectHealth({
   backupDir = process.env.BACKUP_DIR || "/var/backups/for-now",
   backupStamp = process.env.BACKUP_SUCCESS_STAMP || "/var/lib/for-now-monitor/last-backup-success",
   serviceName = process.env.MONITOR_SERVICE_NAME || "for-now.service",
-  readyUrl = process.env.MONITOR_READY_URL || "http://127.0.0.1:4173/readyz"
+  readyUrl = process.env.MONITOR_READY_URL || "http://127.0.0.1:4173/readyz",
+  platformEnabled = process.env.MONITOR_PLATFORM_ENABLED === "1",
+  platformServiceName = process.env.MONITOR_PLATFORM_SERVICE_NAME || "for-now-platform.service",
+  platformReadyUrl = process.env.MONITOR_PLATFORM_READY_URL || "http://127.0.0.1:4280/readyz"
 } = {}) {
   const issues = [], active = await serviceActive(serviceName), isReady = active && await ready(readyUrl);
   if (!active || !isReady) issues.push({ key: "service", severity: "critical", text: active ? "服务进程存活，但健康检查失败" : "服务已停止" });
+  const platformActive = platformEnabled ? await serviceActive(platformServiceName) : null;
+  const platformReady = platformEnabled ? platformActive && await ready(platformReadyUrl) : null;
+  if (platformEnabled && (!platformActive || !platformReady)) {
+    issues.push({
+      key: "platform-service",
+      severity: "critical",
+      text: platformActive ? "中台进程存活，但生产数据就绪检查失败" : "中台服务已停止"
+    });
+  }
 
   const disk = await fs.statfs(dataDir);
   const diskPercent = disk.blocks ? Math.round((1 - disk.bavail / disk.blocks) * 1000) / 10 : 0;
@@ -114,11 +129,26 @@ export async function collectHealth({
   const failureLimit = Math.max(1, numberEnv("ALERT_AI_CONSECUTIVE_FAILURES", 5));
   if (consecutiveAiFailures >= failureLimit) issues.push({ key: "ai-failures", severity: "warning", text: `AI 连续失败 ${consecutiveAiFailures} 次（阈值 ${failureLimit} 次）` });
 
-  const costUsd = Math.round(await dailyAiCost(dataDir, now) * 10000) / 10000;
-  const costLimit = numberEnv("ALERT_DAILY_AI_COST_USD", 5);
-  if (costUsd >= costLimit) issues.push({ key: "ai-cost", severity: "warning", text: `今日 AI 估算费用 $${costUsd.toFixed(4)}（阈值 $${costLimit.toFixed(2)}）` });
+  const cnyPerUsd = Math.max(0.01, numberEnv("AI_COST_CNY_PER_USD", 7.2));
+  const costCny = Math.round(await dailyAiCost(dataDir, now) * cnyPerUsd * 10000) / 10000;
+  const legacyCostLimitUsd = Number(process.env.ALERT_DAILY_AI_COST_USD);
+  const costLimitCny = Math.max(0.01, numberEnv("ALERT_DAILY_AI_COST_CNY", Number.isFinite(legacyCostLimitUsd) ? legacyCostLimitUsd * cnyPerUsd : 36));
+  if (costCny >= costLimitCny) issues.push({ key: "ai-cost", severity: "warning", text: `今日 AI 估算费用 ¥${costCny.toFixed(4)}（阈值 ¥${costLimitCny.toFixed(2)}）` });
 
-  return { checkedAt: new Date(now).toISOString(), host: os.hostname(), active, ready: isReady, diskPercent, backupAgeHours, consecutiveAiFailures, costUsd, issues };
+  return {
+    checkedAt: new Date(now).toISOString(),
+    host: os.hostname(),
+    active,
+    ready: isReady,
+    platformEnabled,
+    platformActive,
+    platformReady,
+    diskPercent,
+    backupAgeHours,
+    consecutiveAiFailures,
+    costCny,
+    issues
+  };
 }
 
 function feishuSignature(timestamp, secret) {

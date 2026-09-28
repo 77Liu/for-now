@@ -10,6 +10,11 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const fixture = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "growth-deploy-")));
 const commit = "abcdef0123456789abcdef0123456789abcdef01";
 const source = await fs.readFile(path.join(root, "deploy/deploy.sh"), "utf8");
+const nginx = await fs.readFile(path.join(root, "deploy/nginx-for-now.conf"), "utf8");
+const envExample = await fs.readFile(path.join(root, "deploy/for-now.env.example"), "utf8");
+assert.match(nginx, /location = \/now\/api\/admin\/v1\/snapshot\s*\{\s*return 404;/);
+assert.match(nginx, /location \/platform\/[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:4280\//);
+assert.match(envExample, /^PLATFORM_SERVICE_TOKEN_HASH=$/m);
 const files = [
   "/etc/for-now.env", "/etc/systemd/system/for-now.service", "/etc/systemd/system/for-now-backup.service",
   "/etc/systemd/system/for-now-backup.timer", "/etc/systemd/system/for-now-monitor.service",
@@ -19,7 +24,7 @@ const files = [
   "/etc/nginx/snippets/acme-challenge.conf", "/etc/nginx/sites-available/dysf", "/usr/local/sbin/for-now-deploy"
 ];
 try {
-  for (const scenario of ["success", "restart", "health", "nginx", "dependencies", "same_commit_dependencies"]) {
+  for (const scenario of ["success", "restart", "health", "nginx", "dependencies", "same_commit_dependencies", "exploration"]) {
     const dir = path.join(fixture, scenario), bin = path.join(dir, "bin"), base = path.join(dir, "opt/for-now");
     const exactRelease = path.join(base, "releases", commit);
     const previous = scenario === "same_commit_dependencies" ? exactRelease : path.join(base, "releases", "previous");
@@ -30,16 +35,17 @@ try {
     await fs.mkdir(path.join(dir, "archive/public"), { recursive: true });
     await fs.mkdir(path.join(dir, "archive/scripts"), { recursive: true });
     await fs.cp(path.join(root, "deploy"), path.join(dir, "archive/deploy"), { recursive: true });
-    for (const file of ["server.mjs", "logging.mjs", "attachment-storage.mjs", "package.json", "package-lock.json"]) await fs.copyFile(path.join(root, file), path.join(dir, "archive", file));
+    for (const file of ["server.mjs", "admin-snapshot.mjs", "logging.mjs", "attachment-storage.mjs", "package.json", "package-lock.json"]) await fs.copyFile(path.join(root, file), path.join(dir, "archive", file));
     for (const file of ["monitor-health.mjs", "validate-restored-data.mjs", "oss-attachment-smoke.mjs", "aliyun-segmentation-smoke.mjs"]) {
       await fs.copyFile(path.join(root, "scripts", file), path.join(dir, "archive/scripts", file));
     }
     await fs.copyFile(path.join(root, "public/app.js"), path.join(dir, "archive/public/app.js"));
+    if (scenario === "exploration") await fs.writeFile(path.join(dir, "archive/public/explore.html"), "local exploration only\n");
     await fs.symlink(previous, path.join(base, "app"));
     for (const file of [...files, "/home/for-now/.ssh/gitee_deploy", "/usr/local/bin/npm", "/usr/local/bin/node"]) {
       await fs.mkdir(path.dirname(path.join(dir, file)), { recursive: true });
       await fs.writeFile(path.join(dir, file), file.endsWith(".env")
-        ? "APP_VERSION=old-version\nOSS_ATTACHMENT_BUCKET=for-now\nOSS_ENDPOINT=https://oss-cn-beijing-internal.aliyuncs.com\nOSS_REGION=cn-beijing\nFEISHU_ALERT_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/test\nUNCHANGED=yes\n"
+        ? "APP_VERSION=old-version\nOSS_ATTACHMENT_BUCKET=for-now\nOSS_ENDPOINT=https://oss-cn-beijing-internal.aliyuncs.com\nOSS_REGION=cn-beijing\nFEISHU_ALERT_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/test\nPLATFORM_SERVICE_TOKEN_HASH=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nUNCHANGED=yes\n"
         : `old:${file}\n`);
     }
     const shim = path.join(bin, "shim.mjs");
@@ -85,7 +91,7 @@ if(name==="sed"){const file=args.at(-1),version=args[1].split("APP_VERSION=")[2]
     if (scenario === "success") assert.equal(path.basename(active), commit);
     else assert.equal(active, previous);
     const env = await fs.readFile(path.join(dir, "etc/for-now.env"), "utf8");
-    assert.equal(env, `APP_VERSION=${scenario === "success" ? commit.slice(0, 12) : "old-version"}\nOSS_ATTACHMENT_BUCKET=for-now\nOSS_ENDPOINT=https://oss-cn-beijing-internal.aliyuncs.com\nOSS_REGION=cn-beijing\nFEISHU_ALERT_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/test\nUNCHANGED=yes\n`);
+    assert.equal(env, `APP_VERSION=${scenario === "success" ? commit.slice(0, 12) : "old-version"}\nOSS_ATTACHMENT_BUCKET=for-now\nOSS_ENDPOINT=https://oss-cn-beijing-internal.aliyuncs.com\nOSS_REGION=cn-beijing\nFEISHU_ALERT_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/test\nPLATFORM_SERVICE_TOKEN_HASH=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nUNCHANGED=yes\n`);
     if (scenario !== "success") {
       for (const file of files.filter(file => !file.endsWith(".env"))) {
         assert.equal(await fs.readFile(path.join(dir, file), "utf8"), `old:${file}\n`, `${scenario}: restore ${file}`);

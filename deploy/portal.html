@@ -9,7 +9,7 @@
     *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px}
     main{width:min(720px,100%)}header{margin-bottom:28px;border-left:4px solid #72877e;padding-left:16px}
     h1{margin:0;font:650 2rem/1.2 ui-serif,"Songti SC",serif}p{margin:7px 0 0;color:#74807b}
-    nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border:1px solid #d5ddd9;border-radius:8px;background:#fff;overflow:hidden}
+    nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid #d5ddd9;border-radius:8px;background:#fff;overflow:hidden}
     a{min-height:150px;display:grid;align-content:center;gap:8px;padding:24px;color:inherit;text-decoration:none}
     a+a{border-left:1px solid #d5ddd9}a:hover{background:#f7f9f8}strong{font-size:1.08rem}span{color:#7a8580;font-size:.82rem;line-height:1.55}
     @media(max-width:560px){nav{grid-template-columns:1fr}a+a{border-left:0;border-top:1px solid #d5ddd9}}
@@ -21,6 +21,7 @@
     <nav aria-label="服务器应用">
       <a href="/"><strong>大衍筮法</strong><span>返回当前主页应用</span></a>
       <a href="/now/"><strong>此刻</strong><span>个人成长、记录与复盘</span></a>
+      <a href="/platform/"><strong>此刻中台</strong><span>生产运行与治理，只读访问</span></a>
     </nav>
   </main>
 </body>

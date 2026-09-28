@@ -43,6 +43,8 @@ const port = await freePort();
 const base = `http://127.0.0.1:${port}`;
 const invitation = "regression-invitation";
 const invitationHash = crypto.createHash("sha256").update(invitation).digest("hex");
+const platformToken = "platform-regression-token-with-32-characters";
+const platformTokenHash = crypto.createHash("sha256").update(platformToken).digest("hex");
 const legacyStore = {
   version: 12,
   checkins: [],
@@ -60,8 +62,10 @@ const legacyStore = {
 };
 await fs.writeFile(path.join(dataDir, "store.json"), `${JSON.stringify(legacyStore)}\n`);
 
+let providerCalls = 0;
 const provider = http.createServer(async (req, res) => {
   for await (const chunk of req) { void chunk; }
+  providerCalls += 1;
   res.setHeader("content-type", "application/json");
   res.end(JSON.stringify({ choices: [{ message: { content: "isolated response" }, finish_reason: "stop" }], usage: { prompt_tokens: 2, completion_tokens: 1 } }));
 });
@@ -70,7 +74,7 @@ let errors = "";
 const startApp = () => {
   const app = spawn(globalThis.process.execPath, ["server.mjs"], {
     cwd: ROOT,
-    env: { ...globalThis.process.env, NODE_ENV: "test", DATA_DIR: dataDir, PORT: String(port), APP_BASE_PATH: "/now", INVITE_CODE_HASH: invitationHash, COOKIE_SECURE: "1", UPSTREAM_ORIGIN: "", DEEPSEEK_API_URL: `http://127.0.0.1:${provider.address().port}` },
+    env: { ...globalThis.process.env, NODE_ENV: "test", DATA_DIR: dataDir, PORT: String(port), APP_BASE_PATH: "/now", INVITE_CODE_HASH: invitationHash, COOKIE_SECURE: "1", UPSTREAM_ORIGIN: "", PLATFORM_SERVICE_TOKEN_HASH: platformTokenHash, BACKUP_STATUS_FILE: path.join(dataDir, "missing-backup-marker"), DEEPSEEK_API_URL: `http://127.0.0.1:${provider.address().port}` },
     stdio: ["ignore", "pipe", "pipe"]
   });
   app.stderr.on("data", chunk => { errors += chunk; });
@@ -82,7 +86,15 @@ try {
   await waitForServer(base, child);
   assert.equal((await fetch(`${base}/now`, { redirect: "manual" })).status, 308);
   assert.equal((await fetch(`${base}/now/styles.css`)).status, 200);
+  const manifestResponse = await fetch(`${base}/now/manifest.webmanifest`);
+  assert.equal(manifestResponse.status, 200);
+  assert.match(manifestResponse.headers.get("content-type") || "", /^application\/manifest\+json/);
+  assert.equal((await manifestResponse.json()).start_url, ".");
   assert.equal((await fetch(`${base}/now/api/state`)).status, 401);
+  assert.equal((await fetch(`${base}/now/api/admin/v1/snapshot`)).status, 401);
+  assert.equal((await fetch(`${base}/now/api/admin/v1/snapshot`, {
+    headers: { authorization: `Bearer ${platformToken}`, "x-forwarded-for": "203.0.113.4" }
+  })).status, 403);
 
   const crossSite = await jsonRequest(`${base}/now/api/auth/register`, {
     method: "POST",
@@ -122,6 +134,15 @@ try {
   const secondCookie = second.response.headers.get("set-cookie").split(";")[0];
   const secondState = await jsonRequest(`${base}/now/api/state`, { headers: { cookie: secondCookie } });
   assert.deepEqual(secondState.body.captures, []);
+  const ownerCommercialization = await jsonRequest(`${base}/now/api/commercialization`, {
+    method: "PATCH",
+    headers: { cookie: ownerCookie },
+    body: JSON.stringify({ assumptions: { validation: { participants: 11, rewardPerParticipantCny: 199 } } })
+  });
+  assert.equal(ownerCommercialization.response.status, 200);
+  assert.equal(ownerCommercialization.body.assumptions.validation.participants, 11);
+  assert.equal(ownerCommercialization.body.assumptions.validation.rewardPerParticipantCny, 199);
+  assert.equal((await jsonRequest(`${base}/now/api/state`, { headers: { cookie: secondCookie } })).body.commercialization.assumptions.validation.participants, 5);
   const secondDir = path.join(dataDir, "users", second.body.user.id);
   assert.equal((await fs.stat(secondDir)).mode & 0o777, 0o700);
   assert.equal((await fs.stat(path.join(secondDir, "attachments"))).mode & 0o777, 0o700);
@@ -134,12 +155,21 @@ try {
   assert.equal((await jsonRequest(`${base}/now/api/captures/legacy`, {
     method: "PATCH", headers: { cookie: secondCookie }, body: JSON.stringify({ content: "cross-account-change" })
   })).response.status, 404);
+  assert.equal((await jsonRequest(`${base}/now/api/captures/legacy`, { method: "DELETE", headers: { cookie: ownerCookie } })).response.status, 200);
+  const ownerTrash = await jsonRequest(`${base}/now/api/trash`, { headers: { cookie: ownerCookie } });
+  const secondTrash = await jsonRequest(`${base}/now/api/trash`, { headers: { cookie: secondCookie } });
+  assert.equal(ownerTrash.body.items.length, 1);
+  assert.equal(secondTrash.body.items.length, 0);
+  assert.equal((await jsonRequest(`${base}/now/api/trash/${ownerTrash.body.items[0].id}/restore`, { method: "POST", headers: { cookie: secondCookie }, body: "{}" })).response.status, 404);
+  assert.equal((await jsonRequest(`${base}/now/api/trash`, { headers: { cookie: ownerCookie } })).body.items.length, 1);
+  assert.equal((await jsonRequest(`${base}/now/api/trash/${ownerTrash.body.items[0].id}/restore`, { method: "POST", headers: { cookie: ownerCookie }, body: "{}" })).response.status, 200);
+  assert.equal((await jsonRequest(`${base}/now/api/state`, { headers: { cookie: ownerCookie } })).body.captures[0].content, "legacy-owner-data");
   await Promise.all([[ownerCookie, "OWNER_PRIVATE"], [secondCookie, "SECOND_PRIVATE"]].map(async ([cookie, question]) => {
     assert.equal((await jsonRequest(`${base}/now/api/settings`, {
       method: "POST", headers: { cookie }, body: JSON.stringify({ apiKey: "audit-test-key" })
     })).response.status, 200);
     assert.equal((await jsonRequest(`${base}/now/api/answer-drafts`, {
-      method: "POST", headers: { cookie }, body: JSON.stringify({ question })
+      method: "POST", headers: { cookie }, body: JSON.stringify({ question, requestId: `auth-${question}`, targetId: "auth-regression", inputVersion: 1 })
     })).response.status, 200);
   }));
   const readLogs = async userId => {
@@ -155,6 +185,15 @@ try {
     const entries = JSON.parse(await fs.readFile(path.join(dataDir, "users", userId, "ai-usage.json"))).entries;
     assert.equal(entries.length, 1);
   }
+  const platformSnapshot = await jsonRequest(`${base}/now/api/admin/v1/snapshot`, {
+    headers: { authorization: `Bearer ${platformToken}` }
+  });
+  assert.equal(platformSnapshot.response.status, 200);
+  assert.equal(platformSnapshot.body.meta.source, "live-aggregate");
+  assert.equal(platformSnapshot.body.users.length, 2);
+  assert.equal(platformSnapshot.body.privacy.containsRecordContent, false);
+  assert.equal(platformSnapshot.body.privacy.containsPromptOrResponse, false);
+  assert.doesNotMatch(JSON.stringify(platformSnapshot.body), /OWNER_PRIVATE|SECOND_PRIVATE|legacy-owner-data|passwordHash|audit-test-key/);
 
   const duplicateRename = await jsonRequest(`${base}/now/api/auth/username`, {
     method: "PATCH",
@@ -213,7 +252,17 @@ try {
   const oldStore = JSON.parse(await fs.readFile(path.join(secondDir, "store.json"), "utf8"));
   const oldSettings = JSON.parse(await fs.readFile(path.join(secondDir, "llm-settings.json"), "utf8"));
   const oldUsage = JSON.parse(await fs.readFile(path.join(secondDir, "ai-usage.json"), "utf8"));
-  await fs.writeFile(path.join(secondDir, "store.json"), JSON.stringify({ ...oldStore, version: 11 }));
+  const queuedQuestion = { id: "restart-question", type: "question", content: "账户任务重启恢复", tags: [], relatedTo: null, remarks: [], followUps: [], annotations: [], annotationDrift: [], disposition: "kept", authorType: "user", version: 1, createdAt: "2026-09-27T18:00:00.000Z", occurredAt: "2026-09-27T18:00:00.000Z", occurredOn: "2026-09-28" };
+  const queuedFollowUp = { id: "restart-follow-up", question: "服务器重启后继续回答追问", answer: "", version: 1, createdAt: "2026-09-27T18:01:00.000Z" };
+  const queuedFollowUpQuestion = { ...queuedQuestion, id: "restart-follow-up-question", content: "账户追问任务重启恢复", followUps: [queuedFollowUp], createdAt: "2026-09-27T18:01:00.000Z" };
+  const queuedAnnotation = { id: "restart-annotation", kind: "highlight", targetKey: "question:restart-annotation-question", start: 2, end: 6, quote: "批注任务", text: "", createdAt: "2026-09-27T18:02:00.000Z", replies: [], shenji: [] };
+  const queuedAnnotationQuestion = { ...queuedQuestion, id: "restart-annotation-question", content: "服务器批注任务重启恢复", annotations: [queuedAnnotation], createdAt: "2026-09-27T18:02:00.000Z" };
+  const queuedTasks = [
+    { id: "restart-queued-task", kind: "thoughtAnswer", resourceType: "thought", targetId: queuedQuestion.id, inputVersion: 1, clientRequestId: "restart-queued-request", requestHash: crypto.createHash("sha256").update(JSON.stringify({ kind: "thoughtAnswer", targetId: queuedQuestion.id, inputVersion: 1 })).digest("hex"), status: "queued", createdAt: "2026-09-27T18:00:01.000Z", updatedAt: "2026-09-27T18:00:01.000Z", attempt: 0 },
+    { id: "restart-follow-up-task", kind: "followUpAnswer", resourceType: "thought", targetId: queuedFollowUpQuestion.id, subtargetId: queuedFollowUp.id, inputVersion: 1, subtargetVersion: 1, payload: {}, clientRequestId: "restart-follow-up-request", requestHash: "restart-follow-up-hash", status: "queued", createdAt: "2026-09-27T18:01:01.000Z", updatedAt: "2026-09-27T18:01:01.000Z", attempt: 0 },
+    { id: "restart-annotation-task", kind: "annotationShenji", resourceType: "thought", targetId: queuedAnnotationQuestion.id, subtargetId: queuedAnnotation.id, inputVersion: 0, subtargetVersion: 0, payload: { message: "重启后继续批注分析" }, clientRequestId: "restart-annotation-request", requestHash: "restart-annotation-hash", status: "queued", createdAt: "2026-09-27T18:02:01.000Z", updatedAt: "2026-09-27T18:02:01.000Z", attempt: 0 }
+  ];
+  await fs.writeFile(path.join(secondDir, "store.json"), JSON.stringify({ ...oldStore, version: 11, thoughts: [queuedQuestion, queuedFollowUpQuestion, queuedAnnotationQuestion, ...(oldStore.thoughts || [])], aiTasks: [...queuedTasks, ...(oldStore.aiTasks || [])], notifications: [] }));
   await fs.writeFile(path.join(secondDir, "llm-settings.json"), JSON.stringify({ ...oldSettings, version: 3 }));
   await fs.writeFile(path.join(secondDir, "ai-usage.json"), JSON.stringify({ ...oldUsage, version: 1 }));
   child.kill("SIGTERM");
@@ -221,20 +270,47 @@ try {
   child = startApp();
   await waitForServer(base, child);
   const migratedNames = await fs.readdir(secondDir);
-  assert.ok(migratedNames.some(name => /store\.json\.v11-pre-v12.*\.bak$/.test(name)));
-  assert.ok(migratedNames.some(name => /llm-settings\.json\.v3-pre-v4.*\.bak$/.test(name)));
+  assert.ok(migratedNames.some(name => /store\.json\.v11-pre-v14.*\.bak$/.test(name)));
+  assert.ok(migratedNames.some(name => /llm-settings\.json\.v3-pre-v5.*\.bak$/.test(name)));
   assert.ok(migratedNames.some(name => /ai-usage\.json\.v1-pre-v2.*\.bak$/.test(name)));
   for (const name of migratedNames.filter(name => name.endsWith(".bak"))) {
     assert.equal((await fs.stat(path.join(secondDir, name))).mode & 0o777, 0o600);
   }
   assert.equal(JSON.parse(await fs.readFile(path.join(secondDir, "ai-usage.json"), "utf8")).version, 2);
+  const resumedTasks = new Map();
+  for (const queuedTask of queuedTasks) {
+    let resumedTask;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      resumedTask = (await jsonRequest(`${base}/now/api/ai-tasks/${queuedTask.id}`, { headers: { cookie: secondCookie } })).body;
+      if (!["queued", "running"].includes(resumedTask.status)) break;
+      await sleep(50);
+    }
+    assert.equal(resumedTask.status, "succeeded");
+    resumedTasks.set(queuedTask.id, resumedTask);
+  }
+  const resumedState = (await jsonRequest(`${base}/now/api/state`, { headers: { cookie: secondCookie } })).body;
+  assert.equal(resumedState.thoughts.filter(item => item.sourceTaskId === queuedTasks[0].id).length, 1);
+  assert.equal(resumedState.thoughts.find(item => item.id === queuedFollowUpQuestion.id).followUps[0].sourceTaskId, queuedTasks[1].id);
+  assert.equal(resumedState.thoughts.find(item => item.id === queuedAnnotationQuestion.id).annotations[0].shenji[0].sourceTaskId, queuedTasks[2].id);
+  assert.equal(resumedState.notifications.filter(item => queuedTasks.some(task => task.id === item.taskId) && item.status === "succeeded").length, 3);
+  const callsAfterResume = providerCalls;
+  child.kill("SIGTERM");
+  if (child.exitCode == null) await new Promise(resolve => child.once("exit", resolve));
+  child = startApp();
+  await waitForServer(base, child);
+  await sleep(150);
+  assert.equal(providerCalls, callsAfterResume);
+  const stateAfterSecondRestart = (await jsonRequest(`${base}/now/api/state`, { headers: { cookie: secondCookie } })).body;
+  assert.equal(stateAfterSecondRestart.thoughts.filter(item => item.sourceTaskId === queuedTasks[0].id).length, 1);
+  assert.equal(stateAfterSecondRestart.thoughts.find(item => item.id === queuedFollowUpQuestion.id).followUps.filter(item => item.sourceTaskId === queuedTasks[1].id).length, 1);
+  assert.equal(stateAfterSecondRestart.thoughts.find(item => item.id === queuedAnnotationQuestion.id).annotations[0].shenji.filter(item => item.sourceTaskId === queuedTasks[2].id).length, 1);
 
   await fs.writeFile(path.join(dataDir, "auth.json"), "{PRIVATE_CORRUPT_AUTH");
   const damaged = await jsonRequest(`${base}/now/api/auth/me`, { headers: { cookie: secondCookie } });
   assert.equal(damaged.response.status, 500);
   assert.doesNotMatch(JSON.stringify(damaged.body) + errors, /PRIVATE_CORRUPT_AUTH/);
   assert.equal(await fs.readFile(path.join(dataDir, "auth.json"), "utf8"), "{PRIVATE_CORRUPT_AUTH");
-  console.log("Auth checks passed: access boundaries, account updates, secure sessions, legacy ownership, concurrent per-user AI/operation isolation, credential redaction and corrupt-auth preservation.");
+  console.log("Auth checks passed: access boundaries, guessed-resource rejection, secure sessions, per-user AI/operation isolation, queued-task restart recovery, credential redaction and corrupt-auth preservation.");
 } finally {
   child.kill("SIGTERM");
   if (child.exitCode == null) await new Promise(resolve => child.once("exit", resolve));

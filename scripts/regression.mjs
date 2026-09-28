@@ -30,6 +30,7 @@ function mockDeepSeek() {
     if (!input.stream) {
       res.writeHead(200, { "content-type": "application/json" });
       const messages = JSON.stringify(input.messages);
+      if (messages.includes("版本竞态问题")) await sleep(250);
       if (messages.includes("同一次睡眠记录")) return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ date: "2026-09-27", bedtime: "2026-09-27T02:58:00", wakeTime: "2026-09-27T10:40:00", totalMinutes: 462, deepMinutes: 134, deepPercent: 29, lightMinutes: 221, lightPercent: 48, remMinutes: 107, remPercent: 23, awakeCount: null, awakeMinutes: null, averageHeartRate: 49, averageOxygen: 98, respiratoryRate: 15, verification: "两张图已合并" }) } }], usage }));
       if (messages.includes("心率日视图")) return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ date: "2026-09-26", minimum: 46, maximum: 82, average: 60, resting: 52, sleepAverage: 50, trendAnalysis: "凌晨下降，午后与晚间出现两次抬升，夜间回落。", trendSegments: [{ period: "00:00-06:00", direction: "下降", approximateRange: "约46-64" }], verification: "今日概览可直接核对" }) } }], usage }));
       if (messages.includes("书籍截图")) return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ title: "测试书", author: "测试作者", verification: "图片已识别" }) } }], usage }));
@@ -89,6 +90,16 @@ async function readEvents(response) {
   return events;
 }
 
+async function waitForTask(base, taskId, attempts = 80) {
+  let task;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    task = await (await fetch(`${base}/api/ai-tasks/${taskId}`)).json();
+    if (!["queued", "running"].includes(task.status)) return task;
+    await sleep(25);
+  }
+  throw new Error(`后台任务 ${taskId} 未在限定时间内结束，最后状态为 ${task?.status}`);
+}
+
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "growth-regression-"));
 const mock = mockDeepSeek();
 const mockPort = await freePort(), appPort = await freePort();
@@ -102,7 +113,16 @@ await fs.writeFile(path.join(dataDir, "store.json"), `${JSON.stringify({
     { id: "context-answer", createdAt: "2026-09-26T15:01:00.000Z", occurredOn: "2026-09-26", type: "answer", content: "前段**加粗内容**后段", reasoningContent: "DO_NOT_LEAK_REASONING", tags: [], relatedTo: "context-question" },
     { id: "context-question", createdAt: "2026-09-26T15:00:00.000Z", occurredOn: "2026-09-26", type: "question", content: "历史问题", tags: [], relatedTo: null }
   ],
-  chats: [], books: [{ id: "legacy-book", createdAt: "2026-09-26T15:00:00.000Z", title: "旧书", notes: [{ id: "legacy-note", createdAt: "2026-09-26T15:10:11.000Z", content: "旧笔记" }] }], quotes: [], experiments: [], analyses: [], customMetrics: []
+  chats: [], books: [{ id: "legacy-book", createdAt: "2026-09-26T15:00:00.000Z", title: "旧书", notes: [{ id: "legacy-note", createdAt: "2026-09-26T15:10:11.000Z", content: "旧笔记" }] }], quotes: [], experiments: [], analyses: [], customMetrics: [],
+  aiTasks: [{ id: "interrupted-task", kind: "thoughtAnswer", targetId: "question-1", inputVersion: 1, clientRequestId: "interrupted-request", requestHash: "legacy", status: "running", createdAt: "2026-09-26T17:00:00.000Z", startedAt: "2026-09-26T17:00:01.000Z" }],
+  notifications: [],
+  commercialization: {
+    version: 2,
+    assumptions: {
+      subscription: { payingUsers: 20, simulationMonths: 6, monthlyPriceCny: 39, activeDaysPerMonth: 31, aiCallsPerActiveDay: 99, imageCallsPerUserMonth: 77 },
+      delivery: { ordersPerMonth: 4, pricePerOrderCny: 299, aiCallsPerOrder: 999, imageCallsPerOrder: 88 }
+    }
+  }
 }, null, 2)}\n`);
 await fs.writeFile(path.join(dataDir, "llm-settings.json"), `${JSON.stringify({
   version: 2,
@@ -117,13 +137,17 @@ await fs.writeFile(path.join(dataDir, "llm-settings.json"), `${JSON.stringify({
   apiKey: "test-key"
 }, null, 2)}\n`);
 
-const app = spawn(process.execPath, ["server.mjs"], {
-  cwd: ROOT,
-  env: { ...process.env, NODE_ENV: "test", TZ: "Asia/Shanghai", PORT: String(appPort), DATA_DIR: dataDir, DEEPSEEK_API_URL: `http://127.0.0.1:${mockPort}/chat/completions`, KEEPSAKE_SEGMENT_MOCK_RESULT: mockSegmentCutout },
-  stdio: ["ignore", "pipe", "pipe"]
-});
 let appError = "";
-app.stderr.on("data", chunk => { appError += chunk; });
+const startApp = () => {
+  const child = spawn(process.execPath, ["server.mjs"], {
+    cwd: ROOT,
+    env: { ...process.env, NODE_ENV: "test", TZ: "Asia/Shanghai", PORT: String(appPort), DATA_DIR: dataDir, DEEPSEEK_API_URL: `http://127.0.0.1:${mockPort}/chat/completions`, KEEPSAKE_SEGMENT_MOCK_RESULT: mockSegmentCutout },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  child.stderr.on("data", chunk => { appError += chunk; });
+  return child;
+};
+let app = startApp();
 
 try {
   const base = `http://127.0.0.1:${appPort}`;
@@ -133,12 +157,36 @@ try {
     body: JSON.stringify({ kind: "highlight", targetKey, start, end: start + quote.length, quote, text: "" })
   });
   const migrated = await waitForServer(base, app);
-  assert.equal(migrated.version, 12);
+  assert.equal(migrated.version, 14);
+  assert.equal(migrated.commercialization.version, 3);
+  assert.equal(migrated.commercialization.assumptions.validation.participants, 5);
+  assert.equal(migrated.commercialization.assumptions.validation.rewardPerParticipantCny, 100);
+  assert.equal(migrated.commercialization.assumptions.subscription.monthlyPriceCny, 39);
+  assert.equal(migrated.commercialization.assumptions.subscription.simulationMonths, 6);
+  assert.equal(migrated.commercialization.assumptions.delivery.ordersPerMonth, 4);
+  assert.equal(migrated.commercialization.assumptions.delivery.serviceFeePerOrderCny, 299);
+  assert.equal(migrated.commercialization.assumptions.usagePack.buyersPerMonth, 10);
+  assert.deepEqual(migrated.commercialization.assumptions.stageByModel, { validation: 0, subscription: 0, delivery: 0, usagePack: 0 });
+  assert.deepEqual(Object.keys(migrated.commercialization.assumptions.usageProfiles), ["low", "medium", "high", "full"]);
+  assert.equal(migrated.commercialization.assumptions.usageProfiles.low.activeDaysPerMonth, 31);
+  assert.equal(migrated.commercialization.assumptions.usageProfiles.medium.foregroundAiCallsPerActiveDay, 99);
+  assert.equal(migrated.commercialization.assumptions.usageProfiles.full.backgroundAiCallsPerActiveDay, 0);
+  assert.equal(migrated.commercialization.assumptions.usageProfiles.high.imageCallsPerMonth, 77);
+  assert.deepEqual(migrated.commercialization.legacyV2, {
+    migratedFromVersion: 2,
+    subscription: { activeDaysPerMonth: 31, aiCallsPerActiveDay: 99, imageCallsPerUserMonth: 77 },
+    delivery: { aiCallsPerOrder: 999, imageCallsPerOrder: 88 }
+  });
+  assert.equal(migrated.commercialization.assumptions.stagePresets.subscription.length, 5);
   assert.deepEqual(migrated.dailyRecords, []);
   assert.deepEqual(migrated.captures, []);
   assert.deepEqual(migrated.journals, []);
   assert.deepEqual(migrated.keepsakes, []);
   assert.equal(migrated.journalDraft, null);
+  assert.equal(migrated.onboarding.status, "completed");
+  assert.equal(migrated.aiTasks.find(item => item.id === "interrupted-task").status, "failed");
+  assert.match(migrated.aiTasks.find(item => item.id === "interrupted-task").error, /避免重复计费/);
+  assert.equal(modelRequests.length, 0);
   assert.equal(Object.hasOwn(migrated, "bookDraft"), false);
   assert.equal(migrated.checkins[0].occurredOn, "2026-09-27");
   assert.equal(migrated.checkins[0].occurredAt, "2026-09-26T16:56:18.237Z");
@@ -173,26 +221,146 @@ try {
     ["mood", 1, 0], ["energy", 1, 0], ["stress", 1, 0], ["sleep", 1, 0]
   ]);
   assert.deepEqual(migrated.insights.associations.map(item => [item.factor, item.withCount, item.confidence]), [["冷启动因素", 1, "单日观察"]]);
-  assert.equal((await fs.readdir(dataDir)).some(name => name.includes("v3-pre-v12") && name.endsWith(".bak")), true);
+  assert.equal((await fs.readdir(dataDir)).some(name => name.includes("v3-pre-v14") && name.endsWith(".bak")), true);
   const migratedSettings = await (await fetch(`${base}/api/settings`)).json();
-  assert.equal(migratedSettings.version, 4);
+  assert.equal(migratedSettings.version, 5);
   assert.deepEqual(Object.keys(migratedSettings.profiles), ["lite", "mid", "high", "ultra"]);
   assert.deepEqual(migratedSettings.scenarios, {
     thoughtPrompt: "lite", thoughtDraft: "high", thoughtAnswer: "ultra", followUpAnswer: "ultra", chat: "high",
     diaryLead: "lite", diaryStructure: "mid", diaryTopic: "high", diaryReflection: "ultra",
     annotationShenji: "high", analysis: "ultra", bookRecognition: "mid", healthRecognition: "mid"
   });
+  assert.equal(migratedSettings.assistantName, "神鸡");
+  assert.equal(migratedSettings.responseStyles.thoughtAnswer, "standard");
   const storedSettings = JSON.parse(await fs.readFile(path.join(dataDir, "llm-settings.json"), "utf8"));
-  assert.equal(storedSettings.version, 4);
+  assert.equal(storedSettings.version, 5);
   assert.equal(storedSettings.apiKey, "test-key");
-  assert.equal((await fs.readdir(dataDir)).some(name => name.includes("v2-pre-v4") && name.endsWith(".bak")), true);
+  assert.equal((await fs.readdir(dataDir)).some(name => name.includes("v2-pre-v5") && name.endsWith(".bak")), true);
   const initialStatistics = await (await fetch(`${base}/api/statistics`)).json();
   assert.equal(initialStatistics.ai.summary.calls, 0);
   assert.equal(initialStatistics.ai.daily.length, 7);
   assert.equal(initialStatistics.records.content.find(item => item.key === "thoughts").count, 3);
   assert.equal(initialStatistics.records.content.find(item => item.key === "bookNotes").count, 1);
   assert.equal(initialStatistics.records.interactions.find(item => item.key === "shenji").count, 0);
+  assert.deepEqual(initialStatistics.records.groups.map(item => item.label), ["今日", "所见", "所思", "互动"]);
+  assert.deepEqual(
+    initialStatistics.records.groups.find(item => item.key === "today").modules.find(item => item.key === "daily").items.map(item => item.label),
+    ["睡眠", "心率", "体重", "运动"]
+  );
+  assert.equal(initialStatistics.ai.pricing.displayCurrency, "CNY");
+  assert.equal(initialStatistics.ai.pricing.cnyPerUsd, 7.2);
   assert.equal(JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"), "utf8")).version, 2);
+  const initialAiCostPlan = await (await fetch(`${base}/api/ai-cost-plan`)).json();
+  assert.equal(initialAiCostPlan.version, 1);
+  assert.equal(initialAiCostPlan.scenarios.length, 13);
+  assert.equal(initialAiCostPlan.scenarios.find(item => item.scene === "thoughtAnswer").model, "deepseek-v4-pro");
+  const savedAiCostPlan = await (await fetch(`${base}/api/ai-cost-plan`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      monthlyBudgetCny: 66,
+      contingencyPct: 900,
+      cnyPerUsd: 7.1,
+      scenarios: [{ scene: "thoughtPrompt", enabled: false, model: "invalid", pricingPeriod: "offPeak", callsPerMonth: 12, avgInputTokens: 8888, cacheHitPct: 120, avgReasoningTokens: 10, avgAnswerTokens: 20 }]
+    })
+  })).json();
+  assert.equal(savedAiCostPlan.monthlyBudgetCny, 66);
+  assert.equal(savedAiCostPlan.contingencyPct, 500);
+  assert.equal(savedAiCostPlan.cnyPerUsd, 7.1);
+  assert.equal(savedAiCostPlan.scenarios.length, 13);
+  assert.deepEqual(savedAiCostPlan.scenarios.find(item => item.scene === "thoughtPrompt"), { scene: "thoughtPrompt", enabled: false, model: "deepseek-flash", pricingPeriod: "offPeak", callsPerMonth: 12, avgInputTokens: 8888, cacheHitPct: 100, avgReasoningTokens: 10, avgAnswerTokens: 20 });
+  assert.equal(JSON.parse(await fs.readFile(path.join(dataDir, "ai-cost-plan.json"), "utf8")).monthlyBudgetCny, 66);
+  const onboardingSchema = await (await fetch(`${base}/api/onboarding/schema`)).json();
+  assert.equal(onboardingSchema.version, 1);
+  assert.equal(onboardingSchema.modes.find(item => item.id === "quick").questionCount, 8);
+  assert.equal(onboardingSchema.modes.find(item => item.id === "detailed").questionCount, 18);
+  const incompleteOnboarding = await fetch(`${base}/api/onboarding`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "completed", questionnaireMode: "quick", answers: {}, profile: {}, interests: [] })
+  });
+  assert.equal(incompleteOnboarding.status, 400);
+  assert.equal((await incompleteOnboarding.json()).code, "ONBOARDING_ANSWERS_REQUIRED");
+  const quickAnswers = Object.fromEntries(onboardingSchema.questions.filter(item => item.tier === "quick").map(item => [item.id, item.options[0].value]));
+  const incompleteDetailed = await fetch(`${base}/api/onboarding/preview`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ questionnaireMode: "detailed", answers: quickAnswers, profile: {}, interests: [] })
+  });
+  assert.equal(incompleteDetailed.status, 400);
+  assert.equal((await incompleteDetailed.json()).missing.length, 10);
+  const dismissedOnboarding = await fetch(`${base}/api/onboarding`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "dismissed" })
+  });
+  assert.equal(dismissedOnboarding.status, 400);
+  const onboardingPreview = await (await fetch(`${base}/api/onboarding/preview`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ questionnaireMode: "quick", answers: quickAnswers, profile: {}, interests: [] })
+  })).json();
+  assert.match(onboardingPreview.understanding, /快速版/);
+  assert.match(onboardingPreview.understanding, /不是人格定论/);
+  const onboarding = await (await fetch(`${base}/api/onboarding`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "completed", questionnaireMode: "quick", answers: quickAnswers, profile: { occupation: "测试职业" }, interests: ["学习成长"], material: "ONBOARDING_PRIVATE_MATERIAL", understanding: onboardingPreview.understanding })
+  })).json();
+  assert.equal(onboarding.status, "completed");
+  assert.equal(Object.keys(onboarding.answers).length, 8);
+  assert.equal(onboarding.profile.occupation, "测试职业");
+  assert.deepEqual(onboarding.interests, ["学习成长"]);
+  assert.equal((await (await fetch(`${base}/api/state`)).json()).onboarding.material, "ONBOARDING_PRIVATE_MATERIAL");
+
+  const commercializationResponse = await fetch(`${base}/api/commercialization`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      assumptions: {
+        validation: { participants: 7, rewardPerParticipantCny: 149, developmentHoursTotal: 16 },
+        subscription: { monthlyPriceCny: 49, paymentFeePct: 140, simulationMonths: 18, developmentHoursPerMonth: 24 },
+        delivery: { ordersPerMonth: 6, serviceFeePerOrderCny: 399, byokPct: 65, maintenanceMarkupPct: 25 },
+        usagePack: { buyersPerMonth: 12, pricePerPackCny: 35 },
+        usageProfiles: { high: { sharePct: 25, backgroundAiCallsPerActiveDay: 3 } },
+        common: { usdCny: 7.1, aiCostFloorPerCallCny: 0.04 }
+      }
+    })
+  });
+  assert.equal(commercializationResponse.status, 200);
+  const savedCommercialization = await commercializationResponse.json();
+  assert.equal(savedCommercialization.assumptions.validation.participants, 7);
+  assert.equal(savedCommercialization.assumptions.validation.rewardPerParticipantCny, 149);
+  assert.equal(savedCommercialization.assumptions.validation.developmentHoursTotal, 16);
+  assert.equal(savedCommercialization.assumptions.subscription.monthlyPriceCny, 49);
+  assert.equal(savedCommercialization.assumptions.subscription.paymentFeePct, 100);
+  assert.equal(savedCommercialization.assumptions.subscription.simulationMonths, 18);
+  assert.equal(savedCommercialization.assumptions.subscription.developmentHoursPerMonth, 24);
+  assert.equal(savedCommercialization.assumptions.delivery.ordersPerMonth, 6);
+  assert.equal(savedCommercialization.assumptions.delivery.serviceFeePerOrderCny, 399);
+  assert.equal(savedCommercialization.assumptions.delivery.byokPct, 65);
+  assert.equal(savedCommercialization.assumptions.delivery.maintenanceMarkupPct, 25);
+  assert.equal(savedCommercialization.assumptions.usagePack.pricePerPackCny, 35);
+  assert.equal(savedCommercialization.assumptions.usageProfiles.high.sharePct, 25);
+  assert.equal(savedCommercialization.assumptions.usageProfiles.high.backgroundAiCallsPerActiveDay, 3);
+  assert.equal(savedCommercialization.assumptions.common.usdCny, 7.1);
+  assert.deepEqual(savedCommercialization.legacyV2, migrated.commercialization.legacyV2);
+  assert.ok(savedCommercialization.updatedAt);
+  const persistedCommercialization = JSON.parse(await fs.readFile(path.join(dataDir, "store.json"), "utf8")).commercialization;
+  assert.deepEqual(persistedCommercialization, savedCommercialization);
+  const stagedAssumptions = structuredClone(savedCommercialization.assumptions);
+  stagedAssumptions.stageByModel.subscription = 2;
+  stagedAssumptions.subscription = { ...stagedAssumptions.stagePresets.subscription[2], monthlyPriceCny: 69 };
+  const stagedCommercialization = await (await fetch(`${base}/api/commercialization`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ assumptions: stagedAssumptions })
+  })).json();
+  assert.equal(stagedCommercialization.assumptions.stageByModel.subscription, 2);
+  assert.equal(stagedCommercialization.assumptions.subscription.dailyActiveUsers, 10000);
+  assert.equal(stagedCommercialization.assumptions.subscription.monthlyPriceCny, 69);
+  assert.equal(stagedCommercialization.assumptions.stagePresets.subscription[0].monthlyPriceCny, 49);
+  assert.equal(stagedCommercialization.assumptions.stagePresets.subscription[2].monthlyPriceCny, 69);
 
   const profileSettings = {
     profiles: {
@@ -206,6 +374,8 @@ try {
       diaryLead: "lite", diaryStructure: "mid", diaryTopic: "high", diaryReflection: "ultra",
       annotationShenji: "high", analysis: "ultra", bookRecognition: "mid", healthRecognition: "mid"
     },
+    assistantName: "照见",
+    responseStyles: { thoughtDraft: "deep", thoughtAnswer: "structured", followUpAnswer: "concise", chat: "exploratory", diaryReflection: "standard", annotationShenji: "structured", analysis: "deep" },
     apiKey: ""
   };
   const savedSettings = await (await fetch(`${base}/api/settings`, {
@@ -214,6 +384,8 @@ try {
     body: JSON.stringify(profileSettings)
   })).json();
   assert.equal(savedSettings.scenarios.diaryTopic, "high");
+  assert.equal(savedSettings.assistantName, "照见");
+  assert.equal(savedSettings.responseStyles.thoughtAnswer, "structured");
   assert.equal(savedSettings.hasApiKey, true);
 
   const originalCheckinCreatedAt = migrated.checkins[0].createdAt;
@@ -399,7 +571,7 @@ try {
   const draftResponse = await fetch(`${base}/api/answer-drafts`, {
     method: "POST",
     headers: { "content-type": "application/json", accept: "text/event-stream" },
-    body: JSON.stringify({ question: "测试流式顺序", idea: "" })
+    body: JSON.stringify({ question: "测试流式顺序", idea: "", requestId: "draft-regression-1", targetId: "chain-form", inputVersion: 1 })
   });
   const events = await readEvents(draftResponse);
   const types = events.map(event => event.type);
@@ -408,17 +580,24 @@ try {
   assert.equal(events.at(-1).type, "done");
   assert.equal(events.at(-1).result.draft, "流式回答已完成。");
   assert.equal(events.at(-1).result.reasoningContent, "先核对问题。再形成判断。");
+  assert.deepEqual([events.at(-1).result.requestId, events.at(-1).result.targetId, events.at(-1).result.inputVersion], ["draft-regression-1", "chain-form", 1]);
   const draftRequest = modelRequests.at(-1);
   assert.deepEqual([draftRequest.model, draftRequest.reasoning_effort], ["deepseek-v4-pro", "high"]);
   assert.match(draftRequest.messages[0].content, /250～450/);
   assert.match(draftRequest.messages[0].content, /哲学、价值、意义/);
   assert.match(draftRequest.messages[0].content, /禁止用“核心判断”/);
+  assert.match(draftRequest.messages[0].content, /你的称呼是“照见”/);
+  assert.match(draftRequest.messages[0].content, /深入分析关键前提/);
   assert.match(draftRequest.messages.at(-1).content, /不能因此回避给观点/);
+  assert.doesNotMatch(draftRequest.messages.at(-1).content, /前段加粗内容后段/);
+  assert.match(JSON.stringify(draftRequest.messages), /ONBOARDING_PRIVATE_MATERIAL/);
+  assert.match(JSON.stringify(draftRequest.messages), /职业：测试职业/);
+  assert.match(JSON.stringify(draftRequest.messages), /用户问卷原始选择/);
 
   const answerResponse = await fetch(`${base}/api/thoughts/question-1/answer`, {
     method: "POST",
     headers: { "content-type": "application/json", accept: "text/event-stream" },
-    body: "{}"
+    body: JSON.stringify({ clientRequestId: "question-1-generation-1" })
   });
   const reader = answerResponse.body.getReader(), decoder = new TextDecoder();
   let partial = "";
@@ -429,6 +608,7 @@ try {
   const answer = persisted.thoughts.find(item => item.relatedTo === "question-1" && item.type === "answer");
   assert.equal(answer?.content, "流式回答已完成。");
   assert.equal(answer?.reasoningContent, "先核对问题。再形成判断。");
+  assert.equal(answer?.authorType, "ai");
   assert.equal(answer?.occurredOn, "2026-09-27");
   assert.equal(answer?.occurredAt, persisted.thoughts.find(item => item.id === "question-1").occurredAt);
   const answerRequest = modelRequests.at(-1);
@@ -444,6 +624,143 @@ try {
   assert.deepEqual(tracedAfterHighlight.insights.aiOnlyThoughtIds, []);
   assert.equal(tracedAfterHighlight.insights.weekly.tracedRoots30, 3);
   assert.equal(tracedAfterHighlight.insights.weekly.traceRate30, 100);
+  const secondAnswerResponse = await fetch(`${base}/api/thoughts/question-1/answer`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "text/event-stream" },
+    body: JSON.stringify({ clientRequestId: "question-1-generation-2" })
+  });
+  const secondAnswerEvents = await readEvents(secondAnswerResponse);
+  assert.equal(secondAnswerEvents.at(-1).type, "done");
+  const afterSecondAnswer = await (await fetch(`${base}/api/state`)).json();
+  const generatedAnswers = afterSecondAnswer.thoughts.filter(item => item.relatedTo === "question-1" && item.type === "answer");
+  assert.equal(generatedAnswers.length, 2);
+  assert.deepEqual(generatedAnswers.map(item => item.generation).sort(), [1, 2]);
+
+  const concurrentQuestion = await (await fetch(`${base}/api/thoughts`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type: "question", occurredAt: "2026-09-27T14:20:00", content: "并发幂等回答问题", tags: [] })
+  })).json();
+  const concurrentModelCount = modelRequests.length;
+  const concurrentResponses = await Promise.all([0, 1].map(() => fetch(`${base}/api/thoughts/${concurrentQuestion.id}/answer`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "text/event-stream" },
+    body: JSON.stringify({ clientRequestId: "concurrent-thought-answer" })
+  })));
+  const concurrentEvents = await Promise.all(concurrentResponses.map(readEvents));
+  assert.equal(modelRequests.length - concurrentModelCount, 1);
+  assert.equal(concurrentEvents[0].at(-1).type, "done");
+  assert.equal(concurrentEvents[1].at(-1).type, "done");
+  assert.equal(concurrentEvents[0].at(-1).result.id, concurrentEvents[1].at(-1).result.id);
+  assert.equal((await (await fetch(`${base}/api/state`)).json()).thoughts.filter(item => item.relatedTo === concurrentQuestion.id && item.clientRequestId === "concurrent-thought-answer").length, 1);
+
+  const concurrentFollowUp = await (await fetch(`${base}/api/thoughts/${concurrentQuestion.id}/follow-ups`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ question: "并发追问如何处理？", answer: "" })
+  })).json();
+  const concurrentFollowUpModelCount = modelRequests.length;
+  const concurrentFollowUpResponses = await Promise.all([0, 1].map(() => fetch(`${base}/api/thoughts/${concurrentQuestion.id}/follow-ups/${concurrentFollowUp.id}/answer`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ clientRequestId: "concurrent-follow-up-answer", inputVersion: concurrentQuestion.version + 1, subtargetVersion: concurrentFollowUp.version })
+  })));
+  assert.deepEqual(concurrentFollowUpResponses.map(response => response.status).sort(), [200, 202]);
+  const concurrentFollowUpTasks = await Promise.all(concurrentFollowUpResponses.map(response => response.json()));
+  assert.equal(concurrentFollowUpTasks[0].id, concurrentFollowUpTasks[1].id);
+  const concurrentFollowUpResult = await waitForTask(base, concurrentFollowUpTasks[0].id);
+  assert.equal(concurrentFollowUpResult.status, "succeeded");
+  assert.equal(modelRequests.length - concurrentFollowUpModelCount, 1);
+  const stateAfterConcurrentFollowUp = await (await fetch(`${base}/api/state`)).json();
+  const savedConcurrentFollowUp = stateAfterConcurrentFollowUp.thoughts.find(item => item.id === concurrentQuestion.id).followUps.find(item => item.id === concurrentFollowUp.id);
+  assert.equal(savedConcurrentFollowUp.sourceTaskId, concurrentFollowUpTasks[0].id);
+  assert.equal(savedConcurrentFollowUp.answer, "同步回答");
+
+  const staleFollowUpQuestion = await (await fetch(`${base}/api/thoughts`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type: "question", occurredAt: "2026-09-27T14:25:00", content: "追问版本竞态问题", tags: [] })
+  })).json();
+  const staleFollowUp = await (await fetch(`${base}/api/thoughts/${staleFollowUpQuestion.id}/follow-ups`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ question: "修改期间不应写入旧回答", answer: "" })
+  })).json();
+  const staleFollowUpTask = await (await fetch(`${base}/api/ai-tasks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind: "followUpAnswer", targetId: staleFollowUpQuestion.id, subtargetId: staleFollowUp.id, inputVersion: 2, subtargetVersion: 1, clientRequestId: "stale-follow-up-task" })
+  })).json();
+  assert.equal((await fetch(`${base}/api/thoughts/${staleFollowUpQuestion.id}/follow-ups/${staleFollowUp.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ expectedVersion: 1, question: "修改期间必须拒绝写入旧回答" })
+  })).status, 200);
+  assert.equal((await waitForTask(base, staleFollowUpTask.id)).status, "stale");
+  let staleFollowUpState = await (await fetch(`${base}/api/state`)).json();
+  assert.equal(staleFollowUpState.thoughts.find(item => item.id === staleFollowUpQuestion.id).followUps[0].answer, "");
+  const retryModelCount = modelRequests.length;
+  const retryResponses = await Promise.all([0, 1].map(() => fetch(`${base}/api/ai-tasks/${staleFollowUpTask.id}/retry`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: "{}"
+  })));
+  assert.deepEqual(retryResponses.map(response => response.status).sort(), [200, 202]);
+  const retriedTasks = await Promise.all(retryResponses.map(response => response.json()));
+  assert.equal(retriedTasks[0].id, retriedTasks[1].id);
+  const retriedFollowUp = retriedTasks[0];
+  assert.equal((await waitForTask(base, retriedFollowUp.id)).status, "succeeded");
+  assert.equal(modelRequests.length - retryModelCount, 1);
+  staleFollowUpState = await (await fetch(`${base}/api/state`)).json();
+  assert.equal(staleFollowUpState.thoughts.find(item => item.id === staleFollowUpQuestion.id).followUps[0].sourceTaskId, retriedFollowUp.id);
+
+  const dispositionQuestion = await (await fetch(`${base}/api/thoughts`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type: "question", occurredAt: "2026-09-27T14:30:00", content: "回答期间改变保留状态", tags: [] })
+  })).json();
+  const dispositionResponse = await fetch(`${base}/api/thoughts/${dispositionQuestion.id}/answer`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "text/event-stream" },
+    body: JSON.stringify({ clientRequestId: "disposition-stale-answer" })
+  });
+  assert.equal((await fetch(`${base}/api/thoughts/${dispositionQuestion.id}/disposition`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ disposition: "discarded" })
+  })).status, 200);
+  const dispositionEvents = await readEvents(dispositionResponse);
+  assert.equal(dispositionEvents.at(-1).type, "error");
+  assert.equal((await (await fetch(`${base}/api/state`)).json()).thoughts.some(item => item.relatedTo === dispositionQuestion.id && item.clientRequestId === "disposition-stale-answer"), false);
+
+  const unsafeChainEdit = await fetch(`${base}/api/thought-chains/question-1`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ question: "测试后台生成", answer: "不得合并", tags: [] })
+  });
+  assert.equal(unsafeChainEdit.status, 409);
+  assert.equal((await (await fetch(`${base}/api/state`)).json()).thoughts.filter(item => item.relatedTo === "question-1" && item.type === "answer").length, 2);
+  const manualRecord = await (await fetch(`${base}/api/thoughts`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type: "record", relatedTo: "question-1", occurredAt: "2026-09-27T15:20:00", content: "一条独立记录", tags: ["验证"] })
+  })).json();
+  const editedRecord = await (await fetch(`${base}/api/thoughts/${manualRecord.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ expectedVersion: manualRecord.version, occurredAt: "2026-09-27T15:21:00", content: "一条独立更新记录" })
+  })).json();
+  assert.equal(editedRecord.version, 2);
+  const staleBlockEdit = await fetch(`${base}/api/thoughts/${manualRecord.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ expectedVersion: 1, content: "不应覆盖" })
+  });
+  assert.equal(staleBlockEdit.status, 409);
+  assert.equal((await fetch(`${base}/api/thoughts/${manualRecord.id}`, { method: "DELETE" })).status, 200);
+  const blockTrash = await (await fetch(`${base}/api/trash`)).json();
+  const deletedBlock = blockTrash.items.find(item => item.type === "thoughtBlock" && item.resourceId === manualRecord.id);
+  assert.ok(deletedBlock);
+  assert.equal((await fetch(`${base}/api/trash/${deletedBlock.id}/restore`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 200);
+  assert.equal((await (await fetch(`${base}/api/state`)).json()).thoughts.find(item => item.id === manualRecord.id).content, "一条独立更新记录");
 
   const chat = await (await fetch(`${base}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ occurredAt: "2026-09-27T11:12:13", message: "测试同步回答" }) })).json();
   assert.equal(chat.answer, "同步回答");
@@ -480,14 +797,21 @@ try {
   });
   assert.equal(analysisAnnotationResponse.status, 201, await analysisAnnotationResponse.clone().text());
   const analysisAnnotation = await analysisAnnotationResponse.json();
-  const shenjiResponse = await fetch(`${base}/api/annotations/analysis/${firstAnalysis.id}/${analysisAnnotation.id}/shenji`, {
+  const shenjiModelCount = modelRequests.length;
+  const shenjiResponses = await Promise.all([0, 1].map(() => fetch(`${base}/api/annotations/analysis/${firstAnalysis.id}/${analysisAnnotation.id}/shenji`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ message: "这条复盘判断可能遗漏了什么？" })
-  });
-  assert.equal(shenjiResponse.status, 201);
-  assert.equal((await shenjiResponse.json()).answer, "同步回答");
+    body: JSON.stringify({ message: "这条复盘判断可能遗漏了什么？", clientRequestId: "analysis-shenji-1" })
+  })));
+  assert.deepEqual(shenjiResponses.map(response => response.status).sort(), [200, 202]);
+  const shenjiTasks = await Promise.all(shenjiResponses.map(response => response.json()));
+  assert.equal(shenjiTasks[0].id, shenjiTasks[1].id);
+  const shenjiTask = shenjiTasks[0];
+  assert.equal((await waitForTask(base, shenjiTask.id)).status, "succeeded");
+  assert.equal(modelRequests.length - shenjiModelCount, 1);
   const analysisAfterAnnotation = (await (await fetch(`${base}/api/state`)).json()).analyses.find(item => item.id === firstAnalysis.id);
+  assert.equal(analysisAfterAnnotation.annotations[0].shenji[0].answer, "同步回答");
+  assert.equal(analysisAfterAnnotation.annotations[0].shenji[0].sourceTaskId, shenjiTask.id);
   assert.equal(analysisAfterAnnotation.annotations[0].text, "需要核对这条总判断的反证。");
   assert.equal(analysisAfterAnnotation.annotations[0].shenji[0].reasoningContent, "同步模型思考");
   assert.match(JSON.stringify(modelRequests.at(-1).messages), /认知复盘/);
@@ -497,6 +821,36 @@ try {
   assert.ok(interactionStatistics.find(item => item.key === "highlights").count >= 4);
   assert.ok(interactionStatistics.find(item => item.key === "comments").count >= 1);
   assert.equal(interactionStatistics.find(item => item.key === "shenji").count, 1);
+
+  const annotationRaceQuestion = await (await fetch(`${base}/api/thoughts`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type: "question", occurredAt: "2026-09-27T14:28:00", content: "批注版本竞态问题", tags: [] })
+  })).json();
+  const annotationRace = await (await fetch(`${base}/api/annotations/thought/${annotationRaceQuestion.id}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind: "highlight", targetKey: `question:${annotationRaceQuestion.id}`, start: 2, end: 8, quote: "版本竞态问题", text: "" })
+  })).json();
+  const annotationRaceTask = await (await fetch(`${base}/api/ai-tasks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind: "annotationShenji", resourceType: "thought", targetId: annotationRaceQuestion.id, subtargetId: annotationRace.id, payload: { message: "检查竞态" }, clientRequestId: "stale-annotation-task" })
+  })).json();
+  assert.equal((await fetch(`${base}/api/thought-chains/${annotationRaceQuestion.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ question: "批注版本竞态问题（已经修改）", tags: [] })
+  })).status, 200);
+  assert.equal((await waitForTask(base, annotationRaceTask.id)).status, "stale");
+  const annotationRaceState = await (await fetch(`${base}/api/state`)).json();
+  assert.equal(annotationRaceState.thoughts.find(item => item.id === annotationRaceQuestion.id).annotations[0].shenji?.length || 0, 0);
+  const retriedAnnotation = await (await fetch(`${base}/api/ai-tasks/${annotationRaceTask.id}/retry`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: "{}"
+  })).json();
+  assert.equal((await waitForTask(base, retriedAnnotation.id)).status, "succeeded");
+  const retriedAnnotationState = await (await fetch(`${base}/api/state`)).json();
+  assert.equal(retriedAnnotationState.thoughts.find(item => item.id === annotationRaceQuestion.id).annotations[0].shenji[0].sourceTaskId, retriedAnnotation.id);
 
   const pixel = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB";
   const uploadedCoverResponse = await fetch(`${base}/api/images/upload`, {
@@ -564,7 +918,15 @@ try {
   assert.equal((await fetch(`${base}/api/books/${book.id}/notes/${note.id}`, { method: "DELETE" })).status, 200);
   const bookAfterDelete = (await (await fetch(`${base}/api/state`)).json()).books.find(item => item.id === book.id);
   assert.equal(bookAfterDelete.notes.length, 0);
-  assert.equal(bookAfterDelete.annotationDrift.some(item => item.originalTargetKey === `note:${note.id}`), true);
+  assert.equal(bookAfterDelete.annotations.some(item => item.targetKey === `note:${note.id}`), false);
+  const trashAfterBookNoteDelete = await (await fetch(`${base}/api/trash`)).json();
+  const deletedBookNote = trashAfterBookNoteDelete.items.find(item => item.type === "bookNote" && item.resourceId === note.id);
+  assert.ok(deletedBookNote);
+  assert.equal(deletedBookNote.dependents.annotations[0].targetKey, `note:${note.id}`);
+  assert.equal((await fetch(`${base}/api/trash/${deletedBookNote.id}/restore`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 200);
+  const bookAfterRestore = (await (await fetch(`${base}/api/state`)).json()).books.find(item => item.id === book.id);
+  assert.equal(bookAfterRestore.notes[0].content, "新增一段可复用批注的读书笔记。");
+  assert.equal(bookAfterRestore.annotations.some(item => item.targetKey === `note:${note.id}`), true);
 
   const parsedBookImage = await fetch(`${base}/api/books/parse`, {
     method: "POST",
@@ -701,8 +1063,245 @@ try {
   assert.equal(editedWeight.createdAt, weightCreatedAt);
   assert.equal((await fetch(`${base}/api/daily-records/${weightRecord.id}`, { method: "DELETE" })).status, 200);
 
+  const reflectionId = reflectionEvents.at(-1).result.id;
+  assert.equal((await fetch(`${base}/api/journals/${createdJournal.id}/reflections/${reflectionId}`, { method: "DELETE" })).status, 200);
+  const reflectionTrash = await (await fetch(`${base}/api/trash`)).json();
+  const deletedReflection = reflectionTrash.items.find(item => item.type === "journalReflection" && item.resourceId === reflectionId);
+  assert.equal(deletedReflection.dependents.annotations[0].targetKey, `reflection:${reflectionId}`);
+  assert.equal((await fetch(`${base}/api/trash/${deletedReflection.id}/restore`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 200);
+  const journalAfterReflectionRestore = (await (await fetch(`${base}/api/state`)).json()).journals.find(item => item.id === createdJournal.id);
+  assert.equal(journalAfterReflectionRestore.reflections[0].id, reflectionId);
+  assert.equal(journalAfterReflectionRestore.annotations.some(item => item.targetKey === `reflection:${reflectionId}`), true);
+
   assert.equal((await fetch(`${base}/api/captures/${createdCapture.id}`, { method: "DELETE" })).status, 200);
   assert.equal((await fetch(`${base}/api/journals/${createdJournal.id}`, { method: "DELETE" })).status, 200);
+  const trashAfterDeletes = await (await fetch(`${base}/api/trash`)).json();
+  const deletedCapture = trashAfterDeletes.items.find(item => item.type === "capture" && item.resourceId === createdCapture.id);
+  const deletedJournal = trashAfterDeletes.items.find(item => item.type === "journal" && item.resourceId === createdJournal.id);
+  assert.ok(deletedCapture);
+  assert.ok(deletedJournal);
+  const stateAfterSoftDelete = await (await fetch(`${base}/api/state`)).json();
+  assert.equal(stateAfterSoftDelete.captures.some(item => item.id === createdCapture.id), false);
+  assert.equal(stateAfterSoftDelete.journals.some(item => item.id === createdJournal.id), false);
+  assert.equal(Object.hasOwn(stateAfterSoftDelete, "trash"), false);
+  assert.equal((await fetch(`${base}/api/trash/${deletedCapture.id}/restore`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 200);
+  assert.equal((await fetch(`${base}/api/trash/${deletedJournal.id}/restore`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 200);
+  const stateAfterRestore = await (await fetch(`${base}/api/state`)).json();
+  assert.equal(stateAfterRestore.captures.find(item => item.id === createdCapture.id).content, "补充后的碎片");
+  assert.equal(stateAfterRestore.journals.find(item => item.id === createdJournal.id).content, "修改后的原文。");
+
+  const concurrentTaskQuestion = await (await fetch(`${base}/api/thoughts`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type: "question", occurredAt: "2026-09-27T14:50:00", content: "后台任务并发幂等", tags: [] })
+  })).json();
+  const concurrentTaskModelCount = modelRequests.length;
+  const concurrentTaskResponses = await Promise.all([0, 1].map(() => fetch(`${base}/api/ai-tasks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind: "thoughtAnswer", targetId: concurrentTaskQuestion.id, inputVersion: concurrentTaskQuestion.version, clientRequestId: "background-task-concurrent" })
+  })));
+  assert.deepEqual(concurrentTaskResponses.map(response => response.status).sort(), [200, 202]);
+  const concurrentTasks = await Promise.all(concurrentTaskResponses.map(response => response.json()));
+  assert.equal(concurrentTasks[0].id, concurrentTasks[1].id);
+  let concurrentTaskResult;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    concurrentTaskResult = await (await fetch(`${base}/api/ai-tasks/${concurrentTasks[0].id}`)).json();
+    if (!["queued", "running"].includes(concurrentTaskResult.status)) break;
+    await sleep(25);
+  }
+  assert.equal(concurrentTaskResult.status, "succeeded");
+  assert.equal(modelRequests.length - concurrentTaskModelCount, 1);
+  assert.equal((await (await fetch(`${base}/api/state`)).json()).thoughts.filter(item => item.sourceTaskId === concurrentTasks[0].id).length, 1);
+
+  const backgroundQuestion = await (await fetch(`${base}/api/thoughts`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type: "question", occurredAt: "2026-09-27T15:00:00", content: "后台任务问题", tags: [] })
+  })).json();
+  const backgroundTaskResponse = await fetch(`${base}/api/ai-tasks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind: "thoughtAnswer", targetId: backgroundQuestion.id, inputVersion: backgroundQuestion.version, clientRequestId: "background-task-1" })
+  });
+  assert.equal(backgroundTaskResponse.status, 202);
+  const backgroundTask = await backgroundTaskResponse.json();
+  const duplicateTask = await (await fetch(`${base}/api/ai-tasks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind: "thoughtAnswer", targetId: backgroundQuestion.id, inputVersion: backgroundQuestion.version, clientRequestId: "background-task-1" })
+  })).json();
+  assert.equal(duplicateTask.id, backgroundTask.id);
+  let completedTask;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    completedTask = await (await fetch(`${base}/api/ai-tasks/${backgroundTask.id}`)).json();
+    if (!["queued", "running"].includes(completedTask.status)) break;
+    await sleep(50);
+  }
+  assert.equal(completedTask.status, "succeeded");
+  const stateAfterBackground = await (await fetch(`${base}/api/state`)).json();
+  assert.equal(stateAfterBackground.thoughts.filter(item => item.sourceTaskId === backgroundTask.id).length, 1);
+  const notifications = await (await fetch(`${base}/api/notifications`)).json();
+  assert.ok(notifications.items.some(item => item.taskId === backgroundTask.id && item.status === "succeeded" && !item.readAt));
+
+  const staleQuestion = await (await fetch(`${base}/api/thoughts`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type: "question", occurredAt: "2026-09-27T15:10:00", content: "版本竞态问题", tags: [] })
+  })).json();
+  const staleTask = await (await fetch(`${base}/api/ai-tasks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind: "thoughtAnswer", targetId: staleQuestion.id, inputVersion: staleQuestion.version, clientRequestId: "background-task-stale" })
+  })).json();
+  assert.equal((await fetch(`${base}/api/thought-chains/${staleQuestion.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ question: "版本竞态问题（已修改）", tags: [] })
+  })).status, 200);
+  let staleResult;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    staleResult = await (await fetch(`${base}/api/ai-tasks/${staleTask.id}`)).json();
+    if (!["queued", "running"].includes(staleResult.status)) break;
+    await sleep(50);
+  }
+  assert.equal(staleResult.status, "stale");
+  assert.equal((await (await fetch(`${base}/api/state`)).json()).thoughts.some(item => item.sourceTaskId === staleTask.id), false);
+  const retriedTaskResponse = await fetch(`${base}/api/ai-tasks/${staleTask.id}/retry`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+  assert.equal(retriedTaskResponse.status, 202);
+  const retriedTask = await retriedTaskResponse.json();
+  let retriedResult;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    retriedResult = await (await fetch(`${base}/api/ai-tasks/${retriedTask.id}`)).json();
+    if (!["queued", "running"].includes(retriedResult.status)) break;
+    await sleep(50);
+  }
+  assert.equal(retriedResult.status, "succeeded");
+
+  const restoredRaceQuestion = await (await fetch(`${base}/api/thoughts`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type: "question", occurredAt: "2026-09-27T15:20:00", content: "版本竞态问题（删除恢复）", tags: [] })
+  })).json();
+  const restoredRaceTask = await (await fetch(`${base}/api/ai-tasks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind: "thoughtAnswer", targetId: restoredRaceQuestion.id, inputVersion: restoredRaceQuestion.version, clientRequestId: "background-task-delete-restore" })
+  })).json();
+  let restoredRaceWasRunning = false;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const task = await (await fetch(`${base}/api/ai-tasks/${restoredRaceTask.id}`)).json();
+    if (task.status === "running") { restoredRaceWasRunning = Boolean(task.startedAt); break; }
+    await sleep(10);
+  }
+  assert.equal(restoredRaceWasRunning, true);
+  assert.equal((await fetch(`${base}/api/thought-chains/${restoredRaceQuestion.id}`, { method: "DELETE" })).status, 200);
+  const restoreRaceTrash = await (await fetch(`${base}/api/trash`)).json();
+  const restoreRaceEntry = restoreRaceTrash.items.find(item => item.type === "thoughtChain" && item.resourceId === restoredRaceQuestion.id);
+  assert.ok(restoreRaceEntry);
+  assert.equal((await fetch(`${base}/api/trash/${restoreRaceEntry.id}/restore`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 200);
+  let restoredRaceResult;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    restoredRaceResult = await (await fetch(`${base}/api/ai-tasks/${restoredRaceTask.id}`)).json();
+    if (!["queued", "running"].includes(restoredRaceResult.status)) break;
+    await sleep(25);
+  }
+  assert.equal(restoredRaceResult.status, "stale");
+  const stateAfterRestoreRace = await (await fetch(`${base}/api/state`)).json();
+  assert.equal(stateAfterRestoreRace.thoughts.find(item => item.id === restoredRaceQuestion.id).version, restoredRaceQuestion.version + 1);
+  assert.equal(stateAfterRestoreRace.thoughts.some(item => item.sourceTaskId === restoredRaceTask.id), false);
+
+  const notificationStore = JSON.parse(await fs.readFile(path.join(dataDir, "store.json"), "utf8"));
+  notificationStore.notifications = Array.from({ length: 105 }, (_, index) => ({ id: `notification-${index}`, taskId: backgroundTask.id, kind: "aiTask", targetId: backgroundQuestion.id, status: "succeeded", title: "思绪回答", message: `完成 ${index}`, createdAt: "2026-09-27T16:00:00.000Z", updatedAt: "2026-09-27T16:00:00.000Z", readAt: "" }));
+  await fs.writeFile(path.join(dataDir, "store.json"), `${JSON.stringify(notificationStore, null, 2)}\n`);
+  const notificationPage = await (await fetch(`${base}/api/notifications`)).json();
+  assert.equal(notificationPage.items.length, 105);
+  assert.equal(notificationPage.unread, 105);
+  assert.equal((await (await fetch(`${base}/api/state`)).json()).notificationUnread, 105);
+
+  const trashBeforeComplexRestore = await (await fetch(`${base}/api/trash`)).json();
+  const deletedKeepsake = trashBeforeComplexRestore.items.find(item => item.type === "keepsake" && item.resourceId === keepsake.id);
+  const deletedWeight = trashBeforeComplexRestore.items.find(item => item.type === "dailyRecord" && item.resourceId === weightRecord.id);
+  assert.ok(deletedKeepsake);
+  assert.ok(deletedWeight);
+  assert.equal((await fetch(`${base}/api/trash/${deletedKeepsake.id}/restore`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 200);
+  assert.equal((await fetch(`${base}/api/trash/${deletedWeight.id}/restore`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 200);
+  const restoredMediaState = await (await fetch(`${base}/api/state`)).json();
+  assert.equal(restoredMediaState.keepsakes.find(item => item.id === keepsake.id).title, "修改后的票券");
+  assert.equal(restoredMediaState.dailyRecords.find(item => item.id === weightRecord.id).adjustedWeight, 69.5);
+
+  const contextChainBeforeDelete = (await (await fetch(`${base}/api/state`)).json()).thoughts.filter(item => item.id === "context-question" || item.relatedTo === "context-question");
+  assert.equal((await fetch(`${base}/api/thought-chains/context-question`, { method: "DELETE" })).status, 200);
+  assert.equal((await (await fetch(`${base}/api/state`)).json()).thoughts.some(item => item.id === "context-question" || item.relatedTo === "context-question"), false);
+  const chainTrash = await (await fetch(`${base}/api/trash`)).json();
+  const deletedChain = chainTrash.items.find(item => item.type === "thoughtChain" && item.resourceId === "context-question");
+  assert.equal(deletedChain.payload.items.length, contextChainBeforeDelete.length);
+  assert.equal((await fetch(`${base}/api/trash/${deletedChain.id}/restore`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 200);
+  const contextChainAfterRestore = (await (await fetch(`${base}/api/state`)).json()).thoughts.filter(item => item.id === "context-question" || item.relatedTo === "context-question");
+  assert.deepEqual(contextChainAfterRestore.map(item => item.id).sort(), contextChainBeforeDelete.map(item => item.id).sort());
+  assert.equal(contextChainAfterRestore.find(item => item.id === "context-question").annotations.length, 1);
+
+  const disposableQuote = await (await fetch(`${base}/api/quotes`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ occurredAt: "2026-09-27T16:00:00", source: "清理测试", content: "只用于永久清理测试", tags: [] })
+  })).json();
+  assert.equal((await fetch(`${base}/api/quotes/${disposableQuote.id}`, { method: "DELETE" })).status, 200);
+  const purgeTrash = await (await fetch(`${base}/api/trash`)).json();
+  const purgeEntry = purgeTrash.items.find(item => item.type === "quote" && item.resourceId === disposableQuote.id);
+  const purgePlan = await (await fetch(`${base}/api/trash/purge-preview`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ids: [purgeEntry.id] })
+  })).json();
+  assert.equal((await fetch(`${base}/api/trash/purge`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ids: [purgeEntry.id], planHash: purgePlan.planHash, confirmation: "永久删除" })
+  })).status, 200);
+  assert.equal((await (await fetch(`${base}/api/trash`)).json()).items.some(item => item.id === purgeEntry.id), false);
+
+  assert.equal((await fetch(`${base}/api/books/${book.id}/notes/${note.id}`, { method: "DELETE" })).status, 200);
+  assert.equal((await fetch(`${base}/api/books/${book.id}`, { method: "DELETE" })).status, 200);
+  const parentTrash = await (await fetch(`${base}/api/trash`)).json();
+  const deletedBook = parentTrash.items.find(item => item.type === "book" && item.resourceId === book.id);
+  const dependentBookNote = parentTrash.items.find(item => item.type === "bookNote" && item.resourceId === note.id);
+  assert.ok(deletedBook);
+  assert.ok(dependentBookNote);
+  const parentPurgePlan = await (await fetch(`${base}/api/trash/purge-preview`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ids: [deletedBook.id] })
+  })).json();
+  assert.deepEqual(new Set(parentPurgePlan.items.map(item => item.id)), new Set([deletedBook.id, dependentBookNote.id]));
+  assert.equal((await fetch(`${base}/api/trash/purge`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ids: [deletedBook.id], planHash: parentPurgePlan.planHash, confirmation: "删除" })
+  })).status, 400);
+  assert.equal((await (await fetch(`${base}/api/trash`)).json()).items.some(item => item.id === deletedBook.id), true);
+  const uploadedCoverFile = path.join(dataDir, uploadedCover.attachmentPath.replace(/^\/attachments\//, "attachments/"));
+  const savedCoverFile = `${uploadedCoverFile}.saved`;
+  await fs.rename(uploadedCoverFile, savedCoverFile);
+  await fs.mkdir(uploadedCoverFile);
+  const parentPurge = await (await fetch(`${base}/api/trash/purge`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ids: [deletedBook.id], planHash: parentPurgePlan.planHash, confirmation: "永久删除" })
+  })).json();
+  assert.equal(parentPurge.purged, 2);
+  assert.equal(parentPurge.attachmentsPurged, 0);
+  assert.equal(parentPurge.attachmentCleanupPending, 1);
+  assert.equal(Object.hasOwn(await (await fetch(`${base}/api/state`)).json(), "attachmentCleanup"), false);
+  assert.equal(JSON.parse(await fs.readFile(path.join(dataDir, "store.json"), "utf8")).attachmentCleanup[0].path, uploadedCover.attachmentPath);
+  await fs.rm(uploadedCoverFile, { recursive: true, force: true });
+  await fs.rename(savedCoverFile, uploadedCoverFile);
+  app.kill("SIGTERM");
+  if (app.exitCode == null) await new Promise(resolve => app.once("exit", resolve));
+  app = startApp();
+  await waitForServer(base, app);
+  assert.deepEqual(JSON.parse(await fs.readFile(path.join(dataDir, "store.json"), "utf8")).attachmentCleanup, []);
+  assert.equal((await fetch(`${base}${uploadedCover.attachmentPath}`)).status, 404);
 
   const lowSampleStore = JSON.parse(await fs.readFile(path.join(dataDir, "store.json"), "utf8"));
   lowSampleStore.thoughts = lowSampleStore.thoughts.filter(item => item.id === "question-1");
@@ -731,7 +1330,7 @@ try {
 
   const midnight = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23", timeZone: "Asia/Shanghai" }).format(new Date("2026-09-26T16:56:18.237Z"));
   assert.equal(midnight, "00:56:18");
-  console.log("Regression checks passed: v12 keepsakes, quote tags, daily records, shared image parsing, local dates, and reasoning isolation.");
+  console.log("Regression checks passed: v14 onboarding, trash recovery, retryable attachment cleanup, concurrent AI idempotency, target-version invalidation, thought blocks, image parsing, local dates, and reasoning isolation.");
 } finally {
   app.kill("SIGTERM");
   await new Promise(resolve => mock.close(resolve));

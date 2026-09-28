@@ -1,0 +1,11 @@
+{
+  "name": "此刻 · 个人成长追踪",
+  "short_name": "此刻",
+  "description": "本地优先的个人成长、捕念、日记与思考追踪工具",
+  "lang": "zh-CN",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#f7f8fb",
+  "theme_color": "#f7f8fb"
+}

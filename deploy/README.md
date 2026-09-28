@@ -10,6 +10,10 @@ archives. Never synchronize a live data directory in both directions.
 - `/apps/` is a small application router.
 - HTTP `/now/` redirects to `https://123.57.140.24/now/`.
 - HTTPS `/now/` proxies to this Node service and requires an invited account.
+- HTTP `/platform/` redirects to HTTPS; HTTPS `/platform/` proxies to the
+  independently deployed read-only platform console on `127.0.0.1:4280`.
+- `/now/api/admin/v1/snapshot` is blocked at Nginx. Only the local platform
+  process can call it with its service token.
 
 Let's Encrypt issues a short-lived certificate directly for the public IPv4
 address. Certbot renews it automatically. The ECS security group must allow
@@ -24,9 +28,11 @@ inbound TCP 80 and 443.
    is documented in `knowledge/operations-capacity.md`.
 3. Run `sudo deploy/prepare-server.sh`.
 4. Add the printed public key to Gitee as a read-only deploy key.
-5. Set `INVITE_CODE_HASH`, OSS attachment settings and
+5. Set `INVITE_CODE_HASH`, `PLATFORM_SERVICE_TOKEN_HASH`, OSS attachment settings and
    `FEISHU_ALERT_WEBHOOK` in `/etc/for-now.env`. Store only the invitation
-   SHA-256 digest, not its plaintext, and keep `COOKIE_SECURE=1`. Keep
+   and platform-token SHA-256 digests, not their plaintext values, and keep
+   `COOKIE_SECURE=1`. The matching platform token plaintext belongs only in
+   `/etc/for-now-platform.env`. Keep
    `ATTACHMENT_STORAGE=local` until the migration sequence below succeeds.
 6. Include `/etc/nginx/snippets/acme-challenge.conf` in the port-80 server,
    reload Nginx, then issue the IP certificate:
@@ -48,6 +54,25 @@ inbound TCP 80 and 443.
 11. Complete the private attachment migration below, run
    `sudo /usr/local/sbin/for-now-restore-drill`, and send one real Feishu test
    alert before enabling invitations.
+
+## Read-only platform console
+
+The platform console is a separate orphan branch (`platform/main`) and systemd
+service in the same Gitee repository. Its deployment instructions live in that
+branch's `README.md`. The main application exposes one aggregate endpoint for it:
+
+- direct loopback access only, with no `X-Forwarded-For`;
+- `Authorization: Bearer ...` checked against
+  `PLATFORM_SERVICE_TOKEN_HASH`;
+- counts, status, timings and cost only;
+- no record content, model prompt/response, attachment body or credential.
+
+Deploy the main application first, then the platform console. Verify that the
+public `/now/api/admin/v1/snapshot` path returns 404 before opening
+`https://123.57.140.24/platform/`. Keep `MONITOR_PLATFORM_ENABLED=0` while the
+platform service does not exist. After its `/readyz` and public login smoke
+tests pass, set the value to `1` and run `for-now-monitor.service` once; only
+then leave the five-minute timer enabled for platform monitoring.
 
 ossutil uses `--mode EcsRamRole` and the Beijing internal endpoint from
 `/etc/for-now.env`; no long-lived AccessKey is stored on disk.

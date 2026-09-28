@@ -18,12 +18,16 @@ if [ ! -f "$ssh_key" ]; then
   echo "Missing $ssh_key. Run prepare-server.sh and add its public key as a read-only Gitee deploy key." >&2
   exit 1
 fi
-for key in OSS_ATTACHMENT_BUCKET OSS_ENDPOINT OSS_REGION FEISHU_ALERT_WEBHOOK; do
+for key in OSS_ATTACHMENT_BUCKET OSS_ENDPOINT OSS_REGION FEISHU_ALERT_WEBHOOK PLATFORM_SERVICE_TOKEN_HASH; do
   if ! grep -Eq "^${key}=.+" /etc/for-now.env; then
     echo "Missing $key in /etc/for-now.env." >&2
     exit 1
   fi
 done
+if ! grep -Eq '^PLATFORM_SERVICE_TOKEN_HASH=[a-f0-9]{64}$' /etc/for-now.env; then
+  echo "PLATFORM_SERVICE_TOKEN_HASH must be a lowercase SHA-256 digest." >&2
+  exit 1
+fi
 if ! grep -Eq '^FEISHU_ALERT_WEBHOOK=https://(open\.feishu\.cn|open\.larkoffice\.com|open\.larksuite\.com)/open-apis/bot/v2/hook/[A-Za-z0-9_-]+/?$' /etc/for-now.env; then
   echo "FEISHU_ALERT_WEBHOOK must be an HTTPS Feishu custom-bot webhook." >&2
   exit 1
@@ -45,9 +49,22 @@ if [ ! -f "$release/.deploy-ready" ]; then
   cleanup_candidate() { rm -rf "$candidate"; }
   trap cleanup_candidate EXIT
   sudo -u for-now git --git-dir="$mirror" archive "$commit" | tar -x -C "$candidate"
+  for forbidden in \
+    "$candidate/public/explore.html" \
+    "$candidate/public/explore.js" \
+    "$candidate/public/explore-p2.js" \
+    "$candidate/public/explore-p3.js" \
+    "$candidate/public/explore.css" \
+    "$candidate/public/explore-assets"; do
+    if [ -e "$forbidden" ]; then
+      echo "Production release contains local exploration assets: ${forbidden#"$candidate/"}" >&2
+      exit 1
+    fi
+  done
   chown -R for-now:for-now "$candidate"
   sudo -u for-now /usr/local/bin/npm --prefix "$candidate" ci --omit=dev
   /usr/local/bin/node --check "$candidate/server.mjs"
+  /usr/local/bin/node --check "$candidate/admin-snapshot.mjs"
   /usr/local/bin/node --check "$candidate/logging.mjs"
   /usr/local/bin/node --check "$candidate/attachment-storage.mjs"
   /usr/local/bin/node --check "$candidate/public/app.js"

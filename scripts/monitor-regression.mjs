@@ -58,10 +58,13 @@ try {
   Object.assign(process.env, {
     NODE_ENV: "test",
     MONITOR_TEST_SERVICE_ACTIVE: "1",
+    MONITOR_TEST_PLATFORM_ACTIVE: "1",
+    MONITOR_PLATFORM_ENABLED: "1",
     DATA_DIR: dataDir,
     BACKUP_DIR: backupDir,
     BACKUP_SUCCESS_STAMP: backupStamp,
     MONITOR_READY_URL: `${base}/readyz`,
+    MONITOR_PLATFORM_READY_URL: `${base}/readyz`,
     MONITOR_STATE_FILE: stateFile,
     FEISHU_ALERT_WEBHOOK: "https://open.feishu.cn/open-apis/bot/v2/hook/test-hook",
     FEISHU_ALERT_SECRET: "test-secret",
@@ -69,16 +72,18 @@ try {
     ALERT_DISK_CRITICAL_PERCENT: "101",
     ALERT_BACKUP_MAX_AGE_HOURS: "26",
     ALERT_AI_CONSECUTIVE_FAILURES: "5",
-    ALERT_DAILY_AI_COST_USD: "5",
+    AI_COST_CNY_PER_USD: "7.2",
+    ALERT_DAILY_AI_COST_CNY: "36",
     ALERT_REPEAT_MINUTES: "60"
   });
   const unhealthy = await collectHealth({ now, dataDir, backupDir, backupStamp, readyUrl: `${base}/readyz` });
-  assert.deepEqual(unhealthy.issues.map(item => item.key).sort(), ["ai-cost", "ai-failures", "backup", "disk", "service"]);
+  assert.deepEqual(unhealthy.issues.map(item => item.key).sort(), ["ai-cost", "ai-failures", "backup", "disk", "platform-service", "service"]);
   await runMonitor();
   process.exitCode = 0;
   assert.equal(messages.length, 1);
   assert.equal(messages[0].msg_type, "text");
   assert.match(messages[0].content.text, /严重告警/);
+  assert.match(messages[0].content.text, /AI 估算费用 ¥43\.2000（阈值 ¥36\.00）/);
   assert.ok(messages[0].timestamp && messages[0].sign);
   await runMonitor();
   process.exitCode = 0;

@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import { resolveHeadlessBrowser } from "./browser-runtime.mjs";
 
 const imagePath = process.argv[2];
 if (!imagePath) throw new Error("Usage: node scripts/keepsake-visual-check.mjs <image>");
@@ -53,8 +54,8 @@ class Cdp {
 }
 
 const port = await freePort(), profile = `/tmp/keepsake-chrome-${Date.now()}`;
-const chrome = spawn("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", [
-  "--headless=new", "--disable-gpu", "--disable-extensions", "--no-first-run", "--no-default-browser-check",
+const chrome = spawn(resolveHeadlessBrowser(), [
+  "--headless=new", "--disable-breakpad", "--disable-crash-reporter", "--disable-gpu", "--disable-extensions", "--no-first-run", "--no-default-browser-check",
   "--password-store=basic", "--use-mock-keychain",
   `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--window-size=1360,1000", appUrl
 ], { stdio: "ignore" });
