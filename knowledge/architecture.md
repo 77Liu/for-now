@@ -2,7 +2,7 @@
 
 图示更新时间：2026-09-27 20:54（Asia/Shanghai）。[系统架构 · 260927-2045](../assets/系统架构-260927-2045.png)；[本版说明](../reports/product-visuals-260927-2045.md)。
 
-本文描述当前工作区候选实现，不代表尚未部署的改动已经在线运行。生产版本与验证证据见 [`../README.md`](../README.md) 的“当前状态”和 [`../reports/mvp-operations-validation-2026-09-27.md`](../reports/mvp-operations-validation-2026-09-27.md)；逐项部署状态只在 [`../README-TODO.md`](../README-TODO.md) 维护。前后端分离、PostgreSQL 数据底座、后台 worker、个人上下文与按指标扩容的目标方案见 [`scalable-architecture-design.md`](scalable-architecture-design.md)。
+本文描述 `release-20260928-p00-p0-commercial-system` 对应的生产运行结构。生产版本与验证证据见 [`../README.md`](../README.md) 的“当前状态”和 [`../reports/pre-launch-2026-09-28-p00-p0-platform.md`](../reports/pre-launch-2026-09-28-p00-p0-platform.md)；逐项部署状态只在 [`../README-TODO.md`](../README-TODO.md) 维护。前后端分离、PostgreSQL 数据底座、后台 worker、个人上下文与按指标扩容的目标方案见 [`scalable-architecture-design.md`](scalable-architecture-design.md)。
 
 ## 运行与数据
 

@@ -37,6 +37,7 @@ npm run start:local-test
 
 - 应用：<https://123.57.140.24/now/>
 - 应用入口：<https://123.57.140.24/apps/>
+- 只读治理中台：<https://123.57.140.24/platform/>（仅 `shenji` 管理员）
 
 ## 核心体验
 
@@ -50,14 +51,15 @@ npm run start:local-test
 
 ## 当前状态
 
-- **生产已上线**：公网运行版本为 `9c9c4d5b1912`；生产数据、附件、备份、限流、日志和告警证据见 `reports/mvp-operations-validation-2026-09-27.md`。
-- **当前工作区**：基于 `9c9c4d5b1912` 的未提交候选实现，包含 JSON v14 回收站、三类持久 AI 任务与通知、思绪内容时间线、快速/详细冷启动问卷、本地只读模拟模式、移动端修复，以及供独立公网中台使用的本机脱敏聚合接口；尚未 commit、push 或部署。
+- **生产已上线**：主应用功能发布提交为 `5ae6a7035169`，发布标签为 `release-20260928-p00-p0-commercial-system`；P00/P0、商业化、AI 成本和五阶段架构设计已部署。
+- **中台已上线**：独立中台提交为 `d157537f7f4c`，发布标签为 `release-20260928-platform-mvp`；公网 `/platform/` 只读治理控制面已部署。
+- **发布已关闭**：两轮测试、发布前备份与隔离恢复、生产冒烟及 30 分钟观察均通过；完整证据见 `reports/pre-launch-2026-09-28-p00-p0-platform.md`。本文件所在后继提交只补充发布关闭文档，不改变已审计的业务代码、依赖、配置或迁移。
 - **夜间探索轨道**：P1、P2、P3 三个递进探索版均已在本地非主线分支验证；所有版本使用隔离样例数据，不连接生产。执行约束与阶段状态见 `knowledge/exploration-release-track.md`。
 - **状态单一事实来源**：P00-P3 的逐项状态、验收标准和剩余阻塞统一见 `README-TODO.md`。生产能力与工作区候选能力不得混写为同一上线状态。
 
-## 当前工作区能力
+## 当前生产能力
 
-以下描述当前工作区代码可提供的能力，不等同于生产已上线；本轮新增能力的部署状态以 `README-TODO.md` 为准。
+以下能力已随 `release-20260928-p00-p0-commercial-system` 上线；逐项状态以 `README-TODO.md` 为准。
 
 ### 核心记录与回顾
 
@@ -96,7 +98,7 @@ npm run start:local-test
 - 云端文字、结构化数据与日志独立保存在 `/srv/for-now/data`，持久图片迁移后保存到私有 OSS 附件前缀；代码、运行数据、附件与 OSS 备份彼此分离，均不进入 Git。
 - ECS 使用 RAM 角色向 OSS 写入一致性快照，不在服务器保存长期 AccessKey；定时备份已启用。
 - Gitee 主分支发布、不可变 release 目录、原子软链接切换、systemd 重启、`/readyz` 健康检查和失败回滚已完成。
-- **候选未部署**：独立中台已补生产管理员认证、`shenji` owner 保护、服务令牌只读聚合、`/platform/` 路由、独立 systemd/数据目录和失败回滚；中台使用同一 Gitee remote 的 `platform/main` orphan 分支和独立 worktree，生产配置已预置但服务尚未部署或冒烟。
+- **只读中台已部署**：独立中台使用生产管理员认证、`shenji` owner 保护、服务令牌只读聚合、`/platform/` 路由、独立 systemd/数据目录和失败回滚；中台使用同一 Gitee remote 的 `platform/main` orphan 分支和独立 worktree。
 
 ## 当前系统架构
 
@@ -113,7 +115,7 @@ npm run start:local-test
 
 ## 生产检查状态
 
-2026-09-27 已完成生产技术发布；运行能力验证基线为 `908004b50d3f`，后续文档发布版本为 `9c9c4d5b1912`。附件目录/文件权限为 `0700/0600`，最新 OSS 快照隔离恢复通过；DeepSeek Flash/Pro 与阿里云图片分割均真实成功。8 个既有附件已迁移至私有 OSS，限流、额度、三类日志与飞书告警均已启用。当前证据及对外邀请前仍需完成的隐私路径见 `reports/mvp-operations-validation-2026-09-27.md`。
+2026-09-28 已完成 P00/P0、商业化/AI 成本、系统设计与独立只读中台发布。主应用功能提交 `5ae6a7035169` 和中台提交 `d157537f7f4c` 均已部署；公网入口、生产认证、13 项权限、9 个中台模块、实时脱敏聚合、只读预演和退出失效冒烟通过。发布后观察超过 30 分钟，两服务重启次数为 0，Swap 为 0，磁盘使用 42%，可用内存最低 417 MiB，未发现持久化/日志失败、无终态 AI 调用或 OOM。完整发布证据见 `reports/pre-launch-2026-09-28-p00-p0-platform.md`；此前生产基础设施与外部供应商实测见 `reports/mvp-operations-validation-2026-09-27.md`。
 
 ## 发布与同步
 
