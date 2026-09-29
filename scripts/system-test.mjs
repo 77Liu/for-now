@@ -45,6 +45,7 @@ const suites = {
   backend: [
     ["production environment isolation", ["scripts/system-test.mjs", ISOLATION_PROBE]],
     ["module boundaries", ["scripts/check-modules.mjs"]],
+    ["local feat commit gate", ["scripts/commit-gate-regression.mjs"]],
     ["versioned prompt catalog", ["scripts/prompt-catalog-regression.mjs"]],
     ["server syntax", ["--check", "server.mjs"]],
     ["runtime configuration, context and logging contracts", ["scripts/runtime-infrastructure-regression.mjs"]],

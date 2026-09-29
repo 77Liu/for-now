@@ -40,6 +40,8 @@
     "test:boundaries": "node scripts/boundaries-regression.mjs",
     "test:monitor": "node scripts/monitor-regression.mjs",
     "test:restore": "node scripts/restore-validation-regression.mjs",
+    "test:commit-gate": "node scripts/commit-gate-regression.mjs",
+    "commit:feat": "node scripts/commit-gate.mjs",
     "migrate:postgres": "node scripts/migrate-json-to-postgres.mjs",
     "export:postgres": "node scripts/export-postgres.mjs"
   },

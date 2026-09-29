@@ -131,7 +131,9 @@ npm run start:local-test
 当前发布不是自动 CI/CD，而是经过明确触发的半自动流程：
 
 ```text
-本地修改 → 本地测试通过 → commit → push Gitee main
+低风险单域暂存变更 → commit:feat 隔离验证 → 本地 feat commit
+其他提交 / push / tag / Gitee Release → 人工明确授权
+已授权 push Gitee main
 → SSH 到 ECS 执行 for-now-deploy → 健康检查 → 切换或自动回滚
 ```
 
@@ -151,7 +153,7 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
   sudo /usr/local/sbin/for-now-deploy
 ```
 
-只有用户明确要求时才提交、推送或部署；本地测试通过不构成自动授权。仓库没有监听本地文件或 Gitee push 的自动触发器。首次引入 SDK 依赖前还需按 `deploy/README.md` 升级旧部署器。
+低风险、单一功能域可在暂存后运行 `npm run commit:feat -- --message "feat(scope): 摘要"`，由门禁在隔离候选上完成影响范围测试并自动创建本地提交；高风险、跨域及发布整合提交仍需人工授权。任何 push、tag、Gitee Release、部署或生产写入始终需要本次人工明确授权，本地测试或自动提交均不构成授权。仓库没有监听本地文件或 Gitee push 的自动触发器。首次引入 SDK 依赖前还需按 `deploy/README.md` 升级旧部署器。
 
 ## 当前 TODO
 
