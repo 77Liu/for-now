@@ -1,0 +1,27 @@
+// The service owns session expiry; this adapter owns the serialized document write.
+export function createAuthRepository({ runtime, file, readDocument, writeDocument, onCommit, onInvalid }) {
+  if (runtime) return runtime.auth;
+  let queue = Promise.resolve();
+  const read = async () => {
+    const value = await readDocument(file, { version: 1, users: [], sessions: [] });
+    if (!Array.isArray(value.users) || !Array.isArray(value.sessions)) {
+      await onInvalid();
+      throw Object.assign(new Error("认证数据无法读取，已保留原文件，请联系管理员"), { code: "STORAGE_READ_FAILED" });
+    }
+    return { version: 1, users: value.users, sessions: value.sessions };
+  };
+  return {
+    read,
+    update(mutator) {
+      const operation = queue.then(async () => {
+        const auth = await read(), before = structuredClone(auth);
+        const result = await mutator(auth);
+        await writeDocument(file, auth);
+        await onCommit(before, auth);
+        return result;
+      });
+      queue = operation.catch(() => {});
+      return operation;
+    }
+  };
+}

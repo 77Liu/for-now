@@ -27,7 +27,7 @@ const child = spawn(process.execPath, ["server.mjs"], {
     INVITE_CODE_HASH: "",
     COOKIE_SECURE: "0",
     ATTACHMENT_STORAGE: "local",
-    UPSTREAM_ORIGIN: process.env.UPSTREAM_ORIGIN || "https://123.57.140.24/now"
+    UPSTREAM_ORIGIN: process.env.UPSTREAM_ORIGIN || "https://77liu.top/now"
   },
   stdio: "inherit"
 });

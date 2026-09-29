@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "gate": "G1",
+  "status": "passed",
+  "date": "2026-09-29",
+  "contractVersion": "1.0.0",
+  "sourceHead": "d33a53e7f173b8af9898b854e3ef415171d9db8b",
+  "workingTreeCommitted": false,
+  "lastVerifiedAfterStage": "S3-10",
+  "artifacts": {
+    "server.mjs": "cb8bc3f3ad64efb56d10f501c194f976b1f158263f64b840ca4dc105bb906108",
+    "package.json": "655ca0e04885ba7d66fb834f3716b1edfda6ec047ae782ef25e64683cd4b1315",
+    "src/app/index.mjs": "d5cc9ec685f64158cc475810bcb4f748cf44ce7aafd718229b5aa141f37864fe",
+    "src/http/index.mjs": "73c86865f80be51da14cac8e878524f520d5169749f99313a6d44c08fb748e7d",
+    "src/http/request.mjs": "3252425075752af4bbe3eb5f1c753038515910cedfa5c70eef0b0e80fb80e675",
+    "src/http/api-v1.mjs": "da94a6592e9df507a6a553d148f9dccd30fc42c40d52ea6c518d4eedfe3bcf1c",
+    "src/http/openapi-v1.mjs": "b17db13b8861c8036ee499aab8d434ce70610f5dd19aa93cbfa3e785e659e92f",
+    "src/http/openapi/thoughts.mjs": "cd30080ca932217a252852e0bdd48d2ff079575127991314fbc85efcd2e06bb5",
+    "src/http/thoughts.mjs": "8fb9b563f8ca190d7e5364811468cfbc38b3084fc9c07a4a71abb0bb7bf6c9b9",
+    "src/http/model-responses.mjs": "70b13f91642f69da790728380e32d1f1a93d9ef793e96598a69f2284ad296b82",
+    "src/app/thought-workflows.mjs": "40244c193c704baf74c04c9b6f9ac82292934a32ae8598fe57b087e1ba15eb8d",
+    "src/modules/thoughts/index.mjs": "6d21f5770003509db2c9d8fe11f6eac7f55715e02470a337c24b75902a6fa543",
+    "knowledge/module-boundaries.json": "afc356140c859a406e9e065b7b4fae930b4d0fdc8da4265177bd705b57634cc1",
+    "scripts/api-v1-contract-regression.mjs": "85f81aba7df003a4af7d60ba0ad72cb92ea77d29dfb39ded6f3fd8dc6574929e",
+    "scripts/api-v1-openapi-fragment-regression.mjs": "f53c05e70987c90f4400b09875c11795e2df91cb4540d434ce8f55e31f472137",
+    "scripts/system-test.mjs": "4117dc127983e6c049d3a4402ba3c114377c657dce1ae9cb77a28d71fed59c3a",
+    "scripts/thought-service-regression.mjs": "a2eb27ca412ab5cbd2219e62a13fd3e2fe55fa8ee5f77189e6eee83464b33fe5"
+  },
+  "verification": {
+    "npmRunCheck": "passed",
+    "npmTest": "passed",
+    "npmRunTestApiV1": "passed",
+    "npmRunTestOpenApi": "passed",
+    "npmRunTestRecords": "passed",
+    "npmRunTestFrontendShared": "passed",
+    "npmRunTestBackend": {
+      "status": "passed",
+      "stages": 30,
+      "durationMs": 92147
+    },
+    "npmRunTestFrontend": {
+      "status": "passed",
+      "stages": 3,
+      "durationMs": 41945
+    },
+    "npmRunTestSystem": {
+      "status": "passed",
+      "stages": 36,
+      "durationMs": 137115
+    },
+    "postgresBaseline": {
+      "status": "passed",
+      "checks": 40,
+      "evidence": "reports/postgres-validation-2026-09-29.json"
+    },
+    "postgresCurrentEnvironmentRerun": {
+      "status": "environment_failed_before_assertions",
+      "attempts": 3,
+      "error": "postmaster became multithreaded during startup",
+      "persistenceCodeChangedAfterBaseline": false,
+      "lastAttemptStage": "S3-10"
+    },
+    "realExternalProvidersCalled": false,
+    "deployed": false
+  },
+  "parallelReservations": [
+    {
+      "track": "B1",
+      "branch": "refactor/v020-b1-backend",
+      "worktree": "/private/tmp/for-now-v020-b1",
+      "port": 4181,
+      "dataDir": "data/worktrees/b1",
+      "database": "for_now_v020_b1",
+      "status": "integrated"
+    },
+    {
+      "track": "B2",
+      "branch": "refactor/v020-b2-frontend-shared",
+      "worktree": "/private/tmp/for-now-v020-b2",
+      "port": 4182,
+      "dataDir": "data/worktrees/b2",
+      "database": null,
+      "status": "integrated"
+    },
+    {
+      "track": "B3",
+      "branch": "refactor/v020-b3-contract-tests",
+      "worktree": "/private/tmp/for-now-v020-b3",
+      "port": 4183,
+      "dataDir": "data/worktrees/b3",
+      "database": "for_now_v020_b3",
+      "status": "integrated"
+    }
+  ],
+  "parallelWorktreesCreated": true,
+  "parallelStartBlockedBy": null,
+  "integrationOrder": ["B1", "B2", "B3"],
+  "nextStage": "S3-11"
+}

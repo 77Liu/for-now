@@ -4,20 +4,37 @@ The cloud service is the canonical data source. Code is deployed from Gitee;
 runtime data lives only in `/srv/for-now/data`; OSS receives consistent backup
 archives. Never synchronize a live data directory in both directions.
 
+The default and current production backend is JSON. The v0.2.0 PostgreSQL runtime,
+separate data/auth/recovery roles, offline export, and cutover boundaries are
+documented in [`knowledge/postgres-migration.md`](../knowledge/postgres-migration.md).
+Deploy database-capable code while still using JSON before the separately approved
+offline database cutover. Generic deploy rollback rejects a PostgreSQL configuration
+if either candidate or previous code lacks the runtime adapter. PostgreSQL backups
+require `PG_BACKUP_DATABASE_URL`; the existing cloud restore drill checks logical
+JSON compatibility only, while a fresh-database restore remains a separate gate.
+
 ## Access model
 
 - Nginx keeps the existing application at `/`.
 - `/apps/` is a small application router.
-- HTTP `/now/` redirects to `https://123.57.140.24/now/`.
-- HTTPS `/now/` proxies to this Node service and requires an invited account.
-- HTTP `/platform/` redirects to HTTPS; HTTPS `/platform/` proxies to the
+- HTTP requests and HTTPS requests to the public IP redirect to `https://77liu.top`.
+- Domain HTTPS `/now/` proxies to this Node service and requires an invited account.
+- Domain HTTPS `/platform/` proxies to the
   independently deployed read-only platform console on `127.0.0.1:4280`.
 - `/now/api/admin/v1/snapshot` is blocked at Nginx. Only the local platform
   process can call it with its service token.
 
-Let's Encrypt issues a short-lived certificate directly for the public IPv4
-address. Certbot renews it automatically. The ECS security group must allow
-inbound TCP 80 and 443.
+Let's Encrypt issues certificates for both `77liu.top` and the public IPv4
+address. Nginx uses the domain certificate for the application and retains the
+IP certificate for a trusted redirect to the canonical domain. Certbot renews
+both automatically. The ECS security group must allow inbound TCP 80 and 443.
+
+The production domain cutover completed on 2026-09-29 as an Nginx-only change.
+`https://77liu.top/now/` returned 200 with a matching certificate; domain HTTP
+and public-IP HTTPS returned 308 to the canonical domain. `certbot renew
+--dry-run` succeeded and the renewal timer was enabled. The pre-change server
+configuration is `/etc/nginx/sites-available/dysf.before-domain-20260929-175523`.
+No application release or data change was part of that operation.
 
 ## Initial server setup
 
@@ -35,13 +52,15 @@ inbound TCP 80 and 443.
    `/etc/for-now-platform.env`. Keep
    `ATTACHMENT_STORAGE=local` until the migration sequence below succeeds.
 6. Include `/etc/nginx/snippets/acme-challenge.conf` in the port-80 server,
-   reload Nginx, then issue the IP certificate:
+   reload Nginx, then issue the IP and domain certificates:
 
    ```bash
    sudo certbot certonly --webroot -w /var/www/letsencrypt \
      --ip-address 123.57.140.24 --preferred-profile shortlived \
      --non-interactive --agree-tos --register-unsafely-without-email \
      --deploy-hook "systemctl reload nginx"
+   sudo certbot certonly --webroot -w /var/www/letsencrypt \
+     -d 77liu.top --deploy-hook "systemctl reload nginx"
    ```
 
 7. Install `deploy/nginx-dysf.conf` as `/etc/nginx/sites-available/dysf`, then
@@ -69,7 +88,7 @@ branch's `README.md`. The main application exposes one aggregate endpoint for it
 
 Deploy the main application first, then the platform console. Verify that the
 public `/now/api/admin/v1/snapshot` path returns 404 before opening
-`https://123.57.140.24/platform/`. Keep `MONITOR_PLATFORM_ENABLED=0` while the
+`https://77liu.top/platform/`. Keep `MONITOR_PLATFORM_ENABLED=0` while the
 platform service does not exist. After its `/readyz` and public login smoke
 tests pass, set the value to `1` and run `for-now-monitor.service` once; only
 then leave the five-minute timer enabled for platform monitoring.
@@ -132,8 +151,12 @@ Push code to the `main` branch, then run:
 sudo for-now-deploy
 ```
 
+The deploy script rejects both `explore/*` and `checkpoint/*`; an intermediate
+checkpoint must first pass the release review and be promoted through an
+authorized release branch.
+
 The deploy command builds dependencies in a new candidate directory, validates
-JavaScript, marks that immutable release ready, switches the active symlink,
+JavaScript and the versioned prompt catalog, marks that immutable release ready, switches the active symlink,
 restarts systemd, and checks `/readyz`. Re-running the same commit never runs
 `npm ci` inside the active release. Failure after configuration
 installation restores the previous code, managed service/Nginx files, deployment
@@ -141,10 +164,17 @@ tools, and `/etc/for-now.env` (including `APP_VERSION`). An unhealthy recovery i
 reported explicitly; the deployment remains failed. Data is not rolled back by
 this script. Take and verify a data backup before a release with migrations.
 
-The older installed deployer does not install npm dependencies and cannot update
-itself until a release succeeds. Before the first deployment containing the
-Alibaba Cloud SDK and `logging.mjs`, bootstrap the deployer from the reviewed,
-pushed commit; merely pushing the new script is insufficient:
+`PROMPT_CATALOG_VERSION` may pin any immutable version included under
+`prompts/versions/`; leave it empty to use `prompts/manifest.json` `activeVersion`.
+Changing the pin requires a service restart, and a missing or modified catalog
+causes startup and candidate validation to fail rather than falling back.
+
+An older installed deployer may lack dependency installation or still check the
+removed root `logging.mjs` and `attachment-storage.mjs`. It cannot update itself
+until a release succeeds. Before deploying the modularized application, verify
+that the installed deployer checks `src/` and `public/frontend/`; if it still
+requires those removed files, bootstrap it from the reviewed, pushed commit.
+Merely pushing the new script is insufficient:
 
 ```bash
 # Replace with the reviewed full commit ID; do not export uncommitted files.
@@ -169,7 +199,7 @@ in `knowledge/observability.md`.
 For local UI development against canonical cloud data:
 
 ```bash
-UPSTREAM_ORIGIN=https://123.57.140.24/now ./启动.command
+UPSTREAM_ORIGIN=https://77liu.top/now ./启动.command
 ```
 
 The local Node process serves local frontend files and proxies API, session, SSE,

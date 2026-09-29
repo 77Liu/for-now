@@ -1,0 +1,136 @@
+{
+  "recordedAt": "2026-09-29T18:08:17Z",
+  "branch": "checkpoint/v0.2.0-g2-20260930",
+  "baseCommit": "54a6326f14ca7e6614939ee1db377c05fd4ddf7c",
+  "status": "local-intermediate-checkpoint-committed-production-release-gates-pending",
+  "scope": {
+    "storeVersion": 15,
+    "modules": 50,
+    "ownedRoutes": 201,
+    "openApiPaths": 60,
+    "openApiOperations": 104,
+    "views": 23,
+    "promptCatalogVersion": "2026.09.29.2",
+    "promptCount": 55
+  },
+  "resolvedBlockers": [
+    "macOS 26 reports pthread_is_threaded_np()=1 in a minimal native process before application logic",
+    "isolated local PostgreSQL 16.14 source build disables only that false-positive configure probe and does not link LDAP or ICU",
+    "lifecycle and idempotency metadata preserve exact array positions",
+    "metadata top-level and row-level extension fields survive PostgreSQL round trips",
+    "legacy metadata tables recover position and payload only from immutable account snapshots",
+    "JSON null idempotency responses survive PostgreSQL round trips",
+    "Store v15 actions, habits, habit check-ins, feedback and validation-ledger objects enter the real PostgreSQL test",
+    "restore validation compares the complete relational bundle before and after independent-database recovery",
+    "automatic answers remain disabled by default and persisted settings are checked across restart",
+    "keepsake derivative paths remain distinct and original media stays behind its dedicated endpoint",
+    "derivative generation and transport regression is part of the system gate",
+    "the read-only governance snapshot reads tenant data through PostgreSQL repositories after cutover"
+  ],
+  "validation": {
+    "npmRunCheck": "passed",
+    "gitDiffCheck": "passed",
+    "npmAuditOmitDev": {
+      "status": "passed",
+      "vulnerabilities": 0
+    },
+    "npmRunTestSystem": {
+      "status": "passed",
+      "phases": 51,
+      "durationMs": 187993
+    },
+    "npmRunTestPostgres": {
+      "status": "passed",
+      "postgresVersion": "16.14",
+      "integrationChecks": 42,
+      "role": "non-owner / NOSUPERUSER / NOBYPASSRLS",
+      "businessCounts": {
+        "businessFields": 27,
+        "businessObjects": 37,
+        "businessRelations": 17,
+        "attachmentReferences": 6,
+        "lifecycleRecords": 27,
+        "idempotencyRecords": 1
+      },
+      "includesPersistentLedgerRegression": true
+    },
+    "cleanCandidate": {
+      "status": "passed",
+      "path": "/tmp/for-now-v020-final-checkpoint",
+      "testedCommit": "58a1a6388208cfb96c724b76c0d22fb07b0a477d",
+      "sourceFiles": 473,
+      "gitTree": "e9d3828b20cd5c840a3abcd4b2d91fefe2083837",
+      "postValidationChanges": "checkpoint-branch deployment rejection plus evidence-only documentation; deploy regression and npm run check rerun successfully",
+      "npmCi": "passed",
+      "npmRunCheck": "passed",
+      "npmRunTestSystem": {
+        "status": "passed",
+        "phases": 51,
+        "durationMs": 188825
+      },
+      "npmRunTestPostgres": "passed",
+      "npmAuditOmitDev": {
+        "status": "passed",
+        "vulnerabilities": 0
+      }
+    },
+    "independentReview": {
+      "initialValidators": 2,
+      "findingsClosed": [
+        "legacy metadata order reconstruction",
+        "metadata extension preservation",
+        "null idempotency response storage",
+        "Store v15 real PostgreSQL coverage",
+        "full relational restore comparison",
+        "persistent ledger gate composition",
+        "keepsake derivative coverage",
+        "settings and automatic-answer assertions"
+      ],
+      "reReview": "metadata review found no remaining blocker; combined review's remaining attachment-byte gap was fixed and the PostgreSQL gate was rerun successfully"
+    }
+  },
+  "postgresTestRuntime": {
+    "scope": "isolated local test only; not a production PostgreSQL build",
+    "sourceUrl": "https://ftp.postgresql.org/pub/source/v16.14/postgresql-16.14.tar.bz2",
+    "sourceSha256": "f6d077142737920858ce958ccdb75c6ee137a63b5b0853c70693d401ac7e3471",
+    "binarySha256": "6e35d1c55eaeb02e66551dd02ac13f526f3893bfc5687e727eb2428ae61f03dd",
+    "configure": "ac_cv_func_pthread_is_threaded_np=no ./configure --without-icu --without-readline --without-zlib",
+    "command": "PG_TEST_BIN=/tmp/for-now-postgresql-16.14/bin npm run test:postgres"
+  },
+  "releaseGate": {
+    "candidate": "local intermediate checkpoint at current HEAD; intentionally mutable and non-authoritative",
+    "currentBranch": "checkpoint/v0.2.0-g2-20260930 (local checkpoint only; deployment guard rejects checkpoint/*)",
+    "currentHead": "see Git HEAD; not embedded to avoid self-referential commit hashes",
+    "originMain": "54a6326f14ca7e6614939ee1db377c05fd4ddf7c",
+    "parentCommit": "54a6326f14ca7e6614939ee1db377c05fd4ddf7c",
+    "authorization": "local intermediate commit only; no push, tag, Gitee Release or deployment",
+    "nextRequiredAction": "create a controlled release branch and complete the formal second-round review only after the next human gate"
+  },
+  "sourceHashes": {
+    "scripts/postgres-integration.mjs": "f4e868a206e7942dbd7fb0d06c71b607b6631e957473632bf56d037477cb39a9",
+    "scripts/postgres-runtime-checks.mjs": "e8199bc6978ad7ae0d360968e0ac3c20e9293ec72f1b220faab3c18f054dbeee",
+    "scripts/persistence-ledger-postgres-regression.mjs": "6c95eba03f66e574ccfe942b3db2f560139d392454f8d59f7c637ff679377d39",
+    "scripts/attachment-derivatives-regression.mjs": "9de9e4f461d4a8be9e23f94f1231e7f59d1a5fb0a584c38c8364c2ea655766dd",
+    "scripts/system-test.mjs": "032ba0eb692f9510aea2ca4fdf74e38fcd0f251851345e9e8956857b3281b421",
+    "scripts/fixtures/migration-store.mjs": "7f8ab342cc43fe6a71e35112786486ddf040b0f014b8c7778925311122e89a98",
+    "src/shared/persistence/postgres-schema.sql": "6f0d31a23359b1fdf176f0d2f55fa5d41baf59c046dbe819baf5d2a392ec2445",
+    "src/shared/persistence/store-mapping.mjs": "9e35d86fb42bc40e9ea425116e5be3c53a577accb069119113d49c35a9e83eeb",
+    "src/shared/persistence/postgres-objects.mjs": "f5bcc66e3befb850f9df1985b9ac43935cf9c2d3f4eca69812d3130a45e88831",
+    "package.json": "abaa45f1016eb0752011f6cb92211cd4627f76cb43b39ac0c63e1abd2a059820",
+    "server.mjs": "ced2628f25e2f957bb178fc092498e543ab7c79550b43e914663cfa65d4f0164",
+    "admin-snapshot.mjs": "79b78d47925e12ea1905ec9bea907f73bad81d73a589241dd9ae56015f9e70d5",
+    "src/config/index.mjs": "084d7d4b06d33dfa5fe90afb63cefd3b60850d246addb3eedd326980f19261b0"
+  },
+  "notPerformed": [
+    "push",
+    "tag",
+    "Gitee Release",
+    "application deployment",
+    "production PostgreSQL migration or cutover",
+    "production OSS snapshot verification",
+    "real AI provider calls",
+    "real segmentation provider calls",
+    "physical-device testing",
+    "post-deployment observation"
+  ]
+}

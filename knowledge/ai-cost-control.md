@@ -12,6 +12,8 @@
 
 模拟参数保存在当前账户独立的 `ai-cost-plan.json`，不写入主业务 `store.json`，也不会自动修改 `llm-settings.json`。
 
+工作区实现由 `src/modules/ai` 拥有成本归一化和账本统计，`http/ai-costs` 适配 GET/PATCH，`shared/persistence` 保存账户文档；PostgreSQL 模式使用独立 `costPlan` 文档映射。PATCH 继续整份替换方案，缺省字段由当前设置和近 30 天账本生成；模拟保存失败保留上一份方案。该模块化调整尚未部署。
+
 ## 场景变量
 
 13 个 AI 场景分别维护：

@@ -5,10 +5,13 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { healthImageFixtures } from "./fixtures/health-images.mjs";
+import { normalizeHealthImage, describeHealthDetails } from "../src/modules/health/index.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const modelRequests = [];
+let nextHealthReply = null;
 const mockSegmentCutout = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lR2nWQAAAABJRU5ErkJggg==";
 
 async function freePort() {
@@ -31,6 +34,12 @@ function mockDeepSeek() {
       res.writeHead(200, { "content-type": "application/json" });
       const messages = JSON.stringify(input.messages);
       if (messages.includes("版本竞态问题")) await sleep(250);
+      const healthKind = messages.includes("转录这张体重/体成分报告") ? "weight" : messages.includes("转录这张运动详情截图") ? "exercise" : "";
+      if (healthKind) {
+        const content = nextHealthReply ?? JSON.stringify(healthImageFixtures[healthKind]);
+        nextHealthReply = null;
+        return res.end(JSON.stringify({ choices: [{ message: { content } }], usage }));
+      }
       if (messages.includes("同一次睡眠记录")) return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ date: "2026-09-27", bedtime: "2026-09-27T02:58:00", wakeTime: "2026-09-27T10:40:00", totalMinutes: 462, deepMinutes: 134, deepPercent: 29, lightMinutes: 221, lightPercent: 48, remMinutes: 107, remPercent: 23, awakeCount: null, awakeMinutes: null, averageHeartRate: 49, averageOxygen: 98, respiratoryRate: 15, verification: "两张图已合并" }) } }], usage }));
       if (messages.includes("心率日视图")) return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ date: "2026-09-26", minimum: 46, maximum: 82, average: 60, resting: 52, sleepAverage: 50, trendAnalysis: "凌晨下降，午后与晚间出现两次抬升，夜间回落。", trendSegments: [{ period: "00:00-06:00", direction: "下降", approximateRange: "约46-64" }], verification: "今日概览可直接核对" }) } }], usage }));
       if (messages.includes("书籍截图")) return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ title: "测试书", author: "测试作者", verification: "图片已识别" }) } }], usage }));
@@ -60,7 +69,7 @@ function mockDeepSeek() {
 
 async function waitForServer(url, child) {
   for (let attempt = 0; attempt < 60; attempt += 1) {
-    if (child.exitCode != null) throw new Error(`应用服务提前退出，退出码 ${child.exitCode}`);
+    if (child.exitCode != null) throw new Error(`应用服务提前退出，退出码 ${child.exitCode}\n${appError.trim()}`);
     try {
       const response = await fetch(`${url}/api/state`);
       if (response.ok) return response.json();
@@ -134,6 +143,7 @@ await fs.writeFile(path.join(dataDir, "llm-settings.json"), `${JSON.stringify({
     ultra: { model: "deepseek-v4-pro", effort: "max" }
   },
   scenarios: Object.fromEntries(["thoughtDraft", "thoughtAnswer", "followUpAnswer", "chat", "diaryLead", "diaryStructure", "diaryTopic", "diaryReflection", "annotationShenji", "analysis", "bookRecognition"].map(scene => [scene, "ultra"])),
+  automaticAnswers: { thoughtAnswer: true },
   apiKey: "test-key"
 }, null, 2)}\n`);
 
@@ -157,7 +167,7 @@ try {
     body: JSON.stringify({ kind: "highlight", targetKey, start, end: start + quote.length, quote, text: "" })
   });
   const migrated = await waitForServer(base, app);
-  assert.equal(migrated.version, 14);
+  assert.equal(migrated.version, 15);
   assert.equal(migrated.commercialization.version, 3);
   assert.equal(migrated.commercialization.assumptions.validation.participants, 5);
   assert.equal(migrated.commercialization.assumptions.validation.rewardPerParticipantCny, 100);
@@ -221,21 +231,22 @@ try {
     ["mood", 1, 0], ["energy", 1, 0], ["stress", 1, 0], ["sleep", 1, 0]
   ]);
   assert.deepEqual(migrated.insights.associations.map(item => [item.factor, item.withCount, item.confidence]), [["冷启动因素", 1, "单日观察"]]);
-  assert.equal((await fs.readdir(dataDir)).some(name => name.includes("v3-pre-v14") && name.endsWith(".bak")), true);
+  assert.equal((await fs.readdir(dataDir)).some(name => name.includes("v3-pre-v15") && name.endsWith(".bak")), true);
   const migratedSettings = await (await fetch(`${base}/api/settings`)).json();
-  assert.equal(migratedSettings.version, 5);
+  assert.equal(migratedSettings.version, 6);
   assert.deepEqual(Object.keys(migratedSettings.profiles), ["lite", "mid", "high", "ultra"]);
   assert.deepEqual(migratedSettings.scenarios, {
     thoughtPrompt: "lite", thoughtDraft: "high", thoughtAnswer: "ultra", followUpAnswer: "ultra", chat: "high",
     diaryLead: "lite", diaryStructure: "mid", diaryTopic: "high", diaryReflection: "ultra",
-    annotationShenji: "high", analysis: "ultra", bookRecognition: "mid", healthRecognition: "mid"
+    annotationShenji: "high", analysis: "ultra", bookRecognition: "mid", healthRecognition: "mid",
+    contentImageUnderstanding: "mid"
   });
   assert.equal(migratedSettings.assistantName, "神鸡");
   assert.equal(migratedSettings.responseStyles.thoughtAnswer, "standard");
   const storedSettings = JSON.parse(await fs.readFile(path.join(dataDir, "llm-settings.json"), "utf8"));
-  assert.equal(storedSettings.version, 5);
+  assert.equal(storedSettings.version, 6);
   assert.equal(storedSettings.apiKey, "test-key");
-  assert.equal((await fs.readdir(dataDir)).some(name => name.includes("v2-pre-v5") && name.endsWith(".bak")), true);
+  assert.equal((await fs.readdir(dataDir)).some(name => name.includes("v2-pre-v6") && name.endsWith(".bak")), true);
   const initialStatistics = await (await fetch(`${base}/api/statistics`)).json();
   assert.equal(initialStatistics.ai.summary.calls, 0);
   assert.equal(initialStatistics.ai.daily.length, 7);
@@ -252,7 +263,7 @@ try {
   assert.equal(JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"), "utf8")).version, 2);
   const initialAiCostPlan = await (await fetch(`${base}/api/ai-cost-plan`)).json();
   assert.equal(initialAiCostPlan.version, 1);
-  assert.equal(initialAiCostPlan.scenarios.length, 13);
+  assert.equal(initialAiCostPlan.scenarios.length, 14);
   assert.equal(initialAiCostPlan.scenarios.find(item => item.scene === "thoughtAnswer").model, "deepseek-v4-pro");
   const savedAiCostPlan = await (await fetch(`${base}/api/ai-cost-plan`, {
     method: "PATCH",
@@ -267,7 +278,7 @@ try {
   assert.equal(savedAiCostPlan.monthlyBudgetCny, 66);
   assert.equal(savedAiCostPlan.contingencyPct, 500);
   assert.equal(savedAiCostPlan.cnyPerUsd, 7.1);
-  assert.equal(savedAiCostPlan.scenarios.length, 13);
+  assert.equal(savedAiCostPlan.scenarios.length, 14);
   assert.deepEqual(savedAiCostPlan.scenarios.find(item => item.scene === "thoughtPrompt"), { scene: "thoughtPrompt", enabled: false, model: "deepseek-flash", pricingPeriod: "offPeak", callsPerMonth: 12, avgInputTokens: 8888, cacheHitPct: 100, avgReasoningTokens: 10, avgAnswerTokens: 20 });
   assert.equal(JSON.parse(await fs.readFile(path.join(dataDir, "ai-cost-plan.json"), "utf8")).monthlyBudgetCny, 66);
   const onboardingSchema = await (await fetch(`${base}/api/onboarding/schema`)).json();
@@ -861,6 +872,171 @@ try {
   assert.equal(uploadedCoverResponse.status, 201);
   const uploadedCover = await uploadedCoverResponse.json();
   assert.match(uploadedCover.attachmentPath, /^\/attachments\/.+\.png$/);
+  const missingUploadKeyResponse = await fetch(`${base}/api/images/upload`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ purpose: "original", images: [pixel] })
+  });
+  assert.equal(missingUploadKeyResponse.status, 400);
+  assert.equal((await missingUploadKeyResponse.json()).code, "IDEMPOTENCY_KEY_REQUIRED");
+  const originalUploadResponse = await fetch(`${base}/api/images/upload`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "idempotency-key": "content-original-upload" },
+    body: JSON.stringify({ purpose: "original", images: [pixel, pixel] })
+  });
+  assert.equal(originalUploadResponse.status, 201);
+  const originalUpload = await originalUploadResponse.json();
+  assert.equal(originalUpload.attachmentPaths.length, 2);
+  const replayedOriginalUpload = await (await fetch(`${base}/api/images/upload`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "idempotency-key": "content-original-upload" },
+    body: JSON.stringify({ purpose: "original", images: [pixel, pixel] })
+  })).json();
+  assert.deepEqual(replayedOriginalUpload.attachmentPaths, originalUpload.attachmentPaths);
+  const failedUpload = await (await fetch(`${base}/api/images/upload`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "idempotency-key": "content-original-failed" },
+    body: JSON.stringify({ purpose: "original", images: [pixel] })
+  })).json();
+  assert.equal((await fetch(`${base}/api/captures`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ content: "", attachmentPaths: failedUpload.attachmentPaths, occurredAt: "invalid" })
+  })).status, 400);
+  const discardedUpload = await (await fetch(`${base}/api/images/discard`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      attachmentPaths: failedUpload.attachmentPaths,
+      uploadRequestId: "content-original-failed"
+    })
+  })).json();
+  assert.deepEqual(discardedUpload.discarded, failedUpload.attachmentPaths);
+  assert.equal((await fetch(`${base}${failedUpload.attachmentPaths[0]}`)).status, 404);
+  const partialUpload = await (await fetch(`${base}/api/images/upload`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "idempotency-key": "content-original-partial" },
+    body: JSON.stringify({ purpose: "original", images: [pixel, pixel] })
+  })).json();
+  assert.equal((await fetch(`${base}/api/captures`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      content: "只引用批次中的第一张",
+      attachmentPaths: [partialUpload.attachmentPaths[0]],
+      occurredAt: "2026-09-27T12:00:30"
+    })
+  })).status, 201);
+  const partialDiscard = await (await fetch(`${base}/api/images/discard`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      attachmentPaths: partialUpload.attachmentPaths,
+      uploadRequestId: "content-original-partial"
+    })
+  })).json();
+  assert.deepEqual(partialDiscard.discarded, [partialUpload.attachmentPaths[1]]);
+  assert.equal((await fetch(`${base}${partialUpload.attachmentPaths[0]}`)).status, 200);
+  assert.equal((await fetch(`${base}${partialUpload.attachmentPaths[1]}`)).status, 404);
+  assert.equal((await fetch(`${base}/api/images/upload`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "idempotency-key": "content-original-partial" },
+    body: JSON.stringify({ purpose: "original", images: [pixel, pixel] })
+  })).status, 409);
+  const imageOnlyCaptureResponse = await fetch(`${base}/api/captures`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ content: "", attachmentPaths: originalUpload.attachmentPaths, occurredAt: "2026-09-27T12:01:00" })
+  });
+  assert.equal(imageOnlyCaptureResponse.status, 201, await imageOnlyCaptureResponse.clone().text());
+  const imageOnlyCapture = await imageOnlyCaptureResponse.json();
+  assert.equal(imageOnlyCapture.content, "");
+  assert.deepEqual(imageOnlyCapture.attachmentPaths, originalUpload.attachmentPaths);
+  const imageOnlyCaptureEdit = await fetch(`${base}/api/captures/${imageOnlyCapture.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ content: "", attachmentPaths: [originalUpload.attachmentPaths[0]] })
+  });
+  assert.equal(imageOnlyCaptureEdit.status, 200, await imageOnlyCaptureEdit.clone().text());
+  assert.deepEqual((await imageOnlyCaptureEdit.json()).attachmentPaths, [originalUpload.attachmentPaths[0]]);
+  const attachmentTrash = (await (await fetch(`${base}/api/trash`)).json()).items.find(item => (
+    item.type === "contentAttachment" && item.location?.targetId === imageOnlyCapture.id
+  ));
+  assert.deepEqual(attachmentTrash.payload.attachmentPaths, [originalUpload.attachmentPaths[1]]);
+  const imageOnlyThoughtResponse = await fetch(`${base}/api/thought-chains`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      clientRequestId: "image-only-thought",
+      question: "",
+      attachmentPaths: [originalUpload.attachmentPaths[0]],
+      occurredAt: "2026-09-27T12:02:00"
+    })
+  });
+  assert.equal(imageOnlyThoughtResponse.status, 201, await imageOnlyThoughtResponse.clone().text());
+  const imageOnlyThought = await imageOnlyThoughtResponse.json();
+  const imageOnlyRoot = imageOnlyThought.items.find(item => item.type === "question");
+  assert.equal(imageOnlyRoot.content, "");
+  assert.deepEqual(imageOnlyRoot.attachmentPaths, [originalUpload.attachmentPaths[0]]);
+  const imageOnlyBlockResponse = await fetch(`${base}/api/thoughts`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      type: "record",
+      relatedTo: imageOnlyRoot.id,
+      content: "",
+      attachmentPaths: [originalUpload.attachmentPaths[1]],
+      occurredAt: "2026-09-27T12:03:00"
+    })
+  });
+  assert.equal(imageOnlyBlockResponse.status, 201, await imageOnlyBlockResponse.clone().text());
+  const imageOnlyBlock = await imageOnlyBlockResponse.json();
+  assert.equal(imageOnlyBlock.content, "");
+  const imageCommentHost = await (await fetch(`${base}/api/captures`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ content: "图片评论锚点", occurredAt: "2026-09-27T12:04:00" })
+  })).json();
+  const imageOnlyCommentResponse = await fetch(`${base}/api/annotations/capture/${imageCommentHost.id}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "comment",
+      targetKey: "content",
+      quote: "图片评论",
+      start: 0,
+      end: 4,
+      text: "",
+      attachmentPaths: [originalUpload.attachmentPaths[0]]
+    })
+  });
+  assert.equal(imageOnlyCommentResponse.status, 201, await imageOnlyCommentResponse.clone().text());
+  assert.deepEqual((await imageOnlyCommentResponse.json()).attachmentPaths, [originalUpload.attachmentPaths[0]]);
+  const beforeUnderstanding = await (await fetch(`${base}/api/state`)).json();
+  const currentImageOnlyCapture = beforeUnderstanding.captures.find(item => item.id === imageOnlyCapture.id);
+  const understandingResponse = await fetch(`${base}/api/v1/content-attachments/understandings`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "idempotency-key": "image-understanding-capture" },
+    body: JSON.stringify({
+      targetType: "capture",
+      targetId: imageOnlyCapture.id,
+      inputVersion: currentImageOnlyCapture.version,
+      attachmentPaths: currentImageOnlyCapture.attachmentPaths
+    })
+  });
+  assert.equal(understandingResponse.status, 202, await understandingResponse.clone().text());
+  const understandingTask = (await understandingResponse.json()).data;
+  assert.equal(understandingTask.kind, "contentImageUnderstanding");
+  assert.equal((await waitForTask(base, understandingTask.id)).status, "succeeded");
+  const understandingResult = await (await fetch(`${base}/api/ai-tasks/${understandingTask.id}/result`)).json();
+  assert.equal(understandingResult.result.sourceTaskId, understandingTask.id);
+  assert.equal(understandingResult.result.content, "同步回答");
+  const afterUnderstanding = await (await fetch(`${base}/api/state`)).json();
+  const understoodCapture = afterUnderstanding.captures.find(item => item.id === imageOnlyCapture.id);
+  assert.equal(understoodCapture.content, "");
+  assert.equal(understoodCapture.imageUnderstandings[0].content, "同步回答");
+  assert.match(JSON.stringify(modelRequests.at(-1).messages), /作为捕念原文保存/);
+  assert.match(JSON.stringify(modelRequests.at(-1).messages), /image_url/);
 
   const missingReadingStartResponse = await fetch(`${base}/api/books`, {
     method: "POST",
@@ -1000,9 +1176,9 @@ try {
   assert.ok(sleepUsage.durationMs >= 0);
   assert.deepEqual(sleepUsage.rawUsage, { prompt_tokens: 1000, prompt_cache_hit_tokens: 200, prompt_cache_miss_tokens: 800, completion_tokens: 500, completion_tokens_details: { reasoning_tokens: 300 } });
   const imageStatistics = (await (await fetch(`${base}/api/statistics`)).json()).ai;
-  assert.equal(imageStatistics.summary.visionCalls, 3);
-  assert.equal(imageStatistics.summary.imageCount, 4);
-  assert.equal(imageStatistics.modalities.find(item => item.modality === "vision").calls, 3);
+  assert.equal(imageStatistics.summary.visionCalls, 4);
+  assert.equal(imageStatistics.summary.imageCount, 5);
+  assert.equal(imageStatistics.modalities.find(item => item.modality === "vision").calls, 4);
   const auditFiles = (await fs.readdir(path.join(dataDir, "logs"))).filter(name => name.startsWith("ai-audit-"));
   const auditEntries = (await Promise.all(auditFiles.map(async name => (await fs.readFile(path.join(dataDir, "logs", name), "utf8")).trim().split("\n").filter(Boolean).map(JSON.parse)))).flat();
   const sleepAudit = auditEntries.find(item => item.traceId === sleepTraceId && item.status !== "started");
@@ -1062,6 +1238,85 @@ try {
   assert.deepEqual([editedWeight.lower95, editedWeight.upper95], [68.5, 70.5]);
   assert.equal(editedWeight.createdAt, weightCreatedAt);
   assert.equal((await fetch(`${base}/api/daily-records/${weightRecord.id}`, { method: "DELETE" })).status, 200);
+
+  // Missing total weight must never be reconstructed from body composition.
+  const imageParse = kind => fetch(`${base}/api/images/parse`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind, images: [pixel], referenceDate: "2026-09-27", requestId: `health-${kind}`, targetId: `daily:${kind}`, inputVersion: 3 })
+  });
+  const saveDaily = (payload, id = "") => fetch(`${base}/api/daily-records${id ? `/${id}` : ""}`, {
+    method: id ? "PATCH" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload)
+  });
+  const bodyParsedResponse = await imageParse("weight");
+  assert.equal(bodyParsedResponse.status, 200);
+  const bodyParsed = await bodyParsedResponse.json();
+  assert.deepEqual(Object.fromEntries(Object.keys(healthImageFixtures.weight).map(key => [key, bodyParsed[key]])), healthImageFixtures.weight);
+  assert.equal(bodyParsed.requestId, "health-weight");
+  assert.equal(bodyParsed.inputVersion, 3);
+  assert.equal(bodyParsed.attachmentPaths.length, 1);
+  assert.equal(modelRequests.at(-1).model, "deepseek-flash");
+  assert.match(JSON.stringify(modelRequests.at(-1).messages), /不能把体水分/);
+  const bodyRecordResponse = await saveDaily({ ...bodyParsed, type: "weight", source: "screenshot", occurredAt: "2026-09-23T08:00:00" });
+  assert.equal(bodyRecordResponse.status, 201);
+  const bodyRecord = await bodyRecordResponse.json();
+  assert.deepEqual([bodyRecord.measuredWeight, bodyRecord.adjustedWeight, bodyRecord.lower95, bodyRecord.upper95], [null, null, null, null]);
+  assert.equal(bodyRecord.bodyWaterMass, 42.2);
+  assert.equal(bodyRecord.measuredAt, "");
+  assert.doesNotMatch(describeHealthDetails("weight", bodyRecord), /nullkg|undefined|NaN/);
+  assert.match(describeHealthDetails("weight", bodyRecord), /总重量未填写/);
+  const bodyEdited = await (await saveDaily({ description: "修改体成分描述", musclePercent: null }, bodyRecord.id)).json();
+  assert.equal(bodyEdited.bodyWaterMass, 42.2, "Partial edits preserve recognized metrics");
+  assert.equal(bodyEdited.musclePercent, null);
+  assert.deepEqual(bodyEdited.attachmentPaths, bodyParsed.attachmentPaths);
+  const withWeight = await (await saveDaily({ measuredWeight: 68, clothing: "light" }, bodyRecord.id)).json();
+  assert.deepEqual([withWeight.adjustedWeight, withWeight.lower95, withWeight.upper95], [67.5, 67.1, 67.9]);
+  const clearedWeight = await (await saveDaily({ measuredWeight: null }, bodyRecord.id)).json();
+  assert.equal(clearedWeight.adjustedWeight, null);
+  assert.equal(clearedWeight.skeletalMuscleMass, 30.4);
+
+  const exerciseParsedResponse = await imageParse("exercise");
+  assert.equal(exerciseParsedResponse.status, 200);
+  const exerciseParsed = await exerciseParsedResponse.json();
+  assert.deepEqual(Object.fromEntries(Object.keys(healthImageFixtures.exercise).map(key => [key, exerciseParsed[key]])), healthImageFixtures.exercise);
+  assert.equal(modelRequests.at(-1).model, "deepseek-flash");
+  assert.match(JSON.stringify(modelRequests.at(-1).messages), /截断的区间不能填零/);
+  assert.match(JSON.stringify(modelRequests.at(-1).messages), /手机状态栏/);
+  const exerciseResponse = await saveDaily({ ...exerciseParsed, type: "exercise", source: "screenshot", occurredAt: exerciseParsed.startedAt });
+  assert.equal(exerciseResponse.status, 201);
+  const exerciseRecord = await exerciseResponse.json();
+  assert.equal(exerciseRecord.startedAt, "2026-09-23T09:12:34.000Z");
+  assert.equal(exerciseRecord.occurredOn, "2026-09-23");
+  assert.equal(exerciseRecord.durationSeconds, 1987);
+  assert.equal(exerciseRecord.aerobicSeconds, 0);
+  assert.equal(exerciseRecord.anaerobicSeconds, null);
+  assert.match(describeHealthDetails("exercise", exerciseRecord), /力量训练；运动时长1987秒；活动热量184kcal；总热量231kcal/);
+  assert.equal((await saveDaily({ averageHeartRate: 180 }, exerciseRecord.id)).status, 400);
+  assert.equal((await saveDaily({ totalCalories: 100 }, exerciseRecord.id)).status, 400);
+  assert.equal((await saveDaily({ durationSeconds: 10 }, exerciseRecord.id)).status, 400);
+  const exerciseEdited = await (await saveDaily({ description: "自行补充的运动感受", maximumHeartRate: null }, exerciseRecord.id)).json();
+  assert.equal(exerciseEdited.maximumHeartRate, null);
+  assert.equal(exerciseEdited.durationSeconds, 1987);
+  assert.equal(exerciseEdited.createdAt, exerciseRecord.createdAt);
+  assert.equal((await saveDaily({ type: "exercise", description: "散步，旧版纯描述仍可用" })).status, 201);
+  for (const type of ["weight", "exercise"]) {
+    assert.equal((await saveDaily({ type })).status, 400);
+    assert.equal((await fetch(`${base}/api/images/parse`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind: type, images: [pixel, pixel] }) })).status, 400);
+  }
+  const invalidHealth = normalizeHealthImage("weight", { measuredWeight: "", muscleMass: true, bodyFatPercent: 101, bodyAge: -1, measuredAt: "2026-02-30T09:00:00", date: "2026-02-30" });
+  assert.deepEqual([invalidHealth.measuredWeight, invalidHealth.muscleMass, invalidHealth.bodyFatPercent, invalidHealth.bodyAge, invalidHealth.date, invalidHealth.measuredAt], [null, null, null, null, "", ""]);
+  const invalidExercise = normalizeHealthImage("exercise", { durationSeconds: 2.5, activeCalories: " ", totalCalories: false, aerobicSeconds: 0 });
+  assert.deepEqual([invalidExercise.durationSeconds, invalidExercise.activeCalories, invalidExercise.totalCalories, invalidExercise.aerobicSeconds], [null, null, null, 0]);
+  const attachmentsBeforeFailure = (await fs.readdir(path.join(dataDir, "attachments"))).sort();
+  nextHealthReply = "not JSON";
+  assert.equal((await imageParse("exercise")).status, 400);
+  assert.deepEqual((await fs.readdir(path.join(dataDir, "attachments"))).sort(), attachmentsBeforeFailure);
+  for (const entry of [bodyRecord, exerciseRecord]) {
+    assert.equal((await fetch(`${base}/api/daily-records/${entry.id}`, { method: "DELETE" })).status, 200);
+    const deleted = (await (await fetch(`${base}/api/trash`)).json()).items.find(item => item.resourceId === entry.id);
+    assert.deepEqual(deleted.payload.attachmentPaths, entry.attachmentPaths);
+    assert.equal((await fetch(`${base}/api/trash/${deleted.id}/restore`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 200);
+    assert.equal((await fetch(`${base}${entry.attachmentPaths[0]}`)).status, 200);
+  }
 
   const reflectionId = reflectionEvents.at(-1).result.id;
   assert.equal((await fetch(`${base}/api/journals/${createdJournal.id}/reflections/${reflectionId}`, { method: "DELETE" })).status, 200);
@@ -1206,7 +1461,7 @@ try {
     if (!["queued", "running"].includes(restoredRaceResult.status)) break;
     await sleep(25);
   }
-  assert.equal(restoredRaceResult.status, "stale");
+  assert.equal(restoredRaceResult.status, "cancelled");
   const stateAfterRestoreRace = await (await fetch(`${base}/api/state`)).json();
   assert.equal(stateAfterRestoreRace.thoughts.find(item => item.id === restoredRaceQuestion.id).version, restoredRaceQuestion.version + 1);
   assert.equal(stateAfterRestoreRace.thoughts.some(item => item.sourceTaskId === restoredRaceTask.id), false);
@@ -1299,11 +1554,18 @@ try {
   app.kill("SIGTERM");
   if (app.exitCode == null) await new Promise(resolve => app.once("exit", resolve));
   app = startApp();
-  await waitForServer(base, app);
+  const restartedState = await waitForServer(base, app);
+  const restartedBody = restartedState.dailyRecords.find(item => item.id === bodyRecord.id);
+  const restartedExercise = restartedState.dailyRecords.find(item => item.id === exerciseRecord.id);
+  assert.equal(restartedBody.adjustedWeight, null);
+  assert.equal(restartedBody.bodyWaterMass, 42.2);
+  assert.equal(restartedExercise.durationSeconds, 1987);
+  assert.equal(restartedExercise.maximumHeartRate, null);
   assert.deepEqual(JSON.parse(await fs.readFile(path.join(dataDir, "store.json"), "utf8")).attachmentCleanup, []);
   assert.equal((await fetch(`${base}${uploadedCover.attachmentPath}`)).status, 404);
 
   const lowSampleStore = JSON.parse(await fs.readFile(path.join(dataDir, "store.json"), "utf8"));
+  delete lowSampleStore._persistence;
   lowSampleStore.thoughts = lowSampleStore.thoughts.filter(item => item.id === "question-1");
   lowSampleStore.analyses = [];
   lowSampleStore.checkins = Array.from({ length: 30 }, (_, index) => {
@@ -1361,7 +1623,7 @@ try {
 
   const midnight = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23", timeZone: "Asia/Shanghai" }).format(new Date("2026-09-26T16:56:18.237Z"));
   assert.equal(midnight, "00:56:18");
-  console.log("Regression checks passed: v14 onboarding, trash recovery, retryable attachment cleanup, concurrent AI idempotency, target-version invalidation, thought blocks, image parsing, local dates, and reasoning isolation.");
+  console.log("Regression checks passed: v15 onboarding, trash recovery, retryable attachment cleanup, concurrent AI idempotency, target-version invalidation, thought blocks, image parsing, local dates, and reasoning isolation.");
 } finally {
   app.kill("SIGTERM");
   await new Promise(resolve => mock.close(resolve));

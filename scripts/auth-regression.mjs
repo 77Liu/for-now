@@ -86,6 +86,9 @@ try {
   await waitForServer(base, child);
   assert.equal((await fetch(`${base}/now`, { redirect: "manual" })).status, 308);
   assert.equal((await fetch(`${base}/now/styles.css`)).status, 200);
+  const clientModule = await fetch(`${base}/now/frontend/api/index.mjs`);
+  assert.equal(clientModule.status, 200);
+  assert.match(clientModule.headers.get("content-type") || "", /^text\/javascript/);
   const manifestResponse = await fetch(`${base}/now/manifest.webmanifest`);
   assert.equal(manifestResponse.status, 200);
   assert.match(manifestResponse.headers.get("content-type") || "", /^application\/manifest\+json/);
@@ -152,6 +155,19 @@ try {
   });
   assert.equal(uploaded.response.status, 201);
   assert.equal((await fs.stat(path.join(secondDir, uploaded.body.attachmentPath.replace("/attachments/", "attachments/")))).mode & 0o777, 0o600);
+  const attachmentUrl = `${base}/now${uploaded.body.attachmentPath}`;
+  const image = await fetch(attachmentUrl, { headers: { cookie: secondCookie } });
+  assert.equal(image.status, 200);
+  assert.equal(image.headers.get("content-type"), "image/png");
+  assert.equal(image.headers.get("cache-control"), "private, no-store");
+  assert.deepEqual(Buffer.from(await image.arrayBuffer()), Buffer.from(pixel.split(",")[1], "base64"));
+  const imageHead = await fetch(attachmentUrl, { method: "HEAD", headers: { cookie: secondCookie } });
+  assert.equal(imageHead.status, 200);
+  assert.equal((await imageHead.arrayBuffer()).byteLength, 0);
+  assert.equal((await fetch(attachmentUrl)).status, 401);
+  assert.equal((await fetch(attachmentUrl, { method: "HEAD", headers: { cookie: ownerCookie } })).status, 404);
+  assert.equal((await fetch(attachmentUrl, { method: "DELETE", headers: { cookie: secondCookie } })).status, 405);
+  assert.equal((await fetch(`${base}/now/attachments/forbidden%2Fname`, { headers: { cookie: secondCookie } })).status, 403);
   assert.equal((await jsonRequest(`${base}/now/api/captures/legacy`, {
     method: "PATCH", headers: { cookie: secondCookie }, body: JSON.stringify({ content: "cross-account-change" })
   })).response.status, 404);
@@ -164,6 +180,40 @@ try {
   assert.equal((await jsonRequest(`${base}/now/api/trash`, { headers: { cookie: ownerCookie } })).body.items.length, 1);
   assert.equal((await jsonRequest(`${base}/now/api/trash/${ownerTrash.body.items[0].id}/restore`, { method: "POST", headers: { cookie: ownerCookie }, body: "{}" })).response.status, 200);
   assert.equal((await jsonRequest(`${base}/now/api/state`, { headers: { cookie: ownerCookie } })).body.captures[0].content, "legacy-owner-data");
+  const keepsake = await jsonRequest(`${base}/now/api/keepsakes`, {
+    method: "POST", headers: { cookie: secondCookie },
+    body: JSON.stringify({ title: "账户二小物", occurredAt: "2026-09-29T00:10:20.000Z", originalPath: uploaded.body.attachmentPath, cutoutPath: uploaded.body.attachmentPath, tags: ["纪念"] })
+  });
+  assert.equal(keepsake.response.status, 201);
+  const keepsakeUrl = `${base}/now/api/keepsakes/${keepsake.body.id}`;
+  assert.equal((await jsonRequest(keepsakeUrl, { method: "PATCH", headers: { cookie: ownerCookie }, body: JSON.stringify({ title: "越权" }) })).response.status, 404);
+  assert.equal((await jsonRequest(keepsakeUrl, { method: "DELETE", headers: { cookie: ownerCookie } })).response.status, 404);
+  const editedKeepsake = await jsonRequest(keepsakeUrl, { method: "PATCH", headers: { cookie: secondCookie }, body: JSON.stringify({ title: "新名称", occurredOn: "2026-10-01" }) });
+  assert.equal(editedKeepsake.response.status, 200);
+  assert.equal(editedKeepsake.body.createdAt, keepsake.body.createdAt);
+  assert.equal(editedKeepsake.body.occurredOn, "2026-10-01");
+  assert.equal(editedKeepsake.body.originalPath, undefined);
+  assert.equal((await jsonRequest(`${keepsakeUrl}/original`, { headers: { cookie: secondCookie } })).body.originalPath, uploaded.body.attachmentPath);
+  const deletedKeepsake = await jsonRequest(keepsakeUrl, { method: "DELETE", headers: { cookie: secondCookie } });
+  const restoredKeepsake = await jsonRequest(`${base}/now/api/trash/${deletedKeepsake.body.trashId}/restore`, { method: "POST", headers: { cookie: secondCookie }, body: "{}" });
+  assert.equal(restoredKeepsake.response.status, 200);
+  const afterKeepsakeRestore = (await jsonRequest(`${base}/now/api/state`, { headers: { cookie: secondCookie } })).body.keepsakes[0];
+  assert.equal(afterKeepsakeRestore.title, "新名称");
+  assert.equal(afterKeepsakeRestore.createdAt, keepsake.body.createdAt);
+  assert.ok(afterKeepsakeRestore.version > editedKeepsake.body.version);
+  assert.deepEqual((await jsonRequest(`${base}/now/api/state`, { headers: { cookie: ownerCookie } })).body.keepsakes, []);
+  assert.equal((await jsonRequest(`${base}/now/api/onboarding/schema`)).response.status, 401);
+  const onboardingSchema = (await jsonRequest(`${base}/now/api/onboarding/schema`, { headers: { cookie: ownerCookie } })).body;
+  const answers = Object.fromEntries(onboardingSchema.questions.filter(item => item.tier === "quick").map(item => [item.id, item.options[0].value]));
+  await Promise.all([[ownerCookie, "ONBOARDING_OWNER"], [secondCookie, "ONBOARDING_SECOND"]].map(async ([cookie, material]) => {
+    const saved = await jsonRequest(`${base}/now/api/onboarding`, {
+      method: "PATCH", headers: { cookie }, body: JSON.stringify({ status: "completed", answers, material })
+    });
+    assert.equal(saved.response.status, 200);
+    assert.equal(saved.body.material, material);
+    const state = await jsonRequest(`${base}/now/api/state`, { headers: { cookie } });
+    assert.equal(state.body.onboarding.material, material);
+  }));
   await Promise.all([[ownerCookie, "OWNER_PRIVATE"], [secondCookie, "SECOND_PRIVATE"]].map(async ([cookie, question]) => {
     assert.equal((await jsonRequest(`${base}/now/api/settings`, {
       method: "POST", headers: { cookie }, body: JSON.stringify({ apiKey: "audit-test-key" })
@@ -178,9 +228,11 @@ try {
   };
   const ownerLogs = await readLogs(registered.body.user.id), secondLogs = await readLogs(second.body.user.id);
   assert.match(ownerLogs, /OWNER_PRIVATE/);
-  assert.doesNotMatch(ownerLogs, /SECOND_PRIVATE|audit-test-key/);
+  assert.match(ownerLogs, /ONBOARDING_OWNER/);
+  assert.doesNotMatch(ownerLogs, /SECOND_PRIVATE|ONBOARDING_SECOND|audit-test-key/);
   assert.match(secondLogs, /SECOND_PRIVATE/);
-  assert.doesNotMatch(secondLogs, /OWNER_PRIVATE|legacy-owner-data|audit-test-key/);
+  assert.match(secondLogs, /ONBOARDING_SECOND/);
+  assert.doesNotMatch(secondLogs, /OWNER_PRIVATE|ONBOARDING_OWNER|legacy-owner-data|audit-test-key/);
   for (const userId of [registered.body.user.id, second.body.user.id]) {
     const entries = JSON.parse(await fs.readFile(path.join(dataDir, "users", userId, "ai-usage.json"))).entries;
     assert.equal(entries.length, 1);
@@ -260,8 +312,9 @@ try {
   const queuedTasks = [
     { id: "restart-queued-task", kind: "thoughtAnswer", resourceType: "thought", targetId: queuedQuestion.id, inputVersion: 1, clientRequestId: "restart-queued-request", requestHash: crypto.createHash("sha256").update(JSON.stringify({ kind: "thoughtAnswer", targetId: queuedQuestion.id, inputVersion: 1 })).digest("hex"), status: "queued", createdAt: "2026-09-27T18:00:01.000Z", updatedAt: "2026-09-27T18:00:01.000Z", attempt: 0 },
     { id: "restart-follow-up-task", kind: "followUpAnswer", resourceType: "thought", targetId: queuedFollowUpQuestion.id, subtargetId: queuedFollowUp.id, inputVersion: 1, subtargetVersion: 1, payload: {}, clientRequestId: "restart-follow-up-request", requestHash: "restart-follow-up-hash", status: "queued", createdAt: "2026-09-27T18:01:01.000Z", updatedAt: "2026-09-27T18:01:01.000Z", attempt: 0 },
-    { id: "restart-annotation-task", kind: "annotationShenji", resourceType: "thought", targetId: queuedAnnotationQuestion.id, subtargetId: queuedAnnotation.id, inputVersion: 0, subtargetVersion: 0, payload: { message: "重启后继续批注分析" }, clientRequestId: "restart-annotation-request", requestHash: "restart-annotation-hash", status: "queued", createdAt: "2026-09-27T18:02:01.000Z", updatedAt: "2026-09-27T18:02:01.000Z", attempt: 0 }
+    { id: "restart-annotation-task", kind: "annotationShenji", resourceType: "thought", targetId: queuedAnnotationQuestion.id, subtargetId: queuedAnnotation.id, inputVersion: 1, subtargetVersion: 0, payload: { message: "重启后继续批注分析" }, clientRequestId: "restart-annotation-request", requestHash: "restart-annotation-hash", status: "queued", createdAt: "2026-09-27T18:02:01.000Z", updatedAt: "2026-09-27T18:02:01.000Z", attempt: 0 }
   ];
+  queuedTasks.push({ ...queuedTasks[2], id: "legacy-unversioned-annotation", inputVersion: 0, clientRequestId: "legacy-unversioned-request" });
   await fs.writeFile(path.join(secondDir, "store.json"), JSON.stringify({ ...oldStore, version: 11, thoughts: [queuedQuestion, queuedFollowUpQuestion, queuedAnnotationQuestion, ...(oldStore.thoughts || [])], aiTasks: [...queuedTasks, ...(oldStore.aiTasks || [])], notifications: [] }));
   await fs.writeFile(path.join(secondDir, "llm-settings.json"), JSON.stringify({ ...oldSettings, version: 3 }));
   await fs.writeFile(path.join(secondDir, "ai-usage.json"), JSON.stringify({ ...oldUsage, version: 1 }));
@@ -270,8 +323,8 @@ try {
   child = startApp();
   await waitForServer(base, child);
   const migratedNames = await fs.readdir(secondDir);
-  assert.ok(migratedNames.some(name => /store\.json\.v11-pre-v14.*\.bak$/.test(name)));
-  assert.ok(migratedNames.some(name => /llm-settings\.json\.v3-pre-v5.*\.bak$/.test(name)));
+  assert.ok(migratedNames.some(name => /store\.json\.v11-pre-v15.*\.bak$/.test(name)));
+  assert.ok(migratedNames.some(name => /llm-settings\.json\.v3-pre-v6.*\.bak$/.test(name)));
   assert.ok(migratedNames.some(name => /ai-usage\.json\.v1-pre-v2.*\.bak$/.test(name)));
   for (const name of migratedNames.filter(name => name.endsWith(".bak"))) {
     assert.equal((await fs.stat(path.join(secondDir, name))).mode & 0o777, 0o600);
@@ -285,7 +338,7 @@ try {
       if (!["queued", "running"].includes(resumedTask.status)) break;
       await sleep(50);
     }
-    assert.equal(resumedTask.status, "succeeded");
+    assert.equal(resumedTask.status, queuedTask.inputVersion ? "succeeded" : "stale");
     resumedTasks.set(queuedTask.id, resumedTask);
   }
   const resumedState = (await jsonRequest(`${base}/now/api/state`, { headers: { cookie: secondCookie } })).body;

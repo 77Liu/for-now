@@ -10,6 +10,12 @@ current=$base/app
 ssh_key=/home/for-now/.ssh/gitee_deploy
 git_ssh="ssh -i $ssh_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
 
+case "$branch" in
+  explore/*|checkpoint/*)
+    echo "Non-release branches cannot be used as production release candidates: $branch" >&2
+    exit 1
+    ;;
+esac
 if [ "$(id -u)" -ne 0 ]; then
   echo "Run as root." >&2
   exit 1
@@ -49,29 +55,23 @@ if [ ! -f "$release/.deploy-ready" ]; then
   cleanup_candidate() { rm -rf "$candidate"; }
   trap cleanup_candidate EXIT
   sudo -u for-now git --git-dir="$mirror" archive "$commit" | tar -x -C "$candidate"
-  for forbidden in \
-    "$candidate/public/explore.html" \
-    "$candidate/public/explore.js" \
-    "$candidate/public/explore-p2.js" \
-    "$candidate/public/explore-p3.js" \
-    "$candidate/public/explore.css" \
-    "$candidate/public/explore-assets"; do
-    if [ -e "$forbidden" ]; then
-      echo "Production release contains local exploration assets: ${forbidden#"$candidate/"}" >&2
-      exit 1
-    fi
-  done
+  forbidden=$(/usr/bin/find "$candidate/public" -mindepth 1 -maxdepth 1 -name 'explore*' -print -quit)
+  if [ -n "$forbidden" ]; then
+    echo "Production release contains local exploration assets: ${forbidden#"$candidate/"}" >&2
+    exit 1
+  fi
   chown -R for-now:for-now "$candidate"
   sudo -u for-now /usr/local/bin/npm --prefix "$candidate" ci --omit=dev
   /usr/local/bin/node --check "$candidate/server.mjs"
-  /usr/local/bin/node --check "$candidate/admin-snapshot.mjs"
-  /usr/local/bin/node --check "$candidate/logging.mjs"
-  /usr/local/bin/node --check "$candidate/attachment-storage.mjs"
+  while IFS= read -r module_file; do
+    /usr/local/bin/node --check "$module_file"
+  done < <(/usr/bin/find "$candidate/src" "$candidate/public/frontend" -type f -name '*.mjs')
   /usr/local/bin/node --check "$candidate/public/app.js"
   /usr/local/bin/node --check "$candidate/scripts/monitor-health.mjs"
   /usr/local/bin/node --check "$candidate/scripts/validate-restored-data.mjs"
   /usr/local/bin/node --check "$candidate/scripts/oss-attachment-smoke.mjs"
   /usr/local/bin/node --check "$candidate/scripts/aliyun-segmentation-smoke.mjs"
+  /usr/local/bin/node "$candidate/scripts/prompt-catalog-regression.mjs"
   /bin/bash -n "$candidate/deploy/backup-to-oss.sh" "$candidate/deploy/restore-drill.sh" \
     "$candidate/deploy/migrate-attachments-to-oss.sh"
   touch "$candidate/.deploy-ready"
@@ -81,6 +81,16 @@ if [ ! -f "$release/.deploy-ready" ]; then
   fi
   mv "$candidate" "$release"
   trap - EXIT
+fi
+
+# A PostgreSQL cutover is a separate offline procedure. Generic code rollback
+# must never start a JSON-only release against the old, now stale JSON files.
+if grep -Eq '^PERSISTENCE_BACKEND=postgres$' /etc/for-now.env; then
+  if [ ! -f "$release/src/shared/persistence/postgres-runtime.mjs" ] || \
+     [ -z "$previous" ] || [ ! -f "$previous/src/shared/persistence/postgres-runtime.mjs" ]; then
+    echo "PostgreSQL deployment requires a database-capable candidate and rollback release; complete the offline cutover procedure first." >&2
+    exit 1
+  fi
 fi
 
 # Keep config and version together with the previous code on every failure path.
@@ -149,7 +159,10 @@ install -o root -g root -m 0755 "$release/deploy/migrate-attachments-to-oss.sh" 
 install -o root -g root -m 0644 "$release/deploy/portal.html" /var/www/app-portal/index.html
 install -o root -g root -m 0644 "$release/deploy/nginx-for-now.conf" /etc/nginx/snippets/for-now.conf
 install -o root -g root -m 0644 "$release/deploy/nginx-acme-challenge.conf" /etc/nginx/snippets/acme-challenge.conf
-if [ -f /etc/letsencrypt/live/123.57.140.24/fullchain.pem ]; then
+if [ -f /etc/letsencrypt/live/123.57.140.24/fullchain.pem ] && \
+   [ -f /etc/letsencrypt/live/123.57.140.24/privkey.pem ] && \
+   [ -f /etc/letsencrypt/live/77liu.top/fullchain.pem ] && \
+   [ -f /etc/letsencrypt/live/77liu.top/privkey.pem ]; then
   install -o root -g root -m 0644 "$release/deploy/nginx-dysf.conf" /etc/nginx/sites-available/dysf
 fi
 systemctl daemon-reload

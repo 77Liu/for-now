@@ -5,14 +5,20 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { errorMetadata, pruneLogs, redact } from "../logging.mjs";
+import { errorMetadata, pruneLogs, redact } from "../src/shared/observability/index.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "growth-audit-"));
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-let mode = "success", stderr = "";
+let mode = "success", stderr = "", providerCalls = 0;
 const mock = http.createServer(async (req, res) => {
   for await (const chunk of req) { void chunk; }
+  providerCalls += 1;
+  if (mode === "usage_write_failure") {
+    const ledger = path.join(dataDir, "ai-usage.json");
+    await fs.rename(ledger, `${ledger}.saved`);
+    await fs.mkdir(ledger);
+  }
   res.setHeader("x-request-id", "provider-test-request");
   if (mode === "http_error") {
     res.writeHead(429, { "content-type": "application/json" });
@@ -116,6 +122,27 @@ try {
   assert.equal(entries.at(-1).status, "timeout");
   assert.equal(entries.at(-1).errorCode, "TIMEOUT");
 
+  mode = "usage_write_failure";
+  const callsBeforeLedgerFailure = providerCalls;
+  assert.equal((await request("/api/settings/test", {})).status, 200);
+  assert.equal(providerCalls - callsBeforeLedgerFailure, 1);
+  await fs.rmdir(path.join(dataDir, "ai-usage.json"));
+  await fs.rename(path.join(dataDir, "ai-usage.json.saved"), path.join(dataDir, "ai-usage.json"));
+  assert.ok((await logEntries("system-")).some(entry => entry.event === "ai.log_failed" && entry.target === "usage"));
+  mode = "success";
+  assert.equal((await request("/api/settings/test", {})).status, 200);
+  const ledgerBeforeLogFailure = JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"))).entries.length;
+  const logDir = path.join(dataDir, "logs");
+  await fs.rename(logDir, `${logDir}.ai-saved`);
+  await fs.writeFile(logDir, "blocked log directory");
+  const callsBeforeAuditFailure = providerCalls;
+  assert.equal((await request("/api/settings/test", {})).status, 200);
+  assert.equal(providerCalls - callsBeforeAuditFailure, 1);
+  assert.equal(JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"))).entries.length, ledgerBeforeLogFailure + 1);
+  await delay(50);
+  await fs.unlink(logDir);
+  await fs.rename(`${logDir}.ai-saved`, logDir);
+
   // Unequal submissions per day must not give a day extra weight.
   for (const [occurredAt, mood] of [["2026-09-25T01:00:00Z", 1], ["2026-09-25T02:00:00Z", 5], ["2026-09-26T01:00:00Z", 5]]) {
     assert.equal((await request("/api/checkins", { occurredAt, mood, energy: mood, sleep: mood, stress: mood })).status, 201);
@@ -164,7 +191,25 @@ try {
   assert.equal((await fs.stat(storeFile)).isDirectory(), true);
   await fs.rmdir(storeFile);
   await fs.writeFile(storeFile, savedStore);
-  console.log("Observability checks passed: legacy migration, null/partial usage, empty/filtered/length/EOF failures, daily averages, linked logs, redaction, retention, permissions and corruption/I/O preservation.");
+  // A post-commit audit failure cannot turn a successful save into a retryable error.
+  const logs = path.join(dataDir, "logs");
+  await fs.rename(logs, `${logs}.saved`);
+  await fs.writeFile(logs, "blocked log directory");
+  const committed = await request("/api/captures", { content: "PRIVATE_COMMITTED_DURING_LOG_FAILURE" });
+  assert.equal(committed.status, 201);
+  const committedId = (await committed.json()).id;
+  assert.ok(JSON.parse(await fs.readFile(storeFile)).captures.some(item => item.id === committedId));
+  await delay(50);
+  assert.match(stderr, /logging.failed/);
+  assert.doesNotMatch(stderr, /PRIVATE_COMMITTED_DURING_LOG_FAILURE/);
+  await fs.unlink(logs);
+  await fs.rename(`${logs}.saved`, logs);
+  const recovered = await request("/api/captures", { content: "PRIVATE_RECOVERED_LOG" });
+  assert.equal(recovered.status, 201);
+  const recoveredTrace = recovered.headers.get("x-request-id");
+  await delay(50);
+  assert.ok((await logEntries("operation-")).some(entry => entry.traceId === recoveredTrace && entry.event === "data.changed"));
+  console.log("Observability checks passed: legacy migration, null/partial usage, empty/filtered/length/EOF failures, daily averages, linked logs, redaction, retention, permissions, corruption/I/O preservation and committed writes during logging failure/recovery.");
 } finally {
   child.kill("SIGTERM");
   if (child.exitCode == null) await new Promise(resolve => child.once("exit", resolve));

@@ -266,7 +266,10 @@ try {
     await fs.writeFile(`/tmp/growth-mobile-${device.name}.png`, Buffer.from(screenshot.data, "base64"));
   }
 
-  const css = await fs.readFile(path.join(ROOT, "public/styles.css"), "utf8");
+  const css = [
+    await fs.readFile(path.join(ROOT, "public/styles.css"), "utf8"),
+    await fs.readFile(path.join(ROOT, "public/frontend/styles/application.css"), "utf8")
+  ].join("\n");
   for (const token of ["100dvh", "env(safe-area-inset-top)", "env(safe-area-inset-right)", "env(safe-area-inset-bottom)", "env(safe-area-inset-left)"]) assert.match(css, new RegExp(token.replace(/[()]/g, "\\$&")));
   console.log("Mobile platform checks passed: iPhone SE/15 and Pixel 7 UA, DPR, touch, portrait/landscape, standalone manifest, dynamic viewport, keyboard contraction, safe-area CSS, input zoom prevention, and horizontal overflow.");
 } finally {

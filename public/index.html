@@ -26,7 +26,7 @@
       </div>
       <form class="auth-form" id="login-form">
         <label><span>用户名</span><input name="username" autocomplete="username" minlength="3" maxlength="32" required></label>
-        <label><span>密码</span><input name="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required></label>
+        <label><span>密码</span><input name="password" type="password" autocomplete="current-password" maxlength="128" required></label>
         <button class="primary-button full" type="submit">登录</button>
       </form>
       <form class="auth-form" id="register-form" hidden>
@@ -49,6 +49,7 @@
     <div class="sidebar-footer">
       <div class="account-control" id="account-control" hidden><span id="account-name"></span><button id="logout-button" type="button">退出</button></div>
       <p class="local-note">● 本地持久化</p>
+      <p class="sidebar-version" id="sidebar-app-version">v0.2.0</p>
     </div>
   </aside>
 
@@ -67,14 +68,19 @@
       </div>
       <div data-section-links="thought" hidden>
         <button type="button" data-view="thoughts">思绪</button>
+        <button type="button" data-view="discovery">寻迹</button>
         <button type="button" data-view="journals">日记</button>
         <button type="button" data-view="review">回顾</button>
       </div>
     </nav>
-    <section class="view active" id="view-today">
-      <header class="page-header">
-        <div><p class="eyebrow" id="today-date-label" data-active-date-label></p><h1 id="today-heading" data-active-date-heading>今天，你感觉怎么样？</h1></div>
-        <label class="date-peek" title="为过去某天补充记录"><span>◷</span><input type="date" id="active-date" data-active-date aria-label="选择记录日期"></label>
+    <section class="view active home-v02" id="view-today">
+      <div class="home-v02-background" aria-hidden="true"></div>
+      <header class="home-v02-masthead">
+        <h1 class="home-v02-brand">此刻 <span aria-hidden="true">此<br>刻</span></h1>
+        <label class="home-v02-date" title="为过去某天补充记录">
+          <span id="today-date-label" data-active-date-label></span>
+          <input type="date" id="active-date" data-active-date aria-label="选择记录日期">
+        </label>
       </header>
 
       <section class="onboarding-workspace" id="onboarding-workspace" hidden>
@@ -110,26 +116,89 @@
         </form>
       </section>
 
-      <div class="today-grid">
-        <form class="card checkin-card" id="checkin-form">
-          <div class="card-heading"><div><span class="section-number">01</span><h2>此刻状态</h2></div><span class="time-hint">约 25 秒</span></div>
-          <div id="sliders"></div>
-          <button class="quiet-button checkin-confirm-all" id="checkin-confirm-all" type="button">确认当前四项</button>
-          <label class="factor-field"><span>今天的因素 / 活动</span><input id="checkin-factors" placeholder="例：运动、咖啡、加班（空格分隔）"></label>
-          <button class="primary-button full" type="submit">记下此刻</button>
-          <p class="status" id="checkin-status" role="status"></p>
-        </form>
+      <div class="home-v02-content">
+        <div class="home-v02-actions">
+          <button class="home-v02-primary" id="home-open-thought" type="button"><span aria-hidden="true">＋</span>记录思考</button>
+          <button class="home-v02-text-action" id="home-shuffle" type="button"><span aria-hidden="true">↻</span>换一组</button>
+        </div>
 
-        <form class="card chain-card" id="chain-form">
-          <div class="card-heading"><div><span class="section-number">02</span><h2>记下一条思考</h2></div><span class="time-hint">问题 · 想法 · 回答</span></div>
-          <label class="field"><span class="field-title"><span>问题 <b>必填</b> <i>支持 Markdown</i></span><button class="thought-prompt-button" id="thought-prompt-button" type="button" title="生成一个简短的思考引子">✦ 给个引子</button></span><textarea id="chain-question" rows="2" placeholder="你真正想问的是什么？" required></textarea></label>
-          <p class="draft-note thought-prompt-status" id="thought-prompt-status" role="status" aria-live="polite"></p>
-          <label class="field"><span>初步想法 <i>可空 · 支持 Markdown</i></span><textarea id="chain-idea" rows="4" placeholder="你现在怎么看？"></textarea></label>
-          <label class="field"><span class="field-title"><span>回答 <i>可空 · 支持 Markdown</i></span><button class="answer-draft-button" id="draft-answer-button" type="button">✦ 给我回答</button></span><textarea id="chain-answer" rows="5" placeholder="可以自己填写，也可先让 DeepSeek 生成草稿，再按你的判断修改"></textarea></label>
-          <p class="draft-note" id="draft-note">模型草稿只有在你提交整套思考后才会保存；你修改了什么，也会成为日后认知复盘的线索。</p>
-          <div class="capture-footer"><div class="tag-composer" id="chain-tag-composer"><div class="tag-chip-list" id="chain-tag-list"></div><label class="tag-input"><span>#</span><input id="chain-tags" list="tag-suggestions" placeholder="输入标签后回车"></label><datalist id="tag-suggestions"></datalist></div><button class="primary-button" type="submit">收进思绪箱</button></div>
-          <p class="status" id="chain-status" role="status"></p>
-        </form>
+        <div class="home-v02-editorial" id="home-memory-grid" aria-label="已有内容片段"></div>
+        <p class="sr-only" id="home-memory-status" role="status" aria-live="polite"></p>
+
+        <div class="home-v02-lower">
+          <section class="home-v02-keepsake" id="home-keepsake"></section>
+          <section class="home-v02-state" aria-label="情绪参考">
+            <div class="home-v02-sparkline">
+              <span>情绪 · 近 7 日</span>
+              <svg id="home-mood-sparkline" viewBox="0 0 280 58" role="img" aria-label="近 7 日情绪记录参考"></svg>
+            </div>
+            <div class="home-v02-state-actions">
+              <button class="home-v02-text-action" id="home-record-state" type="button">记录状态</button>
+              <button class="home-v02-text-action" type="button" data-view="review">查看趋势 <span aria-hidden="true">→</span></button>
+            </div>
+          </section>
+        </div>
+
+        <details class="home-v02-secondary">
+          <summary><span>行动与习惯</span><small id="actions-summary"></small></summary>
+          <section class="g2-workspace actions-workspace" aria-label="行动与习惯">
+            <div class="actions-layout">
+              <section class="actions-panel">
+                <form class="g2-inline-form" id="action-form">
+                  <label><span>行动</span><input name="title" maxlength="120" placeholder="下一步做什么" required></label>
+                  <label><span>优先级</span><select name="priority"><option value="none">未分级</option><option value="P0">P0</option><option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option></select></label>
+                  <button class="quiet-button" type="submit">添加</button>
+                </form>
+                <p class="status" id="action-status" role="status"></p>
+                <div class="action-columns" id="action-columns"></div>
+              </section>
+              <section class="actions-panel habits-panel">
+                <form class="g2-inline-form habit-create-form" id="habit-form">
+                  <label><span>习惯</span><input name="title" maxlength="120" placeholder="想稳定重复的事" required></label>
+                  <label><span>频次</span><select name="cadence"><option value="daily">每天</option><option value="weekly">每周</option></select></label>
+                  <label><span>目标</span><input name="target" type="number" min="1" max="7" value="1" disabled></label>
+                  <button class="quiet-button" type="submit">添加</button>
+                </form>
+                <p class="status" id="habit-status" role="status"></p>
+                <div class="habit-list" id="habit-list"></div>
+              </section>
+            </div>
+          </section>
+        </details>
+      </div>
+
+      <div class="home-v02-editor-backdrop" id="home-thought-editor" hidden>
+        <section class="home-v02-editor" role="dialog" aria-modal="true" aria-labelledby="home-thought-title">
+          <header><h2 id="home-thought-title">记录思考</h2><button class="home-v02-editor-close" type="button" data-home-editor-close="thought" aria-label="收起思考编辑">×</button></header>
+          <form class="chain-card" id="chain-form">
+            <label class="field"><span class="field-title"><span>问题 <i>文字或图片至少一项 · 支持 Markdown</i></span><button class="thought-prompt-button" id="thought-prompt-button" type="button" title="生成一个简短的思考引子">✦ 给个引子</button></span><textarea id="chain-question" rows="2" placeholder="你真正想问的是什么？"></textarea></label>
+            <div class="content-image-editor" data-content-image-editor="thoughtRoot">
+              <div class="content-image-editor-head"><span>图片原文</span><label class="content-image-add" title="插入图片" aria-label="插入图片"><span aria-hidden="true">＋</span><input id="thought-root-images" type="file" accept="image/png,image/jpeg,image/webp" multiple></label></div>
+              <div class="content-image-editor-previews" data-content-image-previews></div>
+            </div>
+            <p class="draft-note thought-prompt-status" id="thought-prompt-status" role="status" aria-live="polite"></p>
+            <label class="field"><span>初步想法 <i>可空 · 支持 Markdown</i></span><textarea id="chain-idea" rows="4" placeholder="你现在怎么看？"></textarea></label>
+            <label class="field"><span class="field-title"><span>回答 <i>可空 · 支持 Markdown</i></span><button class="answer-draft-button" id="draft-answer-button" type="button">✦ 给我回答</button></span><textarea id="chain-answer" rows="5" placeholder="可以自己填写，也可先让 DeepSeek 生成草稿，再按你的判断修改"></textarea></label>
+            <p class="draft-note" id="draft-note">模型草稿只有在你提交整套思考后才会保存；你修改了什么，也会成为日后认知复盘的线索。</p>
+            <label class="field occurrence-field"><span>发生时间</span><input id="chain-datetime" type="datetime-local" step="1" required></label>
+            <div class="capture-footer"><div class="tag-composer" id="chain-tag-composer"><div class="tag-chip-list" id="chain-tag-list"></div><label class="tag-input"><span>#</span><input id="chain-tags" list="tag-suggestions" placeholder="输入标签后回车"></label><datalist id="tag-suggestions"></datalist></div><button class="primary-button" type="submit">收进思绪箱</button></div>
+            <p class="status" id="chain-status" role="status"></p>
+          </form>
+        </section>
+      </div>
+
+      <div class="home-v02-editor-backdrop" id="home-state-editor" hidden>
+        <section class="home-v02-editor home-v02-state-editor" role="dialog" aria-modal="true" aria-labelledby="home-state-title">
+          <header><h2 id="home-state-title">记录状态</h2><button class="home-v02-editor-close" type="button" data-home-editor-close="state" aria-label="收起状态编辑">×</button></header>
+          <form class="checkin-card" id="checkin-form">
+            <div id="sliders"></div>
+            <button class="quiet-button checkin-confirm-all" id="checkin-confirm-all" type="button">确认当前四项</button>
+            <label class="factor-field"><span>今天的因素 / 活动</span><input id="checkin-factors" placeholder="例：运动、咖啡、加班（空格分隔）"></label>
+            <label class="field occurrence-field"><span>发生时间</span><input id="checkin-datetime" type="datetime-local" step="1" required></label>
+            <button class="primary-button full" type="submit">记下此刻</button>
+            <p class="status" id="checkin-status" role="status"></p>
+          </form>
+        </section>
       </div>
     </section>
 
@@ -202,21 +271,66 @@
           </form>
 
           <form class="daily-record-form" data-daily-form="weight" hidden>
-            <input type="hidden" name="recordId">
+            <input type="hidden" name="recordId"><input type="hidden" name="attachmentPaths"><input type="hidden" name="verification">
             <div class="daily-field-grid weight-fields">
               <label><span>记录时间</span><input type="datetime-local" step="1" name="occurredAt" required></label>
-              <label><span>秤上体重（kg）</span><input type="number" min="20" max="400" step="0.01" name="measuredWeight" required></label>
+              <label><span>秤上体重（kg）</span><input type="number" min="20" max="400" step="0.01" name="measuredWeight" placeholder="未显示可留空"></label>
+              <label><span>报告测量时间（可空）</span><input type="datetime-local" step="1" name="measuredAt"></label>
             </div>
             <fieldset class="clothing-options"><legend>称重衣物</legend><label><input type="radio" name="clothing" value="none" checked><span>不穿衣</span></label><label><input type="radio" name="clothing" value="light"><span>轻便衣物</span></label><label><input type="radio" name="clothing" value="heavy"><span>厚重衣物</span></label></fieldset>
             <p class="weight-model-note">校正暂定：轻便衣物扣 0.5 kg，厚重衣物扣 1.5 kg；穿衣记录同时显示衣物不确定性对应的 95% 估计区间。</p>
+            <details class="daily-details">
+              <summary>体成分与更多指标</summary>
+              <p class="weight-model-note">未显示的指标留空。没有总重量也可保存体成分记录；只有填写体重的记录进入体重趋势。</p>
+              <div class="daily-field-grid">
+                <label><span>BMI</span><input data-health-metric type="number" min="1" max="150" step="any" name="bmi"></label>
+                <label><span>脂肪量（kg）</span><input data-health-metric type="number" min="0" max="400" step="any" name="bodyFatMass"></label>
+                <label><span>体脂率（%）</span><input data-health-metric type="number" min="0" max="100" step="any" name="bodyFatPercent"></label>
+                <label><span>体水分（kg）</span><input data-health-metric type="number" min="0" max="400" step="any" name="bodyWaterMass"></label>
+                <label><span>水分比例（%）</span><input data-health-metric type="number" min="0" max="100" step="any" name="bodyWaterPercent"></label>
+                <label><span>蛋白质量（kg）</span><input data-health-metric type="number" min="0" max="400" step="any" name="proteinMass"></label>
+                <label><span>蛋白质比例（%）</span><input data-health-metric type="number" min="0" max="100" step="any" name="proteinPercent"></label>
+                <label><span>骨盐量（kg）</span><input data-health-metric type="number" min="0" max="100" step="any" name="boneMineralMass"></label>
+                <label><span>骨盐比例（%）</span><input data-health-metric type="number" min="0" max="100" step="any" name="boneMineralPercent"></label>
+                <label><span>肌肉量（kg）</span><input data-health-metric type="number" min="0" max="400" step="any" name="muscleMass"></label>
+                <label><span>肌肉比例（%）</span><input data-health-metric type="number" min="0" max="100" step="any" name="musclePercent"></label>
+                <label><span>骨骼肌量（kg）</span><input data-health-metric type="number" min="0" max="400" step="any" name="skeletalMuscleMass"></label>
+                <label><span>内脏脂肪等级</span><input data-health-metric type="number" min="0" max="100" step="any" name="visceralFatLevel"></label>
+                <label><span>基础代谢（kcal/日）</span><input data-health-metric type="number" min="0" max="10000" step="any" name="basalMetabolism"></label>
+                <label><span>腰臀比</span><input data-health-metric type="number" min="0" max="5" step="any" name="waistHipRatio"></label>
+                <label><span>身体年龄（岁）</span><input data-health-metric type="number" min="1" max="150" step="any" name="bodyAge"></label>
+              </div>
+            </details>
+            <label class="daily-wide-field"><span>报告描述</span><textarea name="description" rows="3" placeholder="识别后描述可见指标和原报告标注，可自行修改"></textarea></label>
             <div class="daily-form-actions"><button class="text-button" type="button" data-daily-cancel hidden>取消编辑</button><button class="primary-button" type="submit">保存体重</button></div>
             <p class="status" role="status"></p>
           </form>
 
           <form class="daily-record-form" data-daily-form="exercise" hidden>
-            <input type="hidden" name="recordId">
-            <label class="daily-wide-field"><span>记录时间</span><input type="datetime-local" step="1" name="occurredAt" required></label>
-            <label class="daily-wide-field"><span>运动描述</span><textarea name="description" rows="4" placeholder="例：慢跑 5 公里，约 35 分钟；后半程呼吸偏急。" required></textarea></label>
+            <input type="hidden" name="recordId"><input type="hidden" name="attachmentPaths"><input type="hidden" name="verification">
+            <div class="daily-field-grid">
+              <label><span>记录时间</span><input type="datetime-local" step="1" name="occurredAt" required></label>
+              <label><span>运动项目</span><input name="exerciseType" maxlength="100" placeholder="如：力量训练"></label>
+              <label><span>运动时长（时:分:秒）</span><input data-health-metric data-duration name="durationSeconds" placeholder="如 00:30:15" pattern="[0-9]{1,3}:[0-5][0-9]:[0-5][0-9]" title="请填写时:分:秒，如 00:30:15"></label>
+              <label><span>活动热量（kcal）</span><input data-health-metric type="number" min="0" max="100000" step="any" name="activeCalories"></label>
+              <label><span>总热量（kcal）</span><input data-health-metric type="number" min="0" max="100000" step="any" name="totalCalories"></label>
+              <label><span>平均心率（bpm）</span><input data-health-metric type="number" min="20" max="250" step="any" name="averageHeartRate"></label>
+              <label><span>最大心率（bpm）</span><input data-health-metric type="number" min="20" max="250" step="any" name="maximumHeartRate"></label>
+            </div>
+            <details class="daily-details">
+              <summary>开始时间、距离与心率区间</summary>
+              <p class="weight-model-note">区间时长按「时:分:秒」填写；缺失或被截断的区间留空。</p>
+              <div class="daily-field-grid">
+                <label><span>截图中的开始时间（可空）</span><input type="datetime-local" step="1" name="startedAt"></label>
+                <label><span>距离（km）</span><input data-health-metric type="number" min="0" max="10000" step="any" name="distanceKm"></label>
+                <label><span>热身（时:分:秒）</span><input data-health-metric data-duration name="warmUpSeconds" pattern="[0-9]{1,3}:[0-5][0-9]:[0-5][0-9]"></label>
+                <label><span>燃脂（时:分:秒）</span><input data-health-metric data-duration name="fatBurnSeconds" pattern="[0-9]{1,3}:[0-5][0-9]:[0-5][0-9]"></label>
+                <label><span>有氧（时:分:秒）</span><input data-health-metric data-duration name="aerobicSeconds" pattern="[0-9]{1,3}:[0-5][0-9]:[0-5][0-9]"></label>
+                <label><span>无氧（时:分:秒）</span><input data-health-metric data-duration name="anaerobicSeconds" pattern="[0-9]{1,3}:[0-5][0-9]:[0-5][0-9]"></label>
+                <label><span>极限（时:分:秒）</span><input data-health-metric data-duration name="extremeSeconds" pattern="[0-9]{1,3}:[0-5][0-9]:[0-5][0-9]"></label>
+              </div>
+            </details>
+            <label class="daily-wide-field"><span>运动描述</span><textarea name="description" rows="4" placeholder="可由截图概括心率变化，也可记录自己的运动感受"></textarea></label>
             <div class="daily-form-actions"><button class="text-button" type="button" data-daily-cancel hidden>取消编辑</button><button class="primary-button" type="submit">保存运动</button></div>
             <p class="status" role="status"></p>
           </form>
@@ -238,6 +352,7 @@
       <section class="today-chat card">
         <div class="card-heading"><div><span class="section-number">01</span><h2>共参</h2></div><span class="time-hint" id="chat-model-label">DeepSeek 长期对话</span></div>
         <div class="chat-history" id="chat-history"></div>
+        <label class="field occurrence-field"><span>发生时间</span><input id="chat-datetime" type="datetime-local" step="1" required></label>
         <form class="chat-form" id="chat-form"><textarea id="chat-input" rows="2" placeholder="例如：我最近反复在纠结什么？" required></textarea><button class="primary-button" type="submit">发送</button></form>
         <p class="status" id="chat-status" role="status"></p>
       </section>
@@ -249,7 +364,11 @@
       <header class="page-header"><div><p class="eyebrow">碎片收集箱</p><h1>先捕捉，不急着想完整</h1></div><span class="record-count" id="capture-count"></span></header>
       <form class="card quick-capture-form" id="capture-form">
         <input type="hidden" id="capture-id">
-        <label class="field capture-main-field"><span>此刻冒出来的东西</span><textarea id="capture-content" rows="4" placeholder="一句话、一个念头、一段素材，原样放进来就好。" required></textarea></label>
+        <label class="field capture-main-field"><span>此刻冒出来的东西 <i>文字或图片至少一项</i></span><textarea id="capture-content" rows="4" placeholder="一句话、一个念头、一段素材，原样放进来就好。"></textarea></label>
+        <div class="content-image-editor" data-content-image-editor="capture">
+          <div class="content-image-editor-head"><span>图片原文</span><label class="content-image-add" title="插入图片" aria-label="插入图片"><span aria-hidden="true">＋</span><input id="capture-images" type="file" accept="image/png,image/jpeg,image/webp" multiple></label></div>
+          <div class="content-image-editor-previews" data-content-image-previews></div>
+        </div>
         <div class="record-form-footer">
           <div class="inline-inputs compact-inputs">
             <div class="tag-composer" id="capture-tag-composer"><div class="tag-chip-list" id="capture-tag-list"></div><label class="tag-input"><span>#</span><input id="capture-tags" list="capture-tag-suggestions" placeholder="输入关键词后回车"></label><datalist id="capture-tag-suggestions"></datalist></div>
@@ -313,6 +432,20 @@
       <header class="page-header"><div><p class="eyebrow">主题思考</p><h1>从问题、初步想法，到回答</h1></div></header>
       <div class="filter-row" id="thought-filters" aria-label="按标签筛选"></div>
       <div class="thought-list thought-timeline" id="all-thoughts"></div>
+    </section>
+
+    <section class="view" id="view-discovery">
+      <header class="page-header"><div><p class="eyebrow">思绪回访</p><h1>从旧问题里重新发现线索</h1></div><button class="quiet-button" id="discovery-random" type="button">任意门</button></header>
+      <form class="discovery-toolbar" id="discovery-form">
+        <label class="discovery-query"><span>搜索</span><input name="query" type="search" placeholder="正文或标签"></label>
+        <fieldset><legend>体裁</legend><label><input type="checkbox" name="genre" value="thought" checked>思绪</label><label><input type="checkbox" name="genre" value="capture" checked>捕念</label><label><input type="checkbox" name="genre" value="journal" checked>日记</label><label><input type="checkbox" name="genre" value="bookExcerpt" checked>书摘</label><label><input type="checkbox" name="genre" value="quote" checked>善言</label></fieldset>
+        <fieldset><legend>内容类型</legend><label><input type="checkbox" name="type" value="question" checked>问题</label><label><input type="checkbox" name="type" value="idea" checked>想法</label><label><input type="checkbox" name="type" value="answer" checked>回答</label><label><input type="checkbox" name="type" value="record" checked>记录</label></fieldset>
+        <label class="fresh-toggle"><input name="freshOnly" type="checkbox"><span>只看未回访</span></label>
+        <button class="primary-button" type="submit">查找</button>
+      </form>
+      <div class="discovery-meta"><span id="discovery-count"></span><p class="status" id="discovery-status" role="status"></p></div>
+      <div class="discovery-list" id="discovery-list"></div>
+      <button class="quiet-button discovery-more" id="discovery-more" type="button" hidden>继续加载</button>
     </section>
 
     <section class="view" id="view-review">
@@ -509,6 +642,11 @@
           <span class="mine-row-copy"><b>回收站</b><small>恢复或永久清理已删除的记录</small></span>
           <span class="mine-row-arrow" aria-hidden="true">›</span>
         </button>
+        <button class="mine-menu-row" type="button" data-view="export">
+          <span class="mine-row-icon export" aria-hidden="true">⇩</span>
+          <span class="mine-row-copy"><b>数据导出</b><small>下载可迁移的 JSON 或 Markdown 快照</small></span>
+          <span class="mine-row-arrow" aria-hidden="true">›</span>
+        </button>
       </section>
 
       <section class="mine-menu-group" aria-label="服务">
@@ -524,12 +662,17 @@
         </button>
         <button class="mine-menu-row" type="button" data-view="settings">
           <span class="mine-row-icon settings" aria-hidden="true">⚙</span>
-          <span class="mine-row-copy"><b>设置</b><small>配置助手称呼、回答风格与模型档位</small></span>
+          <span class="mine-row-copy"><b>设置</b><small id="mine-settings-summary">配置本地测试数据、助手称呼与模型档位</small></span>
           <span class="mine-row-arrow" aria-hidden="true">›</span>
         </button>
         <button class="mine-menu-row" type="button" data-view="commercialization">
           <span class="mine-row-icon commercialization" aria-hidden="true">¥</span>
           <span class="mine-row-copy"><b>商业化</b><small>核算付费验证、成本与经营结果</small></span>
+          <span class="mine-row-arrow" aria-hidden="true">›</span>
+        </button>
+        <button class="mine-menu-row" type="button" data-view="feedback">
+          <span class="mine-row-icon feedback" aria-hidden="true">!</span>
+          <span class="mine-row-copy"><b>产品反馈</b><small>提交问题与建议，自主选择是否附带上下文</small></span>
           <span class="mine-row-arrow" aria-hidden="true">›</span>
         </button>
       </section>
@@ -541,6 +684,42 @@
           <span class="mine-row-arrow" aria-hidden="true">›</span>
         </button>
       </section>
+      <p class="mine-version" id="mine-app-version">v0.2.0</p>
+    </section>
+
+    <section class="view" id="view-export">
+      <button class="mine-back" type="button" data-view="mine"><span aria-hidden="true">‹</span> 我的</button>
+      <header class="page-header"><div><p class="eyebrow">数据自主权</p><h1>导出账户记录</h1></div></header>
+      <section class="g2-settings-panel">
+        <div class="export-summary" id="export-summary"><p>正在读取当前快照…</p></div>
+        <div class="export-actions">
+          <button class="primary-button" type="button" data-export-format="json">下载 JSON</button>
+          <button class="quiet-button" type="button" data-export-format="markdown">下载 Markdown</button>
+        </div>
+        <p class="status" id="export-status" role="status"></p>
+      </section>
+    </section>
+
+    <section class="view" id="view-feedback">
+      <button class="mine-back" type="button" data-view="mine"><span aria-hidden="true">‹</span> 我的</button>
+      <header class="page-header"><div><p class="eyebrow">产品反馈</p><h1>把问题说清楚</h1></div></header>
+      <div class="feedback-layout">
+        <form class="g2-settings-panel feedback-form" id="feedback-form">
+          <div class="feedback-fields">
+            <label><span>类型</span><select name="type"><option value="bug">问题</option><option value="feature">功能建议</option><option value="experience">体验反馈</option><option value="other">其他</option></select></label>
+            <label><span>相关功能</span><input name="feature" maxlength="120" placeholder="例如：思绪检索" required></label>
+          </div>
+          <label><span>反馈内容</span><textarea name="body" rows="7" maxlength="12000" required></textarea></label>
+          <label class="feedback-context-choice"><input name="includeContext" type="checkbox"><span>附带当前页面与账户版本摘要</span></label>
+          <label id="feedback-context-field" hidden><span>上下文摘要</span><textarea name="contextSummary" rows="3" maxlength="2000"></textarea></label>
+          <button class="primary-button" type="submit">提交反馈</button>
+          <p class="status" id="feedback-status" role="status"></p>
+        </form>
+        <section class="feedback-history" aria-labelledby="feedback-history-heading">
+          <div class="workspace-heading"><h2 id="feedback-history-heading">提交记录</h2><span id="feedback-count" class="record-count"></span></div>
+          <div class="feedback-list" id="feedback-list"></div>
+        </section>
+      </div>
     </section>
 
     <section class="view" id="view-statistics">
@@ -1015,7 +1194,7 @@
 
     <section class="view" id="view-settings">
       <button class="mine-back" type="button" data-view="mine"><span aria-hidden="true">‹</span> 我的</button>
-      <header class="page-header"><div><p class="eyebrow">模型设置</p><h1>按任务分配合适的力度</h1></div></header>
+      <header class="page-header"><div><p class="eyebrow">应用设置</p><h1>测试数据与模型配置</h1></div></header>
       <section class="card settings-card local-test-settings" id="local-test-settings" hidden>
         <div class="settings-heading"><div><h2>本地测试数据</h2><p>线上数据只用于生成本地快照；之后的新增、修改和删除全部留在本机。</p></div><span class="connection-badge ready" id="local-test-badge">冷启测试</span></div>
         <div class="local-test-mode-row">
@@ -1031,6 +1210,7 @@
         <div class="settings-heading"><div><h2>DeepSeek API</h2><p>档位决定思考投入；每个场景另有篇幅与表达约束，不会因档位高就默认写得更长。</p></div><span class="connection-badge" id="llm-key-state">未配置密钥</span></div>
         <section class="settings-section">
           <div class="settings-section-heading"><h3>助手与回答风格</h3><p>风格和模型档位相互独立。</p><button class="subtle-action" id="reset-response-styles" type="button">恢复默认</button></div>
+          <label class="settings-toggle"><input id="automatic-thought-answer" type="checkbox"><span><b>保存思绪后自动回答</b><small>默认关闭；关闭时只保存你的原文，仍可随时点“给我回答”。</small></span></label>
           <label class="field"><span>助手称呼</span><input id="assistant-name" maxlength="24" placeholder="神鸡"></label>
           <div class="scenario-grid response-style-grid">
             <label><span>思考草稿</span><select data-response-style="thoughtDraft"></select></label>
@@ -1067,6 +1247,7 @@
             <label><span>认知复盘</span><select data-ai-scenario="analysis"></select></label>
             <label><span>书目识别</span><select data-ai-scenario="bookRecognition"></select></label>
             <label><span>健康截图识别</span><select data-ai-scenario="healthRecognition"></select></label>
+            <label><span>内容图片理解</span><select data-ai-scenario="contentImageUnderstanding"></select></label>
           </div>
         </section>
         <label class="field"><span>API 密钥 <i id="llm-key-hint">仅保存在本机</i></span><input id="llm-api-key" type="password" autocomplete="new-password" placeholder="sk-…（留空则保留已保存的密钥）"></label>
@@ -1158,10 +1339,10 @@
     </section>
   </main>
 
-  <div class="selection-tools" id="selection-tools" role="toolbar" aria-label="选中文本操作" hidden><button type="button" data-selection-action="comment">评论</button><button type="button" data-selection-action="quote">善言</button><button type="button" data-selection-action="highlight">划线</button></div>
+  <div class="selection-tools" id="selection-tools" role="toolbar" aria-label="选中文本操作" hidden><button type="button" data-selection-action="comment">评论</button><button type="button" data-selection-action="quote">善言</button><button type="button" data-selection-action="highlight">划线</button><button type="button" data-selection-action="emphasis">加重</button></div>
   <aside class="comment-panel" id="comment-panel" aria-label="正文评论" hidden>
     <header><div><p class="eyebrow">评论</p><h2>正文批注</h2></div><button id="comment-panel-close" type="button" aria-label="关闭评论面板">×</button></header>
-    <form class="comment-composer" id="comment-composer" hidden><blockquote id="comment-quote"></blockquote><textarea id="comment-text" rows="3" placeholder="写下你对这段文字的评论…" required></textarea><div><span class="status" id="comment-status"></span><button class="primary-button" type="submit">评论</button></div></form>
+    <form class="comment-composer" id="comment-composer" hidden><blockquote id="comment-quote"></blockquote><textarea id="comment-text" rows="3" placeholder="写下评论，或只插入图片…"></textarea><div class="content-image-editor compact" data-content-image-editor="comment"><div class="content-image-editor-head"><span>图片原文</span><label class="content-image-add" title="插入图片" aria-label="插入图片"><span aria-hidden="true">＋</span><input id="comment-images" type="file" accept="image/png,image/jpeg,image/webp" multiple></label></div><div class="content-image-editor-previews" data-content-image-previews></div></div><div><span class="status" id="comment-status"></span><button class="primary-button" type="submit">评论</button></div></form>
     <div class="comment-panel-list" id="comment-panel-list"></div>
   </aside>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
@@ -1187,7 +1368,7 @@
     </form>
   </div>
 
-  <div class="modal-backdrop" id="edit-chain-modal" hidden><form class="modal card edit-chain-form" id="edit-chain-form"><button class="modal-close" type="button" aria-label="关闭">×</button><p class="eyebrow">编辑思绪主题</p><input type="hidden" id="edit-chain-id"><label class="field"><span>日期与时间</span><input id="edit-chain-datetime" type="datetime-local" step="1" required></label><label class="field"><span>问题 <i>支持 Markdown</i></span><textarea id="edit-chain-question" rows="3" required></textarea></label><label class="field"><span>标签</span><input id="edit-chain-tags" placeholder="多个标签用空格分隔"></label><button class="primary-button full" type="submit">保存修改</button><p class="status" id="edit-chain-status"></p></form></div>
+  <div class="modal-backdrop" id="edit-chain-modal" hidden><form class="modal card edit-chain-form" id="edit-chain-form"><button class="modal-close" type="button" aria-label="关闭">×</button><p class="eyebrow">编辑思绪主题</p><input type="hidden" id="edit-chain-id"><label class="field"><span>日期与时间</span><input id="edit-chain-datetime" type="datetime-local" step="1" required></label><label class="field"><span>问题 <i>支持 Markdown</i></span><textarea id="edit-chain-question" rows="3"></textarea></label><label class="field"><span>标签</span><input id="edit-chain-tags" placeholder="多个标签用空格分隔"></label><button class="primary-button full" type="submit">保存修改</button><p class="status" id="edit-chain-status"></p></form></div>
   <div class="modal-backdrop" id="thought-block-modal" hidden>
     <form class="modal card edit-chain-form" id="thought-block-form" role="dialog" aria-modal="true" aria-labelledby="thought-block-title">
       <button class="modal-close" type="button" aria-label="关闭">×</button>
@@ -1197,7 +1378,11 @@
       <input type="hidden" id="thought-block-id">
       <label class="field"><span>类型</span><select id="thought-block-type"><option value="record">记录</option><option value="idea">初步想法</option><option value="answer">我的回答</option></select></label>
       <label class="field"><span>发生时间</span><input id="thought-block-datetime" type="datetime-local" step="1" required></label>
-      <label class="field"><span>内容 <i>支持 Markdown</i></span><textarea id="thought-block-content" rows="7" required></textarea></label>
+      <label class="field"><span>内容 <i>文字或图片至少一项 · 支持 Markdown</i></span><textarea id="thought-block-content" rows="7"></textarea></label>
+      <div class="content-image-editor" data-content-image-editor="thoughtBlock">
+        <div class="content-image-editor-head"><span>图片原文</span><label class="content-image-add" title="插入图片" aria-label="插入图片"><span aria-hidden="true">＋</span><input id="thought-block-images" type="file" accept="image/png,image/jpeg,image/webp" multiple></label></div>
+        <div class="content-image-editor-previews" data-content-image-previews></div>
+      </div>
       <button class="primary-button full" type="submit">保存内容</button>
       <p class="status" id="thought-block-status" role="status"></p>
     </form>

@@ -1,0 +1,195 @@
+import { safeIso, numberOrFallback } from "../../shared/validation/index.mjs";
+import { localDateKey, shiftDateKey } from "../../shared/time/index.mjs";
+import { LLM_MODELS, LLM_SCENARIOS, normalizeLlmSettings, llmSettingsForScene } from "./settings.mjs";
+import { DEEPSEEK_PRICING } from "./usage.mjs";
+
+const AI_COST_PLAN_VERSION = 1;
+const AI_COST_SCENARIO_DEFAULTS = {
+  thoughtPrompt: { callsPerMonth: 20, avgInputTokens: 4000, cacheHitPct: 20, avgReasoningTokens: 0, avgAnswerTokens: 120 },
+  thoughtDraft: { callsPerMonth: 15, avgInputTokens: 12000, cacheHitPct: 20, avgReasoningTokens: 2500, avgAnswerTokens: 1200 },
+  thoughtAnswer: { callsPerMonth: 20, avgInputTokens: 24000, cacheHitPct: 25, avgReasoningTokens: 6000, avgAnswerTokens: 2500 },
+  followUpAnswer: { callsPerMonth: 8, avgInputTokens: 18000, cacheHitPct: 25, avgReasoningTokens: 4000, avgAnswerTokens: 1800 },
+  chat: { callsPerMonth: 15, avgInputTokens: 16000, cacheHitPct: 25, avgReasoningTokens: 3000, avgAnswerTokens: 1600 },
+  diaryLead: { callsPerMonth: 12, avgInputTokens: 8000, cacheHitPct: 30, avgReasoningTokens: 0, avgAnswerTokens: 180 },
+  diaryStructure: { callsPerMonth: 8, avgInputTokens: 10000, cacheHitPct: 30, avgReasoningTokens: 1200, avgAnswerTokens: 700 },
+  diaryTopic: { callsPerMonth: 8, avgInputTokens: 10000, cacheHitPct: 30, avgReasoningTokens: 1800, avgAnswerTokens: 500 },
+  diaryReflection: { callsPerMonth: 6, avgInputTokens: 22000, cacheHitPct: 25, avgReasoningTokens: 5000, avgAnswerTokens: 2200 },
+  annotationShenji: { callsPerMonth: 15, avgInputTokens: 10000, cacheHitPct: 25, avgReasoningTokens: 2200, avgAnswerTokens: 1000 },
+  analysis: { callsPerMonth: 4, avgInputTokens: 30000, cacheHitPct: 20, avgReasoningTokens: 8000, avgAnswerTokens: 3500 },
+  bookRecognition: { callsPerMonth: 3, avgInputTokens: 5000, cacheHitPct: 0, avgReasoningTokens: 600, avgAnswerTokens: 400 },
+  healthRecognition: { callsPerMonth: 8, avgInputTokens: 6000, cacheHitPct: 0, avgReasoningTokens: 800, avgAnswerTokens: 500 },
+  contentImageUnderstanding: { callsPerMonth: 10, avgInputTokens: 6000, cacheHitPct: 0, avgReasoningTokens: 800, avgAnswerTokens: 700 }
+};
+
+export function defaultAiCostPlan(settings, usage, { date = localDateKey(), cnyPerUsd } = {}) {
+  const normalizedSettings = normalizeLlmSettings(settings);
+  const from = shiftDateKey(date, -29);
+  const recentEntries = (usage?.entries || []).filter(item => localDateKey(item.createdAt) >= from);
+  return {
+    version: AI_COST_PLAN_VERSION,
+    updatedAt: "",
+    monthlyBudgetCny: 30,
+    contingencyPct: 15,
+    cnyPerUsd,
+    scenarios: LLM_SCENARIOS.map(scene => {
+      const fallback = AI_COST_SCENARIO_DEFAULTS[scene];
+      const entries = recentEntries.filter(item => item.scene === scene);
+      const known = entries.filter(item => item.usageKnown);
+      const total = known.reduce((sum, item) => {
+        sum.input += Number(item.tokens?.input) || 0;
+        sum.cacheHit += Number(item.tokens?.cacheHit) || 0;
+        sum.reasoning += Number(item.tokens?.reasoning) || 0;
+        sum.answer += Number(item.tokens?.answer) || 0;
+        return sum;
+      }, { input: 0, cacheHit: 0, reasoning: 0, answer: 0 });
+      const modelCounts = new Map();
+      for (const item of entries) modelCounts.set(item.model, (modelCounts.get(item.model) || 0) + 1);
+      const observedModel = [...modelCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+      return {
+        scene,
+        enabled: true,
+        model: observedModel || llmSettingsForScene(normalizedSettings, scene).model,
+        pricingPeriod: "peak",
+        callsPerMonth: entries.length || fallback.callsPerMonth,
+        avgInputTokens: known.length ? Math.round(total.input / known.length) : fallback.avgInputTokens,
+        cacheHitPct: total.input ? Math.round(total.cacheHit / total.input * 1000) / 10 : fallback.cacheHitPct,
+        avgReasoningTokens: known.length ? Math.round(total.reasoning / known.length) : fallback.avgReasoningTokens,
+        avgAnswerTokens: known.length ? Math.round(total.answer / known.length) : fallback.avgAnswerTokens
+      };
+    })
+  };
+}
+
+export function normalizeAiCostPlan(value, settings, usage, options) {
+  const fallback = defaultAiCostPlan(settings, usage, options);
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const supplied = new Map((Array.isArray(source.scenarios) ? source.scenarios : []).map(item => [item?.scene, item]));
+  return {
+    version: AI_COST_PLAN_VERSION,
+    updatedAt: safeIso(source.updatedAt),
+    monthlyBudgetCny: numberOrFallback(source.monthlyBudgetCny, fallback.monthlyBudgetCny, 0, 10_000_000),
+    contingencyPct: numberOrFallback(source.contingencyPct, fallback.contingencyPct, 0, 500),
+    cnyPerUsd: numberOrFallback(source.cnyPerUsd, fallback.cnyPerUsd, 0.01, 1000),
+    scenarios: fallback.scenarios.map(defaultRow => {
+      const row = supplied.get(defaultRow.scene) || {};
+      return {
+        scene: defaultRow.scene,
+        enabled: row.enabled == null ? defaultRow.enabled : Boolean(row.enabled),
+        model: LLM_MODELS.includes(row.model) ? row.model : defaultRow.model,
+        pricingPeriod: row.pricingPeriod === "offPeak" ? "offPeak" : "peak",
+        callsPerMonth: numberOrFallback(row.callsPerMonth, defaultRow.callsPerMonth, 0, 10_000_000),
+        avgInputTokens: numberOrFallback(row.avgInputTokens, defaultRow.avgInputTokens, 0, 5_000_000, true),
+        cacheHitPct: numberOrFallback(row.cacheHitPct, defaultRow.cacheHitPct, 0, 100),
+        avgReasoningTokens: numberOrFallback(row.avgReasoningTokens, defaultRow.avgReasoningTokens, 0, 1_000_000, true),
+        avgAnswerTokens: numberOrFallback(row.avgAnswerTokens, defaultRow.avgAnswerTokens, 0, 1_000_000, true)
+      };
+    })
+  };
+}
+
+export function createAiCostService({ repository, readSettings, readUsage, cnyPerUsd, now = () => new Date().toISOString() }) {
+  const normalize = async value => {
+    const [settings, usage] = await Promise.all([readSettings(), readUsage()]);
+    return normalizeAiCostPlan(value, settings, usage, { date: localDateKey(now()), cnyPerUsd });
+  };
+  return {
+    normalize,
+    read: async () => normalize(await repository.read()),
+    async save(input) {
+      const plan = await normalize({ ...input, updatedAt: now() });
+      await repository.write(plan, normalize);
+      return plan;
+    },
+    dashboard: (usage, from, to, rate = cnyPerUsd) => usageDashboard(usage, from, to, rate, cnyPerUsd)
+  };
+}
+
+function blankUsageAggregate() {
+  return {
+    calls: 0,
+    successfulCalls: 0,
+    failedCalls: 0,
+    unknownStatusCalls: 0,
+    usageUnknownCalls: 0,
+    durationMs: 0,
+    durationKnownCalls: 0,
+    maxDurationMs: 0,
+    visionCalls: 0,
+    imageCount: 0,
+    imageBytes: 0,
+    tokens: { input: 0, cacheHit: 0, cacheMiss: 0, reasoning: 0, answer: 0, output: 0 },
+    costsUsd: { input: 0, cacheHit: 0, reasoning: 0, output: 0, total: 0 }
+  };
+}
+
+function addUsageAggregate(target, entry) {
+  target.calls += 1;
+  if (entry.status === "success") target.successfulCalls += 1;
+  else if (entry.status === "unknown") target.unknownStatusCalls += 1;
+  else target.failedCalls += 1;
+  if (!entry.usageKnown) target.usageUnknownCalls += 1;
+  if (entry.durationKnown) {
+    target.durationMs += Number(entry.durationMs) || 0;
+    target.durationKnownCalls += 1;
+    target.maxDurationMs = Math.max(target.maxDurationMs, Number(entry.durationMs) || 0);
+  }
+  if (entry.modality === "vision") target.visionCalls += 1;
+  target.imageCount += Number(entry.imageCount) || 0;
+  target.imageBytes += Number(entry.imageBytes) || 0;
+  for (const key of Object.keys(target.tokens)) target.tokens[key] += Number(entry.tokens?.[key]) || 0;
+  for (const key of Object.keys(target.costsUsd)) target.costsUsd[key] += Number(entry.costsUsd?.[key]) || 0;
+  return target;
+}
+
+export function usageDashboard(usage, from, to, cnyPerUsd, defaultCnyPerUsd = cnyPerUsd) {
+  const dayCount = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000) + 1;
+  const days = Array.from({ length: dayCount }, (_, index) => shiftDateKey(from, index));
+  const entries = usage.entries.filter(item => {
+    const date = localDateKey(item.createdAt);
+    return date >= from && date <= to;
+  });
+  const summary = entries.reduce(addUsageAggregate, blankUsageAggregate());
+  const daily = days.map(date => {
+    const matching = entries.filter(item => localDateKey(item.createdAt) === date);
+    const models = Object.fromEntries(LLM_MODELS.map(model => [model, matching.filter(item => item.model === model).reduce(addUsageAggregate, blankUsageAggregate())]));
+    return { date, ...matching.reduce(addUsageAggregate, blankUsageAggregate()), models };
+  });
+  const models = LLM_MODELS.map(model => ({
+    model,
+    label: DEEPSEEK_PRICING.models[model].label,
+    ...entries.filter(item => item.model === model).reduce(addUsageAggregate, blankUsageAggregate())
+  }));
+  const scenes = [...new Set(entries.map(item => item.scene))].map(scene => {
+    const aggregate = entries.filter(item => item.scene === scene).reduce(addUsageAggregate, blankUsageAggregate());
+    return { scene, ...aggregate };
+  }).sort((a, b) => b.calls - a.calls || a.scene.localeCompare(b.scene));
+  const modalities = ["text", "vision", ...(entries.some(item => item.modality === "unknown") ? ["unknown"] : [])].map(modality => ({
+    modality,
+    label: modality === "vision" ? "图片理解" : modality === "text" ? "纯文本" : "历史未知",
+    ...entries.filter(item => item.modality === modality).reduce(addUsageAggregate, blankUsageAggregate())
+  }));
+  const rate = Math.max(0.01, Number(cnyPerUsd) || defaultCnyPerUsd);
+  const sortedCostsCny = entries.map(item => (Number(item.costsUsd?.total) || 0) * rate).sort((a, b) => a - b);
+  const percentile = proportion => sortedCostsCny.length ? sortedCostsCny[Math.min(sortedCostsCny.length - 1, Math.ceil(sortedCostsCny.length * proportion) - 1)] : 0;
+  const activeDays = new Set(entries.map(item => localDateKey(item.createdAt)).filter(Boolean)).size;
+  return {
+    from, to, trackingStartedAt: usage.trackingStartedAt, summary, daily, models, scenes, modalities,
+    calibration: {
+      activeDays,
+      averageCallsPerActiveDay: activeDays ? entries.length / activeDays : 0,
+      averageInputTokens: entries.length ? summary.tokens.input / entries.length : 0,
+      maxInputTokens: entries.reduce((maximum, item) => Math.max(maximum, Number(item.tokens?.input) || 0), 0),
+      averageRequestChars: entries.length ? entries.reduce((sum, item) => sum + (Number(item.requestChars) || 0), 0) / entries.length : 0,
+      maxRequestChars: entries.reduce((maximum, item) => Math.max(maximum, Number(item.requestChars) || 0), 0),
+      medianCostCny: percentile(0.5),
+      p90CostCny: percentile(0.9),
+      maxCostCny: percentile(1)
+    },
+    pricing: {
+      ...DEEPSEEK_PRICING,
+      displayCurrency: "CNY",
+      cnyPerUsd: rate,
+      estimateNote: "费用按请求发生时固化的官方单价估算；中国法定节假日若落在工作日峰值时段，实际账单可能更低。"
+    }
+  };
+}

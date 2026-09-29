@@ -3,7 +3,8 @@ import path from "node:path";
 
 const RECORD_COLLECTIONS = [
   "checkins", "dailyRecords", "captures", "journals", "thoughts", "chats",
-  "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics"
+  "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics",
+  "actions", "habits", "habitCheckins", "feedback", "validationLedger"
 ];
 const MODEL_LABELS = {
   "deepseek-flash": "DeepSeek Flash",
@@ -184,10 +185,15 @@ export async function buildAdminSnapshot({
   attachmentQuotaBytes = GB,
   attachmentMode = "local",
   attachmentUsageBytes = async () => 0,
-  backupStatusFile = ""
+  backupStatusFile = "",
+  dailyCallLimit = 200,
+  readAuthData = null,
+  readAccountData = null
 }) {
   const generatedAt = new Date().toISOString();
-  const auth = await readJson(path.join(dataDir, "auth.json"), { users: [], sessions: [] });
+  const auth = readAuthData
+    ? await readAuthData()
+    : await readJson(path.join(dataDir, "auth.json"), { users: [], sessions: [] });
   const systemLogs = await readSystemLogs(dataDir, 2);
   const recentRequestLogs = systemLogs.filter(item => item.event === "request.completed");
   const users = [];
@@ -202,9 +208,10 @@ export async function buildAdminSnapshot({
 
   for (const account of Array.isArray(auth.users) ? auth.users : []) {
     const userDir = path.join(dataDir, "users", account.id);
+    const accountData = readAccountData ? await readAccountData(account) : null;
     const [store, usage, localAttachments, logs] = await Promise.all([
-      readJson(path.join(userDir, "store.json"), {}),
-      readJson(path.join(userDir, "ai-usage.json"), { entries: [] }),
+      accountData?.store ?? readJson(path.join(userDir, "store.json"), {}),
+      accountData?.usage ?? readJson(path.join(userDir, "ai-usage.json"), { entries: [] }),
       directoryStats(path.join(userDir, "attachments")),
       directoryStats(path.join(userDir, "logs"))
     ]);
@@ -226,14 +233,18 @@ export async function buildAdminSnapshot({
     ].filter(value => Number.isFinite(new Date(value).getTime())).sort();
     const remoteAttachmentBytes = await attachmentUsageBytes(account.id, path.join(userDir, "attachments"));
     const userAttachmentBytes = Math.max(localAttachments.bytes, Number(remoteAttachmentBytes) || 0);
-    const structuredSizes = await Promise.all(["store.json", "llm-settings.json", "ai-usage.json", "ai-cost-plan.json"]
-      .map(name => fileSize(path.join(userDir, name))));
+    const structuredSizes = Number.isFinite(accountData?.structuredBytes)
+      ? [accountData.structuredBytes]
+      : await Promise.all(["store.json", "llm-settings.json", "ai-usage.json", "ai-cost-plan.json"]
+        .map(name => fileSize(path.join(userDir, name))));
     attachmentBytes += userAttachmentBytes;
     attachmentObjects += localAttachments.files;
     userLogBytes += logs.bytes;
     userLogObjects += logs.files;
     structuredBytes += structuredSizes.reduce((sum, value) => sum + value, 0);
-    structuredObjects += structuredSizes.filter(Boolean).length;
+    structuredObjects += Number.isInteger(accountData?.structuredObjects)
+      ? accountData.structuredObjects
+      : structuredSizes.filter(Boolean).length;
     queuedTasks += (store.aiTasks || []).filter(item => ["queued", "running"].includes(item.status)).length;
     allUsage.push(...entries);
     users.push({
@@ -353,7 +364,7 @@ export async function buildAdminSnapshot({
   const commercial = {
     summary: { payingUsers: 0, mrr: 0, arppu: 0, refundRate: 0, grossMargin: 0, deferredRevenue: 0 },
     funnel: [{ stage: "完成注册", count: users.length }, { stage: "近 7 日活跃", count: active7 }, { stage: "完成付费", count: 0 }],
-    plans: [{ name: "内测版", price: 0, users: users.length, aiQuota: Number(process.env.AI_USER_DAILY_CALL_LIMIT) || 200, storageGb: Number(process.env.ATTACHMENT_USER_QUOTA_BYTES) / GB || 1, status: "active" }],
+    plans: [{ name: "内测版", price: 0, users: users.length, aiQuota: dailyCallLimit, storageGb: attachmentQuotaBytes / GB, status: "active" }],
     ledger: []
   };
 

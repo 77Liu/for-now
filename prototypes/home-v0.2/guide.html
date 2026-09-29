@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>此刻 v0.2 · 前端交付</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f4f4ee;color:#293428;font:15px/1.8 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}main{max-width:1260px;margin:36px auto;padding:0 28px}h1,h2{font-family:"Songti SC",serif;font-weight:500}h1{font-size:34px;margin-bottom:0}.muted{color:#666d60}a{color:#3e5838;text-underline-offset:4px}.links{display:flex;gap:20px;flex-wrap:wrap;margin:22px 0}.previews{display:grid;grid-template-columns:minmax(0,1fr) 392px;gap:26px;align-items:start}.desktop-wrap{position:relative;width:100%;aspect-ratio:1440/1000;overflow:hidden;border:1px solid #cfd6c9;border-radius:10px}.desktop-wrap iframe{position:absolute;width:1440px;height:1000px;border:0;transform-origin:0 0}.phone{width:392px;height:846px;border:1px solid #cfd6c9;border-radius:16px;overflow:hidden}.phone iframe{width:390px;height:844px;border:0}section{margin:32px 0}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;border-bottom:1px solid #d5dacd}code{font-size:13px;overflow-wrap:anywhere}.note{border-left:2px solid #819475;padding-left:16px}@media(max-width:1050px){.previews{grid-template-columns:1fr}.phone{max-width:100%}.phone iframe{max-width:100%}main{padding:0 18px}}a:focus-visible{outline:2px solid #40593b;outline-offset:4px}
+</style></head>
+<body><main>
+<p class="muted">此刻 / 首页 / 设计交付</p><h1>v0.2 · 浅山水，轻记录</h1>
+<p>可实装设计基线。以下为独立交互原型，使用示例数据；保存只在当前页面生效，刷新清空。未接生产接口。</p>
+<div class="links"><a href="index.html">打开响应式原型 →</a><a href="index.html?empty=1">查看空内容状态 →</a><a href="../../knowledge/design-language.md">设计语言与哲学</a><a href="../../knowledge/home-v0.2-handoff.md">实施规格</a></div>
+<div class="previews"><div><h2>桌面 · 1440 × 1000</h2><div class="desktop-wrap"><iframe src="index.html" title="桌面原型" id="desktop-frame"></iframe></div><p class="muted">缩放展示，点击上方链接可在完整窗口体验。</p></div><div><h2>手机 · 390 × 844</h2><div class="phone"><iframe src="index.html" title="手机原型"></iframe></div><p class="muted">独立移动布局，可在框内滚动与操作。</p></div></div>
+<section><h2>交互验收</h2><table><thead><tr><th>入口</th><th>本原型行为</th><th>实装接入</th></tr></thead><tbody>
+<tr><td>记录思考</td><td>打开编辑层；必填校验；收起保留草稿；保存后增量展示</td><td>既有问题—想法—回答链，复用原保存与后台任务</td></tr>
+<tr><td>换一组 / 查看原文</td><td>更换示例，原文弹层；不整页刷新</td><td>当前账户原始内容与真实来源 ID</td></tr>
+<tr><td>小物</td><td>纸品入口与详情示意</td><td>既有小物瀑布流、附件与原图详情</td></tr>
+<tr><td>记录状态 / 查看趋势</td><td>不预选量表，保存增量更新，详情显示数值</td><td>既有四项记录；逐日均值；缺失不补零</td></tr>
+<tr><td>主导航 / 组内导航</td><td>可点开路由说明，首页入口返回顶部</td><td>既有 switchView 与选中态；不复制二级业务页</td></tr>
+</tbody></table></section>
+<section><h2>两张可复用背景</h2><div class="links"><a href="../../public/assets/home-v0.2/desktop-background.png">桌面背景 PNG</a><a href="../../public/assets/home-v0.2/mobile-background.png">手机背景 PNG</a><a href="../../public/assets/home-v0.2/README.md">资产说明与生成提示词</a></div><p>背景只含浅山水与竹子，没有文字、按钮和图表；文字、曲线与小物入口均由 HTML / CSS / SVG 渲染。</p></section>
+<section class="note"><h2>实施边界</h2><p>用户已确认当前方向作为 v0.2 实装基线。本交付提供可运行原型、资产与规格，不代表正式站点已替换或上线。生产 CSS 应限定在 <code>.home-v02</code> 内，保留二级页面与当前开发中的改动。</p></section>
+</main><script>
+const wrapper=document.querySelector('.desktop-wrap');
+new ResizeObserver(()=>{document.querySelector('#desktop-frame').style.transform=`scale(${wrapper.clientWidth/1440})`;}).observe(wrapper);
+</script></body></html>

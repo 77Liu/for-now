@@ -58,6 +58,28 @@ S = 0.30M + 0.30E + 0.25L + 0.15P
 
 校正值 = 秤上体重 − 衣物均值。穿衣记录的体重区间 = `[秤上体重 − 衣物重量上限, 秤上体重 − 衣物重量下限]`。趋势可视化和后续分析使用校正值，并保留该区间；这个区间只表达固定衣物假设的不确定性，不代表体脂秤误差或医学统计置信区间。模型参数后续应依据实际衣物称量校准。
 
+总重量未显示时，`measuredWeight / adjustedWeight / lower95 / upper95` 均为空；允许仅保存体成分或描述，该记录计入日录数量，但不进入体重曲线。不能根据体成分重量、比例或其加总反推总重。衣物校正只作用于总重量，不改变报告中的体成分读数。
+
+## 体重与运动截图字段
+
+字段定义、归一化与模型提示的实现入口为 `src/modules/health/index.mjs`。两类截图各支持 1 张，复用健康识别场景和 8 MB 输入限制；识别只回填，用户保存后才创建日录。数值缺失保存 `null`，文本/报告时间缺失保存空字符串；明确显示为零才保存 `0`，界面空白不转换为零。
+
+| 类型 | 固定字段与单位 |
+| --- | --- |
+| 体重 | `measuredWeight` kg、`bmi` |
+| 体成分 | `bodyFatMass / bodyWaterMass / proteinMass / boneMineralMass / muscleMass / skeletalMuscleMass` kg |
+| 体成分比例 | `bodyFatPercent / bodyWaterPercent / proteinPercent / boneMineralPercent / musclePercent` % |
+| 其他报告指标 | `visceralFatLevel` 等级、`basalMetabolism` kcal/日、`waistHipRatio` 比值、`bodyAge` 岁 |
+| 运动 | `exerciseType` 项目名（如力量训练）、`durationSeconds` 秒、`distanceKm` km |
+| 热量与心率 | `activeCalories / totalCalories` kcal、`averageHeartRate / maximumHeartRate` bpm |
+| 心率区间 | `warmUpSeconds / fatBurnSeconds / aerobicSeconds / anaerobicSeconds / extremeSeconds` 秒 |
+
+运动时长以整数秒保存，以 `HH:mm:ss` 输入和展示。活动热量与总热量独立保存，不相加；顶部“千卡”与独立“总卡路里”同时出现时分别转录，语义不清则留空并在描述中保留原文。平均心率不得高于最大心率、活动热量不得高于总热量、可见区间时长合计不得超过运动时长；保存时提示用户核对。
+
+报告的测量时间 `measuredAt`、运动开始时间 `startedAt` 只有可识别时才回填。它们与用户指定的日录 `occurredAt` 分开保存；日期完全缺失时不猜报告时间，也不改动用户当前记录时间。月日缺少年份时沿用现有参考日期补年规则并在核对说明中注明，手机状态栏时间不能作为事件时间。
+
+`description` 为可编辑描述，记录原报告文字、增减箭头及图中可见的相对变化；原报告评价须明确归因，不产生医疗诊断，不从曲线估计精确采样点。`verification` 保留识别缺口与核对提示。原图通过 `attachmentPaths` 保存，删除、恢复沿用日录附件生命周期。旧版纯描述运动和仅体重记录仍可编辑。
+
 ## 全量记录统计
 
 “我的 / 统计”中的记录数是当前仍存在的数据快照，不是历史创建次数；删除一条记录后对应计数同步减少。内容统计按产品模块归组：此刻含状态，共参含长期对话，每日含睡眠、心率、体重和运动，念起含捕念，书间含书目和读书记录，拾句含善言，小物含小物，思绪含思考主题，日记含日记，回顾含个人实验和认知复盘。

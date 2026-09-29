@@ -1,0 +1,228 @@
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
+import "./prompt-test-setup.mjs";
+import { createJsonStoreRepository } from "../src/shared/persistence/index.mjs";
+import { collectAttachmentPaths } from "../src/shared/attachments/index.mjs";
+import { createTrashService } from "../src/modules/trash/index.mjs";
+import { createAnnotationService } from "../src/modules/annotations/index.mjs";
+import { createTrashMutations, createTrashCommands, createAttachmentCleanup, createAiTaskTargets } from "../src/app/index.mjs";
+import { createTrashHttp } from "../src/http/index.mjs";
+import { taskInputMatches } from "../src/modules/tasks/index.mjs";
+
+const now = () => "2026-09-29T04:00:00.000Z";
+const hash = value => crypto.createHash("sha256").update(value).digest("hex");
+let sequence = 0;
+const createId = () => `trash-${++sequence}`;
+const annotations = createAnnotationService({ createId, now });
+const trash = createTrashService({ createId, now, hash, retentionDays: 30 });
+const cancelledRunningTasks = [];
+const mutations = createTrashMutations({ trash, annotations, now, cancelTask: id => cancelledRunningTasks.push(id) });
+const annotation = (id, targetKey) => ({ id, targetKey, quote: "正文", text: "评论", replies: [{ id: "reply", text: "原回复" }] });
+const empty = () => ({
+  trash: [], attachmentCleanup: [],
+  books: [{ id: "book", title: "书名", version: 3, notes: [{ id: "note", content: "笔记正文" }], annotations: [annotation("mark", "note:note")], annotationDrift: [{ ...annotation("drift", "old"), originalTargetKey: "note:note", originalContext: { focus: "正文" } }] }],
+  thoughts: [{ id: "root", type: "question", version: 4, content: "正文", annotations: [annotation("thought-mark", "answer:answer")], annotationDrift: [] }, { id: "answer", relatedTo: "root", type: "answer", content: "正文" }],
+  journals: [{ id: "journal", version: 2, content: "正文", createdAt: "2026-09-01T01:02:03.000Z", occurredAt: "2026-09-02T01:02:03.000Z", annotations: [annotation("journal-mark", "content")], annotationDrift: [] }],
+  journalDraft: { journalId: "journal", title: "编辑中的标题", content: "编辑中的正文" },
+  aiTasks: [],
+  notifications: [],
+  keepsakes: [], captures: [], checkins: [], dailyRecords: []
+});
+const context = new AsyncLocalStorage(), account = () => context.getStore() || "a";
+const documents = new Map(), commits = [], removals = [], scheduled = [];
+let rejectCommit = 0, commitAttempts = 0, remove = async () => {};
+const repository = createJsonStoreRepository({
+  getFile: account, normalize: value => value, emptyDocument: {},
+  readDocument: async key => structuredClone(documents.get(key)),
+  writeDocument: async (key, value) => {
+    if (++commitAttempts === rejectCommit) throw new Error("injected commit failure");
+    documents.set(key, structuredClone(value));
+    commits.push(structuredClone(value));
+  }
+});
+const cleanup = createAttachmentCleanup({
+  repository, now, contextKey: account,
+  remove: async resourcePath => { removals.push({ account: account(), path: resourcePath }); await remove(resourcePath); },
+  dispatch: callback => { const owner = account(); scheduled.push(() => context.run(owner, callback)); },
+  onRetryFailure: error => { throw error; }, onResult: async () => {}
+});
+const commands = createTrashCommands({ repository, trash, mutations, cleanup });
+const reset = () => {
+  documents.set("a", empty()); commits.length = 0; removals.length = 0;
+  cancelledRunningTasks.length = 0; commitAttempts = 0; rejectCommit = 0; remove = async () => {};
+};
+const move = (collection, type, id) => repository.update(store => mutations.moveCollectionItemToTrash(store, collection, type, id));
+const purge = async id => {
+  const plan = await commands.preview([id]);
+  return commands.purge([id], plan.planHash);
+};
+
+reset();
+const note = await repository.update(store => mutations.moveNestedItemToTrash(store, {
+  parentCollection: "books", parentId: "book", field: "notes", type: "bookNote", id: "note", annotationTargetKeys: ["note:note"]
+}));
+assert.equal((await repository.read()).books[0].annotations.length, 0);
+assert.equal((await repository.read()).books[0].annotationDrift.length, 0);
+assert.equal(note.dependents.annotations[0].replies[0].text, "原回复");
+assert.equal(note.dependents.annotationDrift[0].originalContext.focus, "正文");
+assert.equal(note.purgeAfter, "2026-10-29T04:00:00.000Z");
+const book = await move("books", "book", "book");
+assert.equal((await commands.restore(note.id)).parentMissing, true);
+assert.equal((await move("books", "book", "book")).id, book.id);
+await commands.restore(book.id);
+await commands.restore(note.id);
+const restoredBook = (await repository.read()).books[0];
+assert.equal(restoredBook.notes[0].content, "笔记正文");
+assert.equal(restoredBook.annotations[0].replies[0].text, "原回复");
+assert.equal(restoredBook.annotationDrift[0].originalContext.focus, "正文");
+assert.equal(restoredBook.version, 6);
+assert.equal((await commands.restore(note.id)).missing, true);
+
+const block = await repository.update(store => mutations.moveThoughtBlockToTrash(store, "answer"));
+assert.equal((await repository.read()).thoughts[0].annotations.length, 0);
+const chain = await repository.update(store => mutations.moveThoughtChainToTrash(store, "root"));
+assert.equal((await commands.restore(block.id)).parentMissing, true);
+await commands.restore(chain.id);
+await commands.restore(block.id);
+assert.deepEqual((await repository.read()).thoughts.map(item => item.id), ["root", "answer"]);
+assert.equal((await repository.read()).thoughts[0].version, 7);
+assert.equal((await repository.read()).thoughts[0].annotations[0].id, "thought-mark");
+
+const targets = createAiTaskTargets({ annotations, hash });
+const annotationTask = { kind: "annotationShenji", resourceType: "journal", targetId: "journal", subtargetId: "journal-mark" };
+const original = targets.prepare(await repository.read(), annotationTask);
+const beforeJournal = (await repository.read()).journals[0];
+await repository.update(store => {
+  store.aiTasks.push(
+    { id: "queued-journal-task", kind: "annotationShenji", resourceType: "journal", targetId: "journal", subtargetId: "journal-mark", status: "queued" },
+    { id: "running-journal-task", kind: "annotationShenji", resourceType: "journal", targetId: "journal", subtargetId: "journal-mark", status: "running" }
+  );
+  store.notifications.push(
+    { id: "queued-notification", taskId: "queued-journal-task", status: "queued", readAt: "" },
+    { id: "running-notification", taskId: "running-journal-task", status: "running", readAt: "" }
+  );
+});
+const journal = await move("journals", "journal", "journal");
+const afterJournalDelete = await repository.read();
+assert.equal(targets.prepare(afterJournalDelete, annotationTask), null);
+assert.equal(afterJournalDelete.journalDraft.journalId, "");
+assert.equal(journal.tombstone, true);
+assert.equal(journal.lifecycleState, "deleted");
+let lifecycle = await repository.readPersistenceMetadata();
+assert.equal(lifecycle.lifecycles.find(item => item.resourceType === "journal" && item.resourceId === "journal").state, "deleted");
+assert.equal(lifecycle.lifecycles.find(item => item.resourceType === "journalDraft").state, "active");
+assert.ok(lifecycle.lifecycles.find(item => item.resourceType === "journalDraft").history.some(item => item.event === "association_detached"));
+assert.equal(afterJournalDelete.aiTasks.find(item => item.id === "queued-journal-task").status, "cancelled");
+assert.equal(afterJournalDelete.aiTasks.find(item => item.id === "running-journal-task").status, "cancelling");
+assert.equal(afterJournalDelete.notifications.find(item => item.taskId === "queued-journal-task").status, "cancelled");
+assert.equal(afterJournalDelete.notifications.find(item => item.taskId === "running-journal-task").status, "cancelling");
+assert.deepEqual(cancelledRunningTasks, ["running-journal-task"]);
+await commands.restore(journal.id);
+const restoredJournal = (await repository.read()).journals[0];
+lifecycle = await repository.readPersistenceMetadata();
+assert.equal(lifecycle.lifecycles.find(item => item.resourceType === "journal" && item.resourceId === "journal").state, "active");
+assert.ok(lifecycle.lifecycles.find(item => item.resourceType === "journal" && item.resourceId === "journal").history.some(item => item.event === "restored"));
+assert.equal(restoredJournal.version, beforeJournal.version + 1);
+for (const key of ["id", "content", "createdAt", "occurredAt", "annotations"]) assert.deepEqual(restoredJournal[key], beforeJournal[key]);
+assert.equal(taskInputMatches({ ...annotationTask, inputVersion: original.inputVersion, inputHash: original.inputHash }, targets.prepare(await repository.read(), annotationTask)), false);
+const duplicate = await move("journals", "journal", "journal");
+await repository.update(store => store.journals.push(structuredClone(beforeJournal)));
+assert.equal((await commands.restore(duplicate.id)).conflict, true);
+assert.equal((await commands.list()).items.some(item => item.id === duplicate.id), true);
+await repository.update(store => trash.add(store.trash, "broken", { id: "broken" }, { kind: "unknown" }));
+assert.equal((await commands.restore((await commands.list()).items[0].id)).invalid, true);
+
+reset();
+await repository.update(store => {
+  store.aiTasks.push({ id: "rollback-running-task", kind: "annotationShenji", resourceType: "journal", targetId: "journal", subtargetId: "journal-mark", status: "running" });
+});
+rejectCommit = commitAttempts + 1;
+await assert.rejects(move("journals", "journal", "journal"), /injected commit failure/);
+assert.deepEqual(cancelledRunningTasks, []);
+assert.equal((await repository.read()).journals[0].id, "journal");
+assert.equal((await repository.read()).aiTasks[0].status, "running");
+
+reset();
+await repository.update(store => {
+  store.books[0].imagePath = "/attachments/shared.png";
+  store.keepsakes.push({ id: "keepsake", originalPath: "/attachments/shared.png", cutoutPath: "/attachments/only.png" });
+});
+const keepsake = await move("keepsakes", "keepsake", "keepsake");
+assert.deepEqual(collectAttachmentPaths({ markdown: "before /attachments/not-a-ref.png", bad: "/attachments/../x", good: ["/attachments/shared.png"] }), new Set(["/attachments/shared.png"]));
+const firstPurge = await purge(keepsake.id);
+assert.deepEqual(firstPurge.attachments, ["/attachments/only.png"]);
+assert.ok(commits.some(store => !store.trash.length && store.attachmentCleanup.some(item => item.path === "/attachments/only.png")));
+assert.ok(!removals.some(item => item.path === "/attachments/shared.png"));
+const parent = await move("books", "book", "book");
+const preview = await commands.preview([parent.id]);
+await repository.update(store => trash.add(store.trash, "bookNote", { id: "new-child" }, { kind: "nested", parentId: "book" }));
+const changed = await commands.purge([parent.id], preview.planHash);
+assert.equal(changed.changed, true);
+assert.equal(changed.plan.items.length, 2);
+assert.equal((await commands.list()).items.length, 2);
+
+// Neither missing confirmation nor a stale plan may delete data.
+const handle = createTrashHttp({
+  commands, bodyJson: async req => req.input, sendJson: (res, status, body) => Object.assign(res, { status, body }), logEvent: async () => {}
+}).handle;
+const response = {};
+await handle({ method: "POST", input: { ids: [parent.id], planHash: preview.planHash } }, response, { pathname: "/api/trash/purge" });
+assert.equal(response.status, 400);
+assert.equal((await commands.list()).items.length, 2);
+const finalPurge = await purge(parent.id);
+assert.equal(finalPurge.entries.length, 2);
+assert.deepEqual(finalPurge.attachments, ["/attachments/shared.png"]);
+
+async function pendingFixture() {
+  reset();
+  await repository.update(store => { store.books[0].imagePath = "/attachments/pending.png"; });
+  return move("books", "book", "book");
+}
+let pending = await pendingFixture();
+rejectCommit = commitAttempts + 1;
+await assert.rejects(purge(pending.id), /injected commit failure/);
+assert.equal(removals.length, 0);
+assert.equal((await commands.list()).items.length, 1);
+
+pending = await pendingFixture();
+rejectCommit = commitAttempts + 2;
+await assert.rejects(purge(pending.id), /injected commit failure/);
+assert.equal(removals.length, 1);
+assert.equal((await commands.list()).items.length, 0);
+assert.equal((await repository.read()).attachmentCleanup[0].path, "/attachments/pending.png");
+// A restart sees the durable pre-removal task, and retries even when the object is already gone.
+await cleanup.resume();
+assert.equal(removals.length, 2);
+assert.deepEqual((await repository.read()).attachmentCleanup, []);
+
+pending = await pendingFixture();
+remove = async () => { throw Object.assign(new Error("private provider response"), { code: "EACCES" }); };
+assert.equal((await purge(pending.id)).attachmentCleanupPending, 1);
+assert.equal((await repository.read()).attachmentCleanup[0].attempts, 1);
+assert.equal((await repository.read()).attachmentCleanup[0].errorCode, "EACCES");
+assert.equal(JSON.stringify((await repository.read()).attachmentCleanup).includes("private provider response"), false);
+cleanup.schedule();
+assert.equal(scheduled.length, 1);
+// Retry retains its owning account even if another account is current at dispatch time.
+documents.set("b", empty());
+remove = async () => {};
+await context.run("b", async () => {
+  scheduled.shift()();
+  await context.run("a", () => repository.waitForIdle());
+  assert.deepEqual((await repository.read()).attachmentCleanup, []);
+});
+assert.equal(removals.at(-1).account, "a");
+assert.deepEqual((await repository.read()).attachmentCleanup, []);
+
+// Referenced objects are rescued from an old cleanup task.
+await repository.update(store => {
+  store.captures.push({ id: "rescue", image: "/attachments/rescue.png" });
+  store.attachmentCleanup.push({ path: "/attachments/rescue.png", attempts: 1 });
+});
+const beforeRescue = removals.length;
+await cleanup.resume();
+assert.equal(removals.length, beforeRescue);
+assert.deepEqual((await repository.read()).attachmentCleanup, []);
+
+console.log("Trash checks passed: nested and whole restore, versioned late-result rejection, dependent annotations, plan changes, shared references, commit failures, retry recovery and account isolation.");

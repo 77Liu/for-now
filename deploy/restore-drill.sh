@@ -65,16 +65,15 @@ chown -R for-now:for-now "$work"
 validation=$(sudo -u for-now /usr/local/bin/node "$release/scripts/validate-restored-data.mjs" "$work/data")
 session_token=$(printf "%s" "$validation" | /usr/local/bin/node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).sessionToken')
 expected_records=$(printf "%s" "$validation" | /usr/local/bin/node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).records')
+expected_collection_evidence=$(printf "%s" "$validation" | /usr/local/bin/node -pe 'JSON.stringify(JSON.parse(require("fs").readFileSync(0,"utf8")).collectionEvidence)')
 first_attachment=$(printf "%s" "$validation" | /usr/local/bin/node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).firstAttachment')
 
 setsid sudo -u for-now env \
   NODE_ENV=test DATA_DIR="$work/data" PORT="$port" APP_BASE_PATH=/restore-test \
+  PERSISTENCE_BACKEND=json DATABASE_URL= AUTH_DATABASE_URL= PG_BACKUP_DATABASE_URL= \
   AUTH_REQUIRED=1 INVITE_CODE_HASH="$INVITE_CODE_HASH" COOKIE_SECURE=0 UPSTREAM_ORIGIN= \
-  ATTACHMENT_STORAGE="${ATTACHMENT_STORAGE:-local}" \
-  OSS_ATTACHMENT_BUCKET="${OSS_ATTACHMENT_BUCKET:-}" OSS_ATTACHMENT_PREFIX="${OSS_ATTACHMENT_PREFIX:-for-now-attachments}" \
-  OSS_ENDPOINT="$OSS_ENDPOINT" OSS_REGION="$OSS_REGION" \
-  ALIBABA_CLOUD_ECS_RAM_ROLE="${ALIBABA_CLOUD_ECS_RAM_ROLE:-}" \
-  ALIBABA_CLOUD_IMDSV1_DISABLED="${ALIBABA_CLOUD_IMDSV1_DISABLED:-true}" \
+  ATTACHMENT_STORAGE=local OSS_ATTACHMENT_BUCKET= OSS_ATTACHMENT_PREFIX= \
+  OSS_ENDPOINT= OSS_REGION= ALIBABA_CLOUD_ECS_RAM_ROLE= \
   /usr/local/bin/node "$release/server.mjs" >"$work/server.out" 2>"$work/server.err" &
 launcher=$!
 
@@ -91,11 +90,23 @@ fi
 state=$(curl -fsS -H "Cookie: for_now_session=$session_token" "http://127.0.0.1:$port/restore-test/api/state")
 actual_records=$(printf "%s" "$state" | /usr/local/bin/node -pe '
 const value=JSON.parse(require("fs").readFileSync(0,"utf8"));
-["checkins","dailyRecords","captures","journals","thoughts","chats","books","keepsakes","quotes","experiments","analyses","customMetrics"]
+["checkins","dailyRecords","captures","journals","thoughts","chats","books","keepsakes","quotes","experiments","analyses","customMetrics","actions","habits","habitCheckins","feedback","validationLedger"]
   .reduce((sum,key)=>sum+(Array.isArray(value[key])?value[key].length:0),0)
 ')
 if [ "$actual_records" != "$expected_records" ]; then
   echo "Restored API record count mismatch." >&2
+  exit 1
+fi
+actual_collection_evidence=$(printf "%s" "$state" | /usr/local/bin/node -e '
+const crypto=require("node:crypto"),value=JSON.parse(require("fs").readFileSync(0,"utf8"));
+const objectValue=input=>input!==null&&typeof input==="object"&&!Array.isArray(input);
+const canonical=input=>Array.isArray(input)?`[${input.map(canonical).join(",")}]`:objectValue(input)?`{${Object.keys(input).sort().map(key=>`${JSON.stringify(key)}:${canonical(input[key])}`).join(",")}}`:JSON.stringify(input);
+const digest=input=>crypto.createHash("sha256").update(canonical(input)).digest("hex");
+const collections=["checkins","dailyRecords","captures","journals","thoughts","chats","books","keepsakes","quotes","experiments","analyses","customMetrics","actions","habits","habitCheckins","feedback","validationLedger"];
+process.stdout.write(JSON.stringify(Object.fromEntries(collections.map(key=>[key,{count:(value[key]||[]).length,idsSha256:digest((value[key]||[]).map(item=>String(item?.id||"")).sort()),contentSha256:digest(value[key]||[])}]))));
+')
+if [ "$actual_collection_evidence" != "$expected_collection_evidence" ]; then
+  echo "Restored API collection evidence mismatch." >&2
   exit 1
 fi
 if [ -n "$first_attachment" ]; then
@@ -108,5 +119,5 @@ summary=$(printf "%s" "$validation" | /usr/local/bin/node -pe '
 const value=JSON.parse(require("fs").readFileSync(0,"utf8"));
 JSON.stringify({users:value.users,totalRecords:value.totalRecords,attachmentReferences:value.attachmentReferences,localAttachments:value.localAttachments})
 ')
-printf "Restore drill passed: archive=%s checksum=ok data=%s apiRecords=%s attachmentHttp=%s\n" \
+printf "Logical JSON restore drill passed (PostgreSQL restore is a separate database drill): archive=%s checksum=ok data=%s apiRecords=%s attachmentHttp=%s\n" \
   "$(basename "$archive_uri")" "$summary" "$actual_records" "$([ -n "$first_attachment" ] && echo passed || echo not-applicable)"

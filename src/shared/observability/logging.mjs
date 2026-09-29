@@ -60,12 +60,12 @@ export function appendPrivateJsonLine(file, value) {
   return operation;
 }
 
-export function createLogger({ rootDir, getContext }) {
+export function createLogger({ rootDir, getContext, version = "development" }) {
   return async function logEvent(type, event, fields = {}) {
     const context = getContext() || {}, timestamp = new Date().toISOString();
     const entry = {
       schemaVersion: 1, id: crypto.randomUUID(), timestamp, type, event, module: event.split(".")[0],
-      version: process.env.APP_VERSION || "development",
+      version,
       traceId: context.traceId || "", userId: context.user?.id || null,
       method: context.method || "", route: context.route || "",
       ...fields

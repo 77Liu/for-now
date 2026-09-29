@@ -1,0 +1,57 @@
+export function migrationStore() {
+  return {
+    version: 15,
+    checkins: [{ id: "shared-id", mood: 4, custom: { calm: 3 }, notes: { mood: "原始心情" } }],
+    dailyRecords: [{ id: "health-1", type: "exercise", duration: 30, attachmentPaths: ["/attachments/run.png"] }],
+    captures: [{
+      id: "shared-id", content: "原始捕念", version: 3, futureFlag: { nested: [null, ""] },
+      annotations: [{
+        id: "annotation-1", text: "用户批注", targetKey: "content",
+        replies: [{ id: "reply-1", text: "用户回复" }],
+        shenji: [{ id: "exchange-1", message: "@神鸡", answer: "派生回答", sourceTaskId: "expired-task" }]
+      }], annotationDrift: []
+    }],
+    journals: [{
+      id: "journal-1", content: "日记原文", reflections: [{ id: "reflection-1", content: "回望", authorType: "ai" }],
+      annotations: [], annotationDrift: [{ id: "drift-1", text: "漂移批注", originalTargetKey: "content", replies: [] }]
+    }],
+    journalDraft: { journalId: "journal-1", title: "", content: "未保存草稿" },
+    thoughts: [
+      {
+        id: "root-1", type: "question", authorType: "user", content: "原始问题", version: 2,
+        occurredAt: "2026-09-28T03:00:00.000Z", occurredOn: "2026-09-28",
+        remarks: [{ id: "remark-1", text: "原始备注" }],
+        followUps: [{ id: "follow-1", question: "追问", answer: "", version: 1 }],
+        annotations: [{ id: "thought-annotation-1", text: "问题批注", shenji: [] }], annotationDrift: []
+      },
+      { id: "answer-1", type: "answer", relatedTo: "root-1", content: "AI 回答", authorType: "ai", sourceTaskId: "task-1" }
+    ],
+    chats: [{ id: "chat-1", message: "用户", answer: "模型", reasoningContent: "推理", annotations: [] }],
+    books: [{ id: "book-1", title: "书", notes: [{ id: "note-1", content: "笔记", type: "record" }], annotations: [] }],
+    keepsakes: [{ id: "keepsake-1", originalPath: "/attachments/original.png", cutoutPath: "/attachments/cutout.png" }],
+    quotes: [{ id: "quote-1", content: "善言", source: "出处", annotations: [] }],
+    experiments: [{ id: "experiment-1", title: "实验", metrics: ["calm"] }],
+    analyses: [{ id: "analysis-1", content: "认知复盘", authorType: "ai" }],
+    customMetrics: [{ id: "calm", name: "平静", options: [1, 2, 3] }],
+    trash: [{
+      id: "trash-1", type: "capture", resourceId: "deleted-1", location: { collection: "captures", index: 2 },
+      payload: { id: "deleted-1", content: "已删原文", attachmentPaths: ["/attachments/trash.png"], annotations: [] }
+    }],
+    attachmentCleanup: [{ path: "/attachments/orphan.png", attempts: 2, errorCode: "RETRY" }],
+    aiTasks: [
+      { id: "task-1", kind: "thoughtAnswer", resourceType: "thought", targetId: "root-1", resultId: "answer-1", status: "succeeded", inputVersion: 2 },
+      { id: "task-old", kind: "thoughtAnswer", targetId: "deleted-root", status: "stale", retryOf: "task-1" },
+      { id: "task-follow", kind: "followUpAnswer", targetId: "root-1", subtargetId: "follow-1", status: "queued" },
+      { id: "task-annotation", kind: "annotationShenji", resourceType: "capture", targetId: "shared-id", subtargetId: "annotation-1", resultId: "exchange-1", status: "succeeded" }
+    ],
+    notifications: [{ id: "notification-1", taskId: "task-1", resourceType: "thought", targetId: "root-1", readAt: "" }],
+    actions: [{ id: "action-1", title: "后续行动", status: "active", priority: "high", sourceRef: { type: "thought", id: "root-1" } }],
+    habits: [{ id: "habit-1", title: "每日复盘", frequency: { kind: "daily" }, status: "active" }],
+    habitCheckins: [{ id: "habit-checkin-1", habitId: "habit-1", occurredOn: "2026-09-29", feeling: "稳定" }],
+    feedback: [{ id: "feedback-1", body: "反馈原文", status: "submitted", appVersion: "0.2.0" }],
+    validationLedger: [{ id: "validation-1", participantRef: "成员-01", status: "invited", consent: false }],
+    onboarding: { answers: { worldview: "A" }, profile: { introduction: "可修改初始资料" } },
+    commercialization: { model: "subscription", parameters: { price: 12.5 } },
+    unknownExtension: JSON.parse('{"__proto__":{"keep":true},"values":[null,false,0,""],"path":"/attachments/extension.png"}')
+  };
+}

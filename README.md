@@ -35,9 +35,9 @@ npm run start:local-test
 
 公网正式环境：
 
-- 应用：<https://123.57.140.24/now/>
-- 应用入口：<https://123.57.140.24/apps/>
-- 只读治理中台：<https://123.57.140.24/platform/>（仅 `shenji` 管理员）
+- 应用：<https://77liu.top/now/>
+- 应用入口：<https://77liu.top/apps/>
+- 只读治理中台：<https://77liu.top/platform/>（仅 `shenji` 管理员）
 
 ## 核心体验
 
@@ -51,22 +51,29 @@ npm run start:local-test
 
 ## 当前状态
 
-- **生产已上线**：主应用功能发布提交为 `5ae6a7035169`，发布标签为 `release-20260928-p00-p0-commercial-system`；P00/P0、商业化、AI 成本和五阶段架构设计已部署。
+- **生产 `v0.1.1` 已上线**：公网运行版本为 `54a6326f14ca`，标签 `hotfix-v0.1.1-thought-answer`；在 v0.1.0 基础上修复收集页创建思绪时自动回答任务工厂未定义的问题。
+- **`v0.1.0` 发布历史保留**：主应用功能提交 `5ae6a7035169` 和标签 `release-20260928-p00-p0-commercial-system` 已发布 P00/P0、商业化、AI 成本和五阶段架构设计，并由 v0.1.1 继承。
 - **中台已上线**：独立中台提交为 `d157537f7f4c`，发布标签为 `release-20260928-platform-mvp`；公网 `/platform/` 只读治理控制面已部署。
-- **发布已关闭**：两轮测试、发布前备份与隔离恢复、生产冒烟及 30 分钟观察均通过；完整证据见 `reports/pre-launch-2026-09-28-p00-p0-platform.md`。本文件所在后继提交只补充发布关闭文档，不改变已审计的业务代码、依赖、配置或迁移。
+- **v0.1.0/治理中台发布已关闭**：两轮测试、发布前备份与隔离恢复、生产冒烟及 30 分钟观察均通过；完整证据见 `reports/pre-launch-2026-09-28-p00-p0-platform.md`。
+- **正式域名已上线并纳入 `v0.2.0` 运维交付**：`https://77liu.top/now/` 使用匹配域名的 Let's Encrypt 证书，HTTP 与公网 IP HTTPS 均 308 跳转至该域名；本次仅变更 Nginx，未发布 v0.2.0 应用代码。
+- **本轮 `v0.2.0` 进行中，尚未发布**：G1 三路、G2 四路、R2/R3/R4 收口及首页 v0.2 已完成，并形成以当前 `origin/main` 为父提交、可继续修改的本地中间检查点。当前包含思绪检索/回访、跨体裁导出、行动/习惯、产品反馈、生命周期与幂等账本、小物 WebP 派生、跨体裁图片原文和后台图片理解，共 50 个模块、201 条拥有路由、60 条 OpenAPI 路径、104 个操作和 23 个视图；Store 为 v15。生产正式写源仍保持 JSON，等待正式发布分支、发布授权和生产门禁。
 - **夜间探索轨道**：P1、P2、P3 三个递进探索版均已在本地非主线分支验证；所有版本使用隔离样例数据，不连接生产。执行约束与阶段状态见 `knowledge/exploration-release-track.md`。
-- **状态单一事实来源**：P00-P3 的逐项状态、验收标准和剩余阻塞统一见 `README-TODO.md`。生产能力与工作区候选能力不得混写为同一上线状态。
+- **PostgreSQL 验收恢复（2026-09-30）**：确认 macOS 26 会让原生空 C 进程启动即报告 `pthread_is_threaded_np()=1`；使用关闭该失真探测、且不链接 LDAP/ICU 的官方 PostgreSQL 16.14 本地构建后，Store v15 全领域、旧表升级、完整导出恢复及持久幂等专项均通过。可复用边界见 `knowledge/system-testing.md`，结果见 `reports/g2-r4-postgres-2026-09-30.json`；生产切换仍留在 R 阶段。
+- **状态单一事实来源**：本轮 P00-P3、实施顺序、验收标准和剩余阻塞统一见 `README-TODO.md`；最新主账户原文审阅与取舍见 `reports/iteration-plan-v0.2.0-2026-09-28.md`。
 
-## 当前生产能力
+## 当前生产与工作区能力
 
-以下能力已随 `release-20260928-p00-p0-commercial-system` 上线；逐项状态以 `README-TODO.md` 为准。
+未特别标注的能力已随 `release-20260928-p00-p0-commercial-system` 上线并由 v0.1.1 继承；标有“v0.2 工作区，未发布”的条目只代表当前候选实现。逐项状态以 `README-TODO.md` 为准。
 
 ### 核心记录与回顾
 
-- 本地 JSON 持久化已运行；原始数据位于 `data/store.json`。
+- **v0.2 工作区，未发布**：默认 JSON 持久化继续可用；候选实现已接通 PostgreSQL 单写模式，Store v15 增加行动、习惯、习惯打卡、反馈与验证台账关系映射。真实 PostgreSQL 16.14 已复验原子注册、并发、隔离、断连、重启、旧元数据表升级、全量关系导出和第二数据库恢复；生命周期与幂等账本通过显式位置和原始 payload 保持无损顺序与扩展字段。目前每数据库单应用实例，生产尚未切换，配置与恢复命令见 `knowledge/postgres-migration.md`。
 - “今日”的三个子视图分别承载即时状态与主题思考、长期记录对谈、健康日常；具体信息架构见 `knowledge/architecture.md`，栏目命名见 `knowledge/cultural-content-preferences.md`。
 - “捕念”是低负担的碎片收集箱，支持快捷保存、多关键词、精确发生时间、编辑删除，并可带入初步想法继续展开成思考。
 - “日记”支持自由原文、可选写作引导、Markdown、标签与历史编辑；可基于已写文字追加 AI 引子、结构或主题，保存后可生成流式回望。
+- **v0.2 工作区，未发布**：“寻迹”支持按正文/标签和内容类型检索思绪，区分用户原文与 AI 派生内容，并提供未回访筛选、已读、明日再看和当前筛选内任意门。
+- **v0.2 工作区，未发布**：“今日”支持行动优先级、完成/撤销、来源引用，以及每日/每周习惯、自然日打卡和调整记录；删除习惯时打卡按父子关系一并进入回收站。
+- **v0.2 工作区，未发布**：“我的”提供默认排除密钥与模型内部推理的 JSON/Markdown 账户导出，以及默认不附带私人记录的产品反馈入口；付费验证台账区分计划、同意/退出、补偿/奖励和真实参与证据。
 - “思绪”以问题为根、内容块为倒序时间线，支持多次 AI 回答、用户回答、记录、初步想法、追问和备注；每块独立编辑、软删除和恢复，并显示时间、来源、版本及 AI 派生标记。
 - 状态图位于“所思 → 回顾 → 长期趋势”，按自然日汇总，同日多次逐项取均值，并显示多指标浅色线和综合分；图下可逐次编辑发生时间、量表、备注和当天因素。
 - “回顾”支持低样本当前观察、渐进式趋势与延迟相关线索、问题聚类、个人实验、自定义指标和持久化认知复盘历史。
@@ -78,11 +85,13 @@ npm run start:local-test
 - “我的 → 架构设计”按五阶段展示请求入口、防火墙、分发、主服务器、Worker、数据、监控与灾备，并同步给出规划规格、成本区间、进入条件和白话术语解释；只描述目标路线，不把未部署能力标记为已上线。
 - 主导航已收拢为四个一级入口；今日、所见、所思通过组内导航进入，“我的”通过设置列表进入。具体命名与分组分别见 `knowledge/cultural-content-preferences.md` 和 `knowledge/architecture.md`。
 - 模型能力统一使用 DeepSeek；Lite/Mid/High/Ultra 四档均可独立配置 Flash/Pro 与思考强度，每个 AI 场景独立选择档位，并以场景契约单独控制篇幅与表达。
+- **v0.2 工作区，未发布**：模型提示词使用独立不可变目录版本；当前激活版本、文件摘要、必需提示和占位符在 `prompts/manifest.json` 校验，每次 AI 审计记录目录版本，可独立于应用版本固定和回滚。
+- **v0.2 工作区，未发布**：`/api/v1` 公共内核已冻结为 `1.0.0`，统一 `data/error/meta`、TraceID、游标、ETag/If-Match 与 Idempotency-Key；OpenAPI 位于 `/api/v1/openapi.json`，旧接口继续兼容。
 - 思绪回答默认创建持久后台任务，不弹窗阻断录入；通知中心展示排队、生成、完成、失败和过期状态，并支持结果跳转与失败重试。草稿等主动查看场景仍可流式展示，模型思考独立持久化、默认折叠且不进入后续上下文。
 - 全体裁删除进入 30 天回收站，恢复保留原正文、互动和附件引用；永久清理使用清单哈希与二次确认。助手称呼和逐场景回答风格与模型档位分离。
 - 无记录账户可选择快速版 8 题或详细版 18 题完成必答的价值判断问卷；性别、地区、职业、专业、学校、兴趣、自我介绍、作品与导入材料均可跳过。原始选择和可修正初始认知会进入个人语境，但后续真实记录优先。
 - 日期归属与午夜切换使用本地自然日，时间以 00–23 小时制显示；业务记录保存完整、可编辑的发生时间。
-- 图片识别共用选择、粘贴、拖放、预览、附件与 Flash 调用链路；体重同时保留秤上原值、衣物校正值和穿衣记录的 95% 估计区间。
+- **v0.2 工作区，未发布**：睡眠、心率、体重/体成分、运动图片共用选择、粘贴、拖放、预览、附件与健康识别链路，用户核对回填后保存。体重缺总重量时可只存体成分；有总重量时保留衣物校正和 95% 估计区间。运动记录项目、秒级时长、活动/总热量、心率及可编辑描述，未显示的字段留空；口径见 `knowledge/metrics.md`。
 
 ### 模型与可修正性
 
@@ -93,7 +102,7 @@ npm run start:local-test
 
 ### 云端、数据与安全
 
-- 公网 IP HTTPS、Nginx `/now/` 反向代理、`/apps/` 应用入口和 Let's Encrypt IP 证书自动续期已完成。
+- 公网域名 HTTPS、IP 到域名跳转、Nginx `/now/` 反向代理、`/apps/` 应用入口和 Let's Encrypt 证书自动续期已完成。
 - 邀请码注册、scrypt 独立盐值密码哈希、HttpOnly/SameSite Cookie、多用户数据隔离和登录边界已完成。
 - 云端文字、结构化数据与日志独立保存在 `/srv/for-now/data`，持久图片迁移后保存到私有 OSS 附件前缀；代码、运行数据、附件与 OSS 备份彼此分离，均不进入 Git。
 - ECS 使用 RAM 角色向 OSS 写入一致性快照，不在服务器保存长期 AccessKey；定时备份已启用。
@@ -111,11 +120,11 @@ npm run start:local-test
 - **小物分割**：应用服务端通过 ECS RAM 角色调用阿里云 `SegmentHDCommonImage`，用同类目 `GetAsyncJobResult` 查询异步结果并立即下载临时透明 PNG；不调用 DeepSeek 或 `RefineMask`。
 - **日志与审计**：系统日志、用户操作摘要、DeepSeek 用量及 AI 开始/终态审计已在本地接通；阿里云分割独立留痕。字段、隐私、保留和未关闭边界统一见 `knowledge/observability.md`。
 - **运行边界**：DeepSeek 全局 20 QPS/20 在途，图片分割全局 5 QPS/5 在途；每用户每日 200 次/¥14.40、附件 1 GiB。阈值来源和扩容条件见 `knowledge/operations-capacity.md`。
-- **治理控制面候选**：独立中台只经本机服务令牌读取脱敏聚合，不直接读取业务数据目录；主应用契约见 `knowledge/architecture.md`，认证、部署和回滚细节维护在 `platform/main` 分支 README。
+- **已上线治理控制面**：独立中台只经本机服务令牌读取脱敏聚合，不直接读取业务数据目录；主应用契约见 `knowledge/architecture.md`，认证、部署和回滚细节维护在 `platform/main` 分支 README。
 
 ## 生产检查状态
 
-2026-09-28 已完成 P00/P0、商业化/AI 成本、系统设计与独立只读中台发布。主应用功能提交 `5ae6a7035169` 和中台提交 `d157537f7f4c` 均已部署；公网入口、生产认证、13 项权限、9 个中台模块、实时脱敏聚合、只读预演和退出失效冒烟通过。发布后观察超过 30 分钟，两服务重启次数为 0，Swap 为 0，磁盘使用 42%，可用内存最低 417 MiB，未发现持久化/日志失败、无终态 AI 调用或 OOM。完整发布证据见 `reports/pre-launch-2026-09-28-p00-p0-platform.md`；此前生产基础设施与外部供应商实测见 `reports/mvp-operations-validation-2026-09-27.md`。
+2026-09-28 已完成 P00/P0、商业化/AI 成本、系统设计与独立只读中台发布。主应用功能提交 `5ae6a7035169` 和中台提交 `d157537f7f4c` 均已部署；公网入口、生产认证、13 项权限、9 个中台模块、实时脱敏聚合、只读预演和退出失效冒烟通过。发布后观察超过 30 分钟，两服务重启次数为 0，Swap 为 0，磁盘使用 42%，可用内存最低 417 MiB，未发现持久化/日志失败、无终态 AI 调用或 OOM。随后 `v0.1.1` 热修 `54a6326f14ca` 已发布并成为当前生产应用基线；v0.2.0 尚未发布。完整发布证据见 `reports/pre-launch-2026-09-28-p00-p0-platform.md`；此前生产基础设施与外部供应商实测见 `reports/mvp-operations-validation-2026-09-27.md`。
 
 ## 发布与同步
 
@@ -146,7 +155,7 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
 
 ## 当前 TODO
 
-需求判断以用户亲自写下的问题、初步想法、捕念和备注为主；AI 生成回答仅作弱参考，不代表用户立场。审阅依据见 `reports/product-iteration-review-2026-09-27.md`；当前排期、实施状态和验收标准只在 `README-TODO.md` 维护。
+需求判断以用户亲自写下的问题、初步想法、捕念、追问和批注为主；AI 生成回答仅作弱参考，不代表用户立场。v0.2.0 按“数据底座 → 模块与 v1 契约 → 四路独立功能 → 串行集成 → 发布切换”推进；当前排期只在 `README-TODO.md` 维护，开发准入约束见 `knowledge/modularization-design.md` 第 11 节。
 
 ## 产品路线图
 
@@ -168,6 +177,7 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
 - `knowledge/engineering-rules.md`：代码范围、设计原则、验证、提交与发布规则。
 - `knowledge/pre-launch-confirmation.md`：上线前双轮检查、人工配置与确认、证据失效、Git/服务器发布和观察关闭流程。
 - `knowledge/development-release-checklist.md`：新功能测试完成、准备上线时执行的阻断式自查清单。
+- `knowledge/release-notes-rules.md`：版本更新说明的分类、用户故事、问题与价值表达、模板及发布前检查规则。
 - `knowledge/system-testing.md`：后端、压测、前端系统测试矩阵、统一命令、阈值与维护规则。
 - `knowledge/observability.md`：系统日志、用户操作日志与 AI 调用审计的现状、字段、隐私和未完成项。
 - `knowledge/operations-capacity.md`：生产容量、调用/存储边界、OSS 权限、飞书告警和恢复演练。
@@ -175,6 +185,9 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
 - `knowledge/ai-cost-control.md`：个人 AI 成本模拟变量、计算公式、实测校准与模型配置建议边界。
 - `knowledge/privacy-notice.md`：邀请用户注册后的隐私告知草案、确认流程和上线阻断项。
 - `knowledge/architecture.md`：运行结构、增量更新、模型交互与验证边界。
+- `knowledge/modularization-design.md`：v0.2.0 起的模块边界、依赖方向、跨模块影响矩阵、检查门禁与迁移顺序。
+- `knowledge/module-boundaries.json`：已实施模块、公开入口、依赖、路由所有权、测试和迁移例外的机器可读登记。
+- `knowledge/postgres-migration.md`：全领域关系映射、附件实物/哈希校验、覆盖保护、迁移命令与剩余运行接入范围。
 - `knowledge/scalable-architecture-design.md`：前后端分离、并发稳定性、PostgreSQL/pgvector 数据底座和渐进迁移设计。
 - `knowledge/exploration-release-track.md`：P1-P3 本地递进分支、样例隔离、发布和验收约束。
 - `knowledge/cultural-content-preferences.md`：文化表达与界面命名偏好的单一事实来源。
@@ -185,8 +198,25 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
 - `knowledge/iteration-history.md`：按日期保存的重要迭代历史。
 - `README-TODO.md`：P00-P3 排期、实施状态、验收标准和阻塞项的单一事实来源。
 - `reports/product-iteration-review-2026-09-27.md`：生产条目审阅范围、需求证据、审阅时实现核对与优化取舍。
-- `server.mjs`：服务端、持久化、统计和模型调用。
-- `logging.mjs`：统一脱敏、日志写入与资源变更摘要。
+- `reports/iteration-plan-v0.2.0-2026-09-28.md`：最新主账户原文审阅、版本号、P00-P3 判断和本轮执行计划。
+- `reports/g1-contract-freeze-2026-09-29.json`：G1 契约文件摘要、系统测试、PostgreSQL 证据边界及三路重构资源预留。
+- `reports/s3-10-integration-2026-09-29.json`：B1/B2/B3 隔离工作树、串行集成顺序、产物摘要和 36 阶段系统测试证据。
+- `reports/s3-11-12-completion-2026-09-29.json`：状态/健康 v1 纵向链、前端薄壳与页面生命周期，以及 38 阶段系统测试证据。
+- `reports/g2-i-integration-2026-09-29.json`：G2 A-D 工作树、I 串行集成、Store v15、51 个 OpenAPI 操作、43 阶段系统测试及 PostgreSQL 阻塞证据。
+- `reports/g2-r4-postgres-2026-09-30.json`：G2 R4 真实 PostgreSQL 16.14、持久幂等、旧表升级、完整恢复、系统测试及剩余生产门禁证据。
+- `reports/v0.2.0-g2-intermediate-checkpoint-2026-09-30.md`：本地中间提交的逐项实现、提交前验证、待办及“非权威、可继续修改”边界说明。
+- `reports/hotfix-thought-answer-task-2026-09-28.md`：v0.1.1 思绪自动回答严重故障的根因、修复、验证与生产发布记录。
+- `reports/domain-https-cutover-2026-09-29.md`：`77liu.top` 证书切换、HTTP/IP 跳转、续期、回滚点及与 v0.2.0 应用发布的边界。
+- `server.mjs`：HTTP 装配入口及尚未迁移的领域、统计和模型调用。
+- `src/shared/persistence/`：JSON/PostgreSQL repository、整批迁移与停写导出恢复。
+- `src/modules/thoughts/`：已拆出的构思领域服务。
+- `src/modules/auth/` 与 `src/http/`：认证/会话领域规则及 HTTP、Cookie、JSON 适配。
+- `src/modules/annotations/`、`tasks/`、`notifications/` 与 `src/app/`：批注、任务/通知领域及跨领域事务编排；兼容路由归 HTTP，通用 AI 供应商继续迁移。
+- `src/modules/trash/`、`src/shared/attachments/` 与 `src/app/`：回收条目、版本化恢复、持久清理、上传/配额/临时文件与存储适配；本段 PG 验证缺口见系统测试文档。
+- `public/frontend/`：API、会话、状态、内容/时间/媒体共享能力，以及思绪回访、导出、行动/习惯和反馈纯功能模块；页面运行时仍会按后续领域继续细分。
+- `src/config/` 与 `src/shared/observability/`：统一运行配置、异步请求上下文、脱敏、私有日志与资源变更摘要；请求完成与错误适配归 `src/http/`。
+- `src/modules/ai/`：模型设置、成本模拟/统计、用量/费用、额度、通用 Prompt 与调用/重试审计；账户文档适配归持久化，设置/成本接口归 HTTP。DeepSeek 与阿里云分割传输归 `src/infrastructure/ai-providers/`；业务上下文继续迁移。
+- `src/modules/keepsakes/`：小物校验/归一化、创建/编辑、分割与临时图片流程；HTTP 适配、供应商、回收事务分别装配。通用发生时间解析归 `src/shared/time/`，共享队列归 `src/shared/concurrency/`；前端继续迁移。
 - `public/`：交互页面实现。
 
 ## 数据与设置

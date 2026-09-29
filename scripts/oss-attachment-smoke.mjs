@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { createAttachmentStorage } from "../attachment-storage.mjs";
+import { createAttachmentStorage } from "../src/shared/attachments/index.mjs";
+import { loadAttachmentConfig } from "../src/config/index.mjs";
 
-const bucket = process.env.OSS_ATTACHMENT_BUCKET || "";
-const endpoint = process.env.OSS_ENDPOINT || "";
+const config = loadAttachmentConfig();
+const { bucket, endpoint } = config;
 if (!bucket || !endpoint) throw new Error("OSS_ATTACHMENT_BUCKET and OSS_ENDPOINT are required");
 
-const storage = createAttachmentStorage({ mode: "oss" });
+const storage = createAttachmentStorage({ ...config, mode: "oss" });
 const ownerId = "__smoke__";
 const name = `probe-${Date.now()}-${crypto.randomUUID()}.txt`;
 const localFile = `/nonexistent/${name}`;

@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "stage": "G2 product tracks and I serial integration",
+  "status": "integrated_pending_postgres",
+  "date": "2026-09-29",
+  "sourceBranch": "explore/nightly-p3-20260928",
+  "sourceHead": "d33a53e7f173b8af9898b854e3ef415171d9db8b",
+  "workingTreeCommitted": false,
+  "integrationOrder": ["A", "B", "C", "D", "shared persistence", "HTTP and OpenAPI", "frontend"],
+  "tracks": [
+    {
+      "track": "A",
+      "branch": "feature/v020-g2-a-search",
+      "worktree": "/private/tmp/for-now-v020-g2-a",
+      "deliverable": "thought search, source identity, fresh/untraced state, read, snooze and random resurfacing",
+      "status": "integrated"
+    },
+    {
+      "track": "B",
+      "branch": "feature/v020-g2-b-attachments",
+      "worktree": "/private/tmp/for-now-v020-g2-b",
+      "deliverable": "deterministic account export with cross-genre attachment manifest and privacy defaults",
+      "status": "integrated"
+    },
+    {
+      "track": "C",
+      "branch": "feature/v020-g2-c-actions",
+      "worktree": "/private/tmp/for-now-v020-g2-c",
+      "deliverable": "actions, habits, natural-day check-ins, source links, history and immutable frontend commands",
+      "status": "integrated"
+    },
+    {
+      "track": "D",
+      "branch": "feature/v020-g2-d-feedback",
+      "worktree": "/private/tmp/for-now-v020-g2-d",
+      "deliverable": "product feedback and evidence-backed validation ledger with consent, withdrawal, compensation and rewards",
+      "status": "integrated"
+    }
+  ],
+  "integration": {
+    "storeVersion": 15,
+    "collectionsAdded": ["actions", "habits", "habitCheckins", "feedback", "validationLedger"],
+    "relationsAdded": ["action source", "habit check-in parent"],
+    "apiContractVersion": "1.0.0",
+    "openApiPaths": 32,
+    "openApiOperations": 51,
+    "g2OperationsAdded": 34,
+    "registeredModules": 42,
+    "ownedRoutes": 116,
+    "registeredViews": 23,
+    "habitCascadeDeleteAndRestore": true,
+    "productionWriteSource": "json"
+  },
+  "artifacts": {
+    "src/modules/discovery/index.mjs": "e7f62113c4b563b343dc05a2028cfc8ec3540ab1cdad51967877768c3d746f48",
+    "src/modules/exports/index.mjs": "b1bf7752a9b4399935de8e8d8839bd5ee177c170f0a4b8380b43045d0a3f8378",
+    "src/modules/actions/service.mjs": "f21ca8b9f092170beb13fccd5e14acedc9b38de0ab9ea7619cf6925d2209b4bf",
+    "src/modules/feedback/service.mjs": "cc135d500e9f6fbf4fbd619542ebeae9bf83f3a5b561e18c91269cb1e3842712",
+    "src/http/discovery.mjs": "7b47c1db61c44b62c6d14b0cadc2b4211ee70a3523cd801271dfbfd2fce72db1",
+    "src/http/exports.mjs": "9eec12fd604d8c7dc9e4423305f488efee1c8d32e1dd7cda34c79b5435e55e8b",
+    "src/http/actions.mjs": "add207f5e5b210a8ce2329e7e9dd56191fb38f6ded303ef33dfe3a2c94aaec44",
+    "src/http/feedback.mjs": "eb22b0f4a562cbf1499ff13b4629357aa028d77d43ed6cfc2ca58d7e9f6cd3b5",
+    "src/http/openapi/g2.mjs": "d4e782db365c863dfe6b5e9dd29e0cf234d4714efa43da6a366b303482867ee5",
+    "scripts/g2-integration-regression.mjs": "5a915ae8eb37f41beabde7f369145984e783ff7815e6d807032ad6163eb28325",
+    "public/frontend/app/runtime.mjs": "7674829cbdf8a658d12f4aeeb8b8588e7e5957f2d5f27a2f1c4f4558e63fdefe",
+    "public/index.html": "e8e6591b896635e72804d70e8c0fdfd9ecb61e5b413dfa8506dd12135ccab963",
+    "src/shared/persistence/store-mapping.mjs": "bd520ccdf3a883a7a01c789eacdf9b8cfc6a7276bf0b12587f15663e8e3662c7",
+    "src/app/trash.mjs": "90cd68ee1f8dabab8a216eab9037fd34d2ed72dc2ff6b735ade8a6a962a81d7b",
+    "server.mjs": "bacf676e36320e5d594c2f87bd2c2d6f257333c9f9d0e6ba2689e56b68781d90"
+  },
+  "review": {
+    "independentAgents": 2,
+    "resolvedFindings": [
+      "frontend create retries now retain an idempotency key until success or input change",
+      "actions, habits, habit check-ins and feedback consume all cursor pages",
+      "deleted idempotency records are recognized and restore rejects duplicate keys or duplicate habit days",
+      "action in-progress/edit and habit frequency-adjustment/check-in undo controls are connected",
+      "OpenAPI title and daily-target constraints match the domain schema"
+    ],
+    "acceptedBoundary": "The export endpoint has no injected attachment inventory in this stage, so attachment availability is explicitly unverified rather than inferred."
+  },
+  "verification": {
+    "npmRunCheck": {
+      "status": "passed",
+      "modules": 42,
+      "ownedRoutes": 116,
+      "cycles": 0
+    },
+    "g2SpecializedTests": {
+      "status": "passed",
+      "tracks": ["discovery", "export", "actions", "feedback"]
+    },
+    "g2IntegrationRegression": {
+      "status": "passed",
+      "coverage": ["OpenAPI", "account isolation", "idempotency", "ETag", "habit cascade restore", "feedback privacy", "validation consent", "full export"]
+    },
+    "npmRunTestSystem": {
+      "status": "passed",
+      "stages": 43,
+      "durationMs": 151709
+    },
+    "postgresCurrentEnvironmentRerun": {
+      "status": "environment_failed_before_assertions",
+      "attemptsThisStage": 1,
+      "error": "postmaster became multithreaded during startup",
+      "hint": "Set the LC_ALL environment variable to a valid locale.",
+      "persistenceOrSchemaChangedThisStage": true,
+      "priorBaselineAcceptedForThisStage": false
+    },
+    "loadTestRun": false,
+    "realExternalProvidersCalled": false,
+    "committed": false,
+    "pushed": false,
+    "deployed": false
+  },
+  "gate": {
+    "iSerialIntegration": "passed",
+    "g2FormalClosure": "blocked_by_current_postgres_rerun",
+    "productionRelease": "not_started"
+  },
+  "nextAction": "rerun the PostgreSQL integration suite in the previously approved host environment, then perform the release-stage double review"
+}

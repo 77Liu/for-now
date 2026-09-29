@@ -1,0 +1,75 @@
+{
+  "recordedAt": "2026-09-29T16:10:00Z",
+  "branch": "explore/nightly-p3-20260928",
+  "baseCommit": "d33a53e7f173b8af9898b854e3ef415171d9db8b",
+  "status": "local-validation-passed-production-gates-pending",
+  "scope": {
+    "modules": 50,
+    "ownedRoutes": 201,
+    "openApiPaths": 60,
+    "openApiOperations": 104,
+    "views": 23,
+    "promptCatalogVersion": "2026.09.29.2",
+    "promptCount": 55
+  },
+  "completed": [
+    "G2 R2 release-blocker fixes",
+    "capture/journal, library and review/chat/statistics modularization",
+    "persistent lifecycle and 90-day idempotency ledger",
+    "keepsake WebP derivatives and demand-driven original loading",
+    "cross-genre original images for comments, captures, thought roots and thought blocks",
+    "idempotent original upload with unreferenced failure compensation",
+    "background image understanding with stale-result and deletion cancellation handling",
+    "targeted frontend result merging that preserves drafts, expansion and scroll state",
+    "prompt catalog version 2026.09.29.2"
+  ],
+  "validation": {
+    "npmRunCheck": "passed",
+    "npmTest": "passed",
+    "npmRunTestBackend": {
+      "status": "passed",
+      "phases": 45,
+      "durationMs": 153901
+    },
+    "npmRunTestSystem": {
+      "status": "passed",
+      "phases": 50,
+      "durationMs": 198684
+    },
+    "uiScreenshots": {
+      "desktop": "/tmp/growth-captures.png",
+      "mobile": "/tmp/growth-captures-mobile.png",
+      "status": "visually-checked-no-overlap"
+    },
+    "independentReview": {
+      "validators": 2,
+      "initialFindings": [
+        "unreferenced original upload cleanup",
+        "running image-understanding cancellation"
+      ],
+      "status": "both-fixed-and-revalidated"
+    }
+  },
+  "postgres": {
+    "status": "environment-blocked-before-business-assertions",
+    "version": "16.14",
+    "commands": [
+      "npm run test:postgres",
+      "node scripts/persistence-ledger-postgres-regression.mjs",
+      "OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES npm run test:postgres"
+    ],
+    "error": "postmaster became multithreaded during startup",
+    "productionWriteSource": "json"
+  },
+  "notPerformed": [
+    "commit",
+    "push",
+    "tag",
+    "release",
+    "deployment",
+    "real AI provider calls",
+    "real segmentation provider calls",
+    "production PostgreSQL cutover",
+    "production OSS snapshot verification"
+  ]
+}

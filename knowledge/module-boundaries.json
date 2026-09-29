@@ -1,0 +1,579 @@
+{
+  "version": 1,
+  "modules": [
+    {
+      "id": "infrastructure.prompt-catalog",
+      "type": "infrastructure",
+      "root": "src/infrastructure/prompt-catalog",
+      "publicEntry": "src/infrastructure/prompt-catalog/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["prompt manifest loading, immutable version selection and SHA-256 verification"], "routes": [] },
+      "tests": ["scripts/prompt-catalog-regression.mjs", "scripts/runtime-infrastructure-regression.mjs", "scripts/deploy-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "shared.prompts",
+      "type": "shared",
+      "root": "src/shared/prompts",
+      "publicEntry": "src/shared/prompts/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["installed prompt snapshot, prompt lookup, strict placeholder rendering and audit metadata", "all model-visible stable prompt text stored under prompts/versions"], "routes": [] },
+      "tests": ["scripts/prompt-catalog-regression.mjs", "scripts/ai-provider-regression.mjs", "scripts/personal-context-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.onboarding",
+      "type": "domain",
+      "root": "src/modules/onboarding",
+      "publicEntry": "src/modules/onboarding/index.mjs",
+      "allowedDependencies": ["shared.validation"],
+      "owns": { "data": ["questionnaires, optional profile, required-answer validation, initial understanding and context projection"], "routes": ["GET /api/onboarding/schema", "POST /api/onboarding/preview", "PATCH /api/onboarding"] },
+      "tests": ["scripts/personal-context-regression.mjs", "scripts/regression.mjs", "scripts/auth-regression.mjs", "scripts/ui-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.journals",
+      "type": "domain",
+      "root": "src/modules/journals",
+      "publicEntry": "src/modules/journals/index.mjs",
+      "allowedDependencies": ["shared.prompts", "shared.time", "shared.validation"],
+      "owns": { "data": ["journal records, drafts, reflections, prompt selection, source projection and assist output markers"], "routes": ["GET /api/v1/journal-draft", "PUT /api/v1/journal-draft", "GET /api/v1/journals", "POST /api/v1/journals", "POST /api/v1/journals/assist", "GET /api/v1/journals/:id", "PATCH /api/v1/journals/:id", "DELETE /api/v1/journals/:id", "POST /api/v1/journals/:id/reflections", "DELETE /api/v1/journals/:id/reflections/:reflectionId", "PUT /api/journal-draft", "POST /api/journals", "PATCH /api/journals/:id", "DELETE /api/journals/:id", "POST /api/journals/assist", "POST /api/journals/:id/reflect", "DELETE /api/journals/:id/reflections/:reflectionId"] },
+      "tests": ["scripts/capture-journal-regression.mjs", "scripts/personal-context-regression.mjs", "scripts/regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.captures",
+      "type": "domain",
+      "root": "src/modules/captures",
+      "publicEntry": "src/modules/captures/index.mjs",
+      "allowedDependencies": ["shared.attachments", "shared.time", "shared.validation"],
+      "owns": { "data": ["capture validation, pagination, idempotent creation and annotation-safe editing"], "routes": ["GET /api/v1/captures", "POST /api/v1/captures", "GET /api/v1/captures/:id", "PATCH /api/v1/captures/:id", "DELETE /api/v1/captures/:id", "POST /api/captures", "PATCH /api/captures/:id", "DELETE /api/captures/:id"] },
+      "tests": ["scripts/capture-journal-regression.mjs", "scripts/regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.books",
+      "type": "domain",
+      "root": "src/modules/books",
+      "publicEntry": "src/modules/books/index.mjs",
+      "allowedDependencies": ["shared.attachments", "shared.time", "shared.validation"],
+      "owns": { "data": ["book records, reading dates, nested notes, recognition projection and annotation-safe editing"], "routes": ["GET /api/v1/books", "POST /api/v1/books", "POST /api/v1/books/parse", "GET /api/v1/books/:id", "PATCH /api/v1/books/:id", "DELETE /api/v1/books/:id", "GET /api/v1/books/:id/notes", "POST /api/v1/books/:id/notes", "GET /api/v1/books/:id/notes/:noteId", "PATCH /api/v1/books/:id/notes/:noteId", "DELETE /api/v1/books/:id/notes/:noteId", "POST /api/books/parse", "POST /api/books", "PATCH /api/books/:id", "DELETE /api/books/:id", "POST /api/books/:id/notes", "PATCH /api/books/:id/notes/:noteId", "DELETE /api/books/:id/notes/:noteId"] },
+      "tests": ["scripts/library-regression.mjs", "scripts/regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.quotes",
+      "type": "domain",
+      "root": "src/modules/quotes",
+      "publicEntry": "src/modules/quotes/index.mjs",
+      "allowedDependencies": ["shared.time", "shared.validation"],
+      "owns": { "data": ["quote validation, pagination, idempotent creation and annotation-safe editing"], "routes": ["GET /api/v1/quotes", "POST /api/v1/quotes", "GET /api/v1/quotes/:id", "PATCH /api/v1/quotes/:id", "DELETE /api/v1/quotes/:id", "POST /api/quotes", "PATCH /api/quotes/:id", "DELETE /api/quotes/:id"] },
+      "tests": ["scripts/library-regression.mjs", "scripts/regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.chats",
+      "type": "domain",
+      "root": "src/modules/chats",
+      "publicEntry": "src/modules/chats/index.mjs",
+      "allowedDependencies": ["shared.validation"],
+      "owns": { "data": ["conversation validation, history projection, idempotent persistence and pagination"], "routes": ["GET /api/v1/chats", "POST /api/v1/chats", "GET /api/v1/chats/:id", "DELETE /api/v1/chats/:id", "POST /api/chat", "DELETE /api/chats/:id"] },
+      "tests": ["scripts/reviews-chat-regression.mjs", "scripts/regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.reviews",
+      "type": "domain",
+      "root": "src/modules/reviews",
+      "publicEntry": "src/modules/reviews/index.mjs",
+      "allowedDependencies": ["shared.prompts", "shared.validation"],
+      "owns": { "data": ["analysis evidence, experiments, custom metrics and idempotent review records"], "routes": ["GET /api/v1/analyses", "POST /api/v1/analyses", "GET /api/v1/analyses/:id", "DELETE /api/v1/analyses/:id", "GET /api/v1/experiments", "POST /api/v1/experiments", "GET /api/v1/experiments/:id", "DELETE /api/v1/experiments/:id", "GET /api/v1/custom-metrics", "POST /api/v1/custom-metrics", "GET /api/v1/custom-metrics/:id", "DELETE /api/v1/custom-metrics/:id", "POST /api/analysis/run", "DELETE /api/analyses/:id", "POST /api/experiments", "DELETE /api/experiments/:id", "POST /api/custom-metrics", "DELETE /api/custom-metrics/:id"] },
+      "tests": ["scripts/reviews-chat-regression.mjs", "scripts/regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.statistics",
+      "type": "domain",
+      "root": "src/modules/statistics",
+      "publicEntry": "src/modules/statistics/index.mjs",
+      "allowedDependencies": ["shared.time"],
+      "owns": { "data": ["record, interaction, operation and AI usage statistics"], "routes": ["GET /api/statistics", "GET /api/v1/statistics"] },
+      "tests": ["scripts/reviews-chat-regression.mjs", "scripts/regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.content-attachments",
+      "type": "domain",
+      "root": "src/modules/content-attachments",
+      "publicEntry": "src/modules/content-attachments/index.mjs",
+      "allowedDependencies": ["shared.validation"],
+      "owns": { "data": ["original images for comments, captures and thought records plus non-destructive image understandings"], "routes": ["GET /api/v1/content-attachments/:targetType/:targetId", "PUT /api/v1/content-attachments/:targetType/:targetId", "DELETE /api/v1/content-attachments/:targetType/:targetId/originals/:name", "POST /api/v1/content-attachments/trash/:trashId/restore", "POST /api/v1/content-attachments/understandings"] },
+      "tests": ["scripts/content-attachments-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.ai",
+      "type": "domain",
+      "root": "src/modules/ai",
+      "publicEntry": "src/modules/ai/index.mjs",
+      "allowedDependencies": ["shared.validation", "shared.observability", "shared.time", "shared.prompts"],
+      "owns": { "data": ["model profiles, scenes, settings migration and public projections", "usage normalization, price snapshots, account quotas and invocation audit", "cost plan normalization, usage aggregates, prompt composition and model attempt policy"], "routes": ["GET /api/settings", "POST /api/settings", "POST /api/settings/test", "GET /api/ai-cost-plan", "PATCH /api/ai-cost-plan"] },
+      "tests": ["scripts/ai-domain-regression.mjs", "scripts/ai-provider-regression.mjs", "scripts/regression.mjs", "scripts/observability-regression.mjs", "scripts/auth-regression.mjs", "scripts/boundaries-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "infrastructure.ai-providers",
+      "type": "infrastructure",
+      "root": "src/infrastructure/ai-providers",
+      "publicEntry": "src/infrastructure/ai-providers/index.mjs",
+      "allowedDependencies": ["shared.validation", "shared.attachments"],
+      "owns": { "data": ["DeepSeek HTTP/SSE transport, response validation and image encoding", "Aliyun segmentation SDK, async polling, PNG download and safe error projection"], "routes": [] },
+      "tests": ["scripts/ai-provider-regression.mjs", "scripts/segmentation-regression.mjs", "scripts/regression.mjs", "scripts/observability-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.keepsakes",
+      "type": "domain",
+      "root": "src/modules/keepsakes",
+      "publicEntry": "src/modules/keepsakes/index.mjs",
+      "allowedDependencies": ["shared.validation", "shared.time", "shared.attachments"],
+      "owns": { "data": ["single image segmentation workflow and temporary image lifecycle", "keepsake validation, normalization, creation and editing"], "routes": ["POST /api/keepsakes/segment", "POST /api/keepsakes", "GET /api/keepsakes/:id/original", "PATCH /api/keepsakes/:id", "DELETE /api/keepsakes/:id"] },
+      "tests": ["scripts/segmentation-regression.mjs", "scripts/keepsake-time-regression.mjs", "scripts/keepsake-media-workflows-regression.mjs", "scripts/regression.mjs", "scripts/boundaries-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.discovery",
+      "type": "domain",
+      "root": "src/modules/discovery",
+      "publicEntry": "src/modules/discovery/index.mjs",
+      "allowedDependencies": ["shared.validation"],
+      "owns": {
+        "data": ["thought-chain search, stable cursors, source identity, freshness, read state, snooze state and random resurfacing"],
+        "routes": ["GET /api/v1/discovery", "GET /api/v1/discovery/random", "PATCH /api/v1/thought-chains/:id/discovery"]
+      },
+      "tests": ["scripts/g2-discovery-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.exports",
+      "type": "domain",
+      "root": "src/modules/exports",
+      "publicEntry": "src/modules/exports/index.mjs",
+      "allowedDependencies": [],
+      "owns": {
+        "data": ["deterministic cross-genre account export, attachment reference inventory and private-field exclusion"],
+        "routes": ["GET /api/v1/exports/account"]
+      },
+      "tests": ["scripts/g2-export-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.actions",
+      "type": "domain",
+      "root": "src/modules/actions",
+      "publicEntry": "src/modules/actions/index.mjs",
+      "allowedDependencies": ["shared.validation", "shared.time"],
+      "owns": {
+        "data": ["actions, completion history, source references, habits, frequency adjustments and natural-day habit check-ins"],
+        "routes": ["GET /api/v1/actions", "POST /api/v1/actions", "GET /api/v1/actions/:id", "PATCH /api/v1/actions/:id", "DELETE /api/v1/actions/:id", "POST /api/v1/actions/:id/complete", "POST /api/v1/actions/:id/reopen", "GET /api/v1/habits", "POST /api/v1/habits", "GET /api/v1/habits/:id", "PATCH /api/v1/habits/:id", "DELETE /api/v1/habits/:id", "POST /api/v1/habits/:id/adjustments", "GET /api/v1/habits/:id/checkins", "POST /api/v1/habits/:id/checkins", "PATCH /api/v1/habit-checkins/:id", "DELETE /api/v1/habit-checkins/:id"]
+      },
+      "tests": ["scripts/g2-actions-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.feedback",
+      "type": "domain",
+      "root": "src/modules/feedback",
+      "publicEntry": "src/modules/feedback/index.mjs",
+      "allowedDependencies": ["shared.validation"],
+      "owns": {
+        "data": ["product feedback, explicit context consent, validation plans, participant consent and withdrawal, compensation, rewards and evidence-backed participation"],
+        "routes": ["GET /api/v1/feedback", "POST /api/v1/feedback", "GET /api/v1/feedback/:id", "PATCH /api/v1/feedback/:id/status", "GET /api/v1/validation-ledger", "POST /api/v1/validation-ledger", "GET /api/v1/validation-ledger/:id", "POST /api/v1/validation-ledger/:id/consent", "POST /api/v1/validation-ledger/:id/withdraw", "POST /api/v1/validation-ledger/:id/status", "POST /api/v1/validation-ledger/:id/compensation", "POST /api/v1/validation-ledger/:id/rewards", "POST /api/v1/validation-ledger/:id/participation"]
+      },
+      "tests": ["scripts/g2-feedback-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "shared.concurrency",
+      "type": "shared",
+      "root": "src/shared/concurrency",
+      "publicEntry": "src/shared/concurrency/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["FIFO rolling QPS and in-flight limits"], "routes": [] },
+      "tests": ["scripts/segmentation-regression.mjs", "scripts/boundaries-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "shared.time",
+      "type": "shared",
+      "root": "src/shared/time",
+      "publicEntry": "src/shared/time/index.mjs",
+      "allowedDependencies": ["shared.validation"],
+      "owns": { "data": ["local calendar date and date-key arithmetic", "strict calendar validation, local date/clock composition and event timestamp parsing"], "routes": [] },
+      "tests": ["scripts/keepsake-time-regression.mjs", "scripts/ai-domain-regression.mjs", "scripts/regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "config",
+      "type": "application",
+      "root": "src/config",
+      "publicEntry": "src/config/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["environment parsing, startup mode validation and immutable runtime configuration"], "routes": [] },
+      "tests": ["scripts/runtime-infrastructure-regression.mjs", "scripts/auth-regression.mjs", "scripts/local-test-mode-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "shared.observability",
+      "type": "shared",
+      "root": "src/shared/observability",
+      "publicEntry": "src/shared/observability/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["async request context, redaction, private log writes, committed resource summaries and retention"], "routes": [] },
+      "tests": ["scripts/runtime-infrastructure-regression.mjs", "scripts/observability-regression.mjs", "scripts/auth-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "app",
+      "type": "application",
+      "root": "src/app",
+      "publicEntry": "src/app/index.mjs",
+      "allowedDependencies": ["domain.annotations", "domain.tasks", "domain.notifications", "domain.trash", "domain.onboarding", "domain.health", "domain.thoughts", "domain.captures", "domain.journals", "domain.books", "domain.quotes", "domain.chats", "domain.reviews", "domain.content-attachments", "domain.ai", "shared.time", "shared.attachments", "shared.content", "shared.validation", "shared.prompts"],
+      "owns": { "data": ["cross-domain annotation resource resolution and transactional background AI orchestration", "trash location resolution, versioned restore and durable attachment cleanup orchestration", "cross-domain personal context, activity selection and thought answer prompt composition", "thought chain creation/task transaction, draft/starter generation and foreground answer idempotency", "capture/journal, library and review/chat application workflows"], "routes": [] },
+      "tests": ["scripts/personal-context-regression.mjs", "scripts/trash-regression.mjs", "scripts/collaboration-regression.mjs", "scripts/capture-journal-regression.mjs", "scripts/library-regression.mjs", "scripts/reviews-chat-regression.mjs", "scripts/regression.mjs", "scripts/api-v1-contract-regression.mjs", "scripts/auth-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.trash",
+      "type": "domain",
+      "root": "src/modules/trash",
+      "publicEntry": "src/modules/trash/index.mjs",
+      "allowedDependencies": ["shared.validation"],
+      "owns": {
+        "data": ["trash entries, retention, idempotent deletion, descendant purge selection and plan hashes"],
+        "routes": ["GET /api/trash", "POST /api/trash/:id/restore", "POST /api/trash/purge-preview", "POST /api/trash/purge"]
+      },
+      "tests": ["scripts/trash-regression.mjs", "scripts/regression.mjs", "scripts/postgres-runtime-checks.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "shared.attachments",
+      "type": "shared",
+      "root": "src/shared/attachments",
+      "publicEntry": "src/shared/attachments/index.mjs",
+      "allowedDependencies": ["shared.validation"],
+      "owns": { "data": ["attachment storage adapters, image validation, quota serialization, upload inventory and recovery, reference discovery and cleanup"], "routes": ["POST /api/images/upload", "POST /api/images/discard", "GET /attachments/:name", "HEAD /attachments/:name"] },
+      "tests": ["scripts/attachment-storage-regression.mjs", "scripts/attachment-upload-regression.mjs", "scripts/trash-regression.mjs", "scripts/regression.mjs", "scripts/auth-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "shared.content",
+      "type": "shared",
+      "root": "src/shared/content",
+      "publicEntry": "src/shared/content/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["Markdown visible text coordinates"], "routes": [] },
+      "tests": ["scripts/collaboration-regression.mjs", "scripts/regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "shared.validation",
+      "type": "shared",
+      "root": "src/shared/validation",
+      "publicEntry": "src/shared/validation/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["text limits, ISO timestamps, bounded numbers and positive record versions"], "routes": [] },
+      "tests": ["scripts/collaboration-regression.mjs", "scripts/regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.annotations",
+      "type": "domain",
+      "root": "src/modules/annotations",
+      "publicEntry": "src/modules/annotations/index.mjs",
+      "allowedDependencies": ["shared.attachments", "shared.content", "shared.validation", "shared.prompts"],
+      "owns": {
+        "data": ["annotations, replies, anchored and drifted text, task-generated annotation dialogue", "annotation prompt selection and dialogue projection"],
+        "routes": ["POST /api/annotations/:resourceType/:resourceId", "POST /api/annotations/:resourceType/:resourceId/:id/replies", "POST /api/annotations/:resourceType/:resourceId/:id/shenji", "DELETE /api/annotations/:resourceType/:resourceId/:id", "DELETE /api/annotations/:resourceType/:resourceId/drift/:id", "POST /api/thoughts/:id/annotations", "POST /api/thoughts/:id/annotations/:annotationId/replies", "POST /api/thoughts/:id/annotations/:annotationId/shenji", "DELETE /api/thoughts/:id/annotations/:annotationId", "DELETE /api/thoughts/:id/annotation-drift/:driftId"]
+      },
+      "tests": ["scripts/personal-context-regression.mjs", "scripts/collaboration-regression.mjs", "scripts/regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.tasks",
+      "type": "domain",
+      "root": "src/modules/tasks",
+      "publicEntry": "src/modules/tasks/index.mjs",
+      "allowedDependencies": ["shared.validation"],
+      "owns": {
+        "data": ["task creation, idempotency, single retry successor, claim, completion and restart recovery"],
+        "routes": ["POST /api/ai-tasks", "GET /api/ai-tasks", "GET /api/ai-tasks/:id", "GET /api/ai-tasks/:id/result", "POST /api/ai-tasks/:id/retry"]
+      },
+      "tests": ["scripts/collaboration-regression.mjs", "scripts/regression.mjs", "scripts/auth-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.notifications",
+      "type": "domain",
+      "root": "src/modules/notifications",
+      "publicEntry": "src/modules/notifications/index.mjs",
+      "allowedDependencies": ["shared.validation"],
+      "owns": {
+        "data": ["task notifications, read state and unread count"],
+        "routes": ["GET /api/notifications", "PATCH /api/notifications/:id/read", "POST /api/notifications/read-all"]
+      },
+      "tests": ["scripts/collaboration-regression.mjs", "scripts/regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.api",
+      "type": "shared",
+      "root": "public/frontend/api",
+      "publicEntry": "public/frontend/api/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["base path, JSON and SSE transport, error metadata and session-bound attachment reads"], "routes": [] },
+      "tests": ["scripts/frontend-contract-regression.mjs", "scripts/ui-regression.mjs", "scripts/auth-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.session",
+      "type": "shared",
+      "root": "public/frontend/session",
+      "publicEntry": "public/frontend/session/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["session generation and cancellation scope"], "routes": [] },
+      "tests": ["scripts/frontend-contract-regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.state",
+      "type": "shared",
+      "root": "public/frontend/state",
+      "publicEntry": "public/frontend/state/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["account snapshot, domain subscriptions and coalesced refresh acceptance"], "routes": [] },
+      "tests": ["scripts/frontend-contract-regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.content",
+      "type": "shared",
+      "root": "public/frontend/content",
+      "publicEntry": "public/frontend/content/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["HTML escaping, Markdown rendering, LaTeX placeholders and plain-text previews"], "routes": [] },
+      "tests": ["scripts/frontend-shared-regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.time",
+      "type": "shared",
+      "root": "public/frontend/time",
+      "publicEntry": "public/frontend/time/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["local date keys, 24-hour display, datetime-local conversion and event timestamps"], "routes": [] },
+      "tests": ["scripts/frontend-shared-regression.mjs", "scripts/ui-regression.mjs", "scripts/mobile-platform-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.media",
+      "type": "shared",
+      "root": "public/frontend/media",
+      "publicEntry": "public/frontend/media/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["image count, MIME type and byte-size validation"], "routes": [] },
+      "tests": ["scripts/frontend-shared-regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.pages",
+      "type": "page",
+      "root": "public/frontend/pages",
+      "publicEntry": "public/frontend/pages/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["view-to-section registry, active view switching and page lifecycle dispatch"], "routes": [] },
+      "tests": ["scripts/frontend-shell-regression.mjs", "scripts/ui-regression.mjs", "scripts/mobile-platform-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.discovery",
+      "type": "feature",
+      "root": "public/frontend/features/thought-discovery",
+      "publicEntry": "public/frontend/features/thought-discovery/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["headless thought discovery filters, pagination, read and snooze state"], "routes": [] },
+      "tests": ["scripts/g2-discovery-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.export",
+      "type": "feature",
+      "root": "public/frontend/features/export",
+      "publicEntry": "public/frontend/features/export/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["account export browser download descriptors"], "routes": [] },
+      "tests": ["scripts/g2-export-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.actions",
+      "type": "feature",
+      "root": "public/frontend/features/actions",
+      "publicEntry": "public/frontend/features/actions/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["actions and habits view models plus immutable UI commands"], "routes": [] },
+      "tests": ["scripts/g2-actions-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.feedback",
+      "type": "feature",
+      "root": "public/frontend/features/feedback",
+      "publicEntry": "public/frontend/features/feedback/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["feedback, validation ledger, financial and participation input projections"], "routes": [] },
+      "tests": ["scripts/g2-feedback-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.home",
+      "type": "feature",
+      "root": "public/frontend/features/home",
+      "publicEntry": "public/frontend/features/home/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["home memory source projection, non-repeating selection and seven-day mood aggregation"], "routes": [] },
+      "tests": ["scripts/frontend-shell-regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.features",
+      "type": "feature",
+      "root": "public/frontend/features",
+      "publicEntry": "public/frontend/features/index.mjs",
+      "allowedDependencies": ["frontend.feature.discovery", "frontend.feature.export", "frontend.feature.actions", "frontend.feature.feedback", "frontend.feature.home"],
+      "owns": { "data": ["page-entry side effects for overflow, animation and on-demand data loading"], "routes": [] },
+      "tests": ["scripts/frontend-shell-regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.app",
+      "type": "application",
+      "root": "public/frontend/app",
+      "publicEntry": "public/frontend/app/index.mjs",
+      "allowedDependencies": ["frontend.api", "frontend.session", "frontend.state", "frontend.content", "frontend.time", "frontend.media", "frontend.pages", "frontend.features"],
+      "owns": { "data": ["browser bootstrap, dependency composition, feature event binding and page presenter runtime"], "routes": [] },
+      "tests": ["scripts/frontend-shell-regression.mjs", "scripts/frontend-contract-regression.mjs", "scripts/ui-regression.mjs", "scripts/mobile-platform-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.auth",
+      "type": "domain",
+      "root": "src/modules/auth",
+      "publicEntry": "src/modules/auth/index.mjs",
+      "allowedDependencies": [],
+      "owns": {
+        "data": ["account identity, password validation, session lifecycle and login attempt limits"],
+        "routes": ["GET /api/auth/me", "POST /api/auth/register", "POST /api/auth/login", "PATCH /api/auth/username", "PATCH /api/auth/password", "POST /api/auth/logout"]
+      },
+      "tests": ["scripts/auth-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "http",
+      "type": "application",
+      "root": "src/http",
+      "publicEntry": "src/http/index.mjs",
+      "allowedDependencies": ["domain.auth", "domain.ai", "domain.tasks", "domain.checkins", "domain.health", "domain.captures", "domain.journals", "domain.books", "domain.quotes", "domain.chats", "domain.reviews", "domain.statistics", "domain.content-attachments", "shared.validation", "shared.observability"],
+      "owns": {
+        "data": ["JSON request parsing, response metadata, SSE events, Cookie and auth route adaptation", "request trace validation, base path normalization, completion audit and controlled errors", "v1 data/error envelopes, cursor codec, ETag/If-Match, Idempotency-Key, OpenAPI root and module registration"],
+        "routes": ["GET /api/v1/openapi.json"]
+      },
+      "tests": ["scripts/auth-regression.mjs", "scripts/regression.mjs", "scripts/api-v1-contract-regression.mjs", "scripts/api-v1-openapi-fragment-regression.mjs", "scripts/record-v1-regression.mjs", "scripts/capture-journal-regression.mjs", "scripts/library-regression.mjs", "scripts/reviews-chat-regression.mjs", "scripts/content-attachments-regression.mjs", "scripts/observability-regression.mjs", "scripts/runtime-infrastructure-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "shared.persistence",
+      "type": "shared",
+      "root": "src/shared/persistence",
+      "publicEntry": "src/shared/persistence/index.mjs",
+      "allowedDependencies": [],
+      "owns": {
+        "data": ["JSON/PostgreSQL repository contract, runtime transactions and account isolation", "PostgreSQL identity/config/usage mapping, atomic registration, attachment inventory and recovery", "Atomic migration, runtime overwrite protection, offline relational export"],
+        "routes": []
+      },
+      "tests": ["scripts/persistence-regression.mjs", "scripts/document-migration-regression.mjs", "scripts/postgres-integration.mjs", "scripts/postgres-runtime-checks.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.health",
+      "type": "domain",
+      "root": "src/modules/health",
+      "publicEntry": "src/modules/health/index.mjs",
+      "allowedDependencies": ["shared.prompts", "shared.validation", "shared.time", "shared.attachments"],
+      "owns": {
+        "data": ["weight/body composition and exercise image schemas, normalization, prompt selection and summaries", "sleep, heart-rate and health record context descriptions", "daily health record validation, creation and editing"],
+        "routes": ["POST /api/daily-records", "PATCH /api/daily-records/:id", "DELETE /api/daily-records/:id", "GET /api/v1/daily-records", "POST /api/v1/daily-records", "GET /api/v1/daily-records/:id", "PATCH /api/v1/daily-records/:id", "DELETE /api/v1/daily-records/:id"]
+      },
+      "tests": ["scripts/checkin-health-regression.mjs", "scripts/record-v1-regression.mjs", "scripts/personal-context-regression.mjs", "scripts/regression.mjs", "scripts/ui-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.checkins",
+      "type": "domain",
+      "root": "src/modules/checkins",
+      "publicEntry": "src/modules/checkins/index.mjs",
+      "allowedDependencies": ["shared.validation", "shared.time"],
+      "owns": {
+        "data": ["check-in validation, factors, custom metrics, notes, creation and editing"],
+        "routes": ["POST /api/checkins", "PATCH /api/checkins/:id", "DELETE /api/checkins/:id", "GET /api/v1/checkins", "POST /api/v1/checkins", "GET /api/v1/checkins/:id", "PATCH /api/v1/checkins/:id", "DELETE /api/v1/checkins/:id"]
+      },
+      "tests": ["scripts/checkin-health-regression.mjs", "scripts/record-v1-regression.mjs", "scripts/regression.mjs", "scripts/ui-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "domain.thoughts",
+      "type": "domain",
+      "root": "src/modules/thoughts",
+      "publicEntry": "src/modules/thoughts/index.mjs",
+      "allowedDependencies": ["shared.attachments", "shared.persistence", "shared.validation", "shared.prompts"],
+      "owns": {
+        "data": ["thought roots and blocks", "thought remarks", "thought follow-ups", "thought disposition", "chain projection and optimistic versions", "user-authored context projection, complete thought chain and business prompt selection"],
+        "routes": [
+          "POST /api/thought-chains",
+          "PATCH /api/thought-chains/:id",
+          "DELETE /api/thought-chains/:id",
+          "POST /api/answer-drafts",
+          "POST /api/thought-prompts",
+          "POST /api/thoughts",
+          "PATCH /api/thoughts/:id",
+          "DELETE /api/thoughts/:id",
+          "POST /api/thoughts/:id/answer",
+          "PATCH /api/thoughts/:id/disposition",
+          "POST /api/thoughts/:id/remarks",
+          "PATCH /api/thoughts/:id/remarks/:remarkId",
+          "DELETE /api/thoughts/:id/remarks/:remarkId",
+          "POST /api/thoughts/:id/follow-ups",
+          "PATCH /api/thoughts/:id/follow-ups/:followUpId",
+          "DELETE /api/thoughts/:id/follow-ups/:followUpId",
+          "POST /api/thoughts/:id/follow-ups/:followUpId/answer",
+          "GET /api/v1/thought-chains",
+          "POST /api/v1/thought-chains",
+          "GET /api/v1/thought-chains/:id",
+          "PATCH /api/v1/thought-chains/:id",
+          "DELETE /api/v1/thought-chains/:id",
+          "POST /api/v1/thought-chains/:id/answers"
+        ]
+      },
+      "tests": [
+        "scripts/personal-context-regression.mjs",
+        "scripts/thought-service-regression.mjs",
+        "scripts/regression.mjs",
+        "scripts/api-v1-contract-regression.mjs",
+        "scripts/auth-regression.mjs",
+        "scripts/postgres-runtime-checks.mjs"
+      ],
+      "status": "active"
+    }
+  ],
+  "migrationExceptions": []
+}

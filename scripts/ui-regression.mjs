@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveHeadlessBrowser } from "./browser-runtime.mjs";
+import { healthImageFixtures } from "./fixtures/health-images.mjs";
 
 const CHROME = resolveHeadlessBrowser();
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -22,7 +23,7 @@ async function freePort() {
 }
 
 async function startStaticServer() {
-  const mime = { ".css": "text/css; charset=utf-8", ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8" };
+  const mime = { ".css": "text/css; charset=utf-8", ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8" };
   const server = http.createServer(async (request, response) => {
     try {
       const url = new URL(request.url, "http://127.0.0.1"), relative = url.pathname === "/" ? "index.html" : url.pathname.replace(/^\/+/, "");
@@ -93,6 +94,11 @@ const mockFetch = `
   };
   const nativeFetch = window.fetch.bind(window);
   const json = value => Promise.resolve(new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } }));
+  const v1 = (data, meta = {}) => json({ data, error: null, meta: { traceId: "ui-g2", ...meta } });
+  const eventTime = payload => {
+    const date=payload.timeMode==="now"||!payload.occurredAt?new Date():new Date(payload.occurredAt);
+    return {occurredAt:date.toISOString(),occurredOn:[date.getFullYear(),String(date.getMonth()+1).padStart(2,"0"),String(date.getDate()).padStart(2,"0")].join("-")};
+  };
   const streamResponse = result => {
     const encoder = new TextEncoder();
     const longReasoning = Array.from({ length: 70 }, (_, index) => "思考行 " + (index + 1)).join("\\n") + "\\n";
@@ -122,6 +128,7 @@ const mockFetch = `
   window.__bookParses = 0;
   window.__bookUploads = 0;
   window.__keepsakeUploads = 0;
+  window.__contentImageUploads = 0;
   window.__bookSaves = 0;
   window.__bookPatches = 0;
   window.__bookPayloads = [];
@@ -129,6 +136,7 @@ const mockFetch = `
   window.__bookNotePatches = 0;
   window.__quoteSaves = 0;
   window.__quotePatches = 0;
+  window.__keepsakeOriginalReads = 0;
   window.__settingsSaves = 0;
   window.__aiCostPlanSaves = 0;
   window.__commercializationSaves = 0;
@@ -148,6 +156,18 @@ const mockFetch = `
   window.__releaseSecondState = null;
   window.__delayLogout = false;
   window.__releaseLogout = null;
+  window.__delayLogin = false;
+  window.__releaseLogin = null;
+  window.__delayActionCreate = false;
+  window.__releaseActionCreate = null;
+  window.__delayHabitCreate = false;
+  window.__releaseHabitCreate = null;
+  window.__delayFeedbackCreate = false;
+  window.__releaseFeedbackCreate = null;
+  window.__failNextActionRefresh = false;
+  window.__delayActionList = false;
+  window.__releaseActionList = null;
+  window.__actionListTitle = "完成 G2 界面回归";
   window.__stateRequests = 0;
   window.__notificationReads = 0;
   window.__taskReads = 0;
@@ -155,8 +175,11 @@ const mockFetch = `
   window.__thoughtAnnotationSaves = 0;
   window.__shenjiSaves = 0;
   window.__onboardingSaves = 0;
+  window.__onboardingSchemaRequests = 0;
+  window.__onboardingSchemaAvailable = false;
   window.__savedPayloads = [];
   window.__aiTasks = [];
+  window.__taskResults = {};
   window.__notifications = [];
   window.__testWorkspaceMode = "simulation";
   window.__localTestConfig = { enabled: true, upstreamConfigured: true, mode: "simulation", snapshotAt: "2026-09-28T04:00:00.000Z", sourceUser: { id: "user-1", username: "owner" }, recordCount: 12 };
@@ -180,20 +203,23 @@ const mockFetch = `
     {
       id: "keepsake-1", createdAt: "2026-09-27T01:30:00.000Z", occurredAt: "2026-09-27T09:30:00.000Z", occurredOn: "2026-09-27",
       title: "旧展览票", category: "纸品", note: "在秋天看过的一场展，背面还留着同行人的一句话。", tags: ["展览", "同行"], source: "auto", edgeExpansion: 8,
-      originalPath: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='220'%3E%3Crect width='320' height='220' fill='%23d76455'/%3E%3C/svg%3E",
-      cutoutPath: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='220'%3E%3Crect x='40' y='30' width='240' height='160' rx='8' fill='%23d76455'/%3E%3C/svg%3E"
+      originalPath: "/attachments/keepsake-1.original.png", cutoutPath: "",
+      thumbPath: "/attachments/keepsake-1.thumb.webp", displayPath: "/attachments/keepsake-1.display.webp",
+      editPath: "/attachments/keepsake-1.edit.webp", alphaMaskPath: "/attachments/keepsake-1.alphaMask.webp", mediaVersion: 1
     },
     {
       id: "keepsake-2", createdAt: "2026-09-26T01:30:00.000Z", occurredAt: "2026-09-26T18:20:00.000Z", occurredOn: "2026-09-26",
       title: "咖啡纸袋", category: "纸品", note: "第一次独自去那条街。", tags: ["散步"], source: "auto", edgeExpansion: 8,
-      originalPath: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='360'%3E%3Crect width='240' height='360' fill='%2391a88c'/%3E%3C/svg%3E",
-      cutoutPath: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='360'%3E%3Crect x='35' y='28' width='170' height='304' rx='10' fill='%2391a88c'/%3E%3C/svg%3E"
+      originalPath: "/attachments/keepsake-2.original.png", cutoutPath: "",
+      thumbPath: "/attachments/keepsake-2.thumb.webp", displayPath: "/attachments/keepsake-2.display.webp",
+      editPath: "/attachments/keepsake-2.edit.webp", alphaMaskPath: "/attachments/keepsake-2.alphaMask.webp", mediaVersion: 1
     },
     {
       id: "keepsake-3", createdAt: "2026-09-25T01:30:00.000Z", occurredAt: "2026-09-25T14:05:00.000Z", occurredOn: "2026-09-25",
       title: "车站小票", category: "小票", note: "", tags: ["远行"], source: "auto", edgeExpansion: 8,
-      originalPath: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='420'%3E%3Crect width='260' height='420' fill='%23d8b468'/%3E%3C/svg%3E",
-      cutoutPath: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='420'%3E%3Crect x='34' y='42' width='192' height='336' rx='5' fill='%23d8b468'/%3E%3C/svg%3E"
+      originalPath: "/attachments/keepsake-3.original.png", cutoutPath: "",
+      thumbPath: "/attachments/keepsake-3.thumb.webp", displayPath: "/attachments/keepsake-3.display.webp",
+      editPath: "/attachments/keepsake-3.edit.webp", alphaMaskPath: "/attachments/keepsake-3.alphaMask.webp", mediaVersion: 1
     }
   ];
   window.__captures = [
@@ -219,7 +245,41 @@ const mockFetch = `
     { id: "checkin-latest", createdAt: "2026-09-27T08:00:00.000Z", occurredAt: "2026-09-27T08:00:00.000Z", occurredOn: "2026-09-27", mood: 4, energy: 2, stress: 4, sleep: 5, factors: [], custom: {}, notes: {} },
     { id: "checkin-previous", createdAt: "2026-09-26T08:00:00.000Z", occurredAt: "2026-09-26T08:00:00.000Z", occurredOn: "2026-09-26", mood: 3, energy: 3, stress: 3, sleep: 2, factors: [], custom: {}, notes: {} }
   ];
-  const aiCostScenes = ["thoughtPrompt","thoughtDraft","thoughtAnswer","followUpAnswer","chat","diaryLead","diaryStructure","diaryTopic","diaryReflection","annotationShenji","analysis","bookRecognition","healthRecognition"];
+  window.__thoughts = [
+    { id: "answer-kept", createdAt: "2026-09-27T01:10:00.000Z", occurredAt: "2026-09-27T04:10:00.000Z", occurredOn: "2026-09-27", type: "answer", content: "**核心判断**\\n第一行\\n第二行\\n第三行\\n第四行\\n第五行\\n第六行", modelDraft: "**核心判断**\\n第一行\\n第二行\\n第三行\\n第四行\\n第五行\\n第六行", editedFromModel: false, origin: "deepseek", reasoningContent: "**持久化**的模型思考", tags: [], relatedTo: "kept-root", disposition: "kept" },
+    { id: "kept-root", createdAt: "2026-09-27T01:09:00.000Z", occurredAt: "2026-09-27T04:09:00.000Z", occurredOn: "2026-09-27", type: "question", content: "没有**初步想法**的问题", tags: ["待回看", "商业"], relatedTo: null, disposition: "kept", remarks: [], followUps: [], annotations: [], annotationDrift: [], version: 1 },
+    { id: "discarded-root", createdAt: "2026-09-27T01:08:00.000Z", occurredAt: "2026-09-27T04:08:00.000Z", occurredOn: "2026-09-27", type: "question", content: "已舍弃的问题", tags: [], relatedTo: null, disposition: "discarded", remarks: [], followUps: [], annotations: [], annotationDrift: [], version: 1 }
+  ];
+  window.__completeAiTask = (task, payload = {}) => {
+    task.status = "succeeded";
+    task.completedAt = new Date().toISOString();
+    let result = null;
+    if (task.kind === "thoughtAnswer") {
+      result = { id: "answer-" + task.id, createdAt: task.completedAt, occurredAt: task.completedAt, occurredOn: task.completedAt.slice(0, 10), type: "answer", content: "**即时回答**：后台结果已局部合并。", modelDraft: "**即时回答**：后台结果已局部合并。", editedFromModel: false, origin: "deepseek", reasoningContent: "后台持久化思考", tags: [], relatedTo: task.targetId, sourceTaskId: task.id, version: 1 };
+      window.__thoughts.unshift(result);
+    } else if (task.kind === "followUpAnswer") {
+      const root = window.__thoughts.find(item => item.id === task.targetId), followUp = root?.followUps?.find(item => item.id === task.subtargetId);
+      if (followUp) result = Object.assign(followUp, { answer: "后台追问回答", reasoningContent: "后台持久化思考", answeredAt: task.completedAt, sourceTaskId: task.id });
+    } else if (task.kind === "annotationShenji") {
+      const collections = { analysis: window.__analyses, thought: window.__thoughts }, root = collections[task.resourceType]?.find(item => item.id === task.targetId), annotation = root?.annotations?.find(item => item.id === task.subtargetId);
+      result = { id: "reply-" + task.id, createdAt: task.completedAt, message: payload.payload?.message || "", answer: "**神鸡判断**：这条复盘需要保留反证。", reasoningContent: "核对复盘上下文。", sourceTaskId: task.id };
+      if (annotation) annotation.shenji = [result];
+      window.__shenjiSaves += 1;
+    } else if (task.kind === "contentImageUnderstanding") {
+      const targetType=task.contentTargetType,targetId=task.contentTargetId;
+      let resource=targetType==="capture"?window.__captures.find(item=>item.id===targetId):targetType==="thoughtRoot"?window.__thoughts.find(item=>item.id===targetId&&item.type==="question"):targetType==="thoughtBlock"?window.__thoughts.find(item=>item.id===targetId&&item.type!=="question"):null;
+      if(targetType==="comment"){const collections={analysis:window.__analyses,thought:window.__thoughts,capture:window.__captures},root=collections[task.resourceType]?.find(item=>item.id===task.targetId);resource=root?.annotations?.find(item=>item.id===targetId)}
+      result={id:"understanding-"+task.id,kind:"imageUnderstanding",content:"**可见内容**：图片中有一页手写笔记。",sourceAttachmentPaths:[...(resource?.attachmentPaths||[])],sourceVersion:resource?.version||1,sourceTaskId:task.id,origin:"ai-derived",createdAt:task.completedAt};
+      if(resource){resource.imageUnderstandings||=[];resource.imageUnderstandings.push(result);resource.version=(resource.version||1)+1}
+    }
+    if (result) {
+      task.resultId = result.id;
+      window.__taskResults[task.id] = result;
+    }
+    const notification = window.__notifications.find(item => item.taskId === task.id);
+    if (notification) Object.assign(notification, { status: "succeeded", message: { thoughtAnswer: "回答已生成", followUpAnswer: "追问回答已生成", annotationShenji: "批注回复已生成", contentImageUnderstanding: "图片理解已生成" }[task.kind], updatedAt: task.completedAt, readAt: "" });
+  };
+  const aiCostScenes = ["thoughtPrompt","thoughtDraft","thoughtAnswer","followUpAnswer","chat","diaryLead","diaryStructure","diaryTopic","diaryReflection","annotationShenji","analysis","bookRecognition","healthRecognition","contentImageUnderstanding"];
   const aiCostProScenes = new Set(["thoughtDraft","thoughtAnswer","followUpAnswer","chat","diaryTopic","diaryReflection","annotationShenji","analysis"]);
   window.__aiCostPlan = {
     version: 1, updatedAt: "", monthlyBudgetCny: 30, contingencyPct: 15, cnyPerUsd: 7.2,
@@ -256,6 +316,37 @@ const mockFetch = `
   window.fetch = (input, init = {}) => {
     const url = typeof input === "string" ? input : input.url;
     if (init.method === "DELETE") window.__deleteRequests += 1;
+    if (url.startsWith("/attachments/")) {
+      const bytes=Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lR2nWQAAAABJRU5ErkJggg=="),value=>value.charCodeAt(0));
+      return Promise.resolve(new Response(bytes,{status:200,headers:{"content-type":"image/png"}}));
+    }
+    if (url === "/api/v1/actions" && init.method === "POST") {
+      if(window.__delayActionCreate)return new Promise(resolve=>{window.__releaseActionCreate=()=>{window.__delayActionCreate=false;resolve(v1({id:"created-action"}))}});
+      return v1({id:"created-action"});
+    }
+    if (url.startsWith("/api/v1/actions")) {
+      if(window.__failNextActionRefresh){window.__failNextActionRefresh=false;return Promise.resolve(new Response(JSON.stringify({error:{message:"刷新失败"}}),{status:503,headers:{"content-type":"application/json"}}))}
+      const rows=()=>[{id:"ui-action",title:window.__actionListTitle,priority:"P0",status:"todo",sourceRef:null,version:1,createdAt:"2026-09-27T04:00:00.000Z",updatedAt:"2026-09-27T04:00:00.000Z",statusHistory:[]}];
+      if(window.__delayActionList){window.__delayActionList=false;const captured=rows();return new Promise(resolve=>{window.__releaseActionList=()=>resolve(v1(captured))})}
+      return v1(rows());
+    }
+    if (url === "/api/v1/habits" && init.method === "POST") {
+      if(window.__delayHabitCreate)return new Promise(resolve=>{window.__releaseHabitCreate=()=>{window.__delayHabitCreate=false;resolve(v1({id:"created-habit"}))}});
+      return v1({id:"created-habit"});
+    }
+    if (url.startsWith("/api/v1/habits/ui-habit/checkins")) return v1([{id:"ui-habit-checkin",habitId:"ui-habit",occurredOn:"2026-09-27",feeling:"稳定",version:1}]);
+    if (url.startsWith("/api/v1/habits")) return v1([{id:"ui-habit",title:"每日回望",frequency:{cadence:"daily",target:1},status:"active",version:1,adjustmentHistory:[],statusHistory:[]}]);
+    if (url.startsWith("/api/v1/discovery/random")) return v1(null,{total:0});
+    if (url.startsWith("/api/v1/discovery")) return v1([{id:"kept-root",rootId:"kept-root",question:{id:"kept-root",content:"没有初步想法的问题",source:"user",sourceLabel:"用户原文"},matches:[{id:"kept-root",content:"没有初步想法的问题",source:"user",sourceLabel:"用户原文",type:"question"}],matchCount:1,occurredAt:"2026-09-27T04:09:00.000Z",status:{version:1,fresh:true,untraced:true,read:false,snoozed:false},fresh:true,untraced:true}],{total:1,untracedCount:1,totalUntracedCount:1,nextCursor:null});
+    if (url === "/api/v1/feedback" && init.method === "POST") {
+      if(window.__delayFeedbackCreate)return new Promise(resolve=>{window.__releaseFeedbackCreate=()=>{window.__delayFeedbackCreate=false;resolve(v1({id:"created-feedback"}))}});
+      return v1({id:"created-feedback"});
+    }
+    if (url.startsWith("/api/v1/feedback")) return v1([{id:"ui-feedback",type:"experience",feature:"思绪",appVersion:"0.2.0",body:"界面清晰",context:{selected:false,summary:""},status:"submitted",version:1,createdAt:"2026-09-27T04:00:00.000Z",updatedAt:"2026-09-27T04:00:00.000Z"}]);
+    if (url.includes("/api/v1/exports/account?format=manifest")) return v1({snapshotVersion:15,summary:{resources:12,attachments:2,attachmentReferences:3,orphanReferences:0}});
+    if (url.includes("/api/v1/exports/account?format=json")) return v1({format:"json",filename:"for-now-ui.json",mimeType:"application/json;charset=utf-8",content:"{}\\n"});
+    if (url.includes("/api/v1/exports/account?format=markdown")) return v1({format:"markdown",filename:"for-now-ui.md",mimeType:"text/markdown;charset=utf-8",content:"# For Now\\n"});
+    if (url === "/api/meta") return json({ version: "build-fixture", releaseVersion: "0.2.0", user: window.__accountUser });
     if (url === "/api/auth/me") return json({ authenticated: true, authRequired: true, registrationAvailable: true, user: window.__accountUser, userCount: 1 });
     if (url === "/api/auth/username" && init.method === "PATCH") {
       window.__usernameChanges += 1;
@@ -271,8 +362,9 @@ const mockFetch = `
       return json({ authenticated: false });
     }
     if (url === "/api/auth/login") {
-      window.__accountUser = { id: "user-2", username: "second", createdAt: "2026-09-27T00:00:00.000Z" };
-      return json({ authenticated: true, authRequired: true, user: window.__accountUser });
+      const complete=()=>{window.__accountUser={id:"user-2",username:"second",createdAt:"2026-09-27T00:00:00.000Z"};return json({authenticated:true,authRequired:true,user:window.__accountUser})};
+      if(window.__delayLogin)return new Promise(resolve=>{window.__releaseLogin=()=>{window.__delayLogin=false;resolve(complete())}});
+      return complete();
     }
     if (url === "/api/ai-cost-plan" && (!init.method || init.method === "GET")) return json(window.__aiCostPlan);
     if (url === "/api/ai-cost-plan" && init.method === "PATCH") {
@@ -291,7 +383,12 @@ const mockFetch = `
       if(mode==="cold")window.__onboarding={status:"pending",questionnaireVersion:1,questionnaireMode:"quick",answers:{},profile:{},interests:[],material:"",understanding:""};
       return json(window.__localTestConfig);
     }
-    if (url === "/api/onboarding/schema") return json(window.__onboardingSchema);
+    if (url === "/api/onboarding/schema") {
+      window.__onboardingSchemaRequests += 1;
+      return window.__onboardingSchemaAvailable
+        ? json(window.__onboardingSchema)
+        : Promise.resolve(new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { "content-type": "application/json" } }));
+    }
     if (url === "/api/onboarding/preview" && init.method === "POST") return json({understanding:"快速版初始认知：重视证据，也保留修正空间。"});
     if (url === "/api/onboarding" && init.method === "PATCH") { window.__onboardingSaves+=1;window.__onboarding={...JSON.parse(init.body),updatedAt:new Date().toISOString()};return json(window.__onboarding); }
     if (url.startsWith("/api/statistics")) {
@@ -326,11 +423,8 @@ const mockFetch = `
       window.__stateRequests += 1;
       if(window.__accountUser.id==="user-2"&&window.__delaySecondState)return new Promise(resolve=>{window.__releaseSecondState=()=>{window.__delaySecondState=false;resolve(window.fetch(input,init))}});
       return json({
-      version: 14, checkins: window.__testWorkspaceMode==="cold"?[]:window.__checkins, dailyRecords: window.__testWorkspaceMode==="cold"?[]:window.__dailyRecords, captures: window.__testWorkspaceMode==="cold"?[]:window.__captures, journals: window.__testWorkspaceMode==="cold"?[]:window.__journals, thoughts: window.__testWorkspaceMode==="cold"?[]:[
-        { id: "answer-kept", createdAt: "2026-09-27T01:10:00.000Z", occurredAt: "2026-09-27T04:10:00.000Z", occurredOn: "2026-09-27", type: "answer", content: "**核心判断**\\n第一行\\n第二行\\n第三行\\n第四行\\n第五行\\n第六行", modelDraft: "**核心判断**\\n第一行\\n第二行\\n第三行\\n第四行\\n第五行\\n第六行", editedFromModel: false, origin: "deepseek", reasoningContent: "**持久化**的模型思考", tags: [], relatedTo: "kept-root", disposition: "kept" },
-        { id: "kept-root", createdAt: "2026-09-27T01:09:00.000Z", occurredAt: "2026-09-27T04:09:00.000Z", occurredOn: "2026-09-27", type: "question", content: "没有**初步想法**的问题", tags: ["待回看", "商业"], relatedTo: null, disposition: "kept", remarks: [], followUps: [], annotations: [], annotationDrift: [] },
-        { id: "discarded-root", createdAt: "2026-09-27T01:08:00.000Z", occurredAt: "2026-09-27T04:08:00.000Z", occurredOn: "2026-09-27", type: "question", content: "已舍弃的问题", tags: [], relatedTo: null, disposition: "discarded", remarks: [], followUps: [], annotations: [], annotationDrift: [] }
-      ], chats: window.__testWorkspaceMode==="cold"?[]:[{ id: "chat-1", createdAt: "2026-09-27T01:15:00.000Z", occurredAt: "2026-09-27T04:15:00.000Z", occurredOn: "2026-09-27", message: "**用户问题**", answer: "## 模型回答" }], books: window.__testWorkspaceMode==="cold"?[]:window.__books, journalDraft: window.__testWorkspaceMode==="cold"?null:window.__journalDraft, keepsakes: window.__testWorkspaceMode==="cold"?[]:window.__keepsakes, quotes: window.__testWorkspaceMode==="cold"?[]:window.__quotes, aiTasks: window.__aiTasks, notifications: window.__notifications, onboarding: window.__onboarding, commercialization: window.__commercialization,
+      version: 15, checkins: window.__testWorkspaceMode==="cold"?[]:window.__checkins, dailyRecords: window.__testWorkspaceMode==="cold"?[]:window.__dailyRecords, captures: window.__testWorkspaceMode==="cold"?[]:window.__captures, journals: window.__testWorkspaceMode==="cold"?[]:window.__journals, thoughts: window.__testWorkspaceMode==="cold"?[]:window.__thoughts,
+      chats: window.__testWorkspaceMode==="cold"?[]:[{ id: "chat-1", createdAt: "2026-09-27T01:15:00.000Z", occurredAt: "2026-09-27T04:15:00.000Z", occurredOn: "2026-09-27", message: "**用户问题**", answer: "## 模型回答" }], books: window.__testWorkspaceMode==="cold"?[]:window.__books, journalDraft: window.__testWorkspaceMode==="cold"?null:window.__journalDraft, keepsakes: window.__testWorkspaceMode==="cold"?[]:window.__keepsakes.map(({originalPath,...item})=>item), quotes: window.__testWorkspaceMode==="cold"?[]:window.__quotes, aiTasks: window.__aiTasks, notifications: window.__notifications, onboarding: window.__onboarding, commercialization: window.__commercialization,
       experiments: [], analyses: window.__testWorkspaceMode==="cold"?[]:window.__analyses, customMetrics: [], clusters: [],
       insights: { trends: [
         { metric: "mood", current: 3.5, previous: null, currentCount: 2, previousCount: 0 },
@@ -346,16 +440,17 @@ const mockFetch = `
       });
     }
     if (url === "/api/settings" && (!init.method || init.method === "GET")) return json({
-      version: 5, provider: "deepseek",
+      version: 6, provider: "deepseek",
       profiles: { lite: { model: "deepseek-flash", effort: "none" }, mid: { model: "deepseek-flash", effort: "high" }, high: { model: "deepseek-v4-pro", effort: "high" }, ultra: { model: "deepseek-v4-pro", effort: "max" } },
-      scenarios: { thoughtPrompt: "lite", thoughtDraft: "high", thoughtAnswer: "ultra", followUpAnswer: "ultra", chat: "high", diaryLead: "lite", diaryStructure: "mid", diaryTopic: "high", diaryReflection: "ultra", annotationShenji: "high", analysis: "ultra", bookRecognition: "mid", healthRecognition: "mid" },
+      scenarios: { thoughtPrompt: "lite", thoughtDraft: "high", thoughtAnswer: "ultra", followUpAnswer: "ultra", chat: "high", diaryLead: "lite", diaryStructure: "mid", diaryTopic: "high", diaryReflection: "ultra", annotationShenji: "high", analysis: "ultra", bookRecognition: "mid", healthRecognition: "mid", contentImageUnderstanding: "mid" },
       assistantName: "神鸡", responseStyles: { thoughtDraft:"standard",thoughtAnswer:"standard",followUpAnswer:"standard",chat:"standard",diaryReflection:"standard",annotationShenji:"standard",analysis:"standard" },
+      automaticAnswers: { thoughtAnswer: true },
       hasApiKey: true, keyHint: "tes••••test"
     });
     if (url === "/api/settings" && init.method === "POST") {
       window.__settingsSaves += 1;
       const payload = JSON.parse(init.body);
-      return json({ version: 5, provider: "deepseek", ...payload, hasApiKey: true, keyHint: "tes••••test" });
+      return json({ version: 6, provider: "deepseek", ...payload, hasApiKey: true, keyHint: "tes••••test" });
     }
     if (url === "/api/settings/test") return json({ ok: true, reply: "连接成功" });
     if (url === "/api/thought-prompts") {
@@ -366,12 +461,19 @@ const mockFetch = `
     if (/^\\/api\\/checkins\\/[^/]+$/.test(url) && init.method === "PATCH") {
       window.__checkinPatches += 1;
       const item = window.__checkins.find(value => url.endsWith(value.id)), payload = JSON.parse(init.body);
-      Object.assign(item, payload, { occurredAt: new Date(payload.occurredAt).toISOString(), occurredOn: payload.occurredAt.slice(0, 10), updatedAt: new Date().toISOString() });
+      Object.assign(item, payload, eventTime(payload), { updatedAt: new Date().toISOString() });
       return json(item);
+    }
+    if (url === "/api/v1/captures" && init.method === "POST") {
+      window.__captureSaves += 1;
+      const payload = JSON.parse(init.body), item = { id: "capture-new-" + window.__captureSaves, createdAt: new Date().toISOString(), imageUnderstandings: [], version: 1, ...payload, ...eventTime(payload) };
+      window.__capturePayloads.push(payload);
+      window.__captures.unshift(item);
+      return v1(item);
     }
     if (url === "/api/captures" && init.method === "POST") {
       window.__captureSaves += 1;
-      const payload = JSON.parse(init.body), item = { id: "capture-new-" + window.__captureSaves, createdAt: new Date().toISOString(), ...payload, occurredAt: new Date(payload.occurredAt).toISOString(), occurredOn: payload.occurredAt.slice(0, 10) };
+      const payload = JSON.parse(init.body), item = { id: "capture-new-" + window.__captureSaves, createdAt: new Date().toISOString(), imageUnderstandings: [], version: 1, ...payload, ...eventTime(payload) };
       window.__capturePayloads.push(payload);
       window.__captures.unshift(item);
       return json(item);
@@ -379,7 +481,7 @@ const mockFetch = `
     if (/^\\/api\\/captures\\/[^/]+$/.test(url) && init.method === "PATCH") {
       const item = window.__captures.find(value => url.endsWith(value.id)), payload = JSON.parse(init.body);
       window.__capturePatchPayloads.push(payload);
-      Object.assign(item, payload, { occurredAt: new Date(payload.occurredAt).toISOString(), occurredOn: payload.occurredAt.slice(0, 10), updatedAt: new Date().toISOString() });
+      Object.assign(item, payload, eventTime(payload), { updatedAt: new Date().toISOString() });
       return json(item);
     }
     if (url === "/api/journal-draft" && init.method === "PUT") {
@@ -391,7 +493,7 @@ const mockFetch = `
     }
     if (url === "/api/journals" && init.method === "POST") {
       window.__journalSaves += 1;
-      const payload = JSON.parse(init.body), item = { id: "journal-new-" + window.__journalSaves, createdAt: new Date().toISOString(), reflections: [], ...payload, occurredAt: new Date(payload.occurredAt).toISOString(), occurredOn: payload.occurredAt.slice(0, 10) };
+      const payload = JSON.parse(init.body), item = { id: "journal-new-" + window.__journalSaves, createdAt: new Date().toISOString(), reflections: [], ...payload, ...eventTime(payload) };
       window.__journals.unshift(item);
       if (!window.__journalDraft?.journalId) window.__journalDraft = null;
       return json(item);
@@ -399,7 +501,7 @@ const mockFetch = `
     if (/^\\/api\\/journals\\/[^/]+$/.test(url) && init.method === "PATCH") {
       const item = window.__journals.find(value => url.endsWith(value.id)), payload = JSON.parse(init.body);
       window.__journalPatches += 1;
-      Object.assign(item, payload, { occurredAt: new Date(payload.occurredAt).toISOString(), occurredOn: payload.occurredAt.slice(0, 10), updatedAt: new Date().toISOString() });
+      Object.assign(item, payload, eventTime(payload), { updatedAt: new Date().toISOString() });
       if (window.__journalDraft?.journalId === item.id) window.__journalDraft = null;
       return json(item);
     }
@@ -419,14 +521,16 @@ const mockFetch = `
       const payload = JSON.parse(init.body);
       if (payload.kind === "book") window.__bookParses += 1;
       else window.__healthParses += 1;
-      const result={requestId:payload.requestId,targetId:payload.targetId,inputVersion:payload.inputVersion,...(payload.kind==="sleep"?{ date: "2026-09-27", bedtime: "2026-09-27T02:58:00", wakeTime: "2026-09-27T10:40:00", totalMinutes: 462, deepMinutes: 134, deepPercent: 29, lightMinutes: 221, lightPercent: 48, remMinutes: 107, remPercent: 23, awakeCount: null, awakeMinutes: null, averageHeartRate: 49, averageOxygen: 98, respiratoryRate: 15, attachmentPaths: ["/attachments/sleep-1.jpg", "/attachments/sleep-2.jpg"], verification: "两张图已合并" }:payload.kind==="heartRate"?{ date: "2026-09-26", minimum: 46, maximum: 82, average: 60, resting: 52, sleepAverage: 50, trendAnalysis: "凌晨下降，午后与晚间抬升。", trendSegments: [], attachmentPaths: ["/attachments/heart.jpg"], verification: "心率图已识别" }:{ title: "粘贴识别成功", author: "测试作者", publisher: "测试出版社", isbn: "9780000000000", description: "**识别结果**", attachmentPaths: ["/attachments/mock.png"], verification: "图片已识别，请确认" })};
+      const healthFixtures=${JSON.stringify(healthImageFixtures)};
+      const result={requestId:payload.requestId,targetId:payload.targetId,inputVersion:payload.inputVersion,...(healthFixtures[payload.kind]?{...healthFixtures[payload.kind],attachmentPaths:["/attachments/"+payload.kind+".png"]}:payload.kind==="sleep"?{ date: "2026-09-27", bedtime: "2026-09-27T02:58:00", wakeTime: "2026-09-27T10:40:00", totalMinutes: 462, deepMinutes: 134, deepPercent: 29, lightMinutes: 221, lightPercent: 48, remMinutes: 107, remPercent: 23, awakeCount: null, awakeMinutes: null, averageHeartRate: 49, averageOxygen: 98, respiratoryRate: 15, attachmentPaths: ["/attachments/sleep-1.jpg", "/attachments/sleep-2.jpg"], verification: "两张图已合并" }:payload.kind==="heartRate"?{ date: "2026-09-26", minimum: 46, maximum: 82, average: 60, resting: 52, sleepAverage: 50, trendAnalysis: "凌晨下降，午后与晚间抬升。", trendSegments: [], attachmentPaths: ["/attachments/heart.jpg"], verification: "心率图已识别" }:{ title: "粘贴识别成功", author: "测试作者", publisher: "测试出版社", isbn: "9780000000000", description: "**识别结果**", attachmentPaths: ["/attachments/mock.png"], verification: "图片已识别，请确认" })};
       if(window.__tamperParseField)result[window.__tamperParseField]=window.__tamperParseField==="inputVersion"?payload.inputVersion+1:"wrong-target";
       if(window.__delayParseKind===payload.kind)return new Promise(resolve=>{window.__releaseParse=()=>{window.__delayParseKind="";resolve(json(result))}});
       return json(result);
     }
     if (url === "/api/images/upload") {
-      const image = JSON.parse(init.body).image;
-      window.__imageUploads.push(image);
+      const payload=JSON.parse(init.body),image=payload.image,images=payload.images||[];
+      window.__imageUploads.push(...(images.length?images:[image]));
+      if(payload.purpose==="original"&&images.length){const attachmentPaths=images.map(()=>"/attachments/content-"+(++window.__contentImageUploads)+".png");return json({attachmentPath:attachmentPaths[0],attachmentPaths},201)}
       if (document.querySelector("#view-keepsakes")?.classList.contains("active")) {
         window.__keepsakeUploads += 1;
         return json({ attachmentPath: "/attachments/keepsake-" + window.__keepsakeUploads + ".png" }, 201);
@@ -435,22 +539,28 @@ const mockFetch = `
       return json({ attachmentPath: "/attachments/cover-" + window.__bookUploads + ".png" }, 201);
     }
     if (url === "/api/keepsakes/segment") return json({ cutout: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='36'%3E%3Crect width='24' height='36' fill='%23d76455'/%3E%3C/svg%3E", provider: "aliyun-segment-hd" });
+    if (/^\\/api\\/keepsakes\\/[^/]+\\/original$/.test(url) && (!init.method || init.method === "GET")) {
+      window.__keepsakeOriginalReads += 1;
+      const item=window.__keepsakes.find(value=>value.id===url.split("/")[3]);
+      return item?json({originalPath:item.originalPath}):json({error:"原图不可用"},404);
+    }
     if (url === "/api/keepsakes" && init.method === "POST") {
-      const payload = JSON.parse(init.body), item = { id: "keepsake-new", createdAt: new Date().toISOString(), ...payload, originalPath: window.__imageUploads.at(-2), cutoutPath: window.__imageUploads.at(-1), occurredAt: new Date(payload.occurredAt).toISOString(), occurredOn: payload.occurredAt.slice(0, 10) };
+      const payload = JSON.parse(init.body), item = { id: "keepsake-new", createdAt: new Date().toISOString(), ...payload, originalPath: payload.image, thumbPath: payload.image, displayPath: payload.image, editPath: payload.image, alphaMaskPath: payload.alphaMask, cutoutPath: "", mediaVersion: 1, ...eventTime(payload) };
       window.__keepsakePayloads.push(payload);
       window.__keepsakes.unshift(item);
-      return json(item);
+      const {originalPath,...visible}=item;
+      return json(visible);
     }
     if (url === "/api/daily-records" && init.method === "POST") {
       window.__dailySaves += 1;
-      const payload = JSON.parse(init.body), item = { id: "daily-" + window.__dailySaves, createdAt: new Date().toISOString(), ...payload, occurredAt: new Date(payload.occurredAt).toISOString(), occurredOn: payload.occurredAt.slice(0, 10) };
+      const payload = JSON.parse(init.body), item = { id: "daily-" + window.__dailySaves, createdAt: new Date().toISOString(), ...payload, ...eventTime(payload) };
       window.__dailyRecords.unshift(item);
       return json(item);
     }
     if (/^\\/api\\/daily-records\\/[^/]+$/.test(url) && init.method === "PATCH") {
       window.__dailyPatches += 1;
       const item = window.__dailyRecords.find(value => url.endsWith(value.id)), payload = JSON.parse(init.body);
-      Object.assign(item, payload, { occurredAt: new Date(payload.occurredAt).toISOString(), occurredOn: payload.occurredAt.slice(0, 10) });
+      Object.assign(item, payload, eventTime(payload));
       return json(item);
     }
     if (/^\\/api\\/daily-records\\/[^/]+$/.test(url) && init.method === "DELETE") {
@@ -476,26 +586,26 @@ const mockFetch = `
     }
     if (/^\\/api\\/books\\/[^/]+\\/notes$/.test(url) && init.method === "POST") {
       window.__bookNoteSaves += 1;
-      const book = window.__books.find(item => url.includes(item.id)), payload = JSON.parse(init.body), note = { id: "note-" + window.__bookNoteSaves, createdAt: "2026-09-27T01:01:00.000Z", ...payload, occurredAt: new Date(payload.occurredAt).toISOString(), occurredOn: payload.occurredAt.slice(0, 10) };
+      const book = window.__books.find(item => url.includes(item.id)), payload = JSON.parse(init.body), note = { id: "note-" + window.__bookNoteSaves, createdAt: "2026-09-27T01:01:00.000Z", ...payload, ...eventTime(payload) };
       book.notes.unshift(note);
       return json(note);
     }
     if (/^\\/api\\/books\\/[^/]+\\/notes\\/[^/]+$/.test(url) && init.method === "PATCH") {
       window.__bookNotePatches += 1;
       const [, , , bookId, , noteId] = url.split("/"), book = window.__books.find(item => item.id === bookId), note = book.notes.find(item => item.id === noteId), payload = JSON.parse(init.body);
-      Object.assign(note, payload, { occurredAt: new Date(payload.occurredAt).toISOString(), occurredOn: payload.occurredAt.slice(0, 10), updatedAt: new Date().toISOString() });
+      Object.assign(note, payload, eventTime(payload), { updatedAt: new Date().toISOString() });
       return json(note);
     }
     if (url === "/api/quotes" && init.method === "POST") {
       window.__quoteSaves += 1;
-      const payload = JSON.parse(init.body), item = { id: "quote-new-" + window.__quoteSaves, createdAt: "2026-09-27T03:20:21.000Z", ...payload, occurredAt: new Date(payload.occurredAt).toISOString(), occurredOn: payload.occurredAt.slice(0, 10) };
+      const payload = JSON.parse(init.body), item = { id: "quote-new-" + window.__quoteSaves, createdAt: "2026-09-27T03:20:21.000Z", ...payload, ...eventTime(payload) };
       window.__quotes.unshift(item);
       return json(item);
     }
     if (/^\\/api\\/quotes\\/[^/]+$/.test(url) && init.method === "PATCH") {
       window.__quotePatches += 1;
       const item = window.__quotes.find(value => url.endsWith(value.id)), payload = JSON.parse(init.body);
-      Object.assign(item, payload, { occurredAt: new Date(payload.occurredAt).toISOString(), occurredOn: payload.occurredAt.slice(0, 10), updatedAt: new Date().toISOString() });
+      Object.assign(item, payload, eventTime(payload), { updatedAt: new Date().toISOString() });
       return json(item);
     }
     if (/^\\/api\\/quotes\\/[^/]+$/.test(url) && init.method === "DELETE") {
@@ -509,8 +619,13 @@ const mockFetch = `
     }
     if (url === "/api/annotations/analysis/analysis-1" && init.method === "POST") {
       window.__annotationSaves += 1;
-      const payload = JSON.parse(init.body), annotation = { id: "analysis-annotation-1", createdAt: "2026-09-27T03:30:00.000Z", resolved: false, replies: [], ...payload };
+      const payload = JSON.parse(init.body), annotation = { id: "analysis-annotation-1", createdAt: "2026-09-27T03:30:00.000Z", resolved: false, replies: [], imageUnderstandings: [], version: 1, ...payload };
       window.__analyses[0].annotations.push(annotation);
+      return json(annotation);
+    }
+    if (url === "/api/annotations/analysis/analysis-1/analysis-annotation-1/convert" && init.method === "PATCH") {
+      const annotation=window.__analyses[0].annotations[0],payload=JSON.parse(init.body);
+      Object.assign(annotation,payload,{updatedAt:new Date().toISOString()});
       return json(annotation);
     }
     if (url === "/api/annotations/analysis/analysis-1/analysis-annotation-1/shenji" && init.method === "POST") {
@@ -521,17 +636,30 @@ const mockFetch = `
     }
     if (url === "/api/thought-chains") {
       window.__thoughtSaves += 1;
-      window.__savedPayloads.push(JSON.parse(init.body));
-      const id = "auto-root-" + window.__thoughtSaves;
-      return json({ items: [{ id, createdAt: new Date().toISOString(), occurredAt: "2026-09-27T04:00:00.000Z", occurredOn: "2026-09-27", type: "question", content: "并发记录", tags: [], relatedTo: null, disposition: "kept", version: 1 }], duplicate: false });
+      const payload=JSON.parse(init.body);window.__savedPayloads.push(payload);
+      const id = "auto-root-" + window.__thoughtSaves,question={ id, createdAt: new Date().toISOString(), ...eventTime(payload), type: "question", content: payload.question, attachmentPaths:payload.attachmentPaths||[], imageUnderstandings:[], tags: payload.tags||[], relatedTo: null, disposition: "kept", remarks: [], followUps: [], annotations: [], annotationDrift: [], version: 1 };
+      window.__thoughts.unshift(question);
+      return json({ items: [question], duplicate: false });
+    }
+    if(url==="/api/v1/content-attachments/understandings"&&init.method==="POST"){
+      const payload=JSON.parse(init.body),targetType=payload.targetType;
+      let resourceType=targetType==="capture"?"capture":"thought",targetId=payload.targetId,subtargetId="";
+      if(targetType==="comment"){for(const [type,items]of Object.entries({analysis:window.__analyses,thought:window.__thoughts,capture:window.__captures})){const parent=items.find(item=>(item.annotations||[]).some(annotation=>annotation.id===payload.targetId));if(parent){resourceType=type;targetId=parent.id;subtargetId=payload.targetId;break}}}
+      const task={id:"task-"+(window.__aiTasks.length+1),kind:"contentImageUnderstanding",resourceType,targetId,subtargetId,inputVersion:payload.inputVersion,status:"queued",createdAt:new Date().toISOString(),contentTargetType:targetType,contentTargetId:payload.targetId};
+      window.__aiTasks.unshift(task);window.__notifications.unshift({id:"notification-"+task.id,taskId:task.id,resourceType:task.resourceType,targetId:task.targetId,subtargetId:task.subtargetId,kind:"aiTask",status:"queued",title:"图片理解",message:"已进入后台队列",createdAt:task.createdAt,updatedAt:task.createdAt,readAt:""});
+      setTimeout(()=>window.__completeAiTask(task,{payload}),260);return v1(task)
     }
     if (url === "/api/ai-tasks" && init.method === "POST") {
       const payload=JSON.parse(init.body),task={id:"task-"+(window.__aiTasks.length+1),kind:payload.kind,resourceType:payload.resourceType||(payload.kind==="annotationShenji"?"":"thought"),targetId:payload.targetId,subtargetId:payload.subtargetId||"",inputVersion:payload.inputVersion||0,subtargetVersion:payload.subtargetVersion||0,status:"queued",createdAt:new Date().toISOString()};
-      const titles={thoughtAnswer:"思绪回答",followUpAnswer:"追问回答",annotationShenji:"批注神鸡"},messages={thoughtAnswer:"回答已生成",followUpAnswer:"追问回答已生成",annotationShenji:"批注回复已生成"};
+      const titles={thoughtAnswer:"思绪回答",followUpAnswer:"追问回答",annotationShenji:"批注神鸡",contentImageUnderstanding:"图片理解"};
       window.__aiTasks.unshift(task);window.__notifications.unshift({id:"notification-"+task.id,taskId:task.id,resourceType:task.resourceType,targetId:task.targetId,subtargetId:task.subtargetId,kind:"aiTask",status:"queued",title:titles[task.kind],message:"已进入后台队列",createdAt:task.createdAt,updatedAt:task.createdAt,readAt:""});
       if(window.__holdAiTasks)task.status="running";
-      else setTimeout(()=>{task.status="succeeded";task.completedAt=new Date().toISOString();if(task.kind==="annotationShenji"){window.__shenjiSaves+=1;const annotation=window.__analyses.find(item=>item.id===task.targetId)?.annotations.find(item=>item.id===task.subtargetId);if(annotation)annotation.shenji=[{id:"analysis-shenji-1",createdAt:task.completedAt,message:payload.payload?.message||"",answer:"**神鸡判断**：这条复盘需要保留反证。",reasoningContent:"核对复盘上下文。",sourceTaskId:task.id}]}const notification=window.__notifications.find(item=>item.taskId===task.id);Object.assign(notification,{status:"succeeded",message:messages[task.kind],updatedAt:task.completedAt,readAt:""})},260);
+      else setTimeout(()=>window.__completeAiTask(task,payload),260);
       return json(task);
+    }
+    if (/^\\/api\\/ai-tasks\\/[^/]+\\/result$/.test(url) && (!init.method || init.method === "GET")) {
+      const task=window.__aiTasks.find(item=>item.id===url.split("/")[3]),result=task&&window.__taskResults[task.id];
+      return task&&result?json({task,result}):json({error:"任务结果不可用"},404);
     }
     if (url === "/api/ai-tasks" && (!init.method || init.method === "GET")) { window.__taskReads+=1;return json({items:window.__aiTasks}); }
     if (url === "/api/notifications" && (!init.method || init.method === "GET")) { window.__notificationReads+=1;return json({items:window.__notifications,unread:window.__notifications.filter(item=>!item.readAt&&item.status==="succeeded").length}); }
@@ -590,6 +718,98 @@ try {
     page: await evaluate(`({url:location.href,title:document.title,body:document.body?.innerText.slice(0,300)})`),
     exceptions: cdp.events.filter(event => event.method === "Runtime.exceptionThrown").map(event => event.params.exceptionDetails.exception?.description||event.params.exceptionDetails.text)
   }));
+  assert.deepEqual(await evaluate(`({schemaRequests:window.__onboardingSchemaRequests,locked:document.body.classList.contains("auth-locked"),gateHidden:document.querySelector("#auth-gate").hidden,onboardingHidden:document.querySelector("#onboarding-workspace").hidden})`), {
+    schemaRequests: 1,
+    locked: false,
+    gateHidden: true,
+    onboardingHidden: true
+  });
+  assert.equal(await waitUntil(`document.querySelector("#action-columns")?.textContent.includes("完成 G2 界面回归")&&document.querySelector("#habit-list")?.textContent.includes("每日回望")`), true);
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  assert.equal(await waitUntil(`getComputedStyle(document.querySelector("#view-today")).opacity==="1"`),true);
+  await sleep(120);
+  const homeDesktop = await evaluate(`(() => {
+    const home=document.querySelector("#view-today"),grid=document.querySelector("#home-memory-grid"),background=getComputedStyle(document.querySelector(".home-v02-background"));
+    return {
+      active:home.classList.contains("active")&&home.classList.contains("home-v02"),
+      memories:grid.querySelectorAll(".home-v02-memory").length,
+      twoColumns:getComputedStyle(grid).gridTemplateColumns.split(" ").length===2,
+      userOnly:!grid.textContent.includes("模型回答")&&!grid.textContent.includes("AI总结"),
+      traceable:[...grid.querySelectorAll(".home-v02-memory")].every(item=>item.dataset.homeMemoryId&&item.querySelector("[data-home-memory-open]")),
+      keepsake:document.querySelector("#home-keepsake").textContent.includes("旧展览票"),
+      moodPoints:document.querySelectorAll("#home-mood-sparkline circle").length,
+      background:background.backgroundImage.includes("desktop-background.png"),
+      actionsCollapsed:!document.querySelector(".home-v02-secondary").open,
+      liveStatusHidden:getComputedStyle(document.querySelector("#home-memory-status")).position==="absolute",
+      noOverflow:document.documentElement.scrollWidth<=innerWidth
+    };
+  })()`);
+  assert.deepEqual(homeDesktop,{active:true,memories:3,twoColumns:true,userOnly:true,traceable:true,keepsake:true,moodPoints:2,background:true,actionsCollapsed:true,liveStatusHidden:true,noOverflow:true});
+  const homeDesktopScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
+  await fs.writeFile("/tmp/growth-home-v02-desktop.png",Buffer.from(homeDesktopScreenshot.data,"base64"));
+  const firstHomeKeys=await evaluate(`[...document.querySelectorAll(".home-v02-memory")].map(item=>item.dataset.homeMemoryKey)`);
+  await evaluate(`document.querySelector("#home-shuffle").click();true`);
+  const nextHomeKeys=await evaluate(`[...document.querySelectorAll(".home-v02-memory")].map(item=>item.dataset.homeMemoryKey)`);
+  assert.equal(nextHomeKeys.some(key=>!firstHomeKeys.includes(key)),true);
+  await evaluate(`document.querySelector("#home-open-thought").click();document.querySelector("#chain-question").value="关闭后仍保留的首页草稿";document.querySelector('[data-home-editor-close="thought"]').click();document.querySelector("#home-open-thought").click();true`);
+  assert.equal(await waitUntil(`document.activeElement===document.querySelector("#chain-question")`),true);
+  assert.deepEqual(await evaluate(`({visible:!document.querySelector("#home-thought-editor").hidden,draft:document.querySelector("#chain-question").value,focused:document.activeElement===document.querySelector("#chain-question")})`),{visible:true,draft:"关闭后仍保留的首页草稿",focused:true});
+  assert.equal(await evaluate(`(() => { const editor=document.querySelector("#home-thought-editor"),focusable=[...editor.querySelectorAll('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled])')].filter(item=>!item.hidden&&getComputedStyle(item).display!=="none");focusable.at(-1).focus();document.dispatchEvent(new KeyboardEvent("keydown",{key:"Tab",bubbles:true,cancelable:true}));return document.activeElement===focusable[0]; })()`),true);
+  await evaluate(`document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}));true`);
+  assert.equal(await waitUntil(`document.activeElement===document.querySelector("#home-open-thought")`),true);
+  assert.deepEqual(await evaluate(`({hidden:document.querySelector("#home-thought-editor").hidden,focusReturned:document.activeElement===document.querySelector("#home-open-thought"),draft:document.querySelector("#chain-question").value})`),{hidden:true,focusReturned:true,draft:"关闭后仍保留的首页草稿"});
+  await evaluate(`document.querySelector("#chain-question").value="";document.querySelector("#chain-question").dispatchEvent(new Event("input",{bubbles:true}));true`);
+  await evaluate(`document.querySelector('.home-v02-memory[data-home-memory-type="thought"] [data-home-memory-open]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-thoughts").classList.contains("active")&&document.querySelector('[data-chain-id="kept-root"]').open`),true);
+  await evaluate(`document.querySelector('[data-view="today"]').click();document.querySelector("[data-home-keepsake]").click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-keepsakes").classList.contains("active")&&!document.querySelector("#keepsake-detail").hidden&&document.querySelector("#keepsake-detail h2").textContent==="旧展览票"`),true);
+  await evaluate(`document.querySelector("[data-keepsake-back]").click();document.querySelector('[data-view="today"]').click();true`);
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 900, height: 900, deviceScaleFactor: 1, mobile: false });
+  await evaluate(`window.scrollTo({top:0,behavior:"auto"});true`);
+  await sleep(120);
+  assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth&&getComputedStyle(document.querySelector("#home-memory-grid")).gridTemplateColumns.split(" ").length===2&&Math.round(document.querySelector(".sidebar").getBoundingClientRect().width)===176`),true);
+  const homeTabletScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
+  await fs.writeFile("/tmp/growth-home-v02-tablet.png",Buffer.from(homeTabletScreenshot.data,"base64"));
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+  await evaluate(`window.scrollTo({top:0,behavior:"auto"});true`);
+  await sleep(120);
+  assert.deepEqual(await evaluate(`(() => {
+    const items=[...document.querySelectorAll(".home-v02-memory")],visible=items.filter(item=>getComputedStyle(item).display!=="none");
+    return {visible:visible.length,singleColumn:getComputedStyle(document.querySelector("#home-memory-grid")).display==="flex",touch:[document.querySelector("#home-open-thought"),document.querySelector("#home-record-state")].every(item=>item.getBoundingClientRect().height>=44),noOverflow:document.documentElement.scrollWidth<=innerWidth,background:getComputedStyle(document.querySelector(".home-v02-background")).backgroundImage.includes("mobile-background.png")};
+  })()`),{visible:2,singleColumn:true,touch:true,noOverflow:true,background:true});
+  const homeMobileScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
+  await fs.writeFile("/tmp/growth-home-v02-mobile.png",Buffer.from(homeMobileScreenshot.data,"base64"));
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 320, height: 700, deviceScaleFactor: 2, mobile: true });
+  await evaluate(`window.scrollTo({top:0,behavior:"auto"});true`);
+  await sleep(100);
+  assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth&&[...document.querySelectorAll("#view-today button")].filter(item=>getComputedStyle(item).display!=="none").every(item=>item.getBoundingClientRect().right<=innerWidth)`),true);
+  const homeNarrowScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
+  await fs.writeFile("/tmp/growth-home-v02-narrow.png",Buffer.from(homeNarrowScreenshot.data,"base64"));
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
+  await evaluate(`(()=>{const form=document.querySelector("#action-form");form.elements.title.value="提交时的行动";window.__delayActionCreate=true;form.requestSubmit();return true})()`);
+  assert.equal(await waitUntil(`typeof window.__releaseActionCreate==="function"`),true);
+  await evaluate(`(()=>{const input=document.querySelector("#action-form").elements.title;input.value="等待期间的新行动";input.dispatchEvent(new Event("input",{bubbles:true}));window.__releaseActionCreate();return true})()`);
+  assert.equal(await waitUntil(`document.querySelector("#action-status").textContent.includes("新输入已保留")`),true);
+  assert.equal(await evaluate(`document.querySelector("#action-form").elements.title.value`),"等待期间的新行动");
+  await evaluate(`(()=>{const form=document.querySelector("#action-form"),input=form.elements.title;input.value="刷新失败仍已保存";input.dispatchEvent(new Event("input",{bubbles:true}));window.__failNextActionRefresh=true;form.requestSubmit();return true})()`);
+  assert.equal(await waitUntil(`document.querySelector("#action-status").textContent.includes("已保存，但行动列表刷新失败")`),true);
+  await evaluate(`(()=>{const form=document.querySelector("#habit-form");form.elements.title.value="提交时的习惯";window.__delayHabitCreate=true;form.requestSubmit();return true})()`);
+  assert.equal(await waitUntil(`typeof window.__releaseHabitCreate==="function"`),true);
+  await evaluate(`(()=>{const input=document.querySelector("#habit-form").elements.title;input.value="等待期间的新习惯";input.dispatchEvent(new Event("input",{bubbles:true}));window.__releaseHabitCreate();return true})()`);
+  assert.equal(await waitUntil(`document.querySelector("#habit-status").textContent.includes("新输入已保留")`),true);
+  assert.equal(await evaluate(`document.querySelector("#habit-form").elements.title.value`),"等待期间的新习惯");
+  await evaluate(`document.querySelector('[data-view="feedback"]').click();(()=>{const form=document.querySelector("#feedback-form");form.elements.feature.value="提交时功能";form.elements.body.value="提交时内容";window.__delayFeedbackCreate=true;form.requestSubmit();return true})()`);
+  assert.equal(await waitUntil(`typeof window.__releaseFeedbackCreate==="function"`),true);
+  await evaluate(`(()=>{const input=document.querySelector("#feedback-form").elements.body;input.value="等待期间的新反馈";input.dispatchEvent(new Event("input",{bubbles:true}));window.__releaseFeedbackCreate();return true})()`);
+  assert.equal(await waitUntil(`document.querySelector("#feedback-status").textContent.includes("新输入已保留")`),true);
+  assert.equal(await evaluate(`document.querySelector("#feedback-form").elements.body.value`),"等待期间的新反馈");
+  await evaluate(`window.__actionListTitle="较早响应";window.__delayActionList=true;document.querySelector('[data-view="today"]').click();true`);
+  assert.equal(await waitUntil(`typeof window.__releaseActionList==="function"`),true);
+  await evaluate(`window.__actionListTitle="最新响应";document.querySelector('[data-view="today"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#action-columns").textContent.includes("最新响应")`),true);
+  await evaluate(`window.__releaseActionList();true`);
+  await sleep(100);
+  assert.equal(await evaluate(`document.querySelector("#action-columns").textContent.includes("最新响应")&&!document.querySelector("#action-columns").textContent.includes("较早响应")`),true);
   const associationLimit = await evaluate(`(() => {
     const rows=[...document.querySelectorAll("#association-list .association-row")];
     return {count:rows.length,factors:rows.map(row=>row.querySelector("b").textContent),omitted:!document.querySelector("#association-list").textContent.includes("不应显示")};
@@ -608,6 +828,8 @@ try {
     };
   })()`);
   assert.deepEqual(desktopNavigation, { compact: true, lightGlass: true, labels: ["◌今日","◇所见","∿所思","○我的"], current: true, inactive: true, sectionHidden: false, secondary: ["此刻","共参","每日"] });
+  await evaluate(`document.querySelector('[data-section="thought"]').click(); document.querySelector('[data-view="discovery"]').click(); true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-discovery").classList.contains("active")&&document.querySelector("#discovery-list")?.textContent.includes("没有初步想法的问题")`), true);
   await evaluate(`document.querySelector('[data-section="seen"]').click(); true`);
   assert.deepEqual(await evaluate(`({
     activeView:document.querySelector(".view.active").id,
@@ -617,19 +839,20 @@ try {
   })`), { activeView: "view-captures", primary: "◇所见", secondary: ["念起","书间","拾句","小物"], selected: "念起" });
   await evaluate(`document.querySelector('[data-view="keepsakes"]').click(); true`);
   assert.deepEqual(await evaluate(`(() => {
-    const grid=document.querySelector(".keepsake-grid"),card=document.querySelector(".keepsake-card"),original=card.querySelector(".keepsake-image-original"),cutout=card.querySelector(".keepsake-image-cutout");
-    return {count:document.querySelectorAll(".keepsake-card").length,label:document.querySelector("#keepsake-count").textContent,columns:getComputedStyle(grid).columnCount,avoids:getComputedStyle(card).breakInside==="avoid",originalOpacity:getComputedStyle(original).opacity,cutoutOpacity:getComputedStyle(cutout).opacity,tags:card.querySelector(".keepsake-tags").textContent};
-  })()`), { count: 3, label: "3 件", columns: "3", avoids: true, originalOpacity: "0.15", cutoutOpacity: "1", tags: "#展览#同行" });
+    const grid=document.querySelector(".keepsake-grid"),card=document.querySelector(".keepsake-card"),image=card.querySelector(".keepsake-image-cutout");
+    return {count:document.querySelectorAll(".keepsake-card").length,label:document.querySelector("#keepsake-count").textContent,columns:getComputedStyle(grid).columnCount,avoids:getComputedStyle(card).breakInside==="avoid",layers:card.querySelectorAll("img").length,thumb:image.getAttribute("src")===window.__keepsakes[0].thumbPath,originalReads:window.__keepsakeOriginalReads,tags:card.querySelector(".keepsake-tags").textContent};
+  })()`), { count: 3, label: "3 件", columns: "3", avoids: true, layers: 1, thumb: true, originalReads: 0, tags: "#展览#同行" });
   await evaluate(`document.querySelector("[data-keepsake-open]").click(); true`);
   assert.deepEqual(await evaluate(`(() => {
     const detail=document.querySelector("#keepsake-detail"),image=detail.querySelector(".keepsake-detail-image");
     return {visible:!detail.hidden,libraryHidden:document.querySelector(".keepsake-library").hidden,presentation:detail.querySelector('[data-keepsake-view="presentation"]').classList.contains("active"),layers:image.querySelectorAll("img").length,title:detail.querySelector("h2").textContent,tags:detail.querySelector(".keepsake-tags").textContent};
-  })()`), { visible: true, libraryHidden: true, presentation: true, layers: 2, title: "旧展览票", tags: "#展览#同行" });
+  })()`), { visible: true, libraryHidden: true, presentation: true, layers: 1, title: "旧展览票", tags: "#展览#同行" });
+  assert.equal(await evaluate(`window.__keepsakeOriginalReads`),0);
   await sleep(220);
   const keepsakeDetailScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-keepsake-detail-desktop.png", Buffer.from(keepsakeDetailScreenshot.data, "base64"));
   await evaluate(`document.querySelector('[data-keepsake-view="original"]').click(); true`);
-  assert.deepEqual(await evaluate(`(() => { const image=document.querySelector(".keepsake-detail-image");return {original:image.classList.contains("show-original"),originalOpacity:getComputedStyle(image.querySelector(".keepsake-image-original")).opacity,cutoutDisplay:getComputedStyle(image.querySelector(".keepsake-image-cutout")).display}; })()`), { original: true, originalOpacity: "1", cutoutDisplay: "none" });
+  assert.deepEqual(await evaluate(`(() => { const image=document.querySelector(".keepsake-detail-image img");return {originalSelected:document.querySelector('[data-keepsake-view="original"]').classList.contains("active"),layers:document.querySelectorAll(".keepsake-detail-image img").length,original:image.getAttribute("src")===window.__keepsakes[0].originalPath,originalReads:window.__keepsakeOriginalReads}; })()`), { originalSelected: true, layers: 1, original: true, originalReads: 1 });
   await evaluate(`document.querySelector("[data-keepsake-back]").click(); document.querySelector("#keepsake-create-toggle").click(); true`);
   await evaluate(`(async()=>{const canvas=document.createElement("canvas");canvas.width=48;canvas.height=36;const ctx=canvas.getContext("2d");ctx.fillStyle="#d76455";ctx.fillRect(0,0,48,36);const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"));const file=new File([blob],"ticket.png",{type:"image/png"}),transfer=new DataTransfer();transfer.items.add(file);const input=document.querySelector("#keepsake-image");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
   assert.equal(await waitUntil(`document.querySelector("#keepsake-segment-status").textContent.includes("自动轮廓已生成")`), true);
@@ -641,10 +864,11 @@ try {
   assert.equal(keepsakeEditorState.overflow, false);
   const keepsakeScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-keepsakes-desktop.png", Buffer.from(keepsakeScreenshot.data, "base64"));
+  const imageUploadsBeforeKeepsakeSave=await evaluate(`window.__imageUploads.length`);
   await evaluate(`document.querySelector("#keepsake-title").value="新票根";document.querySelector("#keepsake-tags").value="纪念 周末";document.querySelector("#keepsake-form").requestSubmit();true`);
-  assert.equal(await waitUntil(`window.__keepsakePayloads.length===1 && window.__imageUploads.length>=2`), true);
-  assert.deepEqual(await evaluate(`window.__keepsakePayloads[0].tags`), ["纪念", "周末"]);
-  const savedCutoutAlpha = await evaluate(`(async()=>{const image=new Image();await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=reject;image.src=window.__imageUploads.at(-1)});const canvas=document.createElement("canvas");canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;const ctx=canvas.getContext("2d");ctx.drawImage(image,0,0);return {subject:ctx.getImageData(8,18,1,1).data[3],background:ctx.getImageData(40,18,1,1).data[3]}})()`);
+  if(!await waitUntil(`window.__keepsakePayloads.length===1`))throw new Error(await evaluate(`"小物保存未发出："+document.querySelector("#keepsake-save-status").textContent`));
+  assert.deepEqual(await evaluate(`({tags:window.__keepsakePayloads[0].tags,singleRequest:window.__imageUploads.length===${imageUploadsBeforeKeepsakeSave},hasImage:window.__keepsakePayloads[0].image.startsWith("data:image/"),hasAlpha:window.__keepsakePayloads[0].alphaMask.startsWith("data:image/png")})`), {tags:["纪念","周末"],singleRequest:true,hasImage:true,hasAlpha:true});
+  const savedCutoutAlpha = await evaluate(`(async()=>{const image=new Image();await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=reject;image.src=window.__keepsakePayloads[0].alphaMask});const canvas=document.createElement("canvas");canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;const ctx=canvas.getContext("2d");ctx.drawImage(image,0,0);return {subject:ctx.getImageData(8,18,1,1).data[3],background:ctx.getImageData(40,18,1,1).data[3]}})()`);
   assert.equal(savedCutoutAlpha.subject, 255);
   assert.equal(savedCutoutAlpha.background, 0);
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
@@ -758,7 +982,7 @@ try {
   const togetherMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-together-mobile.png", Buffer.from(togetherMobileScreenshot.data, "base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
-  await evaluate(`document.querySelector('[data-view="today"]').click(); true`);
+  await evaluate(`document.querySelector('[data-view="today"]').click(); document.querySelector("#home-open-thought").click(); true`);
   await evaluate(`document.querySelector("#thought-prompt-button").click(); true`);
   assert.equal(await waitUntil(`window.__thoughtPrompts===1&&document.querySelector("#chain-question").value.length>0`), true);
   assert.equal(await evaluate(`document.querySelector("#chain-question").value`), "之前那件还没想完的事，现在最想往前推哪一步？");
@@ -777,6 +1001,7 @@ try {
     assert.equal(await evaluate(`document.querySelector("#chain-question").value`), reset ? "" : "我刚写的新问题");
   }
   await evaluate(`window.__holdPrompt=false;true`);
+  await evaluate(`document.querySelector('[data-home-editor-close="thought"]').click();document.querySelector("#home-record-state").click();true`);
   const metricHistory = await evaluate(`(() => {
     const metric=document.querySelector("#metric-energy").closest(".metric"),input=metric.querySelector('[type="range"]'),previous=metric.querySelector(".metric-history-marker.previous"),average=metric.querySelector(".metric-history-marker.average"),track=input.getBoundingClientRect(),previousRect=previous.getBoundingClientRect(),averageRect=average.getBoundingClientRect(),expectedAverage=track.left+11+(track.width-22)*.375;
     return {
@@ -829,6 +1054,30 @@ try {
   assert.equal(await waitUntil(`window.__dailySaves===1&&document.querySelector('[data-daily-record-id="daily-1"]')`),true);
   await evaluate(`document.querySelector('[data-daily-tab="weight"]').click(); true`);
   assert.equal(await evaluate(`Boolean(document.querySelector(".weight-chart .weight-interval"))&&document.querySelector(".weight-chart-note").textContent.includes("固定衣物重量假设")`),true);
+  await evaluate(`(() => {
+    window.__pasteHealth=()=>{const bytes=Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="),value=>value.charCodeAt(0)),event=new Event("paste",{bubbles:true,cancelable:true});Object.defineProperty(event,"clipboardData",{value:{files:[new File([bytes],"synthetic-health.png",{type:"image/png"})]}});document.body.dispatchEvent(event)};
+    window.__weightDateBefore=document.querySelector('[data-daily-form="weight"] [name="occurredAt"]').value;
+    window.__pasteHealth();document.querySelector("#parse-health-images").click();return true;
+  })()`);
+  assert.equal(await waitUntil(`document.querySelector('[data-daily-form="weight"] [name="bodyWaterMass"]').value==="42.2"`),true);
+  assert.equal(await evaluate(`(() => {const f=document.querySelector('[data-daily-form="weight"]');return !document.querySelector("#health-image-workflow").hidden&&f.elements.measuredWeight.value===""&&f.elements.bmi.value===""&&f.elements.bodyFatPercent.value===""&&f.elements.measuredAt.value===""&&f.elements.occurredAt.value===window.__weightDateBefore&&f.querySelector("details").open&&f.elements.description.value.includes("原报告标注")})()`),true);
+  await evaluate(`window.__delayParseKind="weight";window.__releaseParse=null;document.querySelector("#parse-health-images").click();true`);
+  assert.equal(await waitUntil(`typeof window.__releaseParse==="function"`),true);
+  await evaluate(`(() => {const input=document.querySelector('[data-daily-form="weight"] [name="description"]');input.value="核对后修改的体成分描述";input.dispatchEvent(new Event("input",{bubbles:true}));window.__releaseParse();return true})()`);
+  assert.equal(await waitUntil(`document.querySelector("#health-parse-status").textContent.includes("当前表单已经变化")`),true);
+  await evaluate(`document.querySelector('[data-daily-form="weight"]').requestSubmit();true`);
+  assert.equal(await waitUntil(`window.__dailySaves===2&&document.querySelector('[data-daily-record-id="daily-2"]')`),true);
+  assert.equal(await evaluate(`(() => {const item=window.__dailyRecords.find(item=>item.id==="daily-2"),card=document.querySelector('[data-daily-record-id="daily-2"]');return item.measuredWeight===null&&item.bodyWaterMass===42.2&&item.description==="核对后修改的体成分描述"&&item.attachmentPaths[0]==="/attachments/weight.png"&&card.textContent.includes("总重量未填写")&&card.textContent.includes("42.2")&&!card.textContent.includes("NaN")&&document.querySelectorAll("#health-image-previews figure").length===0&&document.querySelector('[data-daily-form="weight"] [name="verification"]').value===""})()`),true);
+  await evaluate(`document.querySelector('[data-daily-edit="daily-2"]').click();true`);
+  assert.equal(await evaluate(`document.querySelector('[data-daily-form="weight"] [name="bodyWaterMass"]').value==="42.2"&&document.querySelector('[data-daily-form="weight"] [name="measuredWeight"]').value===""`),true);
+  await evaluate(`(() => {const f=document.querySelector('[data-daily-form="weight"]');f.elements.bodyFatMass.value="";f.requestSubmit();return true})()`);
+  assert.equal(await waitUntil(`window.__dailyPatches===1&&window.__dailyRecords.find(item=>item.id==="daily-2").bodyFatMass===null`),true);
+  // A body-composition-only history must render without invalid SVG coordinates.
+  await evaluate(`window.__savedWeightRecords=window.__dailyRecords;window.__dailyRecords=window.__dailyRecords.filter(item=>item.type!=="weight"||item.id==="daily-2");document.querySelector('[data-view="today"]').click();document.querySelector('[data-view="daily"]').click();true`);
+  // Refresh through the normal save flow to use the current mocked server state.
+  await evaluate(`document.querySelector('[data-daily-edit="daily-2"]').click();document.querySelector('[data-daily-form="weight"]').requestSubmit();true`);
+  assert.equal(await waitUntil(`window.__dailyPatches===2&&!document.querySelector("#daily-record-chart svg")&&document.querySelector('[data-daily-record-id="daily-2"]')`),true);
+  await evaluate(`window.__dailyRecords=window.__savedWeightRecords;document.querySelector('[data-daily-edit="daily-2"]').click();true`);
   await evaluate(`document.querySelector("#daily-records").scrollIntoView({block:"start"}); true`);
   await sleep(150);
   const dailyScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
@@ -837,6 +1086,33 @@ try {
   assert.equal(await evaluate(`document.documentElement.scrollWidth<=window.innerWidth&&document.querySelector("#daily-records").getBoundingClientRect().right<=window.innerWidth`),true);
   const dailyMobileScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
   await fs.writeFile("/tmp/growth-daily-records-mobile.png",Buffer.from(dailyMobileScreenshot.data,"base64"));
+  await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
+  await evaluate(`document.querySelector('[data-daily-tab="exercise"]').click();window.__pasteHealth();document.querySelector("#parse-health-images").click();true`);
+  assert.equal(await waitUntil(`document.querySelector('[data-daily-form="exercise"] [name="durationSeconds"]').value==="00:33:07"`),true);
+  assert.deepEqual(await evaluate(`(() => {const f=document.querySelector('[data-daily-form="exercise"]');return ["exerciseType","activeCalories","totalCalories","averageHeartRate","maximumHeartRate","aerobicSeconds","anaerobicSeconds","extremeSeconds","distanceKm","occurredAt"].map(key=>f.elements[key].value)})()`),["力量训练","184","231","111","137","00:00:00","","","","2026-09-23T17:12:34"]);
+  await evaluate(`document.querySelector('[data-daily-form="exercise"]').requestSubmit();true`);
+  assert.equal(await waitUntil(`window.__dailySaves===3&&document.querySelector('[data-daily-record-id="daily-3"]')`),true);
+  assert.equal(await evaluate(`(() => {const item=window.__dailyRecords.find(item=>item.id==="daily-3"),text=document.querySelector('[data-daily-record-id="daily-3"]').textContent;return item.durationSeconds===1987&&item.aerobicSeconds===0&&item.anaerobicSeconds===null&&item.attachmentPaths[0]==="/attachments/exercise.png"&&text.includes("力量训练")&&text.includes("00:33:07")&&text.includes("活动热量")&&text.includes("总热量")})()`),true);
+  await evaluate(`document.querySelector('[data-daily-edit="daily-3"]').click();true`);
+  assert.equal(await evaluate(`document.querySelector('[data-daily-form="exercise"] [name="durationSeconds"]').value==="00:33:07"&&document.querySelector('[data-daily-form="exercise"] [name="anaerobicSeconds"]').value===""`),true);
+  // Cancel an edit with a pending recognition; a late result must not refill it.
+  await evaluate(`window.__pasteHealth();window.__delayParseKind="exercise";window.__releaseParse=null;document.querySelector("#parse-health-images").click();true`);
+  assert.equal(await waitUntil(`typeof window.__releaseParse==="function"`),true);
+  await evaluate(`document.querySelector('[data-daily-form="exercise"] [data-daily-cancel]').click();window.__releaseParse();true`);
+  await sleep(100);
+  assert.equal(await evaluate(`(() => {const f=document.querySelector('[data-daily-form="exercise"]');return f.elements.recordId.value===""&&f.elements.durationSeconds.value===""&&f.elements.exerciseType.value===""&&f.elements.attachmentPaths.value===""&&!document.querySelector("#parse-health-images").disabled})()`),true);
+  await evaluate(`window.__delayParseKind="exercise";window.__releaseParse=null;document.querySelector("#parse-health-images").click();true`);
+  assert.equal(await waitUntil(`typeof window.__releaseParse==="function"`),true);
+  await evaluate(`document.querySelector('[data-daily-tab="weight"]').click();window.__releaseParse();true`);
+  await sleep(100);
+  assert.equal(await evaluate(`document.querySelector('[data-daily-form="exercise"] [name="exerciseType"]').value===""&&document.querySelector('[data-daily-form="weight"] [name="bodyWaterMass"]').value==="42.2"`),true);
+  await evaluate(`document.querySelector('[data-daily-tab="exercise"]').click();document.querySelector('[data-daily-edit="daily-3"]').click();document.querySelector('[data-daily-form="exercise"]').scrollIntoView({block:"start"});true`);
+  await sleep(100);
+  await fs.writeFile("/tmp/growth-exercise-record.png",Buffer.from((await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false})).data,"base64"));
+  await cdp.send("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:1,mobile:true});
+  await sleep(100);
+  assert.equal(await evaluate(`document.documentElement.scrollWidth<=window.innerWidth&&[...document.querySelectorAll('[data-daily-form="exercise"] input')].filter(input=>input.type!=="hidden").every(input=>input.getBoundingClientRect().right<=window.innerWidth)`),true);
+  await fs.writeFile("/tmp/growth-exercise-record-mobile.png",Buffer.from((await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false})).data,"base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
   await evaluate(`document.querySelector('[data-view="together"]').click(); true`);
   const todayThoughtTimeline = await evaluate(`(() => {
@@ -910,12 +1186,22 @@ try {
   assert.equal(await evaluate(`!document.querySelector('[data-capture-id="capture-long"] .capture-item').classList.contains("is-expanded")`), true);
   await evaluate(`document.querySelector("#capture-content").value = "快捷收下的新捕念"; const input = document.querySelector("#capture-tags"); input.value = "测试"; input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })); true`);
   assert.equal(await evaluate(`document.querySelector("#capture-tag-list .tag-chip")?.textContent.includes("测试")`), true);
-  await evaluate(`document.querySelector("#capture-form").requestSubmit(); true`);
+  assert.deepEqual(await evaluate(`(() => {const input=document.querySelector("#capture-content"),event=new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true});input.dispatchEvent(event);return{prevented:event.defaultPrevented,saves:window.__captureSaves}})()`),{prevented:false,saves:0});
+  await evaluate(`document.querySelector("#capture-content").dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",ctrlKey:true,bubbles:true,cancelable:true}));true`);
   assert.equal(await waitUntil(`window.__captureSaves === 1 && document.querySelector('[data-capture-id="capture-new-1"]')`), true);
   const capturePayload = await evaluate(`window.__capturePayloads[0]`);
   assert.deepEqual(capturePayload.tags, ["测试"]);
-  assert.match(capturePayload.occurredAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/);
+  assert.equal(capturePayload.timeMode, "now");
+  assert.equal(Object.hasOwn(capturePayload, "occurredAt"), false);
   assert.equal(Object.hasOwn(capturePayload, "occurredOn"), false);
+  await evaluate(`(async()=>{const bytes=Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="),value=>value.charCodeAt(0)),file=new File([bytes],"capture-image.png",{type:"image/png"}),transfer=new DataTransfer();transfer.items.add(file);const input=document.querySelector("#capture-images");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));document.querySelector("#capture-content").value="";return true})()`);
+  assert.equal(await evaluate(`document.querySelectorAll('[data-content-image-editor="capture"] .content-image-preview').length`),1);
+  await evaluate(`document.querySelector("#capture-form").requestSubmit();true`);
+  assert.equal(await waitUntil(`window.__captureSaves===2&&document.querySelector('[data-capture-id="capture-new-2"] [data-content-image-understand="capture"]')`),true);
+  assert.deepEqual(await evaluate(`({content:window.__capturePayloads[1].content,paths:window.__capturePayloads[1].attachmentPaths,images:document.querySelectorAll('[data-capture-id="capture-new-2"] .content-originals img').length})`),{content:"",paths:["/attachments/content-1.png"],images:1});
+  await evaluate(`document.querySelector('[data-capture-id="capture-new-2"] [data-content-image-understand="capture"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-new-2"] .content-understanding')?.textContent.includes("手写笔记")`,160,25),true);
+  assert.equal(await evaluate(`window.__captures.find(item=>item.id==="capture-new-2").content`),"");
   await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-capture-edit]').click(); true`);
   const captureEditState = await evaluate(`({ datetime: document.querySelector("#capture-date").value, tags: [...document.querySelectorAll("#capture-tag-list .tag-chip")].map(item => item.textContent.trim()) })`);
   assert.equal(captureEditState.datetime, "2026-09-27T15:08:09");
@@ -923,6 +1209,7 @@ try {
   await evaluate(`document.querySelector("#capture-date").value = "2026-09-27T23:45:12"; document.querySelector("#capture-form").requestSubmit(); true`);
   assert.equal(await waitUntil(`window.__capturePatchPayloads.length === 1`), true);
   assert.equal((await evaluate(`window.__capturePatchPayloads[0].occurredAt`)), "2026-09-27T23:45:12");
+  assert.equal((await evaluate(`window.__capturePatchPayloads[0].timeMode`)), "manual");
   const captureScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-captures.png", Buffer.from(captureScreenshot.data, "base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
@@ -1067,11 +1354,19 @@ try {
   assert.equal(await waitUntil(`document.querySelector("#selection-tools").hidden?(document.dispatchEvent(new Event("selectionchange")),false):true`), true);
   await evaluate(`document.querySelector('[data-selection-action="comment"]').click(); true`);
   assert.equal(await evaluate(`!document.querySelector("#comment-panel").hidden && document.querySelector("#comment-panel h2").textContent === "认知复盘批注"`), true);
-  await evaluate(`document.querySelector("#comment-text").value = "这条判断需要继续核对反证。"; document.querySelector("#comment-composer").requestSubmit(); true`);
+  await evaluate(`(async()=>{const bytes=Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="),value=>value.charCodeAt(0)),file=new File([bytes],"comment-image.png",{type:"image/png"}),transfer=new DataTransfer();transfer.items.add(file);const input=document.querySelector("#comment-images");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));document.querySelector("#comment-text").value="这条判断需要继续核对反证。";document.querySelector("#comment-composer").requestSubmit();return true})()`);
   assert.equal(await waitUntil(`window.__annotationSaves === 1 && document.querySelector('.analysis-content .comment-anchor')?.textContent === "总判断"`), true);
+  assert.equal(await evaluate(`window.__analyses[0].annotations[0].attachmentPaths.length===1&&document.querySelectorAll('[data-comment-card="analysis-annotation-1"] .content-originals img').length===1`),true);
+  await evaluate(`document.querySelector('[data-annotation-menu="to-emphasis"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector('[data-comment-card="analysis-annotation-1"]').classList.contains("emphasis-card")&&document.querySelector(".analysis-content .comment-anchor")?.classList.contains("emphasis-anchor")`),true);
+  await evaluate(`document.querySelector('[data-annotation-menu="to-comment"]').click();true`);
+  assert.equal(await waitUntil(`!document.querySelector('[data-comment-card="analysis-annotation-1"]').classList.contains("emphasis-card")&&document.querySelector(".analysis-content .comment-anchor")?.classList.contains("comment-anchor")`),true);
   await evaluate(`document.querySelector('[data-shenji-toggle="analysis-annotation-1"]').click(); const form = document.querySelector('[data-shenji-form="analysis-annotation-1"]'); form.elements.message.value = "这条判断可能遗漏了什么？"; form.requestSubmit(); true`);
   assert.equal(await waitUntil(`window.__shenjiSaves === 1`), true);
   assert.match(await evaluate(`document.querySelector('[data-shenji-form="analysis-annotation-1"] .shenji-status').textContent`), /后台队列/);
+  await evaluate(`document.querySelector('[data-shenji-form="analysis-annotation-1"] textarea').value="后台同步期间的新草稿";true`);
+  assert.equal(await waitUntil(`document.querySelector('[data-comment-card="analysis-annotation-1"] .shenji-answer')?.textContent.includes("神鸡判断")`,160,25),true);
+  assert.equal(await evaluate(`document.querySelector('[data-shenji-form="analysis-annotation-1"] textarea').value`),"后台同步期间的新草稿");
   await evaluate(`document.querySelector('[data-view="notifications"]').click(); true`);
   assert.equal(await waitUntil(`document.querySelector('[data-notification-task]')?.closest(".notification-entry")?.textContent.includes("批注回复已生成")`), true);
   await evaluate(`document.querySelector('[data-notification-task]').click(); true`);
@@ -1214,7 +1509,7 @@ try {
   })()`);
   assert.equal(await waitUntil(`window.__bookUploads === ${bookUploadsBeforeSave + 2} && window.__bookPatches === 1 && !document.querySelector("#book-detail").hidden && document.querySelector(".book-detail-copy h2").textContent === "编辑后的书名"`), true);
   assert.equal(await evaluate(`window.__bookPayloads[1].imagePath === ${JSON.stringify(editedBookCoverPath)} && window.__bookPayloads[1].readingFinishedOn === "2026-09-27" && document.querySelector(".book-detail-cover").src.endsWith(${JSON.stringify(editedBookCoverPath)})`), true);
-  await evaluate(`(() => { const form = document.querySelector("[data-book-entry-form]"); form.elements.type.value = "thought"; form.elements.favorite.value = "star"; form.elements.occurredAt.value = "2026-09-27T09:10:11"; form.elements.content.value = "## 我的理解\\n\\n这条内容值得继续生长。"; form.requestSubmit(); return true; })()`);
+  await evaluate(`(() => { const form = document.querySelector("[data-book-entry-form]"); form.elements.type.value = "thought"; form.elements.favorite.value = "star"; form.querySelector('[data-occurrence-mode="manual"]').click(); form.elements.occurredAt.value = "2026-09-27T09:10:11"; form.elements.content.value = "## 我的理解\\n\\n这条内容值得继续生长。"; form.requestSubmit(); return true; })()`);
   assert.equal(await waitUntil(`window.__bookNoteSaves === 1 && document.querySelector('[data-note-id="note-1"]')`), true);
   const bookEntryState = await evaluate(`(() => { const entry = document.querySelector('[data-note-id="note-1"]'), card = entry.querySelector(".book-entry-card").getBoundingClientRect(), date = entry.querySelector(".book-entry-date").getBoundingClientRect(); return { heading: entry.querySelector(".book-note h2")?.textContent, type: entry.querySelector(".book-entry-type").textContent, favorite: entry.querySelector(".book-favorite").textContent, time: entry.querySelector("header time").textContent, dateOutside: date.right < card.left, commentable: entry.querySelector(".book-note").classList.contains("commentable") }; })()`);
   assert.equal(bookEntryState.heading, "我的理解");
@@ -1372,18 +1667,24 @@ try {
   assert.equal(await evaluate(`document.querySelector("#ai-answer-modal").hidden`), true);
   assert.match(await evaluate(`document.querySelector("#chain-status").textContent`), /后台生成/);
   assert.equal(await waitUntil(`window.__aiTasks[0].status === "succeeded" && !document.querySelector("#notification-dot").hidden`,80,25),true);
-  await evaluate(`(() => { window.__holdAiTasks=true;const card=document.querySelector('[data-chain-id="kept-root"]');card.open=true;card.querySelector('[data-answer-chain]').click();return true })()`);
+  await evaluate(`(() => { window.__holdAiTasks=true;const card=document.querySelector('#all-thoughts [data-chain-id="kept-root"]');card.open=true;card.querySelector('[data-answer-chain]').click();return true })()`);
   assert.equal(await waitUntil(`window.__aiTasks.some(task=>task.targetId==="kept-root"&&task.status==="running")`),true);
   const notificationReadsBeforePoll=await evaluate(`({notifications:window.__notificationReads,tasks:window.__taskReads})`);
-  await evaluate(`(() => { const card=document.querySelector('[data-chain-id="kept-root"]'),toggle=card.querySelector('[data-followup-compose]');toggle.click();const input=card.querySelector('[data-follow-up-root] textarea[name="question"]');input.value="轮询期间不能丢失";input.focus();return true })()`);
+  await evaluate(`(() => { const card=document.querySelector('#all-thoughts [data-chain-id="kept-root"]'),toggle=card.querySelector('[data-followup-compose]');toggle.click();const input=card.querySelector('[data-follow-up-root] textarea[name="question"]');input.value="轮询期间不能丢失";input.focus();return true })()`);
   await sleep(2200);
   const notificationReadsAfterPoll=await evaluate(`({notifications:window.__notificationReads,tasks:window.__taskReads})`);
   assert.ok(notificationReadsAfterPoll.notifications>notificationReadsBeforePoll.notifications);
   assert.ok(notificationReadsAfterPoll.tasks>notificationReadsBeforePoll.tasks);
-  assert.deepEqual(await evaluate(`(() => { const input=document.querySelector('[data-chain-id="kept-root"] [data-follow-up-root] textarea[name="question"]');return {value:input.value,formHidden:input.closest("form").hidden} })()`),{value:"轮询期间不能丢失",formHidden:false});
-  await evaluate(`(() => { window.__holdAiTasks=false;const task=window.__aiTasks.find(item=>item.targetId==="kept-root");task.status="failed";const notification=window.__notifications.find(item=>item.taskId===task.id);notification.status="failed";return true })()`);
+  assert.deepEqual(await evaluate(`(() => { const input=document.querySelector('#all-thoughts [data-chain-id="kept-root"] [data-follow-up-root] textarea[name="question"]');return {value:input.value,formHidden:input.closest("form").hidden} })()`),{value:"轮询期间不能丢失",formHidden:false});
+  const stateRequestsBeforeBackgroundMerge=await evaluate(`window.__stateRequests`);
+  await evaluate(`(() => { window.__holdAiTasks=false;const task=window.__aiTasks.find(item=>item.targetId==="kept-root"&&item.status==="running");window.__completeAiTask(task);return true })()`);
+  if(!await waitUntil(`[...document.querySelectorAll('[data-chain-id="kept-root"] .thought-block-content')].some(item=>item.textContent.includes("后台结果已局部合并"))`,160,25))throw new Error(await evaluate(`JSON.stringify({tasks:window.__aiTasks,results:window.__taskResults,reads:{notifications:window.__notificationReads,tasks:window.__taskReads},toast:document.querySelector("#toast").textContent,answers:[...document.querySelectorAll('[data-chain-id="kept-root"] .thought-block-content')].map(item=>item.textContent)})`));
+  assert.deepEqual(await evaluate(`(() => {const input=document.querySelector('#all-thoughts [data-chain-id="kept-root"] [data-follow-up-root] textarea[name="question"]');return{value:input.value,formHidden:input.closest("form").hidden,cardOpen:input.closest("[data-chain-id]").open,focused:document.activeElement===input,stateRequests:window.__stateRequests}})()`),{value:"轮询期间不能丢失",formHidden:false,cardOpen:true,focused:true,stateRequests:stateRequestsBeforeBackgroundMerge});
   await evaluate(`document.querySelector("#chain-question").value = "第二条不应被阻塞"; document.querySelector("#chain-answer").value = "手写回答"; document.querySelector("#chain-form").requestSubmit(); true`);
   assert.equal(await waitUntil(`window.__thoughtSaves === 3 && !document.querySelector('#chain-form [type="submit"]').disabled && document.querySelector("#chain-question").value === ""`, 80, 25), true);
+  await evaluate(`(async()=>{const bytes=Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="),value=>value.charCodeAt(0)),file=new File([bytes],"thought-image.png",{type:"image/png"}),transfer=new DataTransfer();transfer.items.add(file);const input=document.querySelector("#thought-root-images");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));document.querySelector("#chain-question").value="";document.querySelector("#chain-answer").value="";document.querySelector("#chain-form").requestSubmit();return true})()`);
+  assert.equal(await waitUntil(`window.__thoughtSaves===4&&document.querySelector('[data-chain-id="auto-root-4"] [data-content-image-understand="thoughtRoot"]')`),true);
+  assert.equal(await evaluate(`window.__savedPayloads[3].question===""&&window.__savedPayloads[3].attachmentPaths.length===1`),true);
   await evaluate(`document.querySelector('[data-section="mine"]').click(); true`);
   const mineDesktop = await evaluate(`(() => ({
     active:document.querySelector("#view-mine").classList.contains("active"),
@@ -1391,9 +1692,11 @@ try {
     account:document.querySelector("#mine-account-name").textContent,
     rows:[...document.querySelectorAll("#view-mine [data-view]")].map(button=>button.querySelector("b").textContent),
     summaries:[...document.querySelectorAll("#view-mine .mine-row-copy small")].every(item=>item.textContent.trim().length>0),
+    sidebarVersion:document.querySelector("#sidebar-app-version").textContent,
+    mineVersion:document.querySelector("#mine-app-version").textContent,
     noOverflow:document.documentElement.scrollWidth<=window.innerWidth
   }))()`);
-  assert.deepEqual(mineDesktop, { active:true, sectionHidden:true, account:"owner", rows:["owner","统计","通知","回收站","AI 成本","架构设计","设置","商业化","关于"], summaries:true, noOverflow:true });
+  assert.deepEqual(mineDesktop, { active:true, sectionHidden:true, account:"owner", rows:["owner","统计","通知","回收站","数据导出","AI 成本","架构设计","设置","商业化","产品反馈","关于"], summaries:true, sidebarVersion:"v0.2.0", mineVersion:"v0.2.0", noOverflow:true });
   const mineDesktopScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-mine-desktop.png", Buffer.from(mineDesktopScreenshot.data, "base64"));
   await evaluate(`document.querySelector('#view-mine [data-view="statistics"]').click(); true`);
@@ -1435,7 +1738,7 @@ try {
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
   const stateRequestsBeforeAiCost=await evaluate(`window.__stateRequests`);
   await evaluate(`document.querySelector('[data-view="ai-cost"]').click();true`);
-  assert.equal(await waitUntil(`document.querySelectorAll("#ai-cost-scenario-rows tr").length===13&&document.querySelectorAll("#ai-cost-kpis article").length===4`),true);
+  assert.equal(await waitUntil(`document.querySelectorAll("#ai-cost-scenario-rows tr").length===14&&document.querySelectorAll("#ai-cost-kpis article").length===4`),true);
   assert.equal(await evaluate(`window.__stateRequests`),stateRequestsBeforeAiCost);
   const aiCostInitial=await evaluate(`({
     active:document.querySelector("#view-ai-cost").classList.contains("active"),
@@ -1445,7 +1748,7 @@ try {
     projectedIsCny:document.querySelector("#ai-cost-kpis strong").textContent.startsWith("¥"),
     noOverflow:document.documentElement.scrollWidth<=window.innerWidth
   })`);
-  assert.deepEqual(aiCostInitial,{active:true,rows:13,recommendations:5,currentModel:"Pro · Ultra",projectedIsCny:true,noOverflow:true});
+  assert.deepEqual(aiCostInitial,{active:true,rows:14,recommendations:5,currentModel:"Pro · Ultra",projectedIsCny:true,noOverflow:true});
   const thoughtAnswerCostBefore=await evaluate(`document.querySelector('[data-ai-cost-row="thoughtAnswer"] [data-ai-cost-row-total]').textContent`);
   await evaluate(`(()=>{const field=document.querySelector('[data-ai-cost-row="thoughtAnswer"] [data-ai-cost-field="callsPerMonth"]');field.value="40";field.dispatchEvent(new Event("input",{bubbles:true}))})();true`);
   assert.notEqual(await evaluate(`document.querySelector('[data-ai-cost-row="thoughtAnswer"] [data-ai-cost-row-total]').textContent`),thoughtAnswerCostBefore);
@@ -1568,7 +1871,7 @@ try {
   await evaluate(`document.querySelector("#password-form [name='currentPassword']").value="old-password-1"; document.querySelector("#password-form [name='newPassword']").value="new-password-2"; document.querySelector("#password-form [name='confirmPassword']").value="new-password-2"; document.querySelector("#password-form").requestSubmit(); true`);
   assert.equal(await waitUntil(`window.__passwordChanges===1&&document.querySelector("#password-status").textContent.includes("密码已更新")`), true);
   await evaluate(`document.querySelector('[data-view="settings"]').click(); true`);
-  assert.equal(await evaluate(`document.querySelectorAll("[data-profile-model]").length === 4 && document.querySelectorAll("[data-profile-effort]").length === 4 && document.querySelectorAll("[data-ai-scenario]").length === 13 && document.querySelectorAll("[data-response-style]").length === 7`), true);
+  assert.equal(await evaluate(`document.querySelectorAll("[data-profile-model]").length === 4 && document.querySelectorAll("[data-profile-effort]").length === 4 && document.querySelectorAll("[data-ai-scenario]").length === 14 && document.querySelectorAll("[data-response-style]").length === 7`), true);
   await evaluate(`document.querySelector('[data-profile-model="lite"]').value = "deepseek-v4-pro"; document.querySelector('[data-profile-effort="lite"]').value = "max"; document.querySelector('[data-ai-scenario="diaryLead"]').value = "ultra";document.querySelector("#assistant-name").value="照见";document.querySelector('[data-response-style="thoughtAnswer"]').value="deep";document.querySelector("#llm-settings-form").requestSubmit(); true`);
   assert.equal(await waitUntil(`window.__settingsSaves === 1`), true);
   const savedSettings = await evaluate(`window.__lastSettings = undefined; ({ model: document.querySelector('[data-profile-model="lite"]').value, effort: document.querySelector('[data-profile-effort="lite"]').value, scene: document.querySelector('[data-ai-scenario="diaryLead"]').value, name:document.querySelector("#assistant-name").value, style:document.querySelector('[data-response-style="thoughtAnswer"]').value })`);
@@ -1585,7 +1888,7 @@ try {
   await fs.writeFile("/tmp/growth-tier-settings-mobile.png", Buffer.from(settingsMobileScreenshot.data, "base64"));
   assert.equal(await evaluate(`document.querySelector("#section-nav").hidden`), true);
   await evaluate(`document.querySelector("#view-settings .mine-back").click(); true`);
-  assert.equal(await evaluate(`document.querySelector("#view-mine").classList.contains("active")&&document.documentElement.scrollWidth<=window.innerWidth`), true);
+  assert.deepEqual(await evaluate(`({active:document.querySelector("#view-mine").classList.contains("active"),version:document.querySelector("#mine-app-version").textContent,centered:getComputedStyle(document.querySelector("#mine-app-version")).textAlign==="center",noOverflow:document.documentElement.scrollWidth<=window.innerWidth})`),{active:true,version:"v0.2.0",centered:true,noOverflow:true});
   const mineMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-mine-mobile.png", Buffer.from(mineMobileScreenshot.data, "base64"));
   await evaluate(`document.querySelector('#view-mine [data-view="about"]').click(); true`);
@@ -1622,26 +1925,37 @@ try {
   const aboutDesktopScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-about-desktop.png", Buffer.from(aboutDesktopScreenshot.data, "base64"));
   assert.equal(await evaluate(`(() => { document.querySelector('[data-view="thoughts"]').click();const before=window.__deleteRequests;window.confirm=()=>false;document.querySelector('[data-chain-id="kept-root"] [data-delete-chain]').click();return window.__deleteRequests===before; })()`),true);
+  await evaluate(`document.querySelector('[data-view="daily"]').click();document.querySelector('[data-daily-tab="exercise"]').click();window.__pasteHealth();window.__delayParseKind="exercise";window.__releaseParse=null;document.querySelector("#parse-health-images").click();true`);
+  assert.equal(await waitUntil(`typeof window.__releaseParse==="function"`),true);
   await evaluate(`document.querySelector('[data-view="today"]').click();document.querySelector("#chain-question").value="账户 A 的在途草稿";document.querySelector("#chain-answer").value="";document.querySelector("#draft-answer-button").click();true`);
   assert.equal(await waitUntil(`window.__reasoningChunks===1`,40,10),true);
   await evaluate(`window.__delayLogout=true;document.querySelector("#logout-button").click();true`);
   assert.equal(await waitUntil(`!document.querySelector("#auth-gate").hidden`),true);
   assert.deepEqual(await evaluate(`({locked:document.body.classList.contains("auth-locked"),privateSurfaceHidden:getComputedStyle(document.querySelector("main")).visibility==="hidden",logoutPending:typeof window.__releaseLogout==="function"})`),{locked:true,privateSurfaceHidden:true,logoutPending:true});
   await evaluate(`window.__releaseLogout();true`);
-  assert.equal(await waitUntil(`[...document.querySelectorAll(".auth-form input,.auth-form button")].every(item=>!item.disabled)`),true);
-  await evaluate(`window.__delaySecondState=true;(() => { const loginForm=document.querySelector("#login-form");loginForm.elements.username.value="second";loginForm.elements.password.value="password2";loginForm.requestSubmit();return true; })()`);
+  assert.equal(await waitUntil(`[...document.querySelectorAll(".auth-form input,.auth-form button,[data-auth-tab]")].every(item=>!item.disabled)`),true);
+  await evaluate(`window.__delaySecondState=true;window.__delayLogin=true;(() => { const loginForm=document.querySelector("#login-form");loginForm.elements.username.value="second";loginForm.elements.password.value="shenji";loginForm.requestSubmit();return true; })()`);
+  assert.equal(await waitUntil(`typeof window.__releaseLogin==="function"`),true);
+  assert.equal(await evaluate(`[...document.querySelectorAll(".auth-form input,.auth-form button,[data-auth-tab]")].every(item=>item.disabled)`),true);
+  await evaluate(`window.__releaseLogin();true`);
   assert.equal(await waitUntil(`document.querySelector("#account-name").textContent==="second"&&typeof window.__releaseSecondState==="function"`),true);
   assert.deepEqual(await evaluate(`({locked:document.body.classList.contains("auth-locked"),gateVisible:!document.querySelector("#auth-gate").hidden,privateSurfaceHidden:getComputedStyle(document.querySelector("main")).visibility==="hidden"})`),{locked:true,gateVisible:true,privateSurfaceHidden:true});
   await evaluate(`window.__releaseSecondState();true`);
   assert.equal(await waitUntil(`document.querySelector("#account-name").textContent==="second"&&document.querySelector("#auth-gate").hidden&&!document.body.classList.contains("auth-locked")`),true);
+  await evaluate(`window.__releaseParse();true`);
   await sleep(1000);
   assert.equal(await evaluate(`document.querySelector("#chain-answer").value===""&&document.querySelector("#ai-answer-modal").hidden`),true);
+  assert.equal(await evaluate(`[...document.querySelectorAll('[data-daily-form="weight"] input,[data-daily-form="exercise"] input')].filter(input=>!["occurredAt","clothing"].includes(input.name)).every(input=>input.value==="")&&document.querySelectorAll("#health-image-previews figure").length===0`),true);
   await evaluate(`window.confirm=()=>true;document.querySelectorAll(".modal-backdrop").forEach(item=>item.hidden=true);document.querySelector("#toast").hidden=true;document.querySelector('[data-view="settings"]').click();true`);
-  assert.deepEqual(await evaluate(`({visible:!document.querySelector("#local-test-settings").hidden,simulation:document.querySelector('[data-local-test-mode="simulation"]').classList.contains("active"),summaryOk:/owner · 12 条记录/.test(document.querySelector("#local-test-summary").textContent)})`),{visible:true,simulation:true,summaryOk:true});
+  assert.deepEqual(await evaluate(`({visible:!document.querySelector("#local-test-settings").hidden,simulation:document.querySelector('[data-local-test-mode="simulation"]').classList.contains("active"),summaryOk:/owner · 12 条记录/.test(document.querySelector("#local-test-summary").textContent),entryOk:/使用模拟 \\/ 冷启测试 · 当前使用模拟/.test(document.querySelector("#mine-settings-summary").textContent)})`),{visible:true,simulation:true,summaryOk:true,entryOk:true});
   const localTestSettingsScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
   await fs.writeFile("/tmp/growth-local-test-settings.png",Buffer.from(localTestSettingsScreenshot.data,"base64"));
-  await evaluate(`document.querySelector('[data-local-test-mode="cold"]').click();true`);
+  await evaluate(`window.__onboardingSchemaAvailable=true;document.querySelector('[data-local-test-mode="cold"]').click();true`);
   assert.equal(await waitUntil(`window.__testWorkspaceMode==="cold"&&document.querySelector("#view-today").classList.contains("active")&&!document.querySelector("#onboarding-workspace").hidden`),true);
+  await evaluate(`document.querySelector('[data-section="seen"]').click();document.querySelector('[data-view="keepsakes"]').click();true`);
+  assert.deepEqual(await evaluate(`(()=>{const grid=document.querySelector("#keepsake-grid"),empty=grid.querySelector(".empty"),gridBox=grid.getBoundingClientRect(),emptyBox=empty.getBoundingClientRect();return{text:empty.textContent.trim(),columnSpan:getComputedStyle(empty).columnSpan,fullWidth:Math.abs(gridBox.width-emptyBox.width)<2,noOverflow:document.documentElement.scrollWidth<=innerWidth}})()`),{text:"还没有数字留存的小物。",columnSpan:"all",fullWidth:true,noOverflow:true});
+  await evaluate(`document.querySelector('[data-section="today"]').click();true`);
+  assert.deepEqual(await evaluate(`({memories:document.querySelectorAll(".home-v02-memory").length,empty:document.querySelector(".home-v02-empty")?.textContent,moodPoints:document.querySelectorAll("#home-mood-sparkline circle").length,keepsake:document.querySelector("#home-keepsake").textContent.includes("留存一件小物"),noOverflow:document.documentElement.scrollWidth<=innerWidth})`),{memories:0,empty:"留下第一条思考，往后在这里重逢。",moodPoints:0,keepsake:true,noOverflow:true});
   assert.equal(await evaluate(`document.querySelectorAll(".onboarding-question").length`),8);
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:2,mobile:true});await sleep(100);
   assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth&&[...document.querySelectorAll(".onboarding-question")].every(item=>item.getBoundingClientRect().right<=innerWidth)`),true);
@@ -1659,7 +1973,7 @@ try {
   await evaluate(`document.querySelector("#onboarding-form").requestSubmit();true`);
   assert.equal(await waitUntil(`window.__onboardingSaves===1&&document.querySelector("#onboarding-workspace").hidden`),true);
   assert.deepEqual(await evaluate(`({mode:window.__onboarding.questionnaireMode,answers:Object.keys(window.__onboarding.answers).length,profile:window.__onboarding.profile})`),{mode:"detailed",answers:18,profile:{gender:"",region:"",occupation:"",major:"",school:"",introduction:"",works:""}});
-  console.log("UI regression passed: account locking, trash-safe actions, bound recognition/drafts, non-destructive notification polling, thought blocks, local test switching, required onboarding questionnaires, mobile layout, and response styles.");
+  console.log("UI regression passed: home v0.2 data, routing, drafts and responsive layouts plus account, health, thought, local-mode and onboarding flows.");
 } finally {
   cdp?.socket.close();
   chrome.kill("SIGKILL");
