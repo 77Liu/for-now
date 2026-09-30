@@ -729,7 +729,7 @@ try {
   assert.equal(await waitUntil(`getComputedStyle(document.querySelector("#view-today")).opacity==="1"`),true);
   await sleep(120);
   const homeDesktop = await evaluate(`(() => {
-    const home=document.querySelector("#view-today"),grid=document.querySelector("#home-memory-grid"),background=getComputedStyle(document.querySelector(".home-v02-background"));
+    const home=document.querySelector("#view-today"),grid=document.querySelector("#home-memory-grid"),backgroundElement=document.querySelector(".home-v02-background"),background=getComputedStyle(backgroundElement),keepsakeImage=document.querySelector(".home-v02-keepsake-preview img");
     return {
       active:home.classList.contains("active")&&home.classList.contains("home-v02"),
       memories:grid.querySelectorAll(".home-v02-memory").length,
@@ -737,27 +737,30 @@ try {
       userOnly:!grid.textContent.includes("模型回答")&&!grid.textContent.includes("AI总结"),
       traceable:[...grid.querySelectorAll(".home-v02-memory")].every(item=>item.dataset.homeMemoryId&&item.querySelector("[data-home-memory-open]")),
       keepsake:document.querySelector("#home-keepsake").textContent.includes("旧展览票"),
+      keepsakeOpaque:keepsakeImage&&getComputedStyle(keepsakeImage).opacity==="1",
       moodPoints:document.querySelectorAll("#home-mood-sparkline circle").length,
       background:background.backgroundImage.includes("desktop-background.png"),
+      backgroundFixed:background.position==="fixed"&&Math.round(backgroundElement.getBoundingClientRect().height)===innerHeight,
       actionsCollapsed:!document.querySelector(".home-v02-secondary").open,
       liveStatusHidden:getComputedStyle(document.querySelector("#home-memory-status")).position==="absolute",
       noOverflow:document.documentElement.scrollWidth<=innerWidth
     };
   })()`);
-  assert.deepEqual(homeDesktop,{active:true,memories:3,twoColumns:true,userOnly:true,traceable:true,keepsake:true,moodPoints:2,background:true,actionsCollapsed:true,liveStatusHidden:true,noOverflow:true});
+  assert.deepEqual(homeDesktop,{active:true,memories:3,twoColumns:true,userOnly:true,traceable:true,keepsake:true,keepsakeOpaque:true,moodPoints:2,background:true,backgroundFixed:true,actionsCollapsed:true,liveStatusHidden:true,noOverflow:true});
   const homeDesktopScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
   await fs.writeFile("/tmp/growth-home-v02-desktop.png",Buffer.from(homeDesktopScreenshot.data,"base64"));
   const firstHomeKeys=await evaluate(`[...document.querySelectorAll(".home-v02-memory")].map(item=>item.dataset.homeMemoryKey)`);
   await evaluate(`document.querySelector("#home-shuffle").click();true`);
   const nextHomeKeys=await evaluate(`[...document.querySelectorAll(".home-v02-memory")].map(item=>item.dataset.homeMemoryKey)`);
   assert.equal(nextHomeKeys.some(key=>!firstHomeKeys.includes(key)),true);
-  await evaluate(`document.querySelector("#home-open-thought").click();document.querySelector("#chain-question").value="关闭后仍保留的首页草稿";document.querySelector('[data-home-editor-close="thought"]').click();document.querySelector("#home-open-thought").click();true`);
+  await evaluate(`document.querySelector("#home-open-thought").click();document.querySelector("#chain-question").value="关闭后仍保留的首页草稿";document.querySelector("#chain-question").dispatchEvent(new Event("input",{bubbles:true}));document.querySelector('[data-home-editor-close="thought"]').click();document.querySelector("#home-open-thought").click();true`);
   assert.equal(await waitUntil(`document.activeElement===document.querySelector("#chain-question")`),true);
   assert.deepEqual(await evaluate(`({visible:!document.querySelector("#home-thought-editor").hidden,draft:document.querySelector("#chain-question").value,focused:document.activeElement===document.querySelector("#chain-question")})`),{visible:true,draft:"关闭后仍保留的首页草稿",focused:true});
   assert.equal(await evaluate(`(() => { const editor=document.querySelector("#home-thought-editor"),focusable=[...editor.querySelectorAll('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled])')].filter(item=>!item.hidden&&getComputedStyle(item).display!=="none");focusable.at(-1).focus();document.dispatchEvent(new KeyboardEvent("keydown",{key:"Tab",bubbles:true,cancelable:true}));return document.activeElement===focusable[0]; })()`),true);
   await evaluate(`document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}));true`);
   assert.equal(await waitUntil(`document.activeElement===document.querySelector("#home-open-thought")`),true);
   assert.deepEqual(await evaluate(`({hidden:document.querySelector("#home-thought-editor").hidden,focusReturned:document.activeElement===document.querySelector("#home-open-thought"),draft:document.querySelector("#chain-question").value})`),{hidden:true,focusReturned:true,draft:"关闭后仍保留的首页草稿"});
+  assert.equal(await evaluate(`JSON.parse(sessionStorage.getItem("cike:session-drafts:user-1")).forms.find(item=>item.key==="form:0").fields.find(item=>item.key==="id:chain-question").value`),"关闭后仍保留的首页草稿");
   await evaluate(`document.querySelector("#chain-question").value="";document.querySelector("#chain-question").dispatchEvent(new Event("input",{bubbles:true}));true`);
   await evaluate(`document.querySelector('.home-v02-memory[data-home-memory-type="thought"] [data-home-memory-open]').click();true`);
   assert.equal(await waitUntil(`document.querySelector("#view-thoughts").classList.contains("active")&&document.querySelector('[data-chain-id="kept-root"]').open`),true);
@@ -1682,9 +1685,10 @@ try {
   assert.deepEqual(await evaluate(`(() => {const input=document.querySelector('#all-thoughts [data-chain-id="kept-root"] [data-follow-up-root] textarea[name="question"]');return{value:input.value,formHidden:input.closest("form").hidden,cardOpen:input.closest("[data-chain-id]").open,focused:document.activeElement===input,stateRequests:window.__stateRequests}})()`),{value:"轮询期间不能丢失",formHidden:false,cardOpen:true,focused:true,stateRequests:stateRequestsBeforeBackgroundMerge});
   await evaluate(`document.querySelector("#chain-question").value = "第二条不应被阻塞"; document.querySelector("#chain-answer").value = "手写回答"; document.querySelector("#chain-form").requestSubmit(); true`);
   assert.equal(await waitUntil(`window.__thoughtSaves === 3 && !document.querySelector('#chain-form [type="submit"]').disabled && document.querySelector("#chain-question").value === ""`, 80, 25), true);
-  await evaluate(`(async()=>{const bytes=Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="),value=>value.charCodeAt(0)),file=new File([bytes],"thought-image.png",{type:"image/png"}),transfer=new DataTransfer();transfer.items.add(file);const input=document.querySelector("#thought-root-images");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));document.querySelector("#chain-question").value="";document.querySelector("#chain-answer").value="";document.querySelector("#chain-form").requestSubmit();return true})()`);
-  assert.equal(await waitUntil(`window.__thoughtSaves===4&&document.querySelector('[data-chain-id="auto-root-4"] [data-content-image-understand="thoughtRoot"]')`),true);
-  assert.equal(await evaluate(`window.__savedPayloads[3].question===""&&window.__savedPayloads[3].attachmentPaths.length===1`),true);
+  const taskCountBeforeImageAnswer=await evaluate(`window.__aiTasks.length`);
+  await evaluate(`(async()=>{const bytes=Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="),value=>value.charCodeAt(0)),file=new File([bytes],"thought-image.png",{type:"image/png"}),transfer=new DataTransfer();transfer.items.add(file);const input=document.querySelector("#thought-root-images");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));document.querySelector("#chain-question").value="结合这张图片回答";document.querySelector("#chain-answer").value="";document.querySelector("#chain-form").requestSubmit();return true})()`);
+  assert.equal(await waitUntil(`window.__thoughtSaves===4&&window.__aiTasks.length===${taskCountBeforeImageAnswer+1}`),true);
+  assert.deepEqual(await evaluate(`({question:window.__savedPayloads[3].question,pathCount:window.__savedPayloads[3].attachmentPaths.length,generate:window.__savedPayloads[3].generateAnswer,answerTasks:window.__aiTasks.filter(item=>item.targetId==="auto-root-4"&&item.kind==="thoughtAnswer").length,imageTasks:window.__aiTasks.filter(item=>item.targetId==="auto-root-4"&&item.kind==="contentImageUnderstanding").length})`),{question:"结合这张图片回答",pathCount:1,generate:true,answerTasks:1,imageTasks:0});
   await evaluate(`document.querySelector('[data-section="mine"]').click(); true`);
   const mineDesktop = await evaluate(`(() => ({
     active:document.querySelector("#view-mine").classList.contains("active"),
@@ -1931,6 +1935,7 @@ try {
   assert.equal(await waitUntil(`window.__reasoningChunks===1`,40,10),true);
   await evaluate(`window.__delayLogout=true;document.querySelector("#logout-button").click();true`);
   assert.equal(await waitUntil(`!document.querySelector("#auth-gate").hidden`),true);
+  assert.equal(await evaluate(`sessionStorage.getItem("cike:session-drafts:user-1")`),null);
   assert.deepEqual(await evaluate(`({locked:document.body.classList.contains("auth-locked"),privateSurfaceHidden:getComputedStyle(document.querySelector("main")).visibility==="hidden",logoutPending:typeof window.__releaseLogout==="function"})`),{locked:true,privateSurfaceHidden:true,logoutPending:true});
   await evaluate(`window.__releaseLogout();true`);
   assert.equal(await waitUntil(`[...document.querySelectorAll(".auth-form input,.auth-form button,[data-auth-tab]")].every(item=>!item.disabled)`),true);

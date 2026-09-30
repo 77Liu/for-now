@@ -1,6 +1,6 @@
 {
   "name": "personal-growth-tracker",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "scripts": {
@@ -22,6 +22,7 @@
     "test:g2": "node scripts/g2-discovery-regression.mjs && node scripts/g2-export-regression.mjs && node scripts/g2-actions-regression.mjs && node scripts/g2-feedback-regression.mjs && node scripts/g2-integration-regression.mjs",
     "test:frontend-shared": "node scripts/frontend-shared-regression.mjs",
     "test:frontend-shell": "node scripts/frontend-shell-regression.mjs",
+    "test:pwa": "node scripts/pwa-regression.mjs",
     "test:ui": "node scripts/ui-regression.mjs",
     "test:mobile": "node scripts/mobile-platform-regression.mjs",
     "test:local-mode": "node scripts/local-test-mode-regression.mjs",

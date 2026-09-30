@@ -970,7 +970,8 @@ try {
       clientRequestId: "image-only-thought",
       question: "",
       attachmentPaths: [originalUpload.attachmentPaths[0]],
-      occurredAt: "2026-09-27T12:02:00"
+      occurredAt: "2026-09-27T12:02:00",
+      generateAnswer: true
     })
   });
   assert.equal(imageOnlyThoughtResponse.status, 201, await imageOnlyThoughtResponse.clone().text());
@@ -978,6 +979,9 @@ try {
   const imageOnlyRoot = imageOnlyThought.items.find(item => item.type === "question");
   assert.equal(imageOnlyRoot.content, "");
   assert.deepEqual(imageOnlyRoot.attachmentPaths, [originalUpload.attachmentPaths[0]]);
+  assert.equal(imageOnlyThought.task.kind, "thoughtAnswer");
+  assert.equal((await waitForTask(base, imageOnlyThought.task.id)).status, "succeeded");
+  assert.equal(modelRequests.at(-1).messages.at(-1).content.some(item => item.type === "image_url"), true);
   const imageOnlyBlockResponse = await fetch(`${base}/api/thoughts`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -1176,9 +1180,9 @@ try {
   assert.ok(sleepUsage.durationMs >= 0);
   assert.deepEqual(sleepUsage.rawUsage, { prompt_tokens: 1000, prompt_cache_hit_tokens: 200, prompt_cache_miss_tokens: 800, completion_tokens: 500, completion_tokens_details: { reasoning_tokens: 300 } });
   const imageStatistics = (await (await fetch(`${base}/api/statistics`)).json()).ai;
-  assert.equal(imageStatistics.summary.visionCalls, 4);
-  assert.equal(imageStatistics.summary.imageCount, 5);
-  assert.equal(imageStatistics.modalities.find(item => item.modality === "vision").calls, 4);
+  assert.equal(imageStatistics.summary.visionCalls, 5);
+  assert.equal(imageStatistics.summary.imageCount, 6);
+  assert.equal(imageStatistics.modalities.find(item => item.modality === "vision").calls, 5);
   const auditFiles = (await fs.readdir(path.join(dataDir, "logs"))).filter(name => name.startsWith("ai-audit-"));
   const auditEntries = (await Promise.all(auditFiles.map(async name => (await fs.readFile(path.join(dataDir, "logs", name), "utf8")).trim().split("\n").filter(Boolean).map(JSON.parse)))).flat();
   const sleepAudit = auditEntries.find(item => item.traceId === sleepTraceId && item.status !== "started");

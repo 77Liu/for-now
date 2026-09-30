@@ -96,6 +96,7 @@ store.onboarding = { ...documents.get("a").onboarding, material: "RAW_IMPORTED",
 const event = { occurredAt: "2026-09-28T01:02:03.000Z", occurredOn: "2026-09-28", createdAt: now() };
 const root = {
   ...event, id: "root", type: "question", authorType: "user", content: "RAW_QUESTION", tags: ["用户标签"], version: 3,
+  attachmentPaths: ["/attachments/thought-image.png"],
   reasoningContent: "PRIVATE_REASONING",
   followUps: Array.from({ length: 65 }, (_, index) => ({ id: `follow-${index}`, version: 2, question: `RAW_FOLLOW_${index}`, answer: index % 2 ? "" : `ANSWER_FOLLOW_${index}`, reasoningContent: "PRIVATE_REASONING" })),
   annotations: [{ id: "mark", kind: "comment", targetKey: "question:root", quote: "RAW_QUESTION", start: 0, end: 12, text: "RAW_COMMENT", shenji: [{ id: "turn", message: "PREVIOUS_QUESTION", answer: "PREVIOUS_ANSWER", reasoningContent: "PRIVATE_REASONING" }] }]
@@ -137,7 +138,9 @@ const targets = createAiTaskTargets({
   thoughts: createThoughtTaskTarget({ createId: () => "generated", now, stripThoughtAnswerLead }),
   annotations: createAnnotationService({ createId: () => "annotation", now }), hash
 });
-assert.equal(targets.prepare(store, { kind: "thoughtAnswer", targetId: root.id }).prompt, prepareThoughtAnswer(store, root));
+const thoughtAnswerWork = targets.prepare(store, { kind: "thoughtAnswer", targetId: root.id });
+assert.equal(thoughtAnswerWork.prompt, prepareThoughtAnswer(store, root));
+assert.deepEqual(thoughtAnswerWork.attachmentPaths, ["/attachments/thought-image.png"]);
 assert.equal(targets.prepare(store, { kind: "followUpAnswer", targetId: root.id, subtargetId: "follow-33" }).prompt, prepareThoughtAnswer(store, root, "follow-33"));
 const annotationWork = targets.prepare(store, { kind: "annotationShenji", resourceType: "thought", targetId: root.id, subtargetId: "mark", payload: { message: "CURRENT_QUESTION" } });
 for (const expected of ["RAW_QUESTION", "RAW_COMMENT", "PREVIOUS_QUESTION", "PREVIOUS_ANSWER", "CURRENT_QUESTION"]) assert.ok(annotationWork.prompt.includes(expected));

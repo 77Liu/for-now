@@ -1,5 +1,6 @@
 export function createApiClient({ baseUrl, session, onAuthRequired = () => {}, fetchImpl = globalThis.fetch }) {
   const basePath = new URL(".", baseUrl).pathname.replace(/\/$/, "");
+  let foregroundAt = 0;
   const appUrl = value => typeof value === "string" && value.startsWith("/") && basePath ? `${basePath}${value}` : value;
   const errorFor = (response, result, fallback) => Object.assign(new Error(result?.error?.message || result?.error || fallback), {
     status: response.status, code: result?.error?.code || result?.code, requestId: response.headers.get("x-request-id")
@@ -7,11 +8,21 @@ export function createApiClient({ baseUrl, session, onAuthRequired = () => {}, f
   async function start(url, options, ticket, networkMessage = "无法连接服务，请确认网络连接后重试") {
     const signal = options.signal ? AbortSignal.any([ticket.signal, options.signal]) : ticket.signal;
     let response;
-    try { response = await fetchImpl(appUrl(url), { ...options, signal }); }
+    const requestOptions = { ...options, signal };
+    try { response = await fetchImpl(appUrl(url), requestOptions); }
     catch (error) {
       session.assertCurrent(ticket);
       if (signal.aborted) throw error;
-      throw new Error(networkMessage);
+      const method = String(options.method || "GET").toUpperCase();
+      if (!["GET", "HEAD"].includes(method) || Date.now() - foregroundAt > 5000) throw new Error(networkMessage);
+      await new Promise(resolve => setTimeout(resolve, 120));
+      session.assertCurrent(ticket);
+      try { response = await fetchImpl(appUrl(url), requestOptions); }
+      catch (retryError) {
+        session.assertCurrent(ticket);
+        if (signal.aborted) throw retryError;
+        throw new Error(networkMessage);
+      }
     }
     session.assertCurrent(ticket);
     return response;
@@ -24,6 +35,7 @@ export function createApiClient({ baseUrl, session, onAuthRequired = () => {}, f
   };
   return {
     appUrl,
+    markForeground() { foregroundAt = Date.now(); },
     async request(url, options = {}, { optional = false, authGate = true, allowUnauthorized = false, fallback = "操作失败" } = {}) {
       const ticket = session.capture();
       const response = await start(url, { ...options, headers: { "content-type": "application/json", ...options.headers } }, ticket);

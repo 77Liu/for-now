@@ -31,6 +31,19 @@ assert.equal(locked, 1);
 fetchHandler = async () => new Response("", { status: 404 });
 assert.equal(await client.request("/api/local-test-mode", {}, { optional: true }), null);
 
+let foregroundAttempts = 0;
+client.markForeground();
+fetchHandler = async () => {
+  foregroundAttempts += 1;
+  if (foregroundAttempts === 1) throw new TypeError("Load failed");
+  return Response.json({ resumed: true });
+};
+assert.deepEqual(await client.request("/api/state"), { resumed: true });
+assert.equal(foregroundAttempts, 2);
+foregroundAttempts = 0;
+await assert.rejects(client.request("/api/write", { method: "POST", body: "{}" }), /无法连接服务/);
+assert.equal(foregroundAttempts, 1);
+
 // A response whose transport ignores abort must still never reach the next account.
 let pending = deferred();
 fetchHandler = () => pending.promise;

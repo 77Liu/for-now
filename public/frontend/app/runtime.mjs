@@ -113,6 +113,29 @@ function restoreFormDrafts(root,drafts){
     }
   }
 }
+const durableDraftForms=["chain-form","checkin-form"];
+const durableDraftKey=()=>currentUser?.id?`cike:session-drafts:${currentUser.id}`:"";
+function saveDurableDrafts(){
+  const key=durableDraftKey();if(!key)return;
+  const forms=durableDraftForms.map(id=>document.getElementById(id)).filter(Boolean);
+  const payload={forms:captureFormDrafts({querySelectorAll:()=>forms}),draftTags,captureDraftTags};
+  try{sessionStorage.setItem(key,JSON.stringify(payload))}catch{}
+}
+function restoreDurableDrafts(){
+  const key=durableDraftKey();if(!key)return;
+  try{
+    const payload=JSON.parse(sessionStorage.getItem(key)||"null");if(!payload)return;
+    restoreFormDrafts({querySelectorAll:()=>durableDraftForms.map(id=>document.getElementById(id)).filter(Boolean)},payload.forms||[]);
+    draftTags=Array.isArray(payload.draftTags)?payload.draftTags:[];captureDraftTags=Array.isArray(payload.captureDraftTags)?payload.captureDraftTags:[];
+    renderTagComposer();renderCaptureTagComposer()
+  }catch{}
+}
+function clearDurableDraft(formId=""){
+  const key=durableDraftKey();if(!key)return;
+  if(!formId){sessionStorage.removeItem(key);return}
+  saveDurableDrafts();
+  try{const payload=JSON.parse(sessionStorage.getItem(key)||"null");if(!payload)return;payload.forms=(payload.forms||[]).filter(item=>item.key!==`form:${durableDraftForms.indexOf(formId)}`);sessionStorage.setItem(key,JSON.stringify(payload))}catch{}
+}
 function patchThoughtTaskTarget(target){
   const chain=thoughtChains().find(item=>item.question.id===target.targetId);if(!chain)return false;
   const cards=[...document.querySelectorAll(`[data-chain-id="${CSS.escape(target.targetId)}"]`)];if(!cards.length)return true;
@@ -1668,16 +1691,11 @@ function renderHomeKeepsake(){
   const preview=document.createElement("span");
   preview.className=`home-v02-keepsake-preview${item?"":" empty"}`;
   if(item){
-    const original=document.createElement("img");
-    original.src=appUrl(item.originalPath);
-    original.alt=item.title;
-    original.loading="lazy";
-    const cutout=document.createElement("img");
-    cutout.src=appUrl(item.cutoutPath);
-    cutout.alt="";
-    cutout.loading="lazy";
-    cutout.setAttribute("aria-hidden","true");
-    preview.append(original,cutout)
+    const image=document.createElement("img");
+    image.src=appUrl(item.cutoutPath||item.displayPath||item.thumbPath||item.originalPath);
+    image.alt=item.title;
+    image.loading="lazy";
+    preview.append(image)
   }else{
     preview.textContent="物";
     preview.setAttribute("aria-hidden","true")
@@ -1881,7 +1899,7 @@ async function downloadExport(format){
   }catch(error){status.textContent=error.message}
 }
 function render(){renderDate();renderOnboarding();renderSliders();renderDailyRecords();renderHealthUploader();renderCaptures();renderJournals();renderThoughts();renderStateChart();renderChat();renderReview();renderBooks();renderKeepsakes();renderQuotes();renderHome();renderTagComposer();renderCaptureTagComposer();renderCommentPanel();renderSettings();renderLocalTestSettings();renderArchitecture();renderCommercialization();renderNotifications();renderMine();renderActionsWorkspace();renderFeedback();renderExport()}
-async function load(){const owner=currentUser?.id,session=sessionSerial;journalDraftRestored=false;aiCostPlan=null;aiCostStatistics=null;commercialStatistics=null;resetJournalForm();const [nextState,nextSettings,nextOnboardingSchema,nextLocalTestConfig,meta]=await Promise.all([request("/api/state"),request("/api/settings"),optionalRequest("/api/onboarding/schema"),optionalRequest("/api/local-test-mode"),request("/api/meta")]);if(owner!==currentUser?.id||session!==sessionSerial)return false;replaceState(nextState);llmSettings=nextSettings;onboardingSchema=nextOnboardingSchema;localTestConfig=nextLocalTestConfig;appVersion=meta.version||"development";releaseVersion=meta.releaseVersion||releaseVersion;onboardingHydrated=false;notificationUnreadCount=Number(state.notificationUnread)||0;render();await loadActionsWorkspace();scheduleNotificationPoll();return true}
+async function load(){const owner=currentUser?.id,session=sessionSerial;journalDraftRestored=false;aiCostPlan=null;aiCostStatistics=null;commercialStatistics=null;resetJournalForm();const [nextState,nextSettings,nextOnboardingSchema,nextLocalTestConfig,meta]=await Promise.all([request("/api/state"),request("/api/settings"),optionalRequest("/api/onboarding/schema"),optionalRequest("/api/local-test-mode"),request("/api/meta")]);if(owner!==currentUser?.id||session!==sessionSerial)return false;replaceState(nextState);llmSettings=nextSettings;onboardingSchema=nextOnboardingSchema;localTestConfig=nextLocalTestConfig;appVersion=meta.version||"development";releaseVersion=meta.releaseVersion||releaseVersion;onboardingHydrated=false;notificationUnreadCount=Number(state.notificationUnread)||0;render();restoreDurableDrafts();await loadActionsWorkspace();scheduleNotificationPoll();return true}
 function setAuthTab(tab){
   if(authBusy)return;
   $$("[data-auth-tab]").forEach(button=>{const active=button.dataset.authTab===tab;button.classList.toggle("active",active);button.setAttribute("aria-selected",String(active))});
@@ -2290,6 +2308,7 @@ $("#chain-form").addEventListener("reset",()=>{chainDraftVersion+=1;resetContent
 $("#capture-tags").addEventListener("keydown",e=>{if(entryKeyIntent(e,{inputKind:"tag"})==="commit-tag"){e.preventDefault();commitCaptureTags()}});$("#capture-tags").addEventListener("blur",()=>{if($("#capture-tags").value.trim())commitCaptureTags()});
 $("#capture-cancel").addEventListener("click",resetCaptureForm);
 $("#journal-cancel").addEventListener("click",resetJournalForm);
+for(const id of durableDraftForms)for(const eventName of["input","change"])document.getElementById(id)?.addEventListener(eventName,saveDurableDrafts);
 document.addEventListener("keydown",event=>{
   const field=event.target.closest?.("input,textarea"),form=field?.closest?.("#capture-form,#journal-form,#chain-form,#checkin-form,#chat-form,[data-daily-form],[data-book-entry-form],#keepsake-form,#quote-form,#selection-quote-form,#thought-block-form");
   if(!field||!form||field===document.activeElement&&["chain-tags","capture-tags"].includes(field.id))return;
@@ -2300,7 +2319,7 @@ document.addEventListener("keydown",event=>{
 $("#capture-form").addEventListener("submit",async e=>{e.preventDefault();if($("#capture-tags").value.trim())commitCaptureTags();const form=e.currentTarget,id=$("#capture-id").value,button=$("#capture-submit"),status=$("#capture-status"),requestId=form.dataset.requestId||crypto.randomUUID();let uploadedPaths=[];if(!id)form.dataset.requestId=requestId;button.disabled=true;status.textContent=id?"正在保存修改…":"正在收下…";try{const submission=await contentImagePaths("capture");uploadedPaths=submission.uploadedPaths;const original=imageRecordPayload({content:$("#capture-content").value,attachmentPaths:submission.attachmentPaths}),payload={...occurrenceFields($("#capture-date")),...original,tags:captureDraftTags};if(id)await request(`/api/captures/${id}`,{method:"PATCH",body:JSON.stringify(payload)});else await requestV1("/api/v1/captures",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)});resetCaptureForm();await refreshState("captures");showToast(id?"捕念已更新":"已收进捕念")}catch(err){await discardContentImageUploads("capture",uploadedPaths);status.textContent=err.message}finally{button.disabled=false}});
 $("#journal-draft-save").addEventListener("click",async e=>{const button=e.currentTarget,status=$("#journal-status");button.disabled=true;button.textContent="正在保存…";status.textContent="正在保存草稿…";try{const draft=await request("/api/journal-draft",{method:"PUT",body:JSON.stringify({journalId:$("#journal-id").value,title:$("#journal-title").value,content:$("#journal-content").value})});state.journalDraft=draft;status.textContent=`草稿已保存于 ${formatTime(draft.updatedAt)}。`;showToast("日记草稿已保存")}catch(err){status.textContent=err.message}finally{button.disabled=false;button.textContent="保存草稿"}});
 $("#journal-form").addEventListener("submit",async e=>{e.preventDefault();const id=$("#journal-id").value,button=$("#journal-submit"),status=$("#journal-status"),payload={...occurrenceFields($("#journal-date")),title:$("#journal-title").value,content:$("#journal-content").value,tags:splitTags($("#journal-tags").value)};button.disabled=true;status.textContent=id?"正在保存修改…":"正在保存原文…";try{await request(id?`/api/journals/${id}`:"/api/journals",{method:id?"PATCH":"POST",body:JSON.stringify(payload)});resetJournalForm();await refreshState("journals");showToast(id?"日记已更新":"日记已保存")}catch(err){status.textContent=err.message}finally{button.disabled=false}});
-$("#checkin-form").addEventListener("submit",async e=>{e.preventDefault();const b=e.currentTarget.querySelector('[type="submit"]'),missing=$$('[data-metric]').filter(x=>x.dataset.confirmed!=="true");if(missing.length){$("#checkin-status").textContent=`请先确认：${missing.map(x=>metricConfig()[x.dataset.metric].label).join("、")}`;missing[0].focus();return}b.disabled=true;b.textContent="正在保存…";const payload={...occurrenceFields($("#checkin-datetime")),notes:{},custom:{},factors:splitTags($("#checkin-factors").value)};$$('[data-metric]').forEach(x=>{const k=x.dataset.metric;if(x.dataset.custom==="1")payload.custom[k]=Number(x.value);else payload[k]=Number(x.value);payload.notes[k]=$(`#${CSS.escape(k)}-note`)?.value||""});try{await request("/api/checkins",{method:"POST",body:JSON.stringify(payload)});await refreshState(["checkins","review"]);resetOccurrenceInput($("#checkin-datetime"));$("#checkin-status").textContent="已记下。这只是此刻，不是对整天的评分。";closeHomeEditors();showToast("此刻状态已保存")}catch(err){$("#checkin-status").textContent=err.message}finally{b.disabled=false;b.textContent="记下此刻"}});
+$("#checkin-form").addEventListener("submit",async e=>{e.preventDefault();const b=e.currentTarget.querySelector('[type="submit"]'),missing=$$('[data-metric]').filter(x=>x.dataset.confirmed!=="true");if(missing.length){$("#checkin-status").textContent=`请先确认：${missing.map(x=>metricConfig()[x.dataset.metric].label).join("、")}`;missing[0].focus();return}b.disabled=true;b.textContent="正在保存…";const payload={...occurrenceFields($("#checkin-datetime")),notes:{},custom:{},factors:splitTags($("#checkin-factors").value)};$$('[data-metric]').forEach(x=>{const k=x.dataset.metric;if(x.dataset.custom==="1")payload.custom[k]=Number(x.value);else payload[k]=Number(x.value);payload.notes[k]=$(`#${CSS.escape(k)}-note`)?.value||""});try{await request("/api/checkins",{method:"POST",body:JSON.stringify(payload)});clearDurableDraft("checkin-form");resetOccurrenceInput($("#checkin-datetime"));$("#checkin-status").textContent="已保存，正在同步列表…";closeHomeEditors();showToast("此刻状态已保存");void refreshState(["checkins","review"]).catch(error=>showToast(`状态已保存，但页面同步失败：${error.message}`,"error"))}catch(err){$("#checkin-status").textContent=err.message}finally{b.disabled=false;b.textContent="记下此刻"}});
 $("#thought-prompt-button").addEventListener("click",async e=>{
   const button=e.currentTarget,question=$("#chain-question"),status=$("#thought-prompt-status"),selectedDate=activeDate,owner=currentUser?.id,requestId=crypto.randomUUID(),targetId=$("#chain-form").dataset.draftId||crypto.randomUUID(),inputVersion=chainDraftVersion;$("#chain-form").dataset.draftId=targetId;
   if(question.value.trim()){status.textContent="问题框已有内容，清空后再生成新的引子。";question.focus();return}
@@ -2323,7 +2342,7 @@ $("#draft-answer-button").addEventListener("click",async e=>{
   catch(err){$("#chain-status").textContent=err.message}
   finally{button.disabled=false}
 });
-$("#chain-form").addEventListener("submit",async e=>{e.preventDefault();const form=e.currentTarget,b=form.querySelector('[type="submit"]');if(b.disabled)return;if($("#chain-tags").value.trim())commitDraftTags();const id=form.dataset.requestId||crypto.randomUUID(),answer=$("#chain-answer").value;let uploadedPaths=[];form.dataset.requestId=id;b.disabled=true;b.textContent="正在保存…";$("#chain-status").textContent="正在保存整套思考…";try{const submission=await contentImagePaths("thoughtRoot");uploadedPaths=submission.uploadedPaths;const original=imageRecordPayload({content:$("#chain-question").value,attachmentPaths:submission.attachmentPaths}),needsAnswer=Boolean(original.content.trim())&&!answer.trim()&&llmSettings.automaticAnswers?.thoughtAnswer===true,result=await request("/api/thought-chains",{method:"POST",body:JSON.stringify({clientRequestId:id,...occurrenceFields($("#chain-datetime")),question:original.content,attachmentPaths:original.attachmentPaths,idea:$("#chain-idea").value,answer,modelDraft:answerDraft,modelReasoning:answerReasoningDraft,tags:draftTags,generateAnswer:needsAnswer})}),question=result.items.find(item=>item.type==="question");chainDraftVersion+=1;form.reset();resetOccurrenceInput($("#chain-datetime"));draftTags=[];renderTagComposer();answerDraft="";answerReasoningDraft="";delete form.dataset.requestId;delete form.dataset.draftId;b.disabled=false;b.textContent="收进思绪箱";$("#chain-status").textContent=needsAnswer?"思考已保存，回答正在后台生成。":answer.trim()?"已保存为一套完整思考。":"思考已保存，未自动调用 AI。";closeHomeEditors();void refreshState(["thoughts","review","notifications"],{chainId:question?.id}).catch(error=>showToast(`记录已保存，但页面刷新失败：${error.message}`,"error"));if(needsAnswer&&question){void startBackgroundChainAnswer(question,result.task)}showToast(needsAnswer?"思考已保存，可继续记录":"整套思考已保存，不会重复记录")}catch(err){await discardContentImageUploads("thoughtRoot",uploadedPaths);$("#chain-status").textContent=err.message}finally{b.disabled=false;b.textContent="收进思绪箱"}});
+$("#chain-form").addEventListener("submit",async e=>{e.preventDefault();const form=e.currentTarget,b=form.querySelector('[type="submit"]');if(b.disabled)return;if($("#chain-tags").value.trim())commitDraftTags();const id=form.dataset.requestId||crypto.randomUUID(),answer=$("#chain-answer").value;let uploadedPaths=[];form.dataset.requestId=id;b.disabled=true;b.textContent="正在保存…";$("#chain-status").textContent="正在保存整套思考…";try{const submission=await contentImagePaths("thoughtRoot");uploadedPaths=submission.uploadedPaths;const original=imageRecordPayload({content:$("#chain-question").value,attachmentPaths:submission.attachmentPaths}),needsAnswer=Boolean(original.content.trim()||original.attachmentPaths.length)&&!answer.trim()&&llmSettings.automaticAnswers?.thoughtAnswer===true,result=await request("/api/thought-chains",{method:"POST",body:JSON.stringify({clientRequestId:id,...occurrenceFields($("#chain-datetime")),question:original.content,attachmentPaths:original.attachmentPaths,idea:$("#chain-idea").value,answer,modelDraft:answerDraft,modelReasoning:answerReasoningDraft,tags:draftTags,generateAnswer:needsAnswer})}),question=result.items.find(item=>item.type==="question");chainDraftVersion+=1;form.reset();clearDurableDraft("chain-form");resetOccurrenceInput($("#chain-datetime"));draftTags=[];renderTagComposer();answerDraft="";answerReasoningDraft="";delete form.dataset.requestId;delete form.dataset.draftId;b.disabled=false;b.textContent="收进思绪箱";$("#chain-status").textContent=needsAnswer?"思考已保存，后台生成一条图文合并回答。":answer.trim()?"已保存为一套完整思考。":"思考已保存，未自动调用 AI。";closeHomeEditors();void refreshState(["thoughts","review","notifications"],{chainId:question?.id}).catch(error=>showToast(`记录已保存，但页面刷新失败：${error.message}`,"error"));if(needsAnswer&&question){void startBackgroundChainAnswer(question,result.task)}showToast(needsAnswer?"思考已保存，可继续记录":"整套思考已保存，不会重复记录")}catch(err){await discardContentImageUploads("thoughtRoot",uploadedPaths);$("#chain-status").textContent=err.message}finally{b.disabled=false;b.textContent="收进思绪箱"}});
 $("#chat-form").addEventListener("submit",async e=>{e.preventDefault();const b=e.currentTarget.querySelector("button");b.disabled=true;$("#chat-status").textContent=`${modelName("chat")} 正在结合你的长期记录…`;try{await request("/api/chat",{method:"POST",body:JSON.stringify({...occurrenceFields($("#chat-datetime")),message:$("#chat-input").value})});$("#chat-input").value="";resetOccurrenceInput($("#chat-datetime"));await refreshState("chat");$("#chat-status").textContent=""}catch(err){$("#chat-status").textContent=err.message}finally{b.disabled=false}});
 $("#edit-chain-form").addEventListener("submit",async e=>{e.preventDefault();const b=e.currentTarget.querySelector('[type="submit"]'),id=$("#edit-chain-id").value;b.disabled=true;$("#edit-chain-status").textContent="正在保存…";try{await request(`/api/thought-chains/${id}`,{method:"PATCH",body:JSON.stringify({occurredAt:$("#edit-chain-datetime").value,question:$("#edit-chain-question").value,tags:splitTags($("#edit-chain-tags").value)})});$("#edit-chain-modal").hidden=true;await refreshState(["thoughts","review"],{chainId:id});showToast("思绪主题已更新")}catch(err){$("#edit-chain-status").textContent=err.message}finally{b.disabled=false}});
 $("#thought-block-form").addEventListener("submit",async e=>{
@@ -2551,7 +2570,11 @@ $("#reset-response-styles").addEventListener("click",()=>{$("#assistant-name").v
 $("#llm-settings-form").addEventListener("submit",async e=>{e.preventDefault();const button=e.currentTarget.querySelector('[type="submit"]'),status=$("#llm-settings-status");button.disabled=true;status.textContent="正在保存…";try{llmSettings=await request("/api/settings",{method:"POST",body:JSON.stringify(settingsPayload())});$("#llm-api-key").value="";renderSettings();status.textContent="四档配置与各场景选择已保存。";showToast("DeepSeek 设置已保存")}catch(err){status.textContent=err.message}finally{button.disabled=false}});
 $("#test-llm").addEventListener("click",async e=>{const button=e.currentTarget,status=$("#llm-settings-status"),tier=$("#llm-test-tier").value;button.disabled=true;status.textContent=`正在保存并测试 ${tier[0].toUpperCase()+tier.slice(1)}…`;try{llmSettings=await request("/api/settings",{method:"POST",body:JSON.stringify(settingsPayload())});$("#llm-api-key").value="";renderSettings();const result=await request("/api/settings/test",{method:"POST",body:JSON.stringify({tier})}),profile=llmSettings.profiles[tier];status.textContent=`连接成功 · ${profile.model==="deepseek-v4-pro"?"DeepSeek Pro":"DeepSeek Flash"} · ${profile.effort==="none"?"思考关闭":`思考 ${profile.effort.toUpperCase()}`}`;showToast(result.reply||"DeepSeek 连接成功")}catch(err){status.textContent=`连接失败：${err.message}`}finally{button.disabled=false}});
 function syncLocalDate(){const next=localDateKey();if(next===currentLocalDate)return;const followedToday=activeDate===currentLocalDate;currentLocalDate=next;if(followedToday){activeDate=next;renderDate();renderSliders();renderThoughts();renderStateChart();renderHomeMood();renderChat()}}
-setInterval(syncLocalDate,30000);document.addEventListener("visibilitychange",()=>{if(!document.hidden)syncLocalDate()});
+function markApplicationForeground(){apiClient.markForeground();syncLocalDate()}
+setInterval(syncLocalDate,30000);
+document.addEventListener("visibilitychange",()=>{if(document.hidden)saveDurableDrafts();else markApplicationForeground()});
+window.addEventListener("pagehide",saveDurableDrafts);
+window.addEventListener("pageshow",markApplicationForeground);
 $$("[data-auth-tab]").forEach(button=>button.addEventListener("click",()=>setAuthTab(button.dataset.authTab)));
 for(const [formId,endpoint]of[["login-form","/api/auth/login"],["register-form","/api/auth/register"]]){
   $(`#${formId}`).addEventListener("submit",async event=>{
@@ -2562,7 +2585,7 @@ for(const [formId,endpoint]of[["login-form","/api/auth/login"],["register-form",
   });
 }
 const logout=async()=>{
-  const operation=++authOperationSerial;showAuthGate();setAuthTab("login");setAuthBusy(true);$("#auth-status").textContent="正在退出…";
+  const operation=++authOperationSerial;clearDurableDraft();showAuthGate();setAuthTab("login");setAuthBusy(true);$("#auth-status").textContent="正在退出…";
   try{await authRequest("/api/auth/logout",{})}
   catch(error){if(operation===authOperationSerial)$("#auth-status").textContent=`本地内容已锁定；服务端退出失败：${error.message}`}
   finally{if(operation===authOperationSerial){setAuthBusy(false);if($("#auth-status").textContent==="正在退出…")$("#auth-status").textContent=""}}

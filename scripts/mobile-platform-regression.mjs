@@ -209,6 +209,20 @@ try {
     assert.equal(shell.navInside, true);
     assert.equal(shell.mainInside, true);
     assert.equal(shell.inputFontSafe, true);
+    if (device.name === "android-landscape") {
+      const todayLinks = await evaluate(`(() => {
+        const links=[...document.querySelectorAll('[data-section-links="today"] button')];
+        return links.map(item => {
+          const rect=item.getBoundingClientRect();
+          return {label:item.textContent.trim(),visible:rect.width>0&&rect.height>0&&rect.left>=0&&rect.right<=innerWidth&&rect.top>=0&&rect.bottom<=innerHeight};
+        });
+      })()`);
+      assert.deepEqual(todayLinks, [
+        { label: "此刻", visible: true },
+        { label: "共参", visible: true },
+        { label: "每日", visible: true }
+      ]);
+    }
 
     const thoughtNav = await evaluate(`(() => { const rect=document.querySelector('[data-section="thought"]').getBoundingClientRect();return{x:rect.left+rect.width/2,y:rect.top+rect.height/2} })()`);
     await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: thoughtNav.x, y: thoughtNav.y, radiusX: 2, radiusY: 2, force: 1, id: 1 }] });

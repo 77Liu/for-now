@@ -80,7 +80,8 @@ export function createAiTaskTargets({ thoughts, annotations, contentAttachments 
       const { root, followUp, inputVersion, subtargetVersion } = work;
       if (task.kind === "thoughtAnswer") {
         const prompt = thoughtAnswerPrompt(userAnswerContext(store), thoughtChainContext(store.thoughts, root));
-        return { ...work, inputHash: hash(JSON.stringify({ targetId: root.id, inputVersion })), prompt, scene: "thoughtAnswer" };
+        const attachmentPaths = Array.isArray(root.attachmentPaths) ? root.attachmentPaths : [];
+        return { ...work, attachmentPaths, inputHash: hash(JSON.stringify({ targetId: root.id, inputVersion, attachmentPaths })), prompt, scene: "thoughtAnswer" };
       }
       const chain = thoughtChainContext(store.thoughts, root, followUp.id);
       const prompt = thoughtAnswerPrompt(userAnswerContext(store), chain, true);

@@ -37,7 +37,7 @@ export function createThoughtHttp({
       const eventTime = eventTimeFields(input);
       if (!eventTime) return v1.error(res, 400, "发生时间格式不正确", "VALIDATION_ERROR");
       const answer = safeText(input.answer);
-      const answerDecision = await automaticAnswer({ requested: input.generateAnswer === true && Boolean(questionText), hasAnswer: Boolean(answer) });
+      const answerDecision = await automaticAnswer({ requested: input.generateAnswer === true && Boolean(questionText || prepared.value.attachmentPaths.length), hasAnswer: Boolean(answer) });
       const created = await workflows.createChain({
         questionText,
         eventTime,
@@ -128,7 +128,7 @@ export function createThoughtHttp({
       const eventTime = eventTimeFields(input);
       if (!eventTime) return sendJson(res, 400, { error: "发生时间格式不正确" });
       const answer = safeText(input.answer);
-      const answerDecision = await automaticAnswer({ requested: input.generateAnswer === true && Boolean(questionText), hasAnswer: Boolean(answer) });
+      const answerDecision = await automaticAnswer({ requested: input.generateAnswer === true && Boolean(questionText || prepared.value.attachmentPaths.length), hasAnswer: Boolean(answer) });
       const created = await workflows.createChain({
         questionText,
         eventTime,

@@ -99,6 +99,7 @@ const suites = {
     ["frontend API, session and state contracts", ["scripts/frontend-contract-regression.mjs"]],
     ["frontend content, time and media contracts", ["scripts/frontend-shared-regression.mjs"]],
     ["frontend application shell and page lifecycle", ["scripts/frontend-shell-regression.mjs"]],
+    ["PWA shell cache and private-data boundaries", ["scripts/pwa-regression.mjs"]],
     ["desktop and responsive UI", ["scripts/ui-regression.mjs"]],
     ["mobile platform simulation", ["scripts/mobile-platform-regression.mjs"]]
   ],
