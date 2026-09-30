@@ -13,6 +13,16 @@ if either candidate or previous code lacks the runtime adapter. PostgreSQL backu
 require `PG_BACKUP_DATABASE_URL`; the existing cloud restore drill checks logical
 JSON compatibility only, while a fresh-database restore remains a separate gate.
 
+As of 2026-09-30, the ECS has PostgreSQL 16.15 and an initialized but empty
+`for_now` database. Separate schema-admin, migration, runtime-data, runtime-auth,
+and read-only recovery logins have passed privilege checks; their credentials
+remain only in a root-owned `0700/0600` server file and are not wired into
+`/etc/for-now.env`. The latest completed production OSS backup also passed a
+two-database relational restore and isolated candidate HTTP check. These facts
+do not authorize enabling PostgreSQL persistence or replace the cutover-window
+snapshot and recovery check. Evidence is recorded in
+[`reports/production-postgres-recovery-2026-09-30.json`](../reports/production-postgres-recovery-2026-09-30.json).
+
 ## Access model
 
 - Nginx keeps the existing application at `/`.

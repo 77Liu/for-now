@@ -57,7 +57,7 @@ npm run start:local-test
 - **本轮 `v0.2.0` 进行中，尚未发布**：G1 三路、G2 四路、R2/R3/R4 收口及首页 v0.2 已完成；本地发布候选分支为 `release/v0.2.0-20260930`，代码内容固定于 `70b5644ef265440b9f5f4e69868647544f6deff2`，其后仅整理发布证据。当前包含思绪检索/回访、跨体裁导出、行动/习惯、产品反馈、生命周期与幂等账本、小物 WebP 派生、跨体裁图片原文和后台图片理解，共 50 个模块、201 条拥有路由、60 条 OpenAPI 路径、104 个操作和 23 个视图；Store 为 v15。该代码提交的干净归档已通过 52/52 系统测试与真实 PostgreSQL 42 项专项，但生产正式写源仍为 JSON，等待人工配置确认和最终发布授权。
 - **夜间探索轨道**：P1、P2、P3 三个递进探索版均已在本地非主线分支验证；所有版本使用隔离样例数据，不连接生产。执行约束与阶段状态见 `knowledge/exploration-release-track.md`。
 - **PostgreSQL 验收恢复（2026-09-30）**：确认 macOS 26 会让原生空 C 进程启动即报告 `pthread_is_threaded_np()=1`；使用关闭该失真探测、且不链接 LDAP/ICU 的官方 PostgreSQL 16.14 本地构建后，Store v15 全领域、旧表升级、完整导出恢复及持久幂等专项均通过。可复用边界见 `knowledge/system-testing.md`，结果见 `reports/g2-r4-postgres-2026-09-30.json`；生产切换仍留在 R 阶段。
-- **ECS 受限试装（2026-09-30）**：按授权在当前规格安装 PostgreSQL 16.15；40 连接/512 MiB 上限下，42 项合成集成矩阵、独立持久幂等、限速负载和备份恢复通过。生产仍为 JSON，尚未接管正式数据；配置、结果及下一步见 `knowledge/operations-capacity.md`。
+- **ECS PostgreSQL 生产前演练（2026-09-30）**：当前规格已安装 PostgreSQL 16.15；正式空库和最小角色已建立。最新完成的生产 OSS 备份已通过 3 账户两库无损恢复、候选 HTTP 读取和 30 个附件逐字节校验；生产仍为 JSON，正式库尚未接管数据。配置、结果及下一步见 `knowledge/postgres-migration.md`。
 - **状态单一事实来源**：本轮 P00-P3、实施顺序、验收标准和剩余阻塞统一见 `README-TODO.md`；最新主账户原文审阅与取舍见 `reports/iteration-plan-v0.2.0-2026-09-28.md`。
 
 ## 当前生产与工作区能力
@@ -205,6 +205,7 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
 - `reports/s3-11-12-completion-2026-09-29.json`：状态/健康 v1 纵向链、前端薄壳与页面生命周期，以及 38 阶段系统测试证据。
 - `reports/g2-i-integration-2026-09-29.json`：G2 A-D 工作树、I 串行集成、Store v15、51 个 OpenAPI 操作、43 阶段系统测试及 PostgreSQL 阻塞证据。
 - `reports/g2-r4-postgres-2026-09-30.json`：G2 R4 真实 PostgreSQL 16.14、持久幂等、旧表升级、完整恢复、系统测试及剩余生产门禁证据。
+- `reports/production-postgres-recovery-2026-09-30.json`：正式空库/最小角色、最新 OSS inventory、生产备份两库恢复和候选 HTTP 读取证据。
 - `reports/v0.2.0-g2-intermediate-checkpoint-2026-09-30.md`：本地中间提交的逐项实现、提交前验证、待办及“非权威、可继续修改”边界说明。
 - `reports/pre-launch-2026-09-29-v0.2.0.md`：v0.2.0 当前发布候选、两轮检查、人工配置、发行说明、生产阻断和最终 GO 记录。
 - `reports/hotfix-thought-answer-task-2026-09-28.md`：v0.1.1 思绪自动回答严重故障的根因、修复、验证与生产发布记录。

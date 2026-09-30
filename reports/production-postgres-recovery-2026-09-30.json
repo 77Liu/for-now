@@ -1,0 +1,233 @@
+{
+  "date": "2026-09-30",
+  "candidate": "70b5644ef265440b9f5f4e69868647544f6deff2",
+  "preceding_evidence_commit": "83042836e515eae148317c5042e132d53d612789",
+  "scope": "Formal empty database, least privilege roles, read-only latest OSS inventory and isolated production-snapshot recovery.",
+  "backup": {
+    "archive": "for-now-20260929T192750Z.tar.gz",
+    "sha256": "85893125c80a08cd0598e70577f16bf22d677ab0d674f02eda015444177e8b23",
+    "bytes": 7453657,
+    "entries": 60,
+    "downloaded_from_oss": true,
+    "unsafe_paths": false
+  },
+  "ossInventory": {
+    "status": "passed",
+    "observedAt": "2026-09-30T04:40:38.037Z",
+    "objects": 34,
+    "bytes": 41356740,
+    "allObjectBytesHashed": true,
+    "snapshotAccounts": 3,
+    "snapshotAttachments": 30,
+    "snapshotOssVerified": 30,
+    "snapshotLocalFallback": 0,
+    "inventorySha256": "f5ca257f174fd2daa4d0ebd6b08c0217ddc9b2b5653faa6a4343d7d9f4a03f55",
+    "sourceSha256": "dcffece861d0df1e1648758646f7ceb332894330f1b616c73669db0e4337d754",
+    "operations": [
+      "ListObjects",
+      "GetObject"
+    ],
+    "remoteWrites": 0
+  },
+  "databaseRecovery": {
+    "status": "passed",
+    "candidate": "70b5644ef265440b9f5f4e69868647544f6deff2",
+    "checks": [
+      "data/auth/backup least privilege and owner function rollback probe",
+      "full batch import",
+      "all account data/auth/documents/inventory roundtrip",
+      "repeat import verified",
+      "read-only role relational export with materialized attachments",
+      "independent database restore exact match",
+      "runtime separate roles, migration guard, application lock and all-account reads",
+      "second export preserves original document and attachment content",
+      "source snapshot untouched"
+    ],
+    "sourceSha256": "dcffece861d0df1e1648758646f7ceb332894330f1b616c73669db0e4337d754",
+    "contentSha256": "9a34e885bf57ff83c894fbda1dd290591239ea65f14b9408a4e5760c8f2e98ea",
+    "accounts": 3,
+    "sessions": 11,
+    "accountsEvidence": [
+      {
+        "accountOrdinal": 1,
+        "sourceStoreVersion": 14,
+        "counts": {
+          "storeCollections": {
+            "checkins": 9,
+            "dailyRecords": 9,
+            "captures": 30,
+            "journals": 0,
+            "thoughts": 97,
+            "chats": 1,
+            "books": 1,
+            "keepsakes": 9,
+            "quotes": 9,
+            "experiments": 0,
+            "analyses": 1,
+            "customMetrics": 0,
+            "trash": 0,
+            "attachmentCleanup": 0,
+            "aiTasks": 4,
+            "notifications": 4
+          },
+          "thoughtEntries": 35,
+          "thoughtBlocks": 97,
+          "thoughtFollowUps": 5,
+          "thoughtRemarks": 1,
+          "thoughtAnnotations": 54,
+          "businessFields": 21,
+          "businessObjects": 248,
+          "businessRelations": 82,
+          "attachmentReferences": 28,
+          "lifecycleRecords": 226,
+          "idempotencyRecords": 0
+        },
+        "documents": [
+          "settings",
+          "usage"
+        ],
+        "attachments": 28,
+        "storeSha256": "f06452a8787c0cef26a50925d00bd4e2b6c346710473f7928a18dd43af566e71",
+        "documentSha256": "b63456fb3deab8e47d591a5d56ebf62c26a9f10d8c63a80bb7d9e9d68f89c5d6",
+        "inventorySha256": "2f098aa9733764fe7f3f6a555cf59c8fb91044ea85c4f3490fec157667400875"
+      },
+      {
+        "accountOrdinal": 2,
+        "sourceStoreVersion": 14,
+        "counts": {
+          "storeCollections": {
+            "checkins": 0,
+            "dailyRecords": 0,
+            "captures": 0,
+            "journals": 0,
+            "thoughts": 1,
+            "chats": 0,
+            "books": 0,
+            "keepsakes": 1,
+            "quotes": 0,
+            "experiments": 0,
+            "analyses": 0,
+            "customMetrics": 0,
+            "trash": 0,
+            "attachmentCleanup": 0,
+            "aiTasks": 0,
+            "notifications": 0
+          },
+          "thoughtEntries": 1,
+          "thoughtBlocks": 1,
+          "thoughtFollowUps": 0,
+          "thoughtRemarks": 0,
+          "thoughtAnnotations": 0,
+          "businessFields": 21,
+          "businessObjects": 4,
+          "businessRelations": 0,
+          "attachmentReferences": 2,
+          "lifecycleRecords": 2,
+          "idempotencyRecords": 0
+        },
+        "documents": [
+          "settings",
+          "usage"
+        ],
+        "attachments": 2,
+        "storeSha256": "9aa06af0051ff3da945b4ed45c08d7032e1a571b1117803c58fe24e47165780d",
+        "documentSha256": "7de2eb251cd53943a60f08368ef510138283b08d48e65abb5b913430ffccfe5a",
+        "inventorySha256": "3de9f2c62dde16a50c5613ee80e7a1c1675a377ebf687f10fa59b57b81d04d0e"
+      },
+      {
+        "accountOrdinal": 3,
+        "sourceStoreVersion": 14,
+        "counts": {
+          "storeCollections": {
+            "checkins": 0,
+            "dailyRecords": 0,
+            "captures": 0,
+            "journals": 0,
+            "thoughts": 0,
+            "chats": 0,
+            "books": 0,
+            "keepsakes": 0,
+            "quotes": 0,
+            "experiments": 0,
+            "analyses": 0,
+            "customMetrics": 0,
+            "trash": 0,
+            "attachmentCleanup": 0,
+            "aiTasks": 0,
+            "notifications": 0
+          },
+          "thoughtEntries": 0,
+          "thoughtBlocks": 0,
+          "thoughtFollowUps": 0,
+          "thoughtRemarks": 0,
+          "thoughtAnnotations": 0,
+          "businessFields": 21,
+          "businessObjects": 2,
+          "businessRelations": 0,
+          "attachmentReferences": 0,
+          "lifecycleRecords": 0,
+          "idempotencyRecords": 0
+        },
+        "documents": [
+          "settings",
+          "usage"
+        ],
+        "attachments": 0,
+        "storeSha256": "f2ae83f5b6ed992ab182fc9f116a07133e275b1c332fa8411aa4c0831389c66b",
+        "documentSha256": "8070f17a8fd95ece5bd566d4af580ea2b205ebb3a14d6f07a2345accd71a215b",
+        "inventorySha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      }
+    ]
+  },
+  "httpRecovery": {
+    "status": "passed",
+    "accounts": 3,
+    "collectionsVerified": 51,
+    "attachmentBytesVerified": 40647767,
+    "attachments": 30
+  },
+  "productionRoleChecks": {
+    "loginRolesVerified": 5,
+    "allNonSuperuser": true,
+    "allNoBypassRls": true,
+    "allNoRoleOrDatabaseCreate": true,
+    "schemaSetRoleDdlRollbackPassed": true,
+    "dataAuthIsolationPassed": true,
+    "backupWriteRejected": true,
+    "unprivilegedPublicDdlRejected": true
+  },
+  "capacityPostCheck": [
+    {
+      "availableMiB": 878.43,
+      "swapKiB": 524
+    }
+  ],
+  "formalDatabase": "for_now",
+  "productionUnchanged": {
+    "productionEnvironment": true,
+    "applicationRelease": true,
+    "servicePids": true
+  },
+  "retainedServicesHealthy": true,
+  "formalEmptyTablesVerified": 19,
+  "remainingDatabases": [
+    "for_now",
+    "postgres",
+    "template0",
+    "template1"
+  ],
+  "credentialFile": "/etc/for-now-postgres/credentials.json",
+  "credentialMode": "0o600",
+  "status": "passed",
+  "cleanup": {
+    "drillDatabasesDropped": true,
+    "drillRolesDropped": true,
+    "temporarySessionsRemovedWithDrillDatabases": true,
+    "privateSnapshotsAndAttachmentsRemoved": true
+  },
+  "remaining": [
+    "Fresh frozen snapshot and final OSS recheck during cutover window",
+    "Production environment wiring, automatic startup, backup/monitoring policy",
+    "Explicit Git/Gitee release and application deployment/write-source cutover authorization"
+  ]
+}
