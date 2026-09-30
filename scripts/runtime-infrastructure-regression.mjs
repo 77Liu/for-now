@@ -23,7 +23,9 @@ assert.deepEqual(defaults.limits, {
 });
 assert.equal(config({ AI_USER_DAILY_COST_LIMIT_USD: "2", AI_COST_CNY_PER_USD: "8" }).limits.aiDailyCostCny, 16);
 assert.equal(config({ AI_USER_DAILY_COST_LIMIT_USD: "2", AI_USER_DAILY_COST_LIMIT_CNY: "11" }).limits.aiDailyCostCny, 11);
-assert.equal(config({ AI_USER_DAILY_COST_LIMIT_USD: "" }).limits.aiDailyCostCny, 0.01);
+assert.equal(config({ AI_USER_DAILY_COST_LIMIT_CNY: "0" }).limits.aiDailyCostCny, null);
+assert.equal(config({ AI_USER_DAILY_COST_LIMIT_USD: "0" }).limits.aiDailyCostCny, null);
+assert.equal(config({ AI_USER_DAILY_COST_LIMIT_USD: "" }).limits.aiDailyCostCny, 14.4);
 assert.equal(config({ AI_GLOBAL_QPS: "bad" }).limits.aiQps, 20);
 assert.equal(config({ AI_GLOBAL_QPS: "3000" }).limits.aiQps, 2500);
 assert.equal(config({ AI_AUDIT_TEXT_LIMIT: "1" }).audit.textLimit, 10000);

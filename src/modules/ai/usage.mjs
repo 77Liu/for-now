@@ -158,7 +158,7 @@ export function createAiUsageService({ repository, getAccountKey, dailyCallLimit
       const persistedCostUsd = entries.reduce((sum, item) => sum + Number(item.costsUsd?.total || 0), 0);
       const reservedCostUsd = [...active.values()].reduce((sum, item) => sum + item.costUsd, 0);
       const costCny = (persistedCostUsd + reservedCostUsd) * cnyPerUsd;
-      if (costCny >= dailyCostLimitCny) {
+      if (Number.isFinite(dailyCostLimitCny) && costCny >= dailyCostLimitCny) {
         throw Object.assign(new Error("今日 AI 费用额度已达到上限，请明天再试"), { statusCode: 429, code: "AI_DAILY_COST_LIMIT" });
       }
       const id = crypto.randomUUID(), state = { costUsd: 0 };

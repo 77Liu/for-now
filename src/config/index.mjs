@@ -33,7 +33,17 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     throw new Error("PLATFORM_SERVICE_TOKEN_HASH must be a 64-character SHA-256 digest");
   }
   const usdCny = Math.max(0.01, Number(env.AI_COST_CNY_PER_USD) || 7.2);
-  const legacyCostLimitUsd = Number(env.AI_USER_DAILY_COST_LIMIT_USD);
+  const configuredCostLimitCny = String(env.AI_USER_DAILY_COST_LIMIT_CNY ?? "").trim();
+  const legacyCostLimitUsd = String(env.AI_USER_DAILY_COST_LIMIT_USD ?? "").trim();
+  const configuredCostLimit = Number(configuredCostLimitCny);
+  const legacyCostLimit = Number(legacyCostLimitUsd);
+  let aiDailyCostCny = 14.4;
+  if (configuredCostLimitCny && Number.isFinite(configuredCostLimit)) {
+    aiDailyCostCny = configuredCostLimit === 0 ? null : Math.max(0.01, configuredCostLimit);
+  } else if (legacyCostLimitUsd && Number.isFinite(legacyCostLimit)) {
+    const converted = legacyCostLimit * usdCny;
+    aiDailyCostCny = converted === 0 ? null : Math.max(0.01, converted);
+  }
   return Object.freeze({
     dataDir: env.DATA_DIR ? path.resolve(env.DATA_DIR) : path.join(rootDir, "data"),
     port: Number(env.PORT || 4173),
@@ -65,7 +75,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
       segmentationConcurrency: Math.max(1, Math.min(20, Number(env.SEGMENTATION_GLOBAL_CONCURRENCY) || 5)),
       aiDailyCalls: Math.max(1, Math.round(Number(env.AI_USER_DAILY_CALL_LIMIT) || 200)),
       usdCny,
-      aiDailyCostCny: Math.max(0.01, Number(env.AI_USER_DAILY_COST_LIMIT_CNY) || (Number.isFinite(legacyCostLimitUsd) ? legacyCostLimitUsd * usdCny : 14.4)),
+      aiDailyCostCny,
       attachmentBytes: Math.max(env.NODE_ENV === "test" ? 1 : 1024 * 1024, Math.round(Number(env.ATTACHMENT_USER_QUOTA_BYTES) || 1024 * 1024 * 1024))
     }),
     segmentation: Object.freeze({

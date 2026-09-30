@@ -238,6 +238,10 @@ try {
     repository: { read: async () => ({ entries }) }, getAccountKey: () => "cost", dailyCallLimit: 100, dailyCostLimitCny: 1, cnyPerUsd: 7.2, now
   });
   await assert.rejects(costQuota.reserveAttempt(), { code: "AI_DAILY_COST_LIMIT" });
+  const unlimitedCostQuota = createAiUsageService({
+    repository: { read: async () => ({ entries }) }, getAccountKey: () => "unlimited-cost", dailyCallLimit: 100, dailyCostLimitCny: null, cnyPerUsd: 7.2, now
+  });
+  (await unlimitedCostQuota.reserveAttempt()).release();
   let reservationNow = now();
   const pendingCostQuota = createAiUsageService({
     repository: { read: async () => ({ entries: [] }) },
