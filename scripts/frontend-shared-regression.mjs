@@ -23,8 +23,10 @@ import {
   toLocalDateTimeInput
 } from "../public/frontend/time/index.mjs";
 import {
+  createMemoryMediaDraftStore,
   imageRecordPayload,
   imageUnderstandingPayload,
+  uploadPendingMediaItems,
   uploadOriginalImages,
   validatedImageFiles
 } from "../public/frontend/media/index.mjs";
@@ -215,6 +217,89 @@ if (process.argv.includes("--timezone-case")) {
     inputVersion: 2,
     attachmentPaths: ["/attachments/a.png"]
   });
+  const mediaDraftStore = createMemoryMediaDraftStore();
+  const pendingImage = new Blob(["pending-image"], { type: "image/png" });
+  await mediaDraftStore.put({
+    owner: "account-a",
+    id: "capture",
+    uploadRequestId: "upload-draft-1",
+    items: [{ blob: pendingImage, name: "capture.png", type: pendingImage.type }]
+  });
+  await mediaDraftStore.put({
+    owner: "account-b",
+    id: "capture",
+    uploadRequestId: "upload-draft-2",
+    items: [{ blob: new Blob(["private-b"], { type: "image/png" }), name: "private.png", type: "image/png" }]
+  });
+  const restoredMediaDraft = await mediaDraftStore.get("account-a", "capture");
+  assert.equal(restoredMediaDraft.uploadRequestId, "upload-draft-1");
+  assert.equal(restoredMediaDraft.items[0].name, "capture.png");
+  assert.equal(await restoredMediaDraft.items[0].blob.text(), "pending-image");
+  await mediaDraftStore.delete("account-a", "capture");
+  assert.equal(await mediaDraftStore.get("account-a", "capture"), null);
+  assert.equal((await mediaDraftStore.get("account-b", "capture")).items[0].name, "private.png");
+  await mediaDraftStore.clear("account-b");
+  assert.equal(await mediaDraftStore.get("account-b", "capture"), null);
+  const uploadAttempts = [];
+  let partialItems = [];
+  await assert.rejects(uploadPendingMediaItems({
+    items: [
+      { file: new Blob(["first"], { type: "image/png" }), name: "first.png" },
+      { file: new Blob(["second"], { type: "image/png" }), name: "second.png" }
+    ],
+    createId: (() => {
+      let id = 0;
+      return () => `media-${++id}`;
+    })(),
+    upload: async (_file, key) => {
+      uploadAttempts.push(key);
+      if (key === "media-2") throw new Error("second image failed");
+      return "/attachments/first.png";
+    },
+    onProgress: async items => {
+      partialItems = items.map(item => ({ ...item }));
+    }
+  }), error => {
+    assert.deepEqual(error.failedIndexes, [1]);
+    assert.match(error.errors[0].message, /second image failed/);
+    return true;
+  });
+  assert.deepEqual(uploadAttempts, ["media-1", "media-2"]);
+  assert.equal(partialItems[0].uploadedPath, "/attachments/first.png");
+  assert.equal(partialItems[1].uploadedPath, undefined);
+  const resumedUpload = await uploadPendingMediaItems({
+    items: partialItems,
+    upload: async (_file, key) => {
+      uploadAttempts.push(key);
+      return "/attachments/second.png";
+    }
+  });
+  assert.deepEqual(uploadAttempts, ["media-1", "media-2", "media-2"]);
+  assert.deepEqual(resumedUpload.attachmentPaths, ["/attachments/first.png", "/attachments/second.png"]);
+  assert.deepEqual(resumedUpload.uploadedPaths, ["/attachments/first.png", "/attachments/second.png"]);
+  let isolatedItems = [];
+  await assert.rejects(uploadPendingMediaItems({
+    items: [
+      { file: new Blob(["failed"], { type: "image/png" }), name: "failed.png" },
+      { file: new Blob(["saved"], { type: "image/png" }), name: "saved.png" }
+    ],
+    createId: (() => {
+      let id = 0;
+      return () => `isolated-${++id}`;
+    })(),
+    upload: async (_file, key) => {
+      if (key === "isolated-1") throw new Error("first image failed");
+      return "/attachments/saved.png";
+    },
+    onProgress: async items => {
+      isolatedItems = items.map(item => ({ ...item }));
+    }
+  }), error => {
+    assert.deepEqual(error.failedIndexes, [0]);
+    return true;
+  });
+  assert.equal(isolatedItems[0].uploadedPath, undefined);
+  assert.equal(isolatedItems[1].uploadedPath, "/attachments/saved.png");
   const uploadCalls = [];
   assert.deepEqual(await uploadOriginalImages({
     request: async (url, options) => {

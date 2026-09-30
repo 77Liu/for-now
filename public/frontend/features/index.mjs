@@ -52,7 +52,8 @@ export {
   buildHabitAdjustmentCommand,
   buildHabitCheckinCommand,
   buildDeleteHabitCommand,
-  buildDeleteHabitCheckinCommand
+  buildDeleteHabitCheckinCommand,
+  projectActionCommand
 } from "./actions/index.mjs";
 export {
   feedbackSubmissionPayload,

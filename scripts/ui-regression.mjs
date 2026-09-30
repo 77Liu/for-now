@@ -169,7 +169,13 @@ const mockFetch = `
   window.__delayActionCreate = false;
   window.__releaseActionCreate = null;
   window.__failActionConflict = false;
+  window.__delayActionUpdate = false;
+  window.__releaseActionUpdate = null;
+  window.__delayActionDelete = false;
+  window.__releaseActionDelete = null;
+  window.__failActionNetwork = false;
   window.__actionListVersion = 1;
+  window.__actionListStatus = "todo";
   window.__delayHabitCreate = false;
   window.__releaseHabitCreate = null;
   window.__delayFeedbackCreate = false;
@@ -340,9 +346,20 @@ const mockFetch = `
       window.__actionListVersion = 2;
       return Promise.resolve(new Response(JSON.stringify({error:{message:"资源版本已变化，请重新读取后再提交",code:"PRECONDITION_FAILED",details:{currentVersion:2}}}),{status:412,headers:{"content-type":"application/json"}}));
     }
+    if (url === "/api/v1/actions/ui-action" && init.method === "PATCH" && window.__delayActionUpdate) {
+      const payload=JSON.parse(init.body||"{}");
+      return new Promise(resolve=>{window.__releaseActionUpdate=()=>{window.__delayActionUpdate=false;window.__actionListStatus=payload.status||window.__actionListStatus;window.__actionListTitle=payload.title||window.__actionListTitle;window.__actionListVersion+=1;resolve(v1({id:"ui-action",...payload,version:window.__actionListVersion}))}});
+    }
+    if (url === "/api/v1/actions/ui-action" && init.method === "DELETE" && window.__delayActionDelete) {
+      return new Promise(resolve=>{window.__releaseActionDelete=()=>{window.__delayActionDelete=false;resolve(new Response(JSON.stringify({error:{message:"删除校验失败",code:"VALIDATION_ERROR"}}),{status:400,headers:{"content-type":"application/json"}}))}});
+    }
+    if (url === "/api/v1/actions/ui-action/complete" && init.method === "POST" && window.__failActionNetwork) {
+      window.__failActionNetwork = false;
+      return Promise.reject(new TypeError("Load failed"));
+    }
     if (url.startsWith("/api/v1/actions")) {
       if(window.__failNextActionRefresh){window.__failNextActionRefresh=false;return Promise.resolve(new Response(JSON.stringify({error:{message:"刷新失败"}}),{status:503,headers:{"content-type":"application/json"}}))}
-      const rows=()=>[{id:"ui-action",title:window.__actionListTitle,priority:"P0",status:"todo",sourceRef:null,version:window.__actionListVersion,createdAt:"2026-09-27T04:00:00.000Z",updatedAt:"2026-09-27T04:00:00.000Z",statusHistory:[]}];
+      const rows=()=>[{id:"ui-action",title:window.__actionListTitle,priority:"P0",status:window.__actionListStatus,sourceRef:null,version:window.__actionListVersion,createdAt:"2026-09-27T04:00:00.000Z",updatedAt:"2026-09-27T04:00:00.000Z",statusHistory:[]}];
       if(window.__delayActionList){window.__delayActionList=false;const captured=rows();return new Promise(resolve=>{window.__releaseActionList=()=>resolve(v1(captured))})}
       return v1(rows());
     }
@@ -871,6 +888,22 @@ try {
   await evaluate(`window.__failActionConflict=true;document.querySelector('[data-action-start="ui-action"]').click();true`);
   assert.equal(await waitUntil(`document.querySelector("#toast").textContent.includes("你基于版本 1")&&document.querySelector("#toast").textContent.includes("服务器当前为版本 2")`),true);
   assert.equal(await evaluate(`document.querySelector("#toast").textContent.includes("服务器新标题")&&document.querySelector("#action-columns").textContent.includes("服务器新标题")`),true);
+  await evaluate(`window.__delayActionUpdate=true;document.querySelector('[data-action-start="ui-action"]').click();true`);
+  await sleep(150);
+  assert.deepEqual(await evaluate(`(() => ({columns:[...document.querySelectorAll(".action-column")].map(item=>item.textContent),sync:document.querySelector(".action-entry .checkin-sync-state")?.textContent||""}))()`),{
+    columns:["待办0暂无","进行中1P0服务器新标题独立行动正在同步","已完成0暂无"],
+    sync:"正在同步"
+  });
+  await evaluate(`window.__releaseActionUpdate();true`);
+  assert.equal(await waitUntil(`document.querySelector('[data-action-complete="ui-action"]')&&!document.querySelector(".action-entry .checkin-sync-state")`),true);
+  await evaluate(`window.confirm=()=>true;window.__delayActionDelete=true;document.querySelector('[data-action-delete="ui-action"]').click();true`);
+  assert.equal(await waitUntil(`!document.querySelector("#action-columns").textContent.includes("服务器新标题")`),true);
+  assert.equal(await waitUntil(`typeof window.__releaseActionDelete==="function"`),true);
+  await evaluate(`window.__releaseActionDelete();true`);
+  assert.equal(await waitUntil(`document.querySelector("#action-columns").textContent.includes("服务器新标题")&&document.querySelector("#toast").textContent.includes("删除校验失败")`),true);
+  await evaluate(`window.__failActionNetwork=true;document.querySelector('[data-action-complete="ui-action"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector(".action-column:nth-child(3)")?.textContent.includes("服务器新标题")&&document.querySelector(".action-column:nth-child(3) .checkin-sync-state")?.textContent==="待同步"`),true);
+  assert.equal(await evaluate(`document.querySelector("#toast").textContent.includes("网络恢复后自动同步")&&!document.querySelector('[data-action-complete="ui-action"]')`),true);
   const associationLimit = await evaluate(`(() => {
     const rows=[...document.querySelectorAll("#association-list .association-row")];
     return {count:rows.length,factors:rows.map(row=>row.querySelector("b").textContent),omitted:!document.querySelector("#association-list").textContent.includes("不应显示")};
@@ -1272,8 +1305,10 @@ try {
   assert.equal(Object.hasOwn(capturePayload, "occurredOn"), false);
   await evaluate(`(async()=>{const bytes=Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="),value=>value.charCodeAt(0)),file=new File([bytes],"capture-image.png",{type:"image/png"}),transfer=new DataTransfer();transfer.items.add(file);const input=document.querySelector("#capture-images");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));document.querySelector("#capture-content").value="";return true})()`);
   assert.equal(await evaluate(`document.querySelectorAll('[data-content-image-editor="capture"] .content-image-preview').length`),1);
+  assert.equal(await waitUntil(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const request=opening.result.transaction("drafts","readonly").objectStore("drafts").get("user-1:capture");request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(request.result?.items?.[0]?.blob?.size>0)}})`),true);
   await evaluate(`document.querySelector("#capture-form").requestSubmit();true`);
   assert.equal(await waitUntil(`window.__captureSaves===2&&document.querySelector('[data-capture-id="capture-new-2"] [data-content-image-understand="capture"]')`),true);
+  assert.equal(await waitUntil(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const request=opening.result.transaction("drafts","readonly").objectStore("drafts").get("user-1:capture");request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(!request.result)}})`),true);
   assert.deepEqual(await evaluate(`({content:window.__capturePayloads[1].content,paths:window.__capturePayloads[1].attachmentPaths,images:document.querySelectorAll('[data-capture-id="capture-new-2"] .content-originals img').length})`),{content:"",paths:["/attachments/content-1.png"],images:1});
   await evaluate(`window.__delayImageTaskCreate=true;window.__holdAiTasks=true;document.querySelector('[data-capture-id="capture-new-2"] [data-content-image-understand="capture"]').click();true`);
   assert.equal(await waitUntil(`typeof window.__releaseImageTaskCreate==="function"&&document.querySelector('[data-capture-id="capture-new-2"] .content-image-task-status').textContent.includes("加入后台队列")`),true);
@@ -2013,12 +2048,15 @@ try {
   assert.equal(await waitUntil(`typeof window.__releaseParse==="function"`),true);
   await evaluate(`document.querySelector('[data-view="today"]').click();document.querySelector("#chain-question").value="账户 A 的在途草稿";document.querySelector("#chain-answer").value="";document.querySelector("#draft-answer-button").click();true`);
   assert.equal(await waitUntil(`window.__reasoningChunks===1`,40,10),true);
+  await evaluate(`(()=>{const file=new File([new Uint8Array([1,2,3])],"thought-draft.png",{type:"image/png"}),transfer=new DataTransfer();transfer.items.add(file);const input=document.querySelector("#thought-root-images");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
+  assert.equal(await waitUntil(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const request=opening.result.transaction("drafts","readonly").objectStore("drafts").get("user-1:thoughtRoot");request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(request.result?.items?.[0]?.name==="thought-draft.png")}})`),true);
   await evaluate(`window.__delayLogout=true;document.querySelector("#logout-button").click();true`);
   assert.equal(await waitUntil(`!document.querySelector("#auth-gate").hidden`),true);
   assert.equal(await evaluate(`sessionStorage.getItem("cike:session-drafts:user-1")`),null);
   assert.deepEqual(await evaluate(`({locked:document.body.classList.contains("auth-locked"),privateSurfaceHidden:getComputedStyle(document.querySelector("main")).visibility==="hidden",logoutPending:typeof window.__releaseLogout==="function"})`),{locked:true,privateSurfaceHidden:true,logoutPending:true});
   await evaluate(`window.__releaseLogout();true`);
   assert.equal(await waitUntil(`[...document.querySelectorAll(".auth-form input,.auth-form button,[data-auth-tab]")].every(item=>!item.disabled)`),true);
+  assert.equal(await waitUntil(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const request=opening.result.transaction("drafts","readonly").objectStore("drafts").get("user-1:thoughtRoot");request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(!request.result)}})`),true);
   await evaluate(`window.__delaySecondState=true;window.__delayLogin=true;(() => { const loginForm=document.querySelector("#login-form");loginForm.elements.username.value="second";loginForm.elements.password.value="shenji";loginForm.requestSubmit();return true; })()`);
   assert.equal(await waitUntil(`typeof window.__releaseLogin==="function"`),true);
   assert.equal(await evaluate(`[...document.querySelectorAll(".auth-form input,.auth-form button,[data-auth-tab]")].every(item=>item.disabled)`),true);
@@ -2058,6 +2096,9 @@ try {
   await evaluate(`document.querySelector("#onboarding-form").requestSubmit();true`);
   assert.equal(await waitUntil(`window.__onboardingSaves===1&&document.querySelector("#onboarding-workspace").hidden`),true);
   assert.deepEqual(await evaluate(`({mode:window.__onboarding.questionnaireMode,answers:Object.keys(window.__onboarding.answers).length,profile:window.__onboarding.profile})`),{mode:"detailed",answers:18,profile:{gender:"",region:"",occupation:"",major:"",school:"",introduction:"",works:""}});
+  assert.equal(await evaluate(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const transaction=opening.result.transaction("drafts","readwrite"),request=transaction.objectStore("drafts").put({key:"user-1:capture",owner:"user-1",id:"capture",uploadRequestId:"restored-upload",items:[{blob:new Blob([new Uint8Array([1,2,3])],{type:"image/png"}),name:"restored.png",type:"image/png",lastModified:1}]});request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(true)}})`),true);
+  await cdp.send("Page.reload",{ignoreCache:true});await sleep(300);
+  assert.equal(await waitUntil(`document.querySelector("#today-date-label")?.textContent.length>0&&document.querySelector('[data-content-image-editor="capture"] .content-image-preview')&&document.querySelector("#capture-status").textContent.includes("已恢复 1 张待上传图片")`),true);
   console.log("UI regression passed: home v0.2 data, routing, drafts and responsive layouts plus account, health, thought, local-mode and onboarding flows.");
 } finally {
   cdp?.socket.close();

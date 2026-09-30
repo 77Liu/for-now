@@ -25,6 +25,7 @@ import {
   buildHabitCheckinCommand,
   buildDeleteHabitCommand,
   buildDeleteHabitCheckinCommand,
+  projectActionCommand,
   feedbackSubmissionPayload,
   feedbackViewModel,
   buildHomeMoodSeries,
@@ -33,8 +34,10 @@ import {
   keepsakeMediaSources
 } from "../features/index.mjs";
 import {
+  createIndexedDbMediaDraftStore,
   imageRecordPayload,
   imageUnderstandingPayload,
+  uploadPendingMediaItems,
   uploadOriginalImages,
   validatedImageFiles
 } from "../media/index.mjs";
@@ -47,6 +50,7 @@ import { createOccurrenceDraft, entryKeyIntent, eventDate, eventTimestamp, forma
 const apiClient=createApiClient({baseUrl:new URL("../../app.js",import.meta.url),session:sessionScope,onAuthRequired:()=>showAuthGate()});
 const appUrl=apiClient.appUrl;
 const syncStore=createIndexedDbSyncStore();
+const mediaDraftStore=createIndexedDbMediaDraftStore();
 const requestCoordinator=createRequestCoordinator({store:syncStore,send:(url,options)=>request(url,options)});
 const refreshCoordinator=createRefreshCoordinator({session:sessionScope,requestState:()=>request("/api/state")});
 const baseMetrics={mood:{label:"情绪",anchors:["非常难受","有些低落","平稳、无明显起伏","感觉不错","轻盈而愉快"]},energy:{label:"精力",anchors:["几乎耗尽","勉强支撑","够用，但有限","精力较好","充沛、想行动"]},stress:{label:"压力",anchors:["快要撑不住","很紧绷","压力明显但可应对","有一点紧绷","身心松弛"]},sleep:{label:"睡眠",anchors:["几乎没休息好","明显不足","基本够用","睡得不错","充分恢复"]}};
@@ -64,6 +68,7 @@ let activeDate=currentLocalDate,activeDailyType="sleep",healthFiles={sleep:[],he
 let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeEditorTrigger=null;
 const keepsakeEditor={file:null,sourceDataUrl:"",sourceImage:null,sourceCanvas:null,maskCanvas:null,autoBase:null,history:[],mode:"keep",drawing:false,lastPoint:null,source:"manual",originalPath:"",cutoutPath:"",renderFrame:0,segmentSerial:0};
 const contentImageDrafts=Object.fromEntries(["capture","thoughtRoot","thoughtBlock","comment"].map(key=>[key,{items:[],uploadRequestId:""}]));
+const persistentContentImageKeys=new Set(["capture","thoughtRoot"]);
 const quoteScrollStates=new WeakMap();
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 function renderLatex(container){if(!container||!window.katex)return;container.querySelectorAll("[data-tex]").forEach(element=>{try{window.katex.render(decodeURIComponent(element.dataset.tex||""),element,{displayMode:element.classList.contains("latex-display"),throwOnError:false,strict:"ignore",trust:false})}catch{element.textContent=decodeURIComponent(element.dataset.tex||"")}})}
@@ -167,36 +172,109 @@ const formatBytes=value=>value<1024?`${value} B`:value<1048576?`${(value/1024).t
 const imageDataUrls=files=>Promise.all(files.map(file=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error("无法读取图片，请重新选择"));reader.readAsDataURL(file)})));
 function contentImageDraft(key){return contentImageDrafts[key]}
 function revokeContentImageItem(item){if(item?.preview&&item.file)URL.revokeObjectURL(item.preview)}
+async function persistContentImageDraft(key){
+  if(!currentUser?.id||!persistentContentImageKeys.has(key))return;
+  const draft=contentImageDraft(key);
+  if(!draft?.items.length){await mediaDraftStore.delete(currentUser.id,key);return}
+  await mediaDraftStore.put({
+    owner:currentUser.id,
+    id:key,
+    uploadRequestId:draft.uploadRequestId,
+    updatedAt:new Date().toISOString(),
+    items:draft.items.map(item=>item.path?{path:item.path}:{
+      blob:item.file,
+      name:item.file?.name||"image",
+      type:item.file?.type||"application/octet-stream",
+      lastModified:Number(item.file?.lastModified)||Date.now(),
+      uploadRequestId:item.uploadRequestId||"",
+      uploadedPath:item.uploadedPath||"",
+      lastError:item.lastError||null
+    })
+  })
+}
+async function restoreContentImageDrafts(owner){
+  if(!owner)return;
+  for(const key of persistentContentImageKeys){
+    const stored=await mediaDraftStore.get(owner,key),draft=contentImageDraft(key);
+    if(!stored?.items?.length||!draft||draft.items.length)continue;
+    draft.uploadRequestId=stored.uploadRequestId||"";
+    draft.items=stored.items.slice(0,2).map(item=>{
+      if(item.path)return{path:item.path};
+      const file=typeof File==="function"
+        ?new File([item.blob],item.name||"image",{type:item.type||item.blob?.type||"",lastModified:Number(item.lastModified)||Date.now()})
+        :item.blob;
+      return{
+        file,
+        preview:URL.createObjectURL(file),
+        uploadRequestId:item.uploadRequestId||"",
+        uploadedPath:item.uploadedPath||"",
+        lastError:item.lastError||null
+      }
+    });
+    renderContentImageEditor(key);
+    const status=document.querySelector(`[data-content-image-editor="${CSS.escape(key)}"]`)?.closest("form")?.querySelector(".status");
+    if(status&&!status.textContent){
+      const failed=draft.items.filter(item=>item.lastError).length;
+      status.textContent=`已恢复 ${draft.items.length} 张待上传图片${failed?`，其中 ${failed} 张可重试`:""}。`
+    }
+  }
+}
 function renderContentImageEditor(key){
   const editor=document.querySelector(`[data-content-image-editor="${CSS.escape(key)}"]`),draft=contentImageDraft(key);if(!editor||!draft)return;
   const previews=editor.querySelector("[data-content-image-previews]");
   previews.innerHTML=draft.items.map((item,index)=>`<figure class="content-image-preview"><img src="${escapeHtml(item.preview||appUrl(item.path))}" alt="图片原文 ${index+1}"><button type="button" data-content-image-remove="${index}" aria-label="移除图片 ${index+1}" title="移除图片">×</button></figure>`).join("");
   const input=editor.querySelector('input[type="file"]');if(input)input.disabled=draft.items.length>=2
 }
-function resetContentImageEditor(key,paths=[]){
+function resetContentImageEditor(key,paths=[],{forget=true}={}){
   const draft=contentImageDraft(key);if(!draft)return;
+  const staleItems=forget?draft.items.filter(item=>item.uploadedPath):[];
   draft.items.forEach(revokeContentImageItem);draft.items=[...new Set(paths)].slice(0,2).map(path=>({path}));draft.uploadRequestId="";
   const input=document.querySelector(`[data-content-image-editor="${CSS.escape(key)}"] input[type="file"]`);if(input)input.value="";
-  renderContentImageEditor(key)
+  renderContentImageEditor(key);
+  if(forget){
+    void Promise.all([
+      ...staleItems.map(item=>discardUploadedMediaItem(item)),
+      currentUser?.id&&persistentContentImageKeys.has(key)?mediaDraftStore.delete(currentUser.id,key):Promise.resolve()
+    ]).catch(()=>{})
+  }
 }
-function setContentImageFiles(key,files){
-  const draft=contentImageDraft(key),existing=draft.items.filter(item=>item.path);draft.items.filter(item=>item.file).forEach(revokeContentImageItem);
+async function setContentImageFiles(key,files){
+  const draft=contentImageDraft(key),replaced=draft.items.filter(item=>item.file),existing=draft.items.filter(item=>item.path);replaced.forEach(revokeContentImageItem);
   const selected=validatedImageFiles(files,Math.max(0,2-existing.length));
-  draft.items=[...existing,...selected.map(file=>({file,preview:URL.createObjectURL(file)}))];draft.uploadRequestId="";renderContentImageEditor(key)
+  draft.items=[...existing,...selected.map(file=>({file,preview:URL.createObjectURL(file)}))];draft.uploadRequestId="";renderContentImageEditor(key);
+  await persistContentImageDraft(key);
+  await Promise.all(replaced.map(item=>discardUploadedMediaItem(item))).catch(()=>{})
 }
 async function contentImagePaths(key){
-  const draft=contentImageDraft(key),existing=draft.items.filter(item=>item.path).map(item=>item.path),pending=draft.items.filter(item=>item.file);
-  if(!pending.length)return{attachmentPaths:existing,uploadedPaths:[]};
-  draft.uploadRequestId||=crypto.randomUUID();
-  const uploadedPaths=await uploadOriginalImages({request,images:await imageDataUrls(pending.map(item=>item.file)),idempotencyKey:draft.uploadRequestId});
-  return{attachmentPaths:[...existing,...uploadedPaths],uploadedPaths}
+  const draft=contentImageDraft(key);
+  if(!draft.items.some(item=>item.file))return{attachmentPaths:draft.items.filter(item=>item.path).map(item=>item.path),uploadedPaths:[]};
+  await persistContentImageDraft(key);
+  const result=await uploadPendingMediaItems({
+    items:draft.items,
+    upload:async(file,idempotencyKey)=>{
+      const [image]=await imageDataUrls([file]);
+      return(await uploadOriginalImages({request,images:[image],idempotencyKey}))[0]
+    },
+    onProgress:async items=>{draft.items=items;await persistContentImageDraft(key)}
+  });
+  draft.items=result.items;
+  return{attachmentPaths:result.attachmentPaths,uploadedPaths:result.uploadedPaths}
+}
+async function discardUploadedMediaItem(item,fallbackRequestId=""){
+  const attachmentPath=item?.uploadedPath,uploadRequestId=item?.uploadRequestId||fallbackRequestId;
+  if(!attachmentPath||!uploadRequestId)return false;
+  try{
+    const result=await request("/api/images/discard",{method:"POST",body:JSON.stringify({attachmentPaths:[attachmentPath],uploadRequestId})});
+    return result.discarded?.includes(attachmentPath)
+  }catch{return false}
 }
 async function discardContentImageUploads(key,uploadedPaths){
   if(!uploadedPaths.length)return;
-  try{
-    const draft=contentImageDraft(key),result=await request("/api/images/discard",{method:"POST",body:JSON.stringify({attachmentPaths:uploadedPaths,uploadRequestId:draft.uploadRequestId})});
-    if(result.discarded?.length)contentImageDraft(key).uploadRequestId=""
-  }catch{}
+  const draft=contentImageDraft(key),targets=draft.items.filter(item=>uploadedPaths.includes(item.uploadedPath));
+  for(const item of targets){
+    if(await discardUploadedMediaItem(item,draft.uploadRequestId)){item.uploadedPath="";item.uploadRequestId=""}
+  }
+  await persistContentImageDraft(key).catch(()=>{})
 }
 function pendingContentImageTask(targetType,targetId){
   return(state.aiTasks||[]).find(task=>task.kind==="contentImageUnderstanding"&&task.contentTargetType===targetType&&task.contentTargetId===targetId&&["queued","running","cancelling"].includes(task.status))
@@ -1823,12 +1901,25 @@ function renderDiscovery(snapshot=discoveryController?.getState()){
   $("#discovery-more").hidden=!snapshot.nextCursor;$("#discovery-more").disabled=snapshot.loadingMore;$("#discovery-more").textContent=snapshot.loadingMore?"正在加载…":"继续加载"
 }
 async function loadDiscovery(){if(!discoveryController)return false;try{return await discoveryController.refresh()}catch(error){showToast(error.message,"error");return false}}
+function actionSyncMarkup(sync){
+  if(!sync)return"";
+  const label=sync.status==="pending"?"待同步":sync.status==="committed"?"已保存":"正在同步";
+  return `<span class="checkin-sync-state ${escapeHtml(sync.status)}">${label}</span>`
+}
+function actionButtons(item){
+  if(item.sync)return actionSyncMarkup(item.sync);
+  return `${item.status==="todo"?`<button class="quiet-button" type="button" data-action-start="${escapeHtml(item.id)}" data-version="${item.version}">开始</button>`:item.status==="doing"?`<button class="quiet-button" type="button" data-action-complete="${escapeHtml(item.id)}" data-version="${item.version}">完成</button>`:`<button class="subtle-action" type="button" data-action-reopen="${escapeHtml(item.id)}" data-version="${item.version}">撤销完成</button>`}<button class="subtle-action" type="button" data-action-edit="${escapeHtml(item.id)}" data-version="${item.version}">编辑</button><button class="subtle-action danger" type="button" data-action-delete="${escapeHtml(item.id)}" data-version="${item.version}" aria-label="删除行动">删除</button>`
+}
+function habitButtons(item){
+  if(item.sync)return actionSyncMarkup(item.sync);
+  return `${item.checkedToday?`<button class="quiet-button" type="button" data-habit-uncheck="${escapeHtml(item.todayCheckin.id)}" data-version="${item.todayCheckin.version}">撤销打卡</button>`:`<button class="quiet-button" type="button" data-habit-checkin="${escapeHtml(item.id)}" ${item.canCheckIn?"":"disabled"}>今日打卡</button>`}<button class="subtle-action" type="button" data-habit-toggle="${escapeHtml(item.id)}" data-enabled="${String(item.enabled)}" data-version="${item.version}">${item.enabled?"暂停":"启用"}</button><button class="subtle-action" type="button" data-habit-adjust="${escapeHtml(item.id)}" data-version="${item.version}">调整</button><button class="subtle-action danger" type="button" data-habit-delete="${escapeHtml(item.id)}" data-version="${item.version}">删除</button>`
+}
 function renderActionsWorkspace(){
   if(!$("#action-columns"))return;
   const view=createActionsViewModel(actionsSnapshot,{today:currentLocalDate});
   $("#actions-summary").textContent=`${view.summary.openActions} 项待推进 · ${view.summary.checkedToday}/${view.summary.activeHabits} 个习惯已打卡`;
-  $("#action-columns").innerHTML=view.actionColumns.map(column=>`<section class="action-column"><header><b>${column.label}</b><span>${column.count}</span></header>${column.items.length?column.items.map(item=>`<article class="action-entry"><div><span class="action-priority priority-${item.priority.toLowerCase()}">${item.priorityLabel}</span><h3>${escapeHtml(item.title)}</h3><small>${escapeHtml(item.sourceLabel)}</small></div><div class="action-entry-buttons">${item.status==="todo"?`<button class="quiet-button" type="button" data-action-start="${escapeHtml(item.id)}" data-version="${item.version}">开始</button>`:item.status==="doing"?`<button class="quiet-button" type="button" data-action-complete="${escapeHtml(item.id)}" data-version="${item.version}">完成</button>`:`<button class="subtle-action" type="button" data-action-reopen="${escapeHtml(item.id)}" data-version="${item.version}">撤销完成</button>`}<button class="subtle-action" type="button" data-action-edit="${escapeHtml(item.id)}" data-version="${item.version}">编辑</button><button class="subtle-action danger" type="button" data-action-delete="${escapeHtml(item.id)}" data-version="${item.version}" aria-label="删除行动">删除</button></div></article>`).join(""):empty("暂无")}</section>`).join("");
-  $("#habit-list").innerHTML=view.habits.length?view.habits.map(item=>`<article class="habit-entry"><header><div><h3>${escapeHtml(item.title)}</h3><span>${escapeHtml(item.frequencyLabel)} · ${item.period.count}/${item.period.target}</span></div><b class="${item.period.complete?"complete":""}">${item.period.complete?"已达成":item.statusLabel}</b></header><div class="habit-progress"><i style="width:${Math.min(100,item.period.count/item.period.target*100)}%"></i></div>${item.latestFeeling?`<p>${escapeHtml(item.latestFeeling)}</p>`:""}<footer>${item.checkedToday?`<button class="quiet-button" type="button" data-habit-uncheck="${escapeHtml(item.todayCheckin.id)}" data-version="${item.todayCheckin.version}">撤销打卡</button>`:`<button class="quiet-button" type="button" data-habit-checkin="${escapeHtml(item.id)}" ${item.canCheckIn?"":"disabled"}>今日打卡</button>`}<button class="subtle-action" type="button" data-habit-toggle="${escapeHtml(item.id)}" data-enabled="${String(item.enabled)}" data-version="${item.version}">${item.enabled?"暂停":"启用"}</button><button class="subtle-action" type="button" data-habit-adjust="${escapeHtml(item.id)}" data-version="${item.version}">调整</button><button class="subtle-action danger" type="button" data-habit-delete="${escapeHtml(item.id)}" data-version="${item.version}">删除</button></footer></article>`).join(""):empty("还没有习惯。");
+  $("#action-columns").innerHTML=view.actionColumns.map(column=>`<section class="action-column"><header><b>${column.label}</b><span>${column.count}</span></header>${column.items.length?column.items.map(item=>`<article class="action-entry${item.sync?" is-syncing":""}"><div><span class="action-priority priority-${item.priority.toLowerCase()}">${item.priorityLabel}</span><h3>${escapeHtml(item.title)}</h3><small>${escapeHtml(item.sourceLabel)}</small></div><div class="action-entry-buttons">${actionButtons(item)}</div></article>`).join(""):empty("暂无")}</section>`).join("");
+  $("#habit-list").innerHTML=view.habits.length?view.habits.map(item=>`<article class="habit-entry${item.sync?" is-syncing":""}"><header><div><h3>${escapeHtml(item.title)}</h3><span>${escapeHtml(item.frequencyLabel)} · ${item.period.count}/${item.period.target}</span></div><b class="${item.period.complete?"complete":""}">${item.period.complete?"已达成":item.statusLabel}</b></header><div class="habit-progress"><i style="width:${Math.min(100,item.period.count/item.period.target*100)}%"></i></div>${item.latestFeeling?`<p>${escapeHtml(item.latestFeeling)}</p>`:""}<footer>${habitButtons(item)}</footer></article>`).join(""):empty("还没有习惯。");
 }
 async function loadActionsWorkspace(){
   if(!$("#action-columns"))return false;
@@ -1856,6 +1947,12 @@ function actionConflictMessage(command,error){
   if(action)server=`；服务器内容为“${action.title}”，状态 ${action.status}，优先级 ${action.priority}`;
   if(habit)server=`；服务器内容为“${habit.title}”，状态 ${habit.status}，频次 ${habit.frequency?.cadence||"未指定"} / ${habit.frequency?.target||"未指定"}`;
   return `同步冲突：你基于版本 ${localVersion} 提交了${local}；服务器当前为版本 ${serverVersion}${server}。列表已刷新，请核对后重试。`
+}
+function actionCommandResource(command){
+  if(String(command.type||"").startsWith("actions."))return`action:${command.id||"collection"}`;
+  if(String(command.type||"").startsWith("habits."))return`habit:${command.id||"collection"}`;
+  const checkin=actionsSnapshot.habitCheckins.find(item=>item.id===command.id);
+  return`habit:${command.habitId||checkin?.habitId||command.id||"checkins"}`
 }
 async function runActionCommand(command,{idempotencyKey=""}={}){
   const headers={},options={};
@@ -1889,14 +1986,33 @@ async function runActionCommand(command,{idempotencyKey=""}={}){
     "habitCheckins.delete":`/api/v1/habit-checkins/${encodeURIComponent(command.id)}`
   };
   options.headers=headers;
-  let result;
-  try{result=await requestV1(routes[command.type],options)}
+  const previous=structuredClone(actionsSnapshot);let result,projected=false,operationId="";
+  const applyProjection=record=>{
+    operationId=record.operationId||operationId;
+    const projection=projectActionCommand(actionsSnapshot,command,{
+      status:record.status,
+      operationId,
+      createdAt:record.createdAt
+    });
+    if(projection.changed){actionsSnapshot=projection.value;projected=true;renderActionsWorkspace()}
+  };
+  try{result=await requestV1(routes[command.type],options,{resource:actionCommandResource(command),onQueued:record=>applyProjection({...record,status:"sending"})})}
   catch(error){
-    if(![409,412].includes(Number(error.status)))throw error;
-    await loadActionsWorkspace();
-    throw Object.assign(new Error(actionConflictMessage(command,error)),{status:error.status,code:error.code,details:error.details})
+    if([409,412].includes(Number(error.status))){
+      if(!await loadActionsWorkspace()&&projected){actionsSnapshot=previous;renderActionsWorkspace()}
+      throw Object.assign(new Error(actionConflictMessage(command,error)),{status:error.status,code:error.code,details:error.details})
+    }
+    if(projected&&error.syncStatus==="pending"){
+      applyProjection({status:"pending",operationId});
+      throw Object.assign(new Error("已更新，网络恢复后自动同步。"),{syncStatus:"pending"})
+    }
+    if(projected){actionsSnapshot=previous;renderActionsWorkspace()}
+    throw error
   }
-  if(!await loadActionsWorkspace())throw Object.assign(new Error("已保存，但行动列表刷新失败，请稍后重试同步。"),{saved:true});
+  if(!await loadActionsWorkspace()){
+    if(projected)applyProjection({status:"committed",operationId});
+    throw Object.assign(new Error("已保存，但行动列表刷新失败，请稍后重试同步。"),{saved:true})
+  }
   return result
 }
 function renderFeedback(){
@@ -1950,7 +2066,7 @@ function clearPrivateSessionState(){
   healthParseSerial+=1;latestHealthRequest=0;healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=[];healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]};
   bookParseSerial+=1;for(const url of Object.values(bookPreviewUrls))if(url)URL.revokeObjectURL(url);bookPreviewUrls={cover:"",recognition:""};pendingBookImages={cover:null,recognition:null};editingBookId="";activeBookId="";activeBookFeatureNoteId="";bookCreatorOpen=false;bookDetailCondensed=false;
   keepsakeEditor.segmentSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.history=[];
-  for(const key of Object.keys(contentImageDrafts))resetContentImageEditor(key);
+  for(const key of Object.keys(contentImageDrafts))resetContentImageEditor(key,[],{forget:false});
   $$("main form").forEach(form=>{form.reset();delete form.dataset.requestId});$$(".modal-backdrop").forEach(modal=>modal.hidden=true);$("#comment-panel").hidden=true;$("#selection-tools").hidden=true;
   Object.keys(dailyTypeMeta).forEach(resetDailyForm);resetHealthImages();
 }
@@ -1968,7 +2084,13 @@ function prepareUserSession(user,authRequired){
 function revealUserSession(){document.body.classList.remove("auth-locked");$("#auth-gate").hidden=true}
 async function activateUserSession(user,authRequired){
   prepareUserSession(user,authRequired);
-  try{await requestCoordinator.resume(user?.id);if(!await load())return false;revealUserSession();return true}
+  try{
+    await Promise.all([
+      requestCoordinator.resume(user?.id),
+      restoreContentImageDrafts(user?.id).catch(error=>showToast(`待上传图片恢复失败：${error.message}`,"error"))
+    ]);
+    if(!await load())return false;revealUserSession();return true
+  }
   catch(error){if(currentUser?.id===user?.id)showAuthGate();throw error}
 }
 async function authRequest(endpoint,payload,method="POST"){
@@ -2133,7 +2255,7 @@ document.addEventListener("click",async event=>{
   else if(button.dataset.habitToggle)command=buildSetHabitEnabledCommand(button.dataset.habitToggle,button.dataset.enabled!=="true",button.dataset.version);
   else if(button.dataset.habitAdjust){const habit=actionsSnapshot.habits.find(value=>value.id===button.dataset.habitAdjust),note=prompt("记录这次调整：");if(!note?.trim()||!habit)return;const cadence=prompt("频次：daily（每天）或 weekly（每周）",habit.frequency?.cadence||"daily");if(!["daily","weekly"].includes(cadence))return showToast("频次只能是 daily 或 weekly","error");const target=cadence==="weekly"?Number(prompt("新的每周目标天数：",String(habit.frequency?.target||3))):1;if(!Number.isInteger(target)||target<1||target>7)return showToast("目标天数必须是 1 到 7","error");command=buildHabitAdjustmentCommand(button.dataset.habitAdjust,{note,frequency:{cadence,target}},button.dataset.version)}
   else if(button.dataset.habitDelete){if(!confirm("将这个习惯及其打卡记录移入回收站？"))return;command=buildDeleteHabitCommand(button.dataset.habitDelete,button.dataset.version)}
-  button.disabled=true;try{await runActionCommand(command,options);delete button.dataset.requestId;delete button.dataset.feeling;showToast("已更新")}catch(error){showToast(error.message,"error")}finally{button.disabled=false}
+  button.disabled=true;try{await runActionCommand(command,options);delete button.dataset.requestId;delete button.dataset.feeling;showToast("已更新")}catch(error){showToast(error.message,error.syncStatus==="pending"?"success":"error")}finally{button.disabled=false}
 });
 $("#feedback-form").elements.includeContext.addEventListener("change",event=>{const field=$("#feedback-context-field");field.hidden=!event.currentTarget.checked;if(event.currentTarget.checked&&!event.currentTarget.form.elements.contextSummary.value)event.currentTarget.form.elements.contextSummary.value=`页面：产品反馈；应用版本：${appVersion}`});
 $("#feedback-form").addEventListener("submit",async event=>{
@@ -2315,16 +2437,20 @@ $$("[data-daily-form]").forEach(form=>form.addEventListener("submit",async e=>{
 }));
 for(const type of Object.keys(dailyTypeMeta))for(const event of["input","change"])dailyForm(type)?.addEventListener(event,()=>{healthParseSerial+=1;$("#parse-health-images").disabled=!(healthFiles[activeDailyType]||[]).length});
 $$("[data-daily-cancel]").forEach(button=>button.addEventListener("click",()=>resetDailyForm(button.closest("[data-daily-form]").dataset.dailyForm)));
-$$("[data-content-image-editor] input[type='file']").forEach(input=>input.addEventListener("change",event=>{
+$$("[data-content-image-editor] input[type='file']").forEach(input=>input.addEventListener("change",async event=>{
   const editor=event.currentTarget.closest("[data-content-image-editor]"),status=editor?.closest("form")?.querySelector(".status");
-  try{setContentImageFiles(editor.dataset.contentImageEditor,event.currentTarget.files);delete editor.closest("form")?.dataset.requestId;event.currentTarget.value="";if(status)status.textContent=""}
+  try{await setContentImageFiles(editor.dataset.contentImageEditor,event.currentTarget.files);delete editor.closest("form")?.dataset.requestId;event.currentTarget.value="";if(status)status.textContent=""}
   catch(error){event.currentTarget.value="";if(status)status.textContent=error.message;else showToast(error.message,"error")}
 }));
-document.addEventListener("click",event=>{
+document.addEventListener("click",async event=>{
   const remove=event.target.closest("[data-content-image-remove]");if(!remove)return;
   const editor=remove.closest("[data-content-image-editor]"),draft=contentImageDraft(editor?.dataset.contentImageEditor),index=Number(remove.dataset.contentImageRemove);
   if(!draft||!Number.isSafeInteger(index)||!draft.items[index])return;
-  revokeContentImageItem(draft.items[index]);draft.items.splice(index,1);renderContentImageEditor(editor.dataset.contentImageEditor)
+  const [item]=draft.items.splice(index,1);revokeContentImageItem(item);renderContentImageEditor(editor.dataset.contentImageEditor);
+  await Promise.all([
+    persistContentImageDraft(editor.dataset.contentImageEditor),
+    discardUploadedMediaItem(item,draft.uploadRequestId)
+  ]).catch(error=>showToast(`图片暂存失败：${error.message}`,"error"))
 });
 document.addEventListener("click",event=>{const button=event.target.closest("[data-content-image-understand]");if(button)void queueContentImageUnderstanding(button)});
 document.addEventListener("click",async e=>{
@@ -2672,7 +2798,7 @@ for(const [formId,endpoint]of[["login-form","/api/auth/login"],["register-form",
   });
 }
 const logout=async()=>{
-  const operation=++authOperationSerial,owner=currentUser?.id;clearDurableDraft();const clearing=owner?requestCoordinator.clear(owner):Promise.resolve();showAuthGate();setAuthTab("login");setAuthBusy(true);$("#auth-status").textContent="正在退出…";
+  const operation=++authOperationSerial,owner=currentUser?.id;clearDurableDraft();const clearing=owner?Promise.all([requestCoordinator.clear(owner),mediaDraftStore.clear(owner)]):Promise.resolve();showAuthGate();setAuthTab("login");setAuthBusy(true);$("#auth-status").textContent="正在退出…";
   try{await Promise.all([clearing,authRequest("/api/auth/logout",{})])}
   catch(error){if(operation===authOperationSerial)$("#auth-status").textContent=`本地内容已锁定；服务端退出失败：${error.message}`}
   finally{if(operation===authOperationSerial){setAuthBusy(false);if($("#auth-status").textContent==="正在退出…")$("#auth-status").textContent=""}}

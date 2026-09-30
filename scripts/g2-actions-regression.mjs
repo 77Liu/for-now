@@ -14,6 +14,7 @@ import {
   buildCompleteActionCommand,
   buildCreateActionCommand,
   buildCreateHabitCommand,
+  buildDeleteActionCommand,
   buildDeleteHabitCommand,
   buildHabitAdjustmentCommand,
   buildHabitCheckinCommand,
@@ -21,7 +22,8 @@ import {
   buildUndoActionCompletionCommand,
   buildUpdateActionCommand,
   buildUpdateHabitCheckinCommand,
-  createActionsViewModel
+  createActionsViewModel,
+  projectActionCommand
 } from "../public/frontend/features/actions/index.mjs";
 
 const clone = value => structuredClone(value);
@@ -622,6 +624,78 @@ assert.deepEqual(buildDeleteHabitCommand("habit-1", 5), {
   id: "habit-1",
   expectedVersion: 5
 });
+const projectionSource = {
+  actions: [{
+    id: "action-1",
+    title: "原行动",
+    priority: "P1",
+    status: "doing",
+    version: 3,
+    statusHistory: []
+  }],
+  habits: [{
+    id: "habit-1",
+    title: "原习惯",
+    status: "active",
+    version: 2,
+    frequency: { cadence: "daily", target: 1 }
+  }],
+  habitCheckins: [{
+    id: "checkin-1",
+    habitId: "habit-1",
+    occurredOn: "2026-09-30",
+    version: 1
+  }]
+};
+const updatedProjection = projectActionCommand(
+  projectionSource,
+  buildUpdateActionCommand("action-1", { title: "即时标题", priority: "P0" }, 3),
+  { operationId: "operation-update", status: "sending" }
+);
+assert.equal(updatedProjection.changed, true);
+assert.deepEqual(updatedProjection.value.actions[0]._sync, {
+  status: "sending",
+  operationId: "operation-update",
+  command: "actions.update"
+});
+assert.equal(updatedProjection.value.actions[0].title, "即时标题");
+assert.equal(updatedProjection.value.actions[0].priority, "P0");
+assert.equal(projectionSource.actions[0].title, "原行动", "projection must not mutate the authoritative snapshot");
+
+const completedProjection = projectActionCommand(
+  projectionSource,
+  buildCompleteActionCommand("action-1", 3),
+  { operationId: "operation-complete", status: "pending", createdAt: "2026-09-30T15:00:00.000Z" }
+);
+assert.equal(completedProjection.value.actions[0].status, "done");
+assert.equal(completedProjection.value.actions[0].statusBeforeCompletion, "doing");
+assert.equal(completedProjection.value.actions[0]._sync.status, "pending");
+const reopenedProjection = projectActionCommand(
+  completedProjection.value,
+  buildUndoActionCompletionCommand("action-1", 3),
+  { operationId: "operation-reopen", status: "sending" }
+);
+assert.equal(reopenedProjection.value.actions[0].status, "doing");
+
+const deletedActionProjection = projectActionCommand(
+  projectionSource,
+  buildDeleteActionCommand("action-1", 3),
+  { operationId: "operation-delete", status: "sending" }
+);
+assert.equal(deletedActionProjection.value.actions.length, 0);
+const pausedHabitProjection = projectActionCommand(
+  projectionSource,
+  buildSetHabitEnabledCommand("habit-1", false, 2),
+  { operationId: "operation-pause", status: "sending" }
+);
+assert.equal(pausedHabitProjection.value.habits[0].status, "paused");
+const deletedHabitProjection = projectActionCommand(
+  projectionSource,
+  buildDeleteHabitCommand("habit-1", 2),
+  { operationId: "operation-delete-habit", status: "sending" }
+);
+assert.equal(deletedHabitProjection.value.habits.length, 0);
+assert.equal(deletedHabitProjection.value.habitCheckins.length, 0);
 assert.throws(() => buildCompleteActionCommand("", 1), /行动 ID不能为空/);
 assert.throws(() => buildUpdateActionCommand("action-1", {}, 0), /版本必须是正整数/);
 assert.throws(() => buildSetHabitEnabledCommand("habit-1", "false", 1), /布尔值/);

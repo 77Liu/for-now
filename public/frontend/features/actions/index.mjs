@@ -102,6 +102,7 @@ function actionViewModel(action) {
     createdAt: action.createdAt || "",
     updatedAt: action.updatedAt || action.createdAt || "",
     completedAt: action.completedAt || "",
+    sync: action._sync ? copy(action._sync) : null,
     transitionCount: Array.isArray(action.statusHistory) ? action.statusHistory.length : 0,
     canComplete: status !== "done",
     canUndoCompletion: status === "done"
@@ -153,6 +154,7 @@ function habitViewModel(habit, checkins, today) {
     statusLabel: status === "active" ? "进行中" : "已暂停",
     enabled: status === "active",
     version: Number(habit.version) || 1,
+    sync: habit._sync ? copy(habit._sync) : null,
     frequency: { cadence, target },
     frequencyLabel: cadence === "daily" ? "每天" : `每周 ${target} 天`,
     checkedToday: Boolean(todayCheckin),
@@ -173,6 +175,72 @@ function habitViewModel(habit, checkins, today) {
     adjustmentCount: Array.isArray(habit.adjustmentHistory) ? habit.adjustmentHistory.length : 0,
     checkins: ownCheckins.map(copy)
   };
+}
+
+export function projectActionCommand(data = {}, pendingCommand = {}, sync = {}) {
+  const value = {
+    ...copy(data),
+    actions: Array.isArray(data.actions) ? data.actions.map(copy) : [],
+    habits: Array.isArray(data.habits) ? data.habits.map(copy) : [],
+    habitCheckins: Array.isArray(data.habitCheckins) ? data.habitCheckins.map(copy) : []
+  };
+  const marker = {
+    status: sync.status === "pending" || sync.status === "committed" ? sync.status : "sending",
+    operationId: text(sync.operationId),
+    command: text(pendingCommand.type)
+  };
+  const mark = item => ({ ...item, _sync: marker });
+  const update = (items, id, transform) => {
+    const index = items.findIndex(item => item.id === id);
+    if (index < 0) return false;
+    items[index] = mark(transform(items[index]));
+    return true;
+  };
+  let changed = false;
+
+  if (pendingCommand.type === "actions.update") {
+    changed = update(value.actions, pendingCommand.id, item => ({ ...item, ...copy(pendingCommand.input) }));
+  } else if (pendingCommand.type === "actions.setStatus") {
+    changed = update(value.actions, pendingCommand.id, item => ({ ...item, status: pendingCommand.status }));
+  } else if (pendingCommand.type === "actions.complete") {
+    changed = update(value.actions, pendingCommand.id, item => ({
+      ...item,
+      statusBeforeCompletion: item.status === "done" ? item.statusBeforeCompletion : item.status,
+      status: "done",
+      completedAt: sync.createdAt || item.completedAt || ""
+    }));
+  } else if (pendingCommand.type === "actions.undoCompletion") {
+    changed = update(value.actions, pendingCommand.id, item => ({
+      ...item,
+      status: ["todo", "doing"].includes(item.statusBeforeCompletion) ? item.statusBeforeCompletion : "todo",
+      completedAt: ""
+    }));
+  } else if (pendingCommand.type === "actions.delete") {
+    const count = value.actions.length;
+    value.actions = value.actions.filter(item => item.id !== pendingCommand.id);
+    changed = value.actions.length !== count;
+  } else if (pendingCommand.type === "habits.setEnabled") {
+    changed = update(value.habits, pendingCommand.id, item => ({
+      ...item,
+      status: pendingCommand.enabled ? "active" : "paused"
+    }));
+  } else if (pendingCommand.type === "habits.recordAdjustment") {
+    changed = update(value.habits, pendingCommand.id, item => ({
+      ...item,
+      ...(pendingCommand.input?.frequency ? { frequency: copy(pendingCommand.input.frequency) } : {})
+    }));
+  } else if (pendingCommand.type === "habits.delete") {
+    const count = value.habits.length;
+    value.habits = value.habits.filter(item => item.id !== pendingCommand.id);
+    value.habitCheckins = value.habitCheckins.filter(item => item.habitId !== pendingCommand.id);
+    changed = value.habits.length !== count;
+  } else if (pendingCommand.type === "habitCheckins.delete") {
+    const count = value.habitCheckins.length;
+    value.habitCheckins = value.habitCheckins.filter(item => item.id !== pendingCommand.id);
+    changed = value.habitCheckins.length !== count;
+  }
+
+  return { value, changed };
 }
 
 export function createActionsViewModel(data = {}, { today = "" } = {}) {
