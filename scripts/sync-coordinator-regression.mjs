@@ -18,6 +18,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 const store = createMemorySyncStore();
 const sent = [];
 const gates = [];
+const transitions = [];
 const coordinator = createRequestCoordinator({
   store,
   createId: (() => {
@@ -35,7 +36,13 @@ const coordinator = createRequestCoordinator({
 const first = coordinator.request({
   owner: "account-a",
   url: "/api/v1/captures",
-  options: { method: "POST", body: JSON.stringify({ content: "first" }) }
+  options: { method: "POST", body: JSON.stringify({ content: "first" }) },
+  onQueued: async record => {
+    transitions.push({
+      status: record.status,
+      durable: Boolean(await store.get(record.owner, record.id))
+    });
+  }
 });
 await flush();
 const pending = await store.list("account-a", ["pending", "sending"]);
@@ -44,6 +51,7 @@ assert.equal(sent.length, 1);
 assert.equal(pending[0].body, JSON.stringify({ content: "first" }));
 assert.equal(sent[0].options.headers["x-client-operation-id"], "operation-1");
 assert.equal(sent[0].options.headers["idempotency-key"], "operation-1");
+assert.deepEqual(transitions, [{ status: "pending", durable: true }]);
 
 const second = coordinator.request({
   owner: "account-a",
@@ -93,11 +101,19 @@ const recovery = createRequestCoordinator({
     return { data: { saved: true }, meta: { operation: { id: "recoverable-operation", status: "committed" } } };
   }
 });
-await assert.rejects(recovery.request({
-  owner: "account-a",
-  url: "/api/v1/checkins",
-  options: { method: "POST", body: "{}" }
-}), /Load failed/);
+let retryableError;
+try {
+  await recovery.request({
+    owner: "account-a",
+    url: "/api/v1/checkins",
+    options: { method: "POST", body: "{}" }
+  });
+} catch (error) {
+  retryableError = error;
+}
+assert.ok(retryableError);
+assert.match(retryableError.message, /Load failed/);
+assert.equal(retryableError.syncStatus, "pending");
 assert.equal((await recoveryStore.list("account-a", ["pending"])).length, 1);
 mode = "success";
 const resumed = await recovery.resume("account-a");

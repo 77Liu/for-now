@@ -404,11 +404,11 @@ function editDailyRecord(id){
 
 function setAnswerStatus(id,message,kind="working"){document.querySelectorAll(`[data-answer-chain="${CSS.escape(id)}"]`).forEach(button=>{let status=button.closest(".chain-expanded")?.querySelector(".card-action-status");if(!status){status=document.createElement("p");status.className="card-action-status";status.setAttribute("role","status");status.setAttribute("aria-live","polite");button.closest(".chain-expanded")?.append(status)}status.className=`card-action-status ${kind}`;status.textContent=message})}
 async function request(url,options={}){const answerId=url.match(/^\/api\/thoughts\/([^/]+)\/answer$/)?.[1];try{const result=await apiClient.request(url,options);if(answerId)setAnswerStatus(answerId,"回答已生成并保存。","success");return result}catch(error){if(answerId&&error.name!=="AbortError")setAnswerStatus(answerId,`未能生成：${error.message}，可重试。`,"error");throw error}}
-async function requestV1(url,options={}){
+async function requestV1(url,options={},coordination={}){
   const method=String(options.method||"GET").toUpperCase();
   const result=["GET","HEAD"].includes(method)
     ?await request(url,options)
-    :await requestCoordinator.request({owner:currentUser?.id,url,options});
+    :await requestCoordinator.request({owner:currentUser?.id,url,options,...coordination});
   if(!result||result.error)throw new Error(result?.error?.message||"接口返回异常");
   return{data:result.data,meta:result.meta||{}}
 }
@@ -548,7 +548,10 @@ function renderThoughts(extraOpen={}){const open=thoughtOpenState();if(extraOpen
 
 function captureCard(item,showDate=true){
   const tags=item.tags?.length?`#${item.tags.map(escapeHtml).join(" #")}`:"未标记";
-  return `<article class="capture-timeline-entry" data-capture-id="${item.id}"><div class="timeline-date capture-date">${showDate?escapeHtml(eventDate(item)):""}</div><header class="capture-meta"><span class="capture-top-tags">${tags}</span><time class="capture-entry-time">${formatTime(eventTimestamp(item))}</time></header><div class="capture-item"><div class="capture-copy"><div class="capture-content-viewport"><div class="record-actions capture-actions"><button type="button" data-capture-promote="${item.id}">展开成思考</button><div class="capture-actions-row"><button type="button" data-capture-edit="${item.id}">编辑</button><button type="button" class="danger" data-capture-delete="${item.id}" aria-label="删除这条捕念">删除</button></div></div>${item.content?`<div class="markdown-content">${renderMarkdown(item.content)}</div>`:""}${contentImagesMarkup(item,"capture")}</div></div><button class="capture-expand" type="button" data-capture-expand aria-expanded="false" aria-label="展开捕念" hidden>⌄</button></div></article>`;
+  const syncing=item._sync?.status,actions=syncing
+    ?`<span class="capture-sync-state ${escapeHtml(syncing)}">${syncing==="pending"?"待同步":"正在同步"}</span>`
+    :`<button type="button" data-capture-promote="${item.id}">展开成思考</button><div class="capture-actions-row"><button type="button" data-capture-edit="${item.id}">编辑</button><button type="button" class="danger" data-capture-delete="${item.id}" aria-label="删除这条捕念">删除</button></div>`;
+  return `<article class="capture-timeline-entry${syncing?" is-syncing":""}" data-capture-id="${item.id}"><div class="timeline-date capture-date">${showDate?escapeHtml(eventDate(item)):""}</div><header class="capture-meta"><span class="capture-top-tags">${tags}</span><time class="capture-entry-time">${formatTime(eventTimestamp(item))}</time></header><div class="capture-item"><div class="capture-copy"><div class="capture-content-viewport"><div class="record-actions capture-actions">${actions}</div>${item.content?`<div class="markdown-content">${renderMarkdown(item.content)}</div>`:""}${contentImagesMarkup(item,"capture")}</div></div><button class="capture-expand" type="button" data-capture-expand aria-expanded="false" aria-label="展开捕念" hidden>⌄</button></div></article>`;
 }
 function syncCaptureOverflow(){
   $$(".capture-item").forEach(card=>{
@@ -568,7 +571,7 @@ function renderCaptures(){
   const items=[...(state.captures||[])].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a)));
   $("#capture-count").textContent=`${items.length} 条`;
   $("#capture-list").innerHTML=items.length?items.map((item,index)=>captureCard(item,index===0||eventDate(item)!==eventDate(items[index-1]))).join(""):empty("这里还没有捕念。下一次有什么一闪而过，直接放进来。");
-  items.forEach(item=>markCommentTarget($(`[data-capture-id="${CSS.escape(item.id)}"] .capture-copy .markdown-content`),commentRootKey("capture",item.id),"content"));
+  items.filter(item=>!item._sync).forEach(item=>markCommentTarget($(`[data-capture-id="${CSS.escape(item.id)}"] .capture-copy .markdown-content`),commentRootKey("capture",item.id),"content"));
   renderLatex($("#capture-list"));applyCommentAnchors($("#capture-list"));requestAnimationFrame(syncCaptureOverflow);
 }
 function resetCaptureForm(){
@@ -2322,7 +2325,33 @@ document.addEventListener("keydown",event=>{
   if(intent==="submit")return void occurrenceKeyboardSubmit(event,form,field.tagName==="TEXTAREA"?"multiline":"field");
   if(intent==="block-submit")event.preventDefault()
 });
-$("#capture-form").addEventListener("submit",async e=>{e.preventDefault();if($("#capture-tags").value.trim())commitCaptureTags();const form=e.currentTarget,id=$("#capture-id").value,button=$("#capture-submit"),status=$("#capture-status"),requestId=form.dataset.requestId||crypto.randomUUID();let uploadedPaths=[];if(!id)form.dataset.requestId=requestId;button.disabled=true;status.textContent=id?"正在保存修改…":"正在收下…";try{const submission=await contentImagePaths("capture");uploadedPaths=submission.uploadedPaths;const original=imageRecordPayload({content:$("#capture-content").value,attachmentPaths:submission.attachmentPaths}),payload={...occurrenceFields($("#capture-date")),...original,tags:captureDraftTags};if(id)await request(`/api/captures/${id}`,{method:"PATCH",body:JSON.stringify(payload)});else await requestV1("/api/v1/captures",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)});resetCaptureForm();await refreshState("captures");showToast(id?"捕念已更新":"已收进捕念")}catch(err){await discardContentImageUploads("capture",uploadedPaths);status.textContent=err.message}finally{button.disabled=false}});
+$("#capture-form").addEventListener("submit",async e=>{
+  e.preventDefault();if($("#capture-tags").value.trim())commitCaptureTags();
+  const form=e.currentTarget,id=$("#capture-id").value,button=$("#capture-submit"),status=$("#capture-status"),requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`;let uploadedPaths=[],projected=false;
+  if(!id)form.dataset.requestId=requestId;button.disabled=true;status.textContent=id?"正在保存修改…":"正在收下…";
+  try{
+    const submission=await contentImagePaths("capture");uploadedPaths=submission.uploadedPaths;if(uploadedPaths.length)status.textContent="图片已上传，正在同步记录…";
+    const original=imageRecordPayload({content:$("#capture-content").value,attachmentPaths:submission.attachmentPaths}),payload={...occurrenceFields($("#capture-date")),...original,tags:[...captureDraftTags]};
+    if(id)await request(`/api/captures/${id}`,{method:"PATCH",body:JSON.stringify(payload)});
+    else{
+      const result=await requestV1("/api/v1/captures",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{
+        onQueued:record=>{
+          state.captures=[{id:temporaryId,...payload,createdAt:record.createdAt,_sync:{status:"sending",operationId:record.operationId}},...(state.captures||[]).filter(item=>item.id!==temporaryId)];
+          projected=true;renderCaptures();status.textContent="已记下，正在同步…";
+        }
+      });
+      state.captures=(state.captures||[]).map(item=>item.id===temporaryId?result.data:item);renderCaptures();
+    }
+    resetCaptureForm();void refreshState("captures").catch(error=>showToast(`捕念已保存，但列表刷新失败：${error.message}`,"error"));showToast(id?"捕念已更新":"已收进捕念");
+  }catch(err){
+    if(projected&&err.syncStatus==="pending"){
+      const pending=(state.captures||[]).find(item=>item.id===temporaryId);if(pending)pending._sync.status="pending";renderCaptures();resetCaptureForm();$("#capture-status").textContent="已记下，网络恢复后自动同步。";showToast("捕念已进入待同步队列");
+    }else{
+      if(projected){state.captures=(state.captures||[]).filter(item=>item.id!==temporaryId);renderCaptures()}
+      await discardContentImageUploads("capture",uploadedPaths);status.textContent=err.message;
+    }
+  }finally{button.disabled=false}
+});
 $("#journal-draft-save").addEventListener("click",async e=>{const button=e.currentTarget,status=$("#journal-status");button.disabled=true;button.textContent="正在保存…";status.textContent="正在保存草稿…";try{const draft=await request("/api/journal-draft",{method:"PUT",body:JSON.stringify({journalId:$("#journal-id").value,title:$("#journal-title").value,content:$("#journal-content").value})});state.journalDraft=draft;status.textContent=`草稿已保存于 ${formatTime(draft.updatedAt)}。`;showToast("日记草稿已保存")}catch(err){status.textContent=err.message}finally{button.disabled=false;button.textContent="保存草稿"}});
 $("#journal-form").addEventListener("submit",async e=>{e.preventDefault();const id=$("#journal-id").value,button=$("#journal-submit"),status=$("#journal-status"),payload={...occurrenceFields($("#journal-date")),title:$("#journal-title").value,content:$("#journal-content").value,tags:splitTags($("#journal-tags").value)};button.disabled=true;status.textContent=id?"正在保存修改…":"正在保存原文…";try{await request(id?`/api/journals/${id}`:"/api/journals",{method:id?"PATCH":"POST",body:JSON.stringify(payload)});resetJournalForm();await refreshState("journals");showToast(id?"日记已更新":"日记已保存")}catch(err){status.textContent=err.message}finally{button.disabled=false}});
 $("#checkin-form").addEventListener("submit",async e=>{e.preventDefault();const b=e.currentTarget.querySelector('[type="submit"]'),missing=$$('[data-metric]').filter(x=>x.dataset.confirmed!=="true");if(missing.length){$("#checkin-status").textContent=`请先确认：${missing.map(x=>metricConfig()[x.dataset.metric].label).join("、")}`;missing[0].focus();return}b.disabled=true;b.textContent="正在保存…";const payload={...occurrenceFields($("#checkin-datetime")),notes:{},custom:{},factors:splitTags($("#checkin-factors").value)};$$('[data-metric]').forEach(x=>{const k=x.dataset.metric;if(x.dataset.custom==="1")payload.custom[k]=Number(x.value);else payload[k]=Number(x.value);payload.notes[k]=$(`#${CSS.escape(k)}-note`)?.value||""});try{await request("/api/checkins",{method:"POST",body:JSON.stringify(payload)});clearDurableDraft("checkin-form");resetOccurrenceInput($("#checkin-datetime"));$("#checkin-status").textContent="已保存，正在同步列表…";closeHomeEditors();showToast("此刻状态已保存");void refreshState(["checkins","review"]).catch(error=>showToast(`状态已保存，但页面同步失败：${error.message}`,"error"))}catch(err){$("#checkin-status").textContent=err.message}finally{b.disabled=false;b.textContent="记下此刻"}});

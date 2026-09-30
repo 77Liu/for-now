@@ -465,11 +465,22 @@ const mockFetch = `
       return json(item);
     }
     if (url === "/api/v1/captures" && init.method === "POST") {
-      window.__captureSaves += 1;
-      const payload = JSON.parse(init.body), item = { id: "capture-new-" + window.__captureSaves, createdAt: new Date().toISOString(), imageUnderstandings: [], version: 1, ...payload, ...eventTime(payload) };
-      window.__capturePayloads.push(payload);
-      window.__captures.unshift(item);
-      return v1(item);
+      const respond = () => {
+        window.__captureSaves += 1;
+        const payload = JSON.parse(init.body), item = { id: "capture-new-" + window.__captureSaves, createdAt: new Date().toISOString(), imageUnderstandings: [], version: 1, ...payload, ...eventTime(payload) };
+        window.__capturePayloads.push(payload);
+        window.__captures.unshift(item);
+        return v1(item);
+      };
+      if (window.__delayCaptureCreate) {
+        window.__delayCaptureCreate = false;
+        return new Promise(resolve => { window.__releaseCaptureCreate = () => resolve(respond()); });
+      }
+      if (window.__failCaptureCreate) {
+        window.__failCaptureCreate = false;
+        throw new TypeError("Load failed");
+      }
+      return respond();
     }
     if (url === "/api/captures" && init.method === "POST") {
       window.__captureSaves += 1;
@@ -1190,7 +1201,10 @@ try {
   await evaluate(`document.querySelector("#capture-content").value = "快捷收下的新捕念"; const input = document.querySelector("#capture-tags"); input.value = "测试"; input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })); true`);
   assert.equal(await evaluate(`document.querySelector("#capture-tag-list .tag-chip")?.textContent.includes("测试")`), true);
   assert.deepEqual(await evaluate(`(() => {const input=document.querySelector("#capture-content"),event=new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true});input.dispatchEvent(event);return{prevented:event.defaultPrevented,saves:window.__captureSaves}})()`),{prevented:false,saves:0});
-  await evaluate(`document.querySelector("#capture-content").dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",ctrlKey:true,bubbles:true,cancelable:true}));true`);
+  await evaluate(`window.__delayCaptureCreate=true;document.querySelector("#capture-content").dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",ctrlKey:true,bubbles:true,cancelable:true}));true`);
+  assert.equal(await waitUntil(`typeof window.__releaseCaptureCreate==="function"&&document.querySelector(".capture-timeline-entry.is-syncing")?.textContent.includes("快捷收下的新捕念")`), true);
+  assert.deepEqual(await evaluate(`({saves:window.__captureSaves,status:document.querySelector(".capture-sync-state")?.textContent,form:document.querySelector("#capture-content").value})`), {saves:0,status:"正在同步",form:"快捷收下的新捕念"});
+  await evaluate(`window.__releaseCaptureCreate();true`);
   assert.equal(await waitUntil(`window.__captureSaves === 1 && document.querySelector('[data-capture-id="capture-new-1"]')`), true);
   const capturePayload = await evaluate(`window.__capturePayloads[0]`);
   assert.deepEqual(capturePayload.tags, ["测试"]);
@@ -1205,6 +1219,9 @@ try {
   await evaluate(`document.querySelector('[data-capture-id="capture-new-2"] [data-content-image-understand="capture"]').click();true`);
   assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-new-2"] .content-understanding')?.textContent.includes("手写笔记")`,160,25),true);
   assert.equal(await evaluate(`window.__captures.find(item=>item.id==="capture-new-2").content`),"");
+  await evaluate(`window.__failCaptureCreate=true;document.querySelector("#capture-content").value="断网时仍可见";document.querySelector("#capture-form").requestSubmit();true`);
+  assert.equal(await waitUntil(`document.querySelector(".capture-sync-state.pending")?.textContent==="待同步"`),true);
+  assert.deepEqual(await evaluate(`({saves:window.__captureSaves,visible:document.querySelector(".capture-timeline-entry.is-syncing")?.textContent.includes("断网时仍可见"),form:document.querySelector("#capture-content").value,status:document.querySelector("#capture-status").textContent})`),{saves:2,visible:true,form:"",status:"已记下，网络恢复后自动同步。"});
   await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-capture-edit]').click(); true`);
   const captureEditState = await evaluate(`({ datetime: document.querySelector("#capture-date").value, tags: [...document.querySelectorAll("#capture-tag-list .tag-chip")].map(item => item.textContent.trim()) })`);
   assert.equal(captureEditState.datetime, "2026-09-27T15:08:09");

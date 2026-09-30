@@ -167,6 +167,9 @@ export function createRequestCoordinator({
         status: nextStatus,
         lastError: { status, code: error?.code || "", message: error?.message || "请求失败" }
       }, expectedGeneration);
+      try {
+        error.syncStatus = nextStatus;
+      } catch {}
       throw error;
     }
   };
@@ -181,7 +184,7 @@ export function createRequestCoordinator({
     return execution;
   };
   return {
-    async request({ owner, url, options = {}, resource = "" }) {
+    async request({ owner, url, options = {}, resource = "", onQueued = () => {} }) {
       if (!owner) throw new Error("写请求缺少账户标识");
       const expectedGeneration = generation(owner);
       const method = String(options.method || "POST").toUpperCase();
@@ -205,6 +208,9 @@ export function createRequestCoordinator({
         updatedAt: timestamp
       };
       await store.put(record);
+      try {
+        await onQueued(clone(record));
+      } catch {}
       if (generation(owner) !== expectedGeneration) {
         await store.clear(owner);
         throw Object.assign(new Error("账户同步队列已清理"), { name: "AbortError" });
