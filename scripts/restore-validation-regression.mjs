@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -9,11 +10,19 @@ import {
   createAttachmentStorage,
   stageAttachmentCompleteBackup
 } from "../src/shared/attachments/index.mjs";
+import { publicKeepsake } from "../src/modules/keepsakes/index.mjs";
 
 const run = promisify(execFile), root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "growth-restore-validation-"));
 const sourceDir = path.join(temporary, "source"), dataDir = path.join(temporary, "backup");
 const collections = ["checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "actions", "habits", "habitCheckins", "feedback", "validationLedger"];
+const objectValue = value => value !== null && typeof value === "object" && !Array.isArray(value);
+const canonical = value => Array.isArray(value)
+  ? `[${value.map(canonical).join(",")}]`
+  : objectValue(value)
+    ? `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`
+    : JSON.stringify(value);
+const digest = value => crypto.createHash("sha256").update(canonical(value)).digest("hex");
 try {
   const users = [{ id: "first", username: "first" }, { id: "second", username: "second" }];
   await fs.mkdir(sourceDir, { recursive: true });
@@ -26,6 +35,18 @@ try {
     if (user.id === "first") {
       store.captures.push({ id: "capture", content: "restored" });
       store.books.push({ id: "book", imagePath: "/attachments/cover.png" });
+      store.keepsakes.push({
+        id: "keepsake",
+        title: "restored keepsake",
+        occurredAt: "2026-09-29T09:00:00.000Z",
+        occurredOn: "2026-09-29",
+        originalPath: "/attachments/cover.png",
+        cutoutPath: "/attachments/cover.png",
+        thumbPath: "/attachments/cover.png",
+        displayPath: "/attachments/cover.png",
+        editPath: "/attachments/cover.png",
+        alphaMaskPath: "/attachments/cover.png"
+      });
       store.actions.push({ id: "action", title: "restored action" });
       store.habits.push({ id: "habit", title: "restored habit" });
       store.habitCheckins.push({ id: "habit-checkin", habitId: "habit", occurredOn: "2026-09-29" });
@@ -64,17 +85,21 @@ try {
     firstAttachment: result.firstAttachment
   }, {
     users: 2,
-    records: 7,
-    totalRecords: 8,
+    records: 8,
+    totalRecords: 9,
     attachmentReferences: 1,
     localAttachments: 1,
     firstAttachment: "/attachments/cover.png"
   });
   for (const key of collections) {
-    assert.equal(result.collectionEvidence[key].count, key === "captures" || key === "books" || ["actions", "habits", "habitCheckins", "feedback", "validationLedger"].includes(key) ? 1 : 0);
+    assert.equal(result.collectionEvidence[key].count, ["captures", "books", "keepsakes", "actions", "habits", "habitCheckins", "feedback", "validationLedger"].includes(key) ? 1 : 0);
     assert.match(result.collectionEvidence[key].idsSha256, /^[a-f0-9]{64}$/);
     assert.match(result.collectionEvidence[key].contentSha256, /^[a-f0-9]{64}$/);
   }
+  const restoredKeepsakes = JSON.parse(await fs.readFile(path.join(dataDir, "users", "first", "store.json"), "utf8")).keepsakes;
+  assert.equal("originalPath" in publicKeepsake(restoredKeepsakes[0]), false);
+  assert.equal(result.collectionEvidence.keepsakes.contentSha256, digest(restoredKeepsakes.map(publicKeepsake)));
+  assert.notEqual(result.collectionEvidence.keepsakes.contentSha256, digest(restoredKeepsakes));
   assert.equal(result.attachmentManifest.format, "for-now-attachment-complete-backup-v1");
   assert.equal(result.attachmentManifest.attachments, 1);
   assert.equal(result.attachmentManifest.sourceAttachmentStorage, "local");

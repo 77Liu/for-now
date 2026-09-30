@@ -106,7 +106,14 @@ const collections=["checkins","dailyRecords","captures","journals","thoughts","c
 process.stdout.write(JSON.stringify(Object.fromEntries(collections.map(key=>[key,{count:(value[key]||[]).length,idsSha256:digest((value[key]||[]).map(item=>String(item?.id||"")).sort()),contentSha256:digest(value[key]||[])}]))));
 ')
 if [ "$actual_collection_evidence" != "$expected_collection_evidence" ]; then
-  echo "Restored API collection evidence mismatch." >&2
+  differences=$(EXPECTED_COLLECTION_EVIDENCE="$expected_collection_evidence" \
+    ACTUAL_COLLECTION_EVIDENCE="$actual_collection_evidence" /usr/local/bin/node -e '
+const expected=JSON.parse(process.env.EXPECTED_COLLECTION_EVIDENCE);
+const actual=JSON.parse(process.env.ACTUAL_COLLECTION_EVIDENCE);
+const changed=Object.keys(expected).filter(key=>JSON.stringify(expected[key])!==JSON.stringify(actual[key]));
+process.stdout.write(JSON.stringify(Object.fromEntries(changed.map(key=>[key,{expected:expected[key],actual:actual[key]}]))));
+')
+  echo "Restored API collection evidence mismatch: $differences" >&2
   exit 1
 fi
 if [ -n "$first_attachment" ]; then

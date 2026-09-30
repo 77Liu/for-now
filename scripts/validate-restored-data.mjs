@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { ATTACHMENT_BACKUP_FORMAT } from "../src/shared/attachments/index.mjs";
+import { publicKeepsake } from "../src/modules/keepsakes/index.mjs";
 
 const root = path.resolve(process.argv[2] || "");
 if (!root) throw new Error("Usage: node scripts/validate-restored-data.mjs <restored-data-dir>");
@@ -49,11 +50,12 @@ for (const user of auth.users) {
     if (!Array.isArray(store[key])) throw new Error(`Restored store is missing ${key}`);
     totalRecords += store[key].length;
     if (user.id === auth.users[0].id) {
-      records += store[key].length;
+      const visibleCollection = key === "keepsakes" ? store[key].map(publicKeepsake) : store[key];
+      records += visibleCollection.length;
       collectionEvidence[key] = {
-        count: store[key].length,
-        idsSha256: digest(store[key].map(item => String(item?.id || "")).sort()),
-        contentSha256: digest(store[key])
+        count: visibleCollection.length,
+        idsSha256: digest(visibleCollection.map(item => String(item?.id || "")).sort()),
+        contentSha256: digest(visibleCollection)
       };
     }
   }
