@@ -31,6 +31,7 @@ async function makeRepository(name, { failingCheck = false, delayedCheck = false
   const directory = path.join(temporary, name);
   await fs.mkdir(path.join(directory, "src/modules/actions"), { recursive: true });
   await fs.mkdir(path.join(directory, "scripts"), { recursive: true });
+  await fs.mkdir(path.join(directory, "reports"), { recursive: true });
   const checkSource = [
     "import assert from 'node:assert/strict';",
     "import fs from 'node:fs';",
@@ -50,7 +51,9 @@ async function makeRepository(name, { failingCheck = false, delayedCheck = false
     type: "module",
     scripts: {
       check: "node check.mjs",
-      "test:backend": "node -e \"process.exit(0)\""
+      "test:backend": "node -e \"process.exit(0)\"",
+      "test:frontend": "node -e \"process.exit(0)\"",
+      "test:system": "node -e \"process.exit(0)\""
     }
   }, null, 2) + "\n");
   git(directory, ["init", "-b", "main"]);
@@ -107,9 +110,50 @@ try {
     const after = git(directory, ["rev-parse", "HEAD"]).stdout.trim();
     assert.notEqual(after, before);
     assert.equal(git(directory, ["rev-parse", "HEAD^{tree}"]).stdout.trim(), stagedTree);
-    assert.match(git(directory, ["show", "-s", "--format=%B", "HEAD"]).stdout, /Commit-Gate: local-feat-v1/);
+    assert.match(git(directory, ["show", "-s", "--format=%B", "HEAD"]).stdout, /Commit-Type: feat/);
+    assert.match(git(directory, ["show", "-s", "--format=%B", "HEAD"]).stdout, /Commit-Gate: local-task-v2/);
     assert.equal(git(directory, ["show", "HEAD:outside.txt"]).stdout, "base\n");
     assert.equal(git(directory, ["status", "--short"]).stdout, " M outside.txt\n");
+  }
+
+  {
+    const directory = await makeRepository("fix");
+    git(directory, ["switch", "-c", "fix/actions"]);
+    await fs.writeFile(path.join(directory, "src/modules/actions/index.mjs"), "export const value = 2;\n");
+    git(directory, ["add", "src/modules/actions/index.mjs"]);
+    const result = invokeGate(directory, "fix(actions): preserve action state");
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(git(directory, ["show", "-s", "--format=%B", "HEAD"]).stdout, /Commit-Type: fix/);
+  }
+
+  {
+    const directory = await makeRepository("test-only");
+    git(directory, ["switch", "-c", "test/records"]);
+    await fs.writeFile(path.join(directory, "scripts/checkin-health-regression.mjs"), "export const covered = true;\n");
+    git(directory, ["add", "scripts/checkin-health-regression.mjs"]);
+    const result = invokeGate(directory, "test(records): cover record regression");
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(git(directory, ["show", "-s", "--format=%B", "HEAD"]).stdout, /Commit-Type: test/);
+  }
+
+  {
+    const directory = await makeRepository("docs-only");
+    git(directory, ["switch", "-c", "docs/task"]);
+    await fs.writeFile(path.join(directory, "reports/task.md"), "# Task record\n");
+    git(directory, ["add", "reports/task.md"]);
+    const result = invokeGate(directory, "docs(task): record local delivery");
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(git(directory, ["show", "-s", "--format=%B", "HEAD"]).stdout, /Commit-Type: docs/);
+  }
+
+  {
+    const directory = await makeRepository("docs-with-code");
+    git(directory, ["switch", "-c", "docs/code"]);
+    await fs.writeFile(path.join(directory, "src/modules/actions/index.mjs"), "export const value = 2;\n");
+    git(directory, ["add", "src/modules/actions/index.mjs"]);
+    const result = invokeGate(directory, "docs(actions): reject product code");
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /documentation only/);
   }
 
   {
@@ -119,6 +163,16 @@ try {
     const result = invokeGate(directory, "feat(actions): reject protected branch");
     assert.equal(result.status, 1);
     assert.match(result.stderr, /branch main is protected/);
+  }
+
+  {
+    const directory = await makeRepository("non-task-branch");
+    git(directory, ["switch", "-c", "archive/history"]);
+    await fs.writeFile(path.join(directory, "src/modules/actions/index.mjs"), "export const value = 2;\n");
+    git(directory, ["add", "src/modules/actions/index.mjs"]);
+    const result = invokeGate(directory, "feat(actions): reject archive branch");
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /not an explicit task branch/);
   }
 
   {
@@ -201,7 +255,7 @@ try {
     assert.equal(git(directory, ["rev-parse", "HEAD"]).stdout.trim(), before);
   }
 
-  console.log("Commit gate regression passed: isolated candidate, local commit, protected/risky/self-integrity/partial rejection, failed tests, and staged-tree drift.");
+  console.log("Commit gate regression passed: feat/fix/test/docs commits, isolated candidates, protected/risky/self-integrity/partial rejection, failed tests, and staged-tree drift.");
 } finally {
   await fs.rm(temporary, { recursive: true, force: true });
 }

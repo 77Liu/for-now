@@ -7,7 +7,7 @@
 | 命令 | 范围 |
 | --- | --- |
 | `npm run check:modules` | 前后端模块登记/语法、公开入口、允许依赖、静态及字面量动态深层导入、循环依赖、前端请求入口、运行配置入口和迁移例外 |
-| `npm run test:commit-gate` | 本地 `feat` 自动提交的隔离候选、允许/拒绝边界、门禁自身完整性、测试失败和暂存 tree 漂移 |
+| `npm run test:commit-gate` | 本地 `feat/fix/test/docs` 任务提交的隔离候选、允许/拒绝边界、门禁自身完整性、测试失败和暂存 tree 漂移 |
 | `npm run test:backend` | 语法、API/数据、认证、本地测试隔离、服务器路径、可观测性、附件、边界、监控、恢复、部署回滚 |
 | `npm run test:api-v1` | v1 公共包络、OpenAPI、认证、base path、思绪/状态/健康纵向链、游标、ETag/If-Match、幂等、SSE、删除恢复和账户隔离 |
 | `npm run test:openapi` | 思绪 OpenAPI 分片、根文档组合、引用闭合、运行路由覆盖和写入请求头 |
@@ -18,6 +18,8 @@
 | `npm run test:frontend-shared` | 前端内容安全/Markdown/LaTeX、本地时区边界和图片数量/MIME/大小校验 |
 | `npm run test:frontend-shell` | 浏览器 JS/CSS 薄入口、23 个视图注册、页面切换和 feature 生命周期副作用 |
 | `npm run test:persistence` | JSON repository、业务及身份/配置/用量/附件映射与构思领域服务 |
+| `npm run test:postgres:preflight` | 在业务断言前核对 PostgreSQL 16 的 `postgres`、`initdb`、`pg_ctl` 和实际选择路径 |
+| `npm run test:postgres:stable` | 通过预检选定固定 PostgreSQL 16 工具链，再执行完整真实数据库专项 |
 | `npm run test:postgres` | 临时真实 PostgreSQL：Store v15 全领域关系重建、RLS/认证授权、整批导入、失败回滚、第二数据库恢复，以及生命周期/幂等账本的跨进程与重启；数据库改动的额外必跑门禁 |
 | `npm run test:local-mode` | 本地模拟/冷启切换、线上只读边界与工作区隔离 |
 | `npm run test:load` | 独立容量评估：并发读、并发写、混合流量、持久 AI 任务队列 |
@@ -32,7 +34,8 @@
 | 测试文件 | 主要覆盖 |
 | --- | --- |
 | `scripts/check-modules.mjs` | 模块清单、公开入口、测试、依赖方向、深层导入、循环依赖和路由归属 |
-| `scripts/commit-gate-regression.mjs` | 隔离暂存候选、精确本地提交、受保护分支、高风险/治理面、同路径未暂存内容、测试失败、门禁完整性和 tree 漂移拒绝 |
+| `scripts/commit-gate-regression.mjs` | `feat/fix/test/docs` 类型、隔离暂存候选、受保护分支、高风险/治理面、同路径未暂存内容、测试失败、门禁完整性和 tree 漂移拒绝 |
+| `scripts/postgres-test-preflight-regression.mjs` | PostgreSQL 16 工具链通过、错误主版本和缺失二进制的预检分支 |
 | `scripts/runtime-infrastructure-regression.mjs` | 环境默认/上下限与旧额度兼容、不可变配置快照、测试模式限制、并发账户/后台上下文、追踪 ID、base path、SSE/断连、脱敏权限与保留边界 |
 | `scripts/persistence-regression.mjs` | JSON 串行提交、业务 store 各领域/嵌套对象映射、附件与任务引用、原文/顺序重建、损坏数据拒绝 |
 | `scripts/postgres-integration.mjs` | 真 PostgreSQL 的非 owner RLS、多账户、父外键、并发重复导入、快照覆盖保护、中途/断连回滚、同数量内容篡改拦截、关系导出恢复 |
@@ -125,6 +128,29 @@ v0.2.0 起的模块化重构按 `knowledge/modularization-design.md` 执行，�
 ## 真实 PostgreSQL 专项
 
 修改映射、schema、导入或数据库 repository 时，除默认 `test:backend` 中的映射回归外，必须运行 `npm run test:postgres`。该命令是独立数据库环境门禁，不以 mock 通过代替，也不静默跳过缺失环境。
+
+项目级稳定入口为：
+
+```bash
+npm run test:postgres:preflight
+npm run test:postgres:stable
+```
+
+预检按以下优先级选择工具链：
+
+1. 当前命令显式传入的 `PG_TEST_BIN`。
+2. 项目忽略目录 `data/pg-integration-tools/postgresql-16.14/bin`。
+3. 已验证的临时兼容构建 `/tmp/for-now-postgresql-16.14/bin`。
+4. `@embedded-postgres` 的当前平台二进制。
+
+预检要求 `postgres`、`initdb`、`pg_ctl` 均可执行且主版本为 16。预检失败时
+不得启动业务验收，也不得重复尝试已经确认会失败的 locale、PID 清理或同一
+二进制启动方案；应先恢复上述固定工具链。`test:postgres` 保留为显式指定
+`PG_TEST_BIN` 后的底层入口，自动化和人工执行优先使用 `test:postgres:stable`。
+
+项目内工具链目录只保存本机测试环境，受 `.gitignore` 保护，不进入提交、
+发布制品或生产环境。它必须来自下文已核验源码和构建参数，不能以修改
+PostgreSQL 业务保护逻辑或连接现存生产数据库代替。
 
 测试始终自行创建本机临时集群、随机端口和随机密码，仅监听 `127.0.0.1`；忽略 `DATABASE_URL`，不连接已有数据库。用管理角色建表，再用 `NOSUPERUSER / NOBYPASSRLS` 且不拥有表的角色导入。成功或失败后关闭集群、删除临时数据。它验证功能正确性，不是压测。
 

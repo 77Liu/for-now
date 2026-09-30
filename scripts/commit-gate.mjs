@@ -9,6 +9,8 @@ const MAX_FILES = 16;
 const MAX_CHANGED_LINES = 1200;
 const MAX_FILE_BYTES = 512 * 1024;
 const PROTECTED_BRANCH = /^(?:main|master|production|release(?:\/|$)|hotfix(?:\/|$))/;
+const TASK_BRANCH = /^(?:feat|feature|fix|test|docs)\//;
+const ALLOWED_COMMIT_TYPES = new Set(["feat", "fix", "test", "docs"]);
 const SECRET_ENV_KEY = /^(?:DATABASE_URL|AUTH_DATABASE_URL|PG_BACKUP_DATABASE_URL|PG_SCHEMA_DATABASE_URL|APP_URL|UPSTREAM_ORIGIN)$/;
 const SECRET_ENV_PREFIX = /^(?:OSS_|ALIYUN_|ALIBABA_CLOUD_|DEEPSEEK_|FEISHU_)/;
 
@@ -93,7 +95,7 @@ function parseArguments(argv) {
       message = argv[index + 1] || "";
       index += 1;
     } else if (value === "--help" || value === "-h") {
-      process.stdout.write("Usage: npm run commit:feat -- --message \"feat(scope): summary\" [--dry-run]\n");
+      process.stdout.write("Usage: npm run commit:task -- --message \"<feat|fix|test|docs>(scope): summary\" [--dry-run]\n");
       process.exit(0);
     } else {
       fail(`unknown argument ${JSON.stringify(value)}`);
@@ -105,10 +107,12 @@ function parseArguments(argv) {
 function validateMessage(message) {
   if (!message) fail("use --message to provide a Conventional Commit subject");
   if (/[\r\n]/.test(message)) fail("the subject must be a single line");
-  if (!/^feat(?:\([a-z0-9][a-z0-9._/-]*\))?: \S.+$/u.test(message)) {
-    fail("the subject must match feat: summary or feat(scope): summary");
+  const match = /^(feat|fix|test|docs)(?:\(([a-z0-9][a-z0-9._/-]*)\))?: (\S.+)$/u.exec(message);
+  if (!match || !ALLOWED_COMMIT_TYPES.has(match[1])) {
+    fail("the subject must use feat, fix, test, or docs");
   }
   if ([...message].length > 72) fail("the subject must not exceed 72 characters");
+  return { type: match[1], scope: match[2] || "" };
 }
 
 function splitNull(value) {
@@ -177,7 +181,9 @@ function classifyPath(file) {
 
   const regressionMatch = /^scripts\/([^/]+-regression\.mjs)$/.exec(file);
   if (regressionMatch && regressionScopes.has(regressionMatch[1])) {
-    return { kind: "test", scopes: regressionScopes.get(regressionMatch[1]) };
+    const name = regressionMatch[1];
+    const surface = /^(?:frontend|mobile-platform|ui)-/.test(name) ? "frontend" : "backend";
+    return { kind: "test", scopes: regressionScopes.get(name), surface };
   }
 
   return { kind: "blocked", reason: "path is outside the explicit low-risk allowlist" };
@@ -326,13 +332,43 @@ async function validateCandidate(root, tree, scripts) {
   }
 }
 
-function selectValidation(classifications) {
+function selectValidation(classifications, subject) {
   const products = classifications.filter(item => item.classification.kind === "product");
+  const tests = classifications.filter(item => item.classification.kind === "test");
+  const documentation = classifications.filter(item => item.classification.kind === "documentation");
+
+  if (subject.type === "docs") {
+    if (documentation.length !== classifications.length) {
+      fail("a docs commit may contain documentation only");
+    }
+    return { scope: subject.scope || "documentation", scripts: [] };
+  }
+
+  if (subject.type === "test") {
+    if (products.length) fail("a test commit may not contain product implementation changes");
+    if (!tests.length) fail("a test commit must include an allowed regression file");
+    if (!subject.scope) fail("a test commit must declare its feature scope");
+    for (const item of tests) {
+      if (!item.classification.scopes.includes(subject.scope)) {
+        fail(`${item.file} does not test the declared ${subject.scope} scope`);
+      }
+    }
+    const backend = tests.some(item => item.classification.surface === "backend");
+    const frontend = tests.some(item => item.classification.surface === "frontend");
+    return {
+      scope: subject.scope,
+      scripts: ["check", backend && frontend ? "test:system" : backend ? "test:backend" : "test:frontend"]
+    };
+  }
+
   const scopes = unique(products.map(item => item.classification.scope));
-  if (scopes.length === 0) fail("a feat commit must include an allowed product or gate implementation change");
+  if (scopes.length === 0) fail(`${subject.type} commits must include an allowed product change`);
   if (scopes.length > 1) fail(`staged paths span multiple feature scopes: ${scopes.join(", ")}`);
 
   const scope = scopes[0];
+  if (subject.scope && subject.scope !== scope) {
+    fail(`commit scope ${subject.scope} does not match staged ${scope} feature scope`);
+  }
   for (const item of classifications.filter(entry => entry.classification.kind === "test")) {
     const accepted = item.classification.scopes.includes(scope);
     if (!accepted) fail(`${item.file} does not test the staged ${scope} feature scope`);
@@ -348,13 +384,14 @@ function selectValidation(classifications) {
 
 async function main() {
   const options = parseArguments(process.argv.slice(2));
-  validateMessage(options.message);
+  const subject = validateMessage(options.message);
 
   const root = git(["rev-parse", "--show-toplevel"], { cwd: process.cwd() }).stdout.trim();
   validateTrustedGate(root);
   const branch = git(["branch", "--show-current"], { cwd: root }).stdout.trim();
   if (!branch) fail("detached HEAD is not eligible for automatic commits");
   if (PROTECTED_BRANCH.test(branch)) fail(`branch ${branch} is protected`);
+  if (!TASK_BRANCH.test(branch)) fail(`branch ${branch} is not an explicit task branch`);
 
   const operation = activeOperation(root);
   if (operation) fail(`Git operation ${operation} is still active`);
@@ -386,7 +423,7 @@ async function main() {
   git(["diff", "--cached", "--check"], { cwd: root });
   const changedLines = validateDiffSize(root);
   validateSecretDiff(root);
-  const validation = selectValidation(classifications);
+  const validation = selectValidation(classifications, subject);
 
   const head = git(["rev-parse", "HEAD"], { cwd: root }).stdout.trim();
   const ref = git(["symbolic-ref", "-q", "HEAD"], { cwd: root }).stdout.trim();
@@ -419,7 +456,8 @@ async function main() {
     "",
     `Validation-Tree: ${tree}`,
     `Validation-Commands: ${validation.scripts.map(script => `npm run ${script}`).join("; ")}`,
-    "Commit-Gate: local-feat-v1"
+    `Commit-Type: ${subject.type}`,
+    "Commit-Gate: local-task-v2"
   ].join("\n");
   const commitArgs = ["commit-tree", tree, "-p", head];
   if (git(["config", "--bool", "commit.gpgSign"], { cwd: root, allowFailure: true }).stdout.trim() === "true") {

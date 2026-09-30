@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "check": "npm run check:modules && npm run check:prompts && node --check server.mjs && node --check admin-snapshot.mjs && node --check public/app.js && node --check src/shared/persistence/index.mjs && node --check src/shared/persistence/json-repository.mjs && node --check src/shared/persistence/postgres-migration.mjs && node --check src/shared/persistence/store-mapping.mjs && node --check src/shared/persistence/postgres-objects.mjs && node --check scripts/postgres-integration.mjs && node --check src/modules/thoughts/index.mjs && node --check scripts/system-test.mjs && node --check scripts/load-regression.mjs && node --check scripts/local-test-mode-regression.mjs && node --check scripts/local-test-preview.mjs && node --check scripts/migrate-json-to-postgres.mjs",
+    "check": "npm run check:modules && npm run check:prompts && node --check server.mjs && node --check admin-snapshot.mjs && node --check public/app.js && node --check src/shared/persistence/index.mjs && node --check src/shared/persistence/json-repository.mjs && node --check src/shared/persistence/postgres-migration.mjs && node --check src/shared/persistence/store-mapping.mjs && node --check src/shared/persistence/postgres-objects.mjs && node --check scripts/postgres-integration.mjs && node --check scripts/postgres-test-preflight.mjs && node --check scripts/postgres-test-preflight-regression.mjs && node --check src/modules/thoughts/index.mjs && node --check scripts/system-test.mjs && node --check scripts/load-regression.mjs && node --check scripts/local-test-mode-regression.mjs && node --check scripts/local-test-preview.mjs && node --check scripts/migrate-json-to-postgres.mjs",
     "check:modules": "node scripts/check-modules.mjs",
     "check:prompts": "node scripts/prompt-catalog-regression.mjs",
     "test": "node scripts/regression.mjs",
@@ -26,6 +26,9 @@
     "test:mobile": "node scripts/mobile-platform-regression.mjs",
     "test:local-mode": "node scripts/local-test-mode-regression.mjs",
     "test:persistence": "node scripts/persistence-regression.mjs && node scripts/document-migration-regression.mjs && node scripts/thought-service-regression.mjs",
+    "test:postgres:preflight": "node scripts/postgres-test-preflight.mjs",
+    "test:postgres:stable": "node scripts/postgres-test-preflight.mjs --run",
+    "test:postgres-preflight": "node scripts/postgres-test-preflight-regression.mjs",
     "test:postgres": "node scripts/postgres-integration.mjs && node scripts/persistence-ledger-postgres-regression.mjs",
     "test:backend": "node scripts/system-test.mjs backend",
     "test:load": "node scripts/system-test.mjs load",
@@ -42,6 +45,7 @@
     "test:restore": "node scripts/restore-validation-regression.mjs",
     "test:commit-gate": "node scripts/commit-gate-regression.mjs",
     "commit:feat": "node scripts/commit-gate.mjs",
+    "commit:task": "node scripts/commit-gate.mjs",
     "migrate:postgres": "node scripts/migrate-json-to-postgres.mjs",
     "export:postgres": "node scripts/export-postgres.mjs"
   },
