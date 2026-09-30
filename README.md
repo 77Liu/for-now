@@ -58,7 +58,12 @@ npm run start:local-test
 - **`v0.2.0` 主版本与 `v0.2.1` 恢复门修复已发布**：`v0.2.0` 先以 JSON 写源部署，恢复演练发现小物私有对象与公开 API 投影摘要口径不一致；`v0.2.1` 修复并复验后完成正式迁移。3 个账户、12 个会话、260 个业务对象和 30 个附件索引已进入 PostgreSQL；停写 212 秒，切换前后备份、逻辑恢复、数据库级独立恢复、写入重启冒烟均通过。当前功能范围包含思绪检索/回访、跨体裁导出、行动/习惯、产品反馈、生命周期与幂等账本、小物 WebP 派生、跨体裁图片原文和后台图片理解，共 50 个模块、201 条拥有路由、60 条 OpenAPI 路径、104 个操作和 23 个视图；Store 为 v15。
 - **夜间探索轨道**：P1、P2、P3 三个递进探索版均已在本地非主线分支验证；所有版本使用隔离样例数据，不连接生产。执行约束与阶段状态见 `knowledge/exploration-release-track.md`。
 - **PostgreSQL 验收与恢复（2026-09-30）**：本地 PostgreSQL 16.14 的 Store v15 全领域、旧表升级、完整导出恢复及持久幂等专项通过；ECS PostgreSQL 16.15 的正式迁移、重复导入验真、生产备份、逻辑恢复和数据库级独立恢复均通过。证据见 `reports/g2-r4-postgres-2026-09-30.json` 与 `reports/v0.2.1-production-cutover-2026-09-30.json`。
-- **状态单一事实来源**：本轮 P00-P3、实施顺序、验收标准和剩余阻塞统一见 `README-TODO.md`；最新主账户原文审阅与取舍见 `reports/iteration-plan-v0.2.0-2026-09-28.md`。
+- **V0.3.0 已启动准备**：本轮完成当前全部未完成 P00/P0 和计划内部分 P1，
+  通过 `v0.2.2` 起的可验收功能版本逐批并入 `main`；任务编号统一使用
+  `V0.3.0-xx`。范围与串并行流程见
+  `reports/iteration-plan-v0.3.0-2026-09-30.md`。
+- **状态单一事实来源**：工程排期、验收标准和剩余阻塞统一见 `README-TODO.md`；
+  业务需求及交付关联维护在飞书 Base“需求池”和“研发交付记录”。
 
 ## 当前生产与工作区能力
 
@@ -130,7 +135,7 @@ npm run start:local-test
 当前发布不是自动 CI/CD，而是经过明确触发的半自动流程：
 
 ```text
-低风险单域暂存变更 → commit:feat 隔离验证 → 本地 feat commit
+低风险单域暂存变更 → commit:task 隔离验证 → 本地任务 commit
 其他提交 / push / tag / Gitee Release → 人工明确授权
 已授权 push Gitee main
 → SSH 到 ECS 执行 for-now-deploy → 健康检查 → 切换或自动回滚
@@ -144,6 +149,10 @@ npm run test:system
 
 该命令串行执行后端与前端功能稳定性测试。功能开发阶段不执行压测；容量评估时再单独运行 `npm run test:load`。测试矩阵与边界见 `knowledge/system-testing.md`。
 
+涉及持久化、schema、迁移或数据库 repository 时，先运行
+`npm run test:postgres:preflight`，再运行 `npm run test:postgres:stable`；
+该入口固定选择已核验的 PostgreSQL 16 测试工具链。
+
 推送后触发服务器更新：
 
 ```bash
@@ -152,11 +161,17 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
   sudo /usr/local/sbin/for-now-deploy
 ```
 
-低风险、单一功能域可在暂存后运行 `npm run commit:feat -- --message "feat(scope): 摘要"`，由门禁在隔离候选上完成影响范围测试并自动创建本地提交；高风险、跨域及发布整合提交仍需人工授权。任何 push、tag、Gitee Release、部署或生产写入始终需要本次人工明确授权，本地测试或自动提交均不构成授权。仓库没有监听本地文件或 Gitee push 的自动触发器。首次引入 SDK 依赖前还需按 `deploy/README.md` 升级旧部署器。
+低风险、单一任务域可在暂存后运行
+`npm run commit:task -- --message "<feat|fix|test|docs>(scope): 摘要"`，由门禁在
+隔离候选上完成相应验证并创建本地提交；`commit:feat` 作为兼容别名保留。
+高风险、跨域及发布整合提交仍需人工授权。任何 push、tag、Gitee Release、
+部署或生产写入始终需要本次人工明确授权，本地测试或自动提交均不构成授权。
+仓库没有监听本地文件或 Gitee push 的自动触发器。首次引入 SDK 依赖前还需
+按 `deploy/README.md` 升级旧部署器。
 
 ## 当前 TODO
 
-需求判断以用户亲自写下的问题、初步想法、捕念、追问和批注为主；AI 生成回答仅作弱参考，不代表用户立场。v0.2.0 按“数据底座 → 模块与 v1 契约 → 四路独立功能 → 串行集成 → 发布切换”推进；当前排期只在 `README-TODO.md` 维护，开发准入约束见 `knowledge/modularization-design.md` 第 11 节。
+需求判断以用户亲自写下的问题、初步想法、捕念、追问和批注为主；AI 生成回答仅作弱参考，不代表用户立场。V0.3.0 按“环境收尾 → 小版本功能交付 → 串行集成 → 主版本冻结”推进；当前排期在 `README-TODO.md` 维护，详细流程见 `reports/iteration-plan-v0.3.0-2026-09-30.md`。
 
 ## 产品路线图
 
@@ -200,6 +215,10 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
 - `README-TODO.md`：P00-P3 排期、实施状态、验收标准和阻塞项的单一事实来源。
 - `reports/product-iteration-review-2026-09-27.md`：生产条目审阅范围、需求证据、审阅时实现核对与优化取舍。
 - `reports/iteration-plan-v0.2.0-2026-09-28.md`：最新主账户原文审阅、版本号、P00-P3 判断和本轮执行计划。
+- `reports/iteration-plan-v0.3.0-2026-09-30.md`：V0.3.0 全部 P00/P0、
+  选定 P1、`v0.2.x` 功能批次及串并行开发流程。
+- `reports/v0.3.0-git-closeout-2026-09-30.md`：旧工作树、探索 stash、
+  本地 `main` 和可恢复归档记录。
 - `reports/g1-contract-freeze-2026-09-29.json`：G1 契约文件摘要、系统测试、PostgreSQL 证据边界及三路重构资源预留。
 - `reports/s3-10-integration-2026-09-29.json`：B1/B2/B3 隔离工作树、串行集成顺序、产物摘要和 36 阶段系统测试证据。
 - `reports/s3-11-12-completion-2026-09-29.json`：状态/健康 v1 纵向链、前端薄壳与页面生命周期，以及 38 阶段系统测试证据。
