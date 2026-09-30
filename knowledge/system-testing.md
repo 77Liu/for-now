@@ -7,6 +7,7 @@
 | 命令 | 范围 |
 | --- | --- |
 | `npm run check:modules` | 前后端模块登记/语法、公开入口、允许依赖、静态及字面量动态深层导入、循环依赖、前端请求入口、运行配置入口和迁移例外 |
+| `npm run test:commit-gate` | 本地 `feat` 自动提交的隔离候选、允许/拒绝边界、门禁自身完整性、测试失败和暂存 tree 漂移 |
 | `npm run test:backend` | 语法、API/数据、认证、本地测试隔离、服务器路径、可观测性、附件、边界、监控、恢复、部署回滚 |
 | `npm run test:api-v1` | v1 公共包络、OpenAPI、认证、base path、思绪/状态/健康纵向链、游标、ETag/If-Match、幂等、SSE、删除恢复和账户隔离 |
 | `npm run test:openapi` | 思绪 OpenAPI 分片、根文档组合、引用闭合、运行路由覆盖和写入请求头 |
@@ -31,6 +32,7 @@
 | 测试文件 | 主要覆盖 |
 | --- | --- |
 | `scripts/check-modules.mjs` | 模块清单、公开入口、测试、依赖方向、深层导入、循环依赖和路由归属 |
+| `scripts/commit-gate-regression.mjs` | 隔离暂存候选、精确本地提交、受保护分支、高风险/治理面、同路径未暂存内容、测试失败、门禁完整性和 tree 漂移拒绝 |
 | `scripts/runtime-infrastructure-regression.mjs` | 环境默认/上下限与旧额度兼容、不可变配置快照、测试模式限制、并发账户/后台上下文、追踪 ID、base path、SSE/断连、脱敏权限与保留边界 |
 | `scripts/persistence-regression.mjs` | JSON 串行提交、业务 store 各领域/嵌套对象映射、附件与任务引用、原文/顺序重建、损坏数据拒绝 |
 | `scripts/postgres-integration.mjs` | 真 PostgreSQL 的非 owner RLS、多账户、父外键、并发重复导入、快照覆盖保护、中途/断连回滚、同数量内容篡改拦截、关系导出恢复 |

@@ -74,6 +74,14 @@ No application release or data change was part of that operation.
    `sudo /usr/local/sbin/for-now-restore-drill`, and send one real Feishu test
    alert before enabling invitations.
 
+`prepare-server.sh` does not install or provision PostgreSQL. Before the v0.2.0
+cutover, choose a PostgreSQL 16 host, verify its capacity and network/TLS
+boundary, and create the separate schema-admin, migration, runtime-data,
+runtime-auth, and read-only recovery roles described in
+[`knowledge/postgres-migration.md`](../knowledge/postgres-migration.md). Do not
+set `PERSISTENCE_BACKEND=postgres` until the latest JSON/OSS snapshot, full
+migration, independent restore, and rollback checks have passed.
+
 ## Read-only platform console
 
 The platform console is a separate orphan branch (`platform/main`) and systemd

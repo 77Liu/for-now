@@ -2,7 +2,7 @@
 
 图示更新时间：2026-09-27 20:54（Asia/Shanghai）。[系统架构 · 260927-2045](../assets/系统架构-260927-2045.png)；[本版说明](../reports/product-visuals-260927-2045.md)。
 
-本文同时记录当前生产基线和 v0.2.0 工作区候选结构，两者不得混写为同一部署状态。生产应用为 `v0.1.1`（`54a6326f14ca`），继承 `release-20260928-p00-p0-commercial-system` 已上线能力；独立只读治理中台也已上线。v0.2.0 已完成 G2 R4 本地验收，但尚未集成到发布分支、push 或部署。生产版本与验证证据见 [`../README.md`](../README.md) 的“当前状态”和 [`../reports/pre-launch-2026-09-28-p00-p0-platform.md`](../reports/pre-launch-2026-09-28-p00-p0-platform.md)；逐项状态只在 [`../README-TODO.md`](../README-TODO.md) 维护。
+本文同时记录当前生产基线和 v0.2.0 工作区候选结构，两者不得混写为同一部署状态。生产应用为 `v0.1.1`（`54a6326f14ca`），继承 `release-20260928-p00-p0-commercial-system` 已上线能力；独立只读治理中台也已上线。v0.2.0 已完成 G2 R4 本地验收，代码内容固定于 `70b5644ef265440b9f5f4e69868647544f6deff2`，本地 `release/v0.2.0-20260930` 此后只整理发布证据，尚未 push 或部署。生产版本与验证证据见 [`../README.md`](../README.md) 的“当前状态”和 [`../reports/pre-launch-2026-09-29-v0.2.0.md`](../reports/pre-launch-2026-09-29-v0.2.0.md)；逐项状态只在 [`../README-TODO.md`](../README-TODO.md) 维护。
 
 ## 生产运行基线（v0.1.1）
 
