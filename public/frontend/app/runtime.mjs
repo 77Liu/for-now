@@ -617,7 +617,7 @@ function editJournal(id){
 function renderCheckinHistory(items){
   const list=$("#checkin-history"),ordered=[...items].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a))),cfg=metricConfig();
   if(!ordered.length){list.innerHTML="";return}
-  list.innerHTML=`<div class="checkin-history-heading"><b>单次记录</b><span>${ordered.length} 次</span></div><div class="checkin-history-list">${ordered.map(item=>{const values=Object.entries(cfg).map(([key,meta])=>{const value=metricValue(item,key,meta.custom);return Number.isFinite(Number(value))?`<span>${escapeHtml(meta.label)} ${Number(value)}</span>`:""}).filter(Boolean).join(""),factors=item.factors?.length?`因素：${item.factors.map(escapeHtml).join("、")}`:"未记录因素";return `<article class="checkin-history-entry"><header><time>${escapeHtml(eventDate(item))} · ${formatTime(eventTimestamp(item))}</time><span><button type="button" data-edit-checkin="${escapeHtml(item.id)}" aria-label="编辑 ${escapeHtml(eventDate(item))} ${formatTime(eventTimestamp(item))} 的状态">编辑</button><button type="button" class="danger" data-delete-checkin="${escapeHtml(item.id)}" aria-label="删除这次状态">删除</button></span></header><div>${values}</div><p>${factors}</p></article>`}).join("")}</div>`;
+  list.innerHTML=`<div class="checkin-history-heading"><b>单次记录</b><span>${ordered.length} 次</span></div><div class="checkin-history-list">${ordered.map(item=>{const values=Object.entries(cfg).map(([key,meta])=>{const value=metricValue(item,key,meta.custom);return Number.isFinite(Number(value))?`<span>${escapeHtml(meta.label)} ${Number(value)}</span>`:""}).filter(Boolean).join(""),factors=item.factors?.length?`因素：${item.factors.map(escapeHtml).join("、")}`:"未记录因素",syncing=item._sync?.status,actions=syncing?`<span class="checkin-sync-state ${escapeHtml(syncing)}">${syncing==="pending"?"待同步":"正在同步"}</span>`:`<span><button type="button" data-edit-checkin="${escapeHtml(item.id)}" aria-label="编辑 ${escapeHtml(eventDate(item))} ${formatTime(eventTimestamp(item))} 的状态">编辑</button><button type="button" class="danger" data-delete-checkin="${escapeHtml(item.id)}" aria-label="删除这次状态">删除</button></span>`;return `<article class="checkin-history-entry${syncing?" is-syncing":""}" data-checkin-id="${escapeHtml(item.id)}"><header><time>${escapeHtml(eventDate(item))} · ${formatTime(eventTimestamp(item))}</time>${actions}</header><div>${values}</div><p>${factors}</p></article>`}).join("")}</div>`;
 }
 function renderStateChart(){
   const days=Number($("#chart-range")?.value||30),cutoff=new Date(`${activeDate}T12:00:00`);cutoff.setDate(cutoff.getDate()-days+1);
@@ -2354,7 +2354,32 @@ $("#capture-form").addEventListener("submit",async e=>{
 });
 $("#journal-draft-save").addEventListener("click",async e=>{const button=e.currentTarget,status=$("#journal-status");button.disabled=true;button.textContent="正在保存…";status.textContent="正在保存草稿…";try{const draft=await request("/api/journal-draft",{method:"PUT",body:JSON.stringify({journalId:$("#journal-id").value,title:$("#journal-title").value,content:$("#journal-content").value})});state.journalDraft=draft;status.textContent=`草稿已保存于 ${formatTime(draft.updatedAt)}。`;showToast("日记草稿已保存")}catch(err){status.textContent=err.message}finally{button.disabled=false;button.textContent="保存草稿"}});
 $("#journal-form").addEventListener("submit",async e=>{e.preventDefault();const id=$("#journal-id").value,button=$("#journal-submit"),status=$("#journal-status"),payload={...occurrenceFields($("#journal-date")),title:$("#journal-title").value,content:$("#journal-content").value,tags:splitTags($("#journal-tags").value)};button.disabled=true;status.textContent=id?"正在保存修改…":"正在保存原文…";try{await request(id?`/api/journals/${id}`:"/api/journals",{method:id?"PATCH":"POST",body:JSON.stringify(payload)});resetJournalForm();await refreshState("journals");showToast(id?"日记已更新":"日记已保存")}catch(err){status.textContent=err.message}finally{button.disabled=false}});
-$("#checkin-form").addEventListener("submit",async e=>{e.preventDefault();const b=e.currentTarget.querySelector('[type="submit"]'),missing=$$('[data-metric]').filter(x=>x.dataset.confirmed!=="true");if(missing.length){$("#checkin-status").textContent=`请先确认：${missing.map(x=>metricConfig()[x.dataset.metric].label).join("、")}`;missing[0].focus();return}b.disabled=true;b.textContent="正在保存…";const payload={...occurrenceFields($("#checkin-datetime")),notes:{},custom:{},factors:splitTags($("#checkin-factors").value)};$$('[data-metric]').forEach(x=>{const k=x.dataset.metric;if(x.dataset.custom==="1")payload.custom[k]=Number(x.value);else payload[k]=Number(x.value);payload.notes[k]=$(`#${CSS.escape(k)}-note`)?.value||""});try{await request("/api/checkins",{method:"POST",body:JSON.stringify(payload)});clearDurableDraft("checkin-form");resetOccurrenceInput($("#checkin-datetime"));$("#checkin-status").textContent="已保存，正在同步列表…";closeHomeEditors();showToast("此刻状态已保存");void refreshState(["checkins","review"]).catch(error=>showToast(`状态已保存，但页面同步失败：${error.message}`,"error"))}catch(err){$("#checkin-status").textContent=err.message}finally{b.disabled=false;b.textContent="记下此刻"}});
+$("#checkin-form").addEventListener("submit",async e=>{
+  e.preventDefault();const form=e.currentTarget,b=form.querySelector('[type="submit"]'),missing=$$('[data-metric]').filter(x=>x.dataset.confirmed!=="true");
+  if(missing.length){$("#checkin-status").textContent=`请先确认：${missing.map(x=>metricConfig()[x.dataset.metric].label).join("、")}`;missing[0].focus();return}
+  const requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`,payload={...occurrenceFields($("#checkin-datetime")),notes:{},custom:{},factors:splitTags($("#checkin-factors").value)};let projected=false;
+  form.dataset.requestId=requestId;b.disabled=true;b.textContent="正在保存…";
+  $$('[data-metric]').forEach(x=>{const k=x.dataset.metric;if(x.dataset.custom==="1")payload.custom[k]=Number(x.value);else payload[k]=Number(x.value);payload.notes[k]=$(`#${CSS.escape(k)}-note`)?.value||""});
+  try{
+    const result=await requestV1("/api/v1/checkins",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{
+      onQueued:record=>{
+        const occurredAt=payload.occurredAt||record.createdAt,occurredOn=payload.occurredOn||localDateKey(occurredAt);
+        state.checkins=[{id:temporaryId,...payload,occurredAt,occurredOn,createdAt:record.createdAt,_sync:{status:"sending",operationId:record.operationId}},...(state.checkins||[]).filter(item=>item.id!==temporaryId)];
+        projected=true;renderStateChart();renderHomeMood();$("#checkin-status").textContent="已记下，正在同步…";
+      }
+    });
+    state.checkins=(state.checkins||[]).map(item=>item.id===temporaryId?result.data:item);renderStateChart();renderHomeMood();
+    clearDurableDraft("checkin-form");form.reset();delete form.dataset.requestId;renderSliders();resetOccurrenceInput($("#checkin-datetime"));$("#checkin-status").textContent="此刻状态已保存。";closeHomeEditors();showToast("此刻状态已保存");void refreshState(["checkins","review"]).catch(error=>showToast(`状态已保存，但列表刷新失败：${error.message}`,"error"))
+  }catch(err){
+    if(projected&&err.syncStatus==="pending"){
+      const pending=(state.checkins||[]).find(item=>item.id===temporaryId);if(pending)pending._sync.status="pending";renderStateChart();renderHomeMood();
+      clearDurableDraft("checkin-form");form.reset();delete form.dataset.requestId;renderSliders();resetOccurrenceInput($("#checkin-datetime"));$("#checkin-status").textContent="已记下，网络恢复后自动同步。";closeHomeEditors();showToast("此刻状态已进入待同步队列")
+    }else{
+      if(projected){state.checkins=(state.checkins||[]).filter(item=>item.id!==temporaryId);renderStateChart();renderHomeMood()}
+      $("#checkin-status").textContent=err.message
+    }
+  }finally{b.disabled=false;b.textContent="记下此刻"}
+});
 $("#thought-prompt-button").addEventListener("click",async e=>{
   const button=e.currentTarget,question=$("#chain-question"),status=$("#thought-prompt-status"),selectedDate=activeDate,owner=currentUser?.id,requestId=crypto.randomUUID(),targetId=$("#chain-form").dataset.draftId||crypto.randomUUID(),inputVersion=chainDraftVersion;$("#chain-form").dataset.draftId=targetId;
   if(question.value.trim()){status.textContent="问题框已有内容，清空后再生成新的引子。";question.focus();return}

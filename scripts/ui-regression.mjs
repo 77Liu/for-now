@@ -145,13 +145,20 @@ const mockFetch = `
   window.__accountUser = { id: "user-1", username: "owner", createdAt: "2026-09-27T00:00:00.000Z" };
   window.__dailySaves = 0;
   window.__dailyPatches = 0;
+  window.__checkinSaves = 0;
+  window.__checkinPayloads = [];
   window.__checkinPatches = 0;
+  window.__delayCheckinCreate = false;
+  window.__releaseCheckinCreate = null;
+  window.__failCheckinCreate = false;
   window.__thoughtPrompts = 0;
   window.__healthParses = 0;
   window.__delayParseKind = "";
   window.__releaseParse = null;
   window.__tamperParseField = "";
   window.__holdAiTasks = false;
+  window.__delayImageTaskCreate = false;
+  window.__releaseImageTaskCreate = null;
   window.__delaySecondState = false;
   window.__releaseSecondState = null;
   window.__delayLogout = false;
@@ -458,6 +465,25 @@ const mockFetch = `
       if (window.__holdPrompt) return new Promise(resolve => { window.__resolvePrompt=()=>resolve(json({prompt:"迟到的引子",hasHistory:true})); });
       return json({ prompt: "之前那件还没想完的事，现在最想往前推哪一步？", hasHistory: true });
     }
+    if (url === "/api/v1/checkins" && init.method === "POST") {
+      const respond = () => {
+        window.__checkinSaves += 1;
+        const payload = JSON.parse(init.body), createdAt = new Date().toISOString(), occurredAt = payload.occurredAt || createdAt;
+        const item = { id: "checkin-new-" + window.__checkinSaves, createdAt, occurredAt, occurredOn: occurredAt.slice(0, 10), version: 1, ...payload };
+        window.__checkinPayloads.push(payload);
+        window.__checkins.unshift(item);
+        return v1(item);
+      };
+      if (window.__delayCheckinCreate) {
+        window.__delayCheckinCreate = false;
+        return new Promise(resolve => { window.__releaseCheckinCreate = () => resolve(respond()); });
+      }
+      if (window.__failCheckinCreate) {
+        window.__failCheckinCreate = false;
+        throw new TypeError("Load failed");
+      }
+      return respond();
+    }
     if (/^\\/api\\/checkins\\/[^/]+$/.test(url) && init.method === "PATCH") {
       window.__checkinPatches += 1;
       const item = window.__checkins.find(value => url.endsWith(value.id)), payload = JSON.parse(init.body);
@@ -654,11 +680,16 @@ const mockFetch = `
     }
     if(url==="/api/v1/content-attachments/understandings"&&init.method==="POST"){
       const payload=JSON.parse(init.body),targetType=payload.targetType;
-      let resourceType=targetType==="capture"?"capture":"thought",targetId=payload.targetId,subtargetId="";
-      if(targetType==="comment"){for(const [type,items]of Object.entries({analysis:window.__analyses,thought:window.__thoughts,capture:window.__captures})){const parent=items.find(item=>(item.annotations||[]).some(annotation=>annotation.id===payload.targetId));if(parent){resourceType=type;targetId=parent.id;subtargetId=payload.targetId;break}}}
-      const task={id:"task-"+(window.__aiTasks.length+1),kind:"contentImageUnderstanding",resourceType,targetId,subtargetId,inputVersion:payload.inputVersion,status:"queued",createdAt:new Date().toISOString(),contentTargetType:targetType,contentTargetId:payload.targetId};
-      window.__aiTasks.unshift(task);window.__notifications.unshift({id:"notification-"+task.id,taskId:task.id,resourceType:task.resourceType,targetId:task.targetId,subtargetId:task.subtargetId,kind:"aiTask",status:"queued",title:"图片理解",message:"已进入后台队列",createdAt:task.createdAt,updatedAt:task.createdAt,readAt:""});
-      setTimeout(()=>window.__completeAiTask(task,{payload}),260);return v1(task)
+      const respond=()=>{
+        let resourceType=targetType==="capture"?"capture":"thought",targetId=payload.targetId,subtargetId="";
+        if(targetType==="comment"){for(const [type,items]of Object.entries({analysis:window.__analyses,thought:window.__thoughts,capture:window.__captures})){const parent=items.find(item=>(item.annotations||[]).some(annotation=>annotation.id===payload.targetId));if(parent){resourceType=type;targetId=parent.id;subtargetId=payload.targetId;break}}}
+        const task={id:"task-"+(window.__aiTasks.length+1),kind:"contentImageUnderstanding",resourceType,targetId,subtargetId,inputVersion:payload.inputVersion,status:"queued",createdAt:new Date().toISOString(),contentTargetType:targetType,contentTargetId:payload.targetId};
+        window.__aiTasks.unshift(task);window.__notifications.unshift({id:"notification-"+task.id,taskId:task.id,resourceType:task.resourceType,targetId:task.targetId,subtargetId:task.subtargetId,kind:"aiTask",status:"queued",title:"图片理解",message:"已进入后台队列",createdAt:task.createdAt,updatedAt:task.createdAt,readAt:""});
+        if(window.__holdAiTasks)task.status="running";else setTimeout(()=>window.__completeAiTask(task,{payload}),260);
+        return v1(task)
+      };
+      if(window.__delayImageTaskCreate){window.__delayImageTaskCreate=false;return new Promise(resolve=>{window.__releaseImageTaskCreate=()=>resolve(respond())})}
+      return respond()
     }
     if (url === "/api/ai-tasks" && init.method === "POST") {
       const payload=JSON.parse(init.body),task={id:"task-"+(window.__aiTasks.length+1),kind:payload.kind,resourceType:payload.resourceType||(payload.kind==="annotationShenji"?"":"thought"),targetId:payload.targetId,subtargetId:payload.subtargetId||"",inputVersion:payload.inputVersion||0,subtargetVersion:payload.subtargetVersion||0,status:"queued",createdAt:new Date().toISOString()};
@@ -1042,6 +1073,15 @@ try {
   const metricHistoryMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-metric-history-mobile.png", Buffer.from(metricHistoryMobileScreenshot.data, "base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
+  await evaluate(`window.__delayCheckinCreate=true;document.querySelector("#checkin-confirm-all").click();document.querySelector("#checkin-factors").value="即时反馈";document.querySelector("#checkin-form").requestSubmit();true`);
+  assert.equal(await waitUntil(`typeof window.__releaseCheckinCreate==="function"&&document.querySelector(".checkin-history-entry.is-syncing")?.textContent.includes("即时反馈")`), true);
+  assert.deepEqual(await evaluate(`({saves:window.__checkinSaves,status:document.querySelector(".checkin-sync-state")?.textContent,form:document.querySelector("#checkin-factors").value,editable:Boolean(document.querySelector(".checkin-history-entry.is-syncing [data-edit-checkin]"))})`), { saves:0, status:"正在同步", form:"即时反馈", editable:false });
+  await evaluate(`window.__releaseCheckinCreate();true`);
+  assert.equal(await waitUntil(`window.__checkinSaves===1&&document.querySelector('[data-checkin-id="checkin-new-1"]')&&document.querySelector("#home-state-editor").hidden`), true);
+  assert.deepEqual(await evaluate(`({factor:window.__checkinPayloads[0].factors[0],timeMode:window.__checkinPayloads[0].timeMode,modalHidden:document.querySelector("#home-state-editor").hidden})`), { factor:"即时反馈", timeMode:"now", modalHidden:true });
+  await evaluate(`document.querySelector("#home-record-state").click();window.__failCheckinCreate=true;document.querySelector("#checkin-confirm-all").click();document.querySelector("#checkin-factors").value="断网状态";document.querySelector("#checkin-form").requestSubmit();true`);
+  assert.equal(await waitUntil(`document.querySelector(".checkin-sync-state.pending")?.textContent==="待同步"`), true);
+  assert.deepEqual(await evaluate(`({saves:window.__checkinSaves,visible:document.querySelector(".checkin-history-entry.is-syncing")?.textContent.includes("断网状态"),form:document.querySelector("#checkin-factors").value,status:document.querySelector("#checkin-status").textContent,modalHidden:document.querySelector("#home-state-editor").hidden})`), { saves:1, visible:true, form:"", status:"已记下，网络恢复后自动同步。", modalHidden:true });
   await evaluate(`document.querySelector('[data-view="daily"]').click(); true`);
   assert.equal(await evaluate(`document.querySelector("#view-daily").classList.contains("active")&&document.querySelector("#view-daily .daily-record-card h2").textContent==="日录"&&!document.querySelector("#view-daily .today-chat")&&!document.querySelector("#view-daily #today-thoughts")`), true);
   const healthUpload = await evaluate(`(() => {
@@ -1216,7 +1256,11 @@ try {
   await evaluate(`document.querySelector("#capture-form").requestSubmit();true`);
   assert.equal(await waitUntil(`window.__captureSaves===2&&document.querySelector('[data-capture-id="capture-new-2"] [data-content-image-understand="capture"]')`),true);
   assert.deepEqual(await evaluate(`({content:window.__capturePayloads[1].content,paths:window.__capturePayloads[1].attachmentPaths,images:document.querySelectorAll('[data-capture-id="capture-new-2"] .content-originals img').length})`),{content:"",paths:["/attachments/content-1.png"],images:1});
-  await evaluate(`document.querySelector('[data-capture-id="capture-new-2"] [data-content-image-understand="capture"]').click();true`);
+  await evaluate(`window.__delayImageTaskCreate=true;window.__holdAiTasks=true;document.querySelector('[data-capture-id="capture-new-2"] [data-content-image-understand="capture"]').click();true`);
+  assert.equal(await waitUntil(`typeof window.__releaseImageTaskCreate==="function"&&document.querySelector('[data-capture-id="capture-new-2"] .content-image-task-status').textContent.includes("加入后台队列")`),true);
+  await evaluate(`window.__releaseImageTaskCreate();true`);
+  assert.equal(await waitUntil(`window.__aiTasks.some(task=>task.contentTargetId==="capture-new-2"&&task.status==="running")&&document.querySelector('[data-capture-id="capture-new-2"] .content-image-task-status').textContent.includes("后台理解")`),true);
+  await evaluate(`(()=>{window.__holdAiTasks=false;const task=window.__aiTasks.find(item=>item.contentTargetId==="capture-new-2"&&item.status==="running");window.__completeAiTask(task,{payload:{targetType:"capture"}});return true})()`);
   assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-new-2"] .content-understanding')?.textContent.includes("手写笔记")`,160,25),true);
   assert.equal(await evaluate(`window.__captures.find(item=>item.id==="capture-new-2").content`),"");
   await evaluate(`window.__failCaptureCreate=true;document.querySelector("#capture-content").value="断网时仍可见";document.querySelector("#capture-form").requestSubmit();true`);
