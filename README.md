@@ -54,7 +54,7 @@ npm run start:local-test
 - **中台已上线**：独立中台提交为 `d157537f7f4c`，发布标签为 `release-20260928-platform-mvp`；公网 `/platform/` 只读治理控制面已部署。
 - **v0.1.0/治理中台发布已关闭**：两轮测试、发布前备份与隔离恢复、生产冒烟及 30 分钟观察均通过；完整证据见 `reports/pre-launch-2026-09-28-p00-p0-platform.md`。
 - **正式域名已上线并纳入 `v0.2.0` 运维交付**：`https://77liu.top/now/` 使用匹配域名的 Let's Encrypt 证书，HTTP 与公网 IP HTTPS 均 308 跳转至该域名；本次仅变更 Nginx，未发布 v0.2.0 应用代码。
-- **本轮 `v0.2.0` 进行中，尚未发布**：G1 三路、G2 四路、R2/R3/R4 收口及首页 v0.2 已完成；本地发布候选分支为 `release/v0.2.0-20260930`，代码内容固定于 `70b5644ef265440b9f5f4e69868647544f6deff2`，其后仅整理发布证据。当前包含思绪检索/回访、跨体裁导出、行动/习惯、产品反馈、生命周期与幂等账本、小物 WebP 派生、跨体裁图片原文和后台图片理解，共 50 个模块、201 条拥有路由、60 条 OpenAPI 路径、104 个操作和 23 个视图；Store 为 v15。该代码提交的干净归档已通过 52/52 系统测试与真实 PostgreSQL 42 项专项，但生产正式写源仍为 JSON，等待人工配置确认和最终发布授权。
+- **本轮 `v0.2.0` 已通过最终 GO，发布执行中**：G1 三路、G2 四路、R2/R3/R4 收口及首页 v0.2 已完成；本地发布候选分支为 `release/v0.2.0-20260930`，代码内容固定于 `979212e53de6c936db998d05d2280c45bd706300`，其后仅整理发布证据。当前包含思绪检索/回访、跨体裁导出、行动/习惯、产品反馈、生命周期与幂等账本、小物 WebP 派生、跨体裁图片原文和后台图片理解，共 50 个模块、201 条拥有路由、60 条 OpenAPI 路径、104 个操作和 23 个视图；Store 为 v15。该代码提交的干净归档已通过 52/52 系统测试与真实 PostgreSQL 42 项专项；生产连接已在 JSON 模式下预置，正式写源切换仍须按 30 分钟维护窗口完成最新备份、迁移、恢复验证和生产冒烟。
 - **夜间探索轨道**：P1、P2、P3 三个递进探索版均已在本地非主线分支验证；所有版本使用隔离样例数据，不连接生产。执行约束与阶段状态见 `knowledge/exploration-release-track.md`。
 - **PostgreSQL 验收恢复（2026-09-30）**：确认 macOS 26 会让原生空 C 进程启动即报告 `pthread_is_threaded_np()=1`；使用关闭该失真探测、且不链接 LDAP/ICU 的官方 PostgreSQL 16.14 本地构建后，Store v15 全领域、旧表升级、完整导出恢复及持久幂等专项均通过。可复用边界见 `knowledge/system-testing.md`，结果见 `reports/g2-r4-postgres-2026-09-30.json`；生产切换仍留在 R 阶段。
 - **ECS PostgreSQL 生产前演练（2026-09-30）**：当前规格已安装 PostgreSQL 16.15；正式空库和最小角色已建立。最新完成的生产 OSS 备份已通过 3 账户两库无损恢复、候选 HTTP 读取和 30 个附件逐字节校验；生产仍为 JSON，正式库尚未接管数据。配置、结果及下一步见 `knowledge/postgres-migration.md`。
@@ -118,7 +118,7 @@ npm run start:local-test
 - **模型调用**：应用服务端统一调用 DeepSeek；模型设置与密钥按用户保存在正式数据目录。
 - **小物分割**：应用服务端通过 ECS RAM 角色调用阿里云 `SegmentHDCommonImage`，用同类目 `GetAsyncJobResult` 查询异步结果并立即下载临时透明 PNG；不调用 DeepSeek 或 `RefineMask`。
 - **日志与审计**：系统日志、用户操作摘要、DeepSeek 用量及 AI 开始/终态审计已在本地接通；阿里云分割独立留痕。字段、隐私、保留和未关闭边界统一见 `knowledge/observability.md`。
-- **运行边界**：DeepSeek 全局 20 QPS/20 在途，图片分割全局 5 QPS/5 在途；每用户每日 200 次/¥14.40、附件 1 GiB。阈值来源和扩容条件见 `knowledge/operations-capacity.md`。
+- **运行边界**：DeepSeek 全局 20 QPS/20 在途，图片分割全局 5 QPS/5 在途；每用户每日 200 次、附件 1 GiB。v0.2.0 仅供 Owner 内部测试，费用拒绝门限暂时关闭，但用量记账和费用告警保留；下个版本重新确定预算。阈值来源和扩容条件见 `knowledge/operations-capacity.md`。
 - **已上线治理控制面**：独立中台只经本机服务令牌读取脱敏聚合，不直接读取业务数据目录；主应用契约见 `knowledge/architecture.md`，认证、部署和回滚细节维护在 `platform/main` 分支 README。
 
 ## 生产检查状态
