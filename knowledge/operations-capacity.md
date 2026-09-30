@@ -163,6 +163,26 @@ OSS 操作只有 List/Get，没有远端写入。
 发布窗口仍需冻结更新后的 JSON/OSS、重查变化并完成最终导入；还需先配置
 PostgreSQL 自动启动、生产连接、数据库备份与监控。
 
+### 2026-09-30 v0.2.1 正式接管
+
+本节是当前生产事实，替代上方试装和切换前记录中的“手动启动、空库、JSON
+单写、待接线”状态，但不删除其历史过程：
+
+- `postgresql@16-fornowtrial.service` 已设置 `start.conf=auto` 并启用，
+  继续仅监听本机；40 连接、512 MiB cgroup 上限和持久化参数不变。
+- data、auth、backup 三条最小权限连接已写入 `0600 root:root` 的
+  `/etc/for-now.env`；PostgreSQL 为唯一正式写源，
+  `/srv/for-now/data/.persistence-mode.json` 阻止直接回切旧 JSON。
+- 212 秒停写窗口内，3 个账户、12 个会话、260 个业务对象、89 个关系及
+  30 个附件 inventory 完成导入；第二次导入返回 `reused=true`。
+- 切换前 JSON/OSS 快照、切换前数据库级恢复、切换后 PostgreSQL 导出备份、
+  OSS 上传、逻辑恢复和数据库级恢复均通过。最新 PostgreSQL 备份为
+  `for-now-20260930T071211Z.tar.gz`，45,836,587 字节。
+- 生产写入经过创建、进程重启后读取、删除和永久清理；监控、飞书测试告警和
+  阿里云图片分割真实调用通过。30 分钟观察期应用零重启，可用内存最低
+  821 MiB、Swap 0、PostgreSQL OOM 0，最终监控无问题。当前 1.57 GiB
+  规格只限 Owner 低并发内部使用，长期推荐至少 4 GiB。
+
 ## 调用与存储边界
 
 | 边界 | 当前默认 | 目的 |

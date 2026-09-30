@@ -1,0 +1,131 @@
+{
+  "date": "2026-09-30",
+  "status": "passed",
+  "release": {
+    "tag": "v0.2.1",
+    "targetCommit": "6adff978e5febcbbafad53d88cf3d4fa7b9de4e1",
+    "codeCandidate": "d28f6095ba6286ee9c5316baaf0ea1cb842a3853",
+    "previousRelease": "v0.2.0",
+    "giteeReleaseUrl": "https://gitee.com/Liu_772021/for-now/releases/tag/v0.2.1",
+    "branchAndTagTargetMatch": true
+  },
+  "finalCandidate": {
+    "systemTests": {
+      "passed": 52,
+      "total": 52,
+      "durationMs": 198936
+    },
+    "postgresVersion": "16.14",
+    "postgresChecks": 42,
+    "persistentIdempotencyChecks": "passed",
+    "dependencyVulnerabilities": 0
+  },
+  "preCutover": {
+    "sourceBackend": "json",
+    "backup": {
+      "archive": "for-now-20260930T070207Z.tar.gz",
+      "bytes": 47114262,
+      "sha256": "6db951e5e30cfc5e1c146c9195a676ea01d823d4fe1ff44b00086d71bd5a6733",
+      "ossUpload": "passed",
+      "logicalRestore": "passed"
+    },
+    "migrationDryRun": {
+      "sourceSha256": "3022793f96297004516db2170b678609d37161c2281a43dc26ac5682ab1cfc79",
+      "contentSha256": "2f3e99474c98e90c684fdbc8f7b6362ae0b9b178b6b5ae4df026f21325b5aafa",
+      "accounts": 3,
+      "sessions": 12,
+      "attachments": 30
+    },
+    "formalDatabaseInitiallyEmpty": true
+  },
+  "migration": {
+    "status": "passed",
+    "firstImportReused": false,
+    "secondImportReused": true,
+    "accounts": 3,
+    "accountSnapshots": 3,
+    "storeObjects": 260,
+    "storeRelations": 89,
+    "attachmentInventory": 30,
+    "runtimeStateRows": 1,
+    "maintenanceStartUtc": "2026-09-30T07:01:56Z",
+    "serviceRestoredUtc": "2026-09-30T07:05:28Z",
+    "serviceInterruptionSeconds": 212,
+    "maximumAuthorizedSeconds": 1800,
+    "sourceCollectionDigestsMatchRuntime": true
+  },
+  "recovery": {
+    "preSwitchDatabaseRestore": {
+      "status": "passed",
+      "archiveBytes": 738522,
+      "tableEvidenceSha256": "bf821941c27861067a5d928691fb9b87e35697444abaf377e84aff83bf846bd4"
+    },
+    "postSwitchBackup": {
+      "archive": "for-now-20260930T071211Z.tar.gz",
+      "bytes": 45836587,
+      "sha256": "6e7fc511ed7438c8e9362f14850e3c1f64897aa6aabc5c47e5b3d8bc9696081",
+      "ossUpload": "passed",
+      "logicalRestore": "passed"
+    },
+    "postSwitchDatabaseRestore": {
+      "status": "passed",
+      "archiveBytes": 737061,
+      "tableEvidenceSha256": "a25cf047c1e0694e01d39b3cf5c5e2e6e5cc76aefbc470ef96d5c5c55fd24d84"
+    }
+  },
+  "productionSmoke": {
+    "readyVersion": "6adff978e5fe",
+    "authenticatedStateStatus": 200,
+    "unauthenticatedAuthStatus": 401,
+    "unauthenticatedStateStatus": 401,
+    "publicAdminSnapshotStatus": 404,
+    "writeRestartReadDeletePurge": "passed",
+    "testRecordsRemaining": 0,
+    "testSessionsRemaining": 0,
+    "aliyunSegmentation": {
+      "status": "passed",
+      "polls": 2,
+      "sourceBytes": 891340,
+      "outputBytes": 171467,
+      "durationMs": 2987
+    },
+    "recentDeepSeekCall": {
+      "callsToday": 1,
+      "successRatePercent": 100,
+      "costCny": 0.208520928
+    },
+    "monitor": "passed",
+    "feishuTestAlert": "passed"
+  },
+  "configuration": {
+    "persistenceBackend": "postgres",
+    "postgresAutoStart": true,
+    "backupTimerEnabled": true,
+    "monitorTimerEnabled": true,
+    "certificateRenewalTimerEnabled": true,
+    "dailyAiCostRejectionDisabled": true,
+    "externalInvitations": 0,
+    "credentialsRecorded": false
+  },
+  "acceptedRisk": {
+    "aegis": "Three core processes and heartbeat connection remain healthy; systemd status is failed after the authorized low-risk restart reproduced the pre-existing status=9/KILL issue.",
+    "legacyKeepsakes": "Ten legacy keepsakes retain their existing cutout fallback because the historical cutout dimensions do not match the original image. Each verification restart records ALPHA_MASK_DIMENSION_MISMATCH; records, IDs, attachments and rendering remain intact, and deferred migration is an explicit P0-21 compatibility path.",
+    "capacity": "The 1.57 GiB host is limited to owner-only low-concurrency use; at least 4 GiB remains recommended for long-term colocated PostgreSQL."
+  },
+  "observation": {
+    "requiredMinutes": 30,
+    "status": "passed",
+    "startedAtUtc": "2026-09-30T07:05:28Z",
+    "completedAtUtc": "2026-09-30T07:35:28Z",
+    "samples": 22,
+    "applicationRestarts": 0,
+    "minimumAvailableMemoryMiB": 821,
+    "maximumPostgresMemoryBytes": 158961664,
+    "maximumSwapUsedMiB": 0,
+    "postgresOomKills": 0,
+    "unexpectedWarnings": 0,
+    "knownDeferredLegacyMediaEvents": 20,
+    "finalMonitorIssues": [],
+    "decision": "continue_running"
+  }
+}
