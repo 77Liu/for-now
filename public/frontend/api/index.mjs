@@ -3,7 +3,10 @@ export function createApiClient({ baseUrl, session, onAuthRequired = () => {}, f
   let foregroundAt = 0;
   const appUrl = value => typeof value === "string" && value.startsWith("/") && basePath ? `${basePath}${value}` : value;
   const errorFor = (response, result, fallback) => Object.assign(new Error(result?.error?.message || result?.error || fallback), {
-    status: response.status, code: result?.error?.code || result?.code, requestId: response.headers.get("x-request-id")
+    status: response.status,
+    code: result?.error?.code || result?.code,
+    details: result?.error?.details || result?.details || null,
+    requestId: response.headers.get("x-request-id")
   });
   async function start(url, options, ticket, networkMessage = "无法连接服务，请确认网络连接后重试") {
     const signal = options.signal ? AbortSignal.any([ticket.signal, options.signal]) : ticket.signal;

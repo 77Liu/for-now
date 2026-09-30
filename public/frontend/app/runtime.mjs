@@ -1840,6 +1840,23 @@ async function loadActionsWorkspace(){
     actionsSnapshot={actions,habits,habitCheckins:checkins};renderActionsWorkspace();status.textContent="";return true
   }catch(error){if(requestSerial===actionsRequestSerial&&owner===currentUser?.id&&session===sessionSerial)status.textContent=error.message;return false}
 }
+function actionConflictMessage(command,error){
+  const action=String(command.type||"").startsWith("actions.")?actionsSnapshot.actions.find(item=>item.id===command.id):null;
+  const habit=String(command.type||"").startsWith("habits.")?actionsSnapshot.habits.find(item=>item.id===command.id):null;
+  const localVersion=command.expectedVersion||"未知",serverVersion=error.details?.currentVersion||action?.version||habit?.version||"未知";
+  let local="这次操作",server="";
+  if(command.type==="actions.update")local=`标题“${command.input.title}”、优先级 ${command.input.priority}`;
+  else if(command.type==="actions.setStatus")local=`状态 ${command.status}`;
+  else if(command.type==="actions.complete")local="完成行动";
+  else if(command.type==="actions.undoCompletion")local="撤销完成";
+  else if(command.type==="actions.delete")local="删除行动";
+  else if(command.type==="habits.setEnabled")local=command.enabled?"启用习惯":"暂停习惯";
+  else if(command.type==="habits.recordAdjustment")local=`频次 ${command.input.frequency?.cadence||"未指定"} / ${command.input.frequency?.target||"未指定"}`;
+  else if(command.type==="habits.delete")local="删除习惯";
+  if(action)server=`；服务器内容为“${action.title}”，状态 ${action.status}，优先级 ${action.priority}`;
+  if(habit)server=`；服务器内容为“${habit.title}”，状态 ${habit.status}，频次 ${habit.frequency?.cadence||"未指定"} / ${habit.frequency?.target||"未指定"}`;
+  return `同步冲突：你基于版本 ${localVersion} 提交了${local}；服务器当前为版本 ${serverVersion}${server}。列表已刷新，请核对后重试。`
+}
 async function runActionCommand(command,{idempotencyKey=""}={}){
   const headers={},options={};
   if(command.expectedVersion)headers["if-match"]=`"${command.expectedVersion}"`;
@@ -1872,7 +1889,13 @@ async function runActionCommand(command,{idempotencyKey=""}={}){
     "habitCheckins.delete":`/api/v1/habit-checkins/${encodeURIComponent(command.id)}`
   };
   options.headers=headers;
-  const result=await requestV1(routes[command.type],options);
+  let result;
+  try{result=await requestV1(routes[command.type],options)}
+  catch(error){
+    if(![409,412].includes(Number(error.status)))throw error;
+    await loadActionsWorkspace();
+    throw Object.assign(new Error(actionConflictMessage(command,error)),{status:error.status,code:error.code,details:error.details})
+  }
   if(!await loadActionsWorkspace())throw Object.assign(new Error("已保存，但行动列表刷新失败，请稍后重试同步。"),{saved:true});
   return result
 }
@@ -2346,6 +2369,8 @@ $("#capture-form").addEventListener("submit",async e=>{
   }catch(err){
     if(projected&&err.syncStatus==="pending"){
       const pending=(state.captures||[]).find(item=>item.id===temporaryId);if(pending)pending._sync.status="pending";renderCaptures();resetCaptureForm();$("#capture-status").textContent="已记下，网络恢复后自动同步。";showToast("捕念已进入待同步队列");
+    }else if(projected&&err.syncStatus==="conflict"){
+      state.captures=(state.captures||[]).filter(item=>item.id!==temporaryId);renderCaptures();await discardContentImageUploads("capture",uploadedPaths);status.textContent=`同步冲突：${err.message}。本地内容已保留，请刷新后重试。`;showToast("捕念同步发生冲突","error")
     }else{
       if(projected){state.captures=(state.captures||[]).filter(item=>item.id!==temporaryId);renderCaptures()}
       await discardContentImageUploads("capture",uploadedPaths);status.textContent=err.message;
@@ -2363,7 +2388,7 @@ $("#checkin-form").addEventListener("submit",async e=>{
   try{
     const result=await requestV1("/api/v1/checkins",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{
       onQueued:record=>{
-        const occurredAt=payload.occurredAt||record.createdAt,occurredOn=payload.occurredOn||localDateKey(occurredAt);
+        const occurredAt=payload.occurredAt||record.createdAt,occurredOn=localDateKey(occurredAt);
         state.checkins=[{id:temporaryId,...payload,occurredAt,occurredOn,createdAt:record.createdAt,_sync:{status:"sending",operationId:record.operationId}},...(state.checkins||[]).filter(item=>item.id!==temporaryId)];
         projected=true;renderStateChart();renderHomeMood();$("#checkin-status").textContent="已记下，正在同步…";
       }
@@ -2374,6 +2399,8 @@ $("#checkin-form").addEventListener("submit",async e=>{
     if(projected&&err.syncStatus==="pending"){
       const pending=(state.checkins||[]).find(item=>item.id===temporaryId);if(pending)pending._sync.status="pending";renderStateChart();renderHomeMood();
       clearDurableDraft("checkin-form");form.reset();delete form.dataset.requestId;renderSliders();resetOccurrenceInput($("#checkin-datetime"));$("#checkin-status").textContent="已记下，网络恢复后自动同步。";closeHomeEditors();showToast("此刻状态已进入待同步队列")
+    }else if(projected&&err.syncStatus==="conflict"){
+      state.checkins=(state.checkins||[]).filter(item=>item.id!==temporaryId);renderStateChart();renderHomeMood();$("#checkin-status").textContent=`同步冲突：${err.message}。本地内容已保留，请刷新后重试。`;showToast("此刻状态同步发生冲突","error")
     }else{
       if(projected){state.checkins=(state.checkins||[]).filter(item=>item.id!==temporaryId);renderStateChart();renderHomeMood()}
       $("#checkin-status").textContent=err.message

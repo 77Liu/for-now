@@ -151,6 +151,7 @@ const mockFetch = `
   window.__delayCheckinCreate = false;
   window.__releaseCheckinCreate = null;
   window.__failCheckinCreate = false;
+  window.__conflictCheckinCreate = false;
   window.__thoughtPrompts = 0;
   window.__healthParses = 0;
   window.__delayParseKind = "";
@@ -167,6 +168,8 @@ const mockFetch = `
   window.__releaseLogin = null;
   window.__delayActionCreate = false;
   window.__releaseActionCreate = null;
+  window.__failActionConflict = false;
+  window.__actionListVersion = 1;
   window.__delayHabitCreate = false;
   window.__releaseHabitCreate = null;
   window.__delayFeedbackCreate = false;
@@ -331,9 +334,15 @@ const mockFetch = `
       if(window.__delayActionCreate)return new Promise(resolve=>{window.__releaseActionCreate=()=>{window.__delayActionCreate=false;resolve(v1({id:"created-action"}))}});
       return v1({id:"created-action"});
     }
+    if (url === "/api/v1/actions/ui-action" && init.method === "PATCH" && window.__failActionConflict) {
+      window.__failActionConflict = false;
+      window.__actionListTitle = "服务器新标题";
+      window.__actionListVersion = 2;
+      return Promise.resolve(new Response(JSON.stringify({error:{message:"资源版本已变化，请重新读取后再提交",code:"PRECONDITION_FAILED",details:{currentVersion:2}}}),{status:412,headers:{"content-type":"application/json"}}));
+    }
     if (url.startsWith("/api/v1/actions")) {
       if(window.__failNextActionRefresh){window.__failNextActionRefresh=false;return Promise.resolve(new Response(JSON.stringify({error:{message:"刷新失败"}}),{status:503,headers:{"content-type":"application/json"}}))}
-      const rows=()=>[{id:"ui-action",title:window.__actionListTitle,priority:"P0",status:"todo",sourceRef:null,version:1,createdAt:"2026-09-27T04:00:00.000Z",updatedAt:"2026-09-27T04:00:00.000Z",statusHistory:[]}];
+      const rows=()=>[{id:"ui-action",title:window.__actionListTitle,priority:"P0",status:"todo",sourceRef:null,version:window.__actionListVersion,createdAt:"2026-09-27T04:00:00.000Z",updatedAt:"2026-09-27T04:00:00.000Z",statusHistory:[]}];
       if(window.__delayActionList){window.__delayActionList=false;const captured=rows();return new Promise(resolve=>{window.__releaseActionList=()=>resolve(v1(captured))})}
       return v1(rows());
     }
@@ -466,6 +475,10 @@ const mockFetch = `
       return json({ prompt: "之前那件还没想完的事，现在最想往前推哪一步？", hasHistory: true });
     }
     if (url === "/api/v1/checkins" && init.method === "POST") {
+      if (window.__conflictCheckinCreate) {
+        window.__conflictCheckinCreate = false;
+        return Promise.resolve(new Response(JSON.stringify({error:{message:"同一幂等键不能用于不同内容",code:"IDEMPOTENCY_KEY_REUSED"}}),{status:409,headers:{"content-type":"application/json"}}));
+      }
       const respond = () => {
         window.__checkinSaves += 1;
         const payload = JSON.parse(init.body), createdAt = new Date().toISOString(), occurredAt = payload.occurredAt || createdAt;
@@ -855,6 +868,9 @@ try {
   await evaluate(`window.__releaseActionList();true`);
   await sleep(100);
   assert.equal(await evaluate(`document.querySelector("#action-columns").textContent.includes("最新响应")&&!document.querySelector("#action-columns").textContent.includes("较早响应")`),true);
+  await evaluate(`window.__failActionConflict=true;document.querySelector('[data-action-start="ui-action"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#toast").textContent.includes("你基于版本 1")&&document.querySelector("#toast").textContent.includes("服务器当前为版本 2")`),true);
+  assert.equal(await evaluate(`document.querySelector("#toast").textContent.includes("服务器新标题")&&document.querySelector("#action-columns").textContent.includes("服务器新标题")`),true);
   const associationLimit = await evaluate(`(() => {
     const rows=[...document.querySelectorAll("#association-list .association-row")];
     return {count:rows.length,factors:rows.map(row=>row.querySelector("b").textContent),omitted:!document.querySelector("#association-list").textContent.includes("不应显示")};
@@ -1082,6 +1098,9 @@ try {
   await evaluate(`document.querySelector("#home-record-state").click();window.__failCheckinCreate=true;document.querySelector("#checkin-confirm-all").click();document.querySelector("#checkin-factors").value="断网状态";document.querySelector("#checkin-form").requestSubmit();true`);
   assert.equal(await waitUntil(`document.querySelector(".checkin-sync-state.pending")?.textContent==="待同步"`), true);
   assert.deepEqual(await evaluate(`({saves:window.__checkinSaves,visible:document.querySelector(".checkin-history-entry.is-syncing")?.textContent.includes("断网状态"),form:document.querySelector("#checkin-factors").value,status:document.querySelector("#checkin-status").textContent,modalHidden:document.querySelector("#home-state-editor").hidden})`), { saves:1, visible:true, form:"", status:"已记下，网络恢复后自动同步。", modalHidden:true });
+  await evaluate(`document.querySelector("#home-record-state").click();window.__conflictCheckinCreate=true;document.querySelector("#checkin-confirm-all").click();document.querySelector("#checkin-factors").value="冲突状态";document.querySelector("#checkin-form").requestSubmit();true`);
+  assert.equal(await waitUntil(`document.querySelector("#checkin-status").textContent.includes("同步冲突")`),true);
+  assert.deepEqual(await evaluate(`({form:document.querySelector("#checkin-factors").value,visible:document.querySelector("#checkin-history").textContent.includes("冲突状态"),modalHidden:document.querySelector("#home-state-editor").hidden})`),{form:"冲突状态",visible:false,modalHidden:false});
   await evaluate(`document.querySelector('[data-view="daily"]').click(); true`);
   assert.equal(await evaluate(`document.querySelector("#view-daily").classList.contains("active")&&document.querySelector("#view-daily .daily-record-card h2").textContent==="日录"&&!document.querySelector("#view-daily .today-chat")&&!document.querySelector("#view-daily #today-thoughts")`), true);
   const healthUpload = await evaluate(`(() => {

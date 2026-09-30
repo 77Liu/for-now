@@ -28,6 +28,14 @@ await assert.rejects(client.request("/api/state"), { status: 401, code: "AUTH_RE
 assert.equal(locked, 1);
 assert.equal((await client.request("/api/auth/me", {}, { allowUnauthorized: true })).code, "AUTH_REQUIRED");
 assert.equal(locked, 1);
+fetchHandler = async () => Response.json({
+  error: { message: "资源版本已变化", code: "PRECONDITION_FAILED", details: { currentVersion: 3 } }
+}, { status: 412 });
+await assert.rejects(client.request("/api/v1/actions/action-1", { method: "PATCH", body: "{}" }), {
+  status: 412,
+  code: "PRECONDITION_FAILED",
+  details: { currentVersion: 3 }
+});
 fetchHandler = async () => new Response("", { status: 404 });
 assert.equal(await client.request("/api/local-test-mode", {}, { optional: true }), null);
 
