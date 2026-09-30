@@ -1,0 +1,121 @@
+{
+  "date": "2026-09-30",
+  "status": "restricted_trial_passed",
+  "authorization": "当前规格受限试装",
+  "production_cutover": false,
+  "candidate": "70b5644ef265440b9f5f4e69868647544f6deff2",
+  "postgres_version": "16.15 (Ubuntu 16.15-1.pgdg22.04+2)",
+  "installed_packages": {
+    "postgresql-16": "16.15-1.pgdg22.04+2",
+    "postgresql-client-16": "16.15-1.pgdg22.04+2",
+    "postgresql-common": "293.pgdg22.04+1",
+    "libpq5": "18.6-1.pgdg22.04+2",
+    "deleted_old_libpq_mapping_in_running_processes": false
+  },
+  "package_source": "https://apt.postgresql.org/pub/repos/apt jammy-pgdg",
+  "signing_key_fingerprint": "B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8",
+  "cluster": "16/fornowtrial",
+  "unit": "postgresql@16-fornowtrial.service",
+  "startup": "manual; currently active, not enabled at boot",
+  "configuration": {
+    "listen_addresses": "127.0.0.1",
+    "port": 5432,
+    "max_connections": 40,
+    "shared_buffers": "128MB",
+    "work_mem": "4MB",
+    "maintenance_work_mem": "64MB",
+    "autovacuum_work_mem": "32MB",
+    "autovacuum_max_workers": 2,
+    "MemoryHigh": "384M",
+    "MemoryMax": "512M",
+    "MemorySwapMax": 0,
+    "CPUQuota": "100%",
+    "TasksMax": 128,
+    "data_checksums": true,
+    "fsync": true,
+    "full_page_writes": true,
+    "synchronous_commit": true
+  },
+  "integration": {
+    "status": "passed",
+    "checks": 42,
+    "source_script_sha256": "f4e868a206e7942dbd7fb0d06c71b607b6631e957473632bf56d037477cb39a9",
+    "adaptation": "Only bootstrap changed to installed empty trial cluster and dedicated trial_gate database; business assertions unchanged.",
+    "min_available_mib": 737.6015625,
+    "max_pg_sampled_mib": 182.9609375,
+    "earlier_failure": "max_connections=30 exhausted non-superuser slots with migration, verification and application connections present; raised to 40 within unchanged 512M memory cap and reran all assertions.",
+    "independent_ledger": {
+      "rerun_on_ecs": true,
+      "script_sha256": "6c95eba03f66e574ccfe942b3db2f560139d392454f8d59f7c637ff679377d39",
+      "postgres_version": "16.15",
+      "checks": [
+        "exact replay",
+        "request hash conflict",
+        "permanent purge duplicate prevention",
+        "restart persistence",
+        "cross-process serialization"
+      ],
+      "resource_boundary": "MemoryMax=384M, MemorySwapMax=0, localhost-only network",
+      "temporary_cluster_and_candidate_removed": true
+    }
+  },
+  "bounded_database_load": {
+    "workload": "pgbench builtin TPC-B scale 1, synthetic",
+    "clients": 17,
+    "threads": 2,
+    "target_tps": 20,
+    "seconds": 90,
+    "transactions": 1819,
+    "failed": 0,
+    "skipped": 0,
+    "over_1000ms": 0,
+    "average_latency_ms": 2.576,
+    "observed_tps": 20.231825,
+    "min_available_mib": 829.71875,
+    "max_pg_sampled_mib": 134.55078125,
+    "scope_limit": "Not application throughput, maximum supported users or image peak-load evidence."
+  },
+  "restore": {
+    "format": "pg_dump custom",
+    "backup_bytes": 321398,
+    "all_rows_in_four_tables_sha256_equal": true,
+    "both_databases_equal_after_postgresql_restart": true
+  },
+  "cleanup": {
+    "databases": ["postgres", "template0", "template1"],
+    "non_builtin_roles": ["postgres"],
+    "temporary_postgres_password_cleared": true,
+    "temporary_candidate_and_scripts_removed": true
+  },
+  "final_snapshot": {
+    "available_memory_mib": 890,
+    "pg_cgroup_bytes": 52764672,
+    "postgres_automatic_restarts": 0,
+    "kernel_oom_during_trial": false,
+    "pg_memory_events_after_restart": {"high": 0, "max": 0, "oom": 0, "oom_kill": 0}
+  },
+  "latest_local_backup_readonly_check": {
+    "archive": "for-now-20260929T192750Z.tar.gz",
+    "local_time": "2026-09-30 03:27",
+    "bytes": 7453657,
+    "entries": 60,
+    "sha256": "valid",
+    "unsafe_paths": false
+  },
+  "retained_services": {
+    "main_pid": 385718,
+    "platform_pid": 367825,
+    "dysf_pid": 235228,
+    "all_healthy_and_unchanged_pids": true,
+    "production_environment_digest_unchanged": true,
+    "production_release_symlink_unchanged": true,
+    "production_version": "54a6326f14ca",
+    "production_backend": "json"
+  },
+  "remaining": [
+    "Production roles, connection configuration, startup/monitoring/backup policy",
+    "Latest JSON/OSS frozen snapshot, migration and independent recovery",
+    "Full application peak-image capacity and release observation",
+    "Final Git/Gitee release and deployment authorization"
+  ]
+}

@@ -63,12 +63,32 @@
 
 ### 生产前置条件
 
+**当前状态（2026-09-30 试装后）**：用户已选择当前规格受限试装；
+PostgreSQL 16.15 已安装，集群 `16/fornowtrial` 仅监听本机，40 连接和
+512 MiB 内存上限已生效，固定候选 42 项合成数据集成检查及独立持久
+幂等专项通过。
+具体配置、容量与验证边界见 [`operations-capacity.md`](operations-capacity.md)
+“当前规格 PostgreSQL 受限试装”。生产应用仍为 JSON，正式业务数据库/
+角色、生产环境连接、最新 JSON/OSS 迁移与云端恢复尚未实施。
+
+以下保留同日试装前的承载评估过程：
+
 生产切换前必须先由人工确定 PostgreSQL 16 的承载方式和维护责任。2026-09-30
 只读核对显示当前 ECS 未安装 `postgres`/`psql`、没有 PostgreSQL systemd
 单元或 5432 监听，同时可用内存仅约 302–303 MiB；不得在该实例上直接同机
 安装数据库并假设容量充足。可选方案是使用网络受限的托管 PostgreSQL，或
 先扩容 ECS 后按 `knowledge/operations-capacity.md` 重新验证内存、磁盘、
 备份时长和故障恢复。
+
+同日 08:45 经用户授权停止并禁用未保留的 OpenClaw 网关及仅服务于
+Olympics 的 MySQL 后，两轮共 10 次可用内存采样提高到 977～990 MiB，`dysf`、
+主应用和中台均保持健康。由此，同机 PostgreSQL 16 可进入低并发 MVP
+受控验证，不再要求必须先扩容；但当前 Ubuntu 22.04 软件源只提供
+PostgreSQL 14，数据库仍未安装。若采用同机方案，应按
+`knowledge/operations-capacity.md` 的受限连接、内存边界和至少 400 MiB
+稳定余量执行完整迁移、备份恢复和负载复测。当前 1.57 GiB 仅作为最低限度
+试运行规格，长期同机生产推荐至少 4 GiB；托管 PostgreSQL 仍是故障隔离更好
+且不需要维护 PGDG 软件源的优先方案。
 
 无论采用哪种承载方式，都必须准备同一 PostgreSQL 16 数据库中的独立 schema
 管理、迁移、运行数据、运行认证和只读恢复身份；运行身份必须满足非 owner、

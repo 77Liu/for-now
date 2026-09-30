@@ -39,6 +39,102 @@
 2026-12-28，公网 IP 短期证书有效至 2026-10-03；发布前必须确认短期证书
 已按计划续期，不能沿用旧文档中的 `certbot.timer` 单元名。
 
+### 2026-09-30 清理与试装前评估
+
+08:45（Asia/Shanghai）经用户授权清理非保留工作负载：
+
+- `openclaw-gateway.service` 是独立的 root 用户级 OpenClaw 网关，清理前
+  cgroup 占用 490,643,456 字节（约 468 MiB）；它未接入当前 Nginx、
+  MySQL、`dysf` 或本应用，
+  已停止并禁用。
+- MySQL 仅有业务库 `olympics_badge` 和账户 `olympic`，无业务连接；
+  Olympics 后端本来就没有运行，旧 `olympic-forward` Nginx 配置也未启用。
+  `mysql.service` 已正常停止并禁用，数据文件保留，未删除。
+- `dysf`、主应用和只读中台继续运行，本地健康检查均通过；复测时三个
+  cgroup 分别约 72～80 MiB、114 MiB 和 80 MiB。两轮共 10 次系统可用
+  内存采样为 977～990 MiB，Swap 约为 0，内核日志和三个保留服务均无
+  OOM 记录。
+- `aegis.service` 已确认是阿里云云安全中心客户端。其 systemd 单元仍保留
+  2026-08-26 的失败状态，但 `AliYunDunUpdate`、`AliYunDun` 和
+  `AliYunDunMonitor` 已于 2026-09-14 重新启动并持续运行，合计常态约
+  35～50 MiB。该客户端提供安全心跳、资产/威胁检测和自更新，不因节省内存
+  停止；应通过云安全中心控制台 Agent 诊断或官方修复流程恢复服务状态一致性。
+
+清理后，同机 PostgreSQL 16 从“当前无容量”调整为“低并发 MVP 可受控验证”。
+应用运行态最多使用两个各 8 连接的池，应用锁占用认证池中的一个槽位；
+同机试运行基线为
+`max_connections=30`、`shared_buffers=128MB`、`work_mem=4MB`、
+`maintenance_work_mem=64MB`、`autovacuum_max_workers=2`，并为数据库设置
+约 `MemoryHigh=384M`、`MemoryMax=512M` 的 systemd 边界。该配置只是验收
+起点，不是未经测量的生产结论：安装后必须以真实候选完成迁移、备份恢复和
+并发/图片链路复测，稳定可用内存不得低于 400 MiB，Swap 不得持续增长。
+当前 1.57 GiB 实例可作为 5～10 名邀请用户的最低限度试运行规格；若数据库
+长期同机承载，推荐扩至至少 4 GiB，以覆盖应用现有内存上限、数据库维护任务
+和图片处理峰值。Ubuntu 22.04 当前软件源只提供 PostgreSQL 14，生产所需
+PostgreSQL 16 还需使用受控的 PGDG 软件源或改用托管实例；本次尚未安装。
+
+### 2026-09-30 当前规格 PostgreSQL 受限试装
+
+用户随后选择“当前规格受限试装”。已从官方 PGDG `jammy-pgdg` 源安装
+PostgreSQL **16.15**，签名密钥指纹核对通过。安装时阻止包脚本自动启动服务，
+未重启现有应用；试装集群为 `16/fornowtrial`，systemd 单元为
+`postgresql@16-fornowtrial.service`。集群名不含连字符，以兼容包内 systemd
+模板的 `%I` 路径展开。依赖同时将 `libpq5` 更新为 PGDG 18.6；收尾核对未
+发现进程继续映射已删除的旧库，三个保留服务进程未变化。
+
+当前实际配置替代上方试装前的配置建议：
+
+| 项目 | 生效值 |
+| --- | --- |
+| 网络/认证 | 仅 `127.0.0.1:5432` 和本机 Unix socket；TCP SCRAM，Unix peer |
+| 最大连接 | 40（30 在迁移/核验连接与测试应用并存时触及保留连接槽；记录失败后改为 40 并重跑全部断言） |
+| 内存 | `shared_buffers=128MB`、`work_mem=4MB`、`maintenance_work_mem=64MB`、`autovacuum_work_mem=32MB` |
+| 后台维护 | `autovacuum_max_workers=2`，禁用并行查询和 JIT |
+| 进程约束 | `MemoryHigh=384M`、`MemoryMax=512M`、`MemorySwapMax=0`、`CPUQuota=100%`、`TasksMax=128` |
+| 持久化 | 校验和开启；`fsync`、`full_page_writes`、`synchronous_commit` 全部保持开启 |
+| 启动策略 | `start.conf=manual`；当前由 systemd 手动启动，试装阶段不自动随主机启动 |
+
+固定候选 `70b5644ef265440b9f5f4e69868647544f6deff2` 的 42 项真实数据库
+断言已在该集群通过。仅将测试启动器从自建临时集群适配为已安装的空试装
+集群，业务断言未修改；合成数据覆盖 Store v15、RLS、并发、认证、配置、
+附件恢复、单写保护及第二数据库重建。测试进程单独限制为 384 MiB/75% CPU，
+仅允许本机网络并屏蔽生产数据/环境文件。期间主机可用内存最低
+737.60 MiB，数据库 cgroup 采样峰值 182.96 MiB。
+
+随后执行 pgbench scale 1、17 客户端/2 线程、20 TPS 限速的 90 秒测试：
+完成 1,819 次事务，零失败/跳过/超过 1 秒，平均延迟 2.576 ms；
+主机可用内存最低 829.72 MiB，数据库 cgroup 采样峰值 134.55 MiB。
+321,398 字节的 `pg_dump -Fc` 备份恢复至新库后，四张表全部行的摘要一致；
+仅重启 PostgreSQL 后两个库摘要仍一致。测试库/角色和临时管理员密码均已
+清理，集群只剩默认库及默认角色。最终数据库 cgroup 的 high/max/OOM 计数
+均为 0，试装期间内核日志无 OOM，Swap 未增长。上述限速吞吐不代表应用端到端吞吐，也不构成大量用户或图片峰值放量
+结论。随后在 ECS 使用同一 PostgreSQL 16.15 二进制独立重跑持久幂等专项，
+精确重放、请求哈希冲突、永久清理后防重复、重启和双进程序列化全部通过；
+测试在独立临时集群及 384 MiB/零 Swap cgroup 中运行，仅允许本机网络，
+结束后临时集群、候选和依赖均已删除。
+机器摘要见 [`ecs-postgres-trial-2026-09-30.json`](../reports/ecs-postgres-trial-2026-09-30.json)。
+收尾时已删除服务器上的临时候选源码、依赖和测试脚本，数据库空闲 cgroup
+约 50.3 MiB，主机可用内存 890 MiB；主应用、中台、`dysf` 与公网健康检查
+通过，OpenClaw 和 MySQL 继续保持停用。
+
+连接池口径：两个池各最多 8 条，合计最多 **16 条**。前述 MySQL
+136,368,128 字节约为 130 MiB；主机 MemAvailable 的 MiB 采样不受影响。
+
+本节只证明受限安装和合成数据验证，不代表生产迁移或峰值容量验收。生产
+仍使用 JSON；新数据库尚无正式业务库/账户角色、生产连接配置、云端数据库
+备份或上线观察。正式切换须另行完成最新 JSON/OSS 迁移恢复与发布授权。
+当前空试装集群可用 `sudo systemctl stop postgresql@16-fornowtrial` 停止并
+释放内存，用 `sudo systemctl start postgresql@16-fornowtrial` 恢复；
+正式接管数据后应按生产迁移流程另行配置自动启动、角色、备份和告警。
+
+同日 10:19 只读复核：最新 JSON/附件备份为
+`for-now-20260929T192750Z.tar.gz`（本地时间 2026-09-30 03:27），
+7,453,657 字节、60 个条目；配套 SHA-256 验证通过，归档无绝对路径或
+`..` 路径。备份、监控和证书续期 timer 均启用，最近监控结果无问题；
+Nginx 配置通过，域名 HTTPS 200，域名 HTTP 和 IP HTTPS 均 308 跳转。
+该本地归档核对仍不替代发布窗口的新备份、OSS 最新 inventory 和生产
+PostgreSQL 独立恢复。
+
 ## 调用与存储边界
 
 | 边界 | 当前默认 | 目的 |
