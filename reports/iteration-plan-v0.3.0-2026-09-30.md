@@ -182,6 +182,8 @@ V0.2 开发流程报告属于 `V0.3.0-01` 的启动验收，不混入产品功�
 - `npm run test:postgres-preflight` 通过。
 - `npm run test:postgres:stable` 通过 PostgreSQL 16.14 的 42 项检查及持久幂等专项。
 - `npm run test:backend` 48/48 通过，耗时 `154504 ms`。
+- 合并到本地 `main@350aca238d613ff0ec0a58d7ca1675abd2092a50` 后，
+  `npm run test:system` 53/53 通过，耗时 `202724 ms`。
 
 ## 8. 总体流程
 
