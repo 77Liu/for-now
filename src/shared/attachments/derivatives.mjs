@@ -81,6 +81,12 @@ function dimensionsFor(source, maxWidth) {
   };
 }
 
+function matchingAspectRatio(source, mask) {
+  const left = source.width * mask.height;
+  const right = source.height * mask.width;
+  return Math.abs(left - right) / Math.max(left, right) <= 0.005;
+}
+
 function nextWidth(width, bytes, targetBytes) {
   const factor = Math.min(0.8, Math.sqrt(targetBytes / Math.max(1, bytes)) * 0.94);
   const estimated = Math.floor(width * factor);
@@ -153,8 +159,8 @@ export async function createKeepsakeImageDerivatives({
   }
   const sourceDimensions = orientedDimensions(await processor.metadata(original));
   const maskDimensions = orientedDimensions(await processor.metadata(alphaMask));
-  if (sourceDimensions.width !== maskDimensions.width || sourceDimensions.height !== maskDimensions.height) {
-    throw Object.assign(new Error("Alpha 蒙版尺寸必须与原图一致"), { code: "ALPHA_MASK_DIMENSION_MISMATCH" });
+  if (!matchingAspectRatio(sourceDimensions, maskDimensions)) {
+    throw Object.assign(new Error("Alpha 蒙版宽高比必须与原图一致"), { code: "ALPHA_MASK_DIMENSION_MISMATCH" });
   }
   const output = {};
   for (const [kind, profile] of Object.entries(KEEPSAKE_DERIVATIVE_PROFILES)) {

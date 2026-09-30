@@ -72,6 +72,35 @@ try {
   assert.ok(events.filter(event => ["thumb", "display"].includes(event.kind)).every(event => event.alphaMask));
   assert.ok(events.filter(event => event.kind === "edit").every(event => !event.alphaMask));
 
+  const scaledMaskProcessor = {
+    ...fakeProcessor(),
+    async metadata(data) {
+      return data === original
+        ? { width: 2400, height: 1900, orientation: 6 }
+        : { width: 950, height: 1200 };
+    }
+  };
+  await createKeepsakeImageDerivatives({
+    original,
+    alphaMask: mask,
+    processor: scaledMaskProcessor
+  });
+  await assert.rejects(
+    createKeepsakeImageDerivatives({
+      original,
+      alphaMask: mask,
+      processor: {
+        ...scaledMaskProcessor,
+        async metadata(data) {
+          return data === original
+            ? { width: 2400, height: 1900, orientation: 6 }
+            : { width: 900, height: 1200 };
+        }
+      }
+    }),
+    { code: "ALPHA_MASK_DIMENSION_MISMATCH" }
+  );
+
   const context = {
     ownerId: "account-a",
     dataDir: path.join(root, "account-a"),
