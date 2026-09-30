@@ -42,8 +42,14 @@ export function createApiV1Http({ sendJson, getContext, openApi }) {
     },
 
     success(res, status, data, { etag = "", meta = {} } = {}) {
+      const context = getContext();
+      const operationId = context?.clientOperationId || "";
+      const operation = operationId && !["GET", "HEAD"].includes(context?.method)
+        ? { operation: { id: operationId, status: "committed" } }
+        : {};
       if (etag) res.setHeader("etag", etag);
-      return sendJson(res, status, envelope(data, meta));
+      if (operationId && operation.operation) res.setHeader("x-client-operation-id", operationId);
+      return sendJson(res, status, envelope(data, { ...meta, ...operation }));
     },
 
     error(res, status, message, code, details) {
@@ -89,6 +95,14 @@ export function createApiV1Http({ sendJson, getContext, openApi }) {
       if (req.method === "GET" && url.pathname === `${API_V1_PREFIX}/openapi.json`) {
         sendJson(res, 200, openApi);
         return true;
+      }
+      const operationId = String(req.headers["x-client-operation-id"] || "").trim();
+      if (operationId) {
+        if (!/^[A-Za-z0-9_.:-]{1,100}$/.test(operationId)) {
+          throw problem("X-Client-Operation-Id 格式无效", "INVALID_CLIENT_OPERATION_ID", 400);
+        }
+        const context = getContext();
+        if (context) context.clientOperationId = operationId;
       }
       for (const handler of handlers.values()) {
         if (await handler(req, res, url, api) || res.headersSent || res.writableEnded) return true;

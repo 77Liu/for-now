@@ -356,6 +356,16 @@
       "status": "active"
     },
     {
+      "id": "frontend.sync",
+      "type": "shared",
+      "root": "public/frontend/sync",
+      "publicEntry": "public/frontend/sync/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["account-scoped durable mutation log, resource request coordination, retry classification and committed operation audit"], "routes": [] },
+      "tests": ["scripts/sync-coordinator-regression.mjs"],
+      "status": "active"
+    },
+    {
       "id": "frontend.content",
       "type": "shared",
       "root": "public/frontend/content",
@@ -460,7 +470,7 @@
       "type": "application",
       "root": "public/frontend/app",
       "publicEntry": "public/frontend/app/index.mjs",
-      "allowedDependencies": ["frontend.api", "frontend.session", "frontend.state", "frontend.content", "frontend.time", "frontend.media", "frontend.pages", "frontend.features"],
+      "allowedDependencies": ["frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.pages", "frontend.features"],
       "owns": { "data": ["browser bootstrap, dependency composition, feature event binding and page presenter runtime"], "routes": [] },
       "tests": ["scripts/frontend-shell-regression.mjs", "scripts/frontend-contract-regression.mjs", "scripts/ui-regression.mjs", "scripts/mobile-platform-regression.mjs"],
       "status": "active"

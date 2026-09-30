@@ -41,10 +41,13 @@ import {
 import { createPageRouter } from "../pages/index.mjs";
 import { sessionScope, sessionSerial, rotateSession } from "../session/index.mjs";
 import { state, replaceState, resetState, subscribeState, createRefreshCoordinator } from "../state/index.mjs";
+import { createIndexedDbSyncStore, createRequestCoordinator } from "../sync/index.mjs";
 import { createOccurrenceDraft, entryKeyIntent, eventDate, eventTimestamp, formatDate, formatDateKey, formatTime, localDateKey, localDateTimeForDate, occurrenceSubmission, persistedDateTimeInput, toLocalDateTimeInput } from "../time/index.mjs";
 
 const apiClient=createApiClient({baseUrl:new URL("../../app.js",import.meta.url),session:sessionScope,onAuthRequired:()=>showAuthGate()});
 const appUrl=apiClient.appUrl;
+const syncStore=createIndexedDbSyncStore();
+const requestCoordinator=createRequestCoordinator({store:syncStore,send:(url,options)=>request(url,options)});
 const refreshCoordinator=createRefreshCoordinator({session:sessionScope,requestState:()=>request("/api/state")});
 const baseMetrics={mood:{label:"情绪",anchors:["非常难受","有些低落","平稳、无明显起伏","感觉不错","轻盈而愉快"]},energy:{label:"精力",anchors:["几乎耗尽","勉强支撑","够用，但有限","精力较好","充沛、想行动"]},stress:{label:"压力",anchors:["快要撑不住","很紧绷","压力明显但可应对","有一点紧绷","身心松弛"]},sleep:{label:"睡眠",anchors:["几乎没休息好","明显不足","基本够用","睡得不错","充分恢复"]}};
 const trendLabels=Object.fromEntries(Object.entries(baseMetrics).map(([k,v])=>[k,v.label]));
@@ -402,7 +405,10 @@ function editDailyRecord(id){
 function setAnswerStatus(id,message,kind="working"){document.querySelectorAll(`[data-answer-chain="${CSS.escape(id)}"]`).forEach(button=>{let status=button.closest(".chain-expanded")?.querySelector(".card-action-status");if(!status){status=document.createElement("p");status.className="card-action-status";status.setAttribute("role","status");status.setAttribute("aria-live","polite");button.closest(".chain-expanded")?.append(status)}status.className=`card-action-status ${kind}`;status.textContent=message})}
 async function request(url,options={}){const answerId=url.match(/^\/api\/thoughts\/([^/]+)\/answer$/)?.[1];try{const result=await apiClient.request(url,options);if(answerId)setAnswerStatus(answerId,"回答已生成并保存。","success");return result}catch(error){if(answerId&&error.name!=="AbortError")setAnswerStatus(answerId,`未能生成：${error.message}，可重试。`,"error");throw error}}
 async function requestV1(url,options={}){
-  const result=await request(url,options);
+  const method=String(options.method||"GET").toUpperCase();
+  const result=["GET","HEAD"].includes(method)
+    ?await request(url,options)
+    :await requestCoordinator.request({owner:currentUser?.id,url,options});
   if(!result||result.error)throw new Error(result?.error?.message||"接口返回异常");
   return{data:result.data,meta:result.meta||{}}
 }
@@ -1936,7 +1942,7 @@ function prepareUserSession(user,authRequired){
 function revealUserSession(){document.body.classList.remove("auth-locked");$("#auth-gate").hidden=true}
 async function activateUserSession(user,authRequired){
   prepareUserSession(user,authRequired);
-  try{if(!await load())return false;revealUserSession();return true}
+  try{await requestCoordinator.resume(user?.id);if(!await load())return false;revealUserSession();return true}
   catch(error){if(currentUser?.id===user?.id)showAuthGate();throw error}
 }
 async function authRequest(endpoint,payload,method="POST"){
@@ -2585,8 +2591,8 @@ for(const [formId,endpoint]of[["login-form","/api/auth/login"],["register-form",
   });
 }
 const logout=async()=>{
-  const operation=++authOperationSerial;clearDurableDraft();showAuthGate();setAuthTab("login");setAuthBusy(true);$("#auth-status").textContent="正在退出…";
-  try{await authRequest("/api/auth/logout",{})}
+  const operation=++authOperationSerial,owner=currentUser?.id;clearDurableDraft();const clearing=owner?requestCoordinator.clear(owner):Promise.resolve();showAuthGate();setAuthTab("login");setAuthBusy(true);$("#auth-status").textContent="正在退出…";
+  try{await Promise.all([clearing,authRequest("/api/auth/logout",{})])}
   catch(error){if(operation===authOperationSerial)$("#auth-status").textContent=`本地内容已锁定；服务端退出失败：${error.message}`}
   finally{if(operation===authOperationSerial){setAuthBusy(false);if($("#auth-status").textContent==="正在退出…")$("#auth-status").textContent=""}}
 };

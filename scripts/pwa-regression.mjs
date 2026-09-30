@@ -40,6 +40,7 @@ for (const asset of [
   "drift.css",
   "app.js",
   "frontend/app/runtime.mjs",
+  "frontend/sync/index.mjs",
   "frontend/styles/application.css",
   "assets/home-v0.2/desktop-background.png",
   "assets/home-v0.2/mobile-background.png"

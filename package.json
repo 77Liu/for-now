@@ -1,6 +1,6 @@
 {
   "name": "personal-growth-tracker",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,6 +11,7 @@
     "test": "node scripts/regression.mjs",
     "test:auth": "node scripts/auth-regression.mjs",
     "test:api-v1": "node scripts/api-v1-contract-regression.mjs",
+    "test:sync": "node scripts/sync-coordinator-regression.mjs",
     "test:openapi": "node scripts/api-v1-openapi-fragment-regression.mjs",
     "test:records": "node scripts/checkin-health-regression.mjs",
     "test:records-v1": "node scripts/record-v1-regression.mjs",

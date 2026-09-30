@@ -129,12 +129,26 @@ try {
     factors: ["运动"]
   };
   const checkin = await request("/api/v1/checkins", {
-    method: "POST", cookie: owner, headers: { "idempotency-key": "checkin-contract-1" }, body: checkinInput
+    method: "POST",
+    cookie: owner,
+    headers: {
+      "idempotency-key": "checkin-contract-1",
+      "x-client-operation-id": "operation-checkin-1"
+    },
+    body: checkinInput
   });
   assert.equal(checkin.response.status, 201);
   assert.equal(checkin.response.headers.get("etag"), "\"1\"");
+  assert.equal(checkin.response.headers.get("x-client-operation-id"), "operation-checkin-1");
+  assert.deepEqual(checkin.body.meta.operation, { id: "operation-checkin-1", status: "committed" });
   const checkinId = checkin.body.data.id;
-  assert.equal((await request(`/api/v1/checkins/${checkinId}`, { cookie: other })).response.status, 404);
+  const crossAccountRead = await request(`/api/v1/checkins/${checkinId}`, {
+    cookie: other,
+    headers: { "x-client-operation-id": "read-does-not-commit" }
+  });
+  assert.equal(crossAccountRead.response.status, 404);
+  assert.equal(crossAccountRead.body.meta.operation, undefined);
+  assert.equal(crossAccountRead.response.headers.get("x-client-operation-id"), null);
   const checkinUpdated = await request(`/api/v1/checkins/${checkinId}`, {
     method: "PATCH", cookie: owner, headers: { "if-match": "\"1\"" }, body: { ...checkinInput, mood: 5 }
   });
@@ -160,10 +174,27 @@ try {
   assert.equal(legacyAfterV1Records.body.dailyRecords.find(item => item.id === healthId).average, 66);
 
   const missingKey = await request("/api/v1/thought-chains", {
-    method: "POST", cookie: owner, body: { question: "缺少幂等键", occurredAt: "2026-09-29T09:00:00" }
+    method: "POST",
+    cookie: owner,
+    headers: { "x-client-operation-id": "operation-without-key" },
+    body: { question: "缺少幂等键", occurredAt: "2026-09-29T09:00:00" }
   });
   assert.equal(missingKey.response.status, 400);
   assert.equal(missingKey.body.error.code, "IDEMPOTENCY_KEY_REQUIRED");
+  assert.equal(missingKey.body.meta.operation, undefined);
+  assert.equal(missingKey.response.headers.get("x-client-operation-id"), null);
+  const invalidOperation = await request("/api/v1/thought-chains", {
+    method: "POST",
+    cookie: owner,
+    headers: {
+      "idempotency-key": "invalid-operation-1",
+      "x-client-operation-id": "invalid operation"
+    },
+    body: { question: "非法操作标识", occurredAt: "2026-09-29T09:00:00" }
+  });
+  assert.equal(invalidOperation.response.status, 400);
+  assert.equal(invalidOperation.body.error.code, "INVALID_CLIENT_OPERATION_ID");
+  assert.equal(invalidOperation.body.meta.operation, undefined);
   const invalidKey = await request("/api/v1/thought-chains", {
     method: "POST", cookie: owner, headers: { "idempotency-key": "x".repeat(101) },
     body: { question: "过长幂等键", occurredAt: "2026-09-29T09:00:00" }

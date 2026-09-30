@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cike-shell-v0.2.2-1";
+const CACHE_VERSION = "cike-shell-v0.2.3-1";
 const SHELL_ASSETS = [
   "./",
   "index.html",
@@ -23,6 +23,7 @@ const SHELL_ASSETS = [
   "frontend/pages/index.mjs",
   "frontend/session/index.mjs",
   "frontend/state/index.mjs",
+  "frontend/sync/index.mjs",
   "frontend/styles/application.css",
   "frontend/time/index.mjs",
   "vendor/katex/katex.min.css",
