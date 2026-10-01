@@ -24,6 +24,8 @@ import {
 } from "../public/frontend/time/index.mjs";
 import {
   createMemoryMediaDraftStore,
+  IMAGE_MAX_BYTES,
+  IMAGE_SELECTION_MAX_BYTES,
   imageRecordPayload,
   imageUnderstandingPayload,
   uploadPendingMediaItems,
@@ -182,20 +184,20 @@ if (process.argv.includes("--timezone-case")) {
   assert.throws(() => validatedImageFiles([image("image/gif", 1)]), {
     message: "只支持 PNG、JPEG 或 WebP 图片"
   });
-  assert.equal(validatedImageFiles([image("image/png", 8 * 1024 * 1024)]).length, 1);
-  assert.throws(() => validatedImageFiles([image("image/png", 8 * 1024 * 1024 + 1)]), {
-    message: "单张及本次图片总大小均不得超过 8 MB"
+  assert.equal(validatedImageFiles([image("image/png", IMAGE_MAX_BYTES)]).length, 1);
+  assert.throws(() => validatedImageFiles([image("image/png", IMAGE_MAX_BYTES + 1)]), {
+    message: "单张图片不得超过 8 MB"
   });
   assert.equal(validatedImageFiles([
-    image("image/png", 4 * 1024 * 1024),
-    image("image/webp", 4 * 1024 * 1024)
-  ], 2).length, 2);
+    ...Array.from({ length: 6 }, (_, index) => image(index % 2 ? "image/png" : "image/webp", IMAGE_MAX_BYTES))
+  ], 8).length, 6);
   assert.throws(() => validatedImageFiles([
-    image("image/png", 4 * 1024 * 1024),
-    image("image/webp", 4 * 1024 * 1024 + 1)
-  ], 2), {
-    message: "单张及本次图片总大小均不得超过 8 MB"
+    ...Array.from({ length: 6 }, (_, index) => image(index % 2 ? "image/png" : "image/webp", IMAGE_MAX_BYTES)),
+    image("image/jpeg", 1)
+  ], 8), {
+    message: "本次图片合计不得超过 48 MB"
   });
+  assert.equal(IMAGE_SELECTION_MAX_BYTES, 48 * 1024 * 1024);
   assert.deepEqual(imageRecordPayload({
     content: "",
     attachmentPaths: ["/attachments/a.png", "/attachments/b.webp"]

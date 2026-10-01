@@ -408,7 +408,7 @@ function renderHealthUploader(){
   const max=activeDailyType==="sleep"?2:1,files=healthFiles[activeDailyType]||[];
   $("#health-images").multiple=max>1;$("#health-upload-title").textContent=`优先上传 ${max===2?"1–2":"1"} 张${dailyTypeMeta[activeDailyType].label}截图`;
   const hints={sleep:"总览与详情可一起识别",heartRate:"包含日视图与今日概览",weight:"体重或体成分报告，未显示的字段留空",exercise:"运动详情，项目、时长与心率可一起识别"};
-  $("#health-upload-hint").textContent=`点击、粘贴或拖入 · ${hints[activeDailyType]} · 合计不超过 8 MB`;
+  $("#health-upload-hint").textContent=`点击、粘贴或拖入 · ${hints[activeDailyType]} · 单张 8 MB · 批次合计 48 MB`;
   healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=files.map(file=>URL.createObjectURL(file));
   $("#health-image-previews").innerHTML=files.map((file,index)=>`<figure><img src="${healthPreviewUrls[index]}" alt="待识别截图 ${index+1}"><figcaption>${escapeHtml(file.name||`截图 ${index+1}`)} · ${formatBytes(file.size)}</figcaption><button type="button" data-health-image-remove="${index}" aria-label="移除截图 ${index+1}">×</button></figure>`).join("");
   $("#health-upload-box").classList.toggle("has-image",files.length>0);$("#parse-health-images").disabled=!files.length;

@@ -1,11 +1,15 @@
+export const IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+export const IMAGE_SELECTION_MAX_BYTES = 48 * 1024 * 1024;
+
 export function validatedImageFiles(files, maxFiles = 1) {
   const list = [...files].slice(0, maxFiles);
   const allowed = new Set(["image/png", "image/jpeg", "image/webp"]);
   if (!list.length) throw new Error("没有找到可用图片");
   if ([...files].length > maxFiles) throw new Error(`最多选择 ${maxFiles} 张图片`);
   if (list.some(file => !allowed.has(file.type))) throw new Error("只支持 PNG、JPEG 或 WebP 图片");
-  if (list.some(file => file.size > 8 * 1024 * 1024) || list.reduce((sum, file) => sum + file.size, 0) > 8 * 1024 * 1024) {
-    throw new Error("单张及本次图片总大小均不得超过 8 MB");
+  if (list.some(file => file.size > IMAGE_MAX_BYTES)) throw new Error("单张图片不得超过 8 MB");
+  if (list.reduce((sum, file) => sum + file.size, 0) > IMAGE_SELECTION_MAX_BYTES) {
+    throw new Error("本次图片合计不得超过 48 MB");
   }
   return list;
 }
