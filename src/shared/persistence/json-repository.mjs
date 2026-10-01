@@ -17,7 +17,8 @@ export function createJsonStoreRepository({
   emptyDocument,
   clone = structuredClone,
   onCommit = async () => {},
-  now = () => new Date().toISOString()
+  now = () => new Date().toISOString(),
+  getContext = () => ({})
 }) {
   const afterCommit = Symbol.for("for-now.after-commit");
 
@@ -39,7 +40,7 @@ export function createJsonStoreRepository({
     const document = await readInternal(file);
     let before = clone(document);
     const commit = async () => {
-      synchronizePersistenceMetadata(before, document, now);
+      synchronizePersistenceMetadata(before, document, now, { context: getContext() || {} });
       await writeDocument(file, document);
       await onCommit(publicPersistenceDocument(before), publicPersistenceDocument(document));
       before = clone(document);
@@ -73,6 +74,13 @@ export function createJsonStoreRepository({
       return replay === undefined ? undefined : clone(replay);
     }),
     readPersistenceMetadata: () => runExclusive(async file => persistenceMetadata(await readInternal(file))),
+    readSyncSnapshot: () => runExclusive(async file => {
+      const document = await readInternal(file);
+      return {
+        document: publicPersistenceDocument(document),
+        metadata: persistenceMetadata(document)
+      };
+    }),
     waitForIdle(file = getFile()) {
       return queues.get(file) || Promise.resolve();
     }

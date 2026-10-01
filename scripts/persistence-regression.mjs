@@ -73,7 +73,8 @@ const metadataRepository = () => createJsonStoreRepository({
   readDocument,
   writeDocument,
   normalize: value => value,
-  emptyDocument: {}
+  emptyDocument: {},
+  getContext: () => ({ clientOperationId: "sync-test-operation", traceId: "sync-test-trace" })
 });
 const firstMetadataRepository = metadataRepository();
 let idempotentExecutions = 0;
@@ -85,6 +86,24 @@ const createOnce = store => {
   return structuredClone(originalResponse);
 };
 assert.deepEqual(await firstMetadataRepository.executeIdempotent(request, createOnce), originalResponse);
+const initialSyncMetadata = await firstMetadataRepository.readPersistenceMetadata();
+assert.equal(initialSyncMetadata.sync.cursor, 1);
+assert.deepEqual(initialSyncMetadata.sync.changes.map(change => ({
+  domain: change.domain,
+  resourceId: change.resourceId,
+  operationId: change.operationId,
+  changeType: change.changeType
+})), [{
+  domain: "captures",
+  resourceId: "stable-record",
+  operationId: "sync-test-operation",
+  changeType: "create"
+}]);
+assert.deepEqual((await firstMetadataRepository.readSyncSnapshot()).document.captures, [{
+  id: "stable-record",
+  clientRequestId: request.key,
+  requestHash: request.requestHash
+}]);
 assert.deepEqual(await firstMetadataRepository.executeIdempotent(request, () => {
   throw new Error("same request must replay without executing");
 }), originalResponse);
@@ -213,6 +232,10 @@ const durablePlan = buildPostgresMigrationPlan({ accountId: "metadata-account", 
 assert.equal(durablePlan.business.idempotency.length, 2);
 assert.ok(durablePlan.business.lifecycles.some(item => item.resourceId === "journal-lifecycle" && item.state === "purged"));
 assert.deepEqual(rebuildStoreObjects(durablePlan.business), durablePlan.snapshot);
+assert.deepEqual(
+  rebuildStoreObjects(durablePlan.business)._persistence.sync,
+  durablePlan.snapshot._persistence.sync
+);
 assert.deepEqual(durablePlan.business.lifecycles.map(item => item.position), durablePlan.business.lifecycles.map((_, index) => index));
 assert.deepEqual(durablePlan.business.idempotency.map(item => item.position), [0, 1]);
 const unorderedMetadata = structuredClone(durablePlan.business);
@@ -250,6 +273,7 @@ const sourceStore = {
       occurredAt: "2026-09-28T01:00:00.000Z",
       occurredOn: "2026-09-28",
       version: 2,
+      sourceRef: { type: "capture", id: "capture-1", version: 1 },
       remarks: [{ id: "remark-1", text: "备注", createdAt: "2026-09-28T01:01:00.000Z", version: 1 }],
       followUps: [{ id: "follow-1", question: "追问", answer: "", createdAt: "2026-09-28T01:02:00.000Z", version: 1 }],
       annotations: [{ id: "annotation-1", kind: "comment", targetKey: "question:question-1", quote: "问题", text: "评论", createdAt: "2026-09-28T01:03:00.000Z" }]
@@ -292,7 +316,7 @@ assert.deepEqual(plan.sourceCounts, {
   thoughtAnnotations: 1,
   businessFields: 4,
   businessObjects: 7,
-  businessRelations: 2,
+  businessRelations: 3,
   attachmentReferences: 0,
   lifecycleRecords: 7,
   idempotencyRecords: 0
@@ -326,6 +350,7 @@ assert.equal(fullPlan.business.objects.filter(row => row.parentKey).length, 9);
 assert.equal(fullPlan.business.attachmentRefs.length, 6);
 assert.ok(fullPlan.business.relations.some(row => row.targetId === "deleted-root" && row.resolution === "historical"));
 assert.equal(fullPlan.business.relations.filter(row => row.relation === "subtarget" && row.resolution === "live").length, 2);
+assert.ok(plan.business.relations.some(row => row.relation === "source" && row.targetId === "capture-1" && row.resolution === "live"));
 assert.ok(fullPlan.business.relations.some(row => row.relation === "result" && row.targetId === "exchange-1" && row.resolution === "live"));
 assert.ok(fullPlan.business.objects.some(row => row.kind === "annotationExchange" && row.parentKey));
 assert.ok(fullPlan.business.objects.some(row => row.kind === "thought" && !Object.hasOwn(row.payload, "followUps")));

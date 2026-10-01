@@ -97,12 +97,21 @@ export function createApiV1Http({ sendJson, getContext, openApi }) {
         return true;
       }
       const operationId = String(req.headers["x-client-operation-id"] || "").trim();
+      const operationFingerprint = String(req.headers["x-client-operation-fingerprint"] || "").trim();
       if (operationId) {
         if (!/^[A-Za-z0-9_.:-]{1,100}$/.test(operationId)) {
           throw problem("X-Client-Operation-Id 格式无效", "INVALID_CLIENT_OPERATION_ID", 400);
         }
+        if (operationFingerprint && !/^[a-f0-9]{64}$/.test(operationFingerprint)) {
+          throw problem("X-Client-Operation-Fingerprint 格式无效", "INVALID_OPERATION_FINGERPRINT", 400);
+        }
         const context = getContext();
-        if (context) context.clientOperationId = operationId;
+        if (context) {
+          context.clientOperationId = operationId;
+          context.clientOperationFingerprint = operationFingerprint;
+        }
+      } else if (operationFingerprint) {
+        throw problem("操作指纹缺少 X-Client-Operation-Id", "INVALID_OPERATION_FINGERPRINT", 400);
       }
       for (const handler of handlers.values()) {
         if (await handler(req, res, url, api) || res.headersSent || res.writableEnded) return true;

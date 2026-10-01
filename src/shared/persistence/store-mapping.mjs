@@ -170,6 +170,8 @@ export function mapStoreObjects(accountId, store) {
       if (item.type !== "question") {
         if (!item.relatedTo) throw new Error(`Thought without a root: ${row.id}`);
         link(row, "thoughtRoot", "thoughts", item.relatedTo, true);
+      } else if (objectValue(item.sourceRef) && item.sourceRef.type === "capture") {
+        link(row, "source", "captures", item.sourceRef.id);
       }
     }
     if (row.kind === "action" && objectValue(item.sourceRef)) {

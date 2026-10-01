@@ -17,6 +17,8 @@ assert.equal(defaults.port, 4173);
 assert.equal(defaults.version, "development");
 assert.equal(defaults.promptCatalogVersion, "");
 assert.equal(defaults.persistenceBackend, "json");
+assert.deepEqual(defaults.features, { incrementalSync: true });
+assert.equal(config({ INCREMENTAL_SYNC_ENABLED: "0" }).features.incrementalSync, false);
 assert.deepEqual(defaults.limits, {
   aiQps: 20, aiConcurrency: 20, segmentationQps: 5, segmentationConcurrency: 5,
   speechQps: 5, speechConcurrency: 5, ocrQps: 10, ocrConcurrency: 10,

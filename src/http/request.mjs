@@ -6,7 +6,16 @@ export function createRequestHandler({ requestContext, rootDir, basePath, logEve
   return (req, res) => {
     const suppliedTraceId = safeText(req.headers["x-request-id"], 128);
     const traceId = /^[A-Za-z0-9_.:-]{8,128}$/.test(suppliedTraceId) ? suppliedTraceId : crypto.randomUUID();
-    const context = { traceId, method: req.method, route: "", dataDir: rootDir, secrets: [] };
+    const context = {
+      traceId,
+      method: req.method,
+      route: "",
+      resource: "",
+      contentType: String(req.headers["content-type"] || "").toLowerCase(),
+      ifMatch: String(req.headers["if-match"] || ""),
+      requestBodySha256: crypto.createHash("sha256").update("").digest("hex"),
+      secrets: []
+    };
     const started = Date.now();
     return requestContext.run(context, async () => {
       try {
@@ -23,6 +32,7 @@ export function createRequestHandler({ requestContext, rootDir, basePath, logEve
           url.pathname = url.pathname.slice(basePath.length) || "/";
         }
         context.route = safeText(url.pathname, 400);
+        context.resource = safeText(`${url.pathname}${url.search}`, 500);
         context.apiVersion = url.pathname.startsWith("/api/v1/") ? "v1" : "";
         return await handle(req, res, url, context);
       } catch (error) {
@@ -44,7 +54,8 @@ export function createRequestHandler({ requestContext, rootDir, basePath, logEve
             level: status >= 500 ? "error" : status >= 400 ? "warn" : "info",
             statusCode: status, httpStatus: res.statusCode, durationMs: Date.now() - started,
             result: status >= 400 ? "failed" : res.destroyed && !res.writableFinished ? "disconnected" : "success",
-            errorCode: context.errorCode || "", changeCount: context.changeCount || 0
+            errorCode: context.errorCode || "", changeCount: context.changeCount || 0,
+            clientOperationId: context.clientOperationId || ""
           };
           await logEvent("system", "request.completed", fields);
           if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {

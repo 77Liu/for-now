@@ -52,7 +52,15 @@ async function validateRole(pool, schema, forbiddenSchema) {
   } finally { client.release(); }
 }
 
-export async function createPostgresRuntime({ connectionString, authConnectionString, getAccountId, requireMigration = false, authRequired = null, onPoolError = () => {} }) {
+export async function createPostgresRuntime({
+  connectionString,
+  authConnectionString,
+  getAccountId,
+  requireMigration = false,
+  authRequired = null,
+  readOnly = false,
+  onPoolError = () => {}
+}) {
   if (!connectionString || !authConnectionString) throw invalid("DATABASE_URL and AUTH_DATABASE_URL are required");
   const makePool = connectionString => {
     const pool = new pg.Pool({
@@ -106,8 +114,10 @@ export async function createPostgresRuntime({ connectionString, authConnectionSt
         if (authRequired === false && (await readAuthDocument(client))?.users.length) {
           throw invalid("Migrated identities require AUTH_REQUIRED=1");
         }
-        await client.query("INSERT INTO for_now_auth.runtime_state(id) VALUES (true) ON CONFLICT DO NOTHING");
-      });
+        if (!readOnly) {
+          await client.query("INSERT INTO for_now_auth.runtime_state(id) VALUES (true) ON CONFLICT DO NOTHING");
+        }
+      }, readOnly);
     } finally { client.release(); }
   } catch (error) {
     await close();
@@ -179,7 +189,13 @@ export async function createPostgresRuntime({ connectionString, authConnectionSt
       await markAccount(client, id);
     })
   };
-  const createStoreRepository = ({ normalize, emptyDocument, onCommit = async () => {}, now = () => new Date().toISOString() }) => {
+  const createStoreRepository = ({
+    normalize,
+    emptyDocument,
+    onCommit = async () => {},
+    now = () => new Date().toISOString(),
+    getContext = () => ({})
+  }) => {
     const afterCommit = Symbol.for("for-now.after-commit");
     const readRaw = (client, id) => readPostgresStoreObjects(client, id).then(rebuildStoreObjects);
     const transact = operation => withAccountLock(async (client, id) => {
@@ -195,7 +211,7 @@ export async function createPostgresRuntime({ connectionString, authConnectionSt
       );
       let before = structuredClone(document), revision = initial.revision;
       const commit = async () => {
-        synchronizePersistenceMetadata(before, document, now);
+        synchronizePersistenceMetadata(before, document, now, { context: getContext() || {} });
         const mapping = mapStoreObjects(id, document);
         const next = await transaction(client, async () => {
           await bind(client, id);
@@ -261,6 +277,16 @@ export async function createPostgresRuntime({ connectionString, authConnectionSt
         normalizePersistedDocument(await readRaw(client, id), normalize),
         now
       ))),
+      readSyncSnapshot: () => readAccount(async (client, id) => {
+        const document = preparePersistenceDocument(
+          normalizePersistedDocument(await readRaw(client, id), normalize),
+          now
+        );
+        return {
+          document: publicPersistenceDocument(document),
+          metadata: persistenceMetadata(document)
+        };
+      }),
       initialize: ({ allowCreate = false } = {}) => accountTransaction(async (client, id) => {
         const exists = (await client.query("SELECT 1 FROM for_now.accounts WHERE account_id = $1", [id])).rowCount;
         if (!exists && !allowCreate) throw invalid("Missing migrated account; refusing empty initialization");

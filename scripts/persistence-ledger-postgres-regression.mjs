@@ -24,7 +24,7 @@ const emptyStore = () => ({
 });
 const cleanEnvironment = source => Object.fromEntries(Object.entries(source).filter(([key]) => (
   !["DATABASE_URL", "AUTH_DATABASE_URL", "APP_URL", "UPSTREAM_ORIGIN"].includes(key)
-  && !/^(?:OSS_|ALIYUN_|ALIBABA_CLOUD_|DEEPSEEK_|FEISHU_)/.test(key)
+  && !/^(?:OSS_|ALIYUN_|ALIBABA_CLOUD_|DEEPSEEK_|FEISHU_|VOLCENGINE_)/.test(key)
 )));
 
 if (process.argv[2] === WORKER_FLAG) {

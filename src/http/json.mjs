@@ -1,3 +1,5 @@
+import crypto from "node:crypto";
+
 export const wantsEventStream = req => String(req.headers.accept || "").includes("text/event-stream");
 
 export function sendStreamEvent(res, value) {
@@ -31,6 +33,7 @@ export function createJsonHttp({ getContext, maxBodyBytes }) {
       const context = getContext();
       if (context) {
         context.requestBytes = bytes;
+        context.requestBodySha256 = crypto.createHash("sha256").update(raw).digest("hex");
         for (const key of ["apiKey", "password", "currentPassword", "newPassword", "invitation"]) if (typeof value[key] === "string" && value[key]) context.secrets.push(value[key]);
       }
       return value;

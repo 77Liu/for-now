@@ -10,6 +10,8 @@ import {
   createPostgresRuntime, initializePostgresSchema, buildPostgresMigrationPlan, applyPostgresMigration,
   canonicalJson, discoverJsonBundle, applyPostgresBundle, exportPostgresDirectory, readPostgresBundle
 } from "../src/shared/persistence/index.mjs";
+import { dailyAiUsage } from "./monitor-health.mjs";
+import { syncOperationFingerprint } from "../public/frontend/sync/index.mjs";
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const empty = () => ({ version: 14, thoughts: [], captures: [], attachmentCleanup: [] });
@@ -206,6 +208,28 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     const state = await request(app.base, "/api/state", { cookie });
     assert.equal(state.body.captures.length, 6);
     assert.equal((await request(app.base, "/api/state", { cookie: otherCookie })).body.captures.length, 0);
+    const receiptCapture = state.body.captures[1], receiptBody = { content: "HTTP 持久记录已修改" };
+    const receiptFingerprint = await syncOperationFingerprint({
+      method: "PATCH",
+      url: `/api/v1/captures/${receiptCapture.id}`,
+      headers: { "content-type": "application/json", "if-match": `"${receiptCapture.version || 1}"` },
+      body: JSON.stringify(receiptBody)
+    });
+    const receiptUpdate = await request(app.base, `/api/v1/captures/${receiptCapture.id}`, {
+      method: "PATCH",
+      cookie,
+      headers: {
+        "if-match": `"${receiptCapture.version || 1}"`,
+        "x-client-operation-id": "postgres-receipt-update",
+        "x-client-operation-fingerprint": receiptFingerprint
+      },
+      body: receiptBody
+    });
+    assert.equal(receiptUpdate.status, 200, JSON.stringify(receiptUpdate.body));
+    const receiptState = await request(app.base, `/api/v1/sync/operations/postgres-receipt-update?fingerprint=${receiptFingerprint}`, { cookie });
+    assert.equal(receiptState.status, 200);
+    assert.equal(receiptState.body.data.status, "committed");
+    assert.equal(receiptState.body.data.responseAvailable, false);
     assert.equal((await request(app.base, "/api/settings", { cookie })).body.automaticAnswers.thoughtAnswer, false);
     const disabledChain = await request(app.base, "/api/thought-chains", {
       method: "POST", cookie,
@@ -382,6 +406,21 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal(restartedSettings.automaticAnswers.thoughtAnswer, true);
     assert.equal(restartedSettings.responseStyles.thoughtAnswer, "deep");
     assert.equal((await request(app.base, "/api/ai-cost-plan", { cookie })).body.monthlyBudgetCny, 81);
+    const monitorCreatedAt = new Date().toISOString();
+    await account(id, () => runtime.documents.update("usage", { version: 3, entries: [] }, usage => {
+      usage.entries.push(
+        {
+          id: "monitor-known", callId: "monitor-known", createdAt: monitorCreatedAt,
+          provider: "volcengine", service: "speech", scene: "speechSynthesis",
+          model: "volcengine-speech", status: "success", costKnown: true, costCny: 2.5
+        },
+        {
+          id: "monitor-unknown", callId: "monitor-unknown", createdAt: monitorCreatedAt,
+          provider: "volcengine", service: "vision", scene: "visionOcr",
+          model: "volcengine-vision", status: "success", costKnown: false, costCny: 0
+        }
+      );
+    }));
     const adminSnapshot = await request(app.base, "/api/admin/v1/snapshot", {
       headers: { authorization: `Bearer ${platformToken}` }
     });
@@ -389,7 +428,18 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal(adminSnapshot.body.meta.source, "live-aggregate");
     assert.equal(adminSnapshot.body.users.length, 2);
     assert.ok(adminSnapshot.body.users.find(item => item.id === id).records >= 6);
+    assert.ok(adminSnapshot.body.users.find(item => item.id === id).aiCost30 >= 2.5);
+    assert.ok(adminSnapshot.body.users.find(item => item.id === id).aiCostUnknown30 >= 1);
+    assert.ok(adminSnapshot.body.ai.summary.costToday >= 2.5);
+    assert.ok(adminSnapshot.body.ai.summary.costUnknown >= 1);
     assert.doesNotMatch(JSON.stringify(adminSnapshot.body), /数据库中的模型回答|runtime-password-1|synthetic-test-key/);
+    const monitorUsage = await dailyAiUsage(dataDir, Date.parse(monitorCreatedAt), {
+      persistenceBackend: "postgres",
+      backupDatabaseUrl: url("runtime_backup")
+    });
+    assert.ok(monitorUsage.calls >= 2);
+    assert.ok(monitorUsage.costCny >= 2.5);
+    assert.ok(monitorUsage.costUnknownCalls >= 1);
     const files = await fs.readdir(dataDir, { recursive: true });
     assert.equal(files.filter(name => /(?:store|auth|llm-settings|ai-usage|ai-cost-plan)\.json$/.test(name)).length, 0);
     await assert.rejects(startApp("runtime_test", dataDir, "json"), /switched persistence backend/);

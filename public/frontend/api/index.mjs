@@ -2,6 +2,14 @@ export function createApiClient({ baseUrl, session, apiOrigin = "", onAuthRequir
   const basePath = new URL(".", baseUrl).pathname.replace(/\/$/, "");
   const origin = String(apiOrigin || "").replace(/\/+$/, "");
   let foregroundAt = 0;
+  const retryAfterMs = response => {
+    const value = response.headers.get("retry-after");
+    if (!value) return null;
+    const seconds = Number(value);
+    if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1000);
+    const timestamp = Date.parse(value);
+    return Number.isFinite(timestamp) ? Math.max(0, timestamp - Date.now()) : null;
+  };
   const appUrl = value => {
     if (typeof value !== "string" || !value.startsWith("/")) return value;
     if (origin) return `${origin}${value}`;
@@ -11,7 +19,8 @@ export function createApiClient({ baseUrl, session, apiOrigin = "", onAuthRequir
     status: response.status,
     code: result?.error?.code || result?.code,
     details: result?.error?.details || result?.details || null,
-    requestId: response.headers.get("x-request-id")
+    requestId: response.headers.get("x-request-id"),
+    retryAfterMs: retryAfterMs(response)
   });
   async function start(url, options, ticket, networkMessage = "无法连接服务，请确认网络连接后重试") {
     const signal = options.signal ? AbortSignal.any([ticket.signal, options.signal]) : ticket.signal;
@@ -55,7 +64,25 @@ export function createApiClient({ baseUrl, session, apiOrigin = "", onAuthRequir
     },
     async readBlob(url) {
       const ticket = session.capture(), response = await start(url, {}, ticket);
-      if (!response.ok) throw errorFor(response, null, "图片读取失败");
+      if (!response.ok) {
+        let parsed = {};
+        try { parsed = await response.json(); } catch {}
+        session.assertCurrent(ticket);
+        check(response, parsed, true, "图片读取失败");
+      }
+      const blob = await response.blob();
+      session.assertCurrent(ticket);
+      return blob;
+    },
+    async requestBlob(url, options = {}, { fallback = "媒体请求失败" } = {}) {
+      const ticket = session.capture();
+      const response = await start(url, options, ticket);
+      if (!response.ok) {
+        let parsed = {};
+        try { parsed = await response.json(); } catch {}
+        session.assertCurrent(ticket);
+        check(response, parsed, true, fallback);
+      }
       const blob = await response.blob();
       session.assertCurrent(ticket);
       return blob;

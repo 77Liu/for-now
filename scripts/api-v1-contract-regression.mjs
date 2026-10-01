@@ -6,6 +6,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { syncOperationFingerprint } from "../public/frontend/sync/index.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -118,7 +119,15 @@ try {
   assert.ok(specification.body.paths["/thought-chains/{id}"]);
   assert.ok(specification.body.paths["/checkins/{id}"]);
   assert.ok(specification.body.paths["/daily-records/{id}"]);
+  assert.ok(specification.body.paths["/sync"]);
+  assert.ok(specification.body.paths["/sync/operations/{operationId}"]);
+  assert.ok(specification.body.paths["/personal-context"]);
   assert.equal(specification.body.components.schemas.ErrorEnvelope.required.includes("meta"), true);
+  assert.equal((await request("/api/v1/personal-context")).response.status, 401);
+  const syncBaseline = await request("/api/v1/sync", { cookie: owner });
+  assert.equal(syncBaseline.response.status, 200);
+  assert.equal(syncBaseline.body.data.changes.length, 0);
+  assert.equal(Number.isSafeInteger(syncBaseline.body.data.cursor), true);
 
   const checkinInput = {
     occurredAt: "2026-09-29T08:30:00",
@@ -128,12 +137,19 @@ try {
     sleep: 5,
     factors: ["运动"]
   };
+  const checkinFingerprint = await syncOperationFingerprint({
+    method: "POST",
+    url: "/api/v1/checkins",
+    headers: { "content-type": "application/json", "idempotency-key": "checkin-contract-1", "x-client-operation-id": "operation-checkin-1" },
+    body: JSON.stringify(checkinInput)
+  });
   const checkin = await request("/api/v1/checkins", {
     method: "POST",
     cookie: owner,
     headers: {
       "idempotency-key": "checkin-contract-1",
-      "x-client-operation-id": "operation-checkin-1"
+      "x-client-operation-id": "operation-checkin-1",
+      "x-client-operation-fingerprint": checkinFingerprint
     },
     body: checkinInput
   });
@@ -142,6 +158,45 @@ try {
   assert.equal(checkin.response.headers.get("x-client-operation-id"), "operation-checkin-1");
   assert.deepEqual(checkin.body.meta.operation, { id: "operation-checkin-1", status: "committed" });
   const checkinId = checkin.body.data.id;
+  const syncAfterCheckin = await request(`/api/v1/sync?cursor=${syncBaseline.body.data.cursor}`, { cookie: owner });
+  assert.equal(syncAfterCheckin.response.status, 200);
+  assert.ok(syncAfterCheckin.body.data.cursor > syncBaseline.body.data.cursor);
+  assert.ok(syncAfterCheckin.body.data.changes.some(change => (
+    change.domain === "checkins"
+      && change.resourceId === checkinId
+      && change.operationId === "operation-checkin-1"
+      && change.changeType === "create"
+  )));
+  assert.equal(syncAfterCheckin.body.data.snapshot.checkins.some(item => item.id === checkinId), true);
+  const operationState = await request(`/api/v1/sync/operations/operation-checkin-1?fingerprint=${checkinFingerprint}`, { cookie: owner });
+  assert.equal(operationState.response.status, 200);
+  assert.equal(operationState.body.data.status, "committed");
+  assert.equal(operationState.body.data.responseAvailable, false);
+  const reusedOperation = await request(`/api/v1/sync/operations/operation-checkin-1?fingerprint=${"0".repeat(64)}`, { cookie: owner });
+  assert.equal(reusedOperation.response.status, 409);
+  assert.equal(reusedOperation.body.error.code, "OPERATION_ID_REUSED");
+  const reusedInput = { ...checkinInput, mood: 2 };
+  const reusedFingerprint = await syncOperationFingerprint({
+    method: "POST",
+    url: "/api/v1/checkins",
+    headers: { "content-type": "application/json", "idempotency-key": "checkin-contract-2", "x-client-operation-id": "operation-checkin-1" },
+    body: JSON.stringify(reusedInput)
+  });
+  const reusedMutation = await request("/api/v1/checkins", {
+    method: "POST",
+    cookie: owner,
+    headers: {
+      "idempotency-key": "checkin-contract-2",
+      "x-client-operation-id": "operation-checkin-1",
+      "x-client-operation-fingerprint": reusedFingerprint
+    },
+    body: reusedInput
+  });
+  assert.equal(reusedMutation.response.status, 409);
+  assert.equal(reusedMutation.body.error.code, "OPERATION_ID_REUSED");
+  const isolatedSync = await request(`/api/v1/sync?cursor=${syncBaseline.body.data.cursor}`, { cookie: other });
+  assert.equal(isolatedSync.response.status, 200);
+  assert.equal(isolatedSync.body.data.changes.length, 0);
   const crossAccountRead = await request(`/api/v1/checkins/${checkinId}`, {
     cookie: other,
     headers: { "x-client-operation-id": "read-does-not-commit" }
@@ -149,12 +204,29 @@ try {
   assert.equal(crossAccountRead.response.status, 404);
   assert.equal(crossAccountRead.body.meta.operation, undefined);
   assert.equal(crossAccountRead.response.headers.get("x-client-operation-id"), null);
+  const checkinUpdateInput = { ...checkinInput, mood: 5 };
+  const checkinUpdateFingerprint = await syncOperationFingerprint({
+    method: "PATCH",
+    url: `/api/v1/checkins/${checkinId}`,
+    headers: { "content-type": "application/json", "if-match": "\"1\"" },
+    body: JSON.stringify(checkinUpdateInput)
+  });
   const checkinUpdated = await request(`/api/v1/checkins/${checkinId}`, {
-    method: "PATCH", cookie: owner, headers: { "if-match": "\"1\"" }, body: { ...checkinInput, mood: 5 }
+    method: "PATCH",
+    cookie: owner,
+    headers: {
+      "if-match": "\"1\"",
+      "x-client-operation-id": "operation-checkin-update-1",
+      "x-client-operation-fingerprint": checkinUpdateFingerprint
+    },
+    body: checkinUpdateInput
   });
   assert.equal(checkinUpdated.response.status, 200);
   assert.equal(checkinUpdated.body.data.version, 2);
   assert.equal(checkinUpdated.response.headers.get("etag"), "\"2\"");
+  assert.equal((await request(`/api/v1/sync/operations/operation-checkin-update-1?fingerprint=${checkinUpdateFingerprint}`, {
+    cookie: owner
+  })).body.data.status, "committed");
   assert.equal((await request(`/api/v1/checkins/${checkinId}`, {
     method: "DELETE", cookie: owner, headers: { "if-match": "\"1\"" }
   })).response.status, 412);
@@ -172,6 +244,34 @@ try {
   const legacyAfterV1Records = await request("/api/state", { cookie: owner });
   assert.equal(legacyAfterV1Records.body.checkins.find(item => item.id === checkinId).mood, 5);
   assert.equal(legacyAfterV1Records.body.dailyRecords.find(item => item.id === healthId).average, 66);
+  const beforeCheckinDelete = await request("/api/v1/sync", { cookie: owner });
+  const checkinDeleteFingerprint = await syncOperationFingerprint({
+    method: "DELETE",
+    url: `/api/v1/checkins/${checkinId}`,
+    headers: { "content-type": "application/json", "if-match": "\"2\"" },
+    body: ""
+  });
+  const checkinDeleted = await request(`/api/v1/checkins/${checkinId}`, {
+    method: "DELETE",
+    cookie: owner,
+    headers: {
+      "content-type": "application/json",
+      "if-match": "\"2\"",
+      "x-client-operation-id": "operation-checkin-delete-1",
+      "x-client-operation-fingerprint": checkinDeleteFingerprint
+    }
+  });
+  assert.equal(checkinDeleted.response.status, 200);
+  assert.equal((await request(`/api/v1/sync/operations/operation-checkin-delete-1?fingerprint=${checkinDeleteFingerprint}`, {
+    cookie: owner
+  })).body.data.status, "committed");
+  const afterCheckinDelete = await request(`/api/v1/sync?cursor=${beforeCheckinDelete.body.data.cursor}`, { cookie: owner });
+  assert.ok(afterCheckinDelete.body.data.changes.some(change => (
+    change.domain === "checkins"
+      && change.resourceId === checkinId
+      && change.operationId === "operation-checkin-delete-1"
+      && change.changeType === "delete"
+  )));
 
   const missingKey = await request("/api/v1/thought-chains", {
     method: "POST",
@@ -202,7 +302,21 @@ try {
   assert.equal(invalidKey.response.status, 400);
   assert.equal(invalidKey.body.error.code, "INVALID_IDEMPOTENCY_KEY");
 
-  const firstInput = { question: "v1 第一条思绪", idea: "初步想法", occurredAt: "2026-09-29T09:00:00", tags: ["契约"] };
+  const sourceCapture = await request("/api/v1/captures", {
+    method: "POST",
+    cookie: owner,
+    headers: { "idempotency-key": "capture-source-contract-1" },
+    body: { content: "准备展开的念起", occurredAt: "2026-09-29T08:55:00", tags: ["契约"] }
+  });
+  assert.equal(sourceCapture.response.status, 201);
+  const sourceCaptureId = sourceCapture.body.data.id;
+  const firstInput = {
+    question: "v1 第一条思绪",
+    idea: "初步想法",
+    occurredAt: "2026-09-29T09:00:00",
+    tags: ["契约"],
+    sourceRef: { type: "capture", id: sourceCaptureId, version: 1 }
+  };
   const first = await request("/api/v1/thought-chains", {
     method: "POST", cookie: owner, headers: { "idempotency-key": "chain-contract-1" }, body: firstInput
   });
@@ -210,7 +324,14 @@ try {
   assert.equal(first.body.error, null);
   assert.equal(first.body.meta.traceId, first.response.headers.get("x-request-id"));
   assert.equal(first.response.headers.get("etag"), "\"1\"");
-  const firstId = first.body.data.items.find(item => item.type === "question").id;
+  const firstRoot = first.body.data.items.find(item => item.type === "question"), firstId = firstRoot.id;
+  assert.deepEqual(firstRoot.sourceRef, { type: "capture", id: sourceCaptureId, version: 1 });
+  const ownerContext = await request("/api/v1/personal-context", { cookie: owner });
+  assert.equal(ownerContext.response.status, 200);
+  assert.equal(ownerContext.body.data.readOnly, true);
+  assert.ok(ownerContext.body.data.tokenBudget.estimatedUsed <= ownerContext.body.data.tokenBudget.limit);
+  assert.ok(ownerContext.body.data.sources.some(source => source.resourceId === firstId && source.excerpt === firstInput.question));
+  assert.equal((await request("/api/v1/personal-context", { cookie: other })).body.data.sources.some(source => source.resourceId === firstId), false);
 
   const replay = await request("/api/v1/thought-chains", {
     method: "POST", cookie: owner, headers: { "idempotency-key": "chain-contract-1" }, body: firstInput
@@ -223,6 +344,25 @@ try {
   });
   assert.equal(reused.response.status, 409);
   assert.equal(reused.body.error.code, "IDEMPOTENCY_KEY_REUSED");
+  const duplicateSource = await request("/api/v1/thought-chains", {
+    method: "POST", cookie: owner, headers: { "idempotency-key": "chain-source-duplicate" },
+    body: { ...firstInput, question: "不允许重复展开" }
+  });
+  assert.equal(duplicateSource.response.status, 409);
+  assert.equal(duplicateSource.body.error.code, "CAPTURE_ALREADY_PROMOTED");
+  assert.equal(duplicateSource.body.error.details.rootId, firstId);
+  const staleSource = await request("/api/v1/thought-chains", {
+    method: "POST", cookie: owner, headers: { "idempotency-key": "chain-source-stale" },
+    body: { ...firstInput, sourceRef: { ...firstInput.sourceRef, version: 9 } }
+  });
+  assert.equal(staleSource.response.status, 412);
+  assert.equal(staleSource.body.error.details.currentVersion, 1);
+  const isolatedSource = await request("/api/v1/thought-chains", {
+    method: "POST", cookie: other, headers: { "idempotency-key": "chain-source-isolated" },
+    body: firstInput
+  });
+  assert.equal(isolatedSource.response.status, 404);
+  assert.equal(isolatedSource.body.error.code, "CAPTURE_SOURCE_NOT_FOUND");
 
   const second = await request("/api/v1/thought-chains", {
     method: "POST", cookie: owner, headers: { "idempotency-key": "chain-contract-2" },
@@ -252,6 +392,11 @@ try {
   });
   assert.equal(stale.response.status, 412);
   assert.equal(stale.body.error.details.currentVersion, 1);
+  const changedSource = await request(`/api/v1/thought-chains/${firstId}`, {
+    method: "PATCH", cookie: owner, headers: { "if-match": "\"1\"" }, body: { ...firstInput, sourceRef: null }
+  });
+  assert.equal(changedSource.response.status, 409);
+  assert.equal(changedSource.body.error.code, "THOUGHT_SOURCE_IMMUTABLE");
   const updated = await request(`/api/v1/thought-chains/${firstId}`, {
     method: "PATCH", cookie: owner, headers: { "if-match": "\"1\"" }, body: { ...firstInput, question: "v1 已更新" }
   });
@@ -275,6 +420,7 @@ try {
   assert.equal(events.at(-1).type, "done");
   assert.equal(events.at(-1).result.data.content, "v1 回答");
   assert.equal(events.at(-1).result.data.reasoningContent, "v1 思考");
+  assert.ok(events.at(-1).result.data.contextReceipt.sources.some(source => source.resourceId === firstId));
   assert.equal(events.at(-1).result.error, null);
 
   const crossTarget = await request(`/api/v1/thought-chains/${secondId}/answers`, {
@@ -304,11 +450,13 @@ try {
   assert.equal(removed.response.status, 200);
   assert.ok(removed.body.data.trashId);
   assert.equal((await request(`/api/v1/thought-chains/${firstId}`, { cookie: owner })).response.status, 404);
+  assert.equal((await request("/api/v1/personal-context", { cookie: owner })).body.data.sources.some(source => source.resourceId === firstId), false);
   assert.equal((await request(`/api/trash/${removed.body.data.trashId}/restore`, {
     method: "POST", cookie: owner, body: {}
   })).response.status, 200);
   const restored = await request(`/api/v1/thought-chains/${firstId}`, { cookie: owner });
   assert.equal(restored.response.headers.get("etag"), "\"3\"");
+  assert.equal((await request("/api/v1/personal-context", { cookie: owner })).body.data.sources.some(source => source.resourceId === firstId), true);
 
   const undated = await request("/api/v1/thought-chains", {
     method: "POST", cookie: owner, headers: { "idempotency-key": "chain-with-server-time" }, body: { question: "由服务端填写时间" }

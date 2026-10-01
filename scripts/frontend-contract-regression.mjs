@@ -41,6 +41,9 @@ await assert.rejects(client.request("/api/state"), { status: 401, code: "AUTH_RE
 assert.equal(locked, 1);
 assert.equal((await client.request("/api/auth/me", {}, { allowUnauthorized: true })).code, "AUTH_REQUIRED");
 assert.equal(locked, 1);
+fetchHandler = async () => Response.json({ error: { message: "登录状态已失效", code: "AUTH_REQUIRED" } }, { status: 401 });
+await assert.rejects(client.readBlob("/attachments/private.png"), { status: 401, code: "AUTH_REQUIRED", message: "登录状态已失效" });
+assert.equal(locked, 2);
 fetchHandler = async () => Response.json({
   error: { message: "资源版本已变化", code: "PRECONDITION_FAILED", details: { currentVersion: 3 } }
 }, { status: 412 });
@@ -49,8 +52,21 @@ await assert.rejects(client.request("/api/v1/actions/action-1", { method: "PATCH
   code: "PRECONDITION_FAILED",
   details: { currentVersion: 3 }
 });
+fetchHandler = async () => Response.json({
+  error: { message: "请求过于频繁", code: "RATE_LIMITED" }
+}, { status: 429, headers: { "retry-after": "4.5" } });
+await assert.rejects(
+  client.request("/api/v1/actions/action-1", { method: "PATCH", body: "{}" }),
+  error => error.status === 429 && error.retryAfterMs === 4500
+);
 fetchHandler = async () => new Response("", { status: 404 });
 assert.equal(await client.request("/api/local-test-mode", {}, { optional: true }), null);
+fetchHandler = async (url, options) => {
+  assert.equal(url, "/now/api/speech/synthesize");
+  assert.equal(options.method, "POST");
+  return new Response(new Uint8Array([0x49, 0x44, 0x33]), { headers: { "content-type": "audio/mpeg" } });
+};
+assert.equal((await client.requestBlob("/api/speech/synthesize", { method: "POST", body: "{}" })).size, 3);
 
 let foregroundAttempts = 0;
 client.markForeground();
@@ -102,8 +118,20 @@ await assert.rejects(client.requestStream("/api/draft", {}, () => rotateSession(
 
 resetState();
 const inFlight = [], updates = [];
+let overlayRestores = 0;
 const stop = subscribeState((next, domains, options) => updates.push({ next, domains: [...domains].sort(), options }));
-const coordinator = createRefreshCoordinator({ session: sessionScope, requestState: () => { const entry = deferred(); inFlight.push(entry); return entry.promise; } });
+const coordinator = createRefreshCoordinator({
+  session: sessionScope,
+  requestState: () => {
+    const entry = deferred();
+    inFlight.push(entry);
+    return entry.promise;
+  },
+  afterReplace: async () => {
+    overlayRestores += 1;
+    state.captures.push("pending");
+  }
+});
 const first = coordinator.refresh("captures"), second = coordinator.refresh("thoughts", { chainId: "root" });
 inFlight[0].resolve({ captures: ["old"] });
 assert.equal(await first, false);
@@ -111,7 +139,8 @@ inFlight[1].resolve({ captures: ["new"], thoughts: [] });
 assert.equal(await second, true);
 assert.deepEqual(updates[0].domains, ["captures", "thoughts"]);
 assert.equal(updates[0].options.chainId, "root");
-assert.deepEqual(state.captures, ["new"]);
+assert.deepEqual(state.captures, ["new", "pending"]);
+assert.equal(overlayRestores, 1);
 const stale = coordinator.refresh("books");
 rotateSession();
 coordinator.reset();
@@ -120,5 +149,6 @@ inFlight[2].resolve({ books: ["previous account"] });
 assert.equal(await stale, false);
 assert.deepEqual(state.books, []);
 assert.equal(updates.length, 1);
+assert.equal(overlayRestores, 1);
 stop();
 console.log("Frontend contracts passed: base path, errors, optional endpoints, session cancellation, delayed body/blob rejection, SSE chunks/termination, refresh domain coalescing and account reset.");

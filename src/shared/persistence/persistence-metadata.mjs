@@ -1,7 +1,14 @@
+import crypto from "node:crypto";
+
 const METADATA_FIELD = "_persistence";
 const METADATA_VERSION = 1;
 const IDEMPOTENCY_RETENTION_DAYS = 90;
 const IDEMPOTENCY_RETENTION_MS = IDEMPOTENCY_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+const SYNC_CHANGE_RETENTION_DAYS = 30;
+const SYNC_CHANGE_RETENTION_MS = SYNC_CHANGE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+const SYNC_CHANGE_LIMIT = 2000;
+const SYNC_OPERATION_RETENTION_MS = IDEMPOTENCY_RETENTION_MS;
+const SYNC_OPERATION_LIMIT = 5000;
 const LIFECYCLE_STATES = new Set(["active", "deleted", "formalized", "purged"]);
 const LIFECYCLES = new Set(["draft", "formal"]);
 const COLLECTION_TYPES = {
@@ -41,10 +48,29 @@ const lifecycle = (item, type) => (
 );
 const identity = (resourceType, resourceId) => `${resourceType}\u0000${resourceId}`;
 const clone = value => structuredClone(value);
+const serialized = value => JSON.stringify(value);
+const sha256 = value => crypto.createHash("sha256").update(value).digest("hex");
+const EMPTY_BODY_SHA256 = sha256("");
 const idempotencyExpiry = createdAt => {
   const created = new Date(createdAt || "");
   return Number.isNaN(created.getTime()) ? "" : new Date(created.getTime() + IDEMPOTENCY_RETENTION_MS).toISOString();
 };
+
+export function syncOperationFingerprint({
+  method = "",
+  resource = "",
+  contentType = "",
+  ifMatch = "",
+  requestBodySha256 = EMPTY_BODY_SHA256
+} = {}) {
+  return sha256(JSON.stringify({
+    method: String(method).toUpperCase(),
+    resource: String(resource),
+    contentType: String(contentType).toLowerCase(),
+    ifMatch: String(ifMatch),
+    requestBodySha256: String(requestBodySha256)
+  }));
+}
 
 function pruneIdempotency(metadata, at) {
   metadata.idempotency = metadata.idempotency.filter(entry => {
@@ -163,14 +189,60 @@ function validIdempotencyEntry(entry) {
     && typeof entry.createdAt === "string";
 }
 
+function validSyncChange(entry) {
+  return objectValue(entry)
+    && Number.isSafeInteger(entry.cursor)
+    && entry.cursor > 0
+    && typeof entry.domain === "string"
+    && entry.domain
+    && typeof entry.resourceId === "string"
+    && typeof entry.operationId === "string"
+    && Number.isSafeInteger(entry.version)
+    && entry.version >= 0
+    && ["create", "update", "delete", "reorder"].includes(entry.changeType)
+    && typeof entry.committedAt === "string";
+}
+
+function validSyncOperation(entry) {
+  return objectValue(entry)
+    && typeof entry.operationId === "string"
+    && entry.operationId
+    && /^[a-f0-9]{64}$/.test(entry.fingerprint)
+    && typeof entry.method === "string"
+    && entry.method
+    && typeof entry.resource === "string"
+    && entry.resource
+    && typeof entry.committedAt === "string"
+    && Number.isSafeInteger(entry.firstCursor)
+    && entry.firstCursor >= 0
+    && Number.isSafeInteger(entry.lastCursor)
+    && entry.lastCursor >= entry.firstCursor;
+}
+
 function ensureMetadata(document) {
   if (!objectValue(document)) throw new Error("Persistence document must be an object");
   if (!Object.hasOwn(document, METADATA_FIELD)) {
-    document[METADATA_FIELD] = { version: METADATA_VERSION, lifecycles: [], idempotency: [] };
+    document[METADATA_FIELD] = {
+      version: METADATA_VERSION,
+      lifecycles: [],
+      idempotency: [],
+      sync: { cursor: 0, changes: [], operations: [] }
+    };
   }
   const metadata = document[METADATA_FIELD];
   if (!objectValue(metadata) || !Array.isArray(metadata.lifecycles) || !Array.isArray(metadata.idempotency)) {
     throw Object.assign(new Error("Persistence metadata is invalid"), { code: "STORAGE_READ_FAILED" });
+  }
+  if (!Object.hasOwn(metadata, "sync")) metadata.sync = { cursor: 0, changes: [] };
+  if (!Object.hasOwn(metadata.sync, "operations")) metadata.sync.operations = [];
+  if (!objectValue(metadata.sync)
+    || !Number.isSafeInteger(metadata.sync.cursor)
+    || metadata.sync.cursor < 0
+    || !Array.isArray(metadata.sync.changes)
+    || !metadata.sync.changes.every(validSyncChange)
+    || !Array.isArray(metadata.sync.operations)
+    || !metadata.sync.operations.every(validSyncOperation)) {
+    throw Object.assign(new Error("Persistence sync metadata is invalid"), { code: "STORAGE_READ_FAILED" });
   }
   if (!metadata.lifecycles.every(validLifecycleEntry) || !metadata.idempotency.every(validIdempotencyEntry)) {
     throw Object.assign(new Error("Persistence metadata records are invalid"), { code: "STORAGE_READ_FAILED" });
@@ -178,10 +250,102 @@ function ensureMetadata(document) {
   metadata.version = METADATA_VERSION;
   const lifecycleKeys = metadata.lifecycles.map(item => item.resourceKey);
   const idempotencyKeys = metadata.idempotency.map(item => identity(item.scope, item.key));
-  if (new Set(lifecycleKeys).size !== lifecycleKeys.length || new Set(idempotencyKeys).size !== idempotencyKeys.length) {
+  const operationIds = metadata.sync.operations.map(item => item.operationId);
+  if (new Set(lifecycleKeys).size !== lifecycleKeys.length
+    || new Set(idempotencyKeys).size !== idempotencyKeys.length
+    || new Set(operationIds).size !== operationIds.length) {
     throw Object.assign(new Error("Persistence metadata contains duplicate keys"), { code: "STORAGE_READ_FAILED" });
   }
   return metadata;
+}
+
+function topLevelChanges(before, after) {
+  const changes = [];
+  for (const domain of new Set([...Object.keys(before || {}), ...Object.keys(after || {})])) {
+    if ([METADATA_FIELD, "version", "attachmentCleanup"].includes(domain)) continue;
+    const previous = before?.[domain], current = after?.[domain];
+    if (Array.isArray(previous) || Array.isArray(current)) {
+      const left = new Map((previous || []).map(item => [String(item?.id || ""), item]));
+      const right = new Map((current || []).map(item => [String(item?.id || ""), item]));
+      for (const resourceId of new Set([...left.keys(), ...right.keys()])) {
+        const oldValue = left.get(resourceId), nextValue = right.get(resourceId);
+        if (serialized(oldValue) === serialized(nextValue)) continue;
+        changes.push({
+          domain,
+          resourceId,
+          version: Math.max(0, Math.round(Number(nextValue?.version || oldValue?.version) || 0)),
+          changeType: oldValue == null ? "create" : nextValue == null ? "delete" : "update"
+        });
+      }
+      const previousOrder = (previous || []).map(item => String(item?.id || ""));
+      const currentOrder = (current || []).map(item => String(item?.id || ""));
+      if (serialized(previousOrder) !== serialized(currentOrder)
+        && !changes.some(item => item.domain === domain && item.changeType !== "update")) {
+        changes.push({ domain, resourceId: "", version: 0, changeType: "reorder" });
+      }
+      continue;
+    }
+    if (serialized(previous) === serialized(current)) continue;
+    changes.push({
+      domain,
+      resourceId: domain,
+      version: Math.max(0, Math.round(Number(current?.version || previous?.version) || 0)),
+      changeType: previous == null ? "create" : current == null ? "delete" : "update"
+    });
+  }
+  return changes;
+}
+
+function appendSyncChanges(metadata, before, after, at, context = {}) {
+  if (!before) return;
+  const operationId = String(context.operationId || context.clientOperationId || "").slice(0, 100);
+  const suppliedFingerprint = String(context.clientOperationFingerprint || "");
+  const fingerprint = suppliedFingerprint ? syncOperationFingerprint(context) : "";
+  if (suppliedFingerprint && suppliedFingerprint !== fingerprint) {
+    throw Object.assign(new Error("客户端操作指纹与请求不一致"), {
+      statusCode: 400,
+      code: "INVALID_OPERATION_FINGERPRINT"
+    });
+  }
+  const traceId = String(context.traceId || "").slice(0, 128);
+  const changes = topLevelChanges(before, after);
+  const firstCursor = metadata.sync.cursor + (changes.length ? 1 : 0);
+  for (const change of changes) {
+    metadata.sync.cursor += 1;
+    metadata.sync.changes.push({
+      cursor: metadata.sync.cursor,
+      ...change,
+      operationId,
+      traceId,
+      committedAt: at
+    });
+  }
+  const cutoff = new Date(new Date(at).getTime() - SYNC_CHANGE_RETENTION_MS).toISOString();
+  metadata.sync.changes = metadata.sync.changes
+    .filter(item => item.committedAt >= cutoff)
+    .slice(-SYNC_CHANGE_LIMIT);
+  const operationCutoff = new Date(new Date(at).getTime() - SYNC_OPERATION_RETENTION_MS).toISOString();
+  metadata.sync.operations = metadata.sync.operations
+    .filter(item => item.committedAt >= operationCutoff)
+    .slice(-SYNC_OPERATION_LIMIT);
+  if (!operationId || !fingerprint) return;
+  const existing = metadata.sync.operations.find(item => item.operationId === operationId);
+  if (existing && existing.fingerprint !== fingerprint) {
+    throw Object.assign(new Error("同一操作标识不能用于不同请求"), {
+      statusCode: 409,
+      code: "OPERATION_ID_REUSED"
+    });
+  }
+  if (!existing) metadata.sync.operations.push({
+    operationId,
+    fingerprint,
+    method: String(context.method || "").slice(0, 16),
+    resource: String(context.resource || context.route || "").slice(0, 500),
+    committedAt: at,
+    firstCursor,
+    lastCursor: metadata.sync.cursor
+  });
+  metadata.sync.operations = metadata.sync.operations.slice(-SYNC_OPERATION_LIMIT);
 }
 
 function appendEvent(entry, event, at, details = {}) {
@@ -189,7 +353,10 @@ function appendEvent(entry, event, at, details = {}) {
   entry.updatedAt = at;
 }
 
-export function synchronizePersistenceMetadata(before, after, now = () => new Date().toISOString(), { force = false } = {}) {
+export function synchronizePersistenceMetadata(before, after, now = () => new Date().toISOString(), {
+  force = false,
+  context = {}
+} = {}) {
   if (!force && !Array.isArray(after?.trash)) return after;
   const at = timestamp(now()) || new Date().toISOString();
   const metadata = ensureMetadata(after);
@@ -288,6 +455,7 @@ export function synchronizePersistenceMetadata(before, after, now = () => new Da
   metadata.lifecycles = [...entries.values()].sort((a, b) => (
     a.resourceType.localeCompare(b.resourceType) || a.resourceId.localeCompare(b.resourceId)
   ));
+  appendSyncChanges(metadata, before, after, at, context);
   return after;
 }
 
@@ -349,4 +517,10 @@ export function removeIdempotencyResponse(document, { scope, key }) {
   return true;
 }
 
-export { IDEMPOTENCY_RETENTION_DAYS, METADATA_FIELD, METADATA_VERSION };
+export {
+  IDEMPOTENCY_RETENTION_DAYS,
+  METADATA_FIELD,
+  METADATA_VERSION,
+  SYNC_CHANGE_LIMIT,
+  SYNC_CHANGE_RETENTION_DAYS
+};
