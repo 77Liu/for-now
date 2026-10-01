@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { decodeAudioDataUrl } from "./audio.mjs";
 import { decodeImages } from "./images.mjs";
 import { createKeepsakeImageDerivatives } from "./derivatives.mjs";
 
@@ -121,6 +122,23 @@ export function createImageAttachments({
     return persistPrepared(decoded, { persist, needsLocalFiles });
   }
 
+  async function saveAudio(audio, { maxBytes = defaultMaxBytes } = {}) {
+    const { attachmentsDir } = getContext();
+    const decoded = decodeAudioDataUrl(audio, { maxBytes });
+    const name = `${createId()}.${decoded.extension}`;
+    const saved = await persistPrepared([{
+      ...decoded,
+      name,
+      file: path.join(attachmentsDir, name)
+    }]);
+    return {
+      ...saved,
+      attachmentPath: saved.attachmentPaths[0],
+      mimeType: decoded.mimeType,
+      bytes: decoded.bytes
+    };
+  }
+
   async function saveKeepsakeSet({ image, alphaMask, maxBytes = defaultMaxBytes }) {
     const { attachmentsDir } = getContext();
     const [source] = decodeImages([image], { maxImages: 1, maxBytes });
@@ -172,8 +190,49 @@ export function createImageAttachments({
     };
   }
 
+  async function previewKeepsakeSet({ originalPath, alphaMaskPath, requirePrimaryStorage = false }) {
+    if (!/^\/attachments\/[\w.-]+$/.test(originalPath || "")
+      || !/^\/attachments\/[\w.-]+$/.test(alphaMaskPath || "")) {
+      throw new TypeError("Existing original and Alpha mask paths are required");
+    }
+    const context = getContext();
+    const sourceLocations = {
+      original: location(originalPath, context),
+      alphaMask: location(alphaMaskPath, context)
+    };
+    if (requirePrimaryStorage) {
+      await Promise.all(Object.values(sourceLocations).map(value => storage.inspect({
+        ...value,
+        allowLocalFallback: false
+      })));
+    }
+    const [original, alphaMask] = await Promise.all([
+      storage.get(sourceLocations.original),
+      storage.get(sourceLocations.alphaMask)
+    ]);
+    const derivatives = await deriveKeepsakeImages({ original, alphaMask });
+    return {
+      source: {
+        original: {
+          bytes: original.length,
+          sha256: crypto.createHash("sha256").update(original).digest("hex")
+        },
+        alphaMask: {
+          bytes: alphaMask.length,
+          sha256: crypto.createHash("sha256").update(alphaMask).digest("hex")
+        }
+      },
+      derivatives: Object.fromEntries(Object.entries(derivatives).map(([kind, { data, ...metadata }]) => [
+        kind,
+        { ...metadata, sha256: crypto.createHash("sha256").update(data).digest("hex") }
+      ]))
+    };
+  }
+
   return {
-    save, saveKeepsakeSet, deriveKeepsakeSet, discard, remove, recover, prepareDirectory,
+    save, saveAudio, saveKeepsakeSet, deriveKeepsakeSet, previewKeepsakeSet,
+    discard, remove, recover, prepareDirectory,
+    inspect: (resourcePath, options = {}) => storage.inspect({ ...location(resourcePath, getContext()), ...options }),
     read: resourcePath => storage.get(location(resourcePath, getContext()))
   };
 }

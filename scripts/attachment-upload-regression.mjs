@@ -3,12 +3,14 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createAttachmentStorage, createImageAttachments, cleanupTemporaryFiles, imageDimensions } from "../src/shared/attachments/index.mjs";
+import { createAttachmentStorage, createImageAttachments, cleanupTemporaryFiles, decodeAudioDataUrl, imageDimensions } from "../src/shared/attachments/index.mjs";
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "growth-uploads-"));
 const scope = new AsyncLocalStorage();
 const pixel = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 const png = Buffer.from(pixel.split(",")[1], "base64");
+const m4a = Buffer.from([0, 0, 0, 20, 0x66, 0x74, 0x79, 0x70, 0x4d, 0x34, 0x41, 0x20]);
+const audio = `data:audio/mp4;base64,${m4a.toString("base64")}`;
 const context = (group, ownerId) => {
   const dataDir = path.join(root, group, ownerId);
   return { ownerId, dataDir, attachmentsDir: path.join(dataDir, "attachments") };
@@ -19,6 +21,14 @@ const options = { getContext: () => scope.getStore(), quotaBytes: png.length, de
 try {
   assert.deepEqual(imageDimensions(png, "image/png"), { width: 1, height: 1 });
   assert.deepEqual(imageDimensions(png, "image/jpeg"), { width: 0, height: 0 });
+  assert.deepEqual(decodeAudioDataUrl(audio, { maxBytes: 1024 }), {
+    data: m4a,
+    mimeType: "audio/mp4",
+    extension: "m4a",
+    bytes: m4a.length
+  });
+  assert.throws(() => decodeAudioDataUrl("data:audio/mp4;base64,AAAA", { maxBytes: 1024 }), /格式不匹配/);
+  assert.throws(() => decodeAudioDataUrl("data:audio/mpeg;base64,AAAA", { maxBytes: 1024 }), /M4A/);
   for (const mode of ["local", "mock"]) {
     const storage = createAttachmentStorage({ mode, testMode: true, mockDir: path.join(root, `${mode}-objects`) });
     const uploads = createImageAttachments({ ...options, storage });
@@ -61,6 +71,12 @@ try {
       // A rejected upload must not poison the account's queue.
       const retry = await uploads.save([pixel]);
       await uploads.remove(retry.attachmentPaths[0]);
+      const recorded = await uploads.saveAudio(audio, { maxBytes: 1024 });
+      assert.equal(recorded.mimeType, "audio/mp4");
+      assert.equal(recorded.bytes, m4a.length);
+      assert.match(recorded.attachmentPath, /^\/attachments\/[\w.-]+\.m4a$/);
+      assert.deepEqual(await uploads.read(recorded.attachmentPath), m4a);
+      await uploads.remove(recorded.attachmentPath);
     });
 
     // Fail after a partial two-image batch: local and mock binaries both clean up.
@@ -165,7 +181,7 @@ try {
     assert.deepEqual(confirmed, []);
     assert.deepEqual(removed, [], "A storage outage must not erase pending inventory");
   });
-  console.log("Attachment upload checks passed: image validation, per-account quota races, local/mock batches, temporary files, inventory ordering, deferred cleanup and startup recovery.");
+  console.log("Attachment upload checks passed: image/audio validation, per-account quota races, local/mock batches, temporary files, inventory ordering, deferred cleanup and startup recovery.");
 } finally {
   await fs.rm(root, { recursive: true, force: true });
 }

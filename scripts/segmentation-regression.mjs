@@ -25,18 +25,18 @@ const attachments = createImageAttachments({
   storage: createAttachmentStorage({ mode: "local" }), getContext: location,
   quotaBytes: 1024 * 1024, defaultMaxBytes: 1024 * 1024
 });
-const records = [], failures = [];
+const records = [], usageRecords = [], failures = [];
 let logsFail = false, usageWrites = 0;
 const audit = createAiAudit({
   textLimit: 10000, getContext: () => context.getStore(),
   append: async (day, entry) => { if (logsFail) throw new Error("audit unavailable"); records.push(entry); },
-  updateUsage: async () => { usageWrites += 1; }, logEvent: async () => {}
+  updateUsage: async mutate => { usageWrites += 1; mutate({ entries: usageRecords }); }, logEvent: async () => {}
 });
 function transport(options = {}) {
   const calls = [], streams = [], sleeps = [];
   let time = 0, clientLoads = 0;
   const provider = createAliyunSegmentationTransport({
-    auditCall: audit.segmentationCall,
+    auditCall: audit.providerCall,
     clock: () => time, sleep: async ms => { sleeps.push(ms); time += ms; },
     getClients: () => {
       clientLoads += 1;
@@ -100,14 +100,29 @@ try {
   assert.equal(new Set(asyncRecords.map(entry => entry.callId)).size, 4);
   for (const entry of asyncRecords) {
     assert.equal(entry.traceId, "trace-async");
-    assert.deepEqual([entry.usage.known, entry.usage.applicable], [false, false]);
     assert.equal(entry.maxAttempts, 1);
+  }
+  for (const entry of asyncRecords.filter(entry => entry.status !== "started")) {
+    assert.equal(entry.usage.known, false);
+    assert.equal(entry.usage.costSource, "Aliyun billing not configured");
   }
   const source = asyncRecords.find(entry => entry.action === "SegmentHDCommonImage").request.images[0];
   assert.deepEqual(source, { index: 0, mimeType: "image/png", bytes: bytes.length, width: 1, height: 1, sha256: crypto.createHash("sha256").update(bytes).digest("hex") });
   const output = asyncRecords.find(entry => entry.action === "DownloadSegmentResult" && entry.status === "success").response;
   assert.deepEqual(output, { mimeType: source.mimeType, bytes: source.bytes, sha256: source.sha256 });
   assert.ok(!JSON.stringify(asyncRecords).includes(pixel));
+  assert.ok(!JSON.stringify(asyncRecords).includes(imageUrl));
+  const asyncUsage = usageRecords.filter(entry => entry.traceId === "trace-async");
+  assert.equal(asyncUsage.length, 4);
+  assert.ok(asyncUsage.every(entry => (
+    entry.provider === "aliyun"
+    && entry.service === "segmentation"
+    && entry.scene === "keepsakeSegmentation"
+    && entry.modality === "vision"
+    && entry.costKnown === false
+  )));
+  assert.equal(asyncUsage.find(entry => entry.action === "SegmentHDCommonImage").imageCount, 1);
+  assert.equal(asyncUsage.find(entry => entry.action === "SegmentHDCommonImage").imageBytes, bytes.length);
 
   const cases = [
     ["no-job", { submit: () => ({ body: {} }) }, /任务编号/],
@@ -139,6 +154,7 @@ try {
     await noTemporaryFiles(id);
   }
   assert.equal(records.filter(entry => entry.actor.userId === "credentials" && entry.status === "failed").length, 1);
+  assert.equal(usageRecords.find(entry => entry.traceId === "trace-credentials" && entry.status === "failed").costKnown, false);
 
   logsFail = true;
   const unlogged = transport();
@@ -150,9 +166,12 @@ try {
   assert.deepEqual(mock.calls, []); assert.deepEqual(mock.sleeps, [25]);
   assert.equal(mock.clientLoads(), 0);
   assert.equal(records.find(entry => entry.actor.userId === "mock").request.mocked, true);
+  assert.equal(usageRecords.find(entry => entry.traceId === "trace-mock").costKnown, true);
   await assert.rejects(run("bad-mock", () => workflow(transport({ provider: { mockResult: "invalid" } }).provider)({ image: pixel })), /测试轮廓不是有效/);
   await noTemporaryFiles("bad-mock");
-  assert.equal(usageWrites, 0);
+  assert.ok(usageWrites > 0);
+  assert.ok(!JSON.stringify(records).includes(imageUrl));
+  assert.ok(!JSON.stringify(usageRecords).includes(pixel));
 
   // Shared queue must preserve account context, FIFO, and both independent limits.
   const gate = createRateGate(2, 1), entered = [], active = new Set();

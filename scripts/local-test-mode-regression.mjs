@@ -67,6 +67,7 @@ const remoteKeepsake = {
   mediaVersion: 1
 };
 const remoteKeepsakeOriginal = "/attachments/remote-keepsake.original.jpg";
+const upstreamAttachmentDelayMs = Math.max(0, Number(process.env.LOCAL_TEST_UPSTREAM_DELAY_MS) || 0);
 const upstream = http.createServer(async (request, response) => {
   for await (const chunk of request) { void chunk; }
   const url = new URL(request.url, "http://127.0.0.1");
@@ -107,6 +108,7 @@ const upstream = http.createServer(async (request, response) => {
     return response.end(JSON.stringify({ originalPath: remoteKeepsakeOriginal }));
   }
   if (url.pathname.startsWith("/attachments/") && request.method === "GET") {
+    if (upstreamAttachmentDelayMs) await new Promise(resolve => setTimeout(resolve, upstreamAttachmentDelayMs));
     response.setHeader("content-type", url.pathname.endsWith(".webp") ? "image/webp" : "image/png");
     return response.end(Buffer.from(`remote-image:${url.pathname}`));
   }
@@ -172,11 +174,15 @@ try {
   assert.equal((await jsonRequest(`${base}/api/state`)).body.captures.length, 1);
 
   const resetCold = await jsonRequest(`${base}/api/local-test-mode`, { method: "POST", body: JSON.stringify({ mode: "cold" }) });
-  assert.equal(resetCold.response.status, 200);
+  assert.equal(resetCold.response.status, 200, `${JSON.stringify(resetCold.body)}\n${stderr}`);
   assert.equal((await jsonRequest(`${base}/api/state`)).body.captures.length, 0);
   assert.equal((await jsonRequest(`${base}/api/settings`)).body.assistantName, "神鸡");
 
+  const simulationStartedAt = Date.now();
   const simulation = await jsonRequest(`${base}/api/local-test-mode`, { method: "POST", headers: { cookie }, body: JSON.stringify({ mode: "simulation" }) });
+  if (upstreamAttachmentDelayMs) {
+    assert.ok(Date.now() - simulationStartedAt < upstreamAttachmentDelayMs * 1.75, "keepsake attachments must download concurrently");
+  }
   assert.equal(simulation.response.status, 200);
   assert.equal(simulation.body.mode, "simulation");
   assert.equal(simulation.body.sourceUser.id, "main-user");

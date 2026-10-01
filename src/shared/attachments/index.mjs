@@ -2,6 +2,7 @@ import { safeText } from "../validation/index.mjs";
 
 export { createAttachmentStorage } from "./storage.mjs";
 export { createImageAttachments, cleanupTemporaryFiles } from "./uploads.mjs";
+export { AUDIO_MIME_TYPES, decodeAudioDataUrl } from "./audio.mjs";
 export { cleanAttachmentPaths, imageDimensions, readImageFile } from "./images.mjs";
 export {
   KEEPSAKE_DERIVATIVE_PROFILES,

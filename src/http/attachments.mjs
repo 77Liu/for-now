@@ -1,7 +1,10 @@
 export function createAttachmentHttp({
   attachments,
   uploadOriginals = null,
+  uploadKeepsake = null,
   discardUploads = null,
+  uploadAudio = null,
+  discardAudio = null,
   bodyJson,
   sendJson,
   uploadBodyMaxBytes,
@@ -18,12 +21,20 @@ export function createAttachmentHttp({
             sendJson(res, 400, { error: "请同时提供小物原图和 Alpha 蒙版" });
             return true;
           }
-          const { paths } = await attachments.saveKeepsakeSet({
-            image: input.image,
-            alphaMask: input.alphaMask,
-            maxBytes: uploadImageMaxBytes
+          const result = typeof uploadKeepsake === "function"
+            ? await uploadKeepsake(req, input)
+            : await attachments.saveKeepsakeSet({
+                image: input.image,
+                alphaMask: input.alphaMask,
+                maxBytes: uploadImageMaxBytes
+              });
+          const paths = result.paths || result;
+          sendJson(res, result.duplicate ? 200 : 201, {
+            attachmentPath: paths.originalPath,
+            attachmentPaths: result.attachmentPaths || Object.values(paths),
+            ...paths,
+            ...(result.duplicate ? { duplicate: true } : {})
           });
-          sendJson(res, 201, { attachmentPath: paths.originalPath, ...paths });
           return true;
         }
         if (input.purpose && input.purpose !== "original") {
@@ -41,9 +52,24 @@ export function createAttachmentHttp({
         else if (/请选择|图片|大小/.test(error.message || "")) sendJson(res, 400, { error: error.message });
         else throw error;
       }
+    } else if (req.method === "POST" && url.pathname === "/api/audio/upload" && typeof uploadAudio === "function") {
+      try {
+        const input = await bodyJson(req, uploadBodyMaxBytes);
+        sendJson(res, 201, await uploadAudio(req, input));
+      } catch (error) {
+        if (error.code === "IDEMPOTENCY_KEY_REUSED") sendJson(res, 409, { error: "同一幂等键不能用于不同音频", code: error.code });
+        else if (error.statusCode) sendJson(res, error.statusCode, { error: error.message, code: error.code });
+        else if (/音频|录音|M4A|WebM|Ogg|WAV/.test(error.message || "")) sendJson(res, 400, { error: error.message, code: "INVALID_AUDIO" });
+        else throw error;
+      }
     } else if (req.method === "POST" && url.pathname === "/api/images/discard" && typeof discardUploads === "function") {
       const input = await bodyJson(req);
-      const result = await discardUploads(input.attachmentPaths, input.uploadRequestId);
+      const scope = input.purpose === "keepsake" ? "attachments.uploadKeepsake" : "attachments.uploadOriginals";
+      const result = await discardUploads(input.attachmentPaths, input.uploadRequestId, scope);
+      sendJson(res, 200, result);
+    } else if (req.method === "POST" && url.pathname === "/api/audio/discard" && typeof discardAudio === "function") {
+      const input = await bodyJson(req);
+      const result = await discardAudio(input.attachmentPath, input.uploadRequestId);
       sendJson(res, 200, result);
     } else if (url.pathname.startsWith("/attachments/")) {
       if (!["GET", "HEAD"].includes(req.method || "GET")) {

@@ -66,7 +66,7 @@ export function createAttachmentStorage({
     }
   }
 
-  async function inspect({ ownerId, name, localFile }) {
+  async function inspect({ ownerId, name, localFile, allowLocalFallback = true }) {
     const local = async file => {
       const stat = await fs.lstat(file);
       if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("Attachment must be a regular file");
@@ -79,6 +79,7 @@ export function createAttachmentStorage({
         data = mode === "mock" ? await local(mockFile(ownerId, name)) : (await (await client()).get(key)).content;
       } catch (error) {
         if (!["ENOENT", "NoSuchKey"].includes(error?.code) && Number(error?.status) !== 404) throw error;
+        if (!allowLocalFallback) throw error;
         data = await local(localFile);
         storage = "local";
         key = name;

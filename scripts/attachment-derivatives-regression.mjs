@@ -10,8 +10,12 @@ import {
   createKeepsakeImageDerivatives
 } from "../src/shared/attachments/index.mjs";
 import {
+  KEEPSAKE_BATCH_MAX_ITEMS,
+  createKeepsakeBatchItems,
+  discardKeepsakeMedia,
   keepsakeMediaSources,
   keepsakeUploadPayload,
+  nextKeepsakeBatchIndex,
   uploadKeepsakeMedia
 } from "../public/frontend/features/index.mjs";
 import { createAttachmentHttp } from "../src/http/index.mjs";
@@ -219,11 +223,32 @@ try {
       return { ...saved.paths };
     },
     image: "source",
-    alphaMask: "mask"
+    alphaMask: "mask",
+    idempotencyKey: "keepsake-upload-1"
   });
-  assert.deepEqual(uploaded, saved.paths);
+  assert.deepEqual(uploaded, { ...saved.paths, attachmentPaths: Object.values(saved.paths) });
   assert.equal(requests.length, 1, "the original and derivatives must use one server batch");
   assert.equal(requests[0].url, "/api/images/upload");
+  assert.equal(requests[0].options.headers["idempotency-key"], "keepsake-upload-1");
+  const batchItems = createKeepsakeBatchItems([{ name: "a.png" }, { name: "b.png" }], {
+    occurredAt: "2026-09-29T12:00:00",
+    createId: (() => { let id = 0; return () => `batch-${++id}`; })()
+  });
+  assert.equal(KEEPSAKE_BATCH_MAX_ITEMS, 8);
+  assert.deepEqual(batchItems.map(item => [item.itemId, item.occurredAt, item.status]), [
+    ["batch-1", "2026-09-29T12:00:00", "waiting"],
+    ["batch-2", "2026-09-29T12:00:00", "waiting"]
+  ]);
+  assert.equal(nextKeepsakeBatchIndex([{}, {}], 2), 1);
+  assert.throws(() => createKeepsakeBatchItems(new Array(9).fill({})), /最多选择 8 张/);
+  assert.deepEqual(await discardKeepsakeMedia({
+    request: async (url, options) => ({ url, payload: JSON.parse(options.body) }),
+    attachmentPaths: uploaded.attachmentPaths,
+    uploadRequestId: "keepsake-upload-1"
+  }), {
+    url: "/api/images/discard",
+    payload: { purpose: "keepsake", attachmentPaths: uploaded.attachmentPaths, uploadRequestId: "keepsake-upload-1" }
+  });
 
   let response;
   const http = createAttachmentHttp({
@@ -243,7 +268,7 @@ try {
   );
   assert.deepEqual(response, {
     status: 201,
-    value: { attachmentPath: saved.paths.originalPath, ...saved.paths }
+    value: { attachmentPath: saved.paths.originalPath, attachmentPaths: Object.values(saved.paths), ...saved.paths }
   });
   await http.handle(
     { method: "POST", body: { purpose: "original", image: "source" } },

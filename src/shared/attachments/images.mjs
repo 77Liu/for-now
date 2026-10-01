@@ -16,8 +16,8 @@ export async function readImageFile(file, index = 0) {
   };
 }
 
-export function cleanAttachmentPaths(value) {
-  return (Array.isArray(value) ? value : []).map(item => safeText(item, 300)).filter(item => /^\/attachments\/[\w.-]+$/.test(item)).slice(0, 2);
+export function cleanAttachmentPaths(value, maxImages = 2) {
+  return (Array.isArray(value) ? value : []).map(item => safeText(item, 300)).filter(item => /^\/attachments\/[\w.-]+$/.test(item)).slice(0, maxImages);
 }
 
 export function imageDimensions(data, mimeType) {
