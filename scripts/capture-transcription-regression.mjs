@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import { createAiTaskTargets, createBackgroundAi } from "../src/app/index.mjs";
 import { createAnnotationService } from "../src/modules/annotations/index.mjs";
 import { createNotificationService } from "../src/modules/notifications/index.mjs";
-import { createTaskLifecycle } from "../src/modules/tasks/index.mjs";
+import { activeTaskForInput, createTaskLifecycle } from "../src/modules/tasks/index.mjs";
 
 let tick = 0;
 const now = () => `2026-10-01T00:00:${String(++tick).padStart(2, "0")}.000Z`;
@@ -151,4 +151,44 @@ assert.equal(store.aiTasks.find(task => task.id === "interrupted-task").status, 
 assert.equal(store.captures.find(item => item.id === "capture-c").transcription.status, "failed");
 assert.equal(store.captures.find(item => item.id === "capture-c").transcription.errorCode, "TASK_INTERRUPTED");
 
-console.log("Capture transcription checks passed: queue state, durable result save, failure projection and interrupted-task recovery.");
+store.captures.unshift({
+  id: "capture-d",
+  content: "",
+  audio: { ...audio, attachmentPath: "/attachments/fourth-old.m4a" },
+  transcription: {
+    status: "unconfigured",
+    provider: "",
+    rawText: "",
+    polishedText: "",
+    updatedAt: "",
+    errorCode: "ASR_NOT_CONFIGURED"
+  },
+  version: 1
+});
+const stale = await background.enqueue({
+  kind: "captureTranscription",
+  targetId: "capture-d",
+  clientRequestId: "transcription-d-old"
+});
+const changedCapture = store.captures.find(item => item.id === "capture-d");
+changedCapture.audio = { ...audio, attachmentPath: "/attachments/fourth-new.m4a" };
+changedCapture.transcription = {
+  status: "unconfigured",
+  provider: "",
+  rawText: "",
+  polishedText: "",
+  updatedAt: "",
+  errorCode: "ASR_NOT_CONFIGURED"
+};
+changedCapture.version = 2;
+const nextInputHash = hash(JSON.stringify({ targetId: "capture-d", audio: changedCapture.audio }));
+assert.equal(activeTaskForInput(store.aiTasks, {
+  kind: "captureTranscription",
+  targetId: "capture-d",
+  inputHash: nextInputHash
+}), null);
+await background.run(stale.task.id);
+assert.equal(store.aiTasks.find(task => task.id === stale.task.id).status, "stale");
+assert.equal(store.captures.find(item => item.id === "capture-d").transcription.status, "unconfigured");
+
+console.log("Capture transcription checks passed: queue state, durable result save, failure projection, interrupted-task recovery and stale-audio isolation.");

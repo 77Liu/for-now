@@ -198,8 +198,8 @@ export function createAiTaskTargets({
     },
     started(store, task) {
       if (task.kind !== "captureTranscription") return;
-      const capture = store.captures?.find(item => item.id === task.targetId);
-      if (capture?.audio?.attachmentPath) capture.transcription.status = "transcribing";
+      const work = captureTranscriptionWork(store, task);
+      if (work && task.inputHash === work.inputHash) work.capture.transcription.status = "transcribing";
     },
     fail(store, task, error) {
       if (task.kind !== "captureTranscription") return;

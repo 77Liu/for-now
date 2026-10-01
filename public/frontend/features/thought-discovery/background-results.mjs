@@ -163,7 +163,12 @@ function mergeCaptureTranscription(snapshot, task, result) {
     return { value: snapshot, changed: false };
   }
   const captures = Array.isArray(snapshot?.captures) ? snapshot.captures : [];
-  if (!captures.some(item => item?.id === task.targetId)) return { value: snapshot, changed: false };
+  const current = captures.find(item => item?.id === task.targetId);
+  if (!current
+    || !current.audio?.attachmentPath
+    || current.audio.attachmentPath !== result.audio?.attachmentPath) {
+    return { value: snapshot, changed: false };
+  }
   return {
     value: {
       ...snapshot,

@@ -24,7 +24,10 @@ import {
 } from "../public/frontend/time/index.mjs";
 import {
   AUDIO_MAX_BYTES,
+  captureAudioIdentity,
+  captureAudioPresentation,
   captureRecordPayload,
+  captureSpeechIdentity,
   createIndexedDbMediaDraftStore,
   createMemoryMediaDraftStore,
   IMAGE_MAX_BYTES,
@@ -239,6 +242,56 @@ if (process.argv.includes("--timezone-case")) {
     inputVersion: 2,
     attachmentPaths: ["/attachments/a.png"]
   });
+  const audioCapture = {
+    id: "capture-audio",
+    version: 2,
+    content: "朗读这段文字",
+    audio: {
+      attachmentPath: "/attachments/voice.m4a",
+      mimeType: "audio/mp4",
+      bytes: 4096,
+      durationMs: 1250
+    },
+    transcription: {
+      status: "failed",
+      rawText: "",
+      polishedText: "",
+      updatedAt: "2026-10-02T00:00:00.000Z",
+      errorCode: "ASR_PROVIDER_FAILED"
+    }
+  };
+  assert.equal(captureAudioIdentity(audioCapture), captureAudioIdentity(structuredClone(audioCapture)));
+  assert.notEqual(captureAudioIdentity(audioCapture), captureAudioIdentity({ ...audioCapture, version: 3 }));
+  assert.notEqual(
+    captureAudioIdentity(audioCapture),
+    captureAudioIdentity({ ...audioCapture, audio: { ...audioCapture.audio, attachmentPath: "/attachments/new.m4a" } })
+  );
+  assert.notEqual(
+    captureSpeechIdentity(audioCapture, "voice-a"),
+    captureSpeechIdentity({ ...audioCapture, version: 3 }, "voice-a")
+  );
+  assert.notEqual(captureSpeechIdentity(audioCapture, "voice-a"), captureSpeechIdentity(audioCapture, "voice-b"));
+  assert.deepEqual(
+    captureAudioPresentation(audioCapture, {
+      configured: true,
+      supportedAsrMimeTypes: ["audio/mp4"]
+    }, [{
+      id: "task-current-audio",
+      kind: "captureTranscription",
+      targetId: "capture-audio",
+      status: "failed",
+      createdAt: "2026-10-02T00:01:00.000Z"
+    }]),
+    {
+      audioKey: captureAudioIdentity(audioCapture),
+      audioReady: true,
+      audioStatus: "原音可播放",
+      transcriptionStatus: "failed",
+      transcriptionMessage: "转写暂时失败。原音已保留，可以再次尝试。",
+      transcriptionTaskId: "task-current-audio",
+      canTranscribe: true
+    }
+  );
   const mediaDraftStore = createMemoryMediaDraftStore();
   const pendingImage = new Blob(["pending-image"], { type: "image/png" });
   await mediaDraftStore.put({

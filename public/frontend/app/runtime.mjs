@@ -46,7 +46,10 @@ import {
 } from "../features/index.mjs";
 import {
   AUDIO_MAX_DURATION_MS,
+  captureAudioIdentity,
+  captureAudioPresentation,
   captureRecordPayload,
+  captureSpeechIdentity,
   createIndexedDbMediaDraftStore,
   imageRecordPayload,
   imageUnderstandingPayload,
@@ -84,7 +87,7 @@ let backgroundResultController=null;
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},automaticAnswers:{thoughtAnswer:false},hasApiKey:false,keyHint:""};
 let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiCostRequestSerial=0,architectureStage=0,architectureTerm="api",commercialMode="validation",commercialStatistics=null,commercialRequestSerial=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,discoveryController=null,actionsSnapshot={actions:[],habits:[],habitCheckins:[]},actionsRequestSerial=0,feedbackItems=[],feedbackRequestSerial=0,exportManifest=null,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,appVersion="0.2.0",releaseVersion="0.2.0",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
-let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeEditorTrigger=null,activeSpeechCaptureId="",activeSpeechAudio=null,activeSpeechObjectUrl="",activeSpeechAbortController=null;
+let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeEditorTrigger=null,activeSpeechCaptureId="",activeSpeechSourceKey="",activeSpeechVoice="",activeSpeechAudio=null,activeSpeechObjectUrl="",activeSpeechAbortController=null;
 const keepsakeEditor={file:null,sourceDataUrl:"",sourceImage:null,sourceCanvas:null,maskCanvas:null,autoBase:null,history:[],mode:"keep",drawing:false,lastPoint:null,source:"manual",originalPath:"",cutoutPath:"",renderFrame:0,segmentSerial:0};
 const keepsakeBatch={items:[],activeIndex:0,loading:false};
 let keepsakeBatchPreviewUrls=[],keepsakeBatchPersistTimer=0;
@@ -1510,40 +1513,50 @@ function renderThoughts(extraOpen={}){const open=thoughtOpenState(),todayDrafts=
 function captureAudioMarkup(item){
   const audio=item.audio,transcription=item.transcription||null,speech=transcription?.polishedText||transcription?.rawText||plainPreview(item.content||"");
   if(!audio&&!speech)return"";
-  const supported=audio&&state.speech?.supportedAsrMimeTypes?.includes(audio.mimeType),canTranscribe=Boolean(audio&&state.speech?.configured&&supported);
+  const presentation=captureAudioPresentation(item,state.speech,state.aiTasks);
   const layers=[
-    transcription?.rawText?`<div class="capture-transcription"><small>ASR 原文</small><p>${escapeHtml(transcription.rawText)}</p></div>`:"",
+    transcription?.rawText?`<div class="capture-transcription"><small>转写原文</small><p>${escapeHtml(transcription.rawText)}</p></div>`:"",
     transcription?.polishedText?`<div class="capture-transcription polished"><small>AI 整理稿</small><div class="markdown-content">${renderMarkdown(transcription.polishedText)}</div></div>`:""
   ].join("");
   let transcriptionState="";
-  if(audio&&["queued","transcribing"].includes(transcription?.status))transcriptionState='<p class="capture-transcription-state">正在后台转写，完成后会通知。</p>';
-  else if(audio&&transcription?.status==="failed")transcriptionState=`<p class="capture-transcription-state error">转写未完成。${canTranscribe?`<button type="button" class="subtle-action" data-capture-transcribe="${escapeHtml(item.id)}">重试</button>`:""}</p>`;
-  else if(audio&&transcription?.status==="unconfigured"){
-    if(!state.speech?.configured)transcriptionState='<p class="capture-transcription-state">ASR 服务尚未配置，语音原件已保留。</p>';
-    else if(!supported)transcriptionState='<p class="capture-transcription-state">该原件格式暂不能转写，请改用 M4A、Ogg 或 WAV。</p>';
-    else transcriptionState=`<p class="capture-transcription-state">语音原件尚未转写。<button type="button" class="subtle-action" data-capture-transcribe="${escapeHtml(item.id)}">开始转写</button></p>`;
+  if(presentation.transcriptionMessage){
+    const action=presentation.canTranscribe&&["failed","unconfigured"].includes(presentation.transcriptionStatus)
+      ?`<button type="button" class="subtle-action" data-capture-transcribe="${escapeHtml(item.id)}" data-capture-audio-key="${escapeHtml(presentation.audioKey)}">${presentation.transcriptionStatus==="failed"?"重试":"开始转写"}</button>`
+      :"";
+    transcriptionState=`<p class="capture-transcription-state ${presentation.transcriptionStatus==="failed"?"error":""}" data-transcription-task-id="${escapeHtml(presentation.transcriptionTaskId)}">${escapeHtml(presentation.transcriptionMessage)}${action}</p>`;
   }
   const voices=state.speech?.voices||[],voiceOptions=voices.map(voice=>`<option value="${escapeHtml(voice.id)}" ${voice.id===state.speech?.defaultVoice?"selected":""}>${escapeHtml(voice.label)}</option>`).join("");
-  return `<section class="capture-audio-record">${audio?`<div class="capture-audio-source"><audio controls preload="metadata" src="${escapeHtml(appUrl(audio.attachmentPath))}"></audio><span>${formatAudioDuration(audio.durationMs)} · 原件</span></div>`:""}${layers}${transcriptionState}${speech&&state.speech?.configured?`<div class="capture-speech-actions"><select data-capture-voice aria-label="朗读音色">${voiceOptions}</select><button type="button" class="capture-speak-button" data-capture-speak="${escapeHtml(item.id)}" title="朗读文字" aria-label="朗读文字">▶</button><button type="button" data-capture-speech-pause title="暂停或继续朗读" aria-label="暂停或继续朗读">Ⅱ</button><button type="button" data-capture-speech-stop title="停止朗读" aria-label="停止朗读">■</button></div>`:""}</section>`
+  const speechKey=captureSpeechIdentity(item,state.speech?.defaultVoice);
+  return `<section class="capture-audio-record" data-capture-audio-key="${escapeHtml(presentation.audioKey)}" data-transcription-task-id="${escapeHtml(presentation.transcriptionTaskId)}">${audio?`<div class="capture-audio-source" data-capture-audio-key="${escapeHtml(presentation.audioKey)}"><audio controls preload="metadata" src="${escapeHtml(appUrl(audio.attachmentPath))}"></audio><span>${formatAudioDuration(audio.durationMs)} · <b class="capture-audio-playback-state">${escapeHtml(presentation.audioStatus)}</b></span></div>`:""}${layers}${transcriptionState}${speech&&state.speech?.configured?`<div class="capture-speech-actions"><select data-capture-voice aria-label="朗读音色">${voiceOptions}</select><button type="button" class="capture-speak-button" data-capture-speak="${escapeHtml(item.id)}" data-capture-speech-key="${escapeHtml(speechKey)}" title="朗读文字" aria-label="朗读文字">▶</button><button type="button" data-capture-speech-pause title="暂停或继续朗读" aria-label="暂停或继续朗读">Ⅱ</button><button type="button" data-capture-speech-stop title="停止朗读" aria-label="停止朗读">■</button></div>`:""}</section>`
 }
 function stopCaptureSpeech(){
   activeSpeechAbortController?.abort();activeSpeechAbortController=null;
   if(activeSpeechAudio){activeSpeechAudio.pause();activeSpeechAudio.removeAttribute("src");activeSpeechAudio.load()}
   if(activeSpeechObjectUrl)URL.revokeObjectURL(activeSpeechObjectUrl);
-  activeSpeechAudio=null;activeSpeechObjectUrl="";activeSpeechCaptureId=""
+  activeSpeechAudio=null;activeSpeechObjectUrl="";activeSpeechCaptureId="";activeSpeechSourceKey="";activeSpeechVoice=""
 }
-async function speakCapture(id,voice){
+async function speakCapture(id,voice,sourceKey){
   const item=(state.captures||[]).find(value=>value.id===id),text=item?.transcription?.polishedText||item?.transcription?.rawText||plainPreview(item?.content||"");
-  if(!text)return;
-  stopCaptureSpeech();const controller=new AbortController();activeSpeechAbortController=controller;activeSpeechCaptureId=id;
+  const expectedSourceKey=captureSpeechIdentity(item,voice);
+  if(!text||!expectedSourceKey||sourceKey!==expectedSourceKey)return;
+  stopCaptureSpeech();const controller=new AbortController();activeSpeechAbortController=controller;activeSpeechCaptureId=id;activeSpeechSourceKey=sourceKey;activeSpeechVoice=voice;
   try{
     const blob=await apiClient.requestBlob("/api/speech/synthesize",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,voice}),signal:controller.signal},{fallback:"语音合成失败"});
-    if(activeSpeechCaptureId!==id||controller.signal.aborted)return;
-    activeSpeechObjectUrl=URL.createObjectURL(blob);activeSpeechAudio=new Audio(activeSpeechObjectUrl);
-    activeSpeechAudio.addEventListener("ended",stopCaptureSpeech,{once:true});
-    activeSpeechAudio.addEventListener("error",()=>{stopCaptureSpeech();showToast("合成音频无法播放","error")},{once:true});
-    await activeSpeechAudio.play()
-  }catch(error){if(error.name!=="AbortError"){stopCaptureSpeech();showToast(error.message,"error")}}
+    const current=(state.captures||[]).find(value=>value.id===id);
+    if(activeSpeechCaptureId!==id||activeSpeechSourceKey!==sourceKey||controller.signal.aborted||captureSpeechIdentity(current,voice)!==sourceKey)return;
+    activeSpeechObjectUrl=URL.createObjectURL(blob);const audio=new Audio(activeSpeechObjectUrl);activeSpeechAudio=audio;
+    audio.addEventListener("ended",()=>{if(activeSpeechAudio===audio)stopCaptureSpeech()},{once:true});
+    audio.addEventListener("error",()=>{if(activeSpeechAudio===audio){stopCaptureSpeech();showToast("合成音频无法播放","error")}},{once:true});
+    await audio.play()
+  }catch(error){
+    if(controller.signal.aborted||activeSpeechSourceKey!==sourceKey)return;
+    if(error.name!=="AbortError"){stopCaptureSpeech();showToast(error.message,"error")}
+  }
+}
+function reconcileCaptureSpeech(){
+  if(!activeSpeechCaptureId||!activeSpeechSourceKey)return;
+  const current=(state.captures||[]).find(value=>value.id===activeSpeechCaptureId);
+  if(captureSpeechIdentity(current,activeSpeechVoice)!==activeSpeechSourceKey)stopCaptureSpeech()
 }
 function captureCard(item,showDate=true){
   const tags=item.tags?.length?`#${item.tags.map(escapeHtml).join(" #")}`:"未标记";
@@ -1569,6 +1582,7 @@ function toggleCaptureCard(card){
 }
 function renderCaptures(){
   const items=[...(state.captures||[])].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a)));
+  reconcileCaptureSpeech();
   $("#capture-count").textContent=`${items.length} 条`;
   $("#capture-list").innerHTML=items.length?items.map((item,index)=>captureCard(item,index===0||eventDate(item)!==eventDate(items[index-1]))).join(""):empty("这里还没有捕念。下一次有什么一闪而过，直接放进来。");
   items.filter(item=>!item._sync).forEach(item=>markCommentTarget($(`[data-capture-id="${CSS.escape(item.id)}"] .capture-copy .markdown-content`),commentRootKey("capture",item.id),"content"));
@@ -3701,11 +3715,13 @@ $("#capture-audio-file").addEventListener("change",async event=>{
 document.addEventListener("click",async event=>{
   const transcribe=event.target.closest("[data-capture-transcribe]");
   if(transcribe){
+    const capture=state.captures.find(item=>item.id===transcribe.dataset.captureTranscribe),audioKey=transcribe.dataset.captureAudioKey;
+    if(!capture||!audioKey||captureAudioIdentity(capture)!==audioKey){showToast("原音已经变化，请在当前记录上重新开始转写。","error");return}
     transcribe.disabled=true;
     try{
       const task=await request(`/api/captures/${encodeURIComponent(transcribe.dataset.captureTranscribe)}/transcription`,{method:"POST",body:"{}"});
+      if(task?.targetId!==capture.id||captureAudioIdentity(state.captures.find(item=>item.id===capture.id))!==audioKey)return;
       if(!state.aiTasks.some(item=>item.id===task.id))state.aiTasks.unshift(task);
-      const capture=state.captures.find(item=>item.id===transcribe.dataset.captureTranscribe);
       if(capture?.transcription)capture.transcription.status="queued";
       renderCaptures();await refreshState("notifications");scheduleNotificationPoll();showToast("语音已进入后台转写队列")
     }catch(error){showToast(error.message,"error");transcribe.disabled=false}
@@ -3714,7 +3730,9 @@ document.addEventListener("click",async event=>{
   const play=event.target.closest("[data-capture-speak]");
   if(play){
     const voice=play.closest(".capture-speech-actions")?.querySelector("[data-capture-voice]")?.value||state.speech?.defaultVoice;
-    return void speakCapture(play.dataset.captureSpeak,voice)
+    const item=state.captures.find(value=>value.id===play.dataset.captureSpeak),sourceKey=captureSpeechIdentity(item,voice);
+    play.dataset.captureSpeechKey=sourceKey;
+    return void speakCapture(play.dataset.captureSpeak,voice,sourceKey)
   }
   if(event.target.closest("[data-capture-speech-pause]")&&activeSpeechCaptureId&&activeSpeechAudio){
     if(activeSpeechAudio.paused)void activeSpeechAudio.play().catch(error=>showToast(error.message,"error"));else activeSpeechAudio.pause();
