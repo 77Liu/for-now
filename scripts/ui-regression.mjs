@@ -184,6 +184,9 @@ const mockFetch = `
   window.__quoteSaves = 0;
   window.__quotePatches = 0;
   window.__keepsakeOriginalReads = 0;
+  window.__keepsakeUnderstandingRequests = [];
+  window.__delayKeepsakeUnderstanding = false;
+  window.__releaseKeepsakeUnderstanding = null;
   window.__settingsSaves = 0;
   window.__lastSettingsPayload = null;
   window.__aiCostPlanSaves = 0;
@@ -821,6 +824,12 @@ const mockFetch = `
     if (url === "/api/images/discard") {
       const payload=JSON.parse(init.body);window.__imageDiscards.push(...(payload.attachmentPaths||[]));return json({discarded:payload.attachmentPaths||[],pending:0});
     }
+    if (url === "/api/keepsakes/understand") {
+      const payload=JSON.parse(init.body);window.__keepsakeUnderstandingRequests.push(payload);
+      const response=()=>json({title:"AI 票根",category:"小票",tags:["候选","展览","候选"],description:"画面中可见一张带文字的票根。",requestId:payload.requestId,targetId:payload.targetId,inputVersion:payload.inputVersion});
+      if(window.__delayKeepsakeUnderstanding){window.__delayKeepsakeUnderstanding=false;return new Promise(resolve=>{window.__releaseKeepsakeUnderstanding=()=>resolve(response())})}
+      return response()
+    }
     if (url === "/api/keepsakes/segment") return json({ cutout: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='36'%3E%3Crect width='24' height='36' fill='%23d76455'/%3E%3C/svg%3E", provider: "aliyun-segment-hd" });
     if (/^\\/api\\/keepsakes\\/[^/]+\\/original$/.test(url) && (!init.method || init.method === "GET")) {
       window.__keepsakeOriginalReads += 1;
@@ -1237,11 +1246,18 @@ try {
     return{tags:payload.tags,opacity:payload.backgroundOpacityPct,hasMask:Object.hasOwn(payload,"alphaMask"),hasImage:Object.hasOwn(payload,"image"),sameMedia:item.originalPath==="/attachments/keepsake-1.original.png"&&item.thumbPath==="/attachments/keepsake-1.thumb.webp"&&item.displayPath==="/attachments/keepsake-1.display.webp"&&item.editPath==="/attachments/keepsake-1.edit.webp"&&item.alphaMaskPath==="/attachments/keepsake-1.alphaMask.webp",backgroundOpacity:getComputedStyle(background).opacity}
   })()`),{tags:["展览","同行","散步"],opacity:22,hasMask:false,hasImage:false,sameMedia:true,backgroundOpacity:"0.22"},"keepsake-edit-tags-opacity");
   await evaluate(`document.querySelector("#keepsake-create-toggle").click();true`);
+  await evaluate(`window.__delayKeepsakeUnderstanding=true;true`);
   await evaluate(`(async()=>{const canvas=document.createElement("canvas");canvas.width=48;canvas.height=36;const ctx=canvas.getContext("2d");ctx.fillStyle="#d76455";ctx.fillRect(0,0,48,36);const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"));const file=new File([blob],"ticket.png",{type:"image/png"}),transfer=new DataTransfer();transfer.items.add(file);const input=document.querySelector("#keepsake-image");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
-  assert.equal(await waitUntil(`document.querySelector("#keepsake-segment-status").textContent.includes("自动轮廓已生成")&&document.querySelector("#keepsake-preview-canvas").getContext("2d").getImageData(8,18,1,1).data[3]===255`), true);
-  const keepsakeEditorState = await evaluate(`(() => { const preview=document.querySelector("#keepsake-preview-canvas"),ctx=preview.getContext("2d");return {editorVisible:!document.querySelector("#keepsake-editor").hidden,title:document.querySelector("#keepsake-title").value,subjectAlpha:ctx.getImageData(8,18,1,1).data[3],backgroundAlpha:ctx.getImageData(40,18,1,1).data[3],overflow:document.documentElement.scrollWidth>window.innerWidth}; })()`);
+  assert.equal(await waitUntil(`document.querySelector("#keepsake-segment-status").textContent.includes("自动轮廓已生成")&&document.querySelector("#keepsake-preview-canvas").getContext("2d").getImageData(8,18,1,1).data[3]===255&&typeof window.__releaseKeepsakeUnderstanding==="function"`), true);
+  await evaluate(`document.querySelector("#keepsake-title").value="人工票名";document.querySelector("#keepsake-title").dispatchEvent(new Event("input",{bubbles:true}));window.__releaseKeepsakeUnderstanding();true`);
+  assert.equal(await waitUntil(`document.querySelector("#keepsake-understanding-status").textContent.includes("已填入类型、标签、描述候选")`),true);
+  const keepsakeEditorState = await evaluate(`(() => { const preview=document.querySelector("#keepsake-preview-canvas"),ctx=preview.getContext("2d"),request=window.__keepsakeUnderstandingRequests[0];return {editorVisible:!document.querySelector("#keepsake-editor").hidden,title:document.querySelector("#keepsake-title").value,category:document.querySelector("#keepsake-category").value,tags:document.querySelector("#keepsake-tags").value,note:document.querySelector("#keepsake-note").value,requestBound:Boolean(request.requestId&&request.targetId&&Number.isInteger(request.inputVersion)),subjectAlpha:ctx.getImageData(8,18,1,1).data[3],backgroundAlpha:ctx.getImageData(40,18,1,1).data[3],overflow:document.documentElement.scrollWidth>window.innerWidth}; })()`);
   assert.equal(keepsakeEditorState.editorVisible, true);
-  assert.equal(keepsakeEditorState.title, "");
+  assert.equal(keepsakeEditorState.title, "人工票名");
+  assert.equal(keepsakeEditorState.category, "小票");
+  assert.equal(keepsakeEditorState.tags, "候选 展览");
+  assert.equal(keepsakeEditorState.note, "画面中可见一张带文字的票根。");
+  assert.equal(keepsakeEditorState.requestBound, true);
   assert.equal(keepsakeEditorState.subjectAlpha, 255);
   assert.ok(keepsakeEditorState.backgroundAlpha >= 37 && keepsakeEditorState.backgroundAlpha <= 39);
   assert.equal(keepsakeEditorState.overflow, false);

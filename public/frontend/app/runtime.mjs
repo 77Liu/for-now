@@ -31,6 +31,7 @@ import {
   buildHomeMoodSeries,
   createHomeMemoryPool,
   selectHomeMemories,
+  applyKeepsakeImageCandidates,
   createKeepsakeBatchItems,
   discardKeepsakeMedia,
   KEEPSAKE_BATCH_MAX_ITEMS,
@@ -91,7 +92,7 @@ let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},automaticAnswers:{thoughtAnswer:false},speech:{generationRate:-10},hasApiKey:false,keyHint:""};
 let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiCostRequestSerial=0,architectureStage=0,architectureTerm="api",commercialMode="validation",commercialStatistics=null,commercialRequestSerial=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,discoveryController=null,actionsSnapshot={actions:[],habits:[],habitCheckins:[]},actionsRequestSerial=0,feedbackItems=[],feedbackRequestSerial=0,exportManifest=null,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,appVersion="0.2.0",releaseVersion="0.2.0",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
 let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeEditorTrigger=null,activeSpeechCaptureId="",activeSpeechSourceKey="",activeSpeechVoice="",activeSpeechPlaybackRate=1,activeSpeechAudio=null,activeSpeechObjectUrl="",activeSpeechAbortController=null;
-const keepsakeEditor={file:null,sourceDataUrl:"",sourceImage:null,sourceCanvas:null,maskCanvas:null,autoBase:null,history:[],mode:"keep",drawing:false,lastPoint:null,source:"manual",originalPath:"",cutoutPath:"",mediaDirty:false,renderFrame:0,segmentSerial:0};
+const keepsakeEditor={file:null,sourceDataUrl:"",sourceImage:null,sourceCanvas:null,maskCanvas:null,autoBase:null,history:[],mode:"keep",drawing:false,lastPoint:null,source:"manual",originalPath:"",cutoutPath:"",mediaDirty:false,renderFrame:0,segmentSerial:0,understandingSerial:0};
 const keepsakeBatch={items:[],activeIndex:0,loading:false};
 let keepsakeBatchPreviewUrls=[],keepsakeBatchPersistTimer=0;
 let keepsakeVisibleCount=KEEPSAKE_PAGE_SIZE,keepsakePaginationOwner="",keepsakeLoadObserver=null;
@@ -1895,6 +1896,33 @@ async function applySegmentedKeepsakeMask(cutoutUrl,serial){
 function keepsakeSegmentationDataUrl(){
   return keepsakeWorkingImage(1600).toDataURL("image/jpeg",.9);
 }
+function keepsakeUnderstandingDataUrl(){
+  return keepsakeWorkingImage(1200).toDataURL("image/jpeg",.88)
+}
+function keepsakeCandidateFields(){
+  return{title:$("#keepsake-title").value,category:$("#keepsake-category").value,tags:$("#keepsake-tags").value,note:$("#keepsake-note").value}
+}
+async function understandCurrentKeepsake(){
+  const button=$("#keepsake-understand"),status=$("#keepsake-understanding-status"),form=$("#keepsake-form");if(!keepsakeEditor.sourceCanvas){status.textContent="请先放入一张照片。";return false}
+  const serial=++keepsakeEditor.understandingSerial,owner=currentUser?.id,session=sessionSerial,requestId=crypto.randomUUID(),batchItem=activeKeepsakeBatchItem(),targetId=$("#keepsake-id").value||batchItem?.itemId||(form.dataset.candidateTargetId||=crypto.randomUUID()),baseline=keepsakeCandidateFields();
+  if(batchItem){batchItem.understandingState="pending";batchItem.candidateRequestId=requestId;renderKeepsakeBatch();void persistKeepsakeBatch({capture:false})}
+  button.disabled=true;status.textContent="正在生成名称、类型、标签和描述候选…";
+  try{
+    const result=await request("/api/keepsakes/understand",{method:"POST",body:JSON.stringify({requestId,targetId,inputVersion:serial,image:keepsakeUnderstandingDataUrl()})});
+    if(serial!==keepsakeEditor.understandingSerial||owner!==currentUser?.id||session!==sessionSerial||result.requestId!==requestId||result.targetId!==targetId||Number(result.inputVersion)!==serial)return false;
+    const merged=applyKeepsakeImageCandidates(keepsakeCandidateFields(),baseline,result);
+    $("#keepsake-title").value=merged.value.title;$("#keepsake-category").value=merged.value.category;$("#keepsake-tags").value=merged.value.tags;$("#keepsake-note").value=merged.value.note;renderKeepsakeTagSuggestions();
+    if(batchItem===activeKeepsakeBatchItem()){batchItem.understandingState="ready";captureActiveKeepsakeBatchItem({captureMask:false});await persistKeepsakeBatch({capture:false});renderKeepsakeBatch()}
+    const labels={title:"名称",category:"类型",tags:"标签",note:"描述"};
+    status.textContent=merged.applied.length?`已填入${merged.applied.map(key=>labels[key]).join("、")}候选，可继续修改。`:"候选已生成；现有手动内容保持不变。";
+    return true
+  }catch(error){
+    if(serial!==keepsakeEditor.understandingSerial)return false;
+    status.textContent=`字段候选未完成：${error.message}`;
+    if(batchItem===activeKeepsakeBatchItem()){batchItem.understandingState="failed";await persistKeepsakeBatch({capture:false});renderKeepsakeBatch()}
+    return false
+  }finally{if(serial===keepsakeEditor.understandingSerial)button.disabled=false}
+}
 const keepsakeBatchDraftKey="keepsake-batch";
 function activeKeepsakeBatchItem(){
   return keepsakeBatch.items[keepsakeBatch.activeIndex]||null
@@ -1963,7 +1991,7 @@ async function persistKeepsakeBatch({capture=true}={}){
 }
 async function loadKeepsakeBatchItem(index,{capture=true}={}){
   if(keepsakeBatch.loading||!keepsakeBatch.items[index])return false;
-  if(capture)await persistKeepsakeBatch();
+  if(capture){const previous=activeKeepsakeBatchItem();if(previous?.understandingState==="pending")previous.understandingState="waiting";await persistKeepsakeBatch()}
   keepsakeBatch.loading=true;resetKeepsakeEditor();keepsakeBatch.activeIndex=index;const item=keepsakeBatch.items[index],serial=keepsakeEditor.segmentSerial;
   $("#keepsake-workspace").hidden=false;$("#keepsake-form").dataset.batchItemId=item.itemId;$("#keepsake-editor-eyebrow").textContent=`批次 ${index+1} / ${keepsakeBatch.items.length}`;$("#keepsake-editor-title").textContent=item.title||`第 ${index+1} 件小物`;
   renderKeepsakeBatch();
@@ -1975,6 +2003,7 @@ async function loadKeepsakeBatchItem(index,{capture=true}={}){
     $("#keepsake-save").textContent=keepsakeBatch.items.length>1?`保存第 ${index+1} 件`:"保存小物";$("#keepsake-save-status").textContent=item.lastError?.message||"";
     item.status=item.alphaMask?"ready":"editing";renderKeepsakeBatch();
     if(!item.alphaMask)void segmentCurrentKeepsake();
+    if(item.understandingState==="waiting")void understandCurrentKeepsake();
     return true
   }catch(error){item.status="failed";item.lastError={message:error.message};$("#keepsake-segment-status").textContent=error.message;renderKeepsakeBatch();return false}
   finally{keepsakeBatch.loading=false;void persistKeepsakeBatch({capture:false})}
@@ -1992,6 +2021,8 @@ async function restoreKeepsakeBatch(owner){
   const stored=await mediaDraftStore.get(owner,keepsakeBatchDraftKey);if(!stored?.items?.length)return false;
   keepsakeBatch.items=stored.items.slice(0,KEEPSAKE_BATCH_MAX_ITEMS).map(item=>({
     ...item,
+    understandingState:item.understandingState==="ready"?"ready":"waiting",
+    candidateRequestId:"",
     file:typeof File==="function"?new File([item.blob],item.name||"keepsake",{type:item.type||item.blob?.type||"",lastModified:Number(item.lastModified)||Date.now()}):item.blob,
     blob:undefined
   }));
@@ -2014,10 +2045,11 @@ function scheduleKeepsakeBatchPersist(){
   clearTimeout(keepsakeBatchPersistTimer);keepsakeBatchPersistTimer=setTimeout(()=>void persistKeepsakeBatch({capture:false}),250)
 }
 function resetKeepsakeEditor({close=false}={}){
-  keepsakeEditor.segmentSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.source="manual";keepsakeEditor.originalPath="";keepsakeEditor.cutoutPath="";keepsakeEditor.mediaDirty=false;keepsakeEditor.drawing=false;keepsakeEditor.lastPoint=null;
+  const pendingCandidate=activeKeepsakeBatchItem();if(pendingCandidate?.understandingState==="pending")pendingCandidate.understandingState="waiting";
+  keepsakeEditor.segmentSerial+=1;keepsakeEditor.understandingSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.source="manual";keepsakeEditor.originalPath="";keepsakeEditor.cutoutPath="";keepsakeEditor.mediaDirty=false;keepsakeEditor.drawing=false;keepsakeEditor.lastPoint=null;
   keepsakeEditor.mode="keep";$("#keepsake-brush-keep").classList.add("active");$("#keepsake-brush-erase").classList.remove("active");$("#keepsake-brush-keep").setAttribute("aria-pressed","true");$("#keepsake-brush-erase").setAttribute("aria-pressed","false");
   $("#keepsake-auto-segment").disabled=false;
-  clearKeepsakeHistory();$("#keepsake-form").reset();delete $("#keepsake-form").dataset.batchItemId;delete $("#keepsake-form").dataset.requestId;delete $("#keepsake-form").dataset.uploadRequestId;$("#keepsake-id").value="";resetOccurrenceInput($("#keepsake-datetime"));$("#keepsake-edge-expansion").value="8";$("#keepsake-edge-output").value="8";$("#keepsake-background-opacity").value="15";$("#keepsake-background-output").value="15%";$("#keepsake-image").value="";$("#keepsake-editor").hidden=true;$("#keepsake-editor").removeAttribute("aria-busy");$("#keepsake-upload-box").hidden=false;$("#keepsake-upload-box").classList.remove("dragging","has-image");$("#keepsake-upload-title").textContent="选择、粘贴或拖入 1–8 张小物照片";$("#keepsake-upload-hint").textContent="每张逐项编辑与保存 · PNG / JPEG / WebP · 单张 8 MB · 批次合计 48 MB";$("#keepsake-segment-status").textContent="";$("#keepsake-save-status").textContent="";$("#keepsake-save").textContent="保存小物";$("#keepsake-save").disabled=false;$("#keepsake-cancel-edit").hidden=true;$("#keepsake-editor-eyebrow").textContent="新建留存";$("#keepsake-editor-title").textContent="拍下或放入一张照片";renderKeepsakeTagSuggestions();
+  clearKeepsakeHistory();$("#keepsake-form").reset();delete $("#keepsake-form").dataset.batchItemId;delete $("#keepsake-form").dataset.requestId;delete $("#keepsake-form").dataset.uploadRequestId;delete $("#keepsake-form").dataset.candidateTargetId;$("#keepsake-id").value="";resetOccurrenceInput($("#keepsake-datetime"));$("#keepsake-edge-expansion").value="8";$("#keepsake-edge-output").value="8";$("#keepsake-background-opacity").value="15";$("#keepsake-background-output").value="15%";$("#keepsake-image").value="";$("#keepsake-editor").hidden=true;$("#keepsake-editor").removeAttribute("aria-busy");$("#keepsake-upload-box").hidden=false;$("#keepsake-upload-box").classList.remove("dragging","has-image");$("#keepsake-upload-title").textContent="选择、粘贴或拖入 1–8 张小物照片";$("#keepsake-upload-hint").textContent="每张逐项编辑与保存 · PNG / JPEG / WebP · 单张 8 MB · 批次合计 48 MB";$("#keepsake-segment-status").textContent="";$("#keepsake-understanding-status").textContent="";$("#keepsake-understand").disabled=true;$("#keepsake-save-status").textContent="";$("#keepsake-save").textContent="保存小物";$("#keepsake-save").disabled=false;$("#keepsake-cancel-edit").hidden=true;$("#keepsake-editor-eyebrow").textContent="新建留存";$("#keepsake-editor-title").textContent="拍下或放入一张照片";renderKeepsakeTagSuggestions();
   if(close)$("#keepsake-workspace").hidden=true;
 }
 function invalidateKeepsakeSegmentation(){keepsakeEditor.segmentSerial+=1;$("#keepsake-auto-segment").disabled=false}
@@ -2028,7 +2060,7 @@ async function prepareKeepsakeImage({dataUrl,file=null,cutoutUrl="",auto=true,me
   if(cutoutUrl){const cutout=await loadImageSource(cutoutUrl),temp=blankCanvas(width,height),tempCtx=temp.getContext("2d",{willReadFrequently:true});tempCtx.drawImage(cutout,0,0,width,height);const sourceData=tempCtx.getImageData(0,0,width,height),maskData=new ImageData(width,height);for(let i=0;i<sourceData.data.length;i+=4)maskData.data[i]=maskData.data[i+1]=maskData.data[i+2]=maskData.data[i+3]=sourceData.data[i+3];maskCanvas.getContext("2d").putImageData(maskData,0,0)}
   if(serial!==keepsakeEditor.segmentSerial)return false;
   keepsakeEditor.file=file;keepsakeEditor.sourceDataUrl=dataUrl;keepsakeEditor.sourceImage=image;keepsakeEditor.sourceCanvas=sourceCanvas;keepsakeEditor.maskCanvas=maskCanvas;keepsakeEditor.autoBase=null;keepsakeEditor.source="manual";keepsakeEditor.mediaDirty=mediaDirty;clearKeepsakeHistory();
-  $("#keepsake-upload-box").hidden=true;$("#keepsake-editor").hidden=false;renderKeepsakeCanvases();
+  $("#keepsake-upload-box").hidden=true;$("#keepsake-editor").hidden=false;$("#keepsake-understand").disabled=false;renderKeepsakeCanvases();
   if(auto)await segmentCurrentKeepsake();
   return true;
 }
@@ -2036,7 +2068,7 @@ async function setKeepsakeFile(file,source="本地文件"){
   const status=$("#keepsake-segment-status");try{[file]=validatedImageFiles([file])}catch(error){status.textContent=error.message;return false}
   const serial=++keepsakeEditor.segmentSerial;$("#keepsake-auto-segment").disabled=false;
   $("#keepsake-workspace").hidden=false;status.textContent="正在读取照片…";
-  try{const [dataUrl]=await imageDataUrls([file]);if(serial!==keepsakeEditor.segmentSerial)return false;if(!await prepareKeepsakeImage({dataUrl,file,auto:false,serial}))return false;keepsakeEditor.originalPath="";keepsakeEditor.cutoutPath="";status.textContent=`${source} · ${formatBytes(file.size)} · 正在识别主体…`;void segmentCurrentKeepsake();return true}catch(error){if(serial===keepsakeEditor.segmentSerial)status.textContent=error.message;return false}
+  try{const [dataUrl]=await imageDataUrls([file]);if(serial!==keepsakeEditor.segmentSerial)return false;if(!await prepareKeepsakeImage({dataUrl,file,auto:false,serial}))return false;keepsakeEditor.originalPath="";keepsakeEditor.cutoutPath="";status.textContent=`${source} · ${formatBytes(file.size)} · 正在识别主体…`;void segmentCurrentKeepsake();void understandCurrentKeepsake();return true}catch(error){if(serial===keepsakeEditor.segmentSerial)status.textContent=error.message;return false}
 }
 async function segmentCurrentKeepsake(){
   const button=$("#keepsake-auto-segment"),status=$("#keepsake-segment-status");if(!keepsakeEditor.sourceDataUrl)return status.textContent="请先放入一张照片。";
@@ -4048,6 +4080,7 @@ $("#keepsake-upload-box").addEventListener("dragleave",e=>{if(!e.currentTarget.c
 $("#keepsake-upload-box").addEventListener("drop",e=>{e.preventDefault();e.currentTarget.classList.remove("dragging");const files=[...(e.dataTransfer?.files||[])].filter(item=>item.type.startsWith("image/"));if(!files.length)return $("#keepsake-segment-status").textContent="拖入的内容里没有可用图片。";if($("#keepsake-id").value)void setKeepsakeFile(files[0],"拖入图片");else void setKeepsakeBatchFiles(files,"拖入图片").catch(error=>$("#keepsake-segment-status").textContent=error.message)});
 document.addEventListener("paste",e=>{if(!$("#view-keepsakes").classList.contains("active")||(e.target instanceof Element&&e.target.closest("input,textarea,[contenteditable=true]")))return;const files=[...(e.clipboardData?.files||[])].filter(item=>item.type.startsWith("image/"));if(!files.length)return;e.preventDefault();if($("#keepsake-id").value)void setKeepsakeFile(files[0],"剪贴板");else void setKeepsakeBatchFiles(files,"剪贴板").catch(error=>$("#keepsake-segment-status").textContent=error.message)});
 $("#keepsake-auto-segment").addEventListener("click",segmentCurrentKeepsake);
+$("#keepsake-understand").addEventListener("click",understandCurrentKeepsake);
 $("#keepsake-brush-keep").addEventListener("click",()=>{keepsakeEditor.mode="keep";$("#keepsake-brush-keep").classList.add("active");$("#keepsake-brush-erase").classList.remove("active");$("#keepsake-brush-keep").setAttribute("aria-pressed","true");$("#keepsake-brush-erase").setAttribute("aria-pressed","false")});
 $("#keepsake-brush-erase").addEventListener("click",()=>{keepsakeEditor.mode="erase";$("#keepsake-brush-erase").classList.add("active");$("#keepsake-brush-keep").classList.remove("active");$("#keepsake-brush-erase").setAttribute("aria-pressed","true");$("#keepsake-brush-keep").setAttribute("aria-pressed","false")});
 $("#keepsake-brush-size").addEventListener("input",e=>{$("#keepsake-brush-output").value=e.currentTarget.value;const cursor=$("#keepsake-canvas-cursor");cursor.style.width=cursor.style.height=`${e.currentTarget.value}px`});

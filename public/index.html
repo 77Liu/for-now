@@ -612,6 +612,10 @@
             <div class="keepsake-cutout-preview"><canvas id="keepsake-preview-canvas" aria-label="小物主体突出预览"></canvas></div>
             <form class="keepsake-form" id="keepsake-form">
               <input type="hidden" id="keepsake-id">
+              <div class="keepsake-candidate-row">
+                <p class="status" id="keepsake-understanding-status" role="status" aria-live="polite"></p>
+                <button class="text-button" id="keepsake-understand" type="button" disabled>✦ 更新字段候选</button>
+              </div>
               <label><span>名称 <b>必填</b></span><input id="keepsake-title" placeholder="例：展览门票" maxlength="120" required></label>
               <div class="keepsake-meta-fields">
                 <label><span>类型</span><select id="keepsake-category"><option value="小票">小票</option><option value="纸品">纸品</option><option value="立牌">立牌</option><option value="小物">小物</option><option value="其他">其他</option></select></label>

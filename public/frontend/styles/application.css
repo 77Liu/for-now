@@ -870,6 +870,7 @@ main{margin-left:176px;padding:48px clamp(26px,4.5vw,68px) 90px}
 .keepsake-cutout-preview{display:grid;place-items:center;min-height:240px;max-height:430px;overflow:hidden;border:1px solid var(--view-line);border-radius:8px}
 .keepsake-cutout-preview canvas{display:block;width:100%;height:100%;max-height:430px;object-fit:contain}
 .keepsake-form{display:grid;gap:10px;margin-top:15px}
+.keepsake-candidate-row{display:flex;min-width:0;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid var(--view-line)}.keepsake-candidate-row .status{min-width:0;margin:0}.keepsake-candidate-row button{flex:none;min-height:44px}
 .keepsake-form label{display:grid;gap:6px;color:var(--muted);font-size:.76rem;font-weight:700}
 .keepsake-form label>span b{color:var(--view-accent)}
 .keepsake-form input,.keepsake-form select{width:100%;min-width:0;padding:10px 11px;border:1px solid var(--line);border-radius:8px;background:#fafcfb;outline:none}

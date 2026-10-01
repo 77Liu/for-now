@@ -68,6 +68,7 @@ export {
 } from "./home/index.mjs";
 export {
   KEEPSAKE_BATCH_MAX_ITEMS,
+  applyKeepsakeImageCandidates,
   createKeepsakeBatchItems,
   discardKeepsakeMedia,
   keepsakeMediaSources,

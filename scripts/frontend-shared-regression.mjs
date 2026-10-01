@@ -48,6 +48,7 @@ import {
   normalizeTtsPlaybackRate
 } from "../public/frontend/media/index.mjs";
 import {
+  applyKeepsakeImageCandidates,
   WEIGHT_BATCH_MAX_ITEMS,
   applyWeightBatchRecognition,
   changeWeightBatchDate,
@@ -287,6 +288,46 @@ if (process.argv.includes("--timezone-case")) {
   assert.deepEqual(TTS_PLAYBACK_RATES, [0.5, 0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.5, 2]);
   assert.equal(normalizeTtsPlaybackRate("1.5"), 1.5);
   assert.equal(normalizeTtsPlaybackRate(1.7), 1);
+  assert.deepEqual(applyKeepsakeImageCandidates({
+    title: "人工名称",
+    category: "其他",
+    tags: "",
+    note: ""
+  }, {
+    title: "",
+    category: "其他",
+    tags: "",
+    note: ""
+  }, {
+    title: "AI 名称",
+    category: "小票",
+    tags: ["纪念", "展览"],
+    description: "可见一张票根。"
+  }), {
+    value: {
+      title: "人工名称",
+      category: "小票",
+      tags: "纪念 展览",
+      note: "可见一张票根。"
+    },
+    applied: ["category", "tags", "note"]
+  });
+  assert.deepEqual(applyKeepsakeImageCandidates({
+    title: "旧名称",
+    category: "纸品",
+    tags: "人工标签",
+    note: "人工描述"
+  }, {
+    title: "旧名称",
+    category: "纸品",
+    tags: "人工标签",
+    note: "人工描述"
+  }, {
+    title: "AI 名称",
+    category: "小票",
+    tags: ["候选"],
+    description: "候选描述"
+  }).applied, []);
   assert.deepEqual(
     captureAudioPresentation(audioCapture, {
       configured: true,

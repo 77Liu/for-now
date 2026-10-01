@@ -4,6 +4,36 @@ const attachmentPath = value => (
 
 export const KEEPSAKE_BATCH_MAX_ITEMS = 8;
 
+export function applyKeepsakeImageCandidates(current = {}, baseline = {}, candidates = {}) {
+  const value = {
+    title: String(current.title || ""),
+    category: String(current.category || "其他"),
+    tags: String(current.tags || ""),
+    note: String(current.note || "")
+  };
+  const applied = [];
+  const apply = (field, candidate, eligible) => {
+    if (!eligible || !candidate || candidate === value[field]
+      || value[field] !== String(baseline[field] || "")) return;
+    value[field] = candidate;
+    applied.push(field);
+  };
+  apply("title", String(candidates.title || "").trim(), !String(baseline.title || "").trim());
+  apply(
+    "category",
+    String(candidates.category || "").trim(),
+    String(baseline.category || "其他") === "其他"
+  );
+  const candidateTags = [...new Set((Array.isArray(candidates.tags) ? candidates.tags : [])
+    .map(tag => String(tag || "").trim())
+    .filter(Boolean))]
+    .slice(0, 8)
+    .join(" ");
+  apply("tags", candidateTags, !String(baseline.tags || "").trim());
+  apply("note", String(candidates.description || "").trim(), !String(baseline.note || "").trim());
+  return { value, applied };
+}
+
 export function createKeepsakeBatchItems(files, {
   occurredAt,
   createId = () => crypto.randomUUID()
@@ -25,6 +55,8 @@ export function createKeepsakeBatchItems(files, {
     source: "manual",
     alphaMask: "",
     status: "waiting",
+    understandingState: "waiting",
+    candidateRequestId: "",
     uploadRequestId: "",
     createRequestId: "",
     mediaPaths: null,
