@@ -562,7 +562,7 @@ const localTestModes = new Set(["simulation", "cold"]);
 const LOCAL_TEST_UPSTREAM_TIMEOUT_MS = 15_000;
 const localTestAllCollections = ["checkins", "dailyRecords", "captures", "journals", "journalDraft", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "actions", "habits", "habitCheckins", "feedback", "validationLedger", "commercialization"];
 const localTestScopeCollections = Object.freeze({
-  today: ["checkins", "dailyRecords", "captures", "thoughts", "actions", "habits", "habitCheckins"],
+  today: ["checkins", "dailyRecords", "captures", "thoughts", "books", "quotes", "keepsakes", "actions", "habits", "habitCheckins"],
   daily: ["dailyRecords"],
   captures: ["captures"],
   books: ["books"],
@@ -570,6 +570,7 @@ const localTestScopeCollections = Object.freeze({
   keepsakes: ["keepsakes"],
   journals: ["journals", "journalDraft"],
   thoughts: ["thoughts"],
+  discovery: ["captures", "journals", "thoughts", "books", "quotes"],
   together: ["chats"],
   review: ["checkins", "dailyRecords", "journals", "thoughts", "chats", "experiments", "analyses", "customMetrics"],
   statistics: localTestAllCollections,
@@ -805,6 +806,16 @@ function localTestRecordCount(store) {
   return ["checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "actions", "habits", "habitCheckins", "feedback", "validationLedger"].reduce((sum, key) => sum + (store[key]?.length || 0), 0);
 }
 
+function mergeLocalTestCollection(collection, current, upstream) {
+  if (Array.isArray(current) && Array.isArray(upstream)) {
+    const localIds = new Set(current.map(item => safeText(item?.id, 100)).filter(Boolean));
+    return [...clone(current), ...clone(upstream).filter(item => !localIds.has(safeText(item?.id, 100)))];
+  }
+  return JSON.stringify(current) === JSON.stringify(emptyStore[collection])
+    ? clone(upstream)
+    : clone(current);
+}
+
 function switchLocalTestMode(req, mode) {
   const operation = localTestControlQueue.then(async () => {
     if (!localTestModes.has(mode)) throw Object.assign(new Error("本地测试模式无效"), { statusCode: 400, code: "LOCAL_TEST_MODE_INVALID" });
@@ -845,7 +856,9 @@ function hydrateLocalTestScope(req, scope) {
     if (LOCAL_TEST_MAIN_USER_ID && session.user.id !== LOCAL_TEST_MAIN_USER_ID) throw Object.assign(new Error("当前登录账户不是配置的线上主账户"), { statusCode: 403, code: "LOCAL_TEST_MAIN_ACCOUNT_REQUIRED" });
     const patch = await localTestScopePatch(req, missingCollections);
     const merged = await updateStore(store => {
-      for (const [collection, value] of Object.entries(patch)) store[collection] = clone(value);
+      for (const [collection, value] of Object.entries(patch)) {
+        store[collection] = mergeLocalTestCollection(collection, store[collection], value);
+      }
       return store;
     });
     const nextControl = normalizeLocalTestControl({

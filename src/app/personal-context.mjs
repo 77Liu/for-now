@@ -304,7 +304,10 @@ export function personalContextReceiptFingerprint(receipt) {
     version: receipt?.version || "",
     tokenLimit: receipt?.tokenBudget?.limit || 0,
     promptSha256: receipt?.promptSha256 || "",
-    sourceIds: list(receipt?.sources).map(source => source.id)
+    sources: list(receipt?.sources).map(source => ({
+      id: source.id,
+      version: Math.max(1, Math.round(Number(source.version) || 1))
+    }))
   });
 }
 

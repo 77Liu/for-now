@@ -67,7 +67,32 @@ const remoteKeepsake = {
   mediaVersion: 1
 };
 const remoteKeepsakeOriginal = "/attachments/remote-keepsake.original.jpg";
+const remoteBook = {
+  id: "remote-book",
+  title: "线上书目",
+  notes: [{
+    id: "remote-book-note",
+    createdAt: "2026-09-28T03:00:00.000Z",
+    occurredAt: "2026-09-28T03:00:00.000Z",
+    occurredOn: "2026-09-28",
+    content: "线上书摘",
+    version: 1
+  }],
+  version: 1
+};
+const remoteQuote = {
+  id: "remote-quote",
+  createdAt: "2026-09-28T04:00:00.000Z",
+  occurredAt: "2026-09-28T04:00:00.000Z",
+  occurredOn: "2026-09-28",
+  content: "线上拾句",
+  source: "测试来源",
+  tags: [],
+  version: 1
+};
 const upstreamAttachmentDelayMs = Math.max(0, Number(process.env.LOCAL_TEST_UPSTREAM_DELAY_MS) || 0);
+let holdCaptureRead = false;
+let releaseCaptureRead = null;
 const upstream = http.createServer(async (request, response) => {
   for await (const chunk of request) { void chunk; }
   const url = new URL(request.url, "http://127.0.0.1");
@@ -84,9 +109,16 @@ const upstream = http.createServer(async (request, response) => {
   }
   if (url.pathname === "/api/auth/me" && request.method === "GET") return response.end(JSON.stringify({ authenticated: true, authRequired: true, user: { id: upstreamUserId, username: "main", createdAt: "" }, userCount: 3 }));
   if (url.pathname === "/api/v1/captures" && request.method === "GET") {
+    if (holdCaptureRead) await new Promise(resolve => { releaseCaptureRead = resolve; });
     return response.end(JSON.stringify({ data: [remoteCapture], error: null, meta: { nextCursor: null } }));
   }
-  if (["/api/v1/checkins", "/api/v1/daily-records", "/api/v1/thought-chains", "/api/v1/actions", "/api/v1/habits"].includes(url.pathname) && request.method === "GET") {
+  if (url.pathname === "/api/v1/books" && request.method === "GET") {
+    return response.end(JSON.stringify({ data: [remoteBook], error: null, meta: { nextCursor: null } }));
+  }
+  if (url.pathname === "/api/v1/quotes" && request.method === "GET") {
+    return response.end(JSON.stringify({ data: [remoteQuote], error: null, meta: { nextCursor: null } }));
+  }
+  if (["/api/v1/checkins", "/api/v1/daily-records", "/api/v1/thought-chains", "/api/v1/actions", "/api/v1/habits", "/api/v1/journals"].includes(url.pathname) && request.method === "GET") {
     return response.end(JSON.stringify({ data: [], error: null, meta: { nextCursor: null } }));
   }
   if (url.pathname === "/api/state" && request.method === "GET") {
@@ -99,9 +131,9 @@ const upstream = http.createServer(async (request, response) => {
       journalDraft: null,
       thoughts: [],
       chats: [],
-      books: [],
+      books: [remoteBook],
       keepsakes: [remoteKeepsake],
-      quotes: [],
+      quotes: [remoteQuote],
       experiments: [],
       analyses: [],
       customMetrics: [],
@@ -234,7 +266,23 @@ try {
   assert.equal(todayHydration.response.status, 200);
   assert.equal(todayHydration.body.hydrated, true);
   assert.equal(upstreamCalls.filter(call => call.path === "/api/v1/captures").length, 1);
-  assert.equal((await jsonRequest(`${base}/api/state`)).body.captures[0].content, "只在本地修改");
+  state = (await jsonRequest(`${base}/api/state`)).body;
+  assert.equal(state.captures[0].content, "只在本地修改");
+  assert.equal(state.books[0].notes[0].content, "线上书摘");
+  assert.equal(state.quotes[0].content, "线上拾句");
+  assert.equal(state.keepsakes[0].title, "线上小物");
+
+  const discoveryHydration = await jsonRequest(`${base}/api/local-test-mode/hydrate`, {
+    method: "POST",
+    headers: { cookie },
+    body: JSON.stringify({ scope: "discovery" })
+  });
+  assert.equal(discoveryHydration.response.status, 200);
+  assert.equal(discoveryHydration.body.hydrated, true);
+  assert.equal(upstreamCalls.filter(call => call.path === "/api/v1/journals").length, 1);
+  assert.equal(upstreamCalls.filter(call => call.path === "/api/v1/books").length, 1);
+  assert.equal(upstreamCalls.filter(call => call.path === "/api/v1/quotes").length, 1);
+  assert.equal(upstreamCalls.filter(call => call.path === "/api/v1/captures").length, 1);
 
   const keepsakeHydration = await jsonRequest(`${base}/api/local-test-mode/hydrate`, {
     method: "POST",
@@ -242,9 +290,9 @@ try {
     body: JSON.stringify({ scope: "keepsakes" })
   });
   assert.equal(keepsakeHydration.response.status, 200);
-  assert.equal(keepsakeHydration.body.hydrated, true);
-  assert.deepEqual(keepsakeHydration.body.control.loadedScopes, ["captures", "today", "keepsakes"]);
-  assert.equal(keepsakeHydration.body.control.recordCount, 2);
+  assert.equal(keepsakeHydration.body.hydrated, false);
+  assert.deepEqual(keepsakeHydration.body.control.loadedScopes, ["captures", "today", "discovery", "keepsakes"]);
+  assert.equal(keepsakeHydration.body.control.recordCount, 4);
   assert.equal(upstreamCalls.filter(call => call.path.startsWith("/attachments/")).length, 0);
 
   const attachment = await fetch(`${base}/attachments/remote.png`, { headers: { cookie } });
@@ -281,15 +329,27 @@ try {
   assert.equal(upstreamCalls.filter(call => call.path.startsWith("/attachments/")).length, lazyAttachmentCalls);
   state = (await jsonRequest(`${base}/api/state`)).body;
   assert.equal(state.captures.length, 0);
-  const rehydrated = await jsonRequest(`${base}/api/local-test-mode/hydrate`, {
+  holdCaptureRead = true;
+  const rehydrationRequest = jsonRequest(`${base}/api/local-test-mode/hydrate`, {
     method: "POST",
     headers: { cookie },
     body: JSON.stringify({ scope: "captures" })
   });
+  for (let attempt = 0; attempt < 100 && !releaseCaptureRead; attempt += 1) await sleep(10);
+  assert.equal(typeof releaseCaptureRead, "function");
+  const concurrentLocal = await jsonRequest(`${base}/api/captures`, {
+    method: "POST",
+    body: JSON.stringify({ occurredAt: "2026-09-28T13:00:00", content: "拉取期间本地写入", tags: [] })
+  });
+  assert.equal(concurrentLocal.response.status, 201);
+  holdCaptureRead = false;
+  releaseCaptureRead();
+  releaseCaptureRead = null;
+  const rehydrated = await rehydrationRequest;
   assert.equal(rehydrated.response.status, 200);
   assert.equal(rehydrated.body.hydrated, true);
   state = (await jsonRequest(`${base}/api/state`)).body;
-  assert.equal(state.captures[0].content, "线上主账户原文");
+  assert.deepEqual(new Set(state.captures.map(item => item.content)), new Set(["线上主账户原文", "拉取期间本地写入"]));
   const captureCallsBeforeDuplicate = upstreamCalls.filter(call => call.path === "/api/v1/captures").length;
   const duplicateHydration = await jsonRequest(`${base}/api/local-test-mode/hydrate`, {
     method: "POST",

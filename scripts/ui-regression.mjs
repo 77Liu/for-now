@@ -2492,6 +2492,14 @@ try {
   await evaluate(`document.querySelector('[data-view="settings"]').click();document.querySelector('[data-view="captures"]').click();true`);
   await sleep(100);
   assert.equal(await evaluate(`window.__localHydrateRequests.filter(scope=>scope==="captures").length`),1);
+  await evaluate(`window.__failCaptureCreate=true;document.querySelector("#capture-content").value="范围切换时保留的待同步记录";document.querySelector("#capture-form").requestSubmit();true`);
+  assert.equal(await waitUntil(`document.querySelector(".capture-sync-state.pending")?.textContent==="待同步"&&document.querySelector("#capture-list").textContent.includes("范围切换时保留的待同步记录")`),true);
+  await evaluate(`document.querySelector('[data-view="today"]').click();true`);
+  assert.equal(await waitUntil(`window.__localHydrateRequests.includes("today")&&document.querySelectorAll(".home-v02-memory").length===3&&document.querySelector("#home-keepsake").textContent.includes("旧展览票")`),true);
+  await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
+  assert.equal(await evaluate(`document.querySelector(".capture-sync-state.pending")?.textContent==="待同步"&&document.querySelector("#capture-list").textContent.includes("范围切换时保留的待同步记录")`),true);
+  await evaluate(`document.querySelector('[data-view="discovery"]').click();true`);
+  assert.equal(await waitUntil(`window.__localHydrateRequests.includes("discovery")`),true);
   await evaluate(`document.querySelector('[data-view="settings"]').click();true`);
   await evaluate(`window.__failLocalModeTimeout=true;document.querySelector('[data-local-test-mode="cold"]').click();true`);
   assert.equal(await waitUntil(`document.querySelector("#local-test-status").textContent==="线上数据读取超时，请检查网络后重试。"&&window.__testWorkspaceMode==="simulation"`),true);
