@@ -139,6 +139,23 @@ export function createImageAttachments({
     };
   }
 
+  async function saveKeepsakeSources({ image, alphaMask, maxBytes = defaultMaxBytes }) {
+    const { attachmentsDir } = getContext();
+    const [source] = decodeImages([image], { maxImages: 1, maxBytes });
+    const [mask] = decodeImages([alphaMask], { maxImages: 1, maxBytes });
+    const id = createId();
+    const prepared = [
+      { ...source, name: `${id}.original.${source.extension}` },
+      { ...mask, name: `${id}.source-mask.${mask.extension}` }
+    ].map(item => ({ ...item, file: path.join(attachmentsDir, item.name) }));
+    const saved = await persistPrepared(prepared);
+    const [originalPath, alphaMaskPath] = saved.attachmentPaths;
+    return {
+      ...saved,
+      paths: { originalPath, alphaMaskPath }
+    };
+  }
+
   async function saveKeepsakeSet({ image, alphaMask, maxBytes = defaultMaxBytes }) {
     const { attachmentsDir } = getContext();
     const [source] = decodeImages([image], { maxImages: 1, maxBytes });
@@ -230,7 +247,7 @@ export function createImageAttachments({
   }
 
   return {
-    save, saveAudio, saveKeepsakeSet, deriveKeepsakeSet, previewKeepsakeSet,
+    save, saveAudio, saveKeepsakeSources, saveKeepsakeSet, deriveKeepsakeSet, previewKeepsakeSet,
     discard, remove, recover, prepareDirectory,
     inspect: (resourcePath, options = {}) => storage.inspect({ ...location(resourcePath, getContext()), ...options }),
     read: resourcePath => storage.get(location(resourcePath, getContext()))

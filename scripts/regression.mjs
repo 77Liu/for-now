@@ -881,7 +881,7 @@ try {
   });
   assert.equal(keepsakeMediaResponse.status, 201, await keepsakeMediaResponse.clone().text());
   const keepsakeMedia = await keepsakeMediaResponse.json();
-  assert.equal(keepsakeMedia.attachmentPaths.length, 5);
+  assert.equal(keepsakeMedia.attachmentPaths.length, 2);
   const replayedKeepsakeMedia = await (await fetch(`${base}/api/images/upload`, {
     method: "POST",
     headers: { "content-type": "application/json", "idempotency-key": "keepsake-media-upload" },

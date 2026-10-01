@@ -71,24 +71,25 @@ export function nextKeepsakeBatchIndex(items, removedIndex) {
 
 export function keepsakeMediaSources(item, mode = "list") {
   if (!item || typeof item !== "object") throw new TypeError("Keepsake media is required");
+  const previewPath = attachmentPath(item.previewPath);
   if (mode === "original") {
     const imagePath = attachmentPath(item.originalPath);
     if (!imagePath) throw new Error("原图不可用");
     return { imagePath };
   }
   if (mode === "edit") {
-    const imagePath = attachmentPath(item.editPath);
+    const imagePath = attachmentPath(item.editPath) || previewPath;
     const alphaMaskPath = attachmentPath(item.alphaMaskPath);
     if (!imagePath || !alphaMaskPath) throw new Error("编辑派生图或蒙版不可用");
     return { imagePath, alphaMaskPath };
   }
   if (mode === "detail") {
-    const imagePath = attachmentPath(item.displayPath) || attachmentPath(item.cutoutPath);
+    const imagePath = attachmentPath(item.displayPath) || attachmentPath(item.cutoutPath) || previewPath;
     if (!imagePath) throw new Error("详情图不可用");
     return { imagePath, backgroundPath: attachmentPath(item.editPath) };
   }
   if (!["list", "home"].includes(mode)) throw new TypeError(`Unsupported keepsake media mode: ${mode}`);
-  const imagePath = attachmentPath(item.thumbPath) || attachmentPath(item.cutoutPath);
+  const imagePath = attachmentPath(item.thumbPath) || attachmentPath(item.cutoutPath) || previewPath;
   if (!imagePath) throw new Error("缩略图不可用");
   return { imagePath, backgroundPath: attachmentPath(item.editPath) };
 }
@@ -109,14 +110,14 @@ export async function uploadKeepsakeMedia({ request, image, alphaMask, idempoten
     body: JSON.stringify(keepsakeUploadPayload({ image, alphaMask }))
   });
   const paths = {};
-  for (const key of ["originalPath", "thumbPath", "displayPath", "editPath", "alphaMaskPath"]) {
+  for (const key of ["originalPath", "alphaMaskPath"]) {
     paths[key] = attachmentPath(result?.[key]);
     if (!paths[key]) throw new Error(`服务端未返回 ${key}`);
   }
   const attachmentPaths = Array.isArray(result?.attachmentPaths)
     ? result.attachmentPaths.map(attachmentPath).filter(Boolean)
     : Object.values(paths);
-  if (attachmentPaths.length !== 5) throw new Error("服务端未返回完整的小物媒体路径");
+  if (attachmentPaths.length !== 2) throw new Error("服务端未返回完整的小物原图与蒙版路径");
   return { ...paths, attachmentPaths };
 }
 

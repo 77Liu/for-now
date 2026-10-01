@@ -36,7 +36,9 @@ export function createKeepsakeHttp({
     } else if (req.method === "POST" && url.pathname === "/api/keepsakes") {
       const input = await bodyJson(req, mediaBodyMaxBytes);
       const clientRequestId = String(req.headers?.["idempotency-key"] || "").trim().slice(0, 100);
-      const result = media && input.image && input.alphaMask
+      const hasMediaSources = (input.image && input.alphaMask)
+        || (input.originalPath && input.alphaMaskPath);
+      const result = media && hasMediaSources
         ? await media.create(input, { clientRequestId })
         : await records.create(input, { clientRequestId });
       if (result.error) sendJson(res, 400, { error: result.error });
@@ -51,6 +53,11 @@ export function createKeepsakeHttp({
       else if (result.conflict) sendJson(res, 409, { error: "小物图片已经变化，请重新打开后再编辑", code: "VERSION_CONFLICT" });
       else if (result.error) sendJson(res, 400, { error: result.error });
       else sendJson(res, 200, present(result.value));
+    } else if (media && req.method === "POST" && /^\/api\/keepsakes\/[^/]+\/derive$/.test(url.pathname)) {
+      const result = await media.retry(url.pathname.split("/")[3]);
+      if (result.missing) sendJson(res, 404, { error: "这件小物不存在" });
+      else if (result.invalid) sendJson(res, 409, { error: "这件小物没有可重试的源蒙版", code: "DERIVATIVE_SOURCE_UNAVAILABLE" });
+      else sendJson(res, 202, present(result.value));
     } else if (getOriginal && req.method === "GET" && /^\/api\/keepsakes\/[^/]+\/original$/.test(url.pathname)) {
       const result = await getOriginal(url.pathname.split("/")[3]);
       if (!result) sendJson(res, 404, { error: "这件小物不存在或原图不可用" });

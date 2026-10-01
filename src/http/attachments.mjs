@@ -23,7 +23,7 @@ export function createAttachmentHttp({
           }
           const result = typeof uploadKeepsake === "function"
             ? await uploadKeepsake(req, input)
-            : await attachments.saveKeepsakeSet({
+            : await (attachments.saveKeepsakeSources || attachments.saveKeepsakeSet)({
                 image: input.image,
                 alphaMask: input.alphaMask,
                 maxBytes: uploadImageMaxBytes

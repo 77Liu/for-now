@@ -1088,7 +1088,18 @@ async function saveKeepsakeImages(req, input) {
       ["ENOENT", "NoSuchKey"].includes(item.reason?.code) || Number(item.reason?.status) === 404
     ));
     if (unexpected) throw unexpected.reason;
-    if (replayPaths.length === 5 && !missing) return replay;
+    if ([2, 5].includes(replayPaths.length) && !missing) {
+      if (replayPaths.length === 2) return replay;
+      const originalPath = replay.originalPath || replayPaths[0];
+      const alphaMaskPath = replay.alphaMaskPath || replayPaths.at(-1);
+      return {
+        ...replay,
+        attachmentPath: originalPath,
+        attachmentPaths: [originalPath, alphaMaskPath],
+        originalPath,
+        alphaMaskPath
+      };
+    }
     if (missing && missing !== replayPaths.length) {
       throw Object.assign(new Error("小物媒体上传的幂等结果仅部分可用，请更换请求标识后重试"), {
         statusCode: 409,
@@ -1097,7 +1108,7 @@ async function saveKeepsakeImages(req, input) {
     }
     await storeRepository.update(store => removeIdempotencyResponse(store, idempotency));
   }
-  const uploaded = await imageAttachments.saveKeepsakeSet({
+  const uploaded = await imageAttachments.saveKeepsakeSources({
     image: input.image,
     alphaMask: input.alphaMask,
     maxBytes: ATTACHMENT_UPLOAD_IMAGE_MAX_BYTES
@@ -1221,7 +1232,15 @@ const keepsakeMediaWorkflows = createKeepsakeMediaWorkflows({
   cleanup: attachmentCleanup,
   parse: keepsakePayload,
   createId: () => crypto.randomUUID(),
-  now
+  now,
+  contextKey: () => requestStorage.getStore()?.dataDir || DATA_DIR,
+  dispatch: callback => {
+    const context = { ...(requestStorage.getStore() || {}) };
+    setImmediate(() => requestStorage.run(context, callback));
+  },
+  onError: (id, error) => logEvent("system", "keepsake.derivative_failed", {
+    level: "error", keepsakeId: id, error: errorMetadata(error)
+  })
 });
 const segmentKeepsakeImage = createKeepsakeSegmentation({
   saveImages: saveImageDataUrls, cleanupFiles: cleanupTemporaryFiles,
@@ -2485,6 +2504,7 @@ if (LOCAL_TEST_MODE) {
     await ensureAuditLogs();
     await resumeAttachmentCleanup();
     await backgroundAi.resume();
+    await keepsakeMediaWorkflows.resume();
   });
 } else if (!postgresRuntime || !AUTH_REQUIRED) {
   await ensureStore();
@@ -2493,6 +2513,7 @@ if (LOCAL_TEST_MODE) {
   await ensureAuditLogs();
   await resumeAttachmentCleanup();
   await backgroundAi.resume();
+  await keepsakeMediaWorkflows.resume();
 }
 await fs.mkdir(USERS_DIR, { recursive: true, mode: 0o700 });
 await fs.chmod(USERS_DIR, 0o700);
@@ -2506,6 +2527,7 @@ if (AUTH_REQUIRED) {
       await ensureAuditLogs();
       await resumeAttachmentCleanup();
       await backgroundAi.resume();
+      await keepsakeMediaWorkflows.resume();
     });
   }
 }

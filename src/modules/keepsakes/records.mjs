@@ -43,6 +43,9 @@ export function normalizeKeepsake(item, eventTime) {
   const cutoutPath = pathValue(item.cutoutPath);
   const derivatives = Object.fromEntries(derivativeKeys.map(key => [key, pathValue(item[key])]));
   const completeDerivatives = derivativeKeys.every(key => derivatives[key]);
+  const pendingDerivatives = originalPath
+    && derivatives.alphaMaskPath
+    && ["pending", "failed"].includes(item.derivativeState);
   const normalized = {
     category: "其他", note: "", tags: [], source: "manual",
     ...item, ...eventTime,
@@ -54,9 +57,15 @@ export function normalizeKeepsake(item, eventTime) {
     ...derivatives,
     thumbPath: derivatives.thumbPath || cutoutPath,
     displayPath: derivatives.displayPath || cutoutPath,
-    derivativeState: completeDerivatives ? "ready" : originalPath && cutoutPath ? "legacy" : "invalid"
+    derivativeState: completeDerivatives
+      ? "ready"
+      : pendingDerivatives
+        ? item.derivativeState
+        : originalPath && cutoutPath
+          ? "legacy"
+          : "invalid"
   };
-  return originalPath && (completeDerivatives || cutoutPath)
+  return originalPath && (completeDerivatives || cutoutPath || pendingDerivatives)
     ? normalized
     : { ...normalized, validationState: "invalid" };
 }
@@ -77,7 +86,15 @@ export function keepsakePayload(input, existing = null) {
     ? backgroundOpacityPct(input.backgroundOpacityPct, existing?.backgroundOpacityPct ?? 15)
     : backgroundOpacityPct(existing?.backgroundOpacityPct);
   const completeDerivatives = derivativeKeys.every(key => derivatives[key]);
-  if (!originalPath || (!completeDerivatives && !cutoutPath)) return { error: "请先完成原图和全部派生图保存" };
+  const requestedDerivativeState = hasOwn(input, "derivativeState")
+    ? input.derivativeState
+    : existing?.derivativeState;
+  const pendingDerivatives = originalPath
+    && derivatives.alphaMaskPath
+    && ["pending", "failed"].includes(requestedDerivativeState);
+  if (!originalPath || (!completeDerivatives && !cutoutPath && !pendingDerivatives)) {
+    return { error: "请先完成原图和全部派生图保存" };
+  }
   return {
     value: {
       ...eventTime,
@@ -88,7 +105,7 @@ export function keepsakePayload(input, existing = null) {
       originalPath,
       cutoutPath,
       ...derivatives,
-      derivativeState: completeDerivatives ? "ready" : "legacy",
+      derivativeState: completeDerivatives ? "ready" : pendingDerivatives ? requestedDerivativeState : "legacy",
       source: input.source === "auto" ? "auto" : existing?.source || "manual",
       edgeExpansion: Math.max(0, Math.min(20, Number(input.edgeExpansion) || 0)),
       backgroundOpacityPct: opacity
@@ -102,7 +119,9 @@ export function publicKeepsake(item) {
     occurredOn: item.occurredOn
   });
   void requestHash;
-  return visible;
+  return ["pending", "failed"].includes(visible.derivativeState)
+    ? { ...visible, previewPath: originalPath }
+    : visible;
 }
 
 export function originalKeepsakeMedia(item) {

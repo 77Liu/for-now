@@ -130,6 +130,26 @@ try {
     deriveKeepsakeImages: input => createKeepsakeImageDerivatives({ ...input, processor: fakeProcessor() })
   });
   await run(() => uploads.prepareDirectory());
+  const sourceWritesStart = writes.length;
+  const sources = await run(() => uploads.saveKeepsakeSources({
+    image: dataUrl("image/png", original),
+    alphaMask: dataUrl("image/png", mask)
+  }));
+  assert.deepEqual(Object.keys(sources.paths), ["originalPath", "alphaMaskPath"]);
+  assert.equal(sources.attachmentPaths.length, 2);
+  assert.equal(writes.length - sourceWritesStart, 2);
+  assert.match(sources.paths.originalPath, /\.original\.png$/);
+  assert.match(sources.paths.alphaMaskPath, /\.source-mask\.png$/);
+  const sourceDerivatives = await run(() => uploads.deriveKeepsakeSet(sources.paths));
+  assert.equal(sourceDerivatives.paths.originalPath, sources.paths.originalPath);
+  assert.equal(sourceDerivatives.replacedPaths[0], sources.paths.alphaMaskPath);
+  assert.equal(sourceDerivatives.attachmentPaths.length, 4);
+  for (const resourcePath of [
+    ...sources.attachmentPaths,
+    ...sourceDerivatives.attachmentPaths
+  ]) await run(() => uploads.remove(resourcePath));
+
+  writes.length = 0;
   const saved = await run(() => uploads.saveKeepsakeSet({
     image: dataUrl("image/png", original),
     alphaMask: dataUrl("image/png", mask)
@@ -222,6 +242,25 @@ try {
   });
   assert.deepEqual(keepsakeMediaSources(record, "original"), { imagePath: saved.paths.originalPath });
   assert.doesNotMatch(JSON.stringify(keepsakeMediaSources(record, "list")), /original/);
+  const pendingRecord = {
+    id: "keepsake-pending",
+    title: "待派生",
+    derivativeState: "pending",
+    previewPath: sources.paths.originalPath,
+    alphaMaskPath: sources.paths.alphaMaskPath
+  };
+  assert.deepEqual(keepsakeMediaSources(pendingRecord, "list"), {
+    imagePath: sources.paths.originalPath,
+    backgroundPath: ""
+  });
+  assert.deepEqual(keepsakeMediaSources(pendingRecord, "detail"), {
+    imagePath: sources.paths.originalPath,
+    backgroundPath: ""
+  });
+  assert.deepEqual(keepsakeMediaSources(pendingRecord, "edit"), {
+    imagePath: sources.paths.originalPath,
+    alphaMaskPath: sources.paths.alphaMaskPath
+  });
   assert.throws(() => keepsakeMediaSources({ originalPath: saved.paths.originalPath }, "list"), /缩略图/);
 
   const payload = keepsakeUploadPayload({ image: "source", alphaMask: "mask" });
@@ -230,14 +269,14 @@ try {
   const uploaded = await uploadKeepsakeMedia({
     request: async (url, options) => {
       requests.push({ url, options });
-      return { ...saved.paths };
+      return { ...sources.paths };
     },
     image: "source",
     alphaMask: "mask",
     idempotencyKey: "keepsake-upload-1"
   });
-  assert.deepEqual(uploaded, { ...saved.paths, attachmentPaths: Object.values(saved.paths) });
-  assert.equal(requests.length, 1, "the original and derivatives must use one server batch");
+  assert.deepEqual(uploaded, { ...sources.paths, attachmentPaths: Object.values(sources.paths) });
+  assert.equal(requests.length, 1, "the original and source mask must use one server batch");
   assert.equal(requests[0].url, "/api/images/upload");
   assert.equal(requests[0].options.headers["idempotency-key"], "keepsake-upload-1");
   const batchItems = createKeepsakeBatchItems([{ name: "a.png" }, { name: "b.png" }], {
@@ -264,7 +303,7 @@ try {
   const http = createAttachmentHttp({
     attachments: {
       save: async () => ({ attachmentPaths: ["/attachments/plain.png"] }),
-      saveKeepsakeSet: async () => ({ paths: saved.paths })
+      saveKeepsakeSources: async () => ({ paths: sources.paths })
     },
     bodyJson: async req => req.body,
     sendJson: (_res, status, value) => { response = { status, value }; },
@@ -278,7 +317,7 @@ try {
   );
   assert.deepEqual(response, {
     status: 201,
-    value: { attachmentPath: saved.paths.originalPath, attachmentPaths: Object.values(saved.paths), ...saved.paths }
+    value: { attachmentPath: sources.paths.originalPath, attachmentPaths: Object.values(sources.paths), ...sources.paths }
   });
   await http.handle(
     { method: "POST", body: { purpose: "original", image: "source" } },

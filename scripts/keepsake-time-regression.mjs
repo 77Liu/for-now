@@ -90,6 +90,23 @@ assert.equal(keepsakePayload({ title: " ", occurredAt: "bad" }).error, "请填�
 assert.equal(keepsakePayload({ ...input, occurredAt: "bad" }).error, "留存时间格式不正确");
 assert.equal(keepsakePayload({ ...input, originalPath: "" }).error, "请先完成原图和全部派生图保存");
 assert.equal(keepsakePayload({ ...input, thumbPath: "" }).error, "请先完成原图和全部派生图保存");
+const pendingInput = {
+  title: "待派生票券",
+  occurredAt: originalTime,
+  originalPath: "/attachments/pending.original.png",
+  alphaMaskPath: "/attachments/pending.source-mask.png",
+  derivativeState: "pending"
+};
+const pendingPayload = keepsakePayload(pendingInput).value;
+assert.equal(pendingPayload.derivativeState, "pending");
+assert.equal(pendingPayload.thumbPath, "");
+const pending = normalizeKeepsake({ id: "pending", ...pendingPayload }, eventTimeFields(pendingPayload));
+assert.equal(pending.validationState, undefined);
+assert.equal(pending.derivativeState, "pending");
+const publicPending = publicKeepsake(pending);
+assert.equal("originalPath" in publicPending, false);
+assert.equal("requestHash" in publicPending, false);
+assert.equal(publicPending.previewPath, pendingInput.originalPath);
 const partial = keepsakePayload({ title: "修改" }, normalized).value;
 assert.equal(partial.originalPath, input.originalPath); assert.equal(partial.thumbPath, input.thumbPath);
 assert.equal(partial.displayPath, input.displayPath); assert.equal(partial.editPath, input.editPath);
@@ -115,7 +132,7 @@ assert.equal(legacy.thumbPath, "/attachments/legacy-cutout.png");
 assert.equal(legacy.displayPath, "/attachments/legacy-cutout.png");
 assert.equal(publicKeepsake(legacy).originalPath, undefined);
 
-let httpResponse, httpCreateOptions;
+let httpResponse, httpCreateOptions, retriedKeepsakeId = "";
 const keepsakeHttp = createKeepsakeHttp({
   records: {
     create: async (_input, options) => { httpCreateOptions = options; return { value: normalized, duplicate: Boolean(options.clientRequestId) }; },
@@ -124,6 +141,16 @@ const keepsakeHttp = createKeepsakeHttp({
   bodyJson: async req => req.body,
   sendJson: (_res, status, value) => { httpResponse = { status, value }; },
   present: publicKeepsake,
+  media: {
+    create: async (_input, options) => {
+      httpCreateOptions = options;
+      return { value: normalized, duplicate: Boolean(options.clientRequestId) };
+    },
+    retry: async id => {
+      retriedKeepsakeId = id;
+      return id === normalized.id ? { value: normalized } : { missing: true };
+    }
+  },
   getOriginal: async id => id === normalized.id ? originalKeepsakeMedia(normalized) : null
 });
 await keepsakeHttp.handle({ method: "POST", body: input }, {}, new URL("http://local/api/keepsakes"));
@@ -135,6 +162,11 @@ assert.deepEqual(httpCreateOptions, { clientRequestId: "keepsake-http-1" });
 await keepsakeHttp.handle({ method: "GET" }, {}, new URL(`http://local/api/keepsakes/${normalized.id}/original`));
 assert.deepEqual(httpResponse, { status: 200, value: { originalPath: input.originalPath } });
 await keepsakeHttp.handle({ method: "GET" }, {}, new URL("http://local/api/keepsakes/missing/original"));
+assert.equal(httpResponse.status, 404);
+await keepsakeHttp.handle({ method: "POST" }, {}, new URL(`http://local/api/keepsakes/${normalized.id}/derive`));
+assert.equal(httpResponse.status, 202);
+assert.equal(retriedKeepsakeId, normalized.id);
+await keepsakeHttp.handle({ method: "POST" }, {}, new URL("http://local/api/keepsakes/missing/derive"));
 assert.equal(httpResponse.status, 404);
 
 const context = new AsyncLocalStorage(), accounts = new Map([["a", []], ["b", []]]);
