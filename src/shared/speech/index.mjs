@@ -1,0 +1,22 @@
+import { numberOrFallback } from "../validation/index.mjs";
+
+export const TTS_GENERATION_RATE_MIN = -50;
+export const TTS_GENERATION_RATE_MAX = 100;
+export const TTS_GENERATION_RATE_DEFAULT = -10;
+
+export function normalizeTtsGenerationRate(value, fallback = TTS_GENERATION_RATE_DEFAULT) {
+  const normalizedFallback = numberOrFallback(
+    fallback,
+    TTS_GENERATION_RATE_DEFAULT,
+    TTS_GENERATION_RATE_MIN,
+    TTS_GENERATION_RATE_MAX,
+    true
+  );
+  return numberOrFallback(
+    value,
+    normalizedFallback,
+    TTS_GENERATION_RATE_MIN,
+    TTS_GENERATION_RATE_MAX,
+    true
+  );
+}

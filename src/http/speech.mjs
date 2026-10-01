@@ -1,3 +1,4 @@
+import { normalizeTtsGenerationRate } from "../shared/speech/index.mjs";
 import { safeText } from "../shared/validation/index.mjs";
 
 export function createSpeechHttp({
@@ -6,6 +7,7 @@ export function createSpeechHttp({
   auditCall = async (_details, invoke) => invoke(),
   bodyJson,
   sendJson,
+  readSettings = async () => ({}),
   getContext = () => null
 }) {
   if (!speech || typeof speech.synthesize !== "function" || !gate || typeof gate.acquire !== "function") {
@@ -23,6 +25,7 @@ export function createSpeechHttp({
     }
     if (req.method !== "POST" || url.pathname !== "/api/speech/synthesize") return false;
     const input = await bodyJson(req);
+    const generationRate = normalizeTtsGenerationRate((await readSettings())?.speech?.generationRate);
     const release = await gate.acquire();
     try {
       const voice = safeText(input.voice, 160) || speech.defaultVoice;
@@ -31,15 +34,16 @@ export function createSpeechHttp({
         service: "speech",
         scene: "speechSynthesis",
         action: "synthesize",
-        request: { textChars: String(input.text || "").length, voice },
+        request: { textChars: String(input.text || "").length, voice, generationRate },
         modality: "audio",
         requestChars: String(input.text || "").length,
         unitType: "character",
         units: [...String(input.text || "")].length,
         costKnown: false,
         costSource: "Volcengine billing not configured"
-      }, () => speech.synthesize({ text: input.text, voice }), value => ({
+      }, () => speech.synthesize({ text: input.text, voice, generationRate }), value => ({
         voice: value.voice,
+        generationRate,
         audioBytes: value.audio.length
       }));
       const context = getContext();

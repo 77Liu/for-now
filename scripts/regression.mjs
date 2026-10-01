@@ -233,7 +233,7 @@ try {
   assert.deepEqual(migrated.insights.associations.map(item => [item.factor, item.withCount, item.confidence]), [["冷启动因素", 1, "单日观察"]]);
   assert.equal((await fs.readdir(dataDir)).some(name => name.includes("v3-pre-v15") && name.endsWith(".bak")), true);
   const migratedSettings = await (await fetch(`${base}/api/settings`)).json();
-  assert.equal(migratedSettings.version, 7);
+  assert.equal(migratedSettings.version, 8);
   assert.deepEqual(Object.keys(migratedSettings.profiles), ["lite", "mid", "high", "ultra"]);
   assert.deepEqual(migratedSettings.scenarios, {
     thoughtPrompt: "lite", thoughtDraft: "high", thoughtAnswer: "ultra", followUpAnswer: "ultra", chat: "high",
@@ -243,10 +243,11 @@ try {
   });
   assert.equal(migratedSettings.assistantName, "神鸡");
   assert.equal(migratedSettings.responseStyles.thoughtAnswer, "standard");
+  assert.deepEqual(migratedSettings.speech, { generationRate: -10 });
   const storedSettings = JSON.parse(await fs.readFile(path.join(dataDir, "llm-settings.json"), "utf8"));
-  assert.equal(storedSettings.version, 7);
+  assert.equal(storedSettings.version, 8);
   assert.equal(storedSettings.apiKey, "test-key");
-  assert.equal((await fs.readdir(dataDir)).some(name => name.includes("v2-pre-v7") && name.endsWith(".bak")), true);
+  assert.equal((await fs.readdir(dataDir)).some(name => name.includes("v2-pre-v8") && name.endsWith(".bak")), true);
   const initialStatistics = await (await fetch(`${base}/api/statistics`)).json();
   assert.equal(initialStatistics.ai.summary.calls, 0);
   assert.equal(initialStatistics.ai.daily.length, 7);
@@ -1520,7 +1521,7 @@ try {
   let restoredRaceResult;
   for (let attempt = 0; attempt < 50; attempt += 1) {
     restoredRaceResult = await (await fetch(`${base}/api/ai-tasks/${restoredRaceTask.id}`)).json();
-    if (!["queued", "running"].includes(restoredRaceResult.status)) break;
+    if (!["queued", "running", "cancelling"].includes(restoredRaceResult.status)) break;
     await sleep(25);
   }
   assert.equal(restoredRaceResult.status, "cancelled");

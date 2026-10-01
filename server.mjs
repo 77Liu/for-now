@@ -2071,6 +2071,7 @@ const speechHttp = createSpeechHttp({
   auditCall: (details, invoke, summarize) => meteredProviderCall(details, invoke, summarize),
   bodyJson,
   sendJson,
+  readSettings: readLlmSettings,
   getContext: () => requestStorage.getStore()
 });
 const visionHttp = createVisionHttp({

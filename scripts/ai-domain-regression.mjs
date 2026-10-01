@@ -22,6 +22,9 @@ for (const [model, effort, tier] of [["deepseek-flash", "none", "lite"], ["deeps
   assert.deepEqual(settings.profiles[tier], { model, effort });
 }
 const initial = normalizeLlmSettings({ apiKey: "private-test-value" });
+assert.deepEqual(initial.speech, { generationRate: -10 });
+assert.equal(normalizeLlmSettings({ speech: { generationRate: -80 } }).speech.generationRate, -50);
+assert.equal(normalizeLlmSettings({ speech: { generationRate: 140 } }).speech.generationRate, 100);
 const edited = mergeLlmSettings(initial, { model: "deepseek-flash", effort: "none", responseStyles: { chat: "concise" }, assistantName: " 新名字 " });
 assert.equal(llmSettingsForScene(edited).model, "deepseek-flash");
 assert.equal(llmSettingsForScene(edited, "chat").responseStyle, "concise");
@@ -30,6 +33,8 @@ assert.equal(edited.apiKey, initial.apiKey);
 assert.equal(mergeLlmSettings(edited, { clearApiKey: true }).apiKey, "");
 assert.equal(publicLlmSettings(edited).apiKey, undefined);
 assert.doesNotMatch(JSON.stringify(publicLlmSettings(edited)), /private-test-value/);
+assert.deepEqual(publicLlmSettings(edited).speech, { generationRate: -10 });
+assert.equal(mergeLlmSettings(edited, { speech: { generationRate: 25 } }).speech.generationRate, 25);
 assert.deepEqual(initial.automaticAnswers, { thoughtAnswer: false });
 assert.equal(publicLlmSettings(initial).automaticAnswers.thoughtAnswer, false);
 assert.deepEqual(automaticAnswerDecision(initial, { requested: true, hasAnswer: false }), {
@@ -213,7 +218,7 @@ try {
   await run("a", async () => {
     await fs.writeFile(getFile(), JSON.stringify(legacy));
     await settings.ensure();
-    assert.equal((await fs.stat(`${getFile()}.v2-pre-v7.20260929010000.bak`)).mode & 0o777, 0o600);
+    assert.equal((await fs.stat(`${getFile()}.v2-pre-v8.20260929010000.bak`)).mode & 0o777, 0o600);
     await Promise.all([
       settings.update(current => mergeLlmSettings(current, { assistantName: "并发名称" })),
       settings.update(current => mergeLlmSettings(current, { apiKey: "next-test-value" }))
@@ -228,8 +233,15 @@ try {
     failWrite = false;
     await settings.update(current => mergeLlmSettings(current, { assistantName: "恢复" }));
   });
-  await Promise.all(["a", "b"].map(account => run(account, () => settings.update(current => mergeLlmSettings(current, { assistantName: account })))));
-  for (const account of ["a", "b"]) assert.equal((await run(account, settings.read)).assistantName, account);
+  await Promise.all(["a", "b"].map((account, index) => run(account, () => settings.update(current => mergeLlmSettings(current, {
+    assistantName: account,
+    speech: { generationRate: index ? 40 : -20 }
+  })))));
+  for (const [account, generationRate] of [["a", -20], ["b", 40]]) {
+    const accountSettings = await run(account, settings.read);
+    assert.equal(accountSettings.assistantName, account);
+    assert.equal(accountSettings.speech.generationRate, generationRate);
+  }
   await run("broken", async () => {
     await fs.writeFile(getFile(), "{CORRUPT");
     await assert.rejects(settings.ensure());

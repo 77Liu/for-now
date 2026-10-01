@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { gzipSync, gunzipSync } from "node:zlib";
 import WebSocket from "ws";
+import { normalizeTtsGenerationRate, TTS_GENERATION_RATE_DEFAULT } from "../../shared/speech/index.mjs";
 import { safeText } from "../../shared/validation/index.mjs";
 
 const DEFAULT_TTS_ENDPOINT = "https://openspeech.bytedance.com/api/v3/tts/unidirectional";
@@ -282,9 +283,15 @@ export function createVolcengineSpeechTransport({
     if (!configured) throw failure("火山语音服务尚未配置", "SPEECH_NOT_CONFIGURED", 503);
   };
 
-  async function synthesize({ text, voice = selectedDefaultVoice, signal } = {}) {
+  async function synthesize({
+    text,
+    voice = selectedDefaultVoice,
+    generationRate = TTS_GENERATION_RATE_DEFAULT,
+    signal
+  } = {}) {
     requireConfiguration();
     const sourceText = String(text || "").trim();
+    const normalizedGenerationRate = normalizeTtsGenerationRate(generationRate);
     if (sourceText.length > MAX_TTS_TEXT_LENGTH) throw failure("单次朗读文本不得超过 5000 字", "TTS_TEXT_TOO_LONG", 400);
     const normalizedText = safeText(sourceText, MAX_TTS_TEXT_LENGTH);
     if (!normalizedText) throw failure("朗读文本不能为空", "INVALID_TTS_TEXT", 400);
@@ -304,7 +311,7 @@ export function createVolcengineSpeechTransport({
             audio_params: {
               format: "mp3",
               sample_rate: 24000,
-              speech_rate: -10,
+              speech_rate: normalizedGenerationRate,
               loudness_rate: 0
             },
             post_process: { pitch: 0 },
@@ -319,9 +326,16 @@ export function createVolcengineSpeechTransport({
     }
   }
 
-  async function submitLongText({ text, voice = selectedDefaultVoice, userId = "local", signal } = {}) {
+  async function submitLongText({
+    text,
+    voice = selectedDefaultVoice,
+    generationRate = TTS_GENERATION_RATE_DEFAULT,
+    userId = "local",
+    signal
+  } = {}) {
     requireConfiguration();
     const sourceText = String(text || "").trim();
+    const normalizedGenerationRate = normalizeTtsGenerationRate(generationRate);
     if (sourceText.length > 100_000) throw failure("长文本朗读不得超过 10 万字", "TTS_TEXT_TOO_LONG", 400);
     const normalizedText = safeText(sourceText, 100_000);
     if (!normalizedText) throw failure("朗读文本不能为空", "INVALID_TTS_TEXT", 400);
@@ -342,7 +356,7 @@ export function createVolcengineSpeechTransport({
             audio_params: {
               format: "mp3",
               sample_rate: 24000,
-              speech_rate: -10,
+              speech_rate: normalizedGenerationRate,
               loudness_rate: 0,
               enable_timestamp: true
             }

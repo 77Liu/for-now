@@ -1,6 +1,7 @@
 import { safeText } from "../../shared/validation/index.mjs";
+import { normalizeTtsGenerationRate, TTS_GENERATION_RATE_DEFAULT } from "../../shared/speech/index.mjs";
 
-export const LLM_SETTINGS_VERSION = 7;
+export const LLM_SETTINGS_VERSION = 8;
 export const LLM_MODELS = ["deepseek-flash", "deepseek-v4-pro"];
 export const LLM_EFFORTS = ["none", "high", "max"];
 export const LLM_TIERS = ["lite", "mid", "high", "ultra"];
@@ -37,6 +38,7 @@ export const defaultLlmSettings = {
   assistantName: "神鸡",
   responseStyles: Object.fromEntries(RESPONSE_STYLE_SCENARIOS.map(scene => [scene, "standard"])),
   automaticAnswers: { thoughtAnswer: false },
+  speech: { generationRate: TTS_GENERATION_RATE_DEFAULT },
   apiKey: ""
 };
 
@@ -59,6 +61,7 @@ export function normalizeLlmSettings(value = {}) {
   settings.apiKey = safeText(value.apiKey, 300);
   settings.assistantName = safeText(value.assistantName, 24) || defaultLlmSettings.assistantName;
   settings.automaticAnswers.thoughtAnswer = value.automaticAnswers?.thoughtAnswer === true;
+  settings.speech.generationRate = normalizeTtsGenerationRate(value.speech?.generationRate);
   for (const scene of RESPONSE_STYLE_SCENARIOS) settings.responseStyles[scene] = RESPONSE_STYLES.includes(value.responseStyles?.[scene]) ? value.responseStyles[scene] : "standard";
   if (!value.profiles || !value.scenarios) {
     const model = LLM_MODELS.includes(value.model) ? value.model : settings.profiles.ultra.model;
@@ -80,7 +83,7 @@ export function normalizeLlmSettings(value = {}) {
 
 export function publicLlmSettings(value) {
   const settings = normalizeLlmSettings(value), primary = settings.profiles[settings.scenarios.thoughtAnswer];
-  return { version: LLM_SETTINGS_VERSION, provider: "deepseek", profiles: settings.profiles, scenarios: settings.scenarios, assistantName: settings.assistantName, responseStyles: settings.responseStyles, automaticAnswers: settings.automaticAnswers, model: primary.model, effort: primary.effort, hasApiKey: Boolean(settings.apiKey), keyHint: settings.apiKey ? `${settings.apiKey.slice(0, 3)}••••${settings.apiKey.slice(-4)}` : "" };
+  return { version: LLM_SETTINGS_VERSION, provider: "deepseek", profiles: settings.profiles, scenarios: settings.scenarios, assistantName: settings.assistantName, responseStyles: settings.responseStyles, automaticAnswers: settings.automaticAnswers, speech: settings.speech, model: primary.model, effort: primary.effort, hasApiKey: Boolean(settings.apiKey), keyHint: settings.apiKey ? `${settings.apiKey.slice(0, 3)}••••${settings.apiKey.slice(-4)}` : "" };
 }
 
 export function llmSettingsForScene(settings, scene = "thoughtAnswer") {
@@ -95,7 +98,7 @@ export function mergeLlmSettings(current, input) {
     const tier = current.scenarios.thoughtAnswer;
     profiles[tier] = { model: input.model || profiles[tier].model, effort: input.effort || profiles[tier].effort };
   }
-  return normalizeLlmSettings({ version: LLM_SETTINGS_VERSION, provider: "deepseek", profiles, scenarios: input.scenarios || current.scenarios, assistantName: input.assistantName ?? current.assistantName, responseStyles: input.responseStyles || current.responseStyles, automaticAnswers: input.automaticAnswers || current.automaticAnswers, apiKey });
+  return normalizeLlmSettings({ version: LLM_SETTINGS_VERSION, provider: "deepseek", profiles, scenarios: input.scenarios || current.scenarios, assistantName: input.assistantName ?? current.assistantName, responseStyles: input.responseStyles || current.responseStyles, automaticAnswers: input.automaticAnswers || current.automaticAnswers, speech: input.speech || current.speech, apiKey });
 }
 
 export function automaticAnswerDecision(settings, { hasAnswer = false } = {}) {

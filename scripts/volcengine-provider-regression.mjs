@@ -199,7 +199,14 @@ assert.equal(speechCalls[0].options.headers["x-api-key"], "speech-secret");
 assert.equal(speechCalls[0].body.req_params.audio_params.speech_rate, -10);
 assert.equal(speechCalls[0].body.req_params.post_process.pitch, 0);
 assert.equal(speechCalls[0].body.req_params.audio_params.loudness_rate, 0);
-assert.deepEqual(await speech.submitLongText({ text: "长文本", userId: "account-a" }), { taskId: "long-task", status: 1 });
+await speech.synthesize({ text: "账户默认生成语速", generationRate: 25 });
+assert.equal(speechCalls[1].body.req_params.audio_params.speech_rate, 25);
+assert.deepEqual(await speech.submitLongText({
+  text: "长文本",
+  generationRate: -25,
+  userId: "account-a"
+}), { taskId: "long-task", status: 1 });
+assert.equal(speechCalls[2].body.req_params.audio_params.speech_rate, -25);
 assert.deepEqual(await speech.queryLongText({ taskId: "long-task" }), {
   taskId: "long-task",
   status: 2,

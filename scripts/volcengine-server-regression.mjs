@@ -140,9 +140,10 @@ try {
   const settings = await fetch(`${base}/api/settings`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ apiKey: "deepseek-test-key" })
+    body: JSON.stringify({ apiKey: "deepseek-test-key", speech: { generationRate: 25 } })
   });
   assert.equal(settings.status, 200);
+  assert.deepEqual((await settings.json()).speech, { generationRate: 25 });
 
   const synthesized = await fetch(`${base}/api/speech/synthesize`, {
     method: "POST",
@@ -152,6 +153,10 @@ try {
   assert.equal(synthesized.status, 200);
   assert.equal(synthesized.headers.get("content-type"), "audio/mpeg");
   assert.equal(Buffer.from(await synthesized.arrayBuffer()).subarray(0, 3).toString("ascii"), "ID3");
+  assert.equal(
+    JSON.parse(providerCalls.find(call => call.pathname === "/tts").raw).req_params.audio_params.speech_rate,
+    25
+  );
 
   const imageBytes = await sharp({
     create: { width: 16, height: 16, channels: 3, background: "#ffffff" }
