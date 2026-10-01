@@ -117,6 +117,17 @@ const mockFetch = `
       });
     }
   };
+  window.__speechRequests = [];
+  window.__speechPlays = [];
+  window.__delaySpeech = false;
+  window.__releaseSpeech = null;
+  window.Audio = class extends EventTarget {
+    constructor(src = "") { super(); this.src = src; this.paused = true; }
+    play() { this.paused = false; window.__speechPlays.push(this.src); return Promise.resolve(); }
+    pause() { this.paused = true; }
+    removeAttribute(name) { if (name === "src") this.src = ""; }
+    load() {}
+  };
   const nativeFetch = window.fetch.bind(window);
   const json = (value, status = 200) => Promise.resolve(new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } }));
   const v1 = (data, meta = {}) => json({ data, error: null, meta: { traceId: "ui-g2", ...meta } });
@@ -238,7 +249,18 @@ const mockFetch = `
   window.__onboardingSchemaRequests = 0;
   window.__onboardingSchemaAvailable = false;
   window.__savedPayloads = [];
-  window.__aiTasks = [];
+  window.__aiTasks = [{
+    id: "task-capture-failed",
+    kind: "captureTranscription",
+    resourceType: "capture",
+    targetId: "capture-failed",
+    inputVersion: 0,
+    status: "failed",
+    createdAt: "2026-09-27T06:55:00.000Z",
+    completedAt: "2026-09-27T06:56:00.000Z",
+    resultId: "",
+    error: "语音服务暂时不可用"
+  }];
   window.__taskResults = {};
   window.__notifications = [];
   window.__testWorkspaceMode = "simulation";
@@ -316,6 +338,12 @@ const mockFetch = `
       content: "这是一条需要验证四行折叠的长捕念。\\n- 第一项内容\\n- 第二项内容\\n- 第三项内容\\n- 第四项内容\\n- 第五项内容\\n- 第六项内容", tags: ["职业规划"],
       audio: { attachmentPath: "/attachments/capture-voice.m4a", mimeType: "audio/mp4", bytes: 4096, durationMs: 1250 },
       transcription: { status: "unconfigured", provider: "", rawText: "", polishedText: "", updatedAt: "", errorCode: "ASR_NOT_CONFIGURED" }, version: 1
+    },
+    {
+      id: "capture-failed", createdAt: "2026-09-27T01:09:00.000Z", occurredAt: "2026-09-27T07:04:09.000Z", occurredOn: "2026-09-27",
+      content: "这条原音可以播放，但转写暂时失败。", tags: ["语音"],
+      audio: { attachmentPath: "/attachments/capture-failed.m4a", mimeType: "audio/mp4", bytes: 3072, durationMs: 980 },
+      transcription: { status: "failed", provider: "volcengine-seedasr-2.0", rawText: "", polishedText: "", updatedAt: "2026-09-27T06:56:00.000Z", errorCode: "ASR_PROVIDER_FAILED" }, version: 1
     }
   ];
   window.__journals = [{ id: "journal-1", createdAt: "2026-09-27T01:13:00.000Z", occurredAt: "2026-09-27T08:13:14.000Z", occurredOn: "2026-09-27", title: "今天的一件小事", content: "事实是事情发生了。\\\\n\\\\n**我的感受**还需要慢慢辨认。", tags: ["日常"], reflections: [], version: 1 }];
@@ -631,6 +659,15 @@ const mockFetch = `
       return json({ version: 7, provider: "deepseek", ...payload, hasApiKey: true, keyHint: "tes••••test" });
     }
     if (url === "/api/settings/test") return json({ ok: true, reply: "连接成功" });
+    if (url === "/api/speech/synthesize" && init.method === "POST") {
+      window.__speechRequests.push(JSON.parse(init.body));
+      const response=()=>new Response(new Uint8Array([0x49,0x44,0x33]),{headers:{"content-type":"audio/mpeg"}});
+      if(window.__delaySpeech){
+        window.__delaySpeech=false;
+        return new Promise(resolve=>{window.__releaseSpeech=()=>resolve(response())})
+      }
+      return response()
+    }
     if (url === "/api/thought-prompts") {
       window.__thoughtPrompts += 1;
       if (window.__holdPrompt) return new Promise(resolve => { window.__resolvePrompt=()=>resolve(json({prompt:"迟到的引子",hasHistory:true})); });
@@ -1572,14 +1609,32 @@ try {
   assert.equal(captureInitial.dateLabels, 1);
   assert.equal(captureInitial.dateOutsideCard, true);
   assert.equal(captureInitial.timeOnRight, true);
-  assert.deepEqual(await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-long"]');return{audio:card.querySelector("audio")?.getAttribute("src"),status:card.querySelector(".capture-transcription-state")?.textContent,speak:card.querySelector("[data-capture-speak]")?.getAttribute("data-capture-speak"),voice:card.querySelector("[data-capture-voice]")?.value,speechControls:card.querySelectorAll(".capture-speech-actions button").length}})()`), {
+  assert.deepEqual(await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-long"]'),source=card.querySelector(".capture-audio-source");return{audio:card.querySelector("audio")?.getAttribute("src"),audioReady:source?.querySelector(".capture-audio-playback-state")?.textContent,audioKey:source?.dataset.captureAudioKey||"",status:card.querySelector(".capture-transcription-state")?.textContent,speak:card.querySelector("[data-capture-speak]")?.getAttribute("data-capture-speak"),speechKey:card.querySelector("[data-capture-speak]")?.dataset.captureSpeechKey||"",voice:card.querySelector("[data-capture-voice]")?.value,speechControls:card.querySelectorAll(".capture-speech-actions button").length}})()`), {
     audio: "/attachments/capture-voice.m4a",
+    audioReady: "原音可播放",
+    audioKey: '["capture-long",1,"/attachments/capture-voice.m4a"]',
     status: "语音原件尚未转写。开始转写",
     speak: "capture-long",
+    speechKey: '["capture-long",1,"/attachments/capture-voice.m4a","","zh_male_shaonianzixin_uranus_bigtts"]',
     voice: "zh_male_shaonianzixin_uranus_bigtts",
     speechControls: 3
   });
-  assert.deepEqual(await evaluate(`(() => {const editor=document.querySelector(".capture-audio-editor"),upload=editor.querySelector(".audio-file-primary"),recorder=editor.querySelector("#capture-audio-recorder"),record=editor.querySelector("#capture-audio-record"),preview=editor.querySelector("#capture-audio-preview");return{fits:editor.getBoundingClientRect().right<=window.innerWidth,uploadText:upload.textContent.trim(),uploadHeight:upload.getBoundingClientRect().height,recorderOpen:recorder.open,summary:recorder.querySelector("summary").textContent.replace(/\\s+/g," ").trim(),recordCollapsed:record.getClientRects().length===0,previewCollapsed:preview.getClientRects().length===0}})()`), {
+  assert.deepEqual(await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-failed"]'),source=card.querySelector(".capture-audio-source"),status=card.querySelector(".capture-transcription-state");return{audio:card.querySelector("audio")?.getAttribute("src"),audioReady:source?.querySelector(".capture-audio-playback-state")?.textContent,audioKey:source?.dataset.captureAudioKey||"",status:status?.textContent,taskId:status?.dataset.transcriptionTaskId||"",misreported:status?.textContent.includes("转写未完成")}})()`),{
+    audio:"/attachments/capture-failed.m4a",
+    audioReady:"原音可播放",
+    audioKey:'["capture-failed",1,"/attachments/capture-failed.m4a"]',
+    status:"转写暂时失败。原音已保留，可以再次尝试。重试",
+    taskId:"task-capture-failed",
+    misreported:false
+  });
+  await evaluate(`window.__delaySpeech=true;document.querySelector('[data-capture-id="capture-long"] [data-capture-speak]').click();true`);
+  assert.equal(await waitUntil(`typeof window.__releaseSpeech==="function"&&window.__speechRequests.length===1`),true);
+  await evaluate(`document.querySelector('[data-capture-id="capture-long"] [data-capture-edit]').click();document.querySelector("#capture-form").requestSubmit();true`);
+  assert.equal(await waitUntil(`window.__captures.find(item=>item.id==="capture-long").version===2&&document.querySelector("#capture-id").value===""`),true);
+  await evaluate(`window.__capturePatchPayloads=[];window.__releaseSpeech();true`);
+  await sleep(100);
+  assert.equal(await evaluate(`window.__speechPlays.length`),0,"audio-tts-playback");
+  assert.deepEqual(await evaluate(`(() => {const editor=document.querySelector(".capture-audio-editor"),upload=editor.querySelector(".audio-file-primary"),recorder=editor.querySelector("#capture-audio-recorder"),record=editor.querySelector("#capture-audio-record"),preview=editor.querySelector("#capture-audio-preview");return{fits:editor.getBoundingClientRect().right<=window.innerWidth,uploadText:upload.textContent.trim(),uploadHeight:Math.round(upload.getBoundingClientRect().height),recorderOpen:recorder.open,summary:recorder.querySelector("summary").textContent.replace(/\\s+/g," ").trim(),recordCollapsed:record.getClientRects().length===0,previewCollapsed:preview.getClientRects().length===0}})()`), {
     fits: true,
     uploadText: "↑上传音频",
     uploadHeight: 44,

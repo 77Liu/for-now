@@ -52,6 +52,63 @@ export function validatedAudioBlob(blob, durationMs, {
   return { blob, mimeType, bytes, durationMs: normalizedDuration };
 }
 
+export function captureAudioIdentity(capture = {}) {
+  const id = String(capture?.id || "");
+  const attachmentPath = String(capture?.audio?.attachmentPath || "");
+  if (!id || !attachmentPath) return "";
+  return JSON.stringify([id, Math.max(0, Math.round(Number(capture.version) || 0)), attachmentPath]);
+}
+
+export function captureSpeechIdentity(capture = {}, voice = "") {
+  const id = String(capture?.id || "");
+  if (!id) return "";
+  return JSON.stringify([
+    id,
+    Math.max(0, Math.round(Number(capture.version) || 0)),
+    String(capture?.audio?.attachmentPath || ""),
+    String(capture?.transcription?.updatedAt || ""),
+    String(voice || "")
+  ]);
+}
+
+export function captureAudioPresentation(capture = {}, speech = {}, tasks = []) {
+  const audioKey = captureAudioIdentity(capture);
+  const audioReady = Boolean(audioKey);
+  const transcriptionStatus = audioReady ? String(capture?.transcription?.status || "unconfigured") : "";
+  const supported = audioReady && (speech.supportedAsrMimeTypes || []).includes(capture.audio.mimeType);
+  const canTranscribe = Boolean(audioReady && speech.configured && supported);
+  const taskStatuses = {
+    queued: new Set(["queued"]),
+    transcribing: new Set(["queued", "running"]),
+    ready: new Set(["succeeded"]),
+    failed: new Set(["failed"])
+  }[transcriptionStatus] || new Set();
+  const currentTask = [...(Array.isArray(tasks) ? tasks : [])]
+    .filter(task => task?.kind === "captureTranscription"
+      && task.targetId === capture.id
+      && taskStatuses.has(task.status))
+    .sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || "")))[0];
+  let transcriptionMessage = "";
+  if (["queued", "transcribing"].includes(transcriptionStatus)) {
+    transcriptionMessage = "正在后台转写，完成后会通知。";
+  } else if (transcriptionStatus === "failed") {
+    transcriptionMessage = "转写暂时失败。原音已保留，可以再次尝试。";
+  } else if (transcriptionStatus === "unconfigured") {
+    if (!speech.configured) transcriptionMessage = "暂时不能转成文字。原音已保留。";
+    else if (!supported) transcriptionMessage = "当前格式暂不能转成文字。原音仍可播放。";
+    else transcriptionMessage = "语音原件尚未转写。";
+  }
+  return {
+    audioKey,
+    audioReady,
+    audioStatus: audioReady ? "原音可播放" : "",
+    transcriptionStatus,
+    transcriptionMessage,
+    transcriptionTaskId: String(currentTask?.id || ""),
+    canTranscribe
+  };
+}
+
 const clone = value => value == null ? value : structuredClone(value);
 const draftKey = (owner, id) => `${owner}:${id}`;
 const requestResult = request => new Promise((resolve, reject) => {

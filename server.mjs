@@ -11,7 +11,7 @@ import { defaultOnboarding, normalizeOnboarding, createOnboardingService } from 
 import { createJournalRecords } from "./src/modules/journals/index.mjs";
 import { createAuthService, publicUser } from "./src/modules/auth/index.mjs";
 import { createAnnotationService } from "./src/modules/annotations/index.mjs";
-import { createTaskLifecycle, publicAiTask } from "./src/modules/tasks/index.mjs";
+import { activeTaskForInput, createTaskLifecycle, publicAiTask } from "./src/modules/tasks/index.mjs";
 import { createNotificationService, notificationUnread } from "./src/modules/notifications/index.mjs";
 import { createTrashService } from "./src/modules/trash/index.mjs";
 import { createCheckinRecords } from "./src/modules/checkins/index.mjs";
@@ -2022,11 +2022,18 @@ async function requestCaptureTranscription(capture, { force = false } = {}) {
       code: "ASR_UNSUPPORTED_AUDIO_FORMAT"
     });
   }
-  const active = (await readStore()).aiTasks.find(task => (
-    task.kind === "captureTranscription"
-    && task.targetId === capture.id
-    && ["queued", "running"].includes(task.status)
-  ));
+  const audio = {
+    attachmentPath: safeText(capture.audio.attachmentPath, 300),
+    mimeType: safeText(capture.audio.mimeType, 100),
+    bytes: Math.max(0, Math.round(Number(capture.audio.bytes) || 0)),
+    durationMs: Math.max(0, Math.round(Number(capture.audio.durationMs) || 0))
+  };
+  const inputHash = sha256(JSON.stringify({ targetId: capture.id, audio }));
+  const active = activeTaskForInput((await readStore()).aiTasks, {
+    kind: "captureTranscription",
+    targetId: capture.id,
+    inputHash
+  });
   if (active) return publicAiTask(active);
   const audioKey = sha256(JSON.stringify(capture.audio)).slice(0, 24);
   const created = await backgroundAi.enqueue({

@@ -27,6 +27,15 @@ export function publicAiTask(task) {
   };
 }
 
+export function activeTaskForInput(tasks, { kind, targetId, inputHash }) {
+  return (Array.isArray(tasks) ? tasks : []).find(task => (
+    task?.kind === kind
+    && task.targetId === targetId
+    && task.inputHash === inputHash
+    && ["queued", "running"].includes(task.status)
+  )) || null;
+}
+
 export function taskInputMatches(task, work) {
   return Boolean(work && !work.alreadyAnswered
     && (work.inputVersion || 0) === task.inputVersion

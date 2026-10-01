@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createApiClient } from "../public/frontend/api/index.mjs";
+import { mergeBackgroundTaskResult } from "../public/frontend/features/index.mjs";
 import { sessionScope, rotateSession } from "../public/frontend/session/index.mjs";
 import { createRefreshCoordinator, subscribeState, resetState, state } from "../public/frontend/state/index.mjs";
 
@@ -151,4 +152,37 @@ assert.deepEqual(state.books, []);
 assert.equal(updates.length, 1);
 assert.equal(overlayRestores, 1);
 stop();
+
+const transcriptionTask = {
+  id: "task-audio-old",
+  kind: "captureTranscription",
+  targetId: "capture-audio",
+  resultId: "capture-audio",
+  status: "succeeded"
+};
+const currentAudioSnapshot = {
+  captures: [{
+    id: "capture-audio",
+    audio: { attachmentPath: "/attachments/new.m4a" },
+    transcription: { status: "queued" },
+    version: 2
+  }]
+};
+const staleTranscription = mergeBackgroundTaskResult(currentAudioSnapshot, transcriptionTask, {
+  id: "capture-audio",
+  audio: { attachmentPath: "/attachments/old.m4a" },
+  transcription: { status: "ready", rawText: "旧原音的迟到结果" },
+  version: 2
+});
+assert.equal(staleTranscription.changed, false);
+assert.equal(staleTranscription.value.captures[0].transcription.status, "queued");
+const currentTranscription = mergeBackgroundTaskResult(currentAudioSnapshot, transcriptionTask, {
+  id: "capture-audio",
+  audio: { attachmentPath: "/attachments/new.m4a" },
+  transcription: { status: "ready", rawText: "当前原音结果" },
+  version: 3
+});
+assert.equal(currentTranscription.changed, true);
+assert.equal(currentTranscription.value.captures[0].transcription.rawText, "当前原音结果");
+
 console.log("Frontend contracts passed: base path, errors, optional endpoints, session cancellation, delayed body/blob rejection, SSE chunks/termination, refresh domain coalescing and account reset.");
