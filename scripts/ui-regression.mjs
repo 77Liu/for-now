@@ -185,6 +185,7 @@ const mockFetch = `
   window.__quotePatches = 0;
   window.__keepsakeOriginalReads = 0;
   window.__settingsSaves = 0;
+  window.__lastSettingsPayload = null;
   window.__aiCostPlanSaves = 0;
   window.__commercializationSaves = 0;
   window.__usernameChanges = 0;
@@ -648,17 +649,19 @@ const mockFetch = `
       });
     }
     if (url === "/api/settings" && (!init.method || init.method === "GET")) return json({
-      version: 7, provider: "deepseek",
+      version: 8, provider: "deepseek",
       profiles: { lite: { model: "deepseek-flash", effort: "none" }, mid: { model: "deepseek-flash", effort: "high" }, high: { model: "deepseek-v4-pro", effort: "high" }, ultra: { model: "deepseek-v4-pro", effort: "max" } },
       scenarios: { thoughtPrompt: "lite", thoughtDraft: "high", thoughtAnswer: "ultra", followUpAnswer: "ultra", chat: "high", diaryLead: "lite", diaryStructure: "mid", diaryTopic: "high", diaryReflection: "ultra", annotationShenji: "high", analysis: "ultra", bookRecognition: "mid", healthRecognition: "mid", contentImageUnderstanding: "mid", capturePolish: "mid" },
       assistantName: "神鸡", responseStyles: { thoughtDraft:"standard",thoughtAnswer:"standard",followUpAnswer:"standard",chat:"standard",diaryReflection:"standard",annotationShenji:"standard",analysis:"standard" },
       automaticAnswers: { thoughtAnswer: true },
+      speech: { generationRate: -10 },
       hasApiKey: true, keyHint: "tes••••test"
     });
     if (url === "/api/settings" && init.method === "POST") {
       window.__settingsSaves += 1;
       const payload = JSON.parse(init.body);
-      return json({ version: 7, provider: "deepseek", ...payload, hasApiKey: true, keyHint: "tes••••test" });
+      window.__lastSettingsPayload = payload;
+      return json({ version: 8, provider: "deepseek", ...payload, hasApiKey: true, keyHint: "tes••••test" });
     }
     if (url === "/api/settings/test") return json({ ok: true, reply: "连接成功" });
     if (url === "/api/speech/synthesize" && init.method === "POST") {
@@ -1678,6 +1681,11 @@ try {
   assert.equal(await evaluate(`window.__speechPlays.length`),0,"audio-tts-playback");
   await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-long"]'),rate=card.querySelector("[data-capture-playback-rate]");rate.value="1.5";card.querySelector("[data-capture-speak]").click();return true})()`);
   assert.equal(await waitUntil(`window.__speechRequests.length===2&&window.__speechPlays.length===1`),true);
+  assert.deepEqual(await evaluate(`({keys:Object.keys(window.__speechRequests[1]).sort(),voice:window.__speechRequests[1].voice,textReady:Boolean(window.__speechRequests[1].text)})`), {
+    keys: ["text", "voice"],
+    voice: "zh_male_shaonianzixin_uranus_bigtts",
+    textReady: true
+  }, "playback rate must not enter the TTS generation request");
   assert.deepEqual(await evaluate(`({rate:window.__speechPlays[0].rate,blob:window.__speechPlays[0].src.startsWith("blob:")})`),{rate:1.5,blob:true});
   await evaluate(`(() => {const rate=document.querySelector('[data-capture-id="capture-long"] [data-capture-playback-rate]');rate.value="2";rate.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
   assert.equal(await evaluate(`window.__lastSpeechAudio.playbackRate`),2);
@@ -2502,11 +2510,17 @@ try {
   await evaluate(`document.querySelector("#password-form [name='currentPassword']").value="old-password-1"; document.querySelector("#password-form [name='newPassword']").value="new-password-2"; document.querySelector("#password-form [name='confirmPassword']").value="new-password-2"; document.querySelector("#password-form").requestSubmit(); true`);
   assert.equal(await waitUntil(`window.__passwordChanges===1&&document.querySelector("#password-status").textContent.includes("密码已更新")`), true);
   await evaluate(`document.querySelector('[data-view="settings"]').click(); true`);
-  assert.equal(await evaluate(`document.querySelectorAll("[data-profile-model]").length === 4 && document.querySelectorAll("[data-profile-effort]").length === 4 && document.querySelectorAll("[data-ai-scenario]").length === 15 && document.querySelectorAll("[data-response-style]").length === 7`), true);
-  await evaluate(`document.querySelector('[data-profile-model="lite"]').value = "deepseek-v4-pro"; document.querySelector('[data-profile-effort="lite"]').value = "max"; document.querySelector('[data-ai-scenario="diaryLead"]').value = "ultra";document.querySelector("#assistant-name").value="照见";document.querySelector('[data-response-style="thoughtAnswer"]').value="deep";document.querySelector("#llm-settings-form").requestSubmit(); true`);
+  assert.deepEqual(await evaluate(`(() => {const rate=document.querySelector("#tts-generation-rate");return{controls:document.querySelectorAll("[data-profile-model]").length === 4 && document.querySelectorAll("[data-profile-effort]").length === 4 && document.querySelectorAll("[data-ai-scenario]").length === 15 && document.querySelectorAll("[data-response-style]").length === 7,min:rate.min,max:rate.max,value:rate.value,label:document.querySelector("#tts-generation-rate-value").textContent}})()`), {
+    controls: true,
+    min: "-50",
+    max: "100",
+    value: "-10",
+    label: "0.90×"
+  });
+  await evaluate(`document.querySelector('[data-profile-model="lite"]').value = "deepseek-v4-pro"; document.querySelector('[data-profile-effort="lite"]').value = "max"; document.querySelector('[data-ai-scenario="diaryLead"]').value = "ultra";document.querySelector("#assistant-name").value="照见";document.querySelector('[data-response-style="thoughtAnswer"]').value="deep";const rate=document.querySelector("#tts-generation-rate");rate.value="25";rate.dispatchEvent(new Event("input",{bubbles:true}));document.querySelector("#llm-settings-form").requestSubmit(); true`);
   assert.equal(await waitUntil(`window.__settingsSaves === 1`), true);
-  const savedSettings = await evaluate(`window.__lastSettings = undefined; ({ model: document.querySelector('[data-profile-model="lite"]').value, effort: document.querySelector('[data-profile-effort="lite"]').value, scene: document.querySelector('[data-ai-scenario="diaryLead"]').value, name:document.querySelector("#assistant-name").value, style:document.querySelector('[data-response-style="thoughtAnswer"]').value })`);
-  assert.deepEqual(savedSettings, { model: "deepseek-v4-pro", effort: "max", scene: "ultra", name:"照见", style:"deep" });
+  const savedSettings = await evaluate(`({ model: document.querySelector('[data-profile-model="lite"]').value, effort: document.querySelector('[data-profile-effort="lite"]').value, scene: document.querySelector('[data-ai-scenario="diaryLead"]').value, name:document.querySelector("#assistant-name").value, style:document.querySelector('[data-response-style="thoughtAnswer"]').value, generationRate:window.__lastSettingsPayload.speech.generationRate, rateLabel:document.querySelector("#tts-generation-rate-value").textContent })`);
+  assert.deepEqual(savedSettings, { model: "deepseek-v4-pro", effort: "max", scene: "ultra", name:"照见", style:"deep", generationRate:25, rateLabel:"1.25×" });
   assert.equal(await evaluate(`document.querySelector("#reset-response-styles").click();document.querySelector("#assistant-name").value==="神鸡"&&[...document.querySelectorAll("[data-response-style]")].every(select=>select.value==="standard")`),true);
   await evaluate(`document.querySelector("#ai-answer-modal").hidden = true; document.querySelector("#edit-chain-modal").hidden = true; document.querySelector(".settings-card").scrollIntoView({ block: "start" }); true`);
   await sleep(300);

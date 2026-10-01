@@ -1277,7 +1277,7 @@
 
     <section class="view" id="view-settings">
       <button class="mine-back" type="button" data-view="mine"><span aria-hidden="true">‹</span> 我的</button>
-      <header class="page-header"><div><p class="eyebrow">应用设置</p><h1>测试数据与模型配置</h1></div></header>
+      <header class="page-header"><div><p class="eyebrow">应用设置</p><h1>测试数据、模型与语音配置</h1></div></header>
       <section class="card settings-card local-test-settings" id="local-test-settings" hidden>
         <div class="settings-heading"><div><h2>本地测试数据</h2><p>线上数据只用于生成本地快照；之后的新增、修改和删除全部留在本机。</p></div><span class="connection-badge ready" id="local-test-badge">冷启测试</span></div>
         <div class="local-test-mode-row">
@@ -1290,7 +1290,14 @@
         <p class="status" id="local-test-status" role="status" aria-live="polite"></p>
       </section>
       <form class="card settings-card" id="llm-settings-form">
-        <div class="settings-heading"><div><h2>DeepSeek API</h2><p>档位决定思考投入；每个场景另有篇幅与表达约束，不会因档位高就默认写得更长。</p></div><span class="connection-badge" id="llm-key-state">未配置密钥</span></div>
+        <div class="settings-heading"><div><h2>AI 与语音</h2><p>模型档位、语音生成速度和本机播放速度分别生效。</p></div><span class="connection-badge" id="llm-key-state">未配置密钥</span></div>
+        <section class="settings-section">
+          <div class="settings-section-heading"><h3>语音生成</h3><p>账户默认值；已生成音频的播放倍速可单独调整。</p></div>
+          <label class="field speech-generation-default">
+            <span>默认生成语速 <output id="tts-generation-rate-value" for="tts-generation-rate">0.90×</output></span>
+            <input id="tts-generation-rate" type="range" min="-50" max="100" step="5" value="-10">
+          </label>
+        </section>
         <section class="settings-section">
           <div class="settings-section-heading"><h3>助手与回答风格</h3><p>风格和模型档位相互独立。</p><button class="subtle-action" id="reset-response-styles" type="button">恢复默认</button></div>
           <label class="settings-toggle"><input id="automatic-thought-answer" type="checkbox"><span><b>保存思绪后自动回答</b><small>默认关闭；关闭时只保存你的原文，仍可随时点“给我回答”。</small></span></label>

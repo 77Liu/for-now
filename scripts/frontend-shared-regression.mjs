@@ -40,7 +40,11 @@ import {
   uploadOriginalImages,
   validatedAudioBlob,
   validatedImageFiles,
+  TTS_GENERATION_RATE_DEFAULT,
+  TTS_GENERATION_RATE_MAX,
+  TTS_GENERATION_RATE_MIN,
   TTS_PLAYBACK_RATES,
+  normalizeTtsGenerationRate,
   normalizeTtsPlaybackRate
 } from "../public/frontend/media/index.mjs";
 import {
@@ -273,6 +277,13 @@ if (process.argv.includes("--timezone-case")) {
     captureSpeechIdentity({ ...audioCapture, version: 3 }, "voice-a")
   );
   assert.notEqual(captureSpeechIdentity(audioCapture, "voice-a"), captureSpeechIdentity(audioCapture, "voice-b"));
+  assert.deepEqual(
+    [TTS_GENERATION_RATE_MIN, TTS_GENERATION_RATE_DEFAULT, TTS_GENERATION_RATE_MAX],
+    [-50, -10, 100]
+  );
+  assert.equal(normalizeTtsGenerationRate("25"), 25);
+  assert.equal(normalizeTtsGenerationRate(-80), -50);
+  assert.equal(normalizeTtsGenerationRate(140), 100);
   assert.deepEqual(TTS_PLAYBACK_RATES, [0.5, 0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.5, 2]);
   assert.equal(normalizeTtsPlaybackRate("1.5"), 1.5);
   assert.equal(normalizeTtsPlaybackRate(1.7), 1);

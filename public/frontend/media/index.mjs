@@ -17,6 +17,9 @@ export function validatedImageFiles(files, maxFiles = 1) {
 export const AUDIO_MAX_BYTES = 16 * 1024 * 1024;
 export const AUDIO_MAX_DURATION_MS = 10 * 60 * 1000;
 export const AUDIO_MIME_TYPES = Object.freeze(["audio/mp4", "audio/webm", "audio/ogg", "audio/wav"]);
+export const TTS_GENERATION_RATE_MIN = -50;
+export const TTS_GENERATION_RATE_MAX = 100;
+export const TTS_GENERATION_RATE_DEFAULT = -10;
 export const TTS_PLAYBACK_RATES = Object.freeze([0.5, 0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.5, 2]);
 const AUDIO_MIME_ALIASES = Object.freeze({ "audio/x-m4a": "audio/mp4", "audio/x-wav": "audio/wav" });
 const AUDIO_PATH = /^\/attachments\/[\w.-]+\.(?:m4a|mp4|webm|ogg|wav)$/i;
@@ -39,6 +42,16 @@ export function normalizeTtsPlaybackRate(value, fallback = 1) {
   const rate = Number(value), fallbackRate = Number(fallback);
   if (TTS_PLAYBACK_RATES.includes(rate)) return rate;
   return TTS_PLAYBACK_RATES.includes(fallbackRate) ? fallbackRate : 1;
+}
+
+export function normalizeTtsGenerationRate(value, fallback = TTS_GENERATION_RATE_DEFAULT) {
+  const rate = Number(value), fallbackRate = Number(fallback);
+  const normalizedFallback = Number.isFinite(fallbackRate)
+    ? Math.min(TTS_GENERATION_RATE_MAX, Math.max(TTS_GENERATION_RATE_MIN, Math.round(fallbackRate)))
+    : TTS_GENERATION_RATE_DEFAULT;
+  return Number.isFinite(rate)
+    ? Math.min(TTS_GENERATION_RATE_MAX, Math.max(TTS_GENERATION_RATE_MIN, Math.round(rate)))
+    : normalizedFallback;
 }
 
 export function validatedAudioBlob(blob, durationMs, {
