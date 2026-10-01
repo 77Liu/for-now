@@ -1,4 +1,9 @@
-import { diaryActivityContext, userAnswerContext } from "./personal-context.mjs";
+import {
+  compactPersonalContextReceipt,
+  diaryActivityContext,
+  personalContextProjection,
+  personalContextReceiptMatches
+} from "./personal-context.mjs";
 import { userPrompt } from "../modules/ai/index.mjs";
 import {
   diaryAssistSystemPrompt,
@@ -93,19 +98,25 @@ export function createCaptureJournalWorkflows({
         const journal = store.journals.find(item => item.id === id);
         if (!journal) throw failure("这篇日记不存在", "JOURNAL_NOT_FOUND", 404);
         const sourceUpdatedAt = journal.updatedAt || journal.createdAt;
+        const personalContext = personalContextProjection(store);
         const result = await generate(userPrompt({
-          context: userAnswerContext(store),
+          context: personalContext.prompt,
           ...journalReflectionInput(journal)
         }), {
           scene: "diaryReflection",
           systemPrompt: diarySystemPrompt(),
           captureReasoning: true,
+          contextReceipt: personalContext.receipt,
           onDelta: notify
         });
+        if (!personalContextReceiptMatches(await repository.read(), personalContext.receipt)) {
+          throw failure("个人语境已变化，本次回望未写入", "STALE_PERSONAL_CONTEXT", 409);
+        }
         const saved = await journals.addReflection(id, {
           sourceUpdatedAt,
           content: result.content,
-          reasoningContent: result.reasoningContent
+          reasoningContent: result.reasoningContent,
+          contextReceipt: compactPersonalContextReceipt(personalContext.receipt)
         }, { clientRequestId, requestHash });
         if (saved.conflict) {
           throw failure("同一幂等键不能用于不同内容", "IDEMPOTENCY_KEY_REUSED", 409);

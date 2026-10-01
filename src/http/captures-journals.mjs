@@ -15,6 +15,8 @@ export function createCaptureJournalHttp({
   journals,
   workflows,
   prepareContentAttachments = async (_targetType, input) => ({ value: input }),
+  prepareCaptureAudio = async input => ({ value: { audio: input.audio ?? null } }),
+  requestCaptureTranscription = async () => null,
   removeCapture,
   removeJournal,
   removeReflection,
@@ -23,6 +25,25 @@ export function createCaptureJournalHttp({
   sendJson,
   respondModel
 }) {
+  async function prepareCapture(input) {
+    const audioOnly = input.audio
+      && !safeText(input.content, 12000)
+      && (!input.attachmentPaths || (Array.isArray(input.attachmentPaths) && !input.attachmentPaths.length));
+    const content = audioOnly
+      ? { value: { content: "", attachmentPaths: [] } }
+      : await prepareContentAttachments("capture", input);
+    if (content.forbidden || content.error) return content;
+    const audio = await prepareCaptureAudio(input);
+    if (audio.forbidden || audio.error) return audio;
+    return { value: { ...content.value, ...audio.value } };
+  }
+
+  async function withTranscription(result) {
+    if (!result?.value?.audio?.attachmentPath || result.value.transcription?.status === "ready") return result;
+    await requestCaptureTranscription(result.value);
+    return { ...result, value: await captures.get(result.value.id) || result.value };
+  }
+
   async function handleV1(req, res, url, v1) {
     if (req.method === "GET" && url.pathname === "/api/v1/captures") {
       const page = await captures.list(v1.pagination(url));
@@ -31,12 +52,13 @@ export function createCaptureJournalHttp({
     }
     if (req.method === "POST" && url.pathname === "/api/v1/captures") {
       const input = await bodyJson(req);
-      const prepared = await prepareContentAttachments("capture", input);
+      const prepared = await prepareCapture(input);
       if (prepared.forbidden) return v1.error(res, 403, prepared.error, prepared.code);
       if (prepared.error) return v1.error(res, 400, prepared.error, prepared.code || "VALIDATION_ERROR");
-      const result = await captures.create({ ...input, ...prepared.value }, { clientRequestId: v1.idempotencyKey(req) });
-      if (result.error) return v1.error(res, 400, result.error, "VALIDATION_ERROR");
+      let result = await captures.create({ ...input, ...prepared.value }, { clientRequestId: v1.idempotencyKey(req) });
+      if (result.error) return v1.error(res, 400, result.error, result.code || "VALIDATION_ERROR");
       if (result.conflict) return v1.error(res, 409, "同一幂等键不能用于不同内容", "IDEMPOTENCY_KEY_REUSED");
+      result = await withTranscription(result);
       return v1.success(res, result.duplicate ? 200 : 201, result.value, {
         etag: v1.versionEtag(result.value.version)
       });
@@ -50,21 +72,32 @@ export function createCaptureJournalHttp({
     if (req.method === "PATCH" && /^\/api\/v1\/captures\/[^/]+$/.test(url.pathname)) {
       const id = url.pathname.split("/")[4], input = await bodyJson(req), current = await captures.get(id);
       if (!current) return v1.error(res, 404, "这条捕念不存在", "CAPTURE_NOT_FOUND");
-      const prepared = await prepareContentAttachments("capture", {
+      const prepared = await prepareCapture({
         content: hasOwn(input, "content") ? input.content : current.content,
-        attachmentPaths: hasOwn(input, "attachmentPaths") ? input.attachmentPaths : current.attachmentPaths || []
+        attachmentPaths: hasOwn(input, "attachmentPaths") ? input.attachmentPaths : current.attachmentPaths || [],
+        audio: hasOwn(input, "audio") ? input.audio : current.audio || null
       });
       if (prepared.forbidden) return v1.error(res, 403, prepared.error, prepared.code);
       if (prepared.error) return v1.error(res, 400, prepared.error, prepared.code || "VALIDATION_ERROR");
-      const result = await captures.update(
+      let result = await captures.update(
         id,
         { ...input, ...prepared.value },
         { expectedVersion: v1.expectedVersion(req) }
       );
       if (result.missing) return v1.error(res, 404, "这条捕念不存在", "CAPTURE_NOT_FOUND");
       if (result.versionConflict) return v1.error(res, 412, "资源版本已变化，请重新读取后再提交", "PRECONDITION_FAILED", { currentVersion: result.currentVersion });
-      if (result.error) return v1.error(res, 400, result.error, "VALIDATION_ERROR");
+      if (result.error) return v1.error(res, 400, result.error, result.code || "VALIDATION_ERROR");
+      result = await withTranscription(result);
       return v1.success(res, 200, result.value, { etag: v1.versionEtag(result.value.version) });
+    }
+    if (req.method === "POST" && /^\/api\/v1\/captures\/[^/]+\/transcription$/.test(url.pathname)) {
+      const capture = await captures.get(url.pathname.split("/")[4]);
+      if (!capture) return v1.error(res, 404, "这条捕念不存在", "CAPTURE_NOT_FOUND");
+      if (!capture.audio?.attachmentPath) return v1.error(res, 409, "这条捕念没有语音原件", "CAPTURE_AUDIO_MISSING");
+      const task = await requestCaptureTranscription(capture, { force: true });
+      return task
+        ? v1.success(res, 202, task)
+        : v1.error(res, 503, "火山语音服务尚未配置", "SPEECH_NOT_CONFIGURED");
     }
     if (req.method === "DELETE" && /^\/api\/v1\/captures\/[^/]+$/.test(url.pathname)) {
       const entry = await removeCapture(url.pathname.split("/")[4], v1.expectedVersion(req));
@@ -157,29 +190,43 @@ export function createCaptureJournalHttp({
 
   async function handle(req, res, url) {
     if (req.method === "POST" && url.pathname === "/api/captures") {
-      const input = await bodyJson(req), prepared = await prepareContentAttachments("capture", input);
+      const input = await bodyJson(req), prepared = await prepareCapture(input);
       if (prepared.forbidden) sendJson(res, 403, { error: prepared.error, code: prepared.code });
       else if (prepared.error) sendJson(res, 400, { error: prepared.error, code: prepared.code });
       else {
-        const result = await captures.create({ ...input, ...prepared.value });
+        let result = await captures.create({ ...input, ...prepared.value });
+        if (!result.error) result = await withTranscription(result);
         sendJson(res, result.error ? 400 : 201, result.error ? { error: result.error } : result.value);
+      }
+    } else if (req.method === "POST" && /^\/api\/captures\/[^/]+\/transcription$/.test(url.pathname)) {
+      const capture = await captures.get(url.pathname.split("/")[3]);
+      if (!capture) sendJson(res, 404, { error: "这条捕念不存在", code: "CAPTURE_NOT_FOUND" });
+      else if (!capture.audio?.attachmentPath) sendJson(res, 409, { error: "这条捕念没有语音原件", code: "CAPTURE_AUDIO_MISSING" });
+      else {
+        const task = await requestCaptureTranscription(capture, { force: true });
+        if (task) sendJson(res, 202, task);
+        else sendJson(res, 503, { error: "火山语音服务尚未配置", code: "SPEECH_NOT_CONFIGURED" });
       }
     } else if (req.method === "PATCH" && /^\/api\/captures\/[^/]+$/.test(url.pathname)) {
       const id = url.pathname.split("/")[3], input = await bodyJson(req), current = await captures.get(id);
       if (!current) {
         sendJson(res, 404, { error: "这条捕念不存在" });
       } else {
-        const prepared = await prepareContentAttachments("capture", {
+        const prepared = await prepareCapture({
           content: hasOwn(input, "content") ? input.content : current.content,
-          attachmentPaths: hasOwn(input, "attachmentPaths") ? input.attachmentPaths : current.attachmentPaths || []
+          attachmentPaths: hasOwn(input, "attachmentPaths") ? input.attachmentPaths : current.attachmentPaths || [],
+          audio: hasOwn(input, "audio") ? input.audio : current.audio || null
         });
         if (prepared.forbidden) sendJson(res, 403, { error: prepared.error, code: prepared.code });
         else if (prepared.error) sendJson(res, 400, { error: prepared.error, code: prepared.code });
         else {
-          const result = await captures.update(id, { ...input, ...prepared.value, tags: legacyTags(input) });
+          let result = await captures.update(id, { ...input, ...prepared.value, tags: legacyTags(input) });
           if (result.missing) sendJson(res, 404, { error: "这条捕念不存在" });
           else if (result.error) sendJson(res, 400, { error: result.error });
-          else sendJson(res, 200, result.value);
+          else {
+            result = await withTranscription(result);
+            sendJson(res, 200, result.value);
+          }
         }
       }
     } else if (req.method === "DELETE" && /^\/api\/captures\/[^/]+$/.test(url.pathname)) {

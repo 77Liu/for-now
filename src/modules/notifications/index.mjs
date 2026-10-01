@@ -1,7 +1,7 @@
 import { safeText } from "../../shared/validation/index.mjs";
 
-const taskTitles = { thoughtAnswer: "思绪回答", followUpAnswer: "追问回答", annotationShenji: "批注神鸡", contentImageUnderstanding: "图片理解" };
-const successMessages = { thoughtAnswer: "回答已生成", followUpAnswer: "追问回答已生成", annotationShenji: "批注回复已生成", contentImageUnderstanding: "图片理解已生成" };
+const taskTitles = { thoughtAnswer: "思绪回答", followUpAnswer: "追问回答", annotationShenji: "批注神鸡", contentImageUnderstanding: "图片理解", captureTranscription: "语音转写" };
+const successMessages = { thoughtAnswer: "回答已生成", followUpAnswer: "追问回答已生成", annotationShenji: "批注回复已生成", contentImageUnderstanding: "图片理解已生成", captureTranscription: "语音转写已完成" };
 const terminalStatuses = ["succeeded", "failed", "stale", "cancelled"];
 
 export const notificationUnread = items => items.filter(item => !item.readAt && terminalStatuses.includes(item.status)).length;

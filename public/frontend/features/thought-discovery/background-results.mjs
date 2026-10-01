@@ -28,6 +28,14 @@ export function backgroundTaskTarget(task) {
       resultId: text(task.resultId)
     };
   }
+  if (task.kind === "captureTranscription" && text(task.targetId)) {
+    return {
+      kind: "captureTranscription",
+      resourceType: "capture",
+      targetId: text(task.targetId),
+      resultId: text(task.resultId)
+    };
+  }
   if (task.kind === "annotationShenji" && text(task.resourceType) && text(task.subtargetId)) {
     return {
       kind: "annotationShenji",
@@ -67,6 +75,11 @@ export function backgroundResultFromSnapshot(snapshot, task) {
       .find(item => item?.id === task.targetId && item.type === "question");
     const followUp = root?.followUps?.find(item => item?.id === task.subtargetId);
     return followUp?.id === task.resultId && followUp.sourceTaskId === task.id ? followUp : null;
+  }
+  if (task.kind === "captureTranscription") {
+    const capture = (Array.isArray(snapshot?.captures) ? snapshot.captures : [])
+      .find(item => item?.id === task.targetId);
+    return capture?.id === task.resultId && capture.transcription?.status === "ready" ? capture : null;
   }
   if (task.kind === "contentImageUnderstanding") {
     const targetType = text(task.contentTargetType), targetId = text(task.contentTargetId);
@@ -143,6 +156,22 @@ function mergeFollowUpAnswer(snapshot, task, result) {
     changed: true,
     target: backgroundTaskTarget(task)
   } : { value: snapshot, changed: false };
+}
+
+function mergeCaptureTranscription(snapshot, task, result) {
+  if (result?.id !== task.targetId || result?.id !== task.resultId || result.transcription?.status !== "ready") {
+    return { value: snapshot, changed: false };
+  }
+  const captures = Array.isArray(snapshot?.captures) ? snapshot.captures : [];
+  if (!captures.some(item => item?.id === task.targetId)) return { value: snapshot, changed: false };
+  return {
+    value: {
+      ...snapshot,
+      captures: captures.map(item => item.id === task.targetId ? { ...item, ...result } : item)
+    },
+    changed: true,
+    target: backgroundTaskTarget(task)
+  };
 }
 
 function mergeAnnotationReply(snapshot, task, result) {
@@ -244,6 +273,7 @@ export function mergeBackgroundTaskResult(snapshot, task, result) {
   if (!backgroundTaskTarget(task)) return { value: snapshot, changed: false };
   if (task.kind === "thoughtAnswer") return mergeThoughtAnswer(snapshot, task, result);
   if (task.kind === "followUpAnswer") return mergeFollowUpAnswer(snapshot, task, result);
+  if (task.kind === "captureTranscription") return mergeCaptureTranscription(snapshot, task, result);
   if (task.kind === "contentImageUnderstanding") return mergeContentImageUnderstanding(snapshot, task, result);
   return mergeAnnotationReply(snapshot, task, result);
 }

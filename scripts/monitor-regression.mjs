@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { collectHealth, runMonitor, sendFeishu, validateFeishuWebhook } from "./monitor-health.mjs";
+import { collectHealth, dailyAiUsage, runMonitor, sendFeishu, validateFeishuWebhook } from "./monitor-health.mjs";
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "growth-monitor-"));
 const dataDir = path.join(root, "data"), logsDir = path.join(dataDir, "logs"), backupDir = path.join(root, "backups");
@@ -50,7 +50,11 @@ try {
     status: "failed"
   })).join("\n"));
   await fs.writeFile(path.join(dataDir, "ai-usage.json"), JSON.stringify({
-    entries: [{ createdAt: new Date(now).toISOString(), costsUsd: { total: 6 } }]
+    entries: [
+      { createdAt: new Date(now).toISOString(), provider: "deepseek", costsUsd: { total: 6 } },
+      { createdAt: new Date(now).toISOString(), provider: "volcengine", costKnown: true, costCny: 2.5 },
+      { createdAt: new Date(now).toISOString(), provider: "volcengine", costKnown: false, costCny: 0 }
+    ]
   }));
   await fs.writeFile(path.join(backupDir, "for-now-old.tar.gz"), "backup");
   await fs.utimes(path.join(backupDir, "for-now-old.tar.gz"), new Date(now - 30 * 3600000), new Date(now - 30 * 3600000));
@@ -76,14 +80,22 @@ try {
     ALERT_DAILY_AI_COST_CNY: "36",
     ALERT_REPEAT_MINUTES: "60"
   });
+  assert.deepEqual(await dailyAiUsage(dataDir, now), {
+    calls: 3,
+    costUsd: 6,
+    costCny: 2.5,
+    costUnknownCalls: 1
+  });
   const unhealthy = await collectHealth({ now, dataDir, backupDir, backupStamp, readyUrl: `${base}/readyz` });
   assert.deepEqual(unhealthy.issues.map(item => item.key).sort(), ["ai-cost", "ai-failures", "backup", "disk", "platform-service", "service"]);
+  assert.equal(unhealthy.costCny, 45.7);
+  assert.equal(unhealthy.costUnknownCalls, 1);
   await runMonitor();
   process.exitCode = 0;
   assert.equal(messages.length, 1);
   assert.equal(messages[0].msg_type, "text");
   assert.match(messages[0].content.text, /严重告警/);
-  assert.match(messages[0].content.text, /AI 估算费用 ¥43\.2000（阈值 ¥36\.00）/);
+  assert.match(messages[0].content.text, /AI 估算费用 ¥45\.7000（阈值 ¥36\.00）/);
   assert.ok(messages[0].timestamp && messages[0].sign);
   await runMonitor();
   process.exitCode = 0;

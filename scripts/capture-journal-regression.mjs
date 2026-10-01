@@ -11,12 +11,13 @@ import {
   openApiV1
 } from "../src/http/index.mjs";
 import { createCaptureJournalWorkflows } from "../src/app/index.mjs";
-import { createCaptureRecords } from "../src/modules/captures/index.mjs";
+import { captureAudioPayload, createCaptureRecords } from "../src/modules/captures/index.mjs";
 import { createJournalRecords } from "../src/modules/journals/index.mjs";
 import { contentOriginalPayload } from "../src/modules/content-attachments/index.mjs";
 import { recordVersion } from "../src/shared/validation/index.mjs";
 
 const context = new AsyncLocalStorage();
+const AFTER_COMMIT = Symbol.for("for-now.after-commit");
 const emptyStore = () => ({
   checkins: [],
   dailyRecords: [],
@@ -84,8 +85,9 @@ const captureRepository = {
   },
   async update(mutate) {
     const store = structuredClone(accountStore());
-    const result = await mutate(store.captures, store.trash);
+    const result = await mutate(store.captures, store.trash, store);
     replaceStore(store);
+    await result?.[AFTER_COMMIT]?.();
     return result;
   },
   readIdempotent,
@@ -143,12 +145,18 @@ let idSequence = 0;
 let clockSequence = 0;
 const now = () => `2026-09-29T08:00:${String(clockSequence++).padStart(2, "0")}.000Z`;
 const reanchors = [];
+const audioCleanup = [];
 const reanchorAnnotations = (record, field, before, after) => {
   reanchors.push({ id: record.id, field, before, after });
 };
 const captures = createCaptureRecords({
   repository: captureRepository,
   reanchorAnnotations,
+  reconcileAudioAttachment: (_store, { previousAudio, nextAudio }) => {
+    if (!previousAudio?.attachmentPath || previousAudio.attachmentPath === nextAudio?.attachmentPath) return null;
+    audioCleanup.push(previousAudio.attachmentPath);
+    return { trashId: "trash-audio-1" };
+  },
   now,
   createId: () => `capture-${++idSequence}`
 });
@@ -245,6 +253,7 @@ const respondModel = async (req, res, {
   status = 200,
   formatResult = value => value
 }) => sendJson(res, status, formatResult(await operation(req.onDelta)));
+const requestedTranscriptions = [];
 
 const http = createCaptureJournalHttp({
   captures,
@@ -256,6 +265,25 @@ const http = createCaptureJournalHttp({
     return parsed.value.attachmentPaths.some(value => value.includes("foreign"))
       ? { forbidden: true, error: "图片附件不属于当前账户", code: "ATTACHMENT_NOT_OWNED" }
       : parsed;
+  },
+  prepareCaptureAudio: async input => {
+    const parsed = captureAudioPayload(input.audio);
+    if (parsed.error || !parsed.value) return parsed;
+    return parsed.value.attachmentPath.includes("foreign")
+      ? { forbidden: true, error: "语音附件不属于当前账户", code: "ATTACHMENT_NOT_OWNED" }
+      : { value: { audio: parsed.value } };
+  },
+  requestCaptureTranscription: async (capture, options = {}) => {
+    requestedTranscriptions.push({ id: capture.id, ...options });
+    return {
+      id: `transcription-${capture.id}`,
+      kind: "captureTranscription",
+      resourceType: "capture",
+      targetId: capture.id,
+      inputVersion: capture.version,
+      status: "queued",
+      createdAt: "2026-09-29T01:01:16.000Z"
+    };
   },
   removeCapture: removeCollection("captures", "capture"),
   removeJournal: removeCollection("journals", "journal"),
@@ -313,6 +341,76 @@ response = await request("account-a", "POST", "/api/captures", {
 assert.equal(response.status, 201);
 assert.equal(response.body.content, "");
 assert.deepEqual(response.body.attachmentPaths, ["/attachments/image-only.png"]);
+
+response = await request("account-a", "POST", "/api/v1/captures", {
+  headers: { "idempotency-key": "audio-capture-1" },
+  body: {
+    content: "",
+    attachmentPaths: [],
+    audio: {
+      attachmentPath: "/attachments/voice.m4a",
+      mimeType: "audio/mp4",
+      bytes: 4096,
+      durationMs: 1250
+    },
+    occurredAt: "2026-09-29T01:01:15.000Z"
+  }
+});
+assert.equal(response.status, 201);
+assert.equal(response.body.data.content, "");
+assert.equal(response.body.data.audio.attachmentPath, "/attachments/voice.m4a");
+assert.deepEqual(response.body.data.transcription, {
+  status: "unconfigured",
+  provider: "",
+  rawText: "",
+  polishedText: "",
+  updatedAt: "",
+  errorCode: "ASR_NOT_CONFIGURED"
+});
+const audioCaptureId = response.body.data.id;
+assert.deepEqual(requestedTranscriptions, [{ id: audioCaptureId }]);
+response = await request("account-a", "POST", `/api/v1/captures/${audioCaptureId}/transcription`, {
+  body: {}
+});
+assert.equal(response.status, 202);
+assert.equal(response.body.data.kind, "captureTranscription");
+assert.deepEqual(requestedTranscriptions.at(-1), { id: audioCaptureId, force: true });
+response = await request("account-a", "PATCH", `/api/v1/captures/${audioCaptureId}`, {
+  headers: { "if-match": "\"1\"" },
+  body: { content: "保留文字，移除语音", audio: null }
+});
+assert.equal(response.status, 200);
+assert.equal(response.body.data.audio, null);
+assert.equal(response.body.data.transcription, null);
+assert.deepEqual(audioCleanup, ["/attachments/voice.m4a"]);
+
+response = await request("account-a", "POST", "/api/v1/captures", {
+  headers: { "idempotency-key": "audio-capture-invalid" },
+  body: {
+    audio: {
+      attachmentPath: "/attachments/voice.m4a",
+      mimeType: "audio/mp4",
+      bytes: 4096,
+      durationMs: 10
+    }
+  }
+});
+assert.equal(response.status, 400);
+assert.equal(response.body.error.code, "INVALID_AUDIO_DURATION");
+
+response = await request("account-a", "POST", "/api/v1/captures", {
+  headers: { "idempotency-key": "audio-capture-foreign" },
+  body: {
+    audio: {
+      attachmentPath: "/attachments/foreign.m4a",
+      mimeType: "audio/mp4",
+      bytes: 4096,
+      durationMs: 1250
+    }
+  }
+});
+assert.equal(response.status, 403);
+assert.equal(response.body.error.code, "ATTACHMENT_NOT_OWNED");
 
 response = await request("account-a", "POST", "/api/captures", {
   body: {
@@ -561,10 +659,13 @@ response = await request("account-a", "POST", `/api/journals/${legacyJournalId}/
 assert.equal(response.status, 201, JSON.stringify(response.body));
 assert.equal(response.body.content, "回望正文");
 assert.equal(response.body.reasoningContent, "模型思考");
+assert.equal(response.body.contextReceipt.version, "2026.10.01.1");
 assert.equal(generationCalls.length, reflectionCallsBeforeLegacy + 1);
 let storedJournal = await run("account-a", () => journals.get(legacyJournalId));
 assert.equal(storedJournal.reflections[0].id, response.body.id);
 assert.equal(storedJournal.reflections[0].sourceUpdatedAt, storedJournal.updatedAt || storedJournal.createdAt);
+assert.equal(storedJournal.reflections[0].contextReceipt.promptSha256, generationCalls.at(-1).options.contextReceipt.promptSha256);
+assert.equal(storedJournal.reflections[0].contextReceipt.sources.some(source => Object.hasOwn(source, "excerpt")), false);
 assert.equal((await request("account-a", "POST", "/api/journals/missing/reflect")).status, 404);
 
 const reflectionCallsBeforeV1 = generationCalls.length;
@@ -798,6 +899,7 @@ assert.strictEqual(capturesJournalsOpenApiFragment.components, captureJournalCom
 assert.deepEqual(Object.keys(captureJournalPaths).sort(), [
   "/captures",
   "/captures/{id}",
+  "/captures/{id}/transcription",
   "/journal-draft",
   "/journals",
   "/journals/assist",
@@ -819,7 +921,7 @@ const HTTP_METHODS = new Set(["get", "put", "post", "delete", "options", "head",
 const operations = Object.entries(captureJournalPaths).flatMap(([route, pathItem]) => Object.entries(pathItem)
   .filter(([method]) => HTTP_METHODS.has(method))
   .map(([method, operation]) => ({ route, method, operation })));
-assert.equal(operations.length, 15);
+assert.equal(operations.length, 16);
 assert.equal(new Set(operations.map(({ operation }) => operation.operationId)).size, operations.length);
 const allOperationIds = Object.values(assembled.paths).flatMap(pathItem => Object.entries(pathItem))
   .filter(([method]) => HTTP_METHODS.has(method))
@@ -866,4 +968,4 @@ for (const [route, method, header] of [
 
 assert.equal((await request("account-a", "GET", "/api/v1/not-capture-or-journal")).handled, false);
 
-console.log("Capture/journal regression passed: legacy compatibility, repository isolation, drafts, assist/reflection workflows, v1 idempotency/ETag/pagination/delete and 15-operation OpenAPI fragment.");
+console.log("Capture/journal regression passed: legacy compatibility, repository isolation, drafts, assist/reflection workflows, transcription scheduling, v1 idempotency/ETag/pagination/delete and 16-operation OpenAPI fragment.");

@@ -7,6 +7,13 @@ const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {},
 const AFTER_COMMIT = Symbol.for("for-now.after-commit");
 const requestDigest = value => crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const IDEMPOTENCY_SCOPE = "captures.create";
+const AUDIO_PATH = /^\/attachments\/[\w.-]+\.(?:m4a|mp4|webm|ogg|wav)$/i;
+const AUDIO_MIME_TYPES = new Set(["audio/mp4", "audio/webm", "audio/ogg", "audio/wav"]);
+const AUDIO_MIME_BY_EXTENSION = Object.freeze({
+  m4a: "audio/mp4", mp4: "audio/mp4", webm: "audio/webm", ogg: "audio/ogg", wav: "audio/wav"
+});
+const AUDIO_MAX_BYTES = 16 * 1024 * 1024;
+const AUDIO_MAX_DURATION_MS = 10 * 60 * 1000;
 const tagsOf = value => (Array.isArray(value) ? value : [])
   .map(tag => safeText(tag, 30))
   .filter(Boolean)
@@ -37,21 +44,60 @@ function pageOf(items, { afterId = "", limit = 20 } = {}) {
 
 const versioned = item => item ? { ...item, version: recordVersion(item.version) } : null;
 
+export function captureAudioPayload(value) {
+  if (value == null) return { value: null };
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { error: "语音附件格式不正确", code: "INVALID_AUDIO_ATTACHMENT" };
+  }
+  const attachmentPath = safeText(value.attachmentPath, 300);
+  const mimeType = safeText(value.mimeType, 100).toLowerCase();
+  const bytes = Math.round(Number(value.bytes));
+  const durationMs = Math.round(Number(value.durationMs));
+  const extension = attachmentPath.split(".").at(-1)?.toLowerCase();
+  if (!AUDIO_PATH.test(attachmentPath) || !AUDIO_MIME_TYPES.has(mimeType) || AUDIO_MIME_BY_EXTENSION[extension] !== mimeType) {
+    return { error: "语音附件格式不正确", code: "INVALID_AUDIO_ATTACHMENT" };
+  }
+  if (!Number.isSafeInteger(bytes) || bytes < 1 || bytes > AUDIO_MAX_BYTES) {
+    return { error: "语音附件大小不正确", code: "INVALID_AUDIO_BYTES" };
+  }
+  if (!Number.isSafeInteger(durationMs) || durationMs < 250 || durationMs > AUDIO_MAX_DURATION_MS) {
+    return { error: "录音时长必须在 0.25 秒到 10 分钟之间", code: "INVALID_AUDIO_DURATION" };
+  }
+  return { value: { attachmentPath, mimeType, bytes, durationMs } };
+}
+
+const unconfiguredTranscription = () => ({
+  status: "unconfigured",
+  provider: "",
+  rawText: "",
+  polishedText: "",
+  updatedAt: "",
+  errorCode: "ASR_NOT_CONFIGURED"
+});
+
 export function capturePayload(input, existing = null) {
   const merged = existing ? { ...existing, ...input } : input;
   const content = safeText(merged.content, 12000);
   const attachmentPaths = cleanAttachmentPaths(merged.attachmentPaths);
-  if (!content && !attachmentPaths.length) {
-    return { error: existing ? "请保留文字或至少一张图片" : "先写一点什么，或插入图片" };
+  const parsedAudio = captureAudioPayload(merged.audio);
+  if (parsedAudio.error) return parsedAudio;
+  const audio = parsedAudio.value;
+  if (!content && !attachmentPaths.length && !audio) {
+    return { error: existing ? "请保留文字、图片或语音" : "先写一点什么，或插入图片、录下语音" };
   }
   const eventTime = eventTimeFields(input, existing);
   if (!eventTime) return { error: "发生时间格式不正确" };
+  const audioChanged = audio?.attachmentPath !== existing?.audio?.attachmentPath;
   return {
     value: {
       ...eventTime,
       content,
       tags: tagsOf(merged.tags),
-      attachmentPaths
+      attachmentPaths,
+      audio,
+      transcription: audio
+        ? audioChanged ? unconfiguredTranscription() : existing?.transcription || unconfiguredTranscription()
+        : null
     }
   };
 }
@@ -60,6 +106,7 @@ export function createCaptureRecords({
   repository,
   reanchorAnnotations,
   reconcileOriginalImages = null,
+  reconcileAudioAttachment = null,
   now = () => new Date().toISOString(),
   createId = () => crypto.randomUUID()
 }) {
@@ -119,6 +166,8 @@ export function createCaptureRecords({
         if (expectedVersion != null && Number(expectedVersion) !== currentVersion) {
           return { versionConflict: true, currentVersion };
         }
+        const previousAudio = capture.audio ? structuredClone(capture.audio) : null;
+        const previousTranscription = capture.transcription ? structuredClone(capture.transcription) : null;
         const parsed = capturePayload(input, capture);
         if (parsed.error) return parsed;
         if (capture.content !== parsed.value.content) {
@@ -138,8 +187,27 @@ export function createCaptureRecords({
           updatedAt,
           version: currentVersion + 1
         });
-        const result = { value: capture, ...(reconciled?.trashId ? { trashId: reconciled.trashId } : {}) };
-        if (reconciled?.[AFTER_COMMIT]) Object.defineProperty(result, AFTER_COMMIT, { value: reconciled[AFTER_COMMIT] });
+        const audioReconciled = store && typeof reconcileAudioAttachment === "function"
+          ? reconcileAudioAttachment(store, {
+            captureId: id,
+            previousAudio,
+            previousTranscription,
+            nextAudio: capture.audio,
+            changedAt: updatedAt
+          })
+          : null;
+        const trashIds = [reconciled?.trashId, audioReconciled?.trashId].filter(Boolean);
+        const result = {
+          value: capture,
+          ...(trashIds[0] ? { trashId: trashIds[0] } : {}),
+          ...(trashIds.length > 1 ? { trashIds } : {})
+        };
+        const afterCommit = [reconciled?.[AFTER_COMMIT], audioReconciled?.[AFTER_COMMIT]].filter(callback => typeof callback === "function");
+        if (afterCommit.length) Object.defineProperty(result, AFTER_COMMIT, {
+          value: async () => {
+            for (const callback of afterCommit) await callback();
+          }
+        });
         return result;
       });
     }

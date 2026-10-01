@@ -14,6 +14,44 @@ export function validatedImageFiles(files, maxFiles = 1) {
   return list;
 }
 
+export const AUDIO_MAX_BYTES = 16 * 1024 * 1024;
+export const AUDIO_MAX_DURATION_MS = 10 * 60 * 1000;
+export const AUDIO_MIME_TYPES = Object.freeze(["audio/mp4", "audio/webm", "audio/ogg", "audio/wav"]);
+const AUDIO_MIME_ALIASES = Object.freeze({ "audio/x-m4a": "audio/mp4", "audio/x-wav": "audio/wav" });
+const AUDIO_PATH = /^\/attachments\/[\w.-]+\.(?:m4a|mp4|webm|ogg|wav)$/i;
+const AUDIO_MIME_BY_EXTENSION = Object.freeze({
+  m4a: "audio/mp4", mp4: "audio/mp4", webm: "audio/webm", ogg: "audio/ogg", wav: "audio/wav"
+});
+
+export function preferredRecorderMime(MediaRecorderConstructor = globalThis.MediaRecorder) {
+  if (typeof MediaRecorderConstructor?.isTypeSupported !== "function") return "";
+  return [
+    "audio/mp4;codecs=mp4a.40.2",
+    "audio/mp4",
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/ogg;codecs=opus"
+  ].find(type => MediaRecorderConstructor.isTypeSupported(type)) || "";
+}
+
+export function validatedAudioBlob(blob, durationMs, {
+  maxBytes = AUDIO_MAX_BYTES,
+  maxDurationMs = AUDIO_MAX_DURATION_MS
+} = {}) {
+  const suppliedMimeType = String(blob?.type || "").split(";")[0].toLowerCase();
+  const mimeType = AUDIO_MIME_ALIASES[suppliedMimeType] || suppliedMimeType;
+  const bytes = Number(blob?.size);
+  const normalizedDuration = Math.round(Number(durationMs));
+  if (!AUDIO_MIME_TYPES.includes(mimeType)) throw new Error("只支持 M4A、WebM、Ogg 或 WAV 音频");
+  if (!Number.isSafeInteger(bytes) || bytes < 1 || bytes > maxBytes) {
+    throw new Error(`音频大小不得超过 ${Math.round(maxBytes / 1024 / 1024)} MB`);
+  }
+  if (!Number.isSafeInteger(normalizedDuration) || normalizedDuration < 250 || normalizedDuration > maxDurationMs) {
+    throw new Error("录音时长必须在 0.25 秒到 10 分钟之间");
+  }
+  return { blob, mimeType, bytes, durationMs: normalizedDuration };
+}
+
 const clone = value => value == null ? value : structuredClone(value);
 const draftKey = (owner, id) => `${owner}:${id}`;
 const requestResult = request => new Promise((resolve, reject) => {
@@ -29,6 +67,7 @@ const transactionDone = transaction => new Promise((resolve, reject) => {
 export function createMemoryMediaDraftStore(initial = []) {
   const records = new Map(initial.map(record => [draftKey(record.owner, record.id), clone(record)]));
   return {
+    durable: false,
     async put(record) {
       records.set(draftKey(record.owner, record.id), clone(record));
       return clone(record);
@@ -50,16 +89,35 @@ export function createIndexedDbMediaDraftStore({
   databaseName = "cike-media-drafts",
   storeName = "drafts"
 } = {}) {
-  if (!indexedDBImpl) throw new Error("当前环境不支持 IndexedDB");
+  if (!indexedDBImpl) return createMemoryMediaDraftStore();
+  const fallback = createMemoryMediaDraftStore();
+  let unavailable = false;
   const opening = indexedDBImpl.open(databaseName, 1);
   opening.addEventListener("upgradeneeded", () => {
     const db = opening.result;
     if (!db.objectStoreNames.contains(storeName)) db.createObjectStore(storeName, { keyPath: "key" });
   }, { once: true });
-  const ready = requestResult(opening);
-  void ready.catch(() => {});
+  const ready = new Promise(resolve => {
+    opening.addEventListener("success", () => {
+      const db = opening.result;
+      db.addEventListener("versionchange", () => {
+        unavailable = true;
+        db.close();
+      });
+      resolve(db);
+    }, { once: true });
+    opening.addEventListener("error", () => {
+      unavailable = true;
+      resolve(null);
+    }, { once: true });
+    opening.addEventListener("blocked", () => {
+      unavailable = true;
+      resolve(null);
+    }, { once: true });
+  });
   const withStore = async (mode, action) => {
     const db = await ready;
+    if (!db || unavailable) throw new Error("IndexedDB unavailable");
     const transaction = db.transaction(storeName, mode);
     const done = transactionDone(transaction);
     try {
@@ -75,26 +133,54 @@ export function createIndexedDbMediaDraftStore({
     }
   };
   return {
+    get durable() {
+      return !unavailable;
+    },
     async put(record) {
       const value = { ...clone(record), key: draftKey(record.owner, record.id) };
-      await withStore("readwrite", store => requestResult(store.put(value)));
+      try {
+        await withStore("readwrite", store => requestResult(store.put(value)));
+      } catch {
+        unavailable = true;
+        return fallback.put(record);
+      }
       delete value.key;
       return value;
     },
     async get(owner, id) {
-      const value = await withStore("readonly", store => requestResult(store.get(draftKey(owner, id))));
+      if (unavailable) return fallback.get(owner, id);
+      let value;
+      try {
+        value = await withStore("readonly", store => requestResult(store.get(draftKey(owner, id))));
+      } catch {
+        unavailable = true;
+        return fallback.get(owner, id);
+      }
       if (!value) return null;
       delete value.key;
       return value;
     },
     async delete(owner, id) {
-      await withStore("readwrite", store => requestResult(store.delete(draftKey(owner, id))));
+      if (unavailable) return fallback.delete(owner, id);
+      try {
+        await withStore("readwrite", store => requestResult(store.delete(draftKey(owner, id))));
+      } catch {
+        unavailable = true;
+        await fallback.delete(owner, id);
+      }
     },
     async clear(owner) {
-      await withStore("readwrite", async store => {
-        const values = await requestResult(store.getAll());
-        await Promise.all(values.filter(record => record.owner === owner).map(record => requestResult(store.delete(record.key))));
-      });
+      if (!unavailable) {
+        try {
+          await withStore("readwrite", async store => {
+            const values = await requestResult(store.getAll());
+            await Promise.all(values.filter(record => record.owner === owner).map(record => requestResult(store.delete(record.key))));
+          });
+        } catch {
+          unavailable = true;
+        }
+      }
+      await fallback.clear(owner);
     }
   };
 }
@@ -105,6 +191,31 @@ export function imageRecordPayload({ content = "", attachmentPaths = [] } = {}, 
   if (paths.length > maxAttachments) throw new Error(`最多插入 ${maxAttachments} 张图片`);
   if (!String(content).trim() && !paths.length) throw new Error("请填写文字或插入图片");
   return { content: String(content), attachmentPaths: paths };
+}
+
+export function captureRecordPayload({ content = "", attachmentPaths = [], audio = null } = {}) {
+  const text = String(content);
+  const paths = [...new Set((Array.isArray(attachmentPaths) ? attachmentPaths : [])
+    .filter(value => typeof value === "string" && /^\/attachments\/[\w.-]+$/.test(value)))];
+  if (paths.length > 2) throw new Error("最多插入 2 张图片");
+  let normalizedAudio = null;
+  if (audio != null) {
+    const mimeType = AUDIO_MIME_ALIASES[String(audio.mimeType || "").toLowerCase()] || String(audio.mimeType || "").toLowerCase();
+    const attachmentPath = String(audio.attachmentPath || "");
+    const extension = attachmentPath.split(".").at(-1)?.toLowerCase();
+    const bytes = Math.round(Number(audio.bytes));
+    const durationMs = Math.round(Number(audio.durationMs));
+    if (!AUDIO_PATH.test(attachmentPath) || !AUDIO_MIME_TYPES.includes(mimeType) || AUDIO_MIME_BY_EXTENSION[extension] !== mimeType) {
+      throw new Error("语音附件格式不正确");
+    }
+    if (!Number.isSafeInteger(bytes) || bytes < 1 || bytes > AUDIO_MAX_BYTES) throw new Error("语音附件大小不正确");
+    if (!Number.isSafeInteger(durationMs) || durationMs < 250 || durationMs > AUDIO_MAX_DURATION_MS) {
+      throw new Error("录音时长必须在 0.25 秒到 10 分钟之间");
+    }
+    normalizedAudio = { attachmentPath, mimeType, bytes, durationMs };
+  }
+  if (!text.trim() && !paths.length && !normalizedAudio) throw new Error("请填写文字、插入图片或录下语音");
+  return { content: text, attachmentPaths: paths, audio: normalizedAudio };
 }
 
 export async function uploadOriginalImages({ request, images, idempotencyKey = "" }) {
@@ -131,6 +242,22 @@ export async function uploadOriginalImages({ request, images, idempotencyKey = "
 
 export async function uploadOriginalImage({ request, image, idempotencyKey }) {
   return (await uploadOriginalImages({ request, images: [image], idempotencyKey }))[0];
+}
+
+export async function uploadOriginalAudio({ request, audio, durationMs, idempotencyKey = "" }) {
+  if (typeof request !== "function") throw new TypeError("A request function is required");
+  if (typeof idempotencyKey !== "string" || !idempotencyKey.trim()) {
+    throw new TypeError("An idempotency key is required");
+  }
+  if (typeof audio !== "string" || !audio.startsWith("data:audio/")) {
+    throw new TypeError("An audio data URL is required");
+  }
+  const result = await request("/api/audio/upload", {
+    method: "POST",
+    headers: { "idempotency-key": idempotencyKey },
+    body: JSON.stringify({ audio, durationMs })
+  });
+  return captureRecordPayload({ audio: result?.audio }).audio;
 }
 
 export async function uploadPendingMediaItems({

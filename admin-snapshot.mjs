@@ -8,7 +8,9 @@ const RECORD_COLLECTIONS = [
 ];
 const MODEL_LABELS = {
   "deepseek-flash": "DeepSeek Flash",
-  "deepseek-v4-pro": "DeepSeek V4 Pro"
+  "deepseek-v4-pro": "DeepSeek V4 Pro",
+  "volcengine-speech": "火山语音",
+  "volcengine-vision": "火山视觉"
 };
 const SCENE_LABELS = {
   thoughtPrompt: "思绪提示",
@@ -24,6 +26,12 @@ const SCENE_LABELS = {
   analysis: "认知复盘",
   bookRecognition: "书籍识别",
   healthRecognition: "健康识别",
+  contentImageUnderstanding: "内容图片理解",
+  capturePolish: "语音整理",
+  speechSynthesis: "语音合成",
+  speechRecognition: "语音识别",
+  visionOcr: "文字识别",
+  documentParsing: "文档解析",
   unknown: "历史未知"
 };
 const GB = 1024 ** 3;
@@ -110,11 +118,13 @@ function sumUsage(entries) {
     total.inputTokens += Number(entry.tokens?.input) || 0;
     total.outputTokens += Number(entry.tokens?.output) || 0;
     total.costUsd += Number(entry.costsUsd?.total) || 0;
+    total.costCny += Number(entry.costCny) || 0;
+    total.costUnknown += entry.provider !== "deepseek" && !entry.costKnown ? 1 : 0;
     if (entry.durationKnown !== false && Number.isFinite(Number(entry.durationMs))) total.durations.push(Number(entry.durationMs));
     return total;
   }, {
     calls: 0, successful: 0, failed: 0, unknown: 0, vision: 0,
-    inputTokens: 0, outputTokens: 0, costUsd: 0, durations: []
+    inputTokens: 0, outputTokens: 0, costUsd: 0, costCny: 0, costUnknown: 0, durations: []
   });
 }
 
@@ -257,10 +267,11 @@ export async function buildAdminSnapshot({
       activeDays30: dates.size,
       records: items.length,
       aiCalls30: usage30.calls,
-      aiCost30: usage30.costUsd * cnyPerUsd,
+      aiCost30: usage30.costUsd * cnyPerUsd + usage30.costCny,
+      aiCostUnknown30: usage30.costUnknown,
       storageMb: userAttachmentBytes / MB,
       consent: "未采集",
-      risk: usage30.costUsd * cnyPerUsd >= dailyCostLimitCny * 20 ? "quota" : "normal"
+      risk: usage30.costUsd * cnyPerUsd + usage30.costCny >= dailyCostLimitCny * 20 ? "quota" : "normal"
     });
   }
 
@@ -280,7 +291,8 @@ export async function buildAdminSnapshot({
       p95Ms: percentile(aggregate.durations, 0.95),
       inputTokens: aggregate.inputTokens,
       outputTokens: aggregate.outputTokens,
-      cost: aggregate.costUsd * cnyPerUsd
+      cost: aggregate.costUsd * cnyPerUsd + aggregate.costCny,
+      costUnknown: aggregate.costUnknown
     };
   });
   const sceneNames = [...new Set(allUsage.map(item => item.scene || "unknown"))];
@@ -290,7 +302,8 @@ export async function buildAdminSnapshot({
     return {
       name: SCENE_LABELS[scene] || scene,
       calls: aggregate.calls,
-      cost: aggregate.costUsd * cnyPerUsd,
+      cost: aggregate.costUsd * cnyPerUsd + aggregate.costCny,
+      costUnknown: aggregate.costUnknown,
       failureRate: aggregate.calls ? aggregate.failed / aggregate.calls * 100 : 0,
       trend: days.map(day => allUsage.filter(item => localDateKey(item.createdAt) === day && (item.scene || "unknown") === scene).length)
     };
@@ -375,7 +388,7 @@ export async function buildAdminSnapshot({
         { key: "users", label: "总用户", value: users.length, unit: "人", delta: "已注册账户", tone: "neutral" },
         { key: "active", label: "近 7 日活跃", value: active7, unit: "人", delta: users.length ? `${(active7 / users.length * 100).toFixed(1)}%` : "0%", tone: "neutral" },
         { key: "services", label: "健康服务", value: healthyServices, unit: `/ ${services.length}`, delta: `${services.length - healthyServices} 项关注`, tone: healthyServices === services.length ? "neutral" : "warning" },
-        { key: "aiCost", label: "今日 AI 成本", value: todayAggregate.costUsd * cnyPerUsd, unit: "元", delta: `${todayAggregate.calls} 次调用`, tone: "neutral" },
+        { key: "aiCost", label: "今日 AI 成本", value: todayAggregate.costUsd * cnyPerUsd + todayAggregate.costCny, unit: "元", delta: todayAggregate.costUnknown ? `${todayAggregate.calls} 次调用 · ${todayAggregate.costUnknown} 次费用待账单` : `${todayAggregate.calls} 次调用`, tone: "neutral" },
         { key: "storage", label: "业务存储", value: usedGb, unit: "GiB", delta: `${attachmentMode.toUpperCase()} + 本机`, tone: "neutral" },
         { key: "incidents", label: "未关闭事件", value: alerts.length, unit: "项", delta: `${alerts.filter(item => item.level === "warning").length} 项关注`, tone: alerts.length ? "warning" : "neutral" }
       ],
@@ -401,14 +414,15 @@ export async function buildAdminSnapshot({
         callsToday: todayAggregate.calls,
         successRate: todayAggregate.calls ? todayAggregate.successful / todayAggregate.calls * 100 : 100,
         p95Ms: percentile(todayAggregate.durations, 0.95),
-        costToday: todayAggregate.costUsd * cnyPerUsd,
+        costToday: todayAggregate.costUsd * cnyPerUsd + todayAggregate.costCny,
+        costUnknown: todayAggregate.costUnknown,
         budgetToday: Math.max(dailyCostLimitCny, dailyCostLimitCny * Math.max(1, users.length)),
         visionCalls: todayAggregate.vision,
         unknownUsage: todayAggregate.unknown
       },
       trend: days.map(day => {
         const aggregate = sumUsage(allUsage.filter(item => localDateKey(item.createdAt) === day));
-        return { day: day.slice(5).replace("-", "/"), calls: aggregate.calls, cost: aggregate.costUsd * cnyPerUsd };
+        return { day: day.slice(5).replace("-", "/"), calls: aggregate.calls, cost: aggregate.costUsd * cnyPerUsd + aggregate.costCny, costUnknown: aggregate.costUnknown };
       }),
       models,
       scenes

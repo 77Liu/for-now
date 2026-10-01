@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
+import pg from "pg";
 
 const execFile = promisify(execFileCallback);
 const DAY_MS = 86400000;
@@ -65,22 +66,74 @@ async function recentAiResults(dataDir) {
   }
 }
 
-async function dailyAiCost(dataDir, timestamp) {
-  const day = new Date(timestamp).toISOString().slice(0, 10), files = [path.join(dataDir, "ai-usage.json")];
+async function jsonUsageDocuments(dataDir) {
+  const files = [path.join(dataDir, "ai-usage.json")];
   try {
     for (const entry of await fs.readdir(path.join(dataDir, "users"), { withFileTypes: true })) {
       if (entry.isDirectory()) files.push(path.join(dataDir, "users", entry.name, "ai-usage.json"));
     }
   } catch {}
-  let total = 0;
+  const documents = [];
   for (const file of files) {
     try {
-      const value = JSON.parse(await fs.readFile(file, "utf8"));
-      for (const entry of value.entries || []) {
-        if (String(entry.createdAt || "").slice(0, 10) === day) total += Number(entry.costsUsd?.total || 0);
-      }
+      documents.push(JSON.parse(await fs.readFile(file, "utf8")));
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
+    }
+  }
+  return documents;
+}
+
+async function postgresUsageDocuments(connectionString) {
+  if (!connectionString) throw new Error("PG_BACKUP_DATABASE_URL is required for PostgreSQL monitoring");
+  const client = new pg.Client({
+    connectionString,
+    connectionTimeoutMillis: 5000,
+    statement_timeout: 30000,
+    application_name: "for-now-monitor"
+  });
+  await client.connect();
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    const users = (await client.query("SELECT id FROM for_now_auth.users ORDER BY position")).rows;
+    const accountIds = users.length ? users.map(user => user.id) : ["local"];
+    const entries = [];
+    for (const accountId of accountIds) {
+      await client.query("SELECT set_config('app.account_id', $1, true)", [accountId]);
+      const rows = (await client.query(`
+        SELECT payload
+        FROM for_now.document_records
+        WHERE account_id = $1 AND document = 'usage' AND field = 'entries'
+        ORDER BY position
+      `, [accountId])).rows;
+      entries.push(...rows.map(row => row.payload));
+    }
+    await client.query("COMMIT");
+    return [{ entries }];
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    await client.end();
+  }
+}
+
+export async function dailyAiUsage(dataDir, timestamp, {
+  persistenceBackend = process.env.PERSISTENCE_BACKEND || "json",
+  backupDatabaseUrl = process.env.PG_BACKUP_DATABASE_URL
+} = {}) {
+  const day = new Date(timestamp).toISOString().slice(0, 10);
+  const documents = persistenceBackend === "postgres"
+    ? await postgresUsageDocuments(backupDatabaseUrl)
+    : await jsonUsageDocuments(dataDir);
+  const total = { calls: 0, costUsd: 0, costCny: 0, costUnknownCalls: 0 };
+  for (const value of documents) {
+    for (const entry of value.entries || []) {
+      if (String(entry.createdAt || "").slice(0, 10) !== day) continue;
+      total.calls += 1;
+      total.costUsd += Number(entry.costsUsd?.total || 0);
+      total.costCny += Number(entry.costCny || 0);
+      if (entry.provider !== "deepseek" && !entry.costKnown) total.costUnknownCalls += 1;
     }
   }
   return total;
@@ -130,7 +183,8 @@ export async function collectHealth({
   if (consecutiveAiFailures >= failureLimit) issues.push({ key: "ai-failures", severity: "warning", text: `AI 连续失败 ${consecutiveAiFailures} 次（阈值 ${failureLimit} 次）` });
 
   const cnyPerUsd = Math.max(0.01, numberEnv("AI_COST_CNY_PER_USD", 7.2));
-  const costCny = Math.round(await dailyAiCost(dataDir, now) * cnyPerUsd * 10000) / 10000;
+  const aiUsage = await dailyAiUsage(dataDir, now);
+  const costCny = Math.round((aiUsage.costUsd * cnyPerUsd + aiUsage.costCny) * 10000) / 10000;
   const legacyCostLimitUsd = Number(process.env.ALERT_DAILY_AI_COST_USD);
   const costLimitCny = Math.max(0.01, numberEnv("ALERT_DAILY_AI_COST_CNY", Number.isFinite(legacyCostLimitUsd) ? legacyCostLimitUsd * cnyPerUsd : 36));
   if (costCny >= costLimitCny) issues.push({ key: "ai-cost", severity: "warning", text: `今日 AI 估算费用 ¥${costCny.toFixed(4)}（阈值 ¥${costLimitCny.toFixed(2)}）` });
@@ -147,6 +201,8 @@ export async function collectHealth({
     backupAgeHours,
     consecutiveAiFailures,
     costCny,
+    aiCalls: aiUsage.calls,
+    costUnknownCalls: aiUsage.costUnknownCalls,
     issues
   };
 }

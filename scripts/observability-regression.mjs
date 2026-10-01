@@ -47,7 +47,12 @@ const base = `http://127.0.0.1:${port}`;
 await fs.writeFile(path.join(dataDir, "llm-settings.json"), JSON.stringify({ version: 4, apiKey: "private-test-key" }));
 await fs.writeFile(path.join(dataDir, "ai-usage.json"), JSON.stringify({
   version: 1, trackingStartedAt: new Date().toISOString(),
-  entries: [{ id: "legacy", createdAt: new Date().toISOString(), model: "deepseek-flash", scene: "healthRecognition", tokens: { input: 10, output: 2 }, costsUsd: { total: 0.125 } }]
+  entries: [
+    { id: "legacy", createdAt: new Date().toISOString(), model: "deepseek-flash", scene: "healthRecognition", tokens: { input: 10, output: 2 }, costsUsd: { total: 0.125 } },
+    { id: "speech", createdAt: new Date().toISOString(), provider: "volcengine", service: "speech", model: "volcengine-speech", scene: "speechSynthesis", modality: "audio", status: "success", unitType: "character", units: 12, costKnown: false },
+    { id: "vision", createdAt: new Date().toISOString(), provider: "volcengine", service: "vision", model: "volcengine-vision", scene: "visionOcr", modality: "vision", status: "success", imageCount: 1, imageBytes: 256, unitType: "image", units: 1, costKnown: false },
+    { id: "segmentation", createdAt: new Date().toISOString(), provider: "aliyun", service: "segmentation", model: "aliyun-segmentation", scene: "keepsakeSegmentation", modality: "vision", status: "failed", imageCount: 1, imageBytes: 256, unitType: "image", units: 1, costKnown: false }
+  ]
 }));
 const child = spawn(process.execPath, ["server.mjs"], {
   cwd: root,
@@ -75,6 +80,14 @@ try {
   assert.equal(initial.ai.summary.unknownStatusCalls, 1);
   assert.equal(initial.ai.summary.durationKnownCalls, 0);
   assert.equal(initial.ai.summary.costsUsd.total, 0.125);
+  assert.equal(initial.ai.summary.failedCalls, 1);
+  assert.equal(initial.ai.summary.costUnknownCalls, 3);
+  assert.equal(initial.ai.modalities.find(item => item.modality === "audio").calls, 1);
+  assert.equal(initial.ai.modalities.find(item => item.modality === "vision").calls, 2);
+  assert.equal(initial.ai.services.find(item => item.key === "volcengineSpeech").calls, 1);
+  assert.equal(initial.ai.services.find(item => item.key === "volcengineVision").calls, 1);
+  assert.equal(initial.ai.services.find(item => item.key === "aliyunSegmentation").failedCalls, 1);
+  assert.equal(initial.ai.daily.at(-1).services.aliyunSegmentation.costUnknownCalls, 1);
 
   const good = await request("/api/settings/test", {});
   assert.equal(good.status, 200);
@@ -82,7 +95,7 @@ try {
   assert.equal(entries.at(-1).usageKnown, false);
   assert.equal(entries.at(-1).status, "success");
   assert.equal(entries.at(-1).costsUsd.total, 0);
-  assert.ok((await fs.readdir(dataDir)).some(name => /ai-usage.json.v1-pre-v2.*\.bak$/.test(name)));
+  assert.ok((await fs.readdir(dataDir)).some(name => /ai-usage.json.v1-pre-v3.*\.bak$/.test(name)));
   mode = "partial_usage";
   assert.equal((await request("/api/settings/test", {})).status, 200);
   entries = JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"))).entries;

@@ -6,8 +6,15 @@ import { DEEPSEEK_PRICING } from "./usage.mjs";
 const AI_COST_PLAN_VERSION = 1;
 const AI_PROVIDER_LABELS = {
   deepseek: "DeepSeek",
-  volcengine: "火山引擎"
+  volcengine: "火山引擎",
+  aliyun: "阿里云"
 };
+const AI_SERVICE_DEFINITIONS = [
+  { key: "deepseek", provider: "deepseek", service: "", label: "DeepSeek 模型" },
+  { key: "volcengineSpeech", provider: "volcengine", service: "speech", label: "豆包语音" },
+  { key: "volcengineVision", provider: "volcengine", service: "vision", label: "火山视觉" },
+  { key: "aliyunSegmentation", provider: "aliyun", service: "segmentation", label: "阿里云图片分割" }
+];
 const AI_COST_SCENARIO_DEFAULTS = {
   thoughtPrompt: { callsPerMonth: 20, avgInputTokens: 4000, cacheHitPct: 20, avgReasoningTokens: 0, avgAnswerTokens: 120 },
   thoughtDraft: { callsPerMonth: 15, avgInputTokens: 12000, cacheHitPct: 20, avgReasoningTokens: 2500, avgAnswerTokens: 1200 },
@@ -150,6 +157,40 @@ function addUsageAggregate(target, entry) {
   return target;
 }
 
+function usageServiceKey(entry) {
+  const provider = entry.provider || "deepseek";
+  if (provider === "deepseek") return "deepseek";
+  const known = AI_SERVICE_DEFINITIONS.find(item => item.provider === provider && item.service === entry.service);
+  return known?.key || `${provider}:${entry.service || "other"}`;
+}
+
+function serviceUnitUsage(entries) {
+  const totals = new Map();
+  for (const entry of entries) {
+    const unitType = (entry.provider || "deepseek") === "deepseek" ? "token" : entry.unitType || "call";
+    const units = unitType === "token"
+      ? (Number(entry.tokens?.input) || 0) + (Number(entry.tokens?.output) || 0)
+      : Number(entry.units) || 0;
+    totals.set(unitType, (totals.get(unitType) || 0) + units);
+  }
+  const order = ["token", "character", "audioMillisecond", "image", "document", "call"];
+  return [...totals.entries()]
+    .map(([unitType, units]) => ({ unitType, units }))
+    .filter(item => item.units > 0)
+    .sort((a, b) => {
+      const left = order.indexOf(a.unitType), right = order.indexOf(b.unitType);
+      return (left < 0 ? order.length : left) - (right < 0 ? order.length : right)
+        || a.unitType.localeCompare(b.unitType);
+    });
+}
+
+function serviceAggregate(entries) {
+  return {
+    ...entries.reduce(addUsageAggregate, blankUsageAggregate()),
+    unitUsage: serviceUnitUsage(entries)
+  };
+}
+
 export function usageDashboard(usage, from, to, cnyPerUsd, defaultCnyPerUsd = cnyPerUsd) {
   const dayCount = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000) + 1;
   const days = Array.from({ length: dayCount }, (_, index) => shiftDateKey(from, index));
@@ -157,11 +198,28 @@ export function usageDashboard(usage, from, to, cnyPerUsd, defaultCnyPerUsd = cn
     const date = localDateKey(item.createdAt);
     return date >= from && date <= to;
   });
+  const extraServices = [...new Set(entries.map(usageServiceKey))]
+    .filter(key => !AI_SERVICE_DEFINITIONS.some(item => item.key === key))
+    .map(key => {
+      const entry = entries.find(item => usageServiceKey(item) === key);
+      const provider = entry?.provider || "unknown", service = entry?.service || "other";
+      return {
+        key,
+        provider,
+        service,
+        label: `${AI_PROVIDER_LABELS[provider] || provider} · ${service}`
+      };
+    });
+  const serviceDefinitions = [...AI_SERVICE_DEFINITIONS, ...extraServices];
   const summary = entries.reduce(addUsageAggregate, blankUsageAggregate());
   const daily = days.map(date => {
     const matching = entries.filter(item => localDateKey(item.createdAt) === date);
     const models = Object.fromEntries(LLM_MODELS.map(model => [model, matching.filter(item => item.model === model).reduce(addUsageAggregate, blankUsageAggregate())]));
-    return { date, ...matching.reduce(addUsageAggregate, blankUsageAggregate()), models };
+    const services = Object.fromEntries(serviceDefinitions.map(service => [
+      service.key,
+      serviceAggregate(matching.filter(item => usageServiceKey(item) === service.key))
+    ]));
+    return { date, ...matching.reduce(addUsageAggregate, blankUsageAggregate()), models, services };
   });
   const models = LLM_MODELS.map(model => ({
     model,
@@ -173,6 +231,10 @@ export function usageDashboard(usage, from, to, cnyPerUsd, defaultCnyPerUsd = cn
     label: AI_PROVIDER_LABELS[provider] || provider,
     ...entries.filter(item => (item.provider || "deepseek") === provider).reduce(addUsageAggregate, blankUsageAggregate())
   })).sort((a, b) => b.calls - a.calls || a.provider.localeCompare(b.provider));
+  const services = serviceDefinitions.map(service => ({
+    ...service,
+    ...serviceAggregate(entries.filter(item => usageServiceKey(item) === service.key))
+  }));
   const scenes = [...new Set(entries.map(item => item.scene))].map(scene => {
     const aggregate = entries.filter(item => item.scene === scene).reduce(addUsageAggregate, blankUsageAggregate());
     return { scene, ...aggregate };
@@ -192,7 +254,7 @@ export function usageDashboard(usage, from, to, cnyPerUsd, defaultCnyPerUsd = cn
   const percentile = proportion => sortedCostsCny.length ? sortedCostsCny[Math.min(sortedCostsCny.length - 1, Math.ceil(sortedCostsCny.length * proportion) - 1)] : 0;
   const activeDays = new Set(entries.map(item => localDateKey(item.createdAt)).filter(Boolean)).size;
   return {
-    from, to, trackingStartedAt: usage.trackingStartedAt, summary, daily, models, providers, scenes, modalities,
+    from, to, trackingStartedAt: usage.trackingStartedAt, summary, daily, models, providers, services, scenes, modalities,
     calibration: {
       activeDays,
       averageCallsPerActiveDay: activeDays ? entries.length / activeDays : 0,

@@ -92,6 +92,16 @@ const resource = ({ schema, input, parameter }) => ({
 export const captureJournalPaths = Object.freeze({
   "/captures": collection({ plural: "Captures", schema: "Capture", input: "CaptureCreateInput" }),
   "/captures/{id}": resource({ schema: "Capture", input: "CaptureUpdateInput", parameter: "CaptureId" }),
+  "/captures/{id}/transcription": {
+    parameters: [{ $ref: "#/components/parameters/CaptureId" }],
+    post: {
+      operationId: "transcribeCapture",
+      responses: {
+        "202": { description: "转写任务已进入后台队列", ...response({ $ref: "#/components/schemas/CaptureTranscriptionTask" }) },
+        ...errors
+      }
+    }
+  },
   "/journal-draft": {
     get: {
       operationId: "getJournalDraft",
@@ -185,12 +195,14 @@ export const captureJournalComponents = Object.freeze({
       type: "object",
       anyOf: [
         { required: ["content"], properties: { content: { type: "string", minLength: 1 } } },
-        { required: ["attachmentPaths"], properties: { attachmentPaths: { type: "array", minItems: 1 } } }
+        { required: ["attachmentPaths"], properties: { attachmentPaths: { type: "array", minItems: 1 } } },
+        { required: ["audio"], properties: { audio: { $ref: "#/components/schemas/CaptureAudio" } } }
       ],
       properties: {
         ...eventTimeProperties,
         content: { type: "string", maxLength: 12000 },
         attachmentPaths: { type: "array", maxItems: 2, uniqueItems: true, items: { $ref: "#/components/schemas/ContentAttachmentPath" } },
+        audio: { anyOf: [{ $ref: "#/components/schemas/CaptureAudio" }, { type: "null" }] },
         tags
       },
       additionalProperties: false
@@ -201,6 +213,7 @@ export const captureJournalComponents = Object.freeze({
         ...eventTimeProperties,
         content: { type: "string", maxLength: 12000 },
         attachmentPaths: { type: "array", maxItems: 2, uniqueItems: true, items: { $ref: "#/components/schemas/ContentAttachmentPath" } },
+        audio: { anyOf: [{ $ref: "#/components/schemas/CaptureAudio" }, { type: "null" }] },
         tags
       },
       additionalProperties: false
@@ -212,8 +225,48 @@ export const captureJournalComponents = Object.freeze({
         ...eventTimeProperties,
         content: { type: "string", maxLength: 12000 },
         attachmentPaths: { type: "array", maxItems: 2, uniqueItems: true, items: { $ref: "#/components/schemas/ContentAttachmentPath" } },
+        audio: { anyOf: [{ $ref: "#/components/schemas/CaptureAudio" }, { type: "null" }] },
+        transcription: { anyOf: [{ $ref: "#/components/schemas/CaptureTranscription" }, { type: "null" }] },
         tags,
         ...recordFields
+      },
+      additionalProperties: true
+    },
+    CaptureAudio: {
+      type: "object",
+      required: ["attachmentPath", "mimeType", "bytes", "durationMs"],
+      properties: {
+        attachmentPath: { $ref: "#/components/schemas/ContentAttachmentPath" },
+        mimeType: { type: "string", enum: ["audio/mp4", "audio/webm", "audio/ogg", "audio/wav"] },
+        bytes: { type: "integer", minimum: 1, maximum: 16777216 },
+        durationMs: { type: "integer", minimum: 250, maximum: 600000 }
+      },
+      additionalProperties: false
+    },
+    CaptureTranscription: {
+      type: "object",
+      required: ["status", "provider", "rawText", "polishedText", "updatedAt", "errorCode"],
+      properties: {
+        status: { type: "string", enum: ["unconfigured", "queued", "transcribing", "ready", "failed"] },
+        provider: { type: "string" },
+        rawText: { type: "string" },
+        polishedText: { type: "string" },
+        updatedAt: { type: "string" },
+        errorCode: { type: "string" }
+      },
+      additionalProperties: false
+    },
+    CaptureTranscriptionTask: {
+      type: "object",
+      required: ["id", "kind", "resourceType", "targetId", "status", "createdAt"],
+      properties: {
+        id: { type: "string" },
+        kind: { type: "string", enum: ["captureTranscription"] },
+        resourceType: { type: "string", enum: ["capture"] },
+        targetId: { type: "string" },
+        inputVersion: { type: "integer", minimum: 0 },
+        status: { type: "string", enum: ["queued", "running", "succeeded", "failed", "stale", "cancelled"] },
+        createdAt: { type: "string", format: "date-time" }
       },
       additionalProperties: true
     },

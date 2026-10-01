@@ -15,10 +15,10 @@ let jobId = "", polls = 0;
 const { roleName, disableIMDSv1 } = loadAttachmentConfig();
 const provider = createAliyunSegmentationTransport({
   roleName, disableIMDSv1,
-  auditCall: async (action, group, request, invoke) => {
-    if (action === "GetAsyncJobResult") polls += 1;
+  auditCall: async (details, invoke) => {
+    if (details.action === "GetAsyncJobResult") polls += 1;
     const response = await invoke();
-    if (action === "SegmentHDCommonImage") jobId = response?.body?.requestId || "";
+    if (details.action === "SegmentHDCommonImage") jobId = response?.body?.requestId || "";
     return response;
   }
 });

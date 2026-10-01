@@ -4,7 +4,11 @@ export function publicAiTask(task) {
   return {
     id: task.id,
     kind: task.kind,
-    resourceType: task.resourceType || (task.kind === "thoughtAnswer" || task.kind === "followUpAnswer" ? "thought" : ""),
+    resourceType: task.resourceType || (
+      task.kind === "thoughtAnswer" || task.kind === "followUpAnswer"
+        ? "thought"
+        : task.kind === "captureTranscription" ? "capture" : ""
+    ),
     targetId: task.targetId,
     subtargetId: task.subtargetId || "",
     inputVersion: task.inputVersion,
@@ -44,11 +48,19 @@ export function createTaskLifecycle({ createId, now, hash }) {
         payload: normalized.payload
       }));
     }
+    if (normalized.kind === "captureTranscription") {
+      return hash(JSON.stringify({
+        kind: normalized.kind,
+        targetId: normalized.targetId
+      }));
+    }
     return hash(JSON.stringify({ kind: normalized.kind, resourceType: normalized.resourceType, targetId: normalized.targetId, subtargetId: normalized.subtargetId, payload: normalized.payload }));
   };
   const normalizeRequest = input => {
     const kind = safeText(input.kind, 40), targetId = safeText(input.targetId, 100), subtargetId = safeText(input.subtargetId, 100), clientRequestId = safeText(input.clientRequestId, 100);
-    const resourceType = ["annotationShenji", "contentImageUnderstanding"].includes(kind) ? safeText(input.resourceType, 40) : "thought";
+    const resourceType = kind === "captureTranscription"
+      ? "capture"
+      : ["annotationShenji", "contentImageUnderstanding"].includes(kind) ? safeText(input.resourceType, 40) : "thought";
     const payload = kind === "annotationShenji"
       ? { message: safeText(input.payload?.message ?? input.message, 6000) }
       : kind === "contentImageUnderstanding"
@@ -67,7 +79,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
   function create(tasks, input, inspectTarget) {
     const normalized = normalizeRequest(input);
     const { kind, resourceType, targetId, subtargetId, clientRequestId, payload, requestedInputVersion, requestedSubtargetVersion } = normalized;
-    if (!["thoughtAnswer", "followUpAnswer", "annotationShenji", "contentImageUnderstanding"].includes(kind)) return { unsupported: true };
+    if (!["thoughtAnswer", "followUpAnswer", "annotationShenji", "contentImageUnderstanding", "captureTranscription"].includes(kind)) return { unsupported: true };
     if (!clientRequestId) return { invalid: true };
     const inputRequestHash = requestHash(normalized);
     const duplicate = tasks.find(item => item.clientRequestId === clientRequestId);
@@ -83,6 +95,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
       payload, clientRequestId, requestHash: inputRequestHash, status: "queued", createdAt: now(), updatedAt: now(), attempt: 0
     };
     tasks.unshift(task);
+    work.markQueued?.(task);
     return { task, duplicate: false };
   }
 
@@ -98,7 +111,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
     create,
     idempotency(input) {
       const normalized = normalizeRequest(input);
-      if (!["thoughtAnswer", "followUpAnswer", "annotationShenji", "contentImageUnderstanding"].includes(normalized.kind) || !normalized.clientRequestId) return null;
+      if (!["thoughtAnswer", "followUpAnswer", "annotationShenji", "contentImageUnderstanding", "captureTranscription"].includes(normalized.kind) || !normalized.clientRequestId) return null;
       return { scope: "aiTasks.create", key: normalized.clientRequestId, requestHash: requestHash(normalized) };
     },
     complete,

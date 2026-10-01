@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "activeVersion": "2026.09.29.2",
+  "activeVersion": "2026.10.01.1",
   "versions": [
     {
       "version": "2026.09.29.1",
@@ -11,6 +11,11 @@
       "version": "2026.09.29.2",
       "file": "2026.09.29.2.json",
       "sha256": "671c0b69d3f4d966f3cf5f91c625c34658d6c5bb145a47b764e02b921d5341b1"
+    },
+    {
+      "version": "2026.10.01.1",
+      "file": "2026.10.01.1.json",
+      "sha256": "330f1e3614f3f0ee25f152b4bf7c2cfe75760606b9e2a40569fc3d3874ac7646"
     }
   ],
   "promptVariables": {
@@ -30,6 +35,7 @@
     "health.image.exercise": ["common", "units", "schema"],
     "health.image.referenceDate": ["referenceDate"],
     "content.image.understanding": ["originalText", "targetType"],
+    "capture.transcription.polish": ["rawText"],
     "analysis.review": ["personalContext", "reflectionData", "evidenceLevel"]
   },
   "requiredPromptIds": [
@@ -48,6 +54,7 @@
     "ai.scene.bookRecognition",
     "ai.scene.healthRecognition",
     "ai.scene.contentImageUnderstanding",
+    "ai.scene.capturePolish",
     "ai.style.concise",
     "ai.style.standard",
     "ai.style.deep",
@@ -87,6 +94,7 @@
     "health.image.heartRate",
     "health.image.referenceDate",
     "content.image.understanding",
+    "capture.transcription.polish",
     "analysis.review"
   ]
 }

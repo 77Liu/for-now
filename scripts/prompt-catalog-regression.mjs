@@ -9,8 +9,8 @@ import { installPromptCatalog, promptCatalogMetadata, promptText, renderPrompt }
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const current = installPromptCatalog(await loadPromptCatalog({ rootDir: root }));
-assert.equal(current.version, "2026.09.29.2");
-assert.equal(current.sha256, "671c0b69d3f4d966f3cf5f91c625c34658d6c5bb145a47b764e02b921d5341b1");
+assert.equal(current.version, "2026.10.01.1");
+assert.equal(current.sha256, "330f1e3614f3f0ee25f152b4bf7c2cfe75760606b9e2a40569fc3d3874ac7646");
 assert.ok(Object.keys(current.prompts).length >= 40);
 assert.match(promptText("ai.system.core"), /结论先行/);
 assert.equal(renderPrompt("ai.identity.named", { assistantName: "照见" }), "你的称呼是“照见”。仅在自然需要时使用，不要反复自称。");

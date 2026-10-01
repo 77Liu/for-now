@@ -37,9 +37,23 @@ export function createAliyunSegmentationTransport({
   roleName = "", disableIMDSv1 = true, mockResult = "", mockDelayMs = 0,
   fetchImpl = fetch, sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)),
   clock = Date.now, getClients: suppliedClients,
-  auditCall = (action, group, request, invoke) => invoke()
+  auditCall = (_details, invoke) => invoke()
 } = {}) {
   let clients;
+  const trackedCall = (action, callGroupId, request, invoke, summarize, usage = {}) => auditCall({
+    provider: "aliyun",
+    service: "segmentation",
+    scene: "keepsakeSegmentation",
+    action,
+    callGroupId,
+    request,
+    modality: "vision",
+    unitType: "call",
+    units: 1,
+    costKnown: false,
+    costSource: "Aliyun billing not configured",
+    ...usage
+  }, invoke, summarize);
   function getClients() {
     if (clients) return clients;
     if (suppliedClients) return clients = suppliedClients();
@@ -56,9 +70,20 @@ export function createAliyunSegmentationTransport({
 
   async function waitForResult(client, jobId, callGroupId) {
     const startedAt = clock(), runtime = new Util.RuntimeOptions(POLL_PARAMETERS);
+    const jobIdDigest = crypto.createHash("sha256").update(jobId).digest("hex").slice(0, 16);
+    let pollAttempt = 0;
     while (clock() - startedAt < SEGMENT_TIMEOUT_MS) {
-      const response = await auditCall("GetAsyncJobResult", callGroupId, { jobId, parameters: POLL_PARAMETERS },
-        () => client.getAsyncJobResultWithOptions(new Viapi.GetAsyncJobResultRequest({ jobId }), runtime));
+      pollAttempt += 1;
+      const response = await trackedCall(
+        "GetAsyncJobResult",
+        callGroupId,
+        { jobIdDigest, pollAttempt, parameters: POLL_PARAMETERS },
+        () => client.getAsyncJobResultWithOptions(new Viapi.GetAsyncJobResultRequest({ jobId }), runtime),
+        result => ({
+          status: safeText(result?.body?.data?.status, 80),
+          hasResult: Boolean(result?.body?.data?.result)
+        })
+      );
       const data = response?.body?.data || {};
       if (data.status === "PROCESS_SUCCESS") {
         const imageUrl = parseResult(data.result);
@@ -101,28 +126,56 @@ export function createAliyunSegmentationTransport({
       if (mockResult) {
         if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(mockResult)) throw new Error("测试轮廓不是有效的 PNG Data URL");
         if (mockDelayMs) await sleep(mockDelayMs);
-        return await auditCall("SegmentHDCommonImage", callGroupId, { images: [image], mocked: true },
-          async () => ({ cutout: mockResult, provider: "aliyun-segment-hd" }), () => ({ mocked: true }));
+        return await trackedCall(
+          "SegmentHDCommonImage",
+          callGroupId,
+          { images: [image], mocked: true },
+          async () => ({ cutout: mockResult, provider: "aliyun-segment-hd" }),
+          () => ({ mocked: true }),
+          {
+            imageCount: 1,
+            imageBytes: image.bytes,
+            imageTypes: [image.mimeType],
+            imageDimensions: [{ width: image.width, height: image.height }],
+            unitType: "image",
+            costKnown: true,
+            costSource: "mock"
+          }
+        );
       }
       const { imageseg, viapi } = getClients();
       const runtime = new Util.RuntimeOptions(SUBMIT_PARAMETERS);
-      const response = await auditCall("SegmentHDCommonImage", callGroupId, {
-        images: [image], region: REGION, parameters: SUBMIT_PARAMETERS
-      }, async () => {
-        const stream = createReadStream(file);
-        try {
-          return await imageseg.segmentHDCommonImageAdvance(new Imageseg.SegmentHDCommonImageAdvanceRequest({ imageUrlObject: stream }), runtime);
-        } finally {
-          stream.destroy();
+      const response = await trackedCall(
+        "SegmentHDCommonImage",
+        callGroupId,
+        { images: [image], region: REGION, parameters: SUBMIT_PARAMETERS },
+        async () => {
+          const stream = createReadStream(file);
+          try {
+            return await imageseg.segmentHDCommonImageAdvance(new Imageseg.SegmentHDCommonImageAdvanceRequest({ imageUrlObject: stream }), runtime);
+          } finally {
+            stream.destroy();
+          }
+        },
+        result => ({
+          providerRequestId: safeText(result?.body?.requestId, 200),
+          resultReady: Boolean(result?.body?.data?.imageUrl)
+        }),
+        {
+          imageCount: 1,
+          imageBytes: image.bytes,
+          imageTypes: [image.mimeType],
+          imageDimensions: [{ width: image.width, height: image.height }],
+          unitType: "image"
         }
-      });
+      );
       let imageUrl = safeText(response?.body?.data?.imageUrl, 4000);
       if (!imageUrl) {
         const jobId = safeText(response?.body?.requestId, 200);
         if (!jobId) throw new Error("主体识别服务没有返回任务编号");
         imageUrl = await waitForResult(viapi, jobId, callGroupId);
       }
-      const cutout = await auditCall("DownloadSegmentResult", callGroupId, { imageUrl },
+      const cutout = await trackedCall("DownloadSegmentResult", callGroupId, { source: "providerResult" },
         () => download(imageUrl), result => {
           const data = Buffer.from(result.split(",")[1], "base64");
           return { mimeType: "image/png", bytes: data.length, sha256: crypto.createHash("sha256").update(data).digest("hex") };

@@ -111,6 +111,16 @@ assert.equal(providerEntry.provider, "volcengine");
 assert.equal(providerEntry.scene, "speechRecognition");
 assert.equal(providerEntry.units, 1250);
 assert.equal(providerEntry.costKnown, false);
+const inferredProviderUsage = normalizeAiUsage({ entries: [
+  { ...providerEntry, id: "legacy-speech", callId: "legacy-speech", modality: "unknown" },
+  { ...providerEntry, id: "legacy-vision", callId: "legacy-vision", service: "vision", scene: "visionOcr", modality: "unknown", unitType: "image", units: 2 },
+  { ...providerEntry, id: "legacy-segmentation", callId: "legacy-segmentation", provider: "aliyun", service: "segmentation", scene: "keepsakeSegmentation", modality: "unknown", unitType: "image", units: 1 }
+] }).entries;
+assert.deepEqual(inferredProviderUsage.map(item => [item.modality, item.imageCount]), [
+  ["audio", 0],
+  ["vision", 2],
+  ["vision", 1]
+]);
 
 assert.equal(localDateKey(new Date(2026, 8, 29, 0, 0, 0)), "2026-09-29");
 assert.equal(localDateKey("invalid"), "");
@@ -156,6 +166,29 @@ assert.deepEqual(providerDashboard.providers.map(item => [item.provider, item.ca
 assert.equal(providerDashboard.modalities.find(item => item.modality === "audio").costUnknownCalls, 1);
 assert.equal(providerDashboard.scenes.find(item => item.scene === "visionOcr").costCny, 2.5);
 assert.equal(providerDashboard.calibration.p90CostCny, 2.5);
+assert.deepEqual(providerDashboard.services.map(item => item.label), [
+  "DeepSeek 模型",
+  "豆包语音",
+  "火山视觉",
+  "阿里云图片分割"
+]);
+assert.deepEqual(providerDashboard.services.find(item => item.key === "volcengineSpeech").unitUsage, [
+  { unitType: "audioMillisecond", units: 1250 }
+]);
+assert.deepEqual(providerDashboard.services.find(item => item.key === "volcengineVision").unitUsage, [
+  { unitType: "image", units: 1 }
+]);
+assert.equal(providerDashboard.daily[0].services.volcengineSpeech.calls, 1);
+assert.equal(providerDashboard.daily[0].services.volcengineVision.calls, 1);
+assert.equal(normalizeAiUsage({
+  entries: [{
+    id: "segmentation",
+    createdAt: now(),
+    provider: "aliyun",
+    service: "segmentation",
+    scene: "keepsakeSegmentation"
+  }]
+}).entries[0].scene, "keepsakeSegmentation");
 
 const directory = await fs.mkdtemp(path.join(os.tmpdir(), "growth-ai-domain-"));
 const context = new AsyncLocalStorage();
@@ -400,6 +433,11 @@ try {
     scene: "visionOcr",
     action: "OCRNormal",
     request: { imageBytes: 1024 },
+    modality: "vision",
+    imageCount: 1,
+    imageBytes: 1024,
+    imageTypes: ["image/png"],
+    imageDimensions: [{ width: 32, height: 24 }],
     unitType: "image",
     units: 1,
     costKnown: false,
@@ -412,6 +450,11 @@ try {
   assert.equal(providerResult.requestId, "provider-request");
   assert.equal(providerUsage.length, 1);
   assert.equal(providerUsage[0].scene, "visionOcr");
+  assert.equal(providerUsage[0].modality, "vision");
+  assert.equal(providerUsage[0].imageCount, 1);
+  assert.equal(providerUsage[0].imageBytes, 1024);
+  assert.deepEqual(providerUsage[0].imageTypes, ["image/png"]);
+  assert.deepEqual(providerUsage[0].imageDimensions, [{ width: 32, height: 24 }]);
   assert.equal(providerUsage[0].unitType, "image");
   assert.equal(retainedProviderUsage.callId, "provider-call");
   assert.equal(committedProviderUsage, 1);

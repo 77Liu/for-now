@@ -139,14 +139,24 @@ assert.equal(accounts.get("cancelled").entries[0].status, "cancelled");
 assert.equal(auditRecords.find(entry => entry.actor.userId === "cancelled" && entry.status === "cancelled").error.code, "AI_TASK_CANCELLED");
 assert.equal(active, 0);
 responseFactory = () => jsonResponse();
-await Promise.all(["a", "b"].map(id => run(id, () => generate(`account-${id}`))));
+await Promise.all(["a", "b"].map(id => run(id, () => generate(`account-${id}`, {
+  contextReceipt: {
+    version: "receipt-v1",
+    tokenBudget: { limit: 100, estimatedUsed: 20, remaining: 80, estimation: "test" },
+    sources: [{ resourceId: `source-${id}` }]
+  }
+}))));
 for (const id of ["a", "b"]) {
   assert.equal(accounts.get(id).entries.length, 1);
   const terminalAudit = auditRecords.find(entry => entry.actor.userId === id && entry.status === "success");
+  const startedAudit = auditRecords.find(entry => entry.actor.userId === id && entry.status === "started");
+  assert.equal(terminalAudit.schemaVersion, 2);
   assert.equal(terminalAudit.traceId, `trace-${id}`);
   assert.equal(terminalAudit.request.userPrompt, `account-${id}`);
-  assert.equal(terminalAudit.request.promptCatalog.version, "2026.09.29.2");
+  assert.equal(terminalAudit.request.promptCatalog.version, "2026.10.01.1");
   assert.match(terminalAudit.request.promptCatalog.sha256, /^[a-f0-9]{64}$/);
+  assert.deepEqual(terminalAudit.request.contextReceipt, startedAudit.request.contextReceipt);
+  assert.equal(terminalAudit.request.contextReceipt.sources[0].resourceId, `source-${id}`);
 }
 
 const directory = await fs.mkdtemp(path.join(os.tmpdir(), "growth-provider-"));

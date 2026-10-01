@@ -1,5 +1,6 @@
 import { taskInputMatches, publicAiTask } from "../modules/tasks/index.mjs";
 import { notificationUnread } from "../modules/notifications/index.mjs";
+import { compactPersonalContextReceipt } from "./personal-context.mjs";
 
 export function createBackgroundAi({ repository, tasks, notifications, targets, generate, dispatch, contextKey, onError }) {
   const running = new Set();
@@ -29,6 +30,7 @@ export function createBackgroundAi({ repository, tasks, notifications, targets, 
       const claimed = await repository.update(store => {
         const task = tasks.claim(store.aiTasks, taskId);
         if (!task) return false;
+        targets.started?.(store, task);
         notifications.upsertTask(store.notifications, task, "running", "正在生成");
         return true;
       });
@@ -45,7 +47,10 @@ export function createBackgroundAi({ repository, tasks, notifications, targets, 
         });
         return;
       }
-      const result = await generate(work, { signal: controller.signal });
+      const generated = await generate(work, { signal: controller.signal });
+      const result = work.contextReceipt && generated && typeof generated === "object" && !Array.isArray(generated)
+        ? { ...generated, contextReceipt: compactPersonalContextReceipt(work.contextReceipt) }
+        : generated;
       await repository.update(value => {
         const currentTask = value.aiTasks.find(item => item.id === taskId);
         if (!currentTask) return;
@@ -54,7 +59,9 @@ export function createBackgroundAi({ repository, tasks, notifications, targets, 
           return;
         }
         const currentWork = targets.prepare(value, currentTask);
-        if (!taskInputMatches(task, currentWork)) {
+        const contextChanged = work.contextFingerprint
+          && work.contextFingerprint !== currentWork?.contextFingerprint;
+        if (!taskInputMatches(task, currentWork) || contextChanged) {
           stale(value, currentTask, "目标已经变化，生成结果未写入");
           return;
         }
@@ -68,6 +75,7 @@ export function createBackgroundAi({ repository, tasks, notifications, targets, 
         if (!task) return;
         if (["cancelled", "cancelling"].includes(task.status)) cancelled(store, task);
         else {
+          targets.fail?.(store, task, error);
           tasks.complete(task, "failed", { error: error.message });
           notifications.upsertTask(store.notifications, task, "failed", task.error || "生成失败");
         }
@@ -121,7 +129,10 @@ export function createBackgroundAi({ repository, tasks, notifications, targets, 
     async resume() {
       const ids = await repository.update(store => {
         const { queued, interrupted } = tasks.recover(store.aiTasks);
-        for (const task of interrupted) notifications.upsertTask(store.notifications, task, "failed", task.error);
+        for (const task of interrupted) {
+          targets.fail?.(store, task, { code: "TASK_INTERRUPTED" });
+          notifications.upsertTask(store.notifications, task, "failed", task.error);
+        }
         return queued;
       });
       for (const id of ids) schedule(id);

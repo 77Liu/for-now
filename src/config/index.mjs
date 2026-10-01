@@ -60,6 +60,9 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     localTestMainUserId: String(env.LOCAL_TEST_MAIN_USER_ID || "").trim(),
     deepSeekApiUrl: env.DEEPSEEK_API_URL || "https://api.deepseek.com/chat/completions",
     attachments,
+    features: Object.freeze({
+      incrementalSync: String(env.INCREMENTAL_SYNC_ENABLED ?? "1") !== "0"
+    }),
     platform: Object.freeze({
       serviceTokenHash: platformServiceTokenHash,
       backupStatusFile: String(env.BACKUP_STATUS_FILE || "/var/lib/for-now-monitor/last-backup-success")

@@ -165,6 +165,14 @@ export function createAiAudit({ textLimit, getContext, append, updateUsage, logE
     scene,
     action,
     request = {},
+    model = "",
+    modality = "unknown",
+    imageCount = 0,
+    imageBytes = 0,
+    imageTypes = [],
+    imageDimensions = [],
+    requestChars = 0,
+    responseChars = 0,
     unitType = "call",
     units = 1,
     costCny = 0,
@@ -184,6 +192,14 @@ export function createAiAudit({ textLimit, getContext, append, updateUsage, logE
       service,
       scene,
       action,
+      model,
+      modality,
+      imageCount,
+      imageBytes,
+      imageTypes,
+      imageDimensions,
+      requestChars,
+      responseChars,
       startedAt,
       attempt: 1,
       maxAttempts: 1,
@@ -274,34 +290,24 @@ export function createAiAudit({ textLimit, getContext, append, updateUsage, logE
       });
     }
   };
-  const segmentationCall = async (action, callGroupId, request, invoke, summarize = result => result?.body || {}) => {
-    const context = getContext() || {}, startedAt = now(), startedMs = Date.now(), callId = createId();
-    const entry = {
-      id: callId, callId, callGroupId, traceId: context.traceId || "", actor: { userId: context.user?.id || "local" },
-      provider: "aliyun", scene: "keepsakeSegmentation", action, startedAt, attempt: 1, maxAttempts: 1,
-      request, usage: { known: false, applicable: false, reason: "Non-token API; billing available from Alibaba Cloud only" }
-    };
-    await start(entry);
-    let response = {}, failure = null;
-    try {
-      const result = await invoke();
-      response = summarize(result);
-      return result;
-    } catch (error) {
-      failure = error;
-      throw error;
-    } finally {
-      const durationMs = Date.now() - startedMs, status = failure ? "failed" : "success";
-      try {
-        await record({ ...entry, completedAt: now(), durationMs, status, response, error: failure ? errorMetadata(failure) : null });
-      } catch (error) {
-        await safeLog("system", "ai.log_failed", { level: "error", callId, target: "audit", error: errorMetadata(error) });
-      }
-      await safeLog("system", "dependency.completed", {
-        level: failure ? "error" : "info", provider: "aliyun", action, callId, callGroupId, durationMs, status,
-        error: failure ? errorMetadata(failure) : null
-      });
-    }
-  };
+  const segmentationCall = (action, callGroupId, request, invoke, summarize = result => ({
+    providerRequestId: result?.body?.requestId || result?.requestId || ""
+  })) => providerCall({
+    provider: "aliyun",
+    service: "segmentation",
+    scene: "keepsakeSegmentation",
+    action,
+    callGroupId,
+    request,
+    modality: "vision",
+    imageCount: Array.isArray(request?.images) ? request.images.length : 0,
+    imageBytes: Array.isArray(request?.images)
+      ? request.images.reduce((sum, image) => sum + (Number(image?.bytes) || 0), 0)
+      : 0,
+    unitType: action === "SegmentHDCommonImage" ? "image" : "call",
+    units: 1,
+    costKnown: false,
+    costSource: "Aliyun billing not configured"
+  }, invoke, summarize);
   return { text, message, start, recordDeepSeekAttempt, recoverPending, providerCall, segmentationCall };
 }

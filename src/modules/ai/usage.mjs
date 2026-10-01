@@ -3,7 +3,17 @@ import { safeText, safeIso } from "../../shared/validation/index.mjs";
 import { LLM_MODELS, LLM_EFFORTS, LLM_TIERS, LLM_SCENARIOS } from "./settings.mjs";
 
 export const AI_USAGE_VERSION = 3;
-const PROVIDER_SCENES = new Set(["speechSynthesis", "speechRecognition", "visionOcr", "documentParsing"]);
+const PROVIDER_SCENES = new Set(["speechSynthesis", "speechRecognition", "visionOcr", "documentParsing", "keepsakeSegmentation"]);
+const knownModalities = new Set(["vision", "text", "audio", "document"]);
+function normalizedModality(item) {
+  if (knownModalities.has(item?.modality)) return item.modality;
+  if (item?.provider === "volcengine" && item?.service === "speech") return "audio";
+  if (item?.provider === "volcengine" && item?.service === "vision") {
+    return item?.unitType === "document" ? "document" : "vision";
+  }
+  if (item?.provider === "aliyun" && item?.service === "segmentation") return "vision";
+  return "unknown";
+}
 export const DEEPSEEK_PRICING = {
   source: "https://api-docs.deepseek.com/quick_start/pricing/",
   checkedAt: "2026-09-27",
@@ -59,8 +69,10 @@ export function normalizeAiUsage(value = {}) {
     responseFormat: item.responseFormat === "json_object" ? "json_object" : "text",
     maxTokens: Math.max(0, Math.round(Number(item.maxTokens) || 0)),
     finishReason: safeText(item.finishReason, 80),
-    modality: ["vision", "text", "audio", "document"].includes(item.modality) ? item.modality : "unknown",
-    imageCount: Math.max(0, Math.round(Number(item.imageCount) || 0)),
+    modality: normalizedModality(item),
+    imageCount: Math.max(0, Math.round(Number(item.imageCount)
+      || (normalizedModality(item) === "vision" && item.unitType === "image" ? Number(item.units) : 0)
+      || 0)),
     imageBytes: Math.max(0, Math.round(Number(item.imageBytes) || 0)),
     imageTypes: Array.isArray(item.imageTypes) ? item.imageTypes.map(type => safeText(type, 80)).filter(Boolean).slice(0, 8) : [],
     imageDimensions: Array.isArray(item.imageDimensions) ? item.imageDimensions.slice(0, 8).map(image => ({
