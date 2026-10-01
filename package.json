@@ -38,6 +38,9 @@
     "test:system": "node scripts/system-test.mjs all",
     "start:local-test": "node scripts/local-test-preview.mjs",
     "test:observability": "node scripts/observability-regression.mjs",
+    "test:volcengine": "node scripts/volcengine-provider-regression.mjs",
+    "test:volcengine:speech": "node scripts/volcengine-speech-smoke.mjs",
+    "test:volcengine:vision": "node scripts/volcengine-vision-smoke.mjs",
     "test:deploy": "node scripts/deploy-regression.mjs",
     "test:storage": "node scripts/attachment-storage-regression.mjs",
     "test:oss": "node scripts/oss-attachment-smoke.mjs",
@@ -65,7 +68,8 @@
     "@capacitor/ios": "8.5.2",
     "ali-oss": "6.23.0",
     "pg": "8.16.3",
-    "sharp": "0.35.5"
+    "sharp": "0.35.5",
+    "ws": "8.22.0"
   },
   "devDependencies": {
     "@capacitor/cli": "8.4.3"

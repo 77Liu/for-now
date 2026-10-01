@@ -19,6 +19,8 @@ assert.equal(defaults.promptCatalogVersion, "");
 assert.equal(defaults.persistenceBackend, "json");
 assert.deepEqual(defaults.limits, {
   aiQps: 20, aiConcurrency: 20, segmentationQps: 5, segmentationConcurrency: 5,
+  speechQps: 5, speechConcurrency: 5, ocrQps: 10, ocrConcurrency: 10,
+  documentQps: 2, documentConcurrency: 2,
   aiDailyCalls: 200, usdCny: 7.2, aiDailyCostCny: 14.4, attachmentBytes: 1024 ** 3
 });
 assert.equal(config({ AI_USER_DAILY_COST_LIMIT_USD: "2", AI_COST_CNY_PER_USD: "8" }).limits.aiDailyCostCny, 16);
@@ -28,6 +30,8 @@ assert.equal(config({ AI_USER_DAILY_COST_LIMIT_USD: "0" }).limits.aiDailyCostCny
 assert.equal(config({ AI_USER_DAILY_COST_LIMIT_USD: "" }).limits.aiDailyCostCny, 14.4);
 assert.equal(config({ AI_GLOBAL_QPS: "bad" }).limits.aiQps, 20);
 assert.equal(config({ AI_GLOBAL_QPS: "3000" }).limits.aiQps, 2500);
+assert.equal(config({ OCR_GLOBAL_QPS: "99" }).limits.ocrQps, 10);
+assert.equal(config({ DOCUMENT_PARSE_GLOBAL_CONCURRENCY: "99" }).limits.documentConcurrency, 2);
 assert.equal(config({ AI_AUDIT_TEXT_LIMIT: "1" }).audit.textLimit, 10000);
 assert.equal(config({ AI_AUDIT_RETENTION_DAYS: "4000" }).audit.retentionDays, 3650);
 assert.equal(config({ ATTACHMENT_USER_QUOTA_BYTES: "1" }).limits.attachmentBytes, 1024 ** 2);
@@ -50,6 +54,16 @@ const snapshot = config(env);
 env.APP_VERSION = "changed";
 assert.equal(snapshot.version, "fixture-version");
 assert.equal(snapshot.segmentation.mockResult, "fixture");
+assert.equal(defaults.speech.defaultVoice, "zh_male_shaonianzixin_uranus_bigtts");
+assert.equal(defaults.speech.projectName, "default");
+assert.equal(defaults.speech.apiKey, "");
+assert.equal(defaults.vision.region, "cn-north-1");
+assert.equal(defaults.vision.accessKeyId, "");
+assert.equal(config({
+  VOLCENGINE_SPEECH_API_KEY: " speech-key ",
+  VOLCENGINE_ACCESS_KEY_ID: " ak ",
+  VOLCENGINE_SECRET_ACCESS_KEY: " sk "
+}).speech.apiKey, "speech-key");
 assert.equal(config({ NODE_ENV: "production", KEEPSAKE_SEGMENT_MOCK_RESULT: "fixture" }).segmentation.mockResult, "");
 assert.throws(() => { snapshot.limits.aiQps = 300; }, TypeError);
 assert.equal(loadAttachmentConfig({ ALIBABA_CLOUD_IMDSV1_DISABLED: "FALSE" }).disableIMDSv1, false);

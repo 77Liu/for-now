@@ -73,6 +73,12 @@ export function loadAppConfig({ rootDir, env = process.env }) {
       aiConcurrency: Math.max(1, Math.min(100, Number(env.AI_GLOBAL_CONCURRENCY) || 20)),
       segmentationQps: Math.max(1, Math.min(100, Number(env.SEGMENTATION_GLOBAL_QPS) || 5)),
       segmentationConcurrency: Math.max(1, Math.min(20, Number(env.SEGMENTATION_GLOBAL_CONCURRENCY) || 5)),
+      speechQps: Math.max(1, Math.min(100, Number(env.SPEECH_GLOBAL_QPS) || 5)),
+      speechConcurrency: Math.max(1, Math.min(20, Number(env.SPEECH_GLOBAL_CONCURRENCY) || 5)),
+      ocrQps: Math.max(1, Math.min(10, Number(env.OCR_GLOBAL_QPS) || 10)),
+      ocrConcurrency: Math.max(1, Math.min(10, Number(env.OCR_GLOBAL_CONCURRENCY) || 10)),
+      documentQps: Math.max(1, Math.min(2, Number(env.DOCUMENT_PARSE_GLOBAL_QPS) || 2)),
+      documentConcurrency: Math.max(1, Math.min(2, Number(env.DOCUMENT_PARSE_GLOBAL_CONCURRENCY) || 2)),
       aiDailyCalls: Math.max(1, Math.round(Number(env.AI_USER_DAILY_CALL_LIMIT) || 200)),
       usdCny,
       aiDailyCostCny,
@@ -83,6 +89,24 @@ export function loadAppConfig({ rootDir, env = process.env }) {
       disableIMDSv1: attachments.disableIMDSv1,
       mockResult: env.NODE_ENV === "test" ? String(env.KEEPSAKE_SEGMENT_MOCK_RESULT ?? "").trim().slice(0, 48 * 1024 * 1024) : "",
       mockDelayMs: Math.max(0, Math.min(5000, Number(env.KEEPSAKE_SEGMENT_MOCK_DELAY_MS) || 0))
+    }),
+    speech: Object.freeze({
+      apiKey: String(env.VOLCENGINE_SPEECH_API_KEY || "").trim().slice(0, 1000),
+      projectName: String(env.VOLCENGINE_SPEECH_PROJECT_NAME || "default").trim().slice(0, 100) || "default",
+      defaultVoice: String(env.VOLCENGINE_TTS_DEFAULT_VOICE || "zh_male_shaonianzixin_uranus_bigtts").trim().slice(0, 160),
+      ttsEndpoint: String(env.VOLCENGINE_TTS_ENDPOINT || "https://openspeech.bytedance.com/api/v3/tts/unidirectional").trim(),
+      ttsSubmitEndpoint: String(env.VOLCENGINE_TTS_SUBMIT_ENDPOINT || "https://openspeech.bytedance.com/api/v3/tts/submit").trim(),
+      ttsQueryEndpoint: String(env.VOLCENGINE_TTS_QUERY_ENDPOINT || "https://openspeech.bytedance.com/api/v3/tts/query").trim(),
+      asrStreamEndpoint: String(env.VOLCENGINE_ASR_STREAM_ENDPOINT || "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async").trim(),
+      asrSubmitEndpoint: String(env.VOLCENGINE_ASR_SUBMIT_ENDPOINT || "https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit").trim(),
+      asrQueryEndpoint: String(env.VOLCENGINE_ASR_QUERY_ENDPOINT || "https://openspeech.bytedance.com/api/v3/auc/bigmodel/query").trim()
+    }),
+    vision: Object.freeze({
+      accessKeyId: String(env.VOLCENGINE_ACCESS_KEY_ID || "").trim().slice(0, 1000),
+      secretAccessKey: String(env.VOLCENGINE_SECRET_ACCESS_KEY || "").trim().slice(0, 1000),
+      sessionToken: String(env.VOLCENGINE_SESSION_TOKEN || "").trim().slice(0, 4000),
+      endpoint: String(env.VOLCENGINE_VISUAL_ENDPOINT || "https://visual.volcengineapi.com").trim(),
+      region: String(env.VOLCENGINE_VISUAL_REGION || "cn-north-1").trim().slice(0, 100) || "cn-north-1"
     })
   });
 }
