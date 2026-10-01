@@ -2505,6 +2505,12 @@ try {
   assert.equal(await evaluate(`document.querySelector(".capture-sync-state.pending")?.textContent==="待同步"&&document.querySelector("#capture-list").textContent.includes("范围切换时保留的待同步记录")`),true);
   await evaluate(`document.querySelector('[data-view="discovery"]').click();true`);
   assert.equal(await waitUntil(`window.__localHydrateRequests.includes("discovery")`),true);
+  await evaluate(`document.querySelector('[data-view="ai-cost"]').click();true`);
+  assert.equal(await waitUntil(`window.__localHydrateRequests.includes("statistics")`),true);
+  const statisticsHydrations=await evaluate(`window.__localHydrateRequests.filter(scope=>scope==="statistics").length`);
+  await evaluate(`document.querySelector('[data-view="commercialization"]').click();true`);
+  await sleep(100);
+  assert.equal(await evaluate(`window.__localHydrateRequests.filter(scope=>scope==="statistics").length`),statisticsHydrations);
   await evaluate(`document.querySelector('[data-view="settings"]').click();true`);
   await evaluate(`window.__failLocalModeTimeout=true;document.querySelector('[data-local-test-mode="cold"]').click();true`);
   assert.equal(await waitUntil(`document.querySelector("#local-test-status").textContent==="线上数据读取超时，请检查网络后重试。"&&window.__testWorkspaceMode==="simulation"`),true);
