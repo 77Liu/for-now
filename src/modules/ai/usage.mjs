@@ -2,7 +2,8 @@ import crypto from "node:crypto";
 import { safeText, safeIso } from "../../shared/validation/index.mjs";
 import { LLM_MODELS, LLM_EFFORTS, LLM_TIERS, LLM_SCENARIOS } from "./settings.mjs";
 
-export const AI_USAGE_VERSION = 2;
+export const AI_USAGE_VERSION = 3;
+const PROVIDER_SCENES = new Set(["speechSynthesis", "speechRecognition", "visionOcr", "documentParsing"]);
 export const DEEPSEEK_PRICING = {
   source: "https://api-docs.deepseek.com/quick_start/pricing/",
   checkedAt: "2026-09-27",
@@ -24,7 +25,11 @@ export const DEEPSEEK_PRICING = {
 
 export function normalizeAiUsage(value = {}) {
   const trackingStartedAt = safeIso(value.trackingStartedAt) || new Date().toISOString();
-  const entries = Array.isArray(value.entries) ? value.entries.filter(item => item && safeIso(item.createdAt) && LLM_MODELS.includes(item.model)).map(item => ({
+  const entries = Array.isArray(value.entries) ? value.entries.filter(item => {
+    const provider = safeText(item?.provider, 40) || "deepseek";
+    return item && safeIso(item.createdAt)
+      && (LLM_MODELS.includes(item.model) || (provider !== "deepseek" && safeText(item.service, 40)));
+  }).map(item => ({
     id: safeText(item.id, 100) || crypto.randomUUID(),
     callId: safeText(item.callId || item.id, 100) || crypto.randomUUID(),
     callGroupId: safeText(item.callGroupId, 100),
@@ -39,9 +44,11 @@ export function normalizeAiUsage(value = {}) {
     errorCode: safeText(item.errorCode, 120),
     provider: safeText(item.provider, 40) || "deepseek",
     providerRequestId: safeText(item.providerRequestId, 200),
-    model: item.model,
+    service: safeText(item.service, 40),
+    action: safeText(item.action, 80),
+    model: LLM_MODELS.includes(item.model) ? item.model : safeText(item.model, 100),
     modelReturned: safeText(item.modelReturned, 100),
-    scene: LLM_SCENARIOS.includes(item.scene) || LLM_TIERS.includes(item.scene) ? item.scene : "unknown",
+    scene: LLM_SCENARIOS.includes(item.scene) || LLM_TIERS.includes(item.scene) || PROVIDER_SCENES.has(item.scene) ? item.scene : "unknown",
     tier: LLM_TIERS.includes(item.tier) ? item.tier : "",
     effort: LLM_EFFORTS.includes(item.effort) ? item.effort : "",
     attempt: Math.max(1, Math.round(Number(item.attempt) || 1)),
@@ -52,7 +59,7 @@ export function normalizeAiUsage(value = {}) {
     responseFormat: item.responseFormat === "json_object" ? "json_object" : "text",
     maxTokens: Math.max(0, Math.round(Number(item.maxTokens) || 0)),
     finishReason: safeText(item.finishReason, 80),
-    modality: ["vision", "text"].includes(item.modality) ? item.modality : "unknown",
+    modality: ["vision", "text", "audio", "document"].includes(item.modality) ? item.modality : "unknown",
     imageCount: Math.max(0, Math.round(Number(item.imageCount) || 0)),
     imageBytes: Math.max(0, Math.round(Number(item.imageBytes) || 0)),
     imageTypes: Array.isArray(item.imageTypes) ? item.imageTypes.map(type => safeText(type, 80)).filter(Boolean).slice(0, 8) : [],
@@ -86,6 +93,11 @@ export function normalizeAiUsage(value = {}) {
       cacheMiss: Math.max(0, Number(item.ratesUsdPerMillion?.cacheMiss) || 0),
       output: Math.max(0, Number(item.ratesUsdPerMillion?.output) || 0)
     },
+    unitType: safeText(item.unitType, 40),
+    units: Math.max(0, Number(item.units) || 0),
+    costKnown: item.costKnown == null ? Boolean(Number(item.costCny)) : Boolean(item.costKnown),
+    costCny: Math.max(0, Number(item.costCny) || 0),
+    costSource: safeText(item.costSource, 160),
     rawUsage: numericUsage(item.rawUsage)
   })) : [];
   return { version: AI_USAGE_VERSION, trackingStartedAt, entries };
@@ -141,13 +153,52 @@ export function deepSeekUsageEntry({ usage, model, createdAt, ...metadata }) {
   };
 }
 
+export function providerUsageEntry({
+  provider,
+  service,
+  action,
+  scene,
+  model = "",
+  unitType = "call",
+  units = 1,
+  costCny = 0,
+  costKnown = false,
+  createdAt,
+  ...metadata
+}) {
+  return normalizeAiUsage({
+    version: AI_USAGE_VERSION,
+    trackingStartedAt: createdAt,
+    entries: [{
+      ...metadata,
+      id: metadata.callId,
+      callId: metadata.callId,
+      provider,
+      service,
+      action,
+      scene,
+      model: model || `${provider}-${service}`,
+      unitType,
+      units,
+      costCny,
+      costKnown,
+      createdAt,
+      usageKnown: false,
+      tokens: {},
+      costsUsd: {},
+      ratesUsdPerMillion: {},
+      rawUsage: { unitType, units }
+    }]
+  }).entries[0];
+}
+
 export function createAiUsageService({ repository, getAccountKey, dailyCallLimit, dailyCostLimitCny, cnyPerUsd, now = () => new Date().toISOString() }) {
   const reservations = new Map();
   return {
     read: repository.read,
     update: repository.update,
     ensure: () => repository.ensure(AI_USAGE_VERSION, original => Number(original.version || 1) < AI_USAGE_VERSION),
-    async reserveAttempt() {
+    async reserveAttempt({ estimatedCostCny = 0 } = {}) {
       const accountKey = getAccountKey();
       const usage = await repository.read(), day = now().slice(0, 10);
       const entries = usage.entries.filter(item => item.createdAt.slice(0, 10) === day);
@@ -155,13 +206,15 @@ export function createAiUsageService({ repository, getAccountKey, dailyCallLimit
       if (entries.length + active.size >= dailyCallLimit) {
         throw Object.assign(new Error("今日 AI 调用次数已达到上限，请明天再试"), { statusCode: 429, code: "AI_DAILY_CALL_LIMIT" });
       }
-      const persistedCostUsd = entries.reduce((sum, item) => sum + Number(item.costsUsd?.total || 0), 0);
-      const reservedCostUsd = [...active.values()].reduce((sum, item) => sum + item.costUsd, 0);
-      const costCny = (persistedCostUsd + reservedCostUsd) * cnyPerUsd;
-      if (Number.isFinite(dailyCostLimitCny) && costCny >= dailyCostLimitCny) {
+      const persistedCostCny = entries.reduce((sum, item) => (
+        sum + (item.costKnown ? Number(item.costCny || 0) : Number(item.costsUsd?.total || 0) * cnyPerUsd)
+      ), 0);
+      const reservedCostCny = [...active.values()].reduce((sum, item) => sum + item.costCny, 0);
+      const requestedCostCny = Math.max(0, Number(estimatedCostCny) || 0);
+      if (Number.isFinite(dailyCostLimitCny) && persistedCostCny + reservedCostCny + requestedCostCny >= dailyCostLimitCny) {
         throw Object.assign(new Error("今日 AI 费用额度已达到上限，请明天再试"), { statusCode: 429, code: "AI_DAILY_COST_LIMIT" });
       }
-      const id = crypto.randomUUID(), state = { costUsd: 0 };
+      const id = crypto.randomUUID(), state = { costCny: requestedCostCny };
       if (!reservations.has(reservationKey)) reservations.set(reservationKey, active);
       active.set(id, state);
       let settled = false;
@@ -177,7 +230,9 @@ export function createAiUsageService({ repository, getAccountKey, dailyCallLimit
       reservation.commit = settle;
       reservation.retain = entry => {
         if (settled) return;
-        state.costUsd = Math.max(0, Number(entry?.costsUsd?.total) || 0);
+        state.costCny = entry?.costKnown
+          ? Math.max(0, Number(entry.costCny) || 0)
+          : Math.max(0, Number(entry?.costsUsd?.total) || 0) * cnyPerUsd;
       };
       return reservation;
     }

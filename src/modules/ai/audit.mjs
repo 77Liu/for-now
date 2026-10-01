@@ -1,9 +1,9 @@
 import crypto from "node:crypto";
 import { safeText } from "../../shared/validation/index.mjs";
 import { errorMetadata, redact } from "../../shared/observability/index.mjs";
-import { deepSeekUsageEntry } from "./usage.mjs";
+import { deepSeekUsageEntry, providerUsageEntry } from "./usage.mjs";
 
-const AI_AUDIT_VERSION = 1;
+const AI_AUDIT_VERSION = 2;
 
 export function usageEntryFromAudit(entry) {
   const value = entry?.usageRecovery;
@@ -58,7 +58,7 @@ export function createAiAudit({ textLimit, getContext, append, updateUsage, logE
     callGroupId: pending.entry.callGroupId,
     traceId: pending.entry.traceId,
     actor: pending.audit.actor,
-    provider: "deepseek",
+    provider: pending.entry.provider || "deepseek",
     scene: pending.entry.scene,
     startedAt: pending.audit.startedAt,
     completedAt: now(),
@@ -159,6 +159,121 @@ export function createAiAudit({ textLimit, getContext, append, updateUsage, logE
       pendingAudit: pendingCount(pendingAudit.values(), scope)
     };
   };
+  const providerCall = async ({
+    provider,
+    service,
+    scene,
+    action,
+    request = {},
+    unitType = "call",
+    units = 1,
+    costCny = 0,
+    costKnown = false,
+    costSource = "",
+    reservation = null,
+    callGroupId = createId()
+  }, invoke, summarize = result => ({ providerRequestId: result?.requestId || "" })) => {
+    const context = getContext() || {}, startedAt = now(), startedMs = Date.now(), callId = createId();
+    const base = {
+      id: callId,
+      callId,
+      callGroupId,
+      traceId: context.traceId || "",
+      actor: { userId: context.user?.id || "local" },
+      provider,
+      service,
+      scene,
+      action,
+      startedAt,
+      attempt: 1,
+      maxAttempts: 1,
+      request
+    };
+    await start(base);
+    let response = {}, failure = null;
+    try {
+      const result = await invoke();
+      response = summarize(result) || {};
+      return result;
+    } catch (error) {
+      failure = error;
+      throw error;
+    } finally {
+      const completedAt = now(), durationMs = Date.now() - startedMs;
+      const status = failure ? (failure.name === "AbortError" ? "cancelled" : "failed") : "success";
+      const usageEntry = providerUsageEntry({
+        ...base,
+        createdAt: startedAt,
+        completedAt,
+        durationMs,
+        durationKnown: true,
+        status,
+        httpStatus: Number(response.httpStatus || failure?.statusCode || failure?.status || 0),
+        errorCode: failure ? safeText(failure.code || failure.name, 120) : "",
+        providerRequestId: safeText(response.providerRequestId || response.requestId, 200),
+        unitType,
+        units,
+        costCny,
+        costKnown,
+        costSource
+      });
+      const scope = entryScope(base);
+      reservation?.retain?.(usageEntry);
+      let usagePersisted = false;
+      try {
+        await persistUsage(usageEntry);
+        usagePersisted = true;
+        reservation?.commit?.();
+      } catch (error) {
+        pendingUsage.set(`${scope}\u0000${callId}`, {
+          entry: usageEntry,
+          audit: base,
+          reservation,
+          scope
+        });
+        await safeLog("system", "ai.log_failed", {
+          level: "error",
+          callId,
+          target: "usage",
+          error: errorMetadata(error)
+        });
+      }
+      try {
+        await record({
+          ...base,
+          completedAt,
+          durationMs,
+          status,
+          response,
+          error: failure ? errorMetadata(failure) : null,
+          persistence: { usage: usagePersisted ? "persisted" : "pending" },
+          ...(!usagePersisted ? { usageRecovery: usageEntry } : {}),
+          usage: {
+            known: usageEntry.costKnown,
+            unitType: usageEntry.unitType,
+            units: usageEntry.units,
+            costCny: usageEntry.costCny,
+            costSource: usageEntry.costSource
+          }
+        });
+      } catch (error) {
+        queueAudit({ ...base, completedAt, durationMs, status, response, error: failure ? errorMetadata(failure) : null }, scope);
+        await safeLog("system", "ai.log_failed", { level: "error", callId, target: "audit", error: errorMetadata(error) });
+      }
+      await safeLog("system", "dependency.completed", {
+        level: failure ? "error" : "info",
+        provider,
+        service,
+        action,
+        scene,
+        callId,
+        callGroupId,
+        durationMs,
+        status,
+        error: failure ? errorMetadata(failure) : null
+      });
+    }
+  };
   const segmentationCall = async (action, callGroupId, request, invoke, summarize = result => result?.body || {}) => {
     const context = getContext() || {}, startedAt = now(), startedMs = Date.now(), callId = createId();
     const entry = {
@@ -188,5 +303,5 @@ export function createAiAudit({ textLimit, getContext, append, updateUsage, logE
       });
     }
   };
-  return { text, message, start, recordDeepSeekAttempt, recoverPending, segmentationCall };
+  return { text, message, start, recordDeepSeekAttempt, recoverPending, providerCall, segmentationCall };
 }

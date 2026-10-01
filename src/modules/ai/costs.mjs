@@ -4,6 +4,10 @@ import { LLM_MODELS, LLM_SCENARIOS, normalizeLlmSettings, llmSettingsForScene } 
 import { DEEPSEEK_PRICING } from "./usage.mjs";
 
 const AI_COST_PLAN_VERSION = 1;
+const AI_PROVIDER_LABELS = {
+  deepseek: "DeepSeek",
+  volcengine: "火山引擎"
+};
 const AI_COST_SCENARIO_DEFAULTS = {
   thoughtPrompt: { callsPerMonth: 20, avgInputTokens: 4000, cacheHitPct: 20, avgReasoningTokens: 0, avgAnswerTokens: 120 },
   thoughtDraft: { callsPerMonth: 15, avgInputTokens: 12000, cacheHitPct: 20, avgReasoningTokens: 2500, avgAnswerTokens: 1200 },
@@ -18,7 +22,8 @@ const AI_COST_SCENARIO_DEFAULTS = {
   analysis: { callsPerMonth: 4, avgInputTokens: 30000, cacheHitPct: 20, avgReasoningTokens: 8000, avgAnswerTokens: 3500 },
   bookRecognition: { callsPerMonth: 3, avgInputTokens: 5000, cacheHitPct: 0, avgReasoningTokens: 600, avgAnswerTokens: 400 },
   healthRecognition: { callsPerMonth: 8, avgInputTokens: 6000, cacheHitPct: 0, avgReasoningTokens: 800, avgAnswerTokens: 500 },
-  contentImageUnderstanding: { callsPerMonth: 10, avgInputTokens: 6000, cacheHitPct: 0, avgReasoningTokens: 800, avgAnswerTokens: 700 }
+  contentImageUnderstanding: { callsPerMonth: 10, avgInputTokens: 6000, cacheHitPct: 0, avgReasoningTokens: 800, avgAnswerTokens: 700 },
+  capturePolish: { callsPerMonth: 20, avgInputTokens: 1200, cacheHitPct: 0, avgReasoningTokens: 100, avgAnswerTokens: 600 }
 };
 
 export function defaultAiCostPlan(settings, usage, { date = localDateKey(), cnyPerUsd } = {}) {
@@ -117,6 +122,8 @@ function blankUsageAggregate() {
     visionCalls: 0,
     imageCount: 0,
     imageBytes: 0,
+    costUnknownCalls: 0,
+    costCny: 0,
     tokens: { input: 0, cacheHit: 0, cacheMiss: 0, reasoning: 0, answer: 0, output: 0 },
     costsUsd: { input: 0, cacheHit: 0, reasoning: 0, output: 0, total: 0 }
   };
@@ -128,6 +135,7 @@ function addUsageAggregate(target, entry) {
   else if (entry.status === "unknown") target.unknownStatusCalls += 1;
   else target.failedCalls += 1;
   if (!entry.usageKnown) target.usageUnknownCalls += 1;
+  if (entry.provider !== "deepseek" && !entry.costKnown) target.costUnknownCalls += 1;
   if (entry.durationKnown) {
     target.durationMs += Number(entry.durationMs) || 0;
     target.durationKnownCalls += 1;
@@ -136,6 +144,7 @@ function addUsageAggregate(target, entry) {
   if (entry.modality === "vision") target.visionCalls += 1;
   target.imageCount += Number(entry.imageCount) || 0;
   target.imageBytes += Number(entry.imageBytes) || 0;
+  target.costCny += Number(entry.costCny) || 0;
   for (const key of Object.keys(target.tokens)) target.tokens[key] += Number(entry.tokens?.[key]) || 0;
   for (const key of Object.keys(target.costsUsd)) target.costsUsd[key] += Number(entry.costsUsd?.[key]) || 0;
   return target;
@@ -159,21 +168,31 @@ export function usageDashboard(usage, from, to, cnyPerUsd, defaultCnyPerUsd = cn
     label: DEEPSEEK_PRICING.models[model].label,
     ...entries.filter(item => item.model === model).reduce(addUsageAggregate, blankUsageAggregate())
   }));
+  const providers = [...new Set(entries.map(item => item.provider || "deepseek"))].map(provider => ({
+    provider,
+    label: AI_PROVIDER_LABELS[provider] || provider,
+    ...entries.filter(item => (item.provider || "deepseek") === provider).reduce(addUsageAggregate, blankUsageAggregate())
+  })).sort((a, b) => b.calls - a.calls || a.provider.localeCompare(b.provider));
   const scenes = [...new Set(entries.map(item => item.scene))].map(scene => {
     const aggregate = entries.filter(item => item.scene === scene).reduce(addUsageAggregate, blankUsageAggregate());
     return { scene, ...aggregate };
   }).sort((a, b) => b.calls - a.calls || a.scene.localeCompare(b.scene));
-  const modalities = ["text", "vision", ...(entries.some(item => item.modality === "unknown") ? ["unknown"] : [])].map(modality => ({
+  const modalityLabels = { text: "纯文本", vision: "图片理解", audio: "语音", document: "文档", unknown: "历史未知" };
+  const modalities = ["text", "vision", "audio", "document", "unknown"]
+    .filter(modality => ["text", "vision"].includes(modality) || entries.some(item => item.modality === modality))
+    .map(modality => ({
     modality,
-    label: modality === "vision" ? "图片理解" : modality === "text" ? "纯文本" : "历史未知",
+    label: modalityLabels[modality],
     ...entries.filter(item => item.modality === modality).reduce(addUsageAggregate, blankUsageAggregate())
   }));
   const rate = Math.max(0.01, Number(cnyPerUsd) || defaultCnyPerUsd);
-  const sortedCostsCny = entries.map(item => (Number(item.costsUsd?.total) || 0) * rate).sort((a, b) => a - b);
+  const sortedCostsCny = entries.map(item => (
+    (Number(item.costsUsd?.total) || 0) * rate + (Number(item.costCny) || 0)
+  )).sort((a, b) => a - b);
   const percentile = proportion => sortedCostsCny.length ? sortedCostsCny[Math.min(sortedCostsCny.length - 1, Math.ceil(sortedCostsCny.length * proportion) - 1)] : 0;
   const activeDays = new Set(entries.map(item => localDateKey(item.createdAt)).filter(Boolean)).size;
   return {
-    from, to, trackingStartedAt: usage.trackingStartedAt, summary, daily, models, scenes, modalities,
+    from, to, trackingStartedAt: usage.trackingStartedAt, summary, daily, models, providers, scenes, modalities,
     calibration: {
       activeDays,
       averageCallsPerActiveDay: activeDays ? entries.length / activeDays : 0,
@@ -189,7 +208,7 @@ export function usageDashboard(usage, from, to, cnyPerUsd, defaultCnyPerUsd = cn
       ...DEEPSEEK_PRICING,
       displayCurrency: "CNY",
       cnyPerUsd: rate,
-      estimateNote: "费用按请求发生时固化的官方单价估算；中国法定节假日若落在工作日峰值时段，实际账单可能更低。"
+      estimateNote: "DeepSeek 费用按请求发生时固化的官方单价估算；其他供应商未配置单价时只统计调用量，并标记为费用待账单。中国法定节假日若落在工作日峰值时段，实际账单可能更低。"
     }
   };
 }

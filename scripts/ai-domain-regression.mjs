@@ -7,7 +7,7 @@ import {
   LLM_SCENARIOS, defaultLlmSettings, normalizeLlmSettings, mergeLlmSettings, publicLlmSettings,
   llmSettingsForScene, createLlmSettingsService, normalizeAiUsage, deepSeekUsageEntry, createAiUsageService, createAiAudit,
   automaticAnswerDecision, defaultAiCostPlan, normalizeAiCostPlan, createAiCostService, usageDashboard,
-  usageEntryFromAudit
+  usageEntryFromAudit, providerUsageEntry
 } from "../src/modules/ai/index.mjs";
 import { createAiSettingsHttp } from "../src/http/index.mjs";
 import { createAccountDocumentRepository } from "../src/shared/persistence/index.mjs";
@@ -87,6 +87,30 @@ assert.equal(historical.costsUsd.total, 0.125);
 assert.equal(historical.status, "unknown");
 assert.equal(historical.modality, "unknown");
 assert.equal(historical.durationKnown, false);
+assert.equal(normalizeAiUsage({
+  entries: [{ id: "capture-polish", createdAt: now(), model: "deepseek-flash", scene: "capturePolish" }]
+}).entries[0].scene, "capturePolish");
+const providerEntry = providerUsageEntry({
+  callId: "provider-call",
+  createdAt: now(),
+  completedAt: now(),
+  provider: "volcengine",
+  service: "speech",
+  scene: "speechRecognition",
+  action: "streamingAsr",
+  status: "success",
+  durationMs: 120,
+  durationKnown: true,
+  modality: "audio",
+  unitType: "audioMillisecond",
+  units: 1250,
+  costKnown: false,
+  costSource: "billing pending"
+});
+assert.equal(providerEntry.provider, "volcengine");
+assert.equal(providerEntry.scene, "speechRecognition");
+assert.equal(providerEntry.units, 1250);
+assert.equal(providerEntry.costKnown, false);
 
 assert.equal(localDateKey(new Date(2026, 8, 29, 0, 0, 0)), "2026-09-29");
 assert.equal(localDateKey("invalid"), "");
@@ -108,7 +132,7 @@ const costNormalized = normalizeAiCostPlan({ monthlyBudgetCny: -1, scenarios: [{
 assert.equal(costNormalized.monthlyBudgetCny, 0);
 assert.equal(costNormalized.scenarios.find(item => item.scene === "chat").cacheHitPct, 100);
 assert.equal(costNormalized.scenarios.find(item => item.scene === "chat").avgInputTokens, 2);
-assert.equal(costNormalized.scenarios.length, 14);
+assert.equal(costNormalized.scenarios.length, 15);
 const dashboard = usageDashboard(sampleUsage, "2026-09-28", "2026-09-29", 6.5, 7.2);
 assert.equal(dashboard.summary.calls, 2);
 assert.equal(dashboard.summary.usageUnknownCalls, 1);
@@ -119,6 +143,19 @@ assert.equal(dashboard.daily[0].calls, 0);
 assert.equal(dashboard.calibration.activeDays, 1);
 assert.equal(dashboard.summary.costsUsd.total, peak.costsUsd.total + historical.costsUsd.total);
 assert.equal(dashboard.calibration.maxCostCny, 0.125 * 6.5); // Preserve historical price snapshots.
+const providerDashboard = usageDashboard(normalizeAiUsage({ trackingStartedAt: now(), entries: [
+  providerEntry,
+  { ...providerEntry, id: "provider-known", callId: "provider-known", service: "vision", scene: "visionOcr", modality: "vision", unitType: "image", units: 1, costKnown: true, costCny: 2.5 }
+] }), "2026-09-29", "2026-09-29", 6.5, 7.2);
+assert.equal(providerDashboard.summary.calls, 2);
+assert.equal(providerDashboard.summary.costCny, 2.5);
+assert.equal(providerDashboard.summary.costUnknownCalls, 1);
+assert.deepEqual(providerDashboard.providers.map(item => [item.provider, item.calls, item.costCny, item.costUnknownCalls]), [
+  ["volcengine", 2, 2.5, 1]
+]);
+assert.equal(providerDashboard.modalities.find(item => item.modality === "audio").costUnknownCalls, 1);
+assert.equal(providerDashboard.scenes.find(item => item.scene === "visionOcr").costCny, 2.5);
+assert.equal(providerDashboard.calibration.p90CostCny, 2.5);
 
 const directory = await fs.mkdtemp(path.join(os.tmpdir(), "growth-ai-domain-"));
 const context = new AsyncLocalStorage();
@@ -143,7 +180,7 @@ try {
   await run("a", async () => {
     await fs.writeFile(getFile(), JSON.stringify(legacy));
     await settings.ensure();
-    assert.equal((await fs.stat(`${getFile()}.v2-pre-v6.20260929010000.bak`)).mode & 0o777, 0o600);
+    assert.equal((await fs.stat(`${getFile()}.v2-pre-v7.20260929010000.bak`)).mode & 0o777, 0o600);
     await Promise.all([
       settings.update(current => mergeLlmSettings(current, { assistantName: "并发名称" })),
       settings.update(current => mergeLlmSettings(current, { apiKey: "next-test-value" }))
@@ -345,6 +382,42 @@ try {
     usageEntryFromAudit(recoveredAudits[0].entry),
     recoveredUsage[0]
   );
+
+  const providerUsage = [], providerAudits = [], providerEvents = [];
+  const providerAudit = createAiAudit({
+    textLimit: 100,
+    getContext: () => ({ user: { id: "provider-account" }, traceId: "provider-trace", secrets: [] }),
+    now,
+    append: async (_day, entry) => providerAudits.push(entry),
+    updateUsage: async mutate => mutate({ entries: providerUsage }),
+    logEvent: async (...args) => providerEvents.push(args),
+    createId: () => "provider-call"
+  });
+  let retainedProviderUsage = null, committedProviderUsage = 0;
+  const providerResult = await providerAudit.providerCall({
+    provider: "volcengine",
+    service: "vision",
+    scene: "visionOcr",
+    action: "OCRNormal",
+    request: { imageBytes: 1024 },
+    unitType: "image",
+    units: 1,
+    costKnown: false,
+    costSource: "billing pending",
+    reservation: {
+      retain(entry) { retainedProviderUsage = entry; },
+      commit() { committedProviderUsage += 1; }
+    }
+  }, async () => ({ requestId: "provider-request", text: "private OCR text" }));
+  assert.equal(providerResult.requestId, "provider-request");
+  assert.equal(providerUsage.length, 1);
+  assert.equal(providerUsage[0].scene, "visionOcr");
+  assert.equal(providerUsage[0].unitType, "image");
+  assert.equal(retainedProviderUsage.callId, "provider-call");
+  assert.equal(committedProviderUsage, 1);
+  assert.equal(providerAudits.length, 2);
+  assert.doesNotMatch(JSON.stringify(providerAudits), /private OCR text/);
+  assert.ok(providerEvents.some(([, name]) => name === "dependency.completed"));
   console.log("AI domain checks passed: settings, cost replacement/account isolation, local dates, unknown-usage aggregation, pre-commit normalization failure, backups, rollback/recovery, price snapshots, quotas and independent audit failures.");
 } finally {
   await fs.rm(directory, { recursive: true, force: true });

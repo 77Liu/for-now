@@ -3,7 +3,7 @@ export {
   normalizeLlmSettings, publicLlmSettings, llmSettingsForScene, mergeLlmSettings,
   automaticAnswerDecision, createLlmSettingsService
 } from "./settings.mjs";
-export { AI_USAGE_VERSION, DEEPSEEK_PRICING, normalizeAiUsage, deepSeekUsageEntry, createAiUsageService } from "./usage.mjs";
+export { AI_USAGE_VERSION, DEEPSEEK_PRICING, normalizeAiUsage, deepSeekUsageEntry, providerUsageEntry, createAiUsageService } from "./usage.mjs";
 export { createAiAudit, usageEntryFromAudit } from "./audit.mjs";
 export { defaultAiCostPlan, normalizeAiCostPlan, createAiCostService, usageDashboard } from "./costs.mjs";
 export { systemPrompt, systemPromptForScene, userPrompt } from "./prompts.mjs";
