@@ -62,6 +62,7 @@ function contextSource(item, {
   targetKey = ""
 }) {
   const resourceId = safeText(id, 100);
+  const sourceText = String(text ?? "");
   return {
     id: `${resourceType}:${resourceId}${targetKey ? `:${targetKey}` : ""}`,
     resourceType,
@@ -72,7 +73,8 @@ function contextSource(item, {
     occurredAt: eventTime(item),
     occurredOn: eventDate(item),
     version: Math.max(1, Math.round(Number(item?.version) || 1)),
-    excerpt: excerpt(text),
+    contentSha256: crypto.createHash("sha256").update(sourceText).digest("hex"),
+    excerpt: excerpt(sourceText),
     location: {
       view,
       targetId: safeText(targetId || resourceId, 100),
@@ -306,7 +308,7 @@ export function personalContextReceiptFingerprint(receipt) {
     promptSha256: receipt?.promptSha256 || "",
     sources: list(receipt?.sources).map(source => ({
       id: source.id,
-      version: Math.max(1, Math.round(Number(source.version) || 1))
+      contentSha256: safeText(source.contentSha256, 64)
     }))
   });
 }

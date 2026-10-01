@@ -165,7 +165,10 @@ changedOnboarding.onboarding.material = `${changedOnboarding.onboarding.material
 assert.equal(personalContextReceiptMatches(changedOnboarding, durableReceipt), false);
 const changedSourceVersion = structuredClone(store);
 changedSourceVersion.captures[0].version = Number(changedSourceVersion.captures[0].version || 1) + 1;
-assert.equal(personalContextReceiptMatches(changedSourceVersion, durableReceipt), false);
+assert.equal(personalContextReceiptMatches(changedSourceVersion, durableReceipt), true);
+const changedSourceContent = structuredClone(store);
+changedSourceContent.captures[0].content = "CHANGED_RAW_CAPTURE";
+assert.equal(personalContextReceiptMatches(changedSourceContent, durableReceipt), false);
 const constrained = personalContextProjection({
   ...store,
   journals: Array.from({ length: 20 }, (_, index) => ({ ...event, id: `long-${index}`, content: "长内容".repeat(1000) }))
