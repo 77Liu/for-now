@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-01",
+  "updatedAt": "2026-10-02",
   "tiers": {
     "smoke": "每个候选功能提交前，验证前端契约和真实浏览器关键旅程。",
     "daily": "覆盖前端全回归、认证、同步和本地测试模式。",
@@ -27,6 +27,22 @@
       "evidence": [
         {"script": "scripts/ui-regression.mjs", "anchor": "window.__delayLogout=true"},
         {"script": "scripts/auth-regression.mjs", "anchor": "Auth checks passed"}
+      ]
+    },
+    {
+      "id": "home-group-navigation-stability",
+      "title": "首页组内导航在恢复与局部加载后保持可用",
+      "role": "普通用户",
+      "goal": "进入今日后持续看到并正确切换此刻、共参和每日",
+      "risk": "critical",
+      "tier": "smoke",
+      "status": "automated",
+      "normalPath": ["登录进入首页", "切换此刻、共参和每日", "局部加载数据", "刷新或重新登录"],
+      "failureAndRecovery": ["从我的退出后登录", "旧入口无法匹配", "页面数据 hydration", "前后台恢复"],
+      "assertions": ["首页与今日主导航同时选中", "三个组内入口持续可见", "旧入口回退到此刻", "恢复不触发额外页面副作用"],
+      "evidence": [
+        {"script": "scripts/frontend-shell-regression.mjs", "anchor": "router.restoreView(\"missing-old-route\")"},
+        {"script": "scripts/ui-regression.mjs", "anchor": "home-group-navigation-stability"}
       ]
     },
     {

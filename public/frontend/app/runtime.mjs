@@ -79,7 +79,7 @@ const defaultLlmProfiles={lite:{model:"deepseek-flash",effort:"none"},mid:{model
 const defaultLlmScenarios={thoughtPrompt:"lite",thoughtDraft:"high",thoughtAnswer:"ultra",followUpAnswer:"ultra",chat:"high",diaryLead:"lite",diaryStructure:"mid",diaryTopic:"high",diaryReflection:"ultra",annotationShenji:"high",analysis:"ultra",bookRecognition:"mid",healthRecognition:"mid",contentImageUnderstanding:"mid",capturePolish:"mid"};
 const responseStyleOptions=[["concise","简短"],["standard","标准"],["deep","深入"],["structured","结构化"],["exploratory","开放探索"]];
 const responseStyleScenes=["thoughtDraft","thoughtAnswer","followUpAnswer","chat","diaryReflection","annotationShenji","analysis"];
-let switchView;
+let switchView,restoreView;
 let backgroundResultController=null;
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},automaticAnswers:{thoughtAnswer:false},hasApiKey:false,keyHint:""};
@@ -3194,7 +3194,7 @@ function openContextSource(button){
     destination?.scrollIntoView({behavior:"smooth",block:"center"})
   })
 }
-function render(){renderDate();renderOnboarding();renderSliders();renderDailyRecords();renderHealthUploader();renderCaptures();renderJournals();renderThoughts();renderStateChart();renderChat();renderReview();renderBooks();renderKeepsakes();renderKeepsakeBatch();renderQuotes();renderHome();renderTagComposer();renderCaptureTagComposer();renderCaptureAudioDraft();renderCommentPanel();renderSettings();renderLocalTestSettings();renderArchitecture();renderCommercialization();renderNotifications();renderMine();renderActionsWorkspace();renderFeedback();renderExport();renderPersonalContext()}
+function render(){renderDate();renderOnboarding();renderSliders();renderDailyRecords();renderHealthUploader();renderCaptures();renderJournals();renderThoughts();renderStateChart();renderChat();renderReview();renderBooks();renderKeepsakes();renderKeepsakeBatch();renderQuotes();renderHome();renderTagComposer();renderCaptureTagComposer();renderCaptureAudioDraft();renderCommentPanel();renderSettings();renderLocalTestSettings();renderArchitecture();renderCommercialization();renderNotifications();renderMine();renderActionsWorkspace();renderFeedback();renderExport();renderPersonalContext();restoreView?.()}
 async function load(){const owner=currentUser?.id,session=sessionSerial;journalDraftRestored=false;aiCostPlan=null;aiCostStatistics=null;commercialStatistics=null;resetJournalForm();const [nextState,nextSettings,nextOnboardingSchema,nextLocalTestConfig,meta]=await Promise.all([request("/api/state"),request("/api/settings"),optionalRequest("/api/onboarding/schema"),optionalRequest("/api/local-test-mode"),request("/api/meta")]);if(owner!==currentUser?.id||session!==sessionSerial)return false;replaceState(nextState);llmSettings=nextSettings;onboardingSchema=nextOnboardingSchema;localTestConfig=nextLocalTestConfig;appVersion=meta.version||"development";releaseVersion=meta.releaseVersion||releaseVersion;featureFlags={...featureFlags,...meta.features};governanceUrl=typeof meta.governanceUrl==="string"?meta.governanceUrl:"";onboardingHydrated=false;notificationUnreadCount=Number(state.notificationUnread)||0;render();restoreDurableDrafts();syncChainRecordKind();await loadActionsWorkspace();scheduleNotificationPoll();return true}
 function setAuthTab(tab){
   if(authBusy)return;
@@ -3229,7 +3229,7 @@ function renderAccountIdentity(){
   $("#account-name").textContent=username;$("#account-current-name").textContent=username;$("#account-page-name").textContent=username;$("#account-username").value=username;
 }
 function prepareUserSession(user,authRequired){
-  rotateSession();currentUser=user;document.body.classList.add("auth-locked");$("#account-control").hidden=!authRequired;$("#account-authenticated").hidden=!authRequired;$("#account-local-mode").hidden=authRequired;renderAccountIdentity();
+  rotateSession();currentUser=user;document.body.classList.add("auth-locked");restoreView?.("today");$("#account-control").hidden=!authRequired;$("#account-authenticated").hidden=!authRequired;$("#account-local-mode").hidden=authRequired;renderAccountIdentity();
   if(authRequired)$(".local-note").textContent="● 账户数据已隔离";
 }
 function revealUserSession(){document.body.classList.remove("auth-locked");$("#auth-gate").hidden=true}
@@ -3348,7 +3348,7 @@ const pageEffects={...createPageEffects({
   loadTrash
 }),today:()=>loadActionsWorkspace(),discovery:()=>loadDiscovery(),feedback:()=>loadFeedback(),export:()=>loadExportManifest(),"personal-context":()=>loadPersonalContext()};
 const lazyPageEffects=new Proxy(pageEffects,{get(target,view){const effect=target[view];if(typeof view!=="string"||!LOCAL_TEST_VIEW_SCOPES[view])return effect;return()=>{void ensureLocalTestViewScope(view).then(async ready=>{if(!ready)return;await effect?.();await restorePendingProjections()})}}});
-({switchView}=createPageRouter({query:$,queryAll:$$,effects:lazyPageEffects}));
+({switchView,restoreView}=createPageRouter({query:$,queryAll:$$,effects:lazyPageEffects}));
 $("#home-open-thought").addEventListener("click",()=>openHomeEditor("thought"));
 $("#home-record-state").addEventListener("click",()=>openHomeEditor("state"));
 $("#home-shuffle").addEventListener("click",()=>renderHomeMemories({advance:true}));
@@ -4160,7 +4160,7 @@ $("#reset-response-styles").addEventListener("click",()=>{$("#assistant-name").v
 $("#llm-settings-form").addEventListener("submit",async e=>{e.preventDefault();const button=e.currentTarget.querySelector('[type="submit"]'),status=$("#llm-settings-status");button.disabled=true;status.textContent="正在保存…";try{llmSettings=await request("/api/settings",{method:"POST",body:JSON.stringify(settingsPayload())});$("#llm-api-key").value="";renderSettings();status.textContent="四档配置与各场景选择已保存。";showToast("DeepSeek 设置已保存")}catch(err){status.textContent=err.message}finally{button.disabled=false}});
 $("#test-llm").addEventListener("click",async e=>{const button=e.currentTarget,status=$("#llm-settings-status"),tier=$("#llm-test-tier").value;button.disabled=true;status.textContent=`正在保存并测试 ${tier[0].toUpperCase()+tier.slice(1)}…`;try{llmSettings=await request("/api/settings",{method:"POST",body:JSON.stringify(settingsPayload())});$("#llm-api-key").value="";renderSettings();const result=await request("/api/settings/test",{method:"POST",body:JSON.stringify({tier})}),profile=llmSettings.profiles[tier];status.textContent=`连接成功 · ${profile.model==="deepseek-v4-pro"?"DeepSeek Pro":"DeepSeek Flash"} · ${profile.effort==="none"?"思考关闭":`思考 ${profile.effort.toUpperCase()}`}`;showToast(result.reply||"DeepSeek 连接成功")}catch(err){status.textContent=`连接失败：${err.message}`}finally{button.disabled=false}});
 function syncLocalDate(){const next=localDateKey();if(next===currentLocalDate)return;const followedToday=activeDate===currentLocalDate;currentLocalDate=next;if(followedToday){activeDate=next;renderDate();renderSliders();renderThoughts();renderStateChart();renderHomeMood();renderChat()}}
-function markApplicationForeground(){apiClient.markForeground();syncLocalDate()}
+function markApplicationForeground(){apiClient.markForeground();syncLocalDate();restoreView?.()}
 setInterval(syncLocalDate,30000);
 document.addEventListener("visibilitychange",()=>{if(document.hidden){saveDurableDrafts();stopCaptureAudioRecording();stopCaptureSpeech()}else markApplicationForeground()});
 window.addEventListener("pagehide",()=>{saveDurableDrafts();stopCaptureAudioRecording();stopCaptureSpeech()});

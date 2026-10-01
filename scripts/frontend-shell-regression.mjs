@@ -128,6 +128,13 @@ router.switchView("settings");
 assert.equal(views[2].classList.contains("active"), true);
 assert.equal(nav[2].classList.contains("active"), true);
 assert.equal(sectionNav.hidden, true);
+router.restoreView("missing-old-route");
+assert.equal(views[0].classList.contains("active"), true);
+assert.equal(nav[0].classList.contains("active"), true);
+assert.equal(groups[0].hidden, false);
+assert.equal(sectionNav.hidden, false);
+assert.equal(tabs[0]["aria-current"], "page");
+assert.equal(calls.length, 5, "restoring a view must not rerun effects or scroll");
 assert.deepEqual(calls.slice(0, 3), ["quotes", ["scroll", { top: 0, behavior: "smooth" }], "leave-quotes"]);
 
 const effects = createPageEffects({

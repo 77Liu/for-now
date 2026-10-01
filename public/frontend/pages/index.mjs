@@ -29,36 +29,51 @@ export function createPageRouter({
   query,
   queryAll,
   effects = {},
-  scrollTo = options => globalThis.scrollTo(options)
+  scrollTo = options => globalThis.scrollTo(options),
+  defaultView = "today"
 }) {
-  let currentView = "";
+  const fallbackView = viewSections[defaultView] ? defaultView : "today";
+  let currentView = fallbackView;
 
-  function switchView(name) {
-    const section = viewSections[name] || "today";
+  function applyView(name, { runEffects = false, resetScroll = false } = {}) {
+    const viewName = viewSections[name] ? name : fallbackView;
+    const section = viewSections[viewName];
     const sectionNav = query("#section-nav");
-    queryAll(".view").forEach(view => view.classList.toggle("active", view.id === `view-${name}`));
+    queryAll(".view").forEach(view => view.classList.toggle("active", view.id === `view-${viewName}`));
     queryAll(".nav-button").forEach(button => {
       const active = button.dataset.section === section;
       button.classList.toggle("active", active);
       button.setAttribute("aria-current", active ? "page" : "false");
     });
-    sectionNav.hidden = section === "mine";
+    if (sectionNav) sectionNav.hidden = section === "mine";
     queryAll("[data-section-links]").forEach(group => {
       group.hidden = group.dataset.sectionLinks !== section;
     });
     queryAll(".section-nav button").forEach(button => {
-      const active = button.dataset.view === name;
+      const active = button.dataset.view === viewName;
       button.classList.toggle("active", active);
       button.setAttribute("aria-current", active ? "page" : "false");
     });
-    if (currentView === "quotes" && name !== "quotes") effects.leaveQuotes?.();
-    effects[name]?.();
-    currentView = name;
-    scrollTo({ top: 0, behavior: "smooth" });
+    if (runEffects) {
+      if (currentView === "quotes" && viewName !== "quotes") effects.leaveQuotes?.();
+      effects[viewName]?.();
+    }
+    currentView = viewName;
+    if (resetScroll) scrollTo({ top: 0, behavior: "smooth" });
+    return viewName;
+  }
+
+  function switchView(name) {
+    return applyView(name, { runEffects: true, resetScroll: true });
+  }
+
+  function restoreView(name = currentView) {
+    return applyView(name);
   }
 
   return {
     switchView,
+    restoreView,
     currentView: () => currentView
   };
 }

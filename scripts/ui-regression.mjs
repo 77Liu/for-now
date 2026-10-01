@@ -2460,6 +2460,8 @@ try {
   assert.equal(await waitUntil(`window.__reasoningChunks===1`,40,10),true);
   await evaluate(`(()=>{const file=new File([new Uint8Array([1,2,3])],"thought-draft.png",{type:"image/png"}),transfer=new DataTransfer();transfer.items.add(file);const input=document.querySelector("#thought-root-images");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
   assert.equal(await waitUntil(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const request=opening.result.transaction("drafts","readonly").objectStore("drafts").get("user-1:thoughtRoot");request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(request.result?.items?.[0]?.name==="thought-draft.png")}})`),true);
+  await evaluate(`document.querySelector('[data-section="mine"]').click();true`);
+  assert.equal(await evaluate(`document.querySelector("#view-mine").classList.contains("active")&&document.querySelector("#section-nav").hidden`),true);
   await evaluate(`window.__delayLogout=true;document.querySelector("#logout-button").click();true`);
   assert.equal(await waitUntil(`!document.querySelector("#auth-gate").hidden`),true);
   assert.equal(await evaluate(`sessionStorage.getItem("cike:session-drafts:user-1")`),null);
@@ -2475,6 +2477,17 @@ try {
   assert.deepEqual(await evaluate(`({locked:document.body.classList.contains("auth-locked"),gateVisible:!document.querySelector("#auth-gate").hidden,privateSurfaceHidden:getComputedStyle(document.querySelector("main")).visibility==="hidden"})`),{locked:true,gateVisible:true,privateSurfaceHidden:true});
   await evaluate(`window.__releaseSecondState();true`);
   assert.equal(await waitUntil(`document.querySelector("#account-name").textContent==="second"&&document.querySelector("#auth-gate").hidden&&!document.body.classList.contains("auth-locked")`),true);
+  assert.deepEqual(await evaluate(`(() => {
+    const links=document.querySelector("[data-section-links='today']");
+    return {
+      view:document.querySelector(".view.active")?.id,
+      navHidden:document.querySelector("#section-nav").hidden,
+      groupHidden:links.hidden,
+      labels:[...links.querySelectorAll("button")].map(button=>button.textContent),
+      selected:links.querySelector("[aria-current='page']")?.textContent,
+      primary:document.querySelector(".nav-button.active")?.dataset.section
+    };
+  })()`),{view:"view-today",navHidden:false,groupHidden:false,labels:["此刻","共参","每日"],selected:"此刻",primary:"today"},"home-group-navigation-stability");
   await evaluate(`window.__releaseParse();true`);
   await sleep(1000);
   assert.equal(await evaluate(`document.querySelector("#chain-answer").value===""&&document.querySelector("#ai-answer-modal").hidden`),true);
@@ -2498,8 +2511,10 @@ try {
   assert.equal(await waitUntil(`document.querySelector(".action-column:nth-child(3)")?.textContent.includes("服务器新标题")&&document.querySelector(".action-column:nth-child(3) .checkin-sync-state.pending")`),true);
   await evaluate(`window.__delayActionList=true;document.querySelector('[data-view="today"]').click();true`);
   assert.equal(await waitUntil(`typeof window.__releaseActionList==="function"`),true);
+  assert.equal(await evaluate(`!document.querySelector("#section-nav").hidden&&!document.querySelector("[data-section-links='today']").hidden&&document.querySelector("[data-section-links='today'] [data-view='today']").getAttribute("aria-current")==="page"`),true);
   await evaluate(`window.__releaseActionList();true`);
   assert.equal(await waitUntil(`window.__localHydrateRequests.includes("today")&&document.querySelectorAll(".home-v02-memory").length===3&&document.querySelector("#home-keepsake").textContent.includes("旧展览票")`),true);
+  assert.equal(await evaluate(`!document.querySelector("#section-nav").hidden&&!document.querySelector("[data-section-links='today']").hidden&&document.querySelector("[data-section-links='today'] [data-view='today']").getAttribute("aria-current")==="page"`),true);
   assert.equal(await evaluate(`Boolean(document.querySelector(".action-column:nth-child(3)")?.textContent.includes("服务器新标题")&&document.querySelector(".action-column:nth-child(3) .checkin-sync-state.pending"))`),true);
   await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
   assert.equal(await evaluate(`document.querySelector(".capture-sync-state.pending")?.textContent==="待同步"&&document.querySelector("#capture-list").textContent.includes("范围切换时保留的待同步记录")`),true);
