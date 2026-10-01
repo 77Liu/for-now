@@ -23,15 +23,34 @@ import {
   toLocalDateTimeInput
 } from "../public/frontend/time/index.mjs";
 import {
+  AUDIO_MAX_BYTES,
+  captureRecordPayload,
+  createIndexedDbMediaDraftStore,
   createMemoryMediaDraftStore,
   IMAGE_MAX_BYTES,
   IMAGE_SELECTION_MAX_BYTES,
   imageRecordPayload,
   imageUnderstandingPayload,
+  preferredRecorderMime,
   uploadPendingMediaItems,
+  uploadOriginalAudio,
   uploadOriginalImages,
+  validatedAudioBlob,
   validatedImageFiles
 } from "../public/frontend/media/index.mjs";
+import {
+  WEIGHT_BATCH_MAX_ITEMS,
+  applyWeightBatchRecognition,
+  changeWeightBatchDate,
+  createWeightBatchItems,
+  nextWeightBatchIndex,
+  weightBatchRecordInput
+} from "../public/frontend/features/index.mjs";
+
+const volatileMediaStore = createIndexedDbMediaDraftStore({ indexedDBImpl: null });
+assert.equal(volatileMediaStore.durable, false);
+await volatileMediaStore.put({ owner: "account-a", id: "draft", value: "kept for this session" });
+assert.equal((await volatileMediaStore.get("account-a", "draft")).value, "kept for this session");
 
 function verifyTimeZoneCase() {
   if (process.env.TZ === "Asia/Shanghai") {
@@ -68,7 +87,8 @@ if (process.argv.includes("--timezone-case")) {
   const moduleUrls = [
     new URL("../public/frontend/content/index.mjs", import.meta.url),
     new URL("../public/frontend/time/index.mjs", import.meta.url),
-    new URL("../public/frontend/media/index.mjs", import.meta.url)
+    new URL("../public/frontend/media/index.mjs", import.meta.url),
+    new URL("../public/frontend/features/health/weight-batch.mjs", import.meta.url)
   ];
   for (const url of moduleUrls) {
     const source = await fs.readFile(url, "utf8");
@@ -317,6 +337,96 @@ if (process.argv.includes("--timezone-case")) {
     purpose: "original",
     images: ["data:image/png;base64,AA==", "data:image/webp;base64,AA=="]
   });
+  const audioBlob = new Blob(["audio"], { type: "audio/mp4;codecs=mp4a.40.2" });
+  assert.deepEqual(validatedAudioBlob(audioBlob, 1250), {
+    blob: audioBlob,
+    mimeType: "audio/mp4",
+    bytes: 5,
+    durationMs: 1250
+  });
+  assert.throws(() => validatedAudioBlob(new Blob(["bad"], { type: "audio/mpeg" }), 1000), /M4A/);
+  assert.throws(() => validatedAudioBlob(new Blob(["large"], { type: "audio/mp4" }), 1000, { maxBytes: 2 }), /大小/);
+  assert.throws(() => validatedAudioBlob(audioBlob, 10), /时长/);
+  assert.equal(preferredRecorderMime({ isTypeSupported: type => type === "audio/webm;codecs=opus" }), "audio/webm;codecs=opus");
+  assert.deepEqual(captureRecordPayload({
+    content: "",
+    attachmentPaths: [],
+    audio: {
+      attachmentPath: "/attachments/voice.m4a",
+      mimeType: "audio/mp4",
+      bytes: AUDIO_MAX_BYTES,
+      durationMs: 600000
+    }
+  }), {
+    content: "",
+    attachmentPaths: [],
+    audio: {
+      attachmentPath: "/attachments/voice.m4a",
+      mimeType: "audio/mp4",
+      bytes: AUDIO_MAX_BYTES,
+      durationMs: 600000
+    }
+  });
+  assert.throws(() => captureRecordPayload({ content: "", attachmentPaths: [], audio: null }), /文字、插入图片或录下语音/);
+  assert.throws(() => captureRecordPayload({
+    audio: { attachmentPath: "/attachments/voice.webm", mimeType: "audio/mp4", bytes: 5, durationMs: 1250 }
+  }), /格式不正确/);
+  const audioUploadCalls = [];
+  assert.deepEqual(await uploadOriginalAudio({
+    request: async (url, options) => {
+      audioUploadCalls.push({ url, options });
+      return {
+        audio: {
+          attachmentPath: "/attachments/voice.m4a",
+          mimeType: "audio/mp4",
+          bytes: 5,
+          durationMs: 1250
+        }
+      };
+    },
+    audio: "data:audio/mp4;base64,AAAA",
+    durationMs: 1250,
+    idempotencyKey: "upload-audio-1"
+  }), {
+    attachmentPath: "/attachments/voice.m4a",
+    mimeType: "audio/mp4",
+    bytes: 5,
+    durationMs: 1250
+  });
+  assert.equal(audioUploadCalls[0].url, "/api/audio/upload");
+  assert.equal(audioUploadCalls[0].options.headers["idempotency-key"], "upload-audio-1");
 
-  console.log("Frontend shared regression passed: HTML safety, Markdown/LaTeX fidelity, local timezone midnight handling, and image count/MIME/size validation.");
+  const weightFiles = [{ name: "day-a.png" }, { name: "day-b.png" }];
+  const weightItems = createWeightBatchItems(weightFiles, {
+    assignedDate: "2026-09-27",
+    createId: (() => { let id = 0; return () => `weight-item-${++id}`; })()
+  });
+  assert.equal(WEIGHT_BATCH_MAX_ITEMS, 8);
+  assert.deepEqual(weightItems.map(item => [item.itemId, item.assignedDate, item.status]), [
+    ["weight-item-1", "2026-09-27", "selected"],
+    ["weight-item-2", "2026-09-27", "selected"]
+  ]);
+  assert.throws(() => createWeightBatchItems(new Array(9).fill({}), { assignedDate: "2026-09-27" }), /最多选择 8 张/);
+  const recognizedWeight = applyWeightBatchRecognition(weightItems[0], {
+    date: "2026-09-26", measuredAt: "2026-09-26T07:30:00", measuredWeight: 70
+  }, { requestId: "recognition-1", expectedRevision: 1 });
+  assert.equal(recognizedWeight.stale, false);
+  assert.equal(recognizedWeight.item.dateMismatch, true);
+  const reassignedWeight = changeWeightBatchDate(recognizedWeight.item, "2026-09-26");
+  assert.equal(reassignedWeight.dateMismatch, false);
+  assert.equal(reassignedWeight.revision, 2);
+  assert.equal(applyWeightBatchRecognition(reassignedWeight, {}, { expectedRevision: 1 }).stale, true);
+  assert.deepEqual(weightBatchRecordInput({ ...reassignedWeight, uploadedPath: "/attachments/weight-a.png" }, {
+    occurredAt: "2026-09-27T08:15:00", measuredWeight: 70
+  }), {
+    occurredAt: "2026-09-26T08:15:00",
+    measuredWeight: 70,
+    type: "weight",
+    source: "screenshot",
+    timeMode: "manual",
+    attachmentPaths: ["/attachments/weight-a.png"]
+  });
+  assert.equal(nextWeightBatchIndex([{}, {}], 2), 1);
+
+  console.log("Frontend shared regression passed: HTML safety, Markdown/LaTeX fidelity, local timezone handling, media validation, recovery helpers and upload contracts.");
 }

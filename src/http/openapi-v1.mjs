@@ -5,6 +5,7 @@ import { capturesJournalsOpenApiFragment } from "./openapi/captures-journals.mjs
 import { libraryOpenApiFragment } from "./openapi/library.mjs";
 import { reviewsChatOpenApiFragment } from "./openapi/reviews-chat.mjs";
 import { contentAttachmentsOpenApiFragment } from "./openapi/content-attachments.mjs";
+import { syncOpenApiFragment } from "./openapi/sync.mjs";
 import { personalContextOpenApiFragment } from "./openapi/personal-context.mjs";
 
 export const openApiV1 = Object.freeze({
@@ -26,6 +27,7 @@ export const openApiV1 = Object.freeze({
     ...libraryOpenApiFragment.paths,
     ...reviewsChatOpenApiFragment.paths,
     ...contentAttachmentsOpenApiFragment.paths,
+    ...syncOpenApiFragment.paths,
     ...personalContextOpenApiFragment.paths
   },
   components: {
@@ -44,6 +46,7 @@ export const openApiV1 = Object.freeze({
       ...libraryOpenApiFragment.components.parameters,
       ...reviewsChatOpenApiFragment.components.parameters,
       ...contentAttachmentsOpenApiFragment.components.parameters,
+      ...syncOpenApiFragment.components.parameters,
       ...personalContextOpenApiFragment.components.parameters
     },
     schemas: {
@@ -95,6 +98,7 @@ export const openApiV1 = Object.freeze({
       ...libraryOpenApiFragment.components.schemas,
       ...reviewsChatOpenApiFragment.components.schemas,
       ...contentAttachmentsOpenApiFragment.components.schemas,
+      ...syncOpenApiFragment.components.schemas,
       ...personalContextOpenApiFragment.components.schemas
     },
     responses: {

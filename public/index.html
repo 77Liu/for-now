@@ -172,17 +172,20 @@
         <section class="home-v02-editor" role="dialog" aria-modal="true" aria-labelledby="home-thought-title">
           <header><h2 id="home-thought-title">记录思考</h2><button class="home-v02-editor-close" type="button" data-home-editor-close="thought" aria-label="收起思考编辑">×</button></header>
           <form class="chain-card" id="chain-form">
-            <label class="field"><span class="field-title"><span>问题 <i>文字或图片至少一项 · 支持 Markdown</i></span><button class="thought-prompt-button" id="thought-prompt-button" type="button" title="生成一个简短的思考引子">✦ 给个引子</button></span><textarea id="chain-question" rows="2" placeholder="你真正想问的是什么？"></textarea></label>
+            <input type="hidden" name="sourceCaptureId"><input type="hidden" name="sourceCaptureVersion">
+            <fieldset class="thought-record-kind"><legend>保存为</legend><label><input type="radio" name="recordKind" value="capture"><span>念起</span></label><label><input type="radio" name="recordKind" value="thought" checked><span>思绪</span></label></fieldset>
+            <div class="thought-source-notice" id="thought-source-notice" hidden><span>正在从一条念起展开</span><button class="subtle-action" id="thought-source-cancel" type="button">取消展开</button></div>
+            <label class="field"><span class="field-title"><span id="chain-primary-label">问题 <i>文字或图片至少一项 · 支持 Markdown</i></span><button class="thought-prompt-button" id="thought-prompt-button" type="button" data-chain-thought-only title="生成一个简短的思考引子">✦ 给个引子</button></span><textarea id="chain-question" rows="2" placeholder="你真正想问的是什么？"></textarea></label>
             <div class="content-image-editor" data-content-image-editor="thoughtRoot">
               <div class="content-image-editor-head"><span>图片原文</span><label class="content-image-add" title="插入图片" aria-label="插入图片"><span aria-hidden="true">＋</span><input id="thought-root-images" type="file" accept="image/png,image/jpeg,image/webp" multiple></label></div>
               <div class="content-image-editor-previews" data-content-image-previews></div>
             </div>
-            <p class="draft-note thought-prompt-status" id="thought-prompt-status" role="status" aria-live="polite"></p>
-            <label class="field"><span>初步想法 <i>可空 · 支持 Markdown</i></span><textarea id="chain-idea" rows="4" placeholder="你现在怎么看？"></textarea></label>
-            <label class="field"><span class="field-title"><span>回答 <i>可空 · 支持 Markdown</i></span><button class="answer-draft-button" id="draft-answer-button" type="button">✦ 给我回答</button></span><textarea id="chain-answer" rows="5" placeholder="可以自己填写，也可先让 DeepSeek 生成草稿，再按你的判断修改"></textarea></label>
-            <p class="draft-note" id="draft-note">模型草稿只有在你提交整套思考后才会保存；你修改了什么，也会成为日后认知复盘的线索。</p>
+            <p class="draft-note thought-prompt-status" id="thought-prompt-status" data-chain-thought-only role="status" aria-live="polite"></p>
+            <label class="field" data-chain-thought-only><span>初步想法 <i>可空 · 支持 Markdown</i></span><textarea id="chain-idea" rows="4" placeholder="你现在怎么看？"></textarea></label>
+            <label class="field" data-chain-thought-only><span class="field-title"><span>回答 <i>可空 · 支持 Markdown</i></span><button class="answer-draft-button" id="draft-answer-button" type="button">✦ 给我回答</button></span><textarea id="chain-answer" rows="5" placeholder="可以自己填写，也可先让 DeepSeek 生成草稿，再按你的判断修改"></textarea></label>
+            <p class="draft-note" id="draft-note" data-chain-thought-only>模型草稿只有在你提交整套思考后才会保存；你修改了什么，也会成为日后认知复盘的线索。</p>
             <label class="field occurrence-field"><span>发生时间</span><input id="chain-datetime" type="datetime-local" step="1" required></label>
-            <div class="capture-footer"><div class="tag-composer" id="chain-tag-composer"><div class="tag-chip-list" id="chain-tag-list"></div><label class="tag-input"><span>#</span><input id="chain-tags" list="tag-suggestions" placeholder="输入标签后回车"></label><datalist id="tag-suggestions"></datalist></div><button class="primary-button" type="submit">收进思绪箱</button></div>
+            <div class="capture-footer"><div class="tag-composer" id="chain-tag-composer"><div class="tag-chip-list" id="chain-tag-list"></div><label class="tag-input"><span>#</span><input id="chain-tags" list="tag-suggestions" placeholder="输入标签后回车"></label><datalist id="tag-suggestions"></datalist></div><button class="primary-button" id="chain-submit" type="submit">收进思绪箱</button></div>
             <p class="status" id="chain-status" role="status"></p>
           </form>
         </section>
@@ -331,7 +334,10 @@
                 <label><span>极限（时:分:秒）</span><input data-health-metric data-duration name="extremeSeconds" pattern="[0-9]{1,3}:[0-5][0-9]:[0-5][0-9]"></label>
               </div>
             </details>
-            <label class="daily-wide-field"><span>运动描述</span><textarea name="description" rows="4" placeholder="可由截图概括心率变化，也可记录自己的运动感受"></textarea></label>
+            <div class="exercise-description-fields">
+              <label class="daily-wide-field"><span>记下感受</span><textarea name="description" rows="3" placeholder="这次运动的身体感受、状态或想记住的事"></textarea></label>
+              <label class="daily-wide-field"><span>AI 解析描述 <i>截图识别后回填，可修改</i></span><textarea name="recognitionDescription" rows="3" placeholder="截图中的趋势、原报告文字与可见信息"></textarea></label>
+            </div>
             <div class="daily-form-actions"><button class="text-button" type="button" data-daily-cancel hidden>取消编辑</button><button class="primary-button" type="submit">保存运动</button></div>
             <p class="status" role="status"></p>
           </form>
@@ -365,11 +371,33 @@
       <header class="page-header"><div><p class="eyebrow">碎片收集箱</p><h1>先捕捉，不急着想完整</h1></div><span class="record-count" id="capture-count"></span></header>
       <form class="card quick-capture-form" id="capture-form">
         <input type="hidden" id="capture-id">
-        <label class="field capture-main-field"><span>此刻冒出来的东西 <i>文字或图片至少一项</i></span><textarea id="capture-content" rows="4" placeholder="一句话、一个念头、一段素材，原样放进来就好。"></textarea></label>
+        <label class="field capture-main-field"><span>此刻冒出来的东西 <i>文字、图片或语音至少一项</i></span><textarea id="capture-content" rows="4" placeholder="一句话、一个念头、一段素材，原样放进来就好。"></textarea></label>
         <div class="content-image-editor" data-content-image-editor="capture">
           <div class="content-image-editor-head"><span>图片原文</span><label class="content-image-add" title="插入图片" aria-label="插入图片"><span aria-hidden="true">＋</span><input id="capture-images" type="file" accept="image/png,image/jpeg,image/webp" multiple></label></div>
           <div class="content-image-editor-previews" data-content-image-previews></div>
         </div>
+        <section class="capture-audio-editor" aria-labelledby="capture-audio-title">
+          <header>
+            <div><span id="capture-audio-title">语音原件</span><small>原音频与转写分层保存</small></div>
+            <div class="capture-audio-primary-actions">
+              <label class="audio-file-button audio-file-primary" title="上传音频"><span aria-hidden="true">↑</span>上传音频<input id="capture-audio-file" type="file" accept="audio/mp4,audio/x-m4a,audio/webm,audio/ogg,audio/wav,audio/x-wav"></label>
+              <button class="audio-remove-button" id="capture-audio-remove" type="button" title="移除语音" aria-label="移除语音" hidden>×</button>
+            </div>
+          </header>
+          <details class="capture-audio-recorder" id="capture-audio-recorder">
+            <summary><span>现场录音</span><small>需要时展开麦克风控制</small></summary>
+            <div class="capture-audio-actions">
+              <button class="audio-record-button" id="capture-audio-record" type="button" title="开始现场录音"><span aria-hidden="true">●</span>开始录音</button>
+              <button class="audio-pause-button" id="capture-audio-pause" type="button" title="暂停录音" aria-label="暂停录音" hidden>Ⅱ</button>
+              <button class="audio-stop-button" id="capture-audio-stop" type="button" title="停止录音" hidden><span aria-hidden="true">■</span>停止</button>
+            </div>
+          </details>
+          <div class="capture-audio-preview" id="capture-audio-preview" hidden>
+            <audio id="capture-audio-player" controls preload="metadata"></audio>
+            <span id="capture-audio-meta"></span>
+          </div>
+          <p id="capture-audio-status" role="status" aria-live="polite"></p>
+        </section>
         <div class="record-form-footer">
           <div class="inline-inputs compact-inputs">
             <div class="tag-composer" id="capture-tag-composer"><div class="tag-chip-list" id="capture-tag-list"></div><label class="tag-input"><span>#</span><input id="capture-tags" list="capture-tag-suggestions" placeholder="输入关键词后回车"></label><datalist id="capture-tag-suggestions"></datalist></div>
@@ -430,7 +458,7 @@
     </section>
 
     <section class="view" id="view-thoughts">
-      <header class="page-header"><div><p class="eyebrow">主题思考</p><h1>从问题、初步想法，到回答</h1></div></header>
+      <header class="page-header"><div><p class="eyebrow">主题思考</p><h1>从问题、初步想法，到回答</h1></div><div class="segmented-control thought-sort" role="group" aria-label="思绪排序"><button class="active" type="button" data-thought-sort="occurred" aria-pressed="true">发生时间</button><button type="button" data-thought-sort="created" aria-pressed="false">提交时间</button></div></header>
       <div class="filter-row" id="thought-filters" aria-label="按标签筛选"></div>
       <div class="thought-list thought-timeline" id="all-thoughts"></div>
     </section>
@@ -545,11 +573,16 @@
         </header>
 
         <label class="keepsake-upload-box" id="keepsake-upload-box" tabindex="0">
-          <input type="file" id="keepsake-image" accept="image/png,image/jpeg,image/webp">
+          <input type="file" id="keepsake-image" accept="image/png,image/jpeg,image/webp" multiple>
           <span class="keepsake-upload-icon" aria-hidden="true">⌁</span>
-          <strong id="keepsake-upload-title">选择、粘贴或拖入小物照片</strong>
-          <small id="keepsake-upload-hint">PNG / JPEG / WebP · 不超过 8 MB</small>
+          <strong id="keepsake-upload-title">选择、粘贴或拖入 1–8 张小物照片</strong>
+          <small id="keepsake-upload-hint">每张逐项编辑与保存 · PNG / JPEG / WebP · 单张 8 MB · 批次合计 48 MB</small>
         </label>
+
+        <section class="keepsake-batch" id="keepsake-batch" aria-labelledby="keepsake-batch-title" hidden>
+          <header><div><b id="keepsake-batch-title">待处理小物</b><span id="keepsake-batch-count"></span></div><small>每张照片独立编辑、取消和重试</small><button class="icon-button" id="keepsake-batch-add" type="button" title="追加照片" aria-label="追加照片">＋</button></header>
+          <div class="keepsake-batch-list" id="keepsake-batch-list"></div>
+        </section>
 
         <div class="keepsake-editor" id="keepsake-editor" hidden>
           <div class="keepsake-stage-column">
@@ -595,6 +628,7 @@
       <section class="keepsake-library">
         <div class="keepsake-library-heading"><div><p class="eyebrow">数字留存</p><h2>轮廓陈列</h2></div><span id="keepsake-library-count"></span></div>
         <div class="keepsake-grid" id="keepsake-grid"></div>
+        <div class="keepsake-pagination" id="keepsake-pagination" hidden><span id="keepsake-pagination-status"></span><button class="quiet-button" id="keepsake-load-more" type="button">继续加载</button></div>
       </section>
       <article class="keepsake-detail" id="keepsake-detail" hidden></article>
     </section>
@@ -648,9 +682,24 @@
           <span class="mine-row-copy"><b>数据导出</b><small>下载可迁移的 JSON 或 Markdown 快照</small></span>
           <span class="mine-row-arrow" aria-hidden="true">›</span>
         </button>
+        <div class="mine-menu-row sync-health-row" role="status" aria-live="polite">
+          <span class="mine-row-icon sync" aria-hidden="true">↻</span>
+          <span class="mine-row-copy"><b>同步状态</b><small id="mine-sync-status">正在核对本地操作与服务端状态</small></span>
+          <span class="mine-row-value" id="mine-sync-count"></span>
+        </div>
       </section>
 
       <section class="mine-menu-group" aria-label="服务">
+        <button class="mine-menu-row" type="button" data-view="personal-context">
+          <span class="mine-row-icon context" aria-hidden="true">◎</span>
+          <span class="mine-row-copy"><b>个人概要</b><small>查看当前采用的个人语境与原始来源</small></span>
+          <span class="mine-row-arrow" aria-hidden="true">›</span>
+        </button>
+        <a class="mine-menu-row" id="mine-governance-link" href="/platform/" hidden>
+          <span class="mine-row-icon governance" aria-hidden="true">⌘</span>
+          <span class="mine-row-copy"><b>治理中台</b><small>使用中台账户权限进入只读控制面</small></span>
+          <span class="mine-row-arrow" aria-hidden="true">›</span>
+        </a>
         <button class="mine-menu-row" type="button" data-view="ai-cost">
           <span class="mine-row-icon ai-cost" aria-hidden="true">∑</span>
           <span class="mine-row-copy"><b>AI 成本</b><small>模拟各场景模型、Token、调用量与预算</small></span>
@@ -686,6 +735,32 @@
         </button>
       </section>
       <p class="mine-version" id="mine-app-version">v0.2.0</p>
+    </section>
+
+    <section class="view" id="view-personal-context">
+      <button class="mine-back" type="button" data-view="mine"><span aria-hidden="true">‹</span> 我的</button>
+      <header class="page-header personal-context-header">
+        <div><p class="eyebrow">当前语境</p><h1>个人概要</h1></div>
+        <span class="context-readonly-badge">只读</span>
+      </header>
+      <p class="status" id="personal-context-status" role="status" aria-live="polite"></p>
+      <section class="personal-context-meta" id="personal-context-meta" aria-label="概要元数据"></section>
+      <p class="personal-context-disclosure" id="personal-context-disclosure"></p>
+      <section class="personal-context-section" aria-labelledby="personal-context-summary-title">
+        <div class="personal-context-section-heading">
+          <div><p class="eyebrow">有据可查</p><h2 id="personal-context-summary-title">系统目前如何理解你</h2></div>
+          <div class="context-type-legend" aria-label="信息类型">
+            <span data-context-type="user_fact">用户事实</span>
+            <span data-context-type="user_viewpoint">用户观点</span>
+            <span data-context-type="model_summary">模型摘要</span>
+          </div>
+        </div>
+        <div class="personal-context-summary" id="personal-context-summary"></div>
+      </section>
+      <details class="personal-context-sources">
+        <summary><span>当前来源</span><small id="personal-context-source-count">0 条</small></summary>
+        <div id="personal-context-source-list"></div>
+      </details>
     </section>
 
     <section class="view" id="view-export">
@@ -752,14 +827,19 @@
 
       <section class="ai-dashboard" aria-labelledby="ai-dashboard-title">
         <div class="statistics-section-heading">
-          <div><p class="eyebrow">AI 调用量</p><h2 id="ai-dashboard-title">DeepSeek 用量看板</h2></div>
+          <div><p class="eyebrow">AI 与云服务调用量</p><h2 id="ai-dashboard-title">多供应商服务用量看板</h2></div>
           <span class="tracking-since" id="ai-tracking-since"></span>
         </div>
         <div class="ai-kpis" id="ai-kpis"></div>
 
         <section class="analytics-panel">
-          <div class="analytics-heading"><div><h3>模型与图片调用</h3><p>不同模型按天呈现，图片理解调用单独标出。</p></div></div>
+          <div class="analytics-heading"><div><h3>服务调用趋势</h3><p>按天比较 DeepSeek、豆包语音、火山视觉与阿里云图片分割。</p></div></div>
           <div class="analytics-chart" id="ai-calls-chart"></div>
+        </section>
+
+        <section class="analytics-panel">
+          <div class="analytics-heading"><div><h3>服务明细</h3><p>单位用量按服务原始计量分别展示，不混加 Token、字符、时长和图片。</p></div></div>
+          <div class="model-usage-table" id="ai-service-summary"></div>
         </section>
 
         <section class="analytics-panel">
@@ -783,7 +863,7 @@
             <div class="scenario-bars" id="ai-scenario-bars"></div>
           </section>
           <section class="analytics-panel">
-            <div class="analytics-heading"><div><h3>模型汇总</h3><p>比较调用、Token 与费用。</p></div></div>
+            <div class="analytics-heading"><div><h3>供应商汇总</h3><p>比较调用、Token、已知费用与待账单次数。</p></div></div>
             <div class="model-usage-table" id="ai-model-summary"></div>
           </section>
         </div>
@@ -1249,6 +1329,7 @@
             <label><span>书目识别</span><select data-ai-scenario="bookRecognition"></select></label>
             <label><span>健康截图识别</span><select data-ai-scenario="healthRecognition"></select></label>
             <label><span>内容图片理解</span><select data-ai-scenario="contentImageUnderstanding"></select></label>
+            <label><span>语音整理</span><select data-ai-scenario="capturePolish"></select></label>
           </div>
         </section>
         <label class="field"><span>API 密钥 <i id="llm-key-hint">仅保存在本机</i></span><input id="llm-api-key" type="password" autocomplete="new-password" placeholder="sk-…（留空则保留已保存的密钥）"></label>
@@ -1347,6 +1428,24 @@
     <div class="comment-panel-list" id="comment-panel-list"></div>
   </aside>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <div class="image-viewer-backdrop" id="image-viewer" hidden>
+    <section class="image-viewer-dialog" role="dialog" aria-modal="true" aria-labelledby="image-viewer-title">
+      <header>
+        <h2 id="image-viewer-title">查看原图</h2>
+        <span id="image-viewer-counter" aria-live="polite"></span>
+        <button id="image-viewer-close" type="button" aria-label="关闭原图">×</button>
+      </header>
+      <div class="image-viewer-stage">
+        <img id="image-viewer-image" alt="" hidden>
+        <p id="image-viewer-status" role="status" aria-live="polite"></p>
+      </div>
+      <footer>
+        <button id="image-viewer-prev" type="button" aria-label="上一张">‹</button>
+        <button id="image-viewer-next" type="button" aria-label="下一张">›</button>
+      </footer>
+    </section>
+  </div>
 
   <div class="modal-backdrop" id="association-flow-modal" hidden>
     <section class="modal card association-flow-modal" role="dialog" aria-modal="true" aria-labelledby="association-flow-title">

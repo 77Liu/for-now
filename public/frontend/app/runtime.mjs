@@ -31,20 +31,36 @@ import {
   buildHomeMoodSeries,
   createHomeMemoryPool,
   selectHomeMemories,
-  keepsakeMediaSources
+  createKeepsakeBatchItems,
+  discardKeepsakeMedia,
+  KEEPSAKE_BATCH_MAX_ITEMS,
+  keepsakeMediaSources,
+  nextKeepsakeBatchIndex,
+  uploadKeepsakeMedia,
+  WEIGHT_BATCH_MAX_ITEMS,
+  applyWeightBatchRecognition,
+  changeWeightBatchDate,
+  createWeightBatchItems,
+  nextWeightBatchIndex,
+  weightBatchRecordInput
 } from "../features/index.mjs";
 import {
+  AUDIO_MAX_DURATION_MS,
+  captureRecordPayload,
   createIndexedDbMediaDraftStore,
   imageRecordPayload,
   imageUnderstandingPayload,
+  preferredRecorderMime,
   uploadPendingMediaItems,
+  uploadOriginalAudio,
   uploadOriginalImages,
+  validatedAudioBlob,
   validatedImageFiles
 } from "../media/index.mjs";
 import { createPageRouter } from "../pages/index.mjs";
 import { sessionScope, sessionSerial, rotateSession } from "../session/index.mjs";
-import { state, replaceState, resetState, subscribeState, createRefreshCoordinator } from "../state/index.mjs";
-import { createIndexedDbSyncStore, createRequestCoordinator } from "../sync/index.mjs";
+import { state, replaceState, mergeStateSnapshot, resetState, subscribeState, publishDomains, createRefreshCoordinator } from "../state/index.mjs";
+import { createIndexedDbSyncStore, createIncrementalSync, createRequestCoordinator } from "../sync/index.mjs";
 import { createOccurrenceDraft, entryKeyIntent, eventDate, eventTimestamp, formatDate, formatDateKey, formatTime, localDateKey, localDateTimeForDate, occurrenceSubmission, persistedDateTimeInput, toLocalDateTimeInput } from "../time/index.mjs";
 
 const apiClient=createApiClient({baseUrl:new URL("../../app.js",import.meta.url),apiOrigin:document.documentElement.dataset.apiOrigin||"",session:sessionScope,onAuthRequired:()=>showAuthGate()});
@@ -52,27 +68,63 @@ const appUrl=apiClient.appUrl;
 const syncStore=createIndexedDbSyncStore();
 const mediaDraftStore=createIndexedDbMediaDraftStore();
 const requestCoordinator=createRequestCoordinator({store:syncStore,send:(url,options)=>request(url,options)});
-const refreshCoordinator=createRefreshCoordinator({session:sessionScope,requestState:()=>request("/api/state")});
+const refreshCoordinator=createRefreshCoordinator({session:sessionScope,requestState:()=>request("/api/state"),afterReplace:()=>restorePendingProjections()});
+const KEEPSAKE_PAGE_SIZE=12,KEEPSAKE_PREFETCH_MARGIN_PX=160;
 const baseMetrics={mood:{label:"情绪",anchors:["非常难受","有些低落","平稳、无明显起伏","感觉不错","轻盈而愉快"]},energy:{label:"精力",anchors:["几乎耗尽","勉强支撑","够用，但有限","精力较好","充沛、想行动"]},stress:{label:"压力",anchors:["快要撑不住","很紧绷","压力明显但可应对","有一点紧绷","身心松弛"]},sleep:{label:"睡眠",anchors:["几乎没休息好","明显不足","基本够用","睡得不错","充分恢复"]}};
 const trendLabels=Object.fromEntries(Object.entries(baseMetrics).map(([k,v])=>[k,v.label]));
 const llmTiers=["lite","mid","high","ultra"];
 const defaultLlmProfiles={lite:{model:"deepseek-flash",effort:"none"},mid:{model:"deepseek-flash",effort:"high"},high:{model:"deepseek-v4-pro",effort:"high"},ultra:{model:"deepseek-v4-pro",effort:"max"}};
-const defaultLlmScenarios={thoughtPrompt:"lite",thoughtDraft:"high",thoughtAnswer:"ultra",followUpAnswer:"ultra",chat:"high",diaryLead:"lite",diaryStructure:"mid",diaryTopic:"high",diaryReflection:"ultra",annotationShenji:"high",analysis:"ultra",bookRecognition:"mid",healthRecognition:"mid",contentImageUnderstanding:"mid"};
+const defaultLlmScenarios={thoughtPrompt:"lite",thoughtDraft:"high",thoughtAnswer:"ultra",followUpAnswer:"ultra",chat:"high",diaryLead:"lite",diaryStructure:"mid",diaryTopic:"high",diaryReflection:"ultra",annotationShenji:"high",analysis:"ultra",bookRecognition:"mid",healthRecognition:"mid",contentImageUnderstanding:"mid",capturePolish:"mid"};
 const responseStyleOptions=[["concise","简短"],["standard","标准"],["deep","深入"],["structured","结构化"],["exploratory","开放探索"]];
 const responseStyleScenes=["thoughtDraft","thoughtAnswer","followUpAnswer","chat","diaryReflection","annotationShenji","analysis"];
 let switchView;
 let backgroundResultController=null;
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},automaticAnswers:{thoughtAnswer:false},hasApiKey:false,keyHint:""};
-let activeDate=currentLocalDate,activeDailyType="sleep",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiCostRequestSerial=0,architectureStage=0,architectureTerm="api",commercialMode="validation",commercialStatistics=null,commercialRequestSerial=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,discoveryController=null,actionsSnapshot={actions:[],habits:[],habitCheckins:[]},actionsRequestSerial=0,feedbackItems=[],feedbackRequestSerial=0,exportManifest=null,authOperationSerial=0,authBusy=false,appVersion="0.2.0",releaseVersion="0.2.0";
-let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeEditorTrigger=null;
+let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiCostRequestSerial=0,architectureStage=0,architectureTerm="api",commercialMode="validation",commercialStatistics=null,commercialRequestSerial=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,discoveryController=null,actionsSnapshot={actions:[],habits:[],habitCheckins:[]},actionsRequestSerial=0,feedbackItems=[],feedbackRequestSerial=0,exportManifest=null,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,appVersion="0.2.0",releaseVersion="0.2.0",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
+let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeEditorTrigger=null,activeSpeechCaptureId="",activeSpeechAudio=null,activeSpeechObjectUrl="",activeSpeechAbortController=null;
 const keepsakeEditor={file:null,sourceDataUrl:"",sourceImage:null,sourceCanvas:null,maskCanvas:null,autoBase:null,history:[],mode:"keep",drawing:false,lastPoint:null,source:"manual",originalPath:"",cutoutPath:"",renderFrame:0,segmentSerial:0};
-const contentImageDrafts=Object.fromEntries(["capture","thoughtRoot","thoughtBlock","comment"].map(key=>[key,{items:[],uploadRequestId:""}]));
-const persistentContentImageKeys=new Set(["capture","thoughtRoot"]);
+const keepsakeBatch={items:[],activeIndex:0,loading:false};
+let keepsakeBatchPreviewUrls=[],keepsakeBatchPersistTimer=0;
+let keepsakeVisibleCount=KEEPSAKE_PAGE_SIZE,keepsakePaginationOwner="",keepsakeLoadObserver=null;
+const contentImageDrafts=Object.fromEntries(["capture","thoughtRoot","thoughtBlock","comment"].map(key=>[key,{items:[],uploadRequestId:"",context:null}]));
+const persistentContentImageKeys=new Set(["capture","thoughtRoot","thoughtBlock","comment"]);
+const healthImageDrafts=Object.fromEntries(["sleep","heartRate","weight","exercise"].map(type=>[type,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0}]));
+const captureAudioDraft={blob:null,preview:"",path:"",mimeType:"",bytes:0,durationMs:0,uploadRequestId:"",uploadedPath:"",lastError:null,recorder:null,stream:null,chunks:[],startedAt:0,pausedAt:0,pausedTotal:0,timer:0,serial:0};
+const imageViewer={paths:[],index:0,objectUrl:"",requestSerial:0,trigger:null};
 const quoteScrollStates=new WeakMap();
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 function renderLatex(container){if(!container||!window.katex)return;container.querySelectorAll("[data-tex]").forEach(element=>{try{window.katex.render(decodeURIComponent(element.dataset.tex||""),element,{displayMode:element.classList.contains("latex-display"),throwOnError:false,strict:"ignore",trust:false})}catch{element.textContent=decodeURIComponent(element.dataset.tex||"")}})}
 function reasoningDisclosure(value){return value?`<details class="saved-reasoning"><summary title="展开模型思考">思考</summary><div class="saved-reasoning-content markdown-content">${renderMarkdown(value)}</div></details>`:""}
+function currentContextSource(source){
+  const type=source?.resourceType,id=source?.resourceId,key=source?.location?.targetKey||"";
+  if(type==="onboarding"){
+    const onboarding=state.onboarding;
+    if(!onboarding||onboarding.status!=="completed")return{exists:false,text:""};
+    const base={exists:true,version:Number(source.version)||1,occurredAt:onboarding.updatedAt||""};
+    if(key==="understanding")return{...base,exists:Boolean(onboarding.understanding),text:onboarding.understanding||""};
+    if(key==="viewpoints")return{...base,text:[Object.keys(onboarding.answers||{}).length?`初始问卷 ${Object.keys(onboarding.answers||{}).length} 项`:"",onboarding.material||""].filter(Boolean).join(" · ")};
+    return{...base,text:[...Object.values(onboarding.profile||{}),...(onboarding.interests||[])].filter(Boolean).join(" · ")}
+  }
+  const collections={capture:"captures",journal:"journals",thought:"thoughts",checkin:"checkins",dailyRecord:"dailyRecords"},item=state[collections[type]]?.find(value=>value.id===id);
+  if(!item)return{exists:false,text:""};
+  const base={exists:true,version:Number(item.version)||1,occurredAt:item.occurredAt||item.createdAt||item.updatedAt||""};
+  if(type==="capture")return{...base,text:item.content||"图片或语音捕念"};
+  if(type==="journal")return{...base,text:`${item.title?`${item.title}：`:""}${item.content||""}`};
+  if(type==="thought")return{...base,text:item.content||item.modelDraft||""};
+  if(type==="checkin")return{...base,text:`情绪 ${item.mood} · 精力 ${item.energy} · 压力 ${item.stress} · 睡眠 ${item.sleep}`};
+  return{...base,text:item.description||item.exerciseType||`${item.type||"健康"}记录`}
+}
+function contextSourceButton(source){
+  const location=source?.location||{},live=source.excerpt?{exists:true,matches:true,text:source.excerpt}:currentContextSource(source),matches=Boolean(source.excerpt)||live.exists&&live.version===Number(source.version||1)&&(source.resourceType!=="onboarding"||!source.occurredAt||live.occurredAt===source.occurredAt),canOpen=live.exists&&location.view&&location.view!=="personal-context",copy=!live.exists?"来源已删除或当前不可用":matches?live.text:"来源当前版本已变化；旧摘录未保留";
+  return `<article class="context-source-item${live.exists&&matches?"":" unavailable"}"><div><b>${escapeHtml(source.recordType||"记录")}</b><small>${escapeHtml(source.occurredOn||"时间未记")} · 版本 ${Number(source.version)||1}</small></div><p>${escapeHtml(plainPreview(copy))}</p>${canOpen?`<button class="subtle-action" type="button" data-context-source data-context-view="${escapeHtml(location.view)}" data-context-target="${escapeHtml(location.targetId||source.resourceId||"")}" data-context-root="${escapeHtml(location.rootId||"")}" data-context-key="${escapeHtml(location.targetKey||"")}" data-context-date="${escapeHtml(location.occurredOn||source.occurredOn||"")}" data-context-daily-type="${escapeHtml(location.dailyType||"")}">查看${matches?"原记录":"当前版本"}</button>`:""}</article>`
+}
+function contextReceiptMarkup(receipt){
+  const sources=Array.isArray(receipt?.sources)?receipt.sources:[],budget=receipt?.tokenBudget;
+  if(!sources.length)return"";
+  const budgetText=budget?`${Number(budget.estimatedUsed)||0} / ${Number(budget.limit)||0} Token 上界`:"";
+  return `<details class="context-audit"><summary><span>本次参考</span><small>${sources.length} 条${budgetText?` · ${budgetText}`:""}</small></summary><div class="context-source-list">${sources.map(contextSourceButton).join("")}</div></details>`
+}
 function commentRootKey(type,id){return `${type}:${id}`}
 function parseCommentRootKey(value){const divider=String(value||"").indexOf(":");return divider<1?{type:"",id:""}:{type:value.slice(0,divider),id:value.slice(divider+1)}}
 function clearThoughtTracePending(rootKey){const {type,id}=parseCommentRootKey(rootKey);if(type!=="thought"||!id)return;state.insights.aiOnlyThoughtIds=(state.insights.aiOnlyThoughtIds||[]).filter(value=>value!==id);document.querySelectorAll(`[data-chain-id="${CSS.escape(id)}"]`).forEach(card=>card.closest(".thought-timeline-entry")?.querySelector(".thought-trace-pending")?.remove())}
@@ -80,7 +132,7 @@ function commentRoot(value){const {type,id}=parseCommentRootKey(value),collectio
 function commentEndpoint(value,suffix=""){const {type,id}=parseCommentRootKey(value);return `/api/annotations/${encodeURIComponent(type)}/${encodeURIComponent(id)}${suffix}`}
 function commentRootLabel(value){const {type}=parseCommentRootKey(value);return({thought:"主题思考",capture:"捕念",journal:"日记",chat:"长期对话",analysis:"认知复盘",book:"读书笔记",quote:"善言"})[type]||"正文"}
 function markCommentTarget(element,rootKey,targetKey){if(!element)return;element.classList.add("commentable");element.dataset.commentRoot=rootKey;element.dataset.commentTarget=targetKey}
-function tagCommentableTargets(container,chains){[...(container?.querySelectorAll(".chain-record")||[])].forEach((card,index)=>{const chain=chains[index];if(!chain)return;const rootId=chain.question.id,rootKey=commentRootKey("thought",rootId);markCommentTarget(card.querySelector(".thought-question-content"),rootKey,`question:${rootId}`);card.querySelectorAll("[data-thought-block-id]").forEach(element=>{const item=chain.children.find(value=>value.id===element.dataset.thoughtBlockId);if(item)markCommentTarget(element.querySelector(".thought-block-content"),rootKey,`${item.type}:${item.id}`)});card.querySelectorAll(".response-entry[data-followup-id]").forEach(entry=>{const id=entry.dataset.followupId;markCommentTarget(entry.querySelector(".followup-question .markdown-content"),rootKey,`followup-question:${id}`);markCommentTarget(entry.querySelector(".followup-answer .model-answer-content > .markdown-content"),rootKey,`followup-answer:${id}`)})})}
+function tagCommentableTargets(container,chains){[...(container?.querySelectorAll(".chain-record")||[])].forEach((card,index)=>{const chain=chains[index];if(!chain||chain.question._sync)return;const rootId=chain.question.id,rootKey=commentRootKey("thought",rootId);markCommentTarget(card.querySelector(".thought-question-content"),rootKey,`question:${rootId}`);card.querySelectorAll("[data-thought-block-id]").forEach(element=>{const item=chain.children.find(value=>value.id===element.dataset.thoughtBlockId);if(item)markCommentTarget(element.querySelector(".thought-block-content"),rootKey,`${item.type}:${item.id}`)});card.querySelectorAll(".response-entry[data-followup-id]").forEach(entry=>{const id=entry.dataset.followupId;markCommentTarget(entry.querySelector(".followup-question .markdown-content"),rootKey,`followup-question:${id}`);markCommentTarget(entry.querySelector(".followup-answer .model-answer-content > .markdown-content"),rootKey,`followup-answer:${id}`)})})}
 function commentTextNodes(container){const walker=document.createTreeWalker(container,NodeFilter.SHOW_TEXT,{acceptNode(node){if(!node.nodeValue||!node.nodeValue.length)return NodeFilter.FILTER_REJECT;const parent=node.parentElement;if(!parent||parent.closest("button, textarea, input")||parent.closest('.katex-html[aria-hidden="true"]'))return NodeFilter.FILTER_REJECT;return NodeFilter.FILTER_ACCEPT}});const nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);return nodes}
 function commentText(container){return commentTextNodes(container).map(node=>node.nodeValue).join("")}
 function wrapCommentRange(container,start,end,rootId,annotationId,kind="comment"){let offset=0;for(const node of commentTextNodes(container)){const nodeStart=offset,nodeEnd=offset+node.nodeValue.length;offset=nodeEnd;if(end<=nodeStart||start>=nodeEnd)continue;const from=Math.max(0,start-nodeStart),to=Math.min(node.nodeValue.length,end-nodeStart);if(to<=from)continue;const selected=node.splitText(from),after=selected.splitText(to-from),mark=document.createElement("mark"),presentation=annotationPresentation({kind});mark.className=`comment-anchor ${presentation.className}`.trim();mark.dataset.commentRoot=rootId;mark.dataset.annotationId=annotationId;selected.parentNode.insertBefore(mark,selected);mark.append(selected);void after}}
@@ -91,8 +143,8 @@ function commentSelection(){const selection=window.getSelection();if(!selection|
 function showSelectionCommentButton(){const found=commentSelection(),tools=$("#selection-tools");if(!found){tools.hidden=true;return}pendingSelection=found;tools.hidden=false;const viewport=window.visualViewport,left=viewport?.offsetLeft||0,top=viewport?.offsetTop||0,width=viewport?.width||window.innerWidth,height=viewport?.height||window.innerHeight,x=Math.max(left+8,Math.min(left+width-tools.offsetWidth-8,found.rect.left+found.rect.width/2-tools.offsetWidth/2)),above=found.rect.top-tools.offsetHeight-9,y=above>=top+8?above:Math.min(top+height-tools.offsetHeight-8,found.rect.bottom+9);tools.style.left=`${x}px`;tools.style.top=`${Math.max(top+8,y)}px`}
 function pendingAiTask(kind,targetId,subtargetId=""){return(state.aiTasks||[]).find(task=>task.kind===kind&&task.targetId===targetId&&(!subtargetId||task.subtargetId===subtargetId)&&["queued","running","cancelling"].includes(task.status))}
 function annotationMenuMarkup(annotation){return `<details class="annotation-menu"><summary title="更多操作" aria-label="更多操作">⋯</summary><div role="menu">${annotationMenuItems(annotation).map(item=>`<button type="button" role="menuitem" class="${item.destructive?"danger":""}" ${item.id==="delete"?`data-comment-delete="${escapeHtml(annotation.id)}"`:`data-annotation-menu="${escapeHtml(item.id)}" data-annotation-id="${escapeHtml(annotation.id)}"`}>${escapeHtml(item.label)}</button>`).join("")}</div></details>`}
-function annotationCard(annotation){const presentation=annotationPresentation(annotation),mark=annotation.kind!=="comment",{id:targetId}=parseCommentRootKey(activeCommentRoot),pending=pendingAiTask("annotationShenji",targetId,annotation.id),shenji=(annotation.shenji||[]).map(item=>`<div class="shenji-turn">${item.message?`<div class="shenji-user"><span>@你</span><div class="markdown-content">${renderMarkdown(item.message)}</div></div>`:""}<div class="shenji-answer markdown-content"><span class="shenji-label">@神鸡</span>${reasoningDisclosure(item.reasoningContent)}${renderMarkdown(item.answer)}</div><small>${formatDate(item.createdAt)}</small></div>`).join(""),images=contentImagesMarkup(annotation,"comment");return `<article class="comment-card ${mark?`${presentation.kind}-card`:""} ${activeAnnotationId===annotation.id?"active":""}" data-comment-card="${annotation.id}">${mark?`<span class="annotation-kind">${escapeHtml(presentation.label)}</span>`:""}<blockquote>${escapeHtml(annotation.quote)}</blockquote>${mark?"":`${annotation.text?`<p>${escapeHtml(annotation.text)}</p>`:""}<small>${formatDate(annotation.createdAt)}</small>${(annotation.replies||[]).map(reply=>`<div class="comment-reply"><p>${escapeHtml(reply.text)}</p><small>${formatDate(reply.createdAt)}</small></div>`).join("")}<form class="comment-reply-form" data-comment-reply="${annotation.id}"><input placeholder="回复这条评论…" required><button type="submit">回复</button></form>`}${images}${shenji?`<div class="shenji-thread">${shenji}</div>`:""}<form class="shenji-form" data-shenji-form="${annotation.id}" ${activeShenjiComposer===annotation.id?"":"hidden"}><div><span class="shenji-label">@神鸡</span><textarea name="message" rows="3" placeholder="可留空直接询问标记内容，也可补充你的问题…"></textarea></div><button type="submit" ${pending?"disabled":""}>发送</button><p class="shenji-status" role="status">${pending?"回复正在后台生成，可继续使用其他功能。":""}</p></form><div class="annotation-actions"><button type="button" class="shenji-toggle" data-shenji-toggle="${annotation.id}">@神鸡</button>${annotationMenuMarkup(annotation)}</div></article>`}
-function driftCard(annotation){const context=annotation.originalContext||{before:"",focus:annotation.quote,after:""},replies=(annotation.replies||[]).map(item=>`<div class="comment-reply"><p>${escapeHtml(item.text)}</p><small>${formatDate(item.createdAt)}</small></div>`).join(""),shenji=(annotation.shenji||[]).map(item=>`<div class="shenji-turn">${item.message?`<div class="shenji-user"><span>@你</span><div class="markdown-content">${renderMarkdown(item.message)}</div></div>`:""}<div class="shenji-answer markdown-content"><span class="shenji-label">@神鸡</span>${reasoningDisclosure(item.reasoningContent)}${renderMarkdown(item.answer)}</div></div>`).join("");return `<article class="drift-card" data-drift-card="${annotation.id}"><div class="drift-meta"><span>${annotation.kind==="highlight"?"失效划线":"失效评论"}</span><small>${escapeHtml(annotation.driftReason||"原文已变化")}</small></div><div class="drift-context"><span>${escapeHtml(context.before)}</span><mark>${escapeHtml(context.focus||annotation.quote)}</mark><span>${escapeHtml(context.after)}</span></div>${annotation.text?`<p>${escapeHtml(annotation.text)}</p>`:""}${replies}${shenji}<button type="button" class="comment-delete" data-drift-delete="${annotation.id}">删除漂流记录</button></article>`}
+function annotationCard(annotation){const presentation=annotationPresentation(annotation),mark=annotation.kind!=="comment",{id:targetId}=parseCommentRootKey(activeCommentRoot),pending=pendingAiTask("annotationShenji",targetId,annotation.id),shenji=(annotation.shenji||[]).map(item=>`<div class="shenji-turn">${item.message?`<div class="shenji-user"><span>@你</span><div class="markdown-content">${renderMarkdown(item.message)}</div></div>`:""}<div class="shenji-answer markdown-content"><span class="shenji-label">@神鸡</span>${reasoningDisclosure(item.reasoningContent)}${renderMarkdown(item.answer)}</div>${contextReceiptMarkup(item.contextReceipt)}<small>${formatDate(item.createdAt)}</small></div>`).join(""),images=contentImagesMarkup(annotation,"comment");return `<article class="comment-card ${mark?`${presentation.kind}-card`:""} ${activeAnnotationId===annotation.id?"active":""}" data-comment-card="${annotation.id}">${mark?`<span class="annotation-kind">${escapeHtml(presentation.label)}</span>`:""}<blockquote>${escapeHtml(annotation.quote)}</blockquote>${mark?"":`${annotation.text?`<p>${escapeHtml(annotation.text)}</p>`:""}<small>${formatDate(annotation.createdAt)}</small>${(annotation.replies||[]).map(reply=>`<div class="comment-reply"><p>${escapeHtml(reply.text)}</p><small>${formatDate(reply.createdAt)}</small></div>`).join("")}<form class="comment-reply-form" data-comment-reply="${annotation.id}"><input placeholder="回复这条评论…" required><button type="submit">回复</button></form>`}${images}${shenji?`<div class="shenji-thread">${shenji}</div>`:""}<form class="shenji-form" data-shenji-form="${annotation.id}" ${activeShenjiComposer===annotation.id?"":"hidden"}><div><span class="shenji-label">@神鸡</span><textarea name="message" rows="3" placeholder="可留空直接询问标记内容，也可补充你的问题…"></textarea></div><button type="submit" ${pending?"disabled":""}>发送</button><p class="shenji-status" role="status">${pending?"回复正在后台生成，可继续使用其他功能。":""}</p></form><div class="annotation-actions"><button type="button" class="shenji-toggle" data-shenji-toggle="${annotation.id}">@神鸡</button>${annotationMenuMarkup(annotation)}</div></article>`}
+function driftCard(annotation){const context=annotation.originalContext||{before:"",focus:annotation.quote,after:""},replies=(annotation.replies||[]).map(item=>`<div class="comment-reply"><p>${escapeHtml(item.text)}</p><small>${formatDate(item.createdAt)}</small></div>`).join(""),shenji=(annotation.shenji||[]).map(item=>`<div class="shenji-turn">${item.message?`<div class="shenji-user"><span>@你</span><div class="markdown-content">${renderMarkdown(item.message)}</div></div>`:""}<div class="shenji-answer markdown-content"><span class="shenji-label">@神鸡</span>${reasoningDisclosure(item.reasoningContent)}${renderMarkdown(item.answer)}</div>${contextReceiptMarkup(item.contextReceipt)}</div>`).join("");return `<article class="drift-card" data-drift-card="${annotation.id}"><div class="drift-meta"><span>${annotation.kind==="highlight"?"失效划线":"失效评论"}</span><small>${escapeHtml(annotation.driftReason||"原文已变化")}</small></div><div class="drift-context"><span>${escapeHtml(context.before)}</span><mark>${escapeHtml(context.focus||annotation.quote)}</mark><span>${escapeHtml(context.after)}</span></div>${annotation.text?`<p>${escapeHtml(annotation.text)}</p>`:""}${replies}${shenji}<button type="button" class="comment-delete" data-drift-delete="${annotation.id}">删除漂流记录</button></article>`}
 function renderCommentPanel(){const panel=$("#comment-panel");if(!activeCommentRoot){panel.hidden=true;return}const root=commentRoot(activeCommentRoot);if(!root){activeCommentRoot="";panel.hidden=true;return}panel.hidden=false;panel.querySelector("header h2").textContent=`${commentRootLabel(activeCommentRoot)}批注`;$("#comment-composer").hidden=!(pendingSelection?.rootKey===activeCommentRoot);if(pendingSelection?.rootKey===activeCommentRoot)$("#comment-quote").textContent=pendingSelection.quote;const annotations=sortAnnotationItemsByPosition(root.annotations||[]),drift=[...(root.annotationDrift||[])].sort((a,b)=>(b.driftedAt||b.createdAt).localeCompare(a.driftedAt||a.createdAt)),live=annotations.length?annotations.map(annotationCard).join(""):empty("还没有有效评论或标记。选中正文后即可添加。"),driftSection=drift.length?`<section class="drift-box"><header><h3>评论漂流箱</h3><span>${drift.length}</span></header><p class="drift-help">原文被改写或删除后，无法可靠定位的批注会保留在这里。</p>${drift.map(driftCard).join("")}</section>`:"";$("#comment-panel-list").innerHTML=live+driftSection;renderLatex($("#comment-panel-list"));requestAnimationFrame(()=>{if(activeAnnotationId)panel.querySelector(`[data-comment-card="${CSS.escape(activeAnnotationId)}"]`)?.scrollIntoView({block:"center"})})}
 function refreshAnnotationCard(annotation){const current=document.querySelector(`[data-comment-card="${CSS.escape(annotation.id)}"]`);if(!current)return renderCommentPanel();const draft=current.querySelector("[data-shenji-form] textarea")?.value||"",composerOpen=!current.querySelector("[data-shenji-form]")?.hidden,template=document.createElement("template");template.innerHTML=annotationCard(annotation).trim();const next=template.content.firstElementChild;current.replaceWith(next);const composer=next.querySelector("[data-shenji-form]"),input=composer?.querySelector("textarea");if(input)input.value=draft;if(composer)composer.hidden=!composerOpen;renderLatex(next)}
 function formIdentity(form,index){for(const key of["followUpRoot","followupManualAnswer","followupEdit"])if(form.dataset[key])return`${key}:${form.dataset[key]}`;return`form:${index}`}
@@ -110,6 +162,7 @@ function captureFormDrafts(root){
 }
 function restoreFormDrafts(root,drafts){
   const forms=[...root.querySelectorAll("form")];
+  let focusedField=null,selectionStart=null,selectionEnd=null;
   for(const [index,form]of forms.entries()){
     const draft=drafts.find(item=>item.key===formIdentity(form,index));if(!draft)continue;
     form.hidden=draft.hidden;if(draft.requestId)form.dataset.requestId=draft.requestId;
@@ -117,11 +170,13 @@ function restoreFormDrafts(root,drafts){
     for(const [fieldIndex,field]of fields.entries()){
       const key=field.name?`name:${field.name}`:field.id?`id:${field.id}`:`field:${fieldIndex}`,saved=draft.fields.find(item=>item.key===key);if(!saved)continue;
       if(saved.checked!==null)field.checked=saved.checked;else field.value=saved.value;
-      if(saved.focused){field.focus({preventScroll:true});if(saved.selectionStart!==null&&typeof field.setSelectionRange==="function")field.setSelectionRange(saved.selectionStart,saved.selectionEnd)}
+      if(saved.focused){focusedField=field;selectionStart=saved.selectionStart;selectionEnd=saved.selectionEnd}
     }
   }
+  if(focusedField){focusedField.focus({preventScroll:true});if(selectionStart!==null&&typeof focusedField.setSelectionRange==="function")focusedField.setSelectionRange(selectionStart,selectionEnd)}
+  return focusedField
 }
-const durableDraftForms=["chain-form","checkin-form"];
+const durableDraftForms=["chain-form","checkin-form","capture-form"];
 const durableDraftKey=()=>currentUser?.id?`cike:session-drafts:${currentUser.id}`:"";
 function saveDurableDrafts(){
   const key=durableDraftKey();if(!key)return;
@@ -170,17 +225,172 @@ const empty=t=>`<div class="empty">${escapeHtml(t)}</div>`;
 const avg=v=>v.length?v.reduce((s,x)=>s+Number(x),0)/v.length:null;
 const formatBytes=value=>value<1024?`${value} B`:value<1048576?`${(value/1024).toFixed(1)} KB`:`${(value/1048576).toFixed(1)} MB`;
 const imageDataUrls=files=>Promise.all(files.map(file=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error("无法读取图片，请重新选择"));reader.readAsDataURL(file)})));
+const audioDataUrl=blob=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error("无法读取音频，请重新录制或导入"));reader.readAsDataURL(blob)});
+const formatAudioDuration=value=>{const seconds=Math.max(0,Math.round(Number(value)||0)/1000),minutes=Math.floor(seconds/60);return`${minutes}:${String(Math.floor(seconds%60)).padStart(2,"0")}`};
+const audioDraftKey="capture-audio";
+function renderCaptureAudioDraft(){
+  const preview=$("#capture-audio-preview"),player=$("#capture-audio-player"),meta=$("#capture-audio-meta"),status=$("#capture-audio-status"),record=$("#capture-audio-record"),pause=$("#capture-audio-pause"),stop=$("#capture-audio-stop"),remove=$("#capture-audio-remove"),file=$("#capture-audio-file"),recorder=$("#capture-audio-recorder");
+  if(!preview||!player)return;
+  const recorderState=captureAudioDraft.recorder?.state||"",active=["recording","paused"].includes(recorderState),paused=recorderState==="paused",source=captureAudioDraft.preview||(captureAudioDraft.path?appUrl(captureAudioDraft.path):"")||(captureAudioDraft.uploadedPath?appUrl(captureAudioDraft.uploadedPath):"");
+  if(active&&recorder)recorder.open=true;record.hidden=active;pause.hidden=!active;pause.textContent=paused?"▶":"Ⅱ";pause.title=paused?"继续录音":"暂停录音";pause.setAttribute("aria-label",pause.title);stop.hidden=!active;file.disabled=active;remove.hidden=!active&&!source;remove.title=active?"取消录音":"移除语音";remove.setAttribute("aria-label",remove.title);
+  preview.hidden=!source;if(source&&player.src!==new URL(source,location.href).href)player.src=source;if(!source){player.pause();player.removeAttribute("src");player.load()}
+  meta.textContent=source?`${formatAudioDuration(captureAudioDraft.durationMs)} · ${formatBytes(captureAudioDraft.bytes)}`:"";
+  const elapsed=Date.now()-captureAudioDraft.startedAt-captureAudioDraft.pausedTotal-(paused?Date.now()-captureAudioDraft.pausedAt:0);
+  if(active)status.textContent=`${paused?"录音已暂停":"正在录音"} ${formatAudioDuration(elapsed)} / 10:00`;
+  else if(captureAudioDraft.lastError)status.textContent=captureAudioDraft.lastError;
+  else if(source)status.textContent=state.speech?.configured?"语音原件已保留；提交后将后台转写。":"语音原件已保留；ASR 服务尚未配置。";
+  else status.textContent=typeof MediaRecorder==="undefined"?"当前浏览器不支持直接录音，可导入音频文件。":""
+}
+async function persistCaptureAudioDraft(){
+  if(!currentUser?.id)return;
+  const hasAudio=captureAudioDraft.blob||captureAudioDraft.path||captureAudioDraft.uploadedPath;
+  if(!hasAudio){await mediaDraftStore.delete(currentUser.id,audioDraftKey);return}
+  await mediaDraftStore.put({
+    owner:currentUser.id,id:audioDraftKey,updatedAt:new Date().toISOString(),
+    audio:captureAudioDraft.path?{
+      path:captureAudioDraft.path,mimeType:captureAudioDraft.mimeType,bytes:captureAudioDraft.bytes,durationMs:captureAudioDraft.durationMs
+    }:{
+      blob:captureAudioDraft.blob,mimeType:captureAudioDraft.mimeType,bytes:captureAudioDraft.bytes,durationMs:captureAudioDraft.durationMs,
+      uploadRequestId:captureAudioDraft.uploadRequestId,uploadedPath:captureAudioDraft.uploadedPath,lastError:captureAudioDraft.lastError
+    }
+  })
+}
+async function discardCaptureAudioUpload(attachmentPath=captureAudioDraft.uploadedPath,uploadRequestId=captureAudioDraft.uploadRequestId){
+  if(!attachmentPath||!uploadRequestId)return false;
+  try{
+    const result=await request("/api/audio/discard",{method:"POST",body:JSON.stringify({attachmentPath,uploadRequestId})});
+    return result.discarded?.includes(attachmentPath)
+  }catch{return false}
+}
+function stopCaptureAudioTracks(){captureAudioDraft.stream?.getTracks?.().forEach(track=>track.stop());captureAudioDraft.stream=null}
+function clearCaptureAudioDraft({forget=true}={}){
+  captureAudioDraft.serial+=1;clearInterval(captureAudioDraft.timer);captureAudioDraft.timer=0;
+  if(captureAudioDraft.recorder?.state==="recording"){captureAudioDraft.recorder.ondataavailable=null;captureAudioDraft.recorder.onstop=null;captureAudioDraft.recorder.stop()}
+  stopCaptureAudioTracks();if(captureAudioDraft.preview)URL.revokeObjectURL(captureAudioDraft.preview);
+  const stalePath=forget?captureAudioDraft.uploadedPath:"",staleRequestId=captureAudioDraft.uploadRequestId;
+  Object.assign(captureAudioDraft,{blob:null,preview:"",path:"",mimeType:"",bytes:0,durationMs:0,uploadRequestId:"",uploadedPath:"",lastError:null,recorder:null,chunks:[],startedAt:0,pausedAt:0,pausedTotal:0});
+  const input=$("#capture-audio-file");if(input)input.value="";renderCaptureAudioDraft();
+  if(forget)void Promise.all([
+    stalePath?discardCaptureAudioUpload(stalePath,staleRequestId):Promise.resolve(),
+    currentUser?.id?mediaDraftStore.delete(currentUser.id,audioDraftKey):Promise.resolve()
+  ]).catch(()=>{})
+}
+function setExistingCaptureAudio(audio){
+  clearCaptureAudioDraft();
+  if(audio)Object.assign(captureAudioDraft,{path:audio.attachmentPath||"",mimeType:audio.mimeType||"",bytes:Number(audio.bytes)||0,durationMs:Number(audio.durationMs)||0});
+  renderCaptureAudioDraft()
+}
+async function setCaptureAudioBlob(blob,durationMs){
+  const audio=validatedAudioBlob(blob,durationMs),stalePath=captureAudioDraft.uploadedPath,staleRequestId=captureAudioDraft.uploadRequestId;
+  if(captureAudioDraft.preview)URL.revokeObjectURL(captureAudioDraft.preview);
+  Object.assign(captureAudioDraft,{blob:audio.blob,preview:URL.createObjectURL(audio.blob),path:"",mimeType:audio.mimeType,bytes:audio.bytes,durationMs:audio.durationMs,uploadRequestId:"",uploadedPath:"",lastError:null,recorder:null,chunks:[]});
+  renderCaptureAudioDraft();await persistCaptureAudioDraft();
+  if(stalePath)await discardCaptureAudioUpload(stalePath,staleRequestId)
+}
+const importedAudioDuration=blob=>new Promise((resolve,reject)=>{
+  const source=URL.createObjectURL(blob),audio=document.createElement("audio");
+  const done=value=>{URL.revokeObjectURL(source);audio.removeAttribute("src");audio.load();value instanceof Error?reject(value):resolve(value)};
+  audio.preload="metadata";audio.addEventListener("loadedmetadata",()=>Number.isFinite(audio.duration)&&audio.duration>0?done(Math.round(audio.duration*1000)):done(new Error("无法读取音频时长")),{once:true});audio.addEventListener("error",()=>done(new Error("无法读取音频时长")),{once:true});audio.src=source
+});
+async function restoreCaptureAudioDraft(owner){
+  if(!owner||captureAudioDraft.blob||captureAudioDraft.path)return;
+  const stored=await mediaDraftStore.get(owner,audioDraftKey),audio=stored?.audio;if(!audio)return;
+  if(audio.path)Object.assign(captureAudioDraft,{path:audio.path,mimeType:audio.mimeType||"",bytes:Number(audio.bytes)||0,durationMs:Number(audio.durationMs)||0});
+  else if(audio.blob){
+    const normalized=validatedAudioBlob(audio.blob,audio.durationMs);
+    Object.assign(captureAudioDraft,{blob:normalized.blob,preview:URL.createObjectURL(normalized.blob),mimeType:normalized.mimeType,bytes:normalized.bytes,durationMs:normalized.durationMs,uploadRequestId:audio.uploadRequestId||"",uploadedPath:audio.uploadedPath||"",lastError:audio.lastError||null})
+  }
+  renderCaptureAudioDraft();$("#capture-audio-status").textContent=`已恢复 ${formatAudioDuration(captureAudioDraft.durationMs)} 的待提交语音。`
+}
+async function startCaptureAudioRecording(){
+  if(typeof MediaRecorder==="undefined"||!navigator.mediaDevices?.getUserMedia)throw new Error("当前浏览器不支持直接录音，可改为导入音频");
+  if((captureAudioDraft.blob||captureAudioDraft.path||captureAudioDraft.uploadedPath)&&!confirm("用新录音替换当前语音？"))return;
+  $("#capture-audio-recorder").open=true;
+  const owner=currentUser?.id,serial=++captureAudioDraft.serial,stream=await navigator.mediaDevices.getUserMedia({audio:true});
+  if(owner!==currentUser?.id||serial!==captureAudioDraft.serial){stream.getTracks().forEach(track=>track.stop());return}
+  const mimeType=preferredRecorderMime(),recorder=mimeType?new MediaRecorder(stream,{mimeType}):new MediaRecorder(stream);
+  captureAudioDraft.stream=stream;captureAudioDraft.recorder=recorder;captureAudioDraft.chunks=[];captureAudioDraft.startedAt=Date.now();captureAudioDraft.pausedAt=0;captureAudioDraft.pausedTotal=0;captureAudioDraft.lastError=null;
+  recorder.addEventListener("dataavailable",event=>{if(serial===captureAudioDraft.serial&&event.data?.size)captureAudioDraft.chunks.push(event.data)});
+  recorder.addEventListener("stop",async()=>{
+    clearInterval(captureAudioDraft.timer);captureAudioDraft.timer=0;stopCaptureAudioTracks();
+    if(serial!==captureAudioDraft.serial)return;
+    const durationMs=Math.min(AUDIO_MAX_DURATION_MS,Date.now()-captureAudioDraft.startedAt-captureAudioDraft.pausedTotal),blob=new Blob(captureAudioDraft.chunks,{type:recorder.mimeType||mimeType});
+    captureAudioDraft.recorder=null;
+    try{await setCaptureAudioBlob(blob,durationMs);$("#capture-audio-status").textContent="录音已保存在本机，提交后同步。"}
+    catch(error){captureAudioDraft.lastError=error.message;renderCaptureAudioDraft()}
+  },{once:true});
+  recorder.start(1000);renderCaptureAudioDraft();
+  captureAudioDraft.timer=setInterval(()=>{const paused=captureAudioDraft.recorder?.state==="paused",elapsed=Date.now()-captureAudioDraft.startedAt-captureAudioDraft.pausedTotal-(paused?Date.now()-captureAudioDraft.pausedAt:0);if(elapsed>=AUDIO_MAX_DURATION_MS)stopCaptureAudioRecording();else renderCaptureAudioDraft()},250)
+}
+function toggleCaptureAudioPause(){
+  const recorder=captureAudioDraft.recorder;if(!recorder)return;
+  if(recorder.state==="recording"){recorder.pause();captureAudioDraft.pausedAt=Date.now()}
+  else if(recorder.state==="paused"){captureAudioDraft.pausedTotal+=Date.now()-captureAudioDraft.pausedAt;captureAudioDraft.pausedAt=0;recorder.resume()}
+  renderCaptureAudioDraft()
+}
+function stopCaptureAudioRecording(){
+  const recorder=captureAudioDraft.recorder;
+  if(recorder?.state==="paused"){captureAudioDraft.pausedTotal+=Date.now()-captureAudioDraft.pausedAt;captureAudioDraft.pausedAt=0}
+  if(recorder&&["recording","paused"].includes(recorder.state))recorder.stop()
+}
+function cancelCaptureAudioRecording(){
+  const recorder=captureAudioDraft.recorder;if(!recorder||!["recording","paused"].includes(recorder.state))return clearCaptureAudioDraft();
+  captureAudioDraft.serial+=1;clearInterval(captureAudioDraft.timer);captureAudioDraft.timer=0;recorder.stop();stopCaptureAudioTracks();
+  Object.assign(captureAudioDraft,{recorder:null,chunks:[],startedAt:0,pausedAt:0,pausedTotal:0,lastError:null});renderCaptureAudioDraft()
+}
+async function captureAudioForSubmission(){
+  if(captureAudioDraft.path)return{attachmentPath:captureAudioDraft.path,mimeType:captureAudioDraft.mimeType,bytes:captureAudioDraft.bytes,durationMs:captureAudioDraft.durationMs};
+  if(!captureAudioDraft.blob)return null;
+  const valid=validatedAudioBlob(captureAudioDraft.blob,captureAudioDraft.durationMs);
+  if(captureAudioDraft.uploadedPath)return{attachmentPath:captureAudioDraft.uploadedPath,mimeType:captureAudioDraft.mimeType,bytes:captureAudioDraft.bytes,durationMs:captureAudioDraft.durationMs};
+  captureAudioDraft.uploadRequestId||=crypto.randomUUID();captureAudioDraft.lastError=null;await persistCaptureAudioDraft();
+  try{
+    const result=await uploadOriginalAudio({request,audio:await audioDataUrl(valid.blob),durationMs:valid.durationMs,idempotencyKey:captureAudioDraft.uploadRequestId});
+    Object.assign(captureAudioDraft,{uploadedPath:result.attachmentPath,mimeType:result.mimeType,bytes:result.bytes,durationMs:result.durationMs,lastError:null});await persistCaptureAudioDraft();renderCaptureAudioDraft();return result
+  }catch(error){captureAudioDraft.lastError=error.message;await persistCaptureAudioDraft();renderCaptureAudioDraft();throw error}
+}
+async function rollbackCaptureAudioUpload(attachmentPath){
+  if(!attachmentPath||attachmentPath!==captureAudioDraft.uploadedPath)return;
+  if(await discardCaptureAudioUpload()){
+    captureAudioDraft.uploadedPath="";captureAudioDraft.uploadRequestId="";await persistCaptureAudioDraft();renderCaptureAudioDraft()
+  }
+}
 function contentImageDraft(key){return contentImageDrafts[key]}
+function currentContentImageContext(key){
+  if(key==="comment"&&pendingSelection){
+    return{
+      selection:{...pendingSelection},
+      text:$("#comment-text")?.value||"",
+      requestId:$("#comment-composer")?.dataset.requestId||""
+    }
+  }
+  if(key==="thoughtBlock"){
+    const form=$("#thought-block-form"),rootId=$("#thought-block-root-id")?.value||"";
+    if(!form||!rootId)return null;
+    return{
+      rootId,
+      blockId:$("#thought-block-id").value,
+      type:$("#thought-block-type").value,
+      occurredAt:$("#thought-block-datetime").value,
+      content:$("#thought-block-content").value,
+      version:Number(form.dataset.version)||1,
+      requestId:form.dataset.requestId||""
+    }
+  }
+  return null
+}
 function revokeContentImageItem(item){if(item?.preview&&item.file)URL.revokeObjectURL(item.preview)}
 async function persistContentImageDraft(key){
   if(!currentUser?.id||!persistentContentImageKeys.has(key))return;
   const draft=contentImageDraft(key);
   if(!draft?.items.length){await mediaDraftStore.delete(currentUser.id,key);return}
+  draft.context=currentContentImageContext(key)||draft.context||null;
   await mediaDraftStore.put({
     owner:currentUser.id,
     id:key,
     uploadRequestId:draft.uploadRequestId,
     updatedAt:new Date().toISOString(),
+    context:draft.context,
     items:draft.items.map(item=>item.path?{path:item.path}:{
       blob:item.file,
       name:item.file?.name||"image",
@@ -198,6 +408,7 @@ async function restoreContentImageDrafts(owner){
     const stored=await mediaDraftStore.get(owner,key),draft=contentImageDraft(key);
     if(!stored?.items?.length||!draft||draft.items.length)continue;
     draft.uploadRequestId=stored.uploadRequestId||"";
+    draft.context=stored.context||null;
     draft.items=stored.items.slice(0,2).map(item=>{
       if(item.path)return{path:item.path};
       const file=typeof File==="function"
@@ -212,12 +423,34 @@ async function restoreContentImageDrafts(owner){
       }
     });
     renderContentImageEditor(key);
+    if(key==="comment"){
+      const selection=draft.context?.selection,root=selection?commentRoot(selection.rootKey):null,target=selection&&root?document.querySelector(`.commentable[data-comment-root="${CSS.escape(selection.rootKey)}"][data-comment-target="${CSS.escape(selection.targetKey)}"]`):null,source=target?commentText(target):"";
+      const start=selection&&(source.slice(selection.start,selection.end)===selection.quote?selection.start:source.indexOf(selection.quote));
+      if(!selection||!root||!target||start<0){await abandonContentImageDraft(owner,key);continue}
+      pendingSelection={...selection,start,end:start+selection.quote.length};activeCommentRoot=selection.rootKey;$("#comment-text").value=draft.context.text||"";
+      if(draft.context.requestId)$("#comment-composer").dataset.requestId=draft.context.requestId;
+      renderCommentPanel()
+    }else if(key==="thoughtBlock"){
+      const context=draft.context,root=state.thoughts.find(item=>item.id===context?.rootId&&item.type==="question"),item=context?.blockId?state.thoughts.find(value=>value.id===context.blockId&&value.relatedTo===context.rootId):null;
+      if(!context?.rootId||!root||(context.blockId&&!item)){await abandonContentImageDraft(owner,key);continue}
+      const form=$("#thought-block-form"),select=$("#thought-block-type");
+      $("#thought-block-root-id").value=context.rootId;$("#thought-block-id").value=context.blockId||"";form.dataset.version=String(context.version||item?.version||1);
+      if(context.requestId)form.dataset.requestId=context.requestId;
+      select.value=context.type||item?.type||"record";select.disabled=Boolean(context.blockId);$("#thought-block-datetime").value=context.occurredAt||toLocalDateTimeInput(eventTimestamp(item||root));$("#thought-block-content").value=context.content||"";
+      $("#thought-block-title").textContent=context.blockId?"编辑内容":`新增${select.options[select.selectedIndex].text}`;$("#thought-block-modal").hidden=false
+    }
     const status=document.querySelector(`[data-content-image-editor="${CSS.escape(key)}"]`)?.closest("form")?.querySelector(".status");
     if(status&&!status.textContent){
       const failed=draft.items.filter(item=>item.lastError).length;
       status.textContent=`已恢复 ${draft.items.length} 张待上传图片${failed?`，其中 ${failed} 张可重试`:""}。`
     }
   }
+}
+async function abandonContentImageDraft(owner,key){
+  const draft=contentImageDraft(key);if(!draft)return;
+  await Promise.all(draft.items.map(item=>discardUploadedMediaItem(item,draft.uploadRequestId))).catch(()=>{});
+  draft.items.forEach(revokeContentImageItem);draft.items=[];draft.uploadRequestId="";draft.context=null;renderContentImageEditor(key);
+  await mediaDraftStore.delete(owner,key)
 }
 function renderContentImageEditor(key){
   const editor=document.querySelector(`[data-content-image-editor="${CSS.escape(key)}"]`),draft=contentImageDraft(key);if(!editor||!draft)return;
@@ -228,7 +461,7 @@ function renderContentImageEditor(key){
 function resetContentImageEditor(key,paths=[],{forget=true}={}){
   const draft=contentImageDraft(key);if(!draft)return;
   const staleItems=forget?draft.items.filter(item=>item.uploadedPath):[];
-  draft.items.forEach(revokeContentImageItem);draft.items=[...new Set(paths)].slice(0,2).map(path=>({path}));draft.uploadRequestId="";
+  draft.items.forEach(revokeContentImageItem);draft.items=[...new Set(paths)].slice(0,2).map(path=>({path}));draft.uploadRequestId="";draft.context=null;
   const input=document.querySelector(`[data-content-image-editor="${CSS.escape(key)}"] input[type="file"]`);if(input)input.value="";
   renderContentImageEditor(key);
   if(forget){
@@ -237,6 +470,11 @@ function resetContentImageEditor(key,paths=[],{forget=true}={}){
       currentUser?.id&&persistentContentImageKeys.has(key)?mediaDraftStore.delete(currentUser.id,key):Promise.resolve()
     ]).catch(()=>{})
   }
+}
+async function clearSubmittedContentImageDraft(key){
+  const draft=contentImageDraft(key);if(!draft)return;
+  draft.items.forEach(revokeContentImageItem);draft.items=[];draft.uploadRequestId="";draft.context=null;renderContentImageEditor(key);
+  if(currentUser?.id&&persistentContentImageKeys.has(key))await mediaDraftStore.delete(currentUser.id,key)
 }
 async function setContentImageFiles(key,files){
   const draft=contentImageDraft(key),replaced=draft.items.filter(item=>item.file),existing=draft.items.filter(item=>item.path);replaced.forEach(revokeContentImageItem);
@@ -268,6 +506,9 @@ async function discardUploadedMediaItem(item,fallbackRequestId=""){
     return result.discarded?.includes(attachmentPath)
   }catch{return false}
 }
+async function discardUploadedImagePath(attachmentPath,uploadRequestId){
+  return discardUploadedMediaItem({uploadedPath:attachmentPath,uploadRequestId})
+}
 async function discardContentImageUploads(key,uploadedPaths){
   if(!uploadedPaths.length)return;
   const draft=contentImageDraft(key),targets=draft.items.filter(item=>uploadedPaths.includes(item.uploadedPath));
@@ -276,6 +517,58 @@ async function discardContentImageUploads(key,uploadedPaths){
   }
   await persistContentImageDraft(key).catch(()=>{})
 }
+function uncertainMediaSubmission(error){
+  const status=Number(error?.status||0);
+  return !status||[408,425,429].includes(status)||status>=500
+}
+function viewerAttachmentPath(value){
+  return typeof value==="string"&&/^\/attachments\/[\w.-]+$/.test(value)?value:""
+}
+function revokeImageViewerUrl(){
+  if(imageViewer.objectUrl)URL.revokeObjectURL(imageViewer.objectUrl);
+  imageViewer.objectUrl="";
+  const image=$("#image-viewer-image");
+  image?.removeAttribute("src")
+}
+function renderImageViewerNavigation(){
+  const total=imageViewer.paths.length,index=imageViewer.index;
+  $("#image-viewer-counter").textContent=total?`${index+1} / ${total}`:"";
+  $("#image-viewer-prev").disabled=index<=0;
+  $("#image-viewer-next").disabled=index>=total-1
+}
+async function loadImageViewerImage(){
+  const modal=$("#image-viewer"),path=imageViewer.paths[imageViewer.index];
+  if(modal.hidden||!path)return;
+  const serial=++imageViewer.requestSerial,image=$("#image-viewer-image"),status=$("#image-viewer-status");
+  revokeImageViewerUrl();image.hidden=true;status.classList.remove("error");status.textContent="正在安全读取原图…";renderImageViewerNavigation();
+  try{
+    const blob=await apiClient.readBlob(path);
+    if(serial!==imageViewer.requestSerial||modal.hidden)return;
+    imageViewer.objectUrl=URL.createObjectURL(blob);image.src=imageViewer.objectUrl;image.alt=`原图 ${imageViewer.index+1}`;image.hidden=false;status.textContent=""
+  }catch(error){
+    if(serial!==imageViewer.requestSerial||modal.hidden)return;
+    status.classList.add("error");status.textContent=error.message||"图片读取失败"
+  }
+}
+function openImageViewer(button){
+  const path=viewerAttachmentPath(button?.dataset.imageViewerPath);
+  if(!path)return;
+  const group=button.closest(".content-originals,.daily-attachments"),paths=[...(group?.querySelectorAll("[data-image-viewer-path]")||[button])].map(item=>viewerAttachmentPath(item.dataset.imageViewerPath)).filter(Boolean);
+  imageViewer.paths=paths.length?paths:[path];imageViewer.index=Math.max(0,imageViewer.paths.indexOf(path));imageViewer.trigger=button;
+  $("#image-viewer").hidden=false;document.body.classList.add("image-viewer-open");renderImageViewerNavigation();$("#image-viewer-close").focus();void loadImageViewerImage()
+}
+function closeImageViewer({restoreFocus=true}={}){
+  const modal=$("#image-viewer");if(!modal||modal.hidden)return;
+  imageViewer.requestSerial+=1;revokeImageViewerUrl();modal.hidden=true;document.body.classList.remove("image-viewer-open");$("#image-viewer-status").textContent="";
+  const trigger=imageViewer.trigger;imageViewer.paths=[];imageViewer.index=0;imageViewer.trigger=null;
+  if(restoreFocus&&trigger?.isConnected)trigger.focus()
+}
+function moveImageViewer(step){
+  if($("#image-viewer").hidden)return;
+  const next=Math.max(0,Math.min(imageViewer.paths.length-1,imageViewer.index+step));
+  if(next===imageViewer.index)return;
+  imageViewer.index=next;void loadImageViewerImage()
+}
 function pendingContentImageTask(targetType,targetId){
   return(state.aiTasks||[]).find(task=>task.kind==="contentImageUnderstanding"&&task.contentTargetType===targetType&&task.contentTargetId===targetId&&["queued","running","cancelling"].includes(task.status))
 }
@@ -283,7 +576,7 @@ function contentImagesMarkup(resource,targetType){
   const paths=Array.isArray(resource?.attachmentPaths)?resource.attachmentPaths:[],understandings=Array.isArray(resource?.imageUnderstandings)?resource.imageUnderstandings:[];
   if(!paths.length&&!understandings.length)return"";
   const pending=pendingContentImageTask(targetType,resource.id);
-  return `<section class="content-attachments" data-content-attachments="${escapeHtml(targetType)}:${escapeHtml(resource.id)}">${paths.length?`<div class="content-originals">${paths.map((source,index)=>`<a href="${escapeHtml(appUrl(source))}" target="_blank" rel="noopener noreferrer" title="查看原图"><img src="${escapeHtml(appUrl(source))}" alt="图片原文 ${index+1}" loading="lazy"></a>`).join("")}</div>`:""}${understandings.map(item=>`<div class="content-understanding"><small>AI 图片理解 · 独立派生</small><div class="markdown-content">${renderMarkdown(item.content)}</div></div>`).join("")}${paths.length?`<div class="content-image-actions"><button type="button" data-content-image-understand="${escapeHtml(targetType)}" data-content-target-id="${escapeHtml(resource.id)}" data-content-version="${resource.version||1}" ${pending?"disabled":""}>✦ ${understandings.length?"重新理解":"理解图片"}</button><span class="content-image-task-status">${pending?"正在后台理解…":""}</span></div>`:""}</section>`
+  return `<section class="content-attachments" data-content-attachments="${escapeHtml(targetType)}:${escapeHtml(resource.id)}">${paths.length?`<div class="content-originals">${paths.map((source,index)=>`<button class="content-original-button" type="button" data-image-viewer-path="${escapeHtml(source)}" title="查看原图 ${index+1}" aria-label="查看原图 ${index+1}"><img src="${escapeHtml(appUrl(source))}" alt="图片原文 ${index+1}" loading="lazy"></button>`).join("")}</div>`:""}${understandings.map(item=>`<div class="content-understanding"><small>AI 图片理解 · 独立派生</small><div class="markdown-content">${renderMarkdown(item.content)}</div></div>`).join("")}${paths.length?`<div class="content-image-actions"><button type="button" data-content-image-understand="${escapeHtml(targetType)}" data-content-target-id="${escapeHtml(resource.id)}" data-content-version="${resource.version||1}" ${pending?"disabled":""}>✦ ${understandings.length?"重新理解":"理解图片"}</button><span class="content-image-task-status">${pending?"正在后台理解…":""}</span></div>`:""}</section>`
 }
 function contentImageResource(targetType,targetId){
   if(targetType==="capture")return(state.captures||[]).find(item=>item.id===targetId)||null;
@@ -383,7 +676,7 @@ function syncBookReadingDates(){
   end.setCustomValidity(start.value&&end.value&&end.value<start.value?"结束日期不能早于开始日期":"");
 }
 function resetBookForm(){
-  editingBookId="";$("#book-form").reset();$("#book-reading-start").value=localDateKey();syncBookReadingDates();$("#book-image-path").value="";resetBookImage("cover");resetBookImage("recognition");$("#book-form-title").textContent="创建书目";$("#book-submit").textContent="创建书目";$("#book-edit-cancel").hidden=true;$("#book-parse-status").textContent="";
+  editingBookId="";delete $("#book-form").dataset.requestId;$("#book-form").reset();$("#book-reading-start").value=localDateKey();syncBookReadingDates();$("#book-image-path").value="";resetBookImage("cover");resetBookImage("recognition");$("#book-form-title").textContent="创建书目";$("#book-submit").textContent="创建书目";$("#book-edit-cancel").hidden=true;$("#book-parse-status").textContent="";
 }
 function openBookEditor(book){
   editingBookId=book.id;activeBookId="";activeBookFeatureNoteId="";bookDetailCondensed=false;bookCreatorOpen=true;
@@ -398,30 +691,279 @@ function openBookEditor(book){
 
 const dailyTypeMeta={sleep:{label:"睡眠",save:"保存睡眠"},heartRate:{label:"心率",save:"保存心率"},weight:{label:"体重",save:"保存体重"},exercise:{label:"运动",save:"保存运动"}};
 let latestHealthRequest=0;
-function resetHealthImages(){
+const healthDraftKey=(type,date)=>type==="weight"?"health:weight:batch":`health:${type}:${date}`;
+const healthImageDraft=(type=activeDailyType)=>healthImageDrafts[type];
+function healthDraftStatus(type,draft){
+  if(type==="weight"){
+    if(draft.items.some(item=>item.submissionOperationId))return"部分体重记录已在待同步队列，其余截图仍可继续核对。";
+    if(draft.items.some(item=>item.recognition))return"已恢复识别结果，请核对后保存。";
+    return draft.items.length?`已恢复 ${draft.items.length} 张待识别截图。`:""
+  }
+  return draft.submissionOperationId?"日录已在待同步队列，截图保留到服务端确认。":draft.result?"已恢复识别结果，请核对后保存。":draft.items.length?`已恢复 ${draft.items.length} 张待识别截图。`:""
+}
+async function persistHealthImageDraft(type=activeDailyType){
+  const owner=currentUser?.id,draft=healthImageDraft(type);if(!owner||!draft)return;
+  if(!draft.items.length){await mediaDraftStore.delete(owner,healthDraftKey(type,draft.date||activeDate));return}
+  await mediaDraftStore.put({
+    owner,id:healthDraftKey(type,draft.date),type,date:draft.date,result:draft.result,submissionOperationId:draft.submissionOperationId||"",activeIndex:draft.activeIndex||0,
+    updatedAt:new Date().toISOString(),
+    items:draft.items.map(item=>({
+      blob:item.file,name:item.file?.name||"image",type:item.file?.type||"application/octet-stream",lastModified:Number(item.file?.lastModified)||Date.now(),
+      itemId:item.itemId||"",assignedDate:item.assignedDate||"",revision:Number(item.revision)||1,status:item.status||"selected",
+      recognition:item.recognition||null,recognitionRequestId:item.recognitionRequestId||"",createRequestId:item.createRequestId||"",
+      submissionOperationId:item.submissionOperationId||"",recognizedDate:item.recognizedDate||"",dateMismatch:Boolean(item.dateMismatch),
+      recognitionError:item.recognitionError||null,reviewValues:item.reviewValues||null,
+      uploadRequestId:item.uploadRequestId||"",uploadedPath:item.uploadedPath||"",lastError:item.lastError||null
+    }))
+  })
+}
+function applyHealthRecognitionResult(type,result){
+  const form=dailyForm(type);if(!form||!result)return;
+  let normalized=result;
+  if(type==="exercise"){const{description,...rest}=result;normalized={...rest,...(!result.recognitionDescription&&description?{recognitionDescription:description}:{})}}
+  for(const [key,value]of Object.entries(normalized)){if(["attachmentPaths","date"].includes(key)||!form.elements[key])continue;fillDailyField(form.elements[key],value)}
+  form.elements.attachmentPaths.value=JSON.stringify(result.attachmentPaths||[]);
+  const recognizedTime=result.wakeTime||result.measuredAt||result.startedAt;
+  if(recognizedTime){setOccurrenceMode(form.elements.occurredAt,"manual");fillDailyField(form.elements.occurredAt,recognizedTime)}
+  else if(result.date){setOccurrenceMode(form.elements.occurredAt,"manual");form.elements.occurredAt.value=localDateTimeForDate(result.date)}
+  form.querySelectorAll(".daily-details").forEach(details=>details.open=[...details.querySelectorAll("input")].some(input=>input.value!==""))
+}
+async function restoreHealthImageDrafts(owner,date=activeDate){
+  if(!owner)return;
+  const operations=new Map((await requestCoordinator.list(owner)).map(record=>[record.operationId,record]));
+  for(const type of Object.keys(dailyTypeMeta)){
+    let stored=await mediaDraftStore.get(owner,healthDraftKey(type,date)),legacyWeightDraft=false;
+    if(type==="weight"&&!stored?.items?.length){stored=await mediaDraftStore.get(owner,`health:weight:${date}`);legacyWeightDraft=Boolean(stored?.items?.length)}
+    if(!stored?.items?.length)continue;
+    const draft=healthImageDraft(type);draft.date=type==="weight"?(stored.date||date):date;draft.result=stored.result||null;draft.submissionOperationId=stored.submissionOperationId||"";draft.activeIndex=Number(stored.activeIndex)||0;
+    draft.items=stored.items.slice(0,type==="sleep"?2:type==="weight"?WEIGHT_BATCH_MAX_ITEMS:1).map((item,index)=>{
+      const file=typeof File==="function"?new File([item.blob],item.name||"image",{type:item.type||item.blob?.type||"",lastModified:Number(item.lastModified)||Date.now()}):item.blob;
+      return{
+        file,itemId:item.itemId||crypto.randomUUID(),assignedDate:item.assignedDate||stored.date||date,revision:Number(item.revision)||1,
+        status:item.status||((item.recognition||index===0&&stored.result)?"review":"selected"),
+        recognition:item.recognition||index===0&&stored.result||null,recognitionRequestId:item.recognitionRequestId||"",
+        createRequestId:item.createRequestId||"",submissionOperationId:item.submissionOperationId||"",
+        recognizedDate:item.recognizedDate||"",dateMismatch:Boolean(item.dateMismatch),recognitionError:item.recognitionError||null,
+        reviewValues:item.reviewValues||null,
+        uploadRequestId:item.uploadRequestId||"",uploadedPath:item.uploadedPath||"",lastError:item.lastError||null
+      }
+    });
+    if(type==="weight"){
+      draft.items=draft.items.filter(item=>{
+        const operation=item.submissionOperationId?operations.get(item.submissionOperationId):null;
+        return operation?.status!=="committed"
+      });
+      for(const item of draft.items){
+        const operation=item.submissionOperationId?operations.get(item.submissionOperationId):null;
+        if(["failed","conflict"].includes(operation?.status)){item.submissionOperationId="";item.createRequestId="";item.status=operation.status}
+      }
+      draft.activeIndex=Math.max(0,Math.min(draft.activeIndex,draft.items.length-1))
+    }else{
+      const operation=draft.submissionOperationId?operations.get(draft.submissionOperationId):null;
+      if(operation?.status==="committed"){await discardHealthImageDraft(type);continue}
+      if(["failed","conflict"].includes(operation?.status)){draft.submissionOperationId="";await persistHealthImageDraft(type)}
+    }
+    healthFiles[type]=draft.items.map(item=>item.file);
+    const form=dailyForm(type);
+    if(type!=="weight"&&draft.submissionOperationId&&form){form.dataset.requestId=draft.submissionOperationId;form.querySelector('[type="submit"]').disabled=true}
+    if(type!=="weight"&&draft.result)applyHealthRecognitionResult(type,draft.result)
+    if(legacyWeightDraft){await persistHealthImageDraft("weight");await mediaDraftStore.delete(owner,`health:weight:${date}`)}
+  }
+  renderHealthUploader();
+  applyActiveWeightBatchItem();
+  const active=healthImageDraft(),message=healthDraftStatus(activeDailyType,active);if(message)$("#health-parse-status").textContent=message
+}
+async function discardHealthImageDraft(type=activeDailyType,{deleteStored=true}={}){
+  const draft=healthImageDraft(type),date=draft.date||activeDate;
+  await Promise.all(draft.items.map(item=>discardUploadedMediaItem(item))).catch(()=>{});
+  if(deleteStored&&currentUser?.id)await mediaDraftStore.delete(currentUser.id,healthDraftKey(type,date));
+  Object.assign(draft,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0});healthFiles[type]=[]
+}
+async function finalizeHealthDraftOperation(operationId){
+  if(!operationId)return;
+  for(const type of Object.keys(dailyTypeMeta)){
+    const draft=healthImageDraft(type);
+    if(type==="weight"){
+      const index=draft.items.findIndex(item=>item.submissionOperationId===operationId);if(index<0)continue;
+      draft.items.splice(index,1);draft.activeIndex=nextWeightBatchIndex(draft.items,index);healthFiles.weight=draft.items.map(item=>item.file);
+      if(draft.items.length)await persistHealthImageDraft(type);else if(currentUser?.id)await mediaDraftStore.delete(currentUser.id,healthDraftKey(type,draft.date||activeDate));
+      renderHealthUploader();if(draft.items.length)applyActiveWeightBatchItem();else resetDailyForm("weight");continue
+    }
+    if(draft.submissionOperationId!==operationId)continue;
+    await discardHealthImageDraft(type);
+    if(type===activeDailyType){const form=dailyForm(type);if(form?.dataset.requestId===operationId){delete form.dataset.requestId;resetDailyForm(type)}resetHealthImages({forget:false})}
+  }
+}
+async function releaseHealthDraftOperation(operationId){
+  if(!operationId)return;
+  for(const type of Object.keys(dailyTypeMeta)){
+    const draft=healthImageDraft(type);
+    if(type==="weight"){
+      const item=draft.items.find(value=>value.submissionOperationId===operationId);if(!item)continue;
+      item.submissionOperationId="";item.createRequestId="";item.status="failed";await persistHealthImageDraft(type);renderHealthUploader();applyActiveWeightBatchItem();continue
+    }
+    if(draft.submissionOperationId!==operationId)continue;
+    draft.submissionOperationId="";await persistHealthImageDraft(type);
+    const form=dailyForm(type);if(form)form.querySelector('[type="submit"]').disabled=false
+  }
+}
+async function healthImagePaths(type,date){
+  const draft=healthImageDraft(type);if(draft.date!==date)throw new Error("截图所属日期已变化，请重新选择");
+  const result=await uploadPendingMediaItems({
+    items:draft.items,
+    upload:async(file,idempotencyKey)=>{
+      const [image]=await imageDataUrls([file]);
+      return(await uploadOriginalImages({request,images:[image],idempotencyKey}))[0]
+    },
+    onProgress:async items=>{draft.items=items;await persistHealthImageDraft(type)}
+  });
+  draft.items=result.items;await persistHealthImageDraft(type);
+  return result
+}
+function weightBatchStatus(item,index){
+  if(item.submissionOperationId||item.status==="queued")return"待同步";
+  if(item.status==="recognizing")return"正在识别";
+  if(item.status==="uploading")return"正在上传";
+  if(item.status==="conflict")return"同步冲突，核对后重试";
+  if(item.recognitionError||item.lastError)return item.recognitionError?.message||item.lastError?.message||"处理失败，可重试";
+  if(item.recognition)return item.dateMismatch?`识别日期 ${item.recognizedDate}，请核对`:"已识别，待核对";
+  return `第 ${index+1} 张 · 待识别`
+}
+function captureActiveWeightBatchItem(){
+  const draft=healthImageDraft("weight"),item=draft.items[draft.activeIndex],form=dailyForm("weight");
+  if(!item?.recognition||form?.dataset.weightBatchItemId!==item.itemId)return;
+  item.reviewValues=Object.fromEntries(new FormData(form).entries());
+  item.reviewValues.occurredAt=form.elements.occurredAt.value;
+  item.reviewValues.occurrenceMode=form.elements.occurredAt.dataset.occurrenceMode||"manual"
+}
+function applyActiveWeightBatchItem(){
+  if(activeDailyType!=="weight")return;
+  const draft=healthImageDraft("weight"),item=draft.items[draft.activeIndex],form=dailyForm("weight");
+  if(!form||!item)return;
+  delete form.dataset.requestId;delete form.dataset.weightBatchItemId;resetDailyForm("weight");
+  if(!item.recognition){
+    form.querySelector('[type="submit"]').disabled=true;
+    form.querySelector(".status").textContent=item?.recognitionError?.message||"选择已识别的截图后核对并保存。";
+    return
+  }
+  applyHealthRecognitionResult("weight",{...item.recognition,attachmentPaths:[item.uploadedPath]});
+  const values=item.reviewValues||{};
+  for(const[key,value]of Object.entries(values)){
+    if(["recordId","attachmentPaths","occurrenceMode"].includes(key)||!form.elements[key])continue;
+    if(key==="clothing"){[...form.elements.clothing].forEach(input=>input.checked=input.value===value);continue}
+    fillDailyField(form.elements[key],value)
+  }
+  const recognizedTime=String(values.occurredAt||item.recognition.measuredAt||"");
+  const clock=/T(\d{2}:\d{2}(?::\d{2})?)/.exec(recognizedTime)?.[1]||localDateTimeForDate(item.assignedDate).slice(11);
+  setOccurrenceMode(form.elements.occurredAt,"manual");form.elements.occurredAt.value=`${item.assignedDate}T${clock}`;
+  form.elements.attachmentPaths.value=JSON.stringify([item.uploadedPath]);form.dataset.weightBatchItemId=item.itemId;
+  form.querySelector('[type="submit"]').textContent=draft.items.length>1?`保存第 ${draft.activeIndex+1} 张`:"保存体重";
+  form.querySelector('[type="submit"]').disabled=Boolean(item.submissionOperationId);
+  form.querySelector(".status").textContent=item.dateMismatch?`截图识别日期为 ${item.recognizedDate}，当前归入 ${item.assignedDate}；请确认日期后保存。`:"请核对当前截图的日期和指标后保存。"
+}
+async function uploadWeightBatchItem(draft,index){
+  const item=draft.items[index],itemId=item.itemId;
+  const uploaded=await uploadPendingMediaItems({
+    items:[item],
+    upload:async(file,idempotencyKey)=>{
+      const [image]=await imageDataUrls([file]);
+      return(await uploadOriginalImages({request,images:[image],idempotencyKey}))[0]
+    },
+    onProgress:async items=>{
+      const current=draft.items.findIndex(value=>value.itemId===itemId);
+      if(current<0)return;
+      draft.items[current]={...draft.items[current],...items[0]};await persistHealthImageDraft("weight")
+    }
+  });
+  const current=draft.items.findIndex(value=>value.itemId===itemId);
+  if(current<0)throw new Error("这张截图已从批次移除");
+  draft.items[current]={...draft.items[current],...uploaded.items[0]};
+  return draft.items[current]
+}
+async function recognizeWeightBatch({serial,owner,session,status,forceActive=false}){
+  const draft=healthImageDraft("weight");let completed=0,failed=0;
+  for(let index=0;index<draft.items.length;index+=1){
+    let item=draft.items[index];
+    if((item.recognition&&!(forceActive&&index===draft.activeIndex))||item.submissionOperationId)continue;
+    if(serial!==healthParseSerial||owner!==currentUser?.id||session!==sessionSerial)return;
+    item.status="uploading";item.recognitionError=null;renderHealthUploader();await persistHealthImageDraft("weight");
+    try{
+      item=await uploadWeightBatchItem(draft,index);
+      const revision=item.revision,requestId=forceActive&&index===draft.activeIndex?crypto.randomUUID():item.recognitionRequestId||crypto.randomUUID(),targetId=`daily:weight:${item.itemId}:${item.assignedDate}`;
+      item.recognitionRequestId=requestId;item.status="recognizing";renderHealthUploader();await persistHealthImageDraft("weight");
+      const result=await request("/api/images/parse",{method:"POST",body:JSON.stringify({requestId,targetId,inputVersion:revision,kind:"weight",referenceDate:item.assignedDate,attachmentPaths:[item.uploadedPath]})});
+      const current=draft.items.find(value=>value.itemId===item.itemId);
+      if(serial!==healthParseSerial||owner!==currentUser?.id||session!==sessionSerial||!current||(result.requestId&&result.requestId!==requestId)||(result.targetId&&result.targetId!==targetId)||(Object.hasOwn(result,"inputVersion")&&Number(result.inputVersion)!==revision)){
+        if(owner===currentUser?.id&&session===sessionSerial)status.textContent="识别已完成，但当前表单已经变化或截图日期已调整，未自动回填。";
+        return
+      }
+      Object.assign(current,applyWeightBatchRecognition(current,{...result,attachmentPaths:[current.uploadedPath]},{requestId,expectedRevision:revision}).item);completed+=1
+    }catch(error){
+      const current=draft.items.find(value=>value.itemId===item.itemId);if(!current)continue;
+      current.status="failed";current.recognitionError={message:error.message||"识别失败"};failed+=1
+    }
+    await persistHealthImageDraft("weight");renderHealthUploader()
+  }
+  const firstReview=draft.items.findIndex(item=>item.recognition&&!item.submissionOperationId);
+  if(firstReview>=0)draft.activeIndex=firstReview;
+  await persistHealthImageDraft("weight");renderHealthUploader();applyActiveWeightBatchItem();
+  status.textContent=failed?`${completed} 张已识别，${failed} 张失败；修正后可直接重试失败项。`:`${completed} 张已逐图识别，请逐项核对日期和指标后保存。`
+}
+async function removeWeightBatchItem(index,{discard=true}={}){
+  const draft=healthImageDraft("weight");captureActiveWeightBatchItem();
+  const[item]=draft.items.splice(index,1);if(!item)return;
+  if(discard)await discardUploadedMediaItem(item).catch(()=>{});
+  draft.activeIndex=nextWeightBatchIndex(draft.items,index);healthFiles.weight=draft.items.map(value=>value.file);
+  if(draft.items.length)await persistHealthImageDraft("weight");
+  else if(currentUser?.id)await mediaDraftStore.delete(currentUser.id,healthDraftKey("weight",draft.date||activeDate));
+  renderHealthUploader();if(draft.items.length)applyActiveWeightBatchItem();else resetDailyForm("weight")
+}
+function resetHealthImages({forget=true}={}){
   healthParseSerial+=1;
+  const type=activeDailyType,draft=healthImageDraft(type);
   healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=[];
-  healthFiles[activeDailyType]=[];$("#health-images").value="";$("#health-image-previews").innerHTML="";$("#health-upload-box").classList.remove("has-image","dragging");$("#parse-health-images").disabled=true;$("#health-parse-status").textContent="";
+  healthFiles[type]=[];$("#health-images").value="";$("#health-image-previews").innerHTML="";$("#health-upload-box").classList.remove("has-image","dragging");$("#parse-health-images").disabled=true;$("#health-parse-status").textContent="";
+  if(forget)void discardHealthImageDraft(type).catch(()=>{});
+  else Object.assign(draft,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0})
 }
 function renderHealthUploader(){
   const visible=Boolean(dailyTypeMeta[activeDailyType]),workflow=$("#health-image-workflow");workflow.hidden=!visible;if(!visible)return;
-  const max=activeDailyType==="sleep"?2:1,files=healthFiles[activeDailyType]||[];
-  $("#health-images").multiple=max>1;$("#health-upload-title").textContent=`优先上传 ${max===2?"1–2":"1"} 张${dailyTypeMeta[activeDailyType].label}截图`;
+  const draft=healthImageDraft(),max=activeDailyType==="sleep"?2:activeDailyType==="weight"?WEIGHT_BATCH_MAX_ITEMS:1,files=healthFiles[activeDailyType]||[];
+  $("#health-images").multiple=max>1;$("#health-upload-title").textContent=activeDailyType==="weight"?`选择 1–${max} 张体重截图`:`优先上传 ${max===2?"1–2":"1"} 张${dailyTypeMeta[activeDailyType].label}截图`;
   const hints={sleep:"总览与详情可一起识别",heartRate:"包含日视图与今日概览",weight:"体重或体成分报告，未显示的字段留空",exercise:"运动详情，项目、时长与心率可一起识别"};
-  $("#health-upload-hint").textContent=`点击、粘贴或拖入 · ${hints[activeDailyType]} · 单张 8 MB · 批次合计 48 MB`;
+  $("#health-upload-hint").textContent=`点击、粘贴或拖入 · ${hints[activeDailyType]}${activeDailyType==="weight"?" · 每张明确对应日期":""} · 单张 8 MB · 批次合计 48 MB`;
   healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=files.map(file=>URL.createObjectURL(file));
-  $("#health-image-previews").innerHTML=files.map((file,index)=>`<figure><img src="${healthPreviewUrls[index]}" alt="待识别截图 ${index+1}"><figcaption>${escapeHtml(file.name||`截图 ${index+1}`)} · ${formatBytes(file.size)}</figcaption><button type="button" data-health-image-remove="${index}" aria-label="移除截图 ${index+1}">×</button></figure>`).join("");
-  $("#health-upload-box").classList.toggle("has-image",files.length>0);$("#parse-health-images").disabled=!files.length;
+  $("#health-image-previews").classList.toggle("weight-batch",activeDailyType==="weight");
+  $("#health-image-previews").innerHTML=files.map((file,index)=>{
+    if(activeDailyType!=="weight")return`<figure><img src="${healthPreviewUrls[index]}" alt="待识别截图 ${index+1}"><figcaption>${escapeHtml(file.name||`截图 ${index+1}`)} · ${formatBytes(file.size)}</figcaption><button type="button" data-health-image-remove="${index}" aria-label="移除截图 ${index+1}">×</button></figure>`;
+    const item=draft.items[index],active=index===draft.activeIndex;
+    return`<figure class="weight-batch-item${active?" active":""}${item?.recognitionError||item?.lastError?" failed":""}">
+      <button class="weight-batch-select" type="button" data-weight-batch-select="${index}" aria-pressed="${active}" aria-label="核对第 ${index+1} 张体重截图"><img src="${healthPreviewUrls[index]}" alt=""><span><b>${escapeHtml(file.name||`截图 ${index+1}`)}</b><small>${escapeHtml(weightBatchStatus(item,index))}</small></span></button>
+      <label class="weight-batch-date"><span>对应日期</span><input type="date" data-weight-batch-date="${index}" value="${escapeHtml(item?.assignedDate||activeDate)}" ${latestHealthRequest||item?.submissionOperationId?"disabled":""}></label>
+      <button class="weight-batch-remove" type="button" data-health-image-remove="${index}" aria-label="移除第 ${index+1} 张截图" ${latestHealthRequest||item?.submissionOperationId?"disabled":""}>×</button>
+    </figure>`
+  }).join("");
+  $("#health-upload-box").classList.toggle("has-image",files.length>0);
+  $("#parse-health-images").textContent=activeDailyType==="weight"?(draft.items.some(item=>item.recognitionError||!item.recognition)?"识别待处理截图":"重新识别当前截图"):"识别并回填";
+  $("#parse-health-images").disabled=!files.length||Boolean(latestHealthRequest)||activeDailyType==="weight"&&draft.items.every(item=>item.submissionOperationId);
 }
 function setHealthImages(files,source="已选择",append=false){
+  const status=$("#health-parse-status"),type=activeDailyType,max=type==="sleep"?2:type==="weight"?WEIGHT_BATCH_MAX_ITEMS:1,draft=healthImageDraft(type);
+  if(latestHealthRequest){status.textContent="正在识别当前截图，请完成后再替换。";return false}
   healthParseSerial+=1;
-  const status=$("#health-parse-status"),max=activeDailyType==="sleep"?2:1;
-  try{const next=append?[...(healthFiles[activeDailyType]||[]),...files]:[...files];healthFiles[activeDailyType]=validatedImageFiles(next,max);renderHealthUploader();status.textContent=`${source}${append?"已追加":""} · ${healthFiles[activeDailyType].length} 张图片已就绪，识别后仍可修改。`;return true}catch(error){status.textContent=error.message;return false}
+  try{
+    const current=type==="weight"||draft.date===activeDate?draft.items:[],next=append?[...current.map(item=>item.file),...files]:[...files],validated=validatedImageFiles(next,max),retained=new Set(validated),removed=current.filter(item=>!retained.has(item.file));
+    const created=type==="weight"?createWeightBatchItems(validated.filter(file=>!current.some(item=>item.file===file)),{assignedDate:activeDate}):[];
+    draft.date=activeDate;draft.result=null;draft.submissionOperationId="";draft.items=validated.map(file=>current.find(item=>item.file===file)||(type==="weight"?created.shift():{file}));draft.activeIndex=Math.min(draft.activeIndex||0,Math.max(0,draft.items.length-1));healthFiles[type]=validated;
+    if(type==="weight")applyActiveWeightBatchItem();renderHealthUploader();
+    void Promise.all([persistHealthImageDraft(type),...removed.map(item=>discardUploadedMediaItem(item))]).catch(()=>{});
+    status.textContent=type==="weight"?`${source}${append?"已追加":""} · ${healthFiles[type].length} 张图片已进入批次，请先确认每张对应日期。`:`${source}${append?"已追加":""} · ${healthFiles[type].length} 张图片已就绪，识别后仍可修改。`;return true
+  }catch(error){status.textContent=error.message;return false}
 }
 function dailyForm(type=activeDailyType){return $(`[data-daily-form="${CSS.escape(type)}"]`)}
 function resetDailyForm(type=activeDailyType){
   healthParseSerial+=1;latestHealthRequest=0;
-  const form=dailyForm(type);if(!form)return;form.reset();form.elements.recordId.value="";if(form.elements.attachmentPaths)form.elements.attachmentPaths.value="";resetOccurrenceInput(form.elements.occurredAt);form.querySelector('[type="submit"]').textContent=dailyTypeMeta[type].save;form.querySelector("[data-daily-cancel]").hidden=true;form.querySelector(".status").textContent="";
+  const form=dailyForm(type);if(!form)return;form.reset();delete form.dataset.weightBatchItemId;form.elements.recordId.value="";if(form.elements.attachmentPaths)form.elements.attachmentPaths.value="";resetOccurrenceInput(form.elements.occurredAt);form.querySelector('[type="submit"]').textContent=dailyTypeMeta[type].save;form.querySelector('[type="submit"]').disabled=false;form.querySelector("[data-daily-cancel]").hidden=true;form.querySelector(".status").textContent="";
   for(const key of["verification","trendSegments"])if(form.elements[key])form.elements[key].value="";
   form.querySelectorAll(".daily-details").forEach(details=>details.open=false);
   if(type===activeDailyType){$("#health-parse-status").textContent="";$("#parse-health-images").disabled=!(healthFiles[type]||[]).length}
@@ -429,10 +971,10 @@ function resetDailyForm(type=activeDailyType){
 }
 function switchDailyType(type){
   if(!dailyTypeMeta[type])return;healthParseSerial+=1;activeDailyType=type;
-  latestHealthRequest=0;$("#health-parse-status").textContent="";
+  latestHealthRequest=0;const draft=healthImageDraft(type);
   $$("[data-daily-tab]").forEach(button=>{const active=button.dataset.dailyTab===type;button.classList.toggle("active",active);button.setAttribute("aria-selected",String(active))});
   $$("[data-daily-form]").forEach(form=>{const active=form.dataset.dailyForm===type;form.hidden=!active;form.classList.toggle("active",active)});
-  renderHealthUploader();renderDailyRecords();
+  renderHealthUploader();if(type==="weight")applyActiveWeightBatchItem();$("#health-parse-status").textContent=healthDraftStatus(type,draft);renderDailyRecords();
 }
 const durationLabel=value=>Number.isFinite(Number(value))?`${Math.floor(Number(value)/60)}小时${String(Math.round(Number(value)%60)).padStart(2,"0")}分`:"—";
 const valueLabel=(value,suffix="")=>value==null?"—":`${value}${suffix}`;
@@ -446,31 +988,76 @@ function dailyStructuredValues(item){
   const values=[...dailyForm(item.type).querySelectorAll("[data-health-metric]")].filter(field=>Number.isFinite(item[field.name]));
   return values.length?`<div class="daily-values">${values.map(field=>`<span><b>${escapeHtml(field.hasAttribute("data-duration")?secondsLabel(item[field.name]):item[field.name])}</b>${escapeHtml(field.closest("label").querySelector("span").textContent)}</span>`).join("")}</div>`:"";
 }
-function weightChart(records){
-  records=records.filter(item=>Number.isFinite(item.adjustedWeight)&&Number.isFinite(item.lower95)&&Number.isFinite(item.upper95));
-  if(!records.length)return"";
-  const items=[...records].sort((a,b)=>eventTimestamp(a).localeCompare(eventTimestamp(b))).slice(-30),width=900,height=220,left=48,right=24,top=18,bottom=40,values=items.flatMap(item=>[item.lower95,item.upper95,item.adjustedWeight]).filter(Number.isFinite),min=Math.floor((Math.min(...values)-.5)*2)/2,max=Math.ceil((Math.max(...values)+.5)*2)/2||min+1,x=index=>items.length===1?width/2:left+index*(width-left-right)/(items.length-1),y=value=>top+(max-value)*(height-top-bottom)/(max-min||1);
-  const grid=[min,(min+max)/2,max].map(value=>`<line x1="${left}" x2="${width-right}" y1="${y(value)}" y2="${y(value)}"/><text x="${left-8}" y="${y(value)+4}" text-anchor="end">${value.toFixed(1)}</text>`).join(""),marks=items.map((item,index)=>{const px=x(index),interval=item.clothing!=="none"?`<line class="weight-interval" x1="${px}" x2="${px}" y1="${y(item.upper95)}" y2="${y(item.lower95)}"/><line class="weight-cap" x1="${px-5}" x2="${px+5}" y1="${y(item.upper95)}" y2="${y(item.upper95)}"/><line class="weight-cap" x1="${px-5}" x2="${px+5}" y1="${y(item.lower95)}" y2="${y(item.lower95)}"/>`:"";return `${interval}<circle class="weight-point" cx="${px}" cy="${y(item.adjustedWeight)}" r="5"><title>${item.occurredOn} · 校正 ${item.adjustedWeight} kg${item.clothing!=="none"?` · 95% ${item.lower95}～${item.upper95} kg`:""}</title></circle><text class="weight-date" x="${px}" y="${height-14}" text-anchor="middle">${item.occurredOn.slice(5)}</text>`}).join("");
-  return `<div class="weight-chart-legend"><span><i></i>衣物校正值</span><span><i class="interval"></i>穿衣记录 95% 估计区间</span></div><svg class="weight-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="最近体重衣物校正值与95%估计区间"><g class="weight-grid">${grid}</g>${marks}</svg><p class="weight-chart-note">图中使用衣物校正值进行比较；区间来自固定衣物重量假设，不代表体脂秤测量误差或医学置信区间。</p>`;
+function weightSummaryValue(value,digits=1,suffix=""){
+  return Number.isFinite(value)?`${Number(value).toFixed(digits)}${suffix}`:"—"
 }
-function dailyRecordCard(item){
-  const labels={sleep:"睡眠",heartRate:"心率",weight:"体重",exercise:"运动"},source=item.source==="screenshot"?"截图识别":"手动记录";let body="";
+function dailyAttachmentsMarkup(item){
+  const paths=(Array.isArray(item?.attachmentPaths)?item.attachmentPaths:[]).map(viewerAttachmentPath).filter(Boolean);
+  return paths.length?`<div class="daily-attachments" aria-label="${escapeHtml(dailyTypeMeta[item.type]?.label||"健康")}截图">${paths.map((path,index)=>`<button type="button" data-image-viewer-path="${escapeHtml(path)}">查看截图 ${index+1}</button>`).join("")}</div>`:""
+}
+function weightRecordBody(item,actions,expanded=false){
+  const adjustedWeight=Number.isFinite(item.adjustedWeight)?item.adjustedWeight:item.measuredWeight;
+  const weightDetail=Number.isFinite(item.adjustedWeight)&&Number.isFinite(item.measuredWeight)
+    ?`<div class="weight-record-value"><strong>${item.adjustedWeight.toFixed(2)} kg</strong><span>秤上 ${item.measuredWeight.toFixed(2)} kg · ${item.clothing==="none"?"不穿衣":item.clothing==="light"?"轻便衣物":"厚重衣物"}</span>${item.clothing!=="none"&&Number.isFinite(item.lower95)&&Number.isFinite(item.upper95)?`<small>95% 估计区间 ${item.lower95.toFixed(2)}–${item.upper95.toFixed(2)} kg</small>`:""}</div>`
+    :`<p class="weight-model-note">总重量未填写 · 仅记录体成分或描述</p>`;
+  const description=item.description?`<p class="exercise-description">${escapeHtml(item.description)}</p>`:"";
+  const verification=item.verification?`<p class="weight-model-note">识别核对：${escapeHtml(item.verification)}</p>`:"";
+  const attachments=dailyAttachmentsMarkup(item);
+  return `<div class="weight-record-summary" role="group" aria-label="体重关键指标"><span class="primary"><b>${weightSummaryValue(adjustedWeight,2," kg")}</b><small>${Number.isFinite(item.adjustedWeight)?"体重（衣物校正）":"体重"}</small></span><span><b>${weightSummaryValue(item.bodyFatPercent,1,"%")}</b><small>体脂率</small></span><span><b>${weightSummaryValue(item.muscleMass,1," kg")}</b><small>肌肉量</small></span></div><details class="weight-record-details" ${expanded?"open":""}><summary>查看体成分与记录详情</summary><div class="weight-record-detail-body">${weightDetail}${dailyStructuredValues(item)}${description}${verification}${attachments}<footer>${actions}</footer></div></details>`
+}
+function weightChart(records){
+  const metrics={
+    weight:{label:"体重",unit:"kg",value:item=>Number.isFinite(item.adjustedWeight)?item.adjustedWeight:item.measuredWeight,interval:true},
+    bodyFatPercent:{label:"体脂率",unit:"%",value:item=>item.bodyFatPercent},
+    muscleMass:{label:"肌肉量",unit:"kg",value:item=>item.muscleMass}
+  },metric=metrics[activeWeightTrendMetric]||metrics.weight;
+  const controls=`<div class="weight-chart-heading"><div class="weight-trend-controls" role="group" aria-label="体重趋势指标">${Object.entries(metrics).map(([key,value])=>`<button type="button" data-weight-trend="${key}" class="${key===activeWeightTrendMetric?"active":""}" aria-pressed="${key===activeWeightTrendMetric}">${value.label}</button>`).join("")}</div><small>最近 30 条体重记录</small></div>`;
+  const recent=[...records].sort((a,b)=>(a.measuredAt||eventTimestamp(a)).localeCompare(b.measuredAt||eventTimestamp(b))).slice(-30);
+  const items=recent.map(item=>({...item,_trendAt:item.measuredAt||eventTimestamp(item),_trendValue:metric.value(item)})).filter(item=>Number.isFinite(item._trendValue));
+  if(!items.length)return`${controls}<p class="weight-chart-empty">当前记录没有可绘制的${metric.label}数据。</p>`;
+  const width=900,height=220,left=48,right=24,top=18,bottom=40,values=metric.interval?items.flatMap(item=>[item.lower95,item.upper95,item._trendValue]).filter(Number.isFinite):items.map(item=>item._trendValue),rawMin=Math.min(...values),rawMax=Math.max(...values),padding=rawMax===rawMin?Math.max(Math.abs(rawMin)*.02,.5):Math.max((rawMax-rawMin)*.12,.2),min=Math.max(0,rawMin-padding),max=rawMax+padding,times=items.map(item=>Date.parse(item._trendAt)).map((value,index)=>Number.isFinite(value)?value:index),firstTime=Math.min(...times),lastTime=Math.max(...times),x=index=>items.length===1||firstTime===lastTime?width/2:left+(times[index]-firstTime)*(width-left-right)/(lastTime-firstTime),y=value=>top+(max-value)*(height-top-bottom)/(max-min||1);
+  const grid=[min,(min+max)/2,max].map(value=>`<line x1="${left}" x2="${width-right}" y1="${y(value)}" y2="${y(value)}"/><text x="${left-8}" y="${y(value)+4}" text-anchor="end">${value.toFixed(1)}</text>`).join(""),marks=items.map((item,index)=>{const px=x(index),date=eventDate({occurredAt:item._trendAt}),interval=metric.interval&&item.clothing!=="none"&&Number.isFinite(item.lower95)&&Number.isFinite(item.upper95)?`<line class="weight-interval" x1="${px}" x2="${px}" y1="${y(item.upper95)}" y2="${y(item.lower95)}"/><line class="weight-cap" x1="${px-5}" x2="${px+5}" y1="${y(item.upper95)}" y2="${y(item.upper95)}"/><line class="weight-cap" x1="${px-5}" x2="${px+5}" y1="${y(item.lower95)}" y2="${y(item.lower95)}"/>`:"";return `${interval}<circle class="weight-point" cx="${px}" cy="${y(item._trendValue)}" r="5"><title>${date} · ${metric.label} ${item._trendValue} ${metric.unit}${interval?` · 95% ${item.lower95}～${item.upper95} kg`:""}</title></circle><text class="weight-date" x="${px}" y="${height-14}" text-anchor="middle">${date.slice(5)}</text>`}).join("");
+  const legend=metric.interval?`<div class="weight-chart-legend"><span><i></i>衣物校正值</span><span><i class="interval"></i>穿衣记录 95% 估计区间</span></div>`:`<div class="weight-chart-legend"><span><i></i>${metric.label}（${metric.unit}）</span></div>`;
+  const note=metric.interval?"图中使用衣物校正值；区间来自固定衣物重量假设，不代表体脂秤测量误差或医学置信区间。":"缺失记录不补零、不推算；横向位置按测量时间，日期不连续时保留真实间隔。";
+  return `${controls}${legend}<svg class="weight-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="最近${metric.label}趋势"><g class="weight-grid">${grid}</g>${marks}</svg><p class="weight-chart-note">${note}</p>`;
+}
+function healthMetricChart(records,type){
+  const metrics={
+    sleep:{label:"总睡眠",unit:"小时",value:item=>Number.isFinite(item.totalMinutes)?item.totalMinutes/60:null,title:item=>durationLabel(item.totalMinutes)},
+    heartRate:{label:"心率",unit:"bpm",value:item=>item.average,title:item=>Number.isFinite(item.average)?`平均 ${item.average} bpm`:`范围 ${item.minimum}–${item.maximum} bpm`,range:item=>[item.minimum,item.maximum]},
+    exercise:{label:"运动时长",unit:"分钟",value:item=>Number.isFinite(item.durationSeconds)?item.durationSeconds/60:null,title:item=>secondsLabel(item.durationSeconds)}
+  },metric=metrics[type];
+  if(!metric)return"";
+  const heading=`<div class="weight-chart-heading health-chart-heading"><strong>${metric.label}趋势</strong><small>最近 30 条${dailyTypeMeta[type].label}记录</small></div>`;
+  const recent=[...records].sort((a,b)=>eventTimestamp(a).localeCompare(eventTimestamp(b))).slice(-30),items=recent.map(item=>({...item,_trendAt:eventTimestamp(item),_trendValue:metric.value(item),_trendRange:metric.range?.(item)||[]})).filter(item=>Number.isFinite(item._trendValue)||(item._trendRange.length===2&&item._trendRange.every(Number.isFinite)));
+  if(!items.length)return`${heading}<p class="weight-chart-empty">当前记录没有可绘制的${metric.label}数据。</p>`;
+  const width=900,height=220,left=48,right=24,top=18,bottom=40,values=items.flatMap(item=>[item._trendValue,...item._trendRange].filter(Number.isFinite)),rawMin=Math.min(...values),rawMax=Math.max(...values),padding=rawMax===rawMin?Math.max(Math.abs(rawMin)*.05,1):Math.max((rawMax-rawMin)*.12,.5),min=Math.max(0,rawMin-padding),max=rawMax+padding,times=items.map(item=>Date.parse(item._trendAt)).map((value,index)=>Number.isFinite(value)?value:index),firstTime=Math.min(...times),lastTime=Math.max(...times),x=index=>items.length===1||firstTime===lastTime?width/2:left+(times[index]-firstTime)*(width-left-right)/(lastTime-firstTime),y=value=>top+(max-value)*(height-top-bottom)/(max-min||1);
+  const grid=[min,(min+max)/2,max].map(value=>`<line x1="${left}" x2="${width-right}" y1="${y(value)}" y2="${y(value)}"/><text x="${left-8}" y="${y(value)+4}" text-anchor="end">${value.toFixed(1)}</text>`).join(""),marks=items.map((item,index)=>{const px=x(index),date=eventDate({occurredAt:item._trendAt}),range=item._trendRange,interval=range.length===2&&range.every(Number.isFinite)?`<line class="health-range" x1="${px}" x2="${px}" y1="${y(range[1])}" y2="${y(range[0])}"/><line class="health-range-cap" x1="${px-5}" x2="${px+5}" y1="${y(range[1])}" y2="${y(range[1])}"/><line class="health-range-cap" x1="${px-5}" x2="${px+5}" y1="${y(range[0])}" y2="${y(range[0])}"/>`:"",point=Number.isFinite(item._trendValue)?`<circle class="weight-point" cx="${px}" cy="${y(item._trendValue)}" r="5"><title>${date} · ${metric.title(item)}</title></circle>`:"";return`${interval}${point}<text class="weight-date" x="${px}" y="${height-14}" text-anchor="middle">${date.slice(5)}</text>`}).join("");
+  const legend=type==="heartRate"?`<div class="weight-chart-legend"><span><i></i>平均心率</span><span><i class="range"></i>最低至最高</span></div>`:`<div class="weight-chart-legend"><span><i></i>${metric.label}（${metric.unit}）</span></div>`;
+  return`${heading}${legend}<svg class="weight-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="最近${metric.label}趋势"><g class="weight-grid">${grid}</g>${marks}</svg><p class="weight-chart-note">缺失记录不补零、不推算；横向位置按发生时间，日期不连续时保留真实间隔。</p>`
+}
+function dailyRecordChart(records,type=activeDailyType){return type==="weight"?weightChart(records):healthMetricChart(records,type)}
+function dailyRecordCard(item,{expanded=false}={}){
+  const labels={sleep:"睡眠",heartRate:"心率",weight:"体重",exercise:"运动"},source=item.source==="screenshot"?"截图识别":"手动记录",syncing=item._sync?.status;let body="";
+  const actions=syncing?`<span class="checkin-sync-state ${escapeHtml(syncing)}">${syncing==="pending"?"待同步":"正在同步"}</span>`:`<button type="button" data-daily-edit="${item.id}">编辑</button><button type="button" class="danger" data-daily-delete="${item.id}">删除</button>`;
   if(item.type==="sleep")body=`<div class="daily-values"><span><b>${durationLabel(item.totalMinutes)}</b>总睡眠</span><span><b>${valueLabel(item.deepMinutes," 分")}</b>深睡 ${valueLabel(item.deepPercent,"%")}</span><span><b>${valueLabel(item.lightMinutes," 分")}</b>浅睡 ${valueLabel(item.lightPercent,"%")}</span><span><b>${valueLabel(item.remMinutes," 分")}</b>快速眼动 ${valueLabel(item.remPercent,"%")}</span><span><b>${valueLabel(item.awakeCount," 次")}</b>清醒 · ${valueLabel(item.awakeMinutes," 分")}</span><span><b>${valueLabel(item.averageHeartRate)}</b>心率 · 血氧 ${valueLabel(item.averageOxygen,"%")} · 呼吸 ${valueLabel(item.respiratoryRate)}</span></div>`;
-  if(item.type==="heartRate")body=`<div class="daily-values"><span><b>${valueLabel(item.minimum)}–${valueLabel(item.maximum)}</b>心率范围</span><span><b>${valueLabel(item.average)}</b>平均</span><span><b>${valueLabel(item.resting)}</b>静息</span><span><b>${valueLabel(item.sleepAverage)}</b>睡眠平均</span></div>${item.trendAnalysis?`<p class="heart-trend">${escapeHtml(item.trendAnalysis)}</p>`:""}`;
-  if(item.type==="weight")body=Number.isFinite(item.adjustedWeight)&&Number.isFinite(item.measuredWeight)?`<div class="weight-record-value"><strong>${item.adjustedWeight.toFixed(2)} kg</strong><span>秤上 ${item.measuredWeight.toFixed(2)} kg · ${item.clothing==="none"?"不穿衣":item.clothing==="light"?"轻便衣物":"厚重衣物"}</span>${item.clothing!=="none"&&Number.isFinite(item.lower95)&&Number.isFinite(item.upper95)?`<small>95% 估计区间 ${item.lower95.toFixed(2)}–${item.upper95.toFixed(2)} kg</small>`:""}</div>`:`<p class="weight-model-note">总重量未填写 · 仅记录体成分或描述</p>`;
+  if(item.type==="heartRate")body=`<div class="daily-values"><span><b>${valueLabel(item.minimum)}–${valueLabel(item.maximum)}</b>心率范围</span><span><b>${valueLabel(item.average)}</b>平均</span><span><b>${valueLabel(item.resting)}</b>静息</span><span><b>${valueLabel(item.sleepAverage)}</b>睡眠平均</span></div>${item.trendAnalysis?`<details class="heart-trend-disclosure"><summary>查看当天趋势</summary><p class="heart-trend">${escapeHtml(item.trendAnalysis)}</p></details>`:""}`;
+  if(item.type==="weight")body=weightRecordBody(item,actions,expanded);
   if(item.type==="exercise"&&item.exerciseType)body=`<h4 class="exercise-type">${escapeHtml(item.exerciseType)}</h4>`;
-  if(["weight","exercise"].includes(item.type)){
+  if(item.type==="exercise"){
     body+=dailyStructuredValues(item);
-    if(item.description)body+=`<p class="exercise-description">${escapeHtml(item.description)}</p>`;
+    if(item.description)body+=`<section class="exercise-description user"><small>记下感受</small><p>${escapeHtml(item.description)}</p></section>`;
+    if(item.recognitionDescription)body+=`<section class="exercise-description derived"><small>AI 解析描述</small><p>${escapeHtml(item.recognitionDescription)}</p></section>`;
     if(item.verification)body+=`<p class="weight-model-note">识别核对：${escapeHtml(item.verification)}</p>`;
-    if(item.attachmentPaths?.length)body+=`<div class="daily-attachments">${item.attachmentPaths.map((url,index)=>`<a href="${escapeHtml(appUrl(url))}" target="_blank" rel="noopener noreferrer">查看截图 ${index+1}</a>`).join("")}</div>`;
   }
-  return `<article class="daily-record-entry" data-daily-record-id="${item.id}"><header><div><span>${labels[item.type]}</span><time>${escapeHtml(item.occurredOn)} · ${formatTime(eventTimestamp(item))}</time></div><small>${source}</small></header>${body}<footer><button type="button" data-daily-edit="${item.id}">编辑</button><button type="button" class="danger" data-daily-delete="${item.id}">删除</button></footer></article>`;
+  if(item.type!=="weight")body+=dailyAttachmentsMarkup(item);
+  return `<article class="daily-record-entry${syncing?" is-syncing":""}" data-daily-record-id="${item.id}"><header><div><span>${labels[item.type]}</span><time>${escapeHtml(item.occurredOn)} · ${formatTime(eventTimestamp(item))}</time></div><small>${source}</small></header>${body}${item.type==="weight"?"":`<footer>${actions}</footer>`}</article>`;
 }
 function renderDailyRecords(){
+  const expandedWeightRecords=new Set($$(".weight-record-details[open]").map(details=>details.closest("[data-daily-record-id]")?.dataset.dailyRecordId).filter(Boolean));
   const items=[...(state.dailyRecords||[])].filter(item=>item.type===activeDailyType).sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a)));
-  $("#daily-history-title").textContent=`${dailyTypeMeta[activeDailyType].label}记录`;$("#daily-history-count").textContent=`${items.length} 条`;$("#daily-record-chart").innerHTML=activeDailyType==="weight"?weightChart(items):"";
-  $("#daily-record-list").innerHTML=items.length?items.map(dailyRecordCard).join(""):empty(`还没有${dailyTypeMeta[activeDailyType].label}记录。`);
+  $("#daily-history-title").textContent=`${dailyTypeMeta[activeDailyType].label}记录`;$("#daily-history-count").textContent=`${items.length} 条`;$("#daily-record-chart").innerHTML=dailyRecordChart(items);
+  $("#daily-record-list").innerHTML=items.length?items.map(item=>dailyRecordCard(item,{expanded:expandedWeightRecords.has(item.id)})).join(""):empty(`还没有${dailyTypeMeta[activeDailyType].label}记录。`);
 }
 function editDailyRecord(id){
   const item=(state.dailyRecords||[]).find(record=>record.id===id);if(!item)return;switchDailyType(item.type);const form=dailyForm(item.type);resetDailyForm(item.type);form.elements.recordId.value=item.id;resetOccurrenceInput(form.elements.occurredAt,item);if(form.elements.attachmentPaths)form.elements.attachmentPaths.value=JSON.stringify(item.attachmentPaths||[]);
@@ -479,14 +1066,141 @@ function editDailyRecord(id){
   if(form.elements.bedtime)form.elements.bedtime.value=item.bedtime?toLocalDateTimeInput(item.bedtime):"";if(form.elements.wakeTime)form.elements.wakeTime.value=item.wakeTime?toLocalDateTimeInput(item.wakeTime):"";if(form.elements.trendSegments)form.elements.trendSegments.value=JSON.stringify(item.trendSegments||[]);
   form.querySelector('[type="submit"]').textContent="保存修改";form.querySelector("[data-daily-cancel]").hidden=false;form.querySelector(".status").textContent="正在编辑已有记录";form.scrollIntoView({behavior:"smooth",block:"center"});
 }
+function dailyFormSubmissionPayload(form,type){
+  const payload=Object.fromEntries(new FormData(form).entries());
+  Object.assign(payload,occurrenceFields(form.elements.occurredAt));
+  delete payload.recordId;payload.type=type;payload.attachmentPaths=payload.attachmentPaths?JSON.parse(payload.attachmentPaths):[];payload.source=payload.attachmentPaths.length?"screenshot":"manual";
+  if(payload.trendSegments){try{payload.trendSegments=JSON.parse(payload.trendSegments)}catch{payload.trendSegments=[]}}
+  form.querySelectorAll('input[type="number"]').forEach(input=>{payload[input.name]=input.value===""?null:Number(input.value)});
+  form.querySelectorAll("[data-duration]").forEach(input=>{payload[input.name]=input.value===""?null:input.value.split(":").reduce((sum,part)=>sum*60+Number(part),0)});
+  return payload
+}
 
 function setAnswerStatus(id,message,kind="working"){document.querySelectorAll(`[data-answer-chain="${CSS.escape(id)}"]`).forEach(button=>{let status=button.closest(".chain-expanded")?.querySelector(".card-action-status");if(!status){status=document.createElement("p");status.className="card-action-status";status.setAttribute("role","status");status.setAttribute("aria-live","polite");button.closest(".chain-expanded")?.append(status)}status.className=`card-action-status ${kind}`;status.textContent=message})}
 async function request(url,options={}){const answerId=url.match(/^\/api\/thoughts\/([^/]+)\/answer$/)?.[1];try{const result=await apiClient.request(url,options);if(answerId)setAnswerStatus(answerId,"回答已生成并保存。","success");return result}catch(error){if(answerId&&error.name!=="AbortError")setAnswerStatus(answerId,`未能生成：${error.message}，可重试。`,"error");throw error}}
+function syncDomainsFor(url){
+  const path=new URL(url,"https://local.invalid").pathname,routes=[
+    [/\/captures(?:\/|$)/,["captures"]],[/\/journals?(?:\/|$)/,["journals"]],[/\/checkins(?:\/|$)/,["checkins"]],
+    [/\/daily-records(?:\/|$)/,["dailyRecords"]],[/\/thought-chains(?:\/|$)/,["thoughts"]],[/\/books(?:\/|$)/,["books"]],
+    [/\/quotes(?:\/|$)/,["quotes"]],[/\/chats(?:\/|$)/,["chats"]],[/\/analyses(?:\/|$)/,["analyses"]],
+    [/\/experiments(?:\/|$)/,["experiments"]],[/\/custom-metrics(?:\/|$)/,["customMetrics"]],
+    [/\/(?:actions|habits|habit-checkins)(?:\/|$)/,["actions","habits","habitCheckins"]],
+    [/\/feedback(?:\/|$)/,["feedback"]],[/\/validation-ledger(?:\/|$)/,["validationLedger"]],
+    [/\/content-attachments(?:\/|$)/,["captures","journals","thoughts","books","quotes"]]
+  ];
+  return routes.find(([pattern])=>pattern.test(path))?.[1]||[]
+}
+function pendingProjectionSnapshot(projection){
+  if(!projection)return null;
+  if(["capture.create","record.create"].includes(projection.kind))return{kind:projection.kind,domain:projection.domain||"captures",temporaryId:projection.temporaryId};
+  if(projection.kind==="thought.chain.create")return{kind:projection.kind,domain:"thoughts",temporaryId:projection.temporaryId};
+  if(["record.update","record.delete"].includes(projection.kind)&&Array.isArray(state[projection.domain])){
+    const index=state[projection.domain].findIndex(item=>item.id===projection.id);
+    return index<0?null:{kind:projection.kind,domain:projection.domain,index,value:structuredClone(state[projection.domain][index])}
+  }
+  if(["book.note.update","book.note.delete"].includes(projection.kind)){
+    const book=(state.books||[]).find(item=>item.id===projection.bookId),index=book?.notes?.findIndex(item=>item.id===projection.id)??-1;
+    return index<0?null:{kind:projection.kind,domain:"books",bookId:projection.bookId,index,value:structuredClone(book.notes[index])}
+  }
+  if(["thought.chain.update","thought.chain.delete"].includes(projection.kind)){
+    const items=(state.thoughts||[]).map((value,index)=>({value,index})).filter(entry=>entry.value.id===projection.id||entry.value.relatedTo===projection.id);
+    return items.length?{kind:projection.kind,domain:"thoughts",id:projection.id,items:structuredClone(items)}:null
+  }
+  if(projection.kind==="discovery.status"){
+    const item=discoveryController?.getState().items.find(value=>value.id===projection.id);
+    return item?{kind:projection.kind,id:projection.id,value:structuredClone(item)}:null
+  }
+  return null
+}
+function restorePendingProjection(snapshot,operationId){
+  if(!snapshot)return false;
+  if(["capture.create","record.create"].includes(snapshot.kind)){
+    const collection=state[snapshot.domain];if(!Array.isArray(collection))return false;
+    const previousLength=collection.length;
+    state[snapshot.domain]=collection.filter(item=>item.id!==snapshot.temporaryId||item._sync?.operationId!==operationId);
+    if(state[snapshot.domain].length===previousLength)return false;
+    publishDomains(new Set([snapshot.domain]));return true
+  }
+  if(snapshot.kind==="thought.chain.create"){
+    const prefix=`${snapshot.temporaryId}:`,previousLength=(state.thoughts||[]).length;
+    state.thoughts=(state.thoughts||[]).filter(item=>!String(item.id).startsWith(prefix)||item._sync?.operationId!==operationId);
+    if(state.thoughts.length===previousLength)return false;
+    renderThoughts();renderCaptures();renderHomeMemories();return true
+  }
+  if(snapshot.kind==="record.update"){
+    const collection=state[snapshot.domain],index=collection?.findIndex(item=>item.id===snapshot.value.id)??-1;
+    if(index<0||collection[index]._sync?.operationId!==operationId)return false;
+    collection[index]=snapshot.value;publishDomains(new Set([snapshot.domain]));return true
+  }
+  if(snapshot.kind==="record.delete"){
+    const collection=state[snapshot.domain];if(!Array.isArray(collection)||collection.some(item=>item.id===snapshot.value.id))return false;
+    collection.splice(Math.min(snapshot.index,collection.length),0,snapshot.value);publishDomains(new Set([snapshot.domain]));return true
+  }
+  if(snapshot.kind==="book.note.update"){
+    const book=(state.books||[]).find(item=>item.id===snapshot.bookId),index=book?.notes?.findIndex(item=>item.id===snapshot.value.id)??-1;
+    if(index<0||book.notes[index]._sync?.operationId!==operationId)return false;
+    book.notes[index]=snapshot.value;renderBooks();return true
+  }
+  if(snapshot.kind==="book.note.delete"){
+    const book=(state.books||[]).find(item=>item.id===snapshot.bookId);if(!book||book.notes?.some(item=>item.id===snapshot.value.id))return false;
+    book.notes||=[];book.notes.splice(Math.min(snapshot.index,book.notes.length),0,snapshot.value);renderBooks();return true
+  }
+  if(snapshot.kind==="thought.chain.update"){
+    const root=snapshot.items.find(entry=>entry.value.id===snapshot.id),index=(state.thoughts||[]).findIndex(item=>item.id===snapshot.id);
+    if(!root||index<0||state.thoughts[index]._sync?.operationId!==operationId)return false;
+    state.thoughts[index]=root.value;renderThoughts();renderHomeMemories();return true
+  }
+  if(snapshot.kind==="thought.chain.delete"){
+    if((state.thoughts||[]).some(item=>item.id===snapshot.id))return false;
+    for(const entry of [...snapshot.items].sort((left,right)=>left.index-right.index)){
+      if(!state.thoughts.some(item=>item.id===entry.value.id))state.thoughts.splice(Math.min(entry.index,state.thoughts.length),0,entry.value)
+    }
+    renderThoughts();renderCaptures();renderHomeMemories();return true
+  }
+  if(snapshot.kind==="discovery.status"){
+    discoveryController?.applyStatus(snapshot.id,snapshot.value);return true
+  }
+  return false
+}
+function settlePendingProjection(projection,operationId,data){
+  if(!projection||!operationId)return false;
+  if(projection.kind==="record.update"){
+    const item=state[projection.domain]?.find(value=>value.id===projection.id);
+    if(!item||item._sync?.operationId!==operationId)return false;
+    if(data&&typeof data==="object")Object.assign(item,data);
+    delete item._sync;publishDomains(new Set([projection.domain]));return true
+  }
+  if(projection.kind==="book.note.update"){
+    const note=(state.books||[]).find(item=>item.id===projection.bookId)?.notes?.find(item=>item.id===projection.id);
+    if(!note||note._sync?.operationId!==operationId)return false;
+    if(data&&typeof data==="object")Object.assign(note,data);
+    delete note._sync;renderBooks();return true
+  }
+  if(projection.kind==="thought.chain.update"){
+    const root=(state.thoughts||[]).find(item=>item.id===projection.id&&item.type==="question");
+    if(!root||root._sync?.operationId!==operationId)return false;
+    if(data&&typeof data==="object")Object.assign(root,data);
+    delete root._sync;renderThoughts();renderHomeMemories();return true
+  }
+  return false
+}
 async function requestV1(url,options={},coordination={}){
   const method=String(options.method||"GET").toUpperCase();
-  const result=["GET","HEAD"].includes(method)
-    ?await request(url,options)
-    :await requestCoordinator.request({owner:currentUser?.id,url,options,...coordination});
+  let result,operationId="";
+  if(["GET","HEAD"].includes(method))result=await request(url,options);
+  else{
+    const snapshot=pendingProjectionSnapshot(coordination.projection),onQueued=coordination.onQueued;
+    try{
+      result=await requestCoordinator.request({
+        owner:currentUser?.id,url,options,domains:syncDomainsFor(url),...coordination,
+        onQueued:record=>{operationId=record.operationId;return onQueued?.(record)}
+      });
+      settlePendingProjection(coordination.projection,operationId,result?.data)
+    }catch(error){
+      if(["failed","conflict"].includes(error?.syncStatus))restorePendingProjection(snapshot,operationId);
+      throw error
+    }
+  }
   if(!result||result.error)throw new Error(result?.error?.message||"接口返回异常");
   return{data:result.data,meta:result.meta||{}}
 }
@@ -510,7 +1224,154 @@ async function requestStream(url,options={},onEvent=()=>{}){
   catch(error){if(answerId&&error.name!=="AbortError")setAnswerStatus(answerId,`未能生成：${error.message}，可重试。`,"error");throw error}
 }
 function showToast(message,kind="success"){const t=$("#toast");t.textContent=message;t.className=`toast ${kind}`;t.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.hidden=true,3200)}
-const trashTypeLabels={checkin:"状态",dailyRecord:"健康日录",capture:"捕念",journal:"日记",journalReflection:"日记回望",thoughtChain:"思绪",thoughtBlock:"思绪内容",thoughtRemark:"思绪备注",thoughtFollowUp:"追问",annotation:"批注",annotationDrift:"漂流批注",chat:"对话",book:"书目",bookNote:"读书记录",keepsake:"小物",quote:"善言",experiment:"实验",analysis:"复盘",customMetric:"自定义指标",action:"行动",habit:"习惯",habitCheckin:"习惯打卡"};
+function applyPendingProjection(record){
+  const projection=record?.projection;
+  if(!projection)return false;
+  const sync={status:record.status==="sending"?"sending":"pending",operationId:record.operationId};
+  if(projection.kind==="capture.create"){
+    if((state.captures||[]).some(item=>item.clientRequestId===record.operationId||item.id===projection.temporaryId))return false;
+    state.captures=[{id:projection.temporaryId,...projection.payload,createdAt:record.createdAt,_sync:sync},...(state.captures||[])];
+    renderCaptures();return true
+  }
+  if(projection.kind==="checkin.create"){
+    if((state.checkins||[]).some(item=>item.clientRequestId===record.operationId||item.id===projection.temporaryId))return false;
+    const occurredAt=projection.payload.occurredAt||record.createdAt,occurredOn=projection.payload.occurredOn||localDateKey(occurredAt);
+    state.checkins=[{id:projection.temporaryId,...projection.payload,occurredAt,occurredOn,createdAt:record.createdAt,_sync:sync},...(state.checkins||[])];
+    renderStateChart();renderHomeMood();return true
+  }
+  if(projection.kind==="record.create"&&Array.isArray(state[projection.domain])){
+    if(state[projection.domain].some(item=>item.clientRequestId===record.operationId||item.id===projection.temporaryId))return false;
+    state[projection.domain]=[{id:projection.temporaryId,...projection.payload,createdAt:record.createdAt,_sync:sync},...state[projection.domain]];
+    publishDomains(new Set([projection.domain]));
+    return true
+  }
+  if(projection.kind==="record.delete"&&Array.isArray(state[projection.domain])){
+    const previousLength=state[projection.domain].length;
+    state[projection.domain]=state[projection.domain].filter(item=>item.id!==projection.id);
+    if(state[projection.domain].length===previousLength)return false;
+    publishDomains(new Set([projection.domain]));
+    return true
+  }
+  if(projection.kind==="record.update"&&Array.isArray(state[projection.domain])){
+    const item=state[projection.domain].find(value=>value.id===projection.id);
+    if(!item)return false;
+    Object.assign(item,projection.payload,{_sync:sync});
+    publishDomains(new Set([projection.domain]));
+    return true
+  }
+  if(projection.kind==="book.note.create"){
+    const book=(state.books||[]).find(item=>item.id===projection.bookId);
+    if(!book)return false;
+    book.notes||=[];
+    if(book.notes.some(item=>item.clientRequestId===record.operationId||item.id===projection.temporaryId))return false;
+    book.notes.unshift({id:projection.temporaryId,...projection.payload,createdAt:record.createdAt,version:1,_sync:sync});
+    pendingBookNoteId=projection.temporaryId;renderBooks();return true
+  }
+  if(projection.kind==="book.note.delete"){
+    const book=(state.books||[]).find(item=>item.id===projection.bookId);
+    if(!book)return false;
+    const previousLength=(book.notes||[]).length;
+    book.notes=(book.notes||[]).filter(item=>item.id!==projection.id);
+    if(book.notes.length===previousLength)return false;
+    renderBooks();return true
+  }
+  if(projection.kind==="book.note.update"){
+    const book=(state.books||[]).find(item=>item.id===projection.bookId),note=book?.notes?.find(item=>item.id===projection.id);
+    if(!note)return false;
+    Object.assign(note,projection.payload,{_sync:sync});
+    renderBooks();return true
+  }
+  if(projection.kind==="thought.chain.create"){
+    if((state.thoughts||[]).some(item=>item.clientRequestId===record.operationId||String(item.id).startsWith(`${projection.temporaryId}:`)))return false;
+    const occurredAt=projection.payload.occurredAt||record.createdAt,rootId=`${projection.temporaryId}:root`,items=[{
+      id:rootId,type:"question",content:projection.payload.question||"",attachmentPaths:projection.payload.attachmentPaths||[],
+      tags:projection.payload.tags||[],authorType:"user",occurredAt,createdAt:record.createdAt,version:1,_sync:sync,
+      ...(projection.payload.sourceRef?{sourceRef:projection.payload.sourceRef}:{})
+    }];
+    if(projection.payload.idea)items.push({id:`${projection.temporaryId}:idea`,type:"idea",relatedTo:rootId,content:projection.payload.idea,authorType:"user",occurredAt,createdAt:record.createdAt,version:1,_sync:sync});
+    if(projection.payload.answer)items.push({id:`${projection.temporaryId}:answer`,type:"answer",relatedTo:rootId,content:projection.payload.answer,authorType:"user",occurredAt,createdAt:record.createdAt,version:1,_sync:sync});
+    state.thoughts=[...items,...state.thoughts];renderThoughts();renderCaptures();renderHomeMemories();return true
+  }
+  if(projection.kind==="thought.chain.delete"){
+    const previousLength=(state.thoughts||[]).length;
+    state.thoughts=(state.thoughts||[]).filter(item=>item.id!==projection.id&&item.relatedTo!==projection.id);
+    if(state.thoughts.length===previousLength)return false;
+    renderThoughts();renderCaptures();renderHomeMemories();return true
+  }
+  if(projection.kind==="thought.chain.update"){
+    const root=(state.thoughts||[]).find(item=>item.id===projection.id&&item.type==="question");
+    if(!root)return false;
+    Object.assign(root,{content:projection.payload.question,tags:projection.payload.tags,occurredAt:projection.payload.occurredAt,_sync:sync});
+    renderThoughts();renderHomeMemories();return true
+  }
+  if(projection.kind==="discovery.status"){
+    discoveryController?.applyStatus(projection.id,projection.value);return true
+  }
+  if(projection.kind==="action.command"){
+    const result=projectActionCommand(actionsSnapshot,projection.command,{...sync,createdAt:record.createdAt});
+    if(!result.changed)return false;
+    actionsSnapshot=result.value;renderActionsWorkspace();return true
+  }
+  return false
+}
+async function restorePendingProjections(){
+  const owner=currentUser?.id,session=sessionSerial;if(!owner)return 0;
+  const records=await requestCoordinator.list(owner,["pending","sending"]);
+  if(owner!==currentUser?.id||session!==sessionSerial)return 0;
+  let restored=0;
+  for(const record of records){
+    if(owner!==currentUser?.id||session!==sessionSerial)return restored;
+    if(applyPendingProjection(record))restored+=1
+  }
+  return restored
+}
+async function applyIncrementalSnapshot(snapshot,changes){
+  const domains=mergeStateSnapshot(snapshot);
+  if(domains.has("actions")||domains.has("habits")||domains.has("habitCheckins")){
+    actionsSnapshot={
+      actions:snapshot.actions||actionsSnapshot.actions,
+      habits:snapshot.habits||actionsSnapshot.habits,
+      habitCheckins:snapshot.habitCheckins||actionsSnapshot.habitCheckins
+    };
+    renderActionsWorkspace()
+  }
+  if(domains.has("feedback")){feedbackItems=snapshot.feedback||[];renderFeedback()}
+  if(domains.has("trashCount")&&!$("#view-trash")?.hidden)void loadTrash();
+  const rendered=new Set([...domains].filter(domain=>!["actions","habits","habitCheckins","feedback","trashCount"].includes(domain)));
+  if(domains.has("clusters")||domains.has("insights"))rendered.add("review");
+  if(rendered.size)publishDomains(rendered);
+  await restorePendingProjections();
+  return changes.length
+}
+async function updateSyncHealth(event){
+  if(!currentUser?.id)return;
+  if(event.type==="operation"&&event.status==="committed")await finalizeHealthDraftOperation(event.operationId);
+  if(event.type==="operation"&&["failed","conflict"].includes(event.status))await releaseHealthDraftOperation(event.operationId);
+  const metrics=await requestCoordinator.metrics(currentUser.id);
+  const oldest=metrics.oldestPendingAt?Math.max(0,Date.now()-new Date(metrics.oldestPendingAt).getTime()):0;
+  syncHealth={
+    status:event.type==="disabled"?"disabled":metrics.conflicts?"conflict":event.type==="error"||metrics.failed?"error":metrics.pending?"pending":metrics.durable?"synced":"degraded",
+    pending:metrics.pending,
+    conflicts:metrics.conflicts,
+    failed:metrics.failed,
+    oldestAgeMs:oldest,
+    enqueueToAckP95Ms:metrics.enqueueToAckP95Ms,
+    lastPullMs:event.type==="pull"?event.durationMs:syncHealth.lastPullMs,
+    lastError:event.type==="error"?(event.code||"SYNC_FAILED"):""
+  };
+  renderMine()
+}
+syncController=createIncrementalSync({
+  coordinator:requestCoordinator,
+  request:url=>requestV1(url),
+  applySnapshot:applyIncrementalSnapshot,
+  resnapshot:async()=>{
+    await refreshState(["checkins","dailyRecords","captures","journals","thoughts","chat","review","books","keepsakes","quotes","notifications"]);
+    await Promise.all([loadActionsWorkspace(),loadFeedback()])
+  },
+  onStatus:event=>void updateSyncHealth(event)
+});
+const trashTypeLabels={checkin:"状态",dailyRecord:"健康日录",capture:"捕念",captureAudio:"捕念语音",journal:"日记",journalReflection:"日记回望",thoughtChain:"思绪",thoughtBlock:"思绪内容",thoughtRemark:"思绪备注",thoughtFollowUp:"追问",annotation:"批注",annotationDrift:"漂流批注",chat:"对话",book:"书目",bookNote:"读书记录",keepsake:"小物",quote:"善言",experiment:"实验",analysis:"复盘",customMetric:"自定义指标",action:"行动",habit:"习惯",habitCheckin:"习惯打卡"};
 function trashPayload(entry){if(entry.type==="thoughtChain"){const records=entry.payload?.items||[];return records.map(record=>record.item).filter(Boolean)}return[entry.payload]}
 function trashTitle(entry){
   const items=trashPayload(entry),item=items.find(value=>value.type==="question")||items[0]||{};
@@ -569,12 +1430,25 @@ async function openAiTaskTarget(task,notification){
     requestAnimationFrame(()=>document.querySelector(`[data-comment-card="${CSS.escape(subtargetId)}"]`)?.scrollIntoView({behavior:"smooth",block:"center"}));
     return
   }
+  if(resourceType==="capture"&&targetId)return requestAnimationFrame(()=>document.querySelector(`[data-capture-id="${CSS.escape(targetId)}"]`)?.scrollIntoView({behavior:"smooth",block:"center"}));
   if(resourceType==="thought"&&targetId)requestAnimationFrame(()=>document.querySelector(`[data-chain-id="${CSS.escape(targetId)}"]`)?.scrollIntoView({behavior:"smooth",block:"center"}))
 }
 function commitDraftTags(){const input=$("#chain-tags"),values=splitTags(input.value);for(const value of values)if(!draftTags.includes(value))draftTags.push(value);input.value="";renderTagComposer()}
 function renderTagComposer(){const list=$("#chain-tag-list");if(!list)return;list.innerHTML=draftTags.map(tag=>`<span class="tag-chip">#${escapeHtml(tag)}<button type="button" data-remove-draft-tag="${escapeHtml(tag)}" aria-label="移除标签 ${escapeHtml(tag)}">×</button></span>`).join("");const known=[...new Set(state.thoughts.flatMap(item=>item.tags||[]))].filter(tag=>!draftTags.includes(tag));$("#tag-suggestions").innerHTML=known.map(tag=>`<option value="${escapeHtml(tag)}"></option>`).join("")}
 function commitCaptureTags(){const input=$("#capture-tags"),values=splitTags(input.value);for(const value of values)if(!captureDraftTags.includes(value))captureDraftTags.push(value);input.value="";renderCaptureTagComposer()}
 function renderCaptureTagComposer(){const list=$("#capture-tag-list");if(!list)return;list.innerHTML=captureDraftTags.map(tag=>`<span class="tag-chip">#${escapeHtml(tag)}<button type="button" data-remove-capture-tag="${escapeHtml(tag)}" aria-label="移除关键词 ${escapeHtml(tag)}">×</button></span>`).join("");const known=[...new Set([...(state.captures||[]),...(state.thoughts||[])].flatMap(item=>item.tags||[]))].filter(tag=>!captureDraftTags.includes(tag));$("#capture-tag-suggestions").innerHTML=known.map(tag=>`<option value="${escapeHtml(tag)}"></option>`).join("")}
+function chainRecordKind(){return $("#chain-form").elements.recordKind?.value==="capture"?"capture":"thought"}
+function syncChainRecordKind(){
+  const form=$("#chain-form"),sourceMode=Boolean(form.elements.sourceCaptureId.value),captureMode=!sourceMode&&chainRecordKind()==="capture";
+  if(sourceMode)form.elements.recordKind.value="thought";
+  form.querySelector(".thought-record-kind").hidden=sourceMode;
+  $("#thought-source-notice").hidden=!sourceMode;
+  $$("[data-chain-thought-only]").forEach(element=>element.hidden=captureMode);
+  $("#home-thought-title").textContent=sourceMode?"展开为思绪":captureMode?"记录念起":"记录思考";
+  $("#chain-primary-label").innerHTML=captureMode?'内容 <i>文字或图片至少一项 · 支持 Markdown</i>':'问题 <i>文字或图片至少一项 · 支持 Markdown</i>';
+  $("#chain-question").placeholder=captureMode?"先记下，不必立刻想完整。":"你真正想问的是什么？";
+  $("#chain-submit").textContent=captureMode?"收进念起":"收进思绪箱"
+}
 function metricConfig(){const custom=Object.fromEntries((state.customMetrics||[]).map(x=>[x.id,{label:x.name,anchors:[x.low,"偏低","居中","偏高",x.high],custom:true}]));return{...baseMetrics,...custom}}
 function metricValue(checkin,key,custom){return custom?checkin.custom?.[key]:checkin[key]}
 function metricReference(key,custom){const eligible=state.checkins.filter(x=>x.occurredOn<=activeDate).sort((a,b)=>b.occurredOn.localeCompare(a.occurredOn)||eventTimestamp(b).localeCompare(eventTimestamp(a)));const previous=eligible.map(x=>metricValue(x,key,custom)).find(x=>Number.isFinite(Number(x)));const history=eligible.slice(0,30).map(x=>Number(metricValue(x,key,custom))).filter(Number.isFinite);return{previous:previous==null?null:Number(previous),average:avg(history)}}
@@ -583,18 +1457,19 @@ function sliderTemplate(key,cfg){const ref=metricReference(key,cfg.custom),value
 function renderSliders(){const cfg=metricConfig();$("#sliders").innerHTML=`<div class="metric-history-legend" aria-label="历史参照图例"><span><i class="previous"></i>上一次</span><span><i class="average"></i>近30次平均</span></div>${Object.entries(cfg).map(([k,v])=>sliderTemplate(k,v)).join("")}`;$$('[data-metric]').forEach(input=>{const update=(confirmed=false)=>{if(confirmed){input.dataset.confirmed="true";input.closest(".metric").classList.remove("unconfirmed")}const prefix=input.dataset.confirmed==="true"?"":"待确认 · ";$(`#${CSS.escape(input.dataset.metric)}-anchor`).textContent=`${prefix}${cfg[input.dataset.metric].anchors[Number(input.value)-1]}`};input.addEventListener("input",()=>update(true));input.addEventListener("change",()=>navigator.vibrate?.(8));input.addEventListener("pointerdown",()=>update(true));update()});$$(".note-toggle").forEach(b=>b.addEventListener("click",()=>{const f=$(`#${CSS.escape(b.dataset.note)}-note`);f.classList.toggle("visible");b.setAttribute("aria-expanded",String(f.classList.contains("visible")));if(f.classList.contains("visible"))f.focus()}))}
 
 const thoughtDate=chain=>eventDate(chain.question);
-function thoughtChains(){const roots=state.thoughts.filter(x=>x.type==="question"),ids=new Set(roots.map(x=>x.id));const grouped=roots.map(question=>({question,children:state.thoughts.filter(x=>x.relatedTo===question.id).sort((a,b)=>a.createdAt.localeCompare(b.createdAt))}));state.thoughts.filter(x=>x.type!=="question"&&(!x.relatedTo||!ids.has(x.relatedTo))).forEach(x=>grouped.push({question:{...x,type:"question",content:"（旧记录未关联问题）"},children:[x]}));return grouped.sort((a,b)=>thoughtDate(b).localeCompare(thoughtDate(a))||eventTimestamp(b.question).localeCompare(eventTimestamp(a.question)))}
+const thoughtSortTimestamp=(chain,mode=thoughtSortMode)=>mode==="created"?(chain.question.createdAt||eventTimestamp(chain.question)):eventTimestamp(chain.question);
+function thoughtChains(mode=thoughtSortMode){const roots=state.thoughts.filter(x=>x.type==="question"),ids=new Set(roots.map(x=>x.id));const grouped=roots.map(question=>({question,children:state.thoughts.filter(x=>x.relatedTo===question.id).sort((a,b)=>a.createdAt.localeCompare(b.createdAt))}));state.thoughts.filter(x=>x.type!=="question"&&(!x.relatedTo||!ids.has(x.relatedTo))).forEach(x=>grouped.push({question:{...x,type:"question",content:"（旧记录未关联问题）"},children:[x]}));return grouped.sort((a,b)=>thoughtSortTimestamp(b,mode).localeCompare(thoughtSortTimestamp(a,mode))||String(b.question.id).localeCompare(String(a.question.id)))}
 function thoughtAnswerPreview(content){return plainPreview(content).replace(/^(?:核心判断|给我判断|给你(?:一个)?判断|我的判断|结论)(?:\s*[：:]|\s+)\s*/u,"").trimStart()}
 function thoughtBlockBody(content){
   return `<div class="thought-block-content-frame"><div class="thought-block-content markdown-content">${renderMarkdown(content||"")}</div></div><button class="thought-block-expand" type="button" data-thought-block-expand aria-expanded="false" hidden><span>展开全文</span><i aria-hidden="true">⌄</i></button>`
 }
 function thoughtContentBlock(item,question){
-  const ai=item.authorType==="ai"||/^(?:deepseek|codex)/.test(item.origin||"")||Boolean(item.reasoningContent),labels={idea:"初步想法",record:"记录",answer:ai?"AI 回答":"我的回答"},label=labels[item.type]||"内容",source=ai?"AI 派生":"用户原文";
-  return `<article class="thought-content-block ${ai?"ai":""}" data-thought-block-id="${item.id}"><header><div><b>${label}</b><span>${source}</span>${item.generation?`<small>第 ${item.generation} 次</small>`:""}</div><time>${formatDate(eventTimestamp(item))}</time></header>${reasoningDisclosure(item.reasoningContent)}${thoughtBlockBody(item.content||item.modelDraft||"")}${contentImagesMarkup(item,"thoughtBlock")}${item.modelDraft&&item.editedFromModel?`<small class="edit-signal">${item.content?"由 AI 草稿修改后保留":"未保留 AI 草稿"}</small>`:""}<footer><span>版本 ${item.version||1}</span><div><button class="subtle-action" type="button" data-thought-block-edit="${item.id}" data-root-id="${question.id}">编辑</button><button class="subtle-action danger" type="button" data-thought-block-delete="${item.id}" data-root-id="${question.id}">删除</button></div></footer></article>`
+  const ai=item.authorType==="ai"||/^(?:deepseek|codex)/.test(item.origin||"")||Boolean(item.reasoningContent),labels={idea:"初步想法",record:"记录",answer:ai?"应答":"我的回答"},label=labels[item.type]||"内容",source=ai?"":"用户原文";
+  return `<article class="thought-content-block ${ai?"ai":""}" data-thought-block-id="${item.id}"><header><div><b>${label}</b>${source?`<span>${source}</span>`:""}${item.generation?`<small>第 ${item.generation} 次</small>`:""}</div><time>${formatDate(eventTimestamp(item))}</time></header>${reasoningDisclosure(item.reasoningContent)}${contextReceiptMarkup(item.contextReceipt)}${thoughtBlockBody(item.content||item.modelDraft||"")}${contentImagesMarkup(item,"thoughtBlock")}${item.modelDraft&&item.editedFromModel?`<small class="edit-signal">${item.content?"由 AI 草稿修改后保留":"未保留 AI 草稿"}</small>`:""}<footer><span>版本 ${item.version||1}</span><div><button class="subtle-action" type="button" data-thought-block-edit="${item.id}" data-root-id="${question.id}">编辑</button><button class="subtle-action danger" type="button" data-thought-block-delete="${item.id}" data-root-id="${question.id}">删除</button></div></footer></article>`
 }
 function thoughtFollowUpBlock(followUp,question,index){
   const pending=pendingAiTask("followUpAnswer",question.id,followUp.id);
-  return `<details class="response-entry thought-content-block followup-block" data-followup-id="${followUp.id}"><summary><div class="response-summary-copy"><div class="response-summary-head"><strong>追问 ${index+1}</strong><span>用户原文</span><small>版本 ${followUp.version||1} · ${formatDate(followUp.updatedAt||followUp.createdAt)}</small></div><p>${escapeHtml(plainPreview(followUp.question))}</p></div></summary><div class="response-entry-body"><div class="followup-question"><b>追问问题</b><div class="markdown-content">${renderMarkdown(followUp.question)}</div></div><div class="followup-answer"><b>追问回答</b>${followUp.answer?`<div class="model-answer-content">${reasoningDisclosure(followUp.reasoningContent)}<div class="markdown-content">${renderMarkdown(followUp.answer)}</div></div>`:`<form class="manual-followup-answer" data-followup-manual-answer="${followUp.id}" data-root-id="${question.id}" data-version="${followUp.version||1}"><textarea rows="3" placeholder="直接写下回答…" aria-label="追问回答" required></textarea><div><button class="quiet-button" type="submit">保存回答</button><button type="button" class="subtle-action answer-action" data-followup-answer="${followUp.id}" data-root-id="${question.id}" ${pending?"disabled":""}>✦ 给我回答</button></div></form>`}<p class="followup-status" role="status" aria-live="polite">${pending?"回答正在后台生成，可继续使用其他功能。":""}</p></div><div class="followup-record-actions"><button type="button" class="subtle-action" data-followup-edit-toggle="${followUp.id}">编辑</button><button type="button" class="subtle-action danger" data-followup-delete="${followUp.id}" data-root-id="${question.id}">删除</button></div><form class="followup-edit-form" data-followup-edit="${followUp.id}" data-root-id="${question.id}" data-version="${followUp.version||1}" hidden><label>追问问题<textarea rows="3" name="question" required>${escapeHtml(followUp.question)}</textarea></label><label>追问回答（可空）<textarea rows="5" name="answer">${escapeHtml(followUp.answer||"")}</textarea></label><div><button class="quiet-button" type="submit">保存修改</button><button class="subtle-action" type="button" data-followup-edit-cancel="${followUp.id}">取消</button></div></form></div></details>`
+  return `<details class="response-entry thought-content-block followup-block" data-followup-id="${followUp.id}"><summary><div class="response-summary-copy"><div class="response-summary-head"><strong>追问 ${index+1}</strong><span>用户原文</span><small>版本 ${followUp.version||1} · ${formatDate(followUp.updatedAt||followUp.createdAt)}</small></div><p>${escapeHtml(plainPreview(followUp.question))}</p></div></summary><div class="response-entry-body"><div class="followup-question"><b>追问问题</b><div class="markdown-content">${renderMarkdown(followUp.question)}</div></div><div class="followup-answer"><b>追问回答</b>${followUp.answer?`<div class="model-answer-content">${reasoningDisclosure(followUp.reasoningContent)}${contextReceiptMarkup(followUp.contextReceipt)}<div class="markdown-content">${renderMarkdown(followUp.answer)}</div></div>`:`<form class="manual-followup-answer" data-followup-manual-answer="${followUp.id}" data-root-id="${question.id}" data-version="${followUp.version||1}"><textarea rows="3" placeholder="直接写下回答…" aria-label="追问回答" required></textarea><div><button class="quiet-button" type="submit">保存回答</button><button type="button" class="subtle-action answer-action" data-followup-answer="${followUp.id}" data-root-id="${question.id}" ${pending?"disabled":""}>✦ 给我回答</button></div></form>`}<p class="followup-status" role="status" aria-live="polite">${pending?"回答正在后台生成，可继续使用其他功能。":""}</p></div><div class="followup-record-actions"><button type="button" class="subtle-action" data-followup-edit-toggle="${followUp.id}">编辑</button><button type="button" class="subtle-action danger" data-followup-delete="${followUp.id}" data-root-id="${question.id}">删除</button></div><form class="followup-edit-form" data-followup-edit="${followUp.id}" data-root-id="${question.id}" data-version="${followUp.version||1}" hidden><label>追问问题<textarea rows="3" name="question" required>${escapeHtml(followUp.question)}</textarea></label><label>追问回答（可空）<textarea rows="5" name="answer">${escapeHtml(followUp.answer||"")}</textarea></label><div><button class="quiet-button" type="submit">保存修改</button><button class="subtle-action" type="button" data-followup-edit-cancel="${followUp.id}">取消</button></div></form></div></details>`
 }
 function thoughtStream(question,children){
   const items=[
@@ -604,13 +1479,15 @@ function thoughtStream(question,children){
   ].sort((a,b)=>String(b.time).localeCompare(String(a.time)));
   return `<section class="thought-content-stream"><header><b>内容时间线</b><span>${items.length} 条 · 最新在前</span></header>${items.length?items.map(item=>item.markup).join(""):'<p class="missing-part">还没有后续内容。</p>'}</section>`
 }
-function chainCard({question,children},showDate=true){
-  const ideas=children.filter(x=>x.type==="idea"),answers=children.filter(x=>x.type==="answer"),ideaText=ideas.map(x=>x.content).join(" "),answerPreview=thoughtAnswerPreview(answers.at(-1)?.content||"")||(answers.some(x=>x.modelDraft)?"AI 草稿未被保留":"尚未回答"),annotationCount=(question.annotations||[]).length+(question.annotationDrift||[]).length;
+function chainCard({question,children},showDate=true,sortMode=thoughtSortMode){
+  const ideas=children.filter(x=>x.type==="idea"),answers=children.filter(x=>x.type==="answer"),ideaText=ideas.map(x=>x.content).join(" "),answerPreview=thoughtAnswerPreview(answers.at(-1)?.content||"")||(answers.some(x=>x.modelDraft)?"AI 草稿未被保留":"尚未回答"),annotationCount=(question.annotations||[]).length+(question.annotationDrift||[]).length,syncing=question._sync?.status;
   const dispositionActions=`${question.disposition!=="kept"?`<button class="subtle-action" data-disposition="${question.id}" data-value="kept">保留</button>`:""}${question.disposition!=="discarded"?`<button class="subtle-action" data-disposition="${question.id}" data-value="discarded">舍弃</button>`:""}`;
   const tags=question.tags?.length?`#${question.tags.map(escapeHtml).join(" #")}`:"未标记",tracePending=(state.insights.aiOnlyThoughtIds||[]).includes(question.id)?'<span class="thought-trace-pending">📫没有你的痕迹⏳</span>':"";
-  return `<article class="thought-timeline-entry"><div class="timeline-date">${showDate?escapeHtml(eventDate(question)):""}</div><header class="thought-entry-meta"><div class="thought-entry-markers"><span class="thought-entry-tags">${tags}</span>${tracePending}</div><time>${formatTime(eventTimestamp(question))}</time></header><details class="thought-card chain-record" data-chain-id="${question.id}"><summary class="chain-summary"><div class="summary-content"><strong class="question-preview">${escapeHtml(plainPreview(question.content)||"图片记录")}</strong>${ideaText?`<p class="idea-preview">${escapeHtml(plainPreview(ideaText))}</p>`:""}<p class="answer-preview">${escapeHtml(answerPreview)}</p></div><span class="expand-mark" aria-hidden="true">⌄</span></summary><div class="chain-expanded"><section class="chain-part"><b>问题</b><div><div class="thought-question-content markdown-content">${renderMarkdown(question.content)}</div>${contentImagesMarkup(question,"thoughtRoot")}</div></section>${thoughtStream(question,children)}<form class="followup-form" data-follow-up-root="${question.id}" hidden><label><span>追问问题</span><textarea rows="3" name="question" placeholder="补充一个追问…" required></textarea></label><label><span>回答（可选）</span><textarea rows="3" name="answer" placeholder="已有答案时可一起记下"></textarea></label><button class="quiet-button followup-submit" type="submit">＋ 追问</button><p class="followup-status" role="status" aria-live="polite"></p></form><div class="thought-actions"><button class="subtle-action answer-action" data-answer-chain="${question.id}">✦ ${answers.length?"重新回答":"给我回答"}</button><button class="subtle-action" data-thought-block-add="record" data-root-id="${question.id}">＋记录</button><button class="subtle-action" data-thought-block-add="idea" data-root-id="${question.id}">＋想法</button>${annotationCount?`<button class="subtle-action" data-open-comments="${question.id}">批注 ${annotationCount}</button>`:""}${dispositionActions}<button class="subtle-action" data-edit-chain="${question.id}">编辑主题</button><button class="subtle-action" data-followup-compose="${question.id}" aria-expanded="false">＋追问</button><button class="subtle-action" data-remark="${question.id}">＋备注</button><button class="subtle-action danger" data-delete-chain="${question.id}">删除</button></div></div></details></article>`
+  const actions=syncing?`<span class="checkin-sync-state ${escapeHtml(syncing)}">${syncing==="pending"?"待同步":"正在同步"}</span>`:`<button class="subtle-action answer-action" data-answer-chain="${question.id}">✦ ${answers.length?"重新回答":"给我回答"}</button><button class="subtle-action" data-thought-block-add="record" data-root-id="${question.id}">＋记录</button><button class="subtle-action" data-thought-block-add="idea" data-root-id="${question.id}">＋想法</button>${annotationCount?`<button class="subtle-action" data-open-comments="${question.id}">批注 ${annotationCount}</button>`:""}${dispositionActions}<button class="subtle-action" data-edit-chain="${question.id}">编辑主题</button><button class="subtle-action" data-followup-compose="${question.id}" aria-expanded="false">＋追问</button><button class="subtle-action" data-remark="${question.id}">＋备注</button><button class="subtle-action danger" data-delete-chain="${question.id}">删除</button>`;
+  const displayedAt=sortMode==="created"?(question.createdAt||eventTimestamp(question)):eventTimestamp(question);
+  return `<article class="thought-timeline-entry${syncing?" is-syncing":""}"><div class="timeline-date">${showDate?escapeHtml(eventDate({occurredAt:displayedAt})):""}</div><header class="thought-entry-meta"><div class="thought-entry-markers"><span class="thought-entry-tags">${tags}</span>${tracePending}</div><time>${formatTime(displayedAt)}</time></header><details class="thought-card chain-record" data-chain-id="${question.id}"><summary class="chain-summary"><div class="summary-content"><strong class="question-preview">${escapeHtml(plainPreview(question.content)||"图片记录")}</strong>${ideaText?`<p class="idea-preview">${escapeHtml(plainPreview(ideaText))}</p>`:""}<p class="answer-preview">${escapeHtml(answerPreview)}</p></div><span class="expand-mark" aria-hidden="true">⌄</span></summary><div class="chain-expanded"><section class="chain-part"><b>问题</b><div><div class="thought-question-content markdown-content">${renderMarkdown(question.content)}</div>${contentImagesMarkup(question,"thoughtRoot")}</div></section>${thoughtStream(question,children)}${syncing?"":`<form class="followup-form" data-follow-up-root="${question.id}" hidden><label><span>追问问题</span><textarea rows="3" name="question" placeholder="补充一个追问…" required></textarea></label><label><span>回答（可选）</span><textarea rows="3" name="answer" placeholder="已有答案时可一起记下"></textarea></label><button class="quiet-button followup-submit" type="submit">＋ 追问</button><p class="followup-status" role="status" aria-live="polite"></p></form>`}<div class="thought-actions">${actions}</div></div></details></article>`
 }
-function chainCardsMarkup(chains){return chains.map((chain,index)=>chainCard(chain,index===0||thoughtDate(chain)!==thoughtDate(chains[index-1]))).join("")}
+function chainCardsMarkup(chains,sortMode=thoughtSortMode){const displayDate=chain=>sortMode==="created"?eventDate({occurredAt:chain.question.createdAt||eventTimestamp(chain.question)}):thoughtDate(chain);return chains.map((chain,index)=>chainCard(chain,index===0||displayDate(chain)!==displayDate(chains[index-1]),sortMode)).join("")}
 function renderThoughtFilters(chains){const tags=[...new Set(chains.flatMap(({question,children})=>[...(question.tags||[]),...children.flatMap(x=>x.tags||[])]))].sort((a,b)=>a.localeCompare(b,"zh-CN"));if(thoughtFilter!=="all"&&!tags.includes(thoughtFilter))thoughtFilter="all";$("#thought-filters").innerHTML=["all",...tags].map(tag=>`<button class="filter-button ${thoughtFilter===tag?"active":""}" data-tag-filter="${escapeHtml(tag)}">${tag==="all"?"全部":`#${escapeHtml(tag)}`}</button>`).join("")}
 function thoughtOpenState(){const roots=new Set(),followUps=new Set();$$('.chain-record[open][data-chain-id]').forEach(card=>roots.add(card.dataset.chainId));$$('.response-entry[open][data-followup-id]').forEach(entry=>{const root=entry.closest('[data-chain-id]')?.dataset.chainId;if(root)followUps.add(`${root}:${entry.dataset.followupId}`)});return{roots,followUps}}
 function restoreThoughtOpenState(openState){$$('[data-chain-id]').forEach(card=>{if(openState.roots.has(card.dataset.chainId))card.open=true;card.querySelectorAll('[data-followup-id]').forEach(entry=>{if(openState.followUps.has(`${card.dataset.chainId}:${entry.dataset.followupId}`))entry.open=true})})}
@@ -626,14 +1503,53 @@ function setupThoughtBlockOverflow(){
   $$(".chain-record").forEach(card=>card.addEventListener("toggle",()=>{if(card.open)requestAnimationFrame(()=>syncThoughtBlockOverflow(card))}));
   requestAnimationFrame(()=>$$(".chain-record[open]").forEach(syncThoughtBlockOverflow))
 }
-function renderThoughts(extraOpen={}){const open=thoughtOpenState();if(extraOpen.chainId)open.roots.add(extraOpen.chainId);if(extraOpen.followUpId)open.followUps.add(`${extraOpen.chainId}:${extraOpen.followUpId}`);const chains=thoughtChains(),today=chains.filter(x=>thoughtDate(x)===activeDate).slice(0,5);$("#today-thoughts").innerHTML=today.length?chainCardsMarkup(today):empty("这一天还没有思绪记录。");renderThoughtFilters(chains);const items=thoughtFilter==="all"?chains:chains.filter(({question,children})=>[...(question.tags||[]),...children.flatMap(x=>x.tags||[])].includes(thoughtFilter));$("#all-thoughts").innerHTML=items.length?chainCardsMarkup(items):empty("这个标签下还没有记录。");tagCommentableTargets($("#today-thoughts"),today);tagCommentableTargets($("#all-thoughts"),items);renderLatex($("#today-thoughts"));renderLatex($("#all-thoughts"));applyCommentAnchors($("#today-thoughts"));applyCommentAnchors($("#all-thoughts"));restoreThoughtOpenState(open);setupThoughtBlockOverflow()}
+function renderThoughts(extraOpen={}){const open=thoughtOpenState(),todayDrafts=captureFormDrafts($("#today-thoughts")),allDrafts=captureFormDrafts($("#all-thoughts"));if(extraOpen.chainId)open.roots.add(extraOpen.chainId);if(extraOpen.followUpId)open.followUps.add(`${extraOpen.chainId}:${extraOpen.followUpId}`);const chains=thoughtChains(),today=thoughtChains("occurred").filter(x=>thoughtDate(x)===activeDate).slice(0,5);$$("[data-thought-sort]").forEach(button=>{const active=button.dataset.thoughtSort===thoughtSortMode;button.classList.toggle("active",active);button.setAttribute("aria-pressed",String(active))});$("#today-thoughts").innerHTML=today.length?chainCardsMarkup(today,"occurred"):empty("这一天还没有思绪记录。");renderThoughtFilters(chains);const items=thoughtFilter==="all"?chains:chains.filter(({question,children})=>[...(question.tags||[]),...children.flatMap(x=>x.tags||[])].includes(thoughtFilter));$("#all-thoughts").innerHTML=items.length?chainCardsMarkup(items):empty("这个标签下还没有记录。");restoreThoughtOpenState(open);const todayFocus=restoreFormDrafts($("#today-thoughts"),todayDrafts),allFocus=restoreFormDrafts($("#all-thoughts"),allDrafts),focusTarget=allFocus||todayFocus;tagCommentableTargets($("#today-thoughts"),today);tagCommentableTargets($("#all-thoughts"),items);renderLatex($("#today-thoughts"));renderLatex($("#all-thoughts"));applyCommentAnchors($("#today-thoughts"));applyCommentAnchors($("#all-thoughts"));setupThoughtBlockOverflow();if(focusTarget)requestAnimationFrame(()=>focusTarget.isConnected&&focusTarget.focus({preventScroll:true}))}
 
+function captureAudioMarkup(item){
+  const audio=item.audio,transcription=item.transcription||null,speech=transcription?.polishedText||transcription?.rawText||plainPreview(item.content||"");
+  if(!audio&&!speech)return"";
+  const supported=audio&&state.speech?.supportedAsrMimeTypes?.includes(audio.mimeType),canTranscribe=Boolean(audio&&state.speech?.configured&&supported);
+  const layers=[
+    transcription?.rawText?`<div class="capture-transcription"><small>ASR 原文</small><p>${escapeHtml(transcription.rawText)}</p></div>`:"",
+    transcription?.polishedText?`<div class="capture-transcription polished"><small>AI 整理稿</small><div class="markdown-content">${renderMarkdown(transcription.polishedText)}</div></div>`:""
+  ].join("");
+  let transcriptionState="";
+  if(audio&&["queued","transcribing"].includes(transcription?.status))transcriptionState='<p class="capture-transcription-state">正在后台转写，完成后会通知。</p>';
+  else if(audio&&transcription?.status==="failed")transcriptionState=`<p class="capture-transcription-state error">转写未完成。${canTranscribe?`<button type="button" class="subtle-action" data-capture-transcribe="${escapeHtml(item.id)}">重试</button>`:""}</p>`;
+  else if(audio&&transcription?.status==="unconfigured"){
+    if(!state.speech?.configured)transcriptionState='<p class="capture-transcription-state">ASR 服务尚未配置，语音原件已保留。</p>';
+    else if(!supported)transcriptionState='<p class="capture-transcription-state">该原件格式暂不能转写，请改用 M4A、Ogg 或 WAV。</p>';
+    else transcriptionState=`<p class="capture-transcription-state">语音原件尚未转写。<button type="button" class="subtle-action" data-capture-transcribe="${escapeHtml(item.id)}">开始转写</button></p>`;
+  }
+  const voices=state.speech?.voices||[],voiceOptions=voices.map(voice=>`<option value="${escapeHtml(voice.id)}" ${voice.id===state.speech?.defaultVoice?"selected":""}>${escapeHtml(voice.label)}</option>`).join("");
+  return `<section class="capture-audio-record">${audio?`<div class="capture-audio-source"><audio controls preload="metadata" src="${escapeHtml(appUrl(audio.attachmentPath))}"></audio><span>${formatAudioDuration(audio.durationMs)} · 原件</span></div>`:""}${layers}${transcriptionState}${speech&&state.speech?.configured?`<div class="capture-speech-actions"><select data-capture-voice aria-label="朗读音色">${voiceOptions}</select><button type="button" class="capture-speak-button" data-capture-speak="${escapeHtml(item.id)}" title="朗读文字" aria-label="朗读文字">▶</button><button type="button" data-capture-speech-pause title="暂停或继续朗读" aria-label="暂停或继续朗读">Ⅱ</button><button type="button" data-capture-speech-stop title="停止朗读" aria-label="停止朗读">■</button></div>`:""}</section>`
+}
+function stopCaptureSpeech(){
+  activeSpeechAbortController?.abort();activeSpeechAbortController=null;
+  if(activeSpeechAudio){activeSpeechAudio.pause();activeSpeechAudio.removeAttribute("src");activeSpeechAudio.load()}
+  if(activeSpeechObjectUrl)URL.revokeObjectURL(activeSpeechObjectUrl);
+  activeSpeechAudio=null;activeSpeechObjectUrl="";activeSpeechCaptureId=""
+}
+async function speakCapture(id,voice){
+  const item=(state.captures||[]).find(value=>value.id===id),text=item?.transcription?.polishedText||item?.transcription?.rawText||plainPreview(item?.content||"");
+  if(!text)return;
+  stopCaptureSpeech();const controller=new AbortController();activeSpeechAbortController=controller;activeSpeechCaptureId=id;
+  try{
+    const blob=await apiClient.requestBlob("/api/speech/synthesize",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,voice}),signal:controller.signal},{fallback:"语音合成失败"});
+    if(activeSpeechCaptureId!==id||controller.signal.aborted)return;
+    activeSpeechObjectUrl=URL.createObjectURL(blob);activeSpeechAudio=new Audio(activeSpeechObjectUrl);
+    activeSpeechAudio.addEventListener("ended",stopCaptureSpeech,{once:true});
+    activeSpeechAudio.addEventListener("error",()=>{stopCaptureSpeech();showToast("合成音频无法播放","error")},{once:true});
+    await activeSpeechAudio.play()
+  }catch(error){if(error.name!=="AbortError"){stopCaptureSpeech();showToast(error.message,"error")}}
+}
 function captureCard(item,showDate=true){
   const tags=item.tags?.length?`#${item.tags.map(escapeHtml).join(" #")}`:"未标记";
+  const promotedRoot=(state.thoughts||[]).find(value=>value.type==="question"&&value.sourceRef?.type==="capture"&&value.sourceRef.id===item.id);
   const syncing=item._sync?.status,actions=syncing
     ?`<span class="capture-sync-state ${escapeHtml(syncing)}">${syncing==="pending"?"待同步":"正在同步"}</span>`
-    :`<button type="button" data-capture-promote="${item.id}">展开成思考</button><div class="capture-actions-row"><button type="button" data-capture-edit="${item.id}">编辑</button><button type="button" class="danger" data-capture-delete="${item.id}" aria-label="删除这条捕念">删除</button></div>`;
-  return `<article class="capture-timeline-entry${syncing?" is-syncing":""}" data-capture-id="${item.id}"><div class="timeline-date capture-date">${showDate?escapeHtml(eventDate(item)):""}</div><header class="capture-meta"><span class="capture-top-tags">${tags}</span><time class="capture-entry-time">${formatTime(eventTimestamp(item))}</time></header><div class="capture-item"><div class="capture-copy"><div class="capture-content-viewport"><div class="record-actions capture-actions">${actions}</div>${item.content?`<div class="markdown-content">${renderMarkdown(item.content)}</div>`:""}${contentImagesMarkup(item,"capture")}</div></div><button class="capture-expand" type="button" data-capture-expand aria-expanded="false" aria-label="展开捕念" hidden>⌄</button></div></article>`;
+    :`${promotedRoot?`<button type="button" class="capture-promoted-link" data-capture-thought="${escapeHtml(promotedRoot.id)}">已展为思考</button>`:`<button type="button" data-capture-promote="${item.id}">展开成思考</button>`}<div class="capture-actions-row"><button type="button" data-capture-edit="${item.id}">编辑</button><button type="button" class="danger" data-capture-delete="${item.id}" aria-label="删除这条捕念">删除</button></div>`;
+  return `<article class="capture-timeline-entry${syncing?" is-syncing":""}" data-capture-id="${item.id}"><div class="timeline-date capture-date">${showDate?escapeHtml(eventDate(item)):""}</div><header class="capture-meta"><span class="capture-top-tags">${tags}</span><time class="capture-entry-time">${formatTime(eventTimestamp(item))}</time></header><div class="capture-item"><div class="capture-copy"><div class="capture-content-viewport"><div class="record-actions capture-actions">${actions}</div>${item.content?`<div class="markdown-content">${renderMarkdown(item.content)}</div>`:""}${contentImagesMarkup(item,"capture")}${captureAudioMarkup(item)}</div></div><button class="capture-expand" type="button" data-capture-expand aria-expanded="false" aria-label="展开捕念" hidden>⌄</button></div></article>`;
 }
 function syncCaptureOverflow(){
   $$(".capture-item").forEach(card=>{
@@ -656,27 +1572,28 @@ function renderCaptures(){
   items.filter(item=>!item._sync).forEach(item=>markCommentTarget($(`[data-capture-id="${CSS.escape(item.id)}"] .capture-copy .markdown-content`),commentRootKey("capture",item.id),"content"));
   renderLatex($("#capture-list"));applyCommentAnchors($("#capture-list"));requestAnimationFrame(syncCaptureOverflow);
 }
-function resetCaptureForm(){
-  $("#capture-form").reset();delete $("#capture-form").dataset.requestId;$("#capture-id").value="";resetContentImageEditor("capture");captureDraftTags=[];renderCaptureTagComposer();resetOccurrenceInput($("#capture-date"));$("#capture-submit").textContent="收下";$("#capture-cancel").hidden=true;$("#capture-status").textContent="";
+function resetCaptureForm({preserveUploads=false}={}){
+  $("#capture-form").reset();delete $("#capture-form").dataset.requestId;$("#capture-id").value="";resetContentImageEditor("capture",[],{forget:!preserveUploads});clearCaptureAudioDraft({forget:!preserveUploads});captureDraftTags=[];renderCaptureTagComposer();resetOccurrenceInput($("#capture-date"));$("#capture-submit").textContent="收下";$("#capture-cancel").hidden=true;$("#capture-status").textContent="";clearDurableDraft("capture-form");
+  if(preserveUploads&&currentUser?.id)void Promise.all([mediaDraftStore.delete(currentUser.id,"capture"),mediaDraftStore.delete(currentUser.id,audioDraftKey)]).catch(()=>{})
 }
 function editCapture(id){
   const item=state.captures.find(value=>value.id===id);if(!item)return;
-  $("#capture-id").value=item.id;$("#capture-content").value=item.content;resetContentImageEditor("capture",item.attachmentPaths||[]);captureDraftTags=[...(item.tags||[])];$("#capture-tags").value="";renderCaptureTagComposer();resetOccurrenceInput($("#capture-date"),item);$("#capture-submit").textContent="保存修改";$("#capture-cancel").hidden=false;$("#capture-status").textContent="正在编辑已有捕念";$("#capture-form").scrollIntoView({behavior:"smooth",block:"start"});$("#capture-content").focus();
+  $("#capture-id").value=item.id;$("#capture-content").value=item.content;resetContentImageEditor("capture",item.attachmentPaths||[]);setExistingCaptureAudio(item.audio);captureDraftTags=[...(item.tags||[])];$("#capture-tags").value="";renderCaptureTagComposer();resetOccurrenceInput($("#capture-date"),item);$("#capture-submit").textContent="保存修改";$("#capture-cancel").hidden=false;$("#capture-status").textContent="正在编辑已有捕念";$("#capture-form").scrollIntoView({behavior:"smooth",block:"start"});$("#capture-content").focus();
 }
 function reflectionMarkup(item,reflection,index){
   const stale=reflection.sourceUpdatedAt&&(reflection.sourceUpdatedAt!==(item.updatedAt||item.createdAt));
-  return `<details class="journal-reflection" data-reflection-id="${reflection.id}" ${index===0?"open":""}><summary><span>助手回望${index?" "+(item.reflections.length-index):""}</span><small>${stale?"基于修改前版本 · ":""}${formatDate(reflection.createdAt)}</small></summary><div class="model-answer-content">${reasoningDisclosure(reflection.reasoningContent)}<div class="markdown-content">${renderMarkdown(reflection.content)}</div></div></details>`;
+  return `<details class="journal-reflection" data-reflection-id="${reflection.id}" ${index===0?"open":""}><summary><span>助手回望${index?" "+(item.reflections.length-index):""}</span><small>${stale?"基于修改前版本 · ":""}${formatDate(reflection.createdAt)}</small></summary><div class="model-answer-content">${reasoningDisclosure(reflection.reasoningContent)}${contextReceiptMarkup(reflection.contextReceipt)}<div class="markdown-content">${renderMarkdown(reflection.content)}</div></div></details>`;
 }
 function journalCard(item){
-  const title=item.title||`${eventDate(item)} 日记`,reflections=item.reflections||[],tags=item.tags?.length?`<div class="record-tags">${item.tags.map(tag=>`<span>#${escapeHtml(tag)}</span>`).join("")}</div>`:"";
-  return `<details class="card journal-entry" data-journal-id="${item.id}"><summary><div><time>${escapeHtml(eventDate(item))}</time><strong>${escapeHtml(title)}</strong><p>${escapeHtml(plainPreview(item.content))}</p></div><span class="expand-mark" aria-hidden="true">⌄</span></summary><div class="journal-entry-body"><div class="markdown-content journal-original">${renderMarkdown(item.content)}</div>${tags}<div class="record-actions"><button type="button" class="reflect-action" data-journal-reflect="${item.id}">✦ ${reflections.length?"再次回望":"请助手回望"}</button><button type="button" data-journal-edit="${item.id}">编辑</button><button type="button" class="danger" data-journal-delete="${item.id}">删除</button></div>${reflections.length?`<section class="journal-reflections"><h3>回望记录</h3>${reflections.map((reflection,index)=>reflectionMarkup(item,reflection,index)).join("")}</section>`:""}</div></details>`;
+  const title=item.title||`${eventDate(item)} 日记`,reflections=item.reflections||[],tags=item.tags?.length?`<div class="record-tags">${item.tags.map(tag=>`<span>#${escapeHtml(tag)}</span>`).join("")}</div>`:"",syncing=item._sync?.status,actions=syncing?`<span class="checkin-sync-state ${escapeHtml(syncing)}">${syncing==="pending"?"待同步":"正在同步"}</span>`:`<button type="button" class="reflect-action" data-journal-reflect="${item.id}">✦ ${reflections.length?"再次回望":"请助手回望"}</button><button type="button" data-journal-edit="${item.id}">编辑</button><button type="button" class="danger" data-journal-delete="${item.id}">删除</button>`;
+  return `<details class="card journal-entry${syncing?" is-syncing":""}" data-journal-id="${item.id}"><summary><div><time>${escapeHtml(eventDate(item))}</time><strong>${escapeHtml(title)}</strong><p>${escapeHtml(plainPreview(item.content))}</p></div><span class="expand-mark" aria-hidden="true">⌄</span></summary><div class="journal-entry-body"><div class="markdown-content journal-original">${renderMarkdown(item.content)}</div>${tags}<div class="record-actions">${actions}</div>${reflections.length?`<section class="journal-reflections"><h3>回望记录</h3>${reflections.map((reflection,index)=>reflectionMarkup(item,reflection,index)).join("")}</section>`:""}</div></details>`;
 }
 function renderJournals(){
   if(!journalDraftRestored){journalDraftRestored=true;restoreJournalDraft(state.journalDraft)}
   const open=new Set($$(".journal-entry[open]").map(item=>item.dataset.journalId)),items=[...(state.journals||[])].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a)));
   $("#journal-count").textContent=`${items.length} 篇`;
   $("#journal-list").innerHTML=items.length?items.map(journalCard).join(""):empty("还没有日记。写一句真实的话，就是开始。");
-  $$(".journal-entry").forEach(card=>{const item=items.find(value=>value.id===card.dataset.journalId);if(!item)return;if(open.has(item.id))card.open=true;const rootKey=commentRootKey("journal",item.id);markCommentTarget(card.querySelector(".journal-original"),rootKey,"content");(item.reflections||[]).forEach(reflection=>markCommentTarget(card.querySelector(`[data-reflection-id="${CSS.escape(reflection.id)}"] .model-answer-content>.markdown-content`),rootKey,`reflection:${reflection.id}`))});renderLatex($("#journal-list"));applyCommentAnchors($("#journal-list"));
+  $$(".journal-entry").forEach(card=>{const item=items.find(value=>value.id===card.dataset.journalId);if(!item)return;if(open.has(item.id))card.open=true;if(item._sync)return;const rootKey=commentRootKey("journal",item.id);markCommentTarget(card.querySelector(".journal-original"),rootKey,"content");(item.reflections||[]).forEach(reflection=>markCommentTarget(card.querySelector(`[data-reflection-id="${CSS.escape(reflection.id)}"] .model-answer-content>.markdown-content`),rootKey,`reflection:${reflection.id}`))});renderLatex($("#journal-list"));applyCommentAnchors($("#journal-list"));
 }
 function resetJournalForm(){
   $("#journal-form").reset();$("#journal-id").value="";resetOccurrenceInput($("#journal-date"));$("#journal-submit").textContent="保存日记";$("#journal-cancel").hidden=true;$("#journal-status").textContent="";$("#journal-assist-status").textContent="";
@@ -716,7 +1633,7 @@ function renderStateChart(){
   const scorePath=pathFor("composite"),scoreDots=daily.map((day,index)=>Number.isFinite(day.composite)?`<circle class="score-dot" cx="${x(index)}" cy="${y(day.composite)}" r="5"><title>${day.date} · 综合 ${day.score}/100 · ${day.entries} 次提交均值</title></circle>`:"").join(""),current=daily.at(-1),summary=[["情绪",current.mood],["精力",current.energy],["压力",current.stress],["睡眠",current.sleep]].map(([label,value])=>`${label} ${round(value)}`).join(" · ");
   $("#state-chart").innerHTML=`<div class="chart-stats"><span><b>${daily.length}</b> 个记录日</span><span><b>${eligible.length}</b> 次提交</span><span><b>${current.score??"—"}</b> 最新综合分</span></div><div class="chart-day-summary"><b>${current.date}</b><span>${current.entries} 次提交取均值：${summary}</span></div><div class="chart-legend">${series.map(item=>`<span><i style="--series:${item.color}"></i>${escapeHtml(item.label)}</span>`).join("")}<span class="score-legend"><i></i>综合状态</span></div><svg class="timeline-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="所有状态指标的每日均值与综合状态趋势"><g class="chart-grid">${grid}${labels}</g>${paleLines}<path class="score-line" d="${scorePath}"/>${scoreDots}</svg><p class="score-method">所有指标均为 1 最差、5 最好。综合分 = 情绪 30% + 精力 30% + 睡眠 25% + 压力状态 15%，再换算为 0–100。自定义指标只展示趋势，不擅自计入总分。</p>`
 }
-function renderChat(){const chats=state.chats.filter(x=>eventDate(x)===activeDate);$("#chat-history").innerHTML=chats.length?[...chats].reverse().map(x=>`<div class="chat-message user" data-chat-id="${x.id}" data-chat-part="message"><div class="markdown-content">${renderMarkdown(x.message)}</div></div><div class="chat-message agent" data-chat-id="${x.id}" data-chat-part="answer">${reasoningDisclosure(x.reasoningContent)}<div class="markdown-content">${renderMarkdown(x.answer)}</div><button class="subtle-action danger chat-delete" type="button" data-chat-delete="${x.id}">删除对话</button></div>`).join(""):empty("在这里提问，我会带着你的长期记录一起回答。");chats.forEach(item=>{const rootKey=commentRootKey("chat",item.id);markCommentTarget($(`[data-chat-id="${CSS.escape(item.id)}"][data-chat-part="message"]>.markdown-content`),rootKey,"message");markCommentTarget($(`[data-chat-id="${CSS.escape(item.id)}"][data-chat-part="answer"]>.markdown-content`),rootKey,"answer")});renderLatex($("#chat-history"));applyCommentAnchors($("#chat-history"))}
+function renderChat(){const chats=state.chats.filter(x=>eventDate(x)===activeDate);$("#chat-history").innerHTML=chats.length?[...chats].reverse().map(x=>`<div class="chat-message user" data-chat-id="${x.id}" data-chat-part="message"><div class="markdown-content">${renderMarkdown(x.message)}</div></div><div class="chat-message agent" data-chat-id="${x.id}" data-chat-part="answer">${reasoningDisclosure(x.reasoningContent)}${contextReceiptMarkup(x.contextReceipt)}<div class="markdown-content">${renderMarkdown(x.answer)}</div><button class="subtle-action danger chat-delete" type="button" data-chat-delete="${x.id}">删除对话</button></div>`).join(""):empty("在这里提问，我会带着你的长期记录一起回答。");chats.forEach(item=>{const rootKey=commentRootKey("chat",item.id);markCommentTarget($(`[data-chat-id="${CSS.escape(item.id)}"][data-chat-part="message"]>.markdown-content`),rootKey,"message");markCommentTarget($(`[data-chat-id="${CSS.escape(item.id)}"][data-chat-part="answer"]>.markdown-content`),rootKey,"answer")});renderLatex($("#chat-history"));applyCommentAnchors($("#chat-history"))}
 function experimentCard(item){const start=new Date(item.createdAt),elapsed=Math.max(1,Math.floor((Date.now()-start.getTime())/86400000)+1),relevant=state.checkins.filter(x=>new Date(eventTimestamp(x))>=start),withFactor=relevant.filter(x=>(x.factors||[]).includes(item.factor)),withoutFactor=relevant.filter(x=>!(x.factors||[]).includes(item.factor)),metric=baseMetrics[item.outcome]?item.outcome:"mood",withAvg=avg(withFactor.map(x=>x[metric]).filter(Number.isFinite)),withoutAvg=avg(withoutFactor.map(x=>x[metric]).filter(Number.isFinite)),enough=withFactor.length>=3&&withoutFactor.length>=3,result=enough?`有因素 ${withAvg.toFixed(1)} / 无因素 ${withoutAvg.toFixed(1)}，差值 ${(withAvg-withoutAvg).toFixed(1)}`:`有因素 ${withFactor.length} 次 / 无因素 ${withoutFactor.length} 次；两边各满 3 次后开始显示线索`;return `<article class="experiment-card"><div class="section-title"><b>${escapeHtml(item.hypothesis)}</b><span>${Math.min(elapsed,item.duration)} / ${item.duration} 天</span></div><div class="experiment-progress"><i style="width:${Math.min(100,elapsed/item.duration*100)}%"></i></div><p>每天若做了“<b>${escapeHtml(item.factor)}</b>”，请在今日因素中填入完全相同的词；观察 ${trendLabels[metric]}。</p><footer><small>${escapeHtml(result)}。相关不等于因果。</small><button class="subtle-action danger" type="button" data-experiment-delete="${item.id}">删除</button></footer></article>`}
 
 function renderAssociationFlow(){const dates=new Set(state.checkins.map(x=>x.occurredOn)).size,factors=new Set(state.checkins.flatMap(x=>x.factors||[])).size;$("#association-flow").innerHTML=`<div class="association-flow" role="img" aria-label="延迟相关线索计算流程：记录状态和因素，按日期聚合，按因素分组，对照当天与自然次日情绪，通过样本门槛，最后输出非因果线索"><div class="flow-node"><b>状态记录</b><span>${state.checkins.length} 次状态 · ${factors} 个因素</span></div><i>↓</i><div class="flow-node"><b>按自然日聚合</b><span>${dates} 天；同日多次取平均</span></div><i>↓</i><div class="flow-node"><b>逐个因素分组</b><span>出现该因素的天 vs 未出现的天</span></div><i>↓</i><div class="flow-node"><b>三个对照</b><span>当天情绪 · 自然次日情绪 · 无因素基线</span></div><i>↓</i><div class="flow-node"><b>样本分层</b><span>首次出现即展示；样本增加后再升级为初步线索或可观察</span></div><i>↓</i><div class="flow-node final"><b>延迟关联线索</b><span>只显示均值差异，不推断因果</span></div></div>`}
@@ -739,7 +1656,7 @@ function associationInsightsMarkup(){
 function renderAnalysisHistory(){
   const list=$("#analysis-list"),known=new Set([...list.querySelectorAll("[data-analysis-id]")].map(item=>item.dataset.analysisId)),opened=new Set([...list.querySelectorAll("[data-analysis-id][open]")].map(item=>item.dataset.analysisId)),items=[...(state.analyses||[])].sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
   $("#analysis-count").textContent=`${items.length} 份`;
-  list.innerHTML=items.length?items.map((item,index)=>{const label=item.reason==="weekly-background"?"后台周复盘":"主动复盘",isNew=!known.has(item.id),open=opened.has(item.id)||(index===0&&(!known.size||isNew));return `<details class="analysis-entry" data-analysis-id="${item.id}" ${open?"open":""}><summary><div><div class="analysis-summary-meta"><time>${formatDate(item.createdAt)}</time><span>${label}</span>${index===0?'<b>最新</b>':""}</div><p>${escapeHtml(plainPreview(item.content))}</p></div><span class="expand-mark" aria-hidden="true">⌄</span></summary><div class="analysis-entry-body">${reasoningDisclosure(item.reasoningContent)}<div class="analysis-content markdown-content">${renderMarkdown(item.content)}</div><button class="subtle-action danger" type="button" data-analysis-delete="${item.id}">删除复盘</button></div></details>`}).join(""):empty("已有任一状态、健康、捕念、日记或思绪记录，就可以生成低样本认知复盘。");
+  list.innerHTML=items.length?items.map((item,index)=>{const label=item.reason==="weekly-background"?"后台周复盘":"主动复盘",isNew=!known.has(item.id),open=opened.has(item.id)||(index===0&&(!known.size||isNew));return `<details class="analysis-entry" data-analysis-id="${item.id}" ${open?"open":""}><summary><div><div class="analysis-summary-meta"><time>${formatDate(item.createdAt)}</time><span>${label}</span>${index===0?'<b>最新</b>':""}</div><p>${escapeHtml(plainPreview(item.content))}</p></div><span class="expand-mark" aria-hidden="true">⌄</span></summary><div class="analysis-entry-body">${reasoningDisclosure(item.reasoningContent)}${contextReceiptMarkup(item.contextReceipt)}<div class="analysis-content markdown-content">${renderMarkdown(item.content)}</div><button class="subtle-action danger" type="button" data-analysis-delete="${item.id}">删除复盘</button></div></details>`}).join(""):empty("已有任一状态、健康、捕念、日记或思绪记录，就可以生成低样本认知复盘。");
   items.forEach(item=>markCommentTarget(list.querySelector(`[data-analysis-id="${CSS.escape(item.id)}"] .analysis-content`),commentRootKey("analysis",item.id),"content"));
   renderLatex(list);applyCommentAnchors(list);
 }
@@ -788,12 +1705,15 @@ function bookTimelineMarkup(book){
   if(!notes.length)return `<div class="book-timeline-empty">${empty("还没有记录。先留下一句真实的理解，之后再慢慢补充。")}</div>`;
   return `<div class="book-timeline">${notes.map((note,index)=>{
     const date=eventDate(note),previous=index?eventDate(notes[index-1]):"",favorite=bookFavoriteMeta[note.favorite]||bookFavoriteMeta.none,type=note.type==="thought"?"附加思考":"记录";
-    return `<article class="book-timeline-entry" id="book-note-${note.id}" data-note-id="${note.id}">
+      const syncing=note._sync?.status,actions=syncing
+        ?`<span class="checkin-sync-state ${escapeHtml(syncing)}">${syncing==="pending"?"待同步":"正在同步"}</span>`
+        :`<button class="book-favorite ${note.favorite||"none"}" type="button" data-book-note-favorite="${note.id}" data-next-favorite="${favorite.next}" title="${favorite.label}，点击切换" aria-label="${favorite.label}，点击切换">${favorite.icon}</button><div><button class="subtle-action" type="button" data-book-note-edit="${note.id}">编辑</button><button class="subtle-action danger" type="button" data-book-note-delete="${note.id}">删除</button></div>`;
+      return `<article class="book-timeline-entry${syncing?" is-syncing":""}" id="book-note-${note.id}" data-note-id="${note.id}">
       ${date!==previous?`<time class="book-entry-date">${escapeHtml(date)}</time>`:""}
       <div class="book-entry-card card">
         <header><span class="book-entry-type ${note.type==="thought"?"thought":""}">${type}</span><time>${formatTime(eventTimestamp(note))}</time></header>
         <div class="book-note markdown-content">${renderMarkdown(note.content)}</div>
-        <footer><button class="book-favorite ${note.favorite||"none"}" type="button" data-book-note-favorite="${note.id}" data-next-favorite="${favorite.next}" title="${favorite.label}，点击切换" aria-label="${favorite.label}，点击切换">${favorite.icon}</button><div><button class="subtle-action" type="button" data-book-note-edit="${note.id}">编辑</button><button class="subtle-action danger" type="button" data-book-note-delete="${note.id}">删除</button></div></footer>
+        <footer>${actions}</footer>
       </div>
     </article>`
   }).join("")}</div>`
@@ -812,7 +1732,7 @@ function renderBookDetail(book){
     ${bookEntryForm(book)}`;
   const rootKey=commentRootKey("book",book.id);
   markCommentTarget(detail.querySelector(".book-description"),rootKey,"description");
-  notes.forEach(note=>markCommentTarget(detail.querySelector(`[data-note-id="${CSS.escape(note.id)}"] .book-note`),rootKey,`note:${note.id}`));
+  notes.filter(note=>!note._sync).forEach(note=>markCommentTarget(detail.querySelector(`[data-note-id="${CSS.escape(note.id)}"] .book-note`),rootKey,`note:${note.id}`));
   renderLatex(detail);applyCommentAnchors(detail);installOccurrenceControls(detail);
   if(pendingBookNoteId){
     const target=detail.querySelector(`#book-note-${CSS.escape(pendingBookNoteId)}`);
@@ -875,7 +1795,8 @@ function renderBooks(){
   renderBookMemories();
   $("#book-grid").innerHTML=state.books.map(book=>{
     const notes=sortedBookNotes(book),latest=notes[0];
-    return `<article class="book-card card" data-book-id="${book.id}"><button class="book-card-open" type="button" data-open-book="${book.id}">${bookCoverMarkup(book,"book-gallery-cover")}<span class="book-card-copy"><span class="book-title-frame" data-title="${escapeHtml(book.title)}" title="${escapeHtml(book.title)}"><strong class="book-title">${escapeHtml(book.title)}</strong></span><span>${escapeHtml(book.author||"作者未填")}</span><small class="book-card-reading">${escapeHtml(bookReadingRange(book))}</small><small>${notes.length} 条记录${latest?` · ${formatDate(eventTimestamp(latest))}`:""}</small></span><span class="book-card-arrow" aria-hidden="true">→</span></button></article>`
+    const syncing=book._sync?.status;
+    return `<article class="book-card card${syncing?" is-syncing":""}" data-book-id="${book.id}"><button class="book-card-open" type="button" data-open-book="${book.id}" ${syncing?"disabled":""}>${bookCoverMarkup(book,"book-gallery-cover")}<span class="book-card-copy"><span class="book-title-frame" data-title="${escapeHtml(book.title)}" title="${escapeHtml(book.title)}"><strong class="book-title">${escapeHtml(book.title)}</strong></span><span>${escapeHtml(book.author||"作者未填")}</span><small class="book-card-reading">${escapeHtml(bookReadingRange(book))}</small><small>${syncing?(syncing==="pending"?"待同步":"正在同步"):`${notes.length} 条记录${latest?` · ${formatDate(eventTimestamp(latest))}`:""}`}</small></span><span class="book-card-arrow" aria-hidden="true">→</span></button></article>`
   }).join("");
   requestAnimationFrame(setupBookTitlePans);
 }
@@ -952,11 +1873,128 @@ async function applySegmentedKeepsakeMask(cutoutUrl,serial){
 function keepsakeSegmentationDataUrl(){
   return keepsakeWorkingImage(1600).toDataURL("image/jpeg",.9);
 }
+const keepsakeBatchDraftKey="keepsake-batch";
+function activeKeepsakeBatchItem(){
+  return keepsakeBatch.items[keepsakeBatch.activeIndex]||null
+}
+function keepsakeBatchStatus(item,index){
+  if(item.status==="saving")return"正在保存";
+  if(item.status==="uploading")return"正在上传";
+  if(item.status==="failed")return item.lastError?.message||"失败，可重试";
+  if(item.alphaMask)return"已编辑，待保存";
+  return index===keepsakeBatch.activeIndex?"正在编辑":"待编辑"
+}
+function revokeKeepsakeBatchPreviews(){
+  keepsakeBatchPreviewUrls.forEach(url=>URL.revokeObjectURL(url));keepsakeBatchPreviewUrls=[]
+}
+function renderKeepsakeBatch(){
+  const section=$("#keepsake-batch"),list=$("#keepsake-batch-list");if(!section||!list)return;
+  const items=keepsakeBatch.items;section.hidden=!items.length;$("#keepsake-batch-count").textContent=items.length?`${items.length} 件`:"";
+  revokeKeepsakeBatchPreviews();keepsakeBatchPreviewUrls=items.map(item=>URL.createObjectURL(item.file));
+  list.innerHTML=items.map((item,index)=>`<article class="keepsake-batch-item${index===keepsakeBatch.activeIndex?" active":""}${item.status==="failed"?" failed":""}">
+    <button class="keepsake-batch-select" type="button" data-keepsake-batch-select="${index}" aria-pressed="${index===keepsakeBatch.activeIndex}">
+      <img src="${keepsakeBatchPreviewUrls[index]}" alt=""><span><b>${escapeHtml(item.title||item.file?.name||`小物 ${index+1}`)}</b><small>${escapeHtml(keepsakeBatchStatus(item,index))}</small></span>
+    </button>
+    <button class="keepsake-batch-remove" type="button" data-keepsake-batch-remove="${index}" aria-label="取消第 ${index+1} 件小物" ${item.status==="saving"?"disabled":""}>×</button>
+  </article>`).join("");
+  $("#keepsake-upload-box").hidden=Boolean(items.length);
+  $("#keepsake-editor").hidden=!items.length&&!$("#keepsake-id").value
+}
+function keepsakeMaskHasSubject(){
+  const data=keepsakeEditor.maskCanvas?maskImageDataFromCanvas(keepsakeEditor.maskCanvas).data:null;
+  if(!data)return false;
+  for(let index=3;index<data.length;index+=4)if(data[index]>20)return true;
+  return false
+}
+function captureActiveKeepsakeBatchItem({captureMask=true}={}){
+  const item=activeKeepsakeBatchItem(),form=$("#keepsake-form");
+  if(!item||form.dataset.batchItemId!==item.itemId||!keepsakeEditor.sourceCanvas)return;
+  const hasMask=captureMask&&keepsakeMaskHasSubject();
+  Object.assign(item,{
+    title:$("#keepsake-title").value,
+    category:$("#keepsake-category").value,
+    occurredAt:$("#keepsake-datetime").value,
+    tags:$("#keepsake-tags").value,
+    note:$("#keepsake-note").value,
+    edgeExpansion:Number($("#keepsake-edge-expansion").value)||0,
+    source:keepsakeEditor.source,
+    alphaMask:hasMask?keepsakeEditor.maskCanvas.toDataURL("image/png"):item.alphaMask,
+    status:["uploading","saving","failed"].includes(item.status)?item.status:hasMask||item.alphaMask?"ready":"editing"
+  })
+}
+async function persistKeepsakeBatch({capture=true}={}){
+  const owner=currentUser?.id;if(!owner)return;
+  if(capture)captureActiveKeepsakeBatchItem();
+  if(!keepsakeBatch.items.length){await mediaDraftStore.delete(owner,keepsakeBatchDraftKey);return}
+  await mediaDraftStore.put({
+    owner,id:keepsakeBatchDraftKey,activeIndex:keepsakeBatch.activeIndex,updatedAt:new Date().toISOString(),
+    items:keepsakeBatch.items.map(item=>({
+      ...item,
+      blob:item.file,
+      name:item.file?.name||"keepsake",
+      type:item.file?.type||"application/octet-stream",
+      lastModified:Number(item.file?.lastModified)||Date.now(),
+      file:undefined
+    }))
+  })
+}
+async function loadKeepsakeBatchItem(index,{capture=true}={}){
+  if(keepsakeBatch.loading||!keepsakeBatch.items[index])return false;
+  if(capture)await persistKeepsakeBatch();
+  keepsakeBatch.loading=true;resetKeepsakeEditor();keepsakeBatch.activeIndex=index;const item=keepsakeBatch.items[index],serial=keepsakeEditor.segmentSerial;
+  $("#keepsake-workspace").hidden=false;$("#keepsake-form").dataset.batchItemId=item.itemId;$("#keepsake-editor-eyebrow").textContent=`批次 ${index+1} / ${keepsakeBatch.items.length}`;$("#keepsake-editor-title").textContent=item.title||`第 ${index+1} 件小物`;
+  renderKeepsakeBatch();
+  try{
+    const[dataUrl]=await imageDataUrls([item.file]);
+    if(serial!==keepsakeEditor.segmentSerial||item!==activeKeepsakeBatchItem())return false;
+    if(!await prepareKeepsakeImage({dataUrl,file:item.file,cutoutUrl:item.alphaMask||"",auto:false,serial}))return false;
+    $("#keepsake-title").value=item.title;$("#keepsake-category").value=item.category;setOccurrenceMode($("#keepsake-datetime"),"manual");$("#keepsake-datetime").value=item.occurredAt||localDateTimeForDate(activeDate);$("#keepsake-tags").value=item.tags;$("#keepsake-note").value=item.note;$("#keepsake-edge-expansion").value=String(item.edgeExpansion);$("#keepsake-edge-output").value=String(item.edgeExpansion);
+    $("#keepsake-save").textContent=keepsakeBatch.items.length>1?`保存第 ${index+1} 件`:"保存小物";$("#keepsake-save-status").textContent=item.lastError?.message||"";
+    item.status=item.alphaMask?"ready":"editing";renderKeepsakeBatch();
+    if(!item.alphaMask)void segmentCurrentKeepsake();
+    return true
+  }catch(error){item.status="failed";item.lastError={message:error.message};$("#keepsake-segment-status").textContent=error.message;renderKeepsakeBatch();return false}
+  finally{keepsakeBatch.loading=false;void persistKeepsakeBatch({capture:false})}
+}
+async function setKeepsakeBatchFiles(files,source="本地文件"){
+  const current=keepsakeBatch.items,nextFiles=[...current.map(item=>item.file),...files],validated=validatedImageFiles(nextFiles,KEEPSAKE_BATCH_MAX_ITEMS),created=createKeepsakeBatchItems(validated.slice(current.length),{occurredAt:localDateTimeForDate(activeDate)});
+  keepsakeBatch.items=[...current,...created];if(!current.length)keepsakeBatch.activeIndex=0;
+  $("#keepsake-workspace").hidden=false;renderKeepsakeBatch();await persistKeepsakeBatch();
+  if(!current.length)await loadKeepsakeBatchItem(0,{capture:false});
+  $("#keepsake-segment-status").textContent=`${source} · 已加入 ${created.length} 张，批次共 ${keepsakeBatch.items.length} 件。`;
+  return true
+}
+async function restoreKeepsakeBatch(owner){
+  if(!owner||keepsakeBatch.items.length)return false;
+  const stored=await mediaDraftStore.get(owner,keepsakeBatchDraftKey);if(!stored?.items?.length)return false;
+  keepsakeBatch.items=stored.items.slice(0,KEEPSAKE_BATCH_MAX_ITEMS).map(item=>({
+    ...item,
+    file:typeof File==="function"?new File([item.blob],item.name||"keepsake",{type:item.type||item.blob?.type||"",lastModified:Number(item.lastModified)||Date.now()}):item.blob,
+    blob:undefined
+  }));
+  keepsakeBatch.activeIndex=Math.max(0,Math.min(Number(stored.activeIndex)||0,keepsakeBatch.items.length-1));renderKeepsakeBatch();
+  return true
+}
+async function removeKeepsakeBatchItem(index,{discard=true}={}){
+  captureActiveKeepsakeBatchItem();const previousIndex=keepsakeBatch.activeIndex,wasActive=index===previousIndex,[item]=keepsakeBatch.items.splice(index,1);if(!item)return;
+  if(discard&&item.mediaPaths&&item.uploadRequestId)await discardKeepsakeMedia({request,attachmentPaths:item.mediaPaths.attachmentPaths||Object.values(item.mediaPaths),uploadRequestId:item.uploadRequestId}).catch(()=>{});
+  keepsakeBatch.activeIndex=wasActive?nextKeepsakeBatchIndex(keepsakeBatch.items,index):Math.max(0,previousIndex-(index<previousIndex?1:0));
+  if(keepsakeBatch.items.length){await persistKeepsakeBatch();renderKeepsakeBatch();if(wasActive)await loadKeepsakeBatchItem(keepsakeBatch.activeIndex,{capture:false})}
+  else{await mediaDraftStore.delete(currentUser?.id,keepsakeBatchDraftKey);resetKeepsakeEditor();renderKeepsakeBatch()}
+}
+function clearKeepsakeBatchState(){
+  clearTimeout(keepsakeBatchPersistTimer);keepsakeBatchPersistTimer=0;revokeKeepsakeBatchPreviews();keepsakeBatch.items=[];keepsakeBatch.activeIndex=0;keepsakeBatch.loading=false;renderKeepsakeBatch()
+}
+function scheduleKeepsakeBatchPersist(){
+  captureActiveKeepsakeBatchItem({captureMask:false});const item=activeKeepsakeBatchItem(),card=item&&document.querySelector(`[data-keepsake-batch-select="${keepsakeBatch.activeIndex}"]`);
+  if(card){card.querySelector("b").textContent=item.title||item.file?.name||`小物 ${keepsakeBatch.activeIndex+1}`;card.querySelector("small").textContent=keepsakeBatchStatus(item,keepsakeBatch.activeIndex)}
+  clearTimeout(keepsakeBatchPersistTimer);keepsakeBatchPersistTimer=setTimeout(()=>void persistKeepsakeBatch({capture:false}),250)
+}
 function resetKeepsakeEditor({close=false}={}){
   keepsakeEditor.segmentSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.source="manual";keepsakeEditor.originalPath="";keepsakeEditor.cutoutPath="";keepsakeEditor.drawing=false;keepsakeEditor.lastPoint=null;
   keepsakeEditor.mode="keep";$("#keepsake-brush-keep").classList.add("active");$("#keepsake-brush-erase").classList.remove("active");$("#keepsake-brush-keep").setAttribute("aria-pressed","true");$("#keepsake-brush-erase").setAttribute("aria-pressed","false");
   $("#keepsake-auto-segment").disabled=false;
-  clearKeepsakeHistory();$("#keepsake-form").reset();$("#keepsake-id").value="";resetOccurrenceInput($("#keepsake-datetime"));$("#keepsake-edge-expansion").value="8";$("#keepsake-edge-output").value="8";$("#keepsake-image").value="";$("#keepsake-editor").hidden=true;$("#keepsake-upload-box").hidden=false;$("#keepsake-upload-box").classList.remove("dragging","has-image");$("#keepsake-upload-title").textContent="选择、粘贴或拖入小物照片";$("#keepsake-upload-hint").textContent="PNG / JPEG / WebP · 不超过 8 MB";$("#keepsake-segment-status").textContent="";$("#keepsake-save-status").textContent="";$("#keepsake-save").textContent="保存小物";$("#keepsake-cancel-edit").hidden=true;$("#keepsake-editor-eyebrow").textContent="新建留存";$("#keepsake-editor-title").textContent="拍下或放入一张照片";
+  clearKeepsakeHistory();$("#keepsake-form").reset();delete $("#keepsake-form").dataset.batchItemId;delete $("#keepsake-form").dataset.requestId;delete $("#keepsake-form").dataset.uploadRequestId;$("#keepsake-id").value="";resetOccurrenceInput($("#keepsake-datetime"));$("#keepsake-edge-expansion").value="8";$("#keepsake-edge-output").value="8";$("#keepsake-image").value="";$("#keepsake-editor").hidden=true;$("#keepsake-upload-box").hidden=false;$("#keepsake-upload-box").classList.remove("dragging","has-image");$("#keepsake-upload-title").textContent="选择、粘贴或拖入 1–8 张小物照片";$("#keepsake-upload-hint").textContent="每张逐项编辑与保存 · PNG / JPEG / WebP · 单张 8 MB · 批次合计 48 MB";$("#keepsake-segment-status").textContent="";$("#keepsake-save-status").textContent="";$("#keepsake-save").textContent="保存小物";$("#keepsake-cancel-edit").hidden=true;$("#keepsake-editor-eyebrow").textContent="新建留存";$("#keepsake-editor-title").textContent="拍下或放入一张照片";
   if(close)$("#keepsake-workspace").hidden=true;
 }
 function invalidateKeepsakeSegmentation(){keepsakeEditor.segmentSerial+=1;$("#keepsake-auto-segment").disabled=false}
@@ -979,13 +2017,14 @@ async function setKeepsakeFile(file,source="本地文件"){
 }
 async function segmentCurrentKeepsake(){
   const button=$("#keepsake-auto-segment"),status=$("#keepsake-segment-status");if(!keepsakeEditor.sourceDataUrl)return status.textContent="请先放入一张照片。";
-  const serial=++keepsakeEditor.segmentSerial,owner=currentUser?.id,session=sessionSerial,requestId=crypto.randomUUID(),targetId=$("#keepsake-id").value||"keepsake-draft";button.disabled=true;status.textContent="正在识别主体，通常需要数秒…";pushKeepsakeHistory();
+  const serial=++keepsakeEditor.segmentSerial,owner=currentUser?.id,session=sessionSerial,requestId=crypto.randomUUID(),targetId=$("#keepsake-id").value||$("#keepsake-form").dataset.batchItemId||"keepsake-draft";button.disabled=true;status.textContent="正在识别主体，通常需要数秒…";pushKeepsakeHistory();
   try{
     const result=await request("/api/keepsakes/segment",{method:"POST",body:JSON.stringify({requestId,targetId,inputVersion:serial,image:keepsakeSegmentationDataUrl()})});
     if(serial!==keepsakeEditor.segmentSerial||owner!==currentUser?.id||session!==sessionSerial||(result.requestId&&result.requestId!==requestId))return;
     if(!result.cutout)throw new Error("服务未返回透明轮廓");
     if(!await applySegmentedKeepsakeMask(result.cutout,serial))return;
     status.textContent="自动轮廓已生成，可继续涂抹修正。";
+    if(activeKeepsakeBatchItem()){captureActiveKeepsakeBatchItem();await persistKeepsakeBatch();renderKeepsakeBatch()}
   }catch(error){if(serial===keepsakeEditor.segmentSerial)status.textContent=`自动提取未完成：${error.message}。仍可手动涂抹。`}
   finally{if(serial===keepsakeEditor.segmentSerial)button.disabled=false}
 }
@@ -1004,6 +2043,21 @@ function keepsakeImageMarkup(item,className="",loading="lazy",mode="list"){
 }
 function keepsakeTagsMarkup(tags){
   return (tags||[]).length?`<span class="keepsake-tags">${tags.map(tag=>`<span>#${escapeHtml(tag)}</span>`).join("")}</span>`:"";
+}
+function keepsakeCardMarkup(item){
+  return `<article class="keepsake-card" data-keepsake-id="${escapeHtml(item.id)}"><button class="keepsake-card-open" type="button" data-keepsake-open="${escapeHtml(item.id)}" aria-label="查看 ${escapeHtml(item.title)} 详情">${keepsakeImageMarkup(item,"keepsake-card-image")}<span class="keepsake-card-copy"><span class="keepsake-card-meta"><span class="keepsake-card-category">${escapeHtml(item.category||"其他")}</span><time>${formatDate(eventTimestamp(item))}</time></span><strong>${escapeHtml(item.title)}</strong>${item.note?`<span class="keepsake-card-note">${escapeHtml(item.note)}</span>`:""}${keepsakeTagsMarkup(item.tags)}</span></button><div class="keepsake-card-actions"><button type="button" data-keepsake-edit="${escapeHtml(item.id)}">编辑</button><button type="button" class="danger" data-keepsake-delete="${escapeHtml(item.id)}">删除</button></div></article>`
+}
+function loadNextKeepsakePage(){
+  const total=(state.keepsakes||[]).length,next=Math.min(total,keepsakeVisibleCount+KEEPSAKE_PAGE_SIZE);
+  if(next===keepsakeVisibleCount)return;
+  keepsakeVisibleCount=next;renderKeepsakes()
+}
+function observeNextKeepsakePage(){
+  keepsakeLoadObserver?.disconnect();keepsakeLoadObserver=null;
+  const sentinel=$("#keepsake-pagination");
+  if(!sentinel||sentinel.hidden||typeof IntersectionObserver==="undefined")return;
+  keepsakeLoadObserver=new IntersectionObserver(entries=>{if(entries.some(entry=>entry.isIntersecting))loadNextKeepsakePage()},{root:null,rootMargin:`${KEEPSAKE_PREFETCH_MARGIN_PX}px 0px`});
+  keepsakeLoadObserver.observe(sentinel)
 }
 function renderKeepsakeDetail(item){
   const original=activeKeepsakeView==="original",detail=$("#keepsake-detail");
@@ -1025,12 +2079,17 @@ function renderKeepsakeDetail(item){
 }
 function renderKeepsakes(){
   const items=[...(state.keepsakes||[])].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a)));
+  const owner=currentUser?.id||"";if(owner!==keepsakePaginationOwner){keepsakePaginationOwner=owner;keepsakeVisibleCount=KEEPSAKE_PAGE_SIZE}
+  keepsakeVisibleCount=Math.max(KEEPSAKE_PAGE_SIZE,Math.min(keepsakeVisibleCount,Math.max(items.length,KEEPSAKE_PAGE_SIZE)));
   let detailItem=items.find(item=>item.id===activeKeepsakeId);if(activeKeepsakeId&&!detailItem){activeKeepsakeId="";activeKeepsakeView="presentation"}
-  detailItem=items.find(item=>item.id===activeKeepsakeId);const inDetail=Boolean(detailItem),library=$(".keepsake-library"),detail=$("#keepsake-detail");
+  detailItem=items.find(item=>item.id===activeKeepsakeId);const inDetail=Boolean(detailItem),library=$(".keepsake-library"),detail=$("#keepsake-detail"),pagination=$("#keepsake-pagination");
   $("#view-keepsakes").classList.toggle("keepsake-detail-mode",inDetail);$("#keepsake-count").textContent=items.length?`${items.length} 件`:"";$("#keepsake-library-count").textContent=`${items.length} 件`;$("#keepsake-create-toggle").hidden=inDetail;library.hidden=inDetail;detail.hidden=!inDetail;
-  if(inDetail){renderKeepsakeDetail(detailItem);return}
+  if(inDetail){keepsakeLoadObserver?.disconnect();if(pagination)pagination.hidden=true;renderKeepsakeDetail(detailItem);return}
   detail.innerHTML="";
-  $("#keepsake-grid").innerHTML=items.length?items.map(item=>`<article class="keepsake-card" data-keepsake-id="${escapeHtml(item.id)}"><button class="keepsake-card-open" type="button" data-keepsake-open="${escapeHtml(item.id)}" aria-label="查看 ${escapeHtml(item.title)} 详情">${keepsakeImageMarkup(item,"keepsake-card-image")}<span class="keepsake-card-copy"><span class="keepsake-card-meta"><span class="keepsake-card-category">${escapeHtml(item.category||"其他")}</span><time>${formatDate(eventTimestamp(item))}</time></span><strong>${escapeHtml(item.title)}</strong>${item.note?`<span class="keepsake-card-note">${escapeHtml(item.note)}</span>`:""}${keepsakeTagsMarkup(item.tags)}</span></button><div class="keepsake-card-actions"><button type="button" data-keepsake-edit="${escapeHtml(item.id)}">编辑</button><button type="button" class="danger" data-keepsake-delete="${escapeHtml(item.id)}">删除</button></div></article>`).join(""):empty("还没有数字留存的小物。");
+  const visibleItems=items.slice(0,keepsakeVisibleCount);
+  $("#keepsake-grid").innerHTML=items.length?visibleItems.map(keepsakeCardMarkup).join(""):empty("还没有数字留存的小物。");
+  if(pagination){pagination.hidden=!items.length||visibleItems.length>=items.length;$("#keepsake-pagination-status").textContent=`已显示 ${visibleItems.length} / ${items.length} 件`;$("#keepsake-load-more").hidden=pagination.hidden}
+  requestAnimationFrame(observeNextKeepsakePage)
 }
 async function editKeepsake(id){
   const item=(state.keepsakes||[]).find(value=>value.id===id);if(!item)return;
@@ -1103,8 +2162,8 @@ function syncQuoteOverflow(){
 function renderQuotes(){
   const dateOf=eventDate,items=[...state.quotes].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a))),timeline=$("#quote-timeline");
   renderQuoteSky();
-  timeline.innerHTML=items.length?items.map((item,index)=>`<article class="quote-entry" data-quote-id="${item.id}">${index===0||dateOf(item)!==dateOf(items[index-1])?`<div class="quote-date">${escapeHtml(dateOf(item))}</div>`:""}<header class="quote-entry-meta"><cite title="${escapeHtml(item.source)}">${escapeHtml(item.source)}</cite><span class="quote-entry-tools"><time>${formatTime(eventTimestamp(item))}</time><button class="subtle-action" type="button" data-quote-edit="${item.id}">编辑</button><button class="subtle-action danger" type="button" data-quote-delete="${item.id}">删除</button></span></header><div class="quote-entry-card card"><blockquote class="quote-content-viewport">${escapeHtml(item.content)}</blockquote><button class="quote-expand" type="button" data-quote-expand aria-expanded="false" hidden>展开</button>${quoteTagsMarkup(item.tags)}</div></article>`).join(""):"";
-  items.forEach(item=>markCommentTarget(timeline.querySelector(`[data-quote-id="${CSS.escape(item.id)}"] blockquote`),commentRootKey("quote",item.id),"content"));
+  timeline.innerHTML=items.length?items.map((item,index)=>{const syncing=item._sync?.status,actions=syncing?`<span class="checkin-sync-state ${escapeHtml(syncing)}">${syncing==="pending"?"待同步":"正在同步"}</span>`:`<button class="subtle-action" type="button" data-quote-edit="${item.id}">编辑</button><button class="subtle-action danger" type="button" data-quote-delete="${item.id}">删除</button>`;return`<article class="quote-entry${syncing?" is-syncing":""}" data-quote-id="${item.id}">${index===0||dateOf(item)!==dateOf(items[index-1])?`<div class="quote-date">${escapeHtml(dateOf(item))}</div>`:""}<header class="quote-entry-meta"><cite title="${escapeHtml(item.source)}">${escapeHtml(item.source)}</cite><span class="quote-entry-tools"><time>${formatTime(eventTimestamp(item))}</time>${actions}</span></header><div class="quote-entry-card card"><blockquote class="quote-content-viewport">${escapeHtml(item.content)}</blockquote><button class="quote-expand" type="button" data-quote-expand aria-expanded="false" hidden>展开</button>${quoteTagsMarkup(item.tags)}</div></article>`}).join(""):"";
+  items.filter(item=>!item._sync).forEach(item=>markCommentTarget(timeline.querySelector(`[data-quote-id="${CSS.escape(item.id)}"] blockquote`),commentRootKey("quote",item.id),"content"));
   applyCommentAnchors(timeline);requestAnimationFrame(syncQuoteOverflow);clearInterval(quoteTimer);
   if(state.quotes.length>3)quoteTimer=setInterval(()=>{if($("#view-quotes").classList.contains("active")&&!document.hidden&&!$("#quote-sky").matches(":hover"))renderQuoteSky(true)},24000);
 }
@@ -1123,7 +2182,16 @@ const compactNumber=value=>new Intl.NumberFormat("zh-CN",{notation:"compact",max
 const formatCny=value=>{const number=Number(value)||0,absolute=Math.abs(number),digits=absolute===0?2:absolute>=100?0:absolute>=10?1:absolute>=1?2:absolute>=.1?3:absolute>=.01?4:6;return `${number<0?"-":""}¥${absolute.toFixed(digits)}`};
 const formatDuration=value=>{const milliseconds=Number(value)||0;return milliseconds>=60000?`${(milliseconds/60000).toFixed(1)} 分钟`:milliseconds>=1000?`${(milliseconds/1000).toFixed(1)} 秒`:`${Math.round(milliseconds)} ms`};
 const shortDate=value=>{const [,month,day]=String(value).split("-");return `${Number(month)}/${Number(day)}`};
-const sceneLabels={thoughtPrompt:"思考引子",thoughtDraft:"思考草稿",thoughtAnswer:"思考回答",followUpAnswer:"追问回答",chat:"长期对话",diaryLead:"日记引子",diaryStructure:"日记结构",diaryTopic:"日记话题",diaryReflection:"日记回望",annotationShenji:"批注神鸡",analysis:"认知复盘",bookRecognition:"书目识别",healthRecognition:"健康识别",contentImageUnderstanding:"内容图片理解",lite:"连接测试",mid:"连接测试",high:"连接测试",ultra:"连接测试"};
+const sceneLabels={thoughtPrompt:"思考引子",thoughtDraft:"思考草稿",thoughtAnswer:"思考回答",followUpAnswer:"追问回答",chat:"长期对话",diaryLead:"日记引子",diaryStructure:"日记结构",diaryTopic:"日记话题",diaryReflection:"日记回望",annotationShenji:"批注神鸡",analysis:"认知复盘",bookRecognition:"书目识别",healthRecognition:"健康识别",contentImageUnderstanding:"内容图片理解",capturePolish:"语音整理",lite:"连接测试",mid:"连接测试",high:"连接测试",ultra:"连接测试"};
+const serviceUnitText=item=>(item?.unitUsage||[]).map(unit=>{
+  if(unit.unitType==="token")return`${compactNumber(unit.units)} Token`;
+  if(unit.unitType==="character")return`${compactNumber(unit.units)} 字符`;
+  if(unit.unitType==="audioMillisecond")return formatDuration(unit.units);
+  if(unit.unitType==="image")return`${compactNumber(unit.units)} 张`;
+  if(unit.unitType==="document")return`${compactNumber(unit.units)} 份`;
+  if(unit.unitType==="call")return`${compactNumber(unit.units)} 次 API 调用`;
+  return`${compactNumber(unit.units)} ${unit.unitType}`
+}).join(" · ")||"—";
 function chartFrame(daily,series,{ariaLabel,valueLabel=compactNumber}={}){
   const width=760,height=260,pad={left:54,right:18,top:16,bottom:38},plotWidth=width-pad.left-pad.right,plotHeight=height-pad.top-pad.bottom,max=Math.max(1,...series.flatMap(item=>item.values)),x=index=>pad.left+(daily.length<=1?plotWidth/2:index*plotWidth/(daily.length-1)),y=value=>pad.top+plotHeight-(Number(value)||0)/max*plotHeight;
   const grid=[0,.5,1].map(ratio=>{const py=pad.top+plotHeight*(1-ratio);return `<line x1="${pad.left}" y1="${py}" x2="${width-pad.right}" y2="${py}"></line><text x="${pad.left-9}" y="${py+4}" text-anchor="end">${escapeHtml(valueLabel(max*ratio))}</text>`}).join("");
@@ -1141,32 +2209,32 @@ function stackedTokenChart(daily){
 }
 function renderStatistics(data){
   statisticsData=data;
-  const {records,ai}=data,summary=ai.summary,cnyPerUsd=Math.max(.01,Number(ai.pricing?.cnyPerUsd)||7.2),costCny=value=>(Number(value)||0)*cnyPerUsd;
+  const {records,ai}=data,summary=ai.summary,cnyPerUsd=Math.max(.01,Number(ai.pricing?.cnyPerUsd)||7.2),costCny=value=>(Number(value)||0)*cnyPerUsd,totalCost=item=>costCny(item?.costsUsd?.total)+(Number(item?.costCny)||0);
   $("#record-total").innerHTML=`<strong>${records.total}</strong><span>累计条目</span>`;
   $("#record-stat-sections").innerHTML=(records.groups||[]).map(group=>`<section class="record-stat-section"><header><h3>${escapeHtml(group.label)}</h3><span>${group.total} 项</span></header><div class="record-module-list">${group.modules.map(module=>`<article><div class="record-module-title"><b>${escapeHtml(module.label)}</b><strong>${module.total}</strong></div><dl>${module.items.map(item=>`<div><dt>${escapeHtml(item.label)}</dt><dd>${item.count}</dd></div>`).join("")}</dl></article>`).join("")}</div></section>`).join("");
-  const totalTokens=summary.tokens.input+summary.tokens.output,cacheRate=summary.tokens.input?summary.tokens.cacheHit/summary.tokens.input*100:0,averageCost=summary.calls?summary.costsUsd.total/summary.calls:0,knownStatuses=(summary.successfulCalls||0)+(summary.failedCalls||0),successRate=knownStatuses?(summary.successfulCalls||0)/knownStatuses*100:null,averageDuration=summary.durationKnownCalls?(summary.durationMs||0)/summary.durationKnownCalls:0,vision=ai.modalities?.find(item=>item.modality==="vision")||{calls:summary.visionCalls||0,imageCount:summary.imageCount||0,costsUsd:{total:0}};
+  const totalTokens=summary.tokens.input+summary.tokens.output,cacheRate=summary.tokens.input?summary.tokens.cacheHit/summary.tokens.input*100:0,totalCostCny=totalCost(summary),averageCost=summary.calls?totalCostCny/summary.calls:0,knownStatuses=(summary.successfulCalls||0)+(summary.failedCalls||0),successRate=knownStatuses?(summary.successfulCalls||0)/knownStatuses*100:null,averageDuration=summary.durationKnownCalls?(summary.durationMs||0)/summary.durationKnownCalls:0,vision=ai.modalities?.find(item=>item.modality==="vision")||{calls:summary.visionCalls||0,imageCount:summary.imageCount||0,costsUsd:{total:0},costCny:0};
   $("#ai-kpis").innerHTML=[
-    ["总费用",formatCny(costCny(summary.costsUsd.total)),"按官方单价折算"],
+    ["总费用",formatCny(totalCostCny),summary.costUnknownCalls?`${summary.costUnknownCalls} 次供应商调用费用待账单核对`:"按官方单价折算"],
     ["调用次数",compactNumber(summary.calls),"次"],
     ["成功率",successRate==null?"未知":`${successRate.toFixed(successRate>=10?0:1)}%`,`${summary.failedCalls||0} 次失败 · ${summary.unknownStatusCalls||0} 次历史未知`],
-    ["图片理解",compactNumber(vision.calls),`${compactNumber(vision.imageCount)} 张 · ${formatCny(costCny(vision.costsUsd.total))}`],
+    ["图片理解",compactNumber(vision.calls),`${compactNumber(vision.imageCount)} 张 · ${formatCny(totalCost(vision))}`],
     ["总 Token",compactNumber(totalTokens),"输入与输出"],
     ["缓存命中率",`${cacheRate.toFixed(cacheRate>=10?0:1)}%`,`${compactNumber(summary.tokens.cacheHit)} Token`],
-    ["平均费用",formatCny(costCny(averageCost)),"每次实际请求"],
+    ["平均费用",formatCny(averageCost),"每次实际请求"],
     ["平均响应",summary.durationKnownCalls?formatDuration(averageDuration):"未知",`${summary.usageUnknownCalls||0} 次用量未知`]
   ].map(([label,value,note])=>`<article><span>${label}</span><strong>${value}</strong><small>${note}</small></article>`).join("");
   $("#ai-tracking-since").textContent=`自 ${new Intl.DateTimeFormat("zh-CN",{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(ai.trackingStartedAt))} 开始统计`;
-  const modelColors={"deepseek-flash":"#4f8d78","deepseek-v4-pro":"#a65f4b"};
-  const callSeries=ai.models.map(model=>({label:model.label,color:modelColors[model.model],values:ai.daily.map(day=>day.models[model.model]?.calls||0)}));
-  callSeries.push({label:"其中图片理解",color:"#c18c3f",values:ai.daily.map(day=>day.visionCalls||0)});
-  $("#ai-calls-chart").innerHTML=chartFrame(ai.daily,callSeries,{ariaLabel:"各 DeepSeek 模型与图片理解每日调用次数",valueLabel:value=>String(Math.round(value))});
+  const serviceColors={deepseek:"#4f8d78",volcengineSpeech:"#a65f4b",volcengineVision:"#5c7891",aliyunSegmentation:"#c18c3f"},fallbackServiceColors=["#77658c","#547d87","#9a7052"];
+  const callSeries=(ai.services||[]).map((service,index)=>({label:service.label,color:serviceColors[service.key]||fallbackServiceColors[index%fallbackServiceColors.length],values:ai.daily.map(day=>day.services?.[service.key]?.calls||0)}));
+  $("#ai-calls-chart").innerHTML=chartFrame(ai.daily,callSeries,{ariaLabel:"多供应商服务每日调用次数",valueLabel:value=>String(Math.round(value))});
+  $("#ai-service-summary").innerHTML=`<table><thead><tr><th>服务</th><th>调用</th><th>成功 / 失败</th><th>单位用量</th><th>已知费用</th><th>待账单</th></tr></thead><tbody>${(ai.services||[]).map(service=>`<tr><td>${escapeHtml(service.label)}</td><td>${service.calls}</td><td>${service.successfulCalls||0} / ${service.failedCalls||0}</td><td>${escapeHtml(serviceUnitText(service))}</td><td>${formatCny(totalCost(service))}</td><td>${service.costUnknownCalls?`${service.costUnknownCalls} 次`:"0 次"}</td></tr>`).join("")}</tbody></table>`;
   $("#ai-token-chart").innerHTML=stackedTokenChart(ai.daily);
-  $("#ai-modality-summary").innerHTML=`<table><thead><tr><th>输入方式</th><th>调用</th><th>成功</th><th>图片</th><th>总 Token</th><th>费用</th><th>平均响应</th></tr></thead><tbody>${(ai.modalities||[]).map(item=>`<tr><td>${escapeHtml(item.label)}</td><td>${item.calls}</td><td>${item.successfulCalls||0}</td><td>${item.imageCount||0}</td><td>${compactNumber((item.tokens?.input||0)+(item.tokens?.output||0))}</td><td>${formatCny(costCny(item.costsUsd?.total))}</td><td>${item.durationKnownCalls?formatDuration((item.durationMs||0)/item.durationKnownCalls):"未知"}</td></tr>`).join("")}</tbody></table>`;
+  $("#ai-modality-summary").innerHTML=`<table><thead><tr><th>输入方式</th><th>调用</th><th>成功</th><th>图片</th><th>总 Token</th><th>费用</th><th>平均响应</th></tr></thead><tbody>${(ai.modalities||[]).map(item=>`<tr><td>${escapeHtml(item.label)}</td><td>${item.calls}</td><td>${item.successfulCalls||0}</td><td>${item.imageCount||0}</td><td>${compactNumber((item.tokens?.input||0)+(item.tokens?.output||0))}</td><td>${formatCny(totalCost(item))}${item.costUnknownCalls?` + ${item.costUnknownCalls} 次待账单`:""}</td><td>${item.durationKnownCalls?formatDuration((item.durationMs||0)/item.durationKnownCalls):"未知"}</td></tr>`).join("")}</tbody></table>`;
   const costSeries=[["input","输入未命中","#5c7891"],["cacheHit","缓存命中","#4f8d78"],["reasoning","推理","#c18c3f"],["output","回答","#a65f4b"]];
   $("#ai-cost-charts").innerHTML=ai.models.map(model=>`<section><h4>${escapeHtml(model.label)} <span>${model.calls} 次 · ${formatCny(costCny(model.costsUsd.total))}</span></h4>${chartFrame(ai.daily,costSeries.map(([key,label,color])=>({label,color,values:ai.daily.map(day=>costCny(day.models[model.model]?.costsUsd[key]))})),{ariaLabel:`${model.label} 每日费用构成`,valueLabel:formatCny})}</section>`).join("");
   const maxScene=Math.max(1,...ai.scenes.map(item=>item.calls));
   $("#ai-scenario-bars").innerHTML=ai.scenes.length?ai.scenes.map(item=>`<div><span>${escapeHtml(sceneLabels[item.scene]||item.scene)}</span><i><b style="width:${item.calls/maxScene*100}%"></b></i><strong>${item.calls}</strong></div>`).join(""):`<div class="analytics-empty">这段时间还没有 AI 调用。</div>`;
-  $("#ai-model-summary").innerHTML=`<table><thead><tr><th>模型</th><th>调用</th><th>图片</th><th>失败</th><th>输入</th><th>输出</th><th>费用</th></tr></thead><tbody>${ai.models.map(model=>`<tr><td>${escapeHtml(model.label)}</td><td>${model.calls}</td><td>${model.visionCalls||0}</td><td>${model.failedCalls||0}</td><td>${compactNumber(model.tokens.input)}</td><td>${compactNumber(model.tokens.output)}</td><td>${formatCny(costCny(model.costsUsd.total))}</td></tr>`).join("")}</tbody></table>`;
+  $("#ai-model-summary").innerHTML=`<table><thead><tr><th>供应商</th><th>调用</th><th>成功</th><th>失败</th><th>总 Token</th><th>已知费用</th><th>核算</th></tr></thead><tbody>${(ai.providers||[]).map(provider=>`<tr><td>${escapeHtml(provider.label)}</td><td>${provider.calls}</td><td>${provider.successfulCalls||0}</td><td>${provider.failedCalls||0}</td><td>${compactNumber((provider.tokens?.input||0)+(provider.tokens?.output||0))}</td><td>${formatCny(totalCost(provider))}</td><td>${provider.costUnknownCalls?`${provider.costUnknownCalls} 次待账单`:"已计入"}</td></tr>`).join("")}</tbody></table>`;
   const pricing=ai.pricing;
   $("#ai-pricing").innerHTML=`<p>${escapeHtml(pricing.estimateNote)} 价格核对于 ${escapeHtml(pricing.checkedAt)}，页面统一以人民币 / 百万 Token 展示，换算系数为 ${cnyPerUsd.toFixed(2)}。<a href="${escapeHtml(pricing.source)}" target="_blank" rel="noopener noreferrer">DeepSeek 官方价格</a></p><div class="pricing-table-wrap"><table><thead><tr><th>模型</th><th>时段</th><th>缓存命中</th><th>输入未命中</th><th>输出</th></tr></thead><tbody>${Object.entries(pricing.models).flatMap(([,model])=>[["offPeak","谷时"],["peak","峰时"]].map(([key,label])=>`<tr><td>${escapeHtml(model.label)}</td><td>${label}</td><td>${formatCny(costCny(model[key].cacheHit))}</td><td>${formatCny(costCny(model[key].cacheMiss))}</td><td>${formatCny(costCny(model[key].output))}</td></tr>`)).join("")}</tbody></table></div>`;
 }
@@ -1243,7 +2311,7 @@ function renderAiCostPlan(syncRows=true){
     $("#ai-cost-exchange").value=aiCostPlan.cnyPerUsd;
     renderAiCostRows();
   }
-  const rows=aiCostPlan.scenarios.map(row=>({row,estimate:aiCostScenarioEstimate(row)})),base=rows.reduce((sum,item)=>sum+item.estimate.total,0),reserve=base*(Number(aiCostPlan.contingencyPct)||0)/100,projected=base+reserve,budget=Number(aiCostPlan.monthlyBudgetCny)||0,observedUsd=Number(aiCostStatistics.ai?.summary?.costsUsd?.total)||0,observed=observedUsd*(Number(aiCostPlan.cnyPerUsd)||7.2),difference=budget-projected;
+  const rows=aiCostPlan.scenarios.map(row=>({row,estimate:aiCostScenarioEstimate(row)})),base=rows.reduce((sum,item)=>sum+item.estimate.total,0),reserve=base*(Number(aiCostPlan.contingencyPct)||0)/100,projected=base+reserve,budget=Number(aiCostPlan.monthlyBudgetCny)||0,observedUsd=Number(aiCostStatistics.ai?.summary?.costsUsd?.total)||0,observed=observedUsd*(Number(aiCostPlan.cnyPerUsd)||7.2)+(Number(aiCostStatistics.ai?.summary?.costCny)||0),difference=budget-projected;
   for(const item of rows){const root=document.querySelector(`[data-ai-cost-row="${CSS.escape(item.row.scene)}"]`),cell=root?.querySelector("[data-ai-cost-row-total]");root?.classList.toggle("disabled",!item.row.enabled);if(cell)cell.textContent=formatCny(item.estimate.total)}
   $("#ai-cost-kpis").innerHTML=[
     ["预计月成本",formatCny(projected),`基础 ${formatCny(base)} + 预留 ${formatCny(reserve)}`,budget&&projected>budget?"negative":"positive"],
@@ -1253,9 +2321,8 @@ function renderAiCostPlan(syncRows=true){
   ].map(([label,value,note,tone])=>`<article class="${tone||""}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(note)}</small></article>`).join("");
   const recommendations=aiCostRecommendations(rows,projected,budget);
   $("#ai-cost-recommendations").innerHTML=recommendations.map(([title,copy,tag],index)=>`<li><b>${String(index+1).padStart(2,"0")}</b><div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(copy)}</p></div><span>${escapeHtml(tag)}</span></li>`).join("")+`<li class="settings-link"><button type="button" data-view="settings">打开模型设置</button><p>模拟方案不会自动修改真实模型配置。</p></li>`;
-  const observedScenes=[...(aiCostStatistics.ai?.scenes||[])].sort((a,b)=>(b.costsUsd?.total||0)-(a.costsUsd?.total||0)).slice(0,5);
-  const pricing=aiCostStatistics.ai.pricing,cny=Number(aiCostPlan.cnyPerUsd)||7.2,p90=(Number(aiCostStatistics.ai?.calibration?.p90CostCny)||0)*cny/(Number(pricing.cnyPerUsd)||7.2);
-  $("#ai-cost-observed").innerHTML=`<dl><div><dt>调用</dt><dd>${aiCostStatistics.ai?.summary?.calls||0} 次</dd></div><div><dt>平均输入</dt><dd>${compactNumber(aiCostStatistics.ai?.calibration?.averageInputTokens||0)} Token</dd></div><div><dt>P90 单次</dt><dd>${formatCny(p90)}</dd></div><div><dt>模拟 / 实测</dt><dd>${observed?`${(projected/observed).toFixed(1)}×`:"—"}</dd></div></dl><div class="ai-cost-observed-scenes">${observedScenes.length?observedScenes.map(item=>`<div><span>${escapeHtml(sceneLabels[item.scene]||item.scene)}</span><strong>${item.calls} 次</strong><small>${formatCny((Number(item.costsUsd?.total)||0)*cny)}</small></div>`).join(""):"<p>近 30 天暂无可用样本。</p>"}</div>`;
+  const pricing=aiCostStatistics.ai.pricing,cny=Number(aiCostPlan.cnyPerUsd)||7.2,observedCost=item=>(Number(item?.costsUsd?.total)||0)*cny+(Number(item?.costCny)||0),observedScenes=[...(aiCostStatistics.ai?.scenes||[])].sort((a,b)=>observedCost(b)-observedCost(a)).slice(0,5),p90=Number(aiCostStatistics.ai?.calibration?.p90CostCny)||0,unknownCosts=Number(aiCostStatistics.ai?.summary?.costUnknownCalls)||0;
+  $("#ai-cost-observed").innerHTML=`<dl><div><dt>调用</dt><dd>${aiCostStatistics.ai?.summary?.calls||0} 次${unknownCosts?` · ${unknownCosts} 次费用待账单`:""}</dd></div><div><dt>平均输入</dt><dd>${compactNumber(aiCostStatistics.ai?.calibration?.averageInputTokens||0)} Token</dd></div><div><dt>P90 单次</dt><dd>${formatCny(p90)}</dd></div><div><dt>模拟 / 实测</dt><dd>${observed?`${(projected/observed).toFixed(1)}×`:"—"}</dd></div></dl><div class="ai-cost-observed-scenes">${observedScenes.length?observedScenes.map(item=>`<div><span>${escapeHtml(sceneLabels[item.scene]||item.scene)}</span><strong>${item.calls} 次</strong><small>${formatCny(observedCost(item))}${item.costUnknownCalls?` + ${item.costUnknownCalls} 次待账单`:""}</small></div>`).join(""):"<p>近 30 天暂无可用样本。</p>"}</div>`;
   $("#ai-cost-pricing").innerHTML=`<div class="pricing-table-wrap"><table><thead><tr><th>模型</th><th>时段</th><th>缓存命中</th><th>输入未命中</th><th>推理/回答</th></tr></thead><tbody>${Object.entries(pricing.models).flatMap(([,model])=>[["offPeak","谷时"],["peak","峰值"]].map(([period,label])=>`<tr><td>${escapeHtml(model.label)}</td><td>${label}</td><td>${formatCny(model[period].cacheHit*cny)}</td><td>${formatCny(model[period].cacheMiss*cny)}</td><td>${formatCny(model[period].output*cny)}</td></tr>`)).join("")}</tbody></table></div><p>单位均为人民币 / 百万 Token；汇率 ${cny.toFixed(2)} 元/美元。</p>`;
   $("#ai-cost-plan-state").textContent=budget&&projected>budget?"超过预算":"预算内";
   $("#ai-cost-plan-state").classList.toggle("over",Boolean(budget&&projected>budget));
@@ -1465,8 +2532,8 @@ function populateCommercialAssumptions(assumptions){
   $$("[data-commercial-profile-field]").forEach(input=>{const [profile,key]=input.dataset.commercialProfileField.split(".");input.value=assumptions?.usageProfiles?.[profile]?.[key]??""});
 }
 function commercialAiBasis(assumptions){
-  const summary=commercialStatistics?.ai?.summary,calls=Number(summary?.calls)||0,totalUsd=Number(summary?.costsUsd?.total)||0,observed=calls?totalUsd*Number(assumptions.common.usdCny)/calls:0,floor=Number(assumptions.common.aiCostFloorPerCallCny)||0;
-  return{calls,totalUsd,observed,unit:Math.max(observed,floor)};
+  const summary=commercialStatistics?.ai?.summary,calls=Number(summary?.calls)||0,unknownCostCalls=Math.min(calls,Number(summary?.costUnknownCalls)||0),knownCalls=Math.max(0,calls-unknownCostCalls),totalUsd=Number(summary?.costsUsd?.total)||0,totalCny=Number(summary?.costCny)||0,observed=knownCalls?(totalUsd*Number(assumptions.common.usdCny)+totalCny)/knownCalls:0,floor=Number(assumptions.common.aiCostFloorPerCallCny)||0;
+  return{calls,knownCalls,unknownCostCalls,totalUsd,totalCny,observed,unit:Math.max(observed,floor)};
 }
 function commercialUsageEconomics(assumptions,ai){
   const profiles=commercialProfileKeys.map(key=>{
@@ -1663,18 +2730,18 @@ function renderCommercialization(syncInputs=true){
   $("#commercial-updated-at").textContent=`${state.commercialization.updatedAt?`参数更新于 ${formatDate(state.commercialization.updatedAt)}`:"使用示例假设"}${state.commercialization.legacyV2?" · 已保留旧版参数供核对":""}`;
   $("#commercial-evidence-count").textContent=`${evidence.length} 条`;
   $("#commercial-paid-evidence").textContent=paidFacts.length?`${paidFacts.length} 条`:"待记录";
-  $("#commercial-ai-sample").textContent=ai.calls?`${ai.calls} 次`:"暂无";
-  $("#commercial-model-basis").textContent=ai.calls?"实际账本 + 保守底线":"假设";
+  $("#commercial-ai-sample").textContent=ai.calls?(ai.unknownCostCalls?`${ai.knownCalls} / ${ai.calls} 次`:`${ai.calls} 次`):"暂无";
+  $("#commercial-model-basis").textContent=ai.calls?(ai.unknownCostCalls?"已知费用下限 + 保守底线":"实际账本 + 保守底线"):"假设";
   renderCommercialStage(current);
   const usage=renderCommercialUsage(current,ai);
-  $("#commercial-evidence-summary").textContent=`${evidence.length} 条用户原文 · AI 回答未计入`;
+  $("#commercial-evidence-summary").textContent=`${evidence.length} 条用户原文 · 应答未计入`;
   $("#commercial-evidence-list").innerHTML=evidence.length?evidence.map(item=>`<article><header><span>${escapeHtml(item.type)}</span><time>${escapeHtml(item.date?eventDate({occurredAt:item.date}):"")}</time></header><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.content)}</p>${item.tags.length?`<div>${item.tags.map(tag=>`<span>#${escapeHtml(tag)}</span>`).join("")}</div>`:""}<button type="button" data-commercial-source-view="${escapeHtml(item.view)}" data-commercial-source-id="${escapeHtml(item.id)}" data-commercial-source-date="${escapeHtml(item.date)}">查看原记录</button></article>`).join(""):empty("还没有能确认的商业化原始记录。");
   $("#commercial-cashflow").hidden=true;$("#commercial-cashflow-rows").innerHTML="";$("#commercial-cashflow-total").innerHTML="";
   if(commercialMode==="validation")renderValidationModel(current,ai);
   else if(commercialMode==="subscription")renderSubscriptionModel(current,ai,usage);
   else if(commercialMode==="delivery")renderDeliveryModel(current,ai);
   else renderUsagePackModel(current,ai);
-  const p90=Number(commercialStatistics?.ai?.calibration?.p90CostCny)||0,sampleNote=ai.calls?`近 30 天实际均值 ${formatCny(ai.observed)}/次、P90 ${formatCny(p90)}/次，共 ${ai.calls} 次；估算采用均值与保守底线中的较高值 ${formatCny(ai.unit)}/次。`:`近 30 天没有 AI 成本样本，暂按 ${formatCny(ai.unit)}/次。`;
+  const p90=Number(commercialStatistics?.ai?.calibration?.p90CostCny)||0,sampleNote=ai.calls?`近 30 天已知费用均值 ${formatCny(ai.observed)}/次、P90 ${formatCny(p90)}/次，共 ${ai.calls} 次${ai.unknownCostCalls?`，其中 ${ai.unknownCostCalls} 次费用待账单`:""}；估算采用已知均值与保守底线中的较高值 ${formatCny(ai.unit)}/次。`:`近 30 天没有 AI 成本样本，暂按 ${formatCny(ai.unit)}/次。`;
   $("#commercial-method-note").textContent+=` ${sampleNote}`;
 }
 async function loadCommercialization(){
@@ -1849,7 +2916,7 @@ function closeHomeEditors({restoreFocus=true}={}){
   opened.forEach(editor=>editor.hidden=true);
   document.body.classList.remove("home-v02-editor-open");
   if(opened.length)homeEditorTrigger=null;
-  if(restoreFocus&&opened.length&&trigger?.isConnected)requestAnimationFrame(()=>trigger.focus({preventScroll:true}))
+  if(restoreFocus&&opened.length&&trigger?.isConnected)trigger.focus({preventScroll:true})
 }
 function openHomeEditor(kind){
   const editor=$(`#home-${kind}-editor`);
@@ -1888,7 +2955,12 @@ function openHomeMemory(item){
 function renderMine(){
   const accountName=$("#mine-account-name"),notificationCount=$("#mine-notification-count");
   if(accountName)accountName.textContent=currentUser?.username||"本机使用";
+  const governance=$("#mine-governance-link");if(governance){governance.hidden=!governanceUrl;if(governanceUrl)governance.href=governanceUrl}
   if(notificationCount){const unread=Number(state.notificationUnread??notificationUnreadCount)||(state.notifications||[]).filter(item=>!item.readAt&&["succeeded","failed","stale","cancelled"].includes(item.status)).length;notificationCount.textContent=unread?`${unread} 条未读`:""}
+  const syncRow=$(".sync-health-row"),syncStatus=$("#mine-sync-status"),syncCount=$("#mine-sync-count");
+  if(syncRow)syncRow.dataset.syncStatus=syncHealth.status;
+  if(syncStatus)syncStatus.textContent=syncHealth.status==="disabled"?"增量同步已关闭，继续使用写后刷新":syncHealth.status==="conflict"?`${syncHealth.conflicts} 项同步冲突，请核对最新内容后重试`:syncHealth.status==="degraded"?"浏览器不支持持久队列，本次会话使用内存同步":syncHealth.status==="error"?syncHealth.failed?`${syncHealth.failed} 项操作重试失败，请保留当前页面并重新提交`:"同步暂时中断，将在回到前台或网络恢复后重试":syncHealth.pending?`${syncHealth.pending} 项操作等待服务端确认${syncHealth.oldestAgeMs>30000?"，已有操作超过 30 秒":""}`:syncHealth.status==="synced"?`已与服务端对齐${syncHealth.lastPullMs?` · 拉取 ${syncHealth.lastPullMs} ms`:""}${syncHealth.enqueueToAckP95Ms?` · 写确认 P95 ${syncHealth.enqueueToAckP95Ms} ms`:""}`:"正在核对本地操作与服务端状态";
+  if(syncCount)syncCount.textContent=syncHealth.conflicts?`${syncHealth.conflicts} 冲突`:syncHealth.failed?`${syncHealth.failed} 失败`:syncHealth.pending?`${syncHealth.pending} 项`:"";
   const versionLabel=releaseVersion.startsWith("v")?releaseVersion:`v${releaseVersion}`;
   for(const element of[$("#sidebar-app-version"),$("#mine-app-version")])if(element)element.textContent=versionLabel
 }
@@ -2000,7 +3072,13 @@ async function runActionCommand(command,{idempotencyKey=""}={}){
     });
     if(projection.changed){actionsSnapshot=projection.value;projected=true;renderActionsWorkspace()}
   };
-  try{result=await requestV1(routes[command.type],options,{resource:actionCommandResource(command),onQueued:record=>applyProjection({...record,status:"sending"})})}
+  try{result=await requestV1(routes[command.type],options,{
+    resource:actionCommandResource(command),
+    domains:["actions","habits","habitCheckins"],
+    recoverCommitted:true,
+    projection:{kind:"action.command",command},
+    onQueued:record=>applyProjection({...record,status:"sending"})
+  })}
   catch(error){
     if([409,412].includes(Number(error.status))){
       if(!await loadActionsWorkspace()&&projected){actionsSnapshot=previous;renderActionsWorkspace()}
@@ -2050,32 +3128,99 @@ async function downloadExport(format){
     status.textContent=`已生成 ${descriptor.filename}`
   }catch(error){status.textContent=error.message}
 }
-function render(){renderDate();renderOnboarding();renderSliders();renderDailyRecords();renderHealthUploader();renderCaptures();renderJournals();renderThoughts();renderStateChart();renderChat();renderReview();renderBooks();renderKeepsakes();renderQuotes();renderHome();renderTagComposer();renderCaptureTagComposer();renderCommentPanel();renderSettings();renderLocalTestSettings();renderArchitecture();renderCommercialization();renderNotifications();renderMine();renderActionsWorkspace();renderFeedback();renderExport()}
-async function load(){const owner=currentUser?.id,session=sessionSerial;journalDraftRestored=false;aiCostPlan=null;aiCostStatistics=null;commercialStatistics=null;resetJournalForm();const [nextState,nextSettings,nextOnboardingSchema,nextLocalTestConfig,meta]=await Promise.all([request("/api/state"),request("/api/settings"),optionalRequest("/api/onboarding/schema"),optionalRequest("/api/local-test-mode"),request("/api/meta")]);if(owner!==currentUser?.id||session!==sessionSerial)return false;replaceState(nextState);llmSettings=nextSettings;onboardingSchema=nextOnboardingSchema;localTestConfig=nextLocalTestConfig;appVersion=meta.version||"development";releaseVersion=meta.releaseVersion||releaseVersion;onboardingHydrated=false;notificationUnreadCount=Number(state.notificationUnread)||0;render();restoreDurableDrafts();await loadActionsWorkspace();scheduleNotificationPoll();return true}
+function renderPersonalContext(){
+  const summary=$("#personal-context-summary");if(!summary)return;
+  const data=personalContext,status=$("#personal-context-status"),sources=Array.isArray(data?.sources)?data.sources:[],sourceById=new Map(sources.map(source=>[source.id,source])),budget=data?.tokenBudget;
+  if(!data){
+    $("#personal-context-meta").innerHTML="";
+    $("#personal-context-disclosure").textContent="";
+    $("#personal-context-source-count").textContent="0 条";
+    $("#personal-context-source-list").innerHTML="";
+    summary.innerHTML=empty("尚未读取个人概要。");
+    return
+  }
+  const windowLabel=data.timeWindow?.from?`${data.timeWindow.from}${data.timeWindow.to&&data.timeWindow.to!==data.timeWindow.from?` 至 ${data.timeWindow.to}`:""}`:"尚无记录";
+  $("#personal-context-meta").innerHTML=[
+    ["版本",data.version||"未标记"],
+    ["时间窗",windowLabel],
+    ["来源",`${Number(data.sourceCount)||0} 条`],
+    ["Token 上界",budget?`${Number(budget.estimatedUsed)||0} / ${Number(budget.limit)||0}`:"未估算"]
+  ].map(([label,value])=>`<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
+  $("#personal-context-disclosure").textContent=data.disclosure||"";
+  $("#personal-context-source-count").textContent=`${sources.length} 条 · 生成于 ${formatDate(data.generatedAt)}`;
+  $("#personal-context-source-list").innerHTML=sources.length?`<div class="context-source-list">${sources.map(contextSourceButton).join("")}</div>`:empty("当前没有可用于个人语境的记录。");
+  const conclusions=Array.isArray(data.conclusions)?data.conclusions:[];
+  summary.innerHTML=conclusions.length?conclusions.map(item=>{
+    const evidence=item.sourceIds?.map(id=>sourceById.get(id)).filter(Boolean)||[];
+    return `<details class="personal-context-conclusion" data-context-type="${escapeHtml(item.informationType||"")}"><summary><div><span>${escapeHtml(item.informationTypeLabel||"")}</span><strong>${escapeHtml(item.title||"")}</strong></div><small>${evidence.length} 条来源</small></summary><div class="personal-context-conclusion-body"><p>${escapeHtml(item.text||"").replace(/\n/g,"<br>")}</p><small>${escapeHtml(item.sampleNote||"")}</small>${evidence.length?`<div class="context-source-list">${evidence.map(contextSourceButton).join("")}</div>`:""}</div></details>`
+  }).join(""):empty("当前记录不足以形成概要。");
+  status.textContent=""
+}
+async function loadPersonalContext(){
+  const serial=++personalContextRequestSerial,owner=currentUser?.id,session=sessionSerial,status=$("#personal-context-status");
+  status.textContent="正在核对当前记录与来源…";
+  try{
+    const response=await requestV1("/api/v1/personal-context");
+    if(serial!==personalContextRequestSerial||owner!==currentUser?.id||session!==sessionSerial)return false;
+    personalContext=response.data;renderPersonalContext();return true
+  }catch(error){
+    if(serial===personalContextRequestSerial&&owner===currentUser?.id&&session===sessionSerial){personalContext=null;renderPersonalContext();status.textContent=error.message}
+    return false
+  }
+}
+function openContextSource(button){
+  const view=button.dataset.contextView,target=button.dataset.contextTarget,root=button.dataset.contextRoot,date=button.dataset.contextDate,dailyType=button.dataset.contextDailyType;
+  if(date){activeDate=date;if(dailyType&&dailyTypeMeta[dailyType])activeDailyType=dailyType;renderDate();renderSliders();renderDailyRecords();renderThoughts();renderStateChart();renderHomeMood();renderChat()}
+  switchView(view);
+  requestAnimationFrame(()=>{
+    const selectors={
+      thoughts:`[data-chain-id="${CSS.escape(root||target)}"]`,
+      captures:`[data-capture-id="${CSS.escape(target)}"]`,
+      journals:`[data-journal-id="${CSS.escape(target)}"]`,
+      together:`[data-chat-id="${CSS.escape(target)}"]`,
+      daily:`[data-daily-record-id="${CSS.escape(target)}"]`,
+      today:`[data-checkin-id="${CSS.escape(target)}"]`
+    },element=document.querySelector(selectors[view]||"");
+    const chain=element?.closest?.("[data-chain-id]")||element;
+    if(chain instanceof HTMLDetailsElement)chain.open=true;
+    let destination=element;
+    if(view==="thoughts"&&element){
+      const key=button.dataset.contextKey||"";
+      if(key.startsWith("question:"))destination=element.querySelector(".thought-question-content")||element;
+      else if(/^(?:idea|record|answer):/.test(key))destination=element.querySelector(`[data-thought-block-id="${CSS.escape(key.split(":").slice(1).join(":"))}"]`)||element
+    }
+    destination?.scrollIntoView({behavior:"smooth",block:"center"})
+  })
+}
+function render(){renderDate();renderOnboarding();renderSliders();renderDailyRecords();renderHealthUploader();renderCaptures();renderJournals();renderThoughts();renderStateChart();renderChat();renderReview();renderBooks();renderKeepsakes();renderKeepsakeBatch();renderQuotes();renderHome();renderTagComposer();renderCaptureTagComposer();renderCaptureAudioDraft();renderCommentPanel();renderSettings();renderLocalTestSettings();renderArchitecture();renderCommercialization();renderNotifications();renderMine();renderActionsWorkspace();renderFeedback();renderExport();renderPersonalContext()}
+async function load(){const owner=currentUser?.id,session=sessionSerial;journalDraftRestored=false;aiCostPlan=null;aiCostStatistics=null;commercialStatistics=null;resetJournalForm();const [nextState,nextSettings,nextOnboardingSchema,nextLocalTestConfig,meta]=await Promise.all([request("/api/state"),request("/api/settings"),optionalRequest("/api/onboarding/schema"),optionalRequest("/api/local-test-mode"),request("/api/meta")]);if(owner!==currentUser?.id||session!==sessionSerial)return false;replaceState(nextState);llmSettings=nextSettings;onboardingSchema=nextOnboardingSchema;localTestConfig=nextLocalTestConfig;appVersion=meta.version||"development";releaseVersion=meta.releaseVersion||releaseVersion;featureFlags={...featureFlags,...meta.features};governanceUrl=typeof meta.governanceUrl==="string"?meta.governanceUrl:"";onboardingHydrated=false;notificationUnreadCount=Number(state.notificationUnread)||0;render();restoreDurableDrafts();syncChainRecordKind();await loadActionsWorkspace();scheduleNotificationPoll();return true}
 function setAuthTab(tab){
   if(authBusy)return;
   $$("[data-auth-tab]").forEach(button=>{const active=button.dataset.authTab===tab;button.classList.toggle("active",active);button.setAttribute("aria-selected",String(active))});
   $("#login-form").hidden=tab!=="login";$("#register-form").hidden=tab!=="register";$("#auth-status").textContent="";
-  (tab==="login"?$("#login-form"):$("#register-form")).elements.username.focus();
+  if(matchMedia?.("(pointer:fine)").matches)(tab==="login"?$("#login-form"):$("#register-form")).elements.username.focus();
 }
 function setAuthBusy(value){authBusy=value;$$(".auth-form input,.auth-form button,[data-auth-tab]").forEach(control=>control.disabled=value)}
 function invalidatePageLoads(){
-  actionsRequestSerial+=1;feedbackRequestSerial+=1;statisticsRequestSerial+=1;aiCostRequestSerial+=1;commercialRequestSerial+=1;
+  actionsRequestSerial+=1;feedbackRequestSerial+=1;statisticsRequestSerial+=1;aiCostRequestSerial+=1;commercialRequestSerial+=1;personalContextRequestSerial+=1;
   activeAnswerTaskId=++answerTaskSerial;healthParseSerial+=1;latestHealthRequest=0;bookParseSerial+=1;clearTimeout(notificationTimer);
   discoveryController?.reset();backgroundResultController?.reset();refreshCoordinator.reset();
 }
 function clearPrivateSessionState(){
+  closeImageViewer({restoreFocus:false});
   resetState();llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},automaticAnswers:{thoughtAnswer:false},hasApiKey:false,keyHint:""};
-  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;commercialStatistics=null;statisticsData=null;localTestConfig=null;onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;actionsSnapshot={actions:[],habits:[],habitCheckins:[]};feedbackItems=[];exportManifest=null;appVersion="0.2.0";homeMemoryKeys=[];homeMemoryByKey=new Map();closeHomeEditors({restoreFocus:false});invalidatePageLoads();draftTags=[];captureDraftTags=[];pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";
-  healthParseSerial+=1;latestHealthRequest=0;healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=[];healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]};
+  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;commercialStatistics=null;statisticsData=null;localTestConfig=null;onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;actionsSnapshot={actions:[],habits:[],habitCheckins:[]};feedbackItems=[];exportManifest=null;personalContext=null;governanceUrl="";appVersion="0.2.0";homeMemoryKeys=[];homeMemoryByKey=new Map();closeHomeEditors({restoreFocus:false});invalidatePageLoads();draftTags=[];captureDraftTags=[];pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";
+  healthParseSerial+=1;latestHealthRequest=0;healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=[];healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]};for(const draft of Object.values(healthImageDrafts))Object.assign(draft,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0});
   bookParseSerial+=1;for(const url of Object.values(bookPreviewUrls))if(url)URL.revokeObjectURL(url);bookPreviewUrls={cover:"",recognition:""};pendingBookImages={cover:null,recognition:null};editingBookId="";activeBookId="";activeBookFeatureNoteId="";bookCreatorOpen=false;bookDetailCondensed=false;
   keepsakeEditor.segmentSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.history=[];
+  clearKeepsakeBatchState();
   for(const key of Object.keys(contentImageDrafts))resetContentImageEditor(key,[],{forget:false});
+  clearCaptureAudioDraft({forget:false});stopCaptureSpeech();
   $$("main form").forEach(form=>{form.reset();delete form.dataset.requestId});$$(".modal-backdrop").forEach(modal=>modal.hidden=true);$("#comment-panel").hidden=true;$("#selection-tools").hidden=true;
-  Object.keys(dailyTypeMeta).forEach(resetDailyForm);resetHealthImages();
+  Object.keys(dailyTypeMeta).forEach(resetDailyForm);
 }
 function showAuthGate(){
-  const localTestEnabled=Boolean(localTestConfig?.enabled);rotateSession();clearPrivateSessionState();currentUser=null;document.body.classList.add("auth-locked");$("#auth-gate").hidden=false;$("#account-control").hidden=true;$("#account-authenticated").hidden=true;const registerTab=$('[data-auth-tab="register"]');if(registerTab)registerTab.hidden=localTestEnabled;
+  const localTestEnabled=Boolean(localTestConfig?.enabled);syncController?.stop();syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};rotateSession();clearPrivateSessionState();currentUser=null;document.body.classList.add("auth-locked");$("#auth-gate").hidden=false;$("#account-control").hidden=true;$("#account-authenticated").hidden=true;const registerTab=$('[data-auth-tab="register"]');if(registerTab)registerTab.hidden=localTestEnabled;
 }
 function renderAccountIdentity(){
   const username=currentUser?.username||"";
@@ -2089,11 +3234,17 @@ function revealUserSession(){document.body.classList.remove("auth-locked");$("#a
 async function activateUserSession(user,authRequired){
   prepareUserSession(user,authRequired);
   try{
+    if(!await load())return false;
     await Promise.all([
-      requestCoordinator.resume(user?.id),
-      restoreContentImageDrafts(user?.id).catch(error=>showToast(`待上传图片恢复失败：${error.message}`,"error"))
+      restoreContentImageDrafts(user?.id).catch(error=>showToast(`待上传图片恢复失败：${error.message}`,"error")),
+      restoreCaptureAudioDraft(user?.id).catch(error=>showToast(`待提交语音恢复失败：${error.message}`,"error")),
+      restoreHealthImageDrafts(user?.id).catch(error=>showToast(`健康截图恢复失败：${error.message}`,"error")),
+      restoreKeepsakeBatch(user?.id).catch(error=>showToast(`小物批次恢复失败：${error.message}`,"error"))
     ]);
-    if(!await load())return false;revealUserSession();return true
+    await restorePendingProjections();
+    revealUserSession();
+    void syncController.start(user?.id,{incremental:featureFlags.incrementalSync}).catch(error=>showToast(`同步恢复失败：${error.message}`,"error"));
+    return true
   }
   catch(error){if(currentUser?.id===user?.id)showAuthGate();throw error}
 }
@@ -2113,6 +3264,7 @@ backgroundResultController=createBackgroundResultController({
     if(backgroundResultFromSnapshot(state,task))return true;
     const merged=mergeBackgroundTaskResult(state,task,result);if(!merged.changed)return false;
     replaceState(merged.value);
+    if(target.kind==="captureTranscription"){renderCaptures();return true}
     if(target.kind==="annotationShenji"){const annotation=annotationForTask(target);if(annotation&&activeCommentRoot===commentRootKey(target.resourceType,target.targetId))refreshAnnotationCard(annotation);return true}
     if(target.kind==="contentImageUnderstanding"){
       if(target.contentTargetType==="capture"){renderCaptures();return true}
@@ -2126,7 +3278,7 @@ backgroundResultController=createBackgroundResultController({
   restoreViewState:view=>{if(!view)return;window.scrollTo(view.x,view.y);if($("#comment-panel-list"))$("#comment-panel-list").scrollTop=view.commentScroll},
   onError:error=>showToast(`后台结果同步失败：${error.message}`,"error")
 });
-subscribeState((next,wanted,thoughtOptions)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("dailyRecords"))renderDailyRecords();if(wanted.has("captures")){renderCaptures();renderCaptureTagComposer()}if(wanted.has("journals"))renderJournals();if(wanted.has("thoughts")){renderThoughts(thoughtOptions);renderTagComposer();renderCaptureTagComposer();renderHomeMemories()}if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat"))renderChat();if(wanted.has("review"))renderReview();if(wanted.has("books")){renderBooks();renderHomeMemories();if(activeCommentRoot.startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes")){renderKeepsakes();renderHomeKeepsake()}if(wanted.has("quotes")){renderQuotes();renderHomeMemories()}if(wanted.has("comments"))renderCommentPanel();renderNotifications()});
+subscribeState((next,wanted,thoughtOptions)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("dailyRecords"))renderDailyRecords();if(wanted.has("captures")){renderCaptures();renderCaptureTagComposer()}if(wanted.has("journals"))renderJournals();if(wanted.has("thoughts")){renderThoughts(thoughtOptions);renderCaptures();renderTagComposer();renderCaptureTagComposer();renderHomeMemories()}if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("review"))renderReview();if(wanted.has("books")){renderBooks();renderHomeMemories();if(activeCommentRoot.startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes")){renderKeepsakes();renderHomeKeepsake()}if(wanted.has("quotes")){renderQuotes();renderHomeMemories()}if(wanted.has("comments"))renderCommentPanel();renderNotifications()});
 function setAnswerModalStep(step){const order=["context","thinking","answer","done"],current=order.indexOf(step);$$("#ai-answer-progress li").forEach((item,index)=>{item.classList.toggle("active",index===current);item.classList.toggle("done",index<current||(step==="done"&&index===current))})}
 function closeAnswerModal(){const modal=$("#ai-answer-modal"),busy=modal.dataset.busy==="true";modal.hidden=true;if(busy)showToast("回答继续在后台生成，完成后会提醒。")}
 async function runAnswerInModal({title,scene="thoughtAnswer",requestCall,onDone,isCurrent=()=>true}){
@@ -2171,7 +3323,7 @@ const pageEffects={...createPageEffects({
   loadNotifications,
   scheduleNotificationPoll,
   loadTrash
-}),today:()=>void loadActionsWorkspace(),discovery:()=>void loadDiscovery(),feedback:()=>void loadFeedback(),export:()=>void loadExportManifest()};
+}),today:()=>void loadActionsWorkspace(),discovery:()=>void loadDiscovery(),feedback:()=>void loadFeedback(),export:()=>void loadExportManifest(),"personal-context":()=>void loadPersonalContext()};
 ({switchView}=createPageRouter({query:$,queryAll:$$,effects:pageEffects}));
 $("#home-open-thought").addEventListener("click",()=>openHomeEditor("thought"));
 $("#home-record-state").addEventListener("click",()=>openHomeEditor("state"));
@@ -2208,8 +3360,8 @@ function openDiscoveryItem(item){
 discoveryController=createThoughtDiscoveryController({
   transport:{
     async search(input){const result=await requestV1(`/api/v1/discovery?${discoveryQuery(input)}`);return{items:result.data,nextCursor:result.meta.nextCursor||"",total:result.meta.total||0,untracedCount:result.meta.untracedCount||0,totalUntracedCount:result.meta.totalUntracedCount||0}},
-    async markRead(id){const item=discoveryController.getState().items.find(value=>value.id===id),result=await requestV1(`/api/v1/thought-chains/${encodeURIComponent(id)}/discovery`,{method:"PATCH",headers:{"if-match":`"${item?.status?.version||1}"`},body:JSON.stringify({action:"read"})});return{value:result.data}},
-    async snooze(id,until){const item=discoveryController.getState().items.find(value=>value.id===id),result=await requestV1(`/api/v1/thought-chains/${encodeURIComponent(id)}/discovery`,{method:"PATCH",headers:{"if-match":`"${item?.status?.version||1}"`},body:JSON.stringify({action:"snooze",until})});return{value:result.data}},
+    async markRead(id){const item=discoveryController.getState().items.find(value=>value.id===id),value={id,status:{...(item?.status||{}),read:true,readAt:new Date().toISOString(),snoozed:false,snoozedUntil:null},fresh:false,untraced:Boolean(item?.untraced)},result=await requestV1(`/api/v1/thought-chains/${encodeURIComponent(id)}/discovery`,{method:"PATCH",headers:{"if-match":`"${item?.status?.version||1}"`},body:JSON.stringify({action:"read"})},{resource:`thought-chain:${id}`,domains:["thoughts"],recoverCommitted:true,projection:{kind:"discovery.status",id,value},onQueued:record=>applyPendingProjection(record)});return{value:result.data||value}},
+    async snooze(id,until){const item=discoveryController.getState().items.find(value=>value.id===id),value={id,status:{...(item?.status||{}),snoozed:true,snoozedUntil:until},fresh:false,untraced:Boolean(item?.untraced)},result=await requestV1(`/api/v1/thought-chains/${encodeURIComponent(id)}/discovery`,{method:"PATCH",headers:{"if-match":`"${item?.status?.version||1}"`},body:JSON.stringify({action:"snooze",until})},{resource:`thought-chain:${id}`,domains:["thoughts"],recoverCommitted:true,projection:{kind:"discovery.status",id,value},onQueued:record=>applyPendingProjection(record)});return{value:result.data||value}},
     async openRandomDoor(input){const result=await requestV1(`/api/v1/discovery/random?${discoveryQuery(input)}`);return{value:result.data,total:result.meta.total||0}}
   },
   onNavigate:openDiscoveryItem
@@ -2273,7 +3425,7 @@ document.addEventListener("click",event=>{const button=event.target.closest("[da
 function openChainEditor(id){const chain=thoughtChains().find(x=>x.question.id===id);if(!chain)return;$("#edit-chain-id").value=id;$("#edit-chain-datetime").value=toLocalDateTimeInput(eventTimestamp(chain.question));$("#edit-chain-question").value=chain.question.content;$("#edit-chain-tags").value=(chain.question.tags||[]).join(" ");$("#edit-chain-status").textContent="这里只修改主题。初步想法、回答与记录请在各自内容块上编辑。";$("#edit-chain-modal").hidden=false;$("#edit-chain-question").focus()}
 function openThoughtBlockEditor(rootId,type="record",blockId=""){
   const item=blockId?state.thoughts.find(value=>value.id===blockId&&value.relatedTo===rootId):null,modal=$("#thought-block-modal"),select=$("#thought-block-type");
-  $("#thought-block-root-id").value=rootId;$("#thought-block-id").value=item?.id||"";$("#thought-block-form").dataset.version=String(item?.version||1);select.value=item?.type||type;select.disabled=Boolean(item);resetOccurrenceInput($("#thought-block-datetime"),item);$("#thought-block-content").value=item?.content||"";resetContentImageEditor("thoughtBlock",item?.attachmentPaths||[]);$("#thought-block-title").textContent=item?"编辑内容":`新增${select.options[select.selectedIndex].text}`;$("#thought-block-status").textContent="";modal.hidden=false;$("#thought-block-content").focus()
+  $("#thought-block-root-id").value=rootId;$("#thought-block-id").value=item?.id||"";$("#thought-block-form").dataset.version=String(item?.version||1);delete $("#thought-block-form").dataset.requestId;select.value=item?.type||type;select.disabled=Boolean(item);resetOccurrenceInput($("#thought-block-datetime"),item);$("#thought-block-content").value=item?.content||"";resetContentImageEditor("thoughtBlock",item?.attachmentPaths||[]);$("#thought-block-title").textContent=item?"编辑内容":`新增${select.options[select.selectedIndex].text}`;$("#thought-block-status").textContent="";modal.hidden=false;$("#thought-block-content").focus()
 }
 function openCheckinEditor(id){
   const item=state.checkins.find(value=>value.id===id);if(!item)return;
@@ -2331,11 +3483,12 @@ document.addEventListener("click",async e=>{
 });
 document.addEventListener("click",async e=>{
   const button=e.target.closest("[data-delete-checkin],[data-chat-delete],[data-experiment-delete],[data-analysis-delete],[data-book-delete]");if(!button)return;
-  const target=button.dataset.deleteCheckin?{url:`/api/checkins/${button.dataset.deleteCheckin}`,domains:["checkins","review"],label:"状态"}:button.dataset.chatDelete?{url:`/api/chats/${button.dataset.chatDelete}`,domains:"chat",label:"对话"}:button.dataset.experimentDelete?{url:`/api/experiments/${button.dataset.experimentDelete}`,domains:"review",label:"实验"}:button.dataset.analysisDelete?{url:`/api/analyses/${button.dataset.analysisDelete}`,domains:"review",label:"复盘"}:{url:`/api/books/${button.dataset.bookDelete}`,domains:["books","review"],label:"书目"};
+  const target=button.dataset.deleteCheckin?{id:button.dataset.deleteCheckin,domain:"checkins",url:`/api/v1/checkins/${encodeURIComponent(button.dataset.deleteCheckin)}`,domains:["checkins","review"],label:"状态"}:button.dataset.chatDelete?{id:button.dataset.chatDelete,domain:"chats",url:`/api/v1/chats/${encodeURIComponent(button.dataset.chatDelete)}`,domains:["chats"],label:"对话"}:button.dataset.experimentDelete?{id:button.dataset.experimentDelete,domain:"experiments",url:`/api/v1/experiments/${encodeURIComponent(button.dataset.experimentDelete)}`,domains:["experiments","review"],label:"实验"}:button.dataset.analysisDelete?{id:button.dataset.analysisDelete,domain:"analyses",url:`/api/v1/analyses/${encodeURIComponent(button.dataset.analysisDelete)}`,domains:["analyses","review"],label:"复盘"}:{id:button.dataset.bookDelete,domain:"books",url:`/api/v1/books/${encodeURIComponent(button.dataset.bookDelete)}`,domains:["books","review"],label:"书目"};
   if(!confirm(`将这条${target.label}移入回收站？`))return;
-  button.disabled=true;
-  try{await request(target.url,{method:"DELETE"});if(button.dataset.bookDelete){activeBookId="";activeBookFeatureNoteId="";bookDetailCondensed=false}await refreshState(target.domains);showToast(`${target.label}已移入回收站`)}
-  catch(error){showToast(error.message,"error");button.disabled=false}
+  const item=(state[target.domain]||[]).find(value=>value.id===target.id);if(!item)return;const requestId=button.dataset.requestId||crypto.randomUUID();button.dataset.requestId=requestId;button.disabled=true;
+  if(button.dataset.bookDelete){activeBookId="";activeBookFeatureNoteId="";bookDetailCondensed=false}
+  try{await requestV1(target.url,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`,"idempotency-key":requestId}},{domains:target.domains,resource:target.domain==="books"?`book:${target.id}`:target.url,recoverCommitted:true,projection:{kind:"record.delete",domain:target.domain,id:target.id},onQueued:record=>applyPendingProjection(record)});void refreshState(target.domains).catch(error=>showToast(`${target.label}已移除，但列表刷新失败：${error.message}`,"error"));showToast(`${target.label}已移入回收站`)}
+  catch(error){if(error.syncStatus==="pending")showToast(`${target.label}将在网络恢复后移入回收站`);else{await refreshState(target.domains).catch(()=>{});showToast(error.message,"error")}}
 });
 document.addEventListener("click",async e=>{
   const add=e.target.closest("[data-thought-block-add]"),edit=e.target.closest("[data-thought-block-edit]"),remove=e.target.closest("[data-thought-block-delete]");
@@ -2347,9 +3500,9 @@ document.addEventListener("click",async e=>{
   catch(error){showToast(error.message,"error");remove.disabled=false}
 });
 $("#selection-tools").addEventListener("mousedown",e=>e.preventDefault());
-$("#selection-tools").addEventListener("click",async e=>{const action=e.target.closest("[data-selection-action]")?.dataset.selectionAction;if(!action||!pendingSelection)return;const selection={...pendingSelection};$("#selection-tools").hidden=true;if(action==="comment"){resetContentImageEditor("comment");openCommentPanel(selection.rootKey);$("#comment-text").focus();return}if(action==="quote"){openSelectionQuoteModal(selection);return}try{const annotation=await request(commentEndpoint(selection.rootKey),{method:"POST",body:JSON.stringify({...selection,kind:action,text:""})}),root=commentRoot(selection.rootKey);if(root){root.annotations||=[];root.annotations.push(annotation)}clearThoughtTracePending(selection.rootKey);pendingSelection=null;window.getSelection()?.removeAllRanges();applySingleCommentAnchor(selection.rootKey,annotation);showToast(action==="emphasis"?"已添加红色加重":"已添加绿色划线")}catch(err){showToast(err.message,"error")}});
-$("#comment-panel-close").addEventListener("click",()=>{activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";pendingSelection=null;resetContentImageEditor("comment");$("#comment-panel").hidden=true;$("#selection-tools").hidden=true;window.getSelection()?.removeAllRanges()});
-$("#comment-composer").addEventListener("submit",async e=>{e.preventDefault();if(!pendingSelection)return;const button=e.currentTarget.querySelector('button[type="submit"]'),status=$("#comment-status"),selection={...pendingSelection};let uploadedPaths=[];button.disabled=true;status.textContent="正在保存…";try{const submission=await contentImagePaths("comment");uploadedPaths=submission.uploadedPaths;const original=imageRecordPayload({content:$("#comment-text").value,attachmentPaths:submission.attachmentPaths}),annotation=await request(commentEndpoint(selection.rootKey),{method:"POST",body:JSON.stringify({...selection,text:original.content,attachmentPaths:original.attachmentPaths})}),root=commentRoot(selection.rootKey);if(root){root.annotations||=[];root.annotations.push(annotation)}clearThoughtTracePending(selection.rootKey);activeAnnotationId=annotation.id;$("#comment-text").value="";resetContentImageEditor("comment");pendingSelection=null;window.getSelection()?.removeAllRanges();applySingleCommentAnchor(selection.rootKey,annotation);renderCommentPanel();showToast("评论已保存")}catch(err){await discardContentImageUploads("comment",uploadedPaths);status.textContent=err.message}finally{button.disabled=false}});
+$("#selection-tools").addEventListener("click",async e=>{const action=e.target.closest("[data-selection-action]")?.dataset.selectionAction;if(!action||!pendingSelection)return;const selection={...pendingSelection};$("#selection-tools").hidden=true;if(action==="comment"){resetContentImageEditor("comment");delete $("#comment-composer").dataset.requestId;contentImageDraft("comment").context={selection,text:"",requestId:""};openCommentPanel(selection.rootKey);$("#comment-text").focus();return}if(action==="quote"){openSelectionQuoteModal(selection);return}try{const annotation=await request(commentEndpoint(selection.rootKey),{method:"POST",body:JSON.stringify({...selection,kind:action,text:""})}),root=commentRoot(selection.rootKey);if(root){root.annotations||=[];root.annotations.push(annotation)}clearThoughtTracePending(selection.rootKey);pendingSelection=null;window.getSelection()?.removeAllRanges();applySingleCommentAnchor(selection.rootKey,annotation);showToast(action==="emphasis"?"已添加红色加重":"已添加绿色划线")}catch(err){showToast(err.message,"error")}});
+$("#comment-panel-close").addEventListener("click",()=>{activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";pendingSelection=null;delete $("#comment-composer").dataset.requestId;resetContentImageEditor("comment");$("#comment-panel").hidden=true;$("#selection-tools").hidden=true;window.getSelection()?.removeAllRanges()});
+$("#comment-composer").addEventListener("submit",async e=>{e.preventDefault();if(!pendingSelection)return;const form=e.currentTarget,button=form.querySelector('button[type="submit"]'),status=$("#comment-status"),selection={...pendingSelection},requestId=form.dataset.requestId||crypto.randomUUID();let uploadedPaths=[];form.dataset.requestId=requestId;button.disabled=true;status.textContent="正在保存…";await persistContentImageDraft("comment");try{const submission=await contentImagePaths("comment");uploadedPaths=submission.uploadedPaths;const original=imageRecordPayload({content:$("#comment-text").value,attachmentPaths:submission.attachmentPaths}),annotation=await request(commentEndpoint(selection.rootKey),{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify({...selection,text:original.content,attachmentPaths:original.attachmentPaths})}),root=commentRoot(selection.rootKey);if(root){root.annotations||=[];root.annotations.push(annotation)}clearThoughtTracePending(selection.rootKey);activeAnnotationId=annotation.id;$("#comment-text").value="";delete form.dataset.requestId;resetContentImageEditor("comment");pendingSelection=null;window.getSelection()?.removeAllRanges();applySingleCommentAnchor(selection.rootKey,annotation);renderCommentPanel();showToast("评论已保存")}catch(err){if(!uncertainMediaSubmission(err))await discardContentImageUploads("comment",uploadedPaths);else await persistContentImageDraft("comment");status.textContent=!Number(err?.status)?"提交状态尚未确认，图片和评论已保留；联网后请再次提交。":err.message}finally{button.disabled=false}});
 document.addEventListener("click",e=>{const anchor=e.target.closest(".comment-anchor");if(!anchor)return;pendingSelection=null;openCommentPanel(anchor.dataset.commentRoot,anchor.dataset.annotationId)});
 document.addEventListener("submit",async e=>{const form=e.target.closest("[data-comment-reply]");if(!form)return;e.preventDefault();const input=form.querySelector("input"),button=form.querySelector("button"),annotationId=form.dataset.commentReply;button.disabled=true;try{const reply=await request(commentEndpoint(activeCommentRoot,`/${annotationId}/replies`),{method:"POST",body:JSON.stringify({text:input.value})}),root=commentRoot(activeCommentRoot),annotation=root?.annotations?.find(item=>item.id===annotationId);if(annotation){annotation.replies||=[];annotation.replies.push(reply);activeAnnotationId=annotationId;refreshAnnotationCard(annotation)}showToast("回复已保存")}catch(err){showToast(err.message,"error");button.disabled=false}});
 document.addEventListener("click",e=>{const button=e.target.closest("[data-shenji-toggle]");if(!button)return;const id=button.dataset.shenjiToggle;activeShenjiComposer=activeShenjiComposer===id?"":id;document.querySelectorAll("[data-shenji-form]").forEach(form=>form.hidden=form.dataset.shenjiForm!==activeShenjiComposer);const form=button.closest(".comment-card")?.querySelector("[data-shenji-form]");if(form&&!form.hidden)form.elements.message.focus()});
@@ -2376,8 +3529,10 @@ document.addEventListener("submit",async e=>{const form=e.target.closest("[data-
 document.addEventListener("click",e=>{const toggle=e.target.closest("[data-followup-edit-toggle]"),cancel=e.target.closest("[data-followup-edit-cancel]");if(!toggle&&!cancel)return;const id=(toggle||cancel).dataset.followupEditToggle||(toggle||cancel).dataset.followupEditCancel,form=document.querySelector(`[data-followup-edit="${CSS.escape(id)}"]`);if(form){form.hidden=cancel?true:!form.hidden;if(!form.hidden)form.elements.question.focus()}});
 document.addEventListener("click",async e=>{const button=e.target.closest("[data-followup-delete]");if(!button)return;if(!confirm("将这条追问及其回答移入回收站？"))return;button.disabled=true;try{await request(`/api/thoughts/${button.dataset.rootId}/follow-ups/${button.dataset.followupDelete}`,{method:"DELETE"});await refreshState("thoughts",{chainId:button.dataset.rootId});showToast("追问已移入回收站")}catch(err){showToast(err.message,"error");button.disabled=false}});
 document.addEventListener("click",async e=>{const button=e.target.closest("[data-followup-answer]");if(!button)return;const rootId=button.dataset.rootId,followUpId=button.dataset.followupAnswer,root=state.thoughts.find(item=>item.id===rootId&&item.type==="question"),followUp=root?.followUps?.find(item=>item.id===followUpId),clientRequestId=button.dataset.requestId||crypto.randomUUID();if(!root||!followUp)return;button.dataset.requestId=clientRequestId;button.disabled=true;const status=button.closest(".followup-answer")?.querySelector(".followup-status");if(status)status.textContent="正在加入后台队列…";try{const task=await request("/api/ai-tasks",{method:"POST",body:JSON.stringify({kind:"followUpAnswer",targetId:rootId,subtargetId:followUpId,inputVersion:root.version||1,subtargetVersion:followUp.version||1,clientRequestId})});if(!state.aiTasks.some(item=>item.id===task.id))state.aiTasks.unshift(task);if(status)status.textContent="回答已进入后台队列，可继续使用其他功能。";await refreshState("notifications");scheduleNotificationPoll();showToast("追问回答已在后台排队")}catch(err){if(status)status.textContent=`未能排队：${err.message}`;showToast(err.message,"error");button.disabled=false}});
+document.addEventListener("click",event=>{const button=event.target.closest("[data-context-source]");if(button)openContextSource(button)});
+document.addEventListener("click",event=>{const button=event.target.closest("[data-thought-sort]");if(!button)return;thoughtSortMode=button.dataset.thoughtSort==="created"?"created":"occurred";renderThoughts()});
 
-document.addEventListener("click",async e=>{const b=e.target.closest("button");if(!b)return;if(b.dataset.view){closeHomeEditors({restoreFocus:false});return switchView(b.dataset.view)}if(b.dataset.go){closeHomeEditors({restoreFocus:false});return switchView(b.dataset.go)}if(b.dataset.openComments)return openCommentPanel(commentRootKey("thought",b.dataset.openComments));if(b.dataset.followupCompose){const form=b.closest(".chain-record")?.querySelector(`[data-follow-up-root="${CSS.escape(b.dataset.followupCompose)}"]`);if(!form)return;form.hidden=!form.hidden;b.setAttribute("aria-expanded",String(!form.hidden));if(!form.hidden){form.elements.question.focus();form.scrollIntoView({block:"nearest",behavior:"smooth"})}return}if(b.dataset.removeDraftTag!=null){draftTags=draftTags.filter(tag=>tag!==b.dataset.removeDraftTag);return renderTagComposer()}if(b.dataset.removeCaptureTag!=null){captureDraftTags=captureDraftTags.filter(tag=>tag!==b.dataset.removeCaptureTag);return renderCaptureTagComposer()}if(b.dataset.tagFilter!=null){thoughtFilter=b.dataset.tagFilter;return renderThoughts()}if(b.dataset.editChain)return openChainEditor(b.dataset.editChain);if(b.dataset.answerChain){const question=state.thoughts.find(item=>item.id===b.dataset.answerChain&&item.type==="question");if(!question)return;b.disabled=true;try{await startBackgroundChainAnswer(question)}finally{b.disabled=false}return}if(b.dataset.remark){const text=prompt("新增一条备注：");if(text?.trim()){await request(`/api/thoughts/${b.dataset.remark}/remarks`,{method:"POST",body:JSON.stringify({text})});await refreshState("thoughts",{chainId:b.dataset.remark});showToast("备注已保存")}return}if(b.dataset.editRemark){const item=state.thoughts.find(x=>x.id===b.dataset.thoughtId),remark=item?.remarks?.find(x=>x.id===b.dataset.editRemark);if(!remark)return;const text=prompt("编辑备注：",remark.text);if(text?.trim()){await request(`/api/thoughts/${b.dataset.thoughtId}/remarks/${b.dataset.editRemark}`,{method:"PATCH",body:JSON.stringify({text})});await refreshState("thoughts",{chainId:b.dataset.thoughtId});showToast("备注已更新")}return}if(b.dataset.deleteRemark){if(!confirm("将这条备注移入回收站？"))return;await request(`/api/thoughts/${b.dataset.thoughtId}/remarks/${b.dataset.deleteRemark}`,{method:"DELETE"});await refreshState("thoughts",{chainId:b.dataset.thoughtId});showToast("备注已移入回收站");return}if(b.dataset.disposition){await request(`/api/thoughts/${b.dataset.disposition}/disposition`,{method:"PATCH",body:JSON.stringify({disposition:b.dataset.value})});await refreshState(["thoughts","review"],{chainId:b.dataset.disposition});showToast(b.dataset.value==="kept"?"已保留":"已舍弃");return}if(b.dataset.deleteChain){if(!confirm("将整套思绪及其内容移入回收站？"))return;b.disabled=true;try{await request(`/api/thought-chains/${b.dataset.deleteChain}`,{method:"DELETE"});await refreshState(["thoughts","review"]);showToast("整套思绪已移入回收站")}catch(err){showToast(err.message,"error");b.disabled=false}}});
+document.addEventListener("click",async e=>{const b=e.target.closest("button");if(!b)return;if(b.dataset.view){closeHomeEditors({restoreFocus:false});return switchView(b.dataset.view)}if(b.dataset.go){closeHomeEditors({restoreFocus:false});return switchView(b.dataset.go)}if(b.dataset.openComments)return openCommentPanel(commentRootKey("thought",b.dataset.openComments));if(b.dataset.followupCompose){const form=b.closest(".chain-record")?.querySelector(`[data-follow-up-root="${CSS.escape(b.dataset.followupCompose)}"]`);if(!form)return;form.hidden=!form.hidden;b.setAttribute("aria-expanded",String(!form.hidden));if(!form.hidden){form.elements.question.focus();form.scrollIntoView({block:"nearest",behavior:"smooth"})}return}if(b.dataset.removeDraftTag!=null){draftTags=draftTags.filter(tag=>tag!==b.dataset.removeDraftTag);return renderTagComposer()}if(b.dataset.removeCaptureTag!=null){captureDraftTags=captureDraftTags.filter(tag=>tag!==b.dataset.removeCaptureTag);return renderCaptureTagComposer()}if(b.dataset.tagFilter!=null){thoughtFilter=b.dataset.tagFilter;return renderThoughts()}if(b.dataset.editChain)return openChainEditor(b.dataset.editChain);if(b.dataset.answerChain){const question=state.thoughts.find(item=>item.id===b.dataset.answerChain&&item.type==="question");if(!question)return;b.disabled=true;try{await startBackgroundChainAnswer(question)}finally{b.disabled=false}return}if(b.dataset.remark){const text=prompt("新增一条备注：");if(text?.trim()){await request(`/api/thoughts/${b.dataset.remark}/remarks`,{method:"POST",body:JSON.stringify({text})});await refreshState("thoughts",{chainId:b.dataset.remark});showToast("备注已保存")}return}if(b.dataset.editRemark){const item=state.thoughts.find(x=>x.id===b.dataset.thoughtId),remark=item?.remarks?.find(x=>x.id===b.dataset.editRemark);if(!remark)return;const text=prompt("编辑备注：",remark.text);if(text?.trim()){await request(`/api/thoughts/${b.dataset.thoughtId}/remarks/${b.dataset.editRemark}`,{method:"PATCH",body:JSON.stringify({text})});await refreshState("thoughts",{chainId:b.dataset.thoughtId});showToast("备注已更新")}return}if(b.dataset.deleteRemark){if(!confirm("将这条备注移入回收站？"))return;await request(`/api/thoughts/${b.dataset.thoughtId}/remarks/${b.dataset.deleteRemark}`,{method:"DELETE"});await refreshState("thoughts",{chainId:b.dataset.thoughtId});showToast("备注已移入回收站");return}if(b.dataset.disposition){await request(`/api/thoughts/${b.dataset.disposition}/disposition`,{method:"PATCH",body:JSON.stringify({disposition:b.dataset.value})});await refreshState(["thoughts","review"],{chainId:b.dataset.disposition});showToast(b.dataset.value==="kept"?"已保留":"已舍弃");return}if(b.dataset.deleteChain){const id=b.dataset.deleteChain,root=(state.thoughts||[]).find(item=>item.id===id&&item.type==="question");if(!root||!confirm("将整套思绪及其内容移入回收站？"))return;b.disabled=true;try{await requestV1(`/api/v1/thought-chains/${encodeURIComponent(id)}`,{method:"DELETE",headers:{"if-match":`"${root.version||1}"`}},{resource:`thought-chain:${id}`,domains:["thoughts","review"],recoverCommitted:true,projection:{kind:"thought.chain.delete",id},onQueued:record=>applyPendingProjection(record)});void refreshState(["thoughts","review"]).catch(error=>showToast(`思绪已移除，但列表刷新失败：${error.message}`,"error"));showToast("整套思绪已移入回收站")}catch(err){if(err.syncStatus==="pending")showToast("思绪将在网络恢复后移入回收站");else{await refreshState(["thoughts","review"]).catch(()=>{});showToast(err.message,"error");b.disabled=false}}}});
 document.addEventListener("click",async e=>{
   const button=e.target.closest("button");if(!button)return;
   if(button.dataset.journalPrompt){const editor=$("#journal-content"),prompt=button.dataset.journalPrompt,prefix=editor.value.trim()?"\n\n":"";editor.setRangeText(`${prefix}${prompt}\n`,editor.selectionStart,editor.selectionEnd,"end");editor.focus();return}
@@ -2397,55 +3552,94 @@ document.addEventListener("click",async e=>{
   if(button.dataset.captureEdit)return editCapture(button.dataset.captureEdit);
   if(button.dataset.journalEdit)return editJournal(button.dataset.journalEdit);
   if(button.dataset.editCheckin)return openCheckinEditor(button.dataset.editCheckin);
-  if(button.dataset.capturePromote){const item=(state.captures||[]).find(value=>value.id===button.dataset.capturePromote);if(!item)return;activeDate=eventDate(item)||activeDate;renderDate();renderSliders();renderThoughts();renderStateChart();renderHomeMood();renderChat();$("#chain-question").value="";$("#chain-idea").value=item.content;draftTags=[...(item.tags||[])];renderTagComposer();$("#chain-status").textContent="捕念已放入初步想法。补上一个明确问题，再形成完整思考。";switchView("today");openHomeEditor("thought");$("#chain-question").focus();return}
-  if(button.dataset.captureDelete){if(!confirm("将这条捕念移入回收站？"))return;button.disabled=true;try{await request(`/api/captures/${button.dataset.captureDelete}`,{method:"DELETE"});await refreshState("captures");showToast("捕念已移入回收站")}catch(err){showToast(err.message,"error");button.disabled=false}return}
-  if(button.dataset.journalDelete){if(!confirm("将这篇日记及其助手回望移入回收站？"))return;button.disabled=true;try{await request(`/api/journals/${button.dataset.journalDelete}`,{method:"DELETE"});await refreshState("journals");showToast("日记已移入回收站")}catch(err){showToast(err.message,"error");button.disabled=false}return}
+  if(button.dataset.captureThought){const id=button.dataset.captureThought;switchView("thoughts");requestAnimationFrame(()=>{const card=document.querySelector(`[data-chain-id="${CSS.escape(id)}"]`);if(card instanceof HTMLDetailsElement)card.open=true;card?.scrollIntoView({behavior:"smooth",block:"center"})});return}
+  if(button.dataset.capturePromote){const item=(state.captures||[]).find(value=>value.id===button.dataset.capturePromote);if(!item)return;const form=$("#chain-form");form.reset();form.elements.sourceCaptureId.value=item.id;form.elements.sourceCaptureVersion.value=String(item.version||1);form.elements.recordKind.value="thought";activeDate=eventDate(item)||activeDate;renderDate();renderSliders();renderThoughts();renderStateChart();renderHomeMood();renderChat();$("#chain-question").value="";$("#chain-idea").value=item.content;draftTags=[...(item.tags||[])];renderTagComposer();syncChainRecordKind();$("#chain-status").textContent="这条念起将保留为来源。补上一个明确问题，再形成完整思考。";switchView("today");openHomeEditor("thought");$("#chain-question").focus();return}
+  if(button.dataset.captureDelete){const id=button.dataset.captureDelete,item=(state.captures||[]).find(value=>value.id===id);if(!item||!confirm("将这条捕念移入回收站？"))return;button.disabled=true;try{await requestV1(`/api/v1/captures/${encodeURIComponent(id)}`,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`}},{domains:["captures"],recoverCommitted:true,projection:{kind:"record.delete",domain:"captures",id},onQueued:record=>applyPendingProjection(record)});void refreshState("captures").catch(error=>showToast(`捕念已移除，但列表刷新失败：${error.message}`,"error"));showToast("捕念已移入回收站")}catch(err){if(err.syncStatus==="pending")showToast("捕念将在网络恢复后移入回收站");else{await refreshState("captures").catch(()=>{});showToast(err.message,"error");button.disabled=false}}return}
+  if(button.dataset.journalDelete){const id=button.dataset.journalDelete,item=(state.journals||[]).find(value=>value.id===id);if(!item||!confirm("将这篇日记及其助手回望移入回收站？"))return;button.disabled=true;try{await requestV1(`/api/v1/journals/${encodeURIComponent(id)}`,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`}},{domains:["journals"],recoverCommitted:true,projection:{kind:"record.delete",domain:"journals",id},onQueued:record=>applyPendingProjection(record)});void refreshState("journals").catch(error=>showToast(`日记已移除，但列表刷新失败：${error.message}`,"error"));showToast("日记已移入回收站")}catch(err){if(err.syncStatus==="pending")showToast("日记将在网络恢复后移入回收站");else{await refreshState("journals").catch(()=>{});showToast(err.message,"error");button.disabled=false}}return}
   if(button.dataset.journalReflect){const id=button.dataset.journalReflect;button.disabled=true;try{await runAnswerInModal({title:"回望这篇日记",scene:"diaryReflection",requestCall:onEvent=>requestStream(`/api/journals/${id}/reflect`,{method:"POST",body:"{}"},onEvent),onDone:()=>refreshState("journals")});showToast("日记回望已保存")}catch(err){showToast(err.message,"error")}finally{button.disabled=false}}
 });
-$$("[data-active-date]").forEach(input=>input.addEventListener("change",e=>{chainDraftVersion+=1;healthParseSerial+=1;activeDate=e.target.value||activeDate;renderDate();renderSliders();renderDailyRecords();renderThoughts();renderStateChart();renderHomeMood();renderChat()}));$("#chart-range").addEventListener("change",renderStateChart);
+$$("[data-active-date]").forEach(input=>input.addEventListener("change",async e=>{chainDraftVersion+=1;healthParseSerial+=1;captureActiveWeightBatchItem();await persistHealthImageDraft("weight").catch(()=>{});activeDate=e.target.value||activeDate;healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=[];healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]};for(const draft of Object.values(healthImageDrafts))Object.assign(draft,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0});renderDate();renderSliders();renderDailyRecords();renderThoughts();renderStateChart();renderHomeMood();renderChat();void restoreHealthImageDrafts(currentUser?.id,activeDate).catch(error=>showToast(`健康截图恢复失败：${error.message}`,"error"))}));$("#chart-range").addEventListener("change",renderStateChart);
 $$("[data-daily-tab]").forEach(button=>button.addEventListener("click",()=>switchDailyType(button.dataset.dailyTab)));
+document.addEventListener("click",event=>{const button=event.target.closest("[data-weight-trend]");if(!button)return;activeWeightTrendMetric=button.dataset.weightTrend||"weight";renderDailyRecords()});
 $("#health-images").addEventListener("change",e=>{if(!setHealthImages(e.currentTarget.files,"本地文件"))e.currentTarget.value=""});
 $("#health-upload-box").addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();$("#health-images").click()}});
 $("#health-upload-box").addEventListener("dragenter",e=>{e.preventDefault();e.currentTarget.classList.add("dragging")});
 $("#health-upload-box").addEventListener("dragover",e=>{e.preventDefault();e.dataTransfer.dropEffect="copy";e.currentTarget.classList.add("dragging")});
 $("#health-upload-box").addEventListener("dragleave",e=>{if(!e.currentTarget.contains(e.relatedTarget))e.currentTarget.classList.remove("dragging")});
-$("#health-upload-box").addEventListener("drop",e=>{e.preventDefault();e.currentTarget.classList.remove("dragging");const files=[...(e.dataTransfer?.files||[])].filter(item=>item.type.startsWith("image/"));setHealthImages(files,"拖入图片",activeDailyType==="sleep")});
-document.addEventListener("paste",e=>{if(!$("#view-daily").classList.contains("active")||!dailyTypeMeta[activeDailyType]||(e.target instanceof Element&&e.target.closest("input,textarea,[contenteditable=true]")))return;const files=[...(e.clipboardData?.files||[])].filter(item=>item.type.startsWith("image/"));if(!files.length)return;e.preventDefault();setHealthImages(files,"剪贴板",activeDailyType==="sleep")});
-document.addEventListener("click",e=>{const button=e.target.closest("[data-health-image-remove]");if(!button)return;healthParseSerial+=1;healthFiles[activeDailyType].splice(Number(button.dataset.healthImageRemove),1);renderHealthUploader();$("#health-parse-status").textContent=healthFiles[activeDailyType].length?`已保留 ${healthFiles[activeDailyType].length} 张图片。`:"请重新选择或粘贴截图。"});
+$("#health-upload-box").addEventListener("drop",e=>{e.preventDefault();e.currentTarget.classList.remove("dragging");const files=[...(e.dataTransfer?.files||[])].filter(item=>item.type.startsWith("image/"));setHealthImages(files,"拖入图片",["sleep","weight"].includes(activeDailyType))});
+document.addEventListener("paste",e=>{if(!$("#view-daily").classList.contains("active")||!dailyTypeMeta[activeDailyType]||(e.target instanceof Element&&e.target.closest("input,textarea,[contenteditable=true]")))return;const files=[...(e.clipboardData?.files||[])].filter(item=>item.type.startsWith("image/"));if(!files.length)return;e.preventDefault();setHealthImages(files,"剪贴板",["sleep","weight"].includes(activeDailyType))});
+document.addEventListener("click",e=>{const button=e.target.closest("[data-weight-batch-select]");if(!button||latestHealthRequest)return;captureActiveWeightBatchItem();const draft=healthImageDraft("weight");draft.activeIndex=Number(button.dataset.weightBatchSelect)||0;void persistHealthImageDraft("weight");renderHealthUploader();applyActiveWeightBatchItem()});
+document.addEventListener("change",e=>{const input=e.target.closest("[data-weight-batch-date]");if(!input)return;const draft=healthImageDraft("weight"),index=Number(input.dataset.weightBatchDate),item=draft.items[index];if(!item)return;captureActiveWeightBatchItem();try{draft.items[index]=changeWeightBatchDate(item,input.value);if(index===draft.activeIndex)applyActiveWeightBatchItem();renderHealthUploader();void persistHealthImageDraft("weight")}catch(error){$("#health-parse-status").textContent=error.message}});
+document.addEventListener("click",e=>{const button=e.target.closest("[data-health-image-remove]");if(!button)return;if(latestHealthRequest)return;healthParseSerial+=1;const type=activeDailyType,index=Number(button.dataset.healthImageRemove);if(type==="weight"){void removeWeightBatchItem(index).then(()=>{$("#health-parse-status").textContent=healthFiles.weight.length?`批次剩余 ${healthFiles.weight.length} 张截图。`:"体重批次已清空。"});return}const draft=healthImageDraft(),[item]=draft.items.splice(index,1);healthFiles[type]=draft.items.map(value=>value.file);draft.result=null;renderHealthUploader();void Promise.all([persistHealthImageDraft(type),discardUploadedMediaItem(item)]).catch(()=>{});$("#health-parse-status").textContent=healthFiles[type].length?`已保留 ${healthFiles[type].length} 张图片。`:"请重新选择或粘贴截图。"});
 $("#parse-health-images").addEventListener("click",async e=>{
   const button=e.currentTarget,type=activeDailyType,date=activeDate,files=[...(healthFiles[type]||[])],status=$("#health-parse-status"),serial=++healthParseSerial,owner=currentUser?.id,session=sessionSerial;if(!files.length)return status.textContent="请先选择、粘贴或拖入截图。";
   latestHealthRequest=serial;
-  button.disabled=true;status.textContent=`${modelName("healthRecognition")} 正在识别并核对字段…`;
+  button.disabled=true;$("#health-images").disabled=true;$$("[data-active-date]").forEach(control=>control.disabled=true);status.textContent="正在安全上传原图…";
   try{
-    const images=await imageDataUrls(files);if(serial!==healthParseSerial||type!==activeDailyType||date!==activeDate||owner!==currentUser?.id||session!==sessionSerial)return;
-    const requestId=crypto.randomUUID(),targetId=`daily:${type}:${date}`,result=await request("/api/images/parse",{method:"POST",body:JSON.stringify({requestId,targetId,inputVersion:serial,kind:type,referenceDate:date,images})});if(serial!==healthParseSerial||type!==activeDailyType||date!==activeDate||owner!==currentUser?.id||session!==sessionSerial||(result.requestId&&result.requestId!==requestId)||(result.targetId&&result.targetId!==targetId)||(Object.hasOwn(result,"inputVersion")&&Number(result.inputVersion)!==serial)){if(latestHealthRequest===serial&&type===activeDailyType&&owner===currentUser?.id&&session===sessionSerial)status.textContent="识别已完成，但当前表单已经变化，未自动回填。";return}const form=dailyForm(type);
-    for(const [key,value]of Object.entries(result)){if(["attachmentPaths","date"].includes(key)||!form.elements[key])continue;fillDailyField(form.elements[key],value)}
-    form.elements.attachmentPaths.value=JSON.stringify(result.attachmentPaths||[]);
-    const recognizedTime=result.wakeTime||result.measuredAt||result.startedAt;
-    if(recognizedTime){setOccurrenceMode(form.elements.occurredAt,"manual");fillDailyField(form.elements.occurredAt,recognizedTime)}
-    else if(result.date){setOccurrenceMode(form.elements.occurredAt,"manual");form.elements.occurredAt.value=localDateTimeForDate(result.date)}
-    form.querySelectorAll(".daily-details").forEach(details=>details.open=[...details.querySelectorAll("input")].some(input=>input.value!==""));
+    if(type==="weight"){const forceActive=healthImageDraft("weight").items.every(item=>item.recognition||item.submissionOperationId);await recognizeWeightBatch({serial,owner,session,status,forceActive});return}
+    const submission=await healthImagePaths(type,date);if(serial!==healthParseSerial||type!==activeDailyType||date!==activeDate||owner!==currentUser?.id||session!==sessionSerial)return;
+    status.textContent=`${modelName("healthRecognition")} 正在识别并核对字段…`;
+    const requestId=crypto.randomUUID(),targetId=`daily:${type}:${date}`,result=await request("/api/images/parse",{method:"POST",body:JSON.stringify({requestId,targetId,inputVersion:serial,kind:type,referenceDate:date,attachmentPaths:submission.attachmentPaths})});if(serial!==healthParseSerial||type!==activeDailyType||date!==activeDate||owner!==currentUser?.id||session!==sessionSerial||(result.requestId&&result.requestId!==requestId)||(result.targetId&&result.targetId!==targetId)||(Object.hasOwn(result,"inputVersion")&&Number(result.inputVersion)!==serial)){if(latestHealthRequest===serial&&type===activeDailyType&&owner===currentUser?.id&&session===sessionSerial)status.textContent="识别已完成，但当前表单已经变化，未自动回填。";return}
+    const draft=healthImageDraft(type);draft.result=result;await persistHealthImageDraft(type);applyHealthRecognitionResult(type,result);
     status.textContent=result.verification||"识别完成。请核对后保存，空白字段可以手动补充。";showToast("截图已识别并回填");
   }catch(err){if(serial===healthParseSerial&&owner===currentUser?.id&&session===sessionSerial)status.textContent=err.message}
-  finally{if(latestHealthRequest===serial&&type===activeDailyType&&owner===currentUser?.id&&session===sessionSerial)button.disabled=!(healthFiles[type]||[]).length}
+  finally{$("#health-images").disabled=false;$$("[data-active-date]").forEach(control=>control.disabled=false);if(latestHealthRequest===serial)latestHealthRequest=0;if(type===activeDailyType&&owner===currentUser?.id&&session===sessionSerial)renderHealthUploader()}
 });
 $$("[data-daily-form]").forEach(form=>form.addEventListener("submit",async e=>{
-  e.preventDefault();const current=e.currentTarget,type=current.dataset.dailyForm,id=current.elements.recordId.value,button=current.querySelector('[type="submit"]'),status=current.querySelector(".status"),payload=Object.fromEntries(new FormData(current).entries()),serial=++healthParseSerial,owner=currentUser?.id,session=sessionSerial;latestHealthRequest=0;
-  try{Object.assign(payload,occurrenceFields(current.elements.occurredAt))}catch(error){status.textContent=error.message;return}
-  delete payload.recordId;payload.type=type;payload.attachmentPaths=payload.attachmentPaths?JSON.parse(payload.attachmentPaths):[];payload.source=payload.attachmentPaths.length?"screenshot":"manual";if(payload.trendSegments){try{payload.trendSegments=JSON.parse(payload.trendSegments)}catch{payload.trendSegments=[]}}
-  current.querySelectorAll('input[type="number"]').forEach(input=>{payload[input.name]=input.value===""?null:Number(input.value)});
-  current.querySelectorAll("[data-duration]").forEach(input=>{payload[input.name]=input.value===""?null:input.value.split(":").reduce((sum,part)=>sum*60+Number(part),0)});
+  e.preventDefault();const current=e.currentTarget,type=current.dataset.dailyForm,id=current.elements.recordId.value,existing=id?(state.dailyRecords||[]).find(item=>item.id===id):null,button=current.querySelector('[type="submit"]'),status=current.querySelector(".status"),serial=++healthParseSerial,owner=currentUser?.id,session=sessionSerial,batchDraft=type==="weight"&&!id?healthImageDraft("weight"):null;let batchItem=batchDraft?.items.find(item=>item.itemId===current.dataset.weightBatchItemId)||null,payload;
+  if(batchItem){captureActiveWeightBatchItem();batchItem=batchDraft.items.find(item=>item.itemId===batchItem.itemId)||batchItem}
+  try{payload=dailyFormSubmissionPayload(current,type);if(batchItem)payload=weightBatchRecordInput(batchItem,payload)}catch(error){status.textContent=error.message;return}
+  const requestId=batchItem?(batchItem.createRequestId||crypto.randomUUID()):(current.dataset.requestId||crypto.randomUUID()),temporaryId=`pending:${requestId}`;latestHealthRequest=0;
+  if(!id){current.dataset.requestId=requestId;if(batchItem)batchItem.createRequestId=requestId}
+  const onQueued=async record=>{
+    applyPendingProjection(record);
+    const draft=healthImageDraft(type);
+    if(batchItem){
+      const queued=draft.items.find(item=>item.itemId===batchItem.itemId);if(queued){queued.submissionOperationId=record.operationId;queued.status="queued";await persistHealthImageDraft(type);renderHealthUploader()}
+    }else if(payload.attachmentPaths.length&&draft.date===activeDate&&draft.items.length){draft.submissionOperationId=record.operationId;await persistHealthImageDraft(type)}
+  };
   button.disabled=true;status.textContent=id?"正在保存修改…":"正在保存…";
-  try{await request(id?`/api/daily-records/${id}`:"/api/daily-records",{method:id?"PATCH":"POST",body:JSON.stringify(payload)});if(owner!==currentUser?.id||session!==sessionSerial)return;if(serial===healthParseSerial&&type===activeDailyType){resetDailyForm(type);resetHealthImages()}await refreshState("dailyRecords");showToast(id?"日录已更新":`${dailyTypeMeta[type].label}已记录`)}
-  catch(err){if(owner===currentUser?.id&&session===sessionSerial)status.textContent=err.message}finally{button.disabled=false}
+  try{
+    if(id){const result=await requestV1(`/api/v1/daily-records/${encodeURIComponent(id)}`,{method:"PATCH",headers:{"if-match":`"${existing?.version||1}"`},body:JSON.stringify(payload)},{domains:["dailyRecords"],recoverCommitted:true,projection:{kind:"record.update",domain:"dailyRecords",id,payload},onQueued});if(result.data)state.dailyRecords=(state.dailyRecords||[]).map(item=>item.id===id?result.data:item);renderDailyRecords()}
+    else{
+      const result=await requestV1("/api/v1/daily-records",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{
+        domains:["dailyRecords"],
+        projection:{kind:"record.create",domain:"dailyRecords",temporaryId,payload},
+        onQueued
+      });
+      state.dailyRecords=(state.dailyRecords||[]).map(item=>item.id===temporaryId?result.data:item);renderDailyRecords()
+    }
+    if(owner!==currentUser?.id||session!==sessionSerial)return;
+    if(batchItem){
+      const index=batchDraft.items.findIndex(item=>item.itemId===batchItem.itemId);if(index>=0)await removeWeightBatchItem(index,{discard:false})
+    }else if(serial===healthParseSerial&&type===activeDailyType){
+      if(type==="weight"&&healthImageDraft("weight").items.length){resetDailyForm(type);applyActiveWeightBatchItem()}
+      else{await discardHealthImageDraft(type);resetDailyForm(type);resetHealthImages({forget:false})}
+    }
+    delete current.dataset.requestId;void refreshState("dailyRecords").catch(error=>showToast(`日录已保存，但列表刷新失败：${error.message}`,"error"));showToast(batchItem&&batchDraft.items.length?"本张体重已保存，请继续核对下一张":id?"日录已更新":`${dailyTypeMeta[type].label}已记录`)
+  }
+  catch(err){
+    if(owner===currentUser?.id&&session===sessionSerial){
+      if(batchItem){
+        const item=batchDraft.items.find(value=>value.itemId===batchItem.itemId);
+        if(item){
+          if(err.syncStatus==="pending"){item.status="queued";status.textContent="本张已进入待同步队列，可继续核对其他截图。";showToast("本张体重已进入待同步队列")}
+          else{item.status=err.syncStatus==="conflict"?"conflict":"failed";item.submissionOperationId="";item.createRequestId="";status.textContent=err.message}
+          await persistHealthImageDraft("weight");renderHealthUploader();applyActiveWeightBatchItem()
+        }
+      }else if(err.syncStatus==="pending"){status.textContent="已记下，网络恢复后自动同步；截图保留到服务端确认。";showToast("日录已进入待同步队列")}
+      else{await refreshState("dailyRecords").catch(()=>{});status.textContent=err.message}
+    }
+  }finally{const activeBatch=type==="weight"?healthImageDraft("weight").items[healthImageDraft("weight").activeIndex]:null;button.disabled=batchDraft?Boolean(activeBatch&&!activeBatch.recognition||activeBatch?.submissionOperationId):Boolean(healthImageDraft(type).submissionOperationId)}
 }));
-for(const type of Object.keys(dailyTypeMeta))for(const event of["input","change"])dailyForm(type)?.addEventListener(event,()=>{healthParseSerial+=1;$("#parse-health-images").disabled=!(healthFiles[activeDailyType]||[]).length});
-$$("[data-daily-cancel]").forEach(button=>button.addEventListener("click",()=>resetDailyForm(button.closest("[data-daily-form]").dataset.dailyForm)));
+for(const type of Object.keys(dailyTypeMeta))for(const event of["input","change"])dailyForm(type)?.addEventListener(event,()=>{healthParseSerial+=1;if(type==="weight"){captureActiveWeightBatchItem();void persistHealthImageDraft("weight");renderHealthUploader()}else $("#parse-health-images").disabled=!(healthFiles[activeDailyType]||[]).length});
+$$("[data-daily-cancel]").forEach(button=>button.addEventListener("click",()=>{const type=button.closest("[data-daily-form]").dataset.dailyForm;resetDailyForm(type);if(type==="weight")applyActiveWeightBatchItem()}));
 $$("[data-content-image-editor] input[type='file']").forEach(input=>input.addEventListener("change",async event=>{
-  const editor=event.currentTarget.closest("[data-content-image-editor]"),status=editor?.closest("form")?.querySelector(".status");
-  try{await setContentImageFiles(editor.dataset.contentImageEditor,event.currentTarget.files);delete editor.closest("form")?.dataset.requestId;event.currentTarget.value="";if(status)status.textContent=""}
-  catch(error){event.currentTarget.value="";if(status)status.textContent=error.message;else showToast(error.message,"error")}
+  const fileInput=event.currentTarget,editor=fileInput.closest("[data-content-image-editor]"),status=editor?.closest("form")?.querySelector(".status");
+  try{delete editor.closest("form")?.dataset.requestId;await setContentImageFiles(editor.dataset.contentImageEditor,fileInput.files);fileInput.value="";if(status)status.textContent=""}
+  catch(error){fileInput.value="";if(status)status.textContent=error.message;else showToast(error.message,"error")}
 }));
+for(const [selector,key]of[["#comment-text","comment"],["#thought-block-content","thoughtBlock"],["#thought-block-type","thoughtBlock"],["#thought-block-datetime","thoughtBlock"]])for(const eventName of["input","change"])$(selector)?.addEventListener(eventName,event=>{delete event.currentTarget.closest("form")?.dataset.requestId;if(contentImageDraft(key).items.length)void persistContentImageDraft(key)});
 document.addEventListener("click",async event=>{
   const remove=event.target.closest("[data-content-image-remove]");if(!remove)return;
   const editor=remove.closest("[data-content-image-editor]"),draft=contentImageDraft(editor?.dataset.contentImageEditor),index=Number(remove.dataset.contentImageRemove);
@@ -2460,14 +3654,50 @@ document.addEventListener("click",event=>{const button=event.target.closest("[da
 document.addEventListener("click",async e=>{
   const button=e.target.closest("[data-daily-edit],[data-daily-delete]");if(!button)return;
   if(button.dataset.dailyEdit)return editDailyRecord(button.dataset.dailyEdit);
-  if(!confirm("将这条日录移入回收站？"))return;button.disabled=true;
-  try{await request(`/api/daily-records/${button.dataset.dailyDelete}`,{method:"DELETE"});await refreshState("dailyRecords");showToast("日录已移入回收站")}catch(err){showToast(err.message,"error");button.disabled=false}
+  const id=button.dataset.dailyDelete,item=(state.dailyRecords||[]).find(value=>value.id===id);if(!item||!confirm("将这条日录移入回收站？"))return;button.disabled=true;
+  try{await requestV1(`/api/v1/daily-records/${encodeURIComponent(id)}`,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`}},{domains:["dailyRecords"],recoverCommitted:true,projection:{kind:"record.delete",domain:"dailyRecords",id},onQueued:record=>applyPendingProjection(record)});void refreshState("dailyRecords").catch(error=>showToast(`日录已移除，但列表刷新失败：${error.message}`,"error"));showToast("日录已移入回收站")}catch(err){if(err.syncStatus==="pending")showToast("日录将在网络恢复后移入回收站");else{await refreshState("dailyRecords").catch(()=>{});showToast(err.message,"error");button.disabled=false}}
 });
 $("#checkin-confirm-all").addEventListener("click",()=>{$$("[data-metric]").forEach(input=>{input.dataset.confirmed="true";input.closest(".metric").classList.remove("unconfirmed");const label=metricConfig()[input.dataset.metric];$(`#${CSS.escape(input.dataset.metric)}-anchor`).textContent=label.anchors[Number(input.value)-1]});navigator.vibrate?.(12);$("#checkin-status").textContent="已确认当前四项，可以直接保存。"});
 $("#chain-tags").addEventListener("keydown",e=>{if(entryKeyIntent(e,{inputKind:"tag"})==="commit-tag"){e.preventDefault();commitDraftTags()}});$("#chain-tags").addEventListener("blur",()=>{if($("#chain-tags").value.trim())commitDraftTags()});
+$("#chain-form").elements.recordKind.forEach(input=>input.addEventListener("change",()=>{chainDraftVersion+=1;delete $("#chain-form").dataset.requestId;syncChainRecordKind()}));
+$("#thought-source-cancel").addEventListener("click",()=>{const form=$("#chain-form");form.reset();clearDurableDraft("chain-form");resetOccurrenceInput($("#chain-datetime"));draftTags=[];renderTagComposer();answerDraft="";answerReasoningDraft="";$("#chain-status").textContent="已取消从念起展开，可以重新记录。";$("#chain-question").focus()});
 for(const selector of["#chain-question","#chain-idea","#chain-answer"])$(selector).addEventListener("input",()=>{chainDraftVersion+=1;if(selector!=="#chain-answer"){answerDraft="";answerReasoningDraft=""}delete $("#chain-form").dataset.requestId});
-$("#chain-form").addEventListener("reset",()=>{chainDraftVersion+=1;resetContentImageEditor("thoughtRoot");delete $("#chain-form").dataset.draftId});
+$("#chain-form").addEventListener("reset",event=>{chainDraftVersion+=1;resetContentImageEditor("thoughtRoot");delete event.currentTarget.dataset.draftId;event.currentTarget.elements.sourceCaptureId.value="";event.currentTarget.elements.sourceCaptureVersion.value="";queueMicrotask(syncChainRecordKind)});
 $("#capture-tags").addEventListener("keydown",e=>{if(entryKeyIntent(e,{inputKind:"tag"})==="commit-tag"){e.preventDefault();commitCaptureTags()}});$("#capture-tags").addEventListener("blur",()=>{if($("#capture-tags").value.trim())commitCaptureTags()});
+$("#capture-audio-record").addEventListener("click",async()=>{try{await startCaptureAudioRecording()}catch(error){captureAudioDraft.lastError=error.message;renderCaptureAudioDraft()}});
+$("#capture-audio-pause").addEventListener("click",toggleCaptureAudioPause);
+$("#capture-audio-stop").addEventListener("click",stopCaptureAudioRecording);
+$("#capture-audio-remove").addEventListener("click",cancelCaptureAudioRecording);
+$("#capture-audio-file").addEventListener("change",async event=>{
+  const fileInput=event.currentTarget,file=fileInput.files?.[0];if(!file)return;
+  try{await setCaptureAudioBlob(file,await importedAudioDuration(file));$("#capture-audio-recorder").open=false;delete $("#capture-form").dataset.requestId;$("#capture-audio-status").textContent="音频已保存在本机，提交后同步。"}
+  catch(error){captureAudioDraft.lastError=error.message;renderCaptureAudioDraft()}
+  finally{fileInput.value=""}
+});
+document.addEventListener("click",async event=>{
+  const transcribe=event.target.closest("[data-capture-transcribe]");
+  if(transcribe){
+    transcribe.disabled=true;
+    try{
+      const task=await request(`/api/captures/${encodeURIComponent(transcribe.dataset.captureTranscribe)}/transcription`,{method:"POST",body:"{}"});
+      if(!state.aiTasks.some(item=>item.id===task.id))state.aiTasks.unshift(task);
+      const capture=state.captures.find(item=>item.id===transcribe.dataset.captureTranscribe);
+      if(capture?.transcription)capture.transcription.status="queued";
+      renderCaptures();await refreshState("notifications");scheduleNotificationPoll();showToast("语音已进入后台转写队列")
+    }catch(error){showToast(error.message,"error");transcribe.disabled=false}
+    return
+  }
+  const play=event.target.closest("[data-capture-speak]");
+  if(play){
+    const voice=play.closest(".capture-speech-actions")?.querySelector("[data-capture-voice]")?.value||state.speech?.defaultVoice;
+    return void speakCapture(play.dataset.captureSpeak,voice)
+  }
+  if(event.target.closest("[data-capture-speech-pause]")&&activeSpeechCaptureId&&activeSpeechAudio){
+    if(activeSpeechAudio.paused)void activeSpeechAudio.play().catch(error=>showToast(error.message,"error"));else activeSpeechAudio.pause();
+    return
+  }
+  if(event.target.closest("[data-capture-speech-stop]"))stopCaptureSpeech()
+});
 $("#capture-cancel").addEventListener("click",resetCaptureForm);
 $("#journal-cancel").addEventListener("click",resetJournalForm);
 for(const id of durableDraftForms)for(const eventName of["input","change"])document.getElementById(id)?.addEventListener(eventName,saveDurableDrafts);
@@ -2480,14 +3710,17 @@ document.addEventListener("keydown",event=>{
 });
 $("#capture-form").addEventListener("submit",async e=>{
   e.preventDefault();if($("#capture-tags").value.trim())commitCaptureTags();
-  const form=e.currentTarget,id=$("#capture-id").value,button=$("#capture-submit"),status=$("#capture-status"),requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`;let uploadedPaths=[],projected=false;
+  const form=e.currentTarget,id=$("#capture-id").value,existing=id?(state.captures||[]).find(item=>item.id===id):null,button=$("#capture-submit"),status=$("#capture-status"),requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`;let uploadedPaths=[],uploadedAudioPath="",projected=false;
   if(!id)form.dataset.requestId=requestId;button.disabled=true;status.textContent=id?"正在保存修改…":"正在收下…";
   try{
     const submission=await contentImagePaths("capture");uploadedPaths=submission.uploadedPaths;if(uploadedPaths.length)status.textContent="图片已上传，正在同步记录…";
-    const original=imageRecordPayload({content:$("#capture-content").value,attachmentPaths:submission.attachmentPaths}),payload={...occurrenceFields($("#capture-date")),...original,tags:[...captureDraftTags]};
-    if(id)await request(`/api/captures/${id}`,{method:"PATCH",body:JSON.stringify(payload)});
+    const audio=await captureAudioForSubmission();if(audio?.attachmentPath===captureAudioDraft.uploadedPath){uploadedAudioPath=audio.attachmentPath;status.textContent="语音已上传，正在同步记录…"}
+    const original=captureRecordPayload({content:$("#capture-content").value,attachmentPaths:submission.attachmentPaths,audio}),payload={...occurrenceFields($("#capture-date")),...original,tags:[...captureDraftTags]};
+    if(id){const result=await requestV1(`/api/v1/captures/${encodeURIComponent(id)}`,{method:"PATCH",headers:{"if-match":`"${existing?.version||1}"`},body:JSON.stringify(payload)},{domains:["captures"],recoverCommitted:true,projection:{kind:"record.update",domain:"captures",id,payload},onQueued:record=>{projected=applyPendingProjection(record)}});if(result.data)state.captures=(state.captures||[]).map(item=>item.id===id?result.data:item);renderCaptures()}
     else{
       const result=await requestV1("/api/v1/captures",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{
+        domains:["captures"],
+        projection:{kind:"capture.create",temporaryId,payload},
         onQueued:record=>{
           state.captures=[{id:temporaryId,...payload,createdAt:record.createdAt,_sync:{status:"sending",operationId:record.operationId}},...(state.captures||[]).filter(item=>item.id!==temporaryId)];
           projected=true;renderCaptures();status.textContent="已记下，正在同步…";
@@ -2498,17 +3731,27 @@ $("#capture-form").addEventListener("submit",async e=>{
     resetCaptureForm();void refreshState("captures").catch(error=>showToast(`捕念已保存，但列表刷新失败：${error.message}`,"error"));showToast(id?"捕念已更新":"已收进捕念");
   }catch(err){
     if(projected&&err.syncStatus==="pending"){
-      const pending=(state.captures||[]).find(item=>item.id===temporaryId);if(pending)pending._sync.status="pending";renderCaptures();resetCaptureForm();$("#capture-status").textContent="已记下，网络恢复后自动同步。";showToast("捕念已进入待同步队列");
+      const pending=(state.captures||[]).find(item=>item.id===temporaryId);if(pending)pending._sync.status="pending";renderCaptures();resetCaptureForm({preserveUploads:true});$("#capture-status").textContent="已记下，网络恢复后自动同步。";showToast("捕念已进入待同步队列");
     }else if(projected&&err.syncStatus==="conflict"){
-      state.captures=(state.captures||[]).filter(item=>item.id!==temporaryId);renderCaptures();await discardContentImageUploads("capture",uploadedPaths);status.textContent=`同步冲突：${err.message}。本地内容已保留，请刷新后重试。`;showToast("捕念同步发生冲突","error")
+      if(id)await refreshState("captures").catch(()=>{});else{state.captures=(state.captures||[]).filter(item=>item.id!==temporaryId);renderCaptures()}await Promise.all([discardContentImageUploads("capture",uploadedPaths),rollbackCaptureAudioUpload(uploadedAudioPath)]);status.textContent=`同步冲突：${err.message}。本地内容已保留，请刷新后重试。`;showToast("捕念同步发生冲突","error")
     }else{
-      if(projected){state.captures=(state.captures||[]).filter(item=>item.id!==temporaryId);renderCaptures()}
-      await discardContentImageUploads("capture",uploadedPaths);status.textContent=err.message;
+      if(projected){if(id)await refreshState("captures").catch(()=>{});else{state.captures=(state.captures||[]).filter(item=>item.id!==temporaryId);renderCaptures()}}
+      await Promise.all([discardContentImageUploads("capture",uploadedPaths),rollbackCaptureAudioUpload(uploadedAudioPath)]);status.textContent=err.message;
     }
   }finally{button.disabled=false}
 });
 $("#journal-draft-save").addEventListener("click",async e=>{const button=e.currentTarget,status=$("#journal-status");button.disabled=true;button.textContent="正在保存…";status.textContent="正在保存草稿…";try{const draft=await request("/api/journal-draft",{method:"PUT",body:JSON.stringify({journalId:$("#journal-id").value,title:$("#journal-title").value,content:$("#journal-content").value})});state.journalDraft=draft;status.textContent=`草稿已保存于 ${formatTime(draft.updatedAt)}。`;showToast("日记草稿已保存")}catch(err){status.textContent=err.message}finally{button.disabled=false;button.textContent="保存草稿"}});
-$("#journal-form").addEventListener("submit",async e=>{e.preventDefault();const id=$("#journal-id").value,button=$("#journal-submit"),status=$("#journal-status"),payload={...occurrenceFields($("#journal-date")),title:$("#journal-title").value,content:$("#journal-content").value,tags:splitTags($("#journal-tags").value)};button.disabled=true;status.textContent=id?"正在保存修改…":"正在保存原文…";try{await request(id?`/api/journals/${id}`:"/api/journals",{method:id?"PATCH":"POST",body:JSON.stringify(payload)});resetJournalForm();await refreshState("journals");showToast(id?"日记已更新":"日记已保存")}catch(err){status.textContent=err.message}finally{button.disabled=false}});
+$("#journal-form").addEventListener("submit",async e=>{
+  e.preventDefault();const form=e.currentTarget,id=$("#journal-id").value,existing=id?(state.journals||[]).find(item=>item.id===id):null,button=$("#journal-submit"),status=$("#journal-status"),payload={...occurrenceFields($("#journal-date")),title:$("#journal-title").value,content:$("#journal-content").value,tags:splitTags($("#journal-tags").value)},requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`;if(!id)form.dataset.requestId=requestId;button.disabled=true;status.textContent=id?"正在保存修改…":"正在保存原文…";
+  try{
+    if(id){const result=await requestV1(`/api/v1/journals/${encodeURIComponent(id)}`,{method:"PATCH",headers:{"if-match":`"${existing?.version||1}"`},body:JSON.stringify(payload)},{domains:["journals"],recoverCommitted:true,projection:{kind:"record.update",domain:"journals",id,payload},onQueued:record=>applyPendingProjection(record)});if(result.data)state.journals=(state.journals||[]).map(item=>item.id===id?result.data:item);renderJournals()}
+    else{
+      const result=await requestV1("/api/v1/journals",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{domains:["journals"],projection:{kind:"record.create",domain:"journals",temporaryId,payload},onQueued:record=>applyPendingProjection(record)});
+      state.journals=(state.journals||[]).map(item=>item.id===temporaryId?result.data:item);renderJournals()
+    }
+    delete form.dataset.requestId;resetJournalForm();void refreshState("journals").catch(error=>showToast(`日记已保存，但列表刷新失败：${error.message}`,"error"));showToast(id?"日记已更新":"日记已保存")
+  }catch(err){if(err.syncStatus==="pending"){resetJournalForm();status.textContent="原文已留存，网络恢复后自动同步。";showToast("日记已进入待同步队列")}else{if(id)await refreshState("journals").catch(()=>{});status.textContent=err.message}}finally{button.disabled=false}
+});
 $("#checkin-form").addEventListener("submit",async e=>{
   e.preventDefault();const form=e.currentTarget,b=form.querySelector('[type="submit"]'),missing=$$('[data-metric]').filter(x=>x.dataset.confirmed!=="true");
   if(missing.length){$("#checkin-status").textContent=`请先确认：${missing.map(x=>metricConfig()[x.dataset.metric].label).join("、")}`;missing[0].focus();return}
@@ -2517,6 +3760,8 @@ $("#checkin-form").addEventListener("submit",async e=>{
   $$('[data-metric]').forEach(x=>{const k=x.dataset.metric;if(x.dataset.custom==="1")payload.custom[k]=Number(x.value);else payload[k]=Number(x.value);payload.notes[k]=$(`#${CSS.escape(k)}-note`)?.value||""});
   try{
     const result=await requestV1("/api/v1/checkins",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{
+      domains:["checkins"],
+      projection:{kind:"checkin.create",temporaryId,payload:{...payload,occurredAt:payload.occurredAt,occurredOn:payload.occurredOn||localDateKey(payload.occurredAt||new Date())}},
       onQueued:record=>{
         const occurredAt=payload.occurredAt||record.createdAt,occurredOn=localDateKey(occurredAt);
         state.checkins=[{id:temporaryId,...payload,occurredAt,occurredOn,createdAt:record.createdAt,_sync:{status:"sending",operationId:record.operationId}},...(state.checkins||[]).filter(item=>item.id!==temporaryId)];
@@ -2559,27 +3804,68 @@ $("#draft-answer-button").addEventListener("click",async e=>{
   catch(err){$("#chain-status").textContent=err.message}
   finally{button.disabled=false}
 });
-$("#chain-form").addEventListener("submit",async e=>{e.preventDefault();const form=e.currentTarget,b=form.querySelector('[type="submit"]');if(b.disabled)return;if($("#chain-tags").value.trim())commitDraftTags();const id=form.dataset.requestId||crypto.randomUUID(),answer=$("#chain-answer").value;let uploadedPaths=[];form.dataset.requestId=id;b.disabled=true;b.textContent="正在保存…";$("#chain-status").textContent="正在保存整套思考…";try{const submission=await contentImagePaths("thoughtRoot");uploadedPaths=submission.uploadedPaths;const original=imageRecordPayload({content:$("#chain-question").value,attachmentPaths:submission.attachmentPaths}),needsAnswer=Boolean(original.content.trim()||original.attachmentPaths.length)&&!answer.trim()&&llmSettings.automaticAnswers?.thoughtAnswer===true,result=await request("/api/thought-chains",{method:"POST",body:JSON.stringify({clientRequestId:id,...occurrenceFields($("#chain-datetime")),question:original.content,attachmentPaths:original.attachmentPaths,idea:$("#chain-idea").value,answer,modelDraft:answerDraft,modelReasoning:answerReasoningDraft,tags:draftTags,generateAnswer:needsAnswer})}),question=result.items.find(item=>item.type==="question");chainDraftVersion+=1;form.reset();clearDurableDraft("chain-form");resetOccurrenceInput($("#chain-datetime"));draftTags=[];renderTagComposer();answerDraft="";answerReasoningDraft="";delete form.dataset.requestId;delete form.dataset.draftId;b.disabled=false;b.textContent="收进思绪箱";$("#chain-status").textContent=needsAnswer?"思考已保存，后台生成一条图文合并回答。":answer.trim()?"已保存为一套完整思考。":"思考已保存，未自动调用 AI。";closeHomeEditors();void refreshState(["thoughts","review","notifications"],{chainId:question?.id}).catch(error=>showToast(`记录已保存，但页面刷新失败：${error.message}`,"error"));if(needsAnswer&&question){void startBackgroundChainAnswer(question,result.task)}showToast(needsAnswer?"思考已保存，可继续记录":"整套思考已保存，不会重复记录")}catch(err){await discardContentImageUploads("thoughtRoot",uploadedPaths);$("#chain-status").textContent=err.message}finally{b.disabled=false;b.textContent="收进思绪箱"}});
-$("#chat-form").addEventListener("submit",async e=>{e.preventDefault();const b=e.currentTarget.querySelector("button");b.disabled=true;$("#chat-status").textContent=`${modelName("chat")} 正在结合你的长期记录…`;try{await request("/api/chat",{method:"POST",body:JSON.stringify({...occurrenceFields($("#chat-datetime")),message:$("#chat-input").value})});$("#chat-input").value="";resetOccurrenceInput($("#chat-datetime"));await refreshState("chat");$("#chat-status").textContent=""}catch(err){$("#chat-status").textContent=err.message}finally{b.disabled=false}});
-$("#edit-chain-form").addEventListener("submit",async e=>{e.preventDefault();const b=e.currentTarget.querySelector('[type="submit"]'),id=$("#edit-chain-id").value;b.disabled=true;$("#edit-chain-status").textContent="正在保存…";try{await request(`/api/thought-chains/${id}`,{method:"PATCH",body:JSON.stringify({occurredAt:$("#edit-chain-datetime").value,question:$("#edit-chain-question").value,tags:splitTags($("#edit-chain-tags").value)})});$("#edit-chain-modal").hidden=true;await refreshState(["thoughts","review"],{chainId:id});showToast("思绪主题已更新")}catch(err){$("#edit-chain-status").textContent=err.message}finally{b.disabled=false}});
+$("#chain-form").addEventListener("submit",async e=>{
+  e.preventDefault();const form=e.currentTarget,b=form.querySelector('[type="submit"]');if(b.disabled)return;if($("#chain-tags").value.trim())commitDraftTags();const recordKind=chainRecordKind(),requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`,answer=$("#chain-answer").value,sourceCaptureId=form.elements.sourceCaptureId.value,sourceCaptureVersion=Number(form.elements.sourceCaptureVersion.value)||0;let uploadedPaths=[];form.dataset.requestId=requestId;b.disabled=true;b.textContent="正在保存…";$("#chain-status").textContent=recordKind==="capture"?"正在收进念起…":"正在保存整套思考…";
+  try{
+    const submission=await contentImagePaths("thoughtRoot");uploadedPaths=submission.uploadedPaths;
+    const eventTime=occurrenceFields($("#chain-datetime")),original=imageRecordPayload({content:$("#chain-question").value,attachmentPaths:submission.attachmentPaths});
+    if(recordKind==="capture"){
+      const payload={...eventTime,...captureRecordPayload(original),tags:draftTags},result=(await requestV1("/api/v1/captures",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{domains:["captures"],projection:{kind:"capture.create",temporaryId,payload},onQueued:record=>applyPendingProjection(record)})).data;
+      state.captures=(state.captures||[]).map(item=>item.id===temporaryId?result:item);renderCaptures();await clearSubmittedContentImageDraft("thoughtRoot");chainDraftVersion+=1;form.reset();clearDurableDraft("chain-form");resetOccurrenceInput($("#chain-datetime"));draftTags=[];renderTagComposer();answerDraft="";answerReasoningDraft="";delete form.dataset.requestId;delete form.dataset.draftId;$("#chain-status").textContent="已收进念起。";closeHomeEditors();void refreshState("captures").catch(error=>showToast(`念起已保存，但页面刷新失败：${error.message}`,"error"));showToast("已收进念起");return
+    }
+    const needsAnswer=Boolean(original.content.trim()||original.attachmentPaths.length)&&!answer.trim()&&llmSettings.automaticAnswers?.thoughtAnswer===true,payload={...eventTime,question:original.content,attachmentPaths:original.attachmentPaths,idea:$("#chain-idea").value,answer,modelDraft:answerDraft,modelReasoning:answerReasoningDraft,tags:draftTags,generateAnswer:needsAnswer,...(sourceCaptureId?{sourceRef:{type:"capture",id:sourceCaptureId,version:sourceCaptureVersion}}:{})},result=(await requestV1("/api/v1/thought-chains",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{domains:["thoughts","aiTasks","notifications"],projection:{kind:"thought.chain.create",temporaryId,payload},onQueued:record=>applyPendingProjection(record)})).data,question=result.items.find(item=>item.type==="question");
+    state.thoughts=[...result.items,...(state.thoughts||[]).filter(item=>!String(item.id).startsWith(`${temporaryId}:`))];renderThoughts();renderCaptures();renderHomeMemories();await clearSubmittedContentImageDraft("thoughtRoot");chainDraftVersion+=1;form.reset();clearDurableDraft("chain-form");resetOccurrenceInput($("#chain-datetime"));draftTags=[];renderTagComposer();answerDraft="";answerReasoningDraft="";delete form.dataset.requestId;delete form.dataset.draftId;$("#chain-status").textContent=needsAnswer?"思考已保存，后台生成一条图文合并回答。":answer.trim()?"已保存为一套完整思考。":"思考已保存，未自动调用 AI。";closeHomeEditors();void refreshState(["thoughts","review","notifications"],{chainId:question?.id}).catch(error=>showToast(`记录已保存，但页面刷新失败：${error.message}`,"error"));if(needsAnswer&&question){void startBackgroundChainAnswer(question,result.task)}showToast(needsAnswer?"思考已保存，可继续记录":"整套思考已保存，不会重复记录")
+  }catch(err){
+    if(err.syncStatus==="pending"){await clearSubmittedContentImageDraft("thoughtRoot");chainDraftVersion+=1;form.reset();clearDurableDraft("chain-form");resetOccurrenceInput($("#chain-datetime"));draftTags=[];renderTagComposer();answerDraft="";answerReasoningDraft="";delete form.dataset.requestId;delete form.dataset.draftId;$("#chain-status").textContent=recordKind==="capture"?"念起已留存，网络恢复后自动同步。":"思考已留存，网络恢复后自动同步。";closeHomeEditors();showToast(recordKind==="capture"?"念起已进入待同步队列":"思考已进入待同步队列")}
+    else{await discardContentImageUploads("thoughtRoot",uploadedPaths);$("#chain-status").textContent=err.message}
+  }finally{b.disabled=false;syncChainRecordKind()}
+});
+$("#chat-form").addEventListener("submit",async e=>{
+  e.preventDefault();const form=e.currentTarget,b=form.querySelector("button"),requestId=form.dataset.requestId||crypto.randomUUID(),payload={...occurrenceFields($("#chat-datetime")),message:$("#chat-input").value};form.dataset.requestId=requestId;b.disabled=true;$("#chat-status").textContent=`${modelName("chat")} 正在结合你的长期记录…`;
+  try{await requestV1("/api/v1/chats",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{domains:["chats"]});delete form.dataset.requestId;$("#chat-input").value="";resetOccurrenceInput($("#chat-datetime"));void refreshState("chat").catch(error=>showToast(`回答已保存，但页面刷新失败：${error.message}`,"error"));$("#chat-status").textContent=""}
+  catch(err){$("#chat-status").textContent=err.syncStatus==="pending"?"问题已留存，网络恢复后自动处理。":err.message}
+  finally{b.disabled=false}
+});
+$("#edit-chain-form").addEventListener("submit",async e=>{e.preventDefault();const b=e.currentTarget.querySelector('[type="submit"]'),id=$("#edit-chain-id").value,root=state.thoughts.find(item=>item.id===id&&item.type==="question"),payload={occurredAt:$("#edit-chain-datetime").value,question:$("#edit-chain-question").value,tags:splitTags($("#edit-chain-tags").value)};b.disabled=true;$("#edit-chain-status").textContent="正在保存…";try{await requestV1(`/api/v1/thought-chains/${encodeURIComponent(id)}`,{method:"PATCH",headers:{"if-match":`"${root?.version||1}"`},body:JSON.stringify(payload)},{resource:`thought-chain:${id}`,domains:["thoughts"],recoverCommitted:true,projection:{kind:"thought.chain.update",id,payload},onQueued:record=>applyPendingProjection(record)});$("#edit-chain-modal").hidden=true;void refreshState(["thoughts","review"],{chainId:id}).catch(error=>showToast(`思绪已更新，但列表刷新失败：${error.message}`,"error"));showToast("思绪主题已更新")}catch(err){if(err.syncStatus==="pending"){$("#edit-chain-modal").hidden=true;showToast("思绪修改将在网络恢复后同步")}else{await refreshState(["thoughts","review"],{chainId:id}).catch(()=>{});$("#edit-chain-status").textContent=err.message}}finally{b.disabled=false}});
 $("#thought-block-form").addEventListener("submit",async e=>{
-  e.preventDefault();const button=e.currentTarget.querySelector('[type="submit"]'),rootId=$("#thought-block-root-id").value,id=$("#thought-block-id").value;let uploadedPaths=[];button.disabled=true;$("#thought-block-status").textContent="正在保存…";
-  try{const submission=await contentImagePaths("thoughtBlock");uploadedPaths=submission.uploadedPaths;const original=imageRecordPayload({content:$("#thought-block-content").value,attachmentPaths:submission.attachmentPaths}),payload={type:$("#thought-block-type").value,relatedTo:rootId,...occurrenceFields($("#thought-block-datetime")),...original,...(id?{expectedVersion:Number(e.currentTarget.dataset.version)||1}:{})};await request(id?`/api/thoughts/${id}`:"/api/thoughts",{method:id?"PATCH":"POST",body:JSON.stringify(payload)});$("#thought-block-modal").hidden=true;resetContentImageEditor("thoughtBlock");await refreshState(["thoughts","review"],{chainId:rootId});showToast(id?"内容已更新":"内容已加入时间线")}
-  catch(error){await discardContentImageUploads("thoughtBlock",uploadedPaths);$("#thought-block-status").textContent=error.message}
+  e.preventDefault();const form=e.currentTarget,button=form.querySelector('[type="submit"]'),rootId=$("#thought-block-root-id").value,id=$("#thought-block-id").value,requestId=form.dataset.requestId||crypto.randomUUID();let uploadedPaths=[];form.dataset.requestId=requestId;button.disabled=true;$("#thought-block-status").textContent="正在保存…";await persistContentImageDraft("thoughtBlock");
+  try{const submission=await contentImagePaths("thoughtBlock");uploadedPaths=submission.uploadedPaths;const original=imageRecordPayload({content:$("#thought-block-content").value,attachmentPaths:submission.attachmentPaths}),payload={type:$("#thought-block-type").value,relatedTo:rootId,...occurrenceFields($("#thought-block-datetime")),...original,...(id?{expectedVersion:Number(form.dataset.version)||1}:{})};await request(id?`/api/thoughts/${id}`:"/api/thoughts",{method:id?"PATCH":"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)});delete form.dataset.requestId;$("#thought-block-modal").hidden=true;resetContentImageEditor("thoughtBlock");await refreshState(["thoughts","review"],{chainId:rootId});showToast(id?"内容已更新":"内容已加入时间线")}
+  catch(error){if(!uncertainMediaSubmission(error))await discardContentImageUploads("thoughtBlock",uploadedPaths);else await persistContentImageDraft("thoughtBlock");$("#thought-block-status").textContent=!Number(error?.status)?"提交状态尚未确认，图片和内容已保留；联网后请再次提交。":error.message}
   finally{button.disabled=false}
 });
-$("#edit-checkin-form").addEventListener("submit",async e=>{e.preventDefault();const button=e.currentTarget.querySelector('[type="submit"]'),id=$("#edit-checkin-id").value,payload={occurredAt:$("#edit-checkin-datetime").value,factors:splitTags($("#edit-checkin-factors").value),custom:{},notes:{}};$$("[data-edit-checkin-metric]").forEach(input=>{const key=input.dataset.editCheckinMetric;if(input.dataset.custom==="1")payload.custom[key]=Number(input.value);else payload[key]=Number(input.value);payload.notes[key]=$(`[data-edit-checkin-note="${CSS.escape(key)}"]`)?.value||""});button.disabled=true;$("#edit-checkin-status").textContent="正在保存修改…";try{await request(`/api/checkins/${id}`,{method:"PATCH",body:JSON.stringify(payload)});$("#edit-checkin-modal").hidden=true;await refreshState(["checkins","review"]);showToast("此刻状态已更新")}catch(err){$("#edit-checkin-status").textContent=err.message}finally{button.disabled=false}});
+$("#edit-checkin-form").addEventListener("submit",async e=>{e.preventDefault();const button=e.currentTarget.querySelector('[type="submit"]'),id=$("#edit-checkin-id").value,item=(state.checkins||[]).find(value=>value.id===id),payload={occurredAt:$("#edit-checkin-datetime").value,factors:splitTags($("#edit-checkin-factors").value),custom:{},notes:{}};$$("[data-edit-checkin-metric]").forEach(input=>{const key=input.dataset.editCheckinMetric;if(input.dataset.custom==="1")payload.custom[key]=Number(input.value);else payload[key]=Number(input.value);payload.notes[key]=$(`[data-edit-checkin-note="${CSS.escape(key)}"]`)?.value||""});button.disabled=true;$("#edit-checkin-status").textContent="正在保存修改…";try{await requestV1(`/api/v1/checkins/${encodeURIComponent(id)}`,{method:"PATCH",headers:{"if-match":`"${item?.version||1}"`},body:JSON.stringify(payload)},{domains:["checkins"],recoverCommitted:true,projection:{kind:"record.update",domain:"checkins",id,payload},onQueued:record=>applyPendingProjection(record)});$("#edit-checkin-modal").hidden=true;void refreshState(["checkins","review"]).catch(error=>showToast(`状态已更新，但列表刷新失败：${error.message}`,"error"));showToast("此刻状态已更新")}catch(err){if(err.syncStatus==="pending"){$("#edit-checkin-modal").hidden=true;showToast("状态修改将在网络恢复后同步")}else{await refreshState(["checkins","review"]).catch(()=>{});$("#edit-checkin-status").textContent=err.message}}finally{button.disabled=false}});
 $("#edit-chain-modal .modal-close").addEventListener("click",()=>$("#edit-chain-modal").hidden=true);$("#edit-chain-modal").addEventListener("click",e=>{if(e.target===e.currentTarget)e.currentTarget.hidden=true});
 $("#thought-block-modal .modal-close").addEventListener("click",()=>$("#thought-block-modal").hidden=true);$("#thought-block-modal").addEventListener("click",e=>{if(e.target===e.currentTarget)e.currentTarget.hidden=true});$("#thought-block-type").addEventListener("change",e=>$("#thought-block-title").textContent=`新增${e.currentTarget.options[e.currentTarget.selectedIndex].text}`);
 $("#edit-checkin-modal .modal-close").addEventListener("click",()=>$("#edit-checkin-modal").hidden=true);$("#edit-checkin-modal").addEventListener("click",e=>{if(e.target===e.currentTarget)e.currentTarget.hidden=true});
 $("#ai-answer-close").addEventListener("click",closeAnswerModal);$("#ai-answer-modal").addEventListener("click",e=>{if(e.target===e.currentTarget)closeAnswerModal()});
-document.addEventListener("keydown",e=>{const homeEditor=$$(".home-v02-editor-backdrop").find(editor=>!editor.hidden),answerModal=$("#ai-answer-modal");if(homeEditor&&answerModal.hidden&&e.key==="Tab")return trapHomeEditorFocus(e,homeEditor);if(e.key!=="Escape")return;if(!answerModal.hidden)return closeAnswerModal();if(!$("#thought-block-modal").hidden)return $("#thought-block-modal").hidden=true;if(!$("#edit-checkin-modal").hidden)return $("#edit-checkin-modal").hidden=true;if(!$("#association-flow-modal").hidden)return setAssociationFlowOpen(false);if(homeEditor)closeHomeEditors()});
+document.addEventListener("click",e=>{const button=e.target.closest("[data-image-viewer-path]");if(button)openImageViewer(button)});
+$("#image-viewer-close").addEventListener("click",()=>closeImageViewer());
+$("#image-viewer-prev").addEventListener("click",()=>moveImageViewer(-1));
+$("#image-viewer-next").addEventListener("click",()=>moveImageViewer(1));
+$("#image-viewer").addEventListener("click",e=>{if(e.target===e.currentTarget)closeImageViewer()});
+document.addEventListener("keydown",e=>{
+  const viewer=$("#image-viewer"),homeEditor=$$(".home-v02-editor-backdrop").find(editor=>!editor.hidden),answerModal=$("#ai-answer-modal");
+  if(!viewer.hidden){
+    if(e.key==="Tab")return trapHomeEditorFocus(e,viewer);
+    if(e.key==="Escape"){e.preventDefault();return closeImageViewer()}
+    if(e.key==="ArrowLeft"){e.preventDefault();return moveImageViewer(-1)}
+    if(e.key==="ArrowRight"){e.preventDefault();return moveImageViewer(1)}
+    return
+  }
+  if(homeEditor&&answerModal.hidden&&e.key==="Tab")return trapHomeEditorFocus(e,homeEditor);
+  if(e.key!=="Escape")return;
+  if(!answerModal.hidden)return closeAnswerModal();
+  if(!$("#thought-block-modal").hidden)return $("#thought-block-modal").hidden=true;
+  if(!$("#edit-checkin-modal").hidden)return $("#edit-checkin-modal").hidden=true;
+  if(!$("#association-flow-modal").hidden)return setAssociationFlowOpen(false);
+  if(homeEditor)closeHomeEditors()
+});
 $("#association-flow-toggle").addEventListener("click",()=>setAssociationFlowOpen(true));
 $("#association-flow-close").addEventListener("click",()=>setAssociationFlowOpen(false));
 $("#association-flow-modal").addEventListener("click",e=>{if(e.target===e.currentTarget)setAssociationFlowOpen(false)});
-$("#run-analysis").addEventListener("click",async e=>{const button=e.currentTarget;button.disabled=true;$("#analysis-status").textContent="正在比较模型草稿与你最终保留的回答，以及你保留、舍弃和长期缺席的主题…";try{await request("/api/analysis/run",{method:"POST",body:"{}"});await refreshState("review");$("#analysis-status").textContent="";showToast("认知复盘已生成")}catch(err){$("#analysis-status").textContent=err.message}finally{button.disabled=false}});
-$("#experiment-form").addEventListener("submit",async e=>{e.preventDefault();const form=e.currentTarget;await request("/api/experiments",{method:"POST",body:JSON.stringify({hypothesis:$("#experiment-hypothesis").value,factor:$("#experiment-factor").value,outcome:$("#experiment-outcome").value,duration:$("#experiment-duration").value})});form.reset();await refreshState("review");showToast("个人实验已开始")});
-$("#metric-form").addEventListener("submit",async e=>{e.preventDefault();const form=e.currentTarget;await request("/api/custom-metrics",{method:"POST",body:JSON.stringify({name:$("#metric-name").value,low:$("#metric-low").value,high:$("#metric-high").value})});form.reset();await refreshState(["review","checkins"])});
+$("#run-analysis").addEventListener("click",async e=>{const button=e.currentTarget;button.disabled=true;$("#analysis-status").textContent="正在比较模型草稿与你最终保留的回答，以及你保留、舍弃和长期缺席的主题…";try{await requestV1("/api/v1/analyses",{method:"POST",headers:{"idempotency-key":crypto.randomUUID()},body:"{}"},{domains:["analyses"]});void refreshState("review").catch(error=>showToast(`复盘已生成，但页面刷新失败：${error.message}`,"error"));$("#analysis-status").textContent="";showToast("认知复盘已生成")}catch(err){$("#analysis-status").textContent=err.message}finally{button.disabled=false}});
+$("#experiment-form").addEventListener("submit",async e=>{e.preventDefault();const form=e.currentTarget,requestId=form.dataset.requestId||crypto.randomUUID();form.dataset.requestId=requestId;try{await requestV1("/api/v1/experiments",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify({hypothesis:$("#experiment-hypothesis").value,factor:$("#experiment-factor").value,outcome:$("#experiment-outcome").value,duration:$("#experiment-duration").value})},{domains:["experiments"]});delete form.dataset.requestId;form.reset();void refreshState("review")}catch(error){if(error.syncStatus!=="pending")showToast(error.message,"error");else{form.reset();showToast("实验已进入待同步队列")}}});
+$("#metric-form").addEventListener("submit",async e=>{e.preventDefault();const form=e.currentTarget,requestId=form.dataset.requestId||crypto.randomUUID();form.dataset.requestId=requestId;try{await requestV1("/api/v1/custom-metrics",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify({name:$("#metric-name").value,low:$("#metric-low").value,high:$("#metric-high").value})},{domains:["customMetrics"]});delete form.dataset.requestId;form.reset();void refreshState(["review","checkins"])}catch(error){if(error.syncStatus!=="pending")showToast(error.message,"error");else{form.reset();showToast("指标已进入待同步队列")}}});
 for(const role of ["cover","recognition"]){
   const ui=bookImageUi[role],input=$(ui.input),box=$(ui.box);
   input.addEventListener("change",e=>{const file=e.currentTarget.files?.[0];bookImagePasteTarget=role;if(file&&!setBookImage(role,file,"本地文件"))e.currentTarget.value=""});
@@ -2622,21 +3908,43 @@ $("#parse-book").addEventListener("click",async e=>{
   finally{if(serial===bookParseSerial&&bookId===editingBookId&&owner===currentUser?.id&&session===sessionSerial)button.disabled=false}
 });
 $("#book-form").addEventListener("submit",async e=>{
-  e.preventDefault();const button=$("#book-submit"),bookId=editingBookId;button.disabled=true;
+  e.preventDefault();const form=e.currentTarget,button=$("#book-submit"),bookId=editingBookId,existing=bookId?(state.books||[]).find(item=>item.id===bookId):null,requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`,coverUploadRequestId=`${requestId}:cover`;let uploadedCoverPath="";if(!bookId)form.dataset.requestId=requestId;button.disabled=true;
   try{
     let imagePath=$("#book-image-path").value;
-    if(pendingBookImages.cover){$("#book-parse-status").textContent="正在上传封面…";const [image]=await imageDataUrls([pendingBookImages.cover]),uploaded=await request("/api/images/upload",{method:"POST",body:JSON.stringify({image})});imagePath=uploaded.attachmentPath}
+    if(pendingBookImages.cover){$("#book-parse-status").textContent="正在上传封面…";const [image]=await imageDataUrls([pendingBookImages.cover]);[uploadedCoverPath]=await uploadOriginalImages({request,images:[image],idempotencyKey:coverUploadRequestId});imagePath=uploadedCoverPath}
     const payload={title:$("#book-title").value,author:$("#book-author").value,publisher:$("#book-publisher").value,isbn:$("#book-isbn").value,readingStartedOn:$("#book-reading-start").value,readingFinishedOn:$("#book-reading-end").value,description:$("#book-description").value,imagePath};
-    await request(bookId?`/api/books/${bookId}`:"/api/books",{method:bookId?"PATCH":"POST",body:JSON.stringify(payload)});
-    resetBookForm();bookCreatorOpen=false;activeBookId=bookId||"";await refreshState("books");showToast(bookId?"书目信息已更新":"书目已加入书架");
-  }catch(err){$("#book-parse-status").textContent=err.message}finally{button.disabled=false}
+    if(bookId){const result=await requestV1(`/api/v1/books/${encodeURIComponent(bookId)}`,{method:"PATCH",headers:{"if-match":`"${existing?.version||1}"`},body:JSON.stringify(payload)},{resource:`book:${bookId}`,domains:["books"],recoverCommitted:true,projection:{kind:"record.update",domain:"books",id:bookId,payload},onQueued:record=>applyPendingProjection(record)});const book=state.books.find(item=>item.id===bookId);if(book){Object.assign(book,result.data||payload,{updatedAt:new Date().toISOString()});delete book._sync}}
+    else{
+      const result=await requestV1("/api/v1/books",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{domains:["books"],projection:{kind:"record.create",domain:"books",temporaryId,payload:{...payload,notes:[]}},onQueued:record=>applyPendingProjection(record)});
+      state.books=[result.data,...(state.books||[]).filter(item=>item.id!==temporaryId&&item.id!==result.data.id)];renderBooks()
+    }
+    resetBookForm();bookCreatorOpen=false;activeBookId=bookId||"";renderBooks();void refreshState("books").catch(error=>showToast(`书目已保存，但列表刷新失败：${error.message}`,"error"));showToast(bookId?"书目信息已更新":"书目已加入书架");
+  }catch(err){
+    if(err.syncStatus==="pending"){resetBookForm();bookCreatorOpen=false;activeBookId=bookId||"";renderBooks();showToast(bookId?"书目修改将在网络恢复后同步":"书目已进入待同步队列")}
+    else{if(!bookId){state.books=(state.books||[]).filter(item=>item.id!==temporaryId);renderBooks()}else await refreshState("books").catch(()=>{});if(uploadedCoverPath)await discardUploadedImagePath(uploadedCoverPath,coverUploadRequestId);$("#book-parse-status").textContent=err.message}
+  }finally{button.disabled=false}
 });
 document.addEventListener("submit",async e=>{
   const form=e.target.closest("[data-book-entry-form]");if(!form)return;e.preventDefault();
-  const bookId=form.dataset.bookEntryForm,noteId=form.elements.noteId.value,button=form.querySelector('[type="submit"]'),status=form.querySelector(".status"),payload={...occurrenceFields(form.elements.occurredAt),type:form.elements.type.value,favorite:form.elements.favorite.value,content:form.elements.content.value};
+  const bookId=form.dataset.bookEntryForm,noteId=form.elements.noteId.value,button=form.querySelector('[type="submit"]'),status=form.querySelector(".status"),payload={...occurrenceFields(form.elements.occurredAt),type:form.elements.type.value,favorite:form.elements.favorite.value,content:form.elements.content.value},requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`;let savedNoteId=noteId;if(!noteId)form.dataset.requestId=requestId;
   button.disabled=true;status.textContent=noteId?"正在保存修改…":"正在写入时间线…";
-  try{await request(noteId?`/api/books/${bookId}/notes/${noteId}`:`/api/books/${bookId}/notes`,{method:noteId?"PATCH":"POST",body:JSON.stringify(payload)});pendingBookNoteId=noteId;await refreshState("books");showToast(noteId?"读书记录已更新":"读书记录已保存")}
-  catch(err){status.textContent=err.message;button.disabled=false}
+  try{
+    if(noteId){const book=state.books.find(item=>item.id===bookId),note=book?.notes?.find(item=>item.id===noteId),result=await requestV1(`/api/v1/books/${encodeURIComponent(bookId)}/notes/${encodeURIComponent(noteId)}`,{method:"PATCH",headers:{"if-match":`"${note?.version||1}"`},body:JSON.stringify(payload)},{resource:`book:${bookId}`,domains:["books"],recoverCommitted:true,projection:{kind:"book.note.update",bookId,id:noteId,payload},onQueued:record=>applyPendingProjection(record)});if(note){Object.assign(note,result.data||payload,{updatedAt:new Date().toISOString()});delete note._sync}renderBooks()}
+    else{
+      const result=await requestV1(`/api/v1/books/${encodeURIComponent(bookId)}/notes`,{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{domains:["books"],resource:`book:${bookId}`,projection:{kind:"book.note.create",bookId,temporaryId,payload},onQueued:record=>applyPendingProjection(record)});
+      savedNoteId=result.data.id;
+      const book=state.books.find(item=>item.id===bookId);if(book)book.notes=[result.data,...(book.notes||[]).filter(item=>item.id!==temporaryId&&item.id!==result.data.id)];pendingBookNoteId=savedNoteId;renderBooks()
+    }
+    delete form.dataset.requestId;pendingBookNoteId=savedNoteId;void refreshState("books").catch(error=>showToast(`读书记录已保存，但列表刷新失败：${error.message}`,"error"));showToast(noteId?"读书记录已更新":"读书记录已保存")
+  }
+  catch(err){
+    if(err.syncStatus==="pending"){renderBooks();showToast("读书记录已进入待同步队列")}
+    else{
+      if(!noteId){const book=state.books.find(item=>item.id===bookId);if(book)book.notes=(book.notes||[]).filter(item=>item.id!==temporaryId)}
+      renderBooks();const retry=$("#book-detail [data-book-entry-form]");
+      if(retry){retry.elements.noteId.value=noteId;retry.elements.type.value=payload.type;retry.elements.favorite.value=payload.favorite;resetOccurrenceInput(retry.elements.occurredAt,payload);retry.elements.content.value=payload.content;retry.querySelector(".status").textContent=err.message;if(noteId){retry.querySelector("[data-book-entry-heading]").textContent="编辑记录";retry.querySelector("[data-book-entry-cancel]").hidden=false;retry.querySelector('[type="submit"]').textContent="保存修改"}}
+    }
+  }
 });
 document.addEventListener("click",async e=>{
   const button=e.target.closest("button");if(!button)return;
@@ -2655,44 +3963,65 @@ document.addEventListener("click",async e=>{
   }
   if(button.dataset.bookNoteFavorite){
     const note=(book.notes||[]).find(item=>item.id===button.dataset.bookNoteFavorite);if(!note)return;
-    button.disabled=true;try{await request(`/api/books/${book.id}/notes/${note.id}`,{method:"PATCH",body:JSON.stringify({occurredAt:eventTimestamp(note),type:note.type,content:note.content,favorite:button.dataset.nextFavorite})});pendingBookNoteId=note.id;await refreshState("books");showToast(button.dataset.nextFavorite==="star"?"已标为星标":button.dataset.nextFavorite==="sprout"?"已标为萌芽":"已取消收藏")}catch(err){showToast(err.message,"error");button.disabled=false}return;
+    const payload={occurredAt:eventTimestamp(note),type:note.type,content:note.content,favorite:button.dataset.nextFavorite};button.disabled=true;try{await requestV1(`/api/v1/books/${encodeURIComponent(book.id)}/notes/${encodeURIComponent(note.id)}`,{method:"PATCH",headers:{"if-match":`"${note.version||1}"`},body:JSON.stringify(payload)},{resource:`book:${book.id}`,domains:["books"],recoverCommitted:true,projection:{kind:"book.note.update",bookId:book.id,id:note.id,payload},onQueued:record=>applyPendingProjection(record)});pendingBookNoteId=note.id;void refreshState("books").catch(error=>showToast(`收藏状态已更新，但列表刷新失败：${error.message}`,"error"));showToast(button.dataset.nextFavorite==="star"?"已标为星标":button.dataset.nextFavorite==="sprout"?"已标为萌芽":"已取消收藏")}catch(err){if(err.syncStatus==="pending")showToast("收藏状态将在网络恢复后同步");else{await refreshState("books").catch(()=>{});showToast(err.message,"error");button.disabled=false}}return;
   }
   if(button.dataset.bookNoteDelete){
     const note=(book.notes||[]).find(item=>item.id===button.dataset.bookNoteDelete);if(!note||!confirm(`将这条${note.type==="thought"?"附加思考":"记录"}移入回收站？`))return;
-    button.disabled=true;try{await request(`/api/books/${book.id}/notes/${note.id}`,{method:"DELETE"});await refreshState("books");showToast("读书记录已移入回收站")}catch(err){showToast(err.message,"error");button.disabled=false}
+    button.disabled=true;try{await requestV1(`/api/v1/books/${encodeURIComponent(book.id)}/notes/${encodeURIComponent(note.id)}`,{method:"DELETE",headers:{"if-match":`"${note.version||1}"`}},{resource:`book:${book.id}`,domains:["books"],recoverCommitted:true,projection:{kind:"book.note.delete",bookId:book.id,id:note.id},onQueued:record=>applyPendingProjection(record)});void refreshState("books").catch(error=>showToast(`读书记录已移除，但列表刷新失败：${error.message}`,"error"));showToast("读书记录已移入回收站")}catch(err){if(err.syncStatus==="pending")showToast("读书记录将在网络恢复后移入回收站");else{await refreshState("books").catch(()=>{});showToast(err.message,"error");button.disabled=false}}
   }
 });
-$("#keepsake-create-toggle").addEventListener("click",()=>{const workspace=$("#keepsake-workspace"),opening=workspace.hidden;if(opening){resetKeepsakeEditor();workspace.hidden=false;workspace.scrollIntoView({behavior:"smooth",block:"start"})}else resetKeepsakeEditor({close:true})});
-$("#keepsake-editor-close").addEventListener("click",()=>resetKeepsakeEditor({close:true}));
+$("#keepsake-create-toggle").addEventListener("click",()=>{const workspace=$("#keepsake-workspace"),opening=workspace.hidden;if(opening){if(keepsakeBatch.items.length)void loadKeepsakeBatchItem(keepsakeBatch.activeIndex,{capture:false});else resetKeepsakeEditor();workspace.hidden=false;workspace.scrollIntoView({behavior:"smooth",block:"start"})}else{void persistKeepsakeBatch();resetKeepsakeEditor({close:true});renderKeepsakeBatch()}});
+$("#keepsake-load-more").addEventListener("click",loadNextKeepsakePage);
+$("#keepsake-editor-close").addEventListener("click",()=>{void persistKeepsakeBatch();resetKeepsakeEditor({close:true});renderKeepsakeBatch()});
 $("#keepsake-cancel-edit").addEventListener("click",()=>{resetKeepsakeEditor();$("#keepsake-workspace").scrollIntoView({behavior:"smooth",block:"start"})});
-$("#keepsake-image").addEventListener("change",e=>{const file=e.currentTarget.files?.[0];if(file&&!setKeepsakeFile(file))e.currentTarget.value=""});
+$("#keepsake-image").addEventListener("change",async e=>{const fileInput=e.currentTarget,files=[...(fileInput.files||[])];if(!files.length)return;try{if($("#keepsake-id").value)await setKeepsakeFile(files[0]);else await setKeepsakeBatchFiles(files)}catch(error){$("#keepsake-segment-status").textContent=error.message}finally{fileInput.value=""}});
+$("#keepsake-batch-add").addEventListener("click",()=>$("#keepsake-image").click());
+document.addEventListener("click",e=>{const button=e.target.closest("[data-keepsake-batch-select]");if(button&&!keepsakeBatch.loading)void loadKeepsakeBatchItem(Number(button.dataset.keepsakeBatchSelect))});
+document.addEventListener("click",e=>{const button=e.target.closest("[data-keepsake-batch-remove]");if(button&&!keepsakeBatch.loading)void removeKeepsakeBatchItem(Number(button.dataset.keepsakeBatchRemove))});
 $("#keepsake-upload-box").addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();$("#keepsake-image").click()}});
 $("#keepsake-upload-box").addEventListener("dragenter",e=>{e.preventDefault();e.currentTarget.classList.add("dragging")});
 $("#keepsake-upload-box").addEventListener("dragover",e=>{e.preventDefault();e.dataTransfer.dropEffect="copy";e.currentTarget.classList.add("dragging")});
 $("#keepsake-upload-box").addEventListener("dragleave",e=>{if(!e.currentTarget.contains(e.relatedTarget))e.currentTarget.classList.remove("dragging")});
-$("#keepsake-upload-box").addEventListener("drop",e=>{e.preventDefault();e.currentTarget.classList.remove("dragging");const file=[...(e.dataTransfer?.files||[])].find(item=>item.type.startsWith("image/"));if(file)setKeepsakeFile(file,"拖入图片");else $("#keepsake-segment-status").textContent="拖入的内容里没有可用图片。"});
-document.addEventListener("paste",e=>{if(!$("#view-keepsakes").classList.contains("active")||(e.target instanceof Element&&e.target.closest("input,textarea,[contenteditable=true]")))return;const file=[...(e.clipboardData?.files||[])].find(item=>item.type.startsWith("image/"));if(!file)return;e.preventDefault();setKeepsakeFile(file,"剪贴板")});
+$("#keepsake-upload-box").addEventListener("drop",e=>{e.preventDefault();e.currentTarget.classList.remove("dragging");const files=[...(e.dataTransfer?.files||[])].filter(item=>item.type.startsWith("image/"));if(!files.length)return $("#keepsake-segment-status").textContent="拖入的内容里没有可用图片。";if($("#keepsake-id").value)void setKeepsakeFile(files[0],"拖入图片");else void setKeepsakeBatchFiles(files,"拖入图片").catch(error=>$("#keepsake-segment-status").textContent=error.message)});
+document.addEventListener("paste",e=>{if(!$("#view-keepsakes").classList.contains("active")||(e.target instanceof Element&&e.target.closest("input,textarea,[contenteditable=true]")))return;const files=[...(e.clipboardData?.files||[])].filter(item=>item.type.startsWith("image/"));if(!files.length)return;e.preventDefault();if($("#keepsake-id").value)void setKeepsakeFile(files[0],"剪贴板");else void setKeepsakeBatchFiles(files,"剪贴板").catch(error=>$("#keepsake-segment-status").textContent=error.message)});
 $("#keepsake-auto-segment").addEventListener("click",segmentCurrentKeepsake);
 $("#keepsake-brush-keep").addEventListener("click",()=>{keepsakeEditor.mode="keep";$("#keepsake-brush-keep").classList.add("active");$("#keepsake-brush-erase").classList.remove("active");$("#keepsake-brush-keep").setAttribute("aria-pressed","true");$("#keepsake-brush-erase").setAttribute("aria-pressed","false")});
 $("#keepsake-brush-erase").addEventListener("click",()=>{keepsakeEditor.mode="erase";$("#keepsake-brush-erase").classList.add("active");$("#keepsake-brush-keep").classList.remove("active");$("#keepsake-brush-erase").setAttribute("aria-pressed","true");$("#keepsake-brush-keep").setAttribute("aria-pressed","false")});
 $("#keepsake-brush-size").addEventListener("input",e=>{$("#keepsake-brush-output").value=e.currentTarget.value;const cursor=$("#keepsake-canvas-cursor");cursor.style.width=cursor.style.height=`${e.currentTarget.value}px`});
 $("#keepsake-edge-expansion").addEventListener("input",e=>{$("#keepsake-edge-output").value=e.currentTarget.value;if(keepsakeEditor.autoBase){applyKeepsakeExpansion();$("#keepsake-segment-status").textContent="已按当前场景边缘重新生成自动轮廓；之后仍可手动修正。"}});
-$("#keepsake-reset-mask").addEventListener("click",()=>{if(!keepsakeEditor.maskCanvas)return;invalidateKeepsakeSegmentation();pushKeepsakeHistory();keepsakeEditor.maskCanvas.getContext("2d").clearRect(0,0,keepsakeEditor.maskCanvas.width,keepsakeEditor.maskCanvas.height);keepsakeEditor.autoBase=null;keepsakeEditor.source="manual";scheduleKeepsakeRender();$("#keepsake-segment-status").textContent="轮廓已清空，可用“保留”笔刷重新涂抹。"});
-$("#keepsake-undo").addEventListener("click",()=>{const previous=keepsakeEditor.history.pop();if(!previous||!keepsakeEditor.maskCanvas)return;invalidateKeepsakeSegmentation();keepsakeEditor.maskCanvas.getContext("2d").putImageData(previous,0,0);$("#keepsake-undo").disabled=!keepsakeEditor.history.length;scheduleKeepsakeRender()});
+$("#keepsake-reset-mask").addEventListener("click",()=>{if(!keepsakeEditor.maskCanvas)return;invalidateKeepsakeSegmentation();pushKeepsakeHistory();keepsakeEditor.maskCanvas.getContext("2d").clearRect(0,0,keepsakeEditor.maskCanvas.width,keepsakeEditor.maskCanvas.height);keepsakeEditor.autoBase=null;keepsakeEditor.source="manual";scheduleKeepsakeRender();const item=activeKeepsakeBatchItem();if(item){item.alphaMask="";item.status="editing";void persistKeepsakeBatch({capture:false});renderKeepsakeBatch()}$("#keepsake-segment-status").textContent="轮廓已清空，可用“保留”笔刷重新涂抹。"});
+$("#keepsake-undo").addEventListener("click",()=>{const previous=keepsakeEditor.history.pop();if(!previous||!keepsakeEditor.maskCanvas)return;invalidateKeepsakeSegmentation();keepsakeEditor.maskCanvas.getContext("2d").putImageData(previous,0,0);$("#keepsake-undo").disabled=!keepsakeEditor.history.length;scheduleKeepsakeRender();if(activeKeepsakeBatchItem()){captureActiveKeepsakeBatchItem();void persistKeepsakeBatch();renderKeepsakeBatch()}});
 const keepsakePaintCanvas=$("#keepsake-mask-canvas");
 keepsakePaintCanvas.addEventListener("pointerdown",e=>{if(!keepsakeEditor.maskCanvas)return;e.preventDefault();invalidateKeepsakeSegmentation();keepsakePaintCanvas.setPointerCapture(e.pointerId);pushKeepsakeHistory();keepsakeEditor.drawing=true;keepsakeEditor.lastPoint=keepsakeCanvasPoint(e);paintKeepsakeStroke(keepsakeEditor.lastPoint,keepsakeEditor.lastPoint)});
 keepsakePaintCanvas.addEventListener("pointermove",e=>{const rect=keepsakePaintCanvas.getBoundingClientRect(),cursor=$("#keepsake-canvas-cursor");cursor.hidden=false;cursor.style.left=`${e.clientX-rect.left}px`;cursor.style.top=`${e.clientY-rect.top}px`;if(!keepsakeEditor.drawing)return;const next=keepsakeCanvasPoint(e);paintKeepsakeStroke(keepsakeEditor.lastPoint,next);keepsakeEditor.lastPoint=next});
-const endKeepsakeStroke=e=>{keepsakeEditor.drawing=false;keepsakeEditor.lastPoint=null;if(e.pointerId!=null&&keepsakePaintCanvas.hasPointerCapture(e.pointerId))keepsakePaintCanvas.releasePointerCapture(e.pointerId)};
+const endKeepsakeStroke=e=>{keepsakeEditor.drawing=false;keepsakeEditor.lastPoint=null;if(e.pointerId!=null&&keepsakePaintCanvas.hasPointerCapture(e.pointerId))keepsakePaintCanvas.releasePointerCapture(e.pointerId);if(activeKeepsakeBatchItem()){captureActiveKeepsakeBatchItem();void persistKeepsakeBatch();renderKeepsakeBatch()}};
 keepsakePaintCanvas.addEventListener("pointerup",endKeepsakeStroke);keepsakePaintCanvas.addEventListener("pointercancel",endKeepsakeStroke);keepsakePaintCanvas.addEventListener("pointerleave",()=>{$("#keepsake-canvas-cursor").hidden=true});
+for(const selector of["#keepsake-title","#keepsake-category","#keepsake-datetime","#keepsake-tags","#keepsake-note","#keepsake-edge-expansion"])for(const eventName of["input","change"])$(selector).addEventListener(eventName,()=>{if(activeKeepsakeBatchItem())scheduleKeepsakeBatchPersist()});
+$("#keepsake-edge-expansion").addEventListener("change",()=>{if(activeKeepsakeBatchItem()){captureActiveKeepsakeBatchItem();void persistKeepsakeBatch();renderKeepsakeBatch()}});
 $("#keepsake-form").addEventListener("submit",async e=>{
-  e.preventDefault();const button=$("#keepsake-save"),status=$("#keepsake-save-status"),id=$("#keepsake-id").value;if(!keepsakeEditor.sourceCanvas||!keepsakeEditor.maskCanvas)return status.textContent="请先放入一张照片。";
+  e.preventDefault();const form=e.currentTarget,button=$("#keepsake-save"),status=$("#keepsake-save-status"),id=$("#keepsake-id").value,batchItem=!id&&form.dataset.batchItemId?keepsakeBatch.items.find(item=>item.itemId===form.dataset.batchItemId):null;if(!keepsakeEditor.sourceCanvas||!keepsakeEditor.maskCanvas)return status.textContent="请先放入一张照片。";
   const alpha=maskImageDataFromCanvas(keepsakeEditor.maskCanvas).data;let hasSubject=false;for(let index=3;index<alpha.length;index+=4)if(alpha[index]>20){hasSubject=true;break}if(!hasSubject)return status.textContent="轮廓还是空的，请自动识别或用“保留”笔刷涂出主体。";
   button.disabled=true;status.textContent="正在生成压缩图…";
   try{
     const alphaMask=keepsakeEditor.maskCanvas.toDataURL("image/png");
-    const payload={...occurrenceFields($("#keepsake-datetime")),title:$("#keepsake-title").value,category:$("#keepsake-category").value,note:$("#keepsake-note").value,tags:splitTags($("#keepsake-tags").value),alphaMask,...(!id||keepsakeEditor.file?{image:keepsakeEditor.sourceDataUrl}:{}),source:keepsakeEditor.source,edgeExpansion:Number($("#keepsake-edge-expansion").value)};
-    await request(id?`/api/keepsakes/${id}`:"/api/keepsakes",{method:id?"PATCH":"POST",body:JSON.stringify(payload)});resetKeepsakeEditor({close:true});await refreshState(["keepsakes","review"]);window.scrollTo({top:0,behavior:"auto"});showToast(id?"小物留存已更新":"小物已数字留存");
-  }catch(error){status.textContent=error.message}finally{button.disabled=false}
+    const basePayload={...occurrenceFields($("#keepsake-datetime")),title:$("#keepsake-title").value,category:$("#keepsake-category").value,note:$("#keepsake-note").value,tags:splitTags($("#keepsake-tags").value),source:keepsakeEditor.source,edgeExpansion:Number($("#keepsake-edge-expansion").value)};
+    if(batchItem){
+      captureActiveKeepsakeBatchItem();batchItem.status="uploading";batchItem.lastError=null;batchItem.uploadRequestId||=crypto.randomUUID();renderKeepsakeBatch();await persistKeepsakeBatch();
+      if(!batchItem.mediaPaths)batchItem.mediaPaths=await uploadKeepsakeMedia({request,image:keepsakeEditor.sourceDataUrl,alphaMask,idempotencyKey:batchItem.uploadRequestId});
+      batchItem.status="saving";batchItem.createRequestId||=crypto.randomUUID();await persistKeepsakeBatch();renderKeepsakeBatch();
+      const{attachmentPaths,...mediaPaths}=batchItem.mediaPaths;
+      await request("/api/keepsakes",{method:"POST",headers:{"idempotency-key":batchItem.createRequestId},body:JSON.stringify({...basePayload,...mediaPaths,cutoutPath:""})});
+      const index=keepsakeBatch.items.findIndex(item=>item.itemId===batchItem.itemId);if(index>=0)await removeKeepsakeBatchItem(index,{discard:false});
+      if(!keepsakeBatch.items.length){$("#keepsake-workspace").hidden=true;window.scrollTo({top:0,behavior:"auto"})}
+      await refreshState(["keepsakes","review"]);showToast(keepsakeBatch.items.length?"本件小物已保存，请继续处理下一件":"小物批次已保存完成");return
+    }
+    const payload={...basePayload,alphaMask,...(!id||keepsakeEditor.file?{image:keepsakeEditor.sourceDataUrl}: {})};
+    const requestId=form.dataset.requestId||crypto.randomUUID();form.dataset.requestId=requestId;
+    await request(id?`/api/keepsakes/${id}`:"/api/keepsakes",{method:id?"PATCH":"POST",headers:id?{}:{"idempotency-key":requestId},body:JSON.stringify(payload)});resetKeepsakeEditor({close:true});await refreshState(["keepsakes","review"]);window.scrollTo({top:0,behavior:"auto"});showToast(id?"小物留存已更新":"小物已数字留存");
+  }catch(error){
+    if(batchItem){batchItem.status="failed";batchItem.lastError={message:error.message};if(!uncertainMediaSubmission(error)&&batchItem.mediaPaths){await discardKeepsakeMedia({request,attachmentPaths:batchItem.mediaPaths.attachmentPaths,uploadRequestId:batchItem.uploadRequestId}).catch(()=>{});batchItem.mediaPaths=null;batchItem.uploadRequestId="";batchItem.createRequestId=""}await persistKeepsakeBatch();renderKeepsakeBatch()}
+    status.textContent=error.message
+  }finally{button.disabled=false}
 });
 document.addEventListener("click",async e=>{
   const back=e.target.closest("[data-keepsake-back]"),view=e.target.closest("[data-keepsake-view]"),edit=e.target.closest("[data-keepsake-edit]"),remove=e.target.closest("[data-keepsake-delete]"),open=e.target.closest("[data-keepsake-open]");
@@ -2704,11 +4033,27 @@ document.addEventListener("click",async e=>{
 });
 $("#quote-refresh").addEventListener("click",()=>renderQuoteSky(true));
 $("#quote-cancel").addEventListener("click",resetQuoteForm);
-$("#quote-form").addEventListener("submit",async e=>{e.preventDefault();const id=$("#quote-id").value,button=$("#quote-submit"),status=$("#quote-status"),payload={...occurrenceFields($("#quote-datetime")),source:$("#quote-source").value,content:$("#quote-content").value,tags:splitTags($("#quote-tags").value)};button.disabled=true;status.textContent=id?"正在保存修改…":"正在收藏…";try{await request(id?`/api/quotes/${id}`:"/api/quotes",{method:id?"PATCH":"POST",body:JSON.stringify(payload)});resetQuoteForm();await refreshState("quotes");showToast(id?"善言已更新":"善言已收藏")}catch(err){status.textContent=err.message}finally{button.disabled=false}});
-document.addEventListener("click",async e=>{const edit=e.target.closest("[data-quote-edit]"),remove=e.target.closest("[data-quote-delete]");if(edit)return editQuote(edit.dataset.quoteEdit);if(!remove)return;if(!confirm("将这条善言及其批注移入回收站？"))return;remove.disabled=true;try{await request(`/api/quotes/${remove.dataset.quoteDelete}`,{method:"DELETE"});if($("#quote-id").value===remove.dataset.quoteDelete)resetQuoteForm();await refreshState("quotes");showToast("善言已移入回收站")}catch(err){showToast(err.message,"error");remove.disabled=false}});
+$("#quote-form").addEventListener("submit",async e=>{
+  e.preventDefault();const form=e.currentTarget,id=$("#quote-id").value,existing=id?(state.quotes||[]).find(item=>item.id===id):null,button=$("#quote-submit"),status=$("#quote-status"),payload={...occurrenceFields($("#quote-datetime")),source:$("#quote-source").value,content:$("#quote-content").value,tags:splitTags($("#quote-tags").value)},requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`;if(!id)form.dataset.requestId=requestId;button.disabled=true;status.textContent=id?"正在保存修改…":"正在收藏…";
+  try{
+    if(id){const result=await requestV1(`/api/v1/quotes/${encodeURIComponent(id)}`,{method:"PATCH",headers:{"if-match":`"${existing?.version||1}"`},body:JSON.stringify(payload)},{domains:["quotes"],recoverCommitted:true,projection:{kind:"record.update",domain:"quotes",id,payload},onQueued:record=>applyPendingProjection(record)});if(result.data)state.quotes=(state.quotes||[]).map(item=>item.id===id?result.data:item);renderQuotes()}
+    else{
+      const result=await requestV1("/api/v1/quotes",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{domains:["quotes"],projection:{kind:"record.create",domain:"quotes",temporaryId,payload},onQueued:record=>applyPendingProjection(record)});
+      state.quotes=(state.quotes||[]).map(item=>item.id===temporaryId?result.data:item);renderQuotes()
+    }
+    delete form.dataset.requestId;resetQuoteForm();void refreshState("quotes").catch(error=>showToast(`善言已保存，但列表刷新失败：${error.message}`,"error"));showToast(id?"善言已更新":"善言已收藏")
+  }catch(err){if(err.syncStatus==="pending"){resetQuoteForm();status.textContent="已收藏，网络恢复后自动同步。";showToast(id?"善言修改将在网络恢复后同步":"善言已进入待同步队列")}else{if(id)await refreshState("quotes").catch(()=>{});status.textContent=err.message}}finally{button.disabled=false}
+});
+document.addEventListener("click",async e=>{const edit=e.target.closest("[data-quote-edit]"),remove=e.target.closest("[data-quote-delete]");if(edit)return editQuote(edit.dataset.quoteEdit);if(!remove)return;const id=remove.dataset.quoteDelete,item=(state.quotes||[]).find(value=>value.id===id);if(!item||!confirm("将这条善言及其批注移入回收站？"))return;remove.disabled=true;try{await requestV1(`/api/v1/quotes/${encodeURIComponent(id)}`,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`}},{domains:["quotes"],recoverCommitted:true,projection:{kind:"record.delete",domain:"quotes",id},onQueued:record=>applyPendingProjection(record)});if($("#quote-id").value===id)resetQuoteForm();void refreshState("quotes").catch(error=>showToast(`善言已移除，但列表刷新失败：${error.message}`,"error"));showToast("善言已移入回收站")}catch(err){if(err.syncStatus==="pending")showToast("善言将在网络恢复后移入回收站");else{await refreshState("quotes").catch(()=>{});showToast(err.message,"error");remove.disabled=false}}});
 $("#selection-quote-close").addEventListener("click",closeSelectionQuoteModal);
 $("#selection-quote-modal").addEventListener("click",e=>{if(e.target===e.currentTarget)closeSelectionQuoteModal()});
-$("#selection-quote-form").addEventListener("submit",async e=>{e.preventDefault();const button=e.currentTarget.querySelector('[type="submit"]'),status=$("#selection-quote-status"),payload={...occurrenceFields($("#selection-quote-datetime")),source:$("#selection-quote-source").value,content:$("#selection-quote-content").value,tags:splitTags($("#selection-quote-tags").value)};button.disabled=true;status.textContent="正在收藏…";try{await request("/api/quotes",{method:"POST",body:JSON.stringify(payload)});closeSelectionQuoteModal();await refreshState("quotes");showToast("选中文字已收为善言")}catch(err){status.textContent=err.message}finally{button.disabled=false}});
+$("#selection-quote-form").addEventListener("submit",async e=>{
+  e.preventDefault();const form=e.currentTarget,button=form.querySelector('[type="submit"]'),status=$("#selection-quote-status"),payload={...occurrenceFields($("#selection-quote-datetime")),source:$("#selection-quote-source").value,content:$("#selection-quote-content").value,tags:splitTags($("#selection-quote-tags").value)},requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`;form.dataset.requestId=requestId;button.disabled=true;status.textContent="正在收藏…";
+  try{
+    const result=await requestV1("/api/v1/quotes",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{domains:["quotes"],projection:{kind:"record.create",domain:"quotes",temporaryId,payload},onQueued:record=>applyPendingProjection(record)});
+    state.quotes=(state.quotes||[]).map(item=>item.id===temporaryId?result.data:item);delete form.dataset.requestId;closeSelectionQuoteModal();void refreshState("quotes").catch(error=>showToast(`善言已保存，但列表刷新失败：${error.message}`,"error"));showToast("选中文字已收为善言")
+  }catch(err){if(err.syncStatus==="pending"){closeSelectionQuoteModal();showToast("善言已进入待同步队列")}else status.textContent=err.message}finally{button.disabled=false}
+});
 setStatisticsRange(7);
 $$("[data-statistics-days]").forEach(button=>button.addEventListener("click",()=>{setStatisticsRange(Number(button.dataset.statisticsDays));void loadStatistics()}));
 $("#statistics-range-form").addEventListener("submit",event=>{event.preventDefault();$$("[data-statistics-days]").forEach(button=>button.classList.remove("active"));void loadStatistics()});
@@ -2773,8 +4118,12 @@ $$("[data-local-test-mode]").forEach(button=>button.addEventListener("click",asy
   if(!confirm(message))return;
   rotateSession();invalidatePageLoads();
   const expectedSession=sessionSerial,expectedOwner=currentUser?.id,controls=$$("[data-local-test-mode]"),status=$("#local-test-status");controls.forEach(control=>control.disabled=true);status.textContent=mode==="simulation"?"正在只读拉取线上最新数据…":"正在创建空账户…";
-  try{const nextConfig=await request("/api/local-test-mode",{method:"POST",body:JSON.stringify({mode})});if(expectedSession!==sessionSerial||expectedOwner!==currentUser?.id||nextConfig?.mode!==mode)throw Object.assign(new Error("已忽略不属于当前账户或模式的响应"),{code:"LOCAL_TEST_RESPONSE_MISMATCH"});localTestConfig=nextConfig;await load();switchView(mode==="cold"?"today":"settings");if(mode==="simulation")$("#local-test-status").textContent=`已切换到${label}。`;showToast(`已切换到${label}`)}
-  catch(error){status.textContent=error.message;renderLocalTestSettings()}
+  try{
+    const nextConfig=await request("/api/local-test-mode",{method:"POST",body:JSON.stringify({mode})});
+    if(expectedSession!==sessionSerial||expectedOwner!==currentUser?.id||nextConfig?.mode!==mode)throw Object.assign(new Error("已忽略不属于当前账户或模式的响应"),{code:"LOCAL_TEST_RESPONSE_MISMATCH"});localTestConfig=nextConfig;await load();
+    switchView(mode==="cold"?"today":"settings");if(mode==="simulation")$("#local-test-status").textContent=`已切换到${label}。`;showToast(`已切换到${label}`)
+  }
+  catch(error){const timeout=["AbortError","TimeoutError"].includes(error?.name)||/aborted due to timeout|timed out/i.test(error?.message||"");status.textContent=timeout?"线上数据读取超时，请检查网络后重试。":error.message;renderLocalTestSettings()}
   finally{if(localTestConfig?.upstreamConfigured||mode!=="simulation")controls.forEach(control=>control.disabled=false)}
 }));
 $$("[data-onboarding-mode]").forEach(button=>button.addEventListener("click",()=>{collectOnboardingAnswers();onboardingMode=button.dataset.onboardingMode==="detailed"?"detailed":"quick";$("#onboarding-understanding").closest("label").hidden=true;$("#onboarding-status").textContent=onboardingMode==="detailed"?"详细版共 18 题，全部作答后才能完成。":"快速版共 8 题，全部作答后才能完成。";renderOnboardingQuestions()}));
@@ -2789,8 +4138,8 @@ $("#test-llm").addEventListener("click",async e=>{const button=e.currentTarget,s
 function syncLocalDate(){const next=localDateKey();if(next===currentLocalDate)return;const followedToday=activeDate===currentLocalDate;currentLocalDate=next;if(followedToday){activeDate=next;renderDate();renderSliders();renderThoughts();renderStateChart();renderHomeMood();renderChat()}}
 function markApplicationForeground(){apiClient.markForeground();syncLocalDate()}
 setInterval(syncLocalDate,30000);
-document.addEventListener("visibilitychange",()=>{if(document.hidden)saveDurableDrafts();else markApplicationForeground()});
-window.addEventListener("pagehide",saveDurableDrafts);
+document.addEventListener("visibilitychange",()=>{if(document.hidden){saveDurableDrafts();stopCaptureAudioRecording();stopCaptureSpeech()}else markApplicationForeground()});
+window.addEventListener("pagehide",()=>{saveDurableDrafts();stopCaptureAudioRecording();stopCaptureSpeech()});
 window.addEventListener("pageshow",markApplicationForeground);
 $$("[data-auth-tab]").forEach(button=>button.addEventListener("click",()=>setAuthTab(button.dataset.authTab)));
 for(const [formId,endpoint]of[["login-form","/api/auth/login"],["register-form","/api/auth/register"]]){
@@ -2802,7 +4151,7 @@ for(const [formId,endpoint]of[["login-form","/api/auth/login"],["register-form",
   });
 }
 const logout=async()=>{
-  const operation=++authOperationSerial,owner=currentUser?.id;clearDurableDraft();const clearing=owner?Promise.all([requestCoordinator.clear(owner),mediaDraftStore.clear(owner)]):Promise.resolve();showAuthGate();setAuthTab("login");setAuthBusy(true);$("#auth-status").textContent="正在退出…";
+  const operation=++authOperationSerial,owner=currentUser?.id;clearDurableDraft();const clearing=owner?mediaDraftStore.clear(owner):Promise.resolve();showAuthGate();setAuthTab("login");setAuthBusy(true);$("#auth-status").textContent="正在退出…";
   try{await Promise.all([clearing,authRequest("/api/auth/logout",{})])}
   catch(error){if(operation===authOperationSerial)$("#auth-status").textContent=`本地内容已锁定；服务端退出失败：${error.message}`}
   finally{if(operation===authOperationSerial){setAuthBusy(false);if($("#auth-status").textContent==="正在退出…")$("#auth-status").textContent=""}}

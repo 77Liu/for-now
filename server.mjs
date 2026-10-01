@@ -15,7 +15,7 @@ import { createTaskLifecycle, publicAiTask } from "./src/modules/tasks/index.mjs
 import { createNotificationService, notificationUnread } from "./src/modules/notifications/index.mjs";
 import { createTrashService } from "./src/modules/trash/index.mjs";
 import { createCheckinRecords } from "./src/modules/checkins/index.mjs";
-import { createCaptureRecords } from "./src/modules/captures/index.mjs";
+import { captureAudioPayload, createCaptureRecords } from "./src/modules/captures/index.mjs";
 import { createBookRecords } from "./src/modules/books/index.mjs";
 import { createQuoteRecords } from "./src/modules/quotes/index.mjs";
 import { createChatRecords } from "./src/modules/chats/index.mjs";
@@ -31,7 +31,7 @@ import {
   createAiUsageService, createAiAudit, createAiCostService, createAiGenerator, usageEntryFromAudit,
   systemPrompt
 } from "./src/modules/ai/index.mjs";
-import { createDeepSeekTransport, createAliyunSegmentationTransport } from "./src/infrastructure/ai-providers/index.mjs";
+import { createDeepSeekTransport, createAliyunSegmentationTransport, createVolcengineSpeechTransport, createVolcengineVisionTransport } from "./src/infrastructure/ai-providers/index.mjs";
 import { loadPromptCatalog } from "./src/infrastructure/prompt-catalog/index.mjs";
 import {
   createKeepsakeSegmentation,
@@ -45,9 +45,9 @@ import { createRateGate } from "./src/shared/concurrency/index.mjs";
 import { installPromptCatalog, promptText, renderPrompt } from "./src/shared/prompts/index.mjs";
 import { localDateKey, shiftDateKey, strictDateKey, localDateTimeOn, eventTimeFields } from "./src/shared/time/index.mjs";
 import { buildAdminSnapshot } from "./admin-snapshot.mjs";
-import { createAnnotationCommands, createAiTaskTargets, createBackgroundAi, createTrashMutations, createTrashCommands, createAttachmentCleanup, createKeepsakeMediaWorkflows, createThoughtWorkflows, createCaptureJournalWorkflows, createLibraryWorkflows, createReviewChatWorkflows } from "./src/app/index.mjs";
+import { createAnnotationCommands, createAiTaskTargets, createBackgroundAi, createTrashMutations, createTrashCommands, createAttachmentCleanup, createKeepsakeMediaWorkflows, createThoughtWorkflows, createCaptureJournalWorkflows, createLibraryWorkflows, createReviewChatWorkflows, personalContextProjection } from "./src/app/index.mjs";
 import { safeText, recordVersion, safeIso, nullableNumber, numberOrFallback as commercialNumber } from "./src/shared/validation/index.mjs";
-import { createAuthHttp, createJsonHttp, createTaskHttp, createAnnotationHttp, createTrashHttp, createAttachmentHttp, createAiSettingsHttp, createAiCostHttp, createKeepsakeHttp, createOnboardingHttp, createThoughtHttp, createCheckinHttp, createHealthRecordHttp, createDiscoveryHttp, createExportHttp, createActionsHttp, createFeedbackHttp, createCaptureJournalHttp, createLibraryHttp, createReviewsChatHttp, createContentAttachmentsHttp, createRequestHandler, createModelResponseHttp, createApiV1Http, openApiV1 } from "./src/http/index.mjs";
+import { createAuthHttp, createJsonHttp, createTaskHttp, createAnnotationHttp, createTrashHttp, createAttachmentHttp, createAiSettingsHttp, createAiCostHttp, createKeepsakeHttp, createOnboardingHttp, createThoughtHttp, createCheckinHttp, createHealthRecordHttp, createDiscoveryHttp, createExportHttp, createActionsHttp, createFeedbackHttp, createCaptureJournalHttp, createLibraryHttp, createReviewsChatHttp, createContentAttachmentsHttp, createSpeechHttp, createVisionHttp, createSyncHttp, createPersonalContextHttp, createRequestHandler, createModelResponseHttp, createApiV1Http, openApiV1 } from "./src/http/index.mjs";
 import { createHealthImageConfig, createDailyRecordRecords, normalizeHealthImage } from "./src/modules/health/index.mjs";
 import { createAccountDocumentRepository, createAuthRepository, createJsonStoreRepository, createPostgresRuntime, checkPersistenceMarker, markPostgresDirectory, hasJsonData, METADATA_FIELD, removeIdempotencyResponse } from "./src/shared/persistence/index.mjs";
 
@@ -152,6 +152,9 @@ const { retentionDays: AI_AUDIT_RETENTION_DAYS, textLimit: AI_AUDIT_TEXT_LIMIT }
 const {
   aiQps: AI_GLOBAL_QPS, aiConcurrency: AI_GLOBAL_CONCURRENCY,
   segmentationQps: SEGMENTATION_GLOBAL_QPS, segmentationConcurrency: SEGMENTATION_GLOBAL_CONCURRENCY,
+  speechQps: SPEECH_GLOBAL_QPS, speechConcurrency: SPEECH_GLOBAL_CONCURRENCY,
+  ocrQps: OCR_GLOBAL_QPS, ocrConcurrency: OCR_GLOBAL_CONCURRENCY,
+  documentQps: DOCUMENT_PARSE_GLOBAL_QPS, documentConcurrency: DOCUMENT_PARSE_GLOBAL_CONCURRENCY,
   aiDailyCalls: AI_USER_DAILY_CALL_LIMIT, usdCny: AI_COST_CNY_PER_USD,
   aiDailyCostCny: AI_USER_DAILY_COST_LIMIT_CNY, attachmentBytes: ATTACHMENT_USER_QUOTA_BYTES
 } = appConfig.limits;
@@ -159,6 +162,8 @@ const STANDARD_BODY_MAX_BYTES = 12_000_000;
 const ATTACHMENT_UPLOAD_BODY_MAX_BYTES = 36_000_000;
 const DEFAULT_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
 const ATTACHMENT_UPLOAD_IMAGE_MAX_BYTES = 24 * 1024 * 1024;
+const ATTACHMENT_UPLOAD_AUDIO_MAX_BYTES = 16 * 1024 * 1024;
+const ATTACHMENT_AUDIO_MAX_DURATION_MS = 10 * 60 * 1000;
 const clone = value => structuredClone(value);
 const requestCookie = (req, name) => String(req.headers.cookie || "").split(";").map(part => part.trim()).find(part => part.startsWith(`${name}=`))?.slice(name.length + 1) || "";
 const localTestUpstreamSession = req => {
@@ -220,6 +225,11 @@ const WEIGHT_CLOTHING_MODEL = {
 };
 const aiGate = createRateGate(AI_GLOBAL_QPS, AI_GLOBAL_CONCURRENCY);
 const segmentationGate = createRateGate(SEGMENTATION_GLOBAL_QPS, SEGMENTATION_GLOBAL_CONCURRENCY);
+const speechGate = createRateGate(SPEECH_GLOBAL_QPS, SPEECH_GLOBAL_CONCURRENCY);
+const ocrGate = createRateGate(OCR_GLOBAL_QPS, OCR_GLOBAL_CONCURRENCY);
+const documentParseGate = createRateGate(DOCUMENT_PARSE_GLOBAL_QPS, DOCUMENT_PARSE_GLOBAL_CONCURRENCY);
+const speechProvider = createVolcengineSpeechTransport(appConfig.speech);
+const visionProvider = createVolcengineVisionTransport(appConfig.vision);
 
 function normalizedOccurredOn(item, previousVersion) {
   const createdUtcDate = item.createdAt?.slice(0, 10);
@@ -544,6 +554,7 @@ async function readStoredJson(file, fallback) {
 }
 
 const localTestModes = new Set(["simulation", "cold"]);
+const LOCAL_TEST_UPSTREAM_TIMEOUT_MS = 15_000;
 let localTestControlQueue = Promise.resolve();
 
 function localTestWorkspaceDir(mode) {
@@ -579,7 +590,23 @@ async function upstreamJson(req, pathname) {
   if (req.headers["user-agent"]) headers["user-agent"] = req.headers["user-agent"];
   const cookie = upstreamCookieHeader(req);
   if (cookie) headers.cookie = cookie;
-  const response = await fetch(`${UPSTREAM_ORIGIN}${pathname}`, { method: "GET", headers, redirect: "manual" });
+  let response;
+  try {
+    response = await fetch(`${UPSTREAM_ORIGIN}${pathname}`, {
+      method: "GET",
+      headers,
+      redirect: "manual",
+      signal: AbortSignal.timeout(LOCAL_TEST_UPSTREAM_TIMEOUT_MS)
+    });
+  } catch (error) {
+    if (["AbortError", "TimeoutError"].includes(error?.name)) {
+      throw Object.assign(new Error("线上数据读取超过 15 秒，请检查网络后重试"), {
+        statusCode: 504,
+        code: "LOCAL_TEST_UPSTREAM_TIMEOUT"
+      });
+    }
+    throw error;
+  }
   let value = {};
   try { value = await response.json(); } catch {}
   if (!response.ok) throw Object.assign(new Error(response.status === 401 ? "请先登录线上主账户" : safeText(value.error, 300) || "线上数据读取失败"), { statusCode: response.status, code: response.status === 401 ? "AUTH_REQUIRED" : "LOCAL_TEST_UPSTREAM_FAILED" });
@@ -594,7 +621,23 @@ async function upstreamAttachment(req, resourcePath) {
   if (req.headers["user-agent"]) headers["user-agent"] = req.headers["user-agent"];
   const cookie = upstreamCookieHeader(req);
   if (cookie) headers.cookie = cookie;
-  const response = await fetch(`${UPSTREAM_ORIGIN}${resourcePath}`, { method: "GET", headers, redirect: "manual" });
+  let response;
+  try {
+    response = await fetch(`${UPSTREAM_ORIGIN}${resourcePath}`, {
+      method: "GET",
+      headers,
+      redirect: "manual",
+      signal: AbortSignal.timeout(LOCAL_TEST_UPSTREAM_TIMEOUT_MS)
+    });
+  } catch (error) {
+    if (["AbortError", "TimeoutError"].includes(error?.name)) {
+      throw Object.assign(new Error("线上小物图片读取超过 15 秒，请检查网络后重试"), {
+        statusCode: 504,
+        code: "LOCAL_TEST_UPSTREAM_TIMEOUT"
+      });
+    }
+    throw error;
+  }
   if (!response.ok) {
     throw Object.assign(new Error("线上小物图片读取失败"), {
       statusCode: response.status,
@@ -618,7 +661,7 @@ function localTestSnapshot(state, trash) {
 
 async function hydrateLocalTestKeepsakeOriginals(req, state) {
   const snapshot = clone(state);
-  const attachments = new Map();
+  const attachmentLoads = new Map();
   snapshot.keepsakes = await Promise.all((snapshot.keepsakes || []).map(async item => {
     const hydrated = item.originalPath
       ? item
@@ -632,10 +675,14 @@ async function hydrateLocalTestKeepsakeOriginals(req, state) {
       hydrated.alphaMaskPath
     ]);
     for (const resourcePath of mediaPaths) {
-      if (!attachments.has(resourcePath)) attachments.set(resourcePath, await upstreamAttachment(req, resourcePath));
+      if (!attachmentLoads.has(resourcePath)) attachmentLoads.set(resourcePath, upstreamAttachment(req, resourcePath));
     }
     return hydrated;
   }));
+  const attachments = new Map(await Promise.all([...attachmentLoads].map(async ([resourcePath, pending]) => [
+    resourcePath,
+    await pending
+  ])));
   return { state: snapshot, attachments };
 }
 
@@ -660,7 +707,6 @@ async function resetLocalTestWorkspace(mode, store, settings = null, attachmentC
     }
     await writeJsonAtomic(storagePaths().storeFile, normalizeStore(store));
     await storeRepository.update(value => value);
-    await migrateLegacyKeepsakes();
     await ensureLlmSettings();
     if (settings) await writeLlmSettings(normalizeLlmSettings({ ...settings, apiKey: safeText(currentSettings?.apiKey, 300) }));
     await ensureAiUsage();
@@ -704,6 +750,26 @@ async function readStore() {
   return storeRepository.read();
 }
 
+function publicStateFromStore(store) {
+  const { trash, attachmentCleanup, ...visible } = store;
+  return {
+    ...visible,
+    keepsakes: visible.keepsakes.map(publicKeepsake),
+    aiTasks: store.aiTasks.slice(0, 100).map(publicAiTask),
+    notificationUnread: notificationUnread(store.notifications),
+    clusters: clusters(store),
+    insights: insights(store),
+    trashCount: trash.length,
+    speech: {
+      configured: speechProvider.configured,
+      defaultVoice: speechProvider.defaultVoice,
+      voices: speechProvider.voices,
+      supportedAsrMimeTypes: speechProvider.supportedAsrMimeTypes
+    },
+    vision: { configured: visionProvider.configured }
+  };
+}
+
 function updateStore(mutator) {
   return storeRepository.update(mutator);
 }
@@ -742,6 +808,27 @@ const aiAudit = createAiAudit({
   append: (day, entry) => appendPrivateJsonLine(path.join(storagePaths().logsDir, `ai-audit-${day}.ndjson`), entry),
   updateUsage: updateAiUsage, logEvent
 });
+async function meteredProviderCall(details, invoke, summarize) {
+  let reservation;
+  try {
+    reservation = await reserveAiAttempt({ estimatedCostCny: details.estimatedCostCny || 0 });
+  } catch (error) {
+    await logEvent("system", "ai.budget_rejected", {
+      level: "warn",
+      provider: details.provider,
+      service: details.service,
+      action: details.action,
+      scene: details.scene,
+      error: errorMetadata(error)
+    });
+    throw error;
+  }
+  try {
+    return await aiAudit.providerCall({ ...details, reservation }, invoke, summarize);
+  } catch (error) {
+    throw error;
+  }
+}
 const costRepository = createAccountDocumentRepository({
   runtime: postgresRuntime, name: "costPlan", getFile: () => storagePaths().aiCostPlanFile,
   readDocument: readStoredJson, writeDocument: writeJsonAtomic, normalize: value => value, emptyDocument: null,
@@ -753,7 +840,11 @@ const runDeepSeek = createAiGenerator({
   getContext: () => requestStorage.getStore(), reserveAttempt: reserveAiAttempt, gate: aiGate, audit: aiAudit
 });
 const storeRepository = postgresRuntime ? postgresRuntime.createStoreRepository({
-  normalize: normalizeStore, emptyDocument: emptyStore, onCommit: auditChanges, now
+  normalize: normalizeStore,
+  emptyDocument: emptyStore,
+  onCommit: auditChanges,
+  now,
+  getContext: () => requestStorage.getStore()
 }) : createJsonStoreRepository({
   getFile: () => storagePaths().storeFile,
   readDocument: readStoredJson,
@@ -762,7 +853,8 @@ const storeRepository = postgresRuntime ? postgresRuntime.createStoreRepository(
   emptyDocument: emptyStore,
   clone,
   onCommit: auditChanges,
-  now
+  now,
+  getContext: () => requestStorage.getStore()
 });
 
 const annotationService = createAnnotationService({ createId: () => crypto.randomUUID(), now });
@@ -842,15 +934,111 @@ async function saveOriginalImages(req, images) {
     throw error;
   }
 }
-async function discardOriginalUploads(value, uploadRequestId = "") {
-  const attachmentPaths = cleanAttachmentPaths(value);
+async function saveKeepsakeImages(req, input) {
+  const key = safeText(req.headers["idempotency-key"], 100);
+  if (!key) throw Object.assign(new Error("小物图片上传缺少幂等标识"), { statusCode: 400, code: "IDEMPOTENCY_KEY_REQUIRED" });
+  const idempotency = {
+    scope: "attachments.uploadKeepsake",
+    key,
+    requestHash: sha256(JSON.stringify({ image: input.image, alphaMask: input.alphaMask }))
+  };
+  const replay = await storeRepository.readIdempotent?.(idempotency);
+  if (replay !== undefined) {
+    const replayPaths = cleanAttachmentPaths(replay.attachmentPaths, 5);
+    const states = await Promise.allSettled(replayPaths.map(resourcePath => imageAttachments.read(resourcePath)));
+    const missing = states.filter(item => item.status === "rejected" && (
+      ["ENOENT", "NoSuchKey"].includes(item.reason?.code) || Number(item.reason?.status) === 404
+    )).length;
+    const unexpected = states.find(item => item.status === "rejected" && !(
+      ["ENOENT", "NoSuchKey"].includes(item.reason?.code) || Number(item.reason?.status) === 404
+    ));
+    if (unexpected) throw unexpected.reason;
+    if (replayPaths.length === 5 && !missing) return replay;
+    if (missing && missing !== replayPaths.length) {
+      throw Object.assign(new Error("小物媒体上传的幂等结果仅部分可用，请更换请求标识后重试"), {
+        statusCode: 409,
+        code: "IDEMPOTENCY_RESULT_STALE"
+      });
+    }
+    await storeRepository.update(store => removeIdempotencyResponse(store, idempotency));
+  }
+  const uploaded = await imageAttachments.saveKeepsakeSet({
+    image: input.image,
+    alphaMask: input.alphaMask,
+    maxBytes: ATTACHMENT_UPLOAD_IMAGE_MAX_BYTES
+  });
+  try {
+    const result = await storeRepository.executeIdempotent(
+      idempotency,
+      () => ({ attachmentPath: uploaded.paths.originalPath, attachmentPaths: uploaded.attachmentPaths, ...uploaded.paths }),
+      { onReplay: value => ({ ...value, duplicate: true }) }
+    );
+    if (result.duplicate) await attachmentCleanup.cleanFailedUploads(uploaded.attachmentPaths);
+    return result;
+  } catch (error) {
+    await attachmentCleanup.cleanFailedUploads(uploaded.attachmentPaths).catch(() => {});
+    throw error;
+  }
+}
+async function saveOriginalAudio(req, input) {
+  const key = safeText(req.headers["idempotency-key"], 100);
+  if (!key) throw Object.assign(new Error("音频上传缺少幂等标识"), { statusCode: 400, code: "IDEMPOTENCY_KEY_REQUIRED" });
+  const durationMs = Math.round(Number(input.durationMs));
+  if (!Number.isSafeInteger(durationMs) || durationMs < 250 || durationMs > ATTACHMENT_AUDIO_MAX_DURATION_MS) {
+    throw Object.assign(new Error("录音时长必须在 0.25 秒到 10 分钟之间"), { statusCode: 400, code: "INVALID_AUDIO_DURATION" });
+  }
+  const idempotency = {
+    scope: "attachments.uploadAudio",
+    key,
+    requestHash: sha256(JSON.stringify({ audio: input.audio, durationMs }))
+  };
+  const replay = await storeRepository.readIdempotent?.(idempotency);
+  if (replay !== undefined) {
+    const resourcePath = safeText(replay.audio?.attachmentPath, 300);
+    try {
+      if (resourcePath) await imageAttachments.read(resourcePath);
+      if (resourcePath) return replay;
+    } catch (error) {
+      const missing = ["ENOENT", "NoSuchKey"].includes(error?.code) || Number(error?.status) === 404;
+      if (!missing) throw error;
+    }
+    await storeRepository.update(store => removeIdempotencyResponse(store, idempotency));
+  }
+  const uploaded = await imageAttachments.saveAudio(input.audio, { maxBytes: ATTACHMENT_UPLOAD_AUDIO_MAX_BYTES });
+  const audio = {
+    attachmentPath: uploaded.attachmentPath,
+    mimeType: uploaded.mimeType,
+    bytes: uploaded.bytes,
+    durationMs
+  };
+  try {
+    const result = await storeRepository.executeIdempotent(
+      idempotency,
+      () => ({ audio }),
+      { onReplay: value => ({ ...value, duplicate: true }) }
+    );
+    if (result.duplicate) await attachmentCleanup.cleanFailedUploads([uploaded.attachmentPath]);
+    return result;
+  } catch (error) {
+    await attachmentCleanup.cleanFailedUploads([uploaded.attachmentPath]).catch(() => {});
+    throw error;
+  }
+}
+async function discardOriginalUploads(value, uploadRequestId = "", scope = "attachments.uploadOriginals") {
+  const maxPaths = scope === "attachments.uploadKeepsake" ? 5 : scope === "attachments.uploadAudio" ? 1 : 2;
+  const attachmentPaths = cleanAttachmentPaths(value, maxPaths);
   const key = safeText(uploadRequestId, 100);
-  if (!key) throw Object.assign(new Error("清理原图上传缺少幂等标识"), { statusCode: 400, code: "IDEMPOTENCY_KEY_REQUIRED" });
+  if (!key) throw Object.assign(new Error("清理附件上传缺少幂等标识"), { statusCode: 400, code: "IDEMPOTENCY_KEY_REQUIRED" });
   const prepared = await storeRepository.update(store => {
     const ledger = store[METADATA_FIELD]?.idempotency?.find(item => (
-      item.scope === "attachments.uploadOriginals" && item.key === key
+      item.scope === scope && item.key === key
     ));
-    const ledgerPaths = cleanAttachmentPaths(ledger?.response?.attachmentPaths);
+    const ledgerPaths = cleanAttachmentPaths(
+      scope === "attachments.uploadAudio"
+        ? [ledger?.response?.audio?.attachmentPath]
+        : ledger?.response?.attachmentPaths,
+      maxPaths
+    );
     const requested = attachmentPaths.filter(resourcePath => ledgerPaths.includes(resourcePath));
     const { [METADATA_FIELD]: _metadata, attachmentCleanup: _cleanup, ...visibleStore } = store;
     const referenced = collectAttachmentPaths(visibleStore);
@@ -858,7 +1046,7 @@ async function discardOriginalUploads(value, uploadRequestId = "") {
     if (removable.length) {
       attachmentCleanup.enqueue(store, new Set(removable));
       if (removable.length === ledgerPaths.length && requested.length === ledgerPaths.length) {
-        removeIdempotencyResponse(store, { scope: "attachments.uploadOriginals", key });
+        removeIdempotencyResponse(store, { scope, key });
       }
     }
     return { removable };
@@ -869,6 +1057,11 @@ async function discardOriginalUploads(value, uploadRequestId = "") {
     pending: result.pending
   };
 }
+const discardOriginalAudio = (value, uploadRequestId = "") => discardOriginalUploads(
+  [value],
+  uploadRequestId,
+  "attachments.uploadAudio"
+);
 async function materializeAttachmentFiles(resourcePaths) {
   const tempDir = path.join(storagePaths().dataDir, "tmp");
   await fs.mkdir(tempDir, { recursive: true, mode: 0o700 });
@@ -895,50 +1088,9 @@ const keepsakeMediaWorkflows = createKeepsakeMediaWorkflows({
   createId: () => crypto.randomUUID(),
   now
 });
-async function migrateLegacyKeepsakes() {
-  const legacy = (await readStore()).keepsakes.filter(item => (
-    item.derivativeState === "legacy"
-    && item.originalPath
-    && item.cutoutPath
-  ));
-  for (const item of legacy) {
-    let generatedPaths = [];
-    try {
-      const derived = await imageAttachments.deriveKeepsakeSet({
-        originalPath: item.originalPath,
-        alphaMaskPath: item.cutoutPath
-      });
-      generatedPaths = Object.values(derived.paths).filter(value => value !== item.originalPath);
-      const migrated = await updateStore(store => {
-        const current = store.keepsakes.find(value => value.id === item.id);
-        if (!current || current.originalPath !== item.originalPath || current.cutoutPath !== item.cutoutPath) return false;
-        Object.assign(current, derived.paths, {
-          cutoutPath: "",
-          derivativeState: "ready",
-          mediaVersion: Math.max(0, Number(current.mediaVersion) || 0) + 1,
-          updatedAt: now()
-        });
-        attachmentCleanup.enqueue(store, new Set(derived.replacedPaths));
-        return true;
-      });
-      if (!migrated) {
-        await attachmentCleanup.cleanFailedUploads(generatedPaths);
-        continue;
-      }
-      await attachmentCleanup.resume();
-    } catch (error) {
-      await attachmentCleanup.cleanFailedUploads(generatedPaths).catch(() => {});
-      logEvent("system", "keepsake.media_migration_deferred", {
-        level: "error",
-        keepsakeId: item.id,
-        error: errorMetadata(error)
-      });
-    }
-  }
-}
 const segmentKeepsakeImage = createKeepsakeSegmentation({
   saveImages: saveImageDataUrls, cleanupFiles: cleanupTemporaryFiles,
-  provider: createAliyunSegmentationTransport({ ...appConfig.segmentation, auditCall: aiAudit.segmentationCall }),
+  provider: createAliyunSegmentationTransport({ ...appConfig.segmentation, auditCall: aiAudit.providerCall }),
   gate: segmentationGate,
   onFailure: (error, callGroupId) => logEvent("system", "segmentation.failed", { level: "error", callGroupId, error: errorMetadata(error) })
 });
@@ -1031,6 +1183,19 @@ const captureRecords = createCaptureRecords({
   repository: collectionStoreRepository("captures"),
   reanchorAnnotations,
   reconcileOriginalImages: (...args) => contentAttachmentService.reconcileOriginalImagesInStore(...args),
+  reconcileAudioAttachment: (store, { captureId, previousAudio, previousTranscription, nextAudio }) => {
+    if (!previousAudio?.attachmentPath || previousAudio.attachmentPath === nextAudio?.attachmentPath) return null;
+    const entry = trashService.add(store.trash, "captureAudio", {
+      id: captureId,
+      audio: previousAudio,
+      transcription: previousTranscription
+    }, {
+      kind: "captureAudio",
+      parentCollection: "captures",
+      parentId: captureId
+    });
+    return { trashId: entry.id };
+  },
   now,
   createId: () => crypto.randomUUID()
 });
@@ -1051,10 +1216,7 @@ const dailyRecordRecords = createDailyRecordRecords({
   createId: () => crypto.randomUUID()
 });
 const keepsakeRecords = createKeepsakeRecords({
-  repository: {
-    read: async () => (await readStore()).keepsakes,
-    update: mutate => updateStore(store => mutate(store.keepsakes))
-  },
+  repository: collectionStoreRepository("keepsakes"),
   now,
   createId: () => crypto.randomUUID()
 });
@@ -1092,7 +1254,6 @@ async function ensureStore() {
   if (postgresRuntime) {
     await storeRepository.initialize({ allowCreate: !AUTH_REQUIRED });
     await imageAttachments.recover();
-    await migrateLegacyKeepsakes();
     return;
   }
   const original = await readStoredJson(storeFile, null);
@@ -1104,7 +1265,6 @@ async function ensureStore() {
   }
   await writeJsonAtomic(storeFile, normalizeStore(original || {}));
   await storeRepository.update(store => store);
-  await migrateLegacyKeepsakes();
 }
 
 async function recoverAiUsageFromAuditLogs() {
@@ -1187,7 +1347,9 @@ async function adminSnapshotApi(req, res, url) {
 }
 
 async function proxyToUpstream(req, res, url) {
-  const chunks = [], maxBytes = url.pathname === "/api/images/upload" ? ATTACHMENT_UPLOAD_BODY_MAX_BYTES : STANDARD_BODY_MAX_BYTES;
+  const chunks = [], maxBytes = ["/api/images/upload", "/api/audio/upload"].includes(url.pathname)
+    ? ATTACHMENT_UPLOAD_BODY_MAX_BYTES
+    : STANDARD_BODY_MAX_BYTES;
   let bytes = 0;
   for await (const chunk of req) {
     bytes += chunk.length;
@@ -1331,25 +1493,75 @@ function normalizeParsedImage(kind, value = {}) {
   throw new Error("不支持这种截图类型");
 }
 
+async function recognizeVisualFiles(files) {
+  if (!visionProvider.configured) return null;
+  const results = [];
+  for (const file of files) {
+    const data = await fs.readFile(file);
+    results.push(await meteredProviderCall({
+      provider: "volcengine",
+      service: "vision",
+      scene: "visionOcr",
+      action: "OCRNormal",
+      request: { imageBytes: data.length },
+      modality: "vision",
+      imageCount: 1,
+      imageBytes: data.length,
+      unitType: "image",
+      units: 1,
+      costKnown: false,
+      costSource: "Volcengine billing not configured"
+    }, async () => {
+      const release = await ocrGate.acquire();
+      try {
+        return await visionProvider.recognizeText({ data });
+      } finally {
+        release();
+      }
+    }));
+  }
+  return results.map((result, index) => `<image index="${index + 1}">\n${result.text || "（未识别到文字）"}\n</image>`).join("\n");
+}
+
 async function parseImageRequest(input, kind) {
   const config = IMAGE_PARSE_CONFIG[kind];
   if (!config) throw new Error("不支持这种截图类型");
   const images = Array.isArray(input.images) ? input.images : input.image ? [input.image] : [];
-  if (kind === "sleep" && !images.length) throw new Error("睡眠识别需要 1～2 张图片");
-  const { files, attachmentPaths, cleanupFiles } = await saveImageDataUrls(images, config.maxImages, { needsLocalFiles: true });
+  const requestedPaths = Array.isArray(input.attachmentPaths) ? input.attachmentPaths : [];
+  const attachmentPaths = cleanAttachmentPaths(requestedPaths);
+  if (images.length && requestedPaths.length) throw new Error("截图只能使用一种上传方式");
+  if (requestedPaths.length && (attachmentPaths.length !== requestedPaths.length || attachmentPaths.length > config.maxImages)) {
+    throw new Error(`最多提交 ${config.maxImages} 张有效截图`);
+  }
+  if (!images.length && !attachmentPaths.length) throw new Error(kind === "sleep" ? "睡眠识别需要 1～2 张图片" : "请先上传截图");
+  const uploaded = attachmentPaths.length
+    ? { files: await materializeAttachmentFiles(attachmentPaths), attachmentPaths, cleanupFiles: [] }
+    : await saveImageDataUrls(images, config.maxImages, { needsLocalFiles: true });
+  if (attachmentPaths.length) uploaded.cleanupFiles = uploaded.files;
   try {
     const referenceDate = /^\d{4}-\d{2}-\d{2}$/.test(input.referenceDate || "") ? input.referenceDate : today();
     const dateContext = renderPrompt("health.image.referenceDate", { referenceDate });
-    const raw = await runDeepSeek(`${config.prompt}${dateContext}`, { scene: config.scene, imagePaths: files, json: true, maxTokens: 4000 });
+    const recognizedText = await recognizeVisualFiles(uploaded.files);
+    const raw = await runDeepSeek(
+      recognizedText
+        ? `${config.prompt}${dateContext}\n\n以下是火山 OCR 提取的原始文字，请只据此提取字段；无法确认的字段保持为空：\n${recognizedText}`
+        : `${config.prompt}${dateContext}`,
+      {
+        scene: config.scene,
+        ...(recognizedText ? {} : { imagePaths: uploaded.files }),
+        json: true,
+        maxTokens: 4000
+      }
+    );
     let parsed = {};
     try { parsed = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || ""); }
     catch { throw new Error("截图已读取，但模型返回格式无法解析，请重试或手动填写"); }
-    return { ...normalizeParsedImage(kind, parsed), attachmentPaths };
+    return { ...normalizeParsedImage(kind, parsed), attachmentPaths: uploaded.attachmentPaths };
   } catch (error) {
-    await imageAttachments.discard(attachmentPaths);
+    if (!attachmentPaths.length) await imageAttachments.discard(uploaded.attachmentPaths);
     throw error;
   } finally {
-    await cleanupTemporaryFiles(cleanupFiles);
+    await cleanupTemporaryFiles(uploaded.cleanupFiles);
   }
 }
 
@@ -1567,11 +1779,62 @@ const contentAttachmentService = createContentAttachmentService({
   now,
   createId: () => crypto.randomUUID()
 });
+async function transcribeCapture(work, { signal } = {}) {
+  const audio = await imageAttachments.read(work.audio.attachmentPath);
+  const transcription = await meteredProviderCall({
+    provider: "volcengine",
+    service: "speech",
+    scene: "speechRecognition",
+    action: "streamingAsr",
+    request: { audioBytes: audio.length, mimeType: work.audio.mimeType },
+    modality: "audio",
+    unitType: "audioMillisecond",
+    units: work.audio.durationMs,
+    costKnown: false,
+    costSource: "Volcengine billing not configured"
+  }, async () => {
+    const release = await speechGate.acquire();
+    try {
+      return await speechProvider.transcribe({
+        audio,
+        mimeType: work.audio.mimeType,
+        signal
+      });
+    } finally {
+      release();
+    }
+  });
+  let polishedText = "", polishErrorCode = "";
+  try {
+    polishedText = await runDeepSeek(
+      renderPrompt("capture.transcription.polish", { rawText: transcription.rawText }),
+      {
+        scene: "capturePolish",
+        maxTokens: 4000,
+        signal
+      }
+    );
+  } catch (error) {
+    polishErrorCode = safeText(error.code, 120) || "POLISH_FAILED";
+    await logEvent("system", "capture.transcription_polish_failed", {
+      level: "warn",
+      captureId: work.capture.id,
+      error: errorMetadata(error)
+    });
+  }
+  return {
+    ...transcription,
+    polishedText,
+    polishErrorCode,
+    updatedAt: now()
+  };
+}
 const taskTargets = createAiTaskTargets({
   thoughts: createThoughtTaskTarget({ createId: () => crypto.randomUUID(), now, stripThoughtAnswerLead }),
   annotations: annotationService,
   contentAttachments: contentAttachmentService,
-  hash: sha256
+  hash: sha256,
+  now
 });
 const backgroundAi = createBackgroundAi({
   repository: storeRepository,
@@ -1579,6 +1842,7 @@ const backgroundAi = createBackgroundAi({
   notifications: createNotificationService({ createId: () => crypto.randomUUID(), now }),
   targets: taskTargets,
   generate: async (work, { signal } = {}) => {
+    if (work.kind === "captureTranscription") return transcribeCapture(work, { signal });
     const imagePaths = work.attachmentPaths?.length
       ? await materializeAttachmentFiles(work.attachmentPaths)
       : [];
@@ -1587,6 +1851,7 @@ const backgroundAi = createBackgroundAi({
         scene: work.scene,
         systemPrompt: work.systemPrompt || systemPrompt(),
         captureReasoning: true,
+        contextReceipt: work.contextReceipt || null,
         imagePaths,
         signal
       });
@@ -1605,6 +1870,39 @@ const backgroundAi = createBackgroundAi({
   onError: (taskId, error) => logEvent("system", "ai_task.failed", { level: "error", taskId, error: errorMetadata(error) })
 });
 cancelBackgroundTask = taskId => backgroundAi.cancel(taskId);
+async function requestCaptureTranscription(capture, { force = false } = {}) {
+  if (!speechProvider.configured || !capture?.audio?.attachmentPath) return null;
+  if (!speechProvider.supportedAsrMimeTypes.includes(capture.audio.mimeType)) {
+    if (!force) return null;
+    throw Object.assign(new Error("当前 WebM 原件不能直接转写，请改用 M4A、Ogg 或 WAV"), {
+      statusCode: 422,
+      code: "ASR_UNSUPPORTED_AUDIO_FORMAT"
+    });
+  }
+  const active = (await readStore()).aiTasks.find(task => (
+    task.kind === "captureTranscription"
+    && task.targetId === capture.id
+    && ["queued", "running"].includes(task.status)
+  ));
+  if (active) return publicAiTask(active);
+  const audioKey = sha256(JSON.stringify(capture.audio)).slice(0, 24);
+  const created = await backgroundAi.enqueue({
+    kind: "captureTranscription",
+    resourceType: "capture",
+    targetId: capture.id,
+    clientRequestId: force
+      ? `capture-transcription:${capture.id}:${audioKey}:${crypto.randomUUID()}`
+      : `capture-transcription:${capture.id}:${audioKey}`
+  });
+  if (!created.task) {
+    if (created.alreadyAnswered) return null;
+    throw Object.assign(new Error("语音转写任务无法创建"), {
+      statusCode: created.missing ? 404 : created.versionConflict ? 409 : 400,
+      code: created.versionConflict ? "VERSION_CONFLICT" : "TRANSCRIPTION_TASK_REJECTED"
+    });
+  }
+  return publicAiTask(created.task);
+}
 const thoughtWorkflows = createThoughtWorkflows({
   repository: storeRepository,
   thoughts: thoughtService,
@@ -1617,6 +1915,23 @@ const thoughtWorkflows = createThoughtWorkflows({
   contextKey: () => storagePaths().storeFile
 });
 const taskHttp = createTaskHttp({ backgroundAi, bodyJson, sendJson });
+const speechHttp = createSpeechHttp({
+  speech: speechProvider,
+  gate: speechGate,
+  auditCall: (details, invoke, summarize) => meteredProviderCall(details, invoke, summarize),
+  bodyJson,
+  sendJson,
+  getContext: () => requestStorage.getStore()
+});
+const visionHttp = createVisionHttp({
+  vision: visionProvider,
+  ocrGate,
+  documentGate: documentParseGate,
+  auditCall: (details, invoke, summarize) => meteredProviderCall(details, invoke, summarize),
+  bodyJson,
+  sendJson,
+  uploadBodyMaxBytes: ATTACHMENT_UPLOAD_BODY_MAX_BYTES
+});
 const aiSettingsHttp = createAiSettingsHttp({ settings: llmSettingsService, generate: runDeepSeek, bodyJson, sendJson });
 const aiCostHttp = createAiCostHttp({ costs: aiCosts, bodyJson, sendJson });
 const onboardingHttp = createOnboardingHttp({
@@ -1641,7 +1956,10 @@ const keepsakeHttp = createKeepsakeHttp({
 const attachmentHttp = createAttachmentHttp({
   attachments: imageAttachments,
   uploadOriginals: saveOriginalImages,
+  uploadKeepsake: saveKeepsakeImages,
   discardUploads: discardOriginalUploads,
+  uploadAudio: saveOriginalAudio,
+  discardAudio: discardOriginalAudio,
   bodyJson,
   sendJson,
   uploadBodyMaxBytes: ATTACHMENT_UPLOAD_BODY_MAX_BYTES, uploadImageMaxBytes: ATTACHMENT_UPLOAD_IMAGE_MAX_BYTES,
@@ -1704,6 +2022,21 @@ async function listAttachmentInventory() {
       bytes: item.bytes,
       state: "verified"
     }));
+}
+async function prepareCaptureAudio(input) {
+  if (!hasOwn(input, "audio")) return { value: {} };
+  const parsed = captureAudioPayload(input.audio);
+  if (parsed.error || !parsed.value) return parsed;
+  const row = (await listAttachmentInventory()).find(item => item.path === parsed.value.attachmentPath);
+  if (!row) {
+    return {
+      forbidden: true,
+      error: "语音附件不属于当前账户",
+      code: "ATTACHMENT_NOT_OWNED"
+    };
+  }
+  const validated = captureAudioPayload({ ...parsed.value, bytes: row.bytes });
+  return validated.error ? validated : { value: { audio: validated.value } };
 }
 const exportHttp = createExportHttp({
   createExport: createAccountExport,
@@ -1777,6 +2110,8 @@ const captureJournalHttp = createCaptureJournalHttp({
   journals: journalRecords,
   workflows: captureJournalWorkflows,
   prepareContentAttachments: contentAttachmentService.prepareOriginalContent,
+  prepareCaptureAudio,
+  requestCaptureTranscription,
   removeCapture: (id, expectedVersion = null) => removeVersionedCollection("captures", "capture", id, expectedVersion),
   removeJournal: (id, expectedVersion = null) => removeVersionedCollection("journals", "journal", id, expectedVersion),
   removeReflection: removeJournalReflection,
@@ -1792,12 +2127,20 @@ const libraryWorkflows = createLibraryWorkflows({
   saveImages: saveImageDataUrls,
   discardAttachments: paths => imageAttachments.discard(paths),
   cleanupTemporaryFiles,
-  recognizeBook: files => runDeepSeek(IMAGE_PARSE_CONFIG.book.prompt, {
-    scene: IMAGE_PARSE_CONFIG.book.scene,
-    imagePaths: files,
-    json: true,
-    maxTokens: 4000
-  }),
+  recognizeBook: async files => {
+    const recognizedText = await recognizeVisualFiles(files);
+    return runDeepSeek(
+      recognizedText
+        ? `${IMAGE_PARSE_CONFIG.book.prompt}\n\n以下是火山 OCR 提取的原始文字，请只据此提取字段；无法确认的字段保持为空：\n${recognizedText}`
+        : IMAGE_PARSE_CONFIG.book.prompt,
+      {
+        scene: IMAGE_PARSE_CONFIG.book.scene,
+        ...(recognizedText ? {} : { imagePaths: files }),
+        json: true,
+        maxTokens: 4000
+      }
+    );
+  },
   moveCollectionItemToTrash,
   moveNestedItemToTrash
 });
@@ -1844,6 +2187,16 @@ const apiV1 = createApiV1Http({
   getContext: () => requestStorage.getStore(),
   openApi: openApiV1
 });
+const syncHttp = createSyncHttp({
+  repository: storeRepository,
+  publicState: publicStateFromStore
+});
+const personalContextHttp = createPersonalContextHttp({
+  readStore,
+  project: store => personalContextProjection(store, { generatedAt: now() })
+});
+apiV1.register("sync", syncHttp.handleV1);
+apiV1.register("personal-context", personalContextHttp.handleV1);
 apiV1.register("thoughts", thoughtHttp.handleV1);
 apiV1.register("checkins", checkinHttp.handleV1);
 apiV1.register("health", healthRecordHttp.handleV1);
@@ -1905,6 +2258,8 @@ async function api(req, res, url) {
   if (await reviewsChatHttp.handle(req, res, url)) return;
   if (await captureJournalHttp.handle(req, res, url)) return;
   if (await libraryHttp.handle(req, res, url)) return;
+  if (await speechHttp.handle(req, res, url)) return;
+  if (await visionHttp.handle(req, res, url)) return;
   if (await aiCostHttp.handle(req, res, url)) return;
   if (await aiSettingsHttp.handle(req, res, url)) return;
   if (await onboardingHttp.handle(req, res, url)) return;
@@ -1921,8 +2276,7 @@ async function api(req, res, url) {
   if (await attachmentHttp.handle(req, res, url)) return;
   if (await keepsakeHttp.handle(req, res, url)) return;
   if (req.method === "GET" && url.pathname === "/api/state") {
-    const store = await readStore(), { trash, attachmentCleanup, ...visible } = store;
-    return sendJson(res, 200, { ...visible, keepsakes: visible.keepsakes.map(publicKeepsake), aiTasks: store.aiTasks.slice(0, 100).map(publicAiTask), notificationUnread: notificationUnread(store.notifications), clusters: clusters(store), insights: insights(store), trashCount: trash.length });
+    return sendJson(res, 200, publicStateFromStore(await readStore()));
   }
   if (req.method === "POST" && url.pathname === "/api/images/parse") {
     const input = await bodyJson(req), kind = ["sleep", "heartRate", "weight", "exercise", "book"].includes(input.kind) ? input.kind : "";
@@ -1945,7 +2299,14 @@ async function api(req, res, url) {
   return sendJson(res, 404, { error: "Not found" });
 }
 
-const mime = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
+const mime = {
+  ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
+  ".webmanifest": "application/manifest+json; charset=utf-8", ".svg": "image/svg+xml",
+  ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
+  ".m4a": "audio/mp4", ".mp4": "audio/mp4", ".webm": "audio/webm", ".ogg": "audio/ogg",
+  ".wav": "audio/wav"
+};
 if (LOCAL_TEST_MODE) {
   await fs.mkdir(LOCAL_TEST_WORKSPACES_DIR, { recursive: true, mode: 0o700 });
   await fs.chmod(LOCAL_TEST_WORKSPACES_DIR, 0o700);
@@ -2038,7 +2399,15 @@ http.createServer(createRequestHandler({
         const handled = await apiV1.handle(req, res, url);
         return handled === false ? apiV1.error(res, 404, "Not found", "NOT_FOUND") : handled;
       }
-      if (req.method === "GET" && url.pathname === "/api/meta") return sendJson(res, 200, { version: APP_VERSION, releaseVersion: RELEASE_VERSION, user: publicUser(user) });
+      if (req.method === "GET" && url.pathname === "/api/meta") {
+        return sendJson(res, 200, {
+          version: APP_VERSION,
+          releaseVersion: RELEASE_VERSION,
+          user: publicUser(user),
+          features: appConfig.features,
+          governanceUrl: PLATFORM_SERVICE_TOKEN_HASH ? "/platform/" : ""
+        });
+      }
       if (url.pathname.startsWith("/api/")) return await api(req, res, url);
       if (await attachmentHttp.handle(req, res, url)) return;
       const base = PUBLIC_DIR, relative = url.pathname === "/" ? "index.html" : url.pathname.replace(/^\/+/, "");
