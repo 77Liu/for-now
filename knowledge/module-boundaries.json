@@ -238,9 +238,9 @@
       "type": "application",
       "root": "src/app",
       "publicEntry": "src/app/index.mjs",
-      "allowedDependencies": ["domain.annotations", "domain.tasks", "domain.notifications", "domain.trash", "domain.onboarding", "domain.health", "domain.thoughts", "domain.captures", "domain.journals", "domain.books", "domain.quotes", "domain.chats", "domain.reviews", "domain.content-attachments", "domain.ai", "shared.time", "shared.attachments", "shared.content", "shared.validation", "shared.prompts"],
-      "owns": { "data": ["cross-domain annotation resource resolution and transactional background AI orchestration", "trash location resolution, versioned restore and durable attachment cleanup orchestration", "cross-domain personal context, source receipts, token budgets, activity selection and thought answer prompt composition", "thought chain creation/task transaction, draft/starter generation and foreground answer idempotency", "capture/journal, library and review/chat application workflows", "explicit hash-confirmed historical keepsake media migration"], "routes": [] },
-      "tests": ["scripts/personal-context-regression.mjs", "scripts/trash-regression.mjs", "scripts/collaboration-regression.mjs", "scripts/capture-journal-regression.mjs", "scripts/capture-transcription-regression.mjs", "scripts/volcengine-server-regression.mjs", "scripts/library-regression.mjs", "scripts/reviews-chat-regression.mjs", "scripts/keepsake-media-migration-regression.mjs", "scripts/regression.mjs", "scripts/api-v1-contract-regression.mjs", "scripts/auth-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
+      "allowedDependencies": ["domain.annotations", "domain.tasks", "domain.notifications", "domain.trash", "domain.onboarding", "domain.health", "domain.thoughts", "domain.captures", "domain.journals", "domain.books", "domain.quotes", "domain.chats", "domain.reviews", "domain.content-attachments", "domain.ai", "shared.time", "shared.attachments", "shared.content", "shared.validation", "shared.prompts", "shared.speech"],
+      "owns": { "data": ["cross-domain annotation resource resolution and transactional background AI orchestration", "trash location resolution, versioned restore and durable attachment cleanup orchestration", "cross-domain personal context, source receipts, token budgets, activity selection and thought answer prompt composition", "thought chain creation/task transaction, draft/starter generation and foreground answer idempotency", "capture/journal, library and review/chat application workflows", "account-private capture speech cache keys, source invalidation and attachment lifecycle orchestration", "explicit hash-confirmed historical keepsake media migration"], "routes": [] },
+      "tests": ["scripts/personal-context-regression.mjs", "scripts/trash-regression.mjs", "scripts/collaboration-regression.mjs", "scripts/capture-journal-regression.mjs", "scripts/capture-transcription-regression.mjs", "scripts/speech-cache-regression.mjs", "scripts/volcengine-server-regression.mjs", "scripts/library-regression.mjs", "scripts/reviews-chat-regression.mjs", "scripts/keepsake-media-migration-regression.mjs", "scripts/regression.mjs", "scripts/api-v1-contract-regression.mjs", "scripts/auth-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
       "status": "active"
     },
     {
@@ -292,8 +292,8 @@
       "root": "src/shared/speech",
       "publicEntry": "src/shared/speech/index.mjs",
       "allowedDependencies": ["shared.validation"],
-      "owns": { "data": ["provider-supported TTS generation-rate bounds and account-default normalization"], "routes": [] },
-      "tests": ["scripts/ai-domain-regression.mjs", "scripts/volcengine-provider-regression.mjs", "scripts/volcengine-server-regression.mjs"],
+      "owns": { "data": ["provider-supported TTS generation-rate bounds, account-default normalization and canonical capture speech text"], "routes": [] },
+      "tests": ["scripts/ai-domain-regression.mjs", "scripts/volcengine-provider-regression.mjs", "scripts/volcengine-server-regression.mjs", "scripts/speech-cache-regression.mjs"],
       "status": "active"
     },
     {

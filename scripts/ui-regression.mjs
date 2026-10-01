@@ -1699,6 +1699,11 @@ try {
   });
   await evaluate(`window.__delaySpeech=true;document.querySelector('[data-capture-id="capture-long"] [data-capture-speak]').click();true`);
   assert.equal(await waitUntil(`typeof window.__releaseSpeech==="function"&&window.__speechRequests.length===1`),true);
+  assert.deepEqual(await evaluate(`window.__speechRequests[0]`), {
+    captureId: "capture-long",
+    sourceVersion: 1,
+    voice: "zh_male_shaonianzixin_uranus_bigtts"
+  });
   await evaluate(`document.querySelector('[data-capture-id="capture-long"] [data-capture-edit]').click();document.querySelector("#capture-form").requestSubmit();true`);
   assert.equal(await waitUntil(`window.__captures.find(item=>item.id==="capture-long").version===2&&document.querySelector("#capture-id").value===""`),true);
   await evaluate(`window.__capturePatchPayloads=[];window.__releaseSpeech();true`);
@@ -1706,10 +1711,11 @@ try {
   assert.equal(await evaluate(`window.__speechPlays.length`),0,"audio-tts-playback");
   await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-long"]'),rate=card.querySelector("[data-capture-playback-rate]");rate.value="1.5";card.querySelector("[data-capture-speak]").click();return true})()`);
   assert.equal(await waitUntil(`window.__speechRequests.length===2&&window.__speechPlays.length===1`),true);
-  assert.deepEqual(await evaluate(`({keys:Object.keys(window.__speechRequests[1]).sort(),voice:window.__speechRequests[1].voice,textReady:Boolean(window.__speechRequests[1].text)})`), {
-    keys: ["text", "voice"],
+  assert.deepEqual(await evaluate(`({keys:Object.keys(window.__speechRequests[1]).sort(),captureId:window.__speechRequests[1].captureId,sourceVersion:window.__speechRequests[1].sourceVersion,voice:window.__speechRequests[1].voice})`), {
+    keys: ["captureId", "sourceVersion", "voice"],
+    captureId: "capture-long",
+    sourceVersion: 2,
     voice: "zh_male_shaonianzixin_uranus_bigtts",
-    textReady: true
   }, "playback rate must not enter the TTS generation request");
   assert.deepEqual(await evaluate(`({rate:window.__speechPlays[0].rate,blob:window.__speechPlays[0].src.startsWith("blob:")})`),{rate:1.5,blob:true});
   await evaluate(`(() => {const rate=document.querySelector('[data-capture-id="capture-long"] [data-capture-playback-rate]');rate.value="2";rate.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);

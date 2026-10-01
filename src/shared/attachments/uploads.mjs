@@ -6,6 +6,7 @@ import { decodeImages } from "./images.mjs";
 import { createKeepsakeImageDerivatives } from "./derivatives.mjs";
 
 export const cleanupTemporaryFiles = files => Promise.all(files.map(file => fs.unlink(file).catch(() => {})));
+const TTS_AUDIO_MAX_BYTES = 16 * 1024 * 1024;
 
 // Context and inventory are injected so neither account lookup nor a concrete
 // repository leaks into the storage module.
@@ -139,6 +140,36 @@ export function createImageAttachments({
     };
   }
 
+  async function saveSpeechAudio({ data, mimeType, maxBytes = TTS_AUDIO_MAX_BYTES }) {
+    const audio = Buffer.isBuffer(data)
+      ? Buffer.from(data)
+      : data instanceof Uint8Array ? Buffer.from(data) : Buffer.alloc(0);
+    const isMp3 = audio.subarray(0, 3).toString("ascii") === "ID3"
+      || (audio.length >= 2 && audio[0] === 0xff && (audio[1] & 0xe0) === 0xe0);
+    if (mimeType !== "audio/mpeg" || !audio.length || audio.length > maxBytes || !isMp3) {
+      throw Object.assign(new Error("语音合成音频格式不正确"), {
+        statusCode: 502,
+        code: "INVALID_TTS_AUDIO"
+      });
+    }
+    const { attachmentsDir } = getContext();
+    const name = `${createId()}.tts.mp3`;
+    const saved = await persistPrepared([{
+      data: audio,
+      mimeType,
+      extension: "mp3",
+      bytes: audio.length,
+      name,
+      file: path.join(attachmentsDir, name)
+    }]);
+    return {
+      ...saved,
+      attachmentPath: saved.attachmentPaths[0],
+      mimeType,
+      bytes: audio.length
+    };
+  }
+
   async function saveKeepsakeSources({ image, alphaMask, maxBytes = defaultMaxBytes }) {
     const { attachmentsDir } = getContext();
     const [source] = decodeImages([image], { maxImages: 1, maxBytes });
@@ -247,7 +278,7 @@ export function createImageAttachments({
   }
 
   return {
-    save, saveAudio, saveKeepsakeSources, saveKeepsakeSet, deriveKeepsakeSet, previewKeepsakeSet,
+    save, saveAudio, saveSpeechAudio, saveKeepsakeSources, saveKeepsakeSet, deriveKeepsakeSet, previewKeepsakeSet,
     discard, remove, recover, prepareDirectory,
     inspect: (resourcePath, options = {}) => storage.inspect({ ...location(resourcePath, getContext()), ...options }),
     read: resourcePath => storage.get(location(resourcePath, getContext()))

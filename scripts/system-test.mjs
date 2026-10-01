@@ -63,6 +63,7 @@ const suites = {
     ["check-in and health record domains", ["scripts/checkin-health-regression.mjs"]],
     ["capture and journal domains", ["scripts/capture-journal-regression.mjs"]],
     ["recoverable capture transcription workflow", ["scripts/capture-transcription-regression.mjs"]],
+    ["private recoverable capture speech cache", ["scripts/speech-cache-regression.mjs"]],
     ["book and quote domains", ["scripts/library-regression.mjs"]],
     ["review, chat and statistics domains", ["scripts/reviews-chat-regression.mjs"]],
     ["cross-genre content attachments", ["scripts/content-attachments-regression.mjs"]],

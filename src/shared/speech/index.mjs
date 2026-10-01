@@ -20,3 +20,17 @@ export function normalizeTtsGenerationRate(value, fallback = TTS_GENERATION_RATE
     true
   );
 }
+
+export function speechTextForCapture(capture = {}) {
+  const source = capture?.transcription?.polishedText
+    || capture?.transcription?.rawText
+    || capture?.content
+    || "";
+  return String(source)
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[`*_>#~|]/g, "")
+    .replace(/\\[\[\]()]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}

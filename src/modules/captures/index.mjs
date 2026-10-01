@@ -42,7 +42,15 @@ function pageOf(items, { afterId = "", limit = 20 } = {}) {
   return { items: page, nextId: start + page.length < items.length ? page.at(-1)?.id || "" : "" };
 }
 
-const versioned = item => item ? { ...item, version: recordVersion(item.version) } : null;
+export function publicCapture(item) {
+  if (!item) return null;
+  const { speechCache: _speechCache, ...value } = item;
+  return value;
+}
+
+const versioned = item => item
+  ? { ...publicCapture(item), version: recordVersion(item.version) }
+  : null;
 
 export function captureAudioPayload(value) {
   if (value == null) return { value: null };
@@ -129,7 +137,7 @@ export function createCaptureRecords({
           const duplicate = priorRequest(items, trashItems, clientRequestId);
           if (duplicate) {
             return duplicate.requestHash === requestHash
-              ? { value: duplicate, duplicate: true }
+              ? { value: publicCapture(duplicate), duplicate: true }
               : { conflict: true };
           }
         }
@@ -142,7 +150,7 @@ export function createCaptureRecords({
           ...(clientRequestId ? { version: 1, clientRequestId, requestHash } : {})
         };
         items.unshift(capture);
-        return { value: capture, duplicate: false };
+        return { value: publicCapture(capture), duplicate: false };
       };
       if (clientRequestId && typeof repository.executeIdempotent === "function") {
         return repository.executeIdempotent(
@@ -198,7 +206,7 @@ export function createCaptureRecords({
           : null;
         const trashIds = [reconciled?.trashId, audioReconciled?.trashId].filter(Boolean);
         const result = {
-          value: capture,
+          value: publicCapture(capture),
           ...(trashIds[0] ? { trashId: trashIds[0] } : {}),
           ...(trashIds.length > 1 ? { trashIds } : {})
         };

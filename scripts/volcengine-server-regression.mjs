@@ -153,18 +153,57 @@ try {
   assert.equal(settings.status, 200);
   assert.deepEqual((await settings.json()).speech, { generationRate: 25 });
 
+  const speechSourceResponse = await fetch(`${base}/api/v1/captures`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "idempotency-key": "volcengine-speech-source" },
+    body: JSON.stringify({ content: "测试朗读" })
+  });
+  assert.equal(speechSourceResponse.status, 201);
+  const speechSource = (await speechSourceResponse.json()).data;
   const synthesized = await fetch(`${base}/api/speech/synthesize`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text: "测试朗读", voice: "zh_male_shaonianzixin_uranus_bigtts" })
+    body: JSON.stringify({
+      captureId: speechSource.id,
+      sourceVersion: speechSource.version,
+      voice: "zh_male_shaonianzixin_uranus_bigtts"
+    })
   });
   assert.equal(synthesized.status, 200);
   assert.equal(synthesized.headers.get("content-type"), "audio/mpeg");
+  assert.equal(synthesized.headers.get("x-speech-cache"), "miss");
   assert.equal(Buffer.from(await synthesized.arrayBuffer()).subarray(0, 3).toString("ascii"), "ID3");
   assert.equal(
     JSON.parse(providerCalls.find(call => call.pathname === "/tts").raw).req_params.audio_params.speech_rate,
     25
   );
+  const cached = await fetch(`${base}/api/speech/synthesize`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      captureId: speechSource.id,
+      sourceVersion: speechSource.version,
+      voice: "zh_male_shaonianzixin_uranus_bigtts",
+      playbackRate: 2
+    })
+  });
+  assert.equal(cached.status, 200);
+  assert.equal(cached.headers.get("x-speech-cache"), "hit");
+  assert.equal(providerCalls.filter(call => call.pathname === "/tts").length, 1);
+  const stale = await fetch(`${base}/api/speech/synthesize`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      captureId: speechSource.id,
+      sourceVersion: speechSource.version + 1,
+      voice: "zh_male_shaonianzixin_uranus_bigtts"
+    })
+  });
+  assert.equal(stale.status, 409);
+  assert.equal((await stale.json()).code, "SPEECH_SOURCE_STALE");
+  assert.equal(providerCalls.filter(call => call.pathname === "/tts").length, 1);
+  assert.ok((await fs.readdir(path.join(dataDir, "attachments"))).some(name => name.endsWith(".tts.mp3")));
+  assert.equal(Object.hasOwn((await (await fetch(`${base}/api/state`)).json()).captures[0], "speechCache"), false);
 
   const imageBytes = await sharp({
     create: { width: 16, height: 16, channels: 3, background: "#ffffff" }
@@ -244,7 +283,7 @@ try {
   assert.equal(asrConnections, 1);
   const usage = JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"), "utf8"));
   assert.equal(usage.version, 3);
-  assert.ok(usage.entries.some(item => item.provider === "volcengine" && item.scene === "speechSynthesis" && item.unitType === "character"));
+  assert.equal(usage.entries.filter(item => item.provider === "volcengine" && item.scene === "speechSynthesis" && item.unitType === "character").length, 1);
   assert.ok(usage.entries.some(item => item.provider === "volcengine" && item.scene === "speechRecognition" && item.unitType === "audioMillisecond"));
   assert.ok(usage.entries.some(item => item.provider === "volcengine" && item.scene === "visionOcr" && item.unitType === "image"));
   assert.ok(usage.entries.some(item => item.provider === "volcengine" && item.scene === "documentParsing" && item.unitType === "document"));
@@ -253,7 +292,11 @@ try {
   const rejected = await fetch(`${base}/api/speech/synthesize`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text: "不应发送到供应商" })
+    body: JSON.stringify({
+      captureId: speechSource.id,
+      sourceVersion: speechSource.version,
+      voice: "zh_female_vv_uranus_bigtts"
+    })
   });
   assert.equal(rejected.status, 429);
   assert.equal((await rejected.json()).code, "AI_DAILY_CALL_LIMIT");

@@ -15,7 +15,7 @@ import { activeTaskForInput, createTaskLifecycle, publicAiTask } from "./src/mod
 import { createNotificationService, notificationUnread } from "./src/modules/notifications/index.mjs";
 import { createTrashService } from "./src/modules/trash/index.mjs";
 import { createCheckinRecords } from "./src/modules/checkins/index.mjs";
-import { captureAudioPayload, createCaptureRecords } from "./src/modules/captures/index.mjs";
+import { captureAudioPayload, createCaptureRecords, publicCapture } from "./src/modules/captures/index.mjs";
 import { createBookRecords } from "./src/modules/books/index.mjs";
 import { createQuoteRecords } from "./src/modules/quotes/index.mjs";
 import { createChatRecords } from "./src/modules/chats/index.mjs";
@@ -46,7 +46,7 @@ import { createRateGate } from "./src/shared/concurrency/index.mjs";
 import { installPromptCatalog, promptText, renderPrompt } from "./src/shared/prompts/index.mjs";
 import { localDateKey, shiftDateKey, strictDateKey, localDateTimeOn, eventTimeFields } from "./src/shared/time/index.mjs";
 import { buildAdminSnapshot } from "./admin-snapshot.mjs";
-import { createAnnotationCommands, createAiTaskTargets, createBackgroundAi, createTrashMutations, createTrashCommands, createAttachmentCleanup, createKeepsakeMediaWorkflows, createThoughtWorkflows, createCaptureJournalWorkflows, createLibraryWorkflows, createReviewChatWorkflows, personalContextProjection } from "./src/app/index.mjs";
+import { createAnnotationCommands, createAiTaskTargets, createBackgroundAi, createTrashMutations, createTrashCommands, createAttachmentCleanup, createSpeechCache, createKeepsakeMediaWorkflows, createThoughtWorkflows, createCaptureJournalWorkflows, createLibraryWorkflows, createReviewChatWorkflows, personalContextProjection } from "./src/app/index.mjs";
 import { safeText, recordVersion, safeIso, nullableNumber, numberOrFallback as commercialNumber } from "./src/shared/validation/index.mjs";
 import { createAuthHttp, createJsonHttp, createTaskHttp, createAnnotationHttp, createTrashHttp, createAttachmentHttp, createAiSettingsHttp, createAiCostHttp, createKeepsakeHttp, createOnboardingHttp, createThoughtHttp, createCheckinHttp, createHealthRecordHttp, createDiscoveryHttp, createExportHttp, createActionsHttp, createFeedbackHttp, createCaptureJournalHttp, createLibraryHttp, createReviewsChatHttp, createContentAttachmentsHttp, createSpeechHttp, createVisionHttp, createSyncHttp, createPersonalContextHttp, createRequestHandler, createModelResponseHttp, createApiV1Http, openApiV1 } from "./src/http/index.mjs";
 import { createHealthImageConfig, createDailyRecordRecords, normalizeHealthImage } from "./src/modules/health/index.mjs";
@@ -889,6 +889,7 @@ function publicStateFromStore(store) {
   const { trash, attachmentCleanup, ...visible } = store;
   return {
     ...visible,
+    captures: visible.captures.map(publicCapture),
     keepsakes: visible.keepsakes.map(publicKeepsake),
     aiTasks: store.aiTasks.slice(0, 100).map(publicAiTask),
     notificationUnread: notificationUnread(store.notifications),
@@ -2095,6 +2096,14 @@ const thoughtWorkflows = createThoughtWorkflows({
   contextKey: () => storagePaths().storeFile
 });
 const taskHttp = createTaskHttp({ backgroundAi, bodyJson, sendJson });
+const speechCache = createSpeechCache({
+  repository: storeRepository,
+  attachments: imageAttachments,
+  cleanup: attachmentCleanup,
+  getOwnerId: () => safeText(requestStorage.getStore()?.user?.id, 100) || "local",
+  hash: sha256,
+  now
+});
 const speechHttp = createSpeechHttp({
   speech: speechProvider,
   gate: speechGate,
@@ -2102,7 +2111,8 @@ const speechHttp = createSpeechHttp({
   bodyJson,
   sendJson,
   readSettings: readLlmSettings,
-  getContext: () => requestStorage.getStore()
+  getContext: () => requestStorage.getStore(),
+  cache: speechCache
 });
 const visionHttp = createVisionHttp({
   vision: visionProvider,
@@ -2487,7 +2497,7 @@ const mime = {
   ".webmanifest": "application/manifest+json; charset=utf-8", ".svg": "image/svg+xml",
   ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
   ".m4a": "audio/mp4", ".mp4": "audio/mp4", ".webm": "audio/webm", ".ogg": "audio/ogg",
-  ".wav": "audio/wav"
+  ".wav": "audio/wav", ".mp3": "audio/mpeg"
 };
 if (LOCAL_TEST_MODE) {
   await fs.mkdir(LOCAL_TEST_WORKSPACES_DIR, { recursive: true, mode: 0o700 });

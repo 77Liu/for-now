@@ -1546,7 +1546,7 @@ async function speakCapture(id,voice,sourceKey,playbackRate=1){
   if(!text||!expectedSourceKey||sourceKey!==expectedSourceKey)return;
   stopCaptureSpeech();const controller=new AbortController();activeSpeechAbortController=controller;activeSpeechCaptureId=id;activeSpeechSourceKey=sourceKey;activeSpeechVoice=voice;activeSpeechPlaybackRate=rate;
   try{
-    const blob=await apiClient.requestBlob("/api/speech/synthesize",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,voice}),signal:controller.signal},{fallback:"语音合成失败"});
+    const blob=await apiClient.requestBlob("/api/speech/synthesize",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({captureId:id,sourceVersion:item.version,voice}),signal:controller.signal},{fallback:"语音合成失败"});
     const current=(state.captures||[]).find(value=>value.id===id);
     if(activeSpeechCaptureId!==id||activeSpeechSourceKey!==sourceKey||controller.signal.aborted||captureSpeechIdentity(current,voice)!==sourceKey)return;
     activeSpeechObjectUrl=URL.createObjectURL(blob);const audio=new Audio(activeSpeechObjectUrl);audio.playbackRate=rate;activeSpeechAudio=audio;

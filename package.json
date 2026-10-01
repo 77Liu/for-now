@@ -18,6 +18,7 @@
     "test:content-attachments": "node scripts/content-attachments-regression.mjs",
     "test:captures-journals": "node scripts/capture-journal-regression.mjs",
     "test:transcription": "node scripts/capture-transcription-regression.mjs",
+    "test:speech-cache": "node scripts/speech-cache-regression.mjs",
     "test:library": "node scripts/library-regression.mjs",
     "test:reviews-chat": "node scripts/reviews-chat-regression.mjs",
     "test:keepsake-media": "node scripts/keepsake-media-workflows-regression.mjs && node scripts/attachment-derivatives-regression.mjs && node scripts/keepsake-media-migration-regression.mjs",
