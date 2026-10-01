@@ -60,7 +60,8 @@ const {
   dataDir: DATA_DIR, persistenceBackend: PERSISTENCE_BACKEND, inviteCodeHash: INVITE_CODE_HASH,
   authRequired: AUTH_REQUIRED, cookieSecure: COOKIE_SECURE, basePath: APP_BASE_PATH,
   upstreamOrigin: UPSTREAM_ORIGIN, localTestMode: LOCAL_TEST_MODE,
-  localTestMainUserId: LOCAL_TEST_MAIN_USER_ID, deepSeekApiUrl: DEEPSEEK_API_URL,
+  localTestMainUserId: LOCAL_TEST_MAIN_USER_ID, localTestResetOnStart: LOCAL_TEST_RESET_ON_START,
+  deepSeekApiUrl: DEEPSEEK_API_URL,
   port: PORT, version: APP_VERSION
 } = appConfig;
 await checkPersistenceMarker(DATA_DIR, PERSISTENCE_BACKEND);
@@ -178,7 +179,7 @@ const localTestUpstreamSession = req => {
   return { token, ...session };
 };
 const upstreamCookieHeader = req => LOCAL_TEST_MODE ? localTestUpstreamSession(req)?.cookie || "" : String(req.headers.cookie || "");
-const storeLocalTestUpstreamSession = (token, cookie) => {
+const storeLocalTestUpstreamSession = (token, cookie, user = null) => {
   const currentTime = Date.now();
   for (const [key, session] of localTestUpstreamSessions) {
     if (session.expiresAt <= currentTime) localTestUpstreamSessions.delete(key);
@@ -186,6 +187,10 @@ const storeLocalTestUpstreamSession = (token, cookie) => {
   while (localTestUpstreamSessions.size >= 128) localTestUpstreamSessions.delete(localTestUpstreamSessions.keys().next().value);
   localTestUpstreamSessions.set(token, {
     cookie,
+    user: user && typeof user === "object" ? {
+      id: safeText(user.id, 100),
+      username: safeText(user.username, 100)
+    } : null,
     expiresAt: currentTime + LOCAL_TEST_SESSION_MAX_AGE_SECONDS * 1000
   });
 };
@@ -555,6 +560,43 @@ async function readStoredJson(file, fallback) {
 
 const localTestModes = new Set(["simulation", "cold"]);
 const LOCAL_TEST_UPSTREAM_TIMEOUT_MS = 15_000;
+const localTestAllCollections = ["checkins", "dailyRecords", "captures", "journals", "journalDraft", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "actions", "habits", "habitCheckins", "feedback", "validationLedger", "commercialization"];
+const localTestScopeCollections = Object.freeze({
+  today: ["checkins", "dailyRecords", "captures", "thoughts", "actions", "habits", "habitCheckins"],
+  daily: ["dailyRecords"],
+  captures: ["captures"],
+  books: ["books"],
+  quotes: ["quotes"],
+  keepsakes: ["keepsakes"],
+  journals: ["journals", "journalDraft"],
+  thoughts: ["thoughts"],
+  together: ["chats"],
+  review: ["checkins", "dailyRecords", "journals", "thoughts", "chats", "experiments", "analyses", "customMetrics"],
+  statistics: localTestAllCollections,
+  "personal-context": ["checkins", "dailyRecords", "captures", "journals", "thoughts", "books", "quotes"],
+  feedback: ["feedback"],
+  export: localTestAllCollections,
+  trash: ["trash"]
+});
+const localTestScopes = new Set(Object.keys(localTestScopeCollections));
+const localTestCollections = new Set([...localTestAllCollections, "trash"]);
+const localTestCollectionEndpoints = Object.freeze({
+  checkins: "/api/v1/checkins",
+  dailyRecords: "/api/v1/daily-records",
+  captures: "/api/v1/captures",
+  journals: "/api/v1/journals",
+  thoughts: "/api/v1/thought-chains",
+  chats: "/api/v1/chats",
+  books: "/api/v1/books",
+  quotes: "/api/v1/quotes",
+  experiments: "/api/v1/experiments",
+  analyses: "/api/v1/analyses",
+  customMetrics: "/api/v1/custom-metrics",
+  actions: "/api/v1/actions",
+  habits: "/api/v1/habits",
+  feedback: "/api/v1/feedback",
+  validationLedger: "/api/v1/validation-ledger"
+});
 let localTestControlQueue = Promise.resolve();
 
 function localTestWorkspaceDir(mode) {
@@ -570,7 +612,9 @@ function normalizeLocalTestControl(value = {}) {
       id: safeText(value.sourceUser.id, 100),
       username: safeText(value.sourceUser.username, 100)
     } : null,
-    recordCount: Math.max(0, Math.round(Number(value.recordCount) || 0))
+    recordCount: Math.max(0, Math.round(Number(value.recordCount) || 0)),
+    loadedScopes: [...new Set(Array.isArray(value.loadedScopes) ? value.loadedScopes : [])].filter(scope => localTestScopes.has(scope)),
+    loadedCollections: [...new Set(Array.isArray(value.loadedCollections) ? value.loadedCollections : [])].filter(collection => localTestCollections.has(collection))
   };
 }
 
@@ -611,6 +655,66 @@ async function upstreamJson(req, pathname) {
   try { value = await response.json(); } catch {}
   if (!response.ok) throw Object.assign(new Error(response.status === 401 ? "请先登录线上主账户" : safeText(value.error, 300) || "线上数据读取失败"), { statusCode: response.status, code: response.status === 401 ? "AUTH_REQUIRED" : "LOCAL_TEST_UPSTREAM_FAILED" });
   return value;
+}
+
+async function upstreamV1List(req, pathname) {
+  const items = [], seen = new Set();
+  let cursor = "";
+  do {
+    const separator = pathname.includes("?") ? "&" : "?";
+    const result = await upstreamJson(req, `${pathname}${separator}limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
+    if (result?.error) throw Object.assign(new Error(result.error.message || "线上记录读取失败"), { statusCode: 502, code: result.error.code || "LOCAL_TEST_UPSTREAM_FAILED" });
+    items.push(...(Array.isArray(result?.data) ? result.data : []));
+    cursor = safeText(result?.meta?.nextCursor, 100);
+    if (cursor && seen.has(cursor)) throw Object.assign(new Error("线上记录游标没有前进"), { statusCode: 502, code: "LOCAL_TEST_UPSTREAM_CURSOR_STALLED" });
+    if (cursor) seen.add(cursor);
+  } while (cursor);
+  return items;
+}
+
+async function localTestScopePatch(req, collections) {
+  const patch = {};
+  let upstreamStatePromise = null;
+  const upstreamState = () => upstreamStatePromise ||= upstreamJson(req, "/api/state");
+  const loadCollection = async collection => {
+    if (collection === "trash") {
+      const value = await upstreamJson(req, "/api/trash");
+      patch.trash = Array.isArray(value?.items) ? value.items : [];
+      return;
+    }
+    if (collection === "journalDraft") {
+      try {
+        patch.journalDraft = (await upstreamJson(req, "/api/v1/journal-draft"))?.data || null;
+      } catch (error) {
+        if (error.statusCode !== 404) throw error;
+        patch.journalDraft = clone((await upstreamState()).journalDraft || null);
+      }
+      return;
+    }
+    if (collection === "habitCheckins") return;
+    const endpoint = localTestCollectionEndpoints[collection];
+    if (endpoint) {
+      try {
+        const items = await upstreamV1List(req, endpoint);
+        patch[collection] = collection === "thoughts"
+          ? items.flatMap(({ blocks = [], ...root }) => [root, ...(Array.isArray(blocks) ? blocks : [])])
+          : items;
+        return;
+      } catch (error) {
+        if (error.statusCode !== 404) throw error;
+      }
+    }
+    patch[collection] = clone((await upstreamState())[collection] ?? emptyStore[collection]);
+  };
+  await Promise.all(collections.map(loadCollection));
+  if (collections.includes("habitCheckins")) {
+    const habits = patch.habits || await upstreamV1List(req, localTestCollectionEndpoints.habits);
+    patch.habitCheckins = (await Promise.all(habits.map(habit => upstreamV1List(req, `/api/v1/habits/${encodeURIComponent(habit.id)}/checkins`)))).flat();
+  }
+  if (patch.keepsakes) {
+    patch.keepsakes = (await hydrateLocalTestKeepsakeOriginals(req, { keepsakes: patch.keepsakes })).state.keepsakes;
+  }
+  return patch;
 }
 
 async function upstreamAttachment(req, resourcePath) {
@@ -661,29 +765,12 @@ function localTestSnapshot(state, trash) {
 
 async function hydrateLocalTestKeepsakeOriginals(req, state) {
   const snapshot = clone(state);
-  const attachmentLoads = new Map();
   snapshot.keepsakes = await Promise.all((snapshot.keepsakes || []).map(async item => {
-    const hydrated = item.originalPath
+    return item.originalPath
       ? item
       : { ...item, ...(await upstreamJson(req, `/api/keepsakes/${encodeURIComponent(item.id)}/original`)) };
-    const mediaPaths = cleanAttachmentPaths([
-      hydrated.originalPath,
-      hydrated.cutoutPath,
-      hydrated.thumbPath,
-      hydrated.displayPath,
-      hydrated.editPath,
-      hydrated.alphaMaskPath
-    ]);
-    for (const resourcePath of mediaPaths) {
-      if (!attachmentLoads.has(resourcePath)) attachmentLoads.set(resourcePath, upstreamAttachment(req, resourcePath));
-    }
-    return hydrated;
   }));
-  const attachments = new Map(await Promise.all([...attachmentLoads].map(async ([resourcePath, pending]) => [
-    resourcePath,
-    await pending
-  ])));
-  return { state: snapshot, attachments };
+  return { state: snapshot, attachments: new Map() };
 }
 
 async function resetLocalTestWorkspace(mode, store, settings = null, attachmentCopies = new Map()) {
@@ -722,21 +809,54 @@ function switchLocalTestMode(req, mode) {
   const operation = localTestControlQueue.then(async () => {
     if (!localTestModes.has(mode)) throw Object.assign(new Error("本地测试模式无效"), { statusCode: 400, code: "LOCAL_TEST_MODE_INVALID" });
     if (mode === "simulation") {
-      const session = await upstreamJson(req, "/api/auth/me");
-      if (!session.authenticated || !session.user) throw Object.assign(new Error("请先登录线上主账户"), { statusCode: 401, code: "AUTH_REQUIRED" });
+      const session = localTestUpstreamSession(req);
+      if (!session?.user?.id) throw Object.assign(new Error("本地登录会话缺少主账户信息，请重新登录"), { statusCode: 401, code: "AUTH_REQUIRED" });
       if (LOCAL_TEST_MAIN_USER_ID && session.user.id !== LOCAL_TEST_MAIN_USER_ID) throw Object.assign(new Error("当前登录账户不是配置的线上主账户"), { statusCode: 403, code: "LOCAL_TEST_MAIN_ACCOUNT_REQUIRED" });
-      const [state, trash, settings] = await Promise.all([upstreamJson(req, "/api/state"), upstreamJson(req, "/api/trash"), upstreamJson(req, "/api/settings")]);
-      const hydrated = await hydrateLocalTestKeepsakeOriginals(req, state);
-      const snapshot = localTestSnapshot(hydrated.state, trash);
-      await resetLocalTestWorkspace(mode, snapshot, settings, hydrated.attachments);
-      const control = { mode, switchedAt: now(), snapshotAt: now(), sourceUser: session.user, recordCount: localTestRecordCount(snapshot) };
+      const snapshot = normalizeStore({ ...clone(emptyStore), onboarding: { ...clone(emptyStore.onboarding), status: "completed" } });
+      await resetLocalTestWorkspace(mode, snapshot);
+      const control = { mode, switchedAt: now(), snapshotAt: "", sourceUser: session.user, recordCount: 0, loadedScopes: [], loadedCollections: [] };
       await writeLocalTestControl(control);
       return normalizeLocalTestControl(control);
     }
     await resetLocalTestWorkspace(mode, emptyStore);
-    const control = { mode, switchedAt: now(), snapshotAt: "", sourceUser: null, recordCount: 0 };
+    const control = { mode, switchedAt: now(), snapshotAt: "", sourceUser: null, recordCount: 0, loadedScopes: [], loadedCollections: [] };
     await writeLocalTestControl(control);
     return normalizeLocalTestControl(control);
+  });
+  localTestControlQueue = operation.catch(() => {});
+  return operation;
+}
+
+function hydrateLocalTestScope(req, scope) {
+  const operation = localTestControlQueue.then(async () => {
+    if (!localTestScopes.has(scope)) throw Object.assign(new Error("本地测试数据范围无效"), { statusCode: 400, code: "LOCAL_TEST_SCOPE_INVALID" });
+    const control = await readLocalTestControl();
+    if (control.mode !== "simulation") throw Object.assign(new Error("当前不是使用模拟模式"), { statusCode: 409, code: "LOCAL_TEST_MODE_MISMATCH" });
+    const missingCollections = localTestScopeCollections[scope].filter(collection => !control.loadedCollections.includes(collection));
+    if (control.loadedScopes.includes(scope) || !missingCollections.length) {
+      const nextControl = control.loadedScopes.includes(scope)
+        ? control
+        : normalizeLocalTestControl({ ...control, loadedScopes: [...control.loadedScopes, scope] });
+      if (nextControl !== control) await writeLocalTestControl(nextControl);
+      return { control: nextControl, state: publicStateFromStore(await readStore()), hydrated: false };
+    }
+    const session = localTestUpstreamSession(req);
+    if (!session?.user?.id) throw Object.assign(new Error("本地登录会话已失效，请重新登录"), { statusCode: 401, code: "AUTH_REQUIRED" });
+    if (LOCAL_TEST_MAIN_USER_ID && session.user.id !== LOCAL_TEST_MAIN_USER_ID) throw Object.assign(new Error("当前登录账户不是配置的线上主账户"), { statusCode: 403, code: "LOCAL_TEST_MAIN_ACCOUNT_REQUIRED" });
+    const patch = await localTestScopePatch(req, missingCollections);
+    const merged = await updateStore(store => {
+      for (const [collection, value] of Object.entries(patch)) store[collection] = clone(value);
+      return store;
+    });
+    const nextControl = normalizeLocalTestControl({
+      ...control,
+      snapshotAt: now(),
+      loadedScopes: [...control.loadedScopes, scope],
+      loadedCollections: [...control.loadedCollections, ...missingCollections],
+      recordCount: localTestRecordCount(merged)
+    });
+    await writeLocalTestControl(nextControl);
+    return { control: nextControl, state: publicStateFromStore(merged), hydrated: true };
   });
   localTestControlQueue = operation.catch(() => {});
   return operation;
@@ -1364,6 +1484,13 @@ async function proxyToUpstream(req, res, url) {
   if (upstreamCookie) headers.cookie = upstreamCookie;
   headers["x-request-id"] = requestStorage.getStore().traceId;
   const response = await fetch(`${UPSTREAM_ORIGIN}${url.pathname}${url.search}`, { method: req.method, headers, body, redirect: "manual" });
+  let upstreamUser = localSession?.user || null;
+  if (LOCAL_TEST_MODE && response.ok && ["/api/auth/login", "/api/auth/me"].includes(url.pathname)) {
+    try {
+      const payload = await response.clone().json();
+      if (payload?.user?.id) upstreamUser = payload.user;
+    } catch {}
+  }
   const responseHeaders = {};
   for (const name of ["content-type", "cache-control", "location", "x-accel-buffering", "x-request-id"]) {
     const value = response.headers.get(name);
@@ -1379,8 +1506,10 @@ async function proxyToUpstream(req, res, url) {
       const sessionCookies = cookies.map(cookie => cookie.split(";", 1)[0]).filter(Boolean).join("; ");
       if (response.ok && sessionCookies) {
         const token = localSession?.token || crypto.randomBytes(32).toString("base64url");
-        storeLocalTestUpstreamSession(token, sessionCookies);
+        storeLocalTestUpstreamSession(token, sessionCookies, upstreamUser);
         responseHeaders["set-cookie"] = `${LOCAL_TEST_SESSION_COOKIE}=${encodeURIComponent(token)}; Path=${localPath}; HttpOnly; SameSite=Strict; Max-Age=${LOCAL_TEST_SESSION_MAX_AGE_SECONDS}`;
+      } else if (response.ok && localSession && upstreamUser) {
+        storeLocalTestUpstreamSession(localSession.token, localSession.cookie, upstreamUser);
       }
     }
   } else if (cookies.length) {
@@ -2310,7 +2439,10 @@ const mime = {
 if (LOCAL_TEST_MODE) {
   await fs.mkdir(LOCAL_TEST_WORKSPACES_DIR, { recursive: true, mode: 0o700 });
   await fs.chmod(LOCAL_TEST_WORKSPACES_DIR, 0o700);
-  const control = await readLocalTestControl();
+  if (LOCAL_TEST_RESET_ON_START) await resetLocalTestWorkspace("cold", emptyStore);
+  const control = LOCAL_TEST_RESET_ON_START
+    ? normalizeLocalTestControl({ mode: "cold", switchedAt: now(), snapshotAt: "", sourceUser: null, recordCount: 0, loadedScopes: [], loadedCollections: [] })
+    : await readLocalTestControl();
   await writeLocalTestControl(control);
   await requestStorage.run({ user: { id: `local-test-${control.mode}`, username: control.mode === "simulation" ? "使用模拟" : "冷启测试", createdAt: "" }, dataDir: localTestWorkspaceDir(control.mode) }, async () => {
     await ensureStore();
@@ -2365,6 +2497,19 @@ http.createServer(createRequestHandler({
     if (url.pathname === "/healthz" || url.pathname === "/readyz") return sendJson(res, 200, { ok: true, version: APP_VERSION });
     const unsafe = !["GET", "HEAD", "OPTIONS"].includes(req.method || "GET");
     if (unsafe && String(req.headers["sec-fetch-site"] || "") === "cross-site") return sendRequestError(403, "跨站请求已拒绝", "CROSS_SITE_REQUEST_REJECTED");
+    if (LOCAL_TEST_MODE) {
+      const control = await readLocalTestControl();
+      context.localTestMode = control.mode;
+      context.dataDir = localTestWorkspaceDir(control.mode);
+    }
+    if (LOCAL_TEST_MODE && url.pathname === "/api/local-test-mode/hydrate" && req.method === "POST") {
+      const input = await bodyJson(req), result = await hydrateLocalTestScope(req, safeText(input.scope, 40));
+      return sendJson(res, 200, {
+        control: publicLocalTestControl(result.control),
+        state: result.state,
+        hydrated: result.hydrated
+      });
+    }
     if (LOCAL_TEST_MODE && url.pathname === "/api/local-test-mode") {
       if (req.method === "GET") return sendJson(res, 200, publicLocalTestControl(await readLocalTestControl()));
       if (req.method === "POST") {
@@ -2377,11 +2522,6 @@ http.createServer(createRequestHandler({
       const allowed = (req.method === "GET" && url.pathname === "/api/auth/me")
         || (req.method === "POST" && ["/api/auth/login", "/api/auth/logout"].includes(url.pathname));
       return allowed ? await proxyToUpstream(req, res, url) : sendJson(res, 403, { error: "本地测试版禁止修改线上账户", code: "LOCAL_TEST_READ_ONLY" });
-    }
-    if (LOCAL_TEST_MODE) {
-      const control = await readLocalTestControl();
-      context.localTestMode = control.mode;
-      context.dataDir = localTestWorkspaceDir(control.mode);
     }
     if (url.pathname.startsWith("/api/admin/")) {
       const handled = await adminSnapshotApi(req, res, url);

@@ -23,6 +23,7 @@ const child = spawn(process.execPath, ["server.mjs"], {
     PORT: port,
     DATA_DIR: process.env.LOCAL_TEST_DATA_DIR || path.join(ROOT, "data", "local-test"),
     LOCAL_TEST_MODE: "1",
+    LOCAL_TEST_RESET_ON_START: process.env.LOCAL_TEST_RESET_ON_START || "1",
     AUTH_REQUIRED: "0",
     INVITE_CODE_HASH: "",
     COOKIE_SECURE: "0",

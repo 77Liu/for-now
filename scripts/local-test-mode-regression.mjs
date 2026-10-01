@@ -83,6 +83,12 @@ const upstream = http.createServer(async (request, response) => {
     return response.end(JSON.stringify({ authenticated: false, error: "请先登录", code: "AUTH_REQUIRED", userCount: 3 }));
   }
   if (url.pathname === "/api/auth/me" && request.method === "GET") return response.end(JSON.stringify({ authenticated: true, authRequired: true, user: { id: upstreamUserId, username: "main", createdAt: "" }, userCount: 3 }));
+  if (url.pathname === "/api/v1/captures" && request.method === "GET") {
+    return response.end(JSON.stringify({ data: [remoteCapture], error: null, meta: { nextCursor: null } }));
+  }
+  if (["/api/v1/checkins", "/api/v1/daily-records", "/api/v1/thought-chains", "/api/v1/actions", "/api/v1/habits"].includes(url.pathname) && request.method === "GET") {
+    return response.end(JSON.stringify({ data: [], error: null, meta: { nextCursor: null } }));
+  }
   if (url.pathname === "/api/state" && request.method === "GET") {
     return response.end(JSON.stringify({
       version: 14,
@@ -140,6 +146,7 @@ const child = spawn(process.execPath, ["server.mjs"], {
     INVITE_CODE_HASH: "",
     COOKIE_SECURE: "0",
     LOCAL_TEST_MODE: "1",
+    LOCAL_TEST_RESET_ON_START: "1",
     LOCAL_TEST_MAIN_USER_ID: "main-user",
     UPSTREAM_ORIGIN: `http://127.0.0.1:${upstream.address().port}`,
     ATTACHMENT_STORAGE: "local"
@@ -166,6 +173,7 @@ try {
   const cookie = localSetCookie.split(";", 1)[0];
   const replayedUpstream = await jsonRequest(`http://127.0.0.1:${upstream.address().port}/api/auth/me`, { headers: { cookie } });
   assert.equal(replayedUpstream.response.status, 401);
+  const upstreamCallsAfterLogin = upstreamCalls.length;
 
   assert.equal((await jsonRequest(`${base}/api/captures`, {
     method: "POST",
@@ -181,17 +189,35 @@ try {
   const simulationStartedAt = Date.now();
   const simulation = await jsonRequest(`${base}/api/local-test-mode`, { method: "POST", headers: { cookie }, body: JSON.stringify({ mode: "simulation" }) });
   if (upstreamAttachmentDelayMs) {
-    assert.ok(Date.now() - simulationStartedAt < upstreamAttachmentDelayMs * 1.75, "keepsake attachments must download concurrently");
+    assert.ok(Date.now() - simulationStartedAt < 1000, "simulation switch must not wait for image downloads");
   }
   assert.equal(simulation.response.status, 200);
   assert.equal(simulation.body.mode, "simulation");
   assert.equal(simulation.body.sourceUser.id, "main-user");
-  assert.equal(simulation.body.recordCount, 2);
+  assert.equal(simulation.body.recordCount, 0);
+  assert.deepEqual(simulation.body.loadedScopes, []);
+  assert.equal(upstreamCalls.length, upstreamCallsAfterLogin);
+  assert.equal(upstreamCalls.filter(call => call.path.startsWith("/attachments/")).length, 0);
   let state = (await jsonRequest(`${base}/api/state`)).body;
-  assert.equal(state.captures[0].content, "线上主账户原文");
+  assert.equal(state.captures.length, 0);
+  assert.equal(state.keepsakes.length, 0);
+  assert.equal(state.onboarding.status, "completed");
   const simulationSettings = (await jsonRequest(`${base}/api/settings`)).body;
-  assert.equal(simulationSettings.assistantName, "线上助手");
+  assert.equal(simulationSettings.assistantName, "神鸡");
   assert.equal(simulationSettings.hasApiKey, false);
+
+  const captureHydration = await jsonRequest(`${base}/api/local-test-mode/hydrate`, {
+    method: "POST",
+    headers: { cookie },
+    body: JSON.stringify({ scope: "captures" })
+  });
+  assert.equal(captureHydration.response.status, 200);
+  assert.equal(captureHydration.body.hydrated, true);
+  assert.deepEqual(captureHydration.body.control.loadedScopes, ["captures"]);
+  assert.equal(captureHydration.body.control.recordCount, 1);
+  assert.equal(upstreamCalls.filter(call => call.path === "/api/v1/captures").length, 1);
+  state = (await jsonRequest(`${base}/api/state`)).body;
+  assert.equal(state.captures[0].content, "线上主账户原文");
 
   const localEdit = await jsonRequest(`${base}/api/captures/remote-capture`, {
     method: "PATCH",
@@ -200,6 +226,26 @@ try {
   assert.equal(localEdit.response.status, 200);
   assert.equal((await jsonRequest(`${base}/api/state`)).body.captures[0].content, "只在本地修改");
   assert.equal(upstreamCalls.some(call => call.method === "PATCH"), false);
+  const todayHydration = await jsonRequest(`${base}/api/local-test-mode/hydrate`, {
+    method: "POST",
+    headers: { cookie },
+    body: JSON.stringify({ scope: "today" })
+  });
+  assert.equal(todayHydration.response.status, 200);
+  assert.equal(todayHydration.body.hydrated, true);
+  assert.equal(upstreamCalls.filter(call => call.path === "/api/v1/captures").length, 1);
+  assert.equal((await jsonRequest(`${base}/api/state`)).body.captures[0].content, "只在本地修改");
+
+  const keepsakeHydration = await jsonRequest(`${base}/api/local-test-mode/hydrate`, {
+    method: "POST",
+    headers: { cookie },
+    body: JSON.stringify({ scope: "keepsakes" })
+  });
+  assert.equal(keepsakeHydration.response.status, 200);
+  assert.equal(keepsakeHydration.body.hydrated, true);
+  assert.deepEqual(keepsakeHydration.body.control.loadedScopes, ["captures", "today", "keepsakes"]);
+  assert.equal(keepsakeHydration.body.control.recordCount, 2);
+  assert.equal(upstreamCalls.filter(call => call.path.startsWith("/attachments/")).length, 0);
 
   const attachment = await fetch(`${base}/attachments/remote.png`, { headers: { cookie } });
   assert.equal(attachment.status, 200);
@@ -216,6 +262,8 @@ try {
     assert.equal(response.status, 200);
     assert.equal(Buffer.from(await response.arrayBuffer()).toString(), `remote-image:${resourcePath}`);
   }
+  const lazyAttachmentCalls = upstreamCalls.filter(call => call.path.startsWith("/attachments/")).length;
+  assert.equal(lazyAttachmentCalls, 1 + keepsakeMediaPaths.length);
 
   const blockedRegistration = await jsonRequest(`${base}/api/auth/register`, {
     method: "POST",
@@ -228,11 +276,33 @@ try {
 
   const refreshed = await jsonRequest(`${base}/api/local-test-mode`, { method: "POST", headers: { cookie }, body: JSON.stringify({ mode: "simulation" }) });
   assert.equal(refreshed.response.status, 200);
+  assert.equal(refreshed.body.recordCount, 0);
+  assert.deepEqual(refreshed.body.loadedScopes, []);
+  assert.equal(upstreamCalls.filter(call => call.path.startsWith("/attachments/")).length, lazyAttachmentCalls);
+  state = (await jsonRequest(`${base}/api/state`)).body;
+  assert.equal(state.captures.length, 0);
+  const rehydrated = await jsonRequest(`${base}/api/local-test-mode/hydrate`, {
+    method: "POST",
+    headers: { cookie },
+    body: JSON.stringify({ scope: "captures" })
+  });
+  assert.equal(rehydrated.response.status, 200);
+  assert.equal(rehydrated.body.hydrated, true);
   state = (await jsonRequest(`${base}/api/state`)).body;
   assert.equal(state.captures[0].content, "线上主账户原文");
+  const captureCallsBeforeDuplicate = upstreamCalls.filter(call => call.path === "/api/v1/captures").length;
+  const duplicateHydration = await jsonRequest(`${base}/api/local-test-mode/hydrate`, {
+    method: "POST",
+    headers: { cookie },
+    body: JSON.stringify({ scope: "captures" })
+  });
+  assert.equal(duplicateHydration.body.hydrated, false);
+  assert.equal(upstreamCalls.filter(call => call.path === "/api/v1/captures").length, captureCallsBeforeDuplicate);
 
   upstreamUserId = "not-main";
-  const wrongAccount = await jsonRequest(`${base}/api/local-test-mode`, { method: "POST", headers: { cookie }, body: JSON.stringify({ mode: "simulation" }) });
+  const otherLogin = await jsonRequest(`${base}/api/auth/login`, { method: "POST", body: JSON.stringify({ username: "not-main", password: "test-password-2" }) });
+  const otherCookie = (otherLogin.response.headers.get("set-cookie") || "").split(";", 1)[0];
+  const wrongAccount = await jsonRequest(`${base}/api/local-test-mode`, { method: "POST", headers: { cookie: otherCookie }, body: JSON.stringify({ mode: "simulation" }) });
   assert.equal(wrongAccount.response.status, 403);
   assert.equal(wrongAccount.body.code, "LOCAL_TEST_MAIN_ACCOUNT_REQUIRED");
 
@@ -240,6 +310,7 @@ try {
   assert.equal(upstreamCalls.filter(call => !call.path.startsWith("/api/auth/")).every(call => call.method === "GET"), true);
   assert.equal(upstreamCalls.filter(call => [
     "/api/state",
+    "/api/v1/captures",
     "/api/trash",
     "/api/settings",
     "/api/keepsakes/remote-keepsake/original",

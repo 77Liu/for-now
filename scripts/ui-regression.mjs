@@ -242,7 +242,9 @@ const mockFetch = `
   window.__taskResults = {};
   window.__notifications = [];
   window.__testWorkspaceMode = "simulation";
+  window.__lazySimulationEmpty = false;
   window.__failLocalModeTimeout = false;
+  window.__localHydrateRequests = [];
   window.__keepsakeObservers = [];
   window.IntersectionObserver = class {
     constructor(callback, options) { this.callback = callback; this.options = options; window.__keepsakeObservers.push(this); }
@@ -250,7 +252,7 @@ const mockFetch = `
     disconnect() { this.target = null; }
     trigger() { if (this.target) this.callback([{ isIntersecting: true, target: this.target }]); }
   };
-  window.__localTestConfig = { enabled: true, upstreamConfigured: true, mode: "simulation", snapshotAt: "2026-09-28T04:00:00.000Z", sourceUser: { id: "user-1", username: "owner" }, recordCount: 12 };
+  window.__localTestConfig = { enabled: true, upstreamConfigured: true, mode: "cold", snapshotAt: "", sourceUser: null, recordCount: 0, loadedScopes: [], loadedCollections: [] };
   window.__onboarding = { status: "dismissed", questionnaireVersion: 1, questionnaireMode: "quick", answers: {}, profile: {}, interests: [], material: "", understanding: "" };
   window.__onboardingSchema = {
     version: 1,
@@ -530,9 +532,16 @@ const mockFetch = `
       return json(window.__commercialization);
     }
     if (url === "/api/local-test-mode" && (!init.method || init.method === "GET")) return json(window.__localTestConfig);
+    if (url === "/api/local-test-mode/hydrate" && init.method === "POST") {
+      const scope=JSON.parse(init.body).scope,hydrated=!window.__localTestConfig.loadedScopes.includes(scope);
+      window.__localHydrateRequests.push(scope);
+      window.__localTestConfig={...window.__localTestConfig,recordCount:12,snapshotAt:new Date().toISOString(),loadedScopes:[...new Set([...window.__localTestConfig.loadedScopes,scope])]};
+      window.__lazySimulationEmpty=false;
+      return window.fetch("/api/state").then(async stateResponse=>json({control:window.__localTestConfig,state:await stateResponse.json(),hydrated}));
+    }
     if (url === "/api/local-test-mode" && init.method === "POST") {
       if(window.__failLocalModeTimeout){window.__failLocalModeTimeout=false;return json({error:"The operation was aborted due to timeout"},504)}
-      const mode=JSON.parse(init.body).mode;window.__testWorkspaceMode=mode;window.__localTestConfig={...window.__localTestConfig,mode,switchedAt:new Date().toISOString(),snapshotAt:mode==="simulation"?new Date().toISOString():"",sourceUser:mode==="simulation"?{id:"user-1",username:"owner"}:null,recordCount:mode==="simulation"?12:0};
+      const mode=JSON.parse(init.body).mode;window.__testWorkspaceMode=mode;window.__lazySimulationEmpty=mode==="simulation";window.__localTestConfig={...window.__localTestConfig,mode,switchedAt:new Date().toISOString(),snapshotAt:"",sourceUser:mode==="simulation"?{id:"user-1",username:"owner"}:null,recordCount:0,loadedScopes:[]};
       if(mode==="cold")window.__onboarding={status:"pending",questionnaireVersion:1,questionnaireMode:"quick",answers:{},profile:{},interests:[],material:"",understanding:""};
       return json(window.__localTestConfig);
     }
@@ -589,11 +598,12 @@ const mockFetch = `
       if(window.__failNextStateRefresh){window.__failNextStateRefresh=false;return Promise.resolve(new Response(JSON.stringify({error:"刷新失败"}),{status:503,headers:{"content-type":"application/json"}}))}
       window.__stateRequests += 1;
       if(window.__accountUser.id==="user-2"&&window.__delaySecondState)return new Promise(resolve=>{window.__releaseSecondState=()=>{window.__delaySecondState=false;resolve(window.fetch(input,init))}});
+      const empty=window.__testWorkspaceMode==="cold"||window.__lazySimulationEmpty;
       return json({
-      version: 15, checkins: window.__testWorkspaceMode==="cold"?[]:window.__checkins, dailyRecords: window.__testWorkspaceMode==="cold"?[]:window.__dailyRecords, captures: window.__testWorkspaceMode==="cold"?[]:window.__captures, journals: window.__testWorkspaceMode==="cold"?[]:window.__journals, thoughts: window.__testWorkspaceMode==="cold"?[]:window.__thoughts,
-      chats: window.__testWorkspaceMode==="cold"?[]:[{ id: "chat-1", createdAt: "2026-09-27T01:15:00.000Z", occurredAt: "2026-09-27T04:15:00.000Z", occurredOn: "2026-09-27", message: "**用户问题**", answer: "## 模型回答" }], books: window.__testWorkspaceMode==="cold"?[]:window.__books, journalDraft: window.__testWorkspaceMode==="cold"?null:window.__journalDraft, keepsakes: window.__testWorkspaceMode==="cold"?[]:window.__keepsakes.map(({originalPath,...item})=>item), quotes: window.__testWorkspaceMode==="cold"?[]:window.__quotes, aiTasks: window.__aiTasks, notifications: window.__notifications, onboarding: window.__onboarding, commercialization: window.__commercialization,
+      version: 15, checkins: empty?[]:window.__checkins, dailyRecords: empty?[]:window.__dailyRecords, captures: empty?[]:window.__captures, journals: empty?[]:window.__journals, thoughts: empty?[]:window.__thoughts,
+      chats: empty?[]:[{ id: "chat-1", createdAt: "2026-09-27T01:15:00.000Z", occurredAt: "2026-09-27T04:15:00.000Z", occurredOn: "2026-09-27", message: "**用户问题**", answer: "## 模型回答" }], books: empty?[]:window.__books, journalDraft: empty?null:window.__journalDraft, keepsakes: empty?[]:window.__keepsakes.map(({originalPath,...item})=>item), quotes: empty?[]:window.__quotes, aiTasks: window.__aiTasks, notifications: window.__notifications, onboarding: window.__onboarding, commercialization: window.__commercialization,
       speech:{configured:true,defaultVoice:"zh_male_shaonianzixin_uranus_bigtts",supportedAsrMimeTypes:["audio/mp4","audio/ogg","audio/wav"],voices:[{id:"zh_male_shaonianzixin_uranus_bigtts",label:"少年梓辛 2.0"},{id:"zh_male_m191_uranus_bigtts",label:"云舟 2.0"},{id:"zh_female_vv_uranus_bigtts",label:"Vivi 2.0"},{id:"zh_female_cancan_uranus_bigtts",label:"知性灿灿 2.0"}]},vision:{configured:true},
-      experiments: [], analyses: window.__testWorkspaceMode==="cold"?[]:window.__analyses, customMetrics: [], clusters: [],
+      experiments: [], analyses: empty?[]:window.__analyses, customMetrics: [], clusters: [],
       insights: { trends: [
         { metric: "mood", current: 3.5, previous: null, currentCount: 2, previousCount: 0 },
         { metric: "energy", current: 2.5, previous: null, currentCount: 2, previousCount: 0 },
@@ -1148,7 +1158,7 @@ try {
   assert.deepEqual(await evaluate(`(() => { const image=document.querySelector(".keepsake-detail-image img");return {originalSelected:document.querySelector('[data-keepsake-view="original"]').classList.contains("active"),layers:document.querySelectorAll(".keepsake-detail-image img").length,original:image.getAttribute("src")===window.__keepsakes[0].originalPath,originalReads:window.__keepsakeOriginalReads}; })()`), { originalSelected: true, layers: 1, original: true, originalReads: 1 });
   await evaluate(`document.querySelector("[data-keepsake-back]").click(); document.querySelector("#keepsake-create-toggle").click(); true`);
   await evaluate(`(async()=>{const canvas=document.createElement("canvas");canvas.width=48;canvas.height=36;const ctx=canvas.getContext("2d");ctx.fillStyle="#d76455";ctx.fillRect(0,0,48,36);const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"));const file=new File([blob],"ticket.png",{type:"image/png"}),transfer=new DataTransfer();transfer.items.add(file);const input=document.querySelector("#keepsake-image");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
-  assert.equal(await waitUntil(`document.querySelector("#keepsake-segment-status").textContent.includes("自动轮廓已生成")`), true);
+  assert.equal(await waitUntil(`document.querySelector("#keepsake-segment-status").textContent.includes("自动轮廓已生成")&&document.querySelector("#keepsake-preview-canvas").getContext("2d").getImageData(8,18,1,1).data[3]===255`), true);
   const keepsakeEditorState = await evaluate(`(() => { const preview=document.querySelector("#keepsake-preview-canvas"),ctx=preview.getContext("2d");return {editorVisible:!document.querySelector("#keepsake-editor").hidden,title:document.querySelector("#keepsake-title").value,subjectAlpha:ctx.getImageData(8,18,1,1).data[3],backgroundAlpha:ctx.getImageData(40,18,1,1).data[3],overflow:document.documentElement.scrollWidth>window.innerWidth}; })()`);
   assert.equal(keepsakeEditorState.editorVisible, true);
   assert.equal(keepsakeEditorState.title, "");
@@ -1509,7 +1519,7 @@ try {
   await evaluate(`(()=>{const bytes=Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="),value=>value.charCodeAt(0)),transfer=new DataTransfer();for(let index=0;index<2;index+=1)transfer.items.add(new File([bytes],"retry-"+(index+1)+".png",{type:"image/png"}));const input=document.querySelector("#health-images");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));["2026-09-18","2026-09-19"].forEach((date,index)=>{const field=document.querySelector('[data-weight-batch-date="'+index+'"]');field.value=date;field.dispatchEvent(new Event("change",{bubbles:true}))});window.__failWeightReferenceDate="2026-09-18";document.querySelector("#parse-health-images").click();return true})()`);
   assert.equal(await waitUntil(`window.__healthParses===${retryParseStart+2}&&document.querySelectorAll(".weight-batch-item.failed").length===1&&[...document.querySelectorAll(".weight-batch-select small")].some(item=>item.textContent.includes("已识别"))&&!document.querySelector("#parse-health-images").disabled`,200,25),true);
   await evaluate(`document.querySelector("#parse-health-images").click();true`);
-  assert.equal(await waitUntil(`window.__healthParses===${retryParseStart+3}&&document.querySelectorAll(".weight-batch-item.failed").length===0&&[...document.querySelectorAll(".weight-batch-select small")].every(item=>item.textContent.includes("已识别"))`,200,25),true);
+  assert.equal(await waitUntil(`window.__healthParses===${retryParseStart+3}&&document.querySelectorAll(".weight-batch-item.failed").length===0&&[...document.querySelectorAll(".weight-batch-select small")].every(item=>item.textContent.includes("已识别"))&&!document.querySelector("#parse-health-images").disabled`,200,25),true);
   for(const remaining of[1,0]){
     await evaluate(`document.querySelector(".weight-batch-remove").click();true`);
     assert.equal(await waitUntil(`document.querySelectorAll(".weight-batch-item").length===${remaining}`),true)
@@ -2470,9 +2480,19 @@ try {
   assert.equal(await evaluate(`document.querySelector("#chain-answer").value===""&&document.querySelector("#ai-answer-modal").hidden`),true);
   assert.equal(await evaluate(`[...document.querySelectorAll('[data-daily-form="weight"] input,[data-daily-form="exercise"] input')].filter(input=>!["occurredAt","clothing"].includes(input.name)).every(input=>input.value==="")&&document.querySelectorAll("#health-image-previews figure").length===0`),true);
   await evaluate(`window.confirm=()=>true;document.querySelectorAll(".modal-backdrop").forEach(item=>item.hidden=true);document.querySelector("#toast").hidden=true;document.querySelector('[data-view="settings"]').click();true`);
-  assert.deepEqual(await evaluate(`({visible:!document.querySelector("#local-test-settings").hidden,simulation:document.querySelector('[data-local-test-mode="simulation"]').classList.contains("active"),summaryOk:/owner · 12 条记录/.test(document.querySelector("#local-test-summary").textContent),entryOk:/使用模拟 \\/ 冷启测试 · 当前使用模拟/.test(document.querySelector("#mine-settings-summary").textContent)})`),{visible:true,simulation:true,summaryOk:true,entryOk:true});
+  assert.deepEqual(await evaluate(`({visible:!document.querySelector("#local-test-settings").hidden,cold:document.querySelector('[data-local-test-mode="cold"]').classList.contains("active"),coldDisabled:document.querySelector('[data-local-test-mode="cold"]').disabled,summaryOk:/空账户工作区/.test(document.querySelector("#local-test-summary").textContent),entryOk:/使用模拟 \\/ 冷启测试 · 当前冷启测试/.test(document.querySelector("#mine-settings-summary").textContent)})`),{visible:true,cold:true,coldDisabled:true,summaryOk:true,entryOk:true});
   const localTestSettingsScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
   await fs.writeFile("/tmp/growth-local-test-settings.png",Buffer.from(localTestSettingsScreenshot.data,"base64"));
+  await evaluate(`window.__localHydrateRequests=[];window.__attachmentReadsBeforeModeSwitch=(window.__attachmentReads||[]).length;document.querySelector('[data-local-test-mode="simulation"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#local-test-status").textContent.includes("打开页面时读取对应记录")`),true);
+  assert.deepEqual(await evaluate(`({hydrates:window.__localHydrateRequests,summary:document.querySelector("#local-test-summary").textContent,captures:document.querySelectorAll("#capture-list [data-capture-id]").length,attachmentReads:(window.__attachmentReads||[]).length-window.__attachmentReadsBeforeModeSwitch})`),{hydrates:[],summary:"owner · 0 条已载入 · 打开页面后读取记录",captures:0,attachmentReads:0});
+  await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
+  assert.equal(await waitUntil(`window.__localHydrateRequests.includes("captures")&&document.querySelector("#capture-list").textContent.includes("这个念头")`),true);
+  assert.equal(await evaluate(`(window.__attachmentReads||[]).length-window.__attachmentReadsBeforeModeSwitch`),0);
+  await evaluate(`document.querySelector('[data-view="settings"]').click();document.querySelector('[data-view="captures"]').click();true`);
+  await sleep(100);
+  assert.equal(await evaluate(`window.__localHydrateRequests.filter(scope=>scope==="captures").length`),1);
+  await evaluate(`document.querySelector('[data-view="settings"]').click();true`);
   await evaluate(`window.__failLocalModeTimeout=true;document.querySelector('[data-local-test-mode="cold"]').click();true`);
   assert.equal(await waitUntil(`document.querySelector("#local-test-status").textContent==="线上数据读取超时，请检查网络后重试。"&&window.__testWorkspaceMode==="simulation"`),true);
   await evaluate(`window.__onboardingSchemaAvailable=true;document.querySelector('[data-local-test-mode="cold"]').click();true`);
@@ -2503,7 +2523,7 @@ try {
   assert.equal(await evaluate(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const transaction=opening.result.transaction("drafts","readwrite"),store=transaction.objectStore("drafts"),blob=new Blob([new Uint8Array([1,2,3])],{type:"image/png"}),item={blob,name:"targeted.png",type:"image/png",lastModified:1,uploadRequestId:"",uploadedPath:"",lastError:null};store.put({key:"user-1:comment",owner:"user-1",id:"comment",context:{selection:{rootKey:"analysis:analysis-1",targetKey:"content",start:0,end:3,quote:"总判断"},text:"刷新后继续的评论",requestId:"comment-restored"},items:[item]});store.put({key:"user-1:thoughtBlock",owner:"user-1",id:"thoughtBlock",context:{rootId:"kept-root",blockId:"",type:"record",occurredAt:"2026-09-27T12:34",content:"刷新后继续的内容块",version:1,requestId:"block-restored"},items:[item]});store.put({key:"user-1:health:weight:2026-09-27",owner:"user-1",id:"health:weight:2026-09-27",date:"2026-09-27",type:"weight",result:{bodyWaterMass:42.2,description:"刷新后恢复的体成分",attachmentPaths:["/attachments/weight.png"]},items:[{...item,uploadRequestId:"health-restored",uploadedPath:"/attachments/weight.png"}]});transaction.oncomplete=()=>resolve(true);transaction.onerror=()=>resolve(false)}})`),true);
   assert.equal(await evaluate(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const bytes=Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="),value=>value.charCodeAt(0)),blob=new Blob([bytes],{type:"image/png"}),items=[1,2].map(index=>({itemId:"restored-keepsake-"+index,blob,name:"restored-"+index+".png",type:"image/png",lastModified:1,occurredAt:"2026-09-27T12:00:00",title:"恢复小物 "+index,category:"其他",note:"",tags:"",edgeExpansion:8,source:"manual",alphaMask:"",status:"waiting",uploadRequestId:"",createRequestId:"",mediaPaths:null,lastError:null})),request=opening.result.transaction("drafts","readwrite").objectStore("drafts").put({key:"user-1:keepsake-batch",owner:"user-1",id:"keepsake-batch",activeIndex:1,items});request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(true)}})`),true);
   await cdp.send("Page.reload",{ignoreCache:true});await sleep(300);
-  const mediaRestored=await waitUntil(`document.querySelector("#today-date-label")?.textContent.length>0&&document.querySelector('[data-content-image-editor="capture"] .content-image-preview')&&document.querySelector("#capture-status").textContent.includes("已恢复 1 张待上传图片")&&document.querySelector("#capture-audio-player").src.startsWith("blob:")&&document.querySelector("#capture-audio-meta").textContent.includes("0:01")&&document.querySelector("#capture-audio-status").textContent.includes("待提交语音")`);
+  const mediaRestored=await waitUntil(`document.querySelector("#today-date-label")?.textContent.length>0&&document.querySelector('[data-content-image-editor="capture"] .content-image-preview')&&document.querySelector("#capture-status").textContent.includes("已恢复 1 张待上传图片")&&document.querySelector("#capture-audio-player").src.startsWith("blob:")&&document.querySelector("#capture-audio-meta").textContent.includes("0:01")&&document.querySelector("#capture-audio-status").textContent.includes("待提交语音")&&!document.querySelector("#comment-panel").hidden&&document.querySelector("#comment-text").value==="刷新后继续的评论"&&document.querySelectorAll('[data-content-image-editor="comment"] .content-image-preview').length===1&&!document.querySelector("#thought-block-modal").hidden&&document.querySelector("#thought-block-content").value==="刷新后继续的内容块"&&document.querySelectorAll('[data-content-image-editor="thoughtBlock"] .content-image-preview').length===1`);
   assert.equal(mediaRestored,true,JSON.stringify(await evaluate(`({date:document.querySelector("#today-date-label")?.textContent,preview:Boolean(document.querySelector('[data-content-image-editor="capture"] .content-image-preview')),captureStatus:document.querySelector("#capture-status")?.textContent,audioSrc:document.querySelector("#capture-audio-player")?.src,audioMeta:document.querySelector("#capture-audio-meta")?.textContent,audioStatus:document.querySelector("#capture-audio-status")?.textContent,toast:document.querySelector("#toast")?.textContent})`)));
   assert.deepEqual(await evaluate(`({commentOpen:!document.querySelector("#comment-panel").hidden,commentText:document.querySelector("#comment-text").value,commentImages:document.querySelectorAll('[data-content-image-editor="comment"] .content-image-preview').length,blockOpen:!document.querySelector("#thought-block-modal").hidden,blockText:document.querySelector("#thought-block-content").value,blockRoot:document.querySelector("#thought-block-root-id").value,blockImages:document.querySelectorAll('[data-content-image-editor="thoughtBlock"] .content-image-preview').length})`),{commentOpen:true,commentText:"刷新后继续的评论",commentImages:1,blockOpen:true,blockText:"刷新后继续的内容块",blockRoot:"kept-root",blockImages:1});
   assert.deepEqual(await evaluate(`({items:document.querySelectorAll(".keepsake-batch-item").length,count:document.querySelector("#keepsake-batch-count").textContent,active:document.querySelector('[data-keepsake-batch-select="1"]')?.getAttribute("aria-pressed")})`),{items:2,count:"2 件",active:"true"});

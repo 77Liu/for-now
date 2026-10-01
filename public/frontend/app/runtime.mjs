@@ -70,6 +70,8 @@ const mediaDraftStore=createIndexedDbMediaDraftStore();
 const requestCoordinator=createRequestCoordinator({store:syncStore,send:(url,options)=>request(url,options)});
 const refreshCoordinator=createRefreshCoordinator({session:sessionScope,requestState:()=>request("/api/state"),afterReplace:()=>restorePendingProjections()});
 const KEEPSAKE_PAGE_SIZE=12,KEEPSAKE_PREFETCH_MARGIN_PX=160;
+const LOCAL_TEST_VIEW_SCOPES=Object.freeze({today:"today",daily:"daily",captures:"captures",books:"books",quotes:"quotes",keepsakes:"keepsakes",journals:"journals",thoughts:"thoughts",together:"together",review:"review",statistics:"statistics","personal-context":"personal-context",feedback:"feedback",export:"export",trash:"trash"});
+const localTestScopeLoads=new Map();
 const baseMetrics={mood:{label:"情绪",anchors:["非常难受","有些低落","平稳、无明显起伏","感觉不错","轻盈而愉快"]},energy:{label:"精力",anchors:["几乎耗尽","勉强支撑","够用，但有限","精力较好","充沛、想行动"]},stress:{label:"压力",anchors:["快要撑不住","很紧绷","压力明显但可应对","有一点紧绷","身心松弛"]},sleep:{label:"睡眠",anchors:["几乎没休息好","明显不足","基本够用","睡得不错","充分恢复"]}};
 const trendLabels=Object.fromEntries(Object.entries(baseMetrics).map(([k,v])=>[k,v.label]));
 const llmTiers=["lite","mid","high","ultra"];
@@ -81,7 +83,7 @@ let switchView;
 let backgroundResultController=null;
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},automaticAnswers:{thoughtAnswer:false},hasApiKey:false,keyHint:""};
-let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiCostRequestSerial=0,architectureStage=0,architectureTerm="api",commercialMode="validation",commercialStatistics=null,commercialRequestSerial=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,discoveryController=null,actionsSnapshot={actions:[],habits:[],habitCheckins:[]},actionsRequestSerial=0,feedbackItems=[],feedbackRequestSerial=0,exportManifest=null,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,appVersion="0.2.0",releaseVersion="0.2.0",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
+let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiCostRequestSerial=0,architectureStage=0,architectureTerm="api",commercialMode="validation",commercialStatistics=null,commercialRequestSerial=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,discoveryController=null,actionsSnapshot={actions:[],habits:[],habitCheckins:[]},actionsRequestSerial=0,feedbackItems=[],feedbackRequestSerial=0,exportManifest=null,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,appVersion="0.2.0",releaseVersion="0.2.0",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
 let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeEditorTrigger=null,activeSpeechCaptureId="",activeSpeechAudio=null,activeSpeechObjectUrl="",activeSpeechAbortController=null;
 const keepsakeEditor={file:null,sourceDataUrl:"",sourceImage:null,sourceCanvas:null,maskCanvas:null,autoBase:null,history:[],mode:"keep",drawing:false,lastPoint:null,source:"manual",originalPath:"",cutoutPath:"",renderFrame:0,segmentSerial:0};
 const keepsakeBatch={items:[],activeIndex:0,loading:false};
@@ -1674,7 +1676,7 @@ function renderReview(){
 }
 const bookFavoriteMeta={none:{icon:"☆",label:"无收藏",next:"star"},star:{icon:"🌟",label:"星标",next:"sprout"},sprout:{icon:"🌱",label:"萌芽",next:"none"}};
 function sortedBookNotes(book){return [...(book.notes||[])].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a)))}
-function bookCoverMarkup(book,className="book-cover"){return book.imagePath?`<img class="${className}" src="${escapeHtml(appUrl(book.imagePath))}" alt="${escapeHtml(book.title)}">`:`<div class="${className} placeholder" aria-hidden="true">书</div>`}
+function bookCoverMarkup(book,className="book-cover"){return book.imagePath?`<img class="${className}" src="${escapeHtml(appUrl(book.imagePath))}" alt="${escapeHtml(book.title)}" loading="lazy">`:`<div class="${className} placeholder" aria-hidden="true">书</div>`}
 function featuredBookNote(book){
   const notes=sortedBookNotes(book);
   let note=notes.find(item=>item.id===activeBookFeatureNoteId);
@@ -2176,7 +2178,7 @@ function llmProfile(scene="thoughtAnswer"){const tier=llmSettings.scenarios?.[sc
 function modelName(scene="thoughtAnswer"){const profile=llmProfile(scene);return `${profile.model==="deepseek-v4-pro"?"DeepSeek Pro":"DeepSeek Flash"} · ${profile.tier[0].toUpperCase()+profile.tier.slice(1)}`}
 function settingsPayload(){return{profiles:Object.fromEntries(llmTiers.map(tier=>[tier,{model:$(`[data-profile-model="${tier}"]`).value,effort:$(`[data-profile-effort="${tier}"]`).value}])),scenarios:Object.fromEntries($$("[data-ai-scenario]").map(select=>[select.dataset.aiScenario,select.value])),assistantName:$("#assistant-name").value,responseStyles:Object.fromEntries($$("[data-response-style]").map(select=>[select.dataset.responseStyle,select.value])),automaticAnswers:{thoughtAnswer:$("#automatic-thought-answer").checked},apiKey:$("#llm-api-key").value}}
 function renderSettings(){const badge=$("#llm-key-state"),hint=$("#llm-key-hint");if(!badge)return;llmSettings.profiles={...structuredClone(defaultLlmProfiles),...(llmSettings.profiles||{})};llmSettings.scenarios={...defaultLlmScenarios,...(llmSettings.scenarios||{})};llmSettings.automaticAnswers={thoughtAnswer:llmSettings.automaticAnswers?.thoughtAnswer===true};llmSettings.responseStyles=Object.fromEntries(responseStyleScenes.map(scene=>[scene,llmSettings.responseStyles?.[scene]||"standard"]));$("#automatic-thought-answer").checked=llmSettings.automaticAnswers.thoughtAnswer;$("#assistant-name").value=llmSettings.assistantName||"神鸡";for(const tier of llmTiers){$(`[data-profile-model="${tier}"]`).value=llmSettings.profiles[tier].model;$(`[data-profile-effort="${tier}"]`).value=llmSettings.profiles[tier].effort}$$("[data-ai-scenario]").forEach(select=>{if(!select.options.length)select.innerHTML=llmTiers.map(tier=>`<option value="${tier}">${tier[0].toUpperCase()+tier.slice(1)}</option>`).join("");select.value=llmSettings.scenarios[select.dataset.aiScenario]});$$("[data-response-style]").forEach(select=>{if(!select.options.length)select.innerHTML=responseStyleOptions.map(([value,label])=>`<option value="${value}">${label}</option>`).join("");select.value=llmSettings.responseStyles[select.dataset.responseStyle]||"standard"});badge.textContent=llmSettings.hasApiKey?"密钥已配置":"未配置密钥";badge.classList.toggle("ready",llmSettings.hasApiKey);hint.textContent=llmSettings.hasApiKey?`${llmSettings.keyHint} · 留空保留原密钥`:"仅保存在本机";const chat=llmProfile("chat");$("#chat-model-label").textContent=`${modelName("chat")} · ${chat.effort==="none"?"不思考":chat.effort.toUpperCase()}`}
-function renderLocalTestSettings(){const panel=$("#local-test-settings"),mineSummary=$("#mine-settings-summary");if(!panel)return;panel.hidden=!localTestConfig?.enabled;if(panel.hidden){if(mineSummary)mineSummary.textContent="配置本地测试数据、助手称呼与模型档位";return}const modeLabel=localTestConfig.mode==="simulation"?"使用模拟":"冷启测试";if(mineSummary)mineSummary.textContent=`本地测试：使用模拟 / 冷启测试 · 当前${modeLabel}`;$$("[data-local-test-mode]").forEach(button=>{const active=button.dataset.localTestMode===localTestConfig.mode;button.classList.toggle("active",active);button.setAttribute("aria-pressed",String(active));button.disabled=button.dataset.localTestMode==="simulation"&&!localTestConfig.upstreamConfigured});$("#local-test-badge").textContent=modeLabel;$("#local-test-summary").textContent=localTestConfig.mode==="simulation"?`${localTestConfig.sourceUser?.username||"线上主账户"} · ${localTestConfig.recordCount||0} 条记录 · ${localTestConfig.snapshotAt?formatDate(localTestConfig.snapshotAt):"尚未拉取"}`:"空账户工作区；每次切换都会重新清空。"}
+function renderLocalTestSettings(){const panel=$("#local-test-settings"),mineSummary=$("#mine-settings-summary");if(!panel)return;panel.hidden=!localTestConfig?.enabled;if(panel.hidden){if(mineSummary)mineSummary.textContent="配置本地测试数据、助手称呼与模型档位";return}const modeLabel=localTestConfig.mode==="simulation"?"使用模拟":"冷启测试";if(mineSummary)mineSummary.textContent=`本地测试：使用模拟 / 冷启测试 · 当前${modeLabel}`;$$("[data-local-test-mode]").forEach(button=>{const active=button.dataset.localTestMode===localTestConfig.mode;button.classList.toggle("active",active);button.setAttribute("aria-pressed",String(active));button.disabled=active||(button.dataset.localTestMode==="simulation"&&!localTestConfig.upstreamConfigured)});$("#local-test-badge").textContent=modeLabel;const loadedCount=localTestConfig.loadedScopes?.length||0;$("#local-test-summary").textContent=localTestConfig.mode==="simulation"?`${localTestConfig.sourceUser?.username||"线上主账户"} · ${localTestConfig.recordCount||0} 条已载入 · ${loadedCount?`${loadedCount} 个页面已读取`:"打开页面后读取记录"}`:"空账户工作区；每次切换都会重新清空。";$("#local-test-status").textContent=localTestStatusOverride||(localTestConfig.mode==="simulation"?"当前为使用模拟；记录将在打开页面时读取。":"当前为冷启测试。")}
 const shiftLocalDateKey=(dateKey,days)=>{const [year,month,day]=String(dateKey).split("-").map(Number),date=new Date(Date.UTC(year,month-1,day+days));return date.toISOString().slice(0,10)};
 const compactNumber=value=>new Intl.NumberFormat("zh-CN",{notation:"compact",maximumFractionDigits:1}).format(Number(value)||0);
 const formatCny=value=>{const number=Number(value)||0,absolute=Math.abs(number),digits=absolute===0?2:absolute>=100?0:absolute>=10?1:absolute>=1?2:absolute>=.1?3:absolute>=.01?4:6;return `${number<0?"-":""}¥${absolute.toFixed(digits)}`};
@@ -3209,7 +3211,7 @@ function invalidatePageLoads(){
 function clearPrivateSessionState(){
   closeImageViewer({restoreFocus:false});
   resetState();llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},automaticAnswers:{thoughtAnswer:false},hasApiKey:false,keyHint:""};
-  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;commercialStatistics=null;statisticsData=null;localTestConfig=null;onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;actionsSnapshot={actions:[],habits:[],habitCheckins:[]};feedbackItems=[];exportManifest=null;personalContext=null;governanceUrl="";appVersion="0.2.0";homeMemoryKeys=[];homeMemoryByKey=new Map();closeHomeEditors({restoreFocus:false});invalidatePageLoads();draftTags=[];captureDraftTags=[];pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";
+  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;commercialStatistics=null;statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;actionsSnapshot={actions:[],habits:[],habitCheckins:[]};feedbackItems=[];exportManifest=null;personalContext=null;governanceUrl="";appVersion="0.2.0";homeMemoryKeys=[];homeMemoryByKey=new Map();closeHomeEditors({restoreFocus:false});invalidatePageLoads();draftTags=[];captureDraftTags=[];pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";
   healthParseSerial+=1;latestHealthRequest=0;healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=[];healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]};for(const draft of Object.values(healthImageDrafts))Object.assign(draft,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0});
   bookParseSerial+=1;for(const url of Object.values(bookPreviewUrls))if(url)URL.revokeObjectURL(url);bookPreviewUrls={cover:"",recognition:""};pendingBookImages={cover:null,recognition:null};editingBookId="";activeBookId="";activeBookFeatureNoteId="";bookCreatorOpen=false;bookDetailCondensed=false;
   keepsakeEditor.segmentSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.history=[];
@@ -3312,6 +3314,27 @@ async function startBackgroundChainAnswer(question,existingTask=null){
     setAnswerStatus(question.id,"回答已进入后台队列。","working");showToast("回答已在后台排队");await refreshState("notifications");scheduleNotificationPoll();return task
   }catch(error){setAnswerStatus(question.id,`回答未能排队：${error.message}`,"error");showToast("回答未能进入后台队列","error");throw error}
 }
+async function ensureLocalTestViewScope(view){
+  const scope=LOCAL_TEST_VIEW_SCOPES[view];
+  if(!scope||localTestConfig?.mode!=="simulation"||localTestConfig.loadedScopes?.includes(scope))return true;
+  if(localTestScopeLoads.has(scope))return localTestScopeLoads.get(scope);
+  const owner=currentUser?.id,session=sessionSerial,panel=$(`#view-${view}`);
+  panel?.setAttribute("aria-busy","true");
+  const pending=(async()=>{
+    try{
+      const result=await request("/api/local-test-mode/hydrate",{method:"POST",body:JSON.stringify({scope})});
+      if(owner!==currentUser?.id||session!==sessionSerial||localTestConfig?.mode!=="simulation")return false;
+      localTestConfig=result.control;replaceState(result.state);notificationUnreadCount=Number(state.notificationUnread)||0;render();renderLocalTestSettings();return true
+    }catch(error){
+      if(owner===currentUser?.id&&session===sessionSerial)showToast(`当前页面记录读取失败：${error.message}`,"error");
+      return false
+    }finally{
+      panel?.removeAttribute("aria-busy");localTestScopeLoads.delete(scope)
+    }
+  })();
+  localTestScopeLoads.set(scope,pending);
+  return pending
+}
 const pageEffects={...createPageEffects({
   syncCaptureOverflow,
   syncQuoteOverflow,
@@ -3324,7 +3347,8 @@ const pageEffects={...createPageEffects({
   scheduleNotificationPoll,
   loadTrash
 }),today:()=>void loadActionsWorkspace(),discovery:()=>void loadDiscovery(),feedback:()=>void loadFeedback(),export:()=>void loadExportManifest(),"personal-context":()=>void loadPersonalContext()};
-({switchView}=createPageRouter({query:$,queryAll:$$,effects:pageEffects}));
+const lazyPageEffects=new Proxy(pageEffects,{get(target,view){const effect=target[view];if(typeof view!=="string"||!LOCAL_TEST_VIEW_SCOPES[view])return effect;return()=>{void ensureLocalTestViewScope(view).then(ready=>{if(ready)effect?.()})}}});
+({switchView}=createPageRouter({query:$,queryAll:$$,effects:lazyPageEffects}));
 $("#home-open-thought").addEventListener("click",()=>openHomeEditor("thought"));
 $("#home-record-state").addEventListener("click",()=>openHomeEditor("state"));
 $("#home-shuffle").addEventListener("click",()=>renderHomeMemories({advance:true}));
@@ -4114,17 +4138,17 @@ $("#commercial-assumptions-form").addEventListener("submit",async event=>{
 });
 document.addEventListener("click",event=>{const button=event.target.closest("[data-commercial-source-view]");if(button)openCommercialSource(button.dataset.commercialSourceView,button.dataset.commercialSourceId,button.dataset.commercialSourceDate)});
 $$("[data-local-test-mode]").forEach(button=>button.addEventListener("click",async()=>{
-  const mode=button.dataset.localTestMode,label=mode==="simulation"?"使用模拟":"冷启测试",message=mode==="simulation"?"重新拉取线上主账户并覆盖本地模拟数据？线上不会收到任何业务写入。":"清空冷启测试账户并重新开始？";
+  const mode=button.dataset.localTestMode,label=mode==="simulation"?"使用模拟":"冷启测试",message=mode==="simulation"?"切换到使用模拟？记录会在打开对应页面时只读加载，线上不会收到任何业务写入。":"清空冷启测试账户并重新开始？";
   if(!confirm(message))return;
   rotateSession();invalidatePageLoads();
-  const expectedSession=sessionSerial,expectedOwner=currentUser?.id,controls=$$("[data-local-test-mode]"),status=$("#local-test-status");controls.forEach(control=>control.disabled=true);status.textContent=mode==="simulation"?"正在只读拉取线上最新数据…":"正在创建空账户…";
+  const expectedSession=sessionSerial,expectedOwner=currentUser?.id,controls=$$("[data-local-test-mode]"),status=$("#local-test-status");controls.forEach(control=>control.disabled=true);localTestStatusOverride=mode==="simulation"?"正在切换到使用模拟…":"正在创建空账户…";status.textContent=localTestStatusOverride;
   try{
     const nextConfig=await request("/api/local-test-mode",{method:"POST",body:JSON.stringify({mode})});
-    if(expectedSession!==sessionSerial||expectedOwner!==currentUser?.id||nextConfig?.mode!==mode)throw Object.assign(new Error("已忽略不属于当前账户或模式的响应"),{code:"LOCAL_TEST_RESPONSE_MISMATCH"});localTestConfig=nextConfig;await load();
-    switchView(mode==="cold"?"today":"settings");if(mode==="simulation")$("#local-test-status").textContent=`已切换到${label}。`;showToast(`已切换到${label}`)
+    if(expectedSession!==sessionSerial||expectedOwner!==currentUser?.id||nextConfig?.mode!==mode)throw Object.assign(new Error("已忽略不属于当前账户或模式的响应"),{code:"LOCAL_TEST_RESPONSE_MISMATCH"});localTestConfig=nextConfig;localTestScopeLoads.clear();await load();
+    switchView(mode==="cold"?"today":"settings");localTestStatusOverride=mode==="simulation"?"已切换；打开页面时读取对应记录。":"已切换到冷启测试。";renderLocalTestSettings();showToast(`已切换到${label}`)
   }
-  catch(error){const timeout=["AbortError","TimeoutError"].includes(error?.name)||/aborted due to timeout|timed out/i.test(error?.message||"");status.textContent=timeout?"线上数据读取超时，请检查网络后重试。":error.message;renderLocalTestSettings()}
-  finally{if(localTestConfig?.upstreamConfigured||mode!=="simulation")controls.forEach(control=>control.disabled=false)}
+  catch(error){const timeout=["AbortError","TimeoutError"].includes(error?.name)||/aborted due to timeout|timed out/i.test(error?.message||"");localTestStatusOverride=timeout?"线上数据读取超时，请检查网络后重试。":error.message;renderLocalTestSettings()}
+  finally{if(localTestConfig?.upstreamConfigured||mode!=="simulation")controls.forEach(control=>control.disabled=false);renderLocalTestSettings()}
 }));
 $$("[data-onboarding-mode]").forEach(button=>button.addEventListener("click",()=>{collectOnboardingAnswers();onboardingMode=button.dataset.onboardingMode==="detailed"?"detailed":"quick";$("#onboarding-understanding").closest("label").hidden=true;$("#onboarding-status").textContent=onboardingMode==="detailed"?"详细版共 18 题，全部作答后才能完成。":"快速版共 8 题，全部作答后才能完成。";renderOnboardingQuestions()}));
 $$("[data-onboarding-sample]").forEach(button=>button.addEventListener("click",()=>{$("#onboarding-material").value=button.dataset.onboardingSample;$("#onboarding-understanding").closest("label").hidden=true}));

@@ -43,6 +43,9 @@ assert.equal(config({ INVITE_CODE_HASH: "a".repeat(64) }).authRequired, true);
 assert.equal(config({ APP_BASE_PATH: "//now///", UPSTREAM_ORIGIN: "http://localhost///" }).basePath, "/now");
 assert.equal(config({ UPSTREAM_ORIGIN: "http://localhost///" }).upstreamOrigin, "http://localhost");
 assert.equal(config({ PROMPT_CATALOG_VERSION: " 2026.09.29.1 " }).promptCatalogVersion, "2026.09.29.1");
+assert.equal(defaults.localTestResetOnStart, false);
+assert.equal(config({ LOCAL_TEST_MODE: "1", LOCAL_TEST_RESET_ON_START: "1" }).localTestResetOnStart, true);
+assert.equal(config({ LOCAL_TEST_RESET_ON_START: "1" }).localTestResetOnStart, false);
 for (const env of [
   { AUTH_REQUIRED: "1" }, { PERSISTENCE_BACKEND: "invalid" },
   { LOCAL_TEST_MODE: "1", NODE_ENV: "production" },
