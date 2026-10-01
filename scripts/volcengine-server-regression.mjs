@@ -59,7 +59,15 @@ const provider = http.createServer(async (request, response) => {
   }
   if (url.pathname === "/deepseek") {
     const requestBody = JSON.parse(raw);
-    const content = requestBody.response_format?.type === "json_object"
+    const promptText = JSON.stringify(requestBody.messages?.at(-1)?.content || "");
+    const content = promptText.includes("可编辑候选")
+      ? JSON.stringify({
+          title: "测试票根",
+          category: "小票",
+          tags: ["测试", "票根", "测试"],
+          description: "画面中是一张测试用票根。"
+        })
+      : requestBody.response_format?.type === "json_object"
       ? JSON.stringify({ measuredWeight: 70, clothing: "none", verification: "请核对" })
       : "这是整理后的转写。";
     return json(response, {
@@ -106,7 +114,7 @@ const app = spawn(process.execPath, ["server.mjs"], {
     AUTH_REQUIRED: "0",
     PERSISTENCE_BACKEND: "json",
     ATTACHMENT_STORAGE: "local",
-    AI_USER_DAILY_CALL_LIMIT: "7",
+    AI_USER_DAILY_CALL_LIMIT: "8",
     DEEPSEEK_API_URL: `http://127.0.0.1:${provider.address().port}/deepseek`,
     VOLCENGINE_SPEECH_API_KEY: "speech-test-key",
     VOLCENGINE_TTS_ENDPOINT: `http://127.0.0.1:${provider.address().port}/tts`,
@@ -162,6 +170,25 @@ try {
     create: { width: 16, height: 16, channels: 3, background: "#ffffff" }
   }).png().toBuffer();
   const image = `data:image/png;base64,${imageBytes.toString("base64")}`;
+  const candidates = await (await fetch(`${base}/api/keepsakes/understand`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      image,
+      requestId: "keepsake-understanding",
+      targetId: "keepsake-draft",
+      inputVersion: 1
+    })
+  })).json();
+  assert.deepEqual(candidates, {
+    title: "测试票根",
+    category: "小票",
+    tags: ["测试", "票根"],
+    description: "画面中是一张测试用票根。",
+    requestId: "keepsake-understanding",
+    targetId: "keepsake-draft",
+    inputVersion: 1
+  });
   const ocr = await (await fetch(`${base}/api/vision/ocr`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -180,7 +207,11 @@ try {
     body: JSON.stringify({ kind: "weight", referenceDate: "2026-10-01", images: [image] })
   })).json();
   assert.equal(parsedImage.measuredWeight, 70, `${JSON.stringify(parsedImage)}\n${stderr}`);
-  const structuredCall = providerCalls.find(call => call.pathname === "/deepseek" && JSON.parse(call.raw).response_format?.type === "json_object");
+  const structuredCall = providerCalls.find(call => {
+    const request = call.pathname === "/deepseek" ? JSON.parse(call.raw) : null;
+    return request?.response_format?.type === "json_object"
+      && typeof request.messages.at(-1).content === "string";
+  });
   assert.equal(typeof JSON.parse(structuredCall.raw).messages.at(-1).content, "string");
   assert.match(JSON.parse(structuredCall.raw).messages.at(-1).content, /OCR TEST 2026/);
 
@@ -240,4 +271,4 @@ try {
   await fs.rm(dataDir, { recursive: true, force: true });
 }
 
-console.log("Volcengine server integration checks passed: authenticated TTS/vision routes and private recoverable capture transcription.");
+console.log("Volcengine server integration checks passed: TTS/vision, keepsake candidates and private recoverable capture transcription.");

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "activeVersion": "2026.10.01.1",
+  "activeVersion": "2026.10.02.1",
   "versions": [
     {
       "version": "2026.09.29.1",
@@ -16,6 +16,11 @@
       "version": "2026.10.01.1",
       "file": "2026.10.01.1.json",
       "sha256": "330f1e3614f3f0ee25f152b4bf7c2cfe75760606b9e2a40569fc3d3874ac7646"
+    },
+    {
+      "version": "2026.10.02.1",
+      "file": "2026.10.02.1.json",
+      "sha256": "79f79b2a0d1db8fe245282477d805df96c948e31f69807b90eb78b4871a5bada"
     }
   ],
   "promptVariables": {
@@ -35,6 +40,7 @@
     "health.image.exercise": ["common", "units", "schema"],
     "health.image.referenceDate": ["referenceDate"],
     "content.image.understanding": ["originalText", "targetType"],
+    "keepsake.image.candidates": [],
     "capture.transcription.polish": ["rawText"],
     "analysis.review": ["personalContext", "reflectionData", "evidenceLevel"]
   },
@@ -94,6 +100,7 @@
     "health.image.heartRate",
     "health.image.referenceDate",
     "content.image.understanding",
+    "keepsake.image.candidates",
     "capture.transcription.polish",
     "analysis.review"
   ]

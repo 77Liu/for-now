@@ -137,7 +137,7 @@
       "root": "src/modules/keepsakes",
       "publicEntry": "src/modules/keepsakes/index.mjs",
       "allowedDependencies": ["shared.validation", "shared.time", "shared.attachments"],
-      "owns": { "data": ["single image segmentation workflow and temporary image lifecycle", "keepsake validation, normalization, creation and editing"], "routes": ["POST /api/keepsakes/segment", "POST /api/keepsakes", "GET /api/keepsakes/:id/original", "PATCH /api/keepsakes/:id", "DELETE /api/keepsakes/:id"] },
+      "owns": { "data": ["single image segmentation and editable metadata candidate workflows with temporary image cleanup", "keepsake validation, normalization, creation and editing"], "routes": ["POST /api/keepsakes/segment", "POST /api/keepsakes/understand", "POST /api/keepsakes", "GET /api/keepsakes/:id/original", "PATCH /api/keepsakes/:id", "DELETE /api/keepsakes/:id"] },
       "tests": ["scripts/segmentation-regression.mjs", "scripts/keepsake-time-regression.mjs", "scripts/keepsake-media-workflows-regression.mjs", "scripts/regression.mjs", "scripts/boundaries-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
       "status": "active"
     },

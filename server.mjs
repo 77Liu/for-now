@@ -34,6 +34,7 @@ import {
 import { createDeepSeekTransport, createAliyunSegmentationTransport, createVolcengineSpeechTransport, createVolcengineVisionTransport } from "./src/infrastructure/ai-providers/index.mjs";
 import { loadPromptCatalog } from "./src/infrastructure/prompt-catalog/index.mjs";
 import {
+  createKeepsakeImageUnderstanding,
   createKeepsakeSegmentation,
   createKeepsakeRecords,
   keepsakePayload,
@@ -1228,6 +1229,16 @@ const segmentKeepsakeImage = createKeepsakeSegmentation({
   gate: segmentationGate,
   onFailure: (error, callGroupId) => logEvent("system", "segmentation.failed", { level: "error", callGroupId, error: errorMetadata(error) })
 });
+const understandKeepsakeImage = createKeepsakeImageUnderstanding({
+  saveImages: saveImageDataUrls,
+  cleanupFiles: cleanupTemporaryFiles,
+  generate: file => runDeepSeek(promptText("keepsake.image.candidates"), {
+    imagePath: file,
+    scene: "contentImageUnderstanding",
+    json: true,
+    maxTokens: 1200
+  })
+});
 const trashCommands = createTrashCommands({ repository: storeRepository, trash: trashService, mutations: trashMutations, cleanup: attachmentCleanup });
 const annotationCommands = createAnnotationCommands({ repository: storeRepository, annotations: annotationService, moveNestedItemToTrash });
 const thoughtService = createThoughtService({
@@ -2096,6 +2107,7 @@ const trashHttp = createTrashHttp({ commands: trashCommands, bodyJson, sendJson,
 const { sendMoved: sendTrashResult } = trashHttp;
 const keepsakeHttp = createKeepsakeHttp({
   segment: segmentKeepsakeImage,
+  understand: understandKeepsakeImage,
   records: keepsakeRecords,
   remove: id => updateStore(store => moveCollectionItemToTrash(store, "keepsakes", "keepsake", id)),
   bodyJson, sendJson, requestBinding, sendTrashResult,

@@ -29,6 +29,15 @@ const priorRequest = (items, trashItems, clientRequestId) => (
   || trashItems.find(item => item.type === "keepsake" && item.payload?.clientRequestId === clientRequestId)?.payload
 );
 
+export function keepsakeImageCandidates(input = {}) {
+  return {
+    title: safeText(input.title, 120),
+    category: CATEGORIES.includes(input.category) ? input.category : "其他",
+    tags: normalizeTags(input.tags),
+    description: safeText(input.description, 2000)
+  };
+}
+
 export function normalizeKeepsake(item, eventTime) {
   const originalPath = pathValue(item.originalPath);
   const cutoutPath = pathValue(item.cutoutPath);

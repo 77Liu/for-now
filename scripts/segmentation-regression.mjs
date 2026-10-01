@@ -6,7 +6,10 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { createAliyunSegmentationTransport, deepSeekImageInput } from "../src/infrastructure/ai-providers/index.mjs";
 import { createAiAudit } from "../src/modules/ai/index.mjs";
-import { createKeepsakeSegmentation } from "../src/modules/keepsakes/index.mjs";
+import {
+  createKeepsakeImageUnderstanding,
+  createKeepsakeSegmentation
+} from "../src/modules/keepsakes/index.mjs";
 import { createKeepsakeHttp } from "../src/http/index.mjs";
 import { createAttachmentStorage, createImageAttachments, cleanupTemporaryFiles, readImageFile } from "../src/shared/attachments/index.mjs";
 import { createRateGate } from "../src/shared/concurrency/index.mjs";
@@ -201,18 +204,79 @@ try {
   const file = path.join(root, "fixture.png");
   await fs.writeFile(file, bytes);
   assert.deepEqual((await deepSeekImageInput(file, 2)).audit, (await readImageFile(file, 2)).audit);
+  const candidateInputs = [];
+  const understand = createKeepsakeImageUnderstanding({
+    saveImages: attachments.save,
+    cleanupFiles: cleanupTemporaryFiles,
+    generate: async filePath => {
+      candidateInputs.push({ account: context.getStore().user.id, filePath });
+      return JSON.stringify({
+        title: " 展览票根 ",
+        category: "小票",
+        tags: ["纪念", "展览", "纪念", ""],
+        description: "画面中可见一张带日期的纸质票根。"
+      });
+    }
+  });
+  assert.deepEqual(await run("understand", () => understand({ image: pixel })), {
+    title: "展览票根",
+    category: "小票",
+    tags: ["纪念", "展览"],
+    description: "画面中可见一张带日期的纸质票根。"
+  });
+  assert.equal(candidateInputs.length, 1);
+  assert.ok(candidateInputs[0].filePath.startsWith(path.join(root, "understand")));
+  await noTemporaryFiles("understand");
+  const invalidCandidate = createKeepsakeImageUnderstanding({
+    saveImages: attachments.save,
+    cleanupFiles: cleanupTemporaryFiles,
+    generate: async () => JSON.stringify({
+      title: "未知物品",
+      category: "模型自造类型",
+      tags: ["一", "二", "三", "四", "五", "六", "七", "八", "九"],
+      description: ""
+    })
+  });
+  assert.deepEqual(await run("understand-invalid", () => invalidCandidate({ image: pixel })), {
+    title: "未知物品",
+    category: "其他",
+    tags: ["一", "二", "三", "四", "五", "六", "七", "八"],
+    description: ""
+  });
+  await assert.rejects(
+    run("understand-malformed", () => createKeepsakeImageUnderstanding({
+      saveImages: attachments.save,
+      cleanupFiles: cleanupTemporaryFiles,
+      generate: async () => "not-json"
+    })({ image: pixel })),
+    /候选格式无法解析/
+  );
+  await noTemporaryFiles("understand-malformed");
   let response;
   const http = createKeepsakeHttp({
-    segment, bodyJson: async req => req.input,
+    segment, understand, bodyJson: async req => req.input,
     sendJson: (res, status, value) => { response = { status, value }; },
     requestBinding: input => ({ requestId: input.requestId, targetId: input.targetId, inputVersion: input.inputVersion })
   });
   await run("http", () => http.handle({ method: "POST", input: { image: pixel, requestId: "r1", targetId: "new", inputVersion: 3 } }, {}, new URL("http://local/api/keepsakes/segment")));
   assert.deepEqual(response, { status: 200, value: { cutout: pixel, provider: "aliyun-segment-hd", requestId: "r1", targetId: "new", inputVersion: 3 } });
+  await run("http", () => http.handle({ method: "POST", input: { image: pixel, requestId: "r2", targetId: "draft-1", inputVersion: 4 } }, {}, new URL("http://local/api/keepsakes/understand")));
+  assert.deepEqual(response, {
+    status: 200,
+    value: {
+      title: "展览票根",
+      category: "小票",
+      tags: ["纪念", "展览"],
+      description: "画面中可见一张带日期的纸质票根。",
+      requestId: "r2",
+      targetId: "draft-1",
+      inputVersion: 4
+    }
+  });
   await run("http", () => http.handle({ method: "POST", input: {} }, {}, new URL("http://local/api/keepsakes/segment")));
   assert.equal(response.status, 400);
   assert.equal(await http.handle({ method: "GET" }, {}, new URL("http://local/api/keepsakes/segment")), false);
-  console.log("Segmentation contracts passed: SDK/no retry, async statuses/timeouts, PNG download validation, grouped private audit, account queues, HTTP binding and temporary cleanup.");
+  console.log("Keepsake vision contracts passed: segmentation, editable metadata candidates, account context, HTTP binding and temporary cleanup.");
 } finally {
   await fs.rm(root, { recursive: true, force: true });
 }

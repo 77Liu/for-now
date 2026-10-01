@@ -1,5 +1,6 @@
 export function createKeepsakeHttp({
   segment,
+  understand,
   records,
   remove,
   sendTrashResult,
@@ -12,7 +13,19 @@ export function createKeepsakeHttp({
   mediaBodyMaxBytes
 }) {
   async function handle(req, res, url) {
-    if (req.method === "POST" && url.pathname === "/api/keepsakes/segment") {
+    if (req.method === "POST" && url.pathname === "/api/keepsakes/understand") {
+      const input = await bodyJson(req);
+      if (typeof understand !== "function") {
+        sendJson(res, 501, { error: "小物图片理解尚未接入", code: "KEEPSAKE_UNDERSTANDING_NOT_CONFIGURED" });
+      } else {
+        try {
+          sendJson(res, 200, { ...await understand(input), ...requestBinding(input) });
+        } catch (error) {
+          const status = /请选择|图片格式|图片大小|不支持/.test(error.message) ? 400 : 502;
+          sendJson(res, status, { error: error.message });
+        }
+      }
+    } else if (req.method === "POST" && url.pathname === "/api/keepsakes/segment") {
       const input = await bodyJson(req);
       try {
         sendJson(res, 200, { ...await segment(input), ...requestBinding(input) });

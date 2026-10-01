@@ -9,10 +9,11 @@ import { installPromptCatalog, promptCatalogMetadata, promptText, renderPrompt }
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const current = installPromptCatalog(await loadPromptCatalog({ rootDir: root }));
-assert.equal(current.version, "2026.10.01.1");
-assert.equal(current.sha256, "330f1e3614f3f0ee25f152b4bf7c2cfe75760606b9e2a40569fc3d3874ac7646");
+assert.equal(current.version, "2026.10.02.1");
+assert.equal(current.sha256, "79f79b2a0d1db8fe245282477d805df96c948e31f69807b90eb78b4871a5bada");
 assert.ok(Object.keys(current.prompts).length >= 40);
 assert.match(promptText("ai.system.core"), /结论先行/);
+assert.match(promptText("keepsake.image.candidates"), /可编辑候选/);
 assert.equal(renderPrompt("ai.identity.named", { assistantName: "照见" }), "你的称呼是“照见”。仅在自然需要时使用，不要反复自称。");
 assert.throws(() => renderPrompt("ai.identity.named"), /variable is missing/);
 assert.throws(() => promptText("missing.prompt"), /Prompt is missing/);
