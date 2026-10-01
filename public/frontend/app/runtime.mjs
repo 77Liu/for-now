@@ -57,6 +57,8 @@ import {
   uploadPendingMediaItems,
   uploadOriginalAudio,
   uploadOriginalImages,
+  TTS_PLAYBACK_RATES,
+  normalizeTtsPlaybackRate,
   validatedAudioBlob,
   validatedImageFiles
 } from "../media/index.mjs";
@@ -87,7 +89,7 @@ let backgroundResultController=null;
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},automaticAnswers:{thoughtAnswer:false},hasApiKey:false,keyHint:""};
 let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiCostRequestSerial=0,architectureStage=0,architectureTerm="api",commercialMode="validation",commercialStatistics=null,commercialRequestSerial=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,discoveryController=null,actionsSnapshot={actions:[],habits:[],habitCheckins:[]},actionsRequestSerial=0,feedbackItems=[],feedbackRequestSerial=0,exportManifest=null,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,appVersion="0.2.0",releaseVersion="0.2.0",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
-let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeEditorTrigger=null,activeSpeechCaptureId="",activeSpeechSourceKey="",activeSpeechVoice="",activeSpeechAudio=null,activeSpeechObjectUrl="",activeSpeechAbortController=null;
+let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeEditorTrigger=null,activeSpeechCaptureId="",activeSpeechSourceKey="",activeSpeechVoice="",activeSpeechPlaybackRate=1,activeSpeechAudio=null,activeSpeechObjectUrl="",activeSpeechAbortController=null;
 const keepsakeEditor={file:null,sourceDataUrl:"",sourceImage:null,sourceCanvas:null,maskCanvas:null,autoBase:null,history:[],mode:"keep",drawing:false,lastPoint:null,source:"manual",originalPath:"",cutoutPath:"",mediaDirty:false,renderFrame:0,segmentSerial:0};
 const keepsakeBatch={items:[],activeIndex:0,loading:false};
 let keepsakeBatchPreviewUrls=[],keepsakeBatchPersistTimer=0;
@@ -1527,24 +1529,25 @@ function captureAudioMarkup(item){
   }
   const voices=state.speech?.voices||[],voiceOptions=voices.map(voice=>`<option value="${escapeHtml(voice.id)}" ${voice.id===state.speech?.defaultVoice?"selected":""}>${escapeHtml(voice.label)}</option>`).join("");
   const speechKey=captureSpeechIdentity(item,state.speech?.defaultVoice);
-  return `<section class="capture-audio-record" data-capture-audio-key="${escapeHtml(presentation.audioKey)}" data-transcription-task-id="${escapeHtml(presentation.transcriptionTaskId)}">${audio?`<div class="capture-audio-source" data-capture-audio-key="${escapeHtml(presentation.audioKey)}"><audio controls preload="metadata" src="${escapeHtml(appUrl(audio.attachmentPath))}"></audio><span>${formatAudioDuration(audio.durationMs)} · <b class="capture-audio-playback-state">${escapeHtml(presentation.audioStatus)}</b></span></div>`:""}${layers}${transcriptionState}${speech&&state.speech?.configured?`<div class="capture-speech-actions"><select data-capture-voice aria-label="朗读音色">${voiceOptions}</select><button type="button" class="capture-speak-button" data-capture-speak="${escapeHtml(item.id)}" data-capture-speech-key="${escapeHtml(speechKey)}" title="朗读文字" aria-label="朗读文字">▶</button><button type="button" data-capture-speech-pause title="暂停或继续朗读" aria-label="暂停或继续朗读">Ⅱ</button><button type="button" data-capture-speech-stop title="停止朗读" aria-label="停止朗读">■</button></div>`:""}</section>`
+  const selectedRate=activeSpeechCaptureId===item.id&&activeSpeechSourceKey===speechKey?activeSpeechPlaybackRate:1,rateOptions=TTS_PLAYBACK_RATES.map(rate=>`<option value="${rate}" ${rate===selectedRate?"selected":""}>${rate.toFixed(1)}×</option>`).join("");
+  return `<section class="capture-audio-record" data-capture-audio-key="${escapeHtml(presentation.audioKey)}" data-transcription-task-id="${escapeHtml(presentation.transcriptionTaskId)}">${audio?`<div class="capture-audio-source" data-capture-audio-key="${escapeHtml(presentation.audioKey)}"><audio controls preload="metadata" src="${escapeHtml(appUrl(audio.attachmentPath))}"></audio><span>${formatAudioDuration(audio.durationMs)} · <b class="capture-audio-playback-state">${escapeHtml(presentation.audioStatus)}</b></span></div>`:""}${layers}${transcriptionState}${speech&&state.speech?.configured?`<div class="capture-speech-actions"><select data-capture-voice aria-label="朗读音色">${voiceOptions}</select><select data-capture-playback-rate="${escapeHtml(item.id)}" aria-label="播放倍速">${rateOptions}</select><button type="button" class="capture-speak-button" data-capture-speak="${escapeHtml(item.id)}" data-capture-speech-key="${escapeHtml(speechKey)}" title="朗读文字" aria-label="朗读文字">▶</button><button type="button" data-capture-speech-pause title="暂停或继续朗读" aria-label="暂停或继续朗读">Ⅱ</button><button type="button" data-capture-speech-stop title="停止朗读" aria-label="停止朗读">■</button></div>`:""}</section>`
 }
 function stopCaptureSpeech(){
   activeSpeechAbortController?.abort();activeSpeechAbortController=null;
   if(activeSpeechAudio){activeSpeechAudio.pause();activeSpeechAudio.removeAttribute("src");activeSpeechAudio.load()}
   if(activeSpeechObjectUrl)URL.revokeObjectURL(activeSpeechObjectUrl);
-  activeSpeechAudio=null;activeSpeechObjectUrl="";activeSpeechCaptureId="";activeSpeechSourceKey="";activeSpeechVoice=""
+  activeSpeechAudio=null;activeSpeechObjectUrl="";activeSpeechCaptureId="";activeSpeechSourceKey="";activeSpeechVoice="";activeSpeechPlaybackRate=1
 }
-async function speakCapture(id,voice,sourceKey){
+async function speakCapture(id,voice,sourceKey,playbackRate=1){
   const item=(state.captures||[]).find(value=>value.id===id),text=item?.transcription?.polishedText||item?.transcription?.rawText||plainPreview(item?.content||"");
-  const expectedSourceKey=captureSpeechIdentity(item,voice);
+  const expectedSourceKey=captureSpeechIdentity(item,voice),rate=normalizeTtsPlaybackRate(playbackRate);
   if(!text||!expectedSourceKey||sourceKey!==expectedSourceKey)return;
-  stopCaptureSpeech();const controller=new AbortController();activeSpeechAbortController=controller;activeSpeechCaptureId=id;activeSpeechSourceKey=sourceKey;activeSpeechVoice=voice;
+  stopCaptureSpeech();const controller=new AbortController();activeSpeechAbortController=controller;activeSpeechCaptureId=id;activeSpeechSourceKey=sourceKey;activeSpeechVoice=voice;activeSpeechPlaybackRate=rate;
   try{
     const blob=await apiClient.requestBlob("/api/speech/synthesize",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text,voice}),signal:controller.signal},{fallback:"语音合成失败"});
     const current=(state.captures||[]).find(value=>value.id===id);
     if(activeSpeechCaptureId!==id||activeSpeechSourceKey!==sourceKey||controller.signal.aborted||captureSpeechIdentity(current,voice)!==sourceKey)return;
-    activeSpeechObjectUrl=URL.createObjectURL(blob);const audio=new Audio(activeSpeechObjectUrl);activeSpeechAudio=audio;
+    activeSpeechObjectUrl=URL.createObjectURL(blob);const audio=new Audio(activeSpeechObjectUrl);audio.playbackRate=rate;activeSpeechAudio=audio;
     audio.addEventListener("ended",()=>{if(activeSpeechAudio===audio)stopCaptureSpeech()},{once:true});
     audio.addEventListener("error",()=>{if(activeSpeechAudio===audio){stopCaptureSpeech();showToast("合成音频无法播放","error")}},{once:true});
     await audio.play()
@@ -3738,16 +3741,22 @@ document.addEventListener("click",async event=>{
   }
   const play=event.target.closest("[data-capture-speak]");
   if(play){
-    const voice=play.closest(".capture-speech-actions")?.querySelector("[data-capture-voice]")?.value||state.speech?.defaultVoice;
+    const actions=play.closest(".capture-speech-actions"),voice=actions?.querySelector("[data-capture-voice]")?.value||state.speech?.defaultVoice,rate=normalizeTtsPlaybackRate(actions?.querySelector("[data-capture-playback-rate]")?.value);
     const item=state.captures.find(value=>value.id===play.dataset.captureSpeak),sourceKey=captureSpeechIdentity(item,voice);
     play.dataset.captureSpeechKey=sourceKey;
-    return void speakCapture(play.dataset.captureSpeak,voice,sourceKey)
+    return void speakCapture(play.dataset.captureSpeak,voice,sourceKey,rate)
   }
   if(event.target.closest("[data-capture-speech-pause]")&&activeSpeechCaptureId&&activeSpeechAudio){
     if(activeSpeechAudio.paused)void activeSpeechAudio.play().catch(error=>showToast(error.message,"error"));else activeSpeechAudio.pause();
     return
   }
   if(event.target.closest("[data-capture-speech-stop]"))stopCaptureSpeech()
+});
+document.addEventListener("change",event=>{
+  const control=event.target.closest("[data-capture-playback-rate]");if(!control||!activeSpeechAudio)return;
+  const id=control.dataset.capturePlaybackRate,item=state.captures.find(value=>value.id===id),voice=control.closest(".capture-speech-actions")?.querySelector("[data-capture-voice]")?.value||state.speech?.defaultVoice,sourceKey=captureSpeechIdentity(item,voice);
+  if(id!==activeSpeechCaptureId||sourceKey!==activeSpeechSourceKey)return;
+  activeSpeechPlaybackRate=normalizeTtsPlaybackRate(control.value);activeSpeechAudio.playbackRate=activeSpeechPlaybackRate
 });
 $("#capture-cancel").addEventListener("click",resetCaptureForm);
 $("#journal-cancel").addEventListener("click",resetJournalForm);

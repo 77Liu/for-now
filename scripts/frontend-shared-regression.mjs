@@ -39,7 +39,9 @@ import {
   uploadOriginalAudio,
   uploadOriginalImages,
   validatedAudioBlob,
-  validatedImageFiles
+  validatedImageFiles,
+  TTS_PLAYBACK_RATES,
+  normalizeTtsPlaybackRate
 } from "../public/frontend/media/index.mjs";
 import {
   WEIGHT_BATCH_MAX_ITEMS,
@@ -271,6 +273,9 @@ if (process.argv.includes("--timezone-case")) {
     captureSpeechIdentity({ ...audioCapture, version: 3 }, "voice-a")
   );
   assert.notEqual(captureSpeechIdentity(audioCapture, "voice-a"), captureSpeechIdentity(audioCapture, "voice-b"));
+  assert.deepEqual(TTS_PLAYBACK_RATES, [0.5, 0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.5, 2]);
+  assert.equal(normalizeTtsPlaybackRate("1.5"), 1.5);
+  assert.equal(normalizeTtsPlaybackRate(1.7), 1);
   assert.deepEqual(
     captureAudioPresentation(audioCapture, {
       configured: true,

@@ -122,8 +122,8 @@ const mockFetch = `
   window.__delaySpeech = false;
   window.__releaseSpeech = null;
   window.Audio = class extends EventTarget {
-    constructor(src = "") { super(); this.src = src; this.paused = true; }
-    play() { this.paused = false; window.__speechPlays.push(this.src); return Promise.resolve(); }
+    constructor(src = "") { super(); this.src = src; this.paused = true; this.playbackRate = 1; window.__lastSpeechAudio = this; }
+    play() { this.paused = false; window.__speechPlays.push({ src: this.src, rate: this.playbackRate }); return Promise.resolve(); }
     pause() { this.paused = true; }
     removeAttribute(name) { if (name === "src") this.src = ""; }
     load() {}
@@ -1649,7 +1649,7 @@ try {
   assert.equal(captureInitial.dateLabels, 1);
   assert.equal(captureInitial.dateOutsideCard, true);
   assert.equal(captureInitial.timeOnRight, true);
-  assert.deepEqual(await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-long"]'),source=card.querySelector(".capture-audio-source");return{audio:card.querySelector("audio")?.getAttribute("src"),audioReady:source?.querySelector(".capture-audio-playback-state")?.textContent,audioKey:source?.dataset.captureAudioKey||"",status:card.querySelector(".capture-transcription-state")?.textContent,speak:card.querySelector("[data-capture-speak]")?.getAttribute("data-capture-speak"),speechKey:card.querySelector("[data-capture-speak]")?.dataset.captureSpeechKey||"",voice:card.querySelector("[data-capture-voice]")?.value,speechControls:card.querySelectorAll(".capture-speech-actions button").length}})()`), {
+  assert.deepEqual(await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-long"]'),source=card.querySelector(".capture-audio-source"),rate=card.querySelector("[data-capture-playback-rate]");return{audio:card.querySelector("audio")?.getAttribute("src"),audioReady:source?.querySelector(".capture-audio-playback-state")?.textContent,audioKey:source?.dataset.captureAudioKey||"",status:card.querySelector(".capture-transcription-state")?.textContent,speak:card.querySelector("[data-capture-speak]")?.getAttribute("data-capture-speak"),speechKey:card.querySelector("[data-capture-speak]")?.dataset.captureSpeechKey||"",voice:card.querySelector("[data-capture-voice]")?.value,rate:rate?.value,rates:[...rate.options].map(option=>Number(option.value)),speechControls:card.querySelectorAll(".capture-speech-actions button").length}})()`), {
     audio: "/attachments/capture-voice.m4a",
     audioReady: "原音可播放",
     audioKey: '["capture-long",1,"/attachments/capture-voice.m4a"]',
@@ -1657,6 +1657,8 @@ try {
     speak: "capture-long",
     speechKey: '["capture-long",1,"/attachments/capture-voice.m4a","","zh_male_shaonianzixin_uranus_bigtts"]',
     voice: "zh_male_shaonianzixin_uranus_bigtts",
+    rate: "1",
+    rates: [0.5,0.7,0.8,0.9,1,1.1,1.2,1.3,1.5,2],
     speechControls: 3
   });
   assert.deepEqual(await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-failed"]'),source=card.querySelector(".capture-audio-source"),status=card.querySelector(".capture-transcription-state");return{audio:card.querySelector("audio")?.getAttribute("src"),audioReady:source?.querySelector(".capture-audio-playback-state")?.textContent,audioKey:source?.dataset.captureAudioKey||"",status:status?.textContent,taskId:status?.dataset.transcriptionTaskId||"",misreported:status?.textContent.includes("转写未完成")}})()`),{
@@ -1674,6 +1676,15 @@ try {
   await evaluate(`window.__capturePatchPayloads=[];window.__releaseSpeech();true`);
   await sleep(100);
   assert.equal(await evaluate(`window.__speechPlays.length`),0,"audio-tts-playback");
+  await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-long"]'),rate=card.querySelector("[data-capture-playback-rate]");rate.value="1.5";card.querySelector("[data-capture-speak]").click();return true})()`);
+  assert.equal(await waitUntil(`window.__speechRequests.length===2&&window.__speechPlays.length===1`),true);
+  assert.deepEqual(await evaluate(`({rate:window.__speechPlays[0].rate,blob:window.__speechPlays[0].src.startsWith("blob:")})`),{rate:1.5,blob:true});
+  await evaluate(`(() => {const rate=document.querySelector('[data-capture-id="capture-long"] [data-capture-playback-rate]');rate.value="2";rate.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
+  assert.equal(await evaluate(`window.__lastSpeechAudio.playbackRate`),2);
+  await evaluate(`document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-pause]').click();document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-pause]').click();true`);
+  assert.equal(await waitUntil(`window.__speechPlays.length===2`),true);
+  assert.deepEqual(await evaluate(`({rate:window.__speechPlays[1].rate,requests:window.__speechRequests.length})`),{rate:2,requests:2});
+  await evaluate(`document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-stop]').click();true`);
   assert.deepEqual(await evaluate(`(() => {const editor=document.querySelector(".capture-audio-editor"),upload=editor.querySelector(".audio-file-primary"),recorder=editor.querySelector("#capture-audio-recorder"),record=editor.querySelector("#capture-audio-record"),preview=editor.querySelector("#capture-audio-preview");return{fits:editor.getBoundingClientRect().right<=window.innerWidth,uploadText:upload.textContent.trim(),uploadHeight:Math.round(upload.getBoundingClientRect().height),recorderOpen:recorder.open,summary:recorder.querySelector("summary").textContent.replace(/\\s+/g," ").trim(),recordCollapsed:record.getClientRects().length===0,previewCollapsed:preview.getClientRects().length===0}})()`), {
     fits: true,
     uploadText: "↑上传音频",
