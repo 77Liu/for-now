@@ -195,6 +195,8 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
 
 - `PROJECT_RULES.md`：长期项目规则；复杂任务和跨会话工作的必读文件。
 - `one-mistake-one-rule.md`：复发风险错误与对应行为规则。
+- `SOP/README.md`：标准作业流程目录；迭代复盘与过程报告按
+  `SOP/iteration-retrospective.md` 执行。
 - `knowledge/engineering-rules.md`：代码范围、设计原则、验证、提交与发布规则。
 - `knowledge/pre-launch-confirmation.md`：上线前双轮检查、人工配置与确认、证据失效、Git/服务器发布和观察关闭流程。
 - `knowledge/development-release-checklist.md`：新功能测试完成、准备上线时执行的阻断式自查清单。
