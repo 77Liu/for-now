@@ -8,6 +8,22 @@ const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {},
 const pathValue = value => cleanAttachmentPaths([value])[0] || "";
 const derivativeKeys = ["thumbPath", "displayPath", "editPath", "alphaMaskPath"];
 const requestDigest = value => crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const normalizeTags = values => {
+  const tags = [], seen = new Set();
+  for (const value of Array.isArray(values) ? values : []) {
+    const tag = safeText(value, 30), key = tag.toLocaleLowerCase("zh-CN");
+    if (!tag || seen.has(key)) continue;
+    seen.add(key);
+    tags.push(tag);
+    if (tags.length === 8) break;
+  }
+  return tags;
+};
+const backgroundOpacityPct = (value, fallback = 15) => {
+  if (value == null || value === "") return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(30, Math.round(parsed))) : fallback;
+};
 const priorRequest = (items, trashItems, clientRequestId) => (
   items.find(item => item.clientRequestId === clientRequestId)
   || trashItems.find(item => item.type === "keepsake" && item.payload?.clientRequestId === clientRequestId)?.payload
@@ -22,7 +38,8 @@ export function normalizeKeepsake(item, eventTime) {
     category: "其他", note: "", tags: [], source: "manual",
     ...item, ...eventTime,
     version: recordVersion(item.version),
-    tags: (Array.isArray(item.tags) ? item.tags : []).map(tag => safeText(tag, 30)).filter(Boolean).slice(0, 8),
+    tags: normalizeTags(item.tags),
+    backgroundOpacityPct: backgroundOpacityPct(item.backgroundOpacityPct),
     originalPath,
     cutoutPath,
     ...derivatives,
@@ -46,7 +63,10 @@ export function keepsakePayload(input, existing = null) {
     key,
     hasOwn(input, key) ? pathValue(input[key]) : existing?.[key] || ""
   ]));
-  const tags = (hasOwn(input, "tags") ? (Array.isArray(input.tags) ? input.tags : []) : existing?.tags || []).map(tag => safeText(tag, 30)).filter(Boolean).slice(0, 8);
+  const tags = normalizeTags(hasOwn(input, "tags") ? input.tags : existing?.tags || []);
+  const opacity = hasOwn(input, "backgroundOpacityPct")
+    ? backgroundOpacityPct(input.backgroundOpacityPct, existing?.backgroundOpacityPct ?? 15)
+    : backgroundOpacityPct(existing?.backgroundOpacityPct);
   const completeDerivatives = derivativeKeys.every(key => derivatives[key]);
   if (!originalPath || (!completeDerivatives && !cutoutPath)) return { error: "请先完成原图和全部派生图保存" };
   return {
@@ -61,7 +81,8 @@ export function keepsakePayload(input, existing = null) {
       ...derivatives,
       derivativeState: completeDerivatives ? "ready" : "legacy",
       source: input.source === "auto" ? "auto" : existing?.source || "manual",
-      edgeExpansion: Math.max(0, Math.min(20, Number(input.edgeExpansion) || 0))
+      edgeExpansion: Math.max(0, Math.min(20, Number(input.edgeExpansion) || 0)),
+      backgroundOpacityPct: opacity
     }
   };
 }

@@ -204,8 +204,18 @@ try {
   }
 
   const record = { id: "keepsake-1", title: "票券", ...saved.paths };
-  assert.deepEqual(keepsakeMediaSources(record, "list"), { imagePath: saved.paths.thumbPath });
-  assert.deepEqual(keepsakeMediaSources(record, "detail"), { imagePath: saved.paths.displayPath });
+  assert.deepEqual(keepsakeMediaSources(record, "list"), {
+    imagePath: saved.paths.thumbPath,
+    backgroundPath: saved.paths.editPath
+  });
+  assert.deepEqual(keepsakeMediaSources(record, "home"), {
+    imagePath: saved.paths.thumbPath,
+    backgroundPath: saved.paths.editPath
+  });
+  assert.deepEqual(keepsakeMediaSources(record, "detail"), {
+    imagePath: saved.paths.displayPath,
+    backgroundPath: saved.paths.editPath
+  });
   assert.deepEqual(keepsakeMediaSources(record, "edit"), {
     imagePath: saved.paths.editPath,
     alphaMaskPath: saved.paths.alphaMaskPath

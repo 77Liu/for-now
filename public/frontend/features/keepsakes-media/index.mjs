@@ -21,6 +21,7 @@ export function createKeepsakeBatchItems(files, {
     note: "",
     tags: "",
     edgeExpansion: 8,
+    backgroundOpacityPct: 15,
     source: "manual",
     alphaMask: "",
     status: "waiting",
@@ -52,12 +53,12 @@ export function keepsakeMediaSources(item, mode = "list") {
   if (mode === "detail") {
     const imagePath = attachmentPath(item.displayPath) || attachmentPath(item.cutoutPath);
     if (!imagePath) throw new Error("详情图不可用");
-    return { imagePath };
+    return { imagePath, backgroundPath: attachmentPath(item.editPath) };
   }
   if (!["list", "home"].includes(mode)) throw new TypeError(`Unsupported keepsake media mode: ${mode}`);
   const imagePath = attachmentPath(item.thumbPath) || attachmentPath(item.cutoutPath);
   if (!imagePath) throw new Error("缩略图不可用");
-  return { imagePath };
+  return { imagePath, backgroundPath: attachmentPath(item.editPath) };
 }
 
 export function keepsakeUploadPayload({ image, alphaMask }) {

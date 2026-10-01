@@ -291,6 +291,8 @@ const mockFetch = `
   window.__deleteRequests = 0;
   window.__imageUploads = [];
   window.__keepsakePayloads = [];
+  window.__keepsakePatchPayloads = [];
+  window.__keepsakePatches = 0;
   window.__keepsakeUploadPayloads = [];
   window.__keepsakeUploadKeys = [];
   window.__keepsakeCreateKeys = [];
@@ -831,6 +833,14 @@ const mockFetch = `
       const {originalPath,...visible}=item;
       return json(visible);
     }
+    if (/^\\/api\\/keepsakes\\/[^/]+$/.test(url) && init.method === "PATCH") {
+      const id=url.split("/").at(-1),item=window.__keepsakes.find(value=>value.id===id),payload=JSON.parse(init.body);
+      if(!item)return json({error:"这件小物不存在"},404);
+      window.__keepsakePatches+=1;window.__keepsakePatchPayloads.push(payload);
+      Object.assign(item,payload,{updatedAt:new Date().toISOString(),version:(item.version||1)+1});
+      const {originalPath,...visible}=item;
+      return json(visible)
+    }
     if ((url === "/api/daily-records" || url === "/api/v1/daily-records") && init.method === "POST") {
       window.__dailySaves += 1;
       const payload = JSON.parse(init.body), item = { id: "daily-" + window.__dailySaves, createdAt: new Date().toISOString(), version: 1, ...payload, ...eventTime(payload) };
@@ -1042,7 +1052,7 @@ try {
   assert.equal(await waitUntil(`getComputedStyle(document.querySelector("#view-today")).opacity==="1"`),true);
   await sleep(120);
   const homeDesktop = await evaluate(`(() => {
-    const home=document.querySelector("#view-today"),grid=document.querySelector("#home-memory-grid"),backgroundElement=document.querySelector(".home-v02-background"),background=getComputedStyle(backgroundElement),keepsakeImage=document.querySelector(".home-v02-keepsake-preview img");
+    const home=document.querySelector("#view-today"),grid=document.querySelector("#home-memory-grid"),backgroundElement=document.querySelector(".home-v02-background"),background=getComputedStyle(backgroundElement),keepsakeImage=document.querySelector(".home-v02-keepsake-preview .keepsake-image-cutout");
     return {
       active:home.classList.contains("active")&&home.classList.contains("home-v02"),
       memories:grid.querySelectorAll(".home-v02-memory").length,
@@ -1175,8 +1185,9 @@ try {
   await evaluate(`document.querySelector('[data-view="keepsakes"]').click(); true`);
   assert.deepEqual(await evaluate(`(() => {
     const grid=document.querySelector(".keepsake-grid"),card=document.querySelector(".keepsake-card"),image=card.querySelector(".keepsake-image-cutout");
-    return {count:document.querySelectorAll(".keepsake-card").length,label:document.querySelector("#keepsake-count").textContent,columns:getComputedStyle(grid).columnCount,avoids:getComputedStyle(card).breakInside==="avoid",layers:card.querySelectorAll("img").length,thumb:image.getAttribute("src")===window.__keepsakes[0].thumbPath,originalReads:window.__keepsakeOriginalReads,tags:card.querySelector(".keepsake-tags").textContent,pagination:document.querySelector("#keepsake-pagination-status").textContent};
-  })()`), { count: 12, label: "25 件", columns: "3", avoids: true, layers: 1, thumb: true, originalReads: 0, tags: "#展览#同行", pagination: "已显示 12 / 25 件" });
+    const background=card.querySelector(".keepsake-image-background");
+    return {count:document.querySelectorAll(".keepsake-card").length,label:document.querySelector("#keepsake-count").textContent,columns:getComputedStyle(grid).columnCount,avoids:getComputedStyle(card).breakInside==="avoid",layers:card.querySelectorAll("img").length,thumb:image.getAttribute("src")===window.__keepsakes[0].thumbPath,background:background.getAttribute("src")===window.__keepsakes[0].editPath,backgroundOpacity:getComputedStyle(background).opacity,originalReads:window.__keepsakeOriginalReads,tags:card.querySelector(".keepsake-tags").textContent,pagination:document.querySelector("#keepsake-pagination-status").textContent};
+  })()`), { count: 12, label: "25 件", columns: "3", avoids: true, layers: 2, thumb: true, background: true, backgroundOpacity: "0.15", originalReads: 0, tags: "#展览#同行", pagination: "已显示 12 / 25 件" });
   assert.equal(await waitUntil(`[...document.querySelectorAll(".keepsake-card img")].every(image=>image.complete&&image.naturalWidth>0)`),true);
   await evaluate(`window.__keepsakeObservers.at(-1).trigger();true`);
   assert.equal(await waitUntil(`document.querySelectorAll(".keepsake-card").length===24&&document.querySelector("#keepsake-pagination-status").textContent==="已显示 24 / 25 件"`),true);
@@ -1185,15 +1196,44 @@ try {
   await evaluate(`document.querySelector("[data-keepsake-open]").click(); true`);
   assert.deepEqual(await evaluate(`(() => {
     const detail=document.querySelector("#keepsake-detail"),image=detail.querySelector(".keepsake-detail-image");
-    return {visible:!detail.hidden,libraryHidden:document.querySelector(".keepsake-library").hidden,presentation:detail.querySelector('[data-keepsake-view="presentation"]').classList.contains("active"),layers:image.querySelectorAll("img").length,title:detail.querySelector("h2").textContent,tags:detail.querySelector(".keepsake-tags").textContent};
-  })()`), { visible: true, libraryHidden: true, presentation: true, layers: 1, title: "旧展览票", tags: "#展览#同行" });
+    return {visible:!detail.hidden,libraryHidden:document.querySelector(".keepsake-library").hidden,presentation:detail.querySelector('[data-keepsake-view="presentation"]').classList.contains("active"),layers:image.querySelectorAll("img").length,backgroundOpacity:getComputedStyle(image.querySelector(".keepsake-image-background")).opacity,title:detail.querySelector("h2").textContent,tags:detail.querySelector(".keepsake-tags").textContent};
+  })()`), { visible: true, libraryHidden: true, presentation: true, layers: 2, backgroundOpacity: "0.15", title: "旧展览票", tags: "#展览#同行" });
   assert.equal(await evaluate(`window.__keepsakeOriginalReads`),0);
   await sleep(220);
   const keepsakeDetailScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-keepsake-detail-desktop.png", Buffer.from(keepsakeDetailScreenshot.data, "base64"));
   await evaluate(`document.querySelector('[data-keepsake-view="original"]').click(); true`);
   assert.deepEqual(await evaluate(`(() => { const image=document.querySelector(".keepsake-detail-image img");return {originalSelected:document.querySelector('[data-keepsake-view="original"]').classList.contains("active"),layers:document.querySelectorAll(".keepsake-detail-image img").length,original:image.getAttribute("src")===window.__keepsakes[0].originalPath,originalReads:window.__keepsakeOriginalReads}; })()`), { originalSelected: true, layers: 1, original: true, originalReads: 1 });
-  await evaluate(`document.querySelector("[data-keepsake-back]").click(); document.querySelector("#keepsake-create-toggle").click(); true`);
+  await evaluate(`document.querySelector("[data-keepsake-back]").click();document.querySelector('[data-keepsake-edit="keepsake-1"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#keepsake-segment-status").textContent.includes("编辑图与蒙版已载入")`),true);
+  assert.deepEqual(await evaluate(`({
+    visible:!document.querySelector("#keepsake-editor").hidden,
+    title:document.querySelector("#keepsake-title").value,
+    tags:document.querySelector("#keepsake-tags").value,
+    opacity:document.querySelector("#keepsake-background-opacity").value,
+    opacityLabel:document.querySelector("#keepsake-background-output").value,
+    suggestions:[...document.querySelectorAll("[data-keepsake-tag-suggestion]")].map(button=>button.textContent.trim())
+  })`),{visible:true,title:"旧展览票",tags:"展览 同行",opacity:"15",opacityLabel:"15%",suggestions:["#展览","#同行","#散步","#远行","#分页"]});
+  await evaluate(`document.querySelector("#keepsake-title").value="取消后不应保存";document.querySelector("#keepsake-cancel-edit").click();true`);
+  assert.deepEqual(await evaluate(`({patches:window.__keepsakePatches,title:window.__keepsakes.find(item=>item.id==="keepsake-1").title})`),{patches:0,title:"旧展览票"});
+  await evaluate(`document.querySelector('[data-keepsake-edit="keepsake-1"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#keepsake-segment-status").textContent.includes("编辑图与蒙版已载入")`),true);
+  await evaluate(`(() => {
+    document.querySelector("#keepsake-title").value="修订展览票";
+    document.querySelector('[data-keepsake-tag-suggestion="散步"]').click();
+    document.querySelector("#keepsake-tags").value+=" 展览 散步";
+    const opacity=document.querySelector("#keepsake-background-opacity");
+    opacity.value="22";
+    opacity.dispatchEvent(new Event("input",{bubbles:true}));
+    document.querySelector("#keepsake-form").requestSubmit();
+    return true
+  })()`);
+  assert.equal(await waitUntil(`window.__keepsakePatches===1&&document.querySelector('[data-keepsake-id="keepsake-1"]')?.textContent.includes("修订展览票")`),true);
+  assert.deepEqual(await evaluate(`(() => {
+    const payload=window.__keepsakePatchPayloads[0],item=window.__keepsakes.find(value=>value.id==="keepsake-1"),card=document.querySelector('[data-keepsake-id="keepsake-1"]'),background=card.querySelector(".keepsake-image-background");
+    return{tags:payload.tags,opacity:payload.backgroundOpacityPct,hasMask:Object.hasOwn(payload,"alphaMask"),hasImage:Object.hasOwn(payload,"image"),sameMedia:item.originalPath==="/attachments/keepsake-1.original.png"&&item.thumbPath==="/attachments/keepsake-1.thumb.webp"&&item.displayPath==="/attachments/keepsake-1.display.webp"&&item.editPath==="/attachments/keepsake-1.edit.webp"&&item.alphaMaskPath==="/attachments/keepsake-1.alphaMask.webp",backgroundOpacity:getComputedStyle(background).opacity}
+  })()`),{tags:["展览","同行","散步"],opacity:22,hasMask:false,hasImage:false,sameMedia:true,backgroundOpacity:"0.22"},"keepsake-edit-tags-opacity");
+  await evaluate(`document.querySelector("#keepsake-create-toggle").click();true`);
   await evaluate(`(async()=>{const canvas=document.createElement("canvas");canvas.width=48;canvas.height=36;const ctx=canvas.getContext("2d");ctx.fillStyle="#d76455";ctx.fillRect(0,0,48,36);const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"));const file=new File([blob],"ticket.png",{type:"image/png"}),transfer=new DataTransfer();transfer.items.add(file);const input=document.querySelector("#keepsake-image");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
   assert.equal(await waitUntil(`document.querySelector("#keepsake-segment-status").textContent.includes("自动轮廓已生成")&&document.querySelector("#keepsake-preview-canvas").getContext("2d").getImageData(8,18,1,1).data[3]===255`), true);
   const keepsakeEditorState = await evaluate(`(() => { const preview=document.querySelector("#keepsake-preview-canvas"),ctx=preview.getContext("2d");return {editorVisible:!document.querySelector("#keepsake-editor").hidden,title:document.querySelector("#keepsake-title").value,subjectAlpha:ctx.getImageData(8,18,1,1).data[3],backgroundAlpha:ctx.getImageData(40,18,1,1).data[3],overflow:document.documentElement.scrollWidth>window.innerWidth}; })()`);
@@ -1205,9 +1245,9 @@ try {
   const keepsakeScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-keepsakes-desktop.png", Buffer.from(keepsakeScreenshot.data, "base64"));
   const imageUploadsBeforeKeepsakeSave=await evaluate(`window.__imageUploads.length`);
-  await evaluate(`document.querySelector("#keepsake-title").value="新票根";document.querySelector("#keepsake-tags").value="纪念 周末";document.querySelector("#keepsake-form").requestSubmit();true`);
+  await evaluate(`document.querySelector("#keepsake-title").value="新票根";document.querySelector("#keepsake-tags").value="纪念 周末 纪念";document.querySelector("#keepsake-form").requestSubmit();true`);
   if(!await waitUntil(`window.__keepsakePayloads.length===1`))throw new Error(await evaluate(`"小物保存未发出："+document.querySelector("#keepsake-save-status").textContent`));
-  assert.deepEqual(await evaluate(`({tags:window.__keepsakePayloads[0].tags,uploadRequests:window.__imageUploads.length-${imageUploadsBeforeKeepsakeSave},hasRawImage:Object.hasOwn(window.__keepsakePayloads[0],"image"),mediaPaths:["originalPath","thumbPath","displayPath","editPath","alphaMaskPath"].every(key=>window.__keepsakePayloads[0][key]?.startsWith("/attachments/")),uploadKey:window.__keepsakeUploadKeys[0].length>0,createKey:Boolean(window.__lastKeepsakeCreateKey)})`), {tags:["纪念","周末"],uploadRequests:1,hasRawImage:false,mediaPaths:true,uploadKey:true,createKey:true});
+  assert.deepEqual(await evaluate(`({tags:window.__keepsakePayloads[0].tags,backgroundOpacityPct:window.__keepsakePayloads[0].backgroundOpacityPct,uploadRequests:window.__imageUploads.length-${imageUploadsBeforeKeepsakeSave},hasRawImage:Object.hasOwn(window.__keepsakePayloads[0],"image"),mediaPaths:["originalPath","thumbPath","displayPath","editPath","alphaMaskPath"].every(key=>window.__keepsakePayloads[0][key]?.startsWith("/attachments/")),uploadKey:window.__keepsakeUploadKeys[0].length>0,createKey:Boolean(window.__lastKeepsakeCreateKey)})`), {tags:["纪念","周末"],backgroundOpacityPct:15,uploadRequests:1,hasRawImage:false,mediaPaths:true,uploadKey:true,createKey:true});
   const savedCutoutAlpha = await evaluate(`(async()=>{const image=new Image();await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=reject;image.src=window.__keepsakeUploadPayloads[0].alphaMask});const canvas=document.createElement("canvas");canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;const ctx=canvas.getContext("2d");ctx.drawImage(image,0,0);return {subject:ctx.getImageData(8,18,1,1).data[3],background:ctx.getImageData(40,18,1,1).data[3]}})()`);
   assert.equal(savedCutoutAlpha.subject, 255);
   assert.equal(savedCutoutAlpha.background, 0);
@@ -2568,7 +2608,7 @@ try {
   assert.equal(await waitUntil(`typeof window.__releaseActionList==="function"`),true);
   assert.equal(await evaluate(`!document.querySelector("#section-nav").hidden&&!document.querySelector("[data-section-links='today']").hidden&&document.querySelector("[data-section-links='today'] [data-view='today']").getAttribute("aria-current")==="page"`),true);
   await evaluate(`window.__releaseActionList();true`);
-  assert.equal(await waitUntil(`window.__localHydrateRequests.includes("today")&&document.querySelectorAll(".home-v02-memory").length===3&&document.querySelector("#home-keepsake").textContent.includes("旧展览票")`),true);
+  assert.equal(await waitUntil(`window.__localHydrateRequests.includes("today")&&document.querySelectorAll(".home-v02-memory").length===3&&document.querySelector("#home-keepsake").textContent.includes("修订展览票")`),true);
   assert.equal(await evaluate(`!document.querySelector("#section-nav").hidden&&!document.querySelector("[data-section-links='today']").hidden&&document.querySelector("[data-section-links='today'] [data-view='today']").getAttribute("aria-current")==="page"`),true);
   assert.equal(await evaluate(`Boolean(document.querySelector(".action-column:nth-child(3)")?.textContent.includes("服务器新标题")&&document.querySelector(".action-column:nth-child(3) .checkin-sync-state.pending"))`),true);
   await evaluate(`document.querySelector('[data-view="captures"]').click();true`);

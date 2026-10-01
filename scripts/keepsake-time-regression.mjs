@@ -78,12 +78,13 @@ const input = {
   displayPath: "/attachments/display.webp",
   editPath: "/attachments/edit.webp",
   alphaMaskPath: "/attachments/mask.webp",
-  category: "纸品", source: "auto", tags: ["展览", "", " ".repeat(2)], note: "当天记录", edgeExpansion: 8
+  category: "纸品", source: "auto", tags: ["展览", "展览", "同行", "同行", "", " ".repeat(2)], note: "当天记录", edgeExpansion: 8
 };
 const eventTime = eventTimeFields(input), normalized = normalizeKeepsake({ id: "old", ...input, version: 0, extension: { keep: true } }, eventTime);
 assert.equal(normalized.version, 1);
 assert.deepEqual(normalized.extension, { keep: true });
-assert.deepEqual(normalized.tags, ["展览"]);
+assert.deepEqual(normalized.tags, ["展览", "同行"]);
+assert.equal(normalized.backgroundOpacityPct, 15);
 assert.equal(normalizeKeepsake({ ...input, originalPath: "https://external.invalid/image" }, eventTime).validationState, "invalid");
 assert.equal(keepsakePayload({ title: " ", occurredAt: "bad" }).error, "请填写小物名称");
 assert.equal(keepsakePayload({ ...input, occurredAt: "bad" }).error, "留存时间格式不正确");
@@ -93,10 +94,14 @@ const partial = keepsakePayload({ title: "修改" }, normalized).value;
 assert.equal(partial.originalPath, input.originalPath); assert.equal(partial.thumbPath, input.thumbPath);
 assert.equal(partial.displayPath, input.displayPath); assert.equal(partial.editPath, input.editPath);
 assert.equal(partial.alphaMaskPath, input.alphaMaskPath);
-assert.deepEqual(partial.tags, ["展览"]); assert.equal(partial.occurredAt, input.occurredAt);
+assert.deepEqual(partial.tags, ["展览", "同行"]); assert.equal(partial.occurredAt, input.occurredAt);
+assert.equal(partial.backgroundOpacityPct, 15);
 assert.equal(partial.note, ""); assert.equal(partial.edgeExpansion, 0);
 assert.equal(keepsakePayload({ title: "修改", source: "manual" }, normalized).value.source, "auto");
 assert.deepEqual(keepsakePayload({ title: "修改", tags: null }, normalized).value.tags, []);
+assert.deepEqual(keepsakePayload({ title: "修改", tags: ["展览", "展览", "同行"] }, normalized).value.tags, ["展览", "同行"]);
+assert.equal(keepsakePayload({ title: "修改", backgroundOpacityPct: 0 }, normalized).value.backgroundOpacityPct, 0);
+assert.equal(keepsakePayload({ title: "修改", backgroundOpacityPct: 80 }, normalized).value.backgroundOpacityPct, 30);
 assert.equal(keepsakePayload({ ...input, edgeExpansion: 500 }).value.edgeExpansion, 20);
 assert.equal("originalPath" in publicKeepsake(normalized), false);
 assert.equal(publicKeepsake(normalized).displayPath, input.displayPath);
@@ -163,6 +168,7 @@ const updated = (await run("a", () => records.update(a.value.id, { title: "新�
 assert.equal(updated.createdAt, before[0].createdAt);
 assert.equal(updated.occurredOn, "2026-10-01");
 assert.equal(updated.originalPath, before[0].originalPath);
+assert.equal(updated.backgroundOpacityPct, 15);
 assert.equal(accounts.get("b")[0].title, "票券");
 
 const idempotentStore = { keepsakes: [], trash: [] }, idempotency = new Map();

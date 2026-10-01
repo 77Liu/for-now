@@ -134,10 +134,11 @@
       "risk": "high",
       "tier": "smoke",
       "status": "automated",
-      "normalPath": ["选择多图", "逐件编辑", "保存", "查看首屏", "下滑加载下一页", "打开详情"],
-      "failureAndRecovery": ["分割失败", "创建失败", "刷新恢复队列", "连续触发加载"],
-      "assertions": ["逐件幂等", "首屏 12 件", "每次增加一页", "无重复卡片", "详情按需读取原图"],
+      "normalPath": ["选择多图", "逐件编辑", "创建或复用标签", "调整背景透明度", "保存", "查看首屏", "下滑加载下一页", "打开详情"],
+      "failureAndRecovery": ["取消编辑", "分割失败", "创建失败", "刷新恢复队列", "连续触发加载"],
+      "assertions": ["取消零写入", "标签去重且账户隔离", "背景默认 15% 且不改原图或蒙版", "逐件幂等", "首屏 12 件", "每次增加一页", "无重复卡片", "详情按需读取原图"],
       "evidence": [
+        {"script": "scripts/ui-regression.mjs", "anchor": "keepsake-edit-tags-opacity"},
         {"script": "scripts/ui-regression.mjs", "anchor": "window.__keepsakeObservers.at(-1).trigger"},
         {"script": "scripts/keepsake-media-workflows-regression.mjs", "anchor": "Keepsake media"}
       ]
