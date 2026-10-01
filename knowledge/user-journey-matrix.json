@@ -1,0 +1,193 @@
+{
+  "version": 1,
+  "updatedAt": "2026-10-01",
+  "tiers": {
+    "smoke": "每个候选功能提交前，验证前端契约和真实浏览器关键旅程。",
+    "daily": "覆盖前端全回归、认证、同步和本地测试模式。",
+    "release": "完整系统、PostgreSQL、依赖审计与发布前人工确认。"
+  },
+  "technicalDefaults": {
+    "browserTimeoutMs": 25000,
+    "keepsakePageSize": 12,
+    "keepsakePrefetchMarginPx": 160,
+    "onlineSnapshotTimeoutMs": 15000
+  },
+  "journeys": [
+    {
+      "id": "auth-session-boundary",
+      "title": "登录、切换账户与退出时清理私密状态",
+      "role": "已注册用户",
+      "goal": "只看到自己的数据，并在退出后清除在途草稿",
+      "risk": "critical",
+      "tier": "smoke",
+      "status": "automated",
+      "normalPath": ["登录", "读取首页", "退出", "另一账户登录"],
+      "failureAndRecovery": ["登录响应延迟", "状态响应乱序", "退出时仍有后台请求"],
+      "assertions": ["界面锁定与解锁", "账户数据隔离", "IndexedDB/会话草稿清理", "旧响应不得写入新会话"],
+      "evidence": [
+        {"script": "scripts/ui-regression.mjs", "anchor": "window.__delayLogout=true"},
+        {"script": "scripts/auth-regression.mjs", "anchor": "Auth checks passed"}
+      ]
+    },
+    {
+      "id": "capture-text-image",
+      "title": "创建图文念起并在刷新后继续",
+      "role": "普通用户",
+      "goal": "快速留下文字和图片，刷新后内容仍在",
+      "risk": "critical",
+      "tier": "smoke",
+      "status": "automated",
+      "normalPath": ["输入文字", "上传图片", "提交", "刷新", "查看记录"],
+      "failureAndRecovery": ["上传失败", "提交后刷新失败", "重复提交"],
+      "assertions": ["成功反馈", "业务记录与图片顺序正确", "刷新后持久存在", "幂等且无重复记录"],
+      "evidence": [
+        {"script": "scripts/ui-regression.mjs", "anchor": "data-content-image-editor=\"capture\""},
+        {"script": "scripts/content-attachments-regression.mjs", "anchor": "Content attachment"}
+      ]
+    },
+    {
+      "id": "capture-audio",
+      "title": "上传或现场录音并恢复语音捕念",
+      "role": "普通用户",
+      "goal": "优先上传音频，必要时展开现场录音，并保留原件和转写层",
+      "risk": "critical",
+      "tier": "smoke",
+      "status": "automated",
+      "normalPath": ["上传音频或展开现场录音", "预览", "提交", "后台转写", "查看原文与整理稿"],
+      "failureAndRecovery": ["麦克风拒绝", "上传中断", "ASR 未配置", "刷新恢复"],
+      "assertions": ["上传入口优先", "录音控件默认折叠", "原件持久化", "失败可重试且不伪造转写"],
+      "evidence": [
+        {"script": "scripts/ui-regression.mjs", "anchor": "capture-audio-recorder"},
+        {"script": "scripts/capture-transcription-regression.mjs", "anchor": "Capture transcription"}
+      ]
+    },
+    {
+      "id": "thought-source-answer",
+      "title": "从念起形成思考并追溯来源",
+      "role": "普通用户",
+      "goal": "从原始记录形成问题、回答和后续思考",
+      "risk": "high",
+      "tier": "smoke",
+      "status": "automated",
+      "normalPath": ["打开念起", "转为思考", "补充问题", "请求回答", "查看来源"],
+      "failureAndRecovery": ["回答后台化", "目标版本变化", "来源删除"],
+      "assertions": ["任务反馈", "回答写入正确目标", "来源可追溯", "旧响应不得覆盖新输入"],
+      "evidence": [
+        {"script": "scripts/ui-regression.mjs", "anchor": "data-capture-promote"},
+        {"script": "scripts/personal-context-regression.mjs", "anchor": "Personal context"}
+      ]
+    },
+    {
+      "id": "health-weight-batch",
+      "title": "多张体重截图逐日识别、核对与保存",
+      "role": "普通用户",
+      "goal": "一次选择多日截图，每张独立核对日期和结果",
+      "risk": "high",
+      "tier": "smoke",
+      "status": "automated",
+      "normalPath": ["选择多图", "逐张指定日期", "识别", "核对", "逐项保存"],
+      "failureAndRecovery": ["单张识别失败", "日期冲突", "保存中断", "重试"],
+      "assertions": ["逐项状态独立", "日期与图片绑定", "保存后从队列移除", "失败项保留且不重复"],
+      "evidence": [
+        {"script": "scripts/ui-regression.mjs", "anchor": "growth-weight-batch-mobile.png"},
+        {"script": "scripts/checkin-health-regression.mjs", "anchor": "Checkin/health contracts passed"}
+      ]
+    },
+    {
+      "id": "keepsake-batch-library",
+      "title": "批量留存小物并分页浏览陈列",
+      "role": "普通用户",
+      "goal": "逐件编辑保存后，只加载首屏陈列并随下滑加载后续页",
+      "risk": "high",
+      "tier": "smoke",
+      "status": "automated",
+      "normalPath": ["选择多图", "逐件编辑", "保存", "查看首屏", "下滑加载下一页", "打开详情"],
+      "failureAndRecovery": ["分割失败", "创建失败", "刷新恢复队列", "连续触发加载"],
+      "assertions": ["逐件幂等", "首屏 12 件", "每次增加一页", "无重复卡片", "详情按需读取原图"],
+      "evidence": [
+        {"script": "scripts/ui-regression.mjs", "anchor": "window.__keepsakeObservers.at(-1).trigger"},
+        {"script": "scripts/keepsake-media-workflows-regression.mjs", "anchor": "Keepsake media"}
+      ]
+    },
+    {
+      "id": "offline-sync-recovery",
+      "title": "断网写入、恢复同步与冲突可见",
+      "role": "普通用户",
+      "goal": "网络中断时不丢输入，恢复后自动收敛且不重复",
+      "risk": "critical",
+      "tier": "daily",
+      "status": "automated",
+      "normalPath": ["提交", "进入待同步", "恢复网络", "服务端确认", "跨标签更新"],
+      "failureAndRecovery": ["超时", "断网", "409 冲突", "刷新或重启"],
+      "assertions": ["本地投影立即可见", "操作日志持久", "幂等确认", "冲突明确且可继续"],
+      "evidence": [
+        {"script": "scripts/sync-coordinator-regression.mjs", "anchor": "Sync coordinator"},
+        {"script": "scripts/ui-regression.mjs", "anchor": "window.__failActionNetwork=true"}
+      ]
+    },
+    {
+      "id": "local-online-snapshot",
+      "title": "冷启测试与线上只读快照切换",
+      "role": "开发验收用户",
+      "goal": "安全复制线上数据到隔离本地工作区",
+      "risk": "critical",
+      "tier": "daily",
+      "status": "partial",
+      "normalPath": ["进入设置", "冷启测试", "确认", "使用模拟", "完整 reload"],
+      "failureAndRecovery": ["线上认证失效", "附件超时", "重复切换"],
+      "assertions": ["不写线上", "附件并行且 15 秒超时", "工作区原子重建", "失败信息可解释"],
+      "evidence": [
+        {"script": "scripts/local-test-mode-regression.mjs", "anchor": "LOCAL_TEST_UPSTREAM_DELAY_MS"},
+        {"script": "scripts/ui-regression.mjs", "anchor": "data-local-test-mode=\"cold\""}
+      ]
+    },
+    {
+      "id": "delete-trash-restore",
+      "title": "删除、回收站恢复与附件生命周期",
+      "role": "普通用户",
+      "goal": "误删后可恢复，过期前不丢媒体",
+      "risk": "high",
+      "tier": "daily",
+      "status": "automated",
+      "normalPath": ["删除记录", "进入回收站", "恢复", "重新查看"],
+      "failureAndRecovery": ["删除响应丢失", "恢复重复提交", "附件清理重试"],
+      "assertions": ["删除后主列表消失", "回收站保留 30 天", "恢复幂等", "引用中的附件不误删"],
+      "evidence": [
+        {"script": "scripts/trash-regression.mjs", "anchor": "Trash"},
+        {"script": "scripts/ui-regression.mjs", "anchor": "网络恢复后移入回收站"}
+      ]
+    },
+    {
+      "id": "personal-context-governance",
+      "title": "个人上下文可见、可追溯并受预算约束",
+      "role": "普通用户",
+      "goal": "知道回答用了哪些个人信息，并能回到原记录",
+      "risk": "high",
+      "tier": "daily",
+      "status": "automated",
+      "normalPath": ["打开个人上下文", "查看来源", "生成回答", "检查收据"],
+      "failureAndRecovery": ["来源已删除", "版本变化", "上下文超预算"],
+      "assertions": ["只读投影", "来源存在性与版本可见", "Token 硬预算", "不读取私密原始媒体"],
+      "evidence": [
+        {"script": "scripts/personal-context-regression.mjs", "anchor": "Personal context"},
+        {"script": "scripts/ui-regression.mjs", "anchor": "personal-context-source-list"}
+      ]
+    },
+    {
+      "id": "responsive-visual-accessibility",
+      "title": "桌面、移动端、iOS 兼容性与视觉回归",
+      "role": "键盘、触摸与小屏用户",
+      "goal": "关键任务在不同视口和输入方式下仍可完成",
+      "risk": "high",
+      "tier": "release",
+      "status": "partial",
+      "normalPath": ["桌面关键旅程", "390px 移动端", "320px 极窄屏", "iOS 模拟器"],
+      "failureAndRecovery": ["键盘弹出", "横竖屏", "前后台切换", "字体放大"],
+      "assertions": ["无横向溢出", "无遮挡", "44px 触控目标", "焦点可见", "截图差异可审阅"],
+      "evidence": [
+        {"script": "scripts/ui-regression.mjs", "anchor": "Page.captureScreenshot"},
+        {"script": "scripts/mobile-platform-regression.mjs", "anchor": "Mobile platform"}
+      ]
+    }
+  ]
+}

@@ -63,6 +63,78 @@ final class AppUITests: XCTestCase {
         capture("04-mine-portrait")
     }
 
+    func testOnlineSimulationSwitchLatency() throws {
+        app.terminate()
+        app.launchEnvironment["CIKE_NATIVE_SCENARIO"] = "login-submit"
+        app.launchEnvironment["CIKE_NATIVE_MARKER"] = "nativegate"
+        app.launch()
+
+        let webView = app.webViews.firstMatch
+        XCTAssertTrue(webView.waitForExistence(timeout: 20), "Web content did not become accessible")
+        XCTAssertTrue(webView.buttons["记录思考"].waitForExistence(timeout: 30), "Online test account login did not complete")
+
+        button(containing: "我的", in: webView).tap()
+        XCTAssertTrue(webView.buttons["设置"].waitForExistence(timeout: 10))
+        webView.buttons["设置"].tap()
+        let cold = webView.buttons["冷启测试"]
+        let simulation = webView.buttons["使用模拟"]
+        XCTAssertTrue(cold.waitForExistence(timeout: 10))
+        XCTAssertTrue(simulation.waitForExistence(timeout: 10))
+
+        if cold.value as? String != "1" {
+            cold.tap()
+            confirmCurrentAlert()
+            XCTAssertTrue(waitUntil(timeout: 30) { cold.value as? String == "1" })
+        }
+        capture("online-switch-before")
+
+        let startedAt = Date()
+        simulation.tap()
+        confirmCurrentAlert()
+        XCTAssertTrue(waitUntil(timeout: 120) { simulation.value as? String == "1" }, "Simulation switch did not finish")
+        let duration = Date().timeIntervalSince(startedAt)
+        add(XCTAttachment(string: "simulation switch duration seconds: \(duration)"))
+        capture("online-switch-after")
+    }
+
+    func testLiveAccountNavigation() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let username = environment["CIKE_TEST_USERNAME"],
+              let password = environment["CIKE_TEST_PASSWORD"] else {
+            throw XCTSkip("CIKE_TEST_USERNAME and CIKE_TEST_PASSWORD are required")
+        }
+
+        app.terminate()
+        app.launchEnvironment["CIKE_NATIVE_SCENARIO"] = "login-submit"
+        app.launchEnvironment["CIKE_NATIVE_MARKER"] = username
+        app.launchEnvironment["CIKE_NATIVE_PASSWORD"] = password
+        app.launch()
+
+        let webView = app.webViews.firstMatch
+        XCTAssertTrue(webView.waitForExistence(timeout: 20), "Web content did not become accessible")
+        XCTAssertTrue(webView.buttons["记录思考"].waitForExistence(timeout: 30), "Live account login did not complete")
+        capture("live-01-today")
+
+        button(containing: "所见", in: webView).tap()
+        XCTAssertTrue(webView.buttons["收下"].waitForExistence(timeout: 10), "Capture view did not open")
+        XCTAssertTrue(webView.staticTexts["上传音频"].waitForExistence(timeout: 5), "Audio upload action is missing")
+        XCTAssertTrue(webView.staticTexts["现场录音"].waitForExistence(timeout: 5), "Collapsed recorder entry is missing")
+        capture("live-02-captures")
+
+        button(containing: "我的", in: webView).tap()
+        XCTAssertTrue(webView.buttons["统计"].waitForExistence(timeout: 10), "Statistics entry is missing")
+        webView.buttons["统计"].tap()
+        XCTAssertTrue(webView.staticTexts["个人统计"].waitForExistence(timeout: 10), "Statistics view did not open")
+        capture("live-03-statistics")
+    }
+
+    private func confirmCurrentAlert() {
+        let alert = app.alerts.firstMatch
+        if alert.waitForExistence(timeout: 3) {
+            alert.buttons.allElementsBoundByIndex.last?.tap()
+        }
+    }
+
     private func button(containing text: String, in webView: XCUIElement) -> XCUIElement {
         webView.buttons
             .matching(NSPredicate(format: "label CONTAINS %@", text))

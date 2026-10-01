@@ -12,7 +12,7 @@ const PROTECTED_BRANCH = /^(?:main|master|production|release(?:\/|$)|hotfix(?:\/
 const TASK_BRANCH = /^(?:feat|feature|fix|test|docs)\//;
 const ALLOWED_COMMIT_TYPES = new Set(["feat", "fix", "test", "docs"]);
 const SECRET_ENV_KEY = /^(?:DATABASE_URL|AUTH_DATABASE_URL|PG_BACKUP_DATABASE_URL|PG_SCHEMA_DATABASE_URL|APP_URL|UPSTREAM_ORIGIN)$/;
-const SECRET_ENV_PREFIX = /^(?:OSS_|ALIYUN_|ALIBABA_CLOUD_|DEEPSEEK_|FEISHU_)/;
+const SECRET_ENV_PREFIX = /^(?:OSS_|ALIYUN_|ALIBABA_CLOUD_|DEEPSEEK_|FEISHU_|VOLCENGINE_)/;
 
 const moduleScopes = new Map([
   ["actions", "actions"],

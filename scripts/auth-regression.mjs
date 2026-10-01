@@ -168,6 +168,56 @@ try {
   assert.equal((await fetch(attachmentUrl, { method: "HEAD", headers: { cookie: ownerCookie } })).status, 404);
   assert.equal((await fetch(attachmentUrl, { method: "DELETE", headers: { cookie: secondCookie } })).status, 405);
   assert.equal((await fetch(`${base}/now/attachments/forbidden%2Fname`, { headers: { cookie: secondCookie } })).status, 403);
+  const m4a = Buffer.from([0, 0, 0, 20, 0x66, 0x74, 0x79, 0x70, 0x4d, 0x34, 0x41, 0x20]);
+  const audioDataUrl = `data:audio/mp4;base64,${m4a.toString("base64")}`;
+  const audioUpload = await jsonRequest(`${base}/now/api/audio/upload`, {
+    method: "POST",
+    headers: { cookie: secondCookie, "idempotency-key": "auth-audio-upload-1" },
+    body: JSON.stringify({ audio: audioDataUrl, durationMs: 1250 })
+  });
+  assert.equal(audioUpload.response.status, 201);
+  assert.equal(audioUpload.body.audio.mimeType, "audio/mp4");
+  assert.equal(audioUpload.body.audio.bytes, m4a.length);
+  const audioUrl = `${base}/now${audioUpload.body.audio.attachmentPath}`;
+  const audioResponse = await fetch(audioUrl, { headers: { cookie: secondCookie } });
+  assert.equal(audioResponse.status, 200);
+  assert.equal(audioResponse.headers.get("content-type"), "audio/mp4");
+  assert.deepEqual(Buffer.from(await audioResponse.arrayBuffer()), m4a);
+  assert.equal((await fetch(audioUrl, { headers: { cookie: ownerCookie } })).status, 404);
+  const audioCapture = await jsonRequest(`${base}/now/api/v1/captures`, {
+    method: "POST",
+    headers: { cookie: secondCookie, "idempotency-key": "auth-audio-capture-1" },
+    body: JSON.stringify({
+      content: "",
+      attachmentPaths: [],
+      audio: { ...audioUpload.body.audio, bytes: 999 },
+      transcription: { status: "ready", rawText: "伪造转写", polishedText: "伪造整理" },
+      timeMode: "now"
+    })
+  });
+  assert.equal(audioCapture.response.status, 201);
+  assert.equal(audioCapture.body.data.audio.attachmentPath, audioUpload.body.audio.attachmentPath);
+  assert.equal(audioCapture.body.data.audio.bytes, m4a.length);
+  assert.equal(audioCapture.body.data.transcription.status, "unconfigured");
+  assert.equal(audioCapture.body.data.transcription.rawText, "");
+  assert.equal(audioCapture.body.data.transcription.errorCode, "ASR_NOT_CONFIGURED");
+  const audioRemoved = await jsonRequest(`${base}/now/api/v1/captures/${audioCapture.body.data.id}`, {
+    method: "PATCH",
+    headers: { cookie: secondCookie, "if-match": "\"1\"" },
+    body: JSON.stringify({ content: "保留文字，移除语音", audio: null })
+  });
+  assert.equal(audioRemoved.response.status, 200);
+  assert.equal(audioRemoved.body.data.audio, null);
+  assert.equal((await fetch(audioUrl, { headers: { cookie: secondCookie } })).status, 200);
+  const audioTrash = (await jsonRequest(`${base}/now/api/trash`, { headers: { cookie: secondCookie } })).body.items
+    .find(item => item.type === "captureAudio");
+  assert.ok(audioTrash);
+  assert.equal((await jsonRequest(`${base}/now/api/trash/${audioTrash.id}/restore`, {
+    method: "POST", headers: { cookie: secondCookie }, body: "{}"
+  })).response.status, 200);
+  const restoredAudioCapture = (await jsonRequest(`${base}/now/api/state`, { headers: { cookie: secondCookie } })).body.captures
+    .find(item => item.id === audioCapture.body.data.id);
+  assert.equal(restoredAudioCapture.audio.attachmentPath, audioUpload.body.audio.attachmentPath);
   assert.equal((await jsonRequest(`${base}/now/api/captures/legacy`, {
     method: "PATCH", headers: { cookie: secondCookie }, body: JSON.stringify({ content: "cross-account-change" })
   })).response.status, 404);
@@ -324,12 +374,12 @@ try {
   await waitForServer(base, child);
   const migratedNames = await fs.readdir(secondDir);
   assert.ok(migratedNames.some(name => /store\.json\.v11-pre-v15.*\.bak$/.test(name)));
-  assert.ok(migratedNames.some(name => /llm-settings\.json\.v3-pre-v6.*\.bak$/.test(name)));
-  assert.ok(migratedNames.some(name => /ai-usage\.json\.v1-pre-v2.*\.bak$/.test(name)));
+  assert.ok(migratedNames.some(name => /llm-settings\.json\.v3-pre-v7.*\.bak$/.test(name)));
+  assert.ok(migratedNames.some(name => /ai-usage\.json\.v1-pre-v3.*\.bak$/.test(name)));
   for (const name of migratedNames.filter(name => name.endsWith(".bak"))) {
     assert.equal((await fs.stat(path.join(secondDir, name))).mode & 0o777, 0o600);
   }
-  assert.equal(JSON.parse(await fs.readFile(path.join(secondDir, "ai-usage.json"), "utf8")).version, 2);
+  assert.equal(JSON.parse(await fs.readFile(path.join(secondDir, "ai-usage.json"), "utf8")).version, 3);
   const resumedTasks = new Map();
   for (const queuedTask of queuedTasks) {
     let resumedTask;

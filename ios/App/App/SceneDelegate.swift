@@ -128,6 +128,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             let username = requestedUsername.range(of: #"^[A-Za-z0-9_-]{3,32}$"#, options: .regularExpression) == nil
                 ? "nativegate"
                 : requestedUsername
+            let requestedPassword = ProcessInfo.processInfo.environment["CIKE_NATIVE_PASSWORD"]
+                ?? UserDefaults.standard.string(forKey: "CIKE_NATIVE_PASSWORD")
+                ?? "NativeGate1234"
+            let passwordValue = requestedPassword.range(of: #"^[A-Za-z0-9_-]{8,128}$"#, options: .regularExpression) == nil
+                ? "NativeGate1234"
+                : requestedPassword
             action = """
             (() => {
               if (!document.body.classList.contains('auth-locked')) {
@@ -139,7 +145,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               const password = form?.querySelector('[name="password"]');
               if (!form || !username || !password) return false;
               username.value = '\(username)';
-              password.value = 'NativeGate1234';
+              password.value = '\(passwordValue)';
               username.dispatchEvent(new Event('input', { bubbles: true }));
               password.dispatchEvent(new Event('input', { bubbles: true }));
               if (!window.__cikeNativeLoginSubmitted) {
@@ -147,6 +153,40 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 form.requestSubmit();
               }
               return false;
+            })()
+            """
+        } else if scenario == "local-test-switch" {
+            action = """
+            (() => {
+              if (document.body.classList.contains('auth-locked')) return false;
+              const settings = document.querySelector('#view-settings');
+              if (!settings?.classList.contains('active')) {
+                document.querySelector('[data-view="settings"]')?.click();
+                return false;
+              }
+              const simulation = document.querySelector('[data-local-test-mode="simulation"]');
+              if (!simulation || simulation.disabled) return false;
+              if (simulation.getAttribute('aria-pressed') === 'true') return true;
+              if (!window.__cikeNativeLocalSwitchStarted) {
+                window.__cikeNativeLocalSwitchStarted = true;
+                window.confirm = () => true;
+                simulation.click();
+              }
+              return false;
+            })()
+            """
+        } else if scenario == "capture-audio-ui" {
+            action = """
+            (() => {
+              const captures = document.querySelector('#view-captures');
+              if (!captures?.classList.contains('active')) {
+                document.querySelector('[data-section="seen"]')?.click();
+                document.querySelector('[data-view="captures"]')?.click();
+                return false;
+              }
+              const recorder = document.querySelector('#capture-audio-recorder');
+              const upload = document.querySelector('.audio-file-primary');
+              return Boolean(upload && recorder && !recorder.open && upload.getBoundingClientRect().height >= 44);
             })()
             """
         } else {

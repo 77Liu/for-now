@@ -8,7 +8,7 @@ const requestedSuite = process.argv[2] || "all";
 const ISOLATION_PROBE = "__isolation-probe";
 const productionEnvironmentKey = key => (
   ["DATABASE_URL", "AUTH_DATABASE_URL", "APP_URL", "UPSTREAM_ORIGIN"].includes(key)
-  || /^(?:OSS_|ALIYUN_|ALIBABA_CLOUD_|DEEPSEEK_|FEISHU_)/.test(key)
+  || /^(?:OSS_|ALIYUN_|ALIBABA_CLOUD_|DEEPSEEK_|FEISHU_|VOLCENGINE_)/.test(key)
   || /^(?:PG_BACKUP_DATABASE_URL|PG_SCHEMA_DATABASE_URL)$/.test(key)
 );
 const isolatedEnvironment = source => {
@@ -26,6 +26,7 @@ if (requestedSuite === ISOLATION_PROBE) {
   for (const key of [
     "DATABASE_URL", "AUTH_DATABASE_URL", "PG_BACKUP_DATABASE_URL", "PG_SCHEMA_DATABASE_URL",
     "APP_URL", "OSS_ENDPOINT", "OSS_BUCKET", "ALIYUN_ACCESS_KEY_ID", "DEEPSEEK_API_KEY",
+    "VOLCENGINE_SPEECH_API_KEY", "VOLCENGINE_ACCESS_KEY_ID", "VOLCENGINE_SECRET_ACCESS_KEY",
     "FEISHU_ALERT_WEBHOOK"
   ]) {
     assert.equal(process.env[key], undefined, `system test child inherited ${key}`);
@@ -45,6 +46,7 @@ const suites = {
   backend: [
     ["production environment isolation", ["scripts/system-test.mjs", ISOLATION_PROBE]],
     ["module boundaries", ["scripts/check-modules.mjs"]],
+    ["user journey coverage matrix", ["scripts/user-journey-regression.mjs", "validate"]],
     ["local task commit gate", ["scripts/commit-gate-regression.mjs"]],
     ["PostgreSQL test preflight", ["scripts/postgres-test-preflight-regression.mjs"]],
     ["versioned prompt catalog", ["scripts/prompt-catalog-regression.mjs"]],
@@ -60,11 +62,13 @@ const suites = {
     ["thought domain service", ["scripts/thought-service-regression.mjs"]],
     ["check-in and health record domains", ["scripts/checkin-health-regression.mjs"]],
     ["capture and journal domains", ["scripts/capture-journal-regression.mjs"]],
+    ["recoverable capture transcription workflow", ["scripts/capture-transcription-regression.mjs"]],
     ["book and quote domains", ["scripts/library-regression.mjs"]],
     ["review, chat and statistics domains", ["scripts/reviews-chat-regression.mjs"]],
     ["cross-genre content attachments", ["scripts/content-attachments-regression.mjs"]],
     ["keepsake media workflows", ["scripts/keepsake-media-workflows-regression.mjs"]],
     ["keepsake derivative generation and transport", ["scripts/attachment-derivatives-regression.mjs"]],
+    ["keepsake historical media migration", ["scripts/keepsake-media-migration-regression.mjs"]],
     ["API v1 public contract and thought vertical slice", ["scripts/api-v1-contract-regression.mjs"]],
     ["API v1 check-in and health vertical slices", ["scripts/record-v1-regression.mjs"]],
     ["API v1 OpenAPI fragments", ["scripts/api-v1-openapi-fragment-regression.mjs"]],
@@ -75,6 +79,8 @@ const suites = {
     ["G2 integrated API and persistence", ["scripts/g2-integration-regression.mjs"]],
     ["AI settings, costs, usage and audit contracts", ["scripts/ai-domain-regression.mjs"]],
     ["AI provider transport and attempt policy", ["scripts/ai-provider-regression.mjs"]],
+    ["Volcengine speech, OCR and document transports", ["scripts/volcengine-provider-regression.mjs"]],
+    ["Volcengine authenticated server integration", ["scripts/volcengine-server-regression.mjs"]],
     ["segmentation transport, audit and temporary lifecycle", ["scripts/segmentation-regression.mjs"]],
     ["keepsake records and event time contracts", ["scripts/keepsake-time-regression.mjs"]],
     ["onboarding, business prompts and personal context", ["scripts/personal-context-regression.mjs"]],
@@ -124,6 +130,9 @@ function runNode(args) {
       OSS_BUCKET: "production-bucket",
       ALIYUN_ACCESS_KEY_ID: "production-secret",
       DEEPSEEK_API_KEY: "production-secret",
+      VOLCENGINE_SPEECH_API_KEY: "production-secret",
+      VOLCENGINE_ACCESS_KEY_ID: "production-secret",
+      VOLCENGINE_SECRET_ACCESS_KEY: "production-secret",
       FEISHU_ALERT_WEBHOOK: "https://production.invalid/hook",
       PG_BACKUP_DATABASE_URL: "postgresql://production.invalid/backup",
       PG_SCHEMA_DATABASE_URL: "postgresql://production.invalid/schema",

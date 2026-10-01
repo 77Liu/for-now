@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1800" viewBox="0 0 1200 1800">
+  <rect width="1200" height="1800" fill="#f4f6f8"/>
+  <rect x="70" y="70" width="1060" height="1660" rx="34" fill="#ffffff" stroke="#d6dce2" stroke-width="3"/>
+  <text x="120" y="165" font-family="Arial, PingFang SC, sans-serif" font-size="58" font-weight="700" fill="#172033">健康日报</text>
+  <text x="120" y="225" font-family="Arial, PingFang SC, sans-serif" font-size="30" fill="#657080">2026年10月1日 · 合成测试数据</text>
+
+  <line x1="120" y1="280" x2="1080" y2="280" stroke="#d6dce2" stroke-width="2"/>
+  <text x="120" y="360" font-family="Arial, PingFang SC, sans-serif" font-size="38" font-weight="700" fill="#263c37">昨夜睡眠</text>
+  <text x="120" y="455" font-family="Arial, PingFang SC, sans-serif" font-size="92" font-weight="700" fill="#172033">7 小时 48 分</text>
+  <text x="120" y="525" font-family="Arial, PingFang SC, sans-serif" font-size="32" fill="#657080">23:18 入睡 · 07:06 醒来</text>
+
+  <rect x="120" y="595" width="250" height="145" rx="20" fill="#e9f4ef"/>
+  <text x="150" y="650" font-family="Arial, PingFang SC, sans-serif" font-size="28" fill="#49635a">深睡</text>
+  <text x="150" y="710" font-family="Arial, PingFang SC, sans-serif" font-size="44" font-weight="700" fill="#172033">121 分钟</text>
+  <rect x="405" y="595" width="250" height="145" rx="20" fill="#eef1fa"/>
+  <text x="435" y="650" font-family="Arial, PingFang SC, sans-serif" font-size="28" fill="#56617a">浅睡</text>
+  <text x="435" y="710" font-family="Arial, PingFang SC, sans-serif" font-size="44" font-weight="700" fill="#172033">248 分钟</text>
+  <rect x="690" y="595" width="250" height="145" rx="20" fill="#fff3dc"/>
+  <text x="720" y="650" font-family="Arial, PingFang SC, sans-serif" font-size="28" fill="#806436">快速眼动</text>
+  <text x="720" y="710" font-family="Arial, PingFang SC, sans-serif" font-size="44" font-weight="700" fill="#172033">99 分钟</text>
+
+  <text x="120" y="830" font-family="Arial, PingFang SC, sans-serif" font-size="38" font-weight="700" fill="#263c37">夜间指标</text>
+  <text x="150" y="915" font-family="Arial, PingFang SC, sans-serif" font-size="30" fill="#657080">平均心率</text>
+  <text x="460" y="915" font-family="Arial, PingFang SC, sans-serif" font-size="42" font-weight="700" fill="#172033">51 bpm</text>
+  <text x="150" y="985" font-family="Arial, PingFang SC, sans-serif" font-size="30" fill="#657080">平均血氧</text>
+  <text x="460" y="985" font-family="Arial, PingFang SC, sans-serif" font-size="42" font-weight="700" fill="#172033">98%</text>
+  <text x="150" y="1055" font-family="Arial, PingFang SC, sans-serif" font-size="30" fill="#657080">呼吸率</text>
+  <text x="460" y="1055" font-family="Arial, PingFang SC, sans-serif" font-size="42" font-weight="700" fill="#172033">15.2 次/分</text>
+  <text x="150" y="1125" font-family="Arial, PingFang SC, sans-serif" font-size="30" fill="#657080">清醒</text>
+  <text x="460" y="1125" font-family="Arial, PingFang SC, sans-serif" font-size="42" font-weight="700" fill="#172033">2 次 · 11 分钟</text>
+
+  <line x1="120" y1="1210" x2="1080" y2="1210" stroke="#d6dce2" stroke-width="2"/>
+  <text x="120" y="1290" font-family="Arial, PingFang SC, sans-serif" font-size="38" font-weight="700" fill="#263c37">今日心率</text>
+  <text x="120" y="1380" font-family="Arial, PingFang SC, sans-serif" font-size="34" fill="#657080">最低 47 bpm</text>
+  <text x="440" y="1380" font-family="Arial, PingFang SC, sans-serif" font-size="34" fill="#657080">平均 68 bpm</text>
+  <text x="760" y="1380" font-family="Arial, PingFang SC, sans-serif" font-size="34" fill="#657080">最高 139 bpm</text>
+
+  <polyline points="130,1540 220,1515 310,1528 400,1470 490,1498 580,1415 670,1450 760,1360 850,1440 940,1465 1060,1430"
+    fill="none" stroke="#c45d63" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="130" y1="1585" x2="1060" y2="1585" stroke="#d6dce2" stroke-width="2"/>
+  <text x="130" y="1640" font-family="Arial, PingFang SC, sans-serif" font-size="26" fill="#88919e">00:00</text>
+  <text x="560" y="1640" font-family="Arial, PingFang SC, sans-serif" font-size="26" fill="#88919e">12:00</text>
+  <text x="970" y="1640" font-family="Arial, PingFang SC, sans-serif" font-size="26" fill="#88919e">24:00</text>
+</svg>

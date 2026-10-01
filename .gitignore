@@ -10,3 +10,6 @@ reports/keepsake-segmentation-preview/
 .xcode-packages/
 build/ios-*/
 artifacts/ios/
+artifacts/user-journeys/
+artifacts/e2e-live/
+artifacts/browser-acceptance/
