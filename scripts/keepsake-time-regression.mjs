@@ -110,10 +110,10 @@ assert.equal(legacy.thumbPath, "/attachments/legacy-cutout.png");
 assert.equal(legacy.displayPath, "/attachments/legacy-cutout.png");
 assert.equal(publicKeepsake(legacy).originalPath, undefined);
 
-let httpResponse;
+let httpResponse, httpCreateOptions;
 const keepsakeHttp = createKeepsakeHttp({
   records: {
-    create: async () => ({ value: normalized }),
+    create: async (_input, options) => { httpCreateOptions = options; return { value: normalized, duplicate: Boolean(options.clientRequestId) }; },
     update: async () => ({ value: normalized })
   },
   bodyJson: async req => req.body,
@@ -124,6 +124,9 @@ const keepsakeHttp = createKeepsakeHttp({
 await keepsakeHttp.handle({ method: "POST", body: input }, {}, new URL("http://local/api/keepsakes"));
 assert.equal(httpResponse.status, 201);
 assert.equal("originalPath" in httpResponse.value, false);
+await keepsakeHttp.handle({ method: "POST", headers: { "idempotency-key": "keepsake-http-1" }, body: input }, {}, new URL("http://local/api/keepsakes"));
+assert.equal(httpResponse.status, 200);
+assert.deepEqual(httpCreateOptions, { clientRequestId: "keepsake-http-1" });
 await keepsakeHttp.handle({ method: "GET" }, {}, new URL(`http://local/api/keepsakes/${normalized.id}/original`));
 assert.deepEqual(httpResponse, { status: 200, value: { originalPath: input.originalPath } });
 await keepsakeHttp.handle({ method: "GET" }, {}, new URL("http://local/api/keepsakes/missing/original"));
@@ -161,4 +164,34 @@ assert.equal(updated.createdAt, before[0].createdAt);
 assert.equal(updated.occurredOn, "2026-10-01");
 assert.equal(updated.originalPath, before[0].originalPath);
 assert.equal(accounts.get("b")[0].title, "票券");
+
+const idempotentStore = { keepsakes: [], trash: [] }, idempotency = new Map();
+const idempotentRecords = createKeepsakeRecords({
+  repository: {
+    read: async () => structuredClone(idempotentStore.keepsakes),
+    update: async mutate => mutate(idempotentStore.keepsakes, idempotentStore.trash),
+    executeIdempotent: async (request, operation, { onReplay = value => value } = {}) => {
+      const key = `${request.scope}:${request.key}`, prior = idempotency.get(key);
+      if (prior) {
+        if (prior.requestHash !== request.requestHash) throw Object.assign(new Error("reused"), { code: "IDEMPOTENCY_KEY_REUSED" });
+        return onReplay(structuredClone(prior.response));
+      }
+      const response = await operation(idempotentStore.keepsakes, idempotentStore.trash);
+      idempotency.set(key, { requestHash: request.requestHash, response: structuredClone(response) });
+      return response;
+    }
+  },
+  now: () => "2026-09-29T01:02:03.004Z",
+  createId: () => "keepsake-idempotent"
+});
+const firstIdempotent = await idempotentRecords.create(input, { clientRequestId: "keepsake-create-1" });
+const replayedIdempotent = await idempotentRecords.create(input, { clientRequestId: "keepsake-create-1" });
+assert.equal(firstIdempotent.value.id, "keepsake-idempotent");
+assert.equal(replayedIdempotent.value.id, firstIdempotent.value.id);
+assert.equal(replayedIdempotent.duplicate, true);
+assert.equal(idempotentStore.keepsakes.length, 1);
+assert.deepEqual(
+  await idempotentRecords.create({ ...input, title: "不同内容" }, { clientRequestId: "keepsake-create-1" }),
+  { conflict: true }
+);
 console.log("Keepsake/time contracts passed: calendar/timezone boundaries, legacy event parsing, payload compatibility, original data, account scoping and failed commits.");

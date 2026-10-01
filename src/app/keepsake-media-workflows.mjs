@@ -1,4 +1,11 @@
+import crypto from "node:crypto";
+
 const MEDIA_KEYS = ["thumbPath", "displayPath", "editPath", "alphaMaskPath"];
+const requestDigest = input => crypto.createHash("sha256").update(JSON.stringify({
+  ...input,
+  image: crypto.createHash("sha256").update(String(input.image || "")).digest("hex"),
+  alphaMask: crypto.createHash("sha256").update(String(input.alphaMask || "")).digest("hex")
+})).digest("hex");
 
 const generatedPaths = (paths, includeOriginal) => [
   ...(includeOriginal ? [paths.originalPath] : []),
@@ -29,7 +36,21 @@ export function createKeepsakeMediaWorkflows({
   }
 
   return {
-    async create(input) {
+    async create(input, { clientRequestId = "" } = {}) {
+      const idempotency = clientRequestId ? {
+        scope: "keepsakeMedia.create",
+        key: clientRequestId,
+        requestHash: requestDigest(input)
+      } : null;
+      if (idempotency && typeof repository.readIdempotent === "function") {
+        try {
+          const replay = await repository.readIdempotent(idempotency);
+          if (replay !== undefined) return { ...replay, duplicate: true };
+        } catch (error) {
+          if (error?.code === "IDEMPOTENCY_KEY_REUSED") return { conflict: true };
+          throw error;
+        }
+      }
       const uploaded = await attachments.saveKeepsakeSet({
         image: input.image,
         alphaMask: input.alphaMask
@@ -40,18 +61,25 @@ export function createKeepsakeMediaWorkflows({
           await discardGenerated(uploaded.paths, true);
           return parsed;
         }
-        return await repository.update(store => {
+        const createRecord = store => {
           const value = {
             id: createId(),
             createdAt: now(),
             ...parsed.value,
-            mediaVersion: 1
+            mediaVersion: 1,
+            ...(clientRequestId ? { clientRequestId, requestHash: idempotency.requestHash } : {})
           };
           store.keepsakes.unshift(value);
-          return { value };
-        });
+          return { value, duplicate: false };
+        };
+        const result = idempotency && typeof repository.executeIdempotent === "function"
+          ? await repository.executeIdempotent(idempotency, createRecord, { onReplay: value => ({ ...value, duplicate: true }) })
+          : await repository.update(createRecord);
+        if (result.duplicate) await discardGenerated(uploaded.paths, true).catch(() => {});
+        return result;
       } catch (error) {
         await discardGenerated(uploaded.paths, true).catch(() => {});
+        if (error?.code === "IDEMPOTENCY_KEY_REUSED") return { conflict: true };
         throw error;
       }
     },

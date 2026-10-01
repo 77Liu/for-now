@@ -22,11 +22,13 @@ export function createKeepsakeHttp({
       }
     } else if (req.method === "POST" && url.pathname === "/api/keepsakes") {
       const input = await bodyJson(req, mediaBodyMaxBytes);
+      const clientRequestId = String(req.headers?.["idempotency-key"] || "").trim().slice(0, 100);
       const result = media && input.image && input.alphaMask
-        ? await media.create(input)
-        : await records.create(input);
+        ? await media.create(input, { clientRequestId })
+        : await records.create(input, { clientRequestId });
       if (result.error) sendJson(res, 400, { error: result.error });
-      else sendJson(res, 201, present(result.value));
+      else if (result.conflict) sendJson(res, 409, { error: "同一幂等键不能用于不同内容", code: "IDEMPOTENCY_KEY_REUSED" });
+      else sendJson(res, result.duplicate ? 200 : 201, present(result.value));
     } else if (req.method === "PATCH" && /^\/api\/keepsakes\/[^/]+$/.test(url.pathname)) {
       const input = await bodyJson(req, mediaBodyMaxBytes);
       const result = media && input.alphaMask

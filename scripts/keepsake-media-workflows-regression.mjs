@@ -23,7 +23,7 @@ const parse = (input, existing = {}) => input.title
     }
   : { error: "请填写小物名称" };
 
-const store = { keepsakes: [] };
+const store = { keepsakes: [] }, idempotency = new Map();
 let failCommit = false;
 const repository = {
   async read() {
@@ -37,6 +37,27 @@ const repository = {
       throw new Error("commit failed");
     }
     Object.assign(store, draft);
+    return structuredClone(result);
+  },
+  async readIdempotent(request) {
+    const entry = idempotency.get(`${request.scope}:${request.key}`);
+    if (!entry) return undefined;
+    if (entry.requestHash !== request.requestHash) throw Object.assign(new Error("reused"), { code: "IDEMPOTENCY_KEY_REUSED" });
+    return structuredClone(entry.response);
+  },
+  async executeIdempotent(request, operation, { onReplay = value => value } = {}) {
+    const key = `${request.scope}:${request.key}`, entry = idempotency.get(key);
+    if (entry) {
+      if (entry.requestHash !== request.requestHash) throw Object.assign(new Error("reused"), { code: "IDEMPOTENCY_KEY_REUSED" });
+      return onReplay(structuredClone(entry.response));
+    }
+    const draft = structuredClone(store), result = await operation(draft);
+    if (failCommit) {
+      failCommit = false;
+      throw new Error("commit failed");
+    }
+    Object.assign(store, draft);
+    idempotency.set(key, { requestHash: request.requestHash, response: structuredClone(result) });
     return structuredClone(result);
   }
 };
@@ -101,6 +122,23 @@ await assert.rejects(workflows.create({
 assert.deepEqual(cleaned.at(-1), Object.values(readyPaths("create-3")));
 assert.equal(store.keepsakes.length, 1);
 
+const idempotentInput = {
+  title: "幂等票根",
+  occurredAt: "2026-09-29T10:20:30.000Z",
+  image: "data:image/jpeg;base64,idempotent-source",
+  alphaMask: "data:image/png;base64,idempotent-mask"
+};
+const savedBeforeIdempotent = saved.length;
+const firstIdempotent = await workflows.create(idempotentInput, { clientRequestId: "keepsake-media-create-1" });
+const replayedIdempotent = await workflows.create(idempotentInput, { clientRequestId: "keepsake-media-create-1" });
+assert.equal(replayedIdempotent.value.id, firstIdempotent.value.id);
+assert.equal(replayedIdempotent.duplicate, true);
+assert.equal(saved.length, savedBeforeIdempotent + 1);
+assert.deepEqual(
+  await workflows.create({ ...idempotentInput, title: "不同小物" }, { clientRequestId: "keepsake-media-create-1" }),
+  { conflict: true }
+);
+
 const before = structuredClone(store.keepsakes[0]);
 const updated = await workflows.update(before.id, {
   title: "修订票根",
@@ -108,7 +146,7 @@ const updated = await workflows.update(before.id, {
   alphaMask: "data:image/png;base64,new-mask"
 });
 assert.equal(updated.value.title, "修订票根");
-assert.equal(saved.length, 3);
+assert.equal(saved.length, savedBeforeIdempotent + 1);
 assert.equal(derived.length, 1);
 assert.deepEqual(derived[0], {
   originalPath: before.originalPath,

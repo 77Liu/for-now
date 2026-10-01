@@ -7,6 +7,11 @@ const CATEGORIES = ["小票", "纸品", "立牌", "小物", "其他"];
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 const pathValue = value => cleanAttachmentPaths([value])[0] || "";
 const derivativeKeys = ["thumbPath", "displayPath", "editPath", "alphaMaskPath"];
+const requestDigest = value => crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const priorRequest = (items, trashItems, clientRequestId) => (
+  items.find(item => item.clientRequestId === clientRequestId)
+  || trashItems.find(item => item.type === "keepsake" && item.payload?.clientRequestId === clientRequestId)?.payload
+);
 
 export function normalizeKeepsake(item, eventTime) {
   const originalPath = pathValue(item.originalPath);
@@ -62,10 +67,11 @@ export function keepsakePayload(input, existing = null) {
 }
 
 export function publicKeepsake(item) {
-  const { originalPath, ...visible } = normalizeKeepsake(item, {
+  const { originalPath, requestHash, ...visible } = normalizeKeepsake(item, {
     occurredAt: item.occurredAt,
     occurredOn: item.occurredOn
   });
+  void requestHash;
   return visible;
 }
 
@@ -80,12 +86,37 @@ export function createKeepsakeRecords({ repository, now = () => new Date().toISO
     async get(id) {
       return (await repository.read()).find(item => item.id === id) || null;
     },
-    async create(input) {
+    async create(input, { clientRequestId = "" } = {}) {
       const parsed = keepsakePayload(input);
       if (parsed.error) return parsed;
-      const keepsake = { id: createId(), createdAt: now(), ...parsed.value };
-      await repository.update(items => items.unshift(keepsake));
-      return { value: keepsake };
+      const requestHash = clientRequestId ? requestDigest(parsed.value) : "";
+      const createRecord = (items, trashItems = [], useLegacyLookup = true) => {
+        if (clientRequestId && useLegacyLookup) {
+          const duplicate = priorRequest(items, trashItems, clientRequestId);
+          if (duplicate) return duplicate.requestHash === requestHash ? { value: duplicate, duplicate: true } : { conflict: true };
+        }
+        const keepsake = {
+          id: createId(),
+          createdAt: now(),
+          ...parsed.value,
+          ...(clientRequestId ? { version: 1, clientRequestId, requestHash } : {})
+        };
+        items.unshift(keepsake);
+        return { value: keepsake, duplicate: false };
+      };
+      if (clientRequestId && typeof repository.executeIdempotent === "function") {
+        try {
+          return await repository.executeIdempotent(
+            { scope: "keepsakes.create", key: clientRequestId, requestHash },
+            (items, trashItems = []) => createRecord(items, trashItems, false),
+            { onReplay: result => ({ ...result, duplicate: true }) }
+          );
+        } catch (error) {
+          if (error?.code === "IDEMPOTENCY_KEY_REUSED") return { conflict: true };
+          throw error;
+        }
+      }
+      return repository.update((items, trashItems = []) => createRecord(items, trashItems));
     },
     update(id, input) {
       return repository.update(items => {
