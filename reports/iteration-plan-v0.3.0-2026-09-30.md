@@ -710,11 +710,13 @@ NO-GO 和中间状态。
 - 2026-10-01 复盘执行时，本地根工作树已从已合入的
   `feat/v0.3.0-05-checkin-optimism` 切回并同步
   `main@2ff285ca663ef9c986b40f3e2f62ad2329ff3268`；旧分支已安全删除。
-- 随后按 Owner 授权形成 SOP、V0.4.0 起规则和本复盘共 3 笔本地文档提交；
-  因未授权 push，当前本地 `main` 合理领先 `origin/main` 3 个提交，不把
-  “尚未 push”误写为主线同步失败。
-- `.worktrees/v0.2.5-voice` 和 `.worktrees/ios-v0.2.4` 均检测到未提交内容；
-  按保护已有工作的规则保留，未强制移除。完成各自内容归属和提交/归档后再
-  继续清理。
+- 随后按 Owner 授权形成 SOP、V0.4.0 起规则、复盘、ignore、研究和归档
+  记录等本地整理提交；因未授权 push，当前本地 `main` 合理领先
+  `origin/main`，不把“尚未 push”误写为主线同步失败。
+- `.worktrees/v0.2.5-voice` 的 V0.4.0 待确认计划归档为
+  `archive/v0.4.0-plan-20261001@b158b08872840255f4f14769b8ba57d1731df6e3`；
+  `.worktrees/ios-v0.2.4` 的 Team 配置与 plist 调整归档为
+  `archive/v0.3.0-ios-package-20261001@d6291b4fa68a140efa75719a60fbd828fdeef001`。
+  两个开发服务已停止、工作树已移除，归档分支继续保留。
 - 完整过程、问题和行动项见
   `reports/v0.3.0-retrospective-2026-10-01.md`。
