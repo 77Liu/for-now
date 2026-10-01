@@ -59,6 +59,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     localTestMode,
     localTestMainUserId: String(env.LOCAL_TEST_MAIN_USER_ID || "").trim(),
     localTestResetOnStart: localTestMode && env.LOCAL_TEST_RESET_ON_START === "1",
+    periodicAnalysisEnabled: env.PERIODIC_ANALYSIS_ENABLED !== "0",
     deepSeekApiUrl: env.DEEPSEEK_API_URL || "https://api.deepseek.com/chat/completions",
     attachments,
     features: Object.freeze({

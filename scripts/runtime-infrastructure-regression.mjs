@@ -46,6 +46,8 @@ assert.equal(config({ PROMPT_CATALOG_VERSION: " 2026.09.29.1 " }).promptCatalogV
 assert.equal(defaults.localTestResetOnStart, false);
 assert.equal(config({ LOCAL_TEST_MODE: "1", LOCAL_TEST_RESET_ON_START: "1" }).localTestResetOnStart, true);
 assert.equal(config({ LOCAL_TEST_RESET_ON_START: "1" }).localTestResetOnStart, false);
+assert.equal(defaults.periodicAnalysisEnabled, true);
+assert.equal(config({ PERIODIC_ANALYSIS_ENABLED: "0" }).periodicAnalysisEnabled, false);
 for (const env of [
   { AUTH_REQUIRED: "1" }, { PERSISTENCE_BACKEND: "invalid" },
   { LOCAL_TEST_MODE: "1", NODE_ENV: "production" },

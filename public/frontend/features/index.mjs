@@ -18,11 +18,11 @@ export function createPageEffects({
       setupQuoteBubbleScroll();
     }),
     leaveQuotes: () => stopQuoteBubbleScroll(),
-    statistics: () => void loadStatistics(),
-    "ai-cost": () => void loadAiCostPlan(),
-    commercialization: () => void loadCommercialization(),
-    notifications: () => void loadNotifications().then(() => scheduleNotificationPoll()),
-    trash: () => void loadTrash()
+    statistics: () => loadStatistics(),
+    "ai-cost": () => loadAiCostPlan(),
+    commercialization: () => loadCommercialization(),
+    notifications: () => loadNotifications().then(() => scheduleNotificationPoll()),
+    trash: () => loadTrash()
   });
 }
 

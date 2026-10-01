@@ -61,6 +61,7 @@ const {
   authRequired: AUTH_REQUIRED, cookieSecure: COOKIE_SECURE, basePath: APP_BASE_PATH,
   upstreamOrigin: UPSTREAM_ORIGIN, localTestMode: LOCAL_TEST_MODE,
   localTestMainUserId: LOCAL_TEST_MAIN_USER_ID, localTestResetOnStart: LOCAL_TEST_RESET_ON_START,
+  periodicAnalysisEnabled: PERIODIC_ANALYSIS_ENABLED,
   deepSeekApiUrl: DEEPSEEK_API_URL,
   port: PORT, version: APP_VERSION
 } = appConfig;
@@ -2489,7 +2490,7 @@ if (AUTH_REQUIRED) {
   }
 }
 const periodicFailure = error => logEvent("system", "scheduler.failed", { level: "error", error: errorMetadata(error) });
-if (!LOCAL_TEST_MODE) {
+if (!LOCAL_TEST_MODE && PERIODIC_ANALYSIS_ENABLED) {
   setTimeout(() => void runPeriodicAnalyses().catch(periodicFailure), 5000).unref();
   setInterval(() => void runPeriodicAnalyses().catch(periodicFailure), 3600000).unref();
 }

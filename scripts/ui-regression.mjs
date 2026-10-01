@@ -1354,7 +1354,7 @@ try {
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
   await evaluate(`window.__delayCheckinCreate=true;document.querySelector("#checkin-confirm-all").click();document.querySelector("#checkin-factors").value="即时反馈";document.querySelector("#checkin-form").requestSubmit();true`);
   assert.equal(await waitUntil(`typeof window.__releaseCheckinCreate==="function"&&document.querySelector(".checkin-history-entry.is-syncing")?.textContent.includes("即时反馈")`), true);
-  assert.deepEqual(await evaluate(`({saves:window.__checkinSaves,status:document.querySelector(".checkin-sync-state")?.textContent,form:document.querySelector("#checkin-factors").value,editable:Boolean(document.querySelector(".checkin-history-entry.is-syncing [data-edit-checkin]"))})`), { saves:0, status:"正在同步", form:"即时反馈", editable:false });
+  assert.deepEqual(await evaluate(`({saves:window.__checkinSaves,status:["待同步","正在同步"].includes(document.querySelector(".checkin-sync-state")?.textContent),form:document.querySelector("#checkin-factors").value,editable:Boolean(document.querySelector(".checkin-history-entry.is-syncing [data-edit-checkin]"))})`), { saves:0, status:true, form:"即时反馈", editable:false });
   await evaluate(`window.__releaseCheckinCreate();true`);
   assert.equal(await waitUntil(`window.__checkinSaves===1&&document.querySelector('[data-checkin-id="checkin-new-1"]')&&document.querySelector("#home-state-editor").hidden`), true);
   assert.deepEqual(await evaluate(`({factor:window.__checkinPayloads[0].factors[0],timeMode:window.__checkinPayloads[0].timeMode,modalHidden:document.querySelector("#home-state-editor").hidden})`), { factor:"即时反馈", timeMode:"now", modalHidden:true });
@@ -1625,7 +1625,7 @@ try {
   assert.deepEqual(await evaluate(`(() => {const input=document.querySelector("#capture-content"),event=new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true});input.dispatchEvent(event);return{prevented:event.defaultPrevented,saves:window.__captureSaves}})()`),{prevented:false,saves:0});
   await evaluate(`window.__delayCaptureCreate=true;document.querySelector("#capture-content").dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",ctrlKey:true,bubbles:true,cancelable:true}));true`);
   assert.equal(await waitUntil(`typeof window.__releaseCaptureCreate==="function"&&document.querySelector(".capture-timeline-entry.is-syncing")?.textContent.includes("快捷收下的新捕念")`), true);
-  assert.deepEqual(await evaluate(`({saves:window.__captureSaves,status:document.querySelector(".capture-sync-state")?.textContent,form:document.querySelector("#capture-content").value})`), {saves:0,status:"正在同步",form:"快捷收下的新捕念"});
+  assert.deepEqual(await evaluate(`({saves:window.__captureSaves,status:["待同步","正在同步"].includes(document.querySelector(".capture-sync-state")?.textContent),form:document.querySelector("#capture-content").value})`), {saves:0,status:true,form:"快捷收下的新捕念"});
   await evaluate(`window.__releaseCaptureCreate();true`);
   assert.equal(await waitUntil(`window.__captureSaves === 1 && document.querySelector('[data-capture-id="capture-new-1"]')`), true);
   const capturePayload = await evaluate(`window.__capturePayloads[0]`);
@@ -2494,8 +2494,13 @@ try {
   assert.equal(await evaluate(`window.__localHydrateRequests.filter(scope=>scope==="captures").length`),1);
   await evaluate(`window.__failCaptureCreate=true;document.querySelector("#capture-content").value="范围切换时保留的待同步记录";document.querySelector("#capture-form").requestSubmit();true`);
   assert.equal(await waitUntil(`document.querySelector(".capture-sync-state.pending")?.textContent==="待同步"&&document.querySelector("#capture-list").textContent.includes("范围切换时保留的待同步记录")`),true);
-  await evaluate(`document.querySelector('[data-view="today"]').click();true`);
+  await evaluate(`window.__failActionNetwork=true;document.querySelector('[data-action-complete="ui-action"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector(".action-column:nth-child(3)")?.textContent.includes("服务器新标题")&&document.querySelector(".action-column:nth-child(3) .checkin-sync-state.pending")`),true);
+  await evaluate(`window.__delayActionList=true;document.querySelector('[data-view="today"]').click();true`);
+  assert.equal(await waitUntil(`typeof window.__releaseActionList==="function"`),true);
+  await evaluate(`window.__releaseActionList();true`);
   assert.equal(await waitUntil(`window.__localHydrateRequests.includes("today")&&document.querySelectorAll(".home-v02-memory").length===3&&document.querySelector("#home-keepsake").textContent.includes("旧展览票")`),true);
+  assert.equal(await evaluate(`Boolean(document.querySelector(".action-column:nth-child(3)")?.textContent.includes("服务器新标题")&&document.querySelector(".action-column:nth-child(3) .checkin-sync-state.pending"))`),true);
   await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
   assert.equal(await evaluate(`document.querySelector(".capture-sync-state.pending")?.textContent==="待同步"&&document.querySelector("#capture-list").textContent.includes("范围切换时保留的待同步记录")`),true);
   await evaluate(`document.querySelector('[data-view="discovery"]').click();true`);

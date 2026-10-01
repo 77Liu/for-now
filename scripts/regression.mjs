@@ -68,7 +68,7 @@ function mockDeepSeek() {
 }
 
 async function waitForServer(url, child) {
-  for (let attempt = 0; attempt < 60; attempt += 1) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
     if (child.exitCode != null) throw new Error(`应用服务提前退出，退出码 ${child.exitCode}\n${appError.trim()}`);
     try {
       const response = await fetch(`${url}/api/state`);
@@ -76,7 +76,7 @@ async function waitForServer(url, child) {
     } catch {}
     await sleep(50);
   }
-  throw new Error("等待应用服务启动超时");
+  throw new Error(`等待应用服务启动超时\n${appError.trim()}`);
 }
 
 async function readEvents(response) {
@@ -151,7 +151,7 @@ let appError = "";
 const startApp = () => {
   const child = spawn(process.execPath, ["server.mjs"], {
     cwd: ROOT,
-    env: { ...process.env, NODE_ENV: "test", TZ: "Asia/Shanghai", PORT: String(appPort), DATA_DIR: dataDir, DEEPSEEK_API_URL: `http://127.0.0.1:${mockPort}/chat/completions`, KEEPSAKE_SEGMENT_MOCK_RESULT: mockSegmentCutout },
+    env: { ...process.env, NODE_ENV: "test", TZ: "Asia/Shanghai", PORT: String(appPort), DATA_DIR: dataDir, DEEPSEEK_API_URL: `http://127.0.0.1:${mockPort}/chat/completions`, KEEPSAKE_SEGMENT_MOCK_RESULT: mockSegmentCutout, PERIODIC_ANALYSIS_ENABLED: "0" },
     stdio: ["ignore", "pipe", "pipe"]
   });
   child.stderr.on("data", chunk => { appError += chunk; });

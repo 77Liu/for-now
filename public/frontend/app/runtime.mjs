@@ -3324,7 +3324,7 @@ async function ensureLocalTestViewScope(view){
     try{
       const result=await request("/api/local-test-mode/hydrate",{method:"POST",body:JSON.stringify({scope})});
       if(owner!==currentUser?.id||session!==sessionSerial||localTestConfig?.mode!=="simulation")return false;
-      localTestConfig=result.control;replaceState(result.state);notificationUnreadCount=Number(state.notificationUnread)||0;render();await restorePendingProjections();renderLocalTestSettings();return true
+      localTestConfig=result.control;replaceState(result.state);notificationUnreadCount=Number(state.notificationUnread)||0;render();renderLocalTestSettings();return true
     }catch(error){
       if(owner===currentUser?.id&&session===sessionSerial)showToast(`当前页面记录读取失败：${error.message}`,"error");
       return false
@@ -3346,8 +3346,8 @@ const pageEffects={...createPageEffects({
   loadNotifications,
   scheduleNotificationPoll,
   loadTrash
-}),today:()=>void loadActionsWorkspace(),discovery:()=>void loadDiscovery(),feedback:()=>void loadFeedback(),export:()=>void loadExportManifest(),"personal-context":()=>void loadPersonalContext()};
-const lazyPageEffects=new Proxy(pageEffects,{get(target,view){const effect=target[view];if(typeof view!=="string"||!LOCAL_TEST_VIEW_SCOPES[view])return effect;return()=>{void ensureLocalTestViewScope(view).then(ready=>{if(ready)effect?.()})}}});
+}),today:()=>loadActionsWorkspace(),discovery:()=>loadDiscovery(),feedback:()=>loadFeedback(),export:()=>loadExportManifest(),"personal-context":()=>loadPersonalContext()};
+const lazyPageEffects=new Proxy(pageEffects,{get(target,view){const effect=target[view];if(typeof view!=="string"||!LOCAL_TEST_VIEW_SCOPES[view])return effect;return()=>{void ensureLocalTestViewScope(view).then(async ready=>{if(!ready)return;await effect?.();await restorePendingProjections()})}}});
 ({switchView}=createPageRouter({query:$,queryAll:$$,effects:lazyPageEffects}));
 $("#home-open-thought").addEventListener("click",()=>openHomeEditor("thought"));
 $("#home-record-state").addEventListener("click",()=>openHomeEditor("state"));
