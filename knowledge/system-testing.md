@@ -28,10 +28,11 @@
 | `npm run test:journeys:daily` | Smoke 加前端全回归、认证隔离和线上快照恢复 |
 | `npm run test:journeys:release` | 完整系统、PostgreSQL 与依赖审计；仍需人工发布闸门 |
 | `npm run test:journeys:live -- <mode>` | 运行时传入隔离账号与样例，验证真实 UI、持久化及第三方服务；不得用于生产写入 |
+| `npm run test:third-party -- --live` | 用合成样例统一实测 DeepSeek、豆包语音、火山视觉、阿里分割和 OSS；必须显式授权并加载受保护凭据 |
 | `npm run test:explore` | P1-P3 本地探索页隔离，仅在探索分支运行，不进入生产发布门禁 |
 | `npm run test:system` | 按后端 → 前端顺序执行功能稳定性系统测试 |
 
-功能开发阶段不执行压测，`test:load` 不属于 `test:system` 默认链路，只在容量评估、扩容决策或用户明确要求时单独运行。`test:system` 串行执行浏览器用例，避免多个 Chromium 进程同时清理临时 Session Storage。真实外部服务冒烟 `test:oss`、`test:aliyun` 也不属于默认系统测试，必须在明确授权且配置受控凭据后单独执行。
+功能开发阶段不执行压测，`test:load` 不属于 `test:system` 默认链路，只在容量评估、扩容决策或用户明确要求时单独运行。`test:system` 串行执行浏览器用例，避免多个 Chromium 进程同时清理临时 Session Storage。真实外部服务冒烟 `test:third-party`、`test:oss`、`test:aliyun` 也不属于默认系统测试，必须在明确授权且配置受控凭据后单独执行。统一实测的固定调用矩阵、3 元预算上限和凭据边界见 [`third-party-live-testing.md`](third-party-live-testing.md)。
 
 ## 后端测试
 
