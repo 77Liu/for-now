@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createThoughtService } from "../src/modules/thoughts/index.mjs";
 
 const store = {
+  captures: [{ id: "capture-source", content: "来源念起", version: 3 }],
   thoughts: [{
     id: "question-1",
     type: "question",
@@ -17,12 +18,26 @@ const store = {
     }]
   }]
 };
+const idempotency = new Map();
 const repository = {
   async read() {
     return structuredClone(store);
   },
   async update(mutator) {
     return mutator(store);
+  },
+  async executeIdempotent(request, operation) {
+    const identity = `${request.scope}:${request.key}`;
+    const existing = idempotency.get(identity);
+    if (existing) {
+      if (existing.requestHash !== request.requestHash) {
+        throw Object.assign(new Error("same key, different body"), { code: "IDEMPOTENCY_KEY_REUSED" });
+      }
+      return structuredClone(existing.response);
+    }
+    const response = await operation(store);
+    idempotency.set(identity, { requestHash: request.requestHash, response: structuredClone(response) });
+    return response;
   }
 };
 let sequence = 0;
@@ -49,6 +64,23 @@ const record = await service.createBlock({
 assert.equal(record.value.authorType, "user");
 assert.equal(store.thoughts[0].id, record.value.id);
 assert.equal(store.thoughts.find(item => item.id === "question-1").version, 2);
+const idempotentBlockInput = {
+  content: "幂等内容块",
+  eventTime: { occurredAt: "2026-09-28T01:00:00.000Z", occurredOn: "2026-09-28" },
+  type: "record",
+  relatedTo: "question-1",
+  tags: ["验证"],
+  attachmentPaths: ["/attachments/idempotent.png"],
+  clientRequestId: "thought-block-request-1"
+};
+const idempotentBlock = await service.createBlock(idempotentBlockInput);
+const replayedBlock = await service.createBlock(idempotentBlockInput);
+assert.equal(replayedBlock.value.id, idempotentBlock.value.id);
+assert.equal(store.thoughts.filter(item => item.clientRequestId === "thought-block-request-1").length, 1);
+await assert.rejects(
+  service.createBlock({ ...idempotentBlockInput, content: "不同内容" }),
+  { code: "IDEMPOTENCY_KEY_REUSED" }
+);
 assert.equal((await service.createBlock({
   content: "孤儿",
   eventTime: { occurredAt: "2026-09-28T01:00:00.000Z", occurredOn: "2026-09-28" },
@@ -112,14 +144,33 @@ const chainInput = {
   idea: "初步想法",
   answer: "",
   modelDraft: "",
-  modelReasoning: ""
+  modelReasoning: "",
+  sourceRef: { type: "capture", id: "capture-source", version: 3 }
 };
 const chain = service.createChainInStore(store, chainInput);
 const chainRoot = chain.items[0];
 assert.equal(chainRoot.type, "question");
+assert.deepEqual(chainRoot.sourceRef, { type: "capture", id: "capture-source", version: 3 });
 assert.equal(chain.items[1].type, "idea");
 assert.equal(service.createChainInStore(store, chainInput).duplicate, true);
 assert.equal(service.createChainInStore(store, { ...chainInput, requestHash: "different" }).conflict, true);
+assert.equal(service.createChainInStore(store, {
+  ...chainInput,
+  clientRequestId: "chain-missing-source",
+  requestHash: "chain-missing-source",
+  sourceRef: { type: "capture", id: "missing", version: 1 }
+}).sourceMissing, true);
+assert.deepEqual(service.createChainInStore(store, {
+  ...chainInput,
+  clientRequestId: "chain-stale-source",
+  requestHash: "chain-stale-source",
+  sourceRef: { type: "capture", id: "capture-source", version: 2 }
+}), { sourceVersionConflict: true, currentVersion: 3 });
+assert.deepEqual(service.createChainInStore(store, {
+  ...chainInput,
+  clientRequestId: "chain-duplicate-source",
+  requestHash: "chain-duplicate-source"
+}), { sourceConflict: true, rootId: chainRoot.id });
 const staleChainUpdate = service.updateChainInStore(store, {
   id: chainRoot.id,
   questionText: "不应覆盖",

@@ -1,7 +1,11 @@
 import { chatHistory, chatMessage } from "../modules/chats/index.mjs";
 import { reflectionEvidence, reflectionPrompt } from "../modules/reviews/index.mjs";
 import { userPrompt } from "../modules/ai/index.mjs";
-import { userAnswerContext } from "./personal-context.mjs";
+import {
+  compactPersonalContextReceipt,
+  personalContextProjection,
+  personalContextReceiptMatches
+} from "./personal-context.mjs";
 
 const idempotencyConflict = () => Object.assign(new Error("同一幂等键不能用于不同内容"), {
   statusCode: 409,
@@ -113,28 +117,43 @@ export function createReviewChatWorkflows({
       findExisting: () => chats.findRequest(clientRequestId, requestHash),
       generateValue: async () => {
         const store = await repository.read();
+        const personalContext = personalContextProjection(store);
         const result = await generate(userPrompt({
-          context: userAnswerContext(store),
+          context: personalContext.prompt,
           task: message
         }), {
           scene: "chat",
           history: chatHistory(store.chats),
-          captureReasoning: true
+          captureReasoning: true,
+          contextReceipt: personalContext.receipt
         });
         return {
           message,
           eventTime,
           answer: result.content,
-          reasoningContent: result.reasoningContent
+          reasoningContent: result.reasoningContent,
+          contextReceipt: personalContext.receipt
         };
       },
-      save: generated => chats.save(generated, { clientRequestId, requestHash }),
+      save: async generated => {
+        if (!personalContextReceiptMatches(await repository.read(), generated.contextReceipt)) {
+          throw Object.assign(new Error("个人语境已变化，本次应答未写入"), { code: "STALE_PERSONAL_CONTEXT", statusCode: 409 });
+        }
+        return chats.save({
+          ...generated,
+          contextReceipt: compactPersonalContextReceipt(generated.contextReceipt)
+        }, { clientRequestId, requestHash });
+      },
       saveInStore: typeof chats.saveInStore === "function"
-        ? (document, generated) => chats.saveInStore(
-            document,
-            generated,
-            { clientRequestId, requestHash }
-          )
+        ? (document, generated) => {
+            if (!personalContextReceiptMatches(document, generated.contextReceipt)) {
+              throw Object.assign(new Error("个人语境已变化，本次应答未写入"), { code: "STALE_PERSONAL_CONTEXT", statusCode: 409 });
+            }
+            return chats.saveInStore(document, {
+              ...generated,
+              contextReceipt: compactPersonalContextReceipt(generated.contextReceipt)
+            }, { clientRequestId, requestHash });
+          }
         : null
     });
   }
@@ -151,6 +170,7 @@ export function createReviewChatWorkflows({
       findExisting: () => reviews.findAnalysisRequest(clientRequestId, requestHash),
       generateValue: async () => {
         const store = await repository.read();
+        const personalContext = personalContextProjection(store);
         const evidence = reflectionEvidence({
           thoughts: store.thoughts,
           checkins: store.checkins,
@@ -162,26 +182,40 @@ export function createReviewChatWorkflows({
           throw new Error("先留下一条状态、健康、捕念、日记或思绪记录，再开始认知复盘");
         }
         const result = await generate(reflectionPrompt({
-          personalContext: userAnswerContext(store),
+          personalContext: personalContext.prompt,
           reflectionData: evidence.reflectionData,
           evidenceLevel: evidence.evidenceLevel
         }), {
           scene: "analysis",
-          captureReasoning: true
+          captureReasoning: true,
+          contextReceipt: personalContext.receipt
         });
         return {
           reason,
           content: result.content,
-          reasoningContent: result.reasoningContent
+          reasoningContent: result.reasoningContent,
+          contextReceipt: personalContext.receipt
         };
       },
-      save: generated => reviews.saveAnalysis(generated, { clientRequestId, requestHash }),
+      save: async generated => {
+        if (!personalContextReceiptMatches(await repository.read(), generated.contextReceipt)) {
+          throw Object.assign(new Error("个人语境已变化，本次复盘未写入"), { code: "STALE_PERSONAL_CONTEXT", statusCode: 409 });
+        }
+        return reviews.saveAnalysis({
+          ...generated,
+          contextReceipt: compactPersonalContextReceipt(generated.contextReceipt)
+        }, { clientRequestId, requestHash });
+      },
       saveInStore: typeof reviews.saveAnalysisInStore === "function"
-        ? (document, generated) => reviews.saveAnalysisInStore(
-            document,
-            generated,
-            { clientRequestId, requestHash }
-          )
+        ? (document, generated) => {
+            if (!personalContextReceiptMatches(document, generated.contextReceipt)) {
+              throw Object.assign(new Error("个人语境已变化，本次复盘未写入"), { code: "STALE_PERSONAL_CONTEXT", statusCode: 409 });
+            }
+            return reviews.saveAnalysisInStore(document, {
+              ...generated,
+              contextReceipt: compactPersonalContextReceipt(generated.contextReceipt)
+            }, { clientRequestId, requestHash });
+          }
         : null
     });
   }

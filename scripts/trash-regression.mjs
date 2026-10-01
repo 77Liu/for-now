@@ -89,6 +89,18 @@ assert.deepEqual((await repository.read()).thoughts.map(item => item.id), ["root
 assert.equal((await repository.read()).thoughts[0].version, 7);
 assert.equal((await repository.read()).thoughts[0].annotations[0].id, "thought-mark");
 
+reset();
+await repository.update(store => {
+  store.captures.push({ id: "capture-source", content: "来源念起", version: 1 });
+  store.thoughts[0].sourceRef = { type: "capture", id: "capture-source", version: 1 };
+});
+const linkedChain = await repository.update(store => mutations.moveThoughtChainToTrash(store, "root"));
+await repository.update(store => {
+  store.thoughts.unshift({ id: "replacement-root", type: "question", version: 1, content: "新思考", sourceRef: { type: "capture", id: "capture-source", version: 1 } });
+});
+assert.equal((await commands.restore(linkedChain.id)).conflict, true);
+
+reset();
 const targets = createAiTaskTargets({ annotations, hash });
 const annotationTask = { kind: "annotationShenji", resourceType: "journal", targetId: "journal", subtargetId: "journal-mark" };
 const original = targets.prepare(await repository.read(), annotationTask);

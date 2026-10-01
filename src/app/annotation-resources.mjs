@@ -1,6 +1,8 @@
+import crypto from "node:crypto";
 import { markdownText } from "../shared/content/index.mjs";
 
 const collections = { thought: "thoughts", capture: "captures", journal: "journals", chat: "chats", analysis: "analyses", book: "books", quote: "quotes" };
+const requestDigest = value => crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
 export const annotationCollection = resourceType => collections[resourceType] || null;
 
 export function annotationResource(store, resourceType, resourceId) {
@@ -48,14 +50,22 @@ export function annotationResourceContext(resourceType, root) {
 
 export function createAnnotationCommands({ repository, annotations, moveNestedItemToTrash }) {
   return {
-    create(resourceType, resourceId, input) {
+    create(resourceType, resourceId, input, { clientRequestId = "" } = {}) {
       const parsed = annotations.creationInput(input);
       if (parsed.invalid) return parsed;
-      return repository.update(store => {
+      const createInStore = store => {
         const root = annotationResource(store, resourceType, resourceId);
         const source = annotationResourceSource(store, resourceType, root, parsed.value.targetKey);
         return annotations.create(root, source, parsed.value);
-      });
+      };
+      if (!clientRequestId || typeof repository.executeIdempotent !== "function") {
+        return repository.update(createInStore);
+      }
+      return repository.executeIdempotent({
+        scope: `annotations.create:${resourceType}:${resourceId}`,
+        key: clientRequestId,
+        requestHash: requestDigest(parsed.value)
+      }, createInStore);
     },
     reply(resourceType, resourceId, annotationId, input) {
       const parsed = annotations.replyInput(input);

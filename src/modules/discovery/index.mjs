@@ -32,7 +32,7 @@ const sourceOf = (item, fallback = "user") => {
   return ai ? "ai" : fallback;
 };
 const contentOf = item => text(item?.content) || text(item?.modelDraft);
-const sourceLabel = source => source === "ai" ? "AI 派生" : "用户原文";
+const sourceLabel = source => source === "ai" ? "应答" : "用户原文";
 const sourceBoundary = source => source === "ai" ? "ai_derived" : "user_original";
 const hasItems = value => Array.isArray(value) && value.length > 0;
 

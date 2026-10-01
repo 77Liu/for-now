@@ -193,10 +193,13 @@ const targets = createAiTaskTargets({
 const thoughtAnswerWork = targets.prepare(store, { kind: "thoughtAnswer", targetId: root.id });
 assert.equal(thoughtAnswerWork.prompt, prepareThoughtAnswer(store, root));
 assert.deepEqual(thoughtAnswerWork.attachmentPaths, ["/attachments/thought-image.png"]);
+assert.equal(thoughtAnswerWork.contextReceipt.version, PERSONAL_CONTEXT_PROJECTION_VERSION);
+assert.ok(thoughtAnswerWork.contextReceipt.sources.some(source => source.resourceId === "root"));
 assert.equal(targets.prepare(store, { kind: "followUpAnswer", targetId: root.id, subtargetId: "follow-33" }).prompt, prepareThoughtAnswer(store, root, "follow-33"));
 const annotationWork = targets.prepare(store, { kind: "annotationShenji", resourceType: "thought", targetId: root.id, subtargetId: "mark", payload: { message: "CURRENT_QUESTION" } });
 for (const expected of ["RAW_QUESTION", "RAW_COMMENT", "PREVIOUS_QUESTION", "PREVIOUS_ANSWER", "CURRENT_QUESTION"]) assert.ok(annotationWork.prompt.includes(expected));
 assert.equal(annotationWork.prompt.includes("PRIVATE_REASONING"), false);
+assert.equal(annotationWork.contextReceipt.version, PERSONAL_CONTEXT_PROJECTION_VERSION);
 const excerpt = annotationExcerpt("前".repeat(1500) + "焦点" + "后".repeat(1500), { start: 1500, end: 1502, quote: "焦点" });
 assert.equal(excerpt.before.length, 1000);
 assert.equal(excerpt.after.length, 1000);

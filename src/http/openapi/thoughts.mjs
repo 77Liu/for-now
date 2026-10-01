@@ -38,6 +38,7 @@ export const thoughtPaths = Object.freeze({
       },
       responses: {
         "201": { description: "已创建思绪链", ...response({ $ref: "#/components/schemas/ThoughtChainMutation" }) },
+        "412": { $ref: "#/components/responses/PreconditionFailed" },
         ...errors
       }
     }
@@ -117,9 +118,21 @@ export const thoughtComponents = Object.freeze({
         occurredOn: { type: "string", format: "date" },
         tags: { type: "array", items: { type: "string" } },
         attachmentPaths: { type: "array", maxItems: 2, uniqueItems: true, items: { $ref: "#/components/schemas/ContentAttachmentPath" } },
-        relatedTo: { type: ["string", "null"] }
+        relatedTo: { type: ["string", "null"] },
+        sourceRef: { $ref: "#/components/schemas/ThoughtSourceRef" }
       },
       additionalProperties: true
+    },
+    ThoughtSourceRef: {
+      type: "object",
+      description: "创建时可选的来源念起引用；创建后不可修改",
+      required: ["type", "id", "version"],
+      properties: {
+        type: { const: "capture" },
+        id: { type: "string", minLength: 1, maxLength: 100 },
+        version: { type: "integer", minimum: 1 }
+      },
+      additionalProperties: false
     },
     ThoughtChain: {
       allOf: [
@@ -145,7 +158,8 @@ export const thoughtComponents = Object.freeze({
         occurredAt: { type: "string" },
         occurredOn: { type: "string", format: "date" },
         tags: { type: "array", maxItems: 8, items: { type: "string", maxLength: 30 } },
-        generateAnswer: { type: "boolean" }
+        generateAnswer: { type: "boolean" },
+        sourceRef: { $ref: "#/components/schemas/ThoughtSourceRef" }
       },
       additionalProperties: false
     },

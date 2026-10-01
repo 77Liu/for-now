@@ -11,6 +11,7 @@ export const viewSections = Object.freeze({
   discovery: "thought",
   review: "thought",
   mine: "mine",
+  "personal-context": "mine",
   statistics: "mine",
   "ai-cost": "mine",
   architecture: "mine",

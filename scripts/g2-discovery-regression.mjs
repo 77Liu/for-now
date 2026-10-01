@@ -137,7 +137,7 @@ const aiSearch = await run("account-a", () => discovery.search({
   types: ["answer"]
 }));
 assert.equal(aiSearch.items[0].matches[0].source, "ai");
-assert.equal(aiSearch.items[0].matches[0].sourceLabel, "AI 派生");
+assert.equal(aiSearch.items[0].matches[0].sourceLabel, "应答");
 const userAnswerSearch = await run("account-a", () => discovery.search({
   query: "自己的答案",
   types: ["answer"]
@@ -257,7 +257,7 @@ const navigated = [];
 const frontItem = (id, source = "user") => ({
   id,
   rootId: id,
-  matches: [{ id: `${id}-match`, rootId: id, type: "answer", source, sourceLabel: source === "ai" ? "AI 派生" : "用户原文" }],
+  matches: [{ id: `${id}-match`, rootId: id, type: "answer", source, sourceLabel: source === "ai" ? "应答" : "用户原文" }],
   status: { fresh: true, untraced: true, read: false, snoozed: false },
   fresh: true,
   untraced: true

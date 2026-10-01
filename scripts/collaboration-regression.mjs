@@ -48,7 +48,7 @@ let generate = async () => ({ content: "生成回答", reasoningContent: "私有
 const background = createBackgroundAi({
   repository, tasks, notifications, targets, contextKey: account,
   dispatch: callback => scheduled.push({ account: account(), callback }),
-  generate: async work => { calls.push({ account: account(), scene: work.scene, prompt: work.prompt }); return generate(work); },
+  generate: async work => { calls.push({ account: account(), scene: work.scene, prompt: work.prompt, contextReceipt: work.contextReceipt }); return generate(work); },
   onError: (id, error) => { throw error; }
 });
 const commands = createAnnotationCommands({ repository, annotations, moveNestedItemToTrash: () => { throw new Error("unexpected delete"); } });
@@ -63,6 +63,15 @@ await repository.update(store => {
 const focus = "🙂相同", start = markdownText(source).lastIndexOf(focus);
 const mark = await commands.create("journal", "journal", { kind: "comment", targetKey: "content", quote: focus, start, end: start + focus.length, text: "保留评论" });
 assert.equal(mark.value.rawStart, start);
+const idempotentInput = { kind: "comment", targetKey: "content", quote: focus, start, end: start + focus.length, text: "幂等评论" };
+const idempotentComment = await commands.create("journal", "journal", idempotentInput, { clientRequestId: "comment-request-1" });
+const replayedComment = await commands.create("journal", "journal", idempotentInput, { clientRequestId: "comment-request-1" });
+assert.equal(replayedComment.value.id, idempotentComment.value.id);
+assert.equal((await repository.read()).journals[0].annotations.filter(item => item.text === "幂等评论").length, 1);
+await assert.rejects(
+  commands.create("journal", "journal", { ...idempotentInput, text: "复用请求 ID 的不同评论" }, { clientRequestId: "comment-request-1" }),
+  { code: "IDEMPOTENCY_KEY_REUSED" }
+);
 await commands.reply("journal", "journal", mark.value.id, { text: "保留回复" });
 const movedSource = "前文" + source;
 await repository.update(store => {
@@ -97,6 +106,12 @@ for (const pathname of ["/api/thoughts/root/annotations", "/api/annotations/thou
   await handle({ method: "POST", input: {} }, invalid, { pathname });
   assert.equal(invalid.status, 400);
 }
+const idempotentHttpInput = { kind: "comment", targetKey: "question:root", quote: "原问题", start: 0, end: 3, text: "HTTP 幂等评论" };
+const firstHttpComment = {}, replayedHttpComment = {};
+await handle({ method: "POST", headers: { "idempotency-key": "comment-http-1" }, input: idempotentHttpInput }, firstHttpComment, { pathname: "/api/annotations/thought/root" });
+await handle({ method: "POST", headers: { "idempotency-key": "comment-http-1" }, input: idempotentHttpInput }, replayedHttpComment, { pathname: "/api/annotations/thought/root" });
+assert.equal(firstHttpComment.body.id, replayedHttpComment.body.id);
+assert.equal((await repository.read()).thoughts[0].annotations.filter(item => item.text === "HTTP 幂等评论").length, 1);
 
 const input = { kind: "thoughtAnswer", targetId: "root", inputVersion: 1, clientRequestId: "same-request" };
 const created = await Promise.all([background.enqueue(input), background.enqueue(input)]);
@@ -112,6 +127,11 @@ assert.equal(calls.length, 1);
 assert.equal((await background.get(created[0].task.id)).status, "succeeded");
 assert.equal((await background.listNotifications()).unread, 1);
 assert.equal((await repository.read()).thoughts.filter(item => item.sourceTaskId === created[0].task.id).length, 1);
+const persistedAnswer = (await repository.read()).thoughts.find(item => item.sourceTaskId === created[0].task.id);
+assert.equal(persistedAnswer.contextReceipt.version, "2026.10.01.1");
+assert.ok(persistedAnswer.contextReceipt.sources.some(source => source.resourceId === "root"));
+assert.equal(persistedAnswer.contextReceipt.sources.some(source => Object.hasOwn(source, "excerpt")), false);
+assert.equal(persistedAnswer.contextReceipt.promptSha256, calls[0].contextReceipt.promptSha256);
 assert.equal(await background.readAllNotifications(), 1);
 assert.equal((await background.listNotifications()).unread, 0);
 assert.ok(commits.some(({ document }) => document.aiTasks[0]?.status === "succeeded"
@@ -124,6 +144,33 @@ const gate = () => {
   const promise = new Promise(done => { resolve = done; });
   return { promise, resolve };
 };
+const contextEntered = gate(), contextOutput = gate();
+generate = async () => {
+  contextEntered.resolve();
+  return contextOutput.promise;
+};
+const contextDriftTask = await background.enqueue({
+  kind: "thoughtAnswer",
+  targetId: "root",
+  inputVersion: 1,
+  clientRequestId: "context-drift"
+});
+const contextDriftRun = background.run(contextDriftTask.task.id);
+await contextEntered.promise;
+await repository.update(store => {
+  store.captures.push({
+    id: "late-context",
+    content: "生成期间新增的来源",
+    occurredAt: now(),
+    occurredOn: now().slice(0, 10),
+    version: 1
+  });
+});
+contextOutput.resolve({ content: "不得采用失效上下文" });
+await contextDriftRun;
+assert.equal((await background.get(contextDriftTask.task.id)).status, "stale");
+assert.equal((await repository.read()).thoughts.some(item => item.sourceTaskId === contextDriftTask.task.id), false);
+
 const annotationEntered = gate(), annotationOutput = gate();
 generate = async () => { annotationEntered.resolve(); return annotationOutput.promise; };
 const annotationId = (await repository.read()).thoughts.find(item => item.id === "root").annotations[0].id;
@@ -208,7 +255,12 @@ assert.equal(failedState.thoughts.some(item => item.sourceTaskId === commitFailu
 documents.set("a", empty());
 documents.set("b", empty());
 const sharedTask = (await background.enqueue({ ...input, clientRequestId: "shared-id" })).task;
-await context.run("b", () => repository.update(store => { store.aiTasks.push(structuredClone(sharedTask)); store.thoughts[0].content = "账户 B 问题"; }));
+await context.run("b", () => repository.update(store => {
+  store.thoughts[0].content = "账户 B 问题";
+  const copied = structuredClone(sharedTask);
+  copied.inputHash = targets.prepare(store, copied).inputHash;
+  store.aiTasks.push(copied);
+}));
 const bothEntered = gate(), bothOutput = gate();
 let inFlight = 0;
 generate = async () => { if (++inFlight === 2) bothEntered.resolve(); return bothOutput.promise; };
@@ -218,11 +270,17 @@ await bothEntered.promise;
 bothOutput.resolve({ content: "按各自账户保存" });
 await Promise.all([accountA, accountB]);
 assert.deepEqual(calls.slice(-2).map(call => call.account).sort(), ["a", "b"]);
+const accountReceiptHashes = [];
 for (const owner of ["a", "b"]) {
   await context.run(owner, async () => {
     assert.equal((await background.get(sharedTask.id)).status, "succeeded");
-    assert.equal((await repository.read()).thoughts.filter(item => item.sourceTaskId === sharedTask.id).length, 1);
+    const answer = (await repository.read()).thoughts.find(item => item.sourceTaskId === sharedTask.id);
+    assert.ok(answer);
+    assert.equal(answer.contextReceipt.sources.some(source => Object.hasOwn(source, "excerpt")), false);
+    assert.match(answer.contextReceipt.promptSha256, /^[a-f0-9]{64}$/);
+    accountReceiptHashes.push(answer.contextReceipt.promptSha256);
   });
 }
+assert.notEqual(accountReceiptHashes[0], accountReceiptHashes[1]);
 
 console.log("Collaboration checks passed: visible-text anchors, drift preservation, legacy routes, atomic task/notification results, idempotency, late results, retry, restart and account isolation.");

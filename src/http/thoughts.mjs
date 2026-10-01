@@ -1,6 +1,13 @@
 import { safeText } from "../shared/validation/index.mjs";
 
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
+const optionalIdempotencyKey = req => {
+  const key = String(req.headers?.["idempotency-key"] || "").trim();
+  if (key.length > 100 || (key && !/^[A-Za-z0-9_.:-]+$/.test(key))) {
+    throw Object.assign(new Error("Idempotency-Key 格式无效"), { statusCode: 400, code: "INVALID_IDEMPOTENCY_KEY" });
+  }
+  return key;
+};
 
 export function createThoughtHttp({
   service, workflows, removeBlock, removeNested, backgroundAi, sendTaskCreation,
@@ -9,6 +16,14 @@ export function createThoughtHttp({
   automaticAnswer = async input => ({ generateAnswer: Boolean(input?.requested) && !input?.hasAnswer })
 }) {
   const tags = input => (Array.isArray(input.tags) ? input.tags : []).map(value => safeText(value, 30)).filter(Boolean);
+  const sourceReference = input => {
+    if (input?.sourceRef == null) return { value: null };
+    const id = safeText(input.sourceRef?.id, 100), version = Number(input.sourceRef?.version);
+    if (input.sourceRef?.type !== "capture" || !id || !Number.isSafeInteger(version) || version < 1) {
+      return { error: "来源念起格式无效" };
+    }
+    return { value: { type: "capture", id, version } };
+  };
   const requestBinding = input => {
     const requestId = safeText(input?.requestId, 100), targetId = safeText(input?.targetId, 100);
     return requestId && targetId
@@ -37,6 +52,8 @@ export function createThoughtHttp({
       const eventTime = eventTimeFields(input);
       if (!eventTime) return v1.error(res, 400, "发生时间格式不正确", "VALIDATION_ERROR");
       const answer = safeText(input.answer);
+      const sourceRef = sourceReference(input);
+      if (sourceRef.error) return v1.error(res, 400, sourceRef.error, "VALIDATION_ERROR");
       const answerDecision = await automaticAnswer({ requested: input.generateAnswer === true && Boolean(questionText || prepared.value.attachmentPaths.length), hasAnswer: Boolean(answer) });
       const created = await workflows.createChain({
         questionText,
@@ -48,11 +65,15 @@ export function createThoughtHttp({
         attachmentPaths: prepared.value.attachmentPaths,
         idea: safeText(input.idea),
         answer,
-        modelDraft: "",
-        modelReasoning: ""
+        modelDraft: safeText(input.modelDraft),
+        modelReasoning: safeText(input.modelReasoning, 50000),
+        sourceRef: sourceRef.value
       });
       if (created.invalid) return v1.error(res, 400, created.error, "VALIDATION_ERROR");
       if (created.conflict) return v1.error(res, 409, "同一幂等键不能用于不同内容", "IDEMPOTENCY_KEY_REUSED");
+      if (created.sourceMissing) return v1.error(res, 404, "来源念起不存在或已删除", "CAPTURE_SOURCE_NOT_FOUND");
+      if (created.sourceVersionConflict) return v1.error(res, 412, "来源念起已变化，请重新打开后再提交", "PRECONDITION_FAILED", { currentVersion: created.currentVersion });
+      if (created.sourceConflict) return v1.error(res, 409, "这条念起已经展开为思考", "CAPTURE_ALREADY_PROMOTED", { rootId: created.rootId });
       const root = created.items.find(item => item.type === "question");
       return v1.success(res, created.duplicate ? 200 : 201, created, { etag: v1.versionEtag(root?.version) });
     }
@@ -65,6 +86,14 @@ export function createThoughtHttp({
     if (req.method === "PATCH" && /^\/api\/v1\/thought-chains\/[^/]+$/.test(url.pathname)) {
       const id = url.pathname.split("/")[4], input = await bodyJson(req), current = await workflows.getChain(id);
       if (!current) return v1.error(res, 404, "这套思考不存在", "THOUGHT_NOT_FOUND");
+      if (hasOwn(input, "sourceRef")) {
+        const sourceRef = sourceReference(input);
+        if (sourceRef.error) return v1.error(res, 400, sourceRef.error, "VALIDATION_ERROR");
+        const existing = current.sourceRef || null, requested = sourceRef.value;
+        if (existing?.type !== requested?.type || existing?.id !== requested?.id || Number(existing?.version) !== Number(requested?.version)) {
+          return v1.error(res, 409, "思考的来源念起不可修改", "THOUGHT_SOURCE_IMMUTABLE");
+        }
+      }
       const prepared = await prepareContentAttachments("thoughtRoot", {
         content: hasOwn(input, "question") ? input.question : current.content,
         attachmentPaths: hasOwn(input, "attachmentPaths") ? input.attachmentPaths : current.attachmentPaths || []
@@ -222,7 +251,8 @@ export function createThoughtHttp({
         type: ["question", "idea", "answer", "record"].includes(input.type) ? input.type : "question",
         relatedTo: safeText(input.relatedTo, 80) || null,
         tags: tags(input).slice(0, 8),
-        attachmentPaths: prepared.value.attachmentPaths
+        attachmentPaths: prepared.value.attachmentPaths,
+        clientRequestId: optionalIdempotencyKey(req)
       });
       if (created.invalid) sendJson(res, 400, { error: created.error });
       else sendJson(res, created.missing ? 404 : 201, created.missing ? { error: "所属思绪不存在" } : created.value);

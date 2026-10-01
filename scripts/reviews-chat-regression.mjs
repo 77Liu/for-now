@@ -210,9 +210,12 @@ const legacyChat = await run("account-a", () => workflows.answerChat({
 assert.equal(legacyChat.value.message, "请结合长期记录回答");
 assert.equal(legacyChat.value.answer, "共参回答");
 assert.equal(legacyChat.value.reasoningContent, "共参思考");
+assert.equal(legacyChat.value.contextReceipt.version, "2026.10.01.1");
 assert.equal("version" in legacyChat.value, false);
 assert.equal(generationCalls.at(-1).options.scene, "chat");
 assert.equal(generationCalls.at(-1).options.captureReasoning, true);
+assert.equal(legacyChat.value.contextReceipt.promptSha256, generationCalls.at(-1).options.contextReceipt.promptSha256);
+assert.equal(legacyChat.value.contextReceipt.sources.some(source => Object.hasOwn(source, "excerpt")), false);
 assert.equal(generationCalls.at(-1).options.history.length, 24);
 assert.match(generationCalls.at(-1).prompt, /请结合长期记录回答/);
 
@@ -260,10 +263,13 @@ const analysis = await run("account-a", () => workflows.runAnalysis({
 assert.equal(analysis.value.reason, "manual");
 assert.equal(analysis.value.content, "复盘结论");
 assert.equal(analysis.value.reasoningContent, "复盘思考");
+assert.equal(analysis.value.contextReceipt.version, "2026.10.01.1");
 assert.equal(analysis.value.version, 1);
 assert.equal(generationCalls.length, analysisCallsBefore + 1);
 assert.equal(generationCalls.at(-1).options.scene, "analysis");
 assert.equal(generationCalls.at(-1).options.captureReasoning, true);
+assert.equal(analysis.value.contextReceipt.promptSha256, generationCalls.at(-1).options.contextReceipt.promptSha256);
+assert.equal(analysis.value.contextReceipt.sources.some(source => Object.hasOwn(source, "excerpt")), false);
 assert.match(generationCalls.at(-1).prompt, /当前证据等级：常规样本/);
 assert.match(generationCalls.at(-1).prompt, /复盘证据 0/);
 assert.doesNotMatch(generationCalls.at(-1).prompt, /共参思考/);

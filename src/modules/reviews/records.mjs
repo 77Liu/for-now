@@ -212,7 +212,8 @@ export function createReviewRecords({
         content: input.content,
         annotations: [],
         annotationDrift: [],
-        ...(input.reasoningContent ? { reasoningContent: input.reasoningContent } : {})
+        ...(input.reasoningContent ? { reasoningContent: input.reasoningContent } : {}),
+        ...(input.contextReceipt ? { contextReceipt: clone(input.contextReceipt) } : {})
       };
       if (clientRequestId && hasPersistentIdempotency) {
         return createIdempotentRecord("analyses", "analysis", value, {
@@ -229,7 +230,8 @@ export function createReviewRecords({
         content: input.content,
         annotations: [],
         annotationDrift: [],
-        ...(input.reasoningContent ? { reasoningContent: input.reasoningContent } : {})
+        ...(input.reasoningContent ? { reasoningContent: input.reasoningContent } : {}),
+        ...(input.contextReceipt ? { contextReceipt: clone(input.contextReceipt) } : {})
       }, { clientRequestId, requestHash });
     },
 

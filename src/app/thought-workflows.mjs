@@ -2,11 +2,19 @@ import { safeText, recordVersion } from "../shared/validation/index.mjs";
 import { userPrompt } from "../modules/ai/index.mjs";
 import {
   stripThoughtAnswerLead,
+  thoughtChainContext,
   thoughtDraftInput,
   thoughtPromptSystem,
   thoughtStarterPrompt
 } from "../modules/thoughts/index.mjs";
-import { prepareThoughtAnswer, thoughtPromptContext, userAnswerContext } from "./personal-context.mjs";
+import {
+  compactPersonalContextReceipt,
+  personalContextProjection,
+  personalContextReceiptMatches,
+  thoughtAnswerPrompt,
+  thoughtPromptContext,
+  userAnswerContext
+} from "./personal-context.mjs";
 
 const failure = (message, code, statusCode = 400) => Object.assign(new Error(message), { code, statusCode });
 
@@ -33,6 +41,7 @@ export function createThoughtWorkflows({
         occurredAt: input.eventTimeHash,
         tags: input.tags,
         attachmentPaths: input.attachmentPaths,
+        sourceRef: input.sourceRef,
         generateAnswer: input.generateAnswer
       }));
       const createInStore = store => {
@@ -151,14 +160,19 @@ export function createThoughtWorkflows({
             const question = store.thoughts.find(item => item.id === id && item.type === "question");
             if (!question) throw failure("问题不存在", "THOUGHT_NOT_FOUND", 404);
             const sourceVersion = recordVersion(question.version);
-            const result = await generate(prepareThoughtAnswer(store, question), {
+            const personalContext = personalContextProjection(store);
+            const result = await generate(
+              thoughtAnswerPrompt(personalContext.prompt, thoughtChainContext(store.thoughts, question)),
+              {
               scene: "thoughtAnswer",
               captureReasoning: true,
+              contextReceipt: personalContext.receipt,
               onDelta: event => {
                 for (const listener of entry.listeners) listener(event);
               }
-            });
-            const saved = await save({ sourceVersion, result });
+              }
+            );
+            const saved = await save({ sourceVersion, result, contextReceipt: personalContext.receipt });
             if (saved.stale) {
               throw failure("问题已被修改或删除，本次回答未写入", "STALE_AI_RESULT", 409);
             }
@@ -166,15 +180,19 @@ export function createThoughtWorkflows({
           };
           if (typeof repository.executeIdempotent === "function") {
             const store = await repository.read();
-            return generateAndSave(store, ({ sourceVersion, result }) => repository.executeIdempotent(
+            return generateAndSave(store, ({ sourceVersion, result, contextReceipt }) => repository.executeIdempotent(
               ledgerRequest,
               current => {
+                if (!personalContextReceiptMatches(current, contextReceipt)) {
+                  throw failure("个人语境已变化，本次回答未写入", "STALE_PERSONAL_CONTEXT", 409);
+                }
                 const saved = thoughts.saveGeneratedAnswerInStore(current, {
                   id,
                   clientRequestId,
                   sourceVersion,
                   content: stripThoughtAnswerLead(result.content),
-                  reasoningContent: result.reasoningContent
+                  reasoningContent: result.reasoningContent,
+                  contextReceipt: compactPersonalContextReceipt(contextReceipt)
                 });
                 if (saved.stale) {
                   throw failure("问题已被修改或删除，本次回答未写入", "STALE_AI_RESULT", 409);
@@ -184,13 +202,19 @@ export function createThoughtWorkflows({
             ));
           }
           const store = await repository.read();
-          return generateAndSave(store, ({ sourceVersion, result }) => repository.update(current => thoughts.saveGeneratedAnswerInStore(current, {
-            id,
-            clientRequestId,
-            sourceVersion,
-            content: stripThoughtAnswerLead(result.content),
-            reasoningContent: result.reasoningContent
-          })));
+          return generateAndSave(store, ({ sourceVersion, result, contextReceipt }) => repository.update(current => {
+            if (!personalContextReceiptMatches(current, contextReceipt)) {
+              throw failure("个人语境已变化，本次回答未写入", "STALE_PERSONAL_CONTEXT", 409);
+            }
+            return thoughts.saveGeneratedAnswerInStore(current, {
+              id,
+              clientRequestId,
+              sourceVersion,
+              content: stripThoughtAnswerLead(result.content),
+              reasoningContent: result.reasoningContent,
+              contextReceipt: compactPersonalContextReceipt(contextReceipt)
+            });
+          }));
         });
         activeAnswers.set(key, entry);
         entry.promise.finally(() => {

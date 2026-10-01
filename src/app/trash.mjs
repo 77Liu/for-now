@@ -160,11 +160,22 @@ export function createTrashMutations({ trash, annotations, now, cancelTask = () 
       const ids = new Set(records.map(record => record.item?.id).filter(Boolean));
       if (!records.length) return { invalid: true };
       if (store.thoughts.some(item => ids.has(item.id))) return { conflict: true };
+      const root = records.find(record => record.item?.id === entry.resourceId && record.item?.type === "question")?.item;
+      if (root?.sourceRef?.type === "capture" && store.thoughts.some(item => (
+        item.type === "question" && item.sourceRef?.type === "capture" && item.sourceRef.id === root.sourceRef.id
+      ))) return { conflict: true };
       for (const record of [...records].sort((a, b) => Number(a.index) - Number(b.index))) {
         const restored = structuredClone(record.item);
         if (restored.id === entry.resourceId && restored.type === "question") advance(restored);
         insert(store.thoughts, record.index, restored);
       }
+    } else if (location.kind === "captureAudio") {
+      const parent = store[location.parentCollection]?.find(item => item.id === location.parentId);
+      if (!parent) return { parentMissing: true };
+      if (parent.audio) return { conflict: true };
+      parent.audio = structuredClone(entry.payload.audio);
+      parent.transcription = structuredClone(entry.payload.transcription);
+      advance(parent);
     } else return { invalid: true };
     trash.remove(store.trash, [id]);
     return { value: entry };

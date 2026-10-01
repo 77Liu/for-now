@@ -269,6 +269,7 @@ export function createThoughtDiscoveryController({
     setTypes: (types, options) => setFilters({ types }, options),
     setGenres: (genres, options) => setFilters({ genres }, options),
     setFreshOnly: (freshOnly, options) => setFilters({ freshOnly }, options),
+    applyStatus,
     markRead,
     snooze,
     openRandomDoor,

@@ -87,6 +87,7 @@ export function createChatRecords({
       annotations: [],
       annotationDrift: [],
       ...(input.reasoningContent ? { reasoningContent: input.reasoningContent } : {}),
+      ...(input.contextReceipt ? { contextReceipt: structuredClone(input.contextReceipt) } : {}),
       ...(clientRequestId ? {
         version: 1,
         clientRequestId,

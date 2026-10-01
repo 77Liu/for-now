@@ -6,6 +6,13 @@ function annotationRoute(pathname) {
   match = pathname.match(/^\/api\/thoughts\/([^/]+)\/annotation-drift\/([^/]+)$/);
   return match ? { resourceType: "thought", resourceId: match[1], id: "drift", action: match[2], drift: true, driftOnly: true } : null;
 }
+const optionalIdempotencyKey = req => {
+  const key = String(req.headers?.["idempotency-key"] || "").trim();
+  if (key.length > 100 || (key && !/^[A-Za-z0-9_.:-]+$/.test(key))) {
+    throw Object.assign(new Error("Idempotency-Key 格式无效"), { statusCode: 400, code: "INVALID_IDEMPOTENCY_KEY" });
+  }
+  return key;
+};
 
 export function createAnnotationHttp({
   commands,
@@ -35,7 +42,12 @@ export function createAnnotationHttp({
         sendJson(res, 400, { error: prepared.error, code: prepared.code });
         return true;
       }
-      const result = await commands.create(resourceType, resourceId, { ...input, ...prepared.value });
+      const result = await commands.create(
+        resourceType,
+        resourceId,
+        { ...input, ...prepared.value },
+        { clientRequestId: optionalIdempotencyKey(req) }
+      );
       if (result.invalid) sendJson(res, 400, { error: result.error });
       else if (result.missing) sendJson(res, 404, { error: "选中的正文已变化，请重新选择" });
       else sendJson(res, 201, result.value);

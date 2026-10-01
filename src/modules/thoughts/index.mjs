@@ -1,8 +1,10 @@
+import crypto from "node:crypto";
 import { cleanAttachmentPaths } from "../../shared/attachments/index.mjs";
 import { recordVersion as normalizedVersion } from "../../shared/validation/index.mjs";
 export { thoughtTask, thoughtPromptSystem, stripThoughtAnswerLead, thoughtPersonalContext, thoughtChainContext, thoughtDraftInput, thoughtStarterPrompt } from "./prompts.mjs";
 
 const AFTER_COMMIT = Symbol.for("for-now.after-commit");
+const requestDigest = value => crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
 export function thoughtTaskResult(thoughts, task) {
   if (!Array.isArray(thoughts) || !task?.id || !task?.targetId || !task?.resultId) return null;
   if (task.kind === "thoughtAnswer") {
@@ -33,7 +35,7 @@ export function createThoughtTaskTarget({ createId, now, stripThoughtAnswerLead 
       let answer = thoughts.find(item => item.sourceTaskId === task.id);
       if (!answer) {
         const root = work.root, generation = thoughts.filter(item => item.relatedTo === root.id && item.type === "answer").length + 1, content = stripThoughtAnswerLead(result.content);
-        answer = { id: createId(), createdAt: now(), occurredAt: root.occurredAt, occurredOn: root.occurredOn, type: "answer", content, modelDraft: content, editedFromModel: false, tags: root.tags, relatedTo: root.id, disposition: root.disposition || "kept", remarks: [], origin: "deepseek", authorType: "ai", version: 1, sourceVersion: task.inputVersion, generation, sourceTaskId: task.id, ...(result.reasoningContent ? { reasoningContent: result.reasoningContent } : {}) };
+        answer = { id: createId(), createdAt: now(), occurredAt: root.occurredAt, occurredOn: root.occurredOn, type: "answer", content, modelDraft: content, editedFromModel: false, tags: root.tags, relatedTo: root.id, disposition: root.disposition || "kept", remarks: [], origin: "deepseek", authorType: "ai", version: 1, sourceVersion: task.inputVersion, generation, sourceTaskId: task.id, ...(result.reasoningContent ? { reasoningContent: result.reasoningContent } : {}), ...(result.contextReceipt ? { contextReceipt: structuredClone(result.contextReceipt) } : {}) };
         thoughts.unshift(answer);
       }
       return answer.id;
@@ -42,6 +44,7 @@ export function createThoughtTaskTarget({ createId, now, stripThoughtAnswerLead 
       const root = work.root, current = work.followUp;
       current.answer = result.content; current.modelDraft = result.content; current.answeredAt = now(); current.origin = "deepseek"; current.authorType = "ai"; current.version = normalizedVersion(current.version) + 1; current.clientRequestId = task.clientRequestId; current.sourceTaskId = task.id;
       if (result.reasoningContent) current.reasoningContent = result.reasoningContent;
+      if (result.contextReceipt) current.contextReceipt = structuredClone(result.contextReceipt);
       root.version = normalizedVersion(root.version) + 1; root.updatedAt = now();
       return current.id;
     }
@@ -69,7 +72,7 @@ export function createThoughtService({
   return {
     createChainInStore(store, {
       questionText, eventTime, tags, clientRequestId, requestHash,
-      idea, answer, modelDraft, modelReasoning, attachmentPaths = []
+      idea, answer, modelDraft, modelReasoning, attachmentPaths = [], sourceRef = null
     }) {
       const originalImages = cleanAttachmentPaths(attachmentPaths);
       if (!questionText && !originalImages.length) {
@@ -82,6 +85,21 @@ export function createThoughtService({
             ? { items: existing, duplicate: true }
             : { conflict: true };
         }
+      }
+      let source = null;
+      if (sourceRef) {
+        const sourceId = typeof sourceRef.id === "string" ? sourceRef.id.trim() : "";
+        const sourceVersion = Number(sourceRef.version);
+        if (sourceRef.type !== "capture" || !sourceId || !Number.isSafeInteger(sourceVersion) || sourceVersion < 1) {
+          return { invalid: true, error: "来源念起格式无效" };
+        }
+        const capture = (store.captures || []).find(item => item.id === sourceId);
+        if (!capture) return { sourceMissing: true };
+        const currentSourceVersion = normalizedVersion(capture.version);
+        if (sourceVersion !== currentSourceVersion) return { sourceVersionConflict: true, currentVersion: currentSourceVersion };
+        const existingRoot = store.thoughts.find(item => item.type === "question" && item.sourceRef?.type === "capture" && item.sourceRef.id === sourceId);
+        if (existingRoot) return { sourceConflict: true, rootId: existingRoot.id };
+        source = { type: "capture", id: sourceId, version: currentSourceVersion };
       }
       const question = {
         id: createId(),
@@ -98,7 +116,8 @@ export function createThoughtService({
         authorType: "user",
         version: 1,
         clientRequestId,
-        requestHash
+        requestHash,
+        ...(source ? { sourceRef: source } : {})
       };
       store.thoughts.unshift(question);
       const items = [question];
@@ -207,7 +226,7 @@ export function createThoughtService({
     },
 
     saveGeneratedAnswerInStore(store, {
-      id, clientRequestId, sourceVersion, content, reasoningContent
+      id, clientRequestId, sourceVersion, content, reasoningContent, contextReceipt = null
     }) {
       const duplicate = store.thoughts.find(item => item.relatedTo === id && item.type === "answer" && item.clientRequestId === clientRequestId);
       if (duplicate) return { value: duplicate, duplicate: true };
@@ -232,7 +251,8 @@ export function createThoughtService({
         sourceVersion,
         generation: store.thoughts.filter(item => item.relatedTo === id && item.type === "answer").length + 1,
         clientRequestId,
-        ...(reasoningContent ? { reasoningContent } : {})
+        ...(reasoningContent ? { reasoningContent } : {}),
+        ...(contextReceipt ? { contextReceipt: structuredClone(contextReceipt) } : {})
       };
       store.thoughts.unshift(answer);
       return { value: answer, duplicate: false };
@@ -261,31 +281,41 @@ export function createThoughtService({
       };
     },
 
-    createBlock({ content, eventTime, type, relatedTo, tags, attachmentPaths = [] }) {
+    createBlock({ content, eventTime, type, relatedTo, tags, attachmentPaths = [], clientRequestId = "" }) {
       const originalImages = cleanAttachmentPaths(attachmentPaths);
       if (!content && !originalImages.length) return Promise.resolve({ invalid: true, error: "请填写文字或插入图片" });
-      const entry = {
-        id: createId(),
-        createdAt: now(),
-        ...eventTime,
-        type,
-        content,
-        attachmentPaths: originalImages,
-        tags,
-        relatedTo,
-        disposition: "kept",
-        remarks: [],
-        origin: "manual",
-        authorType: "user",
-        version: 1
-      };
-      return repository.update(store => {
+      const requestHash = clientRequestId ? requestDigest({ content, eventTime, type, relatedTo, tags, attachmentPaths: originalImages }) : "";
+      const createInStore = store => {
         const root = relatedTo ? store.thoughts.find(item => item.id === relatedTo && item.type === "question") : null;
         if (relatedTo && !root) return { missing: true };
+        const entry = {
+          id: createId(),
+          createdAt: now(),
+          ...eventTime,
+          type,
+          content,
+          attachmentPaths: originalImages,
+          tags,
+          relatedTo,
+          disposition: "kept",
+          remarks: [],
+          origin: "manual",
+          authorType: "user",
+          version: 1,
+          ...(clientRequestId ? { clientRequestId, requestHash } : {})
+        };
         store.thoughts.unshift(entry);
         if (root) touchRoot(root);
         return { value: entry };
-      });
+      };
+      if (!clientRequestId || typeof repository.executeIdempotent !== "function") {
+        return repository.update(createInStore);
+      }
+      return repository.executeIdempotent({
+        scope: `thoughtBlocks.create:${relatedTo || "root"}`,
+        key: clientRequestId,
+        requestHash
+      }, createInStore);
     },
 
     updateBlock({ id, content, eventTimeInput, expectedVersion, attachmentPaths }) {

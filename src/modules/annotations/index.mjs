@@ -142,7 +142,7 @@ export function createAnnotationService({ createId, now }) {
     saveTaskReply(annotation, task, result) {
       let exchange = (annotation.shenji || []).find(item => item.sourceTaskId === task.id);
       if (!exchange) {
-        exchange = { id: createId(), createdAt: now(), message: safeText(task.payload?.message, 6000), answer: result.content, sourceTaskId: task.id, clientRequestId: task.clientRequestId, ...(result.reasoningContent ? { reasoningContent: result.reasoningContent } : {}) };
+        exchange = { id: createId(), createdAt: now(), message: safeText(task.payload?.message, 6000), answer: result.content, sourceTaskId: task.id, clientRequestId: task.clientRequestId, ...(result.reasoningContent ? { reasoningContent: result.reasoningContent } : {}), ...(result.contextReceipt ? { contextReceipt: structuredClone(result.contextReceipt) } : {}) };
         annotation.shenji ||= [];
         annotation.shenji.push(exchange);
       }

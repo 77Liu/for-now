@@ -260,6 +260,7 @@ export function createJournalRecords({
           sourceUpdatedAt: input.sourceUpdatedAt,
           content: input.content,
           ...(input.reasoningContent ? { reasoningContent: input.reasoningContent } : {}),
+          ...(input.contextReceipt ? { contextReceipt: structuredClone(input.contextReceipt) } : {}),
           ...(clientRequestId ? { version: 1, clientRequestId, requestHash } : {})
         };
         journal.reflections ||= [];
