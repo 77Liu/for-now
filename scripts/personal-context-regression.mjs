@@ -6,9 +6,21 @@ import { createOnboardingService, normalizeOnboarding, onboardingContext, defaul
 import { createThoughtTaskTarget, thoughtChainContext, stripThoughtAnswerLead, thoughtDraftInput, thoughtStarterPrompt } from "../src/modules/thoughts/index.mjs";
 import { createAnnotationService, annotationExcerpt } from "../src/modules/annotations/index.mjs";
 import { journalAssistPrompt, journalReflectionInput, markJournalAssistContent } from "../src/modules/journals/index.mjs";
-import { userAnswerContext, diaryActivityContext, thoughtPromptContext, prepareThoughtAnswer, createAiTaskTargets } from "../src/app/index.mjs";
+import {
+  PERSONAL_CONTEXT_PROJECTION_VERSION,
+  PERSONAL_CONTEXT_TOKEN_BUDGET,
+  compactPersonalContextReceipt,
+  estimatePersonalContextTokens,
+  personalContextProjection,
+  personalContextReceiptMatches,
+  userAnswerContext,
+  diaryActivityContext,
+  thoughtPromptContext,
+  prepareThoughtAnswer,
+  createAiTaskTargets
+} from "../src/app/index.mjs";
 import { createJsonStoreRepository } from "../src/shared/persistence/index.mjs";
-import { createOnboardingHttp } from "../src/http/index.mjs";
+import { createOnboardingHttp, createPersonalContextHttp } from "../src/http/index.mjs";
 
 const now = () => "2026-09-29T01:00:00.000Z";
 const hash = value => crypto.createHash("sha256").update(value).digest("hex");
@@ -111,6 +123,8 @@ store.thoughts = [
 ];
 store.journals = [{ ...event, title: "RAW_TITLE", content: "RAW_JOURNAL", tags: [], reflections: [{ content: "AI_REFLECTION", reasoningContent: "PRIVATE_REASONING" }] }];
 store.captures = [{ ...event, content: "RAW_CAPTURE", tags: ["原始"] }];
+store.captures.push({ ...event, id: "discarded-capture", content: "DISCARDED_CONTEXT", disposition: "discarded" });
+store.captures.push({ ...event, id: "disabled-capture", content: "DISABLED_CONTEXT", contextAllowed: false });
 store.chats = [{ ...event, message: "RAW_CHAT", answer: "AI_CHAT", reasoningContent: "PRIVATE_REASONING" }];
 store.dailyRecords = [
   { ...event, type: "weight", measuredWeight: null, bodyFatPercent: 21, description: "RAW_HEALTH" },
@@ -121,11 +135,49 @@ store.dailyRecords = [
 const original = structuredClone(store);
 const personal = userAnswerContext(store);
 for (const raw of ["RAW_QUESTION", "RAW_IDEA", "RAW_RECORD", "RAW_USER_ANSWER", "RAW_JOURNAL", "RAW_CAPTURE", "RAW_IMPORTED", "RAW_INTRODUCTION", "INITIAL_INFERENCE"]) assert.ok(personal.includes(raw), raw);
-for (const derived of ["AI_FINAL_ANSWER", "AI_DRAFT_FALLBACK", "AI_ONLY_TAG", "AI_REFLECTION", "AI_CHAT", "PRIVATE_REASONING", "RAW_FOLLOW_64"]) assert.equal(personal.includes(derived), false, derived);
+for (const derived of ["AI_FINAL_ANSWER", "AI_DRAFT_FALLBACK", "AI_ONLY_TAG", "AI_REFLECTION", "AI_CHAT", "PRIVATE_REASONING", "RAW_FOLLOW_64", "DISCARDED_CONTEXT", "DISABLED_CONTEXT"]) assert.equal(personal.includes(derived), false, derived);
 assert.match(personal, /用户问卷原始选择/);
 assert.match(personal, /可修正的初始理解/);
 assert.match(personal, /总重量未填写/);
 assert.match(personal, /运动时长3123秒/);
+const projection = personalContextProjection(store, { generatedAt: now() });
+assert.equal(projection.overview.version, PERSONAL_CONTEXT_PROJECTION_VERSION);
+assert.equal(projection.overview.generatedAt, now());
+assert.equal(projection.overview.readOnly, true);
+assert.equal(projection.overview.tokenBudget.limit, PERSONAL_CONTEXT_TOKEN_BUDGET);
+assert.equal(projection.overview.tokenBudget.estimatedUsed, estimatePersonalContextTokens(projection.prompt));
+assert.ok(projection.overview.tokenBudget.estimatedUsed <= projection.overview.tokenBudget.limit);
+assert.match(projection.overview.promptSha256, /^[a-f0-9]{64}$/);
+assert.deepEqual(
+  new Set(projection.overview.conclusions.map(item => item.informationType)),
+  new Set(["user_fact", "user_viewpoint", "model_summary"])
+);
+assert.ok(projection.overview.sources.some(source => source.resourceType === "thought" && source.resourceId === "root"));
+assert.ok(projection.overview.sources.some(source => source.resourceType === "capture" && source.excerpt.includes("RAW_CAPTURE")));
+assert.equal(projection.overview.sources.some(source => ["discarded-capture", "disabled-capture", "ai-answer"].includes(source.resourceId)), false);
+assert.equal(JSON.stringify(projection.overview).includes("PRIVATE_REASONING"), false);
+assert.ok(projection.overview.conclusions.every(item => item.sourceIds.every(id => projection.overview.sources.some(source => source.id === id))));
+const durableReceipt = compactPersonalContextReceipt(projection.receipt);
+assert.equal(durableReceipt.sources.some(source => Object.hasOwn(source, "excerpt")), false);
+assert.equal(personalContextReceiptMatches(store, durableReceipt), true);
+const changedOnboarding = structuredClone(store);
+changedOnboarding.onboarding.material = `${changedOnboarding.onboarding.material}${"x".repeat(500)}`;
+assert.equal(personalContextReceiptMatches(changedOnboarding, durableReceipt), false);
+const constrained = personalContextProjection({
+  ...store,
+  journals: Array.from({ length: 20 }, (_, index) => ({ ...event, id: `long-${index}`, content: "长内容".repeat(1000) }))
+}, { generatedAt: now(), tokenLimit: 1000 });
+assert.ok(constrained.receipt.tokenBudget.estimatedUsed <= constrained.receipt.tokenBudget.limit);
+const contextHttp = createPersonalContextHttp({
+  readStore: async () => store,
+  project: value => personalContextProjection(value, { generatedAt: now() })
+});
+const contextResponse = {};
+await contextHttp.handleV1({ method: "GET" }, contextResponse, { pathname: "/api/v1/personal-context" }, {
+  success: (res, status, body) => Object.assign(res, { status, body })
+});
+assert.equal(contextResponse.status, 200);
+assert.equal(contextResponse.body.sourceCount, projection.overview.sourceCount);
 const chain = thoughtChainContext(store.thoughts, root, "follow-33");
 assert.equal(chain.match(/<follow_up /g).length, 65);
 assert.equal(chain.match(/current="true"/g).length, 1);

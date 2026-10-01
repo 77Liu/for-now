@@ -8,4 +8,17 @@ export { createThoughtWorkflows } from "./thought-workflows.mjs";
 export { createCaptureJournalWorkflows } from "./capture-journal-workflows.mjs";
 export { createLibraryWorkflows } from "./library-workflows.mjs";
 export { createReviewChatWorkflows } from "./review-chat-workflows.mjs";
-export { userAnswerContext, diaryActivityContext, thoughtPromptContext, thoughtAnswerPrompt, prepareThoughtAnswer } from "./personal-context.mjs";
+export {
+  PERSONAL_CONTEXT_PROJECTION_VERSION,
+  PERSONAL_CONTEXT_TOKEN_BUDGET,
+  compactPersonalContextReceipt,
+  estimatePersonalContextTokens,
+  personalContextProjection,
+  personalContextReceiptFingerprint,
+  personalContextReceiptMatches,
+  userAnswerContext,
+  diaryActivityContext,
+  thoughtPromptContext,
+  thoughtAnswerPrompt,
+  prepareThoughtAnswer
+} from "./personal-context.mjs";

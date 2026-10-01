@@ -30,3 +30,9 @@ export { createCaptureJournalHttp } from "./captures-journals.mjs";
 export { createLibraryHttp } from "./library.mjs";
 export { createReviewsChatHttp } from "./reviews-chat.mjs";
 export { createContentAttachmentsHttp } from "./content-attachments.mjs";
+export { createPersonalContextHttp } from "./personal-context.mjs";
+export {
+  personalContextPaths,
+  personalContextComponents,
+  personalContextOpenApiFragment
+} from "./openapi/personal-context.mjs";

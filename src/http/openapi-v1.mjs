@@ -5,6 +5,7 @@ import { capturesJournalsOpenApiFragment } from "./openapi/captures-journals.mjs
 import { libraryOpenApiFragment } from "./openapi/library.mjs";
 import { reviewsChatOpenApiFragment } from "./openapi/reviews-chat.mjs";
 import { contentAttachmentsOpenApiFragment } from "./openapi/content-attachments.mjs";
+import { personalContextOpenApiFragment } from "./openapi/personal-context.mjs";
 
 export const openApiV1 = Object.freeze({
   openapi: "3.1.0",
@@ -24,7 +25,8 @@ export const openApiV1 = Object.freeze({
     ...capturesJournalsOpenApiFragment.paths,
     ...libraryOpenApiFragment.paths,
     ...reviewsChatOpenApiFragment.paths,
-    ...contentAttachmentsOpenApiFragment.paths
+    ...contentAttachmentsOpenApiFragment.paths,
+    ...personalContextOpenApiFragment.paths
   },
   components: {
     securitySchemes: {
@@ -41,7 +43,8 @@ export const openApiV1 = Object.freeze({
       ...capturesJournalsOpenApiFragment.components.parameters,
       ...libraryOpenApiFragment.components.parameters,
       ...reviewsChatOpenApiFragment.components.parameters,
-      ...contentAttachmentsOpenApiFragment.components.parameters
+      ...contentAttachmentsOpenApiFragment.components.parameters,
+      ...personalContextOpenApiFragment.components.parameters
     },
     schemas: {
       Meta: {
@@ -91,7 +94,8 @@ export const openApiV1 = Object.freeze({
       ...capturesJournalsOpenApiFragment.components.schemas,
       ...libraryOpenApiFragment.components.schemas,
       ...reviewsChatOpenApiFragment.components.schemas,
-      ...contentAttachmentsOpenApiFragment.components.schemas
+      ...contentAttachmentsOpenApiFragment.components.schemas,
+      ...personalContextOpenApiFragment.components.schemas
     },
     responses: {
       BadRequest: { description: "请求无效", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } },
