@@ -47,7 +47,7 @@ import { state, replaceState, resetState, subscribeState, createRefreshCoordinat
 import { createIndexedDbSyncStore, createRequestCoordinator } from "../sync/index.mjs";
 import { createOccurrenceDraft, entryKeyIntent, eventDate, eventTimestamp, formatDate, formatDateKey, formatTime, localDateKey, localDateTimeForDate, occurrenceSubmission, persistedDateTimeInput, toLocalDateTimeInput } from "../time/index.mjs";
 
-const apiClient=createApiClient({baseUrl:new URL("../../app.js",import.meta.url),session:sessionScope,onAuthRequired:()=>showAuthGate()});
+const apiClient=createApiClient({baseUrl:new URL("../../app.js",import.meta.url),apiOrigin:document.documentElement.dataset.apiOrigin||"",session:sessionScope,onAuthRequired:()=>showAuthGate()});
 const appUrl=apiClient.appUrl;
 const syncStore=createIndexedDbSyncStore();
 const mediaDraftStore=createIndexedDbMediaDraftStore();
@@ -500,6 +500,10 @@ async function listAllV1(url){
   return items
 }
 const optionalRequest=url=>apiClient.request(url,{headers:{accept:"application/json"}},{optional:true,authGate:false});
+const optionalPublicRequest=async url=>{
+  const result=await apiClient.request(url,{headers:{accept:"application/json"}},{optional:true,authGate:false,allowUnauthorized:true});
+  return result?.code==="AUTH_REQUIRED"?null:result
+};
 async function requestStream(url,options={},onEvent=()=>{}){
   const answerId=url.match(/^\/api\/thoughts\/([^/]+)\/answer$/)?.[1];
   try{const result=await apiClient.requestStream(url,options,onEvent);if(answerId)setAnswerStatus(answerId,"回答已生成并保存。","success");return result}
@@ -2098,7 +2102,7 @@ async function authRequest(endpoint,payload,method="POST"){
 }
 async function bootstrap(){
   let session,testConfig=null;
-  try{[session,testConfig]=await Promise.all([apiClient.request("/api/auth/me",{headers:{accept:"application/json"}},{authGate:false,allowUnauthorized:true}),optionalRequest("/api/local-test-mode")])}catch{showAuthGate();$("#auth-status").textContent="无法连接服务，请检查网络后重试。";return}
+  try{[session,testConfig]=await Promise.all([apiClient.request("/api/auth/me",{headers:{accept:"application/json"}},{authGate:false,allowUnauthorized:true}),optionalPublicRequest("/api/local-test-mode")])}catch{showAuthGate();$("#auth-status").textContent="无法连接服务，请检查网络后重试。";return}
   if(!session.authenticated){showAuthGate();localTestConfig=testConfig;const registerTab=$('[data-auth-tab="register"]');if(registerTab)registerTab.hidden=Boolean(testConfig?.enabled);setAuthTab(testConfig?.enabled||session.userCount?"login":"register");return}
   await activateUserSession(session.user,session.authRequired);
 }

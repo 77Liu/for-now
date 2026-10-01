@@ -23,6 +23,19 @@ fetchHandler = async (url, options) => {
 assert.deepEqual(await client.request("/api/state"), { captures: [] });
 assert.equal(client.appUrl("/attachments/cover.png"), "/now/attachments/cover.png");
 assert.equal(client.appUrl("https://example.com/x"), "https://example.com/x");
+let nativeUrl = "";
+const nativeClient = createApiClient({
+  baseUrl: "capacitor://localhost/app.js",
+  apiOrigin: "https://77liu.top/now/",
+  session: sessionScope,
+  fetchImpl: async url => {
+    nativeUrl = url;
+    return Response.json({ authenticated: false });
+  }
+});
+assert.deepEqual(await nativeClient.request("/api/auth/me"), { authenticated: false });
+assert.equal(nativeUrl, "https://77liu.top/now/api/auth/me");
+assert.equal(nativeClient.appUrl("/attachments/cover.png"), "https://77liu.top/now/attachments/cover.png");
 fetchHandler = async () => Response.json({ error: "请先登录", code: "AUTH_REQUIRED" }, { status: 401, headers: { "x-request-id": "test-trace" } });
 await assert.rejects(client.request("/api/state"), { status: 401, code: "AUTH_REQUIRED", requestId: "test-trace" });
 assert.equal(locked, 1);

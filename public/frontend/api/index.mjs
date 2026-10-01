@@ -1,7 +1,12 @@
-export function createApiClient({ baseUrl, session, onAuthRequired = () => {}, fetchImpl = globalThis.fetch }) {
+export function createApiClient({ baseUrl, session, apiOrigin = "", onAuthRequired = () => {}, fetchImpl = globalThis.fetch }) {
   const basePath = new URL(".", baseUrl).pathname.replace(/\/$/, "");
+  const origin = String(apiOrigin || "").replace(/\/+$/, "");
   let foregroundAt = 0;
-  const appUrl = value => typeof value === "string" && value.startsWith("/") && basePath ? `${basePath}${value}` : value;
+  const appUrl = value => {
+    if (typeof value !== "string" || !value.startsWith("/")) return value;
+    if (origin) return `${origin}${value}`;
+    return basePath ? `${basePath}${value}` : value;
+  };
   const errorFor = (response, result, fallback) => Object.assign(new Error(result?.error?.message || result?.error || fallback), {
     status: response.status,
     code: result?.error?.code || result?.code,

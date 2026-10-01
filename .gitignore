@@ -5,3 +5,8 @@ node_modules/
 .secrets/
 deploy/*.local
 reports/keepsake-segmentation-preview/
+.xcode-home/
+.xcode-cache/
+.xcode-packages/
+build/ios-*/
+artifacts/ios/
