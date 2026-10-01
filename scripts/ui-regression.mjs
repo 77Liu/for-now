@@ -187,6 +187,8 @@ const mockFetch = `
   window.__keepsakeUnderstandingRequests = [];
   window.__delayKeepsakeUnderstanding = false;
   window.__releaseKeepsakeUnderstanding = null;
+  window.__holdKeepsakeDerivatives = false;
+  window.__releaseKeepsakeDerivatives = null;
   window.__settingsSaves = 0;
   window.__lastSettingsPayload = null;
   window.__aiCostPlanSaves = 0;
@@ -807,7 +809,7 @@ const mockFetch = `
       if(payload.purpose==="keepsake"){
         window.__keepsakeUploads+=1;window.__keepsakeUploadPayloads.push(payload);window.__keepsakeUploadKeys.push(init.headers?.["idempotency-key"]||"");
         const base="/attachments/keepsake-"+window.__keepsakeUploads;
-        return json({attachmentPath:base+".original.png",attachmentPaths:[base+".original.png",base+".thumb.webp",base+".display.webp",base+".edit.webp",base+".alphaMask.webp"],originalPath:base+".original.png",thumbPath:base+".thumb.webp",displayPath:base+".display.webp",editPath:base+".edit.webp",alphaMaskPath:base+".alphaMask.webp"},201)
+        return json({attachmentPath:base+".original.png",attachmentPaths:[base+".original.png",base+".source-mask.png"],originalPath:base+".original.png",alphaMaskPath:base+".source-mask.png"},201)
       }
       if(payload.purpose==="original"&&images.length){
         if(document.querySelector("#view-books")?.classList.contains("active")){window.__bookUploads += 1;const attachmentPath="/attachments/cover-"+window.__bookUploads+".png";return json({attachmentPath,attachmentPaths:[attachmentPath]},201)}
@@ -837,11 +839,14 @@ const mockFetch = `
       return item?json({originalPath:item.originalPath}):json({error:"原图不可用"},404);
     }
     if (url === "/api/keepsakes" && init.method === "POST") {
-      const payload = JSON.parse(init.body), item = { id: "keepsake-new-"+(window.__keepsakePayloads.length+1), createdAt: new Date().toISOString(), ...payload, cutoutPath: "", mediaVersion: 1, ...eventTime(payload) };
+      const payload = JSON.parse(init.body),id="keepsake-new-"+(window.__keepsakePayloads.length+1),base="/attachments/"+id,item = { id, createdAt: new Date().toISOString(), ...payload, originalPath:payload.originalPath||base+".original.png",alphaMaskPath:payload.alphaMaskPath||base+".source-mask.png",thumbPath:"",displayPath:"",editPath:"",previewPath:payload.originalPath||base+".original.png",cutoutPath:"",derivativeState:"pending",mediaVersion:1,...eventTime(payload) };
+      delete item.image;delete item.alphaMask;
       window.__lastKeepsakeCreateKey=init.headers?.["idempotency-key"]||"";window.__keepsakeCreateKeys.push(window.__lastKeepsakeCreateKey);
       if(window.__failKeepsakeCreateOnce){window.__failKeepsakeCreateOnce=false;return json({error:"小物保存暂时失败"},503)}
       window.__keepsakePayloads.push(payload);
       window.__keepsakes.unshift(item);
+      const finishDerivatives=()=>Object.assign(item,{thumbPath:base+".thumb.webp",displayPath:base+".display.webp",editPath:base+".edit.webp",alphaMaskPath:base+".alphaMask.webp",previewPath:"",derivativeState:"ready",mediaVersion:2});
+      if(window.__holdKeepsakeDerivatives){window.__holdKeepsakeDerivatives=false;window.__releaseKeepsakeDerivatives=finishDerivatives}else setTimeout(finishDerivatives,20);
       const {originalPath,...visible}=item;
       return json(visible);
     }
@@ -1264,9 +1269,13 @@ try {
   const keepsakeScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-keepsakes-desktop.png", Buffer.from(keepsakeScreenshot.data, "base64"));
   const imageUploadsBeforeKeepsakeSave=await evaluate(`window.__imageUploads.length`);
-  await evaluate(`document.querySelector("#keepsake-title").value="新票根";document.querySelector("#keepsake-tags").value="纪念 周末 纪念";document.querySelector("#keepsake-form").requestSubmit();true`);
+  await evaluate(`window.__holdKeepsakeDerivatives=true;document.querySelector("#keepsake-title").value="新票根";document.querySelector("#keepsake-tags").value="纪念 周末 纪念";document.querySelector("#keepsake-form").requestSubmit();true`);
   if(!await waitUntil(`window.__keepsakePayloads.length===1`))throw new Error(await evaluate(`"小物保存未发出："+document.querySelector("#keepsake-save-status").textContent`));
-  assert.deepEqual(await evaluate(`({tags:window.__keepsakePayloads[0].tags,backgroundOpacityPct:window.__keepsakePayloads[0].backgroundOpacityPct,uploadRequests:window.__imageUploads.length-${imageUploadsBeforeKeepsakeSave},hasRawImage:Object.hasOwn(window.__keepsakePayloads[0],"image"),mediaPaths:["originalPath","thumbPath","displayPath","editPath","alphaMaskPath"].every(key=>window.__keepsakePayloads[0][key]?.startsWith("/attachments/")),uploadKey:window.__keepsakeUploadKeys[0].length>0,createKey:Boolean(window.__lastKeepsakeCreateKey)})`), {tags:["纪念","周末"],backgroundOpacityPct:15,uploadRequests:1,hasRawImage:false,mediaPaths:true,uploadKey:true,createKey:true});
+  assert.deepEqual(await evaluate(`(() => {const payload=window.__keepsakePayloads[0],item=window.__keepsakes.find(value=>value.id==="keepsake-new-1"),card=document.querySelector('[data-keepsake-id="keepsake-new-1"]');return{tags:payload.tags,backgroundOpacityPct:payload.backgroundOpacityPct,uploadRequests:window.__imageUploads.length-${imageUploadsBeforeKeepsakeSave},hasRawImage:Object.hasOwn(payload,"image"),sourcePaths:["originalPath","alphaMaskPath"].every(key=>payload[key]?.startsWith("/attachments/")),pending:item.derivativeState==="pending"&&card.querySelector(".keepsake-derivative-state")?.textContent==="正在生成清晰图",preview:card.querySelector(".keepsake-image-cutout")?.getAttribute("src")===item.previewPath,uploadKey:window.__keepsakeUploadKeys[0].length>0,createKey:Boolean(window.__lastKeepsakeCreateKey)}})()`), {tags:["纪念","周末"],backgroundOpacityPct:15,uploadRequests:1,hasRawImage:false,sourcePaths:true,pending:true,preview:true,uploadKey:true,createKey:true});
+  await evaluate(`document.querySelector("#toast").hidden=true;document.querySelector('[data-keepsake-id="keepsake-new-1"]').scrollIntoView({block:"center"});true`);
+  await fs.writeFile("/tmp/growth-keepsake-pending.png",Buffer.from((await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false})).data,"base64"));
+  await evaluate(`window.__releaseKeepsakeDerivatives();true`);
+  assert.equal(await waitUntil(`!document.querySelector('[data-keepsake-id="keepsake-new-1"] .keepsake-derivative-state')&&document.querySelector('[data-keepsake-id="keepsake-new-1"] .keepsake-image-cutout')?.getAttribute("src")===window.__keepsakes.find(item=>item.id==="keepsake-new-1").thumbPath`,80,50),true);
   const savedCutoutAlpha = await evaluate(`(async()=>{const image=new Image();await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=reject;image.src=window.__keepsakeUploadPayloads[0].alphaMask});const canvas=document.createElement("canvas");canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;const ctx=canvas.getContext("2d");ctx.drawImage(image,0,0);return {subject:ctx.getImageData(8,18,1,1).data[3],background:ctx.getImageData(40,18,1,1).data[3]}})()`);
   assert.equal(savedCutoutAlpha.subject, 255);
   assert.equal(savedCutoutAlpha.background, 0);

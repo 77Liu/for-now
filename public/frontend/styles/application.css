@@ -894,6 +894,7 @@ main{margin-left:176px;padding:48px clamp(26px,4.5vw,68px) 90px}
 .keepsake-card-open:hover .keepsake-card-image{transform:scale(1.012)}
 .keepsake-card-copy{display:grid;gap:6px;padding:11px 12px 9px}
 .keepsake-card-copy>strong{font-size:.94rem;line-height:1.4}
+.keepsake-derivative-state{color:var(--muted);font-size:.68rem;font-weight:700}
 .keepsake-card-meta{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .keepsake-card-category{color:var(--view-accent);font-size:.68rem;font-weight:800}
 .keepsake-card-meta time{flex:none;color:var(--muted);font-size:.67rem}

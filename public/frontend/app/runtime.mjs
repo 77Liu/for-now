@@ -94,7 +94,7 @@ let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric=
 let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeEditorTrigger=null,activeSpeechCaptureId="",activeSpeechSourceKey="",activeSpeechVoice="",activeSpeechPlaybackRate=1,activeSpeechAudio=null,activeSpeechObjectUrl="",activeSpeechAbortController=null;
 const keepsakeEditor={file:null,sourceDataUrl:"",sourceImage:null,sourceCanvas:null,maskCanvas:null,autoBase:null,history:[],mode:"keep",drawing:false,lastPoint:null,source:"manual",originalPath:"",cutoutPath:"",mediaDirty:false,renderFrame:0,segmentSerial:0,understandingSerial:0};
 const keepsakeBatch={items:[],activeIndex:0,loading:false};
-let keepsakeBatchPreviewUrls=[],keepsakeBatchPersistTimer=0;
+let keepsakeBatchPreviewUrls=[],keepsakeBatchPersistTimer=0,keepsakeDerivativeRefreshTimer=0;
 let keepsakeVisibleCount=KEEPSAKE_PAGE_SIZE,keepsakePaginationOwner="",keepsakeLoadObserver=null;
 const contentImageDrafts=Object.fromEntries(["capture","thoughtRoot","thoughtBlock","comment"].map(key=>[key,{items:[],uploadRequestId:"",context:null}]));
 const persistentContentImageKeys=new Set(["capture","thoughtRoot","thoughtBlock","comment"]);
@@ -2109,8 +2109,12 @@ function renderKeepsakeTagSuggestions(){
 function keepsakeTagsMarkup(tags){
   return (tags||[]).length?`<span class="keepsake-tags">${tags.map(tag=>`<span>#${escapeHtml(tag)}</span>`).join("")}</span>`:"";
 }
+function keepsakeDerivativeLabel(item){
+  return item.derivativeState==="pending"?"正在生成清晰图":item.derivativeState==="failed"?"清晰图待重试":""
+}
 function keepsakeCardMarkup(item){
-  return `<article class="keepsake-card" data-keepsake-id="${escapeHtml(item.id)}"><button class="keepsake-card-open" type="button" data-keepsake-open="${escapeHtml(item.id)}" aria-label="查看 ${escapeHtml(item.title)} 详情">${keepsakeImageMarkup(item,"keepsake-card-image")}<span class="keepsake-card-copy"><span class="keepsake-card-meta"><span class="keepsake-card-category">${escapeHtml(item.category||"其他")}</span><time>${formatDate(eventTimestamp(item))}</time></span><strong>${escapeHtml(item.title)}</strong>${item.note?`<span class="keepsake-card-note">${escapeHtml(item.note)}</span>`:""}${keepsakeTagsMarkup(item.tags)}</span></button><div class="keepsake-card-actions"><button type="button" data-keepsake-edit="${escapeHtml(item.id)}">编辑</button><button type="button" class="danger" data-keepsake-delete="${escapeHtml(item.id)}">删除</button></div></article>`
+  const derivativeLabel=keepsakeDerivativeLabel(item);
+  return `<article class="keepsake-card" data-keepsake-id="${escapeHtml(item.id)}"><button class="keepsake-card-open" type="button" data-keepsake-open="${escapeHtml(item.id)}" aria-label="查看 ${escapeHtml(item.title)} 详情">${keepsakeImageMarkup(item,"keepsake-card-image")}<span class="keepsake-card-copy"><span class="keepsake-card-meta"><span class="keepsake-card-category">${escapeHtml(item.category||"其他")}</span><time>${formatDate(eventTimestamp(item))}</time></span><strong>${escapeHtml(item.title)}</strong>${derivativeLabel?`<span class="keepsake-derivative-state">${derivativeLabel}</span>`:""}${item.note?`<span class="keepsake-card-note">${escapeHtml(item.note)}</span>`:""}${keepsakeTagsMarkup(item.tags)}</span></button><div class="keepsake-card-actions">${item.derivativeState==="failed"?`<button type="button" data-keepsake-derive="${escapeHtml(item.id)}">重试清晰图</button>`:""}<button type="button" data-keepsake-edit="${escapeHtml(item.id)}">编辑</button><button type="button" class="danger" data-keepsake-delete="${escapeHtml(item.id)}">删除</button></div></article>`
 }
 function loadNextKeepsakePage(){
   const total=(state.keepsakes||[]).length,next=Math.min(total,keepsakeVisibleCount+KEEPSAKE_PAGE_SIZE);
@@ -2124,13 +2128,23 @@ function observeNextKeepsakePage(){
   keepsakeLoadObserver=new IntersectionObserver(entries=>{if(entries.some(entry=>entry.isIntersecting))loadNextKeepsakePage()},{root:null,rootMargin:`${KEEPSAKE_PREFETCH_MARGIN_PX}px 0px`});
   keepsakeLoadObserver.observe(sentinel)
 }
+function scheduleKeepsakeDerivativeRefresh(){
+  if(keepsakeDerivativeRefreshTimer||(state.keepsakes||[]).every(item=>item.derivativeState!=="pending"))return;
+  const owner=currentUser?.id,session=sessionSerial;
+  keepsakeDerivativeRefreshTimer=setTimeout(async()=>{
+    keepsakeDerivativeRefreshTimer=0;if(owner!==currentUser?.id||session!==sessionSerial)return;
+    try{await refreshState("keepsakes")}catch{}
+    if(owner===currentUser?.id&&session===sessionSerial)scheduleKeepsakeDerivativeRefresh()
+  },750)
+}
 function renderKeepsakeDetail(item){
   const original=activeKeepsakeView==="original",detail=$("#keepsake-detail");
+  const derivativeLabel=keepsakeDerivativeLabel(item);
   detail.dataset.keepsakeId=item.id;
-  detail.innerHTML=`<nav class="keepsake-detail-nav"><button class="book-back" type="button" data-keepsake-back>← 返回陈列</button><div class="keepsake-detail-actions"><button class="text-button" type="button" data-keepsake-edit="${escapeHtml(item.id)}">编辑</button><button class="text-button danger" type="button" data-keepsake-delete="${escapeHtml(item.id)}">删除</button></div></nav>
+  detail.innerHTML=`<nav class="keepsake-detail-nav"><button class="book-back" type="button" data-keepsake-back>← 返回陈列</button><div class="keepsake-detail-actions">${item.derivativeState==="failed"?`<button class="text-button" type="button" data-keepsake-derive="${escapeHtml(item.id)}">重试清晰图</button>`:""}<button class="text-button" type="button" data-keepsake-edit="${escapeHtml(item.id)}">编辑</button><button class="text-button danger" type="button" data-keepsake-delete="${escapeHtml(item.id)}">删除</button></div></nav>
     <div class="keepsake-detail-layout">
       <section class="keepsake-detail-media">
-        <div class="keepsake-detail-viewbar"><span>${original?"原始照片":`主体清晰 · 环境 ${Math.max(0,Math.min(30,Number(item.backgroundOpacityPct??15)))}%`}</span><div class="segmented-control" aria-label="图片显示方式"><button type="button" data-keepsake-view="presentation" aria-pressed="${String(!original)}" class="${original?"":"active"}">呈现</button><button type="button" data-keepsake-view="original" aria-pressed="${String(original)}" class="${original?"active":""}">原图</button></div></div>
+        <div class="keepsake-detail-viewbar"><span>${original?"原始照片":derivativeLabel||`主体清晰 · 环境 ${Math.max(0,Math.min(30,Number(item.backgroundOpacityPct??15)))}%`}</span><div class="segmented-control" aria-label="图片显示方式"><button type="button" data-keepsake-view="presentation" aria-pressed="${String(!original)}" class="${original?"":"active"}">呈现</button><button type="button" data-keepsake-view="original" aria-pressed="${String(original)}" class="${original?"active":""}">原图</button></div></div>
         <div class="keepsake-detail-image-wrap">${keepsakeImageMarkup(original?{...item,originalPath:activeKeepsakeOriginalPath}:item,"keepsake-detail-image","eager",original?"original":"detail")}</div>
       </section>
       <section class="keepsake-detail-copy">
@@ -2148,6 +2162,7 @@ function renderKeepsakes(){
   keepsakeVisibleCount=Math.max(KEEPSAKE_PAGE_SIZE,Math.min(keepsakeVisibleCount,Math.max(items.length,KEEPSAKE_PAGE_SIZE)));
   let detailItem=items.find(item=>item.id===activeKeepsakeId);if(activeKeepsakeId&&!detailItem){activeKeepsakeId="";activeKeepsakeView="presentation"}
   detailItem=items.find(item=>item.id===activeKeepsakeId);const inDetail=Boolean(detailItem),library=$(".keepsake-library"),detail=$("#keepsake-detail"),pagination=$("#keepsake-pagination");
+  scheduleKeepsakeDerivativeRefresh();
   $("#view-keepsakes").classList.toggle("keepsake-detail-mode",inDetail);$("#keepsake-count").textContent=items.length?`${items.length} 件`:"";$("#keepsake-library-count").textContent=`${items.length} 件`;$("#keepsake-create-toggle").hidden=inDetail;library.hidden=inDetail;detail.hidden=!inDetail;renderKeepsakeTagSuggestions();
   if(inDetail){keepsakeLoadObserver?.disconnect();if(pagination)pagination.hidden=true;renderKeepsakeDetail(detailItem);return}
   detail.innerHTML="";
@@ -3272,7 +3287,7 @@ function invalidatePageLoads(){
 function clearPrivateSessionState(){
   closeImageViewer({restoreFocus:false});
   resetState();llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},automaticAnswers:{thoughtAnswer:false},speech:{generationRate:-10},hasApiKey:false,keyHint:""};
-  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;commercialStatistics=null;statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;actionsSnapshot={actions:[],habits:[],habitCheckins:[]};feedbackItems=[];exportManifest=null;personalContext=null;governanceUrl="";appVersion="0.2.0";homeMemoryKeys=[];homeMemoryByKey=new Map();closeHomeEditors({restoreFocus:false});invalidatePageLoads();draftTags=[];captureDraftTags=[];pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";
+  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;commercialStatistics=null;statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;actionsSnapshot={actions:[],habits:[],habitCheckins:[]};feedbackItems=[];exportManifest=null;personalContext=null;governanceUrl="";appVersion="0.2.0";homeMemoryKeys=[];homeMemoryByKey=new Map();closeHomeEditors({restoreFocus:false});invalidatePageLoads();draftTags=[];captureDraftTags=[];pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";
   healthParseSerial+=1;latestHealthRequest=0;healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=[];healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]};for(const draft of Object.values(healthImageDrafts))Object.assign(draft,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0});
   bookParseSerial+=1;for(const url of Object.values(bookPreviewUrls))if(url)URL.revokeObjectURL(url);bookPreviewUrls={cover:"",recognition:""};pendingBookImages={cover:null,recognition:null};editingBookId="";activeBookId="";activeBookFeatureNoteId="";bookCreatorOpen=false;bookDetailCondensed=false;
   keepsakeEditor.segmentSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.history=[];
@@ -4121,10 +4136,11 @@ $("#keepsake-form").addEventListener("submit",async e=>{
   }finally{button.disabled=false}
 });
 document.addEventListener("click",async e=>{
-  const tagSuggestion=e.target.closest("[data-keepsake-tag-suggestion]"),back=e.target.closest("[data-keepsake-back]"),view=e.target.closest("[data-keepsake-view]"),edit=e.target.closest("[data-keepsake-edit]"),remove=e.target.closest("[data-keepsake-delete]"),open=e.target.closest("[data-keepsake-open]");
+  const tagSuggestion=e.target.closest("[data-keepsake-tag-suggestion]"),back=e.target.closest("[data-keepsake-back]"),view=e.target.closest("[data-keepsake-view]"),derive=e.target.closest("[data-keepsake-derive]"),edit=e.target.closest("[data-keepsake-edit]"),remove=e.target.closest("[data-keepsake-delete]"),open=e.target.closest("[data-keepsake-open]");
   if(tagSuggestion){const input=$("#keepsake-tags"),tags=uniqueKeepsakeTags([...splitTags(input.value),tagSuggestion.dataset.keepsakeTagSuggestion]);input.value=tags.join(" ");input.dispatchEvent(new Event("input",{bubbles:true}));input.focus();return}
   if(back){activeKeepsakeId="";activeKeepsakeView="presentation";activeKeepsakeOriginalPath="";renderKeepsakes();window.scrollTo({top:0,behavior:"smooth"});return}
   if(view){view.disabled=true;try{await setKeepsakeDetailView(view.dataset.keepsakeView)}catch(error){showToast(error.message,"error")}finally{view.disabled=false}return}
+  if(derive){derive.disabled=true;try{await request(`/api/keepsakes/${encodeURIComponent(derive.dataset.keepsakeDerive)}/derive`,{method:"POST",body:"{}"});await refreshState("keepsakes");showToast("正在重新生成清晰图")}catch(error){showToast(error.message,"error");derive.disabled=false}return}
   if(edit){edit.disabled=true;try{await editKeepsake(edit.dataset.keepsakeEdit)}finally{if(edit.isConnected)edit.disabled=false}return}
   if(remove){if(!confirm("将这件小物移入回收站？原图与轮廓会保留 30 天。"))return;remove.disabled=true;try{await request(`/api/keepsakes/${remove.dataset.keepsakeDelete}`,{method:"DELETE"});await refreshState(["keepsakes","review"]);showToast("小物已移入回收站")}catch(error){showToast(error.message,"error");remove.disabled=false}return}
   if(open)openKeepsakeDetail(open.dataset.keepsakeOpen);
