@@ -37,18 +37,25 @@ DeepSeek 传输现由 `infrastructure/ai-providers` 返回标准结果或携带�
 
 - 本机模式：`data/ai-usage.json`
 - 账户模式：`data/users/<user-id>/ai-usage.json`
+- PostgreSQL 模式：账户 `usage` 文档；主机监控通过
+  `PG_BACKUP_DATABASE_URL` 只读角色汇总，不回退读取 JSON
 
-v2 每条记录包含：
+v3 每条记录包含：
 
 - 身份与关联：`id`、`callId`、`callGroupId`、`traceId`。
 - 时间与结果：`createdAt`、`completedAt`、`durationMs`、`status`、`httpStatus`、`errorCategory`、`errorCode`。
 - 模型信息：`provider`、请求模型、供应商返回模型、供应商请求 ID、场景、档位、思考强度。
 - 尝试信息：当前尝试、最大尝试次数、重试原因、是否流式、响应格式、`maxTokens`、结束原因。
-- 输入形态：`text / vision / unknown`、图片数量、总字节数、MIME 类型、宽高；账本不保存图片正文或 Base64。
+- 输入形态：`text / vision / audio / document / unknown`、图片数量、总字节数、MIME 类型、宽高；账本不保存图片、音频或文档正文。
 - 容量摘要：历史消息数、请求字符数、回答字符数、推理字符数。
-- 计费信息：是否取得官方 usage、原始 usage、标准化 Token、峰谷时段、单价快照和费用拆分。
+- 计费信息：是否取得官方 usage、原始 usage、标准化 Token、峰谷时段、单价快照和费用拆分；非 Token 服务另记 `unitType / units / costKnown / costCny / costSource`。
 
-每一次已完成落账的 DeepSeek 请求计一条，包括失败请求和自动重试。`calls` 因而不是业务操作次数；成功数、失败数和 usage 未知数分别统计。官方输入或输出用量缺失、为 null 时，Token 和费用均保持 0，标记 `usageKnown=false`，数值型原始字段仍保留备查。旧版本升级先备份；旧流水原有费用保留，未知输入形态、状态和耗时不伪造。
+每一次已完成落账的 DeepSeek 或火山语音/视觉请求计一条，包括失败请求和
+自动重试。`calls` 因而不是业务操作次数；成功数、失败数、usage 未知数和
+费用未知数分别统计。官方输入或输出用量缺失、为 null 时，Token 和费用均
+保持 0，标记 `usageKnown=false`；供应商金额未知时标记 `costKnown=false`，
+不得把 0 当作真实成本。旧版本升级先备份；旧流水原有费用保留，未知输入
+形态、状态和耗时不伪造。
 
 ## AI 调用审计
 

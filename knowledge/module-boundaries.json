@@ -47,8 +47,8 @@
       "root": "src/modules/captures",
       "publicEntry": "src/modules/captures/index.mjs",
       "allowedDependencies": ["shared.attachments", "shared.time", "shared.validation"],
-      "owns": { "data": ["capture validation, pagination, idempotent creation and annotation-safe editing"], "routes": ["GET /api/v1/captures", "POST /api/v1/captures", "GET /api/v1/captures/:id", "PATCH /api/v1/captures/:id", "DELETE /api/v1/captures/:id", "POST /api/captures", "PATCH /api/captures/:id", "DELETE /api/captures/:id"] },
-      "tests": ["scripts/capture-journal-regression.mjs", "scripts/regression.mjs", "scripts/ui-regression.mjs"],
+      "owns": { "data": ["capture validation, pagination, idempotent creation, annotation-safe editing, audio metadata and transcription-layer state"], "routes": ["GET /api/v1/captures", "POST /api/v1/captures", "GET /api/v1/captures/:id", "PATCH /api/v1/captures/:id", "DELETE /api/v1/captures/:id", "POST /api/v1/captures/:id/transcription", "POST /api/captures", "PATCH /api/captures/:id", "DELETE /api/captures/:id", "POST /api/captures/:id/transcription"] },
+      "tests": ["scripts/capture-journal-regression.mjs", "scripts/capture-transcription-regression.mjs", "scripts/regression.mjs", "scripts/ui-regression.mjs"],
       "status": "active"
     },
     {
@@ -127,8 +127,8 @@
       "root": "src/infrastructure/ai-providers",
       "publicEntry": "src/infrastructure/ai-providers/index.mjs",
       "allowedDependencies": ["shared.validation", "shared.attachments"],
-      "owns": { "data": ["DeepSeek HTTP/SSE transport, response validation and image encoding", "Aliyun segmentation SDK, async polling, PNG download and safe error projection"], "routes": [] },
-      "tests": ["scripts/ai-provider-regression.mjs", "scripts/segmentation-regression.mjs", "scripts/regression.mjs", "scripts/observability-regression.mjs"],
+      "owns": { "data": ["DeepSeek HTTP/SSE transport, response validation and image encoding", "Aliyun segmentation SDK, async polling, PNG download and safe error projection", "Volcengine V4 signing, OCR/document parsing, TTS and private streaming ASR transports"], "routes": [] },
+      "tests": ["scripts/ai-provider-regression.mjs", "scripts/volcengine-provider-regression.mjs", "scripts/volcengine-server-regression.mjs", "scripts/segmentation-regression.mjs", "scripts/regression.mjs", "scripts/observability-regression.mjs"],
       "status": "active"
     },
     {
@@ -239,8 +239,8 @@
       "root": "src/app",
       "publicEntry": "src/app/index.mjs",
       "allowedDependencies": ["domain.annotations", "domain.tasks", "domain.notifications", "domain.trash", "domain.onboarding", "domain.health", "domain.thoughts", "domain.captures", "domain.journals", "domain.books", "domain.quotes", "domain.chats", "domain.reviews", "domain.content-attachments", "domain.ai", "shared.time", "shared.attachments", "shared.content", "shared.validation", "shared.prompts"],
-      "owns": { "data": ["cross-domain annotation resource resolution and transactional background AI orchestration", "trash location resolution, versioned restore and durable attachment cleanup orchestration", "cross-domain personal context, activity selection and thought answer prompt composition", "thought chain creation/task transaction, draft/starter generation and foreground answer idempotency", "capture/journal, library and review/chat application workflows"], "routes": [] },
-      "tests": ["scripts/personal-context-regression.mjs", "scripts/trash-regression.mjs", "scripts/collaboration-regression.mjs", "scripts/capture-journal-regression.mjs", "scripts/library-regression.mjs", "scripts/reviews-chat-regression.mjs", "scripts/regression.mjs", "scripts/api-v1-contract-regression.mjs", "scripts/auth-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
+      "owns": { "data": ["cross-domain annotation resource resolution and transactional background AI orchestration", "trash location resolution, versioned restore and durable attachment cleanup orchestration", "cross-domain personal context, source receipts, token budgets, activity selection and thought answer prompt composition", "thought chain creation/task transaction, draft/starter generation and foreground answer idempotency", "capture/journal, library and review/chat application workflows", "explicit hash-confirmed historical keepsake media migration"], "routes": [] },
+      "tests": ["scripts/personal-context-regression.mjs", "scripts/trash-regression.mjs", "scripts/collaboration-regression.mjs", "scripts/capture-journal-regression.mjs", "scripts/capture-transcription-regression.mjs", "scripts/volcengine-server-regression.mjs", "scripts/library-regression.mjs", "scripts/reviews-chat-regression.mjs", "scripts/keepsake-media-migration-regression.mjs", "scripts/regression.mjs", "scripts/api-v1-contract-regression.mjs", "scripts/auth-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
       "status": "active"
     },
     {
@@ -262,8 +262,8 @@
       "root": "src/shared/attachments",
       "publicEntry": "src/shared/attachments/index.mjs",
       "allowedDependencies": ["shared.validation"],
-      "owns": { "data": ["attachment storage adapters, image validation, quota serialization, upload inventory and recovery, reference discovery and cleanup"], "routes": ["POST /api/images/upload", "POST /api/images/discard", "GET /attachments/:name", "HEAD /attachments/:name"] },
-      "tests": ["scripts/attachment-storage-regression.mjs", "scripts/attachment-upload-regression.mjs", "scripts/trash-regression.mjs", "scripts/regression.mjs", "scripts/auth-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
+      "owns": { "data": ["attachment storage adapters, image/audio validation, quota serialization, upload inventory and recovery, reference discovery and cleanup"], "routes": ["POST /api/images/upload", "POST /api/images/discard", "POST /api/audio/upload", "POST /api/audio/discard", "GET /attachments/:name", "HEAD /attachments/:name"] },
+      "tests": ["scripts/attachment-storage-regression.mjs", "scripts/attachment-upload-regression.mjs", "scripts/attachment-derivatives-regression.mjs", "scripts/keepsake-media-migration-regression.mjs", "scripts/trash-regression.mjs", "scripts/regression.mjs", "scripts/auth-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
       "status": "active"
     },
     {
@@ -309,7 +309,7 @@
         "data": ["task creation, idempotency, single retry successor, claim, completion and restart recovery"],
         "routes": ["POST /api/ai-tasks", "GET /api/ai-tasks", "GET /api/ai-tasks/:id", "GET /api/ai-tasks/:id/result", "POST /api/ai-tasks/:id/retry"]
       },
-      "tests": ["scripts/collaboration-regression.mjs", "scripts/regression.mjs", "scripts/auth-regression.mjs"],
+      "tests": ["scripts/collaboration-regression.mjs", "scripts/capture-transcription-regression.mjs", "scripts/regression.mjs", "scripts/auth-regression.mjs"],
       "status": "active"
     },
     {
@@ -361,7 +361,7 @@
       "root": "public/frontend/sync",
       "publicEntry": "public/frontend/sync/index.mjs",
       "allowedDependencies": [],
-      "owns": { "data": ["account-scoped durable mutation log, resource request coordination, retry classification and committed operation audit"], "routes": [] },
+      "owns": { "data": ["account-scoped durable mutation log, resource request coordination, retry classification and committed operation audit", "cross-tab invalidation, incremental cursor polling, pending projection recovery and client sync metrics"], "routes": [] },
       "tests": ["scripts/sync-coordinator-regression.mjs"],
       "status": "active"
     },
@@ -391,7 +391,7 @@
       "root": "public/frontend/media",
       "publicEntry": "public/frontend/media/index.mjs",
       "allowedDependencies": [],
-      "owns": { "data": ["image count, MIME type and byte-size validation"], "routes": [] },
+      "owns": { "data": ["image/audio MIME, byte-size and duration validation, account-scoped recoverable media drafts and idempotent upload helpers"], "routes": [] },
       "tests": ["scripts/frontend-shared-regression.mjs", "scripts/ui-regression.mjs"],
       "status": "active"
     },
@@ -495,10 +495,10 @@
       "publicEntry": "src/http/index.mjs",
       "allowedDependencies": ["domain.auth", "domain.ai", "domain.tasks", "domain.checkins", "domain.health", "domain.captures", "domain.journals", "domain.books", "domain.quotes", "domain.chats", "domain.reviews", "domain.statistics", "domain.content-attachments", "shared.validation", "shared.observability"],
       "owns": {
-        "data": ["JSON request parsing, response metadata, SSE events, Cookie and auth route adaptation", "request trace validation, base path normalization, completion audit and controlled errors", "v1 data/error envelopes, cursor codec, ETag/If-Match, Idempotency-Key, OpenAPI root and module registration"],
-        "routes": ["GET /api/v1/openapi.json"]
+        "data": ["JSON request parsing, response metadata, SSE events, Cookie and auth route adaptation", "request trace validation, base path normalization, completion audit and controlled errors", "v1 data/error envelopes, cursor codec, ETag/If-Match, Idempotency-Key, OpenAPI root and module registration", "incremental account snapshot and client operation status transport"],
+        "routes": ["GET /api/v1/openapi.json", "GET /api/v1/sync", "GET /api/v1/sync/operations/:operationId", "GET /api/v1/personal-context", "GET /api/speech/voices", "POST /api/speech/synthesize", "GET /api/vision/status", "POST /api/vision/ocr", "POST /api/vision/document"]
       },
-      "tests": ["scripts/auth-regression.mjs", "scripts/regression.mjs", "scripts/api-v1-contract-regression.mjs", "scripts/api-v1-openapi-fragment-regression.mjs", "scripts/record-v1-regression.mjs", "scripts/capture-journal-regression.mjs", "scripts/library-regression.mjs", "scripts/reviews-chat-regression.mjs", "scripts/content-attachments-regression.mjs", "scripts/observability-regression.mjs", "scripts/runtime-infrastructure-regression.mjs"],
+      "tests": ["scripts/auth-regression.mjs", "scripts/regression.mjs", "scripts/api-v1-contract-regression.mjs", "scripts/api-v1-openapi-fragment-regression.mjs", "scripts/record-v1-regression.mjs", "scripts/capture-journal-regression.mjs", "scripts/library-regression.mjs", "scripts/reviews-chat-regression.mjs", "scripts/content-attachments-regression.mjs", "scripts/observability-regression.mjs", "scripts/runtime-infrastructure-regression.mjs", "scripts/volcengine-provider-regression.mjs", "scripts/volcengine-server-regression.mjs"],
       "status": "active"
     },
     {
@@ -508,7 +508,7 @@
       "publicEntry": "src/shared/persistence/index.mjs",
       "allowedDependencies": [],
       "owns": {
-        "data": ["JSON/PostgreSQL repository contract, runtime transactions and account isolation", "PostgreSQL identity/config/usage mapping, atomic registration, attachment inventory and recovery", "Atomic migration, runtime overwrite protection, offline relational export"],
+        "data": ["JSON/PostgreSQL repository contract, runtime transactions and account isolation", "PostgreSQL identity/config/usage mapping, atomic registration, attachment inventory and recovery", "Atomic migration, runtime overwrite protection, offline relational export", "account-scoped monotonic change cursor and bounded incremental sync ledger"],
         "routes": []
       },
       "tests": ["scripts/persistence-regression.mjs", "scripts/document-migration-regression.mjs", "scripts/postgres-integration.mjs", "scripts/postgres-runtime-checks.mjs"],

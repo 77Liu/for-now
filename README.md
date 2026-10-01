@@ -82,13 +82,14 @@ npm run start:local-test
 - 状态图位于“所思 → 回顾 → 长期趋势”，按自然日汇总，同日多次逐项取均值，并显示多指标浅色线和综合分；图下可逐次编辑发生时间、量表、备注和当天因素。
 - “回顾”支持低样本当前观察、渐进式趋势与延迟相关线索、问题聚类、个人实验、自定义指标和持久化认知复盘历史。
 - “读书笔记”支持零记录冷启动、书籍画廊、随机笔记回顾与书籍详情；书目记录阅读起止日期，详情以笔记时间线为主，支持完整时间、三档收藏、增删改查及批注。
-- “小物收集”将小票、纸品、立牌与小物照片保存为原图和透明轮廓图；自动主体识别只使用阿里云 `SegmentHDCommonImage`，并支持少量场景边缘外扩与手动画笔增删蒙版。陈列采用瀑布流，卡片记录日期时间、标题、备注与标签；图片以 15% 原图托底、100% 主体叠放，点入页内详情可切换完整原图。
+- “小物收集”将小票、纸品、立牌与小物照片保存为原图和透明轮廓图；自动主体识别只使用阿里云 `SegmentHDCommonImage`，并支持少量场景边缘外扩与手动画笔增删蒙版。陈列采用瀑布流，首屏 12 件、接近底部加载下一页；卡片记录日期时间、标题、备注与标签，点入页内详情再按需读取完整原图。
+- 捕念语音以“上传音频”为主入口，现场录音默认折叠，展开后提供开始、暂停/继续、停止和取消；原件、ASR 原文与独立 AI 整理稿分层保存。
 - “我的”采用设置页式分组入口，只显示账户、统计、通知、回收站、AI 成本、架构设计、设置、商业化、探索实验室和关于的简述，点击后进入独立内容页；探索实验室只读写隔离样例，不复用其他一级页面的横向组内标签。
 - “我的 → 商业化”汇总当前账户的商业线索与近 30 天 AI 实际成本，支持有偿调研、月度订阅、一次性交付和用量包四套可保存模拟；订阅按月展示现金流、研发工时与完整结余。
-- “我的 → AI 成本”按 13 个场景独立模拟模型、峰谷价格、调用量、输入缓存和输出 Token，并与近 30 天账户实测比较；方案独立保存，不自动修改真实模型配置。
+- “我的 → AI 成本”按 15 个 DeepSeek 场景独立模拟模型、峰谷价格、调用量、输入缓存和输出 Token，并与近 30 天账户实测比较；方案独立保存，不自动修改真实模型配置。“我的 → 统计”另按 DeepSeek、豆包语音、火山视觉和阿里云图片分割展示调用趋势、原始计量单位、已知费用与待账单次数。
 - “我的 → 架构设计”按五阶段展示请求入口、防火墙、分发、主服务器、Worker、数据、监控与灾备，并同步给出规划规格、成本区间、进入条件和白话术语解释；只描述目标路线，不把未部署能力标记为已上线。
 - 主导航已收拢为四个一级入口；今日、所见、所思通过组内导航进入，“我的”通过设置列表进入。具体命名与分组分别见 `knowledge/cultural-content-preferences.md` 和 `knowledge/architecture.md`。
-- 模型能力统一使用 DeepSeek；Lite/Mid/High/Ultra 四档均可独立配置 Flash/Pro 与思考强度，每个 AI 场景独立选择档位，并以场景契约单独控制篇幅与表达。
+- 文本生成与结构化整理使用 DeepSeek；语音转写/合成和可选 OCR/文档解析使用火山引擎，小物主体分割使用阿里云视觉。DeepSeek 的 Lite/Mid/High/Ultra 四档均可独立配置 Flash/Pro 与思考强度，每个文本场景独立选择档位，并以场景契约单独控制篇幅与表达。
 - 模型提示词使用独立不可变目录版本；当前激活版本、文件摘要、必需提示和占位符在 `prompts/manifest.json` 校验，每次 AI 审计记录目录版本，可独立于应用版本固定和回滚。
 - `/api/v1` 公共内核已冻结为 `1.0.0`，统一 `data/error/meta`、TraceID、游标、ETag/If-Match 与 Idempotency-Key；OpenAPI 位于 `/api/v1/openapi.json`，旧接口继续兼容。
 - 思绪回答默认创建持久后台任务，不弹窗阻断录入；通知中心展示排队、生成、完成、失败和过期状态，并支持结果跳转与失败重试。草稿等主动查看场景仍可流式展示，模型思考独立持久化、默认折叠且不进入后续上下文。
@@ -120,10 +121,11 @@ npm run start:local-test
 - **代码源**：Gitee `main`；服务器不直接改代码。
 - **正式数据源**：ECS PostgreSQL 16.15 保存业务、认证、设置和用量数据；私有 OSS 附件前缀保存持久图片。`/srv/for-now/data` 的旧 JSON 仅作为受写源标记保护的回滚副本，不再接受正式写入。
 - **OSS**：`for-now-backups` 保存一致性快照，`for-now-attachments/<user-id>` 保存图片；两者都不与运行目录双向同步。
-- **模型调用**：应用服务端统一调用 DeepSeek；模型设置与密钥按用户保存在正式数据目录。
+- **模型调用**：应用服务端统一调用 DeepSeek；模型设置与密钥按用户保存在正式数据目录。捕念朗读与转写由服务端调用火山豆包语音，浏览器不接触语音 API Key。
+- **文字与文档识别**：配置火山视觉后，健康截图和书目信息先经通用 OCR 提取文字，再由 DeepSeek 结构化；智能文档解析提供独立受认证接口。视觉 AK/SK 只存在服务端环境中。
 - **小物分割**：应用服务端通过 ECS RAM 角色调用阿里云 `SegmentHDCommonImage`，用同类目 `GetAsyncJobResult` 查询异步结果并立即下载临时透明 PNG；不调用 DeepSeek 或 `RefineMask`。
 - **日志与审计**：系统日志、用户操作摘要、DeepSeek 用量及 AI 开始/终态审计已在本地接通；阿里云分割独立留痕。字段、隐私、保留和未关闭边界统一见 `knowledge/observability.md`。
-- **运行边界**：DeepSeek 全局 20 QPS/20 在途，图片分割全局 5 QPS/5 在途；每用户每日 200 次、附件 1 GiB。v0.2.1 仅供 Owner 内部测试，费用拒绝门限暂时关闭，但用量记账和费用告警保留；下个版本重新确定预算。阈值来源和扩容条件见 `knowledge/operations-capacity.md`。
+- **运行边界**：DeepSeek 全局 20 QPS/20 在途，图片分割 5 QPS/5 在途，火山语音 5 QPS/5 在途，火山 OCR 10 QPS/10 在途，智能文档解析 2 QPS/2 在途；每用户每日 200 次 DeepSeek 调用、附件 1 GiB。阈值来源和扩容条件见 `knowledge/operations-capacity.md`。
 - **已上线治理控制面**：独立中台只经本机服务令牌读取脱敏聚合，不直接读取业务数据目录；主应用契约见 `knowledge/architecture.md`，认证、部署和回滚细节维护在 `platform/main` 分支 README。
 
 ## 生产检查状态
@@ -166,6 +168,9 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
 隔离候选上完成相应验证并创建本地提交；`commit:feat` 作为兼容别名保留。
 高风险、跨域及发布整合提交仍需人工授权。任何 push、tag、Gitee Release、
 部署或生产写入始终需要本次人工明确授权，本地测试或自动提交均不构成授权。
+主分支同一待提交单元超过 500 行增删或 15 个文件时，须在安全线内按同一或
+同组需求及时形成功能级/任务级本地提交；不得跨无关任务合并。完整边界以
+`knowledge/engineering-rules.md` 为准。
 仓库没有监听本地文件或 Gitee push 的自动触发器。首次引入 SDK 依赖前还需
 按 `deploy/README.md` 升级旧部署器。
 
@@ -184,7 +189,7 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
 - 追问必须携带完整原始链；SP/UP 结构以 `knowledge/prompt-architecture.md` 为准。
 - 初始化可全量渲染，写操作不得导致整页刷新和无关状态重置。
 - 聚类、缺席主题与延迟相关只提供线索，不构成因果、人格判断或医疗诊断。
-- API Key 只存运行数据目录内的账户模型设置，密钥不得进入 Git、文档、日志或聊天。
+- DeepSeek API Key 只存运行数据目录内的账户模型设置；火山语音 API Key 与视觉 AK/SK 只存服务端受保护环境文件。任何密钥不得进入 Git、文档、日志或聊天。
 
 ## 文档地图
 
@@ -195,6 +200,7 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
 - `knowledge/development-release-checklist.md`：新功能测试完成、准备上线时执行的阻断式自查清单。
 - `knowledge/release-notes-rules.md`：版本更新说明的分类、用户故事、问题与价值表达、模板及发布前检查规则。
 - `knowledge/system-testing.md`：后端、压测、前端系统测试矩阵、统一命令、阈值与维护规则。
+- `knowledge/user-journey-testing.md`：真实用户任务、异常恢复、视觉兼容性、分层运行与自动提交门槛；机器可读覆盖见 `knowledge/user-journey-matrix.json`。
 - `knowledge/observability.md`：系统日志、用户操作日志与 AI 调用审计的现状、字段、隐私和未完成项。
 - `knowledge/operations-capacity.md`：生产容量、调用/存储边界、OSS 权限、飞书告警和恢复演练。
 - `knowledge/commercialization.md`：商业化阶段、证据边界、成本收益公式、变现优先级与决策门。
@@ -210,6 +216,7 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
 - `knowledge/metrics.md`：量表、同日均值、综合分和延迟相关口径。
 - `knowledge/onboarding-strategy.md`：冷启动资料、快速/详细问卷、初始认知与本地测试模式边界。
 - `knowledge/prompt-architecture.md`：DeepSeek 的 SP/UP 与完整追问链规则。
+- `knowledge/volcengine-integration.md`：火山语音、OCR、智能文档解析的服务端配置、隐私边界和真实冒烟命令。
 - `knowledge/product-definition.md`：产品关键词、记录重点、闭环、核心功能、记录边界与价值主张。
 - `knowledge/iteration-history.md`：按日期保存的重要迭代历史。
 - `README-TODO.md`：P00-P3 排期、实施状态、验收标准和阻塞项的单一事实来源。
@@ -237,7 +244,7 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
 - `src/modules/trash/`、`src/shared/attachments/` 与 `src/app/`：回收条目、版本化恢复、持久清理、上传/配额/临时文件与存储适配；本段 PG 验证缺口见系统测试文档。
 - `public/frontend/`：API、会话、状态、内容/时间/媒体共享能力，以及思绪回访、导出、行动/习惯和反馈纯功能模块；页面运行时仍会按后续领域继续细分。
 - `src/config/` 与 `src/shared/observability/`：统一运行配置、异步请求上下文、脱敏、私有日志与资源变更摘要；请求完成与错误适配归 `src/http/`。
-- `src/modules/ai/`：模型设置、成本模拟/统计、用量/费用、额度、通用 Prompt 与调用/重试审计；账户文档适配归持久化，设置/成本接口归 HTTP。DeepSeek 与阿里云分割传输归 `src/infrastructure/ai-providers/`；业务上下文继续迁移。
+- `src/modules/ai/`：模型设置、成本模拟/统计、用量/费用、额度、通用 Prompt 与调用/重试审计；账户文档适配归持久化，设置/成本接口归 HTTP。DeepSeek、阿里云分割及火山语音/视觉传输归 `src/infrastructure/ai-providers/`；业务上下文继续迁移。
 - `src/modules/keepsakes/`：小物校验/归一化、创建/编辑、分割与临时图片流程；HTTP 适配、供应商、回收事务分别装配。通用发生时间解析归 `src/shared/time/`，共享队列归 `src/shared/concurrency/`；前端继续迁移。
 - `public/`：交互页面实现。
 

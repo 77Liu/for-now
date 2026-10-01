@@ -54,12 +54,23 @@ No application release or data change was part of that operation.
    is documented in `knowledge/operations-capacity.md`.
 3. Run `sudo deploy/prepare-server.sh`.
 4. Add the printed public key to Gitee as a read-only deploy key.
-5. Set `INVITE_CODE_HASH`, `PLATFORM_SERVICE_TOKEN_HASH`, OSS attachment settings and
-   `FEISHU_ALERT_WEBHOOK` in `/etc/for-now.env`. Store only the invitation
+5. Set `INVITE_CODE_HASH`, `PLATFORM_SERVICE_TOKEN_HASH`, OSS attachment settings,
+   `FEISHU_ALERT_WEBHOOK`, `VOLCENGINE_SPEECH_API_KEY`,
+   `VOLCENGINE_ACCESS_KEY_ID`, and `VOLCENGINE_SECRET_ACCESS_KEY` in
+   `/etc/for-now.env`. Store only the invitation
    and platform-token SHA-256 digests, not their plaintext values, and keep
    `COOKIE_SECURE=1`. The matching platform token plaintext belongs only in
    `/etc/for-now-platform.env`. Keep
    `ATTACHMENT_STORAGE=local` until the migration sequence below succeeds.
+   Use a least-privilege visual-service sub-user instead of a root-account
+   Access Key. Detailed service and smoke-test instructions are in
+   `knowledge/volcengine-integration.md`.
+   Keep `INCREMENTAL_SYNC_ENABLED=1` for the normal client cursor-polling path.
+   Set it to `0` only as a temporary frontend rollback: durable writes continue
+   to use the same API and server-side sync ledger, while the browser falls back
+   to the existing write-followed-by-refresh behavior. After changing it,
+   restart the application and verify that “我的 → 同步状态” reports that
+   incremental sync is disabled before admitting traffic.
 6. Include `/etc/nginx/snippets/acme-challenge.conf` in the port-80 server,
    reload Nginx, then issue the IP and domain certificates:
 
@@ -113,6 +124,41 @@ then leave the five-minute timer enabled for platform monitoring.
 ossutil uses `--mode EcsRamRole` and the Beijing internal endpoint from
 `/etc/for-now.env`; no long-lived AccessKey is stored on disk.
 
+## Historical keepsake media migration
+
+Legacy keepsakes are never rewritten during application startup. Stop the
+application before applying a migration, load the same environment used by the
+service, and first generate a read-only plan:
+
+```bash
+sudo -u for-now /bin/bash -c '
+  set -a
+  source /etc/for-now.env
+  set +a
+  npm run migrate:keepsake-media -- --dry-run
+'
+```
+
+Review the per-account blocked count and retain the printed `planSha256`. Apply
+only that exact plan:
+
+```bash
+sudo -u for-now /bin/bash -c '
+  set -a
+  source /etc/for-now.env
+  set +a
+  npm run migrate:keepsake-media -- --apply \
+    --expected-plan-sha256 REVIEWED_SHA256
+'
+```
+
+For OSS, dry-run requires both the original and legacy cutout in primary object
+storage; a local fallback does not count as migration evidence. Apply creates
+the four WebP derivatives and updates the record only if its paths and versions
+still match the reviewed plan. It preserves the old `cutoutPath` and object for
+rollback. Final deletion requires a later backup, restore drill, observation
+window, and separate approval.
+
 ## Private attachment migration
 
 The OSS bucket must remain private. After the RAM role can list, put, get and
@@ -143,7 +189,10 @@ before scheduling any cleanup.
 
 `for-now-monitor.timer` checks the service, disk, backup age, consecutive AI
 failures and daily AI cost every five minutes. The deployment enables it after a
-healthy application restart. Test the Feishu channel without printing its
+healthy application restart. JSON mode reads account usage files; PostgreSQL
+mode requires `PG_BACKUP_DATABASE_URL` and reads usage through that cross-schema
+SELECT-only role. A PostgreSQL read failure fails the monitor run instead of
+silently reporting zero cost. Test the Feishu channel without printing its
 webhook or secret:
 
 ```bash
