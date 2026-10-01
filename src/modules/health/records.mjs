@@ -116,7 +116,7 @@ export function dailyRecordPayload(input, existing = null) {
     };
   }
   const details = normalizeHealthDetails(type, merged);
-  if (!hasHealthContent(type, details)) return { error: "请填写运动项目、指标或描述" };
+  if (!hasHealthContent(type, details)) return { error: "请填写运动项目、指标、感受或解析描述" };
   const error = healthDetailsError(type, details);
   if (error) return { error };
   const startedAt = safeIso(merged.startedAt);

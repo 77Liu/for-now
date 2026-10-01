@@ -17,6 +17,7 @@ export const healthImageFixtures = {
     averageHeartRate: 111, maximumHeartRate: 137, distanceKm: null,
     warmUpSeconds: 1105, fatBurnSeconds: 52, aerobicSeconds: 0,
     anaerobicSeconds: null, extremeSeconds: null,
+    recognitionDescription: "力量训练期间心率多次升降，后段回落；不估计曲线逐点数值。",
     description: "力量训练期间心率多次升降，后段回落；不估计曲线逐点数值。",
     verification: "无氧与极限区间被截断，距离未显示。"
   }

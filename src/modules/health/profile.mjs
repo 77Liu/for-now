@@ -56,7 +56,10 @@ export function normalizeHealthDetails(kind, value = {}) {
   const result = Object.fromEntries(Object.entries(fieldsFor(kind)).map(([key, config]) => [key, number(value[key], config)]));
   return {
     ...result,
-    ...(kind === "exercise" ? { exerciseType: text(value.exerciseType, 100) } : {}),
+    ...(kind === "exercise" ? {
+      exerciseType: text(value.exerciseType, 100),
+      recognitionDescription: text(value.recognitionDescription, 5000)
+    } : {}),
     description: text(value.description, 5000),
     verification: text(value.verification, 800)
   };
@@ -64,15 +67,20 @@ export function normalizeHealthDetails(kind, value = {}) {
 
 export function normalizeHealthImage(kind, value = {}) {
   const timeKey = kind === "weight" ? "measuredAt" : "startedAt";
+  const details = normalizeHealthDetails(kind, value);
+  if (kind === "exercise") {
+    details.recognitionDescription ||= details.description;
+    details.description = details.recognitionDescription;
+  }
   return {
-    ...normalizeHealthDetails(kind, value),
+    ...details,
     date: validDate(value.date) ? value.date : "",
     [timeKey]: localTimestamp(value[timeKey])
   };
 }
 
 export function hasHealthContent(kind, value) {
-  return Boolean(value.description || (kind === "exercise" && value.exerciseType)
+  return Boolean(value.description || (kind === "exercise" && (value.exerciseType || value.recognitionDescription))
     || Object.keys(fieldsFor(kind)).some(key => Number.isFinite(value[key])));
 }
 
@@ -85,7 +93,7 @@ export function healthDetailsError(kind, value) {
   return "";
 }
 
-export function describeHealthDetails(kind, item) {
+export function describeHealthDetails(kind, item, { includeDerived = false } = {}) {
   const values = Object.entries(fieldsFor(kind)).filter(([key]) => Number.isFinite(item[key]))
     .map(([key, [label, unit]]) => `${label}${item[key]}${unit}`);
   if (kind === "exercise" && item.exerciseType) values.unshift(item.exerciseType);
@@ -93,7 +101,9 @@ export function describeHealthDetails(kind, item) {
     if (item.measuredWeight == null) values.unshift("总重量未填写");
     if (Number.isFinite(item.adjustedWeight)) values.push(`衣物校正后${item.adjustedWeight}kg${item.clothing !== "none" ? `（95%估计区间${item.lower95}～${item.upper95}kg）` : ""}`);
   }
-  if (item.description) values.push(item.description);
+  if (kind === "exercise" && item.description) values.push(`感受或历史描述：${item.description}`);
+  else if (item.description) values.push(item.description);
+  if (kind === "exercise" && includeDerived && item.recognitionDescription) values.push(`AI解析：${item.recognitionDescription}`);
   return `${kind === "weight" ? "体重/体成分" : "运动"}：${values.join("；")}`;
 }
 

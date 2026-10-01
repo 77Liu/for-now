@@ -145,7 +145,17 @@ export const recordComponents = Object.freeze({
           properties: {
             type: { enum: ["sleep", "heartRate", "weight", "exercise"] },
             source: { enum: ["manual", "screenshot"] },
-            attachmentPaths: { type: "array", items: { type: "string" } }
+            attachmentPaths: { type: "array", items: { type: "string" } },
+            description: {
+              type: "string",
+              maxLength: 5000,
+              description: "用户填写的感受；历史客户端也可能将未区分来源的描述保存在此字段"
+            },
+            recognitionDescription: {
+              type: "string",
+              maxLength: 5000,
+              description: "截图识别生成的可编辑解析描述，不代表用户感受"
+            }
           },
           additionalProperties: true
         }
