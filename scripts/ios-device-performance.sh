@@ -28,6 +28,7 @@ Required environment:
   CIKE_IOS_DEVICE_NAME=<connected iPhone name>
 
 Optional environment:
+  CIKE_IOS_PERF_LAN_HTTP=1     Allow only an RFC1918 HTTP test URL.
   CIKE_IOS_CANDIDATE_SHA=<expected commit; defaults to HEAD>
   CIKE_IOS_PERF_OUTPUT_DIR=<artifact root; defaults under artifacts/>
 
@@ -69,16 +70,25 @@ validate_environment() {
   [[ -n "${CIKE_IOS_DEVICE_NAME:-}" ]] \
     || fail "CIKE_IOS_DEVICE_NAME is required"
 
-  local host
-  if [[ "$CIKE_IOS_PERF_TEST_URL" =~ ^https://([^/@:\#]+)(:[0-9]+)?(/[^#]*)?$ ]]; then
-    host="${BASH_REMATCH[1]}"
+  local scheme host
+  if [[ "$CIKE_IOS_PERF_TEST_URL" =~ ^(https?)://([^/@:\#]+)(:[0-9]+)?(/[^#]*)?$ ]]; then
+    scheme="${BASH_REMATCH[1]}"
+    host="${BASH_REMATCH[2]}"
   else
-    fail "CIKE_IOS_PERF_TEST_URL must be a credential-free HTTPS URL without a fragment"
+    fail "CIKE_IOS_PERF_TEST_URL must be a credential-free HTTP(S) URL without a fragment"
   fi
   host="$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')"
   host="${host%.}"
   [[ "$host" != "77liu.top" && "$host" != *.77liu.top ]] \
     || fail "production hosts are forbidden"
+  if [[ "$scheme" == "http" ]]; then
+    [[ "${CIKE_IOS_PERF_LAN_HTTP:-}" == "1" ]] \
+      || fail "HTTP requires CIKE_IOS_PERF_LAN_HTTP=1"
+    [[ "$host" =~ ^10\. \
+      || "$host" =~ ^192\.168\. \
+      || "$host" =~ ^172\.(1[6-9]|2[0-9]|3[01])\. ]] \
+      || fail "HTTP is allowed only for RFC1918 private-LAN addresses"
+  fi
 }
 
 candidate_sha() {
@@ -187,6 +197,7 @@ write_metadata() {
     --arg xcodeVersion "$xcode_version" \
     --arg xcodeBuild "$xcode_build" \
     --arg candidateSHA "$sha" \
+    --argjson lanHTTP "$([[ \"${CIKE_IOS_PERF_LAN_HTTP:-}\" == \"1\" ]] && printf true || printf false)" \
     '{
       schemaVersion: 1,
       generatedAt: $generatedAt,
@@ -201,6 +212,7 @@ write_metadata() {
       xcodeBuild: $xcodeBuild,
       candidateSHA: $candidateSHA,
       isolatedTestEnvironment: true,
+      privateLANHTTP: $lanHTTP,
       udidRecorded: false
     }' > "$output"
 }
@@ -212,6 +224,7 @@ Candidate: $sha
 Team: $TEAM_ID
 Window: 01:00-08:00 $TIME_ZONE
 Destination selector: platform=iOS,name=<CIKE_IOS_DEVICE_NAME>
+Private LAN HTTP: ${CIKE_IOS_PERF_LAN_HTTP:-0}
 
 Signed build-for-testing:
   scripts/ios-device-performance.sh build

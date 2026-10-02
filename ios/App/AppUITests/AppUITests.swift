@@ -231,6 +231,7 @@ final class DevicePerformanceAcceptanceTests: XCTestCase {
         let preflightApp = configuredApplication(configuration)
         app = preflightApp
         preflightApp.launch()
+        allowLocalNetworkIfNeeded(in: preflightApp)
         XCTAssertTrue(
             waitForStableHome(in: preflightApp, timeout: 30),
             "Shadow account preflight did not reach a stable home"
@@ -254,6 +255,9 @@ final class DevicePerformanceAcceptanceTests: XCTestCase {
         application.launchArguments += ["-ApplePersistenceIgnoreState", "YES"]
         application.launchEnvironment["CIKE_IOS_PERF_ENABLED"] = "1"
         application.launchEnvironment["CIKE_IOS_PERF_ISOLATED"] = "1"
+        if configuration.lanHTTP {
+            application.launchEnvironment["CIKE_IOS_PERF_LAN_HTTP"] = "1"
+        }
         application.launchEnvironment["CIKE_IOS_PERF_TEST_URL"] = configuration.testURL.absoluteString
         application.launchEnvironment["CIKE_IOS_PERF_SHADOW_USERNAME"] = configuration.username
         application.launchEnvironment["CIKE_IOS_PERF_SHADOW_PASSWORD"] = configuration.password
@@ -261,6 +265,21 @@ final class DevicePerformanceAcceptanceTests: XCTestCase {
         application.launchEnvironment["CIKE_NATIVE_MARKER"] = configuration.username
         application.launchEnvironment["CIKE_NATIVE_PASSWORD"] = configuration.password
         return application
+    }
+
+    private func allowLocalNetworkIfNeeded(in application: XCUIApplication) {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        for alert in [application.alerts.firstMatch, springboard.alerts.firstMatch] where alert.waitForExistence(timeout: 2) {
+            for label in ["允许", "Allow"] {
+                let button = alert.buttons[label]
+                if button.exists && button.isHittable {
+                    button.tap()
+                    return
+                }
+            }
+            alert.buttons.allElementsBoundByIndex.last?.tap()
+            return
+        }
     }
 
     private func waitForStableHome(in application: XCUIApplication, timeout: TimeInterval) -> Bool {
@@ -340,6 +359,15 @@ final class DevicePerformanceAcceptanceTests: XCTestCase {
         let testURL: URL
         let username: String
         let password: String
+        let lanHTTP: Bool
+
+        private static func isPrivateIPv4(_ host: String) -> Bool {
+            let parts = host.split(separator: ".").compactMap { Int($0) }
+            guard parts.count == 4, parts.allSatisfy({ (0...255).contains($0) }) else { return false }
+            return parts[0] == 10
+                || (parts[0] == 172 && (16...31).contains(parts[1]))
+                || (parts[0] == 192 && parts[1] == 168)
+        }
 
         static func load() throws -> Configuration {
             let environment = ProcessInfo.processInfo.environment
@@ -362,15 +390,21 @@ final class DevicePerformanceAcceptanceTests: XCTestCase {
 
             let rawURL = environment["CIKE_IOS_PERF_TEST_URL"]!
             guard let components = URLComponents(string: rawURL),
-                  components.scheme?.lowercased() == "https",
                   components.user == nil,
                   components.password == nil,
                   components.fragment == nil,
                   let rawHost = components.host,
                   let testURL = components.url else {
-                throw ConfigurationError("CIKE_IOS_PERF_TEST_URL must be a credential-free HTTPS URL")
+                throw ConfigurationError("CIKE_IOS_PERF_TEST_URL must be a credential-free URL")
             }
             let host = rawHost.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            let scheme = components.scheme?.lowercased()
+            let lanHTTP = environment["CIKE_IOS_PERF_LAN_HTTP"] == "1"
+                && scheme == "http"
+                && isPrivateIPv4(host)
+            guard scheme == "https" || lanHTTP else {
+                throw ConfigurationError("Performance URL must use HTTPS or explicitly enabled private-LAN HTTP")
+            }
             guard host != "77liu.top", !host.hasSuffix(".77liu.top") else {
                 throw ConfigurationError("Production hosts are forbidden for device performance acceptance")
             }
@@ -378,7 +412,8 @@ final class DevicePerformanceAcceptanceTests: XCTestCase {
             return Configuration(
                 testURL: testURL,
                 username: environment["CIKE_IOS_PERF_SHADOW_USERNAME"]!,
-                password: environment["CIKE_IOS_PERF_SHADOW_PASSWORD"]!
+                password: environment["CIKE_IOS_PERF_SHADOW_PASSWORD"]!,
+                lanHTTP: lanHTTP
             )
         }
     }

@@ -4,6 +4,7 @@ import Capacitor
 private enum DevicePerformanceEnvironment {
     static let enabledKey = "CIKE_IOS_PERF_ENABLED"
     static let isolatedKey = "CIKE_IOS_PERF_ISOLATED"
+    static let lanHTTPKey = "CIKE_IOS_PERF_LAN_HTTP"
     static let testURLKey = "CIKE_IOS_PERF_TEST_URL"
     static let usernameKey = "CIKE_IOS_PERF_SHADOW_USERNAME"
     static let passwordKey = "CIKE_IOS_PERF_SHADOW_PASSWORD"
@@ -13,6 +14,14 @@ private enum DevicePerformanceEnvironment {
     }
 
 #if DEBUG || CIKE_PERFORMANCE_TESTING
+    static func isPrivateIPv4(_ host: String) -> Bool {
+        let parts = host.split(separator: ".").compactMap { Int($0) }
+        guard parts.count == 4, parts.allSatisfy({ (0...255).contains($0) }) else { return false }
+        return parts[0] == 10
+            || (parts[0] == 172 && (16...31).contains(parts[1]))
+            || (parts[0] == 192 && parts[1] == 168)
+    }
+
     static func validatedTestURL() -> URL {
         let environment = ProcessInfo.processInfo.environment
         guard environment[isolatedKey] == "1",
@@ -20,7 +29,6 @@ private enum DevicePerformanceEnvironment {
               environment[passwordKey]?.isEmpty == false,
               let rawURL = environment[testURLKey],
               let components = URLComponents(string: rawURL),
-              components.scheme?.lowercased() == "https",
               components.user == nil,
               components.password == nil,
               components.fragment == nil,
@@ -30,6 +38,14 @@ private enum DevicePerformanceEnvironment {
         }
 
         let host = rawHost.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        let scheme = components.scheme?.lowercased()
+        let secureRemote = scheme == "https"
+        let isolatedLAN = environment[lanHTTPKey] == "1"
+            && scheme == "http"
+            && isPrivateIPv4(host)
+        guard secureRemote || isolatedLAN else {
+            preconditionFailure("Performance URL must use HTTPS or an explicitly enabled private-LAN HTTP address")
+        }
         guard host != "77liu.top", !host.hasSuffix(".77liu.top") else {
             preconditionFailure("Production hosts are forbidden for iOS performance acceptance")
         }
