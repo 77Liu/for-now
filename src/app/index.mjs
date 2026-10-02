@@ -13,6 +13,8 @@ export { createReviewChatWorkflows } from "./review-chat-workflows.mjs";
 export {
   USER_MODEL_DOMAIN_LABELS,
   activeUserModelEntries,
+  createUserModelExtractionService,
+  prepareUserModelExtraction,
   userModelEvidenceCurrent,
   userModelProjection
 } from "./user-model.mjs";

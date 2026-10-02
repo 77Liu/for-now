@@ -1,5 +1,14 @@
 import { safeText } from "../../shared/validation/index.mjs";
 
+const TASK_KINDS = new Set([
+  "thoughtAnswer",
+  "followUpAnswer",
+  "annotationShenji",
+  "contentImageUnderstanding",
+  "captureTranscription",
+  "onboardingClaimExtraction"
+]);
+
 export function publicAiTask(task) {
   return {
     id: task.id,
@@ -7,7 +16,9 @@ export function publicAiTask(task) {
     resourceType: task.resourceType || (
       task.kind === "thoughtAnswer" || task.kind === "followUpAnswer"
         ? "thought"
-        : task.kind === "captureTranscription" ? "capture" : ""
+        : task.kind === "captureTranscription"
+          ? "capture"
+          : task.kind === "onboardingClaimExtraction" ? "onboardingV2" : ""
     ),
     targetId: task.targetId,
     subtargetId: task.subtargetId || "",
@@ -63,12 +74,21 @@ export function createTaskLifecycle({ createId, now, hash }) {
         targetId: normalized.targetId
       }));
     }
+    if (normalized.kind === "onboardingClaimExtraction") {
+      return hash(JSON.stringify({
+        kind: normalized.kind,
+        targetId: normalized.targetId,
+        inputVersion: normalized.requestedInputVersion
+      }));
+    }
     return hash(JSON.stringify({ kind: normalized.kind, resourceType: normalized.resourceType, targetId: normalized.targetId, subtargetId: normalized.subtargetId, payload: normalized.payload }));
   };
   const normalizeRequest = input => {
     const kind = safeText(input.kind, 40), targetId = safeText(input.targetId, 100), subtargetId = safeText(input.subtargetId, 100), clientRequestId = safeText(input.clientRequestId, 100);
     const resourceType = kind === "captureTranscription"
       ? "capture"
+      : kind === "onboardingClaimExtraction"
+        ? "onboardingV2"
       : ["annotationShenji", "contentImageUnderstanding"].includes(kind) ? safeText(input.resourceType, 40) : "thought";
     const payload = kind === "annotationShenji"
       ? { message: safeText(input.payload?.message ?? input.message, 6000) }
@@ -88,7 +108,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
   function create(tasks, input, inspectTarget) {
     const normalized = normalizeRequest(input);
     const { kind, resourceType, targetId, subtargetId, clientRequestId, payload, requestedInputVersion, requestedSubtargetVersion } = normalized;
-    if (!["thoughtAnswer", "followUpAnswer", "annotationShenji", "contentImageUnderstanding", "captureTranscription"].includes(kind)) return { unsupported: true };
+    if (!TASK_KINDS.has(kind)) return { unsupported: true };
     if (!clientRequestId) return { invalid: true };
     const inputRequestHash = requestHash(normalized);
     const duplicate = tasks.find(item => item.clientRequestId === clientRequestId);
@@ -120,7 +140,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
     create,
     idempotency(input) {
       const normalized = normalizeRequest(input);
-      if (!["thoughtAnswer", "followUpAnswer", "annotationShenji", "contentImageUnderstanding", "captureTranscription"].includes(normalized.kind) || !normalized.clientRequestId) return null;
+      if (!TASK_KINDS.has(normalized.kind) || !normalized.clientRequestId) return null;
       return { scope: "aiTasks.create", key: normalized.clientRequestId, requestHash: requestHash(normalized) };
     },
     complete,

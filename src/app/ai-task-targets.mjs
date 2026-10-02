@@ -2,8 +2,10 @@ import { safeText, recordVersion } from "../shared/validation/index.mjs";
 import { renderPrompt } from "../shared/prompts/index.mjs";
 import { annotationExcerpt, annotationPrompt, shenjiSystemPrompt } from "../modules/annotations/index.mjs";
 import { thoughtChainContext, thoughtTaskResult } from "../modules/thoughts/index.mjs";
+import { parseClaimExtractionOutput } from "../modules/user-model/index.mjs";
 import { personalContextProjection, personalContextReceiptFingerprint, thoughtAnswerPrompt } from "./personal-context.mjs";
 import { annotationResource, annotationResourceSource, annotationResourceContext } from "./annotation-resources.mjs";
+import { prepareUserModelExtraction } from "./user-model.mjs";
 
 export function createAiTaskTargets({
   thoughts,
@@ -108,6 +110,13 @@ export function createAiTaskTargets({
     };
   }
 
+  function onboardingClaimExtractionWork(store, task) {
+    const prepared = prepareUserModelExtraction(store, {
+      sourceRevision: task.inputVersion || task.requestedInputVersion
+    });
+    return prepared.value || null;
+  }
+
   return {
     result(store, task) {
       if (task.kind === "captureTranscription") {
@@ -115,6 +124,12 @@ export function createAiTaskTargets({
       }
       if (task.kind === "contentImageUnderstanding") {
         return contentAttachments?.taskResult(store, task) || null;
+      }
+      if (task.kind === "onboardingClaimExtraction") {
+        return {
+          claims: (store.userClaims || []).filter(item => item.sourceTaskId === task.id),
+          unknowns: (store.modelUnknowns || []).filter(item => item.sourceTaskId === task.id)
+        };
       }
       if (task.kind === "thoughtAnswer" || task.kind === "followUpAnswer") {
         return thoughtTaskResult(store.thoughts, task);
@@ -125,6 +140,7 @@ export function createAiTaskTargets({
     prepare(store, task) {
       if (task.kind === "captureTranscription") return captureTranscriptionWork(store, task);
       if (task.kind === "contentImageUnderstanding") return contentImageWork(store, task);
+      if (task.kind === "onboardingClaimExtraction") return onboardingClaimExtractionWork(store, task);
       if (task.kind === "annotationShenji") return annotationWork(store, task);
       if (!["thoughtAnswer", "followUpAnswer"].includes(task.kind)) return null;
       const work = thoughts.inspect(store.thoughts, task);
@@ -191,6 +207,25 @@ export function createAiTaskTargets({
           });
         }
         return saved.value.id;
+      }
+      if (task.kind === "onboardingClaimExtraction") {
+        if ((store.userClaims || []).some(item => item.sourceTaskId === task.id)
+          || (store.modelUnknowns || []).some(item => item.sourceTaskId === task.id)) {
+          return task.id;
+        }
+        const extracted = parseClaimExtractionOutput(result.content, {
+          sources: work.sources,
+          sourceTaskId: task.id,
+          now
+        });
+        store.userClaims ||= [];
+        store.modelUnknowns ||= [];
+        store.userClaims.unshift(...extracted.claims);
+        store.modelUnknowns.unshift(...extracted.unknowns.map(item => ({
+          ...item,
+          sourceTaskId: task.id
+        })));
+        return task.id;
       }
       if (task.kind === "thoughtAnswer") return thoughts.saveAnswer(store.thoughts, work, task, result);
       if (task.kind === "followUpAnswer") return thoughts.saveFollowUp(work, task, result);

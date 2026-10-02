@@ -160,7 +160,8 @@ export const userModelComponents = {
         "resolvedBy",
         "createdAt",
         "updatedAt",
-        "version"
+        "version",
+        "sourceTaskId"
       ],
       properties: {
         id: { type: "string" },
@@ -174,7 +175,8 @@ export const userModelComponents = {
         resolvedBy: { type: "string" },
         createdAt: { type: "string" },
         updatedAt: { type: "string" },
-        version: { type: "integer", minimum: 1 }
+        version: { type: "integer", minimum: 1 },
+        sourceTaskId: { type: "string" }
       }
     },
     UserModel: {

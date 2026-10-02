@@ -20,6 +20,8 @@ export const CLAIM_LIFECYCLES = Object.freeze([
   "retracted",
   "stale"
 ]);
+export const CLAIM_EXTRACTION_MAX_CHARS = 8000;
+export const CLAIM_EXTRACTION_MAX_CANDIDATES = 20;
 
 const DOMAIN_SET = new Set(USER_MODEL_DOMAINS);
 const LIFECYCLE_SET = new Set(CLAIM_LIFECYCLES);
@@ -35,6 +37,11 @@ const ACTION_SET = new Set(["confirm", "revise", "reject", "retract"]);
 const clone = value => structuredClone(value);
 const objectValue = value => value && typeof value === "object" && !Array.isArray(value);
 const validHash = value => /^[a-f0-9]{64}$/.test(value);
+const keysMatch = (value, allowed, required = allowed) => {
+  if (!objectValue(value)) return false;
+  const keys = Object.keys(value);
+  return keys.every(key => allowed.includes(key)) && required.every(key => keys.includes(key));
+};
 
 function normalizeEvidence(value) {
   if (!objectValue(value)) return null;
@@ -109,7 +116,8 @@ export function normalizeModelUnknown(value) {
     resolvedBy: safeText(value.resolvedBy, 100),
     createdAt: safeIso(value.createdAt),
     updatedAt: safeIso(value.updatedAt),
-    version: recordVersion(value.version)
+    version: recordVersion(value.version),
+    sourceTaskId: safeText(value.sourceTaskId, 100)
   };
 }
 
@@ -120,6 +128,126 @@ export const normalizeUserClaims = value => (Array.isArray(value) ? value : [])
 export const normalizeModelUnknowns = value => (Array.isArray(value) ? value : [])
   .map(normalizeModelUnknown)
   .filter(Boolean);
+
+export function parseClaimExtractionOutput(raw, {
+  sources,
+  sourceTaskId,
+  createId = () => crypto.randomUUID(),
+  now = () => new Date().toISOString()
+} = {}) {
+  let document;
+  try {
+    document = typeof raw === "string" ? JSON.parse(raw) : clone(raw);
+  } catch {
+    throw Object.assign(new Error("候选提取结果不是有效 JSON"), { code: "CLAIM_EXTRACTION_INVALID" });
+  }
+  if (!keysMatch(document, ["claims", "unknowns"], ["claims", "unknowns"])
+    || !Array.isArray(document.claims)
+    || !Array.isArray(document.unknowns)
+    || document.unknowns.length > 1
+    || document.claims.length + document.unknowns.length > CLAIM_EXTRACTION_MAX_CANDIDATES) {
+    throw Object.assign(new Error("候选提取结果不符合数量或结构约束"), { code: "CLAIM_EXTRACTION_INVALID" });
+  }
+  const sourceById = new Map((Array.isArray(sources) ? sources : []).map(source => [source.id, source]));
+  const createdAt = safeIso(now());
+  if (!createdAt) throw new TypeError("Claim extraction now() must return an ISO date");
+  const claimIds = [];
+  const claims = document.claims.map(candidate => {
+    const allowed = ["domain", "statement", "scope", "epistemic", "evidenceStrength", "evidence"];
+    if (!keysMatch(candidate, allowed, ["domain", "statement", "epistemic", "evidenceStrength", "evidence"])
+      || !DOMAIN_SET.has(candidate.domain)
+      || !EPISTEMIC_SET.has(candidate.epistemic)
+      || !EVIDENCE_STRENGTH_SET.has(candidate.evidenceStrength)
+      || typeof candidate.statement !== "string"
+      || !candidate.statement.trim()
+      || candidate.statement.length > 1000
+      || (candidate.scope != null && (typeof candidate.scope !== "string" || candidate.scope.length > 500))
+      || !Array.isArray(candidate.evidence)
+      || !candidate.evidence.length
+      || candidate.evidence.length > 10) {
+      throw Object.assign(new Error("候选 claim 字段无效"), { code: "CLAIM_EXTRACTION_INVALID" });
+    }
+    const evidence = candidate.evidence.map(reference => {
+      if (!keysMatch(reference, ["sourceId", "span"])
+        || typeof reference.sourceId !== "string"
+        || !Array.isArray(reference.span)
+        || reference.span.length !== 2
+        || !reference.span.every(Number.isInteger)) {
+        throw Object.assign(new Error("候选来源范围无效"), { code: "CLAIM_EXTRACTION_INVALID" });
+      }
+      const source = sourceById.get(reference.sourceId);
+      const [start, end] = reference.span;
+      if (!source || start < 0 || end <= start || end > source.text.length || !source.text.slice(start, end).trim()) {
+        throw Object.assign(new Error("候选来源无法定位到当前原文"), { code: "CLAIM_EXTRACTION_INVALID" });
+      }
+      return {
+        sourceType: "onboardingV2Answer",
+        sourceId: source.id,
+        sourceVersion: source.version,
+        contentSha256: source.contentSha256,
+        span: [start, end]
+      };
+    });
+    const id = safeText(createId(), 100);
+    if (!id || claimIds.includes(id)) {
+      throw Object.assign(new Error("候选 claim ID 无效"), { code: "CLAIM_EXTRACTION_INVALID" });
+    }
+    claimIds.push(id);
+    const normalized = normalizeUserClaim({
+      id,
+      domain: candidate.domain,
+      statement: candidate.statement,
+      scope: candidate.scope,
+      epistemic: candidate.epistemic,
+      lifecycle: "candidate",
+      confidence: null,
+      evidenceStrength: candidate.evidenceStrength,
+      evidence,
+      contextAllowed: true,
+      createdAt,
+      updatedAt: createdAt,
+      version: 1,
+      sourceTaskId
+    });
+    if (!normalized || normalized.statement !== safeText(candidate.statement, 1000)) {
+      throw Object.assign(new Error("候选 claim 内容无效"), { code: "CLAIM_EXTRACTION_INVALID" });
+    }
+    return normalized;
+  });
+  const unknowns = document.unknowns.map(candidate => {
+    const allowed = ["question", "domain", "reason", "impactOnNextAnswer", "relatedClaimIndexes"];
+    if (!keysMatch(candidate, allowed, ["question", "domain", "reason", "impactOnNextAnswer", "relatedClaimIndexes"])
+      || !DOMAIN_SET.has(candidate.domain)
+      || typeof candidate.question !== "string"
+      || !candidate.question.trim()
+      || candidate.question.length > 1000
+      || typeof candidate.reason !== "string"
+      || candidate.reason.length > 1000
+      || typeof candidate.impactOnNextAnswer !== "string"
+      || candidate.impactOnNextAnswer.length > 1000
+      || !Array.isArray(candidate.relatedClaimIndexes)
+      || !candidate.relatedClaimIndexes.every(index => Number.isInteger(index) && index >= 0 && index < claims.length)) {
+      throw Object.assign(new Error("待了解项字段无效"), { code: "CLAIM_EXTRACTION_INVALID" });
+    }
+    const normalized = normalizeModelUnknown({
+      id: safeText(createId(), 100),
+      question: candidate.question,
+      domain: candidate.domain,
+      reason: candidate.reason,
+      relatedEvidence: [...new Set(candidate.relatedClaimIndexes.map(index => claims[index].id))],
+      impactOnNextAnswer: candidate.impactOnNextAnswer,
+      createdAt,
+      updatedAt: createdAt,
+      version: 1,
+      sourceTaskId
+    });
+    if (!normalized || normalized.question !== safeText(candidate.question, 1000)) {
+      throw Object.assign(new Error("待了解项内容无效"), { code: "CLAIM_EXTRACTION_INVALID" });
+    }
+    return normalized;
+  });
+  return { claims, unknowns };
+}
 
 function patchInput(input, current) {
   if (!objectValue(input)) return { error: "请求内容必须是对象", code: "CLAIM_PATCH_INVALID" };

@@ -204,6 +204,10 @@ export function mapStoreObjects(accountId, store) {
     if (row.kind === "journalDraft" && item.journalId) link(row, "journal", "journals", item.journalId, true);
     if (row.kind === "notification") link(row, "task", "aiTasks", item.taskId);
     if (row.kind === "aiTask" || row.kind === "notification") {
+      if (item.kind === "onboardingClaimExtraction") {
+        const required = row.kind === "aiTask" && ["queued", "running"].includes(item.status);
+        link(row, "target", "onboardingV2", "onboardingV2", required, keyOf(["onboardingV2"]));
+      }
       const collection = own(RESOURCE_COLLECTIONS, item.resourceType) ? RESOURCE_COLLECTIONS[item.resourceType]
         : (["thoughtAnswer", "followUpAnswer"].includes(item.kind) ? "thoughts" : "");
       if (collection) {

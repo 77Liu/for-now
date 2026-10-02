@@ -96,6 +96,18 @@ export function createBackgroundAi({ repository, tasks, notifications, targets, 
       controller.abort();
       return true;
     },
+    async cancelPersisted(taskId) {
+      const value = await repository.update(store => {
+        const task = store.aiTasks.find(item => item.id === taskId);
+        if (!task || !["queued", "running"].includes(task.status)) return null;
+        tasks.complete(task, "cancelled", { error: "用户取消了本次生成" });
+        notifications.upsertTask(store.notifications, task, "cancelled", task.error);
+        return publicAiTask(task);
+      });
+      const controller = controllers.get(`${contextKey()}:${taskId}`);
+      controller?.abort();
+      return value;
+    },
     async enqueue(input) {
       const idempotency = tasks.idempotency?.(input);
       let created;

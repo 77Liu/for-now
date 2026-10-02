@@ -58,7 +58,7 @@ import { createRateGate } from "./src/shared/concurrency/index.mjs";
 import { installPromptCatalog, promptText, renderPrompt } from "./src/shared/prompts/index.mjs";
 import { localDateKey, shiftDateKey, strictDateKey, localDateTimeOn, eventTimeFields } from "./src/shared/time/index.mjs";
 import { buildAdminSnapshot } from "./admin-snapshot.mjs";
-import { createAnnotationCommands, createAiTaskTargets, createBackgroundAi, createTrashMutations, createTrashCommands, createAttachmentCleanup, createSpeechCache, createKeepsakeMediaWorkflows, createThoughtWorkflows, createCaptureJournalWorkflows, createLibraryWorkflows, createReviewChatWorkflows, personalContextProjection, userModelEvidenceCurrent } from "./src/app/index.mjs";
+import { createAnnotationCommands, createAiTaskTargets, createBackgroundAi, createTrashMutations, createTrashCommands, createAttachmentCleanup, createSpeechCache, createKeepsakeMediaWorkflows, createThoughtWorkflows, createCaptureJournalWorkflows, createLibraryWorkflows, createReviewChatWorkflows, createUserModelExtractionService, personalContextProjection, userModelEvidenceCurrent } from "./src/app/index.mjs";
 import { safeText, recordVersion, safeIso, nullableNumber, numberOrFallback as commercialNumber } from "./src/shared/validation/index.mjs";
 import { createAuthHttp, createJsonHttp, createTaskHttp, createAnnotationHttp, createTrashHttp, createAttachmentHttp, createAiSettingsHttp, createAiCostHttp, createKeepsakeHttp, createOnboardingHttp, createOnboardingV2Http, createUserModelHttp, createThoughtHttp, createCheckinHttp, createHealthRecordHttp, createDiscoveryHttp, createExportHttp, createActionsHttp, createFeedbackHttp, createCaptureJournalHttp, createLibraryHttp, createReviewsChatHttp, createContentAttachmentsHttp, createSpeechHttp, createVisionHttp, createSyncHttp, createPersonalContextHttp, createRequestHandler, createModelResponseHttp, createApiV1Http, openApiV1 } from "./src/http/index.mjs";
 import { createHealthImageConfig, createDailyRecordRecords, normalizeHealthImage } from "./src/modules/health/index.mjs";
@@ -2045,6 +2045,9 @@ const backgroundAi = createBackgroundAi({
         scene: work.scene,
         systemPrompt: work.systemPrompt || systemPrompt(),
         captureReasoning: true,
+        json: work.json === true,
+        maxTokens: work.maxTokens || 16000,
+        auditPrompt: work.auditPrompt !== false,
         contextReceipt: work.contextReceipt || null,
         imagePaths,
         signal
@@ -2156,6 +2159,10 @@ const onboardingV2Http = createOnboardingV2Http({
   onboardingV2: createOnboardingV2Service({
     repository: storeRepository,
     now
+  }),
+  extractions: createUserModelExtractionService({
+    repository: storeRepository,
+    backgroundAi
   }),
   bodyJson
 });

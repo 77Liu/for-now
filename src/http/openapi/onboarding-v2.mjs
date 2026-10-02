@@ -75,6 +75,85 @@ export const onboardingV2Paths = {
         "428": { $ref: "#/components/responses/PreconditionRequired" }
       }
     }
+  },
+  "/onboarding-v2/extractions": {
+    post: {
+      operationId: "createOnboardingV2Extraction",
+      summary: "可选地把当前许可原文整理为待确认候选",
+      parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              required: ["sourceRevision"],
+              properties: { sourceRevision: { type: "integer", minimum: 1 } },
+              additionalProperties: false
+            }
+          }
+        }
+      },
+      responses: {
+        "200": {
+          description: "相同请求的幂等重放",
+          ...envelope({ $ref: "#/components/schemas/OnboardingV2ExtractionTask" })
+        },
+        "202": {
+          description: "候选提取任务已进入后台队列",
+          ...envelope({ $ref: "#/components/schemas/OnboardingV2ExtractionTask" })
+        },
+        "400": { $ref: "#/components/responses/BadRequest" },
+        "401": { $ref: "#/components/responses/Unauthorized" },
+        "409": { $ref: "#/components/responses/Conflict" },
+        "422": error("来源为空、过长或字段无效")
+      }
+    }
+  },
+  "/onboarding-v2/extractions/{id}": {
+    get: {
+      operationId: "getOnboardingV2Extraction",
+      summary: "读取候选提取任务和可用结果",
+      parameters: [
+        { name: "id", in: "path", required: true, schema: { type: "string" } }
+      ],
+      responses: {
+        "200": {
+          description: "任务状态；成功后包含 claims 与 unknowns",
+          ...envelope({
+            type: "object",
+            required: ["task", "result"],
+            properties: {
+              task: { $ref: "#/components/schemas/OnboardingV2ExtractionTask" },
+              result: {
+                type: ["object", "null"],
+                properties: {
+                  claims: { type: "array", items: { $ref: "#/components/schemas/UserClaim" } },
+                  unknowns: { type: "array", items: { $ref: "#/components/schemas/ModelUnknown" } }
+                }
+              }
+            }
+          })
+        },
+        "401": { $ref: "#/components/responses/Unauthorized" },
+        "404": { $ref: "#/components/responses/NotFound" }
+      }
+    },
+    delete: {
+      operationId: "cancelOnboardingV2Extraction",
+      summary: "取消仍在排队或运行的候选提取，不删除原文",
+      parameters: [
+        { name: "id", in: "path", required: true, schema: { type: "string" } }
+      ],
+      responses: {
+        "200": {
+          description: "提取已取消，原文保持不变",
+          ...envelope({ $ref: "#/components/schemas/OnboardingV2ExtractionTask" })
+        },
+        "401": { $ref: "#/components/responses/Unauthorized" },
+        "409": { $ref: "#/components/responses/Conflict" }
+      }
+    }
   }
 };
 
@@ -97,6 +176,24 @@ const collaborationAxis = {
 
 export const onboardingV2Components = {
   schemas: {
+    OnboardingV2ExtractionTask: {
+      type: "object",
+      required: ["id", "kind", "resourceType", "targetId", "inputVersion", "status", "createdAt"],
+      properties: {
+        id: { type: "string" },
+        kind: { const: "onboardingClaimExtraction" },
+        resourceType: { const: "onboardingV2" },
+        targetId: { const: "onboarding-v2" },
+        inputVersion: { type: "integer", minimum: 1 },
+        status: { enum: ["queued", "running", "succeeded", "failed", "stale", "cancelled"] },
+        createdAt: { type: "string", format: "date-time" },
+        startedAt: { type: "string" },
+        completedAt: { type: "string" },
+        resultId: { type: "string" },
+        error: { type: "string" },
+        retryOf: { type: "string" }
+      }
+    },
     OnboardingV2Schema: {
       type: "object",
       required: ["schemaVersion", "questions", "steps", "statuses", "defaults"],
