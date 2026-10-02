@@ -107,6 +107,7 @@ const suites = {
     ["attachment storage", ["scripts/attachment-storage-regression.mjs"]],
     ["attachment uploads, quotas and recovery", ["scripts/attachment-upload-regression.mjs"]],
     ["capacity boundaries", ["scripts/boundaries-regression.mjs"]],
+    ["backup recovery and readiness", ["scripts/backup-regression.mjs"]],
     ["monitoring", ["scripts/monitor-regression.mjs"]],
     ["restore validation", ["scripts/restore-validation-regression.mjs"]],
     ["deployment rollback", ["scripts/deploy-regression.mjs"]]

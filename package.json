@@ -56,6 +56,7 @@
     "test:volcengine:speech": "node scripts/volcengine-speech-smoke.mjs",
     "test:volcengine:vision": "node scripts/volcengine-vision-smoke.mjs",
     "test:third-party": "node scripts/third-party-live-smoke.mjs",
+    "test:backup": "node scripts/backup-regression.mjs",
     "test:deploy": "node scripts/deploy-regression.mjs",
     "test:storage": "node scripts/attachment-storage-regression.mjs",
     "test:oss": "node scripts/oss-attachment-smoke.mjs",
