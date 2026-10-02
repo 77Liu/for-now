@@ -79,6 +79,8 @@ const suites = {
     ["G2 feedback and validation ledger", ["scripts/g2-feedback-regression.mjs"]],
     ["G2 integrated API and persistence", ["scripts/g2-integration-regression.mjs"]],
     ["AI settings, costs, usage and audit contracts", ["scripts/ai-domain-regression.mjs"]],
+    ["AI site budget domain contracts", ["scripts/ai-budget-regression.mjs"]],
+    ["AI site budget JSON persistence", ["scripts/ai-budget-persistence-regression.mjs"]],
     ["AI provider transport and attempt policy", ["scripts/ai-provider-regression.mjs"]],
     ["Volcengine speech, OCR and document transports", ["scripts/volcengine-provider-regression.mjs"]],
     ["Volcengine authenticated server integration", ["scripts/volcengine-server-regression.mjs"]],

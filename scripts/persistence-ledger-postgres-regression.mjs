@@ -124,6 +124,7 @@ try {
   await admin.query(`
     GRANT USAGE ON SCHEMA for_now TO ledger_data;
     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA for_now TO ledger_data;
+    REVOKE INSERT, DELETE ON TABLE for_now.site_ai_budget FROM ledger_data;
     GRANT USAGE ON SCHEMA for_now_auth TO ledger_auth;
     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA for_now_auth TO ledger_auth;
     GRANT EXECUTE ON FUNCTION for_now_auth.provision_account(text,jsonb,jsonb) TO ledger_auth

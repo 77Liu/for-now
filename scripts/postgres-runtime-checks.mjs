@@ -9,11 +9,13 @@ import path from "node:path";
 import { deflateSync } from "node:zlib";
 import {
   createPostgresRuntime, initializePostgresSchema, buildPostgresMigrationPlan, applyPostgresMigration,
-  canonicalJson, discoverJsonBundle, applyPostgresBundle, exportPostgresDirectory, readPostgresBundle
+  canonicalJson, discoverJsonBundle, applyPostgresBundle,
+  exportPostgresDirectory, readPostgresBundle
 } from "../src/shared/persistence/index.mjs";
 import { createAttachmentCleanup, createSpeechCacheSweep } from "../src/app/index.mjs";
 import { dailyAiUsage } from "./monitor-health.mjs";
 import { syncOperationFingerprint } from "../public/frontend/sync/index.mjs";
+import { runAiBudgetPostgresChecks } from "./ai-budget-postgres-checks.mjs";
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const empty = () => ({ version: 14, thoughts: [], captures: [], attachmentCleanup: [] });
@@ -66,6 +68,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
   await database.query(`
     GRANT USAGE ON SCHEMA for_now TO runtime_data;
     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA for_now TO runtime_data;
+    REVOKE INSERT, DELETE ON TABLE for_now.site_ai_budget FROM runtime_data;
     GRANT USAGE ON SCHEMA for_now_auth TO runtime_auth;
     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA for_now_auth TO runtime_auth;
     GRANT EXECUTE ON FUNCTION for_now_auth.provision_account(text,jsonb,jsonb) TO runtime_auth;
@@ -157,6 +160,18 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     throw new Error(`PostgreSQL keepsake did not reach ${derivativeState}: ${JSON.stringify(last)}\n${stderr}`);
   };
   try {
+    const budgetChecks = await runAiBudgetPostgresChecks({
+      admin: database,
+      connect,
+      database: "runtime_test",
+      dataRole: "runtime_data",
+      authRole: "runtime_auth",
+      runtime,
+      peer,
+      runtimeOptions: options,
+      runWithAccount: account
+    });
+
     // A provisioning failure rolls identity, session and all tenant rows back together.
     await database.query(`
       CREATE FUNCTION for_now.reject_provision() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -598,6 +613,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       GRANT USAGE ON SCHEMA for_now TO runtime_data, migration_app;
       GRANT USAGE ON SCHEMA for_now_auth TO runtime_auth, migration_app;
       GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA for_now TO runtime_data, migration_app;
+      REVOKE INSERT,DELETE ON TABLE for_now.site_ai_budget FROM runtime_data;
       GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA for_now_auth TO runtime_auth, migration_app;
       GRANT EXECUTE ON FUNCTION for_now_auth.provision_account(text,jsonb,jsonb) TO runtime_auth;
     `);
@@ -626,7 +642,8 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal((await request(restoredApp.base, "/api/ai-tasks/restart-running", { cookie })).body.status, "failed");
     assert.equal(providerCalls, 3);
     await assert.rejects(applyPostgresBundle(restoredMigration, bundle), /entered runtime/);
-    return ["runtime role validation", "atomic registration rollback", "cross-connection serialized writes",
+    return ["runtime role validation", ...budgetChecks,
+      "atomic registration rollback", "cross-connection serialized writes",
       "multi-commit durability", "runtime disconnect rollback", "concurrent usage updates", "HTTP auth and account isolation",
       "settings patch serialization", "cost plan account isolation and restore", "atomic background task and notification writes", "annotation model dialogue", "task restart without double billing",
       "normalization preserves extensions", "versioned trash restore", "attachment upload/purge/crash recovery", "durable cleanup failure and restart", "PostgreSQL admin snapshot privacy", "single application guard",

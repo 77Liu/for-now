@@ -40,13 +40,33 @@ async function validateRole(pool, schema, forbiddenSchema) {
         inet_server_port() AS port, rolsuper, rolbypassrls,
         has_schema_privilege(current_user, $1, 'USAGE') AS allowed,
         has_schema_privilege(current_user, $2, 'USAGE') AS forbidden,
+        has_table_privilege(current_user, budget.oid, 'SELECT') AS budget_select,
+        has_table_privilege(current_user, budget.oid, 'UPDATE') AS budget_update,
+        has_table_privilege(current_user, budget.oid, 'INSERT') AS budget_insert,
+        has_table_privilege(current_user, budget.oid, 'DELETE') AS budget_delete,
+        has_table_privilege(current_user, budget.oid, 'TRUNCATE') AS budget_truncate,
+        has_table_privilege(current_user, budget.oid, 'REFERENCES') AS budget_references,
+        has_table_privilege(current_user, budget.oid, 'TRIGGER') AS budget_trigger,
+        has_table_privilege(current_user, budget.oid, 'SELECT WITH GRANT OPTION') AS budget_select_grant,
+        has_table_privilege(current_user, budget.oid, 'UPDATE WITH GRANT OPTION') AS budget_update_grant,
         EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
           WHERE n.nspname IN ('for_now', 'for_now_auth') AND c.relkind = 'r'
             AND pg_has_role(current_user, c.relowner, 'USAGE')) AS owns
-      FROM pg_roles WHERE rolname = current_user
+      FROM pg_roles
+      CROSS JOIN (
+        SELECT c.oid FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'for_now' AND c.relname = 'site_ai_budget'
+      ) budget
+      WHERE rolname = current_user
     `, [schema, forbiddenSchema]);
     if (!role || role.rolsuper || role.rolbypassrls || role.owns || !role.allowed || role.forbidden) {
       throw invalid("PostgreSQL runtime requires separate non-owner data/auth roles without superuser or BYPASSRLS");
+    }
+    if (schema === "for_now" && (!role.budget_select || !role.budget_update
+      || role.budget_insert || role.budget_delete || role.budget_truncate
+      || role.budget_references || role.budget_trigger
+      || role.budget_select_grant || role.budget_update_grant)) {
+      throw invalid("PostgreSQL data runtime role requires SELECT and UPDATE only on for_now.site_ai_budget");
     }
     return role;
   } finally { client.release(); }
@@ -311,6 +331,42 @@ export async function createPostgresRuntime({
       waitForIdle: () => withAccountLock(async () => {})
     };
   };
+  const aiBudget = {
+    read: async () => {
+      const client = await dataPool.connect();
+      try {
+        return await transaction(client, async () => {
+          const row = (await client.query(
+            "SELECT document FROM for_now.site_ai_budget WHERE id = true"
+          )).rows[0];
+          if (!row) throw invalid("PostgreSQL AI budget singleton is missing");
+          return structuredClone(row.document);
+        }, true);
+      } finally { client.release(); }
+    },
+    update: async mutator => {
+      if (typeof mutator !== "function") throw new TypeError("AI budget update requires a mutator");
+      const client = await dataPool.connect();
+      try {
+        return await transaction(client, async () => {
+          const row = (await client.query(
+            "SELECT document FROM for_now.site_ai_budget WHERE id = true FOR UPDATE"
+          )).rows[0];
+          if (!row) throw invalid("PostgreSQL AI budget singleton is missing");
+          const document = structuredClone(row.document);
+          const result = await mutator(document);
+          if (!document || typeof document !== "object" || Array.isArray(document)) {
+            throw new TypeError("AI budget update must preserve an object document");
+          }
+          await client.query(
+            "UPDATE for_now.site_ai_budget SET document = $1::jsonb WHERE id = true",
+            [JSON.stringify(document)]
+          );
+          return result;
+        });
+      } finally { client.release(); }
+    }
+  };
   const auth = {
     read: async () => {
       const client = await authPool.connect();
@@ -393,5 +449,5 @@ export async function createPostgresRuntime({
     dataPool.query("SELECT 1"), authPool.query("SELECT 1"),
     ...(applicationClient ? [applicationClient.query("SELECT 1")] : [])
   ]);
-  return { createStoreRepository, documents, auth, attachments, ready, claimApplication, close };
+  return { createStoreRepository, documents, aiBudget, auth, attachments, ready, claimApplication, close };
 }

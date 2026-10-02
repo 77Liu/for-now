@@ -65,7 +65,7 @@
 
 **当前状态（2026-09-30 生产备份演练后）**：PostgreSQL 16.15 集群
 `16/fornowtrial` 仅监听本机，40 连接/512 MiB 上限，仍为手动启动。
-正式数据库 `for_now` 已建表，19 张表均为空；独立角色已验证。最新完成的
+正式数据库 `for_now` 已建表，现有基线表均为空；独立角色已验证。最新完成的
 OSS 备份已在两套隔离库完成无损导入、导出、恢复和候选 HTTP 验证，演练库
 与私有副本均已清理。生产应用继续 JSON 单写，尚未接线或切换。
 配置与证据见 [`operations-capacity.md`](operations-capacity.md) 和
@@ -78,7 +78,7 @@ OSS 备份已在两套隔离库完成无损导入、导出、恢复和候选 HTT
 | `for_now_owner` | NOLOGIN，数据库、两个 schema、表和受控开户函数的 owner |
 | `for_now_schema` | 独立登录，NOINHERIT；显式 `SET ROLE for_now_owner` 后管理 schema |
 | `for_now_migration` | 两个 schema 的 USAGE 和表 SELECT/INSERT/UPDATE/DELETE；非 owner |
-| `for_now_data` | 仅 `for_now` 的 USAGE 和表读写；8 连接上限 |
+| `for_now_data` | 仅 `for_now` 的 USAGE；租户表读写，`site_ai_budget` 仅 SELECT/UPDATE；8 连接上限 |
 | `for_now_auth` | 仅 `for_now_auth` 的 USAGE、表读写及开户函数 EXECUTE；8 连接上限 |
 | `for_now_backup` | 两个 schema 的 USAGE 和表 SELECT；没有写权限 |
 
@@ -131,7 +131,7 @@ npm run migrate:postgres -- --init-schema
 npm run migrate:postgres -- --data-dir /path/to/isolated-copy
 ```
 
-建表后由数据库管理者创建独立登录角色。完整迁移角色需要 `for_now`、`for_now_auth` 两个 schema 的 USAGE 及其表的 SELECT/INSERT/UPDATE/DELETE；不授予表所有权或 schema CREATE。运行阶段拆成只访问 `for_now` 的数据角色和只访问 `for_now_auth` 的认证角色。新增表后重新核对授权。
+建表后由数据库管理者创建独立登录角色。完整迁移角色需要 `for_now`、`for_now_auth` 两个 schema 的 USAGE 及迁移涉及表的 SELECT/INSERT/UPDATE/DELETE；不授予表所有权或 schema CREATE。运行阶段拆成只访问 `for_now` 的数据角色和只访问 `for_now_auth` 的认证角色。新增表后重新核对授权。
 
 更新已存在的完整影子批次：
 
@@ -147,11 +147,20 @@ npm run migrate:postgres -- --data-dir /path/to/isolated-copy --expected-target-
 
 `PERSISTENCE_BACKEND=json|postgres` 默认 `json`。PostgreSQL 模式需要 `DATABASE_URL`（数据角色）及 `AUTH_DATABASE_URL`（认证角色）。两者必须同库、不同角色、非 owner / NOSUPERUSER / NOBYPASSRLS，且互相没有对方 schema 的 USAGE。运行模式拒绝 `LOCAL_TEST_MODE` 与上游代理，禁止经 JSON 文件读写业务、认证或配置；日志与附件二进制仍可使用本地文件。
 
-由建表管理员授予数据角色 `for_now` 的 USAGE 和运行表 SELECT/INSERT/UPDATE/DELETE。认证角色仅获 `for_now_auth` 的 USAGE 和认证表读写，并单独授予 `EXECUTE ON FUNCTION for_now_auth.provision_account(text,jsonb,jsonb)`。该 SECURITY DEFINER 函数固定 search_path、默认拒绝 PUBLIC，只能为已经插入身份表的新账户初始化映射，不能读取或替换既有账户。注册的身份、会话、业务初值和独立文档在同一认证事务提交；失败整体回滚。
+由建表管理员授予数据角色 `for_now` 的 USAGE 和租户运行表 SELECT/INSERT/UPDATE/DELETE。全站预算单例 `for_now.site_ai_budget` 只授予 SELECT/UPDATE，不授予 INSERT/DELETE/TRUNCATE/REFERENCES/TRIGGER 或授权转授权；运行启动会拒绝缺权或过权角色。若先对 `for_now` 全表授权，必须立即收回该表的 INSERT/DELETE：
+
+```sql
+GRANT USAGE ON SCHEMA for_now TO for_now_data;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA for_now TO for_now_data;
+REVOKE INSERT, DELETE ON TABLE for_now.site_ai_budget FROM for_now_data;
+```
+
+认证角色仅获 `for_now_auth` 的 USAGE 和认证表读写，并单独授予 `EXECUTE ON FUNCTION for_now_auth.provision_account(text,jsonb,jsonb)`；不得获得 `for_now` 或预算表权限。该 SECURITY DEFINER 函数固定 search_path、默认拒绝 PUBLIC，只能为已经插入身份表的新账户初始化映射，不能读取或替换既有账户。注册的身份、会话、业务初值和独立文档在同一认证事务提交；失败整体回滚。
 
 运行语义：
 
 - `postgres-runtime.mjs` 提供 `read/update/transact`，使用正式关系行重建业务对象，不读取或更新迁移快照。当前兼容适配器每次提交替换该账户的业务映射行；独立文档单独提交。领域级定向更新/数据库分页属于后续接口收口与性能工作，未宣称已实现。
+- 全站 AI 预算不绑定 `app.account_id`，使用 `site_ai_budget` 唯一行的 `SELECT ... FOR UPDATE` 事务串行所有账户的预留、结算和恢复命令；mutator 或 UPDATE 失败均整体回滚。该表不复用认证表，也不进入租户 RLS。
 - 所有账户写入使用数据库 advisory lock；锁跨显式 `commit()` 保留。每个 commit 是真实持久点，后续失败不回滚已完成的附件清理意图。账户 revision 以 compare-and-swap 拦截锁外冲突，读取使用 REPEATABLE READ 一致快照，事务内 `SET LOCAL` 绑定 RLS。
 - 配置读改写、用量追加均在账户锁内完成；归一化保留迁移扩展，若会丢弃数组记录则拒绝。数据角色不能读取认证 schema，认证角色不能直接读租户内容。
 - 上传先登记 `uploading` 与预期大小/哈希，再写二进制并验真为 `verified`；中断上传在启动时核对实物，保留有效文件或清除未写入的预留。业务不能引用其他账户或未验证的附件。永久清理在首个 commit 持久化任务，再删除文件并提交结果；失败可重试。

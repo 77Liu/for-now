@@ -82,7 +82,13 @@ try {
   };
   const admin = await connect("postgres");
   await initializePostgresSchema(admin);
+  await admin.query("UPDATE for_now.site_ai_budget SET document = '{\"schemaRepeat\":true}'::jsonb WHERE id = true");
   await initializePostgresSchema(admin);
+  assert.deepEqual(
+    (await admin.query("SELECT document FROM for_now.site_ai_budget WHERE id = true")).rows[0].document,
+    { schemaRepeat: true }
+  );
+  await admin.query("UPDATE for_now.site_ai_budget SET document = '{}'::jsonb WHERE id = true");
   // The generated hex password is only for this throwaway cluster.
   await admin.query(`CREATE ROLE migration_app LOGIN PASSWORD '${password}' NOSUPERUSER NOBYPASSRLS`);
   await admin.query("GRANT USAGE ON SCHEMA for_now TO migration_app");
@@ -135,9 +141,20 @@ try {
   assert.equal(firstImports.filter(result => !result.reused).length, 1);
 
   const tables = (await admin.query("SELECT tablename FROM pg_tables WHERE schemaname = 'for_now' ORDER BY tablename")).rows.map(row => row.tablename);
-  const policies = (await admin.query("SELECT relrowsecurity, relforcerowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'for_now' AND c.relkind = 'r'")).rows;
+  const tenantTables = tables.filter(table => table !== "site_ai_budget");
+  const policies = (await admin.query(`
+    SELECT relrowsecurity, relforcerowsecurity
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'for_now' AND c.relkind = 'r' AND c.relname <> 'site_ai_budget'
+  `)).rows;
   assert.ok(policies.every(row => row.relrowsecurity && row.relforcerowsecurity));
-  for (const table of tables) {
+  const globalSecurity = (await admin.query(`
+    SELECT relrowsecurity, relforcerowsecurity
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'for_now' AND c.relname = 'site_ai_budget'
+  `)).rows[0];
+  assert.deepEqual(globalSecurity, { relrowsecurity: false, relforcerowsecurity: false });
+  for (const table of tenantTables) {
     assert.equal((await client.query(`SELECT count(*)::int AS count FROM for_now.${table}`)).rows[0].count, 0);
     await inAccount(client, "account-a", async () => {
       const rows = (await client.query(`SELECT DISTINCT account_id FROM for_now.${table}`)).rows;

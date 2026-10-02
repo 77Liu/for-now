@@ -544,10 +544,10 @@
       "publicEntry": "src/shared/persistence/index.mjs",
       "allowedDependencies": [],
       "owns": {
-        "data": ["JSON/PostgreSQL repository contract, runtime transactions and account isolation", "PostgreSQL identity/config/usage mapping, atomic registration, attachment inventory and recovery", "Atomic migration, runtime overwrite protection, offline relational export", "account-scoped monotonic change cursor and bounded incremental sync ledger"],
+        "data": ["JSON/PostgreSQL repository contract, runtime transactions and account isolation", "root-level private JSON and non-RLS PostgreSQL persistence for atomic site-wide AI budget state", "PostgreSQL identity/config/usage mapping, atomic registration, attachment inventory and recovery", "Atomic migration, runtime overwrite protection, offline relational export", "account-scoped monotonic change cursor and bounded incremental sync ledger"],
         "routes": []
       },
-      "tests": ["scripts/persistence-regression.mjs", "scripts/onboarding-v2-regression.mjs", "scripts/document-migration-regression.mjs", "scripts/postgres-integration.mjs", "scripts/postgres-runtime-checks.mjs"],
+      "tests": ["scripts/persistence-regression.mjs", "scripts/ai-budget-persistence-regression.mjs", "scripts/ai-budget-postgres-regression.mjs", "scripts/onboarding-v2-regression.mjs", "scripts/document-migration-regression.mjs", "scripts/postgres-integration.mjs", "scripts/postgres-runtime-checks.mjs"],
       "status": "active"
     },
     {
