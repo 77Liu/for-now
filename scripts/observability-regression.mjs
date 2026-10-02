@@ -95,7 +95,7 @@ try {
   assert.equal(entries.at(-1).usageKnown, false);
   assert.equal(entries.at(-1).status, "success");
   assert.equal(entries.at(-1).costsUsd.total, 0);
-  assert.ok((await fs.readdir(dataDir)).some(name => /ai-usage.json.v1-pre-v3.*\.bak$/.test(name)));
+  assert.ok((await fs.readdir(dataDir)).some(name => /ai-usage.json.v1-pre-v4.*\.bak$/.test(name)));
   mode = "partial_usage";
   assert.equal((await request("/api/settings/test", {})).status, 200);
   entries = JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"))).entries;

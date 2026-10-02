@@ -150,7 +150,7 @@ for (const id of ["a", "b"]) {
   assert.equal(accounts.get(id).entries.length, 1);
   const terminalAudit = auditRecords.find(entry => entry.actor.userId === id && entry.status === "success");
   const startedAudit = auditRecords.find(entry => entry.actor.userId === id && entry.status === "started");
-  assert.equal(terminalAudit.schemaVersion, 2);
+  assert.equal(terminalAudit.schemaVersion, 3);
   assert.equal(terminalAudit.traceId, `trace-${id}`);
   assert.equal(terminalAudit.request.userPrompt, `account-${id}`);
   assert.equal(terminalAudit.request.promptCatalog.version, "2026.10.02.2");

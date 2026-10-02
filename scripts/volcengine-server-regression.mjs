@@ -282,7 +282,7 @@ try {
   assert.equal(capture.transcription.polishedText, "这是整理后的转写。");
   assert.equal(asrConnections, 1);
   const usage = JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"), "utf8"));
-  assert.equal(usage.version, 3);
+  assert.equal(usage.version, 4);
   assert.equal(usage.entries.filter(item => item.provider === "volcengine" && item.scene === "speechSynthesis" && item.unitType === "character").length, 1);
   assert.ok(usage.entries.some(item => item.provider === "volcengine" && item.scene === "speechRecognition" && item.unitType === "audioMillisecond"));
   assert.ok(usage.entries.some(item => item.provider === "volcengine" && item.scene === "visionOcr" && item.unitType === "image"));

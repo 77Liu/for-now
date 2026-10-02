@@ -266,7 +266,7 @@ try {
   );
   assert.equal(initialStatistics.ai.pricing.displayCurrency, "CNY");
   assert.equal(initialStatistics.ai.pricing.cnyPerUsd, 7.2);
-  assert.equal(JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"), "utf8")).version, 3);
+  assert.equal(JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"), "utf8")).version, 4);
   const initialAiCostPlan = await (await fetch(`${base}/api/ai-cost-plan`)).json();
   assert.equal(initialAiCostPlan.version, 1);
   assert.equal(initialAiCostPlan.scenarios.length, 16);
@@ -450,7 +450,8 @@ try {
   assert.equal(usageAfterAssist.summary.failedCalls, 1);
   assert.deepEqual(usageAfterAssist.summary.tokens, { input: 4000, cacheHit: 800, cacheMiss: 3200, reasoning: 1200, answer: 800, output: 2000 });
   assert.deepEqual(usageAfterAssist.models.map(item => [item.model, item.calls]), [["deepseek-flash", 2], ["deepseek-v4-pro", 2]]);
-  assert.ok(usageAfterAssist.summary.costsUsd.total > 0);
+  assert.equal(usageAfterAssist.summary.costsUsd.total, 0);
+  assert.ok(usageAfterAssist.summary.costCny > 0);
 
   const thoughtPromptResponse = await fetch(`${base}/api/thought-prompts`, {
     method: "POST",
@@ -1223,7 +1224,7 @@ try {
     responseFormat: sleepUsage.responseFormat,
     usageKnown: sleepUsage.usageKnown
   }, {
-    version: 3,
+    version: 4,
     status: "success",
     modality: "vision",
     imageCount: 2,
@@ -1245,7 +1246,7 @@ try {
   const auditEntries = (await Promise.all(auditFiles.map(async name => (await fs.readFile(path.join(dataDir, "logs", name), "utf8")).trim().split("\n").filter(Boolean).map(JSON.parse)))).flat();
   const sleepAudit = auditEntries.find(item => item.traceId === sleepTraceId && item.status !== "started");
   assert.ok(auditEntries.some(item => item.callId === sleepAudit.callId && item.status === "started"));
-  assert.equal(sleepAudit.schemaVersion, 2);
+  assert.equal(sleepAudit.schemaVersion, 3);
   assert.equal(sleepAudit.actor.userId, "local");
   assert.equal(sleepAudit.request.images.length, 2);
   assert.equal(sleepAudit.request.images[0].sha256.length, 64);

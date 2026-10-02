@@ -2,6 +2,8 @@ import { recordVersion, safeText } from "../shared/validation/index.mjs";
 import { normalizeTtsGenerationRate, speechTextForCapture } from "../shared/speech/index.mjs";
 
 const ATTACHMENT_PATH = /^\/attachments\/[\w.-]+$/;
+export const SPEECH_CACHE_RETENTION_DAYS = 30;
+const SPEECH_CACHE_RETENTION_MS = SPEECH_CACHE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 const CACHE_PROFILE = Object.freeze({
   provider: "volcengine",
   format: "mp3",
@@ -35,6 +37,13 @@ export function createSpeechCache({
   }
 
   const inFlight = new Map();
+  const expiresAt = createdAt => new Date(Date.parse(createdAt) + SPEECH_CACHE_RETENTION_MS).toISOString();
+  const expiredEntry = entry => {
+    const explicit = Date.parse(entry?.expiresAt);
+    const derived = Date.parse(entry?.createdAt) + SPEECH_CACHE_RETENTION_MS;
+    const cutoff = Number.isFinite(explicit) ? explicit : derived;
+    return !Number.isFinite(cutoff) || cutoff <= Date.parse(now());
+  };
 
   const ownerIdentity = () => {
     const ownerId = safeText(getOwnerId(), 160);
@@ -73,14 +82,14 @@ export function createSpeechCache({
 
   async function prune(captureId, ownerHash, predicate = null, snapshot = null) {
     if (snapshot && !cacheEntries(snapshot).some(
-      entry => obsoleteEntry(entry, snapshot, ownerHash, predicate)
+      entry => obsoleteEntry(entry, snapshot, ownerHash, candidate => expiredEntry(candidate) || predicate?.(candidate))
     )) return [];
     const result = await repository.update(store => {
       const capture = store.captures?.find(item => item.id === captureId);
       if (!capture) return { removed: [] };
       const removed = [], retained = [];
       for (const entry of cacheEntries(capture)) {
-        if (obsoleteEntry(entry, capture, ownerHash, predicate)) removed.push(entry);
+        if (obsoleteEntry(entry, capture, ownerHash, candidate => expiredEntry(candidate) || predicate?.(candidate))) removed.push(entry);
         else retained.push(entry);
       }
       capture.speechCache = retained;
@@ -134,6 +143,7 @@ export function createSpeechCache({
       data: generated.audio,
       mimeType: generated.mimeType
     });
+    const createdAt = now();
     const entry = {
       cacheKey: identity.cacheKey,
       ownerHash,
@@ -146,7 +156,9 @@ export function createSpeechCache({
       attachmentPath: saved.attachmentPath,
       mimeType: saved.mimeType,
       bytes: saved.bytes,
-      createdAt: now()
+      createdAt,
+      expiresAt: expiresAt(createdAt),
+      retentionDays: SPEECH_CACHE_RETENTION_DAYS
     };
 
     let outcome;

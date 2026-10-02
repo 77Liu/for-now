@@ -77,14 +77,18 @@ const peak = deepSeekUsageEntry({
 });
 assert.equal(peak.pricingPeriod, "peak");
 assert.deepEqual(peak.tokens, { input: 1000, cacheHit: 200, cacheMiss: 800, reasoning: 40, answer: 60, output: 100 });
-assert.ok(Math.abs(peak.costsUsd.total - 0.0003612) < 1e-12);
+assert.ok(Math.abs(peak.costCny - 0.002408) < 1e-12);
+assert.equal(peak.costsCny.total, peak.costCny);
+assert.deepEqual(peak.ratesCnyPerMillion, { cacheHit: 0.04, cacheMiss: 2, output: 8 });
+assert.equal(peak.costKnown, true);
 assert.equal(peak.rawUsage.secret, undefined);
 assert.equal(peak.rawUsage.invalid, undefined);
 assert.equal(deepSeekUsageEntry({ createdAt: "2026-09-27T01:00:00Z", model: "deepseek-flash", usage: { prompt_tokens: 1000, completion_tokens: 100 } }).pricingPeriod, "offPeak");
 for (const usage of [null, {}, { prompt_tokens: 1000 }, { completion_tokens: 100 }, { prompt_tokens: "100", completion_tokens: 100 }]) {
   const entry = deepSeekUsageEntry({ model: "deepseek-flash", createdAt: now(), usage });
   assert.equal(entry.usageKnown, false);
-  assert.equal(entry.costsUsd.total, 0);
+  assert.equal(entry.costCny, 0);
+  assert.equal(entry.costKnown, false);
   assert.equal(entry.tokens.input, 0);
 }
 const historical = normalizeAiUsage({ entries: [{ id: "legacy", createdAt: now(), model: "deepseek-flash", costsUsd: { total: 0.125 } }] }).entries[0];
@@ -156,7 +160,9 @@ assert.equal(dashboard.summary.durationKnownCalls, 1);
 assert.equal(dashboard.summary.visionCalls, 1);
 assert.equal(dashboard.daily[0].calls, 0);
 assert.equal(dashboard.calibration.activeDays, 1);
-assert.equal(dashboard.summary.costsUsd.total, peak.costsUsd.total + historical.costsUsd.total);
+assert.equal(dashboard.summary.costsUsd.total, historical.costsUsd.total);
+assert.equal(dashboard.summary.costCny, peak.costCny);
+assert.equal(dashboard.summary.costsCny.total, peak.costCny);
 assert.equal(dashboard.calibration.maxCostCny, 0.125 * 6.5); // Preserve historical price snapshots.
 const providerDashboard = usageDashboard(normalizeAiUsage({ trackingStartedAt: now(), entries: [
   providerEntry,
@@ -422,6 +428,10 @@ try {
   assert.equal(committed, 1);
   assert.equal(recoveredUsage.length, 1);
   assert.equal(recoveredAudits.length, 2);
+  assert.equal(recoveredAudits[0].entry.usage.costKnown, true);
+  assert.equal(recoveredAudits[0].entry.usage.costCny, recoveredUsage[0].costCny);
+  assert.deepEqual(recoveredAudits[0].entry.usage.ratesCnyPerMillion, recoveredUsage[0].ratesCnyPerMillion);
+  assert.deepEqual(recoveredAudits[0].entry.usage.costsCny, recoveredUsage[0].costsCny);
   assert.equal(recoveredAudits.at(-1).entry.type, "ai.usage_recovered");
   assert.deepEqual(
     usageEntryFromAudit(recoveredAudits[0].entry),

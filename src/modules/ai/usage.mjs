@@ -1,8 +1,9 @@
 import crypto from "node:crypto";
 import { safeText, safeIso } from "../../shared/validation/index.mjs";
 import { LLM_MODELS, LLM_EFFORTS, LLM_TIERS, LLM_SCENARIOS } from "./settings.mjs";
+import { OFFICIAL_PROVIDER_PRICING } from "./provider-pricing.mjs";
 
-export const AI_USAGE_VERSION = 3;
+export const AI_USAGE_VERSION = 4;
 const PROVIDER_SCENES = new Set(["speechSynthesis", "speechRecognition", "visionOcr", "documentParsing", "keepsakeSegmentation"]);
 const knownModalities = new Set(["vision", "text", "audio", "document"]);
 function normalizedModality(item) {
@@ -14,24 +15,7 @@ function normalizedModality(item) {
   if (item?.provider === "aliyun" && item?.service === "segmentation") return "vision";
   return "unknown";
 }
-export const DEEPSEEK_PRICING = {
-  source: "https://api-docs.deepseek.com/quick_start/pricing/",
-  checkedAt: "2026-09-27",
-  currency: "USD",
-  unitTokens: 1_000_000,
-  models: {
-    "deepseek-flash": {
-      label: "DeepSeek Flash",
-      offPeak: { cacheHit: 0.003, cacheMiss: 0.15, output: 0.6 },
-      peak: { cacheHit: 0.006, cacheMiss: 0.3, output: 1.2 }
-    },
-    "deepseek-v4-pro": {
-      label: "DeepSeek Pro",
-      offPeak: { cacheHit: 0.022, cacheMiss: 0.66, output: 1.98 },
-      peak: { cacheHit: 0.044, cacheMiss: 1.32, output: 3.96 }
-    }
-  }
-};
+export const DEEPSEEK_PRICING = OFFICIAL_PROVIDER_PRICING.deepseek;
 
 export function normalizeAiUsage(value = {}) {
   const trackingStartedAt = safeIso(value.trackingStartedAt) || new Date().toISOString();
@@ -100,10 +84,22 @@ export function normalizeAiUsage(value = {}) {
       output: Math.max(0, Number(item.costsUsd?.output) || 0),
       total: Math.max(0, Number(item.costsUsd?.total) || 0)
     },
+    costsCny: {
+      input: Math.max(0, Number(item.costsCny?.input) || 0),
+      cacheHit: Math.max(0, Number(item.costsCny?.cacheHit) || 0),
+      reasoning: Math.max(0, Number(item.costsCny?.reasoning) || 0),
+      output: Math.max(0, Number(item.costsCny?.output) || 0),
+      total: Math.max(0, Number(item.costsCny?.total) || 0)
+    },
     ratesUsdPerMillion: {
       cacheHit: Math.max(0, Number(item.ratesUsdPerMillion?.cacheHit) || 0),
       cacheMiss: Math.max(0, Number(item.ratesUsdPerMillion?.cacheMiss) || 0),
       output: Math.max(0, Number(item.ratesUsdPerMillion?.output) || 0)
+    },
+    ratesCnyPerMillion: {
+      cacheHit: Math.max(0, Number(item.ratesCnyPerMillion?.cacheHit) || 0),
+      cacheMiss: Math.max(0, Number(item.ratesCnyPerMillion?.cacheMiss) || 0),
+      output: Math.max(0, Number(item.ratesCnyPerMillion?.output) || 0)
     },
     unitType: safeText(item.unitType, 40),
     units: Math.max(0, Number(item.units) || 0),
@@ -143,13 +139,13 @@ export function deepSeekUsageEntry({ usage, model, createdAt, ...metadata }) {
   const usageKnown = Number.isFinite(usage?.prompt_tokens) && Number.isFinite(usage?.completion_tokens);
   const tokens = normalizedDeepSeekUsage(usageKnown ? usage : null);
   const pricingPeriod = deepSeekPricingPeriod(createdAt), rates = DEEPSEEK_PRICING.models[model]?.[pricingPeriod];
-  const costsUsd = {
+  const costsCny = {
     input: rates ? tokens.cacheMiss * rates.cacheMiss / DEEPSEEK_PRICING.unitTokens : 0,
     cacheHit: rates ? tokens.cacheHit * rates.cacheHit / DEEPSEEK_PRICING.unitTokens : 0,
     reasoning: rates ? tokens.reasoning * rates.output / DEEPSEEK_PRICING.unitTokens : 0,
     output: rates ? tokens.answer * rates.output / DEEPSEEK_PRICING.unitTokens : 0
   };
-  costsUsd.total = costsUsd.input + costsUsd.cacheHit + costsUsd.reasoning + costsUsd.output;
+  costsCny.total = costsCny.input + costsCny.cacheHit + costsCny.reasoning + costsCny.output;
   return {
     ...metadata,
     id: metadata.callId,
@@ -159,8 +155,13 @@ export function deepSeekUsageEntry({ usage, model, createdAt, ...metadata }) {
     pricingPeriod,
     usageKnown,
     tokens,
-    costsUsd,
-    ratesUsdPerMillion: rates ? { ...rates } : { cacheHit: 0, cacheMiss: 0, output: 0 },
+    costKnown: Boolean(rates && usageKnown),
+    costCny: costsCny.total,
+    costsCny,
+    costsUsd: { input: 0, cacheHit: 0, reasoning: 0, output: 0, total: 0 },
+    ratesCnyPerMillion: rates ? { ...rates } : { cacheHit: 0, cacheMiss: 0, output: 0 },
+    ratesUsdPerMillion: { cacheHit: 0, cacheMiss: 0, output: 0 },
+    costSource: rates ? `${DEEPSEEK_PRICING.source}#${DEEPSEEK_PRICING.checkedAt}` : "",
     rawUsage: numericUsage(usage)
   };
 }
@@ -198,7 +199,9 @@ export function providerUsageEntry({
       usageKnown: false,
       tokens: {},
       costsUsd: {},
+      costsCny: {},
       ratesUsdPerMillion: {},
+      ratesCnyPerMillion: {},
       rawUsage: { unitType, units }
     }]
   }).entries[0];

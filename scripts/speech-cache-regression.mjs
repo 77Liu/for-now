@@ -4,6 +4,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createAnnotationService } from "../src/modules/annotations/index.mjs";
 import { createTrashService } from "../src/modules/trash/index.mjs";
 import {
+  SPEECH_CACHE_RETENTION_DAYS,
   createAttachmentCleanup,
   createSpeechCache,
   createTrashCommands,
@@ -144,23 +145,25 @@ await context.run("account-a", async () => {
   assert.equal(providerCalls.length, 1, "a cache hit must not add provider or metered usage calls");
 
   clock = new Date("2027-11-06T01:00:00.000Z");
-  assert.equal((await request()).cacheStatus, "hit", "retention must not silently hard-code a 30-day TTL");
-  assert.equal(providerCalls.length, 1);
+  assert.equal((await request()).cacheStatus, "miss", "expired audio must be regenerated");
+  assert.equal(providerCalls.length, 2);
+  assert.ok(removedAudio.some(item => item.accountId === "account-a"), "expired audio must enter attachment cleanup");
 
   await request({ voice: "voice-b" });
   await request({ generationRate: 25 });
-  assert.equal(providerCalls.length, 3, "voice and generation parameters must partition cache entries");
+  assert.equal(providerCalls.length, 4, "voice and generation parameters must partition cache entries");
   const entries = (await repository.read()).captures[0].speechCache;
   assert.equal(entries.length, 3);
   assert.ok(entries.every(entry => entry.sourceVersion === 2));
-  assert.ok(entries.every(entry => !Object.hasOwn(entry, "retentionDays") && !Object.hasOwn(entry, "expiresAt")));
+  assert.ok(entries.every(entry => entry.retentionDays === SPEECH_CACHE_RETENTION_DAYS));
+  assert.ok(entries.every(entry => Date.parse(entry.expiresAt) - Date.parse(entry.createdAt) === 30 * 24 * 60 * 60 * 1000));
   assert.ok(entries.every(entry => entry.cacheKey && entry.ownerHash && entry.textHash));
 });
 
 await context.run("account-b", async () => {
   const result = await request();
   assert.equal(result.cacheStatus, "miss");
-  assert.equal(providerCalls.length, 4, "accounts with identical source ids must remain isolated");
+  assert.equal(providerCalls.length, 5, "accounts with identical source ids must remain isolated");
   assert.match(result.attachmentPath, /account-b/);
 });
 
@@ -173,7 +176,7 @@ await context.run("account-a", async () => {
   await assert.rejects(request(), error => error.code === "SPEECH_SOURCE_STALE" && error.statusCode === 409);
   const regenerated = await request({ sourceVersion: 3 });
   assert.equal(regenerated.cacheStatus, "miss");
-  assert.equal(providerCalls.length, 5, "a source version change must miss");
+  assert.equal(providerCalls.length, 6, "a source version change must miss");
   assert.ok(removedAudio.some(item => item.accountId === "account-a"), "stale source attachments must enter cleanup");
 });
 
@@ -239,4 +242,4 @@ await context.run("account-c", async () => {
   assert.equal(accountFiles().size, 0, "late stale synthesis must clean its unlinked attachment");
 });
 
-console.log("Speech cache checks passed: private keys, coalesced hits, parameter isolation, version invalidation and recoverable cleanup.");
+console.log("Speech cache checks passed: 30-day expiry, private keys, coalesced hits, parameter isolation, version invalidation and recoverable cleanup.");

@@ -3,7 +3,7 @@ import { safeText } from "../../shared/validation/index.mjs";
 import { errorMetadata, redact } from "../../shared/observability/index.mjs";
 import { deepSeekUsageEntry, providerUsageEntry } from "./usage.mjs";
 
-const AI_AUDIT_VERSION = 2;
+const AI_AUDIT_VERSION = 3;
 
 export function usageEntryFromAudit(entry) {
   const value = entry?.usageRecovery;
@@ -135,6 +135,11 @@ export function createAiAudit({ textLimit, getContext, append, updateUsage, logE
         normalized: usageEntry.tokens,
         raw: usageEntry.rawUsage,
         pricingPeriod: usageEntry.pricingPeriod,
+        costKnown: usageEntry.costKnown,
+        costCny: usageEntry.costCny,
+        costSource: usageEntry.costSource,
+        ratesCnyPerMillion: usageEntry.ratesCnyPerMillion,
+        costsCny: usageEntry.costsCny,
         ratesUsdPerMillion: usageEntry.ratesUsdPerMillion,
         costsUsd: usageEntry.costsUsd
       }

@@ -48,7 +48,7 @@ v3 每条记录包含：
 - 尝试信息：当前尝试、最大尝试次数、重试原因、是否流式、响应格式、`maxTokens`、结束原因。
 - 输入形态：`text / vision / audio / document / unknown`、图片数量、总字节数、MIME 类型、宽高；账本不保存图片、音频或文档正文。
 - 容量摘要：历史消息数、请求字符数、回答字符数、推理字符数。
-- 计费信息：是否取得官方 usage、原始 usage、标准化 Token、峰谷时段、单价快照和费用拆分；非 Token 服务另记 `unitType / units / costKnown / costCny / costSource`。
+- 计费信息：是否取得官方 usage、原始 usage、标准化 Token、峰谷时段、人民币单价快照和费用拆分；2026-10-02 前的美元单价与费用字段仅作历史兼容，不回算覆盖；非 Token 服务另记 `unitType / units / costKnown / costCny / costSource`。
 
 每一次已完成落账的 DeepSeek 或火山语音/视觉请求计一条，包括失败请求和
 自动重试。`calls` 因而不是业务操作次数；成功数、失败数、usage 未知数和

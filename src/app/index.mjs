@@ -3,7 +3,7 @@ export { createAiTaskTargets } from "./ai-task-targets.mjs";
 export { createBackgroundAi } from "./background-ai.mjs";
 export { createTrashMutations, createTrashCommands } from "./trash.mjs";
 export { createAttachmentCleanup } from "./attachment-cleanup.mjs";
-export { createSpeechCache } from "./speech-cache.mjs";
+export { SPEECH_CACHE_RETENTION_DAYS, createSpeechCache } from "./speech-cache.mjs";
 export { createKeepsakeMediaWorkflows } from "./keepsake-media-workflows.mjs";
 export { createKeepsakeMediaMigration } from "./keepsake-media-migration.mjs";
 export { createThoughtWorkflows } from "./thought-workflows.mjs";

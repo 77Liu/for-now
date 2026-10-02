@@ -4,6 +4,7 @@ export {
   automaticAnswerDecision, createLlmSettingsService
 } from "./settings.mjs";
 export { AI_USAGE_VERSION, DEEPSEEK_PRICING, normalizeAiUsage, deepSeekUsageEntry, providerUsageEntry, createAiUsageService } from "./usage.mjs";
+export { OFFICIAL_PROVIDER_PRICING } from "./provider-pricing.mjs";
 export { createAiAudit, usageEntryFromAudit } from "./audit.mjs";
 export { defaultAiCostPlan, normalizeAiCostPlan, createAiCostService, usageDashboard } from "./costs.mjs";
 export { systemPrompt, systemPromptForScene, userPrompt } from "./prompts.mjs";

@@ -133,6 +133,7 @@ function blankUsageAggregate() {
     costUnknownCalls: 0,
     costCny: 0,
     tokens: { input: 0, cacheHit: 0, cacheMiss: 0, reasoning: 0, answer: 0, output: 0 },
+    costsCny: { input: 0, cacheHit: 0, reasoning: 0, output: 0, total: 0 },
     costsUsd: { input: 0, cacheHit: 0, reasoning: 0, output: 0, total: 0 }
   };
 }
@@ -154,6 +155,7 @@ function addUsageAggregate(target, entry) {
   target.imageBytes += Number(entry.imageBytes) || 0;
   target.costCny += Number(entry.costCny) || 0;
   for (const key of Object.keys(target.tokens)) target.tokens[key] += Number(entry.tokens?.[key]) || 0;
+  for (const key of Object.keys(target.costsCny)) target.costsCny[key] += Number(entry.costsCny?.[key]) || 0;
   for (const key of Object.keys(target.costsUsd)) target.costsUsd[key] += Number(entry.costsUsd?.[key]) || 0;
   return target;
 }
@@ -271,7 +273,8 @@ export function usageDashboard(usage, from, to, cnyPerUsd, defaultCnyPerUsd = cn
       ...DEEPSEEK_PRICING,
       displayCurrency: "CNY",
       cnyPerUsd: rate,
-      estimateNote: "DeepSeek 费用按请求发生时固化的官方单价估算；其他供应商未配置单价时只统计调用量，并标记为费用待账单。中国法定节假日若落在工作日峰值时段，实际账单可能更低。"
+      historicalUsdNote: "人民币换算系数仅用于 2026-10-02 前已经固化为美元的历史账本。",
+      estimateNote: "DeepSeek 新调用按请求发生时固化的中国区人民币官方单价估算；其他供应商未配置运行时单价时只统计调用量，并标记为费用待账单。中国法定节假日若落在工作日峰值时段，实际账单可能更低。"
     }
   };
 }
