@@ -17,6 +17,12 @@ export { reviewsChatComponents, reviewsChatPaths, reviewsChatOpenApiFragment } f
 export { contentAttachmentComponents, contentAttachmentPaths, contentAttachmentsOpenApiFragment } from "./openapi/content-attachments.mjs";
 export { createAiSettingsHttp } from "./ai-settings.mjs";
 export { createAiCostHttp } from "./ai-costs.mjs";
+export { createAiBudgetHttp } from "./ai-budget.mjs";
+export {
+  aiBudgetPaths,
+  aiBudgetComponents,
+  aiBudgetOpenApiFragment
+} from "./openapi/ai-budget.mjs";
 export { createKeepsakeHttp } from "./keepsakes.mjs";
 export { createOnboardingHttp } from "./onboarding.mjs";
 export { createOnboardingV2Http } from "./onboarding-v2.mjs";

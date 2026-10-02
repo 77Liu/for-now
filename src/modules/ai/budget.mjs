@@ -188,6 +188,7 @@ export function normalizeAiBudgetState(value = {}, { policy = value?.policy } = 
     .filter(Boolean);
   return {
     version: AI_BUDGET_VERSION,
+    controlVersion: Math.max(1, integer(source.controlVersion, 1)),
     policy: normalizeAiBudgetPolicy(policy),
     days: uniquePeriods(days),
     months: uniquePeriods(months),
@@ -522,6 +523,7 @@ function statusFromState(state, keys, accountId = "") {
       }
     : null;
   return {
+    controlVersion: state.controlVersion,
     policy: structuredClone(state.policy),
     day: {
       key: day.key,
@@ -554,6 +556,39 @@ function statusFromState(state, keys, accountId = "") {
     activeReservations: state.reservations.length,
     eventCount: state.events.length
   };
+}
+
+function assertExpectedControlVersion(state, expectedVersion) {
+  if (expectedVersion == null) {
+    throw Object.assign(new Error("AI budget Owner command requires expectedVersion"), {
+      statusCode: 428,
+      code: "PRECONDITION_REQUIRED"
+    });
+  }
+  if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1) {
+    throw Object.assign(new Error("AI budget expectedVersion must be a positive safe integer"), {
+      statusCode: 400,
+      code: "INVALID_EXPECTED_VERSION"
+    });
+  }
+  if (expectedVersion !== state.controlVersion) {
+    throw Object.assign(new Error("AI budget control state has changed"), {
+      statusCode: 412,
+      code: "PRECONDITION_FAILED",
+      details: { currentVersion: state.controlVersion }
+    });
+  }
+}
+
+function incrementControlVersion(state) {
+  if (state.controlVersion >= Number.MAX_SAFE_INTEGER) {
+    throw Object.assign(new RangeError("AI budget control version is exhausted"), {
+      statusCode: 409,
+      code: "AI_BUDGET_CONTROL_VERSION_EXHAUSTED"
+    });
+  }
+  state.controlVersion += 1;
+  return state.controlVersion;
 }
 
 // repository.update(mutator) must serialize all site-wide writers, commit the
@@ -888,7 +923,7 @@ export function createAiBudgetService({
     },
 
     // G2/capability authorization belongs to the Owner application layer.
-    async ownerAddTemporaryBudget({ scope, amountCny, actorId, reason }) {
+    async ownerAddTemporaryBudget({ scope, amountCny, actorId, reason, expectedVersion }) {
       if (!["daily", "monthly"].includes(scope)) throw new TypeError("AI budget addition scope must be daily or monthly");
       const actor = requiredText(actorId, "owner actorId", 100);
       const explanation = requiredText(reason, "owner reason", 500);
@@ -905,12 +940,14 @@ export function createAiBudgetService({
       const timestamp = now();
       const keys = timestampKeys(timestamp);
       return update(state => {
+        assertExpectedControlVersion(state, expectedVersion);
         const period = scope === "daily" ? ensureDay(state, keys.day) : ensureMonth(state, keys.month);
         period.additionalKnownCostMicros += amountMicros;
         if (!Number.isSafeInteger(period.additionalKnownCostMicros)) throw new RangeError("AI budget additions are too large");
         const effectiveLimitMicros = scope === "daily"
           ? effectiveDailyLimit(period, state.policy)
           : effectiveMonthlyLimit(period, state.policy);
+        const controlVersion = incrementControlVersion(state);
         const event = appendEvent(state, {
           type: "ai.budget.owner_temporary_addition",
           severity: "warning",
@@ -920,26 +957,30 @@ export function createAiBudgetService({
           actorId: actor,
           reason: explanation,
           amountCny: cny(amountMicros),
-          effectiveLimitCny: cny(effectiveLimitMicros)
+          effectiveLimitCny: cny(effectiveLimitMicros),
+          controlVersion
         }, createId);
         return {
           scope,
           periodKey: period.key,
           amountCny: cny(amountMicros),
           effectiveLimitCny: cny(effectiveLimitMicros),
-          event
+          controlVersion,
+          event,
+          status: statusFromState(state, keys)
         };
       });
     },
 
     // This clears only the sticky block. It never changes usage or limits.
-    async ownerRecover({ scope, actorId, reason }) {
+    async ownerRecover({ scope, actorId, reason, expectedVersion }) {
       if (!RECOVERY_SCOPES.has(scope)) throw new TypeError("AI budget recovery scope is invalid");
       const actor = requiredText(actorId, "owner actorId", 100);
       const explanation = requiredText(reason, "owner reason", 500);
       const timestamp = now();
       const keys = timestampKeys(timestamp);
       return update(state => {
+        assertExpectedControlVersion(state, expectedVersion);
         const day = ensureDay(state, keys.day);
         const month = ensureMonth(state, keys.month);
         const period = scope === "monthlyKnownCost" ? month : day;
@@ -951,6 +992,7 @@ export function createAiBudgetService({
         if (scope === "dailyKnownCost") day.blocked.knownCost = false;
         else if (scope === "dailyUnknownCost") day.blocked.unknownCost = false;
         else month.blocked.knownCost = false;
+        const controlVersion = incrementControlVersion(state);
         const event = appendEvent(state, {
           type: "ai.budget.owner_recovery",
           severity: "warning",
@@ -959,9 +1001,17 @@ export function createAiBudgetService({
           periodKey: period.key,
           actorId: actor,
           reason: explanation,
-          wasBlocked
+          wasBlocked,
+          controlVersion
         }, createId);
-        return { scope, periodKey: period.key, wasBlocked, event };
+        return {
+          scope,
+          periodKey: period.key,
+          wasBlocked,
+          controlVersion,
+          event,
+          status: statusFromState(state, keys)
+        };
       });
     }
   };

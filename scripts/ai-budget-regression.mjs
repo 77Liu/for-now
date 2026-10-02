@@ -609,7 +609,8 @@ assert.doesNotThrow(() => JSON.parse(JSON.stringify(normalized)));
     scope: "daily",
     amountCny: 100,
     actorId: "owner-account",
-    reason: "经 Owner 明确确认的临时测试窗口"
+    reason: "经 Owner 明确确认的临时测试窗口",
+    expectedVersion: 1
   });
   assert.equal(addition.effectiveLimitCny, 200);
   await assert.rejects(service.reserveTask({
@@ -620,7 +621,8 @@ assert.doesNotThrow(() => JSON.parse(JSON.stringify(normalized)));
   const recovery = await service.ownerRecover({
     scope: "dailyKnownCost",
     actorId: "owner-account",
-    reason: "追加预算后恢复"
+    reason: "追加预算后恢复",
+    expectedVersion: 2
   });
   assert.equal(recovery.wasBlocked, true);
   await assert.doesNotReject(service.reserveTask({
@@ -633,19 +635,22 @@ assert.doesNotThrow(() => JSON.parse(JSON.stringify(normalized)));
     scope: "daily",
     amountCny: 100.000001,
     actorId: "owner-account",
-    reason: "超过单次上限"
+    reason: "超过单次上限",
+    expectedVersion: 3
   }), { code: "AI_DAILY_ADDITION_TOO_LARGE" });
   await assert.rejects(service.ownerAddTemporaryBudget({
     scope: "monthly",
     amountCny: 2000.000001,
     actorId: "owner-account",
-    reason: "超过单次上限"
+    reason: "超过单次上限",
+    expectedVersion: 3
   }), { code: "AI_MONTHLY_ADDITION_TOO_LARGE" });
   const monthly = await service.ownerAddTemporaryBudget({
     scope: "monthly",
     amountCny: 2000,
     actorId: "owner-account",
-    reason: "月度临时追加"
+    reason: "月度临时追加",
+    expectedVersion: 3
   });
   assert.equal(monthly.effectiveLimitCny, 4000);
   const events = (await service.read()).events;
