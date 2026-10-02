@@ -48,7 +48,7 @@
     "test:system": "node scripts/system-test.mjs all",
     "start:local-test": "node scripts/local-test-preview.mjs",
     "test:observability": "node scripts/observability-regression.mjs",
-    "test:ai-budget": "node scripts/ai-budget-regression.mjs && node scripts/ai-budget-persistence-regression.mjs",
+    "test:ai-budget": "node scripts/ai-budget-regression.mjs && node scripts/ai-budget-persistence-regression.mjs && node scripts/ai-budget-runtime-regression.mjs && node scripts/ai-budget-control-version-regression.mjs && node scripts/ai-budget-http-regression.mjs",
     "test:ai-budget:postgres": "node scripts/ai-budget-postgres-regression.mjs",
     "test:pricing": "node scripts/provider-pricing-regression.mjs",
     "test:volcengine": "node scripts/volcengine-provider-regression.mjs",

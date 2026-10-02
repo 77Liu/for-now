@@ -16,8 +16,40 @@ function aiErrorDetails(error, httpStatus = 0) {
   return { category: "unknown", code: safeText(error?.code, 120), message };
 }
 
-export function createAiGenerator({ readSettings, provider, getContext, reserveAttempt, gate, audit, now = () => new Date().toISOString(), createId = () => crypto.randomUUID() }) {
-  return async function generate(prompt, { imagePath = null, imagePaths = null, history = [], settingsOverride = null, scene = "thoughtAnswer", json = false, systemPrompt: requestedSystemPrompt = "", onDelta = null, captureReasoning = false, contextReceipt = null, maxTokens = 16000, retryWithoutThinking = false, timeoutMs = 300000, signal = null, auditPrompt = true } = {}) {
+const withoutSiteBudget = async (_details, execute) => execute({
+  runStage: async (_stageId, operation) => operation({ recordUsage: () => false })
+});
+
+export function createAiGenerator({
+  readSettings,
+  provider,
+  getContext,
+  reserveAttempt,
+  gate,
+  audit,
+  executeBudgetTask = withoutSiteBudget,
+  now = () => new Date().toISOString(),
+  createId = () => crypto.randomUUID()
+}) {
+  return async function generate(prompt, {
+    imagePath = null,
+    imagePaths = null,
+    history = [],
+    settingsOverride = null,
+    scene = "thoughtAnswer",
+    json = false,
+    systemPrompt: requestedSystemPrompt = "",
+    onDelta = null,
+    captureReasoning = false,
+    contextReceipt = null,
+    maxTokens = 16000,
+    retryWithoutThinking = false,
+    timeoutMs = 300000,
+    signal = null,
+    auditPrompt = true,
+    budgetExecution = null,
+    budgetStageIds = null
+  } = {}) {
     const settings = llmSettingsForScene(settingsOverride || await readSettings(), scene);
     if (!settings.apiKey) throw new Error("尚未配置 DeepSeek API 密钥，请先到“设置”中填写并保存");
     const effectiveSystemPrompt = systemPromptForScene(requestedSystemPrompt || systemPrompt(), scene, settings);
@@ -39,6 +71,8 @@ export function createAiGenerator({ readSettings, provider, getContext, reserveA
     if (context.secrets) context.secrets.push(settings.apiKey);
     const traceId = safeText(context.traceId, 128) || createId(), callGroupId = createId();
     const userId = safeText(context.user?.id, 100) || "local", endpointHost = provider.endpointHost;
+    const requestChars = effectiveSystemPrompt.length + String(prompt).length
+      + history.reduce((sum, message) => sum + (typeof message?.content === "string" ? message.content.length : 0), 0);
     const controller = new AbortController();
     let timedOut = false;
     const abortFromCaller = () => controller.abort();
@@ -50,115 +84,144 @@ export function createAiGenerator({ readSettings, provider, getContext, reserveA
     }, timeoutMs);
     try {
       const efforts = [settings.effort, ...(retryWithoutThinking && settings.effort !== "none" ? ["none"] : [])];
-      for (let attempt = 0; attempt < efforts.length; attempt += 1) {
-        await audit.recoverPending?.();
-        const reservation = await reserveAttempt();
-        const releaseQuota = typeof reservation?.release === "function" ? reservation.release : reservation;
-        const commitQuota = typeof reservation?.commit === "function" ? reservation.commit : reservation;
-        const usageReservation = {
-          retain: typeof reservation?.retain === "function" ? entry => reservation.retain(entry) : () => {},
-          commit: typeof commitQuota === "function" ? () => commitQuota() : () => {}
-        };
-        let releaseCapacity, providerStarted = false;
-        try {
-          releaseCapacity = await gate.acquire();
-          const effort = efforts[attempt], createdAt = now(), startedMs = Date.now();
-          const callId = createId(), model = visualPaths.length ? "deepseek-flash" : settings.model;
-          const parameters = {
-            model, thinking: { type: effort === "none" ? "disabled" : "enabled" }, reasoning_effort: effort,
-            max_tokens: maxTokens, stream: Boolean(onDelta),
-            ...(onDelta ? { stream_options: { include_usage: true } } : {}),
-            ...(json ? { response_format: { type: "json_object" } } : {})
+      const model = visualPaths.length ? "deepseek-flash" : settings.model;
+      const stageIds = Array.isArray(budgetStageIds) && budgetStageIds.length === efforts.length
+        ? budgetStageIds.map(value => safeText(value, 100))
+        : efforts.map((_, index) => `deepseek-attempt-${index + 1}`);
+      const executeAttempts = async execution => {
+        if (!execution || typeof execution.runStage !== "function") {
+          throw new TypeError("AI budget execution requires runStage()");
+        }
+        for (let attempt = 0; attempt < efforts.length; attempt += 1) {
+          await audit.recoverPending?.();
+          const reservation = await reserveAttempt();
+          const releaseQuota = typeof reservation?.release === "function" ? reservation.release : reservation;
+          const commitQuota = typeof reservation?.commit === "function" ? reservation.commit : reservation;
+          let recordBudgetUsage = () => false;
+          const usageReservation = {
+            retain: entry => {
+              reservation?.retain?.(entry);
+              recordBudgetUsage(entry);
+            },
+            commit: typeof commitQuota === "function" ? () => commitQuota() : () => {}
           };
-          const messages = [{ role: "system", content: effectiveSystemPrompt }, ...history, { role: "user", content: userContent }];
-          const requestChars = effectiveSystemPrompt.length + String(prompt).length + history.reduce((sum, message) => sum + (typeof message?.content === "string" ? message.content.length : 0), 0);
-          await audit.start({
-            id: callId, callId, callGroupId, traceId, actor: { userId }, provider: "deepseek",
-            scene, startedAt: createdAt, attempt: attempt + 1, maxAttempts: efforts.length,
-            request: {
-              endpointHost,
-              images: imageAudit,
-              promptCatalog,
-              systemPrompt: auditText(effectiveSystemPrompt),
-              userPrompt: auditText(prompt),
-              history: history.map(auditMessage),
-              parameters,
-              ...(receipt ? { contextReceipt: receipt } : {})
-            }
-          });
-          let recorded = false;
-          const finishAttempt = async ({ status, httpStatus = 0, usage = null, content = "", reasoningContent = "", finishReason = "", error = null, providerRequestId = "", modelReturned = "", providerCreatedAt = "", systemFingerprint = "", retryScheduled = false } = {}) => {
-            if (recorded) return;
-            recorded = true;
-            const completedAt = now(), durationMs = Date.now() - startedMs;
-            const failure = error ? aiErrorDetails(error, httpStatus) : { category: "", code: "", message: "" };
-            const responseRequestId = safeText(providerRequestId, 200);
-            const common = {
-              callId, callGroupId, traceId, completedAt, durationMs, durationKnown: true, status, httpStatus,
-              errorCategory: failure.category, errorCode: failure.code, providerRequestId: responseRequestId,
-              modelReturned: safeText(modelReturned, 100), scene, tier: settings.tier, effort,
-              attempt: attempt + 1, maxAttempts: efforts.length,
-              retryReason: attempt ? "empty_response_without_thinking" : "", retryScheduled,
-              stream: Boolean(onDelta), responseFormat: json ? "json_object" : "text", maxTokens,
-              finishReason: safeText(finishReason, 80), modality: imageAudit.length ? "vision" : "text",
-              imageCount: imageAudit.length, imageBytes: imageAudit.reduce((sum, image) => sum + image.bytes, 0),
-              imageTypes: [...new Set(imageAudit.map(image => image.mimeType))],
-              imageDimensions: imageAudit.map(({ width, height }) => ({ width, height })),
-              historyMessageCount: history.length, requestChars,
-              responseChars: String(content || "").length, reasoningChars: String(reasoningContent || "").length
+          let releaseCapacity, providerStarted = false;
+          try {
+            releaseCapacity = await gate.acquire();
+            const effort = efforts[attempt], createdAt = now(), startedMs = Date.now();
+            const callId = createId();
+            const parameters = {
+              model, thinking: { type: effort === "none" ? "disabled" : "enabled" }, reasoning_effort: effort,
+              max_tokens: maxTokens, stream: Boolean(onDelta),
+              ...(onDelta ? { stream_options: { include_usage: true } } : {}),
+              ...(json ? { response_format: { type: "json_object" } } : {})
             };
-            await audit.recordDeepSeekAttempt({
-              usage, usageMetadata: { ...common, model, createdAt },
-              reservation: usageReservation,
-              audit: {
-                id: callId, callId, callGroupId, traceId, actor: { userId }, provider: "deepseek",
-                scene, tier: settings.tier, attempt: attempt + 1, maxAttempts: efforts.length,
-                retryReason: common.retryReason, retryScheduled, startedAt: createdAt, completedAt, durationMs, status,
-                error: error ? { ...failure, message: audit.text(error.privateMessage || failure.message) } : null,
-                request: {
-                  endpointHost, modality: common.modality, images: imageAudit, promptCatalog,
-                  systemPrompt: auditText(effectiveSystemPrompt), userPrompt: auditText(prompt),
-                  history: history.map(auditMessage), messageCount: messages.length,
-                  characterCounts: {
-                    systemPrompt: effectiveSystemPrompt.length, userPrompt: String(prompt).length,
-                    history: requestChars - effectiveSystemPrompt.length - String(prompt).length, total: requestChars
-                  },
-                  parameters,
-                  ...(receipt ? { contextReceipt: receipt } : {})
-                },
-                response: {
-                  httpStatus, providerRequestId: responseRequestId, model: safeText(modelReturned, 100),
-                  createdAt: safeIso(providerCreatedAt), systemFingerprint: safeText(systemFingerprint, 200),
-                  finishReason: safeText(finishReason, 80), content: audit.text(content), reasoningContent: audit.text(reasoningContent),
-                  rawErrorBody: error?.rawErrorBody ? audit.text(redact(error.rawErrorBody, [settings.apiKey]).slice(0, 10000)) : ""
-                }
+            const messages = [{ role: "system", content: effectiveSystemPrompt }, ...history, { role: "user", content: userContent }];
+            await audit.start({
+              id: callId, callId, callGroupId, traceId, actor: { userId }, provider: "deepseek",
+              scene, startedAt: createdAt, attempt: attempt + 1, maxAttempts: efforts.length,
+              request: {
+                endpointHost,
+                images: imageAudit,
+                promptCatalog,
+                systemPrompt: auditText(effectiveSystemPrompt),
+                userPrompt: auditText(prompt),
+                history: history.map(auditMessage),
+                parameters,
+                ...(receipt ? { contextReceipt: receipt } : {})
               }
             });
-          };
-          try {
-            providerStarted = true;
-            const { httpStatus, ...result } = await provider.complete({ apiKey: settings.apiKey, parameters, messages, signal: controller.signal, onDelta });
-            await finishAttempt({ status: "success", httpStatus, ...result });
-            return captureReasoning ? (onDelta ? result : { content: result.content, reasoningContent: result.reasoningContent }) : result.content;
-          } catch (error) {
-            const retryScheduled = error.code === "EMPTY_DEEPSEEK_CONTENT" && attempt + 1 < efforts.length;
-            const cancelledByCaller = error.name === "AbortError" && signal?.aborted && !timedOut;
-            if (cancelledByCaller) error.cancelled = true;
-            await finishAttempt({
-              status: error.name === "AbortError" ? (cancelledByCaller ? "cancelled" : "timeout") : "failed", httpStatus: error.httpStatus,
-              usage: error.usage, content: error.partialContent, reasoningContent: error.partialReasoningContent,
-              finishReason: error.finishReason, error, providerRequestId: error.providerRequestId,
-              modelReturned: error.modelReturned, providerCreatedAt: error.providerCreatedAt,
-              systemFingerprint: error.systemFingerprint, retryScheduled
-            });
-            if (retryScheduled) continue;
-            throw error;
+            let recorded = false;
+            const finishAttempt = async ({ status, httpStatus = 0, usage = null, content = "", reasoningContent = "", finishReason = "", error = null, providerRequestId = "", modelReturned = "", providerCreatedAt = "", systemFingerprint = "", retryScheduled = false } = {}) => {
+              if (recorded) return;
+              recorded = true;
+              const completedAt = now(), durationMs = Date.now() - startedMs;
+              const failure = error ? aiErrorDetails(error, httpStatus) : { category: "", code: "", message: "" };
+              const responseRequestId = safeText(providerRequestId, 200);
+              const common = {
+                callId, callGroupId, traceId, completedAt, durationMs, durationKnown: true, status, httpStatus,
+                errorCategory: failure.category, errorCode: failure.code, providerRequestId: responseRequestId,
+                modelReturned: safeText(modelReturned, 100), scene, tier: settings.tier, effort,
+                attempt: attempt + 1, maxAttempts: efforts.length,
+                retryReason: attempt ? "empty_response_without_thinking" : "", retryScheduled,
+                stream: Boolean(onDelta), responseFormat: json ? "json_object" : "text", maxTokens,
+                finishReason: safeText(finishReason, 80), modality: imageAudit.length ? "vision" : "text",
+                imageCount: imageAudit.length, imageBytes: imageAudit.reduce((sum, image) => sum + image.bytes, 0),
+                imageTypes: [...new Set(imageAudit.map(image => image.mimeType))],
+                imageDimensions: imageAudit.map(({ width, height }) => ({ width, height })),
+                historyMessageCount: history.length, requestChars,
+                responseChars: String(content || "").length, reasoningChars: String(reasoningContent || "").length
+              };
+              await audit.recordDeepSeekAttempt({
+                usage, usageMetadata: { ...common, model, createdAt },
+                reservation: usageReservation,
+                audit: {
+                  id: callId, callId, callGroupId, traceId, actor: { userId }, provider: "deepseek",
+                  scene, tier: settings.tier, attempt: attempt + 1, maxAttempts: efforts.length,
+                  retryReason: common.retryReason, retryScheduled, startedAt: createdAt, completedAt, durationMs, status,
+                  error: error ? { ...failure, message: audit.text(error.privateMessage || failure.message) } : null,
+                  request: {
+                    endpointHost, modality: common.modality, images: imageAudit, promptCatalog,
+                    systemPrompt: auditText(effectiveSystemPrompt), userPrompt: auditText(prompt),
+                    history: history.map(auditMessage), messageCount: messages.length,
+                    characterCounts: {
+                      systemPrompt: effectiveSystemPrompt.length, userPrompt: String(prompt).length,
+                      history: requestChars - effectiveSystemPrompt.length - String(prompt).length, total: requestChars
+                    },
+                    parameters,
+                    ...(receipt ? { contextReceipt: receipt } : {})
+                  },
+                  response: {
+                    httpStatus, providerRequestId: responseRequestId, model: safeText(modelReturned, 100),
+                    createdAt: safeIso(providerCreatedAt), systemFingerprint: safeText(systemFingerprint, 200),
+                    finishReason: safeText(finishReason, 80), content: audit.text(content), reasoningContent: audit.text(reasoningContent),
+                    rawErrorBody: error?.rawErrorBody ? audit.text(redact(error.rawErrorBody, [settings.apiKey]).slice(0, 10000)) : ""
+                  },
+                }
+              });
+            };
+            try {
+              return await execution.runStage(stageIds[attempt], async ({ recordUsage }) => {
+                recordBudgetUsage = typeof recordUsage === "function" ? recordUsage : () => false;
+                providerStarted = true;
+                const { httpStatus, ...result } = await provider.complete({ apiKey: settings.apiKey, parameters, messages, signal: controller.signal, onDelta });
+                await finishAttempt({ status: "success", httpStatus, ...result });
+                return captureReasoning ? (onDelta ? result : { content: result.content, reasoningContent: result.reasoningContent }) : result.content;
+              });
+            } catch (error) {
+              const retryScheduled = error.code === "EMPTY_DEEPSEEK_CONTENT" && attempt + 1 < efforts.length;
+              const cancelledByCaller = error.name === "AbortError" && signal?.aborted && !timedOut;
+              if (cancelledByCaller) error.cancelled = true;
+              await finishAttempt({
+                status: error.name === "AbortError" ? (cancelledByCaller ? "cancelled" : "timeout") : "failed", httpStatus: error.httpStatus,
+                usage: error.usage, content: error.partialContent, reasoningContent: error.partialReasoningContent,
+                finishReason: error.finishReason, error, providerRequestId: error.providerRequestId,
+                modelReturned: error.modelReturned, providerCreatedAt: error.providerCreatedAt,
+                systemFingerprint: error.systemFingerprint, retryScheduled
+              });
+              if (retryScheduled) continue;
+              throw error;
+            }
+          } finally {
+            releaseCapacity?.();
+            if (!providerStarted) releaseQuota?.();
           }
-        } finally {
-          releaseCapacity?.();
-          if (!providerStarted) releaseQuota?.();
         }
-      }
+      };
+      const budgetDetails = {
+        accountId: userId,
+        taskId: callGroupId,
+        provider: "deepseek",
+        service: "chat-completions",
+        scene,
+        model,
+        maxAttempts: efforts.length,
+        maxInputTokens: Math.max(1, requestChars + visualPaths.length * 128_000),
+        maxOutputTokens: Math.max(0, Math.round(Number(maxTokens) || 0))
+      };
+      return budgetExecution
+        ? await executeAttempts(budgetExecution)
+        : await executeBudgetTask(budgetDetails, executeAttempts);
     } catch (error) {
       if (error.name === "AbortError") {
         if (signal?.aborted && !timedOut) throw Object.assign(new Error("AI 任务已取消"), { code: "AI_TASK_CANCELLED" });

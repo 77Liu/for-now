@@ -97,7 +97,7 @@ let pageRouter,switchView,restoreView;
 let backgroundResultController=null;
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{generationRate:-10},hasApiKey:false,keyHint:""};
-let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,discoveryController=null,actionsSnapshot={actions:[],habits:[],habitCheckins:[]},actionsRequestSerial=0,feedbackItems=[],feedbackRequestSerial=0,exportManifest=null,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.4.0",releaseVersion="0.4.0",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
+let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,discoveryController=null,actionsSnapshot={actions:[],habits:[],habitCheckins:[]},actionsRequestSerial=0,feedbackItems=[],feedbackRequestSerial=0,exportManifest=null,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.4.0",releaseVersion="0.4.0",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
 let notificationsLoadState="idle",feedbackLoadState="idle",exportLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,activeThoughtRouteId="",activeRouteResult=null;
 let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeEditorTrigger=null,activeSpeechCaptureId="",activeSpeechSourceKey="",activeSpeechVoice="",activeSpeechPlaybackRate=1,activeSpeechAudio=null,activeSpeechObjectUrl="",activeSpeechAbortController=null;
 const keepsakeEditor={file:null,sourceDataUrl:"",sourceImage:null,sourceCanvas:null,maskCanvas:null,autoBase:null,history:[],mode:"keep",drawing:false,lastPoint:null,source:"manual",originalPath:"",cutoutPath:"",mediaDirty:false,renderFrame:0,segmentSerial:0,understandingSerial:0};
@@ -2595,12 +2595,39 @@ function renderAiCostPlan(syncRows=true){
   $("#ai-cost-plan-state").classList.toggle("over",Boolean(budget&&projected>budget));
   $("#ai-cost-updated-at").textContent=aiCostPlan.updatedAt?`参数更新于 ${formatDate(aiCostPlan.updatedAt)}`:"尚未保存";
 }
+function renderAiBudgetStatus(){
+  if(!aiBudgetStatus)return;
+  const day=aiBudgetStatus.day||{},month=aiBudgetStatus.month||{},dayUsed=Number(day.committedKnownCostCny||0),dayReserved=Number(day.reservedKnownCostCny||0),monthUsed=Number(month.committedKnownCostCny||0),monthReserved=Number(month.reservedKnownCostCny||0),unknownUsed=Number(day.committedUnknownCalls||0),unknownReserved=Number(day.reservedUnknownCalls||0);
+  $("#ai-budget-period").textContent=`${day.key||"今日"} UTC · ${month.key||"本月"}`;
+  $("#ai-budget-kpis").innerHTML=[
+    ["今日已知费用",`${formatCny(dayUsed+dayReserved)} / ${formatCny(day.effectiveKnownCostLimitCny||0)}`,`${formatCny(dayUsed)} 已结算 · ${formatCny(dayReserved)} 已预留`,day.blocked?.knownCost],
+    ["本月已知费用",`${formatCny(monthUsed+monthReserved)} / ${formatCny(month.effectiveKnownCostLimitCny||0)}`,`${formatCny(monthUsed)} 已结算 · ${formatCny(monthReserved)} 已预留`,month.blocked?.knownCost],
+    ["未知费用调用",`${unknownUsed+unknownReserved} / ${day.unknownCallLimit||0}`,`${unknownUsed} 已发生 · ${unknownReserved} 已预留`,day.blocked?.unknownCost],
+    ["在途任务",String(aiBudgetStatus.activeReservations||0),`控制版本 ${aiBudgetStatus.controlVersion||1}`,false]
+  ].map(([label,value,note,blocked])=>`<article class="${blocked?"blocked":""}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(blocked?`${note} · 已阻断`:note)}</small></article>`).join("")
+}
+async function readAiBudgetStatus(){
+  const response=await apiClient.requestWithMetadata("/api/v1/owner/ai-budget");
+  aiBudgetStatus=response.data?.data||null;aiBudgetEtag=response.etag||"";
+  renderAiBudgetStatus();
+  return aiBudgetStatus
+}
+async function submitAiBudgetCommand(command){
+  if(!aiBudgetEtag)await readAiBudgetStatus();
+  try{
+    const response=await apiClient.requestWithMetadata("/api/v1/owner/ai-budget",{method:"PATCH",headers:{"if-match":aiBudgetEtag},body:JSON.stringify(command)});
+    aiBudgetStatus=response.data?.data||null;aiBudgetEtag=response.etag||"";renderAiBudgetStatus();return aiBudgetStatus
+  }catch(error){
+    if(error.status===412){await readAiBudgetStatus();throw Object.assign(new Error("预算状态已被其他 Owner 更新，已重新读取。"),{code:error.code,status:error.status})}
+    throw error
+  }
+}
 async function loadAiCostPlan(){
   const serial=++aiCostRequestSerial,owner=currentUser?.id,session=sessionSerial,from=shiftLocalDateKey(currentLocalDate,-29),status=$("#ai-cost-status");status.textContent="正在读取成本方案与近 30 天账本…";
   try{
-    const [plan,statistics]=await Promise.all([request("/api/ai-cost-plan"),request(`/api/statistics?from=${encodeURIComponent(from)}&to=${encodeURIComponent(currentLocalDate)}`)]);
+    const [plan,statistics,budgetResponse]=await Promise.all([request("/api/ai-cost-plan"),request(`/api/statistics?from=${encodeURIComponent(from)}&to=${encodeURIComponent(currentLocalDate)}`),apiClient.requestWithMetadata("/api/v1/owner/ai-budget")]);
     if(serial!==aiCostRequestSerial||owner!==currentUser?.id||session!==sessionSerial)return;
-    aiCostPlan=plan;aiCostStatistics=statistics;renderAiCostPlan();status.textContent="";
+    aiCostPlan=plan;aiCostStatistics=statistics;aiBudgetStatus=budgetResponse.data?.data||null;aiBudgetEtag=budgetResponse.etag||"";renderAiBudgetStatus();renderAiCostPlan();status.textContent="";
   }catch(error){if(serial===aiCostRequestSerial)status.textContent=error.message}
 }
 function ownerSurfaceRoot(surface){
@@ -3187,7 +3214,7 @@ function openContextSource(button){
 function render(){renderDate();renderOnboarding();renderSliders();renderDailyRecords();renderHealthUploader();renderCaptures();renderJournals();renderThoughts();renderStateChart();renderChat();renderReview();renderBooks();renderKeepsakes();renderKeepsakeBatch();renderQuotes();renderHome();renderTagComposer();renderCaptureTagComposer();renderCaptureAudioDraft();renderCommentPanel();renderSettings();renderLocalTestSettings();renderNotifications();renderMine();renderAccountUsers();renderActionsWorkspace();renderFeedback();renderExport();renderPersonalContext();restoreView?.()}
 async function load(){
   const owner=currentUser?.id,session=sessionSerial;
-  journalDraftRestored=false;aiCostPlan=null;aiCostStatistics=null;resetJournalForm();
+  journalDraftRestored=false;aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";resetJournalForm();
   const [nextState,meta]=await Promise.all([
     request("/api/state"),
     request("/api/meta")
@@ -3223,7 +3250,7 @@ function clearPrivateSessionState(){
   closeImageViewer({restoreFocus:false});
   onboardingV2Controller.reset();
   resetState();routeDataReady=false;activeThoughtRouteId="";activeRouteResult=null;llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{generationRate:-10},hasApiKey:false,keyHint:""};
-  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationsLoadState="idle";actionsSnapshot={actions:[],habits:[],habitCheckins:[]};feedbackItems=[];feedbackLoadState="idle";exportManifest=null;exportLoadState="idle";personalContext=null;personalContextLoadState="idle";accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.4.0";homeMemoryKeys=[];homeMemoryByKey=new Map();closeHomeEditors({restoreFocus:false});resetOwnerSurfaces();invalidatePageLoads();draftTags=[];captureDraftTags=[];pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";
+  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationsLoadState="idle";actionsSnapshot={actions:[],habits:[],habitCheckins:[]};feedbackItems=[];feedbackLoadState="idle";exportManifest=null;exportLoadState="idle";personalContext=null;personalContextLoadState="idle";accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.4.0";homeMemoryKeys=[];homeMemoryByKey=new Map();closeHomeEditors({restoreFocus:false});resetOwnerSurfaces();invalidatePageLoads();draftTags=[];captureDraftTags=[];pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";
   healthParseSerial+=1;latestHealthRequest=0;healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=[];healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]};for(const draft of Object.values(healthImageDrafts))Object.assign(draft,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0});
   bookParseSerial+=1;for(const url of Object.values(bookPreviewUrls))if(url)URL.revokeObjectURL(url);bookPreviewUrls={cover:"",recognition:""};pendingBookImages={cover:null,recognition:null};editingBookId="";activeBookId="";activeBookFeatureNoteId="";bookCreatorOpen=false;bookDetailCondensed=false;
   keepsakeEditor.segmentSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.history=[];
@@ -4184,6 +4211,18 @@ $("#view-architecture")?.addEventListener("click",event=>{
   const stageButton=event.target.closest("[data-architecture-stage]"),termButton=event.target.closest("[data-architecture-term]");
   if(stageButton){architectureStage=Math.max(0,Math.min((architectureSurface?.stages?.length||1)-1,Number(stageButton.dataset.architectureStage)||0));renderArchitecture();return}
   if(termButton){architectureTerm=termButton.dataset.architectureTerm;renderArchitectureTerm()}
+});
+$("#ai-budget-add-form").addEventListener("submit",async event=>{
+  event.preventDefault();const form=event.currentTarget,button=form.querySelector('[type="submit"]'),status=$("#ai-budget-status"),amountCny=Number($("#ai-budget-add-amount").value),reason=$("#ai-budget-add-reason").value.trim();button.disabled=true;status.textContent="正在追加临时额度…";
+  try{await submitAiBudgetCommand({command:"addTemporaryBudget",scope:$("#ai-budget-add-scope").value,amountCny,reason});form.reset();status.textContent="临时额度已追加。";showToast("全站预算已更新")}
+  catch(error){status.textContent=error.message}
+  finally{button.disabled=false}
+});
+$("#ai-budget-recover-form").addEventListener("submit",async event=>{
+  event.preventDefault();const form=event.currentTarget,button=form.querySelector('[type="submit"]'),status=$("#ai-budget-status"),reason=$("#ai-budget-recover-reason").value.trim();button.disabled=true;status.textContent="正在解除阻断…";
+  try{await submitAiBudgetCommand({command:"recover",scope:$("#ai-budget-recover-scope").value,reason});form.reset();status.textContent="当前周期阻断已解除。";showToast("预算阻断已解除")}
+  catch(error){status.textContent=error.message}
+  finally{button.disabled=false}
 });
 $("#ai-cost-form").addEventListener("input",()=>{
   if(!aiCostPlan||!aiCostStatistics)return;

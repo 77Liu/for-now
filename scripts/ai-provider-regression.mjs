@@ -101,6 +101,59 @@ assert.deepEqual(accounts.get("retry").entries.map(entry => [entry.status, entry
 assert.equal(new Set(accounts.get("retry").entries.map(entry => entry.callGroupId)).size, 1);
 assert.equal(new Set(accounts.get("retry").entries.map(entry => entry.callId)).size, 2);
 assert.equal(active, 0);
+
+const siteBudgetExecutions = [];
+const siteBudgetGenerate = createAiGenerator({
+  provider,
+  readSettings: async () => settings,
+  getContext: () => context.getStore(),
+  reserveAttempt: quota.reserveAttempt,
+  gate,
+  audit,
+  executeBudgetTask: async (details, execute) => {
+    const execution = { details, started: [], usage: [] };
+    siteBudgetExecutions.push(execution);
+    return execute({
+      runStage: async (stageId, operation) => {
+        execution.started.push(stageId);
+        return operation({ recordUsage: entry => execution.usage.push(entry) });
+      }
+    });
+  }
+});
+attempt = 0;
+responseFactory = () => jsonResponse(attempt++ ? "预算重试回答" : "", attempt === 1 ? "length" : "stop");
+assert.equal(await run("site-budget", () => siteBudgetGenerate("全链路预算", {
+  retryWithoutThinking: true,
+  maxTokens: 200
+})), "预算重试回答");
+assert.equal(siteBudgetExecutions.length, 1);
+assert.equal(siteBudgetExecutions[0].details.maxAttempts, 2);
+assert.equal(siteBudgetExecutions[0].details.maxOutputTokens, 200);
+assert.deepEqual(siteBudgetExecutions[0].started, ["deepseek-attempt-1", "deepseek-attempt-2"]);
+assert.equal(siteBudgetExecutions[0].usage.length, 2);
+assert.ok(siteBudgetExecutions[0].usage.every(entry => entry.costKnown && entry.costCny > 0));
+
+const rejectedBySiteBudget = Object.assign(new Error("site budget rejected"), {
+  statusCode: 429,
+  code: "AI_SITE_DAILY_COST_LIMIT"
+});
+const siteRejectedGenerate = createAiGenerator({
+  provider,
+  readSettings: async () => settings,
+  getContext: () => context.getStore(),
+  reserveAttempt: quota.reserveAttempt,
+  gate,
+  audit,
+  executeBudgetTask: async () => { throw rejectedBySiteBudget; }
+});
+const callsBeforeSiteRejection = transportCalls.length;
+await assert.rejects(
+  run("site-rejected", () => siteRejectedGenerate("不应调用供应商")),
+  error => error === rejectedBySiteBudget
+);
+assert.equal(transportCalls.length, callsBeforeSiteRejection);
+
 responseFactory = () => jsonResponse("", "stop");
 attempt = transportCalls.length;
 await assert.rejects(run("once", () => generate("只调用一次")), { code: "EMPTY_DEEPSEEK_CONTENT" });

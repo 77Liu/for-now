@@ -97,6 +97,9 @@ try {
   const anonymousOwnerSurface = await jsonRequest(`${base}/now/api/owner/surfaces/architecture`);
   assert.equal(anonymousOwnerSurface.response.status, 401);
   assert.equal(anonymousOwnerSurface.body.code, "AUTH_REQUIRED");
+  const anonymousBudget = await jsonRequest(`${base}/now/api/v1/owner/ai-budget`);
+  assert.equal(anonymousBudget.response.status, 401);
+  assert.equal(anonymousBudget.body.error?.code || anonymousBudget.body.code, "AUTH_REQUIRED");
   assert.equal((await fetch(`${base}/now/api/admin/v1/snapshot`)).status, 401);
   assert.equal((await fetch(`${base}/now/api/admin/v1/snapshot`, {
     headers: { authorization: `Bearer ${platformToken}`, "x-forwarded-for": "203.0.113.4" }
@@ -148,6 +151,7 @@ try {
     ["GET", "/api/settings", null],
     ["POST", "/api/settings/test", { tier: "lite" }],
     ["GET", "/api/ai-cost-plan", null],
+    ["GET", "/api/v1/owner/ai-budget", null],
     ["GET", "/api/owner/surfaces/architecture", null],
     ["GET", "/api/owner/surfaces/commercialization", null],
     ["PATCH", "/api/commercialization", { assumptions: {} }],
@@ -159,7 +163,7 @@ try {
       ...(body ? { body: JSON.stringify(body) } : {})
     });
     assert.equal(denied.response.status, 403, `${method} ${pathname}`);
-    assert.equal(denied.body.code, "OWNER_REQUIRED");
+    assert.equal(denied.body.error?.code || denied.body.code, "OWNER_REQUIRED");
   }
   const userStatistics = await jsonRequest(`${base}/now/api/statistics`, { headers: { cookie: secondCookie } });
   assert.equal(userStatistics.response.status, 200);
@@ -184,6 +188,12 @@ try {
   assert.equal(ownerMeta.body.user.role, "owner");
   assert.ok(ownerMeta.body.capabilities.includes("architecture"));
   assert.equal(ownerMeta.body.governanceUrl, "/platform/");
+  const ownerBudget = await jsonRequest(`${base}/now/api/v1/owner/ai-budget`, { headers: { cookie: ownerCookie } });
+  assert.equal(ownerBudget.response.status, 200);
+  assert.match(ownerBudget.response.headers.get("etag") || "", /^"[1-9]\d*"$/);
+  assert.equal(ownerBudget.body.data.policy.siteDailyKnownCostCny, 100);
+  assert.equal(ownerBudget.body.data.policy.siteMonthlyKnownCostCny, 2000);
+  assert.equal(ownerBudget.body.data.user, undefined);
   const ownerArchitecture = await jsonRequest(`${base}/now/api/owner/surfaces/architecture`, { headers: { cookie: ownerCookie } });
   assert.equal(ownerArchitecture.response.status, 200);
   assert.equal(ownerArchitecture.body.surface, "architecture");

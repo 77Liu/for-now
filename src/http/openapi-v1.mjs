@@ -9,6 +9,7 @@ import { syncOpenApiFragment } from "./openapi/sync.mjs";
 import { personalContextOpenApiFragment } from "./openapi/personal-context.mjs";
 import { onboardingV2OpenApiFragment } from "./openapi/onboarding-v2.mjs";
 import { userModelOpenApiFragment } from "./openapi/user-model.mjs";
+import { aiBudgetOpenApiFragment } from "./openapi/ai-budget.mjs";
 
 export const openApiV1 = Object.freeze({
   openapi: "3.1.0",
@@ -32,7 +33,8 @@ export const openApiV1 = Object.freeze({
     ...syncOpenApiFragment.paths,
     ...personalContextOpenApiFragment.paths,
     ...onboardingV2OpenApiFragment.paths,
-    ...userModelOpenApiFragment.paths
+    ...userModelOpenApiFragment.paths,
+    ...aiBudgetOpenApiFragment.paths
   },
   components: {
     securitySchemes: {
@@ -53,7 +55,8 @@ export const openApiV1 = Object.freeze({
       ...syncOpenApiFragment.components.parameters,
       ...personalContextOpenApiFragment.components.parameters,
       ...onboardingV2OpenApiFragment.components.parameters,
-      ...userModelOpenApiFragment.components.parameters
+      ...userModelOpenApiFragment.components.parameters,
+      ...aiBudgetOpenApiFragment.components.parameters
     },
     schemas: {
       Meta: {
@@ -107,7 +110,8 @@ export const openApiV1 = Object.freeze({
       ...syncOpenApiFragment.components.schemas,
       ...personalContextOpenApiFragment.components.schemas,
       ...onboardingV2OpenApiFragment.components.schemas,
-      ...userModelOpenApiFragment.components.schemas
+      ...userModelOpenApiFragment.components.schemas,
+      ...aiBudgetOpenApiFragment.components.schemas
     },
     responses: {
       BadRequest: { description: "请求无效", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } },

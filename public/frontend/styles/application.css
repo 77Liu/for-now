@@ -1165,6 +1165,19 @@ body.auth-locked>.sidebar,body.auth-locked>main{visibility:hidden}
 .ai-cost-header-status span.over{border-color:#e2c7c4;background:#fbefee;color:#985651}
 .ai-cost-header-status small{color:var(--muted);font-size:.68rem}
 #ai-cost-status{margin:-15px 0 16px}
+.ai-budget-guard{margin:0 0 22px;padding:18px 0;border-top:1px solid var(--view-line);border-bottom:1px solid var(--view-line)}
+.ai-budget-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:16px;border-top:1px solid var(--view-line);border-left:1px solid var(--view-line)}
+.ai-budget-kpis article{min-width:0;padding:13px;border-right:1px solid var(--view-line);border-bottom:1px solid var(--view-line);background:rgba(255,255,255,.62)}
+.ai-budget-kpis span,.ai-budget-kpis small{display:block;color:var(--muted);font-size:.66rem}
+.ai-budget-kpis strong{display:block;overflow:hidden;margin:8px 0 5px;color:var(--view-accent-strong);font-size:1.06rem;font-variant-numeric:tabular-nums;text-overflow:ellipsis;white-space:nowrap}
+.ai-budget-kpis article.blocked strong{color:#985651}
+.ai-budget-actions{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:14px}
+.ai-budget-actions form{display:grid;grid-template-columns:auto 110px minmax(140px,1fr) auto;gap:9px;align-items:end}
+.ai-budget-actions form+form{grid-template-columns:150px minmax(140px,1fr) auto;padding-left:14px;border-left:1px solid var(--view-line)}
+.ai-budget-actions label{display:grid;gap:5px;color:var(--muted);font-size:.66rem;font-weight:750}
+.ai-budget-actions input,.ai-budget-actions select{width:100%;min-width:0;height:39px;padding:7px 8px;border:1px solid var(--view-line);border-radius:7px;background:#fff}
+.ai-budget-actions button{min-height:39px;white-space:nowrap}
+#ai-budget-status{margin:12px 0 0}
 .ai-cost-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:12px;align-items:end;padding:18px;border-top:1px solid var(--view-line);border-bottom:1px solid var(--view-line);background:rgba(255,255,255,.45)}
 .ai-cost-controls>label{display:grid;gap:6px;color:var(--muted);font-size:.68rem;font-weight:750}
 .ai-cost-controls input{width:100%;min-width:0;height:39px;padding:8px 9px;border:1px solid var(--view-line);border-radius:7px;background:#fff;font-variant-numeric:tabular-nums}
@@ -1219,6 +1232,9 @@ body.auth-locked>.sidebar,body.auth-locked>main{visibility:hidden}
 .ai-cost-observed-scenes>p{color:var(--muted);font-size:.72rem}
 .ai-cost-pricing{margin-bottom:42px}
 @media(max-width:900px){
+  .ai-budget-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .ai-budget-actions{grid-template-columns:1fr}
+  .ai-budget-actions form+form{padding-left:0;padding-top:14px;border-top:1px solid var(--view-line);border-left:0}
   .ai-cost-controls{grid-template-columns:repeat(2,minmax(0,1fr))}
   .ai-cost-actions{align-self:end}
   .ai-cost-analysis-grid{grid-template-columns:1fr}
@@ -1226,6 +1242,8 @@ body.auth-locked>.sidebar,body.auth-locked>main{visibility:hidden}
 @media(max-width:680px){
   .ai-cost-header{display:grid}
   .ai-cost-header-status{justify-items:start}
+  .ai-budget-kpis{grid-template-columns:1fr}
+  .ai-budget-actions form,.ai-budget-actions form+form{grid-template-columns:1fr}
   .ai-cost-controls{grid-template-columns:1fr;padding:14px}
   .ai-cost-actions button{flex:1}
   .ai-cost-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}

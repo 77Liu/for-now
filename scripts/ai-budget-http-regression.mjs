@@ -256,7 +256,7 @@ assert.deepEqual(
   aiBudgetComponents.schemas.AiBudgetRecoverCommand.properties.command,
   { const: "recover" }
 );
-assert.equal(openApiV1.paths["/owner/ai-budget"], undefined);
+assert.deepEqual(openApiV1.paths["/owner/ai-budget"], aiBudgetPaths["/owner/ai-budget"]);
 
 const assembled = {
   ...openApiV1,

@@ -24,6 +24,18 @@ fetchHandler = async (url, options) => {
 assert.deepEqual(await client.request("/api/state"), { captures: [] });
 assert.equal(client.appUrl("/attachments/cover.png"), "/now/attachments/cover.png");
 assert.equal(client.appUrl("https://example.com/x"), "https://example.com/x");
+fetchHandler = async (url, options) => {
+  assert.equal(url, "/now/api/v1/owner/ai-budget");
+  assert.equal(options.signal.aborted, false);
+  return Response.json({ data: { controlVersion: 3 }, error: null, meta: { traceId: "budget-trace" } }, {
+    headers: { etag: "\"3\"", "x-request-id": "budget-trace" }
+  });
+};
+assert.deepEqual(await client.requestWithMetadata("/api/v1/owner/ai-budget"), {
+  data: { data: { controlVersion: 3 }, error: null, meta: { traceId: "budget-trace" } },
+  etag: "\"3\"",
+  requestId: "budget-trace"
+});
 let nativeUrl = "";
 const nativeClient = createApiClient({
   baseUrl: "capacitor://localhost/app.js",

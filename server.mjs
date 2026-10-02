@@ -42,7 +42,7 @@ import {
 import {
   defaultLlmSettings, normalizeLlmSettings, createLlmSettingsService, normalizeAiUsage,
   createAiUsageService, createAiAudit, createAiCostService, createAiGenerator, usageEntryFromAudit,
-  systemPrompt
+  AI_BUDGET_POLICY, createAiBudgetService, systemPrompt
 } from "./src/modules/ai/index.mjs";
 import { createDeepSeekTransport, createAliyunSegmentationTransport, createVolcengineSpeechTransport, createVolcengineVisionTransport } from "./src/infrastructure/ai-providers/index.mjs";
 import { loadPromptCatalog } from "./src/infrastructure/prompt-catalog/index.mjs";
@@ -59,16 +59,16 @@ import { createRateGate } from "./src/shared/concurrency/index.mjs";
 import { installPromptCatalog, promptText, renderPrompt } from "./src/shared/prompts/index.mjs";
 import { localDateKey, shiftDateKey, strictDateKey, localDateTimeOn, eventTimeFields } from "./src/shared/time/index.mjs";
 import { buildAdminSnapshot } from "./admin-snapshot.mjs";
-import { createAnnotationCommands, createAiTaskTargets, createBackgroundAi, createTrashMutations, createTrashCommands, createAttachmentCleanup, createSpeechCache, createKeepsakeMediaWorkflows, createThoughtWorkflows, createCaptureJournalWorkflows, createLibraryWorkflows, createReviewChatWorkflows, createUserModelExtractionService, personalContextProjection, userModelEvidenceCurrent } from "./src/app/index.mjs";
+import { createAnnotationCommands, createAiBudgetRuntime, createAiTaskTargets, createBackgroundAi, createTrashMutations, createTrashCommands, createAttachmentCleanup, createSpeechCache, createKeepsakeMediaWorkflows, createThoughtWorkflows, createCaptureJournalWorkflows, createLibraryWorkflows, createReviewChatWorkflows, createUserModelExtractionService, deepSeekBudgetStages, personalContextProjection, userModelEvidenceCurrent } from "./src/app/index.mjs";
 import {
   createSpeechCacheSweep,
   SPEECH_CACHE_SWEEP_INTERVAL_MS,
   SPEECH_CACHE_SWEEP_STARTUP_DELAY_MS
 } from "./src/app/index.mjs";
 import { safeText, recordVersion, safeIso, nullableNumber, numberOrFallback as commercialNumber } from "./src/shared/validation/index.mjs";
-import { createAuthHttp, createJsonHttp, createTaskHttp, createAnnotationHttp, createTrashHttp, createAttachmentHttp, createAiSettingsHttp, createAiCostHttp, createKeepsakeHttp, createOnboardingHttp, createOnboardingV2Http, createUserModelHttp, createThoughtHttp, createCheckinHttp, createHealthRecordHttp, createDiscoveryHttp, createExportHttp, createActionsHttp, createFeedbackHttp, createCaptureJournalHttp, createLibraryHttp, createReviewsChatHttp, createContentAttachmentsHttp, createSpeechHttp, createVisionHttp, createSyncHttp, createPersonalContextHttp, createRequestHandler, createModelResponseHttp, createApiV1Http, openApiV1 } from "./src/http/index.mjs";
+import { createAuthHttp, createJsonHttp, createTaskHttp, createAnnotationHttp, createTrashHttp, createAttachmentHttp, createAiSettingsHttp, createAiCostHttp, createAiBudgetHttp, createKeepsakeHttp, createOnboardingHttp, createOnboardingV2Http, createUserModelHttp, createThoughtHttp, createCheckinHttp, createHealthRecordHttp, createDiscoveryHttp, createExportHttp, createActionsHttp, createFeedbackHttp, createCaptureJournalHttp, createLibraryHttp, createReviewsChatHttp, createContentAttachmentsHttp, createSpeechHttp, createVisionHttp, createSyncHttp, createPersonalContextHttp, createRequestHandler, createModelResponseHttp, createApiV1Http, openApiV1 } from "./src/http/index.mjs";
 import { createHealthImageConfig, createDailyRecordRecords, normalizeHealthImage } from "./src/modules/health/index.mjs";
-import { createAccountDocumentRepository, createAuthRepository, createJsonStoreRepository, createPostgresRuntime, checkPersistenceMarker, markPostgresDirectory, hasJsonData, METADATA_FIELD, removeIdempotencyResponse } from "./src/shared/persistence/index.mjs";
+import { createAccountDocumentRepository, createAiBudgetRepository, createAuthRepository, createJsonStoreRepository, createPostgresRuntime, checkPersistenceMarker, markPostgresDirectory, hasJsonData, METADATA_FIELD, removeIdempotencyResponse } from "./src/shared/persistence/index.mjs";
 import { isApplicationRoutePath } from "./public/frontend/pages/index.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -981,6 +981,32 @@ if (postgresRuntime) {
   await postgresRuntime.claimApplication(() => process.exit(1));
   await markPostgresDirectory(DATA_DIR);
 }
+const aiBudgetRepository = createAiBudgetRepository({
+  runtime: postgresRuntime,
+  dataRoot: DATA_DIR
+});
+const aiBudgetService = createAiBudgetService({
+  repository: aiBudgetRepository,
+  policy: AI_BUDGET_POLICY
+});
+const aiBudgetRuntime = createAiBudgetRuntime({
+  budget: aiBudgetService,
+  onRecoveryError: (error, details) => logEvent("system", "ai.budget_recovery_failed", {
+    level: "error",
+    ...details,
+    error: errorMetadata(error)
+  })
+});
+const aiBudgetRecovery = await aiBudgetRuntime.recover();
+if (aiBudgetRecovery.scanned || aiBudgetRecovery.failures.length) {
+  await logEvent("system", "ai.budget_recovery_completed", {
+    level: aiBudgetRecovery.failures.length ? "error" : "info",
+    scanned: aiBudgetRecovery.scanned,
+    released: aiBudgetRecovery.released.length,
+    settled: aiBudgetRecovery.settled.length,
+    failed: aiBudgetRecovery.failures.length
+  });
+}
 const settingsRepository = createAccountDocumentRepository({
   runtime: postgresRuntime, name: "settings", getFile: () => storagePaths().llmSettingsFile,
   readDocument: readStoredJson, writeDocument: writeJsonAtomic,
@@ -1003,24 +1029,106 @@ const aiAudit = createAiAudit({
   append: (day, entry) => appendPrivateJsonLine(path.join(storagePaths().logsDir, `ai-audit-${day}.ndjson`), entry),
   updateUsage: updateAiUsage, logEvent
 });
-async function meteredProviderCall(details, invoke, summarize) {
-  let reservation;
+const providerBudgetStage = (details, id = "provider-call") => ({
+  id,
+  provider: safeText(details.provider, 80),
+  service: safeText(details.service, 100),
+  action: safeText(details.action, 120),
+  scene: safeText(details.scene, 120),
+  costKnown: details.costKnown === true,
+  ...(details.costKnown === true
+    ? { estimatedCostCny: Math.max(0, Number(details.estimatedCostCny ?? details.costCny) || 0) }
+    : { billingGap: safeText(details.costSource, 500) || "运行时计量单位或合同单价尚未完成映射" })
+});
+const conservativeDeepSeekStage = ({ id, scene, maxOutputTokens = 4000, model = "deepseek-v4-pro" }) => ({
+  ...deepSeekBudgetStages({
+    model,
+    scene,
+    maxInputTokens: 128_000,
+    maxOutputTokens,
+    maxAttempts: 1,
+    stageIdPrefix: id
+  })[0],
+  id
+});
+const currentBudgetAccountId = () => safeText(requestStorage.getStore()?.user?.id, 100) || "local";
+const logBudgetRejection = (details, error) => logEvent("system", "ai.budget_rejected", {
+  level: "warn",
+  provider: details.provider,
+  service: details.service,
+  action: details.action,
+  scene: details.scene,
+  error: errorMetadata(error)
+});
+async function meteredProviderCall(details, invoke, summarize, budgetContext = null) {
+  const {
+    budgeted = true,
+    estimatedCostCny = 0,
+    ...auditDetails
+  } = details;
+  const execute = async execution => {
+    const accountReservation = await reserveAiAttempt({ estimatedCostCny });
+    const releaseQuota = typeof accountReservation?.release === "function"
+      ? accountReservation.release
+      : accountReservation;
+    const commitQuota = typeof accountReservation?.commit === "function"
+      ? accountReservation.commit
+      : accountReservation;
+    let recordSiteUsage = () => false;
+    const reservation = {
+      retain: entry => {
+        accountReservation?.retain?.(entry);
+        recordSiteUsage(entry);
+      },
+      commit: typeof commitQuota === "function" ? () => commitQuota() : () => {}
+    };
+    const auditedCall = () => aiAudit.providerCall({ ...auditDetails, reservation }, invoke, summarize);
+    if (!budgeted) return auditedCall();
+    let stageStarted = false;
+    try {
+      return await execution.runStage(budgetContext?.stageId || "provider-call", async ({ recordUsage }) => {
+        recordSiteUsage = typeof recordUsage === "function" ? recordUsage : () => false;
+        stageStarted = true;
+        return auditedCall();
+      });
+    } catch (error) {
+      if (!stageStarted && typeof releaseQuota === "function") releaseQuota();
+      throw error;
+    }
+  };
   try {
-    reservation = await reserveAiAttempt({ estimatedCostCny: details.estimatedCostCny || 0 });
+    if (!budgeted) return await execute(null);
+    if (budgetContext?.execution) return await execute(budgetContext.execution);
+    const context = requestStorage.getStore() || {};
+    return await aiBudgetRuntime.executeTask({
+      accountId: safeText(context.user?.id, 100) || "local",
+      taskId: crypto.randomUUID(),
+      stages: [providerBudgetStage(details)]
+    }, execute);
   } catch (error) {
-    await logEvent("system", "ai.budget_rejected", {
-      level: "warn",
-      provider: details.provider,
-      service: details.service,
-      action: details.action,
-      scene: details.scene,
-      error: errorMetadata(error)
-    });
+    if (error.statusCode === 429 || /(?:BUDGET|LIMIT)/.test(error.code || "")) {
+      await logBudgetRejection(details, error);
+    }
     throw error;
   }
+}
+async function executeDeepSeekBudgetTask(details, execute) {
   try {
-    return await aiAudit.providerCall({ ...details, reservation }, invoke, summarize);
+    return await aiBudgetRuntime.executeTask({
+      accountId: details.accountId,
+      taskId: details.taskId,
+      stages: deepSeekBudgetStages({
+        model: details.model,
+        scene: details.scene,
+        maxInputTokens: details.maxInputTokens,
+        maxOutputTokens: details.maxOutputTokens,
+        maxAttempts: details.maxAttempts
+      })
+    }, execute);
   } catch (error) {
+    if (error.statusCode === 429 || /(?:BUDGET|LIMIT)/.test(error.code || "")) {
+      await logBudgetRejection(details, error);
+    }
     throw error;
   }
 }
@@ -1033,7 +1141,8 @@ const aiCosts = createAiCostService({ repository: costRepository, readSettings: 
 let readModelRuntimeSettings = readLlmSettings;
 const runDeepSeek = createAiGenerator({
   readSettings: () => readModelRuntimeSettings(), provider: createDeepSeekTransport({ endpoint: DEEPSEEK_API_URL }),
-  getContext: () => requestStorage.getStore(), reserveAttempt: reserveAiAttempt, gate: aiGate, audit: aiAudit
+  getContext: () => requestStorage.getStore(), reserveAttempt: reserveAiAttempt, gate: aiGate, audit: aiAudit,
+  executeBudgetTask: executeDeepSeekBudgetTask
 });
 const storeRepository = postgresRuntime ? postgresRuntime.createStoreRepository({
   normalize: normalizeStore,
@@ -1305,7 +1414,7 @@ const keepsakeMediaWorkflows = createKeepsakeMediaWorkflows({
 });
 const segmentKeepsakeImage = createKeepsakeSegmentation({
   saveImages: saveImageDataUrls, cleanupFiles: cleanupTemporaryFiles,
-  provider: createAliyunSegmentationTransport({ ...appConfig.segmentation, auditCall: aiAudit.providerCall }),
+  provider: createAliyunSegmentationTransport({ ...appConfig.segmentation, auditCall: meteredProviderCall }),
   gate: segmentationGate,
   onFailure: (error, callGroupId) => logEvent("system", "segmentation.failed", { level: "error", callGroupId, error: errorMetadata(error) })
 });
@@ -1746,32 +1855,35 @@ function normalizeParsedImage(kind, value = {}) {
   throw new Error("不支持这种截图类型");
 }
 
-async function recognizeVisualFiles(files) {
+async function recognizeVisualFiles(files, { budgetExecution = null, stageIds = [] } = {}) {
   if (!visionProvider.configured) return null;
   const results = [];
-  for (const file of files) {
+  for (const [index, file] of files.entries()) {
     const data = await fs.readFile(file);
-    results.push(await meteredProviderCall({
-      provider: "volcengine",
-      service: "vision",
-      scene: "visionOcr",
-      action: "OCRNormal",
-      request: { imageBytes: data.length },
-      modality: "vision",
-      imageCount: 1,
-      imageBytes: data.length,
-      unitType: "image",
-      units: 1,
-      costKnown: false,
-      costSource: "Volcengine billing not configured"
-    }, async () => {
-      const release = await ocrGate.acquire();
-      try {
+    const release = await ocrGate.acquire();
+    try {
+      results.push(await meteredProviderCall({
+        provider: "volcengine",
+        service: "vision",
+        scene: "visionOcr",
+        action: "OCRNormal",
+        request: { imageBytes: data.length },
+        modality: "vision",
+        imageCount: 1,
+        imageBytes: data.length,
+        unitType: "image",
+        units: 1,
+        costKnown: false,
+        costSource: "Volcengine billing not configured"
+      }, async () => {
         return await visionProvider.recognizeText({ data });
-      } finally {
-        release();
-      }
-    }));
+      }, undefined, budgetExecution ? {
+        execution: budgetExecution,
+        stageId: stageIds[index]
+      } : null));
+    } finally {
+      release();
+    }
   }
   return results.map((result, index) => `<image index="${index + 1}">\n${result.text || "（未识别到文字）"}\n</image>`).join("\n");
 }
@@ -1792,24 +1904,54 @@ async function parseImageRequest(input, kind) {
     : await saveImageDataUrls(images, config.maxImages, { needsLocalFiles: true });
   if (attachmentPaths.length) uploaded.cleanupFiles = uploaded.files;
   try {
-    const referenceDate = /^\d{4}-\d{2}-\d{2}$/.test(input.referenceDate || "") ? input.referenceDate : today();
-    const dateContext = renderPrompt("health.image.referenceDate", { referenceDate });
-    const recognizedText = await recognizeVisualFiles(uploaded.files);
-    const raw = await runDeepSeek(
-      recognizedText
-        ? `${config.prompt}${dateContext}\n\n以下是火山 OCR 提取的原始文字，请只据此提取字段；无法确认的字段保持为空：\n${recognizedText}`
-        : `${config.prompt}${dateContext}`,
-      {
+    const ocrStageIds = visionProvider.configured
+      ? uploaded.files.map((_, index) => `ocr-${index + 1}`)
+      : [];
+    const modelStageId = "deepseek-extraction";
+    const stages = [
+      ...ocrStageIds.map(id => providerBudgetStage({
+        provider: "volcengine",
+        service: "vision",
+        scene: "visionOcr",
+        action: "OCRNormal",
+        costKnown: false,
+        costSource: "Volcengine billing not configured"
+      }, id)),
+      conservativeDeepSeekStage({
+        id: modelStageId,
         scene: config.scene,
-        ...(recognizedText ? {} : { imagePaths: uploaded.files }),
-        json: true,
-        maxTokens: 4000
-      }
-    );
-    let parsed = {};
-    try { parsed = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || ""); }
-    catch { throw new Error("截图已读取，但模型返回格式无法解析，请重试或手动填写"); }
-    return { ...normalizeParsedImage(kind, parsed), attachmentPaths: uploaded.attachmentPaths };
+        model: visionProvider.configured ? "deepseek-v4-pro" : "deepseek-flash"
+      })
+    ];
+    return await aiBudgetRuntime.executeTask({
+      accountId: currentBudgetAccountId(),
+      taskId: `image-parse:${crypto.randomUUID()}`,
+      stages
+    }, async budgetExecution => {
+      const referenceDate = /^\d{4}-\d{2}-\d{2}$/.test(input.referenceDate || "") ? input.referenceDate : today();
+      const dateContext = renderPrompt("health.image.referenceDate", { referenceDate });
+      const recognizedText = await recognizeVisualFiles(uploaded.files, {
+        budgetExecution,
+        stageIds: ocrStageIds
+      });
+      const raw = await runDeepSeek(
+        recognizedText
+          ? `${config.prompt}${dateContext}\n\n以下是火山 OCR 提取的原始文字，请只据此提取字段；无法确认的字段保持为空：\n${recognizedText}`
+          : `${config.prompt}${dateContext}`,
+        {
+          scene: config.scene,
+          ...(recognizedText ? {} : { imagePaths: uploaded.files }),
+          json: true,
+          maxTokens: 4000,
+          budgetExecution,
+          budgetStageIds: [modelStageId]
+        }
+      );
+      let parsed = {};
+      try { parsed = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || ""); }
+      catch { throw new Error("截图已读取，但模型返回格式无法解析，请重试或手动填写"); }
+      return { ...normalizeParsedImage(kind, parsed), attachmentPaths: uploaded.attachmentPaths };
+    });
   } catch (error) {
     if (!attachmentPaths.length) await imageAttachments.discard(uploaded.attachmentPaths);
     throw error;
@@ -2034,53 +2176,78 @@ const contentAttachmentService = createContentAttachmentService({
 });
 async function transcribeCapture(work, { signal } = {}) {
   const audio = await imageAttachments.read(work.audio.attachmentPath);
-  const transcription = await meteredProviderCall({
-    provider: "volcengine",
-    service: "speech",
-    scene: "speechRecognition",
-    action: "streamingAsr",
-    request: { audioBytes: audio.length, mimeType: work.audio.mimeType },
-    modality: "audio",
-    unitType: "audioMillisecond",
-    units: work.audio.durationMs,
-    costKnown: false,
-    costSource: "Volcengine billing not configured"
-  }, async () => {
+  const asrStageId = "speech-recognition";
+  const polishStageId = "deepseek-polish";
+  return aiBudgetRuntime.executeTask({
+    accountId: currentBudgetAccountId(),
+    taskId: `capture-transcription:${work.capture.id}:${work.audio.attachmentPath}`,
+    stages: [
+      providerBudgetStage({
+        provider: "volcengine",
+        service: "speech",
+        scene: "speechRecognition",
+        action: "streamingAsr",
+        costKnown: false,
+        costSource: "Volcengine billing not configured"
+      }, asrStageId),
+      conservativeDeepSeekStage({
+        id: polishStageId,
+        scene: "capturePolish"
+      })
+    ]
+  }, async budgetExecution => {
     const release = await speechGate.acquire();
+    let transcription;
     try {
-      return await speechProvider.transcribe({
-        audio,
-        mimeType: work.audio.mimeType,
-        signal
-      });
+      transcription = await meteredProviderCall({
+        provider: "volcengine",
+        service: "speech",
+        scene: "speechRecognition",
+        action: "streamingAsr",
+        request: { audioBytes: audio.length, mimeType: work.audio.mimeType },
+        modality: "audio",
+        unitType: "audioMillisecond",
+        units: work.audio.durationMs,
+        costKnown: false,
+        costSource: "Volcengine billing not configured"
+      }, () => speechProvider.transcribe({
+          audio,
+          mimeType: work.audio.mimeType,
+          signal
+        }), undefined, {
+          execution: budgetExecution,
+          stageId: asrStageId
+        });
     } finally {
       release();
     }
+    let polishedText = "", polishErrorCode = "";
+    try {
+      polishedText = await runDeepSeek(
+        renderPrompt("capture.transcription.polish", { rawText: transcription.rawText }),
+        {
+          scene: "capturePolish",
+          maxTokens: 4000,
+          signal,
+          budgetExecution,
+          budgetStageIds: [polishStageId]
+        }
+      );
+    } catch (error) {
+      polishErrorCode = safeText(error.code, 120) || "POLISH_FAILED";
+      await logEvent("system", "capture.transcription_polish_failed", {
+        level: "warn",
+        captureId: work.capture.id,
+        error: errorMetadata(error)
+      });
+    }
+    return {
+      ...transcription,
+      polishedText,
+      polishErrorCode,
+      updatedAt: now()
+    };
   });
-  let polishedText = "", polishErrorCode = "";
-  try {
-    polishedText = await runDeepSeek(
-      renderPrompt("capture.transcription.polish", { rawText: transcription.rawText }),
-      {
-        scene: "capturePolish",
-        maxTokens: 4000,
-        signal
-      }
-    );
-  } catch (error) {
-    polishErrorCode = safeText(error.code, 120) || "POLISH_FAILED";
-    await logEvent("system", "capture.transcription_polish_failed", {
-      level: "warn",
-      captureId: work.capture.id,
-      error: errorMetadata(error)
-    });
-  }
-  return {
-    ...transcription,
-    polishedText,
-    polishErrorCode,
-    updatedAt: now()
-  };
 }
 const taskTargets = createAiTaskTargets({
   thoughts: createThoughtTaskTarget({ createId: () => crypto.randomUUID(), now, stripThoughtAnswerLead }),
@@ -2238,6 +2405,11 @@ const visionHttp = createVisionHttp({
 });
 const aiSettingsHttp = createAiSettingsHttp({ settings: llmSettingsService, generate: runDeepSeek, bodyJson, sendJson });
 const aiCostHttp = createAiCostHttp({ costs: aiCosts, bodyJson, sendJson });
+const aiBudgetHttp = createAiBudgetHttp({
+  budget: aiBudgetService,
+  bodyJson,
+  getActorId: () => currentBudgetAccountId()
+});
 const onboardingHttp = createOnboardingHttp({
   onboarding: createOnboardingService({
     repository: { update: mutate => updateStore(store => { store.onboarding = mutate(store.onboarding); return store.onboarding; }) },
@@ -2453,18 +2625,47 @@ const libraryWorkflows = createLibraryWorkflows({
   discardAttachments: paths => imageAttachments.discard(paths),
   cleanupTemporaryFiles,
   recognizeBook: async files => {
-    const recognizedText = await recognizeVisualFiles(files);
-    return runDeepSeek(
-      recognizedText
-        ? `${IMAGE_PARSE_CONFIG.book.prompt}\n\n以下是火山 OCR 提取的原始文字，请只据此提取字段；无法确认的字段保持为空：\n${recognizedText}`
-        : IMAGE_PARSE_CONFIG.book.prompt,
-      {
-        scene: IMAGE_PARSE_CONFIG.book.scene,
-        ...(recognizedText ? {} : { imagePaths: files }),
-        json: true,
-        maxTokens: 4000
-      }
-    );
+    const ocrStageIds = visionProvider.configured
+      ? files.map((_, index) => `ocr-${index + 1}`)
+      : [];
+    const modelStageId = "deepseek-book";
+    return aiBudgetRuntime.executeTask({
+      accountId: currentBudgetAccountId(),
+      taskId: `book-recognition:${crypto.randomUUID()}`,
+      stages: [
+        ...ocrStageIds.map(id => providerBudgetStage({
+          provider: "volcengine",
+          service: "vision",
+          scene: "visionOcr",
+          action: "OCRNormal",
+          costKnown: false,
+          costSource: "Volcengine billing not configured"
+        }, id)),
+        conservativeDeepSeekStage({
+          id: modelStageId,
+          scene: IMAGE_PARSE_CONFIG.book.scene,
+          model: visionProvider.configured ? "deepseek-v4-pro" : "deepseek-flash"
+        })
+      ]
+    }, async budgetExecution => {
+      const recognizedText = await recognizeVisualFiles(files, {
+        budgetExecution,
+        stageIds: ocrStageIds
+      });
+      return runDeepSeek(
+        recognizedText
+          ? `${IMAGE_PARSE_CONFIG.book.prompt}\n\n以下是火山 OCR 提取的原始文字，请只据此提取字段；无法确认的字段保持为空：\n${recognizedText}`
+          : IMAGE_PARSE_CONFIG.book.prompt,
+        {
+          scene: IMAGE_PARSE_CONFIG.book.scene,
+          ...(recognizedText ? {} : { imagePaths: files }),
+          json: true,
+          maxTokens: 4000,
+          budgetExecution,
+          budgetStageIds: [modelStageId]
+        }
+      );
+    });
   },
   moveCollectionItemToTrash,
   moveNestedItemToTrash
@@ -2526,6 +2727,7 @@ const personalContextHttp = createPersonalContextHttp({
 });
 apiV1.register("sync", syncHttp.handleV1);
 apiV1.register("personal-context", personalContextHttp.handleV1);
+apiV1.register("owner-ai-budget", aiBudgetHttp.handleV1);
 apiV1.register("onboarding-v2", onboardingV2Http.handleV1);
 apiV1.register("user-model", userModelHttp.handleV1);
 apiV1.register("thoughts", thoughtHttp.handleV1);
@@ -2670,6 +2872,7 @@ const ownerCapabilityFor = url => {
   if (url.pathname === "/api/owner/surfaces/architecture") return "architecture";
   if (["/api/owner/surfaces/commercialization", "/api/owner/surfaces/commercialization/preview"].includes(url.pathname)) return "commercialization";
   if (url.pathname === "/api/ai-cost-plan") return "ai-costs";
+  if (url.pathname === "/api/v1/owner/ai-budget") return "ai-costs";
   if (url.pathname === "/api/commercialization") return "commercialization";
   if (url.pathname === "/api/settings" || url.pathname === "/api/settings/test") return "ai-configuration";
   if (url.pathname === "/api/vision/status") return "ai-configuration";

@@ -925,6 +925,28 @@
         <div class="ai-cost-header-status"><span id="ai-cost-plan-state">模拟方案</span><small id="ai-cost-updated-at">尚未保存</small></div>
       </header>
 
+      <section class="ai-budget-guard" aria-labelledby="ai-budget-title">
+        <div class="ai-cost-section-heading">
+          <div><p class="eyebrow">实际护栏</p><h2 id="ai-budget-title">全站预算</h2></div>
+          <span id="ai-budget-period">正在读取</span>
+        </div>
+        <div class="ai-budget-kpis" id="ai-budget-kpis"></div>
+        <div class="ai-budget-actions">
+          <form id="ai-budget-add-form">
+            <label><span>临时追加</span><select id="ai-budget-add-scope"><option value="daily">今日额度</option><option value="monthly">本月额度</option></select></label>
+            <label><span>金额（元）</span><input id="ai-budget-add-amount" type="number" min=".01" step=".01" required></label>
+            <label class="ai-budget-reason"><span>原因</span><input id="ai-budget-add-reason" maxlength="500" required></label>
+            <button class="primary-button" type="submit">追加</button>
+          </form>
+          <form id="ai-budget-recover-form">
+            <label><span>解除阻断</span><select id="ai-budget-recover-scope"><option value="dailyKnownCost">今日已知费用</option><option value="monthlyKnownCost">本月已知费用</option><option value="dailyUnknownCost">今日未知费用</option></select></label>
+            <label class="ai-budget-reason"><span>原因</span><input id="ai-budget-recover-reason" maxlength="500" required></label>
+            <button class="quiet-button" type="submit">恢复</button>
+          </form>
+        </div>
+        <p class="status" id="ai-budget-status" role="status" aria-live="polite"></p>
+      </section>
+
       <p class="status" id="ai-cost-status" role="status" aria-live="polite"></p>
 
       <form id="ai-cost-form">

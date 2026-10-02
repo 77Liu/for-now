@@ -566,6 +566,15 @@ const mockFetch = `
     version: 1, updatedAt: "", monthlyBudgetCny: 30, contingencyPct: 15, cnyPerUsd: 7.2,
     scenarios: aiCostScenes.map((scene,index)=>({scene,enabled:true,model:aiCostProScenes.has(scene)?"deepseek-v4-pro":"deepseek-flash",pricingPeriod:"peak",callsPerMonth:index===2?20:8,avgInputTokens:index===2?24000:8000,cacheHitPct:20,avgReasoningTokens:aiCostProScenes.has(scene)?3000:500,avgAnswerTokens:aiCostProScenes.has(scene)?1500:400}))
   };
+  window.__aiBudgetCommands = 0;
+  window.__aiBudget = {
+    controlVersion: 1,
+    policy: { userDailyKnownCostCny: 14.4, userDailyCalls: 200, siteDailyKnownCostCny: 100, siteMonthlyKnownCostCny: 2000, siteDailyUnknownCalls: 10, dailyAdditionMaxCny: 100, monthlyAdditionMaxCny: 2000, alertThresholds: [30,50,60,70,80,90,95,99,100] },
+    day: { key: "2026-09-28", committedKnownCostCny: 12.5, reservedKnownCostCny: 2.5, effectiveKnownCostLimitCny: 100, committedUnknownCalls: 3, reservedUnknownCalls: 1, unknownCallLimit: 10, blocked: { knownCost: false, unknownCost: true } },
+    month: { key: "2026-09", committedKnownCostCny: 320, reservedKnownCostCny: 2.5, effectiveKnownCostLimitCny: 2000, blocked: { knownCost: false } },
+    activeReservations: 2,
+    eventCount: 9
+  };
   const commercialValidationBase = { participants: 5, rewardPerParticipantCny: 100, testDays: 14, tasksPerParticipant: 3, validSuggestionsPerParticipant: 2, interviewMinutesPerParticipant: 45, developmentHoursTotal: 12, aiCallsPerParticipant: 20, imageCallsPerParticipant: 2 };
   const commercialSubscriptionBase = { dailyActiveUsers: 5, monthlyActiveUsers: 20, payingUsers: 5, newPaidUsersPerMonth: 2, simulationMonths: 6, monthlyPriceCny: 39, paymentFeePct: 1, refundPct: 3, fixedMonthlyCostCny: 100, operationsHoursPerMonth: 6, developmentHoursPerMonth: 20, acquisitionCostPerNewUserCny: 30, monthlyChurnPct: 8 };
   const commercialDeliveryBase = { ordersPerMonth: 4, serviceFeePerOrderCny: 299, byokPct: 60, hostedPrepaidPerOrderCny: 100, maintenanceMarkupPct: 20, prepaidUtilizationPct: 70, deliveryHoursPerOrder: 2, supportHoursPerOrder: .5, developmentHoursPerMonth: 8, paymentFeePct: 1, refundPct: 3, acquisitionCostPerOrderCny: 20 };
@@ -745,6 +754,24 @@ const mockFetch = `
       const complete=()=>{window.__accountUser={id:"user-2",username:"second",role:window.__nextLoginRole,createdAt:"2026-09-27T00:00:00.000Z"};return json({authenticated:true,authRequired:true,user:window.__accountUser})};
       if(window.__delayLogin)return new Promise(resolve=>{window.__releaseLogin=()=>{window.__delayLogin=false;resolve(complete())}});
       return complete();
+    }
+    if (url === "/api/v1/owner/ai-budget") {
+      const response=()=>Promise.resolve(new Response(JSON.stringify({data:window.__aiBudget,error:null,meta:{traceId:"ui-budget"}}),{status:200,headers:{"content-type":"application/json",etag:'"'+window.__aiBudget.controlVersion+'"'}}));
+      if(!init.method||init.method==="GET")return response();
+      if(init.method==="PATCH"){
+        const expected=Number(String((init.headers||{})["if-match"]||"").replaceAll('"',""));
+        if(expected!==window.__aiBudget.controlVersion)return Promise.resolve(new Response(JSON.stringify({data:null,error:{message:"预算状态已更新",code:"PRECONDITION_FAILED",details:{currentVersion:window.__aiBudget.controlVersion}},meta:{traceId:"ui-budget"}}),{status:412,headers:{"content-type":"application/json"}}));
+        const payload=JSON.parse(init.body||"{}");
+        if(payload.command==="addTemporaryBudget"){
+          const target=payload.scope==="monthly"?window.__aiBudget.month:window.__aiBudget.day;
+          target.effectiveKnownCostLimitCny+=Number(payload.amountCny)||0
+        }else if(payload.command==="recover"){
+          if(payload.scope==="dailyKnownCost")window.__aiBudget.day.blocked.knownCost=false;
+          else if(payload.scope==="dailyUnknownCost")window.__aiBudget.day.blocked.unknownCost=false;
+          else window.__aiBudget.month.blocked.knownCost=false
+        }
+        window.__aiBudget.controlVersion+=1;window.__aiBudget.eventCount+=1;window.__aiBudgetCommands+=1;return response()
+      }
     }
     if (url === "/api/ai-cost-plan" && (!init.method || init.method === "GET")) return json(window.__aiCostPlan);
     if (url === "/api/ai-cost-plan" && init.method === "PATCH") {
@@ -2655,7 +2682,7 @@ try {
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
   const stateRequestsBeforeAiCost=await evaluate(`window.__stateRequests`);
   await evaluate(`document.querySelector('[data-view="ai-cost"]').click();true`);
-  assert.equal(await waitUntil(`document.querySelectorAll("#ai-cost-scenario-rows tr").length===15&&document.querySelectorAll("#ai-cost-kpis article").length===4`),true);
+  assert.equal(await waitUntil(`document.querySelectorAll("#ai-cost-scenario-rows tr").length===15&&document.querySelectorAll("#ai-cost-kpis article").length===4&&document.querySelectorAll("#ai-budget-kpis article").length===4`),true);
   assert.equal(await evaluate(`window.__stateRequests`),stateRequestsBeforeAiCost);
   const aiCostInitial=await evaluate(`({
     active:document.querySelector("#view-ai-cost").classList.contains("active"),
@@ -2665,9 +2692,16 @@ try {
     projectedIsCny:document.querySelector("#ai-cost-kpis strong").textContent.startsWith("¥"),
     p90:[...document.querySelectorAll("#ai-cost-observed dt")].find(item=>item.textContent==="P90 单次")?.nextElementSibling.textContent,
     pendingCost:document.querySelector("#ai-cost-observed").textContent.includes("4 次费用待账单"),
+    dailyBudget:document.querySelector("#ai-budget-kpis article strong").textContent,
+    unknownBlocked:document.querySelector("#ai-budget-kpis article:nth-child(3)").classList.contains("blocked"),
     noOverflow:document.documentElement.scrollWidth<=window.innerWidth
   })`);
-  assert.deepEqual(aiCostInitial,{active:true,rows:15,recommendations:5,currentModel:"Pro · Ultra",projectedIsCny:true,p90:"¥0.0410",pendingCost:true,noOverflow:true});
+  assert.deepEqual(aiCostInitial,{active:true,rows:15,recommendations:5,currentModel:"Pro · Ultra",projectedIsCny:true,p90:"¥0.0410",pendingCost:true,dailyBudget:"¥15.0 / ¥100",unknownBlocked:true,noOverflow:true});
+  await evaluate(`(()=>{document.querySelector("#ai-budget-add-amount").value="10";document.querySelector("#ai-budget-add-reason").value="UI 临时窗口";document.querySelector("#ai-budget-add-form").requestSubmit()})();true`);
+  assert.equal(await waitUntil(`window.__aiBudgetCommands===1&&document.querySelector("#ai-budget-status").textContent.includes("已追加")`),true);
+  assert.equal(await evaluate(`document.querySelector("#ai-budget-kpis article strong").textContent`),"¥15.0 / ¥110");
+  await evaluate(`(()=>{document.querySelector("#ai-budget-recover-scope").value="dailyUnknownCost";document.querySelector("#ai-budget-recover-reason").value="UI 恢复验证";document.querySelector("#ai-budget-recover-form").requestSubmit()})();true`);
+  assert.equal(await waitUntil(`window.__aiBudgetCommands===2&&!document.querySelector("#ai-budget-kpis article:nth-child(3)").classList.contains("blocked")`),true);
   const thoughtAnswerCostBefore=await evaluate(`document.querySelector('[data-ai-cost-row="thoughtAnswer"] [data-ai-cost-row-total]').textContent`);
   await evaluate(`(()=>{const field=document.querySelector('[data-ai-cost-row="thoughtAnswer"] [data-ai-cost-field="callsPerMonth"]');field.value="40";field.dispatchEvent(new Event("input",{bubbles:true}))})();true`);
   assert.notEqual(await evaluate(`document.querySelector('[data-ai-cost-row="thoughtAnswer"] [data-ai-cost-row-total]').textContent`),thoughtAnswerCostBefore);
@@ -2683,7 +2717,7 @@ try {
   await fs.writeFile("/tmp/growth-ai-cost-desktop.png",Buffer.from(aiCostDesktopScreenshot.data,"base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:1,mobile:true});
   await sleep(120);
-  assert.equal(await evaluate(`document.documentElement.scrollWidth<=window.innerWidth&&getComputedStyle(document.querySelector(".ai-cost-kpis")).gridTemplateColumns.split(" ").length===2`),true);
+  assert.equal(await evaluate(`document.documentElement.scrollWidth<=window.innerWidth&&getComputedStyle(document.querySelector(".ai-cost-kpis")).gridTemplateColumns.split(" ").length===2&&getComputedStyle(document.querySelector(".ai-budget-kpis")).gridTemplateColumns.split(" ").length===1`),true);
   const aiCostMobileScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
   await fs.writeFile("/tmp/growth-ai-cost-mobile.png",Buffer.from(aiCostMobileScreenshot.data,"base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });

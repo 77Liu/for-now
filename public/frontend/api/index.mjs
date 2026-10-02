@@ -63,6 +63,18 @@ export function createApiClient({ baseUrl, session, apiOrigin = "", onAuthRequir
       if (!(allowUnauthorized && response.status === 401)) check(response, result, authGate, fallback);
       return result;
     },
+    async requestWithMetadata(url, options = {}, { authGate = true, fallback = "操作失败" } = {}) {
+      const ticket = session.capture();
+      const response = await start(url, { ...options, headers: { "content-type": "application/json", ...options.headers } }, ticket);
+      const result = await response.json();
+      session.assertCurrent(ticket);
+      check(response, result, authGate, fallback);
+      return {
+        data: result,
+        etag: response.headers.get("etag") || "",
+        requestId: response.headers.get("x-request-id") || ""
+      };
+    },
     async readBlob(url) {
       const ticket = session.capture(), response = await start(url, {}, ticket);
       if (!response.ok) {

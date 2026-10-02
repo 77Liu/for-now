@@ -85,9 +85,12 @@
 | `scripts/g2-integration-regression.mjs` | G2 OpenAPI、真实 HTTP、账户隔离、ETag、级联回收恢复、导出覆盖与隐私默认值 |
 | `scripts/checkin-health-regression.mjs` | 状态/健康记录载荷、时间和版本、原始元数据、CRUD/HTTP、仓储账户隔离、回收委派及提交失败 |
 | `scripts/ai-domain-regression.mjs` | 旧模型设置、并发账户设置/成本独立保存、整份替换兼容、自然日与统计、写前归一化失败、备份权限、价格快照/未知用量、额度释放/隔离、账本与审计独立故障；运行适配回滚用接口桩，真实 PG 另验 |
-| `scripts/ai-provider-regression.mjs` | DeepSeek JSON/SSE、逐字节 UTF-8/CRLF 拆包、断流/过滤/截断/供应商错误的部分输出、空正文重试次数与额度、容量失败释放、超时、并发账户、图片 Flash 参数与私有摘要 |
+| `scripts/ai-budget-runtime-regression.mjs` | 站点预算任务预留、阶段启动、实际费用结算、未启动释放、双尝试计划、结算失败保护和启动恢复 |
+| `scripts/ai-budget-control-version-regression.mjs` | Owner 控制版本、普通调用不漂移、If-Match 原子校验、临时追加/恢复递增和并发陈旧写拒绝 |
+| `scripts/ai-budget-http-regression.mjs` | Owner 预算安全聚合投影、ETag/no-store、服务端 actor 注入、命令错误投影与 OpenAPI 组合 |
+| `scripts/ai-provider-regression.mjs` | DeepSeek JSON/SSE、逐字节 UTF-8/CRLF 拆包、断流/过滤/截断/供应商错误的部分输出、空正文重试次数与账户/站点预算、预算拒绝零供应商 I/O、容量失败释放、超时、并发账户、图片 Flash 参数与私有摘要 |
 | `scripts/volcengine-provider-regression.mjs` | 火山 V4 签名、OCR/文档解析请求契约、TTS 参数/音频响应、长文本与录音文件任务，以及流式 ASR 二进制帧 |
-| `scripts/volcengine-server-regression.mjs` | 带鉴权的 TTS/视觉 HTTP 入口、私有附件上传、自动转写排队、ASR 原文与 DeepSeek 整理稿落盘 |
+| `scripts/volcengine-server-regression.mjs` | 带鉴权的 TTS/视觉 HTTP 入口、TTS 缓存零重复预算、OCR + 模型与 ASR + 润色整体预留、站点/账户拒绝零供应商 I/O、Owner 恢复和转写结果落盘 |
 | `scripts/capture-transcription-regression.mjs` | 捕念转写排队/执行/结果合并、失败投影及服务重启后的中断任务恢复 |
 | `scripts/segmentation-regression.mjs` | 阿里云 SDK 无重试、同步/异步结果、失败状态/轮询超时、PNG 下载大小/格式/超时、调用组及账户审计、审计失败不重放、限流/在途/上传失败释放、临时图片清理与异步绑定；均为本地替身 |
 | `scripts/keepsake-time-regression.mjs` | 小物载荷/旧记录/扩展保留、局部更新兼容、账户集合隔离与失败提交；UTC/上海/纽约、夏令时、本地日/时分合成、严格日期及旧发生日期解析 |
@@ -150,6 +153,11 @@
 | `scripts/exploration-regression.mjs` | P1-P3 探索页交互、移动布局、本地命名空间和零生产 API/第三方请求；独立运行，不属于生产候选 |
 
 `ui-regression.mjs` 默认自行启动临时静态服务器；只有验证指定部署实例时才传入 `APP_URL`。移动模拟基于 Chromium，不等同于真实 iOS WebKit、安装态 PWA、Android 真机或触觉验证。
+
+真机性能验收使用 `scripts/ios-device-performance.sh`。`build/test` 仅在北京时间
+01:00-08:00、候选工作树干净、非生产 HTTPS 隔离地址和影子账户齐全时运行；
+使用 Release + 专用测试编译条件和 Team `Y4C56M94J3`，保留 `.xcresult` 与
+不含 UDID 的设备/系统/Xcode/候选 SHA 元数据。
 
 探索页截图默认写入系统临时目录，避免普通回归污染 Git 工作区。只有确认需要更新视觉基准时，显式设置 `UPDATE_EXPLORATION_SCREENSHOTS=1`。
 

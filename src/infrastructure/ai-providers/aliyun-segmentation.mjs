@@ -40,20 +40,27 @@ export function createAliyunSegmentationTransport({
   auditCall = (_details, invoke) => invoke()
 } = {}) {
   let clients;
-  const trackedCall = (action, callGroupId, request, invoke, summarize, usage = {}) => auditCall({
-    provider: "aliyun",
-    service: "segmentation",
-    scene: "keepsakeSegmentation",
-    action,
-    callGroupId,
-    request,
-    modality: "vision",
-    unitType: "call",
-    units: 1,
-    costKnown: false,
-    costSource: "Aliyun billing not configured",
-    ...usage
-  }, invoke, summarize);
+  const trackedCall = (action, callGroupId, request, invoke, summarize, usage = {}) => {
+    const {
+      budgeted = action === "SegmentHDCommonImage",
+      ...usageDetails
+    } = usage;
+    return auditCall({
+      provider: "aliyun",
+      service: "segmentation",
+      scene: "keepsakeSegmentation",
+      action,
+      callGroupId,
+      request,
+      modality: "vision",
+      unitType: "call",
+      units: 1,
+      costKnown: false,
+      costSource: "Aliyun billing not configured",
+      budgeted,
+      ...usageDetails
+    }, invoke, summarize);
+  };
   function getClients() {
     if (clients) return clients;
     if (suppliedClients) return clients = suppliedClients();
@@ -139,7 +146,8 @@ export function createAliyunSegmentationTransport({
             imageDimensions: [{ width: image.width, height: image.height }],
             unitType: "image",
             costKnown: true,
-            costSource: "mock"
+            costSource: "mock",
+            budgeted: false
           }
         );
       }
