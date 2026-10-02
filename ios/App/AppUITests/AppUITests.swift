@@ -322,7 +322,7 @@ final class DevicePerformanceAcceptanceTests: XCTestCase {
 
     private func waitForPendingLatency(in webView: XCUIElement, timeout: TimeInterval) -> Double? {
         let metric = webView.descendants(matching: .any)
-            .matching(NSPredicate(format: "label BEGINSWITH %@", "提交等待 "))
+            .matching(NSPredicate(format: "label CONTAINS %@", "提交等待 "))
             .firstMatch
         guard metric.waitForExistence(timeout: timeout) else { return nil }
         let components = metric.label.split(separator: " ")
