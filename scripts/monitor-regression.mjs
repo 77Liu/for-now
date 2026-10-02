@@ -3,11 +3,19 @@ import { promises as fs } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { collectHealth, dailyAiUsage, runMonitor, sendFeishu, validateFeishuWebhook } from "./monitor-health.mjs";
+import {
+  collectHealth,
+  dailyAiUsage,
+  latestRuntimeMemorySample,
+  runMonitor,
+  sendFeishu,
+  validateFeishuWebhook
+} from "./monitor-health.mjs";
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "growth-monitor-"));
 const dataDir = path.join(root, "data"), logsDir = path.join(dataDir, "logs"), backupDir = path.join(root, "backups");
 const stateFile = path.join(root, "state", "monitor.json"), backupStamp = path.join(root, "backup-success");
+const MIB = 1024 * 1024;
 await Promise.all([
   fs.mkdir(logsDir, { recursive: true }),
   fs.mkdir(path.join(dataDir, "users"), { recursive: true }),
@@ -78,6 +86,8 @@ try {
     ALERT_AI_CONSECUTIVE_FAILURES: "5",
     AI_COST_CNY_PER_USD: "7.2",
     ALERT_DAILY_AI_COST_CNY: "36",
+    ALERT_RUNTIME_RSS_MIB: "400",
+    ALERT_RUNTIME_RSS_RECOVERY_MIB: "360",
     ALERT_REPEAT_MINUTES: "60"
   });
   assert.deepEqual(await dailyAiUsage(dataDir, now), {
@@ -115,7 +125,63 @@ try {
   await runMonitor();
   assert.equal(messages.length, 2);
   assert.match(messages[1].content.text, /已恢复/);
-  console.log("Monitor checks passed: service, disk, stale backup, consecutive AI failures, daily cost, Feishu signing, deduplication and recovery.");
+
+  const appendMemorySample = async (rssMiB, sampledAt) => {
+    const sample = {
+      sampledAt,
+      rss: rssMiB * MIB,
+      heapTotal: 100 * MIB,
+      heapUsed: 80 * MIB,
+      external: 10 * MIB,
+      arrayBuffers: 5 * MIB,
+      heapSpaces: [],
+      eventLoopDelay: { meanMs: 1, p50Ms: 1, p95Ms: 2, p99Ms: 3, maxMs: 4 },
+      activeHandles: { total: 2, categories: { server: 1, socket: 1 } },
+      path: "/PRIVATE/runtime",
+      body: "PRIVATE_USER_CONTENT"
+    };
+    await fs.appendFile(path.join(logsDir, "system-2026-09-27.ndjson"), `\n${JSON.stringify({
+      timestamp: sampledAt,
+      event: "runtime.memory_sample",
+      sample
+    })}\n`);
+  };
+  await appendMemorySample(420, "2026-10-03T01:00:00.000Z");
+  const latestMemory = await latestRuntimeMemorySample(dataDir);
+  assert.equal(latestMemory.rss, 420 * MIB);
+  assert.doesNotMatch(JSON.stringify(latestMemory), /PRIVATE|path|body/);
+  const memoryHigh = await collectHealth({ dataDir, backupDir, backupStamp, readyUrl: `${base}/readyz` });
+  assert.deepEqual(memoryHigh.issues.map(item => item.key), ["runtime-memory"]);
+  assert.match(memoryHigh.issues[0].text, /420 MiB.*400 MiB.*360 MiB/);
+  await runMonitor();
+  assert.equal(messages.length, 3);
+  assert.match(messages[2].content.text, /Node RSS/);
+
+  await appendMemorySample(380, "2026-10-03T01:01:00.000Z");
+  const memoryRetained = await collectHealth({
+    dataDir,
+    backupDir,
+    backupStamp,
+    readyUrl: `${base}/readyz`,
+    runtimeMemoryAlertActive: true
+  });
+  assert.deepEqual(memoryRetained.issues.map(item => item.key), ["runtime-memory"]);
+  await runMonitor();
+  assert.equal(messages.length, 3);
+
+  await appendMemorySample(350, "2026-10-03T01:02:00.000Z");
+  const memoryRecovered = await collectHealth({
+    dataDir,
+    backupDir,
+    backupStamp,
+    readyUrl: `${base}/readyz`,
+    runtimeMemoryAlertActive: true
+  });
+  assert.deepEqual(memoryRecovered.issues, []);
+  await runMonitor();
+  assert.equal(messages.length, 4);
+  assert.match(messages[3].content.text, /已恢复/);
+  console.log("Monitor checks passed: service, disk, stale backup, consecutive AI failures, daily cost, runtime RSS hysteresis, Feishu signing, deduplication and recovery.");
 } finally {
   globalThis.fetch = nativeFetch;
   await new Promise(resolve => mock.close(resolve));
