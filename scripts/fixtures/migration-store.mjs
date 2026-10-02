@@ -1,3 +1,8 @@
+import crypto from "node:crypto";
+
+const claimText = "正在适应新的工作节奏";
+const claimHash = crypto.createHash("sha256").update(claimText).digest("hex");
+
 export function migrationStore() {
   return {
     version: 15,
@@ -51,6 +56,71 @@ export function migrationStore() {
     feedback: [{ id: "feedback-1", body: "反馈原文", status: "submitted", appVersion: "0.2.0" }],
     validationLedger: [{ id: "validation-1", participantRef: "成员-01", status: "invited", consent: false }],
     onboarding: { answers: { worldview: "A" }, profile: { introduction: "可修改初始资料" } },
+    onboardingV2: {
+      schemaVersion: 2,
+      session: {
+        id: "onboarding-v2",
+        schemaVersion: 2,
+        status: "completed",
+        step: "firstAction",
+        revision: 1,
+        answers: {
+          currentContext: {
+            questionId: "currentContext",
+            rawText: claimText,
+            occurredAt: "2026-10-02T01:00:00.000Z",
+            updatedAt: "2026-10-02T01:00:00.000Z",
+            version: 1,
+            contextAllowed: true
+          }
+        },
+        collaboration: {},
+        startedAt: "2026-10-02T01:00:00.000Z",
+        pausedAt: "",
+        completedAt: "2026-10-02T01:00:00.000Z",
+        updatedAt: "2026-10-02T01:00:00.000Z"
+      },
+      readiness: "partial",
+      migration: { selectedFlow: "v2", entryPolicy: "v2", legacy: {} }
+    },
+    userClaims: [{
+      id: "claim-1",
+      domain: "context",
+      statement: claimText,
+      scope: "最近",
+      epistemic: "known",
+      lifecycle: "active",
+      confidence: null,
+      evidenceStrength: "self_report",
+      evidence: [{
+        sourceType: "onboardingV2Answer",
+        sourceId: "currentContext",
+        sourceVersion: 1,
+        contentSha256: claimHash,
+        span: [0, claimText.length]
+      }],
+      validFrom: "2026-10-02",
+      validTo: null,
+      confirmedAt: "2026-10-02T01:02:00.000Z",
+      lastReviewedAt: "2026-10-02T01:02:00.000Z",
+      supersedes: null,
+      contextAllowed: true,
+      createdAt: "2026-10-02T01:01:00.000Z",
+      updatedAt: "2026-10-02T01:02:00.000Z",
+      version: 2
+    }],
+    modelUnknowns: [{
+      id: "unknown-1",
+      question: "怎样减少频繁切换？",
+      domain: "behavior",
+      reason: "下一步建议需要知道可调整的边界",
+      relatedEvidence: ["claim-1"],
+      impactOnNextAnswer: "影响行动建议的粒度",
+      resolvedBy: "claim-1",
+      createdAt: "2026-10-02T01:03:00.000Z",
+      updatedAt: "2026-10-02T01:03:00.000Z",
+      version: 1
+    }],
     commercialization: { model: "subscription", parameters: { price: 12.5 } },
     unknownExtension: JSON.parse('{"__proto__":{"keep":true},"values":[null,false,0,""],"path":"/attachments/extension.png"}')
   };
