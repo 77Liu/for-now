@@ -97,11 +97,27 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
   let stderr = "";
   let providerCalls = 0;
   const platformToken = "postgres-runtime-platform-token-1";
+  const extractionText = "正在验证 PostgreSQL 五问提取";
   const provider = http.createServer(async (req, res) => {
-    for await (const chunk of req) { void chunk; }
+    let rawBody = "";
+    for await (const chunk of req) rawBody += chunk;
+    const payload = JSON.parse(rawBody || "{}");
+    const content = payload.response_format?.type === "json_object"
+      ? JSON.stringify({
+          claims: [{
+            domain: "context",
+            statement: "正在验证 PostgreSQL 五问提取",
+            scope: "",
+            epistemic: "known",
+            evidenceStrength: "self_report",
+            evidence: [{ sourceId: "currentContext", span: [0, extractionText.length] }]
+          }],
+          unknowns: []
+        })
+      : "数据库中的模型回答";
     providerCalls += 1;
     res.setHeader("content-type", "application/json");
-    res.end(JSON.stringify({ choices: [{ message: { content: "数据库中的模型回答", reasoning_content: "隔离模型思考" }, finish_reason: "stop" }], usage: { prompt_tokens: 2, completion_tokens: 2 } }));
+    res.end(JSON.stringify({ choices: [{ message: { content, reasoning_content: "隔离模型思考" }, finish_reason: "stop" }], usage: { prompt_tokens: 2, completion_tokens: 2 } }));
   });
   await new Promise(resolve => provider.listen(0, "127.0.0.1", resolve));
   const startApp = async (db = "runtime_test", directory = dataDir, backend = "postgres") => {
@@ -436,11 +452,72 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     const annotatedRoot = (await account(id, () => repo.read())).thoughts.find(item => item.id === backgroundTask.targetId);
     assert.equal(annotatedRoot.annotations[0].shenji[0].sourceTaskId, annotationTask.body.id);
     assert.equal(providerCalls, 2);
-    assert.equal((await request(app.base, "/api/notifications", { cookie })).body.unread, 2);
+    const onboardingPatch = await request(app.base, "/api/v1/onboarding-v2/session", {
+      method: "PATCH",
+      cookie,
+      headers: { "if-match": "\"1\"", "idempotency-key": "postgres-onboarding-source" },
+      body: {
+        status: "completed",
+        step: "candidates",
+        answers: {
+          currentContext: {
+            rawText: extractionText,
+            occurredAt: "2026-09-29T02:10:00.000Z",
+            contextAllowed: true
+          }
+        }
+      }
+    });
+    assert.equal(onboardingPatch.status, 200, JSON.stringify(onboardingPatch.body));
+    assert.equal(onboardingPatch.body.data.session.revision, 1);
+    const budgetBeforeExtraction = (await database.query(
+      "SELECT document FROM for_now.site_ai_budget WHERE id = true"
+    )).rows[0].document;
+    const settledBeforeExtraction = (budgetBeforeExtraction.events || [])
+      .filter(item => item.type === "ai.budget.reservation_settled").length;
+    const extractionCallsBefore = providerCalls;
+    const extractionResponses = await Promise.all(["a", "b"].map(suffix => request(
+      app.base,
+      "/api/v1/onboarding-v2/extractions",
+      {
+        method: "POST",
+        cookie,
+        headers: { "idempotency-key": `postgres-extraction-${suffix}` },
+        body: { sourceRevision: 1 }
+      }
+    )));
+    assert.deepEqual(extractionResponses.map(item => item.status).sort(), [200, 202]);
+    const extractionTaskIds = extractionResponses.map(item => item.body.data.id);
+    assert.equal(new Set(extractionTaskIds).size, 1);
+    assert.equal((await waitTask(app.base, cookie, extractionTaskIds[0])).status, "succeeded");
+    const extractionRefresh = await request(app.base, "/api/v1/onboarding-v2/extractions", {
+      method: "POST",
+      cookie,
+      headers: { "idempotency-key": "postgres-extraction-refresh" },
+      body: { sourceRevision: 1 }
+    });
+    assert.equal(extractionRefresh.status, 200, JSON.stringify(extractionRefresh.body));
+    assert.equal(extractionRefresh.body.data.id, extractionTaskIds[0]);
+    assert.equal(providerCalls, extractionCallsBefore + 1);
+    const extractionStore = await account(id, () => repo.read());
+    assert.equal(extractionStore.aiTasks.filter(item => (
+      item.kind === "onboardingClaimExtraction"
+      && item.targetId === "onboarding-v2"
+    )).length, 1);
+    assert.equal(extractionStore.userClaims.filter(item => item.sourceTaskId === extractionTaskIds[0]).length, 1);
+    const budgetAfterExtraction = (await database.query(
+      "SELECT document FROM for_now.site_ai_budget WHERE id = true"
+    )).rows[0].document;
+    assert.equal(budgetAfterExtraction.reservations.length, budgetBeforeExtraction.reservations.length);
+    assert.equal(
+      (budgetAfterExtraction.events || []).filter(item => item.type === "ai.budget.reservation_settled").length,
+      settledBeforeExtraction + 1
+    );
+    assert.equal((await request(app.base, "/api/notifications", { cookie })).body.unread, 3);
     assert.equal((await request(app.base, "/api/notifications", { cookie: otherCookie })).body.unread, 0);
     const notificationId = resultState.notifications[0].id;
     assert.equal((await request(app.base, `/api/notifications/${notificationId}/read`, { method: "PATCH", cookie: otherCookie })).status, 404);
-    assert.equal((await request(app.base, "/api/notifications/read-all", { method: "POST", cookie, body: {} })).body.updated, 2);
+    assert.equal((await request(app.base, "/api/notifications/read-all", { method: "POST", cookie, body: {} })).body.updated, 3);
     assert.equal((await request(app.base, "/api/notifications", { cookie })).body.unread, 0);
     const captureId = state.body.captures[0].id;
     assert.equal((await request(app.base, `/api/captures/${captureId}`, { method: "DELETE", cookie: otherCookie })).status, 404);
@@ -547,7 +624,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     const interruptedTask = await waitTask(app.base, cookie, "restart-running");
     assert.equal(interruptedTask.status, "failed");
     assert.match(interruptedTask.error, /避免重复计费/);
-    assert.equal(providerCalls, 3, "Restart must only replay queued tasks");
+    assert.equal(providerCalls, 4, "Restart must only replay queued tasks");
     const inventory = (await database.query("SELECT path,state FROM for_now.attachment_inventory WHERE account_id = $1", [id])).rows;
     assert.deepEqual(inventory, [{ path: "/attachments/interrupted-present.png", state: "verified" }]);
     assert.deepEqual((await account(id, () => repo.read())).attachmentCleanup, []);
@@ -668,12 +745,12 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal((await fetch(`${restoredApp.base}/attachments/interrupted-present.png`, { headers: { cookie: otherCookie } })).status, 404);
     assert.equal((await request(restoredApp.base, "/api/ai-tasks/restart-queued", { cookie })).body.status, "succeeded");
     assert.equal((await request(restoredApp.base, "/api/ai-tasks/restart-running", { cookie })).body.status, "failed");
-    assert.equal(providerCalls, 3);
+    assert.equal(providerCalls, 4);
     await assert.rejects(applyPostgresBundle(restoredMigration, bundle), /entered runtime/);
     return ["runtime role validation", ...budgetChecks,
       "atomic registration rollback", "cross-connection serialized writes",
       "multi-commit durability", "runtime disconnect rollback", "concurrent usage updates", "HTTP auth and account isolation",
-      "settings patch serialization", "Owner cost plan access and restore", "atomic background task and notification writes", "annotation model dialogue", "task restart without double billing",
+      "settings patch serialization", "Owner cost plan access and restore", "atomic background task and notification writes", "annotation model dialogue", "onboarding extraction semantic idempotency", "task restart without double billing",
       "normalization preserves extensions", "versioned trash restore", "attachment upload/purge/crash recovery", "durable cleanup failure and restart", "PostgreSQL admin snapshot privacy", "single application guard",
       "process restart and sessions", "PostgreSQL-only writes",
       "JSON rollback guard", "runtime export and independent database boot with attachment bytes", "live migration overwrite guard"];

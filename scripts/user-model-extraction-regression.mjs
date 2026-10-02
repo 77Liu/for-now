@@ -43,30 +43,40 @@ let store = {
   notifications: []
 };
 const ledger = new Map();
+let persistenceQueue = Promise.resolve();
+const serialize = operation => {
+  const result = persistenceQueue.then(operation);
+  persistenceQueue = result.catch(() => {});
+  return result;
+};
 const repository = {
   async read() {
     return clone(store);
   },
-  async update(mutate) {
-    const draft = clone(store);
-    const result = await mutate(draft);
-    store = draft;
-    return clone(result);
+  update(mutate) {
+    return serialize(async () => {
+      const draft = clone(store);
+      const result = await mutate(draft);
+      store = draft;
+      return clone(result);
+    });
   },
-  async executeIdempotent(request, operation, { onReplay = value => value } = {}) {
-    const key = `${request.scope}:${request.key}`;
-    const prior = ledger.get(key);
-    if (prior) {
-      if (prior.requestHash !== request.requestHash) {
-        throw Object.assign(new Error("idempotency conflict"), { code: "IDEMPOTENCY_KEY_REUSED" });
+  executeIdempotent(request, operation, { onReplay = value => value } = {}) {
+    return serialize(async () => {
+      const key = `${request.scope}:${request.key}`;
+      const prior = ledger.get(key);
+      if (prior) {
+        if (prior.requestHash !== request.requestHash) {
+          throw Object.assign(new Error("idempotency conflict"), { code: "IDEMPOTENCY_KEY_REUSED" });
+        }
+        return clone(onReplay(clone(prior.response)));
       }
-      return clone(onReplay(clone(prior.response)));
-    }
-    const draft = clone(store);
-    const response = await operation(draft);
-    store = draft;
-    ledger.set(key, { requestHash: request.requestHash, response: clone(response) });
-    return clone(response);
+      const draft = clone(store);
+      const response = await operation(draft);
+      store = draft;
+      ledger.set(key, { requestHash: request.requestHash, response: clone(response) });
+      return clone(response);
+    });
   }
 };
 
@@ -90,6 +100,11 @@ let generated = JSON.stringify({
   }]
 });
 const scheduled = [];
+let generationStarted = null;
+let generationBarrier = null;
+let modelCalls = 0;
+let budgetReservations = 0;
+let budgetSettlements = 0;
 const targets = createAiTaskTargets({
   thoughts: {},
   annotations: {},
@@ -112,7 +127,15 @@ const backgroundAi = createBackgroundAi({
     assert.equal(work.scene, "onboardingClaimExtraction");
     assert.equal(work.json, true);
     assert.equal(work.auditPrompt, false);
-    return { content: generated, reasoningContent: "must not be persisted" };
+    modelCalls += 1;
+    budgetReservations += 1;
+    generationStarted?.();
+    try {
+      if (generationBarrier) await generationBarrier;
+      return { content: generated, reasoningContent: "must not be persisted" };
+    } finally {
+      budgetSettlements += 1;
+    }
   },
   dispatch: callback => scheduled.push(callback),
   contextKey: () => "account-a",
@@ -132,24 +155,50 @@ assert.equal((await extractions.enqueue({
   clientRequestId: "wrong-version"
 })).versionConflict, true);
 
-const created = await extractions.enqueue({
-  sourceRevision: 1,
-  clientRequestId: "extract-1"
-});
+const concurrent = await Promise.all([
+  extractions.enqueue({
+    sourceRevision: 1,
+    clientRequestId: "extract-concurrent-1"
+  }),
+  extractions.enqueue({
+    sourceRevision: 1,
+    clientRequestId: "extract-concurrent-2"
+  })
+]);
+const created = concurrent.find(item => !item.duplicate);
+const concurrentReplay = concurrent.find(item => item.duplicate);
 assert.equal(created.duplicate, false);
 assert.equal(created.task.status, "queued");
 assert.equal(created.task.kind, "onboardingClaimExtraction");
 assert.equal(created.task.inputVersion, 1);
+assert.equal(concurrentReplay.task.id, created.task.id);
+assert.equal(store.aiTasks.length, 1);
 assert.equal(scheduled.length, 1);
 const replay = await extractions.enqueue({
   sourceRevision: 1,
-  clientRequestId: "extract-1"
+  clientRequestId: "extract-queued-reentry"
 });
 assert.equal(replay.duplicate, true);
 assert.equal(replay.task.id, created.task.id);
 assert.equal(scheduled.length, 1);
 
-await backgroundAi.run(created.task.id);
+const started = new Promise(resolve => { generationStarted = resolve; });
+let releaseGeneration;
+generationBarrier = new Promise(resolve => { releaseGeneration = resolve; });
+const firstRun = backgroundAi.run(created.task.id);
+await started;
+const runningReplay = await extractions.enqueue({
+  sourceRevision: 1,
+  clientRequestId: "extract-running-reentry"
+});
+assert.equal(runningReplay.duplicate, true);
+assert.equal(runningReplay.task.id, created.task.id);
+assert.equal(store.aiTasks.length, 1);
+assert.equal(scheduled.length, 1);
+releaseGeneration();
+generationBarrier = null;
+generationStarted = null;
+await firstRun;
 assert.equal(store.aiTasks.find(item => item.id === created.task.id).status, "succeeded");
 assert.equal(store.userClaims.length, 1);
 assert.equal(store.userClaims[0].lifecycle, "candidate");
@@ -161,16 +210,40 @@ const result = await backgroundAi.getResult(created.task.id);
 assert.equal(result.result.claims.length, 1);
 assert.equal(result.result.unknowns.length, 1);
 assert.equal((await extractions.get(created.task.id)).task.status, "succeeded");
+const refreshedExtractions = createUserModelExtractionService({ repository, backgroundAi });
+const succeededReplay = await refreshedExtractions.enqueue({
+  sourceRevision: 1,
+  clientRequestId: "extract-succeeded-refresh"
+});
+assert.equal(succeededReplay.duplicate, true);
+assert.equal(succeededReplay.task.id, created.task.id);
+assert.equal(store.aiTasks.length, 1);
+assert.equal(store.userClaims.length, 1);
+assert.equal(store.modelUnknowns.length, 1);
+assert.equal(modelCalls, 1);
+assert.equal(budgetReservations, 1);
+assert.equal(budgetSettlements, 1);
+assert.equal(scheduled.length, 1);
 
 store.onboardingV2 = onboarding("原文已经变化", 2);
 const staleTask = await extractions.enqueue({
   sourceRevision: 2,
   clientRequestId: "extract-stale"
 });
+assert.equal(staleTask.duplicate, false);
+assert.notEqual(staleTask.task.id, created.task.id);
 store.onboardingV2 = onboarding("任务创建后再次变化", 3);
 await backgroundAi.run(staleTask.task.id);
 assert.equal(store.aiTasks.find(item => item.id === staleTask.task.id).status, "stale");
 assert.equal(store.userClaims.filter(item => item.sourceTaskId === staleTask.task.id).length, 0);
+store.onboardingV2 = onboarding("原文已经变化", 2);
+const retryAfterStale = await extractions.enqueue({
+  sourceRevision: 2,
+  clientRequestId: "extract-after-stale"
+});
+assert.equal(retryAfterStale.duplicate, false);
+assert.notEqual(retryAfterStale.task.id, staleTask.task.id);
+assert.equal((await extractions.cancel(retryAfterStale.task.id)).status, "cancelled");
 
 store.onboardingV2 = onboarding("用于失败测试的原文", 4);
 generated = "{\"claims\":[{\"domain\":\"context\",\"statement\":\"无来源\",\"scope\":\"\",\"epistemic\":\"known\",\"evidenceStrength\":\"self_report\",\"evidence\":[{\"sourceId\":\"currentContext\",\"span\":[0,999]}]}],\"unknowns\":[]}";
@@ -182,6 +255,20 @@ await backgroundAi.run(failedTask.task.id);
 assert.equal(store.aiTasks.find(item => item.id === failedTask.task.id).status, "failed");
 assert.match(store.aiTasks.find(item => item.id === failedTask.task.id).error, /来源/);
 assert.equal(store.userClaims.filter(item => item.sourceTaskId === failedTask.task.id).length, 0);
+const retryAfterFailure = await extractions.enqueue({
+  sourceRevision: 4,
+  clientRequestId: "extract-after-failure"
+});
+assert.equal(retryAfterFailure.duplicate, false);
+assert.notEqual(retryAfterFailure.task.id, failedTask.task.id);
+assert.equal((await extractions.cancel(retryAfterFailure.task.id)).status, "cancelled");
+const retryAfterCancellation = await extractions.enqueue({
+  sourceRevision: 4,
+  clientRequestId: "extract-after-cancellation"
+});
+assert.equal(retryAfterCancellation.duplicate, false);
+assert.notEqual(retryAfterCancellation.task.id, retryAfterFailure.task.id);
+assert.equal((await extractions.cancel(retryAfterCancellation.task.id)).status, "cancelled");
 
 const source = {
   id: "currentContext",

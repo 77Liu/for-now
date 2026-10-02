@@ -8,6 +8,8 @@ const TASK_KINDS = new Set([
   "captureTranscription",
   "onboardingClaimExtraction"
 ]);
+const ACTIVE_TASK_STATUSES = new Set(["queued", "running"]);
+const REUSABLE_EXTRACTION_STATUSES = new Set(["queued", "running", "succeeded"]);
 
 export function publicAiTask(task) {
   return {
@@ -38,13 +40,17 @@ export function publicAiTask(task) {
   };
 }
 
-export function activeTaskForInput(tasks, { kind, targetId, inputHash }) {
+function taskForInput(tasks, { kind, targetId, inputHash }, statuses) {
   return (Array.isArray(tasks) ? tasks : []).find(task => (
     task?.kind === kind
     && task.targetId === targetId
     && task.inputHash === inputHash
-    && ["queued", "running"].includes(task.status)
+    && statuses.has(task.status)
   )) || null;
+}
+
+export function activeTaskForInput(tasks, input) {
+  return taskForInput(tasks, input, ACTIVE_TASK_STATUSES);
 }
 
 export function taskInputMatches(task, work) {
@@ -121,6 +127,14 @@ export function createTaskLifecycle({ createId, now, hash }) {
     if (kind === "captureTranscription") {
       const active = activeTaskForInput(tasks, { kind, targetId, inputHash: work.inputHash });
       if (active) return { task: active, duplicate: true };
+    }
+    if (kind === "onboardingClaimExtraction") {
+      const reusable = taskForInput(
+        tasks,
+        { kind, targetId, inputHash: work.inputHash },
+        REUSABLE_EXTRACTION_STATUSES
+      );
+      if (reusable) return { task: reusable, duplicate: true };
     }
     const task = {
       id: createId(), kind, resourceType, targetId, subtargetId,
