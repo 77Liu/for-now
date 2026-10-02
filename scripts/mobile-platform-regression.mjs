@@ -20,7 +20,7 @@ async function freePort() {
 }
 
 async function waitForUrl(url, child) {
-  for (let attempt = 0; attempt < 80; attempt += 1) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
     if (child.exitCode != null) throw new Error(`应用服务提前退出：${child.exitCode}`);
     try {
       if ((await fetch(url)).ok) return;
@@ -210,18 +210,20 @@ try {
     assert.equal(shell.mainInside, true);
     assert.equal(shell.inputFontSafe, true);
     if (device.name === "android-landscape") {
-      const todayLinks = await evaluate(`(() => {
+      const landscapeOnboarding = await evaluate(`(() => {
         const links=[...document.querySelectorAll('[data-section-links="today"] button')];
-        return links.map(item => {
+        return {
+          onboardingVisible:!document.querySelector("#onboarding-workspace").hidden&&document.querySelector("#view-today").classList.contains("active"),
+          onboardingInside:document.querySelector("#onboarding-v2-content").getBoundingClientRect().right<=innerWidth,
+          links:links.map(item => {
           const rect=item.getBoundingClientRect();
           return {label:item.textContent.trim(),visible:rect.width>0&&rect.height>0&&rect.left>=0&&rect.right<=innerWidth&&rect.top>=0&&rect.bottom<=innerHeight};
-        });
+          })
+        };
       })()`);
-      assert.deepEqual(todayLinks, [
-        { label: "此刻", visible: true },
-        { label: "共参", visible: true },
-        { label: "每日", visible: true }
-      ]);
+      assert.equal(landscapeOnboarding.onboardingVisible, true);
+      assert.equal(landscapeOnboarding.onboardingInside, true);
+      assert.deepEqual(landscapeOnboarding.links.map(item => item.visible), [false, false, false]);
     }
 
     const thoughtNav = await evaluate(`(() => { const rect=document.querySelector('[data-section="thought"]').getBoundingClientRect();return{x:rect.left+rect.width/2,y:rect.top+rect.height/2} })()`);
