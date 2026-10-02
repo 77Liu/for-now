@@ -70,6 +70,7 @@
 | `scripts/check-modules.mjs` | 模块清单、公开入口、测试、依赖方向、深层导入、循环依赖和路由归属 |
 | `scripts/commit-gate-regression.mjs` | `feat/fix/test/docs` 类型、隔离暂存候选、受保护分支、高风险/治理面、同路径未暂存内容、测试失败、门禁完整性和 tree 漂移拒绝 |
 | `scripts/postgres-test-preflight-regression.mjs` | PostgreSQL 16 工具链通过、错误主版本和缺失二进制的预检分支 |
+| `scripts/postgres-runtime-preflight.mjs` | 发布切换前只读核对 data/auth/AI-budget 三角色、预算单例、最小权限和同库连接；不取得应用锁、不写数据库 |
 | `scripts/runtime-infrastructure-regression.mjs` | 环境默认/上下限与旧额度兼容、不可变配置快照、测试模式限制、并发账户/后台上下文、追踪 ID、base path、SSE/断连、脱敏权限与保留边界 |
 | `scripts/persistence-regression.mjs` | JSON 串行提交、业务 store 各领域/嵌套对象映射、附件与任务引用、原文/顺序重建、事务内同步游标/操作 ID、损坏数据拒绝 |
 | `scripts/postgres-integration.mjs` | 真 PostgreSQL 的非 owner RLS、多账户、父外键、并发重复导入、快照覆盖保护、中途/断连回滚、同数量内容篡改拦截、关系导出恢复 |
@@ -284,3 +285,6 @@ cd '/Users/bytedance/Documents/Codex/个人成长追踪'
     级任务闭环。
 12. 自 V0.4.0 起，第三方供应商适配器与首个业务切片必须同步维护统一冒烟
     入口、合成样例、预算和生产补验步骤；不得临近发布时才补真实可用性脚本。
+13. 使用固定历史日期断言窗口统计的回归必须注入统一测试时钟；业务时间、AI
+    审计、用量、预算和统计必须读取同一时钟，禁止让测试结果随运行日期或午夜
+    边界变化。该开关在非 `NODE_ENV=test` 环境中必须失效。
