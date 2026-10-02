@@ -166,7 +166,15 @@ try {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ kind: "highlight", targetKey, start, end: start + quote.length, quote, text: "" })
   });
-  const migrated = await waitForServer(base, app);
+  const migratedState = await waitForServer(base, app);
+  const migratedCommercializationResponse = await fetch(`${base}/api/owner/surfaces/commercialization`);
+  assert.equal(migratedCommercializationResponse.status, 200);
+  const migratedCommercializationSurface = await migratedCommercializationResponse.json();
+  assert.equal(migratedCommercializationSurface.report.version, 3);
+  const migrated = {
+    ...migratedState,
+    commercialization: JSON.parse(await fs.readFile(path.join(dataDir, "store.json"), "utf8")).commercialization
+  };
   assert.equal(migrated.version, 15);
   assert.equal(migrated.commercialization.version, 3);
   assert.equal(migrated.commercialization.assumptions.validation.participants, 5);
