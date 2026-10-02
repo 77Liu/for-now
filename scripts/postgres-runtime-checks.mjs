@@ -6,6 +6,7 @@ import http from "node:http";
 import { once } from "node:events";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { deflateSync } from "node:zlib";
 import {
   createPostgresRuntime, initializePostgresSchema, buildPostgresMigrationPlan, applyPostgresMigration,
   canonicalJson, discoverJsonBundle, applyPostgresBundle, exportPostgresDirectory, readPostgresBundle
@@ -15,6 +16,44 @@ import { syncOperationFingerprint } from "../public/frontend/sync/index.mjs";
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const empty = () => ({ version: 14, thoughts: [], captures: [], attachmentCleanup: [] });
+const crcTable = Array.from({ length: 256 }, (_, value) => {
+  let crc = value;
+  for (let bit = 0; bit < 8; bit++) crc = (crc & 1) ? 0xedb88320 ^ (crc >>> 1) : crc >>> 1;
+  return crc >>> 0;
+});
+const crc32 = data => {
+  let crc = 0xffffffff;
+  for (const byte of data) crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+};
+const pngChunk = (type, data) => {
+  const name = Buffer.from(type), length = Buffer.alloc(4), checksum = Buffer.alloc(4);
+  length.writeUInt32BE(data.length);
+  checksum.writeUInt32BE(crc32(Buffer.concat([name, data])));
+  return Buffer.concat([length, name, data, checksum]);
+};
+const syntheticPng = (width = 128, height = 96) => {
+  const header = Buffer.alloc(13), rows = Buffer.alloc((width * 3 + 1) * height);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8;
+  header[9] = 2;
+  for (let y = 0; y < height; y++) {
+    const row = y * (width * 3 + 1);
+    for (let x = 0; x < width; x++) {
+      const pixel = row + 1 + x * 3;
+      rows[pixel] = (x * 13 + y * 7) % 256;
+      rows[pixel + 1] = (x * 3 + y * 17) % 256;
+      rows[pixel + 2] = (x * 19 + y * 5) % 256;
+    }
+  }
+  return Buffer.concat([
+    Buffer.from("89504e470d0a1a0a", "hex"),
+    pngChunk("IHDR", header),
+    pngChunk("IDAT", deflateSync(rows, { level: 0 })),
+    pngChunk("IEND", Buffer.alloc(0))
+  ]);
+};
 
 export async function runRuntimeChecks({ admin, connect, temporary, password, port, freePort }) {
   await admin.query("CREATE DATABASE runtime_test");
@@ -104,6 +143,18 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     }
     throw new Error("PostgreSQL background task timed out");
   };
+  const waitKeepsake = async (base, cookie, id, derivativeState) => {
+    let last = null;
+    for (let attempt = 0; attempt < 160; attempt++) {
+      const state = await request(base, "/api/state", { cookie });
+      assert.equal(state.status, 200);
+      const keepsake = state.body.keepsakes.find(item => item.id === id);
+      last = keepsake;
+      if (keepsake?.derivativeState === derivativeState) return keepsake;
+      await pause(25);
+    }
+    throw new Error(`PostgreSQL keepsake did not reach ${derivativeState}: ${JSON.stringify(last)}\n${stderr}`);
+  };
   try {
     // A provisioning failure rolls identity, session and all tenant rows back together.
     await database.query(`
@@ -192,7 +243,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal(second.status, 201, JSON.stringify(second.body));
     assert.equal((await register("runtime-owner")).status, 409);
     const cookie = registration.cookie, otherCookie = second.cookie, id = registration.body.user.id;
-    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jR1EAAAAASUVORK5CYII=", "base64");
+    const png = syntheticPng();
     const upload = await request(app.base, "/api/images/upload", {
       method: "POST", cookie, body: { image: `data:image/png;base64,${png.toString("base64")}` }
     });
@@ -297,22 +348,28 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal(trash.body.items.length, 1);
     assert.equal((await request(app.base, `/api/trash/${trash.body.items[0].id}/restore`, { method: "POST", cookie, body: {} })).status, 200);
     assert.equal((await request(app.base, "/api/state", { cookie })).body.captures.find(item => item.id === captureId).version, state.body.captures[0].version + 1);
-    const derivativePaths = {};
-    for (const key of ["thumbPath", "displayPath", "editPath", "alphaMaskPath"]) {
-      const derivativeUpload = await request(app.base, "/api/images/upload", {
-        method: "POST", cookie, body: { image: `data:image/png;base64,${png.toString("base64")}` }
-      });
-      assert.equal(derivativeUpload.status, 201, JSON.stringify(derivativeUpload.body));
-      derivativePaths[key] = derivativeUpload.body.attachmentPath;
-    }
-    assert.equal(new Set([attachmentPath, ...Object.values(derivativePaths)]).size, 5);
+    const alphaMaskUpload = await request(app.base, "/api/images/upload", {
+      method: "POST", cookie, body: { image: `data:image/png;base64,${png.toString("base64")}` }
+    });
+    assert.equal(alphaMaskUpload.status, 201, JSON.stringify(alphaMaskUpload.body));
     const media = await request(app.base, "/api/keepsakes", {
       method: "POST", cookie,
-      body: { title: "关系附件", category: "小物", originalPath: attachmentPath, cutoutPath: derivativePaths.displayPath, ...derivativePaths, occurredAt: "2026-09-29T02:00:00.000Z" }
+      body: {
+        title: "关系附件",
+        category: "小物",
+        originalPath: attachmentPath,
+        alphaMaskPath: alphaMaskUpload.body.attachmentPath,
+        occurredAt: "2026-09-29T02:00:00.000Z"
+      }
     });
     assert.equal(media.status, 201, JSON.stringify(media.body));
-    assert.equal(media.body.derivativeState, "ready");
-    for (const [key, value] of Object.entries(derivativePaths)) assert.equal(media.body[key], value);
+    assert.equal(media.body.derivativeState, "pending");
+    assert.equal(media.body.previewPath, attachmentPath);
+    const readyMedia = await waitKeepsake(app.base, cookie, media.body.id, "ready");
+    const generatedPaths = ["thumbPath", "displayPath", "editPath", "alphaMaskPath"]
+      .map(key => readyMedia[key]);
+    assert.ok(generatedPaths.every(resourcePath => /^\/attachments\/[\w.-]+$/.test(resourcePath)));
+    assert.equal(new Set([attachmentPath, ...generatedPaths]).size, 5);
     assert.equal((await request(app.base, `/api/keepsakes/${media.body.id}`, { method: "PATCH", cookie: otherCookie, body: { title: "越权" } })).status, 404);
     const editedMedia = await request(app.base, `/api/keepsakes/${media.body.id}`, {
       method: "PATCH", cookie, body: { title: "关系附件已编辑", occurredOn: "2026-09-30" }
