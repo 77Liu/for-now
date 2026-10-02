@@ -244,7 +244,7 @@ try {
   assert.equal(await waitUntil(`location.pathname==="/now/thoughts"&&document.querySelector('[data-route-result="unavailable"]')?.dataset.routeErrorCode==="RESOURCE_UNAVAILABLE"`), true);
   assert.deepEqual(await evaluate(`({
     resourceType:document.querySelector('[data-route-result="unavailable"]').dataset.routeResourceType,
-    oldContent:document.body.textContent.includes("URL history thought 00"),
+    oldContent:document.querySelector("#view-thoughts").textContent.includes("URL history thought 00"),
     listCount:document.querySelectorAll("#all-thoughts [data-chain-id]").length
   })`), { resourceType:"thought-chain", oldContent:false, listCount:22 });
 

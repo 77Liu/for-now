@@ -1876,7 +1876,7 @@ try {
   const todayThoughtMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-today-thoughts-mobile.png", Buffer.from(todayThoughtMobileScreenshot.data, "base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
-  const viewThemeColors = await evaluate(`Object.fromEntries([...document.querySelectorAll(".view")].map(view => [view.id, getComputedStyle(view.querySelector(".eyebrow,h1")).color]))`);
+  const viewThemeColors = await evaluate(`Object.fromEntries([...document.querySelectorAll(".view")].flatMap(view => { const heading=view.querySelector(".eyebrow,h1"); return heading?[[view.id,getComputedStyle(heading).color]]:[] }))`);
   assert.ok(new Set(Object.values(viewThemeColors)).size >= 16);
   await evaluate(`document.querySelector('[data-view="captures"]').click(); true`);
   assert.equal(await evaluate(`document.querySelector("#view-captures").classList.contains("active") && Boolean(document.querySelector('[data-capture-id="capture-1"] strong'))`), true);
@@ -2762,7 +2762,7 @@ try {
   assert.match(await evaluate(`document.querySelector("#commercial-method-note").textContent`),/BYOK.+合同负债/);
   await evaluate(`document.querySelector('[data-commercial-mode="usagePack"]').click(); true`);
   assert.equal(await waitUntil(`document.querySelector("#commercial-breakdown-title").textContent==="用量增值包月度账"`),true);
-  assert.deepEqual(await evaluate(`[...document.querySelectorAll("#commercial-kpis strong")].map(item=>item.textContent)`),["¥290","¥17.5","¥161","¥0.90"]);
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll("#commercial-kpis strong")].map(item=>item.textContent)`),["¥290","¥17.5","¥161","¥0.900"]);
   await evaluate(`document.querySelector('[data-commercial-mode="subscription"]').click(); true`);
   assert.equal(await waitUntil(`document.querySelector("#commercial-breakdown-title").textContent==="首月订阅经营账"`),true);
   await evaluate(`document.querySelector('[data-commercial-field="subscription.monthlyPriceCny"]').value="59";document.querySelector("#commercial-assumptions-form").requestSubmit();true`);

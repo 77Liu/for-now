@@ -54,6 +54,7 @@ export const canonicalPagePaths = Object.freeze({
   export: "/mine/export",
   notifications: "/mine/notifications",
   trash: "/mine/trash",
+  permission: "/permission",
   account: "/mine/account",
   settings: "/mine/settings",
   about: "/mine/about"
