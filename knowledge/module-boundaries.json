@@ -32,6 +32,19 @@
       "status": "active"
     },
     {
+      "id": "domain.user-model",
+      "type": "domain",
+      "root": "src/modules/user-model",
+      "publicEntry": "src/modules/user-model/index.mjs",
+      "allowedDependencies": ["shared.validation"],
+      "owns": {
+        "data": ["source-bound user claims, model unknowns, candidate activation, correction, rejection, retraction and stale-source projection"],
+        "routes": ["GET /api/v1/user-model", "PATCH /api/v1/user-model/claims/:id"]
+      },
+      "tests": ["scripts/personal-context-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
+      "status": "active"
+    },
+    {
       "id": "domain.journals",
       "type": "domain",
       "root": "src/modules/journals",
@@ -238,7 +251,7 @@
       "type": "application",
       "root": "src/app",
       "publicEntry": "src/app/index.mjs",
-      "allowedDependencies": ["domain.annotations", "domain.tasks", "domain.notifications", "domain.trash", "domain.onboarding", "domain.health", "domain.thoughts", "domain.captures", "domain.journals", "domain.books", "domain.quotes", "domain.chats", "domain.reviews", "domain.content-attachments", "domain.ai", "shared.time", "shared.attachments", "shared.content", "shared.validation", "shared.prompts", "shared.speech"],
+      "allowedDependencies": ["domain.annotations", "domain.tasks", "domain.notifications", "domain.trash", "domain.onboarding", "domain.user-model", "domain.health", "domain.thoughts", "domain.captures", "domain.journals", "domain.books", "domain.quotes", "domain.chats", "domain.reviews", "domain.content-attachments", "domain.ai", "shared.time", "shared.attachments", "shared.content", "shared.validation", "shared.prompts", "shared.speech"],
       "owns": { "data": ["cross-domain annotation resource resolution and transactional background AI orchestration", "trash location resolution, versioned restore and durable attachment cleanup orchestration", "cross-domain personal context, source receipts, token budgets, activity selection and thought answer prompt composition", "thought chain creation/task transaction, draft/starter generation and foreground answer idempotency", "capture/journal, library and review/chat application workflows", "account-private capture speech cache keys, source invalidation and attachment lifecycle orchestration", "explicit hash-confirmed historical keepsake media migration"], "routes": [] },
       "tests": ["scripts/personal-context-regression.mjs", "scripts/onboarding-v2-regression.mjs", "scripts/trash-regression.mjs", "scripts/collaboration-regression.mjs", "scripts/capture-journal-regression.mjs", "scripts/capture-transcription-regression.mjs", "scripts/speech-cache-regression.mjs", "scripts/volcengine-server-regression.mjs", "scripts/library-regression.mjs", "scripts/reviews-chat-regression.mjs", "scripts/keepsake-media-migration-regression.mjs", "scripts/regression.mjs", "scripts/api-v1-contract-regression.mjs", "scripts/auth-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
       "status": "active"

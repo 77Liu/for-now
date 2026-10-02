@@ -11,6 +11,12 @@ export { createCaptureJournalWorkflows } from "./capture-journal-workflows.mjs";
 export { createLibraryWorkflows } from "./library-workflows.mjs";
 export { createReviewChatWorkflows } from "./review-chat-workflows.mjs";
 export {
+  USER_MODEL_DOMAIN_LABELS,
+  activeUserModelEntries,
+  userModelEvidenceCurrent,
+  userModelProjection
+} from "./user-model.mjs";
+export {
   PERSONAL_CONTEXT_PROJECTION_VERSION,
   PERSONAL_CONTEXT_TOKEN_BUDGET,
   compactPersonalContextReceipt,

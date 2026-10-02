@@ -19,11 +19,14 @@ const RESOURCE_TYPES = Object.freeze({
   habitCheckins: "habitCheckin",
   feedback: "feedback",
   validationLedger: "validationLedger",
+  userClaims: "userClaim",
+  modelUnknowns: "modelUnknown",
   trash: "trash"
 });
 const SINGLETON_TYPES = Object.freeze({
   journalDraft: "journalDraft",
   onboarding: "onboarding",
+  onboardingV2: "onboardingV2",
   commercialization: "commercialization"
 });
 const TIME_FIELDS = ["createdAt", "updatedAt", "occurredAt", "occurredOn", "deletedAt", "completedAt"];

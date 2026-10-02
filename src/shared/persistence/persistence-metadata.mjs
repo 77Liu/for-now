@@ -27,7 +27,9 @@ const COLLECTION_TYPES = {
   habits: "habit",
   habitCheckins: "habitCheckin",
   feedback: "feedback",
-  validationLedger: "validationLedger"
+  validationLedger: "validationLedger",
+  userClaims: "userClaim",
+  modelUnknowns: "modelUnknown"
 };
 const CHILD_TYPES = {
   remarks: "thoughtRemark",

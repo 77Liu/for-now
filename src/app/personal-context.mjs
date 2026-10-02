@@ -11,8 +11,9 @@ import {
 import { describeDailyRecord } from "../modules/health/index.mjs";
 import { thoughtChainContext, thoughtTask } from "../modules/thoughts/index.mjs";
 import { userPrompt } from "../modules/ai/index.mjs";
+import { activeUserModelEntries } from "./user-model.mjs";
 
-export const PERSONAL_CONTEXT_PROJECTION_VERSION = "2026.10.02.1";
+export const PERSONAL_CONTEXT_PROJECTION_VERSION = "2026.10.02.2";
 export const PERSONAL_CONTEXT_TOKEN_BUDGET = 20_000;
 
 const INFORMATION_TYPE_LABELS = Object.freeze({
@@ -63,7 +64,10 @@ function contextSource(item, {
   view,
   rootId = "",
   targetId = id,
-  targetKey = ""
+  targetKey = "",
+  evidence = [],
+  epistemic = "",
+  lifecycle = ""
 }) {
   const resourceId = safeText(id, 100);
   const sourceText = String(text ?? "");
@@ -79,6 +83,9 @@ function contextSource(item, {
     version: Math.max(1, Math.round(Number(item?.version) || 1)),
     contentSha256: crypto.createHash("sha256").update(sourceText).digest("hex"),
     excerpt: excerpt(sourceText),
+    ...(evidence.length ? { evidence: structuredClone(evidence) } : {}),
+    ...(epistemic ? { epistemic } : {}),
+    ...(lifecycle ? { lifecycle } : {}),
     location: {
       view,
       targetId: safeText(targetId || resourceId, 100),
@@ -87,6 +94,37 @@ function contextSource(item, {
       occurredOn: eventDate(item),
       ...(resourceType === "dailyRecord" ? { dailyType: safeText(item?.type, 40) } : {})
     }
+  };
+}
+
+function userModelContextProjection(store) {
+  const entries = activeUserModelEntries(store);
+  if (!entries.length) return { prompt: "", sources: [], conclusions: [] };
+  const sources = entries.map(entry => contextSource(entry, {
+    resourceType: "userClaim",
+    recordType: `${entry.title} · 已确认理解`,
+    informationType: entry.informationType,
+    text: entry.text,
+    view: "personal-context",
+    targetKey: `claim:${entry.id}`,
+    evidence: entry.evidence,
+    epistemic: entry.epistemic,
+    lifecycle: entry.lifecycle
+  }));
+  return {
+    prompt: `用户逐项确认的理解：\n${entries.map(entry => `- ${entry.title}：${entry.text}`).join("\n")}`,
+    sources,
+    conclusions: entries.map((entry, index) => ({
+      id: `user-claim-${entry.id}`,
+      informationType: entry.informationType,
+      informationTypeLabel: INFORMATION_TYPE_LABELS[entry.informationType],
+      title: `${entry.title} · 已确认`,
+      text: entry.text,
+      sourceIds: [sources[index].id],
+      sampleNote: entry.epistemic === "known"
+        ? "由你的原话整理并经你确认，可撤回或修正。"
+        : "这是由你的原话整理并经你确认的待验证理解，不是客观定论。"
+    }))
   };
 }
 
@@ -404,7 +442,12 @@ export function personalContextProjection(store, {
   tokenLimit = PERSONAL_CONTEXT_TOKEN_BUDGET
 } = {}) {
   tokenLimit = Math.max(1200, Math.round(Number(tokenLimit) || PERSONAL_CONTEXT_TOKEN_BUDGET));
-  const onboarding = onboardingProjection(store), sections = contextEntries(store);
+  const onboarding = onboardingProjection(store);
+  const userModel = userModelContextProjection(store);
+  onboarding.prompt = [onboarding.prompt, userModel.prompt].filter(Boolean).join("\n");
+  onboarding.sources.push(...userModel.sources);
+  onboarding.conclusions.push(...userModel.conclusions);
+  const sections = contextEntries(store);
   let prompt = renderPersonalPrompt(onboarding, sections);
   while (estimatePersonalContextTokens(prompt) > tokenLimit) {
     const removable = CONTEXT_REMOVAL_ORDER.find(key => sections[key].length);

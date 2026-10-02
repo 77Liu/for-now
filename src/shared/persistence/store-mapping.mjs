@@ -9,7 +9,8 @@ const COLLECTIONS = {
   analyses: "analysis", customMetrics: "customMetric", trash: "trash",
   attachmentCleanup: "attachmentCleanup", aiTasks: "aiTask", notifications: "notification",
   actions: "action", habits: "habit", habitCheckins: "habitCheckin",
-  feedback: "feedback", validationLedger: "validationLedger"
+  feedback: "feedback", validationLedger: "validationLedger",
+  userClaims: "userClaim", modelUnknowns: "modelUnknown"
 };
 const SINGLETONS = new Set(["journalDraft", "onboarding", "onboardingV2", "commercialization"]);
 const ANNOTATED = ["annotations", "annotationDrift"];
@@ -179,6 +180,27 @@ export function mapStoreObjects(accountId, store) {
       if (collection) link(row, "source", collection, item.sourceRef.id);
     }
     if (row.kind === "habitCheckin") link(row, "habit", "habits", item.habitId, true);
+    if (row.kind === "userClaim") {
+      link(row, "supersedes", "userClaims", item.supersedes);
+      for (const [index, evidence] of (item.evidence || []).entries()) {
+        if (evidence.sourceType === "onboardingV2Answer") {
+          link(
+            row,
+            `evidence:${index}`,
+            "onboardingV2",
+            "onboardingV2",
+            true,
+            keyOf(["onboardingV2"])
+          );
+        }
+      }
+    }
+    if (row.kind === "modelUnknown") {
+      for (const [index, claimId] of (item.relatedEvidence || []).entries()) {
+        link(row, `relatedEvidence:${index}`, "userClaims", claimId);
+      }
+      link(row, "resolvedBy", "userClaims", item.resolvedBy);
+    }
     if (row.kind === "journalDraft" && item.journalId) link(row, "journal", "journals", item.journalId, true);
     if (row.kind === "notification") link(row, "task", "aiTasks", item.taskId);
     if (row.kind === "aiTask" || row.kind === "notification") {
