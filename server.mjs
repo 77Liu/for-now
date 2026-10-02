@@ -1066,6 +1066,7 @@ async function meteredProviderCall(details, invoke, summarize, budgetContext = n
     estimatedCostCny = 0,
     ...auditDetails
   } = details;
+  if (!budgeted) return aiAudit.providerCall(auditDetails, invoke, summarize);
   const execute = async execution => {
     const accountReservation = await reserveAiAttempt({ estimatedCostCny });
     const releaseQuota = typeof accountReservation?.release === "function"
@@ -1083,7 +1084,6 @@ async function meteredProviderCall(details, invoke, summarize, budgetContext = n
       commit: typeof commitQuota === "function" ? () => commitQuota() : () => {}
     };
     const auditedCall = () => aiAudit.providerCall({ ...auditDetails, reservation }, invoke, summarize);
-    if (!budgeted) return auditedCall();
     let stageStarted = false;
     try {
       return await execution.runStage(budgetContext?.stageId || "provider-call", async ({ recordUsage }) => {
@@ -1097,7 +1097,6 @@ async function meteredProviderCall(details, invoke, summarize, budgetContext = n
     }
   };
   try {
-    if (!budgeted) return await execute(null);
     if (budgetContext?.execution) return await execute(budgetContext.execution);
     const context = requestStorage.getStore() || {};
     return await aiBudgetRuntime.executeTask({
