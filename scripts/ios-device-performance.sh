@@ -247,11 +247,12 @@ run_action() {
   write_metadata "$metadata" "$action" "prepared" "$result_bundle" "$sha"
 
   run_in_window npx --no-install cap sync ios
+  candidate_sha >/dev/null
 
   local -a arguments=(
     -project "$PROJECT"
     -scheme "$SCHEME"
-    -configuration Debug
+    -configuration Release
     -destination "platform=iOS,name=$CIKE_IOS_DEVICE_NAME"
     -derivedDataPath "$derived_data"
     -clonedSourcePackagesDirPath "$ROOT/.xcode-packages"
@@ -259,6 +260,7 @@ run_action() {
     -resultBundlePath "$result_bundle"
     "DEVELOPMENT_TEAM=$TEAM_ID"
     CODE_SIGN_STYLE=Automatic
+    'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) CIKE_PERFORMANCE_TESTING'
   )
   if [[ "$action" == "build" ]]; then
     arguments+=(build-for-testing)

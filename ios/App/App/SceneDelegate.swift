@@ -12,7 +12,7 @@ private enum DevicePerformanceEnvironment {
         ProcessInfo.processInfo.environment[enabledKey] == "1"
     }
 
-#if DEBUG
+#if DEBUG || CIKE_PERFORMANCE_TESTING
     static func validatedTestURL() -> URL {
         let environment = ProcessInfo.processInfo.environment
         guard environment[isolatedKey] == "1",
@@ -39,7 +39,7 @@ private enum DevicePerformanceEnvironment {
 }
 
 private final class CikeBridgeViewController: CAPBridgeViewController {
-#if DEBUG
+#if DEBUG || CIKE_PERFORMANCE_TESTING
     override func instanceDescriptor() -> InstanceDescriptor {
         let descriptor = super.instanceDescriptor()
         guard DevicePerformanceEnvironment.isEnabled else { return descriptor }
@@ -69,7 +69,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)
 
-#if DEBUG
+#if DEBUG || CIKE_PERFORMANCE_TESTING
         runNativeTestScenarioIfRequested(in: bridgeViewController)
 #endif
     }
@@ -97,7 +97,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         ])
     }
 
-#if DEBUG
+#if DEBUG || CIKE_PERFORMANCE_TESTING
     private func runNativeTestScenarioIfRequested(in controller: CAPBridgeViewController, attempt: Int = 0) {
         guard let scenario = ProcessInfo.processInfo.environment["CIKE_NATIVE_SCENARIO"]
             ?? UserDefaults.standard.string(forKey: "CIKE_NATIVE_SCENARIO") else { return }
