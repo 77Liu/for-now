@@ -47,6 +47,7 @@
     "test:system": "node scripts/system-test.mjs all",
     "start:local-test": "node scripts/local-test-preview.mjs",
     "test:observability": "node scripts/observability-regression.mjs",
+    "test:ai-budget": "node scripts/ai-budget-regression.mjs",
     "test:pricing": "node scripts/provider-pricing-regression.mjs",
     "test:volcengine": "node scripts/volcengine-provider-regression.mjs",
     "test:volcengine:server": "node scripts/volcengine-server-regression.mjs",

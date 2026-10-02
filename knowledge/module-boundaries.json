@@ -130,8 +130,8 @@
       "root": "src/modules/ai",
       "publicEntry": "src/modules/ai/index.mjs",
       "allowedDependencies": ["shared.validation", "shared.observability", "shared.time", "shared.prompts", "shared.speech"],
-      "owns": { "data": ["model profiles, scenes, settings migration and public projections", "usage normalization, price snapshots, account quotas and invocation audit", "cost plan normalization, usage aggregates, prompt composition and model attempt policy"], "routes": ["GET /api/settings", "POST /api/settings", "POST /api/settings/test", "GET /api/ai-cost-plan", "PATCH /api/ai-cost-plan"] },
-      "tests": ["scripts/ai-domain-regression.mjs", "scripts/ai-provider-regression.mjs", "scripts/regression.mjs", "scripts/observability-regression.mjs", "scripts/auth-regression.mjs", "scripts/boundaries-regression.mjs"],
+      "owns": { "data": ["model profiles, scenes, settings migration and public projections", "usage normalization, price snapshots, account quotas and invocation audit", "site-wide budget periods, atomic task reservations, threshold and unknown-cost events", "cost plan normalization, usage aggregates, prompt composition and model attempt policy"], "routes": ["GET /api/settings", "POST /api/settings", "POST /api/settings/test", "GET /api/ai-cost-plan", "PATCH /api/ai-cost-plan"] },
+      "tests": ["scripts/ai-domain-regression.mjs", "scripts/ai-budget-regression.mjs", "scripts/ai-provider-regression.mjs", "scripts/regression.mjs", "scripts/observability-regression.mjs", "scripts/auth-regression.mjs", "scripts/boundaries-regression.mjs"],
       "status": "active"
     },
     {
