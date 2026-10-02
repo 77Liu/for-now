@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { resolveHeadlessBrowser } from "./browser-runtime.mjs";
 import { healthImageFixtures } from "./fixtures/health-images.mjs";
 import { architectureOwnerSurface, commercializationOwnerSurface } from "../src/modules/owner-surfaces/index.mjs";
+import { isApplicationRoutePath } from "../public/frontend/pages/index.mjs";
 
 const CHROME = resolveHeadlessBrowser();
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -66,7 +67,7 @@ async function startStaticServer() {
   const mime = { ".css": "text/css; charset=utf-8", ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8" };
   const server = http.createServer(async (request, response) => {
     try {
-      const url = new URL(request.url, "http://127.0.0.1"), relative = url.pathname === "/" ? "index.html" : url.pathname.replace(/^\/+/, "");
+      const url = new URL(request.url, "http://127.0.0.1");
       if (request.method === "GET" && url.pathname === "/api/owner/surfaces/architecture") {
         response.writeHead(200, { "content-type": "application/json", "cache-control": "private, no-store" });
         response.end(JSON.stringify(architectureOwnerSurface()));
@@ -87,6 +88,7 @@ async function startStaticServer() {
         })));
         return;
       }
+      const relative = isApplicationRoutePath(url.pathname) ? "index.html" : url.pathname.replace(/^\/+/, "");
       if (url.pathname.startsWith("/attachments/")) {
         response.writeHead(200, { "content-type": "image/png", "cache-control": "no-store" });
         response.end(TEST_IMAGE);
@@ -2533,12 +2535,15 @@ try {
   assert.equal(await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-capture-thought]').textContent`),"已展为思考");
   await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-capture-thought]').click();true`);
   assert.equal(await waitUntil(`document.querySelector("#view-thoughts").classList.contains("active")&&document.querySelector('[data-chain-id="auto-root-1"]').open`),true);
+  assert.equal(await evaluate(`location.pathname`),"/thoughts/auto-root-1");
   const taskCountBeforeAutoAnswer = await evaluate(`window.__aiTasks.length`);
   await evaluate(`document.querySelector("#chain-question").value = "第一条自动回答"; document.querySelector("#chain-answer").value = ""; document.querySelector("#chain-form").requestSubmit(); true`);
   assert.equal(await waitUntil(`window.__aiTasks.length === ${taskCountBeforeAutoAnswer + 1} && !document.querySelector('#chain-form [type="submit"]').disabled && document.querySelector("#chain-question").value === ""`, 80, 25), true);
   assert.equal(await evaluate(`document.querySelector("#ai-answer-modal").hidden`), true);
   assert.match(await evaluate(`document.querySelector("#chain-status").textContent`), /后台生成/);
   assert.equal(await waitUntil(`window.__aiTasks[0].status === "succeeded" && !document.querySelector("#notification-dot").hidden`,80,25),true);
+  await evaluate(`document.querySelector("[data-thought-list]").click();true`);
+  assert.equal(await waitUntil(`location.pathname==="/thoughts"&&document.querySelector('#all-thoughts [data-chain-id="kept-root"]')`),true);
   await evaluate(`(() => { window.__holdAiTasks=true;const card=document.querySelector('#all-thoughts [data-chain-id="kept-root"]');card.open=true;card.querySelector('[data-answer-chain]').click();return true })()`);
   assert.equal(await waitUntil(`window.__aiTasks.some(task=>task.targetId==="kept-root"&&task.status==="running")`),true);
   const notificationReadsBeforePoll=await evaluate(`({notifications:window.__notificationReads,tasks:window.__taskReads})`);

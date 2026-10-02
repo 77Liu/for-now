@@ -65,13 +65,15 @@ import {
   validatedAudioBlob,
   validatedImageFiles
 } from "../media/index.mjs";
-import { createPageRouter, ownerViewCapabilities } from "../pages/index.mjs";
+import { createPageRouter, createUnavailableRouteResult, ownerViewCapabilities } from "../pages/index.mjs";
 import { sessionScope, sessionSerial, rotateSession } from "../session/index.mjs";
 import { state, replaceState, mergeStateSnapshot, resetState, subscribeState, publishDomains, createRefreshCoordinator } from "../state/index.mjs";
 import { createIndexedDbSyncStore, createIncrementalSync, createRequestCoordinator } from "../sync/index.mjs";
 import { createOccurrenceDraft, entryKeyIntent, eventDate, eventTimestamp, formatDate, formatDateKey, formatTime, localDateKey, localDateTimeForDate, occurrenceSubmission, persistedDateTimeInput, toLocalDateTimeInput } from "../time/index.mjs";
 
-const apiClient=createApiClient({baseUrl:new URL("../../app.js",import.meta.url),apiOrigin:document.documentElement.dataset.apiOrigin||"",session:sessionScope,onAuthRequired:error=>showAuthGate(error?.code==="AUTH_REAUTH_REQUIRED"?"账户权限已变更，请重新登录。":"")});
+const appEntryUrl=new URL("../../app.js",import.meta.url);
+const applicationBasePath=new URL(".",appEntryUrl).pathname.replace(/\/$/,"")||"/";
+const apiClient=createApiClient({baseUrl:appEntryUrl,apiOrigin:document.documentElement.dataset.apiOrigin||"",session:sessionScope,onAuthRequired:error=>showAuthGate(error?.code==="AUTH_REAUTH_REQUIRED"?"账户权限已变更，请重新登录。":"")});
 const appUrl=apiClient.appUrl;
 const syncStore=createIndexedDbSyncStore();
 const mediaDraftStore=createIndexedDbMediaDraftStore();
@@ -91,12 +93,12 @@ const defaultSceneEfforts={...Object.fromEntries(Object.entries(defaultLlmScenar
 const ownerCapabilities=[...new Set([...Object.values(ownerViewCapabilities),"local-testing","ai-configuration","account-roles"])];
 const responseStyleOptions=[["concise","简短"],["standard","标准"],["deep","深入"],["structured","结构化"],["exploratory","开放探索"]];
 const responseStyleScenes=["thoughtDraft","thoughtAnswer","followUpAnswer","chat","diaryReflection","annotationShenji","analysis"];
-let switchView,restoreView;
+let pageRouter,switchView,restoreView;
 let backgroundResultController=null;
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{generationRate:-10},hasApiKey:false,keyHint:""};
 let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,discoveryController=null,actionsSnapshot={actions:[],habits:[],habitCheckins:[]},actionsRequestSerial=0,feedbackItems=[],feedbackRequestSerial=0,exportManifest=null,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,appVersion="0.4.0",releaseVersion="0.4.0",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
-let notificationsLoadState="idle",feedbackLoadState="idle",exportLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0;
+let notificationsLoadState="idle",feedbackLoadState="idle",exportLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,activeThoughtRouteId="",activeRouteResult=null;
 let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeEditorTrigger=null,activeSpeechCaptureId="",activeSpeechSourceKey="",activeSpeechVoice="",activeSpeechPlaybackRate=1,activeSpeechAudio=null,activeSpeechObjectUrl="",activeSpeechAbortController=null;
 const keepsakeEditor={file:null,sourceDataUrl:"",sourceImage:null,sourceCanvas:null,maskCanvas:null,autoBase:null,history:[],mode:"keep",drawing:false,lastPoint:null,source:"manual",originalPath:"",cutoutPath:"",mediaDirty:false,renderFrame:0,segmentSerial:0,understandingSerial:0};
 const keepsakeBatch={items:[],activeIndex:0,loading:false};
@@ -1298,7 +1300,13 @@ async function requestV1(url,options={},coordination={}){
         owner:currentUser?.id,url,options,domains:syncDomainsFor(url),...coordination,
         onQueued:record=>{operationId=record.operationId;return onQueued?.(record)}
       });
-      settlePendingProjection(coordination.projection,operationId,result?.data)
+      settlePendingProjection(coordination.projection,operationId,result?.data);
+      if(coordination.projection?.kind==="thought.chain.delete"){
+        const id=coordination.projection.id,previousLength=(state.thoughts||[]).length;
+        state.thoughts=(state.thoughts||[]).filter(item=>item.id!==id&&item.relatedTo!==id);
+        if(state.thoughts.length!==previousLength){renderThoughts();renderCaptures();renderHomeMemories()}
+        reconcileThoughtRoute()
+      }
     }catch(error){
       if(["failed","conflict"].includes(error?.syncStatus))restorePendingProjection(snapshot,operationId);
       throw error
@@ -1399,7 +1407,7 @@ function applyPendingProjection(record){
     const previousLength=(state.thoughts||[]).length;
     state.thoughts=(state.thoughts||[]).filter(item=>item.id!==projection.id&&item.relatedTo!==projection.id);
     if(state.thoughts.length===previousLength)return false;
-    renderThoughts();renderCaptures();renderHomeMemories();return true
+    renderThoughts();reconcileThoughtRoute();renderCaptures();renderHomeMemories();return true
   }
   if(projection.kind==="thought.chain.update"){
     const root=(state.thoughts||[]).find(item=>item.id===projection.id&&item.type==="question");
@@ -1527,7 +1535,7 @@ async function loadNotifications(){const owner=currentUser?.id,session=sessionSe
 async function openAiTaskTarget(task,notification){
   const resourceType=task?.resourceType||notification?.resourceType||"thought",targetId=task?.targetId||notification?.targetId,subtargetId=task?.subtargetId||notification?.subtargetId||"",kind=task?.kind||"thoughtAnswer";
   const destination={thought:["thoughts","thoughts"],capture:["captures","captures"],journal:["journals","journals"],chat:["together","chat"],analysis:["review","review"],book:["books","books"],quote:["quotes","quotes"]}[resourceType]||["thoughts","thoughts"];
-  switchView(destination[0]);
+  if(resourceType==="thought"&&targetId)openThoughtDetail(targetId);else switchView(destination[0]);
   await refreshState([destination[1],"notifications"],resourceType==="thought"?{chainId:targetId,followUpId:kind==="followUpAnswer"?subtargetId:""}:{});
   if(kind==="contentImageUnderstanding"){
     if(task?.contentTargetType==="comment"&&targetId&&subtargetId){openCommentPanel(commentRootKey(resourceType,targetId),subtargetId);return}
@@ -1598,7 +1606,7 @@ function chainCard({question,children},showDate=true,sortMode=thoughtSortMode){
   return `<article class="thought-timeline-entry${syncing?" is-syncing":""}"><div class="timeline-date">${showDate?escapeHtml(eventDate({occurredAt:displayedAt})):""}</div><header class="thought-entry-meta"><div class="thought-entry-markers"><span class="thought-entry-tags">${tags}</span>${tracePending}</div><time>${formatTime(displayedAt)}</time></header><details class="thought-card chain-record" data-chain-id="${question.id}"><summary class="chain-summary"><div class="summary-content"><strong class="question-preview">${escapeHtml(plainPreview(question.content)||"图片记录")}</strong>${ideaText?`<p class="idea-preview">${escapeHtml(plainPreview(ideaText))}</p>`:""}<p class="answer-preview">${escapeHtml(answerPreview)}</p></div><span class="expand-mark" aria-hidden="true">⌄</span></summary><div class="chain-expanded"><section class="chain-part"><b>问题</b><div><div class="thought-question-content markdown-content">${renderMarkdown(question.content)}</div>${contentImagesMarkup(question,"thoughtRoot")}</div></section>${thoughtStream(question,children)}${syncing?"":`<form class="followup-form" data-follow-up-root="${question.id}" hidden><label><span>追问问题</span><textarea rows="3" name="question" placeholder="补充一个追问…" required></textarea></label><label><span>回答（可选）</span><textarea rows="3" name="answer" placeholder="已有答案时可一起记下"></textarea></label><button class="quiet-button followup-submit" type="submit">＋ 追问</button><p class="followup-status" role="status" aria-live="polite"></p></form>`}<div class="thought-actions">${actions}</div></div></details></article>`
 }
 function chainCardsMarkup(chains,sortMode=thoughtSortMode){const displayDate=chain=>sortMode==="created"?eventDate({occurredAt:chain.question.createdAt||eventTimestamp(chain.question)}):thoughtDate(chain);return chains.map((chain,index)=>chainCard(chain,index===0||displayDate(chain)!==displayDate(chains[index-1]),sortMode)).join("")}
-function renderThoughtFilters(chains){const tags=[...new Set(chains.flatMap(({question,children})=>[...(question.tags||[]),...children.flatMap(x=>x.tags||[])]))].sort((a,b)=>a.localeCompare(b,"zh-CN"));if(thoughtFilter!=="all"&&!tags.includes(thoughtFilter))thoughtFilter="all";$("#thought-filters").innerHTML=["all",...tags].map(tag=>`<button class="filter-button ${thoughtFilter===tag?"active":""}" data-tag-filter="${escapeHtml(tag)}">${tag==="all"?"全部":`#${escapeHtml(tag)}`}</button>`).join("")}
+function renderThoughtFilters(chains){const tags=[...new Set(chains.flatMap(({question,children})=>[...(question.tags||[]),...children.flatMap(x=>x.tags||[])]))].sort((a,b)=>a.localeCompare(b,"zh-CN"));if(thoughtFilter!=="all"&&!tags.includes(thoughtFilter))tags.unshift(thoughtFilter);$("#thought-filters").innerHTML=["all",...tags].map(tag=>`<button class="filter-button ${thoughtFilter===tag?"active":""}" data-tag-filter="${escapeHtml(tag)}">${tag==="all"?"全部":`#${escapeHtml(tag)}`}</button>`).join("")}
 function thoughtOpenState(){const roots=new Set(),followUps=new Set();$$('.chain-record[open][data-chain-id]').forEach(card=>roots.add(card.dataset.chainId));$$('.response-entry[open][data-followup-id]').forEach(entry=>{const root=entry.closest('[data-chain-id]')?.dataset.chainId;if(root)followUps.add(`${root}:${entry.dataset.followupId}`)});return{roots,followUps}}
 function restoreThoughtOpenState(openState){$$('[data-chain-id]').forEach(card=>{if(openState.roots.has(card.dataset.chainId))card.open=true;card.querySelectorAll('[data-followup-id]').forEach(entry=>{if(openState.followUps.has(`${card.dataset.chainId}:${entry.dataset.followupId}`))entry.open=true})})}
 function syncThoughtBlockOverflow(root=document){
@@ -1613,6 +1621,28 @@ function setupThoughtBlockOverflow(){
   $$(".chain-record").forEach(card=>card.addEventListener("toggle",()=>{if(card.open)requestAnimationFrame(()=>syncThoughtBlockOverflow(card))}));
   requestAnimationFrame(()=>$$(".chain-record[open]").forEach(syncThoughtBlockOverflow))
 }
+function unavailableThoughtRouteMarkup(result){
+  const error=result?.error||{},details=error.details||{};
+  return `<section class="empty content-state route-unavailable" role="status" data-route-result="unavailable" data-route-error-code="${escapeHtml(error.code||"RESOURCE_UNAVAILABLE")}" data-route-resource-type="${escapeHtml(details.resourceType||"thought-chain")}"><strong>${escapeHtml(error.message||"这条思绪已不可用")}</strong><p>它可能已被删除，或当前账户无法访问。旧内容不会在这里显示，下面仍是当前可用的思绪列表。</p><button class="quiet-button content-state-action" type="button" data-content-action="dismiss-route-result">继续查看思绪列表</button></section>`
+}
+function applyApplicationRoute(route){
+  activeRouteResult=route.result||null;
+  if(route.view==="thoughts"){
+    thoughtFilter=route.query?.tag||"all";
+    thoughtSortMode=route.query?.sort==="created"?"created":"occurred";
+    activeThoughtRouteId=route.kind==="detail"&&route.resourceType==="thought-chain"?route.resourceId:""
+  }else activeThoughtRouteId="";
+  if(routeDataReady)renderThoughts()
+}
+function reconcileThoughtRoute(){
+  if(!routeDataReady||!pageRouter)return false;
+  const route=pageRouter.currentRoute();
+  if(route.kind!=="detail"||route.resourceType!=="thought-chain")return false;
+  if((state.thoughts||[]).some(item=>item.id===route.resourceId&&item.type==="question"))return false;
+  pageRouter.showUnavailable(createUnavailableRouteResult({resourceType:"thought-chain",resourceId:route.resourceId,view:"thoughts"}),{view:"thoughts",query:route.query});
+  return true
+}
+function openThoughtDetail(id){return pageRouter?.openDetail("thought-chain",id)}
 function renderThoughts(extraOpen={}){
   const open=thoughtOpenState(),todayDrafts=captureFormDrafts($("#today-thoughts")),allDrafts=captureFormDrafts($("#all-thoughts"));
   if(extraOpen.chainId)open.roots.add(extraOpen.chainId);
@@ -1620,16 +1650,29 @@ function renderThoughts(extraOpen={}){
   const chains=thoughtChains(),today=thoughtChains("occurred").filter(x=>thoughtDate(x)===activeDate).slice(0,5);
   $$("[data-thought-sort]").forEach(button=>{const active=button.dataset.thoughtSort===thoughtSortMode;button.classList.toggle("active",active);button.setAttribute("aria-pressed",String(active))});
   $("#today-thoughts").innerHTML=today.length?chainCardsMarkup(today,"occurred"):contentState({title:"这一天还没有思绪",body:"日期里没有记录很正常，已有内容仍在其他日期。",action:{command:"new-thought",label:"记录一个问题"}});
-  renderThoughtFilters(chains);
+  const selected=activeThoughtRouteId?chains.find(({question})=>question.id===activeThoughtRouteId):null,detailMode=Boolean(selected),filters=$("#thought-filters"),sortControls=$(".thought-sort");
+  filters.hidden=detailMode;sortControls.hidden=detailMode;
+  if(detailMode){
+    $("#all-thoughts").innerHTML=`<div class="filter-row"><button class="quiet-button" type="button" data-thought-list>‹ 返回思绪列表</button></div>${chainCardsMarkup([selected])}`;
+    $("#all-thoughts").querySelector("[data-chain-id]")?.setAttribute("open","");
+    open.roots.add(activeThoughtRouteId)
+  }else{
+    filters.hidden=false;sortControls.hidden=false;renderThoughtFilters(chains)
+  }
   const items=thoughtFilter==="all"?chains:chains.filter(({question,children})=>[...(question.tags||[]),...children.flatMap(x=>x.tags||[])].includes(thoughtFilter));
-  $("#all-thoughts").innerHTML=items.length
-    ?chainCardsMarkup(items)
-    :thoughtFilter==="all"
-      ?contentState({title:"还没有思绪",body:"从一个真实问题开始，初步想法可以稍后补充。",action:{command:"new-thought",label:"记录第一个问题"}})
-      :contentState({title:`#${thoughtFilter} 下还没有记录`,body:"其他标签的思绪仍然保留。",action:{command:"clear-thought-filter",label:"查看全部思绪"}});
+  if(!detailMode){
+    const notice=activeRouteResult?.error?.code==="RESOURCE_UNAVAILABLE"?unavailableThoughtRouteMarkup(activeRouteResult):"";
+    const list=items.length
+      ?chainCardsMarkup(items)
+      :thoughtFilter==="all"
+        ?contentState({title:"还没有思绪",body:"从一个真实问题开始，初步想法可以稍后补充。",action:{command:"new-thought",label:"记录第一个问题"}})
+        :contentState({title:`#${thoughtFilter} 下还没有记录`,body:"其他标签的思绪仍然保留。",action:{command:"clear-thought-filter",label:"查看全部思绪"}});
+    $("#all-thoughts").innerHTML=notice+list
+  }
   restoreThoughtOpenState(open);
   const todayFocus=restoreFormDrafts($("#today-thoughts"),todayDrafts),allFocus=restoreFormDrafts($("#all-thoughts"),allDrafts),focusTarget=allFocus||todayFocus;
-  tagCommentableTargets($("#today-thoughts"),today);tagCommentableTargets($("#all-thoughts"),items);renderLatex($("#today-thoughts"));renderLatex($("#all-thoughts"));applyCommentAnchors($("#today-thoughts"));applyCommentAnchors($("#all-thoughts"));setupThoughtBlockOverflow();
+  const visibleItems=detailMode?[selected]:items;
+  tagCommentableTargets($("#today-thoughts"),today);tagCommentableTargets($("#all-thoughts"),visibleItems);renderLatex($("#today-thoughts"));renderLatex($("#all-thoughts"));applyCommentAnchors($("#today-thoughts"));applyCommentAnchors($("#all-thoughts"));setupThoughtBlockOverflow();
   if(focusTarget)requestAnimationFrame(()=>focusTarget.isConnected&&focusTarget.focus({preventScroll:true}))
 }
 
@@ -2661,7 +2704,7 @@ async function loadCommercialization(){
 }
 function openCommercialSource(view,id,date){
   if(view==="together"&&date){activeDate=eventDate({occurredAt:date});renderDate();renderChat()}
-  switchView(view);
+  if(view==="thoughts")openThoughtDetail(id);else switchView(view);
   requestAnimationFrame(()=>{
     const selectors={thoughts:`[data-chain-id="${CSS.escape(id)}"]`,captures:`[data-capture-id="${CSS.escape(id)}"]`,journals:`[data-journal-id="${CSS.escape(id)}"]`,books:`[data-book-id="${CSS.escape(id)}"]`,together:`[data-chat-id="${CSS.escape(id)}"]`},target=document.querySelector(selectors[view]||"");
     if(target instanceof HTMLDetailsElement)target.open=true;
@@ -2862,8 +2905,7 @@ function trapHomeEditorFocus(event,editor){
 function openHomeMemory(item){
   if(!item)return;
   if(item.type==="thought"){
-    switchView("thoughts");
-    requestAnimationFrame(()=>{const card=document.querySelector(`[data-chain-id="${CSS.escape(item.id)}"]`);if(card instanceof HTMLDetailsElement)card.open=true;card?.scrollIntoView({behavior:"smooth",block:"center"})});
+    openThoughtDetail(item.id);
     return
   }
   if(item.type==="book"){
@@ -3121,7 +3163,7 @@ async function loadPersonalContext(){
 function openContextSource(button){
   const view=button.dataset.contextView,target=button.dataset.contextTarget,root=button.dataset.contextRoot,date=button.dataset.contextDate,dailyType=button.dataset.contextDailyType;
   if(date){activeDate=date;if(dailyType&&dailyTypeMeta[dailyType])activeDailyType=dailyType;renderDate();renderSliders();renderDailyRecords();renderThoughts();renderStateChart();renderHomeMood();renderChat()}
-  switchView(view);
+  if(view==="thoughts")openThoughtDetail(root||target);else switchView(view);
   requestAnimationFrame(()=>{
     const selectors={
       thoughts:`[data-chain-id="${CSS.escape(root||target)}"]`,
@@ -3160,10 +3202,10 @@ async function load(){
     hasCapability("local-testing")?optionalRequest("/api/local-test-mode"):Promise.resolve(null)
   ]);
   if(owner!==currentUser?.id||session!==sessionSerial)return false;
-  replaceState(nextState);state.onboardingV2=nextOnboardingV2State.data;llmSettings=nextSettings;onboardingSchema=nextOnboardingSchema;localTestConfig=nextLocalTestConfig;appVersion=meta.version||"development";releaseVersion=meta.releaseVersion||releaseVersion;featureFlags={...featureFlags,...meta.features};governanceUrl=typeof meta.governanceUrl==="string"?meta.governanceUrl:"";onboardingHydrated=false;notificationUnreadCount=Number(state.notificationUnread)||0;
+  replaceState(nextState);state.onboardingV2=nextOnboardingV2State.data;llmSettings=nextSettings;onboardingSchema=nextOnboardingSchema;localTestConfig=nextLocalTestConfig;appVersion=meta.version||"development";releaseVersion=meta.releaseVersion||releaseVersion;featureFlags={...featureFlags,...meta.features};governanceUrl=typeof meta.governanceUrl==="string"?meta.governanceUrl:"";onboardingHydrated=false;notificationUnreadCount=Number(state.notificationUnread)||0;routeDataReady=true;
   await onboardingV2Controller.hydrate({schema:nextOnboardingV2Schema.data,state:nextOnboardingV2State.data});
   if(owner!==currentUser?.id||session!==sessionSerial)return false;
-  render();restoreDurableDrafts();syncChainRecordKind();await loadActionsWorkspace();scheduleNotificationPoll();return true
+  render();if(!reconcileThoughtRoute())pageRouter?.activate();restoreDurableDrafts();syncChainRecordKind();await loadActionsWorkspace();scheduleNotificationPoll();return true
 }
 function setAuthTab(tab){
   if(authBusy)return;
@@ -3180,7 +3222,7 @@ function invalidatePageLoads(){
 function clearPrivateSessionState(){
   closeImageViewer({restoreFocus:false});
   onboardingV2Controller.reset();
-  resetState();llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{generationRate:-10},hasApiKey:false,keyHint:""};
+  resetState();routeDataReady=false;activeThoughtRouteId="";activeRouteResult=null;llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{generationRate:-10},hasApiKey:false,keyHint:""};
   activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationsLoadState="idle";actionsSnapshot={actions:[],habits:[],habitCheckins:[]};feedbackItems=[];feedbackLoadState="idle";exportManifest=null;exportLoadState="idle";personalContext=null;personalContextLoadState="idle";accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.4.0";homeMemoryKeys=[];homeMemoryByKey=new Map();closeHomeEditors({restoreFocus:false});resetOwnerSurfaces();invalidatePageLoads();draftTags=[];captureDraftTags=[];pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";
   healthParseSerial+=1;latestHealthRequest=0;healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=[];healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]};for(const draft of Object.values(healthImageDrafts))Object.assign(draft,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0});
   bookParseSerial+=1;for(const url of Object.values(bookPreviewUrls))if(url)URL.revokeObjectURL(url);bookPreviewUrls={cover:"",recognition:""};pendingBookImages={cover:null,recognition:null};editingBookId="";activeBookId="";activeBookFeatureNoteId="";bookCreatorOpen=false;bookDetailCondensed=false;
@@ -3199,7 +3241,7 @@ function renderAccountIdentity(){
   $("#account-name").textContent=username;$("#account-current-name").textContent=username;$("#account-page-name").textContent=username;$("#account-username").value=username;
 }
 function prepareUserSession(user,authRequired){
-  rotateSession();currentUser=user;applyCapabilitySurface(user?.role==="owner"?ownerCapabilities:[]);document.body.classList.add("auth-locked");restoreView?.("today");$("#account-control").hidden=!authRequired;$("#account-authenticated").hidden=!authRequired;$("#account-local-mode").hidden=authRequired;renderAccountIdentity();
+  rotateSession();currentUser=user;applyCapabilitySurface(user?.role==="owner"?ownerCapabilities:[]);document.body.classList.add("auth-locked");restoreView?.();$("#account-control").hidden=!authRequired;$("#account-authenticated").hidden=!authRequired;$("#account-local-mode").hidden=authRequired;renderAccountIdentity();
 }
 function revealUserSession(){document.body.classList.remove("auth-locked");$("#auth-gate").hidden=true}
 async function activateUserSession(user,authRequired){
@@ -3249,7 +3291,7 @@ backgroundResultController=createBackgroundResultController({
   restoreViewState:view=>{if(!view)return;window.scrollTo(view.x,view.y);if($("#comment-panel-list"))$("#comment-panel-list").scrollTop=view.commentScroll},
   onError:error=>showToast(`后台结果同步失败：${error.message}`,"error")
 });
-subscribeState((next,wanted,thoughtOptions)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);if(wanted.has("dailyRecords"))renderDailyRecords();if(wanted.has("captures")){renderCaptures();renderCaptureTagComposer()}if(wanted.has("journals"))renderJournals();if(wanted.has("thoughts")){renderThoughts(thoughtOptions);renderCaptures();renderTagComposer();renderCaptureTagComposer();renderHomeMemories()}if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("review"))renderReview();if(wanted.has("books")){renderBooks();renderHomeMemories();if(activeCommentRoot.startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes")){renderKeepsakes();renderHomeKeepsake()}if(wanted.has("quotes")){renderQuotes();renderHomeMemories()}if(wanted.has("comments"))renderCommentPanel();renderNotifications()});
+subscribeState((next,wanted,thoughtOptions)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);if(wanted.has("dailyRecords"))renderDailyRecords();if(wanted.has("captures")){renderCaptures();renderCaptureTagComposer()}if(wanted.has("journals"))renderJournals();if(wanted.has("thoughts")){renderThoughts(thoughtOptions);reconcileThoughtRoute();renderCaptures();renderTagComposer();renderCaptureTagComposer();renderHomeMemories()}if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("review"))renderReview();if(wanted.has("books")){renderBooks();renderHomeMemories();if(activeCommentRoot.startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes")){renderKeepsakes();renderHomeKeepsake()}if(wanted.has("quotes")){renderQuotes();renderHomeMemories()}if(wanted.has("comments"))renderCommentPanel();renderNotifications()});
 function setAnswerModalStep(step){const order=["context","thinking","answer","done"],current=order.indexOf(step);$$("#ai-answer-progress li").forEach((item,index)=>{item.classList.toggle("active",index===current);item.classList.toggle("done",index<current||(step==="done"&&index===current))})}
 function closeAnswerModal(){const modal=$("#ai-answer-modal"),busy=modal.dataset.busy==="true";modal.hidden=true;if(busy)showToast("回答继续在后台生成，完成后会提醒。")}
 async function runAnswerInModal({title,scene="thoughtAnswer",requestCall,onDone,isCurrent=()=>true}){
@@ -3317,7 +3359,8 @@ const pageEffects={...createPageEffects({
   loadTrash
 }),today:()=>loadActionsWorkspace(),discovery:()=>loadDiscovery(),feedback:()=>loadFeedback(),export:()=>loadExportManifest(),"personal-context":()=>loadPersonalContext(),account:()=>loadAccountUsers()};
 const lazyPageEffects=new Proxy(pageEffects,{get(target,view){const effect=target[view];if(typeof view!=="string"||!LOCAL_TEST_VIEW_SCOPES[view])return effect;return()=>{void ensureLocalTestViewScope(view).then(async ready=>{if(!ready)return;await effect?.();await restorePendingProjections()})}}});
-({switchView,restoreView}=createPageRouter({query:$,queryAll:$$,effects:lazyPageEffects,canAccessView:(_,capability)=>hasCapability(capability),onDenied:showPermissionPage}));
+pageRouter=createPageRouter({query:$,queryAll:$$,effects:lazyPageEffects,basePath:applicationBasePath,onRoute:applyApplicationRoute,canAccessView:(_,capability)=>hasCapability(capability),onDenied:showPermissionPage});
+({switchView,restoreView}=pageRouter);
 $("#home-open-thought").addEventListener("click",()=>openHomeEditor("thought"));
 $("#home-record-state").addEventListener("click",()=>openHomeEditor("state"));
 $("#home-shuffle").addEventListener("click",()=>renderHomeMemories({advance:true}));
@@ -3346,7 +3389,7 @@ const discoveryQuery=input=>{
 function openDiscoveryItem(item){
   const route=item?.route||{view:"thoughts",resourceType:"thought",resourceId:item?.id||""},id=route.resourceId;
   if(route.view==="books"){activeBookId=id;activeBookFeatureNoteId=String(route.targetKey||"").replace(/^note:/,"");pendingBookNoteId=activeBookFeatureNoteId;switchView("books");renderBooks();return}
-  switchView(route.view||"thoughts");
+  if(route.resourceType==="thought")openThoughtDetail(id);else switchView(route.view||"thoughts");
   const selector={thought:`[data-chain-id="${CSS.escape(id)}"]`,capture:`[data-capture-id="${CSS.escape(id)}"]`,journal:`[data-journal-id="${CSS.escape(id)}"]`,quote:`[data-quote-id="${CSS.escape(id)}"]`}[route.resourceType];
   requestAnimationFrame(()=>{const target=document.querySelector(selector||"");if(target instanceof HTMLDetailsElement)target.open=true;target?.scrollIntoView({behavior:"smooth",block:"center"})})
 }
@@ -3523,7 +3566,18 @@ document.addEventListener("click",e=>{const toggle=e.target.closest("[data-follo
 document.addEventListener("click",async e=>{const button=e.target.closest("[data-followup-delete]");if(!button)return;if(!confirm("将这条追问及其回答移入回收站？"))return;button.disabled=true;try{await request(`/api/thoughts/${button.dataset.rootId}/follow-ups/${button.dataset.followupDelete}`,{method:"DELETE"});await refreshState("thoughts",{chainId:button.dataset.rootId});showToast("追问已移入回收站")}catch(err){showToast(err.message,"error");button.disabled=false}});
 document.addEventListener("click",async e=>{const button=e.target.closest("[data-followup-answer]");if(!button)return;const rootId=button.dataset.rootId,followUpId=button.dataset.followupAnswer,root=state.thoughts.find(item=>item.id===rootId&&item.type==="question"),followUp=root?.followUps?.find(item=>item.id===followUpId),clientRequestId=button.dataset.requestId||crypto.randomUUID();if(!root||!followUp)return;button.dataset.requestId=clientRequestId;button.disabled=true;const status=button.closest(".followup-answer")?.querySelector(".followup-status");if(status)status.textContent="正在加入后台队列…";try{const task=await request("/api/ai-tasks",{method:"POST",body:JSON.stringify({kind:"followUpAnswer",targetId:rootId,subtargetId:followUpId,inputVersion:root.version||1,subtargetVersion:followUp.version||1,clientRequestId})});if(!state.aiTasks.some(item=>item.id===task.id))state.aiTasks.unshift(task);if(status)status.textContent="回答已进入后台队列，可继续使用其他功能。";await refreshState("notifications");scheduleNotificationPoll();showToast("追问回答已在后台排队")}catch(err){if(status)status.textContent=`未能排队：${err.message}`;showToast(err.message,"error");button.disabled=false}});
 document.addEventListener("click",event=>{const button=event.target.closest("[data-context-source]");if(button)openContextSource(button)});
-document.addEventListener("click",event=>{const button=event.target.closest("[data-thought-sort]");if(!button)return;thoughtSortMode=button.dataset.thoughtSort==="created"?"created":"occurred";renderThoughts()});
+document.addEventListener("click",event=>{
+  const summary=event.target.closest(".chain-summary"),back=event.target.closest("[data-thought-list]");
+  if(back){pageRouter.showList("thoughts",{query:pageRouter.currentRoute().query});return}
+  if(!summary)return;
+  const card=summary.closest("[data-chain-id]");if(!card)return;
+  event.preventDefault();
+  const route=pageRouter.currentRoute();
+  if(route.kind==="detail"&&route.resourceId===card.dataset.chainId)pageRouter.showList("thoughts",{query:route.query});
+  else openThoughtDetail(card.dataset.chainId)
+});
+document.addEventListener("click",event=>{const button=event.target.closest("[data-thought-sort]");if(!button)return;pageRouter.replaceQuery({sort:button.dataset.thoughtSort==="created"?"created":null})});
+document.addEventListener("click",event=>{const button=event.target.closest("[data-tag-filter]");if(!button)return;event.stopImmediatePropagation();pageRouter.replaceQuery({tag:button.dataset.tagFilter==="all"?null:button.dataset.tagFilter,page:null})});
 document.addEventListener("click",event=>{
   const button=event.target.closest("[data-content-focus],[data-content-action]");if(!button)return;
   if(button.dataset.contentFocus){
@@ -3532,7 +3586,8 @@ document.addEventListener("click",event=>{
   }
   const command=button.dataset.contentAction;
   if(command==="new-thought"){switchView("today");openHomeEditor("thought");return}
-  if(command==="clear-thought-filter"){thoughtFilter="all";renderThoughts();return}
+  if(command==="clear-thought-filter"){pageRouter.replaceQuery({tag:null,page:null});return}
+  if(command==="dismiss-route-result"){pageRouter.clearResult();return}
   if(command==="new-state"){switchView("today");openHomeEditor("state");return}
   if(command==="new-keepsake"){$("#keepsake-create-toggle")?.click();return}
   if(command==="run-analysis"){$("#run-analysis")?.click();return}
@@ -3568,7 +3623,7 @@ document.addEventListener("click",async e=>{
   if(button.dataset.captureEdit)return editCapture(button.dataset.captureEdit);
   if(button.dataset.journalEdit)return editJournal(button.dataset.journalEdit);
   if(button.dataset.editCheckin)return openCheckinEditor(button.dataset.editCheckin);
-  if(button.dataset.captureThought){const id=button.dataset.captureThought;switchView("thoughts");requestAnimationFrame(()=>{const card=document.querySelector(`[data-chain-id="${CSS.escape(id)}"]`);if(card instanceof HTMLDetailsElement)card.open=true;card?.scrollIntoView({behavior:"smooth",block:"center"})});return}
+  if(button.dataset.captureThought){openThoughtDetail(button.dataset.captureThought);return}
   if(button.dataset.capturePromote){const item=(state.captures||[]).find(value=>value.id===button.dataset.capturePromote);if(!item)return;const form=$("#chain-form");form.reset();form.elements.sourceCaptureId.value=item.id;form.elements.sourceCaptureVersion.value=String(item.version||1);form.elements.recordKind.value="thought";activeDate=eventDate(item)||activeDate;renderDate();renderSliders();renderThoughts();renderStateChart();renderHomeMood();renderChat();$("#chain-question").value="";$("#chain-idea").value=item.content;draftTags=[...(item.tags||[])];renderTagComposer();syncChainRecordKind();$("#chain-status").textContent="这条念起将保留为来源。补上一个明确问题，再形成完整思考。";switchView("today");openHomeEditor("thought");$("#chain-question").focus();return}
   if(button.dataset.captureDelete){const id=button.dataset.captureDelete,item=(state.captures||[]).find(value=>value.id===id);if(!item||!confirm("将这条捕念移入回收站？"))return;button.disabled=true;try{await requestV1(`/api/v1/captures/${encodeURIComponent(id)}`,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`}},{domains:["captures"],recoverCommitted:true,projection:{kind:"record.delete",domain:"captures",id},onQueued:record=>applyPendingProjection(record)});void refreshState("captures").catch(error=>showToast(`捕念已移除，但列表刷新失败：${error.message}`,"error"));showToast("捕念已移入回收站")}catch(err){if(err.syncStatus==="pending")showToast("捕念将在网络恢复后移入回收站");else{await refreshState("captures").catch(()=>{});showToast(err.message,"error");button.disabled=false}}return}
   if(button.dataset.journalDelete){const id=button.dataset.journalDelete,item=(state.journals||[]).find(value=>value.id===id);if(!item||!confirm("将这篇日记及其助手回望移入回收站？"))return;button.disabled=true;try{await requestV1(`/api/v1/journals/${encodeURIComponent(id)}`,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`}},{domains:["journals"],recoverCommitted:true,projection:{kind:"record.delete",domain:"journals",id},onQueued:record=>applyPendingProjection(record)});void refreshState("journals").catch(error=>showToast(`日记已移除，但列表刷新失败：${error.message}`,"error"));showToast("日记已移入回收站")}catch(err){if(err.syncStatus==="pending")showToast("日记将在网络恢复后移入回收站");else{await refreshState("journals").catch(()=>{});showToast(err.message,"error");button.disabled=false}}return}

@@ -8,7 +8,17 @@ import {
   createPageEffects,
   selectHomeMemories
 } from "../public/frontend/features/index.mjs";
-import { createPageRouter, ownerViewCapabilities, viewSections } from "../public/frontend/pages/index.mjs";
+import {
+  applicationRouteUrl,
+  canonicalPagePaths,
+  createPageRouter,
+  createUnavailableRouteResult,
+  detailRoute,
+  isApplicationRoutePath,
+  ownerViewCapabilities,
+  resolveApplicationRoute,
+  viewSections
+} from "../public/frontend/pages/index.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const appEntry = await fs.readFile(path.join(ROOT, "public/app.js"), "utf8");
@@ -104,6 +114,35 @@ assert.deepEqual(
 
 const htmlViews = [...html.matchAll(/<section class="[^"]*\bview\b[^"]*" id="view-([^"]+)"/g)].map(match => match[1]).sort();
 assert.deepEqual(Object.keys(viewSections).sort(), htmlViews);
+assert.deepEqual(Object.keys(canonicalPagePaths).sort(), htmlViews);
+assert.equal(new Set(Object.values(canonicalPagePaths)).size, htmlViews.length);
+assert.deepEqual(
+  resolveApplicationRoute(new URL("https://example.test/now/thoughts/root%3A1?tag=%E5%A4%8D%E7%9B%98&sort=created&page=2"), { basePath: "/now" }),
+  {
+    kind: "detail",
+    view: "thoughts",
+    resourceType: "thought-chain",
+    resourceId: "root:1",
+    query: { tag: "复盘", sort: "created", page: 2 },
+    matched: true,
+    legacy: false,
+    canonicalUrl: "/now/thoughts/root%3A1?tag=%E5%A4%8D%E7%9B%98&sort=created&page=2"
+  }
+);
+assert.equal(resolveApplicationRoute(new URL("https://example.test/now/?view=books"), { basePath: "/now" }).canonicalUrl, "/now/seen/books");
+assert.equal(resolveApplicationRoute(new URL("https://example.test/now/view/settings"), { basePath: "/now" }).canonicalUrl, "/now/mine/settings");
+assert.equal(applicationRouteUrl(detailRoute("thought-chain", "root:1", { tag: "复盘" }), "/now"), "/now/thoughts/root%3A1?tag=%E5%A4%8D%E7%9B%98");
+assert.equal(isApplicationRoutePath("/thoughts/root-1"), true);
+assert.equal(isApplicationRoutePath("/not-an-app-route"), false);
+assert.deepEqual(createUnavailableRouteResult({ resourceType: "thought-chain", resourceId: "deleted" }), {
+  data: null,
+  error: {
+    code: "RESOURCE_UNAVAILABLE",
+    message: "这条思绪已不可用",
+    details: { resourceType: "thought-chain", resourceId: "deleted" }
+  },
+  meta: { fallback: { view: "thoughts", path: "/thoughts" } }
+});
 
 const element = ({ id = "", dataset = {} } = {}) => {
   const classes = new Set();
@@ -185,6 +224,83 @@ assert.deepEqual(calls.slice(0, 3), ["quotes", ["scroll", { top: 0, behavior: "s
 router.switchView("architecture");
 assert.equal(views[4].classList.contains("active"), true);
 assert.deepEqual(denied, [["architecture", ownerViewCapabilities.architecture]]);
+
+const routeListeners = new Map();
+const routeLocation = { pathname: "/now/", search: "?view=thoughts&tag=%E5%A4%8D%E7%9B%98", hash: "" };
+const routeEntries = [{ url: "/now/?view=thoughts&tag=%E5%A4%8D%E7%9B%98", state: null }];
+let routeIndex = 0;
+const updateRouteLocation = value => {
+  const url = new URL(value, "https://route.test");
+  routeLocation.pathname = url.pathname;
+  routeLocation.search = url.search;
+  routeLocation.hash = url.hash;
+};
+const routeHistory = {
+  state: null,
+  scrollRestoration: "auto",
+  get length() { return routeEntries.length; },
+  replaceState(state, _title, url) {
+    this.state = state;
+    routeEntries[routeIndex] = { state, url };
+    updateRouteLocation(url);
+  },
+  pushState(state, _title, url) {
+    routeEntries.splice(routeIndex + 1);
+    routeEntries.push({ state, url });
+    routeIndex += 1;
+    this.state = state;
+    updateRouteLocation(url);
+  },
+  move(offset) {
+    routeIndex += offset;
+    const entry = routeEntries[routeIndex];
+    this.state = entry.state;
+    updateRouteLocation(entry.url);
+    routeListeners.get("popstate")?.({ state: entry.state });
+  }
+};
+let browserScroll = { x: 0, y: 0 };
+const browserRouteEvents = [];
+const browserRouter = createPageRouter({
+  query: selector => selector === "#section-nav" ? sectionNav : null,
+  queryAll: selector => ({
+    ".view": views,
+    ".nav-button": nav,
+    "[data-section-links]": groups,
+    ".section-nav button": tabs
+  })[selector] || [],
+  location: routeLocation,
+  history: routeHistory,
+  eventTarget: { addEventListener: (name, listener) => routeListeners.set(name, listener) },
+  basePath: "/now",
+  requestFrame: callback => { callback(); return 1; },
+  readScroll: () => browserScroll,
+  scrollTo: options => {
+    browserScroll = { x: Number(options.left) || 0, y: Number(options.top) || 0 };
+  },
+  onRoute: (route, context) => browserRouteEvents.push({ route, source: context.source })
+});
+assert.equal(`${routeLocation.pathname}${routeLocation.search}`, "/now/thoughts?tag=%E5%A4%8D%E7%9B%98");
+assert.equal(routeHistory.length, 1, "legacy canonicalization must replace the current entry");
+browserScroll = { x: 0, y: 420 };
+browserRouter.replaceQuery({ sort: "created", page: 2 });
+assert.equal(routeHistory.length, 1, "same-page query changes must use replaceState");
+assert.equal(`${routeLocation.pathname}${routeLocation.search}`, "/now/thoughts?tag=%E5%A4%8D%E7%9B%98&sort=created&page=2");
+browserRouter.openDetail("thought-chain", "root:1");
+assert.equal(routeHistory.length, 2, "opening a detail must push a history entry");
+assert.equal(`${routeLocation.pathname}${routeLocation.search}`, "/now/thoughts/root%3A1?tag=%E5%A4%8D%E7%9B%98&sort=created&page=2");
+routeHistory.move(-1);
+assert.equal(browserRouter.currentRoute().kind, "page");
+assert.deepEqual(browserScroll, { x: 0, y: 420 });
+routeHistory.move(1);
+assert.equal(browserRouter.currentRoute().resourceId, "root:1");
+const unavailable = createUnavailableRouteResult({ resourceType: "thought-chain", resourceId: "root:1" });
+browserRouter.showUnavailable(unavailable);
+assert.equal(routeHistory.length, 2, "unavailable details must replace the stale detail entry");
+assert.equal(routeLocation.pathname, "/now/thoughts");
+assert.equal(browserRouter.currentRoute().result.error.code, "RESOURCE_UNAVAILABLE");
+assert.equal(routeHistory.scrollRestoration, "manual");
+assert.ok(browserRouteEvents.some(event => event.source === "pop"));
 
 const effects = createPageEffects({
   requestFrame: callback => {
