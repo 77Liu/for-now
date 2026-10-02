@@ -1719,14 +1719,29 @@ function captureAudioMarkup(item){
       :"";
     transcriptionState=`<p class="capture-transcription-state ${presentation.transcriptionStatus==="failed"?"error":""}" data-transcription-task-id="${escapeHtml(presentation.transcriptionTaskId)}">${escapeHtml(presentation.transcriptionMessage)}${action}</p>`;
   }
-  const voices=state.speech?.voices||[],voiceOptions=voices.map(voice=>`<option value="${escapeHtml(voice.id)}" ${voice.id===state.speech?.defaultVoice?"selected":""}>${escapeHtml(voice.label)}</option>`).join("");
-  const speechKey=captureSpeechIdentity(item,state.speech?.defaultVoice);
+  const voices=state.speech?.voices||[],selectedVoice=activeSpeechCaptureId===item.id&&activeSpeechVoice?activeSpeechVoice:state.speech?.defaultVoice,voiceOptions=voices.map(voice=>`<option value="${escapeHtml(voice.id)}" ${voice.id===selectedVoice?"selected":""}>${escapeHtml(voice.label)}</option>`).join("");
+  const speechKey=captureSpeechIdentity(item,selectedVoice);
   const selectedRate=activeSpeechCaptureId===item.id&&activeSpeechSourceKey===speechKey?activeSpeechPlaybackRate:1,rateOptions=TTS_PLAYBACK_RATES.map(rate=>`<option value="${rate}" ${rate===selectedRate?"selected":""}>${rate.toFixed(1)}×</option>`).join("");
-  return `<section class="capture-audio-record" data-capture-audio-key="${escapeHtml(presentation.audioKey)}" data-transcription-task-id="${escapeHtml(presentation.transcriptionTaskId)}">${audio?`<div class="capture-audio-source" data-capture-audio-key="${escapeHtml(presentation.audioKey)}"><audio controls preload="metadata" src="${escapeHtml(appUrl(audio.attachmentPath))}"></audio><span>${formatAudioDuration(audio.durationMs)} · <b class="capture-audio-playback-state">${escapeHtml(presentation.audioStatus)}</b></span></div>`:""}${layers}${transcriptionState}${speech&&state.speech?.configured?`<div class="capture-speech-actions"><select data-capture-voice aria-label="朗读音色">${voiceOptions}</select><select data-capture-playback-rate="${escapeHtml(item.id)}" aria-label="播放倍速">${rateOptions}</select><button type="button" class="capture-speak-button" data-capture-speak="${escapeHtml(item.id)}" data-capture-speech-key="${escapeHtml(speechKey)}" title="朗读文字" aria-label="朗读文字">▶</button><button type="button" data-capture-speech-pause title="暂停或继续朗读" aria-label="暂停或继续朗读">Ⅱ</button><button type="button" data-capture-speech-stop title="停止朗读" aria-label="停止朗读">■</button></div>`:""}</section>`
+  const speechPlayer=speech&&state.speech?.configured?`<div class="capture-speech-player"><audio controls preload="metadata" data-capture-speech-player="${escapeHtml(item.id)}" data-capture-speech-key="${escapeHtml(speechKey)}" aria-label="文字朗读播放器"></audio><span>文字朗读</span></div><div class="capture-speech-actions"><select data-capture-voice aria-label="朗读音色">${voiceOptions}</select><select data-capture-playback-rate="${escapeHtml(item.id)}" aria-label="播放倍速">${rateOptions}</select><button type="button" class="capture-speak-button" data-capture-speak="${escapeHtml(item.id)}" data-capture-speech-key="${escapeHtml(speechKey)}" title="生成并朗读文字" aria-label="生成并朗读文字">▶</button><button type="button" data-capture-speech-pause title="暂停或继续朗读" aria-label="暂停或继续朗读">Ⅱ</button><button type="button" data-capture-speech-stop title="停止朗读" aria-label="停止朗读">■</button></div>`:"";
+  return `<section class="capture-audio-record" data-capture-audio-key="${escapeHtml(presentation.audioKey)}" data-transcription-task-id="${escapeHtml(presentation.transcriptionTaskId)}">${audio?`<div class="capture-audio-source" data-capture-audio-key="${escapeHtml(presentation.audioKey)}"><audio controls preload="metadata" src="${escapeHtml(appUrl(audio.attachmentPath))}"></audio><span>${formatAudioDuration(audio.durationMs)} · <b class="capture-audio-playback-state">${escapeHtml(presentation.audioStatus)}</b></span></div>`:""}${layers}${transcriptionState}${speechPlayer}</section>`
+}
+function clearCaptureSpeechPlayer(player){
+  if(!player)return;player.pause();player.removeAttribute("src");player.load()
+}
+function bindCaptureSpeechPlayer(){
+  if(!activeSpeechCaptureId||!activeSpeechSourceKey||!activeSpeechObjectUrl)return null;
+  const card=document.querySelector(`[data-capture-id="${CSS.escape(activeSpeechCaptureId)}"]`),player=card?.querySelector("[data-capture-speech-player]");
+  if(!player||player.dataset.captureSpeechKey!==activeSpeechSourceKey)return null;
+  if(activeSpeechAudio&&activeSpeechAudio!==player)clearCaptureSpeechPlayer(activeSpeechAudio);
+  activeSpeechAudio=player;
+  if(player.getAttribute("src")!==activeSpeechObjectUrl){clearCaptureSpeechPlayer(player);player.src=activeSpeechObjectUrl;player.load()}
+  player.playbackRate=activeSpeechPlaybackRate;
+  return player
 }
 function stopCaptureSpeech(){
   activeSpeechAbortController?.abort();activeSpeechAbortController=null;
-  if(activeSpeechAudio){activeSpeechAudio.pause();activeSpeechAudio.removeAttribute("src");activeSpeechAudio.load()}
+  const players=new Set([activeSpeechAudio,...document.querySelectorAll("[data-capture-speech-player]")]);
+  for(const player of players)if(player&&(player===activeSpeechAudio||activeSpeechObjectUrl&&[player.getAttribute("src"),player.src,player.currentSrc].includes(activeSpeechObjectUrl)))clearCaptureSpeechPlayer(player);
   if(activeSpeechObjectUrl)URL.revokeObjectURL(activeSpeechObjectUrl);
   activeSpeechAudio=null;activeSpeechObjectUrl="";activeSpeechCaptureId="";activeSpeechSourceKey="";activeSpeechVoice="";activeSpeechPlaybackRate=1
 }
@@ -1735,14 +1750,15 @@ async function speakCapture(id,voice,sourceKey,playbackRate=1){
   const expectedSourceKey=captureSpeechIdentity(item,voice),rate=normalizeTtsPlaybackRate(playbackRate);
   if(!text||!expectedSourceKey||sourceKey!==expectedSourceKey)return;
   stopCaptureSpeech();const controller=new AbortController();activeSpeechAbortController=controller;activeSpeechCaptureId=id;activeSpeechSourceKey=sourceKey;activeSpeechVoice=voice;activeSpeechPlaybackRate=rate;
+  let audio=null;
   try{
     const blob=await apiClient.requestBlob("/api/speech/synthesize",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({captureId:id,sourceVersion:item.version,voice}),signal:controller.signal},{fallback:"语音合成失败"});
     const current=(state.captures||[]).find(value=>value.id===id);
     if(activeSpeechCaptureId!==id||activeSpeechSourceKey!==sourceKey||controller.signal.aborted||captureSpeechIdentity(current,voice)!==sourceKey)return;
-    activeSpeechObjectUrl=URL.createObjectURL(blob);const audio=new Audio(activeSpeechObjectUrl);audio.playbackRate=rate;activeSpeechAudio=audio;
-    audio.addEventListener("ended",()=>{if(activeSpeechAudio===audio)stopCaptureSpeech()},{once:true});
-    audio.addEventListener("error",()=>{if(activeSpeechAudio===audio){stopCaptureSpeech();showToast("合成音频无法播放","error")}},{once:true});
-    await audio.play()
+    if(activeSpeechAbortController===controller)activeSpeechAbortController=null;
+    activeSpeechObjectUrl=URL.createObjectURL(blob);audio=bindCaptureSpeechPlayer();
+    if(!audio){stopCaptureSpeech();return}
+    audio.addEventListener("error",()=>{if(activeSpeechAudio===audio)showToast("合成音频暂时无法播放，音源仍保留在当前卡片。","error")},{once:true})
   }catch(error){
     if(controller.signal.aborted||activeSpeechSourceKey!==sourceKey)return;
     if(error.name!=="AbortError"){
@@ -1753,6 +1769,17 @@ async function speakCapture(id,voice,sourceKey,playbackRate=1){
         retained:"原音和文字记录没有变化"
       }).message,"error")
     }
+    return
+  }
+  try{await audio.play()}
+  catch(error){
+    if(activeSpeechAudio!==audio||activeSpeechSourceKey!==sourceKey)return;
+    showToast(presentError(error,{
+      operation:"播放文字朗读",
+      object:"这次文字朗读",
+      phase:"文字朗读播放",
+      retained:"合成语音已经保留在当前卡片"
+    }).message,"error")
   }
 }
 function reconcileCaptureSpeech(){
@@ -1787,6 +1814,7 @@ function renderCaptures(){
   reconcileCaptureSpeech();
   $("#capture-count").textContent=`${items.length} 条`;
   $("#capture-list").innerHTML=items.length?items.map((item,index)=>captureCard(item,index===0||eventDate(item)!==eventDate(items[index-1]))).join(""):contentState({title:"还没有捕念",body:"刚开始为空很正常。文字、图片或录音都可以单独留下。",action:{focus:"capture-content",label:"留下第一条"}});
+  bindCaptureSpeechPlayer();
   items.filter(item=>!item._sync).forEach(item=>markCommentTarget($(`[data-capture-id="${CSS.escape(item.id)}"] .capture-copy .markdown-content`),commentRootKey("capture",item.id),"content"));
   renderLatex($("#capture-list"));applyCommentAnchors($("#capture-list"));requestAnimationFrame(syncCaptureOverflow);
 }
@@ -3889,13 +3917,22 @@ document.addEventListener("click",async event=>{
     play.dataset.captureSpeechKey=sourceKey;
     return void speakCapture(play.dataset.captureSpeak,voice,sourceKey,rate)
   }
-  if(event.target.closest("[data-capture-speech-pause]")&&activeSpeechCaptureId&&activeSpeechAudio){
-    if(activeSpeechAudio.paused)void activeSpeechAudio.play().catch(error=>showToast(presentError(error,{operation:"播放文字朗读",object:"这次文字朗读",phase:"文字朗读播放",retained:"原音和文字记录没有变化"}).message,"error"));else activeSpeechAudio.pause();
+  const pause=event.target.closest("[data-capture-speech-pause]");
+  if(pause){
+    if(pause.closest("[data-capture-id]")?.dataset.captureId===activeSpeechCaptureId&&activeSpeechAudio){
+      if(activeSpeechAudio.paused)void activeSpeechAudio.play().catch(error=>showToast(presentError(error,{operation:"播放文字朗读",object:"这次文字朗读",phase:"文字朗读播放",retained:"原音和文字记录没有变化"}).message,"error"));else activeSpeechAudio.pause()
+    }
     return
   }
-  if(event.target.closest("[data-capture-speech-stop]"))stopCaptureSpeech()
+  const stop=event.target.closest("[data-capture-speech-stop]");
+  if(stop&&stop.closest("[data-capture-id]")?.dataset.captureId===activeSpeechCaptureId)stopCaptureSpeech()
 });
 document.addEventListener("change",event=>{
+  const voiceControl=event.target.closest("[data-capture-voice]");
+  if(voiceControl&&activeSpeechCaptureId){
+    const card=voiceControl.closest("[data-capture-id]"),id=card?.dataset.captureId,item=state.captures.find(value=>value.id===id);
+    if(id===activeSpeechCaptureId&&captureSpeechIdentity(item,voiceControl.value)!==activeSpeechSourceKey)stopCaptureSpeech();
+  }
   const control=event.target.closest("[data-capture-playback-rate]");if(!control||!activeSpeechAudio)return;
   const id=control.dataset.capturePlaybackRate,item=state.captures.find(value=>value.id===id),voice=control.closest(".capture-speech-actions")?.querySelector("[data-capture-voice]")?.value||state.speech?.defaultVoice,sourceKey=captureSpeechIdentity(item,voice);
   if(id!==activeSpeechCaptureId||sourceKey!==activeSpeechSourceKey)return;

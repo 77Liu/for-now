@@ -183,6 +183,9 @@ const mockFetch = `
   };
   window.__speechRequests = [];
   window.__speechPlays = [];
+  window.__speechObjectUrls = [];
+  window.__speechRevokedUrls = [];
+  window.__rejectNextSpeechPlay = false;
   window.__delaySpeech = false;
   window.__releaseSpeech = null;
   window.__failSpeech = false;
@@ -190,6 +193,41 @@ const mockFetch = `
   window.__audioUploadKeys = [];
   window.__failAudioUpload = false;
   window.__failTranscriptionQueue = false;
+  const nativeCreateObjectUrl = URL.createObjectURL.bind(URL);
+  const nativeRevokeObjectUrl = URL.revokeObjectURL.bind(URL);
+  URL.createObjectURL = value => {
+    const url = nativeCreateObjectUrl(value);
+    if (String(value?.type || "").startsWith("audio/")) window.__speechObjectUrls.push(url);
+    return url;
+  };
+  URL.revokeObjectURL = url => {
+    if (window.__speechObjectUrls.includes(url)) window.__speechRevokedUrls.push(url);
+    return nativeRevokeObjectUrl(url);
+  };
+  const nativeMediaPlay = HTMLMediaElement.prototype.play;
+  const nativeMediaPause = HTMLMediaElement.prototype.pause;
+  const nativePaused = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "paused");
+  const speechPaused = new WeakMap();
+  Object.defineProperty(HTMLMediaElement.prototype, "paused", {
+    configurable: true,
+    get() {
+      return speechPaused.has(this) ? speechPaused.get(this) : nativePaused.get.call(this);
+    }
+  });
+  HTMLMediaElement.prototype.play = function() {
+    if (!this.matches?.("[data-capture-speech-player]")) return nativeMediaPlay.call(this);
+    const rejected = window.__rejectNextSpeechPlay;
+    window.__rejectNextSpeechPlay = false;
+    speechPaused.set(this, rejected);
+    window.__speechPlays.push({ src: this.currentSrc || this.src, rate: this.playbackRate, rejected });
+    return rejected
+      ? Promise.reject(new DOMException("AUTOPLAY_BLOCKED", "NotAllowedError"))
+      : Promise.resolve();
+  };
+  HTMLMediaElement.prototype.pause = function() {
+    if (!this.matches?.("[data-capture-speech-player]")) return nativeMediaPause.call(this);
+    speechPaused.set(this, true);
+  };
   window.Audio = class extends EventTarget {
     constructor(src = "") { super(); this.src = src; this.paused = true; this.playbackRate = 1; window.__lastSpeechAudio = this; }
     play() { this.paused = false; window.__speechPlays.push({ src: this.src, rate: this.playbackRate }); return Promise.resolve(); }
@@ -1996,6 +2034,15 @@ try {
   assert.equal(captureInitial.dateLabels, 1);
   assert.equal(captureInitial.dateOutsideCard, true);
   assert.equal(captureInitial.timeOnRight, true);
+  assert.deepEqual(await evaluate(`(() => {const textCard=document.querySelector('[data-capture-id="capture-1"]'),voiceCard=document.querySelector('[data-capture-id="capture-long"]'),player=textCard.querySelector("[data-capture-speech-player]"),original=voiceCard.querySelector(".capture-audio-source audio");return{textPlayer:Boolean(player),controls:player?.controls,connected:player?.isConnected,source:player?.currentSrc||"",original:original?.getAttribute("src"),ttsPlayers:voiceCard.querySelectorAll("[data-capture-speech-player]").length,repeatedGenerationSetting:Boolean(voiceCard.querySelector("#tts-generation-rate,.speech-generation-default"))}})()`), {
+    textPlayer: true,
+    controls: true,
+    connected: true,
+    source: "",
+    original: "/attachments/capture-voice.m4a",
+    ttsPlayers: 1,
+    repeatedGenerationSetting: false
+  }, "audio-tts-playback: text captures need a stable in-card player");
   assert.deepEqual(await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-long"]'),source=card.querySelector(".capture-audio-source"),rate=card.querySelector("[data-capture-playback-rate]");return{audio:card.querySelector("audio")?.getAttribute("src"),audioReady:source?.querySelector(".capture-audio-playback-state")?.textContent,audioKey:source?.dataset.captureAudioKey||"",status:card.querySelector(".capture-transcription-state")?.textContent,speak:card.querySelector("[data-capture-speak]")?.getAttribute("data-capture-speak"),speechKey:card.querySelector("[data-capture-speak]")?.dataset.captureSpeechKey||"",voice:card.querySelector("[data-capture-voice]")?.value,rate:rate?.value,rates:[...rate.options].map(option=>Number(option.value)),speechControls:card.querySelectorAll(".capture-speech-actions button").length}})()`), {
     audio: "/attachments/capture-voice.m4a",
     audioReady: "原音可播放",
@@ -2034,21 +2081,30 @@ try {
   await evaluate(`window.__capturePatchPayloads=[];window.__releaseSpeech();true`);
   await sleep(100);
   assert.equal(await evaluate(`window.__speechPlays.length`),0,"audio-tts-playback");
-  await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-long"]'),rate=card.querySelector("[data-capture-playback-rate]");rate.value="1.5";card.querySelector("[data-capture-speak]").click();return true})()`);
-  assert.equal(await waitUntil(`window.__speechRequests.length===2&&window.__speechPlays.length===1`),true);
+  await evaluate(`(() => {window.__rejectNextSpeechPlay=true;const card=document.querySelector('[data-capture-id="capture-long"]'),rate=card.querySelector("[data-capture-playback-rate]");rate.value="1.5";card.querySelector("[data-capture-speak]").click();return true})()`);
+  assert.equal(await waitUntil(`window.__speechRequests.length===2&&document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-player]')?.currentSrc.startsWith("blob:")`),true);
   assert.deepEqual(await evaluate(`({keys:Object.keys(window.__speechRequests[1]).sort(),captureId:window.__speechRequests[1].captureId,sourceVersion:window.__speechRequests[1].sourceVersion,voice:window.__speechRequests[1].voice})`), {
     keys: ["captureId", "sourceVersion", "voice"],
     captureId: "capture-long",
     sourceVersion: 2,
     voice: "zh_male_shaonianzixin_uranus_bigtts",
   }, "playback rate must not enter the TTS generation request");
-  assert.deepEqual(await evaluate(`({rate:window.__speechPlays[0].rate,blob:window.__speechPlays[0].src.startsWith("blob:")})`),{rate:1.5,blob:true});
-  await evaluate(`(() => {const rate=document.querySelector('[data-capture-id="capture-long"] [data-capture-playback-rate]');rate.value="2";rate.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
-  assert.equal(await evaluate(`window.__lastSpeechAudio.playbackRate`),2);
-  await evaluate(`document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-pause]').click();document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-pause]').click();true`);
+  assert.deepEqual(await evaluate(`(() => {const player=document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-player]'),src=player.currentSrc;return{rate:window.__speechPlays[0].rate,blob:src.startsWith("blob:"),connected:player.isConnected,retained:player.getAttribute("src")===src,revoked:window.__speechRevokedUrls.includes(src),rejected:window.__speechPlays[0].rejected}})()`),{rate:1.5,blob:true,connected:true,retained:true,revoked:false,rejected:true});
+  await evaluate(`document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-player]').play();true`);
   assert.equal(await waitUntil(`window.__speechPlays.length===2`),true);
-  assert.deepEqual(await evaluate(`({rate:window.__speechPlays[1].rate,requests:window.__speechRequests.length})`),{rate:2,requests:2});
-  await evaluate(`document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-stop]').click();true`);
+  assert.deepEqual(await evaluate(`({sameSource:window.__speechPlays[1].src===window.__speechPlays[0].src,rejected:window.__speechPlays[1].rejected})`),{sameSource:true,rejected:false},"autoplay rejection must retain the source for a user retry");
+  await evaluate(`window.__crossRecordSpeechUrl=document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-player]').currentSrc;document.querySelector('[data-capture-id="capture-1"] [data-capture-speech-pause]').click();document.querySelector('[data-capture-id="capture-1"] [data-capture-speech-stop]').click();true`);
+  assert.deepEqual(await evaluate(`({retained:document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-player]').getAttribute("src")===window.__crossRecordSpeechUrl,revoked:window.__speechRevokedUrls.includes(window.__crossRecordSpeechUrl),plays:window.__speechPlays.length})`),{retained:true,revoked:false,plays:2},"inactive card controls must not affect another record");
+  await evaluate(`(() => {const rate=document.querySelector('[data-capture-id="capture-long"] [data-capture-playback-rate]');rate.value="2";rate.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
+  assert.equal(await evaluate(`document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-player]').playbackRate`),2);
+  await evaluate(`document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-pause]').click();document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-pause]').click();true`);
+  assert.equal(await waitUntil(`window.__speechPlays.length===3`),true);
+  assert.deepEqual(await evaluate(`({rate:window.__speechPlays[2].rate,requests:window.__speechRequests.length})`),{rate:2,requests:2});
+  await evaluate(`window.__replacedSpeechUrl=document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-player]').currentSrc;document.querySelector('[data-capture-id="capture-1"] [data-capture-speak]').click();true`);
+  assert.equal(await waitUntil(`window.__speechRequests.length===3&&document.querySelector('[data-capture-id="capture-1"] [data-capture-speech-player]')?.currentSrc.startsWith("blob:")`),true);
+  assert.deepEqual(await evaluate(`({oldRevoked:window.__speechRevokedUrls.includes(window.__replacedSpeechUrl),oldCleared:!document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-player]').getAttribute("src"),newBound:document.querySelector('[data-capture-id="capture-1"] [data-capture-speech-player]').currentSrc===window.__speechObjectUrls.at(-1)})`),{oldRevoked:true,oldCleared:true,newBound:true},"switching records must release and detach the old source");
+  await evaluate(`window.__stoppedSpeechUrl=document.querySelector('[data-capture-id="capture-1"] [data-capture-speech-player]').currentSrc;document.querySelector('[data-capture-id="capture-1"] [data-capture-speech-stop]').click();true`);
+  assert.deepEqual(await evaluate(`({revoked:window.__speechRevokedUrls.includes(window.__stoppedSpeechUrl),cleared:!document.querySelector('[data-capture-id="capture-1"] [data-capture-speech-player]').getAttribute("src")})`),{revoked:true,cleared:true});
   assert.deepEqual(await evaluate(`(() => {const editor=document.querySelector(".capture-audio-editor"),upload=editor.querySelector(".audio-file-primary"),recorder=editor.querySelector("#capture-audio-recorder"),record=editor.querySelector("#capture-audio-record"),preview=editor.querySelector("#capture-audio-preview");return{fits:editor.getBoundingClientRect().right<=window.innerWidth,uploadText:upload.textContent.trim(),uploadHeight:Math.round(upload.getBoundingClientRect().height),recorderOpen:recorder.open,summary:recorder.querySelector("summary").textContent.replace(/\\s+/g," ").trim(),recordCollapsed:record.getClientRects().length===0,previewCollapsed:preview.getClientRects().length===0}})()`), {
     fits: true,
     uploadText: "↑上传音频",
@@ -2167,6 +2223,9 @@ try {
   assert.equal(await evaluate(`document.documentElement.scrollWidth <= window.innerWidth && document.querySelector("#capture-date").getBoundingClientRect().right <= window.innerWidth`), true);
   assert.equal(await evaluate(`(() => { const card=document.querySelector('[data-capture-id="capture-1"]'),date=card.querySelector(".capture-date").getBoundingClientRect(),meta=card.querySelector(".capture-meta").getBoundingClientRect(),time=card.querySelector(".capture-entry-time").getBoundingClientRect(); return date.bottom<=meta.top+1&&meta.left<=time.left&&time.right<=meta.right+1; })()`), true);
   assert.equal(await evaluate(`(() => { const buttons=[...document.querySelectorAll('[data-capture-id="capture-long"] .capture-actions button')].map(item=>item.getBoundingClientRect()); return buttons[0].bottom<=buttons[1].top+1&&Math.abs(buttons[1].top-buttons[2].top)<2&&buttons[2].bottom-buttons[0].top<42; })()`), true);
+  await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-1"]'),expand=card.querySelector("[data-capture-expand]");if(!expand.hidden&&!card.querySelector(".capture-item").classList.contains("is-expanded"))expand.click();card.scrollIntoView({block:"center"});return true})()`);
+  await sleep(100);
+  assert.deepEqual(await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-1"]'),player=card.querySelector("[data-capture-speech-player]"),actions=card.querySelector(".capture-speech-actions"),cardRect=card.getBoundingClientRect(),playerRect=player.getBoundingClientRect(),actionsRect=actions.getBoundingClientRect();return{controls:player.controls,visible:playerRect.height>0,inside:playerRect.left>=cardRect.left&&playerRect.right<=cardRect.right+1&&actionsRect.right<=cardRect.right+1,noOverflow:document.documentElement.scrollWidth<=innerWidth}})()`),{controls:true,visible:true,inside:true,noOverflow:true});
   const captureMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-captures-mobile.png", Buffer.from(captureMobileScreenshot.data, "base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
@@ -3047,7 +3106,9 @@ try {
   assert.equal(await waitUntil(`!document.querySelector('[data-chain-id="kept-root"]')&&document.querySelector("#toast").textContent.includes("网络恢复后移入回收站")`),true);
   await evaluate(`document.querySelector('[data-view="daily"]').click();document.querySelector('[data-daily-tab="exercise"]').click();window.__pasteHealth();window.__delayParseKind="exercise";window.__releaseParse=null;document.querySelector("#parse-health-images").click();true`);
   assert.equal(await waitUntil(`typeof window.__releaseParse==="function"`),true);
-  await evaluate(`document.querySelector('[data-view="today"]').click();document.querySelector("#chain-question").value="账户 A 的在途草稿";document.querySelector("#chain-answer").value="";document.querySelector("#draft-answer-button").click();true`);
+  await evaluate(`document.querySelector('[data-view="captures"]').click();document.querySelector('[data-capture-id="capture-1"] [data-capture-speak]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-1"] [data-capture-speech-player]')?.currentSrc.startsWith("blob:")`),true);
+  await evaluate(`window.__logoutSpeechUrl=document.querySelector('[data-capture-id="capture-1"] [data-capture-speech-player]').currentSrc;document.querySelector('[data-view="today"]').click();document.querySelector("#chain-question").value="账户 A 的在途草稿";document.querySelector("#chain-answer").value="";document.querySelector("#draft-answer-button").click();true`);
   assert.equal(await waitUntil(`window.__reasoningChunks===1`,40,10),true);
   await evaluate(`(()=>{const file=new File([new Uint8Array([1,2,3])],"thought-draft.png",{type:"image/png"}),transfer=new DataTransfer();transfer.items.add(file);const input=document.querySelector("#thought-root-images");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
   assert.equal(await waitUntil(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const request=opening.result.transaction("drafts","readonly").objectStore("drafts").get("user-1:thoughtRoot");request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(request.result?.items?.[0]?.name==="thought-draft.png")}})`),true);
@@ -3056,7 +3117,7 @@ try {
   await evaluate(`window.__delayLogout=true;document.querySelector("#logout-button").click();true`);
   assert.equal(await waitUntil(`!document.querySelector("#auth-gate").hidden`),true);
   assert.equal(await evaluate(`sessionStorage.getItem("cike:session-drafts:user-1")`),null);
-  assert.deepEqual(await evaluate(`({locked:document.body.classList.contains("auth-locked"),privateSurfaceHidden:getComputedStyle(document.querySelector("main")).visibility==="hidden",logoutPending:typeof window.__releaseLogout==="function"})`),{locked:true,privateSurfaceHidden:true,logoutPending:true});
+  assert.deepEqual(await evaluate(`({locked:document.body.classList.contains("auth-locked"),privateSurfaceHidden:getComputedStyle(document.querySelector("main")).visibility==="hidden",logoutPending:typeof window.__releaseLogout==="function",speechRevoked:window.__speechRevokedUrls.includes(window.__logoutSpeechUrl),speechDetached:![...document.querySelectorAll("[data-capture-speech-player]")].some(player=>player.getAttribute("src")===window.__logoutSpeechUrl)})`),{locked:true,privateSurfaceHidden:true,logoutPending:true,speechRevoked:true,speechDetached:true});
   await evaluate(`window.__releaseLogout();true`);
   assert.equal(await waitUntil(`[...document.querySelectorAll(".auth-form input,.auth-form button,[data-auth-tab]")].every(item=>!item.disabled)`),true);
   assert.equal(await waitUntil(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const request=opening.result.transaction("drafts","readonly").objectStore("drafts").get("user-1:thoughtRoot");request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(!request.result)}})`),true);
