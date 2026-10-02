@@ -28,13 +28,22 @@ async function waitForServer(base, child, stderr) {
   throw new Error(`本地测试服务启动超时\n${stderr()}`);
 }
 
+let defaultCookie = "";
 async function jsonRequest(url, options = {}) {
-  const response = await fetch(url, { ...options, headers: { "content-type": "application/json", ...(options.headers || {}) } });
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      "content-type": "application/json",
+      ...(defaultCookie ? { cookie: defaultCookie } : {}),
+      ...(options.headers || {})
+    }
+  });
   return { response, body: await response.json() };
 }
 
 const upstreamCalls = [];
 let upstreamUserId = "main-user";
+let upstreamUserRole = "owner";
 const remoteCapture = {
   id: "remote-capture",
   createdAt: "2026-09-28T01:00:00.000Z",
@@ -100,14 +109,14 @@ const upstream = http.createServer(async (request, response) => {
   response.setHeader("content-type", "application/json");
   if (url.pathname === "/api/auth/login" && request.method === "POST") {
     response.setHeader("set-cookie", "for_now_session=main-session; Path=/now; HttpOnly; SameSite=Lax; Secure");
-    return response.end(JSON.stringify({ authenticated: true, authRequired: true, user: { id: upstreamUserId, username: "main", createdAt: "" }, userCount: 3 }));
+    return response.end(JSON.stringify({ authenticated: true, authRequired: true, user: { id: upstreamUserId, username: "main", role: upstreamUserRole, createdAt: "" }, userCount: 3 }));
   }
   if (url.pathname === "/api/auth/logout" && request.method === "POST") return response.end(JSON.stringify({ authenticated: false }));
   if (request.headers.cookie !== "for_now_session=main-session") {
     response.writeHead(401);
     return response.end(JSON.stringify({ authenticated: false, error: "请先登录", code: "AUTH_REQUIRED", userCount: 3 }));
   }
-  if (url.pathname === "/api/auth/me" && request.method === "GET") return response.end(JSON.stringify({ authenticated: true, authRequired: true, user: { id: upstreamUserId, username: "main", createdAt: "" }, userCount: 3 }));
+  if (url.pathname === "/api/auth/me" && request.method === "GET") return response.end(JSON.stringify({ authenticated: true, authRequired: true, user: { id: upstreamUserId, username: "main", role: upstreamUserRole, createdAt: "" }, userCount: 3 }));
   if (url.pathname === "/api/v1/captures" && request.method === "GET") {
     if (holdCaptureRead) await new Promise(resolve => { releaseCaptureRead = resolve; });
     return response.end(JSON.stringify({ data: [remoteCapture], error: null, meta: { nextCursor: null } }));
@@ -190,11 +199,9 @@ child.stderr.on("data", chunk => { stderr += chunk; });
 try {
   await waitForServer(base, child, () => stderr);
   const initial = await jsonRequest(`${base}/api/local-test-mode`);
-  assert.equal(initial.response.status, 200);
-  assert.equal(initial.body.mode, "cold");
-  assert.equal(initial.body.enabled, true);
-  assert.equal(initial.body.upstreamConfigured, true);
-  assert.equal((await jsonRequest(`${base}/api/state`)).body.onboarding.status, "pending");
+  assert.equal(initial.response.status, 401);
+  assert.equal(initial.body.code, "AUTH_REQUIRED");
+  assert.equal((await jsonRequest(`${base}/api/state`)).response.status, 401);
   const login = await jsonRequest(`${base}/api/auth/login`, { method: "POST", body: JSON.stringify({ username: "main", password: "test-password-1" }) });
   assert.equal(login.response.status, 200);
   const localSetCookie = login.response.headers.get("set-cookie") || "";
@@ -203,9 +210,16 @@ try {
   assert.match(localSetCookie, /SameSite=Strict/);
   assert.doesNotMatch(localSetCookie, /main-session|for_now_session|;\s*Secure/i);
   const cookie = localSetCookie.split(";", 1)[0];
+  defaultCookie = cookie;
   const replayedUpstream = await jsonRequest(`http://127.0.0.1:${upstream.address().port}/api/auth/me`, { headers: { cookie } });
   assert.equal(replayedUpstream.response.status, 401);
   const upstreamCallsAfterLogin = upstreamCalls.length;
+  const initialAuthorized = await jsonRequest(`${base}/api/local-test-mode`);
+  assert.equal(initialAuthorized.response.status, 200);
+  assert.equal(initialAuthorized.body.mode, "cold");
+  assert.equal(initialAuthorized.body.enabled, true);
+  assert.equal(initialAuthorized.body.upstreamConfigured, true);
+  assert.equal((await jsonRequest(`${base}/api/state`)).body.onboarding.status, "pending");
 
   assert.equal((await jsonRequest(`${base}/api/captures`, {
     method: "POST",
@@ -359,6 +373,14 @@ try {
   assert.equal(duplicateHydration.body.hydrated, false);
   assert.equal(upstreamCalls.filter(call => call.path === "/api/v1/captures").length, captureCallsBeforeDuplicate);
 
+  upstreamUserRole = "user";
+  const userLogin = await jsonRequest(`${base}/api/auth/login`, { method: "POST", body: JSON.stringify({ username: "member", password: "test-password-2" }) });
+  const userCookie = (userLogin.response.headers.get("set-cookie") || "").split(";", 1)[0];
+  const deniedUser = await jsonRequest(`${base}/api/local-test-mode`, { headers: { cookie: userCookie } });
+  assert.equal(deniedUser.response.status, 403);
+  assert.equal(deniedUser.body.code, "OWNER_REQUIRED");
+
+  upstreamUserRole = "owner";
   upstreamUserId = "not-main";
   const otherLogin = await jsonRequest(`${base}/api/auth/login`, { method: "POST", body: JSON.stringify({ username: "not-main", password: "test-password-2" }) });
   const otherCookie = (otherLogin.response.headers.get("set-cookie") || "").split(";", 1)[0];

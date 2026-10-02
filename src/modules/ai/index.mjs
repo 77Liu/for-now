@@ -1,6 +1,7 @@
 export {
   LLM_SETTINGS_VERSION, LLM_MODELS, LLM_TIERS, LLM_SCENARIOS, defaultLlmSettings,
-  normalizeLlmSettings, publicLlmSettings, llmSettingsForScene, mergeLlmSettings,
+  normalizeLlmSettings, publicLlmSettings, publicUserAiPreferences, llmSettingsForScene,
+  mergeLlmSettings, mergeUserAiPreferences,
   automaticAnswerDecision, createLlmSettingsService
 } from "./settings.mjs";
 export { AI_USAGE_VERSION, DEEPSEEK_PRICING, normalizeAiUsage, deepSeekUsageEntry, providerUsageEntry, createAiUsageService } from "./usage.mjs";

@@ -5,7 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import {
   LLM_SCENARIOS, defaultLlmSettings, normalizeLlmSettings, mergeLlmSettings, publicLlmSettings,
-  llmSettingsForScene, createLlmSettingsService, normalizeAiUsage, deepSeekUsageEntry, createAiUsageService, createAiAudit,
+  mergeUserAiPreferences, publicUserAiPreferences, llmSettingsForScene, createLlmSettingsService,
+  normalizeAiUsage, deepSeekUsageEntry, createAiUsageService, createAiAudit,
   automaticAnswerDecision, defaultAiCostPlan, normalizeAiCostPlan, createAiCostService, usageDashboard,
   usageEntryFromAudit, providerUsageEntry
 } from "../src/modules/ai/index.mjs";
@@ -37,6 +38,23 @@ assert.deepEqual(publicLlmSettings(edited).speech, { generationRate: -10 });
 assert.equal(mergeLlmSettings(edited, { speech: { generationRate: 25 } }).speech.generationRate, 25);
 assert.deepEqual(initial.automaticAnswers, { thoughtAnswer: false });
 assert.equal(publicLlmSettings(initial).automaticAnswers.thoughtAnswer, false);
+const userPreferenceBaseline = normalizeLlmSettings({
+  ...initial,
+  sceneEfforts: { ...initial.sceneEfforts, thoughtDraft: "none" }
+});
+const userPreferences = mergeUserAiPreferences(userPreferenceBaseline, {
+  assistantName: "普通账户助手",
+  sceneEfforts: { thoughtAnswer: "none" },
+  apiKey: "must-not-change",
+  profiles: { ultra: { model: "deepseek-flash", effort: "none" } }
+});
+assert.equal(userPreferences.assistantName, "普通账户助手");
+assert.equal(userPreferences.sceneEfforts.thoughtAnswer, "none");
+assert.equal(userPreferences.sceneEfforts.thoughtDraft, "none");
+assert.equal(userPreferences.apiKey, initial.apiKey);
+assert.deepEqual(userPreferences.profiles, initial.profiles);
+assert.equal(llmSettingsForScene(userPreferences, "thoughtAnswer").effort, "none");
+assert.doesNotMatch(JSON.stringify(publicUserAiPreferences(userPreferences)), /apiKey|provider|profiles|private-test-value/);
 assert.deepEqual(automaticAnswerDecision(initial, { requested: true, hasAnswer: false }), {
   enabled: false,
   generateAnswer: false,
@@ -69,6 +87,10 @@ assert.equal(settingsResponse.body.automaticAnswers.thoughtAnswer, false);
 settingsInput = { automaticAnswers: { thoughtAnswer: true } };
 assert.equal(await settingsHttp.handle({ method: "POST" }, {}, new URL("http://local/api/settings")), true);
 assert.equal(settingsResponse.body.automaticAnswers.thoughtAnswer, true);
+settingsInput = { sceneEfforts: { thoughtAnswer: "none" }, apiKey: "must-not-change" };
+assert.equal(await settingsHttp.handle({ method: "PATCH" }, {}, new URL("http://local/api/preferences")), true);
+assert.equal(settingsResponse.body.sceneEfforts.thoughtAnswer, "none");
+assert.equal(settingsDocument.apiKey, initial.apiKey);
 assert.equal((await settingsHttp.automaticAnswer({ requested: true })).generateAnswer, true);
 
 const peak = deepSeekUsageEntry({
@@ -224,7 +246,7 @@ try {
   await run("a", async () => {
     await fs.writeFile(getFile(), JSON.stringify(legacy));
     await settings.ensure();
-    assert.equal((await fs.stat(`${getFile()}.v2-pre-v9.20260929010000.bak`)).mode & 0o777, 0o600);
+    assert.equal((await fs.stat(`${getFile()}.v2-pre-v10.20260929010000.bak`)).mode & 0o777, 0o600);
     await Promise.all([
       settings.update(current => mergeLlmSettings(current, { assistantName: "并发名称" })),
       settings.update(current => mergeLlmSettings(current, { apiKey: "next-test-value" }))

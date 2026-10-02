@@ -16,7 +16,7 @@ import {
   createOnboardingV2Service
 } from "./src/modules/onboarding/index.mjs";
 import { createJournalRecords } from "./src/modules/journals/index.mjs";
-import { createAuthService, publicUser } from "./src/modules/auth/index.mjs";
+import { capabilitiesFor, createAuthService, isOwner, publicUser } from "./src/modules/auth/index.mjs";
 import { createAnnotationService } from "./src/modules/annotations/index.mjs";
 import { activeTaskForInput, createTaskLifecycle, publicAiTask } from "./src/modules/tasks/index.mjs";
 import { createNotificationService, notificationUnread } from "./src/modules/notifications/index.mjs";
@@ -209,7 +209,8 @@ const storeLocalTestUpstreamSession = (token, cookie, user = null) => {
     cookie,
     user: user && typeof user === "object" ? {
       id: safeText(user.id, 100),
-      username: safeText(user.username, 100)
+      username: safeText(user.username, 100),
+      role: user.role === "owner" ? "owner" : "user"
     } : null,
     expiresAt: currentTime + LOCAL_TEST_SESSION_MAX_AGE_SECONDS * 1000
   });
@@ -647,6 +648,23 @@ function normalizeLocalTestControl(value = {}) {
   };
 }
 
+function requireLocalTestOwner(req) {
+  const session = localTestUpstreamSession(req);
+  if (!session?.user?.id) {
+    throw Object.assign(new Error("本地登录会话已失效，请重新登录"), {
+      statusCode: 401,
+      code: "AUTH_REQUIRED"
+    });
+  }
+  if (!isOwner(session.user)) {
+    throw Object.assign(new Error("当前账户没有 Owner 权限"), {
+      statusCode: 403,
+      code: "OWNER_REQUIRED"
+    });
+  }
+  return session;
+}
+
 async function readLocalTestControl() {
   return normalizeLocalTestControl(await readStoredJson(LOCAL_TEST_CONTROL_FILE, { mode: "cold" }));
 }
@@ -814,7 +832,7 @@ async function resetLocalTestWorkspace(mode, store, settings = null, attachmentC
   await Promise.all(["attachments", "logs"].map(name => fs.rm(path.join(dataDir, name), { recursive: true, force: true })));
   await Promise.all(["ai-usage.json", "ai-cost-plan.json"].map(name => fs.rm(path.join(dataDir, name), { force: true })));
   if (mode === "cold") await fs.rm(path.join(dataDir, "llm-settings.json"), { force: true });
-  await requestStorage.run({ ...(requestStorage.getStore() || {}), user: { id: `local-test-${mode}`, username: mode === "simulation" ? "使用模拟" : "冷启测试", createdAt: "" }, dataDir }, async () => {
+  await requestStorage.run({ ...(requestStorage.getStore() || {}), user: { id: `local-test-${mode}`, username: mode === "simulation" ? "使用模拟" : "冷启测试", role: "owner", createdAt: "" }, dataDir }, async () => {
     await ensureStore();
     await fs.mkdir(storagePaths().attachmentsDir, { recursive: true, mode: 0o700 });
     for (const [resourcePath, bytes] of attachmentCopies) {
@@ -848,8 +866,7 @@ function switchLocalTestMode(req, mode) {
   const operation = localTestControlQueue.then(async () => {
     if (!localTestModes.has(mode)) throw Object.assign(new Error("本地测试模式无效"), { statusCode: 400, code: "LOCAL_TEST_MODE_INVALID" });
     if (mode === "simulation") {
-      const session = localTestUpstreamSession(req);
-      if (!session?.user?.id) throw Object.assign(new Error("本地登录会话缺少主账户信息，请重新登录"), { statusCode: 401, code: "AUTH_REQUIRED" });
+      const session = requireLocalTestOwner(req);
       if (LOCAL_TEST_MAIN_USER_ID && session.user.id !== LOCAL_TEST_MAIN_USER_ID) throw Object.assign(new Error("当前登录账户不是配置的线上主账户"), { statusCode: 403, code: "LOCAL_TEST_MAIN_ACCOUNT_REQUIRED" });
       const snapshot = normalizeStore({ ...clone(emptyStore), onboarding: { ...clone(emptyStore.onboarding), status: "completed" } });
       await resetLocalTestWorkspace(mode, snapshot);
@@ -879,8 +896,7 @@ function hydrateLocalTestScope(req, scope) {
       if (nextControl !== control) await writeLocalTestControl(nextControl);
       return { control: nextControl, state: publicStateFromStore(await readStore()), hydrated: false };
     }
-    const session = localTestUpstreamSession(req);
-    if (!session?.user?.id) throw Object.assign(new Error("本地登录会话已失效，请重新登录"), { statusCode: 401, code: "AUTH_REQUIRED" });
+    const session = requireLocalTestOwner(req);
     if (LOCAL_TEST_MAIN_USER_ID && session.user.id !== LOCAL_TEST_MAIN_USER_ID) throw Object.assign(new Error("当前登录账户不是配置的线上主账户"), { statusCode: 403, code: "LOCAL_TEST_MAIN_ACCOUNT_REQUIRED" });
     const patch = await localTestScopePatch(req, missingCollections);
     const merged = await updateStore(store => {
@@ -911,9 +927,23 @@ async function readStore() {
   return storeRepository.read();
 }
 
-function publicStateFromStore(store) {
-  const { trash, attachmentCleanup, ...visible } = store;
-  return {
+function withoutOwnerMetadata(value) {
+  if (Array.isArray(value)) return value.map(withoutOwnerMetadata);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => key !== "tokenBudget")
+    .map(([key, item]) => [key, withoutOwnerMetadata(item)]));
+}
+
+function storeForUser(store, user = requestStorage.getStore()?.user) {
+  if (isOwner(user)) return store;
+  const { commercialization, ...visible } = store;
+  return withoutOwnerMetadata(visible);
+}
+
+function publicStateFromStore(store, user = requestStorage.getStore()?.user) {
+  const { trash, attachmentCleanup, ...visible } = storeForUser(store, user);
+  const state = {
     ...visible,
     captures: visible.captures.map(publicCapture),
     keepsakes: visible.keepsakes.map(publicKeepsake),
@@ -930,6 +960,7 @@ function publicStateFromStore(store) {
     },
     vision: { configured: visionProvider.configured }
   };
+  return isOwner(user) ? state : withoutOwnerMetadata(state);
 }
 
 function updateStore(mutator) {
@@ -997,8 +1028,9 @@ const costRepository = createAccountDocumentRepository({
   onCommit: auditChanges
 });
 const aiCosts = createAiCostService({ repository: costRepository, readSettings: readLlmSettings, readUsage: readAiUsage, cnyPerUsd: AI_COST_CNY_PER_USD });
+let readModelRuntimeSettings = readLlmSettings;
 const runDeepSeek = createAiGenerator({
-  readSettings: readLlmSettings, provider: createDeepSeekTransport({ endpoint: DEEPSEEK_API_URL }),
+  readSettings: () => readModelRuntimeSettings(), provider: createDeepSeekTransport({ endpoint: DEEPSEEK_API_URL }),
   getContext: () => requestStorage.getStore(), reserveAttempt: reserveAiAttempt, gate: aiGate, audit: aiAudit
 });
 const storeRepository = postgresRuntime ? postgresRuntime.createStoreRepository({
@@ -1612,11 +1644,30 @@ const authService = createAuthService({
     bindAuthenticatedUser(user);
   }
 });
-const { requestUser, authApi } = createAuthHttp({
+if (AUTH_REQUIRED) await authService.migrate();
+const { requestAuthentication, authApi } = createAuthHttp({
   service: authService, sendJson, bodyJson, authRequired: AUTH_REQUIRED,
   basePath: APP_BASE_PATH, cookieSecure: COOKIE_SECURE,
   bindUser: bindAuthenticatedUser
 });
+readModelRuntimeSettings = async () => {
+  const context = requestStorage.getStore() || {};
+  const userSettings = await readLlmSettings();
+  if (!AUTH_REQUIRED || isOwner(context.user)) return userSettings;
+  const owner = (await readAuth()).users.find(isOwner);
+  if (!owner) return userSettings;
+  const ownerSettings = await requestStorage.run(
+    { ...context, user: owner, dataDir: userDataDir(owner) },
+    readLlmSettings
+  );
+  return normalizeLlmSettings({
+    ...userSettings,
+    provider: ownerSettings.provider,
+    profiles: ownerSettings.profiles,
+    scenarios: ownerSettings.scenarios,
+    apiKey: ownerSettings.apiKey
+  });
+};
 
 async function initializeUserStorage(user, importLegacy = false) {
   const target = userDataDir(user);
@@ -2315,7 +2366,7 @@ const exportHttp = createExportHttp({
   snapshot: async () => ({
     accountId: requestStorage.getStore()?.user?.id || "local",
     snapshotAt: now(),
-    store: await readStore()
+    store: storeForUser(await readStore())
   }),
   attachmentInventory: listAttachmentInventory
 });
@@ -2448,7 +2499,8 @@ const reviewsChatHttp = createReviewsChatHttp({
   eventTimeFields,
   bodyJson,
   sendJson,
-  sendTrashResult
+  sendTrashResult,
+  canAccessOwner: () => isOwner(requestStorage.getStore()?.user)
 });
 const contentAttachmentsHttp = createContentAttachmentsHttp({
   contentAttachments: contentAttachmentService,
@@ -2465,7 +2517,10 @@ const syncHttp = createSyncHttp({
 });
 const personalContextHttp = createPersonalContextHttp({
   readStore,
-  project: store => personalContextProjection(store, { generatedAt: now() })
+  project: store => {
+    const projection = personalContextProjection(store, { generatedAt: now() });
+    return isOwner(requestStorage.getStore()?.user) ? projection : withoutOwnerMetadata(projection);
+  }
 });
 apiV1.register("sync", syncHttp.handleV1);
 apiV1.register("personal-context", personalContextHttp.handleV1);
@@ -2581,6 +2636,13 @@ const mime = {
   ".m4a": "audio/mp4", ".mp4": "audio/mp4", ".webm": "audio/webm", ".ogg": "audio/ogg",
   ".wav": "audio/wav", ".mp3": "audio/mpeg"
 };
+const ownerCapabilityFor = url => {
+  if (url.pathname === "/api/ai-cost-plan") return "ai-costs";
+  if (url.pathname === "/api/commercialization") return "commercialization";
+  if (url.pathname === "/api/settings" || url.pathname === "/api/settings/test") return "ai-configuration";
+  if (url.pathname === "/api/vision/status") return "ai-configuration";
+  return "";
+};
 if (LOCAL_TEST_MODE) {
   await fs.mkdir(LOCAL_TEST_WORKSPACES_DIR, { recursive: true, mode: 0o700 });
   await fs.chmod(LOCAL_TEST_WORKSPACES_DIR, 0o700);
@@ -2589,7 +2651,7 @@ if (LOCAL_TEST_MODE) {
     ? normalizeLocalTestControl({ mode: "cold", switchedAt: now(), snapshotAt: "", sourceUser: null, recordCount: 0, loadedScopes: [], loadedCollections: [] })
     : await readLocalTestControl();
   await writeLocalTestControl(control);
-  await requestStorage.run({ user: { id: `local-test-${control.mode}`, username: control.mode === "simulation" ? "使用模拟" : "冷启测试", createdAt: "" }, dataDir: localTestWorkspaceDir(control.mode) }, async () => {
+  await requestStorage.run({ user: { id: `local-test-${control.mode}`, username: control.mode === "simulation" ? "使用模拟" : "冷启测试", role: "owner", createdAt: "" }, dataDir: localTestWorkspaceDir(control.mode) }, async () => {
     await ensureStore();
     await ensureLlmSettings();
     await ensureAiUsage();
@@ -2661,6 +2723,7 @@ http.createServer(createRequestHandler({
       context.dataDir = localTestWorkspaceDir(control.mode);
     }
     if (LOCAL_TEST_MODE && url.pathname === "/api/local-test-mode/hydrate" && req.method === "POST") {
+      bindAuthenticatedUser(requireLocalTestOwner(req).user);
       const input = await bodyJson(req), result = await hydrateLocalTestScope(req, safeText(input.scope, 40));
       return sendJson(res, 200, {
         control: publicLocalTestControl(result.control),
@@ -2669,6 +2732,7 @@ http.createServer(createRequestHandler({
       });
     }
     if (LOCAL_TEST_MODE && url.pathname === "/api/local-test-mode") {
+      bindAuthenticatedUser(requireLocalTestOwner(req).user);
       if (req.method === "GET") return sendJson(res, 200, publicLocalTestControl(await readLocalTestControl()));
       if (req.method === "POST") {
         const input = await bodyJson(req), control = await switchLocalTestMode(req, safeText(input.mode, 40));
@@ -2686,13 +2750,22 @@ http.createServer(createRequestHandler({
       return handled === false ? sendJson(res, 404, { error: "Not found" }) : handled;
     }
     if (UPSTREAM_ORIGIN && !LOCAL_TEST_MODE && (url.pathname.startsWith("/api/") || url.pathname.startsWith("/attachments/"))) return await proxyToUpstream(req, res, url);
-    const user = await requestUser(req);
+    const authentication = LOCAL_TEST_MODE
+      ? { user: localTestUpstreamSession(req)?.user || null, reauthRequired: false }
+      : await requestAuthentication(req);
+    const user = authentication.user;
+    if (LOCAL_TEST_MODE && user) bindAuthenticatedUser(user);
     if (url.pathname.startsWith("/api/auth/")) {
       const handled = await authApi(req, res, url);
       return handled === false ? sendJson(res, 404, { error: "Not found" }) : handled;
     }
+    if (url.pathname.startsWith("/api/") && authentication.reauthRequired) {
+      return sendRequestError(401, "账户权限已变更，请重新登录", "AUTH_REAUTH_REQUIRED");
+    }
     if (url.pathname.startsWith("/api/") && !user) return sendRequestError(401, "请先登录", "AUTH_REQUIRED");
     if (url.pathname.startsWith("/attachments/") && !user) return sendJson(res, 401, { error: "请先登录", code: "AUTH_REQUIRED" });
+      const requiredCapability = ownerCapabilityFor(url);
+      if (requiredCapability && !isOwner(user)) return sendRequestError(403, "当前账户没有 Owner 权限", "OWNER_REQUIRED");
       if (url.pathname.startsWith("/api/v1/")) {
         const handled = await apiV1.handle(req, res, url);
         return handled === false ? apiV1.error(res, 404, "Not found", "NOT_FOUND") : handled;
@@ -2702,8 +2775,9 @@ http.createServer(createRequestHandler({
           version: APP_VERSION,
           releaseVersion: RELEASE_VERSION,
           user: publicUser(user),
+          capabilities: capabilitiesFor(user),
           features: appConfig.features,
-          governanceUrl: PLATFORM_SERVICE_TOKEN_HASH ? "/platform/" : ""
+          governanceUrl: isOwner(user) && PLATFORM_SERVICE_TOKEN_HASH ? "/platform/" : ""
         });
       }
       if (url.pathname.startsWith("/api/")) return await api(req, res, url);

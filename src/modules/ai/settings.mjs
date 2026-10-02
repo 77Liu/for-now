@@ -1,7 +1,7 @@
 import { safeText } from "../../shared/validation/index.mjs";
 import { normalizeTtsGenerationRate, TTS_GENERATION_RATE_DEFAULT } from "../../shared/speech/index.mjs";
 
-export const LLM_SETTINGS_VERSION = 9;
+export const LLM_SETTINGS_VERSION = 10;
 export const LLM_MODELS = ["deepseek-flash", "deepseek-v4-pro"];
 export const LLM_EFFORTS = ["none", "high", "max"];
 export const LLM_TIERS = ["lite", "mid", "high", "ultra"];
@@ -36,6 +36,24 @@ export const defaultLlmSettings = {
     capturePolish: "mid",
     onboardingClaimExtraction: "mid"
   },
+  sceneEfforts: {
+    thoughtPrompt: "none",
+    thoughtDraft: "high",
+    thoughtAnswer: "max",
+    followUpAnswer: "max",
+    chat: "high",
+    diaryLead: "none",
+    diaryStructure: "high",
+    diaryTopic: "high",
+    diaryReflection: "max",
+    annotationShenji: "high",
+    analysis: "max",
+    bookRecognition: "high",
+    healthRecognition: "high",
+    contentImageUnderstanding: "high",
+    capturePolish: "high",
+    onboardingClaimExtraction: "high"
+  },
   assistantName: "神鸡",
   responseStyles: Object.fromEntries(RESPONSE_STYLE_SCENARIOS.map(scene => [scene, "standard"])),
   automaticAnswers: { thoughtAnswer: false },
@@ -69,37 +87,77 @@ export function normalizeLlmSettings(value = {}) {
     const effort = LLM_EFFORTS.includes(value.effort) ? value.effort : settings.profiles.ultra.effort;
     const tier = legacyLlmTier(model, effort);
     settings.profiles[tier] = { model, effort };
-    return settings;
+  } else {
+    for (const tier of LLM_TIERS) settings.profiles[tier] = normalizeLlmProfile(value.profiles[tier], settings.profiles[tier]);
+    const legacyScenarioValues = Object.entries(value.scenarios).filter(([scenario, tier]) => LLM_SCENARIOS.includes(scenario) && LLM_TIERS.includes(tier)).map(([, tier]) => tier);
+    const legacyAllUltra = Number(value.version || 1) < 3
+      && legacyScenarioValues.length >= 11
+      && legacyScenarioValues.every(tier => tier === "ultra");
+    if (!legacyAllUltra) {
+      for (const scenario of LLM_SCENARIOS) settings.scenarios[scenario] = LLM_TIERS.includes(value.scenarios[scenario]) ? value.scenarios[scenario] : settings.scenarios[scenario];
+    }
   }
-  for (const tier of LLM_TIERS) settings.profiles[tier] = normalizeLlmProfile(value.profiles[tier], settings.profiles[tier]);
-  const legacyScenarioValues = Object.entries(value.scenarios).filter(([scenario, tier]) => LLM_SCENARIOS.includes(scenario) && LLM_TIERS.includes(tier)).map(([, tier]) => tier);
-  const legacyAllUltra = Number(value.version || 1) < 3
-    && legacyScenarioValues.length >= 11
-    && legacyScenarioValues.every(tier => tier === "ultra");
-  if (!legacyAllUltra) {
-    for (const scenario of LLM_SCENARIOS) settings.scenarios[scenario] = LLM_TIERS.includes(value.scenarios[scenario]) ? value.scenarios[scenario] : settings.scenarios[scenario];
+  for (const scenario of LLM_SCENARIOS) {
+    const fallback = settings.profiles[settings.scenarios[scenario]].effort;
+    settings.sceneEfforts[scenario] = LLM_EFFORTS.includes(value.sceneEfforts?.[scenario]) ? value.sceneEfforts[scenario] : fallback;
   }
   return settings;
 }
 
 export function publicLlmSettings(value) {
   const settings = normalizeLlmSettings(value), primary = settings.profiles[settings.scenarios.thoughtAnswer];
-  return { version: LLM_SETTINGS_VERSION, provider: "deepseek", profiles: settings.profiles, scenarios: settings.scenarios, assistantName: settings.assistantName, responseStyles: settings.responseStyles, automaticAnswers: settings.automaticAnswers, speech: settings.speech, model: primary.model, effort: primary.effort, hasApiKey: Boolean(settings.apiKey), keyHint: settings.apiKey ? `${settings.apiKey.slice(0, 3)}••••${settings.apiKey.slice(-4)}` : "" };
+  return { version: LLM_SETTINGS_VERSION, provider: "deepseek", profiles: settings.profiles, scenarios: settings.scenarios, sceneEfforts: settings.sceneEfforts, assistantName: settings.assistantName, responseStyles: settings.responseStyles, automaticAnswers: settings.automaticAnswers, speech: settings.speech, model: primary.model, effort: settings.sceneEfforts.thoughtAnswer, hasApiKey: Boolean(settings.apiKey), keyHint: settings.apiKey ? `${settings.apiKey.slice(0, 3)}••••${settings.apiKey.slice(-4)}` : "" };
+}
+
+export function publicUserAiPreferences(value) {
+  const settings = normalizeLlmSettings(value);
+  return {
+    version: LLM_SETTINGS_VERSION,
+    sceneEfforts: settings.sceneEfforts,
+    assistantName: settings.assistantName,
+    responseStyles: settings.responseStyles,
+    automaticAnswers: settings.automaticAnswers,
+    speech: settings.speech
+  };
 }
 
 export function llmSettingsForScene(settings, scene = "thoughtAnswer") {
   const normalized = normalizeLlmSettings(settings), tier = LLM_TIERS.includes(scene) ? scene : normalized.scenarios[scene] || "high";
-  return { provider: "deepseek", apiKey: normalized.apiKey, tier, assistantName: normalized.assistantName, responseStyle: normalized.responseStyles[scene] || "standard", ...normalized.profiles[tier] };
+  const profile = normalized.profiles[tier];
+  return {
+    provider: "deepseek",
+    apiKey: normalized.apiKey,
+    tier,
+    assistantName: normalized.assistantName,
+    responseStyle: normalized.responseStyles[scene] || "standard",
+    ...profile,
+    effort: LLM_EFFORTS.includes(scene) ? profile.effort : normalized.sceneEfforts[scene] || profile.effort
+  };
 }
 
 export function mergeLlmSettings(current, input) {
   const suppliedKey = safeText(input.apiKey, 300), apiKey = input.clearApiKey ? "" : suppliedKey || current.apiKey;
   const profiles = structuredClone(input.profiles || current.profiles);
+  const scenarios = structuredClone(input.scenarios || current.scenarios);
+  const sceneEfforts = structuredClone(input.sceneEfforts || current.sceneEfforts || {});
   if (!input.profiles && (input.model || input.effort)) {
     const tier = current.scenarios.thoughtAnswer;
     profiles[tier] = { model: input.model || profiles[tier].model, effort: input.effort || profiles[tier].effort };
+    if (input.effort) sceneEfforts.thoughtAnswer = input.effort;
   }
-  return normalizeLlmSettings({ version: LLM_SETTINGS_VERSION, provider: "deepseek", profiles, scenarios: input.scenarios || current.scenarios, assistantName: input.assistantName ?? current.assistantName, responseStyles: input.responseStyles || current.responseStyles, automaticAnswers: input.automaticAnswers || current.automaticAnswers, speech: input.speech || current.speech, apiKey });
+  return normalizeLlmSettings({ version: LLM_SETTINGS_VERSION, provider: "deepseek", profiles, scenarios, sceneEfforts, assistantName: input.assistantName ?? current.assistantName, responseStyles: input.responseStyles || current.responseStyles, automaticAnswers: input.automaticAnswers || current.automaticAnswers, speech: input.speech || current.speech, apiKey });
+}
+
+export function mergeUserAiPreferences(current, input) {
+  return normalizeLlmSettings({
+    ...current,
+    version: LLM_SETTINGS_VERSION,
+    sceneEfforts: { ...current.sceneEfforts, ...(input.sceneEfforts || {}) },
+    assistantName: input.assistantName ?? current.assistantName,
+    responseStyles: { ...current.responseStyles, ...(input.responseStyles || {}) },
+    automaticAnswers: { ...current.automaticAnswers, ...(input.automaticAnswers || {}) },
+    speech: { ...current.speech, ...(input.speech || {}) }
+  });
 }
 
 export function automaticAnswerDecision(settings, { hasAnswer = false } = {}) {

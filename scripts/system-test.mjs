@@ -94,6 +94,7 @@ const suites = {
     ["annotations, background tasks and notifications", ["scripts/collaboration-regression.mjs"]],
     ["trash, restore and durable attachment cleanup", ["scripts/trash-regression.mjs"]],
     ["backend regression", ["scripts/regression.mjs"]],
+    ["authentication roles and versioned sessions", ["scripts/auth-role-regression.mjs"]],
     ["authentication and server deployment shape", ["scripts/auth-regression.mjs"]],
     ["authentication concurrency", ["scripts/auth-concurrency-regression.mjs"]],
     ["local test data modes", ["scripts/local-test-mode-regression.mjs"]],

@@ -1,10 +1,23 @@
-import { LLM_TIERS, automaticAnswerDecision, mergeLlmSettings, publicLlmSettings } from "../modules/ai/index.mjs";
+import {
+  LLM_TIERS,
+  automaticAnswerDecision,
+  mergeLlmSettings,
+  mergeUserAiPreferences,
+  publicLlmSettings,
+  publicUserAiPreferences
+} from "../modules/ai/index.mjs";
 import { safeText } from "../shared/validation/index.mjs";
 
 export function createAiSettingsHttp({ settings, generate, bodyJson, sendJson }) {
   const automaticAnswer = async input => automaticAnswerDecision(await settings.read(), input);
   async function handle(req, res, url) {
-    if (req.method === "GET" && url.pathname === "/api/settings") {
+    if (req.method === "GET" && url.pathname === "/api/preferences") {
+      sendJson(res, 200, publicUserAiPreferences(await settings.read()));
+    } else if (req.method === "PATCH" && url.pathname === "/api/preferences") {
+      const input = await bodyJson(req);
+      const value = await settings.update(current => mergeUserAiPreferences(current, input));
+      sendJson(res, 200, publicUserAiPreferences(value));
+    } else if (req.method === "GET" && url.pathname === "/api/settings") {
       sendJson(res, 200, publicLlmSettings(await settings.read()));
     } else if (req.method === "POST" && url.pathname === "/api/settings") {
       const input = await bodyJson(req);

@@ -123,6 +123,7 @@ try {
     body: JSON.stringify({ username: "owner", password: "correct-horse-battery-1", invitation })
   });
   assert.equal(registered.response.status, 201);
+  assert.equal(registered.body.user.role, "owner");
   const ownerSetCookie = registered.response.headers.get("set-cookie");
   assert.match(ownerSetCookie, /;\s*Secure(?:;|$)/i);
   const ownerCookie = ownerSetCookie.split(";")[0];
@@ -134,9 +135,71 @@ try {
     body: JSON.stringify({ username: "second", password: "another-long-password-2", invitation })
   });
   assert.equal(second.response.status, 201);
-  const secondCookie = second.response.headers.get("set-cookie").split(";")[0];
+  assert.equal(second.body.user.role, "user");
+  let secondCookie = second.response.headers.get("set-cookie").split(";")[0];
   const secondState = await jsonRequest(`${base}/now/api/state`, { headers: { cookie: secondCookie } });
   assert.deepEqual(secondState.body.captures, []);
+  assert.equal(secondState.body.commercialization, undefined);
+  for (const [method, pathname, body] of [
+    ["GET", "/api/settings", null],
+    ["POST", "/api/settings/test", { tier: "lite" }],
+    ["GET", "/api/ai-cost-plan", null],
+    ["PATCH", "/api/commercialization", { assumptions: {} }],
+    ["GET", "/api/vision/status", null]
+  ]) {
+    const denied = await jsonRequest(`${base}/now${pathname}`, {
+      method,
+      headers: { cookie: secondCookie },
+      ...(body ? { body: JSON.stringify(body) } : {})
+    });
+    assert.equal(denied.response.status, 403, `${method} ${pathname}`);
+    assert.equal(denied.body.code, "OWNER_REQUIRED");
+  }
+  const userStatistics = await jsonRequest(`${base}/now/api/statistics`, { headers: { cookie: secondCookie } });
+  assert.equal(userStatistics.response.status, 200);
+  assert.ok(userStatistics.body.records);
+  assert.equal(userStatistics.body.ai, undefined);
+  assert.equal(userStatistics.body.service, undefined);
+  const userV1Statistics = await jsonRequest(`${base}/now/api/v1/statistics`, { headers: { cookie: secondCookie } });
+  assert.equal(userV1Statistics.response.status, 200);
+  assert.ok(userV1Statistics.body.data.records);
+  assert.equal(userV1Statistics.body.data.ai, undefined);
+  const userContext = await jsonRequest(`${base}/now/api/v1/personal-context`, { headers: { cookie: secondCookie } });
+  assert.equal(userContext.response.status, 200);
+  assert.equal(userContext.body.data.tokenBudget, undefined);
+  const userExport = await jsonRequest(`${base}/now/api/v1/exports/account`, { headers: { cookie: secondCookie } });
+  assert.equal(userExport.response.status, 200);
+  assert.equal(userExport.body.data.resources.some(item => item.resourceType === "commercialization"), false);
+  const userMeta = await jsonRequest(`${base}/now/api/meta`, { headers: { cookie: secondCookie } });
+  assert.deepEqual(userMeta.body.capabilities, []);
+  assert.equal(userMeta.body.governanceUrl, "");
+  const ownerMeta = await jsonRequest(`${base}/now/api/meta`, { headers: { cookie: ownerCookie } });
+  assert.equal(ownerMeta.body.user.role, "owner");
+  assert.ok(ownerMeta.body.capabilities.includes("architecture"));
+  assert.equal(ownerMeta.body.governanceUrl, "/platform/");
+  const userPreferences = await jsonRequest(`${base}/now/api/preferences`, { headers: { cookie: secondCookie } });
+  assert.equal(userPreferences.response.status, 200);
+  assert.equal(userPreferences.body.provider, undefined);
+  assert.equal(userPreferences.body.profiles, undefined);
+  assert.equal(userPreferences.body.hasApiKey, undefined);
+  const changedPreferences = await jsonRequest(`${base}/now/api/preferences`, {
+    method: "PATCH",
+    headers: { cookie: secondCookie },
+    body: JSON.stringify({
+      assistantName: "普通账户助手",
+      sceneEfforts: { thoughtAnswer: "none" },
+      apiKey: "must-not-be-accepted",
+      profiles: { ultra: { model: "deepseek-flash", effort: "none" } }
+    })
+  });
+  assert.equal(changedPreferences.response.status, 200);
+  assert.equal(changedPreferences.body.assistantName, "普通账户助手");
+  assert.equal(changedPreferences.body.sceneEfforts.thoughtAnswer, "none");
+  assert.doesNotMatch(JSON.stringify(changedPreferences.body), /apiKey|provider|profiles|must-not-be-accepted/);
+  assert.equal(JSON.parse(await fs.readFile(path.join(dataDir, "users", second.body.user.id, "llm-settings.json"), "utf8")).apiKey, "");
+  assert.equal((await jsonRequest(`${base}/now/api/auth/users`, { headers: { cookie: secondCookie } })).response.status, 403);
+  const users = await jsonRequest(`${base}/now/api/auth/users`, { headers: { cookie: ownerCookie } });
+  assert.deepEqual(users.body.users.map(user => [user.username, user.role]), [["owner", "owner"], ["second", "user"]]);
   const ownerCommercialization = await jsonRequest(`${base}/now/api/commercialization`, {
     method: "PATCH",
     headers: { cookie: ownerCookie },
@@ -145,7 +208,7 @@ try {
   assert.equal(ownerCommercialization.response.status, 200);
   assert.equal(ownerCommercialization.body.assumptions.validation.participants, 11);
   assert.equal(ownerCommercialization.body.assumptions.validation.rewardPerParticipantCny, 199);
-  assert.equal((await jsonRequest(`${base}/now/api/state`, { headers: { cookie: secondCookie } })).body.commercialization.assumptions.validation.participants, 5);
+  assert.equal((await jsonRequest(`${base}/now/api/state`, { headers: { cookie: secondCookie } })).body.commercialization, undefined);
   const secondDir = path.join(dataDir, "users", second.body.user.id);
   assert.equal((await fs.stat(secondDir)).mode & 0o777, 0o700);
   assert.equal((await fs.stat(path.join(secondDir, "attachments"))).mode & 0o777, 0o700);
@@ -264,10 +327,10 @@ try {
     const state = await jsonRequest(`${base}/now/api/state`, { headers: { cookie } });
     assert.equal(state.body.onboarding.material, material);
   }));
+  assert.equal((await jsonRequest(`${base}/now/api/settings`, {
+    method: "POST", headers: { cookie: ownerCookie }, body: JSON.stringify({ apiKey: "audit-test-key" })
+  })).response.status, 200);
   await Promise.all([[ownerCookie, "OWNER_PRIVATE"], [secondCookie, "SECOND_PRIVATE"]].map(async ([cookie, question]) => {
-    assert.equal((await jsonRequest(`${base}/now/api/settings`, {
-      method: "POST", headers: { cookie }, body: JSON.stringify({ apiKey: "audit-test-key" })
-    })).response.status, 200);
     assert.equal((await jsonRequest(`${base}/now/api/answer-drafts`, {
       method: "POST", headers: { cookie }, body: JSON.stringify({ question, requestId: `auth-${question}`, targetId: "auth-regression", inputVersion: 1 })
     })).response.status, 200);
@@ -338,7 +401,51 @@ try {
   });
   assert.equal(newPasswordLogin.response.status, 200);
 
+  const promoted = await jsonRequest(`${base}/now/api/auth/users/${second.body.user.id}/role`, {
+    method: "PATCH",
+    headers: { cookie: ownerCookie },
+    body: JSON.stringify({ role: "owner" })
+  });
+  assert.equal(promoted.response.status, 200);
+  assert.equal(promoted.body.user.role, "owner");
+  const staleAfterPromotion = await jsonRequest(`${base}/now/api/state`, { headers: { cookie: secondCookie } });
+  assert.equal(staleAfterPromotion.response.status, 401);
+  assert.equal(staleAfterPromotion.body.code, "AUTH_REAUTH_REQUIRED");
+  const promotedLogin = await jsonRequest(`${base}/now/api/auth/login`, {
+    method: "POST",
+    body: JSON.stringify({ username: "second", password: "another-long-password-2" })
+  });
+  secondCookie = promotedLogin.response.headers.get("set-cookie").split(";")[0];
+  assert.equal(promotedLogin.body.user.role, "owner");
+  const revoked = await jsonRequest(`${base}/now/api/auth/users/${second.body.user.id}/role`, {
+    method: "PATCH",
+    headers: { cookie: ownerCookie },
+    body: JSON.stringify({ role: "user" })
+  });
+  assert.equal(revoked.response.status, 200);
+  const staleAfterRevocation = await jsonRequest(`${base}/now/api/state`, { headers: { cookie: secondCookie } });
+  assert.equal(staleAfterRevocation.response.status, 401);
+  assert.equal(staleAfterRevocation.body.code, "AUTH_REAUTH_REQUIRED");
+  const memberLogin = await jsonRequest(`${base}/now/api/auth/login`, {
+    method: "POST",
+    body: JSON.stringify({ username: "second", password: "another-long-password-2" })
+  });
+  secondCookie = memberLogin.response.headers.get("set-cookie").split(";")[0];
+  assert.equal(memberLogin.body.user.role, "user");
+  const lastOwner = await jsonRequest(`${base}/now/api/auth/users/${registered.body.user.id}/role`, {
+    method: "PATCH",
+    headers: { cookie: ownerCookie },
+    body: JSON.stringify({ role: "user" })
+  });
+  assert.equal(lastOwner.response.status, 409);
+  assert.equal(lastOwner.body.code, "LAST_OWNER_REQUIRED");
+
   const validAuthFile = await fs.readFile(path.join(dataDir, "auth.json"), "utf8");
+  const validAuth = JSON.parse(validAuthFile);
+  assert.equal(validAuth.version, 2);
+  assert.deepEqual(validAuth.users.map(user => user.role), ["owner", "user"]);
+  assert.ok(validAuth.users.every(user => Number.isSafeInteger(user.sessionVersion)));
+  assert.ok(validAuth.sessions.every(session => Number.isSafeInteger(session.sessionVersion)));
   assert.doesNotMatch(validAuthFile, /correct-horse-battery|another-long-password|new-secure-password|regression-invitation/);
   assert.equal((await fs.stat(path.join(dataDir, "auth.json"))).mode & 0o777, 0o600);
 
@@ -374,7 +481,7 @@ try {
   await waitForServer(base, child);
   const migratedNames = await fs.readdir(secondDir);
   assert.ok(migratedNames.some(name => /store\.json\.v11-pre-v15.*\.bak$/.test(name)));
-  assert.ok(migratedNames.some(name => /llm-settings\.json\.v3-pre-v9.*\.bak$/.test(name)));
+  assert.ok(migratedNames.some(name => /llm-settings\.json\.v3-pre-v10.*\.bak$/.test(name)));
   assert.ok(migratedNames.some(name => /ai-usage\.json\.v1-pre-v4.*\.bak$/.test(name)));
   for (const name of migratedNames.filter(name => name.endsWith(".bak"))) {
     assert.equal((await fs.stat(path.join(secondDir, name))).mode & 0o777, 0o600);

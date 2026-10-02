@@ -16,21 +16,28 @@ export function createAuthHttp({ service, sendJson, bodyJson, authRequired, base
   const sessionCookie = (token, maxAge = Math.floor(SESSION_TTL_MS / 1000)) =>
     `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=${basePath}; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${cookieSecure ? "; Secure" : ""}`;
   const requestToken = req => authRequired ? parseCookies(req)[SESSION_COOKIE] : undefined;
-  const requestUser = async req => {
-    const user = await service.resolveUser(requestToken(req));
-    if (user) bindUser(user);
-    return user;
+  const requestAuthentication = async req => {
+    const authentication = await service.authenticate(requestToken(req));
+    if (authentication.user) bindUser(authentication.user);
+    return authentication;
   };
+  const requestUser = async req => (await requestAuthentication(req)).user;
   const routes = new Set([
     "GET /api/auth/me", "POST /api/auth/register", "POST /api/auth/login",
-    "PATCH /api/auth/username", "PATCH /api/auth/password", "POST /api/auth/logout"
+    "GET /api/auth/users", "PATCH /api/auth/username", "PATCH /api/auth/password",
+    "POST /api/auth/logout"
   ]);
   return {
+    requestAuthentication,
     requestUser,
     async authApi(req, res, url) {
-      if (!routes.has(`${req.method} ${url.pathname}`)) return false;
+      const roleRoute = req.method === "PATCH" && /^\/api\/auth\/users\/[^/]+\/role$/.test(url.pathname);
+      if (!roleRoute && !routes.has(`${req.method} ${url.pathname}`)) return false;
       try {
         if (req.method === "GET") {
+          if (url.pathname === "/api/auth/users") {
+            return sendJson(res, 200, { users: await service.listUsers(requestToken(req)) });
+          }
           const result = await service.me(requestToken(req));
           return sendJson(res, result.authenticated ? 200 : 401, result);
         }
@@ -41,7 +48,6 @@ export function createAuthHttp({ service, sendJson, bodyJson, authRequired, base
         }
         // Keep local-mode and authentication failures ahead of parsing account edits.
         if (!authRequired) return sendJson(res, 400, { error: url.pathname.endsWith("/register") ? "本机模式无需注册" : url.pathname.endsWith("/login") ? "本机模式无需登录" : "本机模式无需账户管理" });
-        if (req.method === "PATCH" && !await requestUser(req)) return sendJson(res, 401, { error: "请先登录", code: "AUTH_REQUIRED" });
         const input = await bodyJson(req);
         if (req.method === "POST") {
           const result = url.pathname.endsWith("/register") ? await service.register(input) : await service.login(input, remoteAddress(req));
@@ -50,7 +56,11 @@ export function createAuthHttp({ service, sendJson, bodyJson, authRequired, base
           res.setHeader("set-cookie", sessionCookie(result.token));
           return sendJson(res, url.pathname.endsWith("/register") ? 201 : 200, { authenticated: true, user: publicUser(result.user) });
         }
-        const user = url.pathname.endsWith("/username") ? await service.rename(requestToken(req), input) : await service.changePassword(requestToken(req), input);
+        const user = roleRoute
+          ? await service.setRole(requestToken(req), url.pathname.split("/")[4], input.role)
+          : url.pathname.endsWith("/username")
+            ? await service.rename(requestToken(req), input)
+            : await service.changePassword(requestToken(req), input);
         return sendJson(res, 200, { authenticated: true, user: publicUser(user) });
       } catch (error) {
         if (error.statusCode) return sendJson(res, error.statusCode, { error: error.message, ...(error.code ? { code: error.code } : {}) });

@@ -9,7 +9,8 @@ export function createReviewsChatHttp({
   eventTimeFields,
   bodyJson,
   sendJson,
-  sendTrashResult
+  sendTrashResult,
+  canAccessOwner = () => true
 }) {
   const rangeInput = url => ({
     ...(url.searchParams.has("from") ? { from: url.searchParams.get("from") } : {}),
@@ -59,7 +60,7 @@ export function createReviewsChatHttp({
 
   async function handleV1(req, res, url, v1) {
     if (req.method === "GET" && url.pathname === "/api/v1/statistics") {
-      const result = await statistics.dashboard(rangeInput(url));
+      const result = await statistics.dashboard(rangeInput(url), { includeOwner: canAccessOwner() });
       return result.error
         ? v1.error(res, 400, result.error, result.code)
         : v1.success(res, 200, result.value);
@@ -217,7 +218,7 @@ export function createReviewsChatHttp({
 
   async function handle(req, res, url) {
     if (req.method === "GET" && url.pathname === "/api/statistics") {
-      const result = await statistics.dashboard(rangeInput(url));
+      const result = await statistics.dashboard(rangeInput(url), { includeOwner: canAccessOwner() });
       if (result.error) sendJson(res, 400, { error: result.error });
       else sendJson(res, 200, result.value);
     } else if (req.method === "POST" && url.pathname === "/api/chat") {

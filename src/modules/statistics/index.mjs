@@ -170,13 +170,14 @@ export function createStatisticsService({
   }
 
   return {
-    async dashboard(rangeInput = {}) {
+    async dashboard(rangeInput = {}, { includeOwner = true } = {}) {
       const range = statisticsRange(rangeInput, today());
       if (range.error) return range;
       const { from, to } = range.value;
+      const store = await repository.read();
+      if (!includeOwner) return { value: { records: recordStatistics(store) } };
       await ensureAiUsage();
-      const [store, usage, operations] = await Promise.all([
-        repository.read(),
+      const [usage, operations] = await Promise.all([
         readAiUsage(),
         readOperationEntries(from, to)
       ]);
