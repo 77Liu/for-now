@@ -70,6 +70,7 @@ const suites = {
     ["cross-genre content attachments", ["scripts/content-attachments-regression.mjs"]],
     ["keepsake media workflows", ["scripts/keepsake-media-workflows-regression.mjs"]],
     ["keepsake derivative generation and transport", ["scripts/attachment-derivatives-regression.mjs"]],
+    ["private Fontconfig cache for synthetic image smoke", ["scripts/fontconfig-cache-regression.mjs"]],
     ["keepsake historical media migration", ["scripts/keepsake-media-migration-regression.mjs"]],
     ["API v1 public contract and thought vertical slice", ["scripts/api-v1-contract-regression.mjs"]],
     ["API v1 check-in and health vertical slices", ["scripts/record-v1-regression.mjs"]],

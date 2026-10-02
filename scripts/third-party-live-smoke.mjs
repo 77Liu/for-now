@@ -4,7 +4,6 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import sharp from "sharp";
 import { loadAppConfig, loadAttachmentConfig } from "../src/config/index.mjs";
 import {
   createAliyunSegmentationTransport,
@@ -13,6 +12,7 @@ import {
   createVolcengineVisionTransport
 } from "../src/infrastructure/ai-providers/index.mjs";
 import { createAttachmentStorage } from "../src/shared/attachments/index.mjs";
+import { prepareFontconfigCache } from "./fontconfig-cache.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const LIVE = process.argv.includes("--live");
@@ -87,6 +87,8 @@ async function runService({ id, label, configured, coverage, run }) {
 }
 
 const appConfig = loadAppConfig({ rootDir: ROOT });
+await prepareFontconfigCache({ dataDir: appConfig.dataDir });
+const { default: sharp } = await import("sharp");
 const attachmentConfig = loadAttachmentConfig();
 const deepSeekKey = await deepSeekApiKey();
 const aliyunCredentialConfigured = Boolean(

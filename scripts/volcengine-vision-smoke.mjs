@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import sharp from "sharp";
 import { createVolcengineVisionTransport } from "../src/infrastructure/ai-providers/index.mjs";
+import { prepareFontconfigCache } from "./fontconfig-cache.mjs";
 
 const accessKeyId = String(process.env.VOLCENGINE_ACCESS_KEY_ID || "").trim();
 const secretAccessKey = String(process.env.VOLCENGINE_SECRET_ACCESS_KEY || "").trim();
@@ -9,6 +9,8 @@ if (!accessKeyId || !secretAccessKey) {
   throw new Error("缺少 VOLCENGINE_ACCESS_KEY_ID 或 VOLCENGINE_SECRET_ACCESS_KEY；请先从受保护环境文件加载后再运行");
 }
 
+await prepareFontconfigCache();
+const { default: sharp } = await import("sharp");
 const sourcePath = process.argv.find(value => !value.startsWith("-") && value !== process.argv[0] && value !== process.argv[1]);
 const source = sourcePath
   ? await fs.readFile(path.resolve(sourcePath))
