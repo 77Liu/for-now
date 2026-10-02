@@ -79,7 +79,7 @@ function markStartup(name){startupMarks[name]=Number(performance.now().toFixed(1
 function publishStartupTiming(){
   if(!startupPerformanceEnabled&&document.documentElement.dataset.nativePerformance!=="1")return;
   const metric=document.querySelector("#startup-performance-metric");if(!metric)return;
-  const ordered=["moduleLoaded","bootstrapStart","authSessionReady","loadStart","coreSnapshotReady","secondaryReady","stableHome"],segments={};let previous=0;
+  const ordered=["moduleLoaded","bootstrapStart","authSessionReady","loadStart","coreSnapshotReady","visibleShell","secondaryReady","stableHome"],segments={};let previous=0;
   for(const name of ordered){const value=startupMarks[name];if(!Number.isFinite(value))continue;segments[name]=Number((value-previous).toFixed(1));previous=value}
   metric.textContent=`启动分段 ${JSON.stringify({marks:startupMarks,segments,totalMs:startupMarks.stableHome||previous})}`
 }
@@ -3017,13 +3017,13 @@ function renderActionsWorkspace(){
 }
 async function loadActionsWorkspace(){
   if(!$("#action-columns"))return false;
-  const requestSerial=++actionsRequestSerial,owner=currentUser?.id,session=sessionSerial,status=$("#action-status");status.textContent="正在同步行动…";
+  const requestSerial=++actionsRequestSerial,owner=currentUser?.id,session=sessionSerial,status=$("#action-status"),loadingMessage="正在同步行动…";if(!status.textContent)status.textContent=loadingMessage;
   try{
     const [actions,habits]=await Promise.all([listAllV1("/api/v1/actions"),listAllV1("/api/v1/habits")]);
     const checkins=(await Promise.all(habits.map(item=>listAllV1(`/api/v1/habits/${encodeURIComponent(item.id)}/checkins`)))).flat();
     if(requestSerial!==actionsRequestSerial||owner!==currentUser?.id||session!==sessionSerial)return false;
-    actionsSnapshot={actions,habits,habitCheckins:checkins};renderActionsWorkspace();status.textContent="";return true
-  }catch(error){if(requestSerial===actionsRequestSerial&&owner===currentUser?.id&&session===sessionSerial)status.textContent=error.message;return false}
+    actionsSnapshot={actions,habits,habitCheckins:checkins};renderActionsWorkspace();if(status.textContent===loadingMessage)status.textContent="";return true
+  }catch(error){if(requestSerial===actionsRequestSerial&&owner===currentUser?.id&&session===sessionSerial&&status.textContent===loadingMessage)status.textContent=error.message;return false}
 }
 function actionConflictMessage(command,error){
   const action=String(command.type||"").startsWith("actions.")?actionsSnapshot.actions.find(item=>item.id===command.id):null;
@@ -3222,6 +3222,35 @@ function openContextSource(button){
   })
 }
 function render(){renderDate();renderOnboarding();renderSliders();renderDailyRecords();renderHealthUploader();renderCaptures();renderJournals();renderThoughts();renderStateChart();renderChat();renderReview();renderBooks();renderKeepsakes();renderKeepsakeBatch();renderQuotes();renderHome();renderTagComposer();renderCaptureTagComposer();renderCaptureAudioDraft();renderCommentPanel();renderSettings();renderLocalTestSettings();renderNotifications();renderMine();renderAccountUsers();renderActionsWorkspace();renderFeedback();renderExport();renderPersonalContext();restoreView?.()}
+function onboardingBlocksPrivateShell(snapshot){
+  return!["completed","skipped"].includes(snapshot?.session?.status)
+}
+function renderVisibleRoute(){
+  const view=pageRouter?.currentRoute()?.view||"today";
+  renderDate();renderNotifications();renderMine();
+  if(view==="today"){renderSliders();renderThoughts();renderHome();renderActionsWorkspace()}
+  else if(view==="together")renderChat();
+  else if(view==="daily"){renderDailyRecords();renderHealthUploader()}
+  else if(view==="captures"){renderCaptures();renderCaptureTagComposer();renderCaptureAudioDraft()}
+  else if(view==="journals")renderJournals();
+  else if(view==="thoughts"){renderThoughts();renderTagComposer()}
+  else if(view==="review"){renderStateChart();renderReview()}
+  else if(view==="books")renderBooks();
+  else if(view==="keepsakes"){renderKeepsakes();renderKeepsakeBatch()}
+  else if(view==="quotes")renderQuotes();
+  else if(view==="discovery")renderDiscovery();
+  else if(view==="settings"){renderSettings();renderLocalTestSettings()}
+  else if(view==="notifications")renderNotifications();
+  else if(view==="trash")renderTrash();
+  else if(view==="account")renderAccountUsers();
+  else if(view==="feedback")renderFeedback();
+  else if(view==="export")renderExport();
+  else if(view==="personal-context")renderPersonalContext()
+}
+function afterVisibleShellPaint(){
+  if(document.visibilityState==="hidden")return new Promise(resolve=>setTimeout(resolve,0));
+  return new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)))
+}
 function releaseSeries(value){const match=/^v?(\d+)\.(\d+)/.exec(String(value||""));return match?Number(match[1])*1000+Number(match[2]):null}
 function assertNativeServerCompatibility(meta){
   if(!document.documentElement.dataset.apiOrigin)return;
@@ -3230,7 +3259,7 @@ function assertNativeServerCompatibility(meta){
   const serverLabel=meta?.releaseVersion||"旧版本";
   throw Object.assign(new Error(`当前 App ${releaseVersion} 与服务端 ${serverLabel} 不兼容，请使用匹配版本或等待服务端升级。`),{code:"CLIENT_SERVER_VERSION_MISMATCH"})
 }
-async function load(){
+async function load({visibleShell=false}={}){
   markStartup("loadStart");
   const owner=currentUser?.id,session=sessionSerial;
   journalDraftRestored=false;aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";resetJournalForm();
@@ -3241,6 +3270,13 @@ async function load(){
   if(owner!==currentUser?.id||session!==sessionSerial)return false;
   markStartup("coreSnapshotReady");assertNativeServerCompatibility(meta);
   currentUser={...currentUser,...(meta.user||{})};applyCapabilitySurface(meta.capabilities||[]);
+  replaceState(nextState);appVersion=meta.version||"development";releaseVersion=meta.releaseVersion||releaseVersion;featureFlags={...featureFlags,...meta.features};governanceUrl=typeof meta.governanceUrl==="string"?meta.governanceUrl:"";notificationUnreadCount=Number(state.notificationUnread)||0;routeDataReady=true;
+  const onboardingPending=onboardingBlocksPrivateShell(nextState.onboardingV2);
+  if(visibleShell&&!onboardingPending){
+    restoreView?.();renderVisibleRoute();reconcileThoughtRoute();revealUserSession();markStartup("visibleShell");
+    await afterVisibleShellPaint();
+    if(owner!==currentUser?.id||session!==sessionSerial)return false
+  }
   const [nextSettings,nextOnboardingSchema,nextOnboardingV2Schema,nextOnboardingV2State,nextLocalTestConfig]=await Promise.all([
     request(hasCapability("ai-configuration")?"/api/settings":"/api/preferences"),
     optionalRequest("/api/onboarding/schema"),
@@ -3250,10 +3286,12 @@ async function load(){
   ]);
   if(owner!==currentUser?.id||session!==sessionSerial)return false;
   markStartup("secondaryReady");
-  replaceState(nextState);state.onboardingV2=nextOnboardingV2State.data;llmSettings=nextSettings;onboardingSchema=nextOnboardingSchema;localTestConfig=nextLocalTestConfig;appVersion=meta.version||"development";releaseVersion=meta.releaseVersion||releaseVersion;featureFlags={...featureFlags,...meta.features};governanceUrl=typeof meta.governanceUrl==="string"?meta.governanceUrl:"";onboardingHydrated=false;notificationUnreadCount=Number(state.notificationUnread)||0;routeDataReady=true;
+  state.onboardingV2=nextOnboardingV2State.data;llmSettings=nextSettings;onboardingSchema=nextOnboardingSchema;localTestConfig=nextLocalTestConfig;onboardingHydrated=false;
   await onboardingV2Controller.hydrate({schema:nextOnboardingV2Schema.data,state:nextOnboardingV2State.data});
   if(owner!==currentUser?.id||session!==sessionSerial)return false;
-  render();if(!reconcileThoughtRoute())pageRouter?.activate();restoreDurableDrafts();syncChainRecordKind();await loadActionsWorkspace();scheduleNotificationPoll();markStartup("stableHome");publishStartupTiming();return true
+  render();if(!reconcileThoughtRoute())pageRouter?.activate();restoreDurableDrafts();syncChainRecordKind();scheduleNotificationPoll();
+  if(visibleShell&&onboardingPending){revealUserSession();markStartup("visibleShell")}
+  markStartup("stableHome");publishStartupTiming();return true
 }
 function setAuthTab(tab){
   if(authBusy)return;
@@ -3295,7 +3333,7 @@ function revealUserSession(){document.body.classList.remove("auth-locked");$("#a
 async function activateUserSession(user,authRequired){
   prepareUserSession(user,authRequired);
   try{
-    if(!await load())return false;
+    if(!await load({visibleShell:true}))return false;
     await Promise.all([
       restoreContentImageDrafts(user?.id).catch(error=>showToast(`待上传图片恢复失败：${error.message}`,"error")),
       restoreCaptureAudioDraft(user?.id).catch(error=>showToast(`待提交语音恢复失败：${error.message}`,"error")),

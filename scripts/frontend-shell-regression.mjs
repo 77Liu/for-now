@@ -47,6 +47,10 @@ assert.match(appRuntime, /requestSerial!==actionsRequestSerial\|\|owner!==curren
 assert.match(appRuntime, /LOCAL_TEST_RESPONSE_MISMATCH/);
 assert.match(appRuntime, /ownerSurfaceVault\.append\(entry\.node\)/);
 assert.match(appRuntime, /AUTH_REAUTH_REQUIRED/);
+assert.match(appRuntime, /function onboardingBlocksPrivateShell\(/);
+assert.match(appRuntime, /await afterVisibleShellPaint\(\)/);
+assert.match(appRuntime, /load\(\{visibleShell:true\}\)/);
+assert.doesNotMatch(appRuntime, /syncChainRecordKind\(\);await loadActionsWorkspace\(\)/);
 assert.match(appRuntime, /提交时的行动已保存；等待期间的新输入已保留。/);
 assert.match(appRuntime, /已保存，但行动列表刷新失败/);
 assert.match(appRuntime, /function contentState\(/);

@@ -295,6 +295,21 @@ const mockFetch = `
   window.__failImageTaskCreate = false;
   window.__delaySecondState = false;
   window.__failNextStateRefresh = false;
+  window.__startupEvents = [];
+  const startupDelayMarker = sessionStorage.getItem("ui-delay-next-startup-secondary");
+  window.__delayStartupSecondary = startupDelayMarker === null || startupDelayMarker === "1";
+  sessionStorage.setItem("ui-delay-next-startup-secondary", "0");
+  window.__releaseStartupSecondary = null;
+  const observeStartupVisibility = () => {
+    if (!document.body) return;
+    new MutationObserver(() => {
+      if (!document.body.classList.contains("auth-locked") && !window.__startupEvents.includes("shell:visible")) {
+        window.__startupEvents.push("shell:visible");
+      }
+    }).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+  };
+  if (document.body) observeStartupVisibility();
+  else document.addEventListener("DOMContentLoaded", observeStartupVisibility, { once: true });
   window.__operationReceipts = {};
   window.__receiptLookups = 0;
   window.__failThoughtDeleteNetwork = false;
@@ -728,6 +743,7 @@ const mockFetch = `
     if (url.includes("/api/v1/exports/account?format=json")) return v1({format:"json",filename:"for-now-ui.json",mimeType:"application/json;charset=utf-8",content:"{}\\n"});
     if (url.includes("/api/v1/exports/account?format=markdown")) return v1({format:"markdown",filename:"for-now-ui.md",mimeType:"text/markdown;charset=utf-8",content:"# For Now\\n"});
     if (url === "/api/meta") {
+      window.__startupEvents.push("meta:response");
       const owner=window.__accountUser.role==="owner";
       return json({ version: "build-fixture", releaseVersion: "0.2.0", user: window.__accountUser, capabilities:owner?["ai-costs","architecture","commercialization","local-testing","ai-configuration","account-roles"]:[], governanceUrl:owner?"/platform/":"" });
     }
@@ -856,6 +872,7 @@ const mockFetch = `
       window.__stateRequests += 1;
       if(window.__accountUser.id==="user-2"&&window.__delaySecondState)return new Promise(resolve=>{window.__releaseSecondState=()=>{window.__delaySecondState=false;resolve(window.fetch(input,init))}});
       const empty=window.__testWorkspaceMode==="cold"||window.__lazySimulationEmpty;
+      window.__startupEvents.push("state:response");
       return json({
       version: 15, checkins: empty?[]:window.__checkins, dailyRecords: empty?[]:window.__dailyRecords, captures: empty?[]:window.__captures, journals: empty?[]:window.__journals, thoughts: empty?[]:window.__thoughts,
       chats: empty?[]:[{ id: "chat-1", createdAt: "2026-09-27T01:15:00.000Z", occurredAt: "2026-09-27T04:15:00.000Z", occurredOn: "2026-09-27", message: "**用户问题**", answer: "## 模型回答", reasoningContent: "PRIVATE_CHAT_REASONING" }], books: empty?[]:window.__books, journalDraft: empty?null:window.__journalDraft, keepsakes: empty?[]:window.__keepsakes.map(({originalPath,...item})=>item), quotes: empty?[]:window.__quotes, aiTasks: window.__aiTasks, notifications: window.__notifications, onboarding: window.__onboarding, onboardingV2: window.__onboardingV2,
@@ -874,16 +891,21 @@ const mockFetch = `
       ], aiOnlyThoughtIds: ["kept-root"], weekly: { checkins: 2, activeDays7: 4, pairedDays30: 2, rootCount30: 5, tracedRoots30: 3, traceRate30: 60, correctionActions30: 7, reviewAgeDays: 0, analysisCount: 2 } }
       });
     }
-    if (url === "/api/settings" && (!init.method || init.method === "GET")) return json({
-      version: 10, provider: "deepseek",
-      profiles: { lite: { model: "deepseek-flash", effort: "none" }, mid: { model: "deepseek-flash", effort: "high" }, high: { model: "deepseek-v4-pro", effort: "high" }, ultra: { model: "deepseek-v4-pro", effort: "max" } },
-      scenarios: { thoughtPrompt: "lite", thoughtDraft: "high", thoughtAnswer: "ultra", followUpAnswer: "ultra", chat: "high", diaryLead: "lite", diaryStructure: "mid", diaryTopic: "high", diaryReflection: "ultra", annotationShenji: "high", analysis: "ultra", bookRecognition: "mid", healthRecognition: "mid", contentImageUnderstanding: "mid", capturePolish: "mid" },
-      sceneEfforts: { thoughtPrompt:"none",thoughtDraft:"high",thoughtAnswer:"max",followUpAnswer:"max",chat:"high",diaryLead:"none",diaryStructure:"high",diaryTopic:"high",diaryReflection:"max",annotationShenji:"high",analysis:"max",bookRecognition:"high",healthRecognition:"high",contentImageUnderstanding:"high",capturePolish:"high",onboardingClaimExtraction:"high" },
-      assistantName: "神鸡", responseStyles: { thoughtDraft:"standard",thoughtAnswer:"standard",followUpAnswer:"standard",chat:"standard",diaryReflection:"standard",annotationShenji:"standard",analysis:"standard" },
-      automaticAnswers: { thoughtAnswer: true },
-      speech: { generationRate: -10 },
-      hasApiKey: true, keyHint: "tes••••test"
-    });
+    if (url === "/api/settings" && (!init.method || init.method === "GET")) {
+      window.__startupEvents.push("settings:request");
+      const respond=()=>json({
+        version: 10, provider: "deepseek",
+        profiles: { lite: { model: "deepseek-flash", effort: "none" }, mid: { model: "deepseek-flash", effort: "high" }, high: { model: "deepseek-v4-pro", effort: "high" }, ultra: { model: "deepseek-v4-pro", effort: "max" } },
+        scenarios: { thoughtPrompt: "lite", thoughtDraft: "high", thoughtAnswer: "ultra", followUpAnswer: "ultra", chat: "high", diaryLead: "lite", diaryStructure: "mid", diaryTopic: "high", diaryReflection: "ultra", annotationShenji: "high", analysis: "ultra", bookRecognition: "mid", healthRecognition: "mid", contentImageUnderstanding: "mid", capturePolish: "mid" },
+        sceneEfforts: { thoughtPrompt:"none",thoughtDraft:"high",thoughtAnswer:"max",followUpAnswer:"max",chat:"high",diaryLead:"none",diaryStructure:"high",diaryTopic:"high",diaryReflection:"max",annotationShenji:"high",analysis:"max",bookRecognition:"high",healthRecognition:"high",contentImageUnderstanding:"high",capturePolish:"high",onboardingClaimExtraction:"high" },
+        assistantName: "神鸡", responseStyles: { thoughtDraft:"standard",thoughtAnswer:"standard",followUpAnswer:"standard",chat:"standard",diaryReflection:"standard",annotationShenji:"standard",analysis:"standard" },
+        automaticAnswers: { thoughtAnswer: true },
+        speech: { generationRate: -10 },
+        hasApiKey: true, keyHint: "tes••••test"
+      });
+      if(window.__delayStartupSecondary)return new Promise(resolve=>{window.__releaseStartupSecondary=()=>{window.__delayStartupSecondary=false;resolve(respond())}});
+      return respond()
+    }
     if (url === "/api/settings" && init.method === "POST") {
       window.__settingsSaves += 1;
       const payload = JSON.parse(init.body);
@@ -1284,7 +1306,7 @@ try {
   await cdp.send("Runtime.enable");
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: mockFetch });
-  await cdp.send("Page.navigate", { url: APP_URL });
+  await cdp.send("Page.navigate", { url: new URL("thoughts/kept-root", APP_URL).href });
   const evaluate = async expression => {
     const response = await cdp.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
     if (response.exceptionDetails) throw new Error(response.exceptionDetails.exception?.description || response.exceptionDetails.text);
@@ -1297,6 +1319,30 @@ try {
     }
     return false;
   };
+  const coreReady = await waitUntil(`window.__startupEvents.includes("state:response")&&window.__startupEvents.includes("meta:response")&&typeof window.__releaseStartupSecondary==="function"`);
+  assert.equal(coreReady, true);
+  assert.deepEqual(await evaluate(`(() => {
+    const events=window.__startupEvents;
+    const visibleIndex=events.indexOf("shell:visible"),secondaryIndex=events.indexOf("settings:request");
+    return {
+      locked:document.body.classList.contains("auth-locked"),
+      gateHidden:document.querySelector("#auth-gate").hidden,
+      route:document.querySelector(".view.active")?.id,
+      detail:Boolean(document.querySelector('#all-thoughts [data-chain-id="kept-root"]')?.open),
+      secondaryPending:typeof window.__releaseStartupSecondary==="function",
+      coreBeforeVisible:visibleIndex>=0&&events.indexOf("state:response")<visibleIndex&&events.indexOf("meta:response")<visibleIndex,
+      visibleBeforeSecondary:visibleIndex>=0&&secondaryIndex>visibleIndex
+    };
+  })()`), {
+    locked:false,
+    gateHidden:true,
+    route:"view-thoughts",
+    detail:true,
+    secondaryPending:true,
+    coreBeforeVisible:true,
+    visibleBeforeSecondary:true
+  }, "fast-visible-shell: core-before-secondary");
+  await evaluate(`window.__releaseStartupSecondary();true`);
   const loaded = await waitUntil(`document.querySelector("#today-date-label")?.textContent.length > 0 && document.querySelector("#auth-gate")?.hidden && !document.body.classList.contains("auth-locked")`);
   assert.equal(loaded, true, JSON.stringify({
     page: await evaluate(`({url:location.href,title:document.title,body:document.body?.innerText.slice(0,300)})`),
@@ -1308,6 +1354,9 @@ try {
     gateHidden: true,
     onboardingHidden: true
   });
+  assert.equal(await waitUntil(`document.querySelector("#automatic-thought-answer").checked`),true);
+  await evaluate(`document.querySelector('[data-view="today"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-today").classList.contains("active")`),true);
   assert.equal(await waitUntil(`document.querySelector("#action-columns")?.textContent.includes("完成 G2 界面回归")&&document.querySelector("#habit-list")?.textContent.includes("每日回望")`), true);
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
   assert.equal(await waitUntil(`getComputedStyle(document.querySelector("#view-today")).opacity==="1"`),true);
@@ -1376,7 +1425,8 @@ try {
   await evaluate(`(()=>{const form=document.querySelector("#action-form");form.elements.title.value="提交时的行动";window.__delayActionCreate=true;form.requestSubmit();return true})()`);
   assert.equal(await waitUntil(`typeof window.__releaseActionCreate==="function"`),true);
   await evaluate(`(()=>{const input=document.querySelector("#action-form").elements.title;input.value="等待期间的新行动";input.dispatchEvent(new Event("input",{bubbles:true}));window.__releaseActionCreate();return true})()`);
-  assert.equal(await waitUntil(`document.querySelector("#action-status").textContent.includes("新输入已保留")`),true);
+  const actionDraftPreserved=await waitUntil(`document.querySelector("#action-status").textContent.includes("新输入已保留")`);
+  assert.equal(actionDraftPreserved,true,JSON.stringify(await evaluate(`({status:document.querySelector("#action-status").textContent,value:document.querySelector("#action-form").elements.title.value,disabled:document.querySelector("#action-form button").disabled,release:typeof window.__releaseActionCreate,stateRequests:window.__stateRequests})`)));
   assert.equal(await evaluate(`document.querySelector("#action-form").elements.title.value`),"等待期间的新行动");
   await evaluate(`(()=>{const form=document.querySelector("#action-form"),input=form.elements.title;input.value="刷新失败仍已保存";input.dispatchEvent(new Event("input",{bubbles:true}));window.__failNextActionRefresh=true;form.requestSubmit();return true})()`);
   assert.equal(await waitUntil(`document.querySelector("#action-status").textContent.includes("已保存，但行动列表刷新失败")`),true);
@@ -3135,6 +3185,26 @@ try {
   await evaluate(`document.querySelector('[data-view="settings"]').click();window.__reauthNextPreference=true;document.querySelector("#llm-settings-form").requestSubmit();true`);
   assert.equal(await waitUntil(`!document.querySelector("#auth-gate").hidden&&document.querySelector("#auth-status").textContent.includes("权限已变更")`),true);
   assert.equal(await evaluate(`document.body.classList.contains("auth-locked")`),true);
+  await evaluate(`(() => {
+    const onboarding=window.__onboardingV2;
+    onboarding.session={...onboarding.session,status:"draft",step:"welcome",revision:0,answers:{},startedAt:"",pausedAt:"",completedAt:"",updatedAt:""};
+    onboarding.readiness="empty";
+    onboarding.migration={...onboarding.migration,selectedFlow:"undecided",entryPolicy:"choose"};
+    sessionStorage.setItem("ui-onboarding-v2",JSON.stringify(onboarding));
+    sessionStorage.setItem("ui-delay-next-startup-secondary","1");
+    return true;
+  })()`);
+  await cdp.send("Page.navigate",{url:APP_URL});
+  assert.equal(await waitUntil(`window.__startupEvents.includes("state:response")&&window.__startupEvents.includes("meta:response")&&typeof window.__releaseStartupSecondary==="function"`),true);
+  assert.deepEqual(await evaluate(`({
+    locked:document.body.classList.contains("auth-locked"),
+    privateSurfaceHidden:getComputedStyle(document.querySelector("main")).visibility==="hidden",
+    shellVisible:window.__startupEvents.includes("shell:visible"),
+    onboardingHidden:document.querySelector("#onboarding-workspace").hidden
+  })`),{locked:true,privateSurfaceHidden:true,shellVisible:false,onboardingHidden:true},"fast-visible-shell: onboarding-stays-private");
+  await evaluate(`window.__releaseStartupSecondary();true`);
+  assert.equal(await waitUntil(`!document.body.classList.contains("auth-locked")&&!document.querySelector("#onboarding-workspace").hidden&&document.querySelector("#onboarding-v2-content h1")?.textContent.includes("先认识此刻的你")`),true);
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector(".home-v02-content")).display==="none"`),true);
   console.log("UI regression passed: owner capability surfaces, ordinary-user DOM isolation, permission routing, reauthentication, core flows and responsive layouts.");
 } finally {
   cdp?.socket.close();

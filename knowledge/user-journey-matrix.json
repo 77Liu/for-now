@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-02",
+  "updatedAt": "2026-10-03",
   "tiers": {
     "smoke": "每个候选功能提交前，验证前端契约和真实浏览器关键旅程。",
     "daily": "覆盖前端全回归、认证、同步和本地测试模式。",
@@ -27,6 +27,49 @@
       "evidence": [
         {"script": "scripts/ui-regression.mjs", "anchor": "window.__delayLogout=true"},
         {"script": "scripts/auth-regression.mjs", "anchor": "Auth checks passed"}
+      ]
+    },
+    {
+      "id": "fast-visible-shell",
+      "title": "核心状态返回后立即显示当前路由",
+      "role": "已登录返回用户",
+      "goal": "无需等待设置、引导、草稿、同步和行动水合即可看到当前页面",
+      "risk": "critical",
+      "tier": "smoke",
+      "status": "automated",
+      "normalPath": [
+        "直接打开深链",
+        "恢复登录会话",
+        "读取核心状态与元信息",
+        "显示当前路由",
+        "首帧后继续次级水合"
+      ],
+      "failureAndRecovery": [
+        "次级接口延迟",
+        "新用户仍需进入五问引导",
+        "账户切换期间旧状态不可见",
+        "核心读取失败继续锁屏"
+      ],
+      "assertions": [
+        "核心状态和元信息完成后解除返回用户锁屏",
+        "深链内容在次级请求完成前可见",
+        "次级请求在可见壳之后启动",
+        "新用户不会闪出私有首页",
+        "草稿与待同步操作在首帧后恢复"
+      ],
+      "evidence": [
+        {
+          "script": "scripts/ui-regression.mjs",
+          "anchor": "fast-visible-shell: core-before-secondary"
+        },
+        {
+          "script": "scripts/ui-regression.mjs",
+          "anchor": "fast-visible-shell: onboarding-stays-private"
+        },
+        {
+          "script": "scripts/frontend-shell-regression.mjs",
+          "anchor": "function onboardingBlocksPrivateShell"
+        }
       ]
     },
     {
