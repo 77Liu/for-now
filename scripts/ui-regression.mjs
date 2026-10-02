@@ -740,7 +740,7 @@ const mockFetch = `
       const empty=window.__testWorkspaceMode==="cold"||window.__lazySimulationEmpty;
       return json({
       version: 15, checkins: empty?[]:window.__checkins, dailyRecords: empty?[]:window.__dailyRecords, captures: empty?[]:window.__captures, journals: empty?[]:window.__journals, thoughts: empty?[]:window.__thoughts,
-      chats: empty?[]:[{ id: "chat-1", createdAt: "2026-09-27T01:15:00.000Z", occurredAt: "2026-09-27T04:15:00.000Z", occurredOn: "2026-09-27", message: "**用户问题**", answer: "## 模型回答" }], books: empty?[]:window.__books, journalDraft: empty?null:window.__journalDraft, keepsakes: empty?[]:window.__keepsakes.map(({originalPath,...item})=>item), quotes: empty?[]:window.__quotes, aiTasks: window.__aiTasks, notifications: window.__notifications, onboarding: window.__onboarding, onboardingV2: window.__onboardingV2, commercialization: window.__commercialization,
+      chats: empty?[]:[{ id: "chat-1", createdAt: "2026-09-27T01:15:00.000Z", occurredAt: "2026-09-27T04:15:00.000Z", occurredOn: "2026-09-27", message: "**用户问题**", answer: "## 模型回答", reasoningContent: "PRIVATE_CHAT_REASONING" }], books: empty?[]:window.__books, journalDraft: empty?null:window.__journalDraft, keepsakes: empty?[]:window.__keepsakes.map(({originalPath,...item})=>item), quotes: empty?[]:window.__quotes, aiTasks: window.__aiTasks, notifications: window.__notifications, onboarding: window.__onboarding, onboardingV2: window.__onboardingV2, commercialization: window.__commercialization,
       speech:{configured:true,defaultVoice:"zh_male_shaonianzixin_uranus_bigtts",supportedAsrMimeTypes:["audio/mp4","audio/ogg","audio/wav"],voices:[{id:"zh_male_shaonianzixin_uranus_bigtts",label:"少年梓辛 2.0"},{id:"zh_male_m191_uranus_bigtts",label:"云舟 2.0"},{id:"zh_female_vv_uranus_bigtts",label:"Vivi 2.0"},{id:"zh_female_cancan_uranus_bigtts",label:"知性灿灿 2.0"}]},vision:{configured:true},
       experiments: [], analyses: empty?[]:window.__analyses, customMetrics: [], clusters: [],
       insights: { trends: [
@@ -1502,7 +1502,7 @@ try {
   await fs.writeFile("/tmp/growth-review-signals-mobile.png", Buffer.from(reviewMobileScreenshot.data, "base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
   await evaluate(`document.querySelector('[data-view="together"]').click(); true`);
-  assert.equal(await evaluate(`Boolean(document.querySelector(".chat-message.user strong")) && document.querySelector(".chat-message.agent h2")?.textContent === "模型回答"`), true);
+  assert.equal(await evaluate(`Boolean(document.querySelector(".chat-message.user strong")) && document.querySelector(".chat-message.agent h2")?.textContent === "模型回答" && !document.querySelector("#chat-history").textContent.includes("PRIVATE_CHAT_REASONING")`), true);
   assert.equal(await evaluate(`[...document.querySelectorAll(".chat-message>.markdown-content")].every(item => item.classList.contains("commentable"))`), true);
   assert.equal(await evaluate(`document.querySelector("#view-together").classList.contains("active")&&document.querySelector("[data-section-links='today'] [data-view='together']").classList.contains("active")&&document.querySelector("#view-together h2").textContent==="共参"&&document.querySelector("#view-together .recent-section h2").textContent==="一日心迹"`), true);
   await sleep(100);
@@ -1967,7 +1967,7 @@ try {
   assert.equal(await waitUntil(`window.__journalSaves === 1 && document.querySelector('[data-journal-id="journal-new-1"]')`), true);
   await evaluate(`document.querySelector('[data-journal-id="journal-1"]').open = true; document.querySelector('[data-journal-id="journal-1"] [data-journal-reflect]').click(); true`);
   assert.equal(await waitUntil(`document.querySelector('[data-journal-id="journal-1"] .journal-reflection')`, 80, 25), true);
-  assert.equal(await evaluate(`document.querySelector('[data-journal-id="journal-1"] .saved-reasoning-content').textContent`), "持久化的模型思考");
+  assert.deepEqual(await evaluate(`(()=>{const reflection=document.querySelector('[data-journal-id="journal-1"] .journal-reflection');return{reasoningNodes:reflection.querySelectorAll(".saved-reasoning").length,privateText:reflection.textContent.includes("持久化的模型思考"),answer:reflection.textContent.includes("结论")}})()`),{reasoningNodes:0,privateText:false,answer:true});
   assert.equal(await evaluate(`document.querySelector('[data-journal-id="journal-1"] .journal-original').classList.contains("commentable") && document.querySelector('[data-journal-id="journal-1"] .journal-reflection .model-answer-content>.markdown-content').classList.contains("commentable")`), true);
   await evaluate(`document.querySelector("#ai-answer-close").click(); true`);
   const journalScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
@@ -1997,8 +1997,8 @@ try {
       hasIdeaPreview: Boolean(kept.querySelector(".idea-preview")),
       questionMarkdownBold: Boolean([...kept.querySelectorAll(".chain-part")].find(part => part.querySelector(":scope > b")?.textContent === "问题")?.querySelector(".markdown-content strong")),
       markdownBold: Boolean(kept.querySelector(".thought-block-content strong")),
-      savedReasoning: kept.querySelector(".saved-reasoning pre")?.textContent,
-      savedReasoningBold: Boolean(kept.querySelector(".saved-reasoning-content strong")),
+      reasoningNodes: kept.querySelectorAll(".saved-reasoning").length,
+      privateReasoningVisible: kept.textContent.includes("持久化的模型思考"),
       previewStartsClean: !kept.querySelector(".answer-preview").textContent.startsWith("核心判断"),
       blockCount: kept.querySelectorAll("[data-thought-block-id]").length,
       aiMarked: kept.querySelector(".thought-content-block.ai header span")?.textContent,
@@ -2014,8 +2014,8 @@ try {
   assert.equal(cardState.hasIdeaPreview, false);
   assert.equal(cardState.questionMarkdownBold, true);
   assert.equal(cardState.markdownBold, true);
-  assert.equal(cardState.savedReasoning, undefined);
-  assert.equal(cardState.savedReasoningBold, true);
+  assert.equal(cardState.reasoningNodes, 0);
+  assert.equal(cardState.privateReasoningVisible, false);
   assert.equal(cardState.previewStartsClean, true);
   assert.equal(cardState.blockCount, 1);
   assert.equal(cardState.aiMarked, undefined);
@@ -2055,10 +2055,11 @@ try {
   await evaluate(`document.querySelector('[data-selection-action="highlight"]').click(); true`);
   assert.equal(await waitUntil(`window.__thoughtAnnotationSaves===1&&!document.querySelector('[data-chain-id="kept-root"] .thought-trace-pending')`), true);
   await evaluate(`document.querySelector('[data-view="review"]').click(); true`);
-  const reviewMarkdown = await evaluate(`({ bold: Boolean(document.querySelector(".analysis-content strong")), heading: document.querySelector(".analysis-content h2")?.textContent, rawMarkers: document.querySelector(".analysis-content").textContent.includes("**") })`);
+  const reviewMarkdown = await evaluate(`({ bold: Boolean(document.querySelector(".analysis-content strong")), heading: document.querySelector(".analysis-content h2")?.textContent, rawMarkers: document.querySelector(".analysis-content").textContent.includes("**"), privateReasoning:document.querySelector("#analysis-list").textContent.includes("分析过程")||document.querySelector("#analysis-list").textContent.includes("旧分析过程") })`);
   assert.equal(reviewMarkdown.bold, true);
   assert.equal(reviewMarkdown.heading, "证据");
   assert.equal(reviewMarkdown.rawMarkers, false);
+  assert.equal(reviewMarkdown.privateReasoning, false);
   assert.equal(await evaluate(`document.querySelector('[data-analysis-id="analysis-1"] .analysis-content').dataset.commentRoot`), "analysis:analysis-1");
   const analysisHistory = await evaluate(`(() => {
     const entries = [...document.querySelectorAll("[data-analysis-id]")];
@@ -2085,6 +2086,7 @@ try {
   await evaluate(`document.querySelector('[data-shenji-form="analysis-annotation-1"] textarea').value="后台同步期间的新草稿";true`);
   assert.equal(await waitUntil(`document.querySelector('[data-comment-card="analysis-annotation-1"] .shenji-answer')?.textContent.includes("神鸡判断")`,160,25),true);
   assert.equal(await evaluate(`document.querySelector('[data-shenji-form="analysis-annotation-1"] textarea').value`),"后台同步期间的新草稿");
+  assert.equal(await evaluate(`!document.querySelector("#comment-panel").textContent.includes("核对复盘上下文")&&!document.querySelector("#comment-panel .saved-reasoning")`),true);
   await evaluate(`document.querySelector('[data-view="notifications"]').click(); true`);
   assert.equal(await waitUntil(`document.querySelector('[data-notification-task]')?.closest(".notification-entry")?.textContent.includes("批注回复已生成")`), true);
   await evaluate(`document.querySelector('[data-notification-task]').click(); true`);
@@ -2340,11 +2342,7 @@ try {
   await fs.writeFile("/tmp/growth-quote-timeline-mobile.png",Buffer.from(quoteTimelineMobileScreenshot.data,"base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
   await evaluate(`document.querySelector('[data-view="thoughts"]').click(); true`);
-  await evaluate(`(() => { const card = document.querySelector('[data-chain-id="kept-root"]'); card.open = true; card.querySelector(".saved-reasoning").open = true; card.scrollIntoView({ block: "start" }); return true; })()`);
-  await sleep(100);
-  const reasoningScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
-  await fs.writeFile("/tmp/growth-saved-reasoning.png", Buffer.from(reasoningScreenshot.data, "base64"));
-  await evaluate(`(() => { const card = document.querySelector('[data-chain-id="kept-root"]'); card.querySelector(".saved-reasoning").open = false; return true; })()`);
+  assert.deepEqual(await evaluate(`({reasoningNodes:document.querySelectorAll(".saved-reasoning,#ai-answer-reasoning").length,privateText:document.body.textContent.includes("持久化的模型思考")||document.body.textContent.includes("分析过程")||document.body.textContent.includes("PRIVATE_CHAT_REASONING")})`),{reasoningNodes:0,privateText:false});
   await evaluate(`document.querySelector('[data-chain-id="kept-root"] [data-followup-compose]').click(); true`);
   assert.equal(await evaluate(`!document.querySelector('[data-chain-id="kept-root"] [data-follow-up-root]').hidden`), true);
   await evaluate(`document.querySelector('[data-chain-id="kept-root"]').scrollIntoView({ block: "start" }); true`);
@@ -2352,20 +2350,17 @@ try {
   const cardScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-thought-card.png", Buffer.from(cardScreenshot.data, "base64"));
   await evaluate(`document.querySelector("#chain-question").value = "测试流式弹窗"; document.querySelector("#draft-answer-button").click(); true`);
-  assert.equal(await waitUntil(`window.__reasoningChunks === 1 && document.querySelector("#ai-answer-reasoning-content").scrollHeight > document.querySelector("#ai-answer-reasoning-content").clientHeight`, 40, 10), true);
-  await evaluate(`document.querySelector("#ai-answer-reasoning-content").scrollTop = 0; true`);
   assert.equal(await waitUntil(`window.__reasoningChunks === 2`, 40, 10), true);
-  assert.equal(await evaluate(`document.querySelector("#ai-answer-reasoning-content").scrollTop`), 0);
   assert.equal(await waitUntil(`document.querySelector("#ai-answer-result").textContent.includes("结论")`, 80, 25), true);
   const streaming = await evaluate(`(() => ({
-    reasoning: document.querySelector("#ai-answer-reasoning-content").textContent,
-    reasoningOpen: document.querySelector("#ai-answer-reasoning").open,
+    reasoningNodes: document.querySelectorAll("#ai-answer-reasoning,.answer-reasoning,.saved-reasoning").length,
+    privateText: document.querySelector("#ai-answer-modal").textContent.includes("思考行 1") || document.querySelector("#ai-answer-modal").textContent.includes("再形成判断"),
     outputHidden: document.querySelector("#ai-answer-output").hidden,
     activeStep: document.querySelector("#ai-answer-progress li.active")?.dataset.step,
     answer: document.querySelector("#ai-answer-result").textContent
   }))()`);
-  assert.match(streaming.reasoning, /思考行 1[\s\S]*再形成判断。/);
-  assert.equal(streaming.reasoningOpen, false);
+  assert.equal(streaming.reasoningNodes, 0);
+  assert.equal(streaming.privateText, false);
   assert.equal(streaming.outputHidden, false);
   assert.equal(streaming.activeStep, "answer");
   assert.match(streaming.answer, /结论/);
@@ -2374,7 +2369,7 @@ try {
   await fs.writeFile("/tmp/growth-answer-modal.png", Buffer.from(screenshot.data, "base64"));
   await evaluate(`document.querySelector("#ai-answer-close").click(); true`);
   assert.equal(await waitUntil(`document.querySelector("#chain-answer").value.includes("后台完成") && !document.querySelector("#draft-answer-button").disabled`, 80, 25), true);
-  assert.equal(await evaluate(`Boolean(document.querySelector("#ai-answer-reasoning-content strong"))`), true);
+  assert.equal(await evaluate(`document.querySelector("#ai-answer-reasoning")`), null);
   const completed = await evaluate(`(() => ({
     modalHidden: document.querySelector("#ai-answer-modal").hidden,
     draft: document.querySelector("#chain-answer").value,
@@ -2409,7 +2404,7 @@ try {
   const stateRequestsBeforeBackgroundMerge=await evaluate(`window.__stateRequests`);
   await evaluate(`(() => { window.__holdAiTasks=false;const task=window.__aiTasks.find(item=>item.targetId==="kept-root"&&item.status==="running");window.__completeAiTask(task);return true })()`);
   if(!await waitUntil(`[...document.querySelectorAll('[data-chain-id="kept-root"] .thought-block-content')].some(item=>item.textContent.includes("后台结果已局部合并"))`,160,25))throw new Error(await evaluate(`JSON.stringify({tasks:window.__aiTasks,results:window.__taskResults,reads:{notifications:window.__notificationReads,tasks:window.__taskReads},toast:document.querySelector("#toast").textContent,answers:[...document.querySelectorAll('[data-chain-id="kept-root"] .thought-block-content')].map(item=>item.textContent)})`));
-  assert.deepEqual(await evaluate(`(()=>{const answer=[...document.querySelectorAll('[data-chain-id="kept-root"] .thought-content-block.ai')].find(item=>item.textContent.includes("后台结果已局部合并")),receipt=answer.querySelector(".context-audit"),open=receipt.open;receipt.open=true;return{receipt:Boolean(receipt),open,label:receipt.querySelector("summary").textContent.includes("本次参考"),sources:receipt.querySelectorAll(".context-source-item").length,unavailable:[...receipt.querySelectorAll(".context-source-item")].some(item=>item.textContent.includes("来源已删除或当前不可用")),reasoning:Boolean(answer.querySelector(".saved-reasoning"))}})()`),{receipt:true,open:false,label:true,sources:3,unavailable:true,reasoning:true});
+  assert.deepEqual(await evaluate(`(()=>{const answer=[...document.querySelectorAll('[data-chain-id="kept-root"] .thought-content-block.ai')].find(item=>item.textContent.includes("后台结果已局部合并")),receipt=answer.querySelector(".context-audit"),open=receipt.open;receipt.open=true;return{receipt:Boolean(receipt),open,label:receipt.querySelector("summary").textContent.includes("本次参考"),sources:receipt.querySelectorAll(".context-source-item").length,unavailable:[...receipt.querySelectorAll(".context-source-item")].some(item=>item.textContent.includes("来源已删除或当前不可用")),reasoning:Boolean(answer.querySelector(".saved-reasoning")),privateText:answer.textContent.includes("后台持久化思考")}})()`),{receipt:true,open:false,label:true,sources:3,unavailable:true,reasoning:false,privateText:false});
   assert.deepEqual(await evaluate(`(() => {const input=document.querySelector('#all-thoughts [data-chain-id="kept-root"] [data-follow-up-root] textarea[name="question"]');return{value:input.value,formHidden:input.closest("form").hidden,cardOpen:input.closest("[data-chain-id]").open,focused:document.activeElement===input,stateRequests:window.__stateRequests}})()`),{value:"轮询期间不能丢失",formHidden:false,cardOpen:true,focused:true,stateRequests:stateRequestsBeforeBackgroundMerge});
   await evaluate(`document.querySelector("#chain-question").value = "第二条不应被阻塞"; document.querySelector("#chain-answer").value = "手写回答"; document.querySelector("#chain-form").requestSubmit(); true`);
   assert.equal(await waitUntil(`window.__thoughtSaves === 3 && !document.querySelector('#chain-form [type="submit"]').disabled && document.querySelector("#chain-question").value === ""`, 80, 25), true);

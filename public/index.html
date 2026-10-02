@@ -1539,19 +1539,15 @@
   <div class="modal-backdrop" id="ai-answer-modal" hidden>
     <section class="modal card ai-answer-modal" role="dialog" aria-modal="true" aria-labelledby="ai-answer-title">
       <button class="modal-close" id="ai-answer-close" type="button" aria-label="关闭">×</button>
-      <p class="eyebrow">DeepSeek 回答</p>
+      <p class="eyebrow">助手回答</p>
       <h2 id="ai-answer-title">正在回答</h2>
       <ol class="answer-progress" id="ai-answer-progress">
         <li data-step="context">整理完整上下文</li>
-        <li data-step="thinking">模型思考</li>
+        <li data-step="thinking">组织回答</li>
         <li data-step="answer">生成回答</li>
         <li data-step="done">回答完成</li>
       </ol>
       <p class="status answer-modal-status" id="ai-answer-status" role="status" aria-live="polite"></p>
-      <details class="answer-reasoning" id="ai-answer-reasoning" open hidden>
-        <summary><span>模型思考</span><small id="ai-answer-reasoning-state">生成中</small></summary>
-        <div class="answer-reasoning-body markdown-content" id="ai-answer-reasoning-content"></div>
-      </details>
       <section class="answer-output" id="ai-answer-output" hidden>
         <h3>回答</h3>
         <div class="markdown-content answer-modal-result" id="ai-answer-result"></div>
