@@ -215,6 +215,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             let passwordLiteral = javaScriptStringLiteral(passwordValue)
             action = """
             (() => {
+              if (\(performanceAcceptance)) document.documentElement.dataset.nativePerformance = '1';
               if (!document.body.classList.contains('auth-locked')) {
                 return document.querySelector('#view-today')?.classList.contains('active') === true;
               }

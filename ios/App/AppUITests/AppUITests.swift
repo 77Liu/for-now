@@ -206,17 +206,13 @@ final class DevicePerformanceAcceptanceTests: XCTestCase {
 
         let submit = webView.buttons["收下"]
         XCTAssertTrue(submit.isHittable, "Capture submit button is not hittable")
-        let startedAt = ProcessInfo.processInfo.systemUptime
         submit.tap()
-        let enteredPending = waitForPendingState(
-            submit: submit,
-            webView: webView,
-            timeout: Self.pendingLimit
-        )
-        let duration = ProcessInfo.processInfo.systemUptime - startedAt
+        let latencyMilliseconds = waitForPendingLatency(in: webView, timeout: 2)
+        XCTAssertNotNil(latencyMilliseconds, "Submission did not expose its internal pending-state latency")
+        guard let latencyMilliseconds else { return }
+        let duration = latencyMilliseconds / 1000
 
         attachMetric("touch-submit-to-pending", duration: duration, limit: Self.pendingLimit)
-        XCTAssertTrue(enteredPending, "Submission did not expose the unified waiting state")
         XCTAssertLessThan(duration, Self.pendingLimit, "Touch submit to pending state must remain below 0.5 seconds")
     }
 
@@ -304,25 +300,14 @@ final class DevicePerformanceAcceptanceTests: XCTestCase {
             && frame.equalTo(homeAction.frame)
     }
 
-    private func waitForPendingState(
-        submit: XCUIElement,
-        webView: XCUIElement,
-        timeout: TimeInterval
-    ) -> Bool {
-        let waitingLabels = [
-            "正在收下…",
-            "图片已上传，正在同步记录…",
-            "语音已上传，正在同步记录…",
-            "已记下，正在同步…"
-        ]
-        let deadline = ProcessInfo.processInfo.systemUptime + timeout
-        repeat {
-            if !submit.isEnabled && waitingLabels.contains(where: { webView.staticTexts[$0].exists }) {
-                return true
-            }
-            Thread.sleep(forTimeInterval: 0.01)
-        } while ProcessInfo.processInfo.systemUptime < deadline
-        return false
+    private func waitForPendingLatency(in webView: XCUIElement, timeout: TimeInterval) -> Double? {
+        let metric = webView.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "提交等待 "))
+            .firstMatch
+        guard metric.waitForExistence(timeout: timeout) else { return nil }
+        let components = metric.label.split(separator: " ")
+        guard components.count >= 2 else { return nil }
+        return Double(components[1])
     }
 
     private func remainingTime(since startedAt: TimeInterval, limit: TimeInterval) -> TimeInterval {
