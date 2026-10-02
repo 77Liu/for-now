@@ -1,5 +1,24 @@
+import crypto from "node:crypto";
+
 export const API_V1_PREFIX = "/api/v1";
 
+const sha256 = value => crypto.createHash("sha256").update(value).digest("hex");
+const operationFingerprint = context => sha256(JSON.stringify({
+  method: String(context?.method || "").toUpperCase(),
+  resource: String(context?.resource || ""),
+  contentType: String(context?.contentType || "").toLowerCase(),
+  ifMatch: String(context?.ifMatch || ""),
+  requestBodySha256: String(context?.requestBodySha256 || sha256(""))
+}));
+const operationFingerprintDetails = (reason, context = {}) => {
+  const suppliedVersion = String(context.clientContractVersion || "");
+  return {
+    reason,
+    clientContractVersion: /^[A-Za-z0-9_.:-]{1,32}$/.test(suppliedVersion)
+      ? suppliedVersion
+      : "legacy"
+  };
+};
 const problem = (message, code, statusCode, details) => Object.assign(new Error(message), {
   code,
   statusCode,
@@ -32,6 +51,12 @@ export function createApiV1Http({ sendJson, getContext, openApi }) {
     error: { code: code || "INTERNAL_ERROR", message, ...(details ? { details } : {}) },
     meta: metadata()
   });
+  const fingerprintProblem = (message, reason) => problem(
+    message,
+    "INVALID_OPERATION_FINGERPRINT",
+    400,
+    operationFingerprintDetails(reason, getContext())
+  );
 
   const api = {
     versionEtag,
@@ -61,10 +86,23 @@ export function createApiV1Http({ sendJson, getContext, openApi }) {
     envelope,
     errorEnvelope: error => errorEnvelope(error.message || "服务暂时不可用", error.code, error.details),
 
+    operationFingerprintErrorDetails(reason) {
+      return operationFingerprintDetails(reason, getContext());
+    },
+
+    validateOperationFingerprint() {
+      const context = getContext();
+      const supplied = String(context?.clientOperationFingerprint || "");
+      if (supplied && supplied !== operationFingerprint(context)) {
+        throw fingerprintProblem("客户端操作指纹与请求不一致", "canonical-mismatch");
+      }
+    },
+
     idempotencyKey(req) {
       const key = String(req.headers["idempotency-key"] || "").trim();
       if (!key) throw problem("写请求缺少 Idempotency-Key", "IDEMPOTENCY_KEY_REQUIRED", 400);
       if (key.length > 100) throw problem("Idempotency-Key 最长 100 个字符", "INVALID_IDEMPOTENCY_KEY", 400);
+      if (Number.isSafeInteger(getContext()?.requestBytes)) api.validateOperationFingerprint();
       return key;
     },
 
@@ -98,20 +136,23 @@ export function createApiV1Http({ sendJson, getContext, openApi }) {
       }
       const operationId = String(req.headers["x-client-operation-id"] || "").trim();
       const operationFingerprint = String(req.headers["x-client-operation-fingerprint"] || "").trim();
+      const context = getContext();
+      if (context) {
+        context.clientContractVersion = String(req.headers["x-client-contract-version"] || "").trim();
+      }
       if (operationId) {
         if (!/^[A-Za-z0-9_.:-]{1,100}$/.test(operationId)) {
           throw problem("X-Client-Operation-Id 格式无效", "INVALID_CLIENT_OPERATION_ID", 400);
         }
         if (operationFingerprint && !/^[a-f0-9]{64}$/.test(operationFingerprint)) {
-          throw problem("X-Client-Operation-Fingerprint 格式无效", "INVALID_OPERATION_FINGERPRINT", 400);
+          throw fingerprintProblem("X-Client-Operation-Fingerprint 格式无效", "format");
         }
-        const context = getContext();
         if (context) {
           context.clientOperationId = operationId;
           context.clientOperationFingerprint = operationFingerprint;
         }
       } else if (operationFingerprint) {
-        throw problem("操作指纹缺少 X-Client-Operation-Id", "INVALID_OPERATION_FINGERPRINT", 400);
+        throw fingerprintProblem("操作指纹缺少 X-Client-Operation-Id", "missing-id");
       }
       for (const handler of handlers.values()) {
         if (await handler(req, res, url, api) || res.headersSent || res.writableEnded) return true;

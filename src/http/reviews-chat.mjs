@@ -110,6 +110,7 @@ export function createReviewsChatHttp({
     }
     if (req.method === "POST" && url.pathname === "/api/v1/analyses") {
       try {
+        await bodyJson(req);
         const result = await workflows.runAnalysis({
           reason: "manual",
           clientRequestId: v1.idempotencyKey(req)

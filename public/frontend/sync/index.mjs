@@ -1,6 +1,7 @@
 const RETRYABLE_STATUSES = new Set([408, 425, 429]);
 const CONFLICT_STATUSES = new Set([409, 412]);
 export const SYNC_RETRY_MAX_ATTEMPTS = 8;
+export const SYNC_CLIENT_CONTRACT_VERSION = "1.0.0";
 const SYNC_RETRY_BASE_MS = 1000;
 const SYNC_RETRY_MAX_MS = 60_000;
 const SYNC_RETRY_AFTER_MAX_MS = 5 * 60_000;
@@ -13,6 +14,11 @@ const lowerCaseHeaders = headers => {
   const normalized = {};
   for (const [name, value] of new Headers(headers || {}).entries()) normalized[name.toLowerCase()] = value;
   return normalized;
+};
+const equalHeaders = (left, right) => {
+  const leftEntries = Object.entries(left || {}), rightEntries = Object.entries(right || {});
+  return leftEntries.length === rightEntries.length
+    && leftEntries.every(([name, value]) => right[name] === value);
 };
 const defaultResourceKey = url => {
   const parsed = new URL(url, "https://local.invalid");
@@ -237,6 +243,38 @@ export function createRequestCoordinator({
     notify(next);
     return next;
   };
+  const normalizeOperationFingerprint = async (record, expectedGeneration, changes = {}) => {
+    const headers = lowerCaseHeaders(record.headers);
+    headers["content-type"] ||= "application/json";
+    headers["x-client-contract-version"] ||= SYNC_CLIENT_CONTRACT_VERSION;
+    const operationId = String(
+      record.operationId
+      || headers["x-client-operation-id"]
+      || headers["idempotency-key"]
+      || ""
+    );
+    if (operationId) headers["x-client-operation-id"] = operationId;
+    const fingerprint = await syncOperationFingerprint({
+      method: record.method,
+      url: record.url,
+      headers,
+      body: Object.hasOwn(record, "body") ? record.body : ""
+    });
+    headers["x-client-operation-fingerprint"] = fingerprint;
+    const normalized = {
+      operationId,
+      fingerprint,
+      headers,
+      ...changes
+    };
+    if (record.operationId === normalized.operationId
+      && record.fingerprint === normalized.fingerprint
+      && equalHeaders(record.headers, normalized.headers)
+      && Object.entries(changes).every(([key, value]) => record[key] === value)) {
+      return record;
+    }
+    return update(record, normalized, expectedGeneration);
+  };
   const pruneRecords = async (owner, { keepCommitted = 200, keepTerminal = 50 } = {}) => {
     if (typeof store.delete !== "function") return 0;
     const records = await store.list(owner);
@@ -317,6 +355,19 @@ export function createRequestCoordinator({
       const result = await send(current.url, replayOptions(current));
       return commit(current, result, startedAt, expectedGeneration);
     } catch (error) {
+      if (error?.code === "INVALID_OPERATION_FINGERPRINT"
+        && Number(current.fingerprintRetryCount || 0) < 1) {
+        current = await normalizeOperationFingerprint(current, expectedGeneration, {
+          fingerprintRetryCount: 1
+        });
+        if (!current) throw Object.assign(new Error("账户同步队列已清理"), { name: "AbortError" });
+        try {
+          const result = await send(current.url, replayOptions(current));
+          return commit(current, result, startedAt, expectedGeneration);
+        } catch (retryError) {
+          error = retryError;
+        }
+      }
       const status = Number(error?.status || 0), mayHaveCommitted = !status || [...CONFLICT_STATUSES, 404].includes(status);
       let terminalError = error;
       if (mayHaveCommitted) {
@@ -382,6 +433,7 @@ export function createRequestCoordinator({
       const operationId = headers["x-client-operation-id"] || headers["idempotency-key"] || createId();
       headers["x-client-operation-id"] = operationId;
       headers["idempotency-key"] ||= operationId;
+      headers["x-client-contract-version"] ||= SYNC_CLIENT_CONTRACT_VERSION;
       const operationResource = resource || resourceKey(url, options);
       const fingerprint = await syncOperationFingerprint({ method, url, headers, body: options.body });
       headers["x-client-operation-fingerprint"] = fingerprint;
@@ -401,6 +453,7 @@ export function createRequestCoordinator({
         ...(projection ? { projection: clone(projection) } : {}),
         status: "pending",
         attempts: 0,
+        fingerprintRetryCount: 0,
         createdAt: timestamp,
         updatedAt: timestamp
       };
@@ -419,8 +472,11 @@ export function createRequestCoordinator({
       if (!owner) return [];
       const expectedGeneration = generation(owner);
       const records = await store.list(owner, ["pending", "sending"]);
+      const normalized = (await Promise.all(records.map(record => (
+        normalizeOperationFingerprint(record, expectedGeneration)
+      )))).filter(Boolean);
       const currentTime = new Date(now()).getTime();
-      const due = records.filter(record => {
+      const due = normalized.filter(record => {
         const nextAttemptTime = new Date(record.nextAttemptAt || "").getTime();
         return force
           || record.status === "sending"

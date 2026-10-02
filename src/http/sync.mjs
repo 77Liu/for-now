@@ -123,7 +123,13 @@ export function createSyncHttp({ repository, publicState }) {
       const operationId = operation[1];
       const fingerprint = url.searchParams.get("fingerprint") || "";
       if (!/^[a-f0-9]{64}$/.test(fingerprint)) {
-        return v1.error(res, 400, "操作指纹无效", "INVALID_OPERATION_FINGERPRINT");
+        return v1.error(
+          res,
+          400,
+          "操作指纹无效",
+          "INVALID_OPERATION_FINGERPRINT",
+          v1.operationFingerprintErrorDetails("format")
+        );
       }
       const receipt = snapshot.metadata.sync.operations.find(item => item.operationId === operationId);
       if (receipt && receipt.fingerprint !== fingerprint) {

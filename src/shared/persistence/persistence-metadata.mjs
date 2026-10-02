@@ -74,6 +74,16 @@ export function syncOperationFingerprint({
   }));
 }
 
+function operationFingerprintErrorDetails(reason, context = {}) {
+  const suppliedVersion = String(context.clientContractVersion || "");
+  return {
+    reason,
+    clientContractVersion: /^[A-Za-z0-9_.:-]{1,32}$/.test(suppliedVersion)
+      ? suppliedVersion
+      : "legacy"
+  };
+}
+
 function pruneIdempotency(metadata, at) {
   metadata.idempotency = metadata.idempotency.filter(entry => {
     entry.expiresAt = timestamp(entry.expiresAt) || idempotencyExpiry(entry.createdAt);
@@ -306,7 +316,8 @@ function appendSyncChanges(metadata, before, after, at, context = {}) {
   if (suppliedFingerprint && suppliedFingerprint !== fingerprint) {
     throw Object.assign(new Error("客户端操作指纹与请求不一致"), {
       statusCode: 400,
-      code: "INVALID_OPERATION_FINGERPRINT"
+      code: "INVALID_OPERATION_FINGERPRINT",
+      details: operationFingerprintErrorDetails("canonical-mismatch", context)
     });
   }
   const traceId = String(context.traceId || "").slice(0, 128);

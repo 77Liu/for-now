@@ -10,6 +10,7 @@ import { syncOperationFingerprint } from "../public/frontend/sync/index.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+let providerCalls = 0;
 
 async function freePort() {
   const server = http.createServer();
@@ -21,6 +22,7 @@ async function freePort() {
 
 function modelProvider() {
   return http.createServer(async (req, res) => {
+    providerCalls += 1;
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     const input = JSON.parse(Buffer.concat(chunks).toString("utf8"));
@@ -213,6 +215,49 @@ try {
   assert.equal(onboardingOther.body.data.session.revision, 0);
   assert.deepEqual(onboardingOther.body.data.session.answers, {});
 
+  const privateBodyMarker = "PRIVATE_FINGERPRINT_BODY_MUST_NOT_LEAK";
+  const invalidFingerprint = "INVALID_FULL_FINGERPRINT_MUST_NOT_LEAK";
+  const invalidFormat = await request("/api/v1/thought-chains", {
+    method: "POST",
+    cookie: owner,
+    headers: {
+      "x-request-id": "trace-fingerprint-format",
+      "idempotency-key": "fingerprint-format-key",
+      "x-client-operation-id": "fingerprint-format-operation",
+      "x-client-operation-fingerprint": invalidFingerprint,
+      "x-client-contract-version": "0.4.0"
+    },
+    body: { question: privateBodyMarker }
+  });
+  assert.equal(invalidFormat.response.status, 400);
+  assert.equal(invalidFormat.body.error.code, "INVALID_OPERATION_FINGERPRINT");
+  assert.deepEqual(invalidFormat.body.error.details, {
+    reason: "format",
+    clientContractVersion: "0.4.0"
+  });
+  assert.equal(invalidFormat.body.meta.traceId, "trace-fingerprint-format");
+  assert.doesNotMatch(JSON.stringify(invalidFormat.body), new RegExp(`${privateBodyMarker}|${invalidFingerprint}`));
+
+  const missingOperationId = await request("/api/v1/thought-chains", {
+    method: "POST",
+    cookie: owner,
+    headers: {
+      "x-request-id": "trace-fingerprint-missing-id",
+      "idempotency-key": "fingerprint-missing-id-key",
+      "x-client-operation-fingerprint": "a".repeat(64),
+      "x-client-contract-version": "0.4.0"
+    },
+    body: { question: privateBodyMarker }
+  });
+  assert.equal(missingOperationId.response.status, 400);
+  assert.equal(missingOperationId.body.error.code, "INVALID_OPERATION_FINGERPRINT");
+  assert.deepEqual(missingOperationId.body.error.details, {
+    reason: "missing-id",
+    clientContractVersion: "0.4.0"
+  });
+  assert.equal(missingOperationId.body.meta.traceId, "trace-fingerprint-missing-id");
+  assert.doesNotMatch(JSON.stringify(missingOperationId.body), new RegExp(privateBodyMarker));
+
   const checkinInput = {
     occurredAt: "2026-09-29T08:30:00",
     mood: 4,
@@ -242,6 +287,82 @@ try {
   assert.equal(checkin.response.headers.get("x-client-operation-id"), "operation-checkin-1");
   assert.deepEqual(checkin.body.meta.operation, { id: "operation-checkin-1", status: "committed" });
   const checkinId = checkin.body.data.id;
+
+  const legacyFingerprintless = await request("/api/v1/checkins", {
+    method: "POST",
+    cookie: owner,
+    headers: {
+      "idempotency-key": "legacy-fingerprintless-key",
+      "x-client-operation-id": "legacy-fingerprintless-operation",
+      "x-client-contract-version": "0.4.0"
+    },
+    body: { ...checkinInput, occurredAt: "2026-09-29T08:45:00", mood: 3 }
+  });
+  assert.equal(legacyFingerprintless.response.status, 201);
+  assert.deepEqual(legacyFingerprintless.body.meta.operation, {
+    id: "legacy-fingerprintless-operation",
+    status: "committed"
+  });
+
+  const analysisBody = "{}";
+  const analysisHeaders = {
+    "content-type": "application/json",
+    "idempotency-key": "analysis-fingerprint-replay",
+    "x-client-operation-id": "analysis-fingerprint-replay",
+    "x-client-contract-version": "1.0.0"
+  };
+  const providerCallsBeforeAnalysis = providerCalls;
+  const canonicalMismatch = await request("/api/v1/analyses", {
+    method: "POST",
+    cookie: owner,
+    headers: {
+      ...analysisHeaders,
+      "x-request-id": "trace-fingerprint-canonical",
+      "x-client-operation-fingerprint": "0".repeat(64)
+    },
+    body: analysisBody
+  });
+  assert.equal(canonicalMismatch.response.status, 400);
+  assert.equal(canonicalMismatch.body.error.code, "INVALID_OPERATION_FINGERPRINT");
+  assert.deepEqual(canonicalMismatch.body.error.details, {
+    reason: "canonical-mismatch",
+    clientContractVersion: "1.0.0"
+  });
+  assert.equal(canonicalMismatch.body.meta.traceId, "trace-fingerprint-canonical");
+  assert.doesNotMatch(JSON.stringify(canonicalMismatch.body), /0{64}/);
+  assert.equal(providerCalls, providerCallsBeforeAnalysis, "invalid fingerprint must be rejected before provider I/O");
+
+  const canonicalAnalysisFingerprint = await syncOperationFingerprint({
+    method: "POST",
+    url: "/api/v1/analyses",
+    headers: analysisHeaders,
+    body: analysisBody
+  });
+  const analysisCreated = await request("/api/v1/analyses", {
+    method: "POST",
+    cookie: owner,
+    headers: {
+      ...analysisHeaders,
+      "x-client-operation-fingerprint": canonicalAnalysisFingerprint
+    },
+    body: analysisBody
+  });
+  assert.equal(analysisCreated.response.status, 201);
+  const analysisReplayed = await request("/api/v1/analyses", {
+    method: "POST",
+    cookie: owner,
+    headers: {
+      ...analysisHeaders,
+      "x-client-operation-fingerprint": canonicalAnalysisFingerprint
+    },
+    body: analysisBody
+  });
+  assert.equal(analysisReplayed.response.status, 200);
+  assert.equal(analysisReplayed.body.data.id, analysisCreated.body.data.id);
+  assert.equal(providerCalls, providerCallsBeforeAnalysis + 1);
+  const analyses = await request("/api/v1/analyses?limit=100", { cookie: owner });
+  assert.equal(analyses.body.data.filter(item => item.id === analysisCreated.body.data.id).length, 1);
+
   const syncAfterCheckin = await request(`/api/v1/sync?cursor=${syncBaseline.body.data.cursor}`, { cookie: owner });
   assert.equal(syncAfterCheckin.response.status, 200);
   assert.ok(syncAfterCheckin.body.data.cursor > syncBaseline.body.data.cursor);
@@ -256,6 +377,19 @@ try {
   assert.equal(operationState.response.status, 200);
   assert.equal(operationState.body.data.status, "committed");
   assert.equal(operationState.body.data.responseAvailable, false);
+  const invalidReceiptFingerprint = await request(
+    "/api/v1/sync/operations/operation-checkin-1?fingerprint=invalid-full-fingerprint",
+    {
+      cookie: owner,
+      headers: { "x-client-contract-version": "0.4.0" }
+    }
+  );
+  assert.equal(invalidReceiptFingerprint.response.status, 400);
+  assert.deepEqual(invalidReceiptFingerprint.body.error.details, {
+    reason: "format",
+    clientContractVersion: "0.4.0"
+  });
+  assert.doesNotMatch(JSON.stringify(invalidReceiptFingerprint.body), /invalid-full-fingerprint/);
   const reusedOperation = await request(`/api/v1/sync/operations/operation-checkin-1?fingerprint=${"0".repeat(64)}`, { cookie: owner });
   assert.equal(reusedOperation.response.status, 409);
   assert.equal(reusedOperation.body.error.code, "OPERATION_ID_REUSED");

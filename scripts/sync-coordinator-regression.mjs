@@ -4,7 +4,8 @@ import {
   createIndexedDbSyncStore,
   createMemorySyncStore,
   createRequestCoordinator,
-  SYNC_RETRY_MAX_ATTEMPTS
+  SYNC_RETRY_MAX_ATTEMPTS,
+  syncOperationFingerprint
 } from "../public/frontend/sync/index.mjs";
 
 const deferred = () => {
@@ -211,6 +212,129 @@ const resumed = await recovery.resume("account-a", { force: true });
 assert.equal(resumed.length, 1);
 assert.equal(resumed[0].status, "fulfilled");
 assert.equal(recoveryCalls[1].options.headers["x-client-operation-id"], "recoverable-operation");
+
+const legacyRecords = [
+  {
+    id: "legacy-analysis-missing",
+    owner: "account-a",
+    operationId: "legacy-analysis-missing",
+    resourceKey: "/api/v1/analyses",
+    method: "POST",
+    url: "/api/v1/analyses",
+    headers: {
+      "content-type": "application/json",
+      "idempotency-key": "legacy-analysis-idempotency",
+      "x-client-operation-id": "legacy-analysis-missing"
+    },
+    body: "{}",
+    status: "pending",
+    attempts: 0,
+    createdAt: "2026-10-01T00:00:00.000Z",
+    updatedAt: "2026-10-01T00:00:00.000Z"
+  },
+  {
+    id: "legacy-analysis-bad",
+    owner: "account-a",
+    operationId: "legacy-analysis-bad",
+    fingerprint: "0".repeat(64),
+    resourceKey: "/api/v1/analyses",
+    method: "POST",
+    url: "/api/v1/analyses",
+    headers: {
+      "content-type": "application/json",
+      "idempotency-key": "legacy-analysis-bad-idempotency",
+      "x-client-operation-id": "legacy-analysis-bad",
+      "x-client-operation-fingerprint": "0".repeat(64)
+    },
+    body: "{}",
+    status: "pending",
+    attempts: 0,
+    createdAt: "2026-10-01T00:00:01.000Z",
+    updatedAt: "2026-10-01T00:00:01.000Z"
+  }
+];
+const legacyStore = createMemorySyncStore(legacyRecords);
+const legacySends = [];
+const legacyCoordinator = createRequestCoordinator({
+  store: legacyStore,
+  send: async (url, options) => {
+    const operationId = options.headers["x-client-operation-id"];
+    const persisted = await legacyStore.get("account-a", operationId);
+    legacySends.push({ url, options });
+    assert.equal(persisted.fingerprint, options.headers["x-client-operation-fingerprint"]);
+    assert.equal(persisted.headers["x-client-operation-fingerprint"], persisted.fingerprint);
+    return { data: { id: operationId }, meta: { operation: { id: operationId, status: "committed" } } };
+  }
+});
+const resumedLegacy = await legacyCoordinator.resume("account-a", { force: true });
+assert.equal(resumedLegacy.length, 2);
+assert.equal(resumedLegacy.every(result => result.status === "fulfilled"), true);
+assert.deepEqual(
+  legacySends.map(call => call.options.headers["idempotency-key"]),
+  ["legacy-analysis-idempotency", "legacy-analysis-bad-idempotency"]
+);
+for (const call of legacySends) {
+  const expected = await syncOperationFingerprint({
+    method: call.options.method,
+    url: call.url,
+    headers: call.options.headers,
+    body: call.options.body
+  });
+  assert.equal(call.options.headers["x-client-operation-fingerprint"], expected);
+}
+
+const normalizedRetryStore = createMemorySyncStore();
+const normalizedRetryCalls = [];
+const normalizedRetry = createRequestCoordinator({
+  store: normalizedRetryStore,
+  createId: () => "normalize-once",
+  send: async (url, options) => {
+    normalizedRetryCalls.push({ url, options: structuredClone(options) });
+    if (normalizedRetryCalls.length === 1) {
+      throw Object.assign(new Error("fingerprint mismatch"), {
+        status: 400,
+        code: "INVALID_OPERATION_FINGERPRINT",
+        details: { reason: "canonical-mismatch" }
+      });
+    }
+    return { data: { id: "analysis-1" }, meta: { operation: { id: "normalize-once", status: "committed" } } };
+  }
+});
+await normalizedRetry.request({
+  owner: "account-a",
+  url: "/api/v1/analyses",
+  options: {
+    method: "POST",
+    headers: { "idempotency-key": "analysis-stable-key" },
+    body: "{}"
+  }
+});
+assert.equal(normalizedRetryCalls.length, 2);
+assert.equal(normalizedRetryCalls[0].options.headers["idempotency-key"], "analysis-stable-key");
+assert.equal(normalizedRetryCalls[1].options.headers["idempotency-key"], "analysis-stable-key");
+assert.equal((await normalizedRetryStore.list("account-a", ["committed"])).length, 1);
+
+let boundedFingerprintCalls = 0;
+const boundedFingerprintStore = createMemorySyncStore();
+const boundedFingerprint = createRequestCoordinator({
+  store: boundedFingerprintStore,
+  createId: () => "normalize-bounded",
+  send: async () => {
+    boundedFingerprintCalls += 1;
+    throw Object.assign(new Error("fingerprint mismatch"), {
+      status: 400,
+      code: "INVALID_OPERATION_FINGERPRINT",
+      details: { reason: "canonical-mismatch" }
+    });
+  }
+});
+await assert.rejects(boundedFingerprint.request({
+  owner: "account-a",
+  url: "/api/v1/analyses",
+  options: { method: "POST", headers: { "idempotency-key": "bounded-stable-key" }, body: "{}" }
+}), error => error.syncStatus === "failed");
+assert.equal(boundedFingerprintCalls, 2, "fingerprint normalization must retry at most once");
+assert.equal((await boundedFingerprintStore.list("account-a", ["failed"]))[0].fingerprintRetryCount, 1);
 
 const receiptStore = createMemorySyncStore();
 let mutationAttempts = 0, receiptLookups = 0;
