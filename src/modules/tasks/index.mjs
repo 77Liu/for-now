@@ -118,6 +118,10 @@ export function createTaskLifecycle({ createId, now, hash }) {
     if (work.alreadyAnswered) return { alreadyAnswered: true };
     if (requestedInputVersion && requestedInputVersion !== work.inputVersion) return { versionConflict: true, currentVersion: work.inputVersion };
     if (requestedSubtargetVersion && requestedSubtargetVersion !== work.subtargetVersion) return { subtargetVersionConflict: true, currentVersion: work.subtargetVersion };
+    if (kind === "captureTranscription") {
+      const active = activeTaskForInput(tasks, { kind, targetId, inputHash: work.inputHash });
+      if (active) return { task: active, duplicate: true };
+    }
     const task = {
       id: createId(), kind, resourceType, targetId, subtargetId,
       inputVersion: work.inputVersion || 0, subtargetVersion: work.subtargetVersion || 0, inputHash: work.inputHash,

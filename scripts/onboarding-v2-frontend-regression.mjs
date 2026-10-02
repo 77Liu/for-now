@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import {
+  createOnboardingV2Controller,
   mergeOnboardingV2Conflict,
   onboardingV2ConflictRows,
   onboardingV2DraftFromState,
+  onboardingV2PendingResolution,
   onboardingV2PatchFromDraft
 } from "../public/frontend/features/index.mjs";
 
@@ -117,6 +119,41 @@ deviceDraft.answers.dailyRhythm = {
   contextAllowed: true
 };
 deviceDraft.collaboration.additionalBoundary = "不要替我做心理诊断";
+deviceDraft.baseRevision = 3;
+deviceDraft.pendingSync = true;
+deviceDraft.localDirty = true;
+assert.equal(onboardingV2PendingResolution(serverState, deviceDraft), "conflict");
+assert.equal(deviceDraft.baseRevision, 3);
+const matchingDraft = onboardingV2DraftFromState(serverState, { owner: "account-a" });
+matchingDraft.baseRevision = 3;
+matchingDraft.pendingSync = true;
+assert.equal(onboardingV2PendingResolution(serverState, matchingDraft), "synced");
+matchingDraft.baseRevision = 4;
+assert.equal(onboardingV2PendingResolution(serverState, matchingDraft), "unchanged");
+let persistedDraft = structuredClone(deviceDraft);
+let requestCount = 0;
+const controller = createOnboardingV2Controller({
+  query: () => null,
+  requestV1: async () => {
+    requestCount += 1;
+    throw new Error("Conflict hydration must not write automatically");
+  },
+  draftStore: {
+    durable: true,
+    get: async () => structuredClone(persistedDraft),
+    put: async value => { persistedDraft = structuredClone(value); },
+    delete: async () => {}
+  },
+  owner: () => "account-a"
+});
+await controller.hydrate({ schema: {}, state: serverState });
+const conflictState = controller.getState();
+assert.equal(conflictState.uiStep, "conflict");
+assert.equal(conflictState.draft.baseRevision, 3);
+assert.equal(conflictState.draft.pendingSync, true);
+assert.equal(conflictState.draft.answers.currentContext.rawText, "此设备上修改后的处境");
+assert.equal(conflictState.conflict.session.revision, 4);
+assert.equal(requestCount, 0);
 const rows = onboardingV2ConflictRows(serverState, deviceDraft);
 assert.deepEqual(rows.map(row => [row.questionId, row.equal]), [
   ["currentContext", false],
@@ -141,4 +178,4 @@ assert.equal(merged.collaboration.additionalBoundary, "");
 assert.equal(merged.localDirty, true);
 assert.equal(merged.pendingSync, false);
 
-console.log("Onboarding v2 frontend contracts passed: draft hydration, minimal/full patches and explicit per-question conflict merge.");
+console.log("Onboarding v2 frontend contracts passed: draft hydration, minimal/full patches, offline conflict detection and explicit per-question merge.");

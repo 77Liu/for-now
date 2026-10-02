@@ -93,5 +93,6 @@ export {
   mergeOnboardingV2Conflict,
   onboardingV2ConflictRows,
   onboardingV2DraftFromState,
+  onboardingV2PendingResolution,
   onboardingV2PatchFromDraft
 } from "./onboarding-v2/index.mjs";

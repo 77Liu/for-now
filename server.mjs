@@ -2186,7 +2186,7 @@ async function transcribeCapture(work, { signal } = {}) {
   const polishStageId = "deepseek-polish";
   return aiBudgetRuntime.executeTask({
     accountId: currentBudgetAccountId(),
-    taskId: `capture-transcription:${work.capture.id}:${work.audio.attachmentPath}`,
+    taskId: `capture-transcription:${work.taskId}`,
     stages: [
       providerBudgetStage({
         provider: "volcengine",

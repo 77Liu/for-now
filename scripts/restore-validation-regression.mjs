@@ -25,8 +25,15 @@ const canonical = value => Array.isArray(value)
 const digest = value => crypto.createHash("sha256").update(canonical(value)).digest("hex");
 try {
   const users = [{ id: "first", username: "first" }, { id: "second", username: "second" }];
+  const aiBudget = {
+    version: 1,
+    periods: [{ key: "2026-10-03", knownCostMicros: 1_250_000 }],
+    reservations: []
+  };
+  const relationalAccounts = [];
   await fs.mkdir(sourceDir, { recursive: true });
   await fs.writeFile(path.join(sourceDir, "auth.json"), JSON.stringify({ version: 1, users, sessions: [] }));
+  await fs.writeFile(path.join(sourceDir, "ai-budget.json"), JSON.stringify(aiBudget));
   for (const user of users) {
     const dir = path.join(sourceDir, "users", user.id), attachments = path.join(dir, "attachments");
     await fs.mkdir(attachments, { recursive: true });
@@ -55,7 +62,19 @@ try {
       await fs.writeFile(path.join(attachments, "cover.png"), "image");
     } else store.journals.push({ id: "journal", content: "second" });
     await fs.writeFile(path.join(dir, "store.json"), JSON.stringify(store));
+    relationalAccounts.push({
+      accountId: user.id,
+      storeSha256: digest(store),
+      documents: {},
+      attachments: []
+    });
   }
+  await fs.writeFile(path.join(sourceDir, "export-manifest.json"), JSON.stringify({
+    format: "for-now-relational-export-v1",
+    createdAt: "2026-09-29T09:00:00.000Z",
+    aiBudget: { file: "ai-budget.json", sha256: digest(aiBudget) },
+    accounts: relationalAccounts
+  }));
   await stageAttachmentCompleteBackup({
     sourceDir,
     outputDir: dataDir,
@@ -74,7 +93,9 @@ try {
   });
   assert.equal(JSON.parse(cliResult.stdout).status, "staged");
   assert.equal(JSON.parse(await fs.readFile(path.join(cliBackup, "backup-manifest.json"), "utf8")).complete, true);
-  const { stdout } = await run(process.execPath, [path.join(root, "scripts/validate-restored-data.mjs"), dataDir]);
+  const validator = path.join(root, "scripts/validate-restored-data.mjs");
+  const validationArgs = [validator, dataDir, "--require-relational-export"];
+  const { stdout } = await run(process.execPath, validationArgs);
   const result = JSON.parse(stdout);
   assert.deepEqual({
     users: result.users,
@@ -103,22 +124,44 @@ try {
   assert.equal(result.attachmentManifest.format, "for-now-attachment-complete-backup-v1");
   assert.equal(result.attachmentManifest.attachments, 1);
   assert.equal(result.attachmentManifest.sourceAttachmentStorage, "local");
+  assert.equal(result.aiBudgetSha256, digest(aiBudget));
+  assert.equal(result.relationalExport, true);
+  const budgetFile = path.join(dataDir, "ai-budget.json");
+  await fs.rename(budgetFile, `${budgetFile}.missing`);
+  await assert.rejects(
+    run(process.execPath, validationArgs),
+    /no valid AI budget document/
+  );
+  await fs.rename(`${budgetFile}.missing`, budgetFile);
+  await fs.writeFile(budgetFile, JSON.stringify({ ...aiBudget, tampered: true }));
+  await assert.rejects(
+    run(process.execPath, validationArgs),
+    /AI budget hash does not match/
+  );
+  await fs.writeFile(budgetFile, JSON.stringify(aiBudget));
+  const exportManifestFile = path.join(dataDir, "export-manifest.json");
+  await fs.rename(exportManifestFile, `${exportManifestFile}.missing`);
+  await assert.rejects(
+    run(process.execPath, validationArgs),
+    /no valid relational export manifest/
+  );
+  await fs.rename(`${exportManifestFile}.missing`, exportManifestFile);
   const manifestFile = path.join(dataDir, "backup-manifest.json");
   await fs.rename(manifestFile, `${manifestFile}.missing`);
   await assert.rejects(
-    run(process.execPath, [path.join(root, "scripts/validate-restored-data.mjs"), dataDir]),
+    run(process.execPath, validationArgs),
     /no valid attachment manifest/
   );
   await fs.rename(`${manifestFile}.missing`, manifestFile);
   const restoredAttachment = path.join(dataDir, "users", "first", "attachments", "cover.png");
   await fs.unlink(restoredAttachment);
   await assert.rejects(
-    run(process.execPath, [path.join(root, "scripts/validate-restored-data.mjs"), dataDir]),
+    run(process.execPath, validationArgs),
     /Restored attachment is missing/
   );
   await fs.writeFile(restoredAttachment, "tampered");
   await assert.rejects(
-    run(process.execPath, [path.join(root, "scripts/validate-restored-data.mjs"), dataDir]),
+    run(process.execPath, validationArgs),
     /Restored attachment content does not match/
   );
   await fs.writeFile(restoredAttachment, "image");
@@ -127,7 +170,7 @@ try {
   delete brokenStore.feedback;
   await fs.writeFile(path.join(brokenDir, "store.json"), JSON.stringify(brokenStore));
   await assert.rejects(
-    run(process.execPath, [path.join(root, "scripts/validate-restored-data.mjs"), dataDir]),
+    run(process.execPath, validationArgs),
     /Restored store is missing feedback/
   );
   const auth = JSON.parse(await fs.readFile(path.join(dataDir, "auth.json"), "utf8"));
@@ -179,8 +222,9 @@ try {
   assert.match(backupScript, /stage-backup-data\.mjs/);
   assert.doesNotMatch(backupScript, /tar[^\n]*"\$DATA_DIR"/);
   assert.match(restoreScript, /ATTACHMENT_STORAGE=local/);
+  assert.match(restoreScript, /--require-relational-export/);
   assert.doesNotMatch(restoreScript, /ATTACHMENT_STORAGE="\$\{ATTACHMENT_STORAGE/);
-  console.log("Restore validation checks passed: complete attachment manifest, missing/tampered rejection, remote materialization, local-only drill and temporary authenticated session.");
+  console.log("Restore validation checks passed: AI budget and relational hashes, complete attachment manifest, missing/tampered rejection, remote materialization, local-only drill and temporary authenticated session.");
 } finally {
   await fs.rm(temporary, { recursive: true, force: true });
 }

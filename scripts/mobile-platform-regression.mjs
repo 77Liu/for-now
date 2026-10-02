@@ -109,6 +109,12 @@ const devices = [
   }
 ];
 
+const runtimeSource = await fs.readFile(path.join(ROOT, "public/frontend/app/runtime.mjs"), "utf8");
+const uiTestSource = await fs.readFile(path.join(ROOT, "ios/App/AppUITests/AppUITests.swift"), "utf8");
+assert.match(runtimeSource, /startupPerformanceEnabled&&document\.documentElement\.dataset\.nativePerformance/);
+assert.match(uiTestSource, /try attachStartupBreakdown\(in: measuredApp\)/);
+assert.match(uiTestSource, /JSONSerialization\.jsonObject\(with: data\)/);
+
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "growth-mobile-platform-"));
 const appPort = await freePort();
 const debugPort = await freePort();

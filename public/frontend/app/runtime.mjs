@@ -77,7 +77,7 @@ const startupPerformanceEnabled=new URLSearchParams(location.search).has("native
 const startupMarks={navigationStart:0,moduleLoaded:Number(performance.now().toFixed(1))};
 function markStartup(name){startupMarks[name]=Number(performance.now().toFixed(1));return startupMarks[name]}
 function publishStartupTiming(){
-  if(!startupPerformanceEnabled)return;
+  if(!startupPerformanceEnabled&&document.documentElement.dataset.nativePerformance!=="1")return;
   const metric=document.querySelector("#startup-performance-metric");if(!metric)return;
   const ordered=["moduleLoaded","bootstrapStart","authSessionReady","loadStart","coreSnapshotReady","secondaryReady","stableHome"],segments={};let previous=0;
   for(const name of ordered){const value=startupMarks[name];if(!Number.isFinite(value))continue;segments[name]=Number((value-previous).toFixed(1));previous=value}

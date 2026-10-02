@@ -184,7 +184,7 @@ final class DevicePerformanceAcceptanceTests: XCTestCase {
         let duration = ProcessInfo.processInfo.systemUptime - startedAt
 
         attachMetric("cold-process-launch-to-stable-home", duration: duration, limit: Self.launchLimit)
-        attachStartupBreakdown(in: measuredApp)
+        try attachStartupBreakdown(in: measuredApp)
         XCTAssertTrue(stable, "Stable home did not become hittable before the launch deadline")
         XCTAssertLessThan(duration, Self.launchLimit, "Cold process launch to stable home must remain below 3.0 seconds")
     }
@@ -374,13 +374,25 @@ final class DevicePerformanceAcceptanceTests: XCTestCase {
         add(attachment)
     }
 
-    private func attachStartupBreakdown(in application: XCUIApplication) {
+    private func attachStartupBreakdown(in application: XCUIApplication) throws {
         let metric = application.webViews.firstMatch.descendants(matching: .any)
             .matching(NSPredicate(format: "label CONTAINS %@", "启动分段 "))
             .firstMatch
-        guard metric.waitForExistence(timeout: 3),
-              let range = metric.label.range(of: "启动分段 ") else { return }
-        let attachment = XCTAttachment(string: String(metric.label[range.upperBound...]))
+        XCTAssertTrue(metric.waitForExistence(timeout: 3), "Startup breakdown metric was not published")
+        let range = try XCTUnwrap(metric.label.range(of: "启动分段 "), "Startup breakdown prefix is missing")
+        let payload = String(metric.label[range.upperBound...])
+        let data = try XCTUnwrap(payload.data(using: .utf8), "Startup breakdown is not UTF-8")
+        guard let value = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              value["marks"] is [String: Any],
+              value["segments"] is [String: Any],
+              value["totalMs"] is NSNumber else {
+            throw NSError(
+                domain: "DevicePerformanceAcceptanceTests",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Startup breakdown JSON is incomplete"]
+            )
+        }
+        let attachment = XCTAttachment(string: payload)
         attachment.name = "startup-breakdown.json"
         attachment.lifetime = .keepAlways
         add(attachment)

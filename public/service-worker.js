@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cike-shell-v0.4.0-url-history-1";
+const CACHE_VERSION = "cike-shell-v0.4.0-module-closure-1";
 const SHELL_ASSETS = [
   "./",
   "index.html",
@@ -9,13 +9,16 @@ const SHELL_ASSETS = [
   "frontend/api/index.mjs",
   "frontend/app/index.mjs",
   "frontend/app/runtime.mjs",
+  "frontend/content/error-presentation.mjs",
   "frontend/content/index.mjs",
   "frontend/features/actions/index.mjs",
   "frontend/features/export/index.mjs",
   "frontend/features/feedback/index.mjs",
+  "frontend/features/health/weight-batch.mjs",
   "frontend/features/home/index.mjs",
   "frontend/features/index.mjs",
   "frontend/features/keepsakes-media/index.mjs",
+  "frontend/features/onboarding-v2/index.mjs",
   "frontend/features/thought-discovery/annotation-tools.mjs",
   "frontend/features/thought-discovery/background-results.mjs",
   "frontend/features/thought-discovery/index.mjs",

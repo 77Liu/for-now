@@ -62,7 +62,8 @@ find "$work/data" -type d -exec chmod 0700 {} +
 find "$work/data" -type f -exec chmod 0600 {} +
 chown -R for-now:for-now "$work"
 
-validation=$(sudo -u for-now /usr/local/bin/node "$release/scripts/validate-restored-data.mjs" "$work/data")
+validation=$(sudo -u for-now /usr/local/bin/node "$release/scripts/validate-restored-data.mjs" \
+  "$work/data" --require-relational-export)
 session_token=$(printf "%s" "$validation" | /usr/local/bin/node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).sessionToken')
 expected_records=$(printf "%s" "$validation" | /usr/local/bin/node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).records')
 expected_collection_evidence=$(printf "%s" "$validation" | /usr/local/bin/node -pe 'JSON.stringify(JSON.parse(require("fs").readFileSync(0,"utf8")).collectionEvidence)')

@@ -166,6 +166,12 @@ function onboardingContentMatches(serverState, deviceDraft) {
   }));
 }
 
+export function onboardingV2PendingResolution(serverState, deviceDraft) {
+  if (!deviceDraft?.pendingSync
+    || Number(serverState?.session?.revision) <= Number(deviceDraft.baseRevision)) return "unchanged";
+  return onboardingContentMatches(serverState, deviceDraft) ? "synced" : "conflict";
+}
+
 export function mergeOnboardingV2Conflict(serverState, deviceDraft, choices = {}) {
   const serverDraft = onboardingV2DraftFromState(serverState, { owner: deviceDraft?.owner || "" });
   const merged = clone(deviceDraft);
@@ -362,7 +368,6 @@ export function createOnboardingV2Controller({
   let conflict = null;
   let conflictChoices = {};
   let saving = false;
-  let syncing = false;
   let persistSerial = 0;
   let extractionTask = null;
   let userModel = null;
@@ -632,8 +637,8 @@ export function createOnboardingV2Controller({
         conflictChoices = {};
         uiStep = "conflict";
         forceVisible = true;
-        draft.pendingSync = false;
-        draft.baseRevision = Number(error.details.currentRevision) || draft.baseRevision;
+        draft.pendingSync = true;
+        draft.localDirty = true;
         await persist();
         status("两端内容有差异，请逐项选择");
       } else if (error?.syncStatus === "pending") {
@@ -689,24 +694,6 @@ export function createOnboardingV2Controller({
       full
     });
     return sendPatch(patch, { hide, firstAction });
-  }
-
-  async function flushPending() {
-    if (!draft?.pendingSync || syncing || !serverState) return false;
-    syncing = true;
-    draft.baseRevision = Number(serverState.session?.revision) || 0;
-    draft.pendingSync = false;
-    await persist();
-    const result = await sendPatch(onboardingV2PatchFromDraft(draft, {
-      status: draft.status,
-      step: draft.step,
-      full: true
-    }), {
-      hide: draft.status === "paused" || draft.status === "skipped",
-      firstAction: draft.status === "completed"
-    });
-    syncing = false;
-    return result;
   }
 
   function renderSteps() {
@@ -941,32 +928,44 @@ export function createOnboardingV2Controller({
       draft = saved?.owner === owner()
         ? { ...onboardingV2DraftFromState(nextState, { owner: owner() }), ...clone(saved) }
         : onboardingV2DraftFromState(nextState, { owner: owner() });
-      if (draft.pendingSync && Number(nextState.session?.revision) > Number(draft.baseRevision)) {
-        if (onboardingContentMatches(nextState, draft)) {
-          draft = onboardingV2DraftFromState(nextState, { owner: owner() });
-          await clearLocal();
-        } else {
-          draft.baseRevision = Number(nextState.session.revision);
-          void flushPending();
-        }
+      const pendingResolution = onboardingV2PendingResolution(nextState, draft);
+      if (pendingResolution === "synced") {
+        draft = onboardingV2DraftFromState(nextState, { owner: owner() });
+        await clearLocal();
+      } else if (pendingResolution === "conflict") {
+        conflict = clone(nextState);
+        conflictChoices = {};
+        uiStep = "conflict";
+        forceVisible = true;
+        draft.localDirty = true;
+        await persist();
+        status("两端内容有差异，请逐项选择");
       }
-      uiStep = draft.pendingSync || draft.localDirty
-        ? draft.step
-        : nextState.session?.status === "paused"
-          ? "resume"
-          : nextState.session?.step || "welcome";
+      if (!conflict) {
+        uiStep = draft.pendingSync || draft.localDirty
+          ? draft.step
+          : nextState.session?.status === "paused"
+            ? "resume"
+            : nextState.session?.step || "welcome";
+      }
       if (uiStep === "firstAction" && ["completed", "skipped"].includes(nextState.session?.status)) uiStep = "welcome";
       render();
     },
     render,
     reconcile(nextState) {
       setServerState(nextState);
-      if (draft?.pendingSync && Number(nextState.session?.revision) > Number(draft.baseRevision)) {
-        if (onboardingContentMatches(nextState, draft)) {
-          draft = onboardingV2DraftFromState(nextState, { owner: owner() });
-          void clearLocal();
-          status(draftStore.durable === false ? "已同步" : "已保存在此设备 · 已同步");
-        } else void flushPending();
+      const pendingResolution = onboardingV2PendingResolution(nextState, draft);
+      if (pendingResolution === "synced") {
+        draft = onboardingV2DraftFromState(nextState, { owner: owner() });
+        void clearLocal();
+        status(draftStore.durable === false ? "已同步" : "已保存在此设备 · 已同步");
+      } else if (pendingResolution === "conflict") {
+        conflict = clone(nextState);
+        conflictChoices = {};
+        uiStep = "conflict";
+        forceVisible = true;
+        draft.localDirty = true;
+        void persist().then(() => status("两端内容有差异，请逐项选择"));
       } else if (!draft?.localDirty && !draft?.pendingSync) {
         draft = onboardingV2DraftFromState(nextState, { owner: owner() });
       }

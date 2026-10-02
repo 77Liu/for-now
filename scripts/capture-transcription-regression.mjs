@@ -51,6 +51,7 @@ const targets = createAiTaskTargets({
   now
 });
 let failNext = false;
+const generatedTaskIds = [];
 const background = createBackgroundAi({
   repository,
   tasks: createTaskLifecycle({ createId: () => crypto.randomUUID(), now, hash }),
@@ -58,6 +59,8 @@ const background = createBackgroundAi({
   targets,
   generate: async work => {
     assert.equal(work.kind, "captureTranscription");
+    assert.match(work.taskId, /^[0-9a-f-]{36}$/);
+    generatedTaskIds.push(work.taskId);
     if (failNext) throw Object.assign(new Error("公开失败"), { code: "ASR_PROVIDER_FAILED" });
     assert.deepEqual(work.audio, audio);
     return {
@@ -79,9 +82,18 @@ const first = await background.enqueue({
 });
 assert.equal(first.task.status, "queued");
 assert.equal(store.captures[0].transcription.status, "queued");
+const concurrentDuplicate = await background.enqueue({
+  kind: "captureTranscription",
+  targetId: "capture-a",
+  clientRequestId: "transcription-a-concurrent"
+});
+assert.equal(concurrentDuplicate.duplicate, true);
+assert.equal(concurrentDuplicate.task.id, first.task.id);
+assert.equal(store.aiTasks.filter(task => task.targetId === "capture-a").length, 1);
 store.captures[0].content = "转写期间修改了文字，但语音原件未变化";
 store.captures[0].version = 2;
 await background.run(first.task.id);
+assert.deepEqual(generatedTaskIds, [first.task.id]);
 assert.equal(store.aiTasks[0].status, "succeeded");
 assert.equal(store.captures[0].transcription.status, "ready");
 assert.equal(store.captures[0].transcription.rawText, "这是原始转写。");
@@ -191,4 +203,4 @@ await background.run(stale.task.id);
 assert.equal(store.aiTasks.find(task => task.id === stale.task.id).status, "stale");
 assert.equal(store.captures.find(item => item.id === "capture-d").transcription.status, "unconfigured");
 
-console.log("Capture transcription checks passed: queue state, durable result save, failure projection, interrupted-task recovery and stale-audio isolation.");
+console.log("Capture transcription checks passed: active-input deduplication, task-scoped generation, durable result save, failure projection, interrupted-task recovery and stale-audio isolation.");

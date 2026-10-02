@@ -28,6 +28,7 @@ export function createAiTaskTargets({
       && Boolean(safeText(capture.transcription?.rawText, 120_000));
     return {
       kind: "captureTranscription",
+      taskId: task.id,
       capture,
       audio,
       alreadyAnswered,
