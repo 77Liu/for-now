@@ -59,6 +59,11 @@ import { installPromptCatalog, promptText, renderPrompt } from "./src/shared/pro
 import { localDateKey, shiftDateKey, strictDateKey, localDateTimeOn, eventTimeFields } from "./src/shared/time/index.mjs";
 import { buildAdminSnapshot } from "./admin-snapshot.mjs";
 import { createAnnotationCommands, createAiTaskTargets, createBackgroundAi, createTrashMutations, createTrashCommands, createAttachmentCleanup, createSpeechCache, createKeepsakeMediaWorkflows, createThoughtWorkflows, createCaptureJournalWorkflows, createLibraryWorkflows, createReviewChatWorkflows, createUserModelExtractionService, personalContextProjection, userModelEvidenceCurrent } from "./src/app/index.mjs";
+import {
+  createSpeechCacheSweep,
+  SPEECH_CACHE_SWEEP_INTERVAL_MS,
+  SPEECH_CACHE_SWEEP_STARTUP_DELAY_MS
+} from "./src/app/index.mjs";
 import { safeText, recordVersion, safeIso, nullableNumber, numberOrFallback as commercialNumber } from "./src/shared/validation/index.mjs";
 import { createAuthHttp, createJsonHttp, createTaskHttp, createAnnotationHttp, createTrashHttp, createAttachmentHttp, createAiSettingsHttp, createAiCostHttp, createKeepsakeHttp, createOnboardingHttp, createOnboardingV2Http, createUserModelHttp, createThoughtHttp, createCheckinHttp, createHealthRecordHttp, createDiscoveryHttp, createExportHttp, createActionsHttp, createFeedbackHttp, createCaptureJournalHttp, createLibraryHttp, createReviewsChatHttp, createContentAttachmentsHttp, createSpeechHttp, createVisionHttp, createSyncHttp, createPersonalContextHttp, createRequestHandler, createModelResponseHttp, createApiV1Http, openApiV1 } from "./src/http/index.mjs";
 import { createHealthImageConfig, createDailyRecordRecords, normalizeHealthImage } from "./src/modules/health/index.mjs";
@@ -2127,6 +2132,37 @@ const speechCache = createSpeechCache({
   hash: sha256,
   now
 });
+const speechCacheSweep = createSpeechCacheSweep({
+  listAccountIds: async () => AUTH_REQUIRED
+    ? (await readAuth()).users.map(user => user.id)
+    : ["local"],
+  runWithAccount: (accountId, operation) => {
+    const user = { id: accountId };
+    return requestStorage.run({
+      user,
+      traceId: crypto.randomUUID(),
+      dataDir: AUTH_REQUIRED ? userDataDir(user) : DATA_DIR,
+      secrets: [],
+      route: "background/speech-cache-sweep"
+    }, operation);
+  },
+  repository: storeRepository,
+  cleanup: attachmentCleanup,
+  now,
+  onAccountError: (error, { accountId }) => logEvent("system", "speech_cache.sweep_account_failed", {
+    level: "error",
+    accountHash: sha256(accountId),
+    error: errorMetadata(error)
+  })
+});
+async function runSpeechCacheSweep() {
+  const result = await speechCacheSweep.run();
+  await logEvent("system", "speech_cache.sweep_completed", {
+    level: result.failed ? "error" : "info",
+    ...result
+  });
+  return result;
+}
 const speechHttp = createSpeechHttp({
   speech: speechProvider,
   gate: speechGate,
@@ -2590,6 +2626,16 @@ const periodicFailure = error => logEvent("system", "scheduler.failed", { level:
 if (!LOCAL_TEST_MODE && PERIODIC_ANALYSIS_ENABLED) {
   setTimeout(() => void runPeriodicAnalyses().catch(periodicFailure), 5000).unref();
   setInterval(() => void runPeriodicAnalyses().catch(periodicFailure), 3600000).unref();
+}
+if (!LOCAL_TEST_MODE && !UPSTREAM_ORIGIN) {
+  setTimeout(
+    () => void runSpeechCacheSweep().catch(periodicFailure),
+    SPEECH_CACHE_SWEEP_STARTUP_DELAY_MS
+  ).unref();
+  setInterval(
+    () => void runSpeechCacheSweep().catch(periodicFailure),
+    SPEECH_CACHE_SWEEP_INTERVAL_MS
+  ).unref();
 }
 http.createServer(createRequestHandler({
   requestContext: requestStorage, rootDir: DATA_DIR, basePath: APP_BASE_PATH, logEvent, sendJson,
