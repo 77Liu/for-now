@@ -47,7 +47,8 @@ export function migrationStore() {
       { id: "task-1", kind: "thoughtAnswer", resourceType: "thought", targetId: "root-1", resultId: "answer-1", status: "succeeded", inputVersion: 2 },
       { id: "task-old", kind: "thoughtAnswer", targetId: "deleted-root", status: "stale", retryOf: "task-1" },
       { id: "task-follow", kind: "followUpAnswer", targetId: "root-1", subtargetId: "follow-1", status: "queued" },
-      { id: "task-annotation", kind: "annotationShenji", resourceType: "capture", targetId: "shared-id", subtargetId: "annotation-1", resultId: "exchange-1", status: "succeeded" }
+      { id: "task-annotation", kind: "annotationShenji", resourceType: "capture", targetId: "shared-id", subtargetId: "annotation-1", resultId: "exchange-1", status: "succeeded" },
+      { id: "task-onboarding-claims", kind: "onboardingClaimExtraction", resourceType: "onboardingV2", targetId: "onboarding-v2", resultId: "task-onboarding-claims", status: "succeeded", inputVersion: 1 }
     ],
     notifications: [{ id: "notification-1", taskId: "task-1", resourceType: "thought", targetId: "root-1", readAt: "" }],
     actions: [{ id: "action-1", title: "后续行动", status: "active", priority: "high", sourceRef: { type: "thought", id: "root-1" } }],
@@ -107,7 +108,8 @@ export function migrationStore() {
       contextAllowed: true,
       createdAt: "2026-10-02T01:01:00.000Z",
       updatedAt: "2026-10-02T01:02:00.000Z",
-      version: 2
+      version: 2,
+      sourceTaskId: "task-onboarding-claims"
     }],
     modelUnknowns: [{
       id: "unknown-1",
@@ -119,7 +121,8 @@ export function migrationStore() {
       resolvedBy: "claim-1",
       createdAt: "2026-10-02T01:03:00.000Z",
       updatedAt: "2026-10-02T01:03:00.000Z",
-      version: 1
+      version: 1,
+      sourceTaskId: "task-onboarding-claims"
     }],
     commercialization: { model: "subscription", parameters: { price: 12.5 } },
     unknownExtension: JSON.parse('{"__proto__":{"keep":true},"values":[null,false,0,""],"path":"/attachments/extension.png"}')

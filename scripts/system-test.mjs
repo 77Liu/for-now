@@ -90,6 +90,7 @@ const suites = {
     ["onboarding v2 frontend state", ["scripts/onboarding-v2-frontend-regression.mjs"]],
     ["user model claims and source lifecycle", ["scripts/user-model-claims-regression.mjs"]],
     ["user model API", ["scripts/user-model-api-regression.mjs"]],
+    ["user model extraction tasks", ["scripts/user-model-extraction-regression.mjs"]],
     ["annotations, background tasks and notifications", ["scripts/collaboration-regression.mjs"]],
     ["trash, restore and durable attachment cleanup", ["scripts/trash-regression.mjs"]],
     ["backend regression", ["scripts/regression.mjs"]],

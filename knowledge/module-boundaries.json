@@ -27,7 +27,7 @@
       "root": "src/modules/onboarding",
       "publicEntry": "src/modules/onboarding/index.mjs",
       "allowedDependencies": ["shared.validation"],
-      "owns": { "data": ["legacy questionnaires, optional profile, required-answer validation and initial understanding", "v2 onboarding sessions, versioned raw answers, collaboration sources, readiness and legacy entry policy"], "routes": ["GET /api/onboarding/schema", "POST /api/onboarding/preview", "PATCH /api/onboarding", "GET /api/v1/onboarding-v2/schema", "GET /api/v1/onboarding-v2/session", "PATCH /api/v1/onboarding-v2/session"] },
+      "owns": { "data": ["legacy questionnaires, optional profile, required-answer validation and initial understanding", "v2 onboarding sessions, versioned raw answers, collaboration sources, readiness and legacy entry policy"], "routes": ["GET /api/onboarding/schema", "POST /api/onboarding/preview", "PATCH /api/onboarding", "GET /api/v1/onboarding-v2/schema", "GET /api/v1/onboarding-v2/session", "PATCH /api/v1/onboarding-v2/session", "POST /api/v1/onboarding-v2/extractions", "GET /api/v1/onboarding-v2/extractions/:id", "DELETE /api/v1/onboarding-v2/extractions/:id"] },
       "tests": ["scripts/personal-context-regression.mjs", "scripts/onboarding-v2-regression.mjs", "scripts/onboarding-v2-session-regression.mjs", "scripts/onboarding-v2-frontend-regression.mjs", "scripts/regression.mjs", "scripts/auth-regression.mjs", "scripts/ui-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
       "status": "active"
     },
@@ -38,10 +38,10 @@
       "publicEntry": "src/modules/user-model/index.mjs",
       "allowedDependencies": ["shared.validation"],
       "owns": {
-        "data": ["source-bound user claims, model unknowns, candidate activation, correction, rejection, retraction and stale-source projection"],
+        "data": ["source-bound user claims, model unknowns, candidate activation, correction, rejection, retraction and stale-source projection", "strict candidate extraction output parsing, source span validation and extraction limits"],
         "routes": ["GET /api/v1/user-model", "PATCH /api/v1/user-model/claims/:id"]
       },
-      "tests": ["scripts/user-model-claims-regression.mjs", "scripts/user-model-api-regression.mjs", "scripts/personal-context-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
+      "tests": ["scripts/user-model-claims-regression.mjs", "scripts/user-model-api-regression.mjs", "scripts/user-model-extraction-regression.mjs", "scripts/personal-context-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
       "status": "active"
     },
     {
@@ -252,8 +252,8 @@
       "root": "src/app",
       "publicEntry": "src/app/index.mjs",
       "allowedDependencies": ["domain.annotations", "domain.tasks", "domain.notifications", "domain.trash", "domain.onboarding", "domain.user-model", "domain.health", "domain.thoughts", "domain.captures", "domain.journals", "domain.books", "domain.quotes", "domain.chats", "domain.reviews", "domain.content-attachments", "domain.ai", "shared.time", "shared.attachments", "shared.content", "shared.validation", "shared.prompts", "shared.speech"],
-      "owns": { "data": ["cross-domain annotation resource resolution and transactional background AI orchestration", "trash location resolution, versioned restore and durable attachment cleanup orchestration", "cross-domain personal context, source receipts, token budgets, activity selection and thought answer prompt composition", "thought chain creation/task transaction, draft/starter generation and foreground answer idempotency", "capture/journal, library and review/chat application workflows", "account-private capture speech cache keys, source invalidation and attachment lifecycle orchestration", "explicit hash-confirmed historical keepsake media migration"], "routes": [] },
-      "tests": ["scripts/personal-context-regression.mjs", "scripts/onboarding-v2-regression.mjs", "scripts/trash-regression.mjs", "scripts/collaboration-regression.mjs", "scripts/capture-journal-regression.mjs", "scripts/capture-transcription-regression.mjs", "scripts/speech-cache-regression.mjs", "scripts/volcengine-server-regression.mjs", "scripts/library-regression.mjs", "scripts/reviews-chat-regression.mjs", "scripts/keepsake-media-migration-regression.mjs", "scripts/regression.mjs", "scripts/api-v1-contract-regression.mjs", "scripts/auth-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
+      "owns": { "data": ["cross-domain annotation resource resolution and transactional background AI orchestration", "trash location resolution, versioned restore and durable attachment cleanup orchestration", "cross-domain personal context, source receipts, token budgets, activity selection and thought answer prompt composition", "thought chain creation/task transaction, draft/starter generation and foreground answer idempotency", "capture/journal, library and review/chat application workflows", "account-private capture speech cache keys, source invalidation and attachment lifecycle orchestration", "explicit hash-confirmed historical keepsake media migration", "version-bound onboarding claim extraction preparation and candidate task persistence"], "routes": [] },
+      "tests": ["scripts/personal-context-regression.mjs", "scripts/onboarding-v2-regression.mjs", "scripts/user-model-extraction-regression.mjs", "scripts/trash-regression.mjs", "scripts/collaboration-regression.mjs", "scripts/capture-journal-regression.mjs", "scripts/capture-transcription-regression.mjs", "scripts/speech-cache-regression.mjs", "scripts/volcengine-server-regression.mjs", "scripts/library-regression.mjs", "scripts/reviews-chat-regression.mjs", "scripts/keepsake-media-migration-regression.mjs", "scripts/regression.mjs", "scripts/api-v1-contract-regression.mjs", "scripts/auth-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
       "status": "active"
     },
     {
@@ -332,7 +332,7 @@
         "data": ["task creation, idempotency, single retry successor, claim, completion and restart recovery"],
         "routes": ["POST /api/ai-tasks", "GET /api/ai-tasks", "GET /api/ai-tasks/:id", "GET /api/ai-tasks/:id/result", "POST /api/ai-tasks/:id/retry"]
       },
-      "tests": ["scripts/collaboration-regression.mjs", "scripts/capture-transcription-regression.mjs", "scripts/regression.mjs", "scripts/auth-regression.mjs"],
+      "tests": ["scripts/collaboration-regression.mjs", "scripts/capture-transcription-regression.mjs", "scripts/user-model-extraction-regression.mjs", "scripts/regression.mjs", "scripts/auth-regression.mjs"],
       "status": "active"
     },
     {

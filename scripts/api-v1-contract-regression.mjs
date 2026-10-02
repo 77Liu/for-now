@@ -124,6 +124,7 @@ try {
   assert.ok(specification.body.paths["/personal-context"]);
   assert.ok(specification.body.paths["/onboarding-v2/schema"]);
   assert.ok(specification.body.paths["/onboarding-v2/session"]);
+  assert.ok(specification.body.paths["/onboarding-v2/extractions"]);
   assert.ok(specification.body.paths["/user-model"]);
   assert.ok(specification.body.paths["/user-model/claims/{id}"]);
   assert.equal(specification.body.components.schemas.ErrorEnvelope.required.includes("meta"), true);

@@ -96,8 +96,26 @@ const sendJson = (res, status, value) => {
   res.headersSent = true;
   return value;
 };
+const extractionRequests = [];
 const http = createOnboardingV2Http({
   onboardingV2,
+  extractions: {
+    async enqueue(input) {
+      extractionRequests.push(structuredClone(input));
+      return {
+        task: {
+          id: "extraction-task-1",
+          kind: "onboardingClaimExtraction",
+          resourceType: "onboardingV2",
+          targetId: "onboarding-v2",
+          inputVersion: input.sourceRevision,
+          status: "queued",
+          createdAt: "2026-10-02T01:10:00.000Z"
+        },
+        duplicate: false
+      };
+    }
+  },
   bodyJson: async req => req.body || {}
 });
 const api = createApiV1Http({
@@ -173,6 +191,17 @@ assert.equal(response.body.data.session.answers.currentContext.version, 1);
 assert.equal(response.body.data.session.answers.currentContext.rawText, "我正在适应新的工作节奏。");
 assert.equal(response.headers.get("etag"), "\"2\"");
 const firstReplayBody = structuredClone(response.body);
+
+response = await request("account-a", "POST", "/api/v1/onboarding-v2/extractions", {
+  headers: { "idempotency-key": "extract-account-a-1" },
+  body: { sourceRevision: 1 }
+});
+assert.equal(response.status, 202);
+assert.equal(response.body.data.kind, "onboardingClaimExtraction");
+assert.deepEqual(extractionRequests, [{
+  sourceRevision: 1,
+  clientRequestId: "extract-account-a-1"
+}]);
 
 response = await request("account-a", "PATCH", "/api/v1/onboarding-v2/session", {
   headers: { "if-match": "\"1\"", "idempotency-key": "onboarding-a-1" },
@@ -300,10 +329,17 @@ assert.strictEqual(
   onboardingV2OpenApiFragment.paths["/onboarding-v2/session"]
 );
 assert.ok(openApiV1.paths["/onboarding-v2/schema"]);
+assert.ok(openApiV1.paths["/onboarding-v2/extractions"]);
 assert.ok(openApiV1.components.schemas.OnboardingV2Session);
 assert.equal(
   openApiV1.paths["/onboarding-v2/session"].patch.parameters.some(parameter => (
     parameter.$ref === "#/components/parameters/IfMatch"
+  )),
+  true
+);
+assert.equal(
+  openApiV1.paths["/onboarding-v2/extractions"].post.parameters.some(parameter => (
+    parameter.$ref === "#/components/parameters/IdempotencyKey"
   )),
   true
 );
