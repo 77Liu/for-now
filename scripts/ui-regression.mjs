@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveHeadlessBrowser } from "./browser-runtime.mjs";
 import { healthImageFixtures } from "./fixtures/health-images.mjs";
+import { architectureOwnerSurface, commercializationOwnerSurface } from "../src/modules/owner-surfaces/index.mjs";
 
 const CHROME = resolveHeadlessBrowser();
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -14,6 +15,44 @@ const PUBLIC_DIR = path.join(ROOT, "public");
 const CONFIGURED_APP_URL = process.env.APP_URL || "";
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const TEST_IMAGE = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lR2nWQAAAABJRU5ErkJggg==", "base64");
+const commercialValidationBase = { participants: 5, rewardPerParticipantCny: 100, testDays: 14, tasksPerParticipant: 3, validSuggestionsPerParticipant: 2, interviewMinutesPerParticipant: 45, developmentHoursTotal: 12, aiCallsPerParticipant: 20, imageCallsPerParticipant: 2 };
+const commercialSubscriptionBase = { dailyActiveUsers: 5, monthlyActiveUsers: 20, payingUsers: 5, newPaidUsersPerMonth: 2, simulationMonths: 6, monthlyPriceCny: 39, paymentFeePct: 1, refundPct: 3, fixedMonthlyCostCny: 100, operationsHoursPerMonth: 6, developmentHoursPerMonth: 20, acquisitionCostPerNewUserCny: 30, monthlyChurnPct: 8 };
+const commercialDeliveryBase = { ordersPerMonth: 4, serviceFeePerOrderCny: 299, byokPct: 60, hostedPrepaidPerOrderCny: 100, maintenanceMarkupPct: 20, prepaidUtilizationPct: 70, deliveryHoursPerOrder: 2, supportHoursPerOrder: 0.5, developmentHoursPerMonth: 8, paymentFeePct: 1, refundPct: 3, acquisitionCostPerOrderCny: 20 };
+const commercialUsagePackBase = { buyersPerMonth: 10, packsPerBuyer: 1, pricePerPackCny: 29, includedAiCallsPerPack: 80, includedImageCallsPerPack: 10, utilizationPct: 70, supportHoursPerMonth: 2, paymentFeePct: 1, refundPct: 3, acquisitionCostPerBuyerCny: 10 };
+const UI_COMMERCIAL_REPORT = {
+  version: 3,
+  updatedAt: "",
+  assumptions: {
+    stageByModel: { validation: 0, subscription: 0, delivery: 0, usagePack: 0 },
+    stagePresets: {
+      validation: [commercialValidationBase, { ...commercialValidationBase, participants: 20 }, { ...commercialValidationBase, participants: 100 }, { ...commercialValidationBase, participants: 300 }, { ...commercialValidationBase, participants: 1000 }],
+      subscription: [commercialSubscriptionBase, { ...commercialSubscriptionBase, dailyActiveUsers: 100, monthlyActiveUsers: 400, payingUsers: 50, simulationMonths: 12 }, { ...commercialSubscriptionBase, dailyActiveUsers: 10000, monthlyActiveUsers: 40000, payingUsers: 4000, simulationMonths: 18 }, { ...commercialSubscriptionBase, dailyActiveUsers: 25000, monthlyActiveUsers: 100000, payingUsers: 10000, simulationMonths: 24 }, { ...commercialSubscriptionBase, dailyActiveUsers: 46000, monthlyActiveUsers: 184000, payingUsers: 18400, simulationMonths: 24 }],
+      delivery: [commercialDeliveryBase, { ...commercialDeliveryBase, ordersPerMonth: 30 }, { ...commercialDeliveryBase, ordersPerMonth: 800 }, { ...commercialDeliveryBase, ordersPerMonth: 5000 }, { ...commercialDeliveryBase, ordersPerMonth: 15000 }],
+      usagePack: [commercialUsagePackBase, { ...commercialUsagePackBase, buyersPerMonth: 80 }, { ...commercialUsagePackBase, buyersPerMonth: 4000 }, { ...commercialUsagePackBase, buyersPerMonth: 15000 }, { ...commercialUsagePackBase, buyersPerMonth: 36800 }]
+    },
+    validation: commercialValidationBase,
+    subscription: commercialSubscriptionBase,
+    delivery: commercialDeliveryBase,
+    usagePack: commercialUsagePackBase,
+    usageProfiles: {
+      low: { sharePct: 40, activeDaysPerMonth: 4, requestsPerActiveDay: 2, foregroundAiCallsPerActiveDay: 0.5, backgroundAiCallsPerActiveDay: 0.25, imageCallsPerMonth: 1 },
+      medium: { sharePct: 35, activeDaysPerMonth: 10, requestsPerActiveDay: 3, foregroundAiCallsPerActiveDay: 1.5, backgroundAiCallsPerActiveDay: 0.6, imageCallsPerMonth: 3 },
+      high: { sharePct: 20, activeDaysPerMonth: 20, requestsPerActiveDay: 6, foregroundAiCallsPerActiveDay: 6.5, backgroundAiCallsPerActiveDay: 2, imageCallsPerMonth: 8 },
+      full: { sharePct: 5, activeDaysPerMonth: 30, requestsPerActiveDay: 10, foregroundAiCallsPerActiveDay: 10, backgroundAiCallsPerActiveDay: 5, imageCallsPerMonth: 20 }
+    },
+    common: { usdCny: 7.2, aiCostFloorPerCallCny: 0.03, segmentationCostPerImageCny: 0.01, laborHourlyCny: 80 }
+  }
+};
+const UI_OWNER_STATISTICS = {
+  ai: {
+    summary: { calls: 0, costUnknownCalls: 0, costCny: 0, costsUsd: { total: 0 } },
+    calibration: { activeDays: 0, averageCallsPerActiveDay: 0, averageInputTokens: 0, maxInputTokens: 0, p90CostCny: 0 }
+  },
+  service: { completedWrites: 0, segmentationRequests: 0 }
+};
+const UI_OWNER_STORE = {
+  thoughts: [{ id: "kept-root", type: "question", content: "没有初步想法的问题", tags: ["商业"], occurredAt: "2026-09-27T04:09:00.000Z" }]
+};
 
 async function freePort() {
   const server = http.createServer();
@@ -28,6 +67,26 @@ async function startStaticServer() {
   const server = http.createServer(async (request, response) => {
     try {
       const url = new URL(request.url, "http://127.0.0.1"), relative = url.pathname === "/" ? "index.html" : url.pathname.replace(/^\/+/, "");
+      if (request.method === "GET" && url.pathname === "/api/owner/surfaces/architecture") {
+        response.writeHead(200, { "content-type": "application/json", "cache-control": "private, no-store" });
+        response.end(JSON.stringify(architectureOwnerSurface()));
+        return;
+      }
+      if (["GET", "POST"].includes(request.method) && ["/api/owner/surfaces/commercialization", "/api/owner/surfaces/commercialization/preview"].includes(url.pathname)) {
+        const chunks = [];
+        for await (const chunk of request) chunks.push(chunk);
+        const input = chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : {};
+        const report = input.assumptions ? { ...structuredClone(UI_COMMERCIAL_REPORT), assumptions: input.assumptions } : structuredClone(UI_COMMERCIAL_REPORT);
+        response.writeHead(200, { "content-type": "application/json", "cache-control": "private, no-store" });
+        response.end(JSON.stringify(commercializationOwnerSurface({
+          report,
+          store: UI_OWNER_STORE,
+          statistics: UI_OWNER_STATISTICS,
+          mode: input.mode || "validation",
+          currentDate: "2026-09-27"
+        })));
+        return;
+      }
       if (url.pathname.startsWith("/attachments/")) {
         response.writeHead(200, { "content-type": "image/png", "cache-control": "no-store" });
         response.end(TEST_IMAGE);
@@ -205,6 +264,7 @@ const mockFetch = `
   window.__preferenceSaves = 0;
   window.__aiCostPlanSaves = 0;
   window.__commercializationSaves = 0;
+  window.__ownerSurfaceRequests = [];
   window.__usernameChanges = 0;
   window.__passwordChanges = 0;
   window.__roleChanges = 0;
@@ -534,6 +594,10 @@ const mockFetch = `
   };
   window.fetch = (input, init = {}) => {
     const url = typeof input === "string" ? input : input.url;
+    if (url.startsWith("/api/owner/surfaces/")) {
+      window.__ownerSurfaceRequests.push(url);
+      return nativeFetch(input, init);
+    }
     if (url === "/api/v1/onboarding-v2/schema") return v1(window.__onboardingV2Schema);
     if (url === "/api/v1/onboarding-v2/session" && (!init.method || init.method === "GET")) return v1(window.__onboardingV2);
     if (url === "/api/v1/onboarding-v2/session" && init.method === "PATCH") {
@@ -765,7 +829,7 @@ const mockFetch = `
       const empty=window.__testWorkspaceMode==="cold"||window.__lazySimulationEmpty;
       return json({
       version: 15, checkins: empty?[]:window.__checkins, dailyRecords: empty?[]:window.__dailyRecords, captures: empty?[]:window.__captures, journals: empty?[]:window.__journals, thoughts: empty?[]:window.__thoughts,
-      chats: empty?[]:[{ id: "chat-1", createdAt: "2026-09-27T01:15:00.000Z", occurredAt: "2026-09-27T04:15:00.000Z", occurredOn: "2026-09-27", message: "**用户问题**", answer: "## 模型回答", reasoningContent: "PRIVATE_CHAT_REASONING" }], books: empty?[]:window.__books, journalDraft: empty?null:window.__journalDraft, keepsakes: empty?[]:window.__keepsakes.map(({originalPath,...item})=>item), quotes: empty?[]:window.__quotes, aiTasks: window.__aiTasks, notifications: window.__notifications, onboarding: window.__onboarding, onboardingV2: window.__onboardingV2, ...(window.__accountUser.role==="owner"?{commercialization:window.__commercialization}:{}),
+      chats: empty?[]:[{ id: "chat-1", createdAt: "2026-09-27T01:15:00.000Z", occurredAt: "2026-09-27T04:15:00.000Z", occurredOn: "2026-09-27", message: "**用户问题**", answer: "## 模型回答", reasoningContent: "PRIVATE_CHAT_REASONING" }], books: empty?[]:window.__books, journalDraft: empty?null:window.__journalDraft, keepsakes: empty?[]:window.__keepsakes.map(({originalPath,...item})=>item), quotes: empty?[]:window.__quotes, aiTasks: window.__aiTasks, notifications: window.__notifications, onboarding: window.__onboarding, onboardingV2: window.__onboardingV2,
       speech:{configured:true,defaultVoice:"zh_male_shaonianzixin_uranus_bigtts",supportedAsrMimeTypes:["audio/mp4","audio/ogg","audio/wav"],voices:[{id:"zh_male_shaonianzixin_uranus_bigtts",label:"少年梓辛 2.0"},{id:"zh_male_m191_uranus_bigtts",label:"云舟 2.0"},{id:"zh_female_vv_uranus_bigtts",label:"Vivi 2.0"},{id:"zh_female_cancan_uranus_bigtts",label:"知性灿灿 2.0"}]},vision:{configured:true},
       experiments: [], analyses: empty?[]:window.__analyses, customMetrics: [], clusters: [],
       insights: { trends: [
@@ -2618,7 +2682,9 @@ try {
   const aiCostMobileScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
   await fs.writeFile("/tmp/growth-ai-cost-mobile.png",Buffer.from(aiCostMobileScreenshot.data,"base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
+  assert.deepEqual(await evaluate(`window.__ownerSurfaceRequests`),[]);
   await evaluate(`document.querySelector('[data-view="architecture"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelectorAll("[data-architecture-stage]").length===5`),true);
   assert.deepEqual(await evaluate(`({
     active:document.querySelector("#view-architecture").classList.contains("active"),
     stages:document.querySelectorAll("[data-architecture-stage]").length,
@@ -2628,6 +2694,7 @@ try {
     terms:document.querySelectorAll("[data-architecture-term]").length,
     noOverflow:document.documentElement.scrollWidth<=window.innerWidth
   })`),{active:true,stages:5,kpis:4,currentSpec:true,layers:8,terms:12,noOverflow:true});
+  assert.deepEqual(await evaluate(`window.__ownerSurfaceRequests`),["/api/owner/surfaces/architecture"]);
   await sleep(250);
   const architectureDesktopScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
   await fs.writeFile("/tmp/growth-architecture-desktop.png",Buffer.from(architectureDesktopScreenshot.data,"base64"));
@@ -2659,8 +2726,10 @@ try {
     gates:document.querySelectorAll(".commercial-gates li").length,
     noOverflow:document.documentElement.scrollWidth<=window.innerWidth
   }))()`);
-  assert.deepEqual(commercialValidation, { active:true, mode:"有偿调研", kpis:["¥514","¥300","¥960","¥1774"], evidence:"1 条", paid:"待记录", aiSample:"10 / 14 次", models:4, profiles:4, profileSummaries:4, observedMetrics:6, stage:"内部验证期", paths:6, gates:3, noOverflow:true });
+  assert.deepEqual(commercialValidation, { active:true, mode:"有偿调研", kpis:["¥503","¥300","¥960","¥1763"], evidence:"1 条", paid:"待记录", aiSample:"暂无", models:4, profiles:4, profileSummaries:4, observedMetrics:6, stage:"内部验证期", paths:6, gates:3, noOverflow:true });
+  assert.equal(await evaluate(`window.__ownerSurfaceRequests.filter(url=>url.startsWith("/api/owner/surfaces/commercialization")).length`),1);
   await evaluate(`document.querySelector('[data-commercial-mode="subscription"]').click(); true`);
+  assert.equal(await waitUntil(`document.querySelector("#commercial-breakdown-title").textContent==="首月订阅经营账"`),true);
   const commercialSubscription=await evaluate(`({
     title:document.querySelector("#commercial-breakdown-title").textContent,
     kpiCount:document.querySelectorAll("#commercial-kpis strong").length,
@@ -2670,23 +2739,27 @@ try {
     cashflowRange:document.querySelector("#commercial-cashflow-range").textContent,
     weightedCost:document.querySelector("#commercial-profile-summary article:last-child strong").textContent
   })`);
-  assert.deepEqual(commercialSubscription, { title:"首月订阅经营账", kpiCount:4, hiddenValidation:true, visibleSubscription:true, cashflowRows:6, cashflowRange:"统计 2026-09 至 2027-02，共 6 个月；工时单价 ¥80.0/小时", weightedCost:"¥9.18/人/月" });
+  assert.deepEqual(commercialSubscription, { title:"首月订阅经营账", kpiCount:4, hiddenValidation:true, visibleSubscription:true, cashflowRows:6, cashflowRange:"统计 2026-09 至 2027-02，共 6 个月；工时单价 ¥80.0/小时", weightedCost:"¥1.99/人/月" });
   await evaluate(`document.querySelector(".commercial-profile-summary").scrollIntoView({block:"start"});true`);
   await sleep(120);
   const commercializationUsageScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
   await fs.writeFile("/tmp/growth-commercialization-usage-desktop.png",Buffer.from(commercializationUsageScreenshot.data,"base64"));
   await evaluate(`const slider=document.querySelector("#commercial-stage-slider");slider.value="2";slider.dispatchEvent(new Event("input",{bubbles:true}));true`);
+  assert.equal(await waitUntil(`document.querySelector("#commercial-stage-name").textContent==="快速上升期"`),true);
   assert.deepEqual(await evaluate(`({stage:document.querySelector("#commercial-stage-name").textContent,dau:document.querySelector('[data-commercial-field="subscription.dailyActiveUsers"]').value,mau:document.querySelector('[data-commercial-field="subscription.monthlyActiveUsers"]').value,months:document.querySelectorAll("#commercial-cashflow-rows tr").length})`),{stage:"快速上升期",dau:"10000",mau:"40000",months:18});
   await evaluate(`document.querySelector(".commercial-stage-control").scrollIntoView({block:"start"});true`);
   await sleep(120);
   const commercializationStageScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
   await fs.writeFile("/tmp/growth-commercialization-stage-desktop.png",Buffer.from(commercializationStageScreenshot.data,"base64"));
   await evaluate(`document.querySelector('[data-commercial-mode="delivery"]').click(); true`);
+  assert.equal(await waitUntil(`document.querySelector("#commercial-breakdown-title").textContent==="一次性交付与托管预存账"`),true);
   assert.deepEqual(await evaluate(`[...document.querySelectorAll("#commercial-kpis strong")].map(item=>item.textContent)`),["¥1388","¥1140","¥57.6","-¥357"]);
   assert.match(await evaluate(`document.querySelector("#commercial-method-note").textContent`),/BYOK.+合同负债/);
   await evaluate(`document.querySelector('[data-commercial-mode="usagePack"]').click(); true`);
-  assert.deepEqual(await evaluate(`[...document.querySelectorAll("#commercial-kpis strong")].map(item=>item.textContent)`),["¥290","¥79.4","¥99.0","-¥61.0"]);
+  assert.equal(await waitUntil(`document.querySelector("#commercial-breakdown-title").textContent==="用量增值包月度账"`),true);
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll("#commercial-kpis strong")].map(item=>item.textContent)`),["¥290","¥17.5","¥161","¥0.90"]);
   await evaluate(`document.querySelector('[data-commercial-mode="subscription"]').click(); true`);
+  assert.equal(await waitUntil(`document.querySelector("#commercial-breakdown-title").textContent==="首月订阅经营账"`),true);
   await evaluate(`document.querySelector('[data-commercial-field="subscription.monthlyPriceCny"]').value="59";document.querySelector("#commercial-assumptions-form").requestSubmit();true`);
   assert.equal(await waitUntil(`window.__commercializationSaves===1&&document.querySelector("#commercial-save-status").textContent.includes("已保存")`),true);
   await evaluate(`document.querySelector(".commercial-stage-control").scrollIntoView({block:"start"});document.querySelector("#toast").hidden=true;true`);

@@ -86,6 +86,9 @@ const assembled = {
   components: mergeComponents(baseComponents, thoughtsOpenApiFragment.components)
 };
 assert.deepEqual(assembled, openApiV1, "Mechanical fragment merge must preserve the v1 1.0.0 contract");
+assert.deepEqual(openApiV1.components.schemas.StatisticsDashboard.required, ["records"]);
+assert.match(openApiV1.components.schemas.StatisticsDashboard.properties.ai.description, /Owner-only/);
+assert.match(openApiV1.components.schemas.StatisticsDashboard.properties.service.description, /Owner-only/);
 
 const fragmentOperations = operations(thoughtPaths);
 assert.equal(fragmentOperations.length, 6);

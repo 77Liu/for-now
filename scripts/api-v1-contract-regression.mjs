@@ -128,6 +128,7 @@ try {
   assert.ok(specification.body.paths["/user-model"]);
   assert.ok(specification.body.paths["/user-model/claims/{id}"]);
   assert.equal(specification.body.components.schemas.ErrorEnvelope.required.includes("meta"), true);
+  assert.deepEqual(specification.body.components.schemas.StatisticsDashboard.required, ["records"]);
   assert.equal((await request("/api/v1/personal-context")).response.status, 401);
   assert.equal((await request("/api/v1/onboarding-v2/session")).response.status, 401);
   assert.equal((await request("/api/v1/user-model")).response.status, 401);
@@ -152,6 +153,15 @@ try {
   assert.deepEqual(userModelBaseline.body.data.claims, []);
   assert.deepEqual(userModelBaseline.body.data.unknowns, []);
   assert.deepEqual((await request("/api/v1/user-model", { cookie: other })).body.data.claims, []);
+  const memberStatistics = await request("/api/v1/statistics", { cookie: other });
+  assert.equal(memberStatistics.response.status, 200);
+  assert.ok(memberStatistics.body.data.records);
+  assert.equal(memberStatistics.body.data.ai, undefined);
+  assert.equal(memberStatistics.body.data.service, undefined);
+  const ownerStatistics = await request("/api/v1/statistics", { cookie: owner });
+  assert.equal(ownerStatistics.response.status, 200);
+  assert.ok(ownerStatistics.body.data.ai);
+  assert.ok(ownerStatistics.body.data.service);
   assert.equal(onboardingBaseline.response.headers.get("etag"), "\"1\"");
   assert.equal(onboardingBaseline.body.data.session.revision, 0);
   const onboardingSaved = await request("/api/v1/onboarding-v2/session", {

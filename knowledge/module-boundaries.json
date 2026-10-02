@@ -115,6 +115,19 @@
       "status": "active"
     },
     {
+      "id": "application.owner-surfaces",
+      "type": "application",
+      "root": "src/modules/owner-surfaces",
+      "publicEntry": "src/modules/owner-surfaces/index.mjs",
+      "allowedDependencies": [],
+      "owns": {
+        "data": ["Owner-only architecture plans, commercialization templates and server-rendered cost projections"],
+        "routes": ["GET /api/owner/surfaces/architecture", "GET /api/owner/surfaces/commercialization", "POST /api/owner/surfaces/commercialization/preview"]
+      },
+      "tests": ["scripts/auth-regression.mjs", "scripts/frontend-shell-regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
       "id": "domain.content-attachments",
       "type": "domain",
       "root": "src/modules/content-attachments",

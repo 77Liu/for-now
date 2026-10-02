@@ -94,6 +94,9 @@ try {
   assert.match(manifestResponse.headers.get("content-type") || "", /^application\/manifest\+json/);
   assert.equal((await manifestResponse.json()).start_url, ".");
   assert.equal((await fetch(`${base}/now/api/state`)).status, 401);
+  const anonymousOwnerSurface = await jsonRequest(`${base}/now/api/owner/surfaces/architecture`);
+  assert.equal(anonymousOwnerSurface.response.status, 401);
+  assert.equal(anonymousOwnerSurface.body.code, "AUTH_REQUIRED");
   assert.equal((await fetch(`${base}/now/api/admin/v1/snapshot`)).status, 401);
   assert.equal((await fetch(`${base}/now/api/admin/v1/snapshot`, {
     headers: { authorization: `Bearer ${platformToken}`, "x-forwarded-for": "203.0.113.4" }
@@ -129,6 +132,7 @@ try {
   const ownerCookie = ownerSetCookie.split(";")[0];
   const ownerState = await jsonRequest(`${base}/now/api/state`, { headers: { cookie: ownerCookie } });
   assert.equal(ownerState.body.captures[0].content, "legacy-owner-data");
+  assert.equal(ownerState.body.commercialization, undefined);
 
   const second = await jsonRequest(`${base}/now/api/auth/register`, {
     method: "POST",
@@ -144,6 +148,8 @@ try {
     ["GET", "/api/settings", null],
     ["POST", "/api/settings/test", { tier: "lite" }],
     ["GET", "/api/ai-cost-plan", null],
+    ["GET", "/api/owner/surfaces/architecture", null],
+    ["GET", "/api/owner/surfaces/commercialization", null],
     ["PATCH", "/api/commercialization", { assumptions: {} }],
     ["GET", "/api/vision/status", null]
   ]) {
@@ -164,6 +170,7 @@ try {
   assert.equal(userV1Statistics.response.status, 200);
   assert.ok(userV1Statistics.body.data.records);
   assert.equal(userV1Statistics.body.data.ai, undefined);
+  assert.equal(userV1Statistics.body.data.service, undefined);
   const userContext = await jsonRequest(`${base}/now/api/v1/personal-context`, { headers: { cookie: secondCookie } });
   assert.equal(userContext.response.status, 200);
   assert.equal(userContext.body.data.tokenBudget, undefined);
@@ -177,6 +184,16 @@ try {
   assert.equal(ownerMeta.body.user.role, "owner");
   assert.ok(ownerMeta.body.capabilities.includes("architecture"));
   assert.equal(ownerMeta.body.governanceUrl, "/platform/");
+  const ownerArchitecture = await jsonRequest(`${base}/now/api/owner/surfaces/architecture`, { headers: { cookie: ownerCookie } });
+  assert.equal(ownerArchitecture.response.status, 200);
+  assert.equal(ownerArchitecture.body.surface, "architecture");
+  assert.equal(ownerArchitecture.body.stages.length, 5);
+  assert.match(ownerArchitecture.body.markup, /architecture-stage-tabs/);
+  const ownerCommercialSurface = await jsonRequest(`${base}/now/api/owner/surfaces/commercialization`, { headers: { cookie: ownerCookie } });
+  assert.equal(ownerCommercialSurface.response.status, 200);
+  assert.equal(ownerCommercialSurface.body.surface, "commercialization");
+  assert.equal(ownerCommercialSurface.body.report.assumptions.validation.participants, 5);
+  assert.match(ownerCommercialSurface.body.markup, /commercial-assumptions-form/);
   const userPreferences = await jsonRequest(`${base}/now/api/preferences`, { headers: { cookie: secondCookie } });
   assert.equal(userPreferences.response.status, 200);
   assert.equal(userPreferences.body.provider, undefined);
@@ -411,6 +428,9 @@ try {
   const staleAfterPromotion = await jsonRequest(`${base}/now/api/state`, { headers: { cookie: secondCookie } });
   assert.equal(staleAfterPromotion.response.status, 401);
   assert.equal(staleAfterPromotion.body.code, "AUTH_REAUTH_REQUIRED");
+  const staleAttachmentAfterPromotion = await jsonRequest(attachmentUrl, { headers: { cookie: secondCookie } });
+  assert.equal(staleAttachmentAfterPromotion.response.status, 401);
+  assert.equal(staleAttachmentAfterPromotion.body.code, "AUTH_REAUTH_REQUIRED");
   const promotedLogin = await jsonRequest(`${base}/now/api/auth/login`, {
     method: "POST",
     body: JSON.stringify({ username: "second", password: "another-long-password-2" })

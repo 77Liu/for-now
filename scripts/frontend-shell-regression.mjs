@@ -16,6 +16,16 @@ const appRuntime = await fs.readFile(path.join(ROOT, "public/frontend/app/runtim
 const rootStyles = await fs.readFile(path.join(ROOT, "public/styles.css"), "utf8");
 const applicationStyles = await fs.readFile(path.join(ROOT, "public/frontend/styles/application.css"), "utf8");
 const html = await fs.readFile(path.join(ROOT, "public/index.html"), "utf8");
+async function publicSourceFiles(directory) {
+  const output = [];
+  for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+    const file = path.join(directory, entry.name);
+    if (entry.isDirectory()) output.push(...await publicSourceFiles(file));
+    else if (/\.(?:html|m?js)$/.test(entry.name)) output.push(file);
+  }
+  return output;
+}
+const downloadableSource = (await Promise.all((await publicSourceFiles(path.join(ROOT, "public"))).map(file => fs.readFile(file, "utf8")))).join("\n");
 
 assert.match(appEntry, /^import \{ startApplication \} from "\.\/frontend\/app\/index\.mjs";\s+startApplication\(\);\s*$/);
 assert.ok(appEntry.split("\n").length <= 5, "public/app.js must remain a thin bootstrap");
@@ -44,6 +54,9 @@ assert.match(html, /id="home-open-thought"/);
 assert.match(html, /id="home-mood-sparkline"/);
 assert.match(html, /id="discovery-query"/);
 assert.match(html, /id="view-permission"/);
+assert.match(html, /data-owner-surface-root="architecture"/);
+assert.match(html, /data-owner-surface-root="commercialization"/);
+assert.doesNotMatch(html, /id="architecture-stage-tabs"|id="commercial-assumptions-form"/);
 assert.equal((html.match(/data-ai-effort=/g) || []).length, 16);
 assert.ok((html.match(/data-owner-capability=/g) || []).length >= 10);
 assert.doesNotMatch(html, /id="ai-answer-reasoning|DeepSeek 回答|模型思考/);
@@ -53,6 +66,11 @@ for (const phrase of ["图片原文", "语音原件", "原音频与转写分层�
 for (const phrase of ["ASR 服务尚未配置", "内容时间线", "最新在前"]) {
   assert.doesNotMatch(appRuntime, new RegExp(phrase), `runtime copy must use the content design vocabulary: ${phrase}`);
 }
+for (const phrase of ["2 vCPU / 1.57 GiB", "MAU 18.4 万", "约 ¥290k–730k/月", "先付费招募体验者", "自带密钥 BYOK"]) {
+  assert.doesNotMatch(downloadableSource, new RegExp(phrase), `owner-only content leaked into a public HTML/JS asset: ${phrase}`);
+}
+assert.match(appRuntime, /request\("\/api\/owner\/surfaces\/architecture"\)/);
+assert.doesNotMatch(appRuntime, /const architectureStages=|commercialPaymentFactPattern|commercialStageScales/);
 
 const homePool = createHomeMemoryPool({
   thoughts: [
@@ -179,6 +197,7 @@ const effects = createPageEffects({
   stopQuoteBubbleScroll: () => calls.push("quote-stop"),
   loadStatistics: async () => calls.push("statistics"),
   loadAiCostPlan: async () => calls.push("ai-cost"),
+  loadArchitecture: async () => calls.push("architecture"),
   loadCommercialization: async () => calls.push("commercialization"),
   loadNotifications: async () => calls.push("notifications"),
   scheduleNotificationPoll: () => calls.push("notification-poll"),
@@ -187,9 +206,10 @@ const effects = createPageEffects({
 effects.captures();
 effects.quotes();
 effects.leaveQuotes();
+effects.architecture();
 effects.notifications();
 await new Promise(resolve => setTimeout(resolve, 0));
-for (const expected of ["frame", "captures", "quote-overflow", "quote-scroll", "quote-stop", "notifications", "notification-poll"]) {
+for (const expected of ["frame", "captures", "quote-overflow", "quote-scroll", "quote-stop", "architecture", "notifications", "notification-poll"]) {
   assert.ok(calls.includes(expected), `missing page effect: ${expected}`);
 }
 

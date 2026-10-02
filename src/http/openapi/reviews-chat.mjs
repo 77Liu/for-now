@@ -253,12 +253,17 @@ export const reviewsChatComponents = Object.freeze({
     },
     StatisticsDashboard: {
       type: "object",
-      required: ["records", "ai", "service"],
+      required: ["records"],
       properties: {
         records: { type: "object", additionalProperties: true },
-        ai: { type: "object", additionalProperties: true },
+        ai: {
+          type: "object",
+          description: "Owner-only AI usage and cost extension",
+          additionalProperties: true
+        },
         service: {
           type: "object",
+          description: "Owner-only service operation extension",
           required: ["completedWrites", "activeDays", "segmentationRequests", "topActions"],
           properties: {
             completedWrites: { type: "integer", minimum: 0 },

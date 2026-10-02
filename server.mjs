@@ -28,6 +28,7 @@ import { createQuoteRecords } from "./src/modules/quotes/index.mjs";
 import { createChatRecords } from "./src/modules/chats/index.mjs";
 import { createReviewRecords } from "./src/modules/reviews/index.mjs";
 import { createStatisticsService } from "./src/modules/statistics/index.mjs";
+import { architectureOwnerSurface, commercializationOwnerSurface } from "./src/modules/owner-surfaces/index.mjs";
 import { createContentAttachmentService } from "./src/modules/content-attachments/index.mjs";
 import { createThoughtDiscoveryService } from "./src/modules/discovery/index.mjs";
 import { createAccountExport } from "./src/modules/exports/index.mjs";
@@ -936,9 +937,8 @@ function withoutOwnerMetadata(value) {
 }
 
 function storeForUser(store, user = requestStorage.getStore()?.user) {
-  if (isOwner(user)) return store;
   const { commercialization, ...visible } = store;
-  return withoutOwnerMetadata(visible);
+  return isOwner(user) ? visible : withoutOwnerMetadata(visible);
 }
 
 function publicStateFromStore(store, user = requestStorage.getStore()?.user) {
@@ -2584,6 +2584,34 @@ async function readOperationEntries(logsDir, from, to) {
 }
 
 async function api(req, res, url) {
+  if (req.method === "GET" && url.pathname === "/api/owner/surfaces/architecture") {
+    res.setHeader("cache-control", "private, no-store");
+    return sendJson(res, 200, architectureOwnerSurface());
+  }
+  if (
+    ["GET", "POST"].includes(req.method)
+    && ["/api/owner/surfaces/commercialization", "/api/owner/surfaces/commercialization/preview"].includes(url.pathname)
+  ) {
+    const store = await readStore();
+    const input = req.method === "POST" ? await bodyJson(req) : {};
+    const report = req.method === "POST"
+      ? normalizeCommercialization({ ...store.commercialization, assumptions: input.assumptions })
+      : store.commercialization;
+    const range = {
+      ...(url.searchParams.has("from") ? { from: url.searchParams.get("from") } : {}),
+      ...(url.searchParams.has("to") ? { to: url.searchParams.get("to") } : {})
+    };
+    const statistics = await statisticsService.dashboard(range, { includeOwner: true });
+    if (statistics.error) return sendJson(res, 400, { error: statistics.error, code: statistics.code });
+    res.setHeader("cache-control", "private, no-store");
+    return sendJson(res, 200, commercializationOwnerSurface({
+      report,
+      store,
+      statistics: statistics.value,
+      mode: input.mode || url.searchParams.get("mode") || "validation",
+      currentDate: today()
+    }));
+  }
   if (await reviewsChatHttp.handle(req, res, url)) return;
   if (await captureJournalHttp.handle(req, res, url)) return;
   if (await libraryHttp.handle(req, res, url)) return;
@@ -2637,6 +2665,8 @@ const mime = {
   ".wav": "audio/wav", ".mp3": "audio/mpeg"
 };
 const ownerCapabilityFor = url => {
+  if (url.pathname === "/api/owner/surfaces/architecture") return "architecture";
+  if (["/api/owner/surfaces/commercialization", "/api/owner/surfaces/commercialization/preview"].includes(url.pathname)) return "commercialization";
   if (url.pathname === "/api/ai-cost-plan") return "ai-costs";
   if (url.pathname === "/api/commercialization") return "commercialization";
   if (url.pathname === "/api/settings" || url.pathname === "/api/settings/test") return "ai-configuration";
@@ -2759,7 +2789,7 @@ http.createServer(createRequestHandler({
       const handled = await authApi(req, res, url);
       return handled === false ? sendJson(res, 404, { error: "Not found" }) : handled;
     }
-    if (url.pathname.startsWith("/api/") && authentication.reauthRequired) {
+    if ((url.pathname.startsWith("/api/") || url.pathname.startsWith("/attachments/")) && authentication.reauthRequired) {
       return sendRequestError(401, "账户权限已变更，请重新登录", "AUTH_REAUTH_REQUIRED");
     }
     if (url.pathname.startsWith("/api/") && !user) return sendRequestError(401, "请先登录", "AUTH_REQUIRED");

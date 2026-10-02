@@ -6,6 +6,7 @@ export function createPageEffects({
   stopQuoteBubbleScroll,
   loadStatistics,
   loadAiCostPlan,
+  loadArchitecture,
   loadCommercialization,
   loadNotifications,
   scheduleNotificationPoll,
@@ -20,6 +21,7 @@ export function createPageEffects({
     leaveQuotes: () => stopQuoteBubbleScroll(),
     statistics: () => loadStatistics(),
     "ai-cost": () => loadAiCostPlan(),
+    architecture: () => loadArchitecture(),
     commercialization: () => loadCommercialization(),
     notifications: () => loadNotifications().then(() => scheduleNotificationPoll()),
     trash: () => loadTrash()
