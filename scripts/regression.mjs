@@ -686,9 +686,24 @@ try {
 
   const concurrentFollowUp = await (await fetch(`${base}/api/thoughts/${concurrentQuestion.id}/follow-ups`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "idempotency-key": "concurrent-follow-up-create" },
     body: JSON.stringify({ question: "并发追问如何处理？", answer: "" })
   })).json();
+  const replayedFollowUpResponse = await fetch(`${base}/api/thoughts/${concurrentQuestion.id}/follow-ups`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "idempotency-key": "concurrent-follow-up-create" },
+    body: JSON.stringify({ question: "并发追问如何处理？", answer: "" })
+  });
+  assert.equal(replayedFollowUpResponse.status, 200);
+  assert.equal((await replayedFollowUpResponse.json()).id, concurrentFollowUp.id);
+  const conflictingFollowUpResponse = await fetch(`${base}/api/thoughts/${concurrentQuestion.id}/follow-ups`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "idempotency-key": "concurrent-follow-up-create" },
+    body: JSON.stringify({ question: "同一个键不能改写追问", answer: "" })
+  });
+  assert.equal(conflictingFollowUpResponse.status, 409);
+  assert.equal((await conflictingFollowUpResponse.json()).code, "IDEMPOTENCY_KEY_REUSED");
+  assert.equal((await (await fetch(`${base}/api/state`)).json()).thoughts.find(item => item.id === concurrentQuestion.id).followUps.length, 1);
   const concurrentFollowUpModelCount = modelRequests.length;
   const concurrentFollowUpResponses = await Promise.all([0, 1].map(() => fetch(`${base}/api/thoughts/${concurrentQuestion.id}/follow-ups/${concurrentFollowUp.id}/answer`, {
     method: "POST",

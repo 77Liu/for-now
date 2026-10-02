@@ -108,8 +108,22 @@ const remark = await service.addRemark({ id: "question-1", text: "备注" });
 assert.equal(remark.value.text, "备注");
 assert.equal((await service.updateRemark({ id: "question-1", remarkId: remark.value.id, text: "更新备注" })).value.version, 2);
 
-const followUp = await service.addFollowUp({ id: "question-1", question: "为什么？", answer: "" });
+const followUpInput = {
+  id: "question-1",
+  question: "为什么？",
+  answer: "",
+  clientRequestId: "follow-up-request-1"
+};
+const followUp = await service.addFollowUp(followUpInput);
 assert.equal(followUp.value.version, 1);
+const replayedFollowUp = await service.addFollowUp(followUpInput);
+assert.equal(replayedFollowUp.value.id, followUp.value.id);
+assert.equal(replayedFollowUp.duplicate, true);
+assert.equal(store.thoughts.find(item => item.id === "question-1").followUps.length, 1);
+assert.equal((await service.addFollowUp({
+  ...followUpInput,
+  question: "同一个键不应改写内容"
+})).conflict, true);
 const updatedFollowUp = await service.updateFollowUp({
   id: "question-1",
   followUpId: followUp.value.id,

@@ -400,20 +400,29 @@ export function createThoughtService({
       });
     },
 
-    addFollowUp({ id, question, answer }) {
-      const followUp = {
-        id: createId(),
-        createdAt: now(),
-        question,
-        answer,
-        ...(answer ? { answeredAt: now() } : {}),
-        origin: "manual",
-        version: 1
-      };
+    addFollowUp({ id, question, answer, clientRequestId = "" }) {
       return repository.update(store => {
         const root = store.thoughts.find(item => item.id === id && item.type === "question");
         if (!root) return { missing: true };
         root.followUps ||= [];
+        if (clientRequestId) {
+          const existing = root.followUps.find(item => item.clientRequestId === clientRequestId);
+          if (existing) {
+            return existing.question === question && (existing.answer || "") === answer
+              ? { value: existing, duplicate: true }
+              : { conflict: true };
+          }
+        }
+        const followUp = {
+          id: createId(),
+          createdAt: now(),
+          question,
+          answer,
+          ...(answer ? { answeredAt: now() } : {}),
+          ...(clientRequestId ? { clientRequestId } : {}),
+          origin: "manual",
+          version: 1
+        };
         root.followUps.push(followUp);
         touchRoot(root);
         return { value: followUp };

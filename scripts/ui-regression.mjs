@@ -223,6 +223,11 @@ const mockFetch = `
   window.__thoughtSaves = 0;
   window.__conflictThoughtCreate = false;
   window.__failThoughtCreateNetwork = false;
+  window.__followUpSaves = 0;
+  window.__followUpPatches = 0;
+  window.__followUpCreateKeys = [];
+  window.__failFollowUpCreate = false;
+  window.__failFollowUpPatch = "";
   window.__captureSaves = 0;
   window.__capturePayloads = [];
   window.__capturePatchPayloads = [];
@@ -1240,6 +1245,25 @@ const mockFetch = `
       window.__thoughts.unshift(question);
       const result={ items: [question], duplicate: false };
       return url.startsWith("/api/v1/") ? v1(result, { operation: { id: init.headers["x-client-operation-id"], status: "committed" } }) : json(result);
+    }
+    if (/^\\/api\\/thoughts\\/[^/]+\\/follow-ups$/.test(url) && init.method === "POST") {
+      const rootId=url.split("/")[3],root=window.__thoughts.find(item=>item.id===rootId&&item.type==="question"),payload=JSON.parse(init.body),requestId=init.headers?.["idempotency-key"]||"";
+      window.__followUpCreateKeys.push(requestId);
+      if(window.__failFollowUpCreate){window.__failFollowUpCreate=false;return json({error:"追问保存失败"},503)}
+      const duplicate=root?.followUps?.find(item=>requestId&&item.clientRequestId===requestId);
+      if(duplicate)return json(duplicate);
+      window.__followUpSaves+=1;
+      const followUp={id:"follow-up-"+window.__followUpSaves,createdAt:new Date().toISOString(),question:payload.question,answer:payload.answer||"",origin:"manual",version:1,clientRequestId:requestId};
+      root.followUps.push(followUp);root.version=(root.version||1)+1;
+      return json(followUp,201)
+    }
+    if (/^\\/api\\/thoughts\\/[^/]+\\/follow-ups\\/[^/]+$/.test(url) && init.method === "PATCH") {
+      const parts=url.split("/"),root=window.__thoughts.find(item=>item.id===parts[3]&&item.type==="question"),followUp=root?.followUps?.find(item=>item.id===parts[5]),payload=JSON.parse(init.body),kind=Object.hasOwn(payload,"question")?"edit":"manual-answer";
+      if(window.__failFollowUpPatch===kind){window.__failFollowUpPatch="";return json({error:kind==="edit"?"追问编辑失败":"手写回答失败"},503)}
+      window.__followUpPatches+=1;
+      Object.assign(followUp,payload,{updatedAt:new Date().toISOString(),version:(followUp.version||1)+1,origin:"manual"});
+      root.version=(root.version||1)+1;
+      return json(followUp)
     }
     if(url==="/api/v1/content-attachments/understandings"&&init.method==="POST"){
       const payload=JSON.parse(init.body),targetType=payload.targetType;
@@ -2569,8 +2593,76 @@ try {
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
   await evaluate(`document.querySelector('[data-view="thoughts"]').click(); true`);
   assert.deepEqual(await evaluate(`({reasoningNodes:document.querySelectorAll(".saved-reasoning,#ai-answer-reasoning").length,privateText:document.body.textContent.includes("持久化的模型思考")||document.body.textContent.includes("分析过程")||document.body.textContent.includes("PRIVATE_CHAT_REASONING")})`),{reasoningNodes:0,privateText:false});
-  await evaluate(`document.querySelector('[data-chain-id="kept-root"] [data-followup-compose]').click(); true`);
-  assert.equal(await evaluate(`!document.querySelector('[data-chain-id="kept-root"] [data-follow-up-root]').hidden`), true);
+  await evaluate(`(() => {
+    const today=document.querySelector('#today-thoughts [data-chain-id="kept-root"]'),all=document.querySelector('#all-thoughts [data-chain-id="kept-root"]');
+    for(const card of [today,all]){card.open=true;card.querySelector("[data-followup-compose]").click()}
+    const todayForm=today.querySelector("[data-follow-up-root]"),allForm=all.querySelector("[data-follow-up-root]");
+    todayForm.elements.question.value="今日副本追问草稿";todayForm.elements.answer.value="今日副本回答草稿";
+    allForm.elements.question.value="失败后保留的追问";allForm.elements.answer.value="";
+    window.__failFollowUpCreate=true;allForm.requestSubmit();return true
+  })()`);
+  assert.equal(await waitUntil(`document.querySelector('#all-thoughts [data-follow-up-root] .followup-status').textContent.includes("追问保存失败")&&!document.querySelector('#all-thoughts [data-follow-up-root] button[type="submit"]').disabled`),true);
+  assert.deepEqual(await evaluate(`(() => {
+    const read=selector=>{const form=document.querySelector(selector);return{question:form.elements.question.value,answer:form.elements.answer.value,hidden:form.hidden,requestId:form.dataset.requestId||""}};
+    return{today:read('#today-thoughts [data-chain-id="kept-root"] [data-follow-up-root]'),all:read('#all-thoughts [data-chain-id="kept-root"] [data-follow-up-root]')}
+  })()`),{
+    today:{question:"今日副本追问草稿",answer:"今日副本回答草稿",hidden:false,requestId:""},
+    all:{question:"失败后保留的追问",answer:"",hidden:false,requestId:await evaluate(`document.querySelector('#all-thoughts [data-follow-up-root]').dataset.requestId||""`)}
+  });
+  await evaluate(`document.querySelector('#all-thoughts [data-chain-id="kept-root"] [data-follow-up-root]').requestSubmit();true`);
+  assert.equal(await waitUntil(`window.__followUpSaves===1&&[...document.querySelectorAll('[data-chain-id="kept-root"] [data-follow-up-root]')].every(form=>form.hidden)`),true);
+  const followUpCreateKeys=await evaluate(`window.__followUpCreateKeys`);
+  assert.equal(followUpCreateKeys.length,2);
+  assert.ok(followUpCreateKeys[0]);
+  assert.equal(followUpCreateKeys[1],followUpCreateKeys[0]);
+  assert.deepEqual(await evaluate(`(() => {
+    const read=container=>{const card=document.querySelector(container+' [data-chain-id="kept-root"]'),form=card.querySelector("[data-follow-up-root]");return{question:form.elements.question.value,answer:form.elements.answer.value,hidden:form.hidden,expanded:card.querySelector("[data-followup-compose]").getAttribute("aria-expanded"),followUps:card.querySelectorAll("[data-followup-id]").length}};
+    return{today:read("#today-thoughts"),all:read("#all-thoughts")}
+  })()`),{
+    today:{question:"",answer:"",hidden:true,expanded:"false",followUps:1},
+    all:{question:"",answer:"",hidden:true,expanded:"false",followUps:1}
+  });
+  await evaluate(`document.querySelector('[data-view="today"]').click();document.querySelector('[data-view="thoughts"]').click();true`);
+  assert.equal(await evaluate(`[...document.querySelectorAll('[data-chain-id="kept-root"] [data-follow-up-root]')].every(form=>form.hidden&&form.elements.question.value===""&&form.elements.answer.value==="")`),true);
+
+  await evaluate(`(() => {
+    const today=document.querySelector('#today-thoughts [data-followup-id="follow-up-1"]'),all=document.querySelector('#all-thoughts [data-followup-id="follow-up-1"]');
+    today.open=true;all.open=true;
+    const todayForm=today.querySelector("[data-followup-manual-answer]"),allForm=all.querySelector("[data-followup-manual-answer]");
+    todayForm.querySelector("textarea").value="今日手写回答草稿";allForm.querySelector("textarea").value="失败后保留的手写回答";
+    window.__failFollowUpPatch="manual-answer";allForm.requestSubmit();return true
+  })()`);
+  assert.equal(await waitUntil(`document.querySelector('#all-thoughts [data-followup-id="follow-up-1"] .followup-status').textContent.includes("手写回答失败")&&!document.querySelector('#all-thoughts [data-followup-manual-answer] button[type="submit"]').disabled`),true);
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('[data-followup-id="follow-up-1"] [data-followup-manual-answer] textarea')].map(item=>item.value)`),["今日手写回答草稿","失败后保留的手写回答"]);
+  await evaluate(`document.querySelector('#all-thoughts [data-followup-manual-answer]').requestSubmit();true`);
+  assert.equal(await waitUntil(`window.__followUpPatches===1&&document.querySelectorAll('[data-followup-id="follow-up-1"] [data-followup-manual-answer]').length===0`),true);
+
+  await evaluate(`(() => {
+    const today=document.querySelector('#today-thoughts [data-followup-id="follow-up-1"]'),all=document.querySelector('#all-thoughts [data-followup-id="follow-up-1"]');
+    today.querySelector("[data-followup-edit-toggle]").click();all.querySelector("[data-followup-edit-toggle]").click();
+    return !today.querySelector("[data-followup-edit]").hidden&&!all.querySelector("[data-followup-edit]").hidden
+  })()`);
+  assert.equal(await evaluate(`!document.querySelector('#today-thoughts [data-followup-edit="follow-up-1"]').hidden&&!document.querySelector('#all-thoughts [data-followup-edit="follow-up-1"]').hidden`),true);
+  await evaluate(`(() => {
+    const today=document.querySelector('#today-thoughts [data-followup-edit="follow-up-1"]'),all=document.querySelector('#all-thoughts [data-followup-edit="follow-up-1"]');
+    today.elements.question.value="今日编辑草稿";today.elements.answer.value="今日回答草稿";
+    all.elements.question.value="保存后的追问";all.elements.answer.value="保存后的回答";
+    window.__failFollowUpPatch="edit";all.requestSubmit();return true
+  })()`);
+  assert.equal(await waitUntil(`document.querySelector("#toast").textContent.includes("追问编辑失败")&&!document.querySelector('#all-thoughts [data-followup-edit="follow-up-1"] button[type="submit"]').disabled`),true);
+  assert.deepEqual(await evaluate(`(() => {
+    const read=container=>{const form=document.querySelector(container+' [data-followup-edit="follow-up-1"]');return{question:form.elements.question.value,answer:form.elements.answer.value,hidden:form.hidden}};
+    return[read("#today-thoughts"),read("#all-thoughts")]
+  })()`),[
+    {question:"今日编辑草稿",answer:"今日回答草稿",hidden:false},
+    {question:"保存后的追问",answer:"保存后的回答",hidden:false}
+  ]);
+  await evaluate(`document.querySelector('#all-thoughts [data-followup-edit="follow-up-1"]').requestSubmit();true`);
+  assert.equal(await waitUntil(`window.__followUpPatches===2&&[...document.querySelectorAll('[data-followup-edit="follow-up-1"]')].every(form=>form.hidden)`),true);
+  await evaluate(`document.querySelector('[data-view="today"]').click();document.querySelector('[data-view="thoughts"]').click();document.querySelector('#all-thoughts [data-followup-id="follow-up-1"] [data-followup-edit-toggle]').click();true`);
+  assert.deepEqual(await evaluate(`(() => {const form=document.querySelector('#all-thoughts [data-followup-edit="follow-up-1"]');return{question:form.elements.question.value,answer:form.elements.answer.value,hidden:form.hidden}})()`),{question:"保存后的追问",answer:"保存后的回答",hidden:false});
+  await evaluate(`document.querySelector('#all-thoughts [data-followup-id="follow-up-1"] [data-followup-edit-cancel]').click();document.querySelector('#all-thoughts [data-chain-id="kept-root"] [data-followup-compose]').click();true`);
+  assert.equal(await evaluate(`!document.querySelector('#all-thoughts [data-chain-id="kept-root"] [data-follow-up-root]').hidden`), true);
   await evaluate(`document.querySelector('[data-chain-id="kept-root"]').scrollIntoView({ block: "start" }); true`);
   await sleep(100);
   const cardScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });

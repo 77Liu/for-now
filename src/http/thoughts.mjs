@@ -301,8 +301,9 @@ export function createThoughtHttp({
       const id = url.pathname.split("/")[3], input = await bodyJson(req);
       const question = safeText(input.question, 6000), answer = safeText(input.answer, 20000);
       if (!question) return sendJson(res, 400, { error: "请先写下追问" });
-      const created = await service.addFollowUp({ id, question, answer });
-      sendJson(res, created.missing ? 404 : 201, created.missing ? { error: "问题不存在" } : created.value);
+      const created = await service.addFollowUp({ id, question, answer, clientRequestId: optionalIdempotencyKey(req) });
+      if (created.conflict) sendJson(res, 409, { error: "同一幂等键不能用于不同追问", code: "IDEMPOTENCY_KEY_REUSED" });
+      else sendJson(res, created.missing ? 404 : created.duplicate ? 200 : 201, created.missing ? { error: "问题不存在" } : created.value);
     } else if (req.method === "PATCH" && /^\/api\/thoughts\/[^/]+\/follow-ups\/[^/]+$/.test(url.pathname)) {
       const parts = url.pathname.split("/"), id = parts[3], followUpId = parts[5], input = await bodyJson(req);
       const hasQuestion = hasOwn(input, "question"), hasAnswer = hasOwn(input, "answer");
