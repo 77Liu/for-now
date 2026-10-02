@@ -354,6 +354,67 @@ assert.doesNotThrow(() => JSON.parse(JSON.stringify(normalized)));
   }));
 }
 
+// Settlement cannot retroactively start an expired reservation or charge its old period.
+// Work started in the new period consumes the new period's capacity.
+{
+  const clock = { value: "2026-10-31T23:59:59.999Z" };
+  const { service } = serviceFor({
+    clock,
+    prefix: "unstarted-rollover",
+    policy: {
+      ...AI_BUDGET_POLICY,
+      userDailyKnownCostCny: 1000,
+      userDailyCalls: 1000
+    }
+  });
+  const reservation = (await service.reserveTask({
+    accountId: "rollover-bypass-user",
+    taskId: "unstarted-rollover",
+    stages: [known("model", 60)]
+  })).reservation;
+  clock.value = "2026-11-01T00:00:00.000Z";
+  await assert.rejects(service.settleTask({
+    reservationId: reservation.id,
+    stages: [{ stageId: "model", started: true, actualCostCny: 60 }]
+  }), error => {
+    assert.equal(error.code, "AI_BUDGET_RESERVATION_EXPIRED");
+    assert.equal(error.statusCode, 409);
+    assert.equal(error.reservedDay, "2026-10-31");
+    assert.equal(error.reservedMonth, "2026-10");
+    assert.equal(error.currentDay, "2026-11-01");
+    assert.equal(error.currentMonth, "2026-11");
+    assert.equal(error.released, true);
+    assert.equal(error.requiresSettlement, false);
+    assert.ok(error.eventId);
+    return true;
+  });
+  const expired = await service.read();
+  assert.equal(expired.reservations.length, 0);
+  assert.equal(expired.days.find(day => day.key === "2026-10-31").knownCostMicros, 0);
+  assert.equal(expired.months.find(month => month.key === "2026-10").knownCostMicros, 0);
+  assert.equal(expired.days.some(day => day.key === "2026-11-01"), false);
+  assert.equal(expired.months.some(month => month.key === "2026-11"), false);
+  assert.ok(expired.events.some(item => item.type === "ai.budget.reservation_released"
+    && item.reservationId === reservation.id
+    && item.reason === "period_expired"));
+
+  const current = (await service.reserveTask({
+    accountId: "rollover-bypass-user",
+    taskId: "current-period-work",
+    stages: [known("model", 60)]
+  })).reservation;
+  await service.startStage({ reservationId: current.id, stageId: "model" });
+  await service.settleTask({
+    reservationId: current.id,
+    stages: [{ stageId: "model", actualCostCny: 60 }]
+  });
+  await assert.rejects(service.reserveTask({
+    accountId: "other-current-user",
+    taskId: "current-period-over-limit",
+    stages: [known("model", 50)]
+  }), { code: "AI_SITE_DAILY_COST_LIMIT" });
+}
+
 // A partially started reservation cannot start more work after UTC month rollover.
 // Its started work settles against the reservation's original UTC day and month.
 {
@@ -391,8 +452,21 @@ assert.doesNotThrow(() => JSON.parse(JSON.stringify(normalized)));
     assert.equal(error.requiresSettlement, true);
     return true;
   });
+  await assert.rejects(service.settleTask({
+    reservationId: reservation.id,
+    stages: [
+      { stageId: "started", actualCostCny: 25 },
+      { stageId: "not-started", started: true, actualCostCny: 30 }
+    ]
+  }), error => {
+    assert.equal(error.code, "AI_BUDGET_RESERVATION_EXPIRED");
+    assert.equal(error.released, false);
+    assert.equal(error.requiresSettlement, true);
+    return true;
+  });
   const retained = await service.read();
   assert.equal(retained.reservations.length, 1);
+  assert.ok(retained.reservations[0].stages.find(stage => stage.id === "started").startedAt);
   assert.equal(retained.reservations[0].stages.find(stage => stage.id === "not-started").startedAt, "");
   const settled = await service.settleTask({
     reservationId: reservation.id,

@@ -363,6 +363,18 @@ function expiredReservationError(expiration) {
   });
 }
 
+function reservationExpiration(reservation, keys, hasStartedStage) {
+  return {
+    reservationId: reservation.id,
+    reservedDay: reservation.day,
+    reservedMonth: reservation.month,
+    currentDay: keys.day,
+    currentMonth: keys.month,
+    released: !hasStartedStage,
+    requiresSettlement: hasStartedStage
+  };
+}
+
 function thresholdEvents(state, {
   scope,
   period,
@@ -681,15 +693,7 @@ export function createAiBudgetService({
         if (stage.startedAt) return { reservation: publicReservation(reservation), event: null, duplicate: true };
         if (reservation.day !== keys.day || reservation.month !== keys.month) {
           const hasStartedStage = reservation.stages.some(item => item.startedAt);
-          const expiration = {
-            reservationId: reservation.id,
-            reservedDay: reservation.day,
-            reservedMonth: reservation.month,
-            currentDay: keys.day,
-            currentMonth: keys.month,
-            released: !hasStartedStage,
-            requiresSettlement: hasStartedStage
-          };
+          const expiration = reservationExpiration(reservation, keys, hasStartedStage);
           if (!hasStartedStage) {
             const event = releaseReservation(state, index, reservation, {
               timestamp,
@@ -719,7 +723,7 @@ export function createAiBudgetService({
       const timestamp = now();
       const settlementKeys = timestampKeys(timestamp);
       const supplied = new Map((Array.isArray(stages) ? stages : []).map(item => [text(item?.stageId, 100), item]));
-      return update(state => {
+      const result = await update(state => {
         const index = state.reservations.findIndex(item => item.id === text(reservationId, 100));
         if (index < 0) throw Object.assign(new Error("AI budget reservation was not found"), {
           statusCode: 404,
@@ -734,6 +738,31 @@ export function createAiBudgetService({
             });
           }
         }
+        const crossedPeriod = reservation.day !== settlementKeys.day
+          || reservation.month !== settlementKeys.month;
+        if (crossedPeriod) {
+          const hasStartedStage = reservation.stages.some(stage => stage.startedAt);
+          const attemptsLateStart = reservation.stages.some(stage => (
+            !stage.startedAt && supplied.get(stage.id)?.started === true
+          ));
+          if (!hasStartedStage || attemptsLateStart) {
+            const expiration = reservationExpiration(reservation, settlementKeys, hasStartedStage);
+            if (!hasStartedStage) {
+              const event = releaseReservation(state, index, reservation, {
+                timestamp,
+                reason: "period_expired",
+                createId,
+                details: {
+                  reservedMonthKey: reservation.month,
+                  currentPeriodKey: settlementKeys.day,
+                  currentMonthKey: settlementKeys.month
+                }
+              });
+              expiration.eventId = event.id;
+            }
+            return { expiration };
+          }
+        }
         // Started work remains charged to the UTC period that granted its reservation.
         const day = ensureDay(state, reservation.day);
         const month = ensureMonth(state, reservation.month);
@@ -744,8 +773,8 @@ export function createAiBudgetService({
         const events = [];
         const settledStages = [];
         for (const stage of reservation.stages) {
-          const result = supplied.get(stage.id);
-          const started = Boolean(stage.startedAt || result?.started === true);
+          const stageResult = supplied.get(stage.id);
+          const started = Boolean(stage.startedAt || (!crossedPeriod && stageResult?.started === true));
           if (!started) {
             settledStages.push({ stageId: stage.id, started: false, costKnown: stage.costKnown, actualCostCny: 0 });
             continue;
@@ -756,8 +785,8 @@ export function createAiBudgetService({
           }
           calls += 1;
           if (stage.costKnown) {
-            const actual = result && Object.hasOwn(result, "actualCostCny")
-              ? costMicros(result.actualCostCny)
+            const actual = stageResult && Object.hasOwn(stageResult, "actualCostCny")
+              ? costMicros(stageResult.actualCostCny)
               : stage.estimatedCostMicros;
             knownCostMicros += actual;
             settledStages.push({ stageId: stage.id, started: true, costKnown: true, actualCostCny: cny(actual) });
@@ -833,6 +862,8 @@ export function createAiBudgetService({
           events
         };
       });
+      if (result.expiration) throw expiredReservationError(result.expiration);
+      return result;
     },
 
     async releaseTask({ reservationId, reason = "not_started" }) {
