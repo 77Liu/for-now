@@ -24,6 +24,9 @@ export function createRequestHandler({ requestContext, rootDir, basePath, logEve
         res.setHeader("x-frame-options", "DENY");
         res.setHeader("referrer-policy", "same-origin");
         const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+        context.basePathMatched = basePath === "/"
+          || url.pathname === basePath
+          || url.pathname.startsWith(`${basePath}/`);
         if (basePath !== "/" && url.pathname === basePath) {
           res.writeHead(308, { location: `${basePath}/${url.search}` });
           return res.end();

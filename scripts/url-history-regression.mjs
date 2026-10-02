@@ -135,8 +135,19 @@ try {
   const directResponse = await fetch(`${base}/thoughts/${encodeURIComponent(primary.id)}?tag=focus&sort=created&page=2`);
   assert.equal(directResponse.status, 200);
   assert.match(directResponse.headers.get("content-type") || "", /^text\/html/);
+  const outsideBaseResponse = await fetch(`${origin}/today`);
+  assert.equal(outsideBaseResponse.status, 404);
+  assert.match(outsideBaseResponse.headers.get("content-type") || "", /^application\/json/);
+  const canonicalPageResponse = await fetch(`${base}/today`);
+  assert.equal(canonicalPageResponse.status, 200);
+  assert.match(canonicalPageResponse.headers.get("content-type") || "", /^text\/html/);
   assert.equal((await fetch(`${base}/view/books`)).status, 200);
   assert.equal((await fetch(`${base}/not-an-app-route`)).status, 404);
+  assert.equal((await fetch(`${base}/app.js`)).status, 200);
+  assert.equal((await fetch(`${base}/api/meta`)).status, 200);
+  const missingAttachmentResponse = await fetch(`${base}/attachments/missing.png`);
+  assert.equal(missingAttachmentResponse.status, 404);
+  assert.match(missingAttachmentResponse.headers.get("content-type") || "", /^application\/json/);
 
   chrome = spawn(CHROME, [
     "--headless=new",

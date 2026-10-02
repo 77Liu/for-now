@@ -1407,7 +1407,7 @@ function applyPendingProjection(record){
     const previousLength=(state.thoughts||[]).length;
     state.thoughts=(state.thoughts||[]).filter(item=>item.id!==projection.id&&item.relatedTo!==projection.id);
     if(state.thoughts.length===previousLength)return false;
-    renderThoughts();reconcileThoughtRoute();renderCaptures();renderHomeMemories();return true
+    renderThoughts();renderCaptures();renderHomeMemories();return true
   }
   if(projection.kind==="thought.chain.update"){
     const root=(state.thoughts||[]).find(item=>item.id===projection.id&&item.type==="question");

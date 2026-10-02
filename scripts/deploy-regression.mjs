@@ -13,6 +13,8 @@ const source = await fs.readFile(path.join(root, "deploy/deploy.sh"), "utf8");
 const nginx = await fs.readFile(path.join(root, "deploy/nginx-for-now.conf"), "utf8");
 const envExample = await fs.readFile(path.join(root, "deploy/for-now.env.example"), "utf8");
 assert.match(nginx, /location = \/now\/api\/admin\/v1\/snapshot\s*\{\s*return 404;/);
+assert.match(nginx, /location \/now\/[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:4173;/);
+assert.doesNotMatch(nginx, /proxy_pass http:\/\/127\.0\.0\.1:4173\/;/);
 assert.match(nginx, /location \/platform\/[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:4280\//);
 assert.match(envExample, /^PLATFORM_SERVICE_TOKEN_HASH=$/m);
 assert.match(envExample, /^MONITOR_PLATFORM_ENABLED=0$/m);
