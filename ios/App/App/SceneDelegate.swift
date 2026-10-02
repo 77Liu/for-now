@@ -1,13 +1,67 @@
 import UIKit
 import Capacitor
 
+private enum DevicePerformanceEnvironment {
+    static let enabledKey = "CIKE_IOS_PERF_ENABLED"
+    static let isolatedKey = "CIKE_IOS_PERF_ISOLATED"
+    static let testURLKey = "CIKE_IOS_PERF_TEST_URL"
+    static let usernameKey = "CIKE_IOS_PERF_SHADOW_USERNAME"
+    static let passwordKey = "CIKE_IOS_PERF_SHADOW_PASSWORD"
+
+    static var isEnabled: Bool {
+        ProcessInfo.processInfo.environment[enabledKey] == "1"
+    }
+
+#if DEBUG
+    static func validatedTestURL() -> URL {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment[isolatedKey] == "1",
+              environment[usernameKey]?.isEmpty == false,
+              environment[passwordKey]?.isEmpty == false,
+              let rawURL = environment[testURLKey],
+              let components = URLComponents(string: rawURL),
+              components.scheme?.lowercased() == "https",
+              components.user == nil,
+              components.password == nil,
+              components.fragment == nil,
+              let rawHost = components.host,
+              let url = components.url else {
+            preconditionFailure("Invalid or incomplete isolated iOS performance configuration")
+        }
+
+        let host = rawHost.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        guard host != "77liu.top", !host.hasSuffix(".77liu.top") else {
+            preconditionFailure("Production hosts are forbidden for iOS performance acceptance")
+        }
+        return url
+    }
+#endif
+}
+
+private final class CikeBridgeViewController: CAPBridgeViewController {
+#if DEBUG
+    override func instanceDescriptor() -> InstanceDescriptor {
+        let descriptor = super.instanceDescriptor()
+        guard DevicePerformanceEnvironment.isEnabled else { return descriptor }
+
+        let testURL = DevicePerformanceEnvironment.validatedTestURL()
+        guard let host = testURL.host else {
+            preconditionFailure("Isolated iOS performance URL has no host")
+        }
+        descriptor.serverURL = testURL.absoluteString
+        descriptor.allowedNavigationHostnames = [host]
+        return descriptor
+    }
+#endif
+}
+
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         guard let windowScene = scene as? UIWindowScene else { return }
 
-        let bridgeViewController = CAPBridgeViewController()
+        let bridgeViewController = CikeBridgeViewController()
         window = UIWindow(windowScene: windowScene)
         window?.rootViewController = bridgeViewController
         window?.makeKeyAndVisible()
@@ -121,19 +175,28 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               return false;
             })()
             """
-        } else if scenario == "login-submit" {
-            let requestedUsername = ProcessInfo.processInfo.environment["CIKE_NATIVE_MARKER"]
-                ?? UserDefaults.standard.string(forKey: "CIKE_NATIVE_MARKER")
-                ?? "nativegate"
-            let username = requestedUsername.range(of: #"^[A-Za-z0-9_-]{3,32}$"#, options: .regularExpression) == nil
-                ? "nativegate"
-                : requestedUsername
-            let requestedPassword = ProcessInfo.processInfo.environment["CIKE_NATIVE_PASSWORD"]
-                ?? UserDefaults.standard.string(forKey: "CIKE_NATIVE_PASSWORD")
-                ?? "NativeGate1234"
-            let passwordValue = requestedPassword.range(of: #"^[A-Za-z0-9_-]{8,128}$"#, options: .regularExpression) == nil
-                ? "NativeGate1234"
-                : requestedPassword
+        } else if scenario == "login-submit" || scenario == "performance-acceptance" {
+            let performanceAcceptance = scenario == "performance-acceptance"
+            let requestedUsername = performanceAcceptance
+                ? ProcessInfo.processInfo.environment[DevicePerformanceEnvironment.usernameKey]!
+                : ProcessInfo.processInfo.environment["CIKE_NATIVE_MARKER"]
+                    ?? UserDefaults.standard.string(forKey: "CIKE_NATIVE_MARKER")
+                    ?? "nativegate"
+            let username = performanceAcceptance
+                || requestedUsername.range(of: #"^[A-Za-z0-9_-]{3,32}$"#, options: .regularExpression) != nil
+                ? requestedUsername
+                : "nativegate"
+            let requestedPassword = performanceAcceptance
+                ? ProcessInfo.processInfo.environment[DevicePerformanceEnvironment.passwordKey]!
+                : ProcessInfo.processInfo.environment["CIKE_NATIVE_PASSWORD"]
+                    ?? UserDefaults.standard.string(forKey: "CIKE_NATIVE_PASSWORD")
+                    ?? "NativeGate1234"
+            let passwordValue = performanceAcceptance
+                || requestedPassword.range(of: #"^[A-Za-z0-9_-]{8,128}$"#, options: .regularExpression) != nil
+                ? requestedPassword
+                : "NativeGate1234"
+            let usernameLiteral = javaScriptStringLiteral(username)
+            let passwordLiteral = javaScriptStringLiteral(passwordValue)
             action = """
             (() => {
               if (!document.body.classList.contains('auth-locked')) {
@@ -144,8 +207,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
               const username = form?.querySelector('[name="username"]');
               const password = form?.querySelector('[name="password"]');
               if (!form || !username || !password) return false;
-              username.value = '\(username)';
-              password.value = '\(passwordValue)';
+              username.value = \(usernameLiteral);
+              password.value = \(passwordLiteral);
               username.dispatchEvent(new Event('input', { bubbles: true }));
               password.dispatchEvent(new Event('input', { bubbles: true }));
               if (!window.__cikeNativeLoginSubmitted) {
@@ -203,7 +266,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         let script = """
         (() => {
-          const allowsLockedState = '\(scenario)' === 'login-submit';
+          const allowsLockedState = ['login-submit', 'performance-acceptance'].includes('\(scenario)');
           if (document.readyState === 'loading' || (!allowsLockedState && document.body.classList.contains('auth-locked')) || performance.now() < 2000) return false;
           return \(action);
         })()
@@ -217,6 +280,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 self.runNativeTestScenarioIfRequested(in: controller, attempt: attempt + 1)
             }
         }
+    }
+
+    private func javaScriptStringLiteral(_ value: String) -> String {
+        guard let data = try? JSONEncoder().encode(value),
+              let literal = String(data: data, encoding: .utf8) else {
+            preconditionFailure("Unable to encode native test input")
+        }
+        return literal
     }
 #endif
 }
