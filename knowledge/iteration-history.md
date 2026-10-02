@@ -31,6 +31,16 @@
   stable 14.074 秒、依赖审计 1.246 秒且漏洞为 0。当前取得 `FINAL GO`，
   仍须完成后端先行部署、兼容冒烟和不少于 40 分钟观察；冷启动 `4.437s`
   失败继续移交 V0.5.0 `P00`。
+- 发布 `v0.4.0`，生产运行提交固定为
+  `8cb4d93105779d3afd00f20eba319fa5f34150fd`，Gitee Release 为
+  `https://gitee.com/Liu_772021/for-now/releases/tag/v0.4.0`。最终标签候选
+  独立 Release 门 204.921 秒全绿；部署前后两次即时 OSS 备份和恢复通过，
+  新归档包含 AI 预算及关系型导出哈希。Owner/Member 权限、新五问/用户理解、
+  canonical 网页路由、390px 布局和 iOS 0.4.0 设备包兼容通过；DeepSeek、
+  火山语音/视觉、阿里分割和私有 OSS 合成冒烟 5/5 通过。40 分钟观察内服务
+  重启、5xx、应用 error、AI/任务失败、Swap 均为 0，监控 success，结论为
+  继续运行。RSS 阶梯增长、1 次 analyses 操作指纹 400、备份 ready 等待和
+  Fontconfig 警告已转入 V0.5.0。
 
 ## 2026-10-02
 
