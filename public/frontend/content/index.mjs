@@ -1,3 +1,5 @@
+export { presentError } from "./error-presentation.mjs";
+
 export const escapeHtml = value => String(value ?? "").replace(/[&<>"]/g, character => ({
   "&": "&amp;",
   "<": "&lt;",

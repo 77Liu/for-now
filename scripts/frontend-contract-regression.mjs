@@ -79,7 +79,10 @@ fetchHandler = async () => {
 assert.deepEqual(await client.request("/api/state"), { resumed: true });
 assert.equal(foregroundAttempts, 2);
 foregroundAttempts = 0;
-await assert.rejects(client.request("/api/write", { method: "POST", body: "{}" }), /无法连接服务/);
+await assert.rejects(
+  client.request("/api/write", { method: "POST", body: "{}" }),
+  error => error.code === "NETWORK_ERROR" && error.status === 0 && /无法连接服务/.test(error.message)
+);
 assert.equal(foregroundAttempts, 1);
 
 // A response whose transport ignores abort must still never reach the next account.

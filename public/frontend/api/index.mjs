@@ -22,6 +22,7 @@ export function createApiClient({ baseUrl, session, apiOrigin = "", onAuthRequir
     requestId: response.headers.get("x-request-id"),
     retryAfterMs: retryAfterMs(response)
   });
+  const networkError = message => Object.assign(new Error(message), { code: "NETWORK_ERROR", status: 0 });
   async function start(url, options, ticket, networkMessage = "无法连接服务，请确认网络连接后重试") {
     const signal = options.signal ? AbortSignal.any([ticket.signal, options.signal]) : ticket.signal;
     let response;
@@ -31,14 +32,14 @@ export function createApiClient({ baseUrl, session, apiOrigin = "", onAuthRequir
       session.assertCurrent(ticket);
       if (signal.aborted) throw error;
       const method = String(options.method || "GET").toUpperCase();
-      if (!["GET", "HEAD"].includes(method) || Date.now() - foregroundAt > 5000) throw new Error(networkMessage);
+      if (!["GET", "HEAD"].includes(method) || Date.now() - foregroundAt > 5000) throw networkError(networkMessage);
       await new Promise(resolve => setTimeout(resolve, 120));
       session.assertCurrent(ticket);
       try { response = await fetchImpl(appUrl(url), requestOptions); }
       catch (retryError) {
         session.assertCurrent(ticket);
         if (signal.aborted) throw retryError;
-        throw new Error(networkMessage);
+        throw networkError(networkMessage);
       }
     }
     session.assertCurrent(ticket);

@@ -6,6 +6,7 @@ import {
   escapeHtml,
   inlineMarkdown,
   plainPreview,
+  presentError,
   renderMarkdown
 } from "../public/frontend/content/index.mjs";
 import {
@@ -96,6 +97,7 @@ if (process.argv.includes("--timezone-case")) {
 } else {
   const moduleUrls = [
     new URL("../public/frontend/content/index.mjs", import.meta.url),
+    new URL("../public/frontend/content/error-presentation.mjs", import.meta.url),
     new URL("../public/frontend/time/index.mjs", import.meta.url),
     new URL("../public/frontend/media/index.mjs", import.meta.url),
     new URL("../public/frontend/features/health/weight-batch.mjs", import.meta.url)
@@ -163,6 +165,132 @@ if (process.argv.includes("--timezone-case")) {
   assert.equal(
     plainPreview("![封面](cover.png) [链接](https://example.com) **粗体** \\[x+y\\]"),
     "封面 链接 粗体 x+y"
+  );
+
+  const saveContext = {
+    operation: "保存这篇日记",
+    object: "这篇日记",
+    retained: "草稿仍保存在当前页面",
+    retry: { label: "重新保存", command: "retry-save", internal: "drop-me" }
+  };
+  assert.deepEqual(
+    presentError(new TypeError("PROVIDER_TIMEOUT_DEEPSEEK"), saveContext),
+    {
+      kind: "network",
+      message: "保存这篇日记尚未确认。草稿仍保存在当前页面。请检查网络后重试。",
+      action: { label: "重新保存", command: "retry-save" },
+      diagnostic: { code: "", status: 0, requestId: "", retryAfterMs: null }
+    }
+  );
+  assert.deepEqual(
+    presentError(Object.assign(new Error("AUTH_STORAGE_READ_FAILED"), {
+      status: 401,
+      code: "AUTH_REQUIRED",
+      requestId: "req-auth"
+    }), {
+      operation: "读取账户记录",
+      object: "账户记录",
+      retained: "当前页面未展示旧账户数据",
+      retry: { label: "重新登录", view: "account" }
+    }),
+    {
+      kind: "auth",
+      message: "登录状态已失效，暂时无法读取账户记录。当前页面未展示旧账户数据。请重新登录后再试。",
+      action: { label: "重新登录", view: "account" },
+      diagnostic: { code: "AUTH_REQUIRED", status: 401, requestId: "req-auth", retryAfterMs: null }
+    }
+  );
+  assert.equal(
+    presentError(Object.assign(new Error("PRIVATE_PERMISSION_DETAIL"), { status: 403, code: "FORBIDDEN" }), {
+      operation: "读取导出",
+      object: "这份导出",
+      retained: "已加载的个人记录没有变化"
+    }).message,
+    "当前账户无权访问这份导出。已加载的个人记录没有变化。请返回可访问页面。"
+  );
+  assert.equal(
+    presentError(Object.assign(new Error("PRIVATE_MISSING_DETAIL"), { status: 404, code: "RECORD_NOT_FOUND" }), {
+      operation: "打开记录",
+      object: "这条记录",
+      retained: "列表中的其他记录没有变化"
+    }).message,
+    "这条记录当前不可用。列表中的其他记录没有变化。请返回列表重新选择。"
+  );
+  const conflict = presentError(Object.assign(new Error("PRIVATE_CONFLICT_DETAIL"), {
+    status: 412,
+    code: "PRECONDITION_FAILED",
+    details: { currentVersion: 4 }
+  }), {
+    operation: "保存记录",
+    object: "这条记录",
+    retained: "两端内容仍然保留",
+    retry: "重新读取"
+  });
+  assert.equal(conflict.kind, "conflict");
+  assert.equal(conflict.message, "这条记录在其他位置已经变化。两端内容仍然保留。请重新读取后核对两端内容。");
+  assert.deepEqual(conflict.action, { label: "重新读取" });
+  assert.equal("details" in conflict.diagnostic, false);
+  const limited = presentError(Object.assign(new Error("PROVIDER_LIMIT_INTERNAL"), {
+    status: 429,
+    code: "RATE_LIMITED",
+    requestId: "req-rate",
+    retryAfterMs: 4500
+  }), {
+    operation: "保存记录",
+    object: "这条记录",
+    retained: "草稿仍保存在当前页面"
+  });
+  assert.deepEqual(limited, {
+    kind: "rate_limit",
+    message: "保存记录暂时受限。草稿仍保存在当前页面。请在 5 秒后再试。",
+    action: null,
+    diagnostic: { code: "RATE_LIMITED", status: 429, requestId: "req-rate", retryAfterMs: 4500 }
+  });
+  const processing = presentError(Object.assign(new Error("OSS_NO_SUCH_KEY_INTERNAL"), {
+    status: 503,
+    code: "MEDIA_PROCESSING_FAILED"
+  }), {
+    operation: "识别图片",
+    object: "这张图片",
+    phase: "图片识别",
+    retained: "原图已经保存"
+  });
+  assert.equal(processing.kind, "processing");
+  assert.equal(processing.message, "图片识别暂时失败。原图已经保存。请稍后重试。");
+  assert.doesNotMatch(processing.message, /OSS|INTERNAL/);
+  const publicValidation = presentError(new Error("请选择不超过 8 张图片"), {
+    operation: "添加图片",
+    object: "这些图片",
+    retained: "已经选择的有效图片没有变化",
+    publicValidation: true
+  });
+  assert.equal(publicValidation.kind, "validation");
+  assert.equal(publicValidation.message, "请选择不超过 8 张图片。已经选择的有效图片没有变化。请修改后重试。");
+  const privateValidation = presentError(Object.assign(new Error("PRIVATE_VALIDATION_DETAIL"), {
+    status: 400,
+    code: "VALIDATION_ERROR"
+  }), {
+    operation: "上传图片",
+    object: "这些图片",
+    retained: "原有附件没有变化"
+  });
+  assert.equal(privateValidation.kind, "validation");
+  assert.equal(privateValidation.message, "上传图片暂时未完成。原有附件没有变化。请修改后重试。");
+  assert.doesNotMatch(privateValidation.message, /PRIVATE/);
+  const unknown = presentError(Object.assign(new Error("WORKER_LEASE_EXPIRED"), {
+    code: "UNCLASSIFIED_INTERNAL",
+    requestId: "req-unknown"
+  }), {
+    operation: "导出账户记录",
+    object: "账户记录",
+    retained: "账户原始数据没有变化"
+  });
+  assert.equal(unknown.kind, "unknown");
+  assert.equal(unknown.message, "导出账户记录暂时未完成。账户原始数据没有变化。请稍后重试。");
+  assert.doesNotMatch(JSON.stringify(unknown), /WORKER_LEASE_EXPIRED/);
+  assert.throws(
+    () => presentError(new Error("missing context"), { operation: "保存", object: "记录" }),
+    /retained/
   );
 
   assert.equal(formatDateKey("2026-09-29"), "2026年9月29日");
@@ -538,5 +666,5 @@ if (process.argv.includes("--timezone-case")) {
   });
   assert.equal(nextWeightBatchIndex([{}, {}], 2), 1);
 
-  console.log("Frontend shared regression passed: HTML safety, Markdown/LaTeX fidelity, local timezone handling, media validation, recovery helpers and upload contracts.");
+  console.log("Frontend shared regression passed: HTML safety, Markdown/LaTeX fidelity, safe error presentation, local timezone handling, media validation, recovery helpers and upload contracts.");
 }
