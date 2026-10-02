@@ -96,6 +96,32 @@ assert.equal(normalized.days.length, 1);
 assert.deepEqual(normalized.days[0].users, [{ accountId: "a", calls: 3, knownCostMicros: 0 }]);
 assert.doesNotThrow(() => JSON.parse(JSON.stringify(normalized)));
 
+// Budget periods are explicit UTC keys and do not depend on the host timezone.
+{
+  const originalTimezone = process.env.TZ;
+  try {
+    for (const timezone of ["Pacific/Honolulu", "Asia/Shanghai"]) {
+      process.env.TZ = timezone;
+      const { service } = serviceFor({
+        clock: { value: "2026-10-01T00:30:00.000Z" },
+        prefix: `timezone-${timezone}`
+      });
+      const reservation = (await service.reserveTask({
+        accountId: `account-${timezone}`,
+        taskId: "utc-period",
+        stages: [known("model", 1)]
+      })).reservation;
+      assert.equal(reservation.day, "2026-10-01");
+      assert.equal(reservation.month, "2026-10");
+      assert.equal((await service.status()).day.key, "2026-10-01");
+      assert.equal((await service.status()).month.key, "2026-10");
+    }
+  } finally {
+    if (originalTimezone === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTimezone;
+  }
+}
+
 // Existing single-user limits remain active alongside the site-wide budget.
 {
   const { service } = serviceFor({ prefix: "user-cost" });
@@ -237,6 +263,52 @@ assert.doesNotThrow(() => JSON.parse(JSON.stringify(normalized)));
   });
 }
 
+// An unstarted reservation expires at the UTC day boundary and is released atomically.
+{
+  const clock = { value: "2026-10-02T23:59:59.999Z" };
+  const { service } = serviceFor({
+    clock,
+    prefix: "expired-day",
+    policy: {
+      ...AI_BUDGET_POLICY,
+      userDailyKnownCostCny: 1000,
+      userDailyCalls: 1000
+    }
+  });
+  const reservation = (await service.reserveTask({
+    accountId: "expired-user",
+    taskId: "expired-before-start",
+    stages: [known("model", 60)]
+  })).reservation;
+  clock.value = "2026-10-03T00:00:00.000Z";
+  await assert.rejects(service.startStage({
+    reservationId: reservation.id,
+    stageId: "model"
+  }), error => {
+    assert.equal(error.code, "AI_BUDGET_RESERVATION_EXPIRED");
+    assert.equal(error.statusCode, 409);
+    assert.equal(error.reservedDay, "2026-10-02");
+    assert.equal(error.currentDay, "2026-10-03");
+    assert.equal(error.released, true);
+    assert.equal(error.requiresSettlement, false);
+    assert.ok(error.eventId);
+    return true;
+  });
+  const state = await service.read();
+  assert.equal(state.reservations.length, 0);
+  assert.ok(state.events.some(item => item.type === "ai.budget.reservation_released"
+    && item.reservationId === reservation.id
+    && item.reason === "period_expired"
+    && item.periodKey === "2026-10-02"
+    && item.currentPeriodKey === "2026-10-03"));
+  const current = await service.reserveTask({
+    accountId: "expired-user",
+    taskId: "expired-before-start",
+    stages: [known("model", 60)]
+  });
+  assert.equal(current.reservation.day, "2026-10-03");
+}
+
 // Unknown-cost slots are reserved up front, while one warning is emitted per real call.
 {
   const clock = { value: "2026-10-02T01:00:00.000Z" };
@@ -280,6 +352,85 @@ assert.doesNotThrow(() => JSON.parse(JSON.stringify(normalized)));
     taskId: "new-day",
     stages: [unknown("new-day-call")]
   }));
+}
+
+// A partially started reservation cannot start more work after UTC month rollover.
+// Its started work settles against the reservation's original UTC day and month.
+{
+  const clock = { value: "2026-10-31T23:59:59.999Z" };
+  const { service } = serviceFor({
+    clock,
+    prefix: "started-rollover",
+    policy: {
+      ...AI_BUDGET_POLICY,
+      userDailyKnownCostCny: 1000,
+      userDailyCalls: 1000
+    }
+  });
+  const reservation = (await service.reserveTask({
+    accountId: "rollover-user",
+    taskId: "partially-started",
+    stages: [known("started", 20), known("not-started", 30)]
+  })).reservation;
+  await service.startStage({ reservationId: reservation.id, stageId: "started" });
+  clock.value = "2026-11-01T00:00:00.000Z";
+  assert.equal((await service.startStage({
+    reservationId: reservation.id,
+    stageId: "started"
+  })).duplicate, true);
+  await assert.rejects(service.startStage({
+    reservationId: reservation.id,
+    stageId: "not-started"
+  }), error => {
+    assert.equal(error.code, "AI_BUDGET_RESERVATION_EXPIRED");
+    assert.equal(error.reservedDay, "2026-10-31");
+    assert.equal(error.reservedMonth, "2026-10");
+    assert.equal(error.currentDay, "2026-11-01");
+    assert.equal(error.currentMonth, "2026-11");
+    assert.equal(error.released, false);
+    assert.equal(error.requiresSettlement, true);
+    return true;
+  });
+  const retained = await service.read();
+  assert.equal(retained.reservations.length, 1);
+  assert.equal(retained.reservations[0].stages.find(stage => stage.id === "not-started").startedAt, "");
+  const settled = await service.settleTask({
+    reservationId: reservation.id,
+    stages: [{ stageId: "started", actualCostCny: 25 }]
+  });
+  assert.deepEqual({
+    accountingDay: settled.settlement.accountingDay,
+    accountingMonth: settled.settlement.accountingMonth,
+    settledAtDay: settled.settlement.settledAtDay,
+    settledAtMonth: settled.settlement.settledAtMonth
+  }, {
+    accountingDay: "2026-10-31",
+    accountingMonth: "2026-10",
+    settledAtDay: "2026-11-01",
+    settledAtMonth: "2026-11"
+  });
+  assert.deepEqual(
+    settled.settlement.stages.map(stage => ({ stageId: stage.stageId, started: stage.started })),
+    [
+      { stageId: "started", started: true },
+      { stageId: "not-started", started: false }
+    ]
+  );
+  const state = await service.read();
+  assert.equal(state.days.find(day => day.key === "2026-10-31").knownCostMicros, 25_000_000);
+  assert.equal(state.months.find(month => month.key === "2026-10").knownCostMicros, 25_000_000);
+  assert.equal(state.days.some(day => day.key === "2026-11-01"), false);
+  assert.equal(state.months.some(month => month.key === "2026-11"), false);
+  const settlementEvent = state.events.find(item => item.type === "ai.budget.reservation_settled"
+    && item.reservationId === reservation.id);
+  assert.equal(settlementEvent.periodKey, "2026-10-31");
+  assert.equal(settlementEvent.monthKey, "2026-10");
+  assert.equal(settlementEvent.settledAtPeriodKey, "2026-11-01");
+  assert.equal(settlementEvent.settledAtMonthKey, "2026-11");
+  const currentStatus = await service.status({ accountId: "rollover-user" });
+  assert.equal(currentStatus.day.committedKnownCostCny, 0);
+  assert.equal(currentStatus.month.committedKnownCostCny, 0);
+  assert.equal(currentStatus.user.committedCalls, 0);
 }
 
 // Daily and monthly thresholds are emitted once per effective limit and period.
@@ -430,4 +581,4 @@ assert.doesNotThrow(() => JSON.parse(JSON.stringify(normalized)));
     && item.reason === "追加预算后恢复"));
 }
 
-console.log("AI budget checks passed: user/site limits, atomic composite holds, thresholds, unknown-cost alerts, rollover, settlement and Owner domain commands.");
+console.log("AI budget checks passed: UTC periods, user/site limits, atomic holds and expiry, cross-period settlement, thresholds, unknown-cost alerts and Owner domain commands.");

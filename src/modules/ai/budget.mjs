@@ -1,5 +1,4 @@
 import crypto from "node:crypto";
-import { localDateKey } from "../../shared/time/index.mjs";
 import { safeIso, safeText } from "../../shared/validation/index.mjs";
 
 export const AI_BUDGET_VERSION = 1;
@@ -43,9 +42,10 @@ const requiredText = (value, field, limit = 160) => {
   if (!normalized) throw new TypeError(`AI budget ${field} is required`);
   return normalized;
 };
-const timestampKeys = (timestamp, dateKey) => {
-  const day = dateKey(timestamp);
-  if (!DAY_PATTERN.test(day)) throw new TypeError("AI budget requires a valid local date key");
+const timestampKeys = timestamp => {
+  const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
+  if (Number.isNaN(date.getTime())) throw new TypeError("AI budget requires a valid UTC timestamp");
+  const day = date.toISOString().slice(0, 10);
   return { day, month: day.slice(0, 7) };
 };
 const replaceDocument = (target, source) => {
@@ -335,6 +335,34 @@ function appendEvent(state, event, createId) {
   return value;
 }
 
+function releaseReservation(state, index, reservation, {
+  timestamp,
+  reason,
+  createId,
+  details = {}
+}) {
+  state.reservations.splice(index, 1);
+  return appendEvent(state, {
+    type: "ai.budget.reservation_released",
+    severity: "info",
+    createdAt: timestamp,
+    accountId: reservation.accountId,
+    taskId: reservation.taskId,
+    reservationId: reservation.id,
+    periodKey: reservation.day,
+    reason,
+    ...details
+  }, createId);
+}
+
+function expiredReservationError(expiration) {
+  return Object.assign(new Error("AI budget reservation expired before stage start"), {
+    statusCode: 409,
+    code: "AI_BUDGET_RESERVATION_EXPIRED",
+    ...expiration
+  });
+}
+
 function thresholdEvents(state, {
   scope,
   period,
@@ -522,7 +550,6 @@ export function createAiBudgetService({
   repository,
   policy: configuredPolicy = AI_BUDGET_POLICY,
   now = () => new Date().toISOString(),
-  dateKey = value => localDateKey(value),
   createId = () => crypto.randomUUID()
 }) {
   if (!repository || typeof repository.read !== "function" || typeof repository.update !== "function") {
@@ -544,13 +571,13 @@ export function createAiBudgetService({
 
     async status({ accountId = "" } = {}) {
       const timestamp = now();
-      const keys = timestampKeys(timestamp, dateKey);
+      const keys = timestampKeys(timestamp);
       return statusFromState(normalize(await repository.read()), keys, text(accountId, 100));
     },
 
     async reserveTask(input) {
       const timestamp = now();
-      const keys = timestampKeys(timestamp, dateKey);
+      const keys = timestampKeys(timestamp);
       const plan = normalizePlan(input, createId);
       const result = await update(state => {
         const existing = state.reservations.find(item => item.accountId === plan.accountId && item.taskId === plan.taskId);
@@ -638,28 +665,59 @@ export function createAiBudgetService({
 
     async startStage({ reservationId, stageId }) {
       const timestamp = now();
-      return update(state => {
-        const reservation = state.reservations.find(item => item.id === text(reservationId, 100));
-        if (!reservation) throw Object.assign(new Error("AI budget reservation was not found"), {
+      const keys = timestampKeys(timestamp);
+      const result = await update(state => {
+        const index = state.reservations.findIndex(item => item.id === text(reservationId, 100));
+        if (index < 0) throw Object.assign(new Error("AI budget reservation was not found"), {
           statusCode: 404,
           code: "AI_BUDGET_RESERVATION_NOT_FOUND"
         });
+        const reservation = state.reservations[index];
         const stage = reservation.stages.find(item => item.id === text(stageId, 100));
         if (!stage) throw Object.assign(new Error("AI budget reservation stage was not found"), {
           statusCode: 404,
           code: "AI_BUDGET_STAGE_NOT_FOUND"
         });
         if (stage.startedAt) return { reservation: publicReservation(reservation), event: null, duplicate: true };
+        if (reservation.day !== keys.day || reservation.month !== keys.month) {
+          const hasStartedStage = reservation.stages.some(item => item.startedAt);
+          const expiration = {
+            reservationId: reservation.id,
+            reservedDay: reservation.day,
+            reservedMonth: reservation.month,
+            currentDay: keys.day,
+            currentMonth: keys.month,
+            released: !hasStartedStage,
+            requiresSettlement: hasStartedStage
+          };
+          if (!hasStartedStage) {
+            const event = releaseReservation(state, index, reservation, {
+              timestamp,
+              reason: "period_expired",
+              createId,
+              details: {
+                reservedMonthKey: reservation.month,
+                currentPeriodKey: keys.day,
+                currentMonthKey: keys.month
+              }
+            });
+            expiration.eventId = event.id;
+          }
+          return { expiration };
+        }
         stage.startedAt = timestamp;
         const event = stage.costKnown
           ? null
           : unknownWarning(state, reservation, stage, ensureDay(state, reservation.day), timestamp, createId);
         return { reservation: publicReservation(reservation), event, duplicate: false };
       });
+      if (result.expiration) throw expiredReservationError(result.expiration);
+      return result;
     },
 
     async settleTask({ reservationId, stages = [], outcome = "completed" }) {
       const timestamp = now();
+      const settlementKeys = timestampKeys(timestamp);
       const supplied = new Map((Array.isArray(stages) ? stages : []).map(item => [text(item?.stageId, 100), item]));
       return update(state => {
         const index = state.reservations.findIndex(item => item.id === text(reservationId, 100));
@@ -676,6 +734,7 @@ export function createAiBudgetService({
             });
           }
         }
+        // Started work remains charged to the UTC period that granted its reservation.
         const day = ensureDay(state, reservation.day);
         const month = ensureMonth(state, reservation.month);
         const user = ensureUser(day, reservation.accountId);
@@ -750,6 +809,9 @@ export function createAiBudgetService({
           taskId: reservation.taskId,
           reservationId: reservation.id,
           periodKey: reservation.day,
+          monthKey: reservation.month,
+          settledAtPeriodKey: settlementKeys.day,
+          settledAtMonthKey: settlementKeys.month,
           outcome: text(outcome, 80) || "completed",
           calls,
           knownCostCny: cny(knownCostMicros),
@@ -759,6 +821,10 @@ export function createAiBudgetService({
         return {
           reservation: publicReservation(reservation),
           settlement: {
+            accountingDay: reservation.day,
+            accountingMonth: reservation.month,
+            settledAtDay: settlementKeys.day,
+            settledAtMonth: settlementKeys.month,
             calls,
             knownCostCny: cny(knownCostMicros),
             unknownCalls,
@@ -781,17 +847,11 @@ export function createAiBudgetService({
             code: "AI_BUDGET_STAGE_ALREADY_STARTED"
           });
         }
-        state.reservations.splice(index, 1);
-        const event = appendEvent(state, {
-          type: "ai.budget.reservation_released",
-          severity: "info",
-          createdAt: timestamp,
-          accountId: reservation.accountId,
-          taskId: reservation.taskId,
-          reservationId: reservation.id,
-          periodKey: reservation.day,
-          reason: text(reason, 200) || "not_started"
-        }, createId);
+        const event = releaseReservation(state, index, reservation, {
+          timestamp,
+          reason: text(reason, 200) || "not_started",
+          createId
+        });
         return { released: true, duplicate: false, reservation: publicReservation(reservation), event };
       });
     },
@@ -812,7 +872,7 @@ export function createAiBudgetService({
         });
       }
       const timestamp = now();
-      const keys = timestampKeys(timestamp, dateKey);
+      const keys = timestampKeys(timestamp);
       return update(state => {
         const period = scope === "daily" ? ensureDay(state, keys.day) : ensureMonth(state, keys.month);
         period.additionalKnownCostMicros += amountMicros;
@@ -847,7 +907,7 @@ export function createAiBudgetService({
       const actor = requiredText(actorId, "owner actorId", 100);
       const explanation = requiredText(reason, "owner reason", 500);
       const timestamp = now();
-      const keys = timestampKeys(timestamp, dateKey);
+      const keys = timestampKeys(timestamp);
       return update(state => {
         const day = ensureDay(state, keys.day);
         const month = ensureMonth(state, keys.month);
