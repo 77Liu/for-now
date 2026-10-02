@@ -101,7 +101,10 @@ const mockFetch = `
   };
   Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
-    value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) }
+    value: { getUserMedia: async () => {
+      if(window.__failMicrophonePermission){window.__failMicrophonePermission=false;throw new DOMException("MIC_DEVICE_INTERNAL","NotAllowedError")}
+      return { getTracks: () => [{ stop() {} }] }
+    } }
   });
   window.MediaRecorder = class extends EventTarget {
     static isTypeSupported() { return true; }
@@ -121,6 +124,11 @@ const mockFetch = `
   window.__speechPlays = [];
   window.__delaySpeech = false;
   window.__releaseSpeech = null;
+  window.__failSpeech = false;
+  window.__failMicrophonePermission = false;
+  window.__audioUploadKeys = [];
+  window.__failAudioUpload = false;
+  window.__failTranscriptionQueue = false;
   window.Audio = class extends EventTarget {
     constructor(src = "") { super(); this.src = src; this.paused = true; this.playbackRate = 1; window.__lastSpeechAudio = this; }
     play() { this.paused = false; window.__speechPlays.push({ src: this.src, rate: this.playbackRate }); return Promise.resolve(); }
@@ -169,6 +177,8 @@ const mockFetch = `
   window.__journalDraftSaves = 0;
   window.__journalDraftPayloads = [];
   window.__journalAssistPayloads = [];
+  window.__failJournalDraft = false;
+  window.__conflictJournalPatch = false;
   window.__bookParses = 0;
   window.__bookUploads = 0;
   window.__keepsakeUploads = 0;
@@ -775,6 +785,7 @@ const mockFetch = `
     }
     if (url === "/api/settings/test") return json({ ok: true, reply: "连接成功" });
     if (url === "/api/speech/synthesize" && init.method === "POST") {
+      if(window.__failSpeech){window.__failSpeech=false;return Promise.resolve(new Response(JSON.stringify({error:{message:"PROVIDER_TIMEOUT_DEEPSEEK",code:"PROVIDER_TIMEOUT"}}),{status:503,headers:{"content-type":"application/json"}}))}
       window.__speechRequests.push(JSON.parse(init.body));
       const response=()=>new Response(new Uint8Array([0x49,0x44,0x33]),{headers:{"content-type":"audio/mpeg"}});
       if(window.__delaySpeech){
@@ -861,7 +872,20 @@ const mockFetch = `
     if (/^\\/api\\/v1\\/captures\\/[^/]+$/.test(url) && init.method === "DELETE") {
       const id=url.split("/").at(-1);window.__captures=window.__captures.filter(item=>item.id!==id);return v1({trashId:"trash-"+id});
     }
+    if (url === "/api/audio/upload" && init.method === "POST") {
+      const payload=JSON.parse(init.body),key=init.headers?.["idempotency-key"]||"";window.__audioUploadKeys.push(key);
+      if(window.__failAudioUpload){window.__failAudioUpload=false;return Promise.resolve(new Response(JSON.stringify({error:{message:"AUDIO_STORAGE_INTERNAL",code:"STORAGE_UPLOAD_FAILED"}}),{status:503,headers:{"content-type":"application/json"}}))}
+      return json({audio:{attachmentPath:"/attachments/capture-upload.webm",mimeType:"audio/webm",bytes:4,durationMs:payload.durationMs}})
+    }
+    if (url === "/api/audio/discard" && init.method === "POST") {
+      const payload=JSON.parse(init.body);return json({discarded:[payload.attachmentPath],pending:0})
+    }
+    if (/^\\/api\\/captures\\/[^/]+\\/transcription$/.test(url) && init.method === "POST") {
+      if(window.__failTranscriptionQueue){window.__failTranscriptionQueue=false;return Promise.resolve(new Response(JSON.stringify({error:{message:"ASR_PROVIDER_PRIVATE_DETAIL",code:"ASR_PROVIDER_FAILED"}}),{status:503,headers:{"content-type":"application/json"}}))}
+      const targetId=url.split("/")[3];return json({id:"task-transcription-retry",kind:"captureTranscription",targetId,status:"queued",createdAt:new Date().toISOString()})
+    }
     if (url === "/api/journal-draft" && init.method === "PUT") {
+      if(window.__failJournalDraft){window.__failJournalDraft=false;return Promise.resolve(new Response(JSON.stringify({error:{message:"JOURNAL_STORAGE_INTERNAL",code:"STORAGE_WRITE_FAILED"}}),{status:503,headers:{"content-type":"application/json"}}))}
       window.__journalDraftSaves += 1;
       const payload = JSON.parse(init.body);
       window.__journalDraftPayloads.push(payload);
@@ -877,6 +901,7 @@ const mockFetch = `
     }
     if (/^\\/api\\/(?:v1\\/)?journals\\/[^/]+$/.test(url) && init.method === "PATCH") {
       const item = window.__journals.find(value => url.endsWith(value.id)), payload = JSON.parse(init.body);
+      if(window.__conflictJournalPatch){window.__conflictJournalPatch=false;return Promise.resolve(new Response(JSON.stringify({data:null,error:{message:"JOURNAL_CONFLICT_INTERNAL",code:"PRECONDITION_FAILED",details:{currentVersion:(item?.version||1)+1}},meta:{}}),{status:412,headers:{"content-type":"application/json"}}))}
       window.__journalPatches += 1;
       Object.assign(item, payload, eventTime(payload), { updatedAt: new Date().toISOString(), version: (item.version || 1) + 1 });
       if (window.__journalDraft?.journalId === item.id) window.__journalDraft = null;
@@ -1805,6 +1830,12 @@ try {
     taskId:"task-capture-failed",
     misreported:false
   });
+  await evaluate(`window.__failTranscriptionQueue=true;document.querySelector('[data-capture-id="capture-failed"] [data-capture-transcribe]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#toast").textContent==="语音转写排队暂时失败。原音已经保存。请稍后重试。"`),true);
+  assert.deepEqual(await evaluate(`({enabled:!document.querySelector('[data-capture-id="capture-failed"] [data-capture-transcribe]').disabled,original:document.querySelector('[data-capture-id="capture-failed"] .capture-audio-playback-state').textContent,sentinel:document.body.textContent.includes("ASR_PROVIDER_PRIVATE_DETAIL")})`),{enabled:true,original:"原音可播放",sentinel:false});
+  await evaluate(`window.__failSpeech=true;document.querySelector('[data-capture-id="capture-long"] [data-capture-speak]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#toast").textContent==="文字朗读生成暂时失败。原音和文字记录没有变化。请稍后重试。"`),true);
+  assert.equal(await evaluate(`!document.body.textContent.includes("PROVIDER_TIMEOUT_DEEPSEEK")&&window.__speechRequests.length===0`),true);
   await evaluate(`window.__delaySpeech=true;document.querySelector('[data-capture-id="capture-long"] [data-capture-speak]').click();true`);
   assert.equal(await waitUntil(`typeof window.__releaseSpeech==="function"&&window.__speechRequests.length===1`),true);
   assert.deepEqual(await evaluate(`window.__speechRequests[0]`), {
@@ -1843,14 +1874,25 @@ try {
   });
   await evaluate(`document.querySelector("#capture-audio-recorder summary").click();true`);
   assert.equal(await evaluate(`document.querySelector("#capture-audio-recorder").open&&document.querySelector("#capture-audio-record").getBoundingClientRect().height>=44`),true);
+  await evaluate(`window.__failMicrophonePermission=true;document.querySelector("#capture-audio-record").click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#capture-audio-status").textContent==="麦克风权限未开启。当前捕念正文和原有录音没有变化。请开启权限，或改为上传音频。"`),true);
+  assert.equal(await evaluate(`!document.body.textContent.includes("MIC_DEVICE_INTERNAL")`),true);
   await evaluate(`document.querySelector("#capture-audio-record").click();true`);
   assert.equal(await waitUntil(`document.querySelector("#capture-audio-status").textContent.includes("正在录音")`),true);
   await evaluate(`document.querySelector("#capture-audio-pause").click();true`);
   assert.equal(await waitUntil(`document.querySelector("#capture-audio-status").textContent.includes("录音已暂停")`),true);
   await evaluate(`document.querySelector("#capture-audio-pause").click();window.__advanceNow(320);document.querySelector("#capture-audio-stop").click();true`);
   assert.equal(await waitUntil(`document.querySelector("#capture-audio-status").textContent.includes("录音已保存在本机")&&!document.querySelector("#capture-audio-preview").hidden`),true);
+  await evaluate(`document.querySelector("#capture-content").value="带语音的捕念草稿";window.__failAudioUpload=true;document.querySelector("#capture-form").requestSubmit();true`);
+  assert.equal(await waitUntil(`document.querySelector("#capture-audio-status").textContent==="捕念语音上传暂时失败。原音草稿仍保存在本机。请稍后重试。"`),true);
+  assert.deepEqual(await evaluate(`({captureStatus:document.querySelector("#capture-status").textContent,audioVisible:!document.querySelector("#capture-audio-preview").hidden,sentinel:document.body.textContent.includes("AUDIO_STORAGE_INTERNAL"),keys:window.__audioUploadKeys.length})`),{captureStatus:"捕念语音上传暂时失败。捕念草稿和待提交语音仍保存在当前页面。请稍后重试。",audioVisible:true,sentinel:false,keys:1});
+  assert.deepEqual(await evaluate(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(null);opening.onsuccess=()=>{const request=opening.result.transaction("drafts","readonly").objectStore("drafts").get("user-1:capture-audio");request.onerror=()=>resolve(null);request.onsuccess=()=>resolve({lastError:request.result?.audio?.lastError||"",uploadRequestId:request.result?.audio?.uploadRequestId||""})}})`),{lastError:"捕念语音上传暂时失败。原音草稿仍保存在本机。请稍后重试。",uploadRequestId:await evaluate(`window.__audioUploadKeys[0]`)});
+  await evaluate(`window.__failAudioUpload=true;document.querySelector("#capture-form").requestSubmit();true`);
+  assert.equal(await waitUntil(`window.__audioUploadKeys.length===2`),true);
+  assert.equal(await evaluate(`window.__audioUploadKeys[0]===window.__audioUploadKeys[1]&&window.__audioUploadKeys[0].length>0`),true);
   await evaluate(`document.querySelector("#capture-audio-remove").click();true`);
   assert.equal(await waitUntil(`document.querySelector("#capture-audio-preview").hidden&&document.querySelector("#capture-audio-preview").getClientRects().length===0`),true);
+  await evaluate(`document.querySelector("#capture-cancel").click();true`);
   assert.equal(await waitUntil(`!document.querySelector('[data-capture-id="capture-long"] [data-capture-expand]').hidden`), true);
   assert.equal(await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-capture-expand]').hidden`), true);
   const captureCardLayout = await evaluate(`(() => {
@@ -1960,7 +2002,10 @@ try {
   assert.equal(restoredJournalDraft.tags, "#日常");
   assert.ok(restoredJournalDraft.date);
   assert.match(restoredJournalDraft.status, /已恢复/);
-  await evaluate(`document.querySelector("#journal-title").value += "（续写）"; document.querySelector("#journal-content").value += "继续写。"; document.querySelector("#journal-draft-save").click(); true`);
+  await evaluate(`document.querySelector("#journal-title").value += "（续写）"; document.querySelector("#journal-content").value += "继续写。";window.__failJournalDraft=true;document.querySelector("#journal-draft-save").click(); true`);
+  assert.equal(await waitUntil(`document.querySelector("#journal-status").textContent==="日记草稿保存暂时失败。标题和正文仍保留在当前页面。请稍后重试。"`),true);
+  assert.deepEqual(await evaluate(`({title:document.querySelector("#journal-title").value,content:document.querySelector("#journal-content").value,sentinel:document.body.textContent.includes("JOURNAL_STORAGE_INTERNAL"),saves:window.__journalDraftSaves})`),{title:"跨端恢复的标题（续写）",content:"跨端恢复的正文。继续写。",sentinel:false,saves:0});
+  await evaluate(`document.querySelector("#journal-draft-save").click();true`);
   assert.equal(await waitUntil(`window.__journalDraftSaves === 1 && document.querySelector("#journal-status").textContent.includes("草稿已保存")`), true);
   assert.deepEqual(await evaluate(`Object.keys(window.__journalDraftPayloads[0]).sort()`), ["content","journalId","title"]);
   assert.equal(await evaluate(`window.__journalDraftPayloads[0].journalId === "journal-1" && !("occurredAt" in window.__journalDraftPayloads[0]) && !("tags" in window.__journalDraftPayloads[0])`), true);
@@ -1975,10 +2020,15 @@ try {
   assert.equal(journalAfterAssist.value.slice(journalBeforeAssist.length).trim().split("\n").every(line => line.startsWith("🗃 ")), true);
   assert.equal(journalAfterAssist.payload.content, journalBeforeAssist);
   assert.match(journalAfterAssist.status, /已追加/);
-  await evaluate(`document.querySelector("#journal-content").value += "\\n我写下了真实感受。"; document.querySelector("#journal-form").requestSubmit(); true`);
+  await evaluate(`document.querySelector("#journal-content").value += "\\n我写下了真实感受。";window.__conflictJournalPatch=true;document.querySelector("#journal-form").requestSubmit(); true`);
+  assert.equal(await waitUntil(`document.querySelector("#journal-status").textContent==="这篇日记在其他位置已经变化。当前编辑内容仍保留，已有日记没有被覆盖。请重新读取后核对两端内容。"`),true);
+  assert.deepEqual(await evaluate(`({editing:document.querySelector("#journal-content").value.includes("我写下了真实感受"),server:window.__journals.find(item=>item.id==="journal-1").content.includes("我写下了真实感受"),sentinel:document.body.textContent.includes("JOURNAL_CONFLICT_INTERNAL"),patches:window.__journalPatches})`),{editing:true,server:false,sentinel:false,patches:0});
+  await evaluate(`document.querySelector("#journal-form").requestSubmit();true`);
   assert.equal(await waitUntil(`window.__journalPatches === 1 && window.__journalDraft === null && document.querySelector("#journal-id").value === ""`), true);
-  await evaluate(`document.querySelector("#journal-title").value = "新日记"; document.querySelector("#journal-content").value = "新建日记正文。"; document.querySelector("#journal-form").requestSubmit(); true`);
+  await evaluate(`document.querySelector("#journal-title").value = "新日记"; document.querySelector("#journal-content").value = "新建日记正文。";window.__failNextStateRefresh=true;document.querySelector("#journal-form").requestSubmit(); true`);
   assert.equal(await waitUntil(`window.__journalSaves === 1 && document.querySelector('[data-journal-id="journal-new-1"]')`), true);
+  assert.equal(await waitUntil(`document.querySelector("#toast").textContent==="日记列表刷新暂时失败。刚才的日记已经保存。请稍后重试。"`),true);
+  assert.equal(await evaluate(`!document.body.textContent.includes("DISCOVERY_BACKEND_INTERNAL")`),true);
   await evaluate(`document.querySelector('[data-journal-id="journal-1"]').open = true; document.querySelector('[data-journal-id="journal-1"] [data-journal-reflect]').click(); true`);
   assert.equal(await waitUntil(`document.querySelector('[data-journal-id="journal-1"] .journal-reflection')`, 80, 25), true);
   assert.deepEqual(await evaluate(`(()=>{const reflection=document.querySelector('[data-journal-id="journal-1"] .journal-reflection');return{reasoningNodes:reflection.querySelectorAll(".saved-reasoning").length,privateText:reflection.textContent.includes("持久化的模型思考"),answer:reflection.textContent.includes("结论")}})()`),{reasoningNodes:0,privateText:false,answer:true});
@@ -2904,12 +2954,13 @@ try {
   assert.equal(await waitUntil(`document.querySelector("#view-today").classList.contains("active")&&!document.querySelector("#onboarding-workspace").hidden&&document.querySelector(".onboarding-v2-review")`),true);
   assert.equal(await evaluate(`window.__onboardingSaves`),0);
   assert.equal(await evaluate(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const transaction=opening.result.transaction("drafts","readwrite"),request=transaction.objectStore("drafts").put({key:"user-1:capture",owner:"user-1",id:"capture",uploadRequestId:"restored-upload",items:[{blob:new Blob([new Uint8Array([1,2,3])],{type:"image/png"}),name:"restored.png",type:"image/png",lastModified:1}]});request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(true)}})`),true);
-  assert.equal(await evaluate(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const transaction=opening.result.transaction("drafts","readwrite"),blob=new Blob([new Uint8Array([1,2,3,4])],{type:"audio/mp4"}),request=transaction.objectStore("drafts").put({key:"user-1:capture-audio",owner:"user-1",id:"capture-audio",audio:{blob,mimeType:"audio/mp4",bytes:blob.size,durationMs:1250,uploadRequestId:"restored-audio",uploadedPath:"",lastError:null}});request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(true)}})`),true);
+  assert.equal(await evaluate(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const transaction=opening.result.transaction("drafts","readwrite"),blob=new Blob([new Uint8Array([1,2,3,4])],{type:"audio/mp4"}),request=transaction.objectStore("drafts").put({key:"user-1:capture-audio",owner:"user-1",id:"capture-audio",audio:{blob,mimeType:"audio/mp4",bytes:blob.size,durationMs:1250,uploadRequestId:"restored-audio",uploadedPath:"",lastError:"LEGACY_AUDIO_PRIVATE_DETAIL"}});request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(true)}})`),true);
   assert.equal(await evaluate(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const transaction=opening.result.transaction("drafts","readwrite"),store=transaction.objectStore("drafts"),blob=new Blob([new Uint8Array([1,2,3])],{type:"image/png"}),item={blob,name:"targeted.png",type:"image/png",lastModified:1,uploadRequestId:"",uploadedPath:"",lastError:null};store.put({key:"user-1:comment",owner:"user-1",id:"comment",context:{selection:{rootKey:"analysis:analysis-1",targetKey:"content",start:0,end:3,quote:"总判断"},text:"刷新后继续的评论",requestId:"comment-restored"},items:[item]});store.put({key:"user-1:thoughtBlock",owner:"user-1",id:"thoughtBlock",context:{rootId:"kept-root",blockId:"",type:"record",occurredAt:"2026-09-27T12:34",content:"刷新后继续的内容块",version:1,requestId:"block-restored"},items:[item]});store.put({key:"user-1:health:weight:2026-09-27",owner:"user-1",id:"health:weight:2026-09-27",date:"2026-09-27",type:"weight",result:{bodyWaterMass:42.2,description:"刷新后恢复的体成分",attachmentPaths:["/attachments/weight.png"]},items:[{...item,uploadRequestId:"health-restored",uploadedPath:"/attachments/weight.png"}]});transaction.oncomplete=()=>resolve(true);transaction.onerror=()=>resolve(false)}})`),true);
   assert.equal(await evaluate(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const bytes=Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="),value=>value.charCodeAt(0)),blob=new Blob([bytes],{type:"image/png"}),items=[1,2].map(index=>({itemId:"restored-keepsake-"+index,blob,name:"restored-"+index+".png",type:"image/png",lastModified:1,occurredAt:"2026-09-27T12:00:00",title:"恢复小物 "+index,category:"其他",note:"",tags:"",edgeExpansion:8,source:"manual",alphaMask:"",status:"waiting",uploadRequestId:"",createRequestId:"",mediaPaths:null,lastError:null})),request=opening.result.transaction("drafts","readwrite").objectStore("drafts").put({key:"user-1:keepsake-batch",owner:"user-1",id:"keepsake-batch",activeIndex:1,items});request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(true)}})`),true);
   await cdp.send("Page.reload",{ignoreCache:true});await sleep(300);
   const mediaRestored=await waitUntil(`document.querySelector("#today-date-label")?.textContent.length>0&&document.querySelector('[data-content-image-editor="capture"] .content-image-preview')&&document.querySelector("#capture-status").textContent.includes("已恢复 1 张待上传图片")&&document.querySelector("#capture-audio-player").src.startsWith("blob:")&&document.querySelector("#capture-audio-meta").textContent.includes("0:01")&&document.querySelector("#capture-audio-status").textContent.includes("待提交语音")&&!document.querySelector("#comment-panel").hidden&&document.querySelector("#comment-text").value==="刷新后继续的评论"&&document.querySelectorAll('[data-content-image-editor="comment"] .content-image-preview').length===1&&!document.querySelector("#thought-block-modal").hidden&&document.querySelector("#thought-block-content").value==="刷新后继续的内容块"&&document.querySelectorAll('[data-content-image-editor="thoughtBlock"] .content-image-preview').length===1`);
   assert.equal(mediaRestored,true,JSON.stringify(await evaluate(`({date:document.querySelector("#today-date-label")?.textContent,preview:Boolean(document.querySelector('[data-content-image-editor="capture"] .content-image-preview')),captureStatus:document.querySelector("#capture-status")?.textContent,audioSrc:document.querySelector("#capture-audio-player")?.src,audioMeta:document.querySelector("#capture-audio-meta")?.textContent,audioStatus:document.querySelector("#capture-audio-status")?.textContent,toast:document.querySelector("#toast")?.textContent})`)));
+  assert.equal(await evaluate(`!document.body.textContent.includes("LEGACY_AUDIO_PRIVATE_DETAIL")`),true);
   assert.deepEqual(await evaluate(`({commentOpen:!document.querySelector("#comment-panel").hidden,commentText:document.querySelector("#comment-text").value,commentImages:document.querySelectorAll('[data-content-image-editor="comment"] .content-image-preview').length,blockOpen:!document.querySelector("#thought-block-modal").hidden,blockText:document.querySelector("#thought-block-content").value,blockRoot:document.querySelector("#thought-block-root-id").value,blockImages:document.querySelectorAll('[data-content-image-editor="thoughtBlock"] .content-image-preview').length})`),{commentOpen:true,commentText:"刷新后继续的评论",commentImages:1,blockOpen:true,blockText:"刷新后继续的内容块",blockRoot:"kept-root",blockImages:1});
   assert.deepEqual(await evaluate(`({items:document.querySelectorAll(".keepsake-batch-item").length,count:document.querySelector("#keepsake-batch-count").textContent,active:document.querySelector('[data-keepsake-batch-select="1"]')?.getAttribute("aria-pressed")})`),{items:2,count:"2 件",active:"true"});
   await evaluate(`document.querySelector('[data-view="daily"]').click();document.querySelector('[data-daily-tab="weight"]').click();true`);
