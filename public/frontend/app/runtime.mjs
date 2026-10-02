@@ -3845,7 +3845,7 @@ $("#capture-form").addEventListener("submit",async e=>{
   e.preventDefault();const pendingStartedAt=performance.now();if($("#capture-tags").value.trim())commitCaptureTags();
   const form=e.currentTarget,id=$("#capture-id").value,existing=id?(state.captures||[]).find(item=>item.id===id):null,button=$("#capture-submit"),status=$("#capture-status"),requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`;let uploadedPaths=[],uploadedAudioPath="",projected=false,stage="images";
   if(!id)form.dataset.requestId=requestId;button.disabled=true;status.textContent=id?"正在保存修改…":"正在收下…";
-  if(document.documentElement.dataset.nativePerformance==="1"){const label=`提交等待 ${(performance.now()-pendingStartedAt).toFixed(1)} 毫秒`;status.setAttribute("aria-label",label);setTimeout(()=>{if(status.getAttribute("aria-label")===label)status.removeAttribute("aria-label")},5000)}
+  if(document.documentElement.dataset.nativePerformance==="1"||new URLSearchParams(location.search).has("native-performance")){const label=`提交等待 ${(performance.now()-pendingStartedAt).toFixed(1)} 毫秒`;status.setAttribute("aria-label",label);setTimeout(()=>{if(status.getAttribute("aria-label")===label)status.removeAttribute("aria-label")},5000)}
   try{
     const submission=await contentImagePaths("capture");uploadedPaths=submission.uploadedPaths;if(uploadedPaths.length)status.textContent="图片已上传，正在同步记录…";
     stage="audio";
