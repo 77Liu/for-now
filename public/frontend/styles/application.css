@@ -2140,7 +2140,7 @@ h1{letter-spacing:0}
 #discovery-random{min-width:72px;min-height:44px;padding-inline:12px;white-space:nowrap}
 @media(max-width:920px){
   .nav-button{color:#5f6b66}
-  .section-nav button{min-height:44px;padding:10px 1px 11px}
+  .section-nav button{min-width:44px;min-height:44px;padding:10px 1px 11px}
   .daily-record-tabs button,.segmented-control button,.occurrence-mode button,.checkin-confirm-all{min-height:44px}
   .date-peek{min-width:44px;min-height:44px;justify-content:center}
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),select,textarea{font-size:16px}

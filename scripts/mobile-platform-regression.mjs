@@ -90,6 +90,24 @@ const devices = [
     userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
   },
   {
+    name: "compact-320",
+    width: 320,
+    height: 700,
+    dpr: 2,
+    orientation: { type: "portraitPrimary", angle: 0 },
+    marker: "iPhone",
+    userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
+  },
+  {
+    name: "mobile-390",
+    width: 390,
+    height: 844,
+    dpr: 3,
+    orientation: { type: "portraitPrimary", angle: 0 },
+    marker: "iPhone",
+    userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
+  },
+  {
     name: "pixel-7",
     width: 412,
     height: 915,
@@ -239,18 +257,50 @@ try {
       assert.deepEqual(landscapeOnboarding.links.map(item => item.visible), [false, false, false]);
     }
 
+    if (device.width === 320 || device.width === 390) {
+      for (const group of [
+        { section: "today", view: "together", selector: '[data-section-links="today"] [data-view="together"]', count: 3 },
+        { section: "seen", view: "captures", selector: '[data-section="seen"]', count: 4 },
+        { section: "thought", view: "thoughts", selector: '[data-section="thought"]', count: 4 }
+      ]) {
+        await evaluate(`document.querySelector('${group.selector}').click();true`);
+        assert.equal(await waitUntil(`document.querySelector("#view-${group.view}").classList.contains("active")&&!document.querySelector('[data-section-links="${group.section}"]').hidden`), true);
+        const navigation = await evaluate(`(() => {
+          const nav=document.querySelector("#section-nav"),links=document.querySelector('[data-section-links="${group.section}"]'),navRect=nav.getBoundingClientRect(),linksRect=links.getBoundingClientRect();
+          const targets=[...links.querySelectorAll("button")].filter(button=>button.getClientRects().length).map(button=>{
+            const rect=button.getBoundingClientRect();
+            return {label:button.textContent.trim(),width:rect.width,height:rect.height,inside:rect.left>=linksRect.left-.5&&rect.right<=linksRect.right+.5};
+          });
+          return {
+            targets,
+            navInside:navRect.left>=0&&navRect.right<=innerWidth+.5,
+            groupFits:links.scrollWidth<=links.clientWidth+.5,
+            noOverflow:document.documentElement.scrollWidth<=innerWidth
+          };
+        })()`);
+        assert.equal(navigation.targets.length, group.count, `${device.name} ${group.section} visible group navigation`);
+        assert.equal(navigation.targets.every(target => target.width >= 44 && target.height >= 44 && target.inside), true, `${device.name} ${group.section} touch targets: ${JSON.stringify(navigation.targets)}`);
+        assert.equal(navigation.navInside, true);
+        assert.equal(navigation.groupFits, true);
+        assert.equal(navigation.noOverflow, true);
+      }
+    }
+
     await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
     assert.equal(await waitUntil(`Boolean(document.querySelector('[data-capture-id="${speechCaptureId}"]'))`), true);
     const speechCard = await evaluate(`(() => {
-      const card=document.querySelector('[data-capture-id="${speechCaptureId}"]'),player=card.querySelector("[data-capture-speech-player]"),playerBox=player.closest(".capture-speech-player"),actions=card.querySelector(".capture-speech-actions"),button=actions.querySelector("button"),cardRect=card.getBoundingClientRect(),actionsRect=actions.getBoundingClientRect();
+      const card=document.querySelector('[data-capture-id="${speechCaptureId}"]'),player=card.querySelector("[data-capture-speech-player]"),playerBox=player.closest(".capture-speech-player"),actions=card.querySelector(".capture-speech-actions"),button=actions.querySelector("button"),select=actions.querySelector("select"),cardRect=card.getBoundingClientRect(),actionsRect=actions.getBoundingClientRect(),buttonRect=button.getBoundingClientRect(),selectRect=select.getBoundingClientRect();
       return {
         noVoice:!card.querySelector("[data-capture-voice]"),
         noDuplicateControls:!card.querySelector("[data-capture-speech-pause],[data-capture-speech-stop]"),
         buttons:actions.querySelectorAll("button").length,
         selects:actions.querySelectorAll("select").length,
         emptyPlayerHidden:playerBox.hidden&&player.getClientRects().length===0&&!player.currentSrc,
-        buttonHeight:button.getBoundingClientRect().height,
+        buttonTarget:buttonRect.width>=44&&buttonRect.height>=44,
+        selectTarget:selectRect.width>=44&&selectRect.height>=44,
+        controlsInside:[buttonRect,selectRect].every(rect=>rect.left>=cardRect.left-.5&&rect.right<=cardRect.right+.5),
         inside:actionsRect.left>=cardRect.left&&actionsRect.right<=cardRect.right+.5,
+        actionsFit:actions.scrollWidth<=actions.clientWidth+.5,
         noOverflow:document.documentElement.scrollWidth<=innerWidth
       };
     })()`);
@@ -260,8 +310,11 @@ try {
       buttons: 1,
       selects: 1,
       emptyPlayerHidden: true,
-      buttonHeight: 44,
+      buttonTarget: true,
+      selectTarget: true,
+      controlsInside: true,
       inside: true,
+      actionsFit: true,
       noOverflow: true
     });
 
@@ -326,7 +379,7 @@ try {
     await fs.readFile(path.join(ROOT, "public/frontend/styles/application.css"), "utf8")
   ].join("\n");
   for (const token of ["100dvh", "env(safe-area-inset-top)", "env(safe-area-inset-right)", "env(safe-area-inset-bottom)", "env(safe-area-inset-left)"]) assert.match(css, new RegExp(token.replace(/[()]/g, "\\$&")));
-  console.log("Mobile platform checks passed: iPhone SE/15 and Pixel 7 UA, DPR, touch, portrait/landscape, standalone manifest, dynamic viewport, keyboard contraction, safe-area CSS, input zoom prevention, and horizontal overflow.");
+  console.log("Mobile platform checks passed: iPhone SE/15, exact 320/390px audits and Pixel 7 UA, DPR, touch, navigation targets, TTS card controls, portrait/landscape, standalone manifest, dynamic viewport, keyboard contraction, safe-area CSS, input zoom prevention, and horizontal overflow.");
 } finally {
   cdp?.socket.close();
   chrome.kill("SIGKILL");

@@ -2493,7 +2493,7 @@ function renderTtsDefaultVoice(){
   control.disabled=!state.speech?.configured||!voices.length;if(voices.some(item=>item.id===voice))control.value=voice
 }
 function ttsGenerationRateText(value){return`${(1+normalizeTtsGenerationRate(value)/100).toFixed(2)}×`}
-function renderTtsGenerationRate(value){const rate=normalizeTtsGenerationRate(value),control=$("#tts-generation-rate"),output=$("#tts-generation-rate-value");if(control){control.value=String(rate);control.style.setProperty("--fill",`${((rate+50)/1.5).toFixed(2)}%`)}if(output)output.textContent=ttsGenerationRateText(rate)}
+function renderTtsGenerationRate(value){const rate=normalizeTtsGenerationRate(value),text=ttsGenerationRateText(rate),control=$("#tts-generation-rate"),output=$("#tts-generation-rate-value");if(control){control.value=String(rate);control.setAttribute("aria-valuetext",text.replace("×","倍"));control.style.setProperty("--fill",`${((rate+50)/1.5).toFixed(2)}%`)}if(output)output.textContent=text}
 function settingsPayload(){
   const payload={sceneEfforts:Object.fromEntries($$("[data-ai-effort]").map(select=>[select.dataset.aiEffort,select.value])),assistantName:$("#assistant-name").value,responseStyles:Object.fromEntries($$("[data-response-style]").map(select=>[select.dataset.responseStyle,select.value])),automaticAnswers:{thoughtAnswer:$("#automatic-thought-answer").checked},speech:{defaultVoice:$("#tts-default-voice")?.value||accountTtsVoice(),generationRate:normalizeTtsGenerationRate($("#tts-generation-rate")?.value)}};
   if(!hasCapability("ai-configuration"))return payload;
