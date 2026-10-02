@@ -5,11 +5,64 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { errorMetadata, pruneLogs, redact } from "../src/shared/observability/index.mjs";
+import {
+  collectRuntimeMemorySample,
+  errorMetadata,
+  pruneLogs,
+  redact
+} from "../src/shared/observability/index.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "growth-audit-"));
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+const memorySample = collectRuntimeMemorySample({
+  now: () => "2026-10-03T01:02:03.000Z",
+  memoryUsage: () => ({ rss: 100, heapTotal: 80, heapUsed: 60, external: 20, arrayBuffers: 10 }),
+  heapSpaceStatistics: () => [{
+    space_name: "old_space",
+    space_size: 50,
+    space_used_size: 40,
+    space_available_size: 8,
+    physical_space_size: 48
+  }],
+  eventLoopDelay: {
+    mean: 1_250_000,
+    max: 5_500_000,
+    percentile: percentile => ({ 50: 2_000_000, 95: 4_000_000, 99: 5_000_000 })[percentile]
+  },
+  activeHandles: () => [
+    { constructor: { name: "Socket" }, path: "/PRIVATE/socket" },
+    { constructor: { name: "FSWatcher" }, path: "/PRIVATE/watched-file" },
+    { constructor: { name: "PrivateUserObject" }, body: "PRIVATE_USER_CONTENT" }
+  ]
+});
+assert.deepEqual(memorySample, {
+  sampledAt: "2026-10-03T01:02:03.000Z",
+  rss: 100,
+  heapTotal: 80,
+  heapUsed: 60,
+  external: 20,
+  arrayBuffers: 10,
+  heapSpaces: [{
+    name: "old_space",
+    size: 50,
+    used: 40,
+    available: 8,
+    physical: 48
+  }],
+  eventLoopDelay: {
+    meanMs: 1.25,
+    p50Ms: 2,
+    p95Ms: 4,
+    p99Ms: 5,
+    maxMs: 5.5
+  },
+  activeHandles: {
+    total: 3,
+    categories: { fileWatcher: 1, other: 1, socket: 1 }
+  }
+});
+assert.doesNotMatch(JSON.stringify(memorySample), /PRIVATE|path|body|PrivateUserObject/);
 let mode = "success", stderr = "", providerCalls = 0;
 const mock = http.createServer(async (req, res) => {
   for await (const chunk of req) { void chunk; }
@@ -56,9 +109,10 @@ await fs.writeFile(path.join(dataDir, "ai-usage.json"), JSON.stringify({
 }));
 const child = spawn(process.execPath, ["server.mjs"], {
   cwd: root,
-  env: { ...process.env, NODE_ENV: "test", TZ: "UTC", DATA_DIR: dataDir, PORT: String(port), AUTH_REQUIRED: "0", INVITE_CODE_HASH: "", UPSTREAM_ORIGIN: "", APP_BASE_PATH: "", DEEPSEEK_API_URL: `http://127.0.0.1:${mock.address().port}` },
+  env: { ...process.env, NODE_ENV: "test", TZ: "UTC", DATA_DIR: dataDir, PORT: String(port), AUTH_REQUIRED: "0", INVITE_CODE_HASH: "", UPSTREAM_ORIGIN: "", APP_BASE_PATH: "", DEEPSEEK_API_URL: `http://127.0.0.1:${mock.address().port}`, RUNTIME_MEMORY_SAMPLE_INTERVAL_MS: "50" },
   stdio: ["ignore", "ignore", "pipe"]
 });
+let childStopped = false;
 child.stderr.on("data", data => { stderr += data; });
 const request = (route, payload, method = "POST", headers = {}) => fetch(`${base}${route}`, {
   method, headers: { "content-type": "application/json", ...headers }, ...(payload === undefined ? {} : { body: JSON.stringify(payload) })
@@ -175,6 +229,14 @@ try {
   const operations = await logEntries("operation-"), systems = await logEntries("system-"), audits = await logEntries("ai-audit-");
   assert.ok(operations.some(entry => entry.traceId === traceId && entry.changes?.[0]?.resourceId === created.id));
   assert.ok(systems.some(entry => entry.traceId === traceId && entry.event === "request.completed"));
+  const runtimeSample = systems.find(entry => entry.event === "runtime.memory_sample")?.sample;
+  assert.ok(runtimeSample?.rss > 0 && runtimeSample.heapTotal > 0);
+  assert.ok(runtimeSample.heapSpaces.some(space => space.name === "old_space"));
+  assert.ok(runtimeSample.eventLoopDelay.p95Ms >= 0);
+  assert.ok(Number.isSafeInteger(runtimeSample.activeHandles.total));
+  assert.deepEqual(Object.keys(runtimeSample.activeHandles.categories).sort(), Object.keys(runtimeSample.activeHandles.categories).sort().filter(key => [
+    "childProcess", "fileWatcher", "messagePort", "other", "server", "signal", "socket", "stream", "timer", "tlsSocket"
+  ].includes(key)));
   assert.ok(operations.some(entry => entry.statusCode === 404 && entry.result === "failed"));
   assert.deepEqual(operations.flatMap(entry => entry.changes || []).filter(change => change.resourceId === created.id).map(change => change.action), ["create", "update", "delete"]);
   assert.doesNotMatch(JSON.stringify([...systems, ...operations]) + stderr, /PRIVATE_|private-test-key/);
@@ -222,10 +284,16 @@ try {
   const recoveredTrace = recovered.headers.get("x-request-id");
   await delay(50);
   assert.ok((await logEntries("operation-")).some(entry => entry.traceId === recoveredTrace && entry.event === "data.changed"));
-  console.log("Observability checks passed: legacy migration, null/partial usage, empty/filtered/length/EOF failures, daily averages, linked logs, redaction, retention, permissions, corruption/I/O preservation and committed writes during logging failure/recovery.");
-} finally {
   child.kill("SIGTERM");
   if (child.exitCode == null) await new Promise(resolve => child.once("exit", resolve));
+  childStopped = true;
+  assert.ok((await logEntries("system-")).some(entry => entry.event === "server.stopped" && entry.signal === "SIGTERM"));
+  console.log("Observability checks passed: low-sensitivity runtime memory, lifecycle logging, legacy migration, null/partial usage, empty/filtered/length/EOF failures, daily averages, linked logs, redaction, retention, permissions, corruption/I/O preservation and committed writes during logging failure/recovery.");
+} finally {
+  if (!childStopped) {
+    child.kill("SIGTERM");
+    if (child.exitCode == null) await new Promise(resolve => child.once("exit", resolve));
+  }
   await new Promise(resolve => mock.close(resolve));
   await fs.rm(dataDir, { recursive: true, force: true });
 }

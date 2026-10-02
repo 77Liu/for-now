@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import { loadAppConfig } from "./src/config/index.mjs";
 import { createAttachmentStorage, createImageAttachments, cleanAttachmentPaths, cleanupTemporaryFiles, collectAttachmentPaths } from "./src/shared/attachments/index.mjs";
-import { appendPrivateJsonLine, createObservability, errorMetadata, pruneLogs } from "./src/shared/observability/index.mjs";
+import { appendPrivateJsonLine, createObservability, createRuntimeMemorySampler, errorMetadata, pruneLogs } from "./src/shared/observability/index.mjs";
 import { createThoughtService, createThoughtTaskTarget, stripThoughtAnswerLead } from "./src/modules/thoughts/index.mjs";
 import {
   defaultOnboarding,
@@ -96,6 +96,7 @@ const LOCAL_TEST_SESSION_COOKIE = "for_now_local_test_session";
 const LOCAL_TEST_SESSION_MAX_AGE_SECONDS = 30 * 60;
 const localTestUpstreamSessions = new Map();
 const { context: requestStorage, logEvent, auditChanges } = createObservability({ rootDir: DATA_DIR, version: APP_VERSION });
+const runtimeMemorySampler = createRuntimeMemorySampler({ logEvent });
 const attachmentStorage = createAttachmentStorage(appConfig.attachments);
 const PLATFORM_SERVICE_TOKEN_HASH = appConfig.platform.serviceTokenHash;
 const BACKUP_STATUS_FILE = appConfig.platform.backupStatusFile;
@@ -2941,7 +2942,7 @@ if (SPEECH_CACHE_SWEEP_ENABLED) {
     SPEECH_CACHE_SWEEP_INTERVAL_MS
   ).unref();
 }
-http.createServer(createRequestHandler({
+const server = http.createServer(createRequestHandler({
   requestContext: requestStorage, rootDir: DATA_DIR, basePath: APP_BASE_PATH, logEvent, sendJson,
   sendError: (res, status, value, context) => context.apiVersion === "v1"
     ? apiV1.error(res, status, value.error, value.code, value.details)
@@ -3033,4 +3034,35 @@ http.createServer(createRequestHandler({
       const file = path.resolve(base, relative); if (!file.startsWith(`${base}${path.sep}`) && file !== path.join(base, "index.html")) return sendJson(res, 403, { error: "Forbidden" });
       const data = await fs.readFile(file); res.writeHead(200, { "content-type": mime[path.extname(file).toLowerCase()] || "application/octet-stream", "cache-control": "no-store" }); res.end(req.method === "HEAD" ? undefined : data);
   }
-})).listen(PORT, "127.0.0.1", () => void logEvent("system", "server.started", { level: "info", port: PORT }));
+}));
+
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  const forcedExit = setTimeout(() => process.exit(1), 10_000);
+  forcedExit.unref();
+  const closed = new Promise(resolve => server.close(resolve));
+  try {
+    await runtimeMemorySampler.stop();
+    await closed;
+    await logEvent("system", "server.stopped", { level: "info", signal });
+    clearTimeout(forcedExit);
+    process.exit(0);
+  } catch (error) {
+    console.error(JSON.stringify({ type: "system", event: "server.stop_failed", signal, error: errorMetadata(error) }));
+    clearTimeout(forcedExit);
+    process.exit(1);
+  }
+}
+
+for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => void shutdown(signal));
+server.listen(PORT, "127.0.0.1", () => {
+  void (async () => {
+    await logEvent("system", "server.started", { level: "info", port: PORT });
+    await runtimeMemorySampler.start();
+  })().catch(error => logEvent("system", "runtime.memory_sample_failed", {
+    level: "error",
+    error: errorMetadata(error)
+  }));
+});

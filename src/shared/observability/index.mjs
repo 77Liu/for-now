@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { changedResources, createLogger } from "./logging.mjs";
 
 export { appendPrivateJsonLine, changedResources, createLogger, errorMetadata, pruneLogs, redact } from "./logging.mjs";
+export { collectRuntimeMemorySample, createRuntimeMemorySampler } from "./runtime-memory.mjs";
 
 export function createObservability({ rootDir, version }) {
   const storage = new AsyncLocalStorage();
