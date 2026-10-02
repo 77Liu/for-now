@@ -1,8 +1,10 @@
 import { safeText, safeIso } from "../../shared/validation/index.mjs";
 
 export {
+  createOnboardingV2Service,
   defaultOnboardingV2,
   normalizeOnboardingV2,
+  onboardingV2Schema,
   onboardingV2Context,
   onboardingV2ContextEntries,
   ONBOARDING_V2_SCHEMA_VERSION

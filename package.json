@@ -21,7 +21,7 @@
     "test:speech-cache": "node scripts/speech-cache-regression.mjs",
     "test:library": "node scripts/library-regression.mjs",
     "test:reviews-chat": "node scripts/reviews-chat-regression.mjs",
-    "test:onboarding-v2": "node scripts/onboarding-v2-regression.mjs",
+    "test:onboarding-v2": "node scripts/onboarding-v2-regression.mjs && node scripts/onboarding-v2-session-regression.mjs",
     "test:keepsake-media": "node scripts/keepsake-media-workflows-regression.mjs && node scripts/attachment-derivatives-regression.mjs && node scripts/keepsake-media-migration-regression.mjs",
     "test:g2": "node scripts/g2-discovery-regression.mjs && node scripts/g2-export-regression.mjs && node scripts/g2-actions-regression.mjs && node scripts/g2-feedback-regression.mjs && node scripts/g2-integration-regression.mjs",
     "test:frontend-shared": "node scripts/frontend-shared-regression.mjs",

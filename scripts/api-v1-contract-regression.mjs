@@ -122,12 +122,77 @@ try {
   assert.ok(specification.body.paths["/sync"]);
   assert.ok(specification.body.paths["/sync/operations/{operationId}"]);
   assert.ok(specification.body.paths["/personal-context"]);
+  assert.ok(specification.body.paths["/onboarding-v2/schema"]);
+  assert.ok(specification.body.paths["/onboarding-v2/session"]);
   assert.equal(specification.body.components.schemas.ErrorEnvelope.required.includes("meta"), true);
   assert.equal((await request("/api/v1/personal-context")).response.status, 401);
+  assert.equal((await request("/api/v1/onboarding-v2/session")).response.status, 401);
   const syncBaseline = await request("/api/v1/sync", { cookie: owner });
   assert.equal(syncBaseline.response.status, 200);
   assert.equal(syncBaseline.body.data.changes.length, 0);
   assert.equal(Number.isSafeInteger(syncBaseline.body.data.cursor), true);
+  const onboardingSchema = await request("/api/v1/onboarding-v2/schema", { cookie: owner });
+  assert.equal(onboardingSchema.response.status, 200);
+  assert.deepEqual(onboardingSchema.body.data.questions.map(item => item.questionId), [
+    "currentContext",
+    "desiredChanges",
+    "recentObstacles",
+    "dailyRhythm",
+    "collaboration"
+  ]);
+  assert.ok(onboardingSchema.body.data.questions.every(item => item.canSkip));
+  const onboardingBaseline = await request("/api/v1/onboarding-v2/session", { cookie: owner });
+  assert.equal(onboardingBaseline.response.status, 200);
+  assert.equal(onboardingBaseline.response.headers.get("etag"), "\"1\"");
+  assert.equal(onboardingBaseline.body.data.session.revision, 0);
+  const onboardingSaved = await request("/api/v1/onboarding-v2/session", {
+    method: "PATCH",
+    cookie: owner,
+    headers: { "if-match": "\"1\"", "idempotency-key": "onboarding-contract-1" },
+    body: {
+      status: "paused",
+      step: "q2",
+      answers: {
+        currentContext: {
+          rawText: "API_CONTRACT_ONBOARDING_CONTEXT",
+          contextAllowed: true
+        }
+      }
+    }
+  });
+  assert.equal(onboardingSaved.response.status, 200);
+  assert.equal(onboardingSaved.response.headers.get("etag"), "\"2\"");
+  assert.equal(onboardingSaved.body.data.session.answers.currentContext.version, 1);
+  const onboardingReplay = await request("/api/v1/onboarding-v2/session", {
+    method: "PATCH",
+    cookie: owner,
+    headers: { "if-match": "\"1\"", "idempotency-key": "onboarding-contract-1" },
+    body: {
+      status: "paused",
+      step: "q2",
+      answers: {
+        currentContext: {
+          rawText: "API_CONTRACT_ONBOARDING_CONTEXT",
+          contextAllowed: true
+        }
+      }
+    }
+  });
+  assert.equal(onboardingReplay.response.status, 200);
+  assert.equal(onboardingReplay.body.data.session.revision, 1);
+  const onboardingStale = await request("/api/v1/onboarding-v2/session", {
+    method: "PATCH",
+    cookie: owner,
+    headers: { "if-match": "\"1\"", "idempotency-key": "onboarding-contract-stale" },
+    body: { step: "q3" }
+  });
+  assert.equal(onboardingStale.response.status, 409);
+  assert.equal(onboardingStale.body.error.code, "ONBOARDING_SESSION_CONFLICT");
+  assert.equal(onboardingStale.body.error.details.currentRevision, 1);
+  const onboardingOther = await request("/api/v1/onboarding-v2/session", { cookie: other });
+  assert.equal(onboardingOther.response.status, 200);
+  assert.equal(onboardingOther.body.data.session.revision, 0);
+  assert.deepEqual(onboardingOther.body.data.session.answers, {});
 
   const checkinInput = {
     occurredAt: "2026-09-29T08:30:00",

@@ -12,7 +12,8 @@ import {
   defaultOnboardingV2,
   normalizeOnboarding,
   normalizeOnboardingV2,
-  createOnboardingService
+  createOnboardingService,
+  createOnboardingV2Service
 } from "./src/modules/onboarding/index.mjs";
 import { createJournalRecords } from "./src/modules/journals/index.mjs";
 import { createAuthService, publicUser } from "./src/modules/auth/index.mjs";
@@ -54,7 +55,7 @@ import { localDateKey, shiftDateKey, strictDateKey, localDateTimeOn, eventTimeFi
 import { buildAdminSnapshot } from "./admin-snapshot.mjs";
 import { createAnnotationCommands, createAiTaskTargets, createBackgroundAi, createTrashMutations, createTrashCommands, createAttachmentCleanup, createSpeechCache, createKeepsakeMediaWorkflows, createThoughtWorkflows, createCaptureJournalWorkflows, createLibraryWorkflows, createReviewChatWorkflows, personalContextProjection } from "./src/app/index.mjs";
 import { safeText, recordVersion, safeIso, nullableNumber, numberOrFallback as commercialNumber } from "./src/shared/validation/index.mjs";
-import { createAuthHttp, createJsonHttp, createTaskHttp, createAnnotationHttp, createTrashHttp, createAttachmentHttp, createAiSettingsHttp, createAiCostHttp, createKeepsakeHttp, createOnboardingHttp, createThoughtHttp, createCheckinHttp, createHealthRecordHttp, createDiscoveryHttp, createExportHttp, createActionsHttp, createFeedbackHttp, createCaptureJournalHttp, createLibraryHttp, createReviewsChatHttp, createContentAttachmentsHttp, createSpeechHttp, createVisionHttp, createSyncHttp, createPersonalContextHttp, createRequestHandler, createModelResponseHttp, createApiV1Http, openApiV1 } from "./src/http/index.mjs";
+import { createAuthHttp, createJsonHttp, createTaskHttp, createAnnotationHttp, createTrashHttp, createAttachmentHttp, createAiSettingsHttp, createAiCostHttp, createKeepsakeHttp, createOnboardingHttp, createOnboardingV2Http, createThoughtHttp, createCheckinHttp, createHealthRecordHttp, createDiscoveryHttp, createExportHttp, createActionsHttp, createFeedbackHttp, createCaptureJournalHttp, createLibraryHttp, createReviewsChatHttp, createContentAttachmentsHttp, createSpeechHttp, createVisionHttp, createSyncHttp, createPersonalContextHttp, createRequestHandler, createModelResponseHttp, createApiV1Http, openApiV1 } from "./src/http/index.mjs";
 import { createHealthImageConfig, createDailyRecordRecords, normalizeHealthImage } from "./src/modules/health/index.mjs";
 import { createAccountDocumentRepository, createAuthRepository, createJsonStoreRepository, createPostgresRuntime, checkPersistenceMarker, markPostgresDirectory, hasJsonData, METADATA_FIELD, removeIdempotencyResponse } from "./src/shared/persistence/index.mjs";
 
@@ -2144,6 +2145,13 @@ const onboardingHttp = createOnboardingHttp({
   }),
   bodyJson, sendJson
 });
+const onboardingV2Http = createOnboardingV2Http({
+  onboardingV2: createOnboardingV2Service({
+    repository: storeRepository,
+    now
+  }),
+  bodyJson
+});
 const trashHttp = createTrashHttp({ commands: trashCommands, bodyJson, sendJson, logEvent });
 const { sendMoved: sendTrashResult } = trashHttp;
 const keepsakeHttp = createKeepsakeHttp({
@@ -2401,6 +2409,7 @@ const personalContextHttp = createPersonalContextHttp({
 });
 apiV1.register("sync", syncHttp.handleV1);
 apiV1.register("personal-context", personalContextHttp.handleV1);
+apiV1.register("onboarding-v2", onboardingV2Http.handleV1);
 apiV1.register("thoughts", thoughtHttp.handleV1);
 apiV1.register("checkins", checkinHttp.handleV1);
 apiV1.register("health", healthRecordHttp.handleV1);

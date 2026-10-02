@@ -27,8 +27,8 @@
       "root": "src/modules/onboarding",
       "publicEntry": "src/modules/onboarding/index.mjs",
       "allowedDependencies": ["shared.validation"],
-      "owns": { "data": ["legacy questionnaires, optional profile, required-answer validation and initial understanding", "v2 onboarding sessions, versioned raw answers, collaboration sources, readiness and legacy entry policy"], "routes": ["GET /api/onboarding/schema", "POST /api/onboarding/preview", "PATCH /api/onboarding"] },
-      "tests": ["scripts/personal-context-regression.mjs", "scripts/onboarding-v2-regression.mjs", "scripts/regression.mjs", "scripts/auth-regression.mjs", "scripts/ui-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
+      "owns": { "data": ["legacy questionnaires, optional profile, required-answer validation and initial understanding", "v2 onboarding sessions, versioned raw answers, collaboration sources, readiness and legacy entry policy"], "routes": ["GET /api/onboarding/schema", "POST /api/onboarding/preview", "PATCH /api/onboarding", "GET /api/v1/onboarding-v2/schema", "GET /api/v1/onboarding-v2/session", "PATCH /api/v1/onboarding-v2/session"] },
+      "tests": ["scripts/personal-context-regression.mjs", "scripts/onboarding-v2-regression.mjs", "scripts/onboarding-v2-session-regression.mjs", "scripts/regression.mjs", "scripts/auth-regression.mjs", "scripts/ui-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
       "status": "active"
     },
     {
