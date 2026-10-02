@@ -229,6 +229,7 @@ final class DevicePerformanceAcceptanceTests: XCTestCase {
         preflightApp.launch()
         allowLocalNetworkIfNeeded(in: preflightApp)
         try authenticateIfNeeded(in: preflightApp, configuration: configuration)
+        openTodayIfNeeded(in: preflightApp)
         XCTAssertTrue(
             waitForStableHome(in: preflightApp, timeout: 30),
             "Shadow account preflight did not reach a stable home"
@@ -241,6 +242,7 @@ final class DevicePerformanceAcceptanceTests: XCTestCase {
         let launchedApp = configuredApplication(configuration)
         launchedApp.launch()
         try authenticateIfNeeded(in: launchedApp, configuration: configuration)
+        openTodayIfNeeded(in: launchedApp)
         XCTAssertTrue(
             waitForStableHome(in: launchedApp, timeout: 30),
             "Shadow account did not reach a stable home"
@@ -264,6 +266,17 @@ final class DevicePerformanceAcceptanceTests: XCTestCase {
             throw ConfigurationError("Login submit button is unavailable")
         }
         submit.tap()
+    }
+
+    private func openTodayIfNeeded(in application: XCUIApplication) {
+        let webView = application.webViews.firstMatch
+        if webView.buttons["记录思考"].exists { return }
+        let today = webView.buttons
+            .matching(NSPredicate(format: "label CONTAINS %@", "今日"))
+            .firstMatch
+        if today.waitForExistence(timeout: 5), today.isHittable {
+            today.tap()
+        }
     }
 
     private func configuredApplication(_ configuration: Configuration) -> XCUIApplication {
