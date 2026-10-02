@@ -1,10 +1,26 @@
 import crypto from "node:crypto";
 
+export const AUTH_DOCUMENT_VERSION = 2;
 export const SESSION_TTL_MS = 30 * 86400000;
-export const publicUser = user => ({ id: user.id, username: user.username, createdAt: user.createdAt });
+export const AUTH_ROLES = Object.freeze(["user", "owner"]);
+export const OWNER_CAPABILITIES = Object.freeze([
+  "ai-costs",
+  "architecture",
+  "commercialization",
+  "local-testing",
+  "ai-configuration",
+  "account-roles"
+]);
+const roleOf = user => AUTH_ROLES.includes(user?.role) ? user.role : "user";
+const versionOf = value => Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : 1;
+export const isOwner = user => roleOf(user) === "owner";
+export const capabilitiesFor = user => isOwner(user) ? [...OWNER_CAPABILITIES] : [];
+export const publicUser = user => ({ id: user.id, username: user.username, role: roleOf(user), createdAt: user.createdAt });
 const now = () => new Date().toISOString();
 const sha256 = value => crypto.createHash("sha256").update(String(value)).digest("hex");
 const fail = (statusCode, message, code) => { throw Object.assign(new Error(message), { statusCode, ...(code ? { code } : {}) }); };
+const reauth = () => fail(401, "账户权限已变更，请重新登录", "AUTH_REAUTH_REQUIRED");
+const ownerRequired = () => fail(403, "当前账户没有 Owner 权限", "OWNER_REQUIRED");
 const usernameValue = value => String(value ?? "").trim().slice(0, 32);
 const validateUsername = username => {
   if (!/^[\p{L}\p{N}_.-]{3,32}$/u.test(username)) fail(400, "用户名需为 3–32 位文字、数字、点、横线或下划线");
@@ -25,9 +41,30 @@ const passwordMatches = (password, encoded) => new Promise(resolve => {
   });
 });
 
+export function normalizeAuthDocument(value = {}) {
+  const auth = value && typeof value === "object" && !Array.isArray(value) ? structuredClone(value) : {};
+  auth.version = AUTH_DOCUMENT_VERSION;
+  auth.users = (Array.isArray(auth.users) ? auth.users : []).map((user, index) => ({
+    ...user,
+    role: AUTH_ROLES.includes(user?.role) ? user.role : index === 0 ? "owner" : "user",
+    sessionVersion: versionOf(user?.sessionVersion)
+  }));
+  const users = new Map(auth.users.map(user => [user.id, user]));
+  auth.sessions = (Array.isArray(auth.sessions) ? auth.sessions : []).map(session => ({
+    ...session,
+    sessionVersion: versionOf(session?.sessionVersion ?? users.get(session?.userId)?.sessionVersion)
+  }));
+  return auth;
+}
+
 export function createAuthService({ repository, initializeUserStorage, authRequired, inviteCodeHash }) {
   const loginAttempts = new Map();
   const loginQueues = new Map();
+  const replaceDocument = (target, value) => {
+    for (const key of Object.keys(target)) delete target[key];
+    Object.assign(target, value);
+    return target;
+  };
   const withLoginLock = (key, operation) => {
     const previous = loginQueues.get(key) || Promise.resolve();
     const current = previous.catch(() => {}).then(operation);
@@ -37,32 +74,60 @@ export function createAuthService({ repository, initializeUserStorage, authRequi
     });
   };
   const update = mutator => repository.update(auth => {
+    replaceDocument(auth, normalizeAuthDocument(auth));
     auth.sessions = auth.sessions.filter(session => new Date(session.expiresAt).getTime() > Date.now());
     return mutator(auth);
   });
   const issueSession = (auth, user) => {
     const token = crypto.randomBytes(32).toString("base64url");
-    auth.sessions.push({ tokenHash: sha256(token), userId: user.id, createdAt: now(), expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString() });
+    auth.sessions.push({
+      tokenHash: sha256(token),
+      userId: user.id,
+      sessionVersion: versionOf(user.sessionVersion),
+      createdAt: now(),
+      expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString()
+    });
     return { user, token };
   };
   const accountMode = () => { if (!authRequired) fail(400, "本机模式无需账户管理"); };
   const requireUser = async token => {
-    const user = await resolveUser(token);
-    if (!user) fail(401, "请先登录", "AUTH_REQUIRED");
-    return user;
+    const authentication = await authenticate(token);
+    if (authentication.reauthRequired) reauth();
+    if (!authentication.user) fail(401, "请先登录", "AUTH_REQUIRED");
+    return authentication.user;
   };
-  async function resolveUser(token) {
-    if (!authRequired) return { id: "local", username: "本机用户", createdAt: "" };
-    if (!token) return null;
-    const auth = await repository.read(), tokenHash = sha256(token);
+  const authenticationFromDocument = (auth, tokenHash) => {
     const session = auth.sessions.find(item => item.tokenHash === tokenHash && new Date(item.expiresAt).getTime() > Date.now());
-    return session ? auth.users.find(user => user.id === session.userId) || null : null;
+    if (!session) return { user: null, reauthRequired: false };
+    const user = auth.users.find(item => item.id === session.userId) || null;
+    if (!user) return { user: null, reauthRequired: false };
+    if (versionOf(session.sessionVersion) !== versionOf(user.sessionVersion)) return { user: null, reauthRequired: true };
+    return { user, reauthRequired: false };
+  };
+  async function authenticate(token) {
+    if (!authRequired) return { user: { id: "local", username: "本机用户", role: "owner", createdAt: "" }, reauthRequired: false };
+    if (!token) return { user: null, reauthRequired: false };
+    return authenticationFromDocument(normalizeAuthDocument(await repository.read()), sha256(token));
+  }
+  async function resolveUser(token) {
+    return (await authenticate(token)).user;
   }
   return {
+    authenticate,
     resolveUser,
+    migrate: () => update(auth => auth),
     async me(token) {
-      const user = await resolveUser(token), auth = authRequired ? await repository.read() : null;
-      return { authenticated: Boolean(user), authRequired, registrationAvailable: !authRequired || Boolean(inviteCodeHash), user: user ? publicUser(user) : null, userCount: auth?.users.length || 0 };
+      const authentication = await authenticate(token);
+      if (authentication.reauthRequired) reauth();
+      const user = authentication.user, auth = authRequired ? normalizeAuthDocument(await repository.read()) : null;
+      return {
+        authenticated: Boolean(user),
+        authRequired,
+        registrationAvailable: !authRequired || Boolean(inviteCodeHash),
+        user: user ? publicUser(user) : null,
+        capabilities: capabilitiesFor(user),
+        userCount: auth?.users.length || 0
+      };
     },
     async register(input) {
       if (!authRequired) fail(400, "本机模式无需注册");
@@ -74,7 +139,14 @@ export function createAuthService({ repository, initializeUserStorage, authRequi
       const hashed = await passwordHash(password);
       return update(async auth => {
         if (auth.users.some(user => user.username.toLocaleLowerCase() === username.toLocaleLowerCase())) fail(409, "用户名已存在");
-        const user = { id: crypto.randomUUID(), username, passwordHash: hashed, createdAt: now() };
+        const user = {
+          id: crypto.randomUUID(),
+          username,
+          passwordHash: hashed,
+          role: auth.users.length === 0 ? "owner" : "user",
+          sessionVersion: 1,
+          createdAt: now()
+        };
         await initializeUserStorage(user, auth.users.length === 0);
         auth.users.push(user);
         return issueSession(auth, user);
@@ -98,6 +170,33 @@ export function createAuthService({ repository, initializeUserStorage, authRequi
         });
         loginAttempts.delete(key);
         return result;
+      });
+    },
+    async listUsers(token) {
+      accountMode();
+      const requester = await requireUser(token);
+      if (!isOwner(requester)) ownerRequired();
+      return normalizeAuthDocument(await repository.read()).users.map(publicUser);
+    },
+    async setRole(token, userId, role) {
+      accountMode();
+      if (!AUTH_ROLES.includes(role)) fail(400, "角色只能是 user 或 owner", "AUTH_ROLE_INVALID");
+      const tokenHash = sha256(token || "");
+      return update(auth => {
+        const authentication = authenticationFromDocument(auth, tokenHash);
+        if (authentication.reauthRequired) reauth();
+        if (!authentication.user) fail(401, "请先登录", "AUTH_REQUIRED");
+        if (!isOwner(authentication.user)) ownerRequired();
+        const user = auth.users.find(item => item.id === userId);
+        if (!user) fail(404, "账户不存在", "AUTH_USER_NOT_FOUND");
+        if (user.role === role) return user;
+        if (user.role === "owner" && role === "user" && auth.users.filter(isOwner).length <= 1) {
+          fail(409, "至少需要保留一个 Owner", "LAST_OWNER_REQUIRED");
+        }
+        user.role = role;
+        user.sessionVersion = versionOf(user.sessionVersion) + 1;
+        user.updatedAt = now();
+        return user;
       });
     },
     async rename(token, input) {

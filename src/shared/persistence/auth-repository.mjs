@@ -8,7 +8,7 @@ export function createAuthRepository({ runtime, file, readDocument, writeDocumen
       await onInvalid();
       throw Object.assign(new Error("认证数据无法读取，已保留原文件，请联系管理员"), { code: "STORAGE_READ_FAILED" });
     }
-    return { version: 1, users: value.users, sessions: value.sessions };
+    return value;
   };
   return {
     read,
