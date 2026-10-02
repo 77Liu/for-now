@@ -1,5 +1,10 @@
 export { createAnnotationCommands } from "./annotation-resources.mjs";
 export { createAiTaskTargets } from "./ai-task-targets.mjs";
+export {
+  createAiBudgetRuntime,
+  deepSeekBudgetStages,
+  estimateDeepSeekPeakCostCny
+} from "./ai-budget-runtime.mjs";
 export { createBackgroundAi } from "./background-ai.mjs";
 export { createTrashMutations, createTrashCommands } from "./trash.mjs";
 export { createAttachmentCleanup } from "./attachment-cleanup.mjs";
