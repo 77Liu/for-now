@@ -1,5 +1,5 @@
 import { createApiClient } from "../api/index.mjs";
-import { escapeHtml, plainPreview, renderMarkdown } from "../content/index.mjs";
+import { escapeHtml, plainPreview, presentError, renderMarkdown } from "../content/index.mjs";
 import {
   createPageEffects,
   DISCOVERY_GENRES,
@@ -251,6 +251,14 @@ function contentState({kind="empty",title,body,action=null,className=""}){
   return `<section class="empty content-state ${stateKind}${extraClass?` ${extraClass}`:""}"${role}><strong>${escapeHtml(title)}</strong><p>${escapeHtml(body)}</p>${actionMarkup}</section>`
 }
 const avg=v=>v.length?v.reduce((s,x)=>s+Number(x),0)/v.length:null;
+function runPublicValidation(callback){
+  try{return callback()}
+  catch(error){
+    const validationError=new Error(String(error?.message||"输入不符合要求"),{cause:error});
+    validationError.publicValidation=true;
+    throw validationError
+  }
+}
 const formatBytes=value=>value<1024?`${value} B`:value<1048576?`${(value/1024).toFixed(1)} KB`:`${(value/1048576).toFixed(1)} MB`;
 const imageDataUrls=files=>Promise.all(files.map(file=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error("无法读取图片，请重新选择"));reader.readAsDataURL(file)})));
 const audioDataUrl=blob=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error("无法读取音频，请重新录制或导入"));reader.readAsDataURL(blob)});
@@ -505,8 +513,9 @@ async function clearSubmittedContentImageDraft(key){
   if(currentUser?.id&&persistentContentImageKeys.has(key))await mediaDraftStore.delete(currentUser.id,key)
 }
 async function setContentImageFiles(key,files){
-  const draft=contentImageDraft(key),replaced=draft.items.filter(item=>item.file),existing=draft.items.filter(item=>item.path);replaced.forEach(revokeContentImageItem);
-  const selected=validatedImageFiles(files,Math.max(0,2-existing.length));
+  const draft=contentImageDraft(key),replaced=draft.items.filter(item=>item.file),existing=draft.items.filter(item=>item.path);
+  const selected=runPublicValidation(()=>validatedImageFiles(files,Math.max(0,2-existing.length)));
+  replaced.forEach(revokeContentImageItem);
   draft.items=[...existing,...selected.map(file=>({file,preview:URL.createObjectURL(file)}))];draft.uploadRequestId="";renderContentImageEditor(key);
   await persistContentImageDraft(key);
   await Promise.all(replaced.map(item=>discardUploadedMediaItem(item))).catch(()=>{})
@@ -575,7 +584,11 @@ async function loadImageViewerImage(){
     imageViewer.objectUrl=URL.createObjectURL(blob);image.src=imageViewer.objectUrl;image.alt=`原图 ${imageViewer.index+1}`;image.hidden=false;status.textContent=""
   }catch(error){
     if(serial!==imageViewer.requestSerial||modal.hidden)return;
-    status.classList.add("error");status.textContent=error.message||"图片读取失败"
+    status.classList.add("error");status.textContent=presentError(error,{
+      operation:"读取原图",
+      object:"这张原图",
+      retained:"原记录和其他图片没有变化"
+    }).message
   }
 }
 function openImageViewer(button){
@@ -633,7 +646,15 @@ async function queueContentImageUnderstanding(button){
     if(task&&!state.aiTasks.some(item=>item.id===task.id))state.aiTasks.unshift(task);
     if(status)status.textContent="正在后台理解…";
     await refreshState("notifications");scheduleNotificationPoll();showToast("图片理解已进入后台队列")
-  }catch(error){if(status)status.textContent=error.message;button.disabled=false;showToast(error.message,"error")}
+  }catch(error){
+    const message=presentError(error,{
+      operation:"提交图片理解",
+      object:"这次图片理解",
+      phase:"图片理解排队",
+      retained:"原图和已有记录已经保存"
+    }).message;
+    if(status)status.textContent=message;button.disabled=false;showToast(message,"error")
+  }
 }
 const formSnapshot=form=>JSON.stringify([...new FormData(form).entries()]);
 const occurrenceSelector=[
@@ -3853,7 +3874,16 @@ $$("[data-daily-cancel]").forEach(button=>button.addEventListener("click",()=>{c
 $$("[data-content-image-editor] input[type='file']").forEach(input=>input.addEventListener("change",async event=>{
   const fileInput=event.currentTarget,editor=fileInput.closest("[data-content-image-editor]"),status=editor?.closest("form")?.querySelector(".status");
   try{delete editor.closest("form")?.dataset.requestId;await setContentImageFiles(editor.dataset.contentImageEditor,fileInput.files);fileInput.value="";if(status)status.textContent=""}
-  catch(error){fileInput.value="";if(status)status.textContent=error.message;else showToast(error.message,"error")}
+  catch(error){
+    fileInput.value="";
+    const message=presentError(error,{
+      operation:"添加图片",
+      object:"这些图片",
+      retained:error?.publicValidation?"已经选择的图片没有变化":"当前页面中的图片仍然保留",
+      publicValidation:error?.publicValidation===true
+    }).message;
+    if(status)status.textContent=message;else showToast(message,"error")
+  }
 }));
 for(const [selector,key]of[["#comment-text","comment"],["#thought-block-content","thoughtBlock"],["#thought-block-type","thoughtBlock"],["#thought-block-datetime","thoughtBlock"]])for(const eventName of["input","change"])$(selector)?.addEventListener(eventName,event=>{delete event.currentTarget.closest("form")?.dataset.requestId;if(contentImageDraft(key).items.length)void persistContentImageDraft(key)});
 document.addEventListener("click",async event=>{
@@ -3934,14 +3964,26 @@ document.addEventListener("keydown",event=>{
   if(intent==="submit")return void occurrenceKeyboardSubmit(event,form,field.tagName==="TEXTAREA"?"multiline":"field");
   if(intent==="block-submit")event.preventDefault()
 });
+function captureSubmissionError(error,stage){
+  const context={
+    images:{operation:"上传捕念图片",object:"这些图片",phase:"捕念图片上传",retained:"捕念草稿和待上传图片仍保存在当前页面"},
+    audio:{operation:"上传捕念语音",object:"这段语音",phase:"捕念语音上传",retained:"捕念草稿和待提交语音仍保存在当前页面"},
+    validation:{operation:"保存这条捕念",object:"这条捕念",retained:"当前表单内容仍保留"},
+    save:{operation:"保存这条捕念",object:"这条捕念",retained:"当前表单内容和待提交媒体仍保留"}
+  }[stage]||{operation:"保存这条捕念",object:"这条捕念",retained:"当前表单内容仍保留"};
+  return presentError(error,{...context,publicValidation:error?.publicValidation===true}).message
+}
 $("#capture-form").addEventListener("submit",async e=>{
   e.preventDefault();if($("#capture-tags").value.trim())commitCaptureTags();
-  const form=e.currentTarget,id=$("#capture-id").value,existing=id?(state.captures||[]).find(item=>item.id===id):null,button=$("#capture-submit"),status=$("#capture-status"),requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`;let uploadedPaths=[],uploadedAudioPath="",projected=false;
+  const form=e.currentTarget,id=$("#capture-id").value,existing=id?(state.captures||[]).find(item=>item.id===id):null,button=$("#capture-submit"),status=$("#capture-status"),requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`;let uploadedPaths=[],uploadedAudioPath="",projected=false,stage="images";
   if(!id)form.dataset.requestId=requestId;button.disabled=true;status.textContent=id?"正在保存修改…":"正在收下…";
   try{
     const submission=await contentImagePaths("capture");uploadedPaths=submission.uploadedPaths;if(uploadedPaths.length)status.textContent="图片已上传，正在同步记录…";
+    stage="audio";
     const audio=await captureAudioForSubmission();if(audio?.attachmentPath===captureAudioDraft.uploadedPath){uploadedAudioPath=audio.attachmentPath;status.textContent="语音已上传，正在同步记录…"}
-    const original=captureRecordPayload({content:$("#capture-content").value,attachmentPaths:submission.attachmentPaths,audio}),payload={...occurrenceFields($("#capture-date")),...original,tags:[...captureDraftTags]};
+    stage="validation";
+    const payload=runPublicValidation(()=>({...occurrenceFields($("#capture-date")),...captureRecordPayload({content:$("#capture-content").value,attachmentPaths:submission.attachmentPaths,audio}),tags:[...captureDraftTags]}));
+    stage="save";
     if(id){const result=await requestV1(`/api/v1/captures/${encodeURIComponent(id)}`,{method:"PATCH",headers:{"if-match":`"${existing?.version||1}"`},body:JSON.stringify(payload)},{domains:["captures"],recoverCommitted:true,projection:{kind:"record.update",domain:"captures",id,payload},onQueued:record=>{projected=applyPendingProjection(record)}});if(result.data)state.captures=(state.captures||[]).map(item=>item.id===id?result.data:item);renderCaptures()}
     else{
       const result=await requestV1("/api/v1/captures",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{
@@ -3954,15 +3996,20 @@ $("#capture-form").addEventListener("submit",async e=>{
       });
       state.captures=(state.captures||[]).map(item=>item.id===temporaryId?result.data:item);renderCaptures();
     }
-    resetCaptureForm();void refreshState("captures").catch(error=>showToast(`捕念已保存，但列表刷新失败：${error.message}`,"error"));showToast(id?"捕念已更新":"已收进捕念");
+    resetCaptureForm();void refreshState("captures").catch(error=>showToast(presentError(error,{
+      operation:"刷新捕念列表",
+      object:"捕念列表",
+      phase:"捕念列表刷新",
+      retained:"刚才的捕念已经保存"
+    }).message,"error"));showToast(id?"捕念已更新":"已收进捕念");
   }catch(err){
     if(projected&&err.syncStatus==="pending"){
       const pending=(state.captures||[]).find(item=>item.id===temporaryId);if(pending)pending._sync.status="pending";renderCaptures();resetCaptureForm({preserveUploads:true});$("#capture-status").textContent="已记下，网络恢复后自动同步。";showToast("捕念已进入待同步队列");
     }else if(projected&&err.syncStatus==="conflict"){
-      if(id)await refreshState("captures").catch(()=>{});else{state.captures=(state.captures||[]).filter(item=>item.id!==temporaryId);renderCaptures()}await Promise.all([discardContentImageUploads("capture",uploadedPaths),rollbackCaptureAudioUpload(uploadedAudioPath)]);status.textContent=`同步冲突：${err.message}。本地内容已保留，请刷新后重试。`;showToast("捕念同步发生冲突","error")
+      if(id)await refreshState("captures").catch(()=>{});else{state.captures=(state.captures||[]).filter(item=>item.id!==temporaryId);renderCaptures()}await Promise.all([discardContentImageUploads("capture",uploadedPaths),rollbackCaptureAudioUpload(uploadedAudioPath)]);status.textContent=presentError(err,{operation:"保存这条捕念",object:"这条捕念",retained:"当前表单内容仍保留，已有记录没有被覆盖"}).message;showToast("捕念同步发生冲突","error")
     }else{
       if(projected){if(id)await refreshState("captures").catch(()=>{});else{state.captures=(state.captures||[]).filter(item=>item.id!==temporaryId);renderCaptures()}}
-      await Promise.all([discardContentImageUploads("capture",uploadedPaths),rollbackCaptureAudioUpload(uploadedAudioPath)]);status.textContent=err.message;
+      await Promise.all([discardContentImageUploads("capture",uploadedPaths),rollbackCaptureAudioUpload(uploadedAudioPath)]);status.textContent=captureSubmissionError(err,stage);
     }
   }finally{button.disabled=false}
 });

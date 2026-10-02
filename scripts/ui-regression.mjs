@@ -162,6 +162,7 @@ const mockFetch = `
   window.__failCapturePatchNetwork = false;
   window.__loseCapturePatchResponse = false;
   window.__conflictCapturePatch = false;
+  window.__failContentImageUpload = false;
   window.__journalSaves = 0;
   window.__journalPatches = 0;
   window.__journalDraft = { journalId: "journal-1", title: "跨端恢复的标题", content: "跨端恢复的正文。", updatedAt: "2026-09-27T08:18:19.000Z" };
@@ -215,6 +216,7 @@ const mockFetch = `
   window.__holdAiTasks = false;
   window.__delayImageTaskCreate = false;
   window.__releaseImageTaskCreate = null;
+  window.__failImageTaskCreate = false;
   window.__delaySecondState = false;
   window.__failNextStateRefresh = false;
   window.__operationReceipts = {};
@@ -584,7 +586,7 @@ const mockFetch = `
       }
       if (window.__failAttachmentRead) {
         window.__failAttachmentRead = false;
-        return Promise.resolve(new Response(JSON.stringify({ error: { message: "无权读取这张图片", code: "ATTACHMENT_FORBIDDEN" } }), { status: 403, headers: { "content-type": "application/json" } }));
+        return Promise.resolve(new Response(JSON.stringify({ error: { message: "OSS_NO_SUCH_KEY_INTERNAL", code: "ATTACHMENT_FORBIDDEN" } }), { status: 403, headers: { "content-type": "application/json" } }));
       }
       return Promise.resolve(new Response(bytes,{status:200,headers:{"content-type":"image/png"}}));
     }
@@ -734,7 +736,7 @@ const mockFetch = `
       });
     }
     if (url === "/api/state") {
-      if(window.__failNextStateRefresh){window.__failNextStateRefresh=false;return Promise.resolve(new Response(JSON.stringify({error:"刷新失败"}),{status:503,headers:{"content-type":"application/json"}}))}
+      if(window.__failNextStateRefresh){window.__failNextStateRefresh=false;return Promise.resolve(new Response(JSON.stringify({error:"DISCOVERY_BACKEND_INTERNAL"}),{status:503,headers:{"content-type":"application/json"}}))}
       window.__stateRequests += 1;
       if(window.__accountUser.id==="user-2"&&window.__delaySecondState)return new Promise(resolve=>{window.__releaseSecondState=()=>{window.__delaySecondState=false;resolve(window.fetch(input,init))}});
       const empty=window.__testWorkspaceMode==="cold"||window.__lazySimulationEmpty;
@@ -845,7 +847,7 @@ const mockFetch = `
     }
     if (/^\\/api\\/(?:v1\\/)?captures\\/[^/]+$/.test(url) && init.method === "PATCH") {
       const item = window.__captures.find(value => url.endsWith(value.id)), payload = JSON.parse(init.body);
-      if(window.__conflictCapturePatch){window.__conflictCapturePatch=false;return Promise.resolve(new Response(JSON.stringify({data:null,error:{message:"资源版本已变化，请重新读取后再提交",code:"PRECONDITION_FAILED",details:{currentVersion:(item?.version||1)+1}},meta:{}}),{status:412,headers:{"content-type":"application/json"}}))}
+      if(window.__conflictCapturePatch){window.__conflictCapturePatch=false;return Promise.resolve(new Response(JSON.stringify({data:null,error:{message:"CAPTURE_CONFLICT_INTERNAL",code:"PRECONDITION_FAILED",details:{currentVersion:(item?.version||1)+1}},meta:{}}),{status:412,headers:{"content-type":"application/json"}}))}
       if(window.__failCapturePatchNetwork){window.__failCapturePatchNetwork=false;throw new TypeError("Load failed")}
       const respond=()=>{
         window.__capturePatchPayloads.push(payload);
@@ -915,6 +917,7 @@ const mockFetch = `
         return json({attachmentPath:base+".original.png",attachmentPaths:[base+".original.png",base+".source-mask.png"],originalPath:base+".original.png",alphaMaskPath:base+".source-mask.png"},201)
       }
       if(payload.purpose==="original"&&images.length){
+        if(window.__failContentImageUpload){window.__failContentImageUpload=false;return Promise.resolve(new Response(JSON.stringify({error:{message:"OSS_NO_SUCH_KEY_INTERNAL",code:"STORAGE_UPLOAD_FAILED"}}),{status:503,headers:{"content-type":"application/json"}}))}
         if(document.querySelector("#view-books")?.classList.contains("active")){window.__bookUploads += 1;const attachmentPath="/attachments/cover-"+window.__bookUploads+".png";return json({attachmentPath,attachmentPaths:[attachmentPath]},201)}
         if(document.querySelector("#view-daily")?.classList.contains("active")){const type=document.querySelector("[data-daily-tab].active")?.dataset.dailyTab||"weight",index=++window.__healthUploads[type],extension=type==="sleep"?"jpg":"png",attachmentPath="/attachments/"+type+(type==="sleep"?"-"+index:"")+"."+extension;return json({attachmentPath,attachmentPaths:[attachmentPath]},201)}
         const attachmentPaths=images.map(()=>"/attachments/content-"+(++window.__contentImageUploads)+".png");return json({attachmentPath:attachmentPaths[0],attachmentPaths},201)
@@ -1090,6 +1093,7 @@ const mockFetch = `
         return v1(task)
       };
       if(window.__delayImageTaskCreate){window.__delayImageTaskCreate=false;return new Promise(resolve=>{window.__releaseImageTaskCreate=()=>resolve(respond())})}
+      if(window.__failImageTaskCreate){window.__failImageTaskCreate=false;return Promise.resolve(new Response(JSON.stringify({data:null,error:{message:"PROVIDER_TIMEOUT_DEEPSEEK",code:"PROVIDER_TIMEOUT"},meta:{}}),{status:503,headers:{"content-type":"application/json"}}))}
       return respond()
     }
     if (url === "/api/ai-tasks" && init.method === "POST") {
@@ -1611,7 +1615,8 @@ try {
   await evaluate(`document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}));true`);
   assert.equal(await evaluate(`document.querySelector("#image-viewer").hidden&&!document.body.classList.contains("image-viewer-open")&&window.__viewerRevoked.length>=2`),true);
   await evaluate(`window.__restoreViewerRevoke();window.__failAttachmentRead=true;document.querySelector('[data-daily-record-id="daily-1"] [data-image-viewer-path]').click();true`);
-  assert.equal(await waitUntil(`document.querySelector("#image-viewer-status").textContent==="无权读取这张图片"`),true);
+  assert.equal(await waitUntil(`document.querySelector("#image-viewer-status").textContent==="当前账户无权访问这张原图。原记录和其他图片没有变化。请返回可访问页面。"`),true);
+  assert.equal(await evaluate(`!document.querySelector("#image-viewer-status").textContent.includes("OSS_NO_SUCH_KEY_INTERNAL")`),true);
   await evaluate(`document.querySelector("#image-viewer-close").click();true`);
   await evaluate(`window.__releaseAttachmentRead=null;window.__delayAttachmentRead=true;document.querySelector('[data-daily-record-id="daily-1"] [data-image-viewer-path]').click();true`);
   assert.equal(await waitUntil(`typeof window.__releaseAttachmentRead==="function"`),true);
@@ -1874,8 +1879,10 @@ try {
   await evaluate(`window.__delayCaptureCreate=true;document.querySelector("#capture-content").dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",ctrlKey:true,bubbles:true,cancelable:true}));true`);
   assert.equal(await waitUntil(`typeof window.__releaseCaptureCreate==="function"&&document.querySelector(".capture-timeline-entry.is-syncing")?.textContent.includes("快捷收下的新捕念")`), true);
   assert.deepEqual(await evaluate(`({saves:window.__captureSaves,status:["待同步","正在同步"].includes(document.querySelector(".capture-sync-state")?.textContent),form:document.querySelector("#capture-content").value})`), {saves:0,status:true,form:"快捷收下的新捕念"});
-  await evaluate(`window.__releaseCaptureCreate();true`);
+  await evaluate(`window.__failNextStateRefresh=true;window.__releaseCaptureCreate();true`);
   assert.equal(await waitUntil(`window.__captureSaves === 1 && document.querySelector('[data-capture-id="capture-new-1"]')`), true);
+  assert.equal(await waitUntil(`document.querySelector("#toast").textContent==="捕念列表刷新暂时失败。刚才的捕念已经保存。请稍后重试。"`),true);
+  assert.equal(await evaluate(`!document.querySelector("#toast").textContent.includes("DISCOVERY_BACKEND_INTERNAL")`),true);
   const capturePayload = await evaluate(`window.__capturePayloads[0]`);
   assert.deepEqual(capturePayload.tags, ["测试"]);
   assert.equal(capturePayload.timeMode, "now");
@@ -1884,10 +1891,17 @@ try {
   await evaluate(`(async()=>{const bytes=Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="),value=>value.charCodeAt(0)),file=new File([bytes],"capture-image.png",{type:"image/png"}),transfer=new DataTransfer();transfer.items.add(file);const input=document.querySelector("#capture-images");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));document.querySelector("#capture-content").value="";return true})()`);
   assert.equal(await evaluate(`document.querySelectorAll('[data-content-image-editor="capture"] .content-image-preview').length`),1);
   assert.equal(await waitUntil(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const request=opening.result.transaction("drafts","readonly").objectStore("drafts").get("user-1:capture");request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(request.result?.items?.[0]?.blob?.size>0)}})`),true);
+  assert.deepEqual(await evaluate(`(async()=>{const preview=document.querySelector('[data-content-image-editor="capture"] .content-image-preview img').src,invalid=new File(["not-image"],"private.txt",{type:"text/plain"}),transfer=new DataTransfer();transfer.items.add(invalid);const input=document.querySelector("#capture-images");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));await new Promise(resolve=>setTimeout(resolve,20));return{status:document.querySelector("#capture-status").textContent,previewAlive:await fetch(preview).then(response=>response.ok).catch(()=>false),previews:document.querySelectorAll('[data-content-image-editor="capture"] .content-image-preview').length}})()`),{status:"只支持 PNG、JPEG 或 WebP 图片。已经选择的图片没有变化。请修改后重试。",previewAlive:true,previews:1});
+  await evaluate(`window.__failContentImageUpload=true;document.querySelector("#capture-form").requestSubmit();true`);
+  assert.equal(await waitUntil(`document.querySelector("#capture-status").textContent.includes("捕念草稿和待上传图片仍保存在当前页面")`),true);
+  assert.deepEqual(await evaluate(`({sentinel:document.querySelector("#capture-status").textContent.includes("OSS_NO_SUCH_KEY_INTERNAL"),previews:document.querySelectorAll('[data-content-image-editor="capture"] .content-image-preview').length,content:document.querySelector("#capture-content").value})`),{sentinel:false,previews:1,content:""});
   await evaluate(`document.querySelector("#capture-form").requestSubmit();true`);
   assert.equal(await waitUntil(`window.__captureSaves===2&&document.querySelector('[data-capture-id="capture-new-2"] [data-content-image-understand="capture"]')`),true);
   assert.equal(await waitUntil(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const request=opening.result.transaction("drafts","readonly").objectStore("drafts").get("user-1:capture");request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(!request.result)}})`),true);
   assert.deepEqual(await evaluate(`({content:window.__capturePayloads[1].content,paths:window.__capturePayloads[1].attachmentPaths,images:document.querySelectorAll('[data-capture-id="capture-new-2"] .content-originals img').length,viewerButtons:document.querySelectorAll('[data-capture-id="capture-new-2"] .content-originals button[data-image-viewer-path]').length,externalLinks:document.querySelectorAll('[data-capture-id="capture-new-2"] .content-originals a[target="_blank"]').length})`),{content:"",paths:["/attachments/content-1.png"],images:1,viewerButtons:1,externalLinks:0});
+  await evaluate(`window.__failImageTaskCreate=true;document.querySelector('[data-capture-id="capture-new-2"] [data-content-image-understand="capture"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-new-2"] .content-image-task-status').textContent==="图片理解排队暂时失败。原图和已有记录已经保存。请稍后重试。"`),true);
+  assert.deepEqual(await evaluate(`({enabled:!document.querySelector('[data-capture-id="capture-new-2"] [data-content-image-understand="capture"]').disabled,statusSentinel:document.querySelector('[data-capture-id="capture-new-2"] .content-image-task-status').textContent.includes("PROVIDER_TIMEOUT_DEEPSEEK"),toastSentinel:document.querySelector("#toast").textContent.includes("PROVIDER_TIMEOUT_DEEPSEEK")})`),{enabled:true,statusSentinel:false,toastSentinel:false});
   await evaluate(`window.__delayImageTaskCreate=true;window.__holdAiTasks=true;document.querySelector('[data-capture-id="capture-new-2"] [data-content-image-understand="capture"]').click();true`);
   assert.equal(await waitUntil(`typeof window.__releaseImageTaskCreate==="function"&&document.querySelector('[data-capture-id="capture-new-2"] .content-image-task-status').textContent.includes("加入后台队列")`),true);
   await evaluate(`window.__releaseImageTaskCreate();true`);
@@ -1914,8 +1928,8 @@ try {
   await evaluate(`document.querySelector('[data-capture-id="capture-new-1"] [data-capture-edit]').click();document.querySelector("#capture-content").value="响应丢失但已提交";window.__loseCapturePatchResponse=true;document.querySelector("#capture-form").requestSubmit();true`);
   assert.equal(await waitUntil(`window.__receiptLookups>=1&&window.__capturePatchPayloads.length===3&&document.querySelector('[data-capture-id="capture-new-1"]')?.textContent.includes("响应丢失但已提交")&&!document.querySelector('[data-capture-id="capture-new-1"]').classList.contains("is-syncing")`),true);
   await evaluate(`document.querySelector('[data-capture-id="capture-new-1"] [data-capture-edit]').click();document.querySelector("#capture-content").value="冲突内容不应留下";window.__conflictCapturePatch=true;window.__failNextStateRefresh=true;document.querySelector("#capture-form").requestSubmit();true`);
-  assert.equal(await waitUntil(`document.querySelector("#capture-status").textContent.includes("同步冲突")`),true);
-  assert.deepEqual(await evaluate(`({server:window.__captures.find(item=>item.id==="capture-new-1").content,restored:document.querySelector('[data-capture-id="capture-new-1"]').textContent.includes("响应丢失但已提交")&&!document.querySelector('[data-capture-id="capture-new-1"]').textContent.includes("冲突内容不应留下"),editing:document.querySelector("#capture-content").value})`),{server:"响应丢失但已提交",restored:true,editing:"冲突内容不应留下"});
+  assert.equal(await waitUntil(`document.querySelector("#capture-status").textContent==="这条捕念在其他位置已经变化。当前表单内容仍保留，已有记录没有被覆盖。请重新读取后核对两端内容。"`),true);
+  assert.deepEqual(await evaluate(`({server:window.__captures.find(item=>item.id==="capture-new-1").content,restored:document.querySelector('[data-capture-id="capture-new-1"]').textContent.includes("响应丢失但已提交")&&!document.querySelector('[data-capture-id="capture-new-1"]').textContent.includes("冲突内容不应留下"),editing:document.querySelector("#capture-content").value,sentinel:document.querySelector("#capture-status").textContent.includes("CAPTURE_CONFLICT_INTERNAL")})`),{server:"响应丢失但已提交",restored:true,editing:"冲突内容不应留下",sentinel:false});
   await evaluate(`document.querySelector("#capture-content").value="离线修改待同步";window.__failCapturePatchNetwork=true;document.querySelector("#capture-form").requestSubmit();true`);
   assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-new-1"].is-syncing')?.textContent.includes("离线修改待同步")&&document.querySelector('[data-capture-id="capture-new-1"] .capture-sync-state.pending')`),true);
   const captureScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
