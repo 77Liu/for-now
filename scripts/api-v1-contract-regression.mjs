@@ -124,9 +124,12 @@ try {
   assert.ok(specification.body.paths["/personal-context"]);
   assert.ok(specification.body.paths["/onboarding-v2/schema"]);
   assert.ok(specification.body.paths["/onboarding-v2/session"]);
+  assert.ok(specification.body.paths["/user-model"]);
+  assert.ok(specification.body.paths["/user-model/claims/{id}"]);
   assert.equal(specification.body.components.schemas.ErrorEnvelope.required.includes("meta"), true);
   assert.equal((await request("/api/v1/personal-context")).response.status, 401);
   assert.equal((await request("/api/v1/onboarding-v2/session")).response.status, 401);
+  assert.equal((await request("/api/v1/user-model")).response.status, 401);
   const syncBaseline = await request("/api/v1/sync", { cookie: owner });
   assert.equal(syncBaseline.response.status, 200);
   assert.equal(syncBaseline.body.data.changes.length, 0);
@@ -143,6 +146,11 @@ try {
   assert.ok(onboardingSchema.body.data.questions.every(item => item.canSkip));
   const onboardingBaseline = await request("/api/v1/onboarding-v2/session", { cookie: owner });
   assert.equal(onboardingBaseline.response.status, 200);
+  const userModelBaseline = await request("/api/v1/user-model", { cookie: owner });
+  assert.equal(userModelBaseline.response.status, 200);
+  assert.deepEqual(userModelBaseline.body.data.claims, []);
+  assert.deepEqual(userModelBaseline.body.data.unknowns, []);
+  assert.deepEqual((await request("/api/v1/user-model", { cookie: other })).body.data.claims, []);
   assert.equal(onboardingBaseline.response.headers.get("etag"), "\"1\"");
   assert.equal(onboardingBaseline.body.data.session.revision, 0);
   const onboardingSaved = await request("/api/v1/onboarding-v2/session", {

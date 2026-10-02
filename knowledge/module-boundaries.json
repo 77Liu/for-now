@@ -41,7 +41,7 @@
         "data": ["source-bound user claims, model unknowns, candidate activation, correction, rejection, retraction and stale-source projection"],
         "routes": ["GET /api/v1/user-model", "PATCH /api/v1/user-model/claims/:id"]
       },
-      "tests": ["scripts/personal-context-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
+      "tests": ["scripts/user-model-claims-regression.mjs", "scripts/user-model-api-regression.mjs", "scripts/personal-context-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
       "status": "active"
     },
     {
