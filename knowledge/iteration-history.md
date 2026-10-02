@@ -12,9 +12,11 @@
 - 生产只读核对确认 V0.3.0 主服务、中台、备份和监控正常，PostgreSQL 16.15
   恢复角色为非 superuser / NOBYPASSRLS；最新备份 SHA-256 通过。隔离逻辑
   恢复演练验证 3 个账户、187 条导出记录、41 个附件引用及附件 HTTP 读取，
-  主服务未中断。生产尚缺 `site_ai_budget`、独立预算角色及
-  `AI_BUDGET_DATABASE_URL`，因此仍为 `NO FINAL GO`。部署器新增切换前只读
-  PostgreSQL 角色/权限/预算单例预检，防止缺配置候选切换后才启动失败。
+  主服务未中断。第一轮收口随后完成即时 OSS 备份，并新增
+  `site_ai_budget`、独立最小权限预算角色及 `AI_BUDGET_DATABASE_URL`；
+  冻结候选只读预检通过，V0.3.0 release、PID 和数据计数在配置期间未变化。
+  部署器新增切换前只读 PostgreSQL 角色/权限/预算单例预检，防止缺配置候选
+  切换后才启动失败。第二轮审计和最终人工授权未完成，仍为 `NO FINAL GO`。
 
 ## 2026-10-02
 
