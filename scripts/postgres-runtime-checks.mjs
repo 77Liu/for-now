@@ -330,9 +330,11 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     const register = username => request(app.base, "/api/auth/register", {
       method: "POST", body: { username, password: "runtime-password-1", invitation: "runtime-invite" }
     });
-    const [registration, second] = await Promise.all([register("runtime-owner"), register("runtime-second")]);
-    assert.equal(registration.status, 201, JSON.stringify(registration.body));
-    assert.equal(second.status, 201, JSON.stringify(second.body));
+    const registrations = await Promise.all([register("runtime-owner"), register("runtime-second")]);
+    assert.ok(registrations.every(result => result.status === 201), JSON.stringify(registrations));
+    const registration = registrations.find(result => result.body.user.role === "owner");
+    const second = registrations.find(result => result.body.user.role === "user");
+    assert.ok(registration && second, JSON.stringify(registrations));
     assert.equal((await register("runtime-owner")).status, 409);
     const cookie = registration.cookie, otherCookie = second.cookie, id = registration.body.user.id;
     const png = syntheticPng();
@@ -397,9 +399,16 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       request(app.base, "/api/ai-cost-plan", { method: "PATCH", cookie, body: { monthlyBudgetCny: 81 } }),
       request(app.base, "/api/ai-cost-plan", { method: "PATCH", cookie: otherCookie, body: { monthlyBudgetCny: 42 } })
     ]);
-    assert.ok(costWrites.every(result => result.status === 200), JSON.stringify(costWrites));
+    assert.equal(costWrites[0].status, 200, JSON.stringify(costWrites));
+    assert.deepEqual(costWrites[1], {
+      status: 403,
+      body: { error: "当前账户没有 Owner 权限", code: "OWNER_REQUIRED" },
+      cookie: undefined
+    });
     assert.equal((await request(app.base, "/api/ai-cost-plan", { cookie })).body.monthlyBudgetCny, 81);
-    assert.equal((await request(app.base, "/api/ai-cost-plan", { cookie: otherCookie })).body.monthlyBudgetCny, 42);
+    const ordinaryCostPlan = await request(app.base, "/api/ai-cost-plan", { cookie: otherCookie });
+    assert.equal(ordinaryCostPlan.status, 403);
+    assert.equal(ordinaryCostPlan.body.code, "OWNER_REQUIRED");
     assert.equal((await request(app.base, "/api/settings", { cookie })).body.assistantName, "数据库测试");
     const chainBody = { question: "**数据库问题**", occurredAt: "2026-09-29T02:00:00.000Z", generateAnswer: true, clientRequestId: "postgres-chain" };
     const chainResponses = await Promise.all([0, 1].map(() => request(app.base, "/api/thought-chains", { method: "POST", cookie, body: chainBody })));
@@ -650,7 +659,9 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal((await request(restoredApp.base, "/api/state", { cookie })).body.captures.length, 6);
     assert.equal((await request(restoredApp.base, "/api/auth/me", { cookie })).body.user.id, id);
     assert.equal((await request(restoredApp.base, "/api/ai-cost-plan", { cookie })).body.monthlyBudgetCny, 81);
-    assert.equal((await request(restoredApp.base, "/api/ai-cost-plan", { cookie: otherCookie })).body.monthlyBudgetCny, 42);
+    const restoredOrdinaryCostPlan = await request(restoredApp.base, "/api/ai-cost-plan", { cookie: otherCookie });
+    assert.equal(restoredOrdinaryCostPlan.status, 403);
+    assert.equal(restoredOrdinaryCostPlan.body.code, "OWNER_REQUIRED");
     const restoredAttachment = await fetch(`${restoredApp.base}/attachments/interrupted-present.png`, { headers: { cookie } });
     assert.equal(restoredAttachment.status, 200);
     assert.deepEqual(Buffer.from(await restoredAttachment.arrayBuffer()), png);
@@ -662,7 +673,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     return ["runtime role validation", ...budgetChecks,
       "atomic registration rollback", "cross-connection serialized writes",
       "multi-commit durability", "runtime disconnect rollback", "concurrent usage updates", "HTTP auth and account isolation",
-      "settings patch serialization", "cost plan account isolation and restore", "atomic background task and notification writes", "annotation model dialogue", "task restart without double billing",
+      "settings patch serialization", "Owner cost plan access and restore", "atomic background task and notification writes", "annotation model dialogue", "task restart without double billing",
       "normalization preserves extensions", "versioned trash restore", "attachment upload/purge/crash recovery", "durable cleanup failure and restart", "PostgreSQL admin snapshot privacy", "single application guard",
       "process restart and sessions", "PostgreSQL-only writes",
       "JSON rollback guard", "runtime export and independent database boot with attachment bytes", "live migration overwrite guard"];

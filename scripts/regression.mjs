@@ -151,7 +151,7 @@ let appError = "";
 const startApp = () => {
   const child = spawn(process.execPath, ["server.mjs"], {
     cwd: ROOT,
-    env: { ...process.env, NODE_ENV: "test", TZ: "Asia/Shanghai", PORT: String(appPort), DATA_DIR: dataDir, DEEPSEEK_API_URL: `http://127.0.0.1:${mockPort}/chat/completions`, KEEPSAKE_SEGMENT_MOCK_RESULT: mockSegmentCutout, PERIODIC_ANALYSIS_ENABLED: "0" },
+    env: { ...process.env, NODE_ENV: "test", TEST_CURRENT_DATE: "2026-10-02", TZ: "Asia/Shanghai", PORT: String(appPort), DATA_DIR: dataDir, DEEPSEEK_API_URL: `http://127.0.0.1:${mockPort}/chat/completions`, KEEPSAKE_SEGMENT_MOCK_RESULT: mockSegmentCutout, PERIODIC_ANALYSIS_ENABLED: "0" },
     stdio: ["ignore", "pipe", "pipe"]
   });
   child.stderr.on("data", chunk => { appError += chunk; });

@@ -81,6 +81,7 @@ const {
   authRequired: AUTH_REQUIRED, cookieSecure: COOKIE_SECURE, basePath: APP_BASE_PATH,
   upstreamOrigin: UPSTREAM_ORIGIN, localTestMode: LOCAL_TEST_MODE,
   localTestMainUserId: LOCAL_TEST_MAIN_USER_ID, localTestResetOnStart: LOCAL_TEST_RESET_ON_START,
+  testCurrentDate: TEST_CURRENT_DATE,
   periodicAnalysisEnabled: PERIODIC_ANALYSIS_ENABLED,
   speechCacheSweepEnabled: SPEECH_CACHE_SWEEP_ENABLED,
   deepSeekApiUrl: DEEPSEEK_API_URL,
@@ -217,7 +218,11 @@ const storeLocalTestUpstreamSession = (token, cookie, user = null) => {
     expiresAt: currentTime + LOCAL_TEST_SESSION_MAX_AGE_SECONDS * 1000
   });
 };
-const now = () => new Date().toISOString();
+const TEST_CURRENT_INSTANT = TEST_CURRENT_DATE ? new Date(`${TEST_CURRENT_DATE}T12:00:00+08:00`).toISOString() : "";
+let testClockTick = 0;
+const now = () => TEST_CURRENT_INSTANT
+  ? new Date(Date.parse(TEST_CURRENT_INSTANT) + testClockTick++).toISOString()
+  : new Date().toISOString();
 const sha256 = value => crypto.createHash("sha256").update(String(value)).digest("hex");
 const isDirectLoopbackRequest = req => {
   const remote = String(req.socket.remoteAddress || "");
@@ -237,7 +242,7 @@ const authorTypeFor = item => {
   if (item?.type === "answer" && !/^(?:deepseek|codex)/.test(String(item?.origin || "")) && !item?.modelDraft && !item?.reasoningContent) return "user";
   return item?.type === "answer" ? "ai" : "user";
 };
-const today = () => localDateKey();
+const today = () => TEST_CURRENT_DATE || localDateKey();
 const requestBinding = input => {
   const requestId = safeText(input?.requestId, 100), targetId = safeText(input?.targetId, 100);
   return requestId && targetId ? { requestId, targetId, inputVersion: Math.max(0, Math.round(Number(input.inputVersion) || 0)) } : {};
@@ -987,7 +992,8 @@ const aiBudgetRepository = createAiBudgetRepository({
 });
 const aiBudgetService = createAiBudgetService({
   repository: aiBudgetRepository,
-  policy: AI_BUDGET_POLICY
+  policy: AI_BUDGET_POLICY,
+  now
 });
 const aiBudgetRuntime = createAiBudgetRuntime({
   budget: aiBudgetService,
@@ -1022,12 +1028,13 @@ const {
   read: readAiUsage, update: updateAiUsage, ensure: ensureAiUsage, reserveAttempt: reserveAiAttempt
 } = createAiUsageService({
   repository: usageRepository, getAccountKey: () => storagePaths().aiUsageFile,
-  dailyCallLimit: AI_USER_DAILY_CALL_LIMIT, dailyCostLimitCny: AI_USER_DAILY_COST_LIMIT_CNY, cnyPerUsd: AI_COST_CNY_PER_USD
+  dailyCallLimit: AI_USER_DAILY_CALL_LIMIT, dailyCostLimitCny: AI_USER_DAILY_COST_LIMIT_CNY, cnyPerUsd: AI_COST_CNY_PER_USD,
+  now
 });
 const aiAudit = createAiAudit({
   textLimit: AI_AUDIT_TEXT_LIMIT, getContext: () => requestStorage.getStore(),
   append: (day, entry) => appendPrivateJsonLine(path.join(storagePaths().logsDir, `ai-audit-${day}.ndjson`), entry),
-  updateUsage: updateAiUsage, logEvent
+  updateUsage: updateAiUsage, logEvent, now
 });
 const providerBudgetStage = (details, id = "provider-call") => ({
   id,
@@ -1136,12 +1143,12 @@ const costRepository = createAccountDocumentRepository({
   readDocument: readStoredJson, writeDocument: writeJsonAtomic, normalize: value => value, emptyDocument: null,
   onCommit: auditChanges
 });
-const aiCosts = createAiCostService({ repository: costRepository, readSettings: readLlmSettings, readUsage: readAiUsage, cnyPerUsd: AI_COST_CNY_PER_USD });
+const aiCosts = createAiCostService({ repository: costRepository, readSettings: readLlmSettings, readUsage: readAiUsage, cnyPerUsd: AI_COST_CNY_PER_USD, now });
 let readModelRuntimeSettings = readLlmSettings;
 const runDeepSeek = createAiGenerator({
   readSettings: () => readModelRuntimeSettings(), provider: createDeepSeekTransport({ endpoint: DEEPSEEK_API_URL }),
   getContext: () => requestStorage.getStore(), reserveAttempt: reserveAiAttempt, gate: aiGate, audit: aiAudit,
-  executeBudgetTask: executeDeepSeekBudgetTask
+  executeBudgetTask: executeDeepSeekBudgetTask, now
 });
 const storeRepository = postgresRuntime ? postgresRuntime.createStoreRepository({
   normalize: normalizeStore,

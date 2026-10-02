@@ -17,6 +17,12 @@ export function loadAttachmentConfig(env = process.env) {
 export function loadAppConfig({ rootDir, env = process.env }) {
   const persistenceBackend = env.PERSISTENCE_BACKEND || "json";
   const upstreamOrigin = String(env.UPSTREAM_ORIGIN || "").replace(/\/+$/, "");
+  const testCurrentDate = env.NODE_ENV === "test" ? String(env.TEST_CURRENT_DATE || "").trim() : "";
+  if (testCurrentDate) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(testCurrentDate);
+    const date = match && new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+    if (!date || date.toISOString().slice(0, 10) !== testCurrentDate) throw new Error("TEST_CURRENT_DATE must be a valid YYYY-MM-DD date");
+  }
   if (!["json", "postgres"].includes(persistenceBackend)) throw new Error("PERSISTENCE_BACKEND must be json or postgres");
   if (persistenceBackend === "postgres" && (env.LOCAL_TEST_MODE === "1" || upstreamOrigin)) {
     throw new Error("PostgreSQL runtime requires a standalone data source; local-test/upstream proxy is unsupported");
@@ -64,6 +70,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     localTestMode,
     localTestMainUserId: String(env.LOCAL_TEST_MAIN_USER_ID || "").trim(),
     localTestResetOnStart: localTestMode && env.LOCAL_TEST_RESET_ON_START === "1",
+    testCurrentDate,
     periodicAnalysisEnabled: env.PERIODIC_ANALYSIS_ENABLED !== "0",
     speechCacheSweepEnabled,
     deepSeekApiUrl: env.DEEPSEEK_API_URL || "https://api.deepseek.com/chat/completions",
