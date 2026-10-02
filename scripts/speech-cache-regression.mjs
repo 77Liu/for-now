@@ -3,10 +3,12 @@ import crypto from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createAnnotationService } from "../src/modules/annotations/index.mjs";
 import { createTrashService } from "../src/modules/trash/index.mjs";
+import { createJsonStoreRepository } from "../src/shared/persistence/index.mjs";
 import {
   SPEECH_CACHE_RETENTION_DAYS,
   createAttachmentCleanup,
   createSpeechCache,
+  createSpeechCacheSweep,
   createTrashCommands,
   createTrashMutations
 } from "../src/app/index.mjs";
@@ -242,4 +244,154 @@ await context.run("account-c", async () => {
   assert.equal(accountFiles().size, 0, "late stale synthesis must clean its unlinked attachment");
 });
 
-console.log("Speech cache checks passed: 30-day expiry, private keys, coalesced hits, parameter isolation, version invalidation and recoverable cleanup.");
+const sweepContext = new AsyncLocalStorage();
+const sweepDocuments = new Map();
+const sweepFiles = new Map();
+const sweepFailures = new Map([["account-a:/attachments/retry.tts.mp3", 1]]);
+const sweepWriteFailures = new Set(["account-c"]);
+const sweepErrors = [];
+const sweepScheduled = [];
+const sweepClock = new Date("2026-10-02T02:00:00.000Z");
+const sweepNow = () => sweepClock.toISOString();
+const sweepFile = account => `/virtual/${account}/store.json`;
+const sweepEntry = (cacheKey, attachmentPath, createdAt, expiresAt = "") => ({
+  cacheKey,
+  attachmentPath,
+  createdAt,
+  ...(expiresAt ? { expiresAt } : {})
+});
+const sweepStore = entries => ({
+  captures: [{
+    id: "capture-sweep",
+    version: 9,
+    content: "后台清理不得记录此正文",
+    attachmentPaths: [],
+    speechCache: entries
+  }],
+  trash: [],
+  attachmentCleanup: []
+});
+const sweepSeed = {
+  "account-a": {
+    ...sweepStore([
+      sweepEntry("expired-shared", "/attachments/shared.tts.mp3", "2026-09-02T02:00:00.000Z"),
+      sweepEntry("unexpired-stale", "/attachments/shared.tts.mp3", "2025-01-01T00:00:00.000Z", "2027-01-01T00:00:00.000Z"),
+      sweepEntry("expired-retry", "/attachments/retry.tts.mp3", "2026-08-01T00:00:00.000Z")
+    ]),
+    trash: [{
+      id: "trash-capture",
+      type: "capture",
+      payload: {
+        id: "capture-in-trash",
+        speechCache: [
+          sweepEntry("expired-trash", "/attachments/trash.tts.mp3", "2026-08-01T00:00:00.000Z")
+        ]
+      }
+    }]
+  },
+  "account-b": sweepStore([
+    sweepEntry("expired-b", "/attachments/retry.tts.mp3", "2026-08-01T00:00:00.000Z")
+  ]),
+  "account-c": sweepStore([
+    sweepEntry("expired-c", "/attachments/retry.tts.mp3", "2026-08-01T00:00:00.000Z")
+  ])
+};
+for (const [account, document] of Object.entries(sweepSeed)) {
+  sweepDocuments.set(sweepFile(account), structuredClone(document));
+  sweepFiles.set(account, new Set([
+    ...document.captures.flatMap(item => item.speechCache.map(entry => entry.attachmentPath)),
+    ...document.trash.flatMap(item => item.payload.speechCache.map(entry => entry.attachmentPath))
+  ]));
+}
+
+const sweepRepository = createJsonStoreRepository({
+  getFile: () => sweepFile(sweepContext.getStore()),
+  readDocument: async (file, fallback) => structuredClone(sweepDocuments.get(file) || fallback),
+  writeDocument: async (file, document) => {
+    const account = sweepContext.getStore();
+    if (sweepWriteFailures.has(account)) {
+      throw Object.assign(new Error("injected JSON write failure"), { code: "EIO" });
+    }
+    sweepDocuments.set(file, structuredClone(document));
+  },
+  normalize: value => ({
+    captures: [],
+    trash: [],
+    attachmentCleanup: [],
+    ...value
+  }),
+  emptyDocument: sweepStore([]),
+  now: sweepNow
+});
+const sweepCleanup = createAttachmentCleanup({
+  repository: sweepRepository,
+  now: sweepNow,
+  contextKey: () => sweepContext.getStore(),
+  remove: async attachmentPath => {
+    const account = sweepContext.getStore();
+    const failureKey = `${account}:${attachmentPath}`;
+    const remaining = sweepFailures.get(failureKey) || 0;
+    if (remaining) {
+      sweepFailures.set(failureKey, remaining - 1);
+      throw Object.assign(new Error("injected attachment removal failure"), { code: "EIO" });
+    }
+    sweepFiles.get(account).delete(attachmentPath);
+  },
+  dispatch: callback => {
+    const account = sweepContext.getStore();
+    const scheduledRetry = () => sweepContext.run(account, callback);
+    sweepScheduled.push(scheduledRetry);
+    return scheduledRetry;
+  },
+  onRetryFailure: error => { throw error; },
+  onResult: async () => {}
+});
+const sweep = createSpeechCacheSweep({
+  listAccountIds: async () => ["account-a", "account-b", "account-a", "account-c"],
+  runWithAccount: (account, operation) => sweepContext.run(account, operation),
+  repository: sweepRepository,
+  cleanup: sweepCleanup,
+  now: sweepNow,
+  onAccountError: (error, { accountId }) => sweepErrors.push({ accountId, code: error.code })
+});
+
+const firstSweep = await sweep.run();
+assert.deepEqual(firstSweep, {
+  accounts: 3,
+  succeeded: 2,
+  failed: 1,
+  entriesRemoved: 4,
+  attachmentCandidates: 4,
+  attachmentsQueued: 3,
+  attachmentsRemoved: 2,
+  attachmentCleanupPending: 1
+});
+const sweptA = await sweepContext.run("account-a", () => sweepRepository.read());
+const sweptB = await sweepContext.run("account-b", () => sweepRepository.read());
+const unsweptC = await sweepContext.run("account-c", () => sweepRepository.read());
+assert.deepEqual(sweptA.captures[0].speechCache.map(entry => entry.cacheKey), ["unexpired-stale"]);
+assert.deepEqual(sweptA.trash[0].payload.speechCache, []);
+assert.equal(sweepFiles.get("account-a").has("/attachments/shared.tts.mp3"), true, "shared references must retain physical audio");
+assert.equal(sweepFiles.get("account-a").has("/attachments/retry.tts.mp3"), true, "failed removal must remain retryable");
+assert.equal(sweepFiles.get("account-a").has("/attachments/trash.tts.mp3"), false);
+assert.deepEqual(sweptA.attachmentCleanup.map(item => item.path), ["/attachments/retry.tts.mp3"]);
+assert.equal(sweepFiles.get("account-b").has("/attachments/retry.tts.mp3"), false, "same path in another account is isolated");
+assert.equal(sweptB.captures[0].speechCache.length, 0);
+assert.equal(unsweptC.captures[0].speechCache.length, 1, "failed account writes must remain unchanged");
+assert.deepEqual(sweepErrors, [{ accountId: "account-c", code: "EIO" }]);
+assert.equal(sweepScheduled.length, 1);
+
+sweepScheduled.shift()();
+await sweepRepository.waitForIdle(sweepFile("account-a"));
+assert.equal(sweepFiles.get("account-a").has("/attachments/retry.tts.mp3"), false);
+assert.equal((await sweepContext.run("account-a", () => sweepRepository.read())).attachmentCleanup.length, 0);
+
+sweepWriteFailures.clear();
+const retry = sweep.run();
+assert.equal(sweep.run(), retry, "overlapping sweeps must coalesce");
+const secondSweep = await retry;
+assert.equal(secondSweep.entriesRemoved, 1);
+assert.equal(secondSweep.failed, 0);
+assert.equal(sweepFiles.get("account-c").has("/attachments/retry.tts.mp3"), false);
+
+console.log("Speech cache checks passed: 30-day access and background expiry, JSON account isolation, shared references, retryable cleanup, private keys, coalesced hits and version invalidation.");

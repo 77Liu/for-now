@@ -21,6 +21,14 @@ const cachePath = entry => (
   ATTACHMENT_PATH.test(entry?.attachmentPath || "") ? entry.attachmentPath : ""
 );
 
+export const speechCacheAttachmentPath = cachePath;
+export function speechCacheEntryExpired(entry, currentTime) {
+  const explicit = Date.parse(entry?.expiresAt);
+  const derived = Date.parse(entry?.createdAt) + SPEECH_CACHE_RETENTION_MS;
+  const cutoff = Number.isFinite(explicit) ? explicit : derived;
+  return !Number.isFinite(cutoff) || cutoff <= Date.parse(currentTime);
+}
+
 export function createSpeechCache({
   repository,
   attachments,
@@ -38,12 +46,7 @@ export function createSpeechCache({
 
   const inFlight = new Map();
   const expiresAt = createdAt => new Date(Date.parse(createdAt) + SPEECH_CACHE_RETENTION_MS).toISOString();
-  const expiredEntry = entry => {
-    const explicit = Date.parse(entry?.expiresAt);
-    const derived = Date.parse(entry?.createdAt) + SPEECH_CACHE_RETENTION_MS;
-    const cutoff = Number.isFinite(explicit) ? explicit : derived;
-    return !Number.isFinite(cutoff) || cutoff <= Date.parse(now());
-  };
+  const expiredEntry = entry => speechCacheEntryExpired(entry, now());
 
   const ownerIdentity = () => {
     const ownerId = safeText(getOwnerId(), 160);

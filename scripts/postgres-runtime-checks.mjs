@@ -11,6 +11,7 @@ import {
   createPostgresRuntime, initializePostgresSchema, buildPostgresMigrationPlan, applyPostgresMigration,
   canonicalJson, discoverJsonBundle, applyPostgresBundle, exportPostgresDirectory, readPostgresBundle
 } from "../src/shared/persistence/index.mjs";
+import { createAttachmentCleanup, createSpeechCacheSweep } from "../src/app/index.mjs";
 import { dailyAiUsage } from "./monitor-health.mjs";
 import { syncOperationFingerprint } from "../public/frontend/sync/index.mjs";
 
@@ -225,6 +226,77 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       assert.equal((await runtime.documents.read("usage")).entries.length, 8);
     });
     assert.equal((await account("repo-other", () => repo.read())).captures.length, 0);
+
+    const sweepPath = "/attachments/postgres-sweep.tts.mp3";
+    const sweepAudio = Buffer.from("ID3-postgres-sweep");
+    const sweepSha256 = crypto.createHash("sha256").update(sweepAudio).digest("hex");
+    for (const [accountId, shared] of [["sweep-a", true], ["sweep-b", false]]) {
+      await account(accountId, async () => {
+        await repo.initialize({ allowCreate: true });
+        const inventory = {
+          path: sweepPath,
+          storage: "local",
+          objectKey: path.basename(sweepPath),
+          bytes: sweepAudio.length,
+          sha256: sweepSha256
+        };
+        await runtime.attachments.record(inventory);
+        await runtime.attachments.confirm(inventory);
+        await repo.update(store => {
+          store.captures.push({
+            id: `capture-${accountId}`,
+            version: 1,
+            content: "PostgreSQL sweep 不应输出此正文",
+            attachmentPaths: shared ? [sweepPath] : [],
+            speechCache: [{
+              cacheKey: `expired-${accountId}`,
+              attachmentPath: sweepPath,
+              createdAt: "2026-08-01T00:00:00.000Z"
+            }]
+          });
+        });
+      });
+    }
+    const sweepRemoved = [];
+    const sweepCleanup = createAttachmentCleanup({
+      repository: repo,
+      remove: async resourcePath => {
+        sweepRemoved.push({ accountId: context.getStore(), resourcePath });
+        await runtime.attachments.removed(resourcePath);
+      },
+      now: () => "2026-10-02T02:00:00.000Z",
+      contextKey: () => context.getStore(),
+      dispatch: callback => setImmediate(callback),
+      onRetryFailure: error => { throw error; },
+      onResult: async () => {}
+    });
+    const postgresSweep = createSpeechCacheSweep({
+      listAccountIds: async () => ["sweep-a", "sweep-b"],
+      runWithAccount: account,
+      repository: repo,
+      cleanup: sweepCleanup,
+      now: () => "2026-10-02T02:00:00.000Z"
+    });
+    assert.deepEqual(await postgresSweep.run(), {
+      accounts: 2,
+      succeeded: 2,
+      failed: 0,
+      entriesRemoved: 2,
+      attachmentCandidates: 2,
+      attachmentsQueued: 1,
+      attachmentsRemoved: 1,
+      attachmentCleanupPending: 0
+    });
+    assert.deepEqual(sweepRemoved, [{ accountId: "sweep-b", resourcePath: sweepPath }]);
+    assert.equal((await account("sweep-a", () => repo.read())).captures[0].speechCache.length, 0);
+    assert.equal((await account("sweep-b", () => repo.read())).captures[0].speechCache.length, 0);
+    const sweepInventory = (await database.query(`
+      SELECT account_id FROM for_now.attachment_inventory
+      WHERE account_id IN ('sweep-a', 'sweep-b') AND path = $1
+      ORDER BY account_id
+    `, [sweepPath])).rows.map(row => row.account_id);
+    assert.deepEqual(sweepInventory, ["sweep-a"], "shared references and physical objects must remain account-isolated");
+
     const migration = await connect("migration_app", "runtime_test");
     const backup = await connect("runtime_backup", "runtime_test");
     await assert.rejects(backup.query("DELETE FROM for_now_auth.users"), error => error.code === "42501");
