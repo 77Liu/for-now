@@ -273,6 +273,7 @@ const mockFetch = `
   window.__testWorkspaceMode = "simulation";
   window.__lazySimulationEmpty = false;
   window.__failDiscoveryRead = false;
+  window.__emptyDiscoveryRead = false;
   window.__failLocalModeTimeout = false;
   window.__localHydrateRequests = [];
   window.__keepsakeObservers = [];
@@ -623,6 +624,7 @@ const mockFetch = `
     if (url.startsWith("/api/v1/discovery/random")) return v1(null,{total:0});
     if (url.startsWith("/api/v1/discovery")) {
       if(window.__failDiscoveryRead){window.__failDiscoveryRead=false;return Promise.resolve(new Response(JSON.stringify({error:{message:"DISCOVERY_BACKEND_INTERNAL",code:"DISCOVERY_FAILED"}}),{status:503,headers:{"content-type":"application/json"}}))}
+      if(window.__emptyDiscoveryRead)return v1([],{total:0,untracedCount:0,totalUntracedCount:0,nextCursor:null});
       return v1([{id:"kept-root",rootId:"kept-root",question:{id:"kept-root",content:"没有初步想法的问题",source:"user",sourceLabel:"用户原文"},matches:[{id:"kept-root",content:"没有初步想法的问题",source:"user",sourceLabel:"用户原文",type:"question"}],matchCount:1,occurredAt:"2026-09-27T04:09:00.000Z",status:{version:1,fresh:true,untraced:true,read:false,snoozed:false},fresh:true,untraced:true}],{total:1,untracedCount:1,totalUntracedCount:1,nextCursor:null})
     }
     if (url === "/api/v1/feedback" && init.method === "POST") {
@@ -2799,11 +2801,18 @@ try {
   assert.equal(await waitUntil(`document.activeElement===document.querySelector("#quote-content")`),true);
   await evaluate(`document.querySelector('[data-section="thought"]').click();document.querySelector("[data-section-links='thought'] [data-view='discovery']").click();true`);
   assert.equal(await waitUntil(`document.querySelector("#discovery-list [data-discovery-id]")`),true);
+  assert.deepEqual(await evaluate(`(()=>{const more=document.querySelector("#discovery-more"),governance=document.querySelector("#mine-governance-link"),context=document.querySelector("#feedback-context-field");governance.hidden=true;const result={moreHidden:more.hidden,moreDisplay:getComputedStyle(more).display,governanceDisplay:getComputedStyle(governance).display,contextHidden:context.hidden,contextDisplay:getComputedStyle(context).display};governance.hidden=false;return result})()`),{moreHidden:true,moreDisplay:"none",governanceDisplay:"none",contextHidden:true,contextDisplay:"none"});
   await evaluate(`window.__failDiscoveryRead=true;document.querySelector("#toast").hidden=true;(()=>{const form=document.querySelector("#discovery-form");form.elements.query.value="触发恢复状态";form.requestSubmit();return true})()`);
   assert.equal(await waitUntil(`document.querySelector("#discovery-list .content-state.failure")`),true);
   assert.deepEqual(await evaluate(`(()=>{const state=document.querySelector("#discovery-list .content-state"),toast=document.querySelector("#toast");return{title:state.querySelector("strong").textContent,body:state.querySelector("p").textContent,action:state.querySelector("button").textContent,internal:state.textContent.includes("DISCOVERY_BACKEND_INTERNAL")||(!toast.hidden&&toast.textContent.includes("DISCOVERY_BACKEND_INTERNAL"))}})()`),{title:"暂时无法查找旧记录",body:"已有记录没有变化。请检查网络后重试。",action:"重新查找",internal:false});
   await evaluate(`document.querySelector("#discovery-list .content-state-action").click();true`);
   assert.equal(await waitUntil(`document.querySelector("#discovery-list [data-discovery-id]")`),true);
+  await evaluate(`window.__emptyDiscoveryRead=true;document.querySelector("#discovery-form").requestSubmit();true`);
+  assert.equal(await waitUntil(`document.querySelector("#discovery-list .content-state.empty")`),true);
+  assert.deepEqual(await evaluate(`(()=>{const state=document.querySelector("#discovery-list .content-state"),more=document.querySelector("#discovery-more");return{title:state.querySelector("strong").textContent,action:state.querySelector("button").textContent,moreHidden:more.hidden,moreDisplay:getComputedStyle(more).display}})()`),{title:"没有符合条件的记录",action:"调整查找条件",moreHidden:true,moreDisplay:"none"});
+  await evaluate(`document.querySelector("#discovery-list .content-state-action").click();true`);
+  assert.equal(await waitUntil(`document.activeElement===document.querySelector("#discovery-query")`),true);
+  await evaluate(`window.__emptyDiscoveryRead=false;true`);
   await evaluate(`document.querySelector('[data-view="mine"]').click();document.querySelector("#view-mine [data-view='trash']").click();true`);
   assert.equal(await waitUntil(`document.querySelector("#trash-list .content-state.failure")`),true);
   assert.deepEqual(await evaluate(`(()=>{const state=document.querySelector("#trash-list .content-state");return{title:state.querySelector("strong").textContent,body:state.querySelector("p").textContent,action:state.querySelector("button").textContent,actions:state.querySelectorAll("button").length,internal:state.textContent.includes("Not found")}})()`),{title:"暂时无法读取回收站",body:"已删除的记录仍按原保留期保存。请检查网络后重试。",action:"重新读取",actions:1,internal:false});
@@ -2811,6 +2820,8 @@ try {
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:2,mobile:true});await evaluate(`document.querySelector("#journal-list .content-state").scrollIntoView({block:"center"});true`);await sleep(100);
   assert.equal(await evaluate(`(()=>{const state=document.querySelector("#journal-list .content-state"),button=state.querySelector("button");return document.documentElement.scrollWidth<=innerWidth&&state.getBoundingClientRect().right<=innerWidth&&button.getBoundingClientRect().height>=44})()`),true);
   await fs.writeFile("/tmp/growth-content-state-mobile.png",Buffer.from((await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false})).data,"base64"));
+  await evaluate(`document.querySelector('[data-view="mine"]').click();document.querySelector("#view-mine [data-view='notifications']").click();true`);
+  assert.deepEqual(await evaluate(`(()=>{const back=document.querySelector("#view-notifications .mine-back").getBoundingClientRect(),readAll=document.querySelector("#notifications-read-all").getBoundingClientRect();return{backWidth:back.width>=44,backHeight:back.height>=44,readAllWidth:readAll.width>=44,readAllHeight:readAll.height>=44,noOverflow:document.documentElement.scrollWidth<=innerWidth}})()`),{backWidth:true,backHeight:true,readAllWidth:true,readAllHeight:true,noOverflow:true});
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
   await evaluate(`document.querySelector('[data-section="today"]').click();true`);
   assert.deepEqual(await evaluate(`({memories:document.querySelectorAll(".home-v02-memory").length,empty:document.querySelector(".home-v02-empty")?.textContent,moodPoints:document.querySelectorAll("#home-mood-sparkline circle").length,keepsake:document.querySelector("#home-keepsake").textContent.includes("留存一件小物"),noOverflow:document.documentElement.scrollWidth<=innerWidth})`),{memories:0,empty:"留下第一条思考，往后在这里重逢。",moodPoints:0,keepsake:true,noOverflow:true});
