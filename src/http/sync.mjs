@@ -21,6 +21,8 @@ const PUBLIC_DOMAINS = new Set([
   "habitCheckins",
   "feedback",
   "validationLedger",
+  "userClaims",
+  "modelUnknowns",
   "onboarding",
   "onboardingV2",
   "commercialization"

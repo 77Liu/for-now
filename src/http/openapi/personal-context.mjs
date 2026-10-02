@@ -53,6 +53,12 @@ export const personalContextComponents = {
         occurredOn: { type: "string" },
         version: { type: "integer", minimum: 1 },
         excerpt: { type: "string" },
+        evidence: {
+          type: "array",
+          items: { $ref: "#/components/schemas/UserClaimEvidence" }
+        },
+        epistemic: { enum: ["known", "hypothesis"] },
+        lifecycle: { enum: ["active"] },
         location: {
           type: "object",
           required: ["view", "targetId", "rootId", "targetKey", "occurredOn"],

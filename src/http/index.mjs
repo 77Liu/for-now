@@ -25,6 +25,12 @@ export {
   onboardingV2Components,
   onboardingV2OpenApiFragment
 } from "./openapi/onboarding-v2.mjs";
+export { createUserModelHttp } from "./user-model.mjs";
+export {
+  userModelPaths,
+  userModelComponents,
+  userModelOpenApiFragment
+} from "./openapi/user-model.mjs";
 export { createThoughtHttp } from "./thoughts.mjs";
 export { createCheckinHttp } from "./checkins.mjs";
 export { createHealthRecordHttp } from "./health-records.mjs";

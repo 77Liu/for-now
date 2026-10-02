@@ -34,6 +34,11 @@ import { createAccountExport } from "./src/modules/exports/index.mjs";
 import { createActionsService } from "./src/modules/actions/index.mjs";
 import { createFeedbackService } from "./src/modules/feedback/index.mjs";
 import {
+  createUserModelService,
+  normalizeModelUnknowns,
+  normalizeUserClaims
+} from "./src/modules/user-model/index.mjs";
+import {
   defaultLlmSettings, normalizeLlmSettings, createLlmSettingsService, normalizeAiUsage,
   createAiUsageService, createAiAudit, createAiCostService, createAiGenerator, usageEntryFromAudit,
   systemPrompt
@@ -53,9 +58,9 @@ import { createRateGate } from "./src/shared/concurrency/index.mjs";
 import { installPromptCatalog, promptText, renderPrompt } from "./src/shared/prompts/index.mjs";
 import { localDateKey, shiftDateKey, strictDateKey, localDateTimeOn, eventTimeFields } from "./src/shared/time/index.mjs";
 import { buildAdminSnapshot } from "./admin-snapshot.mjs";
-import { createAnnotationCommands, createAiTaskTargets, createBackgroundAi, createTrashMutations, createTrashCommands, createAttachmentCleanup, createSpeechCache, createKeepsakeMediaWorkflows, createThoughtWorkflows, createCaptureJournalWorkflows, createLibraryWorkflows, createReviewChatWorkflows, personalContextProjection } from "./src/app/index.mjs";
+import { createAnnotationCommands, createAiTaskTargets, createBackgroundAi, createTrashMutations, createTrashCommands, createAttachmentCleanup, createSpeechCache, createKeepsakeMediaWorkflows, createThoughtWorkflows, createCaptureJournalWorkflows, createLibraryWorkflows, createReviewChatWorkflows, personalContextProjection, userModelEvidenceCurrent } from "./src/app/index.mjs";
 import { safeText, recordVersion, safeIso, nullableNumber, numberOrFallback as commercialNumber } from "./src/shared/validation/index.mjs";
-import { createAuthHttp, createJsonHttp, createTaskHttp, createAnnotationHttp, createTrashHttp, createAttachmentHttp, createAiSettingsHttp, createAiCostHttp, createKeepsakeHttp, createOnboardingHttp, createOnboardingV2Http, createThoughtHttp, createCheckinHttp, createHealthRecordHttp, createDiscoveryHttp, createExportHttp, createActionsHttp, createFeedbackHttp, createCaptureJournalHttp, createLibraryHttp, createReviewsChatHttp, createContentAttachmentsHttp, createSpeechHttp, createVisionHttp, createSyncHttp, createPersonalContextHttp, createRequestHandler, createModelResponseHttp, createApiV1Http, openApiV1 } from "./src/http/index.mjs";
+import { createAuthHttp, createJsonHttp, createTaskHttp, createAnnotationHttp, createTrashHttp, createAttachmentHttp, createAiSettingsHttp, createAiCostHttp, createKeepsakeHttp, createOnboardingHttp, createOnboardingV2Http, createUserModelHttp, createThoughtHttp, createCheckinHttp, createHealthRecordHttp, createDiscoveryHttp, createExportHttp, createActionsHttp, createFeedbackHttp, createCaptureJournalHttp, createLibraryHttp, createReviewsChatHttp, createContentAttachmentsHttp, createSpeechHttp, createVisionHttp, createSyncHttp, createPersonalContextHttp, createRequestHandler, createModelResponseHttp, createApiV1Http, openApiV1 } from "./src/http/index.mjs";
 import { createHealthImageConfig, createDailyRecordRecords, normalizeHealthImage } from "./src/modules/health/index.mjs";
 import { createAccountDocumentRepository, createAuthRepository, createJsonStoreRepository, createPostgresRuntime, checkPersistenceMarker, markPostgresDirectory, hasJsonData, METADATA_FIELD, removeIdempotencyResponse } from "./src/shared/persistence/index.mjs";
 
@@ -157,7 +162,7 @@ const defaultCommercialization = {
     }
   }
 };
-const emptyStore = { version: STORE_VERSION, checkins: [], dailyRecords: [], captures: [], journals: [], journalDraft: null, thoughts: [], chats: [], books: [], keepsakes: [], quotes: [], experiments: [], analyses: [], customMetrics: [], trash: [], attachmentCleanup: [], aiTasks: [], notifications: [], actions: [], habits: [], habitCheckins: [], feedback: [], validationLedger: [], onboarding: defaultOnboarding, onboardingV2: defaultOnboardingV2, commercialization: defaultCommercialization };
+const emptyStore = { version: STORE_VERSION, checkins: [], dailyRecords: [], captures: [], journals: [], journalDraft: null, thoughts: [], chats: [], books: [], keepsakes: [], quotes: [], experiments: [], analyses: [], customMetrics: [], trash: [], attachmentCleanup: [], aiTasks: [], notifications: [], actions: [], habits: [], habitCheckins: [], feedback: [], validationLedger: [], userClaims: [], modelUnknowns: [], onboarding: defaultOnboarding, onboardingV2: defaultOnboardingV2, commercialization: defaultCommercialization };
 const { retentionDays: AI_AUDIT_RETENTION_DAYS, textLimit: AI_AUDIT_TEXT_LIMIT } = appConfig.audit;
 const {
   aiQps: AI_GLOBAL_QPS, aiConcurrency: AI_GLOBAL_CONCURRENCY,
@@ -409,7 +414,7 @@ function normalizeStore(value = {}) {
   const previousVersion = Number(value.version || 1);
   const hasOnboardingV2 = Object.hasOwn(value || {}, "onboardingV2");
   const store = { ...clone(emptyStore), ...value, version: STORE_VERSION };
-  for (const key of ["checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "trash", "attachmentCleanup", "aiTasks", "notifications", "actions", "habits", "habitCheckins", "feedback", "validationLedger"]) if (!Array.isArray(store[key])) store[key] = [];
+  for (const key of ["checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "trash", "attachmentCleanup", "aiTasks", "notifications", "actions", "habits", "habitCheckins", "feedback", "validationLedger", "userClaims", "modelUnknowns"]) if (!Array.isArray(store[key])) store[key] = [];
   store.checkins = store.checkins.map(item => ({ factors: [], custom: {}, notes: {}, ...item, ...normalizedEventTime(item, previousVersion), sleep: item.sleep || 3, stress: previousVersion < 3 ? 6 - clamp5(item.stress) : clamp5(item.stress), version: recordVersion(item.version) }));
   store.dailyRecords = store.dailyRecords.map(item => {
     const normalized = { source: "manual", attachmentPaths: [], ...item, ...normalizedEventTime(item, previousVersion), version: recordVersion(item.version) };
@@ -532,6 +537,8 @@ function normalizeStore(value = {}) {
   }));
   store.aiTasks = store.aiTasks.filter(item => item && item.id && item.kind);
   store.notifications = store.notifications.filter(item => item && item.id);
+  store.userClaims = normalizeUserClaims(store.userClaims);
+  store.modelUnknowns = normalizeModelUnknowns(store.modelUnknowns);
   store.onboarding = normalizeOnboarding(store.onboarding);
   if (previousVersion < 14 && !Object.keys(store.onboarding.answers).length) {
     const hasRecords = ["checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books", "keepsakes", "quotes"].some(key => store[key].length);
@@ -575,7 +582,7 @@ async function readStoredJson(file, fallback) {
 
 const localTestModes = new Set(["simulation", "cold"]);
 const LOCAL_TEST_UPSTREAM_TIMEOUT_MS = 15_000;
-const localTestAllCollections = ["checkins", "dailyRecords", "captures", "journals", "journalDraft", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "actions", "habits", "habitCheckins", "feedback", "validationLedger", "commercialization"];
+const localTestAllCollections = ["checkins", "dailyRecords", "captures", "journals", "journalDraft", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "actions", "habits", "habitCheckins", "feedback", "validationLedger", "userClaims", "modelUnknowns", "commercialization"];
 const localTestScopeCollections = Object.freeze({
   today: ["checkins", "dailyRecords", "captures", "thoughts", "books", "quotes", "keepsakes", "actions", "habits", "habitCheckins"],
   daily: ["dailyRecords"],
@@ -589,7 +596,7 @@ const localTestScopeCollections = Object.freeze({
   together: ["chats"],
   review: ["checkins", "dailyRecords", "journals", "thoughts", "chats", "experiments", "analyses", "customMetrics"],
   statistics: localTestAllCollections,
-  "personal-context": ["checkins", "dailyRecords", "captures", "journals", "thoughts", "books", "quotes"],
+  "personal-context": ["checkins", "dailyRecords", "captures", "journals", "thoughts", "books", "quotes", "userClaims", "modelUnknowns"],
   feedback: ["feedback"],
   export: localTestAllCollections,
   trash: ["trash"]
@@ -769,7 +776,7 @@ async function upstreamAttachment(req, resourcePath) {
 
 function localTestSnapshot(state, trash) {
   const snapshot = clone(emptyStore);
-  for (const key of ["checkins", "dailyRecords", "captures", "journals", "journalDraft", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "actions", "habits", "habitCheckins", "feedback", "validationLedger", "onboarding", "onboardingV2", "commercialization"]) {
+  for (const key of ["checkins", "dailyRecords", "captures", "journals", "journalDraft", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "actions", "habits", "habitCheckins", "feedback", "validationLedger", "userClaims", "modelUnknowns", "onboarding", "onboardingV2", "commercialization"]) {
     if (hasOwn(state, key)) snapshot[key] = clone(state[key]);
   }
   snapshot.trash = clone(Array.isArray(trash?.items) ? trash.items : []);
@@ -2152,6 +2159,15 @@ const onboardingV2Http = createOnboardingV2Http({
   }),
   bodyJson
 });
+const userModelHttp = createUserModelHttp({
+  userModel: createUserModelService({
+    repository: storeRepository,
+    isEvidenceCurrent: userModelEvidenceCurrent,
+    createId: () => crypto.randomUUID(),
+    now
+  }),
+  bodyJson
+});
 const trashHttp = createTrashHttp({ commands: trashCommands, bodyJson, sendJson, logEvent });
 const { sendMoved: sendTrashResult } = trashHttp;
 const keepsakeHttp = createKeepsakeHttp({
@@ -2410,6 +2426,7 @@ const personalContextHttp = createPersonalContextHttp({
 apiV1.register("sync", syncHttp.handleV1);
 apiV1.register("personal-context", personalContextHttp.handleV1);
 apiV1.register("onboarding-v2", onboardingV2Http.handleV1);
+apiV1.register("user-model", userModelHttp.handleV1);
 apiV1.register("thoughts", thoughtHttp.handleV1);
 apiV1.register("checkins", checkinHttp.handleV1);
 apiV1.register("health", healthRecordHttp.handleV1);
