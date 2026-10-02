@@ -689,7 +689,7 @@
       <section class="mine-menu-group" aria-label="记录与数据">
         <button class="mine-menu-row" type="button" data-view="statistics">
           <span class="mine-row-icon statistics" aria-hidden="true">▥</span>
-          <span class="mine-row-copy"><b>统计</b><small>查看记录分布、AI 用量与人民币费用</small></span>
+          <span class="mine-row-copy"><b>统计</b><small>查看记录与互动分布</small></span>
           <span class="mine-row-arrow" aria-hidden="true">›</span>
         </button>
         <button class="mine-menu-row" type="button" data-view="notifications">
@@ -721,6 +721,19 @@
           <span class="mine-row-copy"><b>个人概要</b><small>查看当前采用的个人语境与原始来源</small></span>
           <span class="mine-row-arrow" aria-hidden="true">›</span>
         </button>
+        <button class="mine-menu-row" type="button" data-view="settings">
+          <span class="mine-row-icon settings" aria-hidden="true">⚙</span>
+          <span class="mine-row-copy"><b>设置</b><small id="mine-settings-summary">配置助手称呼、回答风格与思考强度</small></span>
+          <span class="mine-row-arrow" aria-hidden="true">›</span>
+        </button>
+        <button class="mine-menu-row" type="button" data-view="feedback">
+          <span class="mine-row-icon feedback" aria-hidden="true">!</span>
+          <span class="mine-row-copy"><b>产品反馈</b><small>提交问题与建议，自主选择是否附带上下文</small></span>
+          <span class="mine-row-arrow" aria-hidden="true">›</span>
+        </button>
+      </section>
+
+      <section class="mine-menu-group" aria-label="Owner 控制台" data-owner-capability="account-roles">
         <a class="mine-menu-row" id="mine-governance-link" href="/platform/" hidden>
           <span class="mine-row-icon governance" aria-hidden="true">⌘</span>
           <span class="mine-row-copy"><b>治理中台</b><small>使用中台账户权限进入只读控制面</small></span>
@@ -736,19 +749,9 @@
           <span class="mine-row-copy"><b>架构设计</b><small>查看当前运行结构与五阶段演进边界</small></span>
           <span class="mine-row-arrow" aria-hidden="true">›</span>
         </button>
-        <button class="mine-menu-row" type="button" data-view="settings">
-          <span class="mine-row-icon settings" aria-hidden="true">⚙</span>
-          <span class="mine-row-copy"><b>设置</b><small id="mine-settings-summary">配置本地测试数据、助手称呼与模型档位</small></span>
-          <span class="mine-row-arrow" aria-hidden="true">›</span>
-        </button>
         <button class="mine-menu-row" type="button" data-view="commercialization">
           <span class="mine-row-icon commercialization" aria-hidden="true">¥</span>
           <span class="mine-row-copy"><b>商业化</b><small>核算付费验证、成本与经营结果</small></span>
-          <span class="mine-row-arrow" aria-hidden="true">›</span>
-        </button>
-        <button class="mine-menu-row" type="button" data-view="feedback">
-          <span class="mine-row-icon feedback" aria-hidden="true">!</span>
-          <span class="mine-row-copy"><b>产品反馈</b><small>提交问题与建议，自主选择是否附带上下文</small></span>
           <span class="mine-row-arrow" aria-hidden="true">›</span>
         </button>
       </section>
@@ -830,7 +833,7 @@
     <section class="view" id="view-statistics">
       <button class="mine-back" type="button" data-view="mine"><span aria-hidden="true">‹</span> 我的</button>
       <header class="page-header statistics-header">
-        <div><p class="eyebrow">个人统计</p><h1>留下了什么，也看见如何使用 AI</h1></div>
+        <div><p class="eyebrow">个人统计</p><h1 id="statistics-page-title">留下了什么</h1></div>
         <form class="statistics-range" id="statistics-range-form">
           <div class="statistics-presets" aria-label="快捷时间范围">
             <button class="active" type="button" data-statistics-days="7">7 天</button>
@@ -854,7 +857,7 @@
         <div class="record-stat-sections" id="record-stat-sections"></div>
       </section>
 
-      <section class="ai-dashboard" aria-labelledby="ai-dashboard-title">
+      <section class="ai-dashboard" aria-labelledby="ai-dashboard-title" data-owner-capability="ai-costs">
         <div class="statistics-section-heading">
           <div><p class="eyebrow">AI 与云服务调用量</p><h2 id="ai-dashboard-title">多供应商服务用量看板</h2></div>
           <span class="tracking-since" id="ai-tracking-since"></span>
@@ -904,7 +907,7 @@
       </section>
     </section>
 
-    <section class="view" id="view-ai-cost">
+    <section class="view" id="view-ai-cost" data-owner-capability="ai-costs">
       <button class="mine-back" type="button" data-view="mine"><span aria-hidden="true">‹</span> 我的</button>
       <header class="page-header ai-cost-header">
         <div><p class="eyebrow">个人 AI 成本</p><h1>把每个场景的调用成本算明白</h1></div>
@@ -957,7 +960,7 @@
       </form>
     </section>
 
-    <section class="view" id="view-architecture">
+    <section class="view" id="view-architecture" data-owner-capability="architecture">
       <button class="mine-back" type="button" data-view="mine"><span aria-hidden="true">‹</span> 我的</button>
       <header class="page-header architecture-header">
         <div><p class="eyebrow">系统设计</p><h1>从当前单机到可验证的扩展路径</h1></div>
@@ -1014,7 +1017,7 @@
       </section>
     </section>
 
-    <section class="view" id="view-commercialization">
+    <section class="view" id="view-commercialization" data-owner-capability="commercialization">
       <button class="mine-back" type="button" data-view="mine"><span aria-hidden="true">‹</span> 我的</button>
       <header class="page-header commercialization-header">
         <div><p class="eyebrow">商业化模拟</p><h1><span>四种路径，</span><span>逐月算清投入产出</span></h1></div>
@@ -1272,6 +1275,17 @@
       </section>
     </section>
 
+    <section class="view" id="view-permission">
+      <button class="mine-back" type="button" data-view="mine"><span aria-hidden="true">‹</span> 我的</button>
+      <section class="permission-panel" aria-labelledby="permission-title">
+        <span class="permission-mark" aria-hidden="true">○</span>
+        <p class="eyebrow">访问受限</p>
+        <h1 id="permission-title">此页面仅 Owner 可访问</h1>
+        <p id="permission-copy">当前账户可以继续使用个人记录与偏好设置。管理内容不会在此会话中加载。</p>
+        <button class="primary-button" type="button" data-view="mine">返回我的</button>
+      </section>
+    </section>
+
     <section class="view" id="view-account">
       <button class="mine-back" type="button" data-view="mine"><span aria-hidden="true">‹</span> 我的</button>
       <header class="page-header"><div><p class="eyebrow">账户管理</p><h1>管理你的身份与登录</h1></div></header>
@@ -1299,13 +1313,18 @@
           <span>当前登录账户：<b id="account-page-name"></b></span>
           <button type="button" id="logout-button-account">退出登录</button>
         </div>
+        <section class="card account-role-settings" id="account-role-settings" data-owner-capability="account-roles">
+          <div class="settings-heading"><div><h2>账户角色</h2><p>仅保留普通用户与 Owner。角色变更后，该账户需要重新登录。</p></div></div>
+          <div class="account-role-list" id="account-role-list"></div>
+          <p class="status" id="account-role-status" role="status" aria-live="polite"></p>
+        </section>
       </div>
     </section>
 
     <section class="view" id="view-settings">
       <button class="mine-back" type="button" data-view="mine"><span aria-hidden="true">‹</span> 我的</button>
-      <header class="page-header"><div><p class="eyebrow">应用设置</p><h1>测试数据、模型与语音配置</h1></div></header>
-      <section class="card settings-card local-test-settings" id="local-test-settings" hidden>
+      <header class="page-header"><div><p class="eyebrow">应用设置</p><h1>助手、思考与语音偏好</h1></div></header>
+      <section class="card settings-card local-test-settings" id="local-test-settings" data-owner-capability="local-testing" hidden>
         <div class="settings-heading"><div><h2>本地测试数据</h2><p>线上数据只用于生成本地快照；之后的新增、修改和删除全部留在本机。</p></div><span class="connection-badge ready" id="local-test-badge">冷启测试</span></div>
         <div class="local-test-mode-row">
           <div class="segmented-control" role="group" aria-label="本地测试数据模式">
@@ -1317,7 +1336,7 @@
         <p class="status" id="local-test-status" role="status" aria-live="polite"></p>
       </section>
       <form class="card settings-card" id="llm-settings-form">
-        <div class="settings-heading"><div><h2>AI 与语音</h2><p>模型档位、语音生成速度和本机播放速度分别生效。</p></div><span class="connection-badge" id="llm-key-state">未配置密钥</span></div>
+        <div class="settings-heading"><div><h2>回答与语音</h2><p>每个场景的思考强度、回答风格和语音速度分别生效。</p></div><span class="connection-badge" id="llm-key-state" data-owner-capability="ai-configuration">未配置密钥</span></div>
         <section class="settings-section">
           <div class="settings-section-heading"><h3>语音生成</h3><p>账户默认值；已生成音频的播放倍速可单独调整。</p></div>
           <label class="field speech-generation-default">
@@ -1340,6 +1359,27 @@
           </div>
         </section>
         <section class="settings-section">
+          <div class="settings-section-heading"><h3>场景思考强度</h3><p>普通用户可按场景选择关闭、High 或 Max，无需配置密钥。</p></div>
+          <div class="scenario-grid">
+            <label><span>思考 · 引子</span><select data-ai-effort="thoughtPrompt"></select></label>
+            <label><span>思考草稿</span><select data-ai-effort="thoughtDraft"></select></label>
+            <label><span>思考回答</span><select data-ai-effort="thoughtAnswer"></select></label>
+            <label><span>追问回答</span><select data-ai-effort="followUpAnswer"></select></label>
+            <label><span>长期对话</span><select data-ai-effort="chat"></select></label>
+            <label><span>日记 · 引子</span><select data-ai-effort="diaryLead"></select></label>
+            <label><span>日记 · 结构</span><select data-ai-effort="diaryStructure"></select></label>
+            <label><span>日记 · 话题</span><select data-ai-effort="diaryTopic"></select></label>
+            <label><span>日记回望</span><select data-ai-effort="diaryReflection"></select></label>
+            <label><span>批注回答</span><select data-ai-effort="annotationShenji"></select></label>
+            <label><span>认知复盘</span><select data-ai-effort="analysis"></select></label>
+            <label><span>书目识别</span><select data-ai-effort="bookRecognition"></select></label>
+            <label><span>健康截图识别</span><select data-ai-effort="healthRecognition"></select></label>
+            <label><span>内容图片理解</span><select data-ai-effort="contentImageUnderstanding"></select></label>
+            <label><span>语音整理</span><select data-ai-effort="capturePolish"></select></label>
+            <label><span>五问认知提取</span><select data-ai-effort="onboardingClaimExtraction"></select></label>
+          </div>
+        </section>
+        <section class="settings-section" data-owner-capability="ai-configuration">
           <div class="settings-section-heading"><h3>档位配置</h3><p>每档都可独立选择模型与思考强度。</p></div>
           <div class="profile-grid">
             <fieldset class="profile-config"><legend>Lite</legend><label>模型<select data-profile-model="lite"><option value="deepseek-flash">Flash · V4.1</option><option value="deepseek-v4-pro">Pro · V4</option></select></label><label>思考<select data-profile-effort="lite"><option value="none">关闭</option><option value="high">High</option><option value="max">Max</option></select></label></fieldset>
@@ -1348,7 +1388,7 @@
             <fieldset class="profile-config"><legend>Ultra</legend><label>模型<select data-profile-model="ultra"><option value="deepseek-flash">Flash · V4.1</option><option value="deepseek-v4-pro">Pro · V4</option></select></label><label>思考<select data-profile-effort="ultra"><option value="none">关闭</option><option value="high">High</option><option value="max">Max</option></select></label></fieldset>
           </div>
         </section>
-        <section class="settings-section">
+        <section class="settings-section" data-owner-capability="ai-configuration">
           <div class="settings-section-heading"><h3>场景档位</h3><p>默认让严肃判断充分思考，让写作提示与识别任务快速完成。</p></div>
           <div class="scenario-grid">
             <label><span>思考 · 引子</span><select data-ai-scenario="thoughtPrompt"></select></label>
@@ -1368,9 +1408,9 @@
             <label><span>语音整理</span><select data-ai-scenario="capturePolish"></select></label>
           </div>
         </section>
-        <label class="field"><span>API 密钥 <i id="llm-key-hint">仅保存在本机</i></span><input id="llm-api-key" type="password" autocomplete="new-password" placeholder="sk-…（留空则保留已保存的密钥）"></label>
-        <p class="settings-note">密钥只写入本机数据目录，页面只显示脱敏提示。书目与健康截图识别会使用各自场景的思考强度，并自动切换到支持图像输入的 Flash。</p>
-        <div class="settings-actions"><button class="primary-button" type="submit">保存设置</button><label class="test-tier">测试档位<select id="llm-test-tier"><option value="lite">Lite</option><option value="mid">Mid</option><option value="high">High</option><option value="ultra">Ultra</option></select></label><button class="quiet-button" type="button" id="test-llm">测试连接</button></div>
+        <label class="field" data-owner-capability="ai-configuration"><span>API 密钥 <i id="llm-key-hint">仅保存在本机</i></span><input id="llm-api-key" type="password" autocomplete="new-password" placeholder="sk-…（留空则保留已保存的密钥）"></label>
+        <p class="settings-note" data-owner-capability="ai-configuration">密钥只写入 Owner 数据目录，页面只显示脱敏提示。书目与健康截图识别会自动切换到支持图像输入的模型。</p>
+        <div class="settings-actions"><button class="primary-button" type="submit">保存设置</button><label class="test-tier" data-owner-capability="ai-configuration">测试档位<select id="llm-test-tier"><option value="lite">Lite</option><option value="mid">Mid</option><option value="high">High</option><option value="ultra">Ultra</option></select></label><button class="quiet-button" type="button" id="test-llm" data-owner-capability="ai-configuration">测试连接</button></div>
         <p class="status" id="llm-settings-status" role="status" aria-live="polite"></p>
       </form>
     </section>

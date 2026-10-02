@@ -65,13 +65,13 @@ import {
   validatedAudioBlob,
   validatedImageFiles
 } from "../media/index.mjs";
-import { createPageRouter } from "../pages/index.mjs";
+import { createPageRouter, ownerViewCapabilities } from "../pages/index.mjs";
 import { sessionScope, sessionSerial, rotateSession } from "../session/index.mjs";
 import { state, replaceState, mergeStateSnapshot, resetState, subscribeState, publishDomains, createRefreshCoordinator } from "../state/index.mjs";
 import { createIndexedDbSyncStore, createIncrementalSync, createRequestCoordinator } from "../sync/index.mjs";
 import { createOccurrenceDraft, entryKeyIntent, eventDate, eventTimestamp, formatDate, formatDateKey, formatTime, localDateKey, localDateTimeForDate, occurrenceSubmission, persistedDateTimeInput, toLocalDateTimeInput } from "../time/index.mjs";
 
-const apiClient=createApiClient({baseUrl:new URL("../../app.js",import.meta.url),apiOrigin:document.documentElement.dataset.apiOrigin||"",session:sessionScope,onAuthRequired:()=>showAuthGate()});
+const apiClient=createApiClient({baseUrl:new URL("../../app.js",import.meta.url),apiOrigin:document.documentElement.dataset.apiOrigin||"",session:sessionScope,onAuthRequired:error=>showAuthGate(error?.code==="AUTH_REAUTH_REQUIRED"?"账户权限已变更，请重新登录。":"")});
 const appUrl=apiClient.appUrl;
 const syncStore=createIndexedDbSyncStore();
 const mediaDraftStore=createIndexedDbMediaDraftStore();
@@ -84,16 +84,19 @@ const localTestScopeLoads=new Map();
 const baseMetrics={mood:{label:"情绪",anchors:["非常难受","有些低落","平稳、无明显起伏","感觉不错","轻盈而愉快"]},energy:{label:"精力",anchors:["几乎耗尽","勉强支撑","够用，但有限","精力较好","充沛、想行动"]},stress:{label:"压力",anchors:["快要撑不住","很紧绷","压力明显但可应对","有一点紧绷","身心松弛"]},sleep:{label:"睡眠",anchors:["几乎没休息好","明显不足","基本够用","睡得不错","充分恢复"]}};
 const trendLabels=Object.fromEntries(Object.entries(baseMetrics).map(([k,v])=>[k,v.label]));
 const llmTiers=["lite","mid","high","ultra"];
+const llmEfforts=["none","high","max"];
 const defaultLlmProfiles={lite:{model:"deepseek-flash",effort:"none"},mid:{model:"deepseek-flash",effort:"high"},high:{model:"deepseek-v4-pro",effort:"high"},ultra:{model:"deepseek-v4-pro",effort:"max"}};
 const defaultLlmScenarios={thoughtPrompt:"lite",thoughtDraft:"high",thoughtAnswer:"ultra",followUpAnswer:"ultra",chat:"high",diaryLead:"lite",diaryStructure:"mid",diaryTopic:"high",diaryReflection:"ultra",annotationShenji:"high",analysis:"ultra",bookRecognition:"mid",healthRecognition:"mid",contentImageUnderstanding:"mid",capturePolish:"mid"};
+const defaultSceneEfforts={...Object.fromEntries(Object.entries(defaultLlmScenarios).map(([scene,tier])=>[scene,defaultLlmProfiles[tier].effort])),onboardingClaimExtraction:"high"};
+const ownerCapabilities=[...new Set([...Object.values(ownerViewCapabilities),"local-testing","ai-configuration","account-roles"])];
 const responseStyleOptions=[["concise","简短"],["standard","标准"],["deep","深入"],["structured","结构化"],["exploratory","开放探索"]];
 const responseStyleScenes=["thoughtDraft","thoughtAnswer","followUpAnswer","chat","diaryReflection","annotationShenji","analysis"];
 let switchView,restoreView;
 let backgroundResultController=null;
 let currentLocalDate=localDateKey();
-let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},automaticAnswers:{thoughtAnswer:false},speech:{generationRate:-10},hasApiKey:false,keyHint:""};
+let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{generationRate:-10},hasApiKey:false,keyHint:""};
 let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiCostRequestSerial=0,architectureStage=0,architectureTerm="api",commercialMode="validation",commercialStatistics=null,commercialRequestSerial=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,discoveryController=null,actionsSnapshot={actions:[],habits:[],habitCheckins:[]},actionsRequestSerial=0,feedbackItems=[],feedbackRequestSerial=0,exportManifest=null,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,appVersion="0.4.0",releaseVersion="0.4.0",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
-let notificationsLoadState="idle",feedbackLoadState="idle",exportLoadState="idle",personalContextLoadState="idle";
+let notificationsLoadState="idle",feedbackLoadState="idle",exportLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0;
 let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeEditorTrigger=null,activeSpeechCaptureId="",activeSpeechSourceKey="",activeSpeechVoice="",activeSpeechPlaybackRate=1,activeSpeechAudio=null,activeSpeechObjectUrl="",activeSpeechAbortController=null;
 const keepsakeEditor={file:null,sourceDataUrl:"",sourceImage:null,sourceCanvas:null,maskCanvas:null,autoBase:null,history:[],mode:"keep",drawing:false,lastPoint:null,source:"manual",originalPath:"",cutoutPath:"",mediaDirty:false,renderFrame:0,segmentSerial:0,understandingSerial:0};
 const keepsakeBatch={items:[],activeIndex:0,loading:false};
@@ -106,6 +109,30 @@ const captureAudioDraft={blob:null,preview:"",path:"",mimeType:"",bytes:0,durati
 const imageViewer={paths:[],index:0,objectUrl:"",requestSerial:0,trigger:null};
 const quoteScrollStates=new WeakMap();
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const ownerSurfaceVault=document.createDocumentFragment();
+let ownerSurfaceEntries=null,currentCapabilities=new Set();
+function hasCapability(capability){return currentCapabilities.has(capability)}
+function applyCapabilitySurface(capabilities=[]){
+  currentCapabilities=new Set(Array.isArray(capabilities)?capabilities:[]);
+  if(!ownerSurfaceEntries){
+    ownerSurfaceEntries=$$("[data-owner-capability]").map((node,index)=>{
+      const marker=document.createComment(`owner-capability-${index}`);
+      node.parentNode.insertBefore(marker,node);
+      return{node,marker,capability:node.dataset.ownerCapability}
+    })
+  }
+  for(const entry of ownerSurfaceEntries){
+    if(hasCapability(entry.capability)){
+      if(!entry.node.isConnected&&entry.marker.parentNode)entry.marker.parentNode.insertBefore(entry.node,entry.marker.nextSibling)
+    }else if(entry.node.isConnected)ownerSurfaceVault.append(entry.node)
+  }
+}
+function showPermissionPage(view,capability){
+  const names={"ai-cost":"AI 成本",architecture:"架构设计",commercialization:"商业化"};
+  const title=$("#permission-title"),copy=$("#permission-copy");
+  if(title)title.textContent=`${names[view]||"此页面"}仅 Owner 可访问`;
+  if(copy)copy.textContent=`当前账户没有访问此管理页面的权限（${capability}）。敏感内容未加载，你仍可继续使用个人记录与偏好设置。`
+}
 function renderLatex(container){if(!container||!window.katex)return;container.querySelectorAll("[data-tex]").forEach(element=>{try{window.katex.render(decodeURIComponent(element.dataset.tex||""),element,{displayMode:element.classList.contains("latex-display"),throwOnError:false,strict:"ignore",trust:false})}catch{element.textContent=decodeURIComponent(element.dataset.tex||"")}})}
 function currentContextSource(source){
   const type=source?.resourceType,id=source?.resourceId,key=source?.location?.targetKey||"";
@@ -1292,7 +1319,7 @@ async function listAllV1(url){
 const optionalRequest=url=>apiClient.request(url,{headers:{accept:"application/json"}},{optional:true,authGate:false});
 const optionalPublicRequest=async url=>{
   const result=await apiClient.request(url,{headers:{accept:"application/json"}},{optional:true,authGate:false,allowUnauthorized:true});
-  return result?.code==="AUTH_REQUIRED"?null:result
+  return["AUTH_REQUIRED","AUTH_REAUTH_REQUIRED"].includes(result?.code)?null:result
 };
 async function requestStream(url,options={},onEvent=()=>{}){
   const answerId=url.match(/^\/api\/thoughts\/([^/]+)\/answer$/)?.[1];
@@ -2352,12 +2379,25 @@ function editQuote(id){const quote=state.quotes.find(item=>item.id===id);if(!quo
 function selectionQuoteSource(rootKey){const root=commentRoot(rootKey),label=commentRootLabel(rootKey),{type}=parseCommentRootKey(rootKey);const title=type==="book"?root?.title:type==="journal"?root?.title||root?.content:type==="quote"?root?.source:type==="chat"?root?.message:root?.content;return `${label}${title?` · ${plainPreview(title).slice(0,60)}`:""}`}
 function closeSelectionQuoteModal(){const modal=$("#selection-quote-modal");modal.hidden=true;$("#selection-quote-form").reset();$("#selection-quote-status").textContent=""}
 function openSelectionQuoteModal(selection){const label=commentRootLabel(selection.rootKey);$("#selection-quote-content").value=selection.quote;$("#selection-quote-source").value=selectionQuoteSource(selection.rootKey);$("#selection-quote-tags").value=label;resetOccurrenceInput($("#selection-quote-datetime"));$("#selection-quote-status").textContent="";$("#selection-quote-modal").hidden=false;pendingSelection=null;window.getSelection()?.removeAllRanges();$("#selection-quote-content").focus()}
-function llmProfile(scene="thoughtAnswer"){const tier=llmSettings.scenarios?.[scene]||"high",profile=llmSettings.profiles?.[tier]||defaultLlmProfiles[tier]||defaultLlmProfiles.high;return{tier,...profile}}
+function llmProfile(scene="thoughtAnswer"){const tier=llmSettings.scenarios?.[scene]||"high",profile=llmSettings.profiles?.[tier]||defaultLlmProfiles[tier]||defaultLlmProfiles.high;return{tier,...profile,effort:llmSettings.sceneEfforts?.[scene]||profile.effort}}
 function ttsGenerationRateText(value){return`${(1+normalizeTtsGenerationRate(value)/100).toFixed(2)}×`}
 function renderTtsGenerationRate(value){const rate=normalizeTtsGenerationRate(value),control=$("#tts-generation-rate"),output=$("#tts-generation-rate-value");if(control){control.value=String(rate);control.style.setProperty("--fill",`${((rate+50)/1.5).toFixed(2)}%`)}if(output)output.textContent=ttsGenerationRateText(rate)}
-function settingsPayload(){return{profiles:Object.fromEntries(llmTiers.map(tier=>[tier,{model:$(`[data-profile-model="${tier}"]`).value,effort:$(`[data-profile-effort="${tier}"]`).value}])),scenarios:Object.fromEntries($$("[data-ai-scenario]").map(select=>[select.dataset.aiScenario,select.value])),assistantName:$("#assistant-name").value,responseStyles:Object.fromEntries($$("[data-response-style]").map(select=>[select.dataset.responseStyle,select.value])),automaticAnswers:{thoughtAnswer:$("#automatic-thought-answer").checked},speech:{generationRate:normalizeTtsGenerationRate($("#tts-generation-rate")?.value)},apiKey:$("#llm-api-key").value}}
-function renderSettings(){const badge=$("#llm-key-state"),hint=$("#llm-key-hint");if(!badge)return;llmSettings.profiles={...structuredClone(defaultLlmProfiles),...(llmSettings.profiles||{})};llmSettings.scenarios={...defaultLlmScenarios,...(llmSettings.scenarios||{})};llmSettings.automaticAnswers={thoughtAnswer:llmSettings.automaticAnswers?.thoughtAnswer===true};llmSettings.speech={generationRate:normalizeTtsGenerationRate(llmSettings.speech?.generationRate)};llmSettings.responseStyles=Object.fromEntries(responseStyleScenes.map(scene=>[scene,llmSettings.responseStyles?.[scene]||"standard"]));$("#automatic-thought-answer").checked=llmSettings.automaticAnswers.thoughtAnswer;$("#assistant-name").value=llmSettings.assistantName||"神鸡";renderTtsGenerationRate(llmSettings.speech.generationRate);for(const tier of llmTiers){$(`[data-profile-model="${tier}"]`).value=llmSettings.profiles[tier].model;$(`[data-profile-effort="${tier}"]`).value=llmSettings.profiles[tier].effort}$$("[data-ai-scenario]").forEach(select=>{if(!select.options.length)select.innerHTML=llmTiers.map(tier=>`<option value="${tier}">${tier[0].toUpperCase()+tier.slice(1)}</option>`).join("");select.value=llmSettings.scenarios[select.dataset.aiScenario]});$$("[data-response-style]").forEach(select=>{if(!select.options.length)select.innerHTML=responseStyleOptions.map(([value,label])=>`<option value="${value}">${label}</option>`).join("");select.value=llmSettings.responseStyles[select.dataset.responseStyle]||"standard"});badge.textContent=llmSettings.hasApiKey?"密钥已配置":"未配置密钥";badge.classList.toggle("ready",llmSettings.hasApiKey);hint.textContent=llmSettings.hasApiKey?`${llmSettings.keyHint} · 留空保留原密钥`:"仅保存在本机";$("#chat-model-label").textContent="结合已保存记录"}
-function renderLocalTestSettings(){const panel=$("#local-test-settings"),mineSummary=$("#mine-settings-summary");if(!panel)return;panel.hidden=!localTestConfig?.enabled;if(panel.hidden){if(mineSummary)mineSummary.textContent="配置本地测试数据、助手称呼与模型档位";return}const modeLabel=localTestConfig.mode==="simulation"?"使用模拟":"冷启测试";if(mineSummary)mineSummary.textContent=`本地测试：使用模拟 / 冷启测试 · 当前${modeLabel}`;$$("[data-local-test-mode]").forEach(button=>{const active=button.dataset.localTestMode===localTestConfig.mode;button.classList.toggle("active",active);button.setAttribute("aria-pressed",String(active));button.disabled=active||(button.dataset.localTestMode==="simulation"&&!localTestConfig.upstreamConfigured)});$("#local-test-badge").textContent=modeLabel;const loadedCount=localTestConfig.loadedScopes?.length||0;$("#local-test-summary").textContent=localTestConfig.mode==="simulation"?`${localTestConfig.sourceUser?.username||"线上主账户"} · ${localTestConfig.recordCount||0} 条已载入 · ${loadedCount?`${loadedCount} 个页面已读取`:"打开页面后读取记录"}`:"空账户工作区；每次切换都会重新清空。";$("#local-test-status").textContent=localTestStatusOverride||(localTestConfig.mode==="simulation"?"当前为使用模拟；记录将在打开页面时读取。":"当前为冷启测试。")}
+function settingsPayload(){
+  const payload={sceneEfforts:Object.fromEntries($$("[data-ai-effort]").map(select=>[select.dataset.aiEffort,select.value])),assistantName:$("#assistant-name").value,responseStyles:Object.fromEntries($$("[data-response-style]").map(select=>[select.dataset.responseStyle,select.value])),automaticAnswers:{thoughtAnswer:$("#automatic-thought-answer").checked},speech:{generationRate:normalizeTtsGenerationRate($("#tts-generation-rate")?.value)}};
+  if(!hasCapability("ai-configuration"))return payload;
+  return{...payload,profiles:Object.fromEntries(llmTiers.map(tier=>[tier,{model:$(`[data-profile-model="${tier}"]`).value,effort:$(`[data-profile-effort="${tier}"]`).value}])),scenarios:Object.fromEntries($$("[data-ai-scenario]").map(select=>[select.dataset.aiScenario,select.value])),apiKey:$("#llm-api-key").value}
+}
+function renderSettings(){
+  if(!$("#llm-settings-form"))return;
+  llmSettings.profiles={...structuredClone(defaultLlmProfiles),...(llmSettings.profiles||{})};llmSettings.scenarios={...defaultLlmScenarios,...(llmSettings.scenarios||{})};llmSettings.sceneEfforts={...defaultSceneEfforts,...(llmSettings.sceneEfforts||{})};llmSettings.automaticAnswers={thoughtAnswer:llmSettings.automaticAnswers?.thoughtAnswer===true};llmSettings.speech={generationRate:normalizeTtsGenerationRate(llmSettings.speech?.generationRate)};llmSettings.responseStyles=Object.fromEntries(responseStyleScenes.map(scene=>[scene,llmSettings.responseStyles?.[scene]||"standard"]));
+  $("#automatic-thought-answer").checked=llmSettings.automaticAnswers.thoughtAnswer;$("#assistant-name").value=llmSettings.assistantName||"神鸡";renderTtsGenerationRate(llmSettings.speech.generationRate);
+  for(const tier of llmTiers){const model=$(`[data-profile-model="${tier}"]`),effort=$(`[data-profile-effort="${tier}"]`);if(model)model.value=llmSettings.profiles[tier].model;if(effort)effort.value=llmSettings.profiles[tier].effort}
+  $$("[data-ai-scenario]").forEach(select=>{if(!select.options.length)select.innerHTML=llmTiers.map(tier=>`<option value="${tier}">${tier[0].toUpperCase()+tier.slice(1)}</option>`).join("");select.value=llmSettings.scenarios[select.dataset.aiScenario]});
+  $$("[data-ai-effort]").forEach(select=>{if(!select.options.length)select.innerHTML=llmEfforts.map(effort=>`<option value="${effort}">${effort==="none"?"关闭":effort==="high"?"High":"Max"}</option>`).join("");select.value=llmSettings.sceneEfforts[select.dataset.aiEffort]});
+  $$("[data-response-style]").forEach(select=>{if(!select.options.length)select.innerHTML=responseStyleOptions.map(([value,label])=>`<option value="${value}">${label}</option>`).join("");select.value=llmSettings.responseStyles[select.dataset.responseStyle]||"standard"});
+  const badge=$("#llm-key-state"),hint=$("#llm-key-hint");if(badge){badge.textContent=llmSettings.hasApiKey?"密钥已配置":"未配置密钥";badge.classList.toggle("ready",llmSettings.hasApiKey)}if(hint)hint.textContent=llmSettings.hasApiKey?`${llmSettings.keyHint} · 留空保留原密钥`:"仅保存在 Owner 账户";$("#chat-model-label").textContent="结合已保存记录"
+}
+function renderLocalTestSettings(){const panel=$("#local-test-settings"),mineSummary=$("#mine-settings-summary");if(!panel){if(mineSummary)mineSummary.textContent="配置助手称呼、回答风格与思考强度";return}panel.hidden=!localTestConfig?.enabled;if(panel.hidden){if(mineSummary)mineSummary.textContent="配置助手称呼、回答风格与思考强度";return}const modeLabel=localTestConfig.mode==="simulation"?"使用模拟":"冷启测试";if(mineSummary)mineSummary.textContent=`本地测试：使用模拟 / 冷启测试 · 当前${modeLabel}`;$$("[data-local-test-mode]").forEach(button=>{const active=button.dataset.localTestMode===localTestConfig.mode;button.classList.toggle("active",active);button.setAttribute("aria-pressed",String(active));button.disabled=active||(button.dataset.localTestMode==="simulation"&&!localTestConfig.upstreamConfigured)});$("#local-test-badge").textContent=modeLabel;const loadedCount=localTestConfig.loadedScopes?.length||0;$("#local-test-summary").textContent=localTestConfig.mode==="simulation"?`${localTestConfig.sourceUser?.username||"线上主账户"} · ${localTestConfig.recordCount||0} 条已载入 · ${loadedCount?`${loadedCount} 个页面已读取`:"打开页面后读取记录"}`:"空账户工作区；每次切换都会重新清空。";$("#local-test-status").textContent=localTestStatusOverride||(localTestConfig.mode==="simulation"?"当前为使用模拟；记录将在打开页面时读取。":"当前为冷启测试。")}
 const shiftLocalDateKey=(dateKey,days)=>{const [year,month,day]=String(dateKey).split("-").map(Number),date=new Date(Date.UTC(year,month-1,day+days));return date.toISOString().slice(0,10)};
 const compactNumber=value=>new Intl.NumberFormat("zh-CN",{notation:"compact",maximumFractionDigits:1}).format(Number(value)||0);
 const formatCny=value=>{const number=Number(value)||0,absolute=Math.abs(number),digits=absolute===0?2:absolute>=100?0:absolute>=10?1:absolute>=1?2:absolute>=.1?3:absolute>=.01?4:6;return `${number<0?"-":""}¥${absolute.toFixed(digits)}`};
@@ -2390,9 +2430,12 @@ function stackedTokenChart(daily){
 }
 function renderStatistics(data){
   statisticsData=data;
-  const {records,ai}=data,summary=ai.summary,cnyPerUsd=Math.max(.01,Number(ai.pricing?.cnyPerUsd)||7.2),historicalUsdToCny=value=>(Number(value)||0)*cnyPerUsd,totalCost=item=>historicalUsdToCny(item?.costsUsd?.total)+(Number(item?.costCny)||0),componentCost=(item,key)=>(Number(item?.costsCny?.[key])||0)+historicalUsdToCny(item?.costsUsd?.[key]);
+  const {records,ai}=data;
   $("#record-total").innerHTML=`<strong>${records.total}</strong><span>累计条目</span>`;
   $("#record-stat-sections").innerHTML=(records.groups||[]).map(group=>`<section class="record-stat-section"><header><h3>${escapeHtml(group.label)}</h3><span>${group.total} 项</span></header><div class="record-module-list">${group.modules.map(module=>`<article><div class="record-module-title"><b>${escapeHtml(module.label)}</b><strong>${module.total}</strong></div><dl>${module.items.map(item=>`<div><dt>${escapeHtml(item.label)}</dt><dd>${item.count}</dd></div>`).join("")}</dl></article>`).join("")}</div></section>`).join("");
+  const title=$("#statistics-page-title");if(title)title.textContent=ai?"留下了什么，也看见如何使用 AI":"留下了什么";
+  if(!ai)return;
+  const summary=ai.summary,cnyPerUsd=Math.max(.01,Number(ai.pricing?.cnyPerUsd)||7.2),historicalUsdToCny=value=>(Number(value)||0)*cnyPerUsd,totalCost=item=>historicalUsdToCny(item?.costsUsd?.total)+(Number(item?.costCny)||0),componentCost=(item,key)=>(Number(item?.costsCny?.[key])||0)+historicalUsdToCny(item?.costsUsd?.[key]);
   const totalTokens=summary.tokens.input+summary.tokens.output,cacheRate=summary.tokens.input?summary.tokens.cacheHit/summary.tokens.input*100:0,totalCostCny=totalCost(summary),averageCost=summary.calls?totalCostCny/summary.calls:0,knownStatuses=(summary.successfulCalls||0)+(summary.failedCalls||0),successRate=knownStatuses?(summary.successfulCalls||0)/knownStatuses*100:null,averageDuration=summary.durationKnownCalls?(summary.durationMs||0)/summary.durationKnownCalls:0,vision=ai.modalities?.find(item=>item.modality==="vision")||{calls:summary.visionCalls||0,imageCount:summary.imageCount||0,costsUsd:{total:0},costCny:0};
   $("#ai-kpis").innerHTML=[
     ["总费用",formatCny(totalCostCny),summary.costUnknownCalls?`${summary.costUnknownCalls} 次供应商调用费用待账单核对`:"按官方单价折算"],
@@ -2426,14 +2469,14 @@ function setStatisticsRange(days=7){
 async function loadStatistics(){
   const from=$("#statistics-from").value,to=$("#statistics-to").value;if(!from||!to)setStatisticsRange(7);
   const serial=++statisticsRequestSerial,owner=currentUser?.id,session=sessionSerial,status=$("#statistics-status"),button=$("#statistics-range-form button[type='submit']");
-  button.disabled=true;status.textContent="正在汇总记录与 AI 用量…";
+  button.disabled=true;status.textContent=hasCapability("ai-costs")?"正在汇总记录与 AI 用量…":"正在汇总记录…";
   try{const data=await request(`/api/statistics?from=${encodeURIComponent($("#statistics-from").value)}&to=${encodeURIComponent($("#statistics-to").value)}`);if(serial!==statisticsRequestSerial||owner!==currentUser?.id||session!==sessionSerial)return;renderStatistics(data);status.textContent=""}
   catch(error){if(serial===statisticsRequestSerial)status.textContent=error.message}
   finally{if(serial===statisticsRequestSerial)button.disabled=false}
 }
 function currentAiCostModel(scene){
   const tier=llmSettings.scenarios?.[scene]||defaultLlmScenarios[scene]||"high",profile=llmSettings.profiles?.[tier]||defaultLlmProfiles[tier];
-  return{tier,model:profile.model,effort:profile.effort,label:`${profile.model==="deepseek-v4-pro"?"Pro":"Flash"} · ${tier[0].toUpperCase()+tier.slice(1)}`};
+  return{tier,model:profile.model,effort:llmSettings.sceneEfforts?.[scene]||profile.effort,label:`${profile.model==="deepseek-v4-pro"?"Pro":"Flash"} · ${tier[0].toUpperCase()+tier.slice(1)}`};
 }
 function aiCostScenarioEstimate(row,model=row.model){
   const pricing=aiCostStatistics?.ai?.pricing,rates=pricing?.models?.[model]?.[row.pricingPeriod];
@@ -3157,6 +3200,19 @@ function renderMine(){
   const versionLabel=releaseVersion.startsWith("v")?releaseVersion:`v${releaseVersion}`;
   for(const element of[$("#sidebar-app-version"),$("#mine-app-version")])if(element)element.textContent=versionLabel
 }
+function renderAccountUsers(){
+  const list=$("#account-role-list"),status=$("#account-role-status");if(!list)return;
+  if(accountUsersLoadState==="loading"){list.innerHTML=contentState({kind:"loading",title:"正在读取账户",body:"角色只包含普通用户与 Owner。"});return}
+  if(accountUsersLoadState==="failure"){list.innerHTML=contentState({kind:"failure",title:"暂时无法读取账户",body:"现有角色没有变化。",action:{command:"retry-account-users",label:"重新读取"}});return}
+  list.innerHTML=accountUsers.map(user=>`<article class="account-role-row" data-account-user="${escapeHtml(user.id)}"><div><strong>${escapeHtml(user.username)}</strong><small>${user.id===currentUser?.id?"当前账户 · ":""}${user.role==="owner"?"Owner":"普通用户"}</small></div><select data-account-role="${escapeHtml(user.id)}" aria-label="${escapeHtml(`${user.username} 的角色`)}"><option value="user" ${user.role==="user"?"selected":""}>普通用户</option><option value="owner" ${user.role==="owner"?"selected":""}>Owner</option></select><button class="quiet-button" type="button" data-account-role-save="${escapeHtml(user.id)}">保存</button></article>`).join("")||contentState({title:"还没有可管理的账户",body:"新账户注册后会显示在这里。"});
+  if(status&&accountUsersLoadState==="ready"&&!status.textContent)status.textContent=""
+}
+async function loadAccountUsers(){
+  if(!hasCapability("account-roles"))return false;
+  const serial=++accountUsersRequestSerial,owner=currentUser?.id,session=sessionSerial;accountUsersLoadState="loading";renderAccountUsers();
+  try{const result=await request("/api/auth/users");if(serial!==accountUsersRequestSerial||owner!==currentUser?.id||session!==sessionSerial)return false;accountUsers=result.users||[];accountUsersLoadState="ready";renderAccountUsers();return true}
+  catch(error){if(serial===accountUsersRequestSerial&&owner===currentUser?.id&&session===sessionSerial){accountUsersLoadState="failure";renderAccountUsers();const status=$("#account-role-status");if(status)status.textContent=error.message}return false}
+}
 function discoveryCard(item){
   const primary=item.matches?.[0]||item.question||{},sources=[...new Set((item.matches||[]).map(match=>match.sourceLabel))].join(" · ");
   const key=item.key||`thought:${item.id}`,thought=(item.genre||"thought")==="thought",status=thought?(item.fresh?"待回访":item.status?.snoozed?"已稍后":"已读"):item.genreLabel||"原始记录";
@@ -3402,18 +3458,22 @@ function openContextSource(button){
     destination?.scrollIntoView({behavior:"smooth",block:"center"})
   })
 }
-function render(){renderDate();renderOnboarding();renderSliders();renderDailyRecords();renderHealthUploader();renderCaptures();renderJournals();renderThoughts();renderStateChart();renderChat();renderReview();renderBooks();renderKeepsakes();renderKeepsakeBatch();renderQuotes();renderHome();renderTagComposer();renderCaptureTagComposer();renderCaptureAudioDraft();renderCommentPanel();renderSettings();renderLocalTestSettings();renderArchitecture();renderCommercialization();renderNotifications();renderMine();renderActionsWorkspace();renderFeedback();renderExport();renderPersonalContext();restoreView?.()}
+function render(){renderDate();renderOnboarding();renderSliders();renderDailyRecords();renderHealthUploader();renderCaptures();renderJournals();renderThoughts();renderStateChart();renderChat();renderReview();renderBooks();renderKeepsakes();renderKeepsakeBatch();renderQuotes();renderHome();renderTagComposer();renderCaptureTagComposer();renderCaptureAudioDraft();renderCommentPanel();renderSettings();renderLocalTestSettings();renderArchitecture();renderCommercialization();renderNotifications();renderMine();renderAccountUsers();renderActionsWorkspace();renderFeedback();renderExport();renderPersonalContext();restoreView?.()}
 async function load(){
   const owner=currentUser?.id,session=sessionSerial;
   journalDraftRestored=false;aiCostPlan=null;aiCostStatistics=null;commercialStatistics=null;resetJournalForm();
-  const [nextState,nextSettings,nextOnboardingSchema,nextOnboardingV2Schema,nextOnboardingV2State,nextLocalTestConfig,meta]=await Promise.all([
+  const [nextState,meta]=await Promise.all([
     request("/api/state"),
-    request("/api/settings"),
+    request("/api/meta")
+  ]);
+  if(owner!==currentUser?.id||session!==sessionSerial)return false;
+  currentUser={...currentUser,...(meta.user||{})};applyCapabilitySurface(meta.capabilities||[]);
+  const [nextSettings,nextOnboardingSchema,nextOnboardingV2Schema,nextOnboardingV2State,nextLocalTestConfig]=await Promise.all([
+    request(hasCapability("ai-configuration")?"/api/settings":"/api/preferences"),
     optionalRequest("/api/onboarding/schema"),
     requestV1("/api/v1/onboarding-v2/schema"),
     requestV1("/api/v1/onboarding-v2/session"),
-    optionalRequest("/api/local-test-mode"),
-    request("/api/meta")
+    hasCapability("local-testing")?optionalRequest("/api/local-test-mode"):Promise.resolve(null)
   ]);
   if(owner!==currentUser?.id||session!==sessionSerial)return false;
   replaceState(nextState);state.onboardingV2=nextOnboardingV2State.data;llmSettings=nextSettings;onboardingSchema=nextOnboardingSchema;localTestConfig=nextLocalTestConfig;appVersion=meta.version||"development";releaseVersion=meta.releaseVersion||releaseVersion;featureFlags={...featureFlags,...meta.features};governanceUrl=typeof meta.governanceUrl==="string"?meta.governanceUrl:"";onboardingHydrated=false;notificationUnreadCount=Number(state.notificationUnread)||0;
@@ -3429,15 +3489,15 @@ function setAuthTab(tab){
 }
 function setAuthBusy(value){authBusy=value;$$(".auth-form input,.auth-form button,[data-auth-tab]").forEach(control=>control.disabled=value)}
 function invalidatePageLoads(){
-  actionsRequestSerial+=1;feedbackRequestSerial+=1;statisticsRequestSerial+=1;aiCostRequestSerial+=1;commercialRequestSerial+=1;personalContextRequestSerial+=1;
+  actionsRequestSerial+=1;feedbackRequestSerial+=1;statisticsRequestSerial+=1;aiCostRequestSerial+=1;commercialRequestSerial+=1;personalContextRequestSerial+=1;accountUsersRequestSerial+=1;
   activeAnswerTaskId=++answerTaskSerial;healthParseSerial+=1;latestHealthRequest=0;bookParseSerial+=1;clearTimeout(notificationTimer);
   discoveryController?.reset();backgroundResultController?.reset();refreshCoordinator.reset();
 }
 function clearPrivateSessionState(){
   closeImageViewer({restoreFocus:false});
   onboardingV2Controller.reset();
-  resetState();llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},automaticAnswers:{thoughtAnswer:false},speech:{generationRate:-10},hasApiKey:false,keyHint:""};
-  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;commercialStatistics=null;statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationsLoadState="idle";actionsSnapshot={actions:[],habits:[],habitCheckins:[]};feedbackItems=[];feedbackLoadState="idle";exportManifest=null;exportLoadState="idle";personalContext=null;personalContextLoadState="idle";governanceUrl="";appVersion="0.4.0";homeMemoryKeys=[];homeMemoryByKey=new Map();closeHomeEditors({restoreFocus:false});invalidatePageLoads();draftTags=[];captureDraftTags=[];pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";
+  resetState();llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{generationRate:-10},hasApiKey:false,keyHint:""};
+  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;commercialStatistics=null;statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationsLoadState="idle";actionsSnapshot={actions:[],habits:[],habitCheckins:[]};feedbackItems=[];feedbackLoadState="idle";exportManifest=null;exportLoadState="idle";personalContext=null;personalContextLoadState="idle";accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.4.0";homeMemoryKeys=[];homeMemoryByKey=new Map();closeHomeEditors({restoreFocus:false});invalidatePageLoads();draftTags=[];captureDraftTags=[];pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";
   healthParseSerial+=1;latestHealthRequest=0;healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=[];healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]};for(const draft of Object.values(healthImageDrafts))Object.assign(draft,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0});
   bookParseSerial+=1;for(const url of Object.values(bookPreviewUrls))if(url)URL.revokeObjectURL(url);bookPreviewUrls={cover:"",recognition:""};pendingBookImages={cover:null,recognition:null};editingBookId="";activeBookId="";activeBookFeatureNoteId="";bookCreatorOpen=false;bookDetailCondensed=false;
   keepsakeEditor.segmentSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.history=[];
@@ -3447,15 +3507,15 @@ function clearPrivateSessionState(){
   $$("main form").forEach(form=>{form.reset();delete form.dataset.requestId});$$(".modal-backdrop").forEach(modal=>modal.hidden=true);$("#comment-panel").hidden=true;$("#selection-tools").hidden=true;
   Object.keys(dailyTypeMeta).forEach(resetDailyForm);
 }
-function showAuthGate(){
-  const localTestEnabled=Boolean(localTestConfig?.enabled);syncController?.stop();syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};rotateSession();clearPrivateSessionState();currentUser=null;document.body.classList.add("auth-locked");$("#auth-gate").hidden=false;$("#account-control").hidden=true;$("#account-authenticated").hidden=true;const registerTab=$('[data-auth-tab="register"]');if(registerTab)registerTab.hidden=localTestEnabled;
+function showAuthGate(message=""){
+  const localTestEnabled=Boolean(localTestConfig?.enabled);syncController?.stop();syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};rotateSession();clearPrivateSessionState();currentUser=null;applyCapabilitySurface([]);document.body.classList.add("auth-locked");$("#auth-gate").hidden=false;$("#account-control").hidden=true;$("#account-authenticated").hidden=true;const registerTab=$('[data-auth-tab="register"]');if(registerTab)registerTab.hidden=localTestEnabled;if(message)$("#auth-status").textContent=message;
 }
 function renderAccountIdentity(){
   const username=currentUser?.username||"";
   $("#account-name").textContent=username;$("#account-current-name").textContent=username;$("#account-page-name").textContent=username;$("#account-username").value=username;
 }
 function prepareUserSession(user,authRequired){
-  rotateSession();currentUser=user;document.body.classList.add("auth-locked");restoreView?.("today");$("#account-control").hidden=!authRequired;$("#account-authenticated").hidden=!authRequired;$("#account-local-mode").hidden=authRequired;renderAccountIdentity();
+  rotateSession();currentUser=user;applyCapabilitySurface(user?.role==="owner"?ownerCapabilities:[]);document.body.classList.add("auth-locked");restoreView?.("today");$("#account-control").hidden=!authRequired;$("#account-authenticated").hidden=!authRequired;$("#account-local-mode").hidden=authRequired;renderAccountIdentity();
 }
 function revealUserSession(){document.body.classList.remove("auth-locked");$("#auth-gate").hidden=true}
 async function activateUserSession(user,authRequired){
@@ -3481,7 +3541,7 @@ async function authRequest(endpoint,payload,method="POST"){
 async function bootstrap(){
   let session,testConfig=null;
   try{[session,testConfig]=await Promise.all([apiClient.request("/api/auth/me",{headers:{accept:"application/json"}},{authGate:false,allowUnauthorized:true}),optionalPublicRequest("/api/local-test-mode")])}catch{showAuthGate();$("#auth-status").textContent="无法连接服务，请检查网络后重试。";return}
-  if(!session.authenticated){showAuthGate();localTestConfig=testConfig;const registerTab=$('[data-auth-tab="register"]');if(registerTab)registerTab.hidden=Boolean(testConfig?.enabled);setAuthTab(testConfig?.enabled||session.userCount?"login":"register");return}
+  if(!session.authenticated){showAuthGate(session.code==="AUTH_REAUTH_REQUIRED"?"账户权限已变更，请重新登录。":"");localTestConfig=testConfig;const registerTab=$('[data-auth-tab="register"]');if(registerTab)registerTab.hidden=Boolean(testConfig?.enabled);setAuthTab(testConfig?.enabled||session.userCount?"login":"register");if(session.code==="AUTH_REAUTH_REQUIRED")$("#auth-status").textContent="账户权限已变更，请重新登录。";return}
   await activateUserSession(session.user,session.authRequired);
 }
 const refreshState=(domains,options={})=>refreshCoordinator.refresh(domains,options);
@@ -3570,9 +3630,9 @@ const pageEffects={...createPageEffects({
   loadNotifications,
   scheduleNotificationPoll,
   loadTrash
-}),today:()=>loadActionsWorkspace(),discovery:()=>loadDiscovery(),feedback:()=>loadFeedback(),export:()=>loadExportManifest(),"personal-context":()=>loadPersonalContext()};
+}),today:()=>loadActionsWorkspace(),discovery:()=>loadDiscovery(),feedback:()=>loadFeedback(),export:()=>loadExportManifest(),"personal-context":()=>loadPersonalContext(),account:()=>loadAccountUsers()};
 const lazyPageEffects=new Proxy(pageEffects,{get(target,view){const effect=target[view];if(typeof view!=="string"||!LOCAL_TEST_VIEW_SCOPES[view])return effect;return()=>{void ensureLocalTestViewScope(view).then(async ready=>{if(!ready)return;await effect?.();await restorePendingProjections()})}}});
-({switchView,restoreView}=createPageRouter({query:$,queryAll:$$,effects:lazyPageEffects}));
+({switchView,restoreView}=createPageRouter({query:$,queryAll:$$,effects:lazyPageEffects,canAccessView:(_,capability)=>hasCapability(capability),onDenied:showPermissionPage}));
 $("#home-open-thought").addEventListener("click",()=>openHomeEditor("thought"));
 $("#home-record-state").addEventListener("click",()=>openHomeEditor("state"));
 $("#home-shuffle").addEventListener("click",()=>renderHomeMemories({advance:true}));
@@ -3797,7 +3857,8 @@ document.addEventListener("click",event=>{
     "retry-export":loadExportManifest,
     "retry-notifications":loadNotifications,
     "retry-trash":loadTrash,
-    "retry-personal-context":loadPersonalContext
+    "retry-personal-context":loadPersonalContext,
+    "retry-account-users":loadAccountUsers
   };
   if(retries[command])void retries[command]()
 });
@@ -4458,7 +4519,7 @@ $("#onboarding-form").addEventListener("submit",async event=>{event.preventDefau
 $("#onboarding-v2-reopen").addEventListener("click",()=>{switchView("today");requestAnimationFrame(()=>onboardingV2Controller.reopen())});
 $("#reset-response-styles").addEventListener("click",()=>{$("#assistant-name").value="神鸡";$$("[data-response-style]").forEach(select=>select.value="standard");$("#llm-settings-status").textContent="已恢复默认称呼与风格，保存后生效。"});
 $("#tts-generation-rate").addEventListener("input",event=>renderTtsGenerationRate(event.currentTarget.value));
-$("#llm-settings-form").addEventListener("submit",async e=>{e.preventDefault();const button=e.currentTarget.querySelector('[type="submit"]'),status=$("#llm-settings-status");button.disabled=true;status.textContent="正在保存…";try{llmSettings=await request("/api/settings",{method:"POST",body:JSON.stringify(settingsPayload())});$("#llm-api-key").value="";renderSettings();status.textContent="模型、场景与语音生成设置已保存。";showToast("AI 与语音设置已保存")}catch(err){status.textContent=err.message}finally{button.disabled=false}});
+$("#llm-settings-form").addEventListener("submit",async e=>{e.preventDefault();const ownerSettings=hasCapability("ai-configuration"),button=e.currentTarget.querySelector('[type="submit"]'),status=$("#llm-settings-status");button.disabled=true;status.textContent="正在保存…";try{llmSettings=await request(ownerSettings?"/api/settings":"/api/preferences",{method:ownerSettings?"POST":"PATCH",body:JSON.stringify(settingsPayload())});const key=$("#llm-api-key");if(key)key.value="";renderSettings();status.textContent=ownerSettings?"模型、场景与语音设置已保存。":"思考、回答与语音偏好已保存。";showToast("设置已保存")}catch(err){status.textContent=err.message}finally{button.disabled=false}});
 $("#test-llm").addEventListener("click",async e=>{const button=e.currentTarget,status=$("#llm-settings-status"),tier=$("#llm-test-tier").value;button.disabled=true;status.textContent=`正在保存并测试 ${tier[0].toUpperCase()+tier.slice(1)}…`;try{llmSettings=await request("/api/settings",{method:"POST",body:JSON.stringify(settingsPayload())});$("#llm-api-key").value="";renderSettings();const result=await request("/api/settings/test",{method:"POST",body:JSON.stringify({tier})}),profile=llmSettings.profiles[tier];status.textContent=`连接成功 · ${profile.model==="deepseek-v4-pro"?"DeepSeek Pro":"DeepSeek Flash"} · ${profile.effort==="none"?"思考关闭":`思考 ${profile.effort.toUpperCase()}`}`;showToast(result.reply||"DeepSeek 连接成功")}catch(err){status.textContent=`连接失败：${err.message}`}finally{button.disabled=false}});
 function syncLocalDate(){const next=localDateKey();if(next===currentLocalDate)return;const followedToday=activeDate===currentLocalDate;currentLocalDate=next;if(followedToday){activeDate=next;renderDate();renderSliders();renderThoughts();renderStateChart();renderHomeMood();renderChat()}}
 function markApplicationForeground(){apiClient.markForeground();syncLocalDate();restoreView?.()}
@@ -4498,6 +4559,19 @@ $("#password-form").addEventListener("submit",async event=>{
   finally{button.disabled=false}
 });
 $("#password-form [name='confirmPassword']").addEventListener("input",event=>event.currentTarget.setCustomValidity(""));
+$("#account-role-list").addEventListener("click",async event=>{
+  const button=event.target.closest("[data-account-role-save]");if(!button)return;
+  const userId=button.dataset.accountRoleSave,user=accountUsers.find(item=>item.id===userId),select=$(`[data-account-role="${CSS.escape(userId)}"]`),role=select?.value,status=$("#account-role-status");
+  if(!user||!["user","owner"].includes(role)||role===user.role)return;
+  if(user.role==="owner"&&role==="user"&&!confirm(`撤销 ${user.username} 的 Owner 权限？该账户需要重新登录。`)){select.value=user.role;return}
+  button.disabled=true;status.textContent="正在更新角色…";
+  try{
+    const result=await authRequest(`/api/auth/users/${encodeURIComponent(userId)}/role`,{role},"PATCH");
+    if(userId===currentUser?.id){showAuthGate("账户权限已变更，请重新登录。");return}
+    accountUsers=accountUsers.map(item=>item.id===userId?result.user:item);renderAccountUsers();status.textContent="角色已更新；该账户需要重新登录。"
+  }catch(error){select.value=user.role;status.textContent=error.message}
+  finally{if(button.isConnected)button.disabled=false}
+});
 $("#logout-button").addEventListener("click",logout);$("#logout-button-account").addEventListener("click",logout);
 export function startApplication() {
   return bootstrap().catch(error => {

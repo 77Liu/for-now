@@ -42,9 +42,12 @@ await assert.rejects(client.request("/api/state"), { status: 401, code: "AUTH_RE
 assert.equal(locked, 1);
 assert.equal((await client.request("/api/auth/me", {}, { allowUnauthorized: true })).code, "AUTH_REQUIRED");
 assert.equal(locked, 1);
+fetchHandler = async () => Response.json({ error: "账户权限已变更，请重新登录", code: "AUTH_REAUTH_REQUIRED" }, { status: 401 });
+await assert.rejects(client.request("/api/state"), { status: 401, code: "AUTH_REAUTH_REQUIRED" });
+assert.equal(locked, 2);
 fetchHandler = async () => Response.json({ error: { message: "登录状态已失效", code: "AUTH_REQUIRED" } }, { status: 401 });
 await assert.rejects(client.readBlob("/attachments/private.png"), { status: 401, code: "AUTH_REQUIRED", message: "登录状态已失效" });
-assert.equal(locked, 2);
+assert.equal(locked, 3);
 fetchHandler = async () => Response.json({
   error: { message: "资源版本已变化", code: "PRECONDITION_FAILED", details: { currentVersion: 3 } }
 }, { status: 412 });

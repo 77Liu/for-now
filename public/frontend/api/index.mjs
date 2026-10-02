@@ -48,7 +48,7 @@ export function createApiClient({ baseUrl, session, apiOrigin = "", onAuthRequir
   const check = (response, result, authGate, fallback) => {
     if (response.ok) return;
     const error = errorFor(response, result, fallback);
-    if (authGate && error.status === 401 && error.code === "AUTH_REQUIRED") onAuthRequired();
+    if (authGate && error.status === 401 && ["AUTH_REQUIRED", "AUTH_REAUTH_REQUIRED"].includes(error.code)) onAuthRequired(error);
     throw error;
   };
   return {

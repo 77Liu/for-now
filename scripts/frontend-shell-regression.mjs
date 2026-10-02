@@ -8,7 +8,7 @@ import {
   createPageEffects,
   selectHomeMemories
 } from "../public/frontend/features/index.mjs";
-import { createPageRouter, viewSections } from "../public/frontend/pages/index.mjs";
+import { createPageRouter, ownerViewCapabilities, viewSections } from "../public/frontend/pages/index.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const appEntry = await fs.readFile(path.join(ROOT, "public/app.js"), "utf8");
@@ -25,6 +25,8 @@ assert.doesNotMatch(appRuntime, /from "\.\/frontend\//);
 assert.match(appRuntime, /operation=\+\+authOperationSerial;setAuthBusy\(true\)/);
 assert.match(appRuntime, /requestSerial!==actionsRequestSerial\|\|owner!==currentUser\?\.id\|\|session!==sessionSerial/);
 assert.match(appRuntime, /LOCAL_TEST_RESPONSE_MISMATCH/);
+assert.match(appRuntime, /ownerSurfaceVault\.append\(entry\.node\)/);
+assert.match(appRuntime, /AUTH_REAUTH_REQUIRED/);
 assert.match(appRuntime, /提交时的行动已保存；等待期间的新输入已保留。/);
 assert.match(appRuntime, /已保存，但行动列表刷新失败/);
 assert.match(appRuntime, /function contentState\(/);
@@ -41,6 +43,9 @@ assert.doesNotMatch(applicationStyles, /\.saved-reasoning|\.answer-reasoning/);
 assert.match(html, /id="home-open-thought"/);
 assert.match(html, /id="home-mood-sparkline"/);
 assert.match(html, /id="discovery-query"/);
+assert.match(html, /id="view-permission"/);
+assert.equal((html.match(/data-ai-effort=/g) || []).length, 16);
+assert.ok((html.match(/data-owner-capability=/g) || []).length >= 10);
 assert.doesNotMatch(html, /id="ai-answer-reasoning|DeepSeek 回答|模型思考/);
 for (const phrase of ["图片原文", "语音原件", "原音频与转写分层保存", "需要时展开麦克风控制", "碎片收集箱", "日记助手", "DeepSeek 长期对话", "每周自动尝试，服务需运行"]) {
   assert.doesNotMatch(html, new RegExp(phrase), `implementation or placeholder copy must not remain visible: ${phrase}`);
@@ -100,7 +105,13 @@ const element = ({ id = "", dataset = {} } = {}) => {
     }
   };
 };
-const views = [element({ id: "view-today" }), element({ id: "view-quotes" }), element({ id: "view-settings" })];
+const views = [
+  element({ id: "view-today" }),
+  element({ id: "view-quotes" }),
+  element({ id: "view-settings" }),
+  element({ id: "view-architecture" }),
+  element({ id: "view-permission" })
+];
 const nav = [
   element({ dataset: { section: "today" } }),
   element({ dataset: { section: "seen" } }),
@@ -117,6 +128,7 @@ const tabs = [
 ];
 const sectionNav = element();
 const calls = [];
+const denied = [];
 const router = createPageRouter({
   query: selector => selector === "#section-nav" ? sectionNav : null,
   queryAll: selector => ({
@@ -130,6 +142,8 @@ const router = createPageRouter({
     leaveQuotes: () => calls.push("leave-quotes"),
     settings: () => calls.push("settings")
   },
+  canAccessView: (view, capability) => view !== "architecture" && Boolean(capability),
+  onDenied: (view, capability) => denied.push([view, capability]),
   scrollTo: options => calls.push(["scroll", options])
 });
 router.switchView("quotes");
@@ -150,6 +164,9 @@ assert.equal(sectionNav.hidden, false);
 assert.equal(tabs[0]["aria-current"], "page");
 assert.equal(calls.length, 5, "restoring a view must not rerun effects or scroll");
 assert.deepEqual(calls.slice(0, 3), ["quotes", ["scroll", { top: 0, behavior: "smooth" }], "leave-quotes"]);
+router.switchView("architecture");
+assert.equal(views[4].classList.contains("active"), true);
+assert.deepEqual(denied, [["architecture", ownerViewCapabilities.architecture]]);
 
 const effects = createPageEffects({
   requestFrame: callback => {

@@ -202,11 +202,15 @@ const mockFetch = `
   window.__releaseKeepsakeDerivatives = null;
   window.__settingsSaves = 0;
   window.__lastSettingsPayload = null;
+  window.__preferenceSaves = 0;
   window.__aiCostPlanSaves = 0;
   window.__commercializationSaves = 0;
   window.__usernameChanges = 0;
   window.__passwordChanges = 0;
-  window.__accountUser = { id: "user-1", username: "owner", createdAt: "2026-09-27T00:00:00.000Z" };
+  window.__roleChanges = 0;
+  window.__accountUser = { id: "user-1", username: "owner", role: "owner", createdAt: "2026-09-27T00:00:00.000Z" };
+  window.__nextLoginRole = "owner";
+  window.__reauthNextPreference = false;
   window.__dailySaves = 0;
   window.__dailyPatches = 0;
   window.__checkinSaves = 0;
@@ -648,8 +652,16 @@ const mockFetch = `
     if (url.includes("/api/v1/exports/account?format=manifest")) return v1({snapshotVersion:15,summary:{resources:12,attachments:2,attachmentReferences:3,orphanReferences:0}});
     if (url.includes("/api/v1/exports/account?format=json")) return v1({format:"json",filename:"for-now-ui.json",mimeType:"application/json;charset=utf-8",content:"{}\\n"});
     if (url.includes("/api/v1/exports/account?format=markdown")) return v1({format:"markdown",filename:"for-now-ui.md",mimeType:"text/markdown;charset=utf-8",content:"# For Now\\n"});
-    if (url === "/api/meta") return json({ version: "build-fixture", releaseVersion: "0.2.0", user: window.__accountUser, governanceUrl: "/platform/" });
-    if (url === "/api/auth/me") return json({ authenticated: true, authRequired: true, registrationAvailable: true, user: window.__accountUser, userCount: 1 });
+    if (url === "/api/meta") {
+      const owner=window.__accountUser.role==="owner";
+      return json({ version: "build-fixture", releaseVersion: "0.2.0", user: window.__accountUser, capabilities:owner?["ai-costs","architecture","commercialization","local-testing","ai-configuration","account-roles"]:[], governanceUrl:owner?"/platform/":"" });
+    }
+    if (url === "/api/auth/me") return json({ authenticated: true, authRequired: true, registrationAvailable: true, user: window.__accountUser, capabilities:window.__accountUser.role==="owner"?["account-roles"]:[], userCount: 2 });
+    if (url === "/api/auth/users" && (!init.method || init.method === "GET")) return json({users:[window.__accountUser,{id:"member-1",username:"member",role:"user",createdAt:"2026-09-27T00:00:00.000Z"}]});
+    if (/^\\/api\\/auth\\/users\\/[^/]+\\/role$/.test(url) && init.method === "PATCH") {
+      window.__roleChanges+=1;
+      return json({authenticated:true,user:{id:url.split("/")[4],username:"member",role:JSON.parse(init.body).role,createdAt:"2026-09-27T00:00:00.000Z"}})
+    }
     if (url === "/api/auth/username" && init.method === "PATCH") {
       window.__usernameChanges += 1;
       window.__accountUser = { ...window.__accountUser, username: JSON.parse(init.body).username };
@@ -664,7 +676,7 @@ const mockFetch = `
       return json({ authenticated: false });
     }
     if (url === "/api/auth/login") {
-      const complete=()=>{window.__accountUser={id:"user-2",username:"second",createdAt:"2026-09-27T00:00:00.000Z"};return json({authenticated:true,authRequired:true,user:window.__accountUser})};
+      const complete=()=>{window.__accountUser={id:"user-2",username:"second",role:window.__nextLoginRole,createdAt:"2026-09-27T00:00:00.000Z"};return json({authenticated:true,authRequired:true,user:window.__accountUser})};
       if(window.__delayLogin)return new Promise(resolve=>{window.__releaseLogin=()=>{window.__delayLogin=false;resolve(complete())}});
       return complete();
     }
@@ -739,6 +751,7 @@ const mockFetch = `
         {key:"thought",label:"所思",modules:[module("thoughts","思绪",["thoughts"]),module("journals","日记",["journals"]),module("review","回顾",["experiments","analyses"])]},
         {key:"interaction",label:"互动",modules:[module("annotations","正文批注",["highlights","comments","commentReplies","shenji"]),module("thoughtInteractions","思绪",["followUps","remarks"]),module("journalInteractions","日记",["reflections"])]}
       ].map(group=>({...group,total:group.modules.reduce((sum,item)=>sum+item.total,0)}));
+      if(window.__accountUser.role!=="owner")return json({records:{total:41,contentTotal:31,interactionTotal:10,content,interactions,groups}});
       return json({
         records: { total: 41, contentTotal: 31, interactionTotal: 10, content, interactions, groups },
         ai: { from:dates[0],to:dates.at(-1),trackingStartedAt:"2026-09-21T01:00:00.000Z",summary,daily,models:[{model:"deepseek-flash",label:"DeepSeek Flash",...flash},{model:"deepseek-v4-pro",label:"DeepSeek Pro",...pro}],providers:[{provider:"deepseek",label:"DeepSeek",...deepseek},{provider:"volcengine",label:"火山引擎",...volcengine},{provider:"aliyun",label:"阿里云",...aliyun}],services,modalities:[{modality:"text",label:"纯文本",...text},{modality:"vision",label:"图片理解",...vision},{modality:"audio",label:"语音",...audio}],scenes:[{scene:"thoughtAnswer",calls:4,tokens:{input:12000,cacheHit:3000,reasoning:3000,answer:2000},costCny:.1356,costsCny:{total:.1356},costsUsd:{total:0}},{scene:"chat",calls:2,tokens:{input:5000,cacheHit:1000,reasoning:800,answer:600},costCny:.028,costsCny:{total:.028},costsUsd:{total:0}},{scene:"annotationShenji",calls:1,tokens:{input:1800,cacheHit:200,reasoning:200,answer:180},costCny:.00856,costsCny:{total:.00856},costsUsd:{total:0}},{scene:"speechSynthesis",calls:2,costCny:1.25,costUnknownCalls:1,tokens:{},costsCny:{total:1.25},costsUsd:{total:0}},{scene:"keepsakeSegmentation",calls:2,costUnknownCalls:2,tokens:{},costsCny:{total:0},costsUsd:{total:0}}],calibration:{activeDays:6,averageCallsPerActiveDay:1.5,averageInputTokens:1467,maxInputTokens:31860,averageRequestChars:5100,maxRequestChars:52661,medianCostCny:.025,p90CostCny:.041,maxCostCny:.042},pricing:{source:"https://api-docs.deepseek.com/zh-cn/quick_start/pricing",checkedAt:"2026-10-02",currency:"CNY",displayCurrency:"CNY",cnyPerUsd:7.2,unitTokens:1000000,models:{"deepseek-flash":{label:"DeepSeek Flash",offPeak:{cacheHit:.02,cacheMiss:1,output:4},peak:{cacheHit:.04,cacheMiss:2,output:8}},"deepseek-v4-pro":{label:"DeepSeek Pro",offPeak:{cacheHit:.15,cacheMiss:4.5,output:13.5},peak:{cacheHit:.3,cacheMiss:9,output:27}}},historicalUsdNote:"人民币换算系数仅用于历史美元账本。",estimateNote:"费用按人民币官方单价估算。"} },
@@ -752,7 +765,7 @@ const mockFetch = `
       const empty=window.__testWorkspaceMode==="cold"||window.__lazySimulationEmpty;
       return json({
       version: 15, checkins: empty?[]:window.__checkins, dailyRecords: empty?[]:window.__dailyRecords, captures: empty?[]:window.__captures, journals: empty?[]:window.__journals, thoughts: empty?[]:window.__thoughts,
-      chats: empty?[]:[{ id: "chat-1", createdAt: "2026-09-27T01:15:00.000Z", occurredAt: "2026-09-27T04:15:00.000Z", occurredOn: "2026-09-27", message: "**用户问题**", answer: "## 模型回答", reasoningContent: "PRIVATE_CHAT_REASONING" }], books: empty?[]:window.__books, journalDraft: empty?null:window.__journalDraft, keepsakes: empty?[]:window.__keepsakes.map(({originalPath,...item})=>item), quotes: empty?[]:window.__quotes, aiTasks: window.__aiTasks, notifications: window.__notifications, onboarding: window.__onboarding, onboardingV2: window.__onboardingV2, commercialization: window.__commercialization,
+      chats: empty?[]:[{ id: "chat-1", createdAt: "2026-09-27T01:15:00.000Z", occurredAt: "2026-09-27T04:15:00.000Z", occurredOn: "2026-09-27", message: "**用户问题**", answer: "## 模型回答", reasoningContent: "PRIVATE_CHAT_REASONING" }], books: empty?[]:window.__books, journalDraft: empty?null:window.__journalDraft, keepsakes: empty?[]:window.__keepsakes.map(({originalPath,...item})=>item), quotes: empty?[]:window.__quotes, aiTasks: window.__aiTasks, notifications: window.__notifications, onboarding: window.__onboarding, onboardingV2: window.__onboardingV2, ...(window.__accountUser.role==="owner"?{commercialization:window.__commercialization}:{}),
       speech:{configured:true,defaultVoice:"zh_male_shaonianzixin_uranus_bigtts",supportedAsrMimeTypes:["audio/mp4","audio/ogg","audio/wav"],voices:[{id:"zh_male_shaonianzixin_uranus_bigtts",label:"少年梓辛 2.0"},{id:"zh_male_m191_uranus_bigtts",label:"云舟 2.0"},{id:"zh_female_vv_uranus_bigtts",label:"Vivi 2.0"},{id:"zh_female_cancan_uranus_bigtts",label:"知性灿灿 2.0"}]},vision:{configured:true},
       experiments: [], analyses: empty?[]:window.__analyses, customMetrics: [], clusters: [],
       insights: { trends: [
@@ -769,9 +782,10 @@ const mockFetch = `
       });
     }
     if (url === "/api/settings" && (!init.method || init.method === "GET")) return json({
-      version: 9, provider: "deepseek",
+      version: 10, provider: "deepseek",
       profiles: { lite: { model: "deepseek-flash", effort: "none" }, mid: { model: "deepseek-flash", effort: "high" }, high: { model: "deepseek-v4-pro", effort: "high" }, ultra: { model: "deepseek-v4-pro", effort: "max" } },
       scenarios: { thoughtPrompt: "lite", thoughtDraft: "high", thoughtAnswer: "ultra", followUpAnswer: "ultra", chat: "high", diaryLead: "lite", diaryStructure: "mid", diaryTopic: "high", diaryReflection: "ultra", annotationShenji: "high", analysis: "ultra", bookRecognition: "mid", healthRecognition: "mid", contentImageUnderstanding: "mid", capturePolish: "mid" },
+      sceneEfforts: { thoughtPrompt:"none",thoughtDraft:"high",thoughtAnswer:"max",followUpAnswer:"max",chat:"high",diaryLead:"none",diaryStructure:"high",diaryTopic:"high",diaryReflection:"max",annotationShenji:"high",analysis:"max",bookRecognition:"high",healthRecognition:"high",contentImageUnderstanding:"high",capturePolish:"high",onboardingClaimExtraction:"high" },
       assistantName: "神鸡", responseStyles: { thoughtDraft:"standard",thoughtAnswer:"standard",followUpAnswer:"standard",chat:"standard",diaryReflection:"standard",annotationShenji:"standard",analysis:"standard" },
       automaticAnswers: { thoughtAnswer: true },
       speech: { generationRate: -10 },
@@ -781,7 +795,12 @@ const mockFetch = `
       window.__settingsSaves += 1;
       const payload = JSON.parse(init.body);
       window.__lastSettingsPayload = payload;
-      return json({ version: 9, provider: "deepseek", ...payload, hasApiKey: true, keyHint: "tes••••test" });
+      return json({ version: 10, provider: "deepseek", ...payload, hasApiKey: true, keyHint: "tes••••test" });
+    }
+    if (url === "/api/preferences" && (!init.method || init.method === "GET")) return json({version:10,assistantName:"神鸡",sceneEfforts:{thoughtPrompt:"none",thoughtDraft:"high",thoughtAnswer:"max",followUpAnswer:"max",chat:"high",diaryLead:"none",diaryStructure:"high",diaryTopic:"high",diaryReflection:"max",annotationShenji:"high",analysis:"max",bookRecognition:"high",healthRecognition:"high",contentImageUnderstanding:"high",capturePolish:"high",onboardingClaimExtraction:"high"},responseStyles:{thoughtDraft:"standard",thoughtAnswer:"standard",followUpAnswer:"standard",chat:"standard",diaryReflection:"standard",annotationShenji:"standard",analysis:"standard"},automaticAnswers:{thoughtAnswer:true},speech:{generationRate:-10}});
+    if (url === "/api/preferences" && init.method === "PATCH") {
+      if(window.__reauthNextPreference){window.__reauthNextPreference=false;return json({error:"账户权限已变更，请重新登录",code:"AUTH_REAUTH_REQUIRED"},401)}
+      window.__preferenceSaves+=1;window.__lastSettingsPayload=JSON.parse(init.body);return json({version:10,...window.__lastSettingsPayload})
     }
     if (url === "/api/settings/test") return json({ ok: true, reply: "连接成功" });
     if (url === "/api/speech/synthesize" && init.method === "POST") {
@@ -2326,7 +2345,7 @@ try {
   await evaluate(`(() => { document.querySelector('[data-book-note-edit="note-1"]').click(); const form = document.querySelector("[data-book-entry-form]"); form.elements.content.value = "## 更新后的理解\\n\\n仍然值得继续生长。"; form.requestSubmit(); return true; })()`);
   assert.equal(await waitUntil(`window.__bookNotePatches === 1 && document.querySelector('[data-note-id="note-1"] .book-note h2')?.textContent === "更新后的理解"`), true);
   await evaluate(`document.querySelector('[data-book-note-favorite="note-1"]').click(); true`);
-  assert.equal(await waitUntil(`window.__bookNotePatches === 2 && document.querySelector('[data-book-note-favorite="note-1"]').classList.contains("sprout")`), true);
+  assert.equal(await waitUntil(`window.__bookNotePatches === 2 && document.querySelector('[data-book-note-favorite="note-1"]')?.classList.contains("sprout")`), true);
   const bookDetailScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-book-detail.png", Buffer.from(bookDetailScreenshot.data, "base64"));
   await evaluate(`document.querySelector("[data-book-back]").click(); true`);
@@ -2484,10 +2503,9 @@ try {
     throw new Error(await evaluate(`JSON.stringify({captureSaves:window.__captureSaves,expected:${captureSavesBeforeKindChoice+1},kind:document.querySelector("#chain-form").elements.recordKind.value,question:document.querySelector("#chain-question").value,status:document.querySelector("#chain-status").textContent,toast:document.querySelector("#toast").textContent,buttonDisabled:document.querySelector("#chain-submit").disabled})`))
   }
   assert.deepEqual(await evaluate(`(()=>{const payload=window.__capturePayloads.at(-1),form=document.querySelector("#chain-form");return{content:payload.content,hasIdea:Object.hasOwn(payload,"idea"),kind:form.elements.recordKind.value,title:document.querySelector("#home-thought-title").textContent,chooserHidden:document.querySelector(".thought-record-kind").hidden}})()`),{content:"从思考入口保存的一条念起",hasIdea:false,kind:"thought",title:"记录思考",chooserHidden:false});
-  const thoughtsBeforeRejectedCreate=await evaluate(`window.__thoughts.length`);
   await evaluate(`document.querySelector("#home-open-thought").click();document.querySelector("#chain-question").value="不应残留的冲突思考";window.__conflictThoughtCreate=true;document.querySelector("#chain-form").requestSubmit();true`);
   assert.equal(await waitUntil(`document.querySelector("#chain-status").textContent.includes("来源念起已变化")&&!document.querySelector('#chain-form [type="submit"]').disabled`),true);
-  assert.deepEqual(await evaluate(`({count:window.__thoughts.length,pending:[...document.querySelectorAll("[data-chain-id]")].some(item=>item.dataset.chainId.startsWith("pending:")),visible:[...document.querySelectorAll(".question-preview")].some(item=>item.textContent.includes("不应残留的冲突思考"))})`),{count:thoughtsBeforeRejectedCreate,pending:false,visible:false});
+  assert.deepEqual(await evaluate(`({stored:window.__thoughts.some(item=>item.content==="不应残留的冲突思考"),pending:[...document.querySelectorAll("[data-chain-id]")].some(item=>item.dataset.chainId.startsWith("pending:")),visible:[...document.querySelectorAll(".question-preview")].some(item=>item.textContent.includes("不应残留的冲突思考"))})`),{stored:false,pending:false,visible:false});
   const imageDiscardsBeforePendingThought=await evaluate(`window.__imageDiscards.length`),thoughtSavesBeforePending=await evaluate(`window.__thoughtSaves`);
   await evaluate(`(()=>{const form=document.querySelector("#chain-form");form.reset();const bytes=Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="),value=>value.charCodeAt(0)),file=new File([bytes],"pending-thought.png",{type:"image/png"}),transfer=new DataTransfer();transfer.items.add(file);const input=document.querySelector("#thought-root-images");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));document.querySelector("#chain-question").value="带图的待同步思考";document.querySelector("#chain-answer").value="手写回答";window.__failThoughtCreateNetwork=true;form.requestSubmit();return true})()`);
   assert.equal(await waitUntil(`document.querySelector("#chain-status").textContent.includes("网络恢复后自动同步")&&[...document.querySelectorAll("[data-chain-id]")].some(item=>item.dataset.chainId.startsWith("pending:"))`),true);
@@ -2507,7 +2525,7 @@ try {
     mineVersion:document.querySelector("#mine-app-version").textContent,
     noOverflow:document.documentElement.scrollWidth<=window.innerWidth
   }))()`);
-  assert.deepEqual(mineDesktop, { active:true, sectionHidden:true, account:"owner", rows:["owner","统计","通知","回收站","数据导出","个人概要","AI 成本","架构设计","设置","商业化","产品反馈","关于"], summaries:true, governance:{hidden:false,path:"/platform/"}, sidebarVersion:"v0.2.0", mineVersion:"v0.2.0", noOverflow:true });
+  assert.deepEqual(mineDesktop, { active:true, sectionHidden:true, account:"owner", rows:["owner","统计","通知","回收站","数据导出","个人概要","设置","产品反馈","AI 成本","架构设计","商业化","关于"], summaries:true, governance:{hidden:false,path:"/platform/"}, sidebarVersion:"v0.2.0", mineVersion:"v0.2.0", noOverflow:true });
   const mineDesktopScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-mine-desktop.png", Buffer.from(mineDesktopScreenshot.data, "base64"));
   await evaluate(`document.querySelector('#view-mine [data-view="personal-context"]').click();true`);
@@ -2682,12 +2700,16 @@ try {
   await fs.writeFile("/tmp/growth-commercialization-mobile.png",Buffer.from(commercializationMobileScreenshot.data,"base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
   await evaluate(`document.querySelector('[data-view="account"]').click(); true`);
+  assert.equal(await waitUntil(`document.querySelectorAll("#account-role-list .account-role-row").length===2`),true);
   assert.deepEqual(await evaluate(`({
     active:document.querySelector("#view-account").classList.contains("active"),
     authenticated:!document.querySelector("#account-authenticated").hidden,
     localHidden:document.querySelector("#account-local-mode").hidden,
-    username:document.querySelector("#account-username").value
-  })`), { active: true, authenticated: true, localHidden: true, username: "owner" });
+    username:document.querySelector("#account-username").value,
+    roleRows:document.querySelectorAll("#account-role-list .account-role-row").length
+  })`), { active: true, authenticated: true, localHidden: true, username: "owner", roleRows: 2 });
+  await evaluate(`(()=>{const select=document.querySelector('[data-account-role="member-1"]');select.value="owner";document.querySelector('[data-account-role-save="member-1"]').click();return true})()`);
+  assert.equal(await waitUntil(`window.__roleChanges===1&&document.querySelector('[data-account-user="member-1"] small').textContent.includes("Owner")`),true);
   await evaluate(`document.querySelector("#toast").hidden=true; true`);
   await sleep(250);
   const accountDesktopScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
@@ -2703,7 +2725,7 @@ try {
   await evaluate(`document.querySelector("#password-form [name='currentPassword']").value="old-password-1"; document.querySelector("#password-form [name='newPassword']").value="new-password-2"; document.querySelector("#password-form [name='confirmPassword']").value="new-password-2"; document.querySelector("#password-form").requestSubmit(); true`);
   assert.equal(await waitUntil(`window.__passwordChanges===1&&document.querySelector("#password-status").textContent.includes("密码已更新")`), true);
   await evaluate(`document.querySelector('[data-view="settings"]').click(); true`);
-  assert.deepEqual(await evaluate(`(() => {const rate=document.querySelector("#tts-generation-rate");return{controls:document.querySelectorAll("[data-profile-model]").length === 4 && document.querySelectorAll("[data-profile-effort]").length === 4 && document.querySelectorAll("[data-ai-scenario]").length === 15 && document.querySelectorAll("[data-response-style]").length === 7,min:rate.min,max:rate.max,value:rate.value,label:document.querySelector("#tts-generation-rate-value").textContent}})()`), {
+  assert.deepEqual(await evaluate(`(() => {const rate=document.querySelector("#tts-generation-rate");return{controls:document.querySelectorAll("[data-profile-model]").length === 4 && document.querySelectorAll("[data-profile-effort]").length === 4 && document.querySelectorAll("[data-ai-scenario]").length === 15 && document.querySelectorAll("[data-ai-effort]").length === 16 && document.querySelectorAll("[data-response-style]").length === 7,min:rate.min,max:rate.max,value:rate.value,label:document.querySelector("#tts-generation-rate-value").textContent}})()`), {
     controls: true,
     min: "-50",
     max: "100",
@@ -2962,6 +2984,7 @@ try {
   assert.equal(mediaRestored,true,JSON.stringify(await evaluate(`({date:document.querySelector("#today-date-label")?.textContent,preview:Boolean(document.querySelector('[data-content-image-editor="capture"] .content-image-preview')),captureStatus:document.querySelector("#capture-status")?.textContent,audioSrc:document.querySelector("#capture-audio-player")?.src,audioMeta:document.querySelector("#capture-audio-meta")?.textContent,audioStatus:document.querySelector("#capture-audio-status")?.textContent,toast:document.querySelector("#toast")?.textContent})`)));
   assert.equal(await evaluate(`!document.body.textContent.includes("LEGACY_AUDIO_PRIVATE_DETAIL")`),true);
   assert.deepEqual(await evaluate(`({commentOpen:!document.querySelector("#comment-panel").hidden,commentText:document.querySelector("#comment-text").value,commentImages:document.querySelectorAll('[data-content-image-editor="comment"] .content-image-preview').length,blockOpen:!document.querySelector("#thought-block-modal").hidden,blockText:document.querySelector("#thought-block-content").value,blockRoot:document.querySelector("#thought-block-root-id").value,blockImages:document.querySelectorAll('[data-content-image-editor="thoughtBlock"] .content-image-preview').length})`),{commentOpen:true,commentText:"刷新后继续的评论",commentImages:1,blockOpen:true,blockText:"刷新后继续的内容块",blockRoot:"kept-root",blockImages:1});
+  assert.equal(await waitUntil(`document.querySelectorAll(".keepsake-batch-item").length===2`),true);
   assert.deepEqual(await evaluate(`({items:document.querySelectorAll(".keepsake-batch-item").length,count:document.querySelector("#keepsake-batch-count").textContent,active:document.querySelector('[data-keepsake-batch-select="1"]')?.getAttribute("aria-pressed")})`),{items:2,count:"2 件",active:"true"});
   await evaluate(`document.querySelector('[data-view="daily"]').click();document.querySelector('[data-daily-tab="weight"]').click();true`);
   assert.deepEqual(await evaluate(`({value:document.querySelector('[data-daily-form="weight"] [name="bodyWaterMass"]').value,description:document.querySelector('[data-daily-form="weight"] [name="description"]').value,images:document.querySelectorAll("#health-image-previews figure").length,status:document.querySelector("#health-parse-status").textContent})`),{value:"42.2",description:"刷新后恢复的体成分",images:1,status:"已恢复识别结果，请核对后保存。"});
@@ -2969,7 +2992,36 @@ try {
     .filter(event=>event.method==="Runtime.exceptionThrown")
     .map(event=>event.params.exceptionDetails.exception?.description||event.params.exceptionDetails.text)
     .filter(message=>/Cannot set properties of null \(setting 'value'\)/.test(message)),[]);
-  console.log("UI regression passed: home v0.2 data, routing, drafts and responsive layouts plus account, health, thought, local-mode and onboarding flows.");
+
+  await evaluate(`window.confirm=()=>true;window.__nextLoginRole="user";document.querySelector("#logout-button").click();true`);
+  assert.equal(await waitUntil(`!document.querySelector("#auth-gate").hidden&&[...document.querySelectorAll(".auth-form input,.auth-form button,[data-auth-tab]")].every(item=>!item.disabled)`),true);
+  await evaluate(`(()=>{const form=document.querySelector("#login-form");form.elements.username.value="member";form.elements.password.value="member-password-2";form.requestSubmit();return true})()`);
+  assert.equal(await waitUntil(`document.querySelector("#auth-gate").hidden&&document.querySelector("#account-name").textContent==="second"`),true);
+  assert.deepEqual(await evaluate(`({
+    ownerNodes:document.querySelectorAll("[data-owner-capability]").length,
+    architecture:Boolean(document.querySelector("#view-architecture")),
+    commercialization:Boolean(document.querySelector("#view-commercialization")),
+    aiCost:Boolean(document.querySelector("#view-ai-cost")),
+    aiDashboard:Boolean(document.querySelector("#view-statistics .ai-dashboard")),
+    modelControls:document.querySelectorAll("[data-profile-model]").length,
+    apiKey:Boolean(document.querySelector("#llm-api-key")),
+    localTest:Boolean(document.querySelector("#local-test-settings")),
+    accountRoles:Boolean(document.querySelector("#account-role-settings")),
+    effortControls:document.querySelectorAll("[data-ai-effort]").length,
+    primary:[...document.querySelectorAll(".nav-button")].map(item=>item.textContent.trim())
+  })`),{ownerNodes:0,architecture:false,commercialization:false,aiCost:false,aiDashboard:false,modelControls:0,apiKey:false,localTest:false,accountRoles:false,effortControls:16,primary:["◌今日","◇所见","∿所思","○我的"]});
+  await evaluate(`(()=>{const button=document.createElement("button");button.dataset.view="architecture";document.body.append(button);button.click();button.remove();return true})()`);
+  assert.deepEqual(await evaluate(`({permission:document.querySelector("#view-permission").classList.contains("active"),title:document.querySelector("#permission-title").textContent,sensitive:document.querySelector("main").innerText.includes("2 vCPU")||document.querySelector("main").innerText.includes("API 密钥")})`),{permission:true,title:"架构设计仅 Owner 可访问",sensitive:false});
+  await evaluate(`document.querySelector('[data-view="settings"]').click();document.querySelector('[data-ai-effort="thoughtAnswer"]').value="none";document.querySelector("#llm-settings-form").requestSubmit();true`);
+  assert.equal(await waitUntil(`window.__preferenceSaves===1&&document.querySelector("#llm-settings-status").textContent.includes("偏好已保存")`),true);
+  assert.deepEqual(await evaluate(`({effort:window.__lastSettingsPayload.sceneEfforts.thoughtAnswer,profiles:Object.hasOwn(window.__lastSettingsPayload,"profiles"),scenarios:Object.hasOwn(window.__lastSettingsPayload,"scenarios"),apiKey:Object.hasOwn(window.__lastSettingsPayload,"apiKey")})`),{effort:"none",profiles:false,scenarios:false,apiKey:false});
+  await evaluate(`document.querySelector('[data-view="statistics"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#record-total strong")?.textContent==="41"`),true);
+  assert.deepEqual(await evaluate(`({title:document.querySelector("#statistics-page-title").textContent,aiDashboard:Boolean(document.querySelector("#view-statistics .ai-dashboard"))})`),{title:"留下了什么",aiDashboard:false});
+  await evaluate(`document.querySelector('[data-view="settings"]').click();window.__reauthNextPreference=true;document.querySelector("#llm-settings-form").requestSubmit();true`);
+  assert.equal(await waitUntil(`!document.querySelector("#auth-gate").hidden&&document.querySelector("#auth-status").textContent.includes("权限已变更")`),true);
+  assert.equal(await evaluate(`document.body.classList.contains("auth-locked")`),true);
+  console.log("UI regression passed: owner capability surfaces, ordinary-user DOM isolation, permission routing, reauthentication, core flows and responsive layouts.");
 } finally {
   cdp?.socket.close();
   chrome.kill("SIGKILL");

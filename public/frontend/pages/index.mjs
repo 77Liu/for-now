@@ -20,15 +20,24 @@ export const viewSections = Object.freeze({
   export: "mine",
   notifications: "mine",
   trash: "mine",
+  permission: "mine",
   account: "mine",
   settings: "mine",
   about: "mine"
+});
+
+export const ownerViewCapabilities = Object.freeze({
+  "ai-cost": "ai-costs",
+  architecture: "architecture",
+  commercialization: "commercialization"
 });
 
 export function createPageRouter({
   query,
   queryAll,
   effects = {},
+  canAccessView = () => true,
+  onDenied = () => {},
   scrollTo = options => globalThis.scrollTo(options),
   defaultView = "today"
 }) {
@@ -36,7 +45,12 @@ export function createPageRouter({
   let currentView = fallbackView;
 
   function applyView(name, { runEffects = false, resetScroll = false } = {}) {
-    const viewName = viewSections[name] ? name : fallbackView;
+    let viewName = viewSections[name] ? name : fallbackView;
+    const requiredCapability = ownerViewCapabilities[viewName];
+    if (requiredCapability && !canAccessView(viewName, requiredCapability)) {
+      onDenied(viewName, requiredCapability);
+      viewName = "permission";
+    }
     const section = viewSections[viewName];
     const sectionNav = query("#section-nav");
     queryAll(".view").forEach(view => view.classList.toggle("active", view.id === `view-${viewName}`));

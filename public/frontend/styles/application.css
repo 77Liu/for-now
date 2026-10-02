@@ -1000,12 +1000,25 @@ body.auth-locked>.sidebar,body.auth-locked>main{visibility:hidden}
 .account-session{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:15px 2px;border-top:1px solid var(--view-line);color:var(--muted);font-size:.8rem}
 .account-session b{color:var(--ink)}
 .account-session button{border:0;background:transparent;color:#8d5d60;padding:5px 0;font-weight:700}
+.account-role-settings{grid-column:1/-1;padding:24px}
+.account-role-list{display:grid}
+.account-role-row{display:grid;grid-template-columns:minmax(0,1fr) 150px auto;gap:12px;align-items:center;padding:13px 0;border-bottom:1px solid var(--view-line)}
+.account-role-row:last-child{border-bottom:0}
+.account-role-row div{display:grid;gap:4px}
+.account-role-row small{color:var(--muted);font-size:.72rem}
+.account-role-row select{min-height:40px;border:1px solid var(--view-line);border-radius:8px;background:#fff;padding:7px 9px}
+.permission-panel{display:grid;justify-items:start;max-width:620px;margin:8vh auto 0;padding:34px;border:1px solid var(--view-line);border-radius:12px;background:#fff}
+.permission-mark{display:grid;place-items:center;width:44px;height:44px;margin-bottom:18px;border-radius:50%;background:var(--view-soft);color:var(--view-accent);font-size:1.25rem;font-weight:800}
+.permission-panel h1{font-size:clamp(1.7rem,4vw,2.5rem)}
+.permission-panel>p:not(.eyebrow){max-width:510px;margin:15px 0 24px;color:var(--muted);line-height:1.7}
 @media(max-width:920px){
   .auth-panel{padding:24px}.account-control{display:none!important}
 }
 @media(max-width:680px){
   .account-settings{grid-template-columns:1fr}
   .account-form,.account-local{padding:21px}
+  .account-role-row{grid-template-columns:1fr auto}.account-role-row button{grid-column:1/-1;width:100%}
+  .permission-panel{margin-top:3vh;padding:25px}
 }
 
 /* "我的" uses a settings-style hierarchy: summaries here, full content one level deeper. */
