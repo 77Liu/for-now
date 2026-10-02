@@ -184,6 +184,7 @@ final class DevicePerformanceAcceptanceTests: XCTestCase {
         let duration = ProcessInfo.processInfo.systemUptime - startedAt
 
         attachMetric("cold-process-launch-to-stable-home", duration: duration, limit: Self.launchLimit)
+        attachStartupBreakdown(in: measuredApp)
         XCTAssertTrue(stable, "Stable home did not become hittable before the launch deadline")
         XCTAssertLessThan(duration, Self.launchLimit, "Cold process launch to stable home must remain below 3.0 seconds")
     }
@@ -369,6 +370,18 @@ final class DevicePerformanceAcceptanceTests: XCTestCase {
         )
         let attachment = XCTAttachment(string: payload)
         attachment.name = "\(name).json"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    private func attachStartupBreakdown(in application: XCUIApplication) {
+        let metric = application.webViews.firstMatch.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "启动分段 "))
+            .firstMatch
+        guard metric.waitForExistence(timeout: 3),
+              let range = metric.label.range(of: "启动分段 ") else { return }
+        let attachment = XCTAttachment(string: String(metric.label[range.upperBound...]))
+        attachment.name = "startup-breakdown.json"
         attachment.lifetime = .keepAlways
         add(attachment)
     }

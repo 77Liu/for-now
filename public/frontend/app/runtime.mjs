@@ -73,6 +73,16 @@ import { createOccurrenceDraft, entryKeyIntent, eventDate, eventTimestamp, forma
 
 const appEntryUrl=new URL("../../app.js",import.meta.url);
 const applicationBasePath=new URL(".",appEntryUrl).pathname.replace(/\/$/,"")||"/";
+const startupPerformanceEnabled=new URLSearchParams(location.search).has("native-performance");
+const startupMarks={navigationStart:0,moduleLoaded:Number(performance.now().toFixed(1))};
+function markStartup(name){startupMarks[name]=Number(performance.now().toFixed(1));return startupMarks[name]}
+function publishStartupTiming(){
+  if(!startupPerformanceEnabled)return;
+  const metric=document.querySelector("#startup-performance-metric");if(!metric)return;
+  const ordered=["moduleLoaded","bootstrapStart","authSessionReady","loadStart","coreSnapshotReady","secondaryReady","stableHome"],segments={};let previous=0;
+  for(const name of ordered){const value=startupMarks[name];if(!Number.isFinite(value))continue;segments[name]=Number((value-previous).toFixed(1));previous=value}
+  metric.textContent=`启动分段 ${JSON.stringify({marks:startupMarks,segments,totalMs:startupMarks.stableHome||previous})}`
+}
 const apiClient=createApiClient({baseUrl:appEntryUrl,apiOrigin:document.documentElement.dataset.apiOrigin||"",session:sessionScope,onAuthRequired:error=>showAuthGate(error?.code==="AUTH_REAUTH_REQUIRED"?"账户权限已变更，请重新登录。":"")});
 const appUrl=apiClient.appUrl;
 const syncStore=createIndexedDbSyncStore();
@@ -3212,7 +3222,16 @@ function openContextSource(button){
   })
 }
 function render(){renderDate();renderOnboarding();renderSliders();renderDailyRecords();renderHealthUploader();renderCaptures();renderJournals();renderThoughts();renderStateChart();renderChat();renderReview();renderBooks();renderKeepsakes();renderKeepsakeBatch();renderQuotes();renderHome();renderTagComposer();renderCaptureTagComposer();renderCaptureAudioDraft();renderCommentPanel();renderSettings();renderLocalTestSettings();renderNotifications();renderMine();renderAccountUsers();renderActionsWorkspace();renderFeedback();renderExport();renderPersonalContext();restoreView?.()}
+function releaseSeries(value){const match=/^v?(\d+)\.(\d+)/.exec(String(value||""));return match?Number(match[1])*1000+Number(match[2]):null}
+function assertNativeServerCompatibility(meta){
+  if(!document.documentElement.dataset.apiOrigin)return;
+  const client=releaseSeries(releaseVersion),server=releaseSeries(meta?.releaseVersion);
+  if(server!=null&&client!=null&&server>=client)return;
+  const serverLabel=meta?.releaseVersion||"旧版本";
+  throw Object.assign(new Error(`当前 App ${releaseVersion} 与服务端 ${serverLabel} 不兼容，请使用匹配版本或等待服务端升级。`),{code:"CLIENT_SERVER_VERSION_MISMATCH"})
+}
 async function load(){
+  markStartup("loadStart");
   const owner=currentUser?.id,session=sessionSerial;
   journalDraftRestored=false;aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";resetJournalForm();
   const [nextState,meta]=await Promise.all([
@@ -3220,6 +3239,7 @@ async function load(){
     request("/api/meta")
   ]);
   if(owner!==currentUser?.id||session!==sessionSerial)return false;
+  markStartup("coreSnapshotReady");assertNativeServerCompatibility(meta);
   currentUser={...currentUser,...(meta.user||{})};applyCapabilitySurface(meta.capabilities||[]);
   const [nextSettings,nextOnboardingSchema,nextOnboardingV2Schema,nextOnboardingV2State,nextLocalTestConfig]=await Promise.all([
     request(hasCapability("ai-configuration")?"/api/settings":"/api/preferences"),
@@ -3229,10 +3249,11 @@ async function load(){
     hasCapability("local-testing")?optionalRequest("/api/local-test-mode"):Promise.resolve(null)
   ]);
   if(owner!==currentUser?.id||session!==sessionSerial)return false;
+  markStartup("secondaryReady");
   replaceState(nextState);state.onboardingV2=nextOnboardingV2State.data;llmSettings=nextSettings;onboardingSchema=nextOnboardingSchema;localTestConfig=nextLocalTestConfig;appVersion=meta.version||"development";releaseVersion=meta.releaseVersion||releaseVersion;featureFlags={...featureFlags,...meta.features};governanceUrl=typeof meta.governanceUrl==="string"?meta.governanceUrl:"";onboardingHydrated=false;notificationUnreadCount=Number(state.notificationUnread)||0;routeDataReady=true;
   await onboardingV2Controller.hydrate({schema:nextOnboardingV2Schema.data,state:nextOnboardingV2State.data});
   if(owner!==currentUser?.id||session!==sessionSerial)return false;
-  render();if(!reconcileThoughtRoute())pageRouter?.activate();restoreDurableDrafts();syncChainRecordKind();await loadActionsWorkspace();scheduleNotificationPoll();return true
+  render();if(!reconcileThoughtRoute())pageRouter?.activate();restoreDurableDrafts();syncChainRecordKind();await loadActionsWorkspace();scheduleNotificationPoll();markStartup("stableHome");publishStartupTiming();return true
 }
 function setAuthTab(tab){
   if(authBusy)return;
@@ -3292,8 +3313,10 @@ async function authRequest(endpoint,payload,method="POST"){
   return apiClient.request(endpoint,{method,body:JSON.stringify(payload||{})},{authGate:false,fallback:"账户操作失败"});
 }
 async function bootstrap(){
+  markStartup("bootstrapStart");
   let session,testConfig=null;
   try{[session,testConfig]=await Promise.all([apiClient.request("/api/auth/me",{headers:{accept:"application/json"}},{authGate:false,allowUnauthorized:true}),optionalPublicRequest("/api/local-test-mode")])}catch{showAuthGate();$("#auth-status").textContent="无法连接服务，请检查网络后重试。";return}
+  markStartup("authSessionReady");
   if(!session.authenticated){showAuthGate(session.code==="AUTH_REAUTH_REQUIRED"?"账户权限已变更，请重新登录。":"");localTestConfig=testConfig;const registerTab=$('[data-auth-tab="register"]');if(registerTab)registerTab.hidden=Boolean(testConfig?.enabled);setAuthTab(testConfig?.enabled||session.userCount?"login":"register");if(session.code==="AUTH_REAUTH_REQUIRED")$("#auth-status").textContent="账户权限已变更，请重新登录。";return}
   await activateUserSession(session.user,session.authRequired);
 }
