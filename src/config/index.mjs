@@ -16,8 +16,9 @@ export function loadAttachmentConfig(env = process.env) {
 
 export function loadAppConfig({ rootDir, env = process.env }) {
   const persistenceBackend = env.PERSISTENCE_BACKEND || "json";
+  const upstreamOrigin = String(env.UPSTREAM_ORIGIN || "").replace(/\/+$/, "");
   if (!["json", "postgres"].includes(persistenceBackend)) throw new Error("PERSISTENCE_BACKEND must be json or postgres");
-  if (persistenceBackend === "postgres" && (env.LOCAL_TEST_MODE === "1" || env.UPSTREAM_ORIGIN)) {
+  if (persistenceBackend === "postgres" && (env.LOCAL_TEST_MODE === "1" || upstreamOrigin)) {
     throw new Error("PostgreSQL runtime requires a standalone data source; local-test/upstream proxy is unsupported");
   }
   const inviteCodeHash = String(env.INVITE_CODE_HASH || "").toLowerCase();
@@ -28,6 +29,9 @@ export function loadAppConfig({ rootDir, env = process.env }) {
   if (localTestMode && authRequired) throw new Error("LOCAL_TEST_MODE uses upstream authentication and cannot enable local AUTH_REQUIRED");
   const attachments = loadAttachmentConfig(env);
   if (localTestMode && attachments.mode === "oss") throw new Error("LOCAL_TEST_MODE cannot use OSS attachment storage");
+  const canonicalProduction = env.NODE_ENV === "production" && !localTestMode && !upstreamOrigin;
+  const speechCacheSweepEnabled = canonicalProduction
+    && String(env.SPEECH_CACHE_SWEEP_ENABLED ?? "1").trim() !== "0";
   const platformServiceTokenHash = String(env.PLATFORM_SERVICE_TOKEN_HASH || "").toLowerCase();
   if (platformServiceTokenHash && !/^[a-f0-9]{64}$/.test(platformServiceTokenHash)) {
     throw new Error("PLATFORM_SERVICE_TOKEN_HASH must be a 64-character SHA-256 digest");
@@ -50,7 +54,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     version: env.APP_VERSION || "development",
     promptCatalogVersion: String(env.PROMPT_CATALOG_VERSION || "").trim(),
     basePath: `/${String(env.APP_BASE_PATH || "").replace(/^\/+|\/+$/g, "")}`,
-    upstreamOrigin: String(env.UPSTREAM_ORIGIN || "").replace(/\/+$/, ""),
+    upstreamOrigin,
     persistenceBackend,
     databaseUrl: env.DATABASE_URL,
     authDatabaseUrl: env.AUTH_DATABASE_URL,
@@ -60,6 +64,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     localTestMainUserId: String(env.LOCAL_TEST_MAIN_USER_ID || "").trim(),
     localTestResetOnStart: localTestMode && env.LOCAL_TEST_RESET_ON_START === "1",
     periodicAnalysisEnabled: env.PERIODIC_ANALYSIS_ENABLED !== "0",
+    speechCacheSweepEnabled,
     deepSeekApiUrl: env.DEEPSEEK_API_URL || "https://api.deepseek.com/chat/completions",
     attachments,
     features: Object.freeze({

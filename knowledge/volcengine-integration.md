@@ -41,17 +41,26 @@ TTS 音频统一保留 30 天，不按音色、长短文本或媒体类型设置
 账户朗读访问时登记附件清理并重新生成。条目保存 `createdAt`、`expiresAt` 和
 `retentionDays`，旧条目没有显式到期时间时按 `createdAt + 30 天` 处理。
 
-除访问时清理外，应用会在正常服务启动 5 秒后执行一次跨账户后台 sweep，之后
-每 6 小时执行一次。sweep 逐账户进入既有 JSON/PostgreSQL repository 上下文，
-只检查活跃捕念及回收站捕念的 `speechCache` 到期元数据，不读取或记录正文、
-供应商凭据。单个账户失败不会阻断其他账户，下个周期会再次处理。
+除访问时清理外，canonical production 服务会在启动 5 秒后执行一次跨账户后台
+sweep，之后每 6 小时执行一次。这里的 canonical production 指
+`NODE_ENV=production`、未启用本地测试模式且未配置上游代理；可用
+`SPEECH_CACHE_SWEEP_ENABLED=0` 显式关闭。`NODE_ENV=test`（包括恢复演练）
+即使显式设为 `1` 也不会启动 scheduler。
+
+sweep 逐账户进入既有 JSON/PostgreSQL repository 上下文。当前 repository
+只读预检会读取并归一化完整账户 Store，因此也会从存储读取正文等字段；sweep
+逻辑只判断活跃捕念及回收站捕念的 `speechCache` 到期元数据，不使用、记录或
+传输正文。只有预检发现到期元数据时才调用 `repository.update`，无到期项不会
+重写 Store。单个账户失败不会阻断其他账户，下个周期会再次处理。
 
 到期元数据移除与附件清理任务登记在同一次账户 repository 更新中完成。实物
-仍统一交给既有 `attachmentCleanup` 队列：删除前重新核对该账户全部有效引用，
-所以共享附件仍有任一引用时不会删除；删除失败会保留错误码和尝试次数，1 分钟
-后重试，并在服务重启时恢复。JSON 使用账户文件串行锁，PostgreSQL 使用账户
-上下文、RLS 与 advisory lock，不做跨账户正文查询。后台 sweep 不调用 TTS
-供应商，也不会产生语音用量。
+仍统一交给既有 `attachmentCleanup` 队列：每轮无论是否发现新的到期项都会
+恢复既有队列，删除前重新核对该账户全部有效引用，所以共享附件仍有任一引用时
+不会删除；删除失败会保留错误码和尝试次数，1 分钟后重试，并在服务重启时恢复。
+JSON 串行队列只在当前进程内有效，当前 canonical production 部署假设只有一个
+应用进程，不提供 JSON 多进程 scheduler 租约。PostgreSQL 继续通过账户上下文、
+RLS 与每账户 advisory lock 串行化并保持幂等。后台 sweep 不调用 TTS 供应商，
+也不会产生语音用量。
 
 ## 敏感字段
 
@@ -77,6 +86,7 @@ VOLCENGINE_SECRET_ACCESS_KEY=
 ```dotenv
 VOLCENGINE_SPEECH_PROJECT_NAME=default
 VOLCENGINE_TTS_DEFAULT_VOICE=zh_male_shaonianzixin_uranus_bigtts
+SPEECH_CACHE_SWEEP_ENABLED=1
 SPEECH_GLOBAL_QPS=5
 SPEECH_GLOBAL_CONCURRENCY=5
 OCR_GLOBAL_QPS=10

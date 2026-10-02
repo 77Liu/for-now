@@ -80,6 +80,7 @@ const {
   upstreamOrigin: UPSTREAM_ORIGIN, localTestMode: LOCAL_TEST_MODE,
   localTestMainUserId: LOCAL_TEST_MAIN_USER_ID, localTestResetOnStart: LOCAL_TEST_RESET_ON_START,
   periodicAnalysisEnabled: PERIODIC_ANALYSIS_ENABLED,
+  speechCacheSweepEnabled: SPEECH_CACHE_SWEEP_ENABLED,
   deepSeekApiUrl: DEEPSEEK_API_URL,
   port: PORT, version: APP_VERSION
 } = appConfig;
@@ -2627,7 +2628,7 @@ if (!LOCAL_TEST_MODE && PERIODIC_ANALYSIS_ENABLED) {
   setTimeout(() => void runPeriodicAnalyses().catch(periodicFailure), 5000).unref();
   setInterval(() => void runPeriodicAnalyses().catch(periodicFailure), 3600000).unref();
 }
-if (!LOCAL_TEST_MODE && !UPSTREAM_ORIGIN) {
+if (SPEECH_CACHE_SWEEP_ENABLED) {
   setTimeout(
     () => void runSpeechCacheSweep().catch(periodicFailure),
     SPEECH_CACHE_SWEEP_STARTUP_DELAY_MS

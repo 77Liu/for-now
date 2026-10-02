@@ -248,6 +248,7 @@ const sweepContext = new AsyncLocalStorage();
 const sweepDocuments = new Map();
 const sweepFiles = new Map();
 const sweepFailures = new Map([["account-a:/attachments/retry.tts.mp3", 1]]);
+const sweepResumeFailures = new Map([["account-d", 1]]);
 const sweepWriteFailures = new Set(["account-c"]);
 const sweepErrors = [];
 const sweepScheduled = [];
@@ -294,6 +295,12 @@ const sweepSeed = {
   ]),
   "account-c": sweepStore([
     sweepEntry("expired-c", "/attachments/retry.tts.mp3", "2026-08-01T00:00:00.000Z")
+  ]),
+  "account-d": sweepStore([
+    sweepEntry("expired-resume", "/attachments/resume.tts.mp3", "2026-08-01T00:00:00.000Z")
+  ]),
+  "account-e": sweepStore([
+    sweepEntry("unexpired-e", "/attachments/unexpired.tts.mp3", "2026-10-01T00:00:00.000Z", "2027-01-01T00:00:00.000Z")
   ])
 };
 for (const [account, document] of Object.entries(sweepSeed)) {
@@ -304,7 +311,7 @@ for (const [account, document] of Object.entries(sweepSeed)) {
   ]));
 }
 
-const sweepRepository = createJsonStoreRepository({
+const persistedSweepRepository = createJsonStoreRepository({
   getFile: () => sweepFile(sweepContext.getStore()),
   readDocument: async (file, fallback) => structuredClone(sweepDocuments.get(file) || fallback),
   writeDocument: async (file, document) => {
@@ -323,7 +330,16 @@ const sweepRepository = createJsonStoreRepository({
   emptyDocument: sweepStore([]),
   now: sweepNow
 });
-const sweepCleanup = createAttachmentCleanup({
+const sweepUpdateCalls = new Map();
+const sweepRepository = {
+  ...persistedSweepRepository,
+  update(mutate) {
+    const account = sweepContext.getStore();
+    sweepUpdateCalls.set(account, (sweepUpdateCalls.get(account) || 0) + 1);
+    return persistedSweepRepository.update(mutate);
+  }
+};
+const durableSweepCleanup = createAttachmentCleanup({
   repository: sweepRepository,
   now: sweepNow,
   contextKey: () => sweepContext.getStore(),
@@ -346,8 +362,22 @@ const sweepCleanup = createAttachmentCleanup({
   onRetryFailure: error => { throw error; },
   onResult: async () => {}
 });
+const sweepCleanup = {
+  enqueue: durableSweepCleanup.enqueue,
+  async resume() {
+    const account = sweepContext.getStore();
+    const remaining = sweepResumeFailures.get(account) || 0;
+    if (remaining) {
+      sweepResumeFailures.set(account, remaining - 1);
+      throw Object.assign(new Error("injected cleanup resume startup failure"), { code: "ERESUME" });
+    }
+    return durableSweepCleanup.resume();
+  }
+};
 const sweep = createSpeechCacheSweep({
-  listAccountIds: async () => ["account-a", "account-b", "account-a", "account-c"],
+  listAccountIds: async () => [
+    "account-a", "account-b", "account-a", "account-c", "account-d", "account-e"
+  ],
   runWithAccount: (account, operation) => sweepContext.run(account, operation),
   repository: sweepRepository,
   cleanup: sweepCleanup,
@@ -357,9 +387,9 @@ const sweep = createSpeechCacheSweep({
 
 const firstSweep = await sweep.run();
 assert.deepEqual(firstSweep, {
-  accounts: 3,
-  succeeded: 2,
-  failed: 1,
+  accounts: 5,
+  succeeded: 3,
+  failed: 2,
   entriesRemoved: 4,
   attachmentCandidates: 4,
   attachmentsQueued: 3,
@@ -369,6 +399,7 @@ assert.deepEqual(firstSweep, {
 const sweptA = await sweepContext.run("account-a", () => sweepRepository.read());
 const sweptB = await sweepContext.run("account-b", () => sweepRepository.read());
 const unsweptC = await sweepContext.run("account-c", () => sweepRepository.read());
+const queuedD = await sweepContext.run("account-d", () => sweepRepository.read());
 assert.deepEqual(sweptA.captures[0].speechCache.map(entry => entry.cacheKey), ["unexpired-stale"]);
 assert.deepEqual(sweptA.trash[0].payload.speechCache, []);
 assert.equal(sweepFiles.get("account-a").has("/attachments/shared.tts.mp3"), true, "shared references must retain physical audio");
@@ -378,7 +409,15 @@ assert.deepEqual(sweptA.attachmentCleanup.map(item => item.path), ["/attachments
 assert.equal(sweepFiles.get("account-b").has("/attachments/retry.tts.mp3"), false, "same path in another account is isolated");
 assert.equal(sweptB.captures[0].speechCache.length, 0);
 assert.equal(unsweptC.captures[0].speechCache.length, 1, "failed account writes must remain unchanged");
-assert.deepEqual(sweepErrors, [{ accountId: "account-c", code: "EIO" }]);
+assert.equal(queuedD.captures[0].speechCache.length, 0, "metadata commit must survive cleanup resume failure");
+assert.deepEqual(queuedD.attachmentCleanup.map(item => item.path), ["/attachments/resume.tts.mp3"]);
+assert.equal(sweepFiles.get("account-d").has("/attachments/resume.tts.mp3"), true);
+assert.equal(sweepUpdateCalls.get("account-d"), 1);
+assert.equal(sweepUpdateCalls.get("account-e") || 0, 0, "unexpired accounts must not rewrite the store");
+assert.deepEqual(sweepErrors, [
+  { accountId: "account-c", code: "EIO" },
+  { accountId: "account-d", code: "ERESUME" }
+]);
 assert.equal(sweepScheduled.length, 1);
 
 sweepScheduled.shift()();
@@ -390,8 +429,20 @@ sweepWriteFailures.clear();
 const retry = sweep.run();
 assert.equal(sweep.run(), retry, "overlapping sweeps must coalesce");
 const secondSweep = await retry;
-assert.equal(secondSweep.entriesRemoved, 1);
-assert.equal(secondSweep.failed, 0);
+assert.deepEqual(secondSweep, {
+  accounts: 5,
+  succeeded: 5,
+  failed: 0,
+  entriesRemoved: 1,
+  attachmentCandidates: 1,
+  attachmentsQueued: 1,
+  attachmentsRemoved: 2,
+  attachmentCleanupPending: 0
+});
 assert.equal(sweepFiles.get("account-c").has("/attachments/retry.tts.mp3"), false);
+assert.equal(sweepFiles.get("account-d").has("/attachments/resume.tts.mp3"), false);
+assert.equal((await sweepContext.run("account-d", () => sweepRepository.read())).attachmentCleanup.length, 0);
+assert.equal(sweepUpdateCalls.get("account-d"), 1, "queue recovery must not require another expiry update");
+assert.equal(sweepUpdateCalls.get("account-e") || 0, 0);
 
 console.log("Speech cache checks passed: 30-day access and background expiry, JSON account isolation, shared references, retryable cleanup, private keys, coalesced hits and version invalidation.");

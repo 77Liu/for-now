@@ -21,6 +21,10 @@ function cacheOwners(store) {
   ];
 }
 
+const hasExpiredEntries = (store, sweptAt) => cacheOwners(store).some(
+  owner => cacheEntries(owner).some(entry => speechCacheEntryExpired(entry, sweptAt))
+);
+
 export function createSpeechCacheSweep({
   listAccountIds,
   runWithAccount,
@@ -30,7 +34,7 @@ export function createSpeechCacheSweep({
   onAccountError = async () => {}
 }) {
   if (typeof listAccountIds !== "function" || typeof runWithAccount !== "function"
-    || !repository?.update || !cleanup?.enqueue || !cleanup?.resume
+    || !repository?.read || !repository?.update || !cleanup?.enqueue || !cleanup?.resume
     || typeof now !== "function" || typeof onAccountError !== "function") {
     throw new TypeError("Speech cache sweep requires account context, repository, cleanup and clock");
   }
@@ -61,40 +65,57 @@ export function createSpeechCacheSweep({
     for (const accountId of accountIds) {
       try {
         const accountResult = await runWithAccount(accountId, async () => {
-          const mutation = await repository.update(store => {
-            const paths = new Set();
-            let entriesRemoved = 0;
-            const queueBefore = Array.isArray(store.attachmentCleanup)
-              ? store.attachmentCleanup.length
-              : 0;
-            for (const owner of cacheOwners(store)) {
-              const entries = cacheEntries(owner);
-              if (!entries.length) continue;
-              const retained = [];
-              for (const entry of entries) {
-                if (!speechCacheEntryExpired(entry, sweptAt)) {
-                  retained.push(entry);
-                  continue;
+          let mutation = {
+            entriesRemoved: 0,
+            attachmentCandidates: 0,
+            attachmentsQueued: 0
+          };
+          let accountError = null;
+          try {
+            const snapshot = await repository.read();
+            if (hasExpiredEntries(snapshot, sweptAt)) {
+              mutation = await repository.update(store => {
+                const paths = new Set();
+                let entriesRemoved = 0;
+                const queueBefore = Array.isArray(store.attachmentCleanup)
+                  ? store.attachmentCleanup.length
+                  : 0;
+                for (const owner of cacheOwners(store)) {
+                  const entries = cacheEntries(owner);
+                  if (!entries.length) continue;
+                  const retained = [];
+                  for (const entry of entries) {
+                    if (!speechCacheEntryExpired(entry, sweptAt)) {
+                      retained.push(entry);
+                      continue;
+                    }
+                    entriesRemoved += 1;
+                    const attachmentPath = speechCacheAttachmentPath(entry);
+                    if (attachmentPath) paths.add(attachmentPath);
+                  }
+                  if (retained.length !== entries.length) owner.speechCache = retained;
                 }
-                entriesRemoved += 1;
-                const attachmentPath = speechCacheAttachmentPath(entry);
-                if (attachmentPath) paths.add(attachmentPath);
-              }
-              if (retained.length !== entries.length) owner.speechCache = retained;
+                cleanup.enqueue(store, paths);
+                return {
+                  entriesRemoved,
+                  attachmentCandidates: paths.size,
+                  attachmentsQueued: Math.max(
+                    0,
+                    (Array.isArray(store.attachmentCleanup) ? store.attachmentCleanup.length : 0) - queueBefore
+                  )
+                };
+              });
             }
-            cleanup.enqueue(store, paths);
-            return {
-              entriesRemoved,
-              attachmentCandidates: paths.size,
-              attachmentsQueued: Math.max(
-                0,
-                (Array.isArray(store.attachmentCleanup) ? store.attachmentCleanup.length : 0) - queueBefore
-              )
-            };
-          });
-          const cleanupResult = mutation.attachmentCandidates
-            ? await cleanup.resume()
-            : { removed: [], pending: 0 };
+          } catch (error) {
+            accountError = error;
+          }
+          let cleanupResult = { removed: [], pending: 0 };
+          try {
+            cleanupResult = await cleanup.resume();
+          } catch (error) {
+            accountError ||= error;
+          }
+          if (accountError) throw accountError;
           return {
             ...mutation,
             attachmentsRemoved: cleanupResult.removed?.length || 0,

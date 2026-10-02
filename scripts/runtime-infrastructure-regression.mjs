@@ -48,6 +48,21 @@ assert.equal(config({ LOCAL_TEST_MODE: "1", LOCAL_TEST_RESET_ON_START: "1" }).lo
 assert.equal(config({ LOCAL_TEST_RESET_ON_START: "1" }).localTestResetOnStart, false);
 assert.equal(defaults.periodicAnalysisEnabled, true);
 assert.equal(config({ PERIODIC_ANALYSIS_ENABLED: "0" }).periodicAnalysisEnabled, false);
+assert.equal(defaults.speechCacheSweepEnabled, false);
+assert.equal(config({ NODE_ENV: "test", SPEECH_CACHE_SWEEP_ENABLED: "1" }).speechCacheSweepEnabled, false);
+assert.equal(config({ NODE_ENV: "production" }).speechCacheSweepEnabled, true);
+assert.equal(config({
+  NODE_ENV: "production",
+  SPEECH_CACHE_SWEEP_ENABLED: "1"
+}).speechCacheSweepEnabled, true);
+assert.equal(config({
+  NODE_ENV: "production",
+  SPEECH_CACHE_SWEEP_ENABLED: "0"
+}).speechCacheSweepEnabled, false);
+assert.equal(config({
+  NODE_ENV: "production",
+  UPSTREAM_ORIGIN: "http://localhost"
+}).speechCacheSweepEnabled, false);
 for (const env of [
   { AUTH_REQUIRED: "1" }, { PERSISTENCE_BACKEND: "invalid" },
   { LOCAL_TEST_MODE: "1", NODE_ENV: "production" },
