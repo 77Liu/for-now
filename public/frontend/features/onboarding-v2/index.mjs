@@ -1,6 +1,16 @@
 const QUESTION_IDS = ["currentContext", "desiredChanges", "recentObstacles", "dailyRhythm", "collaboration"];
 const QUESTION_STEPS = ["q1", "q2", "q3", "q4", "q5"];
 const STEP_TITLES = ["现在的生活", "希望的变化", "最近的困扰", "日常节奏", "怎么帮助"];
+const DOMAIN_LABELS = {
+  context: "处境",
+  goals: "目标",
+  state: "状态",
+  behavior: "行为",
+  mind: "认知",
+  values: "价值",
+  relationships: "关系",
+  collaboration: "协作"
+};
 const HORIZONS = [
   ["unknown", "期限未定"],
   ["3m", "未来 3 个月"],
@@ -217,7 +227,10 @@ function collaborationMarkup(draft) {
   </label><p class="onboarding-v2-default-note">没有选择的项目会使用清楚标注的系统默认，不会冒充你的偏好。</p>`;
 }
 
-function reviewMarkup(draft) {
+function reviewMarkup(draft, { extracting = false } = {}) {
+  const hasAnswer = QUESTION_IDS.slice(0, 4).some(questionId => Boolean(answerText(questionId, draft)))
+    || Object.keys(AXES).some(key => draft.collaboration?.[key]?.source === "user")
+    || Boolean(draft.collaboration?.additionalBoundary);
   return `<span class="eyebrow">回看 · 原文</span>
     <h1>这就是目前的起点。</h1>
     <p class="onboarding-v2-lead">你的原话可以直接帮助回答，不必先生成一份画像。</p>
@@ -234,9 +247,62 @@ function reviewMarkup(draft) {
     }).join("")}</div>
     <div class="onboarding-v2-actions">
       <button class="primary-button" type="button" data-onboarding-action="complete">按原文开始使用</button>
+      <button class="quiet-button" type="button" data-onboarding-action="extract" ${hasAnswer && !extracting ? "" : "disabled"}>${extracting ? "正在整理…" : "整理成可确认的候选"}</button>
       <button class="subtle-action" type="button" data-onboarding-action="back">返回修改</button>
     </div>
     <p class="onboarding-v2-help">不会自动创建目标、任务、习惯或提醒。之后仍可回看和修改。</p>`;
+}
+
+function candidatesMarkup(task, userModel, error = "") {
+  const claims = (userModel?.claims || []).filter(item => (
+    item.sourceTaskId === task?.id && ["candidate", "stale"].includes(item.lifecycle)
+  ));
+  const unknowns = (userModel?.unknowns || []).filter(item => item.sourceTaskId === task?.id);
+  const pending = claims.filter(item => item.lifecycle === "candidate");
+  if (error || ["failed", "stale", "cancelled"].includes(task?.status)) {
+    return `<span class="eyebrow">原文已保留 · 整理未完成</span>
+      <h1>这次没有生成可确认的候选。</h1>
+      <p class="onboarding-v2-lead">${escapeHtml(error || task?.error || "原文已变化，可以回看后重试。")}</p>
+      <div class="onboarding-v2-actions">
+        <button class="primary-button" type="button" data-onboarding-action="complete">按原文开始使用</button>
+        <button class="quiet-button" type="button" data-onboarding-action="retry-extraction">稍后重试</button>
+        <button class="subtle-action" type="button" data-onboarding-action="review">返回原文</button>
+      </div>`;
+  }
+  if (!task || ["queued", "running"].includes(task.status)) {
+    return `<span class="eyebrow">可选整理 · 原文已经保存</span>
+      <h1>正在从原话中整理候选。</h1>
+      <p class="onboarding-v2-lead">候选尚未成为记忆。无需等待，也可以直接按原文开始使用。</p>
+      <div class="onboarding-v2-actions">
+        <button class="primary-button" type="button" data-onboarding-action="complete">不等整理，按原文开始</button>
+        <button class="quiet-button" type="button" data-onboarding-action="cancel-extraction">取消整理</button>
+        <button class="subtle-action" type="button" data-onboarding-action="review">返回原文</button>
+      </div>`;
+  }
+  if (!claims.length) {
+    return `<span class="eyebrow">可选整理 · 没有可靠候选</span>
+      <h1>原文已经足够。</h1>
+      <p class="onboarding-v2-lead">这次没有从原话中整理出需要单独确认的内容，不影响继续使用。</p>
+      <div class="onboarding-v2-actions"><button class="primary-button" type="button" data-onboarding-action="complete">按原文开始使用</button><button class="subtle-action" type="button" data-onboarding-action="review">返回原文</button></div>`;
+  }
+  return `<span class="eyebrow">逐项确认 · ${pending.length} 条待处理</span>
+    <h1>只留下你认同的理解。</h1>
+    <p class="onboarding-v2-lead">这些内容从原话整理而来，尚未成为记忆。可修改、保留或不用，不会默认全选。</p>
+    <div class="onboarding-v2-candidates">${claims.map(claim => `<article data-claim-id="${escapeHtml(claim.id)}" class="${claim.lifecycle === "stale" ? "stale" : ""}">
+      <header><span>${escapeHtml(DOMAIN_LABELS[claim.domain] || claim.domain)}</span><small>${claim.lifecycle === "stale" ? "原文已变化" : claim.epistemic === "known" ? "原文直接表达" : "待验证理解"}</small></header>
+      <label><span>候选理解</span><textarea data-claim-statement maxlength="1000" ${claim.lifecycle === "stale" ? "disabled" : ""}>${escapeHtml(claim.statement)}</textarea></label>
+      <label><span>适用范围</span><input data-claim-scope maxlength="500" value="${escapeHtml(claim.scope || "")}" ${claim.lifecycle === "stale" ? "disabled" : ""}></label>
+      <div class="onboarding-v2-candidate-options">
+        <select data-claim-epistemic aria-label="认识状态" ${claim.lifecycle === "stale" ? "disabled" : ""}><option value="known" ${claim.epistemic === "known" ? "selected" : ""}>原文直接表达</option><option value="hypothesis" ${claim.epistemic === "hypothesis" ? "selected" : ""}>仍需验证</option></select>
+        <label><input type="checkbox" data-claim-context ${claim.contextAllowed !== false ? "checked" : ""} ${claim.lifecycle === "stale" ? "disabled" : ""}>用于后续回答</label>
+      </div>
+      <footer>${claim.lifecycle === "stale" ? `<button class="subtle-action" type="button" data-onboarding-action="review">回看修改后的原文</button>` : `<button class="primary-button" type="button" data-claim-action="confirm" data-version="${claim.version}">确认</button><button class="subtle-action" type="button" data-claim-action="reject" data-version="${claim.version}">不用</button>`}</footer>
+    </article>`).join("")}</div>
+    ${unknowns.length ? `<div class="onboarding-v2-unknown"><b>以后可能值得了解</b><p>${escapeHtml(unknowns[0].question)}</p><small>不会自动追问，也不影响开始使用。</small></div>` : ""}
+    <div class="onboarding-v2-actions">
+      <button class="primary-button" type="button" data-onboarding-action="complete">${pending.length ? "保留未处理项，先开始使用" : "开始使用"}</button>
+      <button class="subtle-action" type="button" data-onboarding-action="review">返回原文</button>
+    </div>`;
 }
 
 function firstActionMarkup() {
@@ -298,6 +364,10 @@ export function createOnboardingV2Controller({
   let saving = false;
   let syncing = false;
   let persistSerial = 0;
+  let extractionTask = null;
+  let userModel = null;
+  let extractionError = "";
+  let extractionPoll = 0;
 
   const panel = () => query("#onboarding-workspace");
   const content = () => query("#onboarding-v2-content");
@@ -325,6 +395,128 @@ export function createOnboardingV2Controller({
   const setServerState = value => {
     serverState = clone(value);
     updateState(clone(value));
+  };
+  const clearExtractionPoll = () => {
+    if (extractionPoll) clearTimeout(extractionPoll);
+    extractionPoll = 0;
+  };
+  const loadUserModel = async () => {
+    const result = await requestV1("/api/v1/user-model");
+    userModel = clone(result.data);
+    return userModel;
+  };
+  const pollExtraction = async () => {
+    clearExtractionPoll();
+    if (!extractionTask?.id) return;
+    try {
+      const result = await requestV1(`/api/v1/onboarding-v2/extractions/${encodeURIComponent(extractionTask.id)}`);
+      extractionTask = clone(result.data.task);
+      if (extractionTask.status === "succeeded") await loadUserModel();
+      else if (["queued", "running"].includes(extractionTask.status)) {
+        extractionPoll = setTimeout(() => void pollExtraction(), 700);
+      } else extractionError = extractionTask.error || "原文已保留，可以直接开始使用或稍后重试。";
+    } catch (error) {
+      extractionError = error.message || "原文已保留，可以直接开始使用或稍后重试。";
+    }
+    render();
+  };
+  const startExtraction = async ({ retry = false } = {}) => {
+    extractionError = "";
+    const synced = await saveCurrent("review", { status: "draft", full: true });
+    if (!synced && draft?.pendingSync) {
+      extractionError = "原文仍在等待同步；同步完成后再整理，或直接按原文开始使用。";
+      uiStep = "candidates";
+      forceVisible = true;
+      return render();
+    }
+    saving = true;
+    uiStep = "candidates";
+    forceVisible = true;
+    extractionTask = null;
+    userModel = null;
+    render();
+    try {
+      const revision = Number(serverState?.session?.revision) || 0;
+      const result = await requestV1("/api/v1/onboarding-v2/extractions", {
+        method: "POST",
+        headers: {
+          "idempotency-key": retry
+            ? `onboarding-claims:${revision}:${newId()}`
+            : `onboarding-claims:${revision}`
+        },
+        body: JSON.stringify({ sourceRevision: revision })
+      }, {
+        resource: "onboarding-v2:onboarding-v2",
+        domains: ["aiTasks", "notifications"],
+        recoverCommitted: true
+      });
+      extractionTask = clone(result.data);
+      status("原文已保存 · 候选正在整理");
+      void pollExtraction();
+    } catch (error) {
+      extractionError = error.message || "原文已保留，可以直接开始使用或稍后重试。";
+      status("原文已保存 · 整理未完成");
+    } finally {
+      saving = false;
+      render();
+    }
+  };
+  const updateClaim = async (button, action) => {
+    const article = button.closest("[data-claim-id]");
+    const claimId = article?.dataset.claimId;
+    if (!claimId) return;
+    const body = action === "confirm" ? {
+      action,
+      statement: String(article.querySelector("[data-claim-statement]")?.value || "").trim(),
+      scope: String(article.querySelector("[data-claim-scope]")?.value || "").trim(),
+      epistemic: article.querySelector("[data-claim-epistemic]")?.value || "hypothesis",
+      contextAllowed: article.querySelector("[data-claim-context]")?.checked !== false
+    } : { action: "reject" };
+    saving = true;
+    render();
+    try {
+      await requestV1(`/api/v1/user-model/claims/${encodeURIComponent(claimId)}`, {
+        method: "PATCH",
+        headers: { "if-match": `"${Number(button.dataset.version) || 1}"` },
+        body: JSON.stringify(body)
+      }, {
+        resource: `userClaims:${claimId}`,
+        domains: ["userClaims"],
+        recoverCommitted: true
+      });
+      await loadUserModel();
+      status(action === "confirm" ? "这条理解已确认，可随时撤回或修改" : "这条候选不会用于后续回答");
+    } catch (error) {
+      extractionError = error.message || "候选暂未更新，请刷新后重试。";
+      await loadUserModel().catch(() => {});
+      status(`候选暂未更新：${extractionError}`);
+    } finally {
+      saving = false;
+      render();
+    }
+  };
+  const cancelExtraction = async () => {
+    if (!extractionTask?.id) return;
+    saving = true;
+    try {
+      clearExtractionPoll();
+      const result = await requestV1(`/api/v1/onboarding-v2/extractions/${encodeURIComponent(extractionTask.id)}`, {
+        method: "DELETE"
+      }, {
+        resource: `aiTasks:${extractionTask.id}`,
+        domains: ["aiTasks", "notifications"],
+        recoverCommitted: true
+      });
+      extractionTask = clone(result.data);
+      extractionError = "整理已取消，原文仍然保留。";
+      status("原文已保存 · 整理已取消");
+    } catch (error) {
+      extractionError = error.message || "暂时无法取消整理。";
+      status(extractionError);
+    } finally {
+      saving = false;
+      render();
+    }
   };
 
   function captureVisibleStep() {
@@ -575,7 +767,10 @@ export function createOnboardingV2Controller({
         <div class="onboarding-v2-actions"><button class="primary-button" type="button" data-onboarding-action="resume">继续填写</button><button class="quiet-button" type="button" data-onboarding-action="use">先用起来</button></div>`;
     }
     if (QUESTION_STEPS.includes(uiStep)) return renderQuestion();
-    if (uiStep === "review") return reviewMarkup(draft);
+    if (uiStep === "review") return reviewMarkup(draft, {
+      extracting: ["queued", "running"].includes(extractionTask?.status)
+    });
+    if (uiStep === "candidates") return candidatesMarkup(extractionTask, userModel, extractionError);
     if (uiStep === "firstAction") return firstActionMarkup();
     if (uiStep === "conflict" && conflict) return conflictMarkup(conflict, draft, conflictChoices);
     return "";
@@ -604,7 +799,7 @@ export function createOnboardingV2Controller({
     const back = query("#onboarding-v2-back");
     back.hidden = !QUESTION_STEPS.includes(uiStep) && uiStep !== "review";
     const exit = query("#onboarding-v2-exit");
-    exit.hidden = ["firstAction", "conflict"].includes(uiStep);
+    exit.hidden = ["firstAction", "conflict", "candidates"].includes(uiStep);
     back.disabled = saving;
     exit.disabled = saving;
     const heading = target.querySelector("h1");
@@ -653,6 +848,9 @@ export function createOnboardingV2Controller({
       await persist();
       return render();
     }
+    if (action === "extract") return startExtraction();
+    if (action === "retry-extraction") return startExtraction({ retry: true });
+    if (action === "cancel-extraction") return cancelExtraction();
     if (action === "complete") {
       return saveCurrent("firstAction", { status: "completed", full: true, firstAction: true });
     }
@@ -691,6 +889,11 @@ export function createOnboardingV2Controller({
   }
 
   const click = event => {
+    const claimButton = event.target.closest("[data-claim-action]");
+    if (claimButton) {
+      void updateClaim(claimButton, claimButton.dataset.claimAction);
+      return;
+    }
     const conflictButton = event.target.closest("[data-onboarding-conflict]");
     if (conflictButton) {
       conflictChoices[conflictButton.dataset.onboardingConflict] = conflictButton.dataset.choice;
@@ -722,6 +925,7 @@ export function createOnboardingV2Controller({
 
   return {
     async hydrate({ schema: nextSchema, state: nextState }) {
+      clearExtractionPoll();
       schema = clone(nextSchema);
       serverState = clone(nextState);
       dismissed = false;
@@ -730,6 +934,9 @@ export function createOnboardingV2Controller({
       legacyMode = false;
       conflict = null;
       conflictChoices = {};
+      extractionTask = null;
+      userModel = null;
+      extractionError = "";
       const saved = owner() ? await draftStore.get(owner(), "onboarding-v2") : null;
       draft = saved?.owner === owner()
         ? { ...onboardingV2DraftFromState(nextState, { owner: owner() }), ...clone(saved) }
@@ -788,6 +995,7 @@ export function createOnboardingV2Controller({
       if (accountId) await draftStore.clear(accountId);
     },
     reset() {
+      clearExtractionPoll();
       schema = null;
       serverState = null;
       draft = null;
@@ -797,6 +1005,9 @@ export function createOnboardingV2Controller({
       legacyMode = false;
       conflict = null;
       conflictChoices = {};
+      extractionTask = null;
+      userModel = null;
+      extractionError = "";
       const root = panel();
       if (root) root.hidden = true;
     },
@@ -806,7 +1017,10 @@ export function createOnboardingV2Controller({
         draft: clone(draft),
         serverState: clone(serverState),
         legacyMode,
-        conflict: clone(conflict)
+        conflict: clone(conflict),
+        extractionTask: clone(extractionTask),
+        userModel: clone(userModel),
+        extractionError
       };
     }
   };

@@ -326,6 +326,8 @@ const mockFetch = `
       { questionId: "collaboration", step: "q5", title: "怎么帮助", prompt: "你希望我怎样帮助你？", kind: "collaboration", canSkip: true, limits: { additionalBoundaryMaxLength: 1000 } }
     ]
   };
+  window.__userModel = { readiness: "partial", claims: [], unknowns: [], activeClaimCount: 0, candidateCount: 0, staleCandidateCount: 0 };
+  window.__onboardingExtraction = null;
   window.__onboardingSchema = {
     version: 1,
     modes: [{ id: "quick", label: "快速版", questionCount: 8 }, { id: "detailed", label: "详细版", questionCount: 18 }],
@@ -535,6 +537,33 @@ const mockFetch = `
       if(headers["x-client-operation-id"])window.__operationReceipts[headers["x-client-operation-id"]]=headers["x-client-operation-fingerprint"];
       return v1(window.__onboardingV2,{operation:{id:headers["x-client-operation-id"]||"",status:"committed"}});
     }
+    if(url==="/api/v1/onboarding-v2/extractions"&&init.method==="POST"){
+      const payload=JSON.parse(init.body||"{}"),taskId="extract-"+payload.sourceRevision;
+      window.__onboardingExtraction={id:taskId,kind:"onboardingClaimExtraction",resourceType:"onboardingV2",targetId:"onboarding-v2",inputVersion:payload.sourceRevision,status:"queued",createdAt:new Date().toISOString(),startedAt:"",completedAt:"",resultId:"",error:"",retryOf:""};
+      return v1(window.__onboardingExtraction);
+    }
+    if(url.startsWith("/api/v1/onboarding-v2/extractions/")&&init.method==="DELETE"){
+      window.__onboardingExtraction.status="cancelled";window.__onboardingExtraction.completedAt=new Date().toISOString();window.__onboardingExtraction.error="用户取消了本次生成";
+      return v1(window.__onboardingExtraction);
+    }
+    if(url.startsWith("/api/v1/onboarding-v2/extractions/")&&(!init.method||init.method==="GET")){
+      const task=window.__onboardingExtraction;
+      if(task&&task.status!=="succeeded"){
+        task.status="succeeded";task.completedAt=new Date().toISOString();task.resultId=task.id;
+        window.__userModel.claims=[{id:"claim-ui-1",domain:"goals",statement:"希望恢复规律作息",scope:"未来 3 个月",epistemic:"known",lifecycle:"candidate",confidence:null,evidenceStrength:"self_report",evidence:[{sourceType:"onboardingV2Answer",sourceId:"desiredChanges",sourceVersion:1,contentSha256:"a".repeat(64),span:[0,6]}],validFrom:"",validTo:"",confirmedAt:"",lastReviewedAt:"",supersedes:"",contextAllowed:true,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),version:1,sourceTaskId:task.id,disposition:""}];
+        window.__userModel.unknowns=[{id:"unknown-ui-1",question:"怎样的作息调整最容易开始？",domain:"behavior",reason:"影响下一步建议",relatedEvidence:["claim-ui-1"],impactOnNextAnswer:"决定行动粒度",askedAt:"",snoozedUntil:"",resolvedBy:"",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),version:1,sourceTaskId:task.id}];
+        window.__userModel.candidateCount=1;
+      }
+      return v1({task,result:task?.status==="succeeded"?{claims:window.__userModel.claims,unknowns:window.__userModel.unknowns}:null});
+    }
+    if(url==="/api/v1/user-model"&&(!init.method||init.method==="GET"))return v1(window.__userModel);
+    if(url.startsWith("/api/v1/user-model/claims/")&&init.method==="PATCH"){
+      const id=decodeURIComponent(url.split("/").at(-1)),payload=JSON.parse(init.body||"{}"),claim=window.__userModel.claims.find(item=>item.id===id);
+      if(!claim)return Promise.resolve(new Response(JSON.stringify({data:null,error:{message:"候选不存在",code:"CLAIM_NOT_FOUND"},meta:{}}),{status:404,headers:{"content-type":"application/json"}}));
+      claim.lifecycle=payload.action==="reject"?"retracted":"active";claim.statement=payload.statement||claim.statement;claim.scope=payload.scope??claim.scope;claim.epistemic=payload.epistemic||claim.epistemic;claim.contextAllowed=payload.contextAllowed!==false;claim.version+=1;claim.updatedAt=new Date().toISOString();
+      window.__userModel.candidateCount=window.__userModel.claims.filter(item=>item.lifecycle==="candidate").length;window.__userModel.activeClaimCount=window.__userModel.claims.filter(item=>item.lifecycle==="active").length;
+      return v1({claim});
+    }
     if (url.startsWith("/api/v1/sync?")) return v1({ cursor: window.__syncCursor, changes: [], snapshot: {} });
     if (url.startsWith("/api/v1/sync/operations/")) {
       window.__receiptLookups += 1;
@@ -722,7 +751,7 @@ const mockFetch = `
       });
     }
     if (url === "/api/settings" && (!init.method || init.method === "GET")) return json({
-      version: 8, provider: "deepseek",
+      version: 9, provider: "deepseek",
       profiles: { lite: { model: "deepseek-flash", effort: "none" }, mid: { model: "deepseek-flash", effort: "high" }, high: { model: "deepseek-v4-pro", effort: "high" }, ultra: { model: "deepseek-v4-pro", effort: "max" } },
       scenarios: { thoughtPrompt: "lite", thoughtDraft: "high", thoughtAnswer: "ultra", followUpAnswer: "ultra", chat: "high", diaryLead: "lite", diaryStructure: "mid", diaryTopic: "high", diaryReflection: "ultra", annotationShenji: "high", analysis: "ultra", bookRecognition: "mid", healthRecognition: "mid", contentImageUnderstanding: "mid", capturePolish: "mid" },
       assistantName: "神鸡", responseStyles: { thoughtDraft:"standard",thoughtAnswer:"standard",followUpAnswer:"standard",chat:"standard",diaryReflection:"standard",annotationShenji:"standard",analysis:"standard" },
@@ -734,7 +763,7 @@ const mockFetch = `
       window.__settingsSaves += 1;
       const payload = JSON.parse(init.body);
       window.__lastSettingsPayload = payload;
-      return json({ version: 8, provider: "deepseek", ...payload, hasApiKey: true, keyHint: "tes••••test" });
+      return json({ version: 9, provider: "deepseek", ...payload, hasApiKey: true, keyHint: "tes••••test" });
     }
     if (url === "/api/settings/test") return json({ ok: true, reply: "连接成功" });
     if (url === "/api/speech/synthesize" && init.method === "POST") {
@@ -1114,7 +1143,7 @@ try {
     if (response.exceptionDetails) throw new Error(response.exceptionDetails.exception?.description || response.exceptionDetails.text);
     return response.result.value;
   };
-  const waitUntil = async (expression, attempts = 80, delay = 50) => {
+  const waitUntil = async (expression, attempts = 120, delay = 50) => {
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       if (await evaluate(expression)) return true;
       await sleep(delay);
@@ -2796,6 +2825,16 @@ try {
   assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth&&[...document.querySelectorAll(".onboarding-v2-review article")].every(item=>item.getBoundingClientRect().right<=innerWidth)`),true);
   await fs.writeFile("/tmp/growth-onboarding-v2-review-mobile.png",Buffer.from((await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false})).data,"base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
+  await evaluate(`document.querySelector('[data-onboarding-action="extract"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector(".onboarding-v2-candidates [data-claim-id='claim-ui-1']")?.textContent.includes("希望恢复规律作息")&&document.querySelector(".onboarding-v2-unknown")?.textContent.includes("怎样的作息调整最容易开始")`),true);
+  await cdp.send("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:2,mobile:true});await sleep(100);
+  assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth&&document.querySelector(".onboarding-v2-candidates").getBoundingClientRect().right<=innerWidth&&document.querySelector('[data-claim-action="confirm"]').getBoundingClientRect().height>=44`),true);
+  await fs.writeFile("/tmp/growth-onboarding-v2-candidates-mobile.png",Buffer.from((await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false})).data,"base64"));
+  await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
+  await evaluate(`(()=>{const text=document.querySelector("[data-claim-statement]");text.value="希望逐步恢复规律作息";document.querySelector('[data-claim-action="confirm"]').click();return true})()`);
+  assert.equal(await waitUntil(`window.__userModel.activeClaimCount===1&&!document.querySelector("[data-claim-id='claim-ui-1']")&&document.querySelector("#onboarding-v2-save-status").textContent.includes("已确认")`),true);
+  await evaluate(`document.querySelector('[data-onboarding-action="review"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector(".onboarding-v2-review")&&!document.querySelector('[data-onboarding-action="complete"]').disabled`),true);
   await evaluate(`(()=>{const allow=document.querySelector('[data-onboarding-allow="currentContext"]');allow.checked=false;allow.dispatchEvent(new Event("change",{bubbles:true}));window.__onboardingV2.session.answers.currentContext.rawText="另一设备改写的当前处境";window.__onboardingV2.session.answers.currentContext.version+=1;window.__onboardingV2.session.revision+=1;window.__onboardingV2.session.updatedAt=new Date().toISOString();sessionStorage.setItem("ui-onboarding-v2",JSON.stringify(window.__onboardingV2));document.querySelector('[data-onboarding-action="complete"]').click();return true})()`);
   assert.equal(await waitUntil(`document.querySelector(".onboarding-v2-conflicts")?.textContent.includes("另一设备改写的当前处境")&&document.querySelector(".onboarding-v2-conflicts")?.textContent.includes("一边学习一边实习")`),true);
   assert.deepEqual(await evaluate(`({choices:document.querySelectorAll('[data-onboarding-conflict="currentContext"]').length,mergeDisabled:document.querySelector('[data-onboarding-action="merge-conflict"]').disabled,status:document.querySelector("#onboarding-v2-save-status").textContent})`),{choices:2,mergeDisabled:true,status:"两端内容有差异，请逐项选择"});
