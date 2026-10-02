@@ -32,7 +32,9 @@ async function transaction(client, operation, readOnly = false) {
   }
 }
 
-async function validateRole(pool, schema, forbiddenSchema) {
+async function validateRole(pool, kind) {
+  const schema = kind === "auth" ? "for_now_auth" : "for_now";
+  const forbiddenSchema = kind === "auth" ? "for_now" : "for_now_auth";
   const client = await pool.connect();
   try {
     const { rows: [role] } = await client.query(`
@@ -49,6 +51,22 @@ async function validateRole(pool, schema, forbiddenSchema) {
         has_table_privilege(current_user, budget.oid, 'TRIGGER') AS budget_trigger,
         has_table_privilege(current_user, budget.oid, 'SELECT WITH GRANT OPTION') AS budget_select_grant,
         has_table_privilege(current_user, budget.oid, 'UPDATE WITH GRANT OPTION') AS budget_update_grant,
+        EXISTS (
+          SELECT 1 FROM pg_class privileged
+          JOIN pg_namespace privileged_schema ON privileged_schema.oid = privileged.relnamespace
+          WHERE privileged_schema.nspname IN ('for_now', 'for_now_auth')
+            AND privileged.relkind = 'r'
+            AND privileged.oid <> budget.oid
+            AND (
+              has_table_privilege(current_user, privileged.oid, 'SELECT')
+              OR has_table_privilege(current_user, privileged.oid, 'INSERT')
+              OR has_table_privilege(current_user, privileged.oid, 'UPDATE')
+              OR has_table_privilege(current_user, privileged.oid, 'DELETE')
+              OR has_table_privilege(current_user, privileged.oid, 'TRUNCATE')
+              OR has_table_privilege(current_user, privileged.oid, 'REFERENCES')
+              OR has_table_privilege(current_user, privileged.oid, 'TRIGGER')
+            )
+        ) AS other_table_privileges,
         EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
           WHERE n.nspname IN ('for_now', 'for_now_auth') AND c.relkind = 'r'
             AND pg_has_role(current_user, c.relowner, 'USAGE')) AS owns
@@ -60,13 +78,21 @@ async function validateRole(pool, schema, forbiddenSchema) {
       WHERE rolname = current_user
     `, [schema, forbiddenSchema]);
     if (!role || role.rolsuper || role.rolbypassrls || role.owns || !role.allowed || role.forbidden) {
-      throw invalid("PostgreSQL runtime requires separate non-owner data/auth roles without superuser or BYPASSRLS");
+      throw invalid("PostgreSQL runtime requires separate non-owner data/auth/AI budget roles without superuser or BYPASSRLS");
     }
-    if (schema === "for_now" && (!role.budget_select || !role.budget_update
+    const anyBudgetPrivilege = role.budget_select || role.budget_update
       || role.budget_insert || role.budget_delete || role.budget_truncate
       || role.budget_references || role.budget_trigger
-      || role.budget_select_grant || role.budget_update_grant)) {
-      throw invalid("PostgreSQL data runtime role requires SELECT and UPDATE only on for_now.site_ai_budget");
+      || role.budget_select_grant || role.budget_update_grant;
+    if (kind !== "budget" && anyBudgetPrivilege) {
+      throw invalid("PostgreSQL data/auth runtime roles must not access for_now.site_ai_budget");
+    }
+    if (kind === "budget" && (!role.budget_select || !role.budget_update
+      || role.budget_insert || role.budget_delete || role.budget_truncate
+      || role.budget_references || role.budget_trigger
+      || role.budget_select_grant || role.budget_update_grant
+      || role.other_table_privileges)) {
+      throw invalid("PostgreSQL AI budget runtime role requires SELECT and UPDATE only on for_now.site_ai_budget");
     }
     return role;
   } finally { client.release(); }
@@ -75,24 +101,29 @@ async function validateRole(pool, schema, forbiddenSchema) {
 export async function createPostgresRuntime({
   connectionString,
   authConnectionString,
+  budgetConnectionString,
   getAccountId,
   requireMigration = false,
   authRequired = null,
   readOnly = false,
   onPoolError = () => {}
 }) {
-  if (!connectionString || !authConnectionString) throw invalid("DATABASE_URL and AUTH_DATABASE_URL are required");
-  const makePool = connectionString => {
+  if (!connectionString || !authConnectionString || !budgetConnectionString) {
+    throw invalid("DATABASE_URL, AUTH_DATABASE_URL and AI_BUDGET_DATABASE_URL are required");
+  }
+  const makePool = (connectionString, applicationName, max = 8) => {
     const pool = new pg.Pool({
-      connectionString, max: 8, connectionTimeoutMillis: 5000,
+      connectionString, max, connectionTimeoutMillis: 5000,
       idleTimeoutMillis: 30000, statement_timeout: 30000, lock_timeout: 15000,
-      application_name: "for-now-runtime"
+      application_name: applicationName
     });
     pool.on("error", onPoolError);
     pool.on("connect", client => client.on("error", onPoolError));
     return pool;
   };
-  const dataPool = makePool(connectionString), authPool = makePool(authConnectionString);
+  const dataPool = makePool(connectionString, "for-now-data-runtime");
+  const authPool = makePool(authConnectionString, "for-now-auth-runtime");
+  const budgetPool = makePool(budgetConnectionString, "for-now-ai-budget-runtime", 2);
   const context = new AsyncLocalStorage(), authContext = new AsyncLocalStorage();
   let applicationClient = null;
   const close = async () => {
@@ -102,16 +133,19 @@ export async function createPostgresRuntime({
       await client.query("SELECT pg_advisory_unlock(hashtextextended('for-now-application', 0))").catch(() => {});
       client.release(true);
     }
-    await Promise.all([dataPool.end(), authPool.end()]);
+    await Promise.all([dataPool.end(), authPool.end(), budgetPool.end()]);
   };
   try {
-    const [dataRole, authRole] = await Promise.all([
-      validateRole(dataPool, "for_now", "for_now_auth"),
-      validateRole(authPool, "for_now_auth", "for_now")
+    const [dataRole, authRole, budgetRole] = await Promise.all([
+      validateRole(dataPool, "data"),
+      validateRole(authPool, "auth"),
+      validateRole(budgetPool, "budget")
     ]);
-    if (dataRole.name === authRole.name || dataRole.database !== authRole.database
-      || dataRole.host !== authRole.host || dataRole.port !== authRole.port) {
-      throw invalid("Runtime roles must be distinct and use the same database server");
+    if (new Set([dataRole.name, authRole.name, budgetRole.name]).size !== 3
+      || dataRole.database !== authRole.database || dataRole.database !== budgetRole.database
+      || dataRole.host !== authRole.host || dataRole.host !== budgetRole.host
+      || dataRole.port !== authRole.port || dataRole.port !== budgetRole.port) {
+      throw invalid("Runtime data/auth/AI budget roles must be distinct and use the same database server");
     }
     if (authRequired === true) {
       const probe = await dataPool.connect();
@@ -333,7 +367,7 @@ export async function createPostgresRuntime({
   };
   const aiBudget = {
     read: async () => {
-      const client = await dataPool.connect();
+      const client = await budgetPool.connect();
       try {
         return await transaction(client, async () => {
           const row = (await client.query(
@@ -346,7 +380,7 @@ export async function createPostgresRuntime({
     },
     update: async mutator => {
       if (typeof mutator !== "function") throw new TypeError("AI budget update requires a mutator");
-      const client = await dataPool.connect();
+      const client = await budgetPool.connect();
       try {
         return await transaction(client, async () => {
           const row = (await client.query(
@@ -446,7 +480,7 @@ export async function createPostgresRuntime({
     } catch (error) { client.release(true); throw error; }
   };
   const ready = () => Promise.all([
-    dataPool.query("SELECT 1"), authPool.query("SELECT 1"),
+    dataPool.query("SELECT 1"), authPool.query("SELECT 1"), budgetPool.query("SELECT 1"),
     ...(applicationClient ? [applicationClient.query("SELECT 1")] : [])
   ]);
   return { createStoreRepository, documents, aiBudget, auth, attachments, ready, claimApplication, close };

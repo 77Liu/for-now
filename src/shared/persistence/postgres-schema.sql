@@ -248,8 +248,8 @@ ALTER TABLE for_now.attachment_inventory ADD CONSTRAINT attachment_inventory_val
   CHECK ((state IN ('uploading', 'verified') AND bytes IS NOT NULL AND sha256 IS NOT NULL AND bytes >= 0 AND sha256 ~ '^[a-f0-9]{64}$')
     OR (state = 'missing_cleanup' AND bytes IS NULL AND sha256 IS NULL));
 
--- Site budget state is deliberately outside account RLS. The runtime data
--- role receives SELECT/UPDATE on this singleton and no INSERT/DELETE grants.
+-- Site budget state is deliberately outside account RLS. Only the dedicated
+-- runtime budget role receives SELECT/UPDATE on this singleton.
 CREATE TABLE IF NOT EXISTS for_now.site_ai_budget (
   id boolean PRIMARY KEY DEFAULT true CHECK (id),
   document jsonb NOT NULL CHECK (jsonb_typeof(document) = 'object')

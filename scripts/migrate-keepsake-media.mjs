@@ -59,6 +59,7 @@ try {
     runtime = await createPostgresRuntime({
       connectionString: config.databaseUrl,
       authConnectionString: config.authDatabaseUrl,
+      budgetConnectionString: config.aiBudgetDatabaseUrl,
       authRequired: config.authRequired,
       getAccountId: () => activeAccountId || (config.authRequired ? null : "local"),
       requireMigration: await hasJsonData(config.dataDir),

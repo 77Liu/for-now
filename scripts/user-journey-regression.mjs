@@ -58,7 +58,7 @@ const commandSets = {
 };
 
 const productionEnvironmentKey = key => (
-  ["DATABASE_URL", "AUTH_DATABASE_URL", "APP_URL", "UPSTREAM_ORIGIN"].includes(key)
+  ["DATABASE_URL", "AUTH_DATABASE_URL", "AI_BUDGET_DATABASE_URL", "APP_URL", "UPSTREAM_ORIGIN"].includes(key)
   || /^(?:OSS_|ALIYUN_|ALIBABA_CLOUD_|DEEPSEEK_|FEISHU_|VOLCENGINE_)/.test(key)
   || /^(?:PG_BACKUP_DATABASE_URL|PG_SCHEMA_DATABASE_URL)$/.test(key)
 );

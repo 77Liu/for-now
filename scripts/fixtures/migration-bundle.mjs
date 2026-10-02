@@ -16,6 +16,12 @@ export async function writeMigrationBundleFixture(directory) {
   };
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   await fs.writeFile(path.join(directory, "auth.json"), JSON.stringify(auth), { mode: 0o600 });
+  await fs.writeFile(path.join(directory, "ai-budget.json"), JSON.stringify({
+    version: 1,
+    periods: [{ key: "2026-10-02", knownCostMicros: 12_340_000 }],
+    reservations: [{ id: "synthetic-budget-reservation", accountId: "bundle-a" }],
+    extension: { retained: true }
+  }), { mode: 0o600 });
   for (const user of auth.users) {
     const root = path.join(directory, "users", user.id);
     await fs.mkdir(path.join(root, "attachments"), { recursive: true, mode: 0o700 });

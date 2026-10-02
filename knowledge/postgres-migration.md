@@ -36,6 +36,7 @@
 | `llm-settings.json` | `account_documents` 标记存在性；`document_fields` 保留字段形态；每个档位、场景、回答风格写入 `document_records`；`apiKey` 仅在 `document_secrets`，不复制进普通字段/记录/迁移快照 |
 | `ai-usage.json` | 每次调用按原 ID 独立成行，场景/模型/状态可查询；Token、费用、价格快照及扩展与调用同行保存 |
 | `ai-cost-plan.json` | 每场景一行，全局预算、汇率和扩展字段独立保存 |
+| 根 `ai-budget.json` | 全站预算、预留、结算和阈值事件整体写入非租户单例 `site_ai_budget`；与认证、账户文档和附件清单同事务导入 |
 | 附件 | `attachment_inventory` 保存路径、实际存储来源、对象键、字节数、SHA-256 和状态；包含有效引用、回收站引用、清理队列以及本地未引用文件 |
 
 认证查询发生在确定账户之前，不能假装使用租户 RLS。`for_now_auth` 通过独立 schema/专用角色授权；租户数据角色不得获得其权限。密码哈希和会话摘要不返回业务接口。账户配置、密钥、附件清单仍由强制 RLS 隔离。数据库秘密需要由数据库访问权限、备份访问控制和磁盘加密保护；这里的分表不等同于应用层加密。
@@ -53,7 +54,7 @@
 5. 同一源哈希再次导入时，校验实际数据后复用原迁移记录；不删除重建，不自动“修复”已经损坏的目标。
 6. 目标有不同快照时默认拒绝。只有指定单一账户及当前目标源哈希才能替换影子副本；有业务数据但缺失快照证据时拒绝覆盖。
 7. 所有租户表均启用并强制 RLS；每个事务使用 `SET LOCAL` 等价的 `set_config(..., true)` 绑定账户。导入角色禁止 superuser、BYPASSRLS、表 owner 或继承 owner 权限。
-8. 完整批次对源文件的相对路径/原始字节及内容计算两个哈希。导入前和提交前重新检查文件与附件，发现漂移即回滚；实际操作仍要求冻结写入，不能用前后哈希代替停写。
+8. 完整批次对源文件（包括根 `ai-budget.json`）的相对路径/原始字节及内容计算两个哈希。导入前和提交前重新检查文件与附件，发现漂移即回滚；实际操作仍要求冻结写入，不能用前后哈希代替停写。
 9. 完整批次重复执行会验证认证、文档集合、所有映射行和附件清单。替换必须提供当前批次源哈希，且不得改变账户集合；没有迁移证据的认证或独立文档不得覆盖。
 10. 数据库进入运行态后，认证 `runtime_state` 和账户 `runtime_started_at` 拦截完整/单账户旧 JSON 导入，即使提供旧哈希也拒绝覆盖。运行数据目录写入 `.persistence-mode.json`；切回 JSON 必须在全新目录恢复、核验新增数据，不能直接复用旧 JSON。
 
@@ -78,11 +79,12 @@ OSS 备份已在两套隔离库完成无损导入、导出、恢复和候选 HTT
 | `for_now_owner` | NOLOGIN，数据库、两个 schema、表和受控开户函数的 owner |
 | `for_now_schema` | 独立登录，NOINHERIT；显式 `SET ROLE for_now_owner` 后管理 schema |
 | `for_now_migration` | 两个 schema 的 USAGE 和表 SELECT/INSERT/UPDATE/DELETE；非 owner |
-| `for_now_data` | 仅 `for_now` 的 USAGE；租户表读写，`site_ai_budget` 仅 SELECT/UPDATE；8 连接上限 |
+| `for_now_data` | 仅 `for_now` 的 USAGE 和租户表读写；不得访问 `site_ai_budget`；8 连接上限 |
 | `for_now_auth` | 仅 `for_now_auth` 的 USAGE、表读写及开户函数 EXECUTE；8 连接上限 |
+| `for_now_budget` | 仅 `for_now` 的 USAGE 和 `site_ai_budget` SELECT/UPDATE；不得访问租户表或认证 schema；2 连接上限 |
 | `for_now_backup` | 两个 schema 的 USAGE 和表 SELECT；没有写权限 |
 
-五个登录角色使用独立随机密码，只在 ECS
+六个登录角色使用独立随机密码，只在 ECS
 `/etc/for-now-postgres/credentials.json` 保存（目录 `0700`、文件
 `0600 root:root`）；尚未写入或接入 `/etc/for-now.env`。除 data/auth 外
 登录角色均为 2 连接上限。数据库和 public schema 已撤销 PUBLIC 默认权限。
@@ -131,7 +133,7 @@ npm run migrate:postgres -- --init-schema
 npm run migrate:postgres -- --data-dir /path/to/isolated-copy
 ```
 
-建表后由数据库管理者创建独立登录角色。完整迁移角色需要 `for_now`、`for_now_auth` 两个 schema 的 USAGE 及迁移涉及表的 SELECT/INSERT/UPDATE/DELETE；不授予表所有权或 schema CREATE。运行阶段拆成只访问 `for_now` 的数据角色和只访问 `for_now_auth` 的认证角色。新增表后重新核对授权。
+建表后由数据库管理者创建独立登录角色。完整迁移角色需要 `for_now`、`for_now_auth` 两个 schema 的 USAGE 及迁移涉及表的 SELECT/INSERT/UPDATE/DELETE；不授予表所有权或 schema CREATE。运行阶段拆成数据、认证和全站预算三个角色。新增表后重新核对授权。
 
 更新已存在的完整影子批次：
 
@@ -145,14 +147,17 @@ npm run migrate:postgres -- --data-dir /path/to/isolated-copy --expected-target-
 
 ## PostgreSQL 运行与恢复
 
-`PERSISTENCE_BACKEND=json|postgres` 默认 `json`。PostgreSQL 模式需要 `DATABASE_URL`（数据角色）及 `AUTH_DATABASE_URL`（认证角色）。两者必须同库、不同角色、非 owner / NOSUPERUSER / NOBYPASSRLS，且互相没有对方 schema 的 USAGE。运行模式拒绝 `LOCAL_TEST_MODE` 与上游代理，禁止经 JSON 文件读写业务、认证或配置；日志与附件二进制仍可使用本地文件。
+`PERSISTENCE_BACKEND=json|postgres` 默认 `json`。PostgreSQL 模式需要 `DATABASE_URL`（数据角色）、`AUTH_DATABASE_URL`（认证角色）及 `AI_BUDGET_DATABASE_URL`（预算角色）。三者必须同库、角色互异、非 owner / NOSUPERUSER / NOBYPASSRLS。数据和认证角色不得直接 SELECT/UPDATE 全站预算表；预算角色不得访问任何租户表或认证 schema。运行模式拒绝 `LOCAL_TEST_MODE` 与上游代理，禁止经 JSON 文件读写业务、认证或配置；日志与附件二进制仍可使用本地文件。
 
-由建表管理员授予数据角色 `for_now` 的 USAGE 和租户运行表 SELECT/INSERT/UPDATE/DELETE。全站预算单例 `for_now.site_ai_budget` 只授予 SELECT/UPDATE，不授予 INSERT/DELETE/TRUNCATE/REFERENCES/TRIGGER 或授权转授权；运行启动会拒绝缺权或过权角色。若先对 `for_now` 全表授权，必须立即收回该表的 INSERT/DELETE：
+由建表管理员授予数据角色 `for_now` 的 USAGE 和租户运行表 SELECT/INSERT/UPDATE/DELETE，并收回预算表的全部权限。全站预算单例只向独立预算角色授予 SELECT/UPDATE，不授予 INSERT/DELETE/TRUNCATE/REFERENCES/TRIGGER、授权转授权或其他表权限；运行启动会拒绝缺权、越权或角色复用：
 
 ```sql
 GRANT USAGE ON SCHEMA for_now TO for_now_data;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA for_now TO for_now_data;
-REVOKE INSERT, DELETE ON TABLE for_now.site_ai_budget FROM for_now_data;
+REVOKE ALL ON TABLE for_now.site_ai_budget FROM for_now_data;
+
+GRANT USAGE ON SCHEMA for_now TO for_now_budget;
+GRANT SELECT, UPDATE ON TABLE for_now.site_ai_budget TO for_now_budget;
 ```
 
 认证角色仅获 `for_now_auth` 的 USAGE 和认证表读写，并单独授予 `EXECUTE ON FUNCTION for_now_auth.provision_account(text,jsonb,jsonb)`；不得获得 `for_now` 或预算表权限。该 SECURITY DEFINER 函数固定 search_path、默认拒绝 PUBLIC，只能为已经插入身份表的新账户初始化映射，不能读取或替换既有账户。注册的身份、会话、业务初值和独立文档在同一认证事务提交；失败整体回滚。
@@ -160,7 +165,7 @@ REVOKE INSERT, DELETE ON TABLE for_now.site_ai_budget FROM for_now_data;
 运行语义：
 
 - `postgres-runtime.mjs` 提供 `read/update/transact`，使用正式关系行重建业务对象，不读取或更新迁移快照。当前兼容适配器每次提交替换该账户的业务映射行；独立文档单独提交。领域级定向更新/数据库分页属于后续接口收口与性能工作，未宣称已实现。
-- 全站 AI 预算不绑定 `app.account_id`，使用 `site_ai_budget` 唯一行的 `SELECT ... FOR UPDATE` 事务串行所有账户的预留、结算和恢复命令；mutator 或 UPDATE 失败均整体回滚。该表不复用认证表，也不进入租户 RLS。
+- 全站 AI 预算不绑定 `app.account_id`，独立预算连接使用 `site_ai_budget` 唯一行的 `SELECT ... FOR UPDATE` 事务串行所有账户的预留、结算和恢复命令；mutator 或 UPDATE 失败均整体回滚。普通数据/认证连接无法直接读取或改写该表。
 - 所有账户写入使用数据库 advisory lock；锁跨显式 `commit()` 保留。每个 commit 是真实持久点，后续失败不回滚已完成的附件清理意图。账户 revision 以 compare-and-swap 拦截锁外冲突，读取使用 REPEATABLE READ 一致快照，事务内 `SET LOCAL` 绑定 RLS。
 - 配置读改写、用量追加均在账户锁内完成；归一化保留迁移扩展，若会丢弃数组记录则拒绝。数据角色不能读取认证 schema，认证角色不能直接读租户内容。
 - 上传先登记 `uploading` 与预期大小/哈希，再写二进制并验真为 `verified`；中断上传在启动时核对实物，保留有效文件或清除未写入的预留。业务不能引用其他账户或未验证的附件。永久清理在首个 commit 持久化任务，再删除文件并提交结果；失败可重试。
@@ -174,7 +179,7 @@ REVOKE INSERT, DELETE ON TABLE for_now.site_ai_budget FROM for_now_data;
 npm run export:postgres -- --data-dir /path/to/data --output-dir /path/to/new-export
 ```
 
-OSS 模式还需显式 `--allow-remote-attachments`。导出取得应用排他锁；运行中拒绝导出。REPEATABLE READ 读取身份、每账户关系行、文档与附件清单，逐文件核对 SHA-256/大小，全部通过后原子发布新目录；失败清除临时输出。新目录包含兼容 JSON 恢复文档、附件和 `export-manifest.json`，不包含旧写源标记，也不依赖迁移快照；输出不是线上第二写源。
+OSS 模式还需显式 `--allow-remote-attachments`。导出取得应用排他锁；运行中拒绝导出。REPEATABLE READ 读取全站预算、身份、每账户关系行、文档与附件清单，逐文件核对 SHA-256/大小，全部通过后原子发布新目录；失败清除临时输出。新目录包含根 `ai-budget.json`、兼容 JSON 恢复文档、附件和带预算内容哈希的 `export-manifest.json`，不包含旧写源标记，也不依赖迁移快照；输出不是线上第二写源。
 
 恢复时在**全新数据库**初始化 schema/角色，再对新导出目录执行完整导入，切换隔离应用验证。禁止清空运行标记后重导旧快照。`deploy/backup-to-oss.sh` 已增加停写导出分支，PG 模式要求 `PG_BACKUP_DATABASE_URL`；云端备份作业和真实 OSS 尚需发布阶段演练。现有 `restore-drill.sh` 只证明导出的 JSON 兼容读取，显式清空数据库连接；新数据库恢复由 PostgreSQL 专项另验。
 
@@ -197,6 +202,8 @@ OSS 模式还需显式 `--allow-remote-attachments`。导出取得应用排他�
 
 - 生产版本为 `v0.2.1 / 6adff978e5fe`，`PERSISTENCE_BACKEND=postgres`；
   data/auth/backup 连接使用同库独立最小角色，数据库服务已配置自动启动。
+- 本次候选新增预算角色和 `AI_BUDGET_DATABASE_URL`；在配置该角色并完成权限
+  复验前不得部署候选版本。本文不代表该配置已经写入生产。
 - 冻结源摘要为
   `3022793f96297004516db2170b678609d37161c2281a43dc26ac5682ab1cfc79`，
   内容摘要为

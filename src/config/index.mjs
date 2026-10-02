@@ -58,6 +58,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     persistenceBackend,
     databaseUrl: env.DATABASE_URL,
     authDatabaseUrl: env.AUTH_DATABASE_URL,
+    aiBudgetDatabaseUrl: env.AI_BUDGET_DATABASE_URL,
     inviteCodeHash, authRequired,
     cookieSecure: env.COOKIE_SECURE === "1",
     localTestMode,

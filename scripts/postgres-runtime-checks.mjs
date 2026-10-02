@@ -10,7 +10,7 @@ import { deflateSync } from "node:zlib";
 import {
   createPostgresRuntime, initializePostgresSchema, buildPostgresMigrationPlan, applyPostgresMigration,
   canonicalJson, discoverJsonBundle, applyPostgresBundle,
-  exportPostgresDirectory, readPostgresBundle
+  exportPostgresDirectory, readPostgresBundle, storeContentSha256
 } from "../src/shared/persistence/index.mjs";
 import { createAttachmentCleanup, createSpeechCacheSweep } from "../src/app/index.mjs";
 import { dailyAiUsage } from "./monitor-health.mjs";
@@ -62,16 +62,18 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
   await admin.query("CREATE DATABASE runtime_test");
   const database = await connect("postgres", "runtime_test");
   await initializePostgresSchema(database);
-  for (const role of ["runtime_data", "runtime_auth", "runtime_backup"]) {
+  for (const role of ["runtime_data", "runtime_auth", "runtime_budget", "runtime_backup"]) {
     await database.query(`CREATE ROLE ${role} LOGIN PASSWORD '${password}' NOSUPERUSER NOBYPASSRLS`);
   }
   await database.query(`
     GRANT USAGE ON SCHEMA for_now TO runtime_data;
     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA for_now TO runtime_data;
-    REVOKE INSERT, DELETE ON TABLE for_now.site_ai_budget FROM runtime_data;
+    REVOKE ALL ON TABLE for_now.site_ai_budget FROM runtime_data;
     GRANT USAGE ON SCHEMA for_now_auth TO runtime_auth;
     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA for_now_auth TO runtime_auth;
     GRANT EXECUTE ON FUNCTION for_now_auth.provision_account(text,jsonb,jsonb) TO runtime_auth;
+    GRANT USAGE ON SCHEMA for_now TO runtime_budget;
+    GRANT SELECT, UPDATE ON TABLE for_now.site_ai_budget TO runtime_budget;
     GRANT USAGE ON SCHEMA for_now, for_now_auth TO migration_app;
     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA for_now, for_now_auth TO migration_app;
     GRANT USAGE ON SCHEMA for_now, for_now_auth TO runtime_backup;
@@ -81,6 +83,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
   const context = new AsyncLocalStorage();
   const options = {
     connectionString: url("runtime_data"), authConnectionString: url("runtime_auth"),
+    budgetConnectionString: url("runtime_budget"),
     getAccountId: () => context.getStore()
   };
   await assert.rejects(createPostgresRuntime({ ...options, connectionString: url("postgres") }), /separate non-owner/);
@@ -108,6 +111,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       env: {
         ...process.env, NODE_ENV: "test", PERSISTENCE_BACKEND: backend, DATA_DIR: directory,
         DATABASE_URL: url("runtime_data", db), AUTH_DATABASE_URL: url("runtime_auth", db),
+        AI_BUDGET_DATABASE_URL: url("runtime_budget", db),
         AUTH_REQUIRED: "1", INVITE_CODE_HASH: crypto.createHash("sha256").update("runtime-invite").digest("hex"),
         APP_BASE_PATH: "/now", PORT: String(appPort), LOCAL_TEST_MODE: "", UPSTREAM_ORIGIN: "",
         ATTACHMENT_STORAGE: "local", DEEPSEEK_API_URL: `http://127.0.0.1:${provider.address().port}`,
@@ -166,6 +170,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       database: "runtime_test",
       dataRole: "runtime_data",
       authRole: "runtime_auth",
+      budgetRole: "runtime_budget",
       runtime,
       peer,
       runtimeOptions: options,
@@ -228,7 +233,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       const pids = (await database.query(`
         SELECT DISTINCT l.pid FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
         WHERE l.locktype = 'advisory' AND l.granted AND a.datname = current_database()
-          AND a.application_name = 'for-now-runtime'
+          AND a.application_name = 'for-now-data-runtime'
       `)).rows;
       assert.equal(pids.length, 1);
       await database.query("SELECT pg_terminate_backend($1)", [pids[0].pid]);
@@ -597,6 +602,9 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     };
     await assert.rejects(exportPostgresDirectory(backup, exportOptions), /Stop the application/);
     await stop(app.child);
+    await runtime.aiBudget.update(document => {
+      document.restoreProbe = { knownCostMicros: 7_500_000, retained: true };
+    });
     await backup.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     let expectedRelational;
     try {
@@ -606,14 +614,23 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     }
     await exportPostgresDirectory(backup, exportOptions);
     assert.equal((await fs.stat(path.join(restoredDir, "auth.json"))).mode & 0o777, 0o600);
+    assert.deepEqual(
+      JSON.parse(await fs.readFile(path.join(restoredDir, "ai-budget.json"), "utf8")),
+      expectedRelational.aiBudget
+    );
+    const exportManifest = JSON.parse(await fs.readFile(path.join(restoredDir, "export-manifest.json"), "utf8"));
+    assert.equal(exportManifest.aiBudget.file, "ai-budget.json");
+    assert.equal(exportManifest.aiBudget.sha256, storeContentSha256(expectedRelational.aiBudget));
     await database.query("CREATE DATABASE runtime_restored");
     const restoredAdmin = await connect("postgres", "runtime_restored");
     await initializePostgresSchema(restoredAdmin);
     await restoredAdmin.query(`
       GRANT USAGE ON SCHEMA for_now TO runtime_data, migration_app;
+      GRANT USAGE ON SCHEMA for_now TO runtime_budget;
       GRANT USAGE ON SCHEMA for_now_auth TO runtime_auth, migration_app;
       GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA for_now TO runtime_data, migration_app;
-      REVOKE INSERT,DELETE ON TABLE for_now.site_ai_budget FROM runtime_data;
+      REVOKE ALL ON TABLE for_now.site_ai_budget FROM runtime_data;
+      GRANT SELECT,UPDATE ON TABLE for_now.site_ai_budget TO runtime_budget;
       GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA for_now_auth TO runtime_auth, migration_app;
       GRANT EXECUTE ON FUNCTION for_now_auth.provision_account(text,jsonb,jsonb) TO runtime_auth;
     `);

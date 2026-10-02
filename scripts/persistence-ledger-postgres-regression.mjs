@@ -23,7 +23,7 @@ const emptyStore = () => ({
   trash: []
 });
 const cleanEnvironment = source => Object.fromEntries(Object.entries(source).filter(([key]) => (
-  !["DATABASE_URL", "AUTH_DATABASE_URL", "APP_URL", "UPSTREAM_ORIGIN"].includes(key)
+  !["DATABASE_URL", "AUTH_DATABASE_URL", "AI_BUDGET_DATABASE_URL", "APP_URL", "UPSTREAM_ORIGIN"].includes(key)
   && !/^(?:OSS_|ALIYUN_|ALIBABA_CLOUD_|DEEPSEEK_|FEISHU_|VOLCENGINE_)/.test(key)
 )));
 
@@ -31,6 +31,7 @@ if (process.argv[2] === WORKER_FLAG) {
   const runtime = await createPostgresRuntime({
     connectionString: process.env.TEST_DATABASE_URL,
     authConnectionString: process.env.TEST_AUTH_DATABASE_URL,
+    budgetConnectionString: process.env.TEST_AI_BUDGET_DATABASE_URL,
     getAccountId: () => process.env.TEST_ACCOUNT_ID
   });
   try {
@@ -121,18 +122,22 @@ try {
   await initializePostgresSchema(admin);
   await admin.query(`CREATE ROLE ledger_data LOGIN PASSWORD '${password}' NOSUPERUSER NOBYPASSRLS`);
   await admin.query(`CREATE ROLE ledger_auth LOGIN PASSWORD '${password}' NOSUPERUSER NOBYPASSRLS`);
+  await admin.query(`CREATE ROLE ledger_budget LOGIN PASSWORD '${password}' NOSUPERUSER NOBYPASSRLS`);
   await admin.query(`
     GRANT USAGE ON SCHEMA for_now TO ledger_data;
     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA for_now TO ledger_data;
-    REVOKE INSERT, DELETE ON TABLE for_now.site_ai_budget FROM ledger_data;
+    REVOKE ALL ON TABLE for_now.site_ai_budget FROM ledger_data;
     GRANT USAGE ON SCHEMA for_now_auth TO ledger_auth;
     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA for_now_auth TO ledger_auth;
-    GRANT EXECUTE ON FUNCTION for_now_auth.provision_account(text,jsonb,jsonb) TO ledger_auth
+    GRANT EXECUTE ON FUNCTION for_now_auth.provision_account(text,jsonb,jsonb) TO ledger_auth;
+    GRANT USAGE ON SCHEMA for_now TO ledger_budget;
+    GRANT SELECT, UPDATE ON TABLE for_now.site_ai_budget TO ledger_budget
   `);
   const url = role => `postgresql://${role}:${password}@127.0.0.1:${port}/postgres`;
   const runtimeOptions = {
     connectionString: url("ledger_data"),
     authConnectionString: url("ledger_auth"),
+    budgetConnectionString: url("ledger_budget"),
     getAccountId: () => "ledger-account"
   };
   let runtime = await createPostgresRuntime(runtimeOptions);
@@ -145,6 +150,7 @@ try {
     NODE_ENV: "test",
     TEST_DATABASE_URL: url("ledger_data"),
     TEST_AUTH_DATABASE_URL: url("ledger_auth"),
+    TEST_AI_BUDGET_DATABASE_URL: url("ledger_budget"),
     TEST_ACCOUNT_ID: "ledger-account"
   };
   const responses = await Promise.all([childResponse(workerEnvironment), childResponse(workerEnvironment)]);

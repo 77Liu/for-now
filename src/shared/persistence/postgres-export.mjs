@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { AI_BUDGET_DOCUMENT_FILE } from "./ai-budget-repository.mjs";
 import { ACCOUNT_DOCUMENT_FILES } from "./document-mapping.mjs";
 import { readAuthDocument } from "./postgres-documents.mjs";
 import { readPostgresBundle } from "./postgres-bundle.mjs";
@@ -30,6 +31,7 @@ export async function exportPostgresDirectory(client, { outputDir, readAttachmen
     const ids = auth?.users.length ? auth.users.map(user => user.id) : ["local"];
     const bundle = await readPostgresBundle(client, ids);
     const write = (file, value) => fs.writeFile(file, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+    await write(path.join(stage, AI_BUDGET_DOCUMENT_FILE), bundle.aiBudget);
     if (bundle.auth) await write(path.join(stage, "auth.json"), bundle.auth);
     for (const account of bundle.accounts) {
       await client.query("SELECT set_config('app.account_id', $1, true)", [account.accountId]);
@@ -62,6 +64,10 @@ export async function exportPostgresDirectory(client, { outputDir, readAttachmen
     }
     const evidence = {
       format: "for-now-relational-export-v1", createdAt: new Date().toISOString(),
+      aiBudget: {
+        file: AI_BUDGET_DOCUMENT_FILE,
+        sha256: storeContentSha256(bundle.aiBudget)
+      },
       accounts: bundle.accounts.map(row => ({
         accountId: row.accountId, storeSha256: storeContentSha256(row.store),
         documents: Object.fromEntries(Object.entries(row.documents).map(([name, value]) => [name, storeContentSha256(value)])),

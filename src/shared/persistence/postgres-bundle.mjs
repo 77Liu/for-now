@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { AI_BUDGET_DOCUMENT_FILE } from "./ai-budget-repository.mjs";
 import { canonicalJson, storeContentSha256 } from "./store-mapping.mjs";
 import { buildPostgresMigrationPlan, applyPostgresMigration } from "./postgres-migration.mjs";
 import { ACCOUNT_DOCUMENT_FILES, mapAccountDocument, mapAuthDocument } from "./document-mapping.mjs";
@@ -41,6 +42,7 @@ export async function discoverJsonBundle(dataDir, { inspectAttachment = defaultI
   };
   const auth = await read(path.join(dataDir, "auth.json"), true);
   if (auth) mapAuthDocument(auth);
+  const aiBudget = await read(path.join(dataDir, AI_BUDGET_DOCUMENT_FILE), true) || {};
   const owners = auth?.users.length ? auth.users : [{ id: "local", createdAt: "" }];
   const accounts = [];
   for (const user of owners) {
@@ -85,16 +87,17 @@ export async function discoverJsonBundle(dataDir, { inspectAttachment = defaultI
     }
     accounts.push({ plan, documents, inventory });
   }
-  const contentSha256 = bundleContentHash({ auth, accounts });
+  const contentSha256 = bundleContentHash({ aiBudget, auth, accounts });
   // Relative filenames make copied snapshots reproducible.
   const sourceSha256 = storeContentSha256({
     sources: sources.map(({ file, sha256 }) => ({ file: path.relative(dataDir, file), sha256 })),
     contentSha256
   });
-  return { auth, accounts, sources, sourceSha256, contentSha256 };
+  return { aiBudget, auth, accounts, sources, sourceSha256, contentSha256 };
 }
 
-const bundleContentHash = ({ auth, accounts }) => storeContentSha256({
+const bundleContentHash = ({ aiBudget, auth, accounts }) => storeContentSha256({
+  aiBudget,
   auth,
   accounts: accounts.map(({ plan, documents, inventory }) => ({ accountId: plan.accountId, store: plan.snapshot, documents, inventory }))
 });
@@ -147,6 +150,17 @@ export async function applyPostgresBundle(client, bundle, { expectedTargetSha256
         throw new Error("Bundle replacement cannot change the account set");
       }
     }
+    const budgetRow = (await client.query(
+      "SELECT document FROM for_now.site_ai_budget WHERE id = true FOR UPDATE"
+    )).rows[0];
+    if (!budgetRow) throw new Error("AI budget singleton is missing");
+    if (reused) {
+      if (!equal(budgetRow.document, bundle.aiBudget)) throw new Error("AI budget content mismatch");
+    } else {
+      if (!previous && !equal(budgetRow.document, {})) {
+        throw new Error("AI budget data exists without bundle evidence");
+      }
+    }
     const results = [];
     for (const { plan, documents, inventory } of bundle.accounts) {
       await client.query("SELECT set_config('app.account_id', $1, true)", [plan.accountId]);
@@ -168,6 +182,17 @@ export async function applyPostgresBundle(client, bundle, { expectedTargetSha256
       if (!reused) await writeAuthDocument(client, bundle.auth);
       await verifyAuthDocument(client, mapAuthDocument(bundle.auth));
     } else if (await readAuthDocument(client)) throw new Error("Unexpected auth data");
+    if (!reused) {
+      await client.query(
+        "UPDATE for_now.site_ai_budget SET document = $1::jsonb WHERE id = true",
+        [JSON.stringify(bundle.aiBudget)]
+      );
+    }
+    if (!equal((await client.query(
+      "SELECT document FROM for_now.site_ai_budget WHERE id = true"
+    )).rows[0]?.document, bundle.aiBudget)) {
+      throw new Error("AI budget content mismatch");
+    }
     await verifyJsonBundleSources(bundle);
     await verifyAttachmentSources(bundle, inspectAttachment);
     await client.query(`
@@ -187,6 +212,10 @@ export async function applyPostgresBundle(client, bundle, { expectedTargetSha256
 // Caller owns the transaction (REPEATABLE READ for an online export).
 export async function readPostgresBundle(client, accountIds) {
   const auth = await readAuthDocument(client), accounts = [];
+  const budgetRow = (await client.query(
+    "SELECT document FROM for_now.site_ai_budget WHERE id = true"
+  )).rows[0];
+  if (!budgetRow) throw new Error("AI budget singleton is missing");
   for (const accountId of accountIds) {
     await client.query("SELECT set_config('app.account_id', $1, true)", [accountId]);
     const store = rebuildStoreObjects(await readPostgresStoreObjects(client, accountId));
@@ -197,5 +226,5 @@ export async function readPostgresBundle(client, accountIds) {
     }
     accounts.push({ accountId, store, documents, inventory: await readAttachmentInventory(client, accountId) });
   }
-  return { auth, accounts };
+  return { aiBudget: budgetRow.document, auth, accounts };
 }

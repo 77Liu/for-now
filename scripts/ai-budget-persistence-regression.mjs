@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { once } from "node:events";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -14,6 +15,7 @@ import {
 } from "../src/shared/persistence/index.mjs";
 
 const RESTART_PROBE = "--restart-probe";
+const LOCK_WORKER = "--lock-worker";
 
 if (process.argv[2] === RESTART_PROBE) {
   const repository = createAiBudgetRepository({ dataRoot: process.argv[3] });
@@ -21,9 +23,27 @@ if (process.argv[2] === RESTART_PROBE) {
   process.exit(0);
 }
 
+if (process.argv[2] === LOCK_WORKER) {
+  const repository = createAiBudgetRepository({
+    dataRoot: process.argv[3],
+    lockTimeoutMs: Number(process.env.TEST_LOCK_TIMEOUT_MS) || undefined,
+    lockStaleMs: Number(process.env.TEST_LOCK_STALE_MS) || undefined,
+    lockRetryMs: 10
+  });
+  await repository.update(async document => {
+    process.stdout.write("LOCKED\n");
+    await new Promise(resolve => setTimeout(resolve, Number(process.argv[5]) || 0));
+    const field = process.argv[4];
+    document[field] = Number(document[field] || 0) + 1;
+  });
+  process.stdout.write("DONE\n");
+  process.exit(0);
+}
+
 const run = promisify(execFile);
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "for-now-ai-budget-"));
 const file = path.join(root, AI_BUDGET_DOCUMENT_FILE);
+const lockDirectory = `${file}.lock`;
 const accountDirectory = path.join(root, "users", "account-a");
 const policy = {
   ...AI_BUDGET_POLICY,
@@ -46,6 +66,35 @@ const service = (repository, prefix) => {
     now: () => "2026-10-02T01:00:00.000Z",
     createId: () => `${prefix}-${++sequence}`
   });
+};
+const startLockWorker = (field, delayMs, environment = {}) => {
+  const child = spawn(process.execPath, [
+    import.meta.filename,
+    LOCK_WORKER,
+    root,
+    field,
+    String(delayMs)
+  ], {
+    env: { ...process.env, NODE_ENV: "test", ...environment },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  let stdout = "";
+  let stderr = "";
+  let lockedResolve;
+  const locked = new Promise(resolve => { lockedResolve = resolve; });
+  child.stdout.on("data", chunk => {
+    stdout += chunk;
+    if (stdout.includes("LOCKED\n")) lockedResolve();
+  });
+  child.stderr.on("data", chunk => { stderr += chunk; });
+  const done = new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code, signal) => {
+      if (code === 0) resolve({ stdout, stderr });
+      else reject(new Error(`AI budget lock worker exited with ${code ?? signal}: ${stderr}`));
+    });
+  });
+  return { child, locked, done };
 };
 
 try {
@@ -79,6 +128,53 @@ try {
   assert.equal((await fs.stat(file)).mode & 0o777, 0o600);
   await assert.rejects(fs.access(path.join(accountDirectory, AI_BUDGET_DOCUMENT_FILE)));
 
+  const workers = [
+    startLockWorker("crossProcessUpdates", 100),
+    startLockWorker("crossProcessUpdates", 100)
+  ];
+  await Promise.all(workers.map(worker => worker.done));
+  assert.equal((await firstRepository.read()).crossProcessUpdates, 2);
+
+  const crashed = startLockWorker("mustNotCommitAfterCrash", 30_000);
+  const crashedDone = crashed.done.catch(error => error);
+  await crashed.locked;
+  crashed.child.kill("SIGKILL");
+  await once(crashed.child, "exit");
+  assert.match((await crashedDone).message, /exited with/);
+  assert.equal((await fs.stat(lockDirectory)).isDirectory(), true);
+  const recoveryRepository = createAiBudgetRepository({
+    dataRoot: root,
+    lockTimeoutMs: 2_000,
+    lockStaleMs: 500,
+    lockRetryMs: 10
+  });
+  await recoveryRepository.update(document => {
+    document.recoveredAfterCrash = true;
+  });
+  assert.equal((await recoveryRepository.read()).recoveredAfterCrash, true);
+  await assert.rejects(fs.access(lockDirectory));
+
+  const holder = startLockWorker("timeoutHolderCommitted", 500, {
+    TEST_LOCK_STALE_MS: "2000"
+  });
+  await holder.locked;
+  const timeoutRepository = createAiBudgetRepository({
+    dataRoot: root,
+    lockTimeoutMs: 100,
+    lockStaleMs: 2_000,
+    lockRetryMs: 10
+  });
+  await assert.rejects(
+    timeoutRepository.update(document => {
+      document.mustNotCommitAfterTimeout = true;
+    }),
+    error => error.code === "STORAGE_LOCK_TIMEOUT"
+  );
+  await holder.done;
+  const afterTimeout = await firstRepository.read();
+  assert.equal(afterTimeout.timeoutHolderCommitted, 1);
+  assert.equal(afterTimeout.mustNotCommitAfterTimeout, undefined);
+
   const beforeRollback = await fs.readFile(file, "utf8");
   await assert.rejects(firstRepository.update(document => {
     document.rollbackProbe = true;
@@ -106,7 +202,7 @@ try {
     []
   );
 
-  console.log("AI budget JSON persistence checks passed: root-level 0600 storage, cross-request serialization, atomic rollback, process restart and corrupt-file preservation.");
+  console.log("AI budget JSON persistence checks passed: root-level 0600 storage, cross-request and cross-process serialization, crash-lock recovery, bounded timeout, atomic rollback, process restart and corrupt-file preservation.");
 } finally {
   await fs.rm(root, { recursive: true, force: true });
 }

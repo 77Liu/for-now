@@ -971,6 +971,7 @@ function updateStore(mutator) {
 const postgresRuntime = PERSISTENCE_BACKEND === "postgres" ? await createPostgresRuntime({
   connectionString: appConfig.databaseUrl,
   authConnectionString: appConfig.authDatabaseUrl,
+  budgetConnectionString: appConfig.aiBudgetDatabaseUrl,
   authRequired: AUTH_REQUIRED,
   getAccountId: () => requestStorage.getStore()?.user?.id || (AUTH_REQUIRED ? null : "local"),
   requireMigration: await hasJsonData(DATA_DIR),

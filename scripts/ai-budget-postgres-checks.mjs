@@ -18,6 +18,7 @@ export async function runAiBudgetPostgresChecks({
   database,
   dataRole: configuredDataRole,
   authRole: configuredAuthRole,
+  budgetRole: configuredBudgetRole,
   runtime,
   peer,
   runtimeOptions,
@@ -25,6 +26,7 @@ export async function runAiBudgetPostgresChecks({
 }) {
   const dataRole = roleName(configuredDataRole);
   const authRole = roleName(configuredAuthRole);
+  const budgetRole = roleName(configuredBudgetRole);
   const policy = {
     ...AI_BUDGET_POLICY,
     userDailyKnownCostCny: 1000,
@@ -44,37 +46,64 @@ export async function runAiBudgetPostgresChecks({
     SELECT
       has_table_privilege($1, 'for_now.site_ai_budget', 'SELECT') AS "select",
       has_table_privilege($1, 'for_now.site_ai_budget', 'UPDATE') AS "update",
-      has_table_privilege($1, 'for_now.site_ai_budget', 'INSERT') AS "insert",
-      has_table_privilege($1, 'for_now.site_ai_budget', 'DELETE') AS "delete",
-      has_table_privilege($1, 'for_now.site_ai_budget', 'TRUNCATE') AS "truncate",
-      has_table_privilege($2, 'for_now.site_ai_budget', 'SELECT') AS "authSelect"
-  `, [dataRole, authRole])).rows[0];
+      has_table_privilege($2, 'for_now.site_ai_budget', 'SELECT') AS "authSelect",
+      has_table_privilege($2, 'for_now.site_ai_budget', 'UPDATE') AS "authUpdate",
+      has_table_privilege($3, 'for_now.site_ai_budget', 'SELECT') AS "budgetSelect",
+      has_table_privilege($3, 'for_now.site_ai_budget', 'UPDATE') AS "budgetUpdate",
+      has_table_privilege($3, 'for_now.site_ai_budget', 'INSERT') AS "budgetInsert",
+      has_table_privilege($3, 'for_now.site_ai_budget', 'DELETE') AS "budgetDelete",
+      has_table_privilege($3, 'for_now.site_ai_budget', 'TRUNCATE') AS "budgetTruncate"
+  `, [dataRole, authRole, budgetRole])).rows[0];
   assert.deepEqual(privileges, {
-    select: true,
-    update: true,
-    insert: false,
-    delete: false,
-    truncate: false,
-    authSelect: false
+    select: false,
+    update: false,
+    authSelect: false,
+    authUpdate: false,
+    budgetSelect: true,
+    budgetUpdate: true,
+    budgetInsert: false,
+    budgetDelete: false,
+    budgetTruncate: false
   });
 
   const dataClient = await connect(dataRole, database);
   const authClient = await connect(authRole, database);
+  const budgetClient = await connect(budgetRole, database);
   await assert.rejects(
-    dataClient.query("DELETE FROM for_now.site_ai_budget"),
+    dataClient.query("SELECT document FROM for_now.site_ai_budget"),
+    error => error.code === "42501"
+  );
+  await assert.rejects(
+    dataClient.query("UPDATE for_now.site_ai_budget SET document = '{}'::jsonb"),
     error => error.code === "42501"
   );
   await assert.rejects(
     authClient.query("SELECT document FROM for_now.site_ai_budget"),
     error => error.code === "42501"
   );
+  await assert.rejects(
+    authClient.query("UPDATE for_now.site_ai_budget SET document = '{}'::jsonb"),
+    error => error.code === "42501"
+  );
+  assert.deepEqual((await budgetClient.query(
+    "SELECT document FROM for_now.site_ai_budget WHERE id = true"
+  )).rows[0].document, {});
+  assert.equal((await budgetClient.query(
+    "UPDATE for_now.site_ai_budget SET document = '{}'::jsonb WHERE id = true"
+  )).rowCount, 1);
 
-  await admin.query(`GRANT INSERT ON for_now.site_ai_budget TO ${dataRole}`);
+  await admin.query(`GRANT SELECT ON for_now.site_ai_budget TO ${dataRole}`);
   await assert.rejects(
     createPostgresRuntime(runtimeOptions),
-    /SELECT and UPDATE only on for_now\.site_ai_budget/
+    /data\/auth runtime roles must not access for_now\.site_ai_budget/
   );
-  await admin.query(`REVOKE INSERT ON for_now.site_ai_budget FROM ${dataRole}`);
+  await admin.query(`REVOKE SELECT ON for_now.site_ai_budget FROM ${dataRole}`);
+  await admin.query(`GRANT SELECT ON for_now.accounts TO ${budgetRole}`);
+  await assert.rejects(
+    createPostgresRuntime(runtimeOptions),
+    /AI budget runtime role requires SELECT and UPDATE only/
+  );
+  await admin.query(`REVOKE SELECT ON for_now.accounts FROM ${budgetRole}`);
 
   const firstRepository = createAiBudgetRepository({ runtime });
   const secondRepository = createAiBudgetRepository({ runtime: peer });
@@ -145,7 +174,7 @@ export async function runAiBudgetPostgresChecks({
   await admin.query("UPDATE for_now.site_ai_budget SET document = '{}'::jsonb WHERE id = true");
 
   return [
-    "global AI budget least privilege",
+    "isolated AI budget role and denied data/auth direct access",
     "global AI budget cross-account concurrency",
     "global AI budget database and mutator rollback"
   ];

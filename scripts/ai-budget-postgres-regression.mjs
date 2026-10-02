@@ -105,17 +105,20 @@ try {
   await admin.query("UPDATE for_now.site_ai_budget SET document = '{}'::jsonb WHERE id = true");
   await admin.query(`CREATE ROLE budget_data LOGIN PASSWORD '${password}' NOSUPERUSER NOBYPASSRLS`);
   await admin.query(`CREATE ROLE budget_auth LOGIN PASSWORD '${password}' NOSUPERUSER NOBYPASSRLS`);
+  await admin.query(`CREATE ROLE budget_writer LOGIN PASSWORD '${password}' NOSUPERUSER NOBYPASSRLS`);
   await admin.query(`
     GRANT USAGE ON SCHEMA for_now TO budget_data;
-    GRANT SELECT, UPDATE ON TABLE for_now.site_ai_budget TO budget_data;
     GRANT USAGE ON SCHEMA for_now_auth TO budget_auth;
     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA for_now_auth TO budget_auth;
-    GRANT EXECUTE ON FUNCTION for_now_auth.provision_account(text,jsonb,jsonb) TO budget_auth
+    GRANT EXECUTE ON FUNCTION for_now_auth.provision_account(text,jsonb,jsonb) TO budget_auth;
+    GRANT USAGE ON SCHEMA for_now TO budget_writer;
+    GRANT SELECT, UPDATE ON TABLE for_now.site_ai_budget TO budget_writer
   `);
   const url = role => `postgresql://${role}:${password}@127.0.0.1:${port}/postgres`;
   const runtimeOptions = {
     connectionString: url("budget_data"),
     authConnectionString: url("budget_auth"),
+    budgetConnectionString: url("budget_writer"),
     getAccountId: () => "unused-account"
   };
   runtime = await createPostgresRuntime(runtimeOptions);
@@ -126,6 +129,7 @@ try {
     database: "postgres",
     dataRole: "budget_data",
     authRole: "budget_auth",
+    budgetRole: "budget_writer",
     runtime,
     peer,
     runtimeOptions

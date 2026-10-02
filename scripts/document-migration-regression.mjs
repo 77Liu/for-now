@@ -14,6 +14,8 @@ try {
   assert.deepEqual(rebuildAuthDocument(mapAuthDocument(auth)), auth);
   const bundle = await discoverJsonBundle(directory);
   assert.equal(bundle.accounts.length, 2);
+  assert.equal(bundle.aiBudget.reservations[0].id, "synthetic-budget-reservation");
+  assert.ok(bundle.sources.some(item => item.file === path.join(directory, "ai-budget.json") && item.sha256?.length === 64));
   assert.equal(bundle.sourceSha256.length, 64);
   assert.equal((await discoverJsonBundle(directory)).sourceSha256, bundle.sourceSha256);
   for (const { plan, documents, inventory } of bundle.accounts) {
@@ -61,12 +63,15 @@ try {
   await fs.writeFile(settingsFile, '{"apiKey":"synthetic-private');
   await assert.rejects(discoverJsonBundle(directory), error => error.message === "Invalid migration document: llm-settings.json");
   await writeMigrationBundleFixture(directory);
+  await fs.writeFile(path.join(directory, "ai-budget.json"), "[]");
+  await assert.rejects(discoverJsonBundle(directory), error => error.message === "Invalid migration document: ai-budget.json");
+  await writeMigrationBundleFixture(directory);
   const mock = createAttachmentStorage({ mode: "mock", testMode: true, mockDir: path.join(directory, "mock") });
   const inspected = await mock.inspect({ ownerId: "bundle-a", name: path.basename(file), localFile: file });
   assert.equal(inspected.storage, "local");
   await mock.put({ ownerId: "bundle-a", name: path.basename(file), data: Buffer.from("remote fixture"), localFile: file });
   assert.equal((await mock.inspect({ ownerId: "bundle-a", name: path.basename(file), localFile: file })).storage, "mock");
-  console.log("Document migration checks passed: lossless identities/config/usage/costs, secret partition, duplicates, missing attachments, hashes and mock fallback.");
+  console.log("Document migration checks passed: lossless identities/config/usage/costs/site budget, secret partition, duplicates, missing attachments, hashes and mock fallback.");
 } finally {
   await fs.rm(directory, { recursive: true, force: true });
 }

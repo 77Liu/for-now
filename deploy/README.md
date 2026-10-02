@@ -4,18 +4,20 @@ The cloud service is the canonical data source. Code is deployed from Gitee;
 runtime data lives only in `/srv/for-now/data`; OSS receives consistent backup
 archives. Never synchronize a live data directory in both directions.
 
-The current production backend is PostgreSQL 16.15. The v0.2.1 runtime uses
-separate data/auth/recovery roles, offline export, and a protected single-write
-boundary documented in
+The current production backend is PostgreSQL 16.15. This candidate requires
+separate data/auth/AI-budget/recovery roles, offline export, and a protected
+single-write boundary documented in
 [`knowledge/postgres-migration.md`](../knowledge/postgres-migration.md).
 Generic deploy rollback rejects a PostgreSQL configuration if either candidate
 or previous code lacks the runtime adapter. PostgreSQL backups require
 `PG_BACKUP_DATABASE_URL`; the cloud restore drill validates the exported logical
 JSON and attachments, while a fresh-database restore remains a separate gate.
 
-The `for_now` database contains the migrated production state. Separate
-schema-admin, migration, runtime-data, runtime-auth, and read-only recovery logins
-have passed privilege checks; their credentials remain only in root-owned
+The `for_now` database contains the migrated production state. Existing
+schema-admin, migration, runtime-data, runtime-auth, and read-only recovery
+logins have passed production privilege checks. This candidate additionally
+requires a runtime-budget login and `AI_BUDGET_DATABASE_URL`; provision and
+verify them before deployment. Credentials remain only in root-owned
 `0700/0600` server files and connection URLs in `/etc/for-now.env`. PostgreSQL
 starts automatically, and `/srv/for-now/data/.persistence-mode.json` prevents
 direct reuse of the stale JSON write source. Cutover and recovery evidence is

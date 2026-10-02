@@ -5,7 +5,8 @@ import {
   discoverJsonBundle,
   applyPostgresBundle,
   initializePostgresSchema,
-  migrateJsonStoresToPostgres
+  migrateJsonStoresToPostgres,
+  storeContentSha256
 } from "../src/shared/persistence/index.mjs";
 import { createAttachmentStorage } from "../src/shared/attachments/index.mjs";
 import { loadAttachmentConfig } from "../src/config/index.mjs";
@@ -51,6 +52,10 @@ if (initSchema) {
   if (dryRun) {
     console.log(JSON.stringify({
       mode: "bundle-dry-run", sourceSha256: bundle.sourceSha256, contentSha256: bundle.contentSha256,
+      aiBudget: {
+        sourcePresent: Boolean(bundle.sources.find(item => path.basename(item.file) === "ai-budget.json")?.sha256),
+        contentSha256: storeContentSha256(bundle.aiBudget)
+      },
       identities: bundle.auth?.users.length || 0, sessions: bundle.auth?.sessions.length || 0,
       accounts: bundle.accounts.map(({ plan, documents, inventory }) => ({
         accountId: plan.accountId, counts: plan.sourceCounts, documents: Object.keys(documents),
