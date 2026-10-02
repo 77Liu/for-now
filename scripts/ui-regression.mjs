@@ -377,7 +377,7 @@ const mockFetch = `
     { id: "checkin-previous", createdAt: "2026-09-26T08:00:00.000Z", occurredAt: "2026-09-26T08:00:00.000Z", occurredOn: "2026-09-26", mood: 3, energy: 3, stress: 3, sleep: 2, factors: [], custom: {}, notes: {}, version: 1 }
   ];
   window.__contextReceipt = {
-    version: "2026.10.01.1",
+    version: "2026.10.02.1",
     generatedAt: "2026-09-27T12:00:00.000Z",
     timeWindow: { from: "2026-09-26", to: "2026-09-27" },
     tokenBudget: { limit: 20000, estimatedUsed: 860, remaining: 19140, estimation: "conservative-cjk-v1" },

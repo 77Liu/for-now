@@ -22,6 +22,7 @@ const PUBLIC_DOMAINS = new Set([
   "feedback",
   "validationLedger",
   "onboarding",
+  "onboardingV2",
   "commercialization"
 ]);
 const INSIGHT_DOMAINS = new Set([

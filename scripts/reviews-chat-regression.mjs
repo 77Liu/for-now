@@ -210,7 +210,7 @@ const legacyChat = await run("account-a", () => workflows.answerChat({
 assert.equal(legacyChat.value.message, "请结合长期记录回答");
 assert.equal(legacyChat.value.answer, "共参回答");
 assert.equal(legacyChat.value.reasoningContent, "共参思考");
-assert.equal(legacyChat.value.contextReceipt.version, "2026.10.01.1");
+assert.equal(legacyChat.value.contextReceipt.version, "2026.10.02.1");
 assert.equal("version" in legacyChat.value, false);
 assert.equal(generationCalls.at(-1).options.scene, "chat");
 assert.equal(generationCalls.at(-1).options.captureReasoning, true);
@@ -263,7 +263,7 @@ const analysis = await run("account-a", () => workflows.runAnalysis({
 assert.equal(analysis.value.reason, "manual");
 assert.equal(analysis.value.content, "复盘结论");
 assert.equal(analysis.value.reasoningContent, "复盘思考");
-assert.equal(analysis.value.contextReceipt.version, "2026.10.01.1");
+assert.equal(analysis.value.contextReceipt.version, "2026.10.02.1");
 assert.equal(analysis.value.version, 1);
 assert.equal(generationCalls.length, analysisCallsBefore + 1);
 assert.equal(generationCalls.at(-1).options.scene, "analysis");

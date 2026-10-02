@@ -128,7 +128,7 @@ assert.equal((await background.get(created[0].task.id)).status, "succeeded");
 assert.equal((await background.listNotifications()).unread, 1);
 assert.equal((await repository.read()).thoughts.filter(item => item.sourceTaskId === created[0].task.id).length, 1);
 const persistedAnswer = (await repository.read()).thoughts.find(item => item.sourceTaskId === created[0].task.id);
-assert.equal(persistedAnswer.contextReceipt.version, "2026.10.01.1");
+assert.equal(persistedAnswer.contextReceipt.version, "2026.10.02.1");
 assert.ok(persistedAnswer.contextReceipt.sources.some(source => source.resourceId === "root"));
 assert.equal(persistedAnswer.contextReceipt.sources.some(source => Object.hasOwn(source, "excerpt")), false);
 assert.equal(persistedAnswer.contextReceipt.promptSha256, calls[0].contextReceipt.promptSha256);

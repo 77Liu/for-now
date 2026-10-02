@@ -3,12 +3,16 @@ import { Buffer } from "node:buffer";
 import { safeText } from "../shared/validation/index.mjs";
 import { shiftDateKey } from "../shared/time/index.mjs";
 import { renderPrompt } from "../shared/prompts/index.mjs";
-import { onboardingContext } from "../modules/onboarding/index.mjs";
+import {
+  onboardingContext,
+  onboardingV2Context,
+  onboardingV2ContextEntries
+} from "../modules/onboarding/index.mjs";
 import { describeDailyRecord } from "../modules/health/index.mjs";
 import { thoughtChainContext, thoughtTask } from "../modules/thoughts/index.mjs";
 import { userPrompt } from "../modules/ai/index.mjs";
 
-export const PERSONAL_CONTEXT_PROJECTION_VERSION = "2026.10.01.1";
+export const PERSONAL_CONTEXT_PROJECTION_VERSION = "2026.10.02.1";
 export const PERSONAL_CONTEXT_TOKEN_BUDGET = 20_000;
 
 const INFORMATION_TYPE_LABELS = Object.freeze({
@@ -86,9 +90,47 @@ function contextSource(item, {
   };
 }
 
+function onboardingV2Projection(store) {
+  const entries = onboardingV2ContextEntries(store?.onboardingV2);
+  if (!entries.length) return { prompt: "", sources: [], conclusions: [] };
+  const sources = entries.map(entry => contextSource({
+    id: entry.id,
+    version: entry.version,
+    occurredAt: entry.occurredAt,
+    updatedAt: entry.updatedAt
+  }, {
+    resourceType: "onboardingV2",
+    recordType: entry.title,
+    informationType: entry.informationType,
+    text: entry.text,
+    view: "personal-context",
+    targetKey: `answer:${entry.id}`
+  }));
+  return {
+    prompt: safeText(onboardingV2Context(store.onboardingV2), 6000),
+    sources,
+    conclusions: entries.map((entry, index) => ({
+      id: `onboarding-v2-${entry.id}`,
+      informationType: entry.informationType,
+      informationTypeLabel: INFORMATION_TYPE_LABELS[entry.informationType],
+      title: entry.title,
+      text: entry.text,
+      sourceIds: [sources[index].id],
+      sampleNote: "来自你在五问中保留的原文，可随时修改或排除。"
+    }))
+  };
+}
+
 function onboardingProjection(store) {
   const onboarding = store?.onboarding || {};
-  if (onboarding.status !== "completed") return { prompt: onboardingContext(onboarding), sources: [], conclusions: [] };
+  const v2 = onboardingV2Projection(store);
+  if (onboarding.status !== "completed") {
+    return {
+      prompt: v2.prompt || onboardingContext(onboarding),
+      sources: v2.sources,
+      conclusions: v2.conclusions
+    };
+  }
   const sources = [], conclusions = [];
   const profile = Object.entries(PROFILE_LABELS)
     .map(([key, label]) => onboarding.profile?.[key] ? `${label}：${safeText(onboarding.profile[key], key === "works" ? 2000 : 1200)}` : "")
@@ -164,9 +206,9 @@ function onboardingProjection(store) {
     });
   }
   return {
-    prompt: safeText(onboardingContext(onboarding), 6000),
-    sources,
-    conclusions
+    prompt: [safeText(onboardingContext(onboarding), 6000), v2.prompt].filter(Boolean).join("\n"),
+    sources: [...sources, ...v2.sources],
+    conclusions: [...conclusions, ...v2.conclusions]
   };
 }
 

@@ -659,7 +659,7 @@ response = await request("account-a", "POST", `/api/journals/${legacyJournalId}/
 assert.equal(response.status, 201, JSON.stringify(response.body));
 assert.equal(response.body.content, "回望正文");
 assert.equal(response.body.reasoningContent, "模型思考");
-assert.equal(response.body.contextReceipt.version, "2026.10.01.1");
+assert.equal(response.body.contextReceipt.version, "2026.10.02.1");
 assert.equal(generationCalls.length, reflectionCallsBeforeLegacy + 1);
 let storedJournal = await run("account-a", () => journals.get(legacyJournalId));
 assert.equal(storedJournal.reflections[0].id, response.body.id);

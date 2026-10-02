@@ -11,7 +11,7 @@ const COLLECTIONS = {
   actions: "action", habits: "habit", habitCheckins: "habitCheckin",
   feedback: "feedback", validationLedger: "validationLedger"
 };
-const SINGLETONS = new Set(["journalDraft", "onboarding", "commercialization"]);
+const SINGLETONS = new Set(["journalDraft", "onboarding", "onboardingV2", "commercialization"]);
 const ANNOTATED = ["annotations", "annotationDrift"];
 const CHILDREN = {
   thought: ["remarks", "followUps", ...ANNOTATED],

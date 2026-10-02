@@ -7,7 +7,13 @@ import { loadAppConfig } from "./src/config/index.mjs";
 import { createAttachmentStorage, createImageAttachments, cleanAttachmentPaths, cleanupTemporaryFiles, collectAttachmentPaths } from "./src/shared/attachments/index.mjs";
 import { appendPrivateJsonLine, createObservability, errorMetadata, pruneLogs } from "./src/shared/observability/index.mjs";
 import { createThoughtService, createThoughtTaskTarget, stripThoughtAnswerLead } from "./src/modules/thoughts/index.mjs";
-import { defaultOnboarding, normalizeOnboarding, createOnboardingService } from "./src/modules/onboarding/index.mjs";
+import {
+  defaultOnboarding,
+  defaultOnboardingV2,
+  normalizeOnboarding,
+  normalizeOnboardingV2,
+  createOnboardingService
+} from "./src/modules/onboarding/index.mjs";
 import { createJournalRecords } from "./src/modules/journals/index.mjs";
 import { createAuthService, publicUser } from "./src/modules/auth/index.mjs";
 import { createAnnotationService } from "./src/modules/annotations/index.mjs";
@@ -150,7 +156,7 @@ const defaultCommercialization = {
     }
   }
 };
-const emptyStore = { version: STORE_VERSION, checkins: [], dailyRecords: [], captures: [], journals: [], journalDraft: null, thoughts: [], chats: [], books: [], keepsakes: [], quotes: [], experiments: [], analyses: [], customMetrics: [], trash: [], attachmentCleanup: [], aiTasks: [], notifications: [], actions: [], habits: [], habitCheckins: [], feedback: [], validationLedger: [], onboarding: defaultOnboarding, commercialization: defaultCommercialization };
+const emptyStore = { version: STORE_VERSION, checkins: [], dailyRecords: [], captures: [], journals: [], journalDraft: null, thoughts: [], chats: [], books: [], keepsakes: [], quotes: [], experiments: [], analyses: [], customMetrics: [], trash: [], attachmentCleanup: [], aiTasks: [], notifications: [], actions: [], habits: [], habitCheckins: [], feedback: [], validationLedger: [], onboarding: defaultOnboarding, onboardingV2: defaultOnboardingV2, commercialization: defaultCommercialization };
 const { retentionDays: AI_AUDIT_RETENTION_DAYS, textLimit: AI_AUDIT_TEXT_LIMIT } = appConfig.audit;
 const {
   aiQps: AI_GLOBAL_QPS, aiConcurrency: AI_GLOBAL_CONCURRENCY,
@@ -399,7 +405,9 @@ function normalizeCommercialization(value = {}) {
 }
 
 function normalizeStore(value = {}) {
-  const previousVersion = Number(value.version || 1), store = { ...clone(emptyStore), ...value, version: STORE_VERSION };
+  const previousVersion = Number(value.version || 1);
+  const hasOnboardingV2 = Object.hasOwn(value || {}, "onboardingV2");
+  const store = { ...clone(emptyStore), ...value, version: STORE_VERSION };
   for (const key of ["checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "trash", "attachmentCleanup", "aiTasks", "notifications", "actions", "habits", "habitCheckins", "feedback", "validationLedger"]) if (!Array.isArray(store[key])) store[key] = [];
   store.checkins = store.checkins.map(item => ({ factors: [], custom: {}, notes: {}, ...item, ...normalizedEventTime(item, previousVersion), sleep: item.sleep || 3, stress: previousVersion < 3 ? 6 - clamp5(item.stress) : clamp5(item.stress), version: recordVersion(item.version) }));
   store.dailyRecords = store.dailyRecords.map(item => {
@@ -529,6 +537,10 @@ function normalizeStore(value = {}) {
     if (hasRecords) store.onboarding.status = "completed";
     else if (store.onboarding.status === "dismissed") store.onboarding.status = "pending";
   }
+  store.onboardingV2 = normalizeOnboardingV2(
+    hasOnboardingV2 ? store.onboardingV2 : undefined,
+    store.onboarding
+  );
   store.commercialization = normalizeCommercialization(store.commercialization);
   return store;
 }
@@ -756,7 +768,7 @@ async function upstreamAttachment(req, resourcePath) {
 
 function localTestSnapshot(state, trash) {
   const snapshot = clone(emptyStore);
-  for (const key of ["checkins", "dailyRecords", "captures", "journals", "journalDraft", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "actions", "habits", "habitCheckins", "feedback", "validationLedger", "onboarding", "commercialization"]) {
+  for (const key of ["checkins", "dailyRecords", "captures", "journals", "journalDraft", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "actions", "habits", "habitCheckins", "feedback", "validationLedger", "onboarding", "onboardingV2", "commercialization"]) {
     if (hasOwn(state, key)) snapshot[key] = clone(state[key]);
   }
   snapshot.trash = clone(Array.isArray(trash?.items) ? trash.items : []);

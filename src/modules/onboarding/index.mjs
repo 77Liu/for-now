@@ -1,5 +1,13 @@
 import { safeText, safeIso } from "../../shared/validation/index.mjs";
 
+export {
+  defaultOnboardingV2,
+  normalizeOnboardingV2,
+  onboardingV2Context,
+  onboardingV2ContextEntries,
+  ONBOARDING_V2_SCHEMA_VERSION
+} from "./v2.mjs";
+
 const ONBOARDING_QUESTIONNAIRE_VERSION = 1;
 const onboardingQuestions = [
   { id: "evidence", tier: "quick", dimension: "认识世界", prompt: "面对重要判断但信息不完整时，你通常更依赖什么？", options: [{ value: "evidence", label: "先找可核对证据", insight: "重要判断倾向先核对证据" }, { value: "experience", label: "参考亲身经验", insight: "判断时重视亲身经验" }, { value: "trusted", label: "咨询可信的人", insight: "判断时重视可信关系与专业意见" }, { value: "intuition", label: "先相信直觉", insight: "信息不足时愿意先依直觉行动" }] },

@@ -215,6 +215,22 @@
       ]
     },
     {
+      "id": "onboarding-v2-minimum-model",
+      "title": "五问冷启动保留原文并形成最小可用模型",
+      "role": "首次使用或选择补充当前处境的用户",
+      "goal": "可跳过或部分回答五问，并在不丢旧资料的前提下进入产品",
+      "risk": "critical",
+      "tier": "smoke",
+      "status": "partial",
+      "normalPath": ["进入五问", "部分回答或全部跳过", "回看原文", "进入首次行动"],
+      "failureAndRecovery": ["旧 v1 已完成账户升级", "旧 pending 继续或切换", "刷新恢复", "来源版本变化", "多端冲突"],
+      "assertions": ["旧完成用户不重做", "会话状态与模型准备度分离", "原文带版本和许可", "部分原文可进入上下文", "旧模型摘要不升级为用户事实", "未确认候选不可用"],
+      "evidence": [
+        {"script": "scripts/onboarding-v2-regression.mjs", "anchor": "Onboarding v2 compatibility"},
+        {"script": "scripts/regression.mjs", "anchor": "onboardingV2.migration.entryPolicy"}
+      ]
+    },
+    {
       "id": "responsive-visual-accessibility",
       "title": "桌面、移动端、iOS 兼容性与视觉回归",
       "role": "键盘、触摸与小屏用户",

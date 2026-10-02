@@ -194,6 +194,11 @@ try {
   assert.deepEqual(migrated.keepsakes, []);
   assert.equal(migrated.journalDraft, null);
   assert.equal(migrated.onboarding.status, "completed");
+  assert.equal(migrated.onboardingV2.schemaVersion, 2);
+  assert.equal(migrated.onboardingV2.session.status, "skipped");
+  assert.equal(migrated.onboardingV2.migration.selectedFlow, "legacy");
+  assert.equal(migrated.onboardingV2.migration.entryPolicy, "already_onboarded");
+  assert.equal(migrated.onboardingV2.readiness, "empty");
   assert.equal(migrated.aiTasks.find(item => item.id === "interrupted-task").status, "failed");
   assert.match(migrated.aiTasks.find(item => item.id === "interrupted-task").error, /避免重复计费/);
   assert.equal(modelRequests.length, 0);
@@ -323,7 +328,9 @@ try {
   assert.equal(Object.keys(onboarding.answers).length, 8);
   assert.equal(onboarding.profile.occupation, "测试职业");
   assert.deepEqual(onboarding.interests, ["学习成长"]);
-  assert.equal((await (await fetch(`${base}/api/state`)).json()).onboarding.material, "ONBOARDING_PRIVATE_MATERIAL");
+  const stateAfterLegacyOnboarding = await (await fetch(`${base}/api/state`)).json();
+  assert.equal(stateAfterLegacyOnboarding.onboarding.material, "ONBOARDING_PRIVATE_MATERIAL");
+  assert.equal(stateAfterLegacyOnboarding.onboardingV2.migration.selectedFlow, "legacy");
 
   const commercializationResponse = await fetch(`${base}/api/commercialization`, {
     method: "PATCH",
