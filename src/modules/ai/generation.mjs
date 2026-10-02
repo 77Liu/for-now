@@ -17,7 +17,7 @@ function aiErrorDetails(error, httpStatus = 0) {
 }
 
 export function createAiGenerator({ readSettings, provider, getContext, reserveAttempt, gate, audit, now = () => new Date().toISOString(), createId = () => crypto.randomUUID() }) {
-  return async function generate(prompt, { imagePath = null, imagePaths = null, history = [], settingsOverride = null, scene = "thoughtAnswer", json = false, systemPrompt: requestedSystemPrompt = "", onDelta = null, captureReasoning = false, contextReceipt = null, maxTokens = 16000, retryWithoutThinking = false, timeoutMs = 300000, signal = null } = {}) {
+  return async function generate(prompt, { imagePath = null, imagePaths = null, history = [], settingsOverride = null, scene = "thoughtAnswer", json = false, systemPrompt: requestedSystemPrompt = "", onDelta = null, captureReasoning = false, contextReceipt = null, maxTokens = 16000, retryWithoutThinking = false, timeoutMs = 300000, signal = null, auditPrompt = true } = {}) {
     const settings = llmSettingsForScene(settingsOverride || await readSettings(), scene);
     if (!settings.apiKey) throw new Error("尚未配置 DeepSeek API 密钥，请先到“设置”中填写并保存");
     const effectiveSystemPrompt = systemPromptForScene(requestedSystemPrompt || systemPrompt(), scene, settings);
@@ -30,6 +30,12 @@ export function createAiGenerator({ readSettings, provider, getContext, reserveA
     const receipt = contextReceipt && typeof contextReceipt === "object" && !Array.isArray(contextReceipt)
       ? structuredClone(contextReceipt)
       : null;
+    const auditText = value => auditPrompt
+      ? audit.text(value)
+      : { omitted: true, characters: String(value ?? "").length };
+    const auditMessage = value => auditPrompt
+      ? audit.message(value)
+      : { role: safeText(value?.role, 20) || "unknown", omitted: true };
     if (context.secrets) context.secrets.push(settings.apiKey);
     const traceId = safeText(context.traceId, 128) || createId(), callGroupId = createId();
     const userId = safeText(context.user?.id, 100) || "local", endpointHost = provider.endpointHost;
@@ -73,9 +79,9 @@ export function createAiGenerator({ readSettings, provider, getContext, reserveA
               endpointHost,
               images: imageAudit,
               promptCatalog,
-              systemPrompt: audit.text(effectiveSystemPrompt),
-              userPrompt: audit.text(prompt),
-              history: history.map(audit.message),
+              systemPrompt: auditText(effectiveSystemPrompt),
+              userPrompt: auditText(prompt),
+              history: history.map(auditMessage),
               parameters,
               ...(receipt ? { contextReceipt: receipt } : {})
             }
@@ -111,8 +117,8 @@ export function createAiGenerator({ readSettings, provider, getContext, reserveA
                 error: error ? { ...failure, message: audit.text(error.privateMessage || failure.message) } : null,
                 request: {
                   endpointHost, modality: common.modality, images: imageAudit, promptCatalog,
-                  systemPrompt: audit.text(effectiveSystemPrompt), userPrompt: audit.text(prompt),
-                  history: history.map(audit.message), messageCount: messages.length,
+                  systemPrompt: auditText(effectiveSystemPrompt), userPrompt: auditText(prompt),
+                  history: history.map(auditMessage), messageCount: messages.length,
                   characterCounts: {
                     systemPrompt: effectiveSystemPrompt.length, userPrompt: String(prompt).length,
                     history: requestChars - effectiveSystemPrompt.length - String(prompt).length, total: requestChars

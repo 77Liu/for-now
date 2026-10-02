@@ -147,7 +147,7 @@ const costNormalized = normalizeAiCostPlan({ monthlyBudgetCny: -1, scenarios: [{
 assert.equal(costNormalized.monthlyBudgetCny, 0);
 assert.equal(costNormalized.scenarios.find(item => item.scene === "chat").cacheHitPct, 100);
 assert.equal(costNormalized.scenarios.find(item => item.scene === "chat").avgInputTokens, 2);
-assert.equal(costNormalized.scenarios.length, 15);
+assert.equal(costNormalized.scenarios.length, 16);
 const dashboard = usageDashboard(sampleUsage, "2026-09-28", "2026-09-29", 6.5, 7.2);
 assert.equal(dashboard.summary.calls, 2);
 assert.equal(dashboard.summary.usageUnknownCalls, 1);
@@ -218,7 +218,7 @@ try {
   await run("a", async () => {
     await fs.writeFile(getFile(), JSON.stringify(legacy));
     await settings.ensure();
-    assert.equal((await fs.stat(`${getFile()}.v2-pre-v8.20260929010000.bak`)).mode & 0o777, 0o600);
+    assert.equal((await fs.stat(`${getFile()}.v2-pre-v9.20260929010000.bak`)).mode & 0o777, 0o600);
     await Promise.all([
       settings.update(current => mergeLlmSettings(current, { assistantName: "并发名称" })),
       settings.update(current => mergeLlmSettings(current, { apiKey: "next-test-value" }))

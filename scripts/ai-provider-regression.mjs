@@ -153,11 +153,20 @@ for (const id of ["a", "b"]) {
   assert.equal(terminalAudit.schemaVersion, 2);
   assert.equal(terminalAudit.traceId, `trace-${id}`);
   assert.equal(terminalAudit.request.userPrompt, `account-${id}`);
-  assert.equal(terminalAudit.request.promptCatalog.version, "2026.10.02.1");
+  assert.equal(terminalAudit.request.promptCatalog.version, "2026.10.02.2");
   assert.match(terminalAudit.request.promptCatalog.sha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(terminalAudit.request.contextReceipt, startedAudit.request.contextReceipt);
   assert.equal(terminalAudit.request.contextReceipt.sources[0].resourceId, `source-${id}`);
 }
+await run("private-prompt", () => generate("PRIVATE_ONBOARDING_SOURCE", {
+  scene: "onboardingClaimExtraction",
+  json: true,
+  auditPrompt: false
+}));
+const privateAudits = auditRecords.filter(entry => entry.actor.userId === "private-prompt");
+assert.ok(privateAudits.length >= 2);
+assert.ok(privateAudits.every(entry => entry.request.userPrompt.omitted === true));
+assert.equal(JSON.stringify(privateAudits).includes("PRIVATE_ONBOARDING_SOURCE"), false);
 
 const directory = await fs.mkdtemp(path.join(os.tmpdir(), "growth-provider-"));
 try {

@@ -374,7 +374,7 @@ try {
   await waitForServer(base, child);
   const migratedNames = await fs.readdir(secondDir);
   assert.ok(migratedNames.some(name => /store\.json\.v11-pre-v15.*\.bak$/.test(name)));
-  assert.ok(migratedNames.some(name => /llm-settings\.json\.v3-pre-v8.*\.bak$/.test(name)));
+  assert.ok(migratedNames.some(name => /llm-settings\.json\.v3-pre-v9.*\.bak$/.test(name)));
   assert.ok(migratedNames.some(name => /ai-usage\.json\.v1-pre-v3.*\.bak$/.test(name)));
   for (const name of migratedNames.filter(name => name.endsWith(".bak"))) {
     assert.equal((await fs.stat(path.join(secondDir, name))).mode & 0o777, 0o600);

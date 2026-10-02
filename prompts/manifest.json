@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "activeVersion": "2026.10.02.1",
+  "activeVersion": "2026.10.02.2",
   "versions": [
     {
       "version": "2026.09.29.1",
@@ -21,6 +21,11 @@
       "version": "2026.10.02.1",
       "file": "2026.10.02.1.json",
       "sha256": "79f79b2a0d1db8fe245282477d805df96c948e31f69807b90eb78b4871a5bada"
+    },
+    {
+      "version": "2026.10.02.2",
+      "file": "2026.10.02.2.json",
+      "sha256": "2aa7a06ce59f66e949a785d01192f5fc37719a7e2f53dcab1e24c248528f551d"
     }
   ],
   "promptVariables": {
@@ -42,6 +47,7 @@
     "content.image.understanding": ["originalText", "targetType"],
     "keepsake.image.candidates": [],
     "capture.transcription.polish": ["rawText"],
+    "onboarding.claims.extract": ["schema", "sources"],
     "analysis.review": ["personalContext", "reflectionData", "evidenceLevel"]
   },
   "requiredPromptIds": [
@@ -61,6 +67,7 @@
     "ai.scene.healthRecognition",
     "ai.scene.contentImageUnderstanding",
     "ai.scene.capturePolish",
+    "ai.scene.onboardingClaimExtraction",
     "ai.style.concise",
     "ai.style.standard",
     "ai.style.deep",
@@ -102,6 +109,7 @@
     "content.image.understanding",
     "keepsake.image.candidates",
     "capture.transcription.polish",
+    "onboarding.claims.extract",
     "analysis.review"
   ]
 }

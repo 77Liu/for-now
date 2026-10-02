@@ -30,7 +30,8 @@ const AI_COST_SCENARIO_DEFAULTS = {
   bookRecognition: { callsPerMonth: 3, avgInputTokens: 5000, cacheHitPct: 0, avgReasoningTokens: 600, avgAnswerTokens: 400 },
   healthRecognition: { callsPerMonth: 8, avgInputTokens: 6000, cacheHitPct: 0, avgReasoningTokens: 800, avgAnswerTokens: 500 },
   contentImageUnderstanding: { callsPerMonth: 10, avgInputTokens: 6000, cacheHitPct: 0, avgReasoningTokens: 800, avgAnswerTokens: 700 },
-  capturePolish: { callsPerMonth: 20, avgInputTokens: 1200, cacheHitPct: 0, avgReasoningTokens: 100, avgAnswerTokens: 600 }
+  capturePolish: { callsPerMonth: 20, avgInputTokens: 1200, cacheHitPct: 0, avgReasoningTokens: 100, avgAnswerTokens: 600 },
+  onboardingClaimExtraction: { callsPerMonth: 1, avgInputTokens: 5000, cacheHitPct: 0, avgReasoningTokens: 800, avgAnswerTokens: 1800 }
 };
 
 export function defaultAiCostPlan(settings, usage, { date = localDateKey(), cnyPerUsd } = {}) {
