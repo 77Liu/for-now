@@ -228,6 +228,7 @@ final class DevicePerformanceAcceptanceTests: XCTestCase {
         app = preflightApp
         preflightApp.launch()
         allowLocalNetworkIfNeeded(in: preflightApp)
+        try authenticateIfNeeded(in: preflightApp, configuration: configuration)
         XCTAssertTrue(
             waitForStableHome(in: preflightApp, timeout: 30),
             "Shadow account preflight did not reach a stable home"
@@ -239,11 +240,30 @@ final class DevicePerformanceAcceptanceTests: XCTestCase {
     private func launchAuthenticatedApplication(_ configuration: Configuration) throws -> XCUIApplication {
         let launchedApp = configuredApplication(configuration)
         launchedApp.launch()
+        try authenticateIfNeeded(in: launchedApp, configuration: configuration)
         XCTAssertTrue(
             waitForStableHome(in: launchedApp, timeout: 30),
             "Shadow account did not reach a stable home"
         )
         return launchedApp
+    }
+
+    private func authenticateIfNeeded(in application: XCUIApplication, configuration: Configuration) throws {
+        let webView = application.webViews.firstMatch
+        guard webView.waitForExistence(timeout: 10) else { return }
+        if webView.buttons["记录思考"].exists { return }
+        let username = webView.textFields.firstMatch
+        let password = webView.secureTextFields.firstMatch
+        guard username.waitForExistence(timeout: 10), password.waitForExistence(timeout: 10) else { return }
+        username.tap()
+        username.typeText(configuration.username)
+        password.tap()
+        password.typeText(configuration.password)
+        let loginButtons = webView.buttons.matching(NSPredicate(format: "label == %@", "登录")).allElementsBoundByIndex
+        guard let submit = loginButtons.last else {
+            throw ConfigurationError("Login submit button is unavailable")
+        }
+        submit.tap()
     }
 
     private func configuredApplication(_ configuration: Configuration) -> XCUIApplication {
