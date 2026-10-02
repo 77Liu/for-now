@@ -109,7 +109,7 @@ await fs.writeFile(path.join(dataDir, "ai-usage.json"), JSON.stringify({
 }));
 const child = spawn(process.execPath, ["server.mjs"], {
   cwd: root,
-  env: { ...process.env, NODE_ENV: "test", TZ: "UTC", DATA_DIR: dataDir, PORT: String(port), AUTH_REQUIRED: "0", INVITE_CODE_HASH: "", UPSTREAM_ORIGIN: "", APP_BASE_PATH: "", DEEPSEEK_API_URL: `http://127.0.0.1:${mock.address().port}`, RUNTIME_MEMORY_SAMPLE_INTERVAL_MS: "50" },
+  env: { ...process.env, NODE_ENV: "test", TZ: "UTC", DATA_DIR: dataDir, PORT: String(port), AUTH_REQUIRED: "0", INVITE_CODE_HASH: "", UPSTREAM_ORIGIN: "", APP_BASE_PATH: "", DEEPSEEK_API_URL: `http://127.0.0.1:${mock.address().port}`, RUNTIME_MEMORY_SAMPLE_INTERVAL_MS: "60000" },
   stdio: ["ignore", "ignore", "pipe"]
 });
 let childStopped = false;

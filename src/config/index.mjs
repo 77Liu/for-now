@@ -73,6 +73,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     testCurrentDate,
     periodicAnalysisEnabled: env.PERIODIC_ANALYSIS_ENABLED !== "0",
     speechCacheSweepEnabled,
+    runtimeMemorySampleIntervalMs: Math.max(50, Math.min(3_600_000, Number(env.RUNTIME_MEMORY_SAMPLE_INTERVAL_MS) || 60_000)),
     deepSeekApiUrl: env.DEEPSEEK_API_URL || "https://api.deepseek.com/chat/completions",
     attachments,
     features: Object.freeze({

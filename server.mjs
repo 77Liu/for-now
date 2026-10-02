@@ -84,6 +84,7 @@ const {
   testCurrentDate: TEST_CURRENT_DATE,
   periodicAnalysisEnabled: PERIODIC_ANALYSIS_ENABLED,
   speechCacheSweepEnabled: SPEECH_CACHE_SWEEP_ENABLED,
+  runtimeMemorySampleIntervalMs: RUNTIME_MEMORY_SAMPLE_INTERVAL_MS,
   deepSeekApiUrl: DEEPSEEK_API_URL,
   port: PORT, version: APP_VERSION
 } = appConfig;
@@ -96,7 +97,10 @@ const LOCAL_TEST_SESSION_COOKIE = "for_now_local_test_session";
 const LOCAL_TEST_SESSION_MAX_AGE_SECONDS = 30 * 60;
 const localTestUpstreamSessions = new Map();
 const { context: requestStorage, logEvent, auditChanges } = createObservability({ rootDir: DATA_DIR, version: APP_VERSION });
-const runtimeMemorySampler = createRuntimeMemorySampler({ logEvent });
+const runtimeMemorySampler = createRuntimeMemorySampler({
+  logEvent,
+  intervalMs: RUNTIME_MEMORY_SAMPLE_INTERVAL_MS
+});
 const attachmentStorage = createAttachmentStorage(appConfig.attachments);
 const PLATFORM_SERVICE_TOKEN_HASH = appConfig.platform.serviceTokenHash;
 const BACKUP_STATUS_FILE = appConfig.platform.backupStatusFile;

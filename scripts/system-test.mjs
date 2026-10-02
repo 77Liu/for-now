@@ -55,6 +55,7 @@ const suites = {
     ["frontend syntax", ["--check", "public/app.js"]],
     ["system runner syntax", ["--check", "scripts/system-test.mjs"]],
     ["load test syntax", ["--check", "scripts/load-regression.mjs"]],
+    ["memory soak syntax", ["--check", "scripts/memory-soak.mjs"]],
     ["local test mode syntax", ["--check", "scripts/local-test-mode-regression.mjs"]],
     ["local test launcher syntax", ["--check", "scripts/local-test-preview.mjs"]],
     ["persistence adapters and migration mapping", ["scripts/persistence-regression.mjs"]],
@@ -113,7 +114,8 @@ const suites = {
     ["deployment rollback", ["scripts/deploy-regression.mjs"]]
   ],
   load: [
-    ["isolated load regression", ["scripts/load-regression.mjs"]]
+    ["isolated load regression", ["scripts/load-regression.mjs"]],
+    ["isolated memory soak", ["scripts/memory-soak-regression.mjs"]]
   ],
   frontend: [
     ["frontend API, session and state contracts", ["scripts/frontend-contract-regression.mjs"]],

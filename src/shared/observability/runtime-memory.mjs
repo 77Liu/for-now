@@ -73,7 +73,7 @@ export function collectRuntimeMemorySample({
 
 export function createRuntimeMemorySampler({
   logEvent,
-  intervalMs = Number(process.env.RUNTIME_MEMORY_SAMPLE_INTERVAL_MS) || DEFAULT_INTERVAL_MS,
+  intervalMs = DEFAULT_INTERVAL_MS,
   histogram = monitorEventLoopDelay({ resolution: 20 }),
   collect = options => collectRuntimeMemorySample(options)
 } = {}) {
