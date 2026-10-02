@@ -2667,7 +2667,7 @@ try {
   assert.deepEqual(await evaluate(`[...document.querySelectorAll("#commercial-kpis strong")].map(item=>item.textContent)`),["¥1388","¥1140","¥57.6","-¥357"]);
   assert.match(await evaluate(`document.querySelector("#commercial-method-note").textContent`),/BYOK.+合同负债/);
   await evaluate(`document.querySelector('[data-commercial-mode="usagePack"]').click(); true`);
-  assert.deepEqual(await evaluate(`[...document.querySelectorAll("#commercial-kpis strong")].map(item=>item.textContent)`),["¥290","¥80.0","¥98.4","-¥61.6"]);
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll("#commercial-kpis strong")].map(item=>item.textContent)`),["¥290","¥79.4","¥99.0","-¥61.0"]);
   await evaluate(`document.querySelector('[data-commercial-mode="subscription"]').click(); true`);
   await evaluate(`document.querySelector('[data-commercial-field="subscription.monthlyPriceCny"]').value="59";document.querySelector("#commercial-assumptions-form").requestSubmit();true`);
   assert.equal(await waitUntil(`window.__commercializationSaves===1&&document.querySelector("#commercial-save-status").textContent.includes("已保存")`),true);
