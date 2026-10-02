@@ -116,7 +116,7 @@ export function captureAudioPresentation(capture = {}, speech = {}, tasks = []) 
   } else if (transcriptionStatus === "unconfigured") {
     if (!speech.configured) transcriptionMessage = "暂时不能转成文字。原音已保留。";
     else if (!supported) transcriptionMessage = "当前格式暂不能转成文字。原音仍可播放。";
-    else transcriptionMessage = "语音原件尚未转写。";
+    else transcriptionMessage = "录音尚未转成文字。";
   }
   return {
     audioKey,

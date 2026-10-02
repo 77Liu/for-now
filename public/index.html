@@ -49,7 +49,6 @@
     </nav>
     <div class="sidebar-footer">
       <div class="account-control" id="account-control" hidden><span id="account-name"></span><button id="logout-button" type="button">退出</button></div>
-      <p class="local-note">● 本地持久化</p>
       <p class="sidebar-version" id="sidebar-app-version">v0.2.0</p>
     </div>
   </aside>
@@ -198,7 +197,7 @@
             <div class="thought-source-notice" id="thought-source-notice" hidden><span>正在从一条念起展开</span><button class="subtle-action" id="thought-source-cancel" type="button">取消展开</button></div>
             <label class="field"><span class="field-title"><span id="chain-primary-label">问题 <i>文字或图片至少一项 · 支持 Markdown</i></span><button class="thought-prompt-button" id="thought-prompt-button" type="button" data-chain-thought-only title="生成一个简短的思考引子">✦ 给个引子</button></span><textarea id="chain-question" rows="2" placeholder="你真正想问的是什么？"></textarea></label>
             <div class="content-image-editor" data-content-image-editor="thoughtRoot">
-              <div class="content-image-editor-head"><span>图片原文</span><label class="content-image-add" title="插入图片" aria-label="插入图片"><span aria-hidden="true">＋</span><input id="thought-root-images" type="file" accept="image/png,image/jpeg,image/webp" multiple></label></div>
+              <div class="content-image-editor-head"><span>图片</span><label class="content-image-add" title="插入图片" aria-label="插入图片"><span aria-hidden="true">＋</span><input id="thought-root-images" type="file" accept="image/png,image/jpeg,image/webp" multiple></label></div>
               <div class="content-image-editor-previews" data-content-image-previews></div>
             </div>
             <p class="draft-note thought-prompt-status" id="thought-prompt-status" data-chain-thought-only role="status" aria-live="polite"></p>
@@ -378,7 +377,7 @@
         <label class="date-peek" title="为过去某天补充记录"><span>◷</span><input type="date" data-active-date aria-label="选择记录日期"></label>
       </header>
       <section class="today-chat card">
-        <div class="card-heading"><div><span class="section-number">01</span><h2>共参</h2></div><span class="time-hint" id="chat-model-label">DeepSeek 长期对话</span></div>
+        <div class="card-heading"><div><span class="section-number">01</span><h2>共参</h2></div><span class="time-hint" id="chat-model-label">结合已保存记录</span></div>
         <div class="chat-history" id="chat-history"></div>
         <label class="field occurrence-field"><span>发生时间</span><input id="chat-datetime" type="datetime-local" step="1" required></label>
         <form class="chat-form" id="chat-form"><textarea id="chat-input" rows="2" placeholder="例如：我最近反复在纠结什么？" required></textarea><button class="primary-button" type="submit">发送</button></form>
@@ -389,24 +388,24 @@
     </section>
 
     <section class="view" id="view-captures">
-      <header class="page-header"><div><p class="eyebrow">碎片收集箱</p><h1>先捕捉，不急着想完整</h1></div><span class="record-count" id="capture-count"></span></header>
+      <header class="page-header"><div><h1>念起</h1></div><span class="record-count" id="capture-count"></span></header>
       <form class="card quick-capture-form" id="capture-form">
         <input type="hidden" id="capture-id">
-        <label class="field capture-main-field"><span>此刻冒出来的东西 <i>文字、图片或语音至少一项</i></span><textarea id="capture-content" rows="4" placeholder="一句话、一个念头、一段素材，原样放进来就好。"></textarea></label>
+        <label class="field capture-main-field"><span>想留下什么 <i>文字、图片或录音至少一项</i></span><textarea id="capture-content" rows="4" placeholder="一句话、一张图片或一段录音，都可以。"></textarea></label>
         <div class="content-image-editor" data-content-image-editor="capture">
-          <div class="content-image-editor-head"><span>图片原文</span><label class="content-image-add" title="插入图片" aria-label="插入图片"><span aria-hidden="true">＋</span><input id="capture-images" type="file" accept="image/png,image/jpeg,image/webp" multiple></label></div>
+          <div class="content-image-editor-head"><span>图片</span><label class="content-image-add" title="插入图片" aria-label="插入图片"><span aria-hidden="true">＋</span><input id="capture-images" type="file" accept="image/png,image/jpeg,image/webp" multiple></label></div>
           <div class="content-image-editor-previews" data-content-image-previews></div>
         </div>
         <section class="capture-audio-editor" aria-labelledby="capture-audio-title">
           <header>
-            <div><span id="capture-audio-title">语音原件</span><small>原音频与转写分层保存</small></div>
+            <div><span id="capture-audio-title">录音</span></div>
             <div class="capture-audio-primary-actions">
               <label class="audio-file-button audio-file-primary" title="上传音频"><span aria-hidden="true">↑</span>上传音频<input id="capture-audio-file" type="file" accept="audio/mp4,audio/x-m4a,audio/webm,audio/ogg,audio/wav,audio/x-wav"></label>
               <button class="audio-remove-button" id="capture-audio-remove" type="button" title="移除语音" aria-label="移除语音" hidden>×</button>
             </div>
           </header>
           <details class="capture-audio-recorder" id="capture-audio-recorder">
-            <summary><span>现场录音</span><small>需要时展开麦克风控制</small></summary>
+            <summary><span>现场录音</span></summary>
             <div class="capture-audio-actions">
               <button class="audio-record-button" id="capture-audio-record" type="button" title="开始现场录音"><span aria-hidden="true">●</span>开始录音</button>
               <button class="audio-pause-button" id="capture-audio-pause" type="button" title="暂停录音" aria-label="暂停录音" hidden>Ⅱ</button>
@@ -433,7 +432,7 @@
     </section>
 
     <section class="view" id="view-journals">
-      <header class="page-header"><div><p class="eyebrow">日记助手</p><h1>把今天写清楚，不必写漂亮</h1></div><span class="record-count" id="journal-count"></span></header>
+      <header class="page-header"><div><h1>日记</h1></div><span class="record-count" id="journal-count"></span></header>
       <section class="journal-workspace">
         <form class="card journal-form" id="journal-form">
           <input type="hidden" id="journal-id">
@@ -519,7 +518,7 @@
         <section class="card panel"><h2>个人实验</h2><div class="experiment-guide"><span><b>1</b>写一个可验证假设</span><span><b>2</b>每天照常记录并填同名因素</span><span><b>3</b>对比“有/无因素”的结果，只把它当线索</span></div><form class="mini-form" id="experiment-form"><input id="experiment-hypothesis" placeholder="例如：睡前阅读会改善第二天精力" required><div class="inline-inputs"><input id="experiment-factor" placeholder="唯一因素：睡前阅读" required><select id="experiment-outcome" aria-label="观察结果"><option value="sleep">观察：睡眠</option><option value="energy">观察：精力</option><option value="mood">观察：情绪</option><option value="stress">观察：压力</option></select><select id="experiment-duration"><option value="14">14 天</option><option value="30" selected>30 天</option><option value="60">60 天</option></select></div><button class="quiet-button" type="submit">开始实验</button></form><div id="experiment-list"></div></section>
         <section class="card panel"><h2>自定义指标</h2><form class="mini-form" id="metric-form"><input id="metric-name" placeholder="指标名，例如专注度" required><div class="inline-inputs"><input id="metric-low" placeholder="1 的体感"><input id="metric-high" placeholder="5 的体感"></div><button class="quiet-button" type="submit">添加到此刻状态</button></form><div id="metric-list"></div></section>
       </div>
-      <section class="card panel analysis-panel"><div class="section-title"><h2>认知复盘历史</h2><div class="analysis-heading-meta"><b id="analysis-count">0 份</b><span class="time-hint">每周自动尝试，服务需运行</span></div></div><p class="status" id="analysis-status"></p><div id="analysis-list"></div></section>
+      <section class="card panel analysis-panel"><div class="section-title"><h2>认知复盘历史</h2><div class="analysis-heading-meta"><b id="analysis-count">0 份</b></div></div><p class="status" id="analysis-status"></p><div id="analysis-list"></div></section>
     </section>
 
     <section class="view" id="view-books">
@@ -813,7 +812,7 @@
         <form class="g2-settings-panel feedback-form" id="feedback-form">
           <div class="feedback-fields">
             <label><span>类型</span><select name="type"><option value="bug">问题</option><option value="feature">功能建议</option><option value="experience">体验反馈</option><option value="other">其他</option></select></label>
-            <label><span>相关功能</span><input name="feature" maxlength="120" placeholder="例如：思绪检索" required></label>
+            <label><span>相关功能</span><input id="feedback-feature" name="feature" maxlength="120" placeholder="例如：思绪检索" required></label>
           </div>
           <label><span>反馈内容</span><textarea name="body" rows="7" maxlength="12000" required></textarea></label>
           <label class="feedback-context-choice"><input name="includeContext" type="checkbox"><span>附带当前页面与账户版本摘要</span></label>
@@ -1461,7 +1460,7 @@
   <div class="selection-tools" id="selection-tools" role="toolbar" aria-label="选中文本操作" hidden><button type="button" data-selection-action="comment">评论</button><button type="button" data-selection-action="quote">善言</button><button type="button" data-selection-action="highlight">划线</button><button type="button" data-selection-action="emphasis">加重</button></div>
   <aside class="comment-panel" id="comment-panel" aria-label="正文评论" hidden>
     <header><div><p class="eyebrow">评论</p><h2>正文批注</h2></div><button id="comment-panel-close" type="button" aria-label="关闭评论面板">×</button></header>
-    <form class="comment-composer" id="comment-composer" hidden><blockquote id="comment-quote"></blockquote><textarea id="comment-text" rows="3" placeholder="写下评论，或只插入图片…"></textarea><div class="content-image-editor compact" data-content-image-editor="comment"><div class="content-image-editor-head"><span>图片原文</span><label class="content-image-add" title="插入图片" aria-label="插入图片"><span aria-hidden="true">＋</span><input id="comment-images" type="file" accept="image/png,image/jpeg,image/webp" multiple></label></div><div class="content-image-editor-previews" data-content-image-previews></div></div><div><span class="status" id="comment-status"></span><button class="primary-button" type="submit">评论</button></div></form>
+    <form class="comment-composer" id="comment-composer" hidden><blockquote id="comment-quote"></blockquote><textarea id="comment-text" rows="3" placeholder="写下评论，或只插入图片…"></textarea><div class="content-image-editor compact" data-content-image-editor="comment"><div class="content-image-editor-head"><span>图片</span><label class="content-image-add" title="插入图片" aria-label="插入图片"><span aria-hidden="true">＋</span><input id="comment-images" type="file" accept="image/png,image/jpeg,image/webp" multiple></label></div><div class="content-image-editor-previews" data-content-image-previews></div></div><div><span class="status" id="comment-status"></span><button class="primary-button" type="submit">评论</button></div></form>
     <div class="comment-panel-list" id="comment-panel-list"></div>
   </aside>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
@@ -1517,7 +1516,7 @@
       <label class="field"><span>发生时间</span><input id="thought-block-datetime" type="datetime-local" step="1" required></label>
       <label class="field"><span>内容 <i>文字或图片至少一项 · 支持 Markdown</i></span><textarea id="thought-block-content" rows="7"></textarea></label>
       <div class="content-image-editor" data-content-image-editor="thoughtBlock">
-        <div class="content-image-editor-head"><span>图片原文</span><label class="content-image-add" title="插入图片" aria-label="插入图片"><span aria-hidden="true">＋</span><input id="thought-block-images" type="file" accept="image/png,image/jpeg,image/webp" multiple></label></div>
+        <div class="content-image-editor-head"><span>图片</span><label class="content-image-add" title="插入图片" aria-label="插入图片"><span aria-hidden="true">＋</span><input id="thought-block-images" type="file" accept="image/png,image/jpeg,image/webp" multiple></label></div>
         <div class="content-image-editor-previews" data-content-image-previews></div>
       </div>
       <button class="primary-button full" type="submit">保存内容</button>

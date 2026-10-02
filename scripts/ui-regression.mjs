@@ -272,6 +272,7 @@ const mockFetch = `
   window.__notifications = [];
   window.__testWorkspaceMode = "simulation";
   window.__lazySimulationEmpty = false;
+  window.__failDiscoveryRead = false;
   window.__failLocalModeTimeout = false;
   window.__localHydrateRequests = [];
   window.__keepsakeObservers = [];
@@ -620,7 +621,10 @@ const mockFetch = `
     if (url.startsWith("/api/v1/habits/ui-habit/checkins")) return v1([{id:"ui-habit-checkin",habitId:"ui-habit",occurredOn:"2026-09-27",feeling:"稳定",version:1}]);
     if (url.startsWith("/api/v1/habits")) return v1([{id:"ui-habit",title:"每日回望",frequency:{cadence:"daily",target:1},status:"active",version:1,adjustmentHistory:[],statusHistory:[]}]);
     if (url.startsWith("/api/v1/discovery/random")) return v1(null,{total:0});
-    if (url.startsWith("/api/v1/discovery")) return v1([{id:"kept-root",rootId:"kept-root",question:{id:"kept-root",content:"没有初步想法的问题",source:"user",sourceLabel:"用户原文"},matches:[{id:"kept-root",content:"没有初步想法的问题",source:"user",sourceLabel:"用户原文",type:"question"}],matchCount:1,occurredAt:"2026-09-27T04:09:00.000Z",status:{version:1,fresh:true,untraced:true,read:false,snoozed:false},fresh:true,untraced:true}],{total:1,untracedCount:1,totalUntracedCount:1,nextCursor:null});
+    if (url.startsWith("/api/v1/discovery")) {
+      if(window.__failDiscoveryRead){window.__failDiscoveryRead=false;return Promise.resolve(new Response(JSON.stringify({error:{message:"DISCOVERY_BACKEND_INTERNAL",code:"DISCOVERY_FAILED"}}),{status:503,headers:{"content-type":"application/json"}}))}
+      return v1([{id:"kept-root",rootId:"kept-root",question:{id:"kept-root",content:"没有初步想法的问题",source:"user",sourceLabel:"用户原文"},matches:[{id:"kept-root",content:"没有初步想法的问题",source:"user",sourceLabel:"用户原文",type:"question"}],matchCount:1,occurredAt:"2026-09-27T04:09:00.000Z",status:{version:1,fresh:true,untraced:true,read:false,snoozed:false},fresh:true,untraced:true}],{total:1,untracedCount:1,totalUntracedCount:1,nextCursor:null})
+    }
     if (url === "/api/v1/feedback" && init.method === "POST") {
       if(window.__delayFeedbackCreate)return new Promise(resolve=>{window.__releaseFeedbackCreate=()=>{window.__delayFeedbackCreate=false;resolve(v1({id:"created-feedback"}))}});
       return v1({id:"created-feedback"});
@@ -1755,7 +1759,7 @@ try {
   const todayThoughtMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-today-thoughts-mobile.png", Buffer.from(todayThoughtMobileScreenshot.data, "base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
-  const viewThemeColors = await evaluate(`Object.fromEntries([...document.querySelectorAll(".view")].map(view => [view.id, getComputedStyle(view.querySelector(".eyebrow")).color]))`);
+  const viewThemeColors = await evaluate(`Object.fromEntries([...document.querySelectorAll(".view")].map(view => [view.id, getComputedStyle(view.querySelector(".eyebrow,h1")).color]))`);
   assert.ok(new Set(Object.values(viewThemeColors)).size >= 16);
   await evaluate(`document.querySelector('[data-view="captures"]').click(); true`);
   assert.equal(await evaluate(`document.querySelector("#view-captures").classList.contains("active") && Boolean(document.querySelector('[data-capture-id="capture-1"] strong'))`), true);
@@ -1778,7 +1782,7 @@ try {
     audio: "/attachments/capture-voice.m4a",
     audioReady: "原音可播放",
     audioKey: '["capture-long",1,"/attachments/capture-voice.m4a"]',
-    status: "语音原件尚未转写。开始转写",
+    status: "录音尚未转成文字。开始转写",
     speak: "capture-long",
     speechKey: '["capture-long",1,"/attachments/capture-voice.m4a","","zh_male_shaonianzixin_uranus_bigtts"]',
     voice: "zh_male_shaonianzixin_uranus_bigtts",
@@ -1826,7 +1830,7 @@ try {
     uploadText: "↑上传音频",
     uploadHeight: 44,
     recorderOpen: false,
-    summary: "现场录音需要时展开麦克风控制",
+    summary: "现场录音",
     recordCollapsed: true,
     previewCollapsed: true
   });
@@ -2780,7 +2784,34 @@ try {
   await evaluate(`window.__onboardingSchemaAvailable=true;document.querySelector('[data-local-test-mode="cold"]').click();true`);
   assert.equal(await waitUntil(`window.__testWorkspaceMode==="cold"&&document.querySelector("#view-today").classList.contains("active")&&!document.querySelector("#onboarding-workspace").hidden&&document.querySelector("#onboarding-v2-content h1")?.textContent.includes("先认识此刻的你")`),true);
   await evaluate(`document.querySelector('[data-section="seen"]').click();document.querySelector('[data-view="keepsakes"]').click();true`);
-  assert.deepEqual(await evaluate(`(()=>{const grid=document.querySelector("#keepsake-grid"),empty=grid.querySelector(".empty"),gridBox=grid.getBoundingClientRect(),emptyBox=empty.getBoundingClientRect();return{text:empty.textContent.trim(),columnSpan:getComputedStyle(empty).columnSpan,fullWidth:Math.abs(gridBox.width-emptyBox.width)<2,noOverflow:document.documentElement.scrollWidth<=innerWidth}})()`),{text:"还没有数字留存的小物。",columnSpan:"all",fullWidth:true,noOverflow:true});
+  assert.deepEqual(await evaluate(`(()=>{const grid=document.querySelector("#keepsake-grid"),empty=grid.querySelector(".content-state"),gridBox=grid.getBoundingClientRect(),emptyBox=empty.getBoundingClientRect();return{title:empty.querySelector("strong").textContent,body:empty.querySelector("p").textContent,action:empty.querySelector("button").textContent,actions:empty.querySelectorAll("button").length,columnSpan:getComputedStyle(empty).columnSpan,fullWidth:Math.abs(gridBox.width-emptyBox.width)<2,noOverflow:document.documentElement.scrollWidth<=innerWidth}})()`),{title:"还没有小物",body:"从一张照片开始，名称和轮廓之后都可以修改。",action:"收第一件小物",actions:1,columnSpan:"all",fullWidth:true,noOverflow:true});
+  await evaluate(`document.querySelector("#keepsake-grid .content-state-action").click();true`);
+  assert.equal(await waitUntil(`!document.querySelector("#keepsake-workspace").hidden`),true);
+  await evaluate(`document.querySelector("#keepsake-create-toggle").click();document.querySelector('[data-section="thought"]').click();document.querySelector("[data-section-links='thought'] [data-view='journals']").click();true`);
+  assert.deepEqual(await evaluate(`(()=>{const state=document.querySelector("#journal-list .content-state");return{title:state.querySelector("strong").textContent,body:state.querySelector("p").textContent,action:state.querySelector("button").textContent,actions:state.querySelectorAll("button").length}})()`),{title:"还没有日记",body:"不需要写完整，一句真实的话也可以成为记录。",action:"写第一篇",actions:1});
+  await evaluate(`document.querySelector("#journal-list .content-state-action").click();true`);
+  assert.equal(await waitUntil(`document.activeElement===document.querySelector("#journal-content")`),true);
+  await evaluate(`document.querySelector("[data-section-links='thought'] [data-view='thoughts']").click();true`);
+  assert.deepEqual(await evaluate(`(()=>{const state=document.querySelector("#all-thoughts .content-state");return{title:state.querySelector("strong").textContent,body:state.querySelector("p").textContent,action:state.querySelector("button").textContent,actions:state.querySelectorAll("button").length}})()`),{title:"还没有思绪",body:"从一个真实问题开始，初步想法可以稍后补充。",action:"记录第一个问题",actions:1});
+  await evaluate(`document.querySelector('[data-section="seen"]').click();document.querySelector("[data-section-links='seen'] [data-view='quotes']").click();true`);
+  assert.deepEqual(await evaluate(`(()=>{const state=document.querySelector("#quote-sky-content .content-state");return{title:state.querySelector("strong").textContent,body:state.querySelector("p").textContent,action:state.querySelector("button").textContent,actions:state.querySelectorAll("button").length}})()`),{title:"还没有收藏的句子",body:"先留下原句和来源，它之后会在这里再次出现。",action:"收藏第一句",actions:1});
+  await evaluate(`document.querySelector("#quote-sky-content .content-state-action").click();true`);
+  assert.equal(await waitUntil(`document.activeElement===document.querySelector("#quote-content")`),true);
+  await evaluate(`document.querySelector('[data-section="thought"]').click();document.querySelector("[data-section-links='thought'] [data-view='discovery']").click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#discovery-list [data-discovery-id]")`),true);
+  await evaluate(`window.__failDiscoveryRead=true;document.querySelector("#toast").hidden=true;(()=>{const form=document.querySelector("#discovery-form");form.elements.query.value="触发恢复状态";form.requestSubmit();return true})()`);
+  assert.equal(await waitUntil(`document.querySelector("#discovery-list .content-state.failure")`),true);
+  assert.deepEqual(await evaluate(`(()=>{const state=document.querySelector("#discovery-list .content-state"),toast=document.querySelector("#toast");return{title:state.querySelector("strong").textContent,body:state.querySelector("p").textContent,action:state.querySelector("button").textContent,internal:state.textContent.includes("DISCOVERY_BACKEND_INTERNAL")||(!toast.hidden&&toast.textContent.includes("DISCOVERY_BACKEND_INTERNAL"))}})()`),{title:"暂时无法查找旧记录",body:"已有记录没有变化。请检查网络后重试。",action:"重新查找",internal:false});
+  await evaluate(`document.querySelector("#discovery-list .content-state-action").click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#discovery-list [data-discovery-id]")`),true);
+  await evaluate(`document.querySelector('[data-view="mine"]').click();document.querySelector("#view-mine [data-view='trash']").click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#trash-list .content-state.failure")`),true);
+  assert.deepEqual(await evaluate(`(()=>{const state=document.querySelector("#trash-list .content-state");return{title:state.querySelector("strong").textContent,body:state.querySelector("p").textContent,action:state.querySelector("button").textContent,actions:state.querySelectorAll("button").length,internal:state.textContent.includes("Not found")}})()`),{title:"暂时无法读取回收站",body:"已删除的记录仍按原保留期保存。请检查网络后重试。",action:"重新读取",actions:1,internal:false});
+  await evaluate(`document.querySelector('[data-section="thought"]').click();document.querySelector("[data-section-links='thought'] [data-view='journals']").click();true`);
+  await cdp.send("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:2,mobile:true});await evaluate(`document.querySelector("#journal-list .content-state").scrollIntoView({block:"center"});true`);await sleep(100);
+  assert.equal(await evaluate(`(()=>{const state=document.querySelector("#journal-list .content-state"),button=state.querySelector("button");return document.documentElement.scrollWidth<=innerWidth&&state.getBoundingClientRect().right<=innerWidth&&button.getBoundingClientRect().height>=44})()`),true);
+  await fs.writeFile("/tmp/growth-content-state-mobile.png",Buffer.from((await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false})).data,"base64"));
+  await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
   await evaluate(`document.querySelector('[data-section="today"]').click();true`);
   assert.deepEqual(await evaluate(`({memories:document.querySelectorAll(".home-v02-memory").length,empty:document.querySelector(".home-v02-empty")?.textContent,moodPoints:document.querySelectorAll("#home-mood-sparkline circle").length,keepsake:document.querySelector("#home-keepsake").textContent.includes("留存一件小物"),noOverflow:document.documentElement.scrollWidth<=innerWidth})`),{memories:0,empty:"留下第一条思考，往后在这里重逢。",moodPoints:0,keepsake:true,noOverflow:true});
   await evaluate(`document.querySelector('[data-onboarding-action="legacy"]').click();true`);

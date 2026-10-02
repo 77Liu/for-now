@@ -27,13 +27,22 @@ assert.match(appRuntime, /requestSerial!==actionsRequestSerial\|\|owner!==curren
 assert.match(appRuntime, /LOCAL_TEST_RESPONSE_MISMATCH/);
 assert.match(appRuntime, /提交时的行动已保存；等待期间的新输入已保留。/);
 assert.match(appRuntime, /已保存，但行动列表刷新失败/);
+assert.match(appRuntime, /function contentState\(/);
+assert.match(appRuntime, /data-content-action/);
 assert.equal(rootStyles.trim(), '@import url("./frontend/styles/application.css");');
 assert.match(applicationStyles, /:root\{/);
 assert.match(applicationStyles, /env\(safe-area-inset-bottom\)/);
 assert.match(applicationStyles, /\.home-v02\{/);
 assert.match(applicationStyles, /assets\/home-v0\.2\/desktop-background\.png/);
+assert.match(applicationStyles, /\.content-state\.failure/);
 assert.match(html, /id="home-open-thought"/);
 assert.match(html, /id="home-mood-sparkline"/);
+for (const phrase of ["图片原文", "语音原件", "原音频与转写分层保存", "需要时展开麦克风控制", "碎片收集箱", "日记助手", "DeepSeek 长期对话", "每周自动尝试，服务需运行"]) {
+  assert.doesNotMatch(html, new RegExp(phrase), `implementation or placeholder copy must not remain visible: ${phrase}`);
+}
+for (const phrase of ["ASR 服务尚未配置", "内容时间线", "最新在前"]) {
+  assert.doesNotMatch(appRuntime, new RegExp(phrase), `runtime copy must use the content design vocabulary: ${phrase}`);
+}
 
 const homePool = createHomeMemoryPool({
   thoughts: [
