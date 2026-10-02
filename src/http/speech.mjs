@@ -29,8 +29,9 @@ export function createSpeechHttp({
     }
     if (req.method !== "POST" || url.pathname !== "/api/speech/synthesize") return false;
     const input = await bodyJson(req);
-    const generationRate = normalizeTtsGenerationRate((await readSettings())?.speech?.generationRate);
-    const voice = safeText(input.voice, 160) || speech.defaultVoice;
+    const speechSettings = (await readSettings())?.speech || {};
+    const generationRate = normalizeTtsGenerationRate(speechSettings.generationRate);
+    const voice = safeText(speechSettings.defaultVoice, 160) || speech.defaultVoice;
     const generate = async ({ text, voice: selectedVoice, generationRate: selectedRate }) => {
       const release = await gate.acquire();
       try {

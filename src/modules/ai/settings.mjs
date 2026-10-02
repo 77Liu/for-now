@@ -57,7 +57,7 @@ export const defaultLlmSettings = {
   assistantName: "神鸡",
   responseStyles: Object.fromEntries(RESPONSE_STYLE_SCENARIOS.map(scene => [scene, "standard"])),
   automaticAnswers: { thoughtAnswer: false },
-  speech: { generationRate: TTS_GENERATION_RATE_DEFAULT },
+  speech: { defaultVoice: "", generationRate: TTS_GENERATION_RATE_DEFAULT },
   apiKey: ""
 };
 
@@ -80,6 +80,7 @@ export function normalizeLlmSettings(value = {}) {
   settings.apiKey = safeText(value.apiKey, 300);
   settings.assistantName = safeText(value.assistantName, 24) || defaultLlmSettings.assistantName;
   settings.automaticAnswers.thoughtAnswer = value.automaticAnswers?.thoughtAnswer === true;
+  settings.speech.defaultVoice = safeText(value.speech?.defaultVoice, 160);
   settings.speech.generationRate = normalizeTtsGenerationRate(value.speech?.generationRate);
   for (const scene of RESPONSE_STYLE_SCENARIOS) settings.responseStyles[scene] = RESPONSE_STYLES.includes(value.responseStyles?.[scene]) ? value.responseStyles[scene] : "standard";
   if (!value.profiles || !value.scenarios) {
@@ -145,7 +146,7 @@ export function mergeLlmSettings(current, input) {
     profiles[tier] = { model: input.model || profiles[tier].model, effort: input.effort || profiles[tier].effort };
     if (input.effort) sceneEfforts.thoughtAnswer = input.effort;
   }
-  return normalizeLlmSettings({ version: LLM_SETTINGS_VERSION, provider: "deepseek", profiles, scenarios, sceneEfforts, assistantName: input.assistantName ?? current.assistantName, responseStyles: input.responseStyles || current.responseStyles, automaticAnswers: input.automaticAnswers || current.automaticAnswers, speech: input.speech || current.speech, apiKey });
+  return normalizeLlmSettings({ version: LLM_SETTINGS_VERSION, provider: "deepseek", profiles, scenarios, sceneEfforts, assistantName: input.assistantName ?? current.assistantName, responseStyles: input.responseStyles || current.responseStyles, automaticAnswers: input.automaticAnswers || current.automaticAnswers, speech: { ...current.speech, ...(input.speech || {}) }, apiKey });
 }
 
 export function mergeUserAiPreferences(current, input) {

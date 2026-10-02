@@ -23,9 +23,10 @@ for (const [model, effort, tier] of [["deepseek-flash", "none", "lite"], ["deeps
   assert.deepEqual(settings.profiles[tier], { model, effort });
 }
 const initial = normalizeLlmSettings({ apiKey: "private-test-value" });
-assert.deepEqual(initial.speech, { generationRate: -10 });
+assert.deepEqual(initial.speech, { defaultVoice: "", generationRate: -10 });
 assert.equal(normalizeLlmSettings({ speech: { generationRate: -80 } }).speech.generationRate, -50);
 assert.equal(normalizeLlmSettings({ speech: { generationRate: 140 } }).speech.generationRate, 100);
+assert.equal(normalizeLlmSettings({ speech: { defaultVoice: " voice-a " } }).speech.defaultVoice, "voice-a");
 const edited = mergeLlmSettings(initial, { model: "deepseek-flash", effort: "none", responseStyles: { chat: "concise" }, assistantName: " 新名字 " });
 assert.equal(llmSettingsForScene(edited).model, "deepseek-flash");
 assert.equal(llmSettingsForScene(edited, "chat").responseStyle, "concise");
@@ -34,8 +35,9 @@ assert.equal(edited.apiKey, initial.apiKey);
 assert.equal(mergeLlmSettings(edited, { clearApiKey: true }).apiKey, "");
 assert.equal(publicLlmSettings(edited).apiKey, undefined);
 assert.doesNotMatch(JSON.stringify(publicLlmSettings(edited)), /private-test-value/);
-assert.deepEqual(publicLlmSettings(edited).speech, { generationRate: -10 });
+assert.deepEqual(publicLlmSettings(edited).speech, { defaultVoice: "", generationRate: -10 });
 assert.equal(mergeLlmSettings(edited, { speech: { generationRate: 25 } }).speech.generationRate, 25);
+assert.equal(mergeLlmSettings(edited, { speech: { defaultVoice: "voice-a" } }).speech.defaultVoice, "voice-a");
 assert.deepEqual(initial.automaticAnswers, { thoughtAnswer: false });
 assert.equal(publicLlmSettings(initial).automaticAnswers.thoughtAnswer, false);
 const userPreferenceBaseline = normalizeLlmSettings({
@@ -45,6 +47,7 @@ const userPreferenceBaseline = normalizeLlmSettings({
 const userPreferences = mergeUserAiPreferences(userPreferenceBaseline, {
   assistantName: "普通账户助手",
   sceneEfforts: { thoughtAnswer: "none" },
+  speech: { defaultVoice: "voice-user" },
   apiKey: "must-not-change",
   profiles: { ultra: { model: "deepseek-flash", effort: "none" } }
 });
@@ -53,6 +56,7 @@ assert.equal(userPreferences.sceneEfforts.thoughtAnswer, "none");
 assert.equal(userPreferences.sceneEfforts.thoughtDraft, "none");
 assert.equal(userPreferences.apiKey, initial.apiKey);
 assert.deepEqual(userPreferences.profiles, initial.profiles);
+assert.equal(userPreferences.speech.defaultVoice, "voice-user");
 assert.equal(llmSettingsForScene(userPreferences, "thoughtAnswer").effort, "none");
 assert.doesNotMatch(JSON.stringify(publicUserAiPreferences(userPreferences)), /apiKey|provider|profiles|private-test-value/);
 assert.deepEqual(automaticAnswerDecision(initial, { requested: true, hasAnswer: false }), {
@@ -263,11 +267,12 @@ try {
   });
   await Promise.all(["a", "b"].map((account, index) => run(account, () => settings.update(current => mergeLlmSettings(current, {
     assistantName: account,
-    speech: { generationRate: index ? 40 : -20 }
+    speech: { defaultVoice: `voice-${account}`, generationRate: index ? 40 : -20 }
   })))));
   for (const [account, generationRate] of [["a", -20], ["b", 40]]) {
     const accountSettings = await run(account, settings.read);
     assert.equal(accountSettings.assistantName, account);
+    assert.equal(accountSettings.speech.defaultVoice, `voice-${account}`);
     assert.equal(accountSettings.speech.generationRate, generationRate);
   }
   await run("broken", async () => {

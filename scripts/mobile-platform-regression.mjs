@@ -120,7 +120,7 @@ const appPort = await freePort();
 const debugPort = await freePort();
 const app = spawn(process.execPath, ["server.mjs"], {
   cwd: ROOT,
-  env: { ...process.env, NODE_ENV: "test", PORT: String(appPort), DATA_DIR: dataDir },
+  env: { ...process.env, NODE_ENV: "test", PORT: String(appPort), DATA_DIR: dataDir, VOLCENGINE_SPEECH_API_KEY: "mobile-platform-test-key" },
   stdio: ["ignore", "pipe", "pipe"]
 });
 let appErrors = "";
@@ -148,6 +148,13 @@ let cdp;
 try {
   const base = `http://127.0.0.1:${appPort}`;
   await waitForUrl(`${base}/api/state`, app);
+  const captureResponse = await fetch(`${base}/api/v1/captures`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "idempotency-key": "mobile-platform-speech-card" },
+    body: JSON.stringify({ content: "移动端文字朗读控件" })
+  });
+  assert.equal(captureResponse.status, 201);
+  const speechCaptureId = (await captureResponse.json()).data.id;
   const manifestResponse = await fetch(`${base}/manifest.webmanifest`);
   assert.equal(manifestResponse.status, 200);
   assert.match(manifestResponse.headers.get("content-type") || "", /^application\/manifest\+json/);
@@ -231,6 +238,32 @@ try {
       assert.equal(landscapeOnboarding.onboardingInside, true);
       assert.deepEqual(landscapeOnboarding.links.map(item => item.visible), [false, false, false]);
     }
+
+    await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
+    assert.equal(await waitUntil(`Boolean(document.querySelector('[data-capture-id="${speechCaptureId}"]'))`), true);
+    const speechCard = await evaluate(`(() => {
+      const card=document.querySelector('[data-capture-id="${speechCaptureId}"]'),player=card.querySelector("[data-capture-speech-player]"),playerBox=player.closest(".capture-speech-player"),actions=card.querySelector(".capture-speech-actions"),button=actions.querySelector("button"),cardRect=card.getBoundingClientRect(),actionsRect=actions.getBoundingClientRect();
+      return {
+        noVoice:!card.querySelector("[data-capture-voice]"),
+        noDuplicateControls:!card.querySelector("[data-capture-speech-pause],[data-capture-speech-stop]"),
+        buttons:actions.querySelectorAll("button").length,
+        selects:actions.querySelectorAll("select").length,
+        emptyPlayerHidden:playerBox.hidden&&player.getClientRects().length===0&&!player.currentSrc,
+        buttonHeight:button.getBoundingClientRect().height,
+        inside:actionsRect.left>=cardRect.left&&actionsRect.right<=cardRect.right+.5,
+        noOverflow:document.documentElement.scrollWidth<=innerWidth
+      };
+    })()`);
+    assert.deepEqual(speechCard, {
+      noVoice: true,
+      noDuplicateControls: true,
+      buttons: 1,
+      selects: 1,
+      emptyPlayerHidden: true,
+      buttonHeight: 44,
+      inside: true,
+      noOverflow: true
+    });
 
     const thoughtNav = await evaluate(`(() => { const rect=document.querySelector('[data-section="thought"]').getBoundingClientRect();return{x:rect.left+rect.width/2,y:rect.top+rect.height/2} })()`);
     await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: thoughtNav.x, y: thoughtNav.y, radiusX: 2, radiusY: 2, force: 1, id: 1 }] });

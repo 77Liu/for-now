@@ -106,7 +106,7 @@ const responseStyleScenes=["thoughtDraft","thoughtAnswer","followUpAnswer","chat
 let pageRouter,switchView,restoreView;
 let backgroundResultController=null;
 let currentLocalDate=localDateKey();
-let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{generationRate:-10},hasApiKey:false,keyHint:""};
+let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
 let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,discoveryController=null,actionsSnapshot={actions:[],habits:[],habitCheckins:[]},actionsRequestSerial=0,feedbackItems=[],feedbackRequestSerial=0,exportManifest=null,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.4.0",releaseVersion="0.4.0",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
 let notificationsLoadState="idle",feedbackLoadState="idle",exportLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,activeThoughtRouteId="",activeRouteResult=null;
 let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeEditorTrigger=null,activeSpeechCaptureId="",activeSpeechSourceKey="",activeSpeechVoice="",activeSpeechPlaybackRate=1,activeSpeechAudio=null,activeSpeechObjectUrl="",activeSpeechAbortController=null;
@@ -1719,23 +1719,26 @@ function captureAudioMarkup(item){
       :"";
     transcriptionState=`<p class="capture-transcription-state ${presentation.transcriptionStatus==="failed"?"error":""}" data-transcription-task-id="${escapeHtml(presentation.transcriptionTaskId)}">${escapeHtml(presentation.transcriptionMessage)}${action}</p>`;
   }
-  const voices=state.speech?.voices||[],selectedVoice=activeSpeechCaptureId===item.id&&activeSpeechVoice?activeSpeechVoice:state.speech?.defaultVoice,voiceOptions=voices.map(voice=>`<option value="${escapeHtml(voice.id)}" ${voice.id===selectedVoice?"selected":""}>${escapeHtml(voice.label)}</option>`).join("");
-  const speechKey=captureSpeechIdentity(item,selectedVoice);
+  const voice=accountTtsVoice(),speechKey=captureSpeechIdentity(item,voice);
   const selectedRate=activeSpeechCaptureId===item.id&&activeSpeechSourceKey===speechKey?activeSpeechPlaybackRate:1,rateOptions=TTS_PLAYBACK_RATES.map(rate=>`<option value="${rate}" ${rate===selectedRate?"selected":""}>${rate.toFixed(1)}×</option>`).join("");
-  const speechPlayer=speech&&state.speech?.configured?`<div class="capture-speech-player"><audio controls preload="metadata" data-capture-speech-player="${escapeHtml(item.id)}" data-capture-speech-key="${escapeHtml(speechKey)}" aria-label="文字朗读播放器"></audio><span>文字朗读</span></div><div class="capture-speech-actions"><select data-capture-voice aria-label="朗读音色">${voiceOptions}</select><select data-capture-playback-rate="${escapeHtml(item.id)}" aria-label="播放倍速">${rateOptions}</select><button type="button" class="capture-speak-button" data-capture-speak="${escapeHtml(item.id)}" data-capture-speech-key="${escapeHtml(speechKey)}" title="生成并朗读文字" aria-label="生成并朗读文字">▶</button><button type="button" data-capture-speech-pause title="暂停或继续朗读" aria-label="暂停或继续朗读">Ⅱ</button><button type="button" data-capture-speech-stop title="停止朗读" aria-label="停止朗读">■</button></div>`:"";
+  const hasSpeechSource=activeSpeechCaptureId===item.id&&Boolean(activeSpeechSourceKey&&activeSpeechObjectUrl),playerKey=hasSpeechSource?activeSpeechSourceKey:speechKey;
+  const speechPlayer=speech&&state.speech?.configured?`<div class="capture-speech-player" ${hasSpeechSource?"":"hidden"}><audio controls preload="metadata" data-capture-speech-player="${escapeHtml(item.id)}" data-capture-speech-key="${escapeHtml(playerKey)}" aria-label="文字朗读播放器"></audio><span>文字朗读</span></div><div class="capture-speech-actions"><button type="button" class="capture-speak-button" data-capture-speak="${escapeHtml(item.id)}" data-capture-speech-key="${escapeHtml(speechKey)}">${hasSpeechSource?"重新生成":"生成"}</button><label><span>播放倍速</span><select data-capture-playback-rate="${escapeHtml(item.id)}" aria-label="播放倍速">${rateOptions}</select></label></div>`:"";
   return `<section class="capture-audio-record" data-capture-audio-key="${escapeHtml(presentation.audioKey)}" data-transcription-task-id="${escapeHtml(presentation.transcriptionTaskId)}">${audio?`<div class="capture-audio-source" data-capture-audio-key="${escapeHtml(presentation.audioKey)}"><audio controls preload="metadata" src="${escapeHtml(appUrl(audio.attachmentPath))}"></audio><span>${formatAudioDuration(audio.durationMs)} · <b class="capture-audio-playback-state">${escapeHtml(presentation.audioStatus)}</b></span></div>`:""}${layers}${transcriptionState}${speechPlayer}</section>`
 }
 function clearCaptureSpeechPlayer(player){
-  if(!player)return;player.pause();player.removeAttribute("src");player.load()
+  if(!player)return;player.pause();player.removeAttribute("src");player.load();
+  const container=player.closest(".capture-speech-player"),button=player.closest("[data-capture-id]")?.querySelector("[data-capture-speak]");
+  if(container)container.hidden=true;if(button)button.textContent="生成";requestAnimationFrame(syncCaptureOverflow)
 }
 function bindCaptureSpeechPlayer(){
   if(!activeSpeechCaptureId||!activeSpeechSourceKey||!activeSpeechObjectUrl)return null;
   const card=document.querySelector(`[data-capture-id="${CSS.escape(activeSpeechCaptureId)}"]`),player=card?.querySelector("[data-capture-speech-player]");
-  if(!player||player.dataset.captureSpeechKey!==activeSpeechSourceKey)return null;
+  if(!player)return null;
   if(activeSpeechAudio&&activeSpeechAudio!==player)clearCaptureSpeechPlayer(activeSpeechAudio);
-  activeSpeechAudio=player;
+  activeSpeechAudio=player;player.dataset.captureSpeechKey=activeSpeechSourceKey;
   if(player.getAttribute("src")!==activeSpeechObjectUrl){clearCaptureSpeechPlayer(player);player.src=activeSpeechObjectUrl;player.load()}
-  player.playbackRate=activeSpeechPlaybackRate;
+  player.playbackRate=activeSpeechPlaybackRate;player.closest(".capture-speech-player").hidden=false;
+  const button=card.querySelector("[data-capture-speak]");if(button)button.textContent="重新生成";
   return player
 }
 function stopCaptureSpeech(){
@@ -1752,7 +1755,7 @@ async function speakCapture(id,voice,sourceKey,playbackRate=1){
   stopCaptureSpeech();const controller=new AbortController();activeSpeechAbortController=controller;activeSpeechCaptureId=id;activeSpeechSourceKey=sourceKey;activeSpeechVoice=voice;activeSpeechPlaybackRate=rate;
   let audio=null;
   try{
-    const blob=await apiClient.requestBlob("/api/speech/synthesize",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({captureId:id,sourceVersion:item.version,voice}),signal:controller.signal},{fallback:"语音合成失败"});
+    const blob=await apiClient.requestBlob("/api/speech/synthesize",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({captureId:id,sourceVersion:item.version}),signal:controller.signal},{fallback:"语音合成失败"});
     const current=(state.captures||[]).find(value=>value.id===id);
     if(activeSpeechCaptureId!==id||activeSpeechSourceKey!==sourceKey||controller.signal.aborted||captureSpeechIdentity(current,voice)!==sourceKey)return;
     if(activeSpeechAbortController===controller)activeSpeechAbortController=null;
@@ -2479,17 +2482,27 @@ function selectionQuoteSource(rootKey){const root=commentRoot(rootKey),label=com
 function closeSelectionQuoteModal(){const modal=$("#selection-quote-modal");modal.hidden=true;$("#selection-quote-form").reset();$("#selection-quote-status").textContent=""}
 function openSelectionQuoteModal(selection){const label=commentRootLabel(selection.rootKey);$("#selection-quote-content").value=selection.quote;$("#selection-quote-source").value=selectionQuoteSource(selection.rootKey);$("#selection-quote-tags").value=label;resetOccurrenceInput($("#selection-quote-datetime"));$("#selection-quote-status").textContent="";$("#selection-quote-modal").hidden=false;pendingSelection=null;window.getSelection()?.removeAllRanges();$("#selection-quote-content").focus()}
 function llmProfile(scene="thoughtAnswer"){const tier=llmSettings.scenarios?.[scene]||"high",profile=llmSettings.profiles?.[tier]||defaultLlmProfiles[tier]||defaultLlmProfiles.high;return{tier,...profile,effort:llmSettings.sceneEfforts?.[scene]||profile.effort}}
+function accountTtsVoice(){
+  const voices=state.speech?.voices||[],preferred=String(llmSettings.speech?.defaultVoice||"");
+  return preferred&&(!voices.length||voices.some(voice=>voice.id===preferred))?preferred:state.speech?.defaultVoice||voices[0]?.id||""
+}
+function renderTtsDefaultVoice(){
+  const control=$("#tts-default-voice");if(!control)return;
+  const voices=state.speech?.voices||[],voice=accountTtsVoice();
+  control.innerHTML=voices.length?voices.map(item=>`<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}</option>`).join(""):`<option value="">语音服务未配置</option>`;
+  control.disabled=!state.speech?.configured||!voices.length;if(voices.some(item=>item.id===voice))control.value=voice
+}
 function ttsGenerationRateText(value){return`${(1+normalizeTtsGenerationRate(value)/100).toFixed(2)}×`}
 function renderTtsGenerationRate(value){const rate=normalizeTtsGenerationRate(value),control=$("#tts-generation-rate"),output=$("#tts-generation-rate-value");if(control){control.value=String(rate);control.style.setProperty("--fill",`${((rate+50)/1.5).toFixed(2)}%`)}if(output)output.textContent=ttsGenerationRateText(rate)}
 function settingsPayload(){
-  const payload={sceneEfforts:Object.fromEntries($$("[data-ai-effort]").map(select=>[select.dataset.aiEffort,select.value])),assistantName:$("#assistant-name").value,responseStyles:Object.fromEntries($$("[data-response-style]").map(select=>[select.dataset.responseStyle,select.value])),automaticAnswers:{thoughtAnswer:$("#automatic-thought-answer").checked},speech:{generationRate:normalizeTtsGenerationRate($("#tts-generation-rate")?.value)}};
+  const payload={sceneEfforts:Object.fromEntries($$("[data-ai-effort]").map(select=>[select.dataset.aiEffort,select.value])),assistantName:$("#assistant-name").value,responseStyles:Object.fromEntries($$("[data-response-style]").map(select=>[select.dataset.responseStyle,select.value])),automaticAnswers:{thoughtAnswer:$("#automatic-thought-answer").checked},speech:{defaultVoice:$("#tts-default-voice")?.value||accountTtsVoice(),generationRate:normalizeTtsGenerationRate($("#tts-generation-rate")?.value)}};
   if(!hasCapability("ai-configuration"))return payload;
   return{...payload,profiles:Object.fromEntries(llmTiers.map(tier=>[tier,{model:$(`[data-profile-model="${tier}"]`).value,effort:$(`[data-profile-effort="${tier}"]`).value}])),scenarios:Object.fromEntries($$("[data-ai-scenario]").map(select=>[select.dataset.aiScenario,select.value])),apiKey:$("#llm-api-key").value}
 }
 function renderSettings(){
   if(!$("#llm-settings-form"))return;
-  llmSettings.profiles={...structuredClone(defaultLlmProfiles),...(llmSettings.profiles||{})};llmSettings.scenarios={...defaultLlmScenarios,...(llmSettings.scenarios||{})};llmSettings.sceneEfforts={...defaultSceneEfforts,...(llmSettings.sceneEfforts||{})};llmSettings.automaticAnswers={thoughtAnswer:llmSettings.automaticAnswers?.thoughtAnswer===true};llmSettings.speech={generationRate:normalizeTtsGenerationRate(llmSettings.speech?.generationRate)};llmSettings.responseStyles=Object.fromEntries(responseStyleScenes.map(scene=>[scene,llmSettings.responseStyles?.[scene]||"standard"]));
-  $("#automatic-thought-answer").checked=llmSettings.automaticAnswers.thoughtAnswer;$("#assistant-name").value=llmSettings.assistantName||"神鸡";renderTtsGenerationRate(llmSettings.speech.generationRate);
+  llmSettings.profiles={...structuredClone(defaultLlmProfiles),...(llmSettings.profiles||{})};llmSettings.scenarios={...defaultLlmScenarios,...(llmSettings.scenarios||{})};llmSettings.sceneEfforts={...defaultSceneEfforts,...(llmSettings.sceneEfforts||{})};llmSettings.automaticAnswers={thoughtAnswer:llmSettings.automaticAnswers?.thoughtAnswer===true};llmSettings.speech={defaultVoice:String(llmSettings.speech?.defaultVoice||""),generationRate:normalizeTtsGenerationRate(llmSettings.speech?.generationRate)};llmSettings.responseStyles=Object.fromEntries(responseStyleScenes.map(scene=>[scene,llmSettings.responseStyles?.[scene]||"standard"]));
+  $("#automatic-thought-answer").checked=llmSettings.automaticAnswers.thoughtAnswer;$("#assistant-name").value=llmSettings.assistantName||"神鸡";renderTtsDefaultVoice();renderTtsGenerationRate(llmSettings.speech.generationRate);
   for(const tier of llmTiers){const model=$(`[data-profile-model="${tier}"]`),effort=$(`[data-profile-effort="${tier}"]`);if(model)model.value=llmSettings.profiles[tier].model;if(effort)effort.value=llmSettings.profiles[tier].effort}
   $$("[data-ai-scenario]").forEach(select=>{if(!select.options.length)select.innerHTML=llmTiers.map(tier=>`<option value="${tier}">${tier[0].toUpperCase()+tier.slice(1)}</option>`).join("");select.value=llmSettings.scenarios[select.dataset.aiScenario]});
   $$("[data-ai-effort]").forEach(select=>{if(!select.options.length)select.innerHTML=llmEfforts.map(effort=>`<option value="${effort}">${effort==="none"?"关闭":effort==="high"?"High":"Max"}</option>`).join("");select.value=llmSettings.sceneEfforts[select.dataset.aiEffort]});
@@ -3354,7 +3367,7 @@ function invalidatePageLoads(){
 function clearPrivateSessionState(){
   closeImageViewer({restoreFocus:false});
   onboardingV2Controller.reset();
-  resetState();routeDataReady=false;activeThoughtRouteId="";activeRouteResult=null;llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{generationRate:-10},hasApiKey:false,keyHint:""};
+  resetState();routeDataReady=false;activeThoughtRouteId="";activeRouteResult=null;llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
   activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationsLoadState="idle";actionsSnapshot={actions:[],habits:[],habitCheckins:[]};feedbackItems=[];feedbackLoadState="idle";exportManifest=null;exportLoadState="idle";personalContext=null;personalContextLoadState="idle";accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.4.0";homeMemoryKeys=[];homeMemoryByKey=new Map();closeHomeEditors({restoreFocus:false});resetOwnerSurfaces();invalidatePageLoads();draftTags=[];captureDraftTags=[];pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";
   healthParseSerial+=1;latestHealthRequest=0;healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=[];healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]};for(const draft of Object.values(healthImageDrafts))Object.assign(draft,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0});
   bookParseSerial+=1;for(const url of Object.values(bookPreviewUrls))if(url)URL.revokeObjectURL(url);bookPreviewUrls={cover:"",recognition:""};pendingBookImages={cover:null,recognition:null};editingBookId="";activeBookId="";activeBookFeatureNoteId="";bookCreatorOpen=false;bookDetailCondensed=false;
@@ -3912,30 +3925,15 @@ document.addEventListener("click",async event=>{
   }
   const play=event.target.closest("[data-capture-speak]");
   if(play){
-    const actions=play.closest(".capture-speech-actions"),voice=actions?.querySelector("[data-capture-voice]")?.value||state.speech?.defaultVoice,rate=normalizeTtsPlaybackRate(actions?.querySelector("[data-capture-playback-rate]")?.value);
+    const actions=play.closest(".capture-speech-actions"),voice=accountTtsVoice(),rate=normalizeTtsPlaybackRate(actions?.querySelector("[data-capture-playback-rate]")?.value);
     const item=state.captures.find(value=>value.id===play.dataset.captureSpeak),sourceKey=captureSpeechIdentity(item,voice);
     play.dataset.captureSpeechKey=sourceKey;
     return void speakCapture(play.dataset.captureSpeak,voice,sourceKey,rate)
   }
-  const pause=event.target.closest("[data-capture-speech-pause]");
-  if(pause){
-    if(pause.closest("[data-capture-id]")?.dataset.captureId===activeSpeechCaptureId&&activeSpeechAudio){
-      if(activeSpeechAudio.paused)void activeSpeechAudio.play().catch(error=>showToast(presentError(error,{operation:"播放文字朗读",object:"这次文字朗读",phase:"文字朗读播放",retained:"原音和文字记录没有变化"}).message,"error"));else activeSpeechAudio.pause()
-    }
-    return
-  }
-  const stop=event.target.closest("[data-capture-speech-stop]");
-  if(stop&&stop.closest("[data-capture-id]")?.dataset.captureId===activeSpeechCaptureId)stopCaptureSpeech()
 });
 document.addEventListener("change",event=>{
-  const voiceControl=event.target.closest("[data-capture-voice]");
-  if(voiceControl&&activeSpeechCaptureId){
-    const card=voiceControl.closest("[data-capture-id]"),id=card?.dataset.captureId,item=state.captures.find(value=>value.id===id);
-    if(id===activeSpeechCaptureId&&captureSpeechIdentity(item,voiceControl.value)!==activeSpeechSourceKey)stopCaptureSpeech();
-  }
   const control=event.target.closest("[data-capture-playback-rate]");if(!control||!activeSpeechAudio)return;
-  const id=control.dataset.capturePlaybackRate,item=state.captures.find(value=>value.id===id),voice=control.closest(".capture-speech-actions")?.querySelector("[data-capture-voice]")?.value||state.speech?.defaultVoice,sourceKey=captureSpeechIdentity(item,voice);
-  if(id!==activeSpeechCaptureId||sourceKey!==activeSpeechSourceKey)return;
+  if(control.dataset.capturePlaybackRate!==activeSpeechCaptureId)return;
   activeSpeechPlaybackRate=normalizeTtsPlaybackRate(control.value);activeSpeechAudio.playbackRate=activeSpeechPlaybackRate
 });
 $("#capture-cancel").addEventListener("click",resetCaptureForm);
@@ -4412,8 +4410,8 @@ $("#onboarding-form").addEventListener("submit",async event=>{event.preventDefau
 $("#onboarding-v2-reopen").addEventListener("click",()=>{switchView("today");requestAnimationFrame(()=>onboardingV2Controller.reopen())});
 $("#reset-response-styles").addEventListener("click",()=>{$("#assistant-name").value="神鸡";$$("[data-response-style]").forEach(select=>select.value="standard");$("#llm-settings-status").textContent="已恢复默认称呼与风格，保存后生效。"});
 $("#tts-generation-rate").addEventListener("input",event=>renderTtsGenerationRate(event.currentTarget.value));
-$("#llm-settings-form").addEventListener("submit",async e=>{e.preventDefault();const ownerSettings=hasCapability("ai-configuration"),button=e.currentTarget.querySelector('[type="submit"]'),status=$("#llm-settings-status");button.disabled=true;status.textContent="正在保存…";try{llmSettings=await request(ownerSettings?"/api/settings":"/api/preferences",{method:ownerSettings?"POST":"PATCH",body:JSON.stringify(settingsPayload())});const key=$("#llm-api-key");if(key)key.value="";renderSettings();status.textContent=ownerSettings?"模型、场景与语音设置已保存。":"思考、回答与语音偏好已保存。";showToast("设置已保存")}catch(err){status.textContent=err.message}finally{button.disabled=false}});
-$("#test-llm").addEventListener("click",async e=>{const button=e.currentTarget,status=$("#llm-settings-status"),tier=$("#llm-test-tier").value;button.disabled=true;status.textContent=`正在保存并测试 ${tier[0].toUpperCase()+tier.slice(1)}…`;try{llmSettings=await request("/api/settings",{method:"POST",body:JSON.stringify(settingsPayload())});$("#llm-api-key").value="";renderSettings();const result=await request("/api/settings/test",{method:"POST",body:JSON.stringify({tier})}),profile=llmSettings.profiles[tier];status.textContent=`连接成功 · ${profile.model==="deepseek-v4-pro"?"DeepSeek Pro":"DeepSeek Flash"} · ${profile.effort==="none"?"思考关闭":`思考 ${profile.effort.toUpperCase()}`}`;showToast(result.reply||"DeepSeek 连接成功")}catch(err){status.textContent=`连接失败：${err.message}`}finally{button.disabled=false}});
+$("#llm-settings-form").addEventListener("submit",async e=>{e.preventDefault();const ownerSettings=hasCapability("ai-configuration"),button=e.currentTarget.querySelector('[type="submit"]'),status=$("#llm-settings-status"),previousVoice=accountTtsVoice();button.disabled=true;status.textContent="正在保存…";try{llmSettings=await request(ownerSettings?"/api/settings":"/api/preferences",{method:ownerSettings?"POST":"PATCH",body:JSON.stringify(settingsPayload())});const key=$("#llm-api-key");if(key)key.value="";renderSettings();if(accountTtsVoice()!==previousVoice){stopCaptureSpeech();renderCaptures()}status.textContent=ownerSettings?"模型、场景与语音设置已保存。":"思考、回答与语音偏好已保存。";showToast("设置已保存")}catch(err){status.textContent=err.message}finally{button.disabled=false}});
+$("#test-llm").addEventListener("click",async e=>{const button=e.currentTarget,status=$("#llm-settings-status"),tier=$("#llm-test-tier").value,previousVoice=accountTtsVoice();button.disabled=true;status.textContent=`正在保存并测试 ${tier[0].toUpperCase()+tier.slice(1)}…`;try{llmSettings=await request("/api/settings",{method:"POST",body:JSON.stringify(settingsPayload())});$("#llm-api-key").value="";renderSettings();if(accountTtsVoice()!==previousVoice){stopCaptureSpeech();renderCaptures()}const result=await request("/api/settings/test",{method:"POST",body:JSON.stringify({tier})}),profile=llmSettings.profiles[tier];status.textContent=`连接成功 · ${profile.model==="deepseek-v4-pro"?"DeepSeek Pro":"DeepSeek Flash"} · ${profile.effort==="none"?"思考关闭":`思考 ${profile.effort.toUpperCase()}`}`;showToast(result.reply||"DeepSeek 连接成功")}catch(err){status.textContent=`连接失败：${err.message}`}finally{button.disabled=false}});
 function syncLocalDate(){const next=localDateKey();if(next===currentLocalDate)return;const followedToday=activeDate===currentLocalDate;currentLocalDate=next;if(followedToday){activeDate=next;renderDate();renderSliders();renderThoughts();renderStateChart();renderHomeMood();renderChat()}}
 function markApplicationForeground(){apiClient.markForeground();syncLocalDate();restoreView?.()}
 setInterval(syncLocalDate,30000);
