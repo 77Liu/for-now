@@ -15,6 +15,9 @@
 - [`ui-ux-optimization.md`](ui-ux-optimization.md)：从现状证据、用户任务、
   信息架构和内容审计出发，完成流程、线框、视觉系统、交互原型、实施交接与
   全端设计验收；包含冷启动、组件无漂移和用户文案专项。
+- [`ios-device-performance-testing.md`](ios-device-performance-testing.md)：
+  初步真机性能 SOP；定义隔离环境、Release 签名、启动/提交口径、分段计时、
+  证据、清理、故障分类和从 3 秒收紧到 1 秒的持续优化流程。接受随证据更新。
 
 ## 相关规则
 
