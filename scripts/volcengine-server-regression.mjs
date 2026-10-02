@@ -309,6 +309,12 @@ try {
   assert.equal(transcriptionSettlement.unknownCalls, 1);
   assert.equal(transcriptionSettlement.stages.length, 2);
 
+  const changedVoice = await fetch(`${base}/api/settings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ speech: { defaultVoice: "zh_male_shaonianzixin_uranus_bigtts" } })
+  });
+  assert.equal(changedVoice.status, 200);
   budget.days[0].blocked.unknownCost = true;
   await fs.writeFile(path.join(dataDir, "ai-budget.json"), `${JSON.stringify(budget, null, 2)}\n`);
   const callsBeforeBudgetRejection = providerCalls.length;
