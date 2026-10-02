@@ -46,6 +46,22 @@
       ]
     },
     {
+      "id": "url-history-restoration",
+      "title": "直接打开、筛选和详情历史恢复",
+      "role": "普通用户",
+      "goal": "分享或重新打开地址后回到同一页面，并用浏览器前进后退恢复列表上下文",
+      "risk": "critical",
+      "tier": "smoke",
+      "status": "automated",
+      "normalPath": ["直接打开 canonical URL", "筛选和排序", "进入详情", "后退到列表", "前进到详情"],
+      "failureAndRecovery": ["旧路径打开", "详情对象已删除", "刷新详情", "跨部署基路径加载"],
+      "assertions": ["页面和详情使用 path", "筛选排序分页使用 query", "同页 query 不增加历史项", "列表滚动恢复", "删除对象返回安全列表"],
+      "evidence": [
+        {"script": "scripts/url-history-regression.mjs", "anchor": "URL/history regression passed"},
+        {"script": "scripts/frontend-shell-regression.mjs", "anchor": "unavailable details must replace the stale detail entry"}
+      ]
+    },
+    {
       "id": "capture-text-image",
       "title": "创建图文念起并在刷新后继续",
       "role": "普通用户",

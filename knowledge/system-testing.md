@@ -143,7 +143,8 @@
 | --- | --- |
 | `scripts/frontend-contract-regression.mjs` | base path、错误元数据、可选接口、迟到 JSON/图片拒收、SSE 分块/中断/会话失效、并发刷新域合并和账户清空 |
 | `scripts/frontend-shared-regression.mjs` | 内容 HTML 安全、Markdown/LaTeX 等价、本地时区跨日，以及图片数量、MIME 和大小边界 |
-| `scripts/frontend-shell-regression.mjs` | 根 JS/CSS 薄入口、23 个 HTML 视图登记一致、页面组切换、按需加载与离开页面清理 |
+| `scripts/frontend-shell-regression.mjs` | 根 JS/CSS 薄入口、24 个 HTML 视图与 canonical path 登记一致、页面组切换、按需加载与离开页面清理 |
+| `scripts/url-history-regression.mjs` | 部署基路径下直接打开、旧路径归一、query replace、详情 push、前进后退、滚动恢复与删除对象安全回退 |
 | `scripts/ui-regression.mjs` | 页面主流程、G2 行动/习惯与寻迹渲染、账户切换、输入保留、异步结果、通知跳转、桌面与响应式布局 |
 | `scripts/mobile-platform-regression.mjs` | iPhone/Android UA、DPR、触控、横竖屏、动态视口、键盘、安全区和输入缩放 |
 | `scripts/exploration-regression.mjs` | P1-P3 探索页交互、移动布局、本地命名空间和零生产 API/第三方请求；独立运行，不属于生产候选 |

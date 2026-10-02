@@ -42,6 +42,7 @@ const commandSets = {
   smoke: [
     ["frontend contracts", process.execPath, ["scripts/frontend-contract-regression.mjs"]],
     ["frontend shared contracts", process.execPath, ["scripts/frontend-shared-regression.mjs"]],
+    ["URL and browser history", process.execPath, ["scripts/url-history-regression.mjs"]],
     ["real-browser UI journeys", process.execPath, ["scripts/ui-regression.mjs"]]
   ],
   daily: [

@@ -55,7 +55,8 @@ const regressionScopes = new Map([
   ["record-v1-regression.mjs", ["records"]],
   ["reviews-chat-regression.mjs", ["reviews-chat"]],
   ["thought-service-regression.mjs", ["thoughts"]],
-  ["ui-regression.mjs", allFrontendScopes]
+  ["ui-regression.mjs", allFrontendScopes],
+  ["url-history-regression.mjs", allFrontendScopes]
 ]);
 
 function fail(message) {

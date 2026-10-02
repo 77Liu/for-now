@@ -69,6 +69,7 @@ import { safeText, recordVersion, safeIso, nullableNumber, numberOrFallback as c
 import { createAuthHttp, createJsonHttp, createTaskHttp, createAnnotationHttp, createTrashHttp, createAttachmentHttp, createAiSettingsHttp, createAiCostHttp, createKeepsakeHttp, createOnboardingHttp, createOnboardingV2Http, createUserModelHttp, createThoughtHttp, createCheckinHttp, createHealthRecordHttp, createDiscoveryHttp, createExportHttp, createActionsHttp, createFeedbackHttp, createCaptureJournalHttp, createLibraryHttp, createReviewsChatHttp, createContentAttachmentsHttp, createSpeechHttp, createVisionHttp, createSyncHttp, createPersonalContextHttp, createRequestHandler, createModelResponseHttp, createApiV1Http, openApiV1 } from "./src/http/index.mjs";
 import { createHealthImageConfig, createDailyRecordRecords, normalizeHealthImage } from "./src/modules/health/index.mjs";
 import { createAccountDocumentRepository, createAuthRepository, createJsonStoreRepository, createPostgresRuntime, checkPersistenceMarker, markPostgresDirectory, hasJsonData, METADATA_FIELD, removeIdempotencyResponse } from "./src/shared/persistence/index.mjs";
+import { isApplicationRoutePath } from "./public/frontend/pages/index.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(ROOT, "public");
@@ -2745,6 +2746,10 @@ http.createServer(createRequestHandler({
       catch { return sendJson(res, 503, { ok: false, code: "STORAGE_UNAVAILABLE" }); }
     }
     if (url.pathname === "/healthz" || url.pathname === "/readyz") return sendJson(res, 200, { ok: true, version: APP_VERSION });
+    if (APP_BASE_PATH === "/" && ["/now", "/now/"].includes(url.pathname) && ["GET", "HEAD"].includes(req.method || "GET")) {
+      res.writeHead(308, { location: `/today${url.search}` });
+      return res.end();
+    }
     const unsafe = !["GET", "HEAD", "OPTIONS"].includes(req.method || "GET");
     if (unsafe && String(req.headers["sec-fetch-site"] || "") === "cross-site") return sendRequestError(403, "跨站请求已拒绝", "CROSS_SITE_REQUEST_REJECTED");
     if (LOCAL_TEST_MODE) {
@@ -2812,8 +2817,9 @@ http.createServer(createRequestHandler({
       }
       if (url.pathname.startsWith("/api/")) return await api(req, res, url);
       if (await attachmentHttp.handle(req, res, url)) return;
-      const base = PUBLIC_DIR, relative = url.pathname === "/" ? "index.html" : url.pathname.replace(/^\/+/, "");
+      const applicationRoute = ["GET", "HEAD"].includes(req.method || "GET") && isApplicationRoutePath(url.pathname);
+      const base = PUBLIC_DIR, relative = applicationRoute ? "index.html" : url.pathname.replace(/^\/+/, "");
       const file = path.resolve(base, relative); if (!file.startsWith(`${base}${path.sep}`) && file !== path.join(base, "index.html")) return sendJson(res, 403, { error: "Forbidden" });
-      const data = await fs.readFile(file); res.writeHead(200, { "content-type": mime[path.extname(file).toLowerCase()] || "application/octet-stream", "cache-control": "no-store" }); res.end(data);
+      const data = await fs.readFile(file); res.writeHead(200, { "content-type": mime[path.extname(file).toLowerCase()] || "application/octet-stream", "cache-control": "no-store" }); res.end(req.method === "HEAD" ? undefined : data);
   }
 })).listen(PORT, "127.0.0.1", () => void logEvent("system", "server.started", { level: "info", port: PORT }));
