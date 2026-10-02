@@ -86,6 +86,8 @@ const suites = {
     ["keepsake records and event time contracts", ["scripts/keepsake-time-regression.mjs"]],
     ["onboarding, business prompts and personal context", ["scripts/personal-context-regression.mjs"]],
     ["onboarding v2 data compatibility", ["scripts/onboarding-v2-regression.mjs"]],
+    ["onboarding v2 session API", ["scripts/onboarding-v2-session-regression.mjs"]],
+    ["onboarding v2 frontend state", ["scripts/onboarding-v2-frontend-regression.mjs"]],
     ["annotations, background tasks and notifications", ["scripts/collaboration-regression.mjs"]],
     ["trash, restore and durable attachment cleanup", ["scripts/trash-regression.mjs"]],
     ["backend regression", ["scripts/regression.mjs"]],

@@ -86,3 +86,10 @@ export {
   validWeightBatchDate,
   weightBatchRecordInput
 } from "./health/weight-batch.mjs";
+export {
+  createOnboardingV2Controller,
+  mergeOnboardingV2Conflict,
+  onboardingV2ConflictRows,
+  onboardingV2DraftFromState,
+  onboardingV2PatchFromDraft
+} from "./onboarding-v2/index.mjs";

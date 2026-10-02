@@ -85,8 +85,29 @@
       </header>
 
       <section class="onboarding-workspace" id="onboarding-workspace" hidden>
-        <form id="onboarding-form">
-          <header><div><p class="eyebrow">初次相识</p><h2>先建立一份可以持续修正的认识</h2></div></header>
+        <div class="onboarding-v2-shell" id="onboarding-v2-shell">
+          <header class="onboarding-v2-topbar">
+            <div><span class="onboarding-v2-mark" aria-hidden="true">此</span><strong>从此刻开始了解</strong></div>
+            <div>
+              <button class="subtle-action" id="onboarding-v2-back" type="button" hidden>返回</button>
+              <button class="quiet-button" id="onboarding-v2-exit" type="button">保存并退出</button>
+            </div>
+          </header>
+          <div class="onboarding-v2-layout">
+            <nav class="onboarding-v2-steps" id="onboarding-v2-steps" aria-label="五问步骤"></nav>
+            <section class="onboarding-v2-content" id="onboarding-v2-content" tabindex="-1"></section>
+          </div>
+          <footer class="onboarding-v2-footer">
+            <p id="onboarding-v2-save-status" role="status" aria-live="polite"></p>
+            <span>原文属于你，留空不会被解释成态度。</span>
+          </footer>
+        </div>
+
+        <form class="onboarding-legacy-form" id="onboarding-form" hidden>
+          <header>
+            <button class="subtle-action" id="onboarding-legacy-back" type="button">返回五问</button>
+            <div><p class="eyebrow">旧版补充问卷</p><h2>保留原题与既有答案</h2><p>这组题不再是首次使用门槛，只在你主动选择时继续。</p></div>
+          </header>
           <section class="onboarding-mode">
             <div><strong>答题方式</strong><span>题目必须完成，没有标准答案。</span></div>
             <div class="segmented-control" role="group" aria-label="冷启动答题方式">
@@ -747,7 +768,10 @@
       <button class="mine-back" type="button" data-view="mine"><span aria-hidden="true">‹</span> 我的</button>
       <header class="page-header personal-context-header">
         <div><p class="eyebrow">当前语境</p><h1>个人概要</h1></div>
-        <span class="context-readonly-badge">只读</span>
+        <div class="personal-context-heading-actions">
+          <button class="quiet-button" id="onboarding-v2-reopen" type="button">回看五问</button>
+          <span class="context-readonly-badge">只读</span>
+        </div>
       </header>
       <p class="status" id="personal-context-status" role="status" aria-live="polite"></p>
       <section class="personal-context-meta" id="personal-context-meta" aria-label="概要元数据"></section>

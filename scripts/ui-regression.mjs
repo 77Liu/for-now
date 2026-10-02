@@ -252,6 +252,7 @@ const mockFetch = `
   window.__thoughtAnnotationSaves = 0;
   window.__shenjiSaves = 0;
   window.__onboardingSaves = 0;
+  window.__onboardingV2Saves = 0;
   window.__onboardingSchemaRequests = 0;
   window.__onboardingSchemaAvailable = false;
   window.__savedPayloads = [];
@@ -282,6 +283,49 @@ const mockFetch = `
   };
   window.__localTestConfig = { enabled: true, upstreamConfigured: true, mode: "cold", snapshotAt: "", sourceUser: null, recordCount: 0, loadedScopes: [], loadedCollections: [] };
   window.__onboarding = { status: "dismissed", questionnaireVersion: 1, questionnaireMode: "quick", answers: {}, profile: {}, interests: [], material: "", understanding: "" };
+  const defaultOnboardingV2 = (status = "skipped") => ({
+    schemaVersion: 2,
+    session: {
+      id: "onboarding-v2",
+      schemaVersion: 2,
+      status,
+      step: status === "skipped" ? "firstAction" : "welcome",
+      revision: 0,
+      answers: {},
+      collaboration: {
+        responseLength: { value: "balanced", source: "system_default" },
+        suggestionMode: { value: "actionFirst", source: "system_default" },
+        challengeStyle: { value: "gentle", source: "system_default" },
+        additionalBoundary: "",
+        contextAllowed: true
+      },
+      startedAt: "",
+      pausedAt: "",
+      completedAt: "",
+      updatedAt: ""
+    },
+    readiness: "empty",
+    migration: {
+      selectedFlow: status === "skipped" ? "legacy" : "undecided",
+      entryPolicy: status === "skipped" ? "already_onboarded" : "choose",
+      legacy: { questionnaireVersion: 1, status: "pending", updatedAt: "", answerCount: 0, modelSummaryType: "", resourceType: "onboarding", resourceId: "onboarding" }
+    }
+  });
+  try { window.__onboardingV2 = JSON.parse(sessionStorage.getItem("ui-onboarding-v2")) || defaultOnboardingV2(); }
+  catch { window.__onboardingV2 = defaultOnboardingV2(); }
+  window.__onboardingV2Schema = {
+    schemaVersion: 2,
+    steps: ["welcome","q1","q2","q3","q4","q5","review","candidates","firstAction"],
+    statuses: ["draft","paused","completed","skipped"],
+    defaults: { responseLength: "balanced", suggestionMode: "actionFirst", challengeStyle: "gentle" },
+    questions: [
+      { questionId: "currentContext", step: "q1", title: "现在的生活", prompt: "简单介绍一下，你现在的生活状态。", kind: "text", canSkip: true, limits: { maxLength: 2000 } },
+      { questionId: "desiredChanges", step: "q2", title: "希望的变化", prompt: "未来 3–12 个月，你最希望发生哪些变化？", kind: "list", canSkip: true, limits: { maxItems: 3, itemMaxLength: 300, horizonMaxLength: 100 }, horizons: ["3m","6m","12m","custom","unknown"] },
+      { questionId: "recentObstacles", step: "q3", title: "最近的困扰", prompt: "最近最困扰你的事是什么？", kind: "list", canSkip: true, limits: { maxItems: 3, itemMaxLength: 300 } },
+      { questionId: "dailyRhythm", step: "q4", title: "日常节奏", prompt: "你平时大概怎样生活和工作？", kind: "text", canSkip: true, limits: { maxLength: 2000 } },
+      { questionId: "collaboration", step: "q5", title: "怎么帮助", prompt: "你希望我怎样帮助你？", kind: "collaboration", canSkip: true, limits: { additionalBoundaryMaxLength: 1000 } }
+    ]
+  };
   window.__onboardingSchema = {
     version: 1,
     modes: [{ id: "quick", label: "快速版", questionCount: 8 }, { id: "detailed", label: "详细版", questionCount: 18 }],
@@ -470,6 +514,27 @@ const mockFetch = `
   };
   window.fetch = (input, init = {}) => {
     const url = typeof input === "string" ? input : input.url;
+    if (url === "/api/v1/onboarding-v2/schema") return v1(window.__onboardingV2Schema);
+    if (url === "/api/v1/onboarding-v2/session" && (!init.method || init.method === "GET")) return v1(window.__onboardingV2);
+    if (url === "/api/v1/onboarding-v2/session" && init.method === "PATCH") {
+      const headers=init.headers||{},expected=Number(String(headers["if-match"]||"").replaceAll('"',"")),current=Number(window.__onboardingV2.session.revision)+1;
+      if(expected!==current)return Promise.resolve(new Response(JSON.stringify({data:null,error:{message:"五问会话已更新",code:"ONBOARDING_SESSION_CONFLICT",details:{currentRevision:window.__onboardingV2.session.revision,currentEtag:'"'+current+'"',currentSession:window.__onboardingV2.session}},meta:{traceId:"ui-onboarding"}}),{status:409,headers:{"content-type":"application/json"}}));
+      const payload=JSON.parse(init.body||"{}"),now=new Date().toISOString(),session=window.__onboardingV2.session,answers={...session.answers};
+      for(const [questionId,answer]of Object.entries(payload.answers||{})){
+        if(answer===null){delete answers[questionId];continue}
+        const previous=answers[questionId],content=Object.hasOwn(answer,"rawText")?{rawText:answer.rawText}:{structuredValue:answer.structuredValue||[]};
+        answers[questionId]={questionId,...content,occurredAt:answer.occurredAt||previous?.occurredAt||now,updatedAt:now,version:(previous?.version||0)+1,contextAllowed:answer.contextAllowed!==false}
+      }
+      const defaults={responseLength:"balanced",suggestionMode:"actionFirst",challengeStyle:"gentle"},collaboration={...session.collaboration};
+      for(const key of Object.keys(defaults))if(Object.hasOwn(payload.collaboration||{},key)){const axis=payload.collaboration[key];collaboration[key]=axis?.source==="user"?axis:{value:defaults[key],source:"system_default"}}
+      if(Object.hasOwn(payload.collaboration||{},"additionalBoundary"))collaboration.additionalBoundary=payload.collaboration.additionalBoundary;
+      if(Object.hasOwn(payload.collaboration||{},"contextAllowed"))collaboration.contextAllowed=payload.collaboration.contextAllowed;
+      const status=payload.status||session.status,step=["completed","skipped"].includes(status)?"firstAction":payload.step||session.step,revision=session.revision+1;
+      window.__onboardingV2={...window.__onboardingV2,session:{...session,status,step,revision,answers,collaboration,startedAt:session.startedAt||now,pausedAt:status==="paused"?now:"",completedAt:status==="completed"?(session.completedAt||now):"",updatedAt:now},readiness:Object.keys(answers).length||Object.values(collaboration).some(value=>value?.source==="user")||collaboration.additionalBoundary?"partial":"empty",migration:{...window.__onboardingV2.migration,selectedFlow:"v2",entryPolicy:"v2"}};
+      sessionStorage.setItem("ui-onboarding-v2",JSON.stringify(window.__onboardingV2));window.__onboardingV2Saves+=1;window.__syncCursor+=1;
+      if(headers["x-client-operation-id"])window.__operationReceipts[headers["x-client-operation-id"]]=headers["x-client-operation-fingerprint"];
+      return v1(window.__onboardingV2,{operation:{id:headers["x-client-operation-id"]||"",status:"committed"}});
+    }
     if (url.startsWith("/api/v1/sync?")) return v1({ cursor: window.__syncCursor, changes: [], snapshot: {} });
     if (url.startsWith("/api/v1/sync/operations/")) {
       window.__receiptLookups += 1;
@@ -578,7 +643,10 @@ const mockFetch = `
     if (url === "/api/local-test-mode" && init.method === "POST") {
       if(window.__failLocalModeTimeout){window.__failLocalModeTimeout=false;return json({error:"The operation was aborted due to timeout"},504)}
       const mode=JSON.parse(init.body).mode;window.__testWorkspaceMode=mode;window.__lazySimulationEmpty=mode==="simulation";window.__localTestConfig={...window.__localTestConfig,mode,switchedAt:new Date().toISOString(),snapshotAt:"",sourceUser:mode==="simulation"?{id:"user-1",username:"owner"}:null,recordCount:0,loadedScopes:[]};
-      if(mode==="cold")window.__onboarding={status:"pending",questionnaireVersion:1,questionnaireMode:"quick",answers:{},profile:{},interests:[],material:"",understanding:""};
+      if(mode==="cold"){
+        window.__onboarding={status:"pending",questionnaireVersion:1,questionnaireMode:"quick",answers:{},profile:{},interests:[],material:"",understanding:""};
+        window.__onboardingV2=defaultOnboardingV2("draft");sessionStorage.setItem("ui-onboarding-v2",JSON.stringify(window.__onboardingV2))
+      }
       return json(window.__localTestConfig);
     }
     if (url === "/api/onboarding/schema") {
@@ -637,7 +705,7 @@ const mockFetch = `
       const empty=window.__testWorkspaceMode==="cold"||window.__lazySimulationEmpty;
       return json({
       version: 15, checkins: empty?[]:window.__checkins, dailyRecords: empty?[]:window.__dailyRecords, captures: empty?[]:window.__captures, journals: empty?[]:window.__journals, thoughts: empty?[]:window.__thoughts,
-      chats: empty?[]:[{ id: "chat-1", createdAt: "2026-09-27T01:15:00.000Z", occurredAt: "2026-09-27T04:15:00.000Z", occurredOn: "2026-09-27", message: "**用户问题**", answer: "## 模型回答" }], books: empty?[]:window.__books, journalDraft: empty?null:window.__journalDraft, keepsakes: empty?[]:window.__keepsakes.map(({originalPath,...item})=>item), quotes: empty?[]:window.__quotes, aiTasks: window.__aiTasks, notifications: window.__notifications, onboarding: window.__onboarding, commercialization: window.__commercialization,
+      chats: empty?[]:[{ id: "chat-1", createdAt: "2026-09-27T01:15:00.000Z", occurredAt: "2026-09-27T04:15:00.000Z", occurredOn: "2026-09-27", message: "**用户问题**", answer: "## 模型回答" }], books: empty?[]:window.__books, journalDraft: empty?null:window.__journalDraft, keepsakes: empty?[]:window.__keepsakes.map(({originalPath,...item})=>item), quotes: empty?[]:window.__quotes, aiTasks: window.__aiTasks, notifications: window.__notifications, onboarding: window.__onboarding, onboardingV2: window.__onboardingV2, commercialization: window.__commercialization,
       speech:{configured:true,defaultVoice:"zh_male_shaonianzixin_uranus_bigtts",supportedAsrMimeTypes:["audio/mp4","audio/ogg","audio/wav"],voices:[{id:"zh_male_shaonianzixin_uranus_bigtts",label:"少年梓辛 2.0"},{id:"zh_male_m191_uranus_bigtts",label:"云舟 2.0"},{id:"zh_female_vv_uranus_bigtts",label:"Vivi 2.0"},{id:"zh_female_cancan_uranus_bigtts",label:"知性灿灿 2.0"}]},vision:{configured:true},
       experiments: [], analyses: empty?[]:window.__analyses, customMetrics: [], clusters: [],
       insights: { trends: [
@@ -2681,28 +2749,70 @@ try {
   await evaluate(`window.__failLocalModeTimeout=true;document.querySelector('[data-local-test-mode="cold"]').click();true`);
   assert.equal(await waitUntil(`document.querySelector("#local-test-status").textContent==="线上数据读取超时，请检查网络后重试。"&&window.__testWorkspaceMode==="simulation"`),true);
   await evaluate(`window.__onboardingSchemaAvailable=true;document.querySelector('[data-local-test-mode="cold"]').click();true`);
-  assert.equal(await waitUntil(`window.__testWorkspaceMode==="cold"&&document.querySelector("#view-today").classList.contains("active")&&!document.querySelector("#onboarding-workspace").hidden`),true);
+  assert.equal(await waitUntil(`window.__testWorkspaceMode==="cold"&&document.querySelector("#view-today").classList.contains("active")&&!document.querySelector("#onboarding-workspace").hidden&&document.querySelector("#onboarding-v2-content h1")?.textContent.includes("先认识此刻的你")`),true);
   await evaluate(`document.querySelector('[data-section="seen"]').click();document.querySelector('[data-view="keepsakes"]').click();true`);
   assert.deepEqual(await evaluate(`(()=>{const grid=document.querySelector("#keepsake-grid"),empty=grid.querySelector(".empty"),gridBox=grid.getBoundingClientRect(),emptyBox=empty.getBoundingClientRect();return{text:empty.textContent.trim(),columnSpan:getComputedStyle(empty).columnSpan,fullWidth:Math.abs(gridBox.width-emptyBox.width)<2,noOverflow:document.documentElement.scrollWidth<=innerWidth}})()`),{text:"还没有数字留存的小物。",columnSpan:"all",fullWidth:true,noOverflow:true});
   await evaluate(`document.querySelector('[data-section="today"]').click();true`);
   assert.deepEqual(await evaluate(`({memories:document.querySelectorAll(".home-v02-memory").length,empty:document.querySelector(".home-v02-empty")?.textContent,moodPoints:document.querySelectorAll("#home-mood-sparkline circle").length,keepsake:document.querySelector("#home-keepsake").textContent.includes("留存一件小物"),noOverflow:document.documentElement.scrollWidth<=innerWidth})`),{memories:0,empty:"留下第一条思考，往后在这里重逢。",moodPoints:0,keepsake:true,noOverflow:true});
-  assert.equal(await evaluate(`document.querySelectorAll(".onboarding-question").length`),8);
+  await evaluate(`document.querySelector('[data-onboarding-action="legacy"]').click();true`);
+  assert.equal(await waitUntil(`!document.querySelector("#onboarding-form").hidden&&document.querySelectorAll(".onboarding-question").length===8`),true);
+  await evaluate(`document.querySelector("#onboarding-legacy-back").click();true`);
+  assert.equal(await waitUntil(`!document.querySelector("#onboarding-v2-shell").hidden&&document.querySelector("#onboarding-form").hidden`),true);
+  await evaluate(`document.querySelector("#toast").hidden=true;true`);
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:2,mobile:true});await sleep(100);
-  assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth&&[...document.querySelectorAll(".onboarding-question")].every(item=>item.getBoundingClientRect().right<=innerWidth)`),true);
+  assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth&&document.querySelector("#onboarding-v2-content").getBoundingClientRect().right<=innerWidth`),true);
   const onboardingMobileScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
-  await fs.writeFile("/tmp/growth-onboarding-quick-mobile.png",Buffer.from(onboardingMobileScreenshot.data,"base64"));
+  await fs.writeFile("/tmp/growth-onboarding-v2-welcome-mobile.png",Buffer.from(onboardingMobileScreenshot.data,"base64"));
+  await cdp.send("Emulation.setDeviceMetricsOverride",{width:320,height:760,deviceScaleFactor:2,mobile:true});await sleep(80);
+  assert.equal(await evaluate(`(()=>{const root=document.querySelector("#onboarding-workspace").getBoundingClientRect(),exit=document.querySelector("#onboarding-v2-exit").getBoundingClientRect();return document.documentElement.scrollWidth<=innerWidth&&root.right<=innerWidth&&exit.right<=innerWidth&&exit.height>=44})()`),true);
+  await fs.writeFile("/tmp/growth-onboarding-v2-welcome-narrow.png",Buffer.from((await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false})).data,"base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
-  await evaluate(`document.querySelector('[data-onboarding-mode="detailed"]').click();true`);
-  assert.equal(await evaluate(`document.querySelectorAll(".onboarding-question").length`),18);
-  await evaluate(`document.querySelector("#onboarding-form").requestSubmit();true`);
+  await evaluate(`document.querySelector('[data-onboarding-action="start"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector('[data-onboarding-answer="currentContext"]')&&!document.querySelector('[data-onboarding-answer="currentContext"]').disabled`),true);
+  await evaluate(`(()=>{const input=document.querySelector('[data-onboarding-answer="currentContext"]');input.value="一边学习一边实习，最近时间比较紧。";input.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
+  assert.equal(await waitUntil(`document.querySelector("#onboarding-v2-save-status").textContent.includes("已保存在此设备")`),true);
+  await evaluate(`document.querySelector("#onboarding-v2-exit").click();true`);
+  const onboardingPaused=await waitUntil(`document.querySelector("#onboarding-workspace").hidden&&window.__onboardingV2.session.status==="paused"`);
+  assert.equal(onboardingPaused,true,JSON.stringify(await evaluate(`({hidden:document.querySelector("#onboarding-workspace").hidden,status:window.__onboardingV2.session.status,step:window.__onboardingV2.session.step,revision:window.__onboardingV2.session.revision,save:document.querySelector("#onboarding-v2-save-status").textContent,exitDisabled:document.querySelector("#onboarding-v2-exit").disabled,body:document.querySelector("#onboarding-v2-content").innerText.slice(0,120)})`)));
+  await cdp.send("Page.reload",{ignoreCache:true});
+  assert.equal(await waitUntil(`document.querySelector("#today-date-label")?.textContent.length>0&&!document.querySelector("#onboarding-workspace").hidden&&document.querySelector("#onboarding-v2-content h1")?.textContent.includes("先把这一点留下")`),true);
+  await evaluate(`document.querySelector('[data-onboarding-action="resume"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector('[data-onboarding-answer="currentContext"]')?.value.includes("一边学习一边实习")&&!document.querySelector('[data-onboarding-answer="currentContext"]').disabled`),true);
+  await evaluate(`document.querySelector('[data-onboarding-action="next"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector('[data-onboarding-list="desiredChanges"]')&&!document.querySelector('[data-onboarding-list="desiredChanges"]').disabled`),true);
+  await evaluate(`(()=>{const input=document.querySelector('[data-onboarding-list="desiredChanges"]');input.value="恢复规律作息";input.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
+  assert.equal(await waitUntil(`new Promise(resolve=>{const opening=indexedDB.open("cike-onboarding-v2-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const request=opening.result.transaction("drafts","readonly").objectStore("drafts").get("user-1:onboarding-v2");request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(request.result?.answers?.desiredChanges?.structuredValue?.[0]?.text==="恢复规律作息")}})`),true);
+  await cdp.send("Page.reload",{ignoreCache:true});
+  assert.equal(await waitUntil(`document.querySelector('[data-onboarding-list="desiredChanges"]')?.value==="恢复规律作息"&&!document.querySelector('[data-onboarding-list="desiredChanges"]').disabled`),true);
+  await evaluate(`document.querySelector('[data-onboarding-action="next"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector('[data-onboarding-list="recentObstacles"]')&&!document.querySelector('[data-onboarding-action="skip"]').disabled`),true);
+  await evaluate(`document.querySelector('[data-onboarding-action="skip"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector('[data-onboarding-answer="dailyRhythm"]')&&!document.querySelector('[data-onboarding-action="skip"]').disabled`),true);
+  await evaluate(`document.querySelector('[data-onboarding-action="skip"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector('[data-onboarding-axis="responseLength"]')&&!document.querySelector('[data-onboarding-axis="responseLength"]').disabled`),true);
+  await evaluate(`(()=>{const concise=document.querySelector('[data-onboarding-axis="responseLength"][value="concise"]'),boundary=document.querySelector("[data-onboarding-boundary]");concise.checked=true;concise.dispatchEvent(new Event("change",{bubbles:true}));boundary.value="不要替我做心理诊断。";boundary.dispatchEvent(new Event("input",{bubbles:true}));document.querySelector('[data-onboarding-action="next"]').click();return true})()`);
+  assert.equal(await waitUntil(`document.querySelector(".onboarding-v2-review")?.textContent.includes("恢复规律作息")&&document.querySelector(".onboarding-v2-review")?.textContent.includes("不要替我做心理诊断")&&!document.querySelector('[data-onboarding-action="complete"]').disabled`),true);
+  await cdp.send("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:2,mobile:true});await sleep(100);
+  assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth&&[...document.querySelectorAll(".onboarding-v2-review article")].every(item=>item.getBoundingClientRect().right<=innerWidth)`),true);
+  await fs.writeFile("/tmp/growth-onboarding-v2-review-mobile.png",Buffer.from((await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false})).data,"base64"));
+  await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
+  await evaluate(`(()=>{const allow=document.querySelector('[data-onboarding-allow="currentContext"]');allow.checked=false;allow.dispatchEvent(new Event("change",{bubbles:true}));window.__onboardingV2.session.answers.currentContext.rawText="另一设备改写的当前处境";window.__onboardingV2.session.answers.currentContext.version+=1;window.__onboardingV2.session.revision+=1;window.__onboardingV2.session.updatedAt=new Date().toISOString();sessionStorage.setItem("ui-onboarding-v2",JSON.stringify(window.__onboardingV2));document.querySelector('[data-onboarding-action="complete"]').click();return true})()`);
+  assert.equal(await waitUntil(`document.querySelector(".onboarding-v2-conflicts")?.textContent.includes("另一设备改写的当前处境")&&document.querySelector(".onboarding-v2-conflicts")?.textContent.includes("一边学习一边实习")`),true);
+  assert.deepEqual(await evaluate(`({choices:document.querySelectorAll('[data-onboarding-conflict="currentContext"]').length,mergeDisabled:document.querySelector('[data-onboarding-action="merge-conflict"]').disabled,status:document.querySelector("#onboarding-v2-save-status").textContent})`),{choices:2,mergeDisabled:true,status:"两端内容有差异，请逐项选择"});
+  await evaluate(`document.querySelector('[data-onboarding-conflict="currentContext"][data-choice="device"]').click();document.querySelector('[data-onboarding-action="merge-conflict"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector(".onboarding-v2-review")&&!document.querySelector('[data-onboarding-action="complete"]').disabled&&window.__onboardingV2.session.answers.currentContext.rawText.includes("一边学习一边实习")`),true);
+  await evaluate(`document.querySelector('[data-onboarding-action="complete"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#onboarding-v2-content h1")?.textContent.includes("不必一次说完自己")&&window.__onboardingV2.session.status==="completed"`),true);
+  assert.deepEqual(await evaluate(`({answers:Object.keys(window.__onboardingV2.session.answers),currentAllowed:window.__onboardingV2.session.answers.currentContext.contextAllowed,hasObstacles:Boolean(window.__onboardingV2.session.answers.recentObstacles),collaboration:window.__onboardingV2.session.collaboration.responseLength,boundary:window.__onboardingV2.session.collaboration.additionalBoundary})`),{answers:["currentContext","desiredChanges"],currentAllowed:false,hasObstacles:false,collaboration:{value:"concise",source:"user"},boundary:"不要替我做心理诊断。"});
+  await evaluate(`document.querySelector('[data-onboarding-action="review"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector(".onboarding-v2-review")&&!document.querySelector('[data-onboarding-action="complete"]').disabled`),true);
+  await evaluate(`document.querySelector('[data-onboarding-action="complete"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector('[data-onboarding-action="first-record"]')&&!document.querySelector('[data-onboarding-action="first-record"]').disabled`),true);
+  await evaluate(`document.querySelector('[data-onboarding-action="first-record"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-captures").classList.contains("active")&&document.querySelector("#onboarding-workspace").hidden&&document.activeElement===document.querySelector("#capture-content")`),true);
+  await evaluate(`document.querySelector('[data-view="personal-context"]').click();document.querySelector("#onboarding-v2-reopen").click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-today").classList.contains("active")&&!document.querySelector("#onboarding-workspace").hidden&&document.querySelector(".onboarding-v2-review")`),true);
   assert.equal(await evaluate(`window.__onboardingSaves`),0);
-  await evaluate(`document.querySelectorAll(".onboarding-question").forEach(item=>item.querySelector('input[type="radio"]').checked=true);document.querySelector("#onboarding-region").value="北京";document.querySelector("#onboarding-introduction").value="可选介绍";document.querySelector("#onboarding-skip").click();true`);
-  assert.equal(await evaluate(`document.querySelector("#onboarding-region").value===""&&document.querySelector("#onboarding-introduction").value===""&&!document.querySelector("#onboarding-optional").open`),true);
-  await evaluate(`document.querySelector("#onboarding-preview").click();true`);
-  assert.equal(await waitUntil(`document.querySelector("#onboarding-understanding").value.includes("快速版初始认知")&&!document.querySelector("#onboarding-understanding").closest("label").hidden`),true);
-  await evaluate(`document.querySelector("#onboarding-form").requestSubmit();true`);
-  assert.equal(await waitUntil(`window.__onboardingSaves===1&&document.querySelector("#onboarding-workspace").hidden`),true);
-  assert.deepEqual(await evaluate(`({mode:window.__onboarding.questionnaireMode,answers:Object.keys(window.__onboarding.answers).length,profile:window.__onboarding.profile})`),{mode:"detailed",answers:18,profile:{gender:"",region:"",occupation:"",major:"",school:"",introduction:"",works:""}});
   assert.equal(await evaluate(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const transaction=opening.result.transaction("drafts","readwrite"),request=transaction.objectStore("drafts").put({key:"user-1:capture",owner:"user-1",id:"capture",uploadRequestId:"restored-upload",items:[{blob:new Blob([new Uint8Array([1,2,3])],{type:"image/png"}),name:"restored.png",type:"image/png",lastModified:1}]});request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(true)}})`),true);
   assert.equal(await evaluate(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const transaction=opening.result.transaction("drafts","readwrite"),blob=new Blob([new Uint8Array([1,2,3,4])],{type:"audio/mp4"}),request=transaction.objectStore("drafts").put({key:"user-1:capture-audio",owner:"user-1",id:"capture-audio",audio:{blob,mimeType:"audio/mp4",bytes:blob.size,durationMs:1250,uploadRequestId:"restored-audio",uploadedPath:"",lastError:null}});request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(true)}})`),true);
   assert.equal(await evaluate(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const transaction=opening.result.transaction("drafts","readwrite"),store=transaction.objectStore("drafts"),blob=new Blob([new Uint8Array([1,2,3])],{type:"image/png"}),item={blob,name:"targeted.png",type:"image/png",lastModified:1,uploadRequestId:"",uploadedPath:"",lastError:null};store.put({key:"user-1:comment",owner:"user-1",id:"comment",context:{selection:{rootKey:"analysis:analysis-1",targetKey:"content",start:0,end:3,quote:"总判断"},text:"刷新后继续的评论",requestId:"comment-restored"},items:[item]});store.put({key:"user-1:thoughtBlock",owner:"user-1",id:"thoughtBlock",context:{rootId:"kept-root",blockId:"",type:"record",occurredAt:"2026-09-27T12:34",content:"刷新后继续的内容块",version:1,requestId:"block-restored"},items:[item]});store.put({key:"user-1:health:weight:2026-09-27",owner:"user-1",id:"health:weight:2026-09-27",date:"2026-09-27",type:"weight",result:{bodyWaterMass:42.2,description:"刷新后恢复的体成分",attachmentPaths:["/attachments/weight.png"]},items:[{...item,uploadRequestId:"health-restored",uploadedPath:"/attachments/weight.png"}]});transaction.oncomplete=()=>resolve(true);transaction.onerror=()=>resolve(false)}})`),true);
