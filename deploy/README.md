@@ -226,9 +226,13 @@ checkpoint must first pass the release review and be promoted through an
 authorized release branch.
 
 The deploy command builds dependencies in a new candidate directory, validates
-JavaScript and the versioned prompt catalog, marks that immutable release ready, switches the active symlink,
-restarts systemd, and checks `/readyz`. Re-running the same commit never runs
-`npm ci` inside the active release. Failure after configuration
+JavaScript and the versioned prompt catalog, then runs a read-only PostgreSQL
+runtime preflight when `PERSISTENCE_BACKEND=postgres`. The preflight verifies
+that data, auth and AI-budget connections use distinct compatible roles, that
+the budget singleton exists, and that each role has exactly its permitted
+privileges. Only then does deployment mark the immutable release ready, switch
+the active symlink, restart systemd, and check `/readyz`. Re-running the same
+commit never runs `npm ci` inside the active release. Failure after configuration
 installation restores the previous code, managed service/Nginx files, deployment
 tools, and `/etc/for-now.env` (including `APP_VERSION`). An unhealthy recovery is
 reported explicitly; the deployment remains failed. Data is not rolled back by

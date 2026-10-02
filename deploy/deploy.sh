@@ -71,6 +71,7 @@ if [ ! -f "$release/.deploy-ready" ]; then
   /usr/local/bin/node --check "$candidate/scripts/validate-restored-data.mjs"
   /usr/local/bin/node --check "$candidate/scripts/oss-attachment-smoke.mjs"
   /usr/local/bin/node --check "$candidate/scripts/aliyun-segmentation-smoke.mjs"
+  /usr/local/bin/node --check "$candidate/scripts/postgres-runtime-preflight.mjs"
   /usr/local/bin/node "$candidate/scripts/prompt-catalog-regression.mjs"
   /bin/bash -n "$candidate/deploy/backup-to-oss.sh" "$candidate/deploy/restore-drill.sh" \
     "$candidate/deploy/migrate-attachments-to-oss.sh"
@@ -91,6 +92,13 @@ if grep -Eq '^PERSISTENCE_BACKEND=postgres$' /etc/for-now.env; then
     echo "PostgreSQL deployment requires a database-capable candidate and rollback release; complete the offline cutover procedure first." >&2
     exit 1
   fi
+  (
+    set -a
+    source /etc/for-now.env
+    set +a
+    exec runuser --preserve-environment -u for-now -- \
+      /usr/local/bin/node "$release/scripts/postgres-runtime-preflight.mjs"
+  )
 fi
 
 # Keep config and version together with the previous code on every failure path.
