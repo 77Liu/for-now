@@ -75,6 +75,11 @@ if [ ! -f "$release/.deploy-ready" ]; then
   /usr/local/bin/node "$candidate/scripts/prompt-catalog-regression.mjs"
   /bin/bash -n "$candidate/deploy/backup-to-oss.sh" "$candidate/deploy/restore-drill.sh" \
     "$candidate/deploy/migrate-attachments-to-oss.sh"
+  while IFS= read -r -d '' text_file; do
+    /usr/bin/gzip -n -6 -c "$text_file" > "${text_file}.gz"
+  done < <(/usr/bin/find "$candidate/public" -type f \
+    \( -name '*.css' -o -name '*.html' -o -name '*.js' -o -name '*.mjs' \
+       -o -name '*.svg' -o -name '*.webmanifest' \) -print0)
   touch "$candidate/.deploy-ready"
   chown -R for-now:for-now "$candidate"
   if [ -e "$release" ]; then

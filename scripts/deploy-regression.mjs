@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { gunzipSync } from "node:zlib";
 
 // Run the real Bash control flow with all privileged/network commands replaced.
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -13,8 +14,11 @@ const source = await fs.readFile(path.join(root, "deploy/deploy.sh"), "utf8");
 const nginx = await fs.readFile(path.join(root, "deploy/nginx-for-now.conf"), "utf8");
 const envExample = await fs.readFile(path.join(root, "deploy/for-now.env.example"), "utf8");
 assert.match(nginx, /location = \/now\/api\/admin\/v1\/snapshot\s*\{\s*return 404;/);
+assert.match(nginx, /location ~ \^\/now\/[\s\S]*gzip_static on;[\s\S]*add_header Cache-Control "no-store" always;/);
 assert.match(nginx, /location \/now\/[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:4173;/);
+assert.match(nginx, /location \/now\/[\s\S]*gzip on;[\s\S]*gzip_comp_level 2;[\s\S]*gzip_vary on;/);
 assert.doesNotMatch(nginx, /proxy_pass http:\/\/127\.0\.0\.1:4173\/;/);
+assert.doesNotMatch(nginx, /\bproxy_cache\b|\bexpires\b|max-age/);
 assert.match(nginx, /location \/platform\/[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:4280\//);
 assert.match(envExample, /^PLATFORM_SERVICE_TOKEN_HASH=$/m);
 assert.match(envExample, /^AI_BUDGET_DATABASE_URL=$/m);
@@ -157,6 +161,10 @@ if(name==="sed"){const file=args.at(-1),version=args[1].split("APP_VERSION=")[2]
         await fs.readFile(path.join(active, "public/index.html"), "utf8"),
         await fs.readFile(path.join(root, "public/index.html"), "utf8")
       );
+      const runtime = await fs.readFile(path.join(active, "public/frontend/app/runtime.mjs"));
+      const compressedRuntime = await fs.readFile(path.join(active, "public/frontend/app/runtime.mjs.gz"));
+      assert.deepEqual(gunzipSync(compressedRuntime), runtime);
+      assert.ok(compressedRuntime.length < runtime.length);
     }
     const env = await fs.readFile(path.join(dir, "etc/for-now.env"), "utf8");
     assert.equal(env, `APP_VERSION=${succeeded ? commit.slice(0, 12) : "old-version"}\nOSS_ATTACHMENT_BUCKET=for-now\nOSS_ENDPOINT=https://oss-cn-beijing-internal.aliyuncs.com\nOSS_REGION=cn-beijing\nFEISHU_ALERT_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/test\nPLATFORM_SERVICE_TOKEN_HASH=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nUNCHANGED=yes\n${backendEnv}`);
