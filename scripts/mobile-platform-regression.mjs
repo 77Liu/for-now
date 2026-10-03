@@ -173,6 +173,20 @@ try {
   });
   assert.equal(captureResponse.status, 201);
   const speechCaptureId = (await captureResponse.json()).data.id;
+  const thoughtResponse = await fetch(`${base}/api/v1/thought-chains`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "idempotency-key": "mobile-platform-follow-up" },
+    body: JSON.stringify({ question: "移动端追问安全区测试", occurredAt: "2026-10-03T08:30:00", tags: ["移动回归"] })
+  });
+  assert.equal(thoughtResponse.status, 201);
+  const thoughtRootId = (await thoughtResponse.json()).data.items.find(item => item.type === "question").id;
+  const followUpResponse = await fetch(`${base}/api/thoughts/${thoughtRootId}/follow-ups`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "idempotency-key": "mobile-platform-follow-up-edit" },
+    body: JSON.stringify({ question: "移动端编辑追问安全区测试", answer: "已有回答用于展示编辑表单" })
+  });
+  assert.equal(followUpResponse.status, 201);
+  const followUpId = (await followUpResponse.json()).id;
   const manifestResponse = await fetch(`${base}/manifest.webmanifest`);
   assert.equal(manifestResponse.status, 200);
   assert.match(manifestResponse.headers.get("content-type") || "", /^application\/manifest\+json/);
@@ -323,6 +337,27 @@ try {
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     assert.equal(await waitUntil(`document.querySelector("#view-thoughts").classList.contains("active")`), true);
     assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth`), true);
+
+    if (device.width === 320 || device.width === 390) {
+      assert.equal(await waitUntil(`Boolean(document.querySelector('#all-thoughts [data-chain-id="${thoughtRootId}"]'))`), true);
+      await evaluate(`(() => {const card=document.querySelector('#all-thoughts [data-chain-id="${thoughtRootId}"]');card.open=true;card.querySelector("[data-followup-compose]").click();return true})()`);
+      await sleep(500);
+      const createForm = await evaluate(`(() => {
+        const button=document.querySelector('#all-thoughts [data-chain-id="${thoughtRootId}"] [data-follow-up-root] button[type="submit"]'),bar=document.querySelector(".sidebar"),rect=button.getBoundingClientRect(),barRect=bar.getBoundingClientRect(),x=rect.left+rect.width/2,y=rect.top+rect.height/2,hit=document.elementFromPoint(x,y);
+        return{button:{top:rect.top,bottom:rect.bottom},bar:{top:barRect.top,bottom:barRect.bottom},fullyAbove:rect.bottom<=barRect.top+.5,centerHit:hit===button,hit:hit?.className||hit?.tagName||""}
+      })()`);
+      assert.equal(createForm.fullyAbove, true, `${device.name} 新增追问提交按钮被底栏遮挡：${JSON.stringify(createForm)}`);
+      assert.equal(createForm.centerHit, true, `${device.name} 新增追问提交按钮中心未命中自身：${JSON.stringify(createForm)}`);
+      await evaluate(`(() => {const card=document.querySelector('#all-thoughts [data-chain-id="${thoughtRootId}"]');card.querySelector("[data-followup-compose]").click();const entry=card.querySelector('[data-followup-id="${followUpId}"]');entry.open=true;entry.querySelector("[data-followup-edit-toggle]").click();return true})()`);
+      await sleep(500);
+      const editForm = await evaluate(`(() => {
+        const button=document.querySelector('#all-thoughts [data-chain-id="${thoughtRootId}"] [data-followup-edit="${followUpId}"] button[type="submit"]'),bar=document.querySelector(".sidebar"),rect=button.getBoundingClientRect(),barRect=bar.getBoundingClientRect(),x=rect.left+rect.width/2,y=rect.top+rect.height/2,hit=document.elementFromPoint(x,y);
+        return{button:{top:rect.top,bottom:rect.bottom},bar:{top:barRect.top,bottom:barRect.bottom},fullyAbove:rect.bottom<=barRect.top+.5,centerHit:hit===button,hit:hit?.className||hit?.tagName||""}
+      })()`);
+      assert.equal(editForm.fullyAbove, true, `${device.name} 编辑追问提交按钮被底栏遮挡：${JSON.stringify(editForm)}`);
+      assert.equal(editForm.centerHit, true, `${device.name} 编辑追问提交按钮中心未命中自身：${JSON.stringify(editForm)}`);
+      await evaluate(`document.querySelector('#all-thoughts [data-chain-id="${thoughtRootId}"] [data-followup-edit-cancel]').click();true`);
+    }
 
     await evaluate(`document.querySelector("#edit-chain-modal").hidden=false;document.querySelector("#edit-chain-question").focus();true`);
     const keyboardHeight = Math.min(device.height, device.orientation.angle === 0 ? 430 : 300);

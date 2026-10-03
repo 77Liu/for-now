@@ -1663,6 +1663,9 @@ body{min-height:100vh;min-height:100dvh}
     padding-bottom:calc(88px + env(safe-area-inset-bottom));
     padding-left:calc(18px + env(safe-area-inset-left));
   }
+  .followup-form,.followup-edit-form{
+    scroll-margin-bottom:calc(76px + env(safe-area-inset-bottom));
+  }
   .modal-backdrop{
     place-items:start center;
     overflow-y:auto;

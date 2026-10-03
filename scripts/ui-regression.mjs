@@ -2724,7 +2724,27 @@ try {
   assert.equal(await waitUntil(`window.__followUpPatches===2&&[...document.querySelectorAll('[data-followup-edit="follow-up-1"]')].every(form=>form.hidden)`),true);
   await evaluate(`document.querySelector('[data-view="today"]').click();document.querySelector('[data-view="thoughts"]').click();document.querySelector('#all-thoughts [data-followup-id="follow-up-1"] [data-followup-edit-toggle]').click();true`);
   assert.deepEqual(await evaluate(`(() => {const form=document.querySelector('#all-thoughts [data-followup-edit="follow-up-1"]');return{question:form.elements.question.value,answer:form.elements.answer.value,hidden:form.hidden}})()`),{question:"保存后的追问",answer:"保存后的回答",hidden:false});
-  await evaluate(`document.querySelector('#all-thoughts [data-followup-id="follow-up-1"] [data-followup-edit-cancel]').click();document.querySelector('#all-thoughts [data-chain-id="kept-root"] [data-followup-compose]').click();true`);
+  await evaluate(`document.querySelector('#all-thoughts [data-followup-id="follow-up-1"] [data-followup-edit-cancel]').click();document.querySelector("#toast").hidden=true;true`);
+  await cdp.send("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:1,mobile:true});
+  await evaluate(`document.querySelector('#all-thoughts [data-chain-id="kept-root"] [data-followup-compose]').click();true`);
+  await sleep(500);
+  const createFollowUpMobile=await evaluate(`(() => {
+    const button=document.querySelector('#all-thoughts [data-follow-up-root="kept-root"] button[type="submit"]'),bar=document.querySelector(".sidebar"),rect=button.getBoundingClientRect(),barRect=bar.getBoundingClientRect(),x=rect.left+rect.width/2,y=rect.top+rect.height/2,hit=document.elementFromPoint(x,y);
+    return{button:{top:rect.top,bottom:rect.bottom},bar:{top:barRect.top,bottom:barRect.bottom},fullyAbove:rect.bottom<=barRect.top+.5,centerHit:hit===button,hit:hit?.className||hit?.tagName||""}
+  })()`);
+  assert.equal(createFollowUpMobile.fullyAbove,true,`390px 新增追问提交按钮被底栏遮挡：${JSON.stringify(createFollowUpMobile)}`);
+  assert.equal(createFollowUpMobile.centerHit,true,`390px 新增追问提交按钮中心未命中自身：${JSON.stringify(createFollowUpMobile)}`);
+  await evaluate(`document.querySelector('#all-thoughts [data-chain-id="kept-root"] [data-followup-compose]').click();const entry=document.querySelector('#all-thoughts [data-followup-id="follow-up-1"]');entry.open=true;entry.querySelector("[data-followup-edit-toggle]").click();true`);
+  await sleep(500);
+  const editFollowUpMobile=await evaluate(`(() => {
+    const button=document.querySelector('#all-thoughts [data-followup-edit="follow-up-1"] button[type="submit"]'),bar=document.querySelector(".sidebar"),rect=button.getBoundingClientRect(),barRect=bar.getBoundingClientRect(),x=rect.left+rect.width/2,y=rect.top+rect.height/2,hit=document.elementFromPoint(x,y);
+    return{button:{top:rect.top,bottom:rect.bottom},bar:{top:barRect.top,bottom:barRect.bottom},fullyAbove:rect.bottom<=barRect.top+.5,centerHit:hit===button,hit:hit?.className||hit?.tagName||""}
+  })()`);
+  assert.equal(editFollowUpMobile.fullyAbove,true,`390px 编辑追问提交按钮被底栏遮挡：${JSON.stringify(editFollowUpMobile)}`);
+  assert.equal(editFollowUpMobile.centerHit,true,`390px 编辑追问提交按钮中心未命中自身：${JSON.stringify(editFollowUpMobile)}`);
+  await evaluate(`document.querySelector('#all-thoughts [data-followup-id="follow-up-1"] [data-followup-edit-cancel]').click();true`);
+  await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
+  await evaluate(`document.querySelector('#all-thoughts [data-chain-id="kept-root"] [data-followup-compose]').click();true`);
   assert.equal(await evaluate(`!document.querySelector('#all-thoughts [data-chain-id="kept-root"] [data-follow-up-root]').hidden`), true);
   await evaluate(`document.querySelector('[data-chain-id="kept-root"]').scrollIntoView({ block: "start" }); true`);
   await sleep(100);
