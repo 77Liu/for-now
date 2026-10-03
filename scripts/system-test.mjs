@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { promises as fs } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { prepareTestNodeBinary } from "./test-node-binary.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const requestedSuite = process.argv[2] || "all";
@@ -137,6 +140,18 @@ if (![...Object.keys(suites), "all"].includes(requestedSuite)) {
   throw new Error(`未知系统测试分组：${requestedSuite}。可选值：backend、load、frontend、exploration、all`);
 }
 
+let testNode = process.execPath;
+let testNodeWorkspace;
+if (process.platform === "darwin") {
+  testNodeWorkspace = await fs.mkdtemp(path.join(os.tmpdir(), "for-now-system-test-node-"));
+  try {
+    testNode = await prepareTestNodeBinary(testNodeWorkspace);
+  } catch (error) {
+    await fs.rm(testNodeWorkspace, { recursive: true, force: true });
+    throw error;
+  }
+}
+
 function runNode(args) {
   return new Promise((resolve, reject) => {
     const sourceEnvironment = args[1] === ISOLATION_PROBE ? {
@@ -157,7 +172,7 @@ function runNode(args) {
       PG_SCHEMA_DATABASE_URL: "postgresql://production.invalid/schema",
       SYSTEM_TEST_ISOLATION_PROBE: "poisoned-parent"
     } : process.env;
-    const child = spawn(process.execPath, args, {
+    const child = spawn(testNode, args, {
       cwd: ROOT,
       env: isolatedEnvironment(sourceEnvironment),
       stdio: "inherit"
@@ -174,24 +189,28 @@ const selected = requestedSuite === "all" ? ["backend", "frontend"] : [requested
 const results = [];
 const totalStartedAt = Date.now();
 
-for (const suite of selected) {
-  for (const [name, args] of suites[suite]) {
-    const startedAt = Date.now();
-    process.stdout.write(`\n[system:${suite}] ${name}\n`);
-    try {
-      await runNode(args);
-      results.push({ suite, name, status: "passed", durationMs: Date.now() - startedAt });
-    } catch (error) {
-      results.push({ suite, name, status: "failed", durationMs: Date.now() - startedAt, error: error.message });
-      process.stderr.write(`${error.message}\n`);
-      process.stderr.write(`${JSON.stringify({ suite: requestedSuite, status: "failed", durationMs: Date.now() - totalStartedAt, results }, null, 2)}\n`);
-      process.exitCode = 1;
-      break;
+try {
+  for (const suite of selected) {
+    for (const [name, args] of suites[suite]) {
+      const startedAt = Date.now();
+      process.stdout.write(`\n[system:${suite}] ${name}\n`);
+      try {
+        await runNode(args);
+        results.push({ suite, name, status: "passed", durationMs: Date.now() - startedAt });
+      } catch (error) {
+        results.push({ suite, name, status: "failed", durationMs: Date.now() - startedAt, error: error.message });
+        process.stderr.write(`${error.message}\n`);
+        process.stderr.write(`${JSON.stringify({ suite: requestedSuite, status: "failed", durationMs: Date.now() - totalStartedAt, results }, null, 2)}\n`);
+        process.exitCode = 1;
+        break;
+      }
     }
+    if (process.exitCode) break;
   }
-  if (process.exitCode) break;
-}
 
-if (!process.exitCode) {
-  process.stdout.write(`\n${JSON.stringify({ suite: requestedSuite, status: "passed", durationMs: Date.now() - totalStartedAt, results }, null, 2)}\n`);
+  if (!process.exitCode) {
+    process.stdout.write(`\n${JSON.stringify({ suite: requestedSuite, status: "passed", durationMs: Date.now() - totalStartedAt, results }, null, 2)}\n`);
+  }
+} finally {
+  if (testNodeWorkspace) await fs.rm(testNodeWorkspace, { recursive: true, force: true });
 }

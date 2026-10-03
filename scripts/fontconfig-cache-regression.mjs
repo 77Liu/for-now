@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { prepareFontconfigCache } from "./fontconfig-cache.mjs";
+import { prepareTestNodeBinary } from "./test-node-binary.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "for-now-fontconfig-"));
@@ -46,7 +47,7 @@ try {
     DATA_DIR: planDataDir,
     XDG_CACHE_HOME: path.join(lockedHome, "unwritable-cache")
   });
-  const node = process.env.FONTCONFIG_TEST_NODE || process.execPath;
+  const node = await prepareTestNodeBinary(temporary);
   const result = spawnSync(node, [path.join(ROOT, "scripts/third-party-live-smoke.mjs")], {
     cwd: ROOT,
     env: childEnvironment,
