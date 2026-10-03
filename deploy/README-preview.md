@@ -196,3 +196,15 @@ sudo systemctl status for-now-preview.service
 
 The expected snapshot status is `404`. Real installation and live verification
 require a separate deployment authorization.
+
+Run browser journeys against the public Preview URL with the explicit remote
+guard. Credentials stay in the process environment and must not be committed:
+
+```bash
+E2E_ALLOW_REMOTE_PREVIEW=1 \
+E2E_APP_URL=https://77liu.top/preview/ \
+E2E_USERNAME=... E2E_PASSWORD=... \
+npm run test:journeys:live -- verify
+```
+
+The live journey runner accepts no other public origin or path.

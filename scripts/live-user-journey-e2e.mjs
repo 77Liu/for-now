@@ -17,6 +17,7 @@ const IMAGE_FILE = process.env.E2E_IMAGE_FILE ? path.resolve(process.env.E2E_IMA
 const AUDIO_FILE = process.env.E2E_AUDIO_FILE ? path.resolve(process.env.E2E_AUDIO_FILE) : "";
 const OWN_MARKER = String(process.env.E2E_OWN_MARKER || "").trim();
 const FOREIGN_MARKER = String(process.env.E2E_FOREIGN_MARKER || "").trim();
+const ALLOW_REMOTE_PREVIEW = process.env.E2E_ALLOW_REMOTE_PREVIEW === "1";
 const MODE = process.argv[2] || "verify";
 const ARTIFACT_DIR = path.resolve(
   process.env.E2E_ARTIFACT_DIR || path.join(ROOT, "artifacts", "live-user-journeys")
@@ -24,7 +25,14 @@ const ARTIFACT_DIR = path.resolve(
 const CHROME = resolveHeadlessBrowser();
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-assert.match(APP_URL, /^https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//, "E2E_APP_URL 必须是本机隔离服务");
+const appUrl = new URL(APP_URL);
+const localTarget = ["127.0.0.1", "localhost"].includes(appUrl.hostname);
+const remotePreviewTarget = ALLOW_REMOTE_PREVIEW
+  && appUrl.origin === "https://77liu.top"
+  && appUrl.pathname === "/preview/"
+  && !appUrl.search
+  && !appUrl.hash;
+assert.ok(localTarget || remotePreviewTarget, "E2E_APP_URL 必须是本机隔离服务或显式允许的线上 Preview");
 assert.match(USERNAME, /^[\p{L}\p{N}_.-]{3,32}$/u, "E2E_USERNAME 无效");
 assert.ok(PASSWORD.length >= 8, "E2E_PASSWORD 未配置");
 assert.ok(["register", "onboarding", "account-isolation", "verify", "cleanup-duplicates", "core-records", "configure-ai", "media-inputs", "media-records", "main-original", "health-ocr-preview", "health-ocr", "ai-answer", "keepsake-inputs", "keepsake", "statistics"].includes(MODE), `不支持的 live E2E 模式：${MODE}`);
