@@ -342,18 +342,22 @@ try {
     await screenshot("register.png");
   } else if (MODE === "onboarding") {
     if (!await evaluate(`document.querySelector("#onboarding-workspace").hidden`)) {
-      for (const selector of [
-        'input[name="onboarding-evidence"]',
-        'input[name="onboarding-revision"]',
-        'input[name="onboarding-truth_harmony"]',
-        'input[name="onboarding-autonomy"]',
-        'input[name="onboarding-stability"]',
-        'input[name="onboarding-achievement"]',
-        'input[name="onboarding-control"]',
-        'input[name="onboarding-meaning"]'
-      ]) await click(selector);
-      await click("#onboarding-skip");
-      await click("#onboarding-form button[type=submit]");
+      if (await evaluate(`Boolean(document.querySelector('[data-onboarding-action="use"]'))`)) {
+        await click('[data-onboarding-action="use"]');
+      } else {
+        for (const selector of [
+          'input[name="onboarding-evidence"]',
+          'input[name="onboarding-revision"]',
+          'input[name="onboarding-truth_harmony"]',
+          'input[name="onboarding-autonomy"]',
+          'input[name="onboarding-stability"]',
+          'input[name="onboarding-achievement"]',
+          'input[name="onboarding-control"]',
+          'input[name="onboarding-meaning"]'
+        ]) await click(selector);
+        await click("#onboarding-skip");
+        await click("#onboarding-form button[type=submit]");
+      }
       await waitUntil(`document.querySelector("#onboarding-workspace").hidden`, { label: "新用户引导完成" });
     }
     result.counts.onboarding = 1;
@@ -840,8 +844,12 @@ try {
     await switchView("today");
     const secondaryOpen = await evaluate(`document.querySelector(".home-v02-secondary").open`);
     if (!secondaryOpen) await click(".home-v02-secondary summary");
-    assert.equal(await includesText("#action-columns", marker), true);
-    assert.equal(await includesText("#habit-list", marker), true);
+    await waitUntil(`document.querySelector("#action-columns")?.textContent.includes(${JSON.stringify(marker)})===true`, {
+      label: "行动刷新后恢复"
+    });
+    await waitUntil(`document.querySelector("#habit-list")?.textContent.includes(${JSON.stringify(marker)})===true`, {
+      label: "习惯刷新后恢复"
+    });
   } else {
     result.counts = await evaluate(`({
       captures:document.querySelector("#capture-count")?.textContent||"",
