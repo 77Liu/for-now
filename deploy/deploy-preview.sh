@@ -172,8 +172,8 @@ chmod 0750 "$base" "$releases"
 chmod 0700 "$mirror" "$data_dir"
 
 preview_run() {
-  runuser --chdir "$runtime_home" -u "$runtime_user" -- \
-    env -i HOME="$runtime_home" PATH="$PATH" "$@"
+  runuser -u "$runtime_user" -- env -i HOME="$runtime_home" PATH="$PATH" \
+    /bin/sh -c 'cd "$HOME" && exec "$@"' sh "$@"
 }
 
 preview_git() {

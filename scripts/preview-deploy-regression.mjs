@@ -36,7 +36,7 @@ assert.match(siteSource, /include \/etc\/nginx\/snippets\/for-now-preview\*\.con
 assert.match(await fs.readFile(path.join(root, "deploy/nginx-for-now.conf"), "utf8"), /proxy_pass http:\/\/127\.0\.0\.1:4173;/);
 assert.match(deploySource, /preview\/\*/);
 assert.match(deploySource, /^export PATH=.*\/usr\/sbin$/m);
-assert.match(deploySource, /runuser --chdir "\$runtime_home" -u "\$runtime_user"/);
+assert.match(deploySource, /\/bin\/sh -c 'cd "\$HOME" && exec "\$@"'/);
 assert.match(deploySource, /npm --prefix "\$candidate" ci --omit=dev/);
 assert.match(deploySource, /prompt-catalog-regression\.mjs/);
 assert.match(deploySource, /gzip -n -6/);
