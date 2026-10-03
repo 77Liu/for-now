@@ -2423,9 +2423,9 @@ function keepsakeTagsMarkup(tags){
 function keepsakeDerivativeLabel(item){
   return item.derivativeState==="pending"?"正在生成清晰图":item.derivativeState==="failed"?"清晰图待重试":""
 }
-function keepsakeCardMarkup(item){
+function keepsakeCardMarkup(item,loading="lazy"){
   const derivativeLabel=keepsakeDerivativeLabel(item);
-  return `<article class="keepsake-card" data-keepsake-id="${escapeHtml(item.id)}"><button class="keepsake-card-open" type="button" data-keepsake-open="${escapeHtml(item.id)}" aria-label="查看 ${escapeHtml(item.title)} 详情">${keepsakeImageMarkup(item,"keepsake-card-image")}<span class="keepsake-card-copy"><span class="keepsake-card-meta"><time>${formatDate(eventTimestamp(item))}</time></span><strong>${escapeHtml(item.title)}</strong>${derivativeLabel?`<span class="keepsake-derivative-state">${derivativeLabel}</span>`:""}${item.note?`<span class="keepsake-card-note">${escapeHtml(item.note)}</span>`:""}${keepsakeTagsMarkup(item.tags)}</span></button><div class="keepsake-card-actions">${item.derivativeState==="failed"?`<button type="button" data-keepsake-derive="${escapeHtml(item.id)}">重试清晰图</button>`:""}<button type="button" data-keepsake-edit="${escapeHtml(item.id)}">编辑</button><button type="button" class="danger" data-keepsake-delete="${escapeHtml(item.id)}">删除</button></div></article>`
+  return `<article class="keepsake-card" data-keepsake-id="${escapeHtml(item.id)}"><button class="keepsake-card-open" type="button" data-keepsake-open="${escapeHtml(item.id)}" aria-label="查看 ${escapeHtml(item.title)} 详情">${keepsakeImageMarkup(item,"keepsake-card-image",loading)}<span class="keepsake-card-copy"><span class="keepsake-card-meta"><time>${formatDate(eventTimestamp(item))}</time></span><strong>${escapeHtml(item.title)}</strong>${derivativeLabel?`<span class="keepsake-derivative-state">${derivativeLabel}</span>`:""}${item.note?`<span class="keepsake-card-note">${escapeHtml(item.note)}</span>`:""}${keepsakeTagsMarkup(item.tags)}</span></button><div class="keepsake-card-actions">${item.derivativeState==="failed"?`<button type="button" data-keepsake-derive="${escapeHtml(item.id)}">重试清晰图</button>`:""}<button type="button" data-keepsake-edit="${escapeHtml(item.id)}">编辑</button><button type="button" class="danger" data-keepsake-delete="${escapeHtml(item.id)}">删除</button></div></article>`
 }
 function loadNextKeepsakePage(){
   const total=(state.keepsakes||[]).length,next=Math.min(total,keepsakeVisibleCount+KEEPSAKE_PAGE_SIZE);
@@ -2479,7 +2479,7 @@ function renderKeepsakes(){
   if(inDetail){keepsakeLoadObserver?.disconnect();if(pagination)pagination.hidden=true;renderKeepsakeDetail(detailItem);return}
   detail.innerHTML="";
   const visibleItems=items.slice(0,keepsakeVisibleCount);
-  $("#keepsake-grid").innerHTML=items.length?visibleItems.map(keepsakeCardMarkup).join(""):allItems.length?feedSearchEmpty("小物"):contentState({title:"还没有小物",body:"从一张照片开始，名称和轮廓之后都可以修改。",action:{command:"new-keepsake",label:"收第一件小物"}});
+  $("#keepsake-grid").innerHTML=items.length?visibleItems.map((item,index)=>keepsakeCardMarkup(item,index<4?"eager":"lazy")).join(""):allItems.length?feedSearchEmpty("小物"):contentState({title:"还没有小物",body:"从一张照片开始，名称和轮廓之后都可以修改。",action:{command:"new-keepsake",label:"收第一件小物"}});
   if(pagination){pagination.hidden=!items.length||visibleItems.length>=items.length;$("#keepsake-pagination-status").textContent=`已显示 ${visibleItems.length} / ${items.length} 件`;$("#keepsake-load-more").hidden=pagination.hidden}
   requestAnimationFrame(()=>{setupKeepsakePlacements($("#keepsake-grid"));observeNextKeepsakePage()})
 }
@@ -2997,7 +2997,7 @@ function renderHomeKeepsake(){
   const preview=document.createElement("span");
   preview.className=`home-v02-keepsake-preview${item?"":" empty"}`;
   if(item){
-    const template=document.createElement("template");template.innerHTML=keepsakeImageMarkup(item,"home-v02-keepsake-stack","lazy","home");preview.append(template.content)
+    const template=document.createElement("template");template.innerHTML=keepsakeImageMarkup(item,"home-v02-keepsake-stack","eager","home");preview.append(template.content)
   }else{
     preview.textContent="物";
     preview.setAttribute("aria-hidden","true")
