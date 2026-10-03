@@ -36,6 +36,7 @@ assert.match(siteSource, /include \/etc\/nginx\/snippets\/for-now-preview\*\.con
 assert.match(await fs.readFile(path.join(root, "deploy/nginx-for-now.conf"), "utf8"), /proxy_pass http:\/\/127\.0\.0\.1:4173;/);
 assert.match(deploySource, /preview\/\*/);
 assert.match(deploySource, /^export PATH=.*\/usr\/sbin$/m);
+assert.match(deploySource, /runuser --chdir "\$runtime_home" -u "\$runtime_user"/);
 assert.match(deploySource, /npm --prefix "\$candidate" ci --omit=dev/);
 assert.match(deploySource, /prompt-catalog-regression\.mjs/);
 assert.match(deploySource, /gzip -n -6/);
@@ -165,7 +166,9 @@ if (name === "stat") {
 }
 if (name === "runuser") {
   const split = args.indexOf("--");
-  const result = spawnSync(args[split + 1], args.slice(split + 2), { env: process.env, stdio: "inherit" });
+  const chdirIndex = args.indexOf("--chdir");
+  const cwd = chdirIndex >= 0 ? args[chdirIndex + 1] : undefined;
+  const result = spawnSync(args[split + 1], args.slice(split + 2), { cwd, env: process.env, stdio: "inherit" });
   process.exit(result.status ?? 1);
 }
 if (name === "git") {
