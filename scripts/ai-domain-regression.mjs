@@ -82,6 +82,10 @@ const settingsHttp = createAiSettingsHttp({
       return settingsDocument;
     }
   },
+  speech: {
+    defaultVoice: "voice-default",
+    voices: [{ id: "voice-default" }, { id: "voice-user" }]
+  },
   generate: async () => "连接成功",
   bodyJson: async () => settingsInput,
   sendJson: (response, status, body) => { settingsResponse = { response, status, body }; }
@@ -95,6 +99,19 @@ settingsInput = { sceneEfforts: { thoughtAnswer: "none" }, apiKey: "must-not-cha
 assert.equal(await settingsHttp.handle({ method: "PATCH" }, {}, new URL("http://local/api/preferences")), true);
 assert.equal(settingsResponse.body.sceneEfforts.thoughtAnswer, "none");
 assert.equal(settingsDocument.apiKey, initial.apiKey);
+settingsInput = { speech: { defaultVoice: "not-a-real-voice" } };
+assert.equal(await settingsHttp.handle({ method: "POST" }, {}, new URL("http://local/api/settings")), true);
+assert.equal(settingsResponse.body.speech.defaultVoice, "voice-default");
+assert.equal(settingsDocument.speech.defaultVoice, "voice-default");
+settingsInput = { speech: { defaultVoice: "not-a-real-voice" } };
+assert.equal(await settingsHttp.handle({ method: "PATCH" }, {}, new URL("http://local/api/preferences")), true);
+assert.equal(settingsResponse.body.speech.defaultVoice, "voice-default");
+assert.equal(settingsDocument.speech.defaultVoice, "voice-default");
+settingsDocument.speech.defaultVoice = "not-a-real-voice";
+assert.equal(await settingsHttp.handle({ method: "GET" }, {}, new URL("http://local/api/settings")), true);
+assert.equal(settingsResponse.body.speech.defaultVoice, "voice-default");
+assert.equal(await settingsHttp.handle({ method: "GET" }, {}, new URL("http://local/api/preferences")), true);
+assert.equal(settingsResponse.body.speech.defaultVoice, "voice-default");
 assert.equal((await settingsHttp.automaticAnswer({ requested: true })).generateAnswer, true);
 
 const peak = deepSeekUsageEntry({

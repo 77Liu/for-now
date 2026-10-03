@@ -2414,7 +2414,7 @@ const visionHttp = createVisionHttp({
   sendJson,
   uploadBodyMaxBytes: ATTACHMENT_UPLOAD_BODY_MAX_BYTES
 });
-const aiSettingsHttp = createAiSettingsHttp({ settings: llmSettingsService, generate: runDeepSeek, bodyJson, sendJson });
+const aiSettingsHttp = createAiSettingsHttp({ settings: llmSettingsService, speech: speechProvider, generate: runDeepSeek, bodyJson, sendJson });
 const aiCostHttp = createAiCostHttp({ costs: aiCosts, bodyJson, sendJson });
 const aiBudgetHttp = createAiBudgetHttp({
   budget: aiBudgetService,

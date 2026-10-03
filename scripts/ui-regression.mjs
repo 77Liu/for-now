@@ -943,7 +943,7 @@ const mockFetch = `
         sceneEfforts: { thoughtPrompt:"none",thoughtDraft:"high",thoughtAnswer:"max",followUpAnswer:"max",chat:"high",diaryLead:"none",diaryStructure:"high",diaryTopic:"high",diaryReflection:"max",annotationShenji:"high",analysis:"max",bookRecognition:"high",healthRecognition:"high",contentImageUnderstanding:"high",capturePolish:"high",onboardingClaimExtraction:"high" },
         assistantName: "神鸡", responseStyles: { thoughtDraft:"standard",thoughtAnswer:"standard",followUpAnswer:"standard",chat:"standard",diaryReflection:"standard",annotationShenji:"standard",analysis:"standard" },
         automaticAnswers: { thoughtAnswer: true },
-        speech: { defaultVoice: "zh_female_vv_uranus_bigtts", generationRate: -10 },
+        speech: { defaultVoice: "not-a-real-voice", generationRate: -10 },
         hasApiKey: true, keyHint: "tes••••test"
       });
       if(window.__delayStartupSecondary)return new Promise(resolve=>{window.__releaseStartupSecondary=()=>{window.__delayStartupSecondary=false;resolve(respond())}});
@@ -2052,7 +2052,7 @@ try {
     audioKey: '["capture-long",1,"/attachments/capture-voice.m4a"]',
     status: "录音尚未转成文字。开始转写",
     speak: "capture-long",
-    speechKey: '["capture-long",1,"/attachments/capture-voice.m4a","","zh_female_vv_uranus_bigtts"]',
+    speechKey: '["capture-long",1,"/attachments/capture-voice.m4a","","zh_male_shaonianzixin_uranus_bigtts"]',
     generateLabel: "生成",
     rate: "1",
     rates: [0.5,0.7,0.8,0.9,1,1.1,1.2,1.3,1.5,2],
@@ -3044,7 +3044,7 @@ try {
   await evaluate(`document.querySelector('[data-view="settings"]').click(); true`);
   assert.deepEqual(await evaluate(`(() => {const rate=document.querySelector("#tts-generation-rate"),voice=document.querySelector("#tts-default-voice");return{controls:document.querySelectorAll("[data-profile-model]").length === 4 && document.querySelectorAll("[data-profile-effort]").length === 4 && document.querySelectorAll("[data-ai-scenario]").length === 15 && document.querySelectorAll("[data-ai-effort]").length === 16 && document.querySelectorAll("[data-response-style]").length === 7,voice:voice.value,voices:voice.options.length,min:rate.min,max:rate.max,value:rate.value,accessibleName:rate.getAttribute("aria-label"),valueText:rate.getAttribute("aria-valuetext"),label:document.querySelector("#tts-generation-rate-value").textContent}})()`), {
     controls: true,
-    voice: "zh_female_vv_uranus_bigtts",
+    voice: "zh_male_shaonianzixin_uranus_bigtts",
     voices: 4,
     min: "-50",
     max: "100",

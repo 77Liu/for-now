@@ -1,4 +1,4 @@
-import { numberOrFallback } from "../validation/index.mjs";
+import { numberOrFallback, safeText } from "../validation/index.mjs";
 
 export const TTS_GENERATION_RATE_MIN = -50;
 export const TTS_GENERATION_RATE_MAX = 100;
@@ -19,6 +19,18 @@ export function normalizeTtsGenerationRate(value, fallback = TTS_GENERATION_RATE
     TTS_GENERATION_RATE_MAX,
     true
   );
+}
+
+export function resolveConfiguredTtsVoice(value, speech = {}) {
+  const selected = safeText(value, 160);
+  const configuredDefault = safeText(speech?.defaultVoice, 160);
+  const voiceIds = new Set((Array.isArray(speech?.voices) ? speech.voices : [])
+    .map(voice => safeText(voice?.id, 160))
+    .filter(Boolean));
+  if (!voiceIds.size) return selected || configuredDefault;
+  if (voiceIds.has(selected)) return selected;
+  if (voiceIds.has(configuredDefault)) return configuredDefault;
+  return voiceIds.values().next().value || "";
 }
 
 export function speechTextForCapture(capture = {}) {

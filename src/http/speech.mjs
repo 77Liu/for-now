@@ -1,5 +1,4 @@
-import { normalizeTtsGenerationRate } from "../shared/speech/index.mjs";
-import { safeText } from "../shared/validation/index.mjs";
+import { normalizeTtsGenerationRate, resolveConfiguredTtsVoice } from "../shared/speech/index.mjs";
 
 export function createSpeechHttp({
   speech,
@@ -31,7 +30,7 @@ export function createSpeechHttp({
     const input = await bodyJson(req);
     const speechSettings = (await readSettings())?.speech || {};
     const generationRate = normalizeTtsGenerationRate(speechSettings.generationRate);
-    const voice = safeText(speechSettings.defaultVoice, 160) || speech.defaultVoice;
+    const voice = resolveConfiguredTtsVoice(speechSettings.defaultVoice, speech);
     const generate = async ({ text, voice: selectedVoice, generationRate: selectedRate }) => {
       const release = await gate.acquire();
       try {

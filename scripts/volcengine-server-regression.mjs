@@ -152,6 +152,32 @@ try {
   });
   assert.equal(settings.status, 200);
   assert.deepEqual((await settings.json()).speech, { defaultVoice: "zh_female_vv_uranus_bigtts", generationRate: 25 });
+  const invalidOwnerVoice = await fetch(`${base}/api/settings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ speech: { defaultVoice: "not-a-real-voice" } })
+  });
+  assert.equal(invalidOwnerVoice.status, 200);
+  assert.equal((await invalidOwnerVoice.json()).speech.defaultVoice, "zh_male_shaonianzixin_uranus_bigtts");
+  assert.equal(
+    JSON.parse(await fs.readFile(path.join(dataDir, "llm-settings.json"), "utf8")).speech.defaultVoice,
+    "zh_male_shaonianzixin_uranus_bigtts"
+  );
+  const invalidPreferenceVoice = await fetch(`${base}/api/preferences`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ speech: { defaultVoice: "not-a-real-voice" } })
+  });
+  assert.equal(invalidPreferenceVoice.status, 200);
+  assert.equal((await invalidPreferenceVoice.json()).speech.defaultVoice, "zh_male_shaonianzixin_uranus_bigtts");
+  const historicalSettings = JSON.parse(await fs.readFile(path.join(dataDir, "llm-settings.json"), "utf8"));
+  historicalSettings.speech.defaultVoice = "not-a-real-voice";
+  await fs.writeFile(path.join(dataDir, "llm-settings.json"), `${JSON.stringify(historicalSettings, null, 2)}\n`);
+  for (const endpoint of ["/api/settings", "/api/preferences"]) {
+    const historicalResponse = await fetch(`${base}${endpoint}`);
+    assert.equal(historicalResponse.status, 200);
+    assert.equal((await historicalResponse.json()).speech.defaultVoice, "zh_male_shaonianzixin_uranus_bigtts");
+  }
 
   const speechSourceResponse = await fetch(`${base}/api/v1/captures`, {
     method: "POST",
@@ -166,17 +192,17 @@ try {
     body: JSON.stringify({
       captureId: speechSource.id,
       sourceVersion: speechSource.version,
-      voice: "zh_male_shaonianzixin_uranus_bigtts"
+      voice: "zh_female_vv_uranus_bigtts"
     })
   });
   assert.equal(synthesized.status, 200);
   assert.equal(synthesized.headers.get("content-type"), "audio/mpeg");
   assert.equal(synthesized.headers.get("x-speech-cache"), "miss");
-  assert.equal(synthesized.headers.get("x-speech-voice"), "zh_female_vv_uranus_bigtts");
+  assert.equal(synthesized.headers.get("x-speech-voice"), "zh_male_shaonianzixin_uranus_bigtts");
   assert.equal(Buffer.from(await synthesized.arrayBuffer()).subarray(0, 3).toString("ascii"), "ID3");
   const ttsRequest = JSON.parse(providerCalls.find(call => call.pathname === "/tts").raw);
   assert.equal(ttsRequest.req_params.audio_params.speech_rate, 25);
-  assert.equal(ttsRequest.req_params.speaker, "zh_female_vv_uranus_bigtts");
+  assert.equal(ttsRequest.req_params.speaker, "zh_male_shaonianzixin_uranus_bigtts");
   const cached = await fetch(`${base}/api/speech/synthesize`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -312,7 +338,7 @@ try {
   const changedVoice = await fetch(`${base}/api/settings`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ speech: { defaultVoice: "zh_male_shaonianzixin_uranus_bigtts" } })
+    body: JSON.stringify({ speech: { defaultVoice: "zh_female_vv_uranus_bigtts" } })
   });
   assert.equal(changedVoice.status, 200);
   budget.days[0].blocked.unknownCost = true;
