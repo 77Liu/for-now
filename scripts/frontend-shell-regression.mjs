@@ -57,6 +57,7 @@ assert.match(appRuntime, /function onboardingBlocksPrivateShell\(/);
 assert.match(appRuntime, /await afterVisibleShellPaint\(\)/);
 assert.match(appRuntime, /load\(\{visibleShell:true,initialSnapshot\}\)/);
 assert.match(appRuntime, /initialSnapshot\s*\?\s*\[initialSnapshot\.state,initialSnapshot\.meta\]/);
+assert.match(appRuntime, /document\.documentElement\.dataset\.runtimeReady="1"/);
 assert.doesNotMatch(appRuntime, /syncChainRecordKind\(\);await loadActionsWorkspace\(\)/);
 assert.match(appRuntime, /提交时的行动已保存；等待期间的新输入已保留。/);
 assert.match(appRuntime, /已保存，但行动列表刷新失败/);

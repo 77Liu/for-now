@@ -156,7 +156,18 @@ try {
       if (await evaluate(expression)) return;
       await sleep(delay);
     }
-    throw new Error(`等待界面状态超时：${label}`);
+    const pageState = await evaluate(`JSON.stringify({
+      url:location.href,
+      bodyClass:document.body.className,
+      authHidden:document.querySelector("#auth-gate")?.hidden,
+      authStatus:document.querySelector("#auth-status")?.textContent||"",
+      activeView:document.querySelector(".view.active")?.id||""
+    })`).catch(() => "");
+    const runtimeErrors = cdp.events
+      .filter(event => event.method === "Runtime.exceptionThrown")
+      .map(event => event.params.exceptionDetails.exception?.description || event.params.exceptionDetails.text)
+      .slice(-3);
+    throw new Error(`等待界面状态超时：${label}; page=${pageState}; runtime=${JSON.stringify(runtimeErrors)}`);
   };
   const click = async selector => {
     const point = await evaluate(`(() => {
@@ -255,7 +266,9 @@ try {
   };
   const navigate = async () => {
     await cdp.send("Page.navigate", { url: APP_URL });
-    await waitUntil(`document.readyState==="complete"&&document.querySelector("#auth-gate")`, { label: "应用加载" });
+    await waitUntil(`document.readyState==="complete"&&document.documentElement.dataset.runtimeReady==="1"`, {
+      label: "应用运行时加载"
+    });
   };
   const login = async () => {
     await navigate();
