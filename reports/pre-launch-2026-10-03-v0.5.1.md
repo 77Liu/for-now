@@ -1,7 +1,8 @@
 # V0.5.1 热修上线门记录
 
-状态：V0.5.0 生产静态资源权限已人工恢复，热修代码与回归已完成；最终 Release
-门、标签、Gitee Release 和持久化部署待执行。
+状态：**生产已上线，观察已关闭**。V0.5.1 最终 Release 门、Git/Gitee
+发布、生产部署、静态资源复验、部署后备份、隔离恢复和 30 分钟生产观察均已
+完成。
 
 ## 1. 发布对象
 
@@ -63,9 +64,68 @@
 - `bash -n deploy/deploy.sh`：通过。
 - `npm run test:deploy`：通过，覆盖成功、依赖失败、restart/health/Nginx
   失败、PostgreSQL 预检、同提交、回滚和目录权限。
-- 完整 `npm run test:journeys:release`：待最终候选执行。
-- 因已安装部署器本身包含旧逻辑，需先从已推送热修提交提取
-  `deploy/deploy.sh` 并校验后安装到 `/usr/local/sbin/for-now-deploy`，
-  再部署同一 SHA。
-- 部署后必须核对 root、JS、CSS、`.mjs`、Service Worker、ready、认证边界，
-  并用新版备份器执行备份与隔离恢复。
+- 最终 `npm run test:journeys:release`：通过；runId
+  `2026-10-03T05-40-48-694Z`，总计 `329334ms`，其中完整系统
+  `312173ms`、PostgreSQL 16 `15639ms`、依赖审计 `1522ms / 0 漏洞`。
+- 已从推送后的精确提交提取并安装新版
+  `/usr/local/sbin/for-now-deploy`，再部署同一 SHA；服务器只读拉取、
+  PostgreSQL 权限预检、候选切换和 ready 检查均通过。
+- 生产 `/now/`、`/now/today` 为 200，未登录 `/now/api/v1/state` 为 401，
+  管理快照为 404；JS、CSS、`.mjs`、Service Worker 均为 200，MIME 和
+  gzip 正确。
+
+## 7. Git 与发布对象
+
+- 最终提交：
+  `810a8a694fbd4f88fee4ffc98b28061e5f6c6096`。
+- 发布时 `origin/main`、annotated tag `v0.5.1` 和
+  `origin/preview/v0.5.1` 均指向该提交；观察完成后的文档提交只推进
+  `main`，不重打标签、不重部署。
+- Gitee Release：`v0.5.1`，ID `1181158`，非预发布：
+  <https://gitee.com/Liu_772021/for-now/releases/tag/v0.5.1>。
+- V0.5.0 Release ID `1181137` 已标记“已由 V0.5.1 取代”，不把静态资源
+  403 的短暂部署描述为可正常使用的最终生产版本。
+
+## 8. 部署后备份与恢复
+
+- 新版备份器生成
+  `for-now-20261003T054849Z.tar.gz`，大小 `66,413,277` 字节；命令只有在
+  主服务恢复 ready、OSS 上传和本地清理完成后才返回成功。
+- 隔离恢复通过归档 SHA-256、导出清单哈希和全站 AI 预算校验。
+- 恢复结果为 4 个账户、193 条总记录、公开 API 190 条记录、41 个附件引用、
+  45 个附件；候选服务的附件 HTTP 读取通过。
+
+## 9. 性能与客户端边界
+
+- V0.5.0 Preview 基准为当前屏反馈 `430.5ms`、stableHome `786.8ms`。
+- V0.5.1 公网冷加载保留两次机器样本：`596.2ms / 912.7ms` 未通过 500ms
+  反馈门，复测 `481.3ms / 967.4ms` 通过；不得删除首个失败样本或把单次
+  复测表述为稳定 P95。
+- iOS 未签名设备包：
+  `artifacts/ios/cike-0.5.1-ios-device-unsigned.zip`，大小
+  `5,503,525` 字节，SHA-256
+  `35dc704caca3ff6b0e2eaac39ea1a71c5c35aa1e397fb96017f5354362f6e8cd`。
+- 物理 iPhone 当前离线，V0.5.1 未重新执行真机 WKWebView 测试；网页与
+  iOS 包构建证据不能替代真机结论。
+
+## 10. 生产观察
+
+- 观察区间：`2026-10-03T05:52:44Z` 至 `06:22:47Z`，共 31 个一分钟样本。
+- PID 始终为 `499882`，PID 变化 0，`NRestarts=0`；31 次服务状态均为
+  `active`，31 次本机 ready 均为 200。
+- RSS 最低 `73,568,256` 字节（70.2 MiB），最高和末值均为
+  `152,592,384` 字节（145.5 MiB），低于 400 MiB 告警线。窗口内存在实际
+  媒体请求和阶梯抬升，30 分钟结果不外推为长期无泄漏证明。
+- 系统可用内存最低 `768,800 KiB`（750.8 MiB），根分区始终为 48%。
+- Nginx 访问日志中 `/now/` 5xx 为 0，错误日志中生产路径错误为 0；窗口内
+  另有 2 条外部 TLS 握手异常，与应用路径无关。
+- 应用日志出现 1 次后台火山 ASR `SPEECH_UNAVAILABLE`。入口请求正常返回
+  202，同一既有录音在上一版本也有相同失败记录，未伴随服务异常或 HTTP 5xx，
+  保留为用户可重试的上游失败，不判定为本次热修回归。
+- 应用日志另有 32 条阿里 OSS SDK 的 STS 自动刷新建议。当前实现每次操作先
+  取得新凭据再创建短生命周期客户端，未发生鉴权失败；该项属于日志降噪遗留。
+- 手动运行 `for-now-monitor.service` 成功，返回
+  `{"ok":true,"testAlert":false,"issues":[]}`。
+- 观察结束后生产仍为 `active`、`NRestarts=0`、ready 版本
+  `810a8a694fbd`；Preview 同版本且保持 active，用户 0、会话 0、业务记录 0、
+  附件 0，仅保留内置默认配置。

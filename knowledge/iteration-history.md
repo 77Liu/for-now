@@ -4,6 +4,23 @@
 
 ## 2026-10-03
 
+- 发布 V0.5.0 后，生产 HTML、API 与 ready 正常，但 Nginx 静态 alias 因
+  release 根目录 0700 导致 JS、CSS 和 `.mjs` 返回 403。先人工恢复活动路径
+  0755 并复验，再发布 `v0.5.1@810a8a6`：Git mirror 保持
+  `for-now:for-now 0700`，候选与回滚 release 固定为 `root:root 0755`，
+  部署回归覆盖目录模式和所有权。V0.5.0 Release ID `1181137` 已标记由
+  V0.5.1 取代；V0.5.1 Release ID 为 `1181158`。
+- V0.5.1 最终 Release 门 `329334ms` 全绿，其中系统 `312173ms`、PG16
+  `15639ms`、审计 `1522ms / 0 漏洞`。生产与 Preview 均运行 `810a8a6`；
+  部署后新版备份 `for-now-20261003T054849Z.tar.gz` 为 66,413,277 字节，
+  ready 后返回，隔离恢复 4 个账户、193 条总记录、41 个附件引用和 45 个
+  附件通过。公网保留一次 `596.2ms` 反馈失败和一次 `481.3ms` 通过样本；
+  物理 iPhone 离线，未重新执行真机 WKWebView。
+- V0.5.1 完成 30 分钟生产观察：31 个一分钟样本中 PID 固定、重启 0、
+  ready 失败 0、`/now/` 5xx 为 0；RSS 70.2–145.5 MiB，可用内存最低
+  750.8 MiB，磁盘 48%，监控返回 `issues: []`。一次既有录音的后台火山
+  ASR `SPEECH_UNAVAILABLE` 未影响 HTTP 或服务健康，保留为可重试外部失败；
+  OSS SDK 的 STS 建议日志作为后续降噪项。
 - 建立 V0.5.0 隔离线上 Preview 路径：`preview/v0.5.0` 由服务器只读 deploy
   key 拉取，运行在独立用户、端口、env、JSON 数据和 local 附件目录，并通过
   `https://77liu.top/preview/` 暴露 noindex 入口。公网验收覆盖双账户隔离、

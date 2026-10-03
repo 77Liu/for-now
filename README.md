@@ -49,11 +49,15 @@ npm run start:local-test
 
 ## 当前状态
 
-- **生产 `v0.4.0` 已上线**：公网运行提交为 `8cb4d93105779d3afd00f20eba319fa5f34150fd`，标签 `v0.4.0`；Gitee Release、恢复、真实第三方 5/5 冒烟和 40 分钟观察均通过，PostgreSQL 继续作为唯一正式写源。
-- **V0.5.0 线上 Preview 已通过**：`preview/v0.5.0@3fd511c` 已在独立服务、
-  数据和权限边界下完成公网 E2E；真实网络当前屏反馈 `430.5ms`、稳定首页
-  `786.8ms`，320/390px 无溢出，真实 AI/语音/视觉链路通过。最终 Release
-  门和正式部署进行中，生产仍为 V0.4.0。
+- **生产 `v0.5.1` 已上线**：公网运行提交为
+  `810a8a694fbd4f88fee4ffc98b28061e5f6c6096`。V0.5.0 完成 Preview 与
+  Release 后，生产部署暴露 Nginx 静态目录权限问题；V0.5.1 已持久修复并
+  复验网页、API、PWA、备份恢复和认证边界，30 分钟观察已关闭。PostgreSQL
+  继续作为唯一正式写源。
+- **线上 Preview 保留**：`preview/v0.5.1@810a8a6` 与生产代码一致，独立
+  服务、数据和权限边界保持有效，验收数据与凭据已清理。V0.5.0 公网基准为
+  当前屏反馈 `430.5ms`、稳定首页 `786.8ms`；V0.5.1 两次公网样本中一次
+  当前屏反馈为 `596.2ms`、一次为 `481.3ms`，不把单次通过表述为稳定 P95。
 - **`v0.1.1` 发布历史保留**：提交 `54a6326f14ca`、标签 `hotfix-v0.1.1-thought-answer` 在 v0.1.0 基础上修复了收集页思绪自动回答任务创建问题，现已由 v0.2.1 替代。
 - **`v0.1.0` 发布历史保留**：主应用功能提交 `5ae6a7035169` 和标签 `release-20260928-p00-p0-commercial-system` 已发布 P00/P0、商业化、AI 成本和五阶段架构设计，并由 v0.1.1 继承。
 - **中台已上线**：独立中台提交为 `d157537f7f4c`，发布标签为 `release-20260928-platform-mvp`；公网 `/platform/` 只读治理控制面已部署。
@@ -134,7 +138,12 @@ npm run start:local-test
 
 ## 生产检查状态
 
-2026-09-30，`v0.2.1 / 6adff978e5fe` 已完成 Git/Gitee 发布、JSON 兼容部署、212 秒停写迁移、PostgreSQL 单写切换、切换前后备份恢复、数据库级独立恢复、写入重启冒烟、阿里云分割真实调用、飞书告警验证及 30 分钟观察。观察期应用零重启，可用内存最低 821 MiB，Swap 0，PostgreSQL OOM 0，最终监控无问题。完整证据见 `reports/pre-launch-2026-09-30-v0.2.1.md` 与 `reports/v0.2.1-production-cutover-2026-09-30.json`；v0.1.x 与中台历史见 `reports/pre-launch-2026-09-28-p00-p0-platform.md`。
+2026-10-03，`v0.5.1 / 810a8a694fbd` 已完成 Git/Gitee 发布、生产静态资源
+权限热修、部署后备份、隔离恢复和 30 分钟观察。观察期 PID 与 ready 稳定、
+重启和 `/now/` 5xx 均为 0，RSS 为 70.2–145.5 MiB，监控
+`issues: []`。V0.5.0 的 Preview、功能、真实第三方与性能证据见
+`reports/pre-launch-2026-10-03-v0.5.0.md`，热修和生产证据见
+`reports/pre-launch-2026-10-03-v0.5.1.md`。
 
 ## 发布与同步
 
@@ -183,7 +192,10 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
 
 ## 当前 TODO
 
-需求判断以用户亲自写下的问题、初步想法、捕念、追问和批注为主；AI 生成回答仅作弱参考，不代表用户立场。V0.5.0 按“真实体验 → 需求归一化 → 两线开发 → 系统门 → 模拟线上试运行”推进；当前排期在 `README-TODO.md` 维护，详细流程见 `reports/iteration-plan-v0.5.0-2026-10-03.md`。
+需求判断以用户亲自写下的问题、初步想法、捕念、追问和批注为主；AI 生成回答
+仅作弱参考，不代表用户立场。V0.5.0/V0.5.1 已完成“真实体验 → 两线开发 →
+线上 Preview → Release → 生产热修”闭环；当前排期在 `README-TODO.md`
+维护，详细流程见 `reports/iteration-plan-v0.5.0-2026-10-03.md`。
 
 ## 产品路线图
 
@@ -245,6 +257,8 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
   本地提交、性能证据、系统门、主动试运行、账户清理和剩余外部验收。
 - `reports/pre-launch-2026-10-03-v0.5.0.md`：V0.5.0 线上 Preview、
   公网 E2E/性能、备份恢复、最终发布门与完整中文发行说明。
+- `reports/pre-launch-2026-10-03-v0.5.1.md`：V0.5.1 静态资源权限热修、
+  最终门、Git/Gitee 发布、部署后备份恢复与生产观察。
 - `reports/v0.3.0-git-closeout-2026-09-30.md`：旧工作树、探索 stash、
   本地 `main` 和可恢复归档记录。
 - `reports/g1-contract-freeze-2026-09-29.json`：G1 契约文件摘要、系统测试、PostgreSQL 证据边界及三路重构资源预留。

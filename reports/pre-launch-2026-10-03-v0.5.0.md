@@ -1,20 +1,21 @@
 # V0.5.0 上线门记录
 
-状态：线上 Preview、公开网络性能、真实业务旅程、生产发布前备份与隔离恢复、
-运行代码候选 Release 门已通过；发布文档整合后的最终候选门与生产部署尚未
-开始。
+状态：**已发布，随后由 V0.5.1 取代**。线上 Preview、公开网络性能、真实
+业务旅程、最终 Release 门与生产发布前备份恢复均通过；V0.5.0 部署后暴露
+Nginx 静态 alias 目录权限问题，已通过 V0.5.1 热修并完成生产恢复。
 
 ## 1. 发布对象
 
 - 生产基线：`v0.4.0 / 8cb4d93105779d3afd00f20eba319fa5f34150fd`。
 - 集成分支：`v0.5.0-integration`。
 - 线上 Preview 分支：`preview/v0.5.0`。
-- 当前运行代码候选：
+- 运行代码候选：
   `3fd511c7368a73a99df9c3ed2132f421bfaf6599`。
-- 当前 Preview：
+- 最终发布提交：
+  `b7b8eb6da799666520e5edb4be767a2028c32dae`，仅整合发行文档，运行代码
+  未偏离 `3fd511c`。
+- 验收时 Preview：
   `https://77liu.top/preview/`，ready 版本 `3fd511c7368a`。
-- 最终标签候选将在本记录、TODO 和迭代历史完成后重新冻结；运行代码不得
-  偏离 `3fd511c`。
 - Owner 已要求建立“commit、push、服务器拉取 Preview、线上 E2E、确认后
   Release”的发布流程，并授权 Preview 通过后执行本次正式发布。
 
@@ -123,9 +124,9 @@ console error、异常响应、失败请求和 runtime exception 均为 0。
 | 生产发布前备份与隔离恢复 | 通过 |
 | 运行代码候选 Release 门 | 通过，总计 328,413ms |
 | 完整系统 / PostgreSQL / 依赖审计 | 310,008ms / 16,773ms / 1,632ms，漏洞 0 |
-| 最终文档整合候选 Release 门 | 待最终提交后从头复验 |
-| 最终 Git SHA / tag / Gitee Release | 待执行 |
-| 生产部署与观察 | 待执行 |
+| 最终文档整合候选 Release 门 | 通过，`b7b8eb6`，总计 323,872ms |
+| 最终 Git SHA / tag / Gitee Release | 已完成；`v0.5.0`，Release ID `1181137` |
+| 生产部署与观察 | 部署发现静态资源 403，立即恢复并由 V0.5.1 热修取代 |
 
 ## 6. 发布顺序与回滚
 
@@ -138,7 +139,21 @@ console error、异常响应、失败请求和 runtime exception 均为 0。
 6. 观察不少于 30 分钟；发生 ready/5xx、数据/权限、备份恢复或持续 RSS
    增长异常时回滚代码到 `8cb4d93`。数据不随代码自动回滚。
 
-## 7. V0.5.0 更新说明
+## 7. 实际发布结果
+
+- 发布时 `origin/main`、annotated tag `v0.5.0` 和 Gitee Release ID
+  `1181137` 指向 `b7b8eb6da799666520e5edb4be767a2028c32dae`；Release：
+  <https://gitee.com/Liu_772021/for-now/releases/tag/v0.5.0>。
+- 生产切换后 HTML、API 和 ready 正常，但 JS、CSS 与 `.mjs` 因 release
+  根目录为 0700 而返回 403。该问题不在本地或 Preview 重现，因为 Preview
+  部署器已有候选目录权限规范化。
+- 已先人工把活动路径恢复为可遍历并复验静态资源 200，再发布持久修复
+  `v0.5.1@810a8a6`。V0.5.0 Release 已明确标记“已由 V0.5.1 取代”。
+- 热修、部署后备份恢复与生产观察以
+  [`pre-launch-2026-10-03-v0.5.1.md`](pre-launch-2026-10-03-v0.5.1.md)
+  为准。
+
+## 8. V0.5.0 更新说明
 
 发布时间：2026-10-03
 
