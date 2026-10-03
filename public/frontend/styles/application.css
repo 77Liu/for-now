@@ -975,14 +975,14 @@ body.auth-locked>.sidebar,body.auth-locked>main{visibility:hidden}
 .auth-brand h1{margin:0;font:650 1.55rem/1.2 ui-serif,"Songti SC","STSong",serif;letter-spacing:0}
 .auth-brand p{margin:4px 0 0;color:#737d79;font-size:.8rem}
 .auth-tabs{display:grid;grid-template-columns:1fr 1fr;margin-bottom:20px;padding:3px;border:1px solid #dce2df;border-radius:8px;background:#f2f5f3}
-.auth-tabs button{min-height:36px;border:0;border-radius:6px;background:transparent;color:#7c8581;font-size:.84rem;font-weight:750}
+.auth-tabs button{min-height:44px;border:0;border-radius:6px;background:transparent;color:#7c8581;font-size:.84rem;font-weight:750}
 .auth-tabs button.active{background:#fff;color:#37433f;box-shadow:0 2px 8px rgba(35,48,42,.08)}
 .auth-form{display:grid;gap:14px}
 .auth-form[hidden]{display:none}
 .auth-form label{display:grid;gap:6px;color:#68726e;font-size:.78rem;font-weight:750}
-.auth-form input{width:100%;min-height:43px;border:1px solid #d7dedb;border-radius:8px;background:#fbfcfb;padding:10px 11px;outline:none}
+.auth-form input{width:100%;min-height:44px;border:1px solid #d7dedb;border-radius:8px;background:#fbfcfb;padding:10px 11px;font-size:1rem;outline:none}
 .auth-form input:focus{border-color:#70867d;box-shadow:0 0 0 3px rgba(63,93,80,.1)}
-.auth-form .primary-button{border-radius:8px;background:#37433f}
+.auth-form .primary-button{min-height:44px;border-radius:8px;background:#37433f}
 .auth-form .primary-button:hover{background:#29332f}
 .auth-status{min-height:1.3em;margin:13px 0 0;color:#a05d62;font-size:.78rem}
 .account-control{display:flex;align-items:center;gap:8px;color:#6f7a75;font-size:.72rem}

@@ -42,12 +42,15 @@ assert.ok(appEntry.split("\n").length <= 5, "public/app.js must remain a thin bo
 assert.match(appBootstrap, /const \[state, meta\] = await Promise\.all/);
 assert.match(appBootstrap, /const runtime = await import\("\.\/runtime\.mjs"\)/);
 assert.doesNotMatch(appBootstrap, /from "\.\/runtime\.mjs"/);
+assert.match(appBootstrap, /requestJson\("\/api\/auth\/me", \{ allowUnauthorized: true \}\)/);
 for (const endpoint of ["/api/auth/me", "/api/state", "/api/meta"]) {
   assert.equal(appBootstrap.split(`"${endpoint}"`).length - 1, 1, `bootstrap must request ${endpoint} once`);
 }
 assert.match(appRuntime, /export async function startApplication\(initial = null\)/);
 assert.doesNotMatch(appRuntime, /^bootstrap\(\)\.catch/m);
 assert.doesNotMatch(appRuntime, /from "\.\/frontend\//);
+assert.match(appRuntime, /button\.tabIndex=active\?0:-1/);
+assert.match(appRuntime, /\["ArrowLeft","ArrowRight","Home","End"\]/);
 assert.match(appRuntime, /operation=\+\+authOperationSerial;setAuthBusy\(true\)/);
 assert.match(appRuntime, /requestSerial!==actionsRequestSerial\|\|owner!==currentUser\?\.id\|\|session!==sessionSerial/);
 assert.match(appRuntime, /LOCAL_TEST_RESPONSE_MISMATCH/);
@@ -70,6 +73,9 @@ assert.match(applicationStyles, /(?:^|\n)\[hidden\]\{display:none!important\}/);
 assert.match(applicationStyles, /env\(safe-area-inset-bottom\)/);
 assert.match(applicationStyles, /\.home-v02\{/);
 assert.match(applicationStyles, /assets\/home-v0\.2\/desktop-background\.png/);
+assert.match(applicationStyles, /\.auth-tabs button\{min-height:44px/);
+assert.match(applicationStyles, /\.auth-form input\{[^}]*min-height:44px[^}]*font-size:1rem/);
+assert.match(applicationStyles, /\.auth-form \.primary-button\{min-height:44px/);
 assert.match(applicationStyles, /\.content-state\.failure/);
 assert.doesNotMatch(applicationStyles, /\.saved-reasoning|\.answer-reasoning/);
 assert.match(html, /id="home-open-thought"/);
@@ -78,6 +84,9 @@ assert.match(html, /<link rel="stylesheet" href="frontend\/styles\/application\.
 assert.match(html, /<link rel="modulepreload" href="frontend\/app\/index\.mjs">/);
 assert.match(html, /<link rel="modulepreload" href="frontend\/app\/bootstrap\.mjs">/);
 assert.doesNotMatch(html, /<link rel="modulepreload" href="frontend\/app\/runtime\.mjs">/);
+assert.match(html, /id="auth-tab-login"[^>]+aria-controls="login-form"[^>]+tabindex="0"/);
+assert.match(html, /id="auth-tab-register"[^>]+aria-controls="register-form"[^>]+tabindex="-1"/);
+assert.match(html, /id="login-form" role="tabpanel" aria-labelledby="auth-tab-login"/);
 assert.equal((html.match(/<script src="app\.js" type="module"><\/script>/g) || []).length, 1);
 assert.ok(html.indexOf('rel="modulepreload" href="frontend/app/bootstrap.mjs"') < html.indexOf('<script src="app.js" type="module"></script>'));
 assert.ok(html.indexOf('<script src="app.js" type="module"></script>') < html.indexOf("</head>"));

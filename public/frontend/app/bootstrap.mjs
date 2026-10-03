@@ -60,7 +60,7 @@ async function initialSnapshot() {
   markStartup("bootstrapStart");
   try {
     const [session, testConfigResult] = await Promise.all([
-      requestJson("/api/auth/me"),
+      requestJson("/api/auth/me", { allowUnauthorized: true }),
       requestJson("/api/local-test-mode", { optional: true, allowUnauthorized: true })
     ]);
     const testConfig = ["AUTH_REQUIRED", "AUTH_REAUTH_REQUIRED"].includes(testConfigResult?.code) ? null : testConfigResult;

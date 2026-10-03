@@ -3357,7 +3357,7 @@ async function load({visibleShell=false,initialSnapshot=null}={}){
 }
 function setAuthTab(tab){
   if(authBusy)return;
-  $$("[data-auth-tab]").forEach(button=>{const active=button.dataset.authTab===tab;button.classList.toggle("active",active);button.setAttribute("aria-selected",String(active))});
+  $$("[data-auth-tab]").forEach(button=>{const active=button.dataset.authTab===tab;button.classList.toggle("active",active);button.setAttribute("aria-selected",String(active));button.tabIndex=active?0:-1});
   $("#login-form").hidden=tab!=="login";$("#register-form").hidden=tab!=="register";$("#auth-status").textContent="";
   if(matchMedia?.("(pointer:fine)").matches)(tab==="login"?$("#login-form"):$("#register-form")).elements.username.focus();
 }
@@ -4433,7 +4433,18 @@ setInterval(syncLocalDate,30000);
 document.addEventListener("visibilitychange",()=>{if(document.hidden){saveDurableDrafts();stopCaptureAudioRecording();stopCaptureSpeech()}else markApplicationForeground()});
 window.addEventListener("pagehide",()=>{saveDurableDrafts();stopCaptureAudioRecording();stopCaptureSpeech()});
 window.addEventListener("pageshow",markApplicationForeground);
-$$("[data-auth-tab]").forEach(button=>button.addEventListener("click",()=>setAuthTab(button.dataset.authTab)));
+$$("[data-auth-tab]").forEach(button=>{
+  button.addEventListener("click",()=>setAuthTab(button.dataset.authTab));
+  button.addEventListener("keydown",event=>{
+    if(!["ArrowLeft","ArrowRight","Home","End"].includes(event.key))return;
+    const tabs=$$("[data-auth-tab]").filter(item=>!item.hidden&&!item.disabled);
+    if(tabs.length<2)return;
+    event.preventDefault();
+    const current=Math.max(0,tabs.indexOf(button));
+    const next=event.key==="Home"?tabs[0]:event.key==="End"?tabs.at(-1):tabs[(current+(event.key==="ArrowRight"?1:-1)+tabs.length)%tabs.length];
+    setAuthTab(next.dataset.authTab);next.focus()
+  })
+});
 for(const [formId,endpoint]of[["login-form","/api/auth/login"],["register-form","/api/auth/register"]]){
   $(`#${formId}`).addEventListener("submit",async event=>{
     event.preventDefault();const form=event.currentTarget,fields=new FormData(form),status=$("#auth-status"),operation=++authOperationSerial;setAuthBusy(true);status.textContent=formId==="login-form"?"正在登录…":"正在创建账户…";
