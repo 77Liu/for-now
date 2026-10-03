@@ -237,6 +237,8 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
   失败纠正、Git 收尾和 V0.5.0 行动项。
 - `reports/iteration-plan-v0.5.0-2026-10-03.md`：V0.5.0 的 P00/P0/P1 范围、
   两线编排、性能目标、旅程、验证和人工门。
+- `reports/v0.5.0-development-process-2026-10-03.md`：V0.5.0 影子体验、
+  本地提交、性能证据、系统门、主动试运行、账户清理和剩余外部验收。
 - `reports/v0.3.0-git-closeout-2026-09-30.md`：旧工作树、探索 stash、
   本地 `main` 和可恢复归档记录。
 - `reports/g1-contract-freeze-2026-09-29.json`：G1 契约文件摘要、系统测试、PostgreSQL 证据边界及三路重构资源预留。
