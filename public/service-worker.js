@@ -1,8 +1,7 @@
-const CACHE_VERSION = "cike-shell-v0.4.0-module-closure-1";
+const CACHE_VERSION = "cike-shell-v0.4.0-deferred-assets-1";
 const SHELL_ASSETS = [
   "./",
   "index.html",
-  "styles.css",
   "drift.css",
   "app.js",
   "manifest.webmanifest",
@@ -29,6 +28,11 @@ const SHELL_ASSETS = [
   "frontend/sync/index.mjs",
   "frontend/styles/application.css",
   "frontend/time/index.mjs",
+  "assets/icons/apple-touch-icon.png",
+  "assets/icons/icon-192.png",
+  "assets/icons/icon-512.png"
+];
+const KATEX_ASSETS = [
   "vendor/katex/katex.min.css",
   "vendor/katex/katex.min.js",
   "vendor/katex/fonts/KaTeX_AMS-Regular.woff2",
@@ -50,19 +54,32 @@ const SHELL_ASSETS = [
   "vendor/katex/fonts/KaTeX_Size2-Regular.woff2",
   "vendor/katex/fonts/KaTeX_Size3-Regular.woff2",
   "vendor/katex/fonts/KaTeX_Size4-Regular.woff2",
-  "vendor/katex/fonts/KaTeX_Typewriter-Regular.woff2",
+  "vendor/katex/fonts/KaTeX_Typewriter-Regular.woff2"
+];
+const HOME_BACKGROUND_ASSETS = [
   "assets/home-v0.2/desktop-background.png",
   "assets/home-v0.2/mobile-background.png",
-  "assets/icons/apple-touch-icon.png",
-  "assets/icons/icon-192.png",
-  "assets/icons/icon-512.png"
+  "assets/home-v0.2/desktop-background.d55ffa4f0582.webp",
+  "assets/home-v0.2/mobile-background.788fb03c2ae3.webp",
+  "assets/home-v0.2/desktop-background.1408885ed7d3.avif",
+  "assets/home-v0.2/mobile-background.0549e6676ea3.avif"
 ];
 const NETWORK_ONLY_PATHS = ["/api/", "/attachments/", "/auth/", "/ai/"];
+const DEFERRED_ASSET_SET = new Set(HOME_BACKGROUND_ASSETS);
 
 const isNetworkOnly = url => NETWORK_ONLY_PATHS.some(segment => url.pathname.includes(segment));
+const deferredAsset = url => [...DEFERRED_ASSET_SET].find(asset => url.pathname.endsWith(`/${asset}`));
+const cacheOnUse = async request => {
+  const cache = await caches.open(CACHE_VERSION);
+  const cached = await cache.match(request);
+  if (cached) return cached;
+  const response = await fetch(request);
+  if (response.ok) await cache.put(request, response.clone());
+  return response;
+};
 
 self.addEventListener("install", event => {
-  event.waitUntil(caches.open(CACHE_VERSION).then(cache => cache.addAll(SHELL_ASSETS)).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(CACHE_VERSION).then(cache => cache.addAll([...SHELL_ASSETS, ...KATEX_ASSETS])).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", event => {
@@ -79,6 +96,11 @@ self.addEventListener("fetch", event => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
   if (isNetworkOnly(url)) return;
+  const deferred = deferredAsset(url);
+  if (deferred) {
+    event.respondWith(cacheOnUse(request));
+    return;
+  }
 
   if (request.mode === "navigate") {
     event.respondWith(

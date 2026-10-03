@@ -1,5 +1,5 @@
 import { createApiClient } from "../api/index.mjs";
-import { escapeHtml, plainPreview, presentError, renderMarkdown } from "../content/index.mjs";
+import { createLatexRenderer, escapeHtml, plainPreview, presentError, renderMarkdown } from "../content/index.mjs";
 import {
   createPageEffects,
   DISCOVERY_GENRES,
@@ -145,7 +145,8 @@ function showPermissionPage(view,capability){
   if(title)title.textContent=`${names[view]||"此页面"}仅 Owner 可访问`;
   if(copy)copy.textContent=`当前账户没有访问此管理页面的权限（${capability}）。敏感内容未加载，你仍可继续使用个人记录与偏好设置。`
 }
-function renderLatex(container){if(!container||!window.katex)return;container.querySelectorAll("[data-tex]").forEach(element=>{try{window.katex.render(decodeURIComponent(element.dataset.tex||""),element,{displayMode:element.classList.contains("latex-display"),throwOnError:false,strict:"ignore",trust:false})}catch{element.textContent=decodeURIComponent(element.dataset.tex||"")}})}
+const createLatexAsset=(tagName,properties,kind)=>new Promise((resolve,reject)=>{const element=document.createElement(tagName);Object.assign(element,properties);element.dataset.latexAsset=kind;element.onload=resolve;element.onerror=()=>{document.querySelectorAll("[data-latex-asset]").forEach(asset=>asset.remove());reject(new Error(`LATEX_ASSET_LOAD_FAILED:${kind}`))};document.head.append(element)});
+const renderLatex=createLatexRenderer({createAsset:createLatexAsset,getKatex:()=>window.katex,resolveAssetUrl:appUrl});
 function currentContextSource(source){
   const type=source?.resourceType,id=source?.resourceId,key=source?.location?.targetKey||"";
   if(type==="onboarding"){

@@ -23,7 +23,6 @@ import {
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const appEntry = await fs.readFile(path.join(ROOT, "public/app.js"), "utf8");
 const appRuntime = await fs.readFile(path.join(ROOT, "public/frontend/app/runtime.mjs"), "utf8");
-const rootStyles = await fs.readFile(path.join(ROOT, "public/styles.css"), "utf8");
 const applicationStyles = await fs.readFile(path.join(ROOT, "public/frontend/styles/application.css"), "utf8");
 const html = await fs.readFile(path.join(ROOT, "public/index.html"), "utf8");
 async function publicSourceFiles(directory) {
@@ -56,7 +55,7 @@ assert.match(appRuntime, /已保存，但行动列表刷新失败/);
 assert.match(appRuntime, /function contentState\(/);
 assert.match(appRuntime, /data-content-action/);
 assert.doesNotMatch(appRuntime, /reasoningDisclosure|saved-reasoning|ai-answer-reasoning/);
-assert.equal(rootStyles.trim(), '@import url("./frontend/styles/application.css");');
+assert.match(appRuntime, /createLatexRenderer\(\{createAsset:createLatexAsset,getKatex:\(\)=>window\.katex,resolveAssetUrl:appUrl\}\)/);
 assert.match(applicationStyles, /:root\{/);
 assert.match(applicationStyles, /(?:^|\n)\[hidden\]\{display:none!important\}/);
 assert.match(applicationStyles, /env\(safe-area-inset-bottom\)/);
@@ -66,6 +65,8 @@ assert.match(applicationStyles, /\.content-state\.failure/);
 assert.doesNotMatch(applicationStyles, /\.saved-reasoning|\.answer-reasoning/);
 assert.match(html, /id="home-open-thought"/);
 assert.match(html, /id="home-mood-sparkline"/);
+assert.match(html, /<link rel="stylesheet" href="frontend\/styles\/application\.css">/);
+assert.doesNotMatch(html, /(?:href|src)="(?:styles\.css|vendor\/katex\/katex\.min\.(?:css|js))"/);
 assert.match(html, /id="discovery-query"/);
 assert.match(html, /id="view-permission"/);
 assert.match(html, /data-owner-surface-root="architecture"/);

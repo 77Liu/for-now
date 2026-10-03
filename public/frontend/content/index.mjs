@@ -7,6 +7,73 @@ export const escapeHtml = value => String(value ?? "").replace(/[&<>"]/g, charac
   '"': "&quot;"
 })[character]);
 
+export function createLatexRenderer({
+  createAsset,
+  getKatex = () => globalThis.katex,
+  resolveAssetUrl = value => value
+} = {}) {
+  let loadPromise = null;
+  let assetsReady = false;
+  const pendingContainers = new Set();
+  const elements = container => [...(container?.querySelectorAll?.("[data-tex]") || [])];
+  const fallback = container => {
+    for (const element of elements(container)) {
+      element.textContent = decodeURIComponent(element.dataset.tex || "");
+    }
+  };
+  const render = (container, katex) => {
+    for (const element of elements(container)) {
+      try {
+        katex.render(decodeURIComponent(element.dataset.tex || ""), element, {
+          displayMode: element.classList.contains("latex-display"),
+          throwOnError: false,
+          strict: "ignore",
+          trust: false
+        });
+      } catch {
+        fallback({ querySelectorAll: () => [element] });
+      }
+    }
+  };
+  const load = () => {
+    if (loadPromise) return loadPromise;
+    loadPromise = Promise.all([
+      createAsset("link", {
+        rel: "stylesheet",
+        href: resolveAssetUrl("vendor/katex/katex.min.css")
+      }, "stylesheet"),
+      createAsset("script", {
+        async: true,
+        src: resolveAssetUrl("vendor/katex/katex.min.js")
+      }, "script")
+    ]).then(() => {
+      const katex = getKatex();
+      if (!katex?.render) throw new Error("LATEX_RENDERER_UNAVAILABLE");
+      assetsReady = true;
+      for (const container of pendingContainers) render(container, katex);
+      pendingContainers.clear();
+      return katex;
+    }).catch(error => {
+      loadPromise = null;
+      for (const container of pendingContainers) fallback(container);
+      pendingContainers.clear();
+      throw error;
+    });
+    return loadPromise;
+  };
+
+  return function renderLatex(container) {
+    if (!elements(container).length) return Promise.resolve(false);
+    const katex = getKatex();
+    if (assetsReady && katex?.render) {
+      render(container, katex);
+      return Promise.resolve(true);
+    }
+    pendingContainers.add(container);
+    return load().then(() => true, () => false);
+  };
+}
+
 export function inlineMarkdown(value) {
   const code = [], math = [];
   let source = String(value ?? "")

@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { promises as fs } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
+  createLatexRenderer,
   escapeHtml,
   inlineMarkdown,
   plainPreview,
@@ -166,6 +167,72 @@ if (process.argv.includes("--timezone-case")) {
     plainPreview("![封面](cover.png) [链接](https://example.com) **粗体** \\[x+y\\]"),
     "封面 链接 粗体 x+y"
   );
+
+  const latexAssets = [];
+  const createLatexAsset = (tagName, properties, kind) => new Promise((resolve, reject) => {
+    latexAssets.push({ tagName, kind, ...properties, resolve, reject });
+  });
+  let katex;
+  let latexElements = [];
+  const latexContainer = { querySelectorAll: () => latexElements };
+  const latexRenders = [];
+  const renderLatex = createLatexRenderer({
+    createAsset: createLatexAsset,
+    getKatex: () => katex,
+    resolveAssetUrl: asset => `/now/${asset}`
+  });
+  assert.equal(await renderLatex(latexContainer), false);
+  assert.equal(latexAssets.length, 0);
+  latexElements = [{
+    dataset: { tex: encodeURIComponent("\\int_0^1 x^2 dx") },
+    classList: { contains: value => value === "latex-display" },
+    textContent: ""
+  }];
+  const firstLatexRender = renderLatex(latexContainer);
+  const repeatedLatexRender = renderLatex(latexContainer);
+  assert.deepEqual(
+    latexAssets.map(element => [element.tagName, element.href || element.src]),
+    [
+      ["link", "/now/vendor/katex/katex.min.css"],
+      ["script", "/now/vendor/katex/katex.min.js"]
+    ]
+  );
+  katex = { render: (tex, element, options) => latexRenders.push([tex, element, options]) };
+  latexAssets.forEach(element => element.resolve());
+  assert.deepEqual(await Promise.all([firstLatexRender, repeatedLatexRender]), [true, true]);
+  assert.equal(latexAssets.length, 2);
+  assert.equal(latexRenders.length, 1);
+  assert.equal(latexRenders[0][0], "\\int_0^1 x^2 dx");
+  assert.equal(latexRenders[0][2].displayMode, true);
+  await renderLatex(latexContainer);
+  assert.equal(latexRenders.length, 2);
+
+  const recoveryAssets = [];
+  const recoveryRenders = [];
+  let recoveryKatex;
+  const recoveryElement = {
+    dataset: { tex: encodeURIComponent("a_b") },
+    classList: { contains: () => false },
+    textContent: ""
+  };
+  const recoveryRenderer = createLatexRenderer({
+    createAsset: (tagName, properties, kind) => new Promise((resolve, reject) => {
+      recoveryAssets.push({ tagName, kind, ...properties, resolve, reject });
+    }),
+    getKatex: () => recoveryKatex
+  });
+  const recoveryContainer = { querySelectorAll: () => [recoveryElement] };
+  const failedLatexRender = recoveryRenderer(recoveryContainer);
+  recoveryAssets[0].reject(new Error("offline"));
+  recoveryAssets[1].resolve();
+  assert.equal(await failedLatexRender, false);
+  assert.equal(recoveryElement.textContent, "a_b");
+  const retriedLatexRender = recoveryRenderer(recoveryContainer);
+  assert.equal(recoveryAssets.length, 4);
+  recoveryKatex = { render: tex => recoveryRenders.push(tex) };
+  recoveryAssets.slice(2).forEach(element => element.resolve());
+  assert.equal(await retriedLatexRender, true);
+  assert.deepEqual(recoveryRenders, ["a_b"]);
 
   const saveContext = {
     operation: "保存这篇日记",

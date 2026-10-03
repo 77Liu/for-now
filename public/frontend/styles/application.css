@@ -1759,7 +1759,16 @@ body{min-height:100vh;min-height:100dvh}
   z-index:-1;
   inset:0 0 0 176px;
   pointer-events:none;
-  background:var(--home-paper) url("../../assets/home-v0.2/desktop-background.png") center bottom / cover no-repeat;
+  background-color:var(--home-paper);
+  background-image:url("../../assets/home-v0.2/desktop-background.png");
+  background-image:image-set(
+    url("../../assets/home-v0.2/desktop-background.1408885ed7d3.avif") type("image/avif"),
+    url("../../assets/home-v0.2/desktop-background.d55ffa4f0582.webp") type("image/webp"),
+    url("../../assets/home-v0.2/desktop-background.png") type("image/png")
+  );
+  background-position:center bottom;
+  background-size:cover;
+  background-repeat:no-repeat;
 }
 .home-v02-masthead{
   display:flex;
@@ -2074,6 +2083,11 @@ body.home-v02-editor-open{overflow:hidden}
   .home-v02-background{
     inset:0;
     background-image:url("../../assets/home-v0.2/mobile-background.png");
+    background-image:image-set(
+      url("../../assets/home-v0.2/mobile-background.0549e6676ea3.avif") type("image/avif"),
+      url("../../assets/home-v0.2/mobile-background.788fb03c2ae3.webp") type("image/webp"),
+      url("../../assets/home-v0.2/mobile-background.png") type("image/png")
+    );
     background-position:center top;
   }
   .home-v02-masthead{min-height:48px;margin-bottom:15px}
