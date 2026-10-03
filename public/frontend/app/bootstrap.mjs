@@ -1,8 +1,11 @@
+import { createApiClient } from "../api/index.mjs";
 import { ownerViewCapabilities, resolveApplicationRoute, viewSections } from "../pages/index.mjs";
+import { sessionScope } from "../session/index.mjs";
 
 const appEntryUrl = new URL("../../app.js", import.meta.url);
 const basePath = new URL(".", appEntryUrl).pathname.replace(/\/$/, "");
 const apiOrigin = String(document.documentElement.dataset.apiOrigin || "").replace(/\/+$/, "");
+const apiClient = createApiClient({ baseUrl: appEntryUrl, apiOrigin, session: sessionScope });
 const startupMarks = {
   navigationStart: 0,
   moduleLoaded: Number(performance.now().toFixed(1))
@@ -12,25 +15,12 @@ function markStartup(name) {
   startupMarks[name] = Number(performance.now().toFixed(1));
 }
 
-function appUrl(value) {
-  if (apiOrigin) return `${apiOrigin}${value}`;
-  return `${basePath}${value}` || value;
-}
-
 async function requestJson(url, { optional = false, allowUnauthorized = false } = {}) {
-  const response = await fetch(appUrl(url), {
-    headers: { accept: "application/json", "content-type": "application/json" }
-  });
-  if (optional && response.status === 404) return null;
-  const result = await response.json();
-  if (allowUnauthorized && response.status === 401) return result;
-  if (!response.ok) {
-    throw Object.assign(new Error(result?.error?.message || result?.error || "启动请求失败"), {
-      code: result?.error?.code || result?.code || "",
-      status: response.status
-    });
-  }
-  return result;
+  return apiClient.request(
+    url,
+    { headers: { accept: "application/json" } },
+    { optional, allowUnauthorized, authGate: false, fallback: "启动请求失败" }
+  );
 }
 
 function activateRouteShell(user) {

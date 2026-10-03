@@ -17,7 +17,7 @@ const CHROME = resolveHeadlessBrowser();
 const BUDGET = Object.freeze({
   blockingStyleRequests: 2,
   blockingStyleBytes: 250 * 1024,
-  entryModuleCount: 4,
+  entryModuleCount: 6,
   entryModuleBytes: 64 * 1024,
   deferredRuntimeModuleCount: 21,
   deferredRuntimeModuleBytes: 724 * 1024,
