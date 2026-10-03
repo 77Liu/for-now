@@ -30,6 +30,7 @@
     "test:web-budget": "node scripts/web-first-screen-budget-regression.mjs",
     "test:url-history": "node scripts/url-history-regression.mjs",
     "test:pwa": "node scripts/pwa-regression.mjs",
+    "test:notifications": "node scripts/notification-entry-regression.mjs",
     "test:ui": "node scripts/ui-regression.mjs",
     "test:journeys:validate": "node scripts/user-journey-regression.mjs validate",
     "test:journeys:smoke": "node scripts/user-journey-regression.mjs smoke",

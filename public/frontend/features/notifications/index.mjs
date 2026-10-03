@@ -17,7 +17,8 @@ const TASK_TITLES = Object.freeze({
 });
 
 const RETRYABLE_STATUSES = new Set(["failed", "stale"]);
-const FAILED_TRANSCRIPTION_MESSAGE = "转写暂时失败。原音已保留，可以再次尝试。";
+const FAILED_TRANSCRIPTION_FALLBACK = "转写暂时失败。";
+const RETAINED_AUDIO_MESSAGE = "原音已保留，可以再次尝试。";
 const text = value => typeof value === "string" ? value.trim() : "";
 const escapeHtml = value => String(value ?? "").replace(/[&<>"]/g, character => ({
   "&": "&amp;",
@@ -56,7 +57,11 @@ function displayTime(value, formatter) {
 
 function notificationMessage(notification, task, status) {
   if (task?.kind === "captureTranscription" && status === "failed") {
-    return FAILED_TRANSCRIPTION_MESSAGE;
+    const source = text(notification?.message);
+    const reason = /^[A-Z][A-Z0-9_]{3,}(?::|\b)/.test(source) || /\bupstream\b/i.test(source)
+      ? FAILED_TRANSCRIPTION_FALLBACK
+      : source || FAILED_TRANSCRIPTION_FALLBACK;
+    return reason.includes("原音") ? reason : `${reason}${/[。！？!?]$/.test(reason) ? "" : "。"}${RETAINED_AUDIO_MESSAGE}`;
   }
   return text(notification?.message);
 }

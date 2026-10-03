@@ -44,7 +44,9 @@ import {
   createWeightBatchItems,
   nextWeightBatchIndex,
   weightBatchRecordInput,
-  createOnboardingV2Controller
+  createOnboardingV2Controller,
+  notificationEntryMarkup,
+  transitionNotificationRetry
 } from "../features/index.mjs";
 import {
   AUDIO_MAX_DURATION_MS,
@@ -110,6 +112,7 @@ let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
 let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,discoveryController=null,actionsSnapshot={actions:[],habits:[],habitCheckins:[]},actionsRequestSerial=0,feedbackItems=[],feedbackRequestSerial=0,exportManifest=null,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.1",releaseVersion="0.5.1",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
 let notificationsLoadState="idle",feedbackLoadState="idle",exportLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,activeThoughtRouteId="",activeRouteResult=null;
+let notificationRetryingTaskIds=[];
 let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeEditorTrigger=null,activeSpeechCaptureId="",activeSpeechSourceKey="",activeSpeechVoice="",activeSpeechPlaybackRate=1,activeSpeechAudio=null,activeSpeechObjectUrl="",activeSpeechAbortController=null;
 const keepsakeEditor={file:null,sourceDataUrl:"",sourceImage:null,sourceCanvas:null,maskCanvas:null,autoBase:null,history:[],mode:"keep",drawing:false,lastPoint:null,source:"manual",originalPath:"",cutoutPath:"",mediaDirty:false,renderFrame:0,segmentSerial:0,understandingSerial:0};
 const keepsakeBatch={items:[],activeIndex:0,loading:false};
@@ -1542,12 +1545,11 @@ async function loadTrash(){
   try{const result=await request("/api/trash");if(owner!==currentUser?.id||session!==sessionSerial)return false;trashItems=result.items||[];renderTrash();status.textContent="";return true}
   catch(error){if(owner===currentUser?.id&&session===sessionSerial){status.textContent="";$("#trash-list").innerHTML=contentState({kind:"failure",title:"暂时无法读取回收站",body:"已删除的记录仍按原保留期保存。请检查网络后重试。",action:{command:"retry-trash",label:"重新读取"}})}return false}
 }
-const taskStatusLabels={queued:"排队中",running:"生成中",succeeded:"已完成",failed:"失败",stale:"目标已变化",cancelled:"已取消"};
 function renderNotifications(){
   const items=state.notifications||[],tasks=new Map((state.aiTasks||[]).map(task=>[task.id,task])),unread=Number(state.notificationUnread??notificationUnreadCount)||items.filter(item=>!item.readAt&&["succeeded","failed","stale","cancelled"].includes(item.status)).length;
   $("#notification-dot").hidden=!unread;
   $("#notification-list").innerHTML=items.length
-    ?items.map(item=>{const task=tasks.get(item.taskId),canRetry=task&&["failed","stale"].includes(task.status);return `<article class="notification-entry ${item.readAt?"":"unread"}"><div><header><b>${escapeHtml(item.title||"后台任务")}</b><span>${escapeHtml(taskStatusLabels[item.status]||item.status)}</span><time>${formatDate(item.updatedAt||item.createdAt)}</time></header><p>${escapeHtml(item.message||"")}</p></div><div>${item.targetId?`<button class="subtle-action" type="button" data-notification-open="${escapeHtml(item.targetId)}" data-notification-task="${escapeHtml(item.taskId||"")}" data-notification-id="${escapeHtml(item.id)}">查看</button>`:""}${canRetry?`<button class="subtle-action" type="button" data-task-retry="${escapeHtml(task.id)}">重试</button>`:""}${item.readAt?"":`<button class="subtle-action" type="button" data-notification-read="${escapeHtml(item.id)}">已读</button>`}</div></article>`}).join("")
+    ?items.map(item=>notificationEntryMarkup(item,tasks.get(item.taskId),{retryingTaskIds:notificationRetryingTaskIds,formatTimestamp:formatDate})).join("")
     :notificationsLoadState==="failure"
       ?contentState({kind:"failure",title:"暂时无法读取通知",body:"后台任务和已有结果没有被删除。请检查网络后重试。",action:{command:"retry-notifications",label:"重新读取"}})
       :notificationsLoadState==="loading"
@@ -3369,7 +3371,7 @@ function clearPrivateSessionState(){
   closeImageViewer({restoreFocus:false});
   onboardingV2Controller.reset();
   resetState();routeDataReady=false;activeThoughtRouteId="";activeRouteResult=null;llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationsLoadState="idle";actionsSnapshot={actions:[],habits:[],habitCheckins:[]};feedbackItems=[];feedbackLoadState="idle";exportManifest=null;exportLoadState="idle";personalContext=null;personalContextLoadState="idle";accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.5.1";homeMemoryKeys=[];homeMemoryByKey=new Map();closeHomeEditors({restoreFocus:false});resetOwnerSurfaces();invalidatePageLoads();draftTags=[];captureDraftTags=[];pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";
+  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationRetryingTaskIds=[];notificationsLoadState="idle";actionsSnapshot={actions:[],habits:[],habitCheckins:[]};feedbackItems=[];feedbackLoadState="idle";exportManifest=null;exportLoadState="idle";personalContext=null;personalContextLoadState="idle";accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.5.1";homeMemoryKeys=[];homeMemoryByKey=new Map();closeHomeEditors({restoreFocus:false});resetOwnerSurfaces();invalidatePageLoads();draftTags=[];captureDraftTags=[];pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";
   healthParseSerial+=1;latestHealthRequest=0;healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=[];healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]};for(const draft of Object.values(healthImageDrafts))Object.assign(draft,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0});
   bookParseSerial+=1;for(const url of Object.values(bookPreviewUrls))if(url)URL.revokeObjectURL(url);bookPreviewUrls={cover:"",recognition:""};pendingBookImages={cover:null,recognition:null};editingBookId="";activeBookId="";activeBookFeatureNoteId="";bookCreatorOpen=false;bookDetailCondensed=false;
   keepsakeEditor.segmentSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.history=[];
@@ -3665,7 +3667,13 @@ $("#notifications-read-all").addEventListener("click",async e=>{const button=e.c
 document.addEventListener("click",async e=>{
   const read=e.target.closest("[data-notification-read]"),open=e.target.closest("[data-notification-open]"),retry=e.target.closest("[data-task-retry]");if(!read&&!open&&!retry)return;
   try{
-    if(retry){retry.disabled=true;await request(`/api/ai-tasks/${retry.dataset.taskRetry}/retry`,{method:"POST",body:"{}"});await loadNotifications();scheduleNotificationPoll();showToast("任务已重新排队");return}
+    if(retry){
+      const started=transitionNotificationRetry(notificationRetryingTaskIds,{type:"start",taskId:retry.dataset.taskRetry});if(!started.accepted)return;
+      notificationRetryingTaskIds=[...started.retryingTaskIds];renderNotifications();
+      try{await request(`/api/ai-tasks/${retry.dataset.taskRetry}/retry`,{method:"POST",body:"{}"});await loadNotifications();scheduleNotificationPoll();showToast("任务已重新排队")}
+      finally{notificationRetryingTaskIds=[...transitionNotificationRetry(notificationRetryingTaskIds,{type:"finish",taskId:retry.dataset.taskRetry}).retryingTaskIds];renderNotifications()}
+      return
+    }
     const id=(read||open).dataset.notificationId||read?.dataset.notificationRead;if(id)await request(`/api/notifications/${id}/read`,{method:"PATCH",body:"{}"});
     if(open){const task=(state.aiTasks||[]).find(item=>item.id===open.dataset.notificationTask),notification=(state.notifications||[]).find(item=>item.id===id);await openAiTaskTarget(task,notification)}
     else await loadNotifications()

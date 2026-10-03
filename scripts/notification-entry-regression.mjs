@@ -69,6 +69,10 @@ for (const copy of requiredCopy) {
 }
 assert.deepEqual(failedNotification, notificationBefore);
 assert.deepEqual(failedTask, taskBefore);
+assert.equal(notificationEntryState({
+  ...failedNotification,
+  message: "当前录音格式无法直接转写，请保留原音并重新尝试"
+}, failedTask, { formatTimestamp }).message, "当前录音格式无法直接转写，请保留原音并重新尝试");
 
 const started = transitionNotificationRetry([], { type: "start", taskId: failedTask.id });
 assert.equal(started.accepted, true);
