@@ -115,7 +115,8 @@ const suites = {
     ["backup recovery and readiness", ["scripts/backup-regression.mjs"]],
     ["monitoring", ["scripts/monitor-regression.mjs"]],
     ["restore validation", ["scripts/restore-validation-regression.mjs"]],
-    ["deployment rollback", ["scripts/deploy-regression.mjs"]]
+    ["deployment rollback", ["scripts/deploy-regression.mjs"]],
+    ["isolated online Preview deployment", ["scripts/preview-deploy-regression.mjs"]]
   ],
   load: [
     ["isolated load regression", ["scripts/load-regression.mjs"]],

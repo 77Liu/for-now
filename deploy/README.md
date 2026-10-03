@@ -4,6 +4,10 @@ The cloud service is the canonical data source. Code is deployed from Gitee;
 runtime data lives only in `/srv/for-now/data`; OSS receives consistent backup
 archives. Never synchronize a live data directory in both directions.
 
+The isolated online Preview has separate code, service, environment, and data
+boundaries. Its installation, deploy, rollback, and verification procedure is
+documented in [`README-preview.md`](README-preview.md).
+
 The current production backend is PostgreSQL 16.15. This candidate requires
 separate data/auth/AI-budget/recovery roles, offline export, and a protected
 single-write boundary documented in
