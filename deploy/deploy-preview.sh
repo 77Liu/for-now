@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export PATH=/usr/local/bin:/usr/bin:/bin
+export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin
 
 repo_url=${REPO_URL:-git@gitee.com:Liu_772021/for-now.git}
 branch=${DEPLOY_BRANCH:-preview/main}

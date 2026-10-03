@@ -35,6 +35,7 @@ assert.doesNotMatch(nginxSource, /127\.0\.0\.1:4173|\/opt\/for-now\/app/);
 assert.match(siteSource, /include \/etc\/nginx\/snippets\/for-now-preview\*\.conf;/);
 assert.match(await fs.readFile(path.join(root, "deploy/nginx-for-now.conf"), "utf8"), /proxy_pass http:\/\/127\.0\.0\.1:4173;/);
 assert.match(deploySource, /preview\/\*/);
+assert.match(deploySource, /^export PATH=.*\/usr\/sbin$/m);
 assert.match(deploySource, /npm --prefix "\$candidate" ci --omit=dev/);
 assert.match(deploySource, /prompt-catalog-regression\.mjs/);
 assert.match(deploySource, /gzip -n -6/);
@@ -298,7 +299,7 @@ async function setupScenario(name, {
   await writeShim(directory, bin);
 
   let script = deploySource.replace(
-    "export PATH=/usr/local/bin:/usr/bin:/bin",
+    "export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin",
     `export PATH=${bin}:/usr/local/bin:/usr/bin:/bin`
   );
   for (const prefix of ["/opt/for-now-preview", "/home/for-now-preview", "/srv/for-now-preview", "/etc/", "/usr/local/"]) {
