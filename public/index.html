@@ -1356,7 +1356,14 @@
   </div>
   <script>
     if ("serviceWorker" in navigator) {
-      addEventListener("load", () => navigator.serviceWorker.register("service-worker.js").catch(() => {}), { once: true });
+      addEventListener("load", () => {
+        const registerWorker = () => navigator.serviceWorker.register("service-worker.js").catch(() => {});
+        const waitForStableRuntime = () => {
+          if (document.documentElement.dataset.runtimeReady === "1") setTimeout(registerWorker, 1500);
+          else setTimeout(waitForStableRuntime, 50);
+        };
+        waitForStableRuntime();
+      }, { once: true });
     }
   </script>
 </body>

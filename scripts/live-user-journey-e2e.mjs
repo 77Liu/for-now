@@ -35,7 +35,7 @@ const remotePreviewTarget = ALLOW_REMOTE_PREVIEW
 assert.ok(localTarget || remotePreviewTarget, "E2E_APP_URL 必须是本机隔离服务或显式允许的线上 Preview");
 assert.match(USERNAME, /^[\p{L}\p{N}_.-]{3,32}$/u, "E2E_USERNAME 无效");
 assert.ok(PASSWORD.length >= 8, "E2E_PASSWORD 未配置");
-assert.ok(["register", "onboarding", "account-isolation", "verify", "cleanup-duplicates", "core-records", "configure-ai", "media-inputs", "media-records", "main-original", "health-ocr-preview", "health-ocr", "ai-answer", "keepsake-inputs", "keepsake", "statistics"].includes(MODE), `不支持的 live E2E 模式：${MODE}`);
+assert.ok(["register", "onboarding", "account-isolation", "verify", "cleanup-duplicates", "core-records", "configure-ai", "media-inputs", "media-records", "main-original", "health-ocr-preview", "health-ocr", "ai-answer", "keepsake-inputs", "keepsake", "statistics", "preview-audit"].includes(MODE), `不支持的 live E2E 模式：${MODE}`);
 if (MODE === "register") assert.ok(INVITATION.length >= 8, "E2E_INVITATION 未配置");
 if (MODE === "account-isolation") {
   assert.ok(OWN_MARKER.length >= 8, "E2E_OWN_MARKER 未配置");
@@ -276,7 +276,9 @@ try {
     await fill("#login-form input[name=username]", USERNAME);
     await fill("#login-form input[name=password]", PASSWORD);
     await click("#login-form button[type=submit]");
-    await waitUntil(`document.querySelector("#auth-gate").hidden&&!document.body.classList.contains("auth-locked")`, {
+    await waitUntil(`document.querySelector("#auth-gate").hidden
+      &&!document.body.classList.contains("auth-locked")
+      &&document.querySelector("#login-form button[type=submit]").disabled===false`, {
       label: "登录完成"
     });
     assert.equal(await evaluate(`document.querySelector("#account-name").textContent`), USERNAME);
@@ -289,7 +291,9 @@ try {
     await fill("#register-form input[name=password]", PASSWORD);
     await fill("#register-form input[name=invitation]", INVITATION);
     await click("#register-form button[type=submit]");
-    await waitUntil(`document.querySelector("#auth-gate").hidden&&!document.body.classList.contains("auth-locked")`, {
+    await waitUntil(`document.querySelector("#auth-gate").hidden
+      &&!document.body.classList.contains("auth-locked")
+      &&document.querySelector("#register-form button[type=submit]").disabled===false`, {
       label: "注册完成"
     });
     assert.equal(await evaluate(`document.querySelector("#account-name").textContent`), USERNAME);
@@ -314,6 +318,17 @@ try {
     await click(`[data-view="${view}"]`);
     await waitUntil(`document.querySelector("#view-${view}").classList.contains("active")`, {
       label: `打开 ${view}`
+    });
+  };
+  const waitForCaptureSaved = async (marker, label) => {
+    await waitUntil(`document.querySelector("#capture-list").textContent.includes(${JSON.stringify(marker)})
+      &&document.querySelector("#capture-submit").disabled===false
+      &&document.querySelector("#capture-content").value===""
+      &&document.querySelectorAll('[data-content-image-editor="capture"] .content-image-preview').length===0
+      &&document.querySelector("#capture-audio-preview").hidden`, {
+      attempts: 600,
+      delay: 100,
+      label
     });
   };
   const deleteExtras = async ({ selector, countExpression, label }) => {
@@ -369,9 +384,7 @@ try {
       await setRequestId("#capture-form", `00000000-0000-4000-8000-${USERNAME.endsWith("02")?"000000000502":"000000000501"}`);
       await fill("#capture-content", OWN_MARKER);
       await click("#capture-submit");
-      await waitUntil(`document.querySelector("#capture-list").textContent.includes(${JSON.stringify(OWN_MARKER)})`, {
-        label: "账户隔离捕念保存"
-      });
+      await waitForCaptureSaved(OWN_MARKER, "账户隔离捕念保存");
     }
     await navigate();
     await waitUntil(`document.querySelector("#auth-gate").hidden&&!document.body.classList.contains("auth-locked")`, {
@@ -415,6 +428,106 @@ try {
     result.counts.connectionTests = 1;
     result.connectionStatus = await evaluate(`document.querySelector("#llm-settings-status").textContent`);
     await screenshot("configure-ai.png");
+  } else if (MODE === "preview-audit") {
+    await cdp.send("Network.setCacheDisabled", { cacheDisabled: true });
+    await cdp.send("Network.setBypassServiceWorker", { bypass: true });
+    await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
+      source: `
+        addEventListener("DOMContentLoaded", () => {
+          const check = () => {
+            const active = document.querySelector(".view.active");
+            if (document.body && !document.body.classList.contains("auth-locked") && active && getComputedStyle(active).display !== "none") {
+              window.__currentScreenFeedback = Number(performance.now().toFixed(1));
+              observer.disconnect();
+            }
+          };
+          const observer = new MutationObserver(check);
+          observer.observe(document.body, { attributes: true, attributeFilter: ["class"], subtree: true });
+          check();
+        }, { once: true });
+      `
+    });
+    const auditStart = cdp.events.length;
+    const auditUrl = new URL("today?native-performance=1&budget-profile=public-preview", APP_URL).href;
+    await cdp.send("Page.navigate", { url: auditUrl });
+    await waitUntil(`document.querySelector("#startup-performance-metric")?.textContent.startsWith("启动分段 ")
+      &&document.documentElement.dataset.runtimeReady==="1"
+      &&document.querySelector("#auth-gate").hidden`, {
+      attempts: 400,
+      delay: 25,
+      label: "线上 Preview 稳定首屏"
+    });
+    await sleep(100);
+    result.performance = await evaluate(`(() => {
+      const navigation=performance.getEntriesByType("navigation")[0];
+      const metric=document.querySelector("#startup-performance-metric").textContent.replace(/^启动分段 /,"");
+      const startup=JSON.parse(metric);
+      return {
+        profile:"public-network",
+        dclMs:Number(navigation.domContentLoadedEventEnd.toFixed(1)),
+        currentScreenFeedbackMs:window.__currentScreenFeedback,
+        visibleShellMs:startup.marks.visibleShell,
+        stableHomeMs:startup.marks.stableHome,
+        domNodes:document.getElementsByTagName("*").length
+      };
+    })()`);
+    const auditEvents = cdp.events.slice(auditStart);
+    const requests = new Map(auditEvents
+      .filter(event => event.method === "Network.requestWillBeSent")
+      .map(event => [event.params.requestId, event.params.request.url]));
+    const responses = new Map(auditEvents
+      .filter(event => event.method === "Network.responseReceived" && event.params.response.url.startsWith(APP_URL))
+      .map(event => [event.params.requestId, {
+        url: event.params.response.url,
+        status: event.params.response.status,
+        transferBytes: 0
+      }]));
+    for (const event of auditEvents.filter(event => event.method === "Network.loadingFinished")) {
+      if (responses.has(event.params.requestId)) responses.get(event.params.requestId).transferBytes = Math.round(event.params.encodedDataLength);
+    }
+    const expectedFailures = new Set(["/preview/api/local-test-mode:404"]);
+    result.network = {
+      resources: [...responses.values()].filter(item => item.transferBytes > 0).length,
+      transferBytes: [...responses.values()].reduce((total, item) => total + item.transferBytes, 0),
+      unexpectedResponses: [...responses.values()]
+        .filter(item => item.status >= 400)
+        .map(item => `${new URL(item.url).pathname}:${item.status}`)
+        .filter(item => !expectedFailures.has(item)),
+      failedRequests: auditEvents
+        .filter(event => event.method === "Network.loadingFailed")
+        .filter(event => requests.has(event.params.requestId))
+        .map(event => ({ url: requests.get(event.params.requestId), error: event.params.errorText }))
+        .filter(item => !(new URL(item.url).pathname === "/preview/api/local-test-mode" && item.error === "net::ERR_ABORTED"))
+        .map(item => `${item.url} ${item.error}`)
+    };
+    result.consoleErrors = auditEvents
+      .filter(event => event.method === "Runtime.consoleAPICalled" && event.params.type === "error")
+      .map(event => event.params.args.map(argument => argument.value || argument.description || "").join(" "));
+    await screenshot("preview-audit-desktop.png");
+    result.responsive = {};
+    for (const [width, height] of [[390, 844], [320, 700]]) {
+      await cdp.send("Emulation.setDeviceMetricsOverride", {
+        width,
+        height,
+        deviceScaleFactor: 2,
+        mobile: true
+      });
+      await sleep(150);
+      result.responsive[width] = await evaluate(`({
+        viewport:window.innerWidth,
+        scrollWidth:document.documentElement.scrollWidth,
+        overflow:document.documentElement.scrollWidth>window.innerWidth
+      })`);
+      assert.equal(result.responsive[width].overflow, false, `${width}px 出现横向溢出`);
+      await screenshot(`preview-audit-${width}.png`);
+    }
+    result.auditCompletedAt = new Date().toISOString();
+    await fs.writeFile(path.join(ARTIFACT_DIR, "preview-audit.json"), `${JSON.stringify(result, null, 2)}\n`);
+    assert.ok(result.performance.currentScreenFeedbackMs < 500, `线上 Preview 当前屏反馈 ${result.performance.currentScreenFeedbackMs}ms 未低于 500ms`);
+    assert.ok(result.performance.stableHomeMs < 1000, `线上 Preview stableHome ${result.performance.stableHomeMs}ms 未低于 1000ms`);
+    assert.deepEqual(result.network.unexpectedResponses, []);
+    assert.deepEqual(result.network.failedRequests, []);
+    assert.deepEqual(result.consoleErrors, []);
   } else if (MODE === "main-original") {
     const marker = "E2E-20261001 主账号授权原图";
     await switchView("captures");
@@ -426,11 +539,7 @@ try {
       await setRequestId("#capture-form", "00000000-0000-4000-8000-000000000601");
       await fill("#capture-content", `${marker}：通过只读生产附件抽样，所有后续写入仅发生在隔离测试账号。`);
       await click("#capture-submit");
-      await waitUntil(`document.querySelector("#capture-list").textContent.includes(${JSON.stringify(marker)})`, {
-        attempts: 600,
-        delay: 100,
-        label: "主账号原图捕念保存"
-      });
+      await waitForCaptureSaved(marker, "主账号原图捕念保存");
     }
     const understood = await evaluate(`[...document.querySelectorAll("[data-capture-id]")].some(card=>
       card.textContent.includes(${JSON.stringify(marker)})&&card.querySelector(".content-understanding")
@@ -494,12 +603,14 @@ try {
       delay: 100,
       label: "小物输入预览"
     });
-    await waitUntil(`!document.querySelector("#keepsake-segment-status").textContent.includes("正在识别主体")`, {
+    await waitUntil(`document.querySelector("#keepsake-segment-status").textContent.includes("自动轮廓已生成")
+      ||document.querySelector("#keepsake-segment-status").textContent.includes("自动提取未完成")`, {
       attempts: 900,
       delay: 100,
       label: "小物自动分割结果"
     });
     result.segmentationStatus = await evaluate(`document.querySelector("#keepsake-segment-status").textContent`);
+    assert.match(result.segmentationStatus, /自动轮廓已生成/, "小物自动分割未成功");
     result.counts.keepsakeDrafts = await evaluate(`document.querySelectorAll(".keepsake-batch-item").length`);
     await screenshot("keepsake-inputs.png");
   } else if (MODE === "keepsake") {
@@ -675,11 +786,7 @@ try {
       await setRequestId("#capture-form", "00000000-0000-4000-8000-000000000201");
       await fill("#capture-content", `${imageMarker}：检查上传、原图查看、派生理解和刷新持久化。`);
       await click("#capture-submit");
-      await waitUntil(`document.querySelector("#capture-list").textContent.includes(${JSON.stringify(imageMarker)})`, {
-        attempts: 600,
-        delay: 100,
-        label: "图文捕念保存"
-      });
+      await waitForCaptureSaved(imageMarker, "图文捕念保存");
     }
 
     if (!await includesText("#capture-list", audioMarker)) {
@@ -688,11 +795,7 @@ try {
       await setRequestId("#capture-form", "00000000-0000-4000-8000-000000000202");
       await fill("#capture-content", `${audioMarker}：上传优先，原件、转写和整理稿分层保存。`);
       await click("#capture-submit");
-      await waitUntil(`document.querySelector("#capture-list").textContent.includes(${JSON.stringify(audioMarker)})`, {
-        attempts: 600,
-        delay: 100,
-        label: "语音捕念保存"
-      });
+      await waitForCaptureSaved(audioMarker, "语音捕念保存");
     }
 
     const understandingExists = await evaluate(`[...document.querySelectorAll("[data-capture-id]")].some(card=>
@@ -733,9 +836,7 @@ try {
       await fill("#capture-content", `${marker} 捕念：午后切换任务时注意力下降，先留下事实，再决定是否调整。`);
       await fill("#capture-tags", "端到端 可追溯");
       await click("#capture-submit");
-      await waitUntil(`document.querySelector("#capture-list").textContent.includes(${JSON.stringify(marker)})`, {
-        label: "捕念保存"
-      });
+      await waitForCaptureSaved(marker, "捕念保存");
     }
     result.counts.captures = await evaluate(`document.querySelectorAll("#capture-list [data-capture-id]").length`);
     await screenshot("core-capture.png");

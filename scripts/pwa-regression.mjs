@@ -30,6 +30,8 @@ for (const [file, expectedSize] of [
 
 const html = await fs.readFile(publicPath("index.html"), "utf8");
 assert.match(html, /rel="apple-touch-icon"[^>]+apple-touch-icon\.png/);
+assert.match(html, /document\.documentElement\.dataset\.runtimeReady\s*===\s*["']1["']/);
+assert.match(html, /setTimeout\(registerWorker,\s*1500\)/);
 assert.match(html, /navigator\.serviceWorker\.register\(["']service-worker\.js["']/);
 
 const worker = await fs.readFile(publicPath("service-worker.js"), "utf8");
