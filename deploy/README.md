@@ -54,7 +54,9 @@ No application release or data change was part of that operation.
 ## Initial server setup
 
 1. Install Node.js 20 or newer and npm at `/usr/local/bin/node` and
-   `/usr/local/bin/npm`, plus Git, Nginx, Certbot 5.4 or newer, and ossutil 2.
+   `/usr/local/bin/npm`, plus Git, Nginx, Certbot 5.4 or newer, ossutil 2, and
+   FFmpeg at `/usr/bin/ffmpeg`. FFmpeg is required to normalize private M4A
+   recordings before streaming ASR; deployment fails closed when it is absent.
 2. Attach an ECS RAM role with separate least-privilege access to
    `for-now-backups/*` and `for-now-attachments/*`. The exact attachment policy
    is documented in `knowledge/operations-capacity.md`.

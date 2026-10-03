@@ -10,6 +10,7 @@ const scope = new AsyncLocalStorage();
 const pixel = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 const png = Buffer.from(pixel.split(",")[1], "base64");
 const m4a = Buffer.from([0, 0, 0, 20, 0x66, 0x74, 0x79, 0x70, 0x4d, 0x34, 0x41, 0x20]);
+const wav = Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WAVE"), Buffer.alloc(36)]);
 const audio = `data:audio/mp4;base64,${m4a.toString("base64")}`;
 const context = (group, ownerId) => {
   const dataDir = path.join(root, group, ownerId);
@@ -76,6 +77,15 @@ try {
       assert.equal(recorded.bytes, m4a.length);
       assert.match(recorded.attachmentPath, /^\/attachments\/[\w.-]+\.m4a$/);
       assert.deepEqual(await uploads.read(recorded.attachmentPath), m4a);
+      const derived = await uploads.saveAsrAudio({
+        sourcePath: recorded.attachmentPath,
+        data: wav
+      });
+      assert.equal(derived.mimeType, "audio/wav");
+      assert.equal(derived.bytes, wav.length);
+      assert.equal(derived.attachmentPath, recorded.attachmentPath.replace(/\.m4a$/, ".asr.wav"));
+      assert.deepEqual(await uploads.read(derived.attachmentPath), wav);
+      await uploads.remove(derived.attachmentPath);
       await uploads.remove(recorded.attachmentPath);
     });
 

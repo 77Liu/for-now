@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cike-shell-v0.5.1-bootstrap-split-1";
+const CACHE_VERSION = "cike-shell-v0.5.2-asr-hotfix-1";
 const SHELL_ASSETS = [
   "./",
   "index.html",

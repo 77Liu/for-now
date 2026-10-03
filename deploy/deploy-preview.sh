@@ -70,6 +70,10 @@ if [ "$action" = "deploy" ] && [ ! -f "$ssh_key" ]; then
   echo "Missing $ssh_key. Install a Preview-only read-only deploy key." >&2
   exit 1
 fi
+if [ ! -x /usr/bin/ffmpeg ]; then
+  echo "FFmpeg is required for M4A speech transcription." >&2
+  exit 1
+fi
 
 validate_environment() {
   local keys line key value

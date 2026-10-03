@@ -10,8 +10,24 @@ export function createAttachmentHttp({
   uploadBodyMaxBytes,
   uploadImageMaxBytes,
   contentType,
-  onMissing
+  onMissing,
+  debugServerUrl = "",
+  debugRunId = "pre-fix"
 }) {
+  function byteRange(value, total) {
+    const match = /^bytes=(\d*)-(\d*)$/i.exec(String(value || "").trim());
+    if (!match || (!match[1] && !match[2]) || total < 1) return null;
+    if (!match[1]) {
+      const length = Number(match[2]);
+      if (!Number.isSafeInteger(length) || length < 1) return null;
+      return { start: Math.max(0, total - length), end: total - 1 };
+    }
+    const start = Number(match[1]);
+    const requestedEnd = match[2] ? Number(match[2]) : total - 1;
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(requestedEnd) || start < 0 || start >= total || requestedEnd < start) return null;
+    return { start, end: Math.min(requestedEnd, total - 1) };
+  }
+
   async function handle(req, res, url) {
     if (req.method === "POST" && url.pathname === "/api/images/upload") {
       const input = await bodyJson(req, uploadBodyMaxBytes), images = Array.isArray(input.images) ? input.images : input.image ? [input.image] : [];
@@ -86,8 +102,33 @@ export function createAttachmentHttp({
             if (missing && await onMissing?.(req, res, url)) return true;
             throw error;
           }
-          res.writeHead(200, { "content-type": contentType(name), "cache-control": "private, no-store" });
-          res.end(req.method === "HEAD" ? undefined : data);
+          const responseContentType = contentType(name);
+          // #region debug-point B-D:audio-read
+          if (debugServerUrl && /\.(?:m4a|mp4|webm|ogg|wav)$/i.test(name)) fetch(debugServerUrl,{method:"POST",body:JSON.stringify({sessionId:"login-audio-production",runId:debugRunId,hypothesisId:"B-D",location:"src/http/attachments.mjs:read",msg:"[DEBUG] Audio attachment served",data:{method:req.method,nameExtension:name.split(".").at(-1)?.toLowerCase(),contentType:responseContentType,bytes:data.length,rangeRequested:Boolean(req.headers.range),rangeHeader:String(req.headers.range||"").slice(0,100)},ts:Date.now()})}).catch(()=>{});
+          // #endregion
+          const headers = {
+            "content-type": responseContentType,
+            "cache-control": "private, no-store",
+            "accept-ranges": "bytes"
+          };
+          if (req.headers.range) {
+            const range = byteRange(req.headers.range, data.length);
+            if (!range) {
+              res.writeHead(416, { ...headers, "content-range": `bytes */${data.length}`, "content-length": "0" });
+              res.end();
+              return true;
+            }
+            const body = data.subarray(range.start, range.end + 1);
+            res.writeHead(206, {
+              ...headers,
+              "content-range": `bytes ${range.start}-${range.end}/${data.length}`,
+              "content-length": String(body.length)
+            });
+            res.end(req.method === "HEAD" ? undefined : body);
+          } else {
+            res.writeHead(200, { ...headers, "content-length": String(data.length) });
+            res.end(req.method === "HEAD" ? undefined : data);
+          }
         }
       }
     } else return false;

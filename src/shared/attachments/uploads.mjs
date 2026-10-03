@@ -7,6 +7,7 @@ import { createKeepsakeImageDerivatives } from "./derivatives.mjs";
 
 export const cleanupTemporaryFiles = files => Promise.all(files.map(file => fs.unlink(file).catch(() => {})));
 const TTS_AUDIO_MAX_BYTES = 16 * 1024 * 1024;
+const ASR_AUDIO_MAX_BYTES = 24 * 1024 * 1024;
 
 // Context and inventory are injected so neither account lookup nor a concrete
 // repository leaks into the storage module.
@@ -170,6 +171,40 @@ export function createImageAttachments({
     };
   }
 
+  async function saveAsrAudio({ sourcePath, data, mimeType = "audio/wav", maxBytes = ASR_AUDIO_MAX_BYTES }) {
+    const audio = Buffer.isBuffer(data)
+      ? Buffer.from(data)
+      : data instanceof Uint8Array ? Buffer.from(data) : Buffer.alloc(0);
+    const sourceName = path.basename(String(sourcePath || ""));
+    const sourceStem = sourceName.replace(/\.[^.]+$/, "");
+    const isWav = audio.length >= 44
+      && audio.subarray(0, 4).toString("ascii") === "RIFF"
+      && audio.subarray(8, 12).toString("ascii") === "WAVE";
+    if (!/^[\w.-]+$/.test(sourceName) || !sourceStem || mimeType !== "audio/wav"
+      || !isWav || audio.length > maxBytes) {
+      throw Object.assign(new Error("转写派生音频格式不正确"), {
+        statusCode: 422,
+        code: "INVALID_ASR_DERIVATIVE"
+      });
+    }
+    const { attachmentsDir } = getContext();
+    const name = `${sourceStem}.asr.wav`;
+    const saved = await persistPrepared([{
+      data: audio,
+      mimeType,
+      extension: "wav",
+      bytes: audio.length,
+      name,
+      file: path.join(attachmentsDir, name)
+    }]);
+    return {
+      ...saved,
+      attachmentPath: saved.attachmentPaths[0],
+      mimeType,
+      bytes: audio.length
+    };
+  }
+
   async function saveKeepsakeSources({ image, alphaMask, maxBytes = defaultMaxBytes }) {
     const { attachmentsDir } = getContext();
     const [source] = decodeImages([image], { maxImages: 1, maxBytes });
@@ -278,7 +313,7 @@ export function createImageAttachments({
   }
 
   return {
-    save, saveAudio, saveSpeechAudio, saveKeepsakeSources, saveKeepsakeSet, deriveKeepsakeSet, previewKeepsakeSet,
+    save, saveAudio, saveSpeechAudio, saveAsrAudio, saveKeepsakeSources, saveKeepsakeSet, deriveKeepsakeSet, previewKeepsakeSet,
     discard, remove, recover, prepareDirectory,
     inspect: (resourcePath, options = {}) => storage.inspect({ ...location(resourcePath, getContext()), ...options }),
     read: resourcePath => storage.get(location(resourcePath, getContext()))

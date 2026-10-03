@@ -266,7 +266,11 @@ const segmentationGate = createRateGate(SEGMENTATION_GLOBAL_QPS, SEGMENTATION_GL
 const speechGate = createRateGate(SPEECH_GLOBAL_QPS, SPEECH_GLOBAL_CONCURRENCY);
 const ocrGate = createRateGate(OCR_GLOBAL_QPS, OCR_GLOBAL_CONCURRENCY);
 const documentParseGate = createRateGate(DOCUMENT_PARSE_GLOBAL_QPS, DOCUMENT_PARSE_GLOBAL_CONCURRENCY);
-const speechProvider = createVolcengineSpeechTransport(appConfig.speech);
+const speechProvider = createVolcengineSpeechTransport({
+  ...appConfig.speech,
+  debugServerUrl: appConfig.debug.serverUrl,
+  debugRunId: appConfig.debug.runId
+});
 const visionProvider = createVolcengineVisionTransport(appConfig.vision);
 
 function normalizedOccurredOn(item, previousVersion) {
@@ -1338,6 +1342,9 @@ async function saveOriginalAudio(req, input) {
     bytes: uploaded.bytes,
     durationMs
   };
+  // #region debug-point B-D:audio-upload
+  fetch(appConfig.debug.serverUrl,{method:"POST",body:JSON.stringify({sessionId:"login-audio-production",runId:appConfig.debug.runId,hypothesisId:"B-D",location:"server.mjs:saveOriginalAudio",msg:"[DEBUG] Audio upload normalized metadata",data:{extension:path.extname(audio.attachmentPath),mimeType:audio.mimeType,bytes:audio.bytes,durationMs:audio.durationMs},ts:Date.now()})}).catch(()=>{});
+  // #endregion
   try {
     const result = await storeRepository.executeIdempotent(
       idempotency,
@@ -2185,8 +2192,56 @@ const contentAttachmentService = createContentAttachmentService({
   now,
   createId: () => crypto.randomUUID()
 });
+async function prepareCaptureAsrAudio(work, signal) {
+  if (work.audio.asrAttachmentPath) {
+    try {
+      return {
+        audio: await imageAttachments.read(work.audio.asrAttachmentPath),
+        mimeType: work.audio.asrMimeType || "audio/wav"
+      };
+    } catch (error) {
+      const missing = ["ENOENT", "NoSuchKey"].includes(error?.code) || Number(error?.status) === 404;
+      if (!missing) throw error;
+    }
+  }
+  const source = await imageAttachments.read(work.audio.attachmentPath);
+  const prepared = await speechProvider.prepareAsrAudio({
+    audio: source,
+    mimeType: work.audio.mimeType,
+    signal
+  });
+  if (prepared.audio === source && prepared.mimeType === work.audio.mimeType) return prepared;
+  const derived = await imageAttachments.saveAsrAudio({
+    sourcePath: work.audio.attachmentPath,
+    data: prepared.audio,
+    mimeType: prepared.mimeType
+  });
+  const attached = await storeRepository.update(store => {
+    const capture = store.captures?.find(item => item.id === work.capture.id);
+    if (!capture || capture.audio?.attachmentPath !== work.audio.attachmentPath) return false;
+    capture.audio = {
+      ...capture.audio,
+      asrAttachmentPath: derived.attachmentPath,
+      asrMimeType: derived.mimeType,
+      asrBytes: derived.bytes
+    };
+    capture.updatedAt = now();
+    capture.version = recordVersion(capture.version) + 1;
+    return true;
+  });
+  if (!attached) {
+    await attachmentCleanup.cleanFailedUploads([derived.attachmentPath]).catch(() => {});
+    throw Object.assign(new Error("语音原件已经变化，转写派生物未保留"), { code: "TRANSCRIPTION_STALE" });
+  }
+  // #region debug-point E:asr-derivative
+  fetch(appConfig.debug.serverUrl,{method:"POST",body:JSON.stringify({sessionId:"login-audio-production",runId:appConfig.debug.runId,hypothesisId:"E",location:"server.mjs:prepareCaptureAsrAudio",msg:"[DEBUG] ASR derivative persisted",data:{targetId:safeText(work.capture.id,100),sourcePath:work.audio.attachmentPath,derivedPath:derived.attachmentPath,mimeType:derived.mimeType,bytes:derived.bytes},ts:Date.now()})}).catch(()=>{});
+  // #endregion
+  return { audio: prepared.audio, mimeType: prepared.mimeType };
+}
 async function transcribeCapture(work, { signal } = {}) {
-  const audio = await imageAttachments.read(work.audio.attachmentPath);
+  const preparedAudio = await prepareCaptureAsrAudio(work, signal);
+  const audio = preparedAudio.audio;
+  const audioMimeType = preparedAudio.mimeType;
   const asrStageId = "speech-recognition";
   const polishStageId = "deepseek-polish";
   return aiBudgetRuntime.executeTask({
@@ -2215,7 +2270,7 @@ async function transcribeCapture(work, { signal } = {}) {
         service: "speech",
         scene: "speechRecognition",
         action: "streamingAsr",
-        request: { audioBytes: audio.length, mimeType: work.audio.mimeType },
+        request: { audioBytes: audio.length, mimeType: audioMimeType },
         modality: "audio",
         unitType: "audioMillisecond",
         units: work.audio.durationMs,
@@ -2223,7 +2278,7 @@ async function transcribeCapture(work, { signal } = {}) {
         costSource: "Volcengine billing not configured"
       }, () => speechProvider.transcribe({
           audio,
-          mimeType: work.audio.mimeType,
+          mimeType: audioMimeType,
           signal
         }), undefined, {
           execution: budgetExecution,
@@ -2319,6 +2374,9 @@ async function requestCaptureTranscription(capture, { force = false } = {}) {
     bytes: Math.max(0, Math.round(Number(capture.audio.bytes) || 0)),
     durationMs: Math.max(0, Math.round(Number(capture.audio.durationMs) || 0))
   };
+  // #region debug-point C-E:transcription-input
+  fetch(appConfig.debug.serverUrl,{method:"POST",body:JSON.stringify({sessionId:"login-audio-production",runId:appConfig.debug.runId,hypothesisId:"C-E",location:"server.mjs:requestCaptureTranscription",msg:"[DEBUG] Transcription input selected",data:{targetId:safeText(capture.id,100),extension:path.extname(audio.attachmentPath),mimeType:audio.mimeType,bytes:audio.bytes,durationMs:audio.durationMs,force},ts:Date.now()})}).catch(()=>{});
+  // #endregion
   const inputHash = sha256(JSON.stringify({ targetId: capture.id, audio }));
   const active = activeTaskForInput((await readStore()).aiTasks, {
     kind: "captureTranscription",
@@ -2476,7 +2534,9 @@ const attachmentHttp = createAttachmentHttp({
     if (!LOCAL_TEST_MODE || requestStorage.getStore()?.localTestMode !== "simulation" || !UPSTREAM_ORIGIN) return false;
     await proxyToUpstream(req, res, url);
     return true;
-  }
+  },
+  debugServerUrl: appConfig.debug.serverUrl,
+  debugRunId: appConfig.debug.runId
 });
 const annotationHttp = createAnnotationHttp({
   commands: annotationCommands,
@@ -2535,7 +2595,8 @@ async function prepareCaptureAudio(input) {
   if (!hasOwn(input, "audio")) return { value: {} };
   const parsed = captureAudioPayload(input.audio);
   if (parsed.error || !parsed.value) return parsed;
-  const row = (await listAttachmentInventory()).find(item => item.path === parsed.value.attachmentPath);
+  const inventory = await listAttachmentInventory();
+  const row = inventory.find(item => item.path === parsed.value.attachmentPath);
   if (!row) {
     return {
       forbidden: true,
@@ -2543,7 +2604,19 @@ async function prepareCaptureAudio(input) {
       code: "ATTACHMENT_NOT_OWNED"
     };
   }
-  const validated = captureAudioPayload({ ...parsed.value, bytes: row.bytes });
+  let audio = { ...parsed.value, bytes: row.bytes };
+  if (audio.asrAttachmentPath) {
+    const asrRow = inventory.find(item => item.path === audio.asrAttachmentPath);
+    if (!asrRow) {
+      return {
+        forbidden: true,
+        error: "转写派生附件不属于当前账户",
+        code: "ATTACHMENT_NOT_OWNED"
+      };
+    }
+    audio = { ...audio, asrBytes: asrRow.bytes };
+  }
+  const validated = captureAudioPayload(audio);
   return validated.error ? validated : { value: { audio: validated.value } };
 }
 const exportHttp = createExportHttp({

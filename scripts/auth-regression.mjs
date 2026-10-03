@@ -272,7 +272,26 @@ try {
   const audioResponse = await fetch(audioUrl, { headers: { cookie: secondCookie } });
   assert.equal(audioResponse.status, 200);
   assert.equal(audioResponse.headers.get("content-type"), "audio/mp4");
+  assert.equal(audioResponse.headers.get("accept-ranges"), "bytes");
+  assert.equal(audioResponse.headers.get("content-length"), String(m4a.length));
   assert.deepEqual(Buffer.from(await audioResponse.arrayBuffer()), m4a);
+  const audioRange = await fetch(audioUrl, {
+    headers: { cookie: secondCookie, range: "bytes=4-7" }
+  });
+  assert.equal(audioRange.status, 206);
+  assert.equal(audioRange.headers.get("content-range"), `bytes 4-7/${m4a.length}`);
+  assert.equal(audioRange.headers.get("content-length"), "4");
+  assert.deepEqual(Buffer.from(await audioRange.arrayBuffer()), m4a.subarray(4, 8));
+  const audioSuffix = await fetch(audioUrl, {
+    headers: { cookie: secondCookie, range: "bytes=-4" }
+  });
+  assert.equal(audioSuffix.status, 206);
+  assert.deepEqual(Buffer.from(await audioSuffix.arrayBuffer()), m4a.subarray(-4));
+  const invalidAudioRange = await fetch(audioUrl, {
+    headers: { cookie: secondCookie, range: `bytes=${m4a.length}-` }
+  });
+  assert.equal(invalidAudioRange.status, 416);
+  assert.equal(invalidAudioRange.headers.get("content-range"), `bytes */${m4a.length}`);
   assert.equal((await fetch(audioUrl, { headers: { cookie: ownerCookie } })).status, 404);
   const audioCapture = await jsonRequest(`${base}/now/api/v1/captures`, {
     method: "POST",

@@ -1,5 +1,5 @@
 export const EXPORT_MANIFEST_FORMAT = "for-now-cross-genre-export-v1";
-const ATTACHMENT_FIELDS = new Set(["attachmentPaths", "originalPath", "cutoutPath", "imagePath"]);
+const ATTACHMENT_FIELDS = new Set(["attachmentPaths", "attachmentPath", "asrAttachmentPath", "originalPath", "cutoutPath", "imagePath"]);
 const BODY_FIELDS = new Set(["answer", "content", "description", "recognitionDescription", "message", "note", "question", "quote", "text", "title"]);
 const RESOURCE_TYPES = Object.freeze({
   checkins: "checkin",

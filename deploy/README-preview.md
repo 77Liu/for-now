@@ -51,6 +51,8 @@ COOKIE_SECURE=1
 
 `INVITE_CODE_HASH` must be a Preview-only lowercase SHA-256 digest. Supported
 DeepSeek, Volcengine, and Alibaba Cloud keys are explicitly allowlisted.
+The host must provide `/usr/bin/ffmpeg` so M4A recordings can be normalized
+before ASR; Preview deployment fails closed when it is absent.
 Endpoint overrides, when present, must equal the reviewed official endpoints.
 OSS attachment keys, monitoring webhooks, platform tokens, local-test controls,
 and arbitrary Node options are not accepted.

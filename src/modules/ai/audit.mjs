@@ -231,7 +231,7 @@ export function createAiAudit({ textLimit, getContext, append, updateUsage, logE
         status,
         httpStatus: Number(response.httpStatus || failure?.statusCode || failure?.status || 0),
         errorCode: failure ? safeText(failure.code || failure.name, 120) : "",
-        providerRequestId: safeText(response.providerRequestId || response.requestId, 200),
+        providerRequestId: safeText(response.providerRequestId || response.requestId || failure?.providerRequestId, 200),
         unitType,
         units,
         costCny,
@@ -291,6 +291,8 @@ export function createAiAudit({ textLimit, getContext, append, updateUsage, logE
         callGroupId,
         durationMs,
         status,
+        providerRequestId: safeText(response.providerRequestId || response.requestId || failure?.providerRequestId, 200),
+        providerErrorCode: failure ? safeText(failure.providerCode || failure.code, 120) : "",
         error: failure ? errorMetadata(failure) : null
       });
     }

@@ -42,6 +42,7 @@ assert.match(deploySource, /chown -R "\$runtime_user:\$runtime_user" "\$candidat
 assert.match(deploySource, /preview_run npm[\s\S]*chown -R "root:root" "\$candidate"[\s\S]*chmod 0755 "\$candidate"/);
 assert.match(deploySource, /npm --prefix "\$candidate" ci --omit=dev/);
 assert.match(deploySource, /prompt-catalog-regression\.mjs/);
+assert.match(deploySource, /FFmpeg is required for M4A speech transcription/);
 assert.match(deploySource, /gzip -n -6/);
 assert.match(deploySource, /127\.0\.0\.1:4175\/preview\/readyz/);
 assert.doesNotMatch(deploySource, /\/opt\/for-now(?:\/|$)|\/etc\/for-now\.env|for-now\.service|\/srv\/for-now(?:\/|$)/);
@@ -279,6 +280,8 @@ async function setupScenario(name, {
   await fs.mkdir(path.join(directory, "etc/systemd/system"), { recursive: true });
   await fs.mkdir(path.join(directory, "etc/nginx/snippets"), { recursive: true });
   await fs.mkdir(path.join(directory, "usr/local/sbin"), { recursive: true });
+  await fs.mkdir(path.join(directory, "usr/bin"), { recursive: true });
+  await fs.writeFile(path.join(directory, "usr/bin/ffmpeg"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
   if (previewManaged) {
     await fs.writeFile(path.join(directory, "etc/systemd/system/for-now-preview.service"), "old preview service\n");
     await fs.writeFile(path.join(directory, "etc/nginx/snippets/for-now-preview.conf"), "old preview nginx\n");
@@ -312,6 +315,7 @@ async function setupScenario(name, {
     script = script.replaceAll(prefix, `${directory}${prefix}`);
   }
   script = script.replaceAll("/usr/bin/stat", path.join(bin, "stat"));
+  script = script.replaceAll("/usr/bin/ffmpeg", path.join(directory, "usr/bin/ffmpeg"));
   const scriptFile = path.join(directory, "deploy-preview.sh");
   await fs.writeFile(scriptFile, script, { mode: 0o755 });
   return { directory, bin, scriptFile, targetCommit };

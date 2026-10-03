@@ -24,6 +24,10 @@ if [ ! -f "$ssh_key" ]; then
   echo "Missing $ssh_key. Run prepare-server.sh and add its public key as a read-only Gitee deploy key." >&2
   exit 1
 fi
+if [ ! -x /usr/bin/ffmpeg ]; then
+  echo "FFmpeg is required for M4A speech transcription." >&2
+  exit 1
+fi
 for key in OSS_ATTACHMENT_BUCKET OSS_ENDPOINT OSS_REGION FEISHU_ALERT_WEBHOOK PLATFORM_SERVICE_TOKEN_HASH; do
   if ! grep -Eq "^${key}=.+" /etc/for-now.env; then
     echo "Missing $key in /etc/for-now.env." >&2

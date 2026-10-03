@@ -22,10 +22,21 @@ export function createAiTaskTargets({
       attachmentPath: safeText(capture.audio.attachmentPath, 300),
       mimeType: safeText(capture.audio.mimeType, 100),
       bytes: Math.max(0, Math.round(Number(capture.audio.bytes) || 0)),
-      durationMs: Math.max(0, Math.round(Number(capture.audio.durationMs) || 0))
+      durationMs: Math.max(0, Math.round(Number(capture.audio.durationMs) || 0)),
+      ...(capture.audio.asrAttachmentPath ? {
+        asrAttachmentPath: safeText(capture.audio.asrAttachmentPath, 300),
+        asrMimeType: safeText(capture.audio.asrMimeType, 100),
+        asrBytes: Math.max(0, Math.round(Number(capture.audio.asrBytes) || 0))
+      } : {})
     };
     const alreadyAnswered = capture.transcription?.status === "ready"
       && Boolean(safeText(capture.transcription?.rawText, 120_000));
+    const sourceAudio = {
+      attachmentPath: audio.attachmentPath,
+      mimeType: audio.mimeType,
+      bytes: audio.bytes,
+      durationMs: audio.durationMs
+    };
     return {
       kind: "captureTranscription",
       taskId: task.id,
@@ -33,7 +44,7 @@ export function createAiTaskTargets({
       audio,
       alreadyAnswered,
       inputVersion,
-      inputHash: hash(JSON.stringify({ targetId: capture.id, audio })),
+      inputHash: hash(JSON.stringify({ targetId: capture.id, audio: sourceAudio })),
       markQueued() {
         capture.transcription = {
           status: "queued",

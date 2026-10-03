@@ -527,6 +527,33 @@ try {
   assert.equal(providerAudits.length, 2);
   assert.doesNotMatch(JSON.stringify(providerAudits), /private OCR text/);
   assert.ok(providerEvents.some(([, name]) => name === "dependency.completed"));
+  const failedProviderUsage = [], failedProviderEvents = [];
+  const failedProviderAudit = createAiAudit({
+    textLimit: 100,
+    getContext: () => ({ user: { id: "provider-account" }, traceId: "provider-trace", secrets: [] }),
+    now,
+    append: async () => {},
+    updateUsage: async mutate => mutate({ entries: failedProviderUsage }),
+    logEvent: async (...args) => failedProviderEvents.push(args),
+    createId: () => "provider-failed-call"
+  });
+  await assert.rejects(failedProviderAudit.providerCall({
+    provider: "volcengine",
+    service: "speech",
+    scene: "speechRecognition",
+    action: "streamingAsr"
+  }, async () => {
+    throw Object.assign(new Error("public message"), {
+      code: "ASR_UNSUPPORTED_AUDIO_FORMAT",
+      providerCode: "45000151",
+      providerRequestId: "provider-error-request",
+      statusCode: 422
+    });
+  }), { code: "ASR_UNSUPPORTED_AUDIO_FORMAT" });
+  assert.equal(failedProviderUsage[0].providerRequestId, "provider-error-request");
+  const failedDependency = failedProviderEvents.find(([, name]) => name === "dependency.completed")?.[2];
+  assert.equal(failedDependency.providerRequestId, "provider-error-request");
+  assert.equal(failedDependency.providerErrorCode, "45000151");
   console.log("AI domain checks passed: settings, cost replacement/account isolation, local dates, unknown-usage aggregation, pre-commit normalization failure, backups, rollback/recovery, price snapshots, quotas and independent audit failures.");
 } finally {
   await fs.rm(directory, { recursive: true, force: true });

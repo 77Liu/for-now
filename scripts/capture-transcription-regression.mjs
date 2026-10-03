@@ -203,4 +203,15 @@ await background.run(stale.task.id);
 assert.equal(store.aiTasks.find(task => task.id === stale.task.id).status, "stale");
 assert.equal(store.captures.find(item => item.id === "capture-d").transcription.status, "unconfigured");
 
+const captureWithDerivative = store.captures.find(item => item.id === "capture-a");
+captureWithDerivative.audio = {
+  ...captureWithDerivative.audio,
+  asrAttachmentPath: "/attachments/voice.asr.wav",
+  asrMimeType: "audio/wav",
+  asrBytes: 40044
+};
+const derivativeWork = targets.prepare(store, { id: "derived-task", kind: "captureTranscription", targetId: "capture-a" });
+assert.equal(derivativeWork.audio.asrAttachmentPath, "/attachments/voice.asr.wav");
+assert.equal(derivativeWork.inputHash, hash(JSON.stringify({ targetId: "capture-a", audio })));
+
 console.log("Capture transcription checks passed: active-input deduplication, task-scoped generation, durable result save, failure projection, interrupted-task recovery and stale-audio isolation.");

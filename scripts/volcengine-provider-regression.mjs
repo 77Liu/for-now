@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { gzipSync, gunzipSync } from "node:zlib";
 import {
   canonicalQuery,
@@ -103,6 +106,20 @@ function serverFrame(payload, { final = true } = {}) {
   return Buffer.concat([
     Buffer.from([0x11, 0x90 | (final ? 0x3 : 0x1), 0x11, 0x00]),
     sequence,
+    size,
+    compressed
+  ]);
+}
+
+function serverErrorFrame(code, message) {
+  const compressed = gzipSync(Buffer.from(JSON.stringify({ error: message })));
+  const errorCode = Buffer.allocUnsafe(4);
+  errorCode.writeUInt32BE(code);
+  const size = Buffer.allocUnsafe(4);
+  size.writeUInt32BE(compressed.length);
+  return Buffer.concat([
+    Buffer.from([0x11, 0xf0, 0x01, 0x00]),
+    errorCode,
     size,
     compressed
   ]);
@@ -230,6 +247,90 @@ assert.deepEqual(await speech.transcribe({ audio: Buffer.from("RIFF....WAVE"), m
 });
 assert.equal(MockWebSocket.instances[0].options.headers["X-Api-Key"], "speech-secret");
 assert.equal(MockWebSocket.instances[0].options.headers["X-Api-Resource-Id"], "volc.seedasr.sauc.duration");
+let m4aConversions = 0;
+const m4aSpeech = createVolcengineSpeechTransport({
+  apiKey: "speech-secret",
+  WebSocketImpl: MockWebSocket,
+  sleep: async () => {},
+  prepareStreamingAudio: async ({ audio, mimeType }) => {
+    m4aConversions += 1;
+    assert.equal(mimeType, "audio/mp4");
+    assert.equal(audio.toString("ascii", 4, 8), "ftyp");
+    return { audio: Buffer.from("RIFF....WAVE"), mimeType: "audio/wav" };
+  }
+});
+assert.deepEqual(await m4aSpeech.transcribe({
+  audio: Buffer.from("\0\0\0\u001cftypM4A "),
+  mimeType: "audio/mp4"
+}), {
+  provider: "volcengine-seedasr-2.0",
+  rawText: "今天想把重要的事情先做完。",
+  providerRequestId: "asr-log-id"
+});
+assert.equal(m4aConversions, 1);
+const transcodeFixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "for-now-ffmpeg-test-"));
+const fakeFfmpeg = path.join(transcodeFixtureDir, "ffmpeg");
+const slowFfmpeg = path.join(transcodeFixtureDir, "slow-ffmpeg");
+await fs.writeFile(fakeFfmpeg, "#!/bin/sh\nprintf 'RIFF'\nhead -c 60 /dev/zero\n", { mode: 0o700 });
+await fs.writeFile(slowFfmpeg, "#!/bin/sh\nsleep 1\n", { mode: 0o700 });
+assert.equal((await createVolcengineSpeechTransport({
+  apiKey: "speech-secret",
+  WebSocketImpl: MockWebSocket,
+  sleep: async () => {},
+  ffmpegPath: fakeFfmpeg,
+  timeoutMs: 1_000
+}).transcribe({
+  audio: Buffer.from("\0\0\0\u001cftypM4A "),
+  mimeType: "audio/mp4"
+})).rawText, "今天想把重要的事情先做完。");
+await assert.rejects(createVolcengineSpeechTransport({
+  apiKey: "speech-secret",
+  WebSocketImpl: MockWebSocket,
+  ffmpegPath: path.join(transcodeFixtureDir, "missing-ffmpeg"),
+  timeoutMs: 1_000
+}).transcribe({
+  audio: Buffer.from("\0\0\0\u001cftypM4A "),
+  mimeType: "audio/mp4"
+}), {
+  code: "ASR_TRANSCODE_UNAVAILABLE",
+  statusCode: 503
+});
+await assert.rejects(createVolcengineSpeechTransport({
+  apiKey: "speech-secret",
+  WebSocketImpl: MockWebSocket,
+  ffmpegPath: slowFfmpeg,
+  timeoutMs: 20
+}).transcribe({
+  audio: Buffer.from("\0\0\0\u001cftypM4A "),
+  mimeType: "audio/mp4"
+}), {
+  code: "ASR_TRANSCODE_TIMEOUT",
+  statusCode: 504
+});
+await fs.rm(transcodeFixtureDir, { recursive: true, force: true });
+class ErrorWebSocket extends MockWebSocket {
+  send(data, _options, callback) {
+    this.sent.push(Buffer.from(data));
+    callback();
+    if ((data[1] & 0x0f) === 0x0) {
+      queueMicrotask(() => this.emit(
+        "message",
+        serverErrorFrame(45000151, "[Invalid audio format] unsupported format m4a")
+      ));
+    }
+  }
+}
+await assert.rejects(createVolcengineSpeechTransport({
+  apiKey: "speech-secret",
+  WebSocketImpl: ErrorWebSocket,
+  sleep: async () => {}
+}).transcribe({ audio: Buffer.from("RIFF....WAVE"), mimeType: "audio/wav" }), error => {
+  assert.equal(error.code, "ASR_UNSUPPORTED_AUDIO_FORMAT");
+  assert.equal(error.statusCode, 422);
+  assert.equal(error.providerCode, "45000151");
+  assert.match(error.providerRequestId, /^[a-f0-9-]{36}$/);
+  return true;
+});
 await assert.rejects(speech.transcribe({ audio: Buffer.from("webm"), mimeType: "audio/webm" }), {
   code: "ASR_UNSUPPORTED_AUDIO_FORMAT",
   statusCode: 422

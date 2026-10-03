@@ -11,13 +11,42 @@ import {
   openApiV1
 } from "../src/http/index.mjs";
 import { createCaptureJournalWorkflows } from "../src/app/index.mjs";
-import { captureAudioPayload, createCaptureRecords } from "../src/modules/captures/index.mjs";
+import { captureAudioPayload, capturePayload, createCaptureRecords } from "../src/modules/captures/index.mjs";
 import { createJournalRecords } from "../src/modules/journals/index.mjs";
 import { contentOriginalPayload } from "../src/modules/content-attachments/index.mjs";
 import { recordVersion } from "../src/shared/validation/index.mjs";
 
 const context = new AsyncLocalStorage();
 const AFTER_COMMIT = Symbol.for("for-now.after-commit");
+const derivedAudio = {
+  attachmentPath: "/attachments/voice.m4a",
+  mimeType: "audio/mp4",
+  bytes: 4096,
+  durationMs: 1250,
+  asrAttachmentPath: "/attachments/voice.asr.wav",
+  asrMimeType: "audio/wav",
+  asrBytes: 40044
+};
+assert.deepEqual(captureAudioPayload(derivedAudio), { value: derivedAudio });
+assert.equal(captureAudioPayload({
+  ...derivedAudio,
+  asrAttachmentPath: "/attachments/foreign.wav"
+}).code, "INVALID_ASR_DERIVATIVE");
+assert.deepEqual(
+  capturePayload({ content: "编辑文字", audio: {
+    attachmentPath: derivedAudio.attachmentPath,
+    mimeType: derivedAudio.mimeType,
+    bytes: derivedAudio.bytes,
+    durationMs: derivedAudio.durationMs
+  } }, {
+    ...derivedAudio,
+    content: "原文字",
+    audio: derivedAudio,
+    occurredAt: "2026-10-03T00:00:00.000Z",
+    occurredOn: "2026-10-03"
+  }).value.audio,
+  derivedAudio
+);
 const emptyStore = () => ({
   checkins: [],
   dailyRecords: [],

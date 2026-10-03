@@ -239,7 +239,10 @@ export const captureJournalComponents = Object.freeze({
         attachmentPath: { $ref: "#/components/schemas/ContentAttachmentPath" },
         mimeType: { type: "string", enum: ["audio/mp4", "audio/webm", "audio/ogg", "audio/wav"] },
         bytes: { type: "integer", minimum: 1, maximum: 16777216 },
-        durationMs: { type: "integer", minimum: 250, maximum: 600000 }
+        durationMs: { type: "integer", minimum: 250, maximum: 600000 },
+        asrAttachmentPath: { $ref: "#/components/schemas/ContentAttachmentPath" },
+        asrMimeType: { type: "string", enum: ["audio/wav"] },
+        asrBytes: { type: "integer", minimum: 45, maximum: 25165824 }
       },
       additionalProperties: false
     },

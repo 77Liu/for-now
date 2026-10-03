@@ -13,6 +13,7 @@ const AUDIO_MIME_BY_EXTENSION = Object.freeze({
   m4a: "audio/mp4", mp4: "audio/mp4", webm: "audio/webm", ogg: "audio/ogg", wav: "audio/wav"
 });
 const AUDIO_MAX_BYTES = 16 * 1024 * 1024;
+const ASR_AUDIO_MAX_BYTES = 24 * 1024 * 1024;
 const AUDIO_MAX_DURATION_MS = 10 * 60 * 1000;
 const tagsOf = value => (Array.isArray(value) ? value : [])
   .map(tag => safeText(tag, 30))
@@ -71,7 +72,26 @@ export function captureAudioPayload(value) {
   if (!Number.isSafeInteger(durationMs) || durationMs < 250 || durationMs > AUDIO_MAX_DURATION_MS) {
     return { error: "录音时长必须在 0.25 秒到 10 分钟之间", code: "INVALID_AUDIO_DURATION" };
   }
-  return { value: { attachmentPath, mimeType, bytes, durationMs } };
+  const asrAttachmentPath = safeText(value.asrAttachmentPath, 300);
+  const asrMimeType = safeText(value.asrMimeType, 100).toLowerCase();
+  const asrBytes = Math.round(Number(value.asrBytes));
+  const hasAsrDerivative = Boolean(asrAttachmentPath || asrMimeType || Number.isFinite(asrBytes));
+  if (hasAsrDerivative) {
+    if (!/^\/attachments\/[\w.-]+\.asr\.wav$/i.test(asrAttachmentPath)
+      || asrMimeType !== "audio/wav"
+      || !Number.isSafeInteger(asrBytes) || asrBytes < 45 || asrBytes > ASR_AUDIO_MAX_BYTES) {
+      return { error: "转写派生音频格式不正确", code: "INVALID_ASR_DERIVATIVE" };
+    }
+  }
+  return {
+    value: {
+      attachmentPath,
+      mimeType,
+      bytes,
+      durationMs,
+      ...(hasAsrDerivative ? { asrAttachmentPath, asrMimeType, asrBytes } : {})
+    }
+  };
 }
 
 const unconfiguredTranscription = () => ({
@@ -89,7 +109,16 @@ export function capturePayload(input, existing = null) {
   const attachmentPaths = cleanAttachmentPaths(merged.attachmentPaths);
   const parsedAudio = captureAudioPayload(merged.audio);
   if (parsedAudio.error) return parsedAudio;
-  const audio = parsedAudio.value;
+  let audio = parsedAudio.value;
+  if (audio && audio.attachmentPath === existing?.audio?.attachmentPath
+    && !audio.asrAttachmentPath && existing.audio.asrAttachmentPath) {
+    audio = {
+      ...audio,
+      asrAttachmentPath: existing.audio.asrAttachmentPath,
+      asrMimeType: existing.audio.asrMimeType,
+      asrBytes: existing.audio.asrBytes
+    };
+  }
   if (!content && !attachmentPaths.length && !audio) {
     return { error: existing ? "请保留文字、图片或语音" : "先写一点什么，或插入图片、录下语音" };
   }

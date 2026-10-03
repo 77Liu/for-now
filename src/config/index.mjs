@@ -75,6 +75,10 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     speechCacheSweepEnabled,
     runtimeMemorySampleIntervalMs: Math.max(50, Math.min(3_600_000, Number(env.RUNTIME_MEMORY_SAMPLE_INTERVAL_MS) || 60_000)),
     deepSeekApiUrl: env.DEEPSEEK_API_URL || "https://api.deepseek.com/chat/completions",
+    debug: Object.freeze({
+      serverUrl: String(env.DEBUG_SERVER_URL || "http://127.0.0.1:17778/event").trim(),
+      runId: String(env.DEBUG_RUN_ID || "pre-fix").trim().slice(0, 100) || "pre-fix"
+    }),
     attachments,
     features: Object.freeze({
       incrementalSync: String(env.INCREMENTAL_SYNC_ENABLED ?? "1") !== "0"

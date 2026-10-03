@@ -25,6 +25,7 @@ assert.match(source, /chown root:root "\$base" "\$releases"/);
 assert.match(source, /chown -R for-now:for-now "\$mirror"/);
 assert.match(source, /chown -R root:root "\$release"/);
 assert.match(source, /chmod 0755 "\$release"/);
+assert.match(source, /FFmpeg is required for M4A speech transcription/);
 assert.match(envExample, /^PLATFORM_SERVICE_TOKEN_HASH=$/m);
 assert.match(envExample, /^AI_BUDGET_DATABASE_URL=$/m);
 assert.match(envExample, /^MONITOR_PLATFORM_ENABLED=0$/m);
@@ -55,6 +56,8 @@ try {
     const previous = scenario === "same_commit_dependencies" ? exactRelease : path.join(base, "releases", "previous");
     await fs.mkdir(bin, { recursive: true });
     await fs.mkdir(previous, { recursive: true });
+    await fs.mkdir(path.join(dir, "usr/bin"), { recursive: true });
+    await fs.writeFile(path.join(dir, "usr/bin/ffmpeg"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
     await fs.writeFile(path.join(previous, "active-sentinel"), "unchanged\n");
     if (scenario === "postgres_preflight") {
       await fs.mkdir(path.join(previous, "src/shared/persistence"), { recursive: true });
@@ -118,6 +121,7 @@ if(name==="sed"){const file=args.at(-1),version=args[1].split("APP_VERSION=")[2]
     for (const prefix of ["/opt/for-now", "/home/for-now", "/etc/", "/usr/local/", "/var/www/"]) {
       script = script.replaceAll(prefix, `${dir}${prefix}`);
     }
+    script = script.replaceAll("/usr/bin/ffmpeg", path.join(dir, "usr/bin/ffmpeg"));
     const scriptFile = path.join(dir, "deploy.sh");
     await fs.writeFile(scriptFile, script);
     const result = spawnSync("/bin/bash", [scriptFile], {
