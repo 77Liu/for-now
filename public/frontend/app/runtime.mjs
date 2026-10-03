@@ -3342,7 +3342,7 @@ async function load({visibleShell=false,initialSnapshot=null}={}){
     optionalRequest("/api/onboarding/schema"),
     requestV1("/api/v1/onboarding-v2/schema"),
     requestV1("/api/v1/onboarding-v2/session"),
-    hasCapability("local-testing")?optionalRequest("/api/local-test-mode"):Promise.resolve(null)
+    hasCapability("local-testing")?(initialSnapshot?Promise.resolve(initialSnapshot.testConfig):optionalRequest("/api/local-test-mode")):Promise.resolve(null)
   ]);
   if(owner!==currentUser?.id||session!==sessionSerial)return false;
   markStartup("secondaryReady");
@@ -3421,7 +3421,7 @@ async function bootstrap(initial=null){
   }catch{showAuthGate();$("#auth-status").textContent="无法连接服务，请检查网络后重试。";return}
   if(!Number.isFinite(startupMarks.authSessionReady))markStartup("authSessionReady");
   if(!session.authenticated){showAuthGate(session.code==="AUTH_REAUTH_REQUIRED"?"账户权限已变更，请重新登录。":"");localTestConfig=testConfig;const registerTab=$('[data-auth-tab="register"]');if(registerTab)registerTab.hidden=Boolean(testConfig?.enabled);setAuthTab(testConfig?.enabled||session.userCount?"login":"register");if(session.code==="AUTH_REAUTH_REQUIRED")$("#auth-status").textContent="账户权限已变更，请重新登录。";return}
-  const initialSnapshot=initial?.state&&initial?.meta?{state:initial.state,meta:initial.meta,visibleShell:Boolean(initial.visibleShell)}:null;
+  const initialSnapshot=initial?.state&&initial?.meta?{state:initial.state,meta:initial.meta,testConfig:initial.testConfig,visibleShell:Boolean(initial.visibleShell)}:null;
   await activateUserSession(session.user,session.authRequired,initialSnapshot);
 }
 const refreshState=(domains,options={})=>refreshCoordinator.refresh(domains,{...options,patchOnly:options.patchOnly===true});

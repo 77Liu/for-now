@@ -412,6 +412,7 @@ const mockFetch = `
   window.__emptyDiscoveryRead = false;
   window.__failLocalModeTimeout = false;
   window.__localHydrateRequests = [];
+  window.__apiRequests = [];
   window.__keepsakeObservers = [];
   window.IntersectionObserver = class {
     constructor(callback, options) { this.callback = callback; this.options = options; window.__keepsakeObservers.push(this); }
@@ -663,6 +664,7 @@ const mockFetch = `
   };
   window.fetch = (input, init = {}) => {
     const url = typeof input === "string" ? input : input.url;
+    if (url.startsWith("/api/") && !window.__replayingDelayedState) window.__apiRequests.push(String(init.method || "GET").toUpperCase() + " " + url);
     if (url.startsWith("/api/owner/surfaces/")) {
       window.__ownerSurfaceRequests.push(url);
       return nativeFetch(input, init);
@@ -913,7 +915,7 @@ const mockFetch = `
     if (url === "/api/state") {
       if(window.__failNextStateRefresh){window.__failNextStateRefresh=false;return Promise.resolve(new Response(JSON.stringify({error:"DISCOVERY_BACKEND_INTERNAL"}),{status:503,headers:{"content-type":"application/json"}}))}
       window.__stateRequests += 1;
-      if(window.__accountUser.id==="user-2"&&window.__delaySecondState)return new Promise(resolve=>{window.__releaseSecondState=()=>{window.__delaySecondState=false;resolve(window.fetch(input,init))}});
+      if(window.__accountUser.id==="user-2"&&window.__delaySecondState)return new Promise(resolve=>{window.__releaseSecondState=()=>{window.__delaySecondState=false;window.__replayingDelayedState=true;const response=window.fetch(input,init);window.__replayingDelayedState=false;resolve(response)}});
       const empty=window.__testWorkspaceMode==="cold"||window.__lazySimulationEmpty;
       window.__startupEvents.push("state:response");
       return json({
@@ -1416,6 +1418,11 @@ try {
     gateHidden: true,
     onboardingHidden: true
   });
+  assert.deepEqual(
+    await evaluate(`["GET /api/auth/me","GET /api/state","GET /api/meta","GET /api/local-test-mode"].map(request=>window.__apiRequests.filter(value=>value===request).length)`),
+    [1, 1, 1, 1],
+    "cold startup must reuse auth, state, meta and local-test results"
+  );
   assert.equal(await waitUntil(`document.querySelector("#automatic-thought-answer").checked`),true);
   await evaluate(`document.querySelector('[data-view="today"]').click();true`);
   assert.equal(await waitUntil(`document.querySelector("#view-today").classList.contains("active")`),true);
@@ -3142,6 +3149,7 @@ try {
   assert.equal(await waitUntil(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const request=opening.result.transaction("drafts","readonly").objectStore("drafts").get("user-1:thoughtRoot");request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(request.result?.items?.[0]?.name==="thought-draft.png")}})`),true);
   await evaluate(`document.querySelector('[data-section="mine"]').click();true`);
   assert.equal(await evaluate(`document.querySelector("#view-mine").classList.contains("active")&&document.querySelector("#section-nav").hidden`),true);
+  const accountSwitchCoreRequests = await evaluate(`["GET /api/auth/me","GET /api/state","GET /api/meta","GET /api/local-test-mode"].map(request=>window.__apiRequests.filter(value=>value===request).length)`);
   await evaluate(`window.__delayLogout=true;document.querySelector("#logout-button").click();true`);
   assert.equal(await waitUntil(`!document.querySelector("#auth-gate").hidden`),true);
   assert.equal(await evaluate(`sessionStorage.getItem("cike:session-drafts:user-1")`),null);
@@ -3157,6 +3165,12 @@ try {
   assert.deepEqual(await evaluate(`({locked:document.body.classList.contains("auth-locked"),gateVisible:!document.querySelector("#auth-gate").hidden,privateSurfaceHidden:getComputedStyle(document.querySelector("main")).visibility==="hidden"})`),{locked:true,gateVisible:true,privateSurfaceHidden:true});
   await evaluate(`window.__releaseSecondState();true`);
   assert.equal(await waitUntil(`document.querySelector("#account-name").textContent==="second"&&document.querySelector("#auth-gate").hidden&&!document.body.classList.contains("auth-locked")`),true);
+  assert.equal(await waitUntil(`window.__apiRequests.filter(value=>value==="GET /api/local-test-mode").length===${accountSwitchCoreRequests[3] + 1}`),true);
+  assert.deepEqual(
+    (await evaluate(`["GET /api/auth/me","GET /api/state","GET /api/meta","GET /api/local-test-mode"].map(request=>window.__apiRequests.filter(value=>value===request).length)`)).map((value,index)=>value-accountSwitchCoreRequests[index]),
+    [0, 1, 1, 1],
+    "new login must load the new account snapshot once"
+  );
   assert.deepEqual(await evaluate(`(() => {
     const links=document.querySelector("[data-section-links='today']");
     return {
@@ -3176,9 +3190,15 @@ try {
   assert.deepEqual(await evaluate(`({visible:!document.querySelector("#local-test-settings").hidden,cold:document.querySelector('[data-local-test-mode="cold"]').classList.contains("active"),coldDisabled:document.querySelector('[data-local-test-mode="cold"]').disabled,summaryOk:/空账户工作区/.test(document.querySelector("#local-test-summary").textContent),entryOk:/使用模拟 \\/ 冷启测试 · 当前冷启测试/.test(document.querySelector("#mine-settings-summary").textContent)})`),{visible:true,cold:true,coldDisabled:true,summaryOk:true,entryOk:true});
   const localTestSettingsScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
   await fs.writeFile("/tmp/growth-local-test-settings.png",Buffer.from(localTestSettingsScreenshot.data,"base64"));
+  const activeRefreshCoreRequests = await evaluate(`["GET /api/auth/me","GET /api/state","GET /api/meta","GET /api/local-test-mode"].map(request=>window.__apiRequests.filter(value=>value===request).length)`);
   await evaluate(`window.__localHydrateRequests=[];window.__attachmentReadsBeforeModeSwitch=(window.__attachmentReads||[]).length;document.querySelector('[data-local-test-mode="simulation"]').click();true`);
   assert.equal(await waitUntil(`document.querySelector("#local-test-status").textContent.includes("打开页面时读取对应记录")`),true);
   assert.deepEqual(await evaluate(`({hydrates:window.__localHydrateRequests,summary:document.querySelector("#local-test-summary").textContent,captures:document.querySelectorAll("#capture-list [data-capture-id]").length,attachmentReads:(window.__attachmentReads||[]).length-window.__attachmentReadsBeforeModeSwitch})`),{hydrates:[],summary:"owner · 0 条已载入 · 打开页面后读取记录",captures:0,attachmentReads:0});
+  assert.deepEqual(
+    (await evaluate(`["GET /api/auth/me","GET /api/state","GET /api/meta","GET /api/local-test-mode"].map(request=>window.__apiRequests.filter(value=>value===request).length)`)).map((value,index)=>value-activeRefreshCoreRequests[index]),
+    [0, 1, 1, 1],
+    "active reload must refresh state, meta and local-test once without rechecking auth"
+  );
   await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
   assert.equal(await waitUntil(`window.__localHydrateRequests.includes("captures")&&document.querySelector("#capture-list").textContent.includes("这个念头")`),true);
   assert.equal(await evaluate(`(window.__attachmentReads||[]).length-window.__attachmentReadsBeforeModeSwitch`),0);
@@ -3363,9 +3383,15 @@ try {
   await evaluate(`document.querySelector('[data-view="statistics"]').click();true`);
   assert.equal(await waitUntil(`document.querySelector("#record-total strong")?.textContent==="41"`),true);
   assert.deepEqual(await evaluate(`({title:document.querySelector("#statistics-page-title").textContent,aiDashboard:Boolean(document.querySelector("#view-statistics .ai-dashboard"))})`),{title:"留下了什么",aiDashboard:false});
+  const reauthCoreRequests = await evaluate(`["GET /api/auth/me","GET /api/state","GET /api/meta","GET /api/local-test-mode"].map(request=>window.__apiRequests.filter(value=>value===request).length)`);
   await evaluate(`document.querySelector('[data-view="settings"]').click();window.__reauthNextPreference=true;document.querySelector("#llm-settings-form").requestSubmit();true`);
   assert.equal(await waitUntil(`!document.querySelector("#auth-gate").hidden&&document.querySelector("#auth-status").textContent.includes("权限已变更")`),true);
   assert.equal(await evaluate(`document.body.classList.contains("auth-locked")`),true);
+  assert.deepEqual(
+    await evaluate(`["GET /api/auth/me","GET /api/state","GET /api/meta","GET /api/local-test-mode"].map(request=>window.__apiRequests.filter(value=>value===request).length)`),
+    reauthCoreRequests,
+    "authentication failure must lock the shell without duplicate core loads"
+  );
   await evaluate(`(() => {
     const onboarding=window.__onboardingV2;
     onboarding.session={...onboarding.session,status:"draft",step:"welcome",revision:0,answers:{},startedAt:"",pausedAt:"",completedAt:"",updatedAt:""};

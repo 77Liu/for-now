@@ -175,7 +175,7 @@ async function createTestServer() {
       } else if (url.pathname === "/api/state") {
         result = json(response, clientState);
       } else if (url.pathname === "/api/meta") {
-        result = json(response, { version: "web-budget", releaseVersion: "0.4.0", user, capabilities: [], features: {} });
+        result = json(response, { version: "web-budget", releaseVersion: "0.4.0", user, capabilities: ["local-testing"], features: {} });
       } else if (url.pathname === "/api/preferences") {
         result = json(response, preferences);
       } else if (url.pathname === "/api/v1/onboarding-v2/schema") {
@@ -377,8 +377,9 @@ async function runBrowserBudget(baseUrl, profile) {
         domNodes: document.getElementsByTagName("*").length
       };
     })()`);
-    const completed = [...responses.values()].filter(item => item.transferBytes > 0);
-    const paths = completed.map(item => new URL(item.url).pathname);
+    const allResponses = [...responses.values()];
+    const completed = allResponses.filter(item => item.transferBytes > 0);
+    const paths = allResponses.map(item => new URL(item.url).pathname);
     return {
       profile: profile.name,
       ...browser,
@@ -458,7 +459,7 @@ try {
       result.stableHomeMs < BUDGET.stableHomeMs,
       `${result.profile} stableHome ${result.stableHomeMs}ms 未低于 ${BUDGET.stableHomeMs}ms`
     );
-    for (const endpoint of ["/api/auth/me", "/api/state", "/api/meta"]) {
+    for (const endpoint of ["/api/auth/me", "/api/state", "/api/meta", "/api/local-test-mode"]) {
       assert.equal(result.requestPaths.filter(value => value === endpoint).length, 1, `${result.profile} 重复请求 ${endpoint}`);
     }
   }
