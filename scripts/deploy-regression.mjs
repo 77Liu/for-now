@@ -21,6 +21,10 @@ assert.match(nginx, /location \/now\/[\s\S]*gzip on;[\s\S]*gzip_comp_level 2;[\s
 assert.doesNotMatch(nginx, /proxy_pass http:\/\/127\.0\.0\.1:4173\/;/);
 assert.doesNotMatch(nginx, /\bproxy_cache\b|\bexpires\b|max-age/);
 assert.match(nginx, /location \/platform\/[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:4280\//);
+assert.match(source, /chown root:root "\$base" "\$releases"/);
+assert.match(source, /chown -R for-now:for-now "\$mirror"/);
+assert.match(source, /chown -R root:root "\$release"/);
+assert.match(source, /chmod 0755 "\$release"/);
 assert.match(envExample, /^PLATFORM_SERVICE_TOKEN_HASH=$/m);
 assert.match(envExample, /^AI_BUDGET_DATABASE_URL=$/m);
 assert.match(envExample, /^MONITOR_PLATFORM_ENABLED=0$/m);
@@ -141,6 +145,9 @@ if(name==="sed"){const file=args.at(-1),version=args[1].split("APP_VERSION=")[2]
     else assert.equal(active, previous);
     if (succeeded) {
       const commands = await fs.readFile(path.join(dir, "commands.log"), "utf8");
+      assert.equal((await fs.stat(base)).mode & 0o777, 0o755);
+      assert.equal((await fs.stat(path.join(base, "releases"))).mode & 0o777, 0o755);
+      assert.equal((await fs.stat(active)).mode & 0o777, 0o755);
       assert.match(commands, /node --check .*\/src\/shared\/attachments\/storage\.mjs/);
       assert.match(commands, /node --check .*\/src\/config\/index\.mjs/);
       assert.match(commands, /node --check .*\/src\/shared\/observability\/logging\.mjs/);

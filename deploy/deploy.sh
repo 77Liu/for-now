@@ -39,8 +39,11 @@ if ! grep -Eq '^FEISHU_ALERT_WEBHOOK=https://(open\.feishu\.cn|open\.larkoffice\
   exit 1
 fi
 
-mkdir -p "$releases"
-chown -R for-now:for-now "$base"
+mkdir -p "$mirror" "$releases"
+chown root:root "$base" "$releases"
+chown -R for-now:for-now "$mirror"
+chmod 0755 "$base" "$releases"
+chmod 0700 "$mirror"
 if [ ! -d "$mirror" ]; then
   sudo -u for-now env GIT_SSH_COMMAND="$git_ssh" git clone --mirror "$repo_url" "$mirror"
 else
@@ -81,12 +84,19 @@ if [ ! -f "$release/.deploy-ready" ]; then
     \( -name '*.css' -o -name '*.html' -o -name '*.js' -o -name '*.mjs' \
        -o -name '*.svg' -o -name '*.webmanifest' \) -print0)
   touch "$candidate/.deploy-ready"
-  chown -R for-now:for-now "$candidate"
+  chown -R root:root "$candidate"
+  chmod 0755 "$candidate"
   if [ -e "$release" ]; then
     release="$releases/${commit}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
   fi
   mv "$candidate" "$release"
   trap - EXIT
+fi
+chown -R root:root "$release"
+chmod 0755 "$release"
+if [ -n "$previous" ] && [ -d "$previous" ]; then
+  chown -R root:root "$previous"
+  chmod 0755 "$previous"
 fi
 
 # A PostgreSQL cutover is a separate offline procedure. Generic code rollback
