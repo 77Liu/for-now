@@ -45,7 +45,7 @@ assert.doesNotMatch(appBootstrap, /from "\.\/runtime\.mjs"/);
 for (const endpoint of ["/api/auth/me", "/api/state", "/api/meta"]) {
   assert.equal(appBootstrap.split(`"${endpoint}"`).length - 1, 1, `bootstrap must request ${endpoint} once`);
 }
-assert.match(appRuntime, /export function startApplication\(initial = null\)/);
+assert.match(appRuntime, /export async function startApplication\(initial = null\)/);
 assert.doesNotMatch(appRuntime, /^bootstrap\(\)\.catch/m);
 assert.doesNotMatch(appRuntime, /from "\.\/frontend\//);
 assert.match(appRuntime, /operation=\+\+authOperationSerial;setAuthBusy\(true\)/);
@@ -57,7 +57,7 @@ assert.match(appRuntime, /function onboardingBlocksPrivateShell\(/);
 assert.match(appRuntime, /await afterVisibleShellPaint\(\)/);
 assert.match(appRuntime, /load\(\{visibleShell:true,initialSnapshot\}\)/);
 assert.match(appRuntime, /initialSnapshot\s*\?\s*\[initialSnapshot\.state,initialSnapshot\.meta\]/);
-assert.match(appRuntime, /document\.documentElement\.dataset\.runtimeReady="1"/);
+assert.match(appRuntime, /document\.documentElement\.dataset\.runtimeReady\s*=\s*"1"/);
 assert.doesNotMatch(appRuntime, /syncChainRecordKind\(\);await loadActionsWorkspace\(\)/);
 assert.match(appRuntime, /提交时的行动已保存；等待期间的新输入已保留。/);
 assert.match(appRuntime, /已保存，但行动列表刷新失败/);

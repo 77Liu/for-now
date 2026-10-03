@@ -4471,10 +4471,13 @@ $("#account-role-list").addEventListener("click",async event=>{
   finally{if(button.isConnected)button.disabled=false}
 });
 $("#logout-button").addEventListener("click",logout);$("#logout-button-account").addEventListener("click",logout);
-document.documentElement.dataset.runtimeReady="1";
-export function startApplication(initial = null) {
-  return bootstrap(initial).catch(error => {
+export async function startApplication(initial = null) {
+  try {
+    await bootstrap(initial);
+  } catch (error) {
     showAuthGate();
     $("#auth-status").textContent = error.message;
-  });
+  } finally {
+    document.documentElement.dataset.runtimeReady = "1";
+  }
 }
