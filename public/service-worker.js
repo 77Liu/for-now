@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cike-shell-v0.4.0-deferred-assets-1";
+const CACHE_VERSION = "cike-shell-v0.4.0-bootstrap-split-1";
 const SHELL_ASSETS = [
   "./",
   "index.html",
@@ -6,6 +6,7 @@ const SHELL_ASSETS = [
   "app.js",
   "manifest.webmanifest",
   "frontend/api/index.mjs",
+  "frontend/app/bootstrap.mjs",
   "frontend/app/index.mjs",
   "frontend/app/runtime.mjs",
   "frontend/content/error-presentation.mjs",

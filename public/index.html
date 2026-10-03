@@ -26,6 +26,9 @@
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%2337433f'/%3E%3Cpath d='M18 40c9-1 13-7 14-20 7 7 12 14 14 24' fill='none' stroke='%23f8faf9' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='18' cy='40' r='4' fill='%23d8b468'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="frontend/styles/application.css">
   <link rel="stylesheet" href="drift.css">
+  <link rel="modulepreload" href="frontend/app/index.mjs">
+  <link rel="modulepreload" href="frontend/app/bootstrap.mjs">
+  <script src="app.js" type="module"></script>
 </head>
 <body class="auth-locked">
   <div class="auth-gate" id="auth-gate" hidden>
@@ -1351,7 +1354,6 @@
       </section>
     </section>
   </div>
-  <script src="app.js" type="module"></script>
   <script>
     if ("serviceWorker" in navigator) {
       addEventListener("load", () => navigator.serviceWorker.register("service-worker.js").catch(() => {}), { once: true });

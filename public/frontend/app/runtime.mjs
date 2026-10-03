@@ -76,6 +76,7 @@ const applicationBasePath=new URL(".",appEntryUrl).pathname.replace(/\/$/,"")||"
 const startupPerformanceEnabled=new URLSearchParams(location.search).has("native-performance");
 const startupMarks={navigationStart:0,moduleLoaded:Number(performance.now().toFixed(1))};
 function markStartup(name){startupMarks[name]=Number(performance.now().toFixed(1));return startupMarks[name]}
+function adoptStartupMarks(value){for(const[name,mark]of Object.entries(value||{})){if(Number.isFinite(mark))startupMarks[name]=mark}}
 function publishStartupTiming(){
   if(!startupPerformanceEnabled&&document.documentElement.dataset.nativePerformance!=="1")return;
   const metric=document.querySelector("#startup-performance-metric");if(!metric)return;
@@ -3319,21 +3320,20 @@ function assertNativeServerCompatibility(meta){
   const serverLabel=meta?.releaseVersion||"旧版本";
   throw Object.assign(new Error(`当前 App ${releaseVersion} 与服务端 ${serverLabel} 不兼容，请使用匹配版本或等待服务端升级。`),{code:"CLIENT_SERVER_VERSION_MISMATCH"})
 }
-async function load({visibleShell=false}={}){
-  markStartup("loadStart");
+async function load({visibleShell=false,initialSnapshot=null}={}){
+  if(!Number.isFinite(startupMarks.loadStart))markStartup("loadStart");
   const owner=currentUser?.id,session=sessionSerial;
   journalDraftRestored=false;aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";resetJournalForm();
-  const [nextState,meta]=await Promise.all([
-    request("/api/state"),
-    request("/api/meta")
-  ]);
+  const [nextState,meta]=initialSnapshot
+    ?[initialSnapshot.state,initialSnapshot.meta]
+    :await Promise.all([request("/api/state"),request("/api/meta")]);
   if(owner!==currentUser?.id||session!==sessionSerial)return false;
-  markStartup("coreSnapshotReady");assertNativeServerCompatibility(meta);
+  if(!Number.isFinite(startupMarks.coreSnapshotReady))markStartup("coreSnapshotReady");assertNativeServerCompatibility(meta);
   currentUser={...currentUser,...(meta.user||{})};applyCapabilitySurface(meta.capabilities||[]);
   replaceState(nextState);appVersion=meta.version||"development";releaseVersion=meta.releaseVersion||releaseVersion;featureFlags={...featureFlags,...meta.features};governanceUrl=typeof meta.governanceUrl==="string"?meta.governanceUrl:"";notificationUnreadCount=Number(state.notificationUnread)||0;routeDataReady=true;
   const onboardingPending=onboardingBlocksPrivateShell(nextState.onboardingV2);
   if(visibleShell&&!onboardingPending){
-    restoreView?.();renderVisibleRoute();reconcileThoughtRoute();revealUserSession();markStartup("visibleShell");
+    restoreView?.();renderVisibleRoute();reconcileThoughtRoute();revealUserSession();if(!Number.isFinite(startupMarks.visibleShell))markStartup("visibleShell");
     await afterVisibleShellPaint();
     if(owner!==currentUser?.id||session!==sessionSerial)return false
   }
@@ -3350,7 +3350,7 @@ async function load({visibleShell=false}={}){
   await onboardingV2Controller.hydrate({schema:nextOnboardingV2Schema.data,state:nextOnboardingV2State.data});
   if(owner!==currentUser?.id||session!==sessionSerial)return false;
   render();if(!reconcileThoughtRoute())pageRouter?.activate();restoreDurableDrafts();syncChainRecordKind();scheduleNotificationPoll();
-  if(visibleShell&&onboardingPending){revealUserSession();markStartup("visibleShell")}
+  if(visibleShell&&onboardingPending){revealUserSession();if(!Number.isFinite(startupMarks.visibleShell))markStartup("visibleShell")}
   markStartup("stableHome");publishStartupTiming();return true
 }
 function setAuthTab(tab){
@@ -3386,14 +3386,14 @@ function renderAccountIdentity(){
   const username=currentUser?.username||"";
   $("#account-name").textContent=username;$("#account-current-name").textContent=username;$("#account-page-name").textContent=username;$("#account-username").value=username;
 }
-function prepareUserSession(user,authRequired){
-  rotateSession();currentUser=user;applyCapabilitySurface(user?.role==="owner"?ownerCapabilities:[]);document.body.classList.add("auth-locked");if(resetRouteAfterAuthentication)pageRouter?.showList("today",{mode:"replace"});else restoreView?.();resetRouteAfterAuthentication=false;$("#account-control").hidden=!authRequired;$("#account-authenticated").hidden=!authRequired;$("#account-local-mode").hidden=authRequired;renderAccountIdentity();
+function prepareUserSession(user,authRequired,{keepVisible=false}={}){
+  rotateSession();currentUser=user;applyCapabilitySurface(user?.role==="owner"?ownerCapabilities:[]);if(!keepVisible)document.body.classList.add("auth-locked");if(resetRouteAfterAuthentication)pageRouter?.showList("today",{mode:"replace"});else restoreView?.();resetRouteAfterAuthentication=false;$("#account-control").hidden=!authRequired;$("#account-authenticated").hidden=!authRequired;$("#account-local-mode").hidden=authRequired;renderAccountIdentity();
 }
 function revealUserSession(){document.body.classList.remove("auth-locked");$("#auth-gate").hidden=true}
-async function activateUserSession(user,authRequired){
-  prepareUserSession(user,authRequired);
+async function activateUserSession(user,authRequired,initialSnapshot=null){
+  prepareUserSession(user,authRequired,{keepVisible:Boolean(initialSnapshot?.visibleShell)});
   try{
-    if(!await load({visibleShell:true}))return false;
+    if(!await load({visibleShell:true,initialSnapshot}))return false;
     await Promise.all([
       restoreContentImageDrafts(user?.id).catch(error=>showToast(`待上传图片恢复失败：${error.message}`,"error")),
       restoreCaptureAudioDraft(user?.id).catch(error=>showToast(`待提交语音恢复失败：${error.message}`,"error")),
@@ -3410,13 +3410,19 @@ async function activateUserSession(user,authRequired){
 async function authRequest(endpoint,payload,method="POST"){
   return apiClient.request(endpoint,{method,body:JSON.stringify(payload||{})},{authGate:false,fallback:"账户操作失败"});
 }
-async function bootstrap(){
-  markStartup("bootstrapStart");
+async function bootstrap(initial=null){
+  adoptStartupMarks(initial?.startupMarks);
+  if(!Number.isFinite(startupMarks.bootstrapStart))markStartup("bootstrapStart");
+  if(initial?.error){showAuthGate();$("#auth-status").textContent=initial.error.message;return}
   let session,testConfig=null;
-  try{[session,testConfig]=await Promise.all([apiClient.request("/api/auth/me",{headers:{accept:"application/json"}},{authGate:false,allowUnauthorized:true}),optionalPublicRequest("/api/local-test-mode")])}catch{showAuthGate();$("#auth-status").textContent="无法连接服务，请检查网络后重试。";return}
-  markStartup("authSessionReady");
+  try{
+    if(initial?.session){session=initial.session;testConfig=initial.testConfig}
+    else[session,testConfig]=await Promise.all([apiClient.request("/api/auth/me",{headers:{accept:"application/json"}},{authGate:false,allowUnauthorized:true}),optionalPublicRequest("/api/local-test-mode")])
+  }catch{showAuthGate();$("#auth-status").textContent="无法连接服务，请检查网络后重试。";return}
+  if(!Number.isFinite(startupMarks.authSessionReady))markStartup("authSessionReady");
   if(!session.authenticated){showAuthGate(session.code==="AUTH_REAUTH_REQUIRED"?"账户权限已变更，请重新登录。":"");localTestConfig=testConfig;const registerTab=$('[data-auth-tab="register"]');if(registerTab)registerTab.hidden=Boolean(testConfig?.enabled);setAuthTab(testConfig?.enabled||session.userCount?"login":"register");if(session.code==="AUTH_REAUTH_REQUIRED")$("#auth-status").textContent="账户权限已变更，请重新登录。";return}
-  await activateUserSession(session.user,session.authRequired);
+  const initialSnapshot=initial?.state&&initial?.meta?{state:initial.state,meta:initial.meta,visibleShell:Boolean(initial.visibleShell)}:null;
+  await activateUserSession(session.user,session.authRequired,initialSnapshot);
 }
 const refreshState=(domains,options={})=>refreshCoordinator.refresh(domains,{...options,patchOnly:options.patchOnly===true});
 backgroundResultController=createBackgroundResultController({
@@ -4465,8 +4471,8 @@ $("#account-role-list").addEventListener("click",async event=>{
   finally{if(button.isConnected)button.disabled=false}
 });
 $("#logout-button").addEventListener("click",logout);$("#logout-button-account").addEventListener("click",logout);
-export function startApplication() {
-  return bootstrap().catch(error => {
+export function startApplication(initial = null) {
+  return bootstrap(initial).catch(error => {
     showAuthGate();
     $("#auth-status").textContent = error.message;
   });

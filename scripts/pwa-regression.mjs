@@ -46,6 +46,7 @@ for (const asset of [
   "index.html",
   "drift.css",
   "app.js",
+  "frontend/app/bootstrap.mjs",
   "frontend/app/runtime.mjs",
   "frontend/sync/index.mjs",
   "frontend/styles/application.css"

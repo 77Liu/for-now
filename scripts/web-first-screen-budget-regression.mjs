@@ -17,8 +17,10 @@ const CHROME = resolveHeadlessBrowser();
 const BUDGET = Object.freeze({
   blockingStyleRequests: 2,
   blockingStyleBytes: 250 * 1024,
-  entryModuleCount: 23,
-  entryModuleBytes: 724 * 1024,
+  entryModuleCount: 4,
+  entryModuleBytes: 64 * 1024,
+  deferredRuntimeModuleCount: 21,
+  deferredRuntimeModuleBytes: 724 * 1024,
   currentScreenFeedbackMs: 500,
   stableHomeMs: 1000
 });
@@ -59,8 +61,7 @@ async function blockingStyleClosure(html) {
 }
 
 const moduleDependencies = source => [
-  ...source.matchAll(/\b(?:import|export)\s+(?:[^"'`;]*?\s+from\s*)?["']([^"']+)["']/g),
-  ...source.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g)
+  ...source.matchAll(/\b(?:import|export)\s+(?:[^"'`;]*?\s+from\s*)?["']([^"']+)["']/g)
 ].map(match => match[1]);
 
 async function moduleClosure(entry) {
@@ -395,6 +396,7 @@ async function runBrowserBudget(baseUrl, profile) {
 const html = await fs.readFile(publicFile("index.html"), "utf8");
 const styles = await blockingStyleClosure(html);
 const modules = await moduleClosure("app.js");
+const deferredRuntime = await moduleClosure("frontend/app/runtime.mjs");
 
 assert.ok(
   styles.assets.length <= BUDGET.blockingStyleRequests,
@@ -411,6 +413,14 @@ assert.ok(
 assert.ok(
   modules.bytes <= BUDGET.entryModuleBytes,
   `入口模块闭包 ${modules.bytes} B 超过预算 ${BUDGET.entryModuleBytes} B`
+);
+assert.ok(
+  deferredRuntime.assets.length <= BUDGET.deferredRuntimeModuleCount,
+  `延迟 runtime 闭包 ${deferredRuntime.assets.length} 个超过预算 ${BUDGET.deferredRuntimeModuleCount}`
+);
+assert.ok(
+  deferredRuntime.bytes <= BUDGET.deferredRuntimeModuleBytes,
+  `延迟 runtime 闭包 ${deferredRuntime.bytes} B 超过预算 ${BUDGET.deferredRuntimeModuleBytes} B`
 );
 
 const testServer = await createTestServer();
@@ -457,7 +467,9 @@ try {
   const transferBytes = browserRequests.reduce((total, item) => total + item.transferBytes, 0);
   console.log(
     `Web first-screen budgets passed: ${styles.assets.length} blocking styles / ${styles.bytes} B; ` +
-    `${modules.assets.length} entry modules / ${modules.bytes} B; HTTP payload ${rawBytes} B raw / ${transferBytes} B encoded.`
+    `${modules.assets.length} eager modules / ${modules.bytes} B; ` +
+    `${deferredRuntime.assets.length} deferred runtime modules / ${deferredRuntime.bytes} B; ` +
+    `HTTP payload ${rawBytes} B raw / ${transferBytes} B encoded.`
   );
 } finally {
   await testServer.close();

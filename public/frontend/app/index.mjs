@@ -1,1 +1,1 @@
-export { startApplication } from "./runtime.mjs";
+export { startApplication } from "./bootstrap.mjs";

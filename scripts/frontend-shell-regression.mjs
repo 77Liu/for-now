@@ -22,6 +22,7 @@ import {
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const appEntry = await fs.readFile(path.join(ROOT, "public/app.js"), "utf8");
+const appBootstrap = await fs.readFile(path.join(ROOT, "public/frontend/app/bootstrap.mjs"), "utf8");
 const appRuntime = await fs.readFile(path.join(ROOT, "public/frontend/app/runtime.mjs"), "utf8");
 const applicationStyles = await fs.readFile(path.join(ROOT, "public/frontend/styles/application.css"), "utf8");
 const html = await fs.readFile(path.join(ROOT, "public/index.html"), "utf8");
@@ -38,7 +39,13 @@ const downloadableSource = (await Promise.all((await publicSourceFiles(path.join
 
 assert.match(appEntry, /^import \{ startApplication \} from "\.\/frontend\/app\/index\.mjs";\s+startApplication\(\);\s*$/);
 assert.ok(appEntry.split("\n").length <= 5, "public/app.js must remain a thin bootstrap");
-assert.match(appRuntime, /export function startApplication\(\)/);
+assert.match(appBootstrap, /const \[state, meta\] = await Promise\.all/);
+assert.match(appBootstrap, /const runtime = await import\("\.\/runtime\.mjs"\)/);
+assert.doesNotMatch(appBootstrap, /from "\.\/runtime\.mjs"/);
+for (const endpoint of ["/api/auth/me", "/api/state", "/api/meta"]) {
+  assert.equal(appBootstrap.split(`"${endpoint}"`).length - 1, 1, `bootstrap must request ${endpoint} once`);
+}
+assert.match(appRuntime, /export function startApplication\(initial = null\)/);
 assert.doesNotMatch(appRuntime, /^bootstrap\(\)\.catch/m);
 assert.doesNotMatch(appRuntime, /from "\.\/frontend\//);
 assert.match(appRuntime, /operation=\+\+authOperationSerial;setAuthBusy\(true\)/);
@@ -48,7 +55,8 @@ assert.match(appRuntime, /ownerSurfaceVault\.append\(entry\.node\)/);
 assert.match(appRuntime, /AUTH_REAUTH_REQUIRED/);
 assert.match(appRuntime, /function onboardingBlocksPrivateShell\(/);
 assert.match(appRuntime, /await afterVisibleShellPaint\(\)/);
-assert.match(appRuntime, /load\(\{visibleShell:true\}\)/);
+assert.match(appRuntime, /load\(\{visibleShell:true,initialSnapshot\}\)/);
+assert.match(appRuntime, /initialSnapshot\s*\?\s*\[initialSnapshot\.state,initialSnapshot\.meta\]/);
 assert.doesNotMatch(appRuntime, /syncChainRecordKind\(\);await loadActionsWorkspace\(\)/);
 assert.match(appRuntime, /提交时的行动已保存；等待期间的新输入已保留。/);
 assert.match(appRuntime, /已保存，但行动列表刷新失败/);
@@ -66,6 +74,12 @@ assert.doesNotMatch(applicationStyles, /\.saved-reasoning|\.answer-reasoning/);
 assert.match(html, /id="home-open-thought"/);
 assert.match(html, /id="home-mood-sparkline"/);
 assert.match(html, /<link rel="stylesheet" href="frontend\/styles\/application\.css">/);
+assert.match(html, /<link rel="modulepreload" href="frontend\/app\/index\.mjs">/);
+assert.match(html, /<link rel="modulepreload" href="frontend\/app\/bootstrap\.mjs">/);
+assert.doesNotMatch(html, /<link rel="modulepreload" href="frontend\/app\/runtime\.mjs">/);
+assert.equal((html.match(/<script src="app\.js" type="module"><\/script>/g) || []).length, 1);
+assert.ok(html.indexOf('rel="modulepreload" href="frontend/app/bootstrap.mjs"') < html.indexOf('<script src="app.js" type="module"></script>'));
+assert.ok(html.indexOf('<script src="app.js" type="module"></script>') < html.indexOf("</head>"));
 assert.doesNotMatch(html, /(?:href|src)="(?:styles\.css|vendor\/katex\/katex\.min\.(?:css|js))"/);
 assert.match(html, /id="discovery-query"/);
 assert.match(html, /id="view-permission"/);
