@@ -37,6 +37,8 @@ assert.match(await fs.readFile(path.join(root, "deploy/nginx-for-now.conf"), "ut
 assert.match(deploySource, /preview\/\*/);
 assert.match(deploySource, /^export PATH=.*\/usr\/sbin$/m);
 assert.match(deploySource, /\/bin\/sh -c 'cd "\$HOME" && exec "\$@"'/);
+assert.match(deploySource, /chown -R "\$runtime_user:\$runtime_user" "\$candidate"[\s\S]*preview_run npm/);
+assert.match(deploySource, /preview_run npm[\s\S]*chown -R "root:root" "\$candidate"[\s\S]*chmod 0755 "\$candidate"/);
 assert.match(deploySource, /npm --prefix "\$candidate" ci --omit=dev/);
 assert.match(deploySource, /prompt-catalog-regression\.mjs/);
 assert.match(deploySource, /gzip -n -6/);

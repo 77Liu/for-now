@@ -166,9 +166,9 @@ validate_environment() {
 validate_environment
 
 mkdir -p "$base" "$mirror" "$releases" "$data_dir"
-chown "root:$runtime_user" "$base" "$releases"
+chown "root:root" "$base" "$releases"
 chown "$runtime_user:$runtime_user" "$mirror" "$data_dir"
-chmod 0750 "$base" "$releases"
+chmod 0755 "$base" "$releases"
 chmod 0700 "$mirror" "$data_dir"
 
 preview_run() {
@@ -205,7 +205,7 @@ if [ "$action" = "deploy" ]; then
     candidate=$(mktemp -d "$releases/.${target_commit}.XXXXXX")
     trap cleanup_candidate EXIT
     preview_git --git-dir="$mirror" archive "$target_commit" | tar -x -C "$candidate"
-    chown -R "root:root" "$candidate"
+    chown -R "$runtime_user:$runtime_user" "$candidate"
     preview_run npm --prefix "$candidate" ci --omit=dev
 
     /usr/local/bin/node --check "$candidate/server.mjs"
@@ -225,7 +225,8 @@ if [ "$action" = "deploy" ]; then
       \( -name '*.css' -o -name '*.html' -o -name '*.js' -o -name '*.mjs' \
          -o -name '*.svg' -o -name '*.webmanifest' \) -print0)
     printf 'preview-deploy-v1 %s\n' "$target_commit" > "$candidate/.preview-deploy-ready"
-    chown -R "$runtime_user:$runtime_user" "$candidate"
+    chown -R "root:root" "$candidate"
+    chmod 0755 "$candidate"
     if [ -e "$target" ]; then
       target="$releases/${target_commit}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
     fi
