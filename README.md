@@ -50,9 +50,10 @@ npm run start:local-test
 ## 当前状态
 
 - **生产 `v0.4.0` 已上线**：公网运行提交为 `8cb4d93105779d3afd00f20eba319fa5f34150fd`，标签 `v0.4.0`；Gitee Release、恢复、真实第三方 5/5 冒烟和 40 分钟观察均通过，PostgreSQL 继续作为唯一正式写源。
-- **V0.5.0 本地开发已启动**：当前只优化已有功能 UI/UX、业务链路和性能；
-  目标为网页 0.5 秒内可见反馈、已登录首屏 P95 小于 1 秒。计划见
-  `reports/iteration-plan-v0.5.0-2026-10-03.md`，尚未授权 push 或部署。
+- **V0.5.0 线上 Preview 已通过**：`preview/v0.5.0@3fd511c` 已在独立服务、
+  数据和权限边界下完成公网 E2E；真实网络当前屏反馈 `430.5ms`、稳定首页
+  `786.8ms`，320/390px 无溢出，真实 AI/语音/视觉链路通过。最终 Release
+  门和正式部署进行中，生产仍为 V0.4.0。
 - **`v0.1.1` 发布历史保留**：提交 `54a6326f14ca`、标签 `hotfix-v0.1.1-thought-answer` 在 v0.1.0 基础上修复了收集页思绪自动回答任务创建问题，现已由 v0.2.1 替代。
 - **`v0.1.0` 发布历史保留**：主应用功能提交 `5ae6a7035169` 和标签 `release-20260928-p00-p0-commercial-system` 已发布 P00/P0、商业化、AI 成本和五阶段架构设计，并由 v0.1.1 继承。
 - **中台已上线**：独立中台提交为 `d157537f7f4c`，发布标签为 `release-20260928-platform-mvp`；公网 `/platform/` 只读治理控制面已部署。
@@ -137,12 +138,15 @@ npm run start:local-test
 
 ## 发布与同步
 
-当前发布不是自动 CI/CD，而是经过明确触发的半自动流程：
+当前发布使用经过明确触发的 Preview → Release 半自动流程：
 
 ```text
 低风险单域暂存变更 → commit:task 隔离验证 → 本地任务 commit
 其他提交 / push / tag / Gitee Release → 人工明确授权
-已授权 push Gitee main
+已授权 push preview/* → Preview 服务器只读拉取并部署精确 SHA
+→ 公网 Preview E2E / 性能 / 响应式 / 日志检查
+→ 冻结候选并通过 Release 门
+→ push main / tag / Gitee Release
 → SSH 到 ECS 执行 for-now-deploy → 健康检查 → 切换或自动回滚
 ```
 
@@ -239,6 +243,8 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
   两线编排、性能目标、旅程、验证和人工门。
 - `reports/v0.5.0-development-process-2026-10-03.md`：V0.5.0 影子体验、
   本地提交、性能证据、系统门、主动试运行、账户清理和剩余外部验收。
+- `reports/pre-launch-2026-10-03-v0.5.0.md`：V0.5.0 线上 Preview、
+  公网 E2E/性能、备份恢复、最终发布门与完整中文发行说明。
 - `reports/v0.3.0-git-closeout-2026-09-30.md`：旧工作树、探索 stash、
   本地 `main` 和可恢复归档记录。
 - `reports/g1-contract-freeze-2026-09-29.json`：G1 契约文件摘要、系统测试、PostgreSQL 证据边界及三路重构资源预留。
