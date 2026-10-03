@@ -490,6 +490,7 @@ const eventTarget = {
 const documentTarget = { ...eventTarget, listeners: new Map(), visibilityState: "visible" };
 const requests = [];
 const snapshots = [];
+const incrementalTimers = [];
 let currentCursor = 2;
 const incrementalCoordinator = {
   async resume() { return []; },
@@ -505,7 +506,10 @@ const incremental = createIncrementalSync({
   locks: null,
   windowTarget: eventTarget,
   documentTarget,
-  setTimer: () => 1,
+  setTimer: callback => {
+    incrementalTimers.push(callback);
+    return incrementalTimers.length;
+  },
   clearTimer: () => {},
   request: async url => {
     requests.push(url);
@@ -529,6 +533,12 @@ await incremental.start("account-a");
 assert.match(requests[0], /waitMs=0/);
 assert.doesNotMatch(requests[0], /cursor=/);
 assert.equal(incremental.cursor(), 2);
+const startupRequestCount = requests.length;
+assert.equal(requests.every(url => new URL(url, "https://local.invalid").searchParams.get("waitMs") === "0"), true);
+await incrementalTimers.shift()();
+const scheduledPoll = new URL(requests[startupRequestCount], "https://local.invalid");
+assert.ok(Number(scheduledPoll.searchParams.get("waitMs")) > 0, "scheduled incremental polling must use long polling");
+assert.equal(scheduledPoll.searchParams.get("cursor"), "2");
 currentCursor = 3;
 channel.emit({ type: "committed", owner: "account-a", operationId: "remote-operation" });
 await flush();

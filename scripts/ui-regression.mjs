@@ -412,6 +412,7 @@ const mockFetch = `
   window.__testWorkspaceMode = "simulation";
   window.__lazySimulationEmpty = false;
   window.__failDiscoveryRead = false;
+  window.__failDiscoveryStatusAction = "";
   window.__emptyDiscoveryRead = false;
   window.__failLocalModeTimeout = false;
   window.__localHydrateRequests = [];
@@ -1264,6 +1265,7 @@ const mockFetch = `
     }
     if (/^\\/api\\/v1\\/thought-chains\\/[^/]+\\/discovery$/.test(url) && init.method === "PATCH") {
       const id=url.split("/")[4],payload=JSON.parse(init.body),item=window.__thoughts.find(value=>value.id===id&&value.type==="question"),version=(item?.discovery?.version||1)+1;
+      if(window.__failDiscoveryStatusAction===payload.action){window.__failDiscoveryStatusAction="";return Promise.resolve(new Response(JSON.stringify({data:null,error:{message:"DISCOVERY_STATUS_INTERNAL",code:"DISCOVERY_STATUS_FAILED"},meta:{}}),{status:400,headers:{"content-type":"application/json"}}))}
       item.discovery={...(item.discovery||{}),version,...(payload.action==="read"?{readAt:new Date().toISOString(),snoozedUntil:null}:{snoozedUntil:payload.until})};
       return v1({id,status:{version,read:payload.action==="read",readAt:item.discovery.readAt||null,snoozed:payload.action==="snooze",snoozedUntil:item.discovery.snoozedUntil||null,untraced:true,fresh:false},untraced:true,fresh:false});
     }
@@ -1565,6 +1567,17 @@ try {
   assert.deepEqual(desktopNavigation, { compact: true, lightGlass: true, labels: ["◌今日","◇所见","∿所思","○我的"], current: true, inactive: true, sectionHidden: false, secondary: ["此刻","共参","每日"] });
   await evaluate(`document.querySelector('[data-section="thought"]').click(); document.querySelector('[data-view="discovery"]').click(); true`);
   assert.equal(await waitUntil(`document.querySelector("#view-discovery").classList.contains("active")&&document.querySelector("#discovery-list")?.textContent.includes("没有初步想法的问题")`), true);
+  await cdp.send("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:2,mobile:true});await sleep(100);
+  assert.equal(await evaluate(`(()=>{const selectors=['.sidebar [data-section="thought"]','[data-section-links="thought"] [data-view="thoughts"]','[data-section-links="thought"] [data-view="discovery"]','[data-section-links="thought"] [data-view="journals"]'];return selectors.every(selector=>{const element=document.querySelector(selector),rect=element?.getBoundingClientRect();return Boolean(element&&element.getClientRects().length&&rect.width>=44&&rect.height>=44)})})()`),true,"mobile route targets must expose at least 44x44 CSS pixel touch areas");
+  await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
+  await evaluate(`window.__failDiscoveryStatusAction="read";document.querySelector("#toast").hidden=true;document.querySelector("[data-discovery-open]").click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-thoughts").classList.contains("active")&&document.querySelector('[data-chain-id="kept-root"]')?.open`),true);
+  assert.equal(await evaluate(`!document.querySelector("#toast").hidden&&document.querySelector("#toast").classList.contains("error")&&document.querySelector("#toast").textContent.includes("原记录已打开，但回访状态更新失败")`),true);
+  await evaluate(`document.querySelector("[data-section-links='thought'] [data-view='discovery']").click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-discovery").classList.contains("active")&&document.querySelector("#discovery-list [data-discovery-id]")`),true);
+  await evaluate(`window.__failDiscoveryStatusAction="snooze";document.querySelector("#toast").hidden=true;document.querySelector("[data-discovery-snooze]").click();true`);
+  assert.equal(await waitUntil(`!document.querySelector("#toast").hidden&&document.querySelector("#toast").classList.contains("error")&&document.querySelector("#toast").textContent.includes("暂时无法安排明天再看")`),true);
+  assert.equal(await evaluate(`document.querySelector("#view-discovery").classList.contains("active")&&Boolean(document.querySelector("[data-discovery-snooze]"))`),true);
   await evaluate(`document.querySelector('[data-section="seen"]').click(); true`);
   assert.deepEqual(await evaluate(`({
     activeView:document.querySelector(".view.active").id,
@@ -2238,7 +2251,7 @@ try {
   await sleep(100);
   assert.equal(await evaluate(`document.documentElement.scrollWidth <= window.innerWidth && document.querySelector("#capture-date").getBoundingClientRect().right <= window.innerWidth`), true);
   assert.equal(await evaluate(`(() => { const card=document.querySelector('[data-capture-id="capture-1"]'),date=card.querySelector(".capture-date").getBoundingClientRect(),meta=card.querySelector(".capture-meta").getBoundingClientRect(),time=card.querySelector(".capture-entry-time").getBoundingClientRect(); return date.bottom<=meta.top+1&&meta.left<=time.left&&time.right<=meta.right+1; })()`), true);
-  assert.equal(await evaluate(`(() => { const buttons=[...document.querySelectorAll('[data-capture-id="capture-long"] .capture-actions button')].map(item=>item.getBoundingClientRect()); return buttons[0].bottom<=buttons[1].top+1&&Math.abs(buttons[1].top-buttons[2].top)<2&&buttons[2].bottom-buttons[0].top<42; })()`), true);
+  assert.equal(await evaluate(`(() => { const buttons=[...document.querySelectorAll('[data-capture-id="capture-long"] .capture-actions button')].map(item=>item.getBoundingClientRect()); return buttons.every(item=>item.width>=44&&item.height>=44)&&buttons[0].bottom<=buttons[1].top+1&&Math.abs(buttons[1].top-buttons[2].top)<2&&buttons[2].bottom-buttons[0].top<=90; })()`), true);
   await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-capture-speak]').click();true`);
   assert.equal(await waitUntil(`window.__speechRequests.length===4&&document.querySelector('[data-capture-id="capture-1"] [data-capture-speech-player]')?.currentSrc.startsWith("blob:")`),true);
   await sleep(100);
@@ -2667,7 +2680,7 @@ try {
   const quoteScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-quote-timeline.png", Buffer.from(quoteScreenshot.data, "base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:1,mobile:true});await sleep(120);
-  assert.equal(await evaluate(`(() => { const entry=[...document.querySelectorAll(".quote-entry")].find(item=>item.textContent.includes("第六行：般若照见实相")),meta=entry.querySelector(".quote-entry-meta").getBoundingClientRect(),card=entry.querySelector(".quote-entry-card").getBoundingClientRect(),source=entry.querySelector("cite").getBoundingClientRect(),tools=entry.querySelector(".quote-entry-tools").getBoundingClientRect();return document.documentElement.scrollWidth<=window.innerWidth&&meta.bottom<=card.top&&Math.abs(source.top-tools.top)<3; })()`),true);
+  assert.equal(await evaluate(`(() => { const entry=[...document.querySelectorAll(".quote-entry")].find(item=>item.textContent.includes("第六行：般若照见实相")),meta=entry.querySelector(".quote-entry-meta").getBoundingClientRect(),card=entry.querySelector(".quote-entry-card").getBoundingClientRect(),source=entry.querySelector("cite").getBoundingClientRect(),tools=entry.querySelector(".quote-entry-tools").getBoundingClientRect();return document.documentElement.scrollWidth<=window.innerWidth&&meta.bottom<=card.top+1&&source.top>=meta.top-1&&tools.top>=meta.top-1&&tools.bottom<=meta.bottom+1; })()`),true);
   const quoteTimelineMobileScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
   await fs.writeFile("/tmp/growth-quote-timeline-mobile.png",Buffer.from(quoteTimelineMobileScreenshot.data,"base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});

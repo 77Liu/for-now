@@ -601,7 +601,7 @@ export function createIncrementalSync({
     if (stopped || timer != null) return;
     timer = setTimer(async () => {
       timer = null;
-      if (visible()) await drain().catch(() => {});
+      if (visible()) await drain({ wait: true }).catch(() => {});
       schedulePoll(pollMs);
     }, delay);
   };
@@ -654,7 +654,7 @@ export function createIncrementalSync({
     pulling = execution;
     return execution;
   };
-  const drain = async ({ forceRetry = false } = {}) => {
+  const drain = async ({ forceRetry = false, wait = false } = {}) => {
     if (!owner || stopped) return [];
     const expectedOwner = owner;
     const expectedLifecycle = lifecycle;
@@ -666,7 +666,7 @@ export function createIncrementalSync({
       await resnapshot?.();
       if (!active(expectedOwner, expectedLifecycle)) return [];
     }
-    if (pullEnabled) await pull();
+    if (pullEnabled) await pull({ wait });
     else onStatus({ type: "disabled", owner: expectedOwner, cursor });
     return result;
   };

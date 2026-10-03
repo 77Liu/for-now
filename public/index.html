@@ -1109,63 +1109,63 @@
           <label class="settings-toggle"><input id="automatic-thought-answer" type="checkbox"><span><b>保存思绪后自动回答</b><small>默认关闭；关闭时只保存你的原文，仍可随时点“给我回答”。</small></span></label>
           <label class="field"><span>助手称呼</span><input id="assistant-name" maxlength="24" placeholder="神鸡"></label>
           <div class="scenario-grid response-style-grid">
-            <label><span>思考草稿</span><select data-response-style="thoughtDraft"></select></label>
-            <label><span>思考回答</span><select data-response-style="thoughtAnswer"></select></label>
-            <label><span>追问回答</span><select data-response-style="followUpAnswer"></select></label>
-            <label><span>长期对话</span><select data-response-style="chat"></select></label>
-            <label><span>日记回望</span><select data-response-style="diaryReflection"></select></label>
-            <label><span>批注回答</span><select data-response-style="annotationShenji"></select></label>
-            <label><span>认知复盘</span><select data-response-style="analysis"></select></label>
+            <label><span>思考草稿</span><select data-response-style="thoughtDraft" aria-label="回答风格：思考草稿"></select></label>
+            <label><span>思考回答</span><select data-response-style="thoughtAnswer" aria-label="回答风格：思考回答"></select></label>
+            <label><span>追问回答</span><select data-response-style="followUpAnswer" aria-label="回答风格：追问回答"></select></label>
+            <label><span>长期对话</span><select data-response-style="chat" aria-label="回答风格：长期对话"></select></label>
+            <label><span>日记回望</span><select data-response-style="diaryReflection" aria-label="回答风格：日记回望"></select></label>
+            <label><span>批注回答</span><select data-response-style="annotationShenji" aria-label="回答风格：批注回答"></select></label>
+            <label><span>认知复盘</span><select data-response-style="analysis" aria-label="回答风格：认知复盘"></select></label>
           </div>
         </section>
         <section class="settings-section">
           <div class="settings-section-heading"><h3>场景思考强度</h3><p>普通用户可按场景选择关闭、High 或 Max，无需配置密钥。</p></div>
           <div class="scenario-grid">
-            <label><span>思考 · 引子</span><select data-ai-effort="thoughtPrompt"></select></label>
-            <label><span>思考草稿</span><select data-ai-effort="thoughtDraft"></select></label>
-            <label><span>思考回答</span><select data-ai-effort="thoughtAnswer"></select></label>
-            <label><span>追问回答</span><select data-ai-effort="followUpAnswer"></select></label>
-            <label><span>长期对话</span><select data-ai-effort="chat"></select></label>
-            <label><span>日记 · 引子</span><select data-ai-effort="diaryLead"></select></label>
-            <label><span>日记 · 结构</span><select data-ai-effort="diaryStructure"></select></label>
-            <label><span>日记 · 话题</span><select data-ai-effort="diaryTopic"></select></label>
-            <label><span>日记回望</span><select data-ai-effort="diaryReflection"></select></label>
-            <label><span>批注回答</span><select data-ai-effort="annotationShenji"></select></label>
-            <label><span>认知复盘</span><select data-ai-effort="analysis"></select></label>
-            <label><span>书目识别</span><select data-ai-effort="bookRecognition"></select></label>
-            <label><span>健康截图识别</span><select data-ai-effort="healthRecognition"></select></label>
-            <label><span>内容图片理解</span><select data-ai-effort="contentImageUnderstanding"></select></label>
-            <label><span>语音整理</span><select data-ai-effort="capturePolish"></select></label>
-            <label><span>五问认知提取</span><select data-ai-effort="onboardingClaimExtraction"></select></label>
+            <label><span>思考 · 引子</span><select data-ai-effort="thoughtPrompt" aria-label="思考强度：思考引子"></select></label>
+            <label><span>思考草稿</span><select data-ai-effort="thoughtDraft" aria-label="思考强度：思考草稿"></select></label>
+            <label><span>思考回答</span><select data-ai-effort="thoughtAnswer" aria-label="思考强度：思考回答"></select></label>
+            <label><span>追问回答</span><select data-ai-effort="followUpAnswer" aria-label="思考强度：追问回答"></select></label>
+            <label><span>长期对话</span><select data-ai-effort="chat" aria-label="思考强度：长期对话"></select></label>
+            <label><span>日记 · 引子</span><select data-ai-effort="diaryLead" aria-label="思考强度：日记引子"></select></label>
+            <label><span>日记 · 结构</span><select data-ai-effort="diaryStructure" aria-label="思考强度：日记结构"></select></label>
+            <label><span>日记 · 话题</span><select data-ai-effort="diaryTopic" aria-label="思考强度：日记话题"></select></label>
+            <label><span>日记回望</span><select data-ai-effort="diaryReflection" aria-label="思考强度：日记回望"></select></label>
+            <label><span>批注回答</span><select data-ai-effort="annotationShenji" aria-label="思考强度：批注回答"></select></label>
+            <label><span>认知复盘</span><select data-ai-effort="analysis" aria-label="思考强度：认知复盘"></select></label>
+            <label><span>书目识别</span><select data-ai-effort="bookRecognition" aria-label="思考强度：书目识别"></select></label>
+            <label><span>健康截图识别</span><select data-ai-effort="healthRecognition" aria-label="思考强度：健康截图识别"></select></label>
+            <label><span>内容图片理解</span><select data-ai-effort="contentImageUnderstanding" aria-label="思考强度：内容图片理解"></select></label>
+            <label><span>语音整理</span><select data-ai-effort="capturePolish" aria-label="思考强度：语音整理"></select></label>
+            <label><span>五问认知提取</span><select data-ai-effort="onboardingClaimExtraction" aria-label="思考强度：五问认知提取"></select></label>
           </div>
         </section>
         <section class="settings-section" data-owner-capability="ai-configuration">
           <div class="settings-section-heading"><h3>档位配置</h3><p>每档都可独立选择模型与思考强度。</p></div>
           <div class="profile-grid">
-            <fieldset class="profile-config"><legend>Lite</legend><label>模型<select data-profile-model="lite"><option value="deepseek-flash">Flash · V4.1</option><option value="deepseek-v4-pro">Pro · V4</option></select></label><label>思考<select data-profile-effort="lite"><option value="none">关闭</option><option value="high">High</option><option value="max">Max</option></select></label></fieldset>
-            <fieldset class="profile-config"><legend>Mid</legend><label>模型<select data-profile-model="mid"><option value="deepseek-flash">Flash · V4.1</option><option value="deepseek-v4-pro">Pro · V4</option></select></label><label>思考<select data-profile-effort="mid"><option value="none">关闭</option><option value="high">High</option><option value="max">Max</option></select></label></fieldset>
-            <fieldset class="profile-config"><legend>High</legend><label>模型<select data-profile-model="high"><option value="deepseek-flash">Flash · V4.1</option><option value="deepseek-v4-pro">Pro · V4</option></select></label><label>思考<select data-profile-effort="high"><option value="none">关闭</option><option value="high">High</option><option value="max">Max</option></select></label></fieldset>
-            <fieldset class="profile-config"><legend>Ultra</legend><label>模型<select data-profile-model="ultra"><option value="deepseek-flash">Flash · V4.1</option><option value="deepseek-v4-pro">Pro · V4</option></select></label><label>思考<select data-profile-effort="ultra"><option value="none">关闭</option><option value="high">High</option><option value="max">Max</option></select></label></fieldset>
+            <fieldset class="profile-config"><legend>Lite</legend><label>模型<select data-profile-model="lite" aria-label="Lite 档位模型"><option value="deepseek-flash">Flash · V4.1</option><option value="deepseek-v4-pro">Pro · V4</option></select></label><label>思考<select data-profile-effort="lite" aria-label="Lite 档位思考强度"><option value="none">关闭</option><option value="high">High</option><option value="max">Max</option></select></label></fieldset>
+            <fieldset class="profile-config"><legend>Mid</legend><label>模型<select data-profile-model="mid" aria-label="Mid 档位模型"><option value="deepseek-flash">Flash · V4.1</option><option value="deepseek-v4-pro">Pro · V4</option></select></label><label>思考<select data-profile-effort="mid" aria-label="Mid 档位思考强度"><option value="none">关闭</option><option value="high">High</option><option value="max">Max</option></select></label></fieldset>
+            <fieldset class="profile-config"><legend>High</legend><label>模型<select data-profile-model="high" aria-label="High 档位模型"><option value="deepseek-flash">Flash · V4.1</option><option value="deepseek-v4-pro">Pro · V4</option></select></label><label>思考<select data-profile-effort="high" aria-label="High 档位思考强度"><option value="none">关闭</option><option value="high">High</option><option value="max">Max</option></select></label></fieldset>
+            <fieldset class="profile-config"><legend>Ultra</legend><label>模型<select data-profile-model="ultra" aria-label="Ultra 档位模型"><option value="deepseek-flash">Flash · V4.1</option><option value="deepseek-v4-pro">Pro · V4</option></select></label><label>思考<select data-profile-effort="ultra" aria-label="Ultra 档位思考强度"><option value="none">关闭</option><option value="high">High</option><option value="max">Max</option></select></label></fieldset>
           </div>
         </section>
         <section class="settings-section" data-owner-capability="ai-configuration">
           <div class="settings-section-heading"><h3>场景档位</h3><p>默认让严肃判断充分思考，让写作提示与识别任务快速完成。</p></div>
           <div class="scenario-grid">
-            <label><span>思考 · 引子</span><select data-ai-scenario="thoughtPrompt"></select></label>
-            <label><span>思考草稿</span><select data-ai-scenario="thoughtDraft"></select></label>
-            <label><span>思考回答</span><select data-ai-scenario="thoughtAnswer"></select></label>
-            <label><span>追问回答</span><select data-ai-scenario="followUpAnswer"></select></label>
-            <label><span>长期对话</span><select data-ai-scenario="chat"></select></label>
-            <label><span>日记 · 引子</span><select data-ai-scenario="diaryLead"></select></label>
-            <label><span>日记 · 结构</span><select data-ai-scenario="diaryStructure"></select></label>
-            <label><span>日记 · 话题</span><select data-ai-scenario="diaryTopic"></select></label>
-            <label><span>日记回望</span><select data-ai-scenario="diaryReflection"></select></label>
-            <label><span>批注神鸡</span><select data-ai-scenario="annotationShenji"></select></label>
-            <label><span>认知复盘</span><select data-ai-scenario="analysis"></select></label>
-            <label><span>书目识别</span><select data-ai-scenario="bookRecognition"></select></label>
-            <label><span>健康截图识别</span><select data-ai-scenario="healthRecognition"></select></label>
-            <label><span>内容图片理解</span><select data-ai-scenario="contentImageUnderstanding"></select></label>
-            <label><span>语音整理</span><select data-ai-scenario="capturePolish"></select></label>
+            <label><span>思考 · 引子</span><select data-ai-scenario="thoughtPrompt" aria-label="场景档位：思考引子"></select></label>
+            <label><span>思考草稿</span><select data-ai-scenario="thoughtDraft" aria-label="场景档位：思考草稿"></select></label>
+            <label><span>思考回答</span><select data-ai-scenario="thoughtAnswer" aria-label="场景档位：思考回答"></select></label>
+            <label><span>追问回答</span><select data-ai-scenario="followUpAnswer" aria-label="场景档位：追问回答"></select></label>
+            <label><span>长期对话</span><select data-ai-scenario="chat" aria-label="场景档位：长期对话"></select></label>
+            <label><span>日记 · 引子</span><select data-ai-scenario="diaryLead" aria-label="场景档位：日记引子"></select></label>
+            <label><span>日记 · 结构</span><select data-ai-scenario="diaryStructure" aria-label="场景档位：日记结构"></select></label>
+            <label><span>日记 · 话题</span><select data-ai-scenario="diaryTopic" aria-label="场景档位：日记话题"></select></label>
+            <label><span>日记回望</span><select data-ai-scenario="diaryReflection" aria-label="场景档位：日记回望"></select></label>
+            <label><span>批注神鸡</span><select data-ai-scenario="annotationShenji" aria-label="场景档位：批注神鸡"></select></label>
+            <label><span>认知复盘</span><select data-ai-scenario="analysis" aria-label="场景档位：认知复盘"></select></label>
+            <label><span>书目识别</span><select data-ai-scenario="bookRecognition" aria-label="场景档位：书目识别"></select></label>
+            <label><span>健康截图识别</span><select data-ai-scenario="healthRecognition" aria-label="场景档位：健康截图识别"></select></label>
+            <label><span>内容图片理解</span><select data-ai-scenario="contentImageUnderstanding" aria-label="场景档位：内容图片理解"></select></label>
+            <label><span>语音整理</span><select data-ai-scenario="capturePolish" aria-label="场景档位：语音整理"></select></label>
           </div>
         </section>
         <label class="field" data-owner-capability="ai-configuration"><span>API 密钥 <i id="llm-key-hint">仅保存在本机</i></span><input id="llm-api-key" type="password" autocomplete="new-password" placeholder="sk-…（留空则保留已保存的密钥）"></label>

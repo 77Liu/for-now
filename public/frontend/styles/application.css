@@ -2169,6 +2169,52 @@ h1{letter-spacing:0}
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),select,textarea{font-size:16px}
   .content-image-add,.health-image-previews button,.book-image-remove,.annotation-menu>summary{min-width:44px;min-height:44px}
 }
+@media(max-width:760px){
+  main .view.active button,
+  main .view.active [role="button"]{
+    min-width:44px;
+    min-height:44px;
+  }
+  main .view.active input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]),
+  main .view.active select{
+    min-height:44px;
+  }
+  .date-peek input{
+    width:44px;
+    height:44px;
+  }
+  .statistics-presets button,
+  .statistics-range input,
+  .statistics-range>.quiet-button,
+  #reset-response-styles,
+  #llm-settings-form select,
+  #llm-settings-form .settings-actions button,
+  .account-form input,
+  .account-form>.primary-button,
+  .account-role-row select,
+  .account-role-row button,
+  #logout-button-account,
+  .feedback-form input:not([type="checkbox"]),
+  .feedback-form select,
+  .feedback-form>button[type="submit"],
+  .filter-button,
+  #onboarding-v2-reopen,
+  #trash-purge-selected,
+  .export-actions button{
+    min-height:44px;
+  }
+  .quote-refresh,.book-image-swap{
+    min-width:44px;
+    min-height:44px;
+  }
+  .feedback-context-choice,.trash-select{
+    min-height:44px;
+  }
+  .compact-inputs>.tag-composer .tag-input,
+  .compact-inputs>.tag-composer .tag-input input{
+    min-height:44px;
+  }
+}
 @media(max-width:560px){
   .capture-audio-actions{grid-template-columns:repeat(3,minmax(0,1fr))}
   .capture-audio-actions button,.audio-file-button{min-width:0;white-space:nowrap}
