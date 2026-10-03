@@ -258,7 +258,10 @@ try {
   assert.equal(migratedSettings.sceneEfforts.diaryLead, "none");
   assert.equal(migratedSettings.assistantName, "神鸡");
   assert.equal(migratedSettings.responseStyles.thoughtAnswer, "standard");
-  assert.deepEqual(migratedSettings.speech, { defaultVoice: "", generationRate: -10 });
+  assert.deepEqual(migratedSettings.speech, {
+    defaultVoice: "zh_male_shaonianzixin_uranus_bigtts",
+    generationRate: -10
+  });
   const storedSettings = JSON.parse(await fs.readFile(path.join(dataDir, "llm-settings.json"), "utf8"));
   assert.equal(storedSettings.version, 10);
   assert.equal(storedSettings.apiKey, "test-key");
