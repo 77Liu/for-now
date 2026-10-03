@@ -208,39 +208,36 @@ try {
   const understand = createKeepsakeImageUnderstanding({
     saveImages: attachments.save,
     cleanupFiles: cleanupTemporaryFiles,
-    generate: async filePath => {
-      candidateInputs.push({ account: context.getStore().user.id, filePath });
+    generate: async (filePath, options) => {
+      candidateInputs.push({ account: context.getStore().user.id, filePath, options });
       return JSON.stringify({
         title: " 展览票根 ",
-        category: "小票",
         tags: ["纪念", "展览", "纪念", ""],
         description: "画面中可见一张带日期的纸质票根。"
       });
     }
   });
-  assert.deepEqual(await run("understand", () => understand({ image: pixel })), {
+  assert.deepEqual(await run("understand", () => understand({ image: pixel, existingTags: ["展览", "纪念", "旅行"] })), {
     title: "展览票根",
-    category: "小票",
     tags: ["纪念", "展览"],
     description: "画面中可见一张带日期的纸质票根。"
   });
   assert.equal(candidateInputs.length, 1);
   assert.ok(candidateInputs[0].filePath.startsWith(path.join(root, "understand")));
+  assert.deepEqual(candidateInputs[0].options, { existingTags: ["展览", "纪念", "旅行"] });
   await noTemporaryFiles("understand");
   const invalidCandidate = createKeepsakeImageUnderstanding({
     saveImages: attachments.save,
     cleanupFiles: cleanupTemporaryFiles,
     generate: async () => JSON.stringify({
       title: "未知物品",
-      category: "模型自造类型",
       tags: ["一", "二", "三", "四", "五", "六", "七", "八", "九"],
       description: ""
     })
   });
-  assert.deepEqual(await run("understand-invalid", () => invalidCandidate({ image: pixel })), {
+  assert.deepEqual(await run("understand-invalid", () => invalidCandidate({ image: pixel, existingTags: ["二", "四", "六", "八"] })), {
     title: "未知物品",
-    category: "其他",
-    tags: ["一", "二", "三", "四", "五", "六", "七", "八"],
+    tags: ["二", "四", "六"],
     description: ""
   });
   await assert.rejects(
@@ -260,12 +257,11 @@ try {
   });
   await run("http", () => http.handle({ method: "POST", input: { image: pixel, requestId: "r1", targetId: "new", inputVersion: 3 } }, {}, new URL("http://local/api/keepsakes/segment")));
   assert.deepEqual(response, { status: 200, value: { cutout: pixel, provider: "aliyun-segment-hd", requestId: "r1", targetId: "new", inputVersion: 3 } });
-  await run("http", () => http.handle({ method: "POST", input: { image: pixel, requestId: "r2", targetId: "draft-1", inputVersion: 4 } }, {}, new URL("http://local/api/keepsakes/understand")));
+  await run("http", () => http.handle({ method: "POST", input: { image: pixel, existingTags: ["纪念", "展览"], requestId: "r2", targetId: "draft-1", inputVersion: 4 } }, {}, new URL("http://local/api/keepsakes/understand")));
   assert.deepEqual(response, {
     status: 200,
     value: {
       title: "展览票根",
-      category: "小票",
       tags: ["纪念", "展览"],
       description: "画面中可见一张带日期的纸质票根。",
       requestId: "r2",

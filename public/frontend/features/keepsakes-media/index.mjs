@@ -3,11 +3,18 @@ const attachmentPath = value => (
 );
 
 export const KEEPSAKE_BATCH_MAX_ITEMS = 8;
+export {
+  KEEPSAKE_ALPHA_THRESHOLD,
+  KEEPSAKE_BOUNDS_PADDING_RATIO,
+  keepsakePlacementCss,
+  scanKeepsakeAlpha
+} from "./placement.mjs";
 
-export function applyKeepsakeImageCandidates(current = {}, baseline = {}, candidates = {}) {
+export function applyKeepsakeImageCandidates(current = {}, baseline = {}, candidates = {}, {
+  existingTags = []
+} = {}) {
   const value = {
     title: String(current.title || ""),
-    category: String(current.category || "其他"),
     tags: String(current.tags || ""),
     note: String(current.note || "")
   };
@@ -19,15 +26,14 @@ export function applyKeepsakeImageCandidates(current = {}, baseline = {}, candid
     applied.push(field);
   };
   apply("title", String(candidates.title || "").trim(), !String(baseline.title || "").trim());
-  apply(
-    "category",
-    String(candidates.category || "").trim(),
-    String(baseline.category || "其他") === "其他"
-  );
-  const candidateTags = [...new Set((Array.isArray(candidates.tags) ? candidates.tags : [])
+  const knownByKey = new Map((Array.isArray(existingTags) ? existingTags : [])
     .map(tag => String(tag || "").trim())
+    .filter(Boolean)
+    .map(tag => [tag.toLocaleLowerCase("zh-CN"), tag]));
+  const candidateTags = [...new Set((Array.isArray(candidates.tags) ? candidates.tags : [])
+    .map(tag => knownByKey.get(String(tag || "").trim().toLocaleLowerCase("zh-CN")))
     .filter(Boolean))]
-    .slice(0, 8)
+    .slice(0, 3)
     .join(" ");
   apply("tags", candidateTags, !String(baseline.tags || "").trim());
   apply("note", String(candidates.description || "").trim(), !String(baseline.note || "").trim());
@@ -47,7 +53,6 @@ export function createKeepsakeBatchItems(files, {
     file,
     occurredAt: String(occurredAt || ""),
     title: "",
-    category: "其他",
     note: "",
     tags: "",
     edgeExpansion: 8,

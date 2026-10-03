@@ -300,7 +300,7 @@ export function createPageRouter({
     return viewName;
   }
 
-  function historyEntry(route, { scroll = { x: 0, y: 0 }, result = null } = {}) {
+  function historyEntry(route, { scroll = { x: 0, y: 0 }, result = null, returnRoute = null } = {}) {
     return {
       version: HISTORY_STATE_VERSION,
       route: routeSnapshot(route),
@@ -308,7 +308,8 @@ export function createPageRouter({
         x: Math.max(0, Number(scroll.x) || 0),
         y: Math.max(0, Number(scroll.y) || 0)
       },
-      result
+      result,
+      returnRoute: returnRoute ? routeSnapshot(returnRoute) : null
     };
   }
 
@@ -331,7 +332,8 @@ export function createPageRouter({
     const entry = storedEntry();
     writeHistory("replaceState", currentRoute, {
       scroll: readScroll(),
-      result: entry?.result || currentRoute.result || null
+      result: entry?.result || currentRoute.result || null,
+      returnRoute: entry?.returnRoute || null
     });
   }
 
@@ -365,7 +367,10 @@ export function createPageRouter({
     const historyMode = mode === "replace" || sameUrl ? "replaceState" : "pushState";
     writeHistory(historyMode, next, {
       scroll: resetScroll ? { x: 0, y: 0 } : readScroll(),
-      result
+      result,
+      returnRoute: next.kind === "detail" && currentRoute.kind === "page" && currentRoute.view === next.view
+        ? currentRoute
+        : storedEntry()?.returnRoute || null
     });
     return applyRoute(next, { runEffects, resetScroll, result, source: historyMode === "pushState" ? "push" : "replace" });
   }
@@ -402,6 +407,21 @@ export function createPageRouter({
       runEffects: currentRoute.view !== route.view,
       resetScroll: options.resetScroll !== false
     });
+  }
+
+  function backToList(view = currentRoute.view, options = {}) {
+    const entry = storedEntry();
+    const returnRoute = entry?.returnRoute;
+    if (
+      browserHistory
+      && currentRoute.kind === "detail"
+      && returnRoute?.kind === "page"
+      && returnRoute.view === view
+    ) {
+      history.back();
+      return currentView;
+    }
+    return showList(view, { ...options, mode: "replace" });
   }
 
   function showUnavailable(result, { view = "thoughts", query: nextQuery = currentRoute.query } = {}) {
@@ -480,6 +500,7 @@ export function createPageRouter({
     replaceQuery,
     openDetail,
     showList,
+    backToList,
     showUnavailable,
     clearResult,
     activate,

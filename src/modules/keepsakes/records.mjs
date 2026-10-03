@@ -3,7 +3,6 @@ import { safeText, recordVersion } from "../../shared/validation/index.mjs";
 import { cleanAttachmentPaths } from "../../shared/attachments/index.mjs";
 import { eventTimeFields } from "../../shared/time/index.mjs";
 
-const CATEGORIES = ["小票", "纸品", "立牌", "小物", "其他"];
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 const pathValue = value => cleanAttachmentPaths([value])[0] || "";
 const derivativeKeys = ["thumbPath", "displayPath", "editPath", "alphaMaskPath"];
@@ -29,29 +28,34 @@ const priorRequest = (items, trashItems, clientRequestId) => (
   || trashItems.find(item => item.type === "keepsake" && item.payload?.clientRequestId === clientRequestId)?.payload
 );
 
-export function keepsakeImageCandidates(input = {}) {
+export function keepsakeImageCandidates(input = {}, { existingTags = [] } = {}) {
+  const knownByKey = new Map(normalizeTags(existingTags).map(tag => [tag.toLocaleLowerCase("zh-CN"), tag]));
   return {
     title: safeText(input.title, 120),
-    category: CATEGORIES.includes(input.category) ? input.category : "其他",
-    tags: normalizeTags(input.tags),
+    tags: normalizeTags(input.tags)
+      .map(tag => knownByKey.get(tag.toLocaleLowerCase("zh-CN")))
+      .filter(Boolean)
+      .slice(0, 3),
     description: safeText(input.description, 2000)
   };
 }
 
 export function normalizeKeepsake(item, eventTime) {
-  const originalPath = pathValue(item.originalPath);
-  const cutoutPath = pathValue(item.cutoutPath);
-  const derivatives = Object.fromEntries(derivativeKeys.map(key => [key, pathValue(item[key])]));
+  const { category: legacyCategory, ...record } = item || {};
+  void legacyCategory;
+  const originalPath = pathValue(record.originalPath);
+  const cutoutPath = pathValue(record.cutoutPath);
+  const derivatives = Object.fromEntries(derivativeKeys.map(key => [key, pathValue(record[key])]));
   const completeDerivatives = derivativeKeys.every(key => derivatives[key]);
   const pendingDerivatives = originalPath
     && derivatives.alphaMaskPath
-    && ["pending", "failed"].includes(item.derivativeState);
+    && ["pending", "failed"].includes(record.derivativeState);
   const normalized = {
-    category: "其他", note: "", tags: [], source: "manual",
-    ...item, ...eventTime,
-    version: recordVersion(item.version),
-    tags: normalizeTags(item.tags),
-    backgroundOpacityPct: backgroundOpacityPct(item.backgroundOpacityPct),
+    note: "", tags: [], source: "manual",
+    ...record, ...eventTime,
+    version: recordVersion(record.version),
+    tags: normalizeTags(record.tags),
+    backgroundOpacityPct: backgroundOpacityPct(record.backgroundOpacityPct),
     originalPath,
     cutoutPath,
     ...derivatives,
@@ -60,7 +64,7 @@ export function normalizeKeepsake(item, eventTime) {
     derivativeState: completeDerivatives
       ? "ready"
       : pendingDerivatives
-        ? item.derivativeState
+        ? record.derivativeState
         : originalPath && cutoutPath
           ? "legacy"
           : "invalid"
@@ -99,7 +103,6 @@ export function keepsakePayload(input, existing = null) {
     value: {
       ...eventTime,
       title,
-      category: CATEGORIES.includes(input.category) ? input.category : existing?.category || "其他",
       note: safeText(input.note, 2000),
       tags,
       originalPath,
@@ -174,6 +177,7 @@ export function createKeepsakeRecords({ repository, now = () => new Date().toISO
         const parsed = keepsakePayload(input, keepsake);
         if (parsed.error) return parsed;
         Object.assign(keepsake, parsed.value, { updatedAt: now() });
+        delete keepsake.category;
         return { value: keepsake };
       });
     }

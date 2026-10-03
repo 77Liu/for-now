@@ -63,7 +63,6 @@ const provider = http.createServer(async (request, response) => {
     const content = promptText.includes("可编辑候选")
       ? JSON.stringify({
           title: "测试票根",
-          category: "小票",
           tags: ["测试", "票根", "测试"],
           description: "画面中是一张测试用票根。"
         })
@@ -242,12 +241,12 @@ try {
       image,
       requestId: "keepsake-understanding",
       targetId: "keepsake-draft",
-      inputVersion: 1
+      inputVersion: 1,
+      existingTags: ["测试", "票根", "其他"]
     })
   })).json();
   assert.deepEqual(candidates, {
     title: "测试票根",
-    category: "小票",
     tags: ["测试", "票根"],
     description: "画面中是一张测试用票根。",
     requestId: "keepsake-understanding",

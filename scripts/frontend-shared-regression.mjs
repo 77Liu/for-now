@@ -485,41 +485,34 @@ if (process.argv.includes("--timezone-case")) {
   assert.equal(normalizeTtsPlaybackRate(1.7), 1);
   assert.deepEqual(applyKeepsakeImageCandidates({
     title: "人工名称",
-    category: "其他",
     tags: "",
     note: ""
   }, {
     title: "",
-    category: "其他",
     tags: "",
     note: ""
   }, {
     title: "AI 名称",
-    category: "小票",
     tags: ["纪念", "展览"],
     description: "可见一张票根。"
-  }), {
+  }, { existingTags: ["展览", "纪念", "旅行"] }), {
     value: {
       title: "人工名称",
-      category: "小票",
       tags: "纪念 展览",
       note: "可见一张票根。"
     },
-    applied: ["category", "tags", "note"]
+    applied: ["tags", "note"]
   });
   assert.deepEqual(applyKeepsakeImageCandidates({
     title: "旧名称",
-    category: "纸品",
     tags: "人工标签",
     note: "人工描述"
   }, {
     title: "旧名称",
-    category: "纸品",
     tags: "人工标签",
     note: "人工描述"
   }, {
     title: "AI 名称",
-    category: "小票",
     tags: ["候选"],
     description: "候选描述"
   }).applied, []);

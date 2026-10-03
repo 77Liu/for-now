@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cike-shell-v0.5.3-uiux-auth-1";
+const CACHE_VERSION = "cike-shell-v0.6.0-experience-polish-1";
 const SHELL_ASSETS = [
   "./",
   "index.html",
@@ -18,6 +18,7 @@ const SHELL_ASSETS = [
   "frontend/features/home/index.mjs",
   "frontend/features/index.mjs",
   "frontend/features/keepsakes-media/index.mjs",
+  "frontend/features/keepsakes-media/placement.mjs",
   "frontend/features/notifications/index.mjs",
   "frontend/features/onboarding-v2/index.mjs",
   "frontend/features/thought-discovery/annotation-tools.mjs",

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "activeVersion": "2026.10.02.2",
+  "activeVersion": "2026.10.04.1",
   "versions": [
     {
       "version": "2026.09.29.1",
@@ -26,6 +26,11 @@
       "version": "2026.10.02.2",
       "file": "2026.10.02.2.json",
       "sha256": "2aa7a06ce59f66e949a785d01192f5fc37719a7e2f53dcab1e24c248528f551d"
+    },
+    {
+      "version": "2026.10.04.1",
+      "file": "2026.10.04.1.json",
+      "sha256": "24d2a34c8f6a72ee735ccd4b48e91ce8ddad6e57da37fdf6d095e8aa3be87e90"
     }
   ],
   "promptVariables": {
@@ -45,7 +50,7 @@
     "health.image.exercise": ["common", "units", "schema"],
     "health.image.referenceDate": ["referenceDate"],
     "content.image.understanding": ["originalText", "targetType"],
-    "keepsake.image.candidates": [],
+    "keepsake.image.candidates": ["existingTags"],
     "capture.transcription.polish": ["rawText"],
     "onboarding.claims.extract": ["schema", "sources"],
     "analysis.review": ["personalContext", "reflectionData", "evidenceLevel"]

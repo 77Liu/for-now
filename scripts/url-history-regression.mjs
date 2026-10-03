@@ -239,6 +239,21 @@ try {
   await evaluate("history.forward(); true");
   assert.equal(await waitUntil(`location.pathname==="/now/thoughts/${primary.id}"&&document.querySelector("#all-thoughts [data-chain-id]")?.open`), true);
   assert.equal(await evaluate("history.length"), detailHistoryLength);
+  await evaluate(`document.querySelector("[data-thought-list]").click();true`);
+  assert.equal(await waitUntil(`location.pathname==="/now/thoughts"&&document.querySelectorAll("#all-thoughts [data-chain-id]").length===23&&scrollY>200`), true);
+  assert.deepEqual(await evaluate(`({
+    restored:Math.abs(scrollY-${savedScroll})<120,
+    expanded:document.querySelectorAll("#all-thoughts [data-chain-id][open]").length,
+    length:history.length
+  })`), { restored:true, expanded:0, length:detailHistoryLength });
+
+  await evaluate(`document.querySelector('#all-thoughts [data-chain-id="${primary.id}"] .chain-summary').click();true`);
+  assert.equal(await waitUntil(`location.pathname==="/now/thoughts/${primary.id}"&&document.querySelectorAll("#all-thoughts [data-chain-id]").length===1`), true);
+  await evaluate(`document.querySelector("[data-thought-list]").click();true`);
+  assert.equal(await waitUntil(`location.pathname==="/now/thoughts"&&document.querySelectorAll("#all-thoughts [data-chain-id]").length===23`), true);
+  assert.equal(await evaluate(`document.querySelectorAll("#all-thoughts [data-chain-id][open]").length`), 0);
+  await evaluate(`document.querySelector('#all-thoughts [data-chain-id="${primary.id}"] .chain-summary').click();true`);
+  assert.equal(await waitUntil(`location.pathname==="/now/thoughts/${primary.id}"`), true);
 
   await evaluate(`window.confirm=()=>true;document.querySelector("#all-thoughts [data-delete-chain]").click();true`);
   assert.equal(await waitUntil(`location.pathname==="/now/thoughts"&&document.querySelector('[data-route-result="unavailable"]')?.dataset.routeErrorCode==="RESOURCE_UNAVAILABLE"`), true);

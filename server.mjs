@@ -546,11 +546,16 @@ function normalizeStore(value = {}) {
     participationRecords: Array.isArray(item.participationRecords) ? item.participationRecords : [],
     statusHistory: Array.isArray(item.statusHistory) ? item.statusHistory : []
   }));
-  store.trash = store.trash.filter(item => item && item.id && item.payload && item.type).map(item => ({
-    ...item,
-    deletedAt: safeIso(item.deletedAt) || now(),
-    purgeAfter: safeIso(item.purgeAfter) || new Date(Date.now() + TRASH_RETENTION_DAYS * 86400000).toISOString()
-  }));
+  store.trash = store.trash.filter(item => item && item.id && item.payload && item.type).map(item => {
+    const { category: legacyCategory, ...keepsakePayloadWithoutCategory } = item.type === "keepsake" ? item.payload : {};
+    void legacyCategory;
+    return {
+      ...item,
+      ...(item.type === "keepsake" ? { payload: keepsakePayloadWithoutCategory } : {}),
+      deletedAt: safeIso(item.deletedAt) || now(),
+      purgeAfter: safeIso(item.purgeAfter) || new Date(Date.now() + TRASH_RETENTION_DAYS * 86400000).toISOString()
+    };
+  });
   store.attachmentCleanup = store.attachmentCleanup.filter(item => item && /^\/attachments\/[\w.-]+$/.test(item.path)).map(item => ({
     path: item.path,
     createdAt: safeIso(item.createdAt) || now(),
@@ -1439,7 +1444,9 @@ const segmentKeepsakeImage = createKeepsakeSegmentation({
 const understandKeepsakeImage = createKeepsakeImageUnderstanding({
   saveImages: saveImageDataUrls,
   cleanupFiles: cleanupTemporaryFiles,
-  generate: file => runDeepSeek(promptText("keepsake.image.candidates"), {
+  generate: (file, { existingTags = [] } = {}) => runDeepSeek(renderPrompt("keepsake.image.candidates", {
+    existingTags: JSON.stringify(existingTags)
+  }), {
     imagePath: file,
     scene: "contentImageUnderstanding",
     json: true,

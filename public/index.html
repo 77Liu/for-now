@@ -62,7 +62,7 @@
     </nav>
     <div class="sidebar-footer">
       <div class="account-control" id="account-control" hidden><span id="account-name"></span><button id="logout-button" type="button">退出</button></div>
-      <p class="sidebar-version" id="sidebar-app-version">v0.5.3</p>
+      <p class="sidebar-version" id="sidebar-app-version">v0.6.0</p>
     </div>
   </aside>
 
@@ -401,8 +401,8 @@
     </section>
 
     <section class="view" id="view-captures">
-      <header class="page-header"><div><h1>念起</h1></div><span class="record-count" id="capture-count"></span></header>
-      <form class="card quick-capture-form" id="capture-form">
+      <header class="page-header"><div><h1>念起</h1></div><div class="feed-header-actions"><label class="feed-search"><span aria-hidden="true">⌕</span><input id="capture-search" data-feed-search="captures" type="search" placeholder="搜索念起" aria-label="搜索念起"></label><span class="record-count" id="capture-count"></span><button class="quiet-button" id="capture-create-toggle" type="button" aria-expanded="false">＋ 捕念</button></div></header>
+      <form class="card quick-capture-form" id="capture-form" hidden>
         <input type="hidden" id="capture-id">
         <label class="field capture-main-field"><span>想留下什么 <i>文字、图片或录音至少一项</i></span><textarea id="capture-content" rows="4" placeholder="一句话、一张图片或一段录音，都可以。"></textarea></label>
         <div class="content-image-editor" data-content-image-editor="capture">
@@ -447,7 +447,7 @@
     </section>
 
     <section class="view" id="view-journals">
-      <header class="page-header"><div><h1>日记</h1></div><span class="record-count" id="journal-count"></span></header>
+      <header class="page-header"><div><h1>日记</h1></div><div class="feed-header-actions"><label class="feed-search"><span aria-hidden="true">⌕</span><input id="journal-search" data-feed-search="journals" type="search" placeholder="搜索日记" aria-label="搜索日记"></label><span class="record-count" id="journal-count"></span></div></header>
       <section class="journal-workspace">
         <form class="card journal-form" id="journal-form">
           <input type="hidden" id="journal-id">
@@ -493,7 +493,7 @@
     </section>
 
     <section class="view" id="view-thoughts">
-      <header class="page-header"><div><p class="eyebrow">主题思考</p><h1>从问题、初步想法，到回答</h1></div><div class="segmented-control thought-sort" role="group" aria-label="思绪排序"><button class="active" type="button" data-thought-sort="occurred" aria-pressed="true">发生时间</button><button type="button" data-thought-sort="created" aria-pressed="false">提交时间</button></div></header>
+      <header class="page-header"><div><p class="eyebrow">主题思考</p><h1>从问题、初步想法，到回答</h1></div><div class="feed-header-actions"><label class="feed-search" id="thought-search-control"><span aria-hidden="true">⌕</span><input id="thought-search" data-feed-search="thoughts" type="search" placeholder="搜索思绪" aria-label="搜索思绪"></label><div class="segmented-control thought-sort" role="group" aria-label="思绪排序"><button class="active" type="button" data-thought-sort="occurred" aria-pressed="true">发生时间</button><button type="button" data-thought-sort="created" aria-pressed="false">提交时间</button></div><button class="quiet-button" id="thought-create-toggle" type="button">＋ 思绪</button></div></header>
       <div class="filter-row" id="thought-filters" aria-label="按标签筛选"></div>
       <div class="thought-list thought-timeline" id="all-thoughts"></div>
     </section>
@@ -539,7 +539,7 @@
     <section class="view" id="view-books">
       <header class="page-header">
         <div><p class="eyebrow">读书笔记</p><h1>每本书，留下你自己的索引</h1></div>
-        <div class="book-header-actions" id="book-header-actions"><span class="record-count" id="book-count"></span><button class="quiet-button" id="book-create-toggle" type="button" hidden>＋ 添加书目</button></div>
+        <div class="book-header-actions feed-header-actions" id="book-header-actions"><label class="feed-search" id="book-search-control"><span aria-hidden="true">⌕</span><input id="book-search" data-feed-search="books" type="search" placeholder="搜索书间" aria-label="搜索书间"></label><span class="record-count" id="book-count"></span><button class="quiet-button" id="book-create-toggle" type="button" hidden>＋ 添加书目</button></div>
       </header>
       <section class="card book-create" id="book-create-panel">
         <div class="book-media-fields">
@@ -598,7 +598,7 @@
     <section class="view" id="view-keepsakes">
       <header class="page-header">
         <div><p class="eyebrow">小物收集</p><h1>留下形状，放下实物</h1></div>
-        <div class="keepsake-header-actions"><span class="record-count" id="keepsake-count"></span><button class="quiet-button" id="keepsake-create-toggle" type="button">＋ 收一件小物</button></div>
+        <div class="keepsake-header-actions feed-header-actions"><label class="feed-search" id="keepsake-search-control"><span aria-hidden="true">⌕</span><input id="keepsake-search" data-feed-search="keepsakes" type="search" placeholder="搜索小物" aria-label="搜索小物"></label><span class="record-count" id="keepsake-count"></span><button class="quiet-button" id="keepsake-create-toggle" type="button">＋ 收一件小物</button></div>
       </header>
 
       <section class="card keepsake-workspace" id="keepsake-workspace" hidden>
@@ -649,15 +649,18 @@
               <input type="hidden" id="keepsake-id">
               <div class="keepsake-candidate-row">
                 <p class="status" id="keepsake-understanding-status" role="status" aria-live="polite"></p>
-                <button class="text-button" id="keepsake-understand" type="button" disabled>✦ 更新字段候选</button>
+                <button class="text-button" id="keepsake-understand" type="button" disabled>✦ 帮我填写</button>
               </div>
               <label><span>名称 <b>必填</b></span><input id="keepsake-title" placeholder="例：展览门票" maxlength="120" required></label>
-              <div class="keepsake-meta-fields">
-                <label><span>类型</span><select id="keepsake-category"><option value="小票">小票</option><option value="纸品">纸品</option><option value="立牌">立牌</option><option value="小物">小物</option><option value="其他">其他</option></select></label>
-                <label><span>留存时间</span><input id="keepsake-datetime" type="datetime-local" step="1" required></label>
+              <label><span>留存时间</span><input id="keepsake-datetime" type="datetime-local" step="1" required></label>
+              <div class="keepsake-tag-field">
+                <span>标签</span>
+                <div class="keepsake-tag-picker" id="keepsake-tag-picker">
+                  <div class="keepsake-selected-tags" id="keepsake-selected-tags"></div>
+                  <div class="keepsake-tag-input-row"><input id="keepsake-tags" placeholder="输入后按回车创建" maxlength="30" autocomplete="off"><button class="icon-button" id="keepsake-tag-toggle" type="button" title="选择已有标签" aria-label="选择已有标签" aria-expanded="false">⌄</button></div>
+                  <div class="keepsake-tag-suggestions" id="keepsake-tag-suggestions" role="listbox" aria-label="已有标签" hidden></div>
+                </div>
               </div>
-              <label><span>标签</span><input id="keepsake-tags" placeholder="输入新标签，或选择已有标签" maxlength="240"></label>
-              <div class="keepsake-tag-suggestions" id="keepsake-tag-suggestions" aria-label="已有标签"></div>
               <label><span>备注</span><textarea id="keepsake-note" rows="3" placeholder="它从哪里来，为什么暂时想记住"></textarea></label>
               <div class="keepsake-form-actions"><button class="text-button" id="keepsake-cancel-edit" type="button" hidden>取消编辑</button><button class="primary-button" id="keepsake-save" type="submit">保存小物</button></div>
               <p class="status" id="keepsake-save-status" role="status" aria-live="polite"></p>
@@ -675,7 +678,7 @@
     </section>
 
     <section class="view" id="view-quotes">
-      <header class="page-header"><div><p class="eyebrow">善言收集</p><h1>让好句子偶尔再次出现</h1></div></header>
+      <header class="page-header"><div><p class="eyebrow">善言收集</p><h1>让好句子偶尔再次出现</h1></div><div class="feed-header-actions"><label class="feed-search"><span aria-hidden="true">⌕</span><input id="quote-search" data-feed-search="quotes" type="search" placeholder="搜索拾句" aria-label="搜索拾句"></label></div></header>
       <section class="quote-sky" id="quote-sky"><button class="quote-refresh" id="quote-refresh" type="button" title="换一组善言" aria-label="换一组善言">↻</button><div class="quote-sky-content" id="quote-sky-content"></div></section>
       <form class="card quote-form" id="quote-form">
         <input type="hidden" id="quote-id">
@@ -778,7 +781,7 @@
           <span class="mine-row-arrow" aria-hidden="true">›</span>
         </button>
       </section>
-      <p class="mine-version" id="mine-app-version">v0.5.3</p>
+      <p class="mine-version" id="mine-app-version">v0.6.0</p>
     </section>
 
     <section class="view" id="view-personal-context">

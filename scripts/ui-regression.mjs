@@ -1142,7 +1142,7 @@ const mockFetch = `
     }
     if (url === "/api/keepsakes/understand") {
       const payload=JSON.parse(init.body);window.__keepsakeUnderstandingRequests.push(payload);
-      const response=()=>json({title:"AI 票根",category:"小票",tags:["候选","展览","候选"],description:"画面中可见一张带文字的票根。",requestId:payload.requestId,targetId:payload.targetId,inputVersion:payload.inputVersion});
+      const response=()=>json({title:"AI 票根",tags:["候选","展览","候选"],description:"画面中可见一张带文字的票根。",requestId:payload.requestId,targetId:payload.targetId,inputVersion:payload.inputVersion});
       if(window.__delayKeepsakeUnderstanding){window.__delayKeepsakeUnderstanding=false;return new Promise(resolve=>{window.__releaseKeepsakeUnderstanding=()=>resolve(response())})}
       return response()
     }
@@ -1450,17 +1450,20 @@ try {
       twoColumns:getComputedStyle(grid).gridTemplateColumns.split(" ").length===2,
       userOnly:!grid.textContent.includes("模型回答")&&!grid.textContent.includes("AI总结"),
       traceable:[...grid.querySelectorAll(".home-v02-memory")].every(item=>item.dataset.homeMemoryId&&item.querySelector("[data-home-memory-open]")),
-      keepsake:document.querySelector("#home-keepsake").textContent.includes("旧展览票"),
+      keepsake:Boolean(document.querySelector("[data-home-keepsake]")?.dataset.homeKeepsake),
       keepsakeOpaque:keepsakeImage&&getComputedStyle(keepsakeImage).opacity==="1",
+      keepsakeCutout:document.querySelectorAll(".home-v02-keepsake-preview img").length===1,
       moodPoints:document.querySelectorAll("#home-mood-sparkline circle").length,
       background:background.backgroundImage.includes("desktop-background.png"),
       backgroundFixed:background.position==="fixed"&&Math.round(backgroundElement.getBoundingClientRect().height)===innerHeight,
+      backgroundBelowActions:Number(background.zIndex)<Number(getComputedStyle(document.querySelector(".home-v02-content")).zIndex),
       actionsCollapsed:!document.querySelector(".home-v02-secondary").open,
       liveStatusHidden:getComputedStyle(document.querySelector("#home-memory-status")).position==="absolute",
+      singleScreen:document.documentElement.scrollHeight<=innerHeight,
       noOverflow:document.documentElement.scrollWidth<=innerWidth
     };
   })()`);
-  assert.deepEqual(homeDesktop,{active:true,memories:3,twoColumns:true,userOnly:true,traceable:true,keepsake:true,keepsakeOpaque:true,moodPoints:2,background:true,backgroundFixed:true,actionsCollapsed:true,liveStatusHidden:true,noOverflow:true});
+  assert.deepEqual(homeDesktop,{active:true,memories:3,twoColumns:true,userOnly:true,traceable:true,keepsake:true,keepsakeOpaque:true,keepsakeCutout:true,moodPoints:2,background:true,backgroundFixed:true,backgroundBelowActions:true,actionsCollapsed:true,liveStatusHidden:true,singleScreen:true,noOverflow:true});
   const homeDesktopScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
   await fs.writeFile("/tmp/growth-home-v02-desktop.png",Buffer.from(homeDesktopScreenshot.data,"base64"));
   const firstHomeKeys=await evaluate(`[...document.querySelectorAll(".home-v02-memory")].map(item=>item.dataset.homeMemoryKey)`);
@@ -1478,8 +1481,9 @@ try {
   await evaluate(`document.querySelector("#chain-question").value="";document.querySelector("#chain-question").dispatchEvent(new Event("input",{bubbles:true}));true`);
   await evaluate(`document.querySelector('.home-v02-memory[data-home-memory-type="thought"] [data-home-memory-open]').click();true`);
   assert.equal(await waitUntil(`document.querySelector("#view-thoughts").classList.contains("active")&&document.querySelector('[data-chain-id="kept-root"]').open`),true);
+  const selectedHomeKeepsake=await evaluate(`document.querySelector("[data-home-keepsake]").dataset.homeKeepsake`);
   await evaluate(`document.querySelector('[data-view="today"]').click();document.querySelector("[data-home-keepsake]").click();true`);
-  assert.equal(await waitUntil(`document.querySelector("#view-keepsakes").classList.contains("active")&&!document.querySelector("#keepsake-detail").hidden&&document.querySelector("#keepsake-detail h2").textContent==="旧展览票"`),true);
+  assert.equal(await waitUntil(`document.querySelector("#view-keepsakes").classList.contains("active")&&!document.querySelector("#keepsake-detail").hidden&&document.querySelector("#keepsake-detail").dataset.keepsakeId===${JSON.stringify(selectedHomeKeepsake)}`),true);
   await evaluate(`document.querySelector("[data-keepsake-back]").click();document.querySelector('[data-view="today"]').click();true`);
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 900, height: 900, deviceScaleFactor: 1, mobile: false });
   await evaluate(`window.scrollTo({top:0,behavior:"auto"});true`);
@@ -1585,13 +1589,21 @@ try {
     secondary:[...document.querySelector("[data-section-links='seen']").querySelectorAll("button")].map(button=>button.textContent),
     selected:document.querySelector(".section-nav button.active").textContent
   })`), { activeView: "view-captures", primary: "◇所见", secondary: ["念起","书间","拾句","小物"], selected: "念起" });
+  assert.equal(await evaluate(`["captures","journals","thoughts","books","keepsakes","quotes"].every(scope=>document.querySelector('[data-feed-search="'+scope+'"]'))`),true);
+  await evaluate(`(()=>{const input=document.querySelector("#capture-search");input.value="职业规划";input.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
+  assert.deepEqual(await evaluate(`({ids:[...document.querySelectorAll("#capture-list [data-capture-id]")].map(item=>item.dataset.captureId),count:document.querySelector("#capture-count").textContent})`),{ids:["capture-long"],count:"1 / 3 条"});
+  await evaluate(`(()=>{const input=document.querySelector("#capture-search");input.value="";input.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
   await evaluate(`document.querySelector('[data-view="keepsakes"]').click(); true`);
+  await evaluate(`(()=>{const input=document.querySelector("#keepsake-search");input.value="咖啡纸袋";input.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
+  assert.deepEqual(await evaluate(`({ids:[...document.querySelectorAll("#keepsake-grid [data-keepsake-id]")].map(item=>item.dataset.keepsakeId),count:document.querySelector("#keepsake-count").textContent})`),{ids:["keepsake-2"],count:"1 / 25 件"});
+  await evaluate(`(()=>{const input=document.querySelector("#keepsake-search");input.value="";input.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
   assert.deepEqual(await evaluate(`(() => {
     const grid=document.querySelector(".keepsake-grid"),card=document.querySelector(".keepsake-card"),image=card.querySelector(".keepsake-image-cutout");
     const background=card.querySelector(".keepsake-image-background");
-    return {count:document.querySelectorAll(".keepsake-card").length,label:document.querySelector("#keepsake-count").textContent,columns:getComputedStyle(grid).columnCount,avoids:getComputedStyle(card).breakInside==="avoid",layers:card.querySelectorAll("img").length,thumb:image.getAttribute("src")===window.__keepsakes[0].thumbPath,background:background.getAttribute("src")===window.__keepsakes[0].editPath,backgroundOpacity:getComputedStyle(background).opacity,originalReads:window.__keepsakeOriginalReads,tags:card.querySelector(".keepsake-tags").textContent,pagination:document.querySelector("#keepsake-pagination-status").textContent};
-  })()`), { count: 12, label: "25 件", columns: "3", avoids: true, layers: 2, thumb: true, background: true, backgroundOpacity: "0.15", originalReads: 0, tags: "#展览#同行", pagination: "已显示 12 / 25 件" });
+    return {count:document.querySelectorAll(".keepsake-card").length,label:document.querySelector("#keepsake-count").textContent,display:getComputedStyle(grid).display,columns:getComputedStyle(grid).gridTemplateColumns.split(" ").length,layers:card.querySelectorAll("img").length,thumb:image.getAttribute("src")===window.__keepsakes[0].thumbPath,background:background.getAttribute("src")===window.__keepsakes[0].editPath,backgroundOpacity:getComputedStyle(background).opacity,originalReads:window.__keepsakeOriginalReads,tags:card.querySelector(".keepsake-tags").textContent,pagination:document.querySelector("#keepsake-pagination-status").textContent};
+  })()`), { count: 12, label: "25 件", display:"grid", columns:3, layers: 2, thumb: true, background: true, backgroundOpacity: "0.15", originalReads: 0, tags: "#展览#同行", pagination: "已显示 12 / 25 件" });
   assert.equal(await waitUntil(`[...document.querySelectorAll(".keepsake-card img")].every(image=>image.complete&&image.naturalWidth>0)`),true);
+  assert.equal(await waitUntil(`[...document.querySelectorAll(".keepsake-card-image")].every(stack=>stack.dataset.placementState)`),true);
   await evaluate(`window.__keepsakeObservers.at(-1).trigger();true`);
   assert.equal(await waitUntil(`document.querySelectorAll(".keepsake-card").length===24&&document.querySelector("#keepsake-pagination-status").textContent==="已显示 24 / 25 件"`),true);
   await evaluate(`window.__keepsakeObservers.at(-1).trigger();true`);
@@ -1612,11 +1624,12 @@ try {
   assert.deepEqual(await evaluate(`({
     visible:!document.querySelector("#keepsake-editor").hidden,
     title:document.querySelector("#keepsake-title").value,
-    tags:document.querySelector("#keepsake-tags").value,
+    categoryRemoved:!document.querySelector("#keepsake-category"),
+    tags:[...document.querySelectorAll("#keepsake-selected-tags>span")].map(item=>item.firstChild.textContent),
     opacity:document.querySelector("#keepsake-background-opacity").value,
     opacityLabel:document.querySelector("#keepsake-background-output").value,
     suggestions:[...document.querySelectorAll("[data-keepsake-tag-suggestion]")].map(button=>button.textContent.trim())
-  })`),{visible:true,title:"旧展览票",tags:"展览 同行",opacity:"15",opacityLabel:"15%",suggestions:["#展览","#同行","#散步","#远行","#分页"]});
+  })`),{visible:true,title:"旧展览票",categoryRemoved:true,tags:["展览","同行"],opacity:"15",opacityLabel:"15%",suggestions:["散步","远行","分页"]});
   await evaluate(`document.querySelector("#keepsake-title").value="取消后不应保存";document.querySelector("#keepsake-cancel-edit").click();true`);
   assert.deepEqual(await evaluate(`({patches:window.__keepsakePatches,title:window.__keepsakes.find(item=>item.id==="keepsake-1").title})`),{patches:0,title:"旧展览票"});
   await evaluate(`document.querySelector('[data-keepsake-edit="keepsake-1"]').click();true`);
@@ -1634,19 +1647,22 @@ try {
   assert.equal(await waitUntil(`window.__keepsakePatches===1&&document.querySelector('[data-keepsake-id="keepsake-1"]')?.textContent.includes("修订展览票")`),true);
   assert.deepEqual(await evaluate(`(() => {
     const payload=window.__keepsakePatchPayloads[0],item=window.__keepsakes.find(value=>value.id==="keepsake-1"),card=document.querySelector('[data-keepsake-id="keepsake-1"]'),background=card.querySelector(".keepsake-image-background");
-    return{tags:payload.tags,opacity:payload.backgroundOpacityPct,hasMask:Object.hasOwn(payload,"alphaMask"),hasImage:Object.hasOwn(payload,"image"),sameMedia:item.originalPath==="/attachments/keepsake-1.original.png"&&item.thumbPath==="/attachments/keepsake-1.thumb.webp"&&item.displayPath==="/attachments/keepsake-1.display.webp"&&item.editPath==="/attachments/keepsake-1.edit.webp"&&item.alphaMaskPath==="/attachments/keepsake-1.alphaMask.webp",backgroundOpacity:getComputedStyle(background).opacity}
-  })()`),{tags:["展览","同行","散步"],opacity:22,hasMask:false,hasImage:false,sameMedia:true,backgroundOpacity:"0.22"},"keepsake-edit-tags-opacity");
+    return{tags:payload.tags,hasCategory:Object.hasOwn(payload,"category"),opacity:payload.backgroundOpacityPct,hasMask:Object.hasOwn(payload,"alphaMask"),hasImage:Object.hasOwn(payload,"image"),sameMedia:item.originalPath==="/attachments/keepsake-1.original.png"&&item.thumbPath==="/attachments/keepsake-1.thumb.webp"&&item.displayPath==="/attachments/keepsake-1.display.webp"&&item.editPath==="/attachments/keepsake-1.edit.webp"&&item.alphaMaskPath==="/attachments/keepsake-1.alphaMask.webp",backgroundOpacity:getComputedStyle(background).opacity}
+  })()`),{tags:["展览","同行","散步"],hasCategory:false,opacity:22,hasMask:false,hasImage:false,sameMedia:true,backgroundOpacity:"0.22"},"keepsake-edit-tags-opacity");
   await evaluate(`document.querySelector("#keepsake-create-toggle").click();true`);
   await evaluate(`window.__delayKeepsakeUnderstanding=true;true`);
   await evaluate(`(async()=>{const canvas=document.createElement("canvas");canvas.width=48;canvas.height=36;const ctx=canvas.getContext("2d");ctx.fillStyle="#d76455";ctx.fillRect(0,0,48,36);const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"));const file=new File([blob],"ticket.png",{type:"image/png"}),transfer=new DataTransfer();transfer.items.add(file);const input=document.querySelector("#keepsake-image");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
-  assert.equal(await waitUntil(`document.querySelector("#keepsake-segment-status").textContent.includes("自动轮廓已生成")&&document.querySelector("#keepsake-preview-canvas").getContext("2d").getImageData(8,18,1,1).data[3]===255&&typeof window.__releaseKeepsakeUnderstanding==="function"`), true);
-  await evaluate(`document.querySelector("#keepsake-title").value="人工票名";document.querySelector("#keepsake-title").dispatchEvent(new Event("input",{bubbles:true}));window.__releaseKeepsakeUnderstanding();true`);
-  assert.equal(await waitUntil(`document.querySelector("#keepsake-understanding-status").textContent.includes("已填入类型、标签、描述候选")`),true);
-  const keepsakeEditorState = await evaluate(`(() => { const preview=document.querySelector("#keepsake-preview-canvas"),ctx=preview.getContext("2d"),request=window.__keepsakeUnderstandingRequests[0];return {editorVisible:!document.querySelector("#keepsake-editor").hidden,title:document.querySelector("#keepsake-title").value,category:document.querySelector("#keepsake-category").value,tags:document.querySelector("#keepsake-tags").value,note:document.querySelector("#keepsake-note").value,requestBound:Boolean(request.requestId&&request.targetId&&Number.isInteger(request.inputVersion)),subjectAlpha:ctx.getImageData(8,18,1,1).data[3],backgroundAlpha:ctx.getImageData(40,18,1,1).data[3],overflow:document.documentElement.scrollWidth>window.innerWidth}; })()`);
+  assert.equal(await waitUntil(`document.querySelector("#keepsake-segment-status").textContent.includes("自动轮廓已生成")&&document.querySelector("#keepsake-preview-canvas").getContext("2d").getImageData(8,18,1,1).data[3]===255`), true);
+  assert.equal(await evaluate(`window.__keepsakeUnderstandingRequests.length`),0);
+  await evaluate(`document.querySelector("#keepsake-title").value="人工票名";document.querySelector("#keepsake-title").dispatchEvent(new Event("input",{bubbles:true}));document.querySelector("#keepsake-understand").click();true`);
+  assert.equal(await waitUntil(`typeof window.__releaseKeepsakeUnderstanding==="function"`),true);
+  await evaluate(`window.__releaseKeepsakeUnderstanding();true`);
+  assert.equal(await waitUntil(`document.querySelector("#keepsake-understanding-status").textContent.includes("已填入标签、备注候选")`),true);
+  const keepsakeEditorState = await evaluate(`(() => { const preview=document.querySelector("#keepsake-preview-canvas"),ctx=preview.getContext("2d"),request=window.__keepsakeUnderstandingRequests[0];return {editorVisible:!document.querySelector("#keepsake-editor").hidden,title:document.querySelector("#keepsake-title").value,tags:[...document.querySelectorAll("#keepsake-selected-tags>span")].map(item=>item.firstChild.textContent),note:document.querySelector("#keepsake-note").value,knownOnly:request.existingTags.includes("展览")&&!request.existingTags.includes("候选"),requestBound:Boolean(request.requestId&&request.targetId&&Number.isInteger(request.inputVersion)),subjectAlpha:ctx.getImageData(8,18,1,1).data[3],backgroundAlpha:ctx.getImageData(40,18,1,1).data[3],overflow:document.documentElement.scrollWidth>window.innerWidth}; })()`);
   assert.equal(keepsakeEditorState.editorVisible, true);
   assert.equal(keepsakeEditorState.title, "人工票名");
-  assert.equal(keepsakeEditorState.category, "小票");
-  assert.equal(keepsakeEditorState.tags, "候选 展览");
+  assert.deepEqual(keepsakeEditorState.tags, ["展览"]);
+  assert.equal(keepsakeEditorState.knownOnly, true);
   assert.equal(keepsakeEditorState.note, "画面中可见一张带文字的票根。");
   assert.equal(keepsakeEditorState.requestBound, true);
   assert.equal(keepsakeEditorState.subjectAlpha, 255);
@@ -1657,7 +1673,7 @@ try {
   const imageUploadsBeforeKeepsakeSave=await evaluate(`window.__imageUploads.length`);
   await evaluate(`window.__holdKeepsakeDerivatives=true;document.querySelector("#keepsake-title").value="新票根";document.querySelector("#keepsake-tags").value="纪念 周末 纪念";document.querySelector("#keepsake-form").requestSubmit();true`);
   if(!await waitUntil(`window.__keepsakePayloads.length===1`))throw new Error(await evaluate(`"小物保存未发出："+document.querySelector("#keepsake-save-status").textContent`));
-  assert.deepEqual(await evaluate(`(() => {const payload=window.__keepsakePayloads[0],item=window.__keepsakes.find(value=>value.id==="keepsake-new-1"),card=document.querySelector('[data-keepsake-id="keepsake-new-1"]');return{tags:payload.tags,backgroundOpacityPct:payload.backgroundOpacityPct,uploadRequests:window.__imageUploads.length-${imageUploadsBeforeKeepsakeSave},hasRawImage:Object.hasOwn(payload,"image"),sourcePaths:["originalPath","alphaMaskPath"].every(key=>payload[key]?.startsWith("/attachments/")),pending:item.derivativeState==="pending"&&card.querySelector(".keepsake-derivative-state")?.textContent==="正在生成清晰图",preview:card.querySelector(".keepsake-image-cutout")?.getAttribute("src")===item.previewPath,uploadKey:window.__keepsakeUploadKeys[0].length>0,createKey:Boolean(window.__lastKeepsakeCreateKey)}})()`), {tags:["纪念","周末"],backgroundOpacityPct:15,uploadRequests:1,hasRawImage:false,sourcePaths:true,pending:true,preview:true,uploadKey:true,createKey:true});
+  assert.deepEqual(await evaluate(`(() => {const payload=window.__keepsakePayloads[0],item=window.__keepsakes.find(value=>value.id==="keepsake-new-1"),card=document.querySelector('[data-keepsake-id="keepsake-new-1"]');return{tags:payload.tags,backgroundOpacityPct:payload.backgroundOpacityPct,uploadRequests:window.__imageUploads.length-${imageUploadsBeforeKeepsakeSave},hasRawImage:Object.hasOwn(payload,"image"),sourcePaths:["originalPath","alphaMaskPath"].every(key=>payload[key]?.startsWith("/attachments/")),pending:item.derivativeState==="pending"&&card.querySelector(".keepsake-derivative-state")?.textContent==="正在生成清晰图",preview:card.querySelector(".keepsake-image-cutout")?.getAttribute("src")===item.previewPath,uploadKey:window.__keepsakeUploadKeys[0].length>0,createKey:Boolean(window.__lastKeepsakeCreateKey)}})()`), {tags:["展览","纪念","周末"],backgroundOpacityPct:15,uploadRequests:1,hasRawImage:false,sourcePaths:true,pending:true,preview:true,uploadKey:true,createKey:true});
   await evaluate(`document.querySelector("#toast").hidden=true;document.querySelector('[data-keepsake-id="keepsake-new-1"]').scrollIntoView({block:"center"});true`);
   await fs.writeFile("/tmp/growth-keepsake-pending.png",Buffer.from((await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false})).data,"base64"));
   await evaluate(`window.__releaseKeepsakeDerivatives();true`);
@@ -1667,7 +1683,7 @@ try {
   assert.equal(savedCutoutAlpha.background, 0);
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await sleep(100);
-  assert.equal(await evaluate(`document.documentElement.scrollWidth<=window.innerWidth && getComputedStyle(document.querySelector(".keepsake-grid")).columnCount==="2"`), true);
+  assert.equal(await evaluate(`document.documentElement.scrollWidth<=window.innerWidth && getComputedStyle(document.querySelector(".keepsake-grid")).gridTemplateColumns.split(" ").length===2`), true);
   const keepsakeMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-keepsakes-mobile.png", Buffer.from(keepsakeMobileScreenshot.data, "base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
@@ -2134,6 +2150,8 @@ try {
   await evaluate(`window.__replacedSpeechUrl=document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-player]').currentSrc;document.querySelector('[data-capture-id="capture-1"] [data-capture-speak]').click();true`);
   assert.equal(await waitUntil(`window.__speechRequests.length===3&&document.querySelector('[data-capture-id="capture-1"] [data-capture-speech-player]')?.currentSrc.startsWith("blob:")`),true);
   assert.deepEqual(await evaluate(`({oldRevoked:window.__speechRevokedUrls.includes(window.__replacedSpeechUrl),oldCleared:!document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-player]').getAttribute("src"),newBound:document.querySelector('[data-capture-id="capture-1"] [data-capture-speech-player]').currentSrc===window.__speechObjectUrls.at(-1)})`),{oldRevoked:true,oldCleared:true,newBound:true},"switching records must release and detach the old source");
+  assert.equal(await evaluate(`document.querySelector("#capture-form").hidden&&document.querySelector("#capture-create-toggle").getAttribute("aria-expanded")==="false"`),true);
+  await evaluate(`document.querySelector("#capture-create-toggle").click();true`);
   assert.deepEqual(await evaluate(`(() => {const editor=document.querySelector(".capture-audio-editor"),upload=editor.querySelector(".audio-file-primary"),recorder=editor.querySelector("#capture-audio-recorder"),record=editor.querySelector("#capture-audio-record"),preview=editor.querySelector("#capture-audio-preview");return{fits:editor.getBoundingClientRect().right<=window.innerWidth,uploadText:upload.textContent.trim(),uploadHeight:Math.round(upload.getBoundingClientRect().height),recorderOpen:recorder.open,summary:recorder.querySelector("summary").textContent.replace(/\\s+/g," ").trim(),recordCollapsed:record.getClientRects().length===0,previewCollapsed:preview.getClientRects().length===0}})()`), {
     fits: true,
     uploadText: "↑上传音频",
@@ -2334,7 +2352,7 @@ try {
     const kept = document.querySelector('[data-chain-id="kept-root"]');
     const discarded = document.querySelector('[data-chain-id="discarded-root"]');
     kept.open = true;
-    const actions = [...kept.querySelectorAll(".thought-actions > button")];
+    const actions = [...kept.querySelectorAll(".thought-actions button")];
     return {
       hasIdeaSection: [...kept.querySelectorAll(".chain-part > b")].some(label => label.textContent === "初步想法"),
       hasIdeaPreview: Boolean(kept.querySelector(".idea-preview")),
@@ -2660,7 +2678,8 @@ try {
   await sleep(6500);
   assert.equal(await evaluate(`document.querySelector('[data-quote-id="quote-1"] p').scrollTop<${quoteBottom}-.5`),true);
   assert.equal(quoteSky.distinctTags>=3,true);
-  assert.match(quoteSky.font,/Kaiti|KaiTi|STKaiti/);
+  assert.match(quoteSky.font,/Songti|STSong|SimSun|ui-serif/);
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector("#quote-sky")).backgroundColor`),"rgb(244, 246, 241)");
   await evaluate(`document.querySelector("#quote-refresh").click(); true`);
   assert.notEqual(await evaluate(`[...document.querySelectorAll(".quote-bubble")].map(item=>item.dataset.quoteId).join(",")`),quoteSky.ids);
   await evaluate(`document.querySelector("#quote-sky").scrollIntoView({block:"start"}); true`);await sleep(100);
@@ -3236,9 +3255,9 @@ try {
   assert.equal(await waitUntil(`typeof window.__releaseActionList==="function"`),true);
   assert.equal(await evaluate(`!document.querySelector("#section-nav").hidden&&!document.querySelector("[data-section-links='today']").hidden&&document.querySelector("[data-section-links='today'] [data-view='today']").getAttribute("aria-current")==="page"`),true);
   await evaluate(`window.__releaseActionList();true`);
-  assert.equal(await waitUntil(`window.__localHydrateRequests.includes("today")&&document.querySelectorAll(".home-v02-memory").length===3&&document.querySelector("#home-keepsake").textContent.includes("修订展览票")`),true);
+  assert.equal(await waitUntil(`window.__localHydrateRequests.includes("today")&&document.querySelectorAll(".home-v02-memory").length===3&&Boolean(document.querySelector("[data-home-keepsake]")?.dataset.homeKeepsake)`),true);
   assert.equal(await evaluate(`!document.querySelector("#section-nav").hidden&&!document.querySelector("[data-section-links='today']").hidden&&document.querySelector("[data-section-links='today'] [data-view='today']").getAttribute("aria-current")==="page"`),true);
-  assert.equal(await evaluate(`Boolean(document.querySelector(".action-column:nth-child(3)")?.textContent.includes("服务器新标题")&&document.querySelector(".action-column:nth-child(3) .checkin-sync-state.pending"))`),true);
+  assert.equal(await waitUntil(`Boolean(document.querySelector(".action-column:nth-child(3)")?.textContent.includes("服务器新标题")&&document.querySelector(".action-column:nth-child(3) .checkin-sync-state.pending"))`),true);
   await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
   assert.equal(await evaluate(`document.querySelector(".capture-sync-state.pending")?.textContent==="待同步"&&document.querySelector("#capture-list").textContent.includes("范围切换时保留的待同步记录")`),true);
   await evaluate(`document.querySelector('[data-view="discovery"]').click();true`);
@@ -3255,7 +3274,7 @@ try {
   await evaluate(`window.__onboardingSchemaAvailable=true;document.querySelector('[data-local-test-mode="cold"]').click();true`);
   assert.equal(await waitUntil(`window.__testWorkspaceMode==="cold"&&document.querySelector("#view-today").classList.contains("active")&&!document.querySelector("#onboarding-workspace").hidden&&document.querySelector("#onboarding-v2-content h1")?.textContent.includes("先认识此刻的你")`),true);
   await evaluate(`document.querySelector('[data-section="seen"]').click();document.querySelector('[data-view="keepsakes"]').click();true`);
-  assert.deepEqual(await evaluate(`(()=>{const grid=document.querySelector("#keepsake-grid"),empty=grid.querySelector(".content-state"),gridBox=grid.getBoundingClientRect(),emptyBox=empty.getBoundingClientRect();return{title:empty.querySelector("strong").textContent,body:empty.querySelector("p").textContent,action:empty.querySelector("button").textContent,actions:empty.querySelectorAll("button").length,columnSpan:getComputedStyle(empty).columnSpan,fullWidth:Math.abs(gridBox.width-emptyBox.width)<2,noOverflow:document.documentElement.scrollWidth<=innerWidth}})()`),{title:"还没有小物",body:"从一张照片开始，名称和轮廓之后都可以修改。",action:"收第一件小物",actions:1,columnSpan:"all",fullWidth:true,noOverflow:true});
+  assert.deepEqual(await evaluate(`(()=>{const grid=document.querySelector("#keepsake-grid"),empty=grid.querySelector(".content-state"),gridBox=grid.getBoundingClientRect(),emptyBox=empty.getBoundingClientRect();return{title:empty.querySelector("strong").textContent,body:empty.querySelector("p").textContent,action:empty.querySelector("button").textContent,actions:empty.querySelectorAll("button").length,fullWidth:Math.abs(gridBox.width-emptyBox.width)<2,noOverflow:document.documentElement.scrollWidth<=innerWidth}})()`),{title:"还没有小物",body:"从一张照片开始，名称和轮廓之后都可以修改。",action:"收第一件小物",actions:1,fullWidth:true,noOverflow:true});
   await evaluate(`document.querySelector("#keepsake-grid .content-state-action").click();true`);
   assert.equal(await waitUntil(`!document.querySelector("#keepsake-workspace").hidden`),true);
   await evaluate(`document.querySelector("#keepsake-create-toggle").click();document.querySelector('[data-section="thought"]').click();document.querySelector("[data-section-links='thought'] [data-view='journals']").click();true`);

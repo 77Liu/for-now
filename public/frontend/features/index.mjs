@@ -70,12 +70,16 @@ export {
 } from "./home/index.mjs";
 export {
   KEEPSAKE_BATCH_MAX_ITEMS,
+  KEEPSAKE_ALPHA_THRESHOLD,
+  KEEPSAKE_BOUNDS_PADDING_RATIO,
   applyKeepsakeImageCandidates,
   createKeepsakeBatchItems,
   discardKeepsakeMedia,
+  keepsakePlacementCss,
   keepsakeMediaSources,
   keepsakeUploadPayload,
   nextKeepsakeBatchIndex,
+  scanKeepsakeAlpha,
   uploadKeepsakeMedia
 } from "./keepsakes-media/index.mjs";
 export {

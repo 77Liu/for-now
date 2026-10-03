@@ -9,11 +9,11 @@ import { installPromptCatalog, promptCatalogMetadata, promptText, renderPrompt }
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const current = installPromptCatalog(await loadPromptCatalog({ rootDir: root }));
-assert.equal(current.version, "2026.10.02.2");
-assert.equal(current.sha256, "2aa7a06ce59f66e949a785d01192f5fc37719a7e2f53dcab1e24c248528f551d");
+assert.equal(current.version, "2026.10.04.1");
+assert.equal(current.sha256, "24d2a34c8f6a72ee735ccd4b48e91ce8ddad6e57da37fdf6d095e8aa3be87e90");
 assert.ok(Object.keys(current.prompts).length >= 40);
 assert.match(promptText("ai.system.core"), /结论先行/);
-assert.match(promptText("keepsake.image.candidates"), /可编辑候选/);
+assert.match(renderPrompt("keepsake.image.candidates", { existingTags: "[\"展览\"]" }), /最多 3 个/);
 assert.match(promptText("onboarding.claims.extract"), /最多 20 条候选/);
 assert.equal(renderPrompt("ai.identity.named", { assistantName: "照见" }), "你的称呼是“照见”。仅在自然需要时使用，不要反复自称。");
 assert.throws(() => renderPrompt("ai.identity.named"), /variable is missing/);

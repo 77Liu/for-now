@@ -35,8 +35,10 @@ import {
   createKeepsakeBatchItems,
   discardKeepsakeMedia,
   KEEPSAKE_BATCH_MAX_ITEMS,
+  keepsakePlacementCss,
   keepsakeMediaSources,
   nextKeepsakeBatchIndex,
+  scanKeepsakeAlpha,
   uploadKeepsakeMedia,
   WEIGHT_BATCH_MAX_ITEMS,
   applyWeightBatchRecognition,
@@ -110,10 +112,11 @@ let pageRouter,switchView,restoreView;
 let backgroundResultController=null;
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,discoveryController=null,actionsSnapshot={actions:[],habits:[],habitCheckins:[]},actionsRequestSerial=0,feedbackItems=[],feedbackRequestSerial=0,exportManifest=null,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.1",releaseVersion="0.5.1",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
+let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,captureComposerOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,discoveryController=null,actionsSnapshot={actions:[],habits:[],habitCheckins:[]},actionsRequestSerial=0,feedbackItems=[],feedbackRequestSerial=0,exportManifest=null,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.6.0",releaseVersion="0.6.0",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
 let notificationsLoadState="idle",feedbackLoadState="idle",exportLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,activeThoughtRouteId="",activeRouteResult=null;
-let notificationRetryingTaskIds=[];
-let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeEditorTrigger=null,activeSpeechCaptureId="",activeSpeechSourceKey="",activeSpeechVoice="",activeSpeechPlaybackRate=1,activeSpeechAudio=null,activeSpeechObjectUrl="",activeSpeechAbortController=null;
+const feedSearchQueries={captures:"",journals:"",thoughts:"",books:"",keepsakes:"",quotes:""};
+let notificationRetryingTaskIds=[],keepsakeDraftTags=[];
+let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeKeepsakeId="",homeEditorTrigger=null,activeSpeechCaptureId="",activeSpeechSourceKey="",activeSpeechVoice="",activeSpeechPlaybackRate=1,activeSpeechAudio=null,activeSpeechObjectUrl="",activeSpeechAbortController=null;
 const keepsakeEditor={file:null,sourceDataUrl:"",sourceImage:null,sourceCanvas:null,maskCanvas:null,autoBase:null,history:[],mode:"keep",drawing:false,lastPoint:null,source:"manual",originalPath:"",cutoutPath:"",mediaDirty:false,renderFrame:0,segmentSerial:0,understandingSerial:0};
 const keepsakeBatch={items:[],activeIndex:0,loading:false};
 let keepsakeBatchPreviewUrls=[],keepsakeBatchPersistTimer=0,keepsakeDerivativeRefreshTimer=0;
@@ -1599,6 +1602,29 @@ function syncChainRecordKind(){
   $("#chain-question").placeholder=captureMode?"先记下，不必立刻想完整。":"你真正想问的是什么？";
   $("#chain-submit").textContent=captureMode?"收进念起":"收进思绪箱"
 }
+function normalizedFeedSearch(value){return String(value||"").normalize("NFKC").toLocaleLowerCase("zh-CN").replace(/\s+/g," ").trim()}
+function feedSearchText(...values){
+  const parts=[];
+  const append=value=>{
+    if(value==null)return;
+    if(Array.isArray(value)){value.forEach(append);return}
+    if(typeof value==="object"){Object.values(value).forEach(append);return}
+    parts.push(String(value))
+  };
+  values.forEach(append);
+  return normalizedFeedSearch(parts.join(" "))
+}
+function matchesFeedSearch(scope,...values){
+  const query=normalizedFeedSearch(feedSearchQueries[scope]);
+  if(!query)return true;
+  return query.split(" ").every(term=>feedSearchText(...values).includes(term))
+}
+function feedCountLabel(scope,visible,total,unit){
+  return normalizedFeedSearch(feedSearchQueries[scope])
+    ?`${visible} / ${total} ${unit}`
+    :`${total} ${unit}`
+}
+function feedSearchEmpty(label){return contentState({title:`没有匹配的${label}`,body:"换一个关键词，原有记录不会受到影响。"})}
 function metricConfig(){const custom=Object.fromEntries((state.customMetrics||[]).map(x=>[x.id,{label:x.name,anchors:[x.low,"偏低","居中","偏高",x.high],custom:true}]));return{...baseMetrics,...custom}}
 function metricValue(checkin,key,custom){return custom?checkin.custom?.[key]:checkin[key]}
 function metricReference(key,custom){const eligible=state.checkins.filter(x=>x.occurredOn<=activeDate).sort((a,b)=>b.occurredOn.localeCompare(a.occurredOn)||eventTimestamp(b).localeCompare(eventTimestamp(a)));const previous=eligible.map(x=>metricValue(x,key,custom)).find(x=>Number.isFinite(Number(x)));const history=eligible.slice(0,30).map(x=>Number(metricValue(x,key,custom))).filter(Number.isFinite);return{previous:previous==null?null:Number(previous),average:avg(history)}}
@@ -1633,7 +1659,9 @@ function chainCard({question,children},showDate=true,sortMode=thoughtSortMode){
   const ideas=children.filter(x=>x.type==="idea"),answers=children.filter(x=>x.type==="answer"),ideaText=ideas.map(x=>x.content).join(" "),answerPreview=thoughtAnswerPreview(answers.at(-1)?.content||"")||(answers.some(x=>x.modelDraft)?"AI 草稿未被保留":"尚未回答"),annotationCount=(question.annotations||[]).length+(question.annotationDrift||[]).length,syncing=question._sync?.status;
   const dispositionActions=`${question.disposition!=="kept"?`<button class="subtle-action" data-disposition="${question.id}" data-value="kept">保留</button>`:""}${question.disposition!=="discarded"?`<button class="subtle-action" data-disposition="${question.id}" data-value="discarded">舍弃</button>`:""}`;
   const tags=question.tags?.length?`#${question.tags.map(escapeHtml).join(" #")}`:"未标记",tracePending=(state.insights.aiOnlyThoughtIds||[]).includes(question.id)?'<span class="thought-trace-pending">📫没有你的痕迹⏳</span>':"";
-  const actions=syncing?`<span class="checkin-sync-state ${escapeHtml(syncing)}">${syncing==="pending"?"待同步":"正在同步"}</span>`:`<button class="subtle-action answer-action" data-answer-chain="${question.id}">✦ ${answers.length?"重新回答":"给我回答"}</button><button class="subtle-action" data-thought-block-add="record" data-root-id="${question.id}">＋记录</button><button class="subtle-action" data-thought-block-add="idea" data-root-id="${question.id}">＋想法</button>${annotationCount?`<button class="subtle-action" data-open-comments="${question.id}">批注 ${annotationCount}</button>`:""}${dispositionActions}<button class="subtle-action" data-edit-chain="${question.id}">编辑主题</button><button class="subtle-action" data-followup-compose="${question.id}" aria-expanded="false">＋追问</button><button class="subtle-action" data-remark="${question.id}">＋备注</button><button class="subtle-action danger" data-delete-chain="${question.id}">删除</button>`;
+  const actions=syncing
+    ?`<span class="checkin-sync-state ${escapeHtml(syncing)}">${syncing==="pending"?"待同步":"正在同步"}</span>`
+    :`<span class="thought-action-group thought-action-grow"><button class="subtle-action" data-thought-block-add="record" data-root-id="${question.id}">＋记录</button><button class="subtle-action" data-thought-block-add="idea" data-root-id="${question.id}">＋想法</button><button class="subtle-action" data-followup-compose="${question.id}" aria-expanded="false">＋追问</button><button class="subtle-action" data-remark="${question.id}">＋备注</button></span><span class="thought-action-group thought-action-answer"><button class="subtle-action answer-action" data-answer-chain="${question.id}">✦ ${answers.length?"重新回答":"给我回答"}</button>${annotationCount?`<button class="subtle-action" data-open-comments="${question.id}">批注 ${annotationCount}</button>`:""}</span><span class="thought-action-group thought-action-disposition">${dispositionActions}</span><span class="thought-action-group thought-action-manage"><button class="subtle-action" data-edit-chain="${question.id}">编辑主题</button><button class="subtle-action danger" data-delete-chain="${question.id}">删除</button></span>`;
   const displayedAt=sortMode==="created"?(question.createdAt||eventTimestamp(question)):eventTimestamp(question);
   return `<article class="thought-timeline-entry${syncing?" is-syncing":""}"><div class="timeline-date">${showDate?escapeHtml(eventDate({occurredAt:displayedAt})):""}</div><header class="thought-entry-meta"><div class="thought-entry-markers"><span class="thought-entry-tags">${tags}</span>${tracePending}</div><time>${formatTime(displayedAt)}</time></header><details class="thought-card chain-record" data-chain-id="${question.id}"><summary class="chain-summary"><div class="summary-content"><strong class="question-preview">${escapeHtml(plainPreview(question.content)||"图片记录")}</strong>${ideaText?`<p class="idea-preview">${escapeHtml(plainPreview(ideaText))}</p>`:""}<p class="answer-preview">${escapeHtml(answerPreview)}</p></div><span class="expand-mark" aria-hidden="true">⌄</span></summary><div class="chain-expanded"><section class="chain-part"><b>问题</b><div><div class="thought-question-content markdown-content">${renderMarkdown(question.content)}</div>${contentImagesMarkup(question,"thoughtRoot")}</div></section>${thoughtStream(question,children)}${syncing?"":`<form class="followup-form" data-follow-up-root="${question.id}" hidden><label><span>追问问题</span><textarea rows="3" name="question" placeholder="补充一个追问…" required></textarea></label><label><span>回答（可选）</span><textarea rows="3" name="answer" placeholder="已有答案时可一起记下"></textarea></label><button class="quiet-button followup-submit" type="submit">＋ 追问</button><p class="followup-status" role="status" aria-live="polite"></p></form>`}<div class="thought-actions">${actions}</div></div></details></article>`
 }
@@ -1676,30 +1704,33 @@ function reconcileThoughtRoute(){
 }
 function openThoughtDetail(id){return pageRouter?.openDetail("thought-chain",id)}
 function renderThoughts(extraOpen={}){
-  const open=thoughtOpenState(),todayDrafts=captureFormDrafts($("#today-thoughts")),allDrafts=captureFormDrafts($("#all-thoughts"));
+  const allThoughts=$("#all-thoughts"),open=allThoughts.dataset.routeMode==="list"?thoughtOpenState():{roots:new Set(),followUps:new Set()},todayDrafts=captureFormDrafts($("#today-thoughts")),allDrafts=captureFormDrafts(allThoughts);
   if(extraOpen.chainId)open.roots.add(extraOpen.chainId);
   if(extraOpen.followUpId)open.followUps.add(`${extraOpen.chainId}:${extraOpen.followUpId}`);
   const chains=thoughtChains(),today=thoughtChains("occurred").filter(x=>thoughtDate(x)===activeDate).slice(0,5);
   $$("[data-thought-sort]").forEach(button=>{const active=button.dataset.thoughtSort===thoughtSortMode;button.classList.toggle("active",active);button.setAttribute("aria-pressed",String(active))});
   $("#today-thoughts").innerHTML=today.length?chainCardsMarkup(today,"occurred"):contentState({title:"这一天还没有思绪",body:"日期里没有记录很正常，已有内容仍在其他日期。",action:{command:"new-thought",label:"记录一个问题"}});
-  const selected=activeThoughtRouteId?chains.find(({question})=>question.id===activeThoughtRouteId):null,detailMode=Boolean(selected),filters=$("#thought-filters"),sortControls=$(".thought-sort");
-  filters.hidden=detailMode;sortControls.hidden=detailMode;
+  const selected=activeThoughtRouteId?chains.find(({question})=>question.id===activeThoughtRouteId):null,detailMode=Boolean(selected),filters=$("#thought-filters"),sortControls=$(".thought-sort"),searchControl=$("#thought-search-control");
+  filters.hidden=detailMode;sortControls.hidden=detailMode;searchControl.hidden=detailMode;allThoughts.dataset.routeMode=detailMode?"detail":"list";
   if(detailMode){
-    $("#all-thoughts").innerHTML=`<div class="filter-row"><button class="quiet-button" type="button" data-thought-list>‹ 返回思绪列表</button></div>${chainCardsMarkup([selected])}`;
-    $("#all-thoughts").querySelector("[data-chain-id]")?.setAttribute("open","");
+    allThoughts.innerHTML=`<div class="filter-row"><button class="quiet-button" type="button" data-thought-list>‹ 返回思绪列表</button></div>${chainCardsMarkup([selected])}`;
+    allThoughts.querySelector("[data-chain-id]")?.setAttribute("open","");
     open.roots.add(activeThoughtRouteId)
   }else{
-    filters.hidden=false;sortControls.hidden=false;renderThoughtFilters(chains)
+    filters.hidden=false;sortControls.hidden=false;searchControl.hidden=false;renderThoughtFilters(chains)
   }
-  const items=thoughtFilter==="all"?chains:chains.filter(({question,children})=>[...(question.tags||[]),...children.flatMap(x=>x.tags||[])].includes(thoughtFilter));
+  const tagged=thoughtFilter==="all"?chains:chains.filter(({question,children})=>[...(question.tags||[]),...children.flatMap(x=>x.tags||[])].includes(thoughtFilter));
+  const items=tagged.filter(({question,children})=>matchesFeedSearch("thoughts",question.content,question.tags,question.remarks,question.followUps,children.map(item=>[item.content,item.modelDraft,item.tags])));
   if(!detailMode){
     const notice=activeRouteResult?.error?.code==="RESOURCE_UNAVAILABLE"?unavailableThoughtRouteMarkup(activeRouteResult):"";
     const list=items.length
       ?chainCardsMarkup(items)
+      :normalizedFeedSearch(feedSearchQueries.thoughts)
+        ?feedSearchEmpty("思绪")
       :thoughtFilter==="all"
         ?contentState({title:"还没有思绪",body:"从一个真实问题开始，初步想法可以稍后补充。",action:{command:"new-thought",label:"记录第一个问题"}})
         :contentState({title:`#${thoughtFilter} 下还没有记录`,body:"其他标签的思绪仍然保留。",action:{command:"clear-thought-filter",label:"查看全部思绪"}});
-    $("#all-thoughts").innerHTML=notice+list
+    allThoughts.innerHTML=notice+list
   }
   restoreThoughtOpenState(open);
   const todayFocus=restoreFormDrafts($("#today-thoughts"),todayDrafts),allFocus=restoreFormDrafts($("#all-thoughts"),allDrafts),focusTarget=allFocus||todayFocus;
@@ -1817,21 +1848,28 @@ function toggleCaptureCard(card){
   viewport.classList.toggle("expanded",expanded);card.classList.toggle("is-expanded",expanded);button.setAttribute("aria-expanded",String(expanded));button.setAttribute("aria-label",expanded?"收起捕念":"展开捕念");
 }
 function renderCaptures(){
-  const items=[...(state.captures||[])].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a)));
+  const allItems=[...(state.captures||[])].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a)));
+  const items=allItems.filter(item=>matchesFeedSearch("captures",item.content,item.tags,item.transcription?.rawText,item.transcription?.polishedText));
+  const form=$("#capture-form"),toggle=$("#capture-create-toggle"),editing=Boolean($("#capture-id").value);
+  form.hidden=!captureComposerOpen&&!editing;toggle.setAttribute("aria-expanded",String(!form.hidden));toggle.textContent=form.hidden?"＋ 捕念":"收起";
   reconcileCaptureSpeech();
-  $("#capture-count").textContent=`${items.length} 条`;
-  $("#capture-list").innerHTML=items.length?items.map((item,index)=>captureCard(item,index===0||eventDate(item)!==eventDate(items[index-1]))).join(""):contentState({title:"还没有捕念",body:"刚开始为空很正常。文字、图片或录音都可以单独留下。",action:{focus:"capture-content",label:"留下第一条"}});
+  $("#capture-count").textContent=feedCountLabel("captures",items.length,allItems.length,"条");
+  $("#capture-list").innerHTML=items.length
+    ?items.map((item,index)=>captureCard(item,index===0||eventDate(item)!==eventDate(items[index-1]))).join("")
+    :allItems.length
+      ?feedSearchEmpty("念起")
+      :contentState({title:"还没有捕念",body:"刚开始为空很正常。文字、图片或录音都可以单独留下。",action:{focus:"capture-content",label:"留下第一条"}});
   bindCaptureSpeechPlayer();
   items.filter(item=>!item._sync).forEach(item=>markCommentTarget($(`[data-capture-id="${CSS.escape(item.id)}"] .capture-copy .markdown-content`),commentRootKey("capture",item.id),"content"));
   renderLatex($("#capture-list"));applyCommentAnchors($("#capture-list"));requestAnimationFrame(syncCaptureOverflow);
 }
 function resetCaptureForm({preserveUploads=false}={}){
-  $("#capture-form").reset();delete $("#capture-form").dataset.requestId;$("#capture-id").value="";resetContentImageEditor("capture",[],{forget:!preserveUploads});clearCaptureAudioDraft({forget:!preserveUploads});captureDraftTags=[];renderCaptureTagComposer();resetOccurrenceInput($("#capture-date"));$("#capture-submit").textContent="收下";$("#capture-cancel").hidden=true;$("#capture-status").textContent="";clearDurableDraft("capture-form");
+  captureComposerOpen=false;$("#capture-form").reset();delete $("#capture-form").dataset.requestId;$("#capture-id").value="";resetContentImageEditor("capture",[],{forget:!preserveUploads});clearCaptureAudioDraft({forget:!preserveUploads});captureDraftTags=[];renderCaptureTagComposer();resetOccurrenceInput($("#capture-date"));$("#capture-submit").textContent="收下";$("#capture-cancel").hidden=true;$("#capture-status").textContent="";clearDurableDraft("capture-form");renderCaptures();
   if(preserveUploads&&currentUser?.id)void Promise.all([mediaDraftStore.delete(currentUser.id,"capture"),mediaDraftStore.delete(currentUser.id,audioDraftKey)]).catch(()=>{})
 }
 function editCapture(id){
   const item=state.captures.find(value=>value.id===id);if(!item)return;
-  $("#capture-id").value=item.id;$("#capture-content").value=item.content;resetContentImageEditor("capture",item.attachmentPaths||[]);setExistingCaptureAudio(item.audio);captureDraftTags=[...(item.tags||[])];$("#capture-tags").value="";renderCaptureTagComposer();resetOccurrenceInput($("#capture-date"),item);$("#capture-submit").textContent="保存修改";$("#capture-cancel").hidden=false;$("#capture-status").textContent="正在编辑已有捕念";$("#capture-form").scrollIntoView({behavior:"smooth",block:"start"});$("#capture-content").focus();
+  captureComposerOpen=true;$("#capture-id").value=item.id;$("#capture-content").value=item.content;resetContentImageEditor("capture",item.attachmentPaths||[]);setExistingCaptureAudio(item.audio);captureDraftTags=[...(item.tags||[])];$("#capture-tags").value="";renderCaptureTagComposer();resetOccurrenceInput($("#capture-date"),item);$("#capture-submit").textContent="保存修改";$("#capture-cancel").hidden=false;$("#capture-status").textContent="正在编辑已有捕念";renderCaptures();$("#capture-form").scrollIntoView({behavior:"smooth",block:"start"});$("#capture-content").focus();
 }
 function reflectionMarkup(item,reflection,index){
   const stale=reflection.sourceUpdatedAt&&(reflection.sourceUpdatedAt!==(item.updatedAt||item.createdAt));
@@ -1843,9 +1881,10 @@ function journalCard(item){
 }
 function renderJournals(){
   if(!journalDraftRestored){journalDraftRestored=true;restoreJournalDraft(state.journalDraft)}
-  const open=new Set($$(".journal-entry[open]").map(item=>item.dataset.journalId)),items=[...(state.journals||[])].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a)));
-  $("#journal-count").textContent=`${items.length} 篇`;
-  $("#journal-list").innerHTML=items.length?items.map(journalCard).join(""):contentState({title:"还没有日记",body:"不需要写完整，一句真实的话也可以成为记录。",action:{focus:"journal-content",label:"写第一篇"}});
+  const open=new Set($$(".journal-entry[open]").map(item=>item.dataset.journalId)),allItems=[...(state.journals||[])].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a)));
+  const items=allItems.filter(item=>matchesFeedSearch("journals",item.title,item.content,item.tags,item.reflections?.map(value=>value.content)));
+  $("#journal-count").textContent=feedCountLabel("journals",items.length,allItems.length,"篇");
+  $("#journal-list").innerHTML=items.length?items.map(journalCard).join(""):allItems.length?feedSearchEmpty("日记"):contentState({title:"还没有日记",body:"不需要写完整，一句真实的话也可以成为记录。",action:{focus:"journal-content",label:"写第一篇"}});
   $$(".journal-entry").forEach(card=>{const item=items.find(value=>value.id===card.dataset.journalId);if(!item)return;if(open.has(item.id))card.open=true;if(item._sync)return;const rootKey=commentRootKey("journal",item.id);markCommentTarget(card.querySelector(".journal-original"),rootKey,"content");(item.reflections||[]).forEach(reflection=>markCommentTarget(card.querySelector(`[data-reflection-id="${CSS.escape(reflection.id)}"] .model-answer-content>.markdown-content`),rootKey,`reflection:${reflection.id}`))});renderLatex($("#journal-list"));applyCommentAnchors($("#journal-list"));
 }
 function resetJournalForm(){
@@ -2032,13 +2071,15 @@ function setupBookTitlePans(){
 }
 function renderBooks(){
   const hasBooks=state.books.length>0,book=state.books.find(item=>item.id===activeBookId);
+  const visibleBooks=state.books.filter(item=>matchesFeedSearch("books",item.title,item.author,item.publisher,item.isbn,item.description,item.notes?.map(note=>note.content)));
   if(!editingBookId&&!$("#book-reading-start").value)$("#book-reading-start").value=localDateKey();
   if(activeBookId&&!book){activeBookId="";activeBookFeatureNoteId="";bookDetailCondensed=false}
   const detailBook=state.books.find(item=>item.id===activeBookId),inDetail=Boolean(detailBook),creator=$("#book-create-panel"),library=$("#book-library"),detail=$("#book-detail"),toggle=$("#book-create-toggle");
   $("#view-books").classList.toggle("book-detail-mode",inDetail);
   $("#view-books").classList.toggle("book-detail-condensed",inDetail&&bookDetailCondensed);
   detail.classList.toggle("is-condensed",inDetail&&bookDetailCondensed);
-  $("#book-count").textContent=hasBooks?`${state.books.length} 本`:"";
+  $("#book-search-control").hidden=inDetail;
+  $("#book-count").textContent=hasBooks?feedCountLabel("books",visibleBooks.length,state.books.length,"本"):"";
   $("#book-note-count").textContent=`${state.books.reduce((sum,item)=>sum+(item.notes||[]).length,0)} 条笔记`;
   toggle.hidden=!hasBooks||inDetail;toggle.textContent=bookCreatorOpen?"收起创建":"＋ 添加书目";
   creator.hidden=inDetail||(hasBooks&&!bookCreatorOpen);creator.classList.toggle("cold-start",!hasBooks);
@@ -2047,11 +2088,11 @@ function renderBooks(){
   detail.innerHTML="";
   if(!hasBooks){$("#book-grid").innerHTML="";return}
   renderBookMemories();
-  $("#book-grid").innerHTML=state.books.map(book=>{
+  $("#book-grid").innerHTML=visibleBooks.length?visibleBooks.map(book=>{
     const notes=sortedBookNotes(book),latest=notes[0];
     const syncing=book._sync?.status;
     return `<article class="book-card card${syncing?" is-syncing":""}" data-book-id="${book.id}"><button class="book-card-open" type="button" data-open-book="${book.id}" ${syncing?"disabled":""}>${bookCoverMarkup(book,"book-gallery-cover")}<span class="book-card-copy"><span class="book-title-frame" data-title="${escapeHtml(book.title)}" title="${escapeHtml(book.title)}"><strong class="book-title">${escapeHtml(book.title)}</strong></span><span>${escapeHtml(book.author||"作者未填")}</span><small class="book-card-reading">${escapeHtml(bookReadingRange(book))}</small><small>${syncing?(syncing==="pending"?"待同步":"正在同步"):`${notes.length} 条记录${latest?` · ${formatDate(eventTimestamp(latest))}`:""}`}</small></span><span class="book-card-arrow" aria-hidden="true">→</span></button></article>`
-  }).join("");
+  }).join(""):feedSearchEmpty("书目");
   requestAnimationFrame(setupBookTitlePans);
 }
 const dataUrlFromBlob=blob=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error("图片读取失败"));reader.readAsDataURL(blob)});
@@ -2133,20 +2174,21 @@ function keepsakeUnderstandingDataUrl(){
   return keepsakeWorkingImage(1200).toDataURL("image/jpeg",.88)
 }
 function keepsakeCandidateFields(){
-  return{title:$("#keepsake-title").value,category:$("#keepsake-category").value,tags:$("#keepsake-tags").value,note:$("#keepsake-note").value}
+  return{title:$("#keepsake-title").value,tags:keepsakeTagsFromInput().join(" "),note:$("#keepsake-note").value}
 }
 async function understandCurrentKeepsake(){
   const button=$("#keepsake-understand"),status=$("#keepsake-understanding-status"),form=$("#keepsake-form");if(!keepsakeEditor.sourceCanvas){status.textContent="请先放入一张照片。";return false}
   const serial=++keepsakeEditor.understandingSerial,owner=currentUser?.id,session=sessionSerial,requestId=crypto.randomUUID(),batchItem=activeKeepsakeBatchItem(),targetId=$("#keepsake-id").value||batchItem?.itemId||(form.dataset.candidateTargetId||=crypto.randomUUID()),baseline=keepsakeCandidateFields();
   if(batchItem){batchItem.understandingState="pending";batchItem.candidateRequestId=requestId;renderKeepsakeBatch();void persistKeepsakeBatch({capture:false})}
-  button.disabled=true;status.textContent="正在生成名称、类型、标签和描述候选…";
+  button.disabled=true;status.textContent="正在识别名称、备注与已有标签…";
   try{
-    const result=await request("/api/keepsakes/understand",{method:"POST",body:JSON.stringify({requestId,targetId,inputVersion:serial,image:keepsakeUnderstandingDataUrl()})});
+    const existingTags=uniqueKeepsakeTags((state.keepsakes||[]).flatMap(item=>item.tags||[]));
+    const result=await request("/api/keepsakes/understand",{method:"POST",body:JSON.stringify({requestId,targetId,inputVersion:serial,image:keepsakeUnderstandingDataUrl(),existingTags})});
     if(serial!==keepsakeEditor.understandingSerial||owner!==currentUser?.id||session!==sessionSerial||result.requestId!==requestId||result.targetId!==targetId||Number(result.inputVersion)!==serial)return false;
-    const merged=applyKeepsakeImageCandidates(keepsakeCandidateFields(),baseline,result);
-    $("#keepsake-title").value=merged.value.title;$("#keepsake-category").value=merged.value.category;$("#keepsake-tags").value=merged.value.tags;$("#keepsake-note").value=merged.value.note;renderKeepsakeTagSuggestions();
+    const merged=applyKeepsakeImageCandidates(keepsakeCandidateFields(),baseline,result,{existingTags});
+    $("#keepsake-title").value=merged.value.title;setKeepsakeTags(splitTags(merged.value.tags));$("#keepsake-note").value=merged.value.note;
     if(batchItem===activeKeepsakeBatchItem()){batchItem.understandingState="ready";captureActiveKeepsakeBatchItem({captureMask:false});await persistKeepsakeBatch({capture:false});renderKeepsakeBatch()}
-    const labels={title:"名称",category:"类型",tags:"标签",note:"描述"};
+    const labels={title:"名称",tags:"标签",note:"备注"};
     status.textContent=merged.applied.length?`已填入${merged.applied.map(key=>labels[key]).join("、")}候选，可继续修改。`:"候选已生成；现有手动内容保持不变。";
     return true
   }catch(error){
@@ -2195,9 +2237,8 @@ function captureActiveKeepsakeBatchItem({captureMask=true}={}){
   const hasMask=captureMask&&keepsakeMaskHasSubject();
   Object.assign(item,{
     title:$("#keepsake-title").value,
-    category:$("#keepsake-category").value,
     occurredAt:$("#keepsake-datetime").value,
-    tags:$("#keepsake-tags").value,
+    tags:keepsakeTagsFromInput().join(" "),
     note:$("#keepsake-note").value,
     edgeExpansion:Number($("#keepsake-edge-expansion").value)||0,
     backgroundOpacityPct:Number($("#keepsake-background-opacity").value)||0,
@@ -2232,11 +2273,10 @@ async function loadKeepsakeBatchItem(index,{capture=true}={}){
     const[dataUrl]=await imageDataUrls([item.file]);
     if(serial!==keepsakeEditor.segmentSerial||item!==activeKeepsakeBatchItem())return false;
     if(!await prepareKeepsakeImage({dataUrl,file:item.file,cutoutUrl:item.alphaMask||"",auto:false,serial}))return false;
-    $("#keepsake-title").value=item.title;$("#keepsake-category").value=item.category;setOccurrenceMode($("#keepsake-datetime"),"manual");$("#keepsake-datetime").value=item.occurredAt||localDateTimeForDate(activeDate);$("#keepsake-tags").value=item.tags;$("#keepsake-note").value=item.note;$("#keepsake-edge-expansion").value=String(item.edgeExpansion);$("#keepsake-edge-output").value=String(item.edgeExpansion);$("#keepsake-background-opacity").value=String(item.backgroundOpacityPct??15);$("#keepsake-background-output").value=`${item.backgroundOpacityPct??15}%`;renderKeepsakeTagSuggestions();
+    $("#keepsake-title").value=item.title;setOccurrenceMode($("#keepsake-datetime"),"manual");$("#keepsake-datetime").value=item.occurredAt||localDateTimeForDate(activeDate);setKeepsakeTags(splitTags(item.tags));$("#keepsake-note").value=item.note;$("#keepsake-edge-expansion").value=String(item.edgeExpansion);$("#keepsake-edge-output").value=String(item.edgeExpansion);$("#keepsake-background-opacity").value=String(item.backgroundOpacityPct??15);$("#keepsake-background-output").value=`${item.backgroundOpacityPct??15}%`;
     $("#keepsake-save").textContent=keepsakeBatch.items.length>1?`保存第 ${index+1} 件`:"保存小物";$("#keepsake-save-status").textContent=item.lastError?.message||"";
     item.status=item.alphaMask?"ready":"editing";renderKeepsakeBatch();
     if(!item.alphaMask)void segmentCurrentKeepsake();
-    if(item.understandingState==="waiting")void understandCurrentKeepsake();
     return true
   }catch(error){item.status="failed";item.lastError={message:error.message};$("#keepsake-segment-status").textContent=error.message;renderKeepsakeBatch();return false}
   finally{keepsakeBatch.loading=false;void persistKeepsakeBatch({capture:false})}
@@ -2252,13 +2292,16 @@ async function setKeepsakeBatchFiles(files,source="本地文件"){
 async function restoreKeepsakeBatch(owner){
   if(!owner||keepsakeBatch.items.length)return false;
   const stored=await mediaDraftStore.get(owner,keepsakeBatchDraftKey);if(!stored?.items?.length)return false;
-  keepsakeBatch.items=stored.items.slice(0,KEEPSAKE_BATCH_MAX_ITEMS).map(item=>({
-    ...item,
-    understandingState:item.understandingState==="ready"?"ready":"waiting",
-    candidateRequestId:"",
-    file:typeof File==="function"?new File([item.blob],item.name||"keepsake",{type:item.type||item.blob?.type||"",lastModified:Number(item.lastModified)||Date.now()}):item.blob,
-    blob:undefined
-  }));
+  keepsakeBatch.items=stored.items.slice(0,KEEPSAKE_BATCH_MAX_ITEMS).map(item=>{
+    const{category:legacyCategory,...draft}=item;void legacyCategory;
+    return{
+      ...draft,
+      understandingState:item.understandingState==="ready"?"ready":"waiting",
+      candidateRequestId:"",
+      file:typeof File==="function"?new File([item.blob],item.name||"keepsake",{type:item.type||item.blob?.type||"",lastModified:Number(item.lastModified)||Date.now()}):item.blob,
+      blob:undefined
+    }
+  });
   keepsakeBatch.activeIndex=Math.max(0,Math.min(Number(stored.activeIndex)||0,keepsakeBatch.items.length-1));renderKeepsakeBatch();
   return true
 }
@@ -2282,7 +2325,7 @@ function resetKeepsakeEditor({close=false}={}){
   keepsakeEditor.segmentSerial+=1;keepsakeEditor.understandingSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.source="manual";keepsakeEditor.originalPath="";keepsakeEditor.cutoutPath="";keepsakeEditor.mediaDirty=false;keepsakeEditor.drawing=false;keepsakeEditor.lastPoint=null;
   keepsakeEditor.mode="keep";$("#keepsake-brush-keep").classList.add("active");$("#keepsake-brush-erase").classList.remove("active");$("#keepsake-brush-keep").setAttribute("aria-pressed","true");$("#keepsake-brush-erase").setAttribute("aria-pressed","false");
   $("#keepsake-auto-segment").disabled=false;
-  clearKeepsakeHistory();$("#keepsake-form").reset();delete $("#keepsake-form").dataset.batchItemId;delete $("#keepsake-form").dataset.requestId;delete $("#keepsake-form").dataset.uploadRequestId;delete $("#keepsake-form").dataset.candidateTargetId;$("#keepsake-id").value="";resetOccurrenceInput($("#keepsake-datetime"));$("#keepsake-edge-expansion").value="8";$("#keepsake-edge-output").value="8";$("#keepsake-background-opacity").value="15";$("#keepsake-background-output").value="15%";$("#keepsake-image").value="";$("#keepsake-editor").hidden=true;$("#keepsake-editor").removeAttribute("aria-busy");$("#keepsake-upload-box").hidden=false;$("#keepsake-upload-box").classList.remove("dragging","has-image");$("#keepsake-upload-title").textContent="选择、粘贴或拖入 1–8 张小物照片";$("#keepsake-upload-hint").textContent="每张逐项编辑与保存 · PNG / JPEG / WebP · 单张 8 MB · 批次合计 48 MB";$("#keepsake-segment-status").textContent="";$("#keepsake-understanding-status").textContent="";$("#keepsake-understand").disabled=true;$("#keepsake-save-status").textContent="";$("#keepsake-save").textContent="保存小物";$("#keepsake-save").disabled=false;$("#keepsake-cancel-edit").hidden=true;$("#keepsake-editor-eyebrow").textContent="新建留存";$("#keepsake-editor-title").textContent="拍下或放入一张照片";renderKeepsakeTagSuggestions();
+  clearKeepsakeHistory();$("#keepsake-form").reset();delete $("#keepsake-form").dataset.batchItemId;delete $("#keepsake-form").dataset.requestId;delete $("#keepsake-form").dataset.uploadRequestId;delete $("#keepsake-form").dataset.candidateTargetId;$("#keepsake-id").value="";resetOccurrenceInput($("#keepsake-datetime"));$("#keepsake-edge-expansion").value="8";$("#keepsake-edge-output").value="8";$("#keepsake-background-opacity").value="15";$("#keepsake-background-output").value="15%";$("#keepsake-image").value="";$("#keepsake-tag-toggle").setAttribute("aria-expanded","false");setKeepsakeTags([]);$("#keepsake-editor").hidden=true;$("#keepsake-editor").removeAttribute("aria-busy");$("#keepsake-upload-box").hidden=false;$("#keepsake-upload-box").classList.remove("dragging","has-image");$("#keepsake-upload-title").textContent="选择、粘贴或拖入 1–8 张小物照片";$("#keepsake-upload-hint").textContent="每张逐项编辑与保存 · PNG / JPEG / WebP · 单张 8 MB · 批次合计 48 MB";$("#keepsake-segment-status").textContent="";$("#keepsake-understanding-status").textContent="";$("#keepsake-understand").disabled=true;$("#keepsake-save-status").textContent="";$("#keepsake-save").textContent="保存小物";$("#keepsake-save").disabled=false;$("#keepsake-cancel-edit").hidden=true;$("#keepsake-editor-eyebrow").textContent="新建留存";$("#keepsake-editor-title").textContent="拍下或放入一张照片";
   if(close)$("#keepsake-workspace").hidden=true;
 }
 function invalidateKeepsakeSegmentation(){keepsakeEditor.segmentSerial+=1;$("#keepsake-auto-segment").disabled=false}
@@ -2301,7 +2344,7 @@ async function setKeepsakeFile(file,source="本地文件"){
   const status=$("#keepsake-segment-status");try{[file]=validatedImageFiles([file])}catch(error){status.textContent=error.message;return false}
   const serial=++keepsakeEditor.segmentSerial;$("#keepsake-auto-segment").disabled=false;
   $("#keepsake-workspace").hidden=false;status.textContent="正在读取照片…";
-  try{const [dataUrl]=await imageDataUrls([file]);if(serial!==keepsakeEditor.segmentSerial)return false;if(!await prepareKeepsakeImage({dataUrl,file,auto:false,serial}))return false;keepsakeEditor.originalPath="";keepsakeEditor.cutoutPath="";status.textContent=`${source} · ${formatBytes(file.size)} · 正在识别主体…`;void segmentCurrentKeepsake();void understandCurrentKeepsake();return true}catch(error){if(serial===keepsakeEditor.segmentSerial)status.textContent=error.message;return false}
+  try{const [dataUrl]=await imageDataUrls([file]);if(serial!==keepsakeEditor.segmentSerial)return false;if(!await prepareKeepsakeImage({dataUrl,file,auto:false,serial}))return false;keepsakeEditor.originalPath="";keepsakeEditor.cutoutPath="";status.textContent=`${source} · ${formatBytes(file.size)} · 正在识别主体…`;void segmentCurrentKeepsake();return true}catch(error){if(serial===keepsakeEditor.segmentSerial)status.textContent=error.message;return false}
 }
 async function segmentCurrentKeepsake(){
   const button=$("#keepsake-auto-segment"),status=$("#keepsake-segment-status");if(!keepsakeEditor.sourceDataUrl)return status.textContent="请先放入一张照片。";
@@ -2327,17 +2370,52 @@ function paintKeepsakeStroke(from,to){
 function keepsakeImageMarkup(item,className="",loading="lazy",mode="list"){
   let imagePath="",backgroundPath="";
   try{({imagePath,backgroundPath=""}=keepsakeMediaSources(item,mode))}catch{}
+  if(mode==="home")backgroundPath="";
   const opacity=Math.max(0,Math.min(30,Number(item.backgroundOpacityPct??15)))/100;
-  return `<span class="keepsake-image-stack ${className}" style="--keepsake-background-opacity:${opacity}">${backgroundPath?`<img class="keepsake-image-background" src="${escapeHtml(appUrl(backgroundPath))}" alt="" loading="${loading}">`:""}<img class="keepsake-image-cutout" src="${escapeHtml(appUrl(imagePath))}" alt="${escapeHtml(item.title)}" loading="${loading}"></span>`;
+  return `<span class="keepsake-image-stack ${className}" data-keepsake-media="${escapeHtml(item.id||imagePath)}" style="--keepsake-background-opacity:${opacity}">${backgroundPath?`<img class="keepsake-image-background" src="${escapeHtml(appUrl(backgroundPath))}" alt="" loading="${loading}">`:""}<img class="keepsake-image-cutout" src="${escapeHtml(appUrl(imagePath))}" alt="${escapeHtml(item.title)}" loading="${loading}"></span>`;
+}
+function placeKeepsakeImage(stack){
+  if(!stack||stack.dataset.placementState==="ready"||stack.dataset.placementState==="loading")return;
+  const image=stack.querySelector(".keepsake-image-cutout");if(!image?.src)return;
+  const apply=()=>{
+    if(!image.naturalWidth||!image.naturalHeight)return;
+    stack.dataset.placementState="loading";
+    try{
+      const scale=Math.min(1,480/Math.max(image.naturalWidth,image.naturalHeight)),width=Math.max(1,Math.round(image.naturalWidth*scale)),height=Math.max(1,Math.round(image.naturalHeight*scale)),canvas=blankCanvas(width,height),context=canvas.getContext("2d",{willReadFrequently:true});
+      context.drawImage(image,0,0,width,height);
+      const placement=keepsakePlacementCss(scanKeepsakeAlpha(context.getImageData(0,0,width,height)));
+      if(!placement){stack.dataset.placementState="fallback";return}
+      stack.style.setProperty("--keepsake-frame-ratio",placement.aspectRatio);
+      stack.style.setProperty("--keepsake-image-width",`${placement.widthPct}%`);
+      stack.style.setProperty("--keepsake-image-height",`${placement.heightPct}%`);
+      stack.style.setProperty("--keepsake-image-left",`${placement.leftPct}%`);
+      stack.style.setProperty("--keepsake-image-top",`${placement.topPct}%`);
+      stack.dataset.placementState="ready"
+    }catch{stack.dataset.placementState="fallback"}
+  };
+  if(image.complete)apply();else image.addEventListener("load",apply,{once:true})
+}
+function setupKeepsakePlacements(root=document){
+  root.querySelectorAll(".keepsake-card-image,.home-v02-keepsake-stack").forEach(placeKeepsakeImage)
 }
 function uniqueKeepsakeTags(values){
   const tags=[],seen=new Set();for(const value of values||[]){const tag=String(value||"").trim(),key=tag.toLocaleLowerCase("zh-CN");if(!tag||seen.has(key))continue;seen.add(key);tags.push(tag);if(tags.length===8)break}return tags
 }
-function keepsakeTagsFromInput(){return uniqueKeepsakeTags(splitTags($("#keepsake-tags").value))}
+function keepsakeTagsFromInput(){return uniqueKeepsakeTags([...keepsakeDraftTags,...splitTags($("#keepsake-tags").value)])}
+function setKeepsakeTags(values){
+  keepsakeDraftTags=uniqueKeepsakeTags(values);$("#keepsake-tags").value="";renderKeepsakeTagSuggestions()
+}
+function commitKeepsakeTagInput(){
+  const values=splitTags($("#keepsake-tags").value);if(!values.length)return false;
+  keepsakeDraftTags=uniqueKeepsakeTags([...keepsakeDraftTags,...values]);$("#keepsake-tags").value="";renderKeepsakeTagSuggestions();scheduleKeepsakeBatchPersist();return true
+}
 function renderKeepsakeTagSuggestions(){
-  const root=$("#keepsake-tag-suggestions");if(!root)return;
-  const tags=uniqueKeepsakeTags((state.keepsakes||[]).flatMap(item=>item.tags||[]));
-  root.innerHTML=tags.map(tag=>`<button type="button" data-keepsake-tag-suggestion="${escapeHtml(tag)}">#${escapeHtml(tag)}</button>`).join("");root.hidden=!tags.length
+  const root=$("#keepsake-tag-suggestions"),selected=$("#keepsake-selected-tags"),toggle=$("#keepsake-tag-toggle");if(!root||!selected||!toggle)return;
+  selected.innerHTML=keepsakeDraftTags.map(tag=>`<span>${escapeHtml(tag)}<button type="button" data-keepsake-tag-remove="${escapeHtml(tag)}" aria-label="移除标签 ${escapeHtml(tag)}">×</button></span>`).join("");
+  const selectedKeys=new Set(keepsakeDraftTags.map(tag=>tag.toLocaleLowerCase("zh-CN"))),query=normalizedFeedSearch($("#keepsake-tags").value);
+  const tags=uniqueKeepsakeTags((state.keepsakes||[]).flatMap(item=>item.tags||[])).filter(tag=>!selectedKeys.has(tag.toLocaleLowerCase("zh-CN"))&&(!query||normalizedFeedSearch(tag).includes(query)));
+  root.innerHTML=tags.length?tags.map(tag=>`<button type="button" role="option" aria-selected="false" data-keepsake-tag-suggestion="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join(""):`<span class="keepsake-tag-empty">${query?"没有匹配项，按回车创建":"还没有可选标签"}</span>`;
+  root.hidden=toggle.getAttribute("aria-expanded")!=="true"
 }
 function keepsakeTagsMarkup(tags){
   return (tags||[]).length?`<span class="keepsake-tags">${tags.map(tag=>`<span>#${escapeHtml(tag)}</span>`).join("")}</span>`:"";
@@ -2347,7 +2425,7 @@ function keepsakeDerivativeLabel(item){
 }
 function keepsakeCardMarkup(item){
   const derivativeLabel=keepsakeDerivativeLabel(item);
-  return `<article class="keepsake-card" data-keepsake-id="${escapeHtml(item.id)}"><button class="keepsake-card-open" type="button" data-keepsake-open="${escapeHtml(item.id)}" aria-label="查看 ${escapeHtml(item.title)} 详情">${keepsakeImageMarkup(item,"keepsake-card-image")}<span class="keepsake-card-copy"><span class="keepsake-card-meta"><span class="keepsake-card-category">${escapeHtml(item.category||"其他")}</span><time>${formatDate(eventTimestamp(item))}</time></span><strong>${escapeHtml(item.title)}</strong>${derivativeLabel?`<span class="keepsake-derivative-state">${derivativeLabel}</span>`:""}${item.note?`<span class="keepsake-card-note">${escapeHtml(item.note)}</span>`:""}${keepsakeTagsMarkup(item.tags)}</span></button><div class="keepsake-card-actions">${item.derivativeState==="failed"?`<button type="button" data-keepsake-derive="${escapeHtml(item.id)}">重试清晰图</button>`:""}<button type="button" data-keepsake-edit="${escapeHtml(item.id)}">编辑</button><button type="button" class="danger" data-keepsake-delete="${escapeHtml(item.id)}">删除</button></div></article>`
+  return `<article class="keepsake-card" data-keepsake-id="${escapeHtml(item.id)}"><button class="keepsake-card-open" type="button" data-keepsake-open="${escapeHtml(item.id)}" aria-label="查看 ${escapeHtml(item.title)} 详情">${keepsakeImageMarkup(item,"keepsake-card-image")}<span class="keepsake-card-copy"><span class="keepsake-card-meta"><time>${formatDate(eventTimestamp(item))}</time></span><strong>${escapeHtml(item.title)}</strong>${derivativeLabel?`<span class="keepsake-derivative-state">${derivativeLabel}</span>`:""}${item.note?`<span class="keepsake-card-note">${escapeHtml(item.note)}</span>`:""}${keepsakeTagsMarkup(item.tags)}</span></button><div class="keepsake-card-actions">${item.derivativeState==="failed"?`<button type="button" data-keepsake-derive="${escapeHtml(item.id)}">重试清晰图</button>`:""}<button type="button" data-keepsake-edit="${escapeHtml(item.id)}">编辑</button><button type="button" class="danger" data-keepsake-delete="${escapeHtml(item.id)}">删除</button></div></article>`
 }
 function loadNextKeepsakePage(){
   const total=(state.keepsakes||[]).length,next=Math.min(total,keepsakeVisibleCount+KEEPSAKE_PAGE_SIZE);
@@ -2381,7 +2459,7 @@ function renderKeepsakeDetail(item){
         <div class="keepsake-detail-image-wrap">${keepsakeImageMarkup(original?{...item,originalPath:activeKeepsakeOriginalPath}:item,"keepsake-detail-image","eager",original?"original":"detail")}</div>
       </section>
       <section class="keepsake-detail-copy">
-        <p class="eyebrow">${escapeHtml(item.category||"其他")}</p>
+        <p class="eyebrow">小物留存</p>
         <h2>${escapeHtml(item.title)}</h2>
         <time datetime="${escapeHtml(eventTimestamp(item))}">${escapeHtml(formatDateKey(eventDate(item)))} · ${formatTime(eventTimestamp(item))}</time>
         ${keepsakeTagsMarkup(item.tags)}
@@ -2390,24 +2468,25 @@ function renderKeepsakeDetail(item){
     </div>`;
 }
 function renderKeepsakes(){
-  const items=[...(state.keepsakes||[])].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a)));
+  const allItems=[...(state.keepsakes||[])].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a)));
+  const items=allItems.filter(item=>matchesFeedSearch("keepsakes",item.title,item.tags,item.note));
   const owner=currentUser?.id||"";if(owner!==keepsakePaginationOwner){keepsakePaginationOwner=owner;keepsakeVisibleCount=KEEPSAKE_PAGE_SIZE}
   keepsakeVisibleCount=Math.max(KEEPSAKE_PAGE_SIZE,Math.min(keepsakeVisibleCount,Math.max(items.length,KEEPSAKE_PAGE_SIZE)));
-  let detailItem=items.find(item=>item.id===activeKeepsakeId);if(activeKeepsakeId&&!detailItem){activeKeepsakeId="";activeKeepsakeView="presentation"}
-  detailItem=items.find(item=>item.id===activeKeepsakeId);const inDetail=Boolean(detailItem),library=$(".keepsake-library"),detail=$("#keepsake-detail"),pagination=$("#keepsake-pagination");
+  let detailItem=allItems.find(item=>item.id===activeKeepsakeId);if(activeKeepsakeId&&!detailItem){activeKeepsakeId="";activeKeepsakeView="presentation"}
+  detailItem=allItems.find(item=>item.id===activeKeepsakeId);const inDetail=Boolean(detailItem),library=$(".keepsake-library"),detail=$("#keepsake-detail"),pagination=$("#keepsake-pagination");
   scheduleKeepsakeDerivativeRefresh();
-  $("#view-keepsakes").classList.toggle("keepsake-detail-mode",inDetail);$("#keepsake-count").textContent=items.length?`${items.length} 件`:"";$("#keepsake-library-count").textContent=`${items.length} 件`;$("#keepsake-create-toggle").hidden=inDetail;library.hidden=inDetail;detail.hidden=!inDetail;renderKeepsakeTagSuggestions();
+  $("#view-keepsakes").classList.toggle("keepsake-detail-mode",inDetail);$("#keepsake-search-control").hidden=inDetail;$("#keepsake-count").textContent=allItems.length?feedCountLabel("keepsakes",items.length,allItems.length,"件"):"";$("#keepsake-library-count").textContent=feedCountLabel("keepsakes",items.length,allItems.length,"件");$("#keepsake-create-toggle").hidden=inDetail;library.hidden=inDetail;detail.hidden=!inDetail;renderKeepsakeTagSuggestions();
   if(inDetail){keepsakeLoadObserver?.disconnect();if(pagination)pagination.hidden=true;renderKeepsakeDetail(detailItem);return}
   detail.innerHTML="";
   const visibleItems=items.slice(0,keepsakeVisibleCount);
-  $("#keepsake-grid").innerHTML=items.length?visibleItems.map(keepsakeCardMarkup).join(""):contentState({title:"还没有小物",body:"从一张照片开始，名称和轮廓之后都可以修改。",action:{command:"new-keepsake",label:"收第一件小物"}});
+  $("#keepsake-grid").innerHTML=items.length?visibleItems.map(keepsakeCardMarkup).join(""):allItems.length?feedSearchEmpty("小物"):contentState({title:"还没有小物",body:"从一张照片开始，名称和轮廓之后都可以修改。",action:{command:"new-keepsake",label:"收第一件小物"}});
   if(pagination){pagination.hidden=!items.length||visibleItems.length>=items.length;$("#keepsake-pagination-status").textContent=`已显示 ${visibleItems.length} / ${items.length} 件`;$("#keepsake-load-more").hidden=pagination.hidden}
-  requestAnimationFrame(observeNextKeepsakePage)
+  requestAnimationFrame(()=>{setupKeepsakePlacements($("#keepsake-grid"));observeNextKeepsakePage()})
 }
 async function editKeepsake(id){
   const item=(state.keepsakes||[]).find(value=>value.id===id);if(!item)return;
   resetKeepsakeEditor();const serial=keepsakeEditor.segmentSerial;
-  activeKeepsakeId="";activeKeepsakeView="presentation";renderKeepsakes();$("#keepsake-workspace").hidden=false;$("#keepsake-upload-box").hidden=true;$("#keepsake-editor").hidden=false;$("#keepsake-editor").setAttribute("aria-busy","true");$("#keepsake-editor-eyebrow").textContent="编辑留存";$("#keepsake-editor-title").textContent=item.title;$("#keepsake-id").value=item.id;$("#keepsake-title").value=item.title;$("#keepsake-category").value=item.category||"其他";resetOccurrenceInput($("#keepsake-datetime"),item);$("#keepsake-tags").value=(item.tags||[]).join(" ");$("#keepsake-note").value=item.note||"";$("#keepsake-edge-expansion").value=String(item.edgeExpansion??8);$("#keepsake-edge-output").value=String(item.edgeExpansion??8);$("#keepsake-background-opacity").value=String(item.backgroundOpacityPct??15);$("#keepsake-background-output").value=`${item.backgroundOpacityPct??15}%`;$("#keepsake-save").textContent="保存修改";$("#keepsake-save").disabled=true;$("#keepsake-cancel-edit").hidden=false;$("#keepsake-segment-status").textContent="正在载入编辑图与蒙版…";renderKeepsakeTagSuggestions();$("#keepsake-workspace").scrollIntoView({behavior:"smooth",block:"start"});
+  activeKeepsakeId="";activeKeepsakeView="presentation";renderKeepsakes();$("#keepsake-workspace").hidden=false;$("#keepsake-upload-box").hidden=true;$("#keepsake-editor").hidden=false;$("#keepsake-editor").setAttribute("aria-busy","true");$("#keepsake-editor-eyebrow").textContent="编辑留存";$("#keepsake-editor-title").textContent=item.title;$("#keepsake-id").value=item.id;$("#keepsake-title").value=item.title;resetOccurrenceInput($("#keepsake-datetime"),item);setKeepsakeTags(item.tags||[]);$("#keepsake-note").value=item.note||"";$("#keepsake-edge-expansion").value=String(item.edgeExpansion??8);$("#keepsake-edge-output").value=String(item.edgeExpansion??8);$("#keepsake-background-opacity").value=String(item.backgroundOpacityPct??15);$("#keepsake-background-output").value=`${item.backgroundOpacityPct??15}%`;$("#keepsake-save").textContent="保存修改";$("#keepsake-save").disabled=true;$("#keepsake-cancel-edit").hidden=false;$("#keepsake-segment-status").textContent="正在载入编辑图与蒙版…";$("#keepsake-workspace").scrollIntoView({behavior:"smooth",block:"start"});
   try{const original=await request(`/api/keepsakes/${encodeURIComponent(id)}/original`),media=keepsakeMediaSources(item,"edit"),[editImage,alphaMask]=await Promise.all([apiClient.readBlob(media.imagePath),apiClient.readBlob(media.alphaMaskPath)]),[dataUrl,cutoutUrl]=await Promise.all([dataUrlFromBlob(editImage),dataUrlFromBlob(alphaMask)]);if(serial!==keepsakeEditor.segmentSerial)return;if(!await prepareKeepsakeImage({dataUrl,cutoutUrl,auto:false,mediaDirty:false,serial}))return;keepsakeEditor.originalPath=original.originalPath;keepsakeEditor.cutoutPath=media.alphaMaskPath;keepsakeEditor.source=item.source||"manual";$("#keepsake-segment-status").textContent="编辑图与蒙版已载入，可涂抹修正或重新识别。"}catch(error){if(serial===keepsakeEditor.segmentSerial)$("#keepsake-segment-status").textContent=`编辑资源未能载入：${error.message}。可取消后重试。`}finally{if(serial===keepsakeEditor.segmentSerial){$("#keepsake-editor").removeAttribute("aria-busy");$("#keepsake-save").disabled=!keepsakeEditor.sourceCanvas}}
 }
 function openKeepsakeDetail(id){
@@ -2473,9 +2552,9 @@ function syncQuoteOverflow(){
   });
 }
 function renderQuotes(){
-  const dateOf=eventDate,items=[...state.quotes].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a))),timeline=$("#quote-timeline");
+  const dateOf=eventDate,allItems=[...state.quotes].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a))),items=allItems.filter(item=>matchesFeedSearch("quotes",item.source,item.content,item.tags)),timeline=$("#quote-timeline");
   renderQuoteSky();
-  timeline.innerHTML=items.length?items.map((item,index)=>{const syncing=item._sync?.status,actions=syncing?`<span class="checkin-sync-state ${escapeHtml(syncing)}">${syncing==="pending"?"待同步":"正在同步"}</span>`:`<button class="subtle-action" type="button" data-quote-edit="${item.id}">编辑</button><button class="subtle-action danger" type="button" data-quote-delete="${item.id}">删除</button>`;return`<article class="quote-entry${syncing?" is-syncing":""}" data-quote-id="${item.id}">${index===0||dateOf(item)!==dateOf(items[index-1])?`<div class="quote-date">${escapeHtml(dateOf(item))}</div>`:""}<header class="quote-entry-meta"><cite title="${escapeHtml(item.source)}">${escapeHtml(item.source)}</cite><span class="quote-entry-tools"><time>${formatTime(eventTimestamp(item))}</time>${actions}</span></header><div class="quote-entry-card card"><blockquote class="quote-content-viewport">${escapeHtml(item.content)}</blockquote><button class="quote-expand" type="button" data-quote-expand aria-expanded="false" hidden>展开</button>${quoteTagsMarkup(item.tags)}</div></article>`}).join(""):"";
+  timeline.innerHTML=items.length?items.map((item,index)=>{const syncing=item._sync?.status,actions=syncing?`<span class="checkin-sync-state ${escapeHtml(syncing)}">${syncing==="pending"?"待同步":"正在同步"}</span>`:`<button class="subtle-action" type="button" data-quote-edit="${item.id}">编辑</button><button class="subtle-action danger" type="button" data-quote-delete="${item.id}">删除</button>`;return`<article class="quote-entry${syncing?" is-syncing":""}" data-quote-id="${item.id}">${index===0||dateOf(item)!==dateOf(items[index-1])?`<div class="quote-date">${escapeHtml(dateOf(item))}</div>`:""}<header class="quote-entry-meta"><cite title="${escapeHtml(item.source)}">${escapeHtml(item.source)}</cite><span class="quote-entry-tools"><time>${formatTime(eventTimestamp(item))}</time>${actions}</span></header><div class="quote-entry-card card"><blockquote class="quote-content-viewport">${escapeHtml(item.content)}</blockquote><button class="quote-expand" type="button" data-quote-expand aria-expanded="false" hidden>展开</button>${quoteTagsMarkup(item.tags)}</div></article>`}).join(""):allItems.length?feedSearchEmpty("拾句"):"";
   items.filter(item=>!item._sync).forEach(item=>markCommentTarget(timeline.querySelector(`[data-quote-id="${CSS.escape(item.id)}"] blockquote`),commentRootKey("quote",item.id),"content"));
   applyCommentAnchors(timeline);requestAnimationFrame(syncQuoteOverflow);clearInterval(quoteTimer);
   if(state.quotes.length>3)quoteTimer=setInterval(()=>{if($("#view-quotes").classList.contains("active")&&!document.hidden&&!$("#quote-sky").matches(":hover"))renderQuoteSky(true)},24000);
@@ -2836,7 +2915,7 @@ const onboardingV2Controller=createOnboardingV2Controller({
       $("#home-open-thought").click()
     }else{
       switchView("captures");
-      requestAnimationFrame(()=>$("#capture-content")?.focus())
+      captureComposerOpen=true;renderCaptures();requestAnimationFrame(()=>$("#capture-content")?.focus())
     }
   },
   toast:showToast
@@ -2908,7 +2987,9 @@ function renderHomeMemories({advance=false}={}){
 function renderHomeKeepsake(){
   const container=$("#home-keepsake");
   if(!container)return;
-  const item=[...(state.keepsakes||[])].sort((left,right)=>eventTimestamp(right).localeCompare(eventTimestamp(left)))[0];
+  const items=state.keepsakes||[];
+  let item=items.find(value=>value.id===homeKeepsakeId);
+  if(!item&&items.length){item=items[Math.floor(Math.random()*items.length)];homeKeepsakeId=item.id}
   const button=document.createElement("button");
   button.className="home-v02-keepsake-entry";
   button.type="button";
@@ -2924,7 +3005,7 @@ function renderHomeKeepsake(){
   const copy=document.createElement("span");
   copy.className="home-v02-keepsake-copy";
   const label=document.createElement("small");
-  label.textContent=item?`${item.category||"小物"} · ${formatDate(eventTimestamp(item))}`:"留存一件小物";
+  label.textContent=item?`小物 · ${formatDate(eventTimestamp(item))}`:"留存一件小物";
   const title=document.createElement("strong");
   title.textContent=item?.title||"小物";
   const arrow=document.createElement("span");
@@ -2934,7 +3015,8 @@ function renderHomeKeepsake(){
   copy.append(label,title);
   button.append(preview,copy,arrow);
   button.setAttribute("aria-label",item?`打开小物：${item.title}`:"打开小物");
-  container.replaceChildren(button)
+  container.replaceChildren(button);
+  if(item)requestAnimationFrame(()=>setupKeepsakePlacements(container))
 }
 function renderHomeMood(){
   const svg=$("#home-mood-sparkline");
@@ -3371,7 +3453,7 @@ function clearPrivateSessionState(){
   closeImageViewer({restoreFocus:false});
   onboardingV2Controller.reset();
   resetState();routeDataReady=false;activeThoughtRouteId="";activeRouteResult=null;llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationRetryingTaskIds=[];notificationsLoadState="idle";actionsSnapshot={actions:[],habits:[],habitCheckins:[]};feedbackItems=[];feedbackLoadState="idle";exportManifest=null;exportLoadState="idle";personalContext=null;personalContextLoadState="idle";accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.5.1";homeMemoryKeys=[];homeMemoryByKey=new Map();closeHomeEditors({restoreFocus:false});resetOwnerSurfaces();invalidatePageLoads();draftTags=[];captureDraftTags=[];pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";
+  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationRetryingTaskIds=[];notificationsLoadState="idle";actionsSnapshot={actions:[],habits:[],habitCheckins:[]};feedbackItems=[];feedbackLoadState="idle";exportManifest=null;exportLoadState="idle";personalContext=null;personalContextLoadState="idle";accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.6.0";homeMemoryKeys=[];homeMemoryByKey=new Map();homeKeepsakeId="";closeHomeEditors({restoreFocus:false});resetOwnerSurfaces();invalidatePageLoads();draftTags=[];captureDraftTags=[];keepsakeDraftTags=[];captureComposerOpen=false;pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";
   healthParseSerial+=1;latestHealthRequest=0;healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=[];healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]};for(const draft of Object.values(healthImageDrafts))Object.assign(draft,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0});
   bookParseSerial+=1;for(const url of Object.values(bookPreviewUrls))if(url)URL.revokeObjectURL(url);bookPreviewUrls={cover:"",recognition:""};pendingBookImages={cover:null,recognition:null};editingBookId="";activeBookId="";activeBookFeatureNoteId="";bookCreatorOpen=false;bookDetailCondensed=false;
   keepsakeEditor.segmentSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.history=[];
@@ -3730,13 +3812,24 @@ document.addEventListener("click",async e=>{const button=e.target.closest("[data
 document.addEventListener("click",event=>{const button=event.target.closest("[data-context-source]");if(button)openContextSource(button)});
 document.addEventListener("click",event=>{
   const summary=event.target.closest(".chain-summary"),back=event.target.closest("[data-thought-list]");
-  if(back){pageRouter.showList("thoughts",{query:pageRouter.currentRoute().query});return}
+  if(back){pageRouter.backToList("thoughts",{query:pageRouter.currentRoute().query});return}
   if(!summary)return;
   const card=summary.closest("[data-chain-id]");if(!card)return;
   event.preventDefault();
   const route=pageRouter.currentRoute();
-  if(route.kind==="detail"&&route.resourceId===card.dataset.chainId)pageRouter.showList("thoughts",{query:route.query});
+  if(route.kind==="detail"&&route.resourceId===card.dataset.chainId)pageRouter.backToList("thoughts",{query:route.query});
   else openThoughtDetail(card.dataset.chainId)
+});
+$("#capture-create-toggle").addEventListener("click",()=>{
+  if(captureComposerOpen||$("#capture-id").value){resetCaptureForm();return}
+  captureComposerOpen=true;renderCaptures();$("#capture-content").focus()
+});
+$("#thought-create-toggle").addEventListener("click",()=>{switchView("today");openHomeEditor("thought")});
+document.addEventListener("input",event=>{
+  const input=event.target.closest("[data-feed-search]");if(!input)return;
+  const scope=input.dataset.feedSearch;if(!(scope in feedSearchQueries))return;
+  feedSearchQueries[scope]=input.value;
+  ({captures:renderCaptures,journals:renderJournals,thoughts:renderThoughts,books:renderBooks,keepsakes:renderKeepsakes,quotes:renderQuotes})[scope]?.()
 });
 document.addEventListener("click",event=>{const button=event.target.closest("[data-thought-sort]");if(!button)return;pageRouter.replaceQuery({sort:button.dataset.thoughtSort==="created"?"created":null})});
 document.addEventListener("click",event=>{const button=event.target.closest("[data-tag-filter]");if(!button)return;event.stopImmediatePropagation();pageRouter.replaceQuery({tag:button.dataset.tagFilter==="all"?null:button.dataset.tagFilter,page:null})});
@@ -4262,6 +4355,10 @@ $("#keepsake-upload-box").addEventListener("drop",e=>{e.preventDefault();e.curre
 document.addEventListener("paste",e=>{if(!$("#view-keepsakes").classList.contains("active")||(e.target instanceof Element&&e.target.closest("input,textarea,[contenteditable=true]")))return;const files=[...(e.clipboardData?.files||[])].filter(item=>item.type.startsWith("image/"));if(!files.length)return;e.preventDefault();if($("#keepsake-id").value)void setKeepsakeFile(files[0],"剪贴板");else void setKeepsakeBatchFiles(files,"剪贴板").catch(error=>$("#keepsake-segment-status").textContent=error.message)});
 $("#keepsake-auto-segment").addEventListener("click",segmentCurrentKeepsake);
 $("#keepsake-understand").addEventListener("click",understandCurrentKeepsake);
+$("#keepsake-tag-toggle").addEventListener("click",event=>{const expanded=event.currentTarget.getAttribute("aria-expanded")!=="true";event.currentTarget.setAttribute("aria-expanded",String(expanded));renderKeepsakeTagSuggestions();if(expanded)$("#keepsake-tags").focus()});
+$("#keepsake-tags").addEventListener("keydown",event=>{if(event.key==="Enter"||event.key===","){event.preventDefault();commitKeepsakeTagInput()}else if(event.key==="Backspace"&&!event.currentTarget.value&&keepsakeDraftTags.length){keepsakeDraftTags.pop();renderKeepsakeTagSuggestions();scheduleKeepsakeBatchPersist()}});
+$("#keepsake-tags").addEventListener("input",()=>{renderKeepsakeTagSuggestions();if(activeKeepsakeBatchItem())scheduleKeepsakeBatchPersist()});
+$("#keepsake-tags").addEventListener("blur",()=>{if($("#keepsake-tags").value.trim())commitKeepsakeTagInput()});
 $("#keepsake-brush-keep").addEventListener("click",()=>{keepsakeEditor.mode="keep";$("#keepsake-brush-keep").classList.add("active");$("#keepsake-brush-erase").classList.remove("active");$("#keepsake-brush-keep").setAttribute("aria-pressed","true");$("#keepsake-brush-erase").setAttribute("aria-pressed","false")});
 $("#keepsake-brush-erase").addEventListener("click",()=>{keepsakeEditor.mode="erase";$("#keepsake-brush-erase").classList.add("active");$("#keepsake-brush-keep").classList.remove("active");$("#keepsake-brush-erase").setAttribute("aria-pressed","true");$("#keepsake-brush-keep").setAttribute("aria-pressed","false")});
 $("#keepsake-brush-size").addEventListener("input",e=>{$("#keepsake-brush-output").value=e.currentTarget.value;const cursor=$("#keepsake-canvas-cursor");cursor.style.width=cursor.style.height=`${e.currentTarget.value}px`});
@@ -4274,7 +4371,7 @@ keepsakePaintCanvas.addEventListener("pointerdown",e=>{if(!keepsakeEditor.maskCa
 keepsakePaintCanvas.addEventListener("pointermove",e=>{const rect=keepsakePaintCanvas.getBoundingClientRect(),cursor=$("#keepsake-canvas-cursor");cursor.hidden=false;cursor.style.left=`${e.clientX-rect.left}px`;cursor.style.top=`${e.clientY-rect.top}px`;if(!keepsakeEditor.drawing)return;const next=keepsakeCanvasPoint(e);paintKeepsakeStroke(keepsakeEditor.lastPoint,next);keepsakeEditor.lastPoint=next});
 const endKeepsakeStroke=e=>{keepsakeEditor.drawing=false;keepsakeEditor.lastPoint=null;if(e.pointerId!=null&&keepsakePaintCanvas.hasPointerCapture(e.pointerId))keepsakePaintCanvas.releasePointerCapture(e.pointerId);if(activeKeepsakeBatchItem()){captureActiveKeepsakeBatchItem();void persistKeepsakeBatch();renderKeepsakeBatch()}};
 keepsakePaintCanvas.addEventListener("pointerup",endKeepsakeStroke);keepsakePaintCanvas.addEventListener("pointercancel",endKeepsakeStroke);keepsakePaintCanvas.addEventListener("pointerleave",()=>{$("#keepsake-canvas-cursor").hidden=true});
-for(const selector of["#keepsake-title","#keepsake-category","#keepsake-datetime","#keepsake-tags","#keepsake-note","#keepsake-edge-expansion","#keepsake-background-opacity"])for(const eventName of["input","change"])$(selector).addEventListener(eventName,()=>{if(activeKeepsakeBatchItem())scheduleKeepsakeBatchPersist()});
+for(const selector of["#keepsake-title","#keepsake-datetime","#keepsake-note","#keepsake-edge-expansion","#keepsake-background-opacity"])for(const eventName of["input","change"])$(selector).addEventListener(eventName,()=>{if(activeKeepsakeBatchItem())scheduleKeepsakeBatchPersist()});
 $("#keepsake-edge-expansion").addEventListener("change",()=>{if(activeKeepsakeBatchItem()){captureActiveKeepsakeBatchItem();void persistKeepsakeBatch();renderKeepsakeBatch()}});
 $("#keepsake-form").addEventListener("submit",async e=>{
   e.preventDefault();const form=e.currentTarget,button=$("#keepsake-save"),status=$("#keepsake-save-status"),id=$("#keepsake-id").value,batchItem=!id&&form.dataset.batchItemId?keepsakeBatch.items.find(item=>item.itemId===form.dataset.batchItemId):null;if(!keepsakeEditor.sourceCanvas||!keepsakeEditor.maskCanvas)return status.textContent="请先放入一张照片。";
@@ -4282,7 +4379,7 @@ $("#keepsake-form").addEventListener("submit",async e=>{
   button.disabled=true;status.textContent="正在生成压缩图…";
   try{
     const mediaChanged=!id||Boolean(batchItem)||keepsakeEditor.mediaDirty||Boolean(keepsakeEditor.file),alphaMask=mediaChanged?keepsakeEditor.maskCanvas.toDataURL("image/png"):"";
-    const basePayload={...occurrenceFields($("#keepsake-datetime")),title:$("#keepsake-title").value,category:$("#keepsake-category").value,note:$("#keepsake-note").value,tags:keepsakeTagsFromInput(),source:keepsakeEditor.source,edgeExpansion:Number($("#keepsake-edge-expansion").value),backgroundOpacityPct:Number($("#keepsake-background-opacity").value)};
+    const basePayload={...occurrenceFields($("#keepsake-datetime")),title:$("#keepsake-title").value,note:$("#keepsake-note").value,tags:keepsakeTagsFromInput(),source:keepsakeEditor.source,edgeExpansion:Number($("#keepsake-edge-expansion").value),backgroundOpacityPct:Number($("#keepsake-background-opacity").value)};
     if(batchItem){
       captureActiveKeepsakeBatchItem();batchItem.status="uploading";batchItem.lastError=null;batchItem.uploadRequestId||=crypto.randomUUID();renderKeepsakeBatch();await persistKeepsakeBatch();
       if(!batchItem.mediaPaths)batchItem.mediaPaths=await uploadKeepsakeMedia({request,image:keepsakeEditor.sourceDataUrl,alphaMask,idempotencyKey:batchItem.uploadRequestId});
@@ -4302,8 +4399,9 @@ $("#keepsake-form").addEventListener("submit",async e=>{
   }finally{button.disabled=false}
 });
 document.addEventListener("click",async e=>{
-  const tagSuggestion=e.target.closest("[data-keepsake-tag-suggestion]"),back=e.target.closest("[data-keepsake-back]"),view=e.target.closest("[data-keepsake-view]"),derive=e.target.closest("[data-keepsake-derive]"),edit=e.target.closest("[data-keepsake-edit]"),remove=e.target.closest("[data-keepsake-delete]"),open=e.target.closest("[data-keepsake-open]");
-  if(tagSuggestion){const input=$("#keepsake-tags"),tags=uniqueKeepsakeTags([...splitTags(input.value),tagSuggestion.dataset.keepsakeTagSuggestion]);input.value=tags.join(" ");input.dispatchEvent(new Event("input",{bubbles:true}));input.focus();return}
+  const tagSuggestion=e.target.closest("[data-keepsake-tag-suggestion]"),tagRemove=e.target.closest("[data-keepsake-tag-remove]"),back=e.target.closest("[data-keepsake-back]"),view=e.target.closest("[data-keepsake-view]"),derive=e.target.closest("[data-keepsake-derive]"),edit=e.target.closest("[data-keepsake-edit]"),remove=e.target.closest("[data-keepsake-delete]"),open=e.target.closest("[data-keepsake-open]");
+  if(tagSuggestion){keepsakeDraftTags=uniqueKeepsakeTags([...keepsakeDraftTags,tagSuggestion.dataset.keepsakeTagSuggestion]);$("#keepsake-tags").value="";renderKeepsakeTagSuggestions();scheduleKeepsakeBatchPersist();$("#keepsake-tags").focus();return}
+  if(tagRemove){keepsakeDraftTags=keepsakeDraftTags.filter(tag=>tag!==tagRemove.dataset.keepsakeTagRemove);renderKeepsakeTagSuggestions();scheduleKeepsakeBatchPersist();return}
   if(back){activeKeepsakeId="";activeKeepsakeView="presentation";activeKeepsakeOriginalPath="";renderKeepsakes();window.scrollTo({top:0,behavior:"smooth"});return}
   if(view){view.disabled=true;try{await setKeepsakeDetailView(view.dataset.keepsakeView)}catch(error){showToast(error.message,"error")}finally{view.disabled=false}return}
   if(derive){derive.disabled=true;try{await request(`/api/keepsakes/${encodeURIComponent(derive.dataset.keepsakeDerive)}/derive`,{method:"POST",body:"{}"});await refreshState("keepsakes");showToast("正在重新生成清晰图")}catch(error){showToast(error.message,"error");derive.disabled=false}return}
