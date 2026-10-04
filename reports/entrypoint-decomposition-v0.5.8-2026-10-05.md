@@ -1,0 +1,728 @@
+# V0.5.8 大入口拆分：只读架构分析与执行计划
+
+计划日期：2026-10-05
+分析工作树：`docs/v0.5.8-entrypoint-decomposition`
+分析基线：`cf914a88f6d618baba2951ff6335e626c2576ce7`
+目标对象：`server.mjs`、`public/frontend/app/runtime.mjs`
+文档性质：只读架构分析；不代表 V0.5.8 已开始实现、验证、发布或写入 Base
+
+## 0. 结论摘要
+
+V0.5.8 应当是纯结构重构，冻结用户行为、API、持久化、权限、提示词、费用、
+路由和发布方式。完成标准不是把两个文件切成更多文件，而是让每项规则拥有唯一
+领域归属、显式公开 API、单向依赖和对应测试，最终使：
+
+- `server.mjs` 只创建并启动服务运行时，不包含路由判断、数据归一化、业务计算、
+  文件读写、供应商调用或定时任务实现。
+- `public/frontend/app/runtime.mjs` 只声明浏览器应用组合和按需功能加载，不包含
+  DOM presenter、API 路径、领域可变状态、事件处理器或业务分支。
+- 后端逻辑分别落入现有 `src/modules`、`src/app`、`src/http`、`src/shared` 和
+  `src/infrastructure` 边界；前端逻辑落入 `frontend/features`、`pages` 和已有
+  共享模块，不建立新的万能 `utils`、万能上下文或第二套状态系统。
+- 每批按完整领域职责迁移，旧入口实现与新模块实现不在运行时双轨共存。
+- 行数门只用于防止热点复发，不能替代公开契约、依赖方向、所有权和行为测试。
+
+当前基线不是 V0.5.7 最终集成结果。V0.5.7 计划已明确把两个入口、HTML、
+附件层、Nginx、旅程矩阵和版本文件列为共享热点，并有四个实现工作树从同一
+`cf914a8` 基线启动。因此 V0.5.8 的 G0 必须等待 V0.5.7 串行集成结束，再重新
+盘点行数、路由、DTO、媒体和首屏闭包；本文估算用于排期，不得直接当作届时事实。
+
+## 1. 证据基线
+
+### 1.1 已读取的约束
+
+本次完整读取并以其为约束：
+
+- `PROJECT_RULES.md`
+- `one-mistake-one-rule.md`
+- `SOP/iteration-planning.md`
+- `knowledge/modularization-design.md`
+- `knowledge/engineering-rules.md`
+- `knowledge/module-boundaries.json`
+
+同时只读核对了 `README.md`、`package.json`、当前模块目录、相关静态门禁和
+系统测试入口。未读取或修改 Base，未修改 README、代码或 V0.5.7 计划。
+
+### 1.2 量化现状
+
+| 项目 | `server.mjs` | `runtime.mjs` |
+| --- | ---: | ---: |
+| 行数 | 3,217 | 4,820 |
+| 原始字节 | 159,879 | 551,047 |
+| gzip `-9` 字节 | 不适用 | 138,302 |
+| 行首命名函数声明 | 67 | 426 |
+| import 声明起始行 | 45 | 9 |
+| 事件绑定调用 | 不适用 | 271 次，分布在 255 行 |
+| `querySelector` / `querySelectorAll` | 不适用 | 190 / 47 次 |
+| 直接或封装请求调用 | 服务端路由与适配器装配 | `request` 74、`requestV1` 46、流式 5 |
+| 集中可变状态 | 进程级服务与队列实例 | 仅 122-141 行已列出至少 111 个可变槽位 |
+| 当前分支历史提交数 | 39 | 69 |
+| 历史增删 churn | 11,883 行 | 7,472 行 |
+
+两文件在当前 HEAD 历史中合计被 95 个不同提交触及，其中 13 个提交同时修改
+两者。`runtime.mjs` 最近仍持续承接首页、思绪、语音、批注、同步和移动端修复，
+不是已经稳定的纯入口。
+
+机器边界登记当前包含 54 个模块、231 条拥有路由、0 个迁移例外。登记已经说明
+领域边界，但大入口仍直接装配并实现大量规则，形成“登记上已模块化，入口仍是
+事实耦合中心”的落差。
+
+### 1.3 当前职责分布
+
+#### `server.mjs`
+
+| 行区间 | 当前职责 | 应迁往 |
+| --- | --- | --- |
+| 1-118 | 45 个直接 import、根目录、配置、日志和存储实例 | `src/app` 组合根，只给入口暴露一个运行时工厂 |
+| 119-612 | Store v16、商业化默认值、时间修复、全 Store 归一化 | 所属领域归一化 + `shared/persistence` 兼容聚合 |
+| 613-1024 | JSON 原子读写、本地测试代理/水合/工作区、公开状态投影 | 持久化公开 API + `app` 本地测试运行时 |
+| 1025-1219 | PostgreSQL、AI 预算、设置、用量、审计、DeepSeek 装配 | `app` AI 运行时，调用 `ai` 与 provider 公开入口 |
+| 1220-1703 | 回收、附件、媒体、领域 repository 适配、各记录服务 | 已有领域、共享附件和应用工作流 |
+| 1704-1870 | 管理快照、上游代理、认证 repository 和账户初始化 | `http` 管理/代理适配 + `app` 账户生命周期 |
+| 1871-2206 | 图片识别、聚类、洞察和内容判定 | health/library/reviews 领域与对应应用工作流 |
+| 2207-2527 | 内容附件、ASR、后台 AI、任务目标、思绪工作流 | captures/AI/tasks/app 已有公开边界 |
+| 2528-2900 | 20 余组 HTTP 适配器、导出、删除、统计和 v1 注册 | `http` 组合入口与领域路由模块 |
+| 2901-3093 | 周期分析、操作日志读取、旧 API 分发、静态 MIME/权限 | 调度器、observability 查询和 HTTP 应用 |
+| 3094-3217 | 请求主链、静态文件、启动恢复、定时器、关闭和 listen | `createServerRuntime` 生命周期；入口只调用 |
+
+#### `public/frontend/app/runtime.mjs`
+
+| 行区间 | 当前职责 | 应迁往 |
+| --- | --- | --- |
+| 1-165 | 共享依赖、启动标记、API/sync 实例、全局状态 | `frontend/app` 内部应用壳与显式依赖对象 |
+| 166-415 | 批注锚点、评论面板、神鸡任务和草稿 | `frontend/features/annotations` |
+| 416-953 | 通用内容图片、录音、图片查看器、发生时间、书图输入 | `media` + captures/library 功能控制器 |
+| 954-1341 | 健康图片批次、识别、表单、图表和卡片 | `frontend/features/health` |
+| 1342-1710 | 请求协调、乐观投影、增量同步、回收站和通知 | app sync 协调器 + trash/notifications 功能 |
+| 1711-1910 | 标签、思绪聚合、详情、渲染和路由 | `frontend/features/thoughts` |
+| 1911-2055 | 捕念、语音层、日记和回望 | captures/journals 功能 |
+| 2056-2245 | 状态、趋势、回顾、书籍和笔记 | checkins/reviews/library 功能 |
+| 2246-2715 | 小物画布/蒙版/批次/陈列、善言 | keepsakes/quotes 功能 |
+| 2716-3058 | TTS 设置、统计、AI 成本、预算、架构和商业化 | settings/statistics/owner 功能 |
+| 3059-3547 | onboarding、首页、账户、发现、行动、反馈、导出 | 对应现有或新增功能控制器 |
+| 3548-3795 | 全量 render、可见路由、加载、认证、会话和页面副作用 | 浏览器应用壳与 feature registry |
+| 3796-4747 | 绝大部分事件绑定和各领域提交/恢复路径 | 各功能的 `mount/unmount` |
+| 4748-4820 | 跨午夜、前后台、认证、角色、退出和唯一 export | app/session 生命周期；入口保留 export |
+
+### 1.4 现状与目标依赖图
+
+本计划只维护这一张 Mermaid 总图，左侧是当前事实，右侧是目标方向。
+
+```mermaid
+flowchart LR
+  subgraph NOW["当前：入口是实现与组合的共同热点"]
+    S0["server.mjs<br/>3217 行"]
+    SD["24 个领域模块"]
+    SA["src/app 工作流"]
+    SH["src/http 适配"]
+    SS["shared / persistence"]
+    SI["provider infrastructure"]
+    SF["文件、静态资源、定时器、进程生命周期"]
+    S0 --> SD
+    S0 --> SA
+    S0 --> SH
+    S0 --> SS
+    S0 --> SI
+    S0 --> SF
+
+    R0["runtime.mjs<br/>4820 行"]
+    RA["api / session / state / sync"]
+    RP["pages 路由"]
+    RF["少量 headless features"]
+    RD["DOM presenter、255 行事件绑定、111+ 可变槽位"]
+    R0 --> RA
+    R0 --> RP
+    R0 --> RF
+    R0 --> RD
+  end
+
+  subgraph TARGET["目标：入口只组合，规则回到唯一所有者"]
+    SE["server.mjs<br/>创建 + start"]
+    SR["src/app createServerRuntime"]
+    HC["src/http createHttpApplication"]
+    AW["app 跨领域工作流"]
+    DM["domain public entries"]
+    SP["shared ports / persistence"]
+    IA["infrastructure adapters"]
+    SE --> SR
+    SR --> HC
+    SR --> AW
+    SR --> DM
+    SR --> SP
+    SR --> IA
+    HC --> AW
+    HC --> DM
+    AW --> DM
+    AW --> SP
+    DM --> SP
+
+    RE["runtime.mjs<br/>依赖声明 + startApplication"]
+    BA["createBrowserApplication"]
+    PR["page descriptors + lazy feature registry"]
+    FF["domain feature controllers"]
+    FS["api / state / session / sync / media / content / time"]
+    RE --> BA
+    BA --> PR
+    PR --> FF
+    FF --> FS
+  end
+
+  S0 -. "按领域迁移并删除旧实现" .-> SR
+  R0 -. "按页面/功能迁移并删除旧实现" .-> PR
+```
+
+## 2. 问题诊断
+
+### 2.1 `server.mjs` 的真实耦合
+
+1. **组合根直接知道所有实现细节**：入口直接导入领域、HTTP、共享、provider、
+   PostgreSQL 和前端页面模块，任何构造参数变化都回到同一文件。
+2. **数据兼容与业务默认值混在入口**：Store 归一化同时知道 onboarding、
+   商业化、AI 任务、附件、语音缓存和所有集合，领域规则没有唯一所有者。
+3. **适配与业务分支混在路由主链**：`api()` 仍包含 owner surface、
+   commercialization、`/api/state` 和图片识别分支，HTTP 模块登记不能证明
+   路由实现已离开入口。
+4. **生命周期与账户遍历重复**：本地测试、无认证、认证账户分别执行同组
+   ensure/resume，启动恢复规则容易新增遗漏。
+5. **不可独立测试的闭包依赖**：大量工厂依赖入口局部函数，测试只能启动整个
+   `server.mjs`，难以证明组合变化没有改变某一领域。
+
+### 2.2 `runtime.mjs` 的真实耦合
+
+1. **一个模块拥有全应用可变状态**：至少 111 个可变槽位覆盖认证、同步、健康、
+   思绪、书籍、小物、设置、owner 页面和草稿，账户切换必须手工逐项清理。
+2. **render、命令与传输交错**：同一功能的 view model、HTML、事件、API、
+   乐观投影、恢复和 toast 分散在多个远距离区段。
+3. **生命周期不可回收**：271 次事件绑定多数直接挂在 `document/window`，
+   没有统一 disposer；拆出模块时若只复制绑定，会产生重复监听和跨页面副作用。
+4. **页面按需加载只是数据层按需**：运行时代码仍作为 551 KB 单体下载；
+   机械静态拆分会把一个延迟请求变成大量 ESM 请求。
+5. **测试绑定文本位置**：`frontend-shell-regression.mjs` 直接在
+   `runtime.mjs` 搜索认证、权限、异步序号和文案片段。职责迁移后必须把断言
+   移到所属模块或改为行为测试，不能为保住正则把逻辑留在入口。
+
+### 2.3 为什么“拆文件”不等于解耦
+
+以下做法均不满足 V0.5.8：
+
+- 把连续行复制到 `server-runtime.mjs` 或 `application.mjs`，但仍传入整个
+  Store、整个 DOM 或一个万能 `context`。
+- 新文件只做同名转发，业务规则仍在入口或出现两份实现。
+- 让前端 feature 互相深层导入、查询对方 DOM 或共享可变对象。
+- 只用行数阈值验收，不检查路由/事件/数据所有权。
+- 为降低 `runtime.mjs` 行数把全部功能改成 eager static import，造成首屏请求
+  和压缩字节回归。
+- 按“前端文件”“后端文件”横切并行，而不是迁移可独立验收的领域闭环。
+
+## 3. 目标架构与公开 API
+
+### 3.1 后端组合根
+
+`server.mjs` 最终只允许保留等价于以下动作：
+
+1. 从 `src/app/index.mjs` 导入 `createServerRuntime`。
+2. 以 `import.meta.url` 创建运行时。
+3. 调用 `runtime.start()`。
+
+目标公开契约：
+
+```text
+createServerRuntime({ rootUrl, processRef? })
+  -> {
+       start(): Promise<{ port, version }>,
+       ready(): Promise<void>,
+       stop({ signal? }): Promise<void>
+     }
+```
+
+`createServerRuntime` 是组合 API，不是业务服务。它只通过各模块公开入口构造：
+
+- 不可变 config 和 prompt catalog；
+- observability、persistence、attachments 与 provider adapter；
+- 领域服务和跨领域 app workflow；
+- `createHttpApplication`；
+- startup recovery、scheduler 和 shutdown 生命周期。
+
+`src/app` 内部文件可以互相引用，因为它们属于同一登记模块，但每个内部文件仍须
+围绕一个职责。禁止把 3,000 行原样搬到一个 `server-runtime.mjs`。
+
+### 3.2 后端模块间契约
+
+| 所有者 | 公开 API 方向 | 约束 |
+| --- | --- | --- |
+| `config` | `loadAppConfig({ rootDir }) -> frozen config` | 只有 config 读取环境变量 |
+| `shared.persistence` | repository、账户文档、Store 兼容归一化与 runtime | 不包含领域 Prompt、HTTP 或供应商判断 |
+| `infrastructure.ai-providers` | DeepSeek、阿里、火山 transport | 只负责传输/响应校验，不决定业务重试与保存 |
+| `domain.*` | 现有 `create*Service/create*Records` 等领域 API | 不接收 HTTP 对象、全 Store、DOM 或 SDK |
+| `app` workflow | 显式 repository/领域/provider port | 负责跨领域事务，不拥有 HTTP 响应 |
+| `http` | `createHttpApplication(deps) -> { handle, routeIds }` | 解析、认证、包络、静态资源和错误映射 |
+| `app` runtime | `createServerRuntime` | 唯一可依赖全部下层公开入口的组合根 |
+
+`createHttpApplication` 应聚合现有 `create*Http`，并把 legacy、v1、admin、
+health/readiness、local-test、attachment 和 static handler 组成有序处理链。
+处理顺序是公开行为，必须有契约测试；不得用“遍历所有 handler，谁先返回算谁”
+掩盖路由冲突。
+
+### 3.3 前端组合根
+
+兼容入口保持不变：
+
+```text
+public/app.js
+  -> frontend/app/index.mjs
+  -> bootstrap.mjs
+  -> dynamic import runtime.mjs
+  -> startApplication(initial)
+```
+
+`runtime.mjs` 继续导出：
+
+```text
+startApplication(initial = null): Promise<void>
+```
+
+但其内容只允许：
+
+- 构造共享 app services；
+- 声明页面到 feature 的 lazy loader；
+- 调用 `createBrowserApplication(...).start(initial)`。
+
+建议的 app 内部契约：
+
+```text
+createBrowserApplication({
+  api, session, state, sync, router, featureRegistry, shell
+})
+  -> {
+       start(initial): Promise<void>,
+       resetSession(): Promise<void>,
+       stop(): Promise<void>
+     }
+
+createFeatureRegistry({ descriptors })
+  -> {
+       enter(view, route): Promise<void>,
+       leave(view): Promise<void>,
+       notifyState(snapshot, changedDomains): void,
+       resetSession(): Promise<void>
+     }
+```
+
+每个有 DOM 与副作用的领域 feature 统一使用：
+
+```text
+createXFeature(explicitDependencies)
+  -> {
+       mount({ root, route, signal }): Promise<void> | void,
+       render({ snapshot, changedDomains }): void,
+       unmount(): Promise<void> | void,
+       resetSession(): Promise<void> | void
+     }
+```
+
+`signal` 由 feature registry 创建的 `AbortController` 提供，事件监听、请求、
+observer、animation frame 和 timer 必须随 unmount 或账户切换释放。纯函数型
+feature 保持现有函数 API，不为形式强加 controller。
+
+### 3.4 前端依赖边界
+
+允许方向：
+
+```text
+frontend.app
+  -> frontend.pages / frontend.feature.*
+  -> frontend.api / state / session / sync / media / content / time
+```
+
+强制限制：
+
+- feature 之间不直接 import。跨领域动作通过 app 提供的窄命令口，例如
+  `navigate(ref)`、`refreshDomains(names)`、`showToast(message)`。
+- 不提供包含 api、state、DOM、所有 feature 的万能 service locator。
+- feature 只查询自己 `root` 下的 DOM；全局弹层、认证壳和一级导航归 app shell。
+- API 路径由消费它的 feature/service 拥有，`runtime.mjs` 不出现 `/api/`。
+- feature-local 草稿、序号、timer、observer 和编辑态封装在实例闭包中；
+  账户级公开快照继续由 `frontend.state` 管理，不建立第二套全局 Store。
+- `pages` 只维护路由、权限、页面描述和 lazy loader，不承载领域 presenter。
+
+### 3.5 页面和功能目标归属
+
+| 功能族 | 目标所有者 |
+| --- | --- |
+| 认证、账户切换、一级导航、前后台、跨午夜 | `frontend/app` shell/session runtime |
+| 请求、乐观投影、增量同步、冲突恢复 | `frontend/api`、`state`、`sync` + app coordinator |
+| 批注、划线、漂流、评论面板、神鸡 | 新 `frontend.feature.annotations` |
+| 后台任务结果与通知 | `frontend.feature.background-ai`、现有 notifications |
+| 状态、健康图片、批量体重 | checkins/health features；复用现有 weight batch 纯函数 |
+| 思绪、追问、备注、详情路由、TTS | thoughts feature |
+| 捕念、音频、转写 | captures feature；媒体原语继续在 `frontend.media` |
+| 日记、草稿、辅助、回望 | journals feature |
+| 阅读和书图识别 | library feature |
+| 小物编辑、批次、详情和陈列 | keepsakes feature；复用现有 media/placement |
+| 善言、回顾和统计 | quotes/reviews/statistics features |
+| 设置、AI 成本、预算、架构、商业化 | settings/owner features |
+| onboarding、行动、发现、反馈、导出、首页 | 扩展现有 feature 的生命周期，不复制其纯逻辑 |
+
+## 4. 迁移策略
+
+### 4.1 原子迁移规则
+
+每个领域批次使用固定顺序：
+
+1. 冻结旧行为样本、公开输入输出、失败和恢复路径。
+2. 在目标模块建立公开 API 和模块级测试；此时生产入口仍走旧实现。
+3. 集成负责人单独接线，使用相同输入做差分核对。
+4. 在同一接线提交删除入口旧实现，不保留运行时双实现。
+5. 运行领域专项、影响矩阵测试和入口静态门。
+6. 记录兼容 façade 的负责人和删除条件；能同批删除时不新增 façade。
+
+表中“迁移源 LOC”是从入口移出的有效实现估算，不是净新增。文件移动在 Git diff
+中通常同时计入删除和新增，因此每批必须拆为 2-4 个可验证提交，单提交目标控制
+在约 450 行增删，不能用“只是移动”绕过 500 行提交拆分线。
+
+### 4.2 后端领域批次
+
+| 批次 | 领域闭环与目标 | 迁移源 LOC | 预计文件 | 预计提交 | 主要专项 |
+| --- | --- | ---: | ---: | ---: | --- |
+| B0 | 入口策略、路由顺序快照、Store/API 差分夹具 | 新增 180-260 | 4-6 | 2 | `check:modules`、新 `check:entrypoints` |
+| B1 | Store v16 默认值、领域归一化聚合、公开状态投影 | 430-560 | 6-8 | 3 | persistence、restore、regression |
+| B2 | 本地测试工作区、上游只读水合、账户初始化/恢复 | 500-650 | 7-10 | 3 | local-mode、auth、runtime-infrastructure |
+| B3 | AI 设置/用量/预算/provider 装配和调用审计 | 350-480 | 6-9 | 2 | ai-budget、ai-provider、observability |
+| B4 | 附件、图片识别、健康/书目、语音/视觉传输 | 400-550 | 7-11 | 3 | storage、records、library、volcengine |
+| B5 | thoughts/captures/journals/reviews、后台任务和个人语境 | 350-480 | 7-10 | 2 | 对应领域专项、tasks、personal-context |
+| B6 | owner surfaces、统计、商业化、admin 与旧 API handler | 260-360 | 5-8 | 2 | auth、reviews-chat、frontend-shell |
+| B7 | HTTP 应用、静态资源、scheduler、startup/shutdown 和组合根 | 360-500 | 7-10 | 3 | backend、deploy、memory-soak regression |
+
+依赖顺序：
+
+```text
+B0 -> B1 -> B2
+B1 -> B3 -> B4 -> B5
+B2 + B5 -> B6 -> B7
+```
+
+B3-B5 属于高耦合链，只能串行接线。B1/B2 稳定后，B3 的模块实现与 B6 的纯
+owner handler 可以在不同工作树准备，但进入 `server.mjs` 必须由同一集成负责人
+按顺序完成。
+
+### 4.3 前端领域批次
+
+| 批次 | 领域闭环与目标 | 迁移源 LOC | 预计文件 | 预计提交 | 主要专项 |
+| --- | --- | ---: | ---: | ---: | --- |
+| F0 | feature lifecycle、DOM root、lazy loader 和事件回收契约 | 新增 220-320 | 5-8 | 2 | frontend-contract、frontend-shell |
+| F1 | app shell、session、state/sync coordinator、路由可见壳 | 400-540 | 8-12 | 3 | auth、sync、URL history、startup budget |
+| F2 | 发现、行动、反馈、导出、首页等既有 headless feature 接入生命周期 | 320-440 | 7-11 | 2 | g2、frontend-shell、journey smoke |
+| F3 | 批注、后台任务结果、通知和跨内容定位 | 500-680 | 8-12 | 3 | collaboration、notifications、UI |
+| F4 | 状态、健康图片、批量体重、首页情绪 | 500-680 | 7-11 | 3 | records、records-v1、frontend shared、UI |
+| F5 | 思绪列表/详情、追问、备注、TTS 和路由恢复 | 480-640 | 6-10 | 3 | thoughts、speech-cache、URL history、UI |
+| F6 | 捕念、音频/转写、日记草稿/辅助/回望、内容图片 | 430-580 | 7-11 | 3 | captures-journals、transcription、media |
+| F7 | 书籍/笔记、善言、回顾和统计 | 400-540 | 7-11 | 3 | library、reviews-chat、UI |
+| F8 | 小物画布、批次、派生、详情和陈列 | 620-820 | 8-12 | 4 | keepsake-media、placement、UI |
+| F9 | 设置、AI 成本/预算、owner、onboarding、账户、回收站 | 420-580 | 7-11 | 3 | onboarding、auth、trash、ai-budget |
+| F10 | 删除剩余 presenter/handler/state，收敛 `runtime.mjs` | 240-340 | 5-8 | 2 | 全 frontend、首屏预算、PWA、deploy |
+
+依赖与串行要求：
+
+```text
+F0 -> F1 -> F2
+F1 -> F3 -> F5
+F1 -> F4
+F1 -> F6 -> F7
+F1 -> F8
+F2 + F3 + F4 + F5 + F6 + F7 + F8 + F9 -> F10
+```
+
+F3 与 F5 共享批注/思绪/任务定位，F6 与 F5 共享内容图片和语音，必须串行接线。
+F4、F7、F8 的模块实现可在公开 app ports 冻结后最多两路并行准备。
+
+## 5. 热点消除与静态门禁
+
+### 5.1 入口完成指标
+
+最终候选同时满足以下条件才叫“入口已拆”：
+
+| 指标 | `server.mjs` | `runtime.mjs` |
+| --- | --- | --- |
+| 目标行数 | 目标不超过 20；硬上限 40 | 目标不超过 120；硬上限 180 |
+| 允许 import | `src/app` 唯一公开入口 | app 内部组合 API及 feature 公共入口/lazy loader |
+| 函数实现 | 0 个业务/适配函数 | 只允许 `startApplication` 和无业务判断的 loader 声明 |
+| 禁止内容 | `/api/`、route predicate、Store 字段、fs/http/crypto、timer、provider | `/api/`、DOM selector、事件绑定、timer、领域 state、HTML 模板 |
+| 直接依赖 | 不直接依赖 domain/http/shared/infrastructure | 不直接依赖 feature 内部文件，不深层 import |
+| 行为所有者 | 无 | 无 |
+
+硬行数上限是复发报警器。即使低于上限，只要仍有一项业务判断或私有状态，门禁
+仍失败。
+
+### 5.2 新增 `check:entrypoints`
+
+在实现阶段扩展 `knowledge/module-boundaries.json` 的机器策略，或新增由其引用的
+结构化 entrypoint policy，至少登记：
+
+- 入口路径、允许 import、允许 export、软/硬行数；
+- 禁止 AST/词法节点或字面量类别；
+- 后端 handler 注册清单；
+- 前端 page -> lazy feature descriptor；
+- 每个入口对应测试。
+
+`scripts/entrypoint-boundary-regression.mjs` 应使用词法/结构化解析而非脆弱的整段
+字符串匹配，并纳入 `npm run check`。至少检查：
+
+1. 两入口只依赖允许的公开入口。
+2. 两入口没有深层 import、动态非字面量 import 或循环依赖。
+3. `server.mjs` 没有路由、文件、网络、Store、provider 和 timer 逻辑。
+4. `runtime.mjs` 没有 API 路径、DOM 查询、事件绑定、模板和领域可变状态。
+5. 所有新增源码属于已登记模块，公开入口和测试真实存在。
+6. 后端注册 handler 的路由与 231 条路由所有权无重复、无遗失。
+7. 前端消费的 API 路由能映射到后端拥有路由；兼容旧路径显式登记。
+8. shared 不反向依赖 domain/feature/page，feature 不互相依赖。
+9. migration exception 必须有 owner、删除条件和最晚 G 门；G7 必须重新归零。
+
+### 5.3 防止新热点替代旧热点
+
+- 新建实现文件软上限 500 行、硬上限 800 行。超过软上限必须说明为什么职责仍
+  单一；超过硬上限阻断。测试夹具和声明式 schema 可单独说明。
+- `src/app/server-runtime.mjs` 和 `frontend/app/application.mjs` 不得接收全量
+  Store/DOM service locator，也不得超过 500 行。
+- 同一 API 路径、错误码、字段默认值、选择器或业务文案只能有一个所有者。
+- feature 事件必须绑定 `AbortSignal` 或由 disposer 统一记录；重复 mount 的
+  监听数、timer 数和 observer 数必须保持不变。
+- 账户切换测试应通过 feature registry 的 `resetSession` 清理，不再维护一个
+  100 项手写重置函数。
+
+### 5.4 性能门
+
+拆分不得让原生 ESM 数量失控：
+
+- `bootstrap.mjs` 仍在认证与核心快照后动态加载运行时。
+- 当前可见页面 feature 才进入首次 lazy closure；其他页面不请求、不执行。
+- 共享首屏闭包、当前路由闭包分别设置请求数与 raw/gzip 字节预算。
+- `web-first-screen-budget-regression.mjs` 从只检查整体 deferred runtime 扩展为：
+  shell closure、默认路由 closure、切换单个页面新增 closure、隐藏页面零请求。
+- 部署/Preview 门递归核对所有新增 `.mjs` 的语法和 gzip，而不是只断言
+  `runtime.mjs.gz`。
+- PWA 只预缓存稳定 shell；lazy feature 使用版本一致的运行时缓存策略，不能把
+  所有页面重新塞进首屏 precache。
+
+## 6. 兼容、回滚与失败恢复
+
+### 6.1 必须保持的兼容面
+
+- `node server.mjs` 启动方式、`APP_BASE_PATH`、health/readiness 和信号关闭语义。
+- 所有 legacy `/api/*`、`/api/v1/*`、附件、SSE、错误码、包络、ETag、
+  Idempotency-Key、Cookie、权限和 base path。
+- `public/app.js -> bootstrap -> runtime.startApplication(initial)`。
+- 当前路由 URL、浏览器前进后退、滚动恢复、账户遮罩和 onboarding 阻断。
+- 用户原文、ID、发生/创建时间、版本、附件引用、AI 归属、任务状态与通知。
+- V0.5.7 最终形成的启动 DTO、思绪分页/详情、媒体 Range/变体、gzip 和性能埋点。
+
+### 6.2 明确非目标
+
+- 不改 Store/schema、PostgreSQL 映射、数据迁移或生产数据。
+- 不改产品文案、交互、样式、页面结构、Prompt、模型参数、预算和供应商。
+- 不引入前端框架、TypeScript、bundler、微服务或新第三方依赖。
+- 不以本轮重构删除 legacy API；删除另立兼容版本。
+
+### 6.3 回滚单位
+
+- 每个 B/F 批次的“目标模块 + 接线 + 删除旧实现 + 测试”形成独立提交组。
+- 没有数据迁移，因此回滚只允许回滚完整提交组；不能把新前端与旧后端、或新
+  组合根与旧领域模块混成运行版本。
+- 结构迁移默认不用 feature flag，不建立长期双实现。确需短暂 façade 时只转发
+  到唯一实现，并在当批或下一 G 门删除。
+- 批次失败先回滚接线提交，目标模块未被运行时引用时可以保留在任务分支继续
+  修复；主集成分支不得保留失效半接线。
+- 发布回滚仍使用同一 SHA 的完整 release 目录和现有原子切换；不单独替换某个
+  `.mjs`。
+
+### 6.4 高风险失败路径
+
+| 风险 | 必测恢复 |
+| --- | --- |
+| 事件重复绑定 | 同页面 enter/leave 20 次，监听与副作用只执行一次 |
+| 账户切换迟到响应 | 旧 session、旧 request serial 和旧后台结果均不得写入新账户 |
+| feature lazy import 失败 | 当前页显示可重试失败态，其他页面与退出仍可用 |
+| 后端启动恢复部分失败 | 与当前规则相同地阻止启动或记录受控失败，不吞错继续写 |
+| handler 顺序变化 | auth、owner、v1、legacy、attachment、static 的状态码保持 |
+| 拆分导致 ESM 瀑布 | 首屏预算阻断，不靠提高预算掩盖 |
+| 文本正则测试失效 | 迁移为模块行为断言，不把实现复制回入口 |
+
+## 7. 测试矩阵
+
+### 7.1 每批最低门
+
+| 批次 | 静态门 | 专项 | 旅程/集成 |
+| --- | --- | --- | --- |
+| B0/F0 | `npm run check` + `check:entrypoints` | 新边界脚本自身回归 | 不改变行为 |
+| B1 | check + route/store snapshot diff | `test:persistence`、`test:restore` | `npm test` |
+| B2 | check | `test:local-mode`、`test:auth`、runtime infrastructure | backend |
+| B3 | check | `test:ai-budget`、AI provider、observability | backend |
+| B4 | check | storage、records、library、volcengine server | backend |
+| B5 | check | thoughts、captures-journals、reviews-chat、tasks | backend |
+| B6 | check + route inventory | auth、reviews-chat、frontend-shell | backend |
+| B7 | check | deploy、preview-deploy、boundaries、memory-soak regression | `test:backend` |
+| F1/F2 | check + closure budget | frontend-contract、sync、frontend-shell、g2 | journey smoke |
+| F3 | check + listener leak | collaboration、notifications、UI 定向 | journey smoke |
+| F4 | check | records、records-v1、frontend-shared、UI 定向 | journey smoke |
+| F5 | check | thoughts、speech-cache、URL history、UI 定向 | journey smoke |
+| F6 | check | captures-journals、transcription、content attachments | journey smoke |
+| F7 | check | library、reviews-chat、UI 定向 | journey smoke |
+| F8 | check + route closure budget | keepsake-media、placement、UI 定向 | journey smoke |
+| F9 | check | onboarding、auth、trash、ai-budget、UI 定向 | journey smoke |
+| F10 | 全部静态门 | `npm run test:frontend`、PWA、web budget | `test:system` |
+
+“UI 定向”必须覆盖成功、失败、恢复、异步失效和局部状态保留，不是只截图。
+
+### 7.2 里程碑与候选门
+
+- G2、G3、G5、G6 结束：运行受影响专项和 `npm run test:system`。
+- G4 服务端入口收口：追加真实临时 PostgreSQL 读写/重启验证。虽然不改 schema，
+  组合根改变 repository 启动与账户恢复，不能只用 mock 证明。
+- G6 前端入口收口：桌面、390 px、320 px，路由返回、账户切换、离线待同步、
+  feature lazy 失败、事件回收和首屏预算全部通过。
+- G7 冻结候选：`npm run test:journeys:release`，并完成相同输入的迁移前后差分。
+  本轮不需要真实付费供应商调用；若候选改变 provider 装配行为，则另取授权执行。
+
+### 7.3 差分基线
+
+G0 固定以下机器证据，G7 用同一夹具重跑：
+
+- legacy/v1 路由、状态码、响应摘要和错误码；
+- 公开 State/DTO、OpenAPI 路径与操作数量；
+- Store 归一化后的字段、ID、版本、时间与附件摘要；
+- 23 个当前视图及 V0.5.7 新增路由的可见 DOM 语义；
+- 页面切换新增请求、监听器、timer、observer 和模块 closure；
+- 认证、账户切换、本地测试、后台任务、回收恢复和静态资源；
+- 冷/暖首屏分段、请求数、压缩字节和稳定首页时间。
+
+## 8. 并行所有权
+
+### 8.1 固定角色
+
+| 角色 | 独占范围 | 禁止范围 |
+| --- | --- | --- |
+| 集成负责人 I | 两入口、`src/app/index.mjs`、`src/http/index.mjs`、`features/index.mjs`、`module-boundaries.json`、共享门禁、package scripts | 不在接线时顺改领域行为 |
+| 后端领域负责人 B | 当前批次的 `src/modules/*`、`src/app` 工作流内部文件、对应专项 | 不改入口、公共 barrel、根 OpenAPI、持久化 schema |
+| 前端领域负责人 F | 当前批次的独立 feature/page 内部文件和专项 | 不改 runtime、公共 feature barrel、HTML/CSS |
+| 验证负责人 T | 独立差分夹具和当前批次专项 | 不放宽生产断言，不改业务实现 |
+
+单人可以兼任，但 Git 所有权仍按表执行。
+
+### 8.2 并行上限
+
+- 最多两条模块实现线 + 一条只读验证线。
+- 集成负责人任一时刻只接线一个批次。
+- `server.mjs` 和 `runtime.mjs` 从 G1 起只有集成负责人可写。
+- 公共 API、module registry、根 barrel、system-test、journey matrix 和首屏预算
+  都由集成负责人串行修改。
+- 两个任务需要同一 feature、同一 handler、同一领域状态或同一测试夹具时，
+  视为同一所有权，不能因目录不同并行。
+
+### 8.3 工作树交付契约
+
+每条实现线必须带：
+
+1. 基线 SHA、批次 ID、公开 API 版本和允许目录。
+2. 新模块、模块级测试、迁移源符号清单和消费者清单。
+3. 明确未接线声明；支线不得私改两个入口。
+4. 失败/恢复用例和待集成差分样本。
+5. 不含生产凭据、真实供应商调用、数据迁移和发布动作。
+
+集成顺序固定为：目标模块测试 -> 公共 barrel/登记 -> 入口接线并删除旧实现 ->
+影响回归 -> 提交。发现 API 缺口时停止接线，回到唯一 API owner 修订并重新冻结。
+
+## 9. G0-G7 退出条件
+
+### G0：V0.5.7 后基线冻结
+
+- V0.5.7 纳入切片已串行集成到一个明确 SHA，所有相关工作树状态已核对。
+- 两入口、路由、DTO、媒体、首屏 closure、模块登记和测试耗时重新盘点。
+- `git status` 干净；没有借 V0.5.8 修改 V0.5.7 计划或未关闭实现。
+- 固定第 7.3 节差分证据。
+
+未满足即 NO-GO，不从当前 `cf914a8` 直接开始搬代码。
+
+### G1：目标契约与门禁冻结
+
+- `createServerRuntime`、`createHttpApplication`、`createBrowserApplication`、
+  feature lifecycle 和 app command ports 完成契约测试。
+- `check:entrypoints` 先以当前例外登记运行，例外均有 owner、删除批次和 G 门。
+- B/F 批次、工作树、公共文件 owner、集成顺序和提交上限已登记。
+- 首屏 shell/route closure 预算固定。
+
+### G2：后端低耦合底座完成
+
+- B0-B2 完成，Store 归一化、本地测试、账户初始化已离开入口。
+- JSON 与 PostgreSQL 相同夹具公开投影一致。
+- local-mode、auth、persistence、restore 和系统门通过。
+- `server.mjs` 不再拥有数据默认值、原子文件读写或本地测试业务分支。
+
+### G3：后端领域与供应商链完成
+
+- B3-B6 完成，AI、媒体、内容工作流、owner/statistics 和 legacy handler 均有
+  唯一所有者。
+- `server.mjs` 不含 provider 调用、领域 repository wrapper、图片/语音解析、
+  聚类/洞察或 API 分支。
+- 高耦合任务、通知、回收、附件、账户和迟到结果测试通过。
+- 模块登记、路由所有权和实际 import 图一致。
+
+### G4：服务端入口收口
+
+- B7 完成，`server.mjs` 达到第 5.1 节全部语义门，而非仅达到行数门。
+- startup、scheduler、ready、shutdown、静态资源与错误映射均由目标模块测试。
+- `test:backend`、`test:system` 和获准本地 PostgreSQL 稳定门通过。
+- server 迁移例外归零，可完整回滚到 G3 固定提交。
+
+### G5：前端中低耦合功能完成
+
+- F0-F2、F7、F9 完成；既有 headless feature 接入生命周期，书籍/善言/回顾和
+  设置/owner/account 不再依赖 runtime 私有变量。
+- 页面 enter/leave、账户 reset、lazy import 失败和路由返回测试通过。
+- 非当前页面代码不进入默认路由首次 closure。
+- `runtime.mjs` 不再拥有这些领域的 presenter、请求和事件。
+
+### G6：前端高耦合功能与入口收口
+
+- F3-F6、F8、F10 完成。
+- 批注/思绪/任务、媒体/捕念/日记、健康、书籍和小物的跨域命令都经显式 ports。
+- `runtime.mjs` 达到第 5.1 节全部语义门，迁移例外归零。
+- 账户切换无旧内容泄露，重复 mount 无监听泄露，异步结果不覆盖新目标。
+- `test:frontend`、UI、移动端、PWA、URL history、web budget 和 journey smoke
+  全部通过。
+
+### G7：候选冻结与交付关闭
+
+- B0-B7、F0-F10 的提交、测试和差分证据可追溯，工作树干净。
+- 54 个当前模块和新增模块的登记、公开入口、依赖、路由消费与测试一致。
+- 完整 `npm run test:journeys:release` 通过；候选 SHA 后无代码、测试桩、依赖、
+  配置或版本漂移。
+- API/OpenAPI/Store/用户数据/权限/Prompt/费用无未批准变化。
+- 形成中文变更说明和同 SHA 回滚步骤；是否 push、tag、Release、Preview、
+  部署和生产观察仍逐次取得人工授权。
+
+## 10. 预计规模与排期边界
+
+按当前 `cf914a8` 估算：
+
+- 后端从入口迁移约 2,650-3,620 行有效实现，B0-B7 约 19 个提交。
+- 前端从入口迁移约 4,320-5,940 行有效实现，F0-F10 约 29 个提交。
+- 新增/修改约 45-70 个实现与测试文件；大量是迁移和专项，不代表净代码增长。
+- 目标执行量约 35-55 小时，包括差分夹具、分批集成、浏览器回归和返工；
+  不是通过压缩测试维持的承诺。
+
+估算置信度为中低。V0.5.7 会直接改变启动、思绪、媒体、TTS、念起、善言和
+性能测试，G0 后必须按实际 diff 重估 F1、F4-F6、F8 及首屏门。
+
+## 11. 最终完成定义
+
+V0.5.8 只有在以下条件同时成立时才可关闭：
+
+- 两入口只组装且通过语义静态门。
+- 每项被迁移规则有唯一所有者、最小公开 API 和行为测试。
+- 不存在入口旧实现、新模块实现或 compatibility façade 的长期重复。
+- 依赖方向、模块登记、路由所有权和 API 消费关系可自动检查。
+- 当前页面按需加载，不以更多首屏请求换取文件变小。
+- 认证、账户切换、AI 任务、批注、回收、附件、时间、同步和异步失效链完整。
+- 迁移前后差分、系统门、真实 PostgreSQL、桌面/移动和 Release 旅程均有证据。
+- 没有混入产品功能、数据迁移、文案/样式调整或 V0.5.7 收尾。
+
+任何一项不满足，都只能描述为“部分职责已迁移”，不能描述为“大入口拆分完成”。
