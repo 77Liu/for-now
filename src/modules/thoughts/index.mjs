@@ -4,9 +4,13 @@ import {
   recordVersion as normalizedVersion,
   safeText
 } from "../../shared/validation/index.mjs";
+import { stripThoughtAnswerLead } from "./prompts.mjs";
 export { thoughtTask, thoughtPromptSystem, stripThoughtAnswerLead, thoughtPersonalContext, thoughtChainContext, thoughtDraftInput, thoughtStarterPrompt } from "./prompts.mjs";
 
 const AFTER_COMMIT = Symbol.for("for-now.after-commit");
+const CHAIN_LIST_LIMIT = 20;
+const QUESTION_PREVIEW_LIMIT = 600;
+const USER_PREVIEW_LIMIT = 400;
 const requestDigest = value => crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const isAiAnswer = item => (
   item?.authorType === "ai"
@@ -29,6 +33,98 @@ const latestSpeechAnswer = (items, ai) => items
     && isAiAnswer(item) === ai
   ))
   .sort((left, right) => compareThoughtOccurrence(right, left))[0] || null;
+const normalizedSearchText = value => String(value ?? "")
+  .normalize("NFKC")
+  .toLocaleLowerCase("zh-CN")
+  .replace(/\s+/g, " ")
+  .trim();
+const limitedText = (value, limit) => {
+  const full = String(value ?? "").trim();
+  return { content: full.slice(0, limit), truncated: full.length > limit };
+};
+const chainCursor = (root, query) => requestDigest({
+  version: 1,
+  resource: "thought-chain",
+  id: root.id,
+  query
+});
+const chainSearchText = (root, blocks) => normalizedSearchText([
+  root.content,
+  ...(Array.isArray(root.tags) ? root.tags : []),
+  ...(Array.isArray(root.remarks) ? root.remarks.map(item => item?.text) : []),
+  ...(Array.isArray(root.followUps)
+    ? root.followUps.flatMap(item => [item?.question, item?.answer])
+    : []),
+  ...blocks.flatMap(item => [
+    item?.content,
+    item?.modelDraft,
+    ...(Array.isArray(item?.tags) ? item.tags : [])
+  ])
+].filter(Boolean).join(" "));
+const chainMatchesQuery = (root, blocks, query) => {
+  if (!query) return true;
+  const content = chainSearchText(root, blocks);
+  return query.split(" ").every(term => content.includes(term));
+};
+const userChainPreview = blocks => {
+  const conclusion = blocks
+    .filter(item => (
+      item?.type === "answer"
+      && item.disposition !== "discarded"
+      && !isAiAnswer(item)
+      && Boolean(safeText(item.content, 120_000))
+    ))
+    .sort((left, right) => compareThoughtOccurrence(right, left))[0];
+  const idea = conclusion ? null : blocks
+    .filter(item => (
+      item?.type === "idea"
+      && item.disposition !== "discarded"
+      && !isAiAnswer(item)
+      && Boolean(safeText(item.content, 120_000))
+    ))
+    .sort(compareThoughtOccurrence)[0];
+  const item = conclusion || idea;
+  if (!item) return null;
+  const raw = conclusion ? stripThoughtAnswerLead(item.content) || item.content : item.content;
+  const preview = limitedText(raw, USER_PREVIEW_LIMIT);
+  return {
+    kind: conclusion ? "conclusion" : "idea",
+    content: preview.content,
+    truncated: preview.truncated
+  };
+};
+const chainSummary = (root, blocks) => {
+  const question = limitedText(root.content, QUESTION_PREVIEW_LIMIT);
+  return {
+    id: String(root.id),
+    type: "question",
+    content: question.content,
+    contentTruncated: question.truncated,
+    version: normalizedVersion(root.version),
+    occurredAt: root.occurredAt || null,
+    occurredOn: root.occurredOn || null,
+    createdAt: root.createdAt || null,
+    updatedAt: root.updatedAt || null,
+    tags: (Array.isArray(root.tags) ? root.tags : [])
+      .map(tag => safeText(tag, 30))
+      .filter(Boolean)
+      .slice(0, 8),
+    disposition: ["pending", "kept", "discarded"].includes(root.disposition)
+      ? root.disposition
+      : "kept",
+    attachmentCount: cleanAttachmentPaths(root.attachmentPaths).length,
+    blockCount: blocks.length,
+    answerCount: blocks.filter(item => item?.type === "answer").length,
+    preview: userChainPreview(blocks),
+    ...(root.sourceRef ? {
+      sourceRef: {
+        type: root.sourceRef.type,
+        id: root.sourceRef.id,
+        version: normalizedVersion(root.sourceRef.version)
+      }
+    } : {})
+  };
+};
 
 export function thoughtChainSpeechSource(thoughts, rootId) {
   const items = Array.isArray(thoughts) ? thoughts : [];
@@ -323,17 +419,36 @@ export function createThoughtService({
       return thoughtTaskResult((await repository.read()).thoughts, task);
     },
 
-    async listChains({ limit, afterId = "" }) {
+    async listChains({ limit = CHAIN_LIST_LIMIT, afterId = "", query = "" } = {}) {
       const store = await repository.read();
-      const roots = store.thoughts.filter(item => item.type === "question");
-      const after = afterId ? roots.findIndex(item => item.id === afterId) : -1;
+      const blocksByRoot = new Map();
+      const roots = [];
+      for (const item of store.thoughts) {
+        if (item.type === "question") {
+          roots.push(item);
+        } else if (item.relatedTo) {
+          const blocks = blocksByRoot.get(item.relatedTo) || [];
+          blocks.push(item);
+          blocksByRoot.set(item.relatedTo, blocks);
+        }
+      }
+      const normalizedQuery = normalizedSearchText(query);
+      const matches = roots.filter(root => (
+        chainMatchesQuery(root, blocksByRoot.get(root.id) || [], normalizedQuery)
+      ));
+      const after = afterId
+        ? matches.findIndex(root => chainCursor(root, normalizedQuery) === afterId)
+        : -1;
       if (afterId && after < 0) return { invalidCursor: true };
       const start = after + 1;
-      const selected = roots.slice(start, start + limit);
-      const hasMore = start + selected.length < roots.length;
+      const pageLimit = Number.isSafeInteger(limit)
+        ? Math.min(CHAIN_LIST_LIMIT, Math.max(1, limit))
+        : CHAIN_LIST_LIMIT;
+      const selected = matches.slice(start, start + pageLimit);
+      const hasMore = start + selected.length < matches.length;
       return {
-        items: selected.map(root => chainValue(store.thoughts, root)),
-        nextId: hasMore ? selected.at(-1)?.id || "" : ""
+        items: selected.map(root => chainSummary(root, blocksByRoot.get(root.id) || [])),
+        nextId: hasMore ? chainCursor(selected.at(-1), normalizedQuery) : ""
       };
     },
 

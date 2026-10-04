@@ -19,12 +19,24 @@ export const thoughtPaths = Object.freeze({
       operationId: "listThoughtChains",
       parameters: [
         { $ref: "#/components/parameters/Cursor" },
-        { $ref: "#/components/parameters/Limit" }
+        {
+          name: "limit",
+          in: "query",
+          required: false,
+          schema: { type: "integer", minimum: 1, maximum: 20, default: 20 }
+        },
+        {
+          name: "q",
+          in: "query",
+          required: false,
+          description: "按问题、标签及链内公开内容搜索；多个空格分隔词需全部命中",
+          schema: { type: "string", maxLength: 200 }
+        }
       ],
       responses: {
         "200": {
-          description: "思绪链列表",
-          ...response({ type: "array", items: { $ref: "#/components/schemas/ThoughtChain" } })
+          description: "轻量思绪链摘要列表；完整内容块按详情接口读取",
+          ...response({ type: "array", items: { $ref: "#/components/schemas/ThoughtChainSummary" } })
         },
         ...errors
       }
@@ -131,6 +143,69 @@ export const thoughtComponents = Object.freeze({
         type: { const: "capture" },
         id: { type: "string", minLength: 1, maxLength: 100 },
         version: { type: "integer", minimum: 1 }
+      },
+      additionalProperties: false
+    },
+    ThoughtChainSummaryPreview: {
+      type: "object",
+      required: ["kind", "content", "truncated"],
+      properties: {
+        kind: { enum: ["conclusion", "idea"] },
+        content: { type: "string", maxLength: 400 },
+        truncated: { type: "boolean" }
+      },
+      additionalProperties: false
+    },
+    ThoughtChainSummary: {
+      type: "object",
+      description: "列表专用公开投影，不包含完整内容块、模型草稿、推理或上下文收据",
+      required: [
+        "id",
+        "type",
+        "content",
+        "contentTruncated",
+        "version",
+        "occurredAt",
+        "occurredOn",
+        "createdAt",
+        "updatedAt",
+        "tags",
+        "disposition",
+        "attachmentCount",
+        "blockCount",
+        "answerCount",
+        "preview"
+      ],
+      properties: {
+        id: { type: "string" },
+        type: { const: "question" },
+        content: {
+          type: "string",
+          maxLength: 600,
+          description: "问题预览；contentTruncated 为 true 时从详情读取全文"
+        },
+        contentTruncated: { type: "boolean" },
+        version: { type: "integer", minimum: 1 },
+        occurredAt: { type: ["string", "null"], format: "date-time" },
+        occurredOn: { type: ["string", "null"], format: "date" },
+        createdAt: { type: ["string", "null"], format: "date-time" },
+        updatedAt: { type: ["string", "null"], format: "date-time" },
+        tags: {
+          type: "array",
+          maxItems: 8,
+          items: { type: "string", maxLength: 30 }
+        },
+        disposition: { enum: ["pending", "kept", "discarded"] },
+        attachmentCount: { type: "integer", minimum: 0, maximum: 2 },
+        blockCount: { type: "integer", minimum: 0 },
+        answerCount: { type: "integer", minimum: 0 },
+        preview: {
+          anyOf: [
+            { $ref: "#/components/schemas/ThoughtChainSummaryPreview" },
+            { type: "null" }
+          ]
+        },
+        sourceRef: { $ref: "#/components/schemas/ThoughtSourceRef" }
       },
       additionalProperties: false
     },

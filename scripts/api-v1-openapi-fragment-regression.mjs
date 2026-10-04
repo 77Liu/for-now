@@ -120,6 +120,34 @@ assert.deepEqual(assembled, openApiV1, "Mechanical fragment merge must preserve 
 assert.deepEqual(openApiV1.components.schemas.StatisticsDashboard.required, ["records"]);
 assert.match(openApiV1.components.schemas.StatisticsDashboard.properties.ai.description, /Owner-only/);
 assert.match(openApiV1.components.schemas.StatisticsDashboard.properties.service.description, /Owner-only/);
+const thoughtListParameters = resolvedParameters(assembled, "/thought-chains", "get");
+const thoughtListLimit = thoughtListParameters.find(parameter => parameter.name === "limit");
+const thoughtListQuery = thoughtListParameters.find(parameter => parameter.name === "q");
+assert.deepEqual(thoughtListLimit.schema, {
+  type: "integer",
+  minimum: 1,
+  maximum: 20,
+  default: 20
+});
+assert.equal(thoughtListQuery.schema.maxLength, 200);
+assert.equal(
+  thoughtPaths["/thought-chains"].get.responses["200"]
+    .content["application/json"].schema.allOf[1].properties.data.items.$ref,
+  "#/components/schemas/ThoughtChainSummary"
+);
+assert.equal(
+  thoughtPaths["/thought-chains/{id}"].get.responses["200"]
+    .content["application/json"].schema.allOf[1].properties.data.$ref,
+  "#/components/schemas/ThoughtChain"
+);
+assert.equal(thoughtComponents.schemas.ThoughtChainSummary.additionalProperties, false);
+for (const privateField of ["blocks", "modelDraft", "reasoningContent", "contextReceipt", "followUps", "remarks"]) {
+  assert.equal(
+    Object.hasOwn(thoughtComponents.schemas.ThoughtChainSummary.properties, privateField),
+    false,
+    `ThoughtChainSummary must omit ${privateField}`
+  );
+}
 
 const fragmentOperations = operations(thoughtPaths);
 assert.equal(fragmentOperations.length, 6);

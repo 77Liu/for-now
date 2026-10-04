@@ -119,6 +119,14 @@ try {
   assert.equal(specification.response.status, 200);
   assert.equal(specification.body.openapi, "3.1.0");
   assert.ok(specification.body.paths["/thought-chains/{id}"]);
+  const thoughtListOperation = specification.body.paths["/thought-chains"].get;
+  assert.equal(thoughtListOperation.parameters.find(parameter => parameter.name === "limit").schema.maximum, 20);
+  assert.equal(thoughtListOperation.parameters.find(parameter => parameter.name === "q").schema.maxLength, 200);
+  assert.equal(
+    thoughtListOperation.responses["200"].content["application/json"]
+      .schema.allOf[1].properties.data.items.$ref,
+    "#/components/schemas/ThoughtChainSummary"
+  );
   assert.ok(specification.body.paths["/startup"]);
   assert.ok(specification.body.paths["/route-state"]);
   assert.ok(specification.body.paths["/checkins/{id}"]);
@@ -606,14 +614,57 @@ try {
   const pageOne = await request("/api/v1/thought-chains?limit=1", { cookie: owner });
   assert.equal(pageOne.body.data.length, 1);
   assert.equal(pageOne.body.data[0].id, secondId);
+  assert.equal(Object.hasOwn(pageOne.body.data[0], "blocks"), false);
+  assert.equal(Object.hasOwn(pageOne.body.data[0], "modelDraft"), false);
+  assert.equal(Object.hasOwn(pageOne.body.data[0], "reasoningContent"), false);
   assert.ok(pageOne.body.meta.nextCursor);
   const pageTwo = await request(`/api/v1/thought-chains?limit=1&cursor=${encodeURIComponent(pageOne.body.meta.nextCursor)}`, { cookie: owner });
   assert.equal(pageTwo.body.data[0].id, firstId);
+  assert.deepEqual(pageTwo.body.data[0].preview, {
+    kind: "idea",
+    content: "初步想法",
+    truncated: false
+  });
   assert.equal(pageTwo.body.meta.nextCursor, null);
+  const oversizedPage = await request("/api/v1/thought-chains?limit=21", { cookie: owner });
+  assert.equal(oversizedPage.response.status, 400);
+  assert.equal(oversizedPage.body.error.code, "INVALID_PAGINATION");
   const badCursor = await request("/api/v1/thought-chains?cursor=broken", { cookie: owner });
   assert.equal(badCursor.response.status, 400);
   assert.equal(badCursor.body.error.code, "INVALID_CURSOR");
-  assert.deepEqual((await request("/api/v1/thought-chains", { cookie: other })).body.data, []);
+  const isolatedList = await request("/api/v1/thought-chains?q=v1", { cookie: other });
+  assert.deepEqual(isolatedList.body.data, []);
+  assert.equal((await request(`/api/v1/thought-chains/${firstId}`, { cookie: other })).response.status, 404);
+
+  const searchPageOne = await request("/api/v1/thought-chains?limit=1&q=v1", { cookie: owner });
+  assert.deepEqual(searchPageOne.body.data.map(item => item.id), [secondId]);
+  assert.ok(searchPageOne.body.meta.nextCursor);
+  const inserted = await request("/api/v1/thought-chains", {
+    method: "POST",
+    cookie: owner,
+    headers: { "idempotency-key": "chain-contract-search-insert" },
+    body: { question: "v1 翻页后插入", occurredAt: "2026-09-29T11:00:00" }
+  });
+  assert.equal(inserted.response.status, 201);
+  const searchPageTwo = await request(
+    `/api/v1/thought-chains?limit=1&q=v1&cursor=${encodeURIComponent(searchPageOne.body.meta.nextCursor)}`,
+    { cookie: owner }
+  );
+  assert.deepEqual(searchPageTwo.body.data.map(item => item.id), [firstId]);
+  const changedSearchCursor = await request(
+    `/api/v1/thought-chains?limit=1&q=${encodeURIComponent("第二条")}&cursor=${encodeURIComponent(searchPageOne.body.meta.nextCursor)}`,
+    { cookie: owner }
+  );
+  assert.equal(changedSearchCursor.response.status, 400);
+  assert.equal(changedSearchCursor.body.error.code, "INVALID_CURSOR");
+  const isolatedCursor = await request(
+    `/api/v1/thought-chains?limit=1&q=v1&cursor=${encodeURIComponent(searchPageOne.body.meta.nextCursor)}`,
+    { cookie: other }
+  );
+  assert.equal(isolatedCursor.response.status, 400);
+  assert.equal(isolatedCursor.body.error.code, "INVALID_CURSOR");
+  const blockSearch = await request(`/api/v1/thought-chains?q=${encodeURIComponent("初步想法")}`, { cookie: owner });
+  assert.deepEqual(blockSearch.body.data.map(item => item.id), [firstId]);
 
   const current = await request(`/api/v1/thought-chains/${firstId}`, { cookie: owner });
   assert.equal(current.body.data.blocks.length, 1);
@@ -656,6 +707,9 @@ try {
   assert.equal(events.at(-1).result.data.reasoningContent, "v1 思考");
   assert.ok(events.at(-1).result.data.contextReceipt.sources.some(source => source.resourceId === firstId));
   assert.equal(events.at(-1).result.error, null);
+  const answerSearch = await request(`/api/v1/thought-chains?q=${encodeURIComponent("v1 回答")}`, { cookie: owner });
+  assert.deepEqual(answerSearch.body.data.map(item => item.id), [firstId]);
+  assert.doesNotMatch(JSON.stringify(answerSearch.body.data), /v1 思考|modelDraft|reasoningContent|contextReceipt|blocks/);
 
   const crossTarget = await request(`/api/v1/thought-chains/${secondId}/answers`, {
     method: "POST", cookie: owner, headers: { "idempotency-key": "answer-contract-1" }, body: {}

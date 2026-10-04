@@ -306,7 +306,11 @@ const chainUpdate = service.updateChainInStore(store, {
 });
 assert.equal(chainUpdate.value.version, 2);
 assert.equal((await service.getChain(chainRoot.id)).blocks.length, 1);
-assert.equal((await service.listChains({ limit: 1 })).items.length, 1);
+const chainSummaryPage = await service.listChains({ limit: 1 });
+assert.equal(chainSummaryPage.items.length, 1);
+assert.equal(chainSummaryPage.items[0].id, chainRoot.id);
+assert.equal(chainSummaryPage.items[0].preview.kind, "idea");
+assert.equal(Object.hasOwn(chainSummaryPage.items[0], "blocks"), false);
 assert.equal(service.saveGeneratedAnswerInStore(store, {
   id: chainRoot.id,
   clientRequestId: "answer-request",
@@ -322,4 +326,136 @@ assert.equal(service.saveGeneratedAnswerInStore(store, {
   reasoningContent: "独立思考"
 }).value.reasoningContent, "独立思考");
 
-console.log("Thought service checks passed: chains, repository isolation, version conflicts, annotations, remarks, follow-ups and disposition.");
+const privateSummary = (await service.listChains({ query: "有效回答" })).items[0];
+assert.equal(Object.hasOwn(privateSummary, "blocks"), false);
+assert.equal(Object.hasOwn(privateSummary, "modelDraft"), false);
+assert.equal(Object.hasOwn(privateSummary, "reasoningContent"), false);
+assert.doesNotMatch(JSON.stringify(privateSummary), /独立思考/);
+
+const projectionRoots = Array.from({ length: 23 }, (_, index) => ({
+  id: `projection-root-${index}`,
+  type: "question",
+  content: index === 0
+    ? `共同主题 ${"很长的问题".repeat(150)}`
+    : `共同主题 问题 ${index}`,
+  occurredAt: `2026-09-${String(28 - index).padStart(2, "0")}T09:00:00.000Z`,
+  occurredOn: `2026-09-${String(28 - index).padStart(2, "0")}`,
+  createdAt: `2026-09-${String(28 - index).padStart(2, "0")}T09:00:00.000Z`,
+  tags: index === 0 ? ["搜索标签"] : [],
+  remarks: index === 0 ? [{ id: "remark-search", text: "备注搜索词" }] : [],
+  followUps: index === 0 ? [{ id: "follow-up-search", question: "追问搜索词", answer: "追问回答" }] : [],
+  attachmentPaths: index === 0 ? ["/attachments/one.png", "/attachments/two.png"] : [],
+  ...(index === 0 ? {
+    sourceRef: { type: "capture", id: "capture-projection", version: 2, private: "PRIVATE_SOURCE" }
+  } : {}),
+  disposition: "kept",
+  version: 1
+}));
+const projectionStore = {
+  thoughts: projectionRoots.flatMap((root, index) => [
+    root,
+    {
+      id: `projection-user-answer-${index}`,
+      type: "answer",
+      content: `**结论**：我的结论 ${index}`,
+      authorType: "user",
+      origin: "manual",
+      relatedTo: root.id,
+      occurredAt: root.occurredAt,
+      createdAt: root.createdAt,
+      disposition: "kept",
+      version: 1
+    },
+    {
+      id: `projection-ai-answer-${index}`,
+      type: "answer",
+      content: `公开 AI 内容 ${index}`,
+      modelDraft: `PRIVATE_MODEL_DRAFT_${index}`,
+      reasoningContent: `PRIVATE_REASONING_${index}`,
+      contextReceipt: { private: `PRIVATE_CONTEXT_${index}` },
+      authorType: "ai",
+      origin: "deepseek",
+      relatedTo: root.id,
+      occurredAt: root.occurredAt,
+      createdAt: root.createdAt,
+      disposition: "kept",
+      version: 1
+    }
+  ])
+};
+const projectionService = createThoughtService({
+  repository: {
+    async read() {
+      return structuredClone(projectionStore);
+    },
+    async update(mutator) {
+      return mutator(projectionStore);
+    }
+  },
+  createId: () => "unused",
+  now: () => "2026-09-29T00:00:00.000Z",
+  recordVersion: value => Math.max(1, Number(value) || 1),
+  eventTimeFields: input => input,
+  reanchorAnnotations() {}
+});
+
+const defaultProjectionPage = await projectionService.listChains();
+assert.equal(defaultProjectionPage.items.length, 20);
+assert.ok(defaultProjectionPage.nextId);
+assert.equal((await projectionService.listChains({ limit: 99 })).items.length, 20);
+assert.deepEqual(defaultProjectionPage.items[0], {
+  id: "projection-root-0",
+  type: "question",
+  content: projectionRoots[0].content.slice(0, 600),
+  contentTruncated: true,
+  version: 1,
+  occurredAt: projectionRoots[0].occurredAt,
+  occurredOn: projectionRoots[0].occurredOn,
+  createdAt: projectionRoots[0].createdAt,
+  updatedAt: null,
+  tags: ["搜索标签"],
+  disposition: "kept",
+  attachmentCount: 2,
+  blockCount: 2,
+  answerCount: 2,
+  preview: { kind: "conclusion", content: "我的结论 0", truncated: false },
+  sourceRef: { type: "capture", id: "capture-projection", version: 2 }
+});
+assert.doesNotMatch(
+  JSON.stringify(defaultProjectionPage),
+  /PRIVATE_MODEL_DRAFT|PRIVATE_REASONING|PRIVATE_CONTEXT|PRIVATE_SOURCE|"blocks"/
+);
+assert.equal((await projectionService.listChains({ query: "搜索标签 备注搜索词" })).items[0].id, "projection-root-0");
+assert.equal((await projectionService.listChains({ query: "追问搜索词" })).items[0].id, "projection-root-0");
+const modelDraftSearch = await projectionService.listChains({ query: "PRIVATE_MODEL_DRAFT_0" });
+assert.equal(modelDraftSearch.items[0].id, "projection-root-0");
+assert.doesNotMatch(JSON.stringify(modelDraftSearch), /PRIVATE_MODEL_DRAFT_0/);
+
+const searchedFirstPage = await projectionService.listChains({ limit: 2, query: "共同 主题" });
+assert.deepEqual(searchedFirstPage.items.map(item => item.id), ["projection-root-0", "projection-root-1"]);
+projectionStore.thoughts.unshift({
+  id: "projection-root-new",
+  type: "question",
+  content: "共同主题 翻页后新插入",
+  createdAt: "2026-09-29T09:00:00.000Z",
+  tags: [],
+  disposition: "kept",
+  version: 1
+});
+const searchedSecondPage = await projectionService.listChains({
+  limit: 2,
+  query: "共同 主题",
+  afterId: searchedFirstPage.nextId
+});
+assert.deepEqual(searchedSecondPage.items.map(item => item.id), ["projection-root-2", "projection-root-3"]);
+assert.equal((await projectionService.listChains({
+  limit: 2,
+  query: "共同",
+  afterId: searchedFirstPage.nextId
+})).invalidCursor, true);
+assert.equal((await projectionService.listChains({ afterId: "broken" })).invalidCursor, true);
+const projectionDetail = await projectionService.getChain("projection-root-0");
+assert.equal(projectionDetail.blocks.length, 2);
+assert.equal(projectionDetail.blocks[1].reasoningContent, "PRIVATE_REASONING_0");
+
+console.log("Thought service checks passed: chains, summary projection, search cursors, version conflicts, annotations, remarks, follow-ups and disposition.");
