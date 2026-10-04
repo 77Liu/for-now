@@ -67,6 +67,11 @@ npm run start:local-test
   `rev=342 / 235`、交付 `rev=104 / 83`；证据见
   `reports/pre-launch-2026-10-05-v0.5.7.md` 和
   `reports/hotfix-v0.5.7-audio-on-demand-2026-10-05.md`。
+- **V0.5.8 已完成规划、尚未进入开发**：范围为 1 条大入口拆分 P00 和 5 条
+  系统协作 P0，先把服务端与浏览器入口收敛为纯组装，再实现按任务选材、
+  持续感知、职责化提示词、纠正失效和个性化回放。当前正基于已关闭的
+  V0.5.7 生产主线重定基线并重新冻结新增高优需求，见
+  `reports/iteration-plan-v0.5.8-2026-10-05.md`。
 - **`v0.1.1` 发布历史保留**：提交 `54a6326f14ca`、标签 `hotfix-v0.1.1-thought-answer` 在 v0.1.0 基础上修复了收集页思绪自动回答任务创建问题，现已由 v0.2.1 替代。
 - **`v0.1.0` 发布历史保留**：主应用功能提交 `5ae6a7035169` 和标签 `release-20260928-p00-p0-commercial-system` 已发布 P00/P0、商业化、AI 成本和五阶段架构设计，并由 v0.1.1 继承。
 - **中台已上线**：独立中台提交为 `d157537f7f4c`，发布标签为 `release-20260928-platform-mvp`；公网 `/platform/` 只读治理控制面已部署。
@@ -251,6 +256,12 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
 - `knowledge/metrics.md`：量表、同日均值、综合分和延迟相关口径。
 - `knowledge/onboarding-strategy.md`：冷启动资料、快速/详细问卷、初始认知与本地测试模式边界。
 - `knowledge/prompt-architecture.md`：DeepSeek 的 SP/UP 与完整追问链规则。
+- `reports/个性化回答与感知系统-理想设计-2026-10-04.md`：持续感知、
+  用户模型、任务化上下文、六类提示词和回放验收设计。
+- `reports/entrypoint-decomposition-v0.5.8-2026-10-05.md`：V0.5.8 大入口
+  拆分的公开 API、B/F 批次、静态门、差分、风险和回滚专项。
+- `reports/iteration-plan-v0.5.8-2026-10-05.md`：V0.5.8 P00/P0 范围、
+  前置条件、交付切片、分层验证和 G0-G7 关闭条件。
 - `knowledge/volcengine-integration.md`：火山语音、OCR、智能文档解析的服务端配置、隐私边界和真实冒烟命令。
 - `knowledge/product-definition.md`：产品关键词、记录重点、闭环、核心功能、记录边界与价值主张。
 - `knowledge/iteration-history.md`：按日期保存的重要迭代历史。
