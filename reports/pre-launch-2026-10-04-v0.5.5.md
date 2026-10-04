@@ -2,7 +2,9 @@
 
 日期：2026-10-04
 
-状态：**候选已通过最终 Release 门，等待 Preview 发布**
+状态：**Preview 已发布，生产未发布**
+
+Preview 候选：`fed30539d3d67841ba06881e0fe5c8b661ba3fd0`
 
 生产基线：`v0.5.4@71172c1df5cd`
 
@@ -88,4 +90,16 @@
 
 ## 发布结果
 
-待发布后追加标签、Release、Preview 提交、服务状态与公网验收证据。
+- Gitee 标签与预发布：`v0.5.5`，Release ID `1182619`，标签和
+  `preview/v0.5.5` 均指向 `fed30539d3d67841ba06881e0fe5c8b661ba3fd0`。
+- Preview `/readyz` 返回 `fed30539d3d6`；服务 `active`、`NRestarts=0`，
+  活动 release 为同一完整 SHA。
+- 公网入口返回 `200` 与 `X-Robots-Tag: noindex, nofollow, noarchive`，
+  管理快照路由返回 `404`。
+- 公网 1440×1000：评论栏与正文相邻且无横向溢出；点击外部收起、悬浮入口
+  重新打开并保持活动评论。
+- 公网设置页为 `v0.5.5`；四音色静态官方试音成功、状态无错误。
+- 公网 390×844 与 320×700：念起无横向溢出；原音可播放，原始转写默认
+  收起，AI 整理稿可展开。
+- 生产 `/now/readyz` 仍为 `71172c1df5cd`；生产服务 active、
+  `NRestarts=0`，未部署代码或写入数据。
