@@ -556,6 +556,78 @@ incrementalCoordinator.listener({
 assert.equal(channelMessages.at(-1).operationId, "local-operation");
 incremental.stop();
 
+const queuedLongPoll = deferred();
+const queuedPullRequests = [];
+const queuedSnapshots = [];
+const queuedChannelListeners = new Set();
+const queuedDocumentTarget = { ...eventTarget, listeners: new Map(), visibilityState: "visible" };
+let queuedPollTimer = null;
+let queuedCurrentCursor = 1;
+const queuedImmediatePull = createIncrementalSync({
+  coordinator: {
+    async resume() { return []; },
+    subscribe() { return () => {}; },
+    async prune() {}
+  },
+  storage: null,
+  channel: {
+    publish() {},
+    subscribe(listener) {
+      queuedChannelListeners.add(listener);
+      return () => queuedChannelListeners.delete(listener);
+    },
+    emit(message) {
+      for (const listener of queuedChannelListeners) listener(structuredClone(message));
+    }
+  },
+  locks: null,
+  windowTarget: null,
+  documentTarget: queuedDocumentTarget,
+  setTimer: callback => {
+    queuedPollTimer = callback;
+    return 1;
+  },
+  clearTimer: () => {},
+  request: async url => {
+    queuedPullRequests.push(url);
+    const parsed = new URL(url, "https://local.invalid");
+    if (Number(parsed.searchParams.get("waitMs")) > 0) return queuedLongPoll.promise;
+    const after = parsed.searchParams.has("cursor") ? Number(parsed.searchParams.get("cursor")) : null;
+    return {
+      data: {
+        cursor: queuedCurrentCursor,
+        changes: after != null && after < queuedCurrentCursor
+          ? [{ cursor: queuedCurrentCursor, domain: "captures", resourceId: "capture-queued", changeType: "create" }]
+          : [],
+        snapshot: { captures: [{ id: "capture-queued" }] }
+      }
+    };
+  },
+  applySnapshot: async (snapshot, changes) => queuedSnapshots.push({ snapshot, changes })
+});
+await queuedImmediatePull.start("account-a");
+assert.equal(typeof queuedPollTimer, "function");
+const inFlightPoll = queuedPollTimer();
+await flush();
+assert.equal(queuedPullRequests.length, 3);
+assert.ok(Number(new URL(queuedPullRequests[2], "https://local.invalid").searchParams.get("waitMs")) > 0);
+queuedCurrentCursor = 2;
+for (const listener of queuedChannelListeners) {
+  listener({ type: "committed", owner: "account-a", operationId: "remote-operation" });
+}
+queuedDocumentTarget.listeners.get("visibilitychange")();
+await flush();
+assert.equal(queuedPullRequests.length, 3, "signals during a long poll must wait for the in-flight request");
+queuedLongPoll.resolve({ data: { cursor: 1, changes: [], snapshot: {} } });
+await inFlightPoll;
+await flush();
+await flush();
+assert.equal(queuedPullRequests.length, 4, "multiple immediate signals must coalesce into one follow-up pull");
+assert.equal(new URL(queuedPullRequests[3], "https://local.invalid").searchParams.get("waitMs"), "0");
+assert.equal(queuedImmediatePull.cursor(), 2);
+assert.equal(queuedSnapshots.length, 1);
+queuedImmediatePull.stop();
+
 const staleAccountResponse = deferred();
 const switchedSnapshots = [];
 const switchedCursorStorage = new Map();

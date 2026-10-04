@@ -570,6 +570,7 @@ export function createIncrementalSync({
   let cursor = null;
   let timer = null;
   let pulling = null;
+  let immediatePullQueued = false;
   let stopped = true;
   let pullEnabled = true;
   let lifecycle = 0;
@@ -613,7 +614,10 @@ export function createIncrementalSync({
   };
   const pull = ({ wait = false } = {}) => {
     if (!owner || stopped || !pullEnabled) return Promise.resolve(false);
-    if (pulling) return pulling;
+    if (pulling) {
+      if (!wait) immediatePullQueued = true;
+      return pulling;
+    }
     const expectedOwner = owner;
     const expectedLifecycle = lifecycle;
     const startedAt = now();
@@ -648,7 +652,12 @@ export function createIncrementalSync({
         onStatus({ type: "error", owner: expectedOwner, cursor, code: error?.code || "", durationMs: now() - startedAt });
         throw error;
       } finally {
-        if (pulling === execution) pulling = null;
+        if (pulling === execution) {
+          pulling = null;
+          const followImmediately = immediatePullQueued && active(expectedOwner, expectedLifecycle);
+          immediatePullQueued = false;
+          if (followImmediately) void pull().catch(() => {});
+        }
       }
     })();
     pulling = execution;
@@ -729,6 +738,7 @@ export function createIncrementalSync({
       if (timer != null) clearTimer(timer);
       timer = null;
       pulling = null;
+      immediatePullQueued = false;
       pullEnabled = true;
       unsubscribeChannel();
       unsubscribeCoordinator();
