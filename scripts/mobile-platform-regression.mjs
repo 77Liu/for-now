@@ -304,7 +304,8 @@ try {
     await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
     assert.equal(await waitUntil(`document.querySelector("#view-captures").classList.contains("active")
       && !document.querySelector("#view-captures").hasAttribute("aria-busy")
-      && Boolean(document.querySelector('[data-capture-id="${speechCaptureId}"]'))`), true);
+      && document.querySelector('[data-capture-id="${speechCaptureId}"] .speech-asset-actions button')?.getBoundingClientRect().height>=44
+      && document.querySelector('[data-capture-id="${speechCaptureId}"] .speech-asset-actions select')?.getBoundingClientRect().height>=44`), true);
     const speechCard = await evaluate(`(() => {
       const card=document.querySelector('[data-capture-id="${speechCaptureId}"]'),controls=card.querySelector(".speech-asset-controls"),actions=controls.querySelector(".speech-asset-actions"),button=actions.querySelector("button"),select=actions.querySelector("select"),cardRect=card.getBoundingClientRect(),actionsRect=actions.getBoundingClientRect(),buttonRect=button.getBoundingClientRect(),selectRect=select.getBoundingClientRect();
       return {
