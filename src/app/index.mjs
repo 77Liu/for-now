@@ -21,6 +21,7 @@ export {
 } from "./speech-cache-sweep.mjs";
 export { createKeepsakeMediaWorkflows } from "./keepsake-media-workflows.mjs";
 export { createKeepsakeMediaMigration } from "./keepsake-media-migration.mjs";
+export { routeStateProjection, startupProjection } from "./startup-projections.mjs";
 export { createThoughtWorkflows } from "./thought-workflows.mjs";
 export { createCaptureJournalWorkflows } from "./capture-journal-workflows.mjs";
 export { createLibraryWorkflows } from "./library-workflows.mjs";

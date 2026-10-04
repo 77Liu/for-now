@@ -11,6 +11,7 @@
     "test": "node scripts/regression.mjs",
     "test:auth": "node scripts/auth-regression.mjs",
     "test:api-v1": "node scripts/api-v1-contract-regression.mjs",
+    "test:startup": "node scripts/startup-projection-regression.mjs",
     "test:sync": "node scripts/sync-coordinator-regression.mjs",
     "test:openapi": "node scripts/api-v1-openapi-fragment-regression.mjs",
     "test:records": "node scripts/checkin-health-regression.mjs",

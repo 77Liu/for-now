@@ -11,6 +11,7 @@ import { onboardingV2OpenApiFragment } from "./openapi/onboarding-v2.mjs";
 import { userModelOpenApiFragment } from "./openapi/user-model.mjs";
 import { aiBudgetOpenApiFragment } from "./openapi/ai-budget.mjs";
 import { speechOpenApiFragment } from "./openapi/speech.mjs";
+import { startupOpenApiFragment } from "./openapi/startup.mjs";
 
 export const openApiV1 = Object.freeze({
   openapi: "3.1.0",
@@ -24,6 +25,7 @@ export const openApiV1 = Object.freeze({
     "/openapi.json": {
       get: { operationId: "getOpenApiV1", responses: { "200": { description: "OpenAPI 文档" } } }
     },
+    ...startupOpenApiFragment.paths,
     ...thoughtsOpenApiFragment.paths,
     ...recordsOpenApiFragment.paths,
     ...g2OpenApiFragment.paths,

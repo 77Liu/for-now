@@ -76,6 +76,7 @@ const suites = {
     ["private Fontconfig cache for synthetic image smoke", ["scripts/fontconfig-cache-regression.mjs"]],
     ["keepsake historical media migration", ["scripts/keepsake-media-migration-regression.mjs"]],
     ["keepsake connected-component placement", ["scripts/keepsake-placement-regression.mjs"]],
+    ["startup and current-route projections", ["scripts/startup-projection-regression.mjs"]],
     ["API v1 public contract and thought vertical slice", ["scripts/api-v1-contract-regression.mjs"]],
     ["API v1 check-in and health vertical slices", ["scripts/record-v1-regression.mjs"]],
     ["API v1 OpenAPI fragments", ["scripts/api-v1-openapi-fragment-regression.mjs"]],

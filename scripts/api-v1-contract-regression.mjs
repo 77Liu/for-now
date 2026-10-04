@@ -119,6 +119,8 @@ try {
   assert.equal(specification.response.status, 200);
   assert.equal(specification.body.openapi, "3.1.0");
   assert.ok(specification.body.paths["/thought-chains/{id}"]);
+  assert.ok(specification.body.paths["/startup"]);
+  assert.ok(specification.body.paths["/route-state"]);
   assert.ok(specification.body.paths["/checkins/{id}"]);
   assert.ok(specification.body.paths["/daily-records/{id}"]);
   assert.ok(specification.body.paths["/sync"]);
@@ -134,6 +136,20 @@ try {
   assert.equal((await request("/api/v1/personal-context")).response.status, 401);
   assert.equal((await request("/api/v1/onboarding-v2/session")).response.status, 401);
   assert.equal((await request("/api/v1/user-model")).response.status, 401);
+  const startup = await request("/api/v1/startup", { cookie: owner });
+  assert.equal(startup.response.status, 200);
+  assert.equal(startup.body.data.protocolVersion, 1);
+  assert.equal(startup.body.data.user.username, "contract-owner");
+  assert.equal(Number.isSafeInteger(startup.body.data.accountCursor), true);
+  for (const field of ["thoughts", "clusters", "keepsakes"]) {
+    assert.equal(Object.hasOwn(startup.body.data, field), false);
+  }
+  assert.ok(Buffer.byteLength(JSON.stringify(startup.body.data)) <= 25 * 1024);
+  const todayRoute = await request("/api/v1/route-state?view=today", { cookie: owner });
+  assert.equal(todayRoute.response.status, 200);
+  assert.equal(Object.hasOwn(todayRoute.body.data, "clusters"), false);
+  assert.equal(Object.hasOwn(todayRoute.body.data, "books"), false);
+  assert.equal((await request("/api/v1/route-state?view=unknown", { cookie: owner })).response.status, 400);
   const syncBaseline = await request("/api/v1/sync", { cookie: owner });
   assert.equal(syncBaseline.response.status, 200);
   assert.equal(syncBaseline.body.data.changes.length, 0);

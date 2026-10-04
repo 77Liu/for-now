@@ -59,14 +59,14 @@ import { createRateGate } from "./src/shared/concurrency/index.mjs";
 import { installPromptCatalog, promptText, renderPrompt } from "./src/shared/prompts/index.mjs";
 import { localDateKey, shiftDateKey, strictDateKey, localDateTimeOn, eventTimeFields } from "./src/shared/time/index.mjs";
 import { buildAdminSnapshot } from "./admin-snapshot.mjs";
-import { createAnnotationCommands, createAiBudgetRuntime, createAiTaskTargets, createBackgroundAi, createTrashMutations, createTrashCommands, createAttachmentCleanup, createSpeechCache, createKeepsakeMediaWorkflows, createThoughtWorkflows, createCaptureJournalWorkflows, createLibraryWorkflows, createReviewChatWorkflows, createUserModelExtractionService, deepSeekBudgetStages, normalizeSpeechCacheStore, personalContextProjection, publicSpeechAssets, userModelEvidenceCurrent } from "./src/app/index.mjs";
+import { createAnnotationCommands, createAiBudgetRuntime, createAiTaskTargets, createBackgroundAi, createTrashMutations, createTrashCommands, createAttachmentCleanup, createSpeechCache, createKeepsakeMediaWorkflows, createThoughtWorkflows, createCaptureJournalWorkflows, createLibraryWorkflows, createReviewChatWorkflows, createUserModelExtractionService, deepSeekBudgetStages, normalizeSpeechCacheStore, personalContextProjection, publicSpeechAssets, routeStateProjection, startupProjection, userModelEvidenceCurrent } from "./src/app/index.mjs";
 import {
   createSpeechCacheSweep,
   SPEECH_CACHE_SWEEP_INTERVAL_MS,
   SPEECH_CACHE_SWEEP_STARTUP_DELAY_MS
 } from "./src/app/index.mjs";
 import { safeText, recordVersion, safeIso, nullableNumber, numberOrFallback as commercialNumber } from "./src/shared/validation/index.mjs";
-import { createAuthHttp, createJsonHttp, createTaskHttp, createAnnotationHttp, createTrashHttp, createAttachmentHttp, createAiSettingsHttp, createAiCostHttp, createAiBudgetHttp, createKeepsakeHttp, createOnboardingHttp, createOnboardingV2Http, createUserModelHttp, createThoughtHttp, createCheckinHttp, createHealthRecordHttp, createDiscoveryHttp, createExportHttp, createActionsHttp, createFeedbackHttp, createCaptureJournalHttp, createLibraryHttp, createReviewsChatHttp, createContentAttachmentsHttp, createSpeechHttp, createVisionHttp, createSyncHttp, createPersonalContextHttp, createRequestHandler, createModelResponseHttp, createApiV1Http, openApiV1 } from "./src/http/index.mjs";
+import { createAuthHttp, createJsonHttp, createTaskHttp, createAnnotationHttp, createTrashHttp, createAttachmentHttp, createAiSettingsHttp, createAiCostHttp, createAiBudgetHttp, createKeepsakeHttp, createOnboardingHttp, createOnboardingV2Http, createUserModelHttp, createThoughtHttp, createCheckinHttp, createHealthRecordHttp, createDiscoveryHttp, createExportHttp, createActionsHttp, createFeedbackHttp, createCaptureJournalHttp, createLibraryHttp, createReviewsChatHttp, createContentAttachmentsHttp, createSpeechHttp, createVisionHttp, createSyncHttp, createStartupHttp, createPersonalContextHttp, createRequestHandler, createModelResponseHttp, createApiV1Http, openApiV1 } from "./src/http/index.mjs";
 import { createHealthImageConfig, createDailyRecordRecords, normalizeHealthImage } from "./src/modules/health/index.mjs";
 import { createAccountDocumentRepository, createAiBudgetRepository, createAuthRepository, createJsonStoreRepository, createPostgresRuntime, checkPersistenceMarker, markPostgresDirectory, hasJsonData, METADATA_FIELD, removeIdempotencyResponse } from "./src/shared/persistence/index.mjs";
 import { isApplicationRoutePath } from "./public/frontend/pages/index.mjs";
@@ -2870,6 +2870,29 @@ const apiV1 = createApiV1Http({
   getContext: () => requestStorage.getStore(),
   openApi: openApiV1
 });
+const startupHttp = createStartupHttp({
+  readStartup: async () => {
+    const store = await readStore();
+    const user = requestStorage.getStore()?.user;
+    return startupProjection({
+      store,
+      user: publicUser(user),
+      version: APP_VERSION,
+      releaseVersion: RELEASE_VERSION,
+      capabilities: capabilitiesFor(user),
+      features: appConfig.features,
+      governanceUrl: isOwner(user) && PLATFORM_SERVICE_TOKEN_HASH ? "/platform/" : "",
+      unread: notificationUnread(store.notifications)
+    });
+  },
+  readRouteState: async route => ({
+    ...routeStateProjection(
+      publicStateFromStore(await readStore()),
+      { ...route, currentDate: today() }
+    ),
+    _routeProjection: { view: route.view, complete: false }
+  })
+});
 const syncHttp = createSyncHttp({
   repository: storeRepository,
   publicState: publicStateFromStore
@@ -2881,6 +2904,7 @@ const personalContextHttp = createPersonalContextHttp({
     return isOwner(requestStorage.getStore()?.user) ? projection : withoutOwnerMetadata(projection);
   }
 });
+apiV1.register("startup", startupHttp.handleV1);
 apiV1.register("sync", syncHttp.handleV1);
 apiV1.register("personal-context", personalContextHttp.handleV1);
 apiV1.register("owner-ai-budget", aiBudgetHttp.handleV1);

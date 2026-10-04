@@ -57,6 +57,8 @@ export {
 export { createVisionHttp } from "./vision.mjs";
 export { createSyncHttp } from "./sync.mjs";
 export { syncPaths, syncOpenApiFragment } from "./openapi/sync.mjs";
+export { createStartupHttp } from "./startup.mjs";
+export { startupPaths, startupOpenApiFragment } from "./openapi/startup.mjs";
 export { createPersonalContextHttp } from "./personal-context.mjs";
 export {
   personalContextPaths,
