@@ -31,6 +31,7 @@ assert.match(nginxSource, /location = \/preview\/api\/admin\/v1\/snapshot[\s\S]*
 assert.match(nginxSource, /location ~ \^\/preview\/[\s\S]*gzip_static on;/);
 assert.match(nginxSource, /types \{[\s\S]*application\/javascript js mjs;[\s\S]*\}/);
 assert.match(nginxSource, /proxy_pass http:\/\/127\.0\.0\.1:4175;/);
+assert.match(nginxSource, /location \/preview\/[\s\S]*gzip on;[\s\S]*gzip_proxied any;[\s\S]*gzip_types application\/json application\/problem\+json;/);
 assert.match(nginxSource, /X-Robots-Tag "noindex, nofollow, noarchive" always;/);
 assert.doesNotMatch(nginxSource, /127\.0\.0\.1:4173|\/opt\/for-now\/app/);
 assert.match(siteSource, /include \/etc\/nginx\/snippets\/for-now-preview\*\.conf;/);

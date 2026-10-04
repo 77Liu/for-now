@@ -18,6 +18,7 @@ assert.match(nginx, /location ~ \^\/now\/[\s\S]*gzip_static on;[\s\S]*add_header
 assert.match(nginx, /types \{[\s\S]*application\/javascript js mjs;[\s\S]*\}/);
 assert.match(nginx, /location \/now\/[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:4173;/);
 assert.match(nginx, /location \/now\/[\s\S]*gzip on;[\s\S]*gzip_comp_level 2;[\s\S]*gzip_vary on;/);
+assert.match(nginx, /location \/now\/[\s\S]*gzip_proxied any;[\s\S]*gzip_types application\/json application\/problem\+json;/);
 assert.doesNotMatch(nginx, /proxy_pass http:\/\/127\.0\.0\.1:4173\/;/);
 assert.doesNotMatch(nginx, /\bproxy_cache\b|\bexpires\b|max-age/);
 assert.match(nginx, /location \/platform\/[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:4280\//);
