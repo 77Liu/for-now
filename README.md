@@ -49,12 +49,13 @@ npm run start:local-test
 
 ## 当前状态
 
-- **生产与 Preview `v0.5.5` 已上线**：公网运行提交均为
-  `fed30539d3d67841ba06881e0fe5c8b661ba3fd0`，补齐评论并排阅读、行侧
-  计数、草稿恢复、捕念双层整理、持久 TTS、所思应答朗读和官方音色试音；
-  PostgreSQL 继续作为唯一正式写源。Gitee Release ID 为 `1182619`，发布与
-  复盘证据见 `reports/pre-launch-2026-10-04-v0.5.5.md` 和
-  `reports/v0.5.5-development-process-2026-10-04.md`。
+- **生产与 Preview `v0.5.6` 已上线并关闭观察**：公网运行提交均为
+  `780d279f3b36431430b421f9c72136cc48e90c75`，完成 R8 全页山水、首页
+  默认单屏、思绪列表身份化预览和详情正序阅读；恢复门同步验证公开投影、
+  Store 与账户文档哈希。PostgreSQL 继续作为唯一正式写源。Gitee Release
+  ID 为 `1183270`；生产连续运行 30 分 24 秒，服务与 PostgreSQL 零重启，
+  应用错误、Nginx 5xx、OOM 均为 0。发布证据见
+  `reports/pre-launch-2026-10-04-v0.5.6.md`。
 - **`v0.1.1` 发布历史保留**：提交 `54a6326f14ca`、标签 `hotfix-v0.1.1-thought-answer` 在 v0.1.0 基础上修复了收集页思绪自动回答任务创建问题，现已由 v0.2.1 替代。
 - **`v0.1.0` 发布历史保留**：主应用功能提交 `5ae6a7035169` 和标签 `release-20260928-p00-p0-commercial-system` 已发布 P00/P0、商业化、AI 成本和五阶段架构设计，并由 v0.1.1 继承。
 - **中台已上线**：独立中台提交为 `d157537f7f4c`，发布标签为 `release-20260928-platform-mvp`；公网 `/platform/` 只读治理控制面已部署。

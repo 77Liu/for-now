@@ -2,7 +2,7 @@
 
 日期：2026-10-04
 
-状态：**第二轮、Release 门与 Preview 验收通过，等待生产发布**
+状态：**生产发布与 30 分钟观察已关闭**
 
 生产基线：`v0.5.5@fed30539d3d67841ba06881e0fe5c8b661ba3fd0`
 
@@ -155,6 +155,81 @@ UI 自动化覆盖：
 - 浏览器控制台无运行错误；网络记录中的 401/404 来自登录前认证探测和可选
   本地测试接口，不是页面资源失败。
 
+## Git 与 Gitee Release
+
+- annotated tag：`v0.5.6`，tag object
+  `63c2373bb373181519855041e84dcfac1db04915`，peel 后为 `780d279`。
+- `origin/main`、`origin/preview/v0.5.6`、标签运行提交均为 `780d279`。
+- Gitee Release ID：`1183270`；观察关闭后已转为正式 Release。
+
+## 生产发布
+
+### 备份阻断与修复
+
+首次即时备份被一个不存在的
+`b2cd37aa-6739-43a3-b5af-cad1f9c3065d.source-mask.png` 阻断，未进入部署。
+只读关系导出确认实际小物 `6fa2b1d9-7a70-4175-b35e-3f4765f1d769`
+已是 `ready`，并使用完整的新 `thumb/display/edit/alphaMask` 派生资源；缺失路径
+只存在于 `_persistence.idempotency` 的位置 28、29，是当天原始上传与创建响应
+的历史回放元数据，不属于当前用户内容或活动附件。
+
+处理前创建数据库级自定义格式快照
+`/var/backups/for-now/pre-v056-idempotency-repair-20261004T150332Z.dump`
+（931,713 bytes，SHA-256
+`4b7c8d2c3ff8a142de34b2826a243073f1738122ad77d85079f20d0b381a6b3b`），
+并把快照与校验文件上传到现有私有备份桶的 `repairs/`。随后只删除这两条已完成
+操作的幂等回放记录。第一次重启因账本
+位置出现 28、29 的空洞触发 `Non-contiguous positions: idempotency` 并失败；
+立即将该账户剩余 35 条幂等记录按原顺序重编号为连续位置，服务恢复，
+`NRestarts=0`。没有修改小物记录、附件、用户正文或其他账户数据。
+
+修复后的即时备份通过：
+
+- 4 个账户；
+- 52 个附件；
+- 48 个附件引用；
+- 归档 78,096,920 bytes；
+- OSS 归档与 SHA-256 文件上传成功；
+- 用时 18 秒。
+
+候选 `v0.5.6` 隔离恢复通过：
+
+- 4 个账户、216 条总记录；
+- 48 个附件引用、52 个附件；
+- 首账户 213 条公开 API 记录；
+- 归档校验、关系导出、Store/账户文档哈希、公开集合、附件内容及 HTTP 均通过；
+- 用时 7 秒。
+
+### 部署与即时冒烟
+
+- 生产于 2026-10-04 23:06:48 CST 切换到不可变 release
+  `/opt/for-now/releases/780d279f3b36431430b421f9c72136cc48e90c75`；
+  部署耗时 25 秒。
+- 部署器完成锁定依赖、0 漏洞审计、62 条 Prompt、PostgreSQL 角色、Nginx
+  配置及健康检查。
+- `/now/readyz = 780d279f3b36`，服务与 PostgreSQL active，`NRestarts=0`。
+- 公网首页 200、管理快照 404；R8 CSS 与 AVIF 均 200。
+- 1280、390、320px 未登录页无横向溢出；认证后 UI 使用同 SHA Preview
+  的完整验收证据。
+- 部署后应用 warning/error、Nginx 5xx 和内核 OOM 均为 0。
+
+### 生产观察
+
+- 观察区间：2026-10-04 23:06:48–23:37:12 CST，共 30 分 24 秒。
+- 本地前台监控在约第 10 分钟被 Owner 主动中断；服务未中断，最终结论使用
+  systemd 连续 active 时间、6 次定时监控、完整区间日志和最终公网冒烟交叉
+  核对，不把本地会话中断写成连续采样。
+- 最终主服务 PID `571868`，`NRestarts=0`；PostgreSQL
+  `postgresql@16-fornowtrial.service` active、`NRestarts=0`。
+- 6 次 `for-now-monitor.service` 运行均返回 `issues: []`；应用日志未出现
+  warning/error/exception/fatal/OOM/panic，内核无 OOM，Nginx 5xx 为 0。
+- 最终 Node RSS `107,060 KiB`，可用内存 `793,836 KiB`，Swap 使用
+  `524 KiB`，根盘占用 51%。
+- 公网 `/now/` 为 200，`/now/readyz` 为 200 且版本
+  `780d279f3b36`，R8 CSS 为 200；结论为继续运行。
+- 首次备份暴露的幂等回放附件误引用已进入 V0.5.7 P00，需求记录
+  `reczz28JNp7RTFVj`；不再依赖手工清理作为长期方案。
+
 ## 人工与环境边界
 
 - Preview 使用既有展示账户，只做必要的认证后浏览器验收，不修改生产数据。
@@ -174,9 +249,9 @@ UI 自动化覆盖：
 - [x] 里程碑系统门
 - [x] 固定候选与第二轮 Release 门
 - [x] Preview 部署与公网多视口验收
-- [ ] `v0.5.6` 标签与 Gitee Release
-- [ ] 生产即时备份、恢复、部署、冒烟与观察
-- [ ] Base、README、TODO 与计划关闭
+- [x] `v0.5.6` 标签与 Gitee Release
+- [x] 生产即时备份、恢复、部署、冒烟与观察
+- [x] Base、README、TODO 与计划关闭
 
 ## 回滚
 
