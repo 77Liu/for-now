@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import { emptyClientState } from "../public/frontend/state/index.mjs";
 import { isApplicationRoutePath } from "../public/frontend/pages/index.mjs";
+import { routeStateProjection } from "../src/app/index.mjs";
 import { onboardingV2Schema } from "../src/modules/onboarding/index.mjs";
 import { resolveHeadlessBrowser } from "./browser-runtime.mjs";
 
@@ -172,6 +173,24 @@ async function createTestServer() {
     try {
       if (url.pathname === "/api/auth/me") {
         result = json(response, { authenticated: true, authRequired: true, user, userCount: 1 });
+      } else if (url.pathname === "/api/v1/startup") {
+        result = json(response, v1({
+          protocolVersion: 1,
+          version: "web-budget",
+          releaseVersion: "0.5.7",
+          user,
+          capabilities: ["local-testing"],
+          features: {},
+          governanceUrl: "",
+          accountCursor: 1,
+          notificationUnread: 0,
+          onboardingV2: { session: { status: "completed" } }
+        }));
+      } else if (url.pathname === "/api/v1/route-state") {
+        result = json(response, v1(routeStateProjection(clientState, {
+          view: url.searchParams.get("view") || "today",
+          currentDate: "2026-10-03"
+        })));
       } else if (url.pathname === "/api/state") {
         result = json(response, clientState);
       } else if (url.pathname === "/api/meta") {
@@ -459,11 +478,19 @@ try {
       result.stableHomeMs < BUDGET.stableHomeMs,
       `${result.profile} stableHome ${result.stableHomeMs}ms 未低于 ${BUDGET.stableHomeMs}ms`
     );
-    for (const endpoint of ["/api/auth/me", "/api/state", "/api/meta", "/api/local-test-mode"]) {
+    for (const endpoint of ["/api/auth/me", "/api/v1/startup", "/api/v1/route-state", "/api/local-test-mode"]) {
       assert.equal(result.requestPaths.filter(value => value === endpoint).length, 1, `${result.profile} 重复请求 ${endpoint}`);
     }
+    assert.equal(result.requestPaths.includes("/api/state"), false, `${result.profile} startup must not request /api/state`);
   }
   const browserRequests = testServer.requests.filter(item => !["HEAD", "OPTIONS"].includes(item.method));
+  const startupRequest = browserRequests.find(item => item.path === "/api/v1/startup");
+  const routeRequest = browserRequests.find(item => item.path === "/api/v1/route-state");
+  assert.ok(startupRequest?.rawBytes <= 25 * 1024, `startup JSON ${startupRequest?.rawBytes} B exceeds 25 KiB`);
+  assert.ok(
+    (startupRequest?.rawBytes || 0) + (routeRequest?.rawBytes || 0) <= 200 * 1024,
+    "startup and current-route JSON exceed 200 KiB"
+  );
   const rawBytes = browserRequests.reduce((total, item) => total + item.rawBytes, 0);
   const transferBytes = browserRequests.reduce((total, item) => total + item.transferBytes, 0);
   console.log(

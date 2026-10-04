@@ -78,6 +78,18 @@ function revealAuthGate() {
   if (gate) gate.hidden = false;
 }
 
+function routeStateUrl(route) {
+  const query = new URLSearchParams({ view: route.view });
+  if (route.resourceId) query.set("resourceId", route.resourceId);
+  for (const [key, value] of Object.entries(route.query || {})) query.set(key, String(value));
+  return `/api/v1/route-state?${query}`;
+}
+
+function envelopeData(value) {
+  if (!value || value.error || !value.data) throw new Error(value?.error?.message || "启动请求失败");
+  return value.data;
+}
+
 async function initialSnapshot() {
   markStartup("bootstrapStart");
   try {
@@ -92,13 +104,20 @@ async function initialSnapshot() {
       return { session, testConfig, startupMarks: { ...startupMarks }, visibleShell: false };
     }
     markStartup("loadStart");
-    const [state, meta] = await Promise.all([
-      requestJson("/api/state"),
-      requestJson("/api/meta")
+    const route = resolveApplicationRoute(location, { basePath });
+    const [startupResult, routeResult] = await Promise.all([
+      requestJson("/api/v1/startup"),
+      requestJson(routeStateUrl(route))
     ]);
+    const meta = envelopeData(startupResult);
+    const state = {
+      ...envelopeData(routeResult),
+      onboardingV2: meta.onboardingV2,
+      notificationUnread: meta.notificationUnread
+    };
     markStartup("coreSnapshotReady");
     const visibleShell = revealAuthenticatedShell(session, state);
-    return { session, testConfig, state, meta, startupMarks: { ...startupMarks }, visibleShell };
+    return { session, testConfig, state, meta, route, startupMarks: { ...startupMarks }, visibleShell };
   } catch (error) {
     revealAuthGate();
     return { error, startupMarks: { ...startupMarks }, visibleShell: false };

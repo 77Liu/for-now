@@ -40,19 +40,22 @@ const downloadableSource = (await Promise.all((await publicSourceFiles(path.join
 
 assert.match(appEntry, /^import \{ startApplication \} from "\.\/frontend\/app\/index\.mjs";\s+startApplication\(\);\s*$/);
 assert.ok(appEntry.split("\n").length <= 5, "public/app.js must remain a thin bootstrap");
-assert.match(appBootstrap, /const \[state, meta\] = await Promise\.all/);
+assert.match(appBootstrap, /requestJson\("\/api\/v1\/startup"\)/);
+assert.match(appBootstrap, /requestJson\(routeStateUrl\(route\)\)/);
 assert.match(appBootstrap, /const runtime = await import\("\.\/runtime\.mjs"\)/);
 assert.match(appBootstrap, /await loadR8Styles\(\)/);
 assert.match(appBootstrap, /timeout = setTimeout\(finish, 1500\)/);
 assert.match(appBootstrap, /link\.addEventListener\("error", finish, \{ once: true \}\)/);
 assert.doesNotMatch(appBootstrap, /from "\.\/runtime\.mjs"/);
 assert.match(appBootstrap, /requestJson\("\/api\/auth\/me", \{ allowUnauthorized: true \}\)/);
-for (const endpoint of ["/api/auth/me", "/api/state", "/api/meta"]) {
+for (const endpoint of ["/api/auth/me", "/api/v1/startup"]) {
   assert.equal(appBootstrap.split(`"${endpoint}"`).length - 1, 1, `bootstrap must request ${endpoint} once`);
 }
+assert.doesNotMatch(appBootstrap, /requestJson\("\/api\/state"\)|requestJson\("\/api\/meta"\)/);
 assert.match(appRuntime, /export async function startApplication\(initial = null\)/);
 assert.doesNotMatch(appRuntime, /^bootstrap\(\)\.catch/m);
 assert.doesNotMatch(appRuntime, /from "\.\/frontend\//);
+assert.doesNotMatch(appRuntime, /function render\(\)/);
 assert.match(appRuntime, /button\.tabIndex=active\?0:-1/);
 assert.match(appRuntime, /\["ArrowLeft","ArrowRight","Home","End"\]/);
 assert.match(appRuntime, /operation=\+\+authOperationSerial;setAuthBusy\(true\)/);
