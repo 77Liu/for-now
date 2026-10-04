@@ -432,6 +432,16 @@
       "status": "active"
     },
     {
+      "id": "frontend.component.tag-multiselect",
+      "type": "shared",
+      "root": "public/frontend/components/tag-multiselect",
+      "publicEntry": "public/frontend/components/tag-multiselect/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["headless tag normalization, candidate filtering, multi-selection and keyboard transitions"], "routes": [] },
+      "tests": ["scripts/tag-multiselect-regression.mjs"],
+      "status": "active"
+    },
+    {
       "id": "frontend.pages",
       "type": "page",
       "root": "public/frontend/pages",
