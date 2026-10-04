@@ -542,7 +542,11 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     });
     assert.equal(media.status, 201, JSON.stringify(media.body));
     assert.equal(media.body.derivativeState, "pending");
-    assert.equal(media.body.previewPath, attachmentPath);
+    assert.equal(media.body.previewPath, undefined);
+    assert.equal(media.body.originalPath, undefined);
+    assert.equal(media.body.media?.status, "pending");
+    assert.equal(media.body.media?.originalAvailable, true);
+    assert.equal(media.body.media?.list?.imagePath, "");
     const readyMedia = await waitKeepsake(app.base, cookie, media.body.id, "ready");
     const generatedPaths = ["thumbPath", "displayPath", "editPath", "alphaMaskPath"]
       .map(key => readyMedia[key]);
