@@ -1,10 +1,32 @@
-import { promises as fs } from "node:fs";
+import { createReadStream, promises as fs } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import OSS from "ali-oss";
 import Credential from "@alicloud/credentials";
 
 const cleanSegment = value => String(value || "").replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 160);
+const missing = error => ["ENOENT", "NoSuchKey"].includes(error?.code) || Number(error?.status) === 404;
+
+const streamRange = (bytes, { start, end } = {}) => {
+  if (start === undefined && end === undefined) return null;
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)
+    || start < 0 || end < start || end >= bytes) {
+    throw new RangeError("Attachment stream range is invalid");
+  }
+  return { start, end };
+};
+
+const localReadSource = async file => {
+  const stat = await fs.lstat(file);
+  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("Attachment must be a regular file");
+  return {
+    bytes: stat.size,
+    createReadStream(options = {}) {
+      const range = streamRange(stat.size, options);
+      return createReadStream(file, range || undefined);
+    }
+  };
+};
 
 export function createAttachmentStorage({
   mode = "local", bucket = "", prefix = "for-now-attachments",
@@ -60,9 +82,38 @@ export function createAttachmentStorage({
       if (mode === "mock") return await fs.readFile(mockFile(ownerId, name));
       return (await (await client()).get(objectKey(ownerId, name))).content;
     } catch (error) {
-      if (!["ENOENT", "NoSuchKey"].includes(error?.code) && Number(error?.status) !== 404) throw error;
+      if (!missing(error)) throw error;
       if (!allowLocalFallback) throw error;
       return fs.readFile(localFile);
+    }
+  }
+
+  async function openRead({ ownerId, name, localFile, allowLocalFallback = true }) {
+    if (mode === "local") return localReadSource(localFile);
+    try {
+      if (mode === "mock") return await localReadSource(mockFile(ownerId, name));
+      const store = await client();
+      const key = objectKey(ownerId, name);
+      const metadata = await store.getObjectMeta(key);
+      const bytes = Number(metadata?.res?.headers?.["content-length"]);
+      if (!Number.isSafeInteger(bytes) || bytes < 0) {
+        throw new Error("Attachment size metadata is invalid");
+      }
+      return {
+        bytes,
+        async createReadStream(options = {}) {
+          const range = streamRange(bytes, options);
+          const result = await store.getStream(key, range ? {
+            headers: { Range: `bytes=${range.start}-${range.end}` }
+          } : undefined);
+          if (!result?.stream) throw new Error("Attachment storage returned no readable stream");
+          return result.stream;
+        }
+      };
+    } catch (error) {
+      if (!missing(error)) throw error;
+      if (!allowLocalFallback) throw error;
+      return localReadSource(localFile);
     }
   }
 
@@ -78,7 +129,7 @@ export function createAttachmentStorage({
       try {
         data = mode === "mock" ? await local(mockFile(ownerId, name)) : (await (await client()).get(key)).content;
       } catch (error) {
-        if (!["ENOENT", "NoSuchKey"].includes(error?.code) && Number(error?.status) !== 404) throw error;
+        if (!missing(error)) throw error;
         if (!allowLocalFallback) throw error;
         data = await local(localFile);
         storage = "local";
@@ -96,7 +147,7 @@ export function createAttachmentStorage({
       try {
         await (await client()).delete(objectKey(ownerId, name));
       } catch (error) {
-        if (!["ENOENT", "NoSuchKey"].includes(error?.code) && Number(error?.status) !== 404) throw error;
+        if (!missing(error)) throw error;
       }
     }
     // A successful purge must remove both the object and its legacy fallback.
@@ -171,5 +222,5 @@ export function createAttachmentStorage({
     return result.sort((left, right) => left.name.localeCompare(right.name));
   }
 
-  return { mode, objectKey, put, get, inspect, remove, usageBytes, list };
+  return { mode, objectKey, put, get, openRead, inspect, remove, usageBytes, list };
 }

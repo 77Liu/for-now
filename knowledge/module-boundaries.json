@@ -288,8 +288,8 @@
       "root": "src/shared/attachments",
       "publicEntry": "src/shared/attachments/index.mjs",
       "allowedDependencies": ["shared.validation"],
-      "owns": { "data": ["attachment storage adapters, image/audio validation, quota serialization, upload inventory and recovery, reference discovery and cleanup"], "routes": ["POST /api/images/upload", "POST /api/images/discard", "POST /api/audio/upload", "POST /api/audio/discard", "GET /attachments/:name", "HEAD /attachments/:name"] },
-      "tests": ["scripts/attachment-storage-regression.mjs", "scripts/attachment-upload-regression.mjs", "scripts/attachment-derivatives-regression.mjs", "scripts/keepsake-media-migration-regression.mjs", "scripts/trash-regression.mjs", "scripts/regression.mjs", "scripts/auth-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
+      "owns": { "data": ["attachment storage adapters and byte-range streams, image/audio validation, quota serialization, upload inventory and recovery, reference discovery and cleanup"], "routes": ["POST /api/images/upload", "POST /api/images/discard", "POST /api/audio/upload", "POST /api/audio/discard", "GET /attachments/:name", "HEAD /attachments/:name"] },
+      "tests": ["scripts/attachment-storage-regression.mjs", "scripts/attachment-range-regression.mjs", "scripts/attachment-upload-regression.mjs", "scripts/attachment-derivatives-regression.mjs", "scripts/keepsake-media-migration-regression.mjs", "scripts/trash-regression.mjs", "scripts/regression.mjs", "scripts/auth-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
       "status": "active"
     },
     {

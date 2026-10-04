@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import { parseByteRange } from "./byte-range.mjs";
 
 export function createAttachmentHttp({
@@ -16,6 +17,18 @@ export function createAttachmentHttp({
   debugServerUrl = "",
   debugRunId = "pre-fix"
 }) {
+  const openRead = async resourcePath => {
+    if (typeof attachments.openRead === "function") return attachments.openRead(resourcePath);
+    const data = await attachments.read(resourcePath);
+    return {
+      bytes: data.length,
+      createReadStream({ start = 0, end = data.length - 1 } = {}) {
+        return Readable.from([data.subarray(start, end + 1)]);
+      }
+    };
+  };
+  const isMissing = error => ["ENOENT", "NoSuchKey"].includes(error?.code) || Number(error?.status) === 404;
+
   async function handle(req, res, url) {
     if (req.method === "POST" && url.pathname === "/api/images/upload") {
       const input = await bodyJson(req, uploadBodyMaxBytes), images = Array.isArray(input.images) ? input.images : input.image ? [input.image] : [];
@@ -82,41 +95,80 @@ export function createAttachmentHttp({
         const name = url.pathname.slice("/attachments/".length);
         if (!/^[\w.-]+$/.test(name)) sendJson(res, 403, { error: "Forbidden" });
         else {
-          let data;
+          let source;
           try {
-            data = await attachments.read(url.pathname);
+            source = await openRead(url.pathname);
           } catch (error) {
-            const missing = ["ENOENT", "NoSuchKey"].includes(error?.code) || Number(error?.status) === 404;
-            if (missing && await onMissing?.(req, res, url)) return true;
+            if (isMissing(error) && await onMissing?.(req, res, url)) return true;
             throw error;
+          }
+          const total = source.bytes;
+          if (!Number.isSafeInteger(total) || total < 0 || typeof source.createReadStream !== "function") {
+            throw new Error("Attachment read source is invalid");
           }
           const responseContentType = contentType(name);
           // #region debug-point B-D:audio-read
-          if (debugServerUrl && /\.(?:m4a|mp4|webm|ogg|wav)$/i.test(name)) fetch(debugServerUrl,{method:"POST",body:JSON.stringify({sessionId:"login-audio-production",runId:debugRunId,hypothesisId:"B-D",location:"src/http/attachments.mjs:read",msg:"[DEBUG] Audio attachment served",data:{method:req.method,nameExtension:name.split(".").at(-1)?.toLowerCase(),contentType:responseContentType,bytes:data.length,rangeRequested:Boolean(req.headers.range),rangeHeader:String(req.headers.range||"").slice(0,100)},ts:Date.now()})}).catch(()=>{});
+          if (debugServerUrl && /\.(?:m4a|mp4|webm|ogg|wav)$/i.test(name)) fetch(debugServerUrl,{method:"POST",body:JSON.stringify({sessionId:"login-audio-production",runId:debugRunId,hypothesisId:"B-D",location:"src/http/attachments.mjs:read",msg:"[DEBUG] Audio attachment served",data:{method:req.method,nameExtension:name.split(".").at(-1)?.toLowerCase(),contentType:responseContentType,bytes:total,rangeRequested:Boolean(req.headers.range),rangeHeader:String(req.headers.range||"").slice(0,100)},ts:Date.now()})}).catch(()=>{});
           // #endregion
           const headers = {
             "content-type": responseContentType,
             "cache-control": "private, no-store",
             "accept-ranges": "bytes"
           };
-          if (req.headers.range) {
-            const range = parseByteRange(req.headers.range, data.length);
-            if (!range) {
-              res.writeHead(416, { ...headers, "content-range": `bytes */${data.length}`, "content-length": "0" });
-              res.end();
-              return true;
-            }
-            const body = data.subarray(range.start, range.end + 1);
-            res.writeHead(206, {
-              ...headers,
-              "content-range": `bytes ${range.start}-${range.end}/${data.length}`,
-              "content-length": String(body.length)
-            });
-            res.end(req.method === "HEAD" ? undefined : body);
-          } else {
-            res.writeHead(200, { ...headers, "content-length": String(data.length) });
-            res.end(req.method === "HEAD" ? undefined : data);
+          const range = req.headers.range ? parseByteRange(req.headers.range, total) : null;
+          if (req.headers.range && !range) {
+            res.writeHead(416, { ...headers, "content-range": `bytes */${total}`, "content-length": "0" });
+            res.end();
+            return true;
           }
+          const status = range ? 206 : 200;
+          const length = range ? range.end - range.start + 1 : total;
+          const responseHeaders = {
+            ...headers,
+            ...(range ? { "content-range": `bytes ${range.start}-${range.end}/${total}` } : {}),
+            "content-length": String(length)
+          };
+          if (req.method === "HEAD") {
+            res.writeHead(status, responseHeaders);
+            res.end();
+            return true;
+          }
+          let stream;
+          try {
+            stream = await source.createReadStream(range || {});
+          } catch (error) {
+            if (isMissing(error) && await onMissing?.(req, res, url)) return true;
+            throw error;
+          }
+          if (!stream || typeof stream.pipe !== "function" || typeof stream.destroy !== "function") {
+            throw new Error("Attachment storage returned no readable stream");
+          }
+          if (req.aborted || res.destroyed) {
+            stream.destroy();
+            return true;
+          }
+          res.writeHead(status, responseHeaders);
+          let completed = false;
+          const cleanup = () => {
+            req.off("aborted", cancel);
+            res.off("close", cancel);
+          };
+          const cancel = () => {
+            if (!completed && !stream.destroyed) stream.destroy();
+          };
+          req.once("aborted", cancel);
+          res.once("close", cancel);
+          stream.once("end", () => {
+            completed = true;
+            cleanup();
+          });
+          stream.once("close", cleanup);
+          stream.once("error", error => {
+            completed = true;
+            cleanup();
+            if (!res.destroyed) res.destroy(error);
+          });
+          stream.pipe(res);
         }
       }
     } else return false;

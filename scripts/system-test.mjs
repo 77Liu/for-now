@@ -112,6 +112,7 @@ const suites = {
     ["local test data modes", ["scripts/local-test-mode-regression.mjs"]],
     ["observability", ["scripts/observability-regression.mjs"]],
     ["attachment storage", ["scripts/attachment-storage-regression.mjs"]],
+    ["attachment byte range streaming", ["scripts/attachment-range-regression.mjs"]],
     ["attachment uploads, quotas and recovery", ["scripts/attachment-upload-regression.mjs"]],
     ["capacity boundaries", ["scripts/boundaries-regression.mjs"]],
     ["backup recovery and readiness", ["scripts/backup-regression.mjs"]],

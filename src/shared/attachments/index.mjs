@@ -1,7 +1,12 @@
+import path from "node:path";
 import { safeText } from "../validation/index.mjs";
+import {
+  createImageAttachments as createImageAttachmentsBase,
+  cleanupTemporaryFiles
+} from "./uploads.mjs";
 
 export { createAttachmentStorage } from "./storage.mjs";
-export { createImageAttachments, cleanupTemporaryFiles } from "./uploads.mjs";
+export { cleanupTemporaryFiles };
 export { AUDIO_MIME_TYPES, decodeAudioDataUrl } from "./audio.mjs";
 export { cleanAttachmentPaths, imageDimensions, readImageFile } from "./images.mjs";
 export {
@@ -14,6 +19,22 @@ export {
   collectBackupAttachmentPaths,
   stageAttachmentCompleteBackup
 } from "./backup.mjs";
+
+export function createImageAttachments(options) {
+  const attachments = createImageAttachmentsBase(options);
+  return {
+    ...attachments,
+    openRead(resourcePath) {
+      const context = options.getContext();
+      const name = resourcePath.slice("/attachments/".length);
+      return options.storage.openRead({
+        ownerId: context.ownerId,
+        name,
+        localFile: path.join(context.attachmentsDir, name)
+      });
+    }
+  };
+}
 
 export function collectAttachmentPaths(value, output = new Set()) {
   if (typeof value === "string") {
