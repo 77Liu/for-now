@@ -1726,7 +1726,7 @@ try {
 } finally {
   app.kill("SIGTERM");
   await new Promise(resolve => mock.close(resolve));
-  await fs.rm(dataDir, { recursive: true, force: true });
+  await fs.rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 }
 
 if (appError) process.stderr.write(appError);
