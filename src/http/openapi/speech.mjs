@@ -152,9 +152,22 @@ export const speechComponents = Object.freeze({
         { required: ["captureId"] }
       ],
       properties: {
-        sourceType: { type: "string", enum: ["capture", "thoughtAnswer"] },
-        sourceId: { type: "string", minLength: 1, maxLength: 160 },
-        sourceVersion: { type: "integer", minimum: 1 },
+        sourceType: {
+          type: "string",
+          enum: ["capture", "thoughtAnswer", "thoughtChain"],
+          description: "thoughtChain 表示按根问题、当前我的结论和当前专属回答生成整链朗读。"
+        },
+        sourceId: {
+          type: "string",
+          minLength: 1,
+          maxLength: 160,
+          description: "来源记录 ID；thoughtChain 使用根问题 ID。"
+        },
+        sourceVersion: {
+          type: "integer",
+          minimum: 1,
+          description: "来源版本；thoughtChain 使用根问题当前版本，所选内容块版本由服务端绑定。"
+        },
         regenerate: { type: "boolean", default: false },
         captureId: {
           type: "string",
@@ -182,7 +195,7 @@ export const speechComponents = Object.freeze({
       ],
       properties: {
         id: { type: "string" },
-        sourceType: { type: "string", enum: ["capture", "thoughtAnswer"] },
+        sourceType: { type: "string", enum: ["capture", "thoughtAnswer", "thoughtChain"] },
         sourceId: { type: "string" },
         sourceVersion: { type: "integer", minimum: 1 },
         voice: { type: "string" },

@@ -116,7 +116,7 @@ const app = spawn(process.execPath, ["server.mjs"], {
     AUTH_REQUIRED: "0",
     PERSISTENCE_BACKEND: "json",
     ATTACHMENT_STORAGE: "local",
-    AI_USER_DAILY_CALL_LIMIT: "12",
+    AI_USER_DAILY_CALL_LIMIT: "13",
     DEEPSEEK_API_URL: `http://127.0.0.1:${provider.address().port}/deepseek`,
     VOLCENGINE_SPEECH_API_KEY: "speech-test-key",
     VOLCENGINE_TTS_ENDPOINT: `http://127.0.0.1:${provider.address().port}/tts`,
@@ -356,6 +356,7 @@ try {
   });
   assert.equal(thoughtResponse.status, 201);
   const thoughtItems = (await thoughtResponse.json()).data.items;
+  const thoughtRoot = thoughtItems.find(item => item.type === "question");
   const thoughtAnswer = thoughtItems.find(item => item.type === "answer");
   const thoughtSpeech = await fetch(`${base}/api/speech/synthesize`, {
     method: "POST",
@@ -371,6 +372,21 @@ try {
   const thoughtTtsRequest = JSON.parse(providerCalls.filter(call => call.pathname === "/tts").at(-1).raw);
   assert.equal(thoughtTtsRequest.req_params.text, "你的问题是：测试问题？，你的专属答复是测试回答");
   assert.equal(providerCalls.filter(call => call.pathname === "/tts").length, 4);
+  const thoughtChainSpeech = await fetch(`${base}/api/speech/synthesize`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      sourceType: "thoughtChain",
+      sourceId: thoughtRoot.id,
+      sourceVersion: thoughtRoot.version
+    })
+  });
+  assert.equal(thoughtChainSpeech.status, 200);
+  assert.equal(thoughtChainSpeech.headers.get("x-speech-cache"), "miss");
+  await thoughtChainSpeech.arrayBuffer();
+  const thoughtChainTtsRequest = JSON.parse(providerCalls.filter(call => call.pathname === "/tts").at(-1).raw);
+  assert.equal(thoughtChainTtsRequest.req_params.text, "我的问题：测试问题？ 我的结论：测试回答");
+  assert.equal(providerCalls.filter(call => call.pathname === "/tts").length, 5);
 
   const imageBytes = await sharp({
     create: { width: 16, height: 16, channels: 3, background: "#ffffff" }
@@ -452,7 +468,7 @@ try {
   assert.equal(asrConnections, 1);
   const usage = JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"), "utf8"));
   assert.equal(usage.version, 4);
-  assert.equal(usage.entries.filter(item => item.provider === "volcengine" && item.scene === "speechSynthesis" && item.unitType === "character").length, 3);
+  assert.equal(usage.entries.filter(item => item.provider === "volcengine" && item.scene === "speechSynthesis" && item.unitType === "character").length, 4);
   assert.equal(usage.entries.filter(item => item.provider === "volcengine" && item.scene === "speechPreview" && item.unitType === "character").length, 1);
   assert.ok(usage.entries.some(item => item.provider === "volcengine" && item.scene === "speechRecognition" && item.unitType === "audioMillisecond"));
   assert.ok(usage.entries.some(item => item.provider === "volcengine" && item.scene === "visionOcr" && item.unitType === "image"));
@@ -467,10 +483,10 @@ try {
   assert.equal(usage.entries.filter(item => item.provider === "deepseek" && item.scene === "captureCondense").length, 0);
   const budget = JSON.parse(await fs.readFile(path.join(dataDir, "ai-budget.json"), "utf8"));
   assert.equal(budget.reservations.length, 0);
-  assert.equal(budget.days[0].unknownCalls, 8);
-  assert.equal(budget.days[0].users[0].calls, 12);
+  assert.equal(budget.days[0].unknownCalls, 9);
+  assert.equal(budget.days[0].users[0].calls, 13);
   assert.ok(budget.days[0].knownCostMicros > 0);
-  assert.equal(budget.events.filter(item => item.type === "ai.budget.unknown_cost_warning").length, 8);
+  assert.equal(budget.events.filter(item => item.type === "ai.budget.unknown_cost_warning").length, 9);
   const imageSettlement = budget.events.find(item => (
     item.type === "ai.budget.reservation_settled"
     && item.taskId.startsWith("image-parse:")

@@ -5,9 +5,10 @@ import {
   speechTextForCapture
 } from "../shared/speech/index.mjs";
 import { optionalPromptText, renderPrompt } from "../shared/prompts/index.mjs";
+import { thoughtChainSpeechSource } from "../modules/thoughts/index.mjs";
 
 const ATTACHMENT_PATH = /^\/attachments\/[\w.-]+$/;
-const SOURCE_TYPES = new Set(["capture", "thoughtAnswer"]);
+const SOURCE_TYPES = new Set(["capture", "thoughtAnswer", "thoughtChain"]);
 export const SPEECH_CACHE_RETENTION_DAYS = 30;
 const SPEECH_CACHE_RETENTION_MS = SPEECH_CACHE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 const CACHE_PROFILE = Object.freeze({
@@ -29,6 +30,16 @@ const generationRateOf = entry => normalizeTtsGenerationRate(
   entry?.generationRate ?? entry?.generation?.rate
 );
 const sourceKey = (sourceType, sourceId) => `${sourceType}\u0000${sourceId}`;
+const sourceVersionsOf = value => Object.fromEntries(
+  ["question", "conclusion", "answer"].flatMap(role => {
+    const item = value?.[role];
+    const id = safeText(item?.id, 160);
+    return id ? [[role, { id, version: recordVersion(item.version) }]] : [];
+  })
+);
+const sameSourceVersions = (left, right) => (
+  JSON.stringify(sourceVersionsOf(left)) === JSON.stringify(sourceVersionsOf(right))
+);
 
 function normalizedEntry(entry, defaults = {}) {
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
@@ -36,7 +47,7 @@ function normalizedEntry(entry, defaults = {}) {
   const sourceId = safeText(entry.sourceId || defaults.sourceId, 160);
   const id = entryId(entry);
   if (!id || !sourceType || !sourceId) return null;
-  return {
+  const normalized = {
     ...entry,
     id,
     cacheKey: safeText(entry.cacheKey || id, 160),
@@ -51,6 +62,10 @@ function normalizedEntry(entry, defaults = {}) {
     expiresAt: safeText(entry.expiresAt, 100),
     retentionDays: SPEECH_CACHE_RETENTION_DAYS
   };
+  const sourceVersions = sourceVersionsOf(entry.sourceVersions);
+  if (Object.keys(sourceVersions).length) normalized.sourceVersions = sourceVersions;
+  else delete normalized.sourceVersions;
+  return normalized;
 }
 
 function legacyCaptureEntries(store) {
@@ -104,6 +119,16 @@ function resolveSpeechSource(store, sourceType, sourceId) {
       text: speechTextForCapture(capture),
       sourceVersion: recordVersion(capture.version)
     };
+  }
+  if (sourceType === "thoughtChain") {
+    const resolved = thoughtChainSpeechSource(list(store.thoughts), sourceId);
+    if (!resolved) return null;
+    const text = readableSpeechText(resolved.sections.flatMap(section => {
+      const content = readableSpeechText(section.content);
+      return content ? [`${section.label}：${content}`] : [];
+    }).join("\n"));
+    if (!text) return null;
+    return { ...resolved, text };
   }
   const answer = list(store.thoughts).find(item => (
     item?.id === sourceId && item.type === "answer"
@@ -306,6 +331,9 @@ export function createSpeechCache({
       sourceId: identity.sourceId,
       sourceVersion: identity.sourceVersion,
       textHash: identity.textHash,
+      ...(identity.sourceVersions ? {
+        sourceVersions: sourceVersionsOf(identity.sourceVersions)
+      } : {}),
       voice,
       generation: identity.generation,
       generationRate: identity.generationRate,
@@ -327,12 +355,24 @@ export function createSpeechCache({
         const matches = list(store.speechCache).filter(item => (
           matchingEntry(item, identity, ownerHash, voice)
         ));
-        if (matches.length && !regenerate) return { existing: matches[0] };
+        if (matches.length && !regenerate) {
+          matches[0].sourceVersion = live.sourceVersion;
+          if (live.sourceVersions) {
+            matches[0].sourceVersions = sourceVersionsOf(live.sourceVersions);
+          }
+          return { existing: matches[0] };
+        }
         const replaced = regenerate ? matches : [];
         const replacedSet = new Set(replaced);
         store.speechCache = [
           ...list(store.speechCache).filter(item => !replacedSet.has(item)),
-          { ...entry, sourceVersion: live.sourceVersion }
+          {
+            ...entry,
+            sourceVersion: live.sourceVersion,
+            ...(live.sourceVersions ? {
+              sourceVersions: sourceVersionsOf(live.sourceVersions)
+            } : {})
+          }
         ];
         const paths = new Set(replaced.map(cachePath).filter(Boolean));
         cleanup.enqueue(store, paths);
@@ -365,7 +405,13 @@ export function createSpeechCache({
         const removedSet = new Set(removed);
         store.speechCache = [
           ...list(store.speechCache).filter(item => !removedSet.has(item)),
-          { ...entry, sourceVersion: live.sourceVersion }
+          {
+            ...entry,
+            sourceVersion: live.sourceVersion,
+            ...(live.sourceVersions ? {
+              sourceVersions: sourceVersionsOf(live.sourceVersions)
+            } : {})
+          }
         ];
         const paths = new Set(removed.map(cachePath).filter(Boolean));
         cleanup.enqueue(store, paths);
@@ -428,7 +474,8 @@ export function createSpeechCache({
     if (matching && !regenerate) {
       const cached = await readCached(matching, normalizedVoice);
       if (cached) {
-        if (recordVersion(matching.sourceVersion) !== source.identity.sourceVersion) {
+        if (recordVersion(matching.sourceVersion) !== source.identity.sourceVersion
+          || !sameSourceVersions(matching.sourceVersions, source.identity.sourceVersions)) {
           await repository.update(store => {
             normalizeSpeechCacheStore(store);
             for (const current of list(store.speechCache)) {
@@ -437,6 +484,9 @@ export function createSpeechCache({
                 && current.sourceId === source.identity.sourceId
                 && current.textHash === source.identity.textHash) {
                 current.sourceVersion = source.identity.sourceVersion;
+                if (source.identity.sourceVersions) {
+                  current.sourceVersions = sourceVersionsOf(source.identity.sourceVersions);
+                }
               }
             }
           });
@@ -514,5 +564,11 @@ export function createSpeechCache({
     sourceId: input.captureId
   }, generate);
 
-  return { synthesize, synthesizeCapture, readAudio };
+  const synthesizeThoughtChain = (input, generate) => synthesize({
+    ...input,
+    sourceType: "thoughtChain",
+    sourceId: input.thoughtChainId
+  }, generate);
+
+  return { synthesize, synthesizeCapture, synthesizeThoughtChain, readAudio };
 }

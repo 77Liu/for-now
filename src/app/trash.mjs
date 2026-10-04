@@ -6,14 +6,21 @@ const speechSourceKey = (sourceType, sourceId) => `${sourceType}\u0000${sourceId
 
 function speechSourcesInTrash(entries) {
   const sources = new Set();
+  const thoughtBlockIds = new Set();
   for (const entry of entries) {
     if (entry?.type === "capture" && entry.payload?.id) {
       sources.add(speechSourceKey("capture", entry.payload.id));
     }
-    if (entry?.type === "thoughtBlock" && entry.payload?.type === "answer" && entry.payload.id) {
-      sources.add(speechSourceKey("thoughtAnswer", entry.payload.id));
+    if (entry?.type === "thoughtBlock" && entry.payload?.id) {
+      thoughtBlockIds.add(entry.payload.id);
+      if (entry.payload.type === "answer") {
+        sources.add(speechSourceKey("thoughtAnswer", entry.payload.id));
+      }
     }
     if (entry?.type === "thoughtChain") {
+      if (entry.payload?.id) {
+        sources.add(speechSourceKey("thoughtChain", entry.payload.id));
+      }
       for (const record of Array.isArray(entry.payload?.items) ? entry.payload.items : []) {
         if (record?.item?.type === "answer" && record.item.id) {
           sources.add(speechSourceKey("thoughtAnswer", record.item.id));
@@ -21,13 +28,19 @@ function speechSourcesInTrash(entries) {
       }
     }
   }
-  return sources;
+  return { sources, thoughtBlockIds };
 }
 
 function speechCacheForTrash(store, entries) {
-  const sources = speechSourcesInTrash(entries);
+  const { sources, thoughtBlockIds } = speechSourcesInTrash(entries);
   return (Array.isArray(store.speechCache) ? store.speechCache : []).filter(entry => (
     sources.has(speechSourceKey(entry?.sourceType, entry?.sourceId))
+    || (
+      entry?.sourceType === "thoughtChain"
+      && Object.values(entry.sourceVersions || {}).some(source => (
+        thoughtBlockIds.has(source?.id)
+      ))
+    )
   ));
 }
 

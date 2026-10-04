@@ -81,6 +81,14 @@ assert.deepEqual(
   Object.keys(speechComponents.schemas.SpeechAsset.properties).sort(),
   ["bytes", "createdAt", "expiresAt", "generationRate", "id", "mimeType", "sourceId", "sourceType", "sourceVersion", "voice"]
 );
+assert.deepEqual(
+  speechComponents.schemas.SpeechSynthesisInput.properties.sourceType.enum,
+  ["capture", "thoughtAnswer", "thoughtChain"]
+);
+assert.deepEqual(
+  speechComponents.schemas.SpeechAsset.properties.sourceType.enum,
+  ["capture", "thoughtAnswer", "thoughtChain"]
+);
 for (const privateField of ["attachmentPath", "ownerHash", "textHash"]) {
   assert.equal(Object.hasOwn(speechComponents.schemas.SpeechAsset.properties, privateField), false);
 }

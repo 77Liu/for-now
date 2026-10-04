@@ -1,5 +1,86 @@
 import assert from "node:assert/strict";
-import { createThoughtService } from "../src/modules/thoughts/index.mjs";
+import {
+  createThoughtService,
+  thoughtChainSpeechSource
+} from "../src/modules/thoughts/index.mjs";
+
+const speechRoot = {
+  id: "speech-root",
+  type: "question",
+  content: "**我真正要解决什么？**",
+  version: 5,
+  createdAt: "2026-09-28T00:00:00.000Z"
+};
+const speechSource = thoughtChainSpeechSource([
+  {
+    id: "ai-latest",
+    type: "answer",
+    relatedTo: speechRoot.id,
+    authorType: "ai",
+    content: "当前**专属回答**",
+    modelDraft: "MODEL_DRAFT_MUST_NOT_APPEAR",
+    reasoningContent: "REASONING_MUST_NOT_APPEAR",
+    version: 4,
+    occurredAt: "2026-09-28T04:00:00.000Z"
+  },
+  {
+    id: "conclusion-old",
+    type: "answer",
+    relatedTo: speechRoot.id,
+    authorType: "user",
+    content: "旧结论",
+    version: 1,
+    occurredAt: "2026-09-28T01:00:00.000Z"
+  },
+  speechRoot,
+  {
+    id: "ai-draft-only",
+    type: "answer",
+    relatedTo: speechRoot.id,
+    authorType: "ai",
+    content: "",
+    modelDraft: "DRAFT_ONLY_MUST_NOT_APPEAR",
+    version: 9,
+    occurredAt: "2026-09-28T05:00:00.000Z"
+  },
+  {
+    id: "conclusion-latest",
+    type: "answer",
+    relatedTo: speechRoot.id,
+    authorType: "user",
+    content: "当前结论",
+    version: 3,
+    occurredAt: "2026-09-28T03:00:00.000Z"
+  },
+  {
+    id: "conclusion-discarded",
+    type: "answer",
+    relatedTo: speechRoot.id,
+    authorType: "user",
+    content: "已舍弃结论",
+    disposition: "discarded",
+    version: 8,
+    occurredAt: "2026-09-28T06:00:00.000Z"
+  }
+], speechRoot.id);
+assert.equal(speechSource.source, speechRoot);
+assert.equal(speechSource.sourceVersion, 5);
+assert.deepEqual(speechSource.sourceVersions, {
+  question: { id: "speech-root", version: 5 },
+  conclusion: { id: "conclusion-latest", version: 3 },
+  answer: { id: "ai-latest", version: 4 }
+});
+assert.deepEqual(speechSource.sections, [
+  { kind: "question", label: "我的问题", content: "**我真正要解决什么？**" },
+  { kind: "conclusion", label: "我的结论", content: "当前结论" },
+  { kind: "answer", label: "专属回答", content: "当前**专属回答**" }
+]);
+assert.doesNotMatch(JSON.stringify(speechSource), /REASONING_MUST_NOT_APPEAR|MODEL_DRAFT_MUST_NOT_APPEAR|DRAFT_ONLY_MUST_NOT_APPEAR/);
+assert.deepEqual(
+  thoughtChainSpeechSource([speechRoot], speechRoot.id).sections,
+  [{ kind: "question", label: "我的问题", content: "**我真正要解决什么？**" }]
+);
+assert.equal(thoughtChainSpeechSource([speechRoot], "missing"), null);
 
 const store = {
   captures: [{ id: "capture-source", content: "来源念起", version: 3 }],

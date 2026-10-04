@@ -1,10 +1,66 @@
 import crypto from "node:crypto";
 import { cleanAttachmentPaths } from "../../shared/attachments/index.mjs";
-import { recordVersion as normalizedVersion } from "../../shared/validation/index.mjs";
+import {
+  recordVersion as normalizedVersion,
+  safeText
+} from "../../shared/validation/index.mjs";
 export { thoughtTask, thoughtPromptSystem, stripThoughtAnswerLead, thoughtPersonalContext, thoughtChainContext, thoughtDraftInput, thoughtStarterPrompt } from "./prompts.mjs";
 
 const AFTER_COMMIT = Symbol.for("for-now.after-commit");
 const requestDigest = value => crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const isAiAnswer = item => (
+  item?.authorType === "ai"
+  || /^(?:deepseek|codex|openai|model|ai)(?:$|[-_:])/i.test(String(item?.origin || ""))
+  || Boolean(item?.modelDraft)
+  || Boolean(item?.reasoningContent)
+);
+const compareThoughtOccurrence = (left, right) => (
+  String(left?.occurredAt || left?.createdAt || "").localeCompare(
+    String(right?.occurredAt || right?.createdAt || "")
+  )
+  || String(left?.createdAt || "").localeCompare(String(right?.createdAt || ""))
+  || String(left?.id || "").localeCompare(String(right?.id || ""))
+);
+const latestSpeechAnswer = (items, ai) => items
+  .filter(item => (
+    item?.type === "answer"
+    && item.disposition !== "discarded"
+    && Boolean(safeText(item.content, 120_000))
+    && isAiAnswer(item) === ai
+  ))
+  .sort((left, right) => compareThoughtOccurrence(right, left))[0] || null;
+
+export function thoughtChainSpeechSource(thoughts, rootId) {
+  const items = Array.isArray(thoughts) ? thoughts : [];
+  const root = items.find(item => item?.id === rootId && item.type === "question");
+  if (!root) return null;
+  const related = items.filter(item => item?.relatedTo === root.id);
+  const conclusion = latestSpeechAnswer(related, false);
+  const answer = latestSpeechAnswer(related, true);
+  const sections = [
+    { kind: "question", label: "我的问题", item: root },
+    ...(conclusion ? [{ kind: "conclusion", label: "我的结论", item: conclusion }] : []),
+    ...(answer ? [{ kind: "answer", label: "专属回答", item: answer }] : [])
+  ].flatMap(({ kind, label, item }) => {
+    const content = safeText(item.content, 120_000);
+    return content ? [{ kind, label, content }] : [];
+  });
+  return {
+    source: root,
+    sourceVersion: normalizedVersion(root.version),
+    sourceVersions: {
+      question: { id: root.id, version: normalizedVersion(root.version) },
+      ...(conclusion ? {
+        conclusion: { id: conclusion.id, version: normalizedVersion(conclusion.version) }
+      } : {}),
+      ...(answer ? {
+        answer: { id: answer.id, version: normalizedVersion(answer.version) }
+      } : {})
+    },
+    sections
+  };
+}
+
 export function thoughtTaskResult(thoughts, task) {
   if (!Array.isArray(thoughts) || !task?.id || !task?.targetId || !task?.resultId) return null;
   if (task.kind === "thoughtAnswer") {

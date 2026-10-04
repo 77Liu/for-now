@@ -34,6 +34,7 @@ const scheduled = [];
 let clock = new Date("2026-10-02T01:00:00.000Z");
 let attachmentSequence = 0;
 let trashSequence = 0;
+let activeThoughtChainAsset = null;
 
 const now = () => clock.toISOString();
 const accountId = () => context.getStore();
@@ -57,13 +58,41 @@ const emptyStore = (content = "同一段朗读文字") => ({
     id: "question-1",
     type: "question",
     content: "为什么要记录？",
-    version: 1
+    authorType: "user",
+    version: 4,
+    createdAt: "2026-10-02T00:00:00.000Z",
+    occurredAt: "2026-10-02T00:00:00.000Z"
   }, {
     id: "answer-1",
     type: "answer",
     relatedTo: "question-1",
     content: "**为了**看见变化。",
-    version: 1
+    modelDraft: "不得进入整链朗读的模型草稿",
+    reasoningContent: "不得进入整链朗读的模型思考",
+    authorType: "ai",
+    version: 1,
+    createdAt: "2026-10-02T03:00:00.000Z",
+    occurredAt: "2026-10-02T03:00:00.000Z"
+  }, {
+    id: "conclusion-1",
+    type: "answer",
+    relatedTo: "question-1",
+    content: "持续记录，而不是追求一次想清楚。",
+    authorType: "user",
+    version: 2,
+    createdAt: "2026-10-02T02:00:00.000Z",
+    occurredAt: "2026-10-02T02:00:00.000Z"
+  }, {
+    id: "answer-draft-only",
+    type: "answer",
+    relatedTo: "question-1",
+    content: "",
+    modelDraft: "只有草稿的回答不得进入整链朗读",
+    reasoningContent: "草稿私有思考",
+    authorType: "ai",
+    version: 7,
+    createdAt: "2026-10-02T04:00:00.000Z",
+    occurredAt: "2026-10-02T04:00:00.000Z"
   }],
   speechCache: [],
   trash: [],
@@ -152,6 +181,13 @@ const request = (overrides = {}, generate = synthesize) => cache.synthesize({
   sourceType: "capture",
   sourceId: "capture-1",
   sourceVersion: 2,
+  voice: "voice-a",
+  generationRate: -10,
+  ...overrides
+}, generate);
+const thoughtChainRequest = (overrides = {}, generate = synthesize) => cache.synthesizeThoughtChain({
+  thoughtChainId: "question-1",
+  sourceVersion: 4,
   voice: "voice-a",
   generationRate: -10,
   ...overrides
@@ -362,6 +398,82 @@ await context.run("account-a", async () => {
 });
 
 await context.run("account-a", async () => {
+  const callsBeforeChain = providerCalls.length;
+  const first = await thoughtChainRequest();
+  assert.equal(first.cacheStatus, "miss");
+  assert.equal(
+    providerCalls.at(-1).text,
+    "我的问题：现在为什么要记录？ 我的结论：持续记录，而不是追求一次想清楚。 专属回答：为了看见变化。"
+  );
+  assert.doesNotMatch(providerCalls.at(-1).text, /模型草稿|模型思考|草稿私有思考/);
+  assert.equal(providerCalls.length, callsBeforeChain + 1);
+  const firstEntry = (await repository.read()).speechCache.find(entry => entry.id === first.assetId);
+  assert.deepEqual(firstEntry.sourceVersions, {
+    question: { id: "question-1", version: 4 },
+    conclusion: { id: "conclusion-1", version: 2 },
+    answer: { id: "answer-1", version: 2 }
+  });
+
+  const repeated = await thoughtChainRequest();
+  assert.equal(repeated.cacheStatus, "hit");
+  assert.equal(repeated.attachmentPath, first.attachmentPath);
+  assert.equal(providerCalls.length, callsBeforeChain + 1, "repeated chain synthesis must not add provider or metered usage calls");
+
+  const privateOnlyChange = structuredClone(stores.get("account-a"));
+  Object.assign(privateOnlyChange.thoughts.find(item => item.id === "answer-1"), {
+    modelDraft: "已变化但不得朗读的模型草稿",
+    reasoningContent: "已变化但不得朗读的模型思考",
+    version: 3
+  });
+  stores.set("account-a", privateOnlyChange);
+  assert.equal((await thoughtChainRequest()).cacheStatus, "hit");
+  assert.equal(providerCalls.length, callsBeforeChain + 1);
+  assert.equal(
+    (await repository.read()).speechCache.find(entry => entry.id === first.assetId).sourceVersions.answer.version,
+    3,
+    "a text-identical hit must refresh the bound content versions"
+  );
+
+  const contentChange = structuredClone(stores.get("account-a"));
+  Object.assign(contentChange.thoughts.find(item => item.id === "conclusion-1"), {
+    content: "持续记录，也要定期形成自己的结论。",
+    version: 3
+  });
+  contentChange.thoughts.find(item => item.id === "question-1").version = 5;
+  stores.set("account-a", contentChange);
+  await assert.rejects(
+    thoughtChainRequest({ sourceVersion: 4 }),
+    error => error.code === "SPEECH_SOURCE_STALE" && error.statusCode === 409
+  );
+  await assert.rejects(
+    cache.readAudio({ id: first.assetId }),
+    error => error.code === "SPEECH_ASSET_INVALID" && error.statusCode === 410
+  );
+  const changed = await thoughtChainRequest({ sourceVersion: 5 });
+  assert.equal(changed.cacheStatus, "miss");
+  assert.equal(providerCalls.length, callsBeforeChain + 2, "included content changes must invalidate chain audio");
+  assert.equal(accountFiles().has(first.attachmentPath), false);
+
+  const beforeRegenerate = (await repository.read()).speechCache.find(entry => entry.id === changed.assetId);
+  const regenerated = await thoughtChainRequest({ sourceVersion: 5, regenerate: true });
+  assert.equal(regenerated.cacheStatus, "miss");
+  assert.equal(providerCalls.length, callsBeforeChain + 3);
+  assert.notEqual(regenerated.attachmentPath, beforeRegenerate.attachmentPath);
+  assert.equal(accountFiles().has(beforeRegenerate.attachmentPath), false);
+  activeThoughtChainAsset = regenerated;
+});
+
+await context.run("account-b", async () => {
+  const callsBeforeAccount = providerCalls.length;
+  const isolated = await thoughtChainRequest();
+  assert.equal(isolated.cacheStatus, "miss");
+  assert.match(isolated.attachmentPath, /account-b/);
+  assert.equal(providerCalls.length, callsBeforeAccount + 1, "thought-chain audio must remain account isolated");
+  assert.equal((await thoughtChainRequest()).cacheStatus, "hit");
+  assert.equal(providerCalls.length, callsBeforeAccount + 1);
+});
+
+await context.run("account-a", async () => {
   const document = structuredClone(stores.get("account-a"));
   const asset = document.speechCache.find(entry => entry.sourceType === "capture");
   document.captures[0].content = "再次变化";
@@ -421,17 +533,40 @@ await context.run("account-a", async () => {
   assert.ok(paths.every(attachmentPath => !accountFiles().has(attachmentPath)));
   assert.equal((await repository.read()).speechCache.some(item => item.sourceId === "capture-1"), false);
 
+  const deletedConclusion = await repository.update(store => (
+    mutations.moveThoughtBlockToTrash(store, "conclusion-1")
+  ));
+  await assert.rejects(
+    cache.readAudio({ id: activeThoughtChainAsset.assetId }),
+    error => error.code === "SPEECH_ASSET_INVALID" && error.statusCode === 410
+  );
+  const conclusionPreview = await commands.preview([deletedConclusion.id]);
+  assert.ok(
+    conclusionPreview.attachmentPaths.includes(activeThoughtChainAsset.attachmentPath),
+    "permanently deleting a bound thought block must include its stale chain audio"
+  );
+  await commands.restore(deletedConclusion.id);
+  const restoredRoot = (await repository.read()).thoughts.find(item => item.id === "question-1");
+  const restoredChain = await thoughtChainRequest({ sourceVersion: restoredRoot.version });
+  assert.equal(restoredChain.cacheStatus, "hit", "recoverable block restoration must reuse text-identical chain audio");
+  assert.equal(restoredChain.attachmentPath, activeThoughtChainAsset.attachmentPath);
+
   const thoughtTrash = await repository.update(store => (
     mutations.moveThoughtChainToTrash(store, "question-1")
   ));
   const thoughtPaths = (await repository.read()).speechCache
-    .filter(item => item.sourceType === "thoughtAnswer" && item.sourceId === "answer-1")
+    .filter(item => (
+      (item.sourceType === "thoughtAnswer" && item.sourceId === "answer-1")
+      || (item.sourceType === "thoughtChain" && item.sourceId === "question-1")
+    ))
     .map(item => item.attachmentPath);
   const thoughtPreview = await commands.preview([thoughtTrash.id]);
   assert.deepEqual(new Set(thoughtPreview.attachmentPaths), new Set(thoughtPaths));
   const thoughtPurge = await commands.purge([thoughtTrash.id], thoughtPreview.planHash);
   assert.deepEqual(new Set(thoughtPurge.attachments), new Set(thoughtPaths));
-  assert.equal((await repository.read()).speechCache.some(item => item.sourceId === "answer-1"), false);
+  assert.equal((await repository.read()).speechCache.some(item => (
+    item.sourceId === "answer-1" || item.sourceId === "question-1"
+  )), false);
 });
 
 await context.run("account-c", async () => {
