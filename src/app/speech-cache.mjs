@@ -4,7 +4,7 @@ import {
   readableSpeechText,
   speechTextForCapture
 } from "../shared/speech/index.mjs";
-import { renderPrompt } from "../shared/prompts/index.mjs";
+import { optionalPromptText, renderPrompt } from "../shared/prompts/index.mjs";
 
 const ATTACHMENT_PATH = /^\/attachments\/[\w.-]+$/;
 const SOURCE_TYPES = new Set(["capture", "thoughtAnswer"]);
@@ -113,6 +113,13 @@ function resolveSpeechSource(store, sourceType, sourceId) {
     item?.id === answer.relatedTo && item.type === "question"
   ));
   if (!question) return null;
+  if (!optionalPromptText("thought.speech.wrapper")) {
+    return {
+      source: answer,
+      sourceVersion: recordVersion(answer.version),
+      promptUnavailable: true
+    };
+  }
   const text = readableSpeechText(renderPrompt("thought.speech.wrapper", {
     question: safeText(question.content, 120_000),
     answer: safeText(answer.content || answer.modelDraft, 120_000)
@@ -182,6 +189,9 @@ export function createSpeechCache({
   const sourceIdentity = (store, sourceType, sourceId, ownerHash, voice, generationRate) => {
     const resolved = resolveSpeechSource(store, sourceType, sourceId);
     if (!resolved) throw failure("朗读来源不存在", "SPEECH_SOURCE_MISSING", 404);
+    if (resolved.promptUnavailable) {
+      throw failure("当前提示词版本不支持思绪朗读", "SPEECH_PROMPT_UNAVAILABLE", 503);
+    }
     if (!resolved.text) throw failure("朗读文本不能为空", "INVALID_TTS_TEXT", 400);
     const textHash = hash(resolved.text);
     const normalizedRate = normalizeTtsGenerationRate(generationRate);

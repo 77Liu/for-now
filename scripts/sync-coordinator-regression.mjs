@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createSyncHttp } from "../src/http/sync.mjs";
 import {
   createIncrementalSync,
   createIndexedDbSyncStore,
@@ -782,5 +783,94 @@ await retryTimer();
 assert.equal(retryResumes, 1, "scheduled recovery must retry pending writes before pulling");
 assert.equal(retryPulls, 2);
 retrying.stop();
+
+let speechSyncFixture = null;
+let speechProjectionCalls = 0;
+const speechSyncHttp = createSyncHttp({
+  repository: {
+    async readSyncSnapshot() {
+      return structuredClone(speechSyncFixture);
+    }
+  },
+  publicState(document) {
+    speechProjectionCalls += 1;
+    return { speech: structuredClone(document.publicSpeech) };
+  }
+});
+async function readSpeechSync(cursor) {
+  let response = null;
+  await speechSyncHttp.handleV1(
+    { method: "GET" },
+    {},
+    new URL(`http://local.test/api/v1/sync?cursor=${cursor}`),
+    {
+      success(_res, status, data) {
+        response = { status, data };
+        return true;
+      },
+      error(_res, status, message, code, details) {
+        response = { status, error: { message, code, details } };
+        return true;
+      }
+    }
+  );
+  return response;
+}
+const speechAsset = id => ({
+  id,
+  sourceType: "capture",
+  sourceId: "capture-1",
+  sourceVersion: 1
+});
+for (const scenario of [{
+  after: 0,
+  cursor: 1,
+  changeType: "create",
+  assets: [speechAsset("speech-added")]
+}, {
+  after: 1,
+  cursor: 2,
+  changeType: "update",
+  assets: [speechAsset("speech-replaced")]
+}, {
+  after: 2,
+  cursor: 3,
+  changeType: "delete",
+  assets: []
+}]) {
+  speechSyncFixture = {
+    document: {
+      speechCache: [{ attachmentPath: "/attachments/private.tts.mp3" }],
+      publicSpeech: {
+        configured: true,
+        defaultVoice: "voice-a",
+        voices: [],
+        supportedAsrMimeTypes: [],
+        assets: scenario.assets
+      }
+    },
+    metadata: {
+      sync: {
+        cursor: scenario.cursor,
+        changes: [{
+          cursor: scenario.cursor,
+          domain: "speechCache",
+          resourceId: scenario.assets[0]?.id || "speech-replaced",
+          version: 0,
+          changeType: scenario.changeType,
+          operationId: "",
+          traceId: "",
+          committedAt: "2026-10-04T00:00:00.000Z"
+        }],
+        operations: []
+      }
+    }
+  };
+  const response = await readSpeechSync(scenario.after);
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.data.snapshot.speech.assets, scenario.assets);
+  assert.equal(Object.hasOwn(response.data.snapshot, "speechCache"), false);
+}
+assert.equal(speechProjectionCalls, 3, "speech sync snapshots must reuse the public state projection");
 
 console.log("Sync coordinator contracts passed: durable-first writes, stable keys, resource serialization, parallel resources, deterministic health metrics, recovery resnapshots, disabled-to-enabled gray recovery, stale-session rejection, cross-tab invalidation, incremental cursors, retry/failure classification, audit minimization and account isolation.");

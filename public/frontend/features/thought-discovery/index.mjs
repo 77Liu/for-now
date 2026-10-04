@@ -289,5 +289,6 @@ export {
   commentSubmissionIntent,
   copyAnnotationContent,
   groupAnnotationLineCounts,
+  submitAnnotationAssistantTask,
   sortAnnotationItemsByPosition
 } from "./annotation-tools.mjs";

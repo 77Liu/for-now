@@ -40,6 +40,7 @@ export {
   commentSubmissionIntent,
   copyAnnotationContent,
   groupAnnotationLineCounts,
+  submitAnnotationAssistantTask,
   sortAnnotationItemsByPosition
 } from "./thought-discovery/index.mjs";
 export { createDownloadDescriptor } from "./export/index.mjs";

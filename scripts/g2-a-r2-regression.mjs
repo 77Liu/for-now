@@ -21,6 +21,7 @@ import {
   createThoughtDiscoveryController,
   groupAnnotationLineCounts,
   mergeBackgroundTaskResult,
+  submitAnnotationAssistantTask,
   sortAnnotationItemsByPosition
 } from "../public/frontend/features/thought-discovery/index.mjs";
 
@@ -484,6 +485,48 @@ assert.deepEqual(commentSubmissionIntent("  @神鸡：请核对反例  "), {
   asksAssistant: true,
   message: "请核对反例"
 });
+const assistantSubmissionEvents = [];
+const notificationRefreshFailure = new Error("notification refresh failed");
+const submittedAssistant = await submitAnnotationAssistantTask({
+  createRequestId: () => "assistant-request-1",
+  persistDraft: async requestId => assistantSubmissionEvents.push(`persist:${requestId}`),
+  submitTask: async requestId => {
+    assistantSubmissionEvents.push(`post:${requestId}`);
+    return { id: "task-1" };
+  },
+  refreshNotifications: async () => {
+    assistantSubmissionEvents.push("refresh");
+    throw notificationRefreshFailure;
+  },
+  scheduleNotificationPoll: () => assistantSubmissionEvents.push("schedule")
+});
+assert.deepEqual(assistantSubmissionEvents, [
+  "persist:assistant-request-1",
+  "post:assistant-request-1",
+  "refresh",
+  "schedule"
+]);
+assert.equal(submittedAssistant.task.id, "task-1");
+assert.equal(submittedAssistant.clientRequestId, "assistant-request-1");
+assert.equal(submittedAssistant.notificationRefreshError, notificationRefreshFailure);
+
+let persistedAssistantRequestId = "";
+await assert.rejects(submitAnnotationAssistantTask({
+  createRequestId: () => "assistant-request-retry",
+  persistDraft: async requestId => { persistedAssistantRequestId = requestId; },
+  submitTask: async requestId => {
+    assert.equal(requestId, "assistant-request-retry");
+    throw new Error("task post failed");
+  }
+}), /task post failed/);
+assert.equal(persistedAssistantRequestId, "assistant-request-retry");
+const retriedAssistant = await submitAnnotationAssistantTask({
+  clientRequestId: persistedAssistantRequestId,
+  createRequestId: () => { throw new Error("retry must reuse the persisted request id"); },
+  persistDraft: async requestId => { persistedAssistantRequestId = requestId; },
+  submitTask: async requestId => ({ id: "task-retried", clientRequestId: requestId })
+});
+assert.equal(retriedAssistant.task.clientRequestId, "assistant-request-retry");
 assert.deepEqual(groupAnnotationLineCounts([
   { hostKey: "content", annotationId: "comment-a", rects: [{ top: 100, left: 20, height: 20 }, { top: 122, left: 20, height: 20 }] },
   { hostKey: "content", annotationId: "comment-b", rects: [{ top: 102, left: 90, height: 20 }] },

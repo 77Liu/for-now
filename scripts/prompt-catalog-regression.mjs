@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPromptCatalog } from "../src/infrastructure/prompt-catalog/index.mjs";
-import { installPromptCatalog, promptCatalogMetadata, promptText, renderPrompt } from "../src/shared/prompts/index.mjs";
+import { installPromptCatalog, optionalPromptText, promptCatalogMetadata, promptText, renderPrompt } from "../src/shared/prompts/index.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const current = installPromptCatalog(await loadPromptCatalog({ rootDir: root }));
@@ -30,6 +30,10 @@ const previous = await loadPromptCatalog({ rootDir: root, requestedVersion: "202
 assert.equal(previous.sha256, "24d2a34c8f6a72ee735ccd4b48e91ce8ddad6e57da37fdf6d095e8aa3be87e90");
 assert.equal(previous.prompts["capture.transcription.condense"], undefined);
 assert.equal(previous.prompts["thought.speech.wrapper"], undefined);
+installPromptCatalog(previous);
+assert.equal(optionalPromptText("thought.speech.wrapper"), "");
+assert.throws(() => promptText("thought.speech.wrapper"), /Prompt is missing/);
+installPromptCatalog(current);
 
 const fixture = await fs.mkdtemp(path.join(os.tmpdir(), "growth-prompts-"));
 try {

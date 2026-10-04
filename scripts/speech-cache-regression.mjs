@@ -317,6 +317,51 @@ await context.run("account-a", async () => {
 });
 
 await context.run("account-a", async () => {
+  installPromptCatalog({
+    version: "2026.10.04.1",
+    sha256: "catalog-without-thought-speech",
+    prompts: {}
+  });
+  try {
+    const assets = publicSpeechAssets(await repository.read(), {
+      ownerHash: digest("account-a"),
+      currentTime: now(),
+      hash: digest
+    });
+    assert.ok(assets.some(asset => asset.sourceType === "capture"));
+    assert.equal(
+      assets.some(asset => asset.sourceType === "thoughtAnswer"),
+      false,
+      "unsupported thought speech assets must be omitted from public state"
+    );
+    await assert.rejects(cache.synthesize({
+      sourceType: "thoughtAnswer",
+      sourceId: "answer-1",
+      sourceVersion: 2,
+      voice: "voice-a",
+      generationRate: -10
+    }, synthesize), error => (
+      error.code === "SPEECH_PROMPT_UNAVAILABLE"
+      && error.statusCode === 503
+    ));
+    assert.equal(
+      (await request({ sourceVersion: 4 })).cacheStatus,
+      "hit",
+      "capture speech remains available without the thought wrapper prompt"
+    );
+    assert.equal(providerCalls.length, 9);
+  } finally {
+    installPromptCatalog({
+      version: "speech-cache-test",
+      sha256: "speech-cache-test",
+      prompts: {
+        "thought.speech.wrapper": "问题：{{question}}\n回答：{{answer}}"
+      }
+    });
+  }
+});
+
+await context.run("account-a", async () => {
   const document = structuredClone(stores.get("account-a"));
   const asset = document.speechCache.find(entry => entry.sourceType === "capture");
   document.captures[0].content = "再次变化";

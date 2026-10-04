@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { once } from "node:events";
 import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
@@ -544,6 +545,116 @@ try {
   assert.ok(providerCalls.some(call => call.pathname === "/visual" && /Credential=visual-test-ak\//.test(call.headers.authorization || "")));
   assert.ok(providerCalls.some(call => call.pathname === "/deepseek"));
   assert.doesNotMatch(stderr, /ERR_HTTP_HEADERS_SENT/);
+
+  const oldCatalogPort = await freePort();
+  const oldCatalogDataDir = await fs.mkdtemp(path.join(os.tmpdir(), "for-now-old-speech-catalog-"));
+  const ownerHash = crypto.createHash("sha256").update("local").digest("hex");
+  await fs.writeFile(path.join(oldCatalogDataDir, "store.json"), `${JSON.stringify({
+    version: 16,
+    captures: [{
+      id: "old-catalog-capture",
+      version: 1,
+      content: "旧目录下捕念朗读仍然可用",
+      tags: [],
+      attachmentPaths: [],
+      annotations: [],
+      annotationDrift: []
+    }],
+    thoughts: [{
+      id: "old-catalog-question",
+      type: "question",
+      content: "旧目录为什么不能生成思绪朗读？",
+      version: 1
+    }, {
+      id: "old-catalog-answer",
+      type: "answer",
+      relatedTo: "old-catalog-question",
+      content: "因为缺少对应提示词。",
+      version: 1
+    }],
+    speechCache: [{
+      id: "old-thought-asset",
+      cacheKey: "old-thought-asset",
+      ownerHash,
+      sourceType: "thoughtAnswer",
+      sourceId: "old-catalog-answer",
+      sourceVersion: 1,
+      textHash: "historical-thought-text",
+      voice: "zh_male_shaonianzixin_uranus_bigtts",
+      generationRate: -10,
+      attachmentPath: "/attachments/old-thought.tts.mp3",
+      mimeType: "audio/mpeg",
+      bytes: 64,
+      createdAt: "2026-10-04T00:00:00.000Z",
+      expiresAt: "2026-11-03T00:00:00.000Z"
+    }],
+    trash: [],
+    attachmentCleanup: []
+  }, null, 2)}\n`);
+  const oldCatalogApp = spawn(process.execPath, ["server.mjs"], {
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      NODE_ENV: "test",
+      PORT: String(oldCatalogPort),
+      DATA_DIR: oldCatalogDataDir,
+      AUTH_REQUIRED: "0",
+      PERSISTENCE_BACKEND: "json",
+      ATTACHMENT_STORAGE: "local",
+      PROMPT_CATALOG_VERSION: "2026.10.04.1",
+      VOLCENGINE_SPEECH_API_KEY: "speech-test-key",
+      VOLCENGINE_TTS_ENDPOINT: `http://127.0.0.1:${provider.address().port}/tts`
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  let oldCatalogStderr = "";
+  oldCatalogApp.stderr.on("data", chunk => { oldCatalogStderr += chunk; });
+  const oldCatalogBase = `http://127.0.0.1:${oldCatalogPort}`;
+  try {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (await fetch(`${oldCatalogBase}/readyz`).then(response => response.ok).catch(() => false)) break;
+      if (attempt === 99) throw new Error(`旧 prompt catalog 服务未就绪\n${oldCatalogStderr}`);
+      await new Promise(resolve => setTimeout(resolve, 30));
+    }
+    const oldStateResponse = await fetch(`${oldCatalogBase}/api/state`);
+    assert.equal(oldStateResponse.status, 200, oldCatalogStderr);
+    const oldState = await oldStateResponse.json();
+    assert.equal(oldState.speech.assets.some(asset => asset.sourceType === "thoughtAnswer"), false);
+
+    const callsBeforeOldCatalogSpeech = providerCalls.filter(call => call.pathname === "/tts").length;
+    const oldCaptureSpeech = await fetch(`${oldCatalogBase}/api/speech/synthesize`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sourceType: "capture",
+        sourceId: "old-catalog-capture",
+        sourceVersion: 1
+      })
+    });
+    assert.equal(oldCaptureSpeech.status, 200, oldCatalogStderr);
+    await oldCaptureSpeech.arrayBuffer();
+    assert.equal(providerCalls.filter(call => call.pathname === "/tts").length, callsBeforeOldCatalogSpeech + 1);
+
+    const unavailableThoughtSpeech = await fetch(`${oldCatalogBase}/api/speech/synthesize`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        sourceType: "thoughtAnswer",
+        sourceId: "old-catalog-answer",
+        sourceVersion: 1
+      })
+    });
+    assert.equal(unavailableThoughtSpeech.status, 503);
+    assert.equal((await unavailableThoughtSpeech.json()).code, "SPEECH_PROMPT_UNAVAILABLE");
+    assert.equal(providerCalls.filter(call => call.pathname === "/tts").length, callsBeforeOldCatalogSpeech + 1);
+    const oldStateAfterCapture = await (await fetch(`${oldCatalogBase}/api/state`)).json();
+    assert.ok(oldStateAfterCapture.speech.assets.some(asset => asset.sourceType === "capture"));
+    assert.equal(oldStateAfterCapture.speech.assets.some(asset => asset.sourceType === "thoughtAnswer"), false);
+  } finally {
+    oldCatalogApp.kill("SIGTERM");
+    await once(oldCatalogApp, "exit").catch(() => {});
+    await fs.rm(oldCatalogDataDir, { recursive: true, force: true });
+  }
 } finally {
   app.kill("SIGTERM");
   await once(app, "exit").catch(() => {});

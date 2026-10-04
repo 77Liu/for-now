@@ -47,6 +47,38 @@ export function commentSubmissionIntent(value, assistantName = "神鸡") {
   return { text, asksAssistant, message };
 }
 
+export async function submitAnnotationAssistantTask({
+  clientRequestId = "",
+  createRequestId,
+  persistDraft,
+  submitTask,
+  refreshNotifications = async () => {},
+  scheduleNotificationPoll = () => {}
+}) {
+  if (typeof createRequestId !== "function"
+    || typeof persistDraft !== "function"
+    || typeof submitTask !== "function"
+    || typeof refreshNotifications !== "function"
+    || typeof scheduleNotificationPoll !== "function") {
+    throw new TypeError("Annotation assistant submission requires request, draft and notification handlers");
+  }
+  const requestId = String(clientRequestId || createRequestId());
+  await persistDraft(requestId);
+  const task = await submitTask(requestId);
+  let notificationRefreshError = null;
+  try {
+    await refreshNotifications();
+  } catch (error) {
+    notificationRefreshError = error;
+  }
+  try {
+    scheduleNotificationPoll();
+  } catch (error) {
+    notificationRefreshError ||= error;
+  }
+  return { task, clientRequestId: requestId, notificationRefreshError };
+}
+
 export function groupAnnotationLineCounts(entries, tolerance = 3) {
   const normalized = (Array.isArray(entries) ? entries : []).flatMap(entry => {
     const rects = Array.isArray(entry?.rects) ? entry.rects : [];

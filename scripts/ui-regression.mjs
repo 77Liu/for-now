@@ -402,6 +402,8 @@ const mockFetch = `
   window.__thoughtAnnotationSaves = 0;
   window.__shenjiSaves = 0;
   window.__annotationTaskPayloads = [];
+  window.__annotationTaskAttempts = [];
+  window.__failNextAnnotationTaskPost = false;
   window.__onboardingSaves = 0;
   window.__onboardingV2Saves = 0;
   window.__onboardingSchemaRequests = 0;
@@ -1354,7 +1356,11 @@ const mockFetch = `
     if (url === "/api/ai-tasks" && init.method === "POST") {
       const payload=JSON.parse(init.body),task={id:"task-"+(window.__aiTasks.length+1),kind:payload.kind,resourceType:payload.resourceType||(payload.kind==="annotationShenji"?"":"thought"),targetId:payload.targetId,subtargetId:payload.subtargetId||"",inputVersion:payload.inputVersion||0,subtargetVersion:payload.subtargetVersion||0,status:"queued",createdAt:new Date().toISOString()};
       const titles={thoughtAnswer:"思绪回答",followUpAnswer:"追问回答",annotationShenji:"批注神鸡",contentImageUnderstanding:"图片理解"};
-      if(payload.kind==="annotationShenji")window.__annotationTaskPayloads.push(payload);
+      if(payload.kind==="annotationShenji"){
+        window.__annotationTaskAttempts.push(payload);
+        if(window.__failNextAnnotationTaskPost){window.__failNextAnnotationTaskPost=false;return json({error:"神鸡任务提交失败"},503)}
+        window.__annotationTaskPayloads.push(payload)
+      }
       window.__aiTasks.unshift(task);window.__notifications.unshift({id:"notification-"+task.id,taskId:task.id,resourceType:task.resourceType,targetId:task.targetId,subtargetId:task.subtargetId,kind:"aiTask",status:"queued",title:titles[task.kind],message:"已进入后台队列",createdAt:task.createdAt,updatedAt:task.createdAt,readAt:""});
       if(window.__holdAiTasks)task.status="running";
       else setTimeout(()=>window.__completeAiTask(task,payload),260);
@@ -2502,8 +2508,24 @@ try {
   assert.equal(await waitUntil(`!document.querySelector('[data-comment-card="analysis-annotation-1"]').classList.contains("emphasis-card")&&document.querySelector(".analysis-content .comment-anchor")?.classList.contains("comment-anchor")`),true);
   await evaluate(`(()=>{const text=document.querySelector('.analysis-content .comment-anchor[data-annotation-id="analysis-annotation-1"]').firstChild,range=document.createRange(),selection=getSelection();range.selectNodeContents(text);selection.removeAllRanges();selection.addRange(range);document.dispatchEvent(new MouseEvent("mouseup",{bubbles:true}));return true})()`);
   assert.equal(await waitUntil(`!document.querySelector("#selection-tools").hidden`),true);
-  await evaluate(`(()=>{document.querySelector('[data-selection-action="comment"]').click();const input=document.querySelector("#comment-text");input.value="@神鸡：找出这条判断的反例";input.dispatchEvent(new Event("input",{bubbles:true}));document.querySelector("#comment-composer").requestSubmit();return true})()`);
-  assert.equal(await waitUntil(`window.__annotationSaves===2&&window.__annotationTaskPayloads.length===1`),true);
+  await evaluate(`(()=>{window.__failNextAnnotationTaskPost=true;document.querySelector('[data-selection-action="comment"]').click();const input=document.querySelector("#comment-text");input.value="@神鸡：找出这条判断的反例";input.dispatchEvent(new Event("input",{bubbles:true}));document.querySelector("#comment-composer").requestSubmit();return true})()`);
+  assert.equal(await waitUntil(`window.__annotationSaves===2&&window.__annotationTaskAttempts.length===1&&document.querySelector('[data-shenji-form="analysis-annotation-2"]')?.dataset.requestId`),true);
+  const failedDirectAssistant=await evaluate(`(()=>{const key="analysis:analysis-1|analysis-annotation-2",draft=JSON.parse(sessionStorage.getItem("cike:annotation-drafts:user-1")||"{}")[key],form=document.querySelector('[data-shenji-form="analysis-annotation-2"]');return{attemptId:window.__annotationTaskAttempts[0].clientRequestId,draftId:draft?.requestId||"",formId:form?.dataset.requestId||"",successfulPosts:window.__annotationTaskPayloads.length}})()`);
+  assert.ok(failedDirectAssistant.attemptId);
+  assert.deepEqual(failedDirectAssistant,{
+    attemptId:failedDirectAssistant.attemptId,
+    draftId:failedDirectAssistant.attemptId,
+    formId:failedDirectAssistant.attemptId,
+    successfulPosts:0
+  });
+  await evaluate(`(()=>{window.__failNextStateRefresh=true;document.querySelector('[data-shenji-form="analysis-annotation-2"]').requestSubmit();return true})()`);
+  assert.equal(await waitUntil(`window.__annotationTaskPayloads.length===1&&!document.querySelector('[data-shenji-form="analysis-annotation-2"]').dataset.requestId`),true);
+  assert.deepEqual(await evaluate(`(()=>{const attempts=window.__annotationTaskAttempts;return{attempts:attempts.length,sameRequestId:attempts[0].clientRequestId===attempts[1].clientRequestId,draftRetained:Boolean(JSON.parse(sessionStorage.getItem("cike:annotation-drafts:user-1")||"{}")["analysis:analysis-1|analysis-annotation-2"]),toast:document.querySelector("#toast").textContent}})()`),{
+    attempts:2,
+    sameRequestId:true,
+    draftRetained:false,
+    toast:"神鸡任务已提交，但通知刷新失败"
+  });
   assert.deepEqual(await evaluate(`(()=>{const payload=window.__annotationTaskPayloads[0];return{kind:payload.kind,subtargetId:payload.subtargetId,message:payload.payload.message,comment:window.__analyses[0].annotations.find(item=>item.id==="analysis-annotation-2").text}})()`),{kind:"annotationShenji",subtargetId:"analysis-annotation-2",message:"找出这条判断的反例",comment:"@神鸡：找出这条判断的反例"});
   const commentLineAggregated=await waitUntil(`[...document.querySelectorAll("[data-comment-line]")].some(item=>item.textContent==="2")`);
   assert.equal(commentLineAggregated,true,JSON.stringify(await evaluate(`({badges:[...document.querySelectorAll("[data-comment-line]")].map(item=>({text:item.textContent,top:item.style.top})),marks:[...document.querySelectorAll('.analysis-content .comment-anchor')].map(item=>({id:item.dataset.annotationId,text:item.textContent,rects:[...item.getClientRects()].map(rect=>({top:rect.top,height:rect.height}))})),annotations:window.__analyses[0].annotations.map(item=>({id:item.id,kind:item.kind,start:item.start,end:item.end}))})`)));

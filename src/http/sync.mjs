@@ -60,6 +60,9 @@ function publicSnapshot(state, changes) {
     snapshot.aiTasks = structuredClone(state.aiTasks);
     snapshot.notificationUnread = state.notificationUnread;
   }
+  if (domains.has("speechCache")) {
+    snapshot.speech = structuredClone(state.speech);
+  }
   if ([...domains].some(domain => INSIGHT_DOMAINS.has(domain))) {
     snapshot.clusters = structuredClone(state.clusters);
     snapshot.insights = structuredClone(state.insights);
