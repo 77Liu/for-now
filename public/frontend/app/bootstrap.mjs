@@ -90,7 +90,7 @@ function envelopeData(value) {
   return value.data;
 }
 
-async function initialSnapshot() {
+async function initialSnapshot({ stylesReady = Promise.resolve() } = {}) {
   markStartup("bootstrapStart");
   try {
     const [session, testConfigResult] = await Promise.all([
@@ -105,19 +105,23 @@ async function initialSnapshot() {
     }
     markStartup("loadStart");
     const route = resolveApplicationRoute(location, { basePath });
-    const [startupResult, routeResult] = await Promise.all([
-      requestJson("/api/v1/startup"),
-      requestJson(routeStateUrl(route))
-    ]);
+    const routeRequest = requestJson(routeStateUrl(route)).then(
+      value => ({ value }),
+      error => ({ error })
+    );
+    const startupResult = await requestJson("/api/v1/startup");
     const meta = envelopeData(startupResult);
+    markStartup("coreSnapshotReady");
+    await stylesReady;
+    const visibleShell = revealAuthenticatedShell(session, { onboardingV2: meta.onboardingV2 });
+    const routeResult = await routeRequest;
+    if (routeResult.error) throw routeResult.error;
     const state = {
-      ...envelopeData(routeResult),
+      ...envelopeData(routeResult.value),
       onboardingV2: meta.onboardingV2,
       notificationUnread: meta.notificationUnread,
       quoteTags: meta.quoteTags
     };
-    markStartup("coreSnapshotReady");
-    const visibleShell = revealAuthenticatedShell(session, state);
     return { session, testConfig, state, meta, route, startupMarks: { ...startupMarks }, visibleShell };
   } catch (error) {
     revealAuthGate();
@@ -126,8 +130,8 @@ async function initialSnapshot() {
 }
 
 export async function startApplication() {
-  await loadR8Styles();
-  const initial = await initialSnapshot();
+  const stylesReady = loadR8Styles();
+  const initial = await initialSnapshot({ stylesReady });
   const runtime = await import("./runtime.mjs");
   return runtime.startApplication(initial);
 }
