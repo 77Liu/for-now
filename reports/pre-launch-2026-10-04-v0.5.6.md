@@ -2,13 +2,13 @@
 
 日期：2026-10-04
 
-状态：**第一轮通过，候选待冻结，尚未发布**
+状态：**第二轮与 Release 门通过，等待 Preview 发布**
 
 生产基线：`v0.5.5@fed30539d3d67841ba06881e0fe5c8b661ba3fd0`
 
 候选分支：`feat/v0.5.6-r8`
 
-候选提交：待文档收口后冻结
+运行代码候选：`539ccf3399c06a8c7e11f19b76f9c598f9cefbcf`
 
 ## 发布目标
 
@@ -96,7 +96,8 @@
 4. 非字符串关系导出账户 ID 可绕过 Store/文档哈希查找；改为拒绝并统一键。
 5. 关系导出 Store 和账户文档哈希未实际验证；补读取、比对和篡改回归。
 
-独立双人复核未留下 Critical/Major 问题。最终候选固定后仍需执行第二轮审查。
+两名独立审阅者交叉确认候选问题；上述问题修正后，专项、系统和 Release 门
+均已通过，未留下 Critical/Major 问题。
 
 ## 自动验证
 
@@ -114,7 +115,10 @@
 | `npm run test:web-budget` | 通过；阻塞 CSS 243116 B，Fast 4G 稳定首页 718.2 ms |
 | `npm run test:url-history` | 通过；包含首页来源返回 |
 | `npm run test:system` | 通过；312007 ms |
-| `npm run test:journeys:release` | 待冻结候选后执行 |
+| `npm run test:journeys:release` | 通过；337888 ms |
+| Release 子项：完整系统 | 通过；321983 ms |
+| Release 子项：PostgreSQL 16.14 | 通过；14372 ms |
+| Release 子项：生产依赖审计 | 通过；1533 ms，0 漏洞 |
 
 UI 自动化覆盖：
 
@@ -151,7 +155,7 @@ UI 自动化覆盖：
 - [x] 首页、思绪列表和详情实现
 - [x] 代码审查问题关闭
 - [x] 里程碑系统门
-- [ ] 固定候选与第二轮 Release 门
+- [x] 固定候选与第二轮 Release 门
 - [ ] Preview 部署与公网多视口验收
 - [ ] `v0.5.6` 标签与 Gitee Release
 - [ ] 生产即时备份、恢复、部署、冒烟与观察
@@ -165,3 +169,12 @@ UI 自动化覆盖：
 - 数据回滚：本版不迁移业务 schema；生产发布前备份仍是数据恢复依据。
 - 前端缓存：`cike-shell-v0.5.6-r8-1` 与上一缓存键隔离，回滚提交会重新安装
   上一 Service Worker。
+
+## Release 门重试记录
+
+| 次序 | 结果 | 原因与处置 |
+| --- | --- | --- |
+| 1 | NO-GO | 业务断言完成后，回归临时日志目录清理命中瞬时 `ENOTEMPTY`；为 `fs.rm` 增加有限重试，连续两次专项通过 |
+| 2 | NO-GO | 候选工作树未包含被忽略的 PostgreSQL 16 工具目录；确认根工作树已验证工具链并显式传入 `PG_TEST_BIN` |
+| 3 | NO-GO | PostgreSQL 子进程经 `npm` 使用系统签名 Node，Sharp 返回 `IMAGE_PROCESSOR_UNAVAILABLE`；把临时 ad-hoc Node 目录前置到整棵子进程 `PATH` |
+| 4 | 通过 | 同一运行代码候选从头完成完整系统、PostgreSQL 与生产依赖审计 |
