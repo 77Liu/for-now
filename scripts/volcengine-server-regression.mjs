@@ -148,6 +148,7 @@ try {
   assert.equal(state.vision.configured, true);
   assert.equal(state.speech.voices.length, 4);
   assert.ok(state.speech.voices.every(voice => voice.sampleText === "此刻，听见自己的想法，也看见正在发生的生活。"));
+  assert.ok(state.speech.voices.every(voice => voice.samplePath === `/assets/audio/voice-previews/${voice.id}.mp3`));
   const settings = await fetch(`${base}/api/settings`, {
     method: "POST",
     headers: { "content-type": "application/json" },

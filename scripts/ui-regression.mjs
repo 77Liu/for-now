@@ -183,6 +183,7 @@ const mockFetch = `
   };
   window.__speechRequests = [];
   window.__speechPreviewRequests = [];
+  window.__speechStaticPreviewRequests = [];
   window.__speechPlays = [];
   window.__speechPauses = [];
   window.__speechObjectUrls = [];
@@ -941,7 +942,7 @@ const mockFetch = `
       return json({
       version: 15, checkins: empty?[]:window.__checkins, dailyRecords: empty?[]:window.__dailyRecords, captures: empty?[]:window.__captures, journals: empty?[]:window.__journals, thoughts: empty?[]:window.__thoughts,
       chats: empty?[]:[{ id: "chat-1", createdAt: "2026-09-27T01:15:00.000Z", occurredAt: "2026-09-27T04:15:00.000Z", occurredOn: "2026-09-27", message: "**用户问题**", answer: "## 模型回答", reasoningContent: "PRIVATE_CHAT_REASONING" }], books: empty?[]:window.__books, journalDraft: empty?null:window.__journalDraft, keepsakes: empty?[]:window.__keepsakes.map(({originalPath,...item})=>item), quotes: empty?[]:window.__quotes, aiTasks: window.__aiTasks, notifications: window.__notifications, onboarding: window.__onboarding, onboardingV2: window.__onboardingV2,
-      speech:{configured:true,defaultVoice:"zh_male_shaonianzixin_uranus_bigtts",supportedAsrMimeTypes:["audio/mp4","audio/ogg","audio/wav"],voices:[{id:"zh_male_shaonianzixin_uranus_bigtts",label:"少年梓辛 2.0"},{id:"zh_male_m191_uranus_bigtts",label:"云舟 2.0"},{id:"zh_female_vv_uranus_bigtts",label:"Vivi 2.0"},{id:"zh_female_cancan_uranus_bigtts",label:"知性灿灿 2.0"}],assets:empty?[]:window.__speechAssets},vision:{configured:true},
+      speech:{configured:true,defaultVoice:"zh_male_shaonianzixin_uranus_bigtts",supportedAsrMimeTypes:["audio/mp4","audio/ogg","audio/wav"],voices:[{id:"zh_male_shaonianzixin_uranus_bigtts",label:"少年梓辛 2.0",samplePath:"/assets/audio/voice-previews/zh_male_shaonianzixin_uranus_bigtts.mp3"},{id:"zh_male_m191_uranus_bigtts",label:"云舟 2.0"},{id:"zh_female_vv_uranus_bigtts",label:"Vivi 2.0"},{id:"zh_female_cancan_uranus_bigtts",label:"知性灿灿 2.0"}],assets:empty?[]:window.__speechAssets},vision:{configured:true},
       experiments: [], analyses: empty?[]:window.__analyses, customMetrics: [], clusters: [],
       insights: { trends: [
         { metric: "mood", current: 3.5, previous: null, currentCount: 2, previousCount: 0 },
@@ -986,6 +987,10 @@ const mockFetch = `
     if (url === "/api/speech/preview" && init.method === "POST") {
       if(window.__failSpeechPreview){window.__failSpeechPreview=false;return json({error:{message:"PREVIEW_PROVIDER_PRIVATE",code:"SPEECH_PREVIEW_FAILED"}},503)}
       window.__speechPreviewRequests.push(JSON.parse(init.body));
+      return Promise.resolve(new Response(new Uint8Array([0x49,0x44,0x33]),{headers:{"content-type":"audio/mpeg"}}))
+    }
+    if (url === "/assets/audio/voice-previews/zh_male_shaonianzixin_uranus_bigtts.mp3") {
+      window.__speechStaticPreviewRequests.push(url);
       return Promise.resolve(new Response(new Uint8Array([0x49,0x44,0x33]),{headers:{"content-type":"audio/mpeg"}}))
     }
     if (url.startsWith("/api/speech/audio?") && (!init.method || init.method === "GET")) {
@@ -3225,15 +3230,15 @@ try {
     label: "0.90×"
   });
   await evaluate(`document.querySelector("#tts-voice-preview").click();true`);
-  assert.equal(await waitUntil(`window.__speechPreviewRequests.length===1&&!window.__lastSpeechAudio.paused&&document.querySelector("#tts-voice-preview").getAttribute("aria-label")==="停止官方音色试音"`),true);
-  assert.deepEqual(await evaluate(`window.__speechPreviewRequests[0]`),{voice:"zh_male_shaonianzixin_uranus_bigtts"});
+  assert.equal(await waitUntil(`window.__speechStaticPreviewRequests.length===1&&window.__speechPreviewRequests.length===0&&!window.__lastSpeechAudio.paused&&document.querySelector("#tts-voice-preview").getAttribute("aria-label")==="停止官方音色试音"`),true);
+  assert.equal(await evaluate(`window.__speechStaticPreviewRequests[0]`),"/assets/audio/voice-previews/zh_male_shaonianzixin_uranus_bigtts.mp3");
   await evaluate(`(()=>{const select=document.querySelector("#tts-default-voice");window.__previewUrlBeforeSwitch=window.__lastSpeechAudio.src;select.value="zh_male_m191_uranus_bigtts";select.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
   assert.deepEqual(await evaluate(`({stopped:window.__lastSpeechAudio.paused,revoked:window.__speechRevokedUrls.includes(window.__previewUrlBeforeSwitch),name:document.querySelector("#tts-voice-preview").getAttribute("aria-label"),status:document.querySelector("#tts-voice-preview-status").textContent})`),{stopped:true,revoked:true,name:"播放所选官方音色试音",status:""});
   await evaluate(`window.__failSpeechPreview=true;document.querySelector("#tts-voice-preview").click();true`);
   assert.equal(await waitUntil(`document.querySelector("#tts-voice-preview-status").textContent==="试音暂时不可用，请稍后再试。"`),true);
   assert.equal(await evaluate(`!document.body.textContent.includes("PREVIEW_PROVIDER_PRIVATE")`),true);
   await evaluate(`document.querySelector("#tts-voice-preview").click();true`);
-  assert.equal(await waitUntil(`window.__speechPreviewRequests.length===2&&!window.__lastSpeechAudio.paused`),true);
+  assert.equal(await waitUntil(`window.__speechPreviewRequests.length===1&&!window.__lastSpeechAudio.paused`),true);
   await evaluate(`window.__previewUrlBeforeLeave=window.__lastSpeechAudio.src;document.querySelector("#view-settings .mine-back").click();true`);
   assert.deepEqual(await evaluate(`({stopped:window.__lastSpeechAudio.paused,revoked:window.__speechRevokedUrls.includes(window.__previewUrlBeforeLeave),active:document.querySelector("#view-mine").classList.contains("active")})`),{stopped:true,revoked:true,active:true});
   await evaluate(`document.querySelector('#view-mine [data-view="settings"]').click();true`);

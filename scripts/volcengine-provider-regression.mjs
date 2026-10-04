@@ -209,6 +209,7 @@ const speech = createVolcengineSpeechTransport({
 });
 assert.equal(speech.voices.length, 4);
 assert.ok(speech.voices.every(voice => voice.sampleText === "此刻，听见自己的想法，也看见正在发生的生活。"));
+assert.ok(speech.voices.every(voice => voice.samplePath === `/assets/audio/voice-previews/${voice.id}.mp3`));
 assert.equal(speech.defaultVoice, "zh_male_shaonianzixin_uranus_bigtts");
 const synthesized = await speech.synthesize({ text: "测试朗读" });
 assert.deepEqual(synthesized.audio, ttsAudio);

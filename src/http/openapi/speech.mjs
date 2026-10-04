@@ -133,13 +133,14 @@ export const speechComponents = Object.freeze({
   schemas: Object.freeze({
     SpeechVoice: {
       type: "object",
-      required: ["id", "label", "gender", "age", "sampleText"],
+      required: ["id", "label", "gender", "age", "sampleText", "samplePath"],
       properties: {
         id: { type: "string" },
         label: { type: "string" },
         gender: { type: "string", enum: ["male", "female"] },
         age: { type: "string", enum: ["young", "mature"] },
-        sampleText: { type: "string" }
+        sampleText: { type: "string" },
+        samplePath: { type: "string", pattern: "^/assets/audio/voice-previews/[a-z0-9_]+\\.mp3$" }
       },
       additionalProperties: false
     },

@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cike-shell-v0.5.5-comment-voice-1";
+const CACHE_VERSION = "cike-shell-v0.5.5-comment-voice-2";
 const SHELL_ASSETS = [
   "./",
   "index.html",

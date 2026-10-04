@@ -24,6 +24,7 @@ const ASR_CHUNK_BYTES = 256 * 1024;
 const SUCCESS_CODES = new Set([0, 1000, 20000000]);
 const SUPPORTED_ASR_MIME_TYPES = Object.freeze(["audio/mp4", "audio/mpeg", "audio/ogg", "audio/wav"]);
 const TTS_SAMPLE_TEXT = "此刻，听见自己的想法，也看见正在发生的生活。";
+const samplePath = id => `/assets/audio/voice-previews/${id}.mp3`;
 
 const MESSAGE_FULL_CLIENT_REQUEST = 0x1;
 const MESSAGE_AUDIO_ONLY_REQUEST = 0x2;
@@ -39,10 +40,10 @@ const COMPRESSION_NONE = 0x0;
 const COMPRESSION_GZIP = 0x1;
 
 export const VOLCENGINE_TTS_VOICES = Object.freeze([
-  Object.freeze({ id: "zh_male_shaonianzixin_uranus_bigtts", label: "少年梓辛 2.0", gender: "male", age: "young", sampleText: TTS_SAMPLE_TEXT }),
-  Object.freeze({ id: "zh_male_m191_uranus_bigtts", label: "云舟 2.0", gender: "male", age: "mature", sampleText: TTS_SAMPLE_TEXT }),
-  Object.freeze({ id: "zh_female_vv_uranus_bigtts", label: "Vivi 2.0", gender: "female", age: "young", sampleText: TTS_SAMPLE_TEXT }),
-  Object.freeze({ id: "zh_female_cancan_uranus_bigtts", label: "知性灿灿 2.0", gender: "female", age: "mature", sampleText: TTS_SAMPLE_TEXT })
+  Object.freeze({ id: "zh_male_shaonianzixin_uranus_bigtts", label: "少年梓辛 2.0", gender: "male", age: "young", sampleText: TTS_SAMPLE_TEXT, samplePath: samplePath("zh_male_shaonianzixin_uranus_bigtts") }),
+  Object.freeze({ id: "zh_male_m191_uranus_bigtts", label: "云舟 2.0", gender: "male", age: "mature", sampleText: TTS_SAMPLE_TEXT, samplePath: samplePath("zh_male_m191_uranus_bigtts") }),
+  Object.freeze({ id: "zh_female_vv_uranus_bigtts", label: "Vivi 2.0", gender: "female", age: "young", sampleText: TTS_SAMPLE_TEXT, samplePath: samplePath("zh_female_vv_uranus_bigtts") }),
+  Object.freeze({ id: "zh_female_cancan_uranus_bigtts", label: "知性灿灿 2.0", gender: "female", age: "mature", sampleText: TTS_SAMPLE_TEXT, samplePath: samplePath("zh_female_cancan_uranus_bigtts") })
 ]);
 
 const VOICE_IDS = new Set(VOLCENGINE_TTS_VOICES.map(voice => voice.id));

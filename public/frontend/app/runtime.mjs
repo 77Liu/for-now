@@ -273,10 +273,17 @@ function commentLayoutAnchor(){
   const selected=pendingSelection?.rootKey===activeCommentRoot?visibleCommentNode(`.commentable[data-comment-root="${CSS.escape(activeCommentRoot)}"][data-comment-target="${CSS.escape(pendingSelection.targetKey)}"]`,pendingSelection.quote):null;
   return active||selected||visibleCommentNode(`.commentable[data-comment-root="${CSS.escape(activeCommentRoot)}"]`)
 }
+function stabilizeCommentAnchor(anchor,top,attempt=0){
+  if(!Number.isFinite(top)||!matchMedia("(min-width:1200px)").matches||!anchor?.isConnected)return scheduleAnnotationLineCounts();
+  const current=anchor.getBoundingClientRect().top;
+  if(Math.abs(current-top)>.5)window.scrollBy(0,current-top);
+  if(attempt<5)return requestAnimationFrame(()=>stabilizeCommentAnchor(anchor,top,attempt+1));
+  scheduleAnnotationLineCounts()
+}
 function setCommentPanelVisibility(open){
   const panel=$("#comment-panel"),reopen=$("#comment-panel-reopen"),anchor=commentLayoutAnchor(),before=anchor?.getBoundingClientRect().top;
   commentPanelOpen=Boolean(open&&activeCommentRoot);panel.hidden=!commentPanelOpen;document.body.classList.toggle("comment-panel-open",commentPanelOpen);reopen.hidden=commentPanelOpen||!activeCommentRoot;
-  requestAnimationFrame(()=>{if(Number.isFinite(before)&&matchMedia("(min-width:1200px)").matches&&anchor?.isConnected){const after=anchor.getBoundingClientRect().top;if(Math.abs(after-before)>.5)window.scrollBy(0,after-before)}scheduleAnnotationLineCounts()})
+  requestAnimationFrame(()=>stabilizeCommentAnchor(anchor,before))
 }
 function closeCommentPanel(){
   document.querySelectorAll("#comment-panel [data-shenji-form]").forEach(stashShenjiFormDraft);
@@ -1894,8 +1901,8 @@ function pausePageAudio(audio,{rewind=true}={}){
 }
 function syncVoicePreviewButton(){
   const button=$("#tts-voice-preview");if(!button)return;
-  const playing=Boolean(voicePreviewAudio&&!voicePreviewAudio.paused);
-  button.disabled=Boolean(voicePreviewAbortController);
+  const voice=$("#tts-default-voice")?.value,selected=(state.speech?.voices||[]).find(item=>item.id===voice),playing=Boolean(voicePreviewAudio&&!voicePreviewAudio.paused);
+  button.disabled=Boolean(voicePreviewAbortController)||!Boolean(selected?.samplePath||state.speech?.configured);
   button.setAttribute("aria-label",playing?"停止官方音色试音":"播放所选官方音色试音");
   button.title=button.getAttribute("aria-label");
   const icon=button.querySelector("[aria-hidden]");if(icon)icon.textContent=playing?"■":"▶"
@@ -2678,7 +2685,7 @@ function renderTtsDefaultVoice(){
   const control=$("#tts-default-voice");if(!control)return;
   const voices=state.speech?.voices||[],voice=accountTtsVoice();
   control.innerHTML=voices.length?voices.map(item=>`<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}</option>`).join(""):`<option value="">语音服务未配置</option>`;
-  control.disabled=!state.speech?.configured||!voices.length;if(voices.some(item=>item.id===voice))control.value=voice;syncVoicePreviewButton()
+  control.disabled=!voices.length;if(voices.some(item=>item.id===voice))control.value=voice;syncVoicePreviewButton()
 }
 async function toggleTtsVoicePreview(){
   const control=$("#tts-default-voice"),status=$("#tts-voice-preview-status"),voice=String(control?.value||"");
@@ -2688,7 +2695,10 @@ async function toggleTtsVoicePreview(){
   try{payload=speechPreviewPayload(voice)}catch(error){if(status)status.textContent=error.message;return}
   const controller=new AbortController();voicePreviewAbortController=controller;voicePreviewVoice=voice;if(status)status.textContent="正在加载官方试音…";syncVoicePreviewButton();
   try{
-    const blob=await apiClient.requestBlob("/api/speech/preview",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload),signal:controller.signal},{fallback:"试音暂时不可用"});
+    const selected=(state.speech?.voices||[]).find(item=>item.id===voice),samplePath=String(selected?.samplePath||"");
+    const blob=samplePath
+      ?await apiClient.requestBlob(samplePath,{signal:controller.signal},{fallback:"试音暂时不可用"})
+      :await apiClient.requestBlob("/api/speech/preview",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload),signal:controller.signal},{fallback:"试音暂时不可用"});
     if(controller.signal.aborted||control.value!==voice||!$("#view-settings").classList.contains("active"))return;
     voicePreviewObjectUrl=URL.createObjectURL(blob);const audio=new Audio(voicePreviewObjectUrl);voicePreviewAudio=audio;
     audio.addEventListener("ended",()=>{if(voicePreviewAudio===audio)stopVoicePreview({clearStatus:true})},{once:true});
