@@ -1,7 +1,10 @@
 import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { ATTACHMENT_BACKUP_FORMAT } from "../src/shared/attachments/index.mjs";
+import {
+  ATTACHMENT_BACKUP_FORMAT,
+  collectBackupAttachmentPaths
+} from "../src/shared/attachments/index.mjs";
 import { publicCapture } from "../src/modules/captures/index.mjs";
 import { publicKeepsake } from "../src/modules/keepsakes/index.mjs";
 import { ACCOUNT_DOCUMENT_FILES } from "../src/shared/persistence/index.mjs";
@@ -154,14 +157,7 @@ for (const user of auth.users) {
       };
     }
   }
-  const references = new Set();
-  const scan = (value, key = "") => {
-    if (key === "attachmentCleanup") return;
-    if (Array.isArray(value)) value.forEach(scan);
-    else if (value && typeof value === "object") Object.entries(value).forEach(([childKey, child]) => scan(child, childKey));
-    else if (typeof value === "string" && value.startsWith("/attachments/")) references.add(value);
-  };
-  scan(store);
+  const references = collectBackupAttachmentPaths(store);
   const expectedReferences = [...references].sort();
   if (canonicalJson(expectedReferences) !== canonicalJson([...manifestAccount.references].sort())) {
     throw new Error("Restored attachment references do not match the backup manifest");

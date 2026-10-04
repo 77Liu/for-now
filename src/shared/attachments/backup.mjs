@@ -10,14 +10,20 @@ const attachmentName = resourcePath => {
   return match?.[1] || "";
 };
 
-function collectReferences(value, output = new Set(), key = "") {
+export function collectBackupAttachmentPaths(value, output = new Set(), pathParts = []) {
+  const key = pathParts.at(-1) || "";
   if (key === "attachmentCleanup") return output;
+  if (pathParts[0] === "_persistence" && pathParts[1] === "idempotency" && key === "response") {
+    return output;
+  }
   if (typeof value === "string") {
     if (attachmentName(value)) output.add(value);
   } else if (Array.isArray(value)) {
-    for (const item of value) collectReferences(item, output);
+    for (const item of value) collectBackupAttachmentPaths(item, output, pathParts);
   } else if (value && typeof value === "object") {
-    for (const [childKey, item] of Object.entries(value)) collectReferences(item, output, childKey);
+    for (const [childKey, item] of Object.entries(value)) {
+      collectBackupAttachmentPaths(item, output, [...pathParts, childKey]);
+    }
   }
   return output;
 }
@@ -92,7 +98,7 @@ export async function stageAttachmentCompleteBackup({
     const manifestAccounts = [];
     for (const account of accounts) {
       const store = await readJson(path.join(account.directory, "store.json"), `store for ${account.accountId}`);
-      const references = [...collectReferences(store)].sort();
+      const references = [...collectBackupAttachmentPaths(store)].sort();
       const sourceAttachments = path.join(account.directory, "attachments");
       const targetDirectory = account.userScoped
         ? path.join(stage, "users", account.accountId, "attachments")

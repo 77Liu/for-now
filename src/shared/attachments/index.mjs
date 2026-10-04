@@ -9,7 +9,11 @@ export {
   createKeepsakeImageDerivatives,
   createSharpImageProcessor
 } from "./derivatives.mjs";
-export { ATTACHMENT_BACKUP_FORMAT, stageAttachmentCompleteBackup } from "./backup.mjs";
+export {
+  ATTACHMENT_BACKUP_FORMAT,
+  collectBackupAttachmentPaths,
+  stageAttachmentCompleteBackup
+} from "./backup.mjs";
 
 export function collectAttachmentPaths(value, output = new Set()) {
   if (typeof value === "string") {

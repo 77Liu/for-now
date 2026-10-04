@@ -41,6 +41,18 @@ try {
     const documents = {};
     store.version = 15;
     if (user.id === "first") {
+      store._persistence = {
+        idempotency: [{
+          scope: "attachments.uploadKeepsake",
+          key: "completed-upload",
+          requestHash: "request-hash",
+          response: {
+            attachmentPaths: ["/attachments/already-cleaned.source-mask.png"]
+          },
+          createdAt: "2026-09-29T08:00:00.000Z",
+          expiresAt: "2026-12-28T08:00:00.000Z"
+        }]
+      };
       store.captures.push({
         id: "capture",
         content: "restored",
@@ -153,6 +165,8 @@ try {
   assert.notEqual(result.collectionEvidence.keepsakes.contentSha256, digest(restoredKeepsakes));
   assert.equal(result.attachmentManifest.format, "for-now-attachment-complete-backup-v1");
   assert.equal(result.attachmentManifest.attachments, 1);
+  const stagedAttachmentManifest = JSON.parse(await fs.readFile(path.join(dataDir, "backup-manifest.json"), "utf8"));
+  assert.deepEqual(stagedAttachmentManifest.accounts[0].references, ["/attachments/cover.png"]);
   assert.equal(result.attachmentManifest.sourceAttachmentStorage, "local");
   assert.equal(result.aiBudgetSha256, digest(aiBudget));
   assert.equal(result.relationalExport, true);
