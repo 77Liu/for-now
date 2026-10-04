@@ -3,6 +3,11 @@
 <head>
   <meta charset="utf-8">
   <base href="/">
+  <script>
+    window.__forNowStartupRequest = fetch(new URL("api/v1/startup", document.baseURI).pathname, {
+      headers: { accept: "application/json", "content-type": "application/json" }
+    }).then(response => response.json()).catch(() => null);
+  </script>
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="description" content="本地优先的个人成长、捕念、日记与思考追踪工具">
   <meta name="theme-color" content="#fbfcf8">

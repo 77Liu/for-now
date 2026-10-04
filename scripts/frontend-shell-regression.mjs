@@ -40,7 +40,9 @@ const downloadableSource = (await Promise.all((await publicSourceFiles(path.join
 
 assert.match(appEntry, /^import \{ startApplication \} from "\.\/frontend\/app\/index\.mjs";\s+startApplication\(\);\s*$/);
 assert.ok(appEntry.split("\n").length <= 5, "public/app.js must remain a thin bootstrap");
-assert.match(appBootstrap, /requestJson\("\/api\/v1\/startup", \{ allowUnauthorized: true \}\)/);
+assert.match(appBootstrap, /const startupRequest = globalThis\.__forNowStartupRequest/);
+assert.match(appBootstrap, /delete globalThis\.__forNowStartupRequest/);
+assert.match(appBootstrap, /prefetchedStartup \|\| await requestJson\("\/api\/v1\/startup", \{ allowUnauthorized: true \}\)/);
 assert.match(appBootstrap, /requestJson\(routeStateUrl\(route\), \{ allowUnauthorized: true \}\)/);
 assert.match(appBootstrap, /const runtime = await loadRuntime\(\)/);
 assert.match(appBootstrap, /const stylesReady = loadR8Styles\(\)/);
@@ -53,7 +55,7 @@ assert.match(appBootstrap, /requestJson\("\/api\/auth\/me", \{ allowUnauthorized
 for (const endpoint of ["/api/auth/me", "/api/v1/startup"]) {
   assert.equal(appBootstrap.split(`"${endpoint}"`).length - 1, 1, `bootstrap must request ${endpoint} once`);
 }
-assert.ok(appBootstrap.indexOf('const startupResult = await requestJson("/api/v1/startup"') < appBootstrap.indexOf("const routeRequest = requestJson(routeStateUrl(route)"));
+assert.ok(appBootstrap.indexOf("const startupRequest = globalThis.__forNowStartupRequest") < appBootstrap.indexOf("const routeRequest = requestJson(routeStateUrl(route)"));
 assert.ok(appBootstrap.indexOf("const visibleShell = revealAuthenticatedShell") < appBootstrap.indexOf("const [session, testConfigResult, routeResult]"));
 assert.doesNotMatch(appBootstrap, /requestJson\("\/api\/state"\)|requestJson\("\/api\/meta"\)/);
 assert.match(appRuntime, /export async function startApplication\(initial = null\)/);
@@ -93,6 +95,7 @@ assert.doesNotMatch(applicationStyles, /\.saved-reasoning|\.answer-reasoning/);
 assert.match(html, /id="home-open-thought"/);
 assert.match(html, /id="home-mood-sparkline"/);
 assert.match(html, /<base href="\/">/);
+assert.match(html, /window\.__forNowStartupRequest = fetch\(new URL\("api\/v1\/startup", document\.baseURI\)\.pathname/);
 assert.doesNotMatch(html, /const routeRoots = new Set/);
 assert.match(html, /<link rel="stylesheet" href="frontend\/styles\/application\.css">/);
 assert.match(html, /<link rel="preload" href="frontend\/styles\/r8\.css" as="style">/);
@@ -104,6 +107,7 @@ assert.match(html, /id="auth-tab-register"[^>]+aria-controls="register-form"[^>]
 assert.match(html, /id="login-form" role="tabpanel" aria-labelledby="auth-tab-login"/);
 assert.equal((html.match(/<script src="app\.js" type="module"><\/script>/g) || []).length, 1);
 assert.ok(html.indexOf('<base href="/">') < html.indexOf('rel="stylesheet" href="frontend/styles/application.css"'));
+assert.ok(html.indexOf("window.__forNowStartupRequest") < html.indexOf('rel="stylesheet" href="frontend/styles/application.css"'));
 assert.ok(html.indexOf('rel="modulepreload" href="frontend/app/bootstrap.mjs"') < html.indexOf('<script src="app.js" type="module"></script>'));
 assert.ok(html.indexOf('<script src="app.js" type="module"></script>') < html.indexOf("</head>"));
 assert.doesNotMatch(html, /(?:href|src)="(?:styles\.css|vendor\/katex\/katex\.min\.(?:css|js))"/);

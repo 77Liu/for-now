@@ -97,7 +97,10 @@ async function initialSnapshot({ stylesReady = Promise.resolve(), onShellReady =
   markStartup("bootstrapStart");
   try {
     const route = resolveApplicationRoute(location, { basePath });
-    const startupResult = await requestJson("/api/v1/startup", { allowUnauthorized: true });
+    const startupRequest = globalThis.__forNowStartupRequest;
+    delete globalThis.__forNowStartupRequest;
+    const prefetchedStartup = startupRequest ? await startupRequest : null;
+    const startupResult = prefetchedStartup || await requestJson("/api/v1/startup", { allowUnauthorized: true });
     if (!startupResult?.data) {
       const [session, testConfigResult] = await Promise.all([
         requestSession(),
