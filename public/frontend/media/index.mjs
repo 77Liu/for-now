@@ -77,11 +77,9 @@ export function speechAssetForSource(assets, { sourceType, sourceId, sourceVersi
 }
 
 export function speechAudioPath(asset = {}) {
-  const sourceType = String(asset?.sourceType || "");
-  const sourceId = String(asset?.sourceId || "");
   const assetId = String(asset?.id || "");
-  if (!SPEECH_SOURCE_TYPES.includes(sourceType) || !sourceId || !assetId) return "";
-  const query = new URLSearchParams({ sourceType, sourceId, assetId });
+  if (!assetId) return "";
+  const query = new URLSearchParams({ id: assetId });
   return `/api/speech/audio?${query}`;
 }
 

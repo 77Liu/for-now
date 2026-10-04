@@ -546,7 +546,7 @@ const mockFetch = `
       id: "capture-long", createdAt: "2026-09-27T01:10:00.000Z", occurredAt: "2026-09-27T07:05:09.000Z", occurredOn: "2026-09-27",
       content: "这是一条需要验证四行折叠的长捕念。\\n- 第一项内容\\n- 第二项内容\\n- 第三项内容\\n- 第四项内容\\n- 第五项内容\\n- 第六项内容", tags: ["职业规划"],
       audio: { attachmentPath: "/attachments/capture-voice.m4a", mimeType: "audio/mp4", bytes: 4096, durationMs: 1250 },
-      transcription: { status: "ready", provider: "volcengine-seedasr-2.0", rawText: "**原始重点**\\n\\n- 第一条原始内容\\n- 第二条原始内容", polishedText: "**整理重点**\\n\\n- 第一条整理内容\\n- 第二条整理内容\\n- 第三条整理内容", condensedText: "**凝练总结**\\n\\n1. 第一条结论\\n2. 第二条结论\\n3. 第三条结论\\n4. 第四条结论\\n5. 第五条结论\\n6. 第六条结论\\n7. 第七条结论", updatedAt: "2026-09-27T06:58:00.000Z", errorCode: "" }, version: 1
+      transcription: { status: "ready", provider: "volcengine-seedasr-2.0", rawText: "**原始重点**\\n\\n<em>原始 HTML</em>\\n- 第一条原始内容\\n- 第二条原始内容", polishedText: "**整理重点**\\n\\n- 第一条整理内容\\n- 第二条整理内容\\n- 第三条整理内容", condensedText: "**凝练总结**\\n\\n1. 第一条结论\\n2. 第二条结论\\n3. 第三条结论\\n4. 第四条结论\\n5. 第五条结论\\n6. 第六条结论\\n7. 第七条结论", updatedAt: "2026-09-27T06:58:00.000Z", errorCode: "" }, version: 1
     },
     {
       id: "capture-failed", createdAt: "2026-09-27T01:09:00.000Z", occurredAt: "2026-09-27T07:04:09.000Z", occurredOn: "2026-09-27",
@@ -995,7 +995,7 @@ const mockFetch = `
       const response=()=>{
         if(payload.regenerate)window.__speechAssets=window.__speechAssets.filter(asset=>!(asset.sourceType===payload.sourceType&&asset.sourceId===payload.sourceId&&asset.sourceVersion===payload.sourceVersion));
         const serial=++window.__speechAssetSerial,asset={id:"asset-generated-"+serial,sourceType:payload.sourceType,sourceId:payload.sourceId,sourceVersion:payload.sourceVersion,voice:window.__lastSettingsPayload?.speech?.defaultVoice||"zh_male_shaonianzixin_uranus_bigtts",generationRate:window.__lastSettingsPayload?.speech?.generationRate??-10,mimeType:"audio/mpeg",bytes:3,createdAt:new Date(Date.now()+serial).toISOString(),expiresAt:"2026-11-27T07:00:00.000Z"};
-        window.__speechAssets.push(asset);return json(asset)
+        window.__speechAssets.push(asset);return new Response(new Uint8Array([0x49,0x44,0x33]),{headers:{"content-type":"audio/mpeg"}})
       };
       if(window.__delaySpeech){
         window.__delaySpeech=false;
@@ -2091,7 +2091,7 @@ try {
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
   const viewThemeColors = await evaluate(`Object.fromEntries([...document.querySelectorAll(".view")].flatMap(view => { const heading=view.querySelector(".eyebrow,h1"); return heading?[[view.id,getComputedStyle(heading).color]]:[] }))`);
   assert.ok(new Set(Object.values(viewThemeColors)).size >= 16);
-  await evaluate(`document.querySelector('[data-view="captures"]').click(); true`);
+  await evaluate(`document.querySelector('[data-view="captures"]').click();window.dispatchEvent(new Event("resize"));true`);
   assert.equal(await evaluate(`document.querySelector("#view-captures").classList.contains("active") && Boolean(document.querySelector('[data-capture-id="capture-1"] strong'))`), true);
   assert.equal(await evaluate(`document.querySelector('[data-capture-id="capture-1"] .markdown-content').classList.contains("commentable")`), true);
   const captureInitial = await evaluate(`({
@@ -2113,14 +2113,14 @@ try {
     textGenerate: "生成",
     controls: true,
     connected: true,
-    source: "/api/speech/audio?sourceType=capture&sourceId=capture-long&assetId=asset-capture-long-v1",
+    source: "/api/speech/audio?id=asset-capture-long-v1",
     original: "/attachments/capture-voice.m4a",
     ttsPlayers: 1,
     perCardVoice: false,
     repeatedGenerationSetting: false
   }, "persisted speech assets must render directly without synthesizing");
   assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-long"] .capture-transcription.polished')?.classList.contains("is-collapsible")&&document.querySelector('[data-capture-id="capture-long"] .capture-transcription.condensed')?.classList.contains("is-collapsible")`),true);
-  assert.deepEqual(await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-long"]'),source=card.querySelector(".capture-audio-source"),controls=card.querySelector(".speech-asset-controls"),rate=controls.querySelector("[data-speech-playback-rate]"),raw=card.querySelector(".capture-transcription-raw"),polished=card.querySelector(".capture-transcription.polished"),condensed=card.querySelector(".capture-transcription.condensed");return{audioReady:source.querySelector(".capture-audio-playback-state").textContent,audioKey:source.dataset.captureAudioKey,status:Boolean(card.querySelector(".capture-transcription-state")),sourceType:controls.dataset.speechSourceType,sourceId:controls.dataset.speechSourceId,sourceVersion:controls.dataset.speechSourceVersion,generateLabel:controls.querySelector("[data-speech-synthesize]").textContent,regenerate:controls.querySelector("[data-speech-synthesize]").dataset.speechRegenerate,rate:rate.value,rates:[...rate.options].map(option=>Number(option.value)),rawOpen:raw.open,rawMarkdown:Boolean(raw.querySelector("strong")),polishedLines:polished.dataset.speechTextLines,polishedCollapsed:polished.classList.contains("is-collapsible")&&!polished.classList.contains("is-expanded"),polishedMarkdown:Boolean(polished.querySelector("strong")),condensedLines:condensed.dataset.speechTextLines,condensedCollapsed:condensed.classList.contains("is-collapsible")&&!condensed.classList.contains("is-expanded"),condensedMarkdown:Boolean(condensed.querySelector("strong"))}})()`), {
+  assert.deepEqual(await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-long"]'),source=card.querySelector(".capture-audio-source"),controls=card.querySelector(".speech-asset-controls"),rate=controls.querySelector("[data-speech-playback-rate]"),raw=card.querySelector(".capture-transcription-raw"),polished=card.querySelector(".capture-transcription.polished"),condensed=card.querySelector(".capture-transcription.condensed");return{audioReady:source.querySelector(".capture-audio-playback-state").textContent,audioKey:source.dataset.captureAudioKey,status:Boolean(card.querySelector(".capture-transcription-state")),sourceType:controls.dataset.speechSourceType,sourceId:controls.dataset.speechSourceId,sourceVersion:controls.dataset.speechSourceVersion,generateLabel:controls.querySelector("[data-speech-synthesize]").textContent,regenerate:controls.querySelector("[data-speech-synthesize]").dataset.speechRegenerate,rate:rate.value,rates:[...rate.options].map(option=>Number(option.value)),rawOpen:raw.open,rawMarkdown:Boolean(raw.querySelector("strong")),rawHtml:Boolean(raw.querySelector("em")),rawLiteral:raw.textContent.includes("**原始重点**")&&raw.textContent.includes("<em>原始 HTML</em>"),rawBreaks:raw.querySelectorAll("br").length,polishedLines:polished.dataset.speechTextLines,polishedCollapsed:polished.classList.contains("is-collapsible")&&!polished.classList.contains("is-expanded"),polishedMarkdown:Boolean(polished.querySelector("strong")),condensedLines:condensed.dataset.speechTextLines,condensedCollapsed:condensed.classList.contains("is-collapsible")&&!condensed.classList.contains("is-expanded"),condensedMarkdown:Boolean(condensed.querySelector("strong"))}})()`), {
     audioReady: "原音可播放",
     audioKey: '["capture-long",1,"/attachments/capture-voice.m4a"]',
     status: false,
@@ -2132,7 +2132,10 @@ try {
     rate: "1",
     rates: [0.5,0.7,0.8,0.9,1,1.1,1.2,1.3,1.5,2],
     rawOpen: false,
-    rawMarkdown: true,
+    rawMarkdown: false,
+    rawHtml: false,
+    rawLiteral: true,
+    rawBreaks: 4,
     polishedLines: "2",
     polishedCollapsed: true,
     polishedMarkdown: true,
@@ -2183,7 +2186,7 @@ try {
   assert.equal(await waitUntil(`window.__speechRequests.length===3&&document.querySelector('[data-capture-id="capture-1"] [data-speech-player]')`),true);
   await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-speech-player]').play();true`);
   assert.equal(await waitUntil(`window.__speechPlays.length===4`),true);
-  assert.deepEqual(await evaluate(`(() => {const old=document.querySelector('[data-capture-id="capture-long"] [data-speech-player]'),next=document.querySelector('[data-capture-id="capture-1"] [data-speech-player]'),assetId=new URL(old.src).searchParams.get("assetId");return{oldPaused:old.paused,oldSourceRetained:old.getAttribute("src")===window.__activeCaptureSpeechUrl,newPaused:next.paused,oldPauseRecorded:window.__speechPauses.some(url=>url.includes("assetId="+assetId)),requests:window.__speechRequests.length}})()`),{oldPaused:true,oldSourceRetained:true,newPaused:false,oldPauseRecorded:true,requests:3},"starting another asset must pause the previous player without detaching either persisted source");
+  assert.deepEqual(await evaluate(`(() => {const old=document.querySelector('[data-capture-id="capture-long"] [data-speech-player]'),next=document.querySelector('[data-capture-id="capture-1"] [data-speech-player]'),assetId=new URL(old.src).searchParams.get("id");return{oldPaused:old.paused,oldSourceRetained:old.getAttribute("src")===window.__activeCaptureSpeechUrl,newPaused:next.paused,oldPauseRecorded:window.__speechPauses.some(url=>url.includes("id="+assetId)),requests:window.__speechRequests.length}})()`),{oldPaused:true,oldSourceRetained:true,newPaused:false,oldPauseRecorded:true,requests:3},"starting another asset must pause the previous player without detaching either persisted source");
   assert.equal(await evaluate(`document.querySelector("#capture-form").hidden&&document.querySelector("#capture-create-toggle").getAttribute("aria-expanded")==="false"`),true);
   await evaluate(`document.querySelector("#capture-create-toggle").click();true`);
   assert.deepEqual(await evaluate(`(() => {const editor=document.querySelector(".capture-audio-editor"),upload=editor.querySelector(".audio-file-primary"),recorder=editor.querySelector("#capture-audio-recorder"),record=editor.querySelector("#capture-audio-record"),preview=editor.querySelector("#capture-audio-preview");return{fits:editor.getBoundingClientRect().right<=window.innerWidth,uploadText:upload.textContent.trim(),uploadHeight:Math.round(upload.getBoundingClientRect().height),recorderOpen:recorder.open,summary:recorder.querySelector("summary").textContent.replace(/\\s+/g," ").trim(),recordCollapsed:record.getClientRects().length===0,previewCollapsed:preview.getClientRects().length===0}})()`), {
@@ -3267,7 +3270,7 @@ try {
   assert.equal(await evaluate(`(() => { document.querySelector('[data-view="thoughts"]').click();const before=window.__deleteRequests;window.confirm=()=>false;document.querySelector('[data-chain-id="kept-root"] [data-delete-chain]').click();return window.__deleteRequests===before; })()`),true);
   await evaluate(`document.querySelector('[data-chain-id="kept-root"] .chain-summary').click();true`);
   assert.equal(await waitUntil(`location.pathname==="/thoughts/kept-root"&&document.querySelector('#all-thoughts [data-chain-id="kept-root"]')?.open`),true);
-  assert.deepEqual(await evaluate(`(() => {const block=document.querySelector('#all-thoughts [data-thought-block-id="answer-kept"]'),controls=block.querySelector(".speech-asset-controls"),player=controls.querySelector("[data-speech-player]"),rate=controls.querySelector("[data-speech-playback-rate]");return{sourceType:controls.dataset.speechSourceType,sourceId:controls.dataset.speechSourceId,sourceVersion:controls.dataset.speechSourceVersion,src:player.getAttribute("src"),button:controls.querySelector("[data-speech-synthesize]").textContent,buttonName:controls.querySelector("[data-speech-synthesize]").getAttribute("aria-label"),rateName:rate.getAttribute("aria-label")}})()`),{sourceType:"thoughtAnswer",sourceId:"answer-kept",sourceVersion:"1",src:"/api/speech/audio?sourceType=thoughtAnswer&sourceId=answer-kept&assetId=asset-answer-kept-v1",button:"重新生成",buttonName:"重新生成AI 回答文字朗读",rateName:"AI 回答文字朗读播放倍速"});
+  assert.deepEqual(await evaluate(`(() => {const block=document.querySelector('#all-thoughts [data-thought-block-id="answer-kept"]'),controls=block.querySelector(".speech-asset-controls"),player=controls.querySelector("[data-speech-player]"),rate=controls.querySelector("[data-speech-playback-rate]");return{sourceType:controls.dataset.speechSourceType,sourceId:controls.dataset.speechSourceId,sourceVersion:controls.dataset.speechSourceVersion,src:player.getAttribute("src"),button:controls.querySelector("[data-speech-synthesize]").textContent,buttonName:controls.querySelector("[data-speech-synthesize]").getAttribute("aria-label"),rateName:rate.getAttribute("aria-label")}})()`),{sourceType:"thoughtAnswer",sourceId:"answer-kept",sourceVersion:"1",src:"/api/speech/audio?id=asset-answer-kept-v1",button:"重新生成",buttonName:"重新生成AI 回答文字朗读",rateName:"AI 回答文字朗读播放倍速"});
   await evaluate(`document.querySelector('#all-thoughts [data-thought-block-id="answer-kept"] [data-speech-synthesize]').click();true`);
   assert.equal(await waitUntil(`window.__speechRequests.length===5&&document.querySelector('#all-thoughts [data-thought-block-id="answer-kept"] [data-speech-player]')?.getAttribute("src").includes("asset-generated-")`),true);
   assert.deepEqual(await evaluate(`({request:window.__speechRequests.at(-1),voice:window.__speechAssets.find(asset=>asset.sourceType==="thoughtAnswer"&&asset.sourceId==="answer-kept")?.voice,open:document.querySelector('#all-thoughts [data-chain-id="kept-root"]').open})`),{request:{sourceType:"thoughtAnswer",sourceId:"answer-kept",sourceVersion:1,regenerate:true},voice:"zh_male_m191_uranus_bigtts",open:true});

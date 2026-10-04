@@ -1849,7 +1849,7 @@ function captureAudioMarkup(item){
   if(!audio&&!speech)return"";
   const presentation=captureAudioPresentation(item,state.speech,state.aiTasks);
   const layers=[
-    transcription?.rawText?`<details class="capture-transcription capture-transcription-raw"><summary>原始转写</summary><div class="markdown-content">${renderMarkdown(transcription.rawText)}</div></details>`:"",
+    transcription?.rawText?`<details class="capture-transcription capture-transcription-raw"><summary>原始转写</summary><div class="markdown-content">${escapeHtml(transcription.rawText).replace(/\r\n?|\n/g,"<br>")}</div></details>`:"",
     captureDerivedTranscription("AI 整理稿",transcription?.polishedText,2,"polished"),
     captureDerivedTranscription("AI 凝练压缩总结稿",transcription?.condensedText,6,"condensed")
   ].join("");
@@ -4172,7 +4172,7 @@ document.addEventListener("click",async event=>{
     const asset=speechAssetForSource(state.speech.assets,{sourceType,sourceId,sourceVersion}),regenerate=generate.dataset.speechRegenerate==="true"&&Boolean(asset),payload=speechSynthesisPayload({sourceType,sourceId,sourceVersion,regenerate});
     stopPageAudio();generate.disabled=true;if(status)status.textContent=regenerate?"正在重新生成…":"正在生成…";let generated=false;
     try{
-      await request("/api/speech/synthesize",{method:"POST",body:JSON.stringify(payload)});generated=true;
+      await apiClient.requestBlob("/api/speech/synthesize",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)},{fallback:"语音合成失败"});generated=true;
       const domains=sourceType==="capture"?["speech","captures"]:["speech","thoughts"],options=sourceType==="thoughtAnswer"?{chainId:source.relatedTo}:{};
       await refreshState(domains,options);showToast(regenerate?"文字朗读已重新生成":"文字朗读已生成")
     }catch(error){

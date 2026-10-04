@@ -528,7 +528,7 @@ if (process.argv.includes("--timezone-case")) {
   }), null);
   assert.equal(
     speechAudioPath(speechAssets[1]),
-    "/api/speech/audio?sourceType=capture&sourceId=capture-audio&assetId=asset-current"
+    "/api/speech/audio?id=asset-current"
   );
   assert.equal(speechAudioPath({}), "");
   assert.deepEqual(speechSynthesisPayload({
