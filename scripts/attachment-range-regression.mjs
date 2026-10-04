@@ -69,8 +69,11 @@ try {
   const local = createAttachmentStorage({ mode: "local" });
   const localSource = await local.openRead({ ownerId: "local", name: "voice.m4a", localFile });
   assert.equal(localSource.bytes, payload.length);
+  assert.match(localSource.etag, /^"[^"]+"$/);
+  assert.ok(Number.isFinite(Date.parse(localSource.lastModified)));
   assert.deepEqual(await collect(await localSource.createReadStream({ start: 3, end: 7 })), payload.subarray(3, 8));
   assert.deepEqual(await collect(await localSource.createReadStream()), payload);
+  await localSource.close();
 
   const linkedFile = path.join(localDir, "linked.m4a");
   await fs.symlink(localFile, linkedFile);
@@ -85,9 +88,18 @@ try {
   });
   const serviceSource = await service.openRead("/attachments/voice.m4a");
   assert.equal(serviceSource.bytes, payload.length);
+  assert.match(serviceSource.etag, /^"[^"]+"$/);
   assert.deepEqual(await collect(await serviceSource.createReadStream({ start: 1, end: 2 })), payload.subarray(1, 3));
+  await serviceSource.close();
 
   const ossCalls = [];
+  let ossObject = {
+    body: payload,
+    etag: "\"oss-v1\"",
+    versionId: "version-1",
+    lastModified: "Mon, 05 Oct 2026 00:00:00 GMT"
+  };
+  let replaceBeforeNextStream = null;
   originalGetCredential = Credential.default.prototype.getCredential;
   originalGetObjectMeta = OSS.prototype.getObjectMeta;
   originalGetStream = OSS.prototype.getStream;
@@ -97,18 +109,49 @@ try {
   );
   OSS.prototype.getObjectMeta = async function getObjectMeta(name) {
     ossCalls.push({ method: "getObjectMeta", name });
-    return { status: 200, res: { headers: { "content-length": String(payload.length) } } };
+    return {
+      status: 200,
+      res: {
+        headers: {
+          "content-length": String(ossObject.body.length),
+          etag: ossObject.etag,
+          "last-modified": ossObject.lastModified,
+          "x-oss-version-id": ossObject.versionId
+        }
+      }
+    };
   };
   OSS.prototype.getStream = async function getStream(name, options) {
     const range = options?.headers?.Range || "";
-    ossCalls.push({ method: "getStream", name, range });
+    const ifMatch = options?.headers?.["If-Match"] || "";
+    ossCalls.push({ method: "getStream", name, range, ifMatch });
+    if (replaceBeforeNextStream) {
+      ossObject = replaceBeforeNextStream;
+      replaceBeforeNextStream = null;
+    }
+    if (ifMatch !== ossObject.etag) {
+      throw Object.assign(new Error("Pre condition failed"), {
+        status: 412,
+        code: "PreconditionFailed"
+      });
+    }
     const match = /^bytes=(\d+)-(\d+)$/.exec(range);
     const body = match
-      ? payload.subarray(Number(match[1]), Number(match[2]) + 1)
-      : payload;
+      ? ossObject.body.subarray(Number(match[1]), Number(match[2]) + 1)
+      : ossObject.body;
     return {
       stream: Readable.from([body]),
-      res: { status: range ? 206 : 200, headers: {} }
+      res: {
+        status: range ? 206 : 200,
+        headers: {
+          "content-length": String(body.length),
+          etag: ossObject.etag,
+          "x-oss-version-id": ossObject.versionId,
+          ...(range ? {
+            "content-range": `bytes ${match[1]}-${match[2]}/${ossObject.body.length}`
+          } : {})
+        }
+      }
     };
   };
   OSS.prototype.get = async function get() {
@@ -121,6 +164,8 @@ try {
   });
   const ossSource = await oss.openRead({ ownerId: "account-a", name: "voice.m4a", localFile });
   assert.equal(ossSource.bytes, payload.length);
+  assert.equal(ossSource.etag, "\"oss-v1\"");
+  assert.equal(ossSource.lastModified, ossObject.lastModified);
   assert.deepEqual(await collect(await ossSource.createReadStream({ start: 4, end: 9 })), payload.subarray(4, 10));
   assert.deepEqual(await collect(await ossSource.createReadStream()), payload);
   assert.deepEqual(ossCalls, [
@@ -131,14 +176,65 @@ try {
     {
       method: "getStream",
       name: "attachments/account-a/voice.m4a",
-      range: "bytes=4-9"
+      range: "bytes=4-9",
+      ifMatch: "\"oss-v1\""
     },
     {
       method: "getStream",
       name: "attachments/account-a/voice.m4a",
-      range: ""
+      range: "",
+      ifMatch: "\"oss-v1\""
     }
   ]);
+
+  const ossService = createImageAttachments({
+    storage: oss,
+    getContext: () => ({ ownerId: "account-a", attachmentsDir: localDir })
+  });
+  const ossApp = await listen(ossService);
+  try {
+    ossCalls.length = 0;
+    const replacementPayload = Buffer.from("replacement-object-v2");
+    replaceBeforeNextStream = {
+      body: replacementPayload,
+      etag: "\"oss-v2\"",
+      versionId: "version-2",
+      lastModified: "Mon, 05 Oct 2026 00:01:00 GMT"
+    };
+    const changed = await fetch(`${ossApp.base}/attachments/voice.m4a`, {
+      headers: { range: "bytes=4-9" }
+    });
+    assert.equal(changed.status, 200);
+    assert.equal(changed.headers.get("content-range"), null);
+    assert.equal(changed.headers.get("content-length"), String(replacementPayload.length));
+    assert.equal(changed.headers.get("etag"), "\"oss-v2\"");
+    assert.deepEqual(Buffer.from(await changed.arrayBuffer()), replacementPayload);
+    assert.deepEqual(ossCalls, [
+      {
+        method: "getObjectMeta",
+        name: "attachments/account-a/voice.m4a"
+      },
+      {
+        method: "getStream",
+        name: "attachments/account-a/voice.m4a",
+        range: "bytes=4-9",
+        ifMatch: "\"oss-v1\""
+      },
+      {
+        method: "getObjectMeta",
+        name: "attachments/account-a/voice.m4a"
+      },
+      {
+        method: "getStream",
+        name: "attachments/account-a/voice.m4a",
+        range: "",
+        ifMatch: "\"oss-v2\""
+      }
+    ]);
+  } finally {
+    ossApp.server.close();
+    await once(ossApp.server, "close");
+  }
 
   let bufferedReads = 0;
   const streamOptions = [];
@@ -165,7 +261,11 @@ try {
     assert.equal(full.status, 200);
     assert.equal(full.headers.get("accept-ranges"), "bytes");
     assert.equal(full.headers.get("content-length"), String(payload.length));
+    assert.match(full.headers.get("etag") || "", /^"[^"]+"$/);
+    assert.ok(Number.isFinite(Date.parse(full.headers.get("last-modified") || "")));
     assert.deepEqual(Buffer.from(await full.arrayBuffer()), payload);
+    const localEtag = full.headers.get("etag");
+    const localLastModified = full.headers.get("last-modified");
 
     const headCalls = streamOptions.length;
     const head = await fetch(`${app.base}/attachments/voice.m4a`, {
@@ -204,27 +304,86 @@ try {
       method: "HEAD",
       headers: { range: "bytes=2-5" }
     });
-    assert.equal(rangeHead.status, 206);
-    assert.equal(rangeHead.headers.get("content-range"), `bytes 2-5/${payload.length}`);
-    assert.equal(rangeHead.headers.get("content-length"), "4");
+    assert.equal(rangeHead.status, 200);
+    assert.equal(rangeHead.headers.get("content-range"), null);
+    assert.equal(rangeHead.headers.get("content-length"), String(payload.length));
     assert.equal((await rangeHead.arrayBuffer()).byteLength, 0);
     assert.equal(streamOptions.length, rangeHeadCalls);
 
-    for (const range of [`bytes=${payload.length}-`, "bytes=0-1,4-5", "items=0-1"]) {
-      const invalid = await fetch(`${app.base}/attachments/voice.m4a`, {
+    const matchingIfRange = await fetch(`${app.base}/attachments/voice.m4a`, {
+      headers: { range: "bytes=2-5", "if-range": localEtag }
+    });
+    assert.equal(matchingIfRange.status, 206);
+    assert.equal(matchingIfRange.headers.get("content-range"), `bytes 2-5/${payload.length}`);
+    assert.deepEqual(Buffer.from(await matchingIfRange.arrayBuffer()), payload.subarray(2, 6));
+
+    const matchingIfRangeDate = await fetch(`${app.base}/attachments/voice.m4a`, {
+      headers: { range: "bytes=6-7", "if-range": localLastModified }
+    });
+    assert.equal(matchingIfRangeDate.status, 206);
+    assert.deepEqual(Buffer.from(await matchingIfRangeDate.arrayBuffer()), payload.subarray(6, 8));
+
+    const staleDate = new Date(Date.parse(localLastModified) - 1000).toUTCString();
+    for (const ifRange of ["\"stale-etag\"", `W/${localEtag}`, staleDate]) {
+      const stale = await fetch(`${app.base}/attachments/voice.m4a`, {
+        headers: { range: "bytes=2-5", "if-range": ifRange }
+      });
+      assert.equal(stale.status, 200);
+      assert.equal(stale.headers.get("content-range"), null);
+      assert.equal(stale.headers.get("content-length"), String(payload.length));
+      assert.deepEqual(Buffer.from(await stale.arrayBuffer()), payload);
+    }
+
+    for (const range of ["bytes=0-1,4-5", "items=0-1", "bytes=invalid", "bytes=8-4"]) {
+      const ignored = await fetch(`${app.base}/attachments/voice.m4a`, {
         headers: { range }
       });
-      assert.equal(invalid.status, 416);
-      assert.equal(invalid.headers.get("content-range"), `bytes */${payload.length}`);
-      assert.equal(invalid.headers.get("content-length"), "0");
-      assert.equal((await invalid.arrayBuffer()).byteLength, 0);
+      assert.equal(ignored.status, 200);
+      assert.equal(ignored.headers.get("content-range"), null);
+      assert.equal(ignored.headers.get("content-length"), String(payload.length));
+      assert.deepEqual(Buffer.from(await ignored.arrayBuffer()), payload);
     }
+
+    for (const range of [`bytes=${payload.length}-`, "bytes=-0", "bytes=99-100"]) {
+      const unsatisfiable = await fetch(`${app.base}/attachments/voice.m4a`, {
+        headers: { range }
+      });
+      assert.equal(unsatisfiable.status, 416);
+      assert.equal(unsatisfiable.headers.get("content-range"), `bytes */${payload.length}`);
+      assert.equal(unsatisfiable.headers.get("content-length"), "0");
+      assert.equal((await unsatisfiable.arrayBuffer()).byteLength, 0);
+    }
+
+    const changedLocalPayload = Buffer.from("local-object-v2");
+    await fs.writeFile(localFile, changedLocalPayload);
+    try {
+      const changedLocal = await fetch(`${app.base}/attachments/voice.m4a`, {
+        headers: { range: "bytes=2-5", "if-range": localEtag }
+      });
+      assert.equal(changedLocal.status, 200);
+      assert.equal(changedLocal.headers.get("content-range"), null);
+      assert.notEqual(changedLocal.headers.get("etag"), localEtag);
+      assert.deepEqual(Buffer.from(await changedLocal.arrayBuffer()), changedLocalPayload);
+    } finally {
+      await fs.writeFile(localFile, payload);
+    }
+
     assert.equal(bufferedReads, 0);
     assert.deepEqual(streamOptions, [
       {},
       { start: 4, end: 7 },
       { start: 12, end: 15 },
-      { start: 12, end: 15 }
+      { start: 12, end: 15 },
+      { start: 2, end: 5 },
+      { start: 6, end: 7 },
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      {}
     ]);
   } finally {
     app.server.close();
@@ -282,7 +441,7 @@ try {
     await once(interruptedApp.server, "close");
   }
 
-  console.log("Attachment Range checks passed: local and OSS streams, exact HTTP ranges, full GET compatibility and disconnect cleanup.");
+  console.log("Attachment Range checks passed: GET-only ranges, validators, If-Range, OSS replacement downgrade and disconnect cleanup.");
 } finally {
   if (originalGetCredential) Credential.default.prototype.getCredential = originalGetCredential;
   if (originalGetObjectMeta) OSS.prototype.getObjectMeta = originalGetObjectMeta;

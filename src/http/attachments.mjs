@@ -1,5 +1,6 @@
+import crypto from "node:crypto";
 import { Readable } from "node:stream";
-import { parseByteRange } from "./byte-range.mjs";
+import { evaluateByteRange } from "./byte-range.mjs";
 
 export function createAttachmentHttp({
   attachments,
@@ -22,12 +23,23 @@ export function createAttachmentHttp({
     const data = await attachments.read(resourcePath);
     return {
       bytes: data.length,
+      etag: `"${crypto.createHash("sha256").update(data).digest("base64url")}"`,
       createReadStream({ start = 0, end = data.length - 1 } = {}) {
         return Readable.from([data.subarray(start, end + 1)]);
       }
     };
   };
   const isMissing = error => ["ENOENT", "NoSuchKey"].includes(error?.code) || Number(error?.status) === 404;
+  const closeSource = source => Promise.resolve(source?.close?.()).catch(() => {});
+  const ifRangeMatches = (value, source) => {
+    const input = String(value || "").trim();
+    if (!input) return true;
+    if (/^W\//i.test(input)) return false;
+    if (input.startsWith("\"")) return Boolean(source.etag) && input === source.etag;
+    const conditionTime = Date.parse(input);
+    const modifiedTime = Date.parse(String(source.lastModified || ""));
+    return Number.isFinite(conditionTime) && Number.isFinite(modifiedTime) && modifiedTime <= conditionTime;
+  };
 
   async function handle(req, res, url) {
     if (req.method === "POST" && url.pathname === "/api/images/upload") {
@@ -95,80 +107,121 @@ export function createAttachmentHttp({
         const name = url.pathname.slice("/attachments/".length);
         if (!/^[\w.-]+$/.test(name)) sendJson(res, 403, { error: "Forbidden" });
         else {
-          let source;
-          try {
-            source = await openRead(url.pathname);
-          } catch (error) {
-            if (isMissing(error) && await onMissing?.(req, res, url)) return true;
-            throw error;
-          }
-          const total = source.bytes;
-          if (!Number.isSafeInteger(total) || total < 0 || typeof source.createReadStream !== "function") {
-            throw new Error("Attachment read source is invalid");
-          }
-          const responseContentType = contentType(name);
-          // #region debug-point B-D:audio-read
-          if (debugServerUrl && /\.(?:m4a|mp4|webm|ogg|wav)$/i.test(name)) fetch(debugServerUrl,{method:"POST",body:JSON.stringify({sessionId:"login-audio-production",runId:debugRunId,hypothesisId:"B-D",location:"src/http/attachments.mjs:read",msg:"[DEBUG] Audio attachment served",data:{method:req.method,nameExtension:name.split(".").at(-1)?.toLowerCase(),contentType:responseContentType,bytes:total,rangeRequested:Boolean(req.headers.range),rangeHeader:String(req.headers.range||"").slice(0,100)},ts:Date.now()})}).catch(()=>{});
-          // #endregion
-          const headers = {
-            "content-type": responseContentType,
-            "cache-control": "private, no-store",
-            "accept-ranges": "bytes"
+          const loadSource = async () => {
+            try {
+              return await openRead(url.pathname);
+            } catch (error) {
+              if (isMissing(error) && await onMissing?.(req, res, url)) return null;
+              throw error;
+            }
           };
-          const range = req.headers.range ? parseByteRange(req.headers.range, total) : null;
-          if (req.headers.range && !range) {
-            res.writeHead(416, { ...headers, "content-range": `bytes */${total}`, "content-length": "0" });
-            res.end();
-            return true;
-          }
-          const status = range ? 206 : 200;
-          const length = range ? range.end - range.start + 1 : total;
-          const responseHeaders = {
-            ...headers,
-            ...(range ? { "content-range": `bytes ${range.start}-${range.end}/${total}` } : {}),
-            "content-length": String(length)
-          };
-          if (req.method === "HEAD") {
+          let source = await loadSource();
+          if (!source) return true;
+          let allowRange = req.method === "GET";
+          let sourceChanged = false;
+          while (source) {
+            const total = source.bytes;
+            if (!Number.isSafeInteger(total) || total < 0 || typeof source.createReadStream !== "function") {
+              await closeSource(source);
+              throw new Error("Attachment read source is invalid");
+            }
+            const responseContentType = contentType(name);
+            // #region debug-point B-D:audio-read
+            if (debugServerUrl && /\.(?:m4a|mp4|webm|ogg|wav)$/i.test(name)) fetch(debugServerUrl,{method:"POST",body:JSON.stringify({sessionId:"login-audio-production",runId:debugRunId,hypothesisId:"B-D",location:"src/http/attachments.mjs:read",msg:"[DEBUG] Audio attachment served",data:{method:req.method,nameExtension:name.split(".").at(-1)?.toLowerCase(),contentType:responseContentType,bytes:total,rangeRequested:Boolean(req.headers.range),rangeHeader:String(req.headers.range||"").slice(0,100)},ts:Date.now()})}).catch(()=>{});
+            // #endregion
+            const headers = {
+              "content-type": responseContentType,
+              "cache-control": "private, no-store",
+              "accept-ranges": "bytes",
+              ...(source.etag ? { etag: source.etag } : {}),
+              ...(source.lastModified ? { "last-modified": source.lastModified } : {})
+            };
+            let range = null;
+            if (allowRange && req.headers.range && ifRangeMatches(req.headers["if-range"], source)) {
+              const evaluated = evaluateByteRange(req.headers.range, total);
+              if (evaluated.kind === "unsatisfiable") {
+                await closeSource(source);
+                res.writeHead(416, {
+                  ...headers,
+                  "content-range": `bytes */${total}`,
+                  "content-length": "0"
+                });
+                res.end();
+                return true;
+              }
+              if (evaluated.kind === "range") {
+                range = { start: evaluated.start, end: evaluated.end };
+              }
+            }
+            const status = range ? 206 : 200;
+            const length = range ? range.end - range.start + 1 : total;
+            const responseHeaders = {
+              ...headers,
+              ...(range ? { "content-range": `bytes ${range.start}-${range.end}/${total}` } : {}),
+              "content-length": String(length)
+            };
+            if (req.method === "HEAD") {
+              await closeSource(source);
+              res.writeHead(200, { ...responseHeaders, "content-length": String(total) });
+              res.end();
+              return true;
+            }
+            let stream;
+            try {
+              stream = await source.createReadStream(range || {});
+            } catch (error) {
+              await closeSource(source);
+              if (error?.code === "ATTACHMENT_SOURCE_CHANGED" && !sourceChanged) {
+                sourceChanged = true;
+                allowRange = false;
+                source = await loadSource();
+                if (!source) return true;
+                continue;
+              }
+              if (isMissing(error) && await onMissing?.(req, res, url)) return true;
+              throw error;
+            }
+            if (!stream || typeof stream.pipe !== "function" || typeof stream.destroy !== "function") {
+              await closeSource(source);
+              throw new Error("Attachment storage returned no readable stream");
+            }
+            if (req.aborted || res.destroyed) {
+              stream.destroy();
+              await closeSource(source);
+              return true;
+            }
             res.writeHead(status, responseHeaders);
-            res.end();
-            return true;
+            let completed = false;
+            let released = false;
+            const cleanup = () => {
+              req.off("aborted", cancel);
+              res.off("close", cancel);
+            };
+            const release = () => {
+              if (released) return;
+              released = true;
+              cleanup();
+              void closeSource(source);
+            };
+            const cancel = () => {
+              if (!completed && !stream.destroyed) stream.destroy();
+              release();
+            };
+            req.once("aborted", cancel);
+            res.once("close", cancel);
+            stream.once("end", () => {
+              completed = true;
+              release();
+            });
+            stream.once("close", release);
+            stream.once("error", error => {
+              completed = true;
+              release();
+              if (!res.destroyed) res.destroy(error);
+            });
+            stream.pipe(res);
+            break;
           }
-          let stream;
-          try {
-            stream = await source.createReadStream(range || {});
-          } catch (error) {
-            if (isMissing(error) && await onMissing?.(req, res, url)) return true;
-            throw error;
-          }
-          if (!stream || typeof stream.pipe !== "function" || typeof stream.destroy !== "function") {
-            throw new Error("Attachment storage returned no readable stream");
-          }
-          if (req.aborted || res.destroyed) {
-            stream.destroy();
-            return true;
-          }
-          res.writeHead(status, responseHeaders);
-          let completed = false;
-          const cleanup = () => {
-            req.off("aborted", cancel);
-            res.off("close", cancel);
-          };
-          const cancel = () => {
-            if (!completed && !stream.destroyed) stream.destroy();
-          };
-          req.once("aborted", cancel);
-          res.once("close", cancel);
-          stream.once("end", () => {
-            completed = true;
-            cleanup();
-          });
-          stream.once("close", cleanup);
-          stream.once("error", error => {
-            completed = true;
-            cleanup();
-            if (!res.destroyed) res.destroy(error);
-          });
-          stream.pipe(res);
         }
       }
     } else return false;
