@@ -21,6 +21,11 @@ const timestamp = value => String(value?.occurredAt || value?.createdAt || "");
 const dateKey = value => String(value?.occurredOn || timestamp(value).slice(0, 10));
 const text = value => String(value || "").trim();
 const clone = value => structuredClone(value);
+const quoteTags = state => [...new Set(list(state?.quotes)
+  .flatMap(item => list(item?.tags))
+  .map(value => text(value).slice(0, 30))
+  .filter(Boolean))]
+  .slice(0, 100);
 const PUBLIC_STATE_FIELDS = [
   "version",
   "checkins",
@@ -167,6 +172,7 @@ export function startupProjection({
     governanceUrl,
     accountCursor: Math.max(0, Number(store?._persistence?.sync?.cursor) || 0),
     notificationUnread: Math.max(0, Number(unread) || 0),
+    quoteTags: quoteTags(store),
     onboardingV2: {
       session: {
         status: text(store?.onboardingV2?.session?.status) || "pending"

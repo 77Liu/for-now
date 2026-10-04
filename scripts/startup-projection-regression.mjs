@@ -33,7 +33,11 @@ const thoughts = Array.from({ length: 30 }, (_, index) => {
 const store = {
   _persistence: { sync: { cursor: 42 } },
   onboardingV2: { session: { status: "completed" }, privateDraft: large },
-  notifications: [{ id: "notice", status: "succeeded", readAt: "" }]
+  notifications: [{ id: "notice", status: "succeeded", readAt: "" }],
+  quotes: [
+    { id: "quote-a", content: "PRIVATE_QUOTE_CONTENT", tags: ["阅读", "长期"] },
+    { id: "quote-b", content: "PRIVATE_QUOTE_CONTENT", tags: ["阅读", "摘录"] }
+  ]
 };
 const publicState = {
   checkins: [{ id: "checkin", occurredAt: "2026-10-04T09:00:00.000Z", mood: 4 }],
@@ -61,9 +65,11 @@ const startupText = JSON.stringify(startup);
 assert.equal(startup.accountCursor, 42);
 assert.equal(startup.onboardingV2.session.status, "completed");
 assert.equal(startup.notificationUnread, 1);
+assert.deepEqual(startup.quoteTags, ["阅读", "长期", "摘录"]);
 for (const forbidden of ["thoughts", "clusters", "keepsakes", "attachmentPath", large]) {
   assert.equal(startupText.includes(forbidden), false);
 }
+assert.equal(startupText.includes("PRIVATE_QUOTE_CONTENT"), false);
 assert.ok(Buffer.byteLength(startupText) <= 25 * 1024);
 
 const today = routeStateProjection(publicState, { view: "today", currentDate: "2026-10-04" });

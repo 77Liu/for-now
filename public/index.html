@@ -685,7 +685,7 @@
         <input type="hidden" id="quote-id">
         <label class="field quote-source-field"><span>来源 <b>必填</b></span><input id="quote-source" placeholder="作者、书名、讲话或链接" required></label>
         <label class="field quote-content-field"><span>内容 <b>必填</b></span><textarea id="quote-content" rows="4" placeholder="把这句话留下来" required></textarea></label>
-        <div class="quote-meta-fields"><label class="field"><span>标签</span><input id="quote-tags" placeholder="多个标签用空格分隔"></label><label class="field"><span>记录时间</span><input id="quote-datetime" type="datetime-local" step="1" required></label></div>
+        <div class="quote-meta-fields"><label class="field"><span>标签</span><div class="tag-multiselect" data-tag-multiselect="quote"><div class="tag-multiselect-selected" id="quote-selected-tags"></div><div class="tag-multiselect-input"><input id="quote-tags" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="quote-tag-options" placeholder="输入或选择标签" autocomplete="off"><button class="icon-button" id="quote-tag-toggle" type="button" title="选择标签" aria-label="选择标签" aria-expanded="false" aria-controls="quote-tag-options">⌄</button></div><div class="tag-multiselect-options" id="quote-tag-options" role="listbox" aria-label="善言标签" hidden></div><span class="tag-multiselect-status" id="quote-tag-status" role="status" aria-live="polite"></span></div></label><label class="field"><span>记录时间</span><input id="quote-datetime" type="datetime-local" step="1" required></label></div>
         <div class="quote-form-actions"><button class="text-button" id="quote-cancel" type="button" hidden>取消编辑</button><button class="primary-button" id="quote-submit" type="submit">收藏</button></div>
         <p class="status" id="quote-status" role="status"></p>
       </form>
@@ -1307,7 +1307,7 @@
       <p class="eyebrow">从正文收藏</p><h2 id="selection-quote-title">收为善言</h2>
       <label class="field"><span>内容 <b>必填</b></span><textarea id="selection-quote-content" rows="5" required></textarea></label>
       <label class="field"><span>来源 <b>必填</b></span><input id="selection-quote-source" required></label>
-      <label class="field"><span>标签</span><input id="selection-quote-tags" placeholder="多个标签用空格分隔"></label>
+      <label class="field"><span>标签</span><div class="tag-multiselect" data-tag-multiselect="selectionQuote"><div class="tag-multiselect-selected" id="selection-quote-selected-tags"></div><div class="tag-multiselect-input"><input id="selection-quote-tags" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="selection-quote-tag-options" placeholder="输入或选择标签" autocomplete="off"><button class="icon-button" id="selection-quote-tag-toggle" type="button" title="选择标签" aria-label="选择标签" aria-expanded="false" aria-controls="selection-quote-tag-options">⌄</button></div><div class="tag-multiselect-options" id="selection-quote-tag-options" role="listbox" aria-label="善言标签" hidden></div><span class="tag-multiselect-status" id="selection-quote-tag-status" role="status" aria-live="polite"></span></div></label>
       <label class="field"><span>记录时间</span><input id="selection-quote-datetime" type="datetime-local" step="1" required></label>
       <button class="primary-button full" type="submit">收藏善言</button><p class="status" id="selection-quote-status"></p>
     </form>

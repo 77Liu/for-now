@@ -113,7 +113,8 @@ async function initialSnapshot() {
     const state = {
       ...envelopeData(routeResult),
       onboardingV2: meta.onboardingV2,
-      notificationUnread: meta.notificationUnread
+      notificationUnread: meta.notificationUnread,
+      quoteTags: meta.quoteTags
     };
     markStartup("coreSnapshotReady");
     const visibleShell = revealAuthenticatedShell(session, state);

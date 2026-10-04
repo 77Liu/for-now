@@ -193,10 +193,11 @@ const mockFetch = `
   window.__releaseSpeech = null;
   window.__failSpeech = false;
   window.__failSpeechPreview = false;
-  window.__speechAssetSerial = 2;
+  window.__speechAssetSerial = 3;
   window.__speechAssets = [
     { id:"asset-capture-long-v1",sourceType:"capture",sourceId:"capture-long",sourceVersion:1,voice:"zh_male_shaonianzixin_uranus_bigtts",generationRate:-10,mimeType:"audio/mpeg",bytes:3,createdAt:"2026-09-27T07:00:00.000Z",expiresAt:"2026-10-27T07:00:00.000Z" },
-    { id:"asset-answer-kept-v1",sourceType:"thoughtAnswer",sourceId:"answer-kept",sourceVersion:1,voice:"zh_male_shaonianzixin_uranus_bigtts",generationRate:-10,mimeType:"audio/mpeg",bytes:3,createdAt:"2026-09-27T07:01:00.000Z",expiresAt:"2026-10-27T07:01:00.000Z" }
+    { id:"asset-answer-kept-v1",sourceType:"thoughtAnswer",sourceId:"answer-kept",sourceVersion:1,voice:"zh_male_shaonianzixin_uranus_bigtts",generationRate:-10,mimeType:"audio/mpeg",bytes:3,createdAt:"2026-09-27T07:01:00.000Z",expiresAt:"2026-10-27T07:01:00.000Z" },
+    { id:"asset-chain-kept-v1",sourceType:"thoughtChain",sourceId:"kept-root",sourceVersion:1,voice:"zh_male_shaonianzixin_uranus_bigtts",generationRate:-10,mimeType:"audio/mpeg",bytes:9,createdAt:"2026-10-05T00:00:00.000Z",expiresAt:"2026-11-05T00:00:00.000Z" }
   ];
   window.__failMicrophonePermission = false;
   window.__audioUploadKeys = [];
@@ -310,6 +311,7 @@ const mockFetch = `
   window.__failBookNoteStatus = 0;
   window.__quoteSaves = 0;
   window.__quotePatches = 0;
+  window.__quotePayloads = [];
   window.__keepsakeOriginalReads = 0;
   window.__keepsakeUnderstandingRequests = [];
   window.__delayKeepsakeUnderstanding = false;
@@ -812,7 +814,7 @@ const mockFetch = `
     if (url === "/api/v1/startup") {
       window.__startupEvents.push("startup:response");
       const owner=window.__accountUser.role==="owner";
-      return v1({ protocolVersion:1,version:"build-fixture",releaseVersion:"0.2.0",user:window.__accountUser,capabilities:owner?["ai-costs","architecture","commercialization","local-testing","ai-configuration","account-roles"]:[],features:{incrementalSync:true},governanceUrl:owner?"/platform/":"",accountCursor:window.__syncCursor,notificationUnread:window.__notifications.filter(item=>!item.readAt).length,onboardingV2:window.__onboardingV2 });
+      return v1({ protocolVersion:1,version:"build-fixture",releaseVersion:"0.2.0",user:window.__accountUser,capabilities:owner?["ai-costs","architecture","commercialization","local-testing","ai-configuration","account-roles"]:[],features:{incrementalSync:true},governanceUrl:owner?"/platform/":"",accountCursor:window.__syncCursor,notificationUnread:window.__notifications.filter(item=>!item.readAt).length,quoteTags:["阅读","摘录","长期"],onboardingV2:window.__onboardingV2 });
     }
     if (url.startsWith("/api/v1/route-state")) {
       const respond=()=>{window.__replayingDelayedState=true;const pending=window.fetch("/api/state",init);window.__replayingDelayedState=false;return pending.then(async response=>{window.__startupEvents.push("route:response");return v1({...await response.json(),_routeProjection:{view:new URL("http://local"+url).searchParams.get("view")||"today",complete:true}})})};
@@ -1272,12 +1274,14 @@ const mockFetch = `
     if ((url === "/api/quotes" || url === "/api/v1/quotes") && init.method === "POST") {
       window.__quoteSaves += 1;
       const payload = JSON.parse(init.body), item = { id: "quote-new-" + window.__quoteSaves, createdAt: "2026-09-27T03:20:21.000Z", version: 1, ...payload, ...eventTime(payload) };
+      window.__quotePayloads.push(payload);
       window.__quotes.unshift(item);
       return url.startsWith("/api/v1/") ? v1(item, { operation: { id: init.headers["x-client-operation-id"], status: "committed" } }) : json(item);
     }
     if (/^\\/api\\/(?:v1\\/)?quotes\\/[^/]+$/.test(url) && init.method === "PATCH") {
       window.__quotePatches += 1;
       const item = window.__quotes.find(value => url.endsWith(value.id)), payload = JSON.parse(init.body);
+      window.__quotePayloads.push(payload);
       Object.assign(item, payload, eventTime(payload), { updatedAt: new Date().toISOString(), version: (item.version || 1) + 1 });
       return url.startsWith("/api/v1/") ? v1(item) : json(item);
     }
@@ -2447,6 +2451,7 @@ try {
     };
   })()`);
   assert.deepEqual(thoughtListState,{first:"kept-root",months:1,aiNotConclusion:true,discardedPresent:true,userConclusion:"✓ 我的结论这是我自己的结论。",openLabel:"打开 ↗"});
+  assert.deepEqual(await evaluate(`(()=>{const controls=document.querySelector('#all-thoughts [data-chain-id="kept-root"]').closest(".thought-timeline-entry").querySelector(".thought-chain-speech .speech-asset-controls"),player=controls.querySelector("[data-speech-player]");return{sourceType:controls.dataset.speechSourceType,sourceId:controls.dataset.speechSourceId,sourceVersion:controls.dataset.speechSourceVersion,src:player.getAttribute("src"),visible:Boolean(player.getClientRects().length)}})()`),{sourceType:"thoughtChain",sourceId:"kept-root",sourceVersion:"1",src:"/api/speech/audio?id=asset-chain-kept-v1",visible:true});
   await evaluate(`document.querySelector("#toast").hidden=true;true`);
   await sleep(250);
   await fs.writeFile("/tmp/growth-thought-r8-list.png",Buffer.from((await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false})).data,"base64"));
@@ -2471,9 +2476,11 @@ try {
   await evaluate(`document.querySelector("#toast").hidden=true;true`);
   await sleep(250);
   await fs.writeFile("/tmp/growth-thought-r8-detail.png",Buffer.from((await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false})).data,"base64"));
-  await cdp.send("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:2,mobile:true});
-  await sleep(80);
-  assert.deepEqual(await evaluate(`(()=>{const actions=document.querySelector("#all-thoughts .thought-actions").getBoundingClientRect(),nav=document.querySelector(".sidebar").getBoundingClientRect();return{noOverflow:document.documentElement.scrollWidth<=innerWidth,fixed:getComputedStyle(document.querySelector("#all-thoughts .thought-actions")).position==="fixed",aboveNav:actions.bottom<=nav.top+1,touch:[...document.querySelectorAll("#all-thoughts .thought-actions button")].every(button=>button.getBoundingClientRect().height>=44)}})()`),{noOverflow:true,fixed:true,aboveNav:true,touch:true});
+  for(const width of[320,375,390]){
+    await cdp.send("Emulation.setDeviceMetricsOverride",{width,height:844,deviceScaleFactor:2,mobile:true});
+    await sleep(80);
+    assert.deepEqual(await evaluate(`(()=>{const actions=document.querySelector("#all-thoughts .thought-actions").getBoundingClientRect(),nav=document.querySelector(".sidebar").getBoundingClientRect(),buttons=[...document.querySelectorAll("#all-thoughts .thought-actions button")],tops=buttons.map(button=>Math.round(button.getBoundingClientRect().top));return{noOverflow:document.documentElement.scrollWidth<=innerWidth,fixed:getComputedStyle(document.querySelector("#all-thoughts .thought-actions")).position==="fixed",aboveNav:actions.bottom<=nav.top+1,touch:buttons.every(button=>button.getBoundingClientRect().height>=44),singleRow:new Set(tops).size===1}})()`),{noOverflow:true,fixed:true,aboveNav:true,touch:true,singleRow:true},`${width}px thought primary actions`);
+  }
   await evaluate(`document.querySelector("#toast").hidden=true;true`);
   await fs.writeFile("/tmp/growth-thought-r8-detail-mobile.png",Buffer.from((await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false})).data,"base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
@@ -2599,9 +2606,10 @@ try {
   await evaluate(`(() => { const text = document.querySelector('[data-analysis-id="analysis-2"] .analysis-content h2').firstChild, range = document.createRange(), selection = getSelection(); range.selectNodeContents(text); selection.removeAllRanges(); selection.addRange(range); document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true })); return true; })()`);
   assert.equal(await waitUntil(`!document.querySelector("#selection-tools").hidden`), true);
   await evaluate(`document.querySelector('[data-selection-action="quote"]').click(); true`);
-  assert.equal(await evaluate(`!document.querySelector("#selection-quote-modal").hidden && document.querySelector("#selection-quote-content").value === "旧复盘" && document.querySelector("#selection-quote-source").value.includes("认知复盘")`), true);
-  await evaluate(`document.querySelector("#selection-quote-content").value = "旧复盘\\n收藏"; document.querySelector("#selection-quote-tags").value = "复盘 传统"; document.querySelector("#selection-quote-form").requestSubmit(); true`);
+  assert.equal(await evaluate(`!document.querySelector("#selection-quote-modal").hidden && document.querySelector("#selection-quote-content").value === "旧复盘" && document.querySelector("#selection-quote-source").value.includes("认知复盘") && document.querySelector("#selection-quote-selected-tags").textContent.includes("认知复盘")`), true);
+  await evaluate(`(()=>{document.querySelector("#selection-quote-content").value="旧复盘\\n收藏";const input=document.querySelector("#selection-quote-tags");for(const tag of["复盘","传统"]){input.value=tag;input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true}))}document.querySelector("#selection-quote-form").requestSubmit();return true})()`);
   assert.equal(await waitUntil(`window.__quoteSaves === 1 && document.querySelector("#selection-quote-modal").hidden`), true);
+  assert.deepEqual(await evaluate(`window.__quotePayloads[0].tags`),["认知复盘","复盘","传统"]);
   await evaluate(`document.querySelector(".analysis-panel").scrollIntoView({ block: "start" }); true`);
   await sleep(100);
   const reviewScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
@@ -2829,11 +2837,13 @@ try {
   const quoteSkyMobileScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
   await fs.writeFile("/tmp/growth-quote-sky-mobile.png",Buffer.from(quoteSkyMobileScreenshot.data,"base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
-  await evaluate(`document.querySelector("#quote-source").value = "新来源"; document.querySelector("#quote-content").value = "新收藏\\n第二行"; document.querySelector("#quote-tags").value = "行动 摘录"; document.querySelector("#quote-form").requestSubmit(); true`);
+  await evaluate(`(()=>{document.querySelector("#quote-source").value="新来源";document.querySelector("#quote-content").value="新收藏\\n第二行";document.querySelector("#quote-tag-toggle").click();const option=[...document.querySelectorAll("#quote-tag-options [data-quote-tag-option]")].find(item=>item.dataset.quoteTagOption==="阅读");option.click();const input=document.querySelector("#quote-tags");input.value="新标签";input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new KeyboardEvent("keydown",{key:"，",bubbles:true}));document.querySelector("#quote-form").requestSubmit();return true})()`);
   assert.equal(await waitUntil(`window.__quoteSaves === 2 && document.querySelector("#quote-source").value === "" && document.querySelector("#quote-content").value === "" && document.querySelector("#quote-timeline").textContent.includes("新收藏")`), true);
+  assert.deepEqual(await evaluate(`window.__quotePayloads[1].tags`),["阅读","新标签"]);
   assert.equal(await evaluate(`document.querySelector("#toast").textContent`), "善言已收藏");
-  await evaluate(`document.querySelector('[data-quote-id="quote-new-2"] [data-quote-edit]').click(); document.querySelector("#quote-tags").value = "更新"; document.querySelector("#quote-form").requestSubmit(); true`);
+  await evaluate(`(()=>{document.querySelector('[data-quote-id="quote-new-2"] [data-quote-edit]').click();while(document.querySelector('#quote-selected-tags [data-quote-tag-remove]'))document.querySelector('#quote-selected-tags [data-quote-tag-remove]').click();const input=document.querySelector("#quote-tags");input.value="更新";input.dispatchEvent(new Event("input",{bubbles:true}));document.querySelector("#quote-form").requestSubmit();return true})()`);
   assert.equal(await waitUntil(`window.__quotePatches === 1 && document.querySelector('[data-quote-id="quote-new-2"] .quote-tags')?.textContent.includes("更新")`),true);
+  assert.deepEqual(await evaluate(`window.__quotePayloads[2].tags`),["更新"]);
   await evaluate(`document.querySelector("#quote-timeline").scrollIntoView({ block: "start" }); true`);
   const quoteScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-quote-timeline.png", Buffer.from(quoteScreenshot.data, "base64"));
@@ -3331,9 +3341,16 @@ try {
   await evaluate(`document.querySelector('[data-view="thoughts"]').click();document.querySelector('#all-thoughts [data-chain-id="kept-root"] .chain-summary').click();true`);
   assert.equal(await waitUntil(`location.pathname==="/thoughts/kept-root"&&document.querySelector('#all-thoughts [data-chain-id="kept-root"]')?.open`),true);
   assert.equal(await evaluate(`(() => { const before=window.__deleteRequests;window.confirm=()=>false;document.querySelector('#all-thoughts [data-chain-id="kept-root"] [data-delete-chain]').click();return window.__deleteRequests===before; })()`),true);
+  const chainSpeechRequestsBefore=await evaluate(`window.__speechRequests.length`);
+  const chainSpeechState=await evaluate(`(()=>{const controls=document.querySelector('#all-thoughts [data-chain-id="kept-root"]').closest(".thought-timeline-entry").querySelector(".thought-chain-speech .speech-asset-controls"),player=controls.querySelector("[data-speech-player]"),source=window.__thoughts.find(item=>item.id==="kept-root");return{sourceType:controls.dataset.speechSourceType,sourceId:controls.dataset.speechSourceId,sourceVersion:Number(controls.dataset.speechSourceVersion),currentVersion:source.version,hasPlayer:Boolean(player),button:controls.querySelector("[data-speech-synthesize]").textContent}})()`);
+  assert.deepEqual(chainSpeechState,{sourceType:"thoughtChain",sourceId:"kept-root",sourceVersion:chainSpeechState.currentVersion,currentVersion:chainSpeechState.currentVersion,hasPlayer:false,button:"生成"});
+  await evaluate(`document.querySelector('#all-thoughts [data-chain-id="kept-root"]').closest(".thought-timeline-entry").querySelector(".thought-chain-speech [data-speech-synthesize]").click();true`);
+  assert.equal(await waitUntil(`window.__speechRequests.length===${chainSpeechRequestsBefore+1}&&document.querySelector(".thought-chain-speech [data-speech-player]")?.getAttribute("src").includes("asset-generated-")`),true);
+  assert.deepEqual(await evaluate(`window.__speechRequests.at(-1)`),{sourceType:"thoughtChain",sourceId:"kept-root",sourceVersion:chainSpeechState.currentVersion,regenerate:false});
   assert.deepEqual(await evaluate(`(() => {const block=document.querySelector('#all-thoughts [data-thought-block-id="answer-kept"]'),controls=block.querySelector(".speech-asset-controls"),player=controls.querySelector("[data-speech-player]"),rate=controls.querySelector("[data-speech-playback-rate]");return{sourceType:controls.dataset.speechSourceType,sourceId:controls.dataset.speechSourceId,sourceVersion:controls.dataset.speechSourceVersion,src:player.getAttribute("src"),button:controls.querySelector("[data-speech-synthesize]").textContent,buttonName:controls.querySelector("[data-speech-synthesize]").getAttribute("aria-label"),rateName:rate.getAttribute("aria-label")}})()`),{sourceType:"thoughtAnswer",sourceId:"answer-kept",sourceVersion:"1",src:"/api/speech/audio?id=asset-answer-kept-v1",button:"重新生成",buttonName:"重新生成AI 回答文字朗读",rateName:"AI 回答文字朗读播放倍速"});
+  const thoughtAnswerSpeechRequestsBefore=await evaluate(`window.__speechRequests.length`);
   await evaluate(`document.querySelector('#all-thoughts [data-thought-block-id="answer-kept"] [data-speech-synthesize]').click();true`);
-  assert.equal(await waitUntil(`window.__speechRequests.length===5&&document.querySelector('#all-thoughts [data-thought-block-id="answer-kept"] [data-speech-player]')?.getAttribute("src").includes("asset-generated-")`),true);
+  assert.equal(await waitUntil(`window.__speechRequests.length===${thoughtAnswerSpeechRequestsBefore+1}&&document.querySelector('#all-thoughts [data-thought-block-id="answer-kept"] [data-speech-player]')?.getAttribute("src").includes("asset-generated-")`),true);
   assert.deepEqual(await evaluate(`({request:window.__speechRequests.at(-1),voice:window.__speechAssets.find(asset=>asset.sourceType==="thoughtAnswer"&&asset.sourceId==="answer-kept")?.voice,open:document.querySelector('#all-thoughts [data-chain-id="kept-root"]').open})`),{request:{sourceType:"thoughtAnswer",sourceId:"answer-kept",sourceVersion:1,regenerate:true},voice:"zh_male_m191_uranus_bigtts",open:true});
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:1,mobile:true});await sleep(100);
   assert.equal(await evaluate(`(()=>{const controls=document.querySelector('#all-thoughts [data-thought-block-id="answer-kept"] .speech-asset-controls'),button=controls.querySelector("button").getBoundingClientRect(),select=controls.querySelector("select").getBoundingClientRect(),card=controls.closest(".thought-content-block").getBoundingClientRect();return document.documentElement.scrollWidth<=innerWidth&&button.width>=44&&button.height>=44&&select.width>=44&&select.height>=44&&controls.getBoundingClientRect().right<=card.right+.5})()`),true);

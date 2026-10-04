@@ -20,8 +20,8 @@ const BUDGET = Object.freeze({
   blockingStyleBytes: 250 * 1024,
   entryModuleCount: 6,
   entryModuleBytes: 64 * 1024,
-  deferredRuntimeModuleCount: 23,
-  deferredRuntimeModuleBytes: 760 * 1024,
+  deferredRuntimeModuleCount: 24,
+  deferredRuntimeModuleBytes: 800 * 1024,
   currentScreenFeedbackMs: 500,
   stableHomeMs: 1000
 });

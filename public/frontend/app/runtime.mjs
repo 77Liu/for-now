@@ -1,4 +1,9 @@
 import { createApiClient } from "../api/index.mjs";
+import {
+  createTagMultiSelectState,
+  handleTagMultiSelectKey,
+  reduceTagMultiSelectState
+} from "../components/tag-multiselect/index.mjs";
 import { createLatexRenderer, escapeHtml, plainPreview, presentError, renderMarkdown } from "../content/index.mjs";
 import {
   createPageEffects,
@@ -122,6 +127,14 @@ let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles
 let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",commentPanelOpen=false,annotationLineFrame=0,answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,captureComposerOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,discoveryController=null,actionsSnapshot={actions:[],habits:[],habitCheckins:[]},actionsRequestSerial=0,feedbackItems=[],feedbackRequestSerial=0,exportManifest=null,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.6",releaseVersion="0.5.6",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
 let notificationsLoadState="idle",feedbackLoadState="idle",exportLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,routeDataRequestSerial=0,loadedRouteKey="",fullRouteStateLoaded=false,renderedRouteView="",activeThoughtRouteId="",activeRouteResult=null;
 const feedSearchQueries={captures:"",journals:"",thoughts:"",books:"",keepsakes:"",quotes:""};
+const quoteTagPickerConfig=Object.freeze({
+  quote:{input:"#quote-tags",selected:"#quote-selected-tags",options:"#quote-tag-options",toggle:"#quote-tag-toggle",status:"#quote-tag-status"},
+  selectionQuote:{input:"#selection-quote-tags",selected:"#selection-quote-selected-tags",options:"#selection-quote-tag-options",toggle:"#selection-quote-tag-toggle",status:"#selection-quote-tag-status"}
+});
+let quoteTagStates={
+  quote:createTagMultiSelectState(),
+  selectionQuote:createTagMultiSelectState()
+};
 let notificationRetryingTaskIds=[],keepsakeDraftTags=[];
 let annotationUiDrafts={};
 const expandedLongContentKeys=new Set();
@@ -1870,10 +1883,11 @@ function chainCard({question,children},showDate=true,sortMode=thoughtSortMode,{d
   const actions=syncing
     ?`<span class="checkin-sync-state ${escapeHtml(syncing)}">${syncing==="pending"?"待同步":"正在同步"}</span>`
     :`<span class="thought-action-group thought-action-grow"><button class="primary-button" data-thought-block-add="idea" data-root-id="${question.id}">＋ 补充</button><button class="subtle-action" data-followup-compose="${question.id}" aria-expanded="false">追问 →</button><button class="subtle-action answer-action" data-answer-chain="${question.id}">✦ ${answers.length?"重新回答":"给我回答"}</button></span>`;
+  const chainSpeech=syncing?"":speechAssetControlsMarkup({sourceType:"thoughtChain",sourceId:question.id,sourceVersion:question.version||1,label:"整套思绪朗读"});
   const displayedAt=sortMode==="created"?(question.createdAt||eventTimestamp(question)):eventTimestamp(question),dateLabel=compactDate?eventDate({occurredAt:displayedAt}).slice(-2):eventDate({occurredAt:displayedAt});
   const moreActions=`<details class="thought-more-menu"><summary aria-label="更多思绪操作" title="更多思绪操作">•••</summary><div><button class="subtle-action" type="button" data-remark="${question.id}">备注</button>${dispositionActions}<button class="subtle-action" type="button" data-edit-chain="${question.id}">编辑问题</button><button class="subtle-action danger" type="button" data-delete-chain="${question.id}">移入回收站</button></div></details>`;
   const detailHeader=detail?`<header class="thought-detail-header"><div class="thought-detail-nav"><button class="subtle-action" type="button" data-thought-list>‹ 返回</button><div>${annotationCount?`<button class="subtle-action" type="button" data-open-comments="${question.id}">批注 ${annotationCount}</button>`:""}${moreActions}</div></div><div class="thought-detail-meta"><time>${formatDate(displayedAt)}</time><span>${tags}</span>${tracePending}</div><div class="thought-detail-title thought-question-content markdown-content" role="heading" aria-level="1">${renderMarkdown(question.content||"图片记录")}</div>${contentImagesMarkup(question,"thoughtRoot")}</header>`:"";
-  return `<article class="thought-timeline-entry${syncing?" is-syncing":""}${detail?" thought-detail-entry":""}">${detail?"":`<div class="timeline-date">${showDate?escapeHtml(dateLabel):""}</div><header class="thought-entry-meta"><time>${formatTime(displayedAt)}</time><div class="thought-entry-markers"><span class="thought-entry-tags">${tags}</span>${tracePending}</div></header>`}<details class="thought-card chain-record${detail?" thought-detail-record":""}" data-chain-id="${question.id}"${detail?" open":""}><summary class="chain-summary"><div class="summary-content"><strong class="question-preview">${escapeHtml(plainPreview(question.content)||"图片记录")}</strong>${preview?`<p class="thought-preview ${preview.kind}"><span>${preview.kind==="conclusion"?"✓":"◒"} ${preview.label}</span><span class="thought-preview-text">${escapeHtml(preview.text)}</span></p>`:""}<span class="thought-open-label">打开 ↗</span></div><span class="expand-mark" aria-hidden="true">⌄</span></summary><div class="chain-expanded">${detailHeader}${thoughtStream(question,children)}${syncing?"":`<form class="followup-form" data-follow-up-root="${question.id}" hidden><label><span>追问问题</span><textarea rows="3" name="question" placeholder="补充一个追问…" required></textarea></label><label><span>回答（可选）</span><textarea rows="3" name="answer" placeholder="已有答案时可一起记下"></textarea></label><button class="quiet-button followup-submit" type="submit">保存追问</button><p class="followup-status" role="status" aria-live="polite"></p></form>`}<div class="thought-actions">${actions}</div></div></details></article>`
+  return `<article class="thought-timeline-entry${syncing?" is-syncing":""}${detail?" thought-detail-entry":""}">${detail?"":`<div class="timeline-date">${showDate?escapeHtml(dateLabel):""}</div><header class="thought-entry-meta"><time>${formatTime(displayedAt)}</time><div class="thought-entry-markers"><span class="thought-entry-tags">${tags}</span>${tracePending}</div></header>`}<details class="thought-card chain-record${detail?" thought-detail-record":""}" data-chain-id="${question.id}"${detail?" open":""}><summary class="chain-summary"><div class="summary-content"><strong class="question-preview">${escapeHtml(plainPreview(question.content)||"图片记录")}</strong>${preview?`<p class="thought-preview ${preview.kind}"><span>${preview.kind==="conclusion"?"✓":"◒"} ${preview.label}</span><span class="thought-preview-text">${escapeHtml(preview.text)}</span></p>`:""}<span class="thought-open-label">打开 ↗</span></div><span class="expand-mark" aria-hidden="true">⌄</span></summary><div class="chain-expanded">${detailHeader}${thoughtStream(question,children)}${syncing?"":`<form class="followup-form" data-follow-up-root="${question.id}" hidden><label><span>追问问题</span><textarea rows="3" name="question" placeholder="补充一个追问…" required></textarea></label><label><span>回答（可选）</span><textarea rows="3" name="answer" placeholder="已有答案时可一起记下"></textarea></label><button class="quiet-button followup-submit" type="submit">保存追问</button><p class="followup-status" role="status" aria-live="polite"></p></form>`}<div class="thought-actions">${actions}</div></div></details><div class="thought-chain-speech">${chainSpeech}</div></article>`
 }
 function chainCardsMarkup(chains,sortMode=thoughtSortMode,{detail=false,groupMonths=false}={}){
   const displayDate=chain=>sortMode==="created"?eventDate({occurredAt:chain.question.createdAt||eventTimestamp(chain.question)}):thoughtDate(chain);
@@ -2775,19 +2789,72 @@ function syncQuoteOverflow(){
   });
   scheduleAnnotationLineCounts()
 }
+function quoteTagCandidates(){
+  return[...(state.quoteTags||[]),...(state.quotes||[]).flatMap(item=>item.tags||[])]
+}
+function quoteTagPickerElements(key){
+  const config=quoteTagPickerConfig[key];
+  return config?{
+    root:document.querySelector(`[data-tag-multiselect="${key}"]`),
+    input:$(config.input),
+    selected:$(config.selected),
+    options:$(config.options),
+    toggle:$(config.toggle),
+    status:$(config.status)
+  }:null
+}
+function renderQuoteTagPicker(key){
+  const elements=quoteTagPickerElements(key),model=quoteTagStates[key];
+  if(!elements?.root||!model)return;
+  const open=elements.root.dataset.open==="true"&&!model.atLimit&&model.options.length>0;
+  elements.input.value=model.input;
+  elements.input.setAttribute("aria-expanded",String(open));
+  elements.input.setAttribute("aria-activedescendant",open&&model.activeIndex>=0?`${key}-tag-option-${model.activeIndex}`:"");
+  elements.toggle.setAttribute("aria-expanded",String(open));
+  elements.selected.innerHTML=model.selected.map(tag=>`<span>#${escapeHtml(tag)}<button type="button" data-quote-tag-remove="${escapeHtml(tag)}" data-quote-tag-picker="${key}" aria-label="移除标签 ${escapeHtml(tag)}">×</button></span>`).join("");
+  elements.options.innerHTML=model.options.map((option,index)=>`<button id="${key}-tag-option-${index}" type="button" role="option" aria-selected="${index===model.activeIndex}" data-quote-tag-option="${escapeHtml(option.value)}" data-quote-tag-picker="${key}">${option.type==="create"?`创建 “${escapeHtml(option.value)}”`:escapeHtml(option.value)}</button>`).join("");
+  elements.options.hidden=!open;
+  elements.status.textContent=model.overflow.length?`已有 ${model.selected.length} 个标签，请先移除一个再添加。`:model.atLimit?"已达到 8 个标签上限。":""
+}
+function updateQuoteTagPicker(key,action,{open}={}){
+  quoteTagStates[key]=reduceTagMultiSelectState(quoteTagStates[key],action);
+  const root=quoteTagPickerElements(key)?.root;
+  if(root&&open!==undefined)root.dataset.open=String(open);
+  renderQuoteTagPicker(key);
+  return quoteTagStates[key]
+}
+function setQuoteTagPicker(key,selected=[]){
+  quoteTagStates[key]=createTagMultiSelectState({candidates:quoteTagCandidates(),selected});
+  const root=quoteTagPickerElements(key)?.root;if(root)root.dataset.open="false";
+  renderQuoteTagPicker(key)
+}
+function quoteTagsForSubmission(key){
+  const input=quoteTagPickerElements(key)?.input;
+  let state=reduceTagMultiSelectState(quoteTagStates[key],{type:"input",value:input?.value||""});
+  if(state.query)state=reduceTagMultiSelectState(state,{type:"commit"});
+  quoteTagStates[key]=state;
+  renderQuoteTagPicker(key);
+  return[...(quoteTagStates[key]?.selected||[])]
+}
+function refreshQuoteTagCandidates(){
+  for(const key of Object.keys(quoteTagPickerConfig)){
+    quoteTagStates[key]=reduceTagMultiSelectState(quoteTagStates[key],{type:"set-candidates",values:quoteTagCandidates()});
+    renderQuoteTagPicker(key)
+  }
+}
 function renderQuotes(){
   const dateOf=eventDate,allItems=[...state.quotes].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a))),items=allItems.filter(item=>matchesFeedSearch("quotes",item.source,item.content,item.tags)),timeline=$("#quote-timeline");
   renderQuoteSky();
   timeline.innerHTML=items.length?items.map((item,index)=>{const syncing=item._sync?.status,actions=syncing?`<span class="checkin-sync-state ${escapeHtml(syncing)}">${syncing==="pending"?"待同步":"正在同步"}</span>`:`<button class="subtle-action" type="button" data-quote-edit="${item.id}">编辑</button><button class="subtle-action danger" type="button" data-quote-delete="${item.id}">删除</button>`;return`<article class="quote-entry${syncing?" is-syncing":""}" data-quote-id="${item.id}">${index===0||dateOf(item)!==dateOf(items[index-1])?`<div class="quote-date">${escapeHtml(dateOf(item))}</div>`:""}<header class="quote-entry-meta"><cite title="${escapeHtml(item.source)}">${escapeHtml(item.source)}</cite><span class="quote-entry-tools"><time>${formatTime(eventTimestamp(item))}</time>${actions}</span></header><div class="quote-entry-card card"><blockquote class="quote-content-viewport" data-expand-key="quote:${escapeHtml(item.id)}">${escapeHtml(item.content)}</blockquote><button class="quote-expand" type="button" data-quote-expand aria-expanded="false" hidden>展开</button>${quoteTagsMarkup(item.tags)}</div></article>`}).join(""):allItems.length?feedSearchEmpty("拾句"):"";
   items.filter(item=>!item._sync).forEach(item=>markCommentTarget(timeline.querySelector(`[data-quote-id="${CSS.escape(item.id)}"] blockquote`),commentRootKey("quote",item.id),"content"));
-  applyCommentAnchors(timeline);requestAnimationFrame(syncQuoteOverflow);clearInterval(quoteTimer);
+  applyCommentAnchors(timeline);refreshQuoteTagCandidates();requestAnimationFrame(syncQuoteOverflow);clearInterval(quoteTimer);
   if(state.quotes.length>3)quoteTimer=setInterval(()=>{if($("#view-quotes").classList.contains("active")&&!document.hidden&&!$("#quote-sky").matches(":hover"))renderQuoteSky(true)},24000);
 }
-function resetQuoteForm(){const form=$("#quote-form");form.reset();$("#quote-id").value="";resetOccurrenceInput($("#quote-datetime"));$("#quote-submit").textContent="收藏";$("#quote-cancel").hidden=true;$("#quote-status").textContent=""}
-function editQuote(id){const quote=state.quotes.find(item=>item.id===id);if(!quote)return;$("#quote-id").value=id;$("#quote-source").value=quote.source;$("#quote-content").value=quote.content;$("#quote-tags").value=(quote.tags||[]).join(" ");resetOccurrenceInput($("#quote-datetime"),quote);$("#quote-submit").textContent="保存修改";$("#quote-cancel").hidden=false;$("#quote-status").textContent="正在编辑已有善言";$("#quote-form").scrollIntoView({behavior:"smooth",block:"center"});$("#quote-content").focus()}
+function resetQuoteForm(){const form=$("#quote-form");form.reset();setQuoteTagPicker("quote");$("#quote-id").value="";resetOccurrenceInput($("#quote-datetime"));$("#quote-submit").textContent="收藏";$("#quote-cancel").hidden=true;$("#quote-status").textContent=""}
+function editQuote(id){const quote=state.quotes.find(item=>item.id===id);if(!quote)return;$("#quote-id").value=id;$("#quote-source").value=quote.source;$("#quote-content").value=quote.content;setQuoteTagPicker("quote",quote.tags||[]);resetOccurrenceInput($("#quote-datetime"),quote);$("#quote-submit").textContent="保存修改";$("#quote-cancel").hidden=false;$("#quote-status").textContent="正在编辑已有善言";$("#quote-form").scrollIntoView({behavior:"smooth",block:"center"});$("#quote-content").focus()}
 function selectionQuoteSource(rootKey){const root=commentRoot(rootKey),label=commentRootLabel(rootKey),{type}=parseCommentRootKey(rootKey);const title=type==="book"?root?.title:type==="journal"?root?.title||root?.content:type==="quote"?root?.source:type==="chat"?root?.message:root?.content;return `${label}${title?` · ${plainPreview(title).slice(0,60)}`:""}`}
-function closeSelectionQuoteModal(){const modal=$("#selection-quote-modal");modal.hidden=true;$("#selection-quote-form").reset();$("#selection-quote-status").textContent=""}
-function openSelectionQuoteModal(selection){const label=commentRootLabel(selection.rootKey);$("#selection-quote-content").value=selection.quote;$("#selection-quote-source").value=selectionQuoteSource(selection.rootKey);$("#selection-quote-tags").value=label;resetOccurrenceInput($("#selection-quote-datetime"));$("#selection-quote-status").textContent="";$("#selection-quote-modal").hidden=false;pendingSelection=null;window.getSelection()?.removeAllRanges();$("#selection-quote-content").focus()}
+function closeSelectionQuoteModal(){const modal=$("#selection-quote-modal");modal.hidden=true;$("#selection-quote-form").reset();setQuoteTagPicker("selectionQuote");$("#selection-quote-status").textContent=""}
+function openSelectionQuoteModal(selection){const label=commentRootLabel(selection.rootKey);$("#selection-quote-content").value=selection.quote;$("#selection-quote-source").value=selectionQuoteSource(selection.rootKey);setQuoteTagPicker("selectionQuote",[label]);resetOccurrenceInput($("#selection-quote-datetime"));$("#selection-quote-status").textContent="";$("#selection-quote-modal").hidden=false;pendingSelection=null;window.getSelection()?.removeAllRanges();$("#selection-quote-content").focus()}
 function llmProfile(scene="thoughtAnswer"){const tier=llmSettings.scenarios?.[scene]||"high",profile=llmSettings.profiles?.[tier]||defaultLlmProfiles[tier]||defaultLlmProfiles.high;return{tier,...profile,effort:llmSettings.sceneEfforts?.[scene]||profile.effort}}
 function accountTtsVoice(){
   const voices=state.speech?.voices||[],preferred=String(llmSettings.speech?.defaultVoice||"");
@@ -3675,7 +3742,7 @@ async function load({visibleShell=false,initialSnapshot=null}={}){
   if(!Number.isFinite(startupMarks.coreSnapshotReady))markStartup("coreSnapshotReady");assertNativeServerCompatibility(meta);
   currentUser={...currentUser,...(meta.user||{})};applyCapabilitySurface(meta.capabilities||[]);
   Object.keys(routeContentSelectors).forEach(unmountRouteContent);
-  replaceState({...structuredClone(emptyClientState),...nextState,onboardingV2:meta.onboardingV2,notificationUnread:meta.notificationUnread});
+  replaceState({...structuredClone(emptyClientState),...nextState,onboardingV2:meta.onboardingV2,notificationUnread:meta.notificationUnread,quoteTags:meta.quoteTags||[]});
   loadedRouteKey=routeDataKey(route);fullRouteStateLoaded=Boolean(nextState?._routeProjection?.complete);appVersion=meta.version||"development";releaseVersion=meta.releaseVersion||releaseVersion;featureFlags={...featureFlags,...meta.features};governanceUrl=typeof meta.governanceUrl==="string"?meta.governanceUrl:"";notificationUnreadCount=Number(state.notificationUnread)||0;routeDataReady=true;restoreAnnotationUiDrafts();
   const onboardingPending=onboardingBlocksPrivateShell(meta.onboardingV2);
   if(visibleShell&&!onboardingPending){
@@ -4326,13 +4393,13 @@ document.addEventListener("click",async event=>{
   }
   const generate=event.target.closest("[data-speech-synthesize]");
   if(generate){
-    const controls=generate.closest(".speech-asset-controls"),sourceType=controls?.dataset.speechSourceType,sourceId=controls?.dataset.speechSourceId,sourceVersion=Number(controls?.dataset.speechSourceVersion),source=sourceType==="capture"?(state.captures||[]).find(item=>item.id===sourceId):(state.thoughts||[]).find(item=>item.id===sourceId&&item.type==="answer"),status=controls?.querySelector(".speech-asset-status");
+    const controls=generate.closest(".speech-asset-controls"),sourceType=controls?.dataset.speechSourceType,sourceId=controls?.dataset.speechSourceId,sourceVersion=Number(controls?.dataset.speechSourceVersion),source=sourceType==="capture"?(state.captures||[]).find(item=>item.id===sourceId):(state.thoughts||[]).find(item=>item.id===sourceId&&item.type===(sourceType==="thoughtChain"?"question":"answer")),status=controls?.querySelector(".speech-asset-status");
     if(!source||Number(source.version||1)!==sourceVersion){if(status)status.textContent="文字来源已经变化，请在当前版本上重新生成。";return}
     const asset=speechAssetForSource(state.speech.assets,{sourceType,sourceId,sourceVersion}),regenerate=generate.dataset.speechRegenerate==="true"&&Boolean(asset),payload=speechSynthesisPayload({sourceType,sourceId,sourceVersion,regenerate});
     stopPageAudio();generate.disabled=true;if(status)status.textContent=regenerate?"正在重新生成…":"正在生成…";let generated=false;
     try{
       await apiClient.requestBlob("/api/speech/synthesize",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)},{fallback:"语音合成失败"});generated=true;
-      const domains=sourceType==="capture"?["speech","captures"]:["speech","thoughts"],options=sourceType==="thoughtAnswer"?{chainId:source.relatedTo}:{};
+      const domains=sourceType==="capture"?["speech","captures"]:["speech","thoughts"],options=sourceType==="thoughtAnswer"?{chainId:source.relatedTo}:sourceType==="thoughtChain"?{chainId:source.id}:{};
       await refreshState(domains,options);showToast(regenerate?"文字朗读已重新生成":"文字朗读已生成")
     }catch(error){
       if(generated){if(status?.isConnected)status.textContent="音频已生成，但列表刷新失败，请稍后重试读取。";showToast("音频已生成，但列表刷新失败","error")}
@@ -4350,7 +4417,7 @@ $("#journal-cancel").addEventListener("click",resetJournalForm);
 for(const id of durableDraftForms)for(const eventName of["input","change"])document.getElementById(id)?.addEventListener(eventName,saveDurableDrafts);
 document.addEventListener("keydown",event=>{
   const field=event.target.closest?.("input,textarea"),form=field?.closest?.("#capture-form,#journal-form,#chain-form,#checkin-form,#chat-form,[data-daily-form],[data-book-entry-form],#keepsake-form,#quote-form,#selection-quote-form,#thought-block-form");
-  if(!field||!form||field===document.activeElement&&["chain-tags","capture-tags"].includes(field.id))return;
+  if(!field||!form||field===document.activeElement&&["chain-tags","capture-tags","quote-tags","selection-quote-tags"].includes(field.id))return;
   const intent=entryKeyIntent(event,{inputKind:field.tagName==="TEXTAREA"?"multiline":"field"});
   if(intent==="submit")return void occurrenceKeyboardSubmit(event,form,field.tagName==="TEXTAREA"?"multiline":"field");
   if(intent==="block-submit")event.preventDefault()
@@ -4710,10 +4777,46 @@ document.addEventListener("click",async e=>{
   if(remove){if(!confirm("将这件小物移入回收站？原图与轮廓会保留 30 天。"))return;remove.disabled=true;try{await request(`/api/keepsakes/${remove.dataset.keepsakeDelete}`,{method:"DELETE"});await refreshState(["keepsakes","review"]);showToast("小物已移入回收站")}catch(error){showToast(error.message,"error");remove.disabled=false}return}
   if(open)openKeepsakeDetail(open.dataset.keepsakeOpen);
 });
+for(const key of Object.keys(quoteTagPickerConfig)){
+  const elements=quoteTagPickerElements(key);
+  elements.input.addEventListener("input",event=>updateQuoteTagPicker(key,{type:"input",value:event.currentTarget.value},{open:true}));
+  elements.input.addEventListener("focus",()=>updateQuoteTagPicker(key,{type:"set-candidates",values:quoteTagCandidates()},{open:true}));
+  elements.input.addEventListener("keydown",event=>{
+    const result=handleTagMultiSelectKey(quoteTagStates[key],{
+      key:event.key,
+      isComposing:event.isComposing,
+      selectionStart:event.currentTarget.selectionStart,
+      selectionEnd:event.currentTarget.selectionEnd
+    });
+    if(!result.handled||event.key==="Enter"&&result.intent==="none")return;
+    event.preventDefault();quoteTagStates[key]=result.state;
+    elements.root.dataset.open=String(result.intent==="move");
+    renderQuoteTagPicker(key);
+    if(["create","select","remove"].includes(result.intent))elements.status.textContent=result.intent==="remove"?"已移除标签。":"已添加标签。"
+  });
+  elements.toggle.addEventListener("click",()=>{
+    const open=elements.root.dataset.open!=="true";
+    updateQuoteTagPicker(key,{type:"set-candidates",values:quoteTagCandidates()},{open});
+    if(open)elements.input.focus()
+  });
+  elements.root.addEventListener("click",event=>{
+    const option=event.target.closest("[data-quote-tag-option]"),remove=event.target.closest("[data-quote-tag-remove]");
+    if(option){updateQuoteTagPicker(key,{type:"select",value:option.dataset.quoteTagOption},{open:false});elements.input.focus();elements.status.textContent="已添加标签。"}
+    else if(remove){updateQuoteTagPicker(key,{type:"remove",value:remove.dataset.quoteTagRemove},{open:false});elements.input.focus();elements.status.textContent="已移除标签。"}
+  })
+}
+document.addEventListener("click",event=>{
+  for(const key of Object.keys(quoteTagPickerConfig)){
+    const elements=quoteTagPickerElements(key);
+    if(elements?.root&&!elements.root.contains(event.target)&&elements.root.dataset.open==="true"){
+      elements.root.dataset.open="false";renderQuoteTagPicker(key)
+    }
+  }
+});
 $("#quote-refresh").addEventListener("click",()=>renderQuoteSky(true));
 $("#quote-cancel").addEventListener("click",resetQuoteForm);
 $("#quote-form").addEventListener("submit",async e=>{
-  e.preventDefault();const form=e.currentTarget,id=$("#quote-id").value,existing=id?(state.quotes||[]).find(item=>item.id===id):null,button=$("#quote-submit"),status=$("#quote-status"),payload={...occurrenceFields($("#quote-datetime")),source:$("#quote-source").value,content:$("#quote-content").value,tags:splitTags($("#quote-tags").value)},requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`;if(!id)form.dataset.requestId=requestId;button.disabled=true;status.textContent=id?"正在保存修改…":"正在收藏…";
+  e.preventDefault();const form=e.currentTarget,id=$("#quote-id").value,existing=id?(state.quotes||[]).find(item=>item.id===id):null,button=$("#quote-submit"),status=$("#quote-status"),payload={...occurrenceFields($("#quote-datetime")),source:$("#quote-source").value,content:$("#quote-content").value,tags:quoteTagsForSubmission("quote")},requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`;if(!id)form.dataset.requestId=requestId;button.disabled=true;status.textContent=id?"正在保存修改…":"正在收藏…";
   try{
     if(id){const result=await requestV1(`/api/v1/quotes/${encodeURIComponent(id)}`,{method:"PATCH",headers:{"if-match":`"${existing?.version||1}"`},body:JSON.stringify(payload)},{domains:["quotes"],recoverCommitted:true,projection:{kind:"record.update",domain:"quotes",id,payload},onQueued:record=>applyPendingProjection(record)});if(result.data)state.quotes=(state.quotes||[]).map(item=>item.id===id?result.data:item);renderQuotes()}
     else{
@@ -4727,7 +4830,7 @@ document.addEventListener("click",async e=>{const edit=e.target.closest("[data-q
 $("#selection-quote-close").addEventListener("click",closeSelectionQuoteModal);
 $("#selection-quote-modal").addEventListener("click",e=>{if(e.target===e.currentTarget)closeSelectionQuoteModal()});
 $("#selection-quote-form").addEventListener("submit",async e=>{
-  e.preventDefault();const form=e.currentTarget,button=form.querySelector('[type="submit"]'),status=$("#selection-quote-status"),payload={...occurrenceFields($("#selection-quote-datetime")),source:$("#selection-quote-source").value,content:$("#selection-quote-content").value,tags:splitTags($("#selection-quote-tags").value)},requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`;form.dataset.requestId=requestId;button.disabled=true;status.textContent="正在收藏…";
+  e.preventDefault();const form=e.currentTarget,button=form.querySelector('[type="submit"]'),status=$("#selection-quote-status"),payload={...occurrenceFields($("#selection-quote-datetime")),source:$("#selection-quote-source").value,content:$("#selection-quote-content").value,tags:quoteTagsForSubmission("selectionQuote")},requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`;form.dataset.requestId=requestId;button.disabled=true;status.textContent="正在收藏…";
   try{
     const result=await requestV1("/api/v1/quotes",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{domains:["quotes"],projection:{kind:"record.create",domain:"quotes",temporaryId,payload},onQueued:record=>applyPendingProjection(record)});
     state.quotes=(state.quotes||[]).map(item=>item.id===temporaryId?result.data:item);delete form.dataset.requestId;closeSelectionQuoteModal();void refreshState("quotes").catch(error=>showToast(`善言已保存，但列表刷新失败：${error.message}`,"error"));showToast("选中文字已收为善言")
