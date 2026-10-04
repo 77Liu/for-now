@@ -3,13 +3,13 @@
 图示更新时间：2026-09-27 20:54（Asia/Shanghai）。[系统架构 · 260927-2045](../assets/系统架构-260927-2045.png)；[本版说明](../reports/product-visuals-260927-2045.md)。
 
 本文同时记录当前生产基线和工作区候选结构，两者不得混写为同一部署状态。
-生产应用为 `v0.5.4@71172c1`；V0.5.5 已通过本地发布门，等待 Preview
-发布，生产尚未变更。生产版本与验证证据见 [`../README.md`](../README.md)
-的“当前状态”和
+生产与 Preview 应用均为 `v0.5.5@fed30539d3d6`，PostgreSQL 为唯一正式
+写源，Store 当前版本为 v16。生产版本与验证证据见
+[`../README.md`](../README.md) 的“当前状态”和
 [`../reports/pre-launch-2026-10-04-v0.5.5.md`](../reports/pre-launch-2026-10-04-v0.5.5.md)；
 逐项状态只在 [`../README-TODO.md`](../README-TODO.md) 维护。
 
-## 生产运行基线（v0.1.1）
+## 历史生产基线（v0.1.1）
 
 - `server.mjs`：无框架 Node HTTP 服务、JSON API、DeepSeek 调用、阿里云图片分割、火山语音/视觉装配与统计计算。
 - `logging.mjs`：请求、持久化、操作和 AI 审计共用的脱敏、私有 NDJSON 队列、资源摘要与日文件清理。
@@ -17,7 +17,7 @@
 - `public/`：单页 HTML/CSS/JavaScript 界面。
 - `data/store.json`：状态、每日健康记录、捕念、日记、思绪、对话、书目、小物、善言、实验、复盘、回收站、待重试附件清理、后台任务、通知、冷启动资料与商业化估算参数；生产结构版本为 v14。
 
-## v0.2.0 工作区候选（未发布）
+## 当前生产架构（v0.5.5，继承 v0.2.0 模块化底座）
 
 模块边界和检查规则见 [`modularization-design.md`](modularization-design.md)；PostgreSQL、后台 worker、个人上下文与按指标扩容的目标方案见 [`scalable-architecture-design.md`](scalable-architecture-design.md)。
 
@@ -57,10 +57,11 @@
 
 ### PostgreSQL 迁移阶段
 
-- 生产及默认写源仍是 JSON；本地隔离验证可选 PostgreSQL 单写，不启用长期双写。
+- 生产写源已切换为 PostgreSQL；旧 JSON 由写源标记保护并只作为回滚副本，
+  不启用长期双写。本地隔离验证仍可显式选择 JSON 或 PostgreSQL。
 - `npm run migrate:postgres -- --dry-run --data-dir <path>` 只读校验全领域 JSON 和附件实物，输出账户、SHA-256 和数量，不输出正文或秘密。
 - 建表通过 `--init-schema` 和独立 `PG_SCHEMA_DATABASE_URL`；完整导入使用非 owner 的 `DATABASE_URL`，全站预算、所有账户和独立文件在同一事务中校验内容与源漂移。
-- 业务集合、嵌套内容、认证/会话、模型设置/秘密、逐次用量、成本方案及全站预算已接入关系行运行读写，并验证进程重启和第二数据库恢复。PostgreSQL 运行使用互异的数据、认证和预算连接；当前每数据库单应用实例，旧思绪投影已移除；生产切换仍需发布授权与演练。
+- 业务集合、嵌套内容、认证/会话、模型设置/秘密、逐次用量、成本方案及全站预算已接入关系行运行读写，并验证进程重启和第二数据库恢复。PostgreSQL 运行使用互异的数据、认证和预算连接；当前每数据库单应用实例，旧思绪投影已移除。后续结构变更仍需逐版完成备份、恢复和发布授权。
 - 所有租户表启用并强制 PostgreSQL RLS；真实 PostgreSQL 16.14 已验证隔离、重复导入、失败回滚和关系重建。表结构、覆盖保护、命令与剩余边界统一见 [`postgres-migration.md`](postgres-migration.md)。
 
 ## 视觉设计语言
@@ -127,7 +128,18 @@ TTS 服务端代理，浏览器只接收 `private, no-store` 的 MP3，不接触
 
 书目保存独立的 `readingStartedOn` 与 `readingFinishedOn` 自然日字段：开始日期为新建必填项，结束日期允许为空且不得早于开始日期；旧书目兼容为空，不因增加字段升级存储版本。书籍详情页以笔记为主：轻微滚动后页面标题收拢至左上，随机精选笔记进入左侧，封面、标题、作者、简介及阅读日期缩为右侧摘要；该状态在当前书内保持稳定，返回书架后恢复展开标题。阅读时间线先于新增记录表单展示。
 
-小物收集在 `keepsakes` 中同时保存原图路径 `originalPath`、透明轮廓图路径 `cutoutPath` 和标签 `tags`。自动分割唯一调用阿里云 `SegmentHDCommonImage`：服务端以 ECS RAM 角色提交本地图片流，把异步响应的 `requestId` 作为 `jobId`，通过 VIAPI `GetAsyncJobResult` 取得结果地址后及时下载临时透明 PNG，再向浏览器返回 Data URL；不调用 DeepSeek 锚点或 `RefineMask`。浏览器只从透明图读取 Alpha 蒙版，按 `edgeExpansion` 做小幅膨胀，随后允许用保留/擦除画笔修正；名称和类型由用户填写。透明 PNG 始终由原图与蒙版在独立画布生成，陈列与详情则把 15% 不透明度的原图放在底层、100% 不透明度的透明主体放在上层，不能把展示合成图覆盖为 `cutoutPath`。画廊使用 CSS columns 瀑布流，卡片进入页内详情后可在默认呈现与完整原图之间切换。服务端不常驻图像分割模型。
+小物收集在 `keepsakes` 中同时保存原图路径 `originalPath`、透明轮廓图路径
+`cutoutPath` 和标签 `tags`；历史“类型”字段不再使用。自动分割唯一调用
+阿里云 `SegmentHDCommonImage`：服务端以 ECS RAM 角色提交本地图片流，把
+异步响应的 `requestId` 作为 `jobId`，通过 VIAPI `GetAsyncJobResult` 取得
+结果地址后及时下载临时透明 PNG，再向浏览器返回 Data URL；不调用 DeepSeek
+锚点或 `RefineMask`。浏览器只从透明图读取 Alpha 蒙版，按 `edgeExpansion`
+做小幅膨胀，随后允许用保留/擦除画笔修正；名称和描述可由用户填写，也可由
+DeepSeek 图片理解提供可编辑建议，标签只从用户已有标签中推荐不超过 3 个且
+不强行匹配。透明 PNG 始终由原图与蒙版在独立画布生成，陈列与详情则把 15%
+不透明度的原图放在底层、100% 不透明度的透明主体放在上层，不能把展示合成图
+覆盖为 `cutoutPath`。画廊使用按行优先的 CSS Grid，卡片进入页内详情后可在
+默认呈现与完整原图之间切换。服务端不常驻图像分割模型。
 历史 `legacy` 小物不会在应用启动时隐式改写。维护人员须先执行只读
 `migrate:keepsake-media -- --dry-run`，核对阻断项和计划哈希，再停服并以同一
 哈希执行 `--apply`。应用阶段只新增四类派生图并保留旧 `cutoutPath` 和实物，

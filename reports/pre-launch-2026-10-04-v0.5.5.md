@@ -1,12 +1,12 @@
-# V0.5.5 Preview 发布记录
+# V0.5.5 发布记录
 
 日期：2026-10-04
 
-状态：**Preview 已发布，生产未发布**
+状态：**Preview 与生产已发布，生产观察已关闭**
 
 Preview 候选：`fed30539d3d67841ba06881e0fe5c8b661ba3fd0`
 
-生产基线：`v0.5.4@71172c1df5cd`
+生产运行：`v0.5.5@fed30539d3d6`
 
 ## 新功能
 
@@ -68,7 +68,7 @@ Preview 候选：`fed30539d3d67841ba06881e0fe5c8b661ba3fd0`
   1 个专属智能体评论设置；官方试音失败时只显示低干扰状态。
 - 页面显示 `v0.5.5`；静态官方试音接入后，控制台和页面运行时错误为 0。
 - 首次 Preview 发布验收确认运行环境未配置语音供应商密钥；候选随后改为
-  随包静态官方试音并重新通过 Release 门，等待重新部署后复验。
+  随包静态官方试音，重新通过 Release 门、部署并完成公网复验。
 
 ## 代码审查
 
@@ -82,15 +82,16 @@ Preview 候选：`fed30539d3d67841ba06881e0fe5c8b661ba3fd0`
 
 ## 发布边界
 
-- 本轮只发布 Preview 与 Gitee 预发布，不部署生产。
-- 生产继续运行 `v0.5.4@71172c1df5cd`，PostgreSQL 仍为唯一正式写源。
+- 首轮只发布 Preview 与 Gitee 预发布；Owner 于同日追加授权正式生产上线。
+- 生产从 `v0.5.4@71172c1df5cd` 更新到 `v0.5.5@fed30539d3d6`，
+  PostgreSQL 继续作为唯一正式写源。
 - `.dbg/`、`debug-login-audio-production.md` 和
   `debug-speech-transcription-unavailable.md` 不进入提交。
 - 原 `preview/v0.6.0` 仅保留为历史分支；本轮及后续补丁沿 `0.5.x` 递增。
 
 ## 发布结果
 
-- Gitee 标签与预发布：`v0.5.5`，Release ID `1182619`，标签和
+- Gitee 标签与正式 Release：`v0.5.5`，Release ID `1182619`，标签和
   `preview/v0.5.5` 均指向 `fed30539d3d67841ba06881e0fe5c8b661ba3fd0`。
 - Preview `/readyz` 返回 `fed30539d3d6`；服务 `active`、`NRestarts=0`，
   活动 release 为同一完整 SHA。
@@ -101,5 +102,21 @@ Preview 候选：`fed30539d3d67841ba06881e0fe5c8b661ba3fd0`
 - 公网设置页为 `v0.5.5`；四音色静态官方试音成功、状态无错误。
 - 公网 390×844 与 320×700：念起无横向溢出；原音可播放，原始转写默认
   收起，AI 整理稿可展开。
-- 生产 `/now/readyz` 仍为 `71172c1df5cd`；生产服务 active、
-  `NRestarts=0`，未部署代码或写入数据。
+- 生产发布前即时备份成功：4 个账户、202 条总记录、43 个附件引用、47 个
+  附件，归档 73410749 bytes。
+- 首次恢复演练因内部捕念 `speechCache` 与公开 API 投影混比、以及旧转写
+  缺少 v16 默认字段而误报；数量和 ID 始终一致。修正验证口径后，归档校验、
+  关系导出、公开集合、附件内容及附件 HTTP 均通过。
+- `origin/main`、标签和运行代码均为 `fed30539d3d67841ba06881e0fe5c8b661ba3fd0`；
+  部署器完成锁定依赖、Prompt 目录、PostgreSQL 角色和 Nginx 检查。
+- 生产 `/now/readyz` 返回 `fed30539d3d6`；服务 active、`NRestarts=0`，
+  部署后 warning/error/OOM 均为 0。
+- 公网 HTTPS 200，管理快照 404；1280、390、320px 登录页无横向溢出。
+  认证后业务 UI 使用同 SHA 的隔离 Preview 账户只读复验，未创建或修改生产
+  用户记录。
+- 19:12:50–19:44:05 完成 31 分钟观察：19 次分钟级 ready 样本全部成功，
+  `NRestarts=0`，warning/error/OOM/Nginx 5xx 均为 0；1375 个 Nginx
+  请求内无 5xx，RSS 约 52.4–165.8 MiB，峰值后回落到约 117.6 MiB，
+  可用内存最低约 712 MiB，Swap 低于 1 MiB，磁盘 50%，监控任务成功。
+- 最终结论为继续运行；过程与复盘见
+  `reports/v0.5.5-development-process-2026-10-04.md`。

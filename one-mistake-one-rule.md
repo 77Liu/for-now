@@ -167,8 +167,13 @@
 - 正确规则：一个失败任务只能有一个直接重试后继；按 `retryOf` 原子查重并复用稳定请求标识。再次失败时只能重试最新后继任务。
 - 详细案例：见 `knowledge/architecture.md` 与 `scripts/regression.mjs`。
 
-## 重试请求重复创建后台任务
+## 恢复校验混用内部对象与公开投影
 
-- 简要错误：失败任务的 `/retry` 每次生成随机幂等标识，并发点击会创建多个后继任务并重复调用供应商。
-- 正确规则：一个失败任务只能有一个直接重试后继；按 `retryOf` 原子查重并复用稳定请求标识。再次失败时只能重试最新后继任务。
-- 详细案例：见 `knowledge/architecture.md` 与 `scripts/regression.mjs`。
+- 简要错误：恢复演练直接比较持久层内部捕念与公开 API 捕念；内部
+  `speechCache` 会被 API 隐藏，候选 Store 迁移还会补齐新默认字段，导致记录
+  数量和 ID 一致时仍产生内容哈希误报。
+- 正确规则：恢复校验比较持久层与公开 API 时，必须先使用候选版本的迁移和
+  公开投影规则；每次 Store 版本或公开投影变化，都要用上一生产版本 fixture
+  执行候选恢复，分别覆盖私有字段移除和默认字段补齐。
+- 详细案例：见 `reports/v0.5.5-development-process-2026-10-04.md` 与
+  `scripts/restore-validation-regression.mjs`。
