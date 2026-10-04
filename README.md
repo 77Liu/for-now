@@ -56,9 +56,11 @@ npm run start:local-test
   ID 为 `1183270`；生产连续运行 30 分 24 秒，服务与 PostgreSQL 零重启，
   应用错误、Nginx 5xx、OOM 均为 0。发布证据见
   `reports/pre-launch-2026-10-04-v0.5.6.md`。
-- **V0.5.7 开发已就绪**：从 `main@9c2450e` 建立隔离工作树，硬范围为启动
-  与媒体性能、备份活动引用，以及线上新增思绪/念起/善言交互 P00/P0；计划与
-  Base 记录见 `reports/iteration-plan-v0.5.7-2026-10-04.md`。
+- **V0.5.7 已形成 G4 本地候选**：`d2de3d30c253` 已完成 7 条 P00、8 条 P0
+  与选定 P1；Release 门 369979 ms、PostgreSQL 16.14、固定 Fast 4G 性能门
+  和 1440/390/320px 本地 HTTP 验收通过。远端 Preview、push、tag、Gitee
+  Release、生产媒体 apply 与部署仍等待 G5 明确授权；证据见
+  `reports/pre-launch-2026-10-05-v0.5.7.md`。
 - **`v0.1.1` 发布历史保留**：提交 `54a6326f14ca`、标签 `hotfix-v0.1.1-thought-answer` 在 v0.1.0 基础上修复了收集页思绪自动回答任务创建问题，现已由 v0.2.1 替代。
 - **`v0.1.0` 发布历史保留**：主应用功能提交 `5ae6a7035169` 和标签 `release-20260928-p00-p0-commercial-system` 已发布 P00/P0、商业化、AI 成本和五阶段架构设计，并由 v0.1.1 继承。
 - **中台已上线**：独立中台提交为 `d157537f7f4c`，发布标签为 `release-20260928-platform-mvp`；公网 `/platform/` 只读治理控制面已部署。
