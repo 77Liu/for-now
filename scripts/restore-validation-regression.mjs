@@ -38,6 +38,7 @@ try {
     const dir = path.join(sourceDir, "users", user.id), attachments = path.join(dir, "attachments");
     await fs.mkdir(attachments, { recursive: true });
     const store = Object.fromEntries(collections.map(key => [key, []]));
+    const documents = {};
     store.version = 15;
     if (user.id === "first") {
       store.captures.push({
@@ -71,13 +72,16 @@ try {
       store.habitCheckins.push({ id: "habit-checkin", habitId: "habit", occurredOn: "2026-09-29" });
       store.feedback.push({ id: "feedback", body: "restored feedback" });
       store.validationLedger.push({ id: "validation", participantRef: "member-01" });
+      const settings = { version: 1, profiles: {}, scenarios: {}, responseStyles: {} };
+      await fs.writeFile(path.join(dir, "llm-settings.json"), JSON.stringify(settings));
+      documents.settings = digest(settings);
       await fs.writeFile(path.join(attachments, "cover.png"), "image");
     } else store.journals.push({ id: "journal", content: "second" });
     await fs.writeFile(path.join(dir, "store.json"), JSON.stringify(store));
     relationalAccounts.push({
       accountId: user.id,
       storeSha256: digest(store),
-      documents: {},
+      documents,
       attachments: []
     });
   }
@@ -172,6 +176,31 @@ try {
     /no valid relational export manifest/
   );
   await fs.rename(`${exportManifestFile}.missing`, exportManifestFile);
+  const validExportManifest = JSON.parse(await fs.readFile(exportManifestFile, "utf8"));
+  const invalidAccountManifest = structuredClone(validExportManifest);
+  invalidAccountManifest.accounts[0].accountId = 123;
+  await fs.writeFile(exportManifestFile, JSON.stringify(invalidAccountManifest));
+  await assert.rejects(
+    run(process.execPath, validationArgs),
+    /relational export manifest is invalid/
+  );
+  await fs.writeFile(exportManifestFile, JSON.stringify(validExportManifest));
+  const firstStoreFile = path.join(dataDir, "users", "first", "store.json");
+  const firstStore = await fs.readFile(firstStoreFile, "utf8");
+  await fs.writeFile(firstStoreFile, JSON.stringify({ ...JSON.parse(firstStore), tampered: true }));
+  await assert.rejects(
+    run(process.execPath, validationArgs),
+    /store content does not match/
+  );
+  await fs.writeFile(firstStoreFile, firstStore);
+  const settingsFile = path.join(dataDir, "users", "first", "llm-settings.json");
+  const settings = await fs.readFile(settingsFile, "utf8");
+  await fs.writeFile(settingsFile, JSON.stringify({ ...JSON.parse(settings), tampered: true }));
+  await assert.rejects(
+    run(process.execPath, validationArgs),
+    /account document does not match/
+  );
+  await fs.writeFile(settingsFile, settings);
   const manifestFile = path.join(dataDir, "backup-manifest.json");
   await fs.rename(manifestFile, `${manifestFile}.missing`);
   await assert.rejects(
@@ -195,6 +224,9 @@ try {
   const brokenStore = JSON.parse(await fs.readFile(path.join(brokenDir, "store.json"), "utf8"));
   delete brokenStore.feedback;
   await fs.writeFile(path.join(brokenDir, "store.json"), JSON.stringify(brokenStore));
+  const brokenExportManifest = JSON.parse(await fs.readFile(exportManifestFile, "utf8"));
+  brokenExportManifest.accounts.find(account => account.accountId === "second").storeSha256 = digest(brokenStore);
+  await fs.writeFile(exportManifestFile, JSON.stringify(brokenExportManifest));
   await assert.rejects(
     run(process.execPath, validationArgs),
     /Restored store is missing feedback/

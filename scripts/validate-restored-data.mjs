@@ -4,6 +4,7 @@ import path from "node:path";
 import { ATTACHMENT_BACKUP_FORMAT } from "../src/shared/attachments/index.mjs";
 import { publicCapture } from "../src/modules/captures/index.mjs";
 import { publicKeepsake } from "../src/modules/keepsakes/index.mjs";
+import { ACCOUNT_DOCUMENT_FILES } from "../src/shared/persistence/index.mjs";
 import { safeText } from "../src/shared/validation/index.mjs";
 
 const args = process.argv.slice(2);
@@ -73,7 +74,8 @@ if (exportManifest) {
   const exportAccounts = new Set();
   for (const account of exportManifest.accounts) {
     const accountId = String(account?.accountId || "");
-    if (!/^[A-Za-z0-9_.-]+$/.test(accountId)
+    if (typeof account?.accountId !== "string"
+      || !/^[A-Za-z0-9_.-]+$/.test(accountId)
       || exportAccounts.has(accountId)
       || !/^[a-f0-9]{64}$/.test(account.storeSha256 || "")
       || !objectValue(account.documents)
@@ -111,12 +113,30 @@ if (manifestAccounts.size !== auth.users.length) throw new Error("Restored attac
 const collections = ["checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "actions", "habits", "habitCheckins", "feedback", "validationLedger"];
 let totalRecords = 0, totalAttachmentReferences = 0, localAttachments = 0, records = 0, firstAttachment = "";
 let collectionEvidence = {};
+const exportAccounts = new Map((exportManifest?.accounts || []).map(account => [String(account.accountId), account]));
 for (const user of auth.users) {
   const userId = String(user.id || "");
   if (!/^[A-Za-z0-9_.-]+$/.test(userId)) throw new Error("Restored account has an invalid ID");
   const manifestAccount = manifestAccounts.get(userId);
   if (!manifestAccount || manifestAccount.userScoped !== true) throw new Error("Restored attachment manifest account set does not match");
   const userDir = path.join(root, "users", userId), store = JSON.parse(await fs.readFile(path.join(userDir, "store.json"), "utf8"));
+  const exportAccount = exportAccounts.get(userId);
+  if (exportAccount && digest(store) !== exportAccount.storeSha256) {
+    throw new Error(`Restored store content does not match the relational export manifest: ${userId}`);
+  }
+  for (const [document, expectedHash] of Object.entries(exportAccount?.documents || {})) {
+    const fileName = ACCOUNT_DOCUMENT_FILES[document];
+    if (!fileName) throw new Error("Restored relational export manifest is invalid");
+    let value;
+    try {
+      value = JSON.parse(await fs.readFile(path.join(userDir, fileName), "utf8"));
+    } catch {
+      throw new Error(`Restored account document is missing or invalid: ${userId}/${document}`);
+    }
+    if (digest(value) !== expectedHash) {
+      throw new Error(`Restored account document does not match the relational export manifest: ${userId}/${document}`);
+    }
+  }
   for (const key of collections) {
     if (!Array.isArray(store[key])) throw new Error(`Restored store is missing ${key}`);
     totalRecords += store[key].length;
