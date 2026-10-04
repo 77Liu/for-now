@@ -1260,11 +1260,13 @@
   </main>
 
   <div class="selection-tools" id="selection-tools" role="toolbar" aria-label="选中文本操作" hidden><button type="button" data-selection-action="comment">评论</button><button type="button" data-selection-action="quote">善言</button><button type="button" data-selection-action="highlight">划线</button><button type="button" data-selection-action="emphasis">加重</button></div>
+  <div class="annotation-line-counts" id="annotation-line-counts" aria-label="行级评论数量" hidden></div>
   <aside class="comment-panel" id="comment-panel" aria-label="正文评论" hidden>
     <header><div><p class="eyebrow">评论</p><h2>正文批注</h2></div><button id="comment-panel-close" type="button" aria-label="关闭评论面板">×</button></header>
-    <form class="comment-composer" id="comment-composer" hidden><blockquote id="comment-quote"></blockquote><textarea id="comment-text" rows="3" placeholder="写下评论，或只插入图片…"></textarea><div class="content-image-editor compact" data-content-image-editor="comment"><div class="content-image-editor-head"><span>图片</span><label class="content-image-add" title="插入图片" aria-label="插入图片"><span aria-hidden="true">＋</span><input id="comment-images" type="file" accept="image/png,image/jpeg,image/webp" multiple></label></div><div class="content-image-editor-previews" data-content-image-previews></div></div><div><span class="status" id="comment-status"></span><button class="primary-button" type="submit">评论</button></div></form>
+    <form class="comment-composer" id="comment-composer" hidden><blockquote id="comment-quote"></blockquote><textarea id="comment-text" rows="3" placeholder="写下评论，输入 @神鸡 可同时发起回答…"></textarea><div class="content-image-editor compact" data-content-image-editor="comment"><div class="content-image-editor-head"><span>图片</span><label class="content-image-add" title="插入图片" aria-label="插入图片"><span aria-hidden="true">＋</span><input id="comment-images" type="file" accept="image/png,image/jpeg,image/webp" multiple></label></div><div class="content-image-editor-previews" data-content-image-previews></div></div><div><span class="status" id="comment-status"></span><button class="primary-button" type="submit">评论</button></div></form>
     <div class="comment-panel-list" id="comment-panel-list"></div>
   </aside>
+  <button class="comment-panel-reopen" id="comment-panel-reopen" type="button" aria-label="重新打开上次评论" hidden><span aria-hidden="true">批注</span><b id="comment-panel-reopen-count">0</b></button>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
   <div class="image-viewer-backdrop" id="image-viewer" hidden>

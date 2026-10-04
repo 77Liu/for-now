@@ -15,9 +15,11 @@ import {
   annotationMenuItems,
   annotationPresentation,
   backgroundResultFromSnapshot,
+  commentSubmissionIntent,
   copyAnnotationContent,
   createBackgroundResultController,
   createThoughtDiscoveryController,
+  groupAnnotationLineCounts,
   mergeBackgroundTaskResult,
   sortAnnotationItemsByPosition
 } from "../public/frontend/features/thought-discovery/index.mjs";
@@ -472,5 +474,25 @@ assert.equal(await copyAnnotationContent({ quote: "引文" }, "quote", value => 
   copied = value;
 }), true);
 assert.equal(copied, "引文");
+assert.deepEqual(commentSubmissionIntent("普通评论"), {
+  text: "普通评论",
+  asksAssistant: false,
+  message: ""
+});
+assert.deepEqual(commentSubmissionIntent("  @神鸡：请核对反例  "), {
+  text: "@神鸡：请核对反例",
+  asksAssistant: true,
+  message: "请核对反例"
+});
+assert.deepEqual(groupAnnotationLineCounts([
+  { hostKey: "content", annotationId: "comment-a", rects: [{ top: 100, left: 20, height: 20 }, { top: 122, left: 20, height: 20 }] },
+  { hostKey: "content", annotationId: "comment-b", rects: [{ top: 102, left: 90, height: 20 }] },
+  { hostKey: "content", annotationId: "comment-c", rects: [{ top: 145, left: 20, height: 20 }] },
+  { hostKey: "other", annotationId: "comment-d", rects: [{ top: 101, left: 20, height: 20 }] }
+]), [
+  { hostKey: "content", top: 100, count: 2, annotationIds: ["comment-a", "comment-b"] },
+  { hostKey: "content", top: 145, count: 1, annotationIds: ["comment-c"] },
+  { hostKey: "other", top: 101, count: 1, annotationIds: ["comment-d"] }
+]);
 
-console.log("G2 A R2 regression passed: cross-genre discovery, stable cursors, incremental task results, annotation styles/conversion/order/copy.");
+console.log("G2 A R2 regression passed: cross-genre discovery, stable cursors, incremental task results, annotation styles/conversion/order/copy/mentions/line counts.");

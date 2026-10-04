@@ -36,6 +36,40 @@ export function sortAnnotationItemsByPosition(items, targetOrder = []) {
   ));
 }
 
+export function commentSubmissionIntent(value, assistantName = "神鸡") {
+  const text = String(value || "").trim();
+  const escapedName = String(assistantName || "神鸡").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const mention = new RegExp(`[@＠]\\s*${escapedName}`, "u");
+  const asksAssistant = mention.test(text);
+  const message = asksAssistant
+    ? text.replace(mention, "").replace(/^[\s,，:：。！？!?、-]+/u, "").trim()
+    : "";
+  return { text, asksAssistant, message };
+}
+
+export function groupAnnotationLineCounts(entries, tolerance = 3) {
+  const normalized = (Array.isArray(entries) ? entries : []).flatMap(entry => {
+    const rects = Array.isArray(entry?.rects) ? entry.rects : [];
+    const first = rects
+      .filter(rect => Number.isFinite(Number(rect?.top)) && Number(rect?.height) > 0)
+      .sort((left, right) => Number(left.top) - Number(right.top) || Number(left.left) - Number(right.left))[0];
+    return entry?.annotationId && entry?.hostKey && first
+      ? [{ annotationId: String(entry.annotationId), hostKey: String(entry.hostKey), top: Number(first.top) }]
+      : [];
+  }).sort((left, right) => left.hostKey.localeCompare(right.hostKey) || left.top - right.top || left.annotationId.localeCompare(right.annotationId));
+  const groups = [];
+  for (const entry of normalized) {
+    const current = groups.at(-1);
+    if (current && current.hostKey === entry.hostKey && Math.abs(current.top - entry.top) <= tolerance) {
+      current.annotationIds.push(entry.annotationId);
+      current.count += 1;
+      continue;
+    }
+    groups.push({ hostKey: entry.hostKey, top: entry.top, count: 1, annotationIds: [entry.annotationId] });
+  }
+  return groups;
+}
+
 export function annotationMenuItems(annotation) {
   const kind = PRESENTATION[annotation?.kind] ? annotation.kind : "comment";
   return [

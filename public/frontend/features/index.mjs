@@ -37,7 +37,9 @@ export {
   mergeBackgroundTaskResult,
   annotationMenuItems,
   annotationPresentation,
+  commentSubmissionIntent,
   copyAnnotationContent,
+  groupAnnotationLineCounts,
   sortAnnotationItemsByPosition
 } from "./thought-discovery/index.mjs";
 export { createDownloadDescriptor } from "./export/index.mjs";

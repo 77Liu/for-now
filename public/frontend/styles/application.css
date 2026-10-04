@@ -2530,3 +2530,19 @@ body.image-viewer-open{overflow:hidden}
 #view-quotes .quote-sky-empty.content-state{color:#687168;border-color:#cbd5c6}
 #view-quotes .quote-sky-empty.content-state strong{color:#263027}
 #view-quotes .quote-sky-empty.content-state p{color:#687168}
+
+/* Annotation reading layout and runtime-derived line counts. */
+.annotation-line-counts{position:absolute;z-index:24;top:0;left:0;width:0;height:0;pointer-events:none}
+.annotation-line-counts button{position:absolute;display:grid;place-items:center;width:24px;height:24px;padding:0;border:1px solid #d6b85d;border-radius:999px;background:#fffaf0;color:#76580f;box-shadow:0 3px 10px rgba(68,52,17,.14);font-size:.68rem;font-weight:850;line-height:1;pointer-events:auto}
+.annotation-line-counts button:hover{border-color:#b78a1e;background:#fff2c8}
+.comment-panel-reopen{position:fixed;z-index:70;top:18px;right:20px;display:flex;align-items:center;gap:7px;min-height:42px;padding:8px 11px;border:1px solid #d9c986;border-radius:999px;background:rgba(255,252,240,.96);color:#745810;box-shadow:0 8px 24px rgba(30,42,75,.14);font-size:.76rem;font-weight:800;backdrop-filter:blur(10px)}
+.comment-panel-reopen b{display:grid;place-items:center;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:#8a6a1d;color:#fff;font-size:.66rem}
+.comment-panel-reopen:hover{background:#fff7da}
+@media(min-width:1200px){
+  body.comment-panel-open main{margin-right:360px;padding-right:32px;padding-left:32px}
+  .comment-panel{width:360px}
+}
+@media(max-width:920px){
+  .comment-panel-reopen{display:none}
+  .annotation-line-counts button{transform:translateX(-100%)}
+}

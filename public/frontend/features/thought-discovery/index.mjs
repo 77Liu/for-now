@@ -286,6 +286,8 @@ export {
 export {
   annotationMenuItems,
   annotationPresentation,
+  commentSubmissionIntent,
   copyAnnotationContent,
+  groupAnnotationLineCounts,
   sortAnnotationItemsByPosition
 } from "./annotation-tools.mjs";
