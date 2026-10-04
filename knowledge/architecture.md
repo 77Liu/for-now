@@ -2,7 +2,12 @@
 
 图示更新时间：2026-09-27 20:54（Asia/Shanghai）。[系统架构 · 260927-2045](../assets/系统架构-260927-2045.png)；[本版说明](../reports/product-visuals-260927-2045.md)。
 
-本文同时记录当前生产基线和 v0.2.0 工作区候选结构，两者不得混写为同一部署状态。生产应用为 `v0.1.1`（`54a6326f14ca`），继承 `release-20260928-p00-p0-commercial-system` 已上线能力；独立只读治理中台也已上线。v0.2.0 已完成 G2 R4 本地验收，代码内容固定于 `70b5644ef265440b9f5f4e69868647544f6deff2`，本地 `release/v0.2.0-20260930` 此后只整理发布证据，尚未 push 或部署。生产版本与验证证据见 [`../README.md`](../README.md) 的“当前状态”和 [`../reports/pre-launch-2026-09-29-v0.2.0.md`](../reports/pre-launch-2026-09-29-v0.2.0.md)；逐项状态只在 [`../README-TODO.md`](../README-TODO.md) 维护。
+本文同时记录当前生产基线和工作区候选结构，两者不得混写为同一部署状态。
+生产应用为 `v0.5.4@71172c1`；V0.5.5 已通过本地发布门，等待 Preview
+发布，生产尚未变更。生产版本与验证证据见 [`../README.md`](../README.md)
+的“当前状态”和
+[`../reports/pre-launch-2026-10-04-v0.5.5.md`](../reports/pre-launch-2026-10-04-v0.5.5.md)；
+逐项状态只在 [`../README-TODO.md`](../README-TODO.md) 维护。
 
 ## 生产运行基线（v0.1.1）
 
@@ -33,9 +38,16 @@
 - `src/shared/time/` 与 `src/shared/validation/`：本地自然日/日期偏移、数字范围与通用校验；保持账本配额既有 UTC 日口径。
 - `src/shared/attachments/`：本地、mock 与私有 OSS 附件适配，图片/音频文件签名校验、配额锁、上传清单和临时文件生命周期；账户目录与数据库清单由装配入口注入。云端按账户使用对象前缀，HTTP 上传与 GET/HEAD 读取归 `src/http/attachments.mjs`，统一经过认证；清理同时覆盖云端与迁移遗留本地副本。捕念音频原件、ASR 原文和 AI 整理稿分层保存，未配置真实 ASR 时明确保持 `ASR_NOT_CONFIGURED`，不以客户端临时识别替代。根目录旧存储文件已移除。
 - `public/`：单页 HTML/CSS/JavaScript 界面；根 `app.js` 只启动 `frontend/app`，根 `styles.css` 只加载模块样式。`frontend/pages` 登记 23 个视图并管理组别/页面生命周期，`frontend/features` 组合页面副作用及 discovery/export/actions/feedback 纯功能模块；`frontend/api/session/state/content/time/media` 分别承接传输、会话、状态和无业务共享能力。`index.html` 保持无内联业务逻辑的静态可访问性壳。
-- `data/store.json`：状态、每日健康记录、捕念、日记、思绪、对话、书目、小物、善言、实验、复盘、行动、习惯/打卡、反馈、验证台账、回收站、待重试附件清理、后台任务、通知、冷启动资料与商业化估算参数；当前工作区结构版本为 v15。
-- `data/llm-settings.json`：四档模型配置、逐场景档位、助手称呼、逐场景回答风格与 API Key；当前结构版本为 v7，权限 0600，不返回页面明文。
-- `data/ai-usage.json`：从统计能力启用后开始追加的逐次 AI 用量、图片/语音/文档输入摘要、状态、耗时、当次可得单价快照和费用拆分；当前结构版本为 v3，不回填旧调用。火山账单单价未配置时保留调用单位并明确标记费用未知。
+- `data/store.json`：状态、每日健康记录、捕念、日记、思绪、对话、书目、小物、
+  善言、实验、复盘、行动、习惯/打卡、反馈、验证台账、通用语音缓存、回收站、
+  待重试附件清理、后台任务、通知、冷启动资料与商业化估算参数；当前工作区结构
+  版本为 v16。
+- `data/llm-settings.json`：四档模型、逐场景档位与思考强度、助手称呼、逐场景
+  回答风格、语音偏好与 API Key；当前结构版本为 v10，权限 0600，不返回页面
+  明文。
+- `data/ai-usage.json`：从统计能力启用后开始追加的逐次 AI 用量、图片/语音/
+  文档输入摘要、状态、耗时、当次可得单价快照和费用拆分；当前结构版本为 v4，
+  不回填旧调用。火山账单单价未配置时保留调用单位并明确标记费用未知。
 - `data/ai-budget.json`：全站 AI 预算、任务预留、结算和阈值事件；JSON 更新使用带残留恢复和超时的跨进程文件锁，PostgreSQL 使用独立预算角色和全局单例行。
 - `data/logs/ai-audit-YYYY-MM-DD.ndjson`：按账户和 UTC 自然日保存的完整 AI 调用审计；包含实际 SP、UP、历史、参数、回答与推理，不包含 API Key 或图片 Base64，默认保留 30 天。
 
