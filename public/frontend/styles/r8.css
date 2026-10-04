@@ -542,9 +542,9 @@ body:has(#all-thoughts[data-route-mode="detail"]) .app-atmosphere::after{opacity
 #view-thoughts .chain-summary:hover{background:transparent}
 #view-thoughts .question-preview{display:-webkit-box;overflow:hidden;font:600 21px/1.45 var(--r8-serif);white-space:normal;-webkit-box-orient:vertical;-webkit-line-clamp:2}
 #view-thoughts .thought-preview{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:12px;margin:8px 0 0;color:#445449;font:15px/1.6 var(--r8-serif);white-space:nowrap}
-#view-thoughts .thought-preview>span{padding:4px 8px;border:1px solid #cbdac7;border-radius:5px;color:#52764d;font:600 11px/1.3 var(--r8-sans)}
-#view-thoughts .thought-preview>.thought-preview-text{display:block;overflow:hidden;padding:0;border:0;border-radius:0;color:#445449;font:inherit;text-overflow:ellipsis}
-#view-thoughts .thought-preview.conclusion>span{border-color:#52764d;background:#52764d;color:#fff}
+#view-thoughts .thought-preview>span:first-child{padding:4px 8px;border:1px solid #cbdac7;border-radius:5px;color:#52764d;font:600 11px/1.3 var(--r8-sans)}
+#view-thoughts .thought-preview>.thought-preview-text{display:block;overflow:hidden;padding:0;border:0;border-radius:0;background:transparent;color:#445449;font:inherit;text-overflow:ellipsis}
+#view-thoughts .thought-preview.conclusion>span:first-child{border-color:#52764d;background:#52764d;color:#fff}
 #view-thoughts .thought-open-label{display:block;margin-top:7px;color:#3d6238;font-size:11px;text-align:right}
 #view-thoughts .chain-summary>.expand-mark{display:none}
 
@@ -656,7 +656,7 @@ body:has(#all-thoughts[data-route-mode="detail"]) .app-atmosphere::after{opacity
   #view-thoughts .chain-summary{min-height:122px}
   #view-thoughts .question-preview{font-size:19px}
   #view-thoughts .thought-preview{grid-template-columns:1fr;gap:4px;font-size:14px;white-space:normal}
-  #view-thoughts .thought-preview>span{width:max-content}
+  #view-thoughts .thought-preview>span:first-child{width:max-content}
   #view-thoughts .thought-preview>.thought-preview-text{display:-webkit-box;width:auto;-webkit-box-orient:vertical;-webkit-line-clamp:1}
   .thought-detail-header{padding:11px 0 20px}
   .thought-detail-meta{margin-top:11px;flex-wrap:wrap}
