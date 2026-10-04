@@ -15,6 +15,20 @@ function markStartup(name) {
   startupMarks[name] = Number(performance.now().toFixed(1));
 }
 
+function loadR8Styles() {
+  const existing = document.querySelector('link[data-r8-styles]');
+  if (existing) return Promise.resolve();
+  return new Promise(resolve => {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = new URL("../styles/r8.css", import.meta.url).href;
+    link.dataset.r8Styles = "";
+    link.addEventListener("load", resolve, { once: true });
+    link.addEventListener("error", resolve, { once: true });
+    document.head.append(link);
+  });
+}
+
 async function requestJson(url, { optional = false, allowUnauthorized = false } = {}) {
   return apiClient.request(
     url,
@@ -84,6 +98,7 @@ async function initialSnapshot() {
 }
 
 export async function startApplication() {
+  await loadR8Styles();
   const initial = await initialSnapshot();
   const runtime = await import("./runtime.mjs");
   return runtime.startApplication(initial);

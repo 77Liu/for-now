@@ -368,7 +368,7 @@ export function createPageRouter({
     writeHistory(historyMode, next, {
       scroll: resetScroll ? { x: 0, y: 0 } : readScroll(),
       result,
-      returnRoute: next.kind === "detail" && currentRoute.kind === "page" && currentRoute.view === next.view
+      returnRoute: next.kind === "detail" && currentRoute.kind === "page"
         ? currentRoute
         : storedEntry()?.returnRoute || null
     });
@@ -416,7 +416,6 @@ export function createPageRouter({
       browserHistory
       && currentRoute.kind === "detail"
       && returnRoute?.kind === "page"
-      && returnRoute.view === view
     ) {
       history.back();
       return currentView;

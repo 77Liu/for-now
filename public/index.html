@@ -15,7 +15,7 @@
   </script>
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="description" content="本地优先的个人成长、捕念、日记与思考追踪工具">
-  <meta name="theme-color" content="#f7f8fb">
+  <meta name="theme-color" content="#fbfcf8">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -26,6 +26,7 @@
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%2337433f'/%3E%3Cpath d='M18 40c9-1 13-7 14-20 7 7 12 14 14 24' fill='none' stroke='%23f8faf9' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='18' cy='40' r='4' fill='%23d8b468'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="frontend/styles/application.css">
   <link rel="stylesheet" href="drift.css">
+  <link rel="preload" href="frontend/styles/r8.css" as="style">
   <link rel="modulepreload" href="frontend/app/index.mjs">
   <link rel="modulepreload" href="frontend/app/bootstrap.mjs">
   <script src="app.js" type="module"></script>
@@ -52,6 +53,7 @@
       <p class="auth-status" id="auth-status" role="status" aria-live="polite"></p>
     </section>
   </div>
+  <div class="app-atmosphere" aria-hidden="true"></div>
   <aside class="sidebar">
     <div class="brand"><span class="brand-mark">此</span><span>此刻</span></div>
     <nav aria-label="主导航">
@@ -62,7 +64,7 @@
     </nav>
     <div class="sidebar-footer">
       <div class="account-control" id="account-control" hidden><span id="account-name"></span><button id="logout-button" type="button">退出</button></div>
-      <p class="sidebar-version" id="sidebar-app-version">v0.5.5</p>
+      <p class="sidebar-version" id="sidebar-app-version">v0.5.6</p>
     </div>
   </aside>
 
@@ -87,9 +89,8 @@
       </div>
     </nav>
     <section class="view active home-v02" id="view-today">
-      <div class="home-v02-background" aria-hidden="true"></div>
       <header class="home-v02-masthead">
-        <h1 class="home-v02-brand">此刻 <span aria-hidden="true">此<br>刻</span></h1>
+        <h1 class="home-v02-brand">此刻 <span class="title-dot" aria-hidden="true"></span></h1>
         <label class="home-v02-date" title="为过去某天补充记录">
           <span id="today-date-label" data-active-date-label></span>
           <input type="date" id="active-date" data-active-date aria-label="选择记录日期">
@@ -493,7 +494,7 @@
     </section>
 
     <section class="view" id="view-thoughts">
-      <header class="page-header"><div><p class="eyebrow">主题思考</p><h1>从问题、初步想法，到回答</h1></div><div class="feed-header-actions"><label class="feed-search" id="thought-search-control"><span aria-hidden="true">⌕</span><input id="thought-search" data-feed-search="thoughts" type="search" placeholder="搜索思绪" aria-label="搜索思绪"></label><div class="segmented-control thought-sort" role="group" aria-label="思绪排序"><button class="active" type="button" data-thought-sort="occurred" aria-pressed="true">发生时间</button><button type="button" data-thought-sort="created" aria-pressed="false">提交时间</button></div><button class="quiet-button" id="thought-create-toggle" type="button">＋ 思绪</button></div></header>
+      <header class="page-header"><div><h1>思绪</h1></div><div class="feed-header-actions"><label class="feed-search" id="thought-search-control"><span aria-hidden="true">⌕</span><input id="thought-search" data-feed-search="thoughts" type="search" placeholder="搜索问题或内容" aria-label="搜索思绪"></label><div class="segmented-control thought-sort" role="group" aria-label="思绪排序"><button class="active" type="button" data-thought-sort="occurred" aria-pressed="true">发生时间</button><button type="button" data-thought-sort="created" aria-pressed="false">提交时间</button></div><button class="quiet-button" id="thought-create-toggle" type="button">＋ 记录思考</button></div></header>
       <div class="filter-row" id="thought-filters" aria-label="按标签筛选"></div>
       <div class="thought-list thought-timeline" id="all-thoughts"></div>
     </section>
@@ -781,7 +782,7 @@
           <span class="mine-row-arrow" aria-hidden="true">›</span>
         </button>
       </section>
-      <p class="mine-version" id="mine-app-version">v0.5.5</p>
+      <p class="mine-version" id="mine-app-version">v0.5.6</p>
     </section>
 
     <section class="view" id="view-personal-context">
@@ -1320,7 +1321,7 @@
       <h2 id="thought-block-title">新增记录</h2>
       <input type="hidden" id="thought-block-root-id">
       <input type="hidden" id="thought-block-id">
-      <label class="field"><span>类型</span><select id="thought-block-type"><option value="record">记录</option><option value="idea">初步想法</option><option value="answer">我的回答</option></select></label>
+      <label class="field"><span>类型</span><select id="thought-block-type"><option value="idea">想法</option><option value="record">经历</option><option value="answer">我的结论</option></select></label>
       <label class="field"><span>发生时间</span><input id="thought-block-datetime" type="datetime-local" step="1" required></label>
       <label class="field"><span>内容 <i>文字或图片至少一项 · 支持 Markdown</i></span><textarea id="thought-block-content" rows="7"></textarea></label>
       <div class="content-image-editor" data-content-image-editor="thoughtBlock">

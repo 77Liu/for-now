@@ -35,6 +35,7 @@ export function createHomeMemoryPool(snapshot = {}) {
     const children = thoughts
       .filter(item => (
         item?.relatedTo === root.id
+        && item.disposition !== "discarded"
         && ["idea", "record", "answer"].includes(item.type)
         && !isAiDerivedHomeContent(item)
         && text(item.content)
