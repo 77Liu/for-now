@@ -2,7 +2,7 @@
 
 计划日期：2026-10-04
 
-状态：G0/G1/G2 已通过，进入 V0.5.7-00
+状态：G0/G1/G2 已通过，V0.5.7-00/01 已通过 G3
 
 执行依据：更新后的 `STD-DEV-001`、`SOP/requirement-intake.md`、
 `SOP/iteration-planning.md`、`SOP/feature-development.md`、
@@ -32,7 +32,7 @@ V0.5.7 的主要结果是：已登录用户只为当前页面付出启动、数�
 | 分支 / 工作树 | `feat/v0.5.7-performance` / `.worktrees/v0.5.7-performance` |
 | 数据写源 | PostgreSQL 16.15 |
 | 性能证据 | `/Users/bytedance/Documents/Codex/个人成长追踪/reports/77liu-top-performance-analysis-2026-10-04.md` |
-| 需求池 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblHW2FjQpyJlSck`，rev 302，224 条 |
+| 需求池 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblHW2FjQpyJlSck`，V0.5.7 冻结时 224 条；后续新增 V0.5.8 P00 |
 | 研发交付 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblsidvvCyB8Ty9M`，rev 91，59 条 |
 
 HAR 基线：
@@ -106,8 +106,8 @@ P2/P3 全部保留为后续，不进入本轮承诺。
 
 | 切片 | 优先级 | 范围与所有权 | 进入条件 | 完成条件 |
 | --- | --- | --- | --- | --- |
-| V0.5.7-00 | P00 | `shared/attachments` 备份引用与专项 | 当前生产事件已固定 | 幂等回放不阻断，活动/回收附件仍严格 |
-| V0.5.7-01 | P00 | 启动 DTO、路由投影、路由唯一渲染、Nginx gzip | 00 已提交；API 契约固定 | 首屏无 `/api/state`、无隐藏路由媒体、gzip 可协商 |
+| V0.5.7-00 | P00 | `shared/attachments` 备份引用与专项 | 当前生产事件已固定 | **G3 已通过**：`cf914a8`，幂等回放不阻断，活动/回收附件仍严格 |
+| V0.5.7-01 | P00 | 启动 DTO、路由投影、路由唯一渲染、Nginx gzip | 00 已提交；API 契约固定 | **G3 已通过**：启动不请求 `/api/state`，隐藏路由内容卸载，gzip 可协商 |
 | V0.5.7-02 | P0 | 思绪列表 DTO、分页/搜索、详情按需 | 01 的启动契约稳定 | 首批 20 条内；详情、返回、增量更新完整 |
 | V0.5.7-03 | P0 | 今日时间窗、回顾聚类轻量投影 | 01 稳定 | 当前页字段/点数有上限，非回顾无 clusters |
 | V0.5.7-04 | P00/P0 | 小物变体、迁移、媒体 manifest、图片视口、音频 Range | 路由投影稳定 | 普通展示无原图；点击前无音频；存储按 Range 读 |
@@ -117,9 +117,20 @@ P2/P3 全部保留为后续，不进入本轮承诺。
 | V0.5.7-08 | P1 | AI 费用图纵轴 | P00/P0 无阻断 | 0 到实际峰值，全零/单点/小额稳定 |
 | V0.5.7-09 | 发布 | 集成审计、候选、Preview 与发布交接 | 所有纳入切片 G3 | G4 候选完成；生产动作另取 G5 授权 |
 
-`server.mjs`、`public/frontend/app/runtime.mjs`、`public/index.html`、
-`src/shared/attachments/`、Nginx 配置、旅程矩阵和版本文件均为共享热点，
-由单一集成负责人串行修改。只读调查可以并行；实现分支不并行修改上述文件。
+`server.mjs`、`public/frontend/app/runtime.mjs`、`public/index.html`、Nginx
+配置、旅程矩阵和版本文件由主线单一负责人串行修改。其余任务按所有权拆为独立
+工作树并行开发；每条并行线只提交自己的文件，主线逐条审阅和 cherry-pick，
+候选冻结后停止并行写入。
+
+当前并行线：
+
+| 并行线 | 工作树 / 分支 | 独占范围 | 禁止修改 |
+| --- | --- | --- | --- |
+| 主线启动与投影 | `.worktrees/v0.5.7-performance` / `feat/v0.5.7-performance` | `server.mjs`、`runtime.mjs`、startup/route 投影、Nginx | 不吸收未审阅并行提交 |
+| 后端媒体 Range | `.worktrees/v0.5.7-media-range` / `feat/v0.5.7-media-range` | attachment storage/http 与专项 | `server.mjs`、`runtime.mjs`、版本/发布文件 |
+| 思绪整链 TTS 领域 | `.worktrees/v0.5.7-thought-chain-tts` / `feat/v0.5.7-thought-chain-tts` | speech-cache 应用层与专项 | `server.mjs`、`runtime.mjs`、页面 |
+| 标签组件 | `.worktrees/v0.5.7-tag-component` / `feat/v0.5.7-tag-component` | 独立 tag component 与专项 | `runtime.mjs`、`index.html`、共享 CSS |
+| V0.5.8 架构计划 | `.worktrees/v0.5.8-entrypoint-plan` / `docs/v0.5.8-entrypoint-decomposition` | 单独报告 | 任何代码与 V0.5.7 文件 |
 
 ## 6. 任务契约与验证
 
@@ -222,7 +233,7 @@ flowchart TD
     B --> C["✅ G2 依赖、所有权与验证就绪"]
   end
   subgraph BUILD["阶段二｜小批实现"]
-    C --> D["◐ 00 备份活动引用"]
+    C --> D["✅ 00 备份活动引用"]
     D --> E["○ 01 启动与 gzip"]
     E --> F["○ 02 思绪投影"]
     E --> G["○ 03 今日/回顾投影"]
@@ -272,3 +283,38 @@ flowchart TD
 - 需求池、交付记录、README-TODO、计划和候选报告状态一致。
 - G4 后向 Owner 提交 Preview 结果；push、tag、Release、生产迁移和部署继续
   等待 G5 明确授权。
+
+## 12. 执行记录
+
+### 2026-10-04 23:52 CST
+
+- `V0.5.7-00` 通过 G3，本地提交
+  `cf914a88f6d618baba2951ff6335e626c2576ce7`。
+- 备份与恢复校验共用 `collectBackupAttachmentPaths`；只忽略
+  `_persistence.idempotency[*].response` 中的历史回放路径，在线记录、回收站
+  与其他活动引用仍严格校验。
+- `npm run check`、`npm run test:restore`、`npm run test:backup` 通过。
+- 当前未 push、未部署、未修改生产数据；下一步进入 `V0.5.7-01`。
+
+### 2026-10-05 并行开发调整
+
+- Owner 明确授权本轮按独立所有权尽量并行；主线继续独占
+  `server.mjs` / `runtime.mjs` 等热点。
+- 已建立后端媒体 Range、思绪整链 TTS 领域、标签组件三个独立实现工作树，
+  以及一个只写 V0.5.8 架构报告的工作树；各线不 push，由主线审阅后串行集成。
+- 下一版本新增 P00 `reczz28JPK4rO6LI`：把 `server.mjs` 与
+  `public/frontend/app/runtime.mjs` 拆为纯组装入口。该项本轮只登记和规划，
+  不夹带到 V0.5.7。
+
+### 2026-10-05 V0.5.7-01
+
+- 后端启动/路由投影提交 `362f707`，前端当前路由加载提交 `1efcd92`，
+  Nginx JSON 压缩提交 `f854aa7`。
+- 书目路由卸载保留静态骨架；跨刷新图片草稿先恢复到内存，到所属页面后再
+  激活，避免未加载页面被误判为失效并删除。
+- `npm run check`、`npm test`、`npm run test:startup`、
+  `npm run test:api-v1`、`npm run test:frontend-shell`、
+  `npm run test:sync`、`npm run test:url-history`、`npm run test:ui`、
+  `npm run test:web-budget`、两套部署回归均通过。
+- Fast 4G 本地门：可理解反馈 267.3ms、可见壳 266.8ms、稳定首页 686.5ms；
+  启动与当前路由 JSON 预算通过。当前未 push、未部署。
