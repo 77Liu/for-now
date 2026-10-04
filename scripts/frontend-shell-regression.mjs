@@ -340,6 +340,12 @@ assert.equal(routeLocation.pathname, "/now/thoughts");
 assert.equal(browserRouter.currentRoute().result.error.code, "RESOURCE_UNAVAILABLE");
 assert.equal(routeHistory.scrollRestoration, "manual");
 assert.ok(browserRouteEvents.some(event => event.source === "pop"));
+browserRouter.restoreCurrentScroll({ x: 0, y: 300 });
+assert.deepEqual(browserScroll, { x: 0, y: 300 });
+browserScroll = { x: 0, y: 125 };
+routeListeners.get("pointerdown")?.({ type: "pointerdown" });
+await new Promise(resolve => setTimeout(resolve, 120));
+assert.deepEqual(browserScroll, { x: 0, y: 125 }, "user input must cancel a delayed scroll restore");
 
 const effects = createPageEffects({
   requestFrame: callback => {

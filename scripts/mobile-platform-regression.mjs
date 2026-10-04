@@ -346,7 +346,9 @@ try {
 
     if (device.width === 320 || device.width === 390) {
       assert.equal(await waitUntil(`Boolean(document.querySelector('#all-thoughts [data-chain-id="${thoughtRootId}"]'))`), true);
-      await evaluate(`(() => {const card=document.querySelector('#all-thoughts [data-chain-id="${thoughtRootId}"]');card.open=true;card.querySelector("[data-followup-compose]").click();return true})()`);
+      await evaluate(`document.querySelector('#all-thoughts [data-chain-id="${thoughtRootId}"] .chain-summary').click();true`);
+      assert.equal(await waitUntil(`document.querySelector('#all-thoughts [data-chain-id="${thoughtRootId}"]')?.open&&document.querySelector('#all-thoughts [data-chain-id="${thoughtRootId}"] [data-followup-id="${followUpId}"]')`), true);
+      await evaluate(`document.querySelector('#all-thoughts [data-chain-id="${thoughtRootId}"] [data-followup-compose]').click();true`);
       await sleep(500);
       const createForm = await evaluate(`(() => {
         const button=document.querySelector('#all-thoughts [data-chain-id="${thoughtRootId}"] [data-follow-up-root] button[type="submit"]'),bar=document.querySelector(".sidebar"),rect=button.getBoundingClientRect(),barRect=bar.getBoundingClientRect(),x=rect.left+rect.width/2,y=rect.top+rect.height/2,hit=document.elementFromPoint(x,y);

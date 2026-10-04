@@ -542,6 +542,15 @@ const mockFetch = `
       editPath: "/attachments/keepsake-page-" + (index + 1) + ".edit.webp", alphaMaskPath: "/attachments/keepsake-page-" + (index + 1) + ".alphaMask.webp", mediaVersion: 1
     };
   }));
+  const keepsakeMedia = item => ({
+    version: 1,
+    status: item.derivativeState === "pending" ? "pending" : "ready",
+    originalAvailable: Boolean(item.originalPath),
+    retryable: false,
+    list: { imagePath: item.thumbPath || "", backgroundPath: item.editPath || "" },
+    detail: { imagePath: item.displayPath || "", backgroundPath: item.editPath || "" }
+  });
+  window.__keepsakes.forEach(item => { item.media = keepsakeMedia(item); });
   window.__captures = [
     {
       id: "capture-1", createdAt: "2026-09-27T01:12:00.000Z", occurredAt: "2026-09-27T07:08:09.000Z", occurredOn: "2026-09-27",
@@ -908,11 +917,12 @@ const mockFetch = `
       const dates = ["2026-09-21","2026-09-22","2026-09-23","2026-09-24","2026-09-25","2026-09-26","2026-09-27"];
       const blank = () => ({ calls: 0, successfulCalls: 0, failedCalls: 0, unknownStatusCalls: 0, usageUnknownCalls: 0, durationMs: 0, durationKnownCalls: 0, maxDurationMs: 0, visionCalls: 0, imageCount: 0, imageBytes: 0, costUnknownCalls: 0, costCny: 0, tokens: { input: 0, cacheHit: 0, cacheMiss: 0, reasoning: 0, answer: 0, output: 0 }, costsCny: { input: 0, cacheHit: 0, reasoning: 0, output: 0, total: 0 }, costsUsd: { input: 0, cacheHit: 0, reasoning: 0, output: 0, total: 0 } });
       const daily = dates.map((date,index) => {
-        const flash = blank(), pro = blank();
+        const flash = blank(), pro = blank(), micro = blank();
         flash.calls = index % 3;flash.successfulCalls=flash.calls;flash.durationMs=840*flash.calls;flash.durationKnownCalls=flash.calls;flash.maxDurationMs=flash.calls?840:0;flash.visionCalls=index===5?1:0;flash.imageCount=flash.visionCalls*2;flash.imageBytes=flash.imageCount*2048;flash.tokens = { input: 1200*flash.calls, cacheHit: 400*flash.calls, cacheMiss: 800*flash.calls, reasoning: 180*flash.calls, answer: 320*flash.calls, output: 500*flash.calls };flash.costsCny = { input: .0016*flash.calls, cacheHit: .000016*flash.calls, reasoning: .00144*flash.calls, output: .00256*flash.calls, total: .005616*flash.calls };flash.costCny=flash.costsCny.total;
         pro.calls = index % 2;pro.successfulCalls=pro.calls;pro.durationMs=1350*pro.calls;pro.durationKnownCalls=pro.calls;pro.maxDurationMs=pro.calls?1350:0;pro.tokens = { input: 1800*pro.calls, cacheHit: 600*pro.calls, cacheMiss: 1200*pro.calls, reasoning: 500*pro.calls, answer: 600*pro.calls, output: 1100*pro.calls };pro.costsCny = { input: .0108*pro.calls, cacheHit: .00018*pro.calls, reasoning: .0135*pro.calls, output: .0162*pro.calls, total: .04068*pro.calls };pro.costCny=pro.costsCny.total;
+        if(index===0){micro.costsCny.output=.00000004;micro.costsCny.total=.00000004;micro.costCny=.00000004}
         const total = blank();for(const item of[flash,pro]){for(const key of["calls","successfulCalls","failedCalls","unknownStatusCalls","usageUnknownCalls","durationMs","durationKnownCalls","visionCalls","imageCount","imageBytes","costUnknownCalls","costCny"])total[key]+=item[key];total.maxDurationMs=Math.max(total.maxDurationMs,item.maxDurationMs);for(const key in total.tokens)total.tokens[key]+=item.tokens[key];for(const key in total.costsCny)total.costsCny[key]+=item.costsCny[key];for(const key in total.costsUsd)total.costsUsd[key]+=item.costsUsd[key]}
-        return { date, ...total, models: { "deepseek-flash": flash, "deepseek-v4-pro": pro }, services: {} };
+        return { date, ...total, models: { "deepseek-flash": flash, "deepseek-v4-pro": pro, micro }, services: {} };
       });
       const sum = items => { const total=blank();for(const item of items){for(const key of["calls","successfulCalls","failedCalls","unknownStatusCalls","usageUnknownCalls","durationMs","durationKnownCalls","visionCalls","imageCount","imageBytes","costUnknownCalls","costCny"])total[key]+=item[key];total.maxDurationMs=Math.max(total.maxDurationMs,item.maxDurationMs);for(const key in total.tokens)total.tokens[key]+=item.tokens[key];for(const key in total.costsCny)total.costsCny[key]+=item.costsCny[key];for(const key in total.costsUsd)total.costsUsd[key]+=item.costsUsd[key]}return total };
       const flash=sum(daily.map(item=>item.models["deepseek-flash"])),pro=sum(daily.map(item=>item.models["deepseek-v4-pro"])),deepseek=sum(daily);
@@ -942,7 +952,7 @@ const mockFetch = `
       if(window.__accountUser.role!=="owner")return json({records:{total:41,contentTotal:31,interactionTotal:10,content,interactions,groups}});
       return json({
         records: { total: 41, contentTotal: 31, interactionTotal: 10, content, interactions, groups },
-        ai: { from:dates[0],to:dates.at(-1),trackingStartedAt:"2026-09-21T01:00:00.000Z",summary,daily,models:[{model:"deepseek-flash",label:"DeepSeek Flash",...flash},{model:"deepseek-v4-pro",label:"DeepSeek Pro",...pro}],providers:[{provider:"deepseek",label:"DeepSeek",...deepseek},{provider:"volcengine",label:"火山引擎",...volcengine},{provider:"aliyun",label:"阿里云",...aliyun}],services,modalities:[{modality:"text",label:"纯文本",...text},{modality:"vision",label:"图片理解",...vision},{modality:"audio",label:"语音",...audio}],scenes:[{scene:"thoughtAnswer",calls:4,tokens:{input:12000,cacheHit:3000,reasoning:3000,answer:2000},costCny:.1356,costsCny:{total:.1356},costsUsd:{total:0}},{scene:"chat",calls:2,tokens:{input:5000,cacheHit:1000,reasoning:800,answer:600},costCny:.028,costsCny:{total:.028},costsUsd:{total:0}},{scene:"annotationShenji",calls:1,tokens:{input:1800,cacheHit:200,reasoning:200,answer:180},costCny:.00856,costsCny:{total:.00856},costsUsd:{total:0}},{scene:"speechSynthesis",calls:2,costCny:1.25,costUnknownCalls:1,tokens:{},costsCny:{total:1.25},costsUsd:{total:0}},{scene:"keepsakeSegmentation",calls:2,costUnknownCalls:2,tokens:{},costsCny:{total:0},costsUsd:{total:0}}],calibration:{activeDays:6,averageCallsPerActiveDay:1.5,averageInputTokens:1467,maxInputTokens:31860,averageRequestChars:5100,maxRequestChars:52661,medianCostCny:.025,p90CostCny:.041,maxCostCny:.042},pricing:{source:"https://api-docs.deepseek.com/zh-cn/quick_start/pricing",checkedAt:"2026-10-02",currency:"CNY",displayCurrency:"CNY",cnyPerUsd:7.2,unitTokens:1000000,models:{"deepseek-flash":{label:"DeepSeek Flash",offPeak:{cacheHit:.02,cacheMiss:1,output:4},peak:{cacheHit:.04,cacheMiss:2,output:8}},"deepseek-v4-pro":{label:"DeepSeek Pro",offPeak:{cacheHit:.15,cacheMiss:4.5,output:13.5},peak:{cacheHit:.3,cacheMiss:9,output:27}}},historicalUsdNote:"人民币换算系数仅用于历史美元账本。",estimateNote:"费用按人民币官方单价估算。"} },
+        ai: { from:dates[0],to:dates.at(-1),trackingStartedAt:"2026-09-21T01:00:00.000Z",summary,daily,models:[{model:"deepseek-flash",label:"DeepSeek Flash",...flash},{model:"deepseek-v4-pro",label:"DeepSeek Pro",...pro},{model:"unused",label:"未使用模型",...blank()},{model:"micro",label:"微额模型",...sum(daily.map(item=>item.models.micro))}],providers:[{provider:"deepseek",label:"DeepSeek",...deepseek},{provider:"volcengine",label:"火山引擎",...volcengine},{provider:"aliyun",label:"阿里云",...aliyun}],services,modalities:[{modality:"text",label:"纯文本",...text},{modality:"vision",label:"图片理解",...vision},{modality:"audio",label:"语音",...audio}],scenes:[{scene:"thoughtAnswer",calls:4,tokens:{input:12000,cacheHit:3000,reasoning:3000,answer:2000},costCny:.1356,costsCny:{total:.1356},costsUsd:{total:0}},{scene:"chat",calls:2,tokens:{input:5000,cacheHit:1000,reasoning:800,answer:600},costCny:.028,costsCny:{total:.028},costsUsd:{total:0}},{scene:"annotationShenji",calls:1,tokens:{input:1800,cacheHit:200,reasoning:200,answer:180},costCny:.00856,costsCny:{total:.00856},costsUsd:{total:0}},{scene:"speechSynthesis",calls:2,costCny:1.25,costUnknownCalls:1,tokens:{},costsCny:{total:1.25},costsUsd:{total:0}},{scene:"keepsakeSegmentation",calls:2,usageUnknownCalls:2,durationMs:940,durationKnownCalls:2,maxDurationMs:700,visionCalls:2,imageCount:1,imageBytes:2048,costUnknownCalls:2,unitUsage:[{unitType:"image",units:1},{unitType:"call",units:1}]}],calibration:{activeDays:6,averageCallsPerActiveDay:1.5,averageInputTokens:1467,maxInputTokens:31860,averageRequestChars:5100,maxRequestChars:52661,medianCostCny:.025,p90CostCny:.041,maxCostCny:.042},pricing:{source:"https://api-docs.deepseek.com/zh-cn/quick_start/pricing",checkedAt:"2026-10-02",currency:"CNY",displayCurrency:"CNY",cnyPerUsd:7.2,unitTokens:1000000,models:{"deepseek-flash":{label:"DeepSeek Flash",offPeak:{cacheHit:.02,cacheMiss:1,output:4},peak:{cacheHit:.04,cacheMiss:2,output:8}},"deepseek-v4-pro":{label:"DeepSeek Pro",offPeak:{cacheHit:.15,cacheMiss:4.5,output:13.5},peak:{cacheHit:.3,cacheMiss:9,output:27}}},historicalUsdNote:"人民币换算系数仅用于历史美元账本。",estimateNote:"费用按人民币官方单价估算。"} },
         service: { completedWrites: 56, activeDays: 2, segmentationRequests: 2, topActions: [{ action:"POST /api/thoughts/answer", count:16 }] }
       });
     }
@@ -1200,12 +1210,13 @@ const mockFetch = `
     }
     if (url === "/api/keepsakes" && init.method === "POST") {
       const payload = JSON.parse(init.body),id="keepsake-new-"+(window.__keepsakePayloads.length+1),base="/attachments/"+id,item = { id, createdAt: new Date().toISOString(), ...payload, originalPath:payload.originalPath||base+".original.png",alphaMaskPath:payload.alphaMaskPath||base+".source-mask.png",thumbPath:"",displayPath:"",editPath:"",previewPath:payload.originalPath||base+".original.png",cutoutPath:"",derivativeState:"pending",mediaVersion:1,...eventTime(payload) };
+      item.media=keepsakeMedia(item);
       delete item.image;delete item.alphaMask;
       window.__lastKeepsakeCreateKey=init.headers?.["idempotency-key"]||"";window.__keepsakeCreateKeys.push(window.__lastKeepsakeCreateKey);
       if(window.__failKeepsakeCreateOnce){window.__failKeepsakeCreateOnce=false;return json({error:"小物保存暂时失败"},503)}
       window.__keepsakePayloads.push(payload);
       window.__keepsakes.unshift(item);
-      const finishDerivatives=()=>Object.assign(item,{thumbPath:base+".thumb.webp",displayPath:base+".display.webp",editPath:base+".edit.webp",alphaMaskPath:base+".alphaMask.webp",previewPath:"",derivativeState:"ready",mediaVersion:2});
+      const finishDerivatives=()=>{Object.assign(item,{thumbPath:base+".thumb.webp",displayPath:base+".display.webp",editPath:base+".edit.webp",alphaMaskPath:base+".alphaMask.webp",previewPath:"",derivativeState:"ready",mediaVersion:2});item.media=keepsakeMedia(item)};
       if(window.__holdKeepsakeDerivatives){window.__holdKeepsakeDerivatives=false;window.__releaseKeepsakeDerivatives=finishDerivatives}else setTimeout(finishDerivatives,20);
       const {originalPath,...visible}=item;
       return json(visible);
@@ -1655,6 +1666,15 @@ try {
   assert.equal(await waitUntil(`!document.querySelector("#toast").hidden&&document.querySelector("#toast").classList.contains("error")&&document.querySelector("#toast").textContent.includes("暂时无法安排明天再看")`),true);
   assert.equal(await evaluate(`document.querySelector("#view-discovery").classList.contains("active")&&Boolean(document.querySelector("[data-discovery-snooze]"))`),true);
   await evaluate(`document.querySelector('[data-section="seen"]').click(); true`);
+  const capturesReady = await waitUntil(`document.querySelector("#view-captures").classList.contains("active")&&document.querySelectorAll("#capture-list [data-capture-id]").length===3&&document.querySelector("#capture-count").textContent==="3 条"`);
+  assert.equal(
+    capturesReady,
+    true,
+    JSON.stringify({
+      state: await evaluate(`({active:document.querySelector("#view-captures").classList.contains("active"),cards:document.querySelectorAll("#capture-list [data-capture-id]").length,count:document.querySelector("#capture-count").textContent,busy:document.querySelector("#view-captures").getAttribute("aria-busy"),requests:window.__apiRequests.filter(value=>value.startsWith("GET /api/v1/route-state")).slice(-5),mode:window.__testWorkspaceMode})`),
+      exceptions: cdp.events.filter(event => event.method === "Runtime.exceptionThrown").slice(-3).map(event => event.params.exceptionDetails.exception?.description || event.params.exceptionDetails.text)
+    })
+  );
   assert.deepEqual(await evaluate(`({
     activeView:document.querySelector(".view.active").id,
     primary:document.querySelector(".nav-button.active").textContent.trim(),
@@ -1666,6 +1686,7 @@ try {
   assert.deepEqual(await evaluate(`({ids:[...document.querySelectorAll("#capture-list [data-capture-id]")].map(item=>item.dataset.captureId),count:document.querySelector("#capture-count").textContent})`),{ids:["capture-long"],count:"1 / 3 条"});
   await evaluate(`(()=>{const input=document.querySelector("#capture-search");input.value="";input.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
   await evaluate(`document.querySelector('[data-view="keepsakes"]').click(); true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-keepsakes").classList.contains("active")&&document.querySelectorAll("#keepsake-grid [data-keepsake-id]").length===12`),true);
   await evaluate(`(()=>{const input=document.querySelector("#keepsake-search");input.value="咖啡纸袋";input.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
   assert.deepEqual(await evaluate(`({ids:[...document.querySelectorAll("#keepsake-grid [data-keepsake-id]")].map(item=>item.dataset.keepsakeId),count:document.querySelector("#keepsake-count").textContent})`),{ids:["keepsake-2"],count:"1 / 25 件"});
   await evaluate(`(()=>{const input=document.querySelector("#keepsake-search");input.value="";input.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
@@ -1746,7 +1767,7 @@ try {
   await evaluate(`window.__holdKeepsakeDerivatives=true;document.querySelector("#keepsake-title").value="新票根";document.querySelector("#keepsake-tags").value="纪念 周末 纪念";document.querySelector("#keepsake-form").requestSubmit();true`);
   if(!await waitUntil(`window.__keepsakePayloads.length===1`))throw new Error(await evaluate(`"小物保存未发出："+document.querySelector("#keepsake-save-status").textContent`));
   assert.equal(await waitUntil(`Boolean(document.querySelector('[data-keepsake-id="keepsake-new-1"]'))`),true);
-  assert.deepEqual(await evaluate(`(() => {const payload=window.__keepsakePayloads[0],item=window.__keepsakes.find(value=>value.id==="keepsake-new-1"),card=document.querySelector('[data-keepsake-id="keepsake-new-1"]');return{tags:payload.tags,backgroundOpacityPct:payload.backgroundOpacityPct,uploadRequests:window.__imageUploads.length-${imageUploadsBeforeKeepsakeSave},hasRawImage:Object.hasOwn(payload,"image"),sourcePaths:["originalPath","alphaMaskPath"].every(key=>payload[key]?.startsWith("/attachments/")),pending:item.derivativeState==="pending"&&card.querySelector(".keepsake-derivative-state")?.textContent==="正在生成清晰图",preview:card.querySelector(".keepsake-image-cutout")?.getAttribute("src")===item.previewPath,uploadKey:window.__keepsakeUploadKeys[0].length>0,createKey:Boolean(window.__lastKeepsakeCreateKey)}})()`), {tags:["展览","纪念","周末"],backgroundOpacityPct:15,uploadRequests:1,hasRawImage:false,sourcePaths:true,pending:true,preview:true,uploadKey:true,createKey:true});
+  assert.deepEqual(await evaluate(`(() => {const payload=window.__keepsakePayloads[0],item=window.__keepsakes.find(value=>value.id==="keepsake-new-1"),card=document.querySelector('[data-keepsake-id="keepsake-new-1"]');return{tags:payload.tags,backgroundOpacityPct:payload.backgroundOpacityPct,uploadRequests:window.__imageUploads.length-${imageUploadsBeforeKeepsakeSave},hasRawImage:Object.hasOwn(payload,"image"),sourcePaths:["originalPath","alphaMaskPath"].every(key=>payload[key]?.startsWith("/attachments/")),pending:item.derivativeState==="pending"&&card.querySelector(".keepsake-derivative-state")?.textContent==="正在生成清晰图",noOriginalFallback:!card.querySelector("img")&&card.querySelector(".keepsake-media-placeholder")?.textContent==="正在生成",uploadKey:window.__keepsakeUploadKeys[0].length>0,createKey:Boolean(window.__lastKeepsakeCreateKey)}})()`), {tags:["展览","纪念","周末"],backgroundOpacityPct:15,uploadRequests:1,hasRawImage:false,sourcePaths:true,pending:true,noOriginalFallback:true,uploadKey:true,createKey:true});
   await evaluate(`document.querySelector("#toast").hidden=true;document.querySelector('[data-keepsake-id="keepsake-new-1"]').scrollIntoView({block:"center"});true`);
   await fs.writeFile("/tmp/growth-keepsake-pending.png",Buffer.from((await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false})).data,"base64"));
   await evaluate(`window.__releaseKeepsakeDerivatives();true`);
@@ -2233,8 +2254,30 @@ try {
   await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-speech-player]').play();true`);
   assert.equal(await waitUntil(`window.__speechPlays.length===4`),true);
   assert.deepEqual(await evaluate(`(() => {const old=document.querySelector('[data-capture-id="capture-long"] [data-speech-player]'),next=document.querySelector('[data-capture-id="capture-1"] [data-speech-player]'),assetId=new URL(old.src).searchParams.get("id");return{oldPaused:old.paused,oldSourceRetained:old.getAttribute("src")===window.__activeCaptureSpeechUrl,newPaused:next.paused,oldPauseRecorded:window.__speechPauses.some(url=>url.includes("id="+assetId)),requests:window.__speechRequests.length}})()`),{oldPaused:true,oldSourceRetained:true,newPaused:false,oldPauseRecorded:true,requests:3},"starting another asset must pause the previous player without detaching either persisted source");
-  assert.equal(await evaluate(`document.querySelector("#capture-form").hidden&&document.querySelector("#capture-create-toggle").getAttribute("aria-expanded")==="false"`),true);
+  assert.equal(await evaluate(`document.querySelector("#capture-editor").hidden&&document.querySelector("#capture-form").hidden&&document.querySelector("#capture-create-toggle").getAttribute("aria-expanded")==="false"`),true);
   await evaluate(`document.querySelector("#capture-create-toggle").click();true`);
+  assert.equal(await waitUntil(`!document.querySelector("#capture-editor").hidden&&document.querySelector("#capture-form").getAttribute("hidden")===null&&document.activeElement===document.querySelector("#capture-content")`),true);
+  const captureWritesBeforeClose=await evaluate(`window.__captureSaves`);
+  await evaluate(`document.querySelector("#capture-content").value="关闭后保留的念起";document.querySelector("#capture-content").dispatchEvent(new Event("input",{bubbles:true}));document.querySelector("#capture-editor-close").click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#capture-editor").hidden&&document.activeElement===document.querySelector("#capture-create-toggle")`),true);
+  assert.deepEqual(await evaluate(`({hidden:document.querySelector("#capture-editor").hidden,value:document.querySelector("#capture-content").value,writes:window.__captureSaves,focus:document.activeElement===document.querySelector("#capture-create-toggle")})`),{hidden:true,value:"关闭后保留的念起",writes:captureWritesBeforeClose,focus:true});
+  await evaluate(`document.querySelector("#capture-create-toggle").click();true`);
+  assert.equal(await waitUntil(`!document.querySelector("#capture-editor").hidden&&document.querySelector("#capture-content").value==="关闭后保留的念起"&&document.activeElement===document.querySelector("#capture-content")`),true);
+  await evaluate(`document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}));true`);
+  assert.equal(await waitUntil(`document.querySelector("#capture-editor").hidden&&document.activeElement===document.querySelector("#capture-create-toggle")`),true);
+  assert.deepEqual(await evaluate(`({hidden:document.querySelector("#capture-editor").hidden,value:document.querySelector("#capture-content").value,writes:window.__captureSaves,focus:document.activeElement===document.querySelector("#capture-create-toggle")})`),{hidden:true,value:"关闭后保留的念起",writes:captureWritesBeforeClose,focus:true});
+  await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-capture-edit]').click();true`);
+  assert.equal(await waitUntil(`!document.querySelector("#capture-editor").hidden&&document.querySelector("#capture-id").value==="capture-1"&&document.querySelector("#capture-content").value.includes("这个念头")`),true);
+  await evaluate(`document.querySelector("#capture-content").value="不应覆盖新建草稿";document.querySelector("#capture-content").dispatchEvent(new Event("input",{bubbles:true}));document.querySelector("#capture-cancel").click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#capture-editor").hidden&&document.activeElement===document.querySelector('[data-capture-id="capture-1"] [data-capture-edit]')`),true);
+  assert.deepEqual(await evaluate(`({hidden:document.querySelector("#capture-editor").hidden,id:document.querySelector("#capture-id").value,value:document.querySelector("#capture-content").value,focus:document.activeElement===document.querySelector('[data-capture-id="capture-1"] [data-capture-edit]')})`),{hidden:true,id:"",value:"关闭后保留的念起",focus:true});
+  await evaluate(`document.querySelector("#capture-create-toggle").click();true`);
+  await evaluate(`document.querySelector("#capture-content").value="";document.querySelector("#capture-content").dispatchEvent(new Event("input",{bubbles:true}));true`);
+  for(const width of[320,390]){
+    await cdp.send("Emulation.setDeviceMetricsOverride",{width,height:844,deviceScaleFactor:1,mobile:true});await sleep(80);
+    assert.equal(await evaluate(`(()=>{const editor=document.querySelector("#capture-editor .capture-editor").getBoundingClientRect(),submit=document.querySelector("#capture-submit").getBoundingClientRect(),nav=document.querySelector(".sidebar").getBoundingClientRect();return document.documentElement.scrollWidth<=innerWidth&&editor.left>=0&&editor.right<=innerWidth&&submit.height>=44&&submit.bottom<=nav.top})()`),true,`${width}px capture editor`);
+  }
+  await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
   assert.deepEqual(await evaluate(`(() => {const editor=document.querySelector(".capture-audio-editor"),upload=editor.querySelector(".audio-file-primary"),recorder=editor.querySelector("#capture-audio-recorder"),record=editor.querySelector("#capture-audio-record"),preview=editor.querySelector("#capture-audio-preview");return{fits:editor.getBoundingClientRect().right<=window.innerWidth,uploadText:upload.textContent.trim(),uploadHeight:Math.round(upload.getBoundingClientRect().height),recorderOpen:recorder.open,summary:recorder.querySelector("summary").textContent.replace(/\\s+/g," ").trim(),recordCollapsed:record.getClientRects().length===0,previewCollapsed:preview.getClientRects().length===0}})()`), {
     fits: true,
     uploadText: "↑上传音频",
@@ -2250,6 +2293,12 @@ try {
   assert.equal(await waitUntil(`document.querySelector("#capture-audio-status").textContent==="麦克风权限未开启。当前捕念正文和原有录音没有变化。请开启权限，或改为上传音频。"`),true);
   assert.equal(await evaluate(`!document.body.textContent.includes("MIC_DEVICE_INTERNAL")`),true);
   await evaluate(`document.querySelector("#capture-audio-record").click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#capture-audio-status").textContent.includes("正在录音")`),true);
+  await evaluate(`window.__advanceNow(320);document.querySelector("#capture-editor-close").click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#capture-editor").hidden&&new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const request=opening.result.transaction("drafts","readonly").objectStore("drafts").get("user-1:capture-audio");request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(request.result?.audio?.blob?.size>0)}})`),true);
+  await evaluate(`document.querySelector("#capture-create-toggle").click();true`);
+  assert.equal(await waitUntil(`!document.querySelector("#capture-audio-preview").hidden`),true);
+  await evaluate(`document.querySelector("#capture-audio-remove").click();document.querySelector("#capture-audio-record").click();true`);
   assert.equal(await waitUntil(`document.querySelector("#capture-audio-status").textContent.includes("正在录音")`),true);
   await evaluate(`document.querySelector("#capture-audio-pause").click();true`);
   assert.equal(await waitUntil(`document.querySelector("#capture-audio-status").textContent.includes("录音已暂停")`),true);
@@ -3073,7 +3122,13 @@ try {
     cnyOnly:document.querySelector("#view-statistics").textContent.includes("¥")&&!document.querySelector("#view-statistics").textContent.includes("$")&&document.querySelector("#view-statistics").textContent.includes("历史")&&document.querySelector("#view-statistics").textContent.includes("账本"),
     noOverflow:document.documentElement.scrollWidth<=window.innerWidth
   }))()`);
-  assert.deepEqual(statisticsDesktop, { active:true, sectionHidden:true, recordTotal:"41", groups:["今日","所见","所思","互动"], daily:4, charts:4, title:"多供应商服务用量看板", providers:3, services:4, modalities:3, providerPending:true, serviceNames:["DeepSeek 模型","豆包语音","火山视觉","阿里云图片分割"], serviceUsage:true, serviceFailure:true, audioKnownCost:true, imageKpi:"4", cnyOnly:true, noOverflow:true });
+  assert.deepEqual(statisticsDesktop, { active:true, sectionHidden:true, recordTotal:"41", groups:["今日","所见","所思","互动"], daily:4, charts:6, title:"多供应商服务用量看板", providers:3, services:4, modalities:3, providerPending:true, serviceNames:["DeepSeek 模型","豆包语音","火山视觉","阿里云图片分割"], serviceUsage:true, serviceFailure:true, audioKnownCost:true, imageKpi:"4", cnyOnly:true, noOverflow:true });
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll("#ai-cost-charts>section")].map(section=>[...section.querySelectorAll(".analytics-grid text")].map(item=>item.textContent).filter(value=>value.includes("¥")))`),[
+    ["¥0.00","¥0.002560","¥0.005120"],
+    ["¥0.00","¥0.008100","¥0.0162"],
+    ["¥0.00"],
+    ["¥0.00","<¥0.000001","<¥0.000001"]
+  ]);
   await evaluate(`document.querySelector("#toast").hidden=true; window.scrollTo(0,0); true`);
   await sleep(250);
   const statisticsDesktopScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });

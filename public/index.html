@@ -402,8 +402,11 @@
     </section>
 
     <section class="view" id="view-captures">
-      <header class="page-header"><div><h1>念起</h1></div><div class="feed-header-actions"><label class="feed-search"><span aria-hidden="true">⌕</span><input id="capture-search" data-feed-search="captures" type="search" placeholder="搜索念起" aria-label="搜索念起"></label><span class="record-count" id="capture-count"></span><button class="quiet-button" id="capture-create-toggle" type="button" aria-expanded="false">＋ 捕念</button></div></header>
-      <form class="card quick-capture-form" id="capture-form" hidden>
+      <header class="page-header"><div><h1>念起</h1></div><div class="feed-header-actions"><label class="feed-search"><span aria-hidden="true">⌕</span><input id="capture-search" data-feed-search="captures" type="search" placeholder="搜索念起" aria-label="搜索念起"></label><span class="record-count" id="capture-count"></span><button class="quiet-button" id="capture-create-toggle" type="button" aria-expanded="false" aria-controls="capture-editor">＋ 捕念</button></div></header>
+      <div class="capture-editor-backdrop" id="capture-editor" hidden>
+        <section class="capture-editor" role="dialog" aria-modal="true" aria-labelledby="capture-editor-title">
+          <header><h2 id="capture-editor-title">记录念起</h2><button class="capture-editor-close" id="capture-editor-close" type="button" aria-label="收起念起编辑">×</button></header>
+          <form class="quick-capture-form" id="capture-form" hidden>
         <input type="hidden" id="capture-id">
         <label class="field capture-main-field"><span>想留下什么 <i>文字、图片或录音至少一项</i></span><textarea id="capture-content" rows="4" placeholder="一句话、一张图片或一段录音，都可以。"></textarea></label>
         <div class="content-image-editor" data-content-image-editor="capture">
@@ -443,7 +446,9 @@
         <p class="status" id="capture-status" role="status"></p>
         <p class="native-performance-metric" id="capture-pending-metric" role="status"></p>
         <p class="native-performance-metric" id="startup-performance-metric" role="status"></p>
-      </form>
+          </form>
+        </section>
+      </div>
       <div class="capture-list" id="capture-list"></div>
     </section>
 
@@ -497,6 +502,7 @@
       <header class="page-header"><div><h1>思绪</h1></div><div class="feed-header-actions"><label class="feed-search" id="thought-search-control"><span aria-hidden="true">⌕</span><input id="thought-search" data-feed-search="thoughts" type="search" placeholder="搜索问题或内容" aria-label="搜索思绪"></label><div class="segmented-control thought-sort" role="group" aria-label="思绪排序"><button class="active" type="button" data-thought-sort="occurred" aria-pressed="true">发生时间</button><button type="button" data-thought-sort="created" aria-pressed="false">提交时间</button></div><button class="quiet-button" id="thought-create-toggle" type="button">＋ 记录思考</button></div></header>
       <div class="filter-row" id="thought-filters" aria-label="按标签筛选"></div>
       <div class="thought-list thought-timeline" id="all-thoughts"></div>
+      <div class="thought-pagination" id="thought-pagination" hidden><span id="thought-pagination-status"></span><button class="quiet-button" id="thought-load-more" type="button">继续加载</button></div>
     </section>
 
     <section class="view" id="view-discovery">

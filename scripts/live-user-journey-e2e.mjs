@@ -381,6 +381,7 @@ try {
     await switchView("captures");
     assert.equal(await includesText("#capture-list", FOREIGN_MARKER), false, "看到了其他账户的私密标记");
     if (!await includesText("#capture-list", OWN_MARKER)) {
+      await click("#capture-create-toggle");
       await setRequestId("#capture-form", `00000000-0000-4000-8000-${USERNAME.endsWith("02")?"000000000502":"000000000501"}`);
       await fill("#capture-content", OWN_MARKER);
       await click("#capture-submit");
@@ -532,6 +533,7 @@ try {
     const marker = "E2E-20261001 主账号授权原图";
     await switchView("captures");
     if (!await includesText("#capture-list", marker)) {
+      await click("#capture-create-toggle");
       await setFiles("#capture-images", [IMAGE_FILE]);
       await waitUntil(`document.querySelectorAll('[data-content-image-editor="capture"] .content-image-preview').length===1`, {
         label: "主账号原图预览"
@@ -759,6 +761,7 @@ try {
     await screenshot("health-ocr.png");
   } else if (MODE === "media-inputs") {
     await switchView("captures");
+    await click("#capture-create-toggle");
     await setFiles("#capture-images", [IMAGE_FILE]);
     await waitUntil(`document.querySelectorAll('[data-content-image-editor="capture"] .content-image-preview').length===1`, {
       label: "图片输入预览"
@@ -779,6 +782,7 @@ try {
     await switchView("captures");
 
     if (!await includesText("#capture-list", imageMarker)) {
+      await click("#capture-create-toggle");
       await setFiles("#capture-images", [IMAGE_FILE]);
       await waitUntil(`document.querySelectorAll('[data-content-image-editor="capture"] .content-image-preview').length===1`, {
         label: "图片预览"
@@ -790,6 +794,7 @@ try {
     }
 
     if (!await includesText("#capture-list", audioMarker)) {
+      if (await evaluate(`document.querySelector("#capture-editor").hidden`)) await click("#capture-create-toggle");
       await setFiles("#capture-audio-file", [AUDIO_FILE]);
       await waitUntil(`!document.querySelector("#capture-audio-preview").hidden`, { label: "音频预览" });
       await setRequestId("#capture-form", "00000000-0000-4000-8000-000000000202");
@@ -835,6 +840,7 @@ try {
 
     await switchView("captures");
     if (!await includesText("#capture-list", marker)) {
+      await click("#capture-create-toggle");
       await setRequestId("#capture-form", "00000000-0000-4000-8000-000000000101");
       await fill("#capture-content", `${marker} 捕念：午后切换任务时注意力下降，先留下事实，再决定是否调整。`);
       await fill("#capture-tags", "端到端 可追溯");

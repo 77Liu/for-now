@@ -110,12 +110,14 @@ export function normalizeRouteQuery(view, input = {}) {
   const value = input instanceof URLSearchParams ? input : new URLSearchParams(
     Object.entries(input || {}).filter(([, entry]) => entry != null && entry !== "")
   );
-  const tag = String(value.get("tag") || "").trim().replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 80);
+  const tag = String(value.get("tag") || "").normalize("NFKC").trim().replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 30);
+  const q = String(value.get("q") || "").normalize("NFKC").trim().replace(/\s+/g, " ").replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 200);
   const sort = value.get("sort") === "created" ? "created" : "occurred";
   const pageValue = Number.parseInt(value.get("page") || "1", 10);
-  const page = Number.isSafeInteger(pageValue) && pageValue > 0 ? Math.min(pageValue, 10000) : 1;
+  const page = Number.isSafeInteger(pageValue) && pageValue > 0 ? Math.min(pageValue, 5) : 1;
   return {
     ...(tag && tag !== "all" ? { tag } : {}),
+    ...(q ? { q } : {}),
     ...(sort !== "occurred" ? { sort } : {}),
     ...(page !== 1 ? { page } : {})
   };
@@ -125,6 +127,7 @@ function queryString(view, query) {
   const normalized = normalizeRouteQuery(view, query);
   const params = new URLSearchParams();
   if (normalized.tag) params.set("tag", normalized.tag);
+  if (normalized.q) params.set("q", normalized.q);
   if (normalized.sort) params.set("sort", normalized.sort);
   if (normalized.page) params.set("page", String(normalized.page));
   const value = params.toString();
@@ -258,6 +261,7 @@ export function createPageRouter({
   eventTarget = globalThis,
   basePath = "/",
   requestFrame = callback => globalThis.requestAnimationFrame(callback),
+  setTimer = globalThis.setTimeout,
   readScroll = () => ({ x: Number(globalThis.scrollX) || 0, y: Number(globalThis.scrollY) || 0 }),
   onRoute = () => {}
 }) {
@@ -266,6 +270,7 @@ export function createPageRouter({
   let currentView = fallbackView;
   let currentRoute = pageRoute(fallbackView);
   let scrollFrame = 0;
+  let scrollRestoreVersion = 0;
 
   function applyView(name, { runEffects = false, resetScroll = false } = {}) {
     let viewName = viewSections[name] ? name : fallbackView;
@@ -345,8 +350,8 @@ export function createPageRouter({
   } = {}) {
     currentRoute = { ...routeSnapshot(route), result };
     const viewName = applyView(currentRoute.view, { runEffects, resetScroll });
-    onRoute({ ...currentRoute, query: { ...currentRoute.query } }, { source });
-    return viewName;
+    const routed = onRoute({ ...currentRoute, query: { ...currentRoute.query } }, { source });
+    return routed ?? viewName;
   }
 
   function navigate(route, {
@@ -355,6 +360,7 @@ export function createPageRouter({
     resetScroll = mode === "push",
     result = null
   } = {}) {
+    scrollRestoreVersion += 1;
     const next = route?.kind === "detail"
       ? detailRoute(route.resourceType, route.resourceId, route.query)
       : pageRoute(route?.view, route?.query);
@@ -388,10 +394,19 @@ export function createPageRouter({
     return applyView(currentRoute.view);
   }
 
-  function replaceQuery(changes = {}) {
+  function replaceQuery(changes = {}, { apply = true } = {}) {
     const next = currentRoute.kind === "detail"
       ? detailRoute(currentRoute.resourceType, currentRoute.resourceId, { ...currentRoute.query, ...changes })
       : pageRoute(currentRoute.view, { ...currentRoute.query, ...changes });
+    if (!apply && browserHistory) {
+      writeHistory("replaceState", next, {
+        scroll: readScroll(),
+        result: storedEntry()?.result || currentRoute.result || null,
+        returnRoute: storedEntry()?.returnRoute || null
+      });
+      currentRoute = { ...routeSnapshot(next), result: currentRoute.result || null };
+      return currentView;
+    }
     return navigate(next, { mode: "replace", runEffects: false, resetScroll: false });
   }
 
@@ -446,6 +461,7 @@ export function createPageRouter({
   }
 
   function onPopState(event) {
+    const restoreVersion = ++scrollRestoreVersion;
     const resolved = resolveApplicationRoute(location, { basePath });
     const route = resolved.matched ? resolved : pageRoute(fallbackView);
     const entry = event?.state?.[HISTORY_STATE_KEY];
@@ -455,18 +471,17 @@ export function createPageRouter({
         result: entry?.result || null
       });
     }
-    applyRoute(route, {
+    const applied = applyRoute(route, {
       runEffects: true,
       resetScroll: false,
       result: entry?.result || null,
       source: "pop"
     });
-    const saved = entry?.scroll || { x: 0, y: 0 };
-    requestFrame(() => requestFrame(() => scrollTo({
-      left: Math.max(0, Number(saved.x) || 0),
-      top: Math.max(0, Number(saved.y) || 0),
-      behavior: "auto"
-    })));
+    if (applied && typeof applied.finally === "function") {
+      applied.finally(() => restoreCurrentScroll(entry?.scroll, restoreVersion));
+    } else {
+      restoreCurrentScroll(entry?.scroll, restoreVersion);
+    }
   }
 
   function onScroll() {
@@ -474,6 +489,32 @@ export function createPageRouter({
     scrollFrame = requestFrame(() => {
       scrollFrame = 0;
       captureScroll();
+    });
+  }
+  function onScrollIntent(event) {
+    if (
+      event?.type === "keydown"
+      && !["ArrowDown", "ArrowUp", "End", "Home", "PageDown", "PageUp", " "].includes(event.key)
+    ) return;
+    scrollRestoreVersion += 1;
+  }
+  function restoreCurrentScroll(position = null, expectedVersion = ++scrollRestoreVersion) {
+    const saved = position || storedEntry()?.scroll || { x: 0, y: 0 };
+    const restore = () => {
+      if (expectedVersion !== scrollRestoreVersion) return;
+      scrollTo({
+        left: Math.max(0, Number(saved.x) || 0),
+        top: Math.max(0, Number(saved.y) || 0),
+        behavior: "auto"
+      });
+    };
+    requestFrame(() => {
+      if (expectedVersion !== scrollRestoreVersion) return;
+      requestFrame(() => {
+        if (expectedVersion !== scrollRestoreVersion) return;
+        restore();
+        setTimer?.(restore, 100);
+      });
     });
   }
 
@@ -490,6 +531,9 @@ export function createPageRouter({
     applyRoute(initial, { result, source: "initial" });
     eventTarget?.addEventListener?.("popstate", onPopState);
     eventTarget?.addEventListener?.("scroll", onScroll, { passive: true });
+    for (const eventName of ["wheel", "touchstart", "pointerdown", "keydown"]) {
+      eventTarget?.addEventListener?.(eventName, onScrollIntent, { passive: eventName !== "keydown" });
+    }
     eventTarget?.addEventListener?.("pagehide", captureScroll);
   }
 
@@ -504,6 +548,7 @@ export function createPageRouter({
     clearResult,
     activate,
     captureScroll,
+    restoreCurrentScroll,
     currentView: () => currentView,
     currentRoute: () => ({ ...currentRoute, query: { ...currentRoute.query } })
   };

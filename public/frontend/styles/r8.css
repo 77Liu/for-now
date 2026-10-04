@@ -671,7 +671,7 @@ body:has(#all-thoughts[data-route-mode="detail"]) .app-atmosphere::after{opacity
   #view-thoughts.thought-detail-mode{padding-bottom:66px}
   body:has(#thought-block-modal:not([hidden])) #all-thoughts[data-route-mode="detail"] .thought-actions,
   body:has(#edit-chain-modal:not([hidden])) #all-thoughts[data-route-mode="detail"] .thought-actions,
-  #all-thoughts[data-route-mode="detail"]:has(.followup-form:not([hidden])) .thought-actions{display:none}
+  #all-thoughts[data-route-mode="detail"]:has(.followup-form:not([hidden]),.followup-edit-form:not([hidden])) .thought-actions{display:none}
 }
 
 @media(max-width:760px) and (max-height:740px){
