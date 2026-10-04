@@ -43,6 +43,8 @@ assert.ok(appEntry.split("\n").length <= 5, "public/app.js must remain a thin bo
 assert.match(appBootstrap, /const \[state, meta\] = await Promise\.all/);
 assert.match(appBootstrap, /const runtime = await import\("\.\/runtime\.mjs"\)/);
 assert.match(appBootstrap, /await loadR8Styles\(\)/);
+assert.match(appBootstrap, /timeout = setTimeout\(finish, 1500\)/);
+assert.match(appBootstrap, /link\.addEventListener\("error", finish, \{ once: true \}\)/);
 assert.doesNotMatch(appBootstrap, /from "\.\/runtime\.mjs"/);
 assert.match(appBootstrap, /requestJson\("\/api\/auth\/me", \{ allowUnauthorized: true \}\)/);
 for (const endpoint of ["/api/auth/me", "/api/state", "/api/meta"]) {

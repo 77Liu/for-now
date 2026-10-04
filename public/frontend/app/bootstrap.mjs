@@ -20,11 +20,19 @@ function loadR8Styles() {
   if (existing) return Promise.resolve();
   return new Promise(resolve => {
     const link = document.createElement("link");
+    let timeout = 0;
+    const finish = () => {
+      clearTimeout(timeout);
+      link.removeEventListener("load", finish);
+      link.removeEventListener("error", finish);
+      resolve();
+    };
+    timeout = setTimeout(finish, 1500);
     link.rel = "stylesheet";
     link.href = new URL("../styles/r8.css", import.meta.url).href;
     link.dataset.r8Styles = "";
-    link.addEventListener("load", resolve, { once: true });
-    link.addEventListener("error", resolve, { once: true });
+    link.addEventListener("load", finish, { once: true });
+    link.addEventListener("error", finish, { once: true });
     document.head.append(link);
   });
 }
