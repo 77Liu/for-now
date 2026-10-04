@@ -15,20 +15,47 @@ import { resolveHeadlessBrowser } from "./browser-runtime.mjs";
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const PUBLIC = path.join(ROOT, "public");
 const CHROME = resolveHeadlessBrowser();
-const BUDGET = Object.freeze({
+const integerSetting = (name, fallback, minimum, maximum) => {
+  const value = Number.parseInt(process.env[name] || String(fallback), 10);
+  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
+    throw new Error(`${name} must be an integer from ${minimum} to ${maximum}`);
+  }
+  return value;
+};
+const SAMPLE_COUNT = integerSetting("WEB_PERF_SAMPLE_COUNT", 10, 10, 50);
+const REPORT_PATH = String(process.env.WEB_PERF_REPORT_PATH || "").trim();
+const ASSET_BUDGET = Object.freeze({
   blockingStyleRequests: 2,
   blockingStyleBytes: 250 * 1024,
   entryModuleCount: 6,
   entryModuleBytes: 64 * 1024,
   deferredRuntimeModuleCount: 24,
-  deferredRuntimeModuleBytes: 800 * 1024,
-  currentScreenFeedbackMs: 500,
-  stableHomeMs: 1000
+  deferredRuntimeModuleBytes: 800 * 1024
 });
-const NETWORK_PROFILES = Object.freeze([
-  { name: "local", latency: 0, downloadThroughput: -1, uploadThroughput: -1 },
-  { name: "fast-4g", latency: 40, downloadThroughput: 1_250_000, uploadThroughput: 625_000 }
-]);
+const HTTP_BUDGET = Object.freeze({
+  startupJsonDecodedBytes: 25 * 1024,
+  initialJsonTransferBytes: 200 * 1024,
+  firstReadableRequests: 80,
+  firstReadableApiRequests: 10,
+  mediaBeforeClickTransferBytes: 0
+});
+const TIMING_BUDGET = Object.freeze({
+  "web.startup.coldCache.currentScreenFeedback_ms": { p75: 500, p95: 750 },
+  "web.startup.coldCache.firstReadable_ms": { p75: 1000, p95: 1500 },
+  "web.startup.warmCache.currentScreenFeedback_ms": { p75: 500, p95: 750 },
+  "web.startup.warmCache.firstReadable_ms": { p75: 750, p95: 1000 },
+  "web.navigation.routeSwitch.firstReadable_ms": { p75: 350, p95: 600 },
+  "web.navigation.thoughtDetailReturn.firstReadable_ms": { p75: 250, p95: 500 },
+  "web.sync.secondDeviceCommitToReadable_ms": { p75: 500, p95: 1000 }
+});
+const NETWORK_PROFILE = Object.freeze({
+  name: "fixed-fast-4g",
+  latency: 40,
+  downloadThroughput: 1_250_000,
+  uploadThroughput: 625_000,
+  connectionType: "cellular4g"
+});
+const VIEWPORT = Object.freeze({ width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
 const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
 const normalizeAsset = asset => path.posix.normalize(asset.replace(/^\.?\//, ""));
@@ -120,8 +147,56 @@ const onboardingV2 = {
     }
   }
 };
+const performanceThoughts = Array.from({ length: 12 }, (_, index) => {
+  const rootId = `performance-thought-${index + 1}`;
+  const minute = String(index).padStart(2, "0");
+  const occurredAt = `2026-10-03T08:${minute}:00.000Z`;
+  return [
+    {
+      id: rootId,
+      version: 1,
+      syncVersion: index + 1,
+      type: "question",
+      content: `固定性能样本 ${index + 1}：${"用于验证当前路由首批可读内容。".repeat(8)}`,
+      tags: ["性能门"],
+      annotations: [],
+      followUps: [],
+      occurredAt,
+      occurredOn: "2026-10-03",
+      createdAt: occurredAt,
+      updatedAt: occurredAt
+    },
+    {
+      id: `${rootId}-idea`,
+      version: 1,
+      syncVersion: index + 1,
+      type: "idea",
+      relatedTo: rootId,
+      content: `固定样本想法 ${index + 1}`,
+      authorType: "user",
+      occurredAt,
+      occurredOn: "2026-10-03",
+      createdAt: occurredAt,
+      updatedAt: occurredAt
+    }
+  ];
+}).flat();
 const clientState = {
   ...structuredClone(emptyClientState),
+  captures: [{
+    id: "hidden-media-capture",
+    version: 1,
+    content: "非当前路由媒体描述",
+    occurredAt: "2026-10-03T07:00:00.000Z",
+    createdAt: "2026-10-03T07:00:00.000Z",
+    audio: {
+      attachmentPath: "/attachments/performance-audio.m4a",
+      mimeType: "audio/mp4",
+      bytes: 16,
+      durationMs: 1000
+    }
+  }],
+  thoughts: performanceThoughts,
   onboarding: { ...structuredClone(emptyClientState.onboarding), status: "completed" },
   onboardingV2
 };
@@ -156,83 +231,146 @@ const v1 = data => ({ data, error: null, meta: { traceId: "web-budget-local" } }
 async function createTestServer() {
   const encoded = new Map();
   const requests = [];
-  const json = (response, value, { status = 200, cacheControl = "private, no-store" } = {}) => {
+  const requestWaiters = new Set();
+  let incrementalSync = false;
+  let syncCursor = 0;
+  const notifyRequest = entry => {
+    requests.push(entry);
+    for (const waiter of requestWaiters) {
+      if (entry.index <= waiter.afterIndex || !waiter.predicate(entry)) continue;
+      clearTimeout(waiter.timer);
+      requestWaiters.delete(waiter);
+      waiter.resolve(entry);
+    }
+  };
+  const responseBody = (request, body, contentType) => {
+    const acceptsGzip = /\bgzip\b/.test(String(request.headers["accept-encoding"] || ""));
+    const useGzip = acceptsGzip && /^application\/(?:json|problem\+json)|^text\//.test(contentType) && body.length >= 1024;
+    if (!useGzip) return { output: body, contentEncoding: "" };
+    const cacheKey = `${contentType}:${body.toString("base64")}`;
+    if (!encoded.has(cacheKey)) encoded.set(cacheKey, gzipSync(body, { level: 6 }));
+    return { output: encoded.get(cacheKey), contentEncoding: "gzip" };
+  };
+  const json = (request, response, value, { status = 200, cacheControl = "private, no-store" } = {}) => {
     const body = Buffer.from(JSON.stringify(value));
+    const { output, contentEncoding } = responseBody(request, body, "application/json");
     response.writeHead(status, {
       "cache-control": cacheControl,
-      "content-length": body.length,
-      "content-type": "application/json; charset=utf-8"
+      "content-length": output.length,
+      "content-type": "application/json; charset=utf-8",
+      ...(contentEncoding ? { "content-encoding": contentEncoding, vary: "Accept-Encoding" } : {})
     });
-    response.end(body);
-    return { rawBytes: body.length, transferBytes: body.length };
+    response.end(request.method === "HEAD" ? undefined : output);
+    return {
+      kind: "json",
+      rawBytes: body.length,
+      transferBytes: request.method === "HEAD" ? 0 : output.length,
+      contentEncoding
+    };
   };
   const server = http.createServer(async (request, response) => {
     const startedAt = performance.now();
     const url = new URL(request.url, "http://127.0.0.1");
+    const sample = String(request.headers["x-performance-sample"] || "");
     let result;
     try {
       if (url.pathname === "/api/auth/me") {
-        result = json(response, { authenticated: true, authRequired: true, user, userCount: 1 });
+        result = json(request, response, { authenticated: true, authRequired: true, user, userCount: 1 });
       } else if (url.pathname === "/api/v1/startup") {
-        result = json(response, v1({
+        result = json(request, response, v1({
           protocolVersion: 1,
           version: "web-budget",
           releaseVersion: "0.5.7",
           user,
           capabilities: ["local-testing"],
-          features: {},
+          features: { incrementalSync },
           governanceUrl: "",
-          accountCursor: 1,
+          accountCursor: syncCursor,
           notificationUnread: 0,
           onboardingV2: { session: { status: "completed" } }
         }));
       } else if (url.pathname === "/api/v1/route-state") {
-        result = json(response, v1(routeStateProjection(clientState, {
+        result = json(request, response, v1(routeStateProjection(clientState, {
           view: url.searchParams.get("view") || "today",
           currentDate: "2026-10-03"
         })));
+      } else if (url.pathname === "/api/v1/sync") {
+        const cursorValue = url.searchParams.get("cursor");
+        const cursor = cursorValue == null ? null : Math.max(0, Number(cursorValue) || 0);
+        const changed = cursor != null && cursor < syncCursor;
+        result = json(request, response, v1({
+          cursor: syncCursor,
+          changes: changed ? [{ cursor: syncCursor, domains: ["thoughts"] }] : [],
+          snapshot: changed ? { thoughts: structuredClone(clientState.thoughts) } : {}
+        }));
       } else if (url.pathname === "/api/state") {
-        result = json(response, clientState);
+        result = json(request, response, clientState);
       } else if (url.pathname === "/api/meta") {
-        result = json(response, { version: "web-budget", releaseVersion: "0.4.0", user, capabilities: ["local-testing"], features: {} });
+        result = json(request, response, { version: "web-budget", releaseVersion: "0.4.0", user, capabilities: ["local-testing"], features: {} });
       } else if (url.pathname === "/api/preferences") {
-        result = json(response, preferences);
+        result = json(request, response, preferences);
       } else if (url.pathname === "/api/v1/onboarding-v2/schema") {
-        result = json(response, v1(onboardingV2Schema));
+        result = json(request, response, v1(onboardingV2Schema));
       } else if (url.pathname === "/api/v1/onboarding-v2/session") {
-        result = json(response, v1(onboardingV2));
+        result = json(request, response, v1(onboardingV2));
+      } else if (["/api/v1/actions", "/api/v1/habits"].includes(url.pathname)) {
+        result = json(request, response, v1([]));
+      } else if (url.pathname === "/attachments/performance-audio.m4a" || url.pathname === "/api/speech/audio") {
+        const body = Buffer.from("0123456789abcdef");
+        response.writeHead(200, {
+          "accept-ranges": "bytes",
+          "cache-control": "private, no-store",
+          "content-length": body.length,
+          "content-type": "audio/mp4"
+        });
+        response.end(request.method === "HEAD" ? undefined : body);
+        result = {
+          kind: "media",
+          rawBytes: body.length,
+          transferBytes: request.method === "HEAD" ? 0 : body.length,
+          contentEncoding: ""
+        };
       } else if (url.pathname.startsWith("/api/")) {
-        result = json(response, { error: "Not found", code: "NOT_FOUND" }, { status: 404 });
+        result = json(request, response, { error: "Not found", code: "NOT_FOUND" }, { status: 404 });
       } else {
         const relative = isApplicationRoutePath(url.pathname)
           ? "index.html"
           : url.pathname.replace(/^\/+/, "") || "index.html";
         const file = path.resolve(PUBLIC, relative);
         if (!file.startsWith(`${PUBLIC}${path.sep}`)) {
-          result = json(response, { error: "Forbidden" }, { status: 403, cacheControl: "no-store" });
+          result = json(request, response, { error: "Forbidden" }, { status: 403, cacheControl: "no-store" });
         } else {
           const body = await fs.readFile(file);
-          const acceptsGzip = /\bgzip\b/.test(String(request.headers["accept-encoding"] || ""));
-          const useGzip = acceptsGzip && textAsset(file) && body.length >= 1024;
-          const cacheKey = `${file}:gzip`;
-          if (useGzip && !encoded.has(cacheKey)) encoded.set(cacheKey, gzipSync(body, { level: 6 }));
-          const output = useGzip ? encoded.get(cacheKey) : body;
+          const contentType = mime[path.extname(file).toLowerCase()] || "application/octet-stream";
+          const { output, contentEncoding } = textAsset(file)
+            ? responseBody(request, body, contentType)
+            : { output: body, contentEncoding: "" };
           response.writeHead(200, {
             "cache-control": "no-store",
             "content-length": output.length,
-            "content-type": mime[path.extname(file).toLowerCase()] || "application/octet-stream",
-            ...(useGzip ? { "content-encoding": "gzip", vary: "Accept-Encoding" } : {})
+            "content-type": contentType,
+            ...(contentEncoding ? { "content-encoding": contentEncoding, vary: "Accept-Encoding" } : {})
           });
           response.end(request.method === "HEAD" ? undefined : output);
-          result = { rawBytes: body.length, transferBytes: output.length };
+          result = {
+            kind: textAsset(file) ? "text" : "asset",
+            rawBytes: body.length,
+            transferBytes: request.method === "HEAD" ? 0 : output.length,
+            contentEncoding
+          };
         }
       }
     } catch (error) {
-      result = json(response, { error: "Not found" }, { status: error.code === "ENOENT" ? 404 : 500, cacheControl: "no-store" });
+      result = json(request, response, { error: "Not found" }, { status: error.code === "ENOENT" ? 404 : 500, cacheControl: "no-store" });
     } finally {
-      requests.push({
+      notifyRequest({
+        index: requests.length,
+        sample,
         method: request.method,
         path: url.pathname,
+        search: url.search,
+        kind: result?.kind || "unknown",
+        contentEncoding: result?.contentEncoding || "",
         rawBytes: result?.rawBytes || 0,
         transferBytes: result?.transferBytes || 0,
         durationMs: Number((performance.now() - startedAt).toFixed(1))
@@ -243,6 +381,48 @@ async function createTestServer() {
   return {
     baseUrl: `http://127.0.0.1:${server.address().port}`,
     requests,
+    setIncrementalSync(value) {
+      incrementalSync = Boolean(value);
+    },
+    publishSecondDeviceThought(index) {
+      const id = `second-device-thought-${index}`;
+      const timestamp = `2026-10-03T09:${String(index).padStart(2, "0")}:00.000Z`;
+      clientState.thoughts = [
+        {
+          id,
+          version: 1,
+          syncVersion: syncCursor + 1,
+          type: "question",
+          content: `第二设备同步样本 ${index}`,
+          tags: ["跨设备"],
+          annotations: [],
+          followUps: [],
+          occurredAt: timestamp,
+          occurredOn: "2026-10-03",
+          createdAt: timestamp,
+          updatedAt: timestamp
+        },
+        ...clientState.thoughts
+      ];
+      syncCursor += 1;
+      return { id, cursor: syncCursor };
+    },
+    waitForRequest(predicate, { afterIndex = -1, timeoutMs = 5000 } = {}) {
+      const existing = requests.find(entry => entry.index > afterIndex && predicate(entry));
+      if (existing) return Promise.resolve(existing);
+      return new Promise((resolve, reject) => {
+        const waiter = {
+          afterIndex,
+          predicate,
+          resolve,
+          timer: setTimeout(() => {
+            requestWaiters.delete(waiter);
+            reject(new Error(`Timed out after ${timeoutMs}ms waiting for HTTP request`));
+          }, timeoutMs)
+        };
+        requestWaiters.add(waiter);
+      });
+    },
     close: () => new Promise(resolve => server.close(resolve))
   };
 }
@@ -285,6 +465,22 @@ class Cdp {
 
   onEvent(listener) {
     this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  waitForEvent(method, predicate = () => true, timeoutMs = 5000) {
+    return new Promise((resolve, reject) => {
+      const unsubscribe = this.onEvent(message => {
+        if (message.method !== method || !predicate(message.params || {})) return;
+        clearTimeout(timer);
+        unsubscribe();
+        resolve(message.params || {});
+      });
+      const timer = setTimeout(() => {
+        unsubscribe();
+        reject(new Error(`Timed out after ${timeoutMs}ms waiting for CDP event ${method}`));
+      }, timeoutMs);
+    });
   }
 
   async send(method, params = {}) {
@@ -304,8 +500,8 @@ async function freePort() {
   return port;
 }
 
-async function runBrowserBudget(baseUrl, profile) {
-  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), `growth-web-budget-${profile.name}-`));
+async function createBrowserGate(baseUrl) {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "growth-performance-gate-"));
   const debugPort = await freePort();
   const chrome = spawn(CHROME, [
     "--headless=new",
@@ -324,35 +520,20 @@ async function runBrowserBudget(baseUrl, profile) {
     `--user-data-dir=${dataDir}`,
     "about:blank"
   ], { stdio: "ignore" });
-  let cdp;
   try {
-    cdp = new Cdp(await pageDebuggerUrl(debugPort));
-    const responses = new Map();
-    cdp.onEvent(message => {
-      if (message.method === "Network.responseReceived" && message.params.response.url.startsWith(baseUrl)) {
-        responses.set(message.params.requestId, {
-          url: message.params.response.url,
-          status: message.params.response.status,
-          type: message.params.type,
-          transferBytes: 0
-        });
-      }
-      if (message.method === "Network.loadingFinished" && responses.has(message.params.requestId)) {
-        responses.get(message.params.requestId).transferBytes = Math.round(message.params.encodedDataLength);
-      }
-    });
+    const cdp = new Cdp(await pageDebuggerUrl(debugPort));
     await cdp.send("Page.enable");
     await cdp.send("Runtime.enable");
     await cdp.send("Network.enable");
-    await cdp.send("Network.setCacheDisabled", { cacheDisabled: true });
     await cdp.send("Network.setBypassServiceWorker", { bypass: true });
     await cdp.send("Network.emulateNetworkConditions", {
       offline: false,
-      latency: profile.latency,
-      downloadThroughput: profile.downloadThroughput,
-      uploadThroughput: profile.uploadThroughput,
-      connectionType: profile.name === "local" ? "none" : "cellular4g"
+      latency: NETWORK_PROFILE.latency,
+      downloadThroughput: NETWORK_PROFILE.downloadThroughput,
+      uploadThroughput: NETWORK_PROFILE.uploadThroughput,
+      connectionType: NETWORK_PROFILE.connectionType
     });
+    await cdp.send("Emulation.setDeviceMetricsOverride", VIEWPORT);
     await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
       source: `
         delete Navigator.prototype.serviceWorker;
@@ -375,75 +556,240 @@ async function runBrowserBudget(baseUrl, profile) {
       if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
       return result.result.value;
     };
-    await cdp.send("Page.navigate", { url: `${baseUrl}/today?native-performance=1&budget-profile=${profile.name}` });
-    let ready = false;
-    for (let attempt = 0; attempt < 400; attempt += 1) {
-      ready = await evaluate(`document.querySelector("#startup-performance-metric")?.textContent.startsWith("启动分段 ") || false`);
-      if (ready) break;
-      await sleep(25);
-    }
-    assert.equal(ready, true, `${profile.name} 未产生 stableHome 指标`);
-    await sleep(100);
-    const browser = await evaluate(`(() => {
-      const navigation = performance.getEntriesByType("navigation")[0];
-      const metric = document.querySelector("#startup-performance-metric").textContent.replace(/^启动分段 /, "");
-      const startup = JSON.parse(metric);
-      return {
-        dclMs: Number(navigation.domContentLoadedEventEnd.toFixed(1)),
-        currentScreenFeedbackMs: window.__currentScreenFeedback,
-        stableHomeMs: startup.marks.stableHome,
-        visibleShellMs: startup.marks.visibleShell,
-        domNodes: document.getElementsByTagName("*").length
-      };
-    })()`);
-    const allResponses = [...responses.values()];
-    const completed = allResponses.filter(item => item.transferBytes > 0);
-    const paths = allResponses.map(item => new URL(item.url).pathname);
     return {
-      profile: profile.name,
-      ...browser,
-      resources: completed.length,
-      transferBytes: completed.reduce((total, item) => total + item.transferBytes, 0),
-      requestPaths: paths
+      cdp,
+      evaluate,
+      async setSample(sample) {
+        await cdp.send("Network.setExtraHTTPHeaders", {
+          headers: sample ? { "x-performance-sample": sample } : {}
+        });
+      },
+      async navigate(url) {
+        const domReady = cdp.waitForEvent("Page.domContentEventFired", () => true, 10000);
+        await cdp.send("Page.navigate", { url });
+        await domReady;
+      },
+      async waitForCondition({ condition, action = "", label, timeoutMs = 8000 }) {
+        return evaluate(`new Promise((resolve, reject) => {
+          const startedAt = performance.now();
+          const condition = () => (${condition});
+          let settled = false;
+          const observer = new MutationObserver(check);
+          const finish = value => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            observer.disconnect();
+            removeEventListener("popstate", check);
+            requestAnimationFrame(() => resolve({
+              durationMs: Number((performance.now() - startedAt).toFixed(1)),
+              value
+            }));
+          };
+          function check() {
+            try {
+              const value = condition();
+              if (value) finish(value);
+            } catch (error) {
+              if (settled) return;
+              settled = true;
+              clearTimeout(timeout);
+              observer.disconnect();
+              reject(error);
+            }
+          }
+          const timeout = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            observer.disconnect();
+            removeEventListener("popstate", check);
+            reject(new Error(${JSON.stringify(label)} + " timed out; state=" + JSON.stringify({
+              path: location.pathname,
+              activeView: document.querySelector(".view.active")?.id || "",
+              busy: document.querySelector(".view.active")?.getAttribute("aria-busy") || "",
+              thoughtCards: document.querySelectorAll("#all-thoughts [data-chain-id]").length,
+              startupMetric: document.querySelector("#startup-performance-metric")?.textContent || ""
+            })));
+          }, ${timeoutMs});
+          observer.observe(document.documentElement, {
+            attributes: true,
+            childList: true,
+            characterData: true,
+            subtree: true
+          });
+          addEventListener("popstate", check);
+          ${action}
+          check();
+        })`);
+      },
+      async close() {
+        cdp.socket.close();
+        if (chrome.exitCode == null) chrome.kill("SIGKILL");
+        await fs.rm(dataDir, { recursive: true, force: true });
+      }
     };
-  } finally {
-    cdp?.socket.close();
-    chrome.kill("SIGKILL");
+  } catch (error) {
+    if (chrome.exitCode == null) chrome.kill("SIGKILL");
     await fs.rm(dataDir, { recursive: true, force: true });
+    throw error;
   }
 }
 
+const sum = values => values.reduce((total, value) => total + value, 0);
+const nearestRank = (values, fraction) => {
+  const sorted = values.slice().sort((left, right) => left - right);
+  return sorted[Math.max(0, Math.ceil(sorted.length * fraction) - 1)];
+};
+const distribution = (values, unit, budget = null) => ({
+  unit,
+  samples: values.length,
+  min: Math.min(...values),
+  max: Math.max(...values),
+  p75: nearestRank(values, 0.75),
+  p95: nearestRank(values, 0.95),
+  ...(budget ? { budget } : {})
+});
+const mediaPath = value => (
+  value.startsWith("/attachments/")
+  || value === "/api/speech/audio"
+  || /\.(?:m4a|mp3|mp4|ogg|wav|webm)(?:$|\?)/i.test(value)
+);
+
+function sampleEvidence(server, sample) {
+  const requests = server.requests.filter(item => item.sample === sample && !["HEAD", "OPTIONS"].includes(item.method));
+  const startup = requests.find(item => item.path === "/api/v1/startup");
+  const route = requests.find(item => item.path === "/api/v1/route-state");
+  const json = [startup, route].filter(Boolean);
+  return {
+    sample,
+    requestCount: requests.length,
+    apiRequestCount: requests.filter(item => item.path.startsWith("/api/")).length,
+    transferBytes: sum(requests.map(item => item.transferBytes)),
+    initialJsonDecodedBytes: sum(json.map(item => item.rawBytes)),
+    initialJsonTransferBytes: sum(json.map(item => item.transferBytes)),
+    startupJsonDecodedBytes: startup?.rawBytes || 0,
+    routeJsonDecodedBytes: route?.rawBytes || 0,
+    mediaBeforeClickTransferBytes: sum(requests.filter(item => mediaPath(item.path)).map(item => item.transferBytes)),
+    routeJsonContentEncoding: route?.contentEncoding || "",
+    requestPaths: requests.map(item => item.path)
+  };
+}
+
+async function startupSample(browser, server, sample, { cacheDisabled, clearCache = false } = {}) {
+  await browser.setSample(sample);
+  await browser.cdp.send("Network.setCacheDisabled", { cacheDisabled });
+  if (clearCache) await browser.cdp.send("Network.clearBrowserCache");
+  await browser.navigate(`${server.baseUrl}/today?native-performance=1`);
+  await browser.waitForCondition({
+    label: `${sample} stableHome`,
+    condition: `document.querySelector("#startup-performance-metric")?.textContent.startsWith("启动分段 ")`
+  });
+  const browserEvidence = await browser.evaluate(`(() => {
+    const navigation = performance.getEntriesByType("navigation")[0];
+    const text = document.querySelector("#startup-performance-metric").textContent.replace(/^启动分段 /, "");
+    const startup = JSON.parse(text);
+    return {
+      dclMs: Number(navigation.domContentLoadedEventEnd.toFixed(1)),
+      currentScreenFeedbackMs: Number(window.__currentScreenFeedback),
+      stableHomeMs: Number(startup.marks.stableHome),
+      visibleShellMs: Number(startup.marks.visibleShell),
+      domNodes: document.getElementsByTagName("*").length
+    };
+  })()`);
+  return { ...browserEvidence, ...sampleEvidence(server, sample) };
+}
+
+function startupContractFailures(result) {
+  const failures = [];
+  const fail = (condition, detail) => {
+    if (!condition) failures.push(`${result.sample}: ${detail}`);
+  };
+  fail(
+    result.startupJsonDecodedBytes <= HTTP_BUDGET.startupJsonDecodedBytes,
+    `startup JSON ${result.startupJsonDecodedBytes} B > ${HTTP_BUDGET.startupJsonDecodedBytes} B`
+  );
+  fail(
+    result.initialJsonTransferBytes <= HTTP_BUDGET.initialJsonTransferBytes,
+    `startup + current-route compressed JSON ${result.initialJsonTransferBytes} B > ${HTTP_BUDGET.initialJsonTransferBytes} B`
+  );
+  fail(
+    result.requestCount <= HTTP_BUDGET.firstReadableRequests,
+    `first-readable requests ${result.requestCount} > ${HTTP_BUDGET.firstReadableRequests}`
+  );
+  fail(
+    result.apiRequestCount <= HTTP_BUDGET.firstReadableApiRequests,
+    `first-readable API requests ${result.apiRequestCount} > ${HTTP_BUDGET.firstReadableApiRequests}`
+  );
+  fail(
+    result.mediaBeforeClickTransferBytes === HTTP_BUDGET.mediaBeforeClickTransferBytes,
+    `media before click ${result.mediaBeforeClickTransferBytes} B, expected 0 B`
+  );
+  fail(result.routeJsonContentEncoding === "gzip", "current-route JSON is not gzip encoded");
+  fail(!result.requestPaths.includes("/api/state"), "startup requested forbidden /api/state");
+  for (const endpoint of ["/api/auth/me", "/api/v1/startup", "/api/v1/route-state", "/api/local-test-mode"]) {
+    const count = result.requestPaths.filter(value => value === endpoint).length;
+    fail(count === 1, `${endpoint} request count ${count}, expected 1`);
+  }
+  return failures;
+}
+
+async function browserDiagnostics(browser, server, error) {
+  let page = {};
+  try {
+    page = await browser.evaluate(`({
+      path: location.pathname,
+      activeView: document.querySelector(".view.active")?.id || "",
+      busy: document.querySelector(".view.active")?.getAttribute("aria-busy") || "",
+      thoughtCards: document.querySelectorAll("#all-thoughts [data-chain-id]").length,
+      metric: document.querySelector("#startup-performance-metric")?.textContent || ""
+    })`);
+  } catch {}
+  return new Error(`${error.message}; diagnostics=${JSON.stringify({
+    page,
+    recentRequests: server.requests.slice(-12).map(item => ({
+      sample: item.sample,
+      method: item.method,
+      path: item.path,
+      statusKind: item.kind,
+      transferBytes: item.transferBytes,
+      durationMs: item.durationMs
+    }))
+  })}`);
+}
+
+const gateStartedAt = performance.now();
 const html = await fs.readFile(publicFile("index.html"), "utf8");
 const styles = await blockingStyleClosure(html);
 const modules = await moduleClosure("app.js");
 const deferredRuntime = await moduleClosure("frontend/app/runtime.mjs");
 
 assert.ok(
-  styles.assets.length <= BUDGET.blockingStyleRequests,
-  `首屏阻塞样式请求 ${styles.assets.length} 超过预算 ${BUDGET.blockingStyleRequests}: ${styles.assets.join(", ")}`
+  styles.assets.length <= ASSET_BUDGET.blockingStyleRequests,
+  `首屏阻塞样式请求 ${styles.assets.length} 超过预算 ${ASSET_BUDGET.blockingStyleRequests}: ${styles.assets.join(", ")}`
 );
 assert.ok(
-  styles.bytes <= BUDGET.blockingStyleBytes,
-  `首屏阻塞样式 ${styles.bytes} B 超过预算 ${BUDGET.blockingStyleBytes} B`
+  styles.bytes <= ASSET_BUDGET.blockingStyleBytes,
+  `首屏阻塞样式 ${styles.bytes} B 超过预算 ${ASSET_BUDGET.blockingStyleBytes} B`
 );
 assert.ok(
-  modules.assets.length <= BUDGET.entryModuleCount,
-  `入口模块闭包 ${modules.assets.length} 个超过预算 ${BUDGET.entryModuleCount}`
+  modules.assets.length <= ASSET_BUDGET.entryModuleCount,
+  `入口模块闭包 ${modules.assets.length} 个超过预算 ${ASSET_BUDGET.entryModuleCount}`
 );
 assert.ok(
-  modules.bytes <= BUDGET.entryModuleBytes,
-  `入口模块闭包 ${modules.bytes} B 超过预算 ${BUDGET.entryModuleBytes} B`
+  modules.bytes <= ASSET_BUDGET.entryModuleBytes,
+  `入口模块闭包 ${modules.bytes} B 超过预算 ${ASSET_BUDGET.entryModuleBytes} B`
 );
 assert.ok(
-  deferredRuntime.assets.length <= BUDGET.deferredRuntimeModuleCount,
-  `延迟 runtime 闭包 ${deferredRuntime.assets.length} 个超过预算 ${BUDGET.deferredRuntimeModuleCount}`
+  deferredRuntime.assets.length <= ASSET_BUDGET.deferredRuntimeModuleCount,
+  `延迟 runtime 闭包 ${deferredRuntime.assets.length} 个超过预算 ${ASSET_BUDGET.deferredRuntimeModuleCount}`
 );
 assert.ok(
-  deferredRuntime.bytes <= BUDGET.deferredRuntimeModuleBytes,
-  `延迟 runtime 闭包 ${deferredRuntime.bytes} B 超过预算 ${BUDGET.deferredRuntimeModuleBytes} B`
+  deferredRuntime.bytes <= ASSET_BUDGET.deferredRuntimeModuleBytes,
+  `延迟 runtime 闭包 ${deferredRuntime.bytes} B 超过预算 ${ASSET_BUDGET.deferredRuntimeModuleBytes} B`
 );
 
 const testServer = await createTestServer();
+let browser;
 try {
   const compressedHtml = await fetch(`${testServer.baseUrl}/`, { headers: { "accept-encoding": "gzip" } });
   assert.equal(compressedHtml.headers.get("content-encoding"), "gzip");
@@ -452,53 +798,239 @@ try {
   const compressedRuntime = await fetch(`${testServer.baseUrl}/frontend/app/runtime.mjs`, { headers: { "accept-encoding": "gzip" } });
   assert.equal(compressedRuntime.headers.get("content-encoding"), "gzip");
   assert.equal(compressedRuntime.headers.get("cache-control"), "no-store");
-  const privateState = await fetch(`${testServer.baseUrl}/api/state`, { headers: { "accept-encoding": "gzip" } });
-  assert.equal(privateState.headers.get("content-encoding"), null);
-  assert.equal(privateState.headers.get("cache-control"), "private, no-store");
+  const compressedRoute = await fetch(`${testServer.baseUrl}/api/v1/route-state?view=today`, {
+    headers: { "accept-encoding": "gzip" }
+  });
+  assert.equal(compressedRoute.headers.get("content-encoding"), "gzip");
+  assert.equal(compressedRoute.headers.get("cache-control"), "private, no-store");
+  assert.match(compressedRoute.headers.get("vary") || "", /Accept-Encoding/i);
+  const identityRoute = await fetch(`${testServer.baseUrl}/api/v1/route-state?view=today`, {
+    headers: { "accept-encoding": "identity" }
+  });
+  assert.equal(identityRoute.headers.get("content-encoding"), null);
+  assert.equal(Number(identityRoute.headers.get("content-length")), (await identityRoute.arrayBuffer()).byteLength);
+  const mediaHead = await fetch(`${testServer.baseUrl}/attachments/performance-audio.m4a`, {
+    method: "HEAD",
+    headers: { "accept-encoding": "gzip" }
+  });
+  assert.equal(mediaHead.headers.get("content-encoding"), null);
+  assert.equal((await mediaHead.arrayBuffer()).byteLength, 0);
 
-  const evidence = [];
-  for (const profile of NETWORK_PROFILES) evidence.push(await runBrowserBudget(testServer.baseUrl, profile));
-  for (const result of evidence) {
-    console.log(`Web first-screen ${result.profile}: ${JSON.stringify({
-      dclMs: result.dclMs,
-      currentScreenFeedbackMs: result.currentScreenFeedbackMs,
-      visibleShellMs: result.visibleShellMs,
-      stableHomeMs: result.stableHomeMs,
-      resources: result.resources,
-      transferBytes: result.transferBytes,
-      domNodes: result.domNodes
-    })}`);
+  browser = await createBrowserGate(testServer.baseUrl);
+  const cold = [];
+  for (let index = 1; index <= SAMPLE_COUNT; index += 1) {
+    cold.push(await startupSample(browser, testServer, `startup-cold-${index}`, {
+      cacheDisabled: true,
+      clearCache: true
+    }));
   }
-  for (const result of evidence) {
-    assert.ok(
-      result.currentScreenFeedbackMs < BUDGET.currentScreenFeedbackMs,
-      `${result.profile} current-screen feedback ${result.currentScreenFeedbackMs}ms 未低于 ${BUDGET.currentScreenFeedbackMs}ms`
-    );
-    assert.ok(
-      result.stableHomeMs < BUDGET.stableHomeMs,
-      `${result.profile} stableHome ${result.stableHomeMs}ms 未低于 ${BUDGET.stableHomeMs}ms`
-    );
-    for (const endpoint of ["/api/auth/me", "/api/v1/startup", "/api/v1/route-state", "/api/local-test-mode"]) {
-      assert.equal(result.requestPaths.filter(value => value === endpoint).length, 1, `${result.profile} 重复请求 ${endpoint}`);
-    }
-    assert.equal(result.requestPaths.includes("/api/state"), false, `${result.profile} startup must not request /api/state`);
+
+  await startupSample(browser, testServer, "startup-warm-prime", { cacheDisabled: false });
+  const warm = [];
+  for (let index = 1; index <= SAMPLE_COUNT; index += 1) {
+    warm.push(await startupSample(browser, testServer, `startup-warm-${index}`, { cacheDisabled: false }));
   }
-  const browserRequests = testServer.requests.filter(item => !["HEAD", "OPTIONS"].includes(item.method));
-  const startupRequest = browserRequests.find(item => item.path === "/api/v1/startup");
-  const routeRequest = browserRequests.find(item => item.path === "/api/v1/route-state");
-  assert.ok(startupRequest?.rawBytes <= 25 * 1024, `startup JSON ${startupRequest?.rawBytes} B exceeds 25 KiB`);
-  assert.ok(
-    (startupRequest?.rawBytes || 0) + (routeRequest?.rawBytes || 0) <= 200 * 1024,
-    "startup and current-route JSON exceed 200 KiB"
+
+  testServer.setIncrementalSync(true);
+  const syncRequestIndex = testServer.requests.length - 1;
+  await startupSample(browser, testServer, "interaction-startup", { cacheDisabled: false });
+  await testServer.waitForRequest(item => item.path === "/api/v1/sync", { afterIndex: syncRequestIndex });
+
+  const routeSwitchMs = [];
+  for (let index = 1; index <= SAMPLE_COUNT; index += 1) {
+    await browser.setSample(`route-setup-${index}`);
+    await browser.waitForCondition({
+      label: `route setup ${index}`,
+      action: `document.querySelector('.nav-button[data-view="today"]').click();`,
+      condition: `location.pathname === "/today"
+        && document.querySelector("#view-today").classList.contains("active")
+        && !document.querySelector("#view-today").hasAttribute("aria-busy")
+        && document.querySelector("#home-memory-grid").children.length > 0`
+    });
+    await browser.setSample(`route-switch-${index}`);
+    const measured = await browser.waitForCondition({
+      label: `route switch ${index}`,
+      action: `document.querySelector('.nav-button[data-view="thoughts"]').click();`,
+      condition: `location.pathname === "/thoughts"
+        && document.querySelector("#view-thoughts").classList.contains("active")
+        && !document.querySelector("#view-thoughts").hasAttribute("aria-busy")
+        && document.querySelectorAll("#all-thoughts [data-chain-id]").length >= 12`
+    });
+    routeSwitchMs.push(measured.durationMs);
+  }
+
+  const detailReturnMs = [];
+  for (let index = 1; index <= SAMPLE_COUNT; index += 1) {
+    await browser.setSample(`detail-open-${index}`);
+    await browser.waitForCondition({
+      label: `thought detail open ${index}`,
+      action: `document.querySelector("#all-thoughts .chain-summary").click();`,
+      condition: `location.pathname.startsWith("/thoughts/performance-thought-")
+        && document.querySelectorAll("#all-thoughts [data-chain-id]").length === 1
+        && document.querySelector("#all-thoughts [data-chain-id]")?.open`
+    });
+    await browser.setSample(`detail-return-${index}`);
+    const measured = await browser.waitForCondition({
+      label: `thought detail return ${index}`,
+      action: `document.querySelector("[data-thought-list]").click();`,
+      condition: `location.pathname === "/thoughts"
+        && document.querySelectorAll("#all-thoughts [data-chain-id]").length >= 12
+        && !document.querySelector("#all-thoughts [data-chain-id]")?.open`
+    });
+    detailReturnMs.push(measured.durationMs);
+  }
+
+  await browser.setSample("second-device-sync-prime");
+  const syncPrimeRequestIndex = testServer.requests.length - 1;
+  const syncPrime = testServer.publishSecondDeviceThought(0);
+  await browser.waitForCondition({
+    label: "second-device sync prime",
+    action: `document.dispatchEvent(new Event("visibilitychange"));`,
+    condition: `Boolean(document.querySelector('[data-chain-id="${syncPrime.id}"]'))`
+  });
+  await testServer.waitForRequest(
+    item => item.sample === "second-device-sync-prime" && item.path === "/api/v1/sync",
+    { afterIndex: syncPrimeRequestIndex }
   );
-  const rawBytes = browserRequests.reduce((total, item) => total + item.rawBytes, 0);
-  const transferBytes = browserRequests.reduce((total, item) => total + item.transferBytes, 0);
-  console.log(
-    `Web first-screen budgets passed: ${styles.assets.length} blocking styles / ${styles.bytes} B; ` +
-    `${modules.assets.length} eager modules / ${modules.bytes} B; ` +
-    `${deferredRuntime.assets.length} deferred runtime modules / ${deferredRuntime.bytes} B; ` +
-    `HTTP payload ${rawBytes} B raw / ${transferBytes} B encoded.`
+
+  const secondDeviceSyncMs = [];
+  for (let index = 1; index <= SAMPLE_COUNT; index += 1) {
+    const sample = `second-device-sync-${index}`;
+    await browser.setSample(sample);
+    const requestIndex = testServer.requests.length - 1;
+    const startedAt = performance.now();
+    const mutation = testServer.publishSecondDeviceThought(index);
+    await browser.waitForCondition({
+      label: `second-device sync ${index}`,
+      action: `document.dispatchEvent(new Event("visibilitychange"));`,
+      condition: `Boolean(document.querySelector('[data-chain-id="${mutation.id}"]'))`
+    });
+    secondDeviceSyncMs.push(Number((performance.now() - startedAt).toFixed(1)));
+    await testServer.waitForRequest(item => item.sample === sample && item.path === "/api/v1/sync", {
+      afterIndex: requestIndex
+    });
+  }
+
+  const metrics = {
+    "web.startup.coldCache.currentScreenFeedback_ms": distribution(
+      cold.map(item => item.currentScreenFeedbackMs),
+      "ms",
+      TIMING_BUDGET["web.startup.coldCache.currentScreenFeedback_ms"]
+    ),
+    "web.startup.coldCache.firstReadable_ms": distribution(
+      cold.map(item => item.stableHomeMs),
+      "ms",
+      TIMING_BUDGET["web.startup.coldCache.firstReadable_ms"]
+    ),
+    "web.startup.warmCache.currentScreenFeedback_ms": distribution(
+      warm.map(item => item.currentScreenFeedbackMs),
+      "ms",
+      TIMING_BUDGET["web.startup.warmCache.currentScreenFeedback_ms"]
+    ),
+    "web.startup.warmCache.firstReadable_ms": distribution(
+      warm.map(item => item.stableHomeMs),
+      "ms",
+      TIMING_BUDGET["web.startup.warmCache.firstReadable_ms"]
+    ),
+    "web.navigation.routeSwitch.firstReadable_ms": distribution(
+      routeSwitchMs,
+      "ms",
+      TIMING_BUDGET["web.navigation.routeSwitch.firstReadable_ms"]
+    ),
+    "web.navigation.thoughtDetailReturn.firstReadable_ms": distribution(
+      detailReturnMs,
+      "ms",
+      TIMING_BUDGET["web.navigation.thoughtDetailReturn.firstReadable_ms"]
+    ),
+    "web.sync.secondDeviceCommitToReadable_ms": distribution(
+      secondDeviceSyncMs,
+      "ms",
+      TIMING_BUDGET["web.sync.secondDeviceCommitToReadable_ms"]
+    ),
+    "web.startup.coldCache.requests_count": distribution(cold.map(item => item.requestCount), "count"),
+    "web.startup.warmCache.requests_count": distribution(warm.map(item => item.requestCount), "count"),
+    "web.startup.coldCache.transfer_body_bytes": distribution(cold.map(item => item.transferBytes), "bytes"),
+    "web.startup.warmCache.transfer_body_bytes": distribution(warm.map(item => item.transferBytes), "bytes"),
+    "web.startup.coldCache.initial_json_decoded_bytes": distribution(
+      cold.map(item => item.initialJsonDecodedBytes),
+      "bytes"
+    ),
+    "web.startup.coldCache.initial_json_transfer_bytes": distribution(
+      cold.map(item => item.initialJsonTransferBytes),
+      "bytes"
+    )
+  };
+  const violations = [
+    ...cold.flatMap(startupContractFailures),
+    ...warm.flatMap(startupContractFailures)
+  ];
+  for (const [name, budget] of Object.entries(TIMING_BUDGET)) {
+    const metric = metrics[name];
+    if (metric.p75 > budget.p75) violations.push(`${name} P75 ${metric.p75}ms > ${budget.p75}ms`);
+    if (metric.p95 > budget.p95) violations.push(`${name} P95 ${metric.p95}ms > ${budget.p95}ms`);
+  }
+  const measuredBrowserRequests = testServer.requests.filter(item => item.sample && item.sample !== "startup-warm-prime");
+  const mediaBeforeClickTransferBytes = sum(
+    measuredBrowserRequests.filter(item => mediaPath(item.path)).map(item => item.transferBytes)
   );
+  if (mediaBeforeClickTransferBytes !== 0) {
+    violations.push(`web.media.beforeClick.transfer_body_bytes ${mediaBeforeClickTransferBytes} B, expected 0 B`);
+  }
+
+  const report = {
+    schemaVersion: 1,
+    status: violations.length ? "failed" : "passed",
+    durationMs: Math.round(performance.now() - gateStartedAt),
+    conditions: {
+      sampleCount: SAMPLE_COUNT,
+      percentileMethod: "nearest-rank",
+      browser: CHROME,
+      browserProcess: "one fixed headless browser process and profile",
+      coldCache: "HTTP cache disabled and cleared before every measured navigation",
+      warmCache: "same profile, HTTP cache enabled after one unreported priming navigation; no-store remains honored",
+      network: NETWORK_PROFILE,
+      viewport: VIEWPORT,
+      serviceWorker: "bypassed",
+      measurementCutoff: "stableHome/current scenario DOM readability, not full HAR window"
+    },
+    metrics,
+    contracts: {
+      assets: {
+        blockingStyles: { requests: styles.assets.length, decodedBytes: styles.bytes, assets: styles.assets },
+        entryModules: { requests: modules.assets.length, decodedBytes: modules.bytes },
+        deferredRuntimeModules: { requests: deferredRuntime.assets.length, decodedBytes: deferredRuntime.bytes }
+      },
+      startupJsonDecodedBytesMax: Math.max(...cold.map(item => item.startupJsonDecodedBytes)),
+      routeJsonDecodedBytesMax: Math.max(...cold.map(item => item.routeJsonDecodedBytes)),
+      initialJsonTransferBytesMax: Math.max(...cold.map(item => item.initialJsonTransferBytes)),
+      firstReadableRequestsMax: Math.max(...cold.map(item => item.requestCount)),
+      firstReadableApiRequestsMax: Math.max(...cold.map(item => item.apiRequestCount)),
+      forbiddenFullStateRequests: cold.concat(warm).filter(item => item.requestPaths.includes("/api/state")).length,
+      mediaBeforeClickTransferBytes,
+      gzip: {
+        staticText: "gzip + Vary: Accept-Encoding",
+        jsonOver1024Bytes: "gzip + private, no-store + Vary: Accept-Encoding",
+        identityRequest: "uncompressed",
+        media: "not gzip encoded"
+      },
+      range: "scripts/attachment-range-regression.mjs is part of npm run test:performance-gate"
+    },
+    automatedSecondDeviceScope: "external account commit simulation -> foreground /api/v1/sync pull -> first-device DOM readability",
+    notCovered: [
+      "Preview Linux long-window RSS segmentation, restart/OOM/5xx observation and alert hysteresis"
+    ],
+    violations
+  };
+  if (REPORT_PATH) {
+    const output = path.resolve(REPORT_PATH);
+    await fs.mkdir(path.dirname(output), { recursive: true });
+    await fs.writeFile(output, `${JSON.stringify(report, null, 2)}\n`);
+  }
+  console.log(`Web performance gate report: ${JSON.stringify(report)}`);
+  assert.deepEqual(violations, [], `Web performance gate failed:\n- ${violations.join("\n- ")}`);
+} catch (error) {
+  throw browser ? await browserDiagnostics(browser, testServer, error) : error;
 } finally {
+  await browser?.close();
   await testServer.close();
 }

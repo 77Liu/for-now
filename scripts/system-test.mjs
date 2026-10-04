@@ -125,6 +125,10 @@ const suites = {
     ["isolated load regression", ["scripts/load-regression.mjs"]],
     ["isolated memory soak", ["scripts/memory-soak-regression.mjs"]]
   ],
+  performance: [
+    ["fixed-condition web performance gate", ["scripts/web-first-screen-budget-regression.mjs"]],
+    ["attachment byte range streaming contract", ["scripts/attachment-range-regression.mjs"]]
+  ],
   frontend: [
     ["frontend API, session and state contracts", ["scripts/frontend-contract-regression.mjs"]],
     ["durable mutation log and request coordinator", ["scripts/sync-coordinator-regression.mjs"]],
@@ -142,7 +146,7 @@ const suites = {
 };
 
 if (![...Object.keys(suites), "all"].includes(requestedSuite)) {
-  throw new Error(`未知系统测试分组：${requestedSuite}。可选值：backend、load、frontend、exploration、all`);
+  throw new Error(`未知系统测试分组：${requestedSuite}。可选值：backend、load、performance、frontend、exploration、all`);
 }
 
 let testNode = process.execPath;
@@ -190,7 +194,7 @@ function runNode(args) {
   });
 }
 
-const selected = requestedSuite === "all" ? ["backend", "frontend"] : [requestedSuite];
+const selected = requestedSuite === "all" ? ["backend", "frontend", "performance"] : [requestedSuite];
 const results = [];
 const totalStartedAt = Date.now();
 
