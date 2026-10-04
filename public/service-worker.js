@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cike-shell-v0.5.5-comment-voice-2";
+const CACHE_VERSION = "cike-shell-v0.5.6-r8-1";
 const SHELL_ASSETS = [
   "./",
   "index.html",
@@ -30,6 +30,7 @@ const SHELL_ASSETS = [
   "frontend/state/index.mjs",
   "frontend/sync/index.mjs",
   "frontend/styles/application.css",
+  "frontend/styles/r8.css",
   "frontend/time/index.mjs",
   "assets/icons/apple-touch-icon.png",
   "assets/icons/icon-192.png",
@@ -60,12 +61,15 @@ const KATEX_ASSETS = [
   "vendor/katex/fonts/KaTeX_Typewriter-Regular.woff2"
 ];
 const HOME_BACKGROUND_ASSETS = [
-  "assets/home-v0.2/desktop-background.png",
-  "assets/home-v0.2/mobile-background.png",
-  "assets/home-v0.2/desktop-background.d55ffa4f0582.webp",
-  "assets/home-v0.2/mobile-background.788fb03c2ae3.webp",
-  "assets/home-v0.2/desktop-background.1408885ed7d3.avif",
-  "assets/home-v0.2/mobile-background.0549e6676ea3.avif"
+  "assets/r8/app-background-desktop.png",
+  "assets/r8/app-background-mobile.png",
+  "assets/r8/bamboo-edge.png",
+  "assets/r8/app-background-desktop.b96820a3fb80.webp",
+  "assets/r8/app-background-mobile.22cba13ff0d1.webp",
+  "assets/r8/bamboo-edge.5b2206eba5b8.webp",
+  "assets/r8/app-background-desktop.f7a62027edd6.avif",
+  "assets/r8/app-background-mobile.e8ad4d7f0f47.avif",
+  "assets/r8/bamboo-edge.65e8fade3a25.avif"
 ];
 const NETWORK_ONLY_PATHS = ["/api/", "/attachments/", "/auth/", "/ai/"];
 const DEFERRED_ASSET_SET = new Set(HOME_BACKGROUND_ASSETS);
