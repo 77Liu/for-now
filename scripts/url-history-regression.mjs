@@ -270,8 +270,12 @@ try {
     path:"/now/today",
     today:true
   });
+  await evaluate(`document.querySelector('.home-v02-memory[data-home-memory-type="thought"] [data-home-memory-open]').click();true`);
+  assert.equal(await waitUntil(`location.pathname.startsWith("/now/thoughts/")&&document.querySelector("#all-thoughts").dataset.routeMode==="detail"`), true);
+  await evaluate(`document.querySelector("[data-thought-list]").click();true`);
+  assert.equal(await waitUntil(`location.pathname==="/now/today"&&document.querySelector("#view-today").classList.contains("active")`), true);
 
-  console.log("URL/history regression passed: direct and legacy routes, query replacement, detail history, scroll restoration, and deleted-object fallback.");
+  console.log("URL/history regression passed: direct and legacy routes, query replacement, detail history, source-aware return, scroll restoration, and deleted-object fallback.");
 } finally {
   cdp?.socket.close();
   chrome?.kill("SIGKILL");

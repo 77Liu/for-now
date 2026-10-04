@@ -89,6 +89,38 @@
       ]
     },
     {
+      "id": "home-r8-single-screen",
+      "title": "R8 首页在指定桌面与手机视口完整呈现",
+      "role": "长期记录用户",
+      "goal": "不滚动即可回看三类内容、小物、情绪和行动入口",
+      "risk": "high",
+      "tier": "smoke",
+      "status": "automated",
+      "normalPath": ["登录进入此刻", "浏览三类内容", "打开小物", "查看情绪", "展开行动与习惯"],
+      "failureAndRecovery": ["长内容截断", "小物缺图", "背景派生格式不可用", "短屏与安全区"],
+      "assertions": ["六个指定视口默认未展开不滚动", "三类内容不隐藏", "无横向溢出", "背景不拦截操作", "缺图和缺数据保持入口"],
+      "evidence": [
+        {"script": "scripts/ui-regression.mjs", "anchor": "home-r8-single-screen"},
+        {"script": "scripts/pwa-regression.mjs", "anchor": "deferred backgrounds"}
+      ]
+    },
+    {
+      "id": "thought-r8-reading",
+      "title": "R8 思绪列表与详情保持来源和操作语义",
+      "role": "持续修订思考的用户",
+      "goal": "从列表判断自己的当前想法，并在详情继续补充、追问或请求回答",
+      "risk": "critical",
+      "tier": "smoke",
+      "status": "automated",
+      "normalPath": ["搜索或筛选思绪", "查看身份化预览", "进入详情", "补充或追问", "返回来源"],
+      "failureAndRecovery": ["AI 回答不得冒充用户结论", "后台结果增量到达", "详情对象删除", "移动键盘与固定操作栏"],
+      "assertions": ["用户结论优先且 AI 明确标记", "详情按发生时间正序", "批注与来源仍可用", "草稿与滚动不丢失", "返回原入口"],
+      "evidence": [
+        {"script": "scripts/ui-regression.mjs", "anchor": "thought-r8-reading"},
+        {"script": "scripts/url-history-regression.mjs", "anchor": "URL/history regression passed"}
+      ]
+    },
+    {
       "id": "url-history-restoration",
       "title": "直接打开、筛选和详情历史恢复",
       "role": "普通用户",

@@ -51,17 +51,21 @@ for (const asset of [
   "frontend/app/bootstrap.mjs",
   "frontend/app/runtime.mjs",
   "frontend/sync/index.mjs",
-  "frontend/styles/application.css"
+  "frontend/styles/application.css",
+  "frontend/styles/r8.css"
 ]) assert.ok(shellAssets.has(asset), `预缓存缺少 ${asset}`);
 for (const asset of [
   "vendor/katex/katex.min.css",
   "vendor/katex/katex.min.js",
-  "assets/home-v0.2/desktop-background.png",
-  "assets/home-v0.2/mobile-background.png",
-  "assets/home-v0.2/desktop-background.d55ffa4f0582.webp",
-  "assets/home-v0.2/mobile-background.788fb03c2ae3.webp",
-  "assets/home-v0.2/desktop-background.1408885ed7d3.avif",
-  "assets/home-v0.2/mobile-background.0549e6676ea3.avif"
+  "assets/r8/app-background-desktop.png",
+  "assets/r8/app-background-mobile.png",
+  "assets/r8/bamboo-edge.png",
+  "assets/r8/app-background-desktop.b96820a3fb80.webp",
+  "assets/r8/app-background-mobile.22cba13ff0d1.webp",
+  "assets/r8/bamboo-edge.5b2206eba5b8.webp",
+  "assets/r8/app-background-desktop.f7a62027edd6.avif",
+  "assets/r8/app-background-mobile.e8ad4d7f0f47.avif",
+  "assets/r8/bamboo-edge.65e8fade3a25.avif"
 ]) {
   const assets = asset.startsWith("vendor/katex/") ? katexAssets : backgroundAssets;
   assert.ok(assets.has(asset), `静态资源闭包缺少 ${asset}`);

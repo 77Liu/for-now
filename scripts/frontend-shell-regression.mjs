@@ -25,6 +25,7 @@ const appEntry = await fs.readFile(path.join(ROOT, "public/app.js"), "utf8");
 const appBootstrap = await fs.readFile(path.join(ROOT, "public/frontend/app/bootstrap.mjs"), "utf8");
 const appRuntime = await fs.readFile(path.join(ROOT, "public/frontend/app/runtime.mjs"), "utf8");
 const applicationStyles = await fs.readFile(path.join(ROOT, "public/frontend/styles/application.css"), "utf8");
+const r8Styles = await fs.readFile(path.join(ROOT, "public/frontend/styles/r8.css"), "utf8");
 const html = await fs.readFile(path.join(ROOT, "public/index.html"), "utf8");
 async function publicSourceFiles(directory) {
   const output = [];
@@ -41,6 +42,7 @@ assert.match(appEntry, /^import \{ startApplication \} from "\.\/frontend\/app\/
 assert.ok(appEntry.split("\n").length <= 5, "public/app.js must remain a thin bootstrap");
 assert.match(appBootstrap, /const \[state, meta\] = await Promise\.all/);
 assert.match(appBootstrap, /const runtime = await import\("\.\/runtime\.mjs"\)/);
+assert.match(appBootstrap, /await loadR8Styles\(\)/);
 assert.doesNotMatch(appBootstrap, /from "\.\/runtime\.mjs"/);
 assert.match(appBootstrap, /requestJson\("\/api\/auth\/me", \{ allowUnauthorized: true \}\)/);
 for (const endpoint of ["/api/auth/me", "/api/state", "/api/meta"]) {
@@ -71,8 +73,9 @@ assert.match(appRuntime, /createLatexRenderer\(\{createAsset:createLatexAsset,ge
 assert.match(applicationStyles, /:root\{/);
 assert.match(applicationStyles, /(?:^|\n)\[hidden\]\{display:none!important\}/);
 assert.match(applicationStyles, /env\(safe-area-inset-bottom\)/);
-assert.match(applicationStyles, /\.home-v02\{/);
-assert.match(applicationStyles, /assets\/home-v0\.2\/desktop-background\.png/);
+assert.match(r8Styles, /\.home-v02\{/);
+assert.match(r8Styles, /assets\/r8\/app-background-desktop\.[a-f0-9]{12}\.avif/);
+assert.match(r8Styles, /\.app-atmosphere\{/);
 assert.match(applicationStyles, /\.auth-tabs button\{min-height:44px/);
 assert.match(applicationStyles, /\.auth-form input\{[^}]*min-height:44px[^}]*font-size:1rem/);
 assert.match(applicationStyles, /\.auth-form \.primary-button\{min-height:44px/);
@@ -81,6 +84,7 @@ assert.doesNotMatch(applicationStyles, /\.saved-reasoning|\.answer-reasoning/);
 assert.match(html, /id="home-open-thought"/);
 assert.match(html, /id="home-mood-sparkline"/);
 assert.match(html, /<link rel="stylesheet" href="frontend\/styles\/application\.css">/);
+assert.match(html, /<link rel="preload" href="frontend\/styles\/r8\.css" as="style">/);
 assert.match(html, /<link rel="modulepreload" href="frontend\/app\/index\.mjs">/);
 assert.match(html, /<link rel="modulepreload" href="frontend\/app\/bootstrap\.mjs">/);
 assert.doesNotMatch(html, /<link rel="modulepreload" href="frontend\/app\/runtime\.mjs">/);
@@ -115,6 +119,7 @@ const homePool = createHomeMemoryPool({
   thoughts: [
     { id: "question-1", type: "question", content: "真实问题", occurredOn: "2026-09-27", occurredAt: "2026-09-27T08:00:00.000Z" },
     { id: "idea-1", type: "idea", relatedTo: "question-1", content: "用户自己的想法", occurredOn: "2026-09-27", occurredAt: "2026-09-27T08:01:00.000Z" },
+    { id: "discarded-idea", type: "idea", relatedTo: "question-1", content: "已舍弃的后续想法", disposition: "discarded", occurredOn: "2026-09-27", occurredAt: "2026-09-27T08:03:00.000Z" },
     { id: "answer-1", type: "answer", relatedTo: "question-1", content: "模型回答", authorType: "ai", occurredOn: "2026-09-27", occurredAt: "2026-09-27T08:02:00.000Z" },
     { id: "discarded", type: "question", content: "已舍弃问题", disposition: "discarded", occurredOn: "2026-09-26" }
   ],
