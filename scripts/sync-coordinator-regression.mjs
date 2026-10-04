@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createSyncHttp } from "../src/http/sync.mjs";
+import { createSyncHttp } from "../src/http/index.mjs";
 import {
   createIncrementalSync,
   createIndexedDbSyncStore,
