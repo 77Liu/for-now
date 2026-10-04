@@ -13,6 +13,16 @@ const speechRoot = {
 };
 const speechSource = thoughtChainSpeechSource([
   {
+    id: "ai-older",
+    type: "answer",
+    relatedTo: speechRoot.id,
+    authorType: "ai",
+    content: "旧专属回答",
+    version: 2,
+    occurredAt: "2026-09-28T00:00:00.000Z",
+    createdAt: "2026-09-28T02:00:00.000Z"
+  },
+  {
     id: "ai-latest",
     type: "answer",
     relatedTo: speechRoot.id,
@@ -21,7 +31,8 @@ const speechSource = thoughtChainSpeechSource([
     modelDraft: "MODEL_DRAFT_MUST_NOT_APPEAR",
     reasoningContent: "REASONING_MUST_NOT_APPEAR",
     version: 4,
-    occurredAt: "2026-09-28T04:00:00.000Z"
+    occurredAt: "2026-09-28T00:00:00.000Z",
+    createdAt: "2026-09-28T04:00:00.000Z"
   },
   {
     id: "conclusion-old",

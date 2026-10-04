@@ -383,10 +383,29 @@ try {
   });
   assert.equal(thoughtChainSpeech.status, 200);
   assert.equal(thoughtChainSpeech.headers.get("x-speech-cache"), "miss");
+  const thoughtChainAssetId = thoughtChainSpeech.headers.get("x-speech-asset-id");
+  assert.ok(thoughtChainAssetId);
   await thoughtChainSpeech.arrayBuffer();
   const thoughtChainTtsRequest = JSON.parse(providerCalls.filter(call => call.pathname === "/tts").at(-1).raw);
   assert.equal(thoughtChainTtsRequest.req_params.text, "我的问题：测试问题？ 我的结论：测试回答");
   assert.equal(providerCalls.filter(call => call.pathname === "/tts").length, 5);
+  const thoughtChainState = await (await fetch(`${base}/api/state`)).json();
+  assert.deepEqual(
+    thoughtChainState.speech.assets.find(asset => asset.id === thoughtChainAssetId),
+    {
+      id: thoughtChainAssetId,
+      sourceType: "thoughtChain",
+      sourceId: thoughtRoot.id,
+      sourceVersion: thoughtRoot.version,
+      voice: "zh_male_shaonianzixin_uranus_bigtts",
+      generationRate: 25,
+      mimeType: "audio/mpeg",
+      bytes: Number(thoughtChainSpeech.headers.get("content-length")),
+      createdAt: thoughtChainState.speech.assets.find(asset => asset.id === thoughtChainAssetId)?.createdAt,
+      expiresAt: thoughtChainState.speech.assets.find(asset => asset.id === thoughtChainAssetId)?.expiresAt
+    },
+    "the public state must expose the current thought-chain speech asset"
+  );
 
   const imageBytes = await sharp({
     create: { width: 16, height: 16, channels: 3, background: "#ffffff" }

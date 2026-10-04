@@ -35,6 +35,7 @@ let clock = new Date("2026-10-02T01:00:00.000Z");
 let attachmentSequence = 0;
 let trashSequence = 0;
 let activeThoughtChainAsset = null;
+let accountBThoughtChainAsset = null;
 
 const now = () => clock.toISOString();
 const accountId = () => context.getStore();
@@ -413,6 +414,26 @@ await context.run("account-a", async () => {
     conclusion: { id: "conclusion-1", version: 2 },
     answer: { id: "answer-1", version: 2 }
   });
+  assert.deepEqual(
+    publicSpeechAssets(await repository.read(), {
+      ownerHash: digest("account-a"),
+      currentTime: now(),
+      hash: digest
+    }).find(asset => asset.id === first.assetId),
+    {
+      id: first.assetId,
+      sourceType: "thoughtChain",
+      sourceId: "question-1",
+      sourceVersion: 4,
+      voice: "voice-a",
+      generationRate: -10,
+      mimeType: "audio/mpeg",
+      bytes: first.audio.length,
+      createdAt: firstEntry.createdAt,
+      expiresAt: firstEntry.expiresAt
+    },
+    "current thought-chain audio must be exposed through public speech assets"
+  );
 
   const repeated = await thoughtChainRequest();
   assert.equal(repeated.cacheStatus, "hit");
@@ -466,6 +487,7 @@ await context.run("account-a", async () => {
 await context.run("account-b", async () => {
   const callsBeforeAccount = providerCalls.length;
   const isolated = await thoughtChainRequest();
+  accountBThoughtChainAsset = isolated;
   assert.equal(isolated.cacheStatus, "miss");
   assert.match(isolated.attachmentPath, /account-b/);
   assert.equal(providerCalls.length, callsBeforeAccount + 1, "thought-chain audio must remain account isolated");
@@ -474,6 +496,30 @@ await context.run("account-b", async () => {
 });
 
 await context.run("account-a", async () => {
+  await assert.rejects(
+    cache.readAudio({ id: accountBThoughtChainAsset.assetId }),
+    error => error.code === "SPEECH_ASSET_NOT_FOUND" && error.statusCode === 404,
+    "an asset id from another account must not be readable"
+  );
+  const collisionStore = structuredClone(stores.get("account-a"));
+  const ownedEntry = collisionStore.speechCache.find(entry => entry.id === activeThoughtChainAsset.assetId);
+  collisionStore.speechCache.unshift({
+    ...ownedEntry,
+    ownerHash: digest("account-b"),
+    attachmentPath: accountBThoughtChainAsset.attachmentPath
+  });
+  stores.set("account-a", collisionStore);
+  assert.equal(
+    (await cache.readAudio({ id: activeThoughtChainAsset.assetId })).attachmentPath,
+    activeThoughtChainAsset.attachmentPath,
+    "asset lookup must scope duplicate ids to the current account"
+  );
+  const withoutForeignCollision = structuredClone(stores.get("account-a"));
+  withoutForeignCollision.speechCache = withoutForeignCollision.speechCache.filter(entry => (
+    entry.id !== activeThoughtChainAsset.assetId || entry.ownerHash === digest("account-a")
+  ));
+  stores.set("account-a", withoutForeignCollision);
+
   const document = structuredClone(stores.get("account-a"));
   const asset = document.speechCache.find(entry => entry.sourceType === "capture");
   document.captures[0].content = "再次变化";

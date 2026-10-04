@@ -529,8 +529,10 @@ export function createSpeechCache({
     const { ownerHash } = ownerIdentity();
     const store = await repository.read();
     normalizeSpeechCacheStore(store);
-    const entry = list(store.speechCache).find(item => entryId(item) === assetId);
-    if (!entry || entry.ownerHash !== ownerHash || !cachePath(entry)) {
+    const entry = list(store.speechCache).find(item => (
+      entryId(item) === assetId && item.ownerHash === ownerHash
+    ));
+    if (!entry || !cachePath(entry)) {
       throw failure("朗读音频不存在", "SPEECH_ASSET_NOT_FOUND", 404);
     }
     if (expiredEntry(entry)) {

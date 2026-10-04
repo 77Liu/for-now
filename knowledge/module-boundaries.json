@@ -427,7 +427,7 @@
       "root": "public/frontend/media",
       "publicEntry": "public/frontend/media/index.mjs",
       "allowedDependencies": [],
-      "owns": { "data": ["image/audio MIME, byte-size and duration validation, TTS generation/playback rate normalization, account-scoped recoverable media drafts and idempotent upload helpers"], "routes": [] },
+      "owns": { "data": ["image/audio MIME, byte-size and duration validation, versioned speech source identity, persisted asset selection and TTS generation/playback rate normalization, account-scoped recoverable media drafts and idempotent upload helpers"], "routes": [] },
       "tests": ["scripts/frontend-shared-regression.mjs", "scripts/ui-regression.mjs"],
       "status": "active"
     },

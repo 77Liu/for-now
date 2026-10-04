@@ -512,9 +512,21 @@ if (process.argv.includes("--timezone-case")) {
     bytes: 64,
     createdAt: "2026-10-05T00:00:00.000Z",
     expiresAt: "2026-11-05T00:00:00.000Z"
+  }, {
+    id: "asset-thought-chain",
+    sourceType: "thoughtChain",
+    sourceId: "question-1",
+    sourceVersion: 4,
+    voice: "voice-b",
+    generationRate: -10,
+    mimeType: "audio/mpeg",
+    bytes: 512,
+    createdAt: "2026-10-05T01:00:00.000Z",
+    expiresAt: "2026-11-05T01:00:00.000Z"
   }];
-  assert.deepEqual(SPEECH_SOURCE_TYPES, ["capture", "thoughtAnswer"]);
+  assert.deepEqual(SPEECH_SOURCE_TYPES, ["capture", "thoughtAnswer", "thoughtChain"]);
   assert.equal(speechSourceIdentity("capture", "capture-audio", 2), '["capture","capture-audio",2]');
+  assert.equal(speechSourceIdentity("thoughtChain", "question-1", 4), '["thoughtChain","question-1",4]');
   assert.equal(speechSourceIdentity("other", "capture-audio", 2), "");
   assert.equal(speechAssetForSource(speechAssets, {
     sourceType: "capture",
@@ -526,21 +538,26 @@ if (process.argv.includes("--timezone-case")) {
     sourceId: "capture-audio",
     sourceVersion: 3
   }), null);
+  assert.equal(speechAssetForSource(speechAssets, {
+    sourceType: "thoughtChain",
+    sourceId: "question-1",
+    sourceVersion: 4
+  })?.id, "asset-thought-chain");
   assert.equal(
     speechAudioPath(speechAssets[1]),
     "/api/speech/audio?id=asset-current"
   );
   assert.equal(speechAudioPath({}), "");
   assert.deepEqual(speechSynthesisPayload({
-    sourceType: "thoughtAnswer",
-    sourceId: "answer-1",
-    sourceVersion: 3,
+    sourceType: "thoughtChain",
+    sourceId: "question-1",
+    sourceVersion: 4,
     regenerate: true,
     voice: "must-not-pass-through"
   }), {
-    sourceType: "thoughtAnswer",
-    sourceId: "answer-1",
-    sourceVersion: 3,
+    sourceType: "thoughtChain",
+    sourceId: "question-1",
+    sourceVersion: 4,
     regenerate: true
   });
   assert.deepEqual(speechPreviewPayload(" voice-a "), { voice: "voice-a" });
