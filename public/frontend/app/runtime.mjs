@@ -2580,13 +2580,15 @@ function renderTtsGenerationRate(value){const rate=normalizeTtsGenerationRate(va
 function settingsPayload(){
   const payload={sceneEfforts:Object.fromEntries($$("[data-ai-effort]").map(select=>[select.dataset.aiEffort,select.value])),assistantName:$("#assistant-name").value,responseStyles:Object.fromEntries($$("[data-response-style]").map(select=>[select.dataset.responseStyle,select.value])),automaticAnswers:{thoughtAnswer:$("#automatic-thought-answer").checked},speech:{defaultVoice:$("#tts-default-voice")?.value||accountTtsVoice(),generationRate:normalizeTtsGenerationRate($("#tts-generation-rate")?.value)}};
   if(!hasCapability("ai-configuration"))return payload;
-  return{...payload,profiles:Object.fromEntries(llmTiers.map(tier=>[tier,{model:$(`[data-profile-model="${tier}"]`).value,effort:$(`[data-profile-effort="${tier}"]`).value}])),scenarios:Object.fromEntries($$("[data-ai-scenario]").map(select=>[select.dataset.aiScenario,select.value])),apiKey:$("#llm-api-key").value}
+  const profiles=Object.fromEntries(llmTiers.map(tier=>[tier,{...(llmSettings.profiles?.[tier]||defaultLlmProfiles[tier]),model:$(`[data-profile-model="${tier}"]`).value}]));
+  const visibleScenarios=Object.fromEntries($$("[data-ai-scenario]").map(select=>[select.dataset.aiScenario,select.value]));
+  return{...payload,profiles,scenarios:{...llmSettings.scenarios,...visibleScenarios},apiKey:$("#llm-api-key").value}
 }
 function renderSettings(){
   if(!$("#llm-settings-form"))return;
   llmSettings.profiles={...structuredClone(defaultLlmProfiles),...(llmSettings.profiles||{})};llmSettings.scenarios={...defaultLlmScenarios,...(llmSettings.scenarios||{})};llmSettings.sceneEfforts={...defaultSceneEfforts,...(llmSettings.sceneEfforts||{})};llmSettings.automaticAnswers={thoughtAnswer:llmSettings.automaticAnswers?.thoughtAnswer===true};llmSettings.speech={defaultVoice:String(llmSettings.speech?.defaultVoice||""),generationRate:normalizeTtsGenerationRate(llmSettings.speech?.generationRate)};llmSettings.responseStyles=Object.fromEntries(responseStyleScenes.map(scene=>[scene,llmSettings.responseStyles?.[scene]||"standard"]));
   $("#automatic-thought-answer").checked=llmSettings.automaticAnswers.thoughtAnswer;$("#assistant-name").value=llmSettings.assistantName||"神鸡";renderTtsDefaultVoice();renderTtsGenerationRate(llmSettings.speech.generationRate);
-  for(const tier of llmTiers){const model=$(`[data-profile-model="${tier}"]`),effort=$(`[data-profile-effort="${tier}"]`);if(model)model.value=llmSettings.profiles[tier].model;if(effort)effort.value=llmSettings.profiles[tier].effort}
+  for(const tier of llmTiers){const model=$(`[data-profile-model="${tier}"]`);if(model)model.value=llmSettings.profiles[tier].model}
   $$("[data-ai-scenario]").forEach(select=>{if(!select.options.length)select.innerHTML=llmTiers.map(tier=>`<option value="${tier}">${tier[0].toUpperCase()+tier.slice(1)}</option>`).join("");select.value=llmSettings.scenarios[select.dataset.aiScenario]});
   $$("[data-ai-effort]").forEach(select=>{if(!select.options.length)select.innerHTML=llmEfforts.map(effort=>`<option value="${effort}">${effort==="none"?"关闭":effort==="high"?"High":"Max"}</option>`).join("");select.value=llmSettings.sceneEfforts[select.dataset.aiEffort]});
   $$("[data-response-style]").forEach(select=>{if(!select.options.length)select.innerHTML=responseStyleOptions.map(([value,label])=>`<option value="${value}">${label}</option>`).join("");select.value=llmSettings.responseStyles[select.dataset.responseStyle]||"standard"});

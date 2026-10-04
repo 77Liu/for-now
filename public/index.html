@@ -1111,13 +1111,13 @@
           <div class="settings-section-heading"><h3>助手与回答风格</h3><p>风格和模型档位相互独立。</p><button class="subtle-action" id="reset-response-styles" type="button">恢复默认</button></div>
           <label class="settings-toggle"><input id="automatic-thought-answer" type="checkbox"><span><b>保存思绪后自动回答</b><small>默认关闭；关闭时只保存你的原文，仍可随时点“给我回答”。</small></span></label>
           <label class="field"><span>助手称呼</span><input id="assistant-name" maxlength="24" placeholder="神鸡"></label>
+          <label class="field" data-exclusive-agent-comment><span>专属智能体评论</span><select data-response-style="annotationShenji" aria-label="专属智能体评论风格"></select><small>用于划线或评论后向专属智能体提问时的回复风格。</small></label>
           <div class="scenario-grid response-style-grid">
             <label><span>思考草稿</span><select data-response-style="thoughtDraft" aria-label="回答风格：思考草稿"></select></label>
             <label><span>思考回答</span><select data-response-style="thoughtAnswer" aria-label="回答风格：思考回答"></select></label>
             <label><span>追问回答</span><select data-response-style="followUpAnswer" aria-label="回答风格：追问回答"></select></label>
             <label><span>长期对话</span><select data-response-style="chat" aria-label="回答风格：长期对话"></select></label>
             <label><span>日记回望</span><select data-response-style="diaryReflection" aria-label="回答风格：日记回望"></select></label>
-            <label><span>批注回答</span><select data-response-style="annotationShenji" aria-label="回答风格：批注回答"></select></label>
             <label><span>认知复盘</span><select data-response-style="analysis" aria-label="回答风格：认知复盘"></select></label>
           </div>
         </section>
@@ -1143,12 +1143,12 @@
           </div>
         </section>
         <section class="settings-section" data-owner-capability="ai-configuration">
-          <div class="settings-section-heading"><h3>档位配置</h3><p>每档都可独立选择模型与思考强度。</p></div>
+          <div class="settings-section-heading"><h3>档位配置</h3><p>每档只选择模型；实际思考强度由上方场景设置决定。</p></div>
           <div class="profile-grid">
-            <fieldset class="profile-config"><legend>Lite</legend><label>模型<select data-profile-model="lite" aria-label="Lite 档位模型"><option value="deepseek-flash">Flash · V4.1</option><option value="deepseek-v4-pro">Pro · V4</option></select></label><label>思考<select data-profile-effort="lite" aria-label="Lite 档位思考强度"><option value="none">关闭</option><option value="high">High</option><option value="max">Max</option></select></label></fieldset>
-            <fieldset class="profile-config"><legend>Mid</legend><label>模型<select data-profile-model="mid" aria-label="Mid 档位模型"><option value="deepseek-flash">Flash · V4.1</option><option value="deepseek-v4-pro">Pro · V4</option></select></label><label>思考<select data-profile-effort="mid" aria-label="Mid 档位思考强度"><option value="none">关闭</option><option value="high">High</option><option value="max">Max</option></select></label></fieldset>
-            <fieldset class="profile-config"><legend>High</legend><label>模型<select data-profile-model="high" aria-label="High 档位模型"><option value="deepseek-flash">Flash · V4.1</option><option value="deepseek-v4-pro">Pro · V4</option></select></label><label>思考<select data-profile-effort="high" aria-label="High 档位思考强度"><option value="none">关闭</option><option value="high">High</option><option value="max">Max</option></select></label></fieldset>
-            <fieldset class="profile-config"><legend>Ultra</legend><label>模型<select data-profile-model="ultra" aria-label="Ultra 档位模型"><option value="deepseek-flash">Flash · V4.1</option><option value="deepseek-v4-pro">Pro · V4</option></select></label><label>思考<select data-profile-effort="ultra" aria-label="Ultra 档位思考强度"><option value="none">关闭</option><option value="high">High</option><option value="max">Max</option></select></label></fieldset>
+            <fieldset class="profile-config"><legend>Lite</legend><label>模型<select data-profile-model="lite" aria-label="Lite 档位模型"><option value="deepseek-flash">Flash · V4.1</option><option value="deepseek-v4-pro">Pro · V4</option></select></label></fieldset>
+            <fieldset class="profile-config"><legend>Mid</legend><label>模型<select data-profile-model="mid" aria-label="Mid 档位模型"><option value="deepseek-flash">Flash · V4.1</option><option value="deepseek-v4-pro">Pro · V4</option></select></label></fieldset>
+            <fieldset class="profile-config"><legend>High</legend><label>模型<select data-profile-model="high" aria-label="High 档位模型"><option value="deepseek-flash">Flash · V4.1</option><option value="deepseek-v4-pro">Pro · V4</option></select></label></fieldset>
+            <fieldset class="profile-config"><legend>Ultra</legend><label>模型<select data-profile-model="ultra" aria-label="Ultra 档位模型"><option value="deepseek-flash">Flash · V4.1</option><option value="deepseek-v4-pro">Pro · V4</option></select></label></fieldset>
           </div>
         </section>
         <section class="settings-section" data-owner-capability="ai-configuration">
@@ -1163,7 +1163,6 @@
             <label><span>日记 · 结构</span><select data-ai-scenario="diaryStructure" aria-label="场景档位：日记结构"></select></label>
             <label><span>日记 · 话题</span><select data-ai-scenario="diaryTopic" aria-label="场景档位：日记话题"></select></label>
             <label><span>日记回望</span><select data-ai-scenario="diaryReflection" aria-label="场景档位：日记回望"></select></label>
-            <label><span>批注神鸡</span><select data-ai-scenario="annotationShenji" aria-label="场景档位：批注神鸡"></select></label>
             <label><span>认知复盘</span><select data-ai-scenario="analysis" aria-label="场景档位：认知复盘"></select></label>
             <label><span>书目识别</span><select data-ai-scenario="bookRecognition" aria-label="场景档位：书目识别"></select></label>
             <label><span>健康截图识别</span><select data-ai-scenario="healthRecognition" aria-label="场景档位：健康截图识别"></select></label>

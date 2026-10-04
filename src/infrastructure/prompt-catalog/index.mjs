@@ -13,7 +13,8 @@ export async function loadPromptCatalog({ rootDir, requestedVersion = "" }) {
   const manifest = parseJson(await fs.readFile(manifestFile, "utf8"), manifestFile);
   if (manifest.schemaVersion !== 1 || !Array.isArray(manifest.versions)) throw new Error("Prompt manifest schema is unsupported");
   const version = String(requestedVersion || manifest.activeVersion || "");
-  const selected = manifest.versions.find(item => item.version === version);
+  const selectedIndex = manifest.versions.findIndex(item => item.version === version);
+  const selected = manifest.versions[selectedIndex];
   if (!selected || !/^[a-zA-Z0-9._-]+\.json$/.test(selected.file || "")) throw new Error(`Prompt catalog version is unavailable: ${version}`);
   const versionFile = path.join(directory, "versions", selected.file);
   const raw = await fs.readFile(versionFile);
@@ -40,6 +41,14 @@ export async function loadPromptCatalog({ rootDir, requestedVersion = "" }) {
       }
     }
   }
-  for (const id of manifest.requiredPromptIds || []) if (!prompts[id]) throw new Error(`Required prompt is missing: ${id}`);
+  for (const id of manifest.requiredPromptIds || []) {
+    const introducedIn = manifest.promptIntroducedIn?.[id];
+    if (introducedIn) {
+      const introducedIndex = manifest.versions.findIndex(item => item.version === introducedIn);
+      if (introducedIndex < 0) throw new Error(`Prompt introduction version is unavailable: ${id}`);
+      if (selectedIndex < introducedIndex) continue;
+    }
+    if (!prompts[id]) throw new Error(`Required prompt is missing: ${id}`);
+  }
   return Object.freeze({ version, sha256, prompts: Object.freeze(prompts) });
 }
