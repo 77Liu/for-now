@@ -12,11 +12,20 @@ assert.equal(normalizeTag("  #  修   行  "), "修 行");
 assert.equal(normalizeTag("＃文化"), "文化");
 assert.equal(normalizeTag(" \n\t "), "");
 assert.equal(normalizeTag("123456", { maxLength: 5 }), "12345");
+assert.equal(normalizeTag("㍻A", { maxLength: 2 }), "平成");
+assert.equal(normalizeTag("👨‍👩‍👧‍👦旅行", { maxLength: 2 }), "👨‍👩‍👧‍👦旅");
+const segmenter = Intl.Segmenter;
+Intl.Segmenter = undefined;
+try {
+  assert.equal(normalizeTag("😀旅行", { maxLength: 2 }), "😀旅");
+} finally {
+  Intl.Segmenter = segmenter;
+}
 assert.deepEqual(
   normalizeTagList([" 修行 ", "修行", "修   行", "REFLECTION", "reflection", null]),
   ["修行", "修 行", "REFLECTION"]
 );
-assert.deepEqual(normalizeTagList(["ＡＩ", "AI"]), ["ＡＩ"]);
+assert.deepEqual(normalizeTagList(["ＡＩ", "AI"]), ["AI"]);
 assert.deepEqual(normalizeTagList(["修行"], { limit: 0 }), []);
 
 const initial = createTagMultiSelectState({
@@ -33,6 +42,11 @@ assert.equal(initial.activeIndex, -1);
 assert.equal(initial.activeOption, null);
 assert.equal(initial.canCreate, false);
 assert.equal(initial.atLimit, false);
+assert.deepEqual(initial.overflow, []);
+assert.deepEqual(initial.normalizationChanges, [
+  { index: 1, original: " 修行 ", normalized: "修行", reason: "normalized" },
+  { index: 2, original: "行动", normalized: "行动", reason: "duplicate" }
+]);
 
 const initialBeforeInput = structuredClone(initial);
 const filtered = reduceTagMultiSelectState(initial, { type: "input", value: "  reflec  " });
@@ -53,7 +67,7 @@ const compatibilityFiltered = reduceTagMultiSelectState(
   createTagMultiSelectState({ candidates: ["ＡＩ", "文化"] }),
   { type: "input", value: "ai" }
 );
-assert.deepEqual(compatibilityFiltered.options[0], { type: "candidate", value: "ＡＩ" });
+assert.deepEqual(compatibilityFiltered.options[0], { type: "candidate", value: "AI" });
 
 let keyboardState = createTagMultiSelectState({
   candidates: ["旅行", "旅居", "阅读"],
@@ -84,7 +98,33 @@ assert.equal(keyResult.intent, "none");
 assert.equal(keyResult.state, composingState);
 
 keyboardState = reduceTagMultiSelectState(keyResult.state, { type: "input", value: " \t " });
+keyResult = handleTagMultiSelectKey(keyboardState, {
+  key: "Backspace",
+  selectionStart: 0,
+  selectionEnd: 0
+});
+assert.equal(keyResult.handled, false);
+assert.deepEqual(keyResult.state.selected, ["旅居", "新 标签"]);
+keyboardState = reduceTagMultiSelectState(keyResult.state, { type: "input", value: "" });
+keyResult = handleTagMultiSelectKey(keyboardState, {
+  key: "Backspace",
+  selectionStart: 1,
+  selectionEnd: 1
+});
+assert.equal(keyResult.handled, false);
+keyResult = handleTagMultiSelectKey(keyboardState, {
+  key: "Backspace",
+  selectionStart: 0,
+  selectionEnd: 1
+});
+assert.equal(keyResult.handled, false);
 keyResult = handleTagMultiSelectKey(keyboardState, { key: "Backspace" });
+assert.equal(keyResult.handled, false);
+keyResult = handleTagMultiSelectKey(keyboardState, {
+  key: "Backspace",
+  selectionStart: 0,
+  selectionEnd: 0
+});
 assert.equal(keyResult.handled, true);
 assert.equal(keyResult.intent, "remove");
 assert.deepEqual(keyResult.state.selected, ["旅居"]);
@@ -100,6 +140,17 @@ navigation = handleTagMultiSelectKey(navigation, { key: "Home" }).state;
 assert.deepEqual(navigation.activeOption, { type: "candidate", value: "甲" });
 navigation = handleTagMultiSelectKey(navigation, { key: "End" }).state;
 assert.deepEqual(navigation.activeOption, { type: "candidate", value: "乙" });
+
+let commaState = createTagMultiSelectState({ input: "英文逗号" });
+keyResult = handleTagMultiSelectKey(commaState, { key: "," });
+assert.equal(keyResult.handled, true);
+assert.equal(keyResult.intent, "create");
+assert.deepEqual(keyResult.state.selected, ["英文逗号"]);
+commaState = reduceTagMultiSelectState(keyResult.state, { type: "input", value: "中文逗号" });
+keyResult = handleTagMultiSelectKey(commaState, { key: "，" });
+assert.equal(keyResult.handled, true);
+assert.equal(keyResult.intent, "create");
+assert.deepEqual(keyResult.state.selected, ["英文逗号", "中文逗号"]);
 
 let removable = createTagMultiSelectState({
   candidates: ["REFLECTION", "文化"],
@@ -120,10 +171,37 @@ let limited = createTagMultiSelectState({
 assert.equal(limited.atLimit, true);
 assert.equal(limited.canCreate, false);
 assert.deepEqual(limited.options, []);
+assert.deepEqual(limited.overflow, []);
 limited = reduceTagMultiSelectState(limited, { type: "remove", value: "标签8" });
 limited = reduceTagMultiSelectState(limited, { type: "input", value: "新标签" });
 assert.equal(limited.atLimit, false);
 assert.deepEqual(limited.options, [{ type: "create", value: "新标签" }]);
+
+const hydrated = createTagMultiSelectState({
+  selected: ["ＡＩ", "  超长标签  ", "第三", "第四", "AI", "   "],
+  maxSelected: 2,
+  maxTagLength: 2
+});
+assert.deepEqual(hydrated.selected, ["AI", "超长", "第三", "第四"]);
+assert.deepEqual(hydrated.overflow, ["第三", "第四"]);
+assert.equal(hydrated.atLimit, true);
+assert.deepEqual(hydrated.normalizationChanges, [
+  { index: 0, original: "ＡＩ", normalized: "AI", reason: "normalized" },
+  { index: 1, original: "  超长标签  ", normalized: "超长", reason: "normalized" },
+  { index: 4, original: "AI", normalized: "AI", reason: "duplicate" },
+  { index: 5, original: "   ", normalized: "", reason: "empty" }
+]);
+const hydratedAfterInput = reduceTagMultiSelectState(hydrated, { type: "input", value: "新" });
+assert.deepEqual(hydratedAfterInput.selected, hydrated.selected);
+assert.deepEqual(hydratedAfterInput.overflow, hydrated.overflow);
+assert.deepEqual(hydratedAfterInput.normalizationChanges, hydrated.normalizationChanges);
+const hydratedAfterRemove = reduceTagMultiSelectState(hydratedAfterInput, {
+  type: "remove",
+  value: "第四"
+});
+assert.deepEqual(hydratedAfterRemove.selected, ["AI", "超长", "第三"]);
+assert.deepEqual(hydratedAfterRemove.overflow, ["第三"]);
+assert.deepEqual(hydratedAfterRemove.normalizationChanges, hydrated.normalizationChanges);
 
 const replaced = reduceTagMultiSelectState(limited, {
   type: "set-candidates",
@@ -136,6 +214,10 @@ const reselection = reduceTagMultiSelectState(replaced, {
   values: [" 新候选 ", "文化", "文化"]
 });
 assert.deepEqual(reselection.selected, ["新候选", "文化"]);
+assert.deepEqual(reselection.normalizationChanges, [
+  { index: 0, original: " 新候选 ", normalized: "新候选", reason: "normalized" },
+  { index: 2, original: "文化", normalized: "文化", reason: "duplicate" }
+]);
 assert.throws(
   () => reduceTagMultiSelectState(replaced, { type: "unknown" }),
   /Unsupported tag multi-select action/
@@ -151,4 +233,4 @@ assert.doesNotMatch(
   "tag multi-select state must stay independent of DOM globals and network I/O"
 );
 
-console.log("Tag multi-select regression passed: normalization, filtering, creation, keyboard selection, removal and limits.");
+console.log("Tag multi-select regression passed: graphemes, hydration diagnostics, filtering, delimiters, keyboard selection and limits.");

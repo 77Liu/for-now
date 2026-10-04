@@ -7,18 +7,25 @@ const positiveInteger = (value, fallback) => {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+const graphemes = value => {
+  if (typeof Intl.Segmenter !== "function") return Array.from(value);
+  const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+  return Array.from(segmenter.segment(value), part => part.segment);
+};
+
 export function normalizeTag(value, { maxLength = DEFAULT_MAX_TAG_LENGTH } = {}) {
   const limit = positiveInteger(maxLength, DEFAULT_MAX_TAG_LENGTH);
-  return String(value ?? "")
+  const normalized = String(value ?? "")
+    .normalize("NFKC")
     .trim()
     .replace(TAG_PREFIX, "")
     .replace(/\s+/gu, " ")
-    .slice(0, limit)
     .trim();
+  return graphemes(normalized).slice(0, limit).join("").trim();
 }
 
 const tagKey = (value, maxLength = DEFAULT_MAX_TAG_LENGTH) => (
-  normalizeTag(value, { maxLength }).normalize("NFKC").toLocaleLowerCase("zh-CN")
+  normalizeTag(value, { maxLength }).toLocaleLowerCase("zh-CN")
 );
 
 export function normalizeTagList(values, {
@@ -43,21 +50,44 @@ export function normalizeTagList(values, {
   return tags;
 }
 
+function normalizeSelectedTags(values, maxLength) {
+  const selected = [];
+  const normalizationChanges = [];
+  const seen = new Set();
+  const source = Array.isArray(values) ? values : [values];
+  source.forEach((value, index) => {
+    const original = String(value ?? "");
+    const normalized = normalizeTag(value, { maxLength });
+    if (!normalized) {
+      normalizationChanges.push({ index, original, normalized, reason: "empty" });
+      return;
+    }
+    const key = tagKey(normalized, maxLength);
+    if (seen.has(key)) {
+      normalizationChanges.push({ index, original, normalized, reason: "duplicate" });
+      return;
+    }
+    seen.add(key);
+    selected.push(normalized);
+    if (original !== normalized) {
+      normalizationChanges.push({ index, original, normalized, reason: "normalized" });
+    }
+  });
+  return { selected, normalizationChanges };
+}
+
 function buildState({
   candidates = [],
   selected = [],
   input = "",
   maxSelected = DEFAULT_MAX_SELECTED,
   maxTagLength = DEFAULT_MAX_TAG_LENGTH
-}, { activeIndex } = {}) {
+}, { activeIndex, normalizationChanges } = {}) {
   const selectedLimit = positiveInteger(maxSelected, DEFAULT_MAX_SELECTED);
   const tagLengthLimit = positiveInteger(maxTagLength, DEFAULT_MAX_TAG_LENGTH);
   const knownCandidates = normalizeTagList(candidates, { maxLength: tagLengthLimit });
-  const knownByKey = new Map(knownCandidates.map(tag => [tagKey(tag, tagLengthLimit), tag]));
-  const selectedTags = normalizeTagList(selected, {
-    maxLength: tagLengthLimit,
-    limit: selectedLimit
-  }).map(tag => knownByKey.get(tagKey(tag, tagLengthLimit)) || tag);
+  const selectedResult = normalizeSelectedTags(selected, tagLengthLimit);
+  const selectedTags = selectedResult.selected;
   const normalizedCandidates = normalizeTagList([...knownCandidates, ...selectedTags], {
     maxLength: tagLengthLimit
   });
@@ -91,6 +121,8 @@ function buildState({
   return {
     candidates: normalizedCandidates,
     selected: selectedTags,
+    overflow: selectedTags.slice(selectedLimit),
+    normalizationChanges: normalizationChanges ?? selectedResult.normalizationChanges,
     input: rawInput,
     query,
     options,
@@ -107,16 +139,20 @@ export function createTagMultiSelectState(options = {}) {
   return buildState(options);
 }
 
+const rebuildState = (state, changes, options = {}) => buildState(
+  { ...state, ...changes },
+  { ...options, normalizationChanges: state.normalizationChanges }
+);
+
 function selectTag(state, value) {
   const tag = normalizeTag(value, { maxLength: state.maxTagLength });
   if (!tag || state.atLimit) return state;
   const key = tagKey(tag, state.maxTagLength);
   if (state.selected.some(item => tagKey(item, state.maxTagLength) === key)) {
-    return buildState({ ...state, input: "" });
+    return rebuildState(state, { input: "" });
   }
   const known = state.candidates.find(item => tagKey(item, state.maxTagLength) === key) || tag;
-  return buildState({
-    ...state,
+  return rebuildState(state, {
     candidates: [...state.candidates, known],
     selected: [...state.selected, known],
     input: ""
@@ -127,7 +163,7 @@ function removeTag(state, value) {
   const key = tagKey(value, state.maxTagLength);
   if (!key) return state;
   const selected = state.selected.filter(tag => tagKey(tag, state.maxTagLength) !== key);
-  return selected.length === state.selected.length ? state : buildState({ ...state, selected });
+  return selected.length === state.selected.length ? state : rebuildState(state, { selected });
 }
 
 function moveActiveOption(state, direction) {
@@ -149,20 +185,20 @@ export function reduceTagMultiSelectState(state, action = {}) {
   }
   switch (action.type) {
     case "input":
-      return buildState({ ...state, input: action.value });
+      return rebuildState(state, { input: action.value });
     case "select":
       return selectTag(state, action.value);
     case "remove":
       return removeTag(state, action.value);
     case "commit":
       if (state.activeOption) return selectTag(state, state.activeOption.value);
-      return state.query ? selectTag(state, state.query) : buildState({ ...state, input: "" });
+      return state.query ? selectTag(state, state.query) : rebuildState(state, { input: "" });
     case "move":
       return moveActiveOption(state, Number(action.direction) || 1);
     case "clear-input":
-      return buildState({ ...state, input: "" });
+      return rebuildState(state, { input: "" });
     case "set-candidates":
-      return buildState({ ...state, candidates: action.values });
+      return rebuildState(state, { candidates: action.values });
     case "set-selected":
       return buildState({ ...state, selected: action.values });
     default:
@@ -195,7 +231,7 @@ export function handleTagMultiSelectKey(state, event = {}) {
       intent: "move"
     };
   }
-  if (event.key === "Enter") {
+  if (event.key === "Enter" || event.key === "," || event.key === "，") {
     const option = state.activeOption;
     return {
       state: reduceTagMultiSelectState(state, { type: "commit" }),
@@ -203,7 +239,13 @@ export function handleTagMultiSelectKey(state, event = {}) {
       intent: option?.type === "create" ? "create" : option ? "select" : "none"
     };
   }
-  if (event.key === "Backspace" && !state.query && state.selected.length) {
+  if (
+    event.key === "Backspace"
+    && state.input === ""
+    && event.selectionStart === 0
+    && event.selectionEnd === 0
+    && state.selected.length
+  ) {
     return {
       state: removeTag(state, state.selected.at(-1)),
       handled: true,
