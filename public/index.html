@@ -2,17 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <script>
-    (() => {
-      const routeRoots = new Set(["today", "seen", "thoughts", "journals", "review", "mine", "owner", "view", "captures", "books", "quotes", "keepsakes", "discovery", "personal-context", "statistics", "ai-cost", "architecture", "commercialization", "feedback", "export", "notifications", "trash", "account", "settings", "about"]);
-      const parts = location.pathname.split("/").filter(Boolean);
-      const routeIndex = parts.findIndex(part => routeRoots.has(part));
-      const baseParts = routeIndex < 0 ? parts : parts.slice(0, routeIndex);
-      const base = document.createElement("base");
-      base.href = `/${baseParts.length ? `${baseParts.join("/")}/` : ""}`;
-      document.head.append(base);
-    })();
-  </script>
+  <base href="/">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="description" content="本地优先的个人成长、捕念、日记与思考追踪工具">
   <meta name="theme-color" content="#fbfcf8">

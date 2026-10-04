@@ -85,6 +85,9 @@ let child = startApp();
 try {
   await waitForServer(base, child);
   assert.equal((await fetch(`${base}/now`, { redirect: "manual" })).status, 308);
+  const appShellResponse = await fetch(`${base}/now/thoughts/direct-route`);
+  assert.equal(appShellResponse.status, 200);
+  assert.match(await appShellResponse.text(), /<base href="\/now\/">/);
   assert.equal((await fetch(`${base}/now/styles.css`)).status, 200);
   const clientModule = await fetch(`${base}/now/frontend/api/index.mjs`);
   assert.equal(clientModule.status, 200);

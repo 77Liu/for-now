@@ -3210,7 +3210,16 @@ const server = http.createServer(createRequestHandler({
       if (applicationRoute && !context.basePathMatched) return sendJson(res, 404, { error: "Not found", code: "NOT_FOUND" });
       const base = PUBLIC_DIR, relative = applicationRoute ? "index.html" : url.pathname.replace(/^\/+/, "");
       const file = path.resolve(base, relative); if (!file.startsWith(`${base}${path.sep}`) && file !== path.join(base, "index.html")) return sendJson(res, 403, { error: "Forbidden" });
-      const data = await fs.readFile(file); res.writeHead(200, { "content-type": mime[path.extname(file).toLowerCase()] || "application/octet-stream", "cache-control": "no-store" }); res.end(req.method === "HEAD" ? undefined : data);
+      let data = await fs.readFile(file);
+      if (file === path.join(PUBLIC_DIR, "index.html") && APP_BASE_PATH !== "/") {
+        const baseHref = `${APP_BASE_PATH}/`
+          .replaceAll("&", "&amp;")
+          .replaceAll("\"", "&quot;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;");
+        data = Buffer.from(data.toString("utf8").replace('<base href="/">', `<base href="${baseHref}">`));
+      }
+      res.writeHead(200, { "content-type": mime[path.extname(file).toLowerCase()] || "application/octet-stream", "cache-control": "no-store" }); res.end(req.method === "HEAD" ? undefined : data);
   }
 }));
 

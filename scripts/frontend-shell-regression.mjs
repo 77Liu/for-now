@@ -88,6 +88,8 @@ assert.match(applicationStyles, /\.content-state\.failure/);
 assert.doesNotMatch(applicationStyles, /\.saved-reasoning|\.answer-reasoning/);
 assert.match(html, /id="home-open-thought"/);
 assert.match(html, /id="home-mood-sparkline"/);
+assert.match(html, /<base href="\/">/);
+assert.doesNotMatch(html, /const routeRoots = new Set/);
 assert.match(html, /<link rel="stylesheet" href="frontend\/styles\/application\.css">/);
 assert.match(html, /<link rel="preload" href="frontend\/styles\/r8\.css" as="style">/);
 assert.match(html, /<link rel="modulepreload" href="frontend\/app\/index\.mjs">/);
@@ -97,6 +99,7 @@ assert.match(html, /id="auth-tab-login"[^>]+aria-controls="login-form"[^>]+tabin
 assert.match(html, /id="auth-tab-register"[^>]+aria-controls="register-form"[^>]+tabindex="-1"/);
 assert.match(html, /id="login-form" role="tabpanel" aria-labelledby="auth-tab-login"/);
 assert.equal((html.match(/<script src="app\.js" type="module"><\/script>/g) || []).length, 1);
+assert.ok(html.indexOf('<base href="/">') < html.indexOf('rel="stylesheet" href="frontend/styles/application.css"'));
 assert.ok(html.indexOf('rel="modulepreload" href="frontend/app/bootstrap.mjs"') < html.indexOf('<script src="app.js" type="module"></script>'));
 assert.ok(html.indexOf('<script src="app.js" type="module"></script>') < html.indexOf("</head>"));
 assert.doesNotMatch(html, /(?:href|src)="(?:styles\.css|vendor\/katex\/katex\.min\.(?:css|js))"/);

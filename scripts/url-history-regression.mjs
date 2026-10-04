@@ -206,6 +206,9 @@ try {
     open:true,
     styles:true
   });
+  assert.deepEqual(await evaluate(`performance.getEntriesByType("resource")
+    .map(entry=>new URL(entry.name).pathname)
+    .filter(path=>/^\\/now\\/thoughts\\/(?:frontend\\/|app\\.js$|drift\\.css$)/.test(path))`), []);
 
   await navigate(`${base}/view/thoughts?tag=focus&sort=created&page=2`);
   const firstThoughtPageReady=await waitUntil(`location.pathname==="/now/thoughts"&&document.querySelectorAll("#all-thoughts [data-chain-id]").length===23&&document.querySelector("#thought-pagination").hidden`);
