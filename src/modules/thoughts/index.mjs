@@ -56,15 +56,16 @@ const compareChainTuples = (left, right) => (
   || right.created.localeCompare(left.created)
   || right.id.localeCompare(left.id)
 );
-const chainCursorScope = ({ query, tag, sort }) => requestDigest({
-  version: 2,
+const chainCursorScope = ({ query, tag, sort, cursorScope }) => requestDigest({
+  version: 3,
   resource: "thought-chain",
+  cursorScope: String(cursorScope || ""),
   query,
   tag,
   sort
 }).slice(0, 20);
 const chainCursor = (root, filters) => JSON.stringify({
-  v: 2,
+  v: 3,
   ...chainSortTuple(root, filters.sort),
   scope: chainCursorScope(filters)
 });
@@ -73,7 +74,7 @@ const parseChainCursor = (value, filters) => {
   try {
     const cursor = JSON.parse(value);
     if (
-      cursor?.v !== 2
+      cursor?.v !== 3
       || typeof cursor.primary !== "string"
       || typeof cursor.created !== "string"
       || typeof cursor.id !== "string"
@@ -188,7 +189,8 @@ export function thoughtChainListPage(thoughts, {
   afterId = "",
   query = "",
   tag = "",
-  sort = "occurred"
+  sort = "occurred",
+  cursorScope = ""
 } = {}) {
   const items = Array.isArray(thoughts) ? thoughts : [];
   const blocksByRoot = new Map();
@@ -209,7 +211,7 @@ export function thoughtChainListPage(thoughts, {
     ...(root.tags || []),
     ...(blocksByRoot.get(root.id) || []).flatMap(item => item?.tags || [])
   ]).map(normalizedListTag).filter(Boolean))].sort((left, right) => left.localeCompare(right, "zh-CN")).slice(0, 100);
-  const filters = { query: normalizedQuery, tag: normalizedTag, sort: normalizedSort };
+  const filters = { query: normalizedQuery, tag: normalizedTag, sort: normalizedSort, cursorScope };
   const matches = roots
     .filter(root => {
       const blocks = blocksByRoot.get(root.id) || [];
@@ -326,7 +328,8 @@ export function createThoughtService({
   recordVersion,
   eventTimeFields,
   reanchorAnnotations,
-  reconcileOriginalImages = null
+  reconcileOriginalImages = null,
+  getCursorScope = () => ""
 }) {
   const touchRoot = root => {
     root.version = recordVersion(root.version) + 1;
@@ -533,7 +536,14 @@ export function createThoughtService({
 
     async listChains({ limit = CHAIN_LIST_LIMIT, afterId = "", query = "", tag = "", sort = "occurred" } = {}) {
       const store = await repository.read();
-      return thoughtChainListPage(store.thoughts, { limit, afterId, query, tag, sort });
+      return thoughtChainListPage(store.thoughts, {
+        limit,
+        afterId,
+        query,
+        tag,
+        sort,
+        cursorScope: getCursorScope()
+      });
     },
 
     createBlock({ content, eventTime, type, relatedTo, tags, attachmentPaths = [], clientRequestId = "" }) {

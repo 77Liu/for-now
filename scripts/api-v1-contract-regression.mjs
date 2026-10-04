@@ -659,6 +659,13 @@ try {
   );
   assert.equal(changedSearchCursor.response.status, 400);
   assert.equal(changedSearchCursor.body.error.code, "INVALID_CURSOR");
+  const otherAccountThought = await request("/api/v1/thought-chains", {
+    method: "POST",
+    cookie: other,
+    headers: { "idempotency-key": "chain-other-account-cursor" },
+    body: { question: "v1 其他账户思绪", occurredAt: "2026-09-29T12:00:00" }
+  });
+  assert.equal(otherAccountThought.response.status, 201);
   const isolatedCursor = await request(
     `/api/v1/thought-chains?limit=1&q=v1&cursor=${encodeURIComponent(searchPageOne.body.meta.nextCursor)}`,
     { cookie: other }

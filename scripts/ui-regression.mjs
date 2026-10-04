@@ -578,10 +578,21 @@ const mockFetch = `
   ];
   let persistedAnalysisAnnotations = [];
   try { persistedAnalysisAnnotations = JSON.parse(sessionStorage.getItem("ui-analysis-annotations") || "[]"); } catch {}
-  window.__analyses = [
-    { id: "analysis-1", createdAt: "2026-09-27T01:20:00.000Z", reason: "weekly-background", content: "**总判断**\\n\\n---\\n\\n## 证据", reasoningContent: "### 分析过程", annotations: persistedAnalysisAnnotations, annotationDrift: [] },
-    { id: "analysis-2", createdAt: "2026-09-20T01:20:00.000Z", reason: "manual", content: "## 旧复盘\\n\\n历史内容仍然存在。", reasoningContent: "旧分析过程", annotations: [], annotationDrift: [] }
-  ];
+  window.__reviewProjectionMode = sessionStorage.getItem("ui-review-projection-test") === "1";
+  window.__analyses = window.__reviewProjectionMode
+    ? Array.from({length:10},(_,index)=>({
+        id:"analysis-page-"+(index+1),
+        createdAt:"2026-09-"+String(30-index).padStart(2,"0")+"T01:20:00.000Z",
+        reason:index%2?"manual":"weekly-background",
+        content:"## 完整复盘 "+(index+1)+"\\n\\n"+"正文片段 ".repeat(12),
+        reasoningContent:"不得进入普通页面",
+        annotations:[],
+        annotationDrift:[]
+      }))
+    : [
+        { id: "analysis-1", createdAt: "2026-09-27T01:20:00.000Z", reason: "weekly-background", content: "**总判断**\\n\\n---\\n\\n## 证据", reasoningContent: "### 分析过程", annotations: persistedAnalysisAnnotations, annotationDrift: [] },
+        { id: "analysis-2", createdAt: "2026-09-20T01:20:00.000Z", reason: "manual", content: "## 旧复盘\\n\\n历史内容仍然存在。", reasoningContent: "旧分析过程", annotations: [], annotationDrift: [] }
+      ];
   window.__books = [];
   window.__dailyRecords = [
     { id: "weight-existing", type: "weight", createdAt: "2026-09-26T01:00:00.000Z", occurredAt: "2026-09-26T07:30:00.000Z", occurredOn: "2026-09-26", source: "manual", attachmentPaths: [], measuredWeight: 70, clothing: "light", adjustmentMean: .5, adjustedWeight: 69.5, lower95: 69.1, upper95: 69.9, bodyFatPercent: 18.4, muscleMass: 54.2, version: 1 },
@@ -820,13 +831,21 @@ const mockFetch = `
     if (url.includes("/api/v1/exports/account?format=manifest")) return v1({snapshotVersion:15,summary:{resources:12,attachments:2,attachmentReferences:3,orphanReferences:0}});
     if (url.includes("/api/v1/exports/account?format=json")) return v1({format:"json",filename:"for-now-ui.json",mimeType:"application/json;charset=utf-8",content:"{}\\n"});
     if (url.includes("/api/v1/exports/account?format=markdown")) return v1({format:"markdown",filename:"for-now-ui.md",mimeType:"text/markdown;charset=utf-8",content:"# For Now\\n"});
+    if (/^\\/api\\/v1\\/analyses\\/[^/]+$/.test(url) && (!init.method || init.method === "GET")) {
+      const item=window.__analyses.find(value=>value.id===url.split("/").at(-1));
+      return item?v1(item):json({data:null,error:{message:"这次复盘不存在",code:"ANALYSIS_NOT_FOUND"},meta:{}},404)
+    }
+    if (url.startsWith("/api/v1/analyses?") && (!init.method || init.method === "GET")) {
+      const parsed=new URL("http://local"+url),cursor=parsed.searchParams.get("cursor")||"",start=cursor?window.__analyses.findIndex(item=>item.id===cursor)+1:0,items=window.__analyses.slice(start,start+20),nextCursor=start+items.length<window.__analyses.length?items.at(-1).id:null;
+      return v1(items,{nextCursor})
+    }
     if (url === "/api/v1/startup") {
       window.__startupEvents.push("startup:response");
       const owner=window.__accountUser.role==="owner";
       return v1({ protocolVersion:1,version:"build-fixture",releaseVersion:"0.2.0",user:window.__accountUser,capabilities:owner?["ai-costs","architecture","commercialization","local-testing","ai-configuration","account-roles"]:[],features:{incrementalSync:true},governanceUrl:owner?"/platform/":"",accountCursor:window.__syncCursor,notificationUnread:window.__notifications.filter(item=>!item.readAt).length,quoteTags:["阅读","摘录","长期"],onboardingV2:window.__onboardingV2 });
     }
     if (url.startsWith("/api/v1/route-state")) {
-      const respond=()=>{window.__replayingDelayedState=true;const pending=window.fetch("/api/state",init);window.__replayingDelayedState=false;return pending.then(async response=>{window.__startupEvents.push("route:response");return v1({...await response.json(),_routeProjection:{view:new URL("http://local"+url).searchParams.get("view")||"today",complete:true}})})};
+      const respond=()=>{window.__replayingDelayedState=true;const pending=window.fetch("/api/state",init);window.__replayingDelayedState=false;return pending.then(async response=>{window.__startupEvents.push("route:response");const parsed=new URL("http://local"+url),view=parsed.searchParams.get("view")||"today",snapshot=await response.json();if(window.__reviewProjectionMode&&view==="review"){const cursor=parsed.searchParams.get("cursor")||"",start=cursor?window.__analyses.findIndex(item=>item.id===cursor)+1:0,selected=window.__analyses.slice(start,start+8).map(item=>({...item,content:item.content.slice(0,24),contentTruncated:item.content.length>24}));snapshot.analyses=selected;snapshot.analysisPage={nextCursor:start+selected.length<window.__analyses.length?selected.at(-1).id:null,total:window.__analyses.length}}return v1({...snapshot,_routeProjection:{view,complete:!window.__reviewProjectionMode}})})};
       if(window.__failNextStateRefresh){window.__failNextStateRefresh=false;return Promise.resolve(new Response(JSON.stringify({error:{message:"DISCOVERY_BACKEND_INTERNAL"}}),{status:503,headers:{"content-type":"application/json"}}))}
       if(window.__accountUser.id==="user-2"&&window.__delaySecondState)return new Promise(resolve=>{window.__releaseSecondState=()=>{window.__delaySecondState=false;resolve(respond())}});
       return respond()
@@ -2271,6 +2290,20 @@ try {
   await evaluate(`document.querySelector("#capture-content").value="不应覆盖新建草稿";document.querySelector("#capture-content").dispatchEvent(new Event("input",{bubbles:true}));document.querySelector("#capture-cancel").click();true`);
   assert.equal(await waitUntil(`document.querySelector("#capture-editor").hidden&&document.activeElement===document.querySelector('[data-capture-id="capture-1"] [data-capture-edit]')`),true);
   assert.deepEqual(await evaluate(`({hidden:document.querySelector("#capture-editor").hidden,id:document.querySelector("#capture-id").value,value:document.querySelector("#capture-content").value,focus:document.activeElement===document.querySelector('[data-capture-id="capture-1"] [data-capture-edit]')})`),{hidden:true,id:"",value:"关闭后保留的念起",focus:true});
+  await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-capture-edit]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#capture-id").value==="capture-1"`),true);
+  await evaluate(`(()=>{
+    document.querySelector("#capture-content").value="不应残留的编辑内容";
+    document.querySelector('[data-view="thoughts"]').click();
+    document.querySelector('[data-view="captures"]').click();
+    document.querySelector("#capture-create-toggle").click();
+    return true
+  })()`);
+  assert.equal(await waitUntil(`!document.querySelector("#capture-editor").hidden&&document.querySelector("#capture-id").value===""&&document.querySelector("#capture-content").value==="关闭后保留的念起"`),true);
+  await sleep(80);
+  assert.equal(await evaluate(`!document.querySelector("#capture-editor").hidden&&document.querySelector("#capture-id").value===""`),true);
+  await evaluate(`document.querySelector("#capture-editor-close").click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#capture-editor").hidden`),true);
   await evaluate(`document.querySelector("#capture-create-toggle").click();true`);
   await evaluate(`document.querySelector("#capture-content").value="";document.querySelector("#capture-content").dispatchEvent(new Event("input",{bubbles:true}));true`);
   for(const width of[320,390]){
@@ -3709,6 +3742,14 @@ try {
   await evaluate(`window.__releaseStartupSecondary();true`);
   assert.equal(await waitUntil(`!document.body.classList.contains("auth-locked")&&!document.querySelector("#onboarding-workspace").hidden&&document.querySelector("#onboarding-v2-content h1")?.textContent.includes("先认识此刻的你")`),true);
   assert.equal(await evaluate(`getComputedStyle(document.querySelector(".home-v02-content")).display==="none"`),true);
+  await evaluate(`(()=>{const onboarding=window.__onboardingV2;onboarding.session.status="completed";onboarding.session.step="firstAction";sessionStorage.setItem("ui-onboarding-v2",JSON.stringify(onboarding));sessionStorage.setItem("ui-review-projection-test","1");return true})()`);
+  await cdp.send("Page.navigate",{url:new URL("review",APP_URL).href});
+  const pagedReviewReady=await waitUntil(`document.querySelectorAll("[data-analysis-id]").length===8&&document.querySelector("#analysis-count").textContent==="10 份"&&!document.querySelector("#analysis-pagination").hidden&&document.querySelector('[data-analysis-id="analysis-page-1"] .analysis-content').textContent.includes("正文片段 正文片段 正文片段")`);
+  assert.equal(pagedReviewReady,true,JSON.stringify(await evaluate(`({view:document.querySelector(".view.active")?.id,entries:document.querySelectorAll("[data-analysis-id]").length,count:document.querySelector("#analysis-count").textContent,paginationHidden:document.querySelector("#analysis-pagination").hidden,first:document.querySelector('[data-analysis-id="analysis-page-1"] .analysis-content')?.textContent||"",status:document.querySelector('[data-analysis-id="analysis-page-1"] [data-analysis-load-status]')?.textContent||"",requests:window.__apiRequests.slice(-8)})`)));
+  assert.equal(await evaluate(`!document.querySelector("#analysis-list").textContent.includes("不得进入普通页面")`),true);
+  await evaluate(`document.querySelector("#analysis-load-more").click();true`);
+  assert.equal(await waitUntil(`document.querySelectorAll("[data-analysis-id]").length===10&&document.querySelector("#analysis-pagination").hidden`),true);
+  await evaluate(`sessionStorage.removeItem("ui-review-projection-test");true`);
   console.log("UI regression passed: owner capability surfaces, ordinary-user DOM isolation, permission routing, reauthentication, core flows and responsive layouts.");
 } finally {
   cdp?.socket.close();

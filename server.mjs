@@ -1497,6 +1497,7 @@ const thoughtService = createThoughtService({
   recordVersion,
   eventTimeFields,
   reanchorAnnotations,
+  getCursorScope: () => safeText(requestStorage.getStore()?.user?.id, 100) || "local",
   reconcileOriginalImages: (...args) => contentAttachmentService.reconcileOriginalImagesInStore(...args)
 });
 const collectionStoreRepository = collection => ({
@@ -2888,7 +2889,11 @@ const startupHttp = createStartupHttp({
   readRouteState: async route => ({
     ...routeStateProjection(
       publicStateFromStore(await readStore()),
-      { ...route, currentDate: today() }
+      {
+        ...route,
+        currentDate: today(),
+        cursorScope: safeText(requestStorage.getStore()?.user?.id, 100) || "local"
+      }
     ),
     _routeProjection: { view: route.view, complete: false }
   })

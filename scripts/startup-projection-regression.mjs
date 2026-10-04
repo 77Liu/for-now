@@ -206,6 +206,16 @@ const publicState = {
     originalPath: `/attachments/original-${index}.png`,
     alphaMaskPath: `/attachments/mask-${index}.png`,
     editPath: `/attachments/edit-${index}.webp`,
+    ...(index === 0 ? {
+      media: {
+        version: 1,
+        status: "failed",
+        originalAvailable: true,
+        retryable: true,
+        list: { imagePath: "", backgroundPath: "" },
+        detail: { imagePath: "", backgroundPath: "" }
+      }
+    } : {}),
     occurredAt: occurredAt(shiftDateKey(-index)),
     privateBlob: large
   })),
@@ -282,6 +292,8 @@ assert.equal(Object.hasOwn(today, "thoughts"), false);
 assert.equal(today.customMetrics.length, ROUTE_STATE_LIMITS.today.customMetrics);
 assert.equal(today.homeMemories.length, ROUTE_STATE_LIMITS.today.homeMemories);
 assert.equal(today.keepsakes.length, ROUTE_STATE_LIMITS.today.keepsakes);
+assert.equal(today.keepsakes[0].media.status, "failed");
+assert.equal(today.keepsakes[0].media.list.imagePath, "");
 assert.equal(
   today.checkins.filter(item => item.occurredOn === CURRENT_DATE).length,
   ROUTE_STATE_LIMITS.today.currentCheckins
@@ -310,6 +322,9 @@ const review = routeStateProjection(publicState, { view: "review", currentDate: 
 const reviewText = JSON.stringify(review);
 assert.equal(review.checkins.length, ROUTE_STATE_LIMITS.review.checkins);
 assert.equal(review.analyses.length, ROUTE_STATE_LIMITS.review.analyses);
+assert.equal(review.analyses[0].contentTruncated, true);
+assert.equal(review.analysisPage.total, analyses.length);
+assert.equal(review.analysisPage.nextId, "analysis-7");
 assert.equal(review.experiments.length, ROUTE_STATE_LIMITS.review.experiments);
 assert.equal(review.customMetrics.length, ROUTE_STATE_LIMITS.review.customMetrics);
 assert.equal(review.clusters.length, ROUTE_STATE_LIMITS.review.clusters);
@@ -334,6 +349,18 @@ assertNoPrivateFields(review);
 assert.equal(reviewText.includes(large), false);
 const reviewBytes = Buffer.byteLength(reviewText);
 assert.ok(reviewBytes <= ROUTE_BUDGET_BYTES, `review projection is ${reviewBytes} bytes`);
+const nextReview = routeStateProjection(publicState, {
+  view: "review",
+  currentDate: CURRENT_DATE,
+  query: { analysisAfterId: review.analysisPage.nextId }
+});
+assert.equal(nextReview.analyses[0].id, "analysis-8");
+assert.equal(nextReview.analysisPage.nextId, "analysis-15");
+assert.equal(routeStateProjection(publicState, {
+  view: "review",
+  currentDate: CURRENT_DATE,
+  query: { analysisAfterId: "missing-analysis" }
+}).analysisPage.invalidCursor, true);
 
 const thoughtList = routeStateProjection(publicState, {
   view: "thoughts",
@@ -438,13 +465,17 @@ const v1 = {
   },
   nextCursor(afterId) {
     return afterId ? `encoded:${afterId}` : null;
+  },
+  pagination(url) {
+    return { afterId: String(url.searchParams.get("cursor") || "").replace(/^encoded:/, "") };
   }
 };
 const http = createStartupHttp({
   readStartup: async () => startup,
   readRouteState: async route => ({
     route,
-    ...(route.view === "thoughts" ? { thoughtPage: { kind: "list", nextId: "cursor-id" } } : {})
+    ...(route.view === "thoughts" ? { thoughtPage: { kind: "list", nextId: "cursor-id" } } : {}),
+    ...(route.view === "review" ? { analysisPage: { nextId: "analysis-cursor", total: 9 } } : {})
   })
 });
 assert.equal(await http.handleV1({ method: "GET" }, {}, new URL("http://local/api/v1/startup"), v1), true);
@@ -455,6 +486,10 @@ assert.equal(await http.handleV1({ method: "GET" }, {}, new URL("http://local/ap
 assert.equal(responses.at(-1).data.route.query.q, "test");
 assert.match(responses.at(-1).data.thoughtPage.nextCursor, /^encoded:/);
 assert.equal(Object.hasOwn(responses.at(-1).data.thoughtPage, "nextId"), false);
+assert.equal(await http.handleV1({ method: "GET" }, {}, new URL("http://local/api/v1/route-state?view=review&cursor=encoded:analysis-7"), v1), true);
+assert.equal(responses.at(-1).data.route.query.analysisAfterId, "analysis-7");
+assert.equal(responses.at(-1).data.analysisPage.nextCursor, "encoded:analysis-cursor");
+assert.equal(Object.hasOwn(responses.at(-1).data.analysisPage, "nextId"), false);
 assert.equal(await http.handleV1({ method: "GET" }, {}, new URL("http://local/api/v1/route-state?view=unknown"), v1), true);
 assert.deepEqual(responses.at(-1), { status: 400, message: "页面标识无效", code: "INVALID_ROUTE_VIEW" });
 assert.equal(await http.handleV1({ method: "POST" }, {}, new URL("http://local/api/v1/startup"), v1), false);

@@ -45,6 +45,7 @@ const TIMING_BUDGET = Object.freeze({
   "web.startup.warmCache.currentScreenFeedback_ms": { p75: 500, p95: 750 },
   "web.startup.warmCache.firstReadable_ms": { p75: 750, p95: 1000 },
   "web.navigation.routeSwitch.firstReadable_ms": { p75: 350, p95: 600 },
+  "web.navigation.thoughtDetail.firstReadable_ms": { p75: 350, p95: 600 },
   "web.navigation.thoughtDetailReturn.firstReadable_ms": { p75: 250, p95: 500 },
   "web.sync.secondDeviceCommitToReadable_ms": { p75: 500, p95: 1000 }
 });
@@ -292,7 +293,10 @@ async function createTestServer() {
       } else if (url.pathname === "/api/v1/route-state") {
         result = json(request, response, v1(routeStateProjection(clientState, {
           view: url.searchParams.get("view") || "today",
-          currentDate: "2026-10-03"
+          currentDate: "2026-10-03",
+          resourceId: url.searchParams.get("resourceId") || "",
+          query: Object.fromEntries(url.searchParams),
+          cursorScope: user.id
         })));
       } else if (url.pathname === "/api/v1/sync") {
         const cursorValue = url.searchParams.get("cursor");
@@ -540,7 +544,12 @@ async function createBrowserGate(baseUrl) {
         addEventListener("DOMContentLoaded", () => {
           const check = () => {
             const active = document.querySelector(".view.active");
-            if (document.body && !document.body.classList.contains("auth-locked") && active && getComputedStyle(active).display !== "none") {
+            const heading = active?.querySelector("h1");
+            if (document.documentElement.dataset.bootstrapVisible === "1"
+              && !document.body.classList.contains("auth-locked")
+              && active
+              && getComputedStyle(active).display !== "none"
+              && heading?.textContent.trim()) {
               window.__currentScreenFeedback = Number(performance.now().toFixed(1));
               observer.disconnect();
             }
@@ -859,16 +868,20 @@ try {
     routeSwitchMs.push(measured.durationMs);
   }
 
+  const detailOpenMs = [];
   const detailReturnMs = [];
   for (let index = 1; index <= SAMPLE_COUNT; index += 1) {
     await browser.setSample(`detail-open-${index}`);
-    await browser.waitForCondition({
+    const opened = await browser.waitForCondition({
       label: `thought detail open ${index}`,
       action: `document.querySelector("#all-thoughts .chain-summary").click();`,
       condition: `location.pathname.startsWith("/thoughts/performance-thought-")
         && document.querySelectorAll("#all-thoughts [data-chain-id]").length === 1
-        && document.querySelector("#all-thoughts [data-chain-id]")?.open`
+        && document.querySelector("#all-thoughts .thought-detail-record[data-chain-id]")?.open
+        && document.querySelectorAll("#all-thoughts [data-thought-block-id]").length >= 1
+        && !document.querySelector("#view-thoughts").hasAttribute("aria-busy")`
     });
+    detailOpenMs.push(opened.durationMs);
     await browser.setSample(`detail-return-${index}`);
     const measured = await browser.waitForCondition({
       label: `thought detail return ${index}`,
@@ -937,6 +950,11 @@ try {
       "ms",
       TIMING_BUDGET["web.navigation.routeSwitch.firstReadable_ms"]
     ),
+    "web.navigation.thoughtDetail.firstReadable_ms": distribution(
+      detailOpenMs,
+      "ms",
+      TIMING_BUDGET["web.navigation.thoughtDetail.firstReadable_ms"]
+    ),
     "web.navigation.thoughtDetailReturn.firstReadable_ms": distribution(
       detailReturnMs,
       "ms",
@@ -991,7 +1009,7 @@ try {
       network: NETWORK_PROFILE,
       viewport: VIEWPORT,
       serviceWorker: "bypassed",
-      measurementCutoff: "stableHome/current scenario DOM readability, not full HAR window"
+      measurementCutoff: "route-specific heading feedback and current scenario DOM readability, not full HAR window"
     },
     metrics,
     contracts: {

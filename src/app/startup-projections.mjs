@@ -340,21 +340,29 @@ function annotationProjection(annotation) {
 function analysisProjection(item) {
   const limits = ROUTE_STATE_LIMITS.review;
   const receipt = receiptProjection(item?.contextReceipt);
+  const content = String(item?.content || "");
   return {
     ...scalarFields(item, ["id", "version", "syncVersion", "createdAt", "updatedAt", "reason"]),
-    content: boundedText(item?.content, limits.analysisContentChars),
+    content: content.slice(0, limits.analysisContentChars),
+    ...(content.length > limits.analysisContentChars ? { contentTruncated: true } : {}),
     annotations: list(item?.annotations).slice(0, limits.annotationsPerAnalysis).map(annotationProjection),
     annotationDrift: list(item?.annotationDrift).slice(0, limits.annotationsPerAnalysis).map(annotationProjection),
     ...(receipt ? { contextReceipt: receipt } : {})
   };
 }
 
-function reviewAnalyses(values) {
-  return list(values)
+function reviewAnalyses(values, afterId = "") {
+  const ordered = list(values)
     .slice()
-    .sort((left, right) => timestamp(right).localeCompare(timestamp(left)))
-    .slice(0, ROUTE_STATE_LIMITS.review.analyses)
-    .map(analysisProjection);
+    .sort((left, right) => timestamp(right).localeCompare(timestamp(left)));
+  const start = afterId ? ordered.findIndex(item => item?.id === afterId) + 1 : 0;
+  if (afterId && start === 0) return { invalidCursor: true, items: [], nextId: "", total: ordered.length };
+  const selected = ordered.slice(start, start + ROUTE_STATE_LIMITS.review.analyses);
+  return {
+    items: selected.map(analysisProjection),
+    nextId: start + selected.length < ordered.length ? selected.at(-1)?.id || "" : "",
+    total: ordered.length
+  };
 }
 
 function experimentProjection(item) {
@@ -424,7 +432,8 @@ function keepsakeProjection(item) {
     title: boundedText(item?.title, 160),
     note: boundedText(item?.note, 500),
     description: boundedText(item?.description, 500),
-    tags: list(item?.tags).slice(0, 8).map(value => boundedText(value, 40)).filter(Boolean)
+    tags: list(item?.tags).slice(0, 8).map(value => boundedText(value, 40)).filter(Boolean),
+    ...(item?.media && typeof item.media === "object" ? { media: clone(item.media) } : {})
   };
 }
 
@@ -545,7 +554,8 @@ export function routeStateProjection(state, {
   view = "today",
   currentDate = localDateKey(),
   resourceId = "",
-  query = {}
+  query = {},
+  cursorScope = ""
 } = {}) {
   const common = {
     notificationUnread: Math.max(0, Number(state?.notificationUnread) || 0)
@@ -589,7 +599,8 @@ export function routeStateProjection(state, {
       maxLimit: 100,
       query: query?.q || "",
       tag: query?.tag || "",
-      sort: query?.sort
+      sort: query?.sort,
+      cursorScope
     });
     return {
       ...common,
@@ -619,10 +630,16 @@ export function routeStateProjection(state, {
   if (view === "review") {
     const limits = ROUTE_STATE_LIMITS.review;
     const metrics = customMetricProjections(state?.customMetrics, limits.customMetrics);
+    const analyses = reviewAnalyses(state?.analyses, query?.analysisAfterId);
     return {
       ...common,
       checkins: reviewCheckins(state?.checkins, currentDate, customMetricIds(metrics)),
-      analyses: reviewAnalyses(state?.analyses),
+      analyses: analyses.items,
+      analysisPage: {
+        nextId: analyses.nextId,
+        total: analyses.total,
+        invalidCursor: Boolean(analyses.invalidCursor)
+      },
       experiments: list(state?.experiments).slice(0, limits.experiments).map(experimentProjection),
       customMetrics: metrics,
       clusters: list(state?.clusters).slice(0, limits.clusters).map(clusterProjection),

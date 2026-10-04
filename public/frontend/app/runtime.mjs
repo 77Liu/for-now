@@ -132,8 +132,8 @@ let backgroundResultController=null;
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
 let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",commentPanelOpen=false,annotationLineFrame=0,answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,captureComposerOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,discoveryController=null,actionsSnapshot={actions:[],habits:[],habitCheckins:[]},actionsRequestSerial=0,feedbackItems=[],feedbackRequestSerial=0,exportManifest=null,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.6",releaseVersion="0.5.6",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
-let notificationsLoadState="idle",feedbackLoadState="idle",exportLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,routeDataRequestSerial=0,loadedRouteKey="",fullRouteStateLoaded=false,renderedRouteView="",activeThoughtRouteId="",activeRouteResult=null,thoughtSearchTimer=0;
-let captureEditorTrigger=null,suspendedCaptureCreateDraft=null;
+let notificationsLoadState="idle",feedbackLoadState="idle",exportLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,routeDataRequestSerial=0,loadedRouteKey="",fullRouteStateLoaded=false,renderedRouteView="",activeThoughtRouteId="",activeRouteResult=null,thoughtSearchTimer=0,analysisRequestSerial=0;
+let captureEditorTrigger=null,suspendedCaptureCreateDraft=null,captureEditorSerial=0;
 const feedSearchQueries={captures:"",journals:"",thoughts:"",books:"",keepsakes:"",quotes:""};
 const quoteTagPickerConfig=Object.freeze({
   quote:{input:"#quote-tags",selected:"#quote-selected-tags",options:"#quote-tag-options",toggle:"#quote-tag-toggle",status:"#quote-tag-status"},
@@ -2192,18 +2192,24 @@ function restoreSuspendedCaptureCreateDraft(){
 }
 async function closeCaptureEditor({restoreFocus=true}={}){
   if(!captureComposerOpen)return;
+  const serial=++captureEditorSerial,editingId=$("#capture-id").value,trigger=captureEditorTrigger;
+  captureComposerOpen=false;$("#capture-editor").hidden=true;$("#capture-form").hidden=true;document.body.classList.remove("capture-editor-open");renderCaptures();
   if(captureAudioDraft.recorder&&captureAudioDraft.recorder.state!=="inactive")await stopCaptureAudioRecording();
   saveDurableDrafts();await Promise.all([persistContentImageDraft("capture"),persistCaptureAudioDraft()]).catch(()=>{});
-  captureComposerOpen=false;$("#capture-editor").hidden=true;$("#capture-form").hidden=true;document.body.classList.remove("capture-editor-open");
-  const trigger=captureEditorTrigger;captureEditorTrigger=null;renderCaptures();
+  if(serial!==captureEditorSerial)return false;
+  if(editingId)resetCaptureForm({restoreFocus:false});else captureEditorTrigger=null;
   const target=captureEditorFocusTarget(trigger);if(restoreFocus&&target?.isConnected)target.focus({preventScroll:true})
+  return true
 }
 function openCaptureEditor(trigger=null){
+  if($("#capture-id").value)resetCaptureForm({restoreFocus:false});
+  captureEditorSerial+=1;
   captureEditorTrigger={element:trigger instanceof HTMLElement?trigger:$("#capture-create-toggle"),captureId:""};
   captureComposerOpen=true;renderCaptures();document.body.classList.add("capture-editor-open");
   requestAnimationFrame(()=>$("#capture-content")?.focus())
 }
 function resetCaptureForm({preserveUploads=false,restoreFocus=true}={}){
+  captureEditorSerial+=1;
   const editingId=$("#capture-id").value,trigger=captureEditorTrigger;
   captureComposerOpen=false;$("#capture-form").reset();delete $("#capture-form").dataset.requestId;$("#capture-id").value="";
   resetContentImageEditor("capture",[],{forget:!preserveUploads,preserveStored:Boolean(editingId)});
@@ -2218,6 +2224,7 @@ function editCapture(id,trigger=null){
   const item=state.captures.find(value=>value.id===id);if(!item)return;
   if($("#capture-id").value===item.id)return openCaptureEditor(trigger);
   if($("#capture-id").value)resetCaptureForm({restoreFocus:false});
+  captureEditorSerial+=1;
   saveDurableDrafts();void Promise.all([persistContentImageDraft("capture"),persistCaptureAudioDraft()]).catch(()=>{});
   suspendedCaptureCreateDraft=snapshotCaptureCreateDraft();
   captureEditorTrigger={element:trigger instanceof HTMLElement?trigger:document.activeElement,captureId:item.id};captureComposerOpen=true;$("#capture-id").value=item.id;$("#capture-content").value=item.content;resetContentImageEditor("capture",item.attachmentPaths||[],{forget:false});setExistingCaptureAudio(item.audio,{preserveStored:true});captureDraftTags=[...(item.tags||[])];$("#capture-tags").value="";renderCaptureTagComposer();resetOccurrenceInput($("#capture-date"),item);$("#capture-submit").textContent="保存修改";$("#capture-cancel").hidden=false;$("#capture-status").textContent="正在编辑已有捕念";renderCaptures();document.body.classList.add("capture-editor-open");$("#capture-content").focus();
@@ -2296,12 +2303,54 @@ function associationInsightsMarkup(){
   if(!moods.length)return empty("记录一次状态后即可形成当前观察；补充当天因素后再寻找关联线索。");
   return `<p class="review-observation"><b>当前观察</b><span>${days} 个记录日的情绪均值为 ${avg(moods).toFixed(1)}。尚未记录可对照因素，暂时只描述现状。</span></p>`;
 }
+function safeAnalysisRecord(value){
+  const item=structuredClone(value||{});delete item.reasoningContent;delete item.contentTruncated;
+  for(const annotation of[...(item.annotations||[]),...(item.annotationDrift||[])])for(const exchange of annotation.shenji||[])delete exchange.reasoningContent;
+  return item
+}
+async function loadAnalysisDetail(id){
+  const item=(state.analyses||[]).find(value=>value.id===id);
+  if(!item?.contentTruncated)return true;
+  const serial=++analysisRequestSerial,owner=currentUser?.id,session=sessionSerial,routeKey=routeDataKey(pageRouter?.currentRoute());
+  const status=document.querySelector(`[data-analysis-id="${CSS.escape(id)}"] [data-analysis-load-status]`);
+  if(status)status.textContent="正在载入完整复盘…";
+  try{
+    const result=await requestV1(`/api/v1/analyses/${encodeURIComponent(id)}`);
+    if(serial!==analysisRequestSerial||owner!==currentUser?.id||session!==sessionSerial||routeKey!==routeDataKey(pageRouter?.currentRoute()))return false;
+    state.analyses=(state.analyses||[]).map(value=>value.id===id?safeAnalysisRecord(result.data):value);renderAnalysisHistory();return true
+  }catch(error){
+    if(serial===analysisRequestSerial&&status?.isConnected)status.textContent=`完整复盘载入失败：${error.message}`;
+    return false
+  }
+}
+async function loadMoreAnalyses(){
+  const button=$("#analysis-load-more"),cursor=state.analysisPage?.nextCursor,route=pageRouter?.currentRoute();
+  if(!button||!cursor||route?.view!=="review")return false;
+  const serial=++analysisRequestSerial,owner=currentUser?.id,session=sessionSerial,routeKey=routeDataKey(route);
+  button.disabled=true;$("#analysis-pagination-status").textContent="正在加载…";
+  try{
+    const result=await requestV1(`/api/v1/route-state?view=review&cursor=${encodeURIComponent(cursor)}`),snapshot=result.data||{};
+    if(serial!==analysisRequestSerial||owner!==currentUser?.id||session!==sessionSerial||routeKey!==routeDataKey(pageRouter?.currentRoute()))return false;
+    const known=new Set((state.analyses||[]).map(item=>item.id));
+    state.analyses=[...(state.analyses||[]),...(snapshot.analyses||[]).filter(item=>!known.has(item.id))];
+    state.analysisPage={...(state.analysisPage||{}),...(snapshot.analysisPage||{})};
+    renderAnalysisHistory();return true
+  }catch(error){
+    if(serial===analysisRequestSerial)$("#analysis-pagination-status").textContent=`继续加载失败：${error.message}`;
+    return false
+  }finally{
+    if(button.isConnected)button.disabled=false
+  }
+}
 function renderAnalysisHistory(){
   const list=$("#analysis-list"),known=new Set([...list.querySelectorAll("[data-analysis-id]")].map(item=>item.dataset.analysisId)),opened=new Set([...list.querySelectorAll("[data-analysis-id][open]")].map(item=>item.dataset.analysisId)),items=[...(state.analyses||[])].sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
-  $("#analysis-count").textContent=`${items.length} 份`;
+  const total=Math.max(items.length,Number(state.analysisPage?.total)||0),pagination=$("#analysis-pagination");
+  $("#analysis-count").textContent=`${total} 份`;
   const hasSource=Number(state.reviewSourceCount)>0||[state.checkins,state.dailyRecords,state.captures,state.journals,state.thoughts].some(collection=>collection?.length);
-  list.innerHTML=items.length?items.map((item,index)=>{const label=item.reason==="weekly-background"?"后台周复盘":"主动复盘",isNew=!known.has(item.id),open=opened.has(item.id)||(index===0&&(!known.size||isNew));return `<details class="analysis-entry" data-analysis-id="${item.id}" ${open?"open":""}><summary><div><div class="analysis-summary-meta"><time>${formatDate(item.createdAt)}</time><span>${label}</span>${index===0?'<b>最新</b>':""}</div><p>${escapeHtml(plainPreview(item.content))}</p></div><span class="expand-mark" aria-hidden="true">⌄</span></summary><div class="analysis-entry-body">${contextReceiptMarkup(item.contextReceipt)}<div class="analysis-content markdown-content">${renderMarkdown(item.content)}</div><button class="subtle-action danger" type="button" data-analysis-delete="${item.id}">删除复盘</button></div></details>`}).join(""):contentState({title:"还没有认知复盘",body:hasSource?"现有记录已经可以作为起点，复盘结果只是一条可修正的线索。":"先留下任意一条记录，再回到这里形成第一份复盘。",action:hasSource?{command:"run-analysis",label:"开始一次复盘"}:{view:"captures",label:"先留一条记录"}});
+  list.innerHTML=items.length?items.map((item,index)=>{const label=item.reason==="weekly-background"?"后台周复盘":"主动复盘",isNew=!known.has(item.id),open=opened.has(item.id)||(index===0&&(!known.size||isNew));return `<details class="analysis-entry" data-analysis-id="${item.id}" ${open?"open":""}><summary><div><div class="analysis-summary-meta"><time>${formatDate(item.createdAt)}</time><span>${label}</span>${index===0?'<b>最新</b>':""}</div><p>${escapeHtml(plainPreview(item.content))}</p></div><span class="expand-mark" aria-hidden="true">⌄</span></summary><div class="analysis-entry-body">${contextReceiptMarkup(item.contextReceipt)}<div class="analysis-content markdown-content">${renderMarkdown(item.content)}</div>${item.contentTruncated?'<p class="status" data-analysis-load-status>展开后载入完整复盘。</p>':""}<button class="subtle-action danger" type="button" data-analysis-delete="${item.id}">删除复盘</button></div></details>`}).join(""):contentState({title:"还没有认知复盘",body:hasSource?"现有记录已经可以作为起点，复盘结果只是一条可修正的线索。":"先留下任意一条记录，再回到这里形成第一份复盘。",action:hasSource?{command:"run-analysis",label:"开始一次复盘"}:{view:"captures",label:"先留一条记录"}});
+  if(pagination){pagination.hidden=!state.analysisPage?.nextCursor;$("#analysis-pagination-status").textContent=state.analysisPage?.nextCursor?`已加载 ${items.length} / ${total} 份`:""}
   items.forEach(item=>markCommentTarget(list.querySelector(`[data-analysis-id="${CSS.escape(item.id)}"] .analysis-content`),commentRootKey("analysis",item.id),"content"));
+  list.querySelectorAll("[data-analysis-id]").forEach(entry=>{entry.addEventListener("toggle",()=>{if(entry.open)void loadAnalysisDetail(entry.dataset.analysisId)});if(entry.open)void loadAnalysisDetail(entry.dataset.analysisId)});
   renderLatex(list);applyCommentAnchors(list);
 }
 function renderReview(){
@@ -3893,11 +3942,12 @@ function setAuthTab(tab){
 }
 function setAuthBusy(value){authBusy=value;$$(".auth-form input,.auth-form button,[data-auth-tab]").forEach(control=>control.disabled=value)}
 function invalidatePageLoads(){
-  actionsRequestSerial+=1;feedbackRequestSerial+=1;statisticsRequestSerial+=1;aiCostRequestSerial+=1;architectureRequestSerial+=1;commercialRequestSerial+=1;personalContextRequestSerial+=1;accountUsersRequestSerial+=1;
+  actionsRequestSerial+=1;feedbackRequestSerial+=1;statisticsRequestSerial+=1;aiCostRequestSerial+=1;architectureRequestSerial+=1;commercialRequestSerial+=1;personalContextRequestSerial+=1;accountUsersRequestSerial+=1;analysisRequestSerial+=1;
   activeAnswerTaskId=++answerTaskSerial;healthParseSerial+=1;latestHealthRequest=0;bookParseSerial+=1;clearTimeout(notificationTimer);
   discoveryController?.reset();backgroundResultController?.reset();refreshCoordinator.reset();
 }
 function clearPrivateSessionState(){
+  captureEditorSerial+=1;
   closeImageViewer({restoreFocus:false});
   onboardingV2Controller.reset();
   clearTimeout(thoughtSearchTimer);thoughtSearchTimer=0;
@@ -4307,6 +4357,7 @@ $("#capture-editor-close").addEventListener("click",()=>closeCaptureEditor());
 $("#capture-editor").addEventListener("click",event=>{if(event.target===event.currentTarget)closeCaptureEditor()});
 $("#thought-create-toggle").addEventListener("click",()=>{switchView("today");openHomeEditor("thought")});
 $("#thought-load-more").addEventListener("click",()=>void loadMoreThoughts());
+$("#analysis-load-more").addEventListener("click",()=>void loadMoreAnalyses());
 document.addEventListener("input",event=>{
   const input=event.target.closest("[data-feed-search]");if(!input)return;
   const scope=input.dataset.feedSearch;if(!(scope in feedSearchQueries))return;

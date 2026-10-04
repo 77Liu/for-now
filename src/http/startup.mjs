@@ -48,6 +48,13 @@ export function createStartupHttp({ readStartup, readRouteState }) {
         if (String(query.tag || "").length > 30) {
           return v1.error(res, 400, "标签内容过长", "INVALID_QUERY");
         }
+        if (view === "review") {
+          query.analysisAfterId = v1.pagination(url, {
+            defaultLimit: 8,
+            maxLimit: 8,
+            maxCursorLength: 200
+          }).afterId;
+        }
         const projection = await readRouteState({
           view,
           resourceId: String(url.searchParams.get("resourceId") || "").slice(0, 200),
@@ -57,6 +64,16 @@ export function createStartupHttp({ readStartup, readRouteState }) {
           const { nextId = "", ...thoughtPage } = projection.thoughtPage;
           projection.thoughtPage = {
             ...thoughtPage,
+            nextCursor: v1.nextCursor(nextId)
+          };
+        }
+        if (projection?.analysisPage) {
+          if (projection.analysisPage.invalidCursor) {
+            return v1.error(res, 400, "游标无效或已过期", "INVALID_CURSOR");
+          }
+          const { nextId = "", invalidCursor: _invalidCursor, ...analysisPage } = projection.analysisPage;
+          projection.analysisPage = {
+            ...analysisPage,
             nextCursor: v1.nextCursor(nextId)
           };
         }

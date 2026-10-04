@@ -119,6 +119,7 @@ export function createAttachmentHttp({
           if (!source) return true;
           let allowRange = req.method === "GET";
           let sourceChanged = false;
+          let sourceFallback = false;
           while (source) {
             const total = source.bytes;
             if (!Number.isSafeInteger(total) || total < 0 || typeof source.createReadStream !== "function") {
@@ -171,6 +172,16 @@ export function createAttachmentHttp({
               stream = await source.createReadStream(range || {});
             } catch (error) {
               await closeSource(source);
+              if (isMissing(error) && !sourceFallback && typeof source.fallback === "function") {
+                sourceFallback = true;
+                try {
+                  source = await source.fallback();
+                } catch (fallbackError) {
+                  if (isMissing(fallbackError) && await onMissing?.(req, res, url)) return true;
+                  throw fallbackError;
+                }
+                continue;
+              }
               if (error?.code === "ATTACHMENT_SOURCE_CHANGED" && !sourceChanged) {
                 sourceChanged = true;
                 allowRange = false;

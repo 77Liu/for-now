@@ -385,6 +385,7 @@ const projectionStore = {
 };
 projectionStore.thoughts.find(item => item.id === "projection-root-22").createdAt = "2026-10-01T09:00:00.000Z";
 projectionStore.thoughts.find(item => item.id === "projection-root-22").tags = ["后页标签"];
+let projectionCursorScope = "account-a";
 const projectionService = createThoughtService({
   repository: {
     async read() {
@@ -398,7 +399,8 @@ const projectionService = createThoughtService({
   now: () => "2026-09-29T00:00:00.000Z",
   recordVersion: value => Math.max(1, Number(value) || 1),
   eventTimeFields: input => input,
-  reanchorAnnotations() {}
+  reanchorAnnotations() {},
+  getCursorScope: () => projectionCursorScope
 });
 
 const defaultProjectionPage = await projectionService.listChains();
@@ -437,6 +439,13 @@ assert.doesNotMatch(JSON.stringify(modelDraftSearch), /PRIVATE_MODEL_DRAFT_0/);
 
 const searchedFirstPage = await projectionService.listChains({ limit: 2, query: "共同 主题" });
 assert.deepEqual(searchedFirstPage.items.map(item => item.id), ["projection-root-0", "projection-root-1"]);
+projectionCursorScope = "account-b";
+assert.equal((await projectionService.listChains({
+  limit: 2,
+  query: "共同 主题",
+  afterId: searchedFirstPage.nextId
+})).invalidCursor, true);
+projectionCursorScope = "account-a";
 projectionStore.thoughts.unshift({
   id: "projection-root-new",
   type: "question",

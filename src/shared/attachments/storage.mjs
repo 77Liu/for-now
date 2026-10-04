@@ -156,6 +156,7 @@ export function createAttachmentStorage({
         bytes,
         etag,
         ...(Number.isFinite(modifiedAt) ? { lastModified: new Date(modifiedAt).toUTCString() } : {}),
+        ...(allowLocalFallback ? { fallback: () => localReadSource(localFile) } : {}),
         async createReadStream(options = {}) {
           const range = streamRange(bytes, options);
           const headers = {

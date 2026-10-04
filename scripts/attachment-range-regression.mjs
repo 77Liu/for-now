@@ -100,6 +100,7 @@ try {
     lastModified: "Mon, 05 Oct 2026 00:00:00 GMT"
   };
   let replaceBeforeNextStream = null;
+  let missingBeforeNextStream = false;
   originalGetCredential = Credential.default.prototype.getCredential;
   originalGetObjectMeta = OSS.prototype.getObjectMeta;
   originalGetStream = OSS.prototype.getStream;
@@ -125,6 +126,10 @@ try {
     const range = options?.headers?.Range || "";
     const ifMatch = options?.headers?.["If-Match"] || "";
     ossCalls.push({ method: "getStream", name, range, ifMatch });
+    if (missingBeforeNextStream) {
+      missingBeforeNextStream = false;
+      throw Object.assign(new Error("No such key"), { status: 404, code: "NoSuchKey" });
+    }
     if (replaceBeforeNextStream) {
       ossObject = replaceBeforeNextStream;
       replaceBeforeNextStream = null;
@@ -234,6 +239,31 @@ try {
   } finally {
     ossApp.server.close();
     await once(ossApp.server, "close");
+  }
+
+  const fallbackApp = await listen(createImageAttachments({
+    storage: oss,
+    getContext: () => ({ ownerId: "account-a", attachmentsDir: localDir })
+  }));
+  try {
+    ossCalls.length = 0;
+    ossObject = {
+      body: payload,
+      etag: "\"oss-deleted\"",
+      versionId: "version-deleted",
+      lastModified: "Mon, 05 Oct 2026 00:02:00 GMT"
+    };
+    missingBeforeNextStream = true;
+    const fallback = await fetch(`${fallbackApp.base}/attachments/voice.m4a`, {
+      headers: { range: "bytes=2-5" }
+    });
+    assert.equal(fallback.status, 206);
+    assert.equal(fallback.headers.get("content-range"), `bytes 2-5/${payload.length}`);
+    assert.deepEqual(Buffer.from(await fallback.arrayBuffer()), payload.subarray(2, 6));
+    assert.deepEqual(ossCalls.map(call => call.method), ["getObjectMeta", "getStream"]);
+  } finally {
+    fallbackApp.server.close();
+    await once(fallbackApp.server, "close");
   }
 
   let bufferedReads = 0;
