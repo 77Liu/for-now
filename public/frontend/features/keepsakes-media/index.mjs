@@ -76,27 +76,47 @@ export function nextKeepsakeBatchIndex(items, removedIndex) {
 
 export function keepsakeMediaSources(item, mode = "list") {
   if (!item || typeof item !== "object") throw new TypeError("Keepsake media is required");
-  const previewPath = attachmentPath(item.previewPath);
+  const originalPath = attachmentPath(item.originalPath);
+  const publicPath = value => {
+    const path = attachmentPath(value);
+    return path && path !== originalPath ? path : "";
+  };
   if (mode === "original") {
-    const imagePath = attachmentPath(item.originalPath);
+    const imagePath = originalPath;
     if (!imagePath) throw new Error("原图不可用");
     return { imagePath };
   }
   if (mode === "edit") {
-    const imagePath = attachmentPath(item.editPath) || previewPath;
-    const alphaMaskPath = attachmentPath(item.alphaMaskPath);
+    const imagePath = publicPath(item.editPath);
+    const alphaMaskPath = publicPath(item.alphaMaskPath);
     if (!imagePath || !alphaMaskPath) throw new Error("编辑派生图或蒙版不可用");
     return { imagePath, alphaMaskPath };
   }
+  const manifest = item.media && typeof item.media === "object" ? item.media : null;
+  if (manifest && manifest.status !== "ready") throw new Error("展示派生图不可用");
   if (mode === "detail") {
-    const imagePath = attachmentPath(item.displayPath) || attachmentPath(item.cutoutPath) || previewPath;
+    const imagePath = manifest
+      ? publicPath(manifest.detail?.imagePath)
+      : publicPath(item.displayPath) || publicPath(item.cutoutPath);
     if (!imagePath) throw new Error("详情图不可用");
-    return { imagePath, backgroundPath: attachmentPath(item.editPath) };
+    return {
+      imagePath,
+      backgroundPath: manifest
+        ? publicPath(manifest.detail?.backgroundPath)
+        : publicPath(item.editPath)
+    };
   }
   if (!["list", "home"].includes(mode)) throw new TypeError(`Unsupported keepsake media mode: ${mode}`);
-  const imagePath = attachmentPath(item.thumbPath) || attachmentPath(item.cutoutPath) || previewPath;
+  const imagePath = manifest
+    ? publicPath(manifest.list?.imagePath)
+    : publicPath(item.thumbPath) || publicPath(item.cutoutPath);
   if (!imagePath) throw new Error("缩略图不可用");
-  return { imagePath, backgroundPath: attachmentPath(item.editPath) };
+  return {
+    imagePath,
+    backgroundPath: manifest
+      ? publicPath(manifest.list?.backgroundPath)
+      : publicPath(item.editPath)
+  };
 }
 
 export function keepsakeUploadPayload({ image, alphaMask }) {

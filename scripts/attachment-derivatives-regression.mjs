@@ -256,6 +256,28 @@ try {
   });
   assert.deepEqual(keepsakeMediaSources(record, "original"), { imagePath: saved.paths.originalPath });
   assert.doesNotMatch(JSON.stringify(keepsakeMediaSources(record, "list")), /original/);
+  const manifestRecord = {
+    ...record,
+    media: {
+      version: 1,
+      status: "ready",
+      list: { imagePath: "/attachments/manifest-thumb.webp", backgroundPath: "" },
+      detail: { imagePath: "/attachments/manifest-display.webp", backgroundPath: "/attachments/manifest-edit.webp" }
+    }
+  };
+  assert.deepEqual(keepsakeMediaSources(manifestRecord, "list"), {
+    imagePath: "/attachments/manifest-thumb.webp",
+    backgroundPath: ""
+  });
+  assert.deepEqual(keepsakeMediaSources(manifestRecord, "detail"), {
+    imagePath: "/attachments/manifest-display.webp",
+    backgroundPath: "/attachments/manifest-edit.webp"
+  });
+  for (const status of ["pending", "failed", "unavailable"]) {
+    const unavailable = { ...manifestRecord, media: { ...manifestRecord.media, status } };
+    assert.throws(() => keepsakeMediaSources(unavailable, "list"), /展示派生图/);
+    assert.throws(() => keepsakeMediaSources(unavailable, "detail"), /展示派生图/);
+  }
   const pendingRecord = {
     id: "keepsake-pending",
     title: "待派生",
@@ -263,19 +285,17 @@ try {
     previewPath: sources.paths.originalPath,
     alphaMaskPath: sources.paths.alphaMaskPath
   };
-  assert.deepEqual(keepsakeMediaSources(pendingRecord, "list"), {
-    imagePath: sources.paths.originalPath,
-    backgroundPath: ""
-  });
-  assert.deepEqual(keepsakeMediaSources(pendingRecord, "detail"), {
-    imagePath: sources.paths.originalPath,
-    backgroundPath: ""
-  });
-  assert.deepEqual(keepsakeMediaSources(pendingRecord, "edit"), {
-    imagePath: sources.paths.originalPath,
-    alphaMaskPath: sources.paths.alphaMaskPath
-  });
+  assert.throws(() => keepsakeMediaSources(pendingRecord, "list"), /缩略图/);
+  assert.throws(() => keepsakeMediaSources(pendingRecord, "detail"), /详情图/);
+  assert.throws(() => keepsakeMediaSources(pendingRecord, "edit"), /编辑派生图/);
   assert.throws(() => keepsakeMediaSources({ originalPath: saved.paths.originalPath }, "list"), /缩略图/);
+  assert.throws(() => keepsakeMediaSources({
+    originalPath: saved.paths.originalPath,
+    thumbPath: saved.paths.originalPath,
+    displayPath: saved.paths.originalPath,
+    editPath: saved.paths.originalPath,
+    alphaMaskPath: saved.paths.originalPath
+  }, "list"), /缩略图/);
 
   const payload = keepsakeUploadPayload({ image: "source", alphaMask: "mask" });
   assert.deepEqual(payload, { purpose: "keepsake", image: "source", alphaMask: "mask" });
