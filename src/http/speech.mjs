@@ -1,5 +1,6 @@
 import { normalizeTtsGenerationRate, resolveConfiguredTtsVoice } from "../shared/speech/index.mjs";
 import { safeText } from "../shared/validation/index.mjs";
+import { parseByteRange } from "./byte-range.mjs";
 
 const failure = (message, code, statusCode) => Object.assign(new Error(message), { code, statusCode });
 
@@ -23,19 +24,45 @@ export function createSpeechHttp({
   const previewCache = new Map();
   const previewInFlight = new Map();
   const voices = () => Array.isArray(speech.voices) ? speech.voices : [];
+  const audioHeaders = result => ({
+    "content-type": result.mimeType,
+    "cache-control": "private, no-store",
+    "x-speech-provider": "volcengine",
+    "x-speech-voice": result.voice,
+    ...(result.assetId ? { "x-speech-asset-id": result.assetId } : {}),
+    ...(result.cacheStatus ? { "x-speech-cache": result.cacheStatus } : {})
+  });
   const sendAudio = (res, result) => {
     const context = getContext();
     if (context) context.applicationStatus = 200;
     res.writeHead(200, {
-      "content-type": result.mimeType,
+      ...audioHeaders(result),
       "content-length": result.audio.length,
-      "cache-control": "private, no-store",
-      "x-speech-provider": "volcengine",
-      "x-speech-voice": result.voice,
-      ...(result.assetId ? { "x-speech-asset-id": result.assetId } : {}),
-      ...(result.cacheStatus ? { "x-speech-cache": result.cacheStatus } : {})
     });
     res.end(result.audio);
+  };
+  const sendCachedAudio = (req, res, result) => {
+    const headers = { ...audioHeaders(result), "accept-ranges": "bytes" };
+    const total = result.audio.length;
+    let status = 200;
+    let body = result.audio;
+    if (req.headers.range) {
+      const range = parseByteRange(req.headers.range, total);
+      if (!range) {
+        status = 416;
+        body = Buffer.alloc(0);
+        headers["content-range"] = `bytes */${total}`;
+      } else {
+        status = 206;
+        body = result.audio.subarray(range.start, range.end + 1);
+        headers["content-range"] = `bytes ${range.start}-${range.end}/${total}`;
+      }
+    }
+    headers["content-length"] = String(body.length);
+    const context = getContext();
+    if (context) context.applicationStatus = status;
+    res.writeHead(status, headers);
+    res.end(req.method === "HEAD" ? undefined : body);
   };
 
   const generate = async ({ text, voice, generationRate, scene = "speechSynthesis" }) => {
@@ -107,9 +134,9 @@ export function createSpeechHttp({
       });
       return true;
     }
-    if (req.method === "GET" && url.pathname === "/api/speech/audio") {
+    if (["GET", "HEAD"].includes(req.method) && url.pathname === "/api/speech/audio") {
       if (!cache) throw failure("朗读缓存不可用", "SPEECH_CACHE_UNAVAILABLE", 503);
-      sendAudio(res, await cache.readAudio({ id: url.searchParams.get("id") }));
+      sendCachedAudio(req, res, await cache.readAudio({ id: url.searchParams.get("id") }));
       return true;
     }
     if (req.method === "POST" && url.pathname === "/api/speech/preview") {

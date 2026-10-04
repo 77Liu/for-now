@@ -37,6 +37,7 @@ let trashSequence = 0;
 
 const now = () => clock.toISOString();
 const accountId = () => context.getStore();
+const digest = value => crypto.createHash("sha256").update(value).digest("hex");
 const accountFiles = () => {
   if (!files.has(accountId())) files.set(accountId(), new Map());
   return files.get(accountId());
@@ -135,7 +136,7 @@ const cache = createSpeechCache({
   cleanup,
   getOwnerId: accountId,
   now,
-  hash: value => crypto.createHash("sha256").update(value).digest("hex")
+  hash: digest
 });
 
 const synthesize = async request => {
@@ -233,14 +234,39 @@ await context.run("account-a", async () => {
   const audio = await cache.readAudio({ id: forced.assetId });
   assert.deepEqual(audio.audio, forced.audio);
   const assets = publicSpeechAssets(await repository.read(), {
-    ownerHash: crypto.createHash("sha256").update("account-a").digest("hex"),
-    currentTime: now()
+    ownerHash: digest("account-a"),
+    currentTime: now(),
+    hash: digest
   });
   assert.ok(assets.some(asset => asset.id === forced.assetId));
   assert.deepEqual(
     Object.keys(assets[0]).sort(),
     ["bytes", "createdAt", "expiresAt", "generationRate", "id", "mimeType", "sourceId", "sourceType", "sourceVersion", "voice"]
   );
+  const projectedStore = await repository.read();
+  const projectedEntry = projectedStore.speechCache.find(entry => entry.id === forced.assetId);
+  const storedSourceVersion = projectedEntry.sourceVersion;
+  projectedStore.captures[0].version = storedSourceVersion + 1;
+  projectedStore.speechCache.push({
+    ...projectedEntry,
+    id: "foreign-owner-asset",
+    cacheKey: "foreign-owner-asset",
+    ownerHash: digest("account-b")
+  });
+  const projectedAssets = publicSpeechAssets(projectedStore, {
+    ownerHash: digest("account-a"),
+    currentTime: now(),
+    hash: digest
+  });
+  assert.equal(projectedAssets.find(asset => asset.id === forced.assetId).sourceVersion, storedSourceVersion + 1);
+  assert.equal(projectedEntry.sourceVersion, storedSourceVersion, "public projection must not mutate persisted metadata");
+  assert.equal(projectedAssets.some(asset => asset.id === "foreign-owner-asset"), false);
+  projectedStore.captures[0].content = "公开状态中的当前朗读文本已变化";
+  assert.equal(publicSpeechAssets(projectedStore, {
+    ownerHash: digest("account-a"),
+    currentTime: now(),
+    hash: digest
+  }).some(asset => asset.sourceType === "capture"), false);
 
   const thought = await cache.synthesize({
     sourceType: "thoughtAnswer",
@@ -262,6 +288,20 @@ await context.run("account-a", async () => {
     generationRate: -10
   }, synthesize)).cacheStatus, "hit");
   assert.equal(providerCalls.length, 8);
+  const thoughtProjectionStore = await repository.read();
+  thoughtProjectionStore.thoughts.find(item => item.id === "answer-1").version = 3;
+  const projectedThought = publicSpeechAssets(thoughtProjectionStore, {
+    ownerHash: digest("account-a"),
+    currentTime: now(),
+    hash: digest
+  }).find(asset => asset.id === thought.assetId);
+  assert.equal(projectedThought.sourceVersion, 3);
+  thoughtProjectionStore.thoughts.find(item => item.id === "question-1").content = "关联问题已经变化";
+  assert.equal(publicSpeechAssets(thoughtProjectionStore, {
+    ownerHash: digest("account-a"),
+    currentTime: now(),
+    hash: digest
+  }).some(asset => asset.id === thought.assetId), false);
 
   const changedQuestion = structuredClone(stores.get("account-a"));
   changedQuestion.thoughts.find(item => item.id === "question-1").content = "现在为什么要记录？";

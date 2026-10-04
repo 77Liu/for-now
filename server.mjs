@@ -1007,7 +1007,11 @@ function publicStateFromStore(store, user = requestStorage.getStore()?.user) {
       defaultVoice: speechProvider.defaultVoice,
       voices: speechProvider.voices,
       supportedAsrMimeTypes: speechProvider.supportedAsrMimeTypes,
-      assets: publicSpeechAssets(store, { ownerHash: sha256(ownerId), currentTime: now() })
+      assets: publicSpeechAssets(store, {
+        ownerHash: sha256(ownerId),
+        currentTime: now(),
+        hash: sha256
+      })
     },
     vision: { configured: visionProvider.configured }
   };
@@ -2301,7 +2305,7 @@ async function transcribeCapture(work, { signal } = {}) {
       }),
       conservativeDeepSeekStage({
         id: condenseStageId,
-        scene: "captureCondense"
+        scene: "capturePolish"
       })
     ]
   }, async budgetExecution => {
@@ -2358,7 +2362,7 @@ async function transcribeCapture(work, { signal } = {}) {
           polishedText
         }),
         {
-          scene: "captureCondense",
+          scene: "capturePolish",
           maxTokens: 4000,
           signal,
           budgetExecution,

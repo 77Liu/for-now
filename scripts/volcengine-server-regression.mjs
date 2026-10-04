@@ -150,7 +150,12 @@ try {
   const settings = await fetch(`${base}/api/settings`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ apiKey: "deepseek-test-key", speech: { defaultVoice: "zh_female_vv_uranus_bigtts", generationRate: 25 } })
+    body: JSON.stringify({
+      apiKey: "deepseek-test-key",
+      scenarios: { capturePolish: "lite" },
+      sceneEfforts: { capturePolish: "none" },
+      speech: { defaultVoice: "zh_female_vv_uranus_bigtts", generationRate: 25 }
+    })
   });
   assert.equal(settings.status, 200);
   assert.deepEqual((await settings.json()).speech, { defaultVoice: "zh_female_vv_uranus_bigtts", generationRate: 25 });
@@ -248,7 +253,42 @@ try {
   const cachedAudio = await fetch(`${base}/api/speech/audio?id=${encodeURIComponent(speechAssetId)}`);
   assert.equal(cachedAudio.status, 200);
   assert.equal(cachedAudio.headers.get("x-speech-cache"), "hit");
-  assert.equal(Buffer.from(await cachedAudio.arrayBuffer()).subarray(0, 3).toString("ascii"), "ID3");
+  assert.equal(cachedAudio.headers.get("accept-ranges"), "bytes");
+  const cachedAudioBytes = Buffer.from(await cachedAudio.arrayBuffer());
+  assert.equal(cachedAudioBytes.subarray(0, 3).toString("ascii"), "ID3");
+  const cachedAudioHead = await fetch(`${base}/api/speech/audio?id=${encodeURIComponent(speechAssetId)}`, {
+    method: "HEAD"
+  });
+  assert.equal(cachedAudioHead.status, 200);
+  assert.equal(cachedAudioHead.headers.get("accept-ranges"), "bytes");
+  assert.equal(cachedAudioHead.headers.get("content-length"), String(cachedAudioBytes.length));
+  assert.equal((await cachedAudioHead.arrayBuffer()).byteLength, 0);
+  const cachedAudioRange = await fetch(`${base}/api/speech/audio?id=${encodeURIComponent(speechAssetId)}`, {
+    headers: { range: "bytes=1-3" }
+  });
+  assert.equal(cachedAudioRange.status, 206);
+  assert.equal(cachedAudioRange.headers.get("content-range"), `bytes 1-3/${cachedAudioBytes.length}`);
+  assert.equal(cachedAudioRange.headers.get("content-length"), "3");
+  assert.deepEqual(Buffer.from(await cachedAudioRange.arrayBuffer()), cachedAudioBytes.subarray(1, 4));
+  const cachedAudioRangeHead = await fetch(`${base}/api/speech/audio?id=${encodeURIComponent(speechAssetId)}`, {
+    method: "HEAD",
+    headers: { range: "bytes=-3" }
+  });
+  assert.equal(cachedAudioRangeHead.status, 206);
+  assert.equal(
+    cachedAudioRangeHead.headers.get("content-range"),
+    `bytes ${cachedAudioBytes.length - 3}-${cachedAudioBytes.length - 1}/${cachedAudioBytes.length}`
+  );
+  assert.equal(cachedAudioRangeHead.headers.get("content-length"), "3");
+  assert.equal((await cachedAudioRangeHead.arrayBuffer()).byteLength, 0);
+  for (const range of ["bytes=0-1,3-4", `bytes=${cachedAudioBytes.length}-`]) {
+    const rejectedRange = await fetch(`${base}/api/speech/audio?id=${encodeURIComponent(speechAssetId)}`, {
+      headers: { range }
+    });
+    assert.equal(rejectedRange.status, 416);
+    assert.equal(rejectedRange.headers.get("content-range"), `bytes */${cachedAudioBytes.length}`);
+    assert.equal(rejectedRange.headers.get("content-length"), "0");
+  }
   const missingAudio = await fetch(`${base}/api/speech/audio?id=missing-asset`);
   assert.equal(missingAudio.status, 404);
   assert.equal((await missingAudio.json()).code, "SPEECH_ASSET_NOT_FOUND");
@@ -415,8 +455,14 @@ try {
   assert.ok(usage.entries.some(item => item.provider === "volcengine" && item.scene === "speechRecognition" && item.unitType === "audioMillisecond"));
   assert.ok(usage.entries.some(item => item.provider === "volcengine" && item.scene === "visionOcr" && item.unitType === "image"));
   assert.ok(usage.entries.some(item => item.provider === "volcengine" && item.scene === "documentParsing" && item.unitType === "document"));
-  assert.ok(usage.entries.some(item => item.provider === "deepseek" && item.scene === "capturePolish"));
-  assert.ok(usage.entries.some(item => item.provider === "deepseek" && item.scene === "captureCondense"));
+  const transcriptionUsage = usage.entries.filter(item => (
+    item.provider === "deepseek" && item.scene === "capturePolish"
+  ));
+  assert.equal(transcriptionUsage.length, 2);
+  assert.ok(transcriptionUsage.every(item => (
+    item.model === "deepseek-flash" && item.tier === "lite" && item.effort === "none"
+  )));
+  assert.equal(usage.entries.filter(item => item.provider === "deepseek" && item.scene === "captureCondense").length, 0);
   const budget = JSON.parse(await fs.readFile(path.join(dataDir, "ai-budget.json"), "utf8"));
   assert.equal(budget.reservations.length, 0);
   assert.equal(budget.days[0].unknownCalls, 8);
@@ -437,6 +483,10 @@ try {
   assert.equal(transcriptionSettlement.calls, 3);
   assert.equal(transcriptionSettlement.unknownCalls, 1);
   assert.equal(transcriptionSettlement.stages.length, 3);
+  assert.deepEqual(
+    transcriptionSettlement.stages.map(item => item.stageId),
+    ["speech-recognition", "deepseek-polish", "deepseek-condense"]
+  );
 
   const changedVoice = await fetch(`${base}/api/settings`, {
     method: "POST",

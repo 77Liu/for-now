@@ -1,3 +1,5 @@
+import { parseByteRange } from "./byte-range.mjs";
+
 export function createAttachmentHttp({
   attachments,
   uploadOriginals = null,
@@ -14,20 +16,6 @@ export function createAttachmentHttp({
   debugServerUrl = "",
   debugRunId = "pre-fix"
 }) {
-  function byteRange(value, total) {
-    const match = /^bytes=(\d*)-(\d*)$/i.exec(String(value || "").trim());
-    if (!match || (!match[1] && !match[2]) || total < 1) return null;
-    if (!match[1]) {
-      const length = Number(match[2]);
-      if (!Number.isSafeInteger(length) || length < 1) return null;
-      return { start: Math.max(0, total - length), end: total - 1 };
-    }
-    const start = Number(match[1]);
-    const requestedEnd = match[2] ? Number(match[2]) : total - 1;
-    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(requestedEnd) || start < 0 || start >= total || requestedEnd < start) return null;
-    return { start, end: Math.min(requestedEnd, total - 1) };
-  }
-
   async function handle(req, res, url) {
     if (req.method === "POST" && url.pathname === "/api/images/upload") {
       const input = await bodyJson(req, uploadBodyMaxBytes), images = Array.isArray(input.images) ? input.images : input.image ? [input.image] : [];
@@ -112,7 +100,7 @@ export function createAttachmentHttp({
             "accept-ranges": "bytes"
           };
           if (req.headers.range) {
-            const range = byteRange(req.headers.range, data.length);
+            const range = parseByteRange(req.headers.range, data.length);
             if (!range) {
               res.writeHead(416, { ...headers, "content-range": `bytes */${data.length}`, "content-length": "0" });
               res.end();

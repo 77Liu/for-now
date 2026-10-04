@@ -95,37 +95,63 @@ export function speechCacheEntryExpired(entry, currentTime) {
   return !Number.isFinite(cutoff) || cutoff <= Date.parse(currentTime);
 }
 
-export function publicSpeechAssets(store, { ownerHash = "", currentTime = new Date().toISOString() } = {}) {
+function resolveSpeechSource(store, sourceType, sourceId) {
+  if (sourceType === "capture") {
+    const capture = list(store.captures).find(item => item?.id === sourceId);
+    if (!capture) return null;
+    return {
+      source: capture,
+      text: speechTextForCapture(capture),
+      sourceVersion: recordVersion(capture.version)
+    };
+  }
+  const answer = list(store.thoughts).find(item => (
+    item?.id === sourceId && item.type === "answer"
+  ));
+  if (!answer) return null;
+  const question = list(store.thoughts).find(item => (
+    item?.id === answer.relatedTo && item.type === "question"
+  ));
+  if (!question) return null;
+  const text = readableSpeechText(renderPrompt("thought.speech.wrapper", {
+    question: safeText(question.content, 120_000),
+    answer: safeText(answer.content || answer.modelDraft, 120_000)
+  }));
+  if (!text) return null;
+  return { source: answer, text, sourceVersion: recordVersion(answer.version) };
+}
+
+export function publicSpeechAssets(store, {
+  ownerHash = "",
+  currentTime = new Date().toISOString(),
+  hash
+} = {}) {
+  if (typeof hash !== "function") throw new TypeError("Public speech assets require a hash function");
   const snapshot = normalizeSpeechCacheStore(structuredClone(store || {}));
-  const captureIds = new Set(list(snapshot.captures).map(item => item?.id).filter(Boolean));
-  const questionIds = new Set(list(snapshot.thoughts)
-    .filter(item => item?.type === "question")
-    .map(item => item.id));
-  const answerIds = new Set(list(snapshot.thoughts)
-    .filter(item => item?.type === "answer" && questionIds.has(item.relatedTo))
-    .map(item => item.id));
   return list(snapshot.speechCache)
-    .filter(entry => (
-      cachePath(entry)
-      && (!ownerHash || entry.ownerHash === ownerHash)
-      && !speechCacheEntryExpired(entry, currentTime)
-      && (
-        (entry.sourceType === "capture" && captureIds.has(entry.sourceId))
-        || (entry.sourceType === "thoughtAnswer" && answerIds.has(entry.sourceId))
-      )
-    ))
-    .map(entry => ({
-      id: entryId(entry),
-      sourceType: entry.sourceType,
-      sourceId: entry.sourceId,
-      sourceVersion: recordVersion(entry.sourceVersion),
-      voice: safeText(entry.voice, 160),
-      generationRate: generationRateOf(entry),
-      mimeType: safeText(entry.mimeType, 100) || "audio/mpeg",
-      bytes: Math.max(0, Math.round(Number(entry.bytes) || 0)),
-      createdAt: safeText(entry.createdAt, 100),
-      expiresAt: safeText(entry.expiresAt, 100)
-    }));
+    .flatMap(entry => {
+      if (!cachePath(entry)
+        || (ownerHash && entry.ownerHash !== ownerHash)
+        || speechCacheEntryExpired(entry, currentTime)) return [];
+      const current = resolveSpeechSource(
+        snapshot,
+        entry.sourceType,
+        entry.sourceId
+      );
+      if (!current?.text || entry.textHash !== hash(current.text)) return [];
+      return [{
+        id: entryId(entry),
+        sourceType: entry.sourceType,
+        sourceId: entry.sourceId,
+        sourceVersion: current.sourceVersion,
+        voice: safeText(entry.voice, 160),
+        generationRate: generationRateOf(entry),
+        mimeType: safeText(entry.mimeType, 100) || "audio/mpeg",
+        bytes: Math.max(0, Math.round(Number(entry.bytes) || 0)),
+        createdAt: safeText(entry.createdAt, 100),
+        expiresAt: safeText(entry.expiresAt, 100)
+      }];
+    });
 }
 
 export function createSpeechCache({
@@ -153,34 +179,8 @@ export function createSpeechCache({
     return { ownerId, ownerHash: hash(ownerId) };
   };
 
-  const resolveSource = (store, sourceType, sourceId) => {
-    if (sourceType === "capture") {
-      const capture = list(store.captures).find(item => item?.id === sourceId);
-      if (!capture) return null;
-      return {
-        source: capture,
-        text: speechTextForCapture(capture),
-        sourceVersion: recordVersion(capture.version)
-      };
-    }
-    const answer = list(store.thoughts).find(item => (
-      item?.id === sourceId && item.type === "answer"
-    ));
-    if (!answer) return null;
-    const question = list(store.thoughts).find(item => (
-      item?.id === answer.relatedTo && item.type === "question"
-    ));
-    if (!question) return null;
-    const text = readableSpeechText(renderPrompt("thought.speech.wrapper", {
-      question: safeText(question.content, 120_000),
-      answer: safeText(answer.content || answer.modelDraft, 120_000)
-    }));
-    if (!text) return null;
-    return { source: answer, text, sourceVersion: recordVersion(answer.version) };
-  };
-
   const sourceIdentity = (store, sourceType, sourceId, ownerHash, voice, generationRate) => {
-    const resolved = resolveSource(store, sourceType, sourceId);
+    const resolved = resolveSpeechSource(store, sourceType, sourceId);
     if (!resolved) throw failure("朗读来源不存在", "SPEECH_SOURCE_MISSING", 404);
     if (!resolved.text) throw failure("朗读文本不能为空", "INVALID_TTS_TEXT", 400);
     const textHash = hash(resolved.text);
@@ -311,7 +311,7 @@ export function createSpeechCache({
     try {
       outcome = await repository.update(store => {
         normalizeSpeechCacheStore(store);
-        const live = resolveSource(store, identity.sourceType, identity.sourceId);
+        const live = resolveSpeechSource(store, identity.sourceType, identity.sourceId);
         if (!live) return { missing: true };
         if (hash(live.text) !== identity.textHash) return { stale: true };
         const matches = list(store.speechCache).filter(item => (
@@ -346,7 +346,7 @@ export function createSpeechCache({
       }
       outcome = await repository.update(store => {
         normalizeSpeechCacheStore(store);
-        const live = resolveSource(store, identity.sourceType, identity.sourceId);
+        const live = resolveSpeechSource(store, identity.sourceType, identity.sourceId);
         if (!live || hash(live.text) !== identity.textHash) return { stale: true };
         const removed = list(store.speechCache).filter(item => (
           entryId(item) === entryId(outcome.existing)
