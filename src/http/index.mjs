@@ -49,6 +49,11 @@ export { createLibraryHttp } from "./library.mjs";
 export { createReviewsChatHttp } from "./reviews-chat.mjs";
 export { createContentAttachmentsHttp } from "./content-attachments.mjs";
 export { createSpeechHttp } from "./speech.mjs";
+export {
+  speechPaths,
+  speechComponents,
+  speechOpenApiFragment
+} from "./openapi/speech.mjs";
 export { createVisionHttp } from "./vision.mjs";
 export { createSyncHttp } from "./sync.mjs";
 export { syncPaths, syncOpenApiFragment } from "./openapi/sync.mjs";

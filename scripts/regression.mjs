@@ -175,7 +175,7 @@ try {
     ...migratedState,
     commercialization: JSON.parse(await fs.readFile(path.join(dataDir, "store.json"), "utf8")).commercialization
   };
-  assert.equal(migrated.version, 15);
+  assert.equal(migrated.version, 16);
   assert.equal(migrated.commercialization.version, 3);
   assert.equal(migrated.commercialization.assumptions.validation.participants, 5);
   assert.equal(migrated.commercialization.assumptions.validation.rewardPerParticipantCny, 100);
@@ -244,7 +244,7 @@ try {
     ["mood", 1, 0], ["energy", 1, 0], ["stress", 1, 0], ["sleep", 1, 0]
   ]);
   assert.deepEqual(migrated.insights.associations.map(item => [item.factor, item.withCount, item.confidence]), [["冷启动因素", 1, "单日观察"]]);
-  assert.equal((await fs.readdir(dataDir)).some(name => name.includes("v3-pre-v15") && name.endsWith(".bak")), true);
+  assert.equal((await fs.readdir(dataDir)).some(name => name.includes("v3-pre-v16") && name.endsWith(".bak")), true);
   const migratedSettings = await (await fetch(`${base}/api/settings`)).json();
   assert.equal(migratedSettings.version, 10);
   assert.deepEqual(Object.keys(migratedSettings.profiles), ["lite", "mid", "high", "ultra"]);

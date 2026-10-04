@@ -2,6 +2,34 @@ import { recordVersion } from "../shared/validation/index.mjs";
 import { collectAttachmentPaths } from "../shared/attachments/index.mjs";
 
 const AFTER_COMMIT = Symbol.for("for-now.after-commit");
+const speechSourceKey = (sourceType, sourceId) => `${sourceType}\u0000${sourceId}`;
+
+function speechSourcesInTrash(entries) {
+  const sources = new Set();
+  for (const entry of entries) {
+    if (entry?.type === "capture" && entry.payload?.id) {
+      sources.add(speechSourceKey("capture", entry.payload.id));
+    }
+    if (entry?.type === "thoughtBlock" && entry.payload?.type === "answer" && entry.payload.id) {
+      sources.add(speechSourceKey("thoughtAnswer", entry.payload.id));
+    }
+    if (entry?.type === "thoughtChain") {
+      for (const record of Array.isArray(entry.payload?.items) ? entry.payload.items : []) {
+        if (record?.item?.type === "answer" && record.item.id) {
+          sources.add(speechSourceKey("thoughtAnswer", record.item.id));
+        }
+      }
+    }
+  }
+  return sources;
+}
+
+function speechCacheForTrash(store, entries) {
+  const sources = speechSourcesInTrash(entries);
+  return (Array.isArray(store.speechCache) ? store.speechCache : []).filter(entry => (
+    sources.has(speechSourceKey(entry?.sourceType, entry?.sourceId))
+  ));
+}
 
 export function createTrashMutations({ trash, annotations, now, cancelTask = () => {} }) {
   const advance = record => { record.version = recordVersion(record.version) + 1; record.updatedAt = now(); };
@@ -191,7 +219,14 @@ export function createTrashCommands({ repository, trash, mutations, cleanup }) {
     async preview(ids) {
       const store = await repository.read();
       const entries = trash.expanded(store.trash, ids.length ? ids : store.trash.map(item => item.id));
-      return { ...trash.plan(entries), attachmentPaths: [...collectAttachmentPaths(entries)], requiresConfirmation: "永久删除" };
+      return {
+        ...trash.plan(entries),
+        attachmentPaths: [...collectAttachmentPaths([
+          ...entries,
+          ...speechCacheForTrash(store, entries)
+        ])],
+        requiresConfirmation: "永久删除"
+      };
     },
     purge(ids, expectedPlanHash) {
       return repository.transact(async ({ document: store, commit }) => {
@@ -199,7 +234,12 @@ export function createTrashCommands({ repository, trash, mutations, cleanup }) {
         if (!entries.length) return { missing: true };
         if (expectedPlanHash !== plan.planHash) return { changed: true, plan };
         trash.remove(store.trash, entries.map(item => item.id));
-        cleanup.enqueue(store, collectAttachmentPaths(entries));
+        const speechEntries = speechCacheForTrash(store, entries);
+        if (speechEntries.length) {
+          const removed = new Set(speechEntries);
+          store.speechCache = store.speechCache.filter(entry => !removed.has(entry));
+        }
+        cleanup.enqueue(store, collectAttachmentPaths([...entries, ...speechEntries]));
         await commit();
         const result = await cleanup.drain(store);
         if (result.attempted) await commit();

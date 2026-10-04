@@ -8,7 +8,12 @@ export {
 export { createBackgroundAi } from "./background-ai.mjs";
 export { createTrashMutations, createTrashCommands } from "./trash.mjs";
 export { createAttachmentCleanup } from "./attachment-cleanup.mjs";
-export { SPEECH_CACHE_RETENTION_DAYS, createSpeechCache } from "./speech-cache.mjs";
+export {
+  SPEECH_CACHE_RETENTION_DAYS,
+  createSpeechCache,
+  normalizeSpeechCacheStore,
+  publicSpeechAssets
+} from "./speech-cache.mjs";
 export {
   SPEECH_CACHE_SWEEP_INTERVAL_MS,
   SPEECH_CACHE_SWEEP_STARTUP_DELAY_MS,

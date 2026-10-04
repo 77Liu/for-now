@@ -360,6 +360,38 @@ assert.equal(storeContentSha256(rebuildStoreObjects(fullPlan.business)), fullPla
 assert.equal(canonicalJson({ b: 2, a: 1 }), canonicalJson({ a: 1, b: 2 }));
 assert.notEqual(storeContentSha256([1, 2]), storeContentSha256([2, 1]));
 
+const speechStore = {
+  version: 16,
+  captures: [{ id: "speech-capture", content: "朗读来源", version: 2 }],
+  thoughts: [
+    { id: "speech-question", type: "question", content: "问题", version: 1 },
+    { id: "speech-answer", type: "answer", relatedTo: "speech-question", content: "回答", version: 1 }
+  ],
+  speechCache: [{
+    id: "speech-asset",
+    cacheKey: "speech-asset",
+    ownerHash: "private-owner-hash",
+    sourceType: "thoughtAnswer",
+    sourceId: "speech-answer",
+    sourceVersion: 1,
+    textHash: "private-text-hash",
+    voice: "voice-a",
+    generationRate: -10,
+    attachmentPath: "/attachments/speech.tts.mp3",
+    mimeType: "audio/mpeg",
+    bytes: 128,
+    createdAt: "2026-10-04T00:00:00.000Z",
+    expiresAt: "2026-11-03T00:00:00.000Z"
+  }]
+};
+const speechPlan = buildPostgresMigrationPlan({ accountId: "speech-account", store: speechStore });
+assert.deepEqual(publicPersistenceDocument(rebuildStoreObjects(speechPlan.business)), speechStore);
+assert.ok(speechPlan.business.attachmentRefs.some(reference => (
+  reference.fieldName === "speechCache"
+  && reference.ownerKey === null
+  && reference.path === "/attachments/speech.tts.mp3"
+)));
+
 const g2Store = {
   version: 15,
   thoughts: [],

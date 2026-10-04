@@ -393,8 +393,10 @@ assert.deepEqual(response.body.data.transcription, {
   provider: "",
   rawText: "",
   polishedText: "",
+  condensedText: "",
   updatedAt: "",
-  errorCode: "ASR_NOT_CONFIGURED"
+  errorCode: "ASR_NOT_CONFIGURED",
+  condenseErrorCode: ""
 });
 const audioCaptureId = response.body.data.id;
 assert.deepEqual(requestedTranscriptions, [{ id: audioCaptureId }]);
@@ -972,6 +974,19 @@ function resolveRef(document, ref) {
   }, document);
 }
 for (const ref of collectRefs(assembled)) resolveRef(assembled, ref);
+assert.deepEqual(
+  captureJournalComponents.schemas.CaptureTranscription.required,
+  [
+    "status",
+    "provider",
+    "rawText",
+    "polishedText",
+    "condensedText",
+    "updatedAt",
+    "errorCode",
+    "condenseErrorCode"
+  ]
+);
 
 const operationAt = (route, method) => captureJournalPaths[route][method];
 const declaredParameters = (route, method) => [

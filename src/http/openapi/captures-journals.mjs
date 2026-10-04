@@ -248,14 +248,25 @@ export const captureJournalComponents = Object.freeze({
     },
     CaptureTranscription: {
       type: "object",
-      required: ["status", "provider", "rawText", "polishedText", "updatedAt", "errorCode"],
+      required: [
+        "status",
+        "provider",
+        "rawText",
+        "polishedText",
+        "condensedText",
+        "updatedAt",
+        "errorCode",
+        "condenseErrorCode"
+      ],
       properties: {
         status: { type: "string", enum: ["unconfigured", "queued", "transcribing", "ready", "failed"] },
         provider: { type: "string" },
         rawText: { type: "string" },
         polishedText: { type: "string" },
+        condensedText: { type: "string" },
         updatedAt: { type: "string" },
-        errorCode: { type: "string" }
+        errorCode: { type: "string" },
+        condenseErrorCode: { type: "string" }
       },
       additionalProperties: false
     },

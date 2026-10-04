@@ -63,10 +63,22 @@ const background = createBackgroundAi({
     generatedTaskIds.push(work.taskId);
     if (failNext) throw Object.assign(new Error("公开失败"), { code: "ASR_PROVIDER_FAILED" });
     assert.deepEqual(work.audio, audio);
+    if (work.capture.id === "capture-condense-failed") {
+      return {
+        provider: "volcengine-seedasr-2.0",
+        rawText: "凝练失败时的原始转写。",
+        polishedText: "凝练失败时的整理稿。",
+        condensedText: "",
+        condenseErrorCode: "CONDENSE_UPSTREAM_FAILED",
+        updatedAt: now()
+      };
+    }
     return {
       provider: "volcengine-seedasr-2.0",
       rawText: "这是原始转写。",
       polishedText: "这是整理后的转写。",
+      condensedText: "这是凝练稿。",
+      condenseErrorCode: "",
       updatedAt: now()
     };
   },
@@ -98,8 +110,39 @@ assert.equal(store.aiTasks[0].status, "succeeded");
 assert.equal(store.captures[0].transcription.status, "ready");
 assert.equal(store.captures[0].transcription.rawText, "这是原始转写。");
 assert.equal(store.captures[0].transcription.polishedText, "这是整理后的转写。");
+assert.equal(store.captures[0].transcription.condensedText, "这是凝练稿。");
+assert.equal(store.captures[0].transcription.condenseErrorCode, "");
 assert.equal(store.captures[0].version, 3);
 assert.equal((await background.getResult(first.task.id)).result.id, "capture-a");
+
+store.captures.unshift({
+  id: "capture-condense-failed",
+  content: "",
+  audio,
+  transcription: {
+    status: "unconfigured",
+    provider: "",
+    rawText: "",
+    polishedText: "",
+    condensedText: "",
+    updatedAt: "",
+    errorCode: "ASR_NOT_CONFIGURED",
+    condenseErrorCode: ""
+  },
+  version: 1
+});
+const partial = await background.enqueue({
+  kind: "captureTranscription",
+  targetId: "capture-condense-failed",
+  clientRequestId: "transcription-condense-failed"
+});
+await background.run(partial.task.id);
+const partiallyReady = store.captures.find(item => item.id === "capture-condense-failed");
+assert.equal(partiallyReady.transcription.status, "ready");
+assert.equal(partiallyReady.transcription.rawText, "凝练失败时的原始转写。");
+assert.equal(partiallyReady.transcription.polishedText, "凝练失败时的整理稿。");
+assert.equal(partiallyReady.transcription.condensedText, "");
+assert.equal(partiallyReady.transcription.condenseErrorCode, "CONDENSE_UPSTREAM_FAILED");
 
 store.captures.unshift({
   id: "capture-b",
@@ -125,6 +168,7 @@ await background.run(second.task.id);
 assert.equal(store.aiTasks.find(task => task.id === second.task.id).status, "failed");
 assert.equal(store.captures.find(item => item.id === "capture-b").transcription.status, "failed");
 assert.equal(store.captures.find(item => item.id === "capture-b").transcription.errorCode, "ASR_PROVIDER_FAILED");
+assert.equal(store.captures.find(item => item.id === "capture-b").transcription.condensedText, "");
 
 store.captures.unshift({
   id: "capture-c",
@@ -162,6 +206,7 @@ await background.resume();
 assert.equal(store.aiTasks.find(task => task.id === "interrupted-task").status, "failed");
 assert.equal(store.captures.find(item => item.id === "capture-c").transcription.status, "failed");
 assert.equal(store.captures.find(item => item.id === "capture-c").transcription.errorCode, "TASK_INTERRUPTED");
+assert.equal(store.captures.find(item => item.id === "capture-c").transcription.condenseErrorCode, "");
 
 store.captures.unshift({
   id: "capture-d",

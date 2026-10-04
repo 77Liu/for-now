@@ -99,8 +99,10 @@ const unconfiguredTranscription = () => ({
   provider: "",
   rawText: "",
   polishedText: "",
+  condensedText: "",
   updatedAt: "",
-  errorCode: "ASR_NOT_CONFIGURED"
+  errorCode: "ASR_NOT_CONFIGURED",
+  condenseErrorCode: ""
 });
 
 export function capturePayload(input, existing = null) {

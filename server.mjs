@@ -59,7 +59,7 @@ import { createRateGate } from "./src/shared/concurrency/index.mjs";
 import { installPromptCatalog, promptText, renderPrompt } from "./src/shared/prompts/index.mjs";
 import { localDateKey, shiftDateKey, strictDateKey, localDateTimeOn, eventTimeFields } from "./src/shared/time/index.mjs";
 import { buildAdminSnapshot } from "./admin-snapshot.mjs";
-import { createAnnotationCommands, createAiBudgetRuntime, createAiTaskTargets, createBackgroundAi, createTrashMutations, createTrashCommands, createAttachmentCleanup, createSpeechCache, createKeepsakeMediaWorkflows, createThoughtWorkflows, createCaptureJournalWorkflows, createLibraryWorkflows, createReviewChatWorkflows, createUserModelExtractionService, deepSeekBudgetStages, personalContextProjection, userModelEvidenceCurrent } from "./src/app/index.mjs";
+import { createAnnotationCommands, createAiBudgetRuntime, createAiTaskTargets, createBackgroundAi, createTrashMutations, createTrashCommands, createAttachmentCleanup, createSpeechCache, createKeepsakeMediaWorkflows, createThoughtWorkflows, createCaptureJournalWorkflows, createLibraryWorkflows, createReviewChatWorkflows, createUserModelExtractionService, deepSeekBudgetStages, normalizeSpeechCacheStore, personalContextProjection, publicSpeechAssets, userModelEvidenceCurrent } from "./src/app/index.mjs";
 import {
   createSpeechCacheSweep,
   SPEECH_CACHE_SWEEP_INTERVAL_MS,
@@ -116,7 +116,7 @@ const storagePaths = () => {
     aiCostPlanFile: path.join(dataDir, "ai-cost-plan.json")
   };
 };
-const STORE_VERSION = 15;
+const STORE_VERSION = 16;
 const TRASH_RETENTION_DAYS = 30;
 const COMMERCIALIZATION_VERSION = 3;
 const commercialStageKeys = ["internal", "mvp", "growth", "influence", "market"];
@@ -176,7 +176,7 @@ const defaultCommercialization = {
     }
   }
 };
-const emptyStore = { version: STORE_VERSION, checkins: [], dailyRecords: [], captures: [], journals: [], journalDraft: null, thoughts: [], chats: [], books: [], keepsakes: [], quotes: [], experiments: [], analyses: [], customMetrics: [], trash: [], attachmentCleanup: [], aiTasks: [], notifications: [], actions: [], habits: [], habitCheckins: [], feedback: [], validationLedger: [], userClaims: [], modelUnknowns: [], onboarding: defaultOnboarding, onboardingV2: defaultOnboardingV2, commercialization: defaultCommercialization };
+const emptyStore = { version: STORE_VERSION, checkins: [], dailyRecords: [], captures: [], journals: [], journalDraft: null, thoughts: [], chats: [], books: [], keepsakes: [], quotes: [], experiments: [], analyses: [], customMetrics: [], trash: [], attachmentCleanup: [], speechCache: [], aiTasks: [], notifications: [], actions: [], habits: [], habitCheckins: [], feedback: [], validationLedger: [], userClaims: [], modelUnknowns: [], onboarding: defaultOnboarding, onboardingV2: defaultOnboardingV2, commercialization: defaultCommercialization };
 const { retentionDays: AI_AUDIT_RETENTION_DAYS, textLimit: AI_AUDIT_TEXT_LIMIT } = appConfig.audit;
 const {
   aiQps: AI_GLOBAL_QPS, aiConcurrency: AI_GLOBAL_CONCURRENCY,
@@ -433,11 +433,23 @@ function normalizeCommercialization(value = {}) {
   };
 }
 
+function normalizeCaptureTranscription(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return {
+    ...value,
+    rawText: safeText(value.rawText, 120_000),
+    polishedText: safeText(value.polishedText, 120_000),
+    condensedText: safeText(value.condensedText, 120_000),
+    errorCode: safeText(value.errorCode, 120),
+    condenseErrorCode: safeText(value.condenseErrorCode, 120)
+  };
+}
+
 function normalizeStore(value = {}) {
   const previousVersion = Number(value.version || 1);
   const hasOnboardingV2 = Object.hasOwn(value || {}, "onboardingV2");
   const store = { ...clone(emptyStore), ...value, version: STORE_VERSION };
-  for (const key of ["checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "trash", "attachmentCleanup", "aiTasks", "notifications", "actions", "habits", "habitCheckins", "feedback", "validationLedger", "userClaims", "modelUnknowns"]) if (!Array.isArray(store[key])) store[key] = [];
+  for (const key of ["checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "trash", "attachmentCleanup", "speechCache", "aiTasks", "notifications", "actions", "habits", "habitCheckins", "feedback", "validationLedger", "userClaims", "modelUnknowns"]) if (!Array.isArray(store[key])) store[key] = [];
   store.checkins = store.checkins.map(item => ({ factors: [], custom: {}, notes: {}, ...item, ...normalizedEventTime(item, previousVersion), sleep: item.sleep || 3, stress: previousVersion < 3 ? 6 - clamp5(item.stress) : clamp5(item.stress), version: recordVersion(item.version) }));
   store.dailyRecords = store.dailyRecords.map(item => {
     const normalized = { source: "manual", attachmentPaths: [], ...item, ...normalizedEventTime(item, previousVersion), version: recordVersion(item.version) };
@@ -448,7 +460,19 @@ function normalizeStore(value = {}) {
     }
     return normalized;
   }).map(item => ["sleep", "heartRate", "weight", "exercise"].includes(item.type) ? item : { ...item, validationState: "invalid" });
-  store.captures = store.captures.map(item => ({ tags: [], attachmentPaths: [], imageUnderstandings: [], annotations: [], annotationDrift: [], ...item, ...normalizedEventTime(item, previousVersion), version: recordVersion(item.version) }));
+  store.captures = store.captures.map(item => ({
+    tags: [],
+    attachmentPaths: [],
+    imageUnderstandings: [],
+    annotations: [],
+    annotationDrift: [],
+    ...item,
+    ...(Object.hasOwn(item, "transcription")
+      ? { transcription: normalizeCaptureTranscription(item.transcription) }
+      : {}),
+    ...normalizedEventTime(item, previousVersion),
+    version: recordVersion(item.version)
+  }));
   store.journals = store.journals.map(item => ({ tags: [], reflections: [], annotations: [], annotationDrift: [], ...item, ...normalizedEventTime(item, previousVersion), version: recordVersion(item.version) }));
   if (store.journalDraft && typeof store.journalDraft === "object") {
     const journalId = safeText(store.journalDraft.journalId, 100);
@@ -549,13 +573,18 @@ function normalizeStore(value = {}) {
   store.trash = store.trash.filter(item => item && item.id && item.payload && item.type).map(item => {
     const { category: legacyCategory, ...keepsakePayloadWithoutCategory } = item.type === "keepsake" ? item.payload : {};
     void legacyCategory;
-    return {
+    const normalized = {
       ...item,
       ...(item.type === "keepsake" ? { payload: keepsakePayloadWithoutCategory } : {}),
       deletedAt: safeIso(item.deletedAt) || now(),
       purgeAfter: safeIso(item.purgeAfter) || new Date(Date.now() + TRASH_RETENTION_DAYS * 86400000).toISOString()
     };
+    if (normalized.type === "capture" && Object.hasOwn(normalized.payload, "transcription")) {
+      normalized.payload.transcription = normalizeCaptureTranscription(normalized.payload.transcription);
+    }
+    return normalized;
   });
+  normalizeSpeechCacheStore(store);
   store.attachmentCleanup = store.attachmentCleanup.filter(item => item && /^\/attachments\/[\w.-]+$/.test(item.path)).map(item => ({
     path: item.path,
     createdAt: safeIso(item.createdAt) || now(),
@@ -962,7 +991,8 @@ function storeForUser(store, user = requestStorage.getStore()?.user) {
 }
 
 function publicStateFromStore(store, user = requestStorage.getStore()?.user) {
-  const { trash, attachmentCleanup, ...visible } = storeForUser(store, user);
+  const { trash, attachmentCleanup, speechCache: _speechCache, ...visible } = storeForUser(store, user);
+  const ownerId = safeText(user?.id, 100) || "local";
   const state = {
     ...visible,
     captures: visible.captures.map(publicCapture),
@@ -976,7 +1006,8 @@ function publicStateFromStore(store, user = requestStorage.getStore()?.user) {
       configured: speechProvider.configured,
       defaultVoice: speechProvider.defaultVoice,
       voices: speechProvider.voices,
-      supportedAsrMimeTypes: speechProvider.supportedAsrMimeTypes
+      supportedAsrMimeTypes: speechProvider.supportedAsrMimeTypes,
+      assets: publicSpeechAssets(store, { ownerHash: sha256(ownerId), currentTime: now() })
     },
     vision: { configured: visionProvider.configured }
   };
@@ -2251,6 +2282,7 @@ async function transcribeCapture(work, { signal } = {}) {
   const audioMimeType = preparedAudio.mimeType;
   const asrStageId = "speech-recognition";
   const polishStageId = "deepseek-polish";
+  const condenseStageId = "deepseek-condense";
   return aiBudgetRuntime.executeTask({
     accountId: currentBudgetAccountId(),
     taskId: `capture-transcription:${work.taskId}`,
@@ -2266,6 +2298,10 @@ async function transcribeCapture(work, { signal } = {}) {
       conservativeDeepSeekStage({
         id: polishStageId,
         scene: "capturePolish"
+      }),
+      conservativeDeepSeekStage({
+        id: condenseStageId,
+        scene: "captureCondense"
       })
     ]
   }, async budgetExecution => {
@@ -2314,10 +2350,35 @@ async function transcribeCapture(work, { signal } = {}) {
         error: errorMetadata(error)
       });
     }
+    let condensedText = "", condenseErrorCode = "";
+    try {
+      condensedText = await runDeepSeek(
+        renderPrompt("capture.transcription.condense", {
+          rawText: transcription.rawText,
+          polishedText
+        }),
+        {
+          scene: "captureCondense",
+          maxTokens: 4000,
+          signal,
+          budgetExecution,
+          budgetStageIds: [condenseStageId]
+        }
+      );
+    } catch (error) {
+      condenseErrorCode = safeText(error.code, 120) || "CONDENSE_FAILED";
+      await logEvent("system", "capture.transcription_condense_failed", {
+        level: "warn",
+        captureId: work.capture.id,
+        error: errorMetadata(error)
+      });
+    }
     return {
       ...transcription,
       polishedText,
       polishErrorCode,
+      condensedText,
+      condenseErrorCode,
       updatedAt: now()
     };
   });

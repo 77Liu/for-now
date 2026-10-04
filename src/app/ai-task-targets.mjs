@@ -51,8 +51,10 @@ export function createAiTaskTargets({
           provider: "volcengine-seedasr-2.0",
           rawText: safeText(capture.transcription?.rawText, 120_000),
           polishedText: safeText(capture.transcription?.polishedText, 120_000),
+          condensedText: safeText(capture.transcription?.condensedText, 120_000),
           updatedAt: capture.transcription?.updatedAt || "",
-          errorCode: ""
+          errorCode: "",
+          condenseErrorCode: ""
         };
       }
     };
@@ -195,8 +197,10 @@ export function createAiTaskTargets({
           provider: safeText(result.provider, 100) || "volcengine-seedasr-2.0",
           rawText: safeText(result.rawText, 120_000),
           polishedText: safeText(result.polishedText, 120_000),
+          condensedText: safeText(result.condensedText, 120_000),
           updatedAt: safeText(result.updatedAt, 100) || now(),
-          errorCode: safeText(result.polishErrorCode, 120)
+          errorCode: safeText(result.polishErrorCode, 120),
+          condenseErrorCode: safeText(result.condenseErrorCode, 120)
         };
         capture.updatedAt = capture.transcription.updatedAt;
         capture.version = recordVersion(capture.version) + 1;
@@ -257,8 +261,10 @@ export function createAiTaskTargets({
         provider: "volcengine-seedasr-2.0",
         rawText: safeText(capture.transcription?.rawText, 120_000),
         polishedText: safeText(capture.transcription?.polishedText, 120_000),
+        condensedText: safeText(capture.transcription?.condensedText, 120_000),
         updatedAt: now(),
-        errorCode: safeText(error?.code, 120) || "ASR_FAILED"
+        errorCode: safeText(error?.code, 120) || "ASR_FAILED",
+        condenseErrorCode: safeText(capture.transcription?.condenseErrorCode, 120)
       };
     }
   };

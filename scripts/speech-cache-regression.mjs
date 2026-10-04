@@ -4,14 +4,25 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createAnnotationService } from "../src/modules/annotations/index.mjs";
 import { createTrashService } from "../src/modules/trash/index.mjs";
 import { createJsonStoreRepository } from "../src/shared/persistence/index.mjs";
+import { installPromptCatalog } from "../src/shared/prompts/index.mjs";
 import {
   SPEECH_CACHE_RETENTION_DAYS,
   createAttachmentCleanup,
   createSpeechCache,
   createSpeechCacheSweep,
   createTrashCommands,
-  createTrashMutations
+  createTrashMutations,
+  normalizeSpeechCacheStore,
+  publicSpeechAssets
 } from "../src/app/index.mjs";
+
+installPromptCatalog({
+  version: "speech-cache-test",
+  sha256: "speech-cache-test",
+  prompts: {
+    "thought.speech.wrapper": "问题：{{question}}\n回答：{{answer}}"
+  }
+});
 
 const context = new AsyncLocalStorage();
 const stores = new Map();
@@ -41,6 +52,19 @@ const capture = (content = "同一段朗读文字") => ({
 });
 const emptyStore = (content = "同一段朗读文字") => ({
   captures: [capture(content)],
+  thoughts: [{
+    id: "question-1",
+    type: "question",
+    content: "为什么要记录？",
+    version: 1
+  }, {
+    id: "answer-1",
+    type: "answer",
+    relatedTo: "question-1",
+    content: "**为了**看见变化。",
+    version: 1
+  }],
+  speechCache: [],
   trash: [],
   attachmentCleanup: [],
   aiTasks: [],
@@ -123,8 +147,9 @@ const synthesize = async request => {
     voice: request.voice
   };
 };
-const request = (overrides = {}, generate = synthesize) => cache.synthesizeCapture({
-  captureId: "capture-1",
+const request = (overrides = {}, generate = synthesize) => cache.synthesize({
+  sourceType: "capture",
+  sourceId: "capture-1",
   sourceVersion: 2,
   voice: "voice-a",
   generationRate: -10,
@@ -154,7 +179,7 @@ await context.run("account-a", async () => {
   await request({ voice: "voice-b" });
   await request({ generationRate: 25 });
   assert.equal(providerCalls.length, 4, "voice and generation parameters must partition cache entries");
-  const entries = (await repository.read()).captures[0].speechCache;
+  const entries = (await repository.read()).speechCache;
   assert.equal(entries.length, 3);
   assert.ok(entries.every(entry => entry.sourceVersion === 2));
   assert.ok(entries.every(entry => entry.retentionDays === SPEECH_CACHE_RETENTION_DAYS));
@@ -171,15 +196,96 @@ await context.run("account-b", async () => {
 
 await context.run("account-a", async () => {
   const document = structuredClone(stores.get("account-a"));
-  document.captures[0].content = "升版后的朗读文字";
   document.captures[0].version = 3;
   stores.set("account-a", document);
 
-  await assert.rejects(request(), error => error.code === "SPEECH_SOURCE_STALE" && error.statusCode === 409);
-  const regenerated = await request({ sourceVersion: 3 });
+  const versionOnly = await request({ sourceVersion: 3 });
+  assert.equal(versionOnly.cacheStatus, "hit", "a version-only change must reuse identical speech text");
+  assert.equal(providerCalls.length, 5);
+  assert.ok((await repository.read()).speechCache.every(entry => entry.sourceVersion === 3));
+
+  const changed = structuredClone(stores.get("account-a"));
+  changed.captures[0].content = "升版后的朗读文字";
+  changed.captures[0].version = 4;
+  stores.set("account-a", changed);
+
+  await assert.rejects(request({ sourceVersion: 3 }), error => error.code === "SPEECH_SOURCE_STALE" && error.statusCode === 409);
+  const regenerated = await request({ sourceVersion: 4 });
   assert.equal(regenerated.cacheStatus, "miss");
-  assert.equal(providerCalls.length, 6, "a source version change must miss");
-  assert.ok(removedAudio.some(item => item.accountId === "account-a"), "stale source attachments must enter cleanup");
+  assert.equal(providerCalls.length, 6, "a speech text change must miss");
+  assert.ok(removedAudio.some(item => item.accountId === "account-a"), "stale text attachments must enter cleanup");
+
+  const beforeRegenerate = (await repository.read()).speechCache.find(entry => entry.id === regenerated.assetId);
+  const forced = await request({ sourceVersion: 4, regenerate: true });
+  assert.equal(forced.cacheStatus, "miss");
+  assert.equal(providerCalls.length, 7);
+  const afterRegenerate = (await repository.read()).speechCache.filter(entry => (
+    entry.sourceType === "capture"
+    && entry.sourceId === "capture-1"
+    && entry.textHash === beforeRegenerate.textHash
+    && entry.voice === beforeRegenerate.voice
+    && entry.generationRate === beforeRegenerate.generationRate
+  ));
+  assert.equal(afterRegenerate.length, 1, "regeneration must replace the active cache variant");
+  assert.notEqual(afterRegenerate[0].attachmentPath, beforeRegenerate.attachmentPath);
+  assert.equal(accountFiles().has(beforeRegenerate.attachmentPath), false);
+
+  const audio = await cache.readAudio({ id: forced.assetId });
+  assert.deepEqual(audio.audio, forced.audio);
+  const assets = publicSpeechAssets(await repository.read(), {
+    ownerHash: crypto.createHash("sha256").update("account-a").digest("hex"),
+    currentTime: now()
+  });
+  assert.ok(assets.some(asset => asset.id === forced.assetId));
+  assert.deepEqual(
+    Object.keys(assets[0]).sort(),
+    ["bytes", "createdAt", "expiresAt", "generationRate", "id", "mimeType", "sourceId", "sourceType", "sourceVersion", "voice"]
+  );
+
+  const thought = await cache.synthesize({
+    sourceType: "thoughtAnswer",
+    sourceId: "answer-1",
+    sourceVersion: 1,
+    voice: "voice-a",
+    generationRate: -10
+  }, synthesize);
+  assert.equal(thought.cacheStatus, "miss");
+  assert.equal(providerCalls.at(-1).text, "问题：为什么要记录？ 回答：为了看见变化。");
+  const thoughtDocument = structuredClone(stores.get("account-a"));
+  thoughtDocument.thoughts.find(item => item.id === "answer-1").version = 2;
+  stores.set("account-a", thoughtDocument);
+  assert.equal((await cache.synthesize({
+    sourceType: "thoughtAnswer",
+    sourceId: "answer-1",
+    sourceVersion: 2,
+    voice: "voice-a",
+    generationRate: -10
+  }, synthesize)).cacheStatus, "hit");
+  assert.equal(providerCalls.length, 8);
+
+  const changedQuestion = structuredClone(stores.get("account-a"));
+  changedQuestion.thoughts.find(item => item.id === "question-1").content = "现在为什么要记录？";
+  stores.set("account-a", changedQuestion);
+  assert.equal((await cache.synthesize({
+    sourceType: "thoughtAnswer",
+    sourceId: "answer-1",
+    sourceVersion: 2,
+    voice: "voice-a",
+    generationRate: -10
+  }, synthesize)).cacheStatus, "miss");
+  assert.equal(providerCalls.length, 9, "question text participates in the final thought speech hash");
+});
+
+await context.run("account-a", async () => {
+  const document = structuredClone(stores.get("account-a"));
+  const asset = document.speechCache.find(entry => entry.sourceType === "capture");
+  document.captures[0].content = "再次变化";
+  document.captures[0].version = 5;
+  stores.set("account-a", document);
+  await assert.rejects(
+    cache.readAudio({ id: asset.id }),
+    error => error.code === "SPEECH_ASSET_INVALID" && error.statusCode === 410
+  );
 });
 
 const trash = createTrashService({
@@ -196,34 +302,51 @@ const mutations = createTrashMutations({ trash, annotations, now });
 const commands = createTrashCommands({ repository, trash, mutations, cleanup });
 
 await context.run("account-a", async () => {
+  await request({ sourceVersion: 5 });
   const beforeDelete = await repository.read();
-  const cachedPath = beforeDelete.captures[0].speechCache[0].attachmentPath;
+  const cachedPath = beforeDelete.speechCache.find(entry => entry.sourceType === "capture").attachmentPath;
   const entry = await repository.update(store => (
     mutations.moveCollectionItemToTrash(store, "captures", "capture", "capture-1")
   ));
   assert.equal(accountFiles().has(cachedPath), true, "recoverable deletion must retain cached audio");
-  assert.ok((await repository.read()).trash[0].payload.speechCache.length);
+  assert.ok((await repository.read()).speechCache.length);
+  assert.equal(Object.hasOwn((await repository.read()).trash[0].payload, "speechCache"), false);
   await assert.rejects(
-    request({ sourceVersion: 3 }),
+    request({ sourceVersion: 5 }),
     error => error.code === "SPEECH_SOURCE_MISSING" && error.statusCode === 404
   );
 
   await commands.restore(entry.id);
   const restored = (await repository.read()).captures[0];
-  assert.equal(restored.version, 4);
-  assert.ok(restored.speechCache.length, "restore must recover cache metadata before version validation");
-  const afterRestore = await request({ sourceVersion: 4 });
-  assert.equal(afterRestore.cacheStatus, "miss", "restore advances source version and must not reuse stale audio");
-  assert.equal(accountFiles().has(cachedPath), false, "stale restored audio must be cleaned after replacement");
+  assert.equal(restored.version, 6);
+  const afterRestore = await request({ sourceVersion: 6 });
+  assert.equal(afterRestore.cacheStatus, "hit", "restore version changes must reuse unchanged speech text");
+  assert.equal(accountFiles().has(cachedPath), true);
 
   const deletedAgain = await repository.update(store => (
     mutations.moveCollectionItemToTrash(store, "captures", "capture", "capture-1")
   ));
-  const paths = [...new Set(deletedAgain.payload.speechCache.map(item => item.attachmentPath))];
+  const paths = [...new Set((await repository.read()).speechCache
+    .filter(item => item.sourceType === "capture" && item.sourceId === "capture-1")
+    .map(item => item.attachmentPath))];
   const preview = await commands.preview([deletedAgain.id]);
+  assert.deepEqual(new Set(preview.attachmentPaths), new Set(paths));
   const purged = await commands.purge([deletedAgain.id], preview.planHash);
   assert.deepEqual(new Set(purged.attachments), new Set(paths));
   assert.ok(paths.every(attachmentPath => !accountFiles().has(attachmentPath)));
+  assert.equal((await repository.read()).speechCache.some(item => item.sourceId === "capture-1"), false);
+
+  const thoughtTrash = await repository.update(store => (
+    mutations.moveThoughtChainToTrash(store, "question-1")
+  ));
+  const thoughtPaths = (await repository.read()).speechCache
+    .filter(item => item.sourceType === "thoughtAnswer" && item.sourceId === "answer-1")
+    .map(item => item.attachmentPath);
+  const thoughtPreview = await commands.preview([thoughtTrash.id]);
+  assert.deepEqual(new Set(thoughtPreview.attachmentPaths), new Set(thoughtPaths));
+  const thoughtPurge = await commands.purge([thoughtTrash.id], thoughtPreview.planHash);
+  assert.deepEqual(new Set(thoughtPurge.attachments), new Set(thoughtPaths));
+  assert.equal((await repository.read()).speechCache.some(item => item.sourceId === "answer-1"), false);
 });
 
 await context.run("account-c", async () => {
@@ -244,6 +367,42 @@ await context.run("account-c", async () => {
   assert.equal(accountFiles().size, 0, "late stale synthesis must clean its unlinked attachment");
 });
 
+const legacyStore = {
+  captures: [{
+    id: "legacy-capture",
+    version: 7,
+    speechCache: [{
+      cacheKey: "legacy-cache",
+      ownerHash: "legacy-owner",
+      sourceVersion: 7,
+      textHash: "legacy-text",
+      voice: "voice-a",
+      generation: { rate: 25 },
+      attachmentPath: "/attachments/legacy.tts.mp3",
+      mimeType: "audio/mpeg",
+      bytes: 32,
+      createdAt: "2026-10-01T00:00:00.000Z",
+      expiresAt: "2026-10-31T00:00:00.000Z"
+    }]
+  }],
+  trash: []
+};
+normalizeSpeechCacheStore(legacyStore);
+assert.equal(Object.hasOwn(legacyStore.captures[0], "speechCache"), false);
+assert.deepEqual(legacyStore.speechCache.map(entry => ({
+  id: entry.id,
+  sourceType: entry.sourceType,
+  sourceId: entry.sourceId,
+  sourceVersion: entry.sourceVersion,
+  generationRate: entry.generationRate
+})), [{
+  id: "legacy-cache",
+  sourceType: "capture",
+  sourceId: "legacy-capture",
+  sourceVersion: 7,
+  generationRate: 25
+}]);
+
 const sweepContext = new AsyncLocalStorage();
 const sweepDocuments = new Map();
 const sweepFiles = new Map();
@@ -261,7 +420,7 @@ const sweepEntry = (cacheKey, attachmentPath, createdAt, expiresAt = "") => ({
   createdAt,
   ...(expiresAt ? { expiresAt } : {})
 });
-const sweepStore = entries => ({
+const sweepStore = (entries, speechCache = []) => ({
   captures: [{
     id: "capture-sweep",
     version: 9,
@@ -269,6 +428,7 @@ const sweepStore = entries => ({
     attachmentPaths: [],
     speechCache: entries
   }],
+  speechCache,
   trash: [],
   attachmentCleanup: []
 });
@@ -290,22 +450,23 @@ const sweepSeed = {
       }
     }]
   },
-  "account-b": sweepStore([
+  "account-b": sweepStore([], [
     sweepEntry("expired-b", "/attachments/retry.tts.mp3", "2026-08-01T00:00:00.000Z")
   ]),
-  "account-c": sweepStore([
+  "account-c": sweepStore([], [
     sweepEntry("expired-c", "/attachments/retry.tts.mp3", "2026-08-01T00:00:00.000Z")
   ]),
   "account-d": sweepStore([
     sweepEntry("expired-resume", "/attachments/resume.tts.mp3", "2026-08-01T00:00:00.000Z")
   ]),
-  "account-e": sweepStore([
+  "account-e": sweepStore([], [
     sweepEntry("unexpired-e", "/attachments/unexpired.tts.mp3", "2026-10-01T00:00:00.000Z", "2027-01-01T00:00:00.000Z")
   ])
 };
 for (const [account, document] of Object.entries(sweepSeed)) {
   sweepDocuments.set(sweepFile(account), structuredClone(document));
   sweepFiles.set(account, new Set([
+    ...document.speechCache.map(entry => entry.attachmentPath),
     ...document.captures.flatMap(item => item.speechCache.map(entry => entry.attachmentPath)),
     ...document.trash.flatMap(item => item.payload.speechCache.map(entry => entry.attachmentPath))
   ]));
@@ -407,8 +568,8 @@ assert.equal(sweepFiles.get("account-a").has("/attachments/retry.tts.mp3"), true
 assert.equal(sweepFiles.get("account-a").has("/attachments/trash.tts.mp3"), false);
 assert.deepEqual(sweptA.attachmentCleanup.map(item => item.path), ["/attachments/retry.tts.mp3"]);
 assert.equal(sweepFiles.get("account-b").has("/attachments/retry.tts.mp3"), false, "same path in another account is isolated");
-assert.equal(sweptB.captures[0].speechCache.length, 0);
-assert.equal(unsweptC.captures[0].speechCache.length, 1, "failed account writes must remain unchanged");
+assert.equal(sweptB.speechCache.length, 0);
+assert.equal(unsweptC.speechCache.length, 1, "failed account writes must remain unchanged");
 assert.equal(queuedD.captures[0].speechCache.length, 0, "metadata commit must survive cleanup resume failure");
 assert.deepEqual(queuedD.attachmentCleanup.map(item => item.path), ["/attachments/resume.tts.mp3"]);
 assert.equal(sweepFiles.get("account-d").has("/attachments/resume.tts.mp3"), true);
@@ -445,4 +606,4 @@ assert.equal((await sweepContext.run("account-d", () => sweepRepository.read()))
 assert.equal(sweepUpdateCalls.get("account-d"), 1, "queue recovery must not require another expiry update");
 assert.equal(sweepUpdateCalls.get("account-e") || 0, 0);
 
-console.log("Speech cache checks passed: 30-day access and background expiry, JSON account isolation, shared references, retryable cleanup, private keys, coalesced hits and version invalidation.");
+console.log("Speech cache checks passed: generic sources, stable text hashes, regeneration, safe assets, legacy migration, purge and 30-day account-isolated sweep.");

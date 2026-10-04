@@ -4,6 +4,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   openApiV1,
+  speechComponents,
+  speechOpenApiFragment,
+  speechPaths,
   thoughtPaths,
   thoughtComponents,
   thoughtsOpenApiFragment
@@ -61,6 +64,26 @@ assert.deepEqual(Object.keys(thoughtPaths).sort(), [
   "/thought-chains/{id}",
   "/thought-chains/{id}/answers"
 ]);
+assert.deepEqual(Object.keys(speechOpenApiFragment).sort(), ["components", "paths"]);
+assert.strictEqual(speechOpenApiFragment.paths, speechPaths);
+assert.strictEqual(speechOpenApiFragment.components, speechComponents);
+assert.deepEqual(Object.keys(speechPaths).sort(), [
+  "/speech/audio",
+  "/speech/preview",
+  "/speech/synthesize",
+  "/speech/voices"
+]);
+for (const pathItem of Object.values(speechPaths)) {
+  const operation = Object.entries(pathItem).find(([method]) => HTTP_METHODS.has(method))?.[1];
+  assert.deepEqual(operation.servers, [{ url: "/api" }]);
+}
+assert.deepEqual(
+  Object.keys(speechComponents.schemas.SpeechAsset.properties).sort(),
+  ["bytes", "createdAt", "expiresAt", "generationRate", "id", "mimeType", "sourceId", "sourceType", "sourceVersion", "voice"]
+);
+for (const privateField of ["attachmentPath", "ownerHash", "textHash"]) {
+  assert.equal(Object.hasOwn(speechComponents.schemas.SpeechAsset.properties, privateField), false);
+}
 
 const thoughtPathNames = Object.keys(thoughtPaths);
 assert.deepEqual(thoughtPaths, pick(openApiV1.paths, thoughtPathNames));

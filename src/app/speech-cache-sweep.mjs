@@ -12,6 +12,7 @@ const cacheEntries = value => (
 
 function cacheOwners(store) {
   return [
+    store,
     ...(Array.isArray(store?.captures) ? store.captures : []),
     ...(Array.isArray(store?.trash)
       ? store.trash

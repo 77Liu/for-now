@@ -4,7 +4,7 @@ import { LLM_MODELS, LLM_EFFORTS, LLM_TIERS, LLM_SCENARIOS } from "./settings.mj
 import { OFFICIAL_PROVIDER_PRICING } from "./provider-pricing.mjs";
 
 export const AI_USAGE_VERSION = 4;
-const PROVIDER_SCENES = new Set(["speechSynthesis", "speechRecognition", "visionOcr", "documentParsing", "keepsakeSegmentation"]);
+const PROVIDER_SCENES = new Set(["speechSynthesis", "speechPreview", "speechRecognition", "visionOcr", "documentParsing", "keepsakeSegmentation"]);
 const knownModalities = new Set(["vision", "text", "audio", "document"]);
 function normalizedModality(item) {
   if (knownModalities.has(item?.modality)) return item.modality;

@@ -68,7 +68,9 @@ const provider = http.createServer(async (request, response) => {
         })
       : requestBody.response_format?.type === "json_object"
       ? JSON.stringify({ measuredWeight: 70, clothing: "none", verification: "请核对" })
-      : "这是整理后的转写。";
+      : promptText.includes("凝练为更短")
+        ? "这是凝练后的转写。"
+        : "这是整理后的转写。";
     return json(response, {
       id: "deepseek-server-test",
       model: "deepseek-flash",
@@ -113,7 +115,7 @@ const app = spawn(process.execPath, ["server.mjs"], {
     AUTH_REQUIRED: "0",
     PERSISTENCE_BACKEND: "json",
     ATTACHMENT_STORAGE: "local",
-    AI_USER_DAILY_CALL_LIMIT: "8",
+    AI_USER_DAILY_CALL_LIMIT: "12",
     DEEPSEEK_API_URL: `http://127.0.0.1:${provider.address().port}/deepseek`,
     VOLCENGINE_SPEECH_API_KEY: "speech-test-key",
     VOLCENGINE_TTS_ENDPOINT: `http://127.0.0.1:${provider.address().port}/tts`,
@@ -144,6 +146,7 @@ try {
   assert.equal(state.speech.configured, true);
   assert.equal(state.vision.configured, true);
   assert.equal(state.speech.voices.length, 4);
+  assert.ok(state.speech.voices.every(voice => voice.sampleText === "此刻，听见自己的想法，也看见正在发生的生活。"));
   const settings = await fetch(`${base}/api/settings`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -198,6 +201,8 @@ try {
   assert.equal(synthesized.headers.get("content-type"), "audio/mpeg");
   assert.equal(synthesized.headers.get("x-speech-cache"), "miss");
   assert.equal(synthesized.headers.get("x-speech-voice"), "zh_male_shaonianzixin_uranus_bigtts");
+  const speechAssetId = synthesized.headers.get("x-speech-asset-id");
+  assert.ok(speechAssetId);
   assert.equal(Buffer.from(await synthesized.arrayBuffer()).subarray(0, 3).toString("ascii"), "ID3");
   const ttsRequest = JSON.parse(providerCalls.find(call => call.pathname === "/tts").raw);
   assert.equal(ttsRequest.req_params.audio_params.speech_rate, 25);
@@ -206,7 +211,8 @@ try {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      captureId: speechSource.id,
+      sourceType: "capture",
+      sourceId: speechSource.id,
       sourceVersion: speechSource.version,
       voice: "zh_male_shaonianzixin_uranus_bigtts",
       playbackRate: 2
@@ -228,7 +234,101 @@ try {
   assert.equal((await stale.json()).code, "SPEECH_SOURCE_STALE");
   assert.equal(providerCalls.filter(call => call.pathname === "/tts").length, 1);
   assert.ok((await fs.readdir(path.join(dataDir, "attachments"))).some(name => name.endsWith(".tts.mp3")));
-  assert.equal(Object.hasOwn((await (await fetch(`${base}/api/state`)).json()).captures[0], "speechCache"), false);
+  const speechState = await (await fetch(`${base}/api/state`)).json();
+  assert.equal(Object.hasOwn(speechState, "speechCache"), false);
+  assert.equal(Object.hasOwn(speechState.captures[0], "speechCache"), false);
+  assert.deepEqual(Object.keys(speechState.speech.assets[0]).sort(), [
+    "bytes", "createdAt", "expiresAt", "generationRate", "id",
+    "mimeType", "sourceId", "sourceType", "sourceVersion", "voice"
+  ]);
+  assert.equal(speechState.speech.assets[0].id, speechAssetId);
+  assert.equal(JSON.stringify(speechState.speech.assets).includes("attachmentPath"), false);
+  assert.equal(JSON.stringify(speechState.speech.assets).includes("ownerHash"), false);
+  assert.equal(JSON.stringify(speechState.speech.assets).includes("textHash"), false);
+  const cachedAudio = await fetch(`${base}/api/speech/audio?id=${encodeURIComponent(speechAssetId)}`);
+  assert.equal(cachedAudio.status, 200);
+  assert.equal(cachedAudio.headers.get("x-speech-cache"), "hit");
+  assert.equal(Buffer.from(await cachedAudio.arrayBuffer()).subarray(0, 3).toString("ascii"), "ID3");
+  const missingAudio = await fetch(`${base}/api/speech/audio?id=missing-asset`);
+  assert.equal(missingAudio.status, 404);
+  assert.equal((await missingAudio.json()).code, "SPEECH_ASSET_NOT_FOUND");
+
+  const regenerated = await fetch(`${base}/api/speech/synthesize`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      sourceType: "capture",
+      sourceId: speechSource.id,
+      sourceVersion: speechSource.version,
+      regenerate: true
+    })
+  });
+  assert.equal(regenerated.status, 200);
+  assert.equal(regenerated.headers.get("x-speech-cache"), "miss");
+  assert.equal(providerCalls.filter(call => call.pathname === "/tts").length, 2);
+  await regenerated.arrayBuffer();
+
+  const voiceResponse = await fetch(`${base}/api/speech/voices`);
+  const voicePayload = await voiceResponse.json();
+  assert.equal(voiceResponse.status, 200);
+  assert.ok(voicePayload.voices.every(voice => voice.sampleText));
+  const invalidPreview = await fetch(`${base}/api/speech/preview`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      voice: "zh_male_shaonianzixin_uranus_bigtts",
+      text: "客户端不能指定试听正文"
+    })
+  });
+  assert.equal(invalidPreview.status, 400);
+  assert.equal((await invalidPreview.json()).code, "INVALID_SPEECH_PREVIEW");
+  const preview = await fetch(`${base}/api/speech/preview`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ voice: "zh_male_shaonianzixin_uranus_bigtts" })
+  });
+  assert.equal(preview.status, 200);
+  assert.equal(Buffer.from(await preview.arrayBuffer()).subarray(0, 3).toString("ascii"), "ID3");
+  const previewAgain = await fetch(`${base}/api/speech/preview`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ voice: "zh_male_shaonianzixin_uranus_bigtts" })
+  });
+  assert.equal(previewAgain.status, 200);
+  await previewAgain.arrayBuffer();
+  assert.equal(providerCalls.filter(call => call.pathname === "/tts").length, 3);
+  const previewRequest = JSON.parse(providerCalls.filter(call => call.pathname === "/tts").at(-1).raw);
+  assert.equal(previewRequest.req_params.text, voicePayload.voices[0].sampleText);
+
+  const thoughtResponse = await fetch(`${base}/api/v1/thought-chains`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "idempotency-key": "speech-thought-source"
+    },
+    body: JSON.stringify({
+      question: "测试问题？",
+      answer: "**测试回答**",
+      occurredAt: "2026-10-04T08:00:00.000Z"
+    })
+  });
+  assert.equal(thoughtResponse.status, 201);
+  const thoughtItems = (await thoughtResponse.json()).data.items;
+  const thoughtAnswer = thoughtItems.find(item => item.type === "answer");
+  const thoughtSpeech = await fetch(`${base}/api/speech/synthesize`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      sourceType: "thoughtAnswer",
+      sourceId: thoughtAnswer.id,
+      sourceVersion: thoughtAnswer.version
+    })
+  });
+  assert.equal(thoughtSpeech.status, 200);
+  await thoughtSpeech.arrayBuffer();
+  const thoughtTtsRequest = JSON.parse(providerCalls.filter(call => call.pathname === "/tts").at(-1).raw);
+  assert.equal(thoughtTtsRequest.req_params.text, "你的问题是：测试问题？，你的专属答复是测试回答");
+  assert.equal(providerCalls.filter(call => call.pathname === "/tts").length, 4);
 
   const imageBytes = await sharp({
     create: { width: 16, height: 16, channels: 3, background: "#ffffff" }
@@ -305,20 +405,24 @@ try {
   const capture = ready.captures.find(item => item.id === created.id);
   assert.equal(capture.transcription.rawText, "这是语音识别原文。");
   assert.equal(capture.transcription.polishedText, "这是整理后的转写。");
+  assert.equal(capture.transcription.condensedText, "这是凝练后的转写。");
+  assert.equal(capture.transcription.condenseErrorCode, "");
   assert.equal(asrConnections, 1);
   const usage = JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"), "utf8"));
   assert.equal(usage.version, 4);
-  assert.equal(usage.entries.filter(item => item.provider === "volcengine" && item.scene === "speechSynthesis" && item.unitType === "character").length, 1);
+  assert.equal(usage.entries.filter(item => item.provider === "volcengine" && item.scene === "speechSynthesis" && item.unitType === "character").length, 3);
+  assert.equal(usage.entries.filter(item => item.provider === "volcengine" && item.scene === "speechPreview" && item.unitType === "character").length, 1);
   assert.ok(usage.entries.some(item => item.provider === "volcengine" && item.scene === "speechRecognition" && item.unitType === "audioMillisecond"));
   assert.ok(usage.entries.some(item => item.provider === "volcengine" && item.scene === "visionOcr" && item.unitType === "image"));
   assert.ok(usage.entries.some(item => item.provider === "volcengine" && item.scene === "documentParsing" && item.unitType === "document"));
   assert.ok(usage.entries.some(item => item.provider === "deepseek" && item.scene === "capturePolish"));
+  assert.ok(usage.entries.some(item => item.provider === "deepseek" && item.scene === "captureCondense"));
   const budget = JSON.parse(await fs.readFile(path.join(dataDir, "ai-budget.json"), "utf8"));
   assert.equal(budget.reservations.length, 0);
-  assert.equal(budget.days[0].unknownCalls, 5);
-  assert.equal(budget.days[0].users[0].calls, 8);
+  assert.equal(budget.days[0].unknownCalls, 8);
+  assert.equal(budget.days[0].users[0].calls, 12);
   assert.ok(budget.days[0].knownCostMicros > 0);
-  assert.equal(budget.events.filter(item => item.type === "ai.budget.unknown_cost_warning").length, 5);
+  assert.equal(budget.events.filter(item => item.type === "ai.budget.unknown_cost_warning").length, 8);
   const imageSettlement = budget.events.find(item => (
     item.type === "ai.budget.reservation_settled"
     && item.taskId.startsWith("image-parse:")
@@ -330,9 +434,9 @@ try {
     item.type === "ai.budget.reservation_settled"
     && item.taskId.startsWith("capture-transcription:")
   ));
-  assert.equal(transcriptionSettlement.calls, 2);
+  assert.equal(transcriptionSettlement.calls, 3);
   assert.equal(transcriptionSettlement.unknownCalls, 1);
-  assert.equal(transcriptionSettlement.stages.length, 2);
+  assert.equal(transcriptionSettlement.stages.length, 3);
 
   const changedVoice = await fetch(`${base}/api/settings`, {
     method: "POST",

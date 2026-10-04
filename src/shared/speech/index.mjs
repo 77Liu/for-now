@@ -33,16 +33,21 @@ export function resolveConfiguredTtsVoice(value, speech = {}) {
   return voiceIds.values().next().value || "";
 }
 
-export function speechTextForCapture(capture = {}) {
-  const source = capture?.transcription?.polishedText
-    || capture?.transcription?.rawText
-    || capture?.content
-    || "";
-  return String(source)
+export function readableSpeechText(value) {
+  return String(value || "")
     .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/[`*_>#~|]/g, "")
     .replace(/\\[\[\]()]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+export function speechTextForCapture(capture = {}) {
+  const source = capture?.transcription?.condensedText
+    || capture?.transcription?.polishedText
+    || capture?.transcription?.rawText
+    || capture?.content
+    || "";
+  return readableSpeechText(source);
 }
