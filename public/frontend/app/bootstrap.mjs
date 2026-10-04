@@ -93,28 +93,38 @@ function envelopeData(value) {
 async function initialSnapshot({ stylesReady = Promise.resolve() } = {}) {
   markStartup("bootstrapStart");
   try {
-    const [session, testConfigResult] = await Promise.all([
-      requestJson("/api/auth/me", { allowUnauthorized: true }),
-      requestJson("/api/local-test-mode", { optional: true, allowUnauthorized: true })
-    ]);
-    const testConfig = ["AUTH_REQUIRED", "AUTH_REAUTH_REQUIRED"].includes(testConfigResult?.code) ? null : testConfigResult;
-    markStartup("authSessionReady");
-    if (!session.authenticated) {
-      revealAuthGate();
-      return { session, testConfig, startupMarks: { ...startupMarks }, visibleShell: false };
-    }
-    markStartup("loadStart");
     const route = resolveApplicationRoute(location, { basePath });
-    const routeRequest = requestJson(routeStateUrl(route)).then(
+    const sessionRequest = requestJson("/api/auth/me", { allowUnauthorized: true });
+    const testConfigRequest = requestJson("/api/local-test-mode", { optional: true, allowUnauthorized: true });
+    const startupRequest = requestJson("/api/v1/startup", { allowUnauthorized: true });
+    const routeRequest = requestJson(routeStateUrl(route), { allowUnauthorized: true }).then(
       value => ({ value }),
       error => ({ error })
     );
-    const startupResult = await requestJson("/api/v1/startup");
+    const startupResult = await startupRequest;
+    if (!startupResult?.data) {
+      const [session, testConfigResult] = await Promise.all([sessionRequest, testConfigRequest]);
+      const testConfig = ["AUTH_REQUIRED", "AUTH_REAUTH_REQUIRED"].includes(testConfigResult?.code) ? null : testConfigResult;
+      markStartup("authSessionReady");
+      if (!session.authenticated) {
+        revealAuthGate();
+        return { session, testConfig, startupMarks: { ...startupMarks }, visibleShell: false };
+      }
+      return envelopeData(startupResult);
+    }
     const meta = envelopeData(startupResult);
+    markStartup("authSessionReady");
+    markStartup("loadStart");
     markStartup("coreSnapshotReady");
     await stylesReady;
-    const visibleShell = revealAuthenticatedShell(session, { onboardingV2: meta.onboardingV2 });
-    const routeResult = await routeRequest;
+    const visibleShell = revealAuthenticatedShell({ user: meta.user }, { onboardingV2: meta.onboardingV2 });
+    const [session, testConfigResult, routeResult] = await Promise.all([
+      sessionRequest,
+      testConfigRequest,
+      routeRequest
+    ]);
+    if (!session.authenticated) throw Object.assign(new Error("请先登录"), { code: "AUTH_REQUIRED" });
+    const testConfig = ["AUTH_REQUIRED", "AUTH_REAUTH_REQUIRED"].includes(testConfigResult?.code) ? null : testConfigResult;
     if (routeResult.error) throw routeResult.error;
     const state = {
       ...envelopeData(routeResult.value),

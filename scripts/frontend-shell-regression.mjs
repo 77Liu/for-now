@@ -40,8 +40,8 @@ const downloadableSource = (await Promise.all((await publicSourceFiles(path.join
 
 assert.match(appEntry, /^import \{ startApplication \} from "\.\/frontend\/app\/index\.mjs";\s+startApplication\(\);\s*$/);
 assert.ok(appEntry.split("\n").length <= 5, "public/app.js must remain a thin bootstrap");
-assert.match(appBootstrap, /requestJson\("\/api\/v1\/startup"\)/);
-assert.match(appBootstrap, /requestJson\(routeStateUrl\(route\)\)/);
+assert.match(appBootstrap, /requestJson\("\/api\/v1\/startup", \{ allowUnauthorized: true \}\)/);
+assert.match(appBootstrap, /requestJson\(routeStateUrl\(route\), \{ allowUnauthorized: true \}\)/);
 assert.match(appBootstrap, /const runtime = await import\("\.\/runtime\.mjs"\)/);
 assert.match(appBootstrap, /const stylesReady = loadR8Styles\(\)/);
 assert.match(appBootstrap, /initialSnapshot\(\{ stylesReady \}\)/);
@@ -52,8 +52,8 @@ assert.match(appBootstrap, /requestJson\("\/api\/auth\/me", \{ allowUnauthorized
 for (const endpoint of ["/api/auth/me", "/api/v1/startup"]) {
   assert.equal(appBootstrap.split(`"${endpoint}"`).length - 1, 1, `bootstrap must request ${endpoint} once`);
 }
-assert.ok(appBootstrap.indexOf("const routeRequest = requestJson(routeStateUrl(route))") < appBootstrap.indexOf('const startupResult = await requestJson("/api/v1/startup")'));
-assert.ok(appBootstrap.indexOf("const visibleShell = revealAuthenticatedShell") < appBootstrap.indexOf("const routeResult = await routeRequest"));
+assert.ok(appBootstrap.indexOf("const routeRequest = requestJson(routeStateUrl(route)") < appBootstrap.indexOf("const startupResult = await startupRequest"));
+assert.ok(appBootstrap.indexOf("const visibleShell = revealAuthenticatedShell") < appBootstrap.indexOf("const [session, testConfigResult, routeResult]"));
 assert.doesNotMatch(appBootstrap, /requestJson\("\/api\/state"\)|requestJson\("\/api\/meta"\)/);
 assert.match(appRuntime, /export async function startApplication\(initial = null\)/);
 assert.doesNotMatch(appRuntime, /^bootstrap\(\)\.catch/m);

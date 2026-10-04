@@ -222,7 +222,8 @@ try {
       screenOrientation: device.orientation
     });
     await cdp.send("Page.navigate", { url: `${base}/?mobile-profile=${device.name}` });
-    assert.equal(await waitUntil(`document.querySelector("#today-date-label")?.textContent.length > 0`), true);
+    assert.equal(await waitUntil(`document.documentElement?.dataset.runtimeReady==="1"
+      &&document.querySelector("#today-date-label")?.textContent.length > 0`), true);
 
     const shell = await evaluate(`(() => {
       const nav=document.querySelector(".sidebar").getBoundingClientRect(),main=document.querySelector("main").getBoundingClientRect(),viewport=document.querySelector('meta[name="viewport"]')?.content||"";

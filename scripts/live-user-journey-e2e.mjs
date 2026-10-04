@@ -469,6 +469,8 @@ try {
         currentScreenFeedbackMs:window.__currentScreenFeedback,
         visibleShellMs:startup.marks.visibleShell,
         stableHomeMs:startup.marks.stableHome,
+        marks:startup.marks,
+        segments:startup.segments,
         domNodes:document.getElementsByTagName("*").length
       };
     })()`);
