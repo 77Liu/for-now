@@ -7,6 +7,22 @@
     window.__forNowStartupRequest = fetch(new URL("api/v1/startup", document.baseURI).pathname, {
       headers: { accept: "application/json", "content-type": "application/json" }
     }).then(response => response.json()).catch(() => null);
+    try {
+      const basePath = new URL(".", document.baseURI).pathname.replace(/\/$/, "");
+      const routePath = location.pathname.slice(basePath.length) || "/";
+      if (sessionStorage.getItem("cike:authenticated-shell") === "1") {
+        if (["/", "/today"].includes(routePath)) {
+          window.__forNowRouteRequest = fetch(new URL("api/v1/route-state?view=today", document.baseURI).href, {
+            headers: { accept: "application/json", "content-type": "application/json" }
+          }).then(response => response.json()).catch(() => null);
+          document.documentElement.dataset.bootstrapVisible = "1";
+          addEventListener("DOMContentLoaded", () => {
+            document.body.classList.remove("auth-locked");
+            window.__forNowRuntimeRequest = import(new URL("frontend/app/runtime.mjs", document.baseURI).href);
+          }, { once: true });
+        }
+      }
+    } catch {}
   </script>
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="description" content="本地优先的个人成长、捕念、日记与思考追踪工具">
@@ -24,6 +40,9 @@
   <link rel="preload" href="frontend/styles/r8.css" as="style">
   <link rel="modulepreload" href="frontend/app/index.mjs">
   <link rel="modulepreload" href="frontend/app/bootstrap.mjs">
+  <link rel="modulepreload" href="frontend/api/index.mjs">
+  <link rel="modulepreload" href="frontend/pages/index.mjs">
+  <link rel="modulepreload" href="frontend/session/index.mjs">
   <script src="app.js" type="module"></script>
 </head>
 <body class="auth-locked">

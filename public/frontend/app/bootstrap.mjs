@@ -69,11 +69,19 @@ function revealAuthenticatedShell(session, state) {
   document.querySelector("#auth-gate")?.setAttribute("hidden", "");
   document.body.classList.remove("auth-locked");
   document.documentElement.dataset.bootstrapVisible = "1";
+  try {
+    sessionStorage.setItem("cike:authenticated-shell", "1");
+  } catch {}
   markStartup("visibleShell");
   return true;
 }
 
 function revealAuthGate() {
+  try {
+    sessionStorage.removeItem("cike:authenticated-shell");
+  } catch {}
+  delete document.documentElement.dataset.bootstrapVisible;
+  document.body.classList.add("auth-locked");
   const gate = document.querySelector("#auth-gate");
   if (gate) gate.hidden = false;
 }
@@ -120,7 +128,11 @@ async function initialSnapshot({ stylesReady = Promise.resolve(), onShellReady =
     markStartup("coreSnapshotReady");
     const sessionRequest = requestSession();
     const testConfigRequest = requestLocalTestConfig();
-    const routeRequest = requestJson(routeStateUrl(route), { allowUnauthorized: true }).then(
+    const prefetchedRouteRequest = globalThis.__forNowRouteRequest;
+    delete globalThis.__forNowRouteRequest;
+    const routeRequest = Promise.resolve(prefetchedRouteRequest)
+      .then(value => value || requestJson(routeStateUrl(route), { allowUnauthorized: true }))
+      .then(
       value => ({ value }),
       error => ({ error })
     );
@@ -150,7 +162,11 @@ async function initialSnapshot({ stylesReady = Promise.resolve(), onShellReady =
 
 export async function startApplication() {
   let runtimeRequest;
-  const loadRuntime = () => (runtimeRequest ||= import("./runtime.mjs"));
+  const loadRuntime = () => {
+    const prefetchedRuntime = globalThis.__forNowRuntimeRequest;
+    delete globalThis.__forNowRuntimeRequest;
+    return runtimeRequest ||= prefetchedRuntime || import("./runtime.mjs");
+  };
   const stylesReady = loadR8Styles();
   const initial = await initialSnapshot({ stylesReady, onShellReady: loadRuntime });
   const runtime = await loadRuntime();
