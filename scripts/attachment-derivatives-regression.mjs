@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { AsyncLocalStorage } from "node:async_hooks";
+import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -144,6 +145,19 @@ try {
   assert.equal(sourceDerivatives.paths.originalPath, sources.paths.originalPath);
   assert.equal(sourceDerivatives.replacedPaths[0], sources.paths.alphaMaskPath);
   assert.equal(sourceDerivatives.attachmentPaths.length, 4);
+  assert.deepEqual(sourceDerivatives.source, {
+    original: {
+      bytes: original.length,
+      sha256: crypto.createHash("sha256").update(original).digest("hex")
+    },
+    alphaMask: {
+      bytes: mask.length,
+      sha256: crypto.createHash("sha256").update(mask).digest("hex")
+    }
+  });
+  for (const receipt of Object.values(sourceDerivatives.derivatives)) {
+    assert.match(receipt.sha256, /^[a-f0-9]{64}$/);
+  }
   for (const resourcePath of [
     ...sources.attachmentPaths,
     ...sourceDerivatives.attachmentPaths

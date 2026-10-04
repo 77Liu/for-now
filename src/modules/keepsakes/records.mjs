@@ -6,6 +6,7 @@ import { eventTimeFields } from "../../shared/time/index.mjs";
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 const pathValue = value => cleanAttachmentPaths([value])[0] || "";
 const derivativeKeys = ["thumbPath", "displayPath", "editPath", "alphaMaskPath"];
+const publicMediaKeys = ["cutoutPath", ...derivativeKeys];
 const requestDigest = value => crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const normalizeTags = values => {
   const tags = [], seen = new Set();
@@ -116,15 +117,45 @@ export function keepsakePayload(input, existing = null) {
   };
 }
 
+export function keepsakeMediaManifest(item) {
+  const originalPath = pathValue(item?.originalPath);
+  const publicPath = value => {
+    const resourcePath = pathValue(value);
+    return resourcePath && resourcePath !== originalPath ? resourcePath : "";
+  };
+  const firstPublicPath = (...values) => values.map(publicPath).find(Boolean) || "";
+  const listImagePath = firstPublicPath(item?.thumbPath, item?.cutoutPath);
+  const detailImagePath = firstPublicPath(item?.displayPath, item?.cutoutPath);
+  const backgroundPath = publicPath(item?.editPath);
+  const derivativeState = String(item?.derivativeState || "invalid");
+  const status = ["pending", "failed"].includes(derivativeState)
+    ? derivativeState
+    : listImagePath && detailImagePath
+      ? "ready"
+      : "unavailable";
+  return {
+    version: 1,
+    status,
+    originalAvailable: Boolean(originalPath),
+    retryable: status === "failed",
+    list: { imagePath: listImagePath, backgroundPath },
+    detail: { imagePath: detailImagePath, backgroundPath }
+  };
+}
+
 export function publicKeepsake(item) {
-  const { originalPath, requestHash, ...visible } = normalizeKeepsake(item, {
+  const normalized = normalizeKeepsake(item, {
     occurredAt: item.occurredAt,
     occurredOn: item.occurredOn
   });
+  const media = keepsakeMediaManifest(normalized);
+  const { originalPath, requestHash, previewPath, ...visible } = normalized;
   void requestHash;
-  return ["pending", "failed"].includes(visible.derivativeState)
-    ? { ...visible, previewPath: originalPath }
-    : visible;
+  void previewPath;
+  for (const key of publicMediaKeys) {
+    if (visible[key] === originalPath) visible[key] = "";
+  }
+  return { ...visible, media };
 }
 
 export function originalKeepsakeMedia(item) {

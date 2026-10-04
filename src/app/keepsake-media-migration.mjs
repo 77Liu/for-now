@@ -20,6 +20,10 @@ const planDigest = plan => sha256(JSON.stringify({
   accountId: plan.accountId,
   items: plan.items
 }));
+const mediaDigest = value => sha256(JSON.stringify({
+  source: value?.source || {},
+  derivatives: value?.derivatives || {}
+}));
 
 export function createKeepsakeMediaMigration({
   repository,
@@ -48,7 +52,13 @@ export function createKeepsakeMediaMigration({
           alphaMaskPath: item.cutoutPath,
           requirePrimaryStorage
         });
-        items.push({ ...base, status: "ready", source: preview.source, derivatives: preview.derivatives });
+        items.push({
+          ...base,
+          status: "ready",
+          mediaSha256: mediaDigest(preview),
+          source: preview.source,
+          derivatives: preview.derivatives
+        });
       } catch (error) {
         items.push({ ...base, status: "blocked", errorCode: errorCode(error) });
       }
@@ -91,6 +101,12 @@ export function createKeepsakeMediaMigration({
         });
         generatedPaths = Object.values(derived.paths || {})
           .filter(value => value && value !== planned.originalPath);
+        if (mediaDigest(derived) !== planned.mediaSha256) {
+          await attachments.discard(generatedPaths);
+          generatedPaths = [];
+          results.push({ id: planned.id, status: "conflicted", errorCode: "MIGRATION_MEDIA_CHANGED" });
+          continue;
+        }
         const updated = await repository.update(store => {
           const current = (store.keepsakes || []).find(item => item.id === planned.id);
           if (!current || !legacyCandidate(current)

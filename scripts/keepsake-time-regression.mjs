@@ -5,6 +5,7 @@ import { strictDateKey, localDateTimeOn, eventTimeFields, localDateKey } from ".
 import {
   normalizeKeepsake,
   keepsakePayload,
+  keepsakeMediaManifest,
   createKeepsakeRecords,
   publicKeepsake,
   originalKeepsakeMedia
@@ -106,7 +107,21 @@ assert.equal(pending.derivativeState, "pending");
 const publicPending = publicKeepsake(pending);
 assert.equal("originalPath" in publicPending, false);
 assert.equal("requestHash" in publicPending, false);
-assert.equal(publicPending.previewPath, pendingInput.originalPath);
+assert.equal("previewPath" in publicPending, false);
+assert.deepEqual(publicPending.media, {
+  version: 1,
+  status: "pending",
+  originalAvailable: true,
+  retryable: false,
+  list: { imagePath: "", backgroundPath: "" },
+  detail: { imagePath: "", backgroundPath: "" }
+});
+assert.equal(JSON.stringify(publicPending).includes(pendingInput.originalPath), false);
+const publicFailed = publicKeepsake({ ...pending, derivativeState: "failed", derivativeErrorCode: "DERIVATIVE_FAILED" });
+assert.equal(publicFailed.media.status, "failed");
+assert.equal(publicFailed.media.retryable, true);
+assert.equal(publicFailed.derivativeErrorCode, "DERIVATIVE_FAILED");
+assert.equal(JSON.stringify(publicFailed).includes(pendingInput.originalPath), false);
 const partial = keepsakePayload({ title: "修改" }, normalized).value;
 assert.equal(partial.originalPath, input.originalPath); assert.equal(partial.thumbPath, input.thumbPath);
 assert.equal(partial.displayPath, input.displayPath); assert.equal(partial.editPath, input.editPath);
@@ -120,8 +135,18 @@ assert.deepEqual(keepsakePayload({ title: "修改", tags: ["展览", "展览", "
 assert.equal(keepsakePayload({ title: "修改", backgroundOpacityPct: 0 }, normalized).value.backgroundOpacityPct, 0);
 assert.equal(keepsakePayload({ title: "修改", backgroundOpacityPct: 80 }, normalized).value.backgroundOpacityPct, 30);
 assert.equal(keepsakePayload({ ...input, edgeExpansion: 500 }).value.edgeExpansion, 20);
-assert.equal("originalPath" in publicKeepsake(normalized), false);
-assert.equal(publicKeepsake(normalized).displayPath, input.displayPath);
+const publicReady = publicKeepsake(normalized);
+assert.equal("originalPath" in publicReady, false);
+assert.equal(publicReady.displayPath, input.displayPath);
+assert.deepEqual(publicReady.media, {
+  version: 1,
+  status: "ready",
+  originalAvailable: true,
+  retryable: false,
+  list: { imagePath: input.thumbPath, backgroundPath: input.editPath },
+  detail: { imagePath: input.displayPath, backgroundPath: input.editPath }
+});
+assert.deepEqual(keepsakeMediaManifest(normalized), publicReady.media);
 assert.deepEqual(originalKeepsakeMedia(normalized), { originalPath: input.originalPath });
 const legacy = normalizeKeepsake({
   id: "legacy", title: "旧小物", occurredAt: originalTime,
@@ -131,6 +156,26 @@ assert.equal(legacy.derivativeState, "legacy");
 assert.equal(legacy.thumbPath, "/attachments/legacy-cutout.png");
 assert.equal(legacy.displayPath, "/attachments/legacy-cutout.png");
 assert.equal(publicKeepsake(legacy).originalPath, undefined);
+assert.deepEqual(publicKeepsake(legacy).media, {
+  version: 1,
+  status: "ready",
+  originalAvailable: true,
+  retryable: false,
+  list: { imagePath: "/attachments/legacy-cutout.png", backgroundPath: "" },
+  detail: { imagePath: "/attachments/legacy-cutout.png", backgroundPath: "" }
+});
+const aliasedOriginal = publicKeepsake(normalizeKeepsake({
+  id: "aliased", title: "路径别名", occurredAt: originalTime,
+  originalPath: "/attachments/shared.png",
+  cutoutPath: "/attachments/shared.png",
+  thumbPath: "/attachments/shared.png",
+  displayPath: "/attachments/shared.png",
+  editPath: "/attachments/shared.png",
+  alphaMaskPath: "/attachments/shared.png"
+}, eventTime));
+assert.equal(JSON.stringify(aliasedOriginal).includes("/attachments/shared.png"), false);
+assert.equal(aliasedOriginal.media.status, "unavailable");
+assert.equal(aliasedOriginal.media.originalAvailable, true);
 
 let httpResponse, httpCreateOptions, retriedKeepsakeId = "";
 const keepsakeHttp = createKeepsakeHttp({
@@ -156,6 +201,7 @@ const keepsakeHttp = createKeepsakeHttp({
 await keepsakeHttp.handle({ method: "POST", body: input }, {}, new URL("http://local/api/keepsakes"));
 assert.equal(httpResponse.status, 201);
 assert.equal("originalPath" in httpResponse.value, false);
+assert.deepEqual(httpResponse.value.media, publicReady.media);
 await keepsakeHttp.handle({ method: "POST", headers: { "idempotency-key": "keepsake-http-1" }, body: input }, {}, new URL("http://local/api/keepsakes"));
 assert.equal(httpResponse.status, 200);
 assert.deepEqual(httpCreateOptions, { clientRequestId: "keepsake-http-1" });

@@ -51,24 +51,25 @@ const previews = [];
 const derivations = [];
 const discarded = [];
 let generated = 0;
+const mediaReceipt = () => ({
+  source: {
+    original: { bytes: 4000, sha256: "a".repeat(64) },
+    alphaMask: { bytes: 1000, sha256: "b".repeat(64) }
+  },
+  derivatives: {
+    thumb: { bytes: 100, width: 100, height: 80, quality: 80, sha256: "c".repeat(64) },
+    display: { bytes: 200, width: 200, height: 160, quality: 84, sha256: "d".repeat(64) },
+    edit: { bytes: 250, width: 200, height: 160, quality: 84, sha256: "e".repeat(64) },
+    alphaMask: { bytes: 50, width: 200, height: 160, quality: 90, sha256: "f".repeat(64) }
+  }
+});
 const attachments = {
   async previewKeepsakeSet(input) {
     previews.push(clone(input));
     if (input.originalPath.includes("blocked")) {
       throw Object.assign(new Error("mask mismatch"), { code: "ALPHA_MASK_DIMENSION_MISMATCH" });
     }
-    return {
-      source: {
-        original: { bytes: 4000, sha256: "a".repeat(64) },
-        alphaMask: { bytes: 1000, sha256: "b".repeat(64) }
-      },
-      derivatives: {
-        thumb: { bytes: 100, width: 100, height: 80, quality: 80, sha256: "c".repeat(64) },
-        display: { bytes: 200, width: 200, height: 160, quality: 84, sha256: "d".repeat(64) },
-        edit: { bytes: 250, width: 200, height: 160, quality: 84, sha256: "e".repeat(64) },
-        alphaMask: { bytes: 50, width: 200, height: 160, quality: 90, sha256: "f".repeat(64) }
-      }
-    };
+    return mediaReceipt();
   },
   async deriveKeepsakeSet(input) {
     derivations.push(clone(input));
@@ -81,7 +82,8 @@ const attachments = {
         displayPath: `${prefix}-display.webp`,
         editPath: `${prefix}-edit.webp`,
         alphaMaskPath: `${prefix}-mask.webp`
-      }
+      },
+      ...mediaReceipt()
     };
   },
   async discard(paths) {
@@ -111,6 +113,7 @@ assert.equal(plan.items[0].id, "legacy-a");
 assert.equal(plan.items[0].version, 2);
 assert.equal(plan.items[0].mediaVersion, 0);
 assert.match(plan.planSha256, /^[a-f0-9]{64}$/);
+assert.match(plan.items[0].mediaSha256, /^[a-f0-9]{64}$/);
 assert.equal(JSON.stringify(plan).includes("private-legacy-a"), false, "plan must not expose keepsake text");
 assert.deepEqual(previews[0], {
   originalPath: "/attachments/legacy-a-original.png",
@@ -175,6 +178,30 @@ assert.deepEqual(conflicted.summary, { migrated: 0, conflicted: 1, failed: 0 });
 assert.equal(discarded.length, 1);
 assert.equal(discarded[0].length, 4, "a conflicted record must discard every generated derivative");
 assert.equal(conflictRepository.snapshot().keepsakes[0].derivativeState, "legacy");
+assert.equal(discarded[0].includes("/attachments/conflict-original.png"), false);
+
+const sourceDriftRepository = repositoryFor({ keepsakes: [legacy("source-drift")] });
+const sourceDriftMigration = createKeepsakeMediaMigration({
+  repository: sourceDriftRepository,
+  attachments: {
+    ...attachments,
+    async deriveKeepsakeSet(input) {
+      const derived = await attachments.deriveKeepsakeSet(input);
+      derived.source.original.sha256 = "9".repeat(64);
+      return derived;
+    }
+  },
+  accountId: "account-d"
+});
+const sourceDriftPlan = await sourceDriftMigration.plan();
+const sourceDrift = await sourceDriftMigration.apply(sourceDriftPlan, {
+  expectedPlanSha256: sourceDriftPlan.planSha256
+});
+assert.deepEqual(sourceDrift.summary, { migrated: 0, conflicted: 1, failed: 0 });
+assert.equal(sourceDrift.results[0].errorCode, "MIGRATION_MEDIA_CHANGED");
+assert.equal(sourceDriftRepository.updates(), 0, "source drift must stop before a repository write");
+assert.equal(sourceDriftRepository.snapshot().keepsakes[0].derivativeState, "legacy");
+assert.equal(discarded.at(-1).includes("/attachments/source-drift-original.png"), false);
 
 const cliRoot = await fs.mkdtemp(path.join(os.tmpdir(), "keepsake-media-dry-run-"));
 try {
@@ -254,6 +281,7 @@ try {
     assert.match(updatedKeepsake[key], /^\/attachments\/.+\.webp$/);
     await fs.access(path.join(attachmentsDir, path.basename(updatedKeepsake[key])));
   }
+  await fs.access(path.join(attachmentsDir, "legacy-original.jpg"));
   await fs.access(path.join(attachmentsDir, "legacy-mask.png"));
 } finally {
   await fs.rm(cliRoot, { recursive: true, force: true });

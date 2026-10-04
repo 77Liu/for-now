@@ -5,6 +5,7 @@ export {
   normalizeKeepsake,
   keepsakeImageCandidates,
   keepsakePayload,
+  keepsakeMediaManifest,
   createKeepsakeRecords,
   publicKeepsake,
   originalKeepsakeMedia

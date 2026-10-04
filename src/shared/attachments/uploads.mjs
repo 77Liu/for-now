@@ -8,6 +8,16 @@ import { createKeepsakeImageDerivatives } from "./derivatives.mjs";
 export const cleanupTemporaryFiles = files => Promise.all(files.map(file => fs.unlink(file).catch(() => {})));
 const TTS_AUDIO_MAX_BYTES = 16 * 1024 * 1024;
 const ASR_AUDIO_MAX_BYTES = 24 * 1024 * 1024;
+const binaryReceipt = data => ({
+  bytes: data.length,
+  sha256: crypto.createHash("sha256").update(data).digest("hex")
+});
+const derivativeReceipts = derivatives => Object.fromEntries(
+  Object.entries(derivatives).map(([kind, { data, ...metadata }]) => [
+    kind,
+    { ...metadata, ...binaryReceipt(data) }
+  ])
+);
 
 // Context and inventory are injected so neither account lookup nor a concrete
 // repository leaks into the storage module.
@@ -269,7 +279,11 @@ export function createImageAttachments({
         alphaMaskPath: derivedAlphaMaskPath
       },
       replacedPaths: alphaMaskPath ? [alphaMaskPath] : [],
-      derivatives: Object.fromEntries(Object.entries(derivatives).map(([kind, { data, ...metadata }]) => [kind, metadata]))
+      source: {
+        original: binaryReceipt(original),
+        alphaMask: binaryReceipt(alphaMask)
+      },
+      derivatives: derivativeReceipts(derivatives)
     };
   }
 
@@ -296,19 +310,10 @@ export function createImageAttachments({
     const derivatives = await deriveKeepsakeImages({ original, alphaMask });
     return {
       source: {
-        original: {
-          bytes: original.length,
-          sha256: crypto.createHash("sha256").update(original).digest("hex")
-        },
-        alphaMask: {
-          bytes: alphaMask.length,
-          sha256: crypto.createHash("sha256").update(alphaMask).digest("hex")
-        }
+        original: binaryReceipt(original),
+        alphaMask: binaryReceipt(alphaMask)
       },
-      derivatives: Object.fromEntries(Object.entries(derivatives).map(([kind, { data, ...metadata }]) => [
-        kind,
-        { ...metadata, sha256: crypto.createHash("sha256").update(data).digest("hex") }
-      ]))
+      derivatives: derivativeReceipts(derivatives)
     };
   }
 
