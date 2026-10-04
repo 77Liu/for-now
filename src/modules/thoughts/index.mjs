@@ -57,7 +57,6 @@ const chainSearchText = (root, blocks) => normalizedSearchText([
     : []),
   ...blocks.flatMap(item => [
     item?.content,
-    item?.modelDraft,
     ...(Array.isArray(item?.tags) ? item.tags : [])
   ])
 ].filter(Boolean).join(" "));

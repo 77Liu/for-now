@@ -428,7 +428,7 @@ assert.doesNotMatch(
 assert.equal((await projectionService.listChains({ query: "搜索标签 备注搜索词" })).items[0].id, "projection-root-0");
 assert.equal((await projectionService.listChains({ query: "追问搜索词" })).items[0].id, "projection-root-0");
 const modelDraftSearch = await projectionService.listChains({ query: "PRIVATE_MODEL_DRAFT_0" });
-assert.equal(modelDraftSearch.items[0].id, "projection-root-0");
+assert.deepEqual(modelDraftSearch.items, []);
 assert.doesNotMatch(JSON.stringify(modelDraftSearch), /PRIVATE_MODEL_DRAFT_0/);
 
 const searchedFirstPage = await projectionService.listChains({ limit: 2, query: "共同 主题" });
