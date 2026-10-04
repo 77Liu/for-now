@@ -1098,10 +1098,14 @@
         <div class="settings-heading"><div><h2>回答与语音</h2><p>每个场景的思考强度、回答风格和语音速度分别生效。</p></div><span class="connection-badge" id="llm-key-state" data-owner-capability="ai-configuration">未配置密钥</span></div>
         <section class="settings-section">
           <div class="settings-section-heading"><h3>语音生成</h3><p>账户默认值；已生成音频的播放倍速可单独调整。</p></div>
-          <label class="field speech-voice-default">
-            <span>默认音色</span>
-            <select id="tts-default-voice" aria-label="账户默认音色"></select>
-          </label>
+          <div class="field speech-voice-default">
+            <label for="tts-default-voice">默认音色</label>
+            <div class="speech-voice-control">
+              <select id="tts-default-voice" aria-label="账户默认音色"></select>
+              <button id="tts-voice-preview" type="button" aria-label="播放所选官方音色试音" title="播放所选官方音色试音"><span aria-hidden="true">▶</span></button>
+            </div>
+            <small id="tts-voice-preview-status" role="status" aria-live="polite"></small>
+          </div>
           <label class="field speech-generation-default">
             <span>默认生成语速 <output id="tts-generation-rate-value" for="tts-generation-rate">0.90×</output></span>
             <input id="tts-generation-rate" type="range" min="-50" max="100" step="5" value="-10" aria-label="默认生成语速" aria-valuetext="0.90倍">

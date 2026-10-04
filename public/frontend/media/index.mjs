@@ -21,6 +21,7 @@ export const TTS_GENERATION_RATE_MIN = -50;
 export const TTS_GENERATION_RATE_MAX = 100;
 export const TTS_GENERATION_RATE_DEFAULT = -10;
 export const TTS_PLAYBACK_RATES = Object.freeze([0.5, 0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.5, 2]);
+export const SPEECH_SOURCE_TYPES = Object.freeze(["capture", "thoughtAnswer"]);
 const AUDIO_MIME_ALIASES = Object.freeze({ "audio/x-m4a": "audio/mp4", "audio/x-wav": "audio/wav" });
 const AUDIO_PATH = /^\/attachments\/[\w.-]+\.(?:m4a|mp4|webm|ogg|wav)$/i;
 const AUDIO_MIME_BY_EXTENSION = Object.freeze({
@@ -52,6 +53,54 @@ export function normalizeTtsGenerationRate(value, fallback = TTS_GENERATION_RATE
   return Number.isFinite(rate)
     ? Math.min(TTS_GENERATION_RATE_MAX, Math.max(TTS_GENERATION_RATE_MIN, Math.round(rate)))
     : normalizedFallback;
+}
+
+export function speechSourceIdentity(sourceType, sourceId, sourceVersion) {
+  const type = String(sourceType || "");
+  const id = String(sourceId || "");
+  const version = Math.max(0, Math.round(Number(sourceVersion) || 0));
+  if (!SPEECH_SOURCE_TYPES.includes(type) || !id || !version) return "";
+  return JSON.stringify([type, id, version]);
+}
+
+export function speechAssetForSource(assets, { sourceType, sourceId, sourceVersion } = {}) {
+  const identity = speechSourceIdentity(sourceType, sourceId, sourceVersion);
+  if (!identity) return null;
+  const matches = (Array.isArray(assets) ? assets : []).filter(asset => (
+    speechSourceIdentity(asset?.sourceType, asset?.sourceId, asset?.sourceVersion) === identity
+    && String(asset?.id || "")
+  ));
+  return matches.sort((left, right) => (
+    String(right.createdAt || "").localeCompare(String(left.createdAt || ""))
+    || String(right.id).localeCompare(String(left.id))
+  ))[0] || null;
+}
+
+export function speechAudioPath(asset = {}) {
+  const sourceType = String(asset?.sourceType || "");
+  const sourceId = String(asset?.sourceId || "");
+  const assetId = String(asset?.id || "");
+  if (!SPEECH_SOURCE_TYPES.includes(sourceType) || !sourceId || !assetId) return "";
+  const query = new URLSearchParams({ sourceType, sourceId, assetId });
+  return `/api/speech/audio?${query}`;
+}
+
+export function speechSynthesisPayload({ sourceType, sourceId, sourceVersion, regenerate = false } = {}) {
+  if (!speechSourceIdentity(sourceType, sourceId, sourceVersion)) {
+    throw new Error("语音来源无效");
+  }
+  return {
+    sourceType: String(sourceType),
+    sourceId: String(sourceId),
+    sourceVersion: Math.max(1, Math.round(Number(sourceVersion))),
+    regenerate: regenerate === true
+  };
+}
+
+export function speechPreviewPayload(voice) {
+  const value = String(voice || "").trim();
+  if (!value) throw new Error("请选择试音音色");
+  return { voice: value };
 }
 
 export function validatedAudioBlob(blob, durationMs, {

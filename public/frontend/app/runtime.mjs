@@ -57,12 +57,16 @@ import {
   captureAudioIdentity,
   captureAudioPresentation,
   captureRecordPayload,
-  captureSpeechIdentity,
   createIndexedDbMediaDraftStore,
   imageRecordPayload,
   imageUnderstandingPayload,
   normalizeTtsGenerationRate,
   preferredRecorderMime,
+  speechAssetForSource,
+  speechAudioPath,
+  speechPreviewPayload,
+  speechSourceIdentity,
+  speechSynthesisPayload,
   uploadPendingMediaItems,
   uploadOriginalAudio,
   uploadOriginalImages,
@@ -120,7 +124,7 @@ const feedSearchQueries={captures:"",journals:"",thoughts:"",books:"",keepsakes:
 let notificationRetryingTaskIds=[],keepsakeDraftTags=[];
 let annotationUiDrafts={};
 const expandedLongContentKeys=new Set();
-let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeKeepsakeId="",homeEditorTrigger=null,activeSpeechCaptureId="",activeSpeechSourceKey="",activeSpeechVoice="",activeSpeechPlaybackRate=1,activeSpeechAudio=null,activeSpeechObjectUrl="",activeSpeechAbortController=null;
+let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeKeepsakeId="",homeEditorTrigger=null,activePageAudio=null,voicePreviewAudio=null,voicePreviewObjectUrl="",voicePreviewAbortController=null,voicePreviewVoice="";
 const keepsakeEditor={file:null,sourceDataUrl:"",sourceImage:null,sourceCanvas:null,maskCanvas:null,autoBase:null,history:[],mode:"keep",drawing:false,lastPoint:null,source:"manual",originalPath:"",cutoutPath:"",mediaDirty:false,renderFrame:0,segmentSerial:0,understandingSerial:0};
 const keepsakeBatch={items:[],activeIndex:0,loading:false};
 let keepsakeBatchPreviewUrls=[],keepsakeBatchPersistTimer=0,keepsakeDerivativeRefreshTimer=0;
@@ -1727,9 +1731,16 @@ function setLongContentExpanded(key,expanded){if(!key)return;if(expanded)expande
 function thoughtBlockBody(content,expandKey){
   return `<div class="thought-block-content-frame"><div class="thought-block-content markdown-content">${renderMarkdown(content||"")}</div></div><button class="thought-block-expand" type="button" data-thought-block-expand data-expand-key="${escapeHtml(expandKey)}" aria-expanded="false" hidden><span>展开全文</span><i aria-hidden="true">⌄</i></button>`
 }
+function speechAssetControlsMarkup({sourceType,sourceId,sourceVersion,label}){
+  if(!state.speech?.configured||!speechSourceIdentity(sourceType,sourceId,sourceVersion))return"";
+  const asset=speechAssetForSource(state.speech.assets,{sourceType,sourceId,sourceVersion}),path=speechAudioPath(asset),sourceLabel=String(label||"文字朗读"),voiceLabel=(state.speech.voices||[]).find(item=>item.id===asset?.voice)?.label||"",rateOptions=TTS_PLAYBACK_RATES.map(rate=>`<option value="${rate}" ${rate===1?"selected":""}>${rate.toFixed(1)}×</option>`).join("");
+  const player=asset&&path?`<div class="capture-speech-player speech-asset-player"><audio controls preload="metadata" src="${escapeHtml(appUrl(path))}" data-speech-player="${escapeHtml(asset.id)}" aria-label="${escapeHtml(`${sourceLabel}播放器`)}"></audio><span>${escapeHtml(voiceLabel?`${sourceLabel} · ${voiceLabel}`:sourceLabel)}</span></div>`:"";
+  return `<section class="speech-asset-controls" data-speech-source-type="${escapeHtml(sourceType)}" data-speech-source-id="${escapeHtml(sourceId)}" data-speech-source-version="${Number(sourceVersion)||1}">${player}<div class="capture-speech-actions speech-asset-actions"><button type="button" data-speech-synthesize data-speech-regenerate="${asset?"true":"false"}" aria-label="${escapeHtml(`${asset?"重新生成":"生成"}${sourceLabel}`)}">${asset?"重新生成":"生成"}</button><label><span>播放倍速</span><select data-speech-playback-rate aria-label="${escapeHtml(`${sourceLabel}播放倍速`)}">${rateOptions}</select></label></div><p class="speech-asset-status" role="status" aria-live="polite"></p></section>`
+}
 function thoughtContentBlock(item,question){
   const ai=item.authorType==="ai"||/^(?:deepseek|codex)/.test(item.origin||"")||Boolean(item.reasoningContent),labels={idea:"初步想法",record:"记录",answer:ai?"应答":"我的回答"},label=labels[item.type]||"内容",source=ai?"":"用户原文";
-  return `<article class="thought-content-block ${ai?"ai":""}" data-thought-block-id="${item.id}"><header><div><b>${label}</b>${source?`<span>${source}</span>`:""}${item.generation?`<small>第 ${item.generation} 次</small>`:""}</div><time>${formatDate(eventTimestamp(item))}</time></header>${contextReceiptMarkup(item.contextReceipt)}${thoughtBlockBody(item.content||item.modelDraft||"",`thought:${question.id}:block:${item.id}`)}${contentImagesMarkup(item,"thoughtBlock")}${item.modelDraft&&item.editedFromModel?`<small class="edit-signal">${item.content?"由 AI 草稿修改后保留":"未保留 AI 草稿"}</small>`:""}<footer><span>版本 ${item.version||1}</span><div><button class="subtle-action" type="button" data-thought-block-edit="${item.id}" data-root-id="${question.id}">编辑</button><button class="subtle-action danger" type="button" data-thought-block-delete="${item.id}" data-root-id="${question.id}">删除</button></div></footer></article>`
+  const speechControls=ai&&item.type==="answer"?speechAssetControlsMarkup({sourceType:"thoughtAnswer",sourceId:item.id,sourceVersion:item.version||1,label:"AI 回答文字朗读"}):"";
+  return `<article class="thought-content-block ${ai?"ai":""}" data-thought-block-id="${item.id}"><header><div><b>${label}</b>${source?`<span>${source}</span>`:""}${item.generation?`<small>第 ${item.generation} 次</small>`:""}</div><time>${formatDate(eventTimestamp(item))}</time></header>${contextReceiptMarkup(item.contextReceipt)}${thoughtBlockBody(item.content||item.modelDraft||"",`thought:${question.id}:block:${item.id}`)}${contentImagesMarkup(item,"thoughtBlock")}${speechControls}${item.modelDraft&&item.editedFromModel?`<small class="edit-signal">${item.content?"由 AI 草稿修改后保留":"未保留 AI 草稿"}</small>`:""}<footer><span>版本 ${item.version||1}</span><div><button class="subtle-action" type="button" data-thought-block-edit="${item.id}" data-root-id="${question.id}">编辑</button><button class="subtle-action danger" type="button" data-thought-block-delete="${item.id}" data-root-id="${question.id}">删除</button></div></footer></article>`
 }
 function thoughtFollowUpBlock(followUp,question,index){
   const pending=pendingAiTask("followUpAnswer",question.id,followUp.id);
@@ -1775,6 +1786,7 @@ function unavailableThoughtRouteMarkup(result){
   return `<section class="empty content-state route-unavailable" role="status" data-route-result="unavailable" data-route-error-code="${escapeHtml(error.code||"RESOURCE_UNAVAILABLE")}" data-route-resource-type="${escapeHtml(details.resourceType||"thought-chain")}"><strong>${escapeHtml(error.message||"这条思绪已不可用")}</strong><p>它可能已被删除，或当前账户无法访问。旧内容不会在这里显示，下面仍是当前可用的思绪列表。</p><button class="quiet-button content-state-action" type="button" data-content-action="dismiss-route-result">继续查看思绪列表</button></section>`
 }
 function applyApplicationRoute(route){
+  stopPageAudio();
   activeRouteResult=route.result||null;
   if(route.view==="thoughts"){
     thoughtFilter=route.query?.tag||"all";
@@ -1828,13 +1840,18 @@ function renderThoughts(extraOpen={}){
   if(focusTarget)requestAnimationFrame(()=>focusTarget.isConnected&&focusTarget.focus({preventScroll:true}))
 }
 
+function captureDerivedTranscription(label,text,lines,kind){
+  if(!text)return"";
+  return `<section class="capture-transcription ${escapeHtml(kind)} speech-text-layer" data-speech-text-lines="${lines}" data-speech-text-label="${escapeHtml(label)}" style="--speech-text-lines:${lines}"><small>${escapeHtml(label)}</small><div class="speech-text-frame"><div class="markdown-content">${renderMarkdown(text)}</div></div><button type="button" class="speech-text-expand" data-speech-text-expand aria-expanded="false" aria-label="${escapeHtml(`展开${label}`)}" hidden>展开</button></section>`
+}
 function captureAudioMarkup(item){
-  const audio=item.audio,transcription=item.transcription||null,speech=transcription?.polishedText||transcription?.rawText||plainPreview(item.content||"");
+  const audio=item.audio,transcription=item.transcription||null,speech=transcription?.condensedText||transcription?.polishedText||transcription?.rawText||plainPreview(item.content||"");
   if(!audio&&!speech)return"";
   const presentation=captureAudioPresentation(item,state.speech,state.aiTasks);
   const layers=[
-    transcription?.rawText?`<div class="capture-transcription"><small>转写原文</small><p>${escapeHtml(transcription.rawText)}</p></div>`:"",
-    transcription?.polishedText?`<div class="capture-transcription polished"><small>AI 整理稿</small><div class="markdown-content">${renderMarkdown(transcription.polishedText)}</div></div>`:""
+    transcription?.rawText?`<details class="capture-transcription capture-transcription-raw"><summary>原始转写</summary><div class="markdown-content">${renderMarkdown(transcription.rawText)}</div></details>`:"",
+    captureDerivedTranscription("AI 整理稿",transcription?.polishedText,2,"polished"),
+    captureDerivedTranscription("AI 凝练压缩总结稿",transcription?.condensedText,6,"condensed")
   ].join("");
   let transcriptionState="";
   if(presentation.transcriptionMessage){
@@ -1843,76 +1860,51 @@ function captureAudioMarkup(item){
       :"";
     transcriptionState=`<p class="capture-transcription-state ${presentation.transcriptionStatus==="failed"?"error":""}" data-transcription-task-id="${escapeHtml(presentation.transcriptionTaskId)}">${escapeHtml(presentation.transcriptionMessage)}${action}</p>`;
   }
-  const voice=accountTtsVoice(),speechKey=captureSpeechIdentity(item,voice);
-  const selectedRate=activeSpeechCaptureId===item.id&&activeSpeechSourceKey===speechKey?activeSpeechPlaybackRate:1,rateOptions=TTS_PLAYBACK_RATES.map(rate=>`<option value="${rate}" ${rate===selectedRate?"selected":""}>${rate.toFixed(1)}×</option>`).join("");
-  const hasSpeechSource=activeSpeechCaptureId===item.id&&Boolean(activeSpeechSourceKey&&activeSpeechObjectUrl),playerKey=hasSpeechSource?activeSpeechSourceKey:speechKey;
-  const speechPlayer=speech&&state.speech?.configured?`<div class="capture-speech-player" ${hasSpeechSource?"":"hidden"}><audio controls preload="metadata" data-capture-speech-player="${escapeHtml(item.id)}" data-capture-speech-key="${escapeHtml(playerKey)}" aria-label="文字朗读播放器"></audio><span>文字朗读</span></div><div class="capture-speech-actions"><button type="button" class="capture-speak-button" data-capture-speak="${escapeHtml(item.id)}" data-capture-speech-key="${escapeHtml(speechKey)}">${hasSpeechSource?"重新生成":"生成"}</button><label><span>播放倍速</span><select data-capture-playback-rate="${escapeHtml(item.id)}" aria-label="播放倍速">${rateOptions}</select></label></div>`:"";
-  return `<section class="capture-audio-record" data-capture-audio-key="${escapeHtml(presentation.audioKey)}" data-transcription-task-id="${escapeHtml(presentation.transcriptionTaskId)}">${audio?`<div class="capture-audio-source" data-capture-audio-key="${escapeHtml(presentation.audioKey)}"><audio controls preload="metadata" src="${escapeHtml(appUrl(audio.attachmentPath))}"></audio><span>${formatAudioDuration(audio.durationMs)} · <b class="capture-audio-playback-state">${escapeHtml(presentation.audioStatus)}</b></span></div>`:""}${layers}${transcriptionState}${speechPlayer}</section>`
+  const speechControls=speech?speechAssetControlsMarkup({sourceType:"capture",sourceId:item.id,sourceVersion:item.version||1,label:"捕念文字朗读"}):"";
+  return `<section class="capture-audio-record" data-capture-audio-key="${escapeHtml(presentation.audioKey)}" data-transcription-task-id="${escapeHtml(presentation.transcriptionTaskId)}">${audio?`<div class="capture-audio-source" data-capture-audio-key="${escapeHtml(presentation.audioKey)}"><audio controls preload="metadata" src="${escapeHtml(appUrl(audio.attachmentPath))}" aria-label="捕念原始录音播放器"></audio><span>${formatAudioDuration(audio.durationMs)} · <b class="capture-audio-playback-state">${escapeHtml(presentation.audioStatus)}</b></span></div>`:""}${layers}${transcriptionState}${speechControls}</section>`
 }
-function clearCaptureSpeechPlayer(player){
-  if(!player)return;player.pause();player.removeAttribute("src");player.load();
-  const container=player.closest(".capture-speech-player"),button=player.closest("[data-capture-id]")?.querySelector("[data-capture-speak]");
-  if(container)container.hidden=true;if(button)button.textContent="生成";requestAnimationFrame(syncCaptureOverflow)
+function pausePageAudio(audio,{rewind=true}={}){
+  if(!audio)return;
+  try{audio.pause()}catch{}
+  if(rewind)try{audio.currentTime=0}catch{}
 }
-function bindCaptureSpeechPlayer(){
-  if(!activeSpeechCaptureId||!activeSpeechSourceKey||!activeSpeechObjectUrl)return null;
-  const card=document.querySelector(`[data-capture-id="${CSS.escape(activeSpeechCaptureId)}"]`),player=card?.querySelector("[data-capture-speech-player]");
-  if(!player)return null;
-  if(activeSpeechAudio&&activeSpeechAudio!==player)clearCaptureSpeechPlayer(activeSpeechAudio);
-  activeSpeechAudio=player;player.dataset.captureSpeechKey=activeSpeechSourceKey;
-  if(player.getAttribute("src")!==activeSpeechObjectUrl){clearCaptureSpeechPlayer(player);player.src=activeSpeechObjectUrl;player.load()}
-  player.playbackRate=activeSpeechPlaybackRate;player.closest(".capture-speech-player").hidden=false;
-  const button=card.querySelector("[data-capture-speak]");if(button)button.textContent="重新生成";
-  return player
+function syncVoicePreviewButton(){
+  const button=$("#tts-voice-preview");if(!button)return;
+  const playing=Boolean(voicePreviewAudio&&!voicePreviewAudio.paused);
+  button.disabled=Boolean(voicePreviewAbortController);
+  button.setAttribute("aria-label",playing?"停止官方音色试音":"播放所选官方音色试音");
+  button.title=button.getAttribute("aria-label");
+  const icon=button.querySelector("[aria-hidden]");if(icon)icon.textContent=playing?"■":"▶"
 }
-function stopCaptureSpeech(){
-  activeSpeechAbortController?.abort();activeSpeechAbortController=null;
-  const players=new Set([activeSpeechAudio,...document.querySelectorAll("[data-capture-speech-player]")]);
-  for(const player of players)if(player&&(player===activeSpeechAudio||activeSpeechObjectUrl&&[player.getAttribute("src"),player.src,player.currentSrc].includes(activeSpeechObjectUrl)))clearCaptureSpeechPlayer(player);
-  if(activeSpeechObjectUrl)URL.revokeObjectURL(activeSpeechObjectUrl);
-  activeSpeechAudio=null;activeSpeechObjectUrl="";activeSpeechCaptureId="";activeSpeechSourceKey="";activeSpeechVoice="";activeSpeechPlaybackRate=1
+function stopVoicePreview({clearStatus=false}={}){
+  voicePreviewAbortController?.abort();voicePreviewAbortController=null;
+  const audio=voicePreviewAudio;voicePreviewAudio=null;voicePreviewVoice="";
+  if(audio){pausePageAudio(audio);try{audio.removeAttribute("src");audio.load()}catch{}}
+  if(activePageAudio===audio)activePageAudio=null;
+  if(voicePreviewObjectUrl)URL.revokeObjectURL(voicePreviewObjectUrl);
+  voicePreviewObjectUrl="";
+  if(clearStatus&&$("#tts-voice-preview-status"))$("#tts-voice-preview-status").textContent="";
+  syncVoicePreviewButton()
 }
-async function speakCapture(id,voice,sourceKey,playbackRate=1){
-  const item=(state.captures||[]).find(value=>value.id===id),text=item?.transcription?.polishedText||item?.transcription?.rawText||plainPreview(item?.content||"");
-  const expectedSourceKey=captureSpeechIdentity(item,voice),rate=normalizeTtsPlaybackRate(playbackRate);
-  if(!text||!expectedSourceKey||sourceKey!==expectedSourceKey)return;
-  stopCaptureSpeech();const controller=new AbortController();activeSpeechAbortController=controller;activeSpeechCaptureId=id;activeSpeechSourceKey=sourceKey;activeSpeechVoice=voice;activeSpeechPlaybackRate=rate;
-  let audio=null;
-  try{
-    const blob=await apiClient.requestBlob("/api/speech/synthesize",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({captureId:id,sourceVersion:item.version}),signal:controller.signal},{fallback:"语音合成失败"});
-    const current=(state.captures||[]).find(value=>value.id===id);
-    if(activeSpeechCaptureId!==id||activeSpeechSourceKey!==sourceKey||controller.signal.aborted||captureSpeechIdentity(current,voice)!==sourceKey)return;
-    if(activeSpeechAbortController===controller)activeSpeechAbortController=null;
-    activeSpeechObjectUrl=URL.createObjectURL(blob);audio=bindCaptureSpeechPlayer();
-    if(!audio){stopCaptureSpeech();return}
-    audio.addEventListener("error",()=>{if(activeSpeechAudio===audio)showToast("合成音频暂时无法播放，音源仍保留在当前卡片。","error")},{once:true})
-  }catch(error){
-    if(controller.signal.aborted||activeSpeechSourceKey!==sourceKey)return;
-    if(error.name!=="AbortError"){
-      stopCaptureSpeech();showToast(presentError(error,{
-        operation:"生成文字朗读",
-        object:"这次文字朗读",
-        phase:"文字朗读生成",
-        retained:"原音和文字记录没有变化"
-      }).message,"error")
-    }
-    return
-  }
-  try{await audio.play()}
-  catch(error){
-    if(activeSpeechAudio!==audio||activeSpeechSourceKey!==sourceKey)return;
-    showToast(presentError(error,{
-      operation:"播放文字朗读",
-      object:"这次文字朗读",
-      phase:"文字朗读播放",
-      retained:"合成语音已经保留在当前卡片"
-    }).message,"error")
-  }
+function claimPageAudio(audio){
+  if(!audio||activePageAudio===audio)return;
+  const previous=activePageAudio;
+  if(previous===voicePreviewAudio)stopVoicePreview();
+  else pausePageAudio(previous);
+  activePageAudio=audio
 }
-function reconcileCaptureSpeech(){
-  if(!activeSpeechCaptureId||!activeSpeechSourceKey)return;
-  const current=(state.captures||[]).find(value=>value.id===activeSpeechCaptureId);
-  if(captureSpeechIdentity(current,activeSpeechVoice)!==activeSpeechSourceKey)stopCaptureSpeech()
+function stopPageAudio(){
+  const active=activePageAudio;activePageAudio=null;
+  if(active&&active!==voicePreviewAudio)pausePageAudio(active);
+  stopVoicePreview({clearStatus:true});
+  document.querySelectorAll("audio").forEach(audio=>pausePageAudio(audio))
+}
+function syncSpeechTextOverflow(root=document){
+  root.querySelectorAll("[data-speech-text-lines]").forEach(layer=>{
+    const frame=layer.querySelector(".speech-text-frame"),content=frame?.firstElementChild,button=layer.querySelector("[data-speech-text-expand]");if(!frame||!content||!button)return;
+    const expanded=layer.classList.contains("is-expanded"),lines=Math.max(1,Number(layer.dataset.speechTextLines)||1),lineHeight=parseFloat(getComputedStyle(content).lineHeight)||20,limit=lines*lineHeight,overflows=frame.scrollHeight>limit+1;
+    layer.classList.toggle("is-collapsible",overflows);layer.classList.toggle("is-expanded",overflows&&expanded);button.hidden=!overflows;button.textContent=overflows&&expanded?"收起":"展开";button.setAttribute("aria-expanded",String(overflows&&expanded));button.setAttribute("aria-label",`${overflows&&expanded?"收起":"展开"}${layer.dataset.speechTextLabel||"文稿"}`)
+  })
 }
 function captureCard(item,showDate=true){
   const tags=item.tags?.length?`#${item.tags.map(escapeHtml).join(" #")}`:"未标记";
@@ -1939,19 +1931,17 @@ function toggleCaptureCard(card){
 }
 function renderCaptures(){
   const allItems=[...(state.captures||[])].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a)));
-  const items=allItems.filter(item=>matchesFeedSearch("captures",item.content,item.tags,item.transcription?.rawText,item.transcription?.polishedText));
+  const items=allItems.filter(item=>matchesFeedSearch("captures",item.content,item.tags,item.transcription?.rawText,item.transcription?.polishedText,item.transcription?.condensedText));
   const form=$("#capture-form"),toggle=$("#capture-create-toggle"),editing=Boolean($("#capture-id").value);
   form.hidden=!captureComposerOpen&&!editing;toggle.setAttribute("aria-expanded",String(!form.hidden));toggle.textContent=form.hidden?"＋ 捕念":"收起";
-  reconcileCaptureSpeech();
   $("#capture-count").textContent=feedCountLabel("captures",items.length,allItems.length,"条");
   $("#capture-list").innerHTML=items.length
     ?items.map((item,index)=>captureCard(item,index===0||eventDate(item)!==eventDate(items[index-1]))).join("")
     :allItems.length
       ?feedSearchEmpty("念起")
       :contentState({title:"还没有捕念",body:"刚开始为空很正常。文字、图片或录音都可以单独留下。",action:{focus:"capture-content",label:"留下第一条"}});
-  bindCaptureSpeechPlayer();
   items.filter(item=>!item._sync).forEach(item=>markCommentTarget($(`[data-capture-id="${CSS.escape(item.id)}"] .capture-copy .markdown-content`),commentRootKey("capture",item.id),"content"));
-  renderLatex($("#capture-list"));applyCommentAnchors($("#capture-list"));requestAnimationFrame(syncCaptureOverflow);
+  renderLatex($("#capture-list"));applyCommentAnchors($("#capture-list"));requestAnimationFrame(()=>{syncSpeechTextOverflow($("#capture-list"));syncCaptureOverflow()});
 }
 function resetCaptureForm({preserveUploads=false}={}){
   captureComposerOpen=false;$("#capture-form").reset();delete $("#capture-form").dataset.requestId;$("#capture-id").value="";resetContentImageEditor("capture",[],{forget:!preserveUploads});clearCaptureAudioDraft({forget:!preserveUploads});captureDraftTags=[];renderCaptureTagComposer();resetOccurrenceInput($("#capture-date"));$("#capture-submit").textContent="收下";$("#capture-cancel").hidden=true;$("#capture-status").textContent="";clearDurableDraft("capture-form");renderCaptures();
@@ -2664,7 +2654,28 @@ function renderTtsDefaultVoice(){
   const control=$("#tts-default-voice");if(!control)return;
   const voices=state.speech?.voices||[],voice=accountTtsVoice();
   control.innerHTML=voices.length?voices.map(item=>`<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}</option>`).join(""):`<option value="">语音服务未配置</option>`;
-  control.disabled=!state.speech?.configured||!voices.length;if(voices.some(item=>item.id===voice))control.value=voice
+  control.disabled=!state.speech?.configured||!voices.length;if(voices.some(item=>item.id===voice))control.value=voice;syncVoicePreviewButton()
+}
+async function toggleTtsVoicePreview(){
+  const control=$("#tts-default-voice"),status=$("#tts-voice-preview-status"),voice=String(control?.value||"");
+  if(voicePreviewAudio&&voicePreviewVoice===voice&&!voicePreviewAudio.paused){stopVoicePreview({clearStatus:true});return}
+  stopVoicePreview({clearStatus:true});
+  let payload;
+  try{payload=speechPreviewPayload(voice)}catch(error){if(status)status.textContent=error.message;return}
+  const controller=new AbortController();voicePreviewAbortController=controller;voicePreviewVoice=voice;if(status)status.textContent="正在加载官方试音…";syncVoicePreviewButton();
+  try{
+    const blob=await apiClient.requestBlob("/api/speech/preview",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload),signal:controller.signal},{fallback:"试音暂时不可用"});
+    if(controller.signal.aborted||control.value!==voice||!$("#view-settings").classList.contains("active"))return;
+    voicePreviewObjectUrl=URL.createObjectURL(blob);const audio=new Audio(voicePreviewObjectUrl);voicePreviewAudio=audio;
+    audio.addEventListener("ended",()=>{if(voicePreviewAudio===audio)stopVoicePreview({clearStatus:true})},{once:true});
+    audio.addEventListener("error",()=>{if(voicePreviewAudio===audio){stopVoicePreview();if(status)status.textContent="试音暂时无法播放，请稍后再试。"}},{once:true});
+    claimPageAudio(audio);await audio.play();if(status)status.textContent="";
+  }catch(error){
+    if(!controller.signal.aborted){stopVoicePreview();if(status)status.textContent="试音暂时不可用，请稍后再试。"}
+  }finally{
+    if(voicePreviewAbortController===controller)voicePreviewAbortController=null;
+    syncVoicePreviewButton()
+  }
 }
 function ttsGenerationRateText(value){return`${(1+normalizeTtsGenerationRate(value)/100).toFixed(2)}×`}
 function renderTtsGenerationRate(value){const rate=normalizeTtsGenerationRate(value),text=ttsGenerationRateText(rate),control=$("#tts-generation-rate"),output=$("#tts-generation-rate-value");if(control){control.value=String(rate);control.setAttribute("aria-valuetext",text.replace("×","倍"));control.style.setProperty("--fill",`${((rate+50)/1.5).toFixed(2)}%`)}if(output)output.textContent=text}
@@ -3552,7 +3563,7 @@ function clearPrivateSessionState(){
   keepsakeEditor.segmentSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.history=[];
   clearKeepsakeBatchState();
   for(const key of Object.keys(contentImageDrafts))resetContentImageEditor(key,[],{forget:false});
-  clearCaptureAudioDraft({forget:false});stopCaptureSpeech();
+  clearCaptureAudioDraft({forget:false});stopPageAudio();
   $$("main form").forEach(form=>{form.reset();delete form.dataset.requestId});$$(".modal-backdrop").forEach(modal=>modal.hidden=true);$("#comment-panel").hidden=true;$("#comment-panel-reopen").hidden=true;$("#selection-tools").hidden=true;$("#annotation-line-counts").hidden=true;document.body.classList.remove("comment-panel-open");
   Object.keys(dailyTypeMeta).forEach(resetDailyForm);
 }
@@ -3622,7 +3633,7 @@ backgroundResultController=createBackgroundResultController({
   restoreViewState:view=>{if(!view)return;window.scrollTo(view.x,view.y);if($("#comment-panel"))$("#comment-panel").scrollTop=view.commentScroll;scheduleAnnotationLineCounts()},
   onError:error=>showToast(`后台结果同步失败：${error.message}`,"error")
 });
-subscribeState((next,wanted,thoughtOptions)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);if(wanted.has("dailyRecords"))renderDailyRecords();if(wanted.has("captures")){renderCaptures();renderCaptureTagComposer()}if(wanted.has("journals"))renderJournals();if(wanted.has("thoughts")){if(thoughtOptions.patchOnly&&thoughtOptions.chainId)patchThoughtTaskTarget({targetId:thoughtOptions.chainId});else{renderThoughts(thoughtOptions);renderCaptures();renderTagComposer();renderCaptureTagComposer();renderHomeMemories()}reconcileThoughtRoute()}if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("review"))renderReview();if(wanted.has("books")){renderBooks();renderHomeMemories();if(activeCommentRoot.startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes")){renderKeepsakes();renderHomeKeepsake()}if(wanted.has("quotes")){renderQuotes();renderHomeMemories()}if(wanted.has("comments"))renderCommentPanel();renderNotifications()});
+subscribeState((next,wanted,thoughtOptions)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);if(wanted.has("dailyRecords"))renderDailyRecords();if(wanted.has("captures")){renderCaptures();renderCaptureTagComposer()}if(wanted.has("journals"))renderJournals();if(wanted.has("thoughts")){if(thoughtOptions.patchOnly&&thoughtOptions.chainId)patchThoughtTaskTarget({targetId:thoughtOptions.chainId});else{renderThoughts(thoughtOptions);renderCaptures();renderTagComposer();renderCaptureTagComposer();renderHomeMemories()}reconcileThoughtRoute()}if(wanted.has("speech")){if(!wanted.has("captures")&&!wanted.has("thoughts"))renderCaptures();if(!wanted.has("thoughts"))renderThoughts();renderSettings()}if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("review"))renderReview();if(wanted.has("books")){renderBooks();renderHomeMemories();if(activeCommentRoot.startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes")){renderKeepsakes();renderHomeKeepsake()}if(wanted.has("quotes")){renderQuotes();renderHomeMemories()}if(wanted.has("comments"))renderCommentPanel();renderNotifications()});
 function setAnswerModalStep(step){const order=["context","thinking","answer","done"],current=order.indexOf(step);$$("#ai-answer-progress li").forEach((item,index)=>{item.classList.toggle("active",index===current);item.classList.toggle("done",index<current||(step==="done"&&index===current))})}
 function closeAnswerModal(){const modal=$("#ai-answer-modal"),busy=modal.dataset.busy==="true";modal.hidden=true;if(busy)showToast("回答继续在后台生成，完成后会提醒。")}
 async function runAnswerInModal({title,scene="thoughtAnswer",requestCall,onDone,isCurrent=()=>true}){
@@ -3808,7 +3819,7 @@ document.addEventListener("keyup",e=>{if(e.key.startsWith("Arrow")||e.key==="Shi
 for(const eventName of ["wheel","pointerdown","pointermove","touchstart","touchmove","keydown"])document.addEventListener(eventName,event=>{const viewport=event.target.closest?.(".quote-bubble p.is-auto-scrolling");if(viewport)deferQuoteBubbleScroll(viewport)},{passive:true});
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&$("#view-quotes").classList.contains("active"))setupQuoteBubbleScroll()});
 window.addEventListener("scroll",()=>{$("#selection-tools").hidden=true;syncBookDetailCondensed();scheduleAnnotationLineCounts()},{passive:true});
-window.addEventListener("resize",()=>requestAnimationFrame(()=>{syncCaptureOverflow();syncThoughtBlockOverflow();syncQuoteOverflow();setupQuoteBubbleScroll();setupBookTitlePans();scheduleAnnotationLineCounts()}),{passive:true});
+window.addEventListener("resize",()=>requestAnimationFrame(()=>{syncSpeechTextOverflow();syncCaptureOverflow();syncThoughtBlockOverflow();syncQuoteOverflow();setupQuoteBubbleScroll();setupBookTitlePans();scheduleAnnotationLineCounts()}),{passive:true});
 document.addEventListener("scroll",scheduleAnnotationLineCounts,{passive:true,capture:true});
 window.visualViewport?.addEventListener("resize",()=>{$("#selection-tools").hidden=true},{passive:true});
 window.visualViewport?.addEventListener("scroll",()=>{$("#selection-tools").hidden=true},{passive:true});
@@ -3821,6 +3832,10 @@ document.addEventListener("click",e=>{
 });
 document.addEventListener("click",e=>{const button=e.target.closest("[data-quote-expand]");if(!button)return;const viewport=button.closest(".quote-entry-card")?.querySelector(".quote-content-viewport");if(!viewport)return;const expanded=!viewport.classList.contains("expanded");setLongContentExpanded(viewport.dataset.expandKey,expanded);viewport.classList.toggle("expanded",expanded);button.textContent=expanded?"收起":"展开";button.setAttribute("aria-expanded",String(expanded));scheduleAnnotationLineCounts()});
 document.addEventListener("click",e=>{const button=e.target.closest("[data-thought-block-expand]");if(!button)return;const card=button.closest(".thought-content-block");if(!card?.classList.contains("is-collapsible"))return;const expanded=!card.classList.contains("is-expanded");setLongContentExpanded(button.dataset.expandKey,expanded);card.classList.toggle("is-expanded",expanded);button.setAttribute("aria-expanded",String(expanded));button.querySelector("span").textContent=expanded?"收起":"展开全文";scheduleAnnotationLineCounts();if(!expanded)card.scrollIntoView({block:"nearest"})});
+document.addEventListener("click",e=>{const button=e.target.closest("[data-speech-text-expand]");if(!button)return;const layer=button.closest("[data-speech-text-lines]");if(!layer?.classList.contains("is-collapsible"))return;const expanded=!layer.classList.contains("is-expanded");layer.classList.toggle("is-expanded",expanded);button.textContent=expanded?"收起":"展开";button.setAttribute("aria-expanded",String(expanded));button.setAttribute("aria-label",`${expanded?"收起":"展开"}${layer.dataset.speechTextLabel||"文稿"}`);requestAnimationFrame(syncCaptureOverflow)});
+document.addEventListener("play",event=>{const audio=event.target;if(!(audio instanceof HTMLAudioElement))return;const controls=audio.closest(".speech-asset-controls"),rate=controls?.querySelector("[data-speech-playback-rate]");if(rate)audio.playbackRate=normalizeTtsPlaybackRate(rate.value);claimPageAudio(audio)},true);
+document.addEventListener("pause",event=>{if(activePageAudio===event.target)activePageAudio=null},true);
+document.addEventListener("ended",event=>{if(activePageAudio===event.target)activePageAudio=null},true);
 document.addEventListener("change",e=>{if(e.target.matches("[data-trash-select]"))$("#trash-purge-selected").disabled=!$("[data-trash-select]:checked")});
 document.addEventListener("click",async e=>{
   const restore=e.target.closest("[data-trash-restore]");if(!restore)return;
@@ -4150,18 +4165,26 @@ document.addEventListener("click",async event=>{
     }
     return
   }
-  const play=event.target.closest("[data-capture-speak]");
-  if(play){
-    const actions=play.closest(".capture-speech-actions"),voice=accountTtsVoice(),rate=normalizeTtsPlaybackRate(actions?.querySelector("[data-capture-playback-rate]")?.value);
-    const item=state.captures.find(value=>value.id===play.dataset.captureSpeak),sourceKey=captureSpeechIdentity(item,voice);
-    play.dataset.captureSpeechKey=sourceKey;
-    return void speakCapture(play.dataset.captureSpeak,voice,sourceKey,rate)
+  const generate=event.target.closest("[data-speech-synthesize]");
+  if(generate){
+    const controls=generate.closest(".speech-asset-controls"),sourceType=controls?.dataset.speechSourceType,sourceId=controls?.dataset.speechSourceId,sourceVersion=Number(controls?.dataset.speechSourceVersion),source=sourceType==="capture"?(state.captures||[]).find(item=>item.id===sourceId):(state.thoughts||[]).find(item=>item.id===sourceId&&item.type==="answer"),status=controls?.querySelector(".speech-asset-status");
+    if(!source||Number(source.version||1)!==sourceVersion){if(status)status.textContent="文字来源已经变化，请在当前版本上重新生成。";return}
+    const asset=speechAssetForSource(state.speech.assets,{sourceType,sourceId,sourceVersion}),regenerate=generate.dataset.speechRegenerate==="true"&&Boolean(asset),payload=speechSynthesisPayload({sourceType,sourceId,sourceVersion,regenerate});
+    stopPageAudio();generate.disabled=true;if(status)status.textContent=regenerate?"正在重新生成…":"正在生成…";let generated=false;
+    try{
+      await request("/api/speech/synthesize",{method:"POST",body:JSON.stringify(payload)});generated=true;
+      const domains=sourceType==="capture"?["speech","captures"]:["speech","thoughts"],options=sourceType==="thoughtAnswer"?{chainId:source.relatedTo}:{};
+      await refreshState(domains,options);showToast(regenerate?"文字朗读已重新生成":"文字朗读已生成")
+    }catch(error){
+      if(generated){if(status?.isConnected)status.textContent="音频已生成，但列表刷新失败，请稍后重试读取。";showToast("音频已生成，但列表刷新失败","error")}
+      else{if(status)status.textContent=presentError(error,{operation:"生成文字朗读",object:"这次文字朗读",phase:"文字朗读生成",retained:"原音和文字记录没有变化"}).message}
+    }finally{if(generate.isConnected)generate.disabled=false}
+    return
   }
 });
 document.addEventListener("change",event=>{
-  const control=event.target.closest("[data-capture-playback-rate]");if(!control||!activeSpeechAudio)return;
-  if(control.dataset.capturePlaybackRate!==activeSpeechCaptureId)return;
-  activeSpeechPlaybackRate=normalizeTtsPlaybackRate(control.value);activeSpeechAudio.playbackRate=activeSpeechPlaybackRate
+  const control=event.target.closest("[data-speech-playback-rate]");if(!control)return;
+  const player=control.closest(".speech-asset-controls")?.querySelector("[data-speech-player]");if(player)player.playbackRate=normalizeTtsPlaybackRate(control.value)
 });
 $("#capture-cancel").addEventListener("click",resetCaptureForm);
 $("#journal-cancel").addEventListener("click",resetJournalForm);
@@ -4641,14 +4664,16 @@ $("#onboarding-legacy-back").addEventListener("click",()=>onboardingV2Controller
 $("#onboarding-form").addEventListener("submit",async event=>{event.preventDefault();const form=event.currentTarget,button=form.querySelector('[type="submit"]'),status=$("#onboarding-status");if(!form.reportValidity()){status.textContent="请完成当前版本的全部题目。";return}button.disabled=true;try{state.onboarding=await request("/api/onboarding",{method:"PATCH",body:JSON.stringify(onboardingPayload())});await load();showToast("旧版问卷已保存，原始选择继续保留")}catch(error){status.textContent=error.message}finally{button.disabled=false}});
 $("#onboarding-v2-reopen").addEventListener("click",()=>{switchView("today");requestAnimationFrame(()=>onboardingV2Controller.reopen())});
 $("#reset-response-styles").addEventListener("click",()=>{$("#assistant-name").value="神鸡";$$("[data-response-style]").forEach(select=>select.value="standard");$("#llm-settings-status").textContent="已恢复默认称呼与风格，保存后生效。"});
+$("#tts-default-voice").addEventListener("change",()=>stopVoicePreview({clearStatus:true}));
+$("#tts-voice-preview").addEventListener("click",()=>void toggleTtsVoicePreview());
 $("#tts-generation-rate").addEventListener("input",event=>renderTtsGenerationRate(event.currentTarget.value));
-$("#llm-settings-form").addEventListener("submit",async e=>{e.preventDefault();const ownerSettings=hasCapability("ai-configuration"),button=e.currentTarget.querySelector('[type="submit"]'),status=$("#llm-settings-status"),previousVoice=accountTtsVoice();button.disabled=true;status.textContent="正在保存…";try{llmSettings=await request(ownerSettings?"/api/settings":"/api/preferences",{method:ownerSettings?"POST":"PATCH",body:JSON.stringify(settingsPayload())});const key=$("#llm-api-key");if(key)key.value="";renderSettings();if(accountTtsVoice()!==previousVoice){stopCaptureSpeech();renderCaptures()}status.textContent=ownerSettings?"模型、场景与语音设置已保存。":"思考、回答与语音偏好已保存。";showToast("设置已保存")}catch(err){status.textContent=err.message}finally{button.disabled=false}});
-$("#test-llm").addEventListener("click",async e=>{const button=e.currentTarget,status=$("#llm-settings-status"),tier=$("#llm-test-tier").value,previousVoice=accountTtsVoice();button.disabled=true;status.textContent=`正在保存并测试 ${tier[0].toUpperCase()+tier.slice(1)}…`;try{llmSettings=await request("/api/settings",{method:"POST",body:JSON.stringify(settingsPayload())});$("#llm-api-key").value="";renderSettings();if(accountTtsVoice()!==previousVoice){stopCaptureSpeech();renderCaptures()}const result=await request("/api/settings/test",{method:"POST",body:JSON.stringify({tier})}),profile=llmSettings.profiles[tier];status.textContent=`连接成功 · ${profile.model==="deepseek-v4-pro"?"DeepSeek Pro":"DeepSeek Flash"} · ${profile.effort==="none"?"思考关闭":`思考 ${profile.effort.toUpperCase()}`}`;showToast(result.reply||"DeepSeek 连接成功")}catch(err){status.textContent=`连接失败：${err.message}`}finally{button.disabled=false}});
+$("#llm-settings-form").addEventListener("submit",async e=>{e.preventDefault();stopVoicePreview({clearStatus:true});const ownerSettings=hasCapability("ai-configuration"),button=e.currentTarget.querySelector('[type="submit"]'),status=$("#llm-settings-status");button.disabled=true;status.textContent="正在保存…";try{llmSettings=await request(ownerSettings?"/api/settings":"/api/preferences",{method:ownerSettings?"POST":"PATCH",body:JSON.stringify(settingsPayload())});const key=$("#llm-api-key");if(key)key.value="";renderSettings();status.textContent=ownerSettings?"模型、场景与语音设置已保存。":"思考、回答与语音偏好已保存。";showToast("设置已保存")}catch(err){status.textContent=err.message}finally{button.disabled=false}});
+$("#test-llm").addEventListener("click",async e=>{stopVoicePreview({clearStatus:true});const button=e.currentTarget,status=$("#llm-settings-status"),tier=$("#llm-test-tier").value;button.disabled=true;status.textContent=`正在保存并测试 ${tier[0].toUpperCase()+tier.slice(1)}…`;try{llmSettings=await request("/api/settings",{method:"POST",body:JSON.stringify(settingsPayload())});$("#llm-api-key").value="";renderSettings();const result=await request("/api/settings/test",{method:"POST",body:JSON.stringify({tier})}),profile=llmSettings.profiles[tier];status.textContent=`连接成功 · ${profile.model==="deepseek-v4-pro"?"DeepSeek Pro":"DeepSeek Flash"} · ${profile.effort==="none"?"思考关闭":`思考 ${profile.effort.toUpperCase()}`}`;showToast(result.reply||"DeepSeek 连接成功")}catch(err){status.textContent=`连接失败：${err.message}`}finally{button.disabled=false}});
 function syncLocalDate(){const next=localDateKey();if(next===currentLocalDate)return;const followedToday=activeDate===currentLocalDate;currentLocalDate=next;if(followedToday){activeDate=next;renderDate();renderSliders();renderThoughts();renderStateChart();renderHomeMood();renderChat()}}
 function markApplicationForeground(){apiClient.markForeground();syncLocalDate();restoreView?.()}
 setInterval(syncLocalDate,30000);
-document.addEventListener("visibilitychange",()=>{if(document.hidden){saveDurableDrafts();stopCaptureAudioRecording();stopCaptureSpeech()}else markApplicationForeground()});
-window.addEventListener("pagehide",()=>{saveDurableDrafts();stopCaptureAudioRecording();stopCaptureSpeech()});
+document.addEventListener("visibilitychange",()=>{if(document.hidden){saveDurableDrafts();stopCaptureAudioRecording();stopPageAudio()}else markApplicationForeground()});
+window.addEventListener("pagehide",()=>{saveDurableDrafts();stopCaptureAudioRecording();stopPageAudio()});
 window.addEventListener("pageshow",markApplicationForeground);
 $$("[data-auth-tab]").forEach(button=>{
   button.addEventListener("click",()=>setAuthTab(button.dataset.authTab));

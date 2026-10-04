@@ -813,8 +813,11 @@ try {
     )`, { attempts: 1800, delay: 100, label: "语音转写完成" });
 
     const responseStart = cdp.events.length;
-    await clickWithinText("[data-capture-id]", imageMarker, "[data-capture-speak]");
+    await clickWithinText("[data-capture-id]", imageMarker, "[data-speech-synthesize]");
     const ttsResponse = await waitForResponse("/api/speech/synthesize", responseStart);
+    await waitUntil(`[...document.querySelectorAll("[data-capture-id]")].some(card=>
+      card.textContent.includes(${JSON.stringify(imageMarker)})&&card.querySelector('[data-speech-player][src*="/api/speech/audio?"]')
+    )`, { attempts: 120, delay: 100, label: "持久语音资产刷新" });
     result.thirdParty = {
       imageUnderstanding: "completed",
       asr: "completed",

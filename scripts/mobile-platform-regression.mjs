@@ -303,13 +303,16 @@ try {
     await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
     assert.equal(await waitUntil(`Boolean(document.querySelector('[data-capture-id="${speechCaptureId}"]'))`), true);
     const speechCard = await evaluate(`(() => {
-      const card=document.querySelector('[data-capture-id="${speechCaptureId}"]'),player=card.querySelector("[data-capture-speech-player]"),playerBox=player.closest(".capture-speech-player"),actions=card.querySelector(".capture-speech-actions"),button=actions.querySelector("button"),select=actions.querySelector("select"),cardRect=card.getBoundingClientRect(),actionsRect=actions.getBoundingClientRect(),buttonRect=button.getBoundingClientRect(),selectRect=select.getBoundingClientRect();
+      const card=document.querySelector('[data-capture-id="${speechCaptureId}"]'),controls=card.querySelector(".speech-asset-controls"),actions=controls.querySelector(".speech-asset-actions"),button=actions.querySelector("button"),select=actions.querySelector("select"),cardRect=card.getBoundingClientRect(),actionsRect=actions.getBoundingClientRect(),buttonRect=button.getBoundingClientRect(),selectRect=select.getBoundingClientRect();
       return {
         noVoice:!card.querySelector("[data-capture-voice]"),
         noDuplicateControls:!card.querySelector("[data-capture-speech-pause],[data-capture-speech-stop]"),
         buttons:actions.querySelectorAll("button").length,
         selects:actions.querySelectorAll("select").length,
-        emptyPlayerHidden:playerBox.hidden&&player.getClientRects().length===0&&!player.currentSrc,
+        emptyPlayerAbsent:!card.querySelector("[data-speech-player]"),
+        sourceType:controls.dataset.speechSourceType,
+        buttonName:button.getAttribute("aria-label"),
+        rateName:select.getAttribute("aria-label"),
         buttonTarget:buttonRect.width>=44&&buttonRect.height>=44,
         selectTarget:selectRect.width>=44&&selectRect.height>=44,
         controlsInside:[buttonRect,selectRect].every(rect=>rect.left>=cardRect.left-.5&&rect.right<=cardRect.right+.5),
@@ -323,7 +326,10 @@ try {
       noDuplicateControls: true,
       buttons: 1,
       selects: 1,
-      emptyPlayerHidden: true,
+      emptyPlayerAbsent: true,
+      sourceType: "capture",
+      buttonName: "生成捕念文字朗读",
+      rateName: "捕念文字朗读播放倍速",
       buttonTarget: true,
       selectTarget: true,
       controlsInside: true,

@@ -78,11 +78,11 @@ await assert.rejects(
 fetchHandler = async () => new Response("", { status: 404 });
 assert.equal(await client.request("/api/local-test-mode", {}, { optional: true }), null);
 fetchHandler = async (url, options) => {
-  assert.equal(url, "/now/api/speech/synthesize");
+  assert.equal(url, "/now/api/speech/preview");
   assert.equal(options.method, "POST");
   return new Response(new Uint8Array([0x49, 0x44, 0x33]), { headers: { "content-type": "audio/mpeg" } });
 };
-assert.equal((await client.requestBlob("/api/speech/synthesize", { method: "POST", body: "{}" })).size, 3);
+assert.equal((await client.requestBlob("/api/speech/preview", { method: "POST", body: '{"voice":"voice-a"}' })).size, 3);
 
 let foregroundAttempts = 0;
 client.markForeground();

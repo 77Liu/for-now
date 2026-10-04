@@ -182,13 +182,21 @@ const mockFetch = `
     }
   };
   window.__speechRequests = [];
+  window.__speechPreviewRequests = [];
   window.__speechPlays = [];
+  window.__speechPauses = [];
   window.__speechObjectUrls = [];
   window.__speechRevokedUrls = [];
   window.__rejectNextSpeechPlay = false;
   window.__delaySpeech = false;
   window.__releaseSpeech = null;
   window.__failSpeech = false;
+  window.__failSpeechPreview = false;
+  window.__speechAssetSerial = 2;
+  window.__speechAssets = [
+    { id:"asset-capture-long-v1",sourceType:"capture",sourceId:"capture-long",sourceVersion:1,voice:"zh_male_shaonianzixin_uranus_bigtts",generationRate:-10,mimeType:"audio/mpeg",bytes:3,createdAt:"2026-09-27T07:00:00.000Z",expiresAt:"2026-10-27T07:00:00.000Z" },
+    { id:"asset-answer-kept-v1",sourceType:"thoughtAnswer",sourceId:"answer-kept",sourceVersion:1,voice:"zh_male_shaonianzixin_uranus_bigtts",generationRate:-10,mimeType:"audio/mpeg",bytes:3,createdAt:"2026-09-27T07:01:00.000Z",expiresAt:"2026-10-27T07:01:00.000Z" }
+  ];
   window.__failMicrophonePermission = false;
   window.__audioUploadKeys = [];
   window.__failAudioUpload = false;
@@ -215,23 +223,26 @@ const mockFetch = `
     }
   });
   HTMLMediaElement.prototype.play = function() {
-    if (!this.matches?.("[data-capture-speech-player]")) return nativeMediaPlay.call(this);
+    if (!this.matches?.("[data-speech-player]")) return nativeMediaPlay.call(this);
     const rejected = window.__rejectNextSpeechPlay;
     window.__rejectNextSpeechPlay = false;
     speechPaused.set(this, rejected);
     window.__speechPlays.push({ src: this.currentSrc || this.src, rate: this.playbackRate, rejected });
+    if (!rejected) this.dispatchEvent(new Event("play"));
     return rejected
       ? Promise.reject(new DOMException("AUTOPLAY_BLOCKED", "NotAllowedError"))
       : Promise.resolve();
   };
   HTMLMediaElement.prototype.pause = function() {
-    if (!this.matches?.("[data-capture-speech-player]")) return nativeMediaPause.call(this);
+    if (!this.matches?.("[data-speech-player]")) return nativeMediaPause.call(this);
     speechPaused.set(this, true);
+    window.__speechPauses.push(this.currentSrc || this.src);
+    this.dispatchEvent(new Event("pause"));
   };
   window.Audio = class extends EventTarget {
-    constructor(src = "") { super(); this.src = src; this.paused = true; this.playbackRate = 1; window.__lastSpeechAudio = this; }
+    constructor(src = "") { super(); this.src = src; this.paused = true; this.playbackRate = 1; this.currentTime = 0; window.__lastSpeechAudio = this; }
     play() { this.paused = false; window.__speechPlays.push({ src: this.src, rate: this.playbackRate }); return Promise.resolve(); }
-    pause() { this.paused = true; }
+    pause() { this.paused = true; window.__speechPauses.push(this.src); }
     removeAttribute(name) { if (name === "src") this.src = ""; }
     load() {}
   };
@@ -535,7 +546,7 @@ const mockFetch = `
       id: "capture-long", createdAt: "2026-09-27T01:10:00.000Z", occurredAt: "2026-09-27T07:05:09.000Z", occurredOn: "2026-09-27",
       content: "这是一条需要验证四行折叠的长捕念。\\n- 第一项内容\\n- 第二项内容\\n- 第三项内容\\n- 第四项内容\\n- 第五项内容\\n- 第六项内容", tags: ["职业规划"],
       audio: { attachmentPath: "/attachments/capture-voice.m4a", mimeType: "audio/mp4", bytes: 4096, durationMs: 1250 },
-      transcription: { status: "unconfigured", provider: "", rawText: "", polishedText: "", updatedAt: "", errorCode: "ASR_NOT_CONFIGURED" }, version: 1
+      transcription: { status: "ready", provider: "volcengine-seedasr-2.0", rawText: "**原始重点**\\n\\n- 第一条原始内容\\n- 第二条原始内容", polishedText: "**整理重点**\\n\\n- 第一条整理内容\\n- 第二条整理内容\\n- 第三条整理内容", condensedText: "**凝练总结**\\n\\n1. 第一条结论\\n2. 第二条结论\\n3. 第三条结论\\n4. 第四条结论\\n5. 第五条结论\\n6. 第六条结论\\n7. 第七条结论", updatedAt: "2026-09-27T06:58:00.000Z", errorCode: "" }, version: 1
     },
     {
       id: "capture-failed", createdAt: "2026-09-27T01:09:00.000Z", occurredAt: "2026-09-27T07:04:09.000Z", occurredOn: "2026-09-27",
@@ -593,7 +604,7 @@ const mockFetch = `
     ]
   };
   window.__thoughts = [
-    { id: "answer-kept", createdAt: "2026-09-27T01:10:00.000Z", occurredAt: "2026-09-27T04:10:00.000Z", occurredOn: "2026-09-27", type: "answer", content: "**核心判断**\\n第一行\\n第二行\\n第三行\\n第四行\\n第五行\\n第六行", attachmentPaths: ["/attachments/thought-block.png"], modelDraft: "**核心判断**\\n第一行\\n第二行\\n第三行\\n第四行\\n第五行\\n第六行", editedFromModel: false, origin: "deepseek", reasoningContent: "**持久化**的模型思考", contextReceipt: window.__contextReceipt, tags: [], relatedTo: "kept-root", disposition: "kept" },
+    { id: "answer-kept", createdAt: "2026-09-27T01:10:00.000Z", occurredAt: "2026-09-27T04:10:00.000Z", occurredOn: "2026-09-27", type: "answer", content: "**核心判断**\\n第一行\\n第二行\\n第三行\\n第四行\\n第五行\\n第六行", attachmentPaths: ["/attachments/thought-block.png"], modelDraft: "**核心判断**\\n第一行\\n第二行\\n第三行\\n第四行\\n第五行\\n第六行", editedFromModel: false, origin: "deepseek", reasoningContent: "**持久化**的模型思考", contextReceipt: window.__contextReceipt, tags: [], relatedTo: "kept-root", disposition: "kept", version: 1 },
     { id: "kept-root", createdAt: "2026-09-27T01:09:00.000Z", occurredAt: "2026-09-27T04:09:00.000Z", occurredOn: "2026-09-27", type: "question", content: "没有**初步想法**的问题", attachmentPaths: ["/attachments/thought-root.png"], tags: ["待回看", "商业"], relatedTo: null, disposition: "kept", remarks: [], followUps: [], annotations: [], annotationDrift: [], version: 1 },
     { id: "discarded-root", createdAt: "2026-09-27T02:08:00.000Z", occurredAt: "2026-09-27T04:08:00.000Z", occurredOn: "2026-09-27", type: "question", content: "已舍弃的问题", tags: [], relatedTo: null, disposition: "discarded", remarks: [], followUps: [], annotations: [], annotationDrift: [], version: 1 }
   ];
@@ -928,7 +939,7 @@ const mockFetch = `
       return json({
       version: 15, checkins: empty?[]:window.__checkins, dailyRecords: empty?[]:window.__dailyRecords, captures: empty?[]:window.__captures, journals: empty?[]:window.__journals, thoughts: empty?[]:window.__thoughts,
       chats: empty?[]:[{ id: "chat-1", createdAt: "2026-09-27T01:15:00.000Z", occurredAt: "2026-09-27T04:15:00.000Z", occurredOn: "2026-09-27", message: "**用户问题**", answer: "## 模型回答", reasoningContent: "PRIVATE_CHAT_REASONING" }], books: empty?[]:window.__books, journalDraft: empty?null:window.__journalDraft, keepsakes: empty?[]:window.__keepsakes.map(({originalPath,...item})=>item), quotes: empty?[]:window.__quotes, aiTasks: window.__aiTasks, notifications: window.__notifications, onboarding: window.__onboarding, onboardingV2: window.__onboardingV2,
-      speech:{configured:true,defaultVoice:"zh_male_shaonianzixin_uranus_bigtts",supportedAsrMimeTypes:["audio/mp4","audio/ogg","audio/wav"],voices:[{id:"zh_male_shaonianzixin_uranus_bigtts",label:"少年梓辛 2.0"},{id:"zh_male_m191_uranus_bigtts",label:"云舟 2.0"},{id:"zh_female_vv_uranus_bigtts",label:"Vivi 2.0"},{id:"zh_female_cancan_uranus_bigtts",label:"知性灿灿 2.0"}]},vision:{configured:true},
+      speech:{configured:true,defaultVoice:"zh_male_shaonianzixin_uranus_bigtts",supportedAsrMimeTypes:["audio/mp4","audio/ogg","audio/wav"],voices:[{id:"zh_male_shaonianzixin_uranus_bigtts",label:"少年梓辛 2.0"},{id:"zh_male_m191_uranus_bigtts",label:"云舟 2.0"},{id:"zh_female_vv_uranus_bigtts",label:"Vivi 2.0"},{id:"zh_female_cancan_uranus_bigtts",label:"知性灿灿 2.0"}],assets:empty?[]:window.__speechAssets},vision:{configured:true},
       experiments: [], analyses: empty?[]:window.__analyses, customMetrics: [], clusters: [],
       insights: { trends: [
         { metric: "mood", current: 3.5, previous: null, currentCount: 2, previousCount: 0 },
@@ -970,10 +981,22 @@ const mockFetch = `
       window.__preferenceSaves+=1;window.__lastSettingsPayload=JSON.parse(init.body);return json({version:10,...window.__lastSettingsPayload})
     }
     if (url === "/api/settings/test") return json({ ok: true, reply: "连接成功" });
+    if (url === "/api/speech/preview" && init.method === "POST") {
+      if(window.__failSpeechPreview){window.__failSpeechPreview=false;return json({error:{message:"PREVIEW_PROVIDER_PRIVATE",code:"SPEECH_PREVIEW_FAILED"}},503)}
+      window.__speechPreviewRequests.push(JSON.parse(init.body));
+      return Promise.resolve(new Response(new Uint8Array([0x49,0x44,0x33]),{headers:{"content-type":"audio/mpeg"}}))
+    }
+    if (url.startsWith("/api/speech/audio?") && (!init.method || init.method === "GET")) {
+      return Promise.resolve(new Response(new Uint8Array([0x49,0x44,0x33]),{headers:{"content-type":"audio/mpeg"}}))
+    }
     if (url === "/api/speech/synthesize" && init.method === "POST") {
       if(window.__failSpeech){window.__failSpeech=false;return Promise.resolve(new Response(JSON.stringify({error:{message:"PROVIDER_TIMEOUT_DEEPSEEK",code:"PROVIDER_TIMEOUT"}}),{status:503,headers:{"content-type":"application/json"}}))}
-      window.__speechRequests.push(JSON.parse(init.body));
-      const response=()=>new Response(new Uint8Array([0x49,0x44,0x33]),{headers:{"content-type":"audio/mpeg"}});
+      const payload=JSON.parse(init.body);window.__speechRequests.push(payload);
+      const response=()=>{
+        if(payload.regenerate)window.__speechAssets=window.__speechAssets.filter(asset=>!(asset.sourceType===payload.sourceType&&asset.sourceId===payload.sourceId&&asset.sourceVersion===payload.sourceVersion));
+        const serial=++window.__speechAssetSerial,asset={id:"asset-generated-"+serial,sourceType:payload.sourceType,sourceId:payload.sourceId,sourceVersion:payload.sourceVersion,voice:window.__lastSettingsPayload?.speech?.defaultVoice||"zh_male_shaonianzixin_uranus_bigtts",generationRate:window.__lastSettingsPayload?.speech?.generationRate??-10,mimeType:"audio/mpeg",bytes:3,createdAt:new Date(Date.now()+serial).toISOString(),expiresAt:"2026-11-27T07:00:00.000Z"};
+        window.__speechAssets.push(asset);return json(asset)
+      };
       if(window.__delaySpeech){
         window.__delaySpeech=false;
         return new Promise(resolve=>{window.__releaseSpeech=()=>resolve(response())})
@@ -2085,32 +2108,40 @@ try {
   assert.equal(captureInitial.dateLabels, 1);
   assert.equal(captureInitial.dateOutsideCard, true);
   assert.equal(captureInitial.timeOnRight, true);
-  assert.deepEqual(await evaluate(`(() => {const textCard=document.querySelector('[data-capture-id="capture-1"]'),voiceCard=document.querySelector('[data-capture-id="capture-long"]'),player=textCard.querySelector("[data-capture-speech-player]"),original=voiceCard.querySelector(".capture-audio-source audio");return{textPlayer:Boolean(player),controls:player?.controls,connected:player?.isConnected,source:player?.currentSrc||"",playerHidden:player?.closest(".capture-speech-player").hidden,playerVisible:Boolean(player?.getClientRects().length),original:original?.getAttribute("src"),ttsPlayers:voiceCard.querySelectorAll("[data-capture-speech-player]").length,perCardVoice:Boolean(voiceCard.querySelector("[data-capture-voice]")),repeatedGenerationSetting:Boolean(voiceCard.querySelector("#tts-generation-rate,.speech-generation-default"))}})()`), {
-    textPlayer: true,
+  assert.deepEqual(await evaluate(`(() => {const textCard=document.querySelector('[data-capture-id="capture-1"]'),voiceCard=document.querySelector('[data-capture-id="capture-long"]'),player=voiceCard.querySelector("[data-speech-player]"),original=voiceCard.querySelector(".capture-audio-source audio"),textControls=textCard.querySelector(".speech-asset-controls");return{textPlayer:Boolean(textCard.querySelector("[data-speech-player]")),textGenerate:textControls.querySelector("[data-speech-synthesize]").textContent,controls:player.controls,connected:player.isConnected,source:player.getAttribute("src"),original:original.getAttribute("src"),ttsPlayers:voiceCard.querySelectorAll("[data-speech-player]").length,perCardVoice:Boolean(voiceCard.querySelector("[data-capture-voice]")),repeatedGenerationSetting:Boolean(voiceCard.querySelector("#tts-generation-rate,.speech-generation-default"))}})()`), {
+    textPlayer: false,
+    textGenerate: "生成",
     controls: true,
     connected: true,
-    source: "",
-    playerHidden: true,
-    playerVisible: false,
+    source: "/api/speech/audio?sourceType=capture&sourceId=capture-long&assetId=asset-capture-long-v1",
     original: "/attachments/capture-voice.m4a",
     ttsPlayers: 1,
     perCardVoice: false,
     repeatedGenerationSetting: false
-  }, "audio-tts-playback: source-less native players stay hidden");
-  assert.deepEqual(await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-long"]'),source=card.querySelector(".capture-audio-source"),rate=card.querySelector("[data-capture-playback-rate]");return{audio:card.querySelector("audio")?.getAttribute("src"),audioReady:source?.querySelector(".capture-audio-playback-state")?.textContent,audioKey:source?.dataset.captureAudioKey||"",status:card.querySelector(".capture-transcription-state")?.textContent,speak:card.querySelector("[data-capture-speak]")?.getAttribute("data-capture-speak"),speechKey:card.querySelector("[data-capture-speak]")?.dataset.captureSpeechKey||"",generateLabel:card.querySelector("[data-capture-speak]")?.textContent,rate:rate?.value,rates:[...rate.options].map(option=>Number(option.value)),speechButtons:card.querySelectorAll(".capture-speech-actions button").length,speechSelects:card.querySelectorAll(".capture-speech-actions select").length,pauseStop:Boolean(card.querySelector("[data-capture-speech-pause],[data-capture-speech-stop]"))}})()`), {
-    audio: "/attachments/capture-voice.m4a",
+  }, "persisted speech assets must render directly without synthesizing");
+  assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-long"] .capture-transcription.polished')?.classList.contains("is-collapsible")&&document.querySelector('[data-capture-id="capture-long"] .capture-transcription.condensed')?.classList.contains("is-collapsible")`),true);
+  assert.deepEqual(await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-long"]'),source=card.querySelector(".capture-audio-source"),controls=card.querySelector(".speech-asset-controls"),rate=controls.querySelector("[data-speech-playback-rate]"),raw=card.querySelector(".capture-transcription-raw"),polished=card.querySelector(".capture-transcription.polished"),condensed=card.querySelector(".capture-transcription.condensed");return{audioReady:source.querySelector(".capture-audio-playback-state").textContent,audioKey:source.dataset.captureAudioKey,status:Boolean(card.querySelector(".capture-transcription-state")),sourceType:controls.dataset.speechSourceType,sourceId:controls.dataset.speechSourceId,sourceVersion:controls.dataset.speechSourceVersion,generateLabel:controls.querySelector("[data-speech-synthesize]").textContent,regenerate:controls.querySelector("[data-speech-synthesize]").dataset.speechRegenerate,rate:rate.value,rates:[...rate.options].map(option=>Number(option.value)),rawOpen:raw.open,rawMarkdown:Boolean(raw.querySelector("strong")),polishedLines:polished.dataset.speechTextLines,polishedCollapsed:polished.classList.contains("is-collapsible")&&!polished.classList.contains("is-expanded"),polishedMarkdown:Boolean(polished.querySelector("strong")),condensedLines:condensed.dataset.speechTextLines,condensedCollapsed:condensed.classList.contains("is-collapsible")&&!condensed.classList.contains("is-expanded"),condensedMarkdown:Boolean(condensed.querySelector("strong"))}})()`), {
     audioReady: "原音可播放",
     audioKey: '["capture-long",1,"/attachments/capture-voice.m4a"]',
-    status: "录音尚未转成文字。开始转写",
-    speak: "capture-long",
-    speechKey: '["capture-long",1,"/attachments/capture-voice.m4a","","zh_male_shaonianzixin_uranus_bigtts"]',
-    generateLabel: "生成",
+    status: false,
+    sourceType: "capture",
+    sourceId: "capture-long",
+    sourceVersion: "1",
+    generateLabel: "重新生成",
+    regenerate: "true",
     rate: "1",
     rates: [0.5,0.7,0.8,0.9,1,1.1,1.2,1.3,1.5,2],
-    speechButtons: 1,
-    speechSelects: 1,
-    pauseStop: false
+    rawOpen: false,
+    rawMarkdown: true,
+    polishedLines: "2",
+    polishedCollapsed: true,
+    polishedMarkdown: true,
+    condensedLines: "6",
+    condensedCollapsed: true,
+    condensedMarkdown: true
   });
+  await evaluate(`document.querySelector('[data-capture-id="capture-long"] .capture-transcription.polished [data-speech-text-expand]').click();true`);
+  assert.deepEqual(await evaluate(`(() => {const layer=document.querySelector('[data-capture-id="capture-long"] .capture-transcription.polished'),button=layer.querySelector("[data-speech-text-expand]");return{expanded:layer.classList.contains("is-expanded"),aria:button.getAttribute("aria-expanded"),label:button.getAttribute("aria-label")}})()`),{expanded:true,aria:"true",label:"收起AI 整理稿"});
   assert.deepEqual(await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-failed"]'),source=card.querySelector(".capture-audio-source"),status=card.querySelector(".capture-transcription-state");return{audio:card.querySelector("audio")?.getAttribute("src"),audioReady:source?.querySelector(".capture-audio-playback-state")?.textContent,audioKey:source?.dataset.captureAudioKey||"",status:status?.textContent,taskId:status?.dataset.transcriptionTaskId||"",misreported:status?.textContent.includes("转写未完成")}})()`),{
     audio:"/attachments/capture-failed.m4a",
     audioReady:"原音可播放",
@@ -2122,39 +2153,37 @@ try {
   await evaluate(`window.__failTranscriptionQueue=true;document.querySelector('[data-capture-id="capture-failed"] [data-capture-transcribe]').click();true`);
   assert.equal(await waitUntil(`document.querySelector("#toast").textContent==="语音转写排队暂时失败。原音已经保存。请稍后重试。"`),true);
   assert.deepEqual(await evaluate(`({enabled:!document.querySelector('[data-capture-id="capture-failed"] [data-capture-transcribe]').disabled,original:document.querySelector('[data-capture-id="capture-failed"] .capture-audio-playback-state').textContent,sentinel:document.body.textContent.includes("ASR_PROVIDER_PRIVATE_DETAIL")})`),{enabled:true,original:"原音可播放",sentinel:false});
-  await evaluate(`window.__failSpeech=true;document.querySelector('[data-capture-id="capture-long"] [data-capture-speak]').click();true`);
-  assert.equal(await waitUntil(`document.querySelector("#toast").textContent==="文字朗读生成暂时失败。原音和文字记录没有变化。请稍后重试。"`),true);
+  await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-long"]'),rate=card.querySelector("[data-speech-playback-rate]"),player=card.querySelector("[data-speech-player]");rate.value="1.5";rate.dispatchEvent(new Event("change",{bubbles:true}));window.__rejectNextSpeechPlay=true;player.play().catch(()=>{});return true})()`);
+  assert.equal(await waitUntil(`window.__speechPlays.length===1`),true);
+  assert.deepEqual(await evaluate(`({rate:window.__speechPlays[0].rate,rejected:window.__speechPlays[0].rejected,requests:window.__speechRequests.length,network:window.__speechPlays[0].src.includes("/api/speech/audio?")})`),{rate:1.5,rejected:true,requests:0,network:true});
+  await evaluate(`document.querySelector('[data-capture-id="capture-long"] [data-speech-player]').play();true`);
+  assert.equal(await waitUntil(`window.__speechPlays.length===2`),true);
+  await evaluate(`window.__failSpeech=true;document.querySelector('[data-capture-id="capture-long"] [data-speech-synthesize]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-long"] .speech-asset-status').textContent.includes("文字朗读生成暂时失败")`),true);
   assert.equal(await evaluate(`!document.body.textContent.includes("PROVIDER_TIMEOUT_DEEPSEEK")&&window.__speechRequests.length===0`),true);
-  await evaluate(`window.__delaySpeech=true;document.querySelector('[data-capture-id="capture-long"] [data-capture-speak]').click();true`);
+  await evaluate(`window.__delaySpeech=true;document.querySelector('[data-capture-id="capture-long"] [data-speech-synthesize]').click();true`);
   assert.equal(await waitUntil(`typeof window.__releaseSpeech==="function"&&window.__speechRequests.length===1`),true);
   assert.deepEqual(await evaluate(`window.__speechRequests[0]`), {
-    captureId: "capture-long",
-    sourceVersion: 1
+    sourceType: "capture",
+    sourceId: "capture-long",
+    sourceVersion: 1,
+    regenerate: true
   });
   await evaluate(`document.querySelector('[data-capture-id="capture-long"] [data-capture-edit]').click();document.querySelector("#capture-form").requestSubmit();true`);
   assert.equal(await waitUntil(`window.__captures.find(item=>item.id==="capture-long").version===2&&document.querySelector("#capture-id").value===""`),true);
   await evaluate(`window.__capturePatchPayloads=[];window.__releaseSpeech();true`);
-  await sleep(100);
-  assert.equal(await evaluate(`window.__speechPlays.length`),0,"audio-tts-playback");
-  await evaluate(`(() => {window.__rejectNextSpeechPlay=true;const card=document.querySelector('[data-capture-id="capture-long"]'),rate=card.querySelector("[data-capture-playback-rate]");rate.value="1.5";card.querySelector("[data-capture-speak]").click();return true})()`);
-  assert.equal(await waitUntil(`window.__speechRequests.length===2&&document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-player]')?.currentSrc.startsWith("blob:")`),true);
-  assert.deepEqual(await evaluate(`({keys:Object.keys(window.__speechRequests[1]).sort(),captureId:window.__speechRequests[1].captureId,sourceVersion:window.__speechRequests[1].sourceVersion})`), {
-    keys: ["captureId", "sourceVersion"],
-    captureId: "capture-long",
-    sourceVersion: 2
-  }, "playback rate and per-card voice must not enter the TTS generation request");
-  assert.deepEqual(await evaluate(`(() => {const player=document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-player]'),src=player.currentSrc;return{rate:window.__speechPlays[0].rate,blob:src.startsWith("blob:"),connected:player.isConnected,visible:!player.closest(".capture-speech-player").hidden&&player.getClientRects().length>0,retained:player.getAttribute("src")===src,revoked:window.__speechRevokedUrls.includes(src),rejected:window.__speechPlays[0].rejected,label:player.closest("[data-capture-id]").querySelector("[data-capture-speak]").textContent}})()`),{rate:1.5,blob:true,connected:true,visible:true,retained:true,revoked:false,rejected:true,label:"重新生成"});
-  await evaluate(`document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-player]').play();true`);
-  assert.equal(await waitUntil(`window.__speechPlays.length===2`),true);
-  assert.deepEqual(await evaluate(`({sameSource:window.__speechPlays[1].src===window.__speechPlays[0].src,rejected:window.__speechPlays[1].rejected})`),{sameSource:true,rejected:false},"autoplay rejection must retain the source for a user retry");
-  await evaluate(`(() => {const rate=document.querySelector('[data-capture-id="capture-long"] [data-capture-playback-rate]');rate.value="2";rate.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
-  assert.equal(await evaluate(`document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-player]').playbackRate`),2);
-  await evaluate(`(() => {const player=document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-player]');player.pause();player.play();return true})()`);
+  assert.equal(await waitUntil(`window.__stateRequests>1&&!document.querySelector('[data-capture-id="capture-long"] [data-speech-player]')&&document.querySelector('[data-capture-id="capture-long"] [data-speech-synthesize]').textContent==="生成"`),true);
+  await evaluate(`document.querySelector('[data-capture-id="capture-long"] [data-speech-synthesize]').click();true`);
+  assert.equal(await waitUntil(`window.__speechRequests.length===2&&document.querySelector('[data-capture-id="capture-long"] [data-speech-player]')`),true);
+  assert.deepEqual(await evaluate(`window.__speechRequests[1]`),{sourceType:"capture",sourceId:"capture-long",sourceVersion:2,regenerate:false},"playback rate and voice must not enter the synthesis request");
+  await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-long"]'),rate=card.querySelector("[data-speech-playback-rate]"),player=card.querySelector("[data-speech-player]");rate.value="2";rate.dispatchEvent(new Event("change",{bubbles:true}));player.play();window.__activeCaptureSpeechUrl=player.getAttribute("src");return true})()`);
   assert.equal(await waitUntil(`window.__speechPlays.length===3`),true);
-  assert.deepEqual(await evaluate(`({rate:window.__speechPlays[2].rate,requests:window.__speechRequests.length})`),{rate:2,requests:2});
-  await evaluate(`window.__replacedSpeechUrl=document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-player]').currentSrc;document.querySelector('[data-capture-id="capture-1"] [data-capture-speak]').click();true`);
-  assert.equal(await waitUntil(`window.__speechRequests.length===3&&document.querySelector('[data-capture-id="capture-1"] [data-capture-speech-player]')?.currentSrc.startsWith("blob:")`),true);
-  assert.deepEqual(await evaluate(`({oldRevoked:window.__speechRevokedUrls.includes(window.__replacedSpeechUrl),oldCleared:!document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-player]').getAttribute("src"),newBound:document.querySelector('[data-capture-id="capture-1"] [data-capture-speech-player]').currentSrc===window.__speechObjectUrls.at(-1)})`),{oldRevoked:true,oldCleared:true,newBound:true},"switching records must release and detach the old source");
+  assert.deepEqual(await evaluate(`({rate:window.__speechPlays.at(-1).rate,requests:window.__speechRequests.length})`),{rate:2,requests:2});
+  await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-speech-synthesize]').click();true`);
+  assert.equal(await waitUntil(`window.__speechRequests.length===3&&document.querySelector('[data-capture-id="capture-1"] [data-speech-player]')`),true);
+  await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-speech-player]').play();true`);
+  assert.equal(await waitUntil(`window.__speechPlays.length===4`),true);
+  assert.deepEqual(await evaluate(`(() => {const old=document.querySelector('[data-capture-id="capture-long"] [data-speech-player]'),next=document.querySelector('[data-capture-id="capture-1"] [data-speech-player]'),assetId=new URL(old.src).searchParams.get("assetId");return{oldPaused:old.paused,oldSourceRetained:old.getAttribute("src")===window.__activeCaptureSpeechUrl,newPaused:next.paused,oldPauseRecorded:window.__speechPauses.some(url=>url.includes("assetId="+assetId)),requests:window.__speechRequests.length}})()`),{oldPaused:true,oldSourceRetained:true,newPaused:false,oldPauseRecorded:true,requests:3},"starting another asset must pause the previous player without detaching either persisted source");
   assert.equal(await evaluate(`document.querySelector("#capture-form").hidden&&document.querySelector("#capture-create-toggle").getAttribute("aria-expanded")==="false"`),true);
   await evaluate(`document.querySelector("#capture-create-toggle").click();true`);
   assert.deepEqual(await evaluate(`(() => {const editor=document.querySelector(".capture-audio-editor"),upload=editor.querySelector(".audio-file-primary"),recorder=editor.querySelector("#capture-audio-recorder"),record=editor.querySelector("#capture-audio-record"),preview=editor.querySelector("#capture-audio-preview");return{fits:editor.getBoundingClientRect().right<=window.innerWidth,uploadText:upload.textContent.trim(),uploadHeight:Math.round(upload.getBoundingClientRect().height),recorderOpen:recorder.open,summary:recorder.querySelector("summary").textContent.replace(/\\s+/g," ").trim(),recordCollapsed:record.getClientRects().length===0,previewCollapsed:preview.getClientRects().length===0}})()`), {
@@ -2188,7 +2217,7 @@ try {
   assert.equal(await waitUntil(`document.querySelector("#capture-audio-preview").hidden&&document.querySelector("#capture-audio-preview").getClientRects().length===0`),true);
   await evaluate(`document.querySelector("#capture-cancel").click();true`);
   assert.equal(await waitUntil(`!document.querySelector('[data-capture-id="capture-long"] [data-capture-expand]').hidden`), true);
-  assert.equal(await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-capture-expand]').hidden`), true);
+  assert.equal(await evaluate(`!document.querySelector('[data-capture-id="capture-1"] [data-capture-expand]').hidden`), true);
   const captureCardLayout = await evaluate(`(() => {
     const card=document.querySelector('[data-capture-id="capture-long"]'),item=card.querySelector(".capture-item"),viewport=card.querySelector(".capture-content-viewport"),meta=card.querySelector(".capture-meta"),time=card.querySelector(".capture-entry-time"),tags=card.querySelector(".capture-top-tags"),actions=card.querySelector(".capture-actions"),buttons=[...actions.querySelectorAll("button")],lineHeight=parseFloat(getComputedStyle(viewport).lineHeight);
     const buttonRects=buttons.map(button=>button.getBoundingClientRect()),metaRect=meta.getBoundingClientRect(),timeRect=time.getBoundingClientRect(),itemRect=item.getBoundingClientRect();
@@ -2279,16 +2308,16 @@ try {
   assert.equal(await evaluate(`document.documentElement.scrollWidth <= window.innerWidth && document.querySelector("#capture-date").getBoundingClientRect().right <= window.innerWidth`), true);
   assert.equal(await evaluate(`(() => { const card=document.querySelector('[data-capture-id="capture-1"]'),date=card.querySelector(".capture-date").getBoundingClientRect(),meta=card.querySelector(".capture-meta").getBoundingClientRect(),time=card.querySelector(".capture-entry-time").getBoundingClientRect(); return date.bottom<=meta.top+1&&meta.left<=time.left&&time.right<=meta.right+1; })()`), true);
   assert.equal(await evaluate(`(() => { const buttons=[...document.querySelectorAll('[data-capture-id="capture-long"] .capture-actions button')].map(item=>item.getBoundingClientRect()); return buttons.every(item=>item.width>=44&&item.height>=44)&&buttons[0].bottom<=buttons[1].top+1&&Math.abs(buttons[1].top-buttons[2].top)<2&&buttons[2].bottom-buttons[0].top<=90; })()`), true);
-  await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-capture-speak]').click();true`);
-  assert.equal(await waitUntil(`window.__speechRequests.length===4&&document.querySelector('[data-capture-id="capture-1"] [data-capture-speech-player]')?.currentSrc.startsWith("blob:")`),true);
+  await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-speech-synthesize]').click();true`);
+  assert.equal(await waitUntil(`window.__speechRequests.length===4&&document.querySelector('[data-capture-id="capture-1"] [data-speech-player]')`),true);
   await sleep(100);
   await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-1"]'),expand=card.querySelector("[data-capture-expand]");if(!expand.hidden&&!card.querySelector(".capture-item").classList.contains("is-expanded"))expand.click();card.scrollIntoView({block:"center"});return true})()`);
   await sleep(100);
-  assert.deepEqual(await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-1"]'),player=card.querySelector("[data-capture-speech-player]"),actions=card.querySelector(".capture-speech-actions"),cardRect=card.getBoundingClientRect(),playerRect=player.getBoundingClientRect(),actionsRect=actions.getBoundingClientRect();return{controls:player.controls,visible:!player.closest(".capture-speech-player").hidden&&playerRect.height>0,actionsVisible:actionsRect.height>0&&actionsRect.top>=cardRect.top&&actionsRect.bottom<=cardRect.bottom+1,inside:playerRect.left>=cardRect.left&&playerRect.right<=cardRect.right+1&&actionsRect.right<=cardRect.right+1,noVoice:Boolean(card.querySelector("[data-capture-voice]")),buttons:actions.querySelectorAll("button").length,noOverflow:document.documentElement.scrollWidth<=innerWidth}})()`),{controls:true,visible:true,actionsVisible:true,inside:true,noVoice:false,buttons:1,noOverflow:true});
+  assert.deepEqual(await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-1"]'),player=card.querySelector("[data-speech-player]"),actions=card.querySelector(".speech-asset-actions"),cardRect=card.getBoundingClientRect(),playerRect=player.getBoundingClientRect(),actionsRect=actions.getBoundingClientRect();return{controls:player.controls,visible:playerRect.height>0,actionsVisible:actionsRect.height>0&&actionsRect.top>=cardRect.top&&actionsRect.bottom<=cardRect.bottom+1,inside:playerRect.left>=cardRect.left&&playerRect.right<=cardRect.right+1&&actionsRect.right<=cardRect.right+1,noVoice:Boolean(card.querySelector("[data-capture-voice]")),buttons:actions.querySelectorAll("button").length,noOverflow:document.documentElement.scrollWidth<=innerWidth}})()`),{controls:true,visible:true,actionsVisible:true,inside:true,noVoice:false,buttons:1,noOverflow:true});
   const captureMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-captures-mobile.png", Buffer.from(captureMobileScreenshot.data, "base64"));
-  await evaluate(`window.__stoppedSpeechUrl=document.querySelector('[data-capture-id="capture-1"] [data-capture-speech-player]').currentSrc;window.dispatchEvent(new Event("pagehide"));true`);
-  assert.deepEqual(await evaluate(`({revoked:window.__speechRevokedUrls.includes(window.__stoppedSpeechUrl),cleared:!document.querySelector('[data-capture-id="capture-1"] [data-capture-speech-player]').getAttribute("src"),hidden:document.querySelector('[data-capture-id="capture-1"] .capture-speech-player').hidden})`),{revoked:true,cleared:true,hidden:true},"the internal stop lifecycle must release and hide the source");
+  await evaluate(`window.__stoppedSpeechPlayer=document.querySelector('[data-capture-id="capture-1"] [data-speech-player]');window.__stoppedSpeechUrl=window.__stoppedSpeechPlayer.getAttribute("src");window.__stoppedSpeechPlayer.play();window.dispatchEvent(new Event("pagehide"));true`);
+  assert.deepEqual(await evaluate(`({paused:window.__stoppedSpeechPlayer.paused,retained:window.__stoppedSpeechPlayer.getAttribute("src")===window.__stoppedSpeechUrl,revoked:window.__speechRevokedUrls.includes(window.__stoppedSpeechUrl)})`),{paused:true,retained:true,revoked:false},"page exit must stop playback without deleting the persisted asset source");
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
   await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-capture-promote]').click(); true`);
   const promoted = await evaluate(`({ today: document.querySelector("#view-today").classList.contains("active"), idea: document.querySelector("#chain-idea").value, status: document.querySelector("#chain-status").textContent, sourceId:document.querySelector("#chain-form").elements.sourceCaptureId.value, sourceVersion:document.querySelector("#chain-form").elements.sourceCaptureVersion.value, kind:document.querySelector("#chain-form").elements.recordKind.value, chooserHidden:document.querySelector(".thought-record-kind").hidden })`);
@@ -3149,7 +3178,7 @@ try {
   await evaluate(`document.querySelector("#password-form [name='currentPassword']").value="old-password-1"; document.querySelector("#password-form [name='newPassword']").value="new-password-2"; document.querySelector("#password-form [name='confirmPassword']").value="new-password-2"; document.querySelector("#password-form").requestSubmit(); true`);
   assert.equal(await waitUntil(`window.__passwordChanges===1&&document.querySelector("#password-status").textContent.includes("密码已更新")`), true);
   await evaluate(`document.querySelector('[data-view="settings"]').click(); true`);
-  assert.deepEqual(await evaluate(`(() => {const rate=document.querySelector("#tts-generation-rate"),voice=document.querySelector("#tts-default-voice"),assistant=document.querySelector("#assistant-name").closest("label"),exclusive=document.querySelector("[data-exclusive-agent-comment]");return{profileModels:document.querySelectorAll("[data-profile-model]").length,profileEfforts:document.querySelectorAll("[data-profile-effort]").length,sceneTiers:document.querySelectorAll("[data-ai-scenario]").length,annotationSceneTiers:document.querySelectorAll('[data-ai-scenario="annotationShenji"]').length,sceneEfforts:document.querySelectorAll("[data-ai-effort]").length,responseStyles:document.querySelectorAll("[data-response-style]").length,annotationStyles:document.querySelectorAll('[data-response-style="annotationShenji"]').length,exclusiveLabel:exclusive?.querySelector("span")?.textContent,exclusiveAfterAssistant:assistant.nextElementSibling===exclusive,voice:voice.value,voices:voice.options.length,min:rate.min,max:rate.max,value:rate.value,accessibleName:rate.getAttribute("aria-label"),valueText:rate.getAttribute("aria-valuetext"),label:document.querySelector("#tts-generation-rate-value").textContent}})()`), {
+  assert.deepEqual(await evaluate(`(() => {const rate=document.querySelector("#tts-generation-rate"),voice=document.querySelector("#tts-default-voice"),preview=document.querySelector("#tts-voice-preview"),assistant=document.querySelector("#assistant-name").closest("label"),exclusive=document.querySelector("[data-exclusive-agent-comment]");return{profileModels:document.querySelectorAll("[data-profile-model]").length,profileEfforts:document.querySelectorAll("[data-profile-effort]").length,sceneTiers:document.querySelectorAll("[data-ai-scenario]").length,annotationSceneTiers:document.querySelectorAll('[data-ai-scenario="annotationShenji"]').length,sceneEfforts:document.querySelectorAll("[data-ai-effort]").length,responseStyles:document.querySelectorAll("[data-response-style]").length,annotationStyles:document.querySelectorAll('[data-response-style="annotationShenji"]').length,exclusiveLabel:exclusive?.querySelector("span")?.textContent,exclusiveAfterAssistant:assistant.nextElementSibling===exclusive,voice:voice.value,voices:voice.options.length,previewName:preview.getAttribute("aria-label"),previewTitle:preview.title,min:rate.min,max:rate.max,value:rate.value,accessibleName:rate.getAttribute("aria-label"),valueText:rate.getAttribute("aria-valuetext"),label:document.querySelector("#tts-generation-rate-value").textContent}})()`), {
     profileModels: 4,
     profileEfforts: 0,
     sceneTiers: 14,
@@ -3161,6 +3190,8 @@ try {
     exclusiveAfterAssistant: true,
     voice: "zh_male_shaonianzixin_uranus_bigtts",
     voices: 4,
+    previewName: "播放所选官方音色试音",
+    previewTitle: "播放所选官方音色试音",
     min: "-50",
     max: "100",
     value: "-10",
@@ -3168,10 +3199,23 @@ try {
     valueText: "0.90倍",
     label: "0.90×"
   });
+  await evaluate(`document.querySelector("#tts-voice-preview").click();true`);
+  assert.equal(await waitUntil(`window.__speechPreviewRequests.length===1&&!window.__lastSpeechAudio.paused&&document.querySelector("#tts-voice-preview").getAttribute("aria-label")==="停止官方音色试音"`),true);
+  assert.deepEqual(await evaluate(`window.__speechPreviewRequests[0]`),{voice:"zh_male_shaonianzixin_uranus_bigtts"});
+  await evaluate(`(()=>{const select=document.querySelector("#tts-default-voice");window.__previewUrlBeforeSwitch=window.__lastSpeechAudio.src;select.value="zh_male_m191_uranus_bigtts";select.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
+  assert.deepEqual(await evaluate(`({stopped:window.__lastSpeechAudio.paused,revoked:window.__speechRevokedUrls.includes(window.__previewUrlBeforeSwitch),name:document.querySelector("#tts-voice-preview").getAttribute("aria-label"),status:document.querySelector("#tts-voice-preview-status").textContent})`),{stopped:true,revoked:true,name:"播放所选官方音色试音",status:""});
+  await evaluate(`window.__failSpeechPreview=true;document.querySelector("#tts-voice-preview").click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#tts-voice-preview-status").textContent==="试音暂时不可用，请稍后再试。"`),true);
+  assert.equal(await evaluate(`!document.body.textContent.includes("PREVIEW_PROVIDER_PRIVATE")`),true);
+  await evaluate(`document.querySelector("#tts-voice-preview").click();true`);
+  assert.equal(await waitUntil(`window.__speechPreviewRequests.length===2&&!window.__lastSpeechAudio.paused`),true);
+  await evaluate(`window.__previewUrlBeforeLeave=window.__lastSpeechAudio.src;document.querySelector("#view-settings .mine-back").click();true`);
+  assert.deepEqual(await evaluate(`({stopped:window.__lastSpeechAudio.paused,revoked:window.__speechRevokedUrls.includes(window.__previewUrlBeforeLeave),active:document.querySelector("#view-mine").classList.contains("active")})`),{stopped:true,revoked:true,active:true});
+  await evaluate(`document.querySelector('#view-mine [data-view="settings"]').click();true`);
   await evaluate(`document.querySelector('[data-profile-model="lite"]').value = "deepseek-v4-pro";document.querySelector('[data-ai-scenario="diaryLead"]').value = "ultra";document.querySelector("#assistant-name").value="照见";document.querySelector('[data-response-style="thoughtAnswer"]').value="deep";document.querySelector('[data-response-style="annotationShenji"]').value="structured";document.querySelector("#tts-default-voice").value="zh_male_m191_uranus_bigtts";const rate=document.querySelector("#tts-generation-rate");rate.value="25";rate.dispatchEvent(new Event("input",{bubbles:true}));document.querySelector("#llm-settings-form").requestSubmit(); true`);
   assert.equal(await waitUntil(`window.__settingsSaves === 1`), true);
-  const savedSettings = await evaluate(`({ model: document.querySelector('[data-profile-model="lite"]').value, preservedProfileEffort:window.__lastSettingsPayload.profiles.lite.effort, scene: document.querySelector('[data-ai-scenario="diaryLead"]').value, preservedAnnotationScenario:window.__lastSettingsPayload.scenarios.annotationShenji, name:document.querySelector("#assistant-name").value, style:document.querySelector('[data-response-style="thoughtAnswer"]').value, annotationStyle:window.__lastSettingsPayload.responseStyles.annotationShenji, defaultVoice:window.__lastSettingsPayload.speech.defaultVoice, generationRate:window.__lastSettingsPayload.speech.generationRate, rateLabel:document.querySelector("#tts-generation-rate-value").textContent, rateValueText:document.querySelector("#tts-generation-rate").getAttribute("aria-valuetext") })`);
-  assert.deepEqual(savedSettings, { model: "deepseek-v4-pro", preservedProfileEffort:"max", scene:"ultra", preservedAnnotationScenario:"high", name:"照见", style:"deep", annotationStyle:"structured", defaultVoice:"zh_male_m191_uranus_bigtts", generationRate:25, rateLabel:"1.25×", rateValueText:"1.25倍" });
+  const savedSettings = await evaluate(`({ model: document.querySelector('[data-profile-model="lite"]').value, preservedProfileEffort:window.__lastSettingsPayload.profiles.lite.effort, scene: document.querySelector('[data-ai-scenario="diaryLead"]').value, preservedAnnotationScenario:window.__lastSettingsPayload.scenarios.annotationShenji, name:document.querySelector("#assistant-name").value, style:document.querySelector('[data-response-style="thoughtAnswer"]').value, annotationStyle:window.__lastSettingsPayload.responseStyles.annotationShenji, defaultVoice:window.__lastSettingsPayload.speech.defaultVoice, generationRate:window.__lastSettingsPayload.speech.generationRate, existingAssetVoice:window.__speechAssets.find(asset=>asset.id==="asset-answer-kept-v1")?.voice, rateLabel:document.querySelector("#tts-generation-rate-value").textContent, rateValueText:document.querySelector("#tts-generation-rate").getAttribute("aria-valuetext") })`);
+  assert.deepEqual(savedSettings, { model: "deepseek-v4-pro", preservedProfileEffort:"max", scene:"ultra", preservedAnnotationScenario:"high", name:"照见", style:"deep", annotationStyle:"structured", defaultVoice:"zh_male_m191_uranus_bigtts", generationRate:25, existingAssetVoice:"zh_male_shaonianzixin_uranus_bigtts", rateLabel:"1.25×", rateValueText:"1.25倍" });
   assert.equal(await evaluate(`document.querySelector("#reset-response-styles").click();document.querySelector("#assistant-name").value==="神鸡"&&[...document.querySelectorAll("[data-response-style]")].every(select=>select.value==="standard")`),true);
   await evaluate(`document.querySelector("#ai-answer-modal").hidden = true; document.querySelector("#edit-chain-modal").hidden = true; document.querySelector(".settings-card").scrollIntoView({ block: "start" }); true`);
   await sleep(300);
@@ -3223,15 +3267,23 @@ try {
   assert.equal(await evaluate(`(() => { document.querySelector('[data-view="thoughts"]').click();const before=window.__deleteRequests;window.confirm=()=>false;document.querySelector('[data-chain-id="kept-root"] [data-delete-chain]').click();return window.__deleteRequests===before; })()`),true);
   await evaluate(`document.querySelector('[data-chain-id="kept-root"] .chain-summary').click();true`);
   assert.equal(await waitUntil(`location.pathname==="/thoughts/kept-root"&&document.querySelector('#all-thoughts [data-chain-id="kept-root"]')?.open`),true);
+  assert.deepEqual(await evaluate(`(() => {const block=document.querySelector('#all-thoughts [data-thought-block-id="answer-kept"]'),controls=block.querySelector(".speech-asset-controls"),player=controls.querySelector("[data-speech-player]"),rate=controls.querySelector("[data-speech-playback-rate]");return{sourceType:controls.dataset.speechSourceType,sourceId:controls.dataset.speechSourceId,sourceVersion:controls.dataset.speechSourceVersion,src:player.getAttribute("src"),button:controls.querySelector("[data-speech-synthesize]").textContent,buttonName:controls.querySelector("[data-speech-synthesize]").getAttribute("aria-label"),rateName:rate.getAttribute("aria-label")}})()`),{sourceType:"thoughtAnswer",sourceId:"answer-kept",sourceVersion:"1",src:"/api/speech/audio?sourceType=thoughtAnswer&sourceId=answer-kept&assetId=asset-answer-kept-v1",button:"重新生成",buttonName:"重新生成AI 回答文字朗读",rateName:"AI 回答文字朗读播放倍速"});
+  await evaluate(`document.querySelector('#all-thoughts [data-thought-block-id="answer-kept"] [data-speech-synthesize]').click();true`);
+  assert.equal(await waitUntil(`window.__speechRequests.length===5&&document.querySelector('#all-thoughts [data-thought-block-id="answer-kept"] [data-speech-player]')?.getAttribute("src").includes("asset-generated-")`),true);
+  assert.deepEqual(await evaluate(`({request:window.__speechRequests.at(-1),voice:window.__speechAssets.find(asset=>asset.sourceType==="thoughtAnswer"&&asset.sourceId==="answer-kept")?.voice,open:document.querySelector('#all-thoughts [data-chain-id="kept-root"]').open})`),{request:{sourceType:"thoughtAnswer",sourceId:"answer-kept",sourceVersion:1,regenerate:true},voice:"zh_male_m191_uranus_bigtts",open:true});
+  await cdp.send("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:1,mobile:true});await sleep(100);
+  assert.equal(await evaluate(`(()=>{const controls=document.querySelector('#all-thoughts [data-thought-block-id="answer-kept"] .speech-asset-controls'),button=controls.querySelector("button").getBoundingClientRect(),select=controls.querySelector("select").getBoundingClientRect(),card=controls.closest(".thought-content-block").getBoundingClientRect();return document.documentElement.scrollWidth<=innerWidth&&button.width>=44&&button.height>=44&&select.width>=44&&select.height>=44&&controls.getBoundingClientRect().right<=card.right+.5})()`),true);
+  await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
   await evaluate(`window.confirm=()=>true;window.__conflictThoughtDelete=true;window.__failNextStateRefresh=true;document.querySelector('[data-chain-id="kept-root"] [data-delete-chain]').click();true`);
   assert.equal(await waitUntil(`location.pathname==="/thoughts/kept-root"&&!document.querySelector('[data-route-result="unavailable"]')&&document.querySelector('#all-thoughts [data-chain-id="kept-root"]')?.open&&document.querySelector("#toast").textContent.includes("资源版本已变化")`),true);
   await evaluate(`window.__failThoughtDeleteNetwork=true;document.querySelector('[data-chain-id="kept-root"] [data-delete-chain]').click();true`);
   assert.equal(await waitUntil(`!document.querySelector('[data-chain-id="kept-root"]')&&document.querySelector("#toast").textContent.includes("网络恢复后移入回收站")`),true);
   await evaluate(`document.querySelector('[data-view="daily"]').click();document.querySelector('[data-daily-tab="exercise"]').click();window.__pasteHealth();window.__delayParseKind="exercise";window.__releaseParse=null;document.querySelector("#parse-health-images").click();true`);
   assert.equal(await waitUntil(`typeof window.__releaseParse==="function"`),true);
-  await evaluate(`document.querySelector('[data-view="captures"]').click();document.querySelector('[data-capture-id="capture-1"] [data-capture-speak]').click();true`);
-  assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-1"] [data-capture-speech-player]')?.currentSrc.startsWith("blob:")`),true);
-  await evaluate(`window.__logoutSpeechUrl=document.querySelector('[data-capture-id="capture-1"] [data-capture-speech-player]').currentSrc;document.querySelector('[data-view="today"]').click();document.querySelector("#chain-question").value="账户 A 的在途草稿";document.querySelector("#chain-answer").value="";document.querySelector("#draft-answer-button").click();true`);
+  await evaluate(`document.querySelector('[data-view="captures"]').click();window.__logoutSpeechPlayer=document.querySelector('[data-capture-id="capture-1"] [data-speech-player]');window.__logoutSpeechUrl=window.__logoutSpeechPlayer.getAttribute("src");window.__logoutSpeechPlayer.play();true`);
+  assert.equal(await waitUntil(`!window.__logoutSpeechPlayer.paused`),true);
+  await evaluate(`document.querySelector('[data-view="today"]').click();document.querySelector("#chain-question").value="账户 A 的在途草稿";document.querySelector("#chain-answer").value="";document.querySelector("#draft-answer-button").click();true`);
+  assert.deepEqual(await evaluate(`({paused:window.__logoutSpeechPlayer.paused,retained:window.__logoutSpeechPlayer.getAttribute("src")===window.__logoutSpeechUrl,revoked:window.__speechRevokedUrls.includes(window.__logoutSpeechUrl)})`),{paused:true,retained:true,revoked:false});
   assert.equal(await waitUntil(`window.__reasoningChunks===1`,40,10),true);
   await evaluate(`(()=>{const file=new File([new Uint8Array([1,2,3])],"thought-draft.png",{type:"image/png"}),transfer=new DataTransfer();transfer.items.add(file);const input=document.querySelector("#thought-root-images");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
   assert.equal(await waitUntil(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const request=opening.result.transaction("drafts","readonly").objectStore("drafts").get("user-1:thoughtRoot");request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(request.result?.items?.[0]?.name==="thought-draft.png")}})`),true);
@@ -3241,7 +3293,7 @@ try {
   await evaluate(`window.__delayLogout=true;document.querySelector("#logout-button").click();true`);
   assert.equal(await waitUntil(`!document.querySelector("#auth-gate").hidden`),true);
   assert.equal(await evaluate(`sessionStorage.getItem("cike:session-drafts:user-1")`),null);
-  assert.deepEqual(await evaluate(`({locked:document.body.classList.contains("auth-locked"),privateSurfaceHidden:getComputedStyle(document.querySelector("main")).visibility==="hidden",logoutPending:typeof window.__releaseLogout==="function",speechRevoked:window.__speechRevokedUrls.includes(window.__logoutSpeechUrl),speechDetached:![...document.querySelectorAll("[data-capture-speech-player]")].some(player=>player.getAttribute("src")===window.__logoutSpeechUrl)})`),{locked:true,privateSurfaceHidden:true,logoutPending:true,speechRevoked:true,speechDetached:true});
+  assert.deepEqual(await evaluate(`({locked:document.body.classList.contains("auth-locked"),privateSurfaceHidden:getComputedStyle(document.querySelector("main")).visibility==="hidden",logoutPending:typeof window.__releaseLogout==="function",speechPaused:window.__logoutSpeechPlayer.paused,speechRetained:window.__logoutSpeechPlayer.getAttribute("src")===window.__logoutSpeechUrl,speechRevoked:window.__speechRevokedUrls.includes(window.__logoutSpeechUrl)})`),{locked:true,privateSurfaceHidden:true,logoutPending:true,speechPaused:true,speechRetained:true,speechRevoked:false});
   await evaluate(`window.__releaseLogout();true`);
   assert.equal(await waitUntil(`[...document.querySelectorAll(".auth-form input,.auth-form button,[data-auth-tab]")].every(item=>!item.disabled)`),true);
   assert.equal(await waitUntil(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const request=opening.result.transaction("drafts","readonly").objectStore("drafts").get("user-1:thoughtRoot");request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(!request.result)}})`),true);

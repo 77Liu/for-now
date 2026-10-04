@@ -37,6 +37,12 @@ import {
   imageRecordPayload,
   imageUnderstandingPayload,
   preferredRecorderMime,
+  SPEECH_SOURCE_TYPES,
+  speechAssetForSource,
+  speechAudioPath,
+  speechPreviewPayload,
+  speechSourceIdentity,
+  speechSynthesisPayload,
   uploadPendingMediaItems,
   uploadOriginalAudio,
   uploadOriginalImages,
@@ -473,6 +479,77 @@ if (process.argv.includes("--timezone-case")) {
     captureSpeechIdentity({ ...audioCapture, version: 3 }, "voice-a")
   );
   assert.notEqual(captureSpeechIdentity(audioCapture, "voice-a"), captureSpeechIdentity(audioCapture, "voice-b"));
+  const speechAssets = [{
+    id: "asset-old-voice",
+    sourceType: "capture",
+    sourceId: "capture-audio",
+    sourceVersion: 2,
+    voice: "voice-a",
+    generationRate: -10,
+    mimeType: "audio/mpeg",
+    bytes: 128,
+    createdAt: "2026-10-03T00:00:00.000Z",
+    expiresAt: "2026-11-03T00:00:00.000Z"
+  }, {
+    id: "asset-current",
+    sourceType: "capture",
+    sourceId: "capture-audio",
+    sourceVersion: 2,
+    voice: "voice-b",
+    generationRate: 25,
+    mimeType: "audio/mpeg",
+    bytes: 256,
+    createdAt: "2026-10-04T00:00:00.000Z",
+    expiresAt: "2026-11-04T00:00:00.000Z"
+  }, {
+    id: "asset-stale-version",
+    sourceType: "capture",
+    sourceId: "capture-audio",
+    sourceVersion: 1,
+    voice: "voice-c",
+    generationRate: -10,
+    mimeType: "audio/mpeg",
+    bytes: 64,
+    createdAt: "2026-10-05T00:00:00.000Z",
+    expiresAt: "2026-11-05T00:00:00.000Z"
+  }];
+  assert.deepEqual(SPEECH_SOURCE_TYPES, ["capture", "thoughtAnswer"]);
+  assert.equal(speechSourceIdentity("capture", "capture-audio", 2), '["capture","capture-audio",2]');
+  assert.equal(speechSourceIdentity("other", "capture-audio", 2), "");
+  assert.equal(speechAssetForSource(speechAssets, {
+    sourceType: "capture",
+    sourceId: "capture-audio",
+    sourceVersion: 2
+  })?.id, "asset-current", "the persisted asset selection must not depend on the current default voice");
+  assert.equal(speechAssetForSource(speechAssets, {
+    sourceType: "capture",
+    sourceId: "capture-audio",
+    sourceVersion: 3
+  }), null);
+  assert.equal(
+    speechAudioPath(speechAssets[1]),
+    "/api/speech/audio?sourceType=capture&sourceId=capture-audio&assetId=asset-current"
+  );
+  assert.equal(speechAudioPath({}), "");
+  assert.deepEqual(speechSynthesisPayload({
+    sourceType: "thoughtAnswer",
+    sourceId: "answer-1",
+    sourceVersion: 3,
+    regenerate: true,
+    voice: "must-not-pass-through"
+  }), {
+    sourceType: "thoughtAnswer",
+    sourceId: "answer-1",
+    sourceVersion: 3,
+    regenerate: true
+  });
+  assert.deepEqual(speechPreviewPayload(" voice-a "), { voice: "voice-a" });
+  assert.throws(() => speechSynthesisPayload({
+    sourceType: "capture",
+    sourceId: "",
+    sourceVersion: 1
+  }), { message: "语音来源无效" });
+  assert.throws(() => speechPreviewPayload(""), { message: "请选择试音音色" });
   assert.deepEqual(
     [TTS_GENERATION_RATE_MIN, TTS_GENERATION_RATE_DEFAULT, TTS_GENERATION_RATE_MAX],
     [-50, -10, 100]
