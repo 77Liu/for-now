@@ -85,25 +85,24 @@ function routeStateUrl(route) {
   return `/api/v1/route-state?${query}`;
 }
 
+const requestSession = () => requestJson("/api/auth/me", { allowUnauthorized: true });
+const requestLocalTestConfig = () => requestJson("/api/local-test-mode", { optional: true, allowUnauthorized: true });
+
 function envelopeData(value) {
   if (!value || value.error || !value.data) throw new Error(value?.error?.message || "启动请求失败");
   return value.data;
 }
 
-async function initialSnapshot({ stylesReady = Promise.resolve() } = {}) {
+async function initialSnapshot({ stylesReady = Promise.resolve(), onShellReady = () => {} } = {}) {
   markStartup("bootstrapStart");
   try {
     const route = resolveApplicationRoute(location, { basePath });
-    const sessionRequest = requestJson("/api/auth/me", { allowUnauthorized: true });
-    const testConfigRequest = requestJson("/api/local-test-mode", { optional: true, allowUnauthorized: true });
-    const startupRequest = requestJson("/api/v1/startup", { allowUnauthorized: true });
-    const routeRequest = requestJson(routeStateUrl(route), { allowUnauthorized: true }).then(
-      value => ({ value }),
-      error => ({ error })
-    );
-    const startupResult = await startupRequest;
+    const startupResult = await requestJson("/api/v1/startup", { allowUnauthorized: true });
     if (!startupResult?.data) {
-      const [session, testConfigResult] = await Promise.all([sessionRequest, testConfigRequest]);
+      const [session, testConfigResult] = await Promise.all([
+        requestSession(),
+        requestLocalTestConfig()
+      ]);
       const testConfig = ["AUTH_REQUIRED", "AUTH_REAUTH_REQUIRED"].includes(testConfigResult?.code) ? null : testConfigResult;
       markStartup("authSessionReady");
       if (!session.authenticated) {
@@ -116,8 +115,15 @@ async function initialSnapshot({ stylesReady = Promise.resolve() } = {}) {
     markStartup("authSessionReady");
     markStartup("loadStart");
     markStartup("coreSnapshotReady");
+    const sessionRequest = requestSession();
+    const testConfigRequest = requestLocalTestConfig();
+    const routeRequest = requestJson(routeStateUrl(route), { allowUnauthorized: true }).then(
+      value => ({ value }),
+      error => ({ error })
+    );
     await stylesReady;
     const visibleShell = revealAuthenticatedShell({ user: meta.user }, { onboardingV2: meta.onboardingV2 });
+    onShellReady();
     const [session, testConfigResult, routeResult] = await Promise.all([
       sessionRequest,
       testConfigRequest,
@@ -140,8 +146,10 @@ async function initialSnapshot({ stylesReady = Promise.resolve() } = {}) {
 }
 
 export async function startApplication() {
+  let runtimeRequest;
+  const loadRuntime = () => (runtimeRequest ||= import("./runtime.mjs"));
   const stylesReady = loadR8Styles();
-  const initial = await initialSnapshot({ stylesReady });
-  const runtime = await import("./runtime.mjs");
+  const initial = await initialSnapshot({ stylesReady, onShellReady: loadRuntime });
+  const runtime = await loadRuntime();
   return runtime.startApplication(initial);
 }

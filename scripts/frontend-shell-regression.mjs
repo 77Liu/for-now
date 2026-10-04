@@ -42,9 +42,10 @@ assert.match(appEntry, /^import \{ startApplication \} from "\.\/frontend\/app\/
 assert.ok(appEntry.split("\n").length <= 5, "public/app.js must remain a thin bootstrap");
 assert.match(appBootstrap, /requestJson\("\/api\/v1\/startup", \{ allowUnauthorized: true \}\)/);
 assert.match(appBootstrap, /requestJson\(routeStateUrl\(route\), \{ allowUnauthorized: true \}\)/);
-assert.match(appBootstrap, /const runtime = await import\("\.\/runtime\.mjs"\)/);
+assert.match(appBootstrap, /const runtime = await loadRuntime\(\)/);
 assert.match(appBootstrap, /const stylesReady = loadR8Styles\(\)/);
-assert.match(appBootstrap, /initialSnapshot\(\{ stylesReady \}\)/);
+assert.match(appBootstrap, /initialSnapshot\(\{ stylesReady, onShellReady: loadRuntime \}\)/);
+assert.match(appBootstrap, /const loadRuntime = \(\) => \(runtimeRequest \|\|= import\("\.\/runtime\.mjs"\)\)/);
 assert.match(appBootstrap, /timeout = setTimeout\(finish, 1500\)/);
 assert.match(appBootstrap, /link\.addEventListener\("error", finish, \{ once: true \}\)/);
 assert.doesNotMatch(appBootstrap, /from "\.\/runtime\.mjs"/);
@@ -52,7 +53,7 @@ assert.match(appBootstrap, /requestJson\("\/api\/auth\/me", \{ allowUnauthorized
 for (const endpoint of ["/api/auth/me", "/api/v1/startup"]) {
   assert.equal(appBootstrap.split(`"${endpoint}"`).length - 1, 1, `bootstrap must request ${endpoint} once`);
 }
-assert.ok(appBootstrap.indexOf("const routeRequest = requestJson(routeStateUrl(route)") < appBootstrap.indexOf("const startupResult = await startupRequest"));
+assert.ok(appBootstrap.indexOf('const startupResult = await requestJson("/api/v1/startup"') < appBootstrap.indexOf("const routeRequest = requestJson(routeStateUrl(route)"));
 assert.ok(appBootstrap.indexOf("const visibleShell = revealAuthenticatedShell") < appBootstrap.indexOf("const [session, testConfigResult, routeResult]"));
 assert.doesNotMatch(appBootstrap, /requestJson\("\/api\/state"\)|requestJson\("\/api\/meta"\)/);
 assert.match(appRuntime, /export async function startApplication\(initial = null\)/);
