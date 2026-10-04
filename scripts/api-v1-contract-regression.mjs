@@ -626,6 +626,8 @@ try {
     truncated: false
   });
   assert.equal(pageTwo.body.meta.nextCursor, null);
+  const taggedPage = await request(`/api/v1/thought-chains?tag=${encodeURIComponent("契约")}`, { cookie: owner });
+  assert.deepEqual(taggedPage.body.data.map(item => item.id), [firstId]);
   const oversizedPage = await request("/api/v1/thought-chains?limit=21", { cookie: owner });
   assert.equal(oversizedPage.response.status, 400);
   assert.equal(oversizedPage.body.error.code, "INVALID_PAGINATION");

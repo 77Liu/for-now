@@ -31,6 +31,20 @@ export const thoughtPaths = Object.freeze({
           required: false,
           description: "按问题、标签及链内公开内容搜索；多个空格分隔词需全部命中",
           schema: { type: "string", maxLength: 200 }
+        },
+        {
+          name: "tag",
+          in: "query",
+          required: false,
+          description: "按思绪链内标签精确筛选",
+          schema: { type: "string", maxLength: 30 }
+        },
+        {
+          name: "sort",
+          in: "query",
+          required: false,
+          description: "列表排序时间口径",
+          schema: { type: "string", enum: ["occurred", "created"], default: "occurred" }
         }
       ],
       responses: {

@@ -335,6 +335,43 @@ assert.equal(reviewText.includes(large), false);
 const reviewBytes = Buffer.byteLength(reviewText);
 assert.ok(reviewBytes <= ROUTE_BUDGET_BYTES, `review projection is ${reviewBytes} bytes`);
 
+const thoughtList = routeStateProjection(publicState, {
+  view: "thoughts",
+  currentDate: CURRENT_DATE,
+  query: { q: "earlier" }
+});
+assert.equal(thoughtList.thoughtPage.kind, "list");
+assert.equal(thoughtList.thoughts.length, 20);
+assert.ok(thoughtList.thoughtPage.nextId);
+assert.deepEqual(thoughtList.thoughtPage.tags, ["test"]);
+assert.equal(thoughtList.thoughtPage.sort, "occurred");
+assert.ok(thoughtList.thoughts.every(item => item.type === "question" && !Object.hasOwn(item, "blocks")));
+assertNoPrivateFields(thoughtList);
+const restoredThoughtList = routeStateProjection(publicState, {
+  view: "thoughts",
+  currentDate: CURRENT_DATE,
+  query: { q: "earlier", page: 2 }
+});
+assert.equal(restoredThoughtList.thoughts.length, 29);
+assert.equal(restoredThoughtList.thoughtPage.nextId, "");
+const thoughtDetail = routeStateProjection(publicState, {
+  view: "thoughts",
+  currentDate: CURRENT_DATE,
+  resourceId: "root-0"
+});
+assert.equal(thoughtDetail.thoughtPage.kind, "detail");
+assert.equal(thoughtDetail.thoughtPage.found, true);
+assert.equal(thoughtDetail.thoughts.length, 2);
+assert.equal(Object.hasOwn(thoughtDetail.thoughts[0], "blocks"), false);
+assertNoPrivateFields(thoughtDetail);
+const missingThoughtDetail = routeStateProjection(publicState, {
+  view: "thoughts",
+  currentDate: CURRENT_DATE,
+  resourceId: "missing"
+});
+assert.equal(missingThoughtDetail.thoughtPage.found, false);
+assert.deepEqual(missingThoughtDetail.thoughts, []);
+
 const emptyReview = routeStateProjection({}, { view: "review", currentDate: CURRENT_DATE });
 assert.deepEqual(
   [emptyReview.checkins, emptyReview.analyses, emptyReview.experiments, emptyReview.customMetrics, emptyReview.clusters],
@@ -398,16 +435,26 @@ const v1 = {
   error(_res, status, message, code) {
     responses.push({ status, message, code });
     return true;
+  },
+  nextCursor(afterId) {
+    return afterId ? `encoded:${afterId}` : null;
   }
 };
 const http = createStartupHttp({
   readStartup: async () => startup,
-  readRouteState: async route => ({ route })
+  readRouteState: async route => ({
+    route,
+    ...(route.view === "thoughts" ? { thoughtPage: { kind: "list", nextId: "cursor-id" } } : {})
+  })
 });
 assert.equal(await http.handleV1({ method: "GET" }, {}, new URL("http://local/api/v1/startup"), v1), true);
 assert.equal(responses.at(-1).data.protocolVersion, 1);
 assert.equal(await http.handleV1({ method: "GET" }, {}, new URL("http://local/api/v1/route-state?view=today"), v1), true);
 assert.equal(responses.at(-1).data.route.view, "today");
+assert.equal(await http.handleV1({ method: "GET" }, {}, new URL("http://local/api/v1/route-state?view=thoughts&q=test"), v1), true);
+assert.equal(responses.at(-1).data.route.query.q, "test");
+assert.match(responses.at(-1).data.thoughtPage.nextCursor, /^encoded:/);
+assert.equal(Object.hasOwn(responses.at(-1).data.thoughtPage, "nextId"), false);
 assert.equal(await http.handleV1({ method: "GET" }, {}, new URL("http://local/api/v1/route-state?view=unknown"), v1), true);
 assert.deepEqual(responses.at(-1), { status: 400, message: "页面标识无效", code: "INVALID_ROUTE_VIEW" });
 assert.equal(await http.handleV1({ method: "POST" }, {}, new URL("http://local/api/v1/startup"), v1), false);

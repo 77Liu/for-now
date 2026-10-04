@@ -31,11 +31,11 @@ export function encodeCursor(afterId) {
   return Buffer.from(JSON.stringify({ v: 1, after: afterId }), "utf8").toString("base64url");
 }
 
-export function decodeCursor(value) {
+export function decodeCursor(value, { maxLength = 100 } = {}) {
   if (!value) return "";
   try {
     const decoded = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
-    if (decoded?.v !== 1 || typeof decoded.after !== "string" || !decoded.after || decoded.after.length > 100) throw new Error();
+    if (decoded?.v !== 1 || typeof decoded.after !== "string" || !decoded.after || decoded.after.length > maxLength) throw new Error();
     return decoded.after;
   } catch {
     throw problem("游标无效或已过期", "INVALID_CURSOR", 400);
@@ -116,13 +116,13 @@ export function createApiV1Http({ sendJson, getContext, openApi }) {
       return version;
     },
 
-    pagination(url, { defaultLimit = 20, maxLimit = 100 } = {}) {
+    pagination(url, { defaultLimit = 20, maxLimit = 100, maxCursorLength = 100 } = {}) {
       const rawLimit = url.searchParams.get("limit");
       const limit = rawLimit == null || rawLimit === "" ? defaultLimit : Number(rawLimit);
       if (!Number.isInteger(limit) || limit < 1 || limit > maxLimit) {
         throw problem(`limit 必须是 1 到 ${maxLimit} 的整数`, "INVALID_PAGINATION", 400);
       }
-      return { limit, afterId: decodeCursor(url.searchParams.get("cursor") || "") };
+      return { limit, afterId: decodeCursor(url.searchParams.get("cursor") || "", { maxLength: maxCursorLength }) };
     },
 
     nextCursor(afterId) {

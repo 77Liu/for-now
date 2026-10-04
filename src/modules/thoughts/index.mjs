@@ -42,12 +42,50 @@ const limitedText = (value, limit) => {
   const full = String(value ?? "").trim();
   return { content: full.slice(0, limit), truncated: full.length > limit };
 };
-const chainCursor = (root, query) => requestDigest({
-  version: 1,
-  resource: "thought-chain",
-  id: root.id,
-  query
+const normalizedListSort = value => value === "created" ? "created" : "occurred";
+const normalizedListTag = value => safeText(value, 30).normalize("NFKC").trim();
+const chainSortTuple = (root, sort) => ({
+  primary: String(sort === "created"
+    ? root?.createdAt || root?.occurredAt || ""
+    : root?.occurredAt || root?.createdAt || ""),
+  created: String(root?.createdAt || ""),
+  id: String(root?.id || "")
 });
+const compareChainTuples = (left, right) => (
+  right.primary.localeCompare(left.primary)
+  || right.created.localeCompare(left.created)
+  || right.id.localeCompare(left.id)
+);
+const chainCursorScope = ({ query, tag, sort }) => requestDigest({
+  version: 2,
+  resource: "thought-chain",
+  query,
+  tag,
+  sort
+}).slice(0, 20);
+const chainCursor = (root, filters) => JSON.stringify({
+  v: 2,
+  ...chainSortTuple(root, filters.sort),
+  scope: chainCursorScope(filters)
+});
+const parseChainCursor = (value, filters) => {
+  if (!value) return null;
+  try {
+    const cursor = JSON.parse(value);
+    if (
+      cursor?.v !== 2
+      || typeof cursor.primary !== "string"
+      || typeof cursor.created !== "string"
+      || typeof cursor.id !== "string"
+      || !cursor.id
+      || cursor.id.length > 100
+      || cursor.scope !== chainCursorScope(filters)
+    ) return false;
+    return cursor;
+  } catch {
+    return false;
+  }
+};
 const chainSearchText = (root, blocks) => normalizedSearchText([
   root.content,
   ...(Array.isArray(root.tags) ? root.tags : []),
@@ -92,8 +130,11 @@ const userChainPreview = blocks => {
     truncated: preview.truncated
   };
 };
-const chainSummary = (root, blocks) => {
+export const thoughtChainSummary = (root, blocks) => {
   const question = limitedText(root.content, QUESTION_PREVIEW_LIMIT);
+  const tags = [...new Set([...(root.tags || []), ...blocks.flatMap(item => item?.tags || [])]
+    .map(tag => safeText(tag, 30))
+    .filter(Boolean))].slice(0, 8);
   return {
     id: String(root.id),
     type: "question",
@@ -104,10 +145,7 @@ const chainSummary = (root, blocks) => {
     occurredOn: root.occurredOn || null,
     createdAt: root.createdAt || null,
     updatedAt: root.updatedAt || null,
-    tags: (Array.isArray(root.tags) ? root.tags : [])
-      .map(tag => safeText(tag, 30))
-      .filter(Boolean)
-      .slice(0, 8),
+    tags,
     disposition: ["pending", "kept", "discarded"].includes(root.disposition)
       ? root.disposition
       : "kept",
@@ -124,6 +162,85 @@ const chainSummary = (root, blocks) => {
     } : {})
   };
 };
+
+function publicThoughtValue(value) {
+  if (Array.isArray(value)) return value.map(publicThoughtValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !["modelDraft", "modelReasoning", "reasoningContent", "requestHash"].includes(key))
+    .map(([key, item]) => [key, publicThoughtValue(item)]));
+}
+
+export function thoughtChainDetail(thoughts, id) {
+  const items = Array.isArray(thoughts) ? thoughts : [];
+  const root = items.find(item => item?.id === id && item.type === "question");
+  return root ? {
+    ...publicThoughtValue(root),
+    blocks: items
+      .filter(item => item?.relatedTo === root.id)
+      .map(publicThoughtValue)
+  } : null;
+}
+
+export function thoughtChainListPage(thoughts, {
+  limit = CHAIN_LIST_LIMIT,
+  maxLimit = CHAIN_LIST_LIMIT,
+  afterId = "",
+  query = "",
+  tag = "",
+  sort = "occurred"
+} = {}) {
+  const items = Array.isArray(thoughts) ? thoughts : [];
+  const blocksByRoot = new Map();
+  const roots = [];
+  for (const item of items) {
+    if (item.type === "question") {
+      roots.push(item);
+    } else if (item.relatedTo) {
+      const blocks = blocksByRoot.get(item.relatedTo) || [];
+      blocks.push(item);
+      blocksByRoot.set(item.relatedTo, blocks);
+    }
+  }
+  const normalizedQuery = normalizedSearchText(query);
+  const normalizedTag = normalizedListTag(tag);
+  const normalizedSort = normalizedListSort(sort);
+  const availableTags = [...new Set(roots.flatMap(root => [
+    ...(root.tags || []),
+    ...(blocksByRoot.get(root.id) || []).flatMap(item => item?.tags || [])
+  ]).map(normalizedListTag).filter(Boolean))].sort((left, right) => left.localeCompare(right, "zh-CN")).slice(0, 100);
+  const filters = { query: normalizedQuery, tag: normalizedTag, sort: normalizedSort };
+  const matches = roots
+    .filter(root => {
+      const blocks = blocksByRoot.get(root.id) || [];
+      const tags = [...(root.tags || []), ...blocks.flatMap(item => item?.tags || [])]
+        .map(normalizedListTag);
+      return (!normalizedTag || tags.includes(normalizedTag))
+        && chainMatchesQuery(root, blocks, normalizedQuery);
+    })
+    .sort((left, right) => compareChainTuples(
+      chainSortTuple(left, normalizedSort),
+      chainSortTuple(right, normalizedSort)
+    ));
+  const cursor = parseChainCursor(afterId, filters);
+  if (cursor === false || (afterId && !matches.length)) return { invalidCursor: true };
+  const nextIndex = cursor
+    ? matches.findIndex(root => (
+      compareChainTuples(chainSortTuple(root, normalizedSort), cursor) > 0
+    ))
+    : 0;
+  const start = cursor && nextIndex < 0 ? matches.length : nextIndex;
+  const pageLimit = Number.isSafeInteger(limit)
+    ? Math.min(Math.max(CHAIN_LIST_LIMIT, Number(maxLimit) || 0), Math.max(1, limit))
+    : CHAIN_LIST_LIMIT;
+  const selected = matches.slice(start, start + pageLimit);
+  const hasMore = start + selected.length < matches.length;
+  return {
+    items: selected.map(root => thoughtChainSummary(root, blocksByRoot.get(root.id) || [])),
+    nextId: hasMore ? chainCursor(selected.at(-1), filters) : "",
+    tags: availableTags
+  };
+}
 
 export function thoughtChainSpeechSource(thoughts, rootId) {
   const items = Array.isArray(thoughts) ? thoughts : [];
@@ -215,10 +332,6 @@ export function createThoughtService({
     root.version = recordVersion(root.version) + 1;
     root.updatedAt = now();
   };
-  const chainValue = (thoughts, root) => root ? {
-    ...root,
-    blocks: thoughts.filter(item => item.relatedTo === root.id)
-  } : null;
 
   return {
     createChainInStore(store, {
@@ -411,44 +524,16 @@ export function createThoughtService({
 
     async getChain(id) {
       const store = await repository.read();
-      return chainValue(store.thoughts, store.thoughts.find(item => item.id === id && item.type === "question"));
+      return thoughtChainDetail(store.thoughts, id);
     },
 
     async getTaskResult(task) {
       return thoughtTaskResult((await repository.read()).thoughts, task);
     },
 
-    async listChains({ limit = CHAIN_LIST_LIMIT, afterId = "", query = "" } = {}) {
+    async listChains({ limit = CHAIN_LIST_LIMIT, afterId = "", query = "", tag = "", sort = "occurred" } = {}) {
       const store = await repository.read();
-      const blocksByRoot = new Map();
-      const roots = [];
-      for (const item of store.thoughts) {
-        if (item.type === "question") {
-          roots.push(item);
-        } else if (item.relatedTo) {
-          const blocks = blocksByRoot.get(item.relatedTo) || [];
-          blocks.push(item);
-          blocksByRoot.set(item.relatedTo, blocks);
-        }
-      }
-      const normalizedQuery = normalizedSearchText(query);
-      const matches = roots.filter(root => (
-        chainMatchesQuery(root, blocksByRoot.get(root.id) || [], normalizedQuery)
-      ));
-      const after = afterId
-        ? matches.findIndex(root => chainCursor(root, normalizedQuery) === afterId)
-        : -1;
-      if (afterId && after < 0) return { invalidCursor: true };
-      const start = after + 1;
-      const pageLimit = Number.isSafeInteger(limit)
-        ? Math.min(CHAIN_LIST_LIMIT, Math.max(1, limit))
-        : CHAIN_LIST_LIMIT;
-      const selected = matches.slice(start, start + pageLimit);
-      const hasMore = start + selected.length < matches.length;
-      return {
-        items: selected.map(root => chainSummary(root, blocksByRoot.get(root.id) || [])),
-        nextId: hasMore ? chainCursor(selected.at(-1), normalizedQuery) : ""
-      };
+      return thoughtChainListPage(store.thoughts, { limit, afterId, query, tag, sort });
     },
 
     createBlock({ content, eventTime, type, relatedTo, tags, attachmentPaths = [], clientRequestId = "" }) {

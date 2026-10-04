@@ -37,11 +37,13 @@ export function createThoughtHttp({
   async function handleV1(req, res, url, v1) {
     if (req.method === "GET" && url.pathname === "/api/v1/thought-chains") {
       const page = await workflows.listChains({
-        ...v1.pagination(url, { defaultLimit: 20, maxLimit: 20 }),
-        query: safeText(url.searchParams.get("q"), 200)
+        ...v1.pagination(url, { defaultLimit: 20, maxLimit: 20, maxCursorLength: 256 }),
+        query: safeText(url.searchParams.get("q"), 200),
+        tag: safeText(url.searchParams.get("tag"), 30),
+        sort: url.searchParams.get("sort") === "created" ? "created" : "occurred"
       });
       if (page.invalidCursor) return v1.error(res, 400, "游标无效或已过期", "INVALID_CURSOR");
-      return v1.success(res, 200, page.items, { meta: { nextCursor: v1.nextCursor(page.nextId) } });
+      return v1.success(res, 200, page.items, { meta: { nextCursor: v1.nextCursor(page.nextId), tags: page.tags } });
     }
     if (req.method === "POST" && url.pathname === "/api/v1/thought-chains") {
       const input = await bodyJson(req);

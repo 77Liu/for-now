@@ -383,6 +383,8 @@ const projectionStore = {
     }
   ])
 };
+projectionStore.thoughts.find(item => item.id === "projection-root-22").createdAt = "2026-10-01T09:00:00.000Z";
+projectionStore.thoughts.find(item => item.id === "projection-root-22").tags = ["后页标签"];
 const projectionService = createThoughtService({
   repository: {
     async read() {
@@ -427,6 +429,8 @@ assert.doesNotMatch(
 );
 assert.equal((await projectionService.listChains({ query: "搜索标签 备注搜索词" })).items[0].id, "projection-root-0");
 assert.equal((await projectionService.listChains({ query: "追问搜索词" })).items[0].id, "projection-root-0");
+assert.deepEqual((await projectionService.listChains({ tag: "后页标签" })).items.map(item => item.id), ["projection-root-22"]);
+assert.equal((await projectionService.listChains({ sort: "created" })).items[0].id, "projection-root-22");
 const modelDraftSearch = await projectionService.listChains({ query: "PRIVATE_MODEL_DRAFT_0" });
 assert.deepEqual(modelDraftSearch.items, []);
 assert.doesNotMatch(JSON.stringify(modelDraftSearch), /PRIVATE_MODEL_DRAFT_0/);
@@ -448,6 +452,18 @@ const searchedSecondPage = await projectionService.listChains({
   afterId: searchedFirstPage.nextId
 });
 assert.deepEqual(searchedSecondPage.items.map(item => item.id), ["projection-root-2", "projection-root-3"]);
+projectionStore.thoughts.find(item => item.id === "projection-root-1").content = "锚点已退出搜索";
+assert.deepEqual((await projectionService.listChains({
+  limit: 2,
+  query: "共同 主题",
+  afterId: searchedFirstPage.nextId
+})).items.map(item => item.id), ["projection-root-2", "projection-root-3"]);
+projectionStore.thoughts = projectionStore.thoughts.filter(item => item.id !== "projection-root-1");
+assert.deepEqual((await projectionService.listChains({
+  limit: 2,
+  query: "共同 主题",
+  afterId: searchedFirstPage.nextId
+})).items.map(item => item.id), ["projection-root-2", "projection-root-3"]);
 assert.equal((await projectionService.listChains({
   limit: 2,
   query: "共同",
@@ -456,6 +472,7 @@ assert.equal((await projectionService.listChains({
 assert.equal((await projectionService.listChains({ afterId: "broken" })).invalidCursor, true);
 const projectionDetail = await projectionService.getChain("projection-root-0");
 assert.equal(projectionDetail.blocks.length, 2);
-assert.equal(projectionDetail.blocks[1].reasoningContent, "PRIVATE_REASONING_0");
+assert.equal(projectionDetail.blocks[1].reasoningContent, undefined);
+assert.equal(projectionDetail.blocks[1].modelDraft, undefined);
 
 console.log("Thought service checks passed: chains, summary projection, search cursors, version conflicts, annotations, remarks, follow-ups and disposition.");

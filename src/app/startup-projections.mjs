@@ -1,3 +1,5 @@
+import { thoughtChainDetail, thoughtChainListPage } from "../modules/thoughts/index.mjs";
+
 const LIST_FIELDS = new Set([
   "id",
   "version",
@@ -541,7 +543,9 @@ export function startupProjection({
 
 export function routeStateProjection(state, {
   view = "today",
-  currentDate = localDateKey()
+  currentDate = localDateKey(),
+  resourceId = "",
+  query = {}
 } = {}) {
   const common = {
     notificationUnread: Math.max(0, Number(state?.notificationUnread) || 0)
@@ -568,7 +572,40 @@ export function routeStateProjection(state, {
   }
   if (view === "daily") return { ...common, dailyRecords: clone(list(state?.dailyRecords)) };
   if (view === "journals") return { ...common, journals: clone(list(state?.journals)), journalDraft: clone(state?.journalDraft || null) };
-  if (view === "thoughts") return { ...common, thoughts: clone(list(state?.thoughts)), speech: clone(state?.speech) };
+  if (view === "thoughts") {
+    const pageNumber = Math.min(5, Math.max(1, Math.floor(Number(query?.page) || 1)));
+    if (resourceId) {
+      const detail = thoughtChainDetail(state?.thoughts, resourceId);
+      const { blocks = [], ...root } = detail || {};
+      return {
+        ...common,
+        thoughts: detail ? [root, ...blocks] : [],
+        speech: clone(state?.speech),
+        thoughtPage: { kind: "detail", found: Boolean(detail), nextId: "", query: text(query?.q), page: pageNumber }
+      };
+    }
+    const page = thoughtChainListPage(state?.thoughts, {
+      limit: 20 * pageNumber,
+      maxLimit: 100,
+      query: query?.q || "",
+      tag: query?.tag || "",
+      sort: query?.sort
+    });
+    return {
+      ...common,
+      thoughts: page.items,
+      speech: clone(state?.speech),
+      thoughtPage: {
+        kind: "list",
+        nextId: pageNumber < 5 ? page.nextId : "",
+        tags: page.tags,
+        query: text(query?.q),
+        tag: text(query?.tag),
+        sort: query?.sort === "created" ? "created" : "occurred",
+        page: pageNumber
+      }
+    };
+  }
   if (view === "books") return { ...common, books: clone(list(state?.books)) };
   if (view === "quotes") return { ...common, quotes: clone(list(state?.quotes)) };
   if (view === "keepsakes") return { ...common, keepsakes: clone(list(state?.keepsakes)), vision: clone(state?.vision) };
