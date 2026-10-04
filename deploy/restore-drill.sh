@@ -17,7 +17,7 @@ set +a
 
 port=${RESTORE_DRILL_PORT:-4273}
 base=/opt/for-now
-release=$(readlink -f "$base/app")
+release=${RESTORE_DRILL_RELEASE:-$(readlink -f "$base/app")}
 work=$(mktemp -d /var/tmp/for-now-restore-drill.XXXXXX)
 launcher=""
 

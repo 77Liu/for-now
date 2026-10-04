@@ -40,7 +40,19 @@ try {
     const store = Object.fromEntries(collections.map(key => [key, []]));
     store.version = 15;
     if (user.id === "first") {
-      store.captures.push({ id: "capture", content: "restored" });
+      store.captures.push({
+        id: "capture",
+        content: "restored",
+        transcription: {
+          status: "ready",
+          provider: "legacy",
+          rawText: "raw",
+          polishedText: "polished",
+          updatedAt: "2026-09-29T09:00:00.000Z",
+          errorCode: ""
+        },
+        speechCache: [{ cacheKey: "private-cache-entry" }]
+      });
       store.books.push({ id: "book", imagePath: "/attachments/cover.png" });
       store.keepsakes.push({
         id: "keepsake",
@@ -118,6 +130,20 @@ try {
     assert.match(result.collectionEvidence[key].contentSha256, /^[a-f0-9]{64}$/);
   }
   const restoredKeepsakes = JSON.parse(await fs.readFile(path.join(dataDir, "users", "first", "store.json"), "utf8")).keepsakes;
+  const restoredCaptures = JSON.parse(await fs.readFile(path.join(dataDir, "users", "first", "store.json"), "utf8")).captures;
+  const expectedCaptures = restoredCaptures.map(item => {
+    const { speechCache: _speechCache, ...capture } = item;
+    return {
+      ...capture,
+      transcription: {
+        ...capture.transcription,
+        condensedText: "",
+        condenseErrorCode: ""
+      }
+    };
+  });
+  assert.equal(result.collectionEvidence.captures.contentSha256, digest(expectedCaptures));
+  assert.notEqual(result.collectionEvidence.captures.contentSha256, digest(restoredCaptures));
   assert.equal("originalPath" in publicKeepsake(restoredKeepsakes[0]), false);
   assert.equal(result.collectionEvidence.keepsakes.contentSha256, digest(restoredKeepsakes.map(publicKeepsake)));
   assert.notEqual(result.collectionEvidence.keepsakes.contentSha256, digest(restoredKeepsakes));

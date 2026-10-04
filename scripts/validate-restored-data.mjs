@@ -2,7 +2,9 @@ import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { ATTACHMENT_BACKUP_FORMAT } from "../src/shared/attachments/index.mjs";
+import { publicCapture } from "../src/modules/captures/index.mjs";
 import { publicKeepsake } from "../src/modules/keepsakes/index.mjs";
+import { safeText } from "../src/shared/validation/index.mjs";
 
 const args = process.argv.slice(2);
 const requireRelationalExport = args.includes("--require-relational-export");
@@ -19,6 +21,24 @@ const canonicalJson = value => {
 };
 const digest = value => crypto.createHash("sha256").update(canonicalJson(value)).digest("hex");
 const bytesDigest = value => crypto.createHash("sha256").update(value).digest("hex");
+const restoredPublicCapture = item => {
+  const visible = publicCapture(item);
+  if (!Object.hasOwn(visible || {}, "transcription")) return visible;
+  const transcription = visible.transcription;
+  return {
+    ...visible,
+    transcription: transcription && typeof transcription === "object" && !Array.isArray(transcription)
+      ? {
+          ...transcription,
+          rawText: safeText(transcription.rawText, 120_000),
+          polishedText: safeText(transcription.polishedText, 120_000),
+          condensedText: safeText(transcription.condensedText, 120_000),
+          errorCode: safeText(transcription.errorCode, 120),
+          condenseErrorCode: safeText(transcription.condenseErrorCode, 120)
+        }
+      : null
+  };
+};
 
 const authFile = path.join(root, "auth.json");
 const auth = JSON.parse(await fs.readFile(authFile, "utf8"));
@@ -101,7 +121,11 @@ for (const user of auth.users) {
     if (!Array.isArray(store[key])) throw new Error(`Restored store is missing ${key}`);
     totalRecords += store[key].length;
     if (user.id === auth.users[0].id) {
-      const visibleCollection = key === "keepsakes" ? store[key].map(publicKeepsake) : store[key];
+      const visibleCollection = key === "captures"
+        ? store[key].map(restoredPublicCapture)
+        : key === "keepsakes"
+          ? store[key].map(publicKeepsake)
+          : store[key];
       records += visibleCollection.length;
       collectionEvidence[key] = {
         count: visibleCollection.length,
