@@ -642,6 +642,9 @@ body:has(#all-thoughts[data-route-mode="detail"]) .app-atmosphere::after{opacity
   #view-thoughts .feed-header-actions{display:grid;grid-template-columns:minmax(0,1fr) auto;width:100%}
   #view-thoughts .feed-search{grid-column:1/-1;width:100%;max-height:none}
   #view-thoughts .thought-sort{width:auto;grid-template-columns:1fr 1fr}
+  #view-thoughts .filter-row{flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-inline:contain;scrollbar-width:none}
+  #view-thoughts .filter-row::-webkit-scrollbar{display:none}
+  #view-thoughts .filter-button{flex:none}
   #view-thoughts .thought-timeline{padding-left:20px}
   #view-thoughts .thought-timeline::before{left:4px}
   #view-thoughts .thought-month{margin:15px 0 7px -20px}
