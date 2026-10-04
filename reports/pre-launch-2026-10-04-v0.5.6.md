@@ -2,13 +2,13 @@
 
 日期：2026-10-04
 
-状态：**第二轮与 Release 门通过，等待 Preview 发布**
+状态：**第二轮、Release 门与 Preview 验收通过，等待生产发布**
 
 生产基线：`v0.5.5@fed30539d3d67841ba06881e0fe5c8b661ba3fd0`
 
 候选分支：`feat/v0.5.6-r8`
 
-运行代码候选：`539ccf3399c06a8c7e11f19b76f9c598f9cefbcf`
+运行代码候选：`780d279f3b36431430b421f9c72136cc48e90c75`
 
 ## 发布目标
 
@@ -115,10 +115,10 @@
 | `npm run test:web-budget` | 通过；阻塞 CSS 243116 B，Fast 4G 稳定首页 718.2 ms |
 | `npm run test:url-history` | 通过；包含首页来源返回 |
 | `npm run test:system` | 通过；312007 ms |
-| `npm run test:journeys:release` | 通过；337888 ms |
-| Release 子项：完整系统 | 通过；321983 ms |
-| Release 子项：PostgreSQL 16.14 | 通过；14372 ms |
-| Release 子项：生产依赖审计 | 通过；1533 ms，0 漏洞 |
+| `npm run test:journeys:release` | 最终候选通过；316377 ms |
+| Release 子项：完整系统 | 通过；298679 ms |
+| Release 子项：PostgreSQL 16.14 | 通过；16171 ms |
+| Release 子项：生产依赖审计 | 通过；1527 ms，0 漏洞 |
 
 UI 自动化覆盖：
 
@@ -138,6 +138,23 @@ UI 自动化覆盖：
 - `/tmp/growth-thought-r8-detail.png`
 - `/tmp/growth-thought-r8-detail-mobile.png`
 
+## Preview 验收
+
+- `preview/v0.5.6` 与活动 release 均为
+  `780d279f3b36431430b421f9c72136cc48e90c75`。
+- 部署前后生产活动 release 保持
+  `fed30539d3d67841ba06881e0fe5c8b661ba3fd0`。
+- `/preview/readyz` 返回 `780d279f3b36`，页面显示 `v0.5.6`。
+- 首页在 1440×900、1280×720、1280×600、390×844、375×667、
+  320×568 下 `scrollHeight == innerHeight`、无横向溢出、3 条内容和行动入口
+  可见。
+- 思绪 390×844 标签位于单行可横向滚动区域，首屏可见 3 条记录，月份与日号
+  层级正确；桌面 1440×900 无横向溢出。
+- 思绪详情在 390×844、375×667、320×568 下无横向溢出；固定操作栏底缘与
+  主导航顶缘对齐，想法/AI 应答身份可辨，背景浓度为 0.24。
+- 浏览器控制台无运行错误；网络记录中的 401/404 来自登录前认证探测和可选
+  本地测试接口，不是页面资源失败。
+
 ## 人工与环境边界
 
 - Preview 使用既有展示账户，只做必要的认证后浏览器验收，不修改生产数据。
@@ -156,7 +173,7 @@ UI 自动化覆盖：
 - [x] 代码审查问题关闭
 - [x] 里程碑系统门
 - [x] 固定候选与第二轮 Release 门
-- [ ] Preview 部署与公网多视口验收
+- [x] Preview 部署与公网多视口验收
 - [ ] `v0.5.6` 标签与 Gitee Release
 - [ ] 生产即时备份、恢复、部署、冒烟与观察
 - [ ] Base、README、TODO 与计划关闭
@@ -177,4 +194,5 @@ UI 自动化覆盖：
 | 1 | NO-GO | 业务断言完成后，回归临时日志目录清理命中瞬时 `ENOTEMPTY`；为 `fs.rm` 增加有限重试，连续两次专项通过 |
 | 2 | NO-GO | 候选工作树未包含被忽略的 PostgreSQL 16 工具目录；确认根工作树已验证工具链并显式传入 `PG_TEST_BIN` |
 | 3 | NO-GO | PostgreSQL 子进程经 `npm` 使用系统签名 Node，Sharp 返回 `IMAGE_PROCESSOR_UNAVAILABLE`；把临时 ad-hoc Node 目录前置到整棵子进程 `PATH` |
-| 4 | 通过 | 同一运行代码候选从头完成完整系统、PostgreSQL 与生产依赖审计 |
+| 4 | 通过后失效 | `539ccf3` 完成完整门；Preview 发现移动标签占四行，随后收紧为单行横向滚动 |
+| 5 | 通过 | 最终运行代码 `780d279` 从头完成完整系统、PostgreSQL 与生产依赖审计 |
