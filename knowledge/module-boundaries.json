@@ -502,6 +502,16 @@
       "status": "active"
     },
     {
+      "id": "frontend.feature.opening",
+      "type": "feature",
+      "root": "public/frontend/opening",
+      "publicEntry": "public/frontend/opening/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["R9.4-F1 opening configuration, rain rendering, startup feedback lifecycle and content interaction lock"], "routes": [] },
+      "tests": ["scripts/opening-controller-regression.mjs", "scripts/web-first-screen-budget-regression.mjs"],
+      "status": "active"
+    },
+    {
       "id": "frontend.features",
       "type": "feature",
       "root": "public/frontend/features",

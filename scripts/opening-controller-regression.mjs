@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
 import {
+  createOpeningController,
+  loadGlassRain,
   OPENING_DEFAULTS,
+  OPENING_SELECTORS,
   RAIN_DEFAULTS,
   validateOpeningConfig,
   validateRainConfig
-} from "../public/frontend/opening/config.mjs";
-import {
-  createOpeningController,
-  OPENING_SELECTORS
-} from "../public/frontend/opening/controller.mjs";
-import { GlassRain } from "../public/frontend/opening/rain-engine.mjs";
+} from "../public/frontend/opening/index.mjs";
+
+const GlassRain = await loadGlassRain();
 
 class FakeEventTarget {
   constructor() {
@@ -414,6 +414,46 @@ assert.deepEqual(validateOpeningConfig({
 }
 
 {
+  const fixture = createFixture();
+  let resolveRain;
+  const controller = createOpeningController({
+    ...fixture.controllerOptions,
+    createRain: (...args) => new Promise(resolve => {
+      resolveRain = () => resolve(fixture.createRain(...args));
+    })
+  });
+  const generation = controller.start();
+  assert.equal(fixture.rains.length, 0);
+  resolveRain();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(fixture.rains.length, 1);
+  assert.equal(fixture.rains[0].starts, 1);
+  controller.ready(generation);
+  fixture.clock.fire(fixture.clock.entries.at(-1));
+  controller.dispose();
+}
+
+{
+  const fixture = createFixture();
+  let resolveRain;
+  const controller = createOpeningController({
+    ...fixture.controllerOptions,
+    createRain: (...args) => new Promise(resolve => {
+      resolveRain = () => resolve(fixture.createRain(...args));
+    })
+  });
+  const generation = controller.start();
+  controller.fail(generation);
+  resolveRain();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(fixture.rains[0].starts, 0);
+  assert.equal(fixture.rains[0].disposals, 1);
+  controller.dispose();
+}
+
+{
   const startError = new Error("rain start failed");
   const visualErrors = [];
   const fixture = createFixture({ startError });
@@ -558,9 +598,13 @@ assert.deepEqual(validateOpeningConfig({
   lifecycleTarget.matchMedia = () => ({ matches: true });
   const controller = createOpeningController({ document });
   controller.start();
+  lifecycleTarget.dispatch("pagehide", { persisted: true });
+  assert.equal(root.getAttribute("data-opening-state"), "opening");
+  assert.equal(root.hidden, false);
+  assert.equal(lifecycleTarget.listenerCount("pagehide"), 1);
   controller.ready();
   assert.equal(root.getAttribute("data-opening-state"), "complete");
-  lifecycleTarget.dispatch("pagehide");
+  lifecycleTarget.dispatch("pagehide", { persisted: false });
   assert.equal(root.getAttribute("data-opening-state"), "disposed");
 }
 

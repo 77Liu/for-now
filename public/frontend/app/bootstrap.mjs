@@ -15,6 +15,12 @@ function markStartup(name) {
   startupMarks[name] = Number(performance.now().toFixed(1));
 }
 
+function loadApplicationStyles() {
+  const stylesReady = globalThis.__forNowStylesReady;
+  delete globalThis.__forNowStylesReady;
+  return Promise.resolve(stylesReady).catch(() => {});
+}
+
 function loadR8Styles() {
   const existing = document.querySelector('link[data-r8-styles]');
   if (existing) return Promise.resolve();
@@ -155,20 +161,21 @@ async function initialSnapshot({ stylesReady = Promise.resolve(), onShellReady =
     };
     return { session, testConfig, state, meta, route, startupMarks: { ...startupMarks }, visibleShell };
   } catch (error) {
-    revealAuthGate();
     return { error, startupMarks: { ...startupMarks }, visibleShell: false };
   }
 }
 
-export async function startApplication() {
+export async function startApplication({ opening } = {}) {
   let runtimeRequest;
   const loadRuntime = () => {
     const prefetchedRuntime = globalThis.__forNowRuntimeRequest;
     delete globalThis.__forNowRuntimeRequest;
     return runtimeRequest ||= prefetchedRuntime || import("./runtime.mjs");
   };
-  const stylesReady = loadR8Styles();
+  const stylesReady = Promise.all([loadApplicationStyles(), loadR8Styles()]);
   const initial = await initialSnapshot({ stylesReady, onShellReady: loadRuntime });
-  const runtime = await loadRuntime();
-  return runtime.startApplication(initial);
+  const runtimeModule = loadRuntime();
+  if (!initial?.error) await stylesReady;
+  const runtime = await runtimeModule;
+  return runtime.startApplication(initial, { opening });
 }

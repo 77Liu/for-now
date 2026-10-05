@@ -1,5 +1,4 @@
 import { validateOpeningConfig } from "./config.mjs";
-import { GlassRain } from "./rain-engine.mjs";
 
 export const OPENING_SELECTORS = Object.freeze({
   root: "#opening-screen",
@@ -47,7 +46,8 @@ export function createOpeningController(options = {}) {
     config: configOption,
     backgroundSource,
     backgroundOptions = {},
-    createRain = (canvas, config, environment) => new GlassRain(canvas, config, environment),
+    createRain = (canvas, config, environment) => import("./rain-engine.mjs")
+      .then(({ GlassRain }) => new GlassRain(canvas, config, environment)),
     onRetry = () => {},
     onStateChange = () => {},
     onVisualError = () => {},
@@ -205,6 +205,28 @@ export function createOpeningController(options = {}) {
     }
   }
 
+  function activateRain(candidate, expectedGeneration) {
+    if (!candidate) return false;
+    if (!current(expectedGeneration) || state !== "opening") {
+      candidate.dispose?.();
+      return false;
+    }
+    rain = candidate;
+    if (backgroundSource !== undefined) {
+      const backgroundRain = rain;
+      try {
+        const backgroundResult = rain.setBackground?.(backgroundSource, backgroundOptions);
+        Promise.resolve(backgroundResult).catch(error => {
+          if (current(expectedGeneration) && rain === backgroundRain) onVisualError(error);
+        });
+      } catch (error) {
+        onVisualError(error);
+      }
+    }
+    rain.start?.();
+    return true;
+  }
+
   function start() {
     if (disposed) return null;
     generation += 1;
@@ -232,25 +254,25 @@ export function createOpeningController(options = {}) {
       }, openingSlowDelay, expectedGeneration);
     }
     if (!reducedMotion && config.enabled && canvas) {
+      const expectedGeneration = activeGeneration;
       try {
-        rain = createRain(canvas, config.config, {
+        const candidate = createRain(canvas, config.config, {
           ...rainEnvironment,
           ...directRainEnvironment,
           seed
         });
-        if (backgroundSource !== undefined) {
-          const backgroundRain = rain;
-          const backgroundGeneration = activeGeneration;
-          try {
-            const backgroundResult = rain.setBackground?.(backgroundSource, backgroundOptions);
-            Promise.resolve(backgroundResult).catch(error => {
-              if (current(backgroundGeneration) && rain === backgroundRain) onVisualError(error);
+        if (candidate && typeof candidate.then === "function") {
+          Promise.resolve(candidate)
+            .then(nextRain => activateRain(nextRain, expectedGeneration))
+            .catch(error => {
+              if (current(expectedGeneration) && state === "opening") {
+                releaseRain();
+                onVisualError(error);
+              }
             });
-          } catch (error) {
-            onVisualError(error);
-          }
+        } else {
+          activateRain(candidate, expectedGeneration);
         }
-        rain.start?.();
       } catch (error) {
         releaseRain();
         onVisualError(error);
@@ -296,7 +318,7 @@ export function createOpeningController(options = {}) {
     activeGeneration = generation;
     clearVisualWork();
     retry?.removeEventListener?.("click", handleRetry);
-    lifecycleTarget?.removeEventListener?.("pagehide", dispose);
+    lifecycleTarget?.removeEventListener?.("pagehide", handlePageHide);
     readyLatched = false;
     root.hidden = true;
     setBusy(root, false);
@@ -313,8 +335,12 @@ export function createOpeningController(options = {}) {
     });
   }
 
+  function handlePageHide(event) {
+    if (!event?.persisted) dispose();
+  }
+
   retry?.addEventListener?.("click", handleRetry);
-  lifecycleTarget?.addEventListener?.("pagehide", dispose);
+  lifecycleTarget?.addEventListener?.("pagehide", handlePageHide);
 
   return Object.freeze({ start, ready, fail, dispose });
 }

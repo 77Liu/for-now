@@ -24,6 +24,7 @@ const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const appEntry = await fs.readFile(path.join(ROOT, "public/app.js"), "utf8");
 const appBootstrap = await fs.readFile(path.join(ROOT, "public/frontend/app/bootstrap.mjs"), "utf8");
 const appRuntime = await fs.readFile(path.join(ROOT, "public/frontend/app/runtime.mjs"), "utf8");
+const openingEntry = await fs.readFile(path.join(ROOT, "public/frontend/opening/index.mjs"), "utf8");
 const applicationStyles = await fs.readFile(path.join(ROOT, "public/frontend/styles/application.css"), "utf8");
 const r8Styles = await fs.readFile(path.join(ROOT, "public/frontend/styles/r8.css"), "utf8");
 const html = await fs.readFile(path.join(ROOT, "public/index.html"), "utf8");
@@ -38,8 +39,15 @@ async function publicSourceFiles(directory) {
 }
 const downloadableSource = (await Promise.all((await publicSourceFiles(path.join(ROOT, "public"))).map(file => fs.readFile(file, "utf8")))).join("\n");
 
-assert.match(appEntry, /^import \{ startApplication \} from "\.\/frontend\/app\/index\.mjs";\s+startApplication\(\);\s*$/);
-assert.ok(appEntry.split("\n").length <= 5, "public/app.js must remain a thin bootstrap");
+assert.match(appEntry, /const openingRequest = import\("\.\/frontend\/opening\/index\.mjs"\)/);
+assert.match(appEntry, /\.then\(\(\{ startOpening \}\) => startOpening\(\)\)/);
+assert.match(appEntry, /import\("\.\/frontend\/app\/index\.mjs"\)/);
+assert.match(appEntry, /startApplication\(\{ opening \}\)/);
+assert.match(appEntry, /\.catch\(error => opening\.fail\(error\)\)/);
+assert.match(appEntry, /if \(element !== openingRoot\) element\.inert = true/);
+assert.match(appEntry, /openingRoot\.dataset\.openingState = "failure"/);
+assert.match(appEntry, /opening-retry"\)\.onclick = \(\) => location\.reload\(\)/);
+assert.ok(appEntry.split("\n").length <= 25, "public/app.js must remain a thin composition root");
 assert.match(appBootstrap, /const startupRequest = globalThis\.__forNowStartupRequest/);
 assert.match(appBootstrap, /delete globalThis\.__forNowStartupRequest/);
 assert.match(appBootstrap, /prefetchedStartup \|\| await requestJson\("\/api\/v1\/startup", \{ allowUnauthorized: true \}\)/);
@@ -48,8 +56,9 @@ assert.match(appBootstrap, /value \|\| requestJson\(routeStateUrl\(route\), \{ a
 assert.match(appBootstrap, /sessionStorage\.setItem\("cike:authenticated-shell", "1"\)/);
 assert.match(appBootstrap, /sessionStorage\.removeItem\("cike:authenticated-shell"\)/);
 assert.match(appBootstrap, /requestJson\(routeStateUrl\(route\), \{ allowUnauthorized: true \}\)/);
-assert.match(appBootstrap, /const runtime = await loadRuntime\(\)/);
-assert.match(appBootstrap, /const stylesReady = loadR8Styles\(\)/);
+assert.match(appBootstrap, /const runtimeModule = loadRuntime\(\)/);
+assert.match(appBootstrap, /const runtime = await runtimeModule/);
+assert.match(appBootstrap, /const stylesReady = Promise\.all\(\[loadApplicationStyles\(\), loadR8Styles\(\)\]\)/);
 assert.match(appBootstrap, /initialSnapshot\(\{ stylesReady, onShellReady: loadRuntime \}\)/);
 assert.match(appBootstrap, /const prefetchedRuntime = globalThis\.__forNowRuntimeRequest/);
 assert.match(appBootstrap, /runtimeRequest \|\|= prefetchedRuntime \|\| import\("\.\/runtime\.mjs"\)/);
@@ -63,7 +72,7 @@ for (const endpoint of ["/api/auth/me", "/api/v1/startup"]) {
 assert.ok(appBootstrap.indexOf("const startupRequest = globalThis.__forNowStartupRequest") < appBootstrap.indexOf("const prefetchedRouteRequest = globalThis.__forNowRouteRequest"));
 assert.ok(appBootstrap.indexOf("const visibleShell = revealAuthenticatedShell") < appBootstrap.indexOf("const [session, testConfigResult, routeResult]"));
 assert.doesNotMatch(appBootstrap, /requestJson\("\/api\/state"\)|requestJson\("\/api\/meta"\)/);
-assert.match(appRuntime, /export async function startApplication\(initial = null\)/);
+assert.match(appRuntime, /export async function startApplication\(initial = null, \{ opening = null \} = \{\}\)/);
 assert.doesNotMatch(appRuntime, /^bootstrap\(\)\.catch/m);
 assert.doesNotMatch(appRuntime, /from "\.\/frontend\//);
 assert.doesNotMatch(appRuntime, /function render\(\)/);
@@ -80,7 +89,7 @@ assert.match(appRuntime, /function onboardingBlocksPrivateShell\(/);
 assert.match(appRuntime, /function completeOnboardingSnapshot\(/);
 assert.match(appRuntime, /completeOnboardingSnapshot\(meta\.onboardingV2\)\s*\?Promise\.resolve\(\{data:meta\.onboardingV2\}\)\s*:requestV1\("\/api\/v1\/onboarding-v2\/session"\)/);
 assert.match(appRuntime, /await afterVisibleShellPaint\(\)/);
-assert.match(appRuntime, /load\(\{visibleShell:true,initialSnapshot\}\)/);
+assert.match(appRuntime, /load\(\{visibleShell:true,initialSnapshot,opening\}\)/);
 assert.match(appRuntime, /initialSnapshot\s*\?\s*\[initialSnapshot\.state,initialSnapshot\.meta\]/);
 assert.match(appRuntime, /document\.documentElement\.dataset\.runtimeReady\s*=\s*"1"/);
 assert.doesNotMatch(appRuntime, /syncChainRecordKind\(\);await loadActionsWorkspace\(\)/);
@@ -104,6 +113,20 @@ assert.doesNotMatch(applicationStyles, /\.saved-reasoning|\.answer-reasoning/);
 assert.match(html, /id="home-open-thought"/);
 assert.match(html, /id="home-mood-sparkline"/);
 assert.match(html, /<base href="\/">/);
+assert.match(html, /<style id="opening-critical-style">/);
+assert.match(html, /id="opening-screen"[^>]+aria-busy="true"/);
+assert.match(html, /id="opening-rain"/);
+assert.match(html, /id="opening-status"[^>]+role="status"/);
+assert.match(html, /id="opening-recovery"[^>]+hidden/);
+assert.match(html, /id="opening-retry"/);
+assert.ok(
+  html.indexOf('<style id="opening-critical-style">') < html.indexOf('rel="preload" href="frontend/styles/application.css"'),
+  "opening critical CSS must precede application style loading"
+);
+assert.ok(
+  html.indexOf('id="opening-screen"') < html.indexOf('id="auth-gate"'),
+  "opening shell must be parsed before application content"
+);
 assert.match(html, /window\.__forNowStartupRequest = fetch\(new URL\("api\/v1\/startup", document\.baseURI\)\.pathname/);
 assert.equal((html.match(/priority: "high"/g) || []).length, 2);
 assert.match(html, /sessionStorage\.getItem\("cike:authenticated-shell"\) === "1"/);
@@ -111,7 +134,13 @@ assert.match(html, /window\.__forNowRouteRequest = fetch\(new URL\("api\/v1\/rou
 assert.match(html, /window\.__forNowRuntimeRequest = import\(new URL\("frontend\/app\/runtime\.mjs", document\.baseURI\)\.href\)/);
 assert.match(html, /document\.body\.classList\.remove\("auth-locked"\)/);
 assert.doesNotMatch(html, /const routeRoots = new Set/);
-assert.match(html, /<link rel="stylesheet" href="frontend\/styles\/application\.css">/);
+assert.match(html, /<link rel="preload" href="frontend\/styles\/application\.css" as="style">/);
+assert.match(html, /\["frontend\/styles\/application\.css", "drift\.css"\]\.map/);
+assert.match(html, /link\.rel = "stylesheet"/);
+assert.match(html, /link\.media = "print"/);
+assert.match(html, /window\.__forNowStylesReady = Promise\.all/);
+assert.match(appBootstrap, /loadApplicationStyles\(\)/);
+assert.match(appBootstrap, /Promise\.all\(\[loadApplicationStyles\(\), loadR8Styles\(\)\]\)/);
 assert.match(html, /<link rel="preload" href="frontend\/styles\/r8\.css" as="style">/);
 assert.match(html, /<link rel="modulepreload" href="frontend\/app\/index\.mjs">/);
 assert.match(html, /<link rel="modulepreload" href="frontend\/app\/bootstrap\.mjs">/);
@@ -123,10 +152,26 @@ assert.match(html, /id="auth-tab-login"[^>]+aria-controls="login-form"[^>]+tabin
 assert.match(html, /id="auth-tab-register"[^>]+aria-controls="register-form"[^>]+tabindex="-1"/);
 assert.match(html, /id="login-form" role="tabpanel" aria-labelledby="auth-tab-login"/);
 assert.equal((html.match(/<script src="app\.js" type="module"><\/script>/g) || []).length, 1);
-assert.ok(html.indexOf('<base href="/">') < html.indexOf('rel="stylesheet" href="frontend/styles/application.css"'));
-assert.ok(html.indexOf("window.__forNowStartupRequest") < html.indexOf('rel="stylesheet" href="frontend/styles/application.css"'));
+assert.doesNotMatch(appEntry, /fetch\(|XMLHttpRequest|location\.(?:assign|replace)/);
+assert.match(openingEntry, /createOpeningController/);
+assert.match(openingEntry, /const generation = controller\.start\(\)/);
+assert.match(openingEntry, /exitDuration: 120/);
+assert.match(openingEntry, /onRetry: \(\) => location\.reload\(\)/);
+assert.match(openingEntry, /"openingAnimationStarted"/);
+assert.match(openingEntry, /"openingExitStart"/);
+assert.match(openingEntry, /"openingExitComplete"/);
+assert.match(openingEntry, /"openingExitPainted"/);
+assert.match(appBootstrap, /export async function startApplication\(\{ opening \} = \{\}\)/);
+assert.match(appBootstrap, /runtime\.startApplication\(initial, \{ opening \}\)/);
+assert.doesNotMatch(appBootstrap, /opening\?\.ready\(\)/);
+assert.match(appRuntime, /opening\?\.ready\(\)/);
+assert.match(appRuntime, /opening\?\.fail\(error\)/);
+assert.match(appRuntime, /await opening\?\.fail\(error\)/);
+assert.ok(html.indexOf('<base href="/">') < html.indexOf('rel="preload" href="frontend/styles/application.css"'));
+assert.ok(html.indexOf("window.__forNowStartupRequest") < html.indexOf('rel="preload" href="frontend/styles/application.css"'));
 assert.ok(html.indexOf('rel="modulepreload" href="frontend/app/bootstrap.mjs"') < html.indexOf('<script src="app.js" type="module"></script>'));
-assert.ok(html.indexOf('<script src="app.js" type="module"></script>') < html.indexOf("</head>"));
+assert.ok(html.indexOf('id="opening-screen"') < html.indexOf('<script src="app.js" type="module"></script>'));
+assert.ok(html.indexOf('<script src="app.js" type="module"></script>') < html.indexOf('id="auth-gate"'));
 assert.doesNotMatch(html, /(?:href|src)="(?:styles\.css|vendor\/katex\/katex\.min\.(?:css|js))"/);
 assert.match(html, /id="discovery-query"/);
 assert.match(html, /id="view-permission"/);

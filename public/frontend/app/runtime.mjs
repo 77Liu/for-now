@@ -3978,7 +3978,7 @@ function assertNativeServerCompatibility(meta){
   const serverLabel=meta?.releaseVersion||"旧版本";
   throw Object.assign(new Error(`当前 App ${releaseVersion} 与服务端 ${serverLabel} 不兼容，请使用匹配版本或等待服务端升级。`),{code:"CLIENT_SERVER_VERSION_MISMATCH"})
 }
-async function load({visibleShell=false,initialSnapshot=null}={}){
+async function load({visibleShell=false,initialSnapshot=null,opening=null}={}){
   if(!Number.isFinite(startupMarks.loadStart))markStartup("loadStart");
   const owner=currentUser?.id,session=sessionSerial,route=initialSnapshot?.route||pageRouter?.currentRoute()||{view:"today",query:{}};
   journalDraftRestored=false;aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";resetJournalForm();
@@ -3995,10 +3995,12 @@ async function load({visibleShell=false,initialSnapshot=null}={}){
   replaceState({...structuredClone(emptyClientState),...nextState,onboardingV2:meta.onboardingV2,notificationUnread:meta.notificationUnread,quoteTags:meta.quoteTags||[]});
   loadedRouteKey=routeDataKey(route);fullRouteStateLoaded=Boolean(nextState?._routeProjection?.complete);appVersion=meta.version||"development";releaseVersion=meta.releaseVersion||releaseVersion;featureFlags={...featureFlags,...meta.features};governanceUrl=typeof meta.governanceUrl==="string"?meta.governanceUrl:"";notificationUnreadCount=Number(state.notificationUnread)||0;routeDataReady=true;restoreAnnotationUiDrafts();
   const onboardingPending=onboardingBlocksPrivateShell(meta.onboardingV2);
+  let openingCompletion=null;
   if(visibleShell&&!onboardingPending){
     restoreView?.();renderVisibleRoute();reconcileThoughtRoute();revealUserSession();if(!Number.isFinite(startupMarks.visibleShell))markStartup("visibleShell");
     await afterVisibleShellPaint();
-    if(owner!==currentUser?.id||session!==sessionSerial)return false
+    if(owner!==currentUser?.id||session!==sessionSerial)return false;
+    openingCompletion=opening?.ready()||null
   }
   const [nextSettings,nextOnboardingSchema,nextOnboardingV2Schema,nextOnboardingV2State,nextLocalTestConfig]=await Promise.all([
     request(hasCapability("ai-configuration")?"/api/settings":"/api/preferences"),
@@ -4016,6 +4018,8 @@ async function load({visibleShell=false,initialSnapshot=null}={}){
   if(owner!==currentUser?.id||session!==sessionSerial)return false;
   renderOnboarding();renderVisibleRoute();if(!reconcileThoughtRoute())pageRouter?.activate();restoreDurableDrafts();syncChainRecordKind();scheduleNotificationPoll();
   if(visibleShell&&onboardingPending){revealUserSession();if(!Number.isFinite(startupMarks.visibleShell))markStartup("visibleShell")}
+  if(opening&&onboardingPending){await afterVisibleShellPaint();if(owner!==currentUser?.id||session!==sessionSerial)return false;openingCompletion=opening.ready()}
+  if(openingCompletion)await openingCompletion;
   markStartup("stableHome");publishStartupTiming();return true
 }
 function setAuthTab(tab){
@@ -4057,10 +4061,10 @@ function prepareUserSession(user,authRequired,{keepVisible=false}={}){
   rotateSession();applyCapabilitySurface(user?.role==="owner"?ownerCapabilities:[]);if(!keepVisible)document.body.classList.add("auth-locked");if(resetRouteAfterAuthentication)pageRouter?.showList("today",{mode:"replace"});else restoreView?.();currentUser=user;resetRouteAfterAuthentication=false;$("#account-control").hidden=!authRequired;$("#account-authenticated").hidden=!authRequired;$("#account-local-mode").hidden=authRequired;renderAccountIdentity();
 }
 function revealUserSession(){try{sessionStorage.setItem("cike:authenticated-shell","1")}catch{}document.documentElement.dataset.bootstrapVisible="1";document.body.classList.remove("auth-locked");$("#auth-gate").hidden=true}
-async function activateUserSession(user,authRequired,initialSnapshot=null){
+async function activateUserSession(user,authRequired,initialSnapshot=null,opening=null){
   prepareUserSession(user,authRequired,{keepVisible:Boolean(initialSnapshot?.visibleShell)});
   try{
-    if(!await load({visibleShell:true,initialSnapshot}))return false;
+    if(!await load({visibleShell:true,initialSnapshot,opening}))return false;
     await Promise.all([
       restoreContentImageDrafts(user?.id).catch(error=>showToast(`待上传图片恢复失败：${error.message}`,"error")),
       restoreCaptureAudioDraft(user?.id).catch(error=>showToast(`待提交语音恢复失败：${error.message}`,"error")),
@@ -4077,19 +4081,19 @@ async function activateUserSession(user,authRequired,initialSnapshot=null){
 async function authRequest(endpoint,payload,method="POST"){
   return apiClient.request(endpoint,{method,body:JSON.stringify(payload||{})},{authGate:false,fallback:"账户操作失败"});
 }
-async function bootstrap(initial=null){
+async function bootstrap(initial=null,{opening=null}={}){
   adoptStartupMarks(initial?.startupMarks);
   if(!Number.isFinite(startupMarks.bootstrapStart))markStartup("bootstrapStart");
-  if(initial?.error){showAuthGate();$("#auth-status").textContent=initial.error.message;return}
+  if(initial?.error){if(opening)await opening.fail(initial.error);else{showAuthGate();$("#auth-status").textContent=initial.error.message}return}
   let session,testConfig=null;
   try{
     if(initial?.session){session=initial.session;testConfig=initial.testConfig}
     else[session,testConfig]=await Promise.all([apiClient.request("/api/auth/me",{headers:{accept:"application/json"}},{authGate:false,allowUnauthorized:true}),optionalPublicRequest("/api/local-test-mode")])
-  }catch{showAuthGate();$("#auth-status").textContent="无法连接服务，请检查网络后重试。";return}
+  }catch(error){if(opening)await opening.fail(error);else{showAuthGate();$("#auth-status").textContent="无法连接服务，请检查网络后重试。"}return}
   if(!Number.isFinite(startupMarks.authSessionReady))markStartup("authSessionReady");
-  if(!session.authenticated){showAuthGate(session.code==="AUTH_REAUTH_REQUIRED"?"账户权限已变更，请重新登录。":"");localTestConfig=testConfig;const registerTab=$('[data-auth-tab="register"]');if(registerTab)registerTab.hidden=Boolean(testConfig?.enabled);setAuthTab(testConfig?.enabled||session.userCount?"login":"register");if(session.code==="AUTH_REAUTH_REQUIRED")$("#auth-status").textContent="账户权限已变更，请重新登录。";return}
+  if(!session.authenticated){showAuthGate(session.code==="AUTH_REAUTH_REQUIRED"?"账户权限已变更，请重新登录。":"");localTestConfig=testConfig;const registerTab=$('[data-auth-tab="register"]');if(registerTab)registerTab.hidden=Boolean(testConfig?.enabled);setAuthTab(testConfig?.enabled||session.userCount?"login":"register");if(session.code==="AUTH_REAUTH_REQUIRED")$("#auth-status").textContent="账户权限已变更，请重新登录。";await afterVisibleShellPaint();await opening?.ready();return}
   const initialSnapshot=initial?.state&&initial?.meta?{state:initial.state,meta:initial.meta,route:initial.route,testConfig:initial.testConfig,visibleShell:Boolean(initial.visibleShell)}:null;
-  await activateUserSession(session.user,session.authRequired,initialSnapshot);
+  await activateUserSession(session.user,session.authRequired,initialSnapshot,opening);
 }
 const refreshState=(domains,options={})=>refreshCoordinator.refresh(domains,{...options,patchOnly:options.patchOnly===true});
 backgroundResultController=createBackgroundResultController({
@@ -5265,12 +5269,13 @@ $("#account-role-list").addEventListener("click",async event=>{
   finally{if(button.isConnected)button.disabled=false}
 });
 $("#logout-button").addEventListener("click",logout);$("#logout-button-account").addEventListener("click",logout);
-export async function startApplication(initial = null) {
+export async function startApplication(initial = null, { opening = null } = {}) {
   try {
-    await bootstrap(initial);
+    await bootstrap(initial, { opening });
   } catch (error) {
     showAuthGate();
     $("#auth-status").textContent = error.message;
+    await opening?.fail(error);
   } finally {
     document.documentElement.dataset.runtimeReady = "1";
   }
