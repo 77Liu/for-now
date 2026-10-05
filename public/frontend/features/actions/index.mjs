@@ -638,6 +638,7 @@ export function createActionsCoordinator(deps = {}) {
       return false;
     }
   }
+  const refreshAfterCommand = ticket => (refresh = refresh.then(() => isCurrent(ticket) && load()));
 
   function applyPendingRecord(record = {}) {
     const projection = record?.projection;
@@ -707,7 +708,7 @@ export function createActionsCoordinator(deps = {}) {
       if (!isCurrent(ticket)) return false;
       if ([409, 412].includes(Number(error?.status))) {
         if (operationId) removeProjection(operationId);
-        await load();
+        await refreshAfterCommand(ticket);
         if (!isCurrent(ticket)) return false;
         throw Object.assign(
           new Error(actionConflictMessage(pendingCommand, error, visible)),
@@ -736,9 +737,7 @@ export function createActionsCoordinator(deps = {}) {
         createdAt: projections.get(operationId)?.createdAt
       });
     }
-    const refreshed = await (refresh = refresh.then(
-      () => isCurrent(ticket) && load()
-    ));
+    const refreshed = await refreshAfterCommand(ticket);
     if (!isCurrent(ticket)) return false;
     if (!refreshed) {
       throw Object.assign(

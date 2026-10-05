@@ -386,6 +386,86 @@ function commandCoordinator({ request, server: initialServer, listFailure = () =
   );
 }
 
+// A conflict refresh queues behind a successful write refresh instead of superseding it.
+{
+  const firstWrite = deferred();
+  const secondWrite = deferred();
+  const firstActions = deferred();
+  const firstHabits = deferred();
+  const secondActions = deferred();
+  const secondHabits = deferred();
+  const server = {
+    actions: [action("a1"), action("a2")],
+    habits: [],
+    habitCheckins: []
+  };
+  let actionReads = 0;
+  let habitReads = 0;
+  const coordinator = coordinatorWith({
+    listAllV1(path) {
+      if (path === ACTIONS_ENDPOINT) {
+        actionReads += 1;
+        return actionReads === 1 ? firstActions.promise : secondActions.promise;
+      }
+      if (path === HABITS_ENDPOINT) {
+        habitReads += 1;
+        return habitReads === 1 ? firstHabits.promise : secondHabits.promise;
+      }
+      throw new Error(`unexpected path: ${path}`);
+    },
+    requestV1(path, options, coordination) {
+      const id = path.split("/").at(-1);
+      coordination.onQueued({ operationId: `operation-${id}`, status: "sending" });
+      if (id === "a1") {
+        return firstWrite.promise.then(() => {
+          server.actions[0] = action("a1", { status: "doing", version: 2 });
+          return { data: clone(server.actions[0]) };
+        });
+      }
+      return secondWrite.promise;
+    }
+  });
+  coordinator.applyIncrementalSnapshot(server);
+  const first = coordinator.runCommand(buildSetActionStatusCommand("a1", "doing", 1));
+  const second = coordinator.runCommand(buildCompleteActionCommand("a2", 1));
+  firstWrite.resolve();
+  await waitFor(() => actionReads === 1, "successful command did not start L1");
+  server.actions[1] = action("a2", {
+    title: "服务器新状态",
+    status: "done",
+    version: 2
+  });
+  secondWrite.reject(Object.assign(new Error("conflict"), {
+    status: 412,
+    code: "PRECONDITION_FAILED",
+    details: { currentVersion: 2 }
+  }));
+  await flush();
+  assert.equal(actionReads, 1, "conflict refresh superseded L1");
+  firstActions.resolve([clone(server.actions[0]), action("a2")]);
+  firstHabits.resolve([]);
+  assert.equal((await first).data.status, "doing");
+  await waitFor(() => actionReads === 2, "conflict refresh did not start after L1");
+  secondActions.resolve(clone(server.actions));
+  secondHabits.resolve([]);
+  await assert.rejects(second, error => {
+    assert.equal(error.status, 412);
+    assert.equal(error.saved, undefined);
+    assert.match(error.message, /同步冲突/);
+    assert.match(error.message, /服务器新状态/);
+    assert.match(error.message, /状态 done/);
+    return true;
+  });
+  const snapshot = coordinator.snapshot();
+  assert.equal(snapshot.loadState, "ready");
+  assert.equal(snapshot.loadError, "");
+  assert.deepEqual(
+    snapshot.actions.map(item => [item.id, item.status, item._sync]),
+    [["a1", "doing", undefined], ["a2", "done", undefined]]
+  );
+  assert.deepEqual([actionReads, habitReads], [2, 2]);
+}
+
 // Discovery can create an action through the coordinator while today is unmounted.
 {
   const fixture = commandCoordinator({
