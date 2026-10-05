@@ -353,6 +353,31 @@ assert.deepEqual(validateOpeningConfig({
 
 {
   const fixture = createFixture();
+  const contentTarget = new FakeElement();
+  const controller = createOpeningController({
+    ...fixture.controllerOptions,
+    contentTargets: contentTarget
+  });
+  const generation = controller.start();
+  controller.ready(generation);
+  const exitTimer = fixture.clock.entries.at(-1);
+  const exitAnimation = fixture.root.animations.at(-1);
+  assert.equal(controller.fail(generation), true);
+  assert.equal(exitTimer.cleared, true);
+  assert.equal(exitAnimation.cancelCount, 1);
+  assert.equal(fixture.root.hidden, false);
+  assert.equal(fixture.root.getAttribute("data-opening-state"), "failure");
+  assert.equal(contentTarget.inert, true);
+  fixture.clock.fire(exitTimer, { includeCleared: true });
+  exitAnimation.finish();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(fixture.root.getAttribute("data-opening-state"), "failure");
+  controller.dispose();
+}
+
+{
+  const fixture = createFixture();
   const controller = createOpeningController(fixture.controllerOptions);
   const generation = controller.start();
   const slowTimer = fixture.clock.entries.at(-1);

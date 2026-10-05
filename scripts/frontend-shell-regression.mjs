@@ -40,14 +40,17 @@ async function publicSourceFiles(directory) {
 const downloadableSource = (await Promise.all((await publicSourceFiles(path.join(ROOT, "public"))).map(file => fs.readFile(file, "utf8")))).join("\n");
 
 assert.match(appEntry, /const openingRequest = import\("\.\/frontend\/opening\/index\.mjs"\)/);
-assert.match(appEntry, /\.then\(\(\{ startOpening \}\) => startOpening\(\)\)/);
+assert.match(appEntry, /const controller = startOpening\(\)/);
+assert.match(appEntry, /if \(globalThis\.__forNowEntryFailed\) controller\.fail\(\)/);
 assert.match(appEntry, /import\("\.\/frontend\/app\/index\.mjs"\)/);
 assert.match(appEntry, /startApplication\(\{ opening \}\)/);
 assert.match(appEntry, /\.catch\(error => opening\.fail\(error\)\)/);
 assert.match(appEntry, /if \(element !== openingRoot\) element\.inert = true/);
 assert.match(appEntry, /openingRoot\.dataset\.openingState = "failure"/);
 assert.match(appEntry, /opening-retry"\)\.onclick = \(\) => location\.reload\(\)/);
-assert.ok(appEntry.split("\n").length <= 25, "public/app.js must remain a thin composition root");
+assert.match(appEntry, /globalThis\.__forNowEntryFailed \? controller\.fail\(\) : controller\.ready\(\)/);
+assert.match(appEntry, /globalThis\.__forNowOpeningFail = error => opening\.fail\(error\)/);
+assert.ok(appEntry.trimEnd().split("\n").length <= 30, "public/app.js must remain a thin composition root");
 assert.match(appBootstrap, /const startupRequest = globalThis\.__forNowStartupRequest/);
 assert.match(appBootstrap, /delete globalThis\.__forNowStartupRequest/);
 assert.match(appBootstrap, /prefetchedStartup \|\| await requestJson\("\/api\/v1\/startup", \{ allowUnauthorized: true \}\)/);
@@ -62,8 +65,8 @@ assert.match(appBootstrap, /const stylesReady = Promise\.all\(\[loadApplicationS
 assert.match(appBootstrap, /initialSnapshot\(\{ stylesReady, onShellReady: loadRuntime \}\)/);
 assert.match(appBootstrap, /const prefetchedRuntime = globalThis\.__forNowRuntimeRequest/);
 assert.match(appBootstrap, /runtimeRequest \|\|= prefetchedRuntime \|\| import\("\.\/runtime\.mjs"\)/);
-assert.match(appBootstrap, /timeout = setTimeout\(finish, 1500\)/);
-assert.match(appBootstrap, /link\.addEventListener\("error", finish, \{ once: true \}\)/);
+assert.match(appBootstrap, /timeout = setTimeout\(failed, 1500\)/);
+assert.match(appBootstrap, /link\.addEventListener\("error", failed, \{ once: true \}\)/);
 assert.doesNotMatch(appBootstrap, /from "\.\/runtime\.mjs"/);
 assert.match(appBootstrap, /requestJson\("\/api\/auth\/me", \{ allowUnauthorized: true \}\)/);
 for (const endpoint of ["/api/auth/me", "/api/v1/startup"]) {
@@ -120,7 +123,7 @@ assert.match(html, /id="opening-status"[^>]+role="status"/);
 assert.match(html, /id="opening-recovery"[^>]+hidden/);
 assert.match(html, /id="opening-retry"/);
 assert.ok(
-  html.indexOf('<style id="opening-critical-style">') < html.indexOf('rel="preload" href="frontend/styles/application.css"'),
+  html.indexOf('<style id="opening-critical-style">') < html.indexOf("const loadApplicationStyles"),
   "opening critical CSS must precede application style loading"
 );
 assert.ok(
@@ -134,11 +137,17 @@ assert.match(html, /window\.__forNowRouteRequest = fetch\(new URL\("api\/v1\/rou
 assert.match(html, /window\.__forNowRuntimeRequest = import\(new URL\("frontend\/app\/runtime\.mjs", document\.baseURI\)\.href\)/);
 assert.match(html, /document\.body\.classList\.remove\("auth-locked"\)/);
 assert.doesNotMatch(html, /const routeRoots = new Set/);
-assert.match(html, /<link rel="preload" href="frontend\/styles\/application\.css" as="style">/);
+assert.doesNotMatch(html, /<link rel="preload" href="frontend\/styles\/application\.css" as="style">/);
 assert.match(html, /\["frontend\/styles\/application\.css", "drift\.css"\]\.map/);
 assert.match(html, /link\.rel = "stylesheet"/);
-assert.match(html, /link\.media = "print"/);
-assert.match(html, /window\.__forNowStylesReady = Promise\.all/);
+assert.doesNotMatch(html, /link\.media = "print"/);
+assert.match(html, /window\.__forNowStylesReady = loadApplicationStyles\(\)/);
+assert.match(html, /Promise\.allSettled/);
+assert.match(html, /applicationStylesState !== "ready"/);
+assert.match(html, /addEventListener\("DOMContentLoaded", appendEntry, \{ once: true \}\)/);
+assert.match(html, /entry\.addEventListener\("error"/);
+assert.match(html, /showOpeningFailure\(\)/);
+assert.match(html, /window\.__forNowOpeningFail\?\.\(\)/);
 assert.match(appBootstrap, /loadApplicationStyles\(\)/);
 assert.match(appBootstrap, /Promise\.all\(\[loadApplicationStyles\(\), loadR8Styles\(\)\]\)/);
 assert.match(html, /<link rel="preload" href="frontend\/styles\/r8\.css" as="style">/);
@@ -151,11 +160,14 @@ assert.doesNotMatch(html, /<link rel="modulepreload" href="frontend\/app\/runtim
 assert.match(html, /id="auth-tab-login"[^>]+aria-controls="login-form"[^>]+tabindex="0"/);
 assert.match(html, /id="auth-tab-register"[^>]+aria-controls="register-form"[^>]+tabindex="-1"/);
 assert.match(html, /id="login-form" role="tabpanel" aria-labelledby="auth-tab-login"/);
-assert.equal((html.match(/<script src="app\.js" type="module"><\/script>/g) || []).length, 1);
+assert.equal((html.match(/<script src="app\.js" type="module"><\/script>/g) || []).length, 0);
+assert.match(html, /entry\.type = "module"/);
+assert.match(html, /entry\.src = "app\.js"/);
+assert.match(html, /document\.head\.append\(entry\)/);
 assert.doesNotMatch(appEntry, /fetch\(|XMLHttpRequest|location\.(?:assign|replace)/);
 assert.match(openingEntry, /createOpeningController/);
 assert.match(openingEntry, /const generation = controller\.start\(\)/);
-assert.match(openingEntry, /exitDuration: 120/);
+assert.match(openingEntry, /exitDuration: 100/);
 assert.match(openingEntry, /onRetry: \(\) => location\.reload\(\)/);
 assert.match(openingEntry, /"openingAnimationStarted"/);
 assert.match(openingEntry, /"openingExitStart"/);
@@ -167,11 +179,10 @@ assert.doesNotMatch(appBootstrap, /opening\?\.ready\(\)/);
 assert.match(appRuntime, /opening\?\.ready\(\)/);
 assert.match(appRuntime, /opening\?\.fail\(error\)/);
 assert.match(appRuntime, /await opening\?\.fail\(error\)/);
-assert.ok(html.indexOf('<base href="/">') < html.indexOf('rel="preload" href="frontend/styles/application.css"'));
-assert.ok(html.indexOf("window.__forNowStartupRequest") < html.indexOf('rel="preload" href="frontend/styles/application.css"'));
-assert.ok(html.indexOf('rel="modulepreload" href="frontend/app/bootstrap.mjs"') < html.indexOf('<script src="app.js" type="module"></script>'));
-assert.ok(html.indexOf('id="opening-screen"') < html.indexOf('<script src="app.js" type="module"></script>'));
-assert.ok(html.indexOf('<script src="app.js" type="module"></script>') < html.indexOf('id="auth-gate"'));
+assert.ok(html.indexOf('<base href="/">') < html.indexOf("const loadApplicationStyles"));
+assert.ok(html.indexOf("window.__forNowStartupRequest") < html.indexOf("const loadApplicationStyles"));
+assert.ok(html.indexOf('id="opening-screen"') < html.indexOf('entry.src = "app.js"'));
+assert.ok(html.indexOf('mark("openingVisible")') < html.indexOf('entry.src = "app.js"'));
 assert.doesNotMatch(html, /(?:href|src)="(?:styles\.css|vendor\/katex\/katex\.min\.(?:css|js))"/);
 assert.match(html, /id="discovery-query"/);
 assert.match(html, /id="view-permission"/);

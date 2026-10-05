@@ -78,12 +78,82 @@
       };
       mark("openingParsed");
       document.documentElement.dataset.openingParsed = String(performance.now());
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          mark("openingVisible");
-          document.documentElement.dataset.openingVisible = String(performance.now());
-        }, 0);
-      });
+      let applicationStylesState = "idle";
+      let applicationTimeout = 0;
+      const loadApplicationStyles = () => Promise.allSettled(
+        ["frontend/styles/application.css", "drift.css"].map(href => new Promise((resolve, reject) => {
+          const link = document.createElement("link");
+          let timeout = 0;
+          const cleanup = () => {
+            clearTimeout(timeout);
+            link.removeEventListener("load", loaded);
+            link.removeEventListener("error", failed);
+          };
+          const loaded = () => {
+            cleanup();
+            resolve();
+          };
+          const failed = () => {
+            cleanup();
+            link.remove();
+            reject(new Error(`Application style failed: ${href}`));
+          };
+          timeout = setTimeout(failed, 1500);
+          link.addEventListener("load", loaded, { once: true });
+          link.addEventListener("error", failed, { once: true });
+          link.rel = "stylesheet";
+          link.dataset.applicationStyle = "";
+          link.href = href;
+          document.head.append(link);
+        }))
+      );
+      const showOpeningFailure = () => {
+        clearTimeout(applicationTimeout);
+        applicationTimeout = 0;
+        window.__forNowEntryFailed = true;
+        opening.hidden = false;
+        opening.removeAttribute("aria-busy");
+        opening.dataset.openingState = "failure";
+        document.querySelector("#opening-status").textContent = "";
+        document.querySelector("#opening-recovery").hidden = false;
+        setOpeningContentInert(true);
+        const retry = document.querySelector("#opening-retry");
+        retry.onclick = () => location.reload();
+        retry.focus();
+        void window.__forNowOpeningFail?.();
+      };
+      const startApplicationEntry = () => {
+        mark("openingVisible");
+        document.documentElement.dataset.openingVisible = String(performance.now());
+        applicationStylesState = "loading";
+        window.__forNowStylesReady = loadApplicationStyles();
+        void window.__forNowStylesReady.then(results => {
+          const failed = results.some(result => result.status === "rejected");
+          applicationStylesState = failed ? "failure" : "ready";
+          if (failed) showOpeningFailure();
+          else releaseLegacyOpening();
+        });
+        const appendEntry = () => {
+          const entry = document.createElement("script");
+          applicationTimeout = setTimeout(() => {
+            entry.remove();
+            showOpeningFailure();
+          }, 5000);
+          entry.type = "module";
+          entry.src = "app.js";
+          entry.addEventListener("error", () => {
+            showOpeningFailure();
+          }, { once: true });
+          document.head.append(entry);
+        };
+        if (document.readyState === "loading") {
+          addEventListener("DOMContentLoaded", appendEntry, { once: true });
+        } else {
+          appendEntry();
+        }
+      };
+      if (document.visibilityState === "hidden") setTimeout(startApplicationEntry, 0);
+      else requestAnimationFrame(() => requestAnimationFrame(startApplicationEntry));
       const opening = document.querySelector("#opening-screen");
       const setOpeningContentInert = inert => {
         for (const element of document.body.children) {
@@ -105,6 +175,7 @@
       contentObserver.observe(document.body, { childList: true });
       const releaseLegacyOpening = () => {
         if (document.documentElement.dataset.runtimeReady !== "1"
+          || applicationStylesState !== "ready"
           || opening?.dataset.openingState !== "opening") return false;
         opening.hidden = true;
         opening.removeAttribute("aria-busy");
@@ -114,6 +185,10 @@
         return true;
       };
       const runtimeObserver = new MutationObserver(() => {
+        if (document.documentElement.dataset.runtimeReady === "1") {
+          clearTimeout(applicationTimeout);
+          applicationTimeout = 0;
+        }
         if (releaseLegacyOpening()
           || opening?.dataset.openingState !== "opening") {
           contentObserver.disconnect();
@@ -126,31 +201,6 @@
       });
     })();
   </script>
-  <link rel="preload" href="frontend/styles/application.css" as="style">
-  <link rel="preload" href="drift.css" as="style">
-  <script>
-    window.__forNowStylesReady = Promise.all(
-      ["frontend/styles/application.css", "drift.css"].map(href => new Promise(resolve => {
-        const link = document.createElement("link");
-        let timeout = 0;
-        const finish = () => {
-          clearTimeout(timeout);
-          link.removeEventListener("load", finish);
-          link.removeEventListener("error", finish);
-          link.media = "all";
-          resolve();
-        };
-        timeout = setTimeout(finish, 1500);
-        link.addEventListener("load", finish, { once: true });
-        link.addEventListener("error", finish, { once: true });
-        link.rel = "stylesheet";
-        link.media = "print";
-        link.dataset.applicationStyle = "";
-        link.href = href;
-        document.head.append(link);
-      }))
-    );
-  </script>
   <link rel="preload" href="frontend/styles/r8.css" as="style">
   <link rel="modulepreload" href="frontend/app/index.mjs">
   <link rel="modulepreload" href="frontend/app/bootstrap.mjs">
@@ -159,7 +209,6 @@
   <link rel="modulepreload" href="frontend/session/index.mjs">
   <link rel="modulepreload" href="frontend/opening/index.mjs">
   <link rel="modulepreload" href="frontend/opening/rain-engine.mjs">
-  <script src="app.js" type="module"></script>
   <div class="auth-gate" id="auth-gate" hidden>
     <section class="auth-panel" aria-labelledby="auth-title">
       <div class="auth-brand"><span class="brand-mark">此</span><div><h1 id="auth-title">此刻</h1><p>进入你的个人成长记录</p></div></div>

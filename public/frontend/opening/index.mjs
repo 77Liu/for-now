@@ -61,7 +61,7 @@ export function startOpening({
     root,
     contentTargets: [...document.body.children].filter(element => element !== root),
     backgroundSource,
-    exitDuration: 120,
+    exitDuration: 100,
     onRetry: () => location.reload(),
     onStateChange(state) {
       if (state === "opening") markOnce(performance, "openingAnimationStarted");

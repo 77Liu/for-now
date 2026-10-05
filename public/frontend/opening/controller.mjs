@@ -298,7 +298,7 @@ export function createOpeningController(options = {}) {
     if (disposed || state === "idle" || state === "complete") return false;
     if (candidateGeneration !== undefined && candidateGeneration !== activeGeneration) return false;
     if (state === "failure") return true;
-    if (state !== "opening") return false;
+    if (state !== "opening" && state !== "entering") return false;
     cancelTimers();
     cancelAnimations();
     releaseRain();

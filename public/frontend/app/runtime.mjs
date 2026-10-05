@@ -132,7 +132,7 @@ let backgroundResultController=null;
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
 let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",commentPanelOpen=false,annotationLineFrame=0,answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,captureComposerOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,discoveryController=null,actionsSnapshot={actions:[],habits:[],habitCheckins:[]},actionsRequestSerial=0,feedbackItems=[],feedbackRequestSerial=0,exportManifest=null,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
-let notificationsLoadState="idle",feedbackLoadState="idle",exportLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,routeDataRequestSerial=0,loadedRouteKey="",fullRouteStateLoaded=false,renderedRouteView="",activeThoughtRouteId="",activeRouteResult=null,thoughtSearchTimer=0,analysisRequestSerial=0;
+let notificationsLoadState="idle",feedbackLoadState="idle",exportLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,routeDataRequestSerial=0,routeLoadFailureKey="",loadedRouteKey="",fullRouteStateLoaded=false,renderedRouteView="",activeThoughtRouteId="",activeRouteResult=null,thoughtSearchTimer=0,analysisRequestSerial=0;
 let captureEditorTrigger=null,suspendedCaptureCreateDraft=null,captureEditorSerial=0;
 const feedSearchQueries={captures:"",journals:"",thoughts:"",books:"",keepsakes:"",quotes:""};
 const quoteTagPickerConfig=Object.freeze({
@@ -1584,7 +1584,7 @@ async function loadRouteState(route,requestSerial=++routeDataRequestSerial){
     if(requestSerial!==routeDataRequestSerial||owner!==currentUser?.id||session!==sessionSerial)return false;
     clearRouteLoadFailure(route);mergeStateSnapshot(snapshot);loadedRouteKey=key;fullRouteStateLoaded=Boolean(snapshot?._routeProjection?.complete);routeDataReady=true;renderVisibleRoute();reconcileThoughtRoute();return true
   }catch(error){
-    if(requestSerial===routeDataRequestSerial&&owner===currentUser?.id&&session===sessionSerial){renderRouteLoadFailure(route);showToast("当前页面读取失败，已有记录没有变化。","error")}
+    if(requestSerial===routeDataRequestSerial&&owner===currentUser?.id&&session===sessionSerial){routeLoadFailureKey=key;renderRouteLoadFailure(route);showToast("当前页面读取失败，已有记录没有变化。","error")}
     return false
   }finally{
     if(requestSerial===routeDataRequestSerial)panel?.removeAttribute("aria-busy")
@@ -1709,6 +1709,8 @@ async function restorePendingProjections(){
     if(owner!==currentUser?.id||session!==sessionSerial)return restored;
     if(applyPendingProjection(record))restored+=1
   }
+  const route=pageRouter?.currentRoute();
+  if(routeLoadFailureKey&&routeDataKey(route)===routeLoadFailureKey)renderRouteLoadFailure(route);
   return restored
 }
 async function applyIncrementalSnapshot(snapshot,changes){
@@ -2012,6 +2014,7 @@ function unmountRouteContent(view){
 }
 function clearRouteLoadFailure(route){
   $(`#view-${route?.view||"today"}`)?.querySelector("[data-route-load-failure]")?.remove();
+  if(routeLoadFailureKey===routeDataKey(route))routeLoadFailureKey="";
   const toast=$("#toast");
   if(toast&&!toast.hidden&&toast.classList.contains("error")&&toast.textContent==="当前页面读取失败，已有记录没有变化。"){
     clearTimeout(toastTimer);toast.hidden=true
@@ -2027,6 +2030,7 @@ function renderRouteLoadFailure(route){
 }
 function applyApplicationRoute(route){
   const requestSerial=++routeDataRequestSerial;
+  if(routeLoadFailureKey&&routeLoadFailureKey!==routeDataKey(route))routeLoadFailureKey="";
   $$(".view[aria-busy='true']").forEach(view=>view.removeAttribute("aria-busy"));
   stopPageAudio();
   if(renderedRouteView==="captures"&&route.view!=="captures")closeCaptureEditor({restoreFocus:false});
@@ -3995,14 +3999,7 @@ async function load({visibleShell=false,initialSnapshot=null,opening=null}={}){
   replaceState({...structuredClone(emptyClientState),...nextState,onboardingV2:meta.onboardingV2,notificationUnread:meta.notificationUnread,quoteTags:meta.quoteTags||[]});
   loadedRouteKey=routeDataKey(route);fullRouteStateLoaded=Boolean(nextState?._routeProjection?.complete);appVersion=meta.version||"development";releaseVersion=meta.releaseVersion||releaseVersion;featureFlags={...featureFlags,...meta.features};governanceUrl=typeof meta.governanceUrl==="string"?meta.governanceUrl:"";notificationUnreadCount=Number(state.notificationUnread)||0;routeDataReady=true;restoreAnnotationUiDrafts();
   const onboardingPending=onboardingBlocksPrivateShell(meta.onboardingV2);
-  let openingCompletion=null;
-  if(visibleShell&&!onboardingPending){
-    restoreView?.();renderVisibleRoute();reconcileThoughtRoute();revealUserSession();if(!Number.isFinite(startupMarks.visibleShell))markStartup("visibleShell");
-    await afterVisibleShellPaint();
-    if(owner!==currentUser?.id||session!==sessionSerial)return false;
-    openingCompletion=opening?.ready()||null
-  }
-  const [nextSettings,nextOnboardingSchema,nextOnboardingV2Schema,nextOnboardingV2State,nextLocalTestConfig]=await Promise.all([
+  const requestSecondary=()=>Promise.all([
     request(hasCapability("ai-configuration")?"/api/settings":"/api/preferences"),
     optionalRequest("/api/onboarding/schema"),
     requestV1("/api/v1/onboarding-v2/schema"),
@@ -4010,7 +4007,20 @@ async function load({visibleShell=false,initialSnapshot=null,opening=null}={}){
       ?Promise.resolve({data:meta.onboardingV2})
       :requestV1("/api/v1/onboarding-v2/session"),
     hasCapability("local-testing")?(initialSnapshot?Promise.resolve(initialSnapshot.testConfig):optionalRequest("/api/local-test-mode")):Promise.resolve(null)
-  ]);
+  ]).then(value=>({value}),error=>({error}));
+  let openingCompletion=null;
+  let secondaryRequest=null;
+  if(visibleShell&&!onboardingPending){
+    restoreView?.();renderVisibleRoute();reconcileThoughtRoute();revealUserSession();if(!Number.isFinite(startupMarks.visibleShell))markStartup("visibleShell");
+    await afterVisibleShellPaint();
+    if(owner!==currentUser?.id||session!==sessionSerial)return false;
+    secondaryRequest=requestSecondary();
+  }
+  secondaryRequest||=requestSecondary();
+  const secondaryResult=await secondaryRequest;
+  if(secondaryResult.error)throw secondaryResult.error;
+  if(opening&&!onboardingPending){openingCompletion=opening.ready();if(openingCompletion)await openingCompletion}
+  const [nextSettings,nextOnboardingSchema,nextOnboardingV2Schema,nextOnboardingV2State,nextLocalTestConfig]=secondaryResult.value;
   if(owner!==currentUser?.id||session!==sessionSerial)return false;
   markStartup("secondaryReady");
   state.onboardingV2=nextOnboardingV2State.data;llmSettings=nextSettings;onboardingSchema=nextOnboardingSchema;localTestConfig=nextLocalTestConfig;onboardingHydrated=false;
@@ -4018,8 +4028,7 @@ async function load({visibleShell=false,initialSnapshot=null,opening=null}={}){
   if(owner!==currentUser?.id||session!==sessionSerial)return false;
   renderOnboarding();renderVisibleRoute();if(!reconcileThoughtRoute())pageRouter?.activate();restoreDurableDrafts();syncChainRecordKind();scheduleNotificationPoll();
   if(visibleShell&&onboardingPending){revealUserSession();if(!Number.isFinite(startupMarks.visibleShell))markStartup("visibleShell")}
-  if(opening&&onboardingPending){await afterVisibleShellPaint();if(owner!==currentUser?.id||session!==sessionSerial)return false;openingCompletion=opening.ready()}
-  if(openingCompletion)await openingCompletion;
+  if(opening&&onboardingPending){await afterVisibleShellPaint();if(owner!==currentUser?.id||session!==sessionSerial)return false;await opening.ready()}
   markStartup("stableHome");publishStartupTiming();return true
 }
 function setAuthTab(tab){
@@ -4039,7 +4048,7 @@ function clearPrivateSessionState(){
   closeImageViewer({restoreFocus:false});
   onboardingV2Controller.reset();
   clearTimeout(thoughtSearchTimer);thoughtSearchTimer=0;
-  resetState();routeDataReady=false;routeDataRequestSerial+=1;loadedRouteKey="";fullRouteStateLoaded=false;activeThoughtRouteId="";activeRouteResult=null;quoteTagStates={quote:createTagMultiSelectState(),selectionQuote:createTagMultiSelectState()};llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
+  resetState();routeDataReady=false;routeDataRequestSerial+=1;routeLoadFailureKey="";loadedRouteKey="";fullRouteStateLoaded=false;activeThoughtRouteId="";activeRouteResult=null;quoteTagStates={quote:createTagMultiSelectState(),selectionQuote:createTagMultiSelectState()};llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
   activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationRetryingTaskIds=[];notificationsLoadState="idle";actionsSnapshot={actions:[],habits:[],habitCheckins:[]};feedbackItems=[];feedbackLoadState="idle";exportManifest=null;exportLoadState="idle";personalContext=null;personalContextRequestSerial=0;accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.5.7";homeMemoryKeys=[];homeMemoryByKey=new Map();homeKeepsakeId="";closeHomeEditors({restoreFocus:false});$("#capture-editor").hidden=true;document.body.classList.remove("capture-editor-open");resetOwnerSurfaces();invalidatePageLoads();draftTags=[];captureDraftTags=[];keepsakeDraftTags=[];captureComposerOpen=false;captureEditorTrigger=null;suspendedCaptureCreateDraft=null;pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";commentPanelOpen=false;annotationUiDrafts={};expandedLongContentKeys.clear();
   healthParseSerial+=1;latestHealthRequest=0;healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=[];healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]};for(const draft of Object.values(healthImageDrafts))Object.assign(draft,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0});
   bookParseSerial+=1;for(const url of Object.values(bookPreviewUrls))if(url)URL.revokeObjectURL(url);bookPreviewUrls={cover:"",recognition:""};pendingBookImages={cover:null,recognition:null};editingBookId="";activeBookId="";activeBookFeatureNoteId="";bookCreatorOpen=false;bookDetailCondensed=false;

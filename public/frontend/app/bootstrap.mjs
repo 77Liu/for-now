@@ -18,27 +18,40 @@ function markStartup(name) {
 function loadApplicationStyles() {
   const stylesReady = globalThis.__forNowStylesReady;
   delete globalThis.__forNowStylesReady;
-  return Promise.resolve(stylesReady).catch(() => {});
+  return Promise.resolve(stylesReady).then(results => {
+    const failure = Array.isArray(results)
+      ? results.find(result => result.status === "rejected")
+      : null;
+    if (failure) throw failure.reason;
+  });
 }
 
 function loadR8Styles() {
   const existing = document.querySelector('link[data-r8-styles]');
   if (existing) return Promise.resolve();
-  return new Promise(resolve => {
+  return new Promise((resolve, reject) => {
     const link = document.createElement("link");
     let timeout = 0;
-    const finish = () => {
+    const cleanup = () => {
       clearTimeout(timeout);
-      link.removeEventListener("load", finish);
-      link.removeEventListener("error", finish);
+      link.removeEventListener("load", loaded);
+      link.removeEventListener("error", failed);
+    };
+    const loaded = () => {
+      cleanup();
       resolve();
     };
-    timeout = setTimeout(finish, 1500);
+    const failed = () => {
+      cleanup();
+      link.remove();
+      reject(new Error("R8 stylesheet failed"));
+    };
+    timeout = setTimeout(failed, 1500);
     link.rel = "stylesheet";
     link.href = new URL("../styles/r8.css", import.meta.url).href;
     link.dataset.r8Styles = "";
-    link.addEventListener("load", finish, { once: true });
-    link.addEventListener("error", finish, { once: true });
+    link.addEventListener("load", loaded, { once: true });
+    link.addEventListener("error", failed, { once: true });
     document.head.append(link);
   });
 }
@@ -173,6 +186,7 @@ export async function startApplication({ opening } = {}) {
     return runtimeRequest ||= prefetchedRuntime || import("./runtime.mjs");
   };
   const stylesReady = Promise.all([loadApplicationStyles(), loadR8Styles()]);
+  void stylesReady.catch(() => {});
   const initial = await initialSnapshot({ stylesReady, onShellReady: loadRuntime });
   const runtimeModule = loadRuntime();
   if (!initial?.error) await stylesReady;
