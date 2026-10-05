@@ -5,6 +5,7 @@
   <base href="/">
   <script>
     window.__forNowStartupRequest = fetch(new URL("api/v1/startup", document.baseURI).pathname, {
+      priority: "high",
       headers: { accept: "application/json", "content-type": "application/json" }
     }).then(response => response.json()).catch(() => null);
     try {
@@ -13,6 +14,7 @@
       if (sessionStorage.getItem("cike:authenticated-shell") === "1") {
         if (["/", "/today"].includes(routePath)) {
           window.__forNowRouteRequest = fetch(new URL("api/v1/route-state?view=today", document.baseURI).href, {
+            priority: "high",
             headers: { accept: "application/json", "content-type": "application/json" }
           }).then(response => response.json()).catch(() => null);
           document.documentElement.dataset.bootstrapVisible = "1";

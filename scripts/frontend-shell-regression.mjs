@@ -105,6 +105,7 @@ assert.match(html, /id="home-open-thought"/);
 assert.match(html, /id="home-mood-sparkline"/);
 assert.match(html, /<base href="\/">/);
 assert.match(html, /window\.__forNowStartupRequest = fetch\(new URL\("api\/v1\/startup", document\.baseURI\)\.pathname/);
+assert.equal((html.match(/priority: "high"/g) || []).length, 2);
 assert.match(html, /sessionStorage\.getItem\("cike:authenticated-shell"\) === "1"/);
 assert.match(html, /window\.__forNowRouteRequest = fetch\(new URL\("api\/v1\/route-state\?view=today", document\.baseURI\)\.href/);
 assert.match(html, /window\.__forNowRuntimeRequest = import\(new URL\("frontend\/app\/runtime\.mjs", document\.baseURI\)\.href\)/);
