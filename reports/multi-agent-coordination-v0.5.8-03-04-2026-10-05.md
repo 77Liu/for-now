@@ -2,11 +2,11 @@
 
 - 日期：2026-10-05
 - 起始基线：`f911cde4505d3434ab4afcf4b5614f8e828f4bcc`
-- 当前门禁：`iteration-G3 / entrypoint-pre-G2`
-- 当前状态：`b2-verified-f2-ready`
+- 当前门禁：`iteration-G3 / entrypoint-G2`
+- 当前状态：`f2-slice-1-verified`
 - 活跃工作树：`5 / 6`
-- 机器事实：3 个入口策略、61 个模块、236 条拥有路由、20 条迁移例外；
-  `server.mjs` 由 3283 行降至 2295 行，`runtime.mjs` 仍为 5291 行
+- 机器事实：3 个入口策略、64 个模块、236 条拥有路由、16 条迁移例外；
+  `server.mjs` 由 3283 行降至 2295 行，`runtime.mjs` 当前为 5275 行
 - 授权边界：允许本地代码、测试、文档与任务提交；不允许 push、tag、Release、
   Preview、部署、云资源修改、真实付费调用或生产写入
 
@@ -61,7 +61,7 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 
 | roleId | specialty | activeContext | ownership | dependencies | communications | evidence | status | next |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `orchestrator` | 契约冻结与串行集成 | `9ba9f64`；iteration-G3 / entrypoint-G2 | 共享文件与集成树 | 全部角色 | 串行接入 B2 并关闭 reviewer findings | B1a-B2、F1a/F1b 与门禁强化已集成 | `active` | 进入 F2 真实 lazy feature |
+| `orchestrator` | 契约冻结与串行集成 | `4ee0921`；iteration-G3 / entrypoint-G2 | 共享文件与集成树 | 全部角色 | 串行接入 F2 slice 1 并关闭 reviewer findings | application/ports、3 个真实 lazy feature、PWA/预算门已集成 | `active` | 重新侦察 actions/home |
 | `backend-scout` | B1-B7 符号与闭包 | `server.mjs` 3283 行 | 只读 | B1a | 建议 B1a→B1b→B1c | 无生产 runtime 骨架 | `closed` | 移交 B1a |
 | `frontend-scout` | F1-F10 页面与 lifecycle | `runtime.mjs` 5291 行 | 只读 | F1a | 先 application/router disposer | registry 未接线 | `closed` | 移交 F1a |
 | `gate-scout` | G4/G6 与测试真实性 | 20 条例外 | 只读 | C0/I | 报告 policy 冲突与死代码假绿 | G4/G6 按预期失败 | `closed` | 等待复核 |
@@ -80,9 +80,9 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 | `f2-scout` | 低耦合 feature 与真实 lazy 边界 | `47d24a0`；F2 | 只读 | F1b/I2 | 核对 discovery/actions/feedback/export/home 与 closure/PWA | export/feedback/discovery 候选、PWA/closure 风险已移交 | `closed` | 先实现 export descriptor |
 | `b2f2-secretary` | 第二批状态、所有权与证据账 | `47d24a0`；SOP/计划/报告 | 只读 | B2/F2/I2 | 指出门禁命名、文档状态和 ownership 缺口 | 工作树 5/6；B2/F2 派发清单已移交 | `closed` | 接线后复核五处状态一致性 |
 | `b2-backend-worker` | local-test/account lifecycle 叶子模块 | `47d24a0`；B2 | 新模块和专项 | b2-scout/I2 | 两个无冲突叶子任务移交调度者接线 | `7430973`、`f53ab06`；专项通过 | `closed` | B2 已集成 |
-| `f2-feature-worker` | 真实 lazy feature 叶子实现 | `47d24a0`；等待 F2-S | 选定 feature 内部文件和专项 | f2-scout/I2 | 尚未派发写任务 | 无 | `queued` | 接收冻结候选后实现，不碰 runtime/barrel |
-| `b2-f2-validator` | B2/F2 独立影响验证 | `9ba9f64`；B2 冻结差分 | 只读 | B2/I2 | 保留失败与通过样本 | check、专项、auth、persistence、restore、主 regression、backend 通过 | `closed` | F2 后重新验证前端 |
-| `b2-f2-reviewers` | 生命周期、隔离与 lazy 真实性复审 | `9ba9f64`；B2 冻结差分 | 只读 | V2 | 多轮关闭原子性、隔离与测试假绿 | 最终 GO，blocker/P0/P1=`0/0/0` | `closed` | F2 冻结后复审 |
+| `f2-feature-worker` | 真实 lazy feature 叶子实现 | `c3c4033`；F2 slice 1 | export/feedback/discovery/legacy adapter 内部文件与专项 | f2-scout/I2 | controller API 冻结后交给调度者接线 | 4 个生命周期专项通过 | `closed` | actions/home 另行冻结 |
+| `b2-f2-validator` | B2/F2 独立影响验证 | `4ee0921`；F2 冻结差分 | 只读 | B2/I2 | 重跑 check、entrypoint、F2、PWA、URL 与最终大门 | 最终 check/web/frontend/Journey 全通过 | `closed` | 下一切片重新验证 |
+| `b2-f2-reviewers` | 生命周期、隔离与 lazy 真实性复审 | `4ee0921`；F2 冻结差分 | 只读 | V2 | 多轮关闭 reset scrub、ABA 与 rollback tail | 最终 GO，blocker/P0/P1=`0/0/0` | `closed` | 下一切片复审 |
 
 ## 已关闭问题与保留风险
 
@@ -103,12 +103,14 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 - `P0-F1-01` 已关闭：router 构造无浏览器副作用，`start()` 返回周期归属的
   幂等 disposer；监听、RAF、timer 和 `scrollRestoration` 均可回收，权限拒绝、
   ABA 导航、同步/异步失败和 stale pop 有专项。
-- `P0-F1-02`：当前 25 个 descriptor 均指向同一 features barrel，尚不是真实
-  lazy feature registry。
-- `P0-PWA-01`：当前 Service Worker 预缓存 runtime 与全部 feature 模块；F2
-  接线前必须重新冻结 lazy cache 和 closure budget。
-- `P1-TEST-01`：handler/page 检查主要核对声明；真实接线仍需行为测试。
-- `P1-TEST-02`：Journey Smoke 不在 `test:system all` 内，F2/G6 必须单独执行。
+- `P0-F1-02` 已关闭：export、feedback、discovery 使用直接 public entry 的
+  字面量动态 import；其余 22 页使用显式 legacy adapter，不再指向共享 barrel。
+- `P0-PWA-01` 已关闭：Service Worker install 不再预缓存 3 个 lazy feature，
+  首次使用后按版本缓存；shell、默认路由增量和单页 lazy closure 分层设门。
+- `P1-TEST-01` 已关闭：新增 descriptor 静态门、4 个 controller 专项、
+  `aria-busy` 真实路由交互、账户 reset、迟到响应和 router ABA/rollback 测试。
+- `P1-TEST-02` 仍是流程约束：Journey Smoke 不在 `test:system all` 内，本批已
+  另行执行并通过 `14/14`。
 
 ## 单写边界
 
@@ -212,5 +214,34 @@ npm run test:frontend-shell
   `057b6fa80a6bca478c41367ada48eb237de2b520b4e8b7e868e56163b664c99f`，
   行数上限收紧为 2295，G4 到期条件未放宽。
 
-下一步：F2 先实现 export、feedback、discovery 的真实 lazy descriptors，
-再由调度者同批接入 F1b application/ports；不使用共享 barrel 假 lazy。
+## F2 slice 1 检查点
+
+- 本地提交：`c3c4033`（feature controllers）和 `4ee0921`
+  （application/ports、真实 descriptors、PWA/预算与 runner 接线）。
+- export、feedback、discovery 已拥有 fresh controller、root 内 DOM、幂等
+  disposer、账户 reset 和迟到响应隔离；runtime 同批删除旧 presenter、loader、
+  事件监听和私有状态，无运行时双轨。
+- `createBrowserApplication`、feature registry 及 state/sync/shell ports 已接入；
+  router 对 import/mount 标记 `aria-busy`，A→B→A、失败 rollback 与 rollback
+  pending 时的新导航均串行恢复到唯一 controller。
+- Service Worker 为 `cike-shell-v0.5.8-4`：3 个 lazy feature 不进入 install，
+  访问后 cache-on-use。入口固定门未放宽，最终 shell 为
+  `23 modules / 819087 B`；默认路由增量 `2 / 12000 B`；export、feedback、
+  discovery 分别为 `3 / 13218 B`、`3 / 24922 B`、`3 / 31130 B`，首页隐藏
+  feature 请求为 `0`。
+- 最终固定条件 web budget `30534 ms` 通过：冷启动 firstReadable P75/P95
+  `740.9 / 757.2 ms`，暖启动 `736.3 / 738.2 ms`。开屏入口改为在已观测
+  first-contentful-paint 后注入，关闭此前 app.js 早于 FCP 的不稳定样本。
+- `npm run check`、entrypoint、4 个 F2 专项、G2、PWA、URL/history、UI、mobile
+  均通过；frontend suite `84074 ms`，Journey Smoke `14/14`、`64336 ms`。
+- 多轮 reviewer 关闭 export reset 残留、A→B→A 无 controller 和 rollback
+  enter 脱离 transition tail；最终 GO，blocker/P0/P1=`0/0/0`。
+- browser factory/call/import/import-binding 4 条例外已删除；剩余 6 条 G6 例外
+  绑定 `runtime.mjs` SHA
+  `820e48e3177536893cc82dafb1a49392c741f2b356a936eacad56ef8da6b6a16`，
+  行数上限收紧为 5275。全库迁移例外由 20 降至 16，G6 条件未放宽。
+- 未执行 push、tag、Release、Preview、部署、云资源修改、Base 写入、真实付费
+  调用或生产写入。
+
+下一步：重新侦察 F2 剩余 actions/home 的 runtime 闭包和默认路由预算，单独冻结
+所有权与测试矩阵后再实现；不把本切片写成完整 G5。

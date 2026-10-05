@@ -758,8 +758,17 @@ V0.5.8 只有在以下条件同时成立时才可关闭：
   建立 application lifecycle、可回收 router 和 session/state/sync/shell
   ports；frontend `77626 ms`、Journey Smoke `14/14`、固定 web budget
   `24 modules / 819195 B` 通过，独立 reviewer blocker/P0/P1=`0/0/0`。
-- ports 与 application 仍有意保持未接线；F2 必须先提供真实 lazy descriptors，
-  再由调度者同批接入 runtime，不能用共享 barrel descriptor 静态假通过。
+- F2 slice 1 由 `c3c4033`、`4ee0921` 完成 export、feedback、discovery
+  controller 与真实 descriptors；application、feature registry 及
+  state/sync/shell ports 已同批接入 runtime，旧实现和监听已删除。
+- 其余 22 页经显式 legacy adapter 过渡，不再把 25 页全部登记到共享
+  `features/index.mjs`；actions/home 仍属 F2 剩余范围，未冒充完整 G5。
+- Service Worker install 排除 3 个 lazy feature，访问后 cache-on-use；固定 shell
+  预算未放宽，最终为 `23 modules / 819087 B`，默认路由增量
+  `2 / 12000 B`，首页隐藏 feature 请求为 0。
+- 最终 web budget 冷启动 firstReadable P75/P95 `740.9/757.2 ms`、暖启动
+  `736.3/738.2 ms`；frontend `84074 ms`、Journey Smoke `14/14`
+  `64336 ms` 通过。最终 reviewer blocker/P0/P1=`0/0/0`。
 - B2 由 `a35dad8..9ba9f64` 完成本地测试 control/workspace、GET-only 上游
   水合、隔离会话、账户初始化和逐账户启动恢复迁移；`server.mjs` 进一步降至
   2295 行，拥有路由由 233 增至 236 条，旧入口实现已删除。
@@ -771,4 +780,7 @@ V0.5.8 只有在以下条件同时成立时才可关闭：
   因本机缺少 `postgres/initdb/pg_ctl` 未运行，未冒充通过。
 - 当前达到 entrypoint-G2；10 条 server 例外绑定 SHA
   `057b6fa80a6bca478c41367ada48eb237de2b520b4e8b7e868e56163b664c99f`，
-  行数上限收紧为 2295，G4 条件未放宽。下一步只推进 F2。
+  行数上限收紧为 2295，G4 条件未放宽。browser 例外由 10 降至 6，绑定
+  `runtime.mjs` SHA
+  `820e48e3177536893cc82dafb1a49392c741f2b356a936eacad56ef8da6b6a16`，
+  行数上限 5275；全库例外由 20 降至 16。下一步重新侦察 actions/home。
