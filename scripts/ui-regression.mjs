@@ -3778,6 +3778,11 @@ try {
   assert.equal(await evaluate(`!document.querySelector("#analysis-list").textContent.includes("不得进入普通页面")`),true);
   await evaluate(`document.querySelector("#analysis-load-more").click();true`);
   assert.equal(await waitUntil(`document.querySelectorAll("[data-analysis-id]").length===10&&document.querySelector("#analysis-pagination").hidden`),true);
+  await evaluate(`window.__failNextStateRefresh=true;document.querySelector('[data-section="seen"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#capture-list .route-load-failure")`),true);
+  assert.deepEqual(await evaluate(`(()=>{const failure=document.querySelector("#capture-list .route-load-failure"),toast=document.querySelector("#toast");return{view:document.querySelector(".view.active")?.id,busy:document.querySelector("#view-captures").getAttribute("aria-busy"),title:failure.querySelector("strong").textContent,body:failure.querySelector("p").textContent,action:failure.querySelector("button").textContent,records:document.querySelectorAll("#capture-list [data-capture-id]").length,internal:failure.textContent.includes("DISCOVERY_BACKEND_INTERNAL")||toast.textContent.includes("DISCOVERY_BACKEND_INTERNAL")}})()`),{view:"view-captures",busy:null,title:"暂时无法读取这个页面",body:"已有记录没有变化。请检查网络后重试。",action:"重新读取",records:0,internal:false});
+  await evaluate(`document.querySelector("#capture-list .content-state-action").click();true`);
+  assert.equal(await waitUntil(`!document.querySelector("#capture-list .route-load-failure")&&document.querySelector("#capture-list [data-capture-id]")&&document.querySelector("#toast").hidden`),true);
   await evaluate(`sessionStorage.removeItem("ui-review-projection-test");true`);
   console.log("UI regression passed: owner capability surfaces, ordinary-user DOM isolation, permission routing, reauthentication, core flows and responsive layouts.");
 } finally {

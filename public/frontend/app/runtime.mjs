@@ -1561,9 +1561,9 @@ async function loadRouteState(route,requestSerial=++routeDataRequestSerial){
   try{
     const snapshot=await requestRouteState(route);
     if(requestSerial!==routeDataRequestSerial||owner!==currentUser?.id||session!==sessionSerial)return false;
-    mergeStateSnapshot(snapshot);loadedRouteKey=key;fullRouteStateLoaded=Boolean(snapshot?._routeProjection?.complete);routeDataReady=true;renderVisibleRoute();reconcileThoughtRoute();return true
+    clearRouteLoadFailure(route);mergeStateSnapshot(snapshot);loadedRouteKey=key;fullRouteStateLoaded=Boolean(snapshot?._routeProjection?.complete);routeDataReady=true;renderVisibleRoute();reconcileThoughtRoute();return true
   }catch(error){
-    if(requestSerial===routeDataRequestSerial&&owner===currentUser?.id&&session===sessionSerial)showToast(`当前页面读取失败：${error.message}`,"error");
+    if(requestSerial===routeDataRequestSerial&&owner===currentUser?.id&&session===sessionSerial){renderRouteLoadFailure(route);showToast("当前页面读取失败，已有记录没有变化。","error")}
     return false
   }finally{
     if(requestSerial===routeDataRequestSerial)panel?.removeAttribute("aria-busy")
@@ -1971,8 +1971,35 @@ const routeContentSelectors=Object.freeze({
   keepsakes:["#keepsake-grid","#keepsake-detail"],
   quotes:["#quote-sky-content","#quote-timeline"]
 });
+const routeFailureTargetSelectors=Object.freeze({
+  today:"#home-memory-grid",
+  together:"#chat-history",
+  daily:"#daily-list",
+  captures:"#capture-list",
+  journals:"#journal-list",
+  thoughts:"#all-thoughts",
+  review:"#analysis-list",
+  books:"#book-grid",
+  keepsakes:"#keepsake-grid",
+  quotes:"#quote-timeline"
+});
 function unmountRouteContent(view){
   for(const selector of routeContentSelectors[view]||[])$(selector)?.replaceChildren()
+}
+function clearRouteLoadFailure(route){
+  $(`#view-${route?.view||"today"}`)?.querySelector("[data-route-load-failure]")?.remove();
+  const toast=$("#toast");
+  if(toast&&!toast.hidden&&toast.classList.contains("error")&&toast.textContent==="当前页面读取失败，已有记录没有变化。"){
+    clearTimeout(toastTimer);toast.hidden=true
+  }
+}
+function renderRouteLoadFailure(route){
+  const view=route?.view||"today",panel=$(`#view-${view}`);
+  if(!panel)return;
+  unmountRouteContent(view);
+  const target=$(routeFailureTargetSelectors[view])||panel;
+  target.innerHTML=contentState({kind:"failure",title:"暂时无法读取这个页面",body:"已有记录没有变化。请检查网络后重试。",action:{command:"retry-route-state",label:"重新读取"},className:"route-load-failure"});
+  target.querySelector(".route-load-failure")?.setAttribute("data-route-load-failure","")
 }
 function applyApplicationRoute(route){
   const requestSerial=++routeDataRequestSerial;
@@ -4408,6 +4435,7 @@ document.addEventListener("click",event=>{
   if(command==="new-state"){switchView("today");openHomeEditor("state");return}
   if(command==="new-keepsake"){$("#keepsake-create-toggle")?.click();return}
   if(command==="run-analysis"){$("#run-analysis")?.click();return}
+  if(command==="retry-route-state"){button.disabled=true;void loadRouteState(pageRouter?.currentRoute()).finally(()=>{if(button.isConnected)button.disabled=false});return}
   const retries={
     "retry-discovery":loadDiscovery,
     "retry-feedback":loadFeedback,
