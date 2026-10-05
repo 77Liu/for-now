@@ -2,7 +2,7 @@
 
 计划日期：2026-10-04
 
-状态：G0–G6 完成；V0.5.7 与音频按需热修已发布并关闭观察，G7 待 Owner 验收
+状态：G0–G7 完成；V0.5.7 与音频按需热修已发布、观察与复盘关闭
 
 执行依据：更新后的 `STD-DEV-001`、`SOP/requirement-intake.md`、
 `SOP/iteration-planning.md`、`SOP/feature-development.md`、
@@ -414,3 +414,9 @@ flowchart TD
 验收。事实与复盘报告已形成于
 `reports/v0.5.7-development-process-2026-10-05.md`，当前结论为
 **G7 待 Owner 验收**；不改写上述历史记录。
+
+### 2026-10-05 G7 Owner 验收
+
+Owner 于 2026-10-05 14:45 +0800 审阅并接受
+`reports/v0.5.7-development-process-2026-10-05.md` 及两项行动，V0.5.7
+正式关闭 G7。该决定只关闭 V0.5.7，不授权 V0.5.8 的远端、云资源或生产操作。
