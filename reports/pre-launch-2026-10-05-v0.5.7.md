@@ -284,17 +284,37 @@ PostgreSQL stable 覆盖非 owner、`NOSUPERUSER`、`NOBYPASSRLS` 运行角色�
   路由启动、性能门和 Preview 验收既有记录；最终需求表 `rev=341 / 235`，
   交付表 `rev=103 / 83`。状态保持待验收/待发布。
 
+## G5 最终 GO 与生产预检
+
+- Owner 于 2026-10-05 12:28 +0800 授权把当前 Preview 候选上线，并接受
+  发布前已披露的公网性能尾部波动。
+- 发布前生产仍运行 `v0.5.6@780d279f3b36`；主服务、Nginx、监控和备份
+  timer 正常，`NRestarts=0`，磁盘使用率 55%，可用内存 751 MiB，Swap 为 0。
+- `/etc/for-now.env` 为 `root:root 0600`；PostgreSQL 三类运行连接、备份连接、
+  OSS 附件、DeepSeek、火山与飞书告警所需配置均存在。PostgreSQL 使用外部
+  服务，不以本机 `postgresql.service` 状态作为健康结论。
+- 即时备份 `for-now-20261005T043006Z.tar.gz` 为 80,863,343 B，SHA-256
+  `187b8996febce2af2454c26b72114cab902956b959b1639aef6c891ed011d8bd`，
+  本地校验与 OSS 上传通过。
+- 最新备份隔离恢复通过：4 个账户、220 条总记录、53 个附件引用、57 个附件；
+  公开 API 217 条，附件 HTTP 读取通过。
+- 历史小物生产 dry-run 使用候选迁移器和生产 PostgreSQL/OSS，计划哈希
+  `badfade4fd8eae5c8bc77b16c3b57b0b695906f11a5f30586a446470bd3b49b4`；
+  4 个账户分别计划 `0 / 0 / 1 / 8` 条，共 9 条，blocked 为 0。
+- 回滚代码固定为 `v0.5.6@780d279f3b36`；媒体迁移保留旧 cutout 与原件，
+  数据异常时使用上述即时备份恢复。
+
 ## 未覆盖与后续发布门
 
-当前结论适用于 G5 Preview 候选。以下动作尚未执行：
+当前结论适用于 G5 最终 GO、Git 发布前。以下动作尚未执行：
 
 - push `main`、标签或 Gitee Release；
-- 真实 DeepSeek、火山语音/视觉和阿里云分割（Preview 无凭据，N/A）；
+- 生产真实 DeepSeek、火山语音/视觉和阿里云分割冒烟；
 - 物理 iPhone、安装态 PWA 与 Android 真机；
-- 历史小物生产 dry-run/apply；
-- 生产即时备份、恢复、部署和观察。
+- 历史小物生产 apply；
+- 生产部署、冒烟和观察。
 
-上述生产动作必须另取明确授权。不得用 Preview 通过替代生产结论。
+上述生产动作已获得本次授权，但仍须逐项通过；不得用 Preview 通过替代生产结论。
 
 ## G5 前检查表
 
@@ -309,7 +329,7 @@ PostgreSQL stable 覆盖非 owner、`NOSUPERUSER`、`NOBYPASSRLS` 运行角色�
 - [x] 远端 Preview 功能、Linux RSS 与公网多视口验收
 - [x] Preview 第三方 live 判定 N/A，未借用生产凭据
 - [x] Owner 接受已披露的公网性能尾部超限样本
-- [ ] Owner 授权 tag、Gitee Release、生产迁移与部署
+- [x] Owner 授权 tag、Gitee Release、生产迁移与部署
 - [ ] 生产即时备份、隔离恢复、部署、冒烟与观察
 
 ## 回滚
