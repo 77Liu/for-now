@@ -1,0 +1,25 @@
+{
+  "designVersion": "R9.4-F1",
+  "confirmedAt": "2026-10-05",
+  "source": "用户确认的调参截图",
+  "openingAnimation": {
+    "schemaVersion": 1,
+    "enabled": true,
+    "showBrand": true,
+    "config": {
+      "density": 3.5,
+      "trailPercent": 60,
+      "dropSize": 7.5,
+      "trailWidth": 12,
+      "speed": 85,
+      "bend": 80,
+      "splash": 5,
+      "trailLife": 4,
+      "beadLife": 9,
+      "contrast": 119,
+      "slideDelay": 50,
+      "slideLength": 145,
+      "protectBrand": false
+    }
+  }
+}
