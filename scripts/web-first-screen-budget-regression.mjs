@@ -40,9 +40,9 @@ const HTTP_BUDGET = Object.freeze({
   mediaBeforeClickTransferBytes: 0
 });
 const TIMING_BUDGET = Object.freeze({
-  "web.startup.coldCache.currentScreenFeedback_ms": { p75: 500, p95: 750 },
+  "web.startup.coldCache.currentScreenFeedback_ms": { p75: 250, p95: 250 },
   "web.startup.coldCache.firstReadable_ms": { p75: 1000, p95: 1500 },
-  "web.startup.warmCache.currentScreenFeedback_ms": { p75: 500, p95: 750 },
+  "web.startup.warmCache.currentScreenFeedback_ms": { p75: 250, p95: 250 },
   "web.startup.warmCache.firstReadable_ms": { p75: 750, p95: 1000 },
   "web.navigation.routeSwitch.firstReadable_ms": { p75: 350, p95: 600 },
   "web.navigation.thoughtDetail.firstReadable_ms": { p75: 350, p95: 600 },
@@ -51,7 +51,7 @@ const TIMING_BUDGET = Object.freeze({
 });
 const OPENING_BUDGET = Object.freeze({
   firstContentfulPaintMs: 250,
-  readyToCompleteMs: 140,
+  readyToPaintedMs: 140,
   uiPreferenceRequests: 1
 });
 const NETWORK_PROFILE = Object.freeze({
@@ -584,8 +584,18 @@ async function createBrowserGate(baseUrl) {
     await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
       source: `
         (() => {
-          const trace = { states: [], animations: [] };
+          const trace = { states: [], animations: [], paints: [] };
           window.__openingTrace = trace;
+          try {
+            new PerformanceObserver(list => {
+              for (const entry of list.getEntries()) {
+                trace.paints.push({
+                  name: entry.name,
+                  startTime: Number(entry.startTime.toFixed(1))
+                });
+              }
+            }).observe({ type: "paint", buffered: true });
+          } catch {}
           const nativeSetAttribute = Element.prototype.setAttribute;
           Element.prototype.setAttribute = function(name, value) {
             const result = nativeSetAttribute.call(this, name, value);
@@ -745,14 +755,15 @@ async function startupSample(browser, server, sample, { cacheDisabled, clearCach
   });
   const browserEvidence = await browser.evaluate(`(() => {
     const navigation = performance.getEntriesByType("navigation")[0];
-    const firstContentfulPaint = performance.getEntriesByName("first-contentful-paint").at(-1);
+    const firstContentfulPaint = window.__openingTrace.paints
+      .find(entry => entry.name === "first-contentful-paint");
     const openingComplete = performance.getEntriesByName("openingExitComplete").at(-1);
     const openingPainted = performance.getEntriesByName("openingExitPainted").at(-1);
     const text = document.querySelector("#startup-performance-metric").textContent.replace(/^启动分段 /, "");
     const startup = JSON.parse(text);
     return {
       dclMs: Number(navigation.domContentLoadedEventEnd.toFixed(1)),
-      currentScreenFeedbackMs: Number(firstContentfulPaint?.startTime.toFixed(1)),
+      currentScreenFeedbackMs: Number(firstContentfulPaint?.startTime),
       openingCompleteMs: Number(openingComplete?.startTime.toFixed(1)),
       openingPaintedMs: Number(openingPainted?.startTime.toFixed(1)),
       firstReadableMs: Number(openingPainted?.startTime.toFixed(1)),
@@ -850,7 +861,7 @@ const modulePreloads = [...html.matchAll(/<link\b[^>]*>/gi)]
 const modules = await moduleClosure(["app.js", ...modulePreloads], { includeEntryDynamic: true });
 const deferredRuntime = await moduleClosure("frontend/app/runtime.mjs");
 const openingCriticalStyleIndex = html.indexOf('<style id="opening-critical-style">');
-const applicationStyleLoadIndex = html.indexOf('rel="preload" href="frontend/styles/application.css"');
+const applicationStyleLoadIndex = html.indexOf("const loadApplicationStyles");
 const openingShellIndex = html.indexOf('id="opening-screen"');
 const authGateIndex = html.indexOf('id="auth-gate"');
 const openingShellTag = html.match(/<div\b[^>]*\bid="opening-screen"[^>]*>/i)?.[0] || "";
@@ -938,19 +949,18 @@ try {
     await browser.waitForCondition({
       label: "opening first contentful paint",
       timeoutMs: 2000,
-      condition: `Boolean(document.documentElement.dataset.openingVisible)`
+      condition: `window.__openingTrace.paints.some(entry => entry.name === "first-contentful-paint")
+        && Boolean(document.documentElement.dataset.openingVisible)`
     });
     heldOpening = await browser.evaluate(`(() => {
       const root = document.querySelector("#opening-screen");
-      const firstContentfulPaint = performance.getEntriesByName("first-contentful-paint").at(-1);
+      const firstContentfulPaint = window.__openingTrace.paints
+        .find(entry => entry.name === "first-contentful-paint");
       return {
         parsedMs: Number(document.documentElement.dataset.openingParsed),
         markerVisibleMs: Number(document.documentElement.dataset.openingVisible),
-        firstContentfulPaintMs: Number(firstContentfulPaint?.startTime.toFixed(1)),
-        paintEntries: performance.getEntriesByType("paint").map(entry => ({
-          name: entry.name,
-          startTime: Number(entry.startTime.toFixed(1))
-        })),
+        firstContentfulPaintMs: Number(firstContentfulPaint?.startTime),
+        paintEntries: window.__openingTrace.paints,
         firstBodyElement: document.body.firstElementChild?.id || "",
         state: root?.dataset.openingState || "",
         hidden: Boolean(root?.hidden),
@@ -967,10 +977,6 @@ try {
   assert.ok(
     Number.isFinite(heldOpening.firstContentfulPaintMs),
     `opening first-contentful-paint missing: ${JSON.stringify(heldOpening.paintEntries)}`
-  );
-  assert.ok(
-    heldOpening.firstContentfulPaintMs <= OPENING_BUDGET.firstContentfulPaintMs,
-    `opening first-contentful-paint ${heldOpening.firstContentfulPaintMs}ms > ${OPENING_BUDGET.firstContentfulPaintMs}ms`
   );
   assert.ok(heldOpening.parsedMs <= heldOpening.firstContentfulPaintMs);
   assert.deepEqual(
@@ -999,6 +1005,7 @@ try {
     label: "opening deep-link completion",
     condition: `document.querySelector("#opening-screen")?.dataset.openingState === "complete"
       && document.querySelector("#opening-screen").hidden
+      && performance.getEntriesByName("openingExitPainted").length > 0
       && location.pathname === "/thoughts/performance-thought-1"
       && document.querySelector('#all-thoughts [data-chain-id="performance-thought-1"]')?.open`
   });
@@ -1006,10 +1013,13 @@ try {
     const trace = window.__openingTrace;
     const entering = trace.states.find(entry => entry.state === "entering");
     const complete = trace.states.find(entry => entry.state === "complete");
+    const ready = performance.getEntriesByName("openingReady").at(-1);
+    const painted = performance.getEntriesByName("openingExitPainted").at(-1);
     return {
       states: trace.states.map(entry => entry.state),
       animationDurationMs: trace.animations[0]?.duration ?? 0,
       readyToCompleteMs: entering && complete ? Number((complete.at - entering.at).toFixed(1)) : null,
+      readyToPaintedMs: ready && painted ? Number((painted.startTime - ready.startTime).toFixed(1)) : null,
       rootHidden: document.querySelector("#opening-screen").hidden,
       contentReleased: [
         document.querySelector("main"),
@@ -1021,10 +1031,11 @@ try {
     };
   })()`);
   assert.deepEqual(deepLinkOpening.states.slice(-3), ["opening", "entering", "complete"]);
-  assert.ok(deepLinkOpening.animationDurationMs <= OPENING_BUDGET.readyToCompleteMs);
+  assert.ok(deepLinkOpening.animationDurationMs <= OPENING_BUDGET.readyToPaintedMs);
+  assert.ok(Number.isFinite(deepLinkOpening.readyToPaintedMs), "opening ready-to-painted timing is missing");
   assert.ok(
-    deepLinkOpening.readyToCompleteMs <= OPENING_BUDGET.readyToCompleteMs,
-    `opening ready-to-complete ${deepLinkOpening.readyToCompleteMs}ms > ${OPENING_BUDGET.readyToCompleteMs}ms`
+    deepLinkOpening.readyToPaintedMs <= OPENING_BUDGET.readyToPaintedMs,
+    `opening ready-to-painted ${deepLinkOpening.readyToPaintedMs}ms > ${OPENING_BUDGET.readyToPaintedMs}ms`
   );
   assert.deepEqual(
     {
@@ -1323,11 +1334,12 @@ try {
       forbiddenFullStateRequests: cold.concat(warm).filter(item => item.requestPaths.includes("/api/state")).length,
       mediaBeforeClickTransferBytes,
       opening: {
-        firstContentfulPaintMs: heldOpening.firstContentfulPaintMs,
-        firstContentfulPaintBudgetMs: OPENING_BUDGET.firstContentfulPaintMs,
+        heldDeepLinkFirstContentfulPaintMs: heldOpening.firstContentfulPaintMs,
+        feedbackDistributionBudgetMs: OPENING_BUDGET.firstContentfulPaintMs,
         postPaintMarkerMs: heldOpening.markerVisibleMs,
         readyToCompleteMs: deepLinkOpening.readyToCompleteMs,
-        readyToCompleteBudgetMs: OPENING_BUDGET.readyToCompleteMs,
+        readyToPaintedMs: deepLinkOpening.readyToPaintedMs,
+        readyToPaintedBudgetMs: OPENING_BUDGET.readyToPaintedMs,
         reducedMotionReadyToCompleteMs: reducedMotionOpening.readyToCompleteMs,
         deepLink: deepLinkOpening.path,
         retry: "failure -> reload -> complete",

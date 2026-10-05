@@ -42,7 +42,7 @@ const openingBootstrapScript = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g
   .find(source => source.includes("releaseLegacyOpening"));
 assert.ok(openingBootstrapScript, "缺少旧缓存入口的开屏恢复脚本");
 
-function runLegacyOpeningFallback(openingState) {
+async function runLegacyOpeningFallback(openingState, { failEntry = false, failStyles = false } = {}) {
   const opening = {
     nodeType: 1,
     hidden: false,
@@ -53,10 +53,50 @@ function runLegacyOpeningFallback(openingState) {
     }
   };
   const application = { nodeType: 1, inert: false };
+  const status = { textContent: "loading" };
+  const recovery = { hidden: true };
+  const retry = {
+    focusCount: 0,
+    focus() {
+      this.focusCount += 1;
+    }
+  };
+  const applicationEntries = [];
   const document = {
     documentElement: { dataset: {} },
     body: { children: [opening, application] },
-    querySelector: selector => selector === "#opening-screen" ? opening : null
+    head: {
+      append(entry) {
+        applicationEntries.push(entry);
+        if (entry.tagName === "link") {
+          if (failStyles) entry.listeners.error?.();
+          else entry.listeners.load?.();
+        }
+        if (entry.tagName === "script" && failEntry) {
+          queueMicrotask(() => entry.listeners.error?.());
+        }
+      }
+    },
+    readyState: "complete",
+    createElement: tagName => ({
+      tagName,
+      dataset: {},
+      listeners: {},
+      addEventListener(type, listener) {
+        this.listeners[type] = listener;
+      },
+      removeEventListener(type, listener) {
+        if (this.listeners[type] === listener) delete this.listeners[type];
+      },
+      remove() {}
+    }),
+    querySelector(selector) {
+      if (selector === "#opening-screen") return opening;
+      if (selector === "#opening-status") return status;
+      if (selector === "#opening-recovery") return recovery;
+      if (selector === "#opening-retry") return retry;
+      return null;
+    }
   };
   const observers = [];
   class FakeMutationObserver {
@@ -74,7 +114,7 @@ function runLegacyOpeningFallback(openingState) {
     }
   }
   const marks = new Set();
-  vm.runInNewContext(openingBootstrapScript, {
+  const context = {
     document,
     MutationObserver: FakeMutationObserver,
     performance: {
@@ -86,32 +126,57 @@ function runLegacyOpeningFallback(openingState) {
       callback();
       return 1;
     },
-    setTimeout: callback => {
-      callback();
+    setTimeout: (callback, milliseconds) => {
+      if (milliseconds === 0) callback();
       return 1;
-    }
-  });
+    },
+    clearTimeout() {}
+  };
+  context.window = context;
+  vm.runInNewContext(openingBootstrapScript, context);
+  await context.window.__forNowStylesReady;
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(application.inert, true);
   document.documentElement.dataset.runtimeReady = "1";
   observers.forEach(observer => observer.callback([]));
-  return { opening, application, observers };
+  await new Promise(resolve => setImmediate(resolve));
+  return { opening, application, applicationEntries, observers, recovery, retry, context };
 }
 
-const legacyOpening = runLegacyOpeningFallback("opening");
+const legacyOpening = await runLegacyOpeningFallback("opening");
 assert.equal(legacyOpening.opening.hidden, true);
 assert.equal(legacyOpening.opening.dataset.openingState, "complete");
 assert.equal(legacyOpening.opening.attributes.has("aria-busy"), false);
 assert.equal(legacyOpening.application.inert, false);
+assert.deepEqual(
+  legacyOpening.applicationEntries
+    .filter(entry => entry.tagName === "script")
+    .map(entry => [entry.tagName, entry.type, entry.src]),
+  [["script", "module", "app.js"]]
+);
 assert.equal(legacyOpening.observers.every(observer => observer.disconnected), true);
-const failedOpening = runLegacyOpeningFallback("failure");
+const failedOpening = await runLegacyOpeningFallback("failure");
 assert.equal(failedOpening.opening.hidden, false);
 assert.equal(failedOpening.opening.dataset.openingState, "failure");
 assert.equal(failedOpening.application.inert, true);
 assert.equal(failedOpening.observers.every(observer => observer.disconnected), true);
+const styleFailure = await runLegacyOpeningFallback("opening", { failStyles: true });
+assert.equal(styleFailure.opening.hidden, false);
+assert.equal(styleFailure.opening.dataset.openingState, "failure");
+assert.equal(styleFailure.application.inert, true);
+assert.equal(styleFailure.recovery.hidden, false);
+assert.equal(styleFailure.retry.focusCount, 1);
+assert.equal(styleFailure.context.__forNowEntryFailed, true);
+const entryFailure = await runLegacyOpeningFallback("opening", { failEntry: true });
+assert.equal(entryFailure.opening.hidden, false);
+assert.equal(entryFailure.opening.dataset.openingState, "failure");
+assert.equal(entryFailure.application.inert, true);
+assert.equal(entryFailure.recovery.hidden, false);
+assert.equal(entryFailure.retry.focusCount, 1);
 
 const worker = await fs.readFile(publicPath("service-worker.js"), "utf8");
 assert.match(worker, /const CACHE_VERSION\s*=\s*["'][^"']+["']/);
-assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.8-1["']/);
+assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.8-2["']/);
 const assetSet = name => {
   const source = worker.match(new RegExp(`const ${name}\\s*=\\s*\\[([\\s\\S]*?)\\];`))?.[1] || "";
   return new Set([...source.matchAll(/["']([^"']+)["']/g)].map(match => match[1]));
