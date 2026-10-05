@@ -327,7 +327,8 @@ try {
     }[view];
     if (section) await click(`[data-section="${section}"]`);
     await click(`[data-view="${view}"]`);
-    await waitUntil(`document.querySelector("#view-${view}").classList.contains("active")`, {
+    await waitUntil(`document.querySelector("#view-${view}").classList.contains("active")
+      &&document.querySelector("#view-${view}").getAttribute("aria-busy")!=="true"`, {
       label: `打开 ${view}`
     });
   };
