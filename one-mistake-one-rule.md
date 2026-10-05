@@ -177,3 +177,14 @@
   执行候选恢复，分别覆盖私有字段移除和默认字段补齐。
 - 详细案例：见 `reports/v0.5.5-development-process-2026-10-04.md` 与
   `scripts/restore-validation-regression.mjs`。
+
+## 媒体性能门缺少真实持久媒体路由
+
+- 简要错误：首屏性能门在不含历史录音的页面证明了点击前媒体传输为零，但
+  念起列表中的 `preload="metadata"` 仍会让真实 Chrome 提前下载完整音频。
+- 正确规则：每种可持久媒体必须至少选择一条真实挂载路由，用浏览器网络事件
+  断言用户触发前正文请求为零；音频还要验证点击后的 `206`、Range 和重渲染
+  不重复预载。DOM 属性或空媒体夹具不能替代该证据。
+- 详细案例：见 `reports/hotfix-v0.5.7-audio-on-demand-2026-10-05.md`、
+  `reports/v0.5.7-development-process-2026-10-05.md` 与
+  `scripts/ui-regression.mjs`。

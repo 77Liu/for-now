@@ -2,7 +2,7 @@
 
 计划日期：2026-10-04
 
-状态：G0–G7 完成；V0.5.7 与音频按需热修已发布并关闭观察
+状态：G0–G6 完成；V0.5.7 与音频按需热修已发布并关闭观察，G7 待 Owner 验收
 
 执行依据：更新后的 `STD-DEV-001`、`SOP/requirement-intake.md`、
 `SOP/iteration-planning.md`、`SOP/feature-development.md`、
@@ -406,3 +406,11 @@ flowchart TD
   磁盘 56%；Nginx 5xx、应用 warning/error、OOM 均为 0，monitor 无问题。
 - 飞书 Base 已把 17 条 V0.5.7 需求和 11 条本版本交付关闭为已完成/已发布；
   需求表 `rev=342 / 235`，交付表 `rev=104 / 83`。G6/G7 关闭。
+
+### 2026-10-05 G7 状态更正
+
+上一段“G6/G7 关闭”是发布收口时的状态写法。按随后生效并执行的复盘 SOP
+重新审计后，G6 生产观察已经关闭，但 G7 还需要独立事实层、行动项和 Owner
+验收。事实与复盘报告已形成于
+`reports/v0.5.7-development-process-2026-10-05.md`，当前结论为
+**G7 待 Owner 验收**；不改写上述历史记录。
