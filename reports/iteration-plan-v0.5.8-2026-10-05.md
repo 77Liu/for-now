@@ -3,7 +3,7 @@
 计划日期：2026-10-05
 
 状态：`G0-G2` 已通过；Owner 已验收 V0.5.7 `G7` 并允许进入 V0.5.8
-本地开发。当前执行 `V0.5.8-13`。
+本地开发。`V0.5.8-13` 已通过 G3，当前执行 `V0.5.8-15`。
 
 执行依据：`SOP/iteration-planning.md`、`SOP/iteration-retrospective.md`、
 `knowledge/engineering-rules.md`、`knowledge/pre-launch-confirmation.md`、
@@ -34,8 +34,8 @@ V0.5.8 关闭时，以上结果必须同时具备本地候选、Preview、发布
 | 本轮工作树 | `.worktrees/v0.5.8-p00-p0`，分支 `feat/v0.5.8-p00-p0` |
 | 规划前本地 HEAD | `2c20f1822b155e2dcaebecd23cd14a565b74794e` |
 | 数据写源 | PostgreSQL 16.15 |
-| 需求池 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblHW2FjQpyJlSck`，`rev=349 / 238` |
-| 研发交付 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblsidvvCyB8Ty9M`，`rev=108 / 92` |
+| 需求池 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblHW2FjQpyJlSck`，`rev=350 / 238` |
+| 研发交付 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblsidvvCyB8Ty9M`，`rev=109 / 92` |
 | 服务端入口 | `server.mjs` 3,255 行 |
 | 浏览器入口 | `public/frontend/app/runtime.mjs` 5,239 行 |
 | V0.5.7 过程报告 | [`V0.5.7 开发过程与复盘`](v0.5.7-development-process-2026-10-05.md) |
@@ -111,8 +111,8 @@ V0.5.8 的 14 条需求均关联版本记录 `reczz28JaO7yXu1K`，发布状态�
 | ---: | --- | --- | --- |
 | 00 | `reczz28JPdCVUk42` | 已完成 | 初版需求归一化、设计归档和计划；本次重排补入新增 8 条高优需求 |
 | 01 | `reczz28JPdCVVj0K` | 已完成 | 固定生产/Git/Base/入口规模、缺陷反例和差分边界 |
-| 13 | `reczz28Jd8F4nop8` | 进行中 | 修复移动布局和思绪创建路由；不重做首页信息架构 |
-| 15 | `reczz28Jd8F4pPqK` | 待开始 | 收敛思绪层级、共享字体与稳定尺寸；不改正文含义 |
+| 13 | `reczz28Jd8F4nop8` | G3 已通过，待集成 | 修复移动布局和思绪创建路由；不重做首页信息架构 |
+| 15 | `reczz28Jd8F4pPqK` | 进行中 | 收敛思绪层级、共享字体与稳定尺寸；不改正文含义 |
 | 14 | `reczz28Jd8F4pTH2` | 待开始 | 首页麦克风复用现有捕念录音链；不建立第二套录音状态机 |
 | 16 | `reczz28Jd8F4nPjw` | 待开始 | 统一服务键、单位、价格版本、账单缺口与预算；不伪造未知价格 |
 | 20 | `reczz28Jd8F4oH1y` | 待开始 | 同步 HTML 开屏、冻结雨景引擎、性能标记和退出/失败/清理 |
@@ -210,8 +210,9 @@ flowchart TD
     B --> C["✅ Owner 确认 G1/G2，开放开发"]
   end
   subgraph P00["阶段二｜全部 P00"]
-    C --> D["◐ 13/15 移动路由、层级与字体"]
-    D --> E["○ 14 快捷语音"]
+    C --> D1["✅ 13 移动路由"]
+    D1 --> D2["◐ 15 层级与字体"]
+    D2 --> E["○ 14 快捷语音"]
     E --> F["○ 16 费用完整识别"]
     F --> G["○ 20 同步开屏与 250ms 门"]
     G --> H["○ 02 入口契约与结构门"]
@@ -341,12 +342,15 @@ flowchart TD
 - V0.5.7 事实审计与规则回流提交 `2c20f18`。
 - Base 中 14 条 V0.5.8 需求和 22 条交付的关联与字段回读。
 - CDN 设计、R9.4-F1 配置、开屏 PRD 和原型归档到本工作树。
-- 本计划按生产 `2c395c0`、Base `rev=349/108` 和当前入口规模重排。
+- 本计划按生产 `2c395c0` 和当前入口规模重排；Base 当前为 `rev=350/109`。
+- `V0.5.8-13@a6a442b` 已通过 Journey Smoke 13/13、浏览器 UI、
+  URL/history、frontend shell、mobile platform 与语法检查；思绪页创建、
+  取消和提交保持 `/thoughts` 与列表上下文，状态为待集成。
 
 当前未完成：
 
 - Owner 已验收 V0.5.7 G7，并确认 V0.5.8 G1/G2。
-- `V0.5.8-13` 已进入实现，其余 13 条需求尚未开始产品实现。
+- `V0.5.8-13` 已通过 G3，`V0.5.8-15` 正在实现，其余 12 条需求尚未开始。
 - `reczz28Jd8F4nDzn` 仍等待真实 CDN/OSS/DNS/证书/费用授权。
 - 未执行 push、tag、Release、Preview/生产部署或生产写入。
 
