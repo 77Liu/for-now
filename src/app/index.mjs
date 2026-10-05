@@ -73,3 +73,16 @@ export {
   withoutOwnerMetadata
 } from "./public-state.mjs";
 export { createAccountLifecycle } from "./account-lifecycle.mjs";
+export {
+  LOCAL_TEST_ALL_COLLECTIONS,
+  LOCAL_TEST_COLLECTION_ENDPOINTS,
+  LOCAL_TEST_MODES,
+  LOCAL_TEST_SCOPE_COLLECTIONS,
+  isLocalTestCollection,
+  isLocalTestMode,
+  isLocalTestScope,
+  localTestRecordCount,
+  localTestSnapshot,
+  mergeLocalTestCollection,
+  normalizeLocalTestControl
+} from "./local-test-control.mjs";
