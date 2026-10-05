@@ -503,13 +503,23 @@
       "status": "active"
     },
     {
+      "id": "frontend.feature.actions-controller",
+      "type": "feature",
+      "root": "public/frontend/features/actions/controller.mjs",
+      "publicEntry": "public/frontend/features/actions/controller.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["on-demand actions and habits workspace presentation, forms, root-scoped events and disposable session lifecycle"], "routes": [] },
+      "tests": ["scripts/frontend-actions-feature-regression.mjs"],
+      "status": "active"
+    },
+    {
       "id": "frontend.feature.actions",
       "type": "feature",
       "root": "public/frontend/features/actions",
       "publicEntry": "public/frontend/features/actions/index.mjs",
       "allowedDependencies": [],
-      "owns": { "data": ["actions and habits view models plus immutable UI commands"], "routes": [] },
-      "tests": ["scripts/g2-actions-regression.mjs"],
+      "owns": { "data": ["actions and habits view models, immutable UI commands and headless sync coordination"], "routes": [] },
+      "tests": ["scripts/g2-actions-regression.mjs", "scripts/frontend-actions-feature-regression.mjs"],
       "status": "active"
     },
     {
@@ -609,7 +619,7 @@
       "type": "application",
       "root": "public/frontend/app",
       "publicEntry": "public/frontend/app/index.mjs",
-      "allowedDependencies": ["frontend.application", "frontend.ports", "frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.page-catalog", "frontend.pages", "frontend.features", "frontend.feature-registry", "frontend.feature.discovery", "frontend.feature.export", "frontend.feature.feedback", "frontend.feature.legacy-pages", "frontend.component.tag-multiselect"],
+      "allowedDependencies": ["frontend.application", "frontend.ports", "frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.page-catalog", "frontend.pages", "frontend.features", "frontend.feature-registry", "frontend.feature.actions-controller", "frontend.feature.discovery", "frontend.feature.export", "frontend.feature.feedback", "frontend.feature.legacy-pages", "frontend.component.tag-multiselect"],
       "owns": { "data": ["browser bootstrap, dependency composition, feature event binding and page presenter runtime"], "routes": [] },
       "tests": ["scripts/frontend-shell-regression.mjs", "scripts/frontend-contract-regression.mjs", "scripts/frontend-lazy-descriptor-regression.mjs", "scripts/ui-regression.mjs", "scripts/mobile-platform-regression.mjs"],
       "status": "active"
@@ -821,6 +831,7 @@
         "../components/tag-multiselect/index.mjs",
         "../content/index.mjs",
         "../feature-registry/index.mjs",
+        "../features/actions/controller.mjs",
         "../features/export/index.mjs",
         "../features/feedback/index.mjs",
         "../features/index.mjs",
@@ -840,6 +851,7 @@
         "../components/tag-multiselect/index.mjs",
         "../content/index.mjs",
         "../feature-registry/index.mjs",
+        "../features/actions/controller.mjs",
         "../features/export/index.mjs",
         "../features/feedback/index.mjs",
         "../features/index.mjs",
@@ -1155,18 +1167,18 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.api-path",
-      "sourceSha256": "820e48e3177536893cc82dafb1a49392c741f2b356a936eacad56ef8da6b6a16",
+      "sourceSha256": "a236da9d26cff0aaaa2e47ab39ffac12b1c9212fe12be5b855edd5961587e087",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no API path literals",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden literal matched \"^/api(?:/|$)\"", "count": 74 }
+        { "detail": "forbidden literal matched \"^/api(?:/|$)\"", "count": 70 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.dom-query",
-      "sourceSha256": "820e48e3177536893cc82dafb1a49392c741f2b356a936eacad56ef8da6b6a16",
+      "sourceSha256": "a236da9d26cff0aaaa2e47ab39ffac12b1c9212fe12be5b855edd5961587e087",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page DOM queries",
       "deleteByGate": "G6",
@@ -1179,19 +1191,19 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.event-binding",
-      "sourceSha256": "820e48e3177536893cc82dafb1a49392c741f2b356a936eacad56ef8da6b6a16",
+      "sourceSha256": "a236da9d26cff0aaaa2e47ab39ffac12b1c9212fe12be5b855edd5961587e087",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page event binding",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden identifier \"addEventListener\"", "count": 273 },
-        { "detail": "forbidden identifier \"removeEventListener\"", "count": 2 }
+        { "detail": "forbidden identifier \"addEventListener\"", "count": 268 },
+        { "detail": "forbidden identifier \"removeEventListener\"", "count": 3 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.timer",
-      "sourceSha256": "820e48e3177536893cc82dafb1a49392c741f2b356a936eacad56ef8da6b6a16",
+      "sourceSha256": "a236da9d26cff0aaaa2e47ab39ffac12b1c9212fe12be5b855edd5961587e087",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page timers or animation scheduling",
       "deleteByGate": "G6",
@@ -1205,22 +1217,22 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.template",
-      "sourceSha256": "820e48e3177536893cc82dafb1a49392c741f2b356a936eacad56ef8da6b6a16",
+      "sourceSha256": "a236da9d26cff0aaaa2e47ab39ffac12b1c9212fe12be5b855edd5961587e087",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page templates",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden syntax template-literal", "count": 806 }
+        { "detail": "forbidden syntax template-literal", "count": 774 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "lines.hard",
-      "sourceSha256": "820e48e3177536893cc82dafb1a49392c741f2b356a936eacad56ef8da6b6a16",
+      "sourceSha256": "a236da9d26cff0aaaa2e47ab39ffac12b1c9212fe12be5b855edd5961587e087",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs is at or below 180 lines",
       "deleteByGate": "G6",
-      "maxValue": 5275
+      "maxValue": 5136
     }
   ],
   "migrationExceptions": []

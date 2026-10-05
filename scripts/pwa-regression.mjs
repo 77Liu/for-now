@@ -299,7 +299,7 @@ assert.equal(startupTimeout.observers.every(observer => observer.disconnected), 
 
 const worker = await fs.readFile(publicPath("service-worker.js"), "utf8");
 assert.match(worker, /const CACHE_VERSION\s*=\s*["'][^"']+["']/);
-assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.8-4["']/);
+assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.8-5["']/);
 const assetSet = name => {
   const source = worker.match(new RegExp(`const ${name}\\s*=\\s*\\[([\\s\\S]*?)\\];`))?.[1] || "";
   return new Set([...source.matchAll(/["']([^"']+)["']/g)].map(match => match[1]));
@@ -322,6 +322,8 @@ for (const asset of [
   "frontend/opening/controller.mjs",
   "frontend/opening/index.mjs",
   "frontend/opening/rain-engine.mjs",
+  "frontend/features/actions/controller.mjs",
+  "frontend/features/actions/index.mjs",
   "frontend/sync/index.mjs",
   "frontend/styles/application.css",
   "frontend/styles/r8.css"
@@ -418,7 +420,7 @@ assert.match(worker, /if\s*\(\s*isNetworkOnly\(url\)\s*\)\s*return/);
   const context = {
     caches: {
       async keys() {
-        return ["cike-shell-v0.5.8-4"];
+        return ["cike-shell-v0.5.8-5"];
       },
       async delete() {
         return true;

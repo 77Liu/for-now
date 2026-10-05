@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cike-shell-v0.5.8-4";
+const CACHE_VERSION = "cike-shell-v0.5.8-5";
 const SHELL_ASSETS = [
   "./",
   "index.html",
@@ -18,6 +18,7 @@ const SHELL_ASSETS = [
   "frontend/opening/rain-engine.mjs",
   "frontend/content/index.mjs",
   "frontend/components/tag-multiselect/index.mjs",
+  "frontend/features/actions/controller.mjs",
   "frontend/features/actions/index.mjs",
   "frontend/features/health/weight-batch.mjs",
   "frontend/features/home/index.mjs",

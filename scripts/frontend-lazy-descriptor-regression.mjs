@@ -30,6 +30,7 @@ const dynamicImports = analysis.surface.imports
   .map(entry => entry.specifier);
 const dynamicSpecifiers = [...new Set(dynamicImports)].sort();
 assert.deepEqual(dynamicSpecifiers, [
+  "../features/actions/controller.mjs",
   "../features/export/index.mjs",
   "../features/feedback/index.mjs",
   "../features/legacy-pages/index.mjs",
@@ -39,7 +40,7 @@ assert.deepEqual(dynamicSpecifiers, [
 for (const specifier of dynamicSpecifiers) {
   assert.equal(
     dynamicImports.filter(value => value === specifier).length,
-    specifier === "./ports.mjs" ? 1 : 2,
+    ["./ports.mjs", "../features/actions/controller.mjs"].includes(specifier) ? 1 : 2,
     `${specifier} must have one route-aware prefetch and one descriptor fallback`
   );
 }
@@ -53,6 +54,8 @@ for (const specifier of dynamicSpecifiers) {
   );
 }
 for (const removed of [
+  "renderActionsWorkspace",
+  "runActionCommand",
   "createDownloadDescriptor",
   "feedbackSubmissionPayload",
   "feedbackViewModel",
@@ -92,6 +95,7 @@ for (const [view, descriptor] of descriptors) {
 }
 
 for (const eagerEdge of [
+  "./actions/controller.mjs",
   "./export/index.mjs",
   "./feedback/index.mjs",
   "./thought-discovery/index.mjs"

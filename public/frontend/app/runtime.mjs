@@ -19,20 +19,7 @@ import {
   groupAnnotationLineCounts,
   submitAnnotationAssistantTask,
   sortAnnotationItemsByPosition,
-  createActionsViewModel,
-  buildCreateActionCommand,
-  buildUpdateActionCommand,
-  buildSetActionStatusCommand,
-  buildCompleteActionCommand,
-  buildUndoActionCompletionCommand,
-  buildDeleteActionCommand,
-  buildCreateHabitCommand,
-  buildSetHabitEnabledCommand,
-  buildHabitAdjustmentCommand,
-  buildHabitCheckinCommand,
-  buildDeleteHabitCommand,
-  buildDeleteHabitCheckinCommand,
-  projectActionCommand,
+  createActionsCoordinator,
   buildHomeMoodSeries,
   createHomeMemoryPool,
   selectHomeMemories,
@@ -92,6 +79,8 @@ const legacyFeatureModuleRequest=globalThis.__forNowLegacyFeatureRequest||(["exp
 const exportFeatureModuleRequest=globalThis.__forNowExportFeatureRequest||(initialRuntimeView==="export"?import("../features/export/index.mjs"):null);
 const feedbackFeatureModuleRequest=globalThis.__forNowFeedbackFeatureRequest||(initialRuntimeView==="feedback"?import("../features/feedback/index.mjs"):null);
 const discoveryFeatureModuleRequest=globalThis.__forNowDiscoveryFeatureRequest||(initialRuntimeView==="discovery"?import("../features/thought-discovery/index.mjs"):null);
+const loadLegacyFeatureModule=()=>legacyFeatureModuleRequest||import("../features/legacy-pages/index.mjs");
+const loadActionsFeatureModule=()=>import("../features/actions/controller.mjs");
 const startupPerformanceEnabled=new URLSearchParams(location.search).has("native-performance");
 const startupMarks={navigationStart:0,moduleLoaded:Number(performance.now().toFixed(1))};
 function markStartup(name){startupMarks[name]=Number(performance.now().toFixed(1));return startupMarks[name]}
@@ -135,7 +124,7 @@ let runtimeApplication=null,runtimeFeatureRegistry=null,runtimeStatePort=null,ap
 let backgroundResultController=null;
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",commentPanelOpen=false,annotationLineFrame=0,answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,captureComposerOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,actionsSnapshot={actions:[],habits:[],habitCheckins:[]},actionsRequestSerial=0,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
+let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",commentPanelOpen=false,annotationLineFrame=0,answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,captureComposerOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
 let notificationsLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,routeDataRequestSerial=0,routeLoadFailureKey="",loadedRouteKey="",fullRouteStateLoaded=false,renderedRouteView="",activeThoughtRouteId="",activeRouteResult=null,thoughtSearchTimer=0,analysisRequestSerial=0;
 let captureEditorTrigger=null,suspendedCaptureCreateDraft=null,captureEditorSerial=0;
 const feedSearchQueries={captures:"",journals:"",thoughts:"",books:"",keepsakes:"",quotes:""};
@@ -1692,11 +1681,7 @@ function applyPendingProjection(record){
     Object.assign(root,{content:projection.payload.question,tags:projection.payload.tags,occurredAt:projection.payload.occurredAt,_sync:sync});
     renderThoughts();renderHomeMemories();return true
   }
-  if(projection.kind==="action.command"){
-    const result=projectActionCommand(actionsSnapshot,projection.command,{...sync,createdAt:record.createdAt});
-    if(!result.changed)return false;
-    actionsSnapshot=result.value;renderActionsWorkspace();return true
-  }
+  if(projection.kind==="action.command")return actionsCoordinator.applyPendingRecord(record);
   return false
 }
 async function restorePendingProjections(){
@@ -1714,14 +1699,7 @@ async function restorePendingProjections(){
 }
 async function applyIncrementalSnapshot(snapshot,changes){
   const domains=mergeStateSnapshot(snapshot);
-  if(domains.has("actions")||domains.has("habits")||domains.has("habitCheckins")){
-    actionsSnapshot={
-      actions:snapshot.actions||actionsSnapshot.actions,
-      habits:snapshot.habits||actionsSnapshot.habits,
-      habitCheckins:snapshot.habitCheckins||actionsSnapshot.habitCheckins
-    };
-    renderActionsWorkspace()
-  }
+  actionsCoordinator.applyIncrementalSnapshot(snapshot,{sessionTicket:sessionScope.capture()});
   if(domains.has("trashCount")&&!$("#view-trash")?.hidden)void loadTrash();
   const rendered=new Set([...domains].filter(domain=>!["actions","habits","habitCheckins","trashCount"].includes(domain)));
   if(domains.has("clusters")||domains.has("insights"))rendered.add("review");
@@ -1731,6 +1709,7 @@ async function applyIncrementalSnapshot(snapshot,changes){
 }
 async function updateSyncHealth(event){
   if(!currentUser?.id)return;
+  if(event.type==="operation")actionsCoordinator.applyOperationStatus(event);
   if(event.type==="operation"&&event.status==="committed")await finalizeHealthDraftOperation(event.operationId);
   if(event.type==="operation"&&["failed","conflict"].includes(event.status))await releaseHealthDraftOperation(event.operationId);
   const metrics=await requestCoordinator.metrics(currentUser.id);
@@ -1753,7 +1732,7 @@ syncController=createIncrementalSync({
   applySnapshot:applyIncrementalSnapshot,
   resnapshot:async()=>{
     await refreshState(["checkins","dailyRecords","captures","journals","thoughts","chat","review","books","keepsakes","quotes","notifications","onboardingV2","feedback"]);
-    await loadActionsWorkspace()
+    await actionsCoordinator.load()
   },
   onStatus:event=>void updateSyncHealth(event)
 });
@@ -3688,126 +3667,6 @@ async function loadAccountUsers(){
   try{const result=await request("/api/auth/users");if(serial!==accountUsersRequestSerial||owner!==currentUser?.id||session!==sessionSerial)return false;accountUsers=result.users||[];accountUsersLoadState="ready";renderAccountUsers();return true}
   catch(error){if(serial===accountUsersRequestSerial&&owner===currentUser?.id&&session===sessionSerial){accountUsersLoadState="failure";renderAccountUsers();const status=$("#account-role-status");if(status)status.textContent=error.message}return false}
 }
-function actionSyncMarkup(sync){
-  if(!sync)return"";
-  const label=sync.status==="pending"?"待同步":sync.status==="committed"?"已保存":"正在同步";
-  return `<span class="checkin-sync-state ${escapeHtml(sync.status)}">${label}</span>`
-}
-function actionButtons(item){
-  if(item.sync)return actionSyncMarkup(item.sync);
-  return `${item.status==="todo"?`<button class="quiet-button" type="button" data-action-start="${escapeHtml(item.id)}" data-version="${item.version}">开始</button>`:item.status==="doing"?`<button class="quiet-button" type="button" data-action-complete="${escapeHtml(item.id)}" data-version="${item.version}">完成</button>`:`<button class="subtle-action" type="button" data-action-reopen="${escapeHtml(item.id)}" data-version="${item.version}">撤销完成</button>`}<button class="subtle-action" type="button" data-action-edit="${escapeHtml(item.id)}" data-version="${item.version}">编辑</button><button class="subtle-action danger" type="button" data-action-delete="${escapeHtml(item.id)}" data-version="${item.version}" aria-label="删除行动">删除</button>`
-}
-function habitButtons(item){
-  if(item.sync)return actionSyncMarkup(item.sync);
-  return `${item.checkedToday?`<button class="quiet-button" type="button" data-habit-uncheck="${escapeHtml(item.todayCheckin.id)}" data-version="${item.todayCheckin.version}">撤销打卡</button>`:`<button class="quiet-button" type="button" data-habit-checkin="${escapeHtml(item.id)}" ${item.canCheckIn?"":"disabled"}>今日打卡</button>`}<button class="subtle-action" type="button" data-habit-toggle="${escapeHtml(item.id)}" data-enabled="${String(item.enabled)}" data-version="${item.version}">${item.enabled?"暂停":"启用"}</button><button class="subtle-action" type="button" data-habit-adjust="${escapeHtml(item.id)}" data-version="${item.version}">调整</button><button class="subtle-action danger" type="button" data-habit-delete="${escapeHtml(item.id)}" data-version="${item.version}">删除</button>`
-}
-function renderActionsWorkspace(){
-  if(!$("#action-columns"))return;
-  const view=createActionsViewModel(actionsSnapshot,{today:currentLocalDate});
-  $("#actions-summary").textContent=`${view.summary.openActions} 项待推进 · ${view.summary.checkedToday}/${view.summary.activeHabits} 个习惯已打卡`;
-  $("#action-columns").innerHTML=view.actionColumns.map(column=>`<section class="action-column"><header><b>${column.label}</b><span>${column.count}</span></header>${column.items.length?column.items.map(item=>`<article class="action-entry${item.sync?" is-syncing":""}"><div><span class="action-priority priority-${item.priority.toLowerCase()}">${item.priorityLabel}</span><h3>${escapeHtml(item.title)}</h3><small>${escapeHtml(item.sourceLabel)}</small></div><div class="action-entry-buttons">${actionButtons(item)}</div></article>`).join(""):empty("暂无")}</section>`).join("");
-  $("#habit-list").innerHTML=view.habits.length?view.habits.map(item=>`<article class="habit-entry${item.sync?" is-syncing":""}"><header><div><h3>${escapeHtml(item.title)}</h3><span>${escapeHtml(item.frequencyLabel)} · ${item.period.count}/${item.period.target}</span></div><b class="${item.period.complete?"complete":""}">${item.period.complete?"已达成":item.statusLabel}</b></header><div class="habit-progress"><i style="width:${Math.min(100,item.period.count/item.period.target*100)}%"></i></div>${item.latestFeeling?`<p>${escapeHtml(item.latestFeeling)}</p>`:""}<footer>${habitButtons(item)}</footer></article>`).join(""):empty("还没有习惯。");
-}
-async function loadActionsWorkspace(){
-  if(!$("#action-columns"))return false;
-  const requestSerial=++actionsRequestSerial,owner=currentUser?.id,session=sessionSerial,status=$("#action-status"),loadingMessage="正在同步行动…";if(!status.textContent)status.textContent=loadingMessage;
-  try{
-    const [actions,habits]=await Promise.all([listAllV1("/api/v1/actions"),listAllV1("/api/v1/habits")]);
-    const checkins=(await Promise.all(habits.map(item=>listAllV1(`/api/v1/habits/${encodeURIComponent(item.id)}/checkins`)))).flat();
-    if(requestSerial!==actionsRequestSerial||owner!==currentUser?.id||session!==sessionSerial)return false;
-    actionsSnapshot={actions,habits,habitCheckins:checkins};renderActionsWorkspace();if(status.textContent===loadingMessage)status.textContent="";return true
-  }catch(error){if(requestSerial===actionsRequestSerial&&owner===currentUser?.id&&session===sessionSerial&&status.textContent===loadingMessage)status.textContent=error.message;return false}
-}
-function actionConflictMessage(command,error){
-  const action=String(command.type||"").startsWith("actions.")?actionsSnapshot.actions.find(item=>item.id===command.id):null;
-  const habit=String(command.type||"").startsWith("habits.")?actionsSnapshot.habits.find(item=>item.id===command.id):null;
-  const localVersion=command.expectedVersion||"未知",serverVersion=error.details?.currentVersion||action?.version||habit?.version||"未知";
-  let local="这次操作",server="";
-  if(command.type==="actions.update")local=`标题“${command.input.title}”、优先级 ${command.input.priority}`;
-  else if(command.type==="actions.setStatus")local=`状态 ${command.status}`;
-  else if(command.type==="actions.complete")local="完成行动";
-  else if(command.type==="actions.undoCompletion")local="撤销完成";
-  else if(command.type==="actions.delete")local="删除行动";
-  else if(command.type==="habits.setEnabled")local=command.enabled?"启用习惯":"暂停习惯";
-  else if(command.type==="habits.recordAdjustment")local=`频次 ${command.input.frequency?.cadence||"未指定"} / ${command.input.frequency?.target||"未指定"}`;
-  else if(command.type==="habits.delete")local="删除习惯";
-  if(action)server=`；服务器内容为“${action.title}”，状态 ${action.status}，优先级 ${action.priority}`;
-  if(habit)server=`；服务器内容为“${habit.title}”，状态 ${habit.status}，频次 ${habit.frequency?.cadence||"未指定"} / ${habit.frequency?.target||"未指定"}`;
-  return `同步冲突：你基于版本 ${localVersion} 提交了${local}；服务器当前为版本 ${serverVersion}${server}。列表已刷新，请核对后重试。`
-}
-function actionCommandResource(command){
-  if(String(command.type||"").startsWith("actions."))return`action:${command.id||"collection"}`;
-  if(String(command.type||"").startsWith("habits."))return`habit:${command.id||"collection"}`;
-  const checkin=actionsSnapshot.habitCheckins.find(item=>item.id===command.id);
-  return`habit:${command.habitId||checkin?.habitId||command.id||"checkins"}`
-}
-async function runActionCommand(command,{idempotencyKey=""}={}){
-  const headers={},options={};
-  if(command.expectedVersion)headers["if-match"]=`"${command.expectedVersion}"`;
-  if(["actions.create","habits.create","habitCheckins.create"].includes(command.type))headers["idempotency-key"]=idempotencyKey||crypto.randomUUID();
-  if(command.type==="actions.create")Object.assign(options,{method:"POST",body:JSON.stringify(command.input)});
-  else if(command.type==="actions.update")Object.assign(options,{method:"PATCH",body:JSON.stringify(command.input)});
-  else if(command.type==="actions.setStatus")Object.assign(options,{method:"PATCH",body:JSON.stringify({status:command.status})});
-  else if(command.type==="actions.complete")Object.assign(options,{method:"POST"});
-  else if(command.type==="actions.undoCompletion")Object.assign(options,{method:"POST"});
-  else if(command.type==="actions.delete")Object.assign(options,{method:"DELETE"});
-  else if(command.type==="habits.create")Object.assign(options,{method:"POST",body:JSON.stringify(command.input)});
-  else if(command.type==="habits.setEnabled")Object.assign(options,{method:"PATCH",body:JSON.stringify({status:command.enabled?"active":"paused"})});
-  else if(command.type==="habits.recordAdjustment")Object.assign(options,{method:"POST",body:JSON.stringify(command.input)});
-  else if(command.type==="habits.delete")Object.assign(options,{method:"DELETE"});
-  else if(command.type==="habitCheckins.create")Object.assign(options,{method:"POST",body:JSON.stringify(command.input)});
-  else if(command.type==="habitCheckins.delete")Object.assign(options,{method:"DELETE"});
-  else throw new Error("暂不支持这个行动操作");
-  const routes={
-    "actions.create":"/api/v1/actions",
-    "actions.update":`/api/v1/actions/${encodeURIComponent(command.id)}`,
-    "actions.setStatus":`/api/v1/actions/${encodeURIComponent(command.id)}`,
-    "actions.complete":`/api/v1/actions/${encodeURIComponent(command.id)}/complete`,
-    "actions.undoCompletion":`/api/v1/actions/${encodeURIComponent(command.id)}/reopen`,
-    "actions.delete":`/api/v1/actions/${encodeURIComponent(command.id)}`,
-    "habits.create":"/api/v1/habits",
-    "habits.setEnabled":`/api/v1/habits/${encodeURIComponent(command.id)}`,
-    "habits.recordAdjustment":`/api/v1/habits/${encodeURIComponent(command.id)}/adjustments`,
-    "habits.delete":`/api/v1/habits/${encodeURIComponent(command.id)}`,
-    "habitCheckins.create":`/api/v1/habits/${encodeURIComponent(command.habitId)}/checkins`,
-    "habitCheckins.delete":`/api/v1/habit-checkins/${encodeURIComponent(command.id)}`
-  };
-  options.headers=headers;
-  const previous=structuredClone(actionsSnapshot);let result,projected=false,operationId="";
-  const applyProjection=record=>{
-    operationId=record.operationId||operationId;
-    const projection=projectActionCommand(actionsSnapshot,command,{
-      status:record.status,
-      operationId,
-      createdAt:record.createdAt
-    });
-    if(projection.changed){actionsSnapshot=projection.value;projected=true;renderActionsWorkspace()}
-  };
-  try{result=await requestV1(routes[command.type],options,{
-    resource:actionCommandResource(command),
-    domains:["actions","habits","habitCheckins"],
-    recoverCommitted:true,
-    projection:{kind:"action.command",command},
-    onQueued:record=>applyProjection({...record,status:"sending"})
-  })}
-  catch(error){
-    if([409,412].includes(Number(error.status))){
-      if(!await loadActionsWorkspace()&&projected){actionsSnapshot=previous;renderActionsWorkspace()}
-      throw Object.assign(new Error(actionConflictMessage(command,error)),{status:error.status,code:error.code,details:error.details})
-    }
-    if(projected&&error.syncStatus==="pending"){
-      applyProjection({status:"pending",operationId});
-      throw Object.assign(new Error("已更新，网络恢复后自动同步。"),{syncStatus:"pending"})
-    }
-    if(projected){actionsSnapshot=previous;renderActionsWorkspace()}
-    throw error
-  }
-  if(!await loadActionsWorkspace()){
-    if(projected)applyProjection({status:"committed",operationId});
-    throw Object.assign(new Error("已保存，但行动列表刷新失败，请稍后重试同步。"),{saved:true})
-  }
-  return result
-}
 function renderPersonalContext(){
   const summary=$("#personal-context-summary");if(!summary)return;
   const data=personalContext,status=$("#personal-context-status"),sources=Array.isArray(data?.sources)?data.sources:[],sourceById=new Map(sources.map(source=>[source.id,source])),budget=data?.tokenBudget;
@@ -3889,7 +3748,7 @@ function renderVisibleRoute(){
   renderedRouteView=view;
   renderDate();renderMine();
   $("#notification-dot").hidden=!Number(state.notificationUnread??notificationUnreadCount);
-  if(view==="today"){renderSliders();renderHome();renderActionsWorkspace()}
+  if(view==="today"){renderSliders();renderHome()}
   else if(view==="together"){renderChat();renderThoughts()}
   else if(view==="daily"){renderDailyRecords();renderHealthUploader()}
   else if(view==="captures"){renderCaptures();renderCaptureTagComposer();renderCaptureAudioDraft()}
@@ -3975,7 +3834,7 @@ function setAuthTab(tab){
 }
 function setAuthBusy(value){authBusy=value;$$(".auth-form input,.auth-form button,[data-auth-tab]").forEach(control=>control.disabled=value)}
 function invalidatePageLoads(){
-  actionsRequestSerial+=1;statisticsRequestSerial+=1;aiCostRequestSerial+=1;architectureRequestSerial+=1;commercialRequestSerial+=1;personalContextRequestSerial+=1;accountUsersRequestSerial+=1;analysisRequestSerial+=1;
+  statisticsRequestSerial+=1;aiCostRequestSerial+=1;architectureRequestSerial+=1;commercialRequestSerial+=1;personalContextRequestSerial+=1;accountUsersRequestSerial+=1;analysisRequestSerial+=1;
   activeAnswerTaskId=++answerTaskSerial;healthParseSerial+=1;latestHealthRequest=0;bookParseSerial+=1;clearTimeout(notificationTimer);
   backgroundResultController?.reset();refreshCoordinator.reset();
 }
@@ -3985,7 +3844,7 @@ function clearPrivateSessionState(){
   onboardingV2Controller.reset();
   clearTimeout(thoughtSearchTimer);thoughtSearchTimer=0;
   resetState();routeDataReady=false;routeDataRequestSerial+=1;routeLoadFailureKey="";loadedRouteKey="";fullRouteStateLoaded=false;activeThoughtRouteId="";activeRouteResult=null;quoteTagStates={quote:createTagMultiSelectState(),selectionQuote:createTagMultiSelectState()};llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationRetryingTaskIds=[];notificationsLoadState="idle";actionsSnapshot={actions:[],habits:[],habitCheckins:[]};personalContext=null;personalContextRequestSerial=0;accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.5.7";homeMemoryKeys=[];homeMemoryByKey=new Map();homeKeepsakeId="";closeHomeEditors({restoreFocus:false});$("#capture-editor").hidden=true;document.body.classList.remove("capture-editor-open");resetOwnerSurfaces();invalidatePageLoads();draftTags=[];captureDraftTags=[];keepsakeDraftTags=[];captureComposerOpen=false;captureEditorTrigger=null;suspendedCaptureCreateDraft=null;pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";commentPanelOpen=false;annotationUiDrafts={};expandedLongContentKeys.clear();
+  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationRetryingTaskIds=[];notificationsLoadState="idle";actionsCoordinator.resetSession();personalContext=null;personalContextRequestSerial=0;accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.5.7";homeMemoryKeys=[];homeMemoryByKey=new Map();homeKeepsakeId="";closeHomeEditors({restoreFocus:false});$("#capture-editor").hidden=true;document.body.classList.remove("capture-editor-open");resetOwnerSurfaces();invalidatePageLoads();draftTags=[];captureDraftTags=[];keepsakeDraftTags=[];captureComposerOpen=false;captureEditorTrigger=null;suspendedCaptureCreateDraft=null;pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";commentPanelOpen=false;annotationUiDrafts={};expandedLongContentKeys.clear();
   healthParseSerial+=1;latestHealthRequest=0;healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=[];healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]};for(const draft of Object.values(healthImageDrafts))Object.assign(draft,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0});
   bookParseSerial+=1;for(const url of Object.values(bookPreviewUrls))if(url)URL.revokeObjectURL(url);bookPreviewUrls={cover:"",recognition:""};pendingBookImages={cover:null,recognition:null};editingBookId="";activeBookId="";activeBookFeatureNoteId="";bookCreatorOpen=false;bookDetailCondensed=false;
   keepsakeEditor.segmentSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.history=[];
@@ -4154,6 +4013,7 @@ async function withFeatureScope(view,operation){
 }
 const featureRequestV1=(view,url,options,coordination)=>withFeatureScope(view,()=>requestV1(url,options,coordination));
 const featureListAllV1=(view,url,options)=>withFeatureScope(view,()=>listAllV1(url,options));
+const actionsCoordinator=createActionsCoordinator({listAllV1:(url,options)=>featureListAllV1("today",url,options),requestV1:(url,options,coordination)=>featureRequestV1("today",url,options,coordination),session:sessionScope,date:()=>currentLocalDate,id:()=>crypto.randomUUID(),clone:value=>structuredClone(value)});
 async function pendingDiscoveryStatuses(){
   const owner=currentUser?.id,session=sessionSerial;
   if(!owner)return[];
@@ -4164,8 +4024,40 @@ async function pendingDiscoveryStatuses(){
 function createPageFeatureDescriptors(){
   const descriptors=Object.fromEntries(Object.keys(viewSections).map(view=>[view,{
     root:()=>$(`#view-${view}`),
-    load:()=>(legacyFeatureModuleRequest||import("../features/legacy-pages/index.mjs")).then(module=>module.createLegacyPageController({view}))
+    load:()=>loadLegacyFeatureModule().then(module=>module.createLegacyPageController({view}))
   }]));
+  descriptors.today={
+    root:()=>$("#view-today"),
+    load:()=>loadLegacyFeatureModule().then(module=>{
+      let workspaceController,workspaceModuleRequest,bridge;
+      const renderSummary=(root,snapshot)=>{const summary=root.querySelector("#actions-summary"),view=actionsCoordinator.viewModel(snapshot);if(summary)summary.textContent=`${view.summary.openActions} 项待推进 · ${view.summary.checkedToday}/${view.summary.activeHabits} 个习惯已打卡`};
+      const loadWorkspace=async()=>{
+        const current=bridge;
+        if(!current?.details?.open||current.signal?.aborted||current.mounted||current.loading)return false;
+        current.loading=true;
+        try{
+          const feature=await(workspaceModuleRequest||=loadActionsFeatureModule());
+          if(bridge!==current||current.signal?.aborted)return false;
+          workspaceController||=feature.createActionsFeatureController({coordinator:actionsCoordinator,showToast,prompt:(...args)=>globalThis.prompt(...args),confirm:(...args)=>globalThis.confirm(...args)});
+          workspaceController.mount(current.context);current.mounted=true;workspaceController.render({snapshot:state});return true
+        }catch(error){workspaceModuleRequest=null;if(bridge===current&&!current.signal?.aborted)showToast(`行动与习惯加载失败：${error.message}`,"error");return false}
+        finally{if(bridge===current)current.loading=false}
+      };
+      return module.createLegacyPageController({
+        view:"today",
+        onMount:context=>{
+          const details=context.root.querySelector(".home-v02-secondary"),toggle=()=>void loadWorkspace();
+          bridge={context,details,signal:context.signal,toggle,mounted:false,loading:false};
+          details?.addEventListener("toggle",toggle);bridge.unsubscribe=actionsCoordinator.subscribe(snapshot=>renderSummary(context.root,snapshot));if(details?.open)toggle()
+        },
+        onRender:context=>{void actionsCoordinator.load({ensure:true});return bridge?.mounted?workspaceController?.render(context):false},
+        onUnmount:()=>{
+          const current=bridge;bridge=null;current?.details?.removeEventListener("toggle",current.toggle);current?.unsubscribe?.();if(current?.mounted)workspaceController?.unmount()
+        },
+        onResetSession:()=>{workspaceController?.resetSession();workspaceController=null;actionsCoordinator.resetSession()}
+      })
+    })
+  };
   descriptors.export={
     root:()=>$("#view-export"),
     load:()=>(exportFeatureModuleRequest||import("../features/export/index.mjs")).then(module=>module.createExportFeatureController({
@@ -4187,7 +4079,7 @@ function createPageFeatureDescriptors(){
     root:()=>$("#view-discovery"),
     load:()=>(discoveryFeatureModuleRequest||import("../features/thought-discovery/index.mjs")).then(module=>module.createDiscoveryFeatureController({
       requestV1:(url,options,coordination)=>featureRequestV1("discovery",url,options,coordination),
-      createAction:(input,options)=>runActionCommand(buildCreateActionCommand(input),options),
+      createAction:(input,options)=>actionsCoordinator.runCommand(actionsCoordinator.commands.createAction(input),options),
       navigate:openDiscoveryItem,
       showToast,
       formatDate,
@@ -4211,7 +4103,7 @@ const pageEffects={...createPageEffects({
   loadNotifications,
   scheduleNotificationPoll,
   loadTrash
-}),today:()=>loadActionsWorkspace(),"personal-context":()=>loadPersonalContext(),account:()=>loadAccountUsers()};
+}),today:()=>actionsCoordinator.load(),"personal-context":()=>loadPersonalContext(),account:()=>loadAccountUsers()};
 const lazyPageEffects=new Proxy(pageEffects,{get(target,view){const effect=target[view];if(typeof effect!=="function"||typeof view!=="string"||!LOCAL_TEST_VIEW_SCOPES[view])return effect;return()=>{void ensureLocalTestViewScope(view).then(async ready=>{if(!ready)return;await effect();await restorePendingProjections()})}}});
 pageRouter=createPageRouter({query:$,queryAll:$$,effects:lazyPageEffects,basePath:applicationBasePath,onRouteStart:applyApplicationRoute,canAccessView:(_,capability)=>hasCapability(capability),onDenied:showPermissionPage});
 ({switchView,restoreView}=pageRouter);
@@ -4238,37 +4130,6 @@ function openDiscoveryItem(item){
   const selector={thought:`[data-chain-id="${CSS.escape(id)}"]`,capture:`[data-capture-id="${CSS.escape(id)}"]`,journal:`[data-journal-id="${CSS.escape(id)}"]`,quote:`[data-quote-id="${CSS.escape(id)}"]`}[route.resourceType];
   requestAnimationFrame(()=>{const target=document.querySelector(selector||"");if(target instanceof HTMLDetailsElement)target.open=true;target?.scrollIntoView({behavior:"smooth",block:"center"})})
 }
-$("#action-form").addEventListener("submit",async event=>{
-  event.preventDefault();const form=event.currentTarget,button=form.querySelector('[type="submit"]'),status=$("#action-status"),submittedDraft=formSnapshot(form);form.dataset.requestId||=crypto.randomUUID();button.disabled=true;status.textContent="正在添加…";
-  try{await runActionCommand(buildCreateActionCommand({title:form.elements.title.value,priority:form.elements.priority.value}),{idempotencyKey:form.dataset.requestId});delete form.dataset.requestId;if(formSnapshot(form)===submittedDraft){form.reset();status.textContent=""}else status.textContent="提交时的行动已保存；等待期间的新输入已保留。";showToast("行动已添加")}
-  catch(error){status.textContent=error.message}
-  finally{button.disabled=false}
-});
-$("#action-form").addEventListener("input",event=>{delete event.currentTarget.dataset.requestId});
-$("#habit-form").addEventListener("submit",async event=>{
-  event.preventDefault();const form=event.currentTarget,button=form.querySelector('[type="submit"]'),status=$("#habit-status"),submittedDraft=formSnapshot(form),cadence=form.elements.cadence.value,target=cadence==="daily"?1:Number(form.elements.target.value);form.dataset.requestId||=crypto.randomUUID();button.disabled=true;status.textContent="正在添加…";
-  try{await runActionCommand(buildCreateHabitCommand({title:form.elements.title.value,frequency:{cadence,target}}),{idempotencyKey:form.dataset.requestId});delete form.dataset.requestId;if(formSnapshot(form)===submittedDraft){form.reset();form.elements.target.value="1";status.textContent=""}else status.textContent="提交时的习惯已保存；等待期间的新输入已保留。";showToast("习惯已添加")}
-  catch(error){status.textContent=error.message}
-  finally{button.disabled=false}
-});
-$("#habit-form").addEventListener("input",event=>{delete event.currentTarget.dataset.requestId});
-$("#habit-form").elements.cadence.addEventListener("change",event=>{const target=$("#habit-form").elements.target,daily=event.currentTarget.value==="daily";target.disabled=daily;if(daily)target.value="1";else if(Number(target.value)<1)target.value="3"});
-document.addEventListener("click",async event=>{
-  const button=event.target.closest("[data-action-start],[data-action-complete],[data-action-reopen],[data-action-edit],[data-action-delete],[data-habit-checkin],[data-habit-uncheck],[data-habit-toggle],[data-habit-adjust],[data-habit-delete]");
-  if(!button)return;
-  let command,options={};
-  if(button.dataset.actionStart)command=buildSetActionStatusCommand(button.dataset.actionStart,"doing",button.dataset.version);
-  else if(button.dataset.actionComplete)command=buildCompleteActionCommand(button.dataset.actionComplete,button.dataset.version);
-  else if(button.dataset.actionReopen)command=buildUndoActionCompletionCommand(button.dataset.actionReopen,button.dataset.version);
-  else if(button.dataset.actionEdit){const item=actionsSnapshot.actions.find(value=>value.id===button.dataset.actionEdit),title=prompt("修改行动：",item?.title||"");if(!title?.trim())return;const priority=prompt("优先级：P0 / P1 / P2 / P3 / none",item?.priority||"none");if(!priority)return;command=buildUpdateActionCommand(button.dataset.actionEdit,{title,priority},button.dataset.version)}
-  else if(button.dataset.actionDelete){if(!confirm("将这项行动移入回收站？"))return;command=buildDeleteActionCommand(button.dataset.actionDelete,button.dataset.version)}
-  else if(button.dataset.habitCheckin){let feeling=button.dataset.feeling;if(feeling===undefined){const answer=prompt("今天完成时的感受（可留空）：","");if(answer===null)return;feeling=answer;button.dataset.feeling=feeling}button.dataset.requestId||=crypto.randomUUID();options.idempotencyKey=button.dataset.requestId;command=buildHabitCheckinCommand(button.dataset.habitCheckin,{occurredOn:currentLocalDate,feeling})}
-  else if(button.dataset.habitUncheck){if(!confirm("撤销今天的习惯打卡？"))return;command=buildDeleteHabitCheckinCommand(button.dataset.habitUncheck,button.dataset.version)}
-  else if(button.dataset.habitToggle)command=buildSetHabitEnabledCommand(button.dataset.habitToggle,button.dataset.enabled!=="true",button.dataset.version);
-  else if(button.dataset.habitAdjust){const habit=actionsSnapshot.habits.find(value=>value.id===button.dataset.habitAdjust),note=prompt("记录这次调整：");if(!note?.trim()||!habit)return;const cadence=prompt("频次：daily（每天）或 weekly（每周）",habit.frequency?.cadence||"daily");if(!["daily","weekly"].includes(cadence))return showToast("频次只能是 daily 或 weekly","error");const target=cadence==="weekly"?Number(prompt("新的每周目标天数：",String(habit.frequency?.target||3))):1;if(!Number.isInteger(target)||target<1||target>7)return showToast("目标天数必须是 1 到 7","error");command=buildHabitAdjustmentCommand(button.dataset.habitAdjust,{note,frequency:{cadence,target}},button.dataset.version)}
-  else if(button.dataset.habitDelete){if(!confirm("将这个习惯及其打卡记录移入回收站？"))return;command=buildDeleteHabitCommand(button.dataset.habitDelete,button.dataset.version)}
-  button.disabled=true;try{await runActionCommand(command,options);delete button.dataset.requestId;delete button.dataset.feeling;showToast("已更新")}catch(error){showToast(error.message,error.syncStatus==="pending"?"success":"error")}finally{button.disabled=false}
-});
 function openChainEditor(id){const chain=thoughtChains().find(x=>x.question.id===id);if(!chain)return;$("#edit-chain-id").value=id;$("#edit-chain-datetime").value=toLocalDateTimeInput(eventTimestamp(chain.question));$("#edit-chain-question").value=chain.question.content;$("#edit-chain-tags").value=(chain.question.tags||[]).join(" ");$("#edit-chain-status").textContent="这里只修改主题。初步想法、回答与记录请在各自内容块上编辑。";$("#edit-chain-modal").hidden=false;$("#edit-chain-question").focus()}
 function openThoughtBlockEditor(rootId,type="record",blockId=""){
   const item=blockId?state.thoughts.find(value=>value.id===blockId&&value.relatedTo===rootId):null,modal=$("#thought-block-modal"),select=$("#thought-block-type");

@@ -153,6 +153,7 @@ const suites = {
     ["frontend application shell and page lifecycle", ["scripts/frontend-shell-regression.mjs"]],
     ["frontend feature lifecycle", ["scripts/frontend-feature-lifecycle-regression.mjs"]],
     ["literal lazy descriptor and hidden-module boundaries", ["scripts/frontend-lazy-descriptor-regression.mjs"]],
+    ["F2 actions coordinator and on-demand workspace", ["scripts/frontend-actions-feature-regression.mjs"]],
     ["F2 lazy export controller", ["scripts/frontend-export-feature-regression.mjs"]],
     ["F2 lazy feedback controller", ["scripts/frontend-feedback-feature-regression.mjs"]],
     ["F2 lazy discovery controller", ["scripts/frontend-discovery-feature-regression.mjs"]],

@@ -3,18 +3,21 @@ import { readFile } from "node:fs/promises";
 import * as actionsModule from "../public/frontend/features/actions/index.mjs";
 import {
   ACTIONS_ENDPOINT,
-  ACTIONS_SELECTORS,
   HABITS_ENDPOINT,
   actionCommandBuilders,
   buildCompleteActionCommand,
   buildCreateActionCommand,
+  buildDeleteHabitCommand,
   buildSetActionStatusCommand,
   buildUpdateActionCommand,
   createActionsCoordinator,
-  createActionsFeatureController,
   createActionsViewModel,
   projectActionCommand
 } from "../public/frontend/features/actions/index.mjs";
+import {
+  ACTIONS_SELECTORS,
+  createActionsFeatureController
+} from "../public/frontend/features/actions/controller.mjs";
 
 const clone = value => structuredClone(value);
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -144,7 +147,7 @@ const localReferences = [
   ...indexSource.matchAll(/\bfrom\s+["'](\.[^"']+)["']/g),
   ...controllerSource.matchAll(/\bfrom\s+["'](\.[^"']+)["']/g)
 ].map(match => match[1]);
-assert.deepEqual(localReferences, ["./controller.mjs"]);
+assert.deepEqual(localReferences, []);
 assert.throws(() => createActionsCoordinator(), /requires listAllV1/);
 
 // Concurrent reads use a monotonic ticket, so an older response cannot win.
@@ -178,6 +181,30 @@ assert.throws(() => createActionsCoordinator(), /requires listAllV1/);
   firstHabits.resolve([]);
   assert.equal(await first, false);
   assert.equal(coordinator.snapshot().actions[0].id, "new");
+}
+
+// A newer incremental snapshot invalidates an older full read.
+{
+  const oldActions = deferred();
+  const oldHabits = deferred();
+  const coordinator = coordinatorWith({
+    listAllV1(path) {
+      if(path===ACTIONS_ENDPOINT)return oldActions.promise;
+      if(path===HABITS_ENDPOINT)return oldHabits.promise;
+      if(path.includes("/preserved-habit/checkins"))return Promise.resolve([{id:"preserved-checkin",habitId:"preserved-habit",occurredOn:"2026-10-06"}]);
+      throw new Error(`unexpected path: ${path}`);
+    }
+  });
+  const oldLoad = coordinator.load();
+  coordinator.applyIncrementalSnapshot({
+    actions: [action("same", { version: 2, title: "new incremental" })]
+  });
+  oldActions.resolve([action("same", { version: 1, title: "old full read" })]);
+  oldHabits.resolve([habit("preserved-habit")]);
+  assert.equal(await oldLoad, true);
+  assert.equal(coordinator.snapshot().actions[0].version, 2);
+  assert.equal(coordinator.snapshot().habits[0].id, "preserved-habit");
+  assert.equal(coordinator.snapshot().habitCheckins[0].id, "preserved-checkin");
 }
 
 // Internal reset generation rejects an old response even while the external session stays current.
@@ -307,7 +334,7 @@ function commandCoordinator({ request, server: initialServer, listFailure = () =
     request({ options, coordination, server }) {
       coordination.onQueued({
         operationId: "operation-success",
-        status: "sending",
+        status: "pending",
         createdAt: "2026-10-06T09:00:00.000Z"
       });
       server.actions[0] = action("a1", {
@@ -318,18 +345,144 @@ function commandCoordinator({ request, server: initialServer, listFailure = () =
       return { data: clone(server.actions[0]) };
     }
   });
+  const queuedStatuses = [];
+  fixture.coordinator.subscribe(snapshot => queuedStatuses.push(snapshot.actions[0]?._sync?.status));
   await fixture.coordinator.runCommand(
     buildUpdateActionCommand("a1", { title: "已更新", priority: "P0" }, 1)
   );
   assert.equal(fixture.calls[0].path, "/api/v1/actions/a1");
   assert.equal(fixture.calls[0].options.method, "PATCH");
   assert.equal(fixture.calls[0].options.headers["if-match"], '"1"');
+  assert.ok(queuedStatuses.includes("sending"));
   assert.deepEqual(JSON.parse(fixture.calls[0].options.body), {
     title: "已更新",
     priority: "P0"
   });
   assert.equal(fixture.coordinator.snapshot().actions[0].title, "已更新");
   assert.equal(fixture.coordinator.snapshot().actions[0]._sync, undefined);
+}
+
+// A full read invalidated by an incremental domain keeps its committed projection.
+{
+  const write = deferred();
+  const actionsRead = deferred();
+  const habitsRead = deferred();
+  const coordinator = coordinatorWith({
+    listAllV1(path) {
+      if (path === ACTIONS_ENDPOINT) return actionsRead.promise;
+      if (path === HABITS_ENDPOINT) return habitsRead.promise;
+      throw new Error(`unexpected path: ${path}`);
+    },
+    requestV1(path, options, coordination) {
+      coordination.onQueued({ operationId: "operation-incremental", status: "sending" });
+      return write.promise;
+    }
+  });
+  coordinator.applyIncrementalSnapshot({
+    actions: [action("incremental")],
+    habits: [],
+    habitCheckins: []
+  });
+  const result = coordinator.runCommand(
+    buildSetActionStatusCommand("incremental", "doing", 1)
+  );
+  write.resolve({ data: action("incremental", { status: "doing", version: 2 }) });
+  await waitFor(
+    () => coordinator.snapshot().loadState === "loading",
+    "command refresh did not start"
+  );
+  coordinator.applyIncrementalSnapshot({
+    actions: [action("incremental", { status: "todo", version: 1 })]
+  });
+  actionsRead.resolve([action("incremental", { status: "doing", version: 2 })]);
+  habitsRead.resolve([]);
+  await result;
+  assert.equal(coordinator.snapshot().actions[0].status, "doing");
+  assert.equal(coordinator.snapshot().actions[0]._sync.status, "committed");
+  coordinator.applyIncrementalSnapshot({
+    actions: [action("incremental", { status: "doing", version: 2 })]
+  });
+  assert.equal(coordinator.snapshot().actions[0]._sync, undefined);
+}
+
+// A load that started before commit cannot confirm the newer committed projection.
+{
+  const actionsRead = deferred();
+  const habitsRead = deferred();
+  const coordinator = coordinatorWith({
+    listAllV1(path) {
+      if (path === ACTIONS_ENDPOINT) return actionsRead.promise;
+      if (path === HABITS_ENDPOINT) return habitsRead.promise;
+      throw new Error(`unexpected path: ${path}`);
+    }
+  });
+  coordinator.applyIncrementalSnapshot({
+    actions: [action("commit-during-load")],
+    habits: [],
+    habitCheckins: []
+  });
+  coordinator.applyPendingRecord({
+    operationId: "commit-during-load",
+    status: "pending",
+    projection: {
+      kind: "action.command",
+      command: buildSetActionStatusCommand("commit-during-load", "doing", 1)
+    }
+  });
+  const oldLoad = coordinator.load();
+  assert.equal(coordinator.applyOperationStatus({
+    operationId: "commit-during-load",
+    status: "committed"
+  }), true);
+  actionsRead.resolve([action("commit-during-load")]);
+  habitsRead.resolve([]);
+  assert.equal(await oldLoad, true);
+  assert.equal(coordinator.snapshot().actions[0].status, "doing");
+  assert.equal(coordinator.snapshot().actions[0]._sync.status, "committed");
+}
+
+// A habit deletion remains projected until both affected domains confirm it.
+{
+  const coordinator = coordinatorWith({
+    async listAllV1() {
+      throw new Error("refresh unavailable");
+    },
+    async requestV1(path, options, coordination) {
+      coordination.onQueued({ operationId: "delete-habit", status: "sending" });
+      return { data: null };
+    }
+  });
+  coordinator.applyIncrementalSnapshot({
+    actions: [],
+    habits: [habit("delete-me")],
+    habitCheckins: [{
+      id: "delete-checkin",
+      habitId: "delete-me",
+      occurredOn: "2026-10-06"
+    }]
+  });
+  await assert.rejects(
+    coordinator.runCommand(buildDeleteHabitCommand("delete-me", 1)),
+    error => error.saved === true
+  );
+  assert.deepEqual([
+    coordinator.snapshot().habits.length,
+    coordinator.snapshot().habitCheckins.length
+  ], [0, 0]);
+  coordinator.applyIncrementalSnapshot({ habits: [] });
+  assert.deepEqual([
+    coordinator.snapshot().habits.length,
+    coordinator.snapshot().habitCheckins.length
+  ], [0, 0]);
+  assert.equal(coordinator.applyOperationStatus({
+    operationId: "delete-habit",
+    status: "committed"
+  }), true);
+  coordinator.applyIncrementalSnapshot({ habitCheckins: [] });
+  assert.equal(coordinator.applyOperationStatus({
+    operationId: "delete-habit",
+    status: "committed"
+  }), false);
 }
 
 // Successful writes refresh serially so one command cannot misreport a superseded read.
@@ -384,6 +537,104 @@ function commandCoordinator({ request, server: initialServer, listFailure = () =
     coordinator.snapshot().actions.map(item => [item.id, item.status, item._sync]),
     [["a1", "doing", undefined], ["a2", "doing", undefined]]
   );
+}
+
+// A same-route refresh queues behind the command refresh and cannot make a saved write fail.
+{
+  const write = deferred();
+  const firstActions = deferred();
+  const firstHabits = deferred();
+  const secondActions = deferred();
+  const secondHabits = deferred();
+  const server = { actions: [action("route")], habits: [], habitCheckins: [] };
+  let actionReads = 0;
+  let habitReads = 0;
+  const coordinator = coordinatorWith({
+    listAllV1(path) {
+      if (path === ACTIONS_ENDPOINT) {
+        actionReads += 1;
+        return actionReads === 1 ? firstActions.promise : actionReads === 2 ? secondActions.promise : clone(server.actions);
+      }
+      if (path === HABITS_ENDPOINT) {
+        habitReads += 1;
+        return habitReads === 1 ? firstHabits.promise : habitReads === 2 ? secondHabits.promise : [];
+      }
+      throw new Error(`unexpected path: ${path}`);
+    },
+    requestV1(path, options, coordination) {
+      coordination.onQueued({ operationId: "operation-route", status: "sending" });
+      return write.promise.then(() => {
+        server.actions[0] = action("route", { status: "doing", version: 2 });
+        return { data: clone(server.actions[0]) };
+      });
+    }
+  });
+  coordinator.applyIncrementalSnapshot(server);
+  const command = coordinator.runCommand(buildSetActionStatusCommand("route", "doing", 1));
+  write.resolve();
+  await waitFor(() => actionReads === 1, "command refresh did not start");
+  const replacedRefresh = coordinator.load();
+  const latestRefresh = coordinator.load();
+  secondActions.resolve([action("route", { status: "todo", version: 1 })]);
+  secondHabits.resolve([]);
+  assert.equal(actionReads, 3, "latest same-route refresh did not supersede both older reads");
+  firstActions.resolve(clone(server.actions));
+  firstHabits.resolve([]);
+  assert.deepEqual((await Promise.allSettled([command, replacedRefresh, latestRefresh])).map(item => item.status), ["fulfilled", "fulfilled", "fulfilled"]);
+  assert.equal(coordinator.snapshot().actions[0].status, "doing");
+}
+
+// A successful replacement that starts another refresh must follow the final result.
+{
+  const write = deferred();
+  const firstActions = deferred();
+  const firstHabits = deferred();
+  const secondActions = deferred();
+  const secondHabits = deferred();
+  const thirdActions = deferred();
+  const thirdHabits = deferred();
+  let actionReads = 0;
+  let habitReads = 0;
+  const coordinator = coordinatorWith({
+    listAllV1(path) {
+      const reads = path === ACTIONS_ENDPOINT
+        ? [firstActions, secondActions, thirdActions]
+        : [firstHabits, secondHabits, thirdHabits];
+      const index = path === ACTIONS_ENDPOINT ? actionReads++ : habitReads++;
+      return reads[index].promise;
+    },
+    requestV1(path, options, coordination) {
+      coordination.onQueued({ operationId: "operation-final-refresh", status: "sending" });
+      return write.promise;
+    }
+  });
+  coordinator.applyIncrementalSnapshot({
+    actions: [action("final-refresh")],
+    habits: [],
+    habitCheckins: []
+  });
+  const command = coordinator.runCommand(
+    buildSetActionStatusCommand("final-refresh", "doing", 1)
+  );
+  write.resolve({ data: action("final-refresh", { status: "doing", version: 2 }) });
+  await waitFor(() => actionReads === 1, "command refresh did not start");
+  const replacement = coordinator.load();
+  const finalRefresh = replacement.then(() => coordinator.load());
+  firstActions.resolve([action("final-refresh", { status: "doing", version: 2 })]);
+  firstHabits.resolve([]);
+  await flush();
+  secondActions.resolve([action("final-refresh", { status: "doing", version: 2 })]);
+  secondHabits.resolve([]);
+  await waitFor(() => actionReads === 3, "final replacement refresh did not start");
+  thirdActions.reject(new Error("final refresh unavailable"));
+  thirdHabits.resolve([]);
+  assert.equal(await finalRefresh, false);
+  await assert.rejects(command, error => {
+    assert.equal(error.saved, true);
+    return true;
+  });
+  assert.equal(coordinator.snapshot().actions[0].status, "doing");
+  assert.equal(coordinator.snapshot().actions[0]._sync, undefined);
 }
 
 // A conflict refresh queues behind a successful write refresh instead of superseding it.
@@ -644,10 +895,34 @@ for (const status of [409, 412]) {
     }
   }), true);
   assert.equal(coordinator.snapshot().actions[0].status, "doing");
+  assert.equal(coordinator.applyOperationStatus({
+    operationId: "restored-operation",
+    status: "committed"
+  }), true);
+  assert.equal(coordinator.snapshot().actions[0]._sync.status, "committed");
   coordinator.applyIncrementalSnapshot({
     habits: [habit("h1", { title: "增量习惯" })]
   });
   assert.equal(coordinator.snapshot().habits[0].title, "增量习惯");
+  assert.equal(coordinator.snapshot().actions[0].status, "doing");
+  assert.equal(coordinator.snapshot().actions[0]._sync.status, "committed");
+  coordinator.applyIncrementalSnapshot({
+    actions: [action("headless", { status: "doing" })]
+  });
+  assert.equal(coordinator.snapshot().actions[0]._sync, undefined);
+  coordinator.applyPendingRecord({
+    operationId: "failed-operation",
+    status: "pending",
+    projection: {
+      kind: "action.command",
+      command: buildCompleteActionCommand("headless", 1)
+    }
+  });
+  assert.equal(coordinator.snapshot().actions[0].status, "done");
+  coordinator.applyOperationStatus({
+    operationId: "failed-operation",
+    status: "failed"
+  });
   assert.equal(coordinator.snapshot().actions[0].status, "doing");
 }
 
@@ -691,6 +966,55 @@ for (const status of [409, 412]) {
   assert.equal(await result, false);
   assert.equal(listCalls, 0);
   assert.equal(coordinator.snapshot().actions[0].id, "new-command");
+}
+
+// Reset makes an old command stop without awaiting the new session's load.
+{
+  const oldActions = deferred();
+  const oldHabits = deferred();
+  const newActions = deferred();
+  const newHabits = deferred();
+  let actionReads = 0;
+  let habitReads = 0;
+  const coordinator = coordinatorWith({
+    listAllV1(path) {
+      if (path === ACTIONS_ENDPOINT) {
+        actionReads += 1;
+        return actionReads === 1 ? oldActions.promise : newActions.promise;
+      }
+      if (path === HABITS_ENDPOINT) {
+        habitReads += 1;
+        return habitReads === 1 ? oldHabits.promise : newHabits.promise;
+      }
+      throw new Error(`unexpected path: ${path}`);
+    },
+    requestV1(path, options, coordination) {
+      coordination.onQueued({ operationId: "reset-operation", status: "sending" });
+      return Promise.resolve({ data: action("reset", { status: "doing", version: 2 }) });
+    }
+  });
+  coordinator.applyIncrementalSnapshot({
+    actions: [action("reset")],
+    habits: [],
+    habitCheckins: []
+  });
+  const command = coordinator.runCommand(
+    buildSetActionStatusCommand("reset", "doing", 1)
+  );
+  await waitFor(() => actionReads === 1, "old command refresh did not start");
+  coordinator.resetSession();
+  const newLoad = coordinator.load();
+  let outcome = "pending";
+  command.then(value => {
+    outcome = value;
+  });
+  oldActions.resolve([action("reset", { status: "doing", version: 2 })]);
+  oldHabits.resolve([]);
+  await flush();
+  assert.equal(outcome, false);
+  newActions.resolve([action("new-session")]);
+  newHabits.resolve([]);
+  assert.equal(await newLoad, true);
 }
 
 class FakeNode {
@@ -935,6 +1259,10 @@ function fakeCoordinator({
       loads += 1;
       return true;
     },
+    async refresh() {
+      loads += 1;
+      return true;
+    },
     runCommand,
     applyIncrementalSnapshot(snapshot) {
       state = { ...state, ...clone(snapshot) };
@@ -1027,6 +1355,7 @@ function createController(coordinator, overrides = {}) {
   const root = new FakeRoot("bootstrap-order");
   const controller = createController(coordinator);
   controller.mount({ root, signal: new AbortController().signal });
+  await flush();
   assert.deepEqual([actionReads, habitReads], [1, 1]);
   session.activate("account-a");
   coordinator.resetSession();

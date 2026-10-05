@@ -1543,7 +1543,7 @@ try {
   assert.equal(await evaluate(`document.querySelector("#automatic-thought-answer").checked`),false,"hidden settings must not render during thought startup");
   await evaluate(`document.querySelector('[data-view="today"]').click();true`);
   assert.equal(await waitUntil(`document.querySelector("#view-today").classList.contains("active")`),true);
-  assert.equal(await waitUntil(`document.querySelector("#action-columns")?.textContent.includes("完成 G2 界面回归")&&document.querySelector("#habit-list")?.textContent.includes("每日回望")`), true);
+  assert.equal(await waitUntil(`document.querySelector("#actions-summary")?.textContent.includes("1 项待推进")&&document.querySelector("#actions-summary")?.textContent.includes("1/1")`), true);
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   assert.equal(await waitUntil(`getComputedStyle(document.querySelector("#view-today")).opacity==="1"`),true);
   await sleep(120);
@@ -1628,6 +1628,8 @@ try {
   const homeNarrowScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
   await fs.writeFile("/tmp/growth-home-v02-narrow.png",Buffer.from(homeNarrowScreenshot.data,"base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
+  await evaluate(`document.querySelector(".home-v02-secondary").open=true;true`);
+  assert.equal(await waitUntil(`document.querySelector("#action-columns")?.textContent.includes("完成 G2 界面回归")&&document.querySelector("#habit-list")?.textContent.includes("每日回望")`),true);
   await evaluate(`(()=>{const form=document.querySelector("#action-form");form.elements.title.value="提交时的行动";window.__delayActionCreate=true;form.requestSubmit();return true})()`);
   assert.equal(await waitUntil(`typeof window.__releaseActionCreate==="function"`),true);
   await evaluate(`(()=>{const input=document.querySelector("#action-form").elements.title;input.value="等待期间的新行动";input.dispatchEvent(new Event("input",{bubbles:true}));window.__releaseActionCreate();return true})()`);

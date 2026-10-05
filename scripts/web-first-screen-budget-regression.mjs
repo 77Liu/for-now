@@ -37,6 +37,7 @@ const ASSET_BUDGET = Object.freeze({
   lazyFeatureModuleBytes: 40 * 1024
 });
 const HIDDEN_FEATURE_MODULE_PATHS = Object.freeze([
+  "/frontend/features/actions/controller.mjs",
   "/frontend/features/export/index.mjs",
   "/frontend/features/export/controller.mjs",
   "/frontend/features/export/downloads.mjs",
@@ -905,6 +906,7 @@ const defaultRouteModules = await moduleClosure([
   "frontend/features/legacy-pages/index.mjs"
 ]);
 const lazyFeatureModules = Object.fromEntries(await Promise.all([
+  ["actions-workspace", "frontend/features/actions/controller.mjs"],
   ["export", "frontend/features/export/index.mjs"],
   ["feedback", "frontend/features/feedback/index.mjs"],
   ["discovery", "frontend/features/thought-discovery/index.mjs"]

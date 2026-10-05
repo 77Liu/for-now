@@ -122,6 +122,22 @@
       ]
     },
     {
+      "id": "home-actions-habits-lifecycle",
+      "title": "首页行动与习惯在同步、切页和换账户后保持一致",
+      "role": "持续推进事项与习惯的普通用户",
+      "goal": "创建、更新、完成和打卡后立即看到可信状态，并在异常恢复后继续",
+      "risk": "critical",
+      "tier": "smoke",
+      "status": "automated",
+      "normalPath": ["进入首页", "创建行动或习惯", "更新状态或打卡", "切换页面后返回", "刷新核对"],
+      "failureAndRecovery": ["断网进入待同步", "409/412 冲突刷新", "列表响应乱序", "提交期间继续输入", "退出或切换账户时旧响应迟到"],
+      "assertions": ["乐观状态与服务端最终一致", "冲突显示服务器新状态", "在途草稿不被清空", "重复挂载不重复提交", "旧账户与旧页面响应不得写入当前首页"],
+      "evidence": [
+        {"script": "scripts/frontend-actions-feature-regression.mjs", "anchor": "Frontend actions feature checks passed"},
+        {"script": "scripts/ui-regression.mjs", "anchor": "window.__failActionNetwork=true"}
+      ]
+    },
+    {
       "id": "thought-r8-reading",
       "title": "R8 思绪列表与详情保持来源和操作语义",
       "role": "持续修订思考的用户",

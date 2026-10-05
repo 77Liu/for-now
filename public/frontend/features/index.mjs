@@ -44,6 +44,7 @@ export {
   sortAnnotationItemsByPosition
 } from "./thought-discovery/annotation-tools.mjs";
 export {
+  createActionsCoordinator,
   createActionsViewModel,
   buildCreateActionCommand,
   buildUpdateActionCommand,
