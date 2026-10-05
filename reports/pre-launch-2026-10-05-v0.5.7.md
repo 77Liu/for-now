@@ -2,15 +2,15 @@
 
 日期：2026-10-05
 
-状态：**G4 本地候选通过，等待 G5 远端 Preview 与发布授权**
+状态：**G5 远端 Preview 通过，等待标签、Gitee Release 与生产发布授权**
 
 生产基线：`v0.5.6@780d279f3b36431430b421f9c72136cc48e90c75`
 
 候选分支：`feat/v0.5.7-performance`
 
-运行代码候选：`d2de3d30c253033e3d87616fbc8c61510027f653`
+运行代码候选：`5e806598eac2bb0384a9fc6c966a57e311d82d68`
 
-候选 tree：`842c3d4da94aea4b4a65c2bbe0924493032acf5e`
+候选 tree：`e950815a891fd0e1e95f5a3557aa99fe0f6d59ea`
 
 ## 发布目标
 
@@ -59,6 +59,10 @@
 - 捕念编辑关闭操作串行化，并取消过期异步请求。
 - 冷直达嵌套路由改用服务端注入的静态 `<base>`；浏览器不再抢跑请求
   `/thoughts/frontend/**`、`/seen/frontend/**` 等错误资源路径。
+- 增量同步长轮询期间收到前台或提交信号时，合并补发一次立即拉取，不再偶发
+  等待完整 `1500ms` 轮询窗口。
+- 启动元数据与入口静态资源并行；已认证首页复用只读启动提示，并提前发现入口
+  模块依赖，公网当前屏反馈不再串行等待启动 API。
 
 ## 独立审计
 
@@ -77,16 +81,16 @@
 
 ## 自动验证
 
-最终候选 `d2de3d3`：
+最终候选 `5e80659`：
 
 | 命令 / 子门 | 结果 |
 | --- | --- |
 | `npm run check` | 通过；55 个模块、233 条拥有路由、62 条 Prompt |
-| `npm run test:journeys:release` | 通过；`369979 ms` |
-| Release：完整隔离系统套件 | 通过；`349658 ms` |
-| Release：PostgreSQL 16.14 stable | 通过；`18247 ms` |
-| Release：生产依赖审计 | 通过；`2074 ms`，0 漏洞 |
-| `npm run test:mobile` | Release 内通过；另连续独立运行 6 次通过 |
+| `npm run test:journeys:release` | 通过；`334216 ms` |
+| Release：完整隔离系统套件 | 通过；`318303 ms` |
+| Release：PostgreSQL 16.14 stable | 通过；`14379 ms` |
+| Release：生产依赖审计 | 通过；`1534 ms`，0 漏洞 |
+| `npm run test:mobile` | 最终 Release 内通过；另连续独立运行 10 次通过 |
 | `npm run test:url-history` | 通过；含冷直达静态资源路径断言 |
 | `npm run test:auth` | 通过；含 `/now/` base 注入 |
 | `npm run test:pwa` | 通过；27 个缓存模块 |
@@ -101,14 +105,14 @@ PostgreSQL stable 覆盖非 owner、`NOSUPERUSER`、`NOBYPASSRLS` 运行角色�
 
 | 指标 | P75 | P95 | 预算 |
 | --- | ---: | ---: | ---: |
-| 冷启动当前屏反馈 | 265.1 ms | 318.1 ms | 500 / 750 ms |
-| 冷启动首个可读 | 702.1 ms | 786.6 ms | 1000 / 1500 ms |
-| 暖启动当前屏反馈 | 264.6 ms | 268.2 ms | 500 / 750 ms |
-| 暖启动首个可读 | 696.4 ms | 700.1 ms | 750 / 1000 ms |
-| 路由切换首个可读 | 65.4 ms | 66.6 ms | 350 / 600 ms |
-| 思绪详情打开 | 54.5 ms | 68.7 ms | 350 / 600 ms |
-| 思绪详情返回 | 60.9 ms | 67.5 ms | 250 / 500 ms |
-| 第二设备提交到可读 | 67.4 ms | 67.9 ms | 500 / 1000 ms |
+| 冷启动当前屏反馈 | 171.1 ms | 230.7 ms | 500 / 750 ms |
+| 冷启动首个可读 | 641.3 ms | 730.0 ms | 1000 / 1500 ms |
+| 暖启动当前屏反馈 | 172.7 ms | 176.4 ms | 500 / 750 ms |
+| 暖启动首个可读 | 644.4 ms | 655.0 ms | 750 / 1000 ms |
+| 路由切换首个可读 | 65.2 ms | 80.4 ms | 350 / 600 ms |
+| 思绪详情打开 | 55.9 ms | 70.9 ms | 350 / 600 ms |
+| 思绪详情返回 | 64.4 ms | 65.3 ms | 250 / 500 ms |
+| 第二设备提交到可读 | 67.2 ms | 92.8 ms | 500 / 1000 ms |
 
 其他合同：
 
@@ -120,9 +124,7 @@ PostgreSQL stable 覆盖非 owner、`NOSUPERUSER`、`NOBYPASSRLS` 运行角色�
 - 点击前媒体传输 `0 B`；
 - JSON gzip、identity 协商与媒体不压缩合同通过。
 
-报告：`artifacts/v0.5.7/web-performance-final.json`，SHA-256
-`074b26e92fefd0103819fa7139dbdc460e75abae3bf82833ed57c33f831ed751`。
-该目录被 Git 忽略，只保存在本地验收环境。
+本地性能与截图目录被 Git 忽略，只保存在本地验收环境。
 
 ## 本地 HTTP 验收
 
@@ -156,19 +158,36 @@ PostgreSQL stable 覆盖非 owner、`NOSUPERUSER`、`NOBYPASSRLS` 运行角色�
 - `artifacts/v0.5.7/http-mobile-thought-detail-320.png`
 - `artifacts/v0.5.7/http-mobile-capture-editor-390.png`
 
-## 未覆盖与 G5 门
+## 远端 Preview 验收
 
-当前结论只适用于 G4 本地候选。以下动作尚未执行：
+- `preview/v0.5.7` 与 Preview 运行代码均固定为 `5e806598eac2`；生产保持
+  `780d279f3b36`，生产服务、代码、环境和数据未改动。
+- 公网 `readyz` 返回精确 Preview SHA；`X-Robots-Tag` 为
+  `noindex, nofollow, noarchive`；管理快照端点返回 `404`。
+- 三轮冷缓存公网验收当前屏反馈为 `320.7 / 410.2 / 302.8 ms`，稳定首页为
+  `871.5 / 852.2 / 833.4 ms`，均满足 `<500 / <1000 ms`。
+- 三轮均无资源失败、意外 HTTP 响应、控制台错误或运行时异常；320/390px
+  无横向溢出。登录态 `verify` 旅程通过，新用户引导保持隐藏。
+- Linux 15 分钟共 31 个样本：RSS `82.79–84.52 MiB`，末 10 个样本
+  `84.50–84.52 MiB`；服务始终 active、`NRestarts=0`、健康 SHA 一致。
+  最终部署后的 356 个 Preview 请求中 Nginx 5xx 为 0，应用 warning/error
+  为 0，内核 OOM 为 0。
+- Preview 未配置 DeepSeek、火山语音/视觉或阿里云分割凭据，因此真实第三方
+  live 测试为 N/A；未借用生产凭据，相关合同与模拟专项已在 Release 门通过。
+- 机器证据位于忽略目录 `artifacts/v0.5.7-online-preview-20261005-final-{1,2,3}/`
+  与 `artifacts/v0.5.7-online-preview-20261005-linux-rss.log`。
 
-- push `preview/v0.5.7` 或 `main`；
-- 远端 Preview 部署与公网认证后验收；
-- Preview Linux 长窗口 RSS、重启、OOM、5xx 和告警回滞；
-- 真实 DeepSeek、火山语音/视觉和阿里云分割；
+## 未覆盖与后续发布门
+
+当前结论适用于 G5 Preview 候选。以下动作尚未执行：
+
+- push `main`、标签或 Gitee Release；
+- 真实 DeepSeek、火山语音/视觉和阿里云分割（Preview 无凭据，N/A）；
 - 物理 iPhone、安装态 PWA 与 Android 真机；
 - 历史小物生产 dry-run/apply；
-- tag、Gitee Release、生产即时备份、恢复、部署和观察。
+- 生产即时备份、恢复、部署和观察。
 
-上述远端或生产动作必须取得当次 G5 明确授权。不得用本地通过替代生产结论。
+上述生产动作必须另取明确授权。不得用 Preview 通过替代生产结论。
 
 ## G5 前检查表
 
@@ -179,14 +198,15 @@ PostgreSQL stable 覆盖非 owner、`NOSUPERUSER`、`NOBYPASSRLS` 运行角色�
 - [x] 固定 Fast 4G 性能门
 - [x] 本地 HTTP 桌面与移动端验收
 - [x] 冷直达资源路径无错误请求
-- [ ] Owner 授权 push 与远端 Preview
-- [ ] 远端 Preview 功能、第三方、Linux RSS 与公网多视口验收
+- [x] Owner 授权 push 与远端 Preview
+- [x] 远端 Preview 功能、Linux RSS 与公网多视口验收
+- [x] Preview 第三方 live 判定 N/A，未借用生产凭据
 - [ ] Owner 授权 tag、Gitee Release、生产迁移与部署
 - [ ] 生产即时备份、隔离恢复、部署、冒烟与观察
 
 ## 回滚
 
-- 代码尚未部署；当前生产继续运行
+- Preview 已部署 `5e806598eac2`；当前生产继续运行
   `v0.5.6@780d279f3b36431430b421f9c72136cc48e90c75`。
 - 后续 Preview 或生产失败时，使用既有不可变 release、健康检查和原子软链接
   回滚；生产媒体 apply 必须先保留 dry-run 计划与哈希，并单独取得授权。

@@ -2,7 +2,7 @@
 
 计划日期：2026-10-04
 
-状态：G0–G4 本地候选已通过；远端 Preview 与 G5 发布授权待执行
+状态：G0–G5 Preview 已通过；生产发布授权待执行
 
 执行依据：更新后的 `STD-DEV-001`、`SOP/requirement-intake.md`、
 `SOP/iteration-planning.md`、`SOP/feature-development.md`、
@@ -113,9 +113,9 @@ P2/P3 全部保留为后续，不进入本轮承诺。
 | V0.5.7-04 | P00/P0 | 小物变体、迁移、媒体 manifest、图片视口、音频 Range | 路由投影稳定 | **G3 已通过**：普通展示无原图；点击前无音频；存储按 Range 读 |
 | V0.5.7-05 | P00 | 思绪整链 TTS、移动操作栏 | 思绪详情契约稳定 | **G3 已通过**：双入口、版本失效、单行移动操作和异常恢复通过 |
 | V0.5.7-06 | P0 | 念起独立录入层、善言标签组件 | 路由生命周期稳定 | **G3 已通过**：主任务清楚，草稿/编辑/键盘/移动端不回归 |
-| V0.5.7-07 | P0 | 性能埋点、合同预算、HAR/trace、Linux RSS | 01–06 完成 | **本地门通过**：固定条件 P75/P95 与媒体/字节通过；Linux 长窗口待远端 Preview |
+| V0.5.7-07 | P0 | 性能埋点、合同预算、HAR/trace、Linux RSS | 01–06 完成 | **G5 通过**：固定条件与三轮公网门通过；Linux 15 分钟 RSS 平台化且零重启/5xx/OOM |
 | V0.5.7-08 | P1 | AI 费用图纵轴 | P00/P0 无阻断 | **G3 已通过**：0 到实际峰值，全零/单点/小额稳定 |
-| V0.5.7-09 | 发布 | 集成审计、候选、Preview 与发布交接 | 所有纳入切片 G3 | **G4 本地候选通过**：远端 Preview 和生产动作另取 G5 授权 |
+| V0.5.7-09 | 发布 | 集成审计、候选、Preview 与发布交接 | 所有纳入切片 G3 | **G5 Preview 通过**：`5e80659` 已部署并验收，生产动作另取授权 |
 
 `server.mjs`、`public/frontend/app/runtime.mjs`、`public/index.html`、Nginx
 配置、旅程矩阵和版本文件由主线单一负责人串行修改。其余任务按所有权拆为独立
@@ -349,3 +349,19 @@ flowchart TD
   `artifacts/v0.5.7/`。当前只通过 G4 本地候选；远端 Preview、Linux 长窗口
   RSS、真实供应商、物理设备、生产媒体 apply、push、tag、Gitee Release 和
   部署均未执行，等待 G5 明确授权。
+
+### 2026-10-05 G5 远端 Preview
+
+- 最终运行代码候选 `5e806598eac2bb0384a9fc6c966a57e311d82d68` 已推送
+  `preview/v0.5.7` 并部署到隔离 Preview；生产继续运行 `780d279f3b36`。
+- 最终统一 Release 门 `334216 ms`：系统 `318303 ms`、PostgreSQL 16.14
+  `14379 ms`、依赖审计 `1534 ms` 且漏洞为 0。
+- 三轮公网冷缓存当前屏反馈 `320.7 / 410.2 / 302.8 ms`，稳定首页
+  `871.5 / 852.2 / 833.4 ms`；网络、控制台、运行时异常均为 0，
+  320/390px 无横向溢出。
+- Preview Linux 15 分钟 31 个样本 RSS `82.79–84.52 MiB`，末 10 个样本
+  `84.50–84.52 MiB`；服务零重启，最终部署后 356 个 Preview 请求 5xx 为 0，
+  应用 warning/error 与内核 OOM 为 0。
+- Preview 未配置真实供应商凭据，DeepSeek、火山与阿里云 live 测试为 N/A，
+  未借用生产凭据。tag、Gitee Release、生产媒体 apply、生产部署与观察仍需
+  Owner 另行授权。
