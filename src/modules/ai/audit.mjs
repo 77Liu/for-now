@@ -181,11 +181,11 @@ export function createAiAudit({ textLimit, getContext, append, updateUsage, logE
     unitType = "call",
     units = 1,
     costCny = 0,
-    costKnown = false,
+    costKnown,
     costSource = "",
     reservation = null,
     callGroupId = createId()
-  }, invoke, summarize = result => ({ providerRequestId: result?.requestId || "" })) => {
+  }, invoke, summarize = result => ({ providerRequestId: result?.providerRequestId || result?.requestId || "" })) => {
     const context = getContext() || {}, startedAt = now(), startedMs = Date.now(), callId = createId();
     const base = {
       id: callId,
@@ -232,11 +232,11 @@ export function createAiAudit({ textLimit, getContext, append, updateUsage, logE
         httpStatus: Number(response.httpStatus || failure?.statusCode || failure?.status || 0),
         errorCode: failure ? safeText(failure.code || failure.name, 120) : "",
         providerRequestId: safeText(response.providerRequestId || response.requestId || failure?.providerRequestId, 200),
-        unitType,
-        units,
-        costCny,
-        costKnown,
-        costSource
+        unitType: response.unitType || unitType,
+        units: response.units ?? units,
+        costCny: response.costCny ?? costCny,
+        costKnown: response.costKnown ?? costKnown,
+        costSource: response.costSource || costSource
       });
       const scope = entryScope(base);
       reservation?.retain?.(usageEntry);
@@ -270,9 +270,10 @@ export function createAiAudit({ textLimit, getContext, append, updateUsage, logE
           persistence: { usage: usagePersisted ? "persisted" : "pending" },
           ...(!usagePersisted ? { usageRecovery: usageEntry } : {}),
           usage: {
-            known: usageEntry.costKnown,
+            known: usageEntry.usageKnown,
             unitType: usageEntry.unitType,
             units: usageEntry.units,
+            costKnown: usageEntry.costKnown,
             costCny: usageEntry.costCny,
             costSource: usageEntry.costSource
           }
@@ -311,10 +312,8 @@ export function createAiAudit({ textLimit, getContext, append, updateUsage, logE
     imageBytes: Array.isArray(request?.images)
       ? request.images.reduce((sum, image) => sum + (Number(image?.bytes) || 0), 0)
       : 0,
-    unitType: action === "SegmentHDCommonImage" ? "image" : "call",
+    unitType: "call",
     units: 1,
-    costKnown: false,
-    costSource: "Aliyun billing not configured"
   }, invoke, summarize);
   return { text, message, start, recordDeepSeekAttempt, recoverPending, providerCall, segmentationCall };
 }

@@ -37,10 +37,8 @@ export function createVisionHttp({
           modality: "vision",
           imageCount: 1,
           imageBytes: parsed.data.length,
-          unitType: "image",
-          units: 1,
-          costKnown: false,
-          costSource: "Volcengine billing not configured"
+          unitType: "call",
+          units: 1
         }, () => vision.recognizeText(parsed))));
       return true;
     }
@@ -54,11 +52,13 @@ export function createVisionHttp({
           action: "OCRPdf",
           request: { documentBytes: parsed.data.length, mimeType: parsed.mimeType },
           modality: "document",
-          unitType: "document",
-          units: 1,
-          costKnown: false,
-          costSource: "Volcengine billing not configured"
-        }, () => vision.parseDocument(parsed))));
+          unitType: "page",
+          units: 16
+        }, () => vision.parseDocument(parsed), result => ({
+          providerRequestId: result?.providerRequestId || "",
+          unitType: "page",
+          units: Math.max(1, result?.detail?.length || 0)
+        }))));
       return true;
     }
     return false;

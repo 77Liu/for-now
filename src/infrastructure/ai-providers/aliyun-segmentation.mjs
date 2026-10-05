@@ -55,8 +55,6 @@ export function createAliyunSegmentationTransport({
       modality: "vision",
       unitType: "call",
       units: 1,
-      costKnown: false,
-      costSource: "Aliyun billing not configured",
       budgeted,
       ...usageDetails
     }, invoke, summarize);
@@ -144,7 +142,7 @@ export function createAliyunSegmentationTransport({
             imageBytes: image.bytes,
             imageTypes: [image.mimeType],
             imageDimensions: [{ width: image.width, height: image.height }],
-            unitType: "image",
+            unitType: "call",
             costKnown: true,
             costSource: "mock",
             budgeted: false
@@ -174,7 +172,7 @@ export function createAliyunSegmentationTransport({
           imageBytes: image.bytes,
           imageTypes: [image.mimeType],
           imageDimensions: [{ width: image.width, height: image.height }],
-          unitType: "image"
+          unitType: "call"
         }
       );
       let imageUrl = safeText(response?.body?.data?.imageUrl, 4000);

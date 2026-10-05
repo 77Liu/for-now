@@ -66,6 +66,7 @@ export function createSpeechHttp({
   };
 
   const generate = async ({ text, voice, generationRate, scene = "speechSynthesis" }) => {
+    const submittedText = String(text || "").trim();
     const release = await gate.acquire();
     try {
       return await auditCall({
@@ -73,15 +74,13 @@ export function createSpeechHttp({
         service: "speech",
         scene,
         action: "synthesize",
-        request: { textChars: String(text || "").length, voice, generationRate },
+        request: { textChars: submittedText.length, voice, generationRate },
         modality: "audio",
-        requestChars: String(text || "").length,
+        requestChars: submittedText.length,
         unitType: "character",
-        units: [...String(text || "")].length,
-        costKnown: false,
-        costSource: "Volcengine billing not configured"
+        units: [...submittedText].length
       }, () => speech.synthesize({
-        text,
+        text: submittedText,
         voice,
         generationRate
       }), value => ({

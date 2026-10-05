@@ -106,8 +106,9 @@ try {
     assert.equal(entry.maxAttempts, 1);
   }
   for (const entry of asyncRecords.filter(entry => entry.status !== "started")) {
-    assert.equal(entry.usage.known, false);
-    assert.equal(entry.usage.costSource, "Aliyun billing not configured");
+    assert.equal(entry.usage.known, true);
+    assert.equal(entry.usage.costKnown, true);
+    assert.match(entry.usage.costSource, /^https:\/\/help\.aliyun\.com\/.+#2026-10-02$/);
   }
   const source = asyncRecords.find(entry => entry.action === "SegmentHDCommonImage").request.images[0];
   assert.deepEqual(source, { index: 0, mimeType: "image/png", bytes: bytes.length, width: 1, height: 1, sha256: crypto.createHash("sha256").update(bytes).digest("hex") });
@@ -122,10 +123,14 @@ try {
     && entry.service === "segmentation"
     && entry.scene === "keepsakeSegmentation"
     && entry.modality === "vision"
-    && entry.costKnown === false
+    && entry.costKnown === true
   )));
-  assert.equal(asyncUsage.find(entry => entry.action === "SegmentHDCommonImage").imageCount, 1);
-  assert.equal(asyncUsage.find(entry => entry.action === "SegmentHDCommonImage").imageBytes, bytes.length);
+  const segmentUsage = asyncUsage.find(entry => entry.action === "SegmentHDCommonImage");
+  assert.equal(segmentUsage.imageCount, 1);
+  assert.equal(segmentUsage.imageBytes, bytes.length);
+  assert.equal(segmentUsage.unitType, "call");
+  assert.equal(segmentUsage.costCny, 0.007);
+  assert.ok(asyncUsage.filter(entry => entry.action !== "SegmentHDCommonImage").every(entry => entry.costCny === 0));
 
   const cases = [
     ["no-job", { submit: () => ({ body: {} }) }, /任务编号/],
@@ -157,7 +162,10 @@ try {
     await noTemporaryFiles(id);
   }
   assert.equal(records.filter(entry => entry.actor.userId === "credentials" && entry.status === "failed").length, 1);
-  assert.equal(usageRecords.find(entry => entry.traceId === "trace-credentials" && entry.status === "failed").costKnown, false);
+  const credentialFailure = usageRecords.find(entry => entry.traceId === "trace-credentials" && entry.status === "failed");
+  assert.equal(credentialFailure.costKnown, false);
+  assert.equal(credentialFailure.costCny, 0);
+  assert.match(credentialFailure.costSource, /invoice verification/);
 
   logsFail = true;
   const unlogged = transport();

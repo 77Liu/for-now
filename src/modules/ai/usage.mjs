@@ -3,19 +3,100 @@ import { safeText, safeIso } from "../../shared/validation/index.mjs";
 import { LLM_MODELS, LLM_EFFORTS, LLM_TIERS, LLM_SCENARIOS } from "./settings.mjs";
 import { OFFICIAL_PROVIDER_PRICING } from "./provider-pricing.mjs";
 
-export const AI_USAGE_VERSION = 4;
+export const AI_USAGE_VERSION = 5;
 const PROVIDER_SCENES = new Set(["speechSynthesis", "speechPreview", "speechRecognition", "visionOcr", "documentParsing", "keepsakeSegmentation"]);
 const knownModalities = new Set(["vision", "text", "audio", "document"]);
+const measuredProviderUsage = item => (
+  safeText(item?.provider, 40) !== "deepseek"
+  && Boolean(safeText(item?.unitType, 40))
+  && Number.isFinite(item?.units)
+  && item.units >= 0
+);
 function normalizedModality(item) {
   if (knownModalities.has(item?.modality)) return item.modality;
   if (item?.provider === "volcengine" && item?.service === "speech") return "audio";
   if (item?.provider === "volcengine" && item?.service === "vision") {
-    return item?.unitType === "document" ? "document" : "vision";
+    return item?.scene === "documentParsing"
+      || item?.action === "OCRPdf"
+      || ["document", "page"].includes(item?.unitType)
+      ? "document"
+      : "vision";
   }
   if (item?.provider === "aliyun" && item?.service === "segmentation") return "vision";
   return "unknown";
 }
 export const DEEPSEEK_PRICING = OFFICIAL_PROVIDER_PRICING.deepseek;
+
+const pricingSource = pricing => `${pricing.source}#${pricing.checkedAt}`;
+const normalizedProviderUnits = units => Math.max(0, Number(units) || 0);
+
+export function resolveOfficialProviderPricing({
+  provider,
+  service,
+  action,
+  unitType = "call",
+  units = 1
+} = {}) {
+  const measuredUnits = normalizedProviderUnits(units);
+  let pricing = null, rate = 0, divisor = 1, resolvedUnitType = unitType;
+  if (provider === "volcengine" && service === "speech" && action === "synthesize") {
+    pricing = OFFICIAL_PROVIDER_PRICING.volcengineSpeech;
+    rate = pricing.services.seedTts2.price;
+    divisor = 10_000;
+    resolvedUnitType = "character";
+  } else if (provider === "volcengine" && service === "speech" && action === "streamingAsr") {
+    pricing = OFFICIAL_PROVIDER_PRICING.volcengineSpeech;
+    rate = pricing.services.seedAsr2Streaming.price;
+    divisor = 3_600_000;
+    resolvedUnitType = "audioMillisecond";
+  } else if (provider === "volcengine" && service === "speech" && action === "fileAsr") {
+    pricing = OFFICIAL_PROVIDER_PRICING.volcengineSpeech;
+    rate = pricing.services.seedAsr2File.price;
+    divisor = 3_600_000;
+    resolvedUnitType = "audioMillisecond";
+  } else if (provider === "volcengine" && service === "vision" && action === "OCRNormal") {
+    pricing = {
+      ...OFFICIAL_PROVIDER_PRICING.volcengineVision,
+      source: OFFICIAL_PROVIDER_PRICING.volcengineVision.sources.ocr
+    };
+    rate = pricing.services.ocrNormalFirstTier.price;
+    resolvedUnitType = "call";
+  } else if (provider === "volcengine" && service === "vision" && action === "OCRPdf") {
+    pricing = {
+      ...OFFICIAL_PROVIDER_PRICING.volcengineVision,
+      source: OFFICIAL_PROVIDER_PRICING.volcengineVision.sources.document
+    };
+    rate = pricing.services.intelligentDocumentParsing.price;
+    resolvedUnitType = "page";
+  } else if (provider === "aliyun" && service === "segmentation" && action === "SegmentHDCommonImage") {
+    pricing = OFFICIAL_PROVIDER_PRICING.aliyunSegmentation;
+    rate = pricing.services.segmentHdCommonImage.price;
+    resolvedUnitType = "call";
+  } else if (
+    provider === "aliyun"
+    && service === "segmentation"
+    && ["GetAsyncJobResult", "DownloadSegmentResult"].includes(action)
+  ) {
+    pricing = OFFICIAL_PROVIDER_PRICING.aliyunSegmentation;
+    resolvedUnitType = "call";
+  }
+  if (!pricing) {
+    return {
+      unitType,
+      units: measuredUnits,
+      costKnown: false,
+      costCny: 0,
+      costSource: ""
+    };
+  }
+  return {
+    unitType: resolvedUnitType,
+    units: measuredUnits,
+    costKnown: true,
+    costCny: measuredUnits * rate / divisor,
+    costSource: pricingSource(pricing)
+  };
+}
 
 export function normalizeAiUsage(value = {}) {
   const trackingStartedAt = safeIso(value.trackingStartedAt) || new Date().toISOString();
@@ -67,7 +148,8 @@ export function normalizeAiUsage(value = {}) {
     requestChars: Math.max(0, Math.round(Number(item.requestChars) || 0)),
     responseChars: Math.max(0, Math.round(Number(item.responseChars) || 0)),
     reasoningChars: Math.max(0, Math.round(Number(item.reasoningChars) || 0)),
-    usageKnown: item.usageKnown == null ? Boolean(item.tokens?.input || item.tokens?.output) : Boolean(item.usageKnown),
+    usageKnown: measuredProviderUsage(item)
+      || (item.usageKnown == null ? Boolean(item.tokens?.input || item.tokens?.output) : Boolean(item.usageKnown)),
     pricingPeriod: item.pricingPeriod === "peak" ? "peak" : "offPeak",
     tokens: {
       input: Math.max(0, Math.round(Number(item.tokens?.input) || 0)),
@@ -175,10 +257,44 @@ export function providerUsageEntry({
   unitType = "call",
   units = 1,
   costCny = 0,
-  costKnown = false,
+  costKnown,
   createdAt,
   ...metadata
 }) {
+  const official = costKnown === true ? null : resolveOfficialProviderPricing({
+    provider,
+    service,
+    action,
+    unitType,
+    units
+  });
+  const priced = costKnown === true
+    ? {
+        unitType,
+        units: normalizedProviderUnits(units),
+        costKnown: true,
+        costCny: Math.max(0, Number(costCny) || 0),
+        costSource: safeText(metadata.costSource, 160)
+      }
+    : costKnown === false
+      ? {
+          unitType: official.unitType,
+          units: official.units,
+          costKnown: false,
+          costCny: 0,
+          costSource: safeText(metadata.costSource, 160)
+        }
+    : official.costKnown && metadata.status !== "success"
+      ? {
+          ...official,
+          costKnown: false,
+          costCny: 0,
+          costSource: `${official.costSource}; failed request billing requires invoice verification`
+        }
+    : {
+        ...official,
+        costSource: official.costKnown ? official.costSource : safeText(metadata.costSource, 160)
+      };
   return normalizeAiUsage({
     version: AI_USAGE_VERSION,
     trackingStartedAt: createdAt,
@@ -191,18 +307,19 @@ export function providerUsageEntry({
       action,
       scene,
       model: model || `${provider}-${service}`,
-      unitType,
-      units,
-      costCny,
-      costKnown,
+      unitType: priced.unitType,
+      units: priced.units,
+      costCny: priced.costCny,
+      costKnown: priced.costKnown,
+      costSource: priced.costSource,
       createdAt,
-      usageKnown: false,
+      usageKnown: true,
       tokens: {},
       costsUsd: {},
       costsCny: {},
       ratesUsdPerMillion: {},
       ratesCnyPerMillion: {},
-      rawUsage: { unitType, units }
+      rawUsage: { unitType: priced.unitType, units: priced.units }
     }]
   }).entries[0];
 }

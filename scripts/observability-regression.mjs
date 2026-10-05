@@ -138,8 +138,8 @@ try {
   assert.equal(initial.ai.summary.costUnknownCalls, 3);
   assert.equal(initial.ai.modalities.find(item => item.modality === "audio").calls, 1);
   assert.equal(initial.ai.modalities.find(item => item.modality === "vision").calls, 2);
-  assert.equal(initial.ai.services.find(item => item.key === "volcengineSpeech").calls, 1);
-  assert.equal(initial.ai.services.find(item => item.key === "volcengineVision").calls, 1);
+  assert.equal(initial.ai.services.find(item => item.key === "volcengineTts").calls, 1);
+  assert.equal(initial.ai.services.find(item => item.key === "volcengineOcr").calls, 1);
   assert.equal(initial.ai.services.find(item => item.key === "aliyunSegmentation").failedCalls, 1);
   assert.equal(initial.ai.daily.at(-1).services.aliyunSegmentation.costUnknownCalls, 1);
 
@@ -149,7 +149,7 @@ try {
   assert.equal(entries.at(-1).usageKnown, false);
   assert.equal(entries.at(-1).status, "success");
   assert.equal(entries.at(-1).costsUsd.total, 0);
-  assert.ok((await fs.readdir(dataDir)).some(name => /ai-usage.json.v1-pre-v4.*\.bak$/.test(name)));
+  assert.ok((await fs.readdir(dataDir)).some(name => /ai-usage.json.v1-pre-v5.*\.bak$/.test(name)));
   mode = "partial_usage";
   assert.equal((await request("/api/settings/test", {})).status, 200);
   entries = JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"))).entries;

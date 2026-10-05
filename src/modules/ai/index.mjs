@@ -4,7 +4,15 @@ export {
   mergeLlmSettings, mergeUserAiPreferences,
   automaticAnswerDecision, createLlmSettingsService
 } from "./settings.mjs";
-export { AI_USAGE_VERSION, DEEPSEEK_PRICING, normalizeAiUsage, deepSeekUsageEntry, providerUsageEntry, createAiUsageService } from "./usage.mjs";
+export {
+  AI_USAGE_VERSION,
+  DEEPSEEK_PRICING,
+  normalizeAiUsage,
+  deepSeekUsageEntry,
+  resolveOfficialProviderPricing,
+  providerUsageEntry,
+  createAiUsageService
+} from "./usage.mjs";
 export {
   AI_BUDGET_VERSION, AI_BUDGET_ALERT_THRESHOLDS, AI_BUDGET_POLICY,
   normalizeAiBudgetPolicy, normalizeAiBudgetState, createAiBudgetService

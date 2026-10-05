@@ -163,7 +163,8 @@ class MockWebSocket extends EventEmitter {
         code: 0,
         result: {
           text: "今天想把重要的事情先做完。",
-          additions: { log_id: "asr-log-id" }
+          additions: { log_id: "asr-log-id" },
+          utterances: [{ start_time: 0, end_time: 1250 }]
         }
       })));
     }
@@ -245,7 +246,8 @@ assert.deepEqual(await speech.queryRecording({ taskId: "asr-file-task" }), {
 assert.deepEqual(await speech.transcribe({ audio: Buffer.from("RIFF....WAVE"), mimeType: "audio/wav" }), {
   provider: "volcengine-seedasr-2.0",
   rawText: "今天想把重要的事情先做完。",
-  providerRequestId: "asr-log-id"
+  providerRequestId: "asr-log-id",
+  durationMs: 1250
 });
 assert.equal(MockWebSocket.instances[0].options.headers["X-Api-Key"], "speech-secret");
 assert.equal(MockWebSocket.instances[0].options.headers["X-Api-Resource-Id"], "volc.seedasr.sauc.duration");
@@ -267,7 +269,8 @@ assert.deepEqual(await m4aSpeech.transcribe({
 }), {
   provider: "volcengine-seedasr-2.0",
   rawText: "今天想把重要的事情先做完。",
-  providerRequestId: "asr-log-id"
+  providerRequestId: "asr-log-id",
+  durationMs: 1250
 });
 assert.equal(m4aConversions, 1);
 const transcodeFixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "for-now-ffmpeg-test-"));

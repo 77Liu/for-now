@@ -96,7 +96,8 @@ websocket.on("connection", socket => {
         code: 0,
         result: {
           text: "这是语音识别原文。",
-          additions: { log_id: "asr-server-test" }
+          additions: { log_id: "asr-server-test" },
+          utterances: [{ start_time: 0, end_time: 1250 }]
         }
       }));
     }
@@ -131,7 +132,7 @@ let stderr = "";
 app.stderr.on("data", chunk => { stderr += chunk; });
 const base = `http://127.0.0.1:${appPort}`;
 const waitFor = async predicate => {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  for (let attempt = 0; attempt < 300; attempt += 1) {
     try {
       const value = await predicate();
       if (value) return value;
@@ -486,12 +487,18 @@ try {
   assert.equal(capture.transcription.condenseErrorCode, "");
   assert.equal(asrConnections, 1);
   const usage = JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"), "utf8"));
-  assert.equal(usage.version, 4);
+  assert.equal(usage.version, 5);
   assert.equal(usage.entries.filter(item => item.provider === "volcengine" && item.scene === "speechSynthesis" && item.unitType === "character").length, 4);
   assert.equal(usage.entries.filter(item => item.provider === "volcengine" && item.scene === "speechPreview" && item.unitType === "character").length, 1);
-  assert.ok(usage.entries.some(item => item.provider === "volcengine" && item.scene === "speechRecognition" && item.unitType === "audioMillisecond"));
-  assert.ok(usage.entries.some(item => item.provider === "volcengine" && item.scene === "visionOcr" && item.unitType === "image"));
-  assert.ok(usage.entries.some(item => item.provider === "volcengine" && item.scene === "documentParsing" && item.unitType === "document"));
+  assert.ok(usage.entries.some(item => (
+    item.provider === "volcengine"
+    && item.scene === "speechRecognition"
+    && item.unitType === "audioMillisecond"
+    && item.units === 1250
+  )));
+  assert.ok(usage.entries.some(item => item.provider === "volcengine" && item.scene === "visionOcr" && item.unitType === "call"));
+  assert.ok(usage.entries.some(item => item.provider === "volcengine" && item.scene === "documentParsing" && item.unitType === "page"));
+  assert.ok(usage.entries.filter(item => item.provider !== "deepseek").every(item => item.costKnown && item.usageKnown));
   const transcriptionUsage = usage.entries.filter(item => (
     item.provider === "deepseek" && item.scene === "capturePolish"
   ));
@@ -502,23 +509,23 @@ try {
   assert.equal(usage.entries.filter(item => item.provider === "deepseek" && item.scene === "captureCondense").length, 0);
   const budget = JSON.parse(await fs.readFile(path.join(dataDir, "ai-budget.json"), "utf8"));
   assert.equal(budget.reservations.length, 0);
-  assert.equal(budget.days[0].unknownCalls, 9);
+  assert.equal(budget.days[0].unknownCalls, 0);
   assert.equal(budget.days[0].users[0].calls, 13);
   assert.ok(budget.days[0].knownCostMicros > 0);
-  assert.equal(budget.events.filter(item => item.type === "ai.budget.unknown_cost_warning").length, 9);
+  assert.equal(budget.events.filter(item => item.type === "ai.budget.unknown_cost_warning").length, 0);
   const imageSettlement = budget.events.find(item => (
     item.type === "ai.budget.reservation_settled"
     && item.taskId.startsWith("image-parse:")
   ));
   assert.equal(imageSettlement.calls, 2);
-  assert.equal(imageSettlement.unknownCalls, 1);
+  assert.equal(imageSettlement.unknownCalls, 0);
   assert.equal(imageSettlement.stages.length, 2);
   const transcriptionSettlement = budget.events.find(item => (
     item.type === "ai.budget.reservation_settled"
     && item.taskId.startsWith("capture-transcription:")
   ));
   assert.equal(transcriptionSettlement.calls, 3);
-  assert.equal(transcriptionSettlement.unknownCalls, 1);
+  assert.equal(transcriptionSettlement.unknownCalls, 0);
   assert.equal(transcriptionSettlement.stages.length, 3);
   assert.deepEqual(
     transcriptionSettlement.stages.map(item => item.stageId),
@@ -531,7 +538,7 @@ try {
     body: JSON.stringify({ speech: { defaultVoice: "zh_female_vv_uranus_bigtts" } })
   });
   assert.equal(changedVoice.status, 200);
-  budget.days[0].blocked.unknownCost = true;
+  budget.days[0].blocked.knownCost = true;
   await fs.writeFile(path.join(dataDir, "ai-budget.json"), `${JSON.stringify(budget, null, 2)}\n`);
   const callsBeforeBudgetRejection = providerCalls.length;
   const siteRejected = await fetch(`${base}/api/speech/synthesize`, {
@@ -544,7 +551,7 @@ try {
     })
   });
   assert.equal(siteRejected.status, 429);
-  assert.equal((await siteRejected.json()).code, "AI_SITE_DAILY_UNKNOWN_COST_LIMIT");
+  assert.equal((await siteRejected.json()).code, "AI_SITE_DAILY_COST_LIMIT");
   assert.equal(providerCalls.length, callsBeforeBudgetRejection, "site budget rejection must happen before provider I/O");
 
   const ownerBudget = await fetch(`${base}/api/v1/owner/ai-budget`);
@@ -557,12 +564,12 @@ try {
     },
     body: JSON.stringify({
       command: "recover",
-      scope: "dailyUnknownCost",
+      scope: "dailyKnownCost",
       reason: "server regression recovery"
     })
   });
   assert.equal(recoveredBudget.status, 200);
-  assert.equal((await recoveredBudget.json()).data.day.blocked.unknownCost, false);
+  assert.equal((await recoveredBudget.json()).data.day.blocked.knownCost, false);
 
   const rejected = await fetch(`${base}/api/speech/synthesize`, {
     method: "POST",

@@ -170,6 +170,14 @@ function asrAudioParameters(mimeType) {
   }[String(mimeType || "").toLowerCase()] || null;
 }
 
+function measuredAsrDurationMs(result) {
+  const utterances = Array.isArray(result?.utterances) ? result.utterances : [];
+  return utterances.reduce((maximum, utterance) => {
+    const end = Number(utterance?.end_time ?? utterance?.endTime);
+    return Number.isFinite(end) && end > maximum ? Math.round(end) : maximum;
+  }, 0);
+}
+
 async function transcodeM4aForStreaming({
   audio,
   mimeType,
@@ -597,6 +605,7 @@ export function createVolcengineSpeechTransport({
       let settled = false;
       let rawText = "";
       let providerRequestId = requestId;
+      let durationMs = 0;
       let stage = "connecting";
       const finish = (error, result) => {
         if (settled) return;
@@ -666,13 +675,15 @@ export function createVolcengineSpeechTransport({
           if (result && typeof result === "object") {
             rawText = safeText(result.text, 120_000) || rawText;
             providerRequestId = safeText(result.additions?.log_id, 200) || providerRequestId;
+            durationMs = Math.max(durationMs, measuredAsrDurationMs(result));
           }
           if (frame.final) {
             if (!rawText) throw failure("火山语音识别没有返回文字", "EMPTY_ASR_TEXT");
             finish(null, {
               provider: "volcengine-seedasr-2.0",
               rawText,
-              providerRequestId
+              providerRequestId,
+              durationMs
             });
           }
         } catch (error) {

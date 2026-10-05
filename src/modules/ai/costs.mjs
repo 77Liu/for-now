@@ -2,6 +2,7 @@ import { safeIso, numberOrFallback } from "../../shared/validation/index.mjs";
 import { localDateKey, shiftDateKey } from "../../shared/time/index.mjs";
 import { LLM_MODELS, LLM_SCENARIOS, normalizeLlmSettings, llmSettingsForScene } from "./settings.mjs";
 import { DEEPSEEK_PRICING } from "./usage.mjs";
+import { OFFICIAL_PROVIDER_PRICING } from "./provider-pricing.mjs";
 
 const AI_COST_PLAN_VERSION = 1;
 const AI_PROVIDER_LABELS = {
@@ -10,9 +11,12 @@ const AI_PROVIDER_LABELS = {
   aliyun: "阿里云"
 };
 const AI_SERVICE_DEFINITIONS = [
-  { key: "deepseek", provider: "deepseek", service: "", label: "DeepSeek 模型" },
-  { key: "volcengineSpeech", provider: "volcengine", service: "speech", label: "豆包语音" },
-  { key: "volcengineVision", provider: "volcengine", service: "vision", label: "火山视觉" },
+  { key: "deepseekText", provider: "deepseek", service: "text", label: "DeepSeek 文本" },
+  { key: "deepseekVision", provider: "deepseek", service: "vision", label: "DeepSeek 图片理解" },
+  { key: "volcengineTts", provider: "volcengine", service: "speech", label: "豆包语音合成" },
+  { key: "volcengineAsr", provider: "volcengine", service: "speech", label: "豆包语音识别" },
+  { key: "volcengineOcr", provider: "volcengine", service: "vision", label: "火山文字识别" },
+  { key: "volcengineDocument", provider: "volcengine", service: "vision", label: "火山文档解析" },
   { key: "aliyunSegmentation", provider: "aliyun", service: "segmentation", label: "阿里云图片分割" }
 ];
 const AI_COST_SCENARIO_DEFAULTS = {
@@ -162,9 +166,19 @@ function addUsageAggregate(target, entry) {
 
 function usageServiceKey(entry) {
   const provider = entry.provider || "deepseek";
-  if (provider === "deepseek") return "deepseek";
-  const known = AI_SERVICE_DEFINITIONS.find(item => item.provider === provider && item.service === entry.service);
-  return known?.key || `${provider}:${entry.service || "other"}`;
+  if (provider === "deepseek") return entry.modality === "vision" ? "deepseekVision" : "deepseekText";
+  if (provider === "volcengine" && entry.service === "speech") {
+    return entry.action === "streamingAsr" || entry.action === "fileAsr" || entry.scene === "speechRecognition"
+      ? "volcengineAsr"
+      : "volcengineTts";
+  }
+  if (provider === "volcengine" && entry.service === "vision") {
+    return entry.action === "OCRPdf" || entry.scene === "documentParsing"
+      ? "volcengineDocument"
+      : "volcengineOcr";
+  }
+  if (provider === "aliyun" && entry.service === "segmentation") return "aliyunSegmentation";
+  return `${provider}:${entry.service || "other"}`;
 }
 
 function serviceUnitUsage(entries) {
@@ -176,7 +190,7 @@ function serviceUnitUsage(entries) {
       : Number(entry.units) || 0;
     totals.set(unitType, (totals.get(unitType) || 0) + units);
   }
-  const order = ["token", "character", "audioMillisecond", "image", "document", "call"];
+  const order = ["token", "character", "audioMillisecond", "page", "image", "document", "call"];
   return [...totals.entries()]
     .map(([unitType, units]) => ({ unitType, units }))
     .filter(item => item.units > 0)
@@ -273,8 +287,58 @@ export function usageDashboard(usage, from, to, cnyPerUsd, defaultCnyPerUsd = cn
       ...DEEPSEEK_PRICING,
       displayCurrency: "CNY",
       cnyPerUsd: rate,
+      providerRates: [
+        {
+          key: "volcengineTts",
+          label: OFFICIAL_PROVIDER_PRICING.volcengineSpeech.services.seedTts2.label,
+          priceCny: OFFICIAL_PROVIDER_PRICING.volcengineSpeech.services.seedTts2.price,
+          unitLabel: "万字符",
+          source: OFFICIAL_PROVIDER_PRICING.volcengineSpeech.source,
+          checkedAt: OFFICIAL_PROVIDER_PRICING.volcengineSpeech.checkedAt
+        },
+        {
+          key: "volcengineAsr",
+          label: OFFICIAL_PROVIDER_PRICING.volcengineSpeech.services.seedAsr2Streaming.label,
+          priceCny: OFFICIAL_PROVIDER_PRICING.volcengineSpeech.services.seedAsr2Streaming.price,
+          unitLabel: "音频小时",
+          source: OFFICIAL_PROVIDER_PRICING.volcengineSpeech.source,
+          checkedAt: OFFICIAL_PROVIDER_PRICING.volcengineSpeech.checkedAt
+        },
+        {
+          key: "volcengineFileAsr",
+          label: OFFICIAL_PROVIDER_PRICING.volcengineSpeech.services.seedAsr2File.label,
+          priceCny: OFFICIAL_PROVIDER_PRICING.volcengineSpeech.services.seedAsr2File.price,
+          unitLabel: "音频小时",
+          source: OFFICIAL_PROVIDER_PRICING.volcengineSpeech.source,
+          checkedAt: OFFICIAL_PROVIDER_PRICING.volcengineSpeech.checkedAt
+        },
+        {
+          key: "volcengineOcr",
+          label: OFFICIAL_PROVIDER_PRICING.volcengineVision.services.ocrNormalFirstTier.label,
+          priceCny: OFFICIAL_PROVIDER_PRICING.volcengineVision.services.ocrNormalFirstTier.price,
+          unitLabel: "次",
+          source: OFFICIAL_PROVIDER_PRICING.volcengineVision.sources.ocr,
+          checkedAt: OFFICIAL_PROVIDER_PRICING.volcengineVision.checkedAt
+        },
+        {
+          key: "volcengineDocument",
+          label: OFFICIAL_PROVIDER_PRICING.volcengineVision.services.intelligentDocumentParsing.label,
+          priceCny: OFFICIAL_PROVIDER_PRICING.volcengineVision.services.intelligentDocumentParsing.price,
+          unitLabel: "页",
+          source: OFFICIAL_PROVIDER_PRICING.volcengineVision.sources.document,
+          checkedAt: OFFICIAL_PROVIDER_PRICING.volcengineVision.checkedAt
+        },
+        {
+          key: "aliyunSegmentation",
+          label: OFFICIAL_PROVIDER_PRICING.aliyunSegmentation.services.segmentHdCommonImage.label,
+          priceCny: OFFICIAL_PROVIDER_PRICING.aliyunSegmentation.services.segmentHdCommonImage.price,
+          unitLabel: "次",
+          source: OFFICIAL_PROVIDER_PRICING.aliyunSegmentation.source,
+          checkedAt: OFFICIAL_PROVIDER_PRICING.aliyunSegmentation.checkedAt
+        }
+      ],
       historicalUsdNote: "人民币换算系数仅用于 2026-10-02 前已经固化为美元的历史账本。",
-      estimateNote: "DeepSeek 新调用按请求发生时固化的中国区人民币官方单价估算；其他供应商未配置运行时单价时只统计调用量，并标记为费用待账单。中国法定节假日若落在工作日峰值时段，实际账单可能更低。"
+      estimateNote: "新调用按请求发生时固化的官方目录价估算；阿里云分割结果轮询和下载不重复计费。实际账单仍可能受套餐、阶梯价、免费额度与合同折扣影响。中国法定节假日若落在 DeepSeek 工作日峰值时段，实际账单可能更低。"
     }
   };
 }

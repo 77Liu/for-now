@@ -42,7 +42,7 @@ import {
 import {
   defaultLlmSettings, normalizeLlmSettings, createLlmSettingsService, normalizeAiUsage,
   createAiUsageService, createAiAudit, createAiCostService, createAiGenerator, usageEntryFromAudit,
-  AI_BUDGET_POLICY, createAiBudgetService, systemPrompt
+  AI_BUDGET_POLICY, createAiBudgetService, resolveOfficialProviderPricing, systemPrompt
 } from "./src/modules/ai/index.mjs";
 import { createDeepSeekTransport, createAliyunSegmentationTransport, createVolcengineSpeechTransport, createVolcengineVisionTransport } from "./src/infrastructure/ai-providers/index.mjs";
 import { loadPromptCatalog } from "./src/infrastructure/prompt-catalog/index.mjs";
@@ -1085,17 +1085,29 @@ const aiAudit = createAiAudit({
   append: (day, entry) => appendPrivateJsonLine(path.join(storagePaths().logsDir, `ai-audit-${day}.ndjson`), entry),
   updateUsage: updateAiUsage, logEvent, now
 });
-const providerBudgetStage = (details, id = "provider-call") => ({
-  id,
-  provider: safeText(details.provider, 80),
-  service: safeText(details.service, 100),
-  action: safeText(details.action, 120),
-  scene: safeText(details.scene, 120),
-  costKnown: details.costKnown === true,
-  ...(details.costKnown === true
-    ? { estimatedCostCny: Math.max(0, Number(details.estimatedCostCny ?? details.costCny) || 0) }
-    : { billingGap: safeText(details.costSource, 500) || "运行时计量单位或合同单价尚未完成映射" })
-});
+const providerBudgetStage = (details, id = "provider-call") => {
+  const official = details.costKnown === true ? null : resolveOfficialProviderPricing(details);
+  const costKnown = details.costKnown === true || official?.costKnown === true;
+  return {
+    id,
+    provider: safeText(details.provider, 80),
+    service: safeText(details.service, 100),
+    action: safeText(details.action, 120),
+    scene: safeText(details.scene, 120),
+    costKnown,
+    ...(costKnown
+      ? {
+          estimatedCostCny: Math.max(
+            0,
+            Number(details.estimatedCostCny ?? (details.costKnown === true ? details.costCny : official.costCny)) || 0
+          )
+        }
+      : {
+          billingGap: safeText(details.costSource || official?.costSource, 500)
+            || "运行时计量单位或合同单价尚未完成映射"
+        })
+  };
+};
 const conservativeDeepSeekStage = ({ id, scene, maxOutputTokens = 4000, model = "deepseek-v4-pro" }) => ({
   ...deepSeekBudgetStages({
     model,
@@ -1119,12 +1131,14 @@ const logBudgetRejection = (details, error) => logEvent("system", "ai.budget_rej
 async function meteredProviderCall(details, invoke, summarize, budgetContext = null) {
   const {
     budgeted = true,
-    estimatedCostCny = 0,
+    estimatedCostCny,
     ...auditDetails
   } = details;
+  const budgetStage = providerBudgetStage(details);
+  const reservedCostCny = Math.max(0, Number(estimatedCostCny ?? budgetStage.estimatedCostCny) || 0);
   if (!budgeted) return aiAudit.providerCall(auditDetails, invoke, summarize);
   const execute = async execution => {
-    const accountReservation = await reserveAiAttempt({ estimatedCostCny });
+    const accountReservation = await reserveAiAttempt({ estimatedCostCny: reservedCostCny });
     const releaseQuota = typeof accountReservation?.release === "function"
       ? accountReservation.release
       : accountReservation;
@@ -1158,7 +1172,7 @@ async function meteredProviderCall(details, invoke, summarize, budgetContext = n
     return await aiBudgetRuntime.executeTask({
       accountId: safeText(context.user?.id, 100) || "local",
       taskId: crypto.randomUUID(),
-      stages: [providerBudgetStage(details)]
+      stages: [budgetStage]
     }, execute);
   } catch (error) {
     if (error.statusCode === 429 || /(?:BUDGET|LIMIT)/.test(error.code || "")) {
@@ -1932,10 +1946,8 @@ async function recognizeVisualFiles(files, { budgetExecution = null, stageIds = 
         modality: "vision",
         imageCount: 1,
         imageBytes: data.length,
-        unitType: "image",
-        units: 1,
-        costKnown: false,
-        costSource: "Volcengine billing not configured"
+        unitType: "call",
+        units: 1
       }, async () => {
         return await visionProvider.recognizeText({ data });
       }, undefined, budgetExecution ? {
@@ -1975,8 +1987,8 @@ async function parseImageRequest(input, kind) {
         service: "vision",
         scene: "visionOcr",
         action: "OCRNormal",
-        costKnown: false,
-        costSource: "Volcengine billing not configured"
+        unitType: "call",
+        units: 1
       }, id)),
       conservativeDeepSeekStage({
         id: modelStageId,
@@ -2297,8 +2309,8 @@ async function transcribeCapture(work, { signal } = {}) {
         service: "speech",
         scene: "speechRecognition",
         action: "streamingAsr",
-        costKnown: false,
-        costSource: "Volcengine billing not configured"
+        unitType: "audioMillisecond",
+        units: ATTACHMENT_AUDIO_MAX_DURATION_MS
       }, asrStageId),
       conservativeDeepSeekStage({
         id: polishStageId,
@@ -2321,14 +2333,30 @@ async function transcribeCapture(work, { signal } = {}) {
         request: { audioBytes: audio.length, mimeType: audioMimeType },
         modality: "audio",
         unitType: "audioMillisecond",
-        units: work.audio.durationMs,
-        costKnown: false,
-        costSource: "Volcengine billing not configured"
+        units: ATTACHMENT_AUDIO_MAX_DURATION_MS
       }, () => speechProvider.transcribe({
           audio,
           mimeType: audioMimeType,
           signal
-        }), undefined, {
+        }), result => {
+          const durationMs = Math.min(
+            ATTACHMENT_AUDIO_MAX_DURATION_MS,
+            Math.max(0, Math.round(Number(result?.durationMs) || 0))
+          );
+          return durationMs
+            ? {
+                providerRequestId: result?.providerRequestId || "",
+                unitType: "audioMillisecond",
+                units: durationMs
+              }
+            : {
+                providerRequestId: result?.providerRequestId || "",
+                unitType: "audioMillisecond",
+                units: 0,
+                costKnown: false,
+                costSource: "Provider response did not include a measured audio duration"
+              };
+        }, {
           execution: budgetExecution,
           stageId: asrStageId
         });
@@ -2795,8 +2823,8 @@ const libraryWorkflows = createLibraryWorkflows({
           service: "vision",
           scene: "visionOcr",
           action: "OCRNormal",
-          costKnown: false,
-          costSource: "Volcengine billing not configured"
+          unitType: "call",
+          units: 1
         }, id)),
         conservativeDeepSeekStage({
           id: modelStageId,

@@ -8,9 +8,9 @@ import {
   mergeUserAiPreferences, publicUserAiPreferences, llmSettingsForScene, createLlmSettingsService,
   normalizeAiUsage, deepSeekUsageEntry, createAiUsageService, createAiAudit,
   automaticAnswerDecision, defaultAiCostPlan, normalizeAiCostPlan, createAiCostService, usageDashboard,
-  usageEntryFromAudit, providerUsageEntry
+  usageEntryFromAudit, providerUsageEntry, resolveOfficialProviderPricing
 } from "../src/modules/ai/index.mjs";
-import { createAiSettingsHttp } from "../src/http/index.mjs";
+import { createAiSettingsHttp, createSpeechHttp } from "../src/http/index.mjs";
 import { createAccountDocumentRepository } from "../src/shared/persistence/index.mjs";
 import { localDateKey, shiftDateKey } from "../src/shared/time/index.mjs";
 
@@ -142,6 +142,59 @@ assert.equal(historical.durationKnown, false);
 assert.equal(normalizeAiUsage({
   entries: [{ id: "capture-polish", createdAt: now(), model: "deepseek-flash", scene: "capturePolish" }]
 }).entries[0].scene, "capturePolish");
+for (const [details, expected] of [
+  [
+    { provider: "volcengine", service: "speech", action: "synthesize", unitType: "character", units: 20_000 },
+    { unitType: "character", units: 20_000, costCny: 6 }
+  ],
+  [
+    { provider: "volcengine", service: "speech", action: "streamingAsr", unitType: "audioMillisecond", units: 1_800_000 },
+    { unitType: "audioMillisecond", units: 1_800_000, costCny: 0.5 }
+  ],
+  [
+    { provider: "volcengine", service: "vision", action: "OCRNormal", unitType: "image", units: 2 },
+    { unitType: "call", units: 2, costCny: 0.01 }
+  ],
+  [
+    { provider: "volcengine", service: "vision", action: "OCRPdf", unitType: "document", units: 3 },
+    { unitType: "page", units: 3, costCny: 0.06 }
+  ],
+  [
+    { provider: "aliyun", service: "segmentation", action: "SegmentHDCommonImage", unitType: "image", units: 2 },
+    { unitType: "call", units: 2, costCny: 0.014 }
+  ],
+  [
+    { provider: "aliyun", service: "segmentation", action: "GetAsyncJobResult", unitType: "call", units: 1 },
+    { unitType: "call", units: 1, costCny: 0 }
+  ],
+  [
+    { provider: "aliyun", service: "segmentation", action: "DownloadSegmentResult", unitType: "call", units: 1 },
+    { unitType: "call", units: 1, costCny: 0 }
+  ]
+]) {
+  const resolved = resolveOfficialProviderPricing(details);
+  assert.equal(resolved.costKnown, true);
+  assert.equal(resolved.unitType, expected.unitType);
+  assert.equal(resolved.units, expected.units);
+  assert.ok(Math.abs(resolved.costCny - expected.costCny) < 1e-12);
+  assert.match(resolved.costSource, /^https:\/\/.+#2026-10-02$/);
+}
+assert.deepEqual(
+  resolveOfficialProviderPricing({
+    provider: "volcengine",
+    service: "speech",
+    action: "unmappedAction",
+    unitType: "call",
+    units: 1
+  }),
+  {
+    unitType: "call",
+    units: 1,
+    costKnown: false,
+    costCny: 0,
+    costSource: ""
+  }
+);
 const providerEntry = providerUsageEntry({
   callId: "provider-call",
   createdAt: now(),
@@ -156,21 +209,38 @@ const providerEntry = providerUsageEntry({
   modality: "audio",
   unitType: "audioMillisecond",
   units: 1250,
-  costKnown: false,
   costSource: "billing pending"
 });
 assert.equal(providerEntry.provider, "volcengine");
 assert.equal(providerEntry.scene, "speechRecognition");
 assert.equal(providerEntry.units, 1250);
-assert.equal(providerEntry.costKnown, false);
+assert.equal(providerEntry.usageKnown, true);
+assert.equal(providerEntry.costKnown, true);
+assert.ok(Math.abs(providerEntry.costCny - (1250 / 3_600_000)) < 1e-12);
+assert.equal(normalizeAiUsage({
+  version: 4,
+  entries: [{
+    id: "legacy-measured-provider",
+    createdAt: now(),
+    provider: "volcengine",
+    service: "speech",
+    model: "volcengine-speech",
+    scene: "speechSynthesis",
+    unitType: "character",
+    units: 12,
+    usageKnown: false
+  }]
+}).entries[0].usageKnown, true);
 const inferredProviderUsage = normalizeAiUsage({ entries: [
   { ...providerEntry, id: "legacy-speech", callId: "legacy-speech", modality: "unknown" },
   { ...providerEntry, id: "legacy-vision", callId: "legacy-vision", service: "vision", scene: "visionOcr", modality: "unknown", unitType: "image", units: 2 },
+  { ...providerEntry, id: "legacy-document", callId: "legacy-document", service: "vision", action: "OCRPdf", scene: "documentParsing", modality: "unknown", unitType: "page", units: 3 },
   { ...providerEntry, id: "legacy-segmentation", callId: "legacy-segmentation", provider: "aliyun", service: "segmentation", scene: "keepsakeSegmentation", modality: "unknown", unitType: "image", units: 1 }
 ] }).entries;
 assert.deepEqual(inferredProviderUsage.map(item => [item.modality, item.imageCount]), [
   ["audio", 0],
   ["vision", 2],
+  ["document", 0],
   ["vision", 1]
 ]);
 
@@ -209,31 +279,40 @@ assert.equal(dashboard.summary.costsCny.total, peak.costCny);
 assert.equal(dashboard.calibration.maxCostCny, 0.125 * 6.5); // Preserve historical price snapshots.
 const providerDashboard = usageDashboard(normalizeAiUsage({ trackingStartedAt: now(), entries: [
   providerEntry,
-  { ...providerEntry, id: "provider-known", callId: "provider-known", service: "vision", scene: "visionOcr", modality: "vision", unitType: "image", units: 1, costKnown: true, costCny: 2.5 }
+  { ...providerEntry, id: "provider-known", callId: "provider-known", service: "vision", action: "OCRNormal", scene: "visionOcr", modality: "vision", unitType: "image", units: 1, costKnown: true, costCny: 2.5 }
 ] }), "2026-09-29", "2026-09-29", 6.5, 7.2);
 assert.equal(providerDashboard.summary.calls, 2);
-assert.equal(providerDashboard.summary.costCny, 2.5);
-assert.equal(providerDashboard.summary.costUnknownCalls, 1);
+assert.equal(providerDashboard.summary.costCny, 2.5 + providerEntry.costCny);
+assert.equal(providerDashboard.summary.costUnknownCalls, 0);
 assert.deepEqual(providerDashboard.providers.map(item => [item.provider, item.calls, item.costCny, item.costUnknownCalls]), [
-  ["volcengine", 2, 2.5, 1]
+  ["volcengine", 2, 2.5 + providerEntry.costCny, 0]
 ]);
-assert.equal(providerDashboard.modalities.find(item => item.modality === "audio").costUnknownCalls, 1);
+assert.equal(providerDashboard.modalities.find(item => item.modality === "audio").costUnknownCalls, 0);
 assert.equal(providerDashboard.scenes.find(item => item.scene === "visionOcr").costCny, 2.5);
 assert.equal(providerDashboard.calibration.p90CostCny, 2.5);
 assert.deepEqual(providerDashboard.services.map(item => item.label), [
-  "DeepSeek 模型",
-  "豆包语音",
-  "火山视觉",
+  "DeepSeek 文本",
+  "DeepSeek 图片理解",
+  "豆包语音合成",
+  "豆包语音识别",
+  "火山文字识别",
+  "火山文档解析",
   "阿里云图片分割"
 ]);
-assert.deepEqual(providerDashboard.services.find(item => item.key === "volcengineSpeech").unitUsage, [
+assert.deepEqual(providerDashboard.services.find(item => item.key === "volcengineAsr").unitUsage, [
   { unitType: "audioMillisecond", units: 1250 }
 ]);
-assert.deepEqual(providerDashboard.services.find(item => item.key === "volcengineVision").unitUsage, [
+assert.deepEqual(providerDashboard.services.find(item => item.key === "volcengineOcr").unitUsage, [
   { unitType: "image", units: 1 }
 ]);
-assert.equal(providerDashboard.daily[0].services.volcengineSpeech.calls, 1);
-assert.equal(providerDashboard.daily[0].services.volcengineVision.calls, 1);
+assert.equal(providerDashboard.daily[0].services.volcengineAsr.calls, 1);
+assert.equal(providerDashboard.daily[0].services.volcengineOcr.calls, 1);
+assert.equal(providerDashboard.pricing.providerRates.length, 6);
+assert.ok(providerDashboard.pricing.providerRates.every(item => (
+  item.priceCny > 0
+  && item.checkedAt === "2026-10-02"
+  && /^https:\/\//.test(item.source)
+)));
 assert.equal(normalizeAiUsage({
   entries: [{
     id: "segmentation",
@@ -243,6 +322,38 @@ assert.equal(normalizeAiUsage({
     scene: "keepsakeSegmentation"
   }]
 }).entries[0].scene, "keepsakeSegmentation");
+
+let speechAuditDetails = null, synthesizedText = "", speechStatus = 0;
+const speechHttp = createSpeechHttp({
+  speech: {
+    configured: true,
+    defaultVoice: "voice-a",
+    voices: [{ id: "voice-a", sampleText: "试听" }],
+    async synthesize({ text }) {
+      synthesizedText = text;
+      return { audio: Buffer.from("audio"), mimeType: "audio/mpeg", voice: "voice-a" };
+    }
+  },
+  gate: { acquire: async () => () => {} },
+  auditCall: async (details, invoke) => {
+    speechAuditDetails = details;
+    return invoke();
+  },
+  bodyJson: async () => ({ text: "  测试朗读  ", sourceVersion: 1 }),
+  sendJson: () => {}
+});
+await speechHttp.handle(
+  { method: "POST", headers: {} },
+  {
+    writeHead(status) { speechStatus = status; },
+    end() {}
+  },
+  new URL("http://local/api/speech/synthesize")
+);
+assert.equal(speechStatus, 200);
+assert.equal(synthesizedText, "测试朗读");
+assert.equal(speechAuditDetails.requestChars, 4);
+assert.equal(speechAuditDetails.units, 4);
 
 const directory = await fs.mkdtemp(path.join(os.tmpdir(), "growth-ai-domain-"));
 const context = new AsyncLocalStorage();
@@ -506,7 +617,6 @@ try {
     imageDimensions: [{ width: 32, height: 24 }],
     unitType: "image",
     units: 1,
-    costKnown: false,
     costSource: "billing pending",
     reservation: {
       retain(entry) { retainedProviderUsage = entry; },
@@ -521,12 +631,44 @@ try {
   assert.equal(providerUsage[0].imageBytes, 1024);
   assert.deepEqual(providerUsage[0].imageTypes, ["image/png"]);
   assert.deepEqual(providerUsage[0].imageDimensions, [{ width: 32, height: 24 }]);
-  assert.equal(providerUsage[0].unitType, "image");
+  assert.equal(providerUsage[0].unitType, "call");
+  assert.equal(providerUsage[0].usageKnown, true);
+  assert.equal(providerUsage[0].costKnown, true);
+  assert.equal(providerUsage[0].costCny, 0.005);
   assert.equal(retainedProviderUsage.callId, "provider-call");
   assert.equal(committedProviderUsage, 1);
   assert.equal(providerAudits.length, 2);
   assert.doesNotMatch(JSON.stringify(providerAudits), /private OCR text/);
   assert.ok(providerEvents.some(([, name]) => name === "dependency.completed"));
+  const documentUsage = [];
+  const documentAudit = createAiAudit({
+    textLimit: 100,
+    getContext: () => ({ user: { id: "document-account" }, traceId: "document-trace", secrets: [] }),
+    now,
+    append: async () => {},
+    updateUsage: async mutate => mutate({ entries: documentUsage }),
+    logEvent: async () => {},
+    createId: () => "document-call"
+  });
+  await documentAudit.providerCall({
+    provider: "volcengine",
+    service: "vision",
+    scene: "documentParsing",
+    action: "OCRPdf",
+    unitType: "page",
+    units: 16
+  }, async () => ({
+    requestId: "document-request",
+    detail: [{ page_id: 0 }, { page_id: 1 }, { page_id: 2 }]
+  }), result => ({
+    providerRequestId: result.requestId,
+    unitType: "page",
+    units: result.detail.length
+  }));
+  assert.equal(documentUsage[0].unitType, "page");
+  assert.equal(documentUsage[0].units, 3);
+  assert.equal(documentUsage[0].costKnown, true);
+  assert.equal(documentUsage[0].costCny, 0.06);
   const failedProviderUsage = [], failedProviderEvents = [];
   const failedProviderAudit = createAiAudit({
     textLimit: 100,
@@ -551,6 +693,9 @@ try {
     });
   }), { code: "ASR_UNSUPPORTED_AUDIO_FORMAT" });
   assert.equal(failedProviderUsage[0].providerRequestId, "provider-error-request");
+  assert.equal(failedProviderUsage[0].usageKnown, true);
+  assert.equal(failedProviderUsage[0].costKnown, false);
+  assert.match(failedProviderUsage[0].costSource, /invoice verification/);
   const failedDependency = failedProviderEvents.find(([, name]) => name === "dependency.completed")?.[2];
   assert.equal(failedDependency.providerRequestId, "provider-error-request");
   assert.equal(failedDependency.providerErrorCode, "45000151");
