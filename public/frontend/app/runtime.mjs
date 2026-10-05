@@ -352,12 +352,16 @@ function followUpFormIdentity(form){
 }
 const followUpFormKey=identity=>`follow-up:${identity.rootId}:${identity.kind}:${identity.followUpId||""}`;
 function formIdentity(form,index){const identity=followUpFormIdentity(form);return identity?followUpFormKey(identity):`form:${index}`}
+function formFieldIdentity(field,index){
+  if(field instanceof HTMLInputElement&&field.type==="radio"&&field.name)return`name:${field.name}:value:${field.value}`;
+  return field.name?`name:${field.name}`:field.id?`id:${field.id}`:`field:${index}`
+}
 function captureFormDrafts(root){
   const active=document.activeElement;
   return[...root.querySelectorAll("form")].map((form,index)=>({
     key:formIdentity(form,index),hidden:form.hidden,requestId:form.dataset.requestId||"",
     fields:[...form.querySelectorAll("input,textarea,select")].map((field,fieldIndex)=>({
-      key:field.name?`name:${field.name}`:field.id?`id:${field.id}`:`field:${fieldIndex}`,
+      key:formFieldIdentity(field,fieldIndex),
       value:field.value,checked:field instanceof HTMLInputElement&&["checkbox","radio"].includes(field.type)?field.checked:null,focused:field===active,
       selectionStart:typeof field.selectionStart==="number"?field.selectionStart:null,
       selectionEnd:typeof field.selectionEnd==="number"?field.selectionEnd:null
@@ -374,7 +378,7 @@ function restoreFormDrafts(root,drafts){
     if(identity?.kind==="create")form.closest("[data-chain-id]")?.querySelector("[data-followup-compose]")?.setAttribute("aria-expanded",String(!form.hidden));
     const fields=[...form.querySelectorAll("input,textarea,select")];
     for(const [fieldIndex,field]of fields.entries()){
-      const key=field.name?`name:${field.name}`:field.id?`id:${field.id}`:`field:${fieldIndex}`,saved=draft.fields.find(item=>item.key===key);if(!saved)continue;
+      const key=formFieldIdentity(field,fieldIndex),saved=draft.fields.find(item=>item.key===key);if(!saved)continue;
       if(saved.checked!==null)field.checked=saved.checked;else field.value=saved.value;
       if(saved.focused){focusedField=field;selectionStart=saved.selectionStart;selectionEnd=saved.selectionEnd}
     }
@@ -1733,6 +1737,8 @@ syncController=createIncrementalSync({
   onStatus:event=>void updateSyncHealth(event)
 });
 const trashTypeLabels={checkin:"状态",dailyRecord:"健康日录",capture:"捕念",captureAudio:"捕念语音",journal:"日记",journalReflection:"日记回望",thoughtChain:"思绪",thoughtBlock:"思绪内容",thoughtRemark:"思绪备注",thoughtFollowUp:"追问",annotation:"批注",annotationDrift:"漂流批注",chat:"对话",book:"书目",bookNote:"读书记录",keepsake:"小物",quote:"善言",experiment:"实验",analysis:"复盘",customMetric:"自定义指标",action:"行动",habit:"习惯",habitCheckin:"习惯打卡"};
+const trashDetailLabels={content:"内容",question:"问题",idea:"初步想法",answer:"我的结论",title:"标题",message:"内容",text:"内容",note:"备注",description:"说明",summary:"摘要",source:"来源",author:"作者",publisher:"出版社",category:"类别",hypothesis:"假设",factor:"观察因素",outcome:"观察结果",duration:"周期",feeling:"感受",quote:"原文",tags:"标签",occurredOn:"发生日期",disposition:"处理状态",type:"内容类型",origin:"记录方式",authorType:"内容来源"};
+const trashDetailValues={disposition:{kept:"已保留",discarded:"已舍弃"},type:{question:"问题",idea:"初步想法",record:"经历",answer:"回答"},origin:{manual:"手动记录",model:"AI 生成"},authorType:{user:"本人",ai:"AI"}};
 function trashPayload(entry){if(entry.type==="thoughtChain"){const records=entry.payload?.items||[];return records.map(record=>record.item).filter(Boolean)}return[entry.payload]}
 function trashTitle(entry){
   const items=trashPayload(entry),item=items.find(value=>value.type==="question")||items[0]||{};
@@ -1741,12 +1747,18 @@ function trashTitle(entry){
 function trashDetail(entry){
   const ignored=new Set(["id","clientRequestId","requestHash","originalPath","cutoutPath","imagePath","attachmentPaths"]);
   const rows=[];
-  const visit=(value,label="")=>{
+  const addRow=(label,value)=>rows.push(`<div><b>${escapeHtml(label)}</b><div class="markdown-content">${renderMarkdown(value)}</div></div>`);
+  const visit=(value,key="",label=trashDetailLabels[key]||"")=>{
     if(value==null||rows.length>=80)return;
-    if(Array.isArray(value)){value.forEach((item,index)=>visit(item,`${label}${label?" · ":""}${index+1}`));return}
-    if(typeof value==="object"){for(const[key,item]of Object.entries(value)){if(!ignored.has(key))visit(item,key)}return}
-    if(typeof value!=="string"||!value.trim()||/^(?:[0-9a-f-]{24,}|\d{4}-\d{2}-\d{2}T)/i.test(value))return;
-    rows.push(`<div><b>${escapeHtml(label||"内容")}</b><div class="markdown-content">${renderMarkdown(value)}</div></div>`)
+    if(Array.isArray(value)){
+      if(key==="tags"){const tags=value.map(item=>String(item||"").trim()).filter(Boolean);if(tags.length)addRow(label,tags.map(tag=>`#${tag}`).join(" "))}
+      else value.forEach(item=>visit(item,key,label));
+      return
+    }
+    if(typeof value==="object"){for(const[childKey,item]of Object.entries(value)){if(!ignored.has(childKey))visit(item,childKey,trashDetailLabels[childKey]||"")}return}
+    const text=typeof value==="string"?value.trim():"";
+    if(!label||!text||/^(?:[0-9a-f-]{24,}|\d{4}-\d{2}-\d{2}T)/i.test(text))return;
+    addRow(label,trashDetailValues[key]?.[text]||text)
   };
   trashPayload(entry).forEach(item=>visit(item));
   return rows.join("")||"<p>这条记录没有可预览的文字内容。</p>"
@@ -4536,12 +4548,12 @@ document.addEventListener("click",async e=>{
   try{await requestV1(`/api/v1/daily-records/${encodeURIComponent(id)}`,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`}},{domains:["dailyRecords"],recoverCommitted:true,projection:{kind:"record.delete",domain:"dailyRecords",id},onQueued:record=>applyPendingProjection(record)});void refreshState("dailyRecords").catch(error=>showToast(`日录已移除，但列表刷新失败：${error.message}`,"error"));showToast("日录已移入回收站")}catch(err){if(err.syncStatus==="pending")showToast("日录将在网络恢复后移入回收站");else{await refreshState("dailyRecords").catch(()=>{});showToast(err.message,"error");button.disabled=false}}
 });
 $("#checkin-confirm-all").addEventListener("click",()=>{$$("[data-metric]").forEach(input=>{input.dataset.confirmed="true";input.closest(".metric").classList.remove("unconfirmed");const label=metricConfig()[input.dataset.metric];$(`#${CSS.escape(input.dataset.metric)}-anchor`).textContent=label.anchors[Number(input.value)-1]});navigator.vibrate?.(12);$("#checkin-status").textContent="已确认当前四项，可以直接保存。"});
-$("#chain-tags").addEventListener("keydown",e=>{if(entryKeyIntent(e,{inputKind:"tag"})==="commit-tag"){e.preventDefault();commitDraftTags()}});$("#chain-tags").addEventListener("blur",()=>{if($("#chain-tags").value.trim())commitDraftTags()});
+$("#chain-tags").addEventListener("keydown",e=>{if(entryKeyIntent(e,{inputKind:"tag"})==="commit-tag"){e.preventDefault();commitDraftTags()}});
 $("#chain-form").elements.recordKind.forEach(input=>input.addEventListener("change",()=>{chainDraftVersion+=1;delete $("#chain-form").dataset.requestId;syncChainRecordKind()}));
 $("#thought-source-cancel").addEventListener("click",()=>{const form=$("#chain-form");form.reset();clearDurableDraft("chain-form");resetOccurrenceInput($("#chain-datetime"));draftTags=[];renderTagComposer();answerDraft="";answerReasoningDraft="";$("#chain-status").textContent="已取消从念起展开，可以重新记录。";$("#chain-question").focus()});
 for(const selector of["#chain-question","#chain-idea","#chain-answer"])$(selector).addEventListener("input",()=>{chainDraftVersion+=1;if(selector!=="#chain-answer"){answerDraft="";answerReasoningDraft=""}delete $("#chain-form").dataset.requestId});
 $("#chain-form").addEventListener("reset",event=>{chainDraftVersion+=1;resetContentImageEditor("thoughtRoot");delete event.currentTarget.dataset.draftId;event.currentTarget.elements.sourceCaptureId.value="";event.currentTarget.elements.sourceCaptureVersion.value="";queueMicrotask(syncChainRecordKind)});
-$("#capture-tags").addEventListener("keydown",e=>{if(entryKeyIntent(e,{inputKind:"tag"})==="commit-tag"){e.preventDefault();commitCaptureTags()}});$("#capture-tags").addEventListener("blur",()=>{if($("#capture-tags").value.trim())commitCaptureTags()});
+$("#capture-tags").addEventListener("keydown",e=>{if(entryKeyIntent(e,{inputKind:"tag"})==="commit-tag"){e.preventDefault();commitCaptureTags()}});
 $("#capture-audio-record").addEventListener("click",async()=>{try{await startCaptureAudioRecording()}catch(error){captureAudioDraft.lastError=captureRecordingError(error);renderCaptureAudioDraft()}});
 $("#capture-audio-pause").addEventListener("click",toggleCaptureAudioPause);
 $("#capture-audio-stop").addEventListener("click",stopCaptureAudioRecording);

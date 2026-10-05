@@ -161,7 +161,14 @@ try {
       bodyClass:document.body.className,
       authHidden:document.querySelector("#auth-gate")?.hidden,
       authStatus:document.querySelector("#auth-status")?.textContent||"",
-      activeView:document.querySelector(".view.active")?.id||""
+      activeView:document.querySelector(".view.active")?.id||"",
+      chainStatus:document.querySelector("#chain-status")?.textContent||"",
+      chainKind:document.querySelector("#chain-form")?.elements.recordKind?.value||"",
+      chainSubmit:{text:document.querySelector("#chain-submit")?.textContent||"",disabled:document.querySelector("#chain-submit")?.disabled},
+      activeElement:document.activeElement?.id||document.activeElement?.name||document.activeElement?.tagName||"",
+      invalidFields:[...document.querySelectorAll("#chain-form input,#chain-form textarea,#chain-form select")]
+        .filter(field=>field.willValidate&&!field.validity.valid)
+        .map(field=>({id:field.id,name:field.name,type:field.type,message:field.validationMessage}))
     })`).catch(() => "");
     const runtimeErrors = cdp.events
       .filter(event => event.method === "Runtime.exceptionThrown")
@@ -175,8 +182,12 @@ try {
     if(!element||element.hidden||element.disabled)throw new Error("不可点击："+${JSON.stringify(selector)});
     element.scrollIntoView({block:"center",behavior:"instant"});
     const rect=element.getBoundingClientRect();
-    return{x:rect.left+rect.width/2,y:rect.top+rect.height/2};
+    const x=rect.left+rect.width/2,y=rect.top+rect.height/2,hit=document.elementFromPoint(x,y);
+    return{x,y,visible:x>=0&&x<=innerWidth&&y>=0&&y<=innerHeight,hit:Boolean(hit&&(hit===element||element.contains(hit))),hitLabel:hit?.id||hit?.className||hit?.tagName||""};
   })()`);
+    if (!point.visible || !point.hit) {
+      throw new Error(`点击目标被遮挡或不在视口：${selector}; ${JSON.stringify(point)}`);
+    }
     await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y });
     await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button: "left", clickCount: 1 });
     await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button: "left", clickCount: 1 });
@@ -865,15 +876,18 @@ try {
     }
     result.counts.journals = await evaluate(`document.querySelectorAll("#journal-list [data-journal-id]").length`);
 
+    await switchView("thoughts");
+    const thoughtExists = await includesText("#all-thoughts", `${marker} 问题`);
     await switchView("today");
-    if (!await includesText("#today-thoughts", `${marker} 问题`)) {
+    if (!thoughtExists) {
       await click("#home-open-thought");
       await waitUntil(`!document.querySelector("#home-thought-editor").hidden`, { label: "打开思考编辑器" });
-      await setRequestId("#chain-form", "00000000-0000-4000-8000-000000000103");
+      await setRequestId("#chain-form", crypto.randomUUID());
       await fill("#chain-question", `${marker} 问题：怎样让记录系统在失败后仍然容易继续？`);
       await fill("#chain-idea", "先保证草稿、附件和提交状态彼此独立，再给出明确重试入口。");
       await fill("#chain-answer", "保留原始输入，显示当前状态，失败时不清空；重试必须幂等，并让用户知道结果是否已经保存。");
       await fill("#chain-tags", "端到端 恢复");
+      await fill("#chain-datetime", "2026-10-01T20:20:00");
       await click("#chain-submit");
       await waitUntil(`document.querySelector("#home-thought-editor").hidden`, { label: "思考保存" });
     }

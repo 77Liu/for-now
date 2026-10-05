@@ -1014,6 +1014,13 @@ const mockFetch = `
       if(window.__delayStartupSecondary)return new Promise(resolve=>{window.__releaseStartupSecondary=()=>{window.__delayStartupSecondary=false;resolve(respond())}});
       return respond()
     }
+    if(url==="/api/trash"&&(!init.method||init.method==="GET")){
+      if(!window.__trashReadReady)return json({error:"Not found"},404);
+      return json({items:[{id:"trash-thought-1",type:"thoughtChain",deletedAt:"2026-10-05T01:54:00.000Z",purgeAfter:"2026-11-04T01:54:00.000Z",payload:{items:[
+        {item:{type:"question",content:"回收站文案不能暴露内部字段",origin:"manual",authorType:"user",disposition:"kept",occurredOn:"2026-10-05"}},
+        {item:{type:"idea",content:"只展示用户能理解的内容",origin:"manual",authorType:"user",disposition:"kept",occurredOn:"2026-10-05"}}
+      ]}}]})
+    }
     if (url === "/api/settings" && init.method === "POST") {
       window.__settingsSaves += 1;
       const payload = JSON.parse(init.body);
@@ -3088,6 +3095,18 @@ try {
   await evaluate(`(async()=>{const bytes=Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="),value=>value.charCodeAt(0)),file=new File([bytes],"thought-image.png",{type:"image/png"}),transfer=new DataTransfer();transfer.items.add(file);const input=document.querySelector("#thought-root-images");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));document.querySelector("#chain-question").value="结合这张图片回答";document.querySelector("#chain-answer").value="";document.querySelector("#chain-form").requestSubmit();return true})()`);
   assert.equal(await waitUntil(`window.__thoughtSaves===4&&window.__aiTasks.length===${taskCountBeforeImageAnswer+1}`),true);
   assert.deepEqual(await evaluate(`({question:window.__savedPayloads[3].question,pathCount:window.__savedPayloads[3].attachmentPaths.length,generate:window.__savedPayloads[3].generateAnswer,answerTasks:window.__aiTasks.filter(item=>item.targetId==="auto-root-4"&&item.kind==="thoughtAnswer").length,imageTasks:window.__aiTasks.filter(item=>item.targetId==="auto-root-4"&&item.kind==="contentImageUnderstanding").length})`),{question:"结合这张图片回答",pathCount:1,generate:true,answerTasks:1,imageTasks:0});
+  const thoughtSavesBeforeTagBlur=await evaluate(`window.__thoughtSaves`);
+  await evaluate(`document.querySelector('[data-view="today"]').click();document.querySelector("#home-open-thought").click();true`);
+  await sleep(50);
+  const tagSubmitPoint=await evaluate(`(()=>{document.querySelector("#chain-question").value="标签失焦后仍应一次保存";document.querySelector("#chain-answer").value="真实指针点击不应因标签重排丢失";const tags=document.querySelector("#chain-tags"),button=document.querySelector("#chain-submit"),form=document.querySelector("#chain-form");window.__tagSubmitEvents={blur:0,click:0,submit:0};tags.addEventListener("blur",()=>window.__tagSubmitEvents.blur++,{once:true});button.addEventListener("click",()=>window.__tagSubmitEvents.click++,{once:true});form.addEventListener("submit",()=>window.__tagSubmitEvents.submit++,{once:true});tags.value="标签 回归";tags.focus();button.scrollIntoView({block:"center",behavior:"instant"});const rect=button.getBoundingClientRect(),x=rect.left+rect.width/2,y=rect.top+rect.height/2,hit=document.elementFromPoint(x,y);return{x,y,visible:x>=0&&x<=innerWidth&&y>=0&&y<=innerHeight,hit:hit?.id||hit?.className||hit?.tagName||""}})()`);
+  assert.deepEqual({visible:tagSubmitPoint.visible,hit:tagSubmitPoint.hit},{visible:true,hit:"chain-submit"});
+  await cdp.send("Input.dispatchMouseEvent",{type:"mouseMoved",x:tagSubmitPoint.x,y:tagSubmitPoint.y});
+  await cdp.send("Input.dispatchMouseEvent",{type:"mousePressed",x:tagSubmitPoint.x,y:tagSubmitPoint.y,button:"left",clickCount:1});
+  await cdp.send("Input.dispatchMouseEvent",{type:"mouseReleased",x:tagSubmitPoint.x,y:tagSubmitPoint.y,button:"left",clickCount:1});
+  if(!await waitUntil(`window.__thoughtSaves===${thoughtSavesBeforeTagBlur+1}&&document.querySelector("#home-thought-editor").hidden`)){
+    throw new Error(await evaluate(`JSON.stringify({events:window.__tagSubmitEvents,saves:window.__thoughtSaves,expected:${thoughtSavesBeforeTagBlur+1},active:document.activeElement?.id||"",status:document.querySelector("#chain-status").textContent,button:document.querySelector("#chain-submit").getBoundingClientRect().toJSON(),point:${JSON.stringify(tagSubmitPoint)},hit:document.elementFromPoint(${tagSubmitPoint.x},${tagSubmitPoint.y})?.id||""})`))
+  }
+  assert.deepEqual(await evaluate(`window.__savedPayloads.at(-1).tags`),["标签","回归"]);
   const captureSavesBeforeKindChoice=await evaluate(`window.__captureSaves`);
   await evaluate(`(()=>{document.querySelector('[data-view="today"]').click();document.querySelector("#home-open-thought").click();const form=document.querySelector("#chain-form");form.elements.recordKind.value="capture";form.elements.recordKind[0].dispatchEvent(new Event("change",{bubbles:true}));document.querySelector("#chain-question").value="从思考入口保存的一条念起";return true})()`);
   assert.deepEqual(await evaluate(`(()=>({title:document.querySelector("#home-thought-title").textContent,label:document.querySelector("#chain-primary-label").textContent.trim(),submit:document.querySelector("#chain-submit").textContent,thoughtFieldsHidden:[...document.querySelectorAll("[data-chain-thought-only]")].every(item=>item.hidden),target:[...document.querySelectorAll(".thought-record-kind span")].every(item=>item.getBoundingClientRect().height>=44)}))()`),{title:"记录念起",label:"内容 文字或图片至少一项 · 支持 Markdown",submit:"收进念起",thoughtFieldsHidden:true,target:true});
@@ -3574,6 +3593,9 @@ try {
   await evaluate(`document.querySelector('[data-view="mine"]').click();document.querySelector("#view-mine [data-view='trash']").click();true`);
   assert.equal(await waitUntil(`document.querySelector("#trash-list .content-state.failure")`),true);
   assert.deepEqual(await evaluate(`(()=>{const state=document.querySelector("#trash-list .content-state");return{title:state.querySelector("strong").textContent,body:state.querySelector("p").textContent,action:state.querySelector("button").textContent,actions:state.querySelectorAll("button").length,internal:state.textContent.includes("Not found")}})()`),{title:"暂时无法读取回收站",body:"已删除的记录仍按原保留期保存。请检查网络后重试。",action:"重新读取",actions:1,internal:false});
+  await evaluate(`window.__trashReadReady=true;document.querySelector("#trash-list .content-state-action").click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#trash-list .trash-entry")`),true);
+  assert.deepEqual(await evaluate(`(()=>{const entry=document.querySelector("#trash-list .trash-entry"),detail=entry.querySelector(".trash-detail"),labels=[...detail.querySelectorAll("b")].map(item=>item.textContent);return{title:entry.querySelector("h2").textContent,labels:[...new Set(labels)],translated:detail.textContent.includes("手动记录")&&detail.textContent.includes("本人")&&detail.textContent.includes("已保留"),internal:["disposition","occurredOn","authorType","origin"].some(value=>detail.textContent.includes(value))}})()`),{title:"回收站文案不能暴露内部字段",labels:["内容类型","内容","记录方式","内容来源","处理状态","发生日期"],translated:true,internal:false});
   await evaluate(`document.querySelector('[data-section="thought"]').click();document.querySelector("[data-section-links='thought'] [data-view='journals']").click();true`);
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:2,mobile:true});await evaluate(`document.querySelector("#journal-list .content-state").scrollIntoView({block:"center"});true`);await sleep(100);
   assert.equal(await evaluate(`(()=>{const state=document.querySelector("#journal-list .content-state"),button=state.querySelector("button");return document.documentElement.scrollWidth<=innerWidth&&state.getBoundingClientRect().right<=innerWidth&&button.getBoundingClientRect().height>=44})()`),true);
@@ -3614,8 +3636,10 @@ try {
   await evaluate(`document.querySelector("#onboarding-v2-exit").click();true`);
   const onboardingPaused=await waitUntil(`document.querySelector("#onboarding-workspace").hidden&&window.__onboardingV2.session.status==="paused"`);
   assert.equal(onboardingPaused,true,JSON.stringify(await evaluate(`({hidden:document.querySelector("#onboarding-workspace").hidden,status:window.__onboardingV2.session.status,step:window.__onboardingV2.session.step,revision:window.__onboardingV2.session.revision,save:document.querySelector("#onboarding-v2-save-status").textContent,exitDisabled:document.querySelector("#onboarding-v2-exit").disabled,body:document.querySelector("#onboarding-v2-content").innerText.slice(0,120)})`)));
+  await evaluate(`(()=>{const input=document.querySelector('#chain-form input[name="recordKind"][value="thought"]');input.checked=true;input.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
   await cdp.send("Page.reload",{ignoreCache:true});
   assert.equal(await waitUntil(`document.querySelector("#today-date-label")?.textContent.length>0&&!document.querySelector("#onboarding-workspace").hidden&&document.querySelector("#onboarding-v2-content h1")?.textContent.includes("先把这一点留下")`),true);
+  assert.deepEqual(await evaluate(`([...document.querySelectorAll('#chain-form input[name="recordKind"]')].map(input=>({value:input.value,checked:input.checked})))`),[{value:"capture",checked:false},{value:"thought",checked:true}]);
   await evaluate(`document.querySelector('[data-onboarding-action="resume"]').click();true`);
   assert.equal(await waitUntil(`document.querySelector('[data-onboarding-answer="currentContext"]')?.value.includes("一边学习一边实习")&&!document.querySelector('[data-onboarding-answer="currentContext"]').disabled`),true);
   await evaluate(`document.querySelector('[data-onboarding-action="next"]').click();true`);
