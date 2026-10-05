@@ -854,7 +854,7 @@ try {
     await switchView("captures");
     if (!await includesText("#capture-list", marker)) {
       await click("#capture-create-toggle");
-      await setRequestId("#capture-form", "00000000-0000-4000-8000-000000000101");
+      await setRequestId("#capture-form", crypto.randomUUID());
       await fill("#capture-content", `${marker} 捕念：午后切换任务时注意力下降，先留下事实，再决定是否调整。`);
       await fill("#capture-tags", "端到端 可追溯");
       await click("#capture-submit");
@@ -865,7 +865,7 @@ try {
 
     await switchView("journals");
     if (!await includesText("#journal-list", marker)) {
-      await setRequestId("#journal-form", "00000000-0000-4000-8000-000000000102");
+      await setRequestId("#journal-form", crypto.randomUUID());
       await fill("#journal-title", `${marker} 一次完整使用`);
       await fill("#journal-content", "今天从注册、状态、健康记录到思考都走了一遍。事实是流程可以完成；需要继续观察的是异常恢复、移动端输入和第三方服务的反馈是否足够清楚。");
       await fill("#journal-tags", "端到端 复盘");
@@ -882,6 +882,7 @@ try {
     if (!thoughtExists) {
       await click("#home-open-thought");
       await waitUntil(`!document.querySelector("#home-thought-editor").hidden`, { label: "打开思考编辑器" });
+      await sleep(50);
       await setRequestId("#chain-form", crypto.randomUUID());
       await fill("#chain-question", `${marker} 问题：怎样让记录系统在失败后仍然容易继续？`);
       await fill("#chain-idea", "先保证草稿、附件和提交状态彼此独立，再给出明确重试入口。");
@@ -900,7 +901,7 @@ try {
 
     await switchView("books");
     if (!await includesText("#book-grid", marker)) {
-      await setRequestId("#book-form", "00000000-0000-4000-8000-000000000104");
+      await setRequestId("#book-form", crypto.randomUUID());
       await fill("#book-title", `${marker} 可用性记录`);
       await fill("#book-author", "测试用户");
       await fill("#book-publisher", "此刻测试");
@@ -915,7 +916,7 @@ try {
 
     await switchView("quotes");
     if (!await includesText("#quote-timeline", marker)) {
-      await setRequestId("#quote-form", "00000000-0000-4000-8000-000000000105");
+      await setRequestId("#quote-form", crypto.randomUUID());
       await fill("#quote-source", "端到端测试记录");
       await fill("#quote-content", `${marker} 失败可解释，输入不丢失，用户才能继续。`);
       await fill("#quote-tags", "可用性 恢复");
@@ -932,7 +933,7 @@ try {
       if (!open) await click(".home-v02-secondary summary");
     }
     if (!await includesText("#action-columns", marker)) {
-      await setRequestId("#action-form", "00000000-0000-4000-8000-000000000106");
+      await setRequestId("#action-form", crypto.randomUUID());
       await fill("#action-form input[name=title]", `${marker} 完成移动端复验`);
       await select("#action-form select[name=priority]", "P1");
       await click("#action-form button[type=submit]");
@@ -941,7 +942,7 @@ try {
       });
     }
     if (!await includesText("#habit-list", marker)) {
-      await setRequestId("#habit-form", "00000000-0000-4000-8000-000000000107");
+      await setRequestId("#habit-form", crypto.randomUUID());
       await fill("#habit-form input[name=title]", `${marker} 睡前回顾`);
       await select("#habit-form select[name=cadence]", "daily");
       await click("#habit-form button[type=submit]");
@@ -965,7 +966,9 @@ try {
       ["quotes", "#quote-timeline"]
     ]) {
       await switchView(view);
-      assert.equal(await includesText(selector, marker), true, `${view} 刷新后缺少本轮记录`);
+      await waitUntil(`document.querySelector(${JSON.stringify(selector)})?.textContent.includes(${JSON.stringify(marker)})===true`, {
+        label: `${view} 刷新后恢复`
+      });
     }
     await switchView("today");
     const secondaryOpen = await evaluate(`document.querySelector(".home-v02-secondary").open`);
