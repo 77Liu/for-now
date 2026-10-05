@@ -534,11 +534,11 @@ try {
   const migratedNames = await fs.readdir(secondDir);
   assert.ok(migratedNames.some(name => /store\.json\.v11-pre-v16.*\.bak$/.test(name)));
   assert.ok(migratedNames.some(name => /llm-settings\.json\.v3-pre-v10.*\.bak$/.test(name)));
-  assert.ok(migratedNames.some(name => /ai-usage\.json\.v1-pre-v4.*\.bak$/.test(name)));
+  assert.ok(migratedNames.some(name => /ai-usage\.json\.v1-pre-v5.*\.bak$/.test(name)));
   for (const name of migratedNames.filter(name => name.endsWith(".bak"))) {
     assert.equal((await fs.stat(path.join(secondDir, name))).mode & 0o777, 0o600);
   }
-  assert.equal(JSON.parse(await fs.readFile(path.join(secondDir, "ai-usage.json"), "utf8")).version, 4);
+  assert.equal(JSON.parse(await fs.readFile(path.join(secondDir, "ai-usage.json"), "utf8")).version, 5);
   const resumedTasks = new Map();
   for (const queuedTask of queuedTasks) {
     let resumedTask;

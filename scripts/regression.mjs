@@ -279,7 +279,7 @@ try {
   );
   assert.equal(initialStatistics.ai.pricing.displayCurrency, "CNY");
   assert.equal(initialStatistics.ai.pricing.cnyPerUsd, 7.2);
-  assert.equal(JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"), "utf8")).version, 4);
+  assert.equal(JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"), "utf8")).version, 5);
   const initialAiCostPlan = await (await fetch(`${base}/api/ai-cost-plan`)).json();
   assert.equal(initialAiCostPlan.version, 1);
   assert.equal(initialAiCostPlan.scenarios.length, 16);
@@ -1252,7 +1252,7 @@ try {
     responseFormat: sleepUsage.responseFormat,
     usageKnown: sleepUsage.usageKnown
   }, {
-    version: 4,
+    version: 5,
     status: "success",
     modality: "vision",
     imageCount: 2,
