@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -10,6 +11,7 @@ const checker = path.join(root, "scripts/check-entrypoints.mjs");
 const sourceAnalysis = path.join(root, "scripts/lib/entrypoint-source-analysis.mjs");
 const contractValidation = path.join(root, "scripts/lib/entrypoint-contract-validation.mjs");
 const moduleSurface = path.join(root, "scripts/lib/entrypoint-module-surface.mjs");
+const scopeAnalysis = path.join(root, "scripts/lib/entrypoint-scope-analysis.mjs");
 const staticValues = path.join(root, "scripts/lib/entrypoint-static-values.mjs");
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "entrypoint-boundary-regression-"));
 
@@ -34,11 +36,12 @@ const validBrowserSource = [
   "import { createFeatureRegistry } from \"../feature-registry/index.mjs\";",
   "import * as pageFeatures from \"../features/index.mjs\";",
   "import { viewSections } from \"../pages/index.mjs\";",
-  "const featureRegistry = createFeatureRegistry();",
-  "const application = createBrowserApplication({ featureRegistry });",
-  "application.start();",
+  "export function startApplication() {",
+  "  const featureRegistry = createFeatureRegistry();",
+  "  const application = createBrowserApplication({ featureRegistry });",
+  "  return application.start();",
+  "}",
   "void pageFeatures; void viewSections;",
-  "export function startApplication() {}",
   ""
 ].join("\n");
 
@@ -92,6 +95,7 @@ function serverPolicy(overrides = {}) {
       imported: "createServerRuntime",
       result: "runtime",
       method: "start",
+      directScope: "top-level",
       dependencies: []
     }],
     allowedExports: ["start"],
@@ -130,12 +134,14 @@ function browserPolicy(overrides = {}) {
       imported: "createBrowserApplication",
       result: "application",
       method: "start",
+      directScope: "startApplication",
       dependencies: ["featureRegistry"]
     }, {
       specifier: "../feature-registry/index.mjs",
       imported: "createFeatureRegistry",
       result: "featureRegistry",
       method: null,
+      directScope: "startApplication",
       dependencies: []
     }],
     allowedExports: ["startApplication"],
@@ -169,6 +175,7 @@ function bootstrapPolicy(overrides = {}) {
   return {
     kind: "bootstrap",
     path: "public/app.js",
+    sourceSha256: "fixture",
     allowedImports: ["./frontend/opening/index.mjs", "./frontend/app/index.mjs"],
     requiredImports: ["./frontend/opening/index.mjs", "./frontend/app/index.mjs"],
     requiredBindings: {},
@@ -245,6 +252,7 @@ async function fixture(name, {
   await fs.copyFile(sourceAnalysis, path.join(directory, "scripts/lib/entrypoint-source-analysis.mjs"));
   await fs.copyFile(contractValidation, path.join(directory, "scripts/lib/entrypoint-contract-validation.mjs"));
   await fs.copyFile(moduleSurface, path.join(directory, "scripts/lib/entrypoint-module-surface.mjs"));
+  await fs.copyFile(scopeAnalysis, path.join(directory, "scripts/lib/entrypoint-scope-analysis.mjs"));
   await fs.copyFile(staticValues, path.join(directory, "scripts/lib/entrypoint-static-values.mjs"));
   await fs.writeFile(path.join(directory, "scripts/entry-test.mjs"), "export {};\n");
   await fs.writeFile(path.join(directory, "src/app/index.mjs"), "export const createServerRuntime = () => {};\n");
@@ -276,9 +284,29 @@ async function fixture(name, {
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, contents);
   }
+  const registryDocument = structuredClone(registryValue);
+  const sourceByPath = {
+    "server.mjs": serverSource,
+    "public/frontend/app/runtime.mjs": browserSource,
+    "public/app.js": bootstrapSource
+  };
+  for (const policy of registryDocument.entrypointPolicies || []) {
+    if (policy.sourceSha256 === "fixture") {
+      policy.sourceSha256 = crypto.createHash("sha256")
+        .update(sourceByPath[policy.path] || "")
+        .digest("hex");
+    }
+  }
+  for (const exceptionValue of registryDocument.entrypointMigrationExceptions || []) {
+    if (!Object.hasOwn(exceptionValue, "sourceSha256")) {
+      exceptionValue.sourceSha256 = crypto.createHash("sha256")
+        .update(sourceByPath[exceptionValue.path] || "")
+        .digest("hex");
+    }
+  }
   await fs.writeFile(
     path.join(directory, "knowledge/module-boundaries.json"),
-    `${JSON.stringify(registryValue, null, 2)}\n`
+    `${JSON.stringify(registryDocument, null, 2)}\n`
   );
   return directory;
 }
@@ -463,6 +491,7 @@ try {
               imported: "createServerRuntime",
               result: "other",
               method: "start",
+              directScope: "top-level",
               dependencies: []
             }]
           }),
@@ -569,6 +598,39 @@ try {
   );
 
   await expectFailure(
+    "server-factory-nested-dead-code",
+    {
+      serverSource: validServerSource.replace(
+        "const runtime = createServerRuntime({});\nruntime.start();",
+        "if (false) { const runtime = createServerRuntime({}); runtime.start(); }"
+      )
+    },
+    /\[factory-use\].*runtime=createServerRuntime/
+  );
+
+  await expectFailure(
+    "server-factory-after-unconditional-throw",
+    {
+      serverSource: validServerSource.replace(
+        "const runtime = createServerRuntime({});",
+        "throw new Error(\"unreachable\");\nconst runtime = createServerRuntime({});"
+      )
+    },
+    /\[factory-use\].*runtime=createServerRuntime/
+  );
+
+  await expectFailure(
+    "server-lifecycle-short-circuited",
+    {
+      serverSource: validServerSource.replace(
+        "runtime.start();",
+        "false && runtime.start();"
+      )
+    },
+    /\[factory-use\].*runtime\.start/
+  );
+
+  await expectFailure(
     "browser-factory-missing-registry-argument",
     {
       browserSource: validBrowserSource.replace(
@@ -605,8 +667,8 @@ try {
     "browser-lifecycle-before-assignment",
     {
       browserSource: validBrowserSource.replace(
-        "const application = createBrowserApplication({ featureRegistry });\napplication.start();",
-        "application.start();\nconst application = createBrowserApplication({ featureRegistry });"
+        "  const application = createBrowserApplication({ featureRegistry });\n  return application.start();",
+        "  application.start();\n  const application = createBrowserApplication({ featureRegistry });\n  return application;"
       )
     },
     /\[factory-use\].*application\.start/
@@ -616,8 +678,71 @@ try {
     "browser-lifecycle-wrong-scope",
     {
       browserSource: validBrowserSource.replace(
-        "application.start();",
-        "function boot(application) { application.start(); }"
+        "  return application.start();",
+        "  function boot() { return application.start(); }\n  return boot();"
+      )
+    },
+    /\[factory-use\].*application\.start/
+  );
+
+  await expectFailure(
+    "browser-factory-nested-dead-code",
+    {
+      browserSource: validBrowserSource.replace(
+        "  const featureRegistry = createFeatureRegistry();\n  const application = createBrowserApplication({ featureRegistry });\n  return application.start();",
+        "  if (false) {\n    const featureRegistry = createFeatureRegistry();\n    const application = createBrowserApplication({ featureRegistry });\n    return application.start();\n  }"
+      )
+    },
+    /\[factory-use\].*application=createBrowserApplication/
+  );
+
+  await expectFailure(
+    "browser-factory-nested-same-name-function",
+    {
+      browserSource: validBrowserSource.replace(
+        "  const featureRegistry = createFeatureRegistry();\n  const application = createBrowserApplication({ featureRegistry });\n  return application.start();",
+        "  function startApplication() {\n    const featureRegistry = createFeatureRegistry();\n    const application = createBrowserApplication({ featureRegistry });\n    return application.start();\n  }"
+      )
+    },
+    /\[factory-use\].*application=createBrowserApplication/
+  );
+
+  await expectFailure(
+    "browser-factory-after-return",
+    {
+      browserSource: validBrowserSource.replace(
+        "  const featureRegistry = createFeatureRegistry();",
+        "  return;\n  const featureRegistry = createFeatureRegistry();"
+      )
+    },
+    /\[factory-use\].*featureRegistry=createFeatureRegistry/
+  );
+
+  for (const [name, exit] of [
+    ["browser-factory-after-bare-block-return", "{ return; }"],
+    ["browser-factory-after-try-return", "try { return; } finally {}"],
+    ["browser-factory-after-constant-throw", "if (true) { throw new Error(\"unreachable\"); }"],
+    ["browser-factory-after-asi-return", "return void 0\n  {}"],
+    ["browser-factory-after-asi-throw", "throw new Error(\"unreachable\")\n  {}"]
+  ]) {
+    await expectFailure(
+      name,
+      {
+        browserSource: validBrowserSource.replace(
+          "  const featureRegistry = createFeatureRegistry();",
+          `  ${exit}\n  const featureRegistry = createFeatureRegistry();`
+        )
+      },
+      /\[factory-use\].*featureRegistry=createFeatureRegistry/
+    );
+  }
+
+  await expectFailure(
+    "browser-lifecycle-short-circuited",
+    {
+      browserSource: validBrowserSource.replace(
+        "  return application.start();",
+        "  false && application.start();"
       )
     },
     /\[factory-use\].*application\.start/
@@ -1112,6 +1237,34 @@ try {
   );
 
   await expectFailure(
+    "bootstrap-source-fingerprint-changed",
+    {
+      registryValue: registry({
+        entrypointPolicies: [
+          serverPolicy(),
+          browserPolicy(),
+          bootstrapPolicy({ sourceSha256: "0".repeat(64) })
+        ]
+      })
+    },
+    /public\/app\.js does not match its frozen sourceSha256/
+  );
+
+  await expectFailure(
+    "bootstrap-source-fingerprint-missing",
+    {
+      registryValue: registry({
+        entrypointPolicies: [
+          serverPolicy(),
+          browserPolicy(),
+          bootstrapPolicy({ sourceSha256: undefined })
+        ]
+      })
+    },
+    /sourceSha256 is required for the bootstrap policy/
+  );
+
+  await expectFailure(
     "module-cycle",
     {
       registryValue: registry({
@@ -1225,6 +1378,24 @@ try {
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /1 active migration exceptions/);
   }
+
+  await expectFailure(
+    "exception-source-fingerprint-changed",
+    {
+      serverSource: `dangerous();\n${validServerSource}`,
+      registryValue: registry({
+        entrypointMigrationExceptions: [
+          exception("no-dangerous-identifier", {
+            sourceSha256: crypto.createHash("sha256")
+              .update(`${validServerSource}dangerous();\n`)
+              .digest("hex"),
+            allowlist: [{ detail: "forbidden identifier \"dangerous\"", count: 1 }]
+          })
+        ]
+      })
+    },
+    /sourceSha256 does not match/
+  );
 
   await expectFailure(
     "exception-same-count-replacement",

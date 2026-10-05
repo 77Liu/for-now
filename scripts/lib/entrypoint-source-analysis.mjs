@@ -1,4 +1,5 @@
 import { extractModuleSurface } from "./entrypoint-module-surface.mjs";
+import { directFactoryDeclaration, directLifecycleCall, tokenContexts } from "./entrypoint-scope-analysis.mjs";
 import { staticLiteralCandidates } from "./entrypoint-static-values.mjs";
 
 function reject(message) {
@@ -21,6 +22,7 @@ class Lexer {
     this.line = 1;
     this.tokens = [];
     this.parens = [];
+    this.templateExpressionStart = false;
   }
 
   advance() {
@@ -31,6 +33,7 @@ class Lexer {
 
   token(type, value, start, line, extra = {}) {
     this.tokens.push({ type, value, start, end: this.index, line, ...extra });
+    this.templateExpressionStart = false;
   }
 
   readHexEscape(length, label) {
@@ -130,6 +133,7 @@ class Lexer {
         token.hasExpressions = true;
         this.advance();
         const expressionStart = this.tokens.length;
+        this.templateExpressionStart = true;
         this.scan(true);
         token.expressions.push([expressionStart, this.tokens.length]);
         token.quasis.push("");
@@ -142,6 +146,7 @@ class Lexer {
   }
 
   regexCanStart() {
+    if (this.templateExpressionStart) return true;
     const previous = this.tokens.at(-1);
     if (!previous) return true;
     if (previous.closesControl) return true;
@@ -212,6 +217,10 @@ class Lexer {
     let braceDepth = 0;
     while (this.index < this.source.length) {
       const character = this.source[this.index];
+      if (this.index === 0 && character === "#" && this.source[this.index + 1] === "!") {
+        while (this.index < this.source.length && !/[\r\n]/u.test(this.source[this.index])) this.advance();
+        continue;
+      }
       if (/\s/u.test(character)) {
         this.advance();
         continue;
@@ -322,6 +331,19 @@ function syntaxMatches(tokens, value) {
   if (value === "regex-literal") return tokens.filter(token => token.type === "regex");
   if (value === "arrow-function") return tokens.filter(token => token.value === "=>");
   if (value === "variable-declaration") return tokens.filter(token => ["const", "let", "var"].includes(token.value));
+  if (value === "member-constructor-access") {
+    return tokens.filter((token, index) => {
+      if (token.value !== "constructor") return false;
+      const dotted = [".", "?."].includes(tokens[index - 1]?.value);
+      const computed = tokens[index - 1]?.value === "[" && tokens[index + 1]?.value === "]";
+      if (!dotted && !computed) return false;
+      const after = computed ? index + 2 : index + 1;
+      return !(
+        [".", "?."].includes(tokens[after]?.value)
+        && tokens[after + 1]?.value === "name"
+      );
+    });
+  }
   if (value === "computed-global-access") {
     return tokens.filter((token, index) => {
       if (token.type !== "identifier" || !["globalThis", "window", "self"].includes(token.value)) return false;
@@ -342,24 +364,18 @@ function literalMatches(value, candidate, match, flags) {
   return new RegExp(value, flags).test(candidate);
 }
 
-function tokenScopes(tokens) {
-  const scopes = [];
-  const stack = [];
-  let nextScope = 0;
-  for (let index = 0; index < tokens.length; index += 1) {
-    scopes.push(stack.join("."));
-    if (tokens[index].value === "{") stack.push(nextScope++);
-    else if (tokens[index].value === "}") stack.pop();
-  }
-  return scopes;
-}
-
-function callSurface(tokens, scopes) {
+function callSurface(tokens, contexts) {
   const calls = [];
   for (let index = 0; index < tokens.length; index += 1) {
     if (!["identifier", "string", "template"].includes(tokens[index].type)) continue;
     const name = callName(tokens, index);
-    if (name) calls.push({ name, line: tokens[index].line, index, scope: scopes[index] });
+    if (name) calls.push({
+      name,
+      line: tokens[index].line,
+      index,
+      directStatement: directLifecycleCall(tokens, contexts, index),
+      ...contexts[index]
+    });
   }
   return calls;
 }
@@ -373,7 +389,7 @@ function closingParen(tokens, open) {
   return -1;
 }
 
-function factoryAssignmentSurface(tokens, scopes) {
+function factoryAssignmentSurface(tokens, contexts) {
   const assignments = [];
   for (let index = 0; index < tokens.length - 4; index += 1) {
     if (!["const", "let", "var"].includes(tokens[index].value)) continue;
@@ -402,7 +418,8 @@ function factoryAssignmentSurface(tokens, scopes) {
       argumentsUsed,
       line: result.line,
       index,
-      scope: scopes[index]
+      directStatement: directFactoryDeclaration(tokens, contexts, index),
+      ...contexts[index]
     });
   }
   return assignments;
@@ -448,6 +465,11 @@ function forbiddenViolations(rules, tokens) {
       }
     } else {
       for (const value of rule.values) {
+        if (value === "member-constructor-access") for (const literal of literals) {
+          if (literal.value === "constructor" && literal.before === "[" && literal.after === "]") {
+            violations.push({ ruleId: rule.id, line: literal.line, detail: `forbidden syntax ${value}` });
+          }
+        }
         for (const token of syntaxMatches(tokens, value)) {
           violations.push({ ruleId: rule.id, line: token.line, detail: `forbidden syntax ${value}` });
         }
@@ -459,12 +481,12 @@ function forbiddenViolations(rules, tokens) {
 
 export function analyzeEntrypointSource(source, file, forbiddenRules) {
   const tokens = new Lexer(source, file).scan();
-  const scopes = tokenScopes(tokens);
+  const contexts = tokenContexts(tokens);
   return {
     surface: {
       ...extractModuleSurface(tokens),
-      calls: callSurface(tokens, scopes),
-      factoryAssignments: factoryAssignmentSurface(tokens, scopes),
+      calls: callSurface(tokens, contexts),
+      factoryAssignments: factoryAssignmentSurface(tokens, contexts),
       identifiers: tokens
         .filter(token => token.type === "identifier")
         .map(token => ({ name: token.value, line: token.line }))

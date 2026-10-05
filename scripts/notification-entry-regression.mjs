@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
+import {
+  notificationEntryMarkup,
+  notificationEntryState,
+  transitionNotificationRetry
+} from "../public/frontend/features/notifications/index.mjs";
+
 const notificationModule = new URL(
   "../public/frontend/features/notifications/index.mjs",
   import.meta.url
 );
-const {
-  notificationEntryMarkup,
-  notificationEntryState,
-  transitionNotificationRetry
-} = await import(notificationModule);
 
 const failedNotification = {
   id: "notification-asr-1",

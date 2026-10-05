@@ -23,6 +23,7 @@ const ENTRYPOINT_IDENTITIES = Object.freeze({
       imported: "createServerRuntime",
       result: "runtime",
       method: "start",
+      directScope: "top-level",
       dependencies: []
     }],
     compositionApi: Object.freeze({
@@ -51,12 +52,14 @@ const ENTRYPOINT_IDENTITIES = Object.freeze({
       imported: "createBrowserApplication",
       result: "application",
       method: "start",
+      directScope: "startApplication",
       dependencies: ["featureRegistry"]
     }, {
       specifier: "../feature-registry/index.mjs",
       imported: "createFeatureRegistry",
       result: "featureRegistry",
       method: null,
+      directScope: "startApplication",
       dependencies: []
     }],
     pageCatalog: Object.freeze({
@@ -140,7 +143,7 @@ export function validatePolicyRequirements(policy, label) {
     const use = policy.requiredFactoryUses[index];
     const useLabel = `${label}.requiredFactoryUses[${index}]`;
     if (!record(use)) reject(`${useLabel} must be an object`);
-    for (const field of ["specifier", "imported", "result"]) {
+    for (const field of ["specifier", "imported", "result", "directScope"]) {
       nonEmptyString(use[field], `${useLabel}.${field}`);
     }
     if (use.method !== null) nonEmptyString(use.method, `${useLabel}.method`);
@@ -150,6 +153,13 @@ export function validatePolicyRequirements(policy, label) {
 
 export function requiredContractViolations(policy, surface) {
   const violations = [];
+  const directScopeMatches = (candidate, expected) => expected === "top-level"
+    ? candidate.scope === "" && candidate.directStatement
+    : candidate.functionName === expected
+      && candidate.scope === candidate.functionScope
+      && candidate.functionExported
+      && candidate.functionTopLevel
+      && candidate.directStatement;
   for (const [specifier, requiredBindings] of Object.entries(policy.requiredBindings)) {
     const importedBindings = surface.imports
       .filter(imported => !imported.dynamic && imported.specifier === specifier)
@@ -178,7 +188,9 @@ export function requiredContractViolations(policy, surface) {
     const localName = importedBinding?.local;
     const bindingOccurrences = surface.identifiers.filter(identifier => identifier.name === localName).length;
     const assignment = surface.factoryAssignments.find(candidate => (
-      candidate.factory === localName && candidate.result === use.result
+      candidate.factory === localName
+      && candidate.result === use.result
+      && directScopeMatches(candidate, use.directScope)
     ));
     return {
       use,
@@ -207,6 +219,7 @@ export function requiredContractViolations(policy, surface) {
       call.name === `${use.result}.${use.method}`
       && call.scope === assignment.scope
       && call.index > assignment.index
+      && call.directStatement
     ))) {
       violations.push({
         ruleId: "factory-use",
@@ -228,8 +241,11 @@ export function validateEntrypointExceptions(registry, policies, gate, reservedR
     const exception = exceptions[index];
     const label = `entrypointMigrationExceptions[${index}]`;
     if (!record(exception)) reject(`${label} must be an object`);
-    for (const field of ["path", "ruleId", "owner", "removeWhen", "deleteByGate"]) {
+    for (const field of ["path", "ruleId", "owner", "removeWhen", "deleteByGate", "sourceSha256"]) {
       nonEmptyString(exception[field], `${label}.${field}`);
+    }
+    if (!/^[a-f0-9]{64}$/u.test(exception.sourceSha256)) {
+      reject(`${label}.sourceSha256 must be a lowercase SHA-256 digest`);
     }
     const policy = policyByPath.get(exception.path);
     if (!policy) reject(`${label}.path has no entrypoint policy: ${exception.path}`);

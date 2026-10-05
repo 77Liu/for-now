@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "inlineRuntimeBootstrapSha256": "c8a53db3bd3394b35ffabeb2bbd52a061a4f04162b0de799d14bde670f20f8ba",
   "modules": [
     {
       "id": "infrastructure.prompt-catalog",
@@ -524,11 +525,21 @@
       "status": "active"
     },
     {
+      "id": "frontend.feature.notifications",
+      "type": "feature",
+      "root": "public/frontend/features/notifications",
+      "publicEntry": "public/frontend/features/notifications/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["notification entry presentation, retry state and safe semantic markup"], "routes": [] },
+      "tests": ["scripts/notification-entry-regression.mjs"],
+      "status": "active"
+    },
+    {
       "id": "frontend.features",
       "type": "feature",
       "root": "public/frontend/features",
       "publicEntry": "public/frontend/features/index.mjs",
-      "allowedDependencies": ["frontend.feature.discovery", "frontend.feature.export", "frontend.feature.actions", "frontend.feature.feedback", "frontend.feature.home"],
+      "allowedDependencies": ["frontend.feature.discovery", "frontend.feature.export", "frontend.feature.actions", "frontend.feature.feedback", "frontend.feature.home", "frontend.feature.notifications"],
       "owns": { "data": ["page-entry side effects for overflow, animation and on-demand data loading"], "routes": [] },
       "tests": ["scripts/frontend-shell-regression.mjs", "scripts/ui-regression.mjs"],
       "status": "active"
@@ -669,6 +680,7 @@
           "imported": "createServerRuntime",
           "result": "runtime",
           "method": "start",
+          "directScope": "top-level",
           "dependencies": []
         }
       ],
@@ -779,6 +791,7 @@
           "imported": "createBrowserApplication",
           "result": "application",
           "method": "start",
+          "directScope": "startApplication",
           "dependencies": ["featureRegistry"]
         },
         {
@@ -786,6 +799,7 @@
           "imported": "createFeatureRegistry",
           "result": "featureRegistry",
           "method": null,
+          "directScope": "startApplication",
           "dependencies": []
         }
       ],
@@ -876,6 +890,7 @@
     {
       "kind": "bootstrap",
       "path": "public/app.js",
+      "sourceSha256": "cb36188dca68fc7f43f7274763bee4d94b08e7541cb0b8c5ec0f21062b37c74d",
       "allowedImports": [
         "./frontend/opening/index.mjs",
         "./frontend/app/index.mjs"
@@ -909,6 +924,7 @@
     {
       "path": "server.mjs",
       "ruleId": "factory-use",
+      "sourceSha256": "4ede350bf4e2655a8cbc2043a46dc370b751a27d347e86ec48e0dd9f02a20a5b",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs assigns createServerRuntime to runtime and starts it",
       "deleteByGate": "G4",
@@ -919,6 +935,7 @@
     {
       "path": "server.mjs",
       "ruleId": "calls",
+      "sourceSha256": "4ede350bf4e2655a8cbc2043a46dc370b751a27d347e86ec48e0dd9f02a20a5b",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs constructs and starts createServerRuntime",
       "deleteByGate": "G4",
@@ -929,6 +946,7 @@
     {
       "path": "server.mjs",
       "ruleId": "import-bindings",
+      "sourceSha256": "4ede350bf4e2655a8cbc2043a46dc370b751a27d347e86ec48e0dd9f02a20a5b",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs imports createServerRuntime from ./src/app/index.mjs",
       "deleteByGate": "G4",
@@ -939,6 +957,7 @@
     {
       "path": "server.mjs",
       "ruleId": "imports",
+      "sourceSha256": "4ede350bf4e2655a8cbc2043a46dc370b751a27d347e86ec48e0dd9f02a20a5b",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs imports only ./src/app/index.mjs",
       "deleteByGate": "G4",
@@ -991,6 +1010,7 @@
     {
       "path": "server.mjs",
       "ruleId": "server.api-path",
+      "sourceSha256": "4ede350bf4e2655a8cbc2043a46dc370b751a27d347e86ec48e0dd9f02a20a5b",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs contains no API route literals",
       "deleteByGate": "G4",
@@ -1001,6 +1021,7 @@
     {
       "path": "server.mjs",
       "ruleId": "server.timer",
+      "sourceSha256": "4ede350bf4e2655a8cbc2043a46dc370b751a27d347e86ec48e0dd9f02a20a5b",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs contains no timer orchestration",
       "deleteByGate": "G4",
@@ -1012,6 +1033,7 @@
     {
       "path": "server.mjs",
       "ruleId": "server.provider",
+      "sourceSha256": "4ede350bf4e2655a8cbc2043a46dc370b751a27d347e86ec48e0dd9f02a20a5b",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs contains no provider construction",
       "deleteByGate": "G4",
@@ -1025,6 +1047,7 @@
     {
       "path": "server.mjs",
       "ruleId": "server.store-state",
+      "sourceSha256": "4ede350bf4e2655a8cbc2043a46dc370b751a27d347e86ec48e0dd9f02a20a5b",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs contains no persistence state",
       "deleteByGate": "G4",
@@ -1037,6 +1060,7 @@
     {
       "path": "server.mjs",
       "ruleId": "server.route-composition",
+      "sourceSha256": "4ede350bf4e2655a8cbc2043a46dc370b751a27d347e86ec48e0dd9f02a20a5b",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs delegates route composition to src/app",
       "deleteByGate": "G4",
@@ -1049,6 +1073,7 @@
     {
       "path": "server.mjs",
       "ruleId": "lines.hard",
+      "sourceSha256": "4ede350bf4e2655a8cbc2043a46dc370b751a27d347e86ec48e0dd9f02a20a5b",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs is at or below 40 lines",
       "deleteByGate": "G4",
@@ -1057,6 +1082,7 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "factory-use",
+      "sourceSha256": "c61d91536304def42c0088557ca59366f3dad73f6053eaaa67b24ea13ef426ca",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs assigns createBrowserApplication to application and starts it",
       "deleteByGate": "G6",
@@ -1068,6 +1094,7 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "calls",
+      "sourceSha256": "c61d91536304def42c0088557ca59366f3dad73f6053eaaa67b24ea13ef426ca",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs constructs createBrowserApplication and createFeatureRegistry, then starts the application",
       "deleteByGate": "G6",
@@ -1078,6 +1105,7 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "imports",
+      "sourceSha256": "c61d91536304def42c0088557ca59366f3dad73f6053eaaa67b24ea13ef426ca",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs imports the feature registry public entry",
       "deleteByGate": "G6",
@@ -1088,6 +1116,7 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "import-bindings",
+      "sourceSha256": "c61d91536304def42c0088557ca59366f3dad73f6053eaaa67b24ea13ef426ca",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs imports createFeatureRegistry from ../feature-registry/index.mjs",
       "deleteByGate": "G6",
@@ -1099,6 +1128,7 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.api-path",
+      "sourceSha256": "c61d91536304def42c0088557ca59366f3dad73f6053eaaa67b24ea13ef426ca",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no API path literals",
       "deleteByGate": "G6",
@@ -1109,6 +1139,7 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.dom-query",
+      "sourceSha256": "c61d91536304def42c0088557ca59366f3dad73f6053eaaa67b24ea13ef426ca",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page DOM queries",
       "deleteByGate": "G6",
@@ -1121,6 +1152,7 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.event-binding",
+      "sourceSha256": "c61d91536304def42c0088557ca59366f3dad73f6053eaaa67b24ea13ef426ca",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page event binding",
       "deleteByGate": "G6",
@@ -1132,6 +1164,7 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.timer",
+      "sourceSha256": "c61d91536304def42c0088557ca59366f3dad73f6053eaaa67b24ea13ef426ca",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page timers or animation scheduling",
       "deleteByGate": "G6",
@@ -1145,6 +1178,7 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.template",
+      "sourceSha256": "c61d91536304def42c0088557ca59366f3dad73f6053eaaa67b24ea13ef426ca",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page templates",
       "deleteByGate": "G6",
@@ -1155,6 +1189,7 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "lines.hard",
+      "sourceSha256": "c61d91536304def42c0088557ca59366f3dad73f6053eaaa67b24ea13ef426ca",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs is at or below 180 lines",
       "deleteByGate": "G6",

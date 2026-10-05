@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -154,6 +155,12 @@ async function validatePolicy(root, policy, index, paths, registryInventory) {
   paths.add(entryPath);
   const entryAbsolute = repositoryPath(root, entryPath, `${label}.path`);
   await requireFile(root, entryAbsolute, `${label}.path`, { rejectSymlink: true });
+  if (policy.sourceSha256 != null && !/^[a-f0-9]{64}$/u.test(policy.sourceSha256)) {
+    reject(`${label}.sourceSha256 must be a lowercase SHA-256 digest`);
+  }
+  if (policy.kind === "bootstrap" && !policy.sourceSha256) {
+    reject(`${label}.sourceSha256 is required for the bootstrap policy`);
+  }
   stringArray(policy.allowedImports, `${label}.allowedImports`);
   stringArray(policy.requiredImports, `${label}.requiredImports`, { nonEmpty: true });
   stringArray(policy.allowedExports, `${label}.allowedExports`);
@@ -336,6 +343,7 @@ async function inventory(root, registry) {
 
 async function inspectPolicy(root, policy) {
   const source = await fs.readFile(policy.entryAbsolute, "utf8");
+  const sourceSha256 = crypto.createHash("sha256").update(source).digest("hex");
   const analysis = analyzeEntrypointSource(source, policy.path, policy.forbiddenRules);
   const { surface, violations } = analysis;
   for (const imported of surface.imports) {
@@ -388,7 +396,7 @@ async function inspectPolicy(root, policy) {
   } else if (lines > policy.lineLimits.soft) {
     warnings.push(`${policy.path}: ${lines} lines exceeds soft limit ${policy.lineLimits.soft}`);
   }
-  return { violations, warnings };
+  return { sourceSha256, violations, warnings };
 }
 
 async function main() {
@@ -419,9 +427,14 @@ async function main() {
     RESERVED_RULE_IDS
   );
   const violationsByKey = new Map();
+  const sourceHashes = new Map();
   const warnings = [];
   for (const policy of policies) {
     const result = await inspectPolicy(options.root, policy);
+    if (policy.sourceSha256 && policy.sourceSha256 !== result.sourceSha256) {
+      reject(`${policy.path} does not match its frozen sourceSha256`);
+    }
+    sourceHashes.set(policy.path, result.sourceSha256);
     warnings.push(...result.warnings);
     for (const violation of result.violations) {
       const key = `${policy.path}\0${violation.ruleId}`;
@@ -437,6 +450,9 @@ async function main() {
     const matches = violationsByKey.get(key) || [];
     const label = `entrypointMigrationExceptions[${index}]`;
     if (matches.length === 0) reject(`${label} is stale: ${exception.path} ${exception.ruleId}`);
+    if (exception.sourceSha256 !== sourceHashes.get(exception.path)) {
+      reject(`${label}.sourceSha256 does not match the current entrypoint source`);
+    }
     if (exception.ruleId === "lines.hard") {
       if (matches[0].value > exception.maxValue) {
         reject(`${label} value ${matches[0].value} exceeds maxValue ${exception.maxValue}`);
