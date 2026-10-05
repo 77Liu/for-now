@@ -59,3 +59,16 @@ export {
   normalizeCommercialization,
   normalizeStore
 } from "./store-normalization.mjs";
+export {
+  classifyThought,
+  deriveStateInsights,
+  deriveThoughtClusters,
+  isUntouchedAiAnswer,
+  thoughtHasUserTrace,
+  thoughtIsUntouchedAiOnly
+} from "./derived-statistics.mjs";
+export {
+  createPublicStateProjection,
+  storeForUser,
+  withoutOwnerMetadata
+} from "./public-state.mjs";
