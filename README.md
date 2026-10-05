@@ -71,8 +71,9 @@ npm run start:local-test
   先关闭移动端记录/思绪、快捷语音、第三方费用和 250ms 同步开屏，再完成
   大入口纯组装化、私有媒体绕过 ECS、图片旋转、主账户开屏设置和系统协作
   闭环。Owner 已验收 V0.5.7 G7 与 V0.5.8 G1/G2；当前 03/04 已完成
-  B1/B2、F1 和门禁强化的 G3 检查点，`server.mjs` 已降至 2295 行；
-  下一步实现 F2 真实 lazy features 并接入前端 application/ports，见
+  B1/B2、F1、F2 slice 1 与 actions lifecycle slice，`server.mjs` 已降至
+  2295 行，`runtime.mjs` 已降至 5136 行；当前仍为
+  `iteration-G3 / entrypoint-G2`，下一步进入 B3 AI runtime，见
   `reports/iteration-plan-v0.5.8-2026-10-05.md`。
 - **`v0.1.1` 发布历史保留**：提交 `54a6326f14ca`、标签 `hotfix-v0.1.1-thought-answer` 在 v0.1.0 基础上修复了收集页思绪自动回答任务创建问题，现已由 v0.2.1 替代。
 - **`v0.1.0` 发布历史保留**：主应用功能提交 `5ae6a7035169` 和标签 `release-20260928-p00-p0-commercial-system` 已发布 P00/P0、商业化、AI 成本和五阶段架构设计，并由 v0.1.1 继承。

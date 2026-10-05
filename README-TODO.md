@@ -54,8 +54,9 @@ V0.2.0 历史见
   `a4150e9` 和统计 UI `56337a9` 完成本地验证；`20` 已由 `91a10b7`、
   `6384c7c`、`9830564`、`0f163aa`、`b24722b`、`8607cc6` 和
   `88d37e1` 完成工作区验证；`02` 已冻结三类入口、组合 API、G4/G6
-  例外与 feature lifecycle，最终独立复审 GO。下一步为 `V0.5.8-03/04`
-  入口迁移，当前版本未部署、未进入 Preview、未发布。
+  例外与 feature lifecycle，最终独立复审 GO。`03/04` 已完成 B1/B2、F1、
+  F2 slice 1 与 actions lifecycle slice，下一步为 B3 AI runtime；当前版本
+  未部署、未进入 Preview、未发布。
 - 历史热修：`V0.5.2` P00 热修已完成本地门、线上 Preview、Git/Gitee、
   生产部署及同一历史 M4A 的真实回放验证。完整证据见
   `reports/p00-asr-m4a-2026-10-03.md`。
@@ -147,7 +148,7 @@ V0.5.8 当前范围是 6 条 P00、8 条 P0。Base 最近一次回读为需求
 | V0.5.8-20 | P00 | 工作区已验证未部署 | `91a10b7..88d37e1`：同步 HTML 接入 R9.4-F1；FCP 与退出硬门、FCP 后入口请求、secondary 失败和 5 秒 watchdog 迟到锁存均通过 |
 | V0.5.8-02 | P00 | 工作区已验证未部署 | `6730597`：三类真实入口、组合 API/import binding/factory 链、G4/G6 例外和 feature 生命周期已机器冻结；check、前后端、PWA、性能与独立复审通过 |
 | V0.5.8-03 | P00 | 进行中 | `f3724c4`、`47d5a39`、`a35dad8..9ba9f64`：B1/B2 的 Store v16、派生/公开投影、本地测试与账户生命周期已离开入口；`server.mjs` 3283→2295 行，下一步 B3 |
-| V0.5.8-04 | P00 | 进行中 | `e7d99d6`、`6d74383`、`208cba7`、`48e5d6b`：F1a/F1b application、可回收 router 与 ports 已冻结；保持未接线，下一步 F2 真实 lazy feature 后同批接 runtime |
+| V0.5.8-04 | P00 | 进行中 | `e7d99d6..eca9576`：F1 application/router/ports、export/feedback/discovery 与 actions 生命周期已接入；runtime 5291→5136 行，完整 home 延至 F10 |
 | V0.5.8-17 | P0 | 待开始 | 共享图片草稿支持逐图 90 度旋转，预览/上传/识别/派生一致 |
 | V0.5.8-18 | P0 | 待开始 | 实现 `proxy/oss-signed/cdn-signed`、短签名、302 和代理回滚 |
 | V0.5.8-19 | P0 | 阻塞 | 需 Owner 单独授权 CDN/OSS/DNS/证书/费用配置后做真实 Preview 验收 |
@@ -166,8 +167,10 @@ Owner 已接受 V0.5.7 G7，并确认按本计划进入 V0.5.8 本地开发。13
 最终 `npm run test:system` 在 `88d37e1` 上以 `406996 ms` 全通过，独立
 reviewer 无 blocker/P0/P1/P2。03/04 已由 `f3724c4..2989e61` 完成首批 G3
 检查点，由 `47d5a39` 完成 B1b/B1c，由 `a35dad8..9ba9f64` 完成 B2，
-并由 `208cba7`、`48e5d6b` 完成 F1b；独立 Reviewer blocker/P0/P1 均为
-`0/0/0`。当前活跃工作树 `5 / 6`，下一步执行 F2 真实 lazy feature。
+由 `208cba7`、`48e5d6b` 完成 F1b，由 `c3c4033`、`4ee0921` 完成 F2
+slice 1，并由 `afcf95b..eca9576` 完成 actions lifecycle slice；独立
+Reviewer blocker/P0/P1 均为 `0/0/0`。当前活跃工作树 `5 / 6`，下一步
+执行 B3 AI runtime；完整 home 留待 F10。
 该确认不授权 push、云资源修改、真实付费调用、Preview、部署或生产写入。
 20 的完整调度与验证事实见
 `reports/multi-agent-coordination-v0.5.8-20-2026-10-05.md`。

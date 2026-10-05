@@ -3,10 +3,10 @@
 - 日期：2026-10-05
 - 起始基线：`f911cde4505d3434ab4afcf4b5614f8e828f4bcc`
 - 当前门禁：`iteration-G3 / entrypoint-G2`
-- 当前状态：`f2-slice-2-in-progress`
-- 活跃工作树：`6 / 6`
-- 机器事实：3 个入口策略、64 个模块、236 条拥有路由、16 条迁移例外；
-  `server.mjs` 由 3283 行降至 2295 行，`runtime.mjs` 当前为 5275 行
+- 当前状态：`f2-slice-2-closed-b3-ready`
+- 活跃工作树：`5 / 6`
+- 机器事实：3 个入口策略、65 个模块、236 条拥有路由、16 条迁移例外；
+  `server.mjs` 由 3283 行降至 2295 行，`runtime.mjs` 当前为 5136 行
 - 授权边界：允许本地代码、测试、文档与任务提交；不允许 push、tag、Release、
   Preview、部署、云资源修改、真实付费调用或生产写入
 
@@ -73,7 +73,7 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 
 | roleId | specialty | activeContext | ownership | dependencies | communications | evidence | status | next |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `orchestrator` | 契约冻结与串行集成 | `a48f93e`；iteration-G3 / entrypoint-G2 | 共享文件与集成树 | 全部角色 | 冻结 F2 slice 2 并串行接入 actions lifecycle | home 当前 NO-GO；actions 叶子契约已冻结 | `active` | 派发 actions worker |
+| `orchestrator` | 契约冻结与串行集成 | `eca9576`；iteration-G3 / entrypoint-G2 | 共享文件与集成树 | 全部角色 | 完成 F2 slice 2 接线、验证与复审 | actions 生命周期已收口；完整 home 仍延至 F10 | `active` | B3 AI runtime |
 | `backend-scout` | B1-B7 符号与闭包 | `server.mjs` 3283 行 | 只读 | B1a | 建议 B1a→B1b→B1c | 无生产 runtime 骨架 | `closed` | 移交 B1a |
 | `frontend-scout` | F1-F10 页面与 lifecycle | `runtime.mjs` 5291 行 | 只读 | F1a | 先 application/router disposer | registry 未接线 | `closed` | 移交 F1a |
 | `gate-scout` | G4/G6 与测试真实性 | 20 条例外 | 只读 | C0/I | 报告 policy 冲突与死代码假绿 | G4/G6 按预期失败 | `closed` | 等待复核 |
@@ -98,9 +98,9 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 | `f2-actions-scout` | actions UI、同步和账户闭包 | `a48f93e`；F2 slice 2 | 只读 | F2-A-W/I3 | 冻结 coordinator/controller 分层与迟到响应风险 | 精确符号、测试矩阵与共享接线点已移交 | `closed` | actions worker |
 | `f2-home-scout` | 默认首页与跨域闭包 | `a48f93e`；F2/F4-F10 | 只读 | I3 | 核对首屏时序、跨域依赖与预算 | 完整 home controller 当前 NO-GO | `closed` | 分域迁移后 F10 收口 |
 | `f2-gate-scout` | Journey、PWA 与预算真实性 | `a48f93e`；F2 slice 2 | 只读 | V3/R3 | 固定 G3 证据与拒绝条件 | actions/home 影响矩阵已移交 | `closed` | 接线后验证 |
-| `f2-actions-worker` | actions coordinator/controller | `a48f93e`；F2 slice 2 | actions 内部文件与独立专项 | F2-A-S/I3 | 叶子模块交给调度者接线 | 独立工作树已建立 | `active` | 实现并提交 |
-| `f2-actions-validator` | F2 slice 2 独立影响验证 | 待固定集成 SHA | 只读 | I3 | 重跑专项、系统与预算门 | 未开始 | `queued` | 集成后验证 |
-| `f2-actions-reviewers` | actions 生命周期与隔离复审 | 待固定集成差分 | 只读 | V3 | 复现失败路径并清零高优问题 | 未开始 | `queued` | 验证后复审 |
+| `f2-actions-worker` | actions coordinator/controller | `5781115`；F2 slice 2 | actions 内部文件与独立专项 | F2-A-S/I3 | 叶子模块交给调度者接线 | 叶子提交已集成，工作树已移除 | `closed` | 后续按新切片重新派发 |
+| `f2-actions-validator` | F2 slice 2 独立影响验证 | `eca9576` | 只读 | I3 | 重跑专项、系统与预算门 | check、frontend、Journey、PWA/预算全通过 | `closed` | B3 重新验证 |
+| `f2-actions-reviewers` | actions 生命周期与隔离复审 | `eca9576` 固定差分 | 只读 | V3 | 复现失败路径并清零高优问题 | 最终 GO，blocker/P0/P1=`0/0/0` | `closed` | 下一切片复审 |
 
 ## 已关闭问题与保留风险
 
@@ -287,5 +287,30 @@ npm run test:frontend-shell
   `home-r8-single-screen`、`auth-session-boundary`、`offline-sync-recovery`、
   `local-online-snapshot`、`delete-trash-restore`、响应式/URL 恢复。
 
-下一步：在唯一剩余工作树槽位派发 actions 叶子实现；调度者只处理共享接线。
-本切片完成也不代表完整 F2、G5、Release 或 V0.5.9 已开始。
+以上为冻结时的执行边界；实际完成证据见下一节。
+
+## F2 slice 2 检查点
+
+- 本地提交：`afcf95b`、`60b317c`、`06854ce`、`eca9576`。actions 已拆为
+  长驻 headless coordinator 与首次展开才加载的 workspace controller；
+  runtime 旧状态、请求、渲染与全局监听已删除，无双轨。
+- coordinator 覆盖离线 projection、operation 终态、409/412、A→B→A、
+  分域 incremental/full-load 合并和 latest-load 追随。多轮复审发现并关闭
+  committed projection 过早清理、三连刷新误报、双域删除分批确认及
+  pending→committed/load 竞态。
+- `runtime.mjs` 为 5136 行，SHA
+  `a236da9d26cff0aaaa2e47ab39ffac12b1c9212fe12be5b855edd5961587e087`；
+  6 条 G6 例外上限同步收紧。模块登记为 `65 / 236 / 16`。
+- 固定 web budget 未放宽并通过：deferred runtime
+  `23 modules / 819147 B`，默认路由 `2 / 12000 B`，actions workspace
+  `1 / 28365 B`，hidden feature 请求为 0；Service Worker 为
+  `cike-shell-v0.5.8-5`。
+- `npm run check`、actions 专项、PWA、frontend suite `76840 ms` 与
+  Journey Smoke `15/15`、`62736 ms` 均通过。最终 reviewer
+  GO，blocker/P0/P1=`0/0/0`。
+- actions 叶子工作树已清理，当前 `5 / 6`。未执行 push、tag、Release、
+  Preview、部署、Base 写入、云资源修改、真实付费调用或生产写入。
+
+下一步：按已完成的只读侦察进入 B3 AI runtime；完整 home 继续随 F4-F8
+分域迁移，并在 F10 替换 descriptor。当前仍为
+`iteration-G3 / entrypoint-G2`，不代表完整 F2、G5、Release 或 V0.5.9 已开始。

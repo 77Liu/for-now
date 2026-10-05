@@ -762,13 +762,18 @@ V0.5.8 只有在以下条件同时成立时才可关闭：
   controller 与真实 descriptors；application、feature registry 及
   state/sync/shell ports 已同批接入 runtime，旧实现和监听已删除。
 - 其余 22 页经显式 legacy adapter 过渡，不再把 25 页全部登记到共享
-  `features/index.mjs`；actions/home 仍属 F2 剩余范围，未冒充完整 G5。
-- Service Worker install 排除 3 个 lazy feature，访问后 cache-on-use；固定 shell
-  预算未放宽，最终为 `23 modules / 819087 B`，默认路由增量
-  `2 / 12000 B`，首页隐藏 feature 请求为 0。
-- 最终 web budget 冷启动 firstReadable P75/P95 `740.9/757.2 ms`、暖启动
-  `736.3/738.2 ms`；frontend `84074 ms`、Journey Smoke `14/14`
-  `64336 ms` 通过。最终 reviewer blocker/P0/P1=`0/0/0`。
+  `features/index.mjs`。F2 slice 2 由 `afcf95b`、`60b317c`、`06854ce`、
+  `eca9576` 完成 actions headless coordinator、按需 workspace controller
+  与 runtime 单轨接线；完整 home 仍延至 F10，未冒充完整 F2 或 G5。
+- actions coordinator 已固定离线 projection、operation 终态、409/412、
+  A→B→A、分域 incremental/full-load 合并、双域累计确认、连续刷新追随和
+  pending→committed/load 竞态；最终 reviewer blocker/P0/P1=`0/0/0`。
+- Service Worker install 排除 4 个 lazy feature，访问后 cache-on-use；固定 shell
+  预算未放宽，最终为 `23 modules / 819147 B`，默认路由增量
+  `2 / 12000 B`，actions workspace `1 / 28365 B`，首页隐藏 feature 请求为 0。
+- 最终 web budget 冷启动 firstReadable P75/P95 `736.5/756.5 ms`、暖启动
+  `734.7/750.2 ms`；frontend `76840 ms`、Journey Smoke `15/15`
+  `62736 ms` 通过。
 - B2 由 `a35dad8..9ba9f64` 完成本地测试 control/workspace、GET-only 上游
   水合、隔离会话、账户初始化和逐账户启动恢复迁移；`server.mjs` 进一步降至
   2295 行，拥有路由由 233 增至 236 条，旧入口实现已删除。
@@ -782,5 +787,6 @@ V0.5.8 只有在以下条件同时成立时才可关闭：
   `057b6fa80a6bca478c41367ada48eb237de2b520b4e8b7e868e56163b664c99f`，
   行数上限收紧为 2295，G4 条件未放宽。browser 例外由 10 降至 6，绑定
   `runtime.mjs` SHA
-  `820e48e3177536893cc82dafb1a49392c741f2b356a936eacad56ef8da6b6a16`，
-  行数上限 5275；全库例外由 20 降至 16。下一步重新侦察 actions/home。
+  `a236da9d26cff0aaaa2e47ab39ffac12b1c9212fe12be5b855edd5961587e087`，
+  行数上限 5136；全库例外由 20 降至 16。下一步进入 B3 AI runtime；
+  home 继续随 F4-F8 迁移并在 F10 收口。
