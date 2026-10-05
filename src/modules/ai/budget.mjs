@@ -814,12 +814,15 @@ export function createAiBudgetService({
             settledStages.push({ stageId: stage.id, started: false, costKnown: stage.costKnown, actualCostCny: 0 });
             continue;
           }
+          const costKnown = stage.costKnown && stageResult?.costKnown !== false;
           if (!stage.startedAt) {
             stage.startedAt = timestamp;
-            if (!stage.costKnown) events.push(unknownWarning(state, reservation, stage, day, timestamp, createId));
+            if (!costKnown) events.push(unknownWarning(state, reservation, stage, day, timestamp, createId));
+          } else if (stage.costKnown && !costKnown) {
+            events.push(unknownWarning(state, reservation, stage, day, timestamp, createId));
           }
           calls += 1;
-          if (stage.costKnown) {
+          if (costKnown) {
             const actual = stageResult && Object.hasOwn(stageResult, "actualCostCny")
               ? costMicros(stageResult.actualCostCny)
               : stage.estimatedCostMicros;

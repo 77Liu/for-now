@@ -561,6 +561,56 @@ assert.doesNotThrow(() => JSON.parse(JSON.stringify(normalized)));
   }));
 }
 
+// Actual usage may downgrade a known reservation to an unknown call.
+// Known actual costs and omitted usage retain their existing settlement behavior.
+{
+  const { service } = serviceFor({
+    prefix: "actual-cost-kind",
+    policy: {
+      ...AI_BUDGET_POLICY,
+      userDailyKnownCostCny: 1000,
+      userDailyCalls: 1000
+    }
+  });
+  const reservation = (await service.reserveTask({
+    accountId: "actual-cost-kind-user",
+    taskId: "mixed-actual-cost-kind",
+    stages: [
+      known("actual-known", 10),
+      known("actual-unknown", 20),
+      known("usage-omitted", 30)
+    ]
+  })).reservation;
+  for (const stage of reservation.stages) {
+    await service.startStage({ reservationId: reservation.id, stageId: stage.id });
+  }
+  const settled = await service.settleTask({
+    reservationId: reservation.id,
+    stages: [
+      { stageId: "actual-known", actualCostCny: 4 },
+      { stageId: "actual-unknown", costKnown: false }
+    ]
+  });
+  assert.equal(settled.settlement.calls, 3);
+  assert.equal(settled.settlement.knownCostCny, 34);
+  assert.equal(settled.settlement.unknownCalls, 1);
+  assert.deepEqual(settled.settlement.stages, [
+    { stageId: "actual-known", started: true, costKnown: true, actualCostCny: 4 },
+    { stageId: "actual-unknown", started: true, costKnown: false, actualCostCny: 0 },
+    { stageId: "usage-omitted", started: true, costKnown: true, actualCostCny: 30 }
+  ]);
+  const status = await service.status({ accountId: "actual-cost-kind-user" });
+  assert.equal(status.day.committedKnownCostCny, 34);
+  assert.equal(status.day.committedUnknownCalls, 1);
+  assert.equal(status.user.committedCalls, 3);
+  assert.equal(status.user.committedKnownCostCny, 34);
+  const warnings = (await service.read()).events.filter(
+    event => event.type === "ai.budget.unknown_cost_warning"
+  );
+  assert.equal(warnings.length, 1);
+  assert.equal(warnings[0].stageId, "actual-unknown");
+}
+
 // Actual cost can exceed the estimate; settlement records it and blocks subsequent work.
 {
   const { service } = serviceFor({

@@ -112,6 +112,41 @@ assert.deepEqual(retryEstimate.map(stage => ({
 }
 
 {
+  const budget = createBudgetDouble();
+  const runtime = createAiBudgetRuntime({ budget });
+  await runtime.executeTask(plan("actual-unknown"), async ({ runStage }) => (
+    runStage("deepseek-attempt-1", async ({ recordUsage }) => {
+      assert.equal(recordUsage({ costKnown: false }), true);
+    })
+  ));
+  assert.deepEqual(budget.calls.find(call => call.type === "settle").input, {
+    reservationId: "reservation-actual-unknown",
+    stages: [{
+      stageId: "deepseek-attempt-1",
+      started: true,
+      costKnown: false
+    }],
+    outcome: "completed"
+  });
+}
+
+{
+  const budget = createBudgetDouble();
+  const runtime = createAiBudgetRuntime({ budget });
+  await runtime.executeTask(plan("usage-omitted"), async ({ runStage }) => (
+    runStage("deepseek-attempt-1", async () => {})
+  ));
+  assert.deepEqual(budget.calls.find(call => call.type === "settle").input, {
+    reservationId: "reservation-usage-omitted",
+    stages: [{
+      stageId: "deepseek-attempt-1",
+      started: true
+    }],
+    outcome: "completed"
+  });
+}
+
+{
   const rejection = Object.assign(new Error("budget rejected"), {
     code: "AI_SITE_DAILY_COST_LIMIT"
   });

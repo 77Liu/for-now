@@ -114,7 +114,7 @@ export function createAiBudgetRuntime({ budget, onRecoveryError = () => {} }) {
     const started = new Set(
       reservation.stages.filter(stage => stage.startedAt).map(stage => stage.id)
     );
-    const actualCosts = new Map();
+    const actualUsage = new Map();
 
     const requireStage = stageId => {
       const normalizedId = requiredText(stageId, "stageId");
@@ -128,9 +128,13 @@ export function createAiBudgetRuntime({ budget, onRecoveryError = () => {} }) {
       if (!started.has(stage.id)) {
         throw new Error(`AI budget runtime stage "${stage.id}" has not started`);
       }
+      if (usageEntry?.costKnown === false) {
+        actualUsage.set(stage.id, { costKnown: false });
+        return true;
+      }
       const actualCostCny = knownUsageCost(usageEntry);
       if (actualCostCny == null) return false;
-      actualCosts.set(stage.id, actualCostCny);
+      actualUsage.set(stage.id, { actualCostCny });
       return true;
     };
 
@@ -173,7 +177,7 @@ export function createAiBudgetRuntime({ budget, onRecoveryError = () => {} }) {
       const settlementStages = [...started].map(stageId => ({
         stageId,
         started: true,
-        ...(actualCosts.has(stageId) ? { actualCostCny: actualCosts.get(stageId) } : {})
+        ...(actualUsage.get(stageId) || {})
       }));
       try {
         await budget.settleTask({
