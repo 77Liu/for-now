@@ -2,7 +2,7 @@
 
 计划日期：2026-10-04
 
-状态：G0–G5 Preview 功能验收完成；公网性能尾部波动待 Owner 决策，生产发布授权待执行
+状态：G0–G7 完成；V0.5.7 与音频按需热修已发布并关闭观察
 
 执行依据：更新后的 `STD-DEV-001`、`SOP/requirement-intake.md`、
 `SOP/iteration-planning.md`、`SOP/feature-development.md`、
@@ -249,9 +249,9 @@ flowchart TD
   subgraph RELEASE["阶段三｜候选与发布"]
     L --> M["✅ G4 集成审计与固定候选"]
     M --> N["✅ 本地 HTTP/多视口/性能验收"]
-    N --> O["○ G5 Owner 发布授权"]
-    O --> P["○ Git/Gitee/生产/观察"]
-    P --> Q["○ G6/G7 关闭与回流"]
+    N --> O["✅ G5 Owner 发布授权"]
+    O --> P["✅ Git/Gitee/生产发布"]
+    P --> Q["✅ G6/G7 关闭与回流"]
   end
 ```
 
@@ -379,3 +379,30 @@ flowchart TD
 - 本次扩展复验新增 Base 需求 `reczz28JarNuKfz2`、交付
   `reczz28JardWl8nY`，并回写既有路由启动、性能和集成验收记录；需求表
   `rev=341 / 235`，交付表 `rev=103 / 83`。
+
+### 2026-10-05 G5 生产发布与音频按需热修
+
+- Owner 接受公网尾部风险并授权生产发布。初始 Release
+  `v0.5.7@dbb6a0a` 完成生产即时备份、隔离恢复、9 条历史小物迁移和部署；
+  迁移后 dry-run 为 4 个账户全部 `planned=0 / blocked=0`。
+- 迁移后备份 `for-now-20261005T044124Z.tar.gz` 为 `83,931,364 B`，
+  SHA-256 为
+  `0f9fc164d1ec9e6f765bddee079a90d59c43cc1dac4927de0f91a78d9c2ed70f`；
+  隔离恢复通过 4 个账户、220 条总记录、87 个附件引用、93 个附件、217 条
+  公开 API 记录和附件 HTTP。
+- 生产真实依赖最小调用矩阵 5/5 通过：DeepSeek、火山 TTS/ASR、火山
+  OCR/文档解析、阿里云图片分割和私有 OSS；预算预留上限 `¥2.30`。
+- 生产登录态走查发现念起列表的 `preload="metadata"` 会在未点击播放时完整
+  下载历史 M4A，并在重渲染后重复下载。热修代码 `7ed6286` 改为
+  `preload="none"`，新增真实 Chrome CDP 零音频请求回归；完整系统、
+  PostgreSQL 16.14、固定性能门、移动端、Range、部署回归和 0 漏洞通过。
+- Owner 单独授权热修。正式热修标签
+  `hotfix-v0.5.7-audio-on-demand@2c395c0` 与 Gitee Release `1183910`
+  已发布，既有 `v0.5.7` 标签保持在 `dbb6a0a`。
+- Preview 与生产均已部署 `2c395c0`。真实登录态在含原始录音和 TTS 的念起
+  列表中确认播放前音频请求为 0，点击后返回 `206` 并正常播放。
+- 热修后 31 个一分钟样本持续 30 分 04 秒：PID 固定、重启和 ready 失败为
+  0，RSS `99.96–122.67 MiB`，最低可用内存约 `767 MiB`，Swap 使用 0，
+  磁盘 56%；Nginx 5xx、应用 warning/error、OOM 均为 0，monitor 无问题。
+- 飞书 Base 已把 17 条 V0.5.7 需求和 11 条本版本交付关闭为已完成/已发布；
+  需求表 `rev=342 / 235`，交付表 `rev=104 / 83`。G6/G7 关闭。
