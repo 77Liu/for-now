@@ -2572,10 +2572,12 @@ try {
       aiNotConclusion:!kept.querySelector(".thought-preview"),
       discardedPresent:Boolean(discarded),
       userConclusion:discarded.querySelector(".thought-preview.conclusion")?.textContent.replace(/\s+/g," ").trim(),
-      openLabel:kept.querySelector(".thought-open-label")?.textContent
+      openLabel:kept.querySelector(".thought-open-label")?.textContent,
+      summaries:document.querySelectorAll("#all-thoughts .chain-summary").length,
+      detailTitles:document.querySelectorAll("#all-thoughts .thought-detail-title").length
     };
   })()`);
-  assert.deepEqual(thoughtListState,{first:"kept-root",months:1,aiNotConclusion:true,discardedPresent:true,userConclusion:"✓ 我的结论这是我自己的结论。",openLabel:"打开 ↗"});
+  assert.deepEqual(thoughtListState,{first:"kept-root",months:1,aiNotConclusion:true,discardedPresent:true,userConclusion:"✓ 我的结论这是我自己的结论。",openLabel:"打开 ↗",summaries:2,detailTitles:0});
   assert.deepEqual(await evaluate(`(()=>{const controls=document.querySelector('#all-thoughts [data-chain-id="kept-root"]').closest(".thought-timeline-entry").querySelector(".thought-chain-speech .speech-asset-controls"),player=controls.querySelector("[data-speech-player]");return{sourceType:controls.dataset.speechSourceType,sourceId:controls.dataset.speechSourceId,sourceVersion:controls.dataset.speechSourceVersion,src:player.getAttribute("src"),visible:Boolean(player.getClientRects().length)}})()`),{sourceType:"thoughtChain",sourceId:"kept-root",sourceVersion:"1",src:"/api/speech/audio?id=asset-chain-kept-v1",visible:true});
   await evaluate(`document.querySelector("#toast").hidden=true;true`);
   await sleep(250);
@@ -2594,13 +2596,19 @@ try {
       formHidden:kept.querySelector("[data-follow-up-root]").hidden,
       primary,
       hasDisposition:Boolean(kept.querySelector("[data-disposition]")),
-      staticHeaderHidden:getComputedStyle(document.querySelector("#view-thoughts>.page-header")).display==="none"
+      staticHeaderHidden:getComputedStyle(document.querySelector("#view-thoughts>.page-header")).display==="none",
+      listSummaries:kept.querySelectorAll(".chain-summary").length,
+      listPreviews:kept.querySelectorAll(".question-preview,.thought-preview,.thought-open-label").length,
+      detailTitles:kept.querySelectorAll(".thought-detail-title").length
     };
   })()`);
-  assert.deepEqual(thoughtDetailState,{titleReadable:true,markdownBold:true,reasoningNodes:0,privateReasoningVisible:false,blockCount:1,aiLabel:"AI 应答",formHidden:true,primary:["＋ 补充","追问 →","✦ 重新回答"],hasDisposition:true,staticHeaderHidden:true});
+  assert.deepEqual(thoughtDetailState,{titleReadable:true,markdownBold:true,reasoningNodes:0,privateReasoningVisible:false,blockCount:1,aiLabel:"AI 应答",formHidden:true,primary:["＋ 补充","追问 →","✦ 重新回答"],hasDisposition:true,staticHeaderHidden:true,listSummaries:0,listPreviews:0,detailTitles:1});
   await evaluate(`document.querySelector("#toast").hidden=true;true`);
   await sleep(250);
   await fs.writeFile("/tmp/growth-thought-r8-detail.png",Buffer.from((await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false})).data,"base64"));
+  await cdp.send("Emulation.setDeviceMetricsOverride",{width:720,height:900,deviceScaleFactor:2,mobile:false});
+  await sleep(80);
+  assert.deepEqual(await evaluate(`(()=>{const title=document.querySelector(".thought-detail-title").getBoundingClientRect(),meta=document.querySelector(".thought-detail-meta").getBoundingClientRect(),stream=document.querySelector(".thought-content-stream").getBoundingClientRect();return{noOverflow:document.documentElement.scrollWidth<=innerWidth,titleCount:document.querySelectorAll(".thought-detail-title").length,summaryCount:document.querySelectorAll("#all-thoughts .chain-summary").length,titleAfterMeta:title.top>=meta.bottom-1,streamAfterTitle:stream.top>=title.bottom-1}})()`),{noOverflow:true,titleCount:1,summaryCount:0,titleAfterMeta:true,streamAfterTitle:true},"200% desktop zoom equivalent must preserve one non-overlapping detail hierarchy");
   for(const width of[320,375,390]){
     await cdp.send("Emulation.setDeviceMetricsOverride",{width,height:844,deviceScaleFactor:2,mobile:true});
     await sleep(80);
