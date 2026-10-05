@@ -3,8 +3,8 @@
 - 日期：2026-10-05
 - 起始基线：`f911cde4505d3434ab4afcf4b5614f8e828f4bcc`
 - 当前门禁：`iteration-G3 / entrypoint-G2`
-- 当前状态：`f2-slice-1-verified`
-- 活跃工作树：`5 / 6`
+- 当前状态：`f2-slice-2-in-progress`
+- 活跃工作树：`6 / 6`
 - 机器事实：3 个入口策略、64 个模块、236 条拥有路由、16 条迁移例外；
   `server.mjs` 由 3283 行降至 2295 行，`runtime.mjs` 当前为 5275 行
 - 授权边界：允许本地代码、测试、文档与任务提交；不允许 push、tag、Release、
@@ -57,11 +57,23 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 | V2 | `b2-f2-validator` | 冻结差分只读验证 | 不改实现或放宽断言 | local-mode/auth/runtime-infrastructure/backend；frontend/Journey/closure |
 | R2 | `b2-f2-reviewers` | 冻结差分独立复审 | 只读 | blocker/P0/P1 清零后才可进入下一批 |
 
+## F2 slice 2 所有权
+
+| task | owner | ownership | forbidden | acceptance |
+| --- | --- | --- | --- | --- |
+| F2-A-S | `f2-actions-scout` | actions 闭包、同步与账户边界，只读 | 不修改文件、不调用远程/Base | 精确符号、生命周期、离线/冲突与接线风险 |
+| F2-H-S | `f2-home-scout` | home/default route 闭包与首屏预算，只读 | 不修改文件、不调用远程/Base | 判断当前能否替换 today descriptor |
+| F2-G-S | `f2-gate-scout` | Journey、PWA、closure 与 entrypoint 门，只读 | 不修改文件、不放宽预算 | 验收矩阵、证据失效与拒绝条件 |
+| F2-A-W | `f2-actions-worker` | `features/actions` 内 coordinator/controller/public entry 与独立专项 | runtime、共享 barrel、登记、package、SW、HTML/CSS | 离线/冲突、迟到响应、重复 mount、reset 和草稿保留 |
+| I3 | `orchestrator` | runtime 接线、共享 barrel、登记、runner、PWA/预算与调度记录 | 不顺改产品行为，不替换 home page descriptor | actions 旧实现/监听删除，无双轨，默认路由预算不放宽 |
+| V3 | `f2-actions-validator` | 固定差分只读验证 | 不改实现或断言 | actions 专项、check、frontend/Journey、PWA/预算 |
+| R3 | `f2-actions-reviewers` | coordinator/controller 与集成差分独立复审 | 只读 | blocker/P0/P1 清零 |
+
 ## 角色知识账
 
 | roleId | specialty | activeContext | ownership | dependencies | communications | evidence | status | next |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `orchestrator` | 契约冻结与串行集成 | `4ee0921`；iteration-G3 / entrypoint-G2 | 共享文件与集成树 | 全部角色 | 串行接入 F2 slice 1 并关闭 reviewer findings | application/ports、3 个真实 lazy feature、PWA/预算门已集成 | `active` | 重新侦察 actions/home |
+| `orchestrator` | 契约冻结与串行集成 | `a48f93e`；iteration-G3 / entrypoint-G2 | 共享文件与集成树 | 全部角色 | 冻结 F2 slice 2 并串行接入 actions lifecycle | home 当前 NO-GO；actions 叶子契约已冻结 | `active` | 派发 actions worker |
 | `backend-scout` | B1-B7 符号与闭包 | `server.mjs` 3283 行 | 只读 | B1a | 建议 B1a→B1b→B1c | 无生产 runtime 骨架 | `closed` | 移交 B1a |
 | `frontend-scout` | F1-F10 页面与 lifecycle | `runtime.mjs` 5291 行 | 只读 | F1a | 先 application/router disposer | registry 未接线 | `closed` | 移交 F1a |
 | `gate-scout` | G4/G6 与测试真实性 | 20 条例外 | 只读 | C0/I | 报告 policy 冲突与死代码假绿 | G4/G6 按预期失败 | `closed` | 等待复核 |
@@ -83,6 +95,12 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 | `f2-feature-worker` | 真实 lazy feature 叶子实现 | `c3c4033`；F2 slice 1 | export/feedback/discovery/legacy adapter 内部文件与专项 | f2-scout/I2 | controller API 冻结后交给调度者接线 | 4 个生命周期专项通过 | `closed` | actions/home 另行冻结 |
 | `b2-f2-validator` | B2/F2 独立影响验证 | `4ee0921`；F2 冻结差分 | 只读 | B2/I2 | 重跑 check、entrypoint、F2、PWA、URL 与最终大门 | 最终 check/web/frontend/Journey 全通过 | `closed` | 下一切片重新验证 |
 | `b2-f2-reviewers` | 生命周期、隔离与 lazy 真实性复审 | `4ee0921`；F2 冻结差分 | 只读 | V2 | 多轮关闭 reset scrub、ABA 与 rollback tail | 最终 GO，blocker/P0/P1=`0/0/0` | `closed` | 下一切片复审 |
+| `f2-actions-scout` | actions UI、同步和账户闭包 | `a48f93e`；F2 slice 2 | 只读 | F2-A-W/I3 | 冻结 coordinator/controller 分层与迟到响应风险 | 精确符号、测试矩阵与共享接线点已移交 | `closed` | actions worker |
+| `f2-home-scout` | 默认首页与跨域闭包 | `a48f93e`；F2/F4-F10 | 只读 | I3 | 核对首屏时序、跨域依赖与预算 | 完整 home controller 当前 NO-GO | `closed` | 分域迁移后 F10 收口 |
+| `f2-gate-scout` | Journey、PWA 与预算真实性 | `a48f93e`；F2 slice 2 | 只读 | V3/R3 | 固定 G3 证据与拒绝条件 | actions/home 影响矩阵已移交 | `closed` | 接线后验证 |
+| `f2-actions-worker` | actions coordinator/controller | `a48f93e`；F2 slice 2 | actions 内部文件与独立专项 | F2-A-S/I3 | 叶子模块交给调度者接线 | 独立工作树已建立 | `active` | 实现并提交 |
+| `f2-actions-validator` | F2 slice 2 独立影响验证 | 待固定集成 SHA | 只读 | I3 | 重跑专项、系统与预算门 | 未开始 | `queued` | 集成后验证 |
+| `f2-actions-reviewers` | actions 生命周期与隔离复审 | 待固定集成差分 | 只读 | V3 | 复现失败路径并清零高优问题 | 未开始 | `queued` | 验证后复审 |
 
 ## 已关闭问题与保留风险
 
@@ -243,5 +261,31 @@ npm run test:frontend-shell
 - 未执行 push、tag、Release、Preview、部署、云资源修改、Base 写入、真实付费
   调用或生产写入。
 
-下一步：重新侦察 F2 剩余 actions/home 的 runtime 闭包和默认路由预算，单独冻结
-所有权与测试矩阵后再实现；不把本切片写成完整 G5。
+## F2 slice 2 冻结
+
+- 基线：`a48f93e02729b36d071ee2039dc921fad41653f0`，集成树干净；叶子工作树
+  建立后为 `6 / 6`，不得再创建工作树；仍为 `iteration-G3 / entrypoint-G2`。
+- actions 冻结为长驻 headless coordinator + `today` 根内可回收 controller。
+  coordinator 在页面未挂载时仍负责 discovery 转行动、同步 pending 恢复和
+  incremental snapshot；controller 只拥有 DOM、表单和 root 内事件。
+- `today` 当前每路由只能激活一个 controller，完整 home 又直接耦合 F4 mood、
+  F5 thoughts、F6 capture/voice、F7 library 和 F8 keepsake。首屏渲染还发生在
+  `state.start/load()` 内，立即替换 descriptor 会改变 opening 就绪时序。
+- 因此本批不伪造完整 home lazy：`today` 继续登记 legacy page adapter；
+  memory helper 保持现有纯 API，首页各领域随 F4-F8 迁移，F10 再一次性替换
+  home descriptor 与首屏启动顺序。
+- actions 叶子模块不得修改 runtime、共享 barrel、entrypoint policy、
+  Service Worker、HTML/CSS 或 package；这些由调度者串行接线，并同批删除
+  runtime 旧 presenter、请求、状态和监听，禁止双轨。
+- 必测：重复 mount/unmount、root 外事件、创建草稿保留、409/412、离线 pending、
+  刷新失败、旧 list/command 迟到、A→B→A、账户 reset、未挂载 pending 恢复、
+  local-test today hydrate、discovery 转行动。
+- 门禁不得放宽：runtime `24 modules / 800 KiB`、默认路由 `2 / 16 KiB`、
+  hidden feature 零请求及 6 条 G6 例外的到期条件保持不变；每次 runtime
+  变化都重算 SHA 与实际计数。
+- 受影响 Journey：`fast-visible-shell`、`home-group-navigation-stability`、
+  `home-r8-single-screen`、`auth-session-boundary`、`offline-sync-recovery`、
+  `local-online-snapshot`、`delete-trash-restore`、响应式/URL 恢复。
+
+下一步：在唯一剩余工作树槽位派发 actions 叶子实现；调度者只处理共享接线。
+本切片完成也不代表完整 F2、G5、Release 或 V0.5.9 已开始。
