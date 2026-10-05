@@ -85,15 +85,15 @@
 | `scripts/g2-feedback-regression.mjs` | 反馈上下文授权、幂等、状态流转、验证同意/退出、补偿/奖励、参与证据、账户隔离和失败提交 |
 | `scripts/g2-integration-regression.mjs` | G2 OpenAPI、真实 HTTP、账户隔离、ETag、级联回收恢复、导出覆盖与隐私默认值 |
 | `scripts/checkin-health-regression.mjs` | 状态/健康记录载荷、时间和版本、原始元数据、CRUD/HTTP、仓储账户隔离、回收委派及提交失败 |
-| `scripts/ai-domain-regression.mjs` | 旧模型设置、并发账户设置/成本独立保存、整份替换兼容、自然日与统计、写前归一化失败、备份权限、价格快照/未知用量、额度释放/隔离、账本与审计独立故障；运行适配回滚用接口桩，真实 PG 另验 |
+| `scripts/ai-domain-regression.mjs` | 旧模型设置、并发账户设置/成本独立保存、整份替换兼容、自然日与七类服务统计、DeepSeek/火山/阿里官方价解析、文档实际页数、未知动作、写前归一化失败、备份权限、额度释放/隔离、账本与审计独立故障；运行适配回滚用接口桩，真实 PG 另验 |
 | `scripts/ai-budget-runtime-regression.mjs` | 站点预算任务预留、阶段启动、实际费用结算、未启动释放、双尝试计划、结算失败保护和启动恢复 |
 | `scripts/ai-budget-control-version-regression.mjs` | Owner 控制版本、普通调用不漂移、If-Match 原子校验、临时追加/恢复递增和并发陈旧写拒绝 |
 | `scripts/ai-budget-http-regression.mjs` | Owner 预算安全聚合投影、ETag/no-store、服务端 actor 注入、命令错误投影与 OpenAPI 组合 |
 | `scripts/ai-provider-regression.mjs` | DeepSeek JSON/SSE、逐字节 UTF-8/CRLF 拆包、断流/过滤/截断/供应商错误的部分输出、空正文重试次数与账户/站点预算、预算拒绝零供应商 I/O、容量失败释放、超时、并发账户、图片 Flash 参数与私有摘要 |
 | `scripts/volcengine-provider-regression.mjs` | 火山 V4 签名、OCR/文档解析请求契约、TTS 参数/音频响应、长文本与录音文件任务，以及流式 ASR 二进制帧 |
-| `scripts/volcengine-server-regression.mjs` | 带鉴权的 TTS/视觉 HTTP 入口、TTS 缓存零重复预算、OCR + 模型与 ASR + 润色整体预留、站点/账户拒绝零供应商 I/O、Owner 恢复和转写结果落盘 |
+| `scripts/volcengine-server-regression.mjs` | 带鉴权的 TTS/视觉 HTTP 入口、TTS 缓存零重复预算、TTS/ASR/OCR/文档官方价预留与结算、文档实际页数、OCR + 模型与 ASR + 润色整体预留、站点/账户拒绝零供应商 I/O、Owner 恢复和转写结果落盘 |
 | `scripts/capture-transcription-regression.mjs` | 捕念转写排队/执行/结果合并、失败投影及服务重启后的中断任务恢复 |
-| `scripts/segmentation-regression.mjs` | 阿里云 SDK 无重试、同步/异步结果、失败状态/轮询超时、PNG 下载大小/格式/超时、调用组及账户审计、审计失败不重放、限流/在途/上传失败释放、临时图片清理与异步绑定；均为本地替身 |
+| `scripts/segmentation-regression.mjs` | 阿里云 SDK 无重试、同步/异步结果、提交官方价、轮询/下载零重复费用、失败状态/轮询超时、PNG 下载大小/格式/超时、调用组及账户审计、审计失败不重放、限流/在途/上传失败释放、临时图片清理与异步绑定；均为本地替身 |
 | `scripts/keepsake-time-regression.mjs` | 小物载荷/旧记录/扩展保留、局部更新兼容、账户集合隔离与失败提交；UTC/上海/纽约、夏令时、本地日/时分合成、严格日期及旧发生日期解析 |
 | `scripts/prompt-catalog-regression.mjs` | 提示词目录版本选择、SHA-256、必需 ID、占位符契约、提示词正文与代码分离 |
 | `scripts/collaboration-regression.mjs` | 可见文本/重复引文、漂流保留、两套批注 URL、评论创建幂等、任务结果/通知原子提交、失败回滚、并发幂等/重试、迟到拒写、重启与跨账户同 ID 任务 |
