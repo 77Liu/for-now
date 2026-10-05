@@ -54,6 +54,14 @@ export function createJsonStoreRepository({
     await result?.[afterCommit]?.();
     return result;
   });
+  const replace = (value, { beforeWrite = async () => {} } = {}) => runExclusive(async file => {
+    const before = await readInternal(file);
+    await beforeWrite(publicPersistenceDocument(before), file);
+    const document = preparePersistenceDocument(normalize(clone(value)), now, { force: true });
+    await writeDocument(file, document);
+    await onCommit(publicPersistenceDocument(before), publicPersistenceDocument(document));
+    return publicPersistenceDocument(document);
+  });
 
   const executeIdempotent = (request, operation, { onReplay = value => value } = {}) => transact(async ({ document, commit }) => {
     const replay = findIdempotencyResponse(document, request, now);
@@ -67,7 +75,14 @@ export function createJsonStoreRepository({
   return {
     read,
     update,
+    replace,
     transact,
+    withExclusive(operation) {
+      return runExclusive(async file => operation({
+        file,
+        document: publicPersistenceDocument(await readInternal(file))
+      }));
+    },
     executeIdempotent,
     readIdempotent: request => runExclusive(async file => {
       const replay = findIdempotencyResponse(await readInternal(file), request, now);

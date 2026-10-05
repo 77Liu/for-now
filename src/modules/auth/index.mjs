@@ -137,20 +137,34 @@ export function createAuthService({ repository, initializeUserStorage, authRequi
       const expected = Buffer.from(inviteCodeHash, "hex"), supplied = Buffer.from(sha256(String(input.invitation || "")), "hex");
       if (expected.length !== supplied.length || !crypto.timingSafeEqual(expected, supplied)) fail(403, "内测码无效");
       const hashed = await passwordHash(password);
-      return update(async auth => {
-        if (auth.users.some(user => user.username.toLocaleLowerCase() === username.toLocaleLowerCase())) fail(409, "用户名已存在");
-        const user = {
-          id: crypto.randomUUID(),
-          username,
-          passwordHash: hashed,
-          role: auth.users.length === 0 ? "owner" : "user",
-          sessionVersion: 1,
-          createdAt: now()
-        };
-        await initializeUserStorage(user, auth.users.length === 0);
-        auth.users.push(user);
-        return issueSession(auth, user);
-      });
+      let rollbackStorage = null, initializedUserId = "";
+      try {
+        return await update(async auth => {
+          if (auth.users.some(user => user.username.toLocaleLowerCase() === username.toLocaleLowerCase())) fail(409, "用户名已存在");
+          const user = {
+            id: crypto.randomUUID(),
+            username,
+            passwordHash: hashed,
+            role: auth.users.length === 0 ? "owner" : "user",
+            sessionVersion: 1,
+            createdAt: now()
+          };
+          rollbackStorage = await initializeUserStorage(user, auth.users.length === 0);
+          initializedUserId = user.id;
+          auth.users.push(user);
+          return issueSession(auth, user);
+        });
+      } catch (error) {
+        if (typeof rollbackStorage === "function" && initializedUserId) {
+          let persisted = true;
+          try {
+            persisted = normalizeAuthDocument(await repository.read()).users
+              .some(user => user.id === initializedUserId);
+          } catch {}
+          if (!persisted) await rollbackStorage().catch(() => {});
+        }
+        throw error;
+      }
     },
     async login(input, remoteAddress) {
       if (!authRequired) fail(400, "本机模式无需登录");

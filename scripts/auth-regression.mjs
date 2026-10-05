@@ -84,6 +84,11 @@ let child = startApp();
 
 try {
   await waitForServer(base, child);
+  assert.deepEqual(
+    JSON.parse(await fs.readFile(path.join(dataDir, "store.json"), "utf8")),
+    legacyStore,
+    "authenticated JSON startup must not recover the unowned root store"
+  );
   assert.equal((await fetch(`${base}/now`, { redirect: "manual" })).status, 308);
   const appShellResponse = await fetch(`${base}/now/thoughts/direct-route`);
   assert.equal(appShellResponse.status, 200);
@@ -389,6 +394,12 @@ try {
     return (await Promise.all((await fs.readdir(dir)).map(name => fs.readFile(path.join(dir, name), "utf8")))).join("\n");
   };
   const ownerLogs = await readLogs(registered.body.user.id), secondLogs = await readLogs(second.body.user.id);
+  const ownerLogEntries = ownerLogs.split("\n").filter(Boolean).map(JSON.parse);
+  assert.ok(ownerLogEntries.some(entry => (
+    entry.event === "data.changed"
+    && entry.route === "/api/auth/register"
+    && entry.userId === registered.body.user.id
+  )));
   assert.match(ownerLogs, /OWNER_PRIVATE/);
   assert.match(ownerLogs, /ONBOARDING_OWNER/);
   assert.doesNotMatch(ownerLogs, /SECOND_PRIVATE|ONBOARDING_SECOND|audit-test-key/);

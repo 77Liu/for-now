@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   buildPostgresMigrationPlan,
   canonicalJson,
+  createAuthRepository,
   createJsonStoreRepository,
   discoverJsonStores,
   publicPersistenceDocument,
@@ -47,6 +48,63 @@ await Promise.all(Array.from({ length: 20 }, (_, index) => repository.update(sto
 })));
 assert.equal((await repository.read()).captures.length, 20);
 assert.equal(commits.length, 20);
+
+let releaseQueuedUpdate;
+let queuedUpdateEntered;
+const queuedUpdateStarted = new Promise(resolve => { queuedUpdateEntered = resolve; });
+const queuedUpdateReleased = new Promise(resolve => { releaseQueuedUpdate = resolve; });
+const queuedUpdate = repository.update(async store => {
+  store.captures.push({ id: "before-replace" });
+  queuedUpdateEntered();
+  await queuedUpdateReleased;
+});
+await queuedUpdateStarted;
+let replaceSawQueuedUpdate = false;
+const replacement = repository.replace({
+  version: 14,
+  thoughts: [],
+  captures: [{ id: "replacement" }]
+}, {
+  beforeWrite: current => {
+    replaceSawQueuedUpdate = current.captures.some(item => item.id === "before-replace");
+  }
+});
+const trailingUpdate = repository.update(store => {
+  store.captures.push({ id: "after-replace" });
+});
+releaseQueuedUpdate();
+await Promise.all([queuedUpdate, replacement, trailingUpdate]);
+assert.equal(replaceSawQueuedUpdate, true);
+assert.deepEqual(
+  (await repository.read()).captures.map(item => item.id),
+  ["replacement", "after-replace"]
+);
+
+let runtimeAuth = { version: 1, users: [], sessions: [] };
+const runtimeAuthCommits = [], provisions = [];
+const runtimeAuthRepository = createAuthRepository({
+  runtime: {
+    auth: {
+      read: async () => structuredClone(runtimeAuth),
+      update: async mutator => {
+        const next = structuredClone(runtimeAuth);
+        const result = await mutator(next);
+        runtimeAuth = next;
+        return result;
+      },
+      provision: (...args) => provisions.push(args)
+    }
+  },
+  onCommit: async (before, after) => runtimeAuthCommits.push([before, after])
+});
+await runtimeAuthRepository.update(auth => {
+  auth.users.push({ id: "runtime-user" });
+});
+runtimeAuthRepository.provision("runtime-user", { version: 16 }, {});
+assert.equal(runtimeAuthCommits.length, 1);
+assert.deepEqual(runtimeAuthCommits[0][0].users, []);
+assert.deepEqual(runtimeAuthCommits[0][1].users, [{ id: "runtime-user" }]);
+assert.equal(provisions.length, 1);
 
 const metadataFile = path.join(root, "metadata-store.json");
 await fs.writeFile(metadataFile, `${JSON.stringify({
