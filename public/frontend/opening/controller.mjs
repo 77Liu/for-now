@@ -24,6 +24,16 @@ function setBusy(element, busy) {
   else element.removeAttribute("aria-busy");
 }
 
+function normalizeContentTargets(value) {
+  if (value === undefined || value === null) return [];
+  const iterable = typeof value !== "string" && typeof value[Symbol.iterator] === "function";
+  const targets = iterable ? [...value] : [value];
+  return targets.filter(target => (
+    target !== null
+    && (typeof target === "object" || typeof target === "function")
+  ));
+}
+
 export function createOpeningController(options = {}) {
   const {
     selectors: selectorOverrides = {},
@@ -33,7 +43,10 @@ export function createOpeningController(options = {}) {
     status: statusOption,
     recovery: recoveryOption,
     retry: retryOption,
+    contentTargets: contentTargetsOption,
     config: configOption,
+    backgroundSource,
+    backgroundOptions = {},
     createRain = (canvas, config, environment) => new GlassRain(canvas, config, environment),
     onRetry = () => {},
     onStateChange = () => {},
@@ -43,6 +56,8 @@ export function createOpeningController(options = {}) {
     clearTimeout: clearTimer = globalThis.clearTimeout.bind(globalThis),
     lifecycleTarget: lifecycleTargetOption,
     exitDuration = 140,
+    slowDelay = 3500,
+    slowMessage = "连接比平时慢，正在继续尝试",
     rainEnvironment = {},
     requestAnimationFrame,
     cancelAnimationFrame,
@@ -64,10 +79,18 @@ export function createOpeningController(options = {}) {
   const status = resolveChild(root, statusOption, selectors.status);
   const recovery = resolveChild(root, recoveryOption, selectors.recovery);
   const retry = resolveChild(root, retryOption, selectors.retry);
+  const contentTargets = normalizeContentTargets(contentTargetsOption);
   const lifecycleTarget = lifecycleTargetOption || document?.defaultView;
   const matchMedia = injectedMatchMedia || document?.defaultView?.matchMedia?.bind(document.defaultView);
   const config = validateOpeningConfig(configOption);
   const duration = Math.max(0, Math.min(140, Number(exitDuration) || 0));
+  const parsedSlowDelay = Number(slowDelay);
+  const openingSlowDelay = Number.isFinite(parsedSlowDelay) && parsedSlowDelay >= 0
+    ? parsedSlowDelay
+    : 3500;
+  const openingSlowMessage = typeof slowMessage === "string"
+    ? slowMessage
+    : "连接比平时慢，正在继续尝试";
   const directRainEnvironment = {
     requestAnimationFrame,
     cancelAnimationFrame,
@@ -100,6 +123,10 @@ export function createOpeningController(options = {}) {
     state = nextState;
     root.setAttribute("data-opening-state", nextState);
     onStateChange(nextState, { generation: activeGeneration });
+  }
+
+  function setContentInert(inert) {
+    for (const target of contentTargets) target.inert = inert;
   }
 
   function cancelTimers() {
@@ -139,12 +166,14 @@ export function createOpeningController(options = {}) {
     setBusy(root, false);
     if (recovery) recovery.hidden = true;
     if (status) status.textContent = "";
+    setContentInert(false);
     transition("complete");
     return true;
   }
 
   function beginExit(expectedGeneration) {
     if (!current(expectedGeneration) || state !== "opening") return false;
+    cancelTimers();
     setBusy(root, false);
     if (status) status.textContent = "";
     transition("entering");
@@ -185,6 +214,7 @@ export function createOpeningController(options = {}) {
     readyLatched = false;
     reducedMotion = prefersReducedMotion();
 
+    setContentInert(true);
     root.hidden = false;
     setBusy(root, true);
     transition("opening");
@@ -195,6 +225,12 @@ export function createOpeningController(options = {}) {
       beginExit(activeGeneration);
       return activeGeneration;
     }
+    if (status) {
+      const expectedGeneration = activeGeneration;
+      schedule(() => {
+        if (state === "opening") status.textContent = openingSlowMessage;
+      }, openingSlowDelay, expectedGeneration);
+    }
     if (!reducedMotion && config.enabled && canvas) {
       try {
         rain = createRain(canvas, config.config, {
@@ -202,9 +238,21 @@ export function createOpeningController(options = {}) {
           ...directRainEnvironment,
           seed
         });
+        if (backgroundSource !== undefined) {
+          const backgroundRain = rain;
+          const backgroundGeneration = activeGeneration;
+          try {
+            const backgroundResult = rain.setBackground?.(backgroundSource, backgroundOptions);
+            Promise.resolve(backgroundResult).catch(error => {
+              if (current(backgroundGeneration) && rain === backgroundRain) onVisualError(error);
+            });
+          } catch (error) {
+            onVisualError(error);
+          }
+        }
         rain.start?.();
       } catch (error) {
-        rain = null;
+        releaseRain();
         onVisualError(error);
       }
     }
@@ -231,7 +279,8 @@ export function createOpeningController(options = {}) {
     if (state !== "opening") return false;
     cancelTimers();
     cancelAnimations();
-    rain?.pause?.();
+    releaseRain();
+    setContentInert(true);
     setBusy(root, false);
     transition("failure");
     if (status) status.textContent = "";
@@ -251,6 +300,7 @@ export function createOpeningController(options = {}) {
     readyLatched = false;
     root.hidden = true;
     setBusy(root, false);
+    setContentInert(false);
     transition("disposed");
   }
 

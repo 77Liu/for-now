@@ -45,6 +45,7 @@ class FakeElement extends FakeEventTarget {
     this.children = new Map();
     this.animations = [];
     this.focusCount = 0;
+    this.inert = false;
   }
 
   querySelector(selector) {
@@ -110,7 +111,7 @@ function createClock() {
   };
 }
 
-function createFixture({ reducedMotion = false } = {}) {
+function createFixture({ reducedMotion = false, backgroundResult, startError } = {}) {
   const root = new FakeElement();
   const canvas = new FakeElement();
   const status = new FakeElement();
@@ -123,16 +124,25 @@ function createFixture({ reducedMotion = false } = {}) {
   const lifecycleTarget = new FakeEventTarget();
   const clock = createClock();
   const rains = [];
+  const rainCalls = [];
   const createRain = (receivedCanvas, config, environment) => {
     const rain = {
       receivedCanvas,
       config,
       environment,
+      backgrounds: [],
       starts: 0,
       pauses: 0,
       disposals: 0,
+      setBackground(source, options) {
+        rainCalls.push("background");
+        this.backgrounds.push({ source, options });
+        return backgroundResult;
+      },
       start() {
+        rainCalls.push("start");
         this.starts += 1;
+        if (startError) throw startError;
       },
       pause() {
         this.pauses += 1;
@@ -153,6 +163,7 @@ function createFixture({ reducedMotion = false } = {}) {
     lifecycleTarget,
     clock,
     rains,
+    rainCalls,
     createRain,
     controllerOptions: {
       root,
@@ -171,6 +182,36 @@ function createFixture({ reducedMotion = false } = {}) {
       seed: 1234
     }
   };
+}
+
+function createPhysicsEngine(config, seed) {
+  const document = new FakeEventTarget();
+  document.hidden = false;
+  const view = new FakeEventTarget();
+  document.defaultView = view;
+  const context = {
+    setTransform() {},
+    clearRect() {}
+  };
+  const canvas = {
+    ownerDocument: document,
+    width: 0,
+    height: 0,
+    getContext: type => type === "2d" ? context : null,
+    getBoundingClientRect: () => ({ width: 800, height: 600 })
+  };
+  const engine = new GlassRain(canvas, config, {
+    seed,
+    document,
+    view,
+    ResizeObserver: null,
+    devicePixelRatio: 1
+  });
+  return { engine, document, view };
+}
+
+function advancePhysics(engine, seconds) {
+  for (let frame = 0; frame < seconds * 60; frame += 1) engine.advance(1 / 60);
 }
 
 assert.deepEqual(OPENING_SELECTORS, {
@@ -254,9 +295,11 @@ assert.deepEqual(validateOpeningConfig({
 {
   const fixture = createFixture();
   const states = [];
+  const contentTarget = new FakeElement();
   const requestAnimationFrame = () => 9;
   const controller = createOpeningController({
     ...fixture.controllerOptions,
+    contentTargets: contentTarget,
     requestAnimationFrame,
     onStateChange: state => states.push(state)
   });
@@ -267,6 +310,7 @@ assert.deepEqual(validateOpeningConfig({
   assert.equal(fixture.root.hidden, false);
   assert.equal(fixture.root.getAttribute("aria-busy"), "true");
   assert.equal(fixture.root.getAttribute("data-opening-state"), "opening");
+  assert.equal(contentTarget.inert, true);
   assert.equal(fixture.status.textContent, "正在打开此刻");
   assert.equal(fixture.recovery.hidden, true);
   assert.equal(fixture.rains.length, 1);
@@ -275,27 +319,115 @@ assert.deepEqual(validateOpeningConfig({
   assert.equal(fixture.rains[0].environment.seed, 1234);
   assert.equal(fixture.rains[0].environment.requestAnimationFrame, requestAnimationFrame);
   assert.equal(fixture.rains[0].starts, 1);
+  assert.equal(fixture.rains[0].backgrounds.length, 0);
+  assert.equal(fixture.clock.entries.length, 1);
+  const slowTimer = fixture.clock.entries[0];
+  assert.equal(slowTimer.milliseconds, 3500);
 
   assert.equal(controller.ready(generation), true);
   assert.equal(controller.ready(generation), true);
+  assert.equal(slowTimer.cleared, true);
   assert.equal(fixture.root.getAttribute("data-opening-state"), "entering");
+  assert.equal(contentTarget.inert, true, "content must remain inert through the exit animation");
   assert.equal(fixture.root.getAttribute("aria-busy"), null);
   assert.equal(fixture.root.animations.length, 1);
   assert.equal(fixture.root.animations[0].options.duration, 140);
-  assert.equal(fixture.clock.entries.length, 1);
-  assert.equal(fixture.clock.entries[0].milliseconds, 140);
-  fixture.clock.fire(fixture.clock.entries[0]);
+  assert.equal(fixture.clock.entries.length, 2);
+  const exitTimer = fixture.clock.entries.at(-1);
+  assert.equal(exitTimer.milliseconds, 140);
+  fixture.clock.fire(exitTimer);
   assert.equal(fixture.root.hidden, true);
   assert.equal(fixture.root.getAttribute("data-opening-state"), "complete");
+  assert.equal(contentTarget.inert, false);
   assert.equal(fixture.rains[0].disposals, 1);
   assert.deepEqual(states, ["opening", "entering", "complete"]);
 
   controller.dispose();
+  assert.equal(contentTarget.inert, false);
   assert.equal(fixture.root.getAttribute("data-opening-state"), "disposed");
   assert.equal(fixture.retry.listenerCount("click"), 0);
   assert.equal(fixture.lifecycleTarget.listenerCount("pagehide"), 0);
   assert.equal(controller.start(), null);
   assert.equal(controller.ready(), false);
+}
+
+{
+  const fixture = createFixture();
+  const controller = createOpeningController(fixture.controllerOptions);
+  const generation = controller.start();
+  const slowTimer = fixture.clock.entries.at(-1);
+  fixture.clock.fire(slowTimer);
+  assert.equal(fixture.status.textContent, "连接比平时慢，正在继续尝试");
+  assert.equal(controller.fail(generation), true);
+  assert.equal(fixture.status.textContent, "");
+  controller.dispose();
+}
+
+{
+  const fixture = createFixture();
+  const controller = createOpeningController({
+    ...fixture.controllerOptions,
+    slowDelay: 25,
+    slowMessage: "仍在连接"
+  });
+  const firstGeneration = controller.start();
+  const staleSlowTimer = fixture.clock.entries.at(-1);
+  assert.equal(staleSlowTimer.milliseconds, 25);
+
+  const secondGeneration = controller.start();
+  assert.equal(staleSlowTimer.cleared, true);
+  assert.equal(fixture.status.textContent, "正在打开此刻");
+  fixture.clock.fire(staleSlowTimer, { includeCleared: true });
+  assert.equal(fixture.status.textContent, "正在打开此刻");
+
+  const currentSlowTimer = fixture.clock.entries.at(-1);
+  assert.equal(controller.ready(secondGeneration), true);
+  assert.equal(currentSlowTimer.cleared, true);
+  fixture.clock.fire(currentSlowTimer, { includeCleared: true });
+  assert.equal(fixture.status.textContent, "", "slow status must only appear while opening");
+  assert.equal(controller.ready(firstGeneration), false);
+  controller.dispose();
+}
+
+{
+  let finishBackground;
+  const backgroundResult = new Promise(resolve => {
+    finishBackground = resolve;
+  });
+  const fixture = createFixture({ backgroundResult });
+  const backgroundOptions = { opacity: 0.6, maskStart: 0.2 };
+  const controller = createOpeningController({
+    ...fixture.controllerOptions,
+    backgroundSource: "/opening-background.webp",
+    backgroundOptions
+  });
+  controller.start();
+  assert.deepEqual(fixture.rainCalls, ["background", "start"]);
+  assert.equal(fixture.rains[0].starts, 1, "pending background setup must not delay rain");
+  assert.deepEqual(fixture.rains[0].backgrounds, [{
+    source: "/opening-background.webp",
+    options: backgroundOptions
+  }]);
+  controller.dispose();
+  finishBackground();
+  await Promise.resolve();
+}
+
+{
+  const startError = new Error("rain start failed");
+  const visualErrors = [];
+  const fixture = createFixture({ startError });
+  const controller = createOpeningController({
+    ...fixture.controllerOptions,
+    onVisualError: error => visualErrors.push(error)
+  });
+  controller.start();
+  assert.equal(fixture.rains.length, 1);
+  assert.equal(fixture.rains[0].starts, 1);
+  assert.equal(fixture.rains[0].disposals, 1);
+  assert.deepEqual(visualErrors, [startError]);
+  controller.dispose();
+  assert.equal(fixture.rains[0].disposals, 1, "failed rain must not remain controller-owned");
 }
 
 {
@@ -314,13 +446,21 @@ assert.deepEqual(validateOpeningConfig({
 
 {
   const fixture = createFixture({ reducedMotion: true });
-  const controller = createOpeningController(fixture.controllerOptions);
+  const contentTargets = [new FakeElement(), new FakeElement()];
+  const controller = createOpeningController({
+    ...fixture.controllerOptions,
+    contentTargets
+  });
   const generation = controller.start();
+  assert.equal(contentTargets.every(target => target.inert), true);
   assert.equal(fixture.rains.length, 0);
   assert.equal(controller.ready(generation), true);
+  assert.equal(contentTargets.every(target => !target.inert), true);
   assert.equal(fixture.root.hidden, true);
   assert.equal(fixture.root.animations.length, 0);
-  assert.equal(fixture.clock.entries.length, 0);
+  assert.equal(fixture.clock.entries.length, 1);
+  assert.equal(fixture.clock.entries[0].milliseconds, 3500);
+  assert.equal(fixture.clock.entries[0].cleared, true);
   assert.equal(fixture.root.getAttribute("data-opening-state"), "complete");
   controller.dispose();
 }
@@ -328,15 +468,22 @@ assert.deepEqual(validateOpeningConfig({
 {
   const fixture = createFixture();
   const retries = [];
+  const contentTargets = [new FakeElement(), new FakeElement()];
   const controller = createOpeningController({
     ...fixture.controllerOptions,
+    contentTargets: new Set(contentTargets),
     onRetry: context => retries.push(context)
   });
   const firstGeneration = controller.start();
+  assert.equal(contentTargets.every(target => target.inert), true);
+  const failureSlowTimer = fixture.clock.entries.at(-1);
   assert.equal(controller.fail(firstGeneration + 1), false);
   assert.equal(controller.fail(firstGeneration), true);
   assert.equal(controller.fail(firstGeneration), true);
-  assert.equal(fixture.rains[0].pauses, 1);
+  assert.equal(failureSlowTimer.cleared, true);
+  assert.equal(fixture.rains[0].pauses, 0);
+  assert.equal(fixture.rains[0].disposals, 1);
+  assert.equal(contentTargets.every(target => target.inert), true);
   assert.equal(fixture.recovery.hidden, false);
   assert.equal(fixture.retry.focusCount, 1);
   assert.equal(fixture.root.getAttribute("data-opening-state"), "failure");
@@ -346,12 +493,16 @@ assert.deepEqual(validateOpeningConfig({
   const secondGeneration = retries[0].restart();
   assert.equal(secondGeneration, 2);
   assert.equal(fixture.rains[0].disposals, 1);
+  assert.equal(fixture.rains.length, 2, "retry must create a fresh rain engine");
   assert.equal(fixture.rains[1].starts, 1);
+  assert.equal(contentTargets.every(target => target.inert), true);
   assert.equal(fixture.recovery.hidden, true);
   assert.equal(controller.ready(firstGeneration), false);
   assert.equal(controller.fail(firstGeneration), false);
   assert.equal(fixture.root.getAttribute("data-opening-state"), "opening");
   controller.dispose();
+  assert.equal(fixture.rains[1].disposals, 1);
+  assert.equal(contentTargets.every(target => !target.inert), true);
 }
 
 {
@@ -359,7 +510,7 @@ assert.deepEqual(validateOpeningConfig({
   const controller = createOpeningController(fixture.controllerOptions);
   const firstGeneration = controller.start();
   controller.ready(firstGeneration);
-  const staleTimer = fixture.clock.entries[0];
+  const staleTimer = fixture.clock.entries.at(-1);
   const staleAnimation = fixture.root.animations[0];
   const secondGeneration = controller.start();
   assert.equal(staleTimer.cleared, true);
@@ -504,6 +655,79 @@ assert.deepEqual(validateOpeningConfig({
   disposedImageLoad();
   assert.equal(frames.size, 1, "late rAF must not schedule another frame");
   assert.equal(textureBuilds, 1, "late image callbacks must not rebuild texture");
+
+  const numericCanvas = {
+    ownerDocument: document,
+    width: 0,
+    height: 0,
+    getContext: type => type === "2d" ? context : null,
+    getBoundingClientRect: () => ({ width: 300, height: 150 })
+  };
+  const numericDprEngine = new GlassRain(numericCanvas, RAIN_DEFAULTS, {
+    seed: 8,
+    document,
+    view,
+    ResizeObserver: null,
+    devicePixelRatio: 1.5
+  });
+  assert.equal(numericCanvas.width, 450);
+  assert.equal(numericCanvas.height, 225);
+  numericDprEngine.dispose();
+  assert.equal(view.listenerCount("resize"), 0);
+  assert.equal(document.listenerCount("visibilitychange"), 0);
+}
+
+{
+  const zeroDensity = createPhysicsEngine({ ...RAIN_DEFAULTS, density: 0 }, 101);
+  advancePhysics(zeroDensity.engine, 30);
+  assert.deepEqual(
+    {
+      active: zeroDensity.engine.stats.active,
+      total: zeroDensity.engine.stats.total,
+      flows: zeroDensity.engine.stats.flows
+    },
+    { active: 0, total: 0, flows: 0 }
+  );
+  zeroDensity.engine.dispose();
+
+  const seconds = 120;
+  const config = {
+    ...RAIN_DEFAULTS,
+    density: 4,
+    trailPercent: 65,
+    slideLength: 180
+  };
+  const first = createPhysicsEngine(config, 424242);
+  const second = createPhysicsEngine(config, 424242);
+  const observedDrops = [];
+  const spawn = first.engine.spawn.bind(first.engine);
+  first.engine.spawn = () => {
+    const previousTotal = first.engine.total;
+    spawn();
+    if (first.engine.total > previousTotal) observedDrops.push(first.engine.drops.at(-1));
+  };
+  advancePhysics(first.engine, seconds);
+  advancePhysics(second.engine, seconds);
+  assert.deepEqual(first.engine.stats, second.engine.stats);
+  assert.ok(Math.abs(first.engine.stats.total / seconds - config.density) < 0.35);
+  assert.ok(Math.abs(first.engine.stats.flows / first.engine.stats.total - 0.65) < 0.08);
+
+  const flowDrops = observedDrops.filter(drop => drop.flow);
+  assert.ok(flowDrops.length > 100);
+  for (const drop of flowDrops) {
+    assert.ok(
+      drop.length <= Math.min(first.engine.h * 0.65, drop.c.slideLength * 1.3) + 1e-9,
+      "flow length must remain within the configured slide bound"
+    );
+    for (let index = 1; index < drop.points.length; index += 1) {
+      assert.ok(
+        drop.points[index].y >= drop.points[index - 1].y,
+        "seeded flow points must move monotonically downward"
+      );
+    }
+  }
+  first.engine.dispose();
+  second.engine.dispose();
 }
 
 const controllerSource = await fs.readFile(
@@ -516,4 +740,4 @@ assert.doesNotMatch(
   "Opening controller must remain route-neutral and perform no network or auth work"
 );
 
-console.log("Opening controller checks passed: frozen R9.4-F1 validation, lifecycle, ready latch, failure recovery, reduced motion, generation guards, and complete browser-resource cleanup.");
+console.log("Opening controller checks passed: slow status, inert lifecycle, rain ownership, background setup, DPR variants, seeded physics, and browser-resource cleanup.");

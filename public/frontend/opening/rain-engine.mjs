@@ -29,11 +29,14 @@ function createEnvironment(canvas, overrides) {
   const setTimer = overrides.setTimeout || globalThis.setTimeout.bind(globalThis);
   const clearTimer = overrides.clearTimeout || globalThis.clearTimeout.bind(globalThis);
   const now = overrides.now || (() => globalThis.performance?.now?.() ?? Date.now());
+  const devicePixelRatio = overrides.devicePixelRatio;
   return {
     document,
     view,
     now,
-    devicePixelRatio: overrides.devicePixelRatio || (() => view?.devicePixelRatio || 1),
+    devicePixelRatio: typeof devicePixelRatio === "function"
+      ? devicePixelRatio
+      : () => devicePixelRatio ?? view?.devicePixelRatio ?? 1,
     createCanvas: overrides.createCanvas || (() => document?.createElement("canvas")),
     createImage: overrides.createImage || (() => new view.Image()),
     Path2D: overrides.Path2D || view?.Path2D || globalThis.Path2D,
