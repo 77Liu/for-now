@@ -163,8 +163,10 @@ const mockFetch = `
   Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
     value: { getUserMedia: async () => {
+      window.__microphoneRequests=(window.__microphoneRequests||0)+1;
       if(window.__failMicrophonePermission){window.__failMicrophonePermission=false;throw new DOMException("MIC_DEVICE_INTERNAL","NotAllowedError")}
-      return { getTracks: () => [{ stop() {} }] }
+      if(window.__delayMicrophonePermission)await new Promise(resolve=>{window.__releaseMicrophonePermission=()=>{window.__delayMicrophonePermission=false;delete window.__releaseMicrophonePermission;resolve()}});
+      return { getTracks: () => [{ stop() { window.__microphoneTrackStops=(window.__microphoneTrackStops||0)+1 } }] }
     } }
   });
   window.MediaRecorder = class extends EventTarget {
@@ -1552,6 +1554,7 @@ try {
       keepsakeOpaque:keepsakeImage&&getComputedStyle(keepsakeImage).opacity==="1",
       keepsakeCutout:document.querySelectorAll(".home-v02-keepsake-preview img").length===1,
       moodPoints:document.querySelectorAll("#home-mood-sparkline circle").length,
+      voiceShortcut:Boolean(document.querySelector('#home-record-voice[aria-label="快捷语音记录"][title="快捷语音记录"][aria-haspopup="dialog"][aria-controls="capture-editor"]')),
       background:background.backgroundImage.includes("app-background-desktop"),
       backgroundFixed:getComputedStyle(backgroundElement).position==="fixed"&&Math.round(backgroundElement.getBoundingClientRect().height)===innerHeight,
       railOrder:state.getBoundingClientRect().top<keepsake.getBoundingClientRect().top,
@@ -1561,7 +1564,7 @@ try {
       noOverflow:document.documentElement.scrollWidth<=innerWidth
     };
   })()`);
-  assert.deepEqual(homeDesktop,{active:true,memories:3,twoColumns:true,userOnly:true,traceable:true,keepsake:true,keepsakeOpaque:true,keepsakeCutout:true,moodPoints:2,background:true,backgroundFixed:true,railOrder:true,actionsCollapsed:true,liveStatusHidden:true,singleScreen:true,noOverflow:true});
+  assert.deepEqual(homeDesktop,{active:true,memories:3,twoColumns:true,userOnly:true,traceable:true,keepsake:true,keepsakeOpaque:true,keepsakeCutout:true,moodPoints:2,voiceShortcut:true,background:true,backgroundFixed:true,railOrder:true,actionsCollapsed:true,liveStatusHidden:true,singleScreen:true,noOverflow:true});
   const homeDesktopScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
   await fs.writeFile("/tmp/growth-home-v02-desktop.png",Buffer.from(homeDesktopScreenshot.data,"base64"));
   for(const viewport of[{width:1280,height:720},{width:1280,height:600}]){
@@ -1603,8 +1606,9 @@ try {
   await sleep(120);
   assert.deepEqual(await evaluate(`(() => {
     const items=[...document.querySelectorAll(".home-v02-memory")],visible=items.filter(item=>getComputedStyle(item).display!=="none");
-    return {visible:visible.length,twoColumns:getComputedStyle(document.querySelector("#home-memory-grid")).gridTemplateColumns.split(" ").length===2,touch:[document.querySelector("#home-open-thought"),document.querySelector("#home-record-state")].every(item=>item.getBoundingClientRect().height>=44),singleScreen:document.documentElement.scrollHeight<=innerHeight,noOverflow:document.documentElement.scrollWidth<=innerWidth,background:getComputedStyle(document.querySelector(".app-atmosphere"),"::after").backgroundImage.includes("app-background-mobile")};
-  })()`),{visible:3,twoColumns:true,touch:true,singleScreen:true,noOverflow:true,background:true});
+    const shuffle=document.querySelector("#home-shuffle");
+    return {visible:visible.length,twoColumns:getComputedStyle(document.querySelector("#home-memory-grid")).gridTemplateColumns.split(" ").length===2,touch:[document.querySelector("#home-open-thought"),document.querySelector("#home-record-voice"),document.querySelector("#home-record-state")].every(item=>item.getBoundingClientRect().width>=44&&item.getBoundingClientRect().height>=44),shuffleSingleLine:getComputedStyle(shuffle).whiteSpace==="nowrap"&&shuffle.scrollHeight<=shuffle.clientHeight+1,singleScreen:document.documentElement.scrollHeight<=innerHeight,noOverflow:document.documentElement.scrollWidth<=innerWidth,background:getComputedStyle(document.querySelector(".app-atmosphere"),"::after").backgroundImage.includes("app-background-mobile")};
+  })()`),{visible:3,twoColumns:true,touch:true,shuffleSingleLine:true,singleScreen:true,noOverflow:true,background:true});
   const homeMobileScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
   await fs.writeFile("/tmp/growth-home-v02-mobile.png",Buffer.from(homeMobileScreenshot.data,"base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 375, height: 667, deviceScaleFactor: 2, mobile: true });
@@ -2300,6 +2304,19 @@ try {
   assert.equal(await waitUntil(`window.__speechPlays.length===4`),true);
   assert.deepEqual(await evaluate(`(() => {const old=document.querySelector('[data-capture-id="capture-long"] [data-speech-player]'),next=document.querySelector('[data-capture-id="capture-1"] [data-speech-player]'),assetId=new URL(old.src).searchParams.get("id");return{oldPaused:old.paused,oldSourceRetained:old.getAttribute("src")===window.__activeCaptureSpeechUrl,newPaused:next.paused,oldPauseRecorded:window.__speechPauses.some(url=>url.includes("id="+assetId)),requests:window.__speechRequests.length}})()`),{oldPaused:true,oldSourceRetained:true,newPaused:false,oldPauseRecorded:true,requests:3},"starting another asset must pause the previous player without detaching either persisted source");
   assert.equal(await evaluate(`document.querySelector("#capture-editor").hidden&&document.querySelector("#capture-form").hidden&&document.querySelector("#capture-create-toggle").getAttribute("aria-expanded")==="false"`),true);
+  await evaluate(`document.querySelector('[data-view="today"]').click();window.__failMicrophonePermission=true;document.querySelector("#home-record-voice").click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-captures").classList.contains("active")&&!document.querySelector("#capture-editor").hidden&&document.querySelector("#capture-audio-status").textContent.includes("麦克风权限未开启")`),true);
+  assert.deepEqual(await evaluate(`({path:location.pathname,requests:window.__microphoneRequests,recorderOpen:document.querySelector("#capture-audio-recorder").open,privateError:document.body.textContent.includes("MIC_DEVICE_INTERNAL")})`),{path:"/seen/captures",requests:1,recorderOpen:true,privateError:false});
+  await evaluate(`document.querySelector("#capture-editor-close").click();document.querySelector('[data-view="today"]').click();window.__delayMicrophonePermission=true;document.querySelector("#home-record-voice").click();true`);
+  assert.equal(await waitUntil(`typeof window.__releaseMicrophonePermission==="function"&&document.querySelector("#capture-audio-status").textContent==="正在请求麦克风权限…"`),true);
+  await evaluate(`document.querySelector("#capture-editor-close").click();window.__releaseMicrophonePermission();true`);
+  assert.equal(await waitUntil(`window.__microphoneTrackStops===1&&!document.querySelector("#capture-audio-record").disabled`),true);
+  assert.deepEqual(await evaluate(`({editorHidden:document.querySelector("#capture-editor").hidden,recording:Boolean(document.querySelector("#capture-audio-status").textContent.includes("正在录音"))})`),{editorHidden:true,recording:false});
+  await evaluate(`document.querySelector('[data-view="today"]').click();document.querySelector("#home-record-voice").click();document.querySelector("#home-record-voice").click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#capture-audio-status").textContent.includes("正在录音")`),true);
+  assert.deepEqual(await evaluate(`({path:location.pathname,requests:window.__microphoneRequests,editorVisible:!document.querySelector("#capture-editor").hidden,recorder:document.querySelector("#capture-audio-record").hidden})`),{path:"/seen/captures",requests:3,editorVisible:true,recorder:true});
+  await evaluate(`document.querySelector("#capture-audio-remove").click();document.querySelector("#capture-editor-close").click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#capture-editor").hidden`),true);
   await evaluate(`document.querySelector("#capture-create-toggle").click();true`);
   assert.equal(await waitUntil(`!document.querySelector("#capture-editor").hidden&&document.querySelector("#capture-form").getAttribute("hidden")===null&&document.activeElement===document.querySelector("#capture-content")`),true);
   const captureWritesBeforeClose=await evaluate(`window.__captureSaves`);
@@ -2334,7 +2351,8 @@ try {
   await evaluate(`document.querySelector("#capture-content").value="";document.querySelector("#capture-content").dispatchEvent(new Event("input",{bubbles:true}));true`);
   for(const width of[320,390]){
     await cdp.send("Emulation.setDeviceMetricsOverride",{width,height:844,deviceScaleFactor:1,mobile:true});await sleep(80);
-    assert.equal(await evaluate(`(()=>{const editor=document.querySelector("#capture-editor .capture-editor").getBoundingClientRect(),submit=document.querySelector("#capture-submit").getBoundingClientRect(),nav=document.querySelector(".sidebar").getBoundingClientRect();return document.documentElement.scrollWidth<=innerWidth&&editor.left>=0&&editor.right<=innerWidth&&submit.height>=44&&submit.bottom<=nav.top})()`),true,`${width}px capture editor`);
+    const captureEditorLayout=await evaluate(`(()=>{const editor=document.querySelector("#capture-editor .capture-editor").getBoundingClientRect(),submit=document.querySelector("#capture-submit").getBoundingClientRect(),nav=document.querySelector(".sidebar").getBoundingClientRect();return{noOverflow:document.documentElement.scrollWidth<=innerWidth,editorInside:editor.left>=0&&editor.right<=innerWidth,submitHeight:Math.round(submit.height),submitAboveNav:submit.bottom<=nav.top,recorderOpen:document.querySelector("#capture-audio-recorder").open}})()`);
+    assert.deepEqual(captureEditorLayout,{noOverflow:true,editorInside:true,submitHeight:44,submitAboveNav:true,recorderOpen:false},`${width}px capture editor`);
   }
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
   assert.deepEqual(await evaluate(`(() => {const editor=document.querySelector(".capture-audio-editor"),upload=editor.querySelector(".audio-file-primary"),recorder=editor.querySelector("#capture-audio-recorder"),record=editor.querySelector("#capture-audio-record"),preview=editor.querySelector("#capture-audio-preview");return{fits:editor.getBoundingClientRect().right<=window.innerWidth,uploadText:upload.textContent.trim(),uploadHeight:Math.round(upload.getBoundingClientRect().height),recorderOpen:recorder.open,summary:recorder.querySelector("summary").textContent.replace(/\\s+/g," ").trim(),recordCollapsed:record.getClientRects().length===0,previewCollapsed:preview.getClientRects().length===0}})()`), {

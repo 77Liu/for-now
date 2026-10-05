@@ -88,6 +88,7 @@
   justify-content:space-between;
   gap:24px;
 }
+.home-v02-record-actions{display:flex;align-items:center;gap:10px;min-width:0}
 .home-v02-primary{
   display:inline-flex;
   min-height:60px;
@@ -103,6 +104,20 @@
 }
 .home-v02-primary:hover{background:#dde4d4}
 .home-v02-primary span{font-family:var(--home-serif);font-size:28px;font-weight:400}
+.home-v02-voice{
+  display:grid;
+  width:60px;
+  height:60px;
+  flex:none;
+  place-items:center;
+  padding:0;
+  border:1px solid #526748;
+  border-radius:50%;
+  background:rgba(250,249,245,.9);
+  color:var(--home-moss);
+}
+.home-v02-voice:hover{background:var(--home-sage)}
+.home-v02-voice svg{width:24px;height:24px}
 .home-v02-text-action{
   display:inline-flex;
   min-height:44px;
@@ -116,7 +131,7 @@
   font:500 15px/1.5 var(--home-serif);
 }
 .home-v02-text-action:hover{text-decoration:underline;text-underline-offset:6px}
-.home-v02-text-action:focus-visible,.home-v02-primary:focus-visible,.home-v02-keepsake-entry:focus-visible,.home-v02-date:focus-within{
+.home-v02-text-action:focus-visible,.home-v02-primary:focus-visible,.home-v02-voice:focus-visible,.home-v02-keepsake-entry:focus-visible,.home-v02-date:focus-within{
   outline:2px solid var(--home-moss);
   outline-offset:4px;
 }
@@ -362,9 +377,11 @@ body.home-v02-editor-open{overflow:hidden}
   .home-v02-masthead{min-height:48px;margin-bottom:15px}
   .home-v02-brand{font-size:26px}
   .home-v02-content{padding-top:12px}
-  .home-v02-actions{align-items:stretch;flex-wrap:wrap}
-  .home-v02-primary{width:100%;min-height:52px;padding:9px 16px;font-size:21px}
-  .home-v02-actions>#home-shuffle{margin:-2px 0 0 auto}
+  .home-v02-actions{display:grid;grid-template-columns:minmax(0,1fr) 52px auto;align-items:center;gap:8px}
+  .home-v02-record-actions{display:contents}
+  .home-v02-primary{width:auto;min-height:52px;flex:1;padding:9px 16px;font-size:21px}
+  .home-v02-voice{width:52px;height:52px}
+  .home-v02-actions>#home-shuffle{margin:0;white-space:nowrap}
   .home-v02-editorial{display:flex;flex-direction:column;gap:21px;margin-top:3px}
   .home-v02-memory{width:100%}
   .home-v02-memory:first-child{padding:0}

@@ -480,6 +480,7 @@ const imageDataUrls=files=>Promise.all(files.map(file=>new Promise((resolve,reje
 const audioDataUrl=blob=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error("无法读取音频，请重新录制或导入"));reader.readAsDataURL(blob)});
 const formatAudioDuration=value=>{const seconds=Math.max(0,Math.round(Number(value)||0)/1000),minutes=Math.floor(seconds/60);return`${minutes}:${String(Math.floor(seconds%60)).padStart(2,"0")}`};
 const audioDraftKey="capture-audio";
+let captureAudioStartPending=false;
 function captureAudioInputError(error){
   return presentError(error,{
     operation:"添加录音",
@@ -502,11 +503,12 @@ function renderCaptureAudioDraft(){
   const preview=$("#capture-audio-preview"),player=$("#capture-audio-player"),meta=$("#capture-audio-meta"),status=$("#capture-audio-status"),record=$("#capture-audio-record"),pause=$("#capture-audio-pause"),stop=$("#capture-audio-stop"),remove=$("#capture-audio-remove"),file=$("#capture-audio-file"),recorder=$("#capture-audio-recorder");
   if(!preview||!player)return;
   const recorderState=captureAudioDraft.recorder?.state||"",active=["recording","paused"].includes(recorderState),paused=recorderState==="paused",source=captureAudioDraft.preview||(captureAudioDraft.path?appUrl(captureAudioDraft.path):"")||(captureAudioDraft.uploadedPath?appUrl(captureAudioDraft.uploadedPath):"");
-  if(active&&recorder)recorder.open=true;record.hidden=active;pause.hidden=!active;pause.textContent=paused?"▶":"Ⅱ";pause.title=paused?"继续录音":"暂停录音";pause.setAttribute("aria-label",pause.title);stop.hidden=!active;file.disabled=active;remove.hidden=!active&&!source;remove.title=active?"取消录音":"移除语音";remove.setAttribute("aria-label",remove.title);
+  if((active||captureAudioStartPending)&&recorder)recorder.open=true;record.hidden=active;record.disabled=captureAudioStartPending;pause.hidden=!active;pause.textContent=paused?"▶":"Ⅱ";pause.title=paused?"继续录音":"暂停录音";pause.setAttribute("aria-label",pause.title);stop.hidden=!active;file.disabled=active||captureAudioStartPending;remove.hidden=!active&&!source;remove.disabled=captureAudioStartPending;remove.title=active?"取消录音":"移除语音";remove.setAttribute("aria-label",remove.title);
   preview.hidden=!source;if(source&&player.src!==new URL(source,location.href).href)player.src=source;if(!source){player.pause();player.removeAttribute("src");player.load()}
   meta.textContent=source?`${formatAudioDuration(captureAudioDraft.durationMs)} · ${formatBytes(captureAudioDraft.bytes)}`:"";
   const elapsed=Date.now()-captureAudioDraft.startedAt-captureAudioDraft.pausedTotal-(paused?Date.now()-captureAudioDraft.pausedAt:0);
-  if(active)status.textContent=`${paused?"录音已暂停":"正在录音"} ${formatAudioDuration(elapsed)} / 10:00`;
+  if(captureAudioStartPending)status.textContent="正在请求麦克风权限…";
+  else if(active)status.textContent=`${paused?"录音已暂停":"正在录音"} ${formatAudioDuration(elapsed)} / 10:00`;
   else if(captureAudioDraft.lastError)status.textContent=captureAudioDraft.lastError;
   else if(source)status.textContent=state.speech?.configured?"录音已保留；提交后可在后台转成文字。":"录音已保留；暂时不能转成文字。";
   else status.textContent=typeof MediaRecorder==="undefined"?"当前浏览器不支持直接录音，可导入音频文件。":""
@@ -576,30 +578,49 @@ async function restoreCaptureAudioDraft(owner){
 }
 async function startCaptureAudioRecording(){
   if(typeof MediaRecorder==="undefined"||!navigator.mediaDevices?.getUserMedia)throw new Error("当前浏览器不支持直接录音，可改为导入音频");
-  if((captureAudioDraft.blob||captureAudioDraft.path||captureAudioDraft.uploadedPath)&&!confirm("用新录音替换当前语音？"))return;
+  if(captureAudioStartPending||["recording","paused"].includes(captureAudioDraft.recorder?.state))return false;
+  if((captureAudioDraft.blob||captureAudioDraft.path||captureAudioDraft.uploadedPath)&&!confirm("用新录音替换当前语音？"))return false;
   $("#capture-audio-recorder").open=true;
-  const owner=currentUser?.id,serial=++captureAudioDraft.serial,stream=await navigator.mediaDevices.getUserMedia({audio:true});
-  if(owner!==currentUser?.id||serial!==captureAudioDraft.serial){stream.getTracks().forEach(track=>track.stop());return}
-  const mimeType=preferredRecorderMime(),recorder=mimeType?new MediaRecorder(stream,{mimeType}):new MediaRecorder(stream);
-  let resolveStop;
-  const stopPromise=new Promise(resolve=>{resolveStop=resolve});
-  captureAudioDraft.stream=stream;captureAudioDraft.recorder=recorder;captureAudioDraft.chunks=[];captureAudioDraft.startedAt=Date.now();captureAudioDraft.pausedAt=0;captureAudioDraft.pausedTotal=0;captureAudioDraft.lastError=null;captureAudioDraft.stopPromise=stopPromise;captureAudioDraft.resolveStop=resolveStop;
-  recorder.addEventListener("dataavailable",event=>{if(serial===captureAudioDraft.serial&&event.data?.size)captureAudioDraft.chunks.push(event.data)});
-  recorder.addEventListener("stop",async()=>{
-    try{
-      clearInterval(captureAudioDraft.timer);captureAudioDraft.timer=0;stopCaptureAudioTracks();
-      if(serial!==captureAudioDraft.serial)return;
-      const durationMs=Math.min(AUDIO_MAX_DURATION_MS,Date.now()-captureAudioDraft.startedAt-captureAudioDraft.pausedTotal),blob=new Blob(captureAudioDraft.chunks,{type:recorder.mimeType||mimeType});
-      captureAudioDraft.recorder=null;
-      try{await setCaptureAudioBlob(blob,durationMs);$("#capture-audio-status").textContent="录音已保存在本机，提交后同步。"}
-      catch(error){captureAudioDraft.lastError=captureAudioInputError(error);renderCaptureAudioDraft()}
-    }finally{
-      if(captureAudioDraft.stopPromise===stopPromise){captureAudioDraft.stopPromise=null;captureAudioDraft.resolveStop=null}
-      resolveStop()
+  const owner=currentUser?.id,serial=++captureAudioDraft.serial;
+  let stream=null;
+  captureAudioStartPending=true;captureAudioDraft.lastError=null;renderCaptureAudioDraft();
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    if(owner!==currentUser?.id||serial!==captureAudioDraft.serial){stream.getTracks().forEach(track=>track.stop());return false}
+    const mimeType=preferredRecorderMime(),recorder=mimeType?new MediaRecorder(stream,{mimeType}):new MediaRecorder(stream);
+    let resolveStop;
+    const stopPromise=new Promise(resolve=>{resolveStop=resolve});
+    captureAudioDraft.stream=stream;captureAudioDraft.recorder=recorder;captureAudioDraft.chunks=[];captureAudioDraft.startedAt=Date.now();captureAudioDraft.pausedAt=0;captureAudioDraft.pausedTotal=0;captureAudioDraft.lastError=null;captureAudioDraft.stopPromise=stopPromise;captureAudioDraft.resolveStop=resolveStop;
+    recorder.addEventListener("dataavailable",event=>{if(serial===captureAudioDraft.serial&&event.data?.size)captureAudioDraft.chunks.push(event.data)});
+    recorder.addEventListener("stop",async()=>{
+      try{
+        clearInterval(captureAudioDraft.timer);captureAudioDraft.timer=0;stopCaptureAudioTracks();
+        if(serial!==captureAudioDraft.serial)return;
+        const durationMs=Math.min(AUDIO_MAX_DURATION_MS,Date.now()-captureAudioDraft.startedAt-captureAudioDraft.pausedTotal),blob=new Blob(captureAudioDraft.chunks,{type:recorder.mimeType||mimeType});
+        captureAudioDraft.recorder=null;
+        try{await setCaptureAudioBlob(blob,durationMs);$("#capture-audio-status").textContent="录音已保存在本机，提交后同步。"}
+        catch(error){captureAudioDraft.lastError=captureAudioInputError(error);renderCaptureAudioDraft()}
+      }finally{
+        if(captureAudioDraft.stopPromise===stopPromise){captureAudioDraft.stopPromise=null;captureAudioDraft.resolveStop=null}
+        resolveStop()
+      }
+    },{once:true});
+    recorder.start(1000);renderCaptureAudioDraft();
+    captureAudioDraft.timer=setInterval(()=>{const paused=captureAudioDraft.recorder?.state==="paused",elapsed=Date.now()-captureAudioDraft.startedAt-captureAudioDraft.pausedTotal-(paused?Date.now()-captureAudioDraft.pausedAt:0);if(elapsed>=AUDIO_MAX_DURATION_MS)stopCaptureAudioRecording();else renderCaptureAudioDraft()},250);
+    return true
+  }catch(error){
+    if(stream){
+      if(captureAudioDraft.stream===stream){captureAudioDraft.recorder=null;stopCaptureAudioTracks()}
+      else stream.getTracks().forEach(track=>track.stop())
     }
-  },{once:true});
-  recorder.start(1000);renderCaptureAudioDraft();
-  captureAudioDraft.timer=setInterval(()=>{const paused=captureAudioDraft.recorder?.state==="paused",elapsed=Date.now()-captureAudioDraft.startedAt-captureAudioDraft.pausedTotal-(paused?Date.now()-captureAudioDraft.pausedAt:0);if(elapsed>=AUDIO_MAX_DURATION_MS)stopCaptureAudioRecording();else renderCaptureAudioDraft()},250)
+    throw error
+  }finally{
+    captureAudioStartPending=false;renderCaptureAudioDraft()
+  }
+}
+async function requestCaptureAudioRecording(){
+  try{return await startCaptureAudioRecording()}
+  catch(error){captureAudioDraft.lastError=captureRecordingError(error);renderCaptureAudioDraft();return false}
 }
 function toggleCaptureAudioPause(){
   const recorder=captureAudioDraft.recorder;if(!recorder)return;
@@ -2235,10 +2256,12 @@ function restoreSuspendedCaptureCreateDraft(){
 async function closeCaptureEditor({restoreFocus=true}={}){
   if(!captureComposerOpen)return;
   const serial=++captureEditorSerial,editingId=$("#capture-id").value,trigger=captureEditorTrigger;
+  if(captureAudioStartPending)captureAudioDraft.serial+=1;
   captureComposerOpen=false;$("#capture-editor").hidden=true;$("#capture-form").hidden=true;document.body.classList.remove("capture-editor-open");renderCaptures();
   if(captureAudioDraft.recorder&&captureAudioDraft.recorder.state!=="inactive")await stopCaptureAudioRecording();
   saveDurableDrafts();await Promise.all([persistContentImageDraft("capture"),persistCaptureAudioDraft()]).catch(()=>{});
   if(serial!==captureEditorSerial)return false;
+  if(!captureAudioDraft.blob&&!captureAudioDraft.path&&!captureAudioDraft.uploadedPath)$("#capture-audio-recorder").open=false;
   if(editingId)resetCaptureForm({restoreFocus:false});else captureEditorTrigger=null;
   const target=captureEditorFocusTarget(trigger);if(restoreFocus&&target?.isConnected)target.focus({preventScroll:true})
   return true
@@ -2249,6 +2272,12 @@ function openCaptureEditor(trigger=null){
   captureEditorTrigger={element:trigger instanceof HTMLElement?trigger:$("#capture-create-toggle"),captureId:""};
   captureComposerOpen=true;renderCaptures();document.body.classList.add("capture-editor-open");
   requestAnimationFrame(()=>$("#capture-content")?.focus())
+}
+function openQuickVoiceCapture(){
+  switchView("captures");
+  openCaptureEditor($("#capture-create-toggle"));
+  $("#capture-audio-recorder").open=true;
+  void requestCaptureAudioRecording()
 }
 function resetCaptureForm({preserveUploads=false,restoreFocus=true}={}){
   captureEditorSerial+=1;
@@ -4153,6 +4182,7 @@ const lazyPageEffects=new Proxy(pageEffects,{get(target,view){const effect=targe
 pageRouter=createPageRouter({query:$,queryAll:$$,effects:lazyPageEffects,basePath:applicationBasePath,onRoute:applyApplicationRoute,canAccessView:(_,capability)=>hasCapability(capability),onDenied:showPermissionPage});
 ({switchView,restoreView}=pageRouter);
 $("#home-open-thought").addEventListener("click",event=>openHomeEditor("thought",event.currentTarget));
+$("#home-record-voice").addEventListener("click",openQuickVoiceCapture);
 $("#home-record-state").addEventListener("click",event=>openHomeEditor("state",event.currentTarget));
 $("#home-shuffle").addEventListener("click",()=>renderHomeMemories({advance:true}));
 $("#home-memory-grid").addEventListener("click",event=>{
@@ -4597,7 +4627,7 @@ $("#thought-source-cancel").addEventListener("click",()=>{const form=$("#chain-f
 for(const selector of["#chain-question","#chain-idea","#chain-answer"])$(selector).addEventListener("input",()=>{chainDraftVersion+=1;if(selector!=="#chain-answer"){answerDraft="";answerReasoningDraft=""}delete $("#chain-form").dataset.requestId});
 $("#chain-form").addEventListener("reset",event=>{chainDraftVersion+=1;resetContentImageEditor("thoughtRoot");delete event.currentTarget.dataset.draftId;event.currentTarget.elements.sourceCaptureId.value="";event.currentTarget.elements.sourceCaptureVersion.value="";queueMicrotask(syncChainRecordKind)});
 $("#capture-tags").addEventListener("keydown",e=>{if(entryKeyIntent(e,{inputKind:"tag"})==="commit-tag"){e.preventDefault();commitCaptureTags()}});
-$("#capture-audio-record").addEventListener("click",async()=>{try{await startCaptureAudioRecording()}catch(error){captureAudioDraft.lastError=captureRecordingError(error);renderCaptureAudioDraft()}});
+$("#capture-audio-record").addEventListener("click",()=>void requestCaptureAudioRecording());
 $("#capture-audio-pause").addEventListener("click",toggleCaptureAudioPause);
 $("#capture-audio-stop").addEventListener("click",stopCaptureAudioRecording);
 $("#capture-audio-remove").addEventListener("click",cancelCaptureAudioRecording);
