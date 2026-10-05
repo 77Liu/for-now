@@ -718,7 +718,7 @@ export function createActionsFeatureController(deps = {}) {
     if (!isActive(candidate)) return false;
     if (candidate.firstStateRender) {
       candidate.firstStateRender = false;
-      void coordinator.load();
+      void coordinator.load({ ensure: true });
     }
     const relevant = changedDomains == null
       || (typeof changedDomains === "string"

@@ -180,6 +180,28 @@ assert.throws(() => createActionsCoordinator(), /requires listAllV1/);
   assert.equal(coordinator.snapshot().actions[0].id, "new");
 }
 
+// Internal reset generation rejects an old response even while the external session stays current.
+{
+  const oldActions = deferred();
+  const oldHabits = deferred();
+  const coordinator = coordinatorWith({
+    listAllV1(path) {
+      return path === ACTIONS_ENDPOINT ? oldActions.promise : oldHabits.promise;
+    }
+  });
+  const oldLoad = coordinator.load();
+  coordinator.resetSession();
+  coordinator.applyIncrementalSnapshot({
+    actions: [action("after-reset")],
+    habits: [],
+    habitCheckins: []
+  });
+  oldActions.resolve([action("before-reset")]);
+  oldHabits.resolve([]);
+  assert.equal(await oldLoad, false);
+  assert.equal(coordinator.snapshot().actions[0].id, "after-reset");
+}
+
 // A -> B -> A is isolated by coordinator generation as well as session identity.
 {
   const session = createSession("account-a");
@@ -205,6 +227,53 @@ assert.throws(() => createActionsCoordinator(), /requires listAllV1/);
   oldHabits.resolve([]);
   assert.equal(await oldLoad, false);
   assert.equal(coordinator.snapshot().actions[0].id, "new-a");
+}
+
+// A superseded load cannot publish check-ins that arrive after the newer load settled.
+{
+  const oldActions = deferred();
+  const oldHabits = deferred();
+  const oldCheckins = deferred();
+  let actionReads = 0;
+  let habitReads = 0;
+  let oldCheckinReads = 0;
+  const coordinator = coordinatorWith({
+    async listAllV1(path) {
+      if (path === ACTIONS_ENDPOINT) {
+        actionReads += 1;
+        return actionReads === 1 ? oldActions.promise : [action("new")];
+      }
+      if (path === HABITS_ENDPOINT) {
+        habitReads += 1;
+        return habitReads === 1 ? oldHabits.promise : [habit("new-habit")];
+      }
+      if (path.includes("/old-habit/checkins")) {
+        oldCheckinReads += 1;
+        return oldCheckins.promise;
+      }
+      if (path.includes("/new-habit/checkins")) {
+        return [{ id: "new-checkin", habitId: "new-habit", occurredOn: "2026-10-06" }];
+      }
+      throw new Error(`unexpected path: ${path}`);
+    }
+  });
+  const oldLoad = coordinator.load();
+  oldActions.resolve([action("old")]);
+  oldHabits.resolve([habit("old-habit")]);
+  await waitFor(
+    () => oldCheckinReads === 1,
+    "old load did not enter check-in stage"
+  );
+  const newLoad = coordinator.load();
+  assert.equal(await newLoad, true);
+  oldCheckins.resolve([{
+    id: "old-checkin",
+    habitId: "old-habit",
+    occurredOn: "2026-10-06"
+  }]);
+  assert.equal(await oldLoad, false);
+  assert.equal(coordinator.snapshot().habits[0].id, "new-habit");
+  assert.equal(coordinator.snapshot().habitCheckins[0].id, "new-checkin");
 }
 
 function commandCoordinator({ request, server: initialServer, listFailure = () => false }) {
@@ -261,6 +330,60 @@ function commandCoordinator({ request, server: initialServer, listFailure = () =
   });
   assert.equal(fixture.coordinator.snapshot().actions[0].title, "已更新");
   assert.equal(fixture.coordinator.snapshot().actions[0]._sync, undefined);
+}
+
+// Successful writes refresh serially so one command cannot misreport a superseded read.
+{
+  const writes = new Map([["a1", deferred()], ["a2", deferred()]]);
+  const firstActions = deferred();
+  const firstHabits = deferred();
+  const server = {
+    actions: [action("a1"), action("a2")],
+    habits: [],
+    habitCheckins: []
+  };
+  let actionReads = 0;
+  let habitReads = 0;
+  const coordinator = coordinatorWith({
+    listAllV1(path) {
+      if (path === ACTIONS_ENDPOINT) {
+        actionReads += 1;
+        return actionReads === 1 ? firstActions.promise : clone(server.actions);
+      }
+      if (path === HABITS_ENDPOINT) {
+        habitReads += 1;
+        return habitReads === 1 ? firstHabits.promise : [];
+      }
+      throw new Error(`unexpected path: ${path}`);
+    },
+    requestV1(path, options, coordination) {
+      const id = path.split("/").at(-1);
+      coordination.onQueued({ operationId: `operation-${id}`, status: "sending" });
+      return writes.get(id).promise.then(() => {
+        server.actions = server.actions.map(item => (
+          item.id === id ? action(id, { status: "doing", version: 2 }) : item
+        ));
+        return { data: clone(server.actions.find(item => item.id === id)) };
+      });
+    }
+  });
+  coordinator.applyIncrementalSnapshot(server);
+  const first = coordinator.runCommand(buildSetActionStatusCommand("a1", "doing", 1));
+  const second = coordinator.runCommand(buildSetActionStatusCommand("a2", "doing", 1));
+  writes.get("a1").resolve();
+  await waitFor(() => actionReads === 1, "first command did not start its refresh");
+  writes.get("a2").resolve();
+  await flush();
+  firstActions.resolve([action("a1", { status: "doing", version: 2 }), action("a2")]);
+  firstHabits.resolve([]);
+  const results = await Promise.allSettled([first, second]);
+  assert.deepEqual(results.map(result => result.status), ["fulfilled", "fulfilled"]);
+  assert.equal(actionReads, 2);
+  assert.equal(habitReads, 2);
+  assert.deepEqual(
+    coordinator.snapshot().actions.map(item => [item.id, item.status, item._sync]),
+    [["a1", "doing", undefined], ["a2", "doing", undefined]]
+  );
 }
 
 // Discovery can create an action through the coordinator while today is unmounted.
@@ -409,6 +532,15 @@ for (const status of [409, 412]) {
   assert.equal(fixture.coordinator.snapshot().actions[0].status, "doing");
   assert.equal(fixture.coordinator.snapshot().actions[0]._sync.status, "committed");
   assert.equal(fixture.coordinator.snapshot().loadState, "failure");
+  fixture.coordinator.applyIncrementalSnapshot({
+    habits: [habit("unrelated")]
+  });
+  assert.equal(fixture.coordinator.snapshot().actions[0].status, "doing");
+  assert.equal(fixture.coordinator.snapshot().actions[0]._sync.status, "committed");
+  fixture.coordinator.applyIncrementalSnapshot({
+    actions: clone(fixture.server.actions)
+  });
+  assert.equal(fixture.coordinator.snapshot().actions[0]._sync, undefined);
 }
 
 // Pending restoration and incremental merge work without a mounted page.
@@ -764,6 +896,31 @@ function createController(coordinator, overrides = {}) {
   });
 }
 
+// Mount and the first ordinary state notification share one current-generation read.
+{
+  let actionReads = 0;
+  let habitReads = 0;
+  const coordinator = coordinatorWith({
+    async listAllV1(path) {
+      if (path === ACTIONS_ENDPOINT) actionReads += 1;
+      else if (path === HABITS_ENDPOINT) habitReads += 1;
+      else throw new Error(`unexpected path: ${path}`);
+      return [];
+    }
+  });
+  const root = new FakeRoot("ordinary-load-order");
+  const controller = createController(coordinator);
+  controller.mount({ root, signal: new AbortController().signal });
+  await waitFor(() => coordinator.snapshot().loadState === "ready", "mount read did not settle");
+  assert.equal(controller.render({
+    snapshot: { bootstrap: true },
+    changedDomains: ["actions"]
+  }), true);
+  await flush();
+  assert.deepEqual([actionReads, habitReads], [1, 1]);
+  controller.unmount();
+}
+
 // The first state notification retries a mount-time read invalidated by session bootstrap.
 {
   const session = createSession("pre-bootstrap");
@@ -790,7 +947,7 @@ function createController(coordinator, overrides = {}) {
   const root = new FakeRoot("bootstrap-order");
   const controller = createController(coordinator);
   controller.mount({ root, signal: new AbortController().signal });
-  assert.equal(actionReads, 1);
+  assert.deepEqual([actionReads, habitReads], [1, 1]);
   session.activate("account-a");
   coordinator.resetSession();
   assert.equal(controller.render({
@@ -801,12 +958,13 @@ function createController(coordinator, overrides = {}) {
     () => coordinator.snapshot().actions[0]?.id === "bootstrapped",
     "first state render did not replace the invalidated mount read"
   );
-  assert.equal(actionReads, 2);
+  assert.deepEqual([actionReads, habitReads], [2, 2]);
   assert.equal(coordinator.snapshot().loadState, "ready");
   assert.match(root.actionColumns.innerHTML, /行动-bootstrapped/);
   controller.render({ changedDomains: ["actions"] });
   controller.render({ changedDomains: ["actions"] });
   assert.equal(actionReads, 2, "ordinary state notifications repeated the recovery read");
+  assert.equal(habitReads, 2, "ordinary state notifications repeated the recovery read");
   oldActions.resolve([action("stale-bootstrap")]);
   oldHabits.resolve([]);
   await flush();

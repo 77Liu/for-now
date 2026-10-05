@@ -457,6 +457,23 @@ function actionCommandResource(pendingCommand, data) {
   return `habit:${pendingCommand.habitId || checkin?.habitId || pendingCommand.id || "checkins"}`;
 }
 
+const CONFIRMABLE_PROJECTIONS = new Set([
+  "actions.update", "actions.setStatus", "actions.complete",
+  "actions.undoCompletion", "actions.delete", "habits.setEnabled",
+  "habits.recordAdjustment", "habits.delete", "habitCheckins.delete"
+]);
+
+function projectionConfirmed(entry, value, changed) {
+  const type = String(entry.command?.type || "");
+  const domain = type.startsWith("actions.") ? "actions"
+    : type.startsWith("habits.") ? "habits" : "habitCheckins";
+  if (!changed.includes(domain) || !CONFIRMABLE_PROJECTIONS.has(type)) return false;
+  if (type === "habits.recordAdjustment" && !entry.command.input?.frequency) return false;
+  const clean = items => items.map(({ _sync, ...item }) => item);
+  const projected = projectActionCommand(value, entry.command).value[domain];
+  return JSON.stringify(clean(projected)) === JSON.stringify(value[domain]);
+}
+
 function actionConflictMessage(pendingCommand, error, data) {
   const action = String(pendingCommand.type || "").startsWith("actions.")
     ? data.actions.find(item => item.id === pendingCommand.id)
@@ -515,6 +532,8 @@ export function createActionsCoordinator(deps = {}) {
 
   let generation = 0;
   let loadSerial = 0;
+  let loadTicket = null;
+  let refresh = Promise.resolve(true);
   let revision = 0;
   let base = clone(EMPTY_ACTIONS_DATA);
   let visible = clone(EMPTY_ACTIONS_DATA);
@@ -578,8 +597,11 @@ export function createActionsCoordinator(deps = {}) {
     return true;
   };
 
-  async function load() {
+  async function load({ ensure = false } = {}) {
+    if (ensure && loadTicket && isCurrent(loadTicket)
+      && ["loading", "ready"].includes(loadState)) return loadState === "ready";
     const ticket = capture({ serial: ++loadSerial });
+    loadTicket = ticket;
     loadState = "loading";
     loadError = "";
     publish({ type: "load", status: "loading" });
@@ -636,7 +658,10 @@ export function createActionsCoordinator(deps = {}) {
         : base.habitCheckins
     });
     for (const [operationId, entry] of projections) {
-      if (entry.status === "committed") projections.delete(operationId);
+      if (
+        entry.status === "committed"
+        && projectionConfirmed(entry, value, changed)
+      ) projections.delete(operationId);
     }
     rebuild();
     loadState = "ready";
@@ -711,7 +736,9 @@ export function createActionsCoordinator(deps = {}) {
         createdAt: projections.get(operationId)?.createdAt
       });
     }
-    const refreshed = await load();
+    const refreshed = await (refresh = refresh.then(
+      () => isCurrent(ticket) && load()
+    ));
     if (!isCurrent(ticket)) return false;
     if (!refreshed) {
       throw Object.assign(
@@ -725,7 +752,8 @@ export function createActionsCoordinator(deps = {}) {
 
   function resetSession() {
     generation += 1;
-    loadSerial += 1;
+    loadTicket = null;
+    refresh = Promise.resolve(true);
     base = clone(EMPTY_ACTIONS_DATA);
     visible = clone(EMPTY_ACTIONS_DATA);
     loadState = "idle";
