@@ -72,3 +72,4 @@ export {
   storeForUser,
   withoutOwnerMetadata
 } from "./public-state.mjs";
+export { createAccountLifecycle } from "./account-lifecycle.mjs";
