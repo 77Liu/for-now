@@ -5279,7 +5279,7 @@ $("#account-role-list").addEventListener("click",async event=>{
 });
 $("#logout-button").addEventListener("click",logout);$("#logout-button-account").addEventListener("click",logout);
 export async function startApplication(initial = null, { opening = null } = {}) {
-  try {
+  applyCapabilitySurface(initial?.meta?.capabilities||[]);pageRouter.start({enter:()=>{},leave:()=>{}});try {
     await bootstrap(initial, { opening });
   } catch (error) {
     showAuthGate();

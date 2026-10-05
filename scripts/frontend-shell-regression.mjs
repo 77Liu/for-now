@@ -154,7 +154,7 @@ assert.match(html, /<link rel="preload" href="frontend\/styles\/r8\.css" as="sty
 assert.match(html, /<link rel="modulepreload" href="frontend\/app\/index\.mjs">/);
 assert.match(html, /<link rel="modulepreload" href="frontend\/app\/bootstrap\.mjs">/);
 assert.match(html, /<link rel="modulepreload" href="frontend\/api\/index\.mjs">/);
-assert.match(html, /<link rel="modulepreload" href="frontend\/pages\/index\.mjs">/);
+assert.match(html, /<link rel="modulepreload" href="frontend\/page-catalog\/index\.mjs">/);
 assert.match(html, /<link rel="modulepreload" href="frontend\/session\/index\.mjs">/);
 assert.doesNotMatch(html, /<link rel="modulepreload" href="frontend\/app\/runtime\.mjs">/);
 assert.match(html, /id="auth-tab-login"[^>]+aria-controls="login-form"[^>]+tabindex="0"/);
@@ -326,6 +326,7 @@ const router = createPageRouter({
   onDenied: (view, capability) => denied.push([view, capability]),
   scrollTo: options => calls.push(["scroll", options])
 });
+router.start({ enter: () => {}, leave: () => {} });
 router.switchView("quotes");
 assert.equal(views[1].classList.contains("active"), true);
 assert.equal(nav[1].classList.contains("active"), true);
@@ -394,7 +395,12 @@ const browserRouter = createPageRouter({
   })[selector] || [],
   location: routeLocation,
   history: routeHistory,
-  eventTarget: { addEventListener: (name, listener) => routeListeners.set(name, listener) },
+  eventTarget: {
+    addEventListener: (name, listener) => routeListeners.set(name, listener),
+    removeEventListener: (name, listener) => {
+      if (routeListeners.get(name) === listener) routeListeners.delete(name);
+    }
+  },
   basePath: "/now",
   requestFrame: callback => { callback(); return 1; },
   readScroll: () => browserScroll,
@@ -403,6 +409,7 @@ const browserRouter = createPageRouter({
   },
   onRoute: (route, context) => browserRouteEvents.push({ route, source: context.source })
 });
+browserRouter.start({ enter: () => {}, leave: () => {} });
 assert.equal(`${routeLocation.pathname}${routeLocation.search}`, "/now/thoughts?tag=%E5%A4%8D%E7%9B%98");
 assert.equal(routeHistory.length, 1, "legacy canonicalization must replace the current entry");
 browserScroll = { x: 0, y: 420 };
@@ -413,9 +420,11 @@ browserRouter.openDetail("thought-chain", "root:1");
 assert.equal(routeHistory.length, 2, "opening a detail must push a history entry");
 assert.equal(`${routeLocation.pathname}${routeLocation.search}`, "/now/thoughts/root%3A1?tag=%E5%A4%8D%E7%9B%98&sort=created&page=2");
 routeHistory.move(-1);
+await new Promise(resolve => setImmediate(resolve));
 assert.equal(browserRouter.currentRoute().kind, "page");
 assert.deepEqual(browserScroll, { x: 0, y: 420 });
 routeHistory.move(1);
+await new Promise(resolve => setImmediate(resolve));
 assert.equal(browserRouter.currentRoute().resourceId, "root:1");
 const unavailable = createUnavailableRouteResult({ resourceType: "thought-chain", resourceId: "root:1" });
 browserRouter.showUnavailable(unavailable);

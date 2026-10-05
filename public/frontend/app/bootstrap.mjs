@@ -1,5 +1,5 @@
 import { createApiClient } from "../api/index.mjs";
-import { ownerViewCapabilities, resolveApplicationRoute, viewSections } from "../pages/index.mjs";
+import { ownerViewCapabilities, resolveApplicationRoute, viewSections } from "../page-catalog/index.mjs";
 import { sessionScope } from "../session/index.mjs";
 
 const appEntryUrl = new URL("../../app.js", import.meta.url);

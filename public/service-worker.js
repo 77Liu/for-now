@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cike-shell-v0.5.8-2";
+const CACHE_VERSION = "cike-shell-v0.5.8-3";
 const SHELL_ASSETS = [
   "./",
   "index.html",
@@ -13,7 +13,6 @@ const SHELL_ASSETS = [
   "frontend/opening/controller.mjs",
   "frontend/opening/index.mjs",
   "frontend/opening/rain-engine.mjs",
-  "frontend/content/error-presentation.mjs",
   "frontend/content/index.mjs",
   "frontend/components/tag-multiselect/index.mjs",
   "frontend/features/actions/index.mjs",
@@ -30,6 +29,7 @@ const SHELL_ASSETS = [
   "frontend/features/thought-discovery/background-results.mjs",
   "frontend/features/thought-discovery/index.mjs",
   "frontend/media/index.mjs",
+  "frontend/page-catalog/index.mjs",
   "frontend/pages/index.mjs",
   "frontend/session/index.mjs",
   "frontend/state/index.mjs",

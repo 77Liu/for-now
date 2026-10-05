@@ -408,7 +408,7 @@
       "root": "public/frontend/content",
       "publicEntry": "public/frontend/content/index.mjs",
       "allowedDependencies": [],
-      "owns": { "data": ["HTML escaping, Markdown rendering, LaTeX placeholders and plain-text previews"], "routes": [] },
+      "owns": { "data": ["HTML escaping, Markdown rendering, LaTeX placeholders, plain-text previews and privacy-safe error presentation"], "routes": [] },
       "tests": ["scripts/frontend-shared-regression.mjs", "scripts/ui-regression.mjs"],
       "status": "active"
     },
@@ -443,12 +443,22 @@
       "status": "active"
     },
     {
+      "id": "frontend.page-catalog",
+      "type": "page",
+      "root": "public/frontend/page-catalog",
+      "publicEntry": "public/frontend/page-catalog/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["canonical page paths, route parsing, query normalization, owner capability requirements and unavailable-resource results"], "routes": [] },
+      "tests": ["scripts/frontend-shell-regression.mjs", "scripts/url-history-regression.mjs", "scripts/web-first-screen-budget-regression.mjs"],
+      "status": "active"
+    },
+    {
       "id": "frontend.pages",
       "type": "page",
       "root": "public/frontend/pages",
       "publicEntry": "public/frontend/pages/index.mjs",
-      "allowedDependencies": [],
-      "owns": { "data": ["view-to-section registry, active view switching and page lifecycle dispatch"], "routes": [] },
+      "allowedDependencies": ["frontend.page-catalog"],
+      "owns": { "data": ["active view switching, browser history, scroll restoration and disposable page lifecycle dispatch"], "routes": [] },
       "tests": ["scripts/frontend-shell-regression.mjs", "scripts/ui-regression.mjs", "scripts/mobile-platform-regression.mjs"],
       "status": "active"
     },
@@ -559,7 +569,7 @@
       "type": "application",
       "root": "public/frontend/app",
       "publicEntry": "public/frontend/app/index.mjs",
-      "allowedDependencies": ["frontend.application", "frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.pages", "frontend.features", "frontend.feature-registry", "frontend.component.tag-multiselect"],
+      "allowedDependencies": ["frontend.application", "frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.page-catalog", "frontend.pages", "frontend.features", "frontend.feature-registry", "frontend.component.tag-multiselect"],
       "owns": { "data": ["browser bootstrap, dependency composition, feature event binding and page presenter runtime"], "routes": [] },
       "tests": ["scripts/frontend-shell-regression.mjs", "scripts/frontend-contract-regression.mjs", "scripts/ui-regression.mjs", "scripts/mobile-platform-regression.mjs"],
       "status": "active"
@@ -1094,7 +1104,7 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "factory-use",
-      "sourceSha256": "c61d91536304def42c0088557ca59366f3dad73f6053eaaa67b24ea13ef426ca",
+      "sourceSha256": "edb425c7d2f1a3cd856463cdf7dd53f181abaeb1001247465fe0170ad7101f46",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs assigns createBrowserApplication to application and starts it",
       "deleteByGate": "G6",
@@ -1106,7 +1116,7 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "calls",
-      "sourceSha256": "c61d91536304def42c0088557ca59366f3dad73f6053eaaa67b24ea13ef426ca",
+      "sourceSha256": "edb425c7d2f1a3cd856463cdf7dd53f181abaeb1001247465fe0170ad7101f46",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs constructs createBrowserApplication and createFeatureRegistry, then starts the application",
       "deleteByGate": "G6",
@@ -1117,7 +1127,7 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "imports",
-      "sourceSha256": "c61d91536304def42c0088557ca59366f3dad73f6053eaaa67b24ea13ef426ca",
+      "sourceSha256": "edb425c7d2f1a3cd856463cdf7dd53f181abaeb1001247465fe0170ad7101f46",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs imports the feature registry public entry",
       "deleteByGate": "G6",
@@ -1129,7 +1139,7 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "import-bindings",
-      "sourceSha256": "c61d91536304def42c0088557ca59366f3dad73f6053eaaa67b24ea13ef426ca",
+      "sourceSha256": "edb425c7d2f1a3cd856463cdf7dd53f181abaeb1001247465fe0170ad7101f46",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs imports createFeatureRegistry from ../feature-registry/index.mjs",
       "deleteByGate": "G6",
@@ -1141,7 +1151,7 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.api-path",
-      "sourceSha256": "c61d91536304def42c0088557ca59366f3dad73f6053eaaa67b24ea13ef426ca",
+      "sourceSha256": "edb425c7d2f1a3cd856463cdf7dd53f181abaeb1001247465fe0170ad7101f46",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no API path literals",
       "deleteByGate": "G6",
@@ -1152,7 +1162,7 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.dom-query",
-      "sourceSha256": "c61d91536304def42c0088557ca59366f3dad73f6053eaaa67b24ea13ef426ca",
+      "sourceSha256": "edb425c7d2f1a3cd856463cdf7dd53f181abaeb1001247465fe0170ad7101f46",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page DOM queries",
       "deleteByGate": "G6",
@@ -1165,7 +1175,7 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.event-binding",
-      "sourceSha256": "c61d91536304def42c0088557ca59366f3dad73f6053eaaa67b24ea13ef426ca",
+      "sourceSha256": "edb425c7d2f1a3cd856463cdf7dd53f181abaeb1001247465fe0170ad7101f46",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page event binding",
       "deleteByGate": "G6",
@@ -1177,7 +1187,7 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.timer",
-      "sourceSha256": "c61d91536304def42c0088557ca59366f3dad73f6053eaaa67b24ea13ef426ca",
+      "sourceSha256": "edb425c7d2f1a3cd856463cdf7dd53f181abaeb1001247465fe0170ad7101f46",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page timers or animation scheduling",
       "deleteByGate": "G6",
@@ -1191,7 +1201,7 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.template",
-      "sourceSha256": "c61d91536304def42c0088557ca59366f3dad73f6053eaaa67b24ea13ef426ca",
+      "sourceSha256": "edb425c7d2f1a3cd856463cdf7dd53f181abaeb1001247465fe0170ad7101f46",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page templates",
       "deleteByGate": "G6",
@@ -1202,7 +1212,7 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "lines.hard",
-      "sourceSha256": "c61d91536304def42c0088557ca59366f3dad73f6053eaaa67b24ea13ef426ca",
+      "sourceSha256": "edb425c7d2f1a3cd856463cdf7dd53f181abaeb1001247465fe0170ad7101f46",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs is at or below 180 lines",
       "deleteByGate": "G6",

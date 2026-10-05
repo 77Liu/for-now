@@ -104,7 +104,6 @@ if (process.argv.includes("--timezone-case")) {
 } else {
   const moduleUrls = [
     new URL("../public/frontend/content/index.mjs", import.meta.url),
-    new URL("../public/frontend/content/error-presentation.mjs", import.meta.url),
     new URL("../public/frontend/time/index.mjs", import.meta.url),
     new URL("../public/frontend/media/index.mjs", import.meta.url),
     new URL("../public/frontend/features/health/weight-batch.mjs", import.meta.url)

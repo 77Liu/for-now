@@ -270,7 +270,11 @@ try {
   assert.equal(await waitUntil(`location.pathname==="/now/thoughts/${primary.id}"`), true);
 
   await evaluate(`window.confirm=()=>true;document.querySelector("#all-thoughts [data-delete-chain]").click();true`);
-  assert.equal(await waitUntil(`location.pathname==="/now/thoughts"&&document.querySelector('[data-route-result="unavailable"]')?.dataset.routeErrorCode==="RESOURCE_UNAVAILABLE"`), true);
+  assert.equal(
+    await waitUntil(`location.pathname==="/now/thoughts"&&document.querySelector('[data-route-result="unavailable"]')?.dataset.routeErrorCode==="RESOURCE_UNAVAILABLE"`),
+    true,
+    JSON.stringify(await evaluate(`({path:location.pathname,search:location.search,active:document.querySelector(".view.active")?.id,result:document.querySelector('[data-route-result]')?.outerHTML||"",cards:document.querySelectorAll("#all-thoughts [data-chain-id]").length,toast:document.querySelector("#toast")?.textContent})`))
+  );
   assert.deepEqual(await evaluate(`({
     resourceType:document.querySelector('[data-route-result="unavailable"]').dataset.routeResourceType,
     oldContent:document.querySelector("#view-thoughts").textContent.includes("URL history thought 00"),
