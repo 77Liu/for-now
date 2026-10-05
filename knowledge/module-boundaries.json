@@ -512,6 +512,18 @@
       "status": "active"
     },
     {
+      "id": "frontend.feature-registry",
+      "type": "application",
+      "root": "public/frontend/feature-registry",
+      "publicEntry": "public/frontend/feature-registry/index.mjs",
+      "allowedDependencies": [],
+      "owns": {
+        "data": ["lazy feature controller lifecycle, route activation, state notification, session reset and cleanup"]
+      },
+      "tests": ["scripts/frontend-feature-lifecycle-regression.mjs"],
+      "status": "active"
+    },
+    {
       "id": "frontend.features",
       "type": "feature",
       "root": "public/frontend/features",
@@ -526,7 +538,7 @@
       "type": "application",
       "root": "public/frontend/app",
       "publicEntry": "public/frontend/app/index.mjs",
-      "allowedDependencies": ["frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.pages", "frontend.features", "frontend.component.tag-multiselect"],
+      "allowedDependencies": ["frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.pages", "frontend.features", "frontend.feature-registry", "frontend.component.tag-multiselect"],
       "owns": { "data": ["browser bootstrap, dependency composition, feature event binding and page presenter runtime"], "routes": [] },
       "tests": ["scripts/frontend-shell-regression.mjs", "scripts/frontend-contract-regression.mjs", "scripts/ui-regression.mjs", "scripts/mobile-platform-regression.mjs"],
       "status": "active"
@@ -639,6 +651,514 @@
         "scripts/postgres-runtime-checks.mjs"
       ],
       "status": "active"
+    }
+  ],
+  "entrypointPolicies": [
+    {
+      "kind": "server",
+      "path": "server.mjs",
+      "allowedImports": ["./src/app/index.mjs"],
+      "requiredImports": ["./src/app/index.mjs"],
+      "requiredBindings": {
+        "./src/app/index.mjs": ["createServerRuntime"]
+      },
+      "requiredCalls": ["runtime.start"],
+      "requiredFactoryUses": [
+        {
+          "specifier": "./src/app/index.mjs",
+          "imported": "createServerRuntime",
+          "result": "runtime",
+          "method": "start",
+          "dependencies": []
+        }
+      ],
+      "allowedExports": [],
+      "requiredExports": [],
+      "compositionApi": {
+        "factory": "createServerRuntime",
+        "factorySpecifier": "./src/app/index.mjs",
+        "resultBinding": "runtime",
+        "parameters": ["rootUrl", "processRef?"],
+        "methods": ["start", "ready", "stop"],
+        "httpFactory": "createHttpApplication",
+        "httpMembers": ["handle", "routeIds"]
+      },
+      "lineLimits": { "soft": 20, "hard": 40 },
+      "forbiddenRules": [
+        { "id": "server.api-path", "kind": "literal", "values": ["^/api(?:/|$)"], "match": "regex" },
+        { "id": "server.timer", "kind": "identifier", "values": ["setTimeout", "setInterval"] },
+        { "id": "server.provider", "kind": "identifier", "values": ["createDeepSeekTransport", "createAliyunSegmentationTransport", "createVolcengineSpeechTransport", "createVolcengineVisionTransport"] },
+        { "id": "server.store-state", "kind": "identifier", "values": ["STORE_VERSION", "DATA_DIR", "PERSISTENCE_BACKEND"] },
+        { "id": "server.route-composition", "kind": "identifier", "values": ["createRequestHandler", "createApiV1Http", "createAuthHttp"] },
+        { "id": "server.dynamic-code", "kind": "identifier", "values": ["eval", "Function", "Reflect"] },
+        { "id": "server.computed-global", "kind": "syntax", "values": ["computed-global-access"] }
+      ],
+      "tests": [
+        "scripts/entrypoint-boundary-regression.mjs",
+        "scripts/auth-regression.mjs",
+        "scripts/api-v1-contract-regression.mjs"
+      ],
+      "handlerOrder": [
+        "health-readiness",
+        "local-test-proxy",
+        "admin",
+        "auth",
+        "owner",
+        "v1",
+        "legacy",
+        "attachment",
+        "static"
+      ],
+      "routeOwnerModules": [
+        "domain.onboarding",
+        "domain.user-model",
+        "domain.journals",
+        "domain.captures",
+        "domain.books",
+        "domain.quotes",
+        "domain.chats",
+        "domain.reviews",
+        "domain.statistics",
+        "application.owner-surfaces",
+        "domain.content-attachments",
+        "domain.ai",
+        "domain.keepsakes",
+        "domain.discovery",
+        "domain.exports",
+        "domain.actions",
+        "domain.feedback",
+        "domain.trash",
+        "shared.attachments",
+        "domain.annotations",
+        "domain.tasks",
+        "domain.notifications",
+        "domain.auth",
+        "http",
+        "domain.health",
+        "domain.checkins",
+        "domain.thoughts"
+      ]
+    },
+    {
+      "kind": "browser",
+      "path": "public/frontend/app/runtime.mjs",
+      "allowedImports": [
+        "../api/index.mjs",
+        "../components/tag-multiselect/index.mjs",
+        "../content/index.mjs",
+        "../feature-registry/index.mjs",
+        "../features/index.mjs",
+        "../media/index.mjs",
+        "../pages/index.mjs",
+        "../session/index.mjs",
+        "../state/index.mjs",
+        "../sync/index.mjs",
+        "../time/index.mjs"
+      ],
+      "requiredImports": [
+        "../api/index.mjs",
+        "../components/tag-multiselect/index.mjs",
+        "../content/index.mjs",
+        "../feature-registry/index.mjs",
+        "../features/index.mjs",
+        "../media/index.mjs",
+        "../pages/index.mjs",
+        "../session/index.mjs",
+        "../state/index.mjs",
+        "../sync/index.mjs",
+        "../time/index.mjs"
+      ],
+      "requiredBindings": {
+        "../feature-registry/index.mjs": ["createFeatureRegistry"],
+        "./application.mjs": ["createBrowserApplication"]
+      },
+      "requiredCalls": ["application.start"],
+      "requiredFactoryUses": [
+        {
+          "specifier": "./application.mjs",
+          "imported": "createBrowserApplication",
+          "result": "application",
+          "method": "start",
+          "dependencies": ["featureRegistry"]
+        },
+        {
+          "specifier": "../feature-registry/index.mjs",
+          "imported": "createFeatureRegistry",
+          "result": "featureRegistry",
+          "method": null,
+          "dependencies": []
+        }
+      ],
+      "allowedExports": ["startApplication"],
+      "requiredExports": ["startApplication"],
+      "compositionApi": {
+        "factory": "createBrowserApplication",
+        "factorySpecifier": "./application.mjs",
+        "resultBinding": "application",
+        "methods": ["start", "resetSession", "stop"],
+        "featureRegistryFactory": "createFeatureRegistry",
+        "featureRegistryMethods": ["enter", "leave", "notifyState", "resetSession", "stop"]
+      },
+      "lineLimits": { "soft": 120, "hard": 180 },
+      "forbiddenRules": [
+        { "id": "browser.api-path", "kind": "literal", "values": ["^/api(?:/|$)"], "match": "regex" },
+        { "id": "browser.dom-query", "kind": "identifier", "values": ["querySelector", "querySelectorAll", "getElementById"] },
+        { "id": "browser.event-binding", "kind": "identifier", "values": ["addEventListener", "removeEventListener"] },
+        { "id": "browser.timer", "kind": "identifier", "values": ["setTimeout", "setInterval", "requestAnimationFrame", "cancelAnimationFrame"] },
+        { "id": "browser.template", "kind": "syntax", "values": ["template-literal"] },
+        { "id": "browser.dynamic-code", "kind": "identifier", "values": ["eval", "Function", "Reflect"] },
+        { "id": "browser.computed-global", "kind": "syntax", "values": ["computed-global-access"] }
+      ],
+      "tests": [
+        "scripts/entrypoint-boundary-regression.mjs",
+        "scripts/frontend-feature-lifecycle-regression.mjs",
+        "scripts/frontend-shell-regression.mjs"
+      ],
+      "expectedPages": [
+        "today",
+        "together",
+        "daily",
+        "captures",
+        "books",
+        "quotes",
+        "keepsakes",
+        "journals",
+        "thoughts",
+        "discovery",
+        "review",
+        "mine",
+        "personal-context",
+        "statistics",
+        "ai-cost",
+        "architecture",
+        "commercialization",
+        "feedback",
+        "export",
+        "notifications",
+        "trash",
+        "permission",
+        "account",
+        "settings",
+        "about"
+      ],
+      "pageCatalog": {
+        "specifier": "../pages/index.mjs",
+        "export": "viewSections"
+      },
+      "pageFeatureDescriptors": [
+        { "page": "today", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "together", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "daily", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "captures", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "books", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "quotes", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "keepsakes", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "journals", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "thoughts", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "discovery", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "review", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "mine", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "personal-context", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "statistics", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "ai-cost", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "architecture", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "commercialization", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "feedback", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "export", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "notifications", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "trash", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "permission", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "account", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "settings", "feature": "frontend.features", "specifier": "../features/index.mjs" },
+        { "page": "about", "feature": "frontend.features", "specifier": "../features/index.mjs" }
+      ]
+    },
+    {
+      "kind": "bootstrap",
+      "path": "public/app.js",
+      "allowedImports": [
+        "./frontend/opening/index.mjs",
+        "./frontend/app/index.mjs"
+      ],
+      "requiredImports": [
+        "./frontend/opening/index.mjs",
+        "./frontend/app/index.mjs"
+      ],
+      "requiredBindings": {},
+      "requiredCalls": ["startOpening", "startApplication"],
+      "requiredFactoryUses": [],
+      "allowedExports": [],
+      "requiredExports": [],
+      "lineLimits": { "soft": 30, "hard": 40 },
+      "forbiddenRules": [
+        { "id": "bootstrap.api-path", "kind": "literal", "values": ["^/api(?:/|$)"], "match": "regex" },
+        { "id": "bootstrap.network", "kind": "identifier", "values": ["fetch", "XMLHttpRequest", "WebSocket", "EventSource"] },
+        { "id": "bootstrap.timer", "kind": "identifier", "values": ["setTimeout", "setInterval", "requestAnimationFrame", "cancelAnimationFrame"] },
+        { "id": "bootstrap.dynamic-code", "kind": "identifier", "values": ["eval", "Function", "Reflect"] },
+        { "id": "bootstrap.computed-global", "kind": "syntax", "values": ["computed-global-access"] }
+      ],
+      "tests": [
+        "scripts/entrypoint-boundary-regression.mjs",
+        "scripts/frontend-shell-regression.mjs",
+        "scripts/opening-controller-regression.mjs",
+        "scripts/web-first-screen-budget-regression.mjs"
+      ]
+    }
+  ],
+  "entrypointMigrationExceptions": [
+    {
+      "path": "server.mjs",
+      "ruleId": "factory-use",
+      "owner": "V0.5.8-03",
+      "removeWhen": "server.mjs assigns createServerRuntime to runtime and starts it",
+      "deleteByGate": "G4",
+      "allowlist": [
+        { "detail": "required factory assignment is missing: runtime=createServerRuntime()", "count": 1 }
+      ]
+    },
+    {
+      "path": "server.mjs",
+      "ruleId": "calls",
+      "owner": "V0.5.8-03",
+      "removeWhen": "server.mjs constructs and starts createServerRuntime",
+      "deleteByGate": "G4",
+      "allowlist": [
+        { "detail": "required call is missing: \"runtime.start\"", "count": 1 }
+      ]
+    },
+    {
+      "path": "server.mjs",
+      "ruleId": "import-bindings",
+      "owner": "V0.5.8-03",
+      "removeWhen": "server.mjs imports createServerRuntime from ./src/app/index.mjs",
+      "deleteByGate": "G4",
+      "allowlist": [
+        { "detail": "required binding is missing from \"./src/app/index.mjs\": \"createServerRuntime\"", "count": 1 }
+      ]
+    },
+    {
+      "path": "server.mjs",
+      "ruleId": "imports",
+      "owner": "V0.5.8-03",
+      "removeWhen": "server.mjs imports only ./src/app/index.mjs",
+      "deleteByGate": "G4",
+      "allowlist": [
+        { "detail": "import is not allowlisted: \"node:http\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"node:fs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"node:path\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"node:url\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"node:crypto\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/config/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/shared/attachments/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/shared/observability/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/thoughts/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/onboarding/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/journals/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/auth/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/annotations/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/tasks/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/notifications/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/trash/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/checkins/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/captures/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/books/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/quotes/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/chats/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/reviews/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/statistics/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/owner-surfaces/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/content-attachments/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/discovery/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/exports/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/actions/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/feedback/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/user-model/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/ai/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/infrastructure/ai-providers/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/infrastructure/prompt-catalog/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/keepsakes/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/shared/concurrency/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/shared/prompts/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/shared/time/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./admin-snapshot.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/shared/validation/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/http/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/modules/health/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./src/shared/persistence/index.mjs\"", "count": 1 },
+        { "detail": "import is not allowlisted: \"./public/frontend/pages/index.mjs\"", "count": 1 }
+      ]
+    },
+    {
+      "path": "server.mjs",
+      "ruleId": "server.api-path",
+      "owner": "V0.5.8-03",
+      "removeWhen": "server.mjs contains no API route literals",
+      "deleteByGate": "G4",
+      "allowlist": [
+        { "detail": "forbidden literal matched \"^/api(?:/|$)\"", "count": 53 }
+      ]
+    },
+    {
+      "path": "server.mjs",
+      "ruleId": "server.timer",
+      "owner": "V0.5.8-03",
+      "removeWhen": "server.mjs contains no timer orchestration",
+      "deleteByGate": "G4",
+      "allowlist": [
+        { "detail": "forbidden identifier \"setTimeout\"", "count": 4 },
+        { "detail": "forbidden identifier \"setInterval\"", "count": 2 }
+      ]
+    },
+    {
+      "path": "server.mjs",
+      "ruleId": "server.provider",
+      "owner": "V0.5.8-03",
+      "removeWhen": "server.mjs contains no provider construction",
+      "deleteByGate": "G4",
+      "allowlist": [
+        { "detail": "forbidden identifier \"createDeepSeekTransport\"", "count": 2 },
+        { "detail": "forbidden identifier \"createAliyunSegmentationTransport\"", "count": 2 },
+        { "detail": "forbidden identifier \"createVolcengineSpeechTransport\"", "count": 2 },
+        { "detail": "forbidden identifier \"createVolcengineVisionTransport\"", "count": 2 }
+      ]
+    },
+    {
+      "path": "server.mjs",
+      "ruleId": "server.store-state",
+      "owner": "V0.5.8-03",
+      "removeWhen": "server.mjs contains no persistence state",
+      "deleteByGate": "G4",
+      "allowlist": [
+        { "detail": "forbidden identifier \"DATA_DIR\"", "count": 22 },
+        { "detail": "forbidden identifier \"PERSISTENCE_BACKEND\"", "count": 5 },
+        { "detail": "forbidden identifier \"STORE_VERSION\"", "count": 5 }
+      ]
+    },
+    {
+      "path": "server.mjs",
+      "ruleId": "server.route-composition",
+      "owner": "V0.5.8-03",
+      "removeWhen": "server.mjs delegates route composition to src/app",
+      "deleteByGate": "G4",
+      "allowlist": [
+        { "detail": "forbidden identifier \"createAuthHttp\"", "count": 2 },
+        { "detail": "forbidden identifier \"createApiV1Http\"", "count": 2 },
+        { "detail": "forbidden identifier \"createRequestHandler\"", "count": 2 }
+      ]
+    },
+    {
+      "path": "server.mjs",
+      "ruleId": "lines.hard",
+      "owner": "V0.5.8-03",
+      "removeWhen": "server.mjs is at or below 40 lines",
+      "deleteByGate": "G4",
+      "maxValue": 3283
+    },
+    {
+      "path": "public/frontend/app/runtime.mjs",
+      "ruleId": "factory-use",
+      "owner": "V0.5.8-04",
+      "removeWhen": "runtime.mjs assigns createBrowserApplication to application and starts it",
+      "deleteByGate": "G6",
+      "allowlist": [
+        { "detail": "required factory assignment is missing: application=createBrowserApplication()", "count": 1 },
+        { "detail": "required factory assignment is missing: featureRegistry=createFeatureRegistry()", "count": 1 }
+      ]
+    },
+    {
+      "path": "public/frontend/app/runtime.mjs",
+      "ruleId": "calls",
+      "owner": "V0.5.8-04",
+      "removeWhen": "runtime.mjs constructs createBrowserApplication and createFeatureRegistry, then starts the application",
+      "deleteByGate": "G6",
+      "allowlist": [
+        { "detail": "required call is missing: \"application.start\"", "count": 1 }
+      ]
+    },
+    {
+      "path": "public/frontend/app/runtime.mjs",
+      "ruleId": "imports",
+      "owner": "V0.5.8-04",
+      "removeWhen": "runtime.mjs imports the feature registry public entry",
+      "deleteByGate": "G6",
+      "allowlist": [
+        { "detail": "required import is missing: \"../feature-registry/index.mjs\"", "count": 1 }
+      ]
+    },
+    {
+      "path": "public/frontend/app/runtime.mjs",
+      "ruleId": "import-bindings",
+      "owner": "V0.5.8-04",
+      "removeWhen": "runtime.mjs imports createFeatureRegistry from ../feature-registry/index.mjs",
+      "deleteByGate": "G6",
+      "allowlist": [
+        { "detail": "required binding is missing from \"../feature-registry/index.mjs\": \"createFeatureRegistry\"", "count": 1 },
+        { "detail": "required binding is missing from \"./application.mjs\": \"createBrowserApplication\"", "count": 1 }
+      ]
+    },
+    {
+      "path": "public/frontend/app/runtime.mjs",
+      "ruleId": "browser.api-path",
+      "owner": "V0.5.8-04",
+      "removeWhen": "runtime.mjs contains no API path literals",
+      "deleteByGate": "G6",
+      "allowlist": [
+        { "detail": "forbidden literal matched \"^/api(?:/|$)\"", "count": 77 }
+      ]
+    },
+    {
+      "path": "public/frontend/app/runtime.mjs",
+      "ruleId": "browser.dom-query",
+      "owner": "V0.5.8-04",
+      "removeWhen": "runtime.mjs contains no page DOM queries",
+      "deleteByGate": "G6",
+      "allowlist": [
+        { "detail": "forbidden identifier \"querySelector\"", "count": 148 },
+        { "detail": "forbidden identifier \"querySelectorAll\"", "count": 50 },
+        { "detail": "forbidden identifier \"getElementById\"", "count": 6 }
+      ]
+    },
+    {
+      "path": "public/frontend/app/runtime.mjs",
+      "ruleId": "browser.event-binding",
+      "owner": "V0.5.8-04",
+      "removeWhen": "runtime.mjs contains no page event binding",
+      "deleteByGate": "G6",
+      "allowlist": [
+        { "detail": "forbidden identifier \"addEventListener\"", "count": 281 },
+        { "detail": "forbidden identifier \"removeEventListener\"", "count": 2 }
+      ]
+    },
+    {
+      "path": "public/frontend/app/runtime.mjs",
+      "ruleId": "browser.timer",
+      "owner": "V0.5.8-04",
+      "removeWhen": "runtime.mjs contains no page timers or animation scheduling",
+      "deleteByGate": "G6",
+      "allowlist": [
+        { "detail": "forbidden identifier \"cancelAnimationFrame\"", "count": 3 },
+        { "detail": "forbidden identifier \"requestAnimationFrame\"", "count": 41 },
+        { "detail": "forbidden identifier \"setInterval\"", "count": 3 },
+        { "detail": "forbidden identifier \"setTimeout\"", "count": 14 }
+      ]
+    },
+    {
+      "path": "public/frontend/app/runtime.mjs",
+      "ruleId": "browser.template",
+      "owner": "V0.5.8-04",
+      "removeWhen": "runtime.mjs contains no page templates",
+      "deleteByGate": "G6",
+      "allowlist": [
+        { "detail": "forbidden syntax template-literal", "count": 825 }
+      ]
+    },
+    {
+      "path": "public/frontend/app/runtime.mjs",
+      "ruleId": "lines.hard",
+      "owner": "V0.5.8-04",
+      "removeWhen": "runtime.mjs is at or below 180 lines",
+      "deleteByGate": "G6",
+      "maxValue": 5291
     }
   ],
   "migrationExceptions": []

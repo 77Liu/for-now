@@ -49,6 +49,7 @@ const suites = {
   backend: [
     ["production environment isolation", ["scripts/system-test.mjs", ISOLATION_PROBE]],
     ["module boundaries", ["scripts/check-modules.mjs"]],
+    ["entrypoint boundary contracts", ["scripts/entrypoint-boundary-regression.mjs"]],
     ["user journey coverage matrix", ["scripts/user-journey-regression.mjs", "validate"]],
     ["local task commit gate", ["scripts/commit-gate-regression.mjs"]],
     ["PostgreSQL test preflight", ["scripts/postgres-test-preflight-regression.mjs"]],
@@ -135,6 +136,7 @@ const suites = {
     ["frontend content, time and media contracts", ["scripts/frontend-shared-regression.mjs"]],
     ["opening lifecycle, rain and cleanup contracts", ["scripts/opening-controller-regression.mjs"]],
     ["frontend application shell and page lifecycle", ["scripts/frontend-shell-regression.mjs"]],
+    ["frontend feature lifecycle", ["scripts/frontend-feature-lifecycle-regression.mjs"]],
     ["notification entry states and retry interactions", ["scripts/notification-entry-regression.mjs"]],
     ["URL and browser history contracts", ["scripts/url-history-regression.mjs"]],
     ["PWA shell cache and private-data boundaries", ["scripts/pwa-regression.mjs"]],

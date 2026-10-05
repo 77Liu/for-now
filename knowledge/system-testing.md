@@ -7,6 +7,8 @@
 | 命令 | 范围 |
 | --- | --- |
 | `npm run check:modules` | 前后端模块登记/语法、公开入口、允许依赖、静态及字面量动态深层导入、循环依赖、前端请求入口、运行配置入口和迁移例外 |
+| `npm run check:entrypoints` | 固定三类真实入口、目标组合 API/import binding、handler 顺序、页面清单、职责禁令、行数和 G4/G6 到期迁移例外 |
+| `npm run test:entrypoints` | 入口词法/策略正反例与 feature registry 的挂载、渲染、清理、账户重置、迟到结果和失败恢复 |
 | `npm run test:commit-gate` | 本地 `feat/fix/test/docs` 任务提交的隔离候选、允许/拒绝边界、门禁自身完整性、测试失败和暂存 tree 漂移 |
 | `npm run test:backend` | 语法、API/数据、认证、本地测试隔离、服务器路径、可观测性、附件、边界、监控、恢复、部署回滚 |
 | `npm run test:api-v1` | v1 公共包络、OpenAPI、认证、base path、思绪/状态/健康纵向链、游标、ETag/If-Match、幂等、SSE、删除恢复和账户隔离 |
@@ -17,7 +19,7 @@
 | `npm run test:keepsake-media` | 小物媒体事务、WebP 派生规格、批量失败补偿、上传响应契约及历史媒体迁移计划 |
 | `npm run test:frontend-shared` | 前端内容安全/Markdown/LaTeX、本地时区边界和图片数量/MIME/大小校验 |
 | `npm run test:opening` | 开屏参数、雨滴物理、同步壳、退出上限、失败重试、减少动态效果与资源清理 |
-| `npm run test:frontend-shell` | 浏览器 JS/CSS 薄入口、23 个视图注册、页面切换和 feature 生命周期副作用 |
+| `npm run test:frontend-shell` | 浏览器 JS/CSS 薄入口、25 个视图注册、页面切换和 feature 生命周期副作用 |
 | `npm run test:persistence` | JSON repository、业务及身份/配置/用量/附件映射与构思领域服务 |
 | `npm run test:postgres:preflight` | 在业务断言前核对 PostgreSQL 16 的 `postgres`、`initdb`、`pg_ctl` 和实际选择路径 |
 | `npm run test:postgres:stable` | 通过预检选定固定 PostgreSQL 16 工具链，再执行完整真实数据库专项 |
@@ -149,7 +151,8 @@
 | `scripts/frontend-contract-regression.mjs` | base path、错误元数据、可选接口、迟到 JSON/图片拒收、SSE 分块/中断/会话失效、并发刷新域合并和账户清空 |
 | `scripts/frontend-shared-regression.mjs` | 内容 HTML 安全、Markdown/LaTeX 等价、本地时区跨日，以及图片数量、MIME 和大小边界 |
 | `scripts/opening-controller-regression.mjs` | R9.4-F1 参数、慢提示、内容 inert、退出/失败/重试状态机、背景异步、DPR、确定性雨滴物理和页面生命周期清理 |
-| `scripts/frontend-shell-regression.mjs` | 根 JS/CSS 薄入口、24 个 HTML 视图与 canonical path 登记一致、页面组切换、按需加载与离开页面清理 |
+| `scripts/frontend-shell-regression.mjs` | 根 JS/CSS 薄入口、25 个 HTML 视图与 canonical path 登记一致、页面组切换、按需加载与离开页面清理 |
+| `scripts/frontend-feature-lifecycle-regression.mjs` | feature 延迟加载、重复进入、状态合并、AbortSignal、失败重试、清理、账户重置与 stop |
 | `scripts/web-first-screen-budget-regression.mjs` | Fast 4G 下同步开屏 250ms、ready 后 140ms 退出、深链、失败重试、减少动态效果、首屏请求与媒体零预取预算 |
 | `scripts/url-history-regression.mjs` | 部署基路径下直接打开、旧路径归一、query replace、详情 push、前进后退、滚动恢复与删除对象安全回退 |
 | `scripts/ui-regression.mjs` | 页面主流程、G2 行动/习惯与寻迹渲染、账户切换、输入保留、异步结果、通知跳转、桌面与响应式布局 |
@@ -172,6 +175,9 @@ v0.2.0 起的模块化重构按 `knowledge/modularization-design.md` 执行，�
 1. 开始迁移前冻结 API 响应、关键 DOM、生产数据快照兼容样本、桌面/移动截图和性能基线。
 2. 每迁移一个模块，先运行该模块契约或行为测试，再运行命中跨模块影响矩阵的集成测试。
 3. `npm run check:modules` 已检查前后端模块源文件归属及语法、公开入口、依赖方向、循环依赖、静态/字面量动态深层导入和路由归属；旧前端入口与新模块不得绕过 API 模块直接 fetch；`server.mjs` 和 `src/` 除 `config` 外不得直接读取环境变量。独立 CLI 的命令参数和测试运行环境不受该应用门禁约束。路由消费者与 CSS 作用域随对应模块迁移补齐。
+   `npm run check:entrypoints` 另固定 `server.mjs`、`public/frontend/app/runtime.mjs`
+   与 `public/app.js` 的真实路径、目标组合 API、导入 binding、handler/page 契约、
+   禁止职责和行数；服务端例外最晚在 G4 删除，浏览器例外最晚在 G6 删除。
 4. 认证、时间、AI、任务、通知、回收站、附件和批注等高耦合链路必须保留端到端测试，不能只用模块单测替代。
 5. 迁移期间允许的旧入口必须登记负责人、删除条件和测试；最终候选要求例外清零。
 6. 全量模块化完成前后使用同一测试输入做差分核对；用户原文、ID、时间、版本、附件引用、AI 归属和错误码不得漂移。
