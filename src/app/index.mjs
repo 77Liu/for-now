@@ -48,3 +48,14 @@ export {
   thoughtAnswerPrompt,
   prepareThoughtAnswer
 } from "./personal-context.mjs";
+export {
+  STORE_VERSION,
+  TRASH_RETENTION_DAYS,
+  createEmptyStore,
+  emptyStore
+} from "./store-schema.mjs";
+export {
+  createStoreNormalizer,
+  normalizeCommercialization,
+  normalizeStore
+} from "./store-normalization.mjs";
