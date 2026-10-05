@@ -118,7 +118,7 @@ V0.5.8 的 14 条需求均关联版本记录 `reczz28JaO7yXu1K`，发布状态�
 | 16 | `reczz28Jd8F4nPjw` | 工作区已验证未部署 | `1eb61c9`、`a4150e9`、`56337a9`：七类能力统一用量、官方价格版本、预算和明确账单缺口；独立复审无新增问题 |
 | 20 | `reczz28Jd8F4oH1y` | 工作区已验证未部署 | `91a10b7..88d37e1`：同步 HTML 开屏、雨景生命周期、真实 paint 性能门、FCP 后入口、退出/失败/清理、watchdog 锁存及 PWA 升级预算通过 |
 | 02 | `reczz28JPdCVUwBD` | 工作区已验证未部署 | `6730597`：三类真实入口、组合 API/import binding/factory 链、G4/G6 例外和 feature lifecycle 已机器冻结；最终独立复审 GO |
-| 03 | `reczz28JPdCVWPzV` | 进行中 | `f3724c4`：B1a Store v16 默认值、兼容归一化和商业化迁移已离开入口；`server.mjs` 3283→2866 行 |
+| 03 | `reczz28JPdCVWPzV` | 进行中 | `f3724c4`、`47d5a39`：B1a/B1b/B1c 的 Store v16 归一化、派生统计和公开投影已离开入口；`server.mjs` 3283→2668 行 |
 | 04 | `reczz28JPdCVXtsA` | 进行中 | `e7d99d6`、`6d74383`：F1a application lifecycle 已冻结但未接 runtime；继续 F1b ports |
 
 13、15、14、16、20 都是行为修复，已在现有入口上完成并固定自动化反例；
@@ -374,15 +374,17 @@ flowchart TD
   runtime 闭包仍为 `24 / 815481 B`；独立 Reviewer 最终 GO。整体需求
   `reczz28JPK4rO6LI` 保持“进行中 / 未发布”，交付
   `reczz28JPdCVUwBD` 已回填“待验收 / 未发布”。
-- `V0.5.8-03/04` 首批 `f3724c4..2989e61` 已完成 B1a、F1a 与门禁强化：
+- `V0.5.8-03/04` 首批 `f3724c4..2989e61` 已完成 B1a、F1a 与门禁强化；
+  `47d5a39` 又完成 B1b/B1c 派生统计与公开状态投影：
   当前登记 59 个模块、233 条拥有路由，20 条例外绑定入口 SHA；
-  `server.mjs` 为 2866 行，runtime 仍为 5291 行。backend `405823 ms`、
-  frontend `80094 ms` 通过，最终 Reviewer GO。当前只达到 G3 检查点，
-  `check:entrypoints:g4` 会按设计拒绝已到期的 server 例外。
+  `server.mjs` 为 2668 行，runtime 仍为 5291 行。B1b/B1c backend
+  `326672 ms` 通过，两个独立 Reviewer blocker/P0/P1=`0/0/0`；首批
+  frontend `80094 ms` 证据保持有效。当前只达到 G3 检查点，
+  `check:entrypoints:g4` 仍会按设计拒绝已到期的 server 例外。
 
 当前未完成：
 
-- 下一步执行 B1b/B1c 与 F1b，再按依赖推进 B2/F2；P0 仍按既定依赖推进。
+- 下一步执行 F1b，再按依赖推进 B2/F2；P0 仍按既定依赖推进。
 - `reczz28Jd8F4nDzn` 仍等待真实 CDN/OSS/DNS/证书/费用授权。
 - 未执行 push、tag、Release、Preview/生产部署或生产写入。
 

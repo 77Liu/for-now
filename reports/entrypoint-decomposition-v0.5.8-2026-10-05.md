@@ -742,3 +742,17 @@ V0.5.8 只有在以下条件同时成立时才可关闭：
 这些会改变现有入口行为的 P00 先以小切片修复并固定回归，再执行本文的结构
 迁移；图片旋转、媒体分发、开屏设置和系统协作 P0 在入口契约上继续推进。
 本文的 B/F 拆分、静态门、差分和回退设计保持有效，执行顺序以总计划为准。
+
+## 13. 2026-10-05 实施检查点
+
+- `f3724c4` 完成 B1a；`47d5a39` 完成 B1b/B1c。Store v16 归一化、派生
+  统计、用户留痕判定与角色化公开 Store 投影均由 `src/app` 唯一实现。
+- legacy state、route-state、sync 和本地测试水合使用同一公开 projector；
+  入口旧实现已同批删除，`server.mjs` 从 3283 行降至 2668 行。
+- B1b/B1c 专项、check、startup、sync、persistence、restore、主 regression、
+  auth 和 backend `326672 ms` 通过；两个独立 reviewer 均 GO，
+  blocker/P0/P1=`0/0/0`。
+- 当前仍是 G3 部分职责迁移。10 条 server 例外继续在 G4 到期，未放宽
+  `server.mjs <= 40`、唯一 runtime factory、真实系统门或 PostgreSQL 条件。
+- 前端 F1a 已建立 application lifecycle，但尚未接入 runtime；下一步为 F1b
+  router/session/state/sync/shell ports，随后推进 B2/F2。
