@@ -1,4 +1,9 @@
 export { createAuthHttp } from "./auth.mjs";
+export {
+  createLocalTestHttp,
+  createLocalTestSessionVault,
+  createReadOnlyUpstream
+} from "./local-test.mjs";
 export { createJsonHttp, wantsEventStream, sendStreamEvent } from "./json.mjs";
 export { createTaskHttp } from "./tasks.mjs";
 export { createAnnotationHttp } from "./annotations.mjs";
