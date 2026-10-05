@@ -112,9 +112,9 @@
       "risk": "critical",
       "tier": "smoke",
       "status": "automated",
-      "normalPath": ["搜索或筛选思绪", "查看身份化预览", "进入详情", "补充或追问", "返回来源"],
+      "normalPath": ["搜索或筛选思绪", "从思绪列表记录新思考", "查看身份化预览", "进入详情", "补充或追问", "返回来源"],
       "failureAndRecovery": ["AI 回答不得冒充用户结论", "后台结果增量到达", "详情对象删除", "移动键盘与固定操作栏"],
-      "assertions": ["用户结论优先且 AI 明确标记", "详情按发生时间正序", "批注与来源仍可用", "草稿与滚动不丢失", "返回原入口"],
+      "assertions": ["用户结论优先且 AI 明确标记", "创建、取消和提交保持思绪路由及列表上下文", "详情按发生时间正序", "批注与来源仍可用", "草稿与滚动不丢失", "返回原入口"],
       "evidence": [
         {"script": "scripts/ui-regression.mjs", "anchor": "thought-r8-reading"},
         {"script": "scripts/url-history-regression.mjs", "anchor": "URL/history regression passed"}

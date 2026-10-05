@@ -2545,6 +2545,23 @@ try {
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
   await evaluate(`document.querySelector('[data-view="thoughts"]').click();true`);
   assert.equal(await waitUntil(`document.querySelectorAll("#all-thoughts .thought-month").length===1`),true);
+  const thoughtListScrollBeforeCreate = await evaluate(`window.scrollY`);
+  await evaluate(`document.querySelector("#thought-create-toggle").click();true`);
+  assert.equal(await waitUntil(`!document.querySelector("#home-thought-editor").hidden&&document.activeElement===document.querySelector("#chain-question")`),true);
+  assert.deepEqual(await evaluate(`({
+    view:document.querySelector(".view.active")?.id,
+    path:location.pathname,
+    thoughtPrimary:document.querySelector('[data-section="thought"]').getAttribute("aria-current"),
+    todayPrimary:document.querySelector('[data-section="today"]').getAttribute("aria-current")
+  })`),{view:"view-thoughts",path:"/thoughts",thoughtPrimary:"page",todayPrimary:"false"},"thought create must keep the thoughts route active");
+  await evaluate(`document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}));true`);
+  assert.deepEqual(await evaluate(`({
+    hidden:document.querySelector("#home-thought-editor").hidden,
+    view:document.querySelector(".view.active")?.id,
+    path:location.pathname,
+    focusReturned:document.activeElement===document.querySelector("#thought-create-toggle"),
+    scrollY:window.scrollY
+  })`),{hidden:true,view:"view-thoughts",path:"/thoughts",focusReturned:true,scrollY:thoughtListScrollBeforeCreate},"cancelling thought create must restore the thoughts list context");
   // thought-r8-reading
   const thoughtListState = await evaluate(`(() => {
     const kept = document.querySelector('[data-chain-id="kept-root"]');
@@ -3115,7 +3132,8 @@ try {
   assert.equal(await waitUntil(`window.__thoughtSaves===4&&window.__aiTasks.length===${taskCountBeforeImageAnswer+1}`),true);
   assert.deepEqual(await evaluate(`({question:window.__savedPayloads[3].question,pathCount:window.__savedPayloads[3].attachmentPaths.length,generate:window.__savedPayloads[3].generateAnswer,answerTasks:window.__aiTasks.filter(item=>item.targetId==="auto-root-4"&&item.kind==="thoughtAnswer").length,imageTasks:window.__aiTasks.filter(item=>item.targetId==="auto-root-4"&&item.kind==="contentImageUnderstanding").length})`),{question:"结合这张图片回答",pathCount:1,generate:true,answerTasks:1,imageTasks:0});
   const thoughtSavesBeforeTagBlur=await evaluate(`window.__thoughtSaves`);
-  await evaluate(`document.querySelector('[data-view="today"]').click();document.querySelector("#home-open-thought").click();true`);
+  await evaluate(`document.querySelector('[data-view="thoughts"]').click();document.querySelector("#thought-create-toggle").click();true`);
+  assert.deepEqual(await evaluate(`({view:document.querySelector(".view.active")?.id,path:location.pathname,visible:!document.querySelector("#home-thought-editor").hidden})`),{view:"view-thoughts",path:"/thoughts",visible:true});
   await sleep(50);
   const tagSubmitPoint=await evaluate(`(()=>{document.querySelector("#chain-question").value="标签失焦后仍应一次保存";document.querySelector("#chain-answer").value="真实指针点击不应因标签重排丢失";const tags=document.querySelector("#chain-tags"),button=document.querySelector("#chain-submit"),form=document.querySelector("#chain-form");window.__tagSubmitEvents={blur:0,click:0,submit:0};tags.addEventListener("blur",()=>window.__tagSubmitEvents.blur++,{once:true});button.addEventListener("click",()=>window.__tagSubmitEvents.click++,{once:true});form.addEventListener("submit",()=>window.__tagSubmitEvents.submit++,{once:true});tags.value="标签 回归";tags.focus();button.scrollIntoView({block:"center",behavior:"instant"});const rect=button.getBoundingClientRect(),x=rect.left+rect.width/2,y=rect.top+rect.height/2,hit=document.elementFromPoint(x,y);return{x,y,visible:x>=0&&x<=innerWidth&&y>=0&&y<=innerHeight,hit:hit?.id||hit?.className||hit?.tagName||""}})()`);
   assert.deepEqual({visible:tagSubmitPoint.visible,hit:tagSubmitPoint.hit},{visible:true,hit:"chain-submit"});
@@ -3125,6 +3143,7 @@ try {
   if(!await waitUntil(`window.__thoughtSaves===${thoughtSavesBeforeTagBlur+1}&&document.querySelector("#home-thought-editor").hidden`)){
     throw new Error(await evaluate(`JSON.stringify({events:window.__tagSubmitEvents,saves:window.__thoughtSaves,expected:${thoughtSavesBeforeTagBlur+1},active:document.activeElement?.id||"",status:document.querySelector("#chain-status").textContent,button:document.querySelector("#chain-submit").getBoundingClientRect().toJSON(),point:${JSON.stringify(tagSubmitPoint)},hit:document.elementFromPoint(${tagSubmitPoint.x},${tagSubmitPoint.y})?.id||""})`))
   }
+  assert.deepEqual(await evaluate(`({view:document.querySelector(".view.active")?.id,path:location.pathname})`),{view:"view-thoughts",path:"/thoughts"},"submitting from thoughts must return to the thoughts list");
   assert.deepEqual(await evaluate(`window.__savedPayloads.at(-1).tags`),["标签","回归"]);
   const captureSavesBeforeKindChoice=await evaluate(`window.__captureSaves`);
   await evaluate(`(()=>{document.querySelector('[data-view="today"]').click();document.querySelector("#home-open-thought").click();const form=document.querySelector("#chain-form");form.elements.recordKind.value="capture";form.elements.recordKind[0].dispatchEvent(new Event("change",{bubbles:true}));document.querySelector("#chain-question").value="从思考入口保存的一条念起";return true})()`);
@@ -3591,6 +3610,10 @@ try {
   assert.equal(await waitUntil(`document.activeElement===document.querySelector("#journal-content")`),true);
   await evaluate(`document.querySelector("[data-section-links='thought'] [data-view='thoughts']").click();true`);
   assert.deepEqual(await evaluate(`(()=>{const state=document.querySelector("#all-thoughts .content-state");return{title:state.querySelector("strong").textContent,body:state.querySelector("p").textContent,action:state.querySelector("button").textContent,actions:state.querySelectorAll("button").length}})()`),{title:"还没有思绪",body:"从一个真实问题开始，初步想法可以稍后补充。",action:"记录第一个问题",actions:1});
+  await evaluate(`document.querySelector("#all-thoughts .content-state-action").click();true`);
+  assert.equal(await waitUntil(`document.activeElement===document.querySelector("#chain-question")`),true);
+  assert.deepEqual(await evaluate(`({view:document.querySelector(".view.active")?.id,path:location.pathname,visible:!document.querySelector("#home-thought-editor").hidden,focused:document.activeElement===document.querySelector("#chain-question")})`),{view:"view-thoughts",path:"/thoughts",visible:true,focused:true});
+  await evaluate(`document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}));true`);
   await evaluate(`document.querySelector('[data-section="seen"]').click();document.querySelector("[data-section-links='seen'] [data-view='quotes']").click();true`);
   assert.deepEqual(await evaluate(`(()=>{const state=document.querySelector("#quote-sky-content .content-state");return{title:state.querySelector("strong").textContent,body:state.querySelector("p").textContent,action:state.querySelector("button").textContent,actions:state.querySelectorAll("button").length}})()`),{title:"还没有收藏的句子",body:"先留下原句和来源，它之后会在这里再次出现。",action:"收藏第一句",actions:1});
   await evaluate(`document.querySelector("#quote-sky-content .content-state-action").click();true`);

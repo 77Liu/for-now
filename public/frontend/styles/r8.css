@@ -1,5 +1,5 @@
 /* Home v0.2: scoped Song-style paper surface backed by real account data. */
-.home-v02{
+.home-v02,.home-v02-editor-backdrop{
   --home-paper:#faf9f5;
   --home-ink:#282f28;
   --home-muted:#646a60;
@@ -7,6 +7,8 @@
   --home-sage:#e6e9de;
   --home-line:#dcded5;
   --home-serif:"Songti SC","Noto Serif CJK SC","STSong","SimSun",serif;
+}
+.home-v02{
   position:relative;
   isolation:isolate;
   max-width:1250px;

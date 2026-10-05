@@ -218,29 +218,6 @@
         </details>
       </div>
 
-      <div class="home-v02-editor-backdrop" id="home-thought-editor" hidden>
-        <section class="home-v02-editor" role="dialog" aria-modal="true" aria-labelledby="home-thought-title">
-          <header><h2 id="home-thought-title">记录思考</h2><button class="home-v02-editor-close" type="button" data-home-editor-close="thought" aria-label="收起思考编辑">×</button></header>
-          <form class="chain-card" id="chain-form">
-            <input type="hidden" name="sourceCaptureId"><input type="hidden" name="sourceCaptureVersion">
-            <fieldset class="thought-record-kind"><legend>保存为</legend><label><input type="radio" name="recordKind" value="capture"><span>念起</span></label><label><input type="radio" name="recordKind" value="thought" checked><span>思绪</span></label></fieldset>
-            <div class="thought-source-notice" id="thought-source-notice" hidden><span>正在从一条念起展开</span><button class="subtle-action" id="thought-source-cancel" type="button">取消展开</button></div>
-            <label class="field"><span class="field-title"><span id="chain-primary-label">问题 <i>文字或图片至少一项 · 支持 Markdown</i></span><button class="thought-prompt-button" id="thought-prompt-button" type="button" data-chain-thought-only title="生成一个简短的思考引子">✦ 给个引子</button></span><textarea id="chain-question" rows="2" placeholder="你真正想问的是什么？"></textarea></label>
-            <div class="content-image-editor" data-content-image-editor="thoughtRoot">
-              <div class="content-image-editor-head"><span>图片</span><label class="content-image-add" title="插入图片" aria-label="插入图片"><span aria-hidden="true">＋</span><input id="thought-root-images" type="file" accept="image/png,image/jpeg,image/webp" multiple></label></div>
-              <div class="content-image-editor-previews" data-content-image-previews></div>
-            </div>
-            <p class="draft-note thought-prompt-status" id="thought-prompt-status" data-chain-thought-only role="status" aria-live="polite"></p>
-            <label class="field" data-chain-thought-only><span>初步想法 <i>可空 · 支持 Markdown</i></span><textarea id="chain-idea" rows="4" placeholder="你现在怎么看？"></textarea></label>
-            <label class="field" data-chain-thought-only><span class="field-title"><span>回答 <i>可空 · 支持 Markdown</i></span><button class="answer-draft-button" id="draft-answer-button" type="button">✦ 给我回答</button></span><textarea id="chain-answer" rows="5" placeholder="可以自己填写，也可先让 DeepSeek 生成草稿，再按你的判断修改"></textarea></label>
-            <p class="draft-note" id="draft-note" data-chain-thought-only>模型草稿只有在你提交整套思考后才会保存；你修改了什么，也会成为日后认知复盘的线索。</p>
-            <label class="field occurrence-field"><span>发生时间</span><input id="chain-datetime" type="datetime-local" step="1" required></label>
-            <div class="capture-footer"><div class="tag-composer" id="chain-tag-composer"><div class="tag-chip-list" id="chain-tag-list"></div><label class="tag-input"><span>#</span><input id="chain-tags" list="tag-suggestions" placeholder="输入标签后回车"></label><datalist id="tag-suggestions"></datalist></div><button class="primary-button" id="chain-submit" type="submit">收进思绪箱</button></div>
-            <p class="status" id="chain-status" role="status"></p>
-          </form>
-        </section>
-      </div>
-
       <div class="home-v02-editor-backdrop" id="home-state-editor" hidden>
         <section class="home-v02-editor home-v02-state-editor" role="dialog" aria-modal="true" aria-labelledby="home-state-title">
           <header><h2 id="home-state-title">记录状态</h2><button class="home-v02-editor-close" type="button" data-home-editor-close="state" aria-label="收起状态编辑">×</button></header>
@@ -1284,6 +1261,29 @@
         <button type="button" data-view="today">回到今天 <span aria-hidden="true">→</span></button>
       </footer>
     </section>
+
+    <div class="home-v02-editor-backdrop" id="home-thought-editor" hidden>
+      <section class="home-v02-editor" role="dialog" aria-modal="true" aria-labelledby="home-thought-title">
+        <header><h2 id="home-thought-title">记录思考</h2><button class="home-v02-editor-close" type="button" data-home-editor-close="thought" aria-label="收起思考编辑">×</button></header>
+        <form class="chain-card" id="chain-form">
+          <input type="hidden" name="sourceCaptureId"><input type="hidden" name="sourceCaptureVersion">
+          <fieldset class="thought-record-kind"><legend>保存为</legend><label><input type="radio" name="recordKind" value="capture"><span>念起</span></label><label><input type="radio" name="recordKind" value="thought" checked><span>思绪</span></label></fieldset>
+          <div class="thought-source-notice" id="thought-source-notice" hidden><span>正在从一条念起展开</span><button class="subtle-action" id="thought-source-cancel" type="button">取消展开</button></div>
+          <label class="field"><span class="field-title"><span id="chain-primary-label">问题 <i>文字或图片至少一项 · 支持 Markdown</i></span><button class="thought-prompt-button" id="thought-prompt-button" type="button" data-chain-thought-only title="生成一个简短的思考引子">✦ 给个引子</button></span><textarea id="chain-question" rows="2" placeholder="你真正想问的是什么？"></textarea></label>
+          <div class="content-image-editor" data-content-image-editor="thoughtRoot">
+            <div class="content-image-editor-head"><span>图片</span><label class="content-image-add" title="插入图片" aria-label="插入图片"><span aria-hidden="true">＋</span><input id="thought-root-images" type="file" accept="image/png,image/jpeg,image/webp" multiple></label></div>
+            <div class="content-image-editor-previews" data-content-image-previews></div>
+          </div>
+          <p class="draft-note thought-prompt-status" id="thought-prompt-status" data-chain-thought-only role="status" aria-live="polite"></p>
+          <label class="field" data-chain-thought-only><span>初步想法 <i>可空 · 支持 Markdown</i></span><textarea id="chain-idea" rows="4" placeholder="你现在怎么看？"></textarea></label>
+          <label class="field" data-chain-thought-only><span class="field-title"><span>回答 <i>可空 · 支持 Markdown</i></span><button class="answer-draft-button" id="draft-answer-button" type="button">✦ 给我回答</button></span><textarea id="chain-answer" rows="5" placeholder="可以自己填写，也可先让 DeepSeek 生成草稿，再按你的判断修改"></textarea></label>
+          <p class="draft-note" id="draft-note" data-chain-thought-only>模型草稿只有在你提交整套思考后才会保存；你修改了什么，也会成为日后认知复盘的线索。</p>
+          <label class="field occurrence-field"><span>发生时间</span><input id="chain-datetime" type="datetime-local" step="1" required></label>
+          <div class="capture-footer"><div class="tag-composer" id="chain-tag-composer"><div class="tag-chip-list" id="chain-tag-list"></div><label class="tag-input"><span>#</span><input id="chain-tags" list="tag-suggestions" placeholder="输入标签后回车"></label><datalist id="tag-suggestions"></datalist></div><button class="primary-button" id="chain-submit" type="submit">收进思绪箱</button></div>
+          <p class="status" id="chain-status" role="status"></p>
+        </form>
+      </section>
+    </div>
   </main>
 
   <div class="selection-tools" id="selection-tools" role="toolbar" aria-label="选中文本操作" hidden><button type="button" data-selection-action="comment">评论</button><button type="button" data-selection-action="quote">善言</button><button type="button" data-selection-action="highlight">划线</button><button type="button" data-selection-action="emphasis">加重</button></div>

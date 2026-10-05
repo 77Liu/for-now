@@ -3591,12 +3591,16 @@ function closeHomeEditors({restoreFocus=true}={}){
   if(opened.length)homeEditorTrigger=null;
   if(restoreFocus&&opened.length&&trigger?.isConnected)trigger.focus({preventScroll:true})
 }
-function openHomeEditor(kind){
+function openHomeEditor(kind,trigger=null){
   const editor=$(`#home-${kind}-editor`);
   if(!editor)return;
   closeHomeEditors({restoreFocus:false});
   const fallback=kind==="thought"?$("#home-open-thought"):$("#home-record-state");
-  homeEditorTrigger=document.activeElement instanceof HTMLElement&&document.activeElement!==document.body?document.activeElement:fallback;
+  homeEditorTrigger=trigger instanceof HTMLElement
+    ?trigger
+    :document.activeElement instanceof HTMLElement&&document.activeElement!==document.body
+      ?document.activeElement
+      :fallback;
   editor.hidden=false;
   document.body.classList.add("home-v02-editor-open");
   requestAnimationFrame(()=>{
@@ -4145,8 +4149,8 @@ const pageEffects={...createPageEffects({
 const lazyPageEffects=new Proxy(pageEffects,{get(target,view){const effect=target[view];if(typeof view!=="string"||!LOCAL_TEST_VIEW_SCOPES[view])return effect;return()=>{void ensureLocalTestViewScope(view).then(async ready=>{if(!ready)return;await effect?.();await restorePendingProjections()})}}});
 pageRouter=createPageRouter({query:$,queryAll:$$,effects:lazyPageEffects,basePath:applicationBasePath,onRoute:applyApplicationRoute,canAccessView:(_,capability)=>hasCapability(capability),onDenied:showPermissionPage});
 ({switchView,restoreView}=pageRouter);
-$("#home-open-thought").addEventListener("click",()=>openHomeEditor("thought"));
-$("#home-record-state").addEventListener("click",()=>openHomeEditor("state"));
+$("#home-open-thought").addEventListener("click",event=>openHomeEditor("thought",event.currentTarget));
+$("#home-record-state").addEventListener("click",event=>openHomeEditor("state",event.currentTarget));
 $("#home-shuffle").addEventListener("click",()=>renderHomeMemories({advance:true}));
 $("#home-memory-grid").addEventListener("click",event=>{
   const button=event.target.closest("[data-home-memory-open]");
@@ -4402,7 +4406,7 @@ $("#capture-create-toggle").addEventListener("click",()=>{
 });
 $("#capture-editor-close").addEventListener("click",()=>closeCaptureEditor());
 $("#capture-editor").addEventListener("click",event=>{if(event.target===event.currentTarget)closeCaptureEditor()});
-$("#thought-create-toggle").addEventListener("click",()=>{switchView("today");openHomeEditor("thought")});
+$("#thought-create-toggle").addEventListener("click",event=>openHomeEditor("thought",event.currentTarget));
 $("#thought-load-more").addEventListener("click",()=>void loadMoreThoughts());
 $("#analysis-load-more").addEventListener("click",()=>void loadMoreAnalyses());
 document.addEventListener("input",event=>{
@@ -4428,11 +4432,11 @@ document.addEventListener("click",event=>{
     target?.scrollIntoView({behavior:"smooth",block:"center"});target?.focus();return
   }
   const command=button.dataset.contentAction;
-  if(command==="new-thought"){switchView("today");openHomeEditor("thought");return}
+  if(command==="new-thought"){openHomeEditor("thought",button);return}
   if(command==="new-capture"){openCaptureEditor(button);return}
   if(command==="clear-thought-filter"){pageRouter.replaceQuery({tag:null,page:null});return}
   if(command==="dismiss-route-result"){pageRouter.clearResult();return}
-  if(command==="new-state"){switchView("today");openHomeEditor("state");return}
+  if(command==="new-state"){switchView("today");openHomeEditor("state",button);return}
   if(command==="new-keepsake"){$("#keepsake-create-toggle")?.click();return}
   if(command==="run-analysis"){$("#run-analysis")?.click();return}
   if(command==="retry-route-state"){button.disabled=true;void loadRouteState(pageRouter?.currentRoute()).finally(()=>{if(button.isConnected)button.disabled=false});return}
@@ -4469,7 +4473,7 @@ document.addEventListener("click",async e=>{
   if(button.dataset.journalEdit)return editJournal(button.dataset.journalEdit);
   if(button.dataset.editCheckin)return openCheckinEditor(button.dataset.editCheckin);
   if(button.dataset.captureThought){openThoughtDetail(button.dataset.captureThought);return}
-  if(button.dataset.capturePromote){const item=(state.captures||[]).find(value=>value.id===button.dataset.capturePromote);if(!item)return;const form=$("#chain-form");form.reset();form.elements.sourceCaptureId.value=item.id;form.elements.sourceCaptureVersion.value=String(item.version||1);form.elements.recordKind.value="thought";activeDate=eventDate(item)||activeDate;renderDate();renderSliders();renderThoughts();renderStateChart();renderHomeMood();renderChat();$("#chain-question").value="";$("#chain-idea").value=item.content;draftTags=[...(item.tags||[])];renderTagComposer();syncChainRecordKind();$("#chain-status").textContent="这条念起将保留为来源。补上一个明确问题，再形成完整思考。";switchView("today");openHomeEditor("thought");$("#chain-question").focus();return}
+  if(button.dataset.capturePromote){const item=(state.captures||[]).find(value=>value.id===button.dataset.capturePromote);if(!item)return;const form=$("#chain-form");form.reset();form.elements.sourceCaptureId.value=item.id;form.elements.sourceCaptureVersion.value=String(item.version||1);form.elements.recordKind.value="thought";activeDate=eventDate(item)||activeDate;renderDate();renderSliders();renderThoughts();renderStateChart();renderHomeMood();renderChat();$("#chain-question").value="";$("#chain-idea").value=item.content;draftTags=[...(item.tags||[])];renderTagComposer();syncChainRecordKind();$("#chain-status").textContent="这条念起将保留为来源。补上一个明确问题，再形成完整思考。";switchView("today");openHomeEditor("thought",button);$("#chain-question").focus();return}
   if(button.dataset.captureDelete){const id=button.dataset.captureDelete,item=(state.captures||[]).find(value=>value.id===id);if(!item||!confirm("将这条捕念移入回收站？"))return;button.disabled=true;try{await requestV1(`/api/v1/captures/${encodeURIComponent(id)}`,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`}},{domains:["captures"],recoverCommitted:true,projection:{kind:"record.delete",domain:"captures",id},onQueued:record=>applyPendingProjection(record)});void refreshState("captures").catch(error=>showToast(`捕念已移除，但列表刷新失败：${error.message}`,"error"));showToast("捕念已移入回收站")}catch(err){if(err.syncStatus==="pending")showToast("捕念将在网络恢复后移入回收站");else{await refreshState("captures").catch(()=>{});showToast(err.message,"error");button.disabled=false}}return}
   if(button.dataset.journalDelete){const id=button.dataset.journalDelete,item=(state.journals||[]).find(value=>value.id===id);if(!item||!confirm("将这篇日记及其助手回望移入回收站？"))return;button.disabled=true;try{await requestV1(`/api/v1/journals/${encodeURIComponent(id)}`,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`}},{domains:["journals"],recoverCommitted:true,projection:{kind:"record.delete",domain:"journals",id},onQueued:record=>applyPendingProjection(record)});void refreshState("journals").catch(error=>showToast(`日记已移除，但列表刷新失败：${error.message}`,"error"));showToast("日记已移入回收站")}catch(err){if(err.syncStatus==="pending")showToast("日记将在网络恢复后移入回收站");else{await refreshState("journals").catch(()=>{});showToast(err.message,"error");button.disabled=false}}return}
   if(button.dataset.journalReflect){const id=button.dataset.journalReflect;button.disabled=true;try{await runAnswerInModal({title:"回望这篇日记",scene:"diaryReflection",requestCall:onEvent=>requestStream(`/api/journals/${id}/reflect`,{method:"POST",body:"{}"},onEvent),onDone:()=>refreshState("journals")});showToast("日记回望已保存")}catch(err){showToast(err.message,"error")}finally{button.disabled=false}}
