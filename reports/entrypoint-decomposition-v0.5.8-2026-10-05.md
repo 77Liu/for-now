@@ -748,7 +748,7 @@ V0.5.8 只有在以下条件同时成立时才可关闭：
 - `f3724c4` 完成 B1a；`47d5a39` 完成 B1b/B1c。Store v16 归一化、派生
   统计、用户留痕判定与角色化公开 Store 投影均由 `src/app` 唯一实现。
 - legacy state、route-state、sync 和本地测试水合使用同一公开 projector；
-  入口旧实现已同批删除，`server.mjs` 从 3283 行降至 2668 行。
+  B1 入口旧实现已同批删除，`server.mjs` 从 3283 行降至 2668 行。
 - B1b/B1c 专项、check、startup、sync、persistence、restore、主 regression、
   auth 和 backend `326672 ms` 通过；两个独立 reviewer 均 GO，
   blocker/P0/P1=`0/0/0`。
@@ -760,4 +760,15 @@ V0.5.8 只有在以下条件同时成立时才可关闭：
   `24 modules / 819195 B` 通过，独立 reviewer blocker/P0/P1=`0/0/0`。
 - ports 与 application 仍有意保持未接线；F2 必须先提供真实 lazy descriptors，
   再由调度者同批接入 runtime，不能用共享 barrel descriptor 静态假通过。
-  下一步为 B2/F2。
+- B2 由 `a35dad8..9ba9f64` 完成本地测试 control/workspace、GET-only 上游
+  水合、隔离会话、账户初始化和逐账户启动恢复迁移；`server.mjs` 进一步降至
+  2295 行，拥有路由由 233 增至 236 条，旧入口实现已删除。
+- workspace reset 使用 staging + repository 独占换目录，hydrate 使用 Store
+  commit 后 pending-control 恢复；注册失败回收未持久目录，JSON/PG 认证提交
+  均执行账户归属审计。Range/If-Range、HEAD、206/416 保持兼容。
+- check、B2 专项、local-mode、auth、persistence、restore、主 regression 和
+  backend 通过；最终 reviewer blocker/P0/P1=`0/0/0`。真实 PostgreSQL 16
+  因本机缺少 `postgres/initdb/pg_ctl` 未运行，未冒充通过。
+- 当前达到 entrypoint-G2；10 条 server 例外绑定 SHA
+  `057b6fa80a6bca478c41367ada48eb237de2b520b4e8b7e868e56163b664c99f`，
+  行数上限收紧为 2295，G4 条件未放宽。下一步只推进 F2。

@@ -2,11 +2,11 @@
 
 - 日期：2026-10-05
 - 起始基线：`f911cde4505d3434ab4afcf4b5614f8e828f4bcc`
-- 当前门禁：`G3`
-- 当前状态：`f1b-verified`
+- 当前门禁：`iteration-G3 / entrypoint-pre-G2`
+- 当前状态：`b2-verified-f2-ready`
 - 活跃工作树：`5 / 6`
-- 机器事实：3 个入口策略、61 个模块、233 条拥有路由、20 条迁移例外；
-  `server.mjs` 由 3283 行降至 2668 行，`runtime.mjs` 仍为 5291 行
+- 机器事实：3 个入口策略、61 个模块、236 条拥有路由、20 条迁移例外；
+  `server.mjs` 由 3283 行降至 2295 行，`runtime.mjs` 仍为 5291 行
 - 授权边界：允许本地代码、测试、文档与任务提交；不允许 push、tag、Release、
   Preview、部署、云资源修改、真实付费调用或生产写入
 
@@ -45,11 +45,23 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 | F1a | `frontend-application-worker` | 新 application 模块和专项 | runtime、pages、registry、barrel、登记、package | start/reset/stop 顺序、重复调用、失败传播 |
 | I | `orchestrator` | 两入口、公共 barrel、登记、runner、调度记录 | 不顺改产品行为 | 逐批接线后运行影响门 |
 
+## B2/F2 所有权
+
+| task | owner | ownership | forbidden | acceptance |
+| --- | --- | --- | --- | --- |
+| B2-S | `b2-scout` | `server.mjs` 本地测试、账户初始化/恢复闭包与相关测试，只读 | 不修改文件、不调用远程/Base | 精确符号、依赖、迁移顺序、测试与风险 |
+| B2-W | `b2-backend-worker` | `src/app/` 内新 local-test/account lifecycle 模块与独立专项 | 两入口、公共 barrel、登记、package、持久化 schema | 本地工作区、只读水合、初始化/恢复成功与失败契约 |
+| F2-S | `f2-scout` | discovery/actions/feedback/export/home feature 闭包，只读 | 不修改文件、不调用远程/Base | 真实 lazy 候选、closure/PWA 风险和测试矩阵 |
+| F2-W | `f2-feature-worker` | F2 选定 feature 内部模块、descriptor/controller 与独立专项 | runtime、公共 barrel、pages、HTML/CSS、Service Worker | 隐藏页面不加载，start/stop/失败/账户切换可验证 |
+| I2 | `orchestrator` | 两入口、公共 barrel、登记、runner、Service Worker、调度记录 | 不顺改产品行为，不放宽 closure/PWA 预算 | B2 先串行接线并删旧实现；F2 就绪后同批接 ports/application |
+| V2 | `b2-f2-validator` | 冻结差分只读验证 | 不改实现或放宽断言 | local-mode/auth/runtime-infrastructure/backend；frontend/Journey/closure |
+| R2 | `b2-f2-reviewers` | 冻结差分独立复审 | 只读 | blocker/P0/P1 清零后才可进入下一批 |
+
 ## 角色知识账
 
 | roleId | specialty | activeContext | ownership | dependencies | communications | evidence | status | next |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `orchestrator` | 契约冻结与串行集成 | `48e5d6b`；G3 | 共享文件与集成树 | 全部角色 | 固定任务图并处理 blocker | B1a-B1c、F1a/F1b 与门禁强化已集成 | `integrated` | 进入 B2/F2 |
+| `orchestrator` | 契约冻结与串行集成 | `9ba9f64`；iteration-G3 / entrypoint-G2 | 共享文件与集成树 | 全部角色 | 串行接入 B2 并关闭 reviewer findings | B1a-B2、F1a/F1b 与门禁强化已集成 | `active` | 进入 F2 真实 lazy feature |
 | `backend-scout` | B1-B7 符号与闭包 | `server.mjs` 3283 行 | 只读 | B1a | 建议 B1a→B1b→B1c | 无生产 runtime 骨架 | `closed` | 移交 B1a |
 | `frontend-scout` | F1-F10 页面与 lifecycle | `runtime.mjs` 5291 行 | 只读 | F1a | 先 application/router disposer | registry 未接线 | `closed` | 移交 F1a |
 | `gate-scout` | G4/G6 与测试真实性 | 20 条例外 | 只读 | C0/I | 报告 policy 冲突与死代码假绿 | G4/G6 按预期失败 | `closed` | 等待复核 |
@@ -64,6 +76,13 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 | `f1b-router/state/runtime-scouts` | router、ports 与 runtime 闭包 | `4d3efba` | 只读 | F1a | 冻结 disposer、账户代际和 closure 约束 | 3 份闭包/竞态/测试矩阵 | `closed` | 已移交 F1b |
 | `f1b-secretary` | 任务图、预算与证据失效 | `4d3efba` | 只读 | F1b/I | 固定不创建写工作树与 F2 接线条件 | 角色账和 reviewer 清单 | `closed` | 已写入总账 |
 | `f1b-reviewers` | router/ports 独立复审 | `48e5d6b` 前冻结差分 | 只读 | F1b/I | 多轮复现并关闭竞态与夹具假绿 | 最终 GO，blocker/P0/P1=`0/0/0` | `closed` | F2 复审 |
+| `b2-scout` | 本地测试、账户生命周期闭包 | `47d24a0`；B2 | 只读 | B1c/I2 | 核对 local-test、auth、runtime-infrastructure 与 persistence | 精确闭包、迁移顺序与风险已移交 | `closed` | B2 已集成 |
+| `f2-scout` | 低耦合 feature 与真实 lazy 边界 | `47d24a0`；F2 | 只读 | F1b/I2 | 核对 discovery/actions/feedback/export/home 与 closure/PWA | export/feedback/discovery 候选、PWA/closure 风险已移交 | `closed` | 先实现 export descriptor |
+| `b2f2-secretary` | 第二批状态、所有权与证据账 | `47d24a0`；SOP/计划/报告 | 只读 | B2/F2/I2 | 指出门禁命名、文档状态和 ownership 缺口 | 工作树 5/6；B2/F2 派发清单已移交 | `closed` | 接线后复核五处状态一致性 |
+| `b2-backend-worker` | local-test/account lifecycle 叶子模块 | `47d24a0`；B2 | 新模块和专项 | b2-scout/I2 | 两个无冲突叶子任务移交调度者接线 | `7430973`、`f53ab06`；专项通过 | `closed` | B2 已集成 |
+| `f2-feature-worker` | 真实 lazy feature 叶子实现 | `47d24a0`；等待 F2-S | 选定 feature 内部文件和专项 | f2-scout/I2 | 尚未派发写任务 | 无 | `queued` | 接收冻结候选后实现，不碰 runtime/barrel |
+| `b2-f2-validator` | B2/F2 独立影响验证 | `9ba9f64`；B2 冻结差分 | 只读 | B2/I2 | 保留失败与通过样本 | check、专项、auth、persistence、restore、主 regression、backend 通过 | `closed` | F2 后重新验证前端 |
+| `b2-f2-reviewers` | 生命周期、隔离与 lazy 真实性复审 | `9ba9f64`；B2 冻结差分 | 只读 | V2 | 多轮关闭原子性、隔离与测试假绿 | 最终 GO，blocker/P0/P1=`0/0/0` | `closed` | F2 冻结后复审 |
 
 ## 已关闭问题与保留风险
 
@@ -173,5 +192,25 @@ npm run test:frontend-shell
   `edb425c7d2f1a3cd856463cdf7dd53f181abaeb1001247465fe0170ad7101f46`，
   G6 条件未放宽。
 
-下一步：B2 本地测试/账户初始化与恢复，以及 F2 低耦合 feature 与真实 lazy
-descriptors；继续由调度者单写两个入口。
+## B2 检查点
+
+- 本地提交：`a35dad8`、`7430973`、`f53ab06`、`f824524`、`40b5021`、
+  `816d156`、`0a912ec`、`9ba9f64`。
+- 本地测试 control/workspace、上游 GET-only 水合、隔离 Cookie、账户初始化、
+  JSON/PG 认证审计与逐账户恢复均已离开入口；`server.mjs` 2668→2295 行。
+- workspace 切换先在 staging 完整构建，再在 Store 队列独占区换目录；水合
+  使用 commit 后 pending-control 恢复。Range/If-Range、HEAD、206/416 继续透传。
+- 多轮 reviewer 关闭根目录误恢复、注册孤儿目录、reset/control 原子性、
+  barrier 换代、hydrate 崩溃窗口、Range 假绿和认证审计归属；最终 GO，
+  blocker/P0/P1=`0/0/0`。
+- `npm run check`、B2 四专项、local-mode、auth、startup、persistence、
+  restore、主 regression 和 backend 均通过。过程保留两次失败样本：
+  hydrate 被错误纳入 switch barrier 导致 `504`；固定时钟夹具跨日得到
+  `2026-10-06`。两者均修复并复测。
+- 真实 PostgreSQL 稳定门因本机缺少 PostgreSQL 16 的 `postgres/initdb/pg_ctl`
+  未运行；preflight 回归通过。server 10 条 G4 例外绑定 SHA
+  `057b6fa80a6bca478c41367ada48eb237de2b520b4e8b7e868e56163b664c99f`，
+  行数上限收紧为 2295，G4 到期条件未放宽。
+
+下一步：F2 先实现 export、feedback、discovery 的真实 lazy descriptors，
+再由调度者同批接入 F1b application/ports；不使用共享 barrel 假 lazy。

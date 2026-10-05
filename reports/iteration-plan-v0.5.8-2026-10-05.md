@@ -3,8 +3,8 @@
 计划日期：2026-10-05
 
 状态：`G0-G2` 已通过；Owner 已验收 V0.5.7 `G7` 并允许进入 V0.5.8
-本地开发。`V0.5.8-13/15/14/16/20/02` 已完成工作区验证，下一步为
-`V0.5.8-03/04`；尚未进入 Preview 或发布。
+本地开发。`V0.5.8-13/15/14/16/20/02` 已完成工作区验证，`03/04`
+已完成 B1/B2 与 F1，下一步为 F2；尚未进入 Preview 或发布。
 
 执行依据：`SOP/iteration-planning.md`、`SOP/iteration-retrospective.md`、
 `knowledge/engineering-rules.md`、`knowledge/pre-launch-confirmation.md`、
@@ -118,12 +118,12 @@ V0.5.8 的 14 条需求均关联版本记录 `reczz28JaO7yXu1K`，发布状态�
 | 16 | `reczz28Jd8F4nPjw` | 工作区已验证未部署 | `1eb61c9`、`a4150e9`、`56337a9`：七类能力统一用量、官方价格版本、预算和明确账单缺口；独立复审无新增问题 |
 | 20 | `reczz28Jd8F4oH1y` | 工作区已验证未部署 | `91a10b7..88d37e1`：同步 HTML 开屏、雨景生命周期、真实 paint 性能门、FCP 后入口、退出/失败/清理、watchdog 锁存及 PWA 升级预算通过 |
 | 02 | `reczz28JPdCVUwBD` | 工作区已验证未部署 | `6730597`：三类真实入口、组合 API/import binding/factory 链、G4/G6 例外和 feature lifecycle 已机器冻结；最终独立复审 GO |
-| 03 | `reczz28JPdCVWPzV` | 进行中 | `f3724c4`、`47d5a39`：B1a/B1b/B1c 的 Store v16 归一化、派生统计和公开投影已离开入口；`server.mjs` 3283→2668 行 |
+| 03 | `reczz28JPdCVWPzV` | 进行中 | `f3724c4`、`47d5a39`、`a35dad8..9ba9f64`：B1/B2 的 Store v16、派生/公开投影、本地测试与账户生命周期已离开入口；`server.mjs` 3283→2295 行 |
 | 04 | `reczz28JPdCVXtsA` | 进行中 | `e7d99d6`、`6d74383`、`208cba7`、`48e5d6b`：F1a/F1b application、可回收 router 与 ports 已冻结；保持未接线，等待 F2 真实 lazy descriptors 后同批接 runtime |
 
 13、15、14、16、20 都是行为修复，已在现有入口上完成并固定自动化反例；
-共享热点由集成负责人串行接线。下一步由 02 以修复后的行为冻结结构契约，
-03/04 可在模块内部并行准备，但两个入口只允许单写集成。
+共享热点由集成负责人串行接线。02 已冻结结构契约；03 已完成 B1/B2，
+04 已完成 F1，下一步 F2 可在内部准备，但两个入口仍只允许单写集成。
 
 ### 5.2 独立 P0
 
@@ -376,16 +376,19 @@ flowchart TD
   `reczz28JPdCVUwBD` 已回填“待验收 / 未发布”。
 - `V0.5.8-03/04` 首批 `f3724c4..2989e61` 已完成 B1a、F1a 与门禁强化；
   `47d5a39` 完成 B1b/B1c，`208cba7`、`48e5d6b` 完成 F1b：
-  当前登记 61 个模块、233 条拥有路由，20 条例外绑定入口 SHA；
-  `server.mjs` 为 2668 行，runtime 仍为 5291 行。B1b/B1c backend
+  `a35dad8..9ba9f64` 完成 B2。本地测试、账户初始化/恢复及认证审计已离开
+  入口；当前登记 61 个模块、236 条拥有路由，20 条例外绑定入口 SHA；
+  `server.mjs` 为 2295 行，runtime 仍为 5291 行。B1b/B1c backend
   `326672 ms`、F1b frontend `77626 ms`、Journey Smoke `14/14` 和最终
-  web budget `24 / 819195 B` 通过，独立 Reviewer blocker/P0/P1=`0/0/0`。
-  当前只达到 G3 检查点，
+  web budget `24 / 819195 B` 通过；B2 check、专项、auth、persistence、
+  restore、主 regression 和 backend 通过，最终 Reviewer
+  blocker/P0/P1=`0/0/0`。真实 PostgreSQL 16 因本机缺少可执行文件未运行。
+  当前仍是 iteration-G3，
   `check:entrypoints:g4` 仍会按设计拒绝已到期的 server 例外。
 
 当前未完成：
 
-- 下一步按依赖推进 B2/F2；P0 仍按既定依赖推进。
+- 下一步按依赖推进 F2 真实 lazy feature；P0 仍按既定依赖推进。
 - `reczz28Jd8F4nDzn` 仍等待真实 CDN/OSS/DNS/证书/费用授权。
 - 未执行 push、tag、Release、Preview/生产部署或生产写入。
 
