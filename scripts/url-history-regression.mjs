@@ -288,6 +288,10 @@ try {
     path:"/now/today",
     today:true
   });
+  assert.equal(
+    await waitUntil(`document.querySelector('.home-v02-memory[data-home-memory-type="thought"] [data-home-memory-open]')`),
+    true
+  );
   await evaluate(`document.querySelector('.home-v02-memory[data-home-memory-type="thought"] [data-home-memory-open]').click();true`);
   assert.equal(await waitUntil(`location.pathname.startsWith("/now/thoughts/")&&document.querySelector("#all-thoughts").dataset.routeMode==="detail"`), true);
   await evaluate(`document.querySelector("[data-thought-list]").click();true`);

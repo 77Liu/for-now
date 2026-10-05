@@ -283,14 +283,107 @@ transitionRouter.start({
   }
 });
 const staleBooks = transitionRouter.switchView("books");
-await transitionRouter.switchView("quotes");
-await transitionRouter.switchView("books");
+await flush();
+const staleQuotes = transitionRouter.switchView("quotes");
+const latestBooks = transitionRouter.switchView("books");
 transitionGate.resolve();
-await staleBooks;
+await Promise.all([staleBooks, staleQuotes, latestBooks]);
 assert.equal(transitionEvents.filter(event => event === "enter:books").length, 1);
 assert.equal(transitionEvents.filter(event => event === "route:books:ok").length, 1);
-assert.ok(transitionEvents.includes("enter:quotes"));
-assert.ok(transitionEvents.includes("route:quotes:ok"));
+assert.equal(transitionEvents.includes("enter:quotes"), false);
+assert.equal(transitionEvents.includes("route:quotes:ok"), false);
+
+{
+  const leaveGate = deferred();
+  const events = ["mount:today"];
+  const router = createPageRouter({
+    query: () => null,
+    queryAll: () => [],
+    scrollTo: () => {}
+  });
+  router.start({
+    async leave(route) {
+      events.push(`unmount:${route.view}`);
+      await leaveGate.promise;
+    },
+    enter(route) {
+      events.push(`mount:${route.view}`);
+    }
+  });
+  const leaving = router.switchView("books");
+  await flush();
+  assert.deepEqual(events, ["mount:today", "unmount:today"]);
+  const returning = router.switchView("today");
+  leaveGate.resolve();
+  await Promise.all([leaving, returning]);
+  assert.equal(router.currentRoute().view, "today");
+  assert.deepEqual(events, ["mount:today", "unmount:today", "mount:today"]);
+}
+
+{
+  const events = ["mount:today"];
+  const routes = [];
+  const router = createPageRouter({
+    query: () => null,
+    queryAll: () => [],
+    scrollTo: () => {},
+    onRoute: (route, context) => routes.push([
+      route.view,
+      context.transitionError?.message || ""
+    ])
+  });
+  router.start({
+    leave(route) {
+      events.push(`unmount:${route.view}`);
+    },
+    enter(route) {
+      if (route.view === "books") throw new Error("books import failed");
+      events.push(`mount:${route.view}`);
+    }
+  });
+  await assert.rejects(router.switchView("books"), /books import failed/);
+  assert.equal(router.currentRoute().view, "today");
+  assert.deepEqual(events, ["mount:today", "unmount:today", "mount:today"]);
+  assert.deepEqual(routes.at(-1), ["today", "books import failed"]);
+}
+
+{
+  const rollbackStarted = deferred();
+  const rollbackGate = deferred();
+  const events = [];
+  const router = createPageRouter({
+    query: () => null,
+    queryAll: () => [],
+    scrollTo: () => {},
+    onRoute: (route, context) => events.push(
+      `route:${route.view}:${context.transitionError?.message || "ok"}`
+    )
+  });
+  router.start({
+    leave(route) {
+      events.push(`leave:${route.view}`);
+    },
+    enter(route) {
+      events.push(`enter:${route.view}`);
+      if (route.view === "books") throw new Error("broken import");
+      if (route.view === "today") {
+        rollbackStarted.resolve();
+        return rollbackGate.promise;
+      }
+    }
+  });
+  const broken = router.switchView("books");
+  await rollbackStarted.promise;
+  const latest = router.switchView("quotes");
+  rollbackGate.resolve();
+  await assert.rejects(broken, /broken import/);
+  await latest;
+  assert.equal(router.currentRoute().view, "quotes");
+  assert.ok(events.includes("enter:today"));
+  assert.ok(events.includes("enter:quotes"));
+  assert.equal(events.includes("route:quotes:broken import"), false);
+  assert.equal(events.at(-1), "route:quotes:ok");
+}
 
 const historyGate = deferred();
 const historyLocation = { pathname: "/now/today", search: "", hash: "" };
@@ -334,13 +427,14 @@ historyRouter.start({
 const pendingHistoryBooks = historyRouter.switchView("books");
 historyRouter.captureScroll();
 assert.deepEqual(historyWritesForTransitions.at(-1), ["replace", "/now/today"]);
-await historyRouter.switchView("quotes");
-await historyRouter.switchView("books");
+await flush();
+const pendingHistoryQuotes = historyRouter.switchView("quotes");
+const latestHistoryBooks = historyRouter.switchView("books");
 historyGate.resolve();
-await pendingHistoryBooks;
+await Promise.all([pendingHistoryBooks, pendingHistoryQuotes, latestHistoryBooks]);
 assert.equal(
   historyWritesForTransitions.filter(([method, url]) => method === "push" && url === "/now/seen/quotes").length,
-  1
+  0
 );
 assert.equal(
   historyWritesForTransitions.filter(([method, url]) => method === "push" && url === "/now/seen/books").length,
@@ -348,7 +442,6 @@ assert.equal(
 );
 
 const oldPopGate = deferred();
-const newRouteGate = deferred();
 const popTarget = new EventTargetFixture();
 const popLocation = { pathname: "/now/today", search: "", hash: "" };
 const popWrites = [];
@@ -388,27 +481,27 @@ popRouter.start({
     if (failPop) throw new Error("pop failed");
     popLeaves += 1;
     if (popLeaves === 1) return oldPopGate.promise;
-    if (popLeaves === 2) return newRouteGate.promise;
   },
   enter() {}
 });
 popLocation.pathname = "/now/seen/books";
 popTarget.dispatch("popstate", { state: null });
+await flush();
 const pendingQuotes = popRouter.switchView("quotes");
 const writesBeforeOldPop = popWrites.length;
 const scrollsBeforeOldPop = popScrolls.length;
 const framesBeforeOldPop = frames.size;
 oldPopGate.resolve();
-await flush();
-assert.equal(popWrites.length, writesBeforeOldPop);
+await pendingQuotes;
+assert.equal(popWrites.length, writesBeforeOldPop + 1);
+assert.equal(popWrites.at(-1), "/now/seen/quotes");
 assert.equal(popScrolls.length, scrollsBeforeOldPop);
 assert.equal(frames.size, framesBeforeOldPop);
-newRouteGate.resolve();
-await pendingQuotes;
 assert.equal(popLocation.pathname, "/now/seen/quotes");
 failPop = true;
 popLocation.pathname = "/now/seen/books";
 popTarget.dispatch("popstate", { state: null });
+await flush();
 assert.equal(popLocation.pathname, "/now/seen/quotes");
 assert.equal(popRouter.currentRoute().view, "quotes");
 
@@ -430,7 +523,7 @@ failureRouter.start({
   },
   enter() {}
 });
-assert.throws(() => failureRouter.switchView("books"), /leave failed/);
+await assert.rejects(failureRouter.switchView("books"), /leave failed/);
 assert.deepEqual(failureEvents.at(-1), ["today", "leave failed"]);
 assert.equal(failureRouter.currentRoute().view, "today");
 failureMode = "async";

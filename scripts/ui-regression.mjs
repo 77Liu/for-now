@@ -1641,11 +1641,17 @@ try {
   await evaluate(`(()=>{const input=document.querySelector("#habit-form").elements.title;input.value="等待期间的新习惯";input.dispatchEvent(new Event("input",{bubbles:true}));window.__releaseHabitCreate();return true})()`);
   assert.equal(await waitUntil(`document.querySelector("#habit-status").textContent.includes("新输入已保留")`),true);
   assert.equal(await evaluate(`document.querySelector("#habit-form").elements.title.value`),"等待期间的新习惯");
-  await evaluate(`document.querySelector('[data-view="feedback"]').click();(()=>{const form=document.querySelector("#feedback-form");form.elements.feature.value="提交时功能";form.elements.body.value="提交时内容";window.__delayFeedbackCreate=true;form.requestSubmit();return true})()`);
+  await evaluate(`document.querySelector('[data-view="feedback"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-feedback").classList.contains("active")&&!document.querySelector("#view-feedback").hasAttribute("aria-busy")`),true);
+  await evaluate(`(()=>{const form=document.querySelector("#feedback-form");form.elements.feature.value="提交时功能";form.elements.body.value="提交时内容";window.__delayFeedbackCreate=true;form.requestSubmit();return true})()`);
   assert.equal(await waitUntil(`typeof window.__releaseFeedbackCreate==="function"`),true);
   await evaluate(`(()=>{const input=document.querySelector("#feedback-form").elements.body;input.value="等待期间的新反馈";input.dispatchEvent(new Event("input",{bubbles:true}));window.__releaseFeedbackCreate();return true})()`);
   assert.equal(await waitUntil(`document.querySelector("#feedback-status").textContent.includes("新输入已保留")`),true);
   assert.equal(await evaluate(`document.querySelector("#feedback-form").elements.body.value`),"等待期间的新反馈");
+  await evaluate(`document.querySelector('[data-view="export"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-export").classList.contains("active")&&!document.querySelector("#view-export").hasAttribute("aria-busy")&&document.querySelector("#export-summary").textContent.includes("快照版本 15")`),true);
+  await evaluate(`document.querySelector('[data-export-format="json"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#export-status").textContent.includes("for-now-ui.json")`),true);
   await evaluate(`window.__actionListTitle="较早响应";window.__delayActionList=true;document.querySelector('[data-view="today"]').click();true`);
   assert.equal(await waitUntil(`typeof window.__releaseActionList==="function"`),true);
   await evaluate(`window.__actionListTitle="最新响应";document.querySelector('[data-view="today"]').click();true`);
@@ -1701,7 +1707,11 @@ try {
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
   await evaluate(`window.__failDiscoveryStatusAction="read";document.querySelector("#toast").hidden=true;document.querySelector("[data-discovery-open]").click();true`);
   assert.equal(await waitUntil(`document.querySelector("#view-thoughts").classList.contains("active")&&document.querySelector('[data-chain-id="kept-root"]')?.open`),true);
-  assert.equal(await evaluate(`!document.querySelector("#toast").hidden&&document.querySelector("#toast").classList.contains("error")&&document.querySelector("#toast").textContent.includes("原记录已打开，但回访状态更新失败")`),true);
+  assert.equal(
+    await evaluate(`!document.querySelector("#toast").hidden&&document.querySelector("#toast").classList.contains("error")&&document.querySelector("#toast").textContent.includes("原记录已打开，但回访状态更新失败")`),
+    true,
+    JSON.stringify(await evaluate(`({hidden:document.querySelector("#toast").hidden,className:document.querySelector("#toast").className,text:document.querySelector("#toast").textContent,failFlag:window.__failDiscoveryStatusAction})`))
+  );
   await evaluate(`document.querySelector("[data-section-links='thought'] [data-view='discovery']").click();true`);
   assert.equal(await waitUntil(`document.querySelector("#view-discovery").classList.contains("active")&&document.querySelector("#discovery-list [data-discovery-id]")`),true);
   await evaluate(`window.__failDiscoveryStatusAction="snooze";document.querySelector("#toast").hidden=true;document.querySelector("[data-discovery-snooze]").click();true`);
@@ -2348,7 +2358,11 @@ try {
     document.querySelector("#capture-create-toggle").click();
     return true
   })()`);
-  assert.equal(await waitUntil(`!document.querySelector("#capture-editor").hidden&&document.querySelector("#capture-id").value===""&&document.querySelector("#capture-content").value==="关闭后保留的念起"`),true);
+  assert.equal(
+    await waitUntil(`!document.querySelector("#capture-editor").hidden&&document.querySelector("#capture-id").value===""&&document.querySelector("#capture-content").value==="关闭后保留的念起"`),
+    true,
+    JSON.stringify(await evaluate(`({view:document.querySelector(".view.active")?.id,capturesBusy:document.querySelector("#view-captures").getAttribute("aria-busy"),capturesInert:document.querySelector("#view-captures").inert,editorHidden:document.querySelector("#capture-editor").hidden,id:document.querySelector("#capture-id").value,content:document.querySelector("#capture-content").value})`))
+  );
   await sleep(80);
   assert.equal(await evaluate(`!document.querySelector("#capture-editor").hidden&&document.querySelector("#capture-id").value===""`),true);
   await evaluate(`document.querySelector("#capture-editor-close").click();true`);

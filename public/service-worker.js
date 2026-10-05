@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cike-shell-v0.5.8-3";
+const CACHE_VERSION = "cike-shell-v0.5.8-4";
 const SHELL_ASSETS = [
   "./",
   "index.html",
@@ -6,9 +6,12 @@ const SHELL_ASSETS = [
   "app.js",
   "manifest.webmanifest",
   "frontend/api/index.mjs",
+  "frontend/app/application.mjs",
   "frontend/app/bootstrap.mjs",
   "frontend/app/index.mjs",
+  "frontend/app/ports.mjs",
   "frontend/app/runtime.mjs",
+  "frontend/feature-registry/index.mjs",
   "frontend/opening/config.mjs",
   "frontend/opening/controller.mjs",
   "frontend/opening/index.mjs",
@@ -16,18 +19,16 @@ const SHELL_ASSETS = [
   "frontend/content/index.mjs",
   "frontend/components/tag-multiselect/index.mjs",
   "frontend/features/actions/index.mjs",
-  "frontend/features/export/index.mjs",
-  "frontend/features/feedback/index.mjs",
   "frontend/features/health/weight-batch.mjs",
   "frontend/features/home/index.mjs",
   "frontend/features/index.mjs",
+  "frontend/features/legacy-pages/index.mjs",
   "frontend/features/keepsakes-media/index.mjs",
   "frontend/features/keepsakes-media/placement.mjs",
   "frontend/features/notifications/index.mjs",
   "frontend/features/onboarding-v2/index.mjs",
   "frontend/features/thought-discovery/annotation-tools.mjs",
   "frontend/features/thought-discovery/background-results.mjs",
-  "frontend/features/thought-discovery/index.mjs",
   "frontend/media/index.mjs",
   "frontend/page-catalog/index.mjs",
   "frontend/pages/index.mjs",
@@ -78,9 +79,15 @@ const HOME_BACKGROUND_ASSETS = [
 ];
 const NETWORK_ONLY_PATHS = ["/api/", "/attachments/", "/auth/", "/ai/"];
 const DEFERRED_ASSET_SET = new Set(HOME_BACKGROUND_ASSETS);
+const LAZY_MODULE_PATHS = [
+  "/frontend/features/export/",
+  "/frontend/features/feedback/",
+  "/frontend/features/thought-discovery/"
+];
 
 const isNetworkOnly = url => NETWORK_ONLY_PATHS.some(segment => url.pathname.includes(segment));
 const deferredAsset = url => [...DEFERRED_ASSET_SET].find(asset => url.pathname.endsWith(`/${asset}`));
+const lazyModule = url => LAZY_MODULE_PATHS.some(segment => url.pathname.includes(segment));
 const cacheOnUse = async request => {
   const cache = await caches.open(CACHE_VERSION);
   const cached = await cache.match(request);
@@ -109,7 +116,7 @@ self.addEventListener("fetch", event => {
   if (url.origin !== self.location.origin) return;
   if (isNetworkOnly(url)) return;
   const deferred = deferredAsset(url);
-  if (deferred) {
+  if (deferred || lazyModule(url)) {
     event.respondWith(cacheOnUse(request));
     return;
   }

@@ -146,11 +146,31 @@
           }, { once: true });
           document.head.append(entry);
         };
-        if (document.readyState === "loading") {
-          addEventListener("DOMContentLoaded", appendEntry, { once: true });
-        } else {
-          appendEntry();
-        }
+        const appendEntryAfterPaint = () => {
+          let observer;
+          let appended = false;
+          const finish = () => {
+            if (appended) return;
+            appended = true;
+            observer?.disconnect();
+            if (document.readyState === "loading") {
+              addEventListener("DOMContentLoaded", appendEntry, { once: true });
+            } else {
+              appendEntry();
+            }
+          };
+          if (document.visibilityState === "hidden") return finish();
+          if (performance.getEntriesByName("first-contentful-paint", "paint").length) return finish();
+          if (typeof PerformanceObserver === "function") {
+            observer = new PerformanceObserver(list => {
+              if (list.getEntries().some(entry => entry.name === "first-contentful-paint")) finish();
+            });
+            observer.observe({ type: "paint", buffered: true });
+          } else {
+            requestAnimationFrame(() => requestAnimationFrame(finish));
+          }
+        };
+        appendEntryAfterPaint();
       };
       if (document.visibilityState === "hidden") setTimeout(startApplicationEntry, 0);
       else requestAnimationFrame(() => setTimeout(startApplicationEntry, 0));

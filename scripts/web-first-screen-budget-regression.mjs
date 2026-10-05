@@ -30,8 +30,23 @@ const ASSET_BUDGET = Object.freeze({
   entryModuleCount: 10,
   entryModuleBytes: 72 * 1024,
   deferredRuntimeModuleCount: 24,
-  deferredRuntimeModuleBytes: 800 * 1024
+  deferredRuntimeModuleBytes: 800 * 1024,
+  defaultRouteModuleCount: 2,
+  defaultRouteModuleBytes: 16 * 1024,
+  lazyFeatureModuleCount: 3,
+  lazyFeatureModuleBytes: 40 * 1024
 });
+const HIDDEN_FEATURE_MODULE_PATHS = Object.freeze([
+  "/frontend/features/export/index.mjs",
+  "/frontend/features/export/controller.mjs",
+  "/frontend/features/export/downloads.mjs",
+  "/frontend/features/feedback/index.mjs",
+  "/frontend/features/feedback/controller.mjs",
+  "/frontend/features/feedback/model.mjs",
+  "/frontend/features/thought-discovery/index.mjs",
+  "/frontend/features/thought-discovery/controller.mjs",
+  "/frontend/features/thought-discovery/headless.mjs"
+]);
 const HTTP_BUDGET = Object.freeze({
   startupJsonDecodedBytes: 25 * 1024,
   initialJsonTransferBytes: 200 * 1024,
@@ -831,6 +846,12 @@ function startupContractFailures(result) {
   );
   fail(result.routeJsonContentEncoding === "gzip", "current-route JSON is not gzip encoded");
   fail(!result.requestPaths.includes("/api/state"), "startup requested forbidden /api/state");
+  for (const path of HIDDEN_FEATURE_MODULE_PATHS) {
+    fail(
+      !result.requestPaths.includes(path),
+      `startup requested hidden feature module ${path}`
+    );
+  }
   for (const endpoint of ["/api/auth/me", "/api/v1/startup", "/api/v1/route-state", "/api/local-test-mode"]) {
     const count = result.requestPaths.filter(value => value === endpoint).length;
     fail(count === 1, `${endpoint} request count ${count}, expected 1`);
@@ -879,6 +900,15 @@ const modulePreloads = [...html.matchAll(/<link\b[^>]*>/gi)]
   .filter(Boolean);
 const modules = await moduleClosure(["app.js", ...modulePreloads], { includeEntryDynamic: true });
 const deferredRuntime = await moduleClosure("frontend/app/runtime.mjs");
+const defaultRouteModules = await moduleClosure([
+  "frontend/app/ports.mjs",
+  "frontend/features/legacy-pages/index.mjs"
+]);
+const lazyFeatureModules = Object.fromEntries(await Promise.all([
+  ["export", "frontend/features/export/index.mjs"],
+  ["feedback", "frontend/features/feedback/index.mjs"],
+  ["discovery", "frontend/features/thought-discovery/index.mjs"]
+].map(async ([view, entry]) => [view, await moduleClosure(entry)])));
 const openingCriticalStyleIndex = html.indexOf('<style id="opening-critical-style">');
 const applicationStyleLoadIndex = html.indexOf("const loadApplicationStyles");
 const openingShellIndex = html.indexOf('id="opening-screen"');
@@ -927,6 +957,29 @@ assert.ok(
   deferredRuntime.bytes <= ASSET_BUDGET.deferredRuntimeModuleBytes,
   `延迟 runtime 闭包 ${deferredRuntime.bytes} B 超过预算 ${ASSET_BUDGET.deferredRuntimeModuleBytes} B`
 );
+assert.ok(
+  defaultRouteModules.assets.length <= ASSET_BUDGET.defaultRouteModuleCount,
+  `默认路由增量闭包 ${defaultRouteModules.assets.length} 个超过预算 ${ASSET_BUDGET.defaultRouteModuleCount}`
+);
+assert.ok(
+  defaultRouteModules.bytes <= ASSET_BUDGET.defaultRouteModuleBytes,
+  `默认路由增量闭包 ${defaultRouteModules.bytes} B 超过预算 ${ASSET_BUDGET.defaultRouteModuleBytes} B`
+);
+for (const [view, closure] of Object.entries(lazyFeatureModules)) {
+  assert.ok(
+    closure.assets.length <= ASSET_BUDGET.lazyFeatureModuleCount,
+    `${view} lazy 闭包 ${closure.assets.length} 个超过预算 ${ASSET_BUDGET.lazyFeatureModuleCount}`
+  );
+  assert.ok(
+    closure.bytes <= ASSET_BUDGET.lazyFeatureModuleBytes,
+    `${view} lazy 闭包 ${closure.bytes} B 超过预算 ${ASSET_BUDGET.lazyFeatureModuleBytes} B`
+  );
+  assert.equal(
+    closure.assets.some(asset => deferredRuntime.assets.includes(asset)),
+    false,
+    `${view} lazy 闭包进入了 shell 静态闭包`
+  );
+}
 
 const testServer = await createTestServer();
 let browser;
@@ -1470,7 +1523,12 @@ try {
       assets: {
         blockingStyles: { requests: styles.assets.length, decodedBytes: styles.bytes, assets: styles.assets },
         entryModules: { requests: modules.assets.length, decodedBytes: modules.bytes },
-        deferredRuntimeModules: { requests: deferredRuntime.assets.length, decodedBytes: deferredRuntime.bytes }
+        deferredRuntimeModules: { requests: deferredRuntime.assets.length, decodedBytes: deferredRuntime.bytes },
+        defaultRouteModules: { requests: defaultRouteModules.assets.length, decodedBytes: defaultRouteModules.bytes },
+        lazyFeatureModules: Object.fromEntries(Object.entries(lazyFeatureModules).map(([view, closure]) => [
+          view,
+          { requests: closure.assets.length, decodedBytes: closure.bytes }
+        ]))
       },
       startupJsonDecodedBytesMax: Math.max(...cold.map(item => item.startupJsonDecodedBytes)),
       routeJsonDecodedBytesMax: Math.max(...cold.map(item => item.routeJsonDecodedBytes)),
@@ -1479,6 +1537,8 @@ try {
       firstReadableApiRequestsMax: Math.max(...cold.map(item => item.apiRequestCount)),
       uiPreferenceRequestsMax: Math.max(...cold.concat(warm).map(item => item.uiPreferenceRequestCount)),
       forbiddenFullStateRequests: cold.concat(warm).filter(item => item.requestPaths.includes("/api/state")).length,
+      hiddenFeatureModuleRequests: cold.concat(warm).flatMap(item => item.requestPaths)
+        .filter(value => HIDDEN_FEATURE_MODULE_PATHS.includes(value)).length,
       mediaBeforeClickTransferBytes,
       opening: {
         heldDeepLinkFirstContentfulPaintMs: heldOpening.firstContentfulPaintMs,

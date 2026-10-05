@@ -6,6 +6,17 @@ const appEntryUrl = new URL("../../app.js", import.meta.url);
 const basePath = new URL(".", appEntryUrl).pathname.replace(/\/$/, "");
 const apiOrigin = String(document.documentElement.dataset.apiOrigin || "").replace(/\/+$/, "");
 const apiClient = createApiClient({ baseUrl: appEntryUrl, apiOrigin, session: sessionScope });
+const bootstrapRoute = resolveApplicationRoute(location, { basePath });
+globalThis.__forNowPortsRequest ||= import("./ports.mjs");
+if (bootstrapRoute.view === "export") {
+  globalThis.__forNowExportFeatureRequest ||= import("../features/export/index.mjs");
+} else if (bootstrapRoute.view === "feedback") {
+  globalThis.__forNowFeedbackFeatureRequest ||= import("../features/feedback/index.mjs");
+} else if (bootstrapRoute.view === "discovery") {
+  globalThis.__forNowDiscoveryFeatureRequest ||= import("../features/thought-discovery/index.mjs");
+} else {
+  globalThis.__forNowLegacyFeatureRequest ||= import("../features/legacy-pages/index.mjs");
+}
 const startupMarks = {
   navigationStart: 0,
   moduleLoaded: Number(performance.now().toFixed(1))
@@ -123,7 +134,7 @@ function envelopeData(value) {
 async function initialSnapshot({ stylesReady = Promise.resolve(), onShellReady = () => {} } = {}) {
   markStartup("bootstrapStart");
   try {
-    const route = resolveApplicationRoute(location, { basePath });
+    const route = bootstrapRoute;
     const startupRequest = globalThis.__forNowStartupRequest;
     delete globalThis.__forNowStartupRequest;
     const prefetchedStartup = startupRequest ? await startupRequest : null;

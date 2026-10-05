@@ -1,4 +1,6 @@
 import { createApiClient } from "../api/index.mjs";
+import { createFeatureRegistry } from "../feature-registry/index.mjs";
+import { createBrowserApplication } from "./application.mjs";
 import {
   createTagMultiSelectState,
   handleTagMultiSelectKey,
@@ -7,8 +9,6 @@ import {
 import { createLatexRenderer, escapeHtml, plainPreview, presentError, renderMarkdown } from "../content/index.mjs";
 import {
   createPageEffects,
-  DISCOVERY_GENRES,
-  createThoughtDiscoveryController,
   createBackgroundResultController,
   backgroundResultFromSnapshot,
   mergeBackgroundTaskResult,
@@ -19,7 +19,6 @@ import {
   groupAnnotationLineCounts,
   submitAnnotationAssistantTask,
   sortAnnotationItemsByPosition,
-  createDownloadDescriptor,
   createActionsViewModel,
   buildCreateActionCommand,
   buildUpdateActionCommand,
@@ -34,8 +33,6 @@ import {
   buildDeleteHabitCommand,
   buildDeleteHabitCheckinCommand,
   projectActionCommand,
-  feedbackSubmissionPayload,
-  feedbackViewModel,
   buildHomeMoodSeries,
   createHomeMemoryPool,
   selectHomeMemories,
@@ -81,7 +78,7 @@ import {
   validatedAudioBlob,
   validatedImageFiles
 } from "../media/index.mjs";
-import { createPageRouter, createUnavailableRouteResult, ownerViewCapabilities } from "../pages/index.mjs";
+import { createPageRouter, createUnavailableRouteResult, ownerViewCapabilities, resolveApplicationRoute, viewSections } from "../pages/index.mjs";
 import { sessionScope, sessionSerial, rotateSession } from "../session/index.mjs";
 import { emptyClientState, state, replaceState, mergeStateSnapshot, resetState, subscribeState, publishDomains, createRefreshCoordinator } from "../state/index.mjs";
 import { createIndexedDbSyncStore, createIncrementalSync, createRequestCoordinator } from "../sync/index.mjs";
@@ -89,6 +86,12 @@ import { createOccurrenceDraft, entryKeyIntent, eventDate, eventTimestamp, forma
 
 const appEntryUrl=new URL("../../app.js",import.meta.url);
 const applicationBasePath=new URL(".",appEntryUrl).pathname.replace(/\/$/,"")||"/";
+const initialRuntimeView=resolveApplicationRoute(location,{basePath:applicationBasePath}).view;
+const portFactoriesRequest=globalThis.__forNowPortsRequest||import("./ports.mjs");
+const legacyFeatureModuleRequest=globalThis.__forNowLegacyFeatureRequest||(["export","feedback","discovery"].includes(initialRuntimeView)?null:import("../features/legacy-pages/index.mjs"));
+const exportFeatureModuleRequest=globalThis.__forNowExportFeatureRequest||(initialRuntimeView==="export"?import("../features/export/index.mjs"):null);
+const feedbackFeatureModuleRequest=globalThis.__forNowFeedbackFeatureRequest||(initialRuntimeView==="feedback"?import("../features/feedback/index.mjs"):null);
+const discoveryFeatureModuleRequest=globalThis.__forNowDiscoveryFeatureRequest||(initialRuntimeView==="discovery"?import("../features/thought-discovery/index.mjs"):null);
 const startupPerformanceEnabled=new URLSearchParams(location.search).has("native-performance");
 const startupMarks={navigationStart:0,moduleLoaded:Number(performance.now().toFixed(1))};
 function markStartup(name){startupMarks[name]=Number(performance.now().toFixed(1));return startupMarks[name]}
@@ -128,11 +131,12 @@ const ownerCapabilities=[...new Set([...Object.values(ownerViewCapabilities),"lo
 const responseStyleOptions=[["concise","简短"],["standard","标准"],["deep","深入"],["structured","结构化"],["exploratory","开放探索"]];
 const responseStyleScenes=["thoughtDraft","thoughtAnswer","followUpAnswer","chat","diaryReflection","annotationShenji","analysis"];
 let pageRouter,switchView,restoreView;
+let runtimeApplication=null,runtimeFeatureRegistry=null,runtimeStatePort=null,applicationLifecycleReady=false;
 let backgroundResultController=null;
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",commentPanelOpen=false,annotationLineFrame=0,answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,captureComposerOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,discoveryController=null,actionsSnapshot={actions:[],habits:[],habitCheckins:[]},actionsRequestSerial=0,feedbackItems=[],feedbackRequestSerial=0,exportManifest=null,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
-let notificationsLoadState="idle",feedbackLoadState="idle",exportLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,routeDataRequestSerial=0,routeLoadFailureKey="",loadedRouteKey="",fullRouteStateLoaded=false,renderedRouteView="",activeThoughtRouteId="",activeRouteResult=null,thoughtSearchTimer=0,analysisRequestSerial=0;
+let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],pendingSelection=null,activeCommentRoot="",activeAnnotationId="",activeShenjiComposer="",commentPanelOpen=false,annotationLineFrame=0,answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,captureComposerOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,actionsSnapshot={actions:[],habits:[],habitCheckins:[]},actionsRequestSerial=0,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
+let notificationsLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,routeDataRequestSerial=0,routeLoadFailureKey="",loadedRouteKey="",fullRouteStateLoaded=false,renderedRouteView="",activeThoughtRouteId="",activeRouteResult=null,thoughtSearchTimer=0,analysisRequestSerial=0;
 let captureEditorTrigger=null,suspendedCaptureCreateDraft=null,captureEditorSerial=0;
 const feedSearchQueries={captures:"",journals:"",thoughts:"",books:"",keepsakes:"",quotes:""};
 const quoteTagPickerConfig=Object.freeze({
@@ -1459,10 +1463,6 @@ function pendingProjectionSnapshot(projection){
     const items=(state.thoughts||[]).map((value,index)=>({value,index})).filter(entry=>entry.value.id===projection.id||entry.value.relatedTo===projection.id);
     return items.length?{kind:projection.kind,domain:"thoughts",id:projection.id,items:structuredClone(items)}:null
   }
-  if(projection.kind==="discovery.status"){
-    const item=discoveryController?.getState().items.find(value=>value.id===projection.id);
-    return item?{kind:projection.kind,id:projection.id,value:structuredClone(item)}:null
-  }
   return null
 }
 function restorePendingProjection(snapshot,operationId){
@@ -1510,9 +1510,6 @@ function restorePendingProjection(snapshot,operationId){
     }
     renderThoughts();renderCaptures();renderHomeMemories();return true
   }
-  if(snapshot.kind==="discovery.status"){
-    discoveryController?.applyStatus(snapshot.id,snapshot.value);return true
-  }
   return false
 }
 function settlePendingProjection(projection,operationId,data){
@@ -1542,7 +1539,9 @@ async function requestV1(url,options={},coordination={}){
   let result,operationId="";
   if(["GET","HEAD"].includes(method))result=await request(url,options);
   else{
-    const snapshot=pendingProjectionSnapshot(coordination.projection),onQueued=coordination.onQueued;
+    const snapshot=typeof coordination.captureProjection==="function"
+      ?coordination.captureProjection()
+      :pendingProjectionSnapshot(coordination.projection),onQueued=coordination.onQueued;
     try{
       result=await requestCoordinator.request({
         owner:currentUser?.id,url,options,domains:syncDomainsFor(url),...coordination,
@@ -1556,7 +1555,10 @@ async function requestV1(url,options={},coordination={}){
         reconcileThoughtRoute()
       }
     }catch(error){
-      if(["failed","conflict"].includes(error?.syncStatus))restorePendingProjection(snapshot,operationId);
+      if(["failed","conflict"].includes(error?.syncStatus)){
+        if(typeof coordination.restoreProjection==="function")await coordination.restoreProjection(snapshot,operationId,error);
+        else restorePendingProjection(snapshot,operationId)
+      }
       throw error
     }
   }
@@ -1590,10 +1592,10 @@ async function loadRouteState(route,requestSerial=++routeDataRequestSerial){
     if(requestSerial===routeDataRequestSerial)panel?.removeAttribute("aria-busy")
   }
 }
-async function listAllV1(url){
+async function listAllV1(url,options={}){
   const items=[],seen=new Set();let cursor="";
   do{
-    const separator=url.includes("?")?"&":"?",result=await requestV1(`${url}${separator}limit=100${cursor?`&cursor=${encodeURIComponent(cursor)}`:""}`);
+    const separator=url.includes("?")?"&":"?",result=await requestV1(`${url}${separator}limit=100${cursor?`&cursor=${encodeURIComponent(cursor)}`:""}`,options);
     items.push(...(Array.isArray(result.data)?result.data:[]));cursor=result.meta.nextCursor||"";
     if(cursor&&seen.has(cursor))throw new Error("列表游标没有前进");if(cursor)seen.add(cursor)
   }while(cursor);
@@ -1690,9 +1692,6 @@ function applyPendingProjection(record){
     Object.assign(root,{content:projection.payload.question,tags:projection.payload.tags,occurredAt:projection.payload.occurredAt,_sync:sync});
     renderThoughts();renderHomeMemories();return true
   }
-  if(projection.kind==="discovery.status"){
-    discoveryController?.applyStatus(projection.id,projection.value);return true
-  }
   if(projection.kind==="action.command"){
     const result=projectActionCommand(actionsSnapshot,projection.command,{...sync,createdAt:record.createdAt});
     if(!result.changed)return false;
@@ -1723,9 +1722,8 @@ async function applyIncrementalSnapshot(snapshot,changes){
     };
     renderActionsWorkspace()
   }
-  if(domains.has("feedback")){feedbackItems=snapshot.feedback||[];renderFeedback()}
   if(domains.has("trashCount")&&!$("#view-trash")?.hidden)void loadTrash();
-  const rendered=new Set([...domains].filter(domain=>!["actions","habits","habitCheckins","feedback","trashCount"].includes(domain)));
+  const rendered=new Set([...domains].filter(domain=>!["actions","habits","habitCheckins","trashCount"].includes(domain)));
   if(domains.has("clusters")||domains.has("insights"))rendered.add("review");
   if(rendered.size)publishDomains(rendered);
   await restorePendingProjections();
@@ -1754,8 +1752,8 @@ syncController=createIncrementalSync({
   request:url=>requestV1(url),
   applySnapshot:applyIncrementalSnapshot,
   resnapshot:async()=>{
-    await refreshState(["checkins","dailyRecords","captures","journals","thoughts","chat","review","books","keepsakes","quotes","notifications","onboardingV2"]);
-    await Promise.all([loadActionsWorkspace(),loadFeedback()])
+    await refreshState(["checkins","dailyRecords","captures","journals","thoughts","chat","review","books","keepsakes","quotes","notifications","onboardingV2","feedback"]);
+    await loadActionsWorkspace()
   },
   onStatus:event=>void updateSyncHealth(event)
 });
@@ -3690,25 +3688,6 @@ async function loadAccountUsers(){
   try{const result=await request("/api/auth/users");if(serial!==accountUsersRequestSerial||owner!==currentUser?.id||session!==sessionSerial)return false;accountUsers=result.users||[];accountUsersLoadState="ready";renderAccountUsers();return true}
   catch(error){if(serial===accountUsersRequestSerial&&owner===currentUser?.id&&session===sessionSerial){accountUsersLoadState="failure";renderAccountUsers();const status=$("#account-role-status");if(status)status.textContent=error.message}return false}
 }
-function discoveryCard(item){
-  const primary=item.matches?.[0]||item.question||{},sources=[...new Set((item.matches||[]).map(match=>match.sourceLabel))].join(" · ");
-  const key=item.key||`thought:${item.id}`,thought=(item.genre||"thought")==="thought",status=thought?(item.fresh?"待回访":item.status?.snoozed?"已稍后":"已读"):item.genreLabel||"原始记录";
-  return `<article class="discovery-entry" data-discovery-id="${escapeHtml(key)}"><header><div><span>${escapeHtml(status)}</span><small>${escapeHtml([item.genreLabel,sources||item.sourceLabel||"用户原文"].filter(Boolean).join(" · "))}</small></div><time>${formatDate(item.occurredAt||item.createdAt)}</time></header><h2>${escapeHtml(plainPreview(item.title||item.question?.content||primary.content||"无标题记录"))}</h2><p>${escapeHtml(plainPreview(primary.content||"").slice(0,220))}</p><footer><span>${item.matchCount||0} 处命中</span><div><button class="subtle-action" type="button" data-discovery-action="${escapeHtml(key)}">转为行动</button>${thought?`<button class="subtle-action" type="button" data-discovery-snooze="${escapeHtml(key)}">明天再看</button>`:""}<button class="quiet-button" type="button" data-discovery-open="${escapeHtml(key)}">查看原记录</button></div></footer></article>`
-}
-function renderDiscovery(snapshot=discoveryController?.getState()){
-  if(!snapshot||!$("#discovery-list"))return;
-  $("#discovery-count").textContent=`${snapshot.total} 条 · ${snapshot.totalUntracedCount} 条尚无你的后续痕迹`;
-  $("#discovery-status").textContent=snapshot.loading?"正在查找记录…":snapshot.error&&snapshot.items.length?"结果暂未更新，可以重新查找。":"";
-  $("#discovery-list").innerHTML=snapshot.items.length
-    ?snapshot.items.map(discoveryCard).join("")
-    :snapshot.loading
-      ?contentState({kind:"loading",title:"正在查找记录",body:"结果会保留在当前页面，不需要重复提交。"})
-      :snapshot.error
-        ?contentState({kind:"failure",title:"暂时无法查找旧记录",body:"已有记录没有变化。请检查网络后重试。",action:{command:"retry-discovery",label:"重新查找"}})
-        :contentState({title:"没有符合条件的记录",body:"这不会改变原有记录，可以调整条件后重新查找。",action:{focus:"discovery-query",label:"调整查找条件"}});
-  $("#discovery-more").hidden=!snapshot.nextCursor;$("#discovery-more").disabled=snapshot.loadingMore;$("#discovery-more").textContent=snapshot.loadingMore?"正在加载…":"继续加载"
-}
-async function loadDiscovery(){if(!discoveryController)return false;try{return await discoveryController.refresh()}catch{return false}}
 function actionSyncMarkup(sync){
   if(!sync)return"";
   const label=sync.status==="pending"?"待同步":sync.status==="committed"?"已保存":"正在同步";
@@ -3829,46 +3808,6 @@ async function runActionCommand(command,{idempotencyKey=""}={}){
   }
   return result
 }
-function renderFeedback(){
-  if(!$("#feedback-list"))return;
-  const items=feedbackItems.map(feedbackViewModel);
-  $("#feedback-count").textContent=`${items.length} 条`;
-  $("#feedback-list").innerHTML=items.length
-    ?items.map(item=>`<article class="feedback-entry"><header><span>${escapeHtml(item.typeLabel)}</span><b>${escapeHtml(item.statusLabel)}</b></header><h3>${escapeHtml(item.feature)}</h3><p>${escapeHtml(item.body)}</p><footer><small>${formatDate(item.createdAt)} · ${escapeHtml(item.appVersion)}</small><span>${escapeHtml(item.contextLabel)}</span></footer></article>`).join("")
-    :feedbackLoadState==="failure"
-      ?contentState({kind:"failure",title:"暂时无法读取反馈记录",body:"已经提交的内容没有被删除。请检查网络后重试。",action:{command:"retry-feedback",label:"重新读取"}})
-      :contentState({title:"还没有提交记录",body:"问题或建议提交后会留在这里，方便继续核对。",action:{focus:"feedback-feature",label:"写一条反馈"}});
-}
-async function loadFeedback(){
-  if(!$("#feedback-list"))return false;
-  const requestSerial=++feedbackRequestSerial,owner=currentUser?.id,session=sessionSerial;feedbackLoadState="loading";
-  try{const items=await listAllV1("/api/v1/feedback");if(requestSerial!==feedbackRequestSerial||owner!==currentUser?.id||session!==sessionSerial)return false;feedbackItems=items;feedbackLoadState="ready";renderFeedback();return true}
-  catch(error){if(requestSerial===feedbackRequestSerial&&owner===currentUser?.id&&session===sessionSerial){feedbackLoadState="failure";$("#feedback-status").textContent="";renderFeedback()}return false}
-}
-function renderExport(){
-  if(!$("#export-summary"))return;
-  const summary=exportManifest?.summary;
-  $("#export-summary").innerHTML=summary
-    ?`<dl><div><dt>资源</dt><dd>${summary.resources}</dd></div><div><dt>附件</dt><dd>${summary.attachments}</dd></div><div><dt>附件引用</dt><dd>${summary.attachmentReferences}</dd></div><div><dt>待核对引用</dt><dd>${summary.orphanReferences}</dd></div></dl><p>快照版本 ${escapeHtml(String(exportManifest.snapshotVersion??""))} · 默认排除密钥与模型内部推理。</p>`
-    :exportLoadState==="failure"
-      ?contentState({kind:"failure",title:"暂时无法读取导出范围",body:"账户中的原始数据没有变化。请检查网络后重试。",action:{command:"retry-export",label:"重新读取"}})
-      :contentState({kind:"loading",title:"正在读取导出范围",body:"这里只核对可导出的资源，不会修改原始数据。"});
-}
-async function loadExportManifest(){
-  if(!$("#export-summary"))return false;
-  exportLoadState="loading";renderExport();
-  try{exportManifest=(await requestV1("/api/v1/exports/account?format=manifest")).data;exportLoadState="ready";renderExport();$("#export-status").textContent="";return true}
-  catch(error){exportLoadState="failure";$("#export-status").textContent="";renderExport();return false}
-}
-async function downloadExport(format){
-  const status=$("#export-status");status.textContent="正在生成导出文件…";
-  try{
-    const file=(await requestV1(`/api/v1/exports/account?format=${encodeURIComponent(format)}`)).data;
-    const descriptor=createDownloadDescriptor(file),url=URL.createObjectURL(descriptor.blob),link=document.createElement("a");
-    link.href=url;link.download=descriptor.filename;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),0);
-    status.textContent=`已生成 ${descriptor.filename}`
-  }catch(error){status.textContent=error.message}
-}
 function renderPersonalContext(){
   const summary=$("#personal-context-summary");if(!summary)return;
   const data=personalContext,status=$("#personal-context-status"),sources=Array.isArray(data?.sources)?data.sources:[],sourceById=new Map(sources.map(source=>[source.id,source])),budget=data?.tokenBudget;
@@ -3960,13 +3899,10 @@ function renderVisibleRoute(){
   else if(view==="books")renderBooks();
   else if(view==="keepsakes"){renderKeepsakes();renderKeepsakeBatch()}
   else if(view==="quotes")renderQuotes();
-  else if(view==="discovery")renderDiscovery();
   else if(view==="settings"){renderSettings();renderLocalTestSettings()}
   else if(view==="notifications")renderNotifications();
   else if(view==="trash")renderTrash();
   else if(view==="account")renderAccountUsers();
-  else if(view==="feedback")renderFeedback();
-  else if(view==="export")renderExport();
   else if(view==="personal-context")renderPersonalContext()
   activateContentImageDraftsForCurrentRoute()
 }
@@ -4039,9 +3975,9 @@ function setAuthTab(tab){
 }
 function setAuthBusy(value){authBusy=value;$$(".auth-form input,.auth-form button,[data-auth-tab]").forEach(control=>control.disabled=value)}
 function invalidatePageLoads(){
-  actionsRequestSerial+=1;feedbackRequestSerial+=1;statisticsRequestSerial+=1;aiCostRequestSerial+=1;architectureRequestSerial+=1;commercialRequestSerial+=1;personalContextRequestSerial+=1;accountUsersRequestSerial+=1;analysisRequestSerial+=1;
+  actionsRequestSerial+=1;statisticsRequestSerial+=1;aiCostRequestSerial+=1;architectureRequestSerial+=1;commercialRequestSerial+=1;personalContextRequestSerial+=1;accountUsersRequestSerial+=1;analysisRequestSerial+=1;
   activeAnswerTaskId=++answerTaskSerial;healthParseSerial+=1;latestHealthRequest=0;bookParseSerial+=1;clearTimeout(notificationTimer);
-  discoveryController?.reset();backgroundResultController?.reset();refreshCoordinator.reset();
+  backgroundResultController?.reset();refreshCoordinator.reset();
 }
 function clearPrivateSessionState(){
   captureEditorSerial+=1;
@@ -4049,7 +3985,7 @@ function clearPrivateSessionState(){
   onboardingV2Controller.reset();
   clearTimeout(thoughtSearchTimer);thoughtSearchTimer=0;
   resetState();routeDataReady=false;routeDataRequestSerial+=1;routeLoadFailureKey="";loadedRouteKey="";fullRouteStateLoaded=false;activeThoughtRouteId="";activeRouteResult=null;quoteTagStates={quote:createTagMultiSelectState(),selectionQuote:createTagMultiSelectState()};llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationRetryingTaskIds=[];notificationsLoadState="idle";actionsSnapshot={actions:[],habits:[],habitCheckins:[]};feedbackItems=[];feedbackLoadState="idle";exportManifest=null;exportLoadState="idle";personalContext=null;personalContextRequestSerial=0;accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.5.7";homeMemoryKeys=[];homeMemoryByKey=new Map();homeKeepsakeId="";closeHomeEditors({restoreFocus:false});$("#capture-editor").hidden=true;document.body.classList.remove("capture-editor-open");resetOwnerSurfaces();invalidatePageLoads();draftTags=[];captureDraftTags=[];keepsakeDraftTags=[];captureComposerOpen=false;captureEditorTrigger=null;suspendedCaptureCreateDraft=null;pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";commentPanelOpen=false;annotationUiDrafts={};expandedLongContentKeys.clear();
+  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationRetryingTaskIds=[];notificationsLoadState="idle";actionsSnapshot={actions:[],habits:[],habitCheckins:[]};personalContext=null;personalContextRequestSerial=0;accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.5.7";homeMemoryKeys=[];homeMemoryByKey=new Map();homeKeepsakeId="";closeHomeEditors({restoreFocus:false});$("#capture-editor").hidden=true;document.body.classList.remove("capture-editor-open");resetOwnerSurfaces();invalidatePageLoads();draftTags=[];captureDraftTags=[];keepsakeDraftTags=[];captureComposerOpen=false;captureEditorTrigger=null;suspendedCaptureCreateDraft=null;pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";commentPanelOpen=false;annotationUiDrafts={};expandedLongContentKeys.clear();
   healthParseSerial+=1;latestHealthRequest=0;healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=[];healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]};for(const draft of Object.values(healthImageDrafts))Object.assign(draft,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0});
   bookParseSerial+=1;for(const url of Object.values(bookPreviewUrls))if(url)URL.revokeObjectURL(url);bookPreviewUrls={cover:"",recognition:""};pendingBookImages={cover:null,recognition:null};editingBookId="";activeBookId="";activeBookFeatureNoteId="";bookCreatorOpen=false;bookDetailCondensed=false;
   keepsakeEditor.segmentSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.history=[];
@@ -4060,7 +3996,7 @@ function clearPrivateSessionState(){
   Object.keys(dailyTypeMeta).forEach(resetDailyForm);
 }
 function showAuthGate(message=""){
-  const localTestEnabled=Boolean(localTestConfig?.enabled);resetRouteAfterAuthentication||=Boolean(currentUser);syncController?.stop();syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};rotateSession();clearPrivateSessionState();currentUser=null;applyCapabilitySurface([]);try{sessionStorage.removeItem("cike:authenticated-shell")}catch{}delete document.documentElement.dataset.bootstrapVisible;document.body.classList.add("auth-locked");$("#auth-gate").hidden=false;$("#account-control").hidden=true;$("#account-authenticated").hidden=true;const registerTab=$('[data-auth-tab="register"]');if(registerTab)registerTab.hidden=localTestEnabled;if(message)$("#auth-status").textContent=message;
+  const localTestEnabled=Boolean(localTestConfig?.enabled),resetApplication=applicationLifecycleReady;applicationLifecycleReady=false;resetRouteAfterAuthentication||=Boolean(currentUser);syncController?.stop();syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};rotateSession();clearPrivateSessionState();if(resetApplication){void runtimeFeatureRegistry?.resetSession().catch(()=>{});runtimeStatePort?.resetSession()}currentUser=null;applyCapabilitySurface([]);try{sessionStorage.removeItem("cike:authenticated-shell")}catch{}delete document.documentElement.dataset.bootstrapVisible;document.body.classList.add("auth-locked");$("#auth-gate").hidden=false;$("#account-control").hidden=true;$("#account-authenticated").hidden=true;const registerTab=$('[data-auth-tab="register"]');if(registerTab)registerTab.hidden=localTestEnabled;if(message)$("#auth-status").textContent=message;
 }
 function renderAccountIdentity(){
   const username=currentUser?.username||"";
@@ -4082,7 +4018,6 @@ async function activateUserSession(user,authRequired,initialSnapshot=null,openin
     ]);
     await restorePendingProjections();
     revealUserSession();
-    void syncController.start(user?.id,{incremental:featureFlags.incrementalSync}).catch(error=>showToast(`同步恢复失败：${error.message}`,"error"));
     return true
   }
   catch(error){if(currentUser?.id===user?.id)showAuthGate();throw error}
@@ -4103,6 +4038,40 @@ async function bootstrap(initial=null,{opening=null}={}){
   if(!session.authenticated){showAuthGate(session.code==="AUTH_REAUTH_REQUIRED"?"账户权限已变更，请重新登录。":"");localTestConfig=testConfig;const registerTab=$('[data-auth-tab="register"]');if(registerTab)registerTab.hidden=Boolean(testConfig?.enabled);setAuthTab(testConfig?.enabled||session.userCount?"login":"register");if(session.code==="AUTH_REAUTH_REQUIRED")$("#auth-status").textContent="账户权限已变更，请重新登录。";await afterVisibleShellPaint();await opening?.ready();return}
   const initialSnapshot=initial?.state&&initial?.meta?{state:initial.state,meta:initial.meta,route:initial.route,testConfig:initial.testConfig,visibleShell:Boolean(initial.visibleShell)}:null;
   await activateUserSession(session.user,session.authRequired,initialSnapshot,opening);
+}
+function applicationStartInput(initial,opening=null){
+  const owner=initial?.session?.user?.id||initial?.meta?.user?.id||"";
+  return{state:{initial,opening},sync:{owner},shell:{owner}}
+}
+function createRuntimeApplicationPorts({createShellPort,createStatePort,createSyncPort}){
+  const statePort=createStatePort({
+    emptyState:emptyClientState,
+    cloneValue:value=>value,
+    load:async input=>{await bootstrap(input?.initial??null,{opening:input?.opening??null});return state}
+  });
+  const syncPort=createSyncPort({
+    controller:{
+      start:owner=>owner?syncController.start(owner,{incremental:featureFlags.incrementalSync}):false,
+      stop:()=>syncController.stop()
+    },
+    onError:error=>showToast(`同步恢复失败：${error.message}`,"error")
+  });
+  const shellPort=createShellPort({
+    mount:()=>subscribeState((next,domains,options)=>statePort.replace(next,domains,options)),
+    reset:()=>clearPrivateSessionState(),
+    stop:()=>{}
+  });
+  return{statePort,syncPort,shellPort,sessionPort:{resetSession:rotateSession}}
+}
+async function restartApplicationForUser(user){
+  const testConfig=localTestConfig;
+  applicationLifecycleReady=false;
+  await runtimeApplication.resetSession();
+  await runtimeApplication.start(applicationStartInput({
+    session:{authenticated:true,authRequired:true,user,userCount:1},
+    testConfig
+  }));
+  applicationLifecycleReady=true
 }
 const refreshState=(domains,options={})=>refreshCoordinator.refresh(domains,{...options,patchOnly:options.patchOnly===true});
 backgroundResultController=createBackgroundResultController({
@@ -4168,7 +4137,7 @@ async function ensureLocalTestViewScope(view){
     try{
       const result=await request("/api/local-test-mode/hydrate",{method:"POST",body:JSON.stringify({scope})});
       if(owner!==currentUser?.id||session!==sessionSerial||localTestConfig?.mode!=="simulation")return false;
-      localTestConfig=result.control;replaceState(result.state);notificationUnreadCount=Number(state.notificationUnread)||0;loadedRouteKey=routeDataKey(pageRouter?.currentRoute());renderOnboarding();renderVisibleRoute();renderLocalTestSettings();return true
+      localTestConfig=result.control;replaceState(result.state);runtimeStatePort?.replace(state,Object.keys(result.state||{}),{source:"local-test-hydrate"});notificationUnreadCount=Number(state.notificationUnread)||0;loadedRouteKey=routeDataKey(pageRouter?.currentRoute());renderOnboarding();renderVisibleRoute();renderLocalTestSettings();return true
     }catch(error){
       if(owner===currentUser?.id&&session===sessionSerial)showToast(`当前页面记录读取失败：${error.message}`,"error");
       return false
@@ -4178,6 +4147,57 @@ async function ensureLocalTestViewScope(view){
   })();
   localTestScopeLoads.set(scope,pending);
   return pending
+}
+async function withFeatureScope(view,operation){
+  if(!await ensureLocalTestViewScope(view))throw new Error("当前页面记录读取失败，请稍后重试");
+  return operation()
+}
+const featureRequestV1=(view,url,options,coordination)=>withFeatureScope(view,()=>requestV1(url,options,coordination));
+const featureListAllV1=(view,url,options)=>withFeatureScope(view,()=>listAllV1(url,options));
+async function pendingDiscoveryStatuses(){
+  const owner=currentUser?.id,session=sessionSerial;
+  if(!owner)return[];
+  const records=await requestCoordinator.list(owner,["pending","sending"]);
+  if(owner!==currentUser?.id||session!==sessionSerial)return[];
+  return records.filter(record=>record?.projection?.kind==="discovery.status")
+}
+function createPageFeatureDescriptors(){
+  const descriptors=Object.fromEntries(Object.keys(viewSections).map(view=>[view,{
+    root:()=>$(`#view-${view}`),
+    load:()=>(legacyFeatureModuleRequest||import("../features/legacy-pages/index.mjs")).then(module=>module.createLegacyPageController({view}))
+  }]));
+  descriptors.export={
+    root:()=>$("#view-export"),
+    load:()=>(exportFeatureModuleRequest||import("../features/export/index.mjs")).then(module=>module.createExportFeatureController({
+      requestV1:(url,options,coordination)=>featureRequestV1("export",url,options,coordination)
+    }))
+  };
+  descriptors.feedback={
+    root:()=>$("#view-feedback"),
+    load:()=>(feedbackFeatureModuleRequest||import("../features/feedback/index.mjs")).then(module=>module.createFeedbackFeatureController({
+      requestV1:(url,options,coordination)=>featureRequestV1("feedback",url,options,coordination),
+      listAllV1:(url,options)=>featureListAllV1("feedback",url,options),
+      getAppVersion:()=>appVersion,
+      createRequestId:()=>crypto.randomUUID(),
+      formatDate,
+      showToast
+    }))
+  };
+  descriptors.discovery={
+    root:()=>$("#view-discovery"),
+    load:()=>(discoveryFeatureModuleRequest||import("../features/thought-discovery/index.mjs")).then(module=>module.createDiscoveryFeatureController({
+      requestV1:(url,options,coordination)=>featureRequestV1("discovery",url,options,coordination),
+      createAction:(input,options)=>runActionCommand(buildCreateActionCommand(input),options),
+      navigate:openDiscoveryItem,
+      showToast,
+      formatDate,
+      plainPreview,
+      createRequestId:()=>crypto.randomUUID(),
+      now:()=>Date.now(),
+      restorePendingStatuses:pendingDiscoveryStatuses
+    }))
+  };
+  return descriptors
 }
 const pageEffects={...createPageEffects({
   syncCaptureOverflow,
@@ -4191,9 +4211,9 @@ const pageEffects={...createPageEffects({
   loadNotifications,
   scheduleNotificationPoll,
   loadTrash
-}),today:()=>loadActionsWorkspace(),discovery:()=>loadDiscovery(),feedback:()=>loadFeedback(),export:()=>loadExportManifest(),"personal-context":()=>loadPersonalContext(),account:()=>loadAccountUsers()};
-const lazyPageEffects=new Proxy(pageEffects,{get(target,view){const effect=target[view];if(typeof view!=="string"||!LOCAL_TEST_VIEW_SCOPES[view])return effect;return()=>{void ensureLocalTestViewScope(view).then(async ready=>{if(!ready)return;await effect?.();await restorePendingProjections()})}}});
-pageRouter=createPageRouter({query:$,queryAll:$$,effects:lazyPageEffects,basePath:applicationBasePath,onRoute:applyApplicationRoute,canAccessView:(_,capability)=>hasCapability(capability),onDenied:showPermissionPage});
+}),today:()=>loadActionsWorkspace(),"personal-context":()=>loadPersonalContext(),account:()=>loadAccountUsers()};
+const lazyPageEffects=new Proxy(pageEffects,{get(target,view){const effect=target[view];if(typeof effect!=="function"||typeof view!=="string"||!LOCAL_TEST_VIEW_SCOPES[view])return effect;return()=>{void ensureLocalTestViewScope(view).then(async ready=>{if(!ready)return;await effect();await restorePendingProjections()})}}});
+pageRouter=createPageRouter({query:$,queryAll:$$,effects:lazyPageEffects,basePath:applicationBasePath,onRouteStart:applyApplicationRoute,canAccessView:(_,capability)=>hasCapability(capability),onDenied:showPermissionPage});
 ({switchView,restoreView}=pageRouter);
 $("#home-open-thought").addEventListener("click",event=>openHomeEditor("thought",event.currentTarget));
 $("#home-record-voice").addEventListener("click",openQuickVoiceCapture);
@@ -4211,16 +4231,6 @@ $("#home-keepsake").addEventListener("click",event=>{
 });
 $$("[data-home-editor-close]").forEach(button=>button.addEventListener("click",()=>closeHomeEditors()));
 $$(".home-v02-editor-backdrop").forEach(editor=>editor.addEventListener("click",event=>{if(event.target===editor)closeHomeEditors()}));
-const discoveryQuery=input=>{
-  const params=new URLSearchParams();
-  if(input.query)params.set("q",input.query);
-  for(const genre of input.genres||[])params.append("genre",genre);
-  for(const type of input.types||[])params.append("type",type);
-  if(input.freshOnly)params.set("fresh","1");
-  if(input.cursor)params.set("cursor",input.cursor);
-  params.set("limit","20");
-  return params.toString()
-};
 function openDiscoveryItem(item){
   const route=item?.route||{view:"thoughts",resourceType:"thought",resourceId:item?.id||""},id=route.resourceId;
   if(route.view==="books"){activeBookId=id;activeBookFeatureNoteId=String(route.targetKey||"").replace(/^note:/,"");pendingBookNoteId=activeBookFeatureNoteId;switchView("books");renderBooks();return}
@@ -4228,31 +4238,6 @@ function openDiscoveryItem(item){
   const selector={thought:`[data-chain-id="${CSS.escape(id)}"]`,capture:`[data-capture-id="${CSS.escape(id)}"]`,journal:`[data-journal-id="${CSS.escape(id)}"]`,quote:`[data-quote-id="${CSS.escape(id)}"]`}[route.resourceType];
   requestAnimationFrame(()=>{const target=document.querySelector(selector||"");if(target instanceof HTMLDetailsElement)target.open=true;target?.scrollIntoView({behavior:"smooth",block:"center"})})
 }
-discoveryController=createThoughtDiscoveryController({
-  transport:{
-    async search(input){const result=await requestV1(`/api/v1/discovery?${discoveryQuery(input)}`);return{items:result.data,nextCursor:result.meta.nextCursor||"",total:result.meta.total||0,untracedCount:result.meta.untracedCount||0,totalUntracedCount:result.meta.totalUntracedCount||0}},
-    async markRead(id){const item=discoveryController.getState().items.find(value=>value.id===id),value={id,status:{...(item?.status||{}),read:true,readAt:new Date().toISOString(),snoozed:false,snoozedUntil:null},fresh:false,untraced:Boolean(item?.untraced)},result=await requestV1(`/api/v1/thought-chains/${encodeURIComponent(id)}/discovery`,{method:"PATCH",headers:{"if-match":`"${item?.status?.version||1}"`},body:JSON.stringify({action:"read"})},{resource:`thought-chain:${id}`,domains:["thoughts"],recoverCommitted:true,projection:{kind:"discovery.status",id,value},onQueued:record=>applyPendingProjection(record)});return{value:result.data||value}},
-    async snooze(id,until){const item=discoveryController.getState().items.find(value=>value.id===id),value={id,status:{...(item?.status||{}),snoozed:true,snoozedUntil:until},fresh:false,untraced:Boolean(item?.untraced)},result=await requestV1(`/api/v1/thought-chains/${encodeURIComponent(id)}/discovery`,{method:"PATCH",headers:{"if-match":`"${item?.status?.version||1}"`},body:JSON.stringify({action:"snooze",until})},{resource:`thought-chain:${id}`,domains:["thoughts"],recoverCommitted:true,projection:{kind:"discovery.status",id,value},onQueued:record=>applyPendingProjection(record)});return{value:result.data||value}},
-    async openRandomDoor(input){const result=await requestV1(`/api/v1/discovery/random?${discoveryQuery(input)}`);return{value:result.data,total:result.meta.total||0}}
-  },
-  onNavigate:openDiscoveryItem
-});
-discoveryController.setGenres(DISCOVERY_GENRES,{reload:false});
-discoveryController.subscribe(renderDiscovery);
-$("#discovery-form").addEventListener("submit",event=>{
-  event.preventDefault();
-  const form=event.currentTarget,types=[...form.elements.type].filter(input=>input.checked).map(input=>input.value),genres=[...form.elements.genre].filter(input=>input.checked).map(input=>input.value);
-  void discoveryController.setFilters({query:form.elements.query.value,types,genres,freshOnly:form.elements.freshOnly.checked}).catch(()=>{})
-});
-$("#discovery-more").addEventListener("click",()=>void discoveryController.loadMore().catch(()=>{}));
-$("#discovery-random").addEventListener("click",()=>void discoveryController.openRandomDoor().catch(()=>{}));
-$("#discovery-list").addEventListener("click",async event=>{
-  const open=event.target.closest("[data-discovery-open]"),snooze=event.target.closest("[data-discovery-snooze]"),action=event.target.closest("[data-discovery-action]");
-  const itemFor=key=>discoveryController.getState().items.find(value=>(value.key||`thought:${value.id}`)===key);
-  if(action){const item=itemFor(action.dataset.discoveryAction);if(!item)return;action.dataset.requestId||=crypto.randomUUID();action.disabled=true;try{await runActionCommand(buildCreateActionCommand({title:plainPreview(item.title||item.question?.content||"回访记录"),priority:"none",sourceRef:{type:item.resourceType||"thought",id:item.resourceId||item.id,label:"寻迹"}}),{idempotencyKey:action.dataset.requestId});delete action.dataset.requestId;showToast("已转为行动")}catch(error){showToast(error.message,"error")}finally{action.disabled=false}}
-  if(open){const item=itemFor(open.dataset.discoveryOpen);if(!item)return;open.disabled=true;try{if((item.genre||"thought")==="thought"){try{await discoveryController.markRead(item.id)}catch(error){showToast(`原记录已打开，但回访状态更新失败：${error.message}`,"error")}}openDiscoveryItem(item)}finally{open.disabled=false}}
-  if(snooze){const item=itemFor(snooze.dataset.discoverySnooze);if(!item)return;snooze.disabled=true;const until=new Date(Date.now()+86400000).toISOString();try{await discoveryController.snooze(item.id,until);showToast("已安排明天再看")}catch(error){showToast(`暂时无法安排明天再看：${error.message}`,"error")}finally{snooze.disabled=false}}
-});
 $("#action-form").addEventListener("submit",async event=>{
   event.preventDefault();const form=event.currentTarget,button=form.querySelector('[type="submit"]'),status=$("#action-status"),submittedDraft=formSnapshot(form);form.dataset.requestId||=crypto.randomUUID();button.disabled=true;status.textContent="正在添加…";
   try{await runActionCommand(buildCreateActionCommand({title:form.elements.title.value,priority:form.elements.priority.value}),{idempotencyKey:form.dataset.requestId});delete form.dataset.requestId;if(formSnapshot(form)===submittedDraft){form.reset();status.textContent=""}else status.textContent="提交时的行动已保存；等待期间的新输入已保留。";showToast("行动已添加")}
@@ -4284,15 +4269,6 @@ document.addEventListener("click",async event=>{
   else if(button.dataset.habitDelete){if(!confirm("将这个习惯及其打卡记录移入回收站？"))return;command=buildDeleteHabitCommand(button.dataset.habitDelete,button.dataset.version)}
   button.disabled=true;try{await runActionCommand(command,options);delete button.dataset.requestId;delete button.dataset.feeling;showToast("已更新")}catch(error){showToast(error.message,error.syncStatus==="pending"?"success":"error")}finally{button.disabled=false}
 });
-$("#feedback-form").elements.includeContext.addEventListener("change",event=>{const field=$("#feedback-context-field");field.hidden=!event.currentTarget.checked;if(event.currentTarget.checked&&!event.currentTarget.form.elements.contextSummary.value)event.currentTarget.form.elements.contextSummary.value=`页面：产品反馈；应用版本：${appVersion}`});
-$("#feedback-form").addEventListener("submit",async event=>{
-  event.preventDefault();const form=event.currentTarget,button=form.querySelector('[type="submit"]'),status=$("#feedback-status"),submittedDraft=formSnapshot(form),payload=feedbackSubmissionPayload({type:form.elements.type.value,feature:form.elements.feature.value,body:form.elements.body.value,includeContext:form.elements.includeContext.checked,contextSummary:form.elements.contextSummary.value},{appVersion});form.dataset.requestId||=crypto.randomUUID();button.disabled=true;status.textContent="正在提交…";
-  try{await requestV1("/api/v1/feedback",{method:"POST",headers:{"idempotency-key":form.dataset.requestId},body:JSON.stringify(payload)});delete form.dataset.requestId;const unchanged=formSnapshot(form)===submittedDraft;if(unchanged){form.reset();$("#feedback-context-field").hidden=true}const refreshed=await loadFeedback();status.textContent=!refreshed?"反馈已提交，但列表刷新失败，请稍后重试同步。":unchanged?"反馈已提交。":"提交时的反馈已保存；等待期间的新输入已保留。";showToast("反馈已提交")}
-  catch(error){status.textContent=error.message}
-  finally{button.disabled=false}
-});
-$("#feedback-form").addEventListener("input",event=>{delete event.currentTarget.dataset.requestId});
-document.addEventListener("click",event=>{const button=event.target.closest("[data-export-format]");if(button)void downloadExport(button.dataset.exportFormat)});
 function openChainEditor(id){const chain=thoughtChains().find(x=>x.question.id===id);if(!chain)return;$("#edit-chain-id").value=id;$("#edit-chain-datetime").value=toLocalDateTimeInput(eventTimestamp(chain.question));$("#edit-chain-question").value=chain.question.content;$("#edit-chain-tags").value=(chain.question.tags||[]).join(" ");$("#edit-chain-status").textContent="这里只修改主题。初步想法、回答与记录请在各自内容块上编辑。";$("#edit-chain-modal").hidden=false;$("#edit-chain-question").focus()}
 function openThoughtBlockEditor(rootId,type="record",blockId=""){
   const item=blockId?state.thoughts.find(value=>value.id===blockId&&value.relatedTo===rootId):null,modal=$("#thought-block-modal"),select=$("#thought-block-type");
@@ -4488,9 +4464,6 @@ document.addEventListener("click",event=>{
   if(command==="run-analysis"){$("#run-analysis")?.click();return}
   if(command==="retry-route-state"){button.disabled=true;void loadRouteState(pageRouter?.currentRoute()).finally(()=>{if(button.isConnected)button.disabled=false});return}
   const retries={
-    "retry-discovery":loadDiscovery,
-    "retry-feedback":loadFeedback,
-    "retry-export":loadExportManifest,
     "retry-notifications":loadNotifications,
     "retry-trash":loadTrash,
     "retry-personal-context":loadPersonalContext,
@@ -5236,7 +5209,7 @@ $$("[data-auth-tab]").forEach(button=>{
 for(const [formId,endpoint]of[["login-form","/api/auth/login"],["register-form","/api/auth/register"]]){
   $(`#${formId}`).addEventListener("submit",async event=>{
     event.preventDefault();const form=event.currentTarget,fields=new FormData(form),status=$("#auth-status"),operation=++authOperationSerial;setAuthBusy(true);status.textContent=formId==="login-form"?"正在登录…":"正在创建账户…";
-    try{const result=await authRequest(endpoint,Object.fromEntries(fields));if(operation!==authOperationSerial)return;form.reset();await activateUserSession(result.user,true)}
+    try{const result=await authRequest(endpoint,Object.fromEntries(fields));if(operation!==authOperationSerial)return;form.reset();await restartApplicationForUser(result.user)}
     catch(error){if(operation===authOperationSerial)status.textContent=error.message}
     finally{if(operation===authOperationSerial)setAuthBusy(false)}
   });
@@ -5279,8 +5252,19 @@ $("#account-role-list").addEventListener("click",async event=>{
 });
 $("#logout-button").addEventListener("click",logout);$("#logout-button-account").addEventListener("click",logout);
 export async function startApplication(initial = null, { opening = null } = {}) {
-  applyCapabilitySurface(initial?.meta?.capabilities||[]);pageRouter.start({enter:()=>{},leave:()=>{}});try {
-    await bootstrap(initial, { opening });
+  applyCapabilitySurface(initial?.meta?.capabilities||[]);
+  const portFactories=await portFactoriesRequest;
+  const featureRegistry=createFeatureRegistry({
+    descriptors:createPageFeatureDescriptors(),
+    onFailure:(error,{view,phase})=>showToast(`${view} 页面${phase==="import"?"加载":"运行"}失败：${error.message}`,"error")
+  });
+  const {statePort,syncPort,shellPort,sessionPort}=createRuntimeApplicationPorts(portFactories);
+  const application=createBrowserApplication({router:pageRouter,featureRegistry,session:sessionPort,state:statePort,sync:syncPort,shell:shellPort});
+  runtimeApplication=application;runtimeFeatureRegistry=featureRegistry;runtimeStatePort=statePort;
+  const startPromise=application.start(applicationStartInput(initial,opening));
+  try {
+    await startPromise;
+    applicationLifecycleReady=true
   } catch (error) {
     showAuthGate();
     $("#auth-status").textContent = error.message;

@@ -12,18 +12,22 @@ import {
 import { thoughtTaskResult } from "../src/modules/thoughts/index.mjs";
 import { createAnnotationHttp, createDiscoveryHttp, openApiV1 } from "../src/http/index.mjs";
 import {
+  createThoughtDiscoveryController
+} from "../public/frontend/features/thought-discovery/index.mjs";
+import {
+  backgroundResultFromSnapshot,
+  createBackgroundResultController,
+  mergeBackgroundTaskResult
+} from "../public/frontend/features/thought-discovery/background-results.mjs";
+import {
   annotationMenuItems,
   annotationPresentation,
-  backgroundResultFromSnapshot,
   commentSubmissionIntent,
   copyAnnotationContent,
-  createBackgroundResultController,
-  createThoughtDiscoveryController,
   groupAnnotationLineCounts,
-  mergeBackgroundTaskResult,
   submitAnnotationAssistantTask,
   sortAnnotationItemsByPosition
-} from "../public/frontend/features/thought-discovery/index.mjs";
+} from "../public/frontend/features/thought-discovery/annotation-tools.mjs";
 
 const timestamp = value => `2026-09-29T${value}:00.000Z`;
 const document = {

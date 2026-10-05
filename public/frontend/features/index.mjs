@@ -29,12 +29,12 @@ export function createPageEffects({
 }
 
 export {
-  DISCOVERY_GENRES,
-  createThoughtDiscoveryController,
   backgroundResultFromSnapshot,
   backgroundTaskTarget,
   createBackgroundResultController,
-  mergeBackgroundTaskResult,
+  mergeBackgroundTaskResult
+} from "./thought-discovery/background-results.mjs";
+export {
   annotationMenuItems,
   annotationPresentation,
   commentSubmissionIntent,
@@ -42,8 +42,7 @@ export {
   groupAnnotationLineCounts,
   submitAnnotationAssistantTask,
   sortAnnotationItemsByPosition
-} from "./thought-discovery/index.mjs";
-export { createDownloadDescriptor } from "./export/index.mjs";
+} from "./thought-discovery/annotation-tools.mjs";
 export {
   createActionsViewModel,
   buildCreateActionCommand,
@@ -60,11 +59,6 @@ export {
   buildDeleteHabitCheckinCommand,
   projectActionCommand
 } from "./actions/index.mjs";
-export {
-  feedbackSubmissionPayload,
-  feedbackViewModel,
-  validationLedgerViewModel
-} from "./feedback/index.mjs";
 export {
   buildHomeMoodSeries,
   createHomeMemoryPool,

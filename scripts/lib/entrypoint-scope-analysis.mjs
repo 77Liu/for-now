@@ -69,6 +69,13 @@ function directStatementStart(tokens, index) {
   return before == null || [";", "{", "}"].includes(before);
 }
 
+function assignedStatementStart(tokens, index) {
+  if (tokens[index - 1]?.value !== "=" || tokens[index - 2]?.type !== "identifier") return false;
+  const declaration = tokens[index - 3]?.value;
+  return ["const", "let", "var"].includes(declaration)
+    && directStatementStart(tokens, index - 3);
+}
+
 export function directFactoryDeclaration(tokens, contexts, index) {
   return directStatementStart(tokens, index) && reachableAt(tokens, contexts, index);
 }
@@ -76,7 +83,7 @@ export function directFactoryDeclaration(tokens, contexts, index) {
 export function directLifecycleCall(tokens, contexts, index) {
   let root = index;
   while (tokens[root - 1]?.value === "." && tokens[root - 2]?.type === "identifier") root -= 2;
-  if (!directStatementStart(tokens, root)) return false;
+  if (!directStatementStart(tokens, root) && !assignedStatementStart(tokens, root)) return false;
   const open = tokens[index + 1]?.value === "(" ? index + 1 : -1;
   const close = open < 0 ? -1 : matchingCloseParen(tokens, open);
   if (close < 0 || ![undefined, ";", "}"].includes(tokens[close + 1]?.value)) return false;

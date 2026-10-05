@@ -351,6 +351,17 @@ try {
   }
 
   {
+    const directory = await fixture("valid-assigned-lifecycle", {
+      browserSource: validBrowserSource.replace(
+        "  return application.start();",
+        "  const startPromise = application.start();\n  return startPromise;"
+      )
+    });
+    const result = run(directory);
+    assert.equal(result.status, 0, result.stderr);
+  }
+
+  {
     const directory = await fixture("server-entry-without-exports", {
       serverSource: validServerSource.replace(
         "export const start = () => {};",

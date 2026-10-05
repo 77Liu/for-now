@@ -299,7 +299,7 @@ assert.equal(startupTimeout.observers.every(observer => observer.disconnected), 
 
 const worker = await fs.readFile(publicPath("service-worker.js"), "utf8");
 assert.match(worker, /const CACHE_VERSION\s*=\s*["'][^"']+["']/);
-assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.8-3["']/);
+assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.8-4["']/);
 const assetSet = name => {
   const source = worker.match(new RegExp(`const ${name}\\s*=\\s*\\[([\\s\\S]*?)\\];`))?.[1] || "";
   return new Set([...source.matchAll(/["']([^"']+)["']/g)].map(match => match[1]));
@@ -307,13 +307,17 @@ const assetSet = name => {
 const shellAssets = assetSet("SHELL_ASSETS");
 const katexAssets = assetSet("KATEX_ASSETS");
 const backgroundAssets = assetSet("HOME_BACKGROUND_ASSETS");
+const lazyModulePaths = assetSet("LAZY_MODULE_PATHS");
 for (const asset of [
   "./",
   "index.html",
   "drift.css",
   "app.js",
+  "frontend/app/application.mjs",
   "frontend/app/bootstrap.mjs",
+  "frontend/app/ports.mjs",
   "frontend/app/runtime.mjs",
+  "frontend/feature-registry/index.mjs",
   "frontend/opening/config.mjs",
   "frontend/opening/controller.mjs",
   "frontend/opening/index.mjs",
@@ -322,6 +326,17 @@ for (const asset of [
   "frontend/styles/application.css",
   "frontend/styles/r8.css"
 ]) assert.ok(shellAssets.has(asset), `预缓存缺少 ${asset}`);
+for (const asset of [
+  "frontend/features/export/index.mjs",
+  "frontend/features/feedback/index.mjs",
+  "frontend/features/thought-discovery/index.mjs"
+]) {
+  assert.equal(shellAssets.has(asset), false, `lazy feature 不得进入 install 预缓存: ${asset}`);
+  assert.ok(
+    [...lazyModulePaths].some(prefix => `/${asset}`.includes(prefix)),
+    `lazy feature 缺少按需缓存边界: ${asset}`
+  );
+}
 for (const asset of [
   "vendor/katex/katex.min.css",
   "vendor/katex/katex.min.js",
@@ -359,8 +374,7 @@ const katexFonts = new Set([...katexStyles.matchAll(/url\(fonts\/([^)]+\.woff2)\
 for (const font of katexFonts) assert.ok(katexAssets.has(font), `KaTeX 延迟闭包缺少 ${font}`);
 
 const dependencies = source => [
-  ...source.matchAll(/\b(?:import|export)\s+(?:[^"'`;]*?\s+from\s*)?["']([^"']+)["']/g),
-  ...source.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g)
+  ...source.matchAll(/\b(?:import|export)\s+(?:[^"'`;]*?\s+from\s*)?["']([^"']+)["']/g)
 ].map(match => match[1]);
 const pendingModules = [...shellAssets].filter(asset => /\.(?:m?js)$/.test(asset));
 const visitedModules = new Set();
@@ -378,6 +392,7 @@ while (pendingModules.length) {
 }
 assert.match(worker, /cache\.addAll\(\[\.\.\.SHELL_ASSETS,\s*\.\.\.KATEX_ASSETS\]\)/);
 assert.match(worker, /event\.respondWith\(cacheOnUse\(request\)\)/);
+assert.match(worker, /deferred\s*\|\|\s*lazyModule\(url\)/);
 assert.match(worker, /request\.mode\s*===\s*["']navigate["']/);
 assert.match(worker, /cache\.match\(["']\.\/["']\)/);
 for (const boundary of ["/api/", "/attachments/", "/auth/", "/ai/"]) {
@@ -385,4 +400,75 @@ for (const boundary of ["/api/", "/attachments/", "/auth/", "/ai/"]) {
 }
 assert.match(worker, /if\s*\(\s*isNetworkOnly\(url\)\s*\)\s*return/);
 
-console.log(`PWA contracts passed: install icons, ${visitedModules.size} cached modules, offline KaTeX closure, deferred backgrounds, navigation fallback, and private/network-only exclusions.`);
+{
+  const handlers = new Map();
+  const stored = new Map();
+  const networkRequests = [];
+  let online = true;
+  const requestKey = request => typeof request === "string" ? request : request.url;
+  const cache = {
+    async addAll() {},
+    async match(request) {
+      return stored.get(requestKey(request))?.clone();
+    },
+    async put(request, response) {
+      stored.set(requestKey(request), response.clone());
+    }
+  };
+  const context = {
+    caches: {
+      async keys() {
+        return ["cike-shell-v0.5.8-4"];
+      },
+      async delete() {
+        return true;
+      },
+      async match(request) {
+        return cache.match(request);
+      },
+      async open() {
+        return cache;
+      }
+    },
+    fetch: async request => {
+      networkRequests.push(requestKey(request));
+      if (!online) throw new Error("offline");
+      return new Response("export feature", {
+        status: 200,
+        headers: { "content-type": "text/javascript" }
+      });
+    },
+    Request,
+    Response,
+    Set,
+    URL,
+    self: {
+      clients: { claim: async () => {} },
+      location: { origin: "https://pwa.test" },
+      skipWaiting: async () => {},
+      addEventListener(type, handler) {
+        handlers.set(type, handler);
+      }
+    }
+  };
+  vm.runInNewContext(worker, context);
+  const request = new Request("https://pwa.test/frontend/features/export/index.mjs");
+  const dispatch = async () => {
+    let response;
+    handlers.get("fetch")({
+      request,
+      respondWith(value) {
+        response = Promise.resolve(value);
+      }
+    });
+    assert.ok(response, "lazy module fetch must be intercepted");
+    return response;
+  };
+  assert.equal(await (await dispatch()).text(), "export feature");
+  assert.equal(stored.has(request.url), true);
+  online = false;
+  assert.equal(await (await dispatch()).text(), "export feature");
+  assert.deepEqual(networkRequests, [request.url]);
+}
+
+console.log(`PWA contracts passed: install icons, ${visitedModules.size} cached modules, offline KaTeX closure, lazy module cache-on-use, deferred backgrounds, navigation fallback, and private/network-only exclusions.`);
