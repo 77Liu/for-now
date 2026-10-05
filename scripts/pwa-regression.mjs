@@ -42,7 +42,50 @@ const openingBootstrapScript = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g
   .find(source => source.includes("releaseLegacyOpening"));
 assert.ok(openingBootstrapScript, "缺少旧缓存入口的开屏恢复脚本");
 
-async function runLegacyOpeningFallback(openingState, { failEntry = false, failStyles = false } = {}) {
+function createControlledClock() {
+  let now = 0;
+  let nextId = 1;
+  const entries = [];
+  const setTimeout = (callback, milliseconds = 0) => {
+    const delay = Math.max(0, Number(milliseconds) || 0);
+    const entry = {
+      id: nextId,
+      callback,
+      milliseconds: delay,
+      dueAt: now + delay,
+      cleared: false,
+      fired: false
+    };
+    nextId += 1;
+    entries.push(entry);
+    return entry.id;
+  };
+  const clearTimeout = id => {
+    const entry = entries.find(candidate => candidate.id === id);
+    if (entry) entry.cleared = true;
+  };
+  const advance = milliseconds => {
+    const target = now + Math.max(0, Number(milliseconds) || 0);
+    while (true) {
+      const entry = entries
+        .filter(candidate => !candidate.cleared && !candidate.fired && candidate.dueAt <= target)
+        .sort((left, right) => left.dueAt - right.dueAt || left.id - right.id)[0];
+      if (!entry) break;
+      now = entry.dueAt;
+      entry.fired = true;
+      entry.callback();
+    }
+    now = target;
+  };
+  return { advance, clearTimeout, entries, now: () => now, setTimeout };
+}
+
+const settleVmTasks = () => new Promise(resolve => setImmediate(resolve));
+
+async function runLegacyOpeningFallback(
+  openingState,
+  { failEntry = false, failStyles = false, pendingStyles = false, runtimeReady = true } = {}
+) {
   const opening = {
     nodeType: 1,
     hidden: false,
@@ -70,7 +113,7 @@ async function runLegacyOpeningFallback(openingState, { failEntry = false, failS
         applicationEntries.push(entry);
         if (entry.tagName === "link") {
           if (failStyles) entry.listeners.error?.();
-          else entry.listeners.load?.();
+          else if (!pendingStyles) entry.listeners.load?.();
         }
         if (entry.tagName === "script" && failEntry) {
           queueMicrotask(() => entry.listeners.error?.());
@@ -82,13 +125,24 @@ async function runLegacyOpeningFallback(openingState, { failEntry = false, failS
       tagName,
       dataset: {},
       listeners: {},
+      listenerHistory: {},
+      removed: false,
       addEventListener(type, listener) {
         this.listeners[type] = listener;
+        (this.listenerHistory[type] ||= []).push(listener);
       },
       removeEventListener(type, listener) {
         if (this.listeners[type] === listener) delete this.listeners[type];
       },
-      remove() {}
+      dispatch(type, { includeRemoved = false } = {}) {
+        const listeners = includeRemoved
+          ? this.listenerHistory[type] || []
+          : this.listeners[type] ? [this.listeners[type]] : [];
+        for (const listener of listeners) listener();
+      },
+      remove() {
+        this.removed = true;
+      }
     }),
     querySelector(selector) {
       if (selector === "#opening-screen") return opening;
@@ -114,11 +168,12 @@ async function runLegacyOpeningFallback(openingState, { failEntry = false, failS
     }
   }
   const marks = new Set();
+  const clock = createControlledClock();
   const context = {
     document,
     MutationObserver: FakeMutationObserver,
     performance: {
-      now: () => 1,
+      now: clock.now,
       getEntriesByName: name => marks.has(name) ? [{}] : [],
       mark: name => marks.add(name)
     },
@@ -126,21 +181,43 @@ async function runLegacyOpeningFallback(openingState, { failEntry = false, failS
       callback();
       return 1;
     },
-    setTimeout: (callback, milliseconds) => {
-      if (milliseconds === 0) callback();
-      return 1;
-    },
-    clearTimeout() {}
+    setTimeout: clock.setTimeout,
+    clearTimeout: clock.clearTimeout
   };
   context.window = context;
   vm.runInNewContext(openingBootstrapScript, context);
-  await context.window.__forNowStylesReady;
-  await new Promise(resolve => setImmediate(resolve));
+  clock.advance(0);
+  await settleVmTasks();
+  if (!pendingStyles) await context.window.__forNowStylesReady;
+  await settleVmTasks();
   assert.equal(application.inert, true);
-  document.documentElement.dataset.runtimeReady = "1";
-  observers.forEach(observer => observer.callback([]));
-  await new Promise(resolve => setImmediate(resolve));
-  return { opening, application, applicationEntries, observers, recovery, retry, context };
+  const notify = (target, records = []) => {
+    for (const observer of observers) {
+      if (!observer.disconnected && observer.target === target) observer.callback(records);
+    }
+  };
+  const signalRuntimeReady = async () => {
+    document.documentElement.dataset.runtimeReady = "1";
+    notify(document.documentElement);
+    await settleVmTasks();
+  };
+  const advance = async milliseconds => {
+    clock.advance(milliseconds);
+    await settleVmTasks();
+  };
+  if (runtimeReady) await signalRuntimeReady();
+  return {
+    advance,
+    application,
+    applicationEntries,
+    clock,
+    context,
+    opening,
+    observers,
+    recovery,
+    retry,
+    signalRuntimeReady
+  };
 }
 
 const legacyOpening = await runLegacyOpeningFallback("opening");
@@ -173,6 +250,52 @@ assert.equal(entryFailure.opening.dataset.openingState, "failure");
 assert.equal(entryFailure.application.inert, true);
 assert.equal(entryFailure.recovery.hidden, false);
 assert.equal(entryFailure.retry.focusCount, 1);
+
+const assertFailureLocked = (fixture, message) => {
+  assert.equal(fixture.opening.hidden, false, `${message}: failure screen must remain visible`);
+  assert.equal(fixture.opening.dataset.openingState, "failure", `${message}: failure state must remain latched`);
+  assert.equal(fixture.application.inert, true, `${message}: application must remain inert`);
+  assert.equal(fixture.recovery.hidden, false, `${message}: recovery action must remain visible`);
+  assert.equal(fixture.context.__forNowEntryFailed, true, `${message}: entry failure must remain latched`);
+};
+
+const styleTimeout = await runLegacyOpeningFallback("opening", {
+  pendingStyles: true,
+  runtimeReady: false
+});
+assert.deepEqual(
+  styleTimeout.clock.entries.map(entry => entry.milliseconds).sort((left, right) => left - right),
+  [0, 1500, 1500, 5000]
+);
+await styleTimeout.advance(1499);
+assert.equal(styleTimeout.opening.dataset.openingState, "opening");
+assert.equal(styleTimeout.application.inert, true);
+assert.equal(styleTimeout.context.__forNowEntryFailed, undefined);
+await styleTimeout.advance(1);
+assertFailureLocked(styleTimeout, "application stylesheet timeout");
+const timedOutStyles = styleTimeout.applicationEntries.filter(entry => entry.tagName === "link");
+assert.equal(timedOutStyles.length, 2);
+assert.equal(timedOutStyles.every(entry => entry.removed), true);
+for (const entry of timedOutStyles) entry.dispatch("load", { includeRemoved: true });
+await settleVmTasks();
+assertFailureLocked(styleTimeout, "late stylesheet load");
+await styleTimeout.signalRuntimeReady();
+assertFailureLocked(styleTimeout, "runtimeReady after stylesheet timeout");
+assert.equal(styleTimeout.observers.every(observer => observer.disconnected), true);
+
+const startupTimeout = await runLegacyOpeningFallback("opening", { runtimeReady: false });
+await startupTimeout.advance(4999);
+assert.equal(startupTimeout.opening.dataset.openingState, "opening");
+assert.equal(startupTimeout.application.inert, true);
+await startupTimeout.advance(1);
+assertFailureLocked(startupTimeout, "full startup watchdog");
+assert.equal(
+  startupTimeout.applicationEntries.find(entry => entry.tagName === "script")?.removed,
+  true
+);
+await startupTimeout.signalRuntimeReady();
+assertFailureLocked(startupTimeout, "runtimeReady after startup watchdog");
+assert.equal(startupTimeout.observers.every(observer => observer.disconnected), true);
 
 const worker = await fs.readFile(publicPath("service-worker.js"), "utf8");
 assert.match(worker, /const CACHE_VERSION\s*=\s*["'][^"']+["']/);

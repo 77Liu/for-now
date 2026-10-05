@@ -54,6 +54,7 @@ const OPENING_BUDGET = Object.freeze({
   readyToPaintedMs: 140,
   uiPreferenceRequests: 1
 });
+const OPENING_TIMING_BOUNDARY_TOLERANCE_MS = 1;
 const NETWORK_PROFILE = Object.freeze({
   name: "fixed-fast-4g",
   latency: 40,
@@ -254,6 +255,7 @@ async function createTestServer() {
   let syncCursor = 0;
   let startupBarrier = null;
   let startupFailures = 0;
+  const requestFailures = new Map();
   const notifyRequest = entry => {
     requests.push(entry);
     for (const waiter of requestWaiters) {
@@ -294,7 +296,14 @@ async function createTestServer() {
     const sample = String(request.headers["x-performance-sample"] || "");
     let result;
     try {
-      if (url.pathname === "/api/auth/me") {
+      const remainingFailures = requestFailures.get(url.pathname) || 0;
+      if (remainingFailures > 0) {
+        if (remainingFailures === 1) requestFailures.delete(url.pathname);
+        else requestFailures.set(url.pathname, remainingFailures - 1);
+        result = json(request, response, {
+          error: { code: "OPENING_TEST_FAILURE", message: `Opening integration failure: ${url.pathname}` }
+        }, { status: 503 });
+      } else if (url.pathname === "/api/auth/me") {
         result = json(request, response, { authenticated: true, authRequired: true, user, userCount: 1 });
       } else if (url.pathname === "/api/v1/startup") {
         if (startupBarrier) await startupBarrier.promise;
@@ -404,6 +413,7 @@ async function createTestServer() {
         contentEncoding: result?.contentEncoding || "",
         rawBytes: result?.rawBytes || 0,
         transferBytes: result?.transferBytes || 0,
+        status: response.statusCode,
         durationMs: Number((performance.now() - startedAt).toFixed(1))
       });
     }
@@ -427,6 +437,10 @@ async function createTestServer() {
     },
     failNextStartup(count = 1) {
       startupFailures += Math.max(1, Number.parseInt(count, 10) || 1);
+    },
+    failNextRequest(pathname, count = 1) {
+      const failures = Math.max(1, Number.parseInt(count, 10) || 1);
+      requestFailures.set(pathname, (requestFailures.get(pathname) || 0) + failures);
     },
     setIncrementalSync(value) {
       incrementalSync = Boolean(value);
@@ -722,6 +736,11 @@ const mediaPath = value => (
   || /\.(?:m4a|mp3|mp4|ogg|wav|webm)(?:$|\?)/i.test(value)
 );
 const uiPreferencePath = value => value === "/api/preferences" || /(?:^|\/)ui-preferences(?:\/|$)/.test(value);
+const timingIsNotBefore = (candidateMs, boundaryMs) => (
+  Number.isFinite(candidateMs)
+  && Number.isFinite(boundaryMs)
+  && candidateMs + OPENING_TIMING_BOUNDARY_TOLERANCE_MS >= boundaryMs
+);
 
 function sampleEvidence(server, sample) {
   const requests = server.requests.filter(item => item.sample === sample && !["HEAD", "OPTIONS"].includes(item.method));
@@ -951,15 +970,23 @@ try {
       timeoutMs: 2000,
       condition: `window.__openingTrace.paints.some(entry => entry.name === "first-contentful-paint")
         && Boolean(document.documentElement.dataset.openingVisible)`
+        + ` && performance.getEntriesByName(new URL("app.js", document.baseURI).href, "resource").length > 0`
     });
     heldOpening = await browser.evaluate(`(() => {
       const root = document.querySelector("#opening-screen");
       const firstContentfulPaint = window.__openingTrace.paints
         .find(entry => entry.name === "first-contentful-paint");
+      const appEntry = performance.getEntriesByName(
+        new URL("app.js", document.baseURI).href,
+        "resource"
+      ).at(-1);
       return {
         parsedMs: Number(document.documentElement.dataset.openingParsed),
         markerVisibleMs: Number(document.documentElement.dataset.openingVisible),
         firstContentfulPaintMs: Number(firstContentfulPaint?.startTime),
+        appEntryStartMs: Number(appEntry?.startTime),
+        appEntryResponseEndMs: Number(appEntry?.responseEnd),
+        appEntryInitiatorType: appEntry?.initiatorType || "",
         paintEntries: window.__openingTrace.paints,
         firstBodyElement: document.body.firstElementChild?.id || "",
         state: root?.dataset.openingState || "",
@@ -979,6 +1006,16 @@ try {
     `opening first-contentful-paint missing: ${JSON.stringify(heldOpening.paintEntries)}`
   );
   assert.ok(heldOpening.parsedMs <= heldOpening.firstContentfulPaintMs);
+  assert.equal(heldOpening.appEntryInitiatorType, "script");
+  assert.ok(
+    timingIsNotBefore(heldOpening.appEntryStartMs, heldOpening.firstContentfulPaintMs),
+    `app.js started at ${heldOpening.appEntryStartMs}ms before FCP ${heldOpening.firstContentfulPaintMs}ms`
+  );
+  assert.ok(
+    timingIsNotBefore(heldOpening.appEntryResponseEndMs, heldOpening.firstContentfulPaintMs),
+    `app.js loaded at ${heldOpening.appEntryResponseEndMs}ms before FCP ${heldOpening.firstContentfulPaintMs}ms`
+  );
+  assert.ok(heldOpening.appEntryResponseEndMs >= heldOpening.appEntryStartMs);
   assert.deepEqual(
     {
       firstBodyElement: heldOpening.firstBodyElement,
@@ -1053,6 +1090,116 @@ try {
   );
   assert.ok(
     sampleEvidence(testServer, deepLinkSample).uiPreferenceRequestCount <= OPENING_BUDGET.uiPreferenceRequests
+  );
+
+  const secondaryFailureSample = "opening-secondary-failure-preferences";
+  testServer.failNextRequest("/api/preferences");
+  await browser.setSample(secondaryFailureSample);
+  await browser.cdp.send("Network.setCacheDisabled", { cacheDisabled: true });
+  await browser.cdp.send("Network.clearBrowserCache");
+  await browser.navigate(`${testServer.baseUrl}/today`);
+  await browser.waitForCondition({
+    label: "opening secondary request failure",
+    condition: `document.querySelector("#opening-screen")?.dataset.openingState === "failure"
+      && !document.querySelector("#opening-recovery").hidden`
+  });
+  await sleep(150);
+  const secondaryFailureOpening = await browser.evaluate(`(() => {
+    const root = document.querySelector("#opening-screen");
+    return {
+      states: window.__openingTrace.states.map(entry => entry.state),
+      readyMarkCount: performance.getEntriesByName("openingReady").length,
+      state: root?.dataset.openingState || "",
+      hidden: Boolean(root?.hidden),
+      busy: root?.getAttribute("aria-busy") || "",
+      recoveryHidden: Boolean(document.querySelector("#opening-recovery")?.hidden),
+      retryFocused: document.activeElement === document.querySelector("#opening-retry"),
+      contentInert: [...document.body.children]
+        .filter(element => element !== root)
+        .every(element => element.inert)
+    };
+  })()`);
+  assert.deepEqual(secondaryFailureOpening.states, ["opening", "failure"]);
+  assert.equal(secondaryFailureOpening.readyMarkCount, 0);
+  assert.deepEqual(
+    {
+      state: secondaryFailureOpening.state,
+      hidden: secondaryFailureOpening.hidden,
+      busy: secondaryFailureOpening.busy,
+      recoveryHidden: secondaryFailureOpening.recoveryHidden,
+      retryFocused: secondaryFailureOpening.retryFocused,
+      contentInert: secondaryFailureOpening.contentInert
+    },
+    {
+      state: "failure",
+      hidden: false,
+      busy: "",
+      recoveryHidden: false,
+      retryFocused: true,
+      contentInert: true
+    }
+  );
+  const secondaryFailureRequests = testServer.requests.filter(item => (
+    item.sample === secondaryFailureSample
+    && item.path === "/api/preferences"
+  ));
+  assert.equal(secondaryFailureRequests.length, 1);
+  assert.equal(secondaryFailureRequests[0].status, 503);
+
+  const watchdogFailureSample = "opening-startup-watchdog";
+  await browser.setSample(watchdogFailureSample);
+  await browser.cdp.send("Network.setCacheDisabled", { cacheDisabled: true });
+  await browser.cdp.send("Network.clearBrowserCache");
+  testServer.holdStartup();
+  try {
+    await browser.navigate(`${testServer.baseUrl}/today`);
+    await browser.waitForCondition({
+      label: "opening startup watchdog failure",
+      timeoutMs: 7000,
+      condition: `document.querySelector("#opening-screen")?.dataset.openingState === "failure"
+        && !document.querySelector("#opening-recovery").hidden`
+    });
+  } finally {
+    testServer.releaseStartup();
+  }
+  await browser.waitForCondition({
+    label: "late runtime completion after opening watchdog",
+    timeoutMs: 3000,
+    condition: `document.documentElement.dataset.runtimeReady === "1"`
+  });
+  await sleep(150);
+  const watchdogFailureOpening = await browser.evaluate(`(() => {
+    const root = document.querySelector("#opening-screen");
+    return {
+      states: window.__openingTrace.states.map(entry => entry.state),
+      readyMarkCount: performance.getEntriesByName("openingReady").length,
+      state: root?.dataset.openingState || "",
+      hidden: Boolean(root?.hidden),
+      recoveryHidden: Boolean(document.querySelector("#opening-recovery")?.hidden),
+      contentInert: [...document.body.children]
+        .filter(element => element !== root)
+        .every(element => element.inert),
+      runtimeReady: document.documentElement.dataset.runtimeReady || ""
+    };
+  })()`);
+  assert.equal(watchdogFailureOpening.states.includes("entering"), false);
+  assert.equal(watchdogFailureOpening.states.includes("complete"), false);
+  assert.equal(watchdogFailureOpening.readyMarkCount, 0);
+  assert.deepEqual(
+    {
+      state: watchdogFailureOpening.state,
+      hidden: watchdogFailureOpening.hidden,
+      recoveryHidden: watchdogFailureOpening.recoveryHidden,
+      contentInert: watchdogFailureOpening.contentInert,
+      runtimeReady: watchdogFailureOpening.runtimeReady
+    },
+    {
+      state: "failure",
+      hidden: false,
+      recoveryHidden: false,
+      contentInert: true,
+      runtimeReady: "1"
+    }
   );
 
   const retrySample = "opening-retry";
@@ -1336,12 +1483,17 @@ try {
       opening: {
         heldDeepLinkFirstContentfulPaintMs: heldOpening.firstContentfulPaintMs,
         feedbackDistributionBudgetMs: OPENING_BUDGET.firstContentfulPaintMs,
-        postPaintMarkerMs: heldOpening.markerVisibleMs,
+        entrySchedulingMarkerMs: heldOpening.markerVisibleMs,
+        appEntryStartMs: heldOpening.appEntryStartMs,
+        appEntryResponseEndMs: heldOpening.appEntryResponseEndMs,
+        timingBoundaryToleranceMs: OPENING_TIMING_BOUNDARY_TOLERANCE_MS,
         readyToCompleteMs: deepLinkOpening.readyToCompleteMs,
         readyToPaintedMs: deepLinkOpening.readyToPaintedMs,
         readyToPaintedBudgetMs: OPENING_BUDGET.readyToPaintedMs,
         reducedMotionReadyToCompleteMs: reducedMotionOpening.readyToCompleteMs,
         deepLink: deepLinkOpening.path,
+        secondaryFailure: "/api/preferences -> failure",
+        watchdogFailure: "5000ms timeout -> late runtimeReady remains failure",
         retry: "failure -> reload -> complete",
         uiPreferenceRequestsMax: OPENING_BUDGET.uiPreferenceRequests
       },

@@ -153,7 +153,7 @@
         }
       };
       if (document.visibilityState === "hidden") setTimeout(startApplicationEntry, 0);
-      else requestAnimationFrame(() => requestAnimationFrame(startApplicationEntry));
+      else requestAnimationFrame(() => setTimeout(startApplicationEntry, 0));
       const opening = document.querySelector("#opening-screen");
       const setOpeningContentInert = inert => {
         for (const element of document.body.children) {
