@@ -1471,6 +1471,7 @@ try {
   cdp = new Cdp(await pageDebuggerUrl(port));
   await cdp.send("Page.enable");
   await cdp.send("Runtime.enable");
+  await cdp.send("Network.enable");
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: mockFetch });
   await cdp.send("Page.navigate", { url: new URL("thoughts/kept-root", APP_URL).href });
@@ -2189,8 +2190,19 @@ try {
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
   const viewThemeColors = await evaluate(`Object.fromEntries([...document.querySelectorAll(".view")].flatMap(view => { const heading=view.querySelector(".eyebrow,h1"); return heading?[[view.id,getComputedStyle(heading).color]]:[] }))`);
   assert.ok(new Set(Object.values(viewThemeColors)).size >= 16);
+  const captureMediaEventStart = cdp.events.length;
   await evaluate(`document.querySelector('[data-view="captures"]').click();window.dispatchEvent(new Event("resize"));true`);
   assert.equal(await evaluate(`document.querySelector("#view-captures").classList.contains("active") && Boolean(document.querySelector('[data-capture-id="capture-1"] strong'))`), true);
+  await sleep(150);
+  assert.deepEqual(
+    cdp.events
+      .slice(captureMediaEventStart)
+      .filter(event => event.method === "Network.requestWillBeSent")
+      .map(event => new URL(event.params.request.url).pathname)
+      .filter(pathname => pathname.endsWith(".m4a") || pathname === "/api/speech/audio"),
+    [],
+    "audio-tts-playback: capture audio must transfer only after a playback click"
+  );
   assert.equal(await evaluate(`document.querySelector('[data-capture-id="capture-1"] .markdown-content').classList.contains("commentable")`), true);
   const captureInitial = await evaluate(`({
     inputType: document.querySelector("#capture-date").type,
@@ -2206,13 +2218,15 @@ try {
   assert.equal(captureInitial.dateLabels, 1);
   assert.equal(captureInitial.dateOutsideCard, true);
   assert.equal(captureInitial.timeOnRight, true);
-  assert.deepEqual(await evaluate(`(() => {const textCard=document.querySelector('[data-capture-id="capture-1"]'),voiceCard=document.querySelector('[data-capture-id="capture-long"]'),player=voiceCard.querySelector("[data-speech-player]"),original=voiceCard.querySelector(".capture-audio-source audio"),textControls=textCard.querySelector(".speech-asset-controls");return{textPlayer:Boolean(textCard.querySelector("[data-speech-player]")),textGenerate:textControls.querySelector("[data-speech-synthesize]").textContent,controls:player.controls,connected:player.isConnected,source:player.getAttribute("src"),original:original.getAttribute("src"),ttsPlayers:voiceCard.querySelectorAll("[data-speech-player]").length,perCardVoice:Boolean(voiceCard.querySelector("[data-capture-voice]")),repeatedGenerationSetting:Boolean(voiceCard.querySelector("#tts-generation-rate,.speech-generation-default"))}})()`), {
+  assert.deepEqual(await evaluate(`(() => {const textCard=document.querySelector('[data-capture-id="capture-1"]'),voiceCard=document.querySelector('[data-capture-id="capture-long"]'),player=voiceCard.querySelector("[data-speech-player]"),original=voiceCard.querySelector(".capture-audio-source audio"),textControls=textCard.querySelector(".speech-asset-controls");return{textPlayer:Boolean(textCard.querySelector("[data-speech-player]")),textGenerate:textControls.querySelector("[data-speech-synthesize]").textContent,controls:player.controls,connected:player.isConnected,source:player.getAttribute("src"),playerPreload:player.preload,original:original.getAttribute("src"),originalPreload:original.preload,ttsPlayers:voiceCard.querySelectorAll("[data-speech-player]").length,perCardVoice:Boolean(voiceCard.querySelector("[data-capture-voice]")),repeatedGenerationSetting:Boolean(voiceCard.querySelector("#tts-generation-rate,.speech-generation-default"))}})()`), {
     textPlayer: false,
     textGenerate: "生成",
     controls: true,
     connected: true,
     source: "/api/speech/audio?id=asset-capture-long-v1",
+    playerPreload: "none",
     original: "/attachments/capture-voice.m4a",
+    originalPreload: "none",
     ttsPlayers: 1,
     perCardVoice: false,
     repeatedGenerationSetting: false
