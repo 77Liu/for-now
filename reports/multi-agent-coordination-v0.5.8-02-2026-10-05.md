@@ -3,7 +3,7 @@
 - 日期：2026-10-05
 - 门禁：`G3 / B0-F0`
 - 起始基线：`dab874d`
-- 当前状态：`ready-for-local-commit`
+- 当前状态：`local-committed`
 - 活跃工作树：`5 / 6`
 - 授权边界：仅本地契约、静态门、专项、文档与提交；无 push、tag、Release、
   Preview、部署、云资源、真实付费调用或生产写入授权
@@ -36,7 +36,7 @@
 
 | task | roleId | specialty | activeContext | ownership | dependencies | communications | evidence | status | next |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 02-I | `orchestrator` | 契约冻结与串行集成 | `dab874d`；B0/F0 | registry、package/system、PWA、文档 | 02-A/02-B/02-W | 收敛 reviewer findings，固定 G 门 | G3 通过；check/frontend/performance 通过 | `integrated` | 固定本地提交 |
+| 02-I | `orchestrator` | 契约冻结与串行集成 | `dab874d`；B0/F0 | registry、package/system、PWA、文档 | 02-A/02-B/02-W | 收敛 reviewer findings，固定 G 门 | `6730597`；check/frontend/performance 通过 | `closed` | 进入 03/04 |
 | 02-A | `entrypoint-checker-dev` | 词法静态门与反例 | 当前入口仅作有期限例外 | checker、lexer 与反例 | 入口设计、机器 registry | 交付初版后由调度者修复边界漏洞 | 三入口、真实 path、API/binding/catalog、例外期限已覆盖 | `integrated` | 关闭 |
 | 02-B | `feature-registry-dev` | 前端 feature 生命周期 | registry 不接当前 runtime | `public/frontend/feature-registry/` 与 lifecycle 专项 | 生命周期冻结契约 | 交付初版后由调度者修复竞态 | 加载中状态、清理失败、reset 锁定均覆盖 | `integrated` | 关闭 |
 | 02-W | `wiring-dev` | package、barrel、system runner | 仅三个授权文件 | package/system 接线 | 02-A/02-B | 发现静态 barrel 增加首屏闭包后改为独立模块 | `test:entrypoints` 与双 suite 接线 | `integrated` | 关闭 |
@@ -98,6 +98,10 @@
 - 所有命令均使用本地临时目录、模拟供应商和隔离端口；无真实付费调用、
   Preview、部署或生产写入。
 - 最终独立 Reviewer 结论：GO，blocker/P0/P1 = `0/0/0`。
+- 本地提交：`6730597`（`feat(architecture): freeze entrypoint contracts`）。
+- Base 回读：需求池 `rev=355 / 238`、研发交付 `rev=114 / 92`。整体需求
+  `reczz28JPK4rO6LI` 为“进行中 / 未发布”，02 交付
+  `reczz28JPdCVUwBD` 为“待验收 / 未发布”。
 
 测试 fixture 因集中覆盖大量恶意输入超过 800 行；生产 checker、lexer、
 surface/contract/static-value helper 与 feature registry 均不超过 500 行，

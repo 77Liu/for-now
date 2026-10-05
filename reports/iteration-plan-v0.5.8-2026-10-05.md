@@ -35,8 +35,8 @@ V0.5.8 关闭时，以上结果必须同时具备本地候选、Preview、发布
 | 本轮工作树 | `.worktrees/v0.5.8-p00-p0`，分支 `feat/v0.5.8-p00-p0` |
 | 规划前本地 HEAD | `2c20f1822b155e2dcaebecd23cd14a565b74794e` |
 | 数据写源 | PostgreSQL 16.15 |
-| 需求池 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblHW2FjQpyJlSck`，`rev=354 / 238` |
-| 研发交付 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblsidvvCyB8Ty9M`，`rev=113 / 92` |
+| 需求池 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblHW2FjQpyJlSck`，`rev=355 / 238` |
+| 研发交付 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblsidvvCyB8Ty9M`，`rev=114 / 92` |
 | 服务端入口 | `server.mjs` 3,283 行 |
 | 浏览器入口 | `public/frontend/app/runtime.mjs` 5,291 行 |
 | V0.5.7 过程报告 | [`V0.5.7 开发过程与复盘`](v0.5.7-development-process-2026-10-05.md) |
@@ -117,7 +117,7 @@ V0.5.8 的 14 条需求均关联版本记录 `reczz28JaO7yXu1K`，发布状态�
 | 14 | `reczz28Jd8F4pTH2` | 工作区已验证未部署 | `75e37d9`：首页麦克风在同一手势复用现有捕念录音链；不建立第二套录音状态机 |
 | 16 | `reczz28Jd8F4nPjw` | 工作区已验证未部署 | `1eb61c9`、`a4150e9`、`56337a9`：七类能力统一用量、官方价格版本、预算和明确账单缺口；独立复审无新增问题 |
 | 20 | `reczz28Jd8F4oH1y` | 工作区已验证未部署 | `91a10b7..88d37e1`：同步 HTML 开屏、雨景生命周期、真实 paint 性能门、FCP 后入口、退出/失败/清理、watchdog 锁存及 PWA 升级预算通过 |
-| 02 | `reczz28JPdCVUwBD` | 工作区已验证未部署 | 三类真实入口、组合 API/import binding/factory 链、G4/G6 例外和 feature lifecycle 已机器冻结；最终独立复审 GO |
+| 02 | `reczz28JPdCVUwBD` | 工作区已验证未部署 | `6730597`：三类真实入口、组合 API/import binding/factory 链、G4/G6 例外和 feature lifecycle 已机器冻结；最终独立复审 GO |
 | 03 | `reczz28JPdCVWPzV` | 待开始 | 按 B1-B7 迁移服务端领域，`server.mjs` 成为纯启动入口 |
 | 04 | `reczz28JPdCVXtsA` | 待开始 | 按 F1-F10 迁移浏览器功能，`runtime.mjs` 成为纯组合入口 |
 
@@ -344,7 +344,7 @@ flowchart TD
 - Base 中 14 条 V0.5.8 需求和 22 条交付的关联与字段回读。
 - CDN 设计、R9.4-F1 配置、开屏 PRD 和原型归档到本工作树。
 - 本计划按生产 `2c395c0` 和当前入口规模重排；Base 当前为需求
-  `rev=354 / 238`、交付 `rev=113 / 92`。
+  `rev=355 / 238`、交付 `rev=114 / 92`。
 - `V0.5.8-13@a6a442b` 已通过 Journey Smoke 13/13、浏览器 UI、
   URL/history、frontend shell、mobile platform 与语法检查；思绪页创建、
   取消和提交保持 `/thoughts` 与列表上下文；证据提交为 `372201d`。
@@ -369,9 +369,11 @@ flowchart TD
   `reczz28Jd7mMoWFW` 与交付 `reczz28Jd8F4oH1y` 均已回填“待验收 /
   未发布”。完整调度证据见
   [`V0.5.8-20 多 Agent 调度记录`](multi-agent-coordination-v0.5.8-20-2026-10-05.md)。
-- `V0.5.8-02` 已登记 57 个模块、233 条拥有路由和 20 条精确迁移例外；
+- `V0.5.8-02@6730597` 已登记 57 个模块、233 条拥有路由和 20 条精确迁移例外；
   服务端例外在 G4、浏览器例外在 G6 失效。registry 保持独立未接线，
-  runtime 闭包仍为 `24 / 815481 B`；独立 Reviewer 最终 GO。
+  runtime 闭包仍为 `24 / 815481 B`；独立 Reviewer 最终 GO。整体需求
+  `reczz28JPK4rO6LI` 保持“进行中 / 未发布”，交付
+  `reczz28JPdCVUwBD` 已回填“待验收 / 未发布”。
 
 当前未完成：
 
