@@ -545,11 +545,21 @@
       "status": "active"
     },
     {
+      "id": "frontend.application",
+      "type": "application",
+      "root": "public/frontend/app/application.mjs",
+      "publicEntry": "public/frontend/app/application.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["browser application start, route/feature activation, state notification, session reset and stop lifecycle"], "routes": [] },
+      "tests": ["scripts/frontend-application-regression.mjs"],
+      "status": "active"
+    },
+    {
       "id": "frontend.app",
       "type": "application",
       "root": "public/frontend/app",
       "publicEntry": "public/frontend/app/index.mjs",
-      "allowedDependencies": ["frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.pages", "frontend.features", "frontend.feature-registry", "frontend.component.tag-multiselect"],
+      "allowedDependencies": ["frontend.application", "frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.pages", "frontend.features", "frontend.feature-registry", "frontend.component.tag-multiselect"],
       "owns": { "data": ["browser bootstrap, dependency composition, feature event binding and page presenter runtime"], "routes": [] },
       "tests": ["scripts/frontend-shell-regression.mjs", "scripts/frontend-contract-regression.mjs", "scripts/ui-regression.mjs", "scripts/mobile-platform-regression.mjs"],
       "status": "active"
@@ -755,6 +765,7 @@
       "kind": "browser",
       "path": "public/frontend/app/runtime.mjs",
       "allowedImports": [
+        "./application.mjs",
         "../api/index.mjs",
         "../components/tag-multiselect/index.mjs",
         "../content/index.mjs",
@@ -768,6 +779,7 @@
         "../time/index.mjs"
       ],
       "requiredImports": [
+        "./application.mjs",
         "../api/index.mjs",
         "../components/tag-multiselect/index.mjs",
         "../content/index.mjs",
@@ -1110,6 +1122,7 @@
       "removeWhen": "runtime.mjs imports the feature registry public entry",
       "deleteByGate": "G6",
       "allowlist": [
+        { "detail": "required import is missing: \"./application.mjs\"", "count": 1 },
         { "detail": "required import is missing: \"../feature-registry/index.mjs\"", "count": 1 }
       ]
     },
