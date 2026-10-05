@@ -288,7 +288,7 @@ async function createTestServer() {
           governanceUrl: "",
           accountCursor: syncCursor,
           notificationUnread: 0,
-          onboardingV2: { session: { status: "completed" } }
+          onboardingV2
         }));
       } else if (url.pathname === "/api/v1/route-state") {
         result = json(request, response, v1(routeStateProjection(clientState, {
@@ -739,6 +739,9 @@ function startupContractFailures(result) {
     const count = result.requestPaths.filter(value => value === endpoint).length;
     fail(count === 1, `${endpoint} request count ${count}, expected 1`);
   }
+  const onboardingSessionCount = result.requestPaths
+    .filter(value => value === "/api/v1/onboarding-v2/session").length;
+  fail(onboardingSessionCount === 0, `/api/v1/onboarding-v2/session request count ${onboardingSessionCount}, expected 0`);
   return failures;
 }
 

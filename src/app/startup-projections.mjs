@@ -1,4 +1,5 @@
 import { thoughtChainDetail, thoughtChainListPage } from "../modules/thoughts/index.mjs";
+import { normalizeOnboardingV2 } from "../modules/onboarding/index.mjs";
 
 const LIST_FIELDS = new Set([
   "id",
@@ -542,11 +543,7 @@ export function startupProjection({
     accountCursor: Math.max(0, Number(store?._persistence?.sync?.cursor) || 0),
     notificationUnread: Math.max(0, Number(unread) || 0),
     quoteTags: quoteTags(store),
-    onboardingV2: {
-      session: {
-        status: text(store?.onboardingV2?.session?.status) || "pending"
-      }
-    }
+    onboardingV2: normalizeOnboardingV2(store?.onboardingV2, store?.onboarding)
   };
 }
 

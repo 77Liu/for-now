@@ -3870,6 +3870,12 @@ function openContextSource(button){
 function onboardingBlocksPrivateShell(snapshot){
   return!["completed","skipped"].includes(snapshot?.session?.status)
 }
+function completeOnboardingSnapshot(snapshot){
+  return Number(snapshot?.schemaVersion)===2
+    &&snapshot?.session
+    &&Object.hasOwn(snapshot.session,"answers")
+    &&Object.hasOwn(snapshot.session,"collaboration")
+}
 function renderVisibleRoute(){
   const view=pageRouter?.currentRoute()?.view||"today";
   if(renderedRouteView&&renderedRouteView!==view)unmountRouteContent(renderedRouteView);
@@ -3934,7 +3940,9 @@ async function load({visibleShell=false,initialSnapshot=null}={}){
     request(hasCapability("ai-configuration")?"/api/settings":"/api/preferences"),
     optionalRequest("/api/onboarding/schema"),
     requestV1("/api/v1/onboarding-v2/schema"),
-    requestV1("/api/v1/onboarding-v2/session"),
+    completeOnboardingSnapshot(meta.onboardingV2)
+      ?Promise.resolve({data:meta.onboardingV2})
+      :requestV1("/api/v1/onboarding-v2/session"),
     hasCapability("local-testing")?(initialSnapshot?Promise.resolve(initialSnapshot.testConfig):optionalRequest("/api/local-test-mode")):Promise.resolve(null)
   ]);
   if(owner!==currentUser?.id||session!==sessionSerial)return false;

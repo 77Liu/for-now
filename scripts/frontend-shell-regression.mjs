@@ -77,6 +77,8 @@ assert.match(appRuntime, /AUTH_REAUTH_REQUIRED/);
 assert.match(appRuntime, /sessionStorage\.setItem\("cike:authenticated-shell","1"\)/);
 assert.match(appRuntime, /sessionStorage\.removeItem\("cike:authenticated-shell"\)/);
 assert.match(appRuntime, /function onboardingBlocksPrivateShell\(/);
+assert.match(appRuntime, /function completeOnboardingSnapshot\(/);
+assert.match(appRuntime, /completeOnboardingSnapshot\(meta\.onboardingV2\)\s*\?Promise\.resolve\(\{data:meta\.onboardingV2\}\)\s*:requestV1\("\/api\/v1\/onboarding-v2\/session"\)/);
 assert.match(appRuntime, /await afterVisibleShellPaint\(\)/);
 assert.match(appRuntime, /load\(\{visibleShell:true,initialSnapshot\}\)/);
 assert.match(appRuntime, /initialSnapshot\s*\?\s*\[initialSnapshot\.state,initialSnapshot\.meta\]/);

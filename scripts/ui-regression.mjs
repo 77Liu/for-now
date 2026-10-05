@@ -1526,6 +1526,11 @@ try {
     [1, 1, 1, 1],
     "cold startup must reuse auth, startup, route-state and local-test results"
   );
+  assert.equal(
+    await evaluate(`window.__apiRequests.filter(value=>value==="GET /api/v1/onboarding-v2/session").length`),
+    0,
+    "cold startup must reuse the complete onboarding state"
+  );
   assert.equal(await evaluate(`document.querySelector("#automatic-thought-answer").checked`),false,"hidden settings must not render during thought startup");
   await evaluate(`document.querySelector('[data-view="today"]').click();true`);
   assert.equal(await waitUntil(`document.querySelector("#view-today").classList.contains("active")`),true);

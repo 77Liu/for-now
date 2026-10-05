@@ -183,7 +183,25 @@ const experiments = Array.from({ length: 30 }, (_, index) => ({
 }));
 const store = {
   _persistence: { sync: { cursor: 42 } },
-  onboardingV2: { session: { status: "completed" }, privateDraft: large },
+  onboardingV2: {
+    schemaVersion: 2,
+    session: {
+      status: "completed",
+      step: "firstAction",
+      revision: 3,
+      answers: {
+        currentContext: {
+          rawText: "正在验证启动快照复用",
+          occurredAt: "2026-10-04T08:00:00.000Z",
+          updatedAt: "2026-10-04T08:00:00.000Z",
+          version: 1,
+          contextAllowed: true,
+          privateBlob: large
+        }
+      }
+    },
+    privateDraft: large
+  },
   notifications: [{ id: "notice", status: "succeeded", readAt: "" }],
   quotes: [
     { id: "quote-a", content: "PRIVATE_QUOTE_CONTENT", tags: ["阅读", "长期"] },
@@ -275,6 +293,10 @@ const startup = startupProjection({
 const startupText = JSON.stringify(startup);
 assert.equal(startup.accountCursor, 42);
 assert.equal(startup.onboardingV2.session.status, "completed");
+assert.equal(startup.onboardingV2.schemaVersion, 2);
+assert.equal(startup.onboardingV2.session.answers.currentContext.rawText, "正在验证启动快照复用");
+assert.equal(Object.hasOwn(startup.onboardingV2, "privateDraft"), false);
+assert.equal(Object.hasOwn(startup.onboardingV2.session.answers.currentContext, "privateBlob"), false);
 assert.equal(startup.notificationUnread, 1);
 assert.deepEqual(startup.quoteTags, ["阅读", "长期", "摘录"]);
 for (const forbidden of ["thoughts", "clusters", "keepsakes", "attachmentPath", large]) {
@@ -282,6 +304,65 @@ for (const forbidden of ["thoughts", "clusters", "keepsakes", "attachmentPath", 
 }
 assert.equal(startupText.includes("PRIVATE_QUOTE_CONTENT"), false);
 assert.ok(Buffer.byteLength(startupText) <= 25 * 1024);
+
+const onboardingTimestamp = "2026-10-04T08:00:00.000Z";
+const textAnswerAtLimit = (questionId, character) => ({
+  questionId,
+  rawText: character.repeat(2000),
+  occurredAt: onboardingTimestamp,
+  updatedAt: onboardingTimestamp,
+  version: 1,
+  contextAllowed: true
+});
+const listAnswerAtLimit = (questionId, { horizon = false } = {}) => ({
+  questionId,
+  structuredValue: Array.from({ length: 3 }, () => ({
+    text: "项".repeat(300),
+    ...(horizon ? { horizon: "custom", horizonText: "期".repeat(100) } : {})
+  })),
+  occurredAt: onboardingTimestamp,
+  updatedAt: onboardingTimestamp,
+  version: 1,
+  contextAllowed: true
+});
+const maximumOnboardingStartup = startupProjection({
+  store: {
+    _persistence: { sync: { cursor: 42 } },
+    onboardingV2: {
+      schemaVersion: 2,
+      session: {
+        id: "onboarding-v2",
+        schemaVersion: 2,
+        status: "completed",
+        step: "firstAction",
+        revision: 9,
+        answers: {
+          currentContext: textAnswerAtLimit("currentContext", "处"),
+          desiredChanges: listAnswerAtLimit("desiredChanges", { horizon: true }),
+          recentObstacles: listAnswerAtLimit("recentObstacles"),
+          dailyRhythm: textAnswerAtLimit("dailyRhythm", "日")
+        },
+        collaboration: {
+          responseLength: { value: "expanded", source: "user" },
+          suggestionMode: { value: "reasonFirst", source: "user" },
+          challengeStyle: { value: "direct", source: "user" },
+          additionalBoundary: "界".repeat(1000),
+          contextAllowed: true
+        },
+        startedAt: onboardingTimestamp,
+        pausedAt: "",
+        completedAt: onboardingTimestamp,
+        updatedAt: onboardingTimestamp
+      },
+      readiness: "usable",
+      migration: { selectedFlow: "v2", entryPolicy: "v2" }
+    }
+  },
+  user: { id: "account", username: "owner", role: "owner" },
+  version: "test",
+  releaseVersion: "0.5.7"
+});
+assert.ok(Buffer.byteLength(JSON.stringify(maximumOnboardingStartup)) <= 25 * 1024);
 
 const today = routeStateProjection(publicState, { view: "today", currentDate: CURRENT_DATE });
 const todayText = JSON.stringify(today);
