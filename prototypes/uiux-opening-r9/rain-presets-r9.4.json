@@ -1,0 +1,103 @@
+{
+  "version": "R9.4-F1",
+  "openingAnimation": {
+    "schemaVersion": 1,
+    "enabled": true,
+    "showBrand": true,
+    "config": {
+      "density": 3.5,
+      "trailPercent": 60,
+      "dropSize": 7.5,
+      "trailWidth": 12,
+      "speed": 85,
+      "bend": 80,
+      "splash": 5,
+      "trailLife": 4,
+      "beadLife": 9,
+      "contrast": 119,
+      "slideDelay": 50,
+      "slideLength": 145,
+      "protectBrand": false
+    }
+  },
+  "presets": {
+    "drizzle": {
+      "density": 3,
+      "trailPercent": 25,
+      "dropSize": 4.5,
+      "trailWidth": 5.5,
+      "speed": 55,
+      "bend": 25,
+      "splash": 5,
+      "trailLife": 8,
+      "beadLife": 12,
+      "contrast": 80,
+      "slideDelay": 40,
+      "slideLength": 180,
+      "protectBrand": true
+    },
+    "ribbon": {
+      "density": 2.2,
+      "trailPercent": 80,
+      "dropSize": 8,
+      "trailWidth": 12,
+      "speed": 85,
+      "bend": 35,
+      "splash": 5,
+      "trailLife": 4,
+      "beadLife": 9,
+      "contrast": 120,
+      "slideDelay": 40,
+      "slideLength": 180,
+      "protectBrand": true
+    },
+    "dense": {
+      "density": 7,
+      "trailPercent": 60,
+      "dropSize": 5,
+      "trailWidth": 8,
+      "speed": 105,
+      "bend": 25,
+      "splash": 5,
+      "trailLife": 5,
+      "beadLife": 7,
+      "contrast": 85,
+      "slideDelay": 40,
+      "slideLength": 180,
+      "protectBrand": true
+    },
+    "confirmed": {
+      "density": 3.5,
+      "trailPercent": 60,
+      "dropSize": 7.5,
+      "trailWidth": 12,
+      "speed": 85,
+      "bend": 80,
+      "splash": 5,
+      "trailLife": 4,
+      "beadLife": 9,
+      "contrast": 119,
+      "slideDelay": 50,
+      "slideLength": 145,
+      "protectBrand": false
+    }
+  },
+  "confirmedAt": "2026-10-05",
+  "historicalPresets": {
+    "sparse": {
+      "density": 1.6,
+      "trailPercent": 35,
+      "dropSize": 5.5,
+      "trailWidth": 7.5,
+      "speed": 105,
+      "bend": 25,
+      "splash": 5,
+      "trailLife": 4,
+      "beadLife": 9,
+      "contrast": 90,
+      "slideDelay": 40,
+      "slideLength": 180,
+      "protectBrand": true
+    }
+  }
+}

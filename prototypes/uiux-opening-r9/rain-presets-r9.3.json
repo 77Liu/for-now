@@ -1,0 +1,57 @@
+{
+  "version": "R9.3",
+  "presets": {
+    "sparse": {
+      "density": 1.6,
+      "trailPercent": 38,
+      "dropSize": 6.5,
+      "trailWidth": 8,
+      "speed": 72,
+      "bend": 38,
+      "splash": 5,
+      "trailLife": 6,
+      "beadLife": 9,
+      "contrast": 75,
+      "protectBrand": true
+    },
+    "drizzle": {
+      "density": 3,
+      "trailPercent": 25,
+      "dropSize": 4.5,
+      "trailWidth": 5.5,
+      "speed": 55,
+      "bend": 38,
+      "splash": 5,
+      "trailLife": 8,
+      "beadLife": 12,
+      "contrast": 80,
+      "protectBrand": true
+    },
+    "ribbon": {
+      "density": 2.2,
+      "trailPercent": 80,
+      "dropSize": 8,
+      "trailWidth": 13,
+      "speed": 50,
+      "bend": 62,
+      "splash": 5,
+      "trailLife": 10,
+      "beadLife": 9,
+      "contrast": 105,
+      "protectBrand": true
+    },
+    "dense": {
+      "density": 7,
+      "trailPercent": 60,
+      "dropSize": 5,
+      "trailWidth": 8,
+      "speed": 105,
+      "bend": 38,
+      "splash": 5,
+      "trailLife": 5,
+      "beadLife": 7,
+      "contrast": 85,
+      "protectBrand": true
+    }
+  }
+}
