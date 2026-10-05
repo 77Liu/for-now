@@ -224,7 +224,7 @@ export function createStoreNormalizer({
 
   const normalizedOccurredOn = (item, previousVersion) => {
     const createdUtcDate = item.createdAt?.slice(0, 10);
-    const createdLocalDate = localDateKey(item.createdAt);
+    const createdLocalDate = item.createdAt ? localDateKey(item.createdAt) : "";
     const current = item.occurredOn || createdLocalDate || today();
     if (previousVersion < 4
       && current === createdUtcDate
