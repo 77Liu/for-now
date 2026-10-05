@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-03",
+  "updatedAt": "2026-10-05",
   "tiers": {
     "smoke": "每个候选功能提交前，验证前端契约和真实浏览器关键旅程。",
     "daily": "覆盖前端全回归、认证、同步和本地测试模式。",
@@ -70,6 +70,23 @@
           "script": "scripts/frontend-shell-regression.mjs",
           "anchor": "function onboardingBlocksPrivateShell"
         }
+      ]
+    },
+    {
+      "id": "opening-synchronized-feedback",
+      "title": "开屏与首个可交互页面同步交接",
+      "role": "首次或返回访问用户",
+      "goal": "请求期间立即看到稳定开屏，并在真实目标页面就绪后无空白交接",
+      "risk": "critical",
+      "tier": "smoke",
+      "status": "automated",
+      "normalPath": ["直接打开首页或深链", "250ms 内看到开屏", "等待真实路由或登录页完成", "140ms 内退出开屏"],
+      "failureAndRecovery": ["启动请求失败后保留开屏", "整页重试并保留深链", "减少动态效果时立即退出", "页面离开时释放动画资源"],
+      "assertions": ["开屏 DOM 与关键样式同步解析", "应用内容在交接前 inert", "不因缓存壳提前消失", "失败可重试", "无新增首屏偏好请求", "雨景和监听器均可释放"],
+      "evidence": [
+        {"script": "scripts/opening-controller-regression.mjs", "anchor": "Opening controller checks passed"},
+        {"script": "scripts/web-first-screen-budget-regression.mjs", "anchor": "opening first contentful paint"},
+        {"script": "scripts/frontend-shell-regression.mjs", "anchor": "opening-critical-style"}
       ]
     },
     {

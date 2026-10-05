@@ -27,8 +27,8 @@ const REPORT_PATH = String(process.env.WEB_PERF_REPORT_PATH || "").trim();
 const ASSET_BUDGET = Object.freeze({
   blockingStyleRequests: 2,
   blockingStyleBytes: 250 * 1024,
-  entryModuleCount: 6,
-  entryModuleBytes: 64 * 1024,
+  entryModuleCount: 10,
+  entryModuleBytes: 72 * 1024,
   deferredRuntimeModuleCount: 24,
   deferredRuntimeModuleBytes: 800 * 1024
 });
@@ -48,6 +48,11 @@ const TIMING_BUDGET = Object.freeze({
   "web.navigation.thoughtDetail.firstReadable_ms": { p75: 350, p95: 600 },
   "web.navigation.thoughtDetailReturn.firstReadable_ms": { p75: 250, p95: 500 },
   "web.sync.secondDeviceCommitToReadable_ms": { p75: 500, p95: 1000 }
+});
+const OPENING_BUDGET = Object.freeze({
+  firstContentfulPaintMs: 250,
+  readyToCompleteMs: 140,
+  uiPreferenceRequests: 1
 });
 const NETWORK_PROFILE = Object.freeze({
   name: "fixed-fast-4g",
@@ -70,7 +75,10 @@ function attribute(tag, name) {
 async function blockingStyleClosure(html) {
   const pending = [...html.matchAll(/<link\b[^>]*>/gi)]
     .map(match => match[0])
-    .filter(tag => attribute(tag, "rel").split(/\s+/).includes("stylesheet"))
+    .filter(tag => (
+      attribute(tag, "rel").split(/\s+/).includes("stylesheet")
+      && attribute(tag, "media").toLowerCase() !== "print"
+    ))
     .map(tag => attribute(tag, "href"))
     .filter(Boolean);
   const assets = new Set();
@@ -89,24 +97,33 @@ async function blockingStyleClosure(html) {
   return { assets: [...assets].sort(), bytes };
 }
 
-const moduleDependencies = source => [
-  ...source.matchAll(/\b(?:import|export)\s+(?:[^"'`;]*?\s+from\s*)?["']([^"']+)["']/g)
+const moduleDependencies = (source, { includeDynamic = false } = {}) => [
+  ...source.matchAll(/\b(?:import|export)\s+(?:[^"'`;]*?\s+from\s*)?["']([^"']+)["']/g),
+  ...(includeDynamic ? source.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g) : [])
 ].map(match => match[1]);
 
-async function moduleClosure(entry) {
-  const pending = [entry];
+async function moduleClosure(entry, { includeEntryDynamic = false } = {}) {
+  const entries = Array.isArray(entry) ? entry : [entry];
+  const pending = entries.map((asset, index) => ({
+    asset,
+    includeDynamic: includeEntryDynamic && index === 0
+  }));
   const assets = new Set();
   let bytes = 0;
 
   while (pending.length) {
-    const asset = normalizeAsset(pending.pop());
+    const candidate = pending.pop();
+    const asset = normalizeAsset(candidate.asset);
     if (assets.has(asset)) continue;
     assets.add(asset);
     const source = await fs.readFile(publicFile(asset), "utf8");
     bytes += await fileBytes(asset);
-    for (const specifier of moduleDependencies(source)) {
+    for (const specifier of moduleDependencies(source, { includeDynamic: candidate.includeDynamic })) {
       if (!specifier.startsWith(".")) continue;
-      pending.push(path.posix.join(path.posix.dirname(asset), specifier));
+      pending.push({
+        asset: path.posix.join(path.posix.dirname(asset), specifier),
+        includeDynamic: false
+      });
     }
   }
   return { assets: [...assets].sort(), bytes };
@@ -235,6 +252,8 @@ async function createTestServer() {
   const requestWaiters = new Set();
   let incrementalSync = false;
   let syncCursor = 0;
+  let startupBarrier = null;
+  let startupFailures = 0;
   const notifyRequest = entry => {
     requests.push(entry);
     for (const waiter of requestWaiters) {
@@ -278,18 +297,26 @@ async function createTestServer() {
       if (url.pathname === "/api/auth/me") {
         result = json(request, response, { authenticated: true, authRequired: true, user, userCount: 1 });
       } else if (url.pathname === "/api/v1/startup") {
-        result = json(request, response, v1({
-          protocolVersion: 1,
-          version: "web-budget",
-          releaseVersion: "0.5.7",
-          user,
-          capabilities: ["local-testing"],
-          features: { incrementalSync },
-          governanceUrl: "",
-          accountCursor: syncCursor,
-          notificationUnread: 0,
-          onboardingV2
-        }));
+        if (startupBarrier) await startupBarrier.promise;
+        if (startupFailures > 0) {
+          startupFailures -= 1;
+          result = json(request, response, {
+            error: { code: "OPENING_TEST_FAILURE", message: "Opening integration startup failure" }
+          }, { status: 503 });
+        } else {
+          result = json(request, response, v1({
+            protocolVersion: 1,
+            version: "web-budget",
+            releaseVersion: "0.5.7",
+            user,
+            capabilities: ["local-testing"],
+            features: { incrementalSync },
+            governanceUrl: "",
+            accountCursor: syncCursor,
+            notificationUnread: 0,
+            onboardingV2
+          }));
+        }
       } else if (url.pathname === "/api/v1/route-state") {
         result = json(request, response, v1(routeStateProjection(clientState, {
           view: url.searchParams.get("view") || "today",
@@ -385,6 +412,22 @@ async function createTestServer() {
   return {
     baseUrl: `http://127.0.0.1:${server.address().port}`,
     requests,
+    holdStartup() {
+      if (startupBarrier) throw new Error("Startup is already held");
+      let release;
+      const promise = new Promise(resolve => {
+        release = resolve;
+      });
+      startupBarrier = { promise, release };
+    },
+    releaseStartup() {
+      const barrier = startupBarrier;
+      startupBarrier = null;
+      barrier?.release();
+    },
+    failNextStartup(count = 1) {
+      startupFailures += Math.max(1, Number.parseInt(count, 10) || 1);
+    },
     setIncrementalSync(value) {
       incrementalSync = Boolean(value);
     },
@@ -540,24 +583,29 @@ async function createBrowserGate(baseUrl) {
     await cdp.send("Emulation.setDeviceMetricsOverride", VIEWPORT);
     await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
       source: `
-        delete Navigator.prototype.serviceWorker;
-        addEventListener("DOMContentLoaded", () => {
-          const check = () => {
-            const active = document.querySelector(".view.active");
-            const heading = active?.querySelector("h1");
-            if (document.documentElement.dataset.bootstrapVisible === "1"
-              && !document.body.classList.contains("auth-locked")
-              && active
-              && getComputedStyle(active).display !== "none"
-              && heading?.textContent.trim()) {
-              window.__currentScreenFeedback = Number(performance.now().toFixed(1));
-              observer.disconnect();
+        (() => {
+          const trace = { states: [], animations: [] };
+          window.__openingTrace = trace;
+          const nativeSetAttribute = Element.prototype.setAttribute;
+          Element.prototype.setAttribute = function(name, value) {
+            const result = nativeSetAttribute.call(this, name, value);
+            if (this.id === "opening-screen" && name === "data-opening-state") {
+              trace.states.push({ state: String(value), at: Number(performance.now().toFixed(1)) });
             }
+            return result;
           };
-          const observer = new MutationObserver(check);
-          observer.observe(document.body, { attributes: true, attributeFilter: ["class"], subtree: true });
-          check();
-        }, { once: true });
+          const nativeAnimate = Element.prototype.animate;
+          Element.prototype.animate = function(frames, options) {
+            if (this.id === "opening-screen") {
+              trace.animations.push({
+                at: Number(performance.now().toFixed(1)),
+                duration: Number(typeof options === "number" ? options : options?.duration) || 0
+              });
+            }
+            return nativeAnimate.call(this, frames, options);
+          };
+        })();
+        delete Navigator.prototype.serviceWorker;
       `
     });
     const evaluate = async expression => {
@@ -663,6 +711,7 @@ const mediaPath = value => (
   || value === "/api/speech/audio"
   || /\.(?:m4a|mp3|mp4|ogg|wav|webm)(?:$|\?)/i.test(value)
 );
+const uiPreferencePath = value => value === "/api/preferences" || /(?:^|\/)ui-preferences(?:\/|$)/.test(value);
 
 function sampleEvidence(server, sample) {
   const requests = server.requests.filter(item => item.sample === sample && !["HEAD", "OPTIONS"].includes(item.method));
@@ -680,6 +729,7 @@ function sampleEvidence(server, sample) {
     routeJsonDecodedBytes: route?.rawBytes || 0,
     mediaBeforeClickTransferBytes: sum(requests.filter(item => mediaPath(item.path)).map(item => item.transferBytes)),
     routeJsonContentEncoding: route?.contentEncoding || "",
+    uiPreferenceRequestCount: requests.filter(item => uiPreferencePath(item.path)).length,
     requestPaths: requests.map(item => item.path)
   };
 }
@@ -695,14 +745,23 @@ async function startupSample(browser, server, sample, { cacheDisabled, clearCach
   });
   const browserEvidence = await browser.evaluate(`(() => {
     const navigation = performance.getEntriesByType("navigation")[0];
+    const firstContentfulPaint = performance.getEntriesByName("first-contentful-paint").at(-1);
+    const openingComplete = performance.getEntriesByName("openingExitComplete").at(-1);
+    const openingPainted = performance.getEntriesByName("openingExitPainted").at(-1);
     const text = document.querySelector("#startup-performance-metric").textContent.replace(/^启动分段 /, "");
     const startup = JSON.parse(text);
     return {
       dclMs: Number(navigation.domContentLoadedEventEnd.toFixed(1)),
-      currentScreenFeedbackMs: Number(window.__currentScreenFeedback),
+      currentScreenFeedbackMs: Number(firstContentfulPaint?.startTime.toFixed(1)),
+      openingCompleteMs: Number(openingComplete?.startTime.toFixed(1)),
+      openingPaintedMs: Number(openingPainted?.startTime.toFixed(1)),
+      firstReadableMs: Number(openingPainted?.startTime.toFixed(1)),
       stableHomeMs: Number(startup.marks.stableHome),
       visibleShellMs: Number(startup.marks.visibleShell),
-      domNodes: document.getElementsByTagName("*").length
+      domNodes: document.getElementsByTagName("*").length,
+      openingHidden: document.querySelector("#opening-screen")?.hidden === true,
+      contentReleased: !document.querySelector("main")?.inert,
+      routeReadable: Boolean(document.querySelector(".view.active h1")?.textContent.trim())
     };
   })()`);
   return { ...browserEvidence, ...sampleEvidence(server, sample) };
@@ -713,6 +772,13 @@ function startupContractFailures(result) {
   const fail = (condition, detail) => {
     if (!condition) failures.push(`${result.sample}: ${detail}`);
   };
+  fail(Number.isFinite(result.currentScreenFeedbackMs), "first-contentful-paint is missing");
+  fail(Number.isFinite(result.openingCompleteMs), "opening completion mark is missing");
+  fail(Number.isFinite(result.openingPaintedMs), "opening post-paint mark is missing");
+  fail(Number.isFinite(result.firstReadableMs), "first-readable mark is missing");
+  fail(Number.isFinite(result.stableHomeMs), "stableHome mark is missing");
+  fail(result.stableHomeMs >= result.openingPaintedMs, "stableHome was recorded before opening exit was painted");
+  fail(result.openingHidden && result.contentReleased && result.routeReadable, "first-readable state is still covered or inert");
   fail(
     result.startupJsonDecodedBytes <= HTTP_BUDGET.startupJsonDecodedBytes,
     `startup JSON ${result.startupJsonDecodedBytes} B > ${HTTP_BUDGET.startupJsonDecodedBytes} B`
@@ -742,6 +808,10 @@ function startupContractFailures(result) {
   const onboardingSessionCount = result.requestPaths
     .filter(value => value === "/api/v1/onboarding-v2/session").length;
   fail(onboardingSessionCount === 0, `/api/v1/onboarding-v2/session request count ${onboardingSessionCount}, expected 0`);
+  fail(
+    result.uiPreferenceRequestCount <= OPENING_BUDGET.uiPreferenceRequests,
+    `UI preference request count ${result.uiPreferenceRequestCount} > ${OPENING_BUDGET.uiPreferenceRequests}`
+  );
   return failures;
 }
 
@@ -772,8 +842,36 @@ async function browserDiagnostics(browser, server, error) {
 const gateStartedAt = performance.now();
 const html = await fs.readFile(publicFile("index.html"), "utf8");
 const styles = await blockingStyleClosure(html);
-const modules = await moduleClosure("app.js");
+const modulePreloads = [...html.matchAll(/<link\b[^>]*>/gi)]
+  .map(match => match[0])
+  .filter(tag => attribute(tag, "rel").split(/\s+/).includes("modulepreload"))
+  .map(tag => attribute(tag, "href"))
+  .filter(Boolean);
+const modules = await moduleClosure(["app.js", ...modulePreloads], { includeEntryDynamic: true });
 const deferredRuntime = await moduleClosure("frontend/app/runtime.mjs");
+const openingCriticalStyleIndex = html.indexOf('<style id="opening-critical-style">');
+const applicationStyleLoadIndex = html.indexOf('rel="preload" href="frontend/styles/application.css"');
+const openingShellIndex = html.indexOf('id="opening-screen"');
+const authGateIndex = html.indexOf('id="auth-gate"');
+const openingShellTag = html.match(/<div\b[^>]*\bid="opening-screen"[^>]*>/i)?.[0] || "";
+
+assert.ok(openingCriticalStyleIndex >= 0, "opening critical CSS must be inline");
+assert.ok(
+  openingCriticalStyleIndex < applicationStyleLoadIndex,
+  "opening critical CSS must precede application style loading"
+);
+assert.ok(openingShellIndex >= 0, "opening shell must be parser-visible HTML");
+assert.ok(openingShellIndex < authGateIndex, "opening shell must precede application DOM");
+assert.match(openingShellTag, /\baria-busy="true"/);
+assert.doesNotMatch(openingShellTag, /\bhidden\b/);
+for (const asset of [
+  "frontend/app/bootstrap.mjs",
+  "frontend/opening/index.mjs",
+  "frontend/opening/controller.mjs",
+  "frontend/opening/rain-engine.mjs"
+]) {
+  assert.ok(modules.assets.includes(asset), `entry module budget must include ${asset}`);
+}
 
 assert.ok(
   styles.assets.length <= ASSET_BUDGET.blockingStyleRequests,
@@ -829,6 +927,199 @@ try {
   assert.equal((await mediaHead.arrayBuffer()).byteLength, 0);
 
   browser = await createBrowserGate(testServer.baseUrl);
+  const deepLinkSample = "opening-held-deep-link";
+  await browser.setSample(deepLinkSample);
+  await browser.cdp.send("Network.setCacheDisabled", { cacheDisabled: true });
+  await browser.cdp.send("Network.clearBrowserCache");
+  testServer.holdStartup();
+  let heldOpening;
+  try {
+    await browser.navigate(`${testServer.baseUrl}/thoughts/performance-thought-1`);
+    await browser.waitForCondition({
+      label: "opening first contentful paint",
+      timeoutMs: 2000,
+      condition: `Boolean(document.documentElement.dataset.openingVisible)`
+    });
+    heldOpening = await browser.evaluate(`(() => {
+      const root = document.querySelector("#opening-screen");
+      const firstContentfulPaint = performance.getEntriesByName("first-contentful-paint").at(-1);
+      return {
+        parsedMs: Number(document.documentElement.dataset.openingParsed),
+        markerVisibleMs: Number(document.documentElement.dataset.openingVisible),
+        firstContentfulPaintMs: Number(firstContentfulPaint?.startTime.toFixed(1)),
+        paintEntries: performance.getEntriesByType("paint").map(entry => ({
+          name: entry.name,
+          startTime: Number(entry.startTime.toFixed(1))
+        })),
+        firstBodyElement: document.body.firstElementChild?.id || "",
+        state: root?.dataset.openingState || "",
+        hidden: Boolean(root?.hidden),
+        busy: root?.getAttribute("aria-busy") || "",
+        mainInert: Boolean(document.querySelector("main")?.inert),
+        sidebarInert: Boolean(document.querySelector(".sidebar")?.inert),
+        authGateInert: Boolean(document.querySelector("#auth-gate")?.inert),
+        path: location.pathname
+      };
+    })()`);
+  } finally {
+    testServer.releaseStartup();
+  }
+  assert.ok(
+    Number.isFinite(heldOpening.firstContentfulPaintMs),
+    `opening first-contentful-paint missing: ${JSON.stringify(heldOpening.paintEntries)}`
+  );
+  assert.ok(
+    heldOpening.firstContentfulPaintMs <= OPENING_BUDGET.firstContentfulPaintMs,
+    `opening first-contentful-paint ${heldOpening.firstContentfulPaintMs}ms > ${OPENING_BUDGET.firstContentfulPaintMs}ms`
+  );
+  assert.ok(heldOpening.parsedMs <= heldOpening.firstContentfulPaintMs);
+  assert.deepEqual(
+    {
+      firstBodyElement: heldOpening.firstBodyElement,
+      state: heldOpening.state,
+      hidden: heldOpening.hidden,
+      busy: heldOpening.busy,
+      mainInert: heldOpening.mainInert,
+      sidebarInert: heldOpening.sidebarInert,
+      authGateInert: heldOpening.authGateInert,
+      path: heldOpening.path
+    },
+    {
+      firstBodyElement: "opening-screen",
+      state: "opening",
+      hidden: false,
+      busy: "true",
+      mainInert: true,
+      sidebarInert: true,
+      authGateInert: true,
+      path: "/thoughts/performance-thought-1"
+    }
+  );
+  await browser.waitForCondition({
+    label: "opening deep-link completion",
+    condition: `document.querySelector("#opening-screen")?.dataset.openingState === "complete"
+      && document.querySelector("#opening-screen").hidden
+      && location.pathname === "/thoughts/performance-thought-1"
+      && document.querySelector('#all-thoughts [data-chain-id="performance-thought-1"]')?.open`
+  });
+  const deepLinkOpening = await browser.evaluate(`(() => {
+    const trace = window.__openingTrace;
+    const entering = trace.states.find(entry => entry.state === "entering");
+    const complete = trace.states.find(entry => entry.state === "complete");
+    return {
+      states: trace.states.map(entry => entry.state),
+      animationDurationMs: trace.animations[0]?.duration ?? 0,
+      readyToCompleteMs: entering && complete ? Number((complete.at - entering.at).toFixed(1)) : null,
+      rootHidden: document.querySelector("#opening-screen").hidden,
+      contentReleased: [
+        document.querySelector("main"),
+        document.querySelector(".sidebar"),
+        document.querySelector("#auth-gate")
+      ].every(node => !node.inert),
+      activeView: document.querySelector(".view.active")?.id || "",
+      path: location.pathname
+    };
+  })()`);
+  assert.deepEqual(deepLinkOpening.states.slice(-3), ["opening", "entering", "complete"]);
+  assert.ok(deepLinkOpening.animationDurationMs <= OPENING_BUDGET.readyToCompleteMs);
+  assert.ok(
+    deepLinkOpening.readyToCompleteMs <= OPENING_BUDGET.readyToCompleteMs,
+    `opening ready-to-complete ${deepLinkOpening.readyToCompleteMs}ms > ${OPENING_BUDGET.readyToCompleteMs}ms`
+  );
+  assert.deepEqual(
+    {
+      rootHidden: deepLinkOpening.rootHidden,
+      contentReleased: deepLinkOpening.contentReleased,
+      activeView: deepLinkOpening.activeView,
+      path: deepLinkOpening.path
+    },
+    {
+      rootHidden: true,
+      contentReleased: true,
+      activeView: "view-thoughts",
+      path: "/thoughts/performance-thought-1"
+    }
+  );
+  assert.ok(
+    sampleEvidence(testServer, deepLinkSample).uiPreferenceRequestCount <= OPENING_BUDGET.uiPreferenceRequests
+  );
+
+  const retrySample = "opening-retry";
+  testServer.failNextStartup();
+  await browser.setSample(retrySample);
+  await browser.navigate(`${testServer.baseUrl}/seen/captures`);
+  await browser.waitForCondition({
+    label: "opening failure recovery",
+    condition: `document.querySelector("#opening-screen")?.dataset.openingState === "failure"
+      && !document.querySelector("#opening-recovery").hidden`
+  });
+  assert.deepEqual(
+    await browser.evaluate(`(() => ({
+      path: location.pathname,
+      mainInert: document.querySelector("main").inert,
+      retryFocused: document.activeElement === document.querySelector("#opening-retry"),
+      retryDisabled: document.querySelector("#opening-retry").disabled
+    }))()`),
+    { path: "/seen/captures", mainInert: true, retryFocused: true, retryDisabled: false }
+  );
+  const retryNavigation = browser.cdp.waitForEvent("Page.domContentEventFired", () => true, 10000);
+  await browser.evaluate(`document.querySelector("#opening-retry").click(); true`);
+  await retryNavigation;
+  await browser.waitForCondition({
+    label: "opening retry completion",
+    condition: `document.querySelector("#opening-screen")?.dataset.openingState === "complete"
+      && document.querySelector("#opening-screen").hidden
+      && location.pathname === "/seen/captures"
+      && document.querySelector("#view-captures").classList.contains("active")`
+  });
+  assert.ok(
+    sampleEvidence(testServer, retrySample).uiPreferenceRequestCount <= OPENING_BUDGET.uiPreferenceRequests
+  );
+
+  const reducedMotionSample = "opening-reduced-motion";
+  await browser.cdp.send("Emulation.setEmulatedMedia", {
+    media: "",
+    features: [{ name: "prefers-reduced-motion", value: "reduce" }]
+  });
+  await browser.setSample(reducedMotionSample);
+  await browser.navigate(`${testServer.baseUrl}/today?native-performance=1`);
+  await browser.waitForCondition({
+    label: "opening reduced-motion completion",
+    condition: `document.querySelector("#opening-screen")?.dataset.openingState === "complete"
+      && document.querySelector("#opening-screen").hidden
+      && document.querySelector("#startup-performance-metric")?.textContent.startsWith("启动分段 ")`
+  });
+  const reducedMotionOpening = await browser.evaluate(`(() => {
+    const trace = window.__openingTrace;
+    const entering = trace.states.find(entry => entry.state === "entering");
+    const complete = trace.states.find(entry => entry.state === "complete");
+    const transitionElapsedMs = entering && complete
+      ? Number((complete.at - entering.at).toFixed(1))
+      : null;
+    return {
+      reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
+      animationCount: trace.animations.length,
+      readyToCompleteMs: trace.animations.length ? transitionElapsedMs : 0,
+      brandAnimation: getComputedStyle(document.querySelector(".opening-brand")).animationName,
+      contentReleased: [
+        document.querySelector("main"),
+        document.querySelector(".sidebar"),
+        document.querySelector("#auth-gate")
+      ].every(node => !node.inert)
+    };
+  })()`);
+  assert.deepEqual(reducedMotionOpening, {
+    reduced: true,
+    animationCount: 0,
+    readyToCompleteMs: 0,
+    brandAnimation: "none",
+    contentReleased: true
+  });
+  assert.ok(
+    sampleEvidence(testServer, reducedMotionSample).uiPreferenceRequestCount <= OPENING_BUDGET.uiPreferenceRequests
+  );
+  await browser.cdp.send("Emulation.setEmulatedMedia", { media: "", features: [] });
+
   const cold = [];
   for (let index = 1; index <= SAMPLE_COUNT; index += 1) {
     cold.push(await startupSample(browser, testServer, `startup-cold-${index}`, {
@@ -934,7 +1225,7 @@ try {
       TIMING_BUDGET["web.startup.coldCache.currentScreenFeedback_ms"]
     ),
     "web.startup.coldCache.firstReadable_ms": distribution(
-      cold.map(item => item.stableHomeMs),
+      cold.map(item => item.firstReadableMs),
       "ms",
       TIMING_BUDGET["web.startup.coldCache.firstReadable_ms"]
     ),
@@ -944,10 +1235,12 @@ try {
       TIMING_BUDGET["web.startup.warmCache.currentScreenFeedback_ms"]
     ),
     "web.startup.warmCache.firstReadable_ms": distribution(
-      warm.map(item => item.stableHomeMs),
+      warm.map(item => item.firstReadableMs),
       "ms",
       TIMING_BUDGET["web.startup.warmCache.firstReadable_ms"]
     ),
+    "web.startup.coldCache.stableHome_ms": distribution(cold.map(item => item.stableHomeMs), "ms"),
+    "web.startup.warmCache.stableHome_ms": distribution(warm.map(item => item.stableHomeMs), "ms"),
     "web.navigation.routeSwitch.firstReadable_ms": distribution(
       routeSwitchMs,
       "ms",
@@ -1012,7 +1305,7 @@ try {
       network: NETWORK_PROFILE,
       viewport: VIEWPORT,
       serviceWorker: "bypassed",
-      measurementCutoff: "route-specific heading feedback and current scenario DOM readability, not full HAR window"
+      measurementCutoff: "opening visibility for current-screen feedback; opening exit with visible, non-inert route for firstReadable; stableHome reported separately"
     },
     metrics,
     contracts: {
@@ -1026,8 +1319,20 @@ try {
       initialJsonTransferBytesMax: Math.max(...cold.map(item => item.initialJsonTransferBytes)),
       firstReadableRequestsMax: Math.max(...cold.map(item => item.requestCount)),
       firstReadableApiRequestsMax: Math.max(...cold.map(item => item.apiRequestCount)),
+      uiPreferenceRequestsMax: Math.max(...cold.concat(warm).map(item => item.uiPreferenceRequestCount)),
       forbiddenFullStateRequests: cold.concat(warm).filter(item => item.requestPaths.includes("/api/state")).length,
       mediaBeforeClickTransferBytes,
+      opening: {
+        firstContentfulPaintMs: heldOpening.firstContentfulPaintMs,
+        firstContentfulPaintBudgetMs: OPENING_BUDGET.firstContentfulPaintMs,
+        postPaintMarkerMs: heldOpening.markerVisibleMs,
+        readyToCompleteMs: deepLinkOpening.readyToCompleteMs,
+        readyToCompleteBudgetMs: OPENING_BUDGET.readyToCompleteMs,
+        reducedMotionReadyToCompleteMs: reducedMotionOpening.readyToCompleteMs,
+        deepLink: deepLinkOpening.path,
+        retry: "failure -> reload -> complete",
+        uiPreferenceRequestsMax: OPENING_BUDGET.uiPreferenceRequests
+      },
       gzip: {
         staticText: "gzip + Vary: Accept-Encoding",
         jsonOver1024Bytes: "gzip + private, no-store + Vary: Accept-Encoding",

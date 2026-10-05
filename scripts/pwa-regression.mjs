@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import vm from "node:vm";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const publicPath = (...parts) => path.join(ROOT, "public", ...parts);
@@ -33,9 +34,84 @@ assert.match(html, /rel="apple-touch-icon"[^>]+apple-touch-icon\.png/);
 assert.match(html, /document\.documentElement\.dataset\.runtimeReady\s*===\s*["']1["']/);
 assert.match(html, /setTimeout\(registerWorker,\s*1500\)/);
 assert.match(html, /navigator\.serviceWorker\.register\(["']service-worker\.js["']/);
+assert.match(html, /const releaseLegacyOpening = \(\) =>/);
+assert.match(html, /opening\?\.dataset\.openingState !== "opening"/);
+assert.match(html, /opening\.hidden = true/);
+const openingBootstrapScript = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+  .map(match => match[1])
+  .find(source => source.includes("releaseLegacyOpening"));
+assert.ok(openingBootstrapScript, "缺少旧缓存入口的开屏恢复脚本");
+
+function runLegacyOpeningFallback(openingState) {
+  const opening = {
+    nodeType: 1,
+    hidden: false,
+    dataset: { openingState },
+    attributes: new Set(["aria-busy"]),
+    removeAttribute(name) {
+      this.attributes.delete(name);
+    }
+  };
+  const application = { nodeType: 1, inert: false };
+  const document = {
+    documentElement: { dataset: {} },
+    body: { children: [opening, application] },
+    querySelector: selector => selector === "#opening-screen" ? opening : null
+  };
+  const observers = [];
+  class FakeMutationObserver {
+    constructor(callback) {
+      this.callback = callback;
+      this.disconnected = false;
+      observers.push(this);
+    }
+    observe(target, options) {
+      this.target = target;
+      this.options = options;
+    }
+    disconnect() {
+      this.disconnected = true;
+    }
+  }
+  const marks = new Set();
+  vm.runInNewContext(openingBootstrapScript, {
+    document,
+    MutationObserver: FakeMutationObserver,
+    performance: {
+      now: () => 1,
+      getEntriesByName: name => marks.has(name) ? [{}] : [],
+      mark: name => marks.add(name)
+    },
+    requestAnimationFrame: callback => {
+      callback();
+      return 1;
+    },
+    setTimeout: callback => {
+      callback();
+      return 1;
+    }
+  });
+  assert.equal(application.inert, true);
+  document.documentElement.dataset.runtimeReady = "1";
+  observers.forEach(observer => observer.callback([]));
+  return { opening, application, observers };
+}
+
+const legacyOpening = runLegacyOpeningFallback("opening");
+assert.equal(legacyOpening.opening.hidden, true);
+assert.equal(legacyOpening.opening.dataset.openingState, "complete");
+assert.equal(legacyOpening.opening.attributes.has("aria-busy"), false);
+assert.equal(legacyOpening.application.inert, false);
+assert.equal(legacyOpening.observers.every(observer => observer.disconnected), true);
+const failedOpening = runLegacyOpeningFallback("failure");
+assert.equal(failedOpening.opening.hidden, false);
+assert.equal(failedOpening.opening.dataset.openingState, "failure");
+assert.equal(failedOpening.application.inert, true);
+assert.equal(failedOpening.observers.every(observer => observer.disconnected), true);
 
 const worker = await fs.readFile(publicPath("service-worker.js"), "utf8");
 assert.match(worker, /const CACHE_VERSION\s*=\s*["'][^"']+["']/);
+assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.8-1["']/);
 const assetSet = name => {
   const source = worker.match(new RegExp(`const ${name}\\s*=\\s*\\[([\\s\\S]*?)\\];`))?.[1] || "";
   return new Set([...source.matchAll(/["']([^"']+)["']/g)].map(match => match[1]));
@@ -50,6 +126,10 @@ for (const asset of [
   "app.js",
   "frontend/app/bootstrap.mjs",
   "frontend/app/runtime.mjs",
+  "frontend/opening/config.mjs",
+  "frontend/opening/controller.mjs",
+  "frontend/opening/index.mjs",
+  "frontend/opening/rain-engine.mjs",
   "frontend/sync/index.mjs",
   "frontend/styles/application.css",
   "frontend/styles/r8.css"

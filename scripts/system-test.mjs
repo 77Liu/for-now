@@ -133,6 +133,7 @@ const suites = {
     ["frontend API, session and state contracts", ["scripts/frontend-contract-regression.mjs"]],
     ["durable mutation log and request coordinator", ["scripts/sync-coordinator-regression.mjs"]],
     ["frontend content, time and media contracts", ["scripts/frontend-shared-regression.mjs"]],
+    ["opening lifecycle, rain and cleanup contracts", ["scripts/opening-controller-regression.mjs"]],
     ["frontend application shell and page lifecycle", ["scripts/frontend-shell-regression.mjs"]],
     ["notification entry states and retry interactions", ["scripts/notification-entry-regression.mjs"]],
     ["URL and browser history contracts", ["scripts/url-history-regression.mjs"]],
