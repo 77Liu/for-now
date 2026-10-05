@@ -136,6 +136,8 @@ const suites = {
   ],
   frontend: [
     ["browser application lifecycle", ["scripts/frontend-application-regression.mjs"]],
+    ["browser session, state, sync and shell ports", ["scripts/frontend-app-ports-regression.mjs"]],
+    ["disposable page router lifecycle", ["scripts/page-router-lifecycle-regression.mjs"]],
     ["frontend API, session and state contracts", ["scripts/frontend-contract-regression.mjs"]],
     ["durable mutation log and request coordinator", ["scripts/sync-coordinator-regression.mjs"]],
     ["frontend content, time and media contracts", ["scripts/frontend-shared-regression.mjs"]],

@@ -459,7 +459,7 @@
       "publicEntry": "public/frontend/pages/index.mjs",
       "allowedDependencies": ["frontend.page-catalog"],
       "owns": { "data": ["active view switching, browser history, scroll restoration and disposable page lifecycle dispatch"], "routes": [] },
-      "tests": ["scripts/frontend-shell-regression.mjs", "scripts/ui-regression.mjs", "scripts/mobile-platform-regression.mjs"],
+      "tests": ["scripts/page-router-lifecycle-regression.mjs", "scripts/frontend-shell-regression.mjs", "scripts/ui-regression.mjs", "scripts/mobile-platform-regression.mjs"],
       "status": "active"
     },
     {
@@ -555,6 +555,16 @@
       "status": "active"
     },
     {
+      "id": "frontend.ports",
+      "type": "application",
+      "root": "public/frontend/app/ports.mjs",
+      "publicEntry": "public/frontend/app/ports.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["session generation plus isolated state, sync and shell lifecycle port adapters"], "routes": [] },
+      "tests": ["scripts/frontend-app-ports-regression.mjs"],
+      "status": "active"
+    },
+    {
       "id": "frontend.application",
       "type": "application",
       "root": "public/frontend/app/application.mjs",
@@ -569,7 +579,7 @@
       "type": "application",
       "root": "public/frontend/app",
       "publicEntry": "public/frontend/app/index.mjs",
-      "allowedDependencies": ["frontend.application", "frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.page-catalog", "frontend.pages", "frontend.features", "frontend.feature-registry", "frontend.component.tag-multiselect"],
+      "allowedDependencies": ["frontend.application", "frontend.ports", "frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.page-catalog", "frontend.pages", "frontend.features", "frontend.feature-registry", "frontend.component.tag-multiselect"],
       "owns": { "data": ["browser bootstrap, dependency composition, feature event binding and page presenter runtime"], "routes": [] },
       "tests": ["scripts/frontend-shell-regression.mjs", "scripts/frontend-contract-regression.mjs", "scripts/ui-regression.mjs", "scripts/mobile-platform-regression.mjs"],
       "status": "active"
