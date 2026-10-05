@@ -49,6 +49,7 @@ const suites = {
   backend: [
     ["production environment isolation", ["scripts/system-test.mjs", ISOLATION_PROBE]],
     ["module boundaries", ["scripts/check-modules.mjs"]],
+    ["module boundary checker regression", ["scripts/module-boundary-regression.mjs"]],
     ["entrypoint boundary contracts", ["scripts/entrypoint-boundary-regression.mjs"]],
     ["user journey coverage matrix", ["scripts/user-journey-regression.mjs", "validate"]],
     ["local task commit gate", ["scripts/commit-gate-regression.mjs"]],
@@ -62,6 +63,7 @@ const suites = {
     ["memory soak syntax", ["--check", "scripts/memory-soak.mjs"]],
     ["local test mode syntax", ["--check", "scripts/local-test-mode-regression.mjs"]],
     ["local test launcher syntax", ["--check", "scripts/local-test-preview.mjs"]],
+    ["Store v16 defaults and compatibility normalization", ["scripts/store-normalization-regression.mjs"]],
     ["persistence adapters and migration mapping", ["scripts/persistence-regression.mjs"]],
     ["identity, configuration and attachment migration", ["scripts/document-migration-regression.mjs"]],
     ["thought domain service", ["scripts/thought-service-regression.mjs"]],
@@ -131,6 +133,7 @@ const suites = {
     ["attachment byte range streaming contract", ["scripts/attachment-range-regression.mjs"]]
   ],
   frontend: [
+    ["browser application lifecycle", ["scripts/frontend-application-regression.mjs"]],
     ["frontend API, session and state contracts", ["scripts/frontend-contract-regression.mjs"]],
     ["durable mutation log and request coordinator", ["scripts/sync-coordinator-regression.mjs"]],
     ["frontend content, time and media contracts", ["scripts/frontend-shared-regression.mjs"]],
