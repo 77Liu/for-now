@@ -754,5 +754,10 @@ V0.5.8 只有在以下条件同时成立时才可关闭：
   blocker/P0/P1=`0/0/0`。
 - 当前仍是 G3 部分职责迁移。10 条 server 例外继续在 G4 到期，未放宽
   `server.mjs <= 40`、唯一 runtime factory、真实系统门或 PostgreSQL 条件。
-- 前端 F1a 已建立 application lifecycle，但尚未接入 runtime；下一步为 F1b
-  router/session/state/sync/shell ports，随后推进 B2/F2。
+- 前端 F1a/F1b 已由 `e7d99d6`、`6d74383`、`208cba7`、`48e5d6b`
+  建立 application lifecycle、可回收 router 和 session/state/sync/shell
+  ports；frontend `77626 ms`、Journey Smoke `14/14`、固定 web budget
+  `24 modules / 819195 B` 通过，独立 reviewer blocker/P0/P1=`0/0/0`。
+- ports 与 application 仍有意保持未接线；F2 必须先提供真实 lazy descriptors，
+  再由调度者同批接入 runtime，不能用共享 barrel descriptor 静态假通过。
+  下一步为 B2/F2。

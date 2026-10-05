@@ -119,7 +119,7 @@ V0.5.8 的 14 条需求均关联版本记录 `reczz28JaO7yXu1K`，发布状态�
 | 20 | `reczz28Jd8F4oH1y` | 工作区已验证未部署 | `91a10b7..88d37e1`：同步 HTML 开屏、雨景生命周期、真实 paint 性能门、FCP 后入口、退出/失败/清理、watchdog 锁存及 PWA 升级预算通过 |
 | 02 | `reczz28JPdCVUwBD` | 工作区已验证未部署 | `6730597`：三类真实入口、组合 API/import binding/factory 链、G4/G6 例外和 feature lifecycle 已机器冻结；最终独立复审 GO |
 | 03 | `reczz28JPdCVWPzV` | 进行中 | `f3724c4`、`47d5a39`：B1a/B1b/B1c 的 Store v16 归一化、派生统计和公开投影已离开入口；`server.mjs` 3283→2668 行 |
-| 04 | `reczz28JPdCVXtsA` | 进行中 | `e7d99d6`、`6d74383`：F1a application lifecycle 已冻结但未接 runtime；继续 F1b ports |
+| 04 | `reczz28JPdCVXtsA` | 进行中 | `e7d99d6`、`6d74383`、`208cba7`、`48e5d6b`：F1a/F1b application、可回收 router 与 ports 已冻结；保持未接线，等待 F2 真实 lazy descriptors 后同批接 runtime |
 
 13、15、14、16、20 都是行为修复，已在现有入口上完成并固定自动化反例；
 共享热点由集成负责人串行接线。下一步由 02 以修复后的行为冻结结构契约，
@@ -375,16 +375,17 @@ flowchart TD
   `reczz28JPK4rO6LI` 保持“进行中 / 未发布”，交付
   `reczz28JPdCVUwBD` 已回填“待验收 / 未发布”。
 - `V0.5.8-03/04` 首批 `f3724c4..2989e61` 已完成 B1a、F1a 与门禁强化；
-  `47d5a39` 又完成 B1b/B1c 派生统计与公开状态投影：
-  当前登记 59 个模块、233 条拥有路由，20 条例外绑定入口 SHA；
+  `47d5a39` 完成 B1b/B1c，`208cba7`、`48e5d6b` 完成 F1b：
+  当前登记 61 个模块、233 条拥有路由，20 条例外绑定入口 SHA；
   `server.mjs` 为 2668 行，runtime 仍为 5291 行。B1b/B1c backend
-  `326672 ms` 通过，两个独立 Reviewer blocker/P0/P1=`0/0/0`；首批
-  frontend `80094 ms` 证据保持有效。当前只达到 G3 检查点，
+  `326672 ms`、F1b frontend `77626 ms`、Journey Smoke `14/14` 和最终
+  web budget `24 / 819195 B` 通过，独立 Reviewer blocker/P0/P1=`0/0/0`。
+  当前只达到 G3 检查点，
   `check:entrypoints:g4` 仍会按设计拒绝已到期的 server 例外。
 
 当前未完成：
 
-- 下一步执行 F1b，再按依赖推进 B2/F2；P0 仍按既定依赖推进。
+- 下一步按依赖推进 B2/F2；P0 仍按既定依赖推进。
 - `reczz28Jd8F4nDzn` 仍等待真实 CDN/OSS/DNS/证书/费用授权。
 - 未执行 push、tag、Release、Preview/生产部署或生产写入。
 

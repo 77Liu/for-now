@@ -3,10 +3,10 @@
 - 日期：2026-10-05
 - 起始基线：`f911cde4505d3434ab4afcf4b5614f8e828f4bcc`
 - 当前门禁：`G3`
-- 当前状态：`b1bc-verified`
+- 当前状态：`f1b-verified`
 - 活跃工作树：`5 / 6`
-- 机器事实：3 个入口策略、59 个模块、233 条拥有路由、20 条迁移例外；
-  `server.mjs` 由 3283 行降至 2668 行
+- 机器事实：3 个入口策略、61 个模块、233 条拥有路由、20 条迁移例外；
+  `server.mjs` 由 3283 行降至 2668 行，`runtime.mjs` 仍为 5291 行
 - 授权边界：允许本地代码、测试、文档与任务提交；不允许 push、tag、Release、
   Preview、部署、云资源修改、真实付费调用或生产写入
 
@@ -49,7 +49,7 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 
 | roleId | specialty | activeContext | ownership | dependencies | communications | evidence | status | next |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `orchestrator` | 契约冻结与串行集成 | `47d5a39`；G3 | 共享文件与集成树 | 全部角色 | 固定任务图并处理 blocker | B1a/B1b/B1c、F1a 与门禁强化已集成 | `integrated` | 进入 F1b/B2 |
+| `orchestrator` | 契约冻结与串行集成 | `48e5d6b`；G3 | 共享文件与集成树 | 全部角色 | 固定任务图并处理 blocker | B1a-B1c、F1a/F1b 与门禁强化已集成 | `integrated` | 进入 B2/F2 |
 | `backend-scout` | B1-B7 符号与闭包 | `server.mjs` 3283 行 | 只读 | B1a | 建议 B1a→B1b→B1c | 无生产 runtime 骨架 | `closed` | 移交 B1a |
 | `frontend-scout` | F1-F10 页面与 lifecycle | `runtime.mjs` 5291 行 | 只读 | F1a | 先 application/router disposer | registry 未接线 | `closed` | 移交 F1a |
 | `gate-scout` | G4/G6 与测试真实性 | 20 条例外 | 只读 | C0/I | 报告 policy 冲突与死代码假绿 | G4/G6 按预期失败 | `closed` | 等待复核 |
@@ -61,6 +61,9 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 | `b1bc-secretary` | 第二批依赖与证据账 | `f627eeb` | 只读 | B1b/B1c/I | 固定共享入口单写与串行顺序 | 工作树、G3/G4 和 reviewer 清单 | `closed` | 已写入总账 |
 | `b1b-reviewer` | 统计口径行为等价 | `47d5a39` 前冻结差分 | 只读 | B1b/I | 核对日期、排序、留痕和双实现 | GO，blocker/P0/P1=`0/0/0` | `closed` | F1b 后续复审 |
 | `b1c-reviewer` | 隐私、账户与消费链 | `47d5a39` 前冻结差分 | 只读 | B1c/I | 核对四类消费者、例外 SHA 和 runner | GO，blocker/P0/P1=`0/0/0` | `closed` | F1b 后续复审 |
+| `f1b-router/state/runtime-scouts` | router、ports 与 runtime 闭包 | `4d3efba` | 只读 | F1a | 冻结 disposer、账户代际和 closure 约束 | 3 份闭包/竞态/测试矩阵 | `closed` | 已移交 F1b |
+| `f1b-secretary` | 任务图、预算与证据失效 | `4d3efba` | 只读 | F1b/I | 固定不创建写工作树与 F2 接线条件 | 角色账和 reviewer 清单 | `closed` | 已写入总账 |
+| `f1b-reviewers` | router/ports 独立复审 | `48e5d6b` 前冻结差分 | 只读 | F1b/I | 多轮复现并关闭竞态与夹具假绿 | 最终 GO，blocker/P0/P1=`0/0/0` | `closed` | F2 复审 |
 
 ## 已关闭问题与保留风险
 
@@ -78,8 +81,9 @@ barrel、登记和 package/system runner 均由调度者串行处理。
   `tokenBudget` 继续隐藏。
 - F1a 多轮关闭 pending start、迟到 disposer、reset/stop 重入、cleanup lock、
   直接/异步包装自引用和 timeout 后迟到清理；最终 Reviewer 无 P1。
-- `P0-F1-01`：`createPageRouter` 注册全局监听但没有 disposer，无法满足
-  application stop 和重复启动闭包；留给 F1b。
+- `P0-F1-01` 已关闭：router 构造无浏览器副作用，`start()` 返回周期归属的
+  幂等 disposer；监听、RAF、timer 和 `scrollRestoration` 均可回收，权限拒绝、
+  ABA 导航、同步/异步失败和 stale pop 有专项。
 - `P0-F1-02`：当前 25 个 descriptor 均指向同一 features barrel，尚不是真实
   lazy feature registry。
 - `P0-PWA-01`：当前 Service Worker 预缓存 runtime 与全部 feature 模块；F2
@@ -150,5 +154,24 @@ npm run test:frontend-shell
   `0e637c46dae7275c8f3770175d7bfebf5eb1e16543996973de9c5e208eb5c047`，
   G4 到期条件未放宽或改期。
 
-下一步：F1b router/session/state/sync/shell ports，然后进入 B2/F2；继续由
-调度者单写两个入口。
+## F1b 检查点
+
+- 本地提交：`208cba7`（router/catalog/closure/PWA）和 `48e5d6b`
+  （session/state/sync/shell ports 与专项）。
+- `createPageRouter` 已提供真实 start/disposer；F1b ports 保持未接线，必须等
+  F2 提供真实 lazy descriptors 后与 `createBrowserApplication` 同批接入，
+  不用 25 个共享 barrel descriptor 制造静态假通过。
+- `npm run check`、application/ports/router/contracts/sync/shell/PWA/URL/UI/
+  mobile 全通过；frontend suite `77626 ms`，Journey Smoke `14/14`
+  `63416 ms`。
+- 最终固定条件 web budget `29514 ms` 通过：entry `10 / 61300 B`，
+  deferred runtime `24 / 819195 B`；未提高 `24 modules / 800 KiB` 门。
+- 过程保留三类性能失败样本：两次 `app.js` 比 FCP 早 `16.2 ms / 2.2 ms`，
+  一次 warm firstReadable P75 `750.6 ms > 750 ms`；独立重跑收敛。
+- router/ports 多轮 reviewer 最终 GO，blocker/P0/P1=`0/0/0`。runtime 仍
+  5291 行，10 条 browser 例外继续绑定 SHA
+  `edb425c7d2f1a3cd856463cdf7dd53f181abaeb1001247465fe0170ad7101f46`，
+  G6 条件未放宽。
+
+下一步：B2 本地测试/账户初始化与恢复，以及 F2 低耦合 feature 与真实 lazy
+descriptors；继续由调度者单写两个入口。
