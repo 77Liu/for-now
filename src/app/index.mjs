@@ -86,3 +86,4 @@ export {
   mergeLocalTestCollection,
   normalizeLocalTestControl
 } from "./local-test-control.mjs";
+export { createLocalTestRuntime } from "./local-test-runtime.mjs";
