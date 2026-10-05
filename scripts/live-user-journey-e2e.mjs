@@ -575,7 +575,7 @@ try {
     await screenshot("main-original.png");
   } else if (MODE === "statistics") {
     await switchView("statistics");
-    await waitUntil(`document.querySelectorAll("#ai-service-summary tbody tr").length>=4`, {
+    await waitUntil(`document.querySelectorAll("#ai-service-summary tbody tr").length>=7`, {
       label: "多供应商统计加载"
     });
     result.services = await evaluate(`[...document.querySelectorAll("#ai-service-summary tbody tr")].map(row=>({
@@ -590,9 +590,12 @@ try {
       calls:Number(row.cells[1].textContent)||0
     }))`);
     assert.deepEqual(result.services.map(item=>item.name), [
-      "DeepSeek 模型",
-      "豆包语音",
-      "火山视觉",
+      "DeepSeek 文本",
+      "DeepSeek 图片理解",
+      "豆包语音合成",
+      "豆包语音识别",
+      "火山文字识别",
+      "火山文档解析",
       "阿里云图片分割"
     ]);
     assert.ok(result.modalities.some(item=>item.name==="语音"&&item.calls>0));
