@@ -3,8 +3,8 @@
 计划日期：2026-10-05
 
 状态：`G0-G2` 已通过；Owner 已验收 V0.5.7 `G7` 并允许进入 V0.5.8
-本地开发。`V0.5.8-13/15/14/16` 已完成本地验证，当前执行
-`V0.5.8-20`。
+本地开发。`V0.5.8-13/15/14/16/20` 已完成工作区验证，下一步为
+`V0.5.8-02`；尚未进入 Preview 或发布。
 
 执行依据：`SOP/iteration-planning.md`、`SOP/iteration-retrospective.md`、
 `knowledge/engineering-rules.md`、`knowledge/pre-launch-confirmation.md`、
@@ -35,10 +35,10 @@ V0.5.8 关闭时，以上结果必须同时具备本地候选、Preview、发布
 | 本轮工作树 | `.worktrees/v0.5.8-p00-p0`，分支 `feat/v0.5.8-p00-p0` |
 | 规划前本地 HEAD | `2c20f1822b155e2dcaebecd23cd14a565b74794e` |
 | 数据写源 | PostgreSQL 16.15 |
-| 需求池 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblHW2FjQpyJlSck`，`rev=350 / 238` |
-| 研发交付 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblsidvvCyB8Ty9M`，`rev=109 / 92` |
-| 服务端入口 | `server.mjs` 3,255 行 |
-| 浏览器入口 | `public/frontend/app/runtime.mjs` 5,239 行 |
+| 需求池 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblHW2FjQpyJlSck`，`rev=354 / 238` |
+| 研发交付 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblsidvvCyB8Ty9M`，`rev=113 / 92` |
+| 服务端入口 | `server.mjs` 3,283 行 |
+| 浏览器入口 | `public/frontend/app/runtime.mjs` 5,291 行 |
 | V0.5.7 过程报告 | [`V0.5.7 开发过程与复盘`](v0.5.7-development-process-2026-10-05.md) |
 | 入口拆分设计 | [`V0.5.8 大入口拆分`](entrypoint-decomposition-v0.5.8-2026-10-05.md) |
 | 媒体分发设计 | [`私有 OSS 与 CDN 媒体分发`](77liu-top-private-oss-cdn-delivery-design-2026-10-05.md) |
@@ -116,14 +116,14 @@ V0.5.8 的 14 条需求均关联版本记录 `reczz28JaO7yXu1K`，发布状态�
 | 15 | `reczz28Jd8F4pPqK` | 工作区已验证未部署 | `41b30d8`：列表/详情只渲染各自层级，200% 字体等效视口通过；不改正文含义 |
 | 14 | `reczz28Jd8F4pTH2` | 工作区已验证未部署 | `75e37d9`：首页麦克风在同一手势复用现有捕念录音链；不建立第二套录音状态机 |
 | 16 | `reczz28Jd8F4nPjw` | 工作区已验证未部署 | `1eb61c9`、`a4150e9`、`56337a9`：七类能力统一用量、官方价格版本、预算和明确账单缺口；独立复审无新增问题 |
-| 20 | `reczz28Jd8F4oH1y` | 进行中 | 同步 HTML 开屏、冻结雨景引擎、性能标记和退出/失败/清理 |
-| 02 | `reczz28JPdCVUwBD` | 待开始 | 冻结服务端/浏览器组合 API、生命周期和 `check:entrypoints` |
+| 20 | `reczz28Jd8F4oH1y` | 工作区已验证未部署 | `91a10b7..88d37e1`：同步 HTML 开屏、雨景生命周期、真实 paint 性能门、FCP 后入口、退出/失败/清理、watchdog 锁存及 PWA 升级预算通过 |
+| 02 | `reczz28JPdCVUwBD` | 待开始 | 下一步：冻结服务端/浏览器组合 API、生命周期和 `check:entrypoints` |
 | 03 | `reczz28JPdCVWPzV` | 待开始 | 按 B1-B7 迁移服务端领域，`server.mjs` 成为纯启动入口 |
 | 04 | `reczz28JPdCVXtsA` | 待开始 | 按 F1-F10 迁移浏览器功能，`runtime.mjs` 成为纯组合入口 |
 
-13、15、14、16、20 都是行为修复，先在现有入口上完成并固定自动化反例；共享
-热点由集成负责人串行接线。02 再以修复后的行为冻结结构契约，03/04 可在模块
-内部并行准备，但两个入口只允许单写集成。
+13、15、14、16、20 都是行为修复，已在现有入口上完成并固定自动化反例；
+共享热点由集成负责人串行接线。下一步由 02 以修复后的行为冻结结构契约，
+03/04 可在模块内部并行准备，但两个入口只允许单写集成。
 
 ### 5.2 独立 P0
 
@@ -215,8 +215,8 @@ flowchart TD
     D1 --> D2["✅ 15 层级与字体"]
     D2 --> E["✅ 14 快捷语音"]
     E --> F["✅ 16 费用完整识别"]
-    F --> G["◐ 20 同步开屏与 250ms 门"]
-    G --> H["○ 02 入口契约与结构门"]
+    F --> G["✅ 20 同步开屏与 250ms 门"]
+    G --> H["○ 下一步：02 入口契约与结构门"]
     H --> I["○ 03/04 服务端与浏览器入口迁移"]
   end
   subgraph P0["阶段三｜全部 P0"]
@@ -343,7 +343,8 @@ flowchart TD
 - V0.5.7 事实审计与规则回流提交 `2c20f18`。
 - Base 中 14 条 V0.5.8 需求和 22 条交付的关联与字段回读。
 - CDN 设计、R9.4-F1 配置、开屏 PRD 和原型归档到本工作树。
-- 本计划按生产 `2c395c0` 和当前入口规模重排；Base 当前为 `rev=350/109`。
+- 本计划按生产 `2c395c0` 和当前入口规模重排；Base 当前为需求
+  `rev=354 / 238`、交付 `rev=113 / 92`。
 - `V0.5.8-13@a6a442b` 已通过 Journey Smoke 13/13、浏览器 UI、
   URL/history、frontend shell、mobile platform 与语法检查；思绪页创建、
   取消和提交保持 `/thoughts` 与列表上下文；证据提交为 `372201d`。
@@ -353,10 +354,25 @@ flowchart TD
   权限拒绝、权限等待时关闭、重复点击、草稿恢复和移动布局断言通过。
 - `V0.5.8-16` 已由预算修复 `1eb61c9`、核心计价 `a4150e9` 和统计 UI
   `56337a9` 完成本地验证；实际未知费用按未知调用结算，独立复审无新增问题。
+- `V0.5.8-20` 已由 `91a10b7`、`6384c7c`、`9830564`、`0f163aa`、
+  `b24722b`、`8607cc6` 和 `88d37e1` 完成工作区验证。最终 Fast 4G web gate
+  使用原生 Paint Timing：cold FCP P75/P95 `60/64 ms`，warm `56/60 ms`；
+  cold firstReadable `704.0/704.5 ms`，warm `701.0/716.5 ms`；深链 FCP
+  `84 ms`，`app.js` 请求从 `90.8 ms` 开始，ready 到实际绘制 `114.8 ms`。
+- 最终 `npm run test:system` 在 `88d37e1` 上以 `406996 ms` 全通过；
+  `check`、opening、frontend-shell、PWA、mobile/UI、性能门和 PostgreSQL
+  16.14 兼容门均有通过证据。
+- 性能验证曾有一次环境尾部失败；该失败样本未被隐去，也未计为通过。随后
+  独立重跑收敛；随后复审发现的 FCP 后入口、超时锁存与 secondary 失败覆盖
+  已由 `88d37e1` 关闭。最终独立 reviewer 无 blocker/P0/P1/P2。
+- `V0.5.8-20` 代码与测试截止 SHA 为 `88d37e1`，活跃工作树 `5 / 6`。需求
+  `reczz28Jd7mMoWFW` 与交付 `reczz28Jd8F4oH1y` 均已回填“待验收 /
+  未发布”。完整调度证据见
+  [`V0.5.8-20 多 Agent 调度记录`](multi-agent-coordination-v0.5.8-20-2026-10-05.md)。
 
 当前未完成：
 
-- 当前执行 `V0.5.8-20`；后续入口拆分与 P0 仍按既定依赖推进。
+- 下一步执行 `V0.5.8-02`；后续入口拆分与 P0 仍按既定依赖推进。
 - `reczz28Jd8F4nDzn` 仍等待真实 CDN/OSS/DNS/证书/费用授权。
 - 未执行 push、tag、Release、Preview/生产部署或生产写入。
 
