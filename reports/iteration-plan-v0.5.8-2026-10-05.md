@@ -35,8 +35,8 @@ V0.5.8 关闭时，以上结果必须同时具备本地候选、Preview、发布
 | 本轮工作树 | `.worktrees/v0.5.8-p00-p0`，分支 `feat/v0.5.8-p00-p0` |
 | 规划前本地 HEAD | `2c20f1822b155e2dcaebecd23cd14a565b74794e` |
 | 数据写源 | PostgreSQL 16.15 |
-| 需求池 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblHW2FjQpyJlSck`，`rev=355 / 238` |
-| 研发交付 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblsidvvCyB8Ty9M`，`rev=114 / 92` |
+| 需求池 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblHW2FjQpyJlSck`，`rev=359 / 238` |
+| 研发交付 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblsidvvCyB8Ty9M`，`rev=115 / 92` |
 | 服务端入口 | `server.mjs` 3,283 行 |
 | 浏览器入口 | `public/frontend/app/runtime.mjs` 5,291 行 |
 | V0.5.7 过程报告 | [`V0.5.7 开发过程与复盘`](v0.5.7-development-process-2026-10-05.md) |
@@ -118,8 +118,8 @@ V0.5.8 的 14 条需求均关联版本记录 `reczz28JaO7yXu1K`，发布状态�
 | 16 | `reczz28Jd8F4nPjw` | 工作区已验证未部署 | `1eb61c9`、`a4150e9`、`56337a9`：七类能力统一用量、官方价格版本、预算和明确账单缺口；独立复审无新增问题 |
 | 20 | `reczz28Jd8F4oH1y` | 工作区已验证未部署 | `91a10b7..88d37e1`：同步 HTML 开屏、雨景生命周期、真实 paint 性能门、FCP 后入口、退出/失败/清理、watchdog 锁存及 PWA 升级预算通过 |
 | 02 | `reczz28JPdCVUwBD` | 工作区已验证未部署 | `6730597`：三类真实入口、组合 API/import binding/factory 链、G4/G6 例外和 feature lifecycle 已机器冻结；最终独立复审 GO |
-| 03 | `reczz28JPdCVWPzV` | 待开始 | 按 B1-B7 迁移服务端领域，`server.mjs` 成为纯启动入口 |
-| 04 | `reczz28JPdCVXtsA` | 待开始 | 按 F1-F10 迁移浏览器功能，`runtime.mjs` 成为纯组合入口 |
+| 03 | `reczz28JPdCVWPzV` | 进行中 | `f3724c4`：B1a Store v16 默认值、兼容归一化和商业化迁移已离开入口；`server.mjs` 3283→2866 行 |
+| 04 | `reczz28JPdCVXtsA` | 进行中 | `e7d99d6`、`6d74383`：F1a application lifecycle 已冻结但未接 runtime；继续 F1b ports |
 
 13、15、14、16、20 都是行为修复，已在现有入口上完成并固定自动化反例；
 共享热点由集成负责人串行接线。下一步由 02 以修复后的行为冻结结构契约，
@@ -344,7 +344,7 @@ flowchart TD
 - Base 中 14 条 V0.5.8 需求和 22 条交付的关联与字段回读。
 - CDN 设计、R9.4-F1 配置、开屏 PRD 和原型归档到本工作树。
 - 本计划按生产 `2c395c0` 和当前入口规模重排；Base 当前为需求
-  `rev=355 / 238`、交付 `rev=114 / 92`。
+  `rev=359 / 238`、交付 `rev=115 / 92`。
 - `V0.5.8-13@a6a442b` 已通过 Journey Smoke 13/13、浏览器 UI、
   URL/history、frontend shell、mobile platform 与语法检查；思绪页创建、
   取消和提交保持 `/thoughts` 与列表上下文；证据提交为 `372201d`。
@@ -374,10 +374,15 @@ flowchart TD
   runtime 闭包仍为 `24 / 815481 B`；独立 Reviewer 最终 GO。整体需求
   `reczz28JPK4rO6LI` 保持“进行中 / 未发布”，交付
   `reczz28JPdCVUwBD` 已回填“待验收 / 未发布”。
+- `V0.5.8-03/04` 首批 `f3724c4..2989e61` 已完成 B1a、F1a 与门禁强化：
+  当前登记 59 个模块、233 条拥有路由，20 条例外绑定入口 SHA；
+  `server.mjs` 为 2866 行，runtime 仍为 5291 行。backend `405823 ms`、
+  frontend `80094 ms` 通过，最终 Reviewer GO。当前只达到 G3 检查点，
+  `check:entrypoints:g4` 会按设计拒绝已到期的 server 例外。
 
 当前未完成：
 
-- 下一步执行 `V0.5.8-03/04` 服务端与浏览器入口迁移；P0 仍按既定依赖推进。
+- 下一步执行 B1b/B1c 与 F1b，再按依赖推进 B2/F2；P0 仍按既定依赖推进。
 - `reczz28Jd8F4nDzn` 仍等待真实 CDN/OSS/DNS/证书/费用授权。
 - 未执行 push、tag、Release、Preview/生产部署或生产写入。
 
