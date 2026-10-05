@@ -154,10 +154,34 @@ const upstream = http.createServer(async (request, response) => {
   if (url.pathname === "/api/keepsakes/remote-keepsake/original" && request.method === "GET") {
     return response.end(JSON.stringify({ originalPath: remoteKeepsakeOriginal }));
   }
-  if (url.pathname.startsWith("/attachments/") && request.method === "GET") {
+  if (url.pathname.startsWith("/attachments/") && ["GET", "HEAD"].includes(request.method)) {
     if (upstreamAttachmentDelayMs) await new Promise(resolve => setTimeout(resolve, upstreamAttachmentDelayMs));
+    const body = Buffer.from(`remote-image:${url.pathname}`);
     response.setHeader("content-type", url.pathname.endsWith(".webp") ? "image/webp" : "image/png");
-    return response.end(Buffer.from(`remote-image:${url.pathname}`));
+    response.setHeader("accept-ranges", "bytes");
+    response.setHeader("etag", "\"fixture\"");
+    const ifRange = String(request.headers["if-range"] || "");
+    const range = ifRange && ifRange !== "\"fixture\""
+      ? null
+      : /^bytes=(\d+)-(\d*)$/.exec(String(request.headers.range || ""));
+    if (range) {
+      const start = Number(range[1]), end = range[2] ? Number(range[2]) : body.length - 1;
+      if (start >= body.length || end < start) {
+        response.writeHead(416, {
+          "content-range": `bytes */${body.length}`,
+          "content-length": "0"
+        });
+        return response.end();
+      }
+      const chunk = body.subarray(start, Math.min(end + 1, body.length));
+      response.writeHead(206, {
+        "content-range": `bytes ${start}-${start + chunk.length - 1}/${body.length}`,
+        "content-length": String(chunk.length)
+      });
+      return response.end(request.method === "HEAD" ? undefined : chunk);
+    }
+    response.setHeader("content-length", String(body.length));
+    return response.end(request.method === "HEAD" ? undefined : body);
   }
   response.writeHead(405);
   response.end(JSON.stringify({ error: "upstream write rejected" }));
@@ -312,6 +336,34 @@ try {
   const attachment = await fetch(`${base}/attachments/remote.png`, { headers: { cookie } });
   assert.equal(attachment.status, 200);
   assert.equal(Buffer.from(await attachment.arrayBuffer()).toString(), "remote-image:/attachments/remote.png");
+  assert.equal(attachment.headers.get("accept-ranges"), "bytes");
+  const attachmentRange = await fetch(`${base}/attachments/remote.png`, {
+    headers: { cookie, range: "bytes=0-5", "if-range": "\"fixture\"" }
+  });
+  assert.equal(attachmentRange.status, 206);
+  assert.equal(attachmentRange.headers.get("content-range"), "bytes 0-5/36");
+  assert.equal(attachmentRange.headers.get("content-length"), "6");
+  assert.equal(Buffer.from(await attachmentRange.arrayBuffer()).toString(), "remote");
+  const staleIfRange = await fetch(`${base}/attachments/remote.png`, {
+    headers: { cookie, range: "bytes=0-5", "if-range": "\"stale\"" }
+  });
+  assert.equal(staleIfRange.status, 200);
+  assert.equal(staleIfRange.headers.get("etag"), "\"fixture\"");
+  assert.equal(Buffer.from(await staleIfRange.arrayBuffer()).toString(), "remote-image:/attachments/remote.png");
+  const attachmentHead = await fetch(`${base}/attachments/remote.png`, {
+    method: "HEAD",
+    headers: { cookie }
+  });
+  assert.equal(attachmentHead.status, 200);
+  assert.equal(attachmentHead.headers.get("content-length"), "36");
+  assert.equal((await attachmentHead.arrayBuffer()).byteLength, 0);
+  const attachmentUnsatisfied = await fetch(`${base}/attachments/remote.png`, {
+    headers: { cookie, range: "bytes=1000-" }
+  });
+  assert.equal(attachmentUnsatisfied.status, 416);
+  assert.equal(attachmentUnsatisfied.headers.get("content-range"), "bytes */36");
+  assert.equal(attachmentUnsatisfied.headers.get("accept-ranges"), "bytes");
+  assert.equal(attachmentUnsatisfied.headers.get("content-length"), "0");
   const keepsakeMediaPaths = [
     remoteKeepsakeOriginal,
     remoteKeepsake.thumbPath,
@@ -325,7 +377,7 @@ try {
     assert.equal(Buffer.from(await response.arrayBuffer()).toString(), `remote-image:${resourcePath}`);
   }
   const lazyAttachmentCalls = upstreamCalls.filter(call => call.path.startsWith("/attachments/")).length;
-  assert.equal(lazyAttachmentCalls, 1 + keepsakeMediaPaths.length);
+  assert.equal(lazyAttachmentCalls, 5 + keepsakeMediaPaths.length);
 
   const blockedRegistration = await jsonRequest(`${base}/api/auth/register`, {
     method: "POST",
@@ -389,7 +441,10 @@ try {
   assert.equal(wrongAccount.body.code, "LOCAL_TEST_MAIN_ACCOUNT_REQUIRED");
 
   assert.equal(upstreamCalls.filter(call => call.path === "/api/state").every(call => call.method === "GET"), true);
-  assert.equal(upstreamCalls.filter(call => !call.path.startsWith("/api/auth/")).every(call => call.method === "GET"), true);
+  assert.equal(upstreamCalls.filter(call => !call.path.startsWith("/api/auth/")).every(call => (
+    call.method === "GET"
+    || (call.method === "HEAD" && call.path.startsWith("/attachments/"))
+  )), true);
   assert.equal(upstreamCalls.filter(call => [
     "/api/state",
     "/api/v1/captures",

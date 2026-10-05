@@ -266,8 +266,8 @@
       "root": "src/app",
       "publicEntry": "src/app/index.mjs",
       "allowedDependencies": ["domain.annotations", "domain.tasks", "domain.notifications", "domain.trash", "domain.onboarding", "domain.user-model", "domain.health", "domain.thoughts", "domain.captures", "domain.journals", "domain.books", "domain.quotes", "domain.chats", "domain.reviews", "domain.content-attachments", "domain.ai", "domain.keepsakes", "shared.time", "shared.attachments", "shared.content", "shared.validation", "shared.prompts", "shared.speech"],
-      "owns": { "data": ["Store v16 defaults, compatibility normalization and commercialization migration", "cross-domain derived thought clusters, trend/association insights and user-trace metrics", "role-aware public Store projection, recursive owner metadata filtering and provider capability snapshots", "cross-domain annotation resource resolution and transactional background AI orchestration", "trash location resolution, versioned restore and durable attachment cleanup orchestration", "cross-domain personal context, source receipts, token budgets, activity selection and thought answer prompt composition", "thought chain creation/task transaction, draft/starter generation and foreground answer idempotency", "capture/journal, library and review/chat application workflows", "account-private capture, thought-answer and thought-chain speech cache keys, source invalidation and attachment lifecycle orchestration", "explicit hash-confirmed historical keepsake media migration", "version-bound onboarding claim extraction preparation and candidate task persistence", "bounded startup and current-route projections"], "routes": [] },
-      "tests": ["scripts/store-normalization-regression.mjs", "scripts/derived-statistics-regression.mjs", "scripts/public-state-regression.mjs", "scripts/ai-budget-runtime-regression.mjs", "scripts/personal-context-regression.mjs", "scripts/onboarding-v2-regression.mjs", "scripts/user-model-extraction-regression.mjs", "scripts/trash-regression.mjs", "scripts/collaboration-regression.mjs", "scripts/capture-journal-regression.mjs", "scripts/capture-transcription-regression.mjs", "scripts/speech-cache-regression.mjs", "scripts/volcengine-server-regression.mjs", "scripts/library-regression.mjs", "scripts/reviews-chat-regression.mjs", "scripts/keepsake-media-migration-regression.mjs", "scripts/startup-projection-regression.mjs", "scripts/regression.mjs", "scripts/api-v1-contract-regression.mjs", "scripts/auth-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
+      "owns": { "data": ["Store v16 defaults, compatibility normalization and commercialization migration", "cross-domain derived thought clusters, trend/association insights and user-trace metrics", "role-aware public Store projection, recursive owner metadata filtering and provider capability snapshots", "local-test control normalization, workspace switching, lazy read-only hydration and merge rules", "account-private initialization and ordered startup recovery across local, authenticated and local-test contexts", "cross-domain annotation resource resolution and transactional background AI orchestration", "trash location resolution, versioned restore and durable attachment cleanup orchestration", "cross-domain personal context, source receipts, token budgets, activity selection and thought answer prompt composition", "thought chain creation/task transaction, draft/starter generation and foreground answer idempotency", "capture/journal, library and review/chat application workflows", "account-private capture, thought-answer and thought-chain speech cache keys, source invalidation and attachment lifecycle orchestration", "explicit hash-confirmed historical keepsake media migration", "version-bound onboarding claim extraction preparation and candidate task persistence", "bounded startup and current-route projections"], "routes": [] },
+      "tests": ["scripts/store-normalization-regression.mjs", "scripts/derived-statistics-regression.mjs", "scripts/public-state-regression.mjs", "scripts/local-test-control-regression.mjs", "scripts/account-lifecycle-regression.mjs", "scripts/local-test-runtime-regression.mjs", "scripts/local-test-mode-regression.mjs", "scripts/ai-budget-runtime-regression.mjs", "scripts/personal-context-regression.mjs", "scripts/onboarding-v2-regression.mjs", "scripts/user-model-extraction-regression.mjs", "scripts/trash-regression.mjs", "scripts/collaboration-regression.mjs", "scripts/capture-journal-regression.mjs", "scripts/capture-transcription-regression.mjs", "scripts/speech-cache-regression.mjs", "scripts/volcengine-server-regression.mjs", "scripts/library-regression.mjs", "scripts/reviews-chat-regression.mjs", "scripts/keepsake-media-migration-regression.mjs", "scripts/startup-projection-regression.mjs", "scripts/regression.mjs", "scripts/api-v1-contract-regression.mjs", "scripts/auth-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
       "status": "active"
     },
     {
@@ -604,10 +604,10 @@
       "publicEntry": "src/http/index.mjs",
       "allowedDependencies": ["domain.auth", "domain.ai", "domain.tasks", "domain.checkins", "domain.health", "domain.captures", "domain.journals", "domain.books", "domain.quotes", "domain.chats", "domain.reviews", "domain.statistics", "domain.content-attachments", "shared.validation", "shared.observability", "shared.speech"],
       "owns": {
-        "data": ["JSON request parsing, response metadata, SSE events, Cookie and auth route adaptation", "request trace validation, base path normalization, completion audit and controlled errors", "v1 data/error envelopes, cursor codec, ETag/If-Match, Idempotency-Key, OpenAPI root and module registration", "incremental account snapshot and client operation status transport"],
-        "routes": ["GET /api/v1/openapi.json", "GET /api/v1/startup", "GET /api/v1/route-state", "GET /api/v1/sync", "GET /api/v1/sync/operations/:operationId", "GET /api/v1/personal-context", "GET /api/speech/voices", "POST /api/speech/preview", "POST /api/speech/synthesize", "GET /api/speech/audio", "HEAD /api/speech/audio", "GET /api/vision/status", "POST /api/vision/ocr", "POST /api/vision/document"]
+        "data": ["JSON request parsing, response metadata, SSE events, Cookie and auth route adaptation", "bounded local-test session vault, isolated upstream Cookie rewriting and GET-only upstream pagination", "request trace validation, base path normalization, completion audit and controlled errors", "v1 data/error envelopes, cursor codec, ETag/If-Match, Idempotency-Key, OpenAPI root and module registration", "incremental account snapshot and client operation status transport"],
+        "routes": ["GET /api/local-test-mode", "POST /api/local-test-mode", "POST /api/local-test-mode/hydrate", "GET /api/v1/openapi.json", "GET /api/v1/startup", "GET /api/v1/route-state", "GET /api/v1/sync", "GET /api/v1/sync/operations/:operationId", "GET /api/v1/personal-context", "GET /api/speech/voices", "POST /api/speech/preview", "POST /api/speech/synthesize", "GET /api/speech/audio", "HEAD /api/speech/audio", "GET /api/vision/status", "POST /api/vision/ocr", "POST /api/vision/document"]
       },
-      "tests": ["scripts/auth-regression.mjs", "scripts/regression.mjs", "scripts/api-v1-contract-regression.mjs", "scripts/api-v1-openapi-fragment-regression.mjs", "scripts/record-v1-regression.mjs", "scripts/capture-journal-regression.mjs", "scripts/library-regression.mjs", "scripts/reviews-chat-regression.mjs", "scripts/content-attachments-regression.mjs", "scripts/observability-regression.mjs", "scripts/runtime-infrastructure-regression.mjs", "scripts/volcengine-provider-regression.mjs", "scripts/volcengine-server-regression.mjs", "scripts/startup-projection-regression.mjs"],
+      "tests": ["scripts/auth-regression.mjs", "scripts/local-test-http-regression.mjs", "scripts/local-test-mode-regression.mjs", "scripts/regression.mjs", "scripts/api-v1-contract-regression.mjs", "scripts/api-v1-openapi-fragment-regression.mjs", "scripts/record-v1-regression.mjs", "scripts/capture-journal-regression.mjs", "scripts/library-regression.mjs", "scripts/reviews-chat-regression.mjs", "scripts/content-attachments-regression.mjs", "scripts/observability-regression.mjs", "scripts/runtime-infrastructure-regression.mjs", "scripts/volcengine-provider-regression.mjs", "scripts/volcengine-server-regression.mjs", "scripts/startup-projection-regression.mjs"],
       "status": "active"
     },
     {
@@ -956,7 +956,7 @@
     {
       "path": "server.mjs",
       "ruleId": "factory-use",
-      "sourceSha256": "0e637c46dae7275c8f3770175d7bfebf5eb1e16543996973de9c5e208eb5c047",
+      "sourceSha256": "057b6fa80a6bca478c41367ada48eb237de2b520b4e8b7e868e56163b664c99f",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs assigns createServerRuntime to runtime and starts it",
       "deleteByGate": "G4",
@@ -967,7 +967,7 @@
     {
       "path": "server.mjs",
       "ruleId": "calls",
-      "sourceSha256": "0e637c46dae7275c8f3770175d7bfebf5eb1e16543996973de9c5e208eb5c047",
+      "sourceSha256": "057b6fa80a6bca478c41367ada48eb237de2b520b4e8b7e868e56163b664c99f",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs constructs and starts createServerRuntime",
       "deleteByGate": "G4",
@@ -978,7 +978,7 @@
     {
       "path": "server.mjs",
       "ruleId": "import-bindings",
-      "sourceSha256": "0e637c46dae7275c8f3770175d7bfebf5eb1e16543996973de9c5e208eb5c047",
+      "sourceSha256": "057b6fa80a6bca478c41367ada48eb237de2b520b4e8b7e868e56163b664c99f",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs imports createServerRuntime from ./src/app/index.mjs",
       "deleteByGate": "G4",
@@ -989,7 +989,7 @@
     {
       "path": "server.mjs",
       "ruleId": "imports",
-      "sourceSha256": "0e637c46dae7275c8f3770175d7bfebf5eb1e16543996973de9c5e208eb5c047",
+      "sourceSha256": "057b6fa80a6bca478c41367ada48eb237de2b520b4e8b7e868e56163b664c99f",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs imports only ./src/app/index.mjs",
       "deleteByGate": "G4",
@@ -1042,18 +1042,18 @@
     {
       "path": "server.mjs",
       "ruleId": "server.api-path",
-      "sourceSha256": "0e637c46dae7275c8f3770175d7bfebf5eb1e16543996973de9c5e208eb5c047",
+      "sourceSha256": "057b6fa80a6bca478c41367ada48eb237de2b520b4e8b7e868e56163b664c99f",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs contains no API route literals",
       "deleteByGate": "G4",
       "allowlist": [
-        { "detail": "forbidden literal matched \"^/api(?:/|$)\"", "count": 53 }
+        { "detail": "forbidden literal matched \"^/api(?:/|$)\"", "count": 26 }
       ]
     },
     {
       "path": "server.mjs",
       "ruleId": "server.timer",
-      "sourceSha256": "0e637c46dae7275c8f3770175d7bfebf5eb1e16543996973de9c5e208eb5c047",
+      "sourceSha256": "057b6fa80a6bca478c41367ada48eb237de2b520b4e8b7e868e56163b664c99f",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs contains no timer orchestration",
       "deleteByGate": "G4",
@@ -1065,7 +1065,7 @@
     {
       "path": "server.mjs",
       "ruleId": "server.provider",
-      "sourceSha256": "0e637c46dae7275c8f3770175d7bfebf5eb1e16543996973de9c5e208eb5c047",
+      "sourceSha256": "057b6fa80a6bca478c41367ada48eb237de2b520b4e8b7e868e56163b664c99f",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs contains no provider construction",
       "deleteByGate": "G4",
@@ -1079,12 +1079,12 @@
     {
       "path": "server.mjs",
       "ruleId": "server.store-state",
-      "sourceSha256": "0e637c46dae7275c8f3770175d7bfebf5eb1e16543996973de9c5e208eb5c047",
+      "sourceSha256": "057b6fa80a6bca478c41367ada48eb237de2b520b4e8b7e868e56163b664c99f",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs contains no persistence state",
       "deleteByGate": "G4",
       "allowlist": [
-        { "detail": "forbidden identifier \"DATA_DIR\"", "count": 22 },
+        { "detail": "forbidden identifier \"DATA_DIR\"", "count": 20 },
         { "detail": "forbidden identifier \"PERSISTENCE_BACKEND\"", "count": 5 },
         { "detail": "forbidden identifier \"STORE_VERSION\"", "count": 3 }
       ]
@@ -1092,7 +1092,7 @@
     {
       "path": "server.mjs",
       "ruleId": "server.route-composition",
-      "sourceSha256": "0e637c46dae7275c8f3770175d7bfebf5eb1e16543996973de9c5e208eb5c047",
+      "sourceSha256": "057b6fa80a6bca478c41367ada48eb237de2b520b4e8b7e868e56163b664c99f",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs delegates route composition to src/app",
       "deleteByGate": "G4",
@@ -1105,11 +1105,11 @@
     {
       "path": "server.mjs",
       "ruleId": "lines.hard",
-      "sourceSha256": "0e637c46dae7275c8f3770175d7bfebf5eb1e16543996973de9c5e208eb5c047",
+      "sourceSha256": "057b6fa80a6bca478c41367ada48eb237de2b520b4e8b7e868e56163b664c99f",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs is at or below 40 lines",
       "deleteByGate": "G4",
-      "maxValue": 2668
+      "maxValue": 2295
     },
     {
       "path": "public/frontend/app/runtime.mjs",
