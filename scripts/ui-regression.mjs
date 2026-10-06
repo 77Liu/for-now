@@ -2875,7 +2875,7 @@ try {
   const reviewScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-review-markdown.png", Buffer.from(reviewScreenshot.data, "base64"));
   await evaluate(`document.querySelector('[data-view="books"]').click(); true`);
-  assert.equal(await waitUntil(`document.querySelector("#view-books").classList.contains("active")&&!document.querySelector("#book-create-panel").hidden&&document.querySelector("#book-library").hidden`),true);
+  assert.equal(await waitUntil(`document.querySelector("#view-books").classList.contains("active")&&!document.querySelector("#view-books").inert&&!document.querySelector("#view-books").hasAttribute("aria-busy")&&!document.querySelector("#book-create-panel").hidden&&document.querySelector("#book-library").hidden`),true);
   const pastedRecognitionImage = await evaluate(`(() => {
     const bytes = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="), value => value.charCodeAt(0));
     const file = new File([bytes], "recognition.png", { type: "image/png" });
@@ -2890,7 +2890,16 @@ try {
       inputDisplay: getComputedStyle(document.querySelector("#book-recognition-image")).display
     };
   })()`);
-  assert.equal(pastedRecognitionImage.recognitionVisible, true);
+  assert.equal(
+    pastedRecognitionImage.recognitionVisible,
+    true,
+    JSON.stringify({
+      state: await evaluate(`({busy:document.querySelector("#view-books").getAttribute("aria-busy"),toast:document.querySelector("#toast").textContent,active:document.querySelector("#view-books").classList.contains("active")})`),
+      exceptions: cdp.events.filter(event => event.method === "Runtime.exceptionThrown")
+        .slice(-3)
+        .map(event => event.params.exceptionDetails.exception?.description || event.params.exceptionDetails.text)
+    })
+  );
   assert.equal(pastedRecognitionImage.coverHidden, true);
   assert.equal(pastedRecognitionImage.parseEnabled, true);
   assert.equal(pastedRecognitionImage.title, "recognition.png");
@@ -3045,7 +3054,7 @@ try {
   await fs.writeFile("/tmp/growth-book-detail-mobile.png", Buffer.from(bookMobileScreenshot.data, "base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
   await evaluate(`document.querySelector('[data-view="quotes"]').click(); true`);
-  await sleep(50);
+  assert.equal(await waitUntil(`document.querySelector("#view-quotes").classList.contains("active")&&!document.querySelector("#view-quotes").inert&&!document.querySelector("#view-quotes").hasAttribute("aria-busy")&&document.querySelectorAll(".quote-entry").length===5`),true);
   const quoteTimeline = await evaluate(`(() => ({
     dateLabels: [...document.querySelectorAll(".quote-date")].map(item => item.textContent),
     times: [...document.querySelectorAll(".quote-entry time")].map(item => item.textContent)
@@ -3774,6 +3783,7 @@ try {
   assert.deepEqual(await evaluate(`({view:document.querySelector(".view.active")?.id,path:location.pathname,visible:!document.querySelector("#home-thought-editor").hidden,focused:document.activeElement===document.querySelector("#chain-question")})`),{view:"view-thoughts",path:"/thoughts",visible:true,focused:true});
   await evaluate(`document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}));true`);
   await evaluate(`document.querySelector('[data-section="seen"]').click();document.querySelector("[data-section-links='seen'] [data-view='quotes']").click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-quotes").classList.contains("active")&&!document.querySelector("#view-quotes").inert&&!document.querySelector("#view-quotes").hasAttribute("aria-busy")&&document.querySelector("#quote-sky-content .content-state")`),true);
   assert.deepEqual(await evaluate(`(()=>{const state=document.querySelector("#quote-sky-content .content-state");return{title:state.querySelector("strong").textContent,body:state.querySelector("p").textContent,action:state.querySelector("button").textContent,actions:state.querySelectorAll("button").length}})()`),{title:"还没有收藏的句子",body:"先留下原句和来源，它之后会在这里再次出现。",action:"收藏第一句",actions:1});
   await evaluate(`document.querySelector("#quote-sky-content .content-state-action").click();true`);
   assert.equal(await waitUntil(`document.activeElement===document.querySelector("#quote-content")`),true);

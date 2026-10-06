@@ -52,7 +52,7 @@ const appEntryUrl=new URL("../../app.js",import.meta.url);
 const applicationBasePath=new URL(".",appEntryUrl).pathname.replace(/\/$/,"")||"/";
 const initialRuntimeView=resolveApplicationRoute(location,{basePath:applicationBasePath}).view;
 const portFactoriesRequest=globalThis.__forNowPortsRequest||import("./ports.mjs");
-const legacyFeatureModuleRequest=globalThis.__forNowLegacyFeatureRequest||(["export","feedback","discovery","notifications","captures","journals"].includes(initialRuntimeView)?null:import("../features/legacy-pages/index.mjs"));
+const legacyFeatureModuleRequest=globalThis.__forNowLegacyFeatureRequest||(["export","feedback","discovery","notifications","captures","journals","books","quotes"].includes(initialRuntimeView)?null:import("../features/legacy-pages/index.mjs"));
 const exportFeatureModuleRequest=globalThis.__forNowExportFeatureRequest||(initialRuntimeView==="export"?import("../features/export/index.mjs"):null);
 const feedbackFeatureModuleRequest=globalThis.__forNowFeedbackFeatureRequest||(initialRuntimeView==="feedback"?import("../features/feedback/index.mjs"):null);
 const discoveryFeatureModuleRequest=globalThis.__forNowDiscoveryFeatureRequest||(initialRuntimeView==="discovery"?import("../features/thought-discovery/index.mjs"):null);
@@ -62,6 +62,8 @@ let annotationsFeatureModuleRequest=globalThis.__forNowAnnotationsFeatureRequest
 let backgroundResultsFeatureModuleRequest=globalThis.__forNowBackgroundResultsFeatureRequest||null;
 let healthFeatureModuleRequest=globalThis.__forNowHealthFeatureRequest||null;
 let thoughtsFeatureModuleRequest=globalThis.__forNowThoughtsFeatureRequest||(["thoughts","together"].includes(initialRuntimeView)?import("../features/thoughts/index.mjs"):null);
+let quotesFeatureModuleRequest=globalThis.__forNowQuotesFeatureRequest||(initialRuntimeView==="quotes"?import("../features/quotes/index.mjs"):null);
+let libraryFeatureModuleRequest=globalThis.__forNowLibraryFeatureRequest||(initialRuntimeView==="books"?import("../features/library/index.mjs"):null);
 const loadLegacyFeatureModule=()=>legacyFeatureModuleRequest||import("../features/legacy-pages/index.mjs");
 const loadActionsFeatureModule=()=>import("../features/actions/controller.mjs");
 const loadAnnotationsFeatureModule=()=>{
@@ -88,6 +90,16 @@ const loadCaptureJournalFeatureModule=()=>{
   const pending=captureJournalFeatureModuleRequest||import("../features/capture-journal/index.mjs");
   captureJournalFeatureModuleRequest=pending;
   return Promise.resolve(pending).catch(error=>{if(captureJournalFeatureModuleRequest===pending)captureJournalFeatureModuleRequest=null;throw error})
+};
+const loadQuotesFeatureModule=()=>{
+  const pending=quotesFeatureModuleRequest||import("../features/quotes/index.mjs");
+  quotesFeatureModuleRequest=pending;
+  return Promise.resolve(pending).catch(error=>{if(quotesFeatureModuleRequest===pending)quotesFeatureModuleRequest=null;throw error})
+};
+const loadLibraryFeatureModule=()=>{
+  const pending=libraryFeatureModuleRequest||import("../features/library/index.mjs");
+  libraryFeatureModuleRequest=pending;
+  return Promise.resolve(pending).catch(error=>{if(libraryFeatureModuleRequest===pending)libraryFeatureModuleRequest=null;throw error})
 };
 const startupPerformanceEnabled=new URLSearchParams(location.search).has("native-performance");
 const startupMarks={navigationStart:0,moduleLoaded:Number(performance.now().toFixed(1))};
@@ -154,23 +166,22 @@ let runtimeApplication=null,runtimeFeatureRegistry=null,runtimeStatePort=null,ap
 let backgroundResultsController=null,backgroundResultsLoadErrorReported=false,backgroundResultsRetryAttempts=0;
 let healthFeatureController=null;
 let capturesFeatureController=null;
+let quotesFeatureController=null;
+let libraryFeatureController=null;
 const checkinsFeatureControllers=new Set();
 const thoughtsFeatureControllers=new Set();
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-let activeDate=currentLocalDate,activeDailyType="sleep",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
+let activeDate=currentLocalDate,activeDailyType="sleep",answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],answerTaskSerial=0,activeAnswerTaskId=0,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
 let notificationsLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,routeDataRequestSerial=0,routeLoadFailureKey="",loadedRouteKey="",fullRouteStateLoaded=false,renderedRouteView="",analysisRequestSerial=0;
-const feedSearchQueries={books:"",keepsakes:"",quotes:""};
+const feedSearchQueries={keepsakes:""};
 const quoteTagPickerConfig=Object.freeze({
-  quote:{input:"#quote-tags",selected:"#quote-selected-tags",options:"#quote-tag-options",toggle:"#quote-tag-toggle",status:"#quote-tag-status"},
   selectionQuote:{input:"#selection-quote-tags",selected:"#selection-quote-selected-tags",options:"#selection-quote-tag-options",toggle:"#selection-quote-tag-toggle",status:"#selection-quote-tag-status"}
 });
 let quoteTagStates={
-  quote:createTagMultiSelectState(),
   selectionQuote:createTagMultiSelectState()
 };
 let keepsakeDraftTags=[];
-const expandedLongContentKeys=new Set();
 let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeKeepsakeId="",homeEditorTrigger=null,voicePreviewAudio=null,voicePreviewPending=false,voicePreviewPlaying=false,voicePreviewVoice="";
 const keepsakeEditor={file:null,sourceDataUrl:"",sourceImage:null,sourceCanvas:null,maskCanvas:null,autoBase:null,history:[],mode:"keep",drawing:false,lastPoint:null,source:"manual",originalPath:"",cutoutPath:"",mediaDirty:false,renderFrame:0,segmentSerial:0,understandingSerial:0};
 const keepsakeBatch={items:[],activeIndex:0,loading:false};
@@ -178,7 +189,6 @@ let keepsakeBatchPreviewUrls=[],keepsakeBatchPersistTimer=0,keepsakeDerivativeRe
 let keepsakeVisibleCount=KEEPSAKE_PAGE_SIZE,keepsakePaginationOwner="",keepsakeLoadObserver=null;
 const persistentContentImageKeys=new Set(["capture","thoughtRoot","thoughtBlock","comment"]);
 const imageViewer={paths:[],index:0,objectUrl:"",requestSerial:0,trigger:null};
-const quoteScrollStates=new WeakMap();
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const ownerSurfaceVault=document.createDocumentFragment();
 let ownerSurfaceEntries=null,currentCapabilities=new Set();
@@ -384,7 +394,6 @@ function clearDurableDraft(formId=""){
   try{const payload=JSON.parse(sessionStorage.getItem(key)||"null");if(!payload)return;payload.forms=(payload.forms||[]).filter(item=>item.key!==`form:${durableDraftForms.indexOf(formId)}`);sessionStorage.setItem(key,JSON.stringify(payload))}catch{}
 }
 const splitTags=v=>String(v||"").split(/[,，#\s]+/).map(x=>x.trim()).filter(Boolean);
-const bookReadingRange=book=>book.readingStartedOn?`${formatDateKey(book.readingStartedOn)} — ${book.readingFinishedOn?formatDateKey(book.readingFinishedOn):"至今"}`:"阅读日期未记录";
 const empty=t=>`<div class="empty">${escapeHtml(t)}</div>`;
 function contentState({kind="empty",title,body,action=null,className=""}){
   const stateKind=["empty","loading","failure"].includes(kind)?kind:"empty";
@@ -662,60 +671,6 @@ function installOccurrenceControls(root=document){root.querySelectorAll(occurren
 function occurrenceFields(input){return occurrenceSubmission({mode:input?.dataset.occurrenceMode||"manual",manualValue:input?.value||""},{now:new Date()})}
 function resetOccurrenceInput(input,existing=null){installOccurrenceControl(input,{existing})}
 function occurrenceKeyboardSubmit(event,form,inputKind="multiline"){const intent=entryKeyIntent(event,{inputKind});if(intent!=="submit")return false;event.preventDefault();form.requestSubmit();return true}
-const bookImageUi={
-  cover:{input:"#book-cover-image",preview:"#book-cover-preview",box:"#book-cover-upload-box",title:"#book-cover-upload-title",hint:"#book-cover-upload-hint",remove:"#book-cover-remove",emptyTitle:"选择、粘贴或拖入封面",emptyHint:"PNG / JPEG / WebP · 不超过 8 MB"},
-  recognition:{input:"#book-recognition-image",preview:"#book-recognition-preview",box:"#book-recognition-upload-box",title:"#book-recognition-upload-title",hint:"#book-recognition-upload-hint",remove:"#book-recognition-remove",emptyTitle:"选择、粘贴或拖入识别图",emptyHint:"PNG / JPEG / WebP · 不超过 8 MB"}
-};
-function updateBookImageSwapButton(){
-  const button=$("#book-image-swap");
-  if(button)button.disabled=$("#book-cover-preview").hidden||$("#book-recognition-preview").hidden;
-}
-function resetBookImage(role,{existingPath=""}={}){
-  bookParseSerial+=1;
-  const ui=bookImageUi[role];
-  if(bookPreviewUrls[role])URL.revokeObjectURL(bookPreviewUrls[role]);
-  bookPreviewUrls[role]="";pendingBookImages[role]=null;$(ui.input).value="";$(ui.box).classList.remove("has-image","dragging");
-  const preview=$(ui.preview);
-  if(existingPath){preview.src=existingPath;preview.hidden=false;$(ui.title).textContent="当前封面";$(ui.hint).textContent="选择新图片即可替换";$(ui.box).classList.add("has-image");$(ui.remove).hidden=false}
-  else{preview.hidden=true;preview.removeAttribute("src");$(ui.title).textContent=ui.emptyTitle;$(ui.hint).textContent=ui.emptyHint;$(ui.remove).hidden=true}
-  if(role==="recognition")$("#parse-book").disabled=true;
-  updateBookImageSwapButton();
-}
-function setBookImage(role,file,source="已选择"){
-  bookParseSerial+=1;
-  const ui=bookImageUi[role],status=$("#book-parse-status");try{[file]=validatedImageFiles([file])}catch(error){status.textContent=error.message;return false}
-  if(bookPreviewUrls[role])URL.revokeObjectURL(bookPreviewUrls[role]);
-  pendingBookImages[role]=file;bookPreviewUrls[role]=URL.createObjectURL(file);$(ui.preview).src=bookPreviewUrls[role];$(ui.preview).hidden=false;$(ui.title).textContent=file.name||"剪贴板图片";$(ui.hint).textContent=`${source} · ${formatBytes(file.size)} · 点击可重新选择`;$(ui.box).classList.add("has-image");$(ui.remove).hidden=false;
-  if(role==="recognition"){$("#parse-book").disabled=false;status.textContent="识别图已就绪，可以回填书目信息。"}else status.textContent="新封面已就绪，将在保存书目时上传。";
-  updateBookImageSwapButton();
-  return true;
-}
-async function currentBookCoverFile(){
-  if(pendingBookImages.cover)return pendingBookImages.cover;
-  const imagePath=$("#book-image-path").value;
-  if(!imagePath)return null;
-  const blob=await apiClient.readBlob(imagePath),name=decodeURIComponent(imagePath.split("/").pop()||"current-cover");
-  return new File([blob],name,{type:blob.type||"image/jpeg"});
-}
-function syncBookReadingDates(){
-  const start=$("#book-reading-start"),end=$("#book-reading-end");
-  end.min=start.value;
-  end.setCustomValidity(start.value&&end.value&&end.value<start.value?"结束日期不能早于开始日期":"");
-}
-function resetBookForm(){
-  editingBookId="";delete $("#book-form").dataset.requestId;$("#book-form").reset();$("#book-reading-start").value=localDateKey();syncBookReadingDates();$("#book-image-path").value="";resetBookImage("cover");resetBookImage("recognition");$("#book-form-title").textContent="创建书目";$("#book-submit").textContent="创建书目";$("#book-edit-cancel").hidden=true;$("#book-parse-status").textContent="";
-}
-function openBookEditor(book){
-  editingBookId=book.id;activeBookId="";activeBookFeatureNoteId="";bookDetailCondensed=false;bookCreatorOpen=true;
-  for(const key of["title","author","publisher","isbn","description"])$(`#book-${key}`).value=book[key]||"";
-  $("#book-reading-start").value=book.readingStartedOn||"";
-  $("#book-reading-end").value=book.readingFinishedOn||"";
-  syncBookReadingDates();
-  $("#book-image-path").value=book.imagePath||"";resetBookImage("cover",{existingPath:book.imagePath||""});resetBookImage("recognition");
-  $("#book-form-title").textContent="编辑书目";$("#book-submit").textContent="保存修改";$("#book-edit-cancel").hidden=false;$("#book-parse-status").textContent="可修改资料或替换封面。";renderBooks();
-  requestAnimationFrame(()=>{$("#book-create-panel").scrollIntoView({behavior:"smooth",block:"start"});$("#book-title").focus()});
-}
-
 const dailyTypeMeta={sleep:{label:"睡眠",save:"保存睡眠"},heartRate:{label:"心率",save:"保存心率"},weight:{label:"体重",save:"保存体重"},exercise:{label:"运动",save:"保存运动"}};
 
 function setAnswerStatus(id,message,kind="working"){document.querySelectorAll(`[data-answer-chain="${CSS.escape(id)}"]`).forEach(button=>{let status=button.closest(".chain-expanded")?.querySelector(".card-action-status");if(!status){status=document.createElement("p");status.className="card-action-status";status.setAttribute("role","status");status.setAttribute("aria-live","polite");button.closest(".chain-expanded")?.append(status)}status.className=`card-action-status ${kind}`;status.textContent=message})}
@@ -778,11 +733,11 @@ function restorePendingProjection(snapshot,operationId){
   if(snapshot.kind==="book.note.update"){
     const book=(state.books||[]).find(item=>item.id===snapshot.bookId),index=book?.notes?.findIndex(item=>item.id===snapshot.value.id)??-1;
     if(index<0||book.notes[index]._sync?.operationId!==operationId)return false;
-    book.notes[index]=snapshot.value;renderBooks();return true
+    book.notes[index]=snapshot.value;publishDomains(new Set(["books"]));return true
   }
   if(snapshot.kind==="book.note.delete"){
     const book=(state.books||[]).find(item=>item.id===snapshot.bookId);if(!book||book.notes?.some(item=>item.id===snapshot.value.id))return false;
-    book.notes||=[];book.notes.splice(Math.min(snapshot.index,book.notes.length),0,snapshot.value);renderBooks();return true
+    book.notes||=[];book.notes.splice(Math.min(snapshot.index,book.notes.length),0,snapshot.value);publishDomains(new Set(["books"]));return true
   }
   if(snapshot.kind==="thought.chain.update"){
     const root=snapshot.items.find(entry=>entry.value.id===snapshot.id),index=(state.thoughts||[]).findIndex(item=>item.id===snapshot.id);
@@ -810,7 +765,7 @@ function settlePendingProjection(projection,operationId,data){
     const note=(state.books||[]).find(item=>item.id===projection.bookId)?.notes?.find(item=>item.id===projection.id);
     if(!note||note._sync?.operationId!==operationId)return false;
     if(data&&typeof data==="object")Object.assign(note,data);
-    delete note._sync;renderBooks();return true
+    delete note._sync;publishDomains(new Set(["books"]));return true
   }
   if(projection.kind==="thought.chain.update"){
     const root=(state.thoughts||[]).find(item=>item.id===projection.id&&item.type==="question");
@@ -939,7 +894,7 @@ function applyPendingProjection(record){
     book.notes||=[];
     if(book.notes.some(item=>item.clientRequestId===record.operationId||item.id===projection.temporaryId))return false;
     book.notes.unshift({id:projection.temporaryId,...projection.payload,createdAt:record.createdAt,version:1,_sync:sync});
-    pendingBookNoteId=projection.temporaryId;renderBooks();return true
+    publishDomains(new Set(["books"]));return true
   }
   if(projection.kind==="book.note.delete"){
     const book=(state.books||[]).find(item=>item.id===projection.bookId);
@@ -947,13 +902,13 @@ function applyPendingProjection(record){
     const previousLength=(book.notes||[]).length;
     book.notes=(book.notes||[]).filter(item=>item.id!==projection.id);
     if(book.notes.length===previousLength)return false;
-    renderBooks();return true
+    publishDomains(new Set(["books"]));return true
   }
   if(projection.kind==="book.note.update"){
     const book=(state.books||[]).find(item=>item.id===projection.bookId),note=book?.notes?.find(item=>item.id===projection.id);
     if(!note)return false;
     Object.assign(note,projection.payload,{_sync:sync});
-    renderBooks();return true
+    publishDomains(new Set(["books"]));return true
   }
   if(projection.kind==="thought.chain.create"){
     if((state.thoughts||[]).some(item=>item.clientRequestId===record.operationId||String(item.id).startsWith(`${projection.temporaryId}:`)))return false;
@@ -1143,7 +1098,6 @@ function metricMarker(kind,value,label){if(!Number.isFinite(value))return"";cons
 function sliderTemplate(key,cfg){const ref=metricReference(key,cfg.custom),value=ref.previous??(ref.average==null?3:Math.round(ref.average));return `<div class="metric unconfirmed"><div class="metric-top"><span class="metric-label">${escapeHtml(cfg.label)}</span><span class="anchor" id="${key}-anchor">待确认 · ${escapeHtml(cfg.anchors[value-1])}</span><button class="note-toggle" type="button" data-note="${key}" aria-expanded="false">＋备注</button></div><div class="metric-scale">${metricMarker("previous",ref.previous,"上一次")}${metricMarker("average",ref.average,"近30次平均")}<input type="range" id="metric-${key}" data-metric="${key}" data-custom="${cfg.custom?"1":"0"}" data-confirmed="false" min="1" max="5" value="${value}" step="1" aria-label="${escapeHtml(cfg.label)} 1到5，必须确认"></div><div class="range-labels"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span></div><input class="note-field" id="${key}-note" placeholder="可选：补充一句话" maxlength="800"></div>`}
 function renderSliders(){const cfg=metricConfig();$("#sliders").innerHTML=`<div class="metric-history-legend" aria-label="历史参照图例"><span><i class="previous"></i>上一次</span><span><i class="average"></i>近30次平均</span></div>${Object.entries(cfg).map(([k,v])=>sliderTemplate(k,v)).join("")}`;$$('[data-metric]').forEach(input=>{const update=(confirmed=false)=>{if(confirmed){input.dataset.confirmed="true";input.closest(".metric").classList.remove("unconfirmed")}const prefix=input.dataset.confirmed==="true"?"":"待确认 · ";$(`#${CSS.escape(input.dataset.metric)}-anchor`).textContent=`${prefix}${cfg[input.dataset.metric].anchors[Number(input.value)-1]}`};input.addEventListener("input",()=>update(true));input.addEventListener("change",()=>navigator.vibrate?.(8));input.addEventListener("pointerdown",()=>update(true));update()});$$(".note-toggle").forEach(b=>b.addEventListener("click",()=>{const f=$(`#${CSS.escape(b.dataset.note)}-note`);f.classList.toggle("visible");b.setAttribute("aria-expanded",String(f.classList.contains("visible")));if(f.classList.contains("visible"))f.focus()}))}
 
-function setLongContentExpanded(key,expanded){if(!key)return;if(expanded)expandedLongContentKeys.add(key);else expandedLongContentKeys.delete(key)}
 const routeContentSelectors=Object.freeze({
   today:["#home-memory-grid","#home-keepsake","#action-columns","#habit-list"],
   together:["#chat-history","#today-thoughts"],
@@ -1306,136 +1260,6 @@ function renderReview(){
   ];
   $("#weekly-summary").innerHTML=signals.map(item=>`<article class="summary-signal" data-signal="${item.key}"><span class="summary-signal-label">${item.label}</span><div class="summary-signal-value"><strong>${item.value}</strong>${item.unit?`<span>${item.unit}</span>`:""}</div><p>${item.detail}</p></article>`).join("");
   $("#trend-list").innerHTML=trendInsightsMarkup();renderStateChart();$("#association-list").innerHTML=associationInsightsMarkup();renderAssociationFlow();$("#cluster-grid").innerHTML=state.clusters.length?state.clusters.map(g=>`<article class="cluster-card"><div class="section-title"><h2>${escapeHtml(g.theme)}</h2><b>${g.count}</b></div><div class="cluster-stats"><span>保留 ${g.kept}</span><span>舍弃 ${g.discarded}</span><span>未处理 ${g.unreviewed}</span></div><ul>${g.items.slice(0,3).map(x=>`<li>${escapeHtml(x.content.slice(0,54))}${x.content.length>54?"…":""}</li>`).join("")}</ul></article>`).join(""):empty("累积几条思绪后，这里会出现反复主题。");$("#experiment-list").innerHTML=state.experiments.length?state.experiments.map(experimentCard).join(""):`<p class="time-hint">建议从 14 天、一个因素、一个结果开始。</p>`;$("#metric-list").innerHTML=state.customMetrics.length?`<div class="pill-list">${state.customMetrics.map(x=>`<span class="pill">${escapeHtml(x.name)}：${escapeHtml(x.low)} ↔ ${escapeHtml(x.high)}</span>`).join("")}</div>`:`<p class="time-hint">新指标会出现在“此刻状态”中。</p>`;renderAnalysisHistory()
-}
-const bookFavoriteMeta={none:{icon:"☆",label:"无收藏",next:"star"},star:{icon:"🌟",label:"星标",next:"sprout"},sprout:{icon:"🌱",label:"萌芽",next:"none"}};
-function sortedBookNotes(book){return [...(book.notes||[])].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a)))}
-function bookCoverMarkup(book,className="book-cover"){return book.imagePath?`<img class="${className}" src="${escapeHtml(appUrl(book.imagePath))}" alt="${escapeHtml(book.title)}" loading="lazy">`:`<div class="${className} placeholder" aria-hidden="true">书</div>`}
-function featuredBookNote(book){
-  const notes=sortedBookNotes(book);
-  let note=notes.find(item=>item.id===activeBookFeatureNoteId);
-  if(!note&&notes.length){note=notes[Math.floor(Math.random()*notes.length)];activeBookFeatureNoteId=note.id}
-  return note;
-}
-function bookFeatureMarkup(note){
-  if(!note)return `<article class="book-feature-note is-empty"><p class="eyebrow">随机精选</p><h3>第一条笔记会出现在这里</h3><p>正文时间线已经就位。写下一条真实的理解，再回来与它偶遇。</p></article>`;
-  const type=note.type==="thought"?"附加思考":"读书记录",preview=plainPreview(note.content);
-  return `<article class="book-feature-note"><p class="eyebrow">随机精选</p><blockquote>${escapeHtml(preview.slice(0,220))}${preview.length>220?"…":""}</blockquote><footer><span>${type} · ${formatDate(eventTimestamp(note))}</span><button class="text-button" type="button" data-book-feature-note="${note.id}">在时间线中查看 →</button></footer></article>`;
-}
-function bookEntryForm(book){
-  return `<form class="book-entry-form card" data-book-entry-form="${book.id}">
-    <div class="book-entry-form-heading"><div><p class="eyebrow">写进这本书</p><h2 data-book-entry-heading>新增记录</h2></div><button class="text-button" type="button" data-book-entry-cancel hidden>取消编辑</button></div>
-    <input type="hidden" name="noteId">
-    <div class="book-entry-controls">
-      <fieldset class="book-segmented"><legend>类型</legend><label><input type="radio" name="type" value="record" checked><span>记录</span></label><label><input type="radio" name="type" value="thought"><span>附加思考</span></label></fieldset>
-      <label class="book-entry-time"><span>发生时间</span><input type="datetime-local" step="1" name="occurredAt" required></label>
-      <fieldset class="book-segmented favorite-segmented"><legend>收藏</legend><label><input type="radio" name="favorite" value="none" checked><span>无</span></label><label><input type="radio" name="favorite" value="star"><span>🌟</span></label><label><input type="radio" name="favorite" value="sprout"><span>🌱</span></label></fieldset>
-    </div>
-    <textarea name="content" rows="5" placeholder="记下原文、理解、疑问，或读完后仍在生长的想法…" required></textarea>
-    <div class="book-entry-submit"><span>支持 Markdown 与 LaTeX</span><button class="primary-button" type="submit">保存记录</button></div>
-    <p class="status" role="status"></p>
-  </form>`
-}
-function bookTimelineMarkup(book){
-  const notes=sortedBookNotes(book);
-  if(!notes.length)return `<div class="book-timeline-empty">${empty("还没有记录。先留下一句真实的理解，之后再慢慢补充。")}</div>`;
-  return `<div class="book-timeline">${notes.map((note,index)=>{
-    const date=eventDate(note),previous=index?eventDate(notes[index-1]):"",favorite=bookFavoriteMeta[note.favorite]||bookFavoriteMeta.none,type=note.type==="thought"?"附加思考":"记录";
-      const syncing=note._sync?.status,actions=syncing
-        ?`<span class="checkin-sync-state ${escapeHtml(syncing)}">${syncing==="pending"?"待同步":"正在同步"}</span>`
-        :`<button class="book-favorite ${note.favorite||"none"}" type="button" data-book-note-favorite="${note.id}" data-next-favorite="${favorite.next}" title="${favorite.label}，点击切换" aria-label="${favorite.label}，点击切换">${favorite.icon}</button><div><button class="subtle-action" type="button" data-book-note-edit="${note.id}">编辑</button><button class="subtle-action danger" type="button" data-book-note-delete="${note.id}">删除</button></div>`;
-      return `<article class="book-timeline-entry${syncing?" is-syncing":""}" id="book-note-${note.id}" data-note-id="${note.id}">
-      ${date!==previous?`<time class="book-entry-date">${escapeHtml(date)}</time>`:""}
-      <div class="book-entry-card card">
-        <header><span class="book-entry-type ${note.type==="thought"?"thought":""}">${type}</span><time>${formatTime(eventTimestamp(note))}</time></header>
-        <div class="book-note markdown-content">${renderMarkdown(note.content)}</div>
-        <footer>${actions}</footer>
-      </div>
-    </article>`
-  }).join("")}</div>`
-}
-function renderBookDetail(book){
-  const detail=$("#book-detail"),notes=sortedBookNotes(book),latest=notes[0],featured=featuredBookNote(book);
-  detail.innerHTML=`<div class="book-detail-nav"><button class="book-back" type="button" data-book-back>← 返回书架</button><div><button class="quiet-button" type="button" data-book-edit="${book.id}">编辑书目</button><button class="subtle-action danger" type="button" data-book-delete="${book.id}">删除书目</button></div></div>
-    <section class="book-detail-overview">
-      <div class="book-feature-wrap">${bookFeatureMarkup(featured)}</div>
-      <section class="book-detail-hero">
-        ${bookCoverMarkup(book,"book-detail-cover")}
-        <div class="book-detail-copy"><h2>${escapeHtml(book.title)}</h2><p class="book-meta">${escapeHtml(book.author||"作者未填")}${book.publisher?` · ${escapeHtml(book.publisher)}`:""}${book.isbn?` · ${escapeHtml(book.isbn)}`:""}</p><p class="book-reading-range">${escapeHtml(bookReadingRange(book))}</p><div class="book-description markdown-content">${renderMarkdown(book.description||"暂无简介")}</div><div class="book-detail-stats"><span><b>${notes.length}</b> 条记录</span><span>${latest?`最近记录 ${formatDate(eventTimestamp(latest))}`:"等待第一条记录"}</span></div></div>
-      </section>
-    </section>
-    <section class="book-timeline-section"><div class="book-timeline-heading"><div><p class="eyebrow">阅读时间线</p><h2>我的笔记与思考</h2></div><div><span>${notes.length} 条</span><button class="quiet-button" type="button" data-book-add-note>＋ 新增记录</button></div></div>${bookTimelineMarkup(book)}</section>
-    ${bookEntryForm(book)}`;
-  const rootKey=commentRootKey("book",book.id);
-  markCommentTarget(detail.querySelector(".book-description"),rootKey,"description");
-  notes.filter(note=>!note._sync).forEach(note=>markCommentTarget(detail.querySelector(`[data-note-id="${CSS.escape(note.id)}"] .book-note`),rootKey,`note:${note.id}`));
-  renderLatex(detail);applyCommentAnchors(detail);installOccurrenceControls(detail);
-  if(pendingBookNoteId){
-    const target=detail.querySelector(`#book-note-${CSS.escape(pendingBookNoteId)}`);
-    pendingBookNoteId="";
-    requestAnimationFrame(()=>target?.scrollIntoView({behavior:"smooth",block:"center"}));
-  }
-}
-function setBookDetailCondensed(value){
-  bookDetailCondensed=Boolean(value&&activeBookId);
-  $("#view-books").classList.toggle("book-detail-condensed",bookDetailCondensed);
-  $("#book-detail").classList.toggle("is-condensed",bookDetailCondensed);
-}
-function syncBookDetailCondensed(){
-  if(activeBookId&&!bookDetailCondensed&&window.scrollY>48)setBookDetailCondensed(true);
-}
-function renderBookMemories(){
-  const sky=$("#book-memory-sky"),memories=state.books.flatMap(book=>(book.notes||[]).map(note=>({book,note}))).sort(()=>Math.random()-.5).slice(0,5);
-  sky.innerHTML=memories.length?`<div class="book-memory-title"><p class="eyebrow">偶遇旧笔记</p><span>点击回到原处</span></div>${memories.map(({book,note},index)=>`<button class="book-memory-bubble tone-${index%5} position-${index%5}" type="button" data-book-memory="${book.id}" data-book-note="${note.id}" aria-label="打开《${escapeHtml(book.title)}》中的这条笔记"><span>${escapeHtml(plainPreview(note.content).slice(0,76))}${plainPreview(note.content).length>76?"…":""}</span><small>《${escapeHtml(book.title)}》</small></button>`).join("")}`:`<div class="book-memory-placeholder"><b>旧笔记会在这里浮现</b><span>在任一本书中留下记录后，这里会随机回顾。</span></div>`;
-}
-function setupBookTitlePans(){
-  $$(".book-title-frame").forEach(frame=>{
-    const title=frame.dataset.title||"",text=frame.querySelector(".book-title");
-    if(!text)return;
-    text.textContent=title;frame.classList.remove("is-overflowing");frame.style.removeProperty("--book-title-travel");frame.style.removeProperty("--book-title-duration");
-    const lineHeight=parseFloat(getComputedStyle(text).lineHeight);
-    if(!lineHeight||text.scrollHeight<=lineHeight*2+.5)return;
-    const node=text.firstChild,range=document.createRange(),firstTop=text.getBoundingClientRect().top;
-    let secondLineStart=title.length;
-    for(let offset=0;offset<title.length;offset++){
-      range.setStart(node,offset);range.setEnd(node,offset+1);
-      if(range.getBoundingClientRect().top>firstTop+lineHeight*.5){secondLineStart=offset;break}
-    }
-    const firstLine=title.slice(0,secondLineStart).trimEnd(),remainder=title.slice(secondLineStart).trimStart();
-    if(!remainder)return;
-    const viewport=document.createElement("span"),track=document.createElement("span"),first=document.createElement("span"),second=document.createElement("span");
-    viewport.className="book-title-scroll";track.className="book-title-scroll-track";first.className="book-title-scroll-line";second.className="book-title-scroll-line";first.textContent=firstLine;second.textContent=remainder;track.append(first,second);viewport.append(track);text.replaceChildren(viewport);
-    const travel=Math.max(0,Math.ceil(track.scrollWidth-viewport.clientWidth));
-    if(!travel)return;
-    frame.style.setProperty("--book-title-travel",`${-travel}px`);
-    frame.style.setProperty("--book-title-duration",`${Math.min(9,Math.max(4,3.5+travel/40)).toFixed(1)}s`);
-    frame.classList.add("is-overflowing");
-  });
-}
-function renderBooks(){
-  const hasBooks=state.books.length>0,book=state.books.find(item=>item.id===activeBookId);
-  const visibleBooks=state.books.filter(item=>matchesFeedSearch("books",item.title,item.author,item.publisher,item.isbn,item.description,item.notes?.map(note=>note.content)));
-  if(!editingBookId&&!$("#book-reading-start").value)$("#book-reading-start").value=localDateKey();
-  if(activeBookId&&!book){activeBookId="";activeBookFeatureNoteId="";bookDetailCondensed=false}
-  const detailBook=state.books.find(item=>item.id===activeBookId),inDetail=Boolean(detailBook),creator=$("#book-create-panel"),library=$("#book-library"),detail=$("#book-detail"),toggle=$("#book-create-toggle");
-  $("#view-books").classList.toggle("book-detail-mode",inDetail);
-  $("#view-books").classList.toggle("book-detail-condensed",inDetail&&bookDetailCondensed);
-  detail.classList.toggle("is-condensed",inDetail&&bookDetailCondensed);
-  $("#book-search-control").hidden=inDetail;
-  $("#book-count").textContent=hasBooks?feedCountLabel("books",visibleBooks.length,state.books.length,"本"):"";
-  $("#book-note-count").textContent=`${state.books.reduce((sum,item)=>sum+(item.notes||[]).length,0)} 条笔记`;
-  toggle.hidden=!hasBooks||inDetail;toggle.textContent=bookCreatorOpen?"收起创建":"＋ 添加书目";
-  creator.hidden=inDetail||(hasBooks&&!bookCreatorOpen);creator.classList.toggle("cold-start",!hasBooks);
-  library.hidden=inDetail||!hasBooks;detail.hidden=!inDetail;
-  if(inDetail){renderBookDetail(detailBook);return}
-  detail.innerHTML="";
-  if(!hasBooks){$("#book-grid").innerHTML="";return}
-  renderBookMemories();
-  $("#book-grid").innerHTML=visibleBooks.length?visibleBooks.map(book=>{
-    const notes=sortedBookNotes(book),latest=notes[0];
-    const syncing=book._sync?.status;
-    return `<article class="book-card card${syncing?" is-syncing":""}" data-book-id="${book.id}"><button class="book-card-open" type="button" data-open-book="${book.id}" ${syncing?"disabled":""}>${bookCoverMarkup(book,"book-gallery-cover")}<span class="book-card-copy"><span class="book-title-frame" data-title="${escapeHtml(book.title)}" title="${escapeHtml(book.title)}"><strong class="book-title">${escapeHtml(book.title)}</strong></span><span>${escapeHtml(book.author||"作者未填")}</span><small class="book-card-reading">${escapeHtml(bookReadingRange(book))}</small><small>${syncing?(syncing==="pending"?"待同步":"正在同步"):`${notes.length} 条记录${latest?` · ${formatDate(eventTimestamp(latest))}`:""}`}</small></span><span class="book-card-arrow" aria-hidden="true">→</span></button></article>`
-  }).join(""):feedSearchEmpty("书目");
-  requestAnimationFrame(setupBookTitlePans);
 }
 const dataUrlFromBlob=blob=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error("图片读取失败"));reader.readAsDataURL(blob)});
 const loadImageSource=source=>new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>reject(new Error("图片无法打开，请换一张重试"));image.src=source});
@@ -1849,55 +1673,6 @@ async function setKeepsakeDetailView(view){
   }
   activeKeepsakeView=view==="original"?"original":"presentation";const item=(state.keepsakes||[]).find(value=>value.id===activeKeepsakeId);if(item)renderKeepsakeDetail(item);
 }
-function rotatingQuotes(){
-  const quotes=[...(state.quotes||[])],tagNames=[...new Set(quotes.flatMap(item=>item.tags||[]))],selected=[],selectedIds=new Set();
-  if(tagNames.length){for(let offset=0;offset<tagNames.length&&selected.length<3;offset++){const tag=tagNames[(quoteSkyIndex+offset)%tagNames.length],bucket=quotes.filter(item=>(item.tags||[]).includes(tag)&&!selectedIds.has(item.id));if(!bucket.length)continue;const item=bucket[(quoteSkyIndex+offset)%bucket.length];selected.push(item);selectedIds.add(item.id)}}
-  for(let offset=0;offset<quotes.length&&selected.length<3;offset++){const item=quotes[(quoteSkyIndex+offset)%quotes.length];if(!selectedIds.has(item.id)){selected.push(item);selectedIds.add(item.id)}}
-  return selected;
-}
-const quoteTagsMarkup=tags=>(tags||[]).length?`<div class="quote-tags">${tags.map(tag=>`<span>#${escapeHtml(tag)}</span>`).join("")}</div>`:"";
-function stopQuoteBubbleScroll(){if(quoteScrollFrame)cancelAnimationFrame(quoteScrollFrame);quoteScrollFrame=0}
-function runQuoteBubbleScroll(now){
-  if(document.hidden||!$("#view-quotes").classList.contains("active")){quoteScrollFrame=0;return}
-  let active=false;
-  $$(".quote-bubble p.is-auto-scrolling").forEach(viewport=>{
-    const scrollState=quoteScrollStates.get(viewport),maximum=viewport.scrollHeight-viewport.clientHeight;if(!scrollState||maximum<=1)return;
-    active=true;const elapsed=Math.min(64,now-scrollState.lastTime)/1000;scrollState.lastTime=now;
-    if(now<scrollState.resumeAt){scrollState.position=viewport.scrollTop;scrollState.velocity=0;viewport.classList.toggle("is-user-scrolling",scrollState.userPaused);return}
-    scrollState.userPaused=false;viewport.classList.remove("is-user-scrolling");
-    if(now<scrollState.holdUntil){scrollState.velocity=0;return}
-    const remaining=scrollState.direction>0?maximum-scrollState.position:scrollState.position;
-    if(remaining<=.25){scrollState.position=scrollState.direction>0?maximum:0;viewport.scrollTop=scrollState.position;scrollState.direction*=-1;scrollState.velocity=0;scrollState.holdUntil=now+800;return}
-    const cruiseSpeed=14,acceleration=18,targetSpeed=Math.min(cruiseSpeed,Math.sqrt(2*acceleration*remaining)),currentSpeed=Math.abs(scrollState.velocity),speedStep=acceleration*elapsed;
-    const speed=currentSpeed<targetSpeed?Math.min(targetSpeed,currentSpeed+speedStep):Math.max(targetSpeed,currentSpeed-speedStep);
-    scrollState.velocity=scrollState.direction*speed;
-    const next=scrollState.position+scrollState.velocity*elapsed;
-    if(next>=maximum||next<=0){scrollState.position=scrollState.direction>0?maximum:0;viewport.scrollTop=scrollState.position;scrollState.direction*=-1;scrollState.velocity=0;scrollState.holdUntil=now+800}
-    else{scrollState.position=next;viewport.scrollTop=next}
-  });
-  quoteScrollFrame=active?requestAnimationFrame(runQuoteBubbleScroll):0;
-}
-function setupQuoteBubbleScroll(){
-  stopQuoteBubbleScroll();const now=performance.now(),reduceMotion=matchMedia("(prefers-reduced-motion: reduce)").matches;
-  $$(".quote-bubble p").forEach(viewport=>{
-    viewport.classList.remove("is-auto-scrolling");viewport.removeAttribute("tabindex");viewport.scrollTop=0;
-    if(viewport.scrollHeight-viewport.clientHeight<=1)return;
-    viewport.classList.add("is-auto-scrolling");viewport.tabIndex=0;
-    quoteScrollStates.set(viewport,{direction:1,position:0,velocity:0,lastTime:now,resumeAt:now+1200,holdUntil:0,userPaused:false});
-  });
-  if(!reduceMotion&&$("#view-quotes").classList.contains("active")&&$$(".quote-bubble p.is-auto-scrolling").length)quoteScrollFrame=requestAnimationFrame(runQuoteBubbleScroll);
-}
-function deferQuoteBubbleScroll(viewport){const scrollState=quoteScrollStates.get(viewport);if(!scrollState)return;const now=performance.now();scrollState.direction=1;scrollState.position=viewport.scrollTop;scrollState.velocity=0;scrollState.lastTime=now;scrollState.resumeAt=now+5000;scrollState.holdUntil=0;scrollState.userPaused=true;viewport.classList.add("is-user-scrolling")}
-function renderQuoteSky(advance=false){const sky=$("#quote-sky-content"),previousIds=new Set([...sky.querySelectorAll(".quote-bubble")].map(item=>item.dataset.quoteId));if(advance)quoteSkyIndex+=1;const items=rotatingQuotes();if(advance&&state.quotes.length>items.length&&items.every(item=>previousIds.has(item.id))){const alternate=state.quotes.find(item=>!previousIds.has(item.id));if(alternate)items[items.length-1]=alternate}sky.innerHTML=items.length?items.map(x=>{const visibleLines=3+Math.floor(Math.random()*3);return `<article class="quote-bubble" data-quote-id="${x.id}" data-visible-lines="${visibleLines}" style="--quote-content-max-height:${(visibleLines*1.72).toFixed(2)}em"><p><span class="quote-scroll-track">“<span class="quote-content">${escapeHtml(x.content)}</span>”</span></p>${quoteTagsMarkup(x.tags)}<small>— ${escapeHtml(x.source)}</small></article>`}).join(""):contentState({title:"还没有收藏的句子",body:"先留下原句和来源，它之后会在这里再次出现。",action:{focus:"quote-content",label:"收藏第一句"},className:"quote-sky-empty"});items.forEach(item=>markCommentTarget(sky.querySelector(`[data-quote-id="${CSS.escape(item.id)}"] .quote-content`),commentRootKey("quote",item.id),"content"));applyCommentAnchors(sky);requestAnimationFrame(setupQuoteBubbleScroll)}
-function syncQuoteOverflow(){
-  $$(".quote-entry").forEach(entry=>{
-    const viewport=entry.querySelector(".quote-content-viewport"),button=entry.querySelector("[data-quote-expand]");if(!viewport||!button)return;
-    const wasExpanded=expandedLongContentKeys.has(viewport.dataset.expandKey);viewport.classList.remove("expanded");
-    const overflows=viewport.scrollHeight>viewport.clientHeight+1;
-    viewport.classList.toggle("expanded",wasExpanded&&overflows);button.hidden=!overflows;button.textContent=wasExpanded&&overflows?"收起":"展开";button.setAttribute("aria-expanded",String(wasExpanded&&overflows));
-  });
-  scheduleAnnotationLineCounts()
-}
 function quoteTagCandidates(){
   return[...(state.quoteTags||[]),...(state.quotes||[]).flatMap(item=>item.tags||[])]
 }
@@ -1945,22 +1720,6 @@ function quoteTagsForSubmission(key){
   renderQuoteTagPicker(key);
   return[...(quoteTagStates[key]?.selected||[])]
 }
-function refreshQuoteTagCandidates(){
-  for(const key of Object.keys(quoteTagPickerConfig)){
-    quoteTagStates[key]=reduceTagMultiSelectState(quoteTagStates[key],{type:"set-candidates",values:quoteTagCandidates()});
-    renderQuoteTagPicker(key)
-  }
-}
-function renderQuotes(){
-  const dateOf=eventDate,allItems=[...state.quotes].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a))),items=allItems.filter(item=>matchesFeedSearch("quotes",item.source,item.content,item.tags)),timeline=$("#quote-timeline");
-  renderQuoteSky();
-  timeline.innerHTML=items.length?items.map((item,index)=>{const syncing=item._sync?.status,actions=syncing?`<span class="checkin-sync-state ${escapeHtml(syncing)}">${syncing==="pending"?"待同步":"正在同步"}</span>`:`<button class="subtle-action" type="button" data-quote-edit="${item.id}">编辑</button><button class="subtle-action danger" type="button" data-quote-delete="${item.id}">删除</button>`;return`<article class="quote-entry${syncing?" is-syncing":""}" data-quote-id="${item.id}">${index===0||dateOf(item)!==dateOf(items[index-1])?`<div class="quote-date">${escapeHtml(dateOf(item))}</div>`:""}<header class="quote-entry-meta"><cite title="${escapeHtml(item.source)}">${escapeHtml(item.source)}</cite><span class="quote-entry-tools"><time>${formatTime(eventTimestamp(item))}</time>${actions}</span></header><div class="quote-entry-card card"><blockquote class="quote-content-viewport" data-expand-key="quote:${escapeHtml(item.id)}">${escapeHtml(item.content)}</blockquote><button class="quote-expand" type="button" data-quote-expand aria-expanded="false" hidden>展开</button>${quoteTagsMarkup(item.tags)}</div></article>`}).join(""):allItems.length?feedSearchEmpty("拾句"):"";
-  items.filter(item=>!item._sync).forEach(item=>markCommentTarget(timeline.querySelector(`[data-quote-id="${CSS.escape(item.id)}"] blockquote`),commentRootKey("quote",item.id),"content"));
-  applyCommentAnchors(timeline);refreshQuoteTagCandidates();requestAnimationFrame(syncQuoteOverflow);clearInterval(quoteTimer);
-  if(state.quotes.length>3)quoteTimer=setInterval(()=>{if($("#view-quotes").classList.contains("active")&&!document.hidden&&!$("#quote-sky").matches(":hover"))renderQuoteSky(true)},24000);
-}
-function resetQuoteForm(){const form=$("#quote-form");form.reset();setQuoteTagPicker("quote");$("#quote-id").value="";resetOccurrenceInput($("#quote-datetime"));$("#quote-submit").textContent="收藏";$("#quote-cancel").hidden=true;$("#quote-status").textContent=""}
-function editQuote(id){const quote=state.quotes.find(item=>item.id===id);if(!quote)return;$("#quote-id").value=id;$("#quote-source").value=quote.source;$("#quote-content").value=quote.content;setQuoteTagPicker("quote",quote.tags||[]);resetOccurrenceInput($("#quote-datetime"),quote);$("#quote-submit").textContent="保存修改";$("#quote-cancel").hidden=false;$("#quote-status").textContent="正在编辑已有善言";$("#quote-form").scrollIntoView({behavior:"smooth",block:"center"});$("#quote-content").focus()}
 function selectionQuoteSource(rootKey){const root=commentRoot(rootKey),label=commentRootLabel(rootKey),{type}=parseCommentRootKey(rootKey);const title=type==="book"?root?.title:type==="journal"?root?.title||root?.content:type==="quote"?root?.source:type==="chat"?root?.message:root?.content;return `${label}${title?` · ${plainPreview(title).slice(0,60)}`:""}`}
 function closeSelectionQuoteModal(){const modal=$("#selection-quote-modal");modal.hidden=true;$("#selection-quote-form").reset();setQuoteTagPicker("selectionQuote");$("#selection-quote-status").textContent=""}
 function openSelectionQuoteModal(selection){const label=annotationsController.rootLabel(selection.rootKey);$("#selection-quote-content").value=selection.quote;$("#selection-quote-source").value=selectionQuoteSource(selection.rootKey);setQuoteTagPicker("selectionQuote",[label]);resetOccurrenceInput($("#selection-quote-datetime"));$("#selection-quote-status").textContent="";$("#selection-quote-modal").hidden=false;$("#selection-quote-content").focus()}
@@ -2495,10 +2254,9 @@ function openHomeMemory(item){
     return
   }
   if(item.type==="book"){
-    activeBookId=item.bookId;activeBookFeatureNoteId=item.noteId;pendingBookNoteId=item.noteId;switchView("books");renderBooks();return
+    void openLibraryFeature(item.bookId,{noteId:item.noteId});return
   }
-  switchView("quotes");
-  requestAnimationFrame(()=>document.querySelector(`[data-quote-id="${CSS.escape(item.id)}"]`)?.scrollIntoView({behavior:"smooth",block:"center"}))
+  void openQuoteFeature(item.id)
 }
 function renderMine(){
   const accountName=$("#mine-account-name"),notificationCount=$("#mine-notification-count");
@@ -2609,9 +2367,7 @@ function renderVisibleRoute(){
   if(view==="today"){renderSliders();renderHome()}
   else if(view==="daily")void healthFeatureController?.render().catch(error=>showToast(`日录显示失败：${error.message}`,"error"));
   else if(view==="review"){renderStateChart();renderReview()}
-  else if(view==="books")renderBooks();
   else if(view==="keepsakes"){renderKeepsakes();renderKeepsakeBatch()}
-  else if(view==="quotes")renderQuotes();
   else if(view==="settings"){renderSettings();renderLocalTestSettings()}
   else if(view==="trash")renderTrash();
   else if(view==="account")renderAccountUsers();
@@ -2689,15 +2445,14 @@ function setAuthTab(tab){
 function setAuthBusy(value){authBusy=value;$$(".auth-form input,.auth-form button,[data-auth-tab]").forEach(control=>control.disabled=value)}
 function invalidatePageLoads(){
   statisticsRequestSerial+=1;aiCostRequestSerial+=1;architectureRequestSerial+=1;commercialRequestSerial+=1;personalContextRequestSerial+=1;accountUsersRequestSerial+=1;analysisRequestSerial+=1;
-  activeAnswerTaskId=++answerTaskSerial;healthFeatureController?.invalidateSession();bookParseSerial+=1;clearTimeout(notificationTimer);
+  activeAnswerTaskId=++answerTaskSerial;healthFeatureController?.invalidateSession();clearTimeout(notificationTimer);
   backgroundResultsController?.resetSession();backgroundResultsLoadErrorReported=false;backgroundResultsRetryAttempts=0;refreshCoordinator.reset();
 }
 function clearPrivateSessionState(){
   closeImageViewer({restoreFocus:false});
   onboardingV2Controller.reset();
-  resetState();routeDataReady=false;routeDataRequestSerial+=1;routeLoadFailureKey="";loadedRouteKey="";fullRouteStateLoaded=false;quoteTagStates={quote:createTagMultiSelectState(),selectionQuote:createTagMultiSelectState()};llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationsLoadState="idle";actionsCoordinator.resetSession();annotationsController?.resetSession();personalContext=null;personalContextRequestSerial=0;accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.5.7";homeMemoryKeys=[];homeMemoryByKey=new Map();homeKeepsakeId="";closeHomeEditors({restoreFocus:false});$("#capture-editor").hidden=true;document.body.classList.remove("capture-editor-open");resetOwnerSurfaces();invalidatePageLoads();draftTags=[];keepsakeDraftTags=[];expandedLongContentKeys.clear();capturesFeatureController=null;
-  bookParseSerial+=1;for(const url of Object.values(bookPreviewUrls))if(url)URL.revokeObjectURL(url);bookPreviewUrls={cover:"",recognition:""};pendingBookImages={cover:null,recognition:null};editingBookId="";activeBookId="";activeBookFeatureNoteId="";bookCreatorOpen=false;bookDetailCondensed=false;
+  resetState();routeDataReady=false;routeDataRequestSerial+=1;routeLoadFailureKey="";loadedRouteKey="";fullRouteStateLoaded=false;quoteTagStates={selectionQuote:createTagMultiSelectState()};llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
+  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationsLoadState="idle";actionsCoordinator.resetSession();annotationsController?.resetSession();personalContext=null;personalContextRequestSerial=0;accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.5.7";homeMemoryKeys=[];homeMemoryByKey=new Map();homeKeepsakeId="";closeHomeEditors({restoreFocus:false});$("#capture-editor").hidden=true;document.body.classList.remove("capture-editor-open");resetOwnerSurfaces();invalidatePageLoads();draftTags=[];keepsakeDraftTags=[];capturesFeatureController=null;quotesFeatureController=null;libraryFeatureController=null;
   keepsakeEditor.segmentSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.history=[];
   clearKeepsakeBatchState();
   contentImageDraftManager?.resetSession();for(const key of persistentContentImageKeys)renderContentImageEditor(key);
@@ -2792,7 +2547,7 @@ async function restartApplicationForUser(user){
   applicationLifecycleReady=true
 }
 const refreshState=(domains,options={})=>refreshCoordinator.refresh(domains,{...options,patchOnly:options.patchOnly===true});
-subscribeState((next,wanted)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);if(wanted.has("dailyRecords"))void healthFeatureController?.render({snapshot:next,changedDomains:wanted}).catch(()=>{});if(wanted.has("thoughts")){renderTagComposer();renderHomeMemories()}if(wanted.has("speech"))renderSettings();if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("review"))renderReview();if(wanted.has("books")){renderBooks();renderHomeMemories();if(annotationsController?.activeRootKey().startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes")){renderKeepsakes();renderHomeKeepsake()}if(wanted.has("quotes")){renderQuotes();renderHomeMemories()}if(wanted.has("comments"))renderCommentPanel();renderNotificationSummary()});
+subscribeState((next,wanted)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);if(wanted.has("dailyRecords"))void healthFeatureController?.render({snapshot:next,changedDomains:wanted}).catch(()=>{});if(wanted.has("thoughts")){renderTagComposer();renderHomeMemories()}if(wanted.has("speech"))renderSettings();if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("review"))renderReview();if(wanted.has("books")){renderHomeMemories();if(annotationsController?.activeRootKey().startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes")){renderKeepsakes();renderHomeKeepsake()}if(wanted.has("quotes"))renderHomeMemories();if(wanted.has("comments"))renderCommentPanel();renderNotificationSummary()});
 function setAnswerModalStep(step){const order=["context","thinking","answer","done"],current=order.indexOf(step);$$("#ai-answer-progress li").forEach((item,index)=>{item.classList.toggle("active",index===current);item.classList.toggle("done",index<current||(step==="done"&&index===current))})}
 function closeAnswerModal(){const modal=$("#ai-answer-modal"),busy=modal.dataset.busy==="true";modal.hidden=true;if(busy)showToast("回答继续在后台生成，完成后会提醒。")}
 async function runAnswerInModal({title,scene="thoughtAnswer",requestCall,onDone,isCurrent=()=>true}){
@@ -3030,6 +2785,117 @@ function createPageFeatureDescriptors(){
   });
   descriptors.captures={root:()=>$("#view-captures"),load:()=>loadCaptureJournalPage("captures")};
   descriptors.journals={root:()=>$("#view-journals"),load:()=>loadCaptureJournalPage("journals")};
+  descriptors.books={
+    root:()=>$("#view-books"),
+    load:()=>loadLibraryFeatureModule().then(module=>{
+      const controller=module.createLibraryFeatureController({
+        data:{
+          getSnapshot:()=>state,
+          getAccountId:()=>currentUser?.id||"",
+          getSessionSerial:()=>sessionSerial,
+          request:(url,options)=>withFeatureScope("books",()=>request(url,options)),
+          requestV1:(url,options,coordination)=>featureRequestV1("books",url,options,coordination),
+          refresh:(domains,options)=>refreshState(domains,options),
+          applyPendingProjection,
+          publish:domains=>publishDomains(new Set(domains))
+        },
+        navigation:{scrollTo:options=>window.scrollTo(options)},
+        media:{
+          validateImages:(files,maxItems)=>runPublicValidation(()=>validatedImageFiles(files,maxItems)),
+          imageDataUrls,
+          uploadOriginalImages:(images,idempotencyKey)=>uploadOriginalImages({request,images,idempotencyKey}),
+          discardUploadedImagePath,
+          readBlob:path=>apiClient.readBlob(path)
+        },
+        annotations:{
+          rootKey:commentRootKey,
+          markTarget:markCommentTarget,
+          applyAnchors:applyCommentAnchors
+        },
+        view:{
+          appUrl,
+          contentState,
+          escapeMarkup:escapeHtml,
+          plainPreview,
+          renderMarkdown,
+          renderLatex,
+          eventDate,
+          eventTimestamp,
+          formatDate,
+          formatDateKey,
+          formatTime,
+          localDateKey,
+          resetOccurrenceInput,
+          occurrenceFields,
+          showToast,
+          entryKeyIntent
+        },
+        platform:{
+          document,
+          window,
+          objectUrls:URL,
+          createFile:(blob,name,type)=>new File([blob],name,{type}),
+          createRequestId:()=>crypto.randomUUID(),
+          requestFrame:callback=>requestAnimationFrame(callback),
+          cancelFrame:frame=>cancelAnimationFrame(frame),
+          getComputedStyle:element=>getComputedStyle(element),
+          createRange:()=>document.createRange(),
+          random:()=>Math.random(),
+          confirm:(...args)=>globalThis.confirm(...args),
+          escapeSelector:value=>CSS.escape(value),
+          now:()=>new Date().toISOString()
+        }
+      });
+      libraryFeatureController=controller;
+      return controller
+    })
+  };
+  descriptors.quotes={
+    root:()=>$("#view-quotes"),
+    load:()=>loadQuotesFeatureModule().then(module=>{
+      const controller=module.createQuotesFeatureController({
+        data:{
+          getSnapshot:()=>state,
+          getAccountId:()=>currentUser?.id||"",
+          getSessionSerial:()=>sessionSerial,
+          requestV1:(url,options,coordination)=>featureRequestV1("quotes",url,options,coordination),
+          refresh:(domains,options)=>refreshState(domains,options),
+          applyPendingProjection,
+          publish:domains=>publishDomains(new Set(domains))
+        },
+        annotations:{
+          markTarget:markCommentTarget,
+          applyAnchors:applyCommentAnchors,
+          scheduleLayout:scheduleAnnotationLineCounts,
+          rootKey:commentRootKey
+        },
+        view:{
+          contentState,
+          resetOccurrenceInput,
+          occurrenceFields,
+          showToast,
+          escapeMarkup:escapeHtml
+        },
+        platform:{
+          document,
+          window,
+          createRequestId:()=>crypto.randomUUID(),
+          requestFrame:callback=>requestAnimationFrame(callback),
+          cancelFrame:frame=>cancelAnimationFrame(frame),
+          repeat:(callback,delay)=>setInterval(callback,delay),
+          cancelRepeat:timer=>clearInterval(timer),
+          getComputedStyle:element=>getComputedStyle(element),
+          matchesMedia:query=>matchMedia(query).matches,
+          confirm:(...args)=>globalThis.confirm(...args),
+          performanceNow:()=>performance.now(),
+          random:()=>Math.random(),
+          escapeSelector:value=>CSS.escape(value)
+        }
+      });
+      quotesFeatureController=controller;
+      return controller
+    })
+  };
   const loadThoughtsPage=view=>Promise.all([loadLegacyFeatureModule(),loadThoughtsFeatureModule()]).then(([legacy,thoughts])=>{
     const delegate=legacy.createLegacyPageController({
       view,
@@ -3162,9 +3028,6 @@ function createPageFeatureDescriptors(){
   return descriptors
 }
 const pageEffects={...createPageEffects({
-  syncQuoteOverflow,
-  setupQuoteBubbleScroll,
-  stopQuoteBubbleScroll,
   loadStatistics,
   loadAiCostPlan,
   loadArchitecture,
@@ -3177,6 +3040,14 @@ pageRouter=createPageRouter({query:$,queryAll:$$,effects:lazyPageEffects,basePat
 async function openCaptureFeature(action,trigger=null){
   await Promise.resolve(switchView("captures"));
   return capturesFeatureController?.[action]?.(trigger)||false
+}
+async function openLibraryFeature(id,options={}){
+  await Promise.resolve(switchView("books"));
+  return libraryFeatureController?.openBook(id,options)||false
+}
+async function openQuoteFeature(id){
+  await Promise.resolve(switchView("quotes"));
+  return quotesFeatureController?.openItem(id)||false
 }
 $("#home-open-thought").addEventListener("click",event=>openHomeEditor("thought",event.currentTarget));
 $("#home-record-voice").addEventListener("click",event=>void openCaptureFeature("openQuickVoice",event.currentTarget));
@@ -3196,9 +3067,10 @@ $$("[data-home-editor-close]").forEach(button=>button.addEventListener("click",(
 $$(".home-v02-editor-backdrop").forEach(editor=>editor.addEventListener("click",event=>{if(event.target===editor)closeHomeEditors()}));
 function openDiscoveryItem(item){
   const route=item?.route||{view:"thoughts",resourceType:"thought",resourceId:item?.id||""},id=route.resourceId;
-  if(route.view==="books"){activeBookId=id;activeBookFeatureNoteId=String(route.targetKey||"").replace(/^note:/,"");pendingBookNoteId=activeBookFeatureNoteId;switchView("books");renderBooks();return}
+  if(route.view==="books"){void openLibraryFeature(id,{noteId:String(route.targetKey||"").replace(/^note:/,"")});return}
+  if(route.view==="quotes"){void openQuoteFeature(id);return}
   if(route.resourceType==="thought")openThoughtDetail(id);else switchView(route.view||"thoughts");
-  const selector={thought:`[data-chain-id="${CSS.escape(id)}"]`,capture:`[data-capture-id="${CSS.escape(id)}"]`,journal:`[data-journal-id="${CSS.escape(id)}"]`,quote:`[data-quote-id="${CSS.escape(id)}"]`}[route.resourceType];
+  const selector={thought:`[data-chain-id="${CSS.escape(id)}"]`,capture:`[data-capture-id="${CSS.escape(id)}"]`,journal:`[data-journal-id="${CSS.escape(id)}"]`}[route.resourceType];
   requestAnimationFrame(()=>{const target=document.querySelector(selector||"");if(target instanceof HTMLDetailsElement)target.open=true;target?.scrollIntoView({behavior:"smooth",block:"center"})})
 }
 function openCheckinEditor(id){
@@ -3208,11 +3080,6 @@ function openCheckinEditor(id){
   $("#edit-checkin-modal").hidden=false;$("#edit-checkin-factors").focus();
 }
 
-for(const eventName of ["wheel","pointerdown","pointermove","touchstart","touchmove","keydown"])document.addEventListener(eventName,event=>{const viewport=event.target.closest?.(".quote-bubble p.is-auto-scrolling");if(viewport)deferQuoteBubbleScroll(viewport)},{passive:true});
-document.addEventListener("visibilitychange",()=>{if(!document.hidden&&$("#view-quotes").classList.contains("active"))setupQuoteBubbleScroll()});
-window.addEventListener("scroll",syncBookDetailCondensed,{passive:true});
-window.addEventListener("resize",()=>requestAnimationFrame(()=>{syncQuoteOverflow();setupQuoteBubbleScroll();setupBookTitlePans()}),{passive:true});
-document.addEventListener("click",e=>{const button=e.target.closest("[data-quote-expand]");if(!button)return;const viewport=button.closest(".quote-entry-card")?.querySelector(".quote-content-viewport");if(!viewport)return;const expanded=!viewport.classList.contains("expanded");setLongContentExpanded(viewport.dataset.expandKey,expanded);viewport.classList.toggle("expanded",expanded);button.textContent=expanded?"收起":"展开";button.setAttribute("aria-expanded",String(expanded));scheduleAnnotationLineCounts()});
 document.addEventListener("play",event=>{const audio=event.target;if(!(audio instanceof HTMLAudioElement))return;const controls=audio.closest(".speech-asset-controls"),rate=controls?.querySelector("[data-speech-playback-rate]");if(rate)audio.playbackRate=normalizeTtsPlaybackRate(rate.value);claimPageAudio(audio)},true);
 document.addEventListener("change",e=>{if(e.target.matches("[data-trash-select]"))$("#trash-purge-selected").disabled=!$("[data-trash-select]:checked")});
 document.addEventListener("click",async e=>{
@@ -3233,12 +3100,11 @@ $("#trash-purge-selected").addEventListener("click",async e=>{
   finally{button.disabled=!$("[data-trash-select]:checked")}
 });
 document.addEventListener("click",async e=>{
-  const button=e.target.closest("[data-delete-checkin],[data-chat-delete],[data-experiment-delete],[data-analysis-delete],[data-book-delete]");if(!button)return;
-  const target=button.dataset.deleteCheckin?{id:button.dataset.deleteCheckin,domain:"checkins",url:`/api/v1/checkins/${encodeURIComponent(button.dataset.deleteCheckin)}`,domains:["checkins","review"],label:"状态"}:button.dataset.chatDelete?{id:button.dataset.chatDelete,domain:"chats",url:`/api/v1/chats/${encodeURIComponent(button.dataset.chatDelete)}`,domains:["chats"],label:"对话"}:button.dataset.experimentDelete?{id:button.dataset.experimentDelete,domain:"experiments",url:`/api/v1/experiments/${encodeURIComponent(button.dataset.experimentDelete)}`,domains:["experiments","review"],label:"实验"}:button.dataset.analysisDelete?{id:button.dataset.analysisDelete,domain:"analyses",url:`/api/v1/analyses/${encodeURIComponent(button.dataset.analysisDelete)}`,domains:["analyses","review"],label:"复盘"}:{id:button.dataset.bookDelete,domain:"books",url:`/api/v1/books/${encodeURIComponent(button.dataset.bookDelete)}`,domains:["books","review"],label:"书目"};
+  const button=e.target.closest("[data-delete-checkin],[data-chat-delete],[data-experiment-delete],[data-analysis-delete]");if(!button)return;
+  const target=button.dataset.deleteCheckin?{id:button.dataset.deleteCheckin,domain:"checkins",url:`/api/v1/checkins/${encodeURIComponent(button.dataset.deleteCheckin)}`,domains:["checkins","review"],label:"状态"}:button.dataset.chatDelete?{id:button.dataset.chatDelete,domain:"chats",url:`/api/v1/chats/${encodeURIComponent(button.dataset.chatDelete)}`,domains:["chats"],label:"对话"}:button.dataset.experimentDelete?{id:button.dataset.experimentDelete,domain:"experiments",url:`/api/v1/experiments/${encodeURIComponent(button.dataset.experimentDelete)}`,domains:["experiments","review"],label:"实验"}:{id:button.dataset.analysisDelete,domain:"analyses",url:`/api/v1/analyses/${encodeURIComponent(button.dataset.analysisDelete)}`,domains:["analyses","review"],label:"复盘"};
   if(!confirm(`将这条${target.label}移入回收站？`))return;
   const item=(state[target.domain]||[]).find(value=>value.id===target.id);if(!item)return;const requestId=button.dataset.requestId||crypto.randomUUID();button.dataset.requestId=requestId;button.disabled=true;
-  if(button.dataset.bookDelete){activeBookId="";activeBookFeatureNoteId="";bookDetailCondensed=false}
-  try{await requestV1(target.url,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`,"idempotency-key":requestId}},{domains:target.domains,resource:target.domain==="books"?`book:${target.id}`:target.url,recoverCommitted:true,projection:{kind:"record.delete",domain:target.domain,id:target.id},onQueued:record=>applyPendingProjection(record)});void refreshState(target.domains).catch(error=>showToast(`${target.label}已移除，但列表刷新失败：${error.message}`,"error"));showToast(`${target.label}已移入回收站`)}
+  try{await requestV1(target.url,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`,"idempotency-key":requestId}},{domains:target.domains,resource:target.url,recoverCommitted:true,projection:{kind:"record.delete",domain:target.domain,id:target.id},onQueued:record=>applyPendingProjection(record)});void refreshState(target.domains).catch(error=>showToast(`${target.label}已移除，但列表刷新失败：${error.message}`,"error"));showToast(`${target.label}已移入回收站`)}
   catch(error){if(error.syncStatus==="pending")showToast(`${target.label}将在网络恢复后移入回收站`);else{await refreshState(target.domains).catch(()=>{});showToast(error.message,"error")}}
 });
 document.addEventListener("click",event=>{const button=event.target.closest("[data-context-source]");if(button)openContextSource(button)});
@@ -3247,7 +3113,7 @@ document.addEventListener("input",event=>{
   const input=event.target.closest("[data-feed-search]");if(!input)return;
   const scope=input.dataset.feedSearch;if(!(scope in feedSearchQueries))return;
   feedSearchQueries[scope]=input.value;
-  ({books:renderBooks,keepsakes:renderKeepsakes,quotes:renderQuotes})[scope]?.()
+  if(scope==="keepsakes")renderKeepsakes()
 });
 document.addEventListener("click",event=>{
   const button=event.target.closest("[data-content-focus],[data-content-action]");if(!button)return;
@@ -3418,110 +3284,6 @@ $("#association-flow-modal").addEventListener("click",e=>{if(e.target===e.curren
 $("#run-analysis").addEventListener("click",async e=>{const button=e.currentTarget;button.disabled=true;$("#analysis-status").textContent="正在比较模型草稿与你最终保留的回答，以及你保留、舍弃和长期缺席的主题…";try{await requestV1("/api/v1/analyses",{method:"POST",headers:{"idempotency-key":crypto.randomUUID()},body:"{}"},{domains:["analyses"]});void refreshState("review").catch(error=>showToast(`复盘已生成，但页面刷新失败：${error.message}`,"error"));$("#analysis-status").textContent="";showToast("认知复盘已生成")}catch(err){$("#analysis-status").textContent=err.message}finally{button.disabled=false}});
 $("#experiment-form").addEventListener("submit",async e=>{e.preventDefault();const form=e.currentTarget,requestId=form.dataset.requestId||crypto.randomUUID();form.dataset.requestId=requestId;try{await requestV1("/api/v1/experiments",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify({hypothesis:$("#experiment-hypothesis").value,factor:$("#experiment-factor").value,outcome:$("#experiment-outcome").value,duration:$("#experiment-duration").value})},{domains:["experiments"]});delete form.dataset.requestId;form.reset();void refreshState("review")}catch(error){if(error.syncStatus!=="pending")showToast(error.message,"error");else{form.reset();showToast("实验已进入待同步队列")}}});
 $("#metric-form").addEventListener("submit",async e=>{e.preventDefault();const form=e.currentTarget,requestId=form.dataset.requestId||crypto.randomUUID();form.dataset.requestId=requestId;try{await requestV1("/api/v1/custom-metrics",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify({name:$("#metric-name").value,low:$("#metric-low").value,high:$("#metric-high").value})},{domains:["customMetrics"]});delete form.dataset.requestId;form.reset();void refreshState(["review","checkins"])}catch(error){if(error.syncStatus!=="pending")showToast(error.message,"error");else{form.reset();showToast("指标已进入待同步队列")}}});
-for(const role of ["cover","recognition"]){
-  const ui=bookImageUi[role],input=$(ui.input),box=$(ui.box);
-  input.addEventListener("change",e=>{const file=e.currentTarget.files?.[0];bookImagePasteTarget=role;if(file&&!setBookImage(role,file,"本地文件"))e.currentTarget.value=""});
-  box.addEventListener("focusin",()=>bookImagePasteTarget=role);
-  box.addEventListener("pointerdown",()=>bookImagePasteTarget=role);
-  box.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();input.click()}});
-  box.addEventListener("dragenter",e=>{e.preventDefault();bookImagePasteTarget=role;e.currentTarget.classList.add("dragging")});
-  box.addEventListener("dragover",e=>{e.preventDefault();e.dataTransfer.dropEffect="copy";e.currentTarget.classList.add("dragging")});
-  box.addEventListener("dragleave",e=>{if(!e.currentTarget.contains(e.relatedTarget))e.currentTarget.classList.remove("dragging")});
-  box.addEventListener("drop",e=>{e.preventDefault();e.currentTarget.classList.remove("dragging");const file=[...(e.dataTransfer?.files||[])].find(item=>item.type.startsWith("image/"));if(!file)return $("#book-parse-status").textContent="拖入的内容里没有可用图片。";setBookImage(role,file,"拖入图片")});
-}
-$("#book-cover-remove").addEventListener("click",()=>{$("#book-image-path").value="";resetBookImage("cover");$("#book-parse-status").textContent="封面已移除，保存后生效。"});
-$("#book-recognition-remove").addEventListener("click",()=>{resetBookImage("recognition");$("#book-parse-status").textContent=""});
-$("#book-image-swap").addEventListener("click",async e=>{
-  const button=e.currentTarget,recognitionFile=pendingBookImages.recognition;
-  if(!recognitionFile)return;
-  button.disabled=true;
-  try{
-    const coverFile=await currentBookCoverFile();
-    if(!coverFile)return;
-    $("#book-image-path").value="";
-    setBookImage("cover",recognitionFile,"交换后作为封面");
-    setBookImage("recognition",coverFile,"交换后用于识别");
-    bookImagePasteTarget="recognition";
-    $("#book-parse-status").textContent="封面与识别图已交换。";
-  }catch(error){$("#book-parse-status").textContent=error.message}
-  finally{updateBookImageSwapButton()}
-});
-$("#book-create-toggle").addEventListener("click",()=>{if(bookCreatorOpen){bookCreatorOpen=false;resetBookForm()}else{resetBookForm();bookCreatorOpen=true}renderBooks();if(bookCreatorOpen)$("#book-create-panel").scrollIntoView({behavior:"smooth",block:"start"})});
-$("#book-edit-cancel").addEventListener("click",()=>{const bookId=editingBookId;resetBookForm();bookCreatorOpen=false;activeBookId=bookId;activeBookFeatureNoteId="";bookDetailCondensed=false;window.scrollTo({top:0,behavior:"auto"});renderBooks()});
-$("#book-reading-start").addEventListener("input",syncBookReadingDates);
-$("#book-reading-end").addEventListener("input",syncBookReadingDates);
-$("#book-form").addEventListener("input",()=>{bookParseSerial+=1;$("#parse-book").disabled=!pendingBookImages.recognition});
-document.addEventListener("paste",e=>{if(!$("#view-books").classList.contains("active")||$("#book-create-panel").hidden||(e.target instanceof Element&&e.target.closest('input:not([type="file"]),textarea,[contenteditable=true]')))return;const file=[...(e.clipboardData?.files||[])].find(item=>item.type.startsWith("image/"));if(!file)return;e.preventDefault();setBookImage(bookImagePasteTarget,file,"剪贴板")});
-$("#parse-book").addEventListener("click",async e=>{
-  const button=e.currentTarget,file=pendingBookImages.recognition||$("#book-recognition-image").files?.[0];if(!file)return $("#book-parse-status").textContent="请先选择、粘贴或拖入一张识别图。";
-  const serial=++bookParseSerial,bookId=editingBookId,owner=currentUser?.id,session=sessionSerial,requestId=crypto.randomUUID(),targetId=bookId||"book-draft";button.disabled=true;$("#book-parse-status").textContent="正在识别并查询书目…";
-  try{const images=await imageDataUrls([file]);if(serial!==bookParseSerial||file!==pendingBookImages.recognition||bookId!==editingBookId||owner!==currentUser?.id||session!==sessionSerial)return;const result=await request("/api/images/parse",{method:"POST",body:JSON.stringify({requestId,targetId,inputVersion:serial,kind:"book",images})});if(serial!==bookParseSerial||file!==pendingBookImages.recognition||bookId!==editingBookId||owner!==currentUser?.id||session!==sessionSerial||(result.requestId&&result.requestId!==requestId)||(result.targetId&&result.targetId!==targetId)||(Object.hasOwn(result,"inputVersion")&&Number(result.inputVersion)!==serial)){$("#book-parse-status").textContent="识别已完成，但当前书目已经变化，未自动回填。";return}for(const k of["title","author","publisher","isbn","description"])$(`#book-${k}`).value=result[k]||"";$("#book-parse-status").textContent=result.verification||"识别完成，请确认书目信息。"}
-  catch(err){if(serial===bookParseSerial&&bookId===editingBookId&&owner===currentUser?.id&&session===sessionSerial)$("#book-parse-status").textContent=err.message}
-  finally{if(serial===bookParseSerial&&bookId===editingBookId&&owner===currentUser?.id&&session===sessionSerial)button.disabled=false}
-});
-$("#book-form").addEventListener("submit",async e=>{
-  e.preventDefault();const form=e.currentTarget,button=$("#book-submit"),bookId=editingBookId,existing=bookId?(state.books||[]).find(item=>item.id===bookId):null,requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`,coverUploadRequestId=`${requestId}:cover`;let uploadedCoverPath="";if(!bookId)form.dataset.requestId=requestId;button.disabled=true;
-  try{
-    let imagePath=$("#book-image-path").value;
-    if(pendingBookImages.cover){$("#book-parse-status").textContent="正在上传封面…";const [image]=await imageDataUrls([pendingBookImages.cover]);[uploadedCoverPath]=await uploadOriginalImages({request,images:[image],idempotencyKey:coverUploadRequestId});imagePath=uploadedCoverPath}
-    const payload={title:$("#book-title").value,author:$("#book-author").value,publisher:$("#book-publisher").value,isbn:$("#book-isbn").value,readingStartedOn:$("#book-reading-start").value,readingFinishedOn:$("#book-reading-end").value,description:$("#book-description").value,imagePath};
-    if(bookId){const result=await requestV1(`/api/v1/books/${encodeURIComponent(bookId)}`,{method:"PATCH",headers:{"if-match":`"${existing?.version||1}"`},body:JSON.stringify(payload)},{resource:`book:${bookId}`,domains:["books"],recoverCommitted:true,projection:{kind:"record.update",domain:"books",id:bookId,payload},onQueued:record=>applyPendingProjection(record)});const book=state.books.find(item=>item.id===bookId);if(book){Object.assign(book,result.data||payload,{updatedAt:new Date().toISOString()});delete book._sync}}
-    else{
-      const result=await requestV1("/api/v1/books",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{domains:["books"],projection:{kind:"record.create",domain:"books",temporaryId,payload:{...payload,notes:[]}},onQueued:record=>applyPendingProjection(record)});
-      state.books=[result.data,...(state.books||[]).filter(item=>item.id!==temporaryId&&item.id!==result.data.id)];renderBooks()
-    }
-    resetBookForm();bookCreatorOpen=false;activeBookId=bookId||"";renderBooks();void refreshState("books").catch(error=>showToast(`书目已保存，但列表刷新失败：${error.message}`,"error"));showToast(bookId?"书目信息已更新":"书目已加入书架");
-  }catch(err){
-    if(err.syncStatus==="pending"){resetBookForm();bookCreatorOpen=false;activeBookId=bookId||"";renderBooks();showToast(bookId?"书目修改将在网络恢复后同步":"书目已进入待同步队列")}
-    else{if(!bookId){state.books=(state.books||[]).filter(item=>item.id!==temporaryId);renderBooks()}else await refreshState("books").catch(()=>{});if(uploadedCoverPath)await discardUploadedImagePath(uploadedCoverPath,coverUploadRequestId);$("#book-parse-status").textContent=err.message}
-  }finally{button.disabled=false}
-});
-document.addEventListener("submit",async e=>{
-  const form=e.target.closest("[data-book-entry-form]");if(!form)return;e.preventDefault();
-  const bookId=form.dataset.bookEntryForm,noteId=form.elements.noteId.value,button=form.querySelector('[type="submit"]'),status=form.querySelector(".status"),payload={...occurrenceFields(form.elements.occurredAt),type:form.elements.type.value,favorite:form.elements.favorite.value,content:form.elements.content.value},requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`;let savedNoteId=noteId;if(!noteId)form.dataset.requestId=requestId;
-  button.disabled=true;status.textContent=noteId?"正在保存修改…":"正在写入时间线…";
-  try{
-    if(noteId){const book=state.books.find(item=>item.id===bookId),note=book?.notes?.find(item=>item.id===noteId),result=await requestV1(`/api/v1/books/${encodeURIComponent(bookId)}/notes/${encodeURIComponent(noteId)}`,{method:"PATCH",headers:{"if-match":`"${note?.version||1}"`},body:JSON.stringify(payload)},{resource:`book:${bookId}`,domains:["books"],recoverCommitted:true,projection:{kind:"book.note.update",bookId,id:noteId,payload},onQueued:record=>applyPendingProjection(record)});if(note){Object.assign(note,result.data||payload,{updatedAt:new Date().toISOString()});delete note._sync}renderBooks()}
-    else{
-      const result=await requestV1(`/api/v1/books/${encodeURIComponent(bookId)}/notes`,{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{domains:["books"],resource:`book:${bookId}`,projection:{kind:"book.note.create",bookId,temporaryId,payload},onQueued:record=>applyPendingProjection(record)});
-      savedNoteId=result.data.id;
-      const book=state.books.find(item=>item.id===bookId);if(book)book.notes=[result.data,...(book.notes||[]).filter(item=>item.id!==temporaryId&&item.id!==result.data.id)];pendingBookNoteId=savedNoteId;renderBooks()
-    }
-    delete form.dataset.requestId;pendingBookNoteId=savedNoteId;void refreshState("books").catch(error=>showToast(`读书记录已保存，但列表刷新失败：${error.message}`,"error"));showToast(noteId?"读书记录已更新":"读书记录已保存")
-  }
-  catch(err){
-    if(err.syncStatus==="pending"){renderBooks();showToast("读书记录已进入待同步队列")}
-    else{
-      if(!noteId){const book=state.books.find(item=>item.id===bookId);if(book)book.notes=(book.notes||[]).filter(item=>item.id!==temporaryId)}
-      renderBooks();const retry=$("#book-detail [data-book-entry-form]");
-      if(retry){retry.elements.noteId.value=noteId;retry.elements.type.value=payload.type;retry.elements.favorite.value=payload.favorite;resetOccurrenceInput(retry.elements.occurredAt,payload);retry.elements.content.value=payload.content;retry.querySelector(".status").textContent=err.message;if(noteId){retry.querySelector("[data-book-entry-heading]").textContent="编辑记录";retry.querySelector("[data-book-entry-cancel]").hidden=false;retry.querySelector('[type="submit"]').textContent="保存修改"}}
-    }
-  }
-});
-document.addEventListener("click",async e=>{
-  const button=e.target.closest("button");if(!button)return;
-  const openId=button.dataset.openBook||button.dataset.bookMemory;
-  if(openId){window.scrollTo({top:0,behavior:"auto"});activeBookId=openId;activeBookFeatureNoteId="";bookDetailCondensed=false;pendingBookNoteId=button.dataset.bookNote||"";bookCreatorOpen=false;renderBooks();return}
-  if(button.dataset.bookBack!=null){activeBookId="";activeBookFeatureNoteId="";pendingBookNoteId="";setBookDetailCondensed(false);renderBooks();window.scrollTo({top:0,behavior:"smooth"});return}
-  if(button.dataset.bookAddNote!=null){$("#book-detail [data-book-entry-form]")?.scrollIntoView({behavior:"smooth",block:"center"});return}
-  if(button.dataset.bookFeatureNote){document.querySelector(`#book-note-${CSS.escape(button.dataset.bookFeatureNote)}`)?.scrollIntoView({behavior:"smooth",block:"center"});return}
-  if(button.dataset.bookEntryCancel!=null){renderBooks();return}
-  if(button.dataset.bookEdit){const editBook=state.books.find(item=>item.id===button.dataset.bookEdit);if(editBook)openBookEditor(editBook);return}
-  const book=state.books.find(item=>item.id===activeBookId);
-  if(!book)return;
-  if(button.dataset.bookNoteEdit){
-    const note=(book.notes||[]).find(item=>item.id===button.dataset.bookNoteEdit),form=$("#book-detail [data-book-entry-form]");if(!note||!form)return;
-    form.elements.noteId.value=note.id;form.elements.type.value=note.type||"record";form.elements.favorite.value=note.favorite||"none";resetOccurrenceInput(form.elements.occurredAt,note);form.elements.content.value=note.content;form.querySelector("[data-book-entry-heading]").textContent="编辑记录";form.querySelector("[data-book-entry-cancel]").hidden=false;form.querySelector('[type="submit"]').textContent="保存修改";form.scrollIntoView({behavior:"smooth",block:"center"});form.elements.content.focus();return;
-  }
-  if(button.dataset.bookNoteFavorite){
-    const note=(book.notes||[]).find(item=>item.id===button.dataset.bookNoteFavorite);if(!note)return;
-    const payload={occurredAt:eventTimestamp(note),type:note.type,content:note.content,favorite:button.dataset.nextFavorite};button.disabled=true;try{await requestV1(`/api/v1/books/${encodeURIComponent(book.id)}/notes/${encodeURIComponent(note.id)}`,{method:"PATCH",headers:{"if-match":`"${note.version||1}"`},body:JSON.stringify(payload)},{resource:`book:${book.id}`,domains:["books"],recoverCommitted:true,projection:{kind:"book.note.update",bookId:book.id,id:note.id,payload},onQueued:record=>applyPendingProjection(record)});pendingBookNoteId=note.id;void refreshState("books").catch(error=>showToast(`收藏状态已更新，但列表刷新失败：${error.message}`,"error"));showToast(button.dataset.nextFavorite==="star"?"已标为星标":button.dataset.nextFavorite==="sprout"?"已标为萌芽":"已取消收藏")}catch(err){if(err.syncStatus==="pending")showToast("收藏状态将在网络恢复后同步");else{await refreshState("books").catch(()=>{});showToast(err.message,"error");button.disabled=false}}return;
-  }
-  if(button.dataset.bookNoteDelete){
-    const note=(book.notes||[]).find(item=>item.id===button.dataset.bookNoteDelete);if(!note||!confirm(`将这条${note.type==="thought"?"附加思考":"记录"}移入回收站？`))return;
-    button.disabled=true;try{await requestV1(`/api/v1/books/${encodeURIComponent(book.id)}/notes/${encodeURIComponent(note.id)}`,{method:"DELETE",headers:{"if-match":`"${note.version||1}"`}},{resource:`book:${book.id}`,domains:["books"],recoverCommitted:true,projection:{kind:"book.note.delete",bookId:book.id,id:note.id},onQueued:record=>applyPendingProjection(record)});void refreshState("books").catch(error=>showToast(`读书记录已移除，但列表刷新失败：${error.message}`,"error"));showToast("读书记录已移入回收站")}catch(err){if(err.syncStatus==="pending")showToast("读书记录将在网络恢复后移入回收站");else{await refreshState("books").catch(()=>{});showToast(err.message,"error");button.disabled=false}}
-  }
-});
 $("#keepsake-create-toggle").addEventListener("click",()=>{const workspace=$("#keepsake-workspace"),opening=workspace.hidden;if(opening){if(keepsakeBatch.items.length)void loadKeepsakeBatchItem(keepsakeBatch.activeIndex,{capture:false});else resetKeepsakeEditor();workspace.hidden=false;workspace.scrollIntoView({behavior:"smooth",block:"start"})}else{void persistKeepsakeBatch();resetKeepsakeEditor({close:true});renderKeepsakeBatch()}});
 $("#keepsake-load-more").addEventListener("click",loadNextKeepsakePage);
 $("#keepsake-editor-close").addEventListener("click",()=>{void persistKeepsakeBatch();resetKeepsakeEditor({close:true});renderKeepsakeBatch()});
@@ -3628,20 +3390,6 @@ document.addEventListener("click",event=>{
     }
   }
 });
-$("#quote-refresh").addEventListener("click",()=>renderQuoteSky(true));
-$("#quote-cancel").addEventListener("click",resetQuoteForm);
-$("#quote-form").addEventListener("submit",async e=>{
-  e.preventDefault();const form=e.currentTarget,id=$("#quote-id").value,existing=id?(state.quotes||[]).find(item=>item.id===id):null,button=$("#quote-submit"),status=$("#quote-status"),payload={...occurrenceFields($("#quote-datetime")),source:$("#quote-source").value,content:$("#quote-content").value,tags:quoteTagsForSubmission("quote")},requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`;if(!id)form.dataset.requestId=requestId;button.disabled=true;status.textContent=id?"正在保存修改…":"正在收藏…";
-  try{
-    if(id){const result=await requestV1(`/api/v1/quotes/${encodeURIComponent(id)}`,{method:"PATCH",headers:{"if-match":`"${existing?.version||1}"`},body:JSON.stringify(payload)},{domains:["quotes"],recoverCommitted:true,projection:{kind:"record.update",domain:"quotes",id,payload},onQueued:record=>applyPendingProjection(record)});if(result.data)state.quotes=(state.quotes||[]).map(item=>item.id===id?result.data:item);renderQuotes()}
-    else{
-      const result=await requestV1("/api/v1/quotes",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{domains:["quotes"],projection:{kind:"record.create",domain:"quotes",temporaryId,payload},onQueued:record=>applyPendingProjection(record)});
-      state.quotes=(state.quotes||[]).map(item=>item.id===temporaryId?result.data:item);renderQuotes()
-    }
-    delete form.dataset.requestId;resetQuoteForm();void refreshState("quotes").catch(error=>showToast(`善言已保存，但列表刷新失败：${error.message}`,"error"));showToast(id?"善言已更新":"善言已收藏")
-  }catch(err){if(err.syncStatus==="pending"){resetQuoteForm();status.textContent="已收藏，网络恢复后自动同步。";showToast(id?"善言修改将在网络恢复后同步":"善言已进入待同步队列")}else{if(id)await refreshState("quotes").catch(()=>{});status.textContent=err.message}}finally{button.disabled=false}
-});
-document.addEventListener("click",async e=>{const edit=e.target.closest("[data-quote-edit]"),remove=e.target.closest("[data-quote-delete]");if(edit)return editQuote(edit.dataset.quoteEdit);if(!remove)return;const id=remove.dataset.quoteDelete,item=(state.quotes||[]).find(value=>value.id===id);if(!item||!confirm("将这条善言及其批注移入回收站？"))return;remove.disabled=true;try{await requestV1(`/api/v1/quotes/${encodeURIComponent(id)}`,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`}},{domains:["quotes"],recoverCommitted:true,projection:{kind:"record.delete",domain:"quotes",id},onQueued:record=>applyPendingProjection(record)});if($("#quote-id").value===id)resetQuoteForm();void refreshState("quotes").catch(error=>showToast(`善言已移除，但列表刷新失败：${error.message}`,"error"));showToast("善言已移入回收站")}catch(err){if(err.syncStatus==="pending")showToast("善言将在网络恢复后移入回收站");else{await refreshState("quotes").catch(()=>{});showToast(err.message,"error");remove.disabled=false}}});
 $("#selection-quote-close").addEventListener("click",closeSelectionQuoteModal);
 $("#selection-quote-modal").addEventListener("click",e=>{if(e.target===e.currentTarget)closeSelectionQuoteModal()});
 $("#selection-quote-form").addEventListener("submit",async e=>{

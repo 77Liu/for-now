@@ -1,8 +1,4 @@
 export function createPageEffects({
-  requestFrame = globalThis.requestAnimationFrame,
-  syncQuoteOverflow,
-  setupQuoteBubbleScroll,
-  stopQuoteBubbleScroll,
   loadStatistics,
   loadAiCostPlan,
   loadArchitecture,
@@ -10,11 +6,6 @@ export function createPageEffects({
   loadTrash
 }) {
   return Object.freeze({
-    quotes: () => requestFrame(() => {
-      syncQuoteOverflow();
-      setupQuoteBubbleScroll();
-    }),
-    leaveQuotes: () => stopQuoteBubbleScroll(),
     statistics: () => loadStatistics(),
     "ai-cost": () => loadAiCostPlan(),
     architecture: () => loadArchitecture(),

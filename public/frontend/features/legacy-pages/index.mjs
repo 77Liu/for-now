@@ -3,8 +3,6 @@ export const LEGACY_PAGE_VIEWS = Object.freeze([
   "together",
   "daily",
   "captures",
-  "books",
-  "quotes",
   "keepsakes",
   "journals",
   "thoughts",

@@ -36,6 +36,8 @@ const frontendScopes = new Map([
   ["capture-journal", "captures-journals"],
   ["home", "home"],
   ["keepsakes-media", "keepsakes"],
+  ["library", "library"],
+  ["quotes", "library"],
   ["thought-discovery", "discovery"]
 ]);
 
@@ -45,6 +47,8 @@ const regressionScopes = new Map([
   ["checkin-health-regression.mjs", ["records"]],
   ["frontend-contract-regression.mjs", allFrontendScopes],
   ["frontend-capture-journal-feature-regression.mjs", ["captures-journals"]],
+  ["frontend-library-feature-regression.mjs", ["library"]],
+  ["frontend-quotes-feature-regression.mjs", ["library"]],
   ["frontend-shell-regression.mjs", allFrontendScopes],
   ["g2-a-r2-regression.mjs", ["thoughts"]],
   ["g2-actions-regression.mjs", ["actions"]],

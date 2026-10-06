@@ -445,24 +445,15 @@ await new Promise(resolve => setTimeout(resolve, 120));
 assert.deepEqual(browserScroll, { x: 0, y: 125 }, "user input must cancel a delayed scroll restore");
 
 const effects = createPageEffects({
-  requestFrame: callback => {
-    calls.push("frame");
-    callback();
-  },
-  syncQuoteOverflow: () => calls.push("quote-overflow"),
-  setupQuoteBubbleScroll: () => calls.push("quote-scroll"),
-  stopQuoteBubbleScroll: () => calls.push("quote-stop"),
   loadStatistics: async () => calls.push("statistics"),
   loadAiCostPlan: async () => calls.push("ai-cost"),
   loadArchitecture: async () => calls.push("architecture"),
   loadCommercialization: async () => calls.push("commercialization"),
   loadTrash: async () => calls.push("trash")
 });
-effects.quotes();
-effects.leaveQuotes();
 effects.architecture();
 await new Promise(resolve => setTimeout(resolve, 0));
-for (const expected of ["frame", "quote-overflow", "quote-scroll", "quote-stop", "architecture"]) {
+for (const expected of ["architecture"]) {
   assert.ok(calls.includes(expected), `missing page effect: ${expected}`);
 }
 

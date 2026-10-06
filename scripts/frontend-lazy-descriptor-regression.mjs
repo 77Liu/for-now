@@ -38,7 +38,9 @@ assert.deepEqual(dynamicSpecifiers, [
   "../features/feedback/index.mjs",
   "../features/health/controller.mjs",
   "../features/legacy-pages/index.mjs",
+  "../features/library/index.mjs",
   "../features/notifications/index.mjs",
+  "../features/quotes/index.mjs",
   "../features/thought-discovery/index.mjs",
   "../features/thoughts/index.mjs",
   "../media/content-image-drafts.mjs",
@@ -112,7 +114,11 @@ for (const removed of [
   "feedbackSubmissionPayload",
   "feedbackViewModel",
   "createThoughtDiscoveryController",
-  "DISCOVERY_GENRES"
+  "DISCOVERY_GENRES",
+  "function renderBooks(",
+  "function renderQuotes(",
+  "function renderQuoteSky(",
+  "const bookImageUi="
 ]) {
   assert.equal(runtime.includes(removed), false, `legacy F2 symbol remains in runtime: ${removed}`);
 }
@@ -142,6 +148,16 @@ assert.deepEqual(descriptors.get("notifications"), {
   feature: "frontend.feature.notifications",
   specifier: "../features/notifications/index.mjs"
 });
+assert.deepEqual(descriptors.get("quotes"), {
+  page: "quotes",
+  feature: "frontend.feature.quotes",
+  specifier: "../features/quotes/index.mjs"
+});
+assert.deepEqual(descriptors.get("books"), {
+  page: "books",
+  feature: "frontend.feature.library",
+  specifier: "../features/library/index.mjs"
+});
 assert.deepEqual(descriptors.get("daily"), {
   page: "daily",
   feature: "frontend.feature.health",
@@ -169,7 +185,7 @@ for (const view of ["today", "review"]) {
   });
 }
 for (const [view, descriptor] of descriptors) {
-  if (["today", "review", "daily", "captures", "journals", "thoughts", "together", "export", "feedback", "discovery", "notifications"].includes(view)) continue;
+  if (["today", "review", "daily", "captures", "journals", "books", "quotes", "thoughts", "together", "export", "feedback", "discovery", "notifications"].includes(view)) continue;
   assert.deepEqual(descriptor, {
     page: view,
     feature: "frontend.feature.legacy-pages",
@@ -184,7 +200,9 @@ for (const eagerEdge of [
   "./capture-journal/index.mjs",
   "./export/index.mjs",
   "./feedback/index.mjs",
+  "./library/index.mjs",
   "./notifications/index.mjs",
+  "./quotes/index.mjs",
   "./thought-discovery/index.mjs",
   "./thoughts/index.mjs"
 ]) {
@@ -199,7 +217,9 @@ for (const hiddenAsset of [
   "frontend/features/export/index.mjs",
   "frontend/features/feedback/index.mjs",
   "frontend/features/health/controller.mjs",
+  "frontend/features/library/index.mjs",
   "frontend/features/notifications/index.mjs",
+  "frontend/features/quotes/index.mjs",
   "frontend/features/thought-discovery/index.mjs",
   "frontend/features/thoughts/index.mjs"
 ]) {

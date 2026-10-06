@@ -173,6 +173,8 @@ const suites = {
     ["shared page audio lifecycle", ["scripts/frontend-page-audio-regression.mjs"]],
     ["F5 thought presentation and runtime isolation", ["scripts/frontend-thoughts-feature-regression.mjs"]],
     ["F6 capture, audio and journal lifecycle", ["scripts/frontend-capture-journal-feature-regression.mjs"]],
+    ["F7 library presentation and lifecycle", ["scripts/frontend-library-feature-regression.mjs"]],
+    ["F7 quote presentation and lifecycle", ["scripts/frontend-quotes-feature-regression.mjs"]],
     ["URL and browser history contracts", ["scripts/url-history-regression.mjs"]],
     ["PWA shell cache and private-data boundaries", ["scripts/pwa-regression.mjs"]],
     ["desktop and responsive UI", ["scripts/ui-regression.mjs"]],
