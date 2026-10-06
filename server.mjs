@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import { loadAppConfig } from "./src/config/index.mjs";
 import { createAttachmentStorage, createImageAttachments, cleanAttachmentPaths, cleanupTemporaryFiles, collectAttachmentPaths } from "./src/shared/attachments/index.mjs";
-import { appendPrivateJsonLine, createObservability, createRuntimeMemorySampler, errorMetadata, pruneLogs } from "./src/shared/observability/index.mjs";
+import { createObservability, createRuntimeMemorySampler, errorMetadata, pruneLogs } from "./src/shared/observability/index.mjs";
 import { createThoughtService, createThoughtTaskTarget, stripThoughtAnswerLead } from "./src/modules/thoughts/index.mjs";
 import {
   createOnboardingService,
@@ -32,11 +32,9 @@ import { createActionsService } from "./src/modules/actions/index.mjs";
 import { createFeedbackService } from "./src/modules/feedback/index.mjs";
 import { createUserModelService } from "./src/modules/user-model/index.mjs";
 import {
-  defaultLlmSettings, normalizeLlmSettings, createLlmSettingsService, normalizeAiUsage,
-  createAiUsageService, createAiAudit, createAiCostService, createAiGenerator, usageEntryFromAudit,
-  AI_BUDGET_POLICY, createAiBudgetService, resolveOfficialProviderPricing, systemPrompt
+  normalizeLlmSettings, normalizeAiUsage, systemPrompt
 } from "./src/modules/ai/index.mjs";
-import { createDeepSeekTransport, createAliyunSegmentationTransport, createVolcengineSpeechTransport, createVolcengineVisionTransport } from "./src/infrastructure/ai-providers/index.mjs";
+import { createAliyunSegmentationTransport, createVolcengineSpeechTransport, createVolcengineVisionTransport } from "./src/infrastructure/ai-providers/index.mjs";
 import { loadPromptCatalog } from "./src/infrastructure/prompt-catalog/index.mjs";
 import {
   createKeepsakeImageUnderstanding,
@@ -50,7 +48,7 @@ import { createRateGate } from "./src/shared/concurrency/index.mjs";
 import { installPromptCatalog, promptText, renderPrompt } from "./src/shared/prompts/index.mjs";
 import { localDateKey, eventTimeFields } from "./src/shared/time/index.mjs";
 import { buildAdminSnapshot } from "./admin-snapshot.mjs";
-import { createAccountLifecycle, createAnnotationCommands, createAiBudgetRuntime, createAiTaskTargets, createBackgroundAi, createLocalTestRuntime, createTrashMutations, createTrashCommands, createAttachmentCleanup, createSpeechCache, createKeepsakeMediaWorkflows, createThoughtWorkflows, createCaptureJournalWorkflows, createLibraryWorkflows, createReviewChatWorkflows, createUserModelExtractionService, createStoreNormalizer, createPublicStateProjection, deepSeekBudgetStages, emptyStore, normalizeCommercialization, personalContextProjection, routeStateProjection, startupProjection, storeForUser, withoutOwnerMetadata, STORE_VERSION, TRASH_RETENTION_DAYS, userModelEvidenceCurrent } from "./src/app/index.mjs";
+import { createAccountLifecycle, createAnnotationCommands, createAiRuntime, createAiTaskTargets, createBackgroundAi, createLocalTestRuntime, createTrashMutations, createTrashCommands, createAttachmentCleanup, createSpeechCache, createKeepsakeMediaWorkflows, createThoughtWorkflows, createCaptureJournalWorkflows, createLibraryWorkflows, createReviewChatWorkflows, createUserModelExtractionService, createStoreNormalizer, createPublicStateProjection, emptyStore, normalizeCommercialization, personalContextProjection, routeStateProjection, startupProjection, storeForUser, withoutOwnerMetadata, STORE_VERSION, TRASH_RETENTION_DAYS, userModelEvidenceCurrent } from "./src/app/index.mjs";
 import {
   createSpeechCacheSweep,
   SPEECH_CACHE_SWEEP_INTERVAL_MS,
@@ -59,7 +57,7 @@ import {
 import { safeText, recordVersion, safeIso, nullableNumber } from "./src/shared/validation/index.mjs";
 import { createAuthHttp, createLocalTestHttp, createLocalTestSessionVault, createReadOnlyUpstream, createJsonHttp, createTaskHttp, createAnnotationHttp, createTrashHttp, createAttachmentHttp, createAiSettingsHttp, createAiCostHttp, createAiBudgetHttp, createKeepsakeHttp, createOnboardingHttp, createOnboardingV2Http, createUserModelHttp, createThoughtHttp, createCheckinHttp, createHealthRecordHttp, createDiscoveryHttp, createExportHttp, createActionsHttp, createFeedbackHttp, createCaptureJournalHttp, createLibraryHttp, createReviewsChatHttp, createContentAttachmentsHttp, createSpeechHttp, createVisionHttp, createSyncHttp, createStartupHttp, createPersonalContextHttp, createRequestHandler, createModelResponseHttp, createApiV1Http, openApiV1 } from "./src/http/index.mjs";
 import { createHealthImageConfig, createDailyRecordRecords, normalizeHealthImage } from "./src/modules/health/index.mjs";
-import { createAccountDocumentRepository, createAiBudgetRepository, createAuthRepository, createJsonStoreRepository, createPostgresRuntime, checkPersistenceMarker, markPostgresDirectory, hasJsonData, METADATA_FIELD, removeIdempotencyResponse } from "./src/shared/persistence/index.mjs";
+import { createAuthRepository, createJsonStoreRepository, createPostgresRuntime, checkPersistenceMarker, markPostgresDirectory, hasJsonData, METADATA_FIELD, removeIdempotencyResponse } from "./src/shared/persistence/index.mjs";
 import { isApplicationRoutePath } from "./public/frontend/pages/index.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -149,7 +147,6 @@ const requestBinding = input => {
   return requestId && targetId ? { requestId, targetId, inputVersion: Math.max(0, Math.round(Number(input.inputVersion) || 0)) } : {};
 };
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
-const aiGate = createRateGate(AI_GLOBAL_QPS, AI_GLOBAL_CONCURRENCY);
 const segmentationGate = createRateGate(SEGMENTATION_GLOBAL_QPS, SEGMENTATION_GLOBAL_CONCURRENCY);
 const speechGate = createRateGate(SPEECH_GLOBAL_QPS, SPEECH_GLOBAL_CONCURRENCY);
 const ocrGate = createRateGate(OCR_GLOBAL_QPS, OCR_GLOBAL_CONCURRENCY);
@@ -219,184 +216,45 @@ if (postgresRuntime) {
   await postgresRuntime.claimApplication(() => process.exit(1));
   await markPostgresDirectory(DATA_DIR);
 }
-const aiBudgetRepository = createAiBudgetRepository({
-  runtime: postgresRuntime,
-  dataRoot: DATA_DIR
-});
-const aiBudgetService = createAiBudgetService({
-  repository: aiBudgetRepository,
-  policy: AI_BUDGET_POLICY,
+const aiRuntime = await createAiRuntime({
+  dataRoot: DATA_DIR,
+  postgresRuntime,
+  storagePaths,
+  requestStorage,
+  readStoredJson,
+  writeJsonAtomic,
+  auditChanges,
+  logEvent,
+  deepSeekApiUrl: DEEPSEEK_API_URL,
+  aiQps: AI_GLOBAL_QPS,
+  aiConcurrency: AI_GLOBAL_CONCURRENCY,
+  userDailyCallLimit: AI_USER_DAILY_CALL_LIMIT,
+  userDailyCostLimitCny: AI_USER_DAILY_COST_LIMIT_CNY,
+  cnyPerUsd: AI_COST_CNY_PER_USD,
+  auditTextLimit: AI_AUDIT_TEXT_LIMIT,
+  auditRetentionDays: AI_AUDIT_RETENTION_DAYS,
   now
-});
-const aiBudgetRuntime = createAiBudgetRuntime({
-  budget: aiBudgetService,
-  onRecoveryError: (error, details) => logEvent("system", "ai.budget_recovery_failed", {
-    level: "error",
-    ...details,
-    error: errorMetadata(error)
-  })
-});
-const aiBudgetRecovery = await aiBudgetRuntime.recover();
-if (aiBudgetRecovery.scanned || aiBudgetRecovery.failures.length) {
-  await logEvent("system", "ai.budget_recovery_completed", {
-    level: aiBudgetRecovery.failures.length ? "error" : "info",
-    scanned: aiBudgetRecovery.scanned,
-    released: aiBudgetRecovery.released.length,
-    settled: aiBudgetRecovery.settled.length,
-    failed: aiBudgetRecovery.failures.length
-  });
-}
-const settingsRepository = createAccountDocumentRepository({
-  runtime: postgresRuntime, name: "settings", getFile: () => storagePaths().llmSettingsFile,
-  readDocument: readStoredJson, writeDocument: writeJsonAtomic,
-  normalize: normalizeLlmSettings, emptyDocument: defaultLlmSettings, onCommit: auditChanges
-});
-const llmSettingsService = createLlmSettingsService({ repository: settingsRepository });
-const { read: readLlmSettings, write: writeLlmSettings, ensure: ensureLlmSettings } = llmSettingsService;
-const usageRepository = createAccountDocumentRepository({
-  runtime: postgresRuntime, name: "usage", getFile: () => storagePaths().aiUsageFile,
-  readDocument: readStoredJson, writeDocument: writeJsonAtomic, normalize: normalizeAiUsage, emptyDocument: {}
 });
 const {
-  read: readAiUsage, update: updateAiUsage, ensure: ensureAiUsage, reserveAttempt: reserveAiAttempt
-} = createAiUsageService({
-  repository: usageRepository, getAccountKey: () => storagePaths().aiUsageFile,
-  dailyCallLimit: AI_USER_DAILY_CALL_LIMIT, dailyCostLimitCny: AI_USER_DAILY_COST_LIMIT_CNY, cnyPerUsd: AI_COST_CNY_PER_USD,
-  now
-});
-const aiAudit = createAiAudit({
-  textLimit: AI_AUDIT_TEXT_LIMIT, getContext: () => requestStorage.getStore(),
-  append: (day, entry) => appendPrivateJsonLine(path.join(storagePaths().logsDir, `ai-audit-${day}.ndjson`), entry),
-  updateUsage: updateAiUsage, logEvent, now
-});
-const providerBudgetStage = (details, id = "provider-call") => {
-  const official = details.costKnown === true ? null : resolveOfficialProviderPricing(details);
-  const costKnown = details.costKnown === true || official?.costKnown === true;
-  return {
-    id,
-    provider: safeText(details.provider, 80),
-    service: safeText(details.service, 100),
-    action: safeText(details.action, 120),
-    scene: safeText(details.scene, 120),
-    costKnown,
-    ...(costKnown
-      ? {
-          estimatedCostCny: Math.max(
-            0,
-            Number(details.estimatedCostCny ?? (details.costKnown === true ? details.costCny : official.costCny)) || 0
-          )
-        }
-      : {
-          billingGap: safeText(details.costSource || official?.costSource, 500)
-            || "运行时计量单位或合同单价尚未完成映射"
-        })
-  };
-};
-const conservativeDeepSeekStage = ({ id, scene, maxOutputTokens = 4000, model = "deepseek-v4-pro" }) => ({
-  ...deepSeekBudgetStages({
-    model,
-    scene,
-    maxInputTokens: 128_000,
-    maxOutputTokens,
-    maxAttempts: 1,
-    stageIdPrefix: id
-  })[0],
-  id
-});
-const currentBudgetAccountId = () => safeText(requestStorage.getStore()?.user?.id, 100) || "local";
-const logBudgetRejection = (details, error) => logEvent("system", "ai.budget_rejected", {
-  level: "warn",
-  provider: details.provider,
-  service: details.service,
-  action: details.action,
-  scene: details.scene,
-  error: errorMetadata(error)
-});
-async function meteredProviderCall(details, invoke, summarize, budgetContext = null) {
-  const {
-    budgeted = true,
-    estimatedCostCny,
-    ...auditDetails
-  } = details;
-  const budgetStage = providerBudgetStage(details);
-  const reservedCostCny = Math.max(0, Number(estimatedCostCny ?? budgetStage.estimatedCostCny) || 0);
-  if (!budgeted) return aiAudit.providerCall(auditDetails, invoke, summarize);
-  const execute = async execution => {
-    const accountReservation = await reserveAiAttempt({ estimatedCostCny: reservedCostCny });
-    const releaseQuota = typeof accountReservation?.release === "function"
-      ? accountReservation.release
-      : accountReservation;
-    const commitQuota = typeof accountReservation?.commit === "function"
-      ? accountReservation.commit
-      : accountReservation;
-    let recordSiteUsage = () => false;
-    const reservation = {
-      retain: entry => {
-        accountReservation?.retain?.(entry);
-        recordSiteUsage(entry);
-      },
-      commit: typeof commitQuota === "function" ? () => commitQuota() : () => {}
-    };
-    const auditedCall = () => aiAudit.providerCall({ ...auditDetails, reservation }, invoke, summarize);
-    let stageStarted = false;
-    try {
-      return await execution.runStage(budgetContext?.stageId || "provider-call", async ({ recordUsage }) => {
-        recordSiteUsage = typeof recordUsage === "function" ? recordUsage : () => false;
-        stageStarted = true;
-        return auditedCall();
-      });
-    } catch (error) {
-      if (!stageStarted && typeof releaseQuota === "function") releaseQuota();
-      throw error;
-    }
-  };
-  try {
-    if (budgetContext?.execution) return await execute(budgetContext.execution);
-    const context = requestStorage.getStore() || {};
-    return await aiBudgetRuntime.executeTask({
-      accountId: safeText(context.user?.id, 100) || "local",
-      taskId: crypto.randomUUID(),
-      stages: [budgetStage]
-    }, execute);
-  } catch (error) {
-    if (error.statusCode === 429 || /(?:BUDGET|LIMIT)/.test(error.code || "")) {
-      await logBudgetRejection(details, error);
-    }
-    throw error;
-  }
-}
-async function executeDeepSeekBudgetTask(details, execute) {
-  try {
-    return await aiBudgetRuntime.executeTask({
-      accountId: details.accountId,
-      taskId: details.taskId,
-      stages: deepSeekBudgetStages({
-        model: details.model,
-        scene: details.scene,
-        maxInputTokens: details.maxInputTokens,
-        maxOutputTokens: details.maxOutputTokens,
-        maxAttempts: details.maxAttempts
-      })
-    }, execute);
-  } catch (error) {
-    if (error.statusCode === 429 || /(?:BUDGET|LIMIT)/.test(error.code || "")) {
-      await logBudgetRejection(details, error);
-    }
-    throw error;
-  }
-}
-const costRepository = createAccountDocumentRepository({
-  runtime: postgresRuntime, name: "costPlan", getFile: () => storagePaths().aiCostPlanFile,
-  readDocument: readStoredJson, writeDocument: writeJsonAtomic, normalize: value => value, emptyDocument: null,
-  onCommit: auditChanges
-});
-const aiCosts = createAiCostService({ repository: costRepository, readSettings: readLlmSettings, readUsage: readAiUsage, cnyPerUsd: AI_COST_CNY_PER_USD, now });
-let readModelRuntimeSettings = readLlmSettings;
-const runDeepSeek = createAiGenerator({
-  readSettings: () => readModelRuntimeSettings(), provider: createDeepSeekTransport({ endpoint: DEEPSEEK_API_URL }),
-  getContext: () => requestStorage.getStore(), reserveAttempt: reserveAiAttempt, gate: aiGate, audit: aiAudit,
-  executeBudgetTask: executeDeepSeekBudgetTask, now
-});
+  aiBudgetService,
+  aiBudgetRuntime,
+  settingsRepository,
+  llmSettingsService,
+  readLlmSettings,
+  writeLlmSettings,
+  ensureLlmSettings,
+  readAiUsage,
+  ensureAiUsage,
+  costRepository,
+  aiCosts,
+  runDeepSeek,
+  providerBudgetStage,
+  conservativeDeepSeekStage,
+  currentBudgetAccountId,
+  meteredProviderCall,
+  ensureAuditLogs,
+  installModelRuntimeSettingsReader
+} = aiRuntime;
 const storeRepository = postgresRuntime ? postgresRuntime.createStoreRepository({
   normalize: normalizeStore,
   emptyDocument: emptyStore,
@@ -860,39 +718,6 @@ async function ensureStore() {
   await storeRepository.update(store => store);
 }
 
-async function recoverAiUsageFromAuditLogs() {
-  let names = [];
-  try {
-    names = await fs.readdir(storagePaths().logsDir);
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
-  }
-  const recovered = new Map();
-  for (const name of names.filter(value => /^ai-audit-\d{4}-\d{2}-\d{2}\.ndjson$/.test(value)).sort()) {
-    const content = await fs.readFile(path.join(storagePaths().logsDir, name), "utf8");
-    for (const line of content.split("\n")) {
-      if (!line.trim()) continue;
-      try {
-        const entry = usageEntryFromAudit(JSON.parse(line));
-        if (entry?.callId) recovered.set(entry.callId, entry);
-      } catch {}
-    }
-  }
-  if (recovered.size) {
-    await updateAiUsage(usage => {
-      if (!Array.isArray(usage.entries)) usage.entries = [];
-      const existing = new Set(usage.entries.map(item => item.callId || item.id).filter(Boolean));
-      for (const [callId, entry] of recovered) if (!existing.has(callId)) usage.entries.push(entry);
-    });
-  }
-  await aiAudit.recoverPending();
-}
-
-async function ensureAuditLogs() {
-  await pruneLogs(storagePaths().logsDir, AI_AUDIT_RETENTION_DAYS);
-  await recoverAiUsageFromAuditLogs();
-}
-
 const { sendJson, bodyJson } = createJsonHttp({
   getContext: () => requestStorage.getStore(), maxBodyBytes: STANDARD_BODY_MAX_BYTES
 });
@@ -1105,7 +930,7 @@ const { requestAuthentication, authApi } = createAuthHttp({
   basePath: APP_BASE_PATH, cookieSecure: COOKIE_SECURE,
   bindUser: bindAuthenticatedUser
 });
-readModelRuntimeSettings = async () => {
+installModelRuntimeSettingsReader(async () => {
   const context = requestStorage.getStore() || {};
   const userSettings = await readLlmSettings();
   if (!AUTH_REQUIRED || isOwner(context.user)) return userSettings;
@@ -1122,7 +947,7 @@ readModelRuntimeSettings = async () => {
     scenarios: ownerSettings.scenarios,
     apiKey: ownerSettings.apiKey
   });
-};
+});
 
 function normalizedLocalDateTimeText(value) {
   const text = safeText(value, 40).replace(" ", "T");

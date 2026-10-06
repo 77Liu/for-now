@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createAiRuntime } from "../src/app/ai-runtime.mjs";
+import { createAiRuntime } from "../src/app/index.mjs";
 
 const clone = value => structuredClone(value);
 const tick = () => new Promise(resolve => setImmediate(resolve));
