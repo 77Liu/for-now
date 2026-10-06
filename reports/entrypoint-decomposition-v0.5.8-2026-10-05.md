@@ -1055,3 +1055,28 @@ V0.5.8 只有在以下条件同时成立时才可关闭：
 - `npm run check`、F4 专项、sync、PWA、web budget、完整 frontend `25/25`
   `83034 ms` 与 Journey Smoke `15/15` `63884 ms` 通过；独立复审
   blocker/P0/P1=`0/0/0`。下一步进入 F5。
+
+### F5 思绪列表、详情与 TTS 检查点
+
+- `e603137`、`6faa442` 建立应用级页面音频协调器与账户隔离的内容图片草稿
+  manager；`74ac884` 新增 `features/thoughts` 的 lazy loader、model、
+  presentation、view、operations、speech 和 controller，并完成
+  `thoughts/together` 两个页面 descriptor 的单轨接线。
+- 列表/详情层级、搜索/分页、追问/备注、内容块与整链编辑删除、TTS
+  source-version 校验和不可用详情回退均离开 runtime；首页思绪创建器仍作为
+  F10 home 组合的一部分保留，不把 F6 捕念或 F10 首页提前并入本批。
+- 图片草稿 manager 不读取 DOM/router/领域状态；按 owner/generation 与
+  `thoughtRoot/thoughtBlock` key 隔离，覆盖部分上传、确定失败补偿、未知结果
+  保留和预览 URL 单次回收。页面音频 coordinator 统一处理持久音频与 Blob
+  试音的播放排他、迟到取消和账户 reset。
+- `runtime.mjs` 4527→4288 行，SHA
+  `dc4dc6eb4b847adc35ecdb38563eee411b8478ccefd85c29d95ada3a757ceba5`；
+  API 63、DOM query 118、event binding 204、template 548、timer 45，
+  6 条 G6 例外继续精确绑定。
+- thoughts lazy 引导闭包为 `2 modules / 1147 B`，默认首页隐藏 thoughts
+  请求为 0；延迟 runtime 闭包 `24 modules / 677830 B`，首屏 API 最大 9。
+  冷/暖 first-readable P75 `672.7/668.3 ms`，预算未放宽。
+- `npm run check`、F5 专项、sync、URL/history、PWA、web budget、UI、
+  mobile、完整 frontend `28/28` `93962 ms`、Journey Smoke `15/15`
+  `66361 ms` 全部通过；独立 Reviewer 最终
+  blocker/P0/P1=`0/0/0`。下一步进入 F6。

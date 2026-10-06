@@ -4,11 +4,11 @@
 
 状态：`G0-G2` 已通过；Owner 已验收 V0.5.7 `G7` 并允许进入 V0.5.8
 本地开发。`V0.5.8-13/15/14/16/20/02` 已完成工作区验证，`03/04`
-已完成 B1-B7 与 F1-F4；服务端入口 G4 代码、本地系统门及
+已完成 B1-B7 与 F1-F5；服务端入口 G4 代码、本地系统门及
 隔离 PostgreSQL 16.14 stable 门均已通过，G4 已关闭。
 F3.1 通知页、F3.2 批注 lifecycle、F3.3 后台结果/跨内容定位及 F4.1
 状态趋势/历史/首页情绪、F4.2 健康媒体草稿与批量体重、F4.3 日录展示/
-提交/sync 均已完成，下一步进入 F5；
+提交/sync 以及 F5 思绪列表/详情/追问/备注/TTS 均已完成，下一步进入 F6；
 尚未进入 Preview 或发布。
 
 2026-10-06 经 Owner 授权按完整需求原子重排：V0.5.8 只保留 6 条 P00；
@@ -129,12 +129,12 @@ V0.5.8 的 6 条 P00 关联版本记录 `reczz28JaO7yXu1K`；V0.5.9 的 8 条 P0
 | 20 | `reczz28Jd8F4oH1y` | 工作区已验证未部署 | `91a10b7..88d37e1`：同步 HTML 开屏、雨景生命周期、真实 paint 性能门、FCP 后入口、退出/失败/清理、watchdog 锁存及 PWA 升级预算通过 |
 | 02 | `reczz28JPdCVUwBD` | 工作区已验证未部署 | `6730597`：三类真实入口、组合 API/import binding/factory 链、G4/G6 例外和 feature lifecycle 已机器冻结；最终独立复审 GO |
 | 03 | `reczz28JPdCVWPzV` | 工作区已验证未部署 | `f3724c4..17fca0d`：B1-B7 已完成，`server.mjs` 3283→4 行；显式 PostgreSQL 16.14 与隔离签名 Node 下 stable 三段通过，G4 已关闭 |
-| 04 | `reczz28JPdCVXtsA` | 进行中 | `e7d99d6..5139875`：F1-F4 已完成；日录展示、CRUD、媒体草稿、批量体重与 sync 对账已迁入 health feature；runtime 5291→4527 行，下一步 F5，完整 home 延至 F10 |
+| 04 | `reczz28JPdCVXtsA` | 进行中 | `e7d99d6..74ac884`：F1-F5 已完成；health 与 thoughts 已按路由迁移，共享图片草稿/页面音频接线；runtime 5291→4288 行，下一步 F6，完整 home 延至 F10 |
 
 13、15、14、16、20 都是行为修复，已在现有入口上完成并固定自动化反例；
 共享热点由集成负责人串行接线。02 已冻结结构契约；03 已完成 B1-B7 并关闭
-G4，04 已完成 F1、F2 slice 1、actions lifecycle、F3 和 F4；
-完整 F2/G5 尚未完成，下一步进入 F5，剩余浏览器入口仍只允许单写集成。
+G4，04 已完成 F1、F2 slice 1、actions lifecycle、F3、F4 和 F5；
+完整 F2/G5 尚未完成，下一步进入 F6，剩余浏览器入口仍只允许单写集成。
 Owner 于 2026-10-06
 重申 `server.mjs` 只能负责启动，硬上限 100 行、目标不超过 40 行；不得用
 无边界 barrel 或动态目录扫描制造表面瘦身。
@@ -493,6 +493,19 @@ flowchart TD
   为 `3 modules / 38617 B`，首页隐藏 feature 请求 0。一次独立复审
   blocker/P0/P1=`0/0/0`。
 
+### 2026-10-06 F5 检查点
+
+- `e603137`、`6faa442`、`74ac884` 完成共享页面音频、内容图片草稿与
+  thoughts lazy feature；列表/详情、搜索/分页、追问/备注、TTS 和路由恢复
+  已从 runtime 单轨删除，`thoughts/together` 共用同一 controller。
+- `runtime.mjs` 4527→4288 行，SHA
+  `dc4dc6eb4b847adc35ecdb38563eee411b8478ccefd85c29d95ada3a757ceba5`；
+  API 63、DOM query 118、event binding 204、template 548、timer 45，
+  模块登记 74、browser G6 例外 6。
+- `check`、F5 专项、URL/history、PWA、web budget、UI、mobile、完整
+  frontend `28/28` `93962 ms`、Journey Smoke `15/15` `66361 ms`
+  通过；独立复审 blocker/P0/P1=`0/0/0`，下一步 F6。
+
 ### 2026-10-06 滚动调度与 G4
 
 - 已将事件重排、角色池缩放、候选内容绑定、资源约束和实际时间证据融合到
@@ -511,7 +524,7 @@ flowchart TD
 
 当前未完成：
 
-- 下一步进入 F5-F10，完成剩余 browser runtime 收口与
+- 下一步进入 F6-F10，完成剩余 browser runtime 收口与
   G6-G7；服务端入口已收口为 4 行、删除全部 server 迁移例外并通过 G4。
 - 未执行 push、tag、Release、Preview/生产部署或生产写入。
 

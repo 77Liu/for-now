@@ -746,3 +746,30 @@ F4.3 -> F5 -> F6 -> F7 -> F8 -> F9 -> F10 -> G6
 - Base 交付 `04@reczz28JPdCVXtsA` 已最小字段更新并回读，交付表
   `rev=121 / 92`；仍为“进行中 / 未发布”，下一步 F5。未执行 push、tag、
   Release、Preview、部署、云资源修改、真实付费调用或生产写入。
+
+## 2026-10-06 F5 思绪与共享媒体 lifecycle 检查点 R4
+
+- 代码提交：`e603137`（页面音频 coordinator）、`6faa442`（内容图片草稿
+  manager）和 `74ac884`（思绪 feature、共享入口接线与旧实现删除）。
+- `features/thoughts` 接管思绪列表/详情、搜索/分页、追问/备注、编辑/删除、
+  TTS source-version 校验和详情路由恢复；`thoughts/together` 共用同一
+  lazy controller，runtime 不再保留 presenter、详情操作或全局思绪监听。
+- 内容图片草稿按 owner/generation 与 key 隔离，部分上传只重试失败项，
+  确定失败补偿、未知结果持久保留；页面音频统一处理播放排他、迟到 Blob、
+  reset 和 object URL 单次回收。
+- `runtime.mjs` 4527→4288 行，SHA
+  `dc4dc6eb4b847adc35ecdb38563eee411b8478ccefd85c29d95ada3a757ceba5`；
+  API 65→63、DOM query 141→118、event binding 229→204、
+  template 614→548、timer 50→45；74 个模块、237 条路由、6 条 browser
+  G6 例外按更小计数冻结。
+- thoughts descriptor 静态引导闭包 `2 modules / 1147 B`，默认首页隐藏
+  thoughts 请求 0；延迟 runtime 闭包 `24 modules / 677830 B`，首屏 API
+  最大 9。冷/暖 first-readable P75 为 `672.7/668.3 ms`，预算未放宽。
+- `npm run check`、F5 专项、sync、URL/history、PWA、web budget、UI、
+  mobile、完整 frontend `28/28` `93962 ms`、Journey Smoke `15/15`
+  `66361 ms` 通过；一次独立复审 blocker/P0/P1=`0/0/0`。
+- Base 最小字段回填未执行：当前环境缺少 `lark-cli`，无法调用已安装
+  lark-base skill；交付表继续以已回读的 `rev=121 / 92` 为最后事实，待工具
+  恢复后补写 F5 证据，不据此阻塞本地代码检查点。
+- F5 已关闭，下一步进入 F6 捕念/音频/转写与日记；未执行 push、tag、
+  Release、Preview、部署、云资源修改、真实付费调用或生产写入。
