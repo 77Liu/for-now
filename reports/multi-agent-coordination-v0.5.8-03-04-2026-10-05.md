@@ -1069,3 +1069,71 @@ M  bbcbd8b3d71c3c15c0218444e174bacbeacefaf9a36f5571edb467f9c72804c1  scripts/web
 唯一下一动作：以 `983f9cc` 为基线执行 F10，将剩余 6 个 legacy 页面及
 home/chat/onboarding/auth/shell 运行时职责迁出，达到 runtime `<=180` 且
 六类 G6 迁移例外归零后冻结完整本地候选。
+
+## 2026-10-07 F10/G6 本地候选关闭 R11
+
+状态：`F10 closed / G6 closed / local candidate fixed / release authorization pending`。
+本检查点仅关闭本地候选；未执行 push、tag、Gitee Release、Preview、生产
+部署、云资源、费用调用或生产写入。
+
+### 固定候选与提交
+
+- base：`e33ea1990a0acc532890a10c13f47b1b1ba7af2d`。
+- candidate tree：`68aa4c1a0ba1a849800b70746ff5713237a13a65`。
+- 完整 tree manifest：
+  `/tmp/v0.5.8-f10-g6-68aa4c1a0ba1a849800b70746ff5713237a13a65.manifest`；
+  SHA-256：
+  `61af0282effd5ce7d642366602bcef5b2ad4cced2919a0f5ceaf2695ee29fb86`。
+- 相对 base 共 42 个文件；暂存后 `git write-tree` 与 candidate tree
+  完全一致，且 cached/working-tree `git diff --check` 均通过。
+- F10/G6 功能提交：
+  `d28ea5787d63cd385733f0bc09d769f335e1c94f`；commit tree 与固定
+  candidate tree 完全一致。调度报告未混入功能提交。
+
+### 收口事实
+
+- `public/frontend/app/runtime.mjs` 为 53 行纯组合入口；14 个 runtime owner
+  均不超过 500 行，最大为 `kernel.mjs` 474 行。
+- 25 个页面均由真实 descriptor/controller 单轨承接；legacy page feature
+  与旧专项已删除。
+- G6 机器门：3 个入口策略、108 个 active modules、237 条 owned routes、
+  0 个 active migration exceptions；API/DOM/event/timer/template/lines
+  六类迁移例外全部归零。
+- 启动、登录、账户切换、路由恢复、Home/actions 增量和捕念保存竞态均已
+  在当前候选关闭；未加入感知模型、提示词语义调整、CDN、开屏设置或其他
+  V0.5.9 功能。
+
+### 固定候选验证与复审
+
+- `npm run check`、F9/F10 专项、G6、entrypoints、UI、PWA、sync、
+  URL/history、账户切换、离线同步与路由恢复专项：通过。
+- `npm run test:system`：通过，耗时 449215ms；包含 backend、36 项
+  frontend 和 performance。
+- Web budget：warm P75 735.2ms/750ms，cold P75 749.7ms/1000ms；
+  首屏请求不超过 70/80，API 不超过 9/10，hidden feature 请求为 0；
+  deferred runtime 为 10 modules / 73082B。
+- `npm run test:journeys:smoke`：15/15 全自动通过，无 partial，耗时
+  69997ms。
+- `npm run test:postgres:stable`：preflight 未通过，本机三个受检位置均
+  缺少 PostgreSQL 16 的 `postgres`、`initdb`、`pg_ctl`，测试未启动；
+  该环境缺口不冒充通过。
+- `test:journeys:release` 未执行：该命令包含会联网的
+  `npm audit --omit=dev`，超出本批禁止联网/远程动作的授权边界。
+- 最终独立只读 Reviewer `f10_g6_final_reviewer` 对固定 base/tree/manifest
+  复审，并独立复核 G6、module boundaries、F10、PWA、actions、
+  capture/journal；无 findings，blocker/P0/P1=`0/0/0`，`GO`。
+
+### DAG、资源与剩余风险
+
+- F10 与 G6 已关闭；当前没有 ready 的 V0.5.8 编码节点，不再派发写任务。
+- 当前 worktree 为 5 个，满足 `<=6`；最终 Reviewer 与 Validator 已释放。
+  Agent API 仍显示的 3 条旧记录在关闭时返回 `No agent found`，继续登记为
+  registry stale，不视为运行资源。
+- 本地候选的剩余验证缺口为 PostgreSQL 16 stable、真实安装态 PWA/真实
+  断网重启，以及包含联网审计的 release journey；Preview、生产和第三方
+  资源均未触碰。
+- Release 授权包固定为功能提交 `d28ea57`、candidate tree `68aa4c1a`、
+  manifest SHA-256 `61af0282...fb86`、Reviewer `0/0/0`、worktree `5`。
+
+唯一下一动作：保持本地候选冻结；只有取得明确的远端 Release 授权和对应
+环境后，才可执行 push/tag/Release/Preview/生产动作或补跑受环境约束的门禁。
