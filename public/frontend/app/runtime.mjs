@@ -30,26 +30,15 @@ import {
 } from "../features/checkins-model/index.mjs";
 import { createCheckinsFeatureController } from "../features/checkins/index.mjs";
 import {
-  AUDIO_MAX_DURATION_MS,
-  captureAudioIdentity,
-  captureAudioPresentation,
   captureRecordPayload,
   createIndexedDbMediaDraftStore,
   imageRecordPayload,
   imageUnderstandingPayload,
   normalizeTtsGenerationRate,
-  preferredRecorderMime,
-  speechAssetForSource,
-  speechAudioPath,
   speechPreviewPayload,
-  speechSourceIdentity,
-  speechSynthesisPayload,
   uploadPendingMediaItems,
-  uploadOriginalAudio,
   uploadOriginalImages,
-  TTS_PLAYBACK_RATES,
   normalizeTtsPlaybackRate,
-  validatedAudioBlob,
   validatedImageFiles
 } from "../media/index.mjs";
 import { createPageAudioCoordinator } from "../media/page-audio.mjs";
@@ -63,11 +52,12 @@ const appEntryUrl=new URL("../../app.js",import.meta.url);
 const applicationBasePath=new URL(".",appEntryUrl).pathname.replace(/\/$/,"")||"/";
 const initialRuntimeView=resolveApplicationRoute(location,{basePath:applicationBasePath}).view;
 const portFactoriesRequest=globalThis.__forNowPortsRequest||import("./ports.mjs");
-const legacyFeatureModuleRequest=globalThis.__forNowLegacyFeatureRequest||(["export","feedback","discovery","notifications"].includes(initialRuntimeView)?null:import("../features/legacy-pages/index.mjs"));
+const legacyFeatureModuleRequest=globalThis.__forNowLegacyFeatureRequest||(["export","feedback","discovery","notifications","captures","journals"].includes(initialRuntimeView)?null:import("../features/legacy-pages/index.mjs"));
 const exportFeatureModuleRequest=globalThis.__forNowExportFeatureRequest||(initialRuntimeView==="export"?import("../features/export/index.mjs"):null);
 const feedbackFeatureModuleRequest=globalThis.__forNowFeedbackFeatureRequest||(initialRuntimeView==="feedback"?import("../features/feedback/index.mjs"):null);
 const discoveryFeatureModuleRequest=globalThis.__forNowDiscoveryFeatureRequest||(initialRuntimeView==="discovery"?import("../features/thought-discovery/index.mjs"):null);
 const notificationsFeatureModuleRequest=globalThis.__forNowNotificationsFeatureRequest||(initialRuntimeView==="notifications"?import("../features/notifications/index.mjs"):null);
+let captureJournalFeatureModuleRequest=globalThis.__forNowCaptureJournalFeatureRequest||(["captures","journals"].includes(initialRuntimeView)?import("../features/capture-journal/index.mjs"):null);
 let annotationsFeatureModuleRequest=globalThis.__forNowAnnotationsFeatureRequest||null;
 let backgroundResultsFeatureModuleRequest=globalThis.__forNowBackgroundResultsFeatureRequest||null;
 let healthFeatureModuleRequest=globalThis.__forNowHealthFeatureRequest||null;
@@ -93,6 +83,11 @@ const loadThoughtsFeatureModule=()=>{
   const pending=thoughtsFeatureModuleRequest||import("../features/thoughts/index.mjs");
   thoughtsFeatureModuleRequest=pending;
   return Promise.resolve(pending).catch(error=>{if(thoughtsFeatureModuleRequest===pending)thoughtsFeatureModuleRequest=null;throw error})
+};
+const loadCaptureJournalFeatureModule=()=>{
+  const pending=captureJournalFeatureModuleRequest||import("../features/capture-journal/index.mjs");
+  captureJournalFeatureModuleRequest=pending;
+  return Promise.resolve(pending).catch(error=>{if(captureJournalFeatureModuleRequest===pending)captureJournalFeatureModuleRequest=null;throw error})
 };
 const startupPerformanceEnabled=new URLSearchParams(location.search).has("native-performance");
 const startupMarks={navigationStart:0,moduleLoaded:Number(performance.now().toFixed(1))};
@@ -158,14 +153,14 @@ let pageRouter,switchView,restoreView;
 let runtimeApplication=null,runtimeFeatureRegistry=null,runtimeStatePort=null,applicationLifecycleReady=false;
 let backgroundResultsController=null,backgroundResultsLoadErrorReported=false,backgroundResultsRetryAttempts=0;
 let healthFeatureController=null;
+let capturesFeatureController=null;
 const checkinsFeatureControllers=new Set();
 const thoughtsFeatureControllers=new Set();
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-let activeDate=currentLocalDate,activeDailyType="sleep",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,captureComposerOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
+let activeDate=currentLocalDate,activeDailyType="sleep",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
 let notificationsLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,routeDataRequestSerial=0,routeLoadFailureKey="",loadedRouteKey="",fullRouteStateLoaded=false,renderedRouteView="",analysisRequestSerial=0;
-let captureEditorTrigger=null,suspendedCaptureCreateDraft=null,captureEditorSerial=0;
-const feedSearchQueries={captures:"",journals:"",books:"",keepsakes:"",quotes:""};
+const feedSearchQueries={books:"",keepsakes:"",quotes:""};
 const quoteTagPickerConfig=Object.freeze({
   quote:{input:"#quote-tags",selected:"#quote-selected-tags",options:"#quote-tag-options",toggle:"#quote-tag-toggle",status:"#quote-tag-status"},
   selectionQuote:{input:"#selection-quote-tags",selected:"#selection-quote-selected-tags",options:"#selection-quote-tag-options",toggle:"#selection-quote-tag-toggle",status:"#selection-quote-tag-status"}
@@ -182,7 +177,6 @@ const keepsakeBatch={items:[],activeIndex:0,loading:false};
 let keepsakeBatchPreviewUrls=[],keepsakeBatchPersistTimer=0,keepsakeDerivativeRefreshTimer=0;
 let keepsakeVisibleCount=KEEPSAKE_PAGE_SIZE,keepsakePaginationOwner="",keepsakeLoadObserver=null;
 const persistentContentImageKeys=new Set(["capture","thoughtRoot","thoughtBlock","comment"]);
-const captureAudioDraft={blob:null,preview:"",path:"",mimeType:"",bytes:0,durationMs:0,uploadRequestId:"",uploadedPath:"",lastError:null,recorder:null,stream:null,chunks:[],startedAt:0,pausedAt:0,pausedTotal:0,timer:0,serial:0,stopPromise:null};
 const imageViewer={paths:[],index:0,objectUrl:"",requestSerial:0,trigger:null};
 const quoteScrollStates=new WeakMap();
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
@@ -312,13 +306,13 @@ const openCommentPanel=(...args)=>annotationsController?.openPanel(...args);
 function patchActiveThoughtTarget(target){for(const controller of thoughtsFeatureControllers)if(controller.patchTarget(target))return true;return false}
 function reconcileActiveThoughtRoute(){for(const controller of thoughtsFeatureControllers)if(controller.reconcileRoute())return true;return false}
 function createRuntimeBackgroundResultsController(module){return module.createBackgroundResultsFeatureController({
-  data:{getSnapshot:()=>state,getAccountId:()=>currentUser?.id||"",replaceSnapshot:replaceState,request,refresh:(domains,options)=>refreshState(domains,options)},
+  data:{getSnapshot:()=>state,getAccountId:()=>currentUser?.id||"",replaceSnapshot:replaceState,request,refresh:(domains,options)=>refreshState(domains,options),publish:domains=>publishDomains(new Set(domains))},
   navigation:{openThoughtDetail,switchView},
   annotations:{
     openTarget:async(target,isCurrent)=>{const controller=await ensureAnnotationsController();if(!isCurrent())return false;controller.openPanel(commentRootKey(target.resourceType,target.targetId),target.annotationId);return true},
     refreshTarget:target=>{const controller=annotationsController,annotation=controller?.findTaskAnnotation(target);if(annotation&&controller.isActiveRoot(commentRootKey(target.resourceType,target.targetId)))controller.refreshAnnotation(annotation);return true}
   },
-  view:{renderCaptures,patchThoughtTarget:patchActiveThoughtTarget,scheduleAnnotationLayout:scheduleAnnotationLineCounts,showToast},
+  view:{patchThoughtTarget:patchActiveThoughtTarget,scheduleAnnotationLayout:scheduleAnnotationLineCounts,showToast},
   platform:{document,window,requestFrame:callback=>requestAnimationFrame(callback),escapeSelector:value=>CSS.escape(value)}
 })}
 async function ensureBackgroundResultsController(){
@@ -338,9 +332,9 @@ function formFieldIdentity(field,index){
   if(field instanceof HTMLInputElement&&field.type==="radio"&&field.name)return`name:${field.name}:value:${field.value}`;
   return field.name?`name:${field.name}`:field.id?`id:${field.id}`:`field:${index}`
 }
-function captureFormDrafts(root){
+function captureFormsDraft(forms){
   const active=document.activeElement;
-  return[...root.querySelectorAll("form")].map((form,index)=>({
+  return[...forms].map((form,index)=>({
     key:formIdentity(form,index),hidden:form.hidden,requestId:form.dataset.requestId||"",
     fields:[...form.querySelectorAll("input,textarea,select")].map((field,fieldIndex)=>({
       key:formFieldIdentity(field,fieldIndex),
@@ -350,8 +344,7 @@ function captureFormDrafts(root){
     }))
   }))
 }
-function restoreFormDrafts(root,drafts){
-  const forms=[...root.querySelectorAll("form")];
+function restoreFormsDraft(forms,drafts){
   let focusedField=null,selectionStart=null,selectionEnd=null;
   for(const [index,form]of forms.entries()){
     const draft=drafts.find(item=>item.key===formIdentity(form,index));if(!draft)continue;
@@ -366,29 +359,22 @@ function restoreFormDrafts(root,drafts){
   if(focusedField){focusedField.focus({preventScroll:true});if(selectionStart!==null&&typeof focusedField.setSelectionRange==="function")focusedField.setSelectionRange(selectionStart,selectionEnd)}
   return focusedField
 }
-const durableDraftForms=["chain-form","checkin-form","capture-form"];
+const durableDraftForms=["chain-form","checkin-form"];
 const durableDraftKey=()=>currentUser?.id?`cike:session-drafts:${currentUser.id}`:"";
 function saveDurableDrafts(){
   const key=durableDraftKey();if(!key)return;
-  const editingCapture=Boolean($("#capture-id")?.value),forms=durableDraftForms.map(id=>document.getElementById(id)).filter(Boolean),drafts=captureFormDrafts({querySelectorAll:()=>forms});
-  let previous=null;
-  if(editingCapture){
-    try{previous=JSON.parse(sessionStorage.getItem(key)||"null")}catch{}
-    const captureKey=`form:${durableDraftForms.indexOf("capture-form")}`,savedCapture=previous?.forms?.find(item=>item.key===captureKey);
-    const index=drafts.findIndex(item=>item.key===captureKey);
-    if(savedCapture&&index>=0)drafts[index]=savedCapture;
-    else if(!savedCapture&&index>=0)drafts.splice(index,1)
-  }
-  const payload={forms:drafts,draftTags,captureDraftTags:editingCapture?(previous?.captureDraftTags||[]):captureDraftTags};
+  const forms=durableDraftForms.map(id=>document.getElementById(id)).filter(Boolean),drafts=captureFormsDraft(forms);
+  let previous=null;try{previous=JSON.parse(sessionStorage.getItem(key)||"null")}catch{}
+  const payload={...(previous||{}),forms:drafts,draftTags};
   try{sessionStorage.setItem(key,JSON.stringify(payload))}catch{}
 }
 function restoreDurableDrafts(){
   const key=durableDraftKey();if(!key)return;
   try{
     const payload=JSON.parse(sessionStorage.getItem(key)||"null");if(!payload)return;
-    restoreFormDrafts({querySelectorAll:()=>durableDraftForms.map(id=>document.getElementById(id)).filter(Boolean)},payload.forms||[]);
-    draftTags=Array.isArray(payload.draftTags)?payload.draftTags:[];captureDraftTags=Array.isArray(payload.captureDraftTags)?payload.captureDraftTags:[];
-    renderTagComposer();renderCaptureTagComposer()
+    restoreFormsDraft(durableDraftForms.map(id=>document.getElementById(id)).filter(Boolean),payload.forms||[]);
+    draftTags=Array.isArray(payload.draftTags)?payload.draftTags:[];
+    renderTagComposer()
   }catch{}
 }
 function clearDurableDraft(formId=""){
@@ -428,194 +414,6 @@ function runPublicValidation(callback){
 }
 const formatBytes=value=>value<1024?`${value} B`:value<1048576?`${(value/1024).toFixed(1)} KB`:`${(value/1048576).toFixed(1)} MB`;
 const imageDataUrls=files=>Promise.all(files.map(file=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error("无法读取图片，请重新选择"));reader.readAsDataURL(file)})));
-const audioDataUrl=blob=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error("无法读取音频，请重新录制或导入"));reader.readAsDataURL(blob)});
-const formatAudioDuration=value=>{const seconds=Math.max(0,Math.round(Number(value)||0)/1000),minutes=Math.floor(seconds/60);return`${minutes}:${String(Math.floor(seconds%60)).padStart(2,"0")}`};
-const audioDraftKey="capture-audio";
-let captureAudioStartPending=false;
-function captureAudioInputError(error){
-  return presentError(error,{
-    operation:"添加录音",
-    object:"这段录音",
-    retained:"当前捕念正文和已有录音仍保留在页面",
-    publicValidation:error?.publicValidation===true
-  }).message
-}
-function captureRecordingError(error){
-  const name=String(error?.name||"");
-  if(["NotAllowedError","SecurityError"].includes(name))return"麦克风权限未开启。当前捕念正文和原有录音没有变化。请开启权限，或改为上传音频。";
-  if(name==="NotFoundError")return"没有找到可用的麦克风。当前捕念正文和原有录音没有变化。请连接设备，或改为上传音频。";
-  return presentError(error,{
-    operation:"开始录音",
-    object:"这次录音",
-    retained:"当前捕念正文和原有录音没有变化"
-  }).message
-}
-function renderCaptureAudioDraft(){
-  const preview=$("#capture-audio-preview"),player=$("#capture-audio-player"),meta=$("#capture-audio-meta"),status=$("#capture-audio-status"),record=$("#capture-audio-record"),pause=$("#capture-audio-pause"),stop=$("#capture-audio-stop"),remove=$("#capture-audio-remove"),file=$("#capture-audio-file"),recorder=$("#capture-audio-recorder");
-  if(!preview||!player)return;
-  const recorderState=captureAudioDraft.recorder?.state||"",active=["recording","paused"].includes(recorderState),paused=recorderState==="paused",source=captureAudioDraft.preview||(captureAudioDraft.path?appUrl(captureAudioDraft.path):"")||(captureAudioDraft.uploadedPath?appUrl(captureAudioDraft.uploadedPath):"");
-  if((active||captureAudioStartPending)&&recorder)recorder.open=true;record.hidden=active;record.disabled=captureAudioStartPending;pause.hidden=!active;pause.textContent=paused?"▶":"Ⅱ";pause.title=paused?"继续录音":"暂停录音";pause.setAttribute("aria-label",pause.title);stop.hidden=!active;file.disabled=active||captureAudioStartPending;remove.hidden=!active&&!source;remove.disabled=captureAudioStartPending;remove.title=active?"取消录音":"移除语音";remove.setAttribute("aria-label",remove.title);
-  preview.hidden=!source;if(source&&player.src!==new URL(source,location.href).href)player.src=source;if(!source){player.pause();player.removeAttribute("src");player.load()}
-  meta.textContent=source?`${formatAudioDuration(captureAudioDraft.durationMs)} · ${formatBytes(captureAudioDraft.bytes)}`:"";
-  const elapsed=Date.now()-captureAudioDraft.startedAt-captureAudioDraft.pausedTotal-(paused?Date.now()-captureAudioDraft.pausedAt:0);
-  if(captureAudioStartPending)status.textContent="正在请求麦克风权限…";
-  else if(active)status.textContent=`${paused?"录音已暂停":"正在录音"} ${formatAudioDuration(elapsed)} / 10:00`;
-  else if(captureAudioDraft.lastError)status.textContent=captureAudioDraft.lastError;
-  else if(source)status.textContent=state.speech?.configured?"录音已保留；提交后可在后台转成文字。":"录音已保留；暂时不能转成文字。";
-  else status.textContent=typeof MediaRecorder==="undefined"?"当前浏览器不支持直接录音，可导入音频文件。":""
-}
-async function persistCaptureAudioDraft(){
-  if(!currentUser?.id||$("#capture-id")?.value)return;
-  const hasAudio=captureAudioDraft.blob||captureAudioDraft.path||captureAudioDraft.uploadedPath;
-  if(!hasAudio){await mediaDraftStore.delete(currentUser.id,audioDraftKey);return}
-  await mediaDraftStore.put({
-    owner:currentUser.id,id:audioDraftKey,updatedAt:new Date().toISOString(),
-    audio:captureAudioDraft.path?{
-      path:captureAudioDraft.path,mimeType:captureAudioDraft.mimeType,bytes:captureAudioDraft.bytes,durationMs:captureAudioDraft.durationMs
-    }:{
-      blob:captureAudioDraft.blob,mimeType:captureAudioDraft.mimeType,bytes:captureAudioDraft.bytes,durationMs:captureAudioDraft.durationMs,
-      uploadRequestId:captureAudioDraft.uploadRequestId,uploadedPath:captureAudioDraft.uploadedPath,lastError:captureAudioDraft.lastError
-    }
-  })
-}
-async function discardCaptureAudioUpload(attachmentPath=captureAudioDraft.uploadedPath,uploadRequestId=captureAudioDraft.uploadRequestId){
-  if(!attachmentPath||!uploadRequestId)return false;
-  try{
-    const result=await request("/api/audio/discard",{method:"POST",body:JSON.stringify({attachmentPath,uploadRequestId})});
-    return result.discarded?.includes(attachmentPath)
-  }catch{return false}
-}
-function stopCaptureAudioTracks(){captureAudioDraft.stream?.getTracks?.().forEach(track=>track.stop());captureAudioDraft.stream=null}
-function clearCaptureAudioDraft({forget=true,preserveStored=false}={}){
-  captureAudioDraft.serial+=1;clearInterval(captureAudioDraft.timer);captureAudioDraft.timer=0;
-  if(["recording","paused"].includes(captureAudioDraft.recorder?.state))captureAudioDraft.recorder.stop();
-  stopCaptureAudioTracks();if(captureAudioDraft.preview)URL.revokeObjectURL(captureAudioDraft.preview);
-  const stalePath=forget?captureAudioDraft.uploadedPath:"",staleRequestId=captureAudioDraft.uploadRequestId;
-  const resolveStop=captureAudioDraft.resolveStop;
-  Object.assign(captureAudioDraft,{blob:null,preview:"",path:"",mimeType:"",bytes:0,durationMs:0,uploadRequestId:"",uploadedPath:"",lastError:null,recorder:null,chunks:[],startedAt:0,pausedAt:0,pausedTotal:0,stopPromise:null,resolveStop:null});
-  resolveStop?.();
-  const input=$("#capture-audio-file");if(input)input.value="";renderCaptureAudioDraft();
-  if(forget)void Promise.all([
-    stalePath?discardCaptureAudioUpload(stalePath,staleRequestId):Promise.resolve(),
-    currentUser?.id&&!preserveStored?mediaDraftStore.delete(currentUser.id,audioDraftKey):Promise.resolve()
-  ]).catch(()=>{})
-}
-function setExistingCaptureAudio(audio,{preserveStored=false}={}){
-  clearCaptureAudioDraft({preserveStored});
-  if(audio)Object.assign(captureAudioDraft,{path:audio.attachmentPath||"",mimeType:audio.mimeType||"",bytes:Number(audio.bytes)||0,durationMs:Number(audio.durationMs)||0});
-  renderCaptureAudioDraft()
-}
-async function setCaptureAudioBlob(blob,durationMs){
-  const audio=runPublicValidation(()=>validatedAudioBlob(blob,durationMs)),stalePath=captureAudioDraft.uploadedPath,staleRequestId=captureAudioDraft.uploadRequestId;
-  if(captureAudioDraft.preview)URL.revokeObjectURL(captureAudioDraft.preview);
-  Object.assign(captureAudioDraft,{blob:audio.blob,preview:URL.createObjectURL(audio.blob),path:"",mimeType:audio.mimeType,bytes:audio.bytes,durationMs:audio.durationMs,uploadRequestId:"",uploadedPath:"",lastError:null,recorder:null,chunks:[]});
-  renderCaptureAudioDraft();await persistCaptureAudioDraft();
-  if(stalePath)await discardCaptureAudioUpload(stalePath,staleRequestId)
-}
-const importedAudioDuration=blob=>new Promise((resolve,reject)=>{
-  const source=URL.createObjectURL(blob),audio=document.createElement("audio");
-  const done=value=>{URL.revokeObjectURL(source);audio.removeAttribute("src");audio.load();value instanceof Error?reject(value):resolve(value)};
-  audio.preload="metadata";audio.addEventListener("loadedmetadata",()=>Number.isFinite(audio.duration)&&audio.duration>0?done(Math.round(audio.duration*1000)):done(new Error("无法读取音频时长")),{once:true});audio.addEventListener("error",()=>done(new Error("无法读取音频时长")),{once:true});audio.src=source
-});
-async function restoreCaptureAudioDraft(owner){
-  if(!owner||captureAudioDraft.blob||captureAudioDraft.path)return;
-  const stored=await mediaDraftStore.get(owner,audioDraftKey),audio=stored?.audio;if(!audio)return;
-  if(audio.path)Object.assign(captureAudioDraft,{path:audio.path,mimeType:audio.mimeType||"",bytes:Number(audio.bytes)||0,durationMs:Number(audio.durationMs)||0});
-  else if(audio.blob){
-    const normalized=validatedAudioBlob(audio.blob,audio.durationMs),lastError=audio.lastError?"上次处理录音未完成。原音草稿仍保存在本机，请重试。":null;
-    Object.assign(captureAudioDraft,{blob:normalized.blob,preview:URL.createObjectURL(normalized.blob),mimeType:normalized.mimeType,bytes:normalized.bytes,durationMs:normalized.durationMs,uploadRequestId:audio.uploadRequestId||"",uploadedPath:audio.uploadedPath||"",lastError})
-  }
-  renderCaptureAudioDraft();$("#capture-audio-status").textContent=`已恢复 ${formatAudioDuration(captureAudioDraft.durationMs)} 的待提交语音。`
-}
-async function startCaptureAudioRecording(){
-  if(typeof MediaRecorder==="undefined"||!navigator.mediaDevices?.getUserMedia)throw new Error("当前浏览器不支持直接录音，可改为导入音频");
-  if(captureAudioStartPending||["recording","paused"].includes(captureAudioDraft.recorder?.state))return false;
-  if((captureAudioDraft.blob||captureAudioDraft.path||captureAudioDraft.uploadedPath)&&!confirm("用新录音替换当前语音？"))return false;
-  $("#capture-audio-recorder").open=true;
-  const owner=currentUser?.id,serial=++captureAudioDraft.serial;
-  let stream=null;
-  captureAudioStartPending=true;captureAudioDraft.lastError=null;renderCaptureAudioDraft();
-  try{
-    stream=await navigator.mediaDevices.getUserMedia({audio:true});
-    if(owner!==currentUser?.id||serial!==captureAudioDraft.serial){stream.getTracks().forEach(track=>track.stop());return false}
-    const mimeType=preferredRecorderMime(),recorder=mimeType?new MediaRecorder(stream,{mimeType}):new MediaRecorder(stream);
-    let resolveStop;
-    const stopPromise=new Promise(resolve=>{resolveStop=resolve});
-    captureAudioDraft.stream=stream;captureAudioDraft.recorder=recorder;captureAudioDraft.chunks=[];captureAudioDraft.startedAt=Date.now();captureAudioDraft.pausedAt=0;captureAudioDraft.pausedTotal=0;captureAudioDraft.lastError=null;captureAudioDraft.stopPromise=stopPromise;captureAudioDraft.resolveStop=resolveStop;
-    recorder.addEventListener("dataavailable",event=>{if(serial===captureAudioDraft.serial&&event.data?.size)captureAudioDraft.chunks.push(event.data)});
-    recorder.addEventListener("stop",async()=>{
-      try{
-        clearInterval(captureAudioDraft.timer);captureAudioDraft.timer=0;stopCaptureAudioTracks();
-        if(serial!==captureAudioDraft.serial)return;
-        const durationMs=Math.min(AUDIO_MAX_DURATION_MS,Date.now()-captureAudioDraft.startedAt-captureAudioDraft.pausedTotal),blob=new Blob(captureAudioDraft.chunks,{type:recorder.mimeType||mimeType});
-        captureAudioDraft.recorder=null;
-        try{await setCaptureAudioBlob(blob,durationMs);$("#capture-audio-status").textContent="录音已保存在本机，提交后同步。"}
-        catch(error){captureAudioDraft.lastError=captureAudioInputError(error);renderCaptureAudioDraft()}
-      }finally{
-        if(captureAudioDraft.stopPromise===stopPromise){captureAudioDraft.stopPromise=null;captureAudioDraft.resolveStop=null}
-        resolveStop()
-      }
-    },{once:true});
-    recorder.start(1000);renderCaptureAudioDraft();
-    captureAudioDraft.timer=setInterval(()=>{const paused=captureAudioDraft.recorder?.state==="paused",elapsed=Date.now()-captureAudioDraft.startedAt-captureAudioDraft.pausedTotal-(paused?Date.now()-captureAudioDraft.pausedAt:0);if(elapsed>=AUDIO_MAX_DURATION_MS)stopCaptureAudioRecording();else renderCaptureAudioDraft()},250);
-    return true
-  }catch(error){
-    if(stream){
-      if(captureAudioDraft.stream===stream){captureAudioDraft.recorder=null;stopCaptureAudioTracks()}
-      else stream.getTracks().forEach(track=>track.stop())
-    }
-    throw error
-  }finally{
-    captureAudioStartPending=false;renderCaptureAudioDraft()
-  }
-}
-async function requestCaptureAudioRecording(){
-  try{return await startCaptureAudioRecording()}
-  catch(error){captureAudioDraft.lastError=captureRecordingError(error);renderCaptureAudioDraft();return false}
-}
-function toggleCaptureAudioPause(){
-  const recorder=captureAudioDraft.recorder;if(!recorder)return;
-  if(recorder.state==="recording"){recorder.pause();captureAudioDraft.pausedAt=Date.now()}
-  else if(recorder.state==="paused"){captureAudioDraft.pausedTotal+=Date.now()-captureAudioDraft.pausedAt;captureAudioDraft.pausedAt=0;recorder.resume()}
-  renderCaptureAudioDraft()
-}
-function stopCaptureAudioRecording(){
-  const recorder=captureAudioDraft.recorder;
-  if(recorder?.state==="paused"){captureAudioDraft.pausedTotal+=Date.now()-captureAudioDraft.pausedAt;captureAudioDraft.pausedAt=0}
-  if(recorder&&["recording","paused"].includes(recorder.state))recorder.stop();
-  return captureAudioDraft.stopPromise||Promise.resolve()
-}
-function cancelCaptureAudioRecording(){
-  const recorder=captureAudioDraft.recorder;if(!recorder||!["recording","paused"].includes(recorder.state))return clearCaptureAudioDraft();
-  captureAudioDraft.serial+=1;clearInterval(captureAudioDraft.timer);captureAudioDraft.timer=0;recorder.stop();stopCaptureAudioTracks();
-  const resolveStop=captureAudioDraft.resolveStop;
-  Object.assign(captureAudioDraft,{recorder:null,chunks:[],startedAt:0,pausedAt:0,pausedTotal:0,lastError:null,stopPromise:null,resolveStop:null});resolveStop?.();renderCaptureAudioDraft()
-}
-async function captureAudioForSubmission(){
-  if(captureAudioDraft.path)return{attachmentPath:captureAudioDraft.path,mimeType:captureAudioDraft.mimeType,bytes:captureAudioDraft.bytes,durationMs:captureAudioDraft.durationMs};
-  if(!captureAudioDraft.blob)return null;
-  const valid=runPublicValidation(()=>validatedAudioBlob(captureAudioDraft.blob,captureAudioDraft.durationMs));
-  if(captureAudioDraft.uploadedPath)return{attachmentPath:captureAudioDraft.uploadedPath,mimeType:captureAudioDraft.mimeType,bytes:captureAudioDraft.bytes,durationMs:captureAudioDraft.durationMs};
-  captureAudioDraft.uploadRequestId||=crypto.randomUUID();captureAudioDraft.lastError=null;await persistCaptureAudioDraft();
-  try{
-    const result=await uploadOriginalAudio({request,audio:await audioDataUrl(valid.blob),durationMs:valid.durationMs,idempotencyKey:captureAudioDraft.uploadRequestId});
-    Object.assign(captureAudioDraft,{uploadedPath:result.attachmentPath,mimeType:result.mimeType,bytes:result.bytes,durationMs:result.durationMs,lastError:null});await persistCaptureAudioDraft();renderCaptureAudioDraft();return result
-  }catch(error){
-    captureAudioDraft.lastError=presentError(error,{
-      operation:"上传捕念语音",
-      object:"这段语音",
-      phase:"捕念语音上传",
-      retained:"原音草稿仍保存在本机"
-    }).message;
-    await persistCaptureAudioDraft();renderCaptureAudioDraft();throw error
-  }
-}
-async function rollbackCaptureAudioUpload(attachmentPath){
-  if(!attachmentPath||attachmentPath!==captureAudioDraft.uploadedPath)return;
-  if(await discardCaptureAudioUpload()){
-    captureAudioDraft.uploadedPath="";captureAudioDraft.uploadRequestId="";await persistCaptureAudioDraft();renderCaptureAudioDraft()
-  }
-}
 function contentImageDraft(key){return contentImageDraftManager?.snapshot(key)||{owner:"",key,items:[],uploadRequestId:"",context:null}}
 function currentContentImageContext(key){
   if(key==="comment")return annotationsController?.commentDraftContext()||null;
@@ -1107,7 +905,7 @@ function applyPendingProjection(record){
   if(projection.kind==="capture.create"){
     if((state.captures||[]).some(item=>item.clientRequestId===record.operationId||item.id===projection.temporaryId))return false;
     state.captures=[{id:projection.temporaryId,...projection.payload,createdAt:record.createdAt,_sync:sync},...(state.captures||[])];
-    renderCaptures();return true
+    publishDomains(new Set(["captures"]));return true
   }
   if(projection.kind==="checkin.create"){
     if((state.checkins||[]).some(item=>item.clientRequestId===record.operationId||item.id===projection.temporaryId))return false;
@@ -1303,8 +1101,6 @@ async function openAiTaskTarget(task,notification){
 }
 function commitDraftTags(){const input=$("#chain-tags"),values=splitTags(input.value);for(const value of values)if(!draftTags.includes(value))draftTags.push(value);input.value="";renderTagComposer()}
 function renderTagComposer(){const list=$("#chain-tag-list");if(!list)return;list.innerHTML=draftTags.map(tag=>`<span class="tag-chip">#${escapeHtml(tag)}<button type="button" data-remove-draft-tag="${escapeHtml(tag)}" aria-label="移除标签 ${escapeHtml(tag)}">×</button></span>`).join("");const known=[...new Set(state.thoughts.flatMap(item=>item.tags||[]))].filter(tag=>!draftTags.includes(tag));$("#tag-suggestions").innerHTML=known.map(tag=>`<option value="${escapeHtml(tag)}"></option>`).join("")}
-function commitCaptureTags(){const input=$("#capture-tags"),values=splitTags(input.value);for(const value of values)if(!captureDraftTags.includes(value))captureDraftTags.push(value);input.value="";renderCaptureTagComposer()}
-function renderCaptureTagComposer(){const list=$("#capture-tag-list");if(!list)return;list.innerHTML=captureDraftTags.map(tag=>`<span class="tag-chip">#${escapeHtml(tag)}<button type="button" data-remove-capture-tag="${escapeHtml(tag)}" aria-label="移除关键词 ${escapeHtml(tag)}">×</button></span>`).join("");const known=[...new Set([...(state.captures||[]),...(state.thoughts||[])].flatMap(item=>item.tags||[]))].filter(tag=>!captureDraftTags.includes(tag));$("#capture-tag-suggestions").innerHTML=known.map(tag=>`<option value="${escapeHtml(tag)}"></option>`).join("")}
 function chainRecordKind(){return $("#chain-form").elements.recordKind?.value==="capture"?"capture":"thought"}
 function syncChainRecordKind(){
   const form=$("#chain-form"),sourceMode=Boolean(form.elements.sourceCaptureId.value),captureMode=!sourceMode&&chainRecordKind()==="capture";
@@ -1348,12 +1144,6 @@ function sliderTemplate(key,cfg){const ref=metricReference(key,cfg.custom),value
 function renderSliders(){const cfg=metricConfig();$("#sliders").innerHTML=`<div class="metric-history-legend" aria-label="历史参照图例"><span><i class="previous"></i>上一次</span><span><i class="average"></i>近30次平均</span></div>${Object.entries(cfg).map(([k,v])=>sliderTemplate(k,v)).join("")}`;$$('[data-metric]').forEach(input=>{const update=(confirmed=false)=>{if(confirmed){input.dataset.confirmed="true";input.closest(".metric").classList.remove("unconfirmed")}const prefix=input.dataset.confirmed==="true"?"":"待确认 · ";$(`#${CSS.escape(input.dataset.metric)}-anchor`).textContent=`${prefix}${cfg[input.dataset.metric].anchors[Number(input.value)-1]}`};input.addEventListener("input",()=>update(true));input.addEventListener("change",()=>navigator.vibrate?.(8));input.addEventListener("pointerdown",()=>update(true));update()});$$(".note-toggle").forEach(b=>b.addEventListener("click",()=>{const f=$(`#${CSS.escape(b.dataset.note)}-note`);f.classList.toggle("visible");b.setAttribute("aria-expanded",String(f.classList.contains("visible")));if(f.classList.contains("visible"))f.focus()}))}
 
 function setLongContentExpanded(key,expanded){if(!key)return;if(expanded)expandedLongContentKeys.add(key);else expandedLongContentKeys.delete(key)}
-function speechAssetControlsMarkup({sourceType,sourceId,sourceVersion,label}){
-  if(!state.speech?.configured||!speechSourceIdentity(sourceType,sourceId,sourceVersion))return"";
-  const asset=speechAssetForSource(state.speech.assets,{sourceType,sourceId,sourceVersion}),path=speechAudioPath(asset),sourceLabel=String(label||"文字朗读"),voiceLabel=(state.speech.voices||[]).find(item=>item.id===asset?.voice)?.label||"",rateOptions=TTS_PLAYBACK_RATES.map(rate=>`<option value="${rate}" ${rate===1?"selected":""}>${rate.toFixed(1)}×</option>`).join("");
-  const player=asset&&path?`<div class="capture-speech-player speech-asset-player"><audio controls preload="none" src="${escapeHtml(appUrl(path))}" data-speech-player="${escapeHtml(asset.id)}" aria-label="${escapeHtml(`${sourceLabel}播放器`)}"></audio><span>${escapeHtml(voiceLabel?`${sourceLabel} · ${voiceLabel}`:sourceLabel)}</span></div>`:"";
-  return `<section class="speech-asset-controls" data-speech-source-type="${escapeHtml(sourceType)}" data-speech-source-id="${escapeHtml(sourceId)}" data-speech-source-version="${Number(sourceVersion)||1}">${player}<div class="capture-speech-actions speech-asset-actions"><button type="button" data-speech-synthesize data-speech-regenerate="${asset?"true":"false"}" aria-label="${escapeHtml(`${asset?"重新生成":"生成"}${sourceLabel}`)}">${asset?"重新生成":"生成"}</button><label><span>播放倍速</span><select data-speech-playback-rate aria-label="${escapeHtml(`${sourceLabel}播放倍速`)}">${rateOptions}</select></label></div><p class="speech-asset-status" role="status" aria-live="polite"></p></section>`
-}
 const routeContentSelectors=Object.freeze({
   today:["#home-memory-grid","#home-keepsake","#action-columns","#habit-list"],
   together:["#chat-history","#today-thoughts"],
@@ -1402,36 +1192,11 @@ function applyApplicationRoute(route){
   if(routeLoadFailureKey&&routeLoadFailureKey!==routeDataKey(route))routeLoadFailureKey="";
   $$(".view[aria-busy='true']").forEach(view=>view.removeAttribute("aria-busy"));
   stopPageAudio();
-  if(renderedRouteView==="captures"&&route.view!=="captures")closeCaptureEditor({restoreFocus:false});
   renderVisibleRoute();
   if(!fullRouteStateLoaded&&(!routeDataReady||loadedRouteKey!==routeDataKey(route))&&currentUser)return loadRouteState(route,requestSerial);
   return null
 }
 function openThoughtDetail(id){return pageRouter?.openDetail("thought-chain",id)}
-
-function captureDerivedTranscription(label,text,lines,kind){
-  if(!text)return"";
-  return `<section class="capture-transcription ${escapeHtml(kind)} speech-text-layer" data-speech-text-lines="${lines}" data-speech-text-label="${escapeHtml(label)}" style="--speech-text-lines:${lines}"><small>${escapeHtml(label)}</small><div class="speech-text-frame"><div class="markdown-content">${renderMarkdown(text)}</div></div><button type="button" class="speech-text-expand" data-speech-text-expand aria-expanded="false" aria-label="${escapeHtml(`展开${label}`)}" hidden>展开</button></section>`
-}
-function captureAudioMarkup(item){
-  const audio=item.audio,transcription=item.transcription||null,speech=transcription?.condensedText||transcription?.polishedText||transcription?.rawText||plainPreview(item.content||"");
-  if(!audio&&!speech)return"";
-  const presentation=captureAudioPresentation(item,state.speech,state.aiTasks);
-  const layers=[
-    transcription?.rawText?`<details class="capture-transcription capture-transcription-raw"><summary>原始转写</summary><div class="markdown-content">${escapeHtml(transcription.rawText).replace(/\r\n?|\n/g,"<br>")}</div></details>`:"",
-    captureDerivedTranscription("AI 整理稿",transcription?.polishedText,2,"polished"),
-    captureDerivedTranscription("AI 凝练压缩总结稿",transcription?.condensedText,6,"condensed")
-  ].join("");
-  let transcriptionState="";
-  if(presentation.transcriptionMessage){
-    const action=presentation.canTranscribe&&["failed","unconfigured"].includes(presentation.transcriptionStatus)
-      ?`<button type="button" class="subtle-action" data-capture-transcribe="${escapeHtml(item.id)}" data-capture-audio-key="${escapeHtml(presentation.audioKey)}">${presentation.transcriptionStatus==="failed"?"重试":"开始转写"}</button>`
-      :"";
-    transcriptionState=`<p class="capture-transcription-state ${presentation.transcriptionStatus==="failed"?"error":""}" data-transcription-task-id="${escapeHtml(presentation.transcriptionTaskId)}">${escapeHtml(presentation.transcriptionMessage)}${action}</p>`;
-  }
-  const speechControls=speech?speechAssetControlsMarkup({sourceType:"capture",sourceId:item.id,sourceVersion:item.version||1,label:"捕念文字朗读"}):"";
-  return `<section class="capture-audio-record" data-capture-audio-key="${escapeHtml(presentation.audioKey)}" data-transcription-task-id="${escapeHtml(presentation.transcriptionTaskId)}">${audio?`<div class="capture-audio-source" data-capture-audio-key="${escapeHtml(presentation.audioKey)}"><audio controls preload="none" src="${escapeHtml(appUrl(audio.attachmentPath))}" aria-label="捕念原始录音播放器"></audio><span>${formatAudioDuration(audio.durationMs)} · <b class="capture-audio-playback-state">${escapeHtml(presentation.audioStatus)}</b></span></div>`:""}${layers}${transcriptionState}${speechControls}</section>`
-}
 function syncVoicePreviewButton(){
   const button=$("#tts-voice-preview");if(!button)return;
   const voice=$("#tts-default-voice")?.value,selected=(state.speech?.voices||[]).find(item=>item.id===voice);
@@ -1456,155 +1221,6 @@ function stopPageAudio(){
   pageAudioCoordinator.stopAll();voicePreviewAudio=null;voicePreviewPending=false;voicePreviewPlaying=false;voicePreviewVoice="";
   if($("#tts-voice-preview-status"))$("#tts-voice-preview-status").textContent="";
   syncVoicePreviewButton()
-}
-function syncSpeechTextOverflow(root=document){
-  root.querySelectorAll("[data-speech-text-lines]").forEach(layer=>{
-    const frame=layer.querySelector(".speech-text-frame"),content=frame?.firstElementChild,button=layer.querySelector("[data-speech-text-expand]");if(!frame||!content||!button)return;
-    const expanded=layer.classList.contains("is-expanded"),lines=Math.max(1,Number(layer.dataset.speechTextLines)||1),lineHeight=parseFloat(getComputedStyle(content).lineHeight)||20,limit=lines*lineHeight,overflows=frame.scrollHeight>limit+1;
-    layer.classList.toggle("is-collapsible",overflows);layer.classList.toggle("is-expanded",overflows&&expanded);button.hidden=!overflows;button.textContent=overflows&&expanded?"收起":"展开";button.setAttribute("aria-expanded",String(overflows&&expanded));button.setAttribute("aria-label",`${overflows&&expanded?"收起":"展开"}${layer.dataset.speechTextLabel||"文稿"}`)
-  })
-}
-function captureCard(item,showDate=true){
-  const tags=item.tags?.length?`#${item.tags.map(escapeHtml).join(" #")}`:"未标记";
-  const promotedRoot=(state.thoughts||[]).find(value=>value.type==="question"&&value.sourceRef?.type==="capture"&&value.sourceRef.id===item.id);
-  const syncing=item._sync?.status,actions=syncing
-    ?`<span class="capture-sync-state ${escapeHtml(syncing)}">${syncing==="pending"?"待同步":"正在同步"}</span>`
-    :`${promotedRoot?`<button type="button" class="capture-promoted-link" data-capture-thought="${escapeHtml(promotedRoot.id)}">已展为思考</button>`:`<button type="button" data-capture-promote="${item.id}">展开成思考</button>`}<div class="capture-actions-row"><button type="button" data-capture-edit="${item.id}">编辑</button><button type="button" class="danger" data-capture-delete="${item.id}" aria-label="删除这条捕念">删除</button></div>`;
-  return `<article class="capture-timeline-entry${syncing?" is-syncing":""}" data-capture-id="${item.id}"><div class="timeline-date capture-date">${showDate?escapeHtml(eventDate(item)):""}</div><header class="capture-meta"><span class="capture-top-tags">${tags}</span><time class="capture-entry-time">${formatTime(eventTimestamp(item))}</time></header><div class="capture-item" data-expand-key="capture:${escapeHtml(item.id)}"><div class="capture-copy"><div class="capture-content-viewport"><div class="record-actions capture-actions">${actions}</div>${item.content?`<div class="markdown-content">${renderMarkdown(item.content)}</div>`:""}${contentImagesMarkup(item,"capture")}${captureAudioMarkup(item)}</div></div><button class="capture-expand" type="button" data-capture-expand aria-expanded="false" aria-label="展开捕念" hidden>⌄</button></div></article>`;
-}
-function syncCaptureOverflow(){
-  $$(".capture-item").forEach(card=>{
-    const viewport=card.querySelector(".capture-content-viewport"),button=card.querySelector("[data-capture-expand]");if(!viewport||!button)return;
-    const wasExpanded=expandedLongContentKeys.has(card.dataset.expandKey);viewport.classList.remove("expanded");
-    const overflows=viewport.scrollHeight>viewport.clientHeight+1;
-    const expanded=wasExpanded&&overflows;
-    viewport.classList.toggle("expanded",expanded);card.classList.toggle("is-expandable",overflows);card.classList.toggle("is-expanded",expanded);button.hidden=!overflows;button.setAttribute("aria-expanded",String(expanded));button.setAttribute("aria-label",expanded?"收起捕念":"展开捕念");
-  });
-  scheduleAnnotationLineCounts()
-}
-function toggleCaptureCard(card){
-  if(!card?.classList.contains("is-expandable"))return;
-  const viewport=card.querySelector(".capture-content-viewport"),button=card.querySelector("[data-capture-expand]"),expanded=!viewport.classList.contains("expanded");
-  setLongContentExpanded(card.dataset.expandKey,expanded);viewport.classList.toggle("expanded",expanded);card.classList.toggle("is-expanded",expanded);button.setAttribute("aria-expanded",String(expanded));button.setAttribute("aria-label",expanded?"收起捕念":"展开捕念");scheduleAnnotationLineCounts();
-}
-function renderCaptures(){
-  const allItems=[...(state.captures||[])].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a)));
-  const items=allItems.filter(item=>matchesFeedSearch("captures",item.content,item.tags,item.transcription?.rawText,item.transcription?.polishedText,item.transcription?.condensedText));
-  const form=$("#capture-form"),editor=$("#capture-editor"),toggle=$("#capture-create-toggle"),open=captureComposerOpen,editing=Boolean($("#capture-id").value);
-  form.hidden=!open;editor.hidden=!open;$("#capture-editor-title").textContent=editing?"编辑念起":"记录念起";toggle.setAttribute("aria-expanded",String(open));toggle.textContent=open?"收起":"＋ 捕念";
-  $("#capture-count").textContent=feedCountLabel("captures",items.length,allItems.length,"条");
-  $("#capture-list").innerHTML=items.length
-    ?items.map((item,index)=>captureCard(item,index===0||eventDate(item)!==eventDate(items[index-1]))).join("")
-    :allItems.length
-      ?feedSearchEmpty("念起")
-      :contentState({title:"还没有捕念",body:"刚开始为空很正常。文字、图片或录音都可以单独留下。",action:{command:"new-capture",label:"留下第一条"}});
-  items.filter(item=>!item._sync).forEach(item=>markCommentTarget($(`[data-capture-id="${CSS.escape(item.id)}"] .capture-copy .markdown-content`),commentRootKey("capture",item.id),"content"));
-  renderLatex($("#capture-list"));applyCommentAnchors($("#capture-list"));requestAnimationFrame(()=>{syncSpeechTextOverflow($("#capture-list"));syncCaptureOverflow()});
-}
-function captureEditorFocusTarget(trigger=captureEditorTrigger){
-  if(trigger?.element?.isConnected)return trigger.element;
-  if(trigger?.captureId)return document.querySelector(`[data-capture-id="${CSS.escape(trigger.captureId)}"] [data-capture-edit]`);
-  return $("#capture-create-toggle")
-}
-function snapshotCaptureCreateDraft(){
-  const imageDraft=contentImageDraft("capture");
-  return{
-    form:captureFormDrafts({querySelectorAll:()=>[$("#capture-form")]})[0],
-    tags:[...captureDraftTags],
-    images:{
-      uploadRequestId:imageDraft.uploadRequestId,
-      context:imageDraft.context,
-      items:imageDraft.items.map(item=>({...item,preview:""}))
-    },
-    audio:Object.fromEntries(["blob","path","mimeType","bytes","durationMs","uploadRequestId","uploadedPath","lastError"].map(key=>[key,captureAudioDraft[key]]))
-  }
-}
-function restoreSuspendedCaptureCreateDraft(){
-  const snapshot=suspendedCaptureCreateDraft;if(!snapshot)return false;
-  contentImageDraftManager.replaceTransient("capture",snapshot.images);
-  if(captureAudioDraft.preview)URL.revokeObjectURL(captureAudioDraft.preview);
-  Object.assign(captureAudioDraft,{blob:null,preview:"",path:"",mimeType:"",bytes:0,durationMs:0,uploadRequestId:"",uploadedPath:"",lastError:null,recorder:null,stream:null,chunks:[],startedAt:0,pausedAt:0,pausedTotal:0,timer:0,stopPromise:null,resolveStop:null,...snapshot.audio});
-  captureDraftTags=[...snapshot.tags];restoreFormDrafts({querySelectorAll:()=>[$("#capture-form")]},[snapshot.form]);renderContentImageEditor("capture");renderCaptureAudioDraft();renderCaptureTagComposer();suspendedCaptureCreateDraft=null;return true
-}
-async function closeCaptureEditor({restoreFocus=true}={}){
-  if(!captureComposerOpen)return;
-  const serial=++captureEditorSerial,editingId=$("#capture-id").value,trigger=captureEditorTrigger;
-  if(captureAudioStartPending)captureAudioDraft.serial+=1;
-  captureComposerOpen=false;$("#capture-editor").hidden=true;$("#capture-form").hidden=true;document.body.classList.remove("capture-editor-open");renderCaptures();
-  if(captureAudioDraft.recorder&&captureAudioDraft.recorder.state!=="inactive")await stopCaptureAudioRecording();
-  saveDurableDrafts();await Promise.all([persistContentImageDraft("capture"),persistCaptureAudioDraft()]).catch(()=>{});
-  if(serial!==captureEditorSerial)return false;
-  if(!captureAudioDraft.blob&&!captureAudioDraft.path&&!captureAudioDraft.uploadedPath)$("#capture-audio-recorder").open=false;
-  if(editingId)resetCaptureForm({restoreFocus:false});else captureEditorTrigger=null;
-  const target=captureEditorFocusTarget(trigger);if(restoreFocus&&target?.isConnected)target.focus({preventScroll:true})
-  return true
-}
-function openCaptureEditor(trigger=null){
-  if($("#capture-id").value)resetCaptureForm({restoreFocus:false});
-  captureEditorSerial+=1;
-  captureEditorTrigger={element:trigger instanceof HTMLElement?trigger:$("#capture-create-toggle"),captureId:""};
-  captureComposerOpen=true;renderCaptures();document.body.classList.add("capture-editor-open");
-  requestAnimationFrame(()=>$("#capture-content")?.focus())
-}
-function openQuickVoiceCapture(){
-  switchView("captures");
-  openCaptureEditor($("#capture-create-toggle"));
-  $("#capture-audio-recorder").open=true;
-  void requestCaptureAudioRecording()
-}
-function resetCaptureForm({preserveUploads=false,restoreFocus=true}={}){
-  captureEditorSerial+=1;
-  const editingId=$("#capture-id").value,trigger=captureEditorTrigger;
-  captureComposerOpen=false;$("#capture-form").reset();delete $("#capture-form").dataset.requestId;$("#capture-id").value="";
-  resetContentImageEditor("capture",[],{forget:!preserveUploads,preserveStored:Boolean(editingId)});
-  clearCaptureAudioDraft({forget:!preserveUploads,preserveStored:Boolean(editingId)});
-  captureDraftTags=[];renderCaptureTagComposer();resetOccurrenceInput($("#capture-date"));$("#capture-submit").textContent="收下";$("#capture-cancel").hidden=true;$("#capture-status").textContent="";$("#capture-editor").hidden=true;document.body.classList.remove("capture-editor-open");
-  if(editingId)restoreSuspendedCaptureCreateDraft();else clearDurableDraft("capture-form");
-  captureEditorTrigger=null;renderCaptures();
-  if(preserveUploads&&currentUser?.id&&!editingId)void Promise.all([mediaDraftStore.delete(currentUser.id,"capture"),mediaDraftStore.delete(currentUser.id,audioDraftKey)]).catch(()=>{});
-  const target=captureEditorFocusTarget(trigger);if(restoreFocus&&target?.isConnected)requestAnimationFrame(()=>target.focus({preventScroll:true}))
-}
-function editCapture(id,trigger=null){
-  const item=state.captures.find(value=>value.id===id);if(!item)return;
-  if($("#capture-id").value===item.id)return openCaptureEditor(trigger);
-  if($("#capture-id").value)resetCaptureForm({restoreFocus:false});
-  captureEditorSerial+=1;
-  saveDurableDrafts();void Promise.all([persistContentImageDraft("capture"),persistCaptureAudioDraft()]).catch(()=>{});
-  suspendedCaptureCreateDraft=snapshotCaptureCreateDraft();
-  captureEditorTrigger={element:trigger instanceof HTMLElement?trigger:document.activeElement,captureId:item.id};captureComposerOpen=true;$("#capture-id").value=item.id;$("#capture-content").value=item.content;resetContentImageEditor("capture",item.attachmentPaths||[],{forget:false});setExistingCaptureAudio(item.audio,{preserveStored:true});captureDraftTags=[...(item.tags||[])];$("#capture-tags").value="";renderCaptureTagComposer();resetOccurrenceInput($("#capture-date"),item);$("#capture-submit").textContent="保存修改";$("#capture-cancel").hidden=false;$("#capture-status").textContent="正在编辑已有捕念";renderCaptures();document.body.classList.add("capture-editor-open");$("#capture-content").focus();
-}
-function reflectionMarkup(item,reflection,index){
-  const stale=reflection.sourceUpdatedAt&&(reflection.sourceUpdatedAt!==(item.updatedAt||item.createdAt));
-  return `<details class="journal-reflection" data-reflection-id="${reflection.id}" ${index===0?"open":""}><summary><span>助手回望${index?" "+(item.reflections.length-index):""}</span><small>${stale?"基于修改前版本 · ":""}${formatDate(reflection.createdAt)}</small></summary><div class="model-answer-content">${contextReceiptMarkup(reflection.contextReceipt)}<div class="markdown-content">${renderMarkdown(reflection.content)}</div></div></details>`;
-}
-function journalCard(item){
-  const title=item.title||`${eventDate(item)} 日记`,reflections=item.reflections||[],tags=item.tags?.length?`<div class="record-tags">${item.tags.map(tag=>`<span>#${escapeHtml(tag)}</span>`).join("")}</div>`:"",syncing=item._sync?.status,actions=syncing?`<span class="checkin-sync-state ${escapeHtml(syncing)}">${syncing==="pending"?"待同步":"正在同步"}</span>`:`<button type="button" class="reflect-action" data-journal-reflect="${item.id}">✦ ${reflections.length?"再次回望":"请助手回望"}</button><button type="button" data-journal-edit="${item.id}">编辑</button><button type="button" class="danger" data-journal-delete="${item.id}">删除</button>`;
-  return `<details class="card journal-entry${syncing?" is-syncing":""}" data-journal-id="${item.id}"><summary><div><time>${escapeHtml(eventDate(item))}</time><strong>${escapeHtml(title)}</strong><p>${escapeHtml(plainPreview(item.content))}</p></div><span class="expand-mark" aria-hidden="true">⌄</span></summary><div class="journal-entry-body"><div class="markdown-content journal-original">${renderMarkdown(item.content)}</div>${tags}<div class="record-actions">${actions}</div>${reflections.length?`<section class="journal-reflections"><h3>回望记录</h3>${reflections.map((reflection,index)=>reflectionMarkup(item,reflection,index)).join("")}</section>`:""}</div></details>`;
-}
-function renderJournals(){
-  if(!journalDraftRestored){journalDraftRestored=true;restoreJournalDraft(state.journalDraft)}
-  const open=new Set($$(".journal-entry[open]").map(item=>item.dataset.journalId)),allItems=[...(state.journals||[])].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a)));
-  const items=allItems.filter(item=>matchesFeedSearch("journals",item.title,item.content,item.tags,item.reflections?.map(value=>value.content)));
-  $("#journal-count").textContent=feedCountLabel("journals",items.length,allItems.length,"篇");
-  $("#journal-list").innerHTML=items.length?items.map(journalCard).join(""):allItems.length?feedSearchEmpty("日记"):contentState({title:"还没有日记",body:"不需要写完整，一句真实的话也可以成为记录。",action:{focus:"journal-content",label:"写第一篇"}});
-  $$(".journal-entry").forEach(card=>{const item=items.find(value=>value.id===card.dataset.journalId);if(!item)return;if(open.has(item.id))card.open=true;if(item._sync)return;const rootKey=commentRootKey("journal",item.id);markCommentTarget(card.querySelector(".journal-original"),rootKey,"content");(item.reflections||[]).forEach(reflection=>markCommentTarget(card.querySelector(`[data-reflection-id="${CSS.escape(reflection.id)}"] .model-answer-content>.markdown-content`),rootKey,`reflection:${reflection.id}`))});renderLatex($("#journal-list"));applyCommentAnchors($("#journal-list"));
-}
-function resetJournalForm(){
-  $("#journal-form").reset();$("#journal-id").value="";resetOccurrenceInput($("#journal-date"));$("#journal-submit").textContent="保存日记";$("#journal-cancel").hidden=true;$("#journal-status").textContent="";$("#journal-assist-status").textContent="";
-}
-function restoreJournalDraft(draft){
-  if(!draft)return false;
-  const item=state.journals.find(value=>value.id===draft.journalId);
-  $("#journal-form").reset();$("#journal-id").value=item?.id||"";$("#journal-title").value=draft.title||"";$("#journal-content").value=draft.content||"";
-  resetOccurrenceInput($("#journal-date"),item||null);
-  $("#journal-tags").value=item?(item.tags||[]).map(tag=>`#${tag}`).join(" "):"";
-  $("#journal-submit").textContent=item?"保存修改":"保存日记";$("#journal-cancel").hidden=!item;$("#journal-assist-status").textContent="";
-  $("#journal-status").textContent=`已恢复 ${formatTime(draft.updatedAt)} 保存的草稿。`;
-  return true;
-}
-function editJournal(id){
-  const item=state.journals.find(value=>value.id===id);if(!item)return;
-  $("#journal-id").value=item.id;$("#journal-title").value=item.title||"";resetOccurrenceInput($("#journal-date"),item);$("#journal-content").value=item.content;$("#journal-tags").value=(item.tags||[]).map(tag=>`#${tag}`).join(" ");$("#journal-submit").textContent="保存修改";$("#journal-cancel").hidden=false;$("#journal-status").textContent=item.reflections?.length?"修改原文后，已有回望仍会保留并标记为旧版本。":"正在编辑已有日记";$("#journal-form").scrollIntoView({behavior:"smooth",block:"start"});$("#journal-content").focus();
 }
 
 function renderCheckinSurfaces(domains){for(const controller of checkinsFeatureControllers)controller.renderPresentation({snapshot:state,changedDomains:domains})}
@@ -2727,14 +2343,13 @@ const onboardingV2Controller=createOnboardingV2Controller({
       switchView("today");
       $("#home-open-thought").click()
     }else{
-      switchView("captures");
-      captureComposerOpen=true;renderCaptures();requestAnimationFrame(()=>$("#capture-content")?.focus())
+      void openCaptureFeature("openComposer")
     }
   },
   toast:showToast
 });
 function renderOnboarding(){onboardingV2Controller.render()}
-function renderDate(){$$("[data-active-date]").forEach(input=>input.value=activeDate);installOccurrenceControls();if(!$("#capture-id")?.value)resetOccurrenceInput($("#capture-date"));if(!$("#journal-id")?.value)resetOccurrenceInput($("#journal-date"));if(!$("#quote-id")?.value)resetOccurrenceInput($("#quote-datetime"));if(!$("#keepsake-id")?.value)resetOccurrenceInput($("#keepsake-datetime"));for(const input of[$("#chain-datetime"),$("#checkin-datetime"),$("#chat-datetime")])resetOccurrenceInput(input);$$("[data-daily-form]").forEach(form=>{if(!form.elements.recordId.value)resetOccurrenceInput(form.elements.occurredAt)});const d=new Date(`${activeDate}T12:00:00`),today=activeDate===localDateKey(),label=new Intl.DateTimeFormat("zh-CN",{year:"numeric",month:"long",day:"numeric",weekday:"long"}).format(d);$$("[data-active-date-label]").forEach(element=>element.textContent=element.id==="today-date-label"?activeDate.replaceAll("-","/"):label);$$("[data-active-date-heading]").forEach(element=>{const view=element.closest(".view")?.id;element.textContent=!today?"回到这一天":view==="view-daily"?"今天，留下了什么？":view==="view-together"?"今天，一起看看":"今天，你感觉怎么样？"})}
+function renderDate(){$$("[data-active-date]").forEach(input=>input.value=activeDate);installOccurrenceControls();if(!$("#quote-id")?.value)resetOccurrenceInput($("#quote-datetime"));if(!$("#keepsake-id")?.value)resetOccurrenceInput($("#keepsake-datetime"));for(const input of[$("#chain-datetime"),$("#checkin-datetime"),$("#chat-datetime")])resetOccurrenceInput(input);$$("[data-daily-form]").forEach(form=>{if(!form.elements.recordId.value)resetOccurrenceInput(form.elements.occurredAt)});const d=new Date(`${activeDate}T12:00:00`),today=activeDate===localDateKey(),label=new Intl.DateTimeFormat("zh-CN",{year:"numeric",month:"long",day:"numeric",weekday:"long"}).format(d);$$("[data-active-date-label]").forEach(element=>element.textContent=element.id==="today-date-label"?activeDate.replaceAll("-","/"):label);$$("[data-active-date-heading]").forEach(element=>{const view=element.closest(".view")?.id;element.textContent=!today?"回到这一天":view==="view-daily"?"今天，留下了什么？":view==="view-together"?"今天，一起看看":"今天，你感觉怎么样？"})}
 function homeMemorySource(item){
   const date=item.occurredAt?formatDate(item.occurredAt):formatDateKey(item.occurredOn);
   if(item.type==="book")return `书间 · 《${item.sourceTitle||"未命名书目"}》 · ${date}`;
@@ -2993,8 +2608,6 @@ function renderVisibleRoute(){
   $("#notification-dot").hidden=!Number(state.notificationUnread??notificationUnreadCount);
   if(view==="today"){renderSliders();renderHome()}
   else if(view==="daily")void healthFeatureController?.render().catch(error=>showToast(`日录显示失败：${error.message}`,"error"));
-  else if(view==="captures"){renderCaptures();renderCaptureTagComposer();renderCaptureAudioDraft()}
-  else if(view==="journals")renderJournals();
   else if(view==="review"){renderStateChart();renderReview()}
   else if(view==="books")renderBooks();
   else if(view==="keepsakes"){renderKeepsakes();renderKeepsakeBatch()}
@@ -3020,7 +2633,7 @@ function assertNativeServerCompatibility(meta){
 async function load({visibleShell=false,initialSnapshot=null,opening=null}={}){
   if(!Number.isFinite(startupMarks.loadStart))markStartup("loadStart");
   const owner=currentUser?.id,session=sessionSerial,route=initialSnapshot?.route||pageRouter?.currentRoute()||{view:"today",query:{}};
-  journalDraftRestored=false;aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";resetJournalForm();
+  aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";
   const [nextState,meta]=initialSnapshot
     ?[initialSnapshot.state,initialSnapshot.meta]
     :await Promise.all([
@@ -3080,16 +2693,15 @@ function invalidatePageLoads(){
   backgroundResultsController?.resetSession();backgroundResultsLoadErrorReported=false;backgroundResultsRetryAttempts=0;refreshCoordinator.reset();
 }
 function clearPrivateSessionState(){
-  captureEditorSerial+=1;
   closeImageViewer({restoreFocus:false});
   onboardingV2Controller.reset();
   resetState();routeDataReady=false;routeDataRequestSerial+=1;routeLoadFailureKey="";loadedRouteKey="";fullRouteStateLoaded=false;quoteTagStates={quote:createTagMultiSelectState(),selectionQuote:createTagMultiSelectState()};llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationsLoadState="idle";actionsCoordinator.resetSession();annotationsController?.resetSession();personalContext=null;personalContextRequestSerial=0;accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.5.7";homeMemoryKeys=[];homeMemoryByKey=new Map();homeKeepsakeId="";closeHomeEditors({restoreFocus:false});$("#capture-editor").hidden=true;document.body.classList.remove("capture-editor-open");resetOwnerSurfaces();invalidatePageLoads();draftTags=[];captureDraftTags=[];keepsakeDraftTags=[];captureComposerOpen=false;captureEditorTrigger=null;suspendedCaptureCreateDraft=null;expandedLongContentKeys.clear();
+  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationsLoadState="idle";actionsCoordinator.resetSession();annotationsController?.resetSession();personalContext=null;personalContextRequestSerial=0;accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.5.7";homeMemoryKeys=[];homeMemoryByKey=new Map();homeKeepsakeId="";closeHomeEditors({restoreFocus:false});$("#capture-editor").hidden=true;document.body.classList.remove("capture-editor-open");resetOwnerSurfaces();invalidatePageLoads();draftTags=[];keepsakeDraftTags=[];expandedLongContentKeys.clear();capturesFeatureController=null;
   bookParseSerial+=1;for(const url of Object.values(bookPreviewUrls))if(url)URL.revokeObjectURL(url);bookPreviewUrls={cover:"",recognition:""};pendingBookImages={cover:null,recognition:null};editingBookId="";activeBookId="";activeBookFeatureNoteId="";bookCreatorOpen=false;bookDetailCondensed=false;
   keepsakeEditor.segmentSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.history=[];
   clearKeepsakeBatchState();
   contentImageDraftManager?.resetSession();for(const key of persistentContentImageKeys)renderContentImageEditor(key);
-  clearCaptureAudioDraft({forget:false});pageAudioCoordinator.resetSession();stopPageAudio();
+  pageAudioCoordinator.resetSession();stopPageAudio();
   $$("main form").forEach(form=>{form.reset();delete form.dataset.requestId});$$(".modal-backdrop").forEach(modal=>modal.hidden=true);$("#comment-panel").hidden=true;$("#comment-panel-reopen").hidden=true;$("#selection-tools").hidden=true;$("#annotation-line-counts").hidden=true;document.body.classList.remove("comment-panel-open");
 }
 function showAuthGate(message=""){
@@ -3109,7 +2721,6 @@ async function activateUserSession(user,authRequired,initialSnapshot=null,openin
     if(!await load({visibleShell:true,initialSnapshot,opening}))return false;
     await Promise.all([
       restoreContentImageDrafts(user?.id).catch(error=>showToast(`待上传图片恢复失败：${error.message}`,"error")),
-      restoreCaptureAudioDraft(user?.id).catch(error=>showToast(`待提交语音恢复失败：${error.message}`,"error")),
       restoreKeepsakeBatch(user?.id).catch(error=>showToast(`小物批次恢复失败：${error.message}`,"error"))
     ]);
     await restorePendingProjections();
@@ -3181,7 +2792,7 @@ async function restartApplicationForUser(user){
   applicationLifecycleReady=true
 }
 const refreshState=(domains,options={})=>refreshCoordinator.refresh(domains,{...options,patchOnly:options.patchOnly===true});
-subscribeState((next,wanted)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);if(wanted.has("dailyRecords"))void healthFeatureController?.render({snapshot:next,changedDomains:wanted}).catch(()=>{});if(wanted.has("captures")){renderCaptures();renderCaptureTagComposer()}if(wanted.has("journals"))renderJournals();if(wanted.has("thoughts")){renderCaptures();renderTagComposer();renderCaptureTagComposer();renderHomeMemories()}if(wanted.has("speech")){if(!wanted.has("captures"))renderCaptures();renderSettings()}if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("review"))renderReview();if(wanted.has("books")){renderBooks();renderHomeMemories();if(annotationsController?.activeRootKey().startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes")){renderKeepsakes();renderHomeKeepsake()}if(wanted.has("quotes")){renderQuotes();renderHomeMemories()}if(wanted.has("comments"))renderCommentPanel();renderNotificationSummary()});
+subscribeState((next,wanted)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);if(wanted.has("dailyRecords"))void healthFeatureController?.render({snapshot:next,changedDomains:wanted}).catch(()=>{});if(wanted.has("thoughts")){renderTagComposer();renderHomeMemories()}if(wanted.has("speech"))renderSettings();if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("review"))renderReview();if(wanted.has("books")){renderBooks();renderHomeMemories();if(annotationsController?.activeRootKey().startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes")){renderKeepsakes();renderHomeKeepsake()}if(wanted.has("quotes")){renderQuotes();renderHomeMemories()}if(wanted.has("comments"))renderCommentPanel();renderNotificationSummary()});
 function setAnswerModalStep(step){const order=["context","thinking","answer","done"],current=order.indexOf(step);$$("#ai-answer-progress li").forEach((item,index)=>{item.classList.toggle("active",index===current);item.classList.toggle("done",index<current||(step==="done"&&index===current))})}
 function closeAnswerModal(){const modal=$("#ai-answer-modal"),busy=modal.dataset.busy==="true";modal.hidden=true;if(busy)showToast("回答继续在后台生成，完成后会提醒。")}
 async function runAnswerInModal({title,scene="thoughtAnswer",requestCall,onDone,isCurrent=()=>true}){
@@ -3249,6 +2860,15 @@ async function pendingDiscoveryStatuses(){
   if(owner!==currentUser?.id||session!==sessionSerial)return[];
   return records.filter(record=>record?.projection?.kind==="discovery.status")
 }
+function promoteCaptureToThought(item,button){
+  const form=$("#chain-form");form.reset();form.elements.sourceCaptureId.value=item.id;form.elements.sourceCaptureVersion.value=String(item.version||1);form.elements.recordKind.value="thought";activeDate=eventDate(item)||activeDate;renderDate();renderSliders();publishDomains(new Set(["thoughts","activeDate"]));renderStateChart();renderHomeMood();renderChat();$("#chain-question").value="";$("#chain-idea").value=item.content;draftTags=[...(item.tags||[])];renderTagComposer();syncChainRecordKind();$("#chain-status").textContent="这条念起将保留为来源。补上一个明确问题，再形成完整思考。";switchView("today");openHomeEditor("thought",button);$("#chain-question").focus();return true
+}
+const encodeAudioDraft=blob=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error("无法读取音频，请重新录制或导入"));reader.readAsDataURL(blob)});
+const readAudioDraftDuration=blob=>new Promise((resolve,reject)=>{
+  const source=URL.createObjectURL(blob),audio=document.createElement("audio");
+  const done=value=>{URL.revokeObjectURL(source);audio.removeAttribute("src");audio.load();value instanceof Error?reject(value):resolve(value)};
+  audio.preload="metadata";audio.addEventListener("loadedmetadata",()=>Number.isFinite(audio.duration)&&audio.duration>0?done(Math.round(audio.duration*1000)):done(new Error("无法读取音频时长")),{once:true});audio.addEventListener("error",()=>done(new Error("无法读取音频时长")),{once:true});audio.src=source
+});
 function createPageFeatureDescriptors(){
   const descriptors=Object.fromEntries(Object.keys(viewSections).map(view=>[view,{
     root:()=>$(`#view-${view}`),
@@ -3327,6 +2947,89 @@ function createPageFeatureDescriptors(){
       return controller
     })
   };
+  const loadCaptureJournalPage=viewName=>loadCaptureJournalFeatureModule().then(module=>{
+    const controller=module.createCaptureJournalFeatureController({
+      page:viewName,
+      data:{
+        getSnapshot:()=>state,
+        getAccountId:()=>currentUser?.id||"",
+        getSessionSerial:()=>sessionSerial,
+        request,
+        requestV1:(url,options,coordination)=>featureRequestV1(viewName,url,options,coordination),
+        requestStream,
+        requestBlob:(url,options,config)=>apiClient.requestBlob(url,options,config),
+        refresh:(domains,options)=>refreshState(domains,options),
+        applyPendingProjection,
+        publish:domains=>publishDomains(new Set(domains))
+      },
+      navigation:{openThoughtDetail},
+      media:{
+        snapshot:contentImageDraft,
+        activateDraft:key=>activateContentImageDraft(key,currentUser?.id),
+        renderEditor:renderContentImageEditor,
+        resetEditor:resetContentImageEditor,
+        replaceTransient:(key,snapshot)=>contentImageDraftManager.replaceTransient(key,snapshot),
+        persistDraft:persistContentImageDraft,
+        submitDraft:contentImagePaths,
+        completeDraft:clearSubmittedContentImageDraft,
+        rollbackDraft:discardContentImageUploads,
+        selectFiles:setContentImageFiles,
+        removeItem:(key,index)=>contentImageDraftManager.remove(key,index),
+        contentImagesMarkup
+      },
+      drafts:{storage:sessionStorage,getAccountId:()=>currentUser?.id||""},
+      annotations:{
+        markTarget:markCommentTarget,
+        applyAnchors:applyCommentAnchors,
+        scheduleLayout:scheduleAnnotationLineCounts,
+        rootKey:commentRootKey
+      },
+      crossDomain:{promoteToThought:promoteCaptureToThought,scheduleNotificationPoll},
+      assistant:{runAnswer:runAnswerInModal},
+      view:{
+        appUrl,
+        contentState,
+        contextReceiptMarkup,
+        renderLatex,
+        showToast,
+        presentError,
+        resetOccurrenceInput,
+        occurrenceFields,
+        trapFocus:trapHomeEditorFocus,
+        escapeMarkup:escapeHtml,
+        entryKeyIntent
+      },
+      platform:{
+        document,
+        window,
+        audio:pageAudioCoordinator,
+        draftStore:mediaDraftStore,
+        createRequestId:()=>crypto.randomUUID(),
+        requestFrame:callback=>requestAnimationFrame(callback),
+        setTimer:(callback,delay)=>setTimeout(callback,delay),
+        clearTimer:timer=>clearTimeout(timer),
+        repeat:(callback,delay)=>globalThis.setInterval(callback,delay),
+        cancelRepeat:timer=>clearInterval(timer),
+        getComputedStyle:element=>getComputedStyle(element),
+        confirm:(...args)=>globalThis.confirm(...args),
+        encodeAudio:encodeAudioDraft,
+        readAudioDuration:readAudioDraftDuration,
+        mediaDevices:navigator.mediaDevices,
+        MediaRecorder:globalThis.MediaRecorder,
+        Blob:globalThis.Blob,
+        objectUrls:URL,
+        location,
+        now:()=>Date.now(),
+        performance,
+        performanceEnabled:()=>document.documentElement.dataset.nativePerformance==="1"||startupPerformanceEnabled,
+        escapeSelector:value=>CSS.escape(value)
+      }
+    });
+    if(viewName==="captures")capturesFeatureController=controller;
+    return controller
+  });
+  descriptors.captures={root:()=>$("#view-captures"),load:()=>loadCaptureJournalPage("captures")};
+  descriptors.journals={root:()=>$("#view-journals"),load:()=>loadCaptureJournalPage("journals")};
   const loadThoughtsPage=view=>Promise.all([loadLegacyFeatureModule(),loadThoughtsFeatureModule()]).then(([legacy,thoughts])=>{
     const delegate=legacy.createLegacyPageController({
       view,
@@ -3459,7 +3162,6 @@ function createPageFeatureDescriptors(){
   return descriptors
 }
 const pageEffects={...createPageEffects({
-  syncCaptureOverflow,
   syncQuoteOverflow,
   setupQuoteBubbleScroll,
   stopQuoteBubbleScroll,
@@ -3469,11 +3171,15 @@ const pageEffects={...createPageEffects({
   loadCommercialization,
   loadTrash
 }),today:()=>actionsCoordinator.load(),"personal-context":()=>loadPersonalContext(),account:()=>loadAccountUsers()};
-const lazyPageEffects=new Proxy(pageEffects,{get(target,view){const effect=target[view];if(typeof effect!=="function"||typeof view!=="string"||!LOCAL_TEST_VIEW_SCOPES[view])return effect;return()=>{void ensureLocalTestViewScope(view).then(async ready=>{if(!ready)return;await effect();await restorePendingProjections()})}}});
+const lazyPageEffects=new Proxy(pageEffects,{get(target,view){const effect=target[view];if(typeof view!=="string"||!LOCAL_TEST_VIEW_SCOPES[view])return effect;return()=>{void ensureLocalTestViewScope(view).then(async ready=>{if(!ready)return;if(typeof effect==="function")await effect();await restorePendingProjections()})}}});
 pageRouter=createPageRouter({query:$,queryAll:$$,effects:lazyPageEffects,basePath:applicationBasePath,onRouteStart:applyApplicationRoute,canAccessView:(_,capability)=>hasCapability(capability),onDenied:showPermissionPage});
 ({switchView,restoreView}=pageRouter);
+async function openCaptureFeature(action,trigger=null){
+  await Promise.resolve(switchView("captures"));
+  return capturesFeatureController?.[action]?.(trigger)||false
+}
 $("#home-open-thought").addEventListener("click",event=>openHomeEditor("thought",event.currentTarget));
-$("#home-record-voice").addEventListener("click",openQuickVoiceCapture);
+$("#home-record-voice").addEventListener("click",event=>void openCaptureFeature("openQuickVoice",event.currentTarget));
 $("#home-record-state").addEventListener("click",event=>openHomeEditor("state",event.currentTarget));
 $("#home-shuffle").addEventListener("click",()=>renderHomeMemories({advance:true}));
 $("#home-memory-grid").addEventListener("click",event=>{
@@ -3505,16 +3211,8 @@ function openCheckinEditor(id){
 for(const eventName of ["wheel","pointerdown","pointermove","touchstart","touchmove","keydown"])document.addEventListener(eventName,event=>{const viewport=event.target.closest?.(".quote-bubble p.is-auto-scrolling");if(viewport)deferQuoteBubbleScroll(viewport)},{passive:true});
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&$("#view-quotes").classList.contains("active"))setupQuoteBubbleScroll()});
 window.addEventListener("scroll",syncBookDetailCondensed,{passive:true});
-window.addEventListener("resize",()=>requestAnimationFrame(()=>{syncSpeechTextOverflow();syncCaptureOverflow();syncQuoteOverflow();setupQuoteBubbleScroll();setupBookTitlePans()}),{passive:true});
-document.addEventListener("click",e=>{
-  const card=e.target.closest(".capture-item");if(!card?.classList.contains("is-expandable"))return;
-  const toggle=e.target.closest("[data-capture-expand]");
-  if(!toggle&&e.target.closest("button,a,input,textarea,select,.comment-anchor"))return;
-  if(!toggle&&!window.getSelection()?.isCollapsed)return;
-  toggleCaptureCard(card);
-});
+window.addEventListener("resize",()=>requestAnimationFrame(()=>{syncQuoteOverflow();setupQuoteBubbleScroll();setupBookTitlePans()}),{passive:true});
 document.addEventListener("click",e=>{const button=e.target.closest("[data-quote-expand]");if(!button)return;const viewport=button.closest(".quote-entry-card")?.querySelector(".quote-content-viewport");if(!viewport)return;const expanded=!viewport.classList.contains("expanded");setLongContentExpanded(viewport.dataset.expandKey,expanded);viewport.classList.toggle("expanded",expanded);button.textContent=expanded?"收起":"展开";button.setAttribute("aria-expanded",String(expanded));scheduleAnnotationLineCounts()});
-document.addEventListener("click",e=>{const button=e.target.closest("[data-speech-text-expand]");if(!button)return;const layer=button.closest("[data-speech-text-lines]");if(!layer?.classList.contains("is-collapsible"))return;const expanded=!layer.classList.contains("is-expanded");layer.classList.toggle("is-expanded",expanded);button.textContent=expanded?"收起":"展开";button.setAttribute("aria-expanded",String(expanded));button.setAttribute("aria-label",`${expanded?"收起":"展开"}${layer.dataset.speechTextLabel||"文稿"}`);requestAnimationFrame(syncCaptureOverflow)});
 document.addEventListener("play",event=>{const audio=event.target;if(!(audio instanceof HTMLAudioElement))return;const controls=audio.closest(".speech-asset-controls"),rate=controls?.querySelector("[data-speech-playback-rate]");if(rate)audio.playbackRate=normalizeTtsPlaybackRate(rate.value);claimPageAudio(audio)},true);
 document.addEventListener("change",e=>{if(e.target.matches("[data-trash-select]"))$("#trash-purge-selected").disabled=!$("[data-trash-select]:checked")});
 document.addEventListener("click",async e=>{
@@ -3544,27 +3242,21 @@ document.addEventListener("click",async e=>{
   catch(error){if(error.syncStatus==="pending")showToast(`${target.label}将在网络恢复后移入回收站`);else{await refreshState(target.domains).catch(()=>{});showToast(error.message,"error")}}
 });
 document.addEventListener("click",event=>{const button=event.target.closest("[data-context-source]");if(button)openContextSource(button)});
-$("#capture-create-toggle").addEventListener("click",()=>{
-  if(captureComposerOpen){closeCaptureEditor();return}
-  openCaptureEditor($("#capture-create-toggle"))
-});
-$("#capture-editor-close").addEventListener("click",()=>closeCaptureEditor());
-$("#capture-editor").addEventListener("click",event=>{if(event.target===event.currentTarget)closeCaptureEditor()});
 $("#analysis-load-more").addEventListener("click",()=>void loadMoreAnalyses());
 document.addEventListener("input",event=>{
   const input=event.target.closest("[data-feed-search]");if(!input)return;
   const scope=input.dataset.feedSearch;if(!(scope in feedSearchQueries))return;
   feedSearchQueries[scope]=input.value;
-  ({captures:renderCaptures,journals:renderJournals,books:renderBooks,keepsakes:renderKeepsakes,quotes:renderQuotes})[scope]?.()
+  ({books:renderBooks,keepsakes:renderKeepsakes,quotes:renderQuotes})[scope]?.()
 });
 document.addEventListener("click",event=>{
   const button=event.target.closest("[data-content-focus],[data-content-action]");if(!button)return;
+  if(button.closest("#view-captures,#view-journals"))return;
   if(button.dataset.contentFocus){
     const target=document.getElementById(button.dataset.contentFocus);
     target?.scrollIntoView({behavior:"smooth",block:"center"});target?.focus();return
   }
   const command=button.dataset.contentAction;
-  if(command==="new-capture"){openCaptureEditor(button);return}
   if(command==="new-state"){switchView("today");openHomeEditor("state",button);return}
   if(command==="new-keepsake"){$("#keepsake-create-toggle")?.click();return}
   if(command==="run-analysis"){$("#run-analysis")?.click();return}
@@ -3577,35 +3269,15 @@ document.addEventListener("click",event=>{
   if(retries[command])void retries[command]()
 });
 
-document.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;if(b.dataset.view){closeHomeEditors({restoreFocus:false});return switchView(b.dataset.view)}if(b.dataset.go){closeHomeEditors({restoreFocus:false});return switchView(b.dataset.go)}if(b.dataset.removeDraftTag!=null){draftTags=draftTags.filter(tag=>tag!==b.dataset.removeDraftTag);return renderTagComposer()}if(b.dataset.removeCaptureTag!=null){captureDraftTags=captureDraftTags.filter(tag=>tag!==b.dataset.removeCaptureTag);return renderCaptureTagComposer()}});
+document.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;if(b.dataset.view){closeHomeEditors({restoreFocus:false});return switchView(b.dataset.view)}if(b.dataset.go){closeHomeEditors({restoreFocus:false});return switchView(b.dataset.go)}if(b.dataset.removeDraftTag!=null){draftTags=draftTags.filter(tag=>tag!==b.dataset.removeDraftTag);return renderTagComposer()}});
 document.addEventListener("click",async e=>{
   const button=e.target.closest("button");if(!button)return;
-  if(button.dataset.journalPrompt){const editor=$("#journal-content"),prompt=button.dataset.journalPrompt,prefix=editor.value.trim()?"\n\n":"";editor.setRangeText(`${prefix}${prompt}\n`,editor.selectionStart,editor.selectionEnd,"end");editor.focus();return}
-  if(button.dataset.journalAssist){
-    const mode=button.dataset.journalAssist,editor=$("#journal-content"),status=$("#journal-assist-status"),buttons=$$("[data-journal-assist]"),labels={lead:"引子",structure:"结构",topic:"话题"},title=$("#journal-title").value,date=$("#journal-date").value,content=editor.value,journalId=$("#journal-id").value,owner=currentUser?.id,session=sessionSerial;
-    buttons.forEach(item=>item.disabled=true);status.textContent=`正在生成${labels[mode]}…`;
-    try{
-      let streamed="";
-      const requestId=crypto.randomUUID(),targetId=journalId||"journal-draft",inputVersion=Date.now(),result=await requestStream("/api/journals/assist",{method:"POST",body:JSON.stringify({requestId,targetId,inputVersion,mode,occurredAt:date,title,content})},event=>{if(event.type==="content"){streamed+=event.delta||"";status.textContent=`正在生成${labels[mode]}… ${streamed.length} 字`}});
-      if(result.requestId&&result.requestId!==requestId)return;
-      if(owner!==currentUser?.id||session!==sessionSerial||$("#journal-date").value!==date||$("#journal-title").value!==title||editor.value!==content||$("#journal-id").value!==journalId){status.textContent=`${labels[mode]}已生成，但当前日记已经变化，未自动追加。`;return}
-      const addition=(result.content||streamed).trim();
-      if(addition){editor.value+=`${editor.value.trim()?"\n\n":""}${addition}`;editor.selectionStart=editor.selectionEnd=editor.value.length;editor.focus();status.textContent=`${labels[mode]}已追加到正文末尾。`;showToast(`${labels[mode]}已追加`)}
-    }catch(err){status.textContent=`生成失败：${err.message}`}finally{buttons.forEach(item=>item.disabled=false)}
-    return;
-  }
-  if(button.dataset.captureEdit)return editCapture(button.dataset.captureEdit,button);
-  if(button.dataset.journalEdit)return editJournal(button.dataset.journalEdit);
   if(button.dataset.editCheckin)return openCheckinEditor(button.dataset.editCheckin);
-  if(button.dataset.captureThought){openThoughtDetail(button.dataset.captureThought);return}
-  if(button.dataset.capturePromote){const item=(state.captures||[]).find(value=>value.id===button.dataset.capturePromote);if(!item)return;const form=$("#chain-form");form.reset();form.elements.sourceCaptureId.value=item.id;form.elements.sourceCaptureVersion.value=String(item.version||1);form.elements.recordKind.value="thought";activeDate=eventDate(item)||activeDate;renderDate();renderSliders();publishDomains(new Set(["thoughts"]));renderStateChart();renderHomeMood();renderChat();$("#chain-question").value="";$("#chain-idea").value=item.content;draftTags=[...(item.tags||[])];renderTagComposer();syncChainRecordKind();$("#chain-status").textContent="这条念起将保留为来源。补上一个明确问题，再形成完整思考。";switchView("today");openHomeEditor("thought",button);$("#chain-question").focus();return}
-  if(button.dataset.captureDelete){const id=button.dataset.captureDelete,item=(state.captures||[]).find(value=>value.id===id);if(!item||!confirm("将这条捕念移入回收站？"))return;button.disabled=true;try{await requestV1(`/api/v1/captures/${encodeURIComponent(id)}`,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`}},{domains:["captures"],recoverCommitted:true,projection:{kind:"record.delete",domain:"captures",id},onQueued:record=>applyPendingProjection(record)});void refreshState("captures").catch(error=>showToast(`捕念已移除，但列表刷新失败：${error.message}`,"error"));showToast("捕念已移入回收站")}catch(err){if(err.syncStatus==="pending")showToast("捕念将在网络恢复后移入回收站");else{await refreshState("captures").catch(()=>{});showToast(err.message,"error");button.disabled=false}}return}
-  if(button.dataset.journalDelete){const id=button.dataset.journalDelete,item=(state.journals||[]).find(value=>value.id===id);if(!item||!confirm("将这篇日记及其助手回望移入回收站？"))return;button.disabled=true;try{await requestV1(`/api/v1/journals/${encodeURIComponent(id)}`,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`}},{domains:["journals"],recoverCommitted:true,projection:{kind:"record.delete",domain:"journals",id},onQueued:record=>applyPendingProjection(record)});void refreshState("journals").catch(error=>showToast(`日记已移除，但列表刷新失败：${error.message}`,"error"));showToast("日记已移入回收站")}catch(err){if(err.syncStatus==="pending")showToast("日记将在网络恢复后移入回收站");else{await refreshState("journals").catch(()=>{});showToast(err.message,"error");button.disabled=false}}return}
-  if(button.dataset.journalReflect){const id=button.dataset.journalReflect;button.disabled=true;try{await runAnswerInModal({title:"回望这篇日记",scene:"diaryReflection",requestCall:onEvent=>requestStream(`/api/journals/${id}/reflect`,{method:"POST",body:"{}"},onEvent),onDone:()=>refreshState("journals")});showToast("日记回望已保存")}catch(err){showToast(err.message,"error")}finally{button.disabled=false}}
 });
-$$("[data-active-date]").forEach(input=>input.addEventListener("change",async e=>{chainDraftVersion+=1;activeDate=e.target.value||activeDate;renderDate();renderSliders();publishDomains(new Set(["thoughts"]));renderStateChart();renderHomeMood();renderChat();await healthFeatureController?.changeDate(activeDate).catch(error=>showToast(`健康截图恢复失败：${error.message}`,"error"))}));
+$$("[data-active-date]").forEach(input=>input.addEventListener("change",async e=>{chainDraftVersion+=1;activeDate=e.target.value||activeDate;renderDate();renderSliders();publishDomains(new Set(["thoughts","activeDate"]));renderStateChart();renderHomeMood();renderChat();await healthFeatureController?.changeDate(activeDate).catch(error=>showToast(`健康截图恢复失败：${error.message}`,"error"))}));
 $$("[data-content-image-editor] input[type='file']").forEach(input=>input.addEventListener("change",async event=>{
   const fileInput=event.currentTarget,editor=fileInput.closest("[data-content-image-editor]"),status=editor?.closest("form")?.querySelector(".status");
+  if(editor?.dataset.contentImageEditor==="capture")return;
   try{delete editor.closest("form")?.dataset.requestId;await setContentImageFiles(editor.dataset.contentImageEditor,fileInput.files);fileInput.value="";if(status)status.textContent=""}
   catch(error){
     fileInput.value="";
@@ -3620,7 +3292,7 @@ $$("[data-content-image-editor] input[type='file']").forEach(input=>input.addEve
 }));
 document.addEventListener("click",async event=>{
   const remove=event.target.closest("[data-content-image-remove]");if(!remove)return;
-  const editor=remove.closest("[data-content-image-editor]"),draft=contentImageDraft(editor?.dataset.contentImageEditor),index=Number(remove.dataset.contentImageRemove);
+  const editor=remove.closest("[data-content-image-editor]");if(editor?.dataset.contentImageEditor==="capture")return;const draft=contentImageDraft(editor?.dataset.contentImageEditor),index=Number(remove.dataset.contentImageRemove);
   if(!draft||!Number.isSafeInteger(index)||!draft.items[index])return;
   await contentImageDraftManager.remove(editor.dataset.contentImageEditor,index)
     .then(()=>renderContentImageEditor(editor.dataset.contentImageEditor))
@@ -3633,137 +3305,13 @@ $("#chain-form").elements.recordKind.forEach(input=>input.addEventListener("chan
 $("#thought-source-cancel").addEventListener("click",()=>{const form=$("#chain-form");form.reset();clearDurableDraft("chain-form");resetOccurrenceInput($("#chain-datetime"));draftTags=[];renderTagComposer();answerDraft="";answerReasoningDraft="";$("#chain-status").textContent="已取消从念起展开，可以重新记录。";$("#chain-question").focus()});
 for(const selector of["#chain-question","#chain-idea","#chain-answer"])$(selector).addEventListener("input",()=>{chainDraftVersion+=1;if(selector!=="#chain-answer"){answerDraft="";answerReasoningDraft=""}delete $("#chain-form").dataset.requestId});
 $("#chain-form").addEventListener("reset",event=>{chainDraftVersion+=1;resetContentImageEditor("thoughtRoot");delete event.currentTarget.dataset.draftId;event.currentTarget.elements.sourceCaptureId.value="";event.currentTarget.elements.sourceCaptureVersion.value="";queueMicrotask(syncChainRecordKind)});
-$("#capture-tags").addEventListener("keydown",e=>{if(entryKeyIntent(e,{inputKind:"tag"})==="commit-tag"){e.preventDefault();commitCaptureTags()}});
-$("#capture-audio-record").addEventListener("click",()=>void requestCaptureAudioRecording());
-$("#capture-audio-pause").addEventListener("click",toggleCaptureAudioPause);
-$("#capture-audio-stop").addEventListener("click",stopCaptureAudioRecording);
-$("#capture-audio-remove").addEventListener("click",cancelCaptureAudioRecording);
-$("#capture-audio-file").addEventListener("change",async event=>{
-  const fileInput=event.currentTarget,file=fileInput.files?.[0];if(!file)return;
-  try{await setCaptureAudioBlob(file,await importedAudioDuration(file));$("#capture-audio-recorder").open=false;delete $("#capture-form").dataset.requestId;$("#capture-audio-status").textContent="音频已保存在本机，提交后同步。"}
-  catch(error){captureAudioDraft.lastError=captureAudioInputError(error);renderCaptureAudioDraft()}
-  finally{fileInput.value=""}
-});
-document.addEventListener("click",async event=>{
-  const transcribe=event.target.closest("[data-capture-transcribe]");
-  if(transcribe){
-    const capture=state.captures.find(item=>item.id===transcribe.dataset.captureTranscribe),audioKey=transcribe.dataset.captureAudioKey;
-    if(!capture||!audioKey||captureAudioIdentity(capture)!==audioKey){showToast("原音已经变化，请在当前记录上重新开始转写。","error");return}
-    transcribe.disabled=true;
-    try{
-      const task=await request(`/api/captures/${encodeURIComponent(transcribe.dataset.captureTranscribe)}/transcription`,{method:"POST",body:"{}"});
-      if(task?.targetId!==capture.id||captureAudioIdentity(state.captures.find(item=>item.id===capture.id))!==audioKey)return;
-      if(!state.aiTasks.some(item=>item.id===task.id))state.aiTasks.unshift(task);
-      if(capture?.transcription)capture.transcription.status="queued";
-      renderCaptures();await refreshState("notifications");scheduleNotificationPoll();showToast("语音已进入后台转写队列")
-    }catch(error){
-      showToast(presentError(error,{
-        operation:"开始语音转写",
-        object:"这段录音",
-        phase:"语音转写排队",
-        retained:"原音已经保存"
-      }).message,"error");transcribe.disabled=false
-    }
-    return
-  }
-  const generate=event.target.closest("[data-speech-synthesize]");
-  if(generate){
-    const controls=generate.closest(".speech-asset-controls"),sourceType=controls?.dataset.speechSourceType;if(sourceType!=="capture")return;
-    const sourceId=controls?.dataset.speechSourceId,sourceVersion=Number(controls?.dataset.speechSourceVersion),source=(state.captures||[]).find(item=>item.id===sourceId),status=controls?.querySelector(".speech-asset-status");
-    if(!source||Number(source.version||1)!==sourceVersion){if(status)status.textContent="文字来源已经变化，请在当前版本上重新生成。";return}
-    const asset=speechAssetForSource(state.speech.assets,{sourceType,sourceId,sourceVersion}),regenerate=generate.dataset.speechRegenerate==="true"&&Boolean(asset),payload=speechSynthesisPayload({sourceType,sourceId,sourceVersion,regenerate});
-    stopPageAudio();generate.disabled=true;if(status)status.textContent=regenerate?"正在重新生成…":"正在生成…";let generated=false;
-    try{
-      await apiClient.requestBlob("/api/speech/synthesize",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)},{fallback:"语音合成失败"});generated=true;
-      await refreshState(["speech","captures"]);showToast(regenerate?"文字朗读已重新生成":"文字朗读已生成")
-    }catch(error){
-      if(generated){if(status?.isConnected)status.textContent="音频已生成，但列表刷新失败，请稍后重试读取。";showToast("音频已生成，但列表刷新失败","error")}
-      else{if(status)status.textContent=presentError(error,{operation:"生成文字朗读",object:"这次文字朗读",phase:"文字朗读生成",retained:"原音和文字记录没有变化"}).message}
-    }finally{if(generate.isConnected)generate.disabled=false}
-    return
-  }
-});
-document.addEventListener("change",event=>{
-  const control=event.target.closest("[data-speech-playback-rate]");if(!control)return;
-  if(control.closest(".speech-asset-controls")?.dataset.speechSourceType!=="capture")return;
-  const player=control.closest(".speech-asset-controls")?.querySelector("[data-speech-player]");if(player)player.playbackRate=normalizeTtsPlaybackRate(control.value)
-});
-$("#capture-cancel").addEventListener("click",resetCaptureForm);
-$("#journal-cancel").addEventListener("click",resetJournalForm);
 for(const id of durableDraftForms)for(const eventName of["input","change"])document.getElementById(id)?.addEventListener(eventName,saveDurableDrafts);
 document.addEventListener("keydown",event=>{
-  const field=event.target.closest?.("input,textarea"),form=field?.closest?.("#capture-form,#journal-form,#chain-form,#checkin-form,#chat-form,[data-daily-form],[data-book-entry-form],#keepsake-form,#quote-form,#selection-quote-form,#thought-block-form");
-  if(!field||!form||field===document.activeElement&&["chain-tags","capture-tags","quote-tags","selection-quote-tags"].includes(field.id))return;
+  const field=event.target.closest?.("input,textarea"),form=field?.closest?.("#chain-form,#checkin-form,#chat-form,[data-daily-form],[data-book-entry-form],#keepsake-form,#quote-form,#selection-quote-form,#thought-block-form");
+  if(!field||!form||field===document.activeElement&&["chain-tags","quote-tags","selection-quote-tags"].includes(field.id))return;
   const intent=entryKeyIntent(event,{inputKind:field.tagName==="TEXTAREA"?"multiline":"field"});
   if(intent==="submit")return void occurrenceKeyboardSubmit(event,form,field.tagName==="TEXTAREA"?"multiline":"field");
   if(intent==="block-submit")event.preventDefault()
-});
-function captureSubmissionError(error,stage){
-  const context={
-    images:{operation:"上传捕念图片",object:"这些图片",phase:"捕念图片上传",retained:"捕念草稿和待上传图片仍保存在当前页面"},
-    audio:{operation:"上传捕念语音",object:"这段语音",phase:"捕念语音上传",retained:"捕念草稿和待提交语音仍保存在当前页面"},
-    validation:{operation:"保存这条捕念",object:"这条捕念",retained:"当前表单内容仍保留"},
-    save:{operation:"保存这条捕念",object:"这条捕念",retained:"当前表单内容和待提交媒体仍保留"}
-  }[stage]||{operation:"保存这条捕念",object:"这条捕念",retained:"当前表单内容仍保留"};
-  return presentError(error,{...context,publicValidation:error?.publicValidation===true}).message
-}
-$("#capture-form").addEventListener("submit",async e=>{
-  e.preventDefault();const pendingStartedAt=performance.now();if($("#capture-tags").value.trim())commitCaptureTags();
-  const form=e.currentTarget,id=$("#capture-id").value,existing=id?(state.captures||[]).find(item=>item.id===id):null,button=$("#capture-submit"),status=$("#capture-status"),requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`;let uploadedPaths=[],uploadedAudioPath="",projected=false,stage="images";
-  if(!id)form.dataset.requestId=requestId;button.disabled=true;status.textContent=id?"正在保存修改…":"正在收下…";
-  if(document.documentElement.dataset.nativePerformance==="1"||new URLSearchParams(location.search).has("native-performance")){const label=`提交等待 ${(performance.now()-pendingStartedAt).toFixed(1)} 毫秒`,metric=$("#capture-pending-metric");metric.textContent=label;setTimeout(()=>{if(metric.textContent===label)metric.textContent=""},5000)}
-  try{
-    const submission=await contentImagePaths("capture");uploadedPaths=submission.uploadedPaths;if(uploadedPaths.length)status.textContent="图片已上传，正在同步记录…";
-    stage="audio";
-    const audio=await captureAudioForSubmission();if(audio?.attachmentPath===captureAudioDraft.uploadedPath){uploadedAudioPath=audio.attachmentPath;status.textContent="语音已上传，正在同步记录…"}
-    stage="validation";
-    const payload=runPublicValidation(()=>({...occurrenceFields($("#capture-date")),...captureRecordPayload({content:$("#capture-content").value,attachmentPaths:submission.attachmentPaths,audio}),tags:[...captureDraftTags]}));
-    stage="save";
-    if(id){const result=await requestV1(`/api/v1/captures/${encodeURIComponent(id)}`,{method:"PATCH",headers:{"if-match":`"${existing?.version||1}"`},body:JSON.stringify(payload)},{domains:["captures"],recoverCommitted:true,projection:{kind:"record.update",domain:"captures",id,payload},onQueued:record=>{projected=applyPendingProjection(record)}});if(result.data)state.captures=(state.captures||[]).map(item=>item.id===id?result.data:item);renderCaptures()}
-    else{
-      const result=await requestV1("/api/v1/captures",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{
-        domains:["captures"],
-        projection:{kind:"capture.create",temporaryId,payload},
-        onQueued:record=>{
-          state.captures=[{id:temporaryId,...payload,createdAt:record.createdAt,_sync:{status:"sending",operationId:record.operationId}},...(state.captures||[]).filter(item=>item.id!==temporaryId)];
-          projected=true;renderCaptures();status.textContent="已记下，正在同步…";
-        }
-      });
-      state.captures=(state.captures||[]).map(item=>item.id===temporaryId?result.data:item);renderCaptures();
-    }
-    resetCaptureForm();void refreshState("captures").catch(error=>showToast(presentError(error,{
-      operation:"刷新捕念列表",
-      object:"捕念列表",
-      phase:"捕念列表刷新",
-      retained:"刚才的捕念已经保存"
-    }).message,"error"));showToast(id?"捕念已更新":"已收进捕念");
-  }catch(err){
-    if(projected&&err.syncStatus==="pending"){
-      const pending=(state.captures||[]).find(item=>item.id===temporaryId);if(pending)pending._sync.status="pending";renderCaptures();resetCaptureForm({preserveUploads:true});$("#capture-status").textContent="已记下，网络恢复后自动同步。";showToast("捕念已进入待同步队列");
-    }else if(projected&&err.syncStatus==="conflict"){
-      if(id)await refreshState("captures").catch(()=>{});else{state.captures=(state.captures||[]).filter(item=>item.id!==temporaryId);renderCaptures()}await Promise.all([discardContentImageUploads("capture",uploadedPaths),rollbackCaptureAudioUpload(uploadedAudioPath)]);status.textContent=presentError(err,{operation:"保存这条捕念",object:"这条捕念",retained:"当前表单内容仍保留，已有记录没有被覆盖"}).message;showToast("捕念同步发生冲突","error")
-    }else{
-      if(projected){if(id)await refreshState("captures").catch(()=>{});else{state.captures=(state.captures||[]).filter(item=>item.id!==temporaryId);renderCaptures()}}
-      await Promise.all([discardContentImageUploads("capture",uploadedPaths),rollbackCaptureAudioUpload(uploadedAudioPath)]);status.textContent=captureSubmissionError(err,stage);
-    }
-  }finally{button.disabled=false}
-});
-$("#journal-draft-save").addEventListener("click",async e=>{const button=e.currentTarget,status=$("#journal-status");button.disabled=true;button.textContent="正在保存…";status.textContent="正在保存草稿…";try{const draft=await request("/api/journal-draft",{method:"PUT",body:JSON.stringify({journalId:$("#journal-id").value,title:$("#journal-title").value,content:$("#journal-content").value})});state.journalDraft=draft;status.textContent=`草稿已保存于 ${formatTime(draft.updatedAt)}。`;showToast("日记草稿已保存")}catch(err){status.textContent=presentError(err,{operation:"保存日记草稿",object:"这份日记草稿",phase:"日记草稿保存",retained:"标题和正文仍保留在当前页面"}).message}finally{button.disabled=false;button.textContent="保存草稿"}});
-$("#journal-form").addEventListener("submit",async e=>{
-  e.preventDefault();const form=e.currentTarget,id=$("#journal-id").value,existing=id?(state.journals||[]).find(item=>item.id===id):null,button=$("#journal-submit"),status=$("#journal-status"),requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`;let payload;if(!id)form.dataset.requestId=requestId;button.disabled=true;status.textContent=id?"正在保存修改…":"正在保存原文…";
-  try{
-    payload=runPublicValidation(()=>({...occurrenceFields($("#journal-date")),title:$("#journal-title").value,content:$("#journal-content").value,tags:splitTags($("#journal-tags").value)}));
-    if(id){const result=await requestV1(`/api/v1/journals/${encodeURIComponent(id)}`,{method:"PATCH",headers:{"if-match":`"${existing?.version||1}"`},body:JSON.stringify(payload)},{domains:["journals"],recoverCommitted:true,projection:{kind:"record.update",domain:"journals",id,payload},onQueued:record=>applyPendingProjection(record)});if(result.data)state.journals=(state.journals||[]).map(item=>item.id===id?result.data:item);renderJournals()}
-    else{
-      const result=await requestV1("/api/v1/journals",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{domains:["journals"],projection:{kind:"record.create",domain:"journals",temporaryId,payload},onQueued:record=>applyPendingProjection(record)});
-      state.journals=(state.journals||[]).map(item=>item.id===temporaryId?result.data:item);renderJournals()
-    }
-    delete form.dataset.requestId;resetJournalForm();void refreshState("journals").catch(error=>showToast(presentError(error,{operation:"刷新日记列表",object:"日记列表",phase:"日记列表刷新",retained:"刚才的日记已经保存"}).message,"error"));showToast(id?"日记已更新":"日记已保存")
-  }catch(err){
-    if(err.syncStatus==="pending"){resetJournalForm();status.textContent="原文已留存，网络恢复后自动同步。";showToast("日记已进入待同步队列")}
-    else if(err.syncStatus==="conflict"){if(id)await refreshState("journals").catch(()=>{});status.textContent=presentError(err,{operation:"保存这篇日记",object:"这篇日记",retained:"当前编辑内容仍保留，已有日记没有被覆盖"}).message}
-    else{if(id)await refreshState("journals").catch(()=>{});status.textContent=presentError(err,{operation:"保存这篇日记",object:"这篇日记",retained:"标题和正文仍保留在当前页面",publicValidation:err?.publicValidation===true}).message}
-  }finally{button.disabled=false}
 });
 $("#checkin-form").addEventListener("submit",async e=>{
   e.preventDefault();const form=e.currentTarget,b=form.querySelector('[type="submit"]'),missing=$$('[data-metric]').filter(x=>x.dataset.confirmed!=="true");
@@ -3824,7 +3372,7 @@ $("#chain-form").addEventListener("submit",async e=>{
     const eventTime=occurrenceFields($("#chain-datetime")),original=imageRecordPayload({content:$("#chain-question").value,attachmentPaths:submission.attachmentPaths});
     if(recordKind==="capture"){
       const payload={...eventTime,...captureRecordPayload(original),tags:draftTags},result=(await requestV1("/api/v1/captures",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{domains:["captures"],projection:{kind:"capture.create",temporaryId,payload},onQueued:record=>applyPendingProjection(record)})).data;
-      state.captures=(state.captures||[]).map(item=>item.id===temporaryId?result:item);renderCaptures();await clearSubmittedContentImageDraft("thoughtRoot");chainDraftVersion+=1;form.reset();clearDurableDraft("chain-form");resetOccurrenceInput($("#chain-datetime"));draftTags=[];renderTagComposer();answerDraft="";answerReasoningDraft="";delete form.dataset.requestId;delete form.dataset.draftId;$("#chain-status").textContent="已收进念起。";closeHomeEditors();void refreshState("captures").catch(error=>showToast(`念起已保存，但页面刷新失败：${error.message}`,"error"));showToast("已收进念起");return
+      state.captures=(state.captures||[]).map(item=>item.id===temporaryId?result:item);publishDomains(new Set(["captures"]));await clearSubmittedContentImageDraft("thoughtRoot");chainDraftVersion+=1;form.reset();clearDurableDraft("chain-form");resetOccurrenceInput($("#chain-datetime"));draftTags=[];renderTagComposer();answerDraft="";answerReasoningDraft="";delete form.dataset.requestId;delete form.dataset.draftId;$("#chain-status").textContent="已收进念起。";closeHomeEditors();void refreshState("captures").catch(error=>showToast(`念起已保存，但页面刷新失败：${error.message}`,"error"));showToast("已收进念起");return
     }
     const needsAnswer=Boolean(original.content.trim()||original.attachmentPaths.length)&&!answer.trim()&&llmSettings.automaticAnswers?.thoughtAnswer===true,payload={...eventTime,question:original.content,attachmentPaths:original.attachmentPaths,idea:$("#chain-idea").value,answer,modelDraft:answerDraft,modelReasoning:answerReasoningDraft,tags:draftTags,generateAnswer:needsAnswer,...(sourceCaptureId?{sourceRef:{type:"capture",id:sourceCaptureId,version:sourceCaptureVersion}}:{})},result=(await requestV1("/api/v1/thought-chains",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{domains:["thoughts","aiTasks","notifications"],projection:{kind:"thought.chain.create",temporaryId,payload},onQueued:record=>applyPendingProjection(record)})).data,question=result.items.find(item=>item.type==="question");
     state.thoughts=[...result.items,...(state.thoughts||[]).filter(item=>!String(item.id).startsWith(`${temporaryId}:`))];publishDomains(new Set(["thoughts"]));await clearSubmittedContentImageDraft("thoughtRoot");chainDraftVersion+=1;form.reset();clearDurableDraft("chain-form");resetOccurrenceInput($("#chain-datetime"));draftTags=[];renderTagComposer();answerDraft="";answerReasoningDraft="";delete form.dataset.requestId;delete form.dataset.draftId;$("#chain-status").textContent=needsAnswer?"思考已保存，后台生成一条图文合并回答。":answer.trim()?"已保存为一套完整思考。":"思考已保存，未自动调用 AI。";closeHomeEditors();void refreshState(["thoughts","review","notifications"],{chainId:question?.id}).catch(error=>showToast(`记录已保存，但页面刷新失败：${error.message}`,"error"));if(needsAnswer&&question){void startBackgroundChainAnswer(question,result.task)}showToast(needsAnswer?"思考已保存，可继续记录":"整套思考已保存，不会重复记录")
@@ -3848,7 +3396,7 @@ $("#image-viewer-prev").addEventListener("click",()=>moveImageViewer(-1));
 $("#image-viewer-next").addEventListener("click",()=>moveImageViewer(1));
 $("#image-viewer").addEventListener("click",e=>{if(e.target===e.currentTarget)closeImageViewer()});
 document.addEventListener("keydown",e=>{
-  const viewer=$("#image-viewer"),homeEditor=$$(".home-v02-editor-backdrop").find(editor=>!editor.hidden),captureEditor=$("#capture-editor"),answerModal=$("#ai-answer-modal");
+  const viewer=$("#image-viewer"),homeEditor=$$(".home-v02-editor-backdrop").find(editor=>!editor.hidden),answerModal=$("#ai-answer-modal");
   if(!viewer.hidden){
     if(e.key==="Tab")return trapHomeEditorFocus(e,viewer);
     if(e.key==="Escape"){e.preventDefault();return closeImageViewer()}
@@ -3857,10 +3405,8 @@ document.addEventListener("keydown",e=>{
     return
   }
   if(homeEditor&&answerModal.hidden&&e.key==="Tab")return trapHomeEditorFocus(e,homeEditor);
-  if(!captureEditor.hidden&&answerModal.hidden&&e.key==="Tab")return trapHomeEditorFocus(e,captureEditor);
   if(e.key!=="Escape")return;
   if(!answerModal.hidden)return closeAnswerModal();
-  if(!captureEditor.hidden)return closeCaptureEditor();
   if(!$("#thought-block-modal").hidden)return $("#thought-block-modal").hidden=true;
   if(!$("#edit-checkin-modal").hidden)return $("#edit-checkin-modal").hidden=true;
   if(!$("#association-flow-modal").hidden)return setAssociationFlowOpen(false);
@@ -4200,11 +3746,11 @@ $("#tts-voice-preview").addEventListener("click",()=>void toggleTtsVoicePreview(
 $("#tts-generation-rate").addEventListener("input",event=>renderTtsGenerationRate(event.currentTarget.value));
 $("#llm-settings-form").addEventListener("submit",async e=>{e.preventDefault();stopVoicePreview({clearStatus:true});const ownerSettings=hasCapability("ai-configuration"),button=e.currentTarget.querySelector('[type="submit"]'),status=$("#llm-settings-status");button.disabled=true;status.textContent="正在保存…";try{llmSettings=await request(ownerSettings?"/api/settings":"/api/preferences",{method:ownerSettings?"POST":"PATCH",body:JSON.stringify(settingsPayload())});const key=$("#llm-api-key");if(key)key.value="";renderSettings();status.textContent=ownerSettings?"模型、场景与语音设置已保存。":"思考、回答与语音偏好已保存。";showToast("设置已保存")}catch(err){status.textContent=err.message}finally{button.disabled=false}});
 $("#test-llm").addEventListener("click",async e=>{stopVoicePreview({clearStatus:true});const button=e.currentTarget,status=$("#llm-settings-status"),tier=$("#llm-test-tier").value;button.disabled=true;status.textContent=`正在保存并测试 ${tier[0].toUpperCase()+tier.slice(1)}…`;try{llmSettings=await request("/api/settings",{method:"POST",body:JSON.stringify(settingsPayload())});$("#llm-api-key").value="";renderSettings();const result=await request("/api/settings/test",{method:"POST",body:JSON.stringify({tier})}),profile=llmSettings.profiles[tier];status.textContent=`连接成功 · ${profile.model==="deepseek-v4-pro"?"DeepSeek Pro":"DeepSeek Flash"} · ${profile.effort==="none"?"思考关闭":`思考 ${profile.effort.toUpperCase()}`}`;showToast(result.reply||"DeepSeek 连接成功")}catch(err){status.textContent=`连接失败：${err.message}`}finally{button.disabled=false}});
-function syncLocalDate(){const next=localDateKey();if(next===currentLocalDate)return;const followedToday=activeDate===currentLocalDate;currentLocalDate=next;if(followedToday){activeDate=next;renderDate();renderSliders();publishDomains(new Set(["thoughts"]));renderStateChart();renderHomeMood();renderChat()}}
+function syncLocalDate(){const next=localDateKey();if(next===currentLocalDate)return;const followedToday=activeDate===currentLocalDate;currentLocalDate=next;if(followedToday){activeDate=next;renderDate();renderSliders();publishDomains(new Set(["thoughts","activeDate"]));renderStateChart();renderHomeMood();renderChat()}}
 function markApplicationForeground(){apiClient.markForeground();syncLocalDate();restoreView?.()}
 setInterval(syncLocalDate,30000);
-document.addEventListener("visibilitychange",()=>{if(document.hidden){saveDurableDrafts();stopCaptureAudioRecording();stopPageAudio()}else markApplicationForeground()});
-window.addEventListener("pagehide",()=>{saveDurableDrafts();stopCaptureAudioRecording();stopPageAudio()});
+document.addEventListener("visibilitychange",()=>{if(document.hidden){saveDurableDrafts();stopPageAudio()}else markApplicationForeground()});
+window.addEventListener("pagehide",()=>{saveDurableDrafts();stopPageAudio()});
 window.addEventListener("pageshow",markApplicationForeground);
 $$("[data-auth-tab]").forEach(button=>{
   button.addEventListener("click",()=>setAuthTab(button.dataset.authTab));

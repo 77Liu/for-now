@@ -543,6 +543,46 @@
       "status": "active"
     },
     {
+      "id": "frontend.feature.capture-drafts",
+      "type": "feature",
+      "root": "public/frontend/features/capture-journal/capture-drafts.mjs",
+      "publicEntry": "public/frontend/features/capture-journal/capture-drafts.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["account-scoped capture form and tag draft serialization, restoration and legacy session migration"], "routes": [] },
+      "tests": ["scripts/frontend-capture-journal-feature-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.capture-audio",
+      "type": "feature",
+      "root": "public/frontend/features/capture-journal/capture-audio.mjs",
+      "publicEntry": "public/frontend/features/capture-journal/capture-audio.mjs",
+      "allowedDependencies": ["frontend.media"],
+      "owns": { "data": ["account-scoped capture audio draft, recording stream and timer lifecycle, idempotent upload lease and late-result compensation"], "routes": [] },
+      "tests": ["scripts/frontend-capture-journal-feature-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.capture-journal-presentation",
+      "type": "feature",
+      "root": "public/frontend/features/capture-journal/presentation.mjs",
+      "publicEntry": "public/frontend/features/capture-journal/presentation.mjs",
+      "allowedDependencies": ["frontend.content", "frontend.media", "frontend.time"],
+      "owns": { "data": ["capture and journal search, timeline markup, transcription layers, reflection version state and speech controls"], "routes": [] },
+      "tests": ["scripts/frontend-capture-journal-feature-regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.capture-journal",
+      "type": "feature",
+      "root": "public/frontend/features/capture-journal",
+      "publicEntry": "public/frontend/features/capture-journal/index.mjs",
+      "allowedDependencies": ["frontend.media", "frontend.time", "frontend.feature.capture-audio", "frontend.feature.capture-drafts", "frontend.feature.capture-journal-presentation"],
+      "owns": { "data": ["capture and journal editor state, media submission compensation, transcription and reflection interactions, route-aware drafts and disposable page lifecycle"], "routes": [] },
+      "tests": ["scripts/frontend-capture-journal-feature-regression.mjs", "scripts/capture-journal-regression.mjs", "scripts/capture-transcription-regression.mjs", "scripts/speech-cache-regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
       "id": "frontend.feature.thoughts-model",
       "type": "feature",
       "root": "public/frontend/features/thoughts/model.mjs",
@@ -709,7 +749,7 @@
       "type": "application",
       "root": "public/frontend/app",
       "publicEntry": "public/frontend/app/index.mjs",
-      "allowedDependencies": ["frontend.application", "frontend.ports", "frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.media-content-drafts", "frontend.page-audio", "frontend.page-catalog", "frontend.pages", "frontend.features", "frontend.feature-registry", "frontend.feature.actions-controller", "frontend.feature.annotations", "frontend.feature.background-results", "frontend.feature.checkins-model", "frontend.feature.checkins", "frontend.feature.health", "frontend.feature.thoughts", "frontend.feature.discovery", "frontend.feature.export", "frontend.feature.feedback", "frontend.feature.notifications", "frontend.feature.legacy-pages", "frontend.component.tag-multiselect"],
+      "allowedDependencies": ["frontend.application", "frontend.ports", "frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.media-content-drafts", "frontend.page-audio", "frontend.page-catalog", "frontend.pages", "frontend.features", "frontend.feature-registry", "frontend.feature.actions-controller", "frontend.feature.annotations", "frontend.feature.background-results", "frontend.feature.capture-journal", "frontend.feature.checkins-model", "frontend.feature.checkins", "frontend.feature.health", "frontend.feature.thoughts", "frontend.feature.discovery", "frontend.feature.export", "frontend.feature.feedback", "frontend.feature.notifications", "frontend.feature.legacy-pages", "frontend.component.tag-multiselect"],
       "owns": { "data": ["browser bootstrap, dependency composition, feature event binding and page presenter runtime"], "routes": [] },
       "tests": ["scripts/frontend-shell-regression.mjs", "scripts/frontend-contract-regression.mjs", "scripts/frontend-lazy-descriptor-regression.mjs", "scripts/frontend-checkins-feature-regression.mjs", "scripts/frontend-notifications-feature-regression.mjs", "scripts/ui-regression.mjs", "scripts/mobile-platform-regression.mjs"],
       "status": "active"
@@ -924,6 +964,7 @@
         "../features/actions/controller.mjs",
         "../features/annotations/index.mjs",
         "../features/background-results/index.mjs",
+        "../features/capture-journal/index.mjs",
         "../features/checkins-model/index.mjs",
         "../features/checkins/index.mjs",
         "../features/export/index.mjs",
@@ -953,6 +994,7 @@
         "../features/actions/controller.mjs",
         "../features/annotations/index.mjs",
         "../features/background-results/index.mjs",
+        "../features/capture-journal/index.mjs",
         "../features/checkins-model/index.mjs",
         "../features/checkins/index.mjs",
         "../features/export/index.mjs",
@@ -1056,11 +1098,11 @@
         { "page": "today", "feature": "frontend.feature.checkins", "specifier": "../features/checkins/index.mjs" },
         { "page": "together", "feature": "frontend.feature.thoughts", "specifier": "../features/thoughts/index.mjs" },
         { "page": "daily", "feature": "frontend.feature.health", "specifier": "../features/health/controller.mjs" },
-        { "page": "captures", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
+        { "page": "captures", "feature": "frontend.feature.capture-journal", "specifier": "../features/capture-journal/index.mjs" },
         { "page": "books", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
         { "page": "quotes", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
         { "page": "keepsakes", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
-        { "page": "journals", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
+        { "page": "journals", "feature": "frontend.feature.capture-journal", "specifier": "../features/capture-journal/index.mjs" },
         { "page": "thoughts", "feature": "frontend.feature.thoughts", "specifier": "../features/thoughts/index.mjs" },
         { "page": "discovery", "feature": "frontend.feature.discovery", "specifier": "../features/thought-discovery/index.mjs" },
         { "page": "review", "feature": "frontend.feature.checkins", "specifier": "../features/checkins/index.mjs" },
@@ -1117,49 +1159,49 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.api-path",
-      "sourceSha256": "dc4dc6eb4b847adc35ecdb38563eee411b8478ccefd85c29d95ada3a757ceba5",
+      "sourceSha256": "df8abcd7311deba608ddb5a6c310bea0e6e1be03130b522bd76f8536e5ad25c6",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no API path literals",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden literal matched \"^/api(?:/|$)\"", "count": 63 }
+        { "detail": "forbidden literal matched \"^/api(?:/|$)\"", "count": 57 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.dom-query",
-      "sourceSha256": "dc4dc6eb4b847adc35ecdb38563eee411b8478ccefd85c29d95ada3a757ceba5",
+      "sourceSha256": "df8abcd7311deba608ddb5a6c310bea0e6e1be03130b522bd76f8536e5ad25c6",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page DOM queries",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden identifier \"querySelector\"", "count": 90 },
-        { "detail": "forbidden identifier \"querySelectorAll\"", "count": 22 },
+        { "detail": "forbidden identifier \"querySelector\"", "count": 79 },
+        { "detail": "forbidden identifier \"querySelectorAll\"", "count": 15 },
         { "detail": "forbidden identifier \"getElementById\"", "count": 6 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.event-binding",
-      "sourceSha256": "dc4dc6eb4b847adc35ecdb38563eee411b8478ccefd85c29d95ada3a757ceba5",
+      "sourceSha256": "df8abcd7311deba608ddb5a6c310bea0e6e1be03130b522bd76f8536e5ad25c6",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page event binding",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden identifier \"addEventListener\"", "count": 201 },
+        { "detail": "forbidden identifier \"addEventListener\"", "count": 181 },
         { "detail": "forbidden identifier \"removeEventListener\"", "count": 3 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.timer",
-      "sourceSha256": "dc4dc6eb4b847adc35ecdb38563eee411b8478ccefd85c29d95ada3a757ceba5",
+      "sourceSha256": "df8abcd7311deba608ddb5a6c310bea0e6e1be03130b522bd76f8536e5ad25c6",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page timers or animation scheduling",
       "deleteByGate": "G6",
       "allowlist": [
         { "detail": "forbidden identifier \"cancelAnimationFrame\"", "count": 3 },
-        { "detail": "forbidden identifier \"requestAnimationFrame\"", "count": 29 },
+        { "detail": "forbidden identifier \"requestAnimationFrame\"", "count": 25 },
         { "detail": "forbidden identifier \"setInterval\"", "count": 3 },
         { "detail": "forbidden identifier \"setTimeout\"", "count": 10 }
       ]
@@ -1167,22 +1209,22 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.template",
-      "sourceSha256": "dc4dc6eb4b847adc35ecdb38563eee411b8478ccefd85c29d95ada3a757ceba5",
+      "sourceSha256": "df8abcd7311deba608ddb5a6c310bea0e6e1be03130b522bd76f8536e5ad25c6",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page templates",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden syntax template-literal", "count": 548 }
+        { "detail": "forbidden syntax template-literal", "count": 478 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "lines.hard",
-      "sourceSha256": "dc4dc6eb4b847adc35ecdb38563eee411b8478ccefd85c29d95ada3a757ceba5",
+      "sourceSha256": "df8abcd7311deba608ddb5a6c310bea0e6e1be03130b522bd76f8536e5ad25c6",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs is at or below 180 lines",
       "deleteByGate": "G6",
-      "maxValue": 4288
+      "maxValue": 3834
     }
   ],
   "migrationExceptions": []

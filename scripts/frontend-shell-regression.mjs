@@ -449,7 +449,6 @@ const effects = createPageEffects({
     calls.push("frame");
     callback();
   },
-  syncCaptureOverflow: () => calls.push("captures"),
   syncQuoteOverflow: () => calls.push("quote-overflow"),
   setupQuoteBubbleScroll: () => calls.push("quote-scroll"),
   stopQuoteBubbleScroll: () => calls.push("quote-stop"),
@@ -459,12 +458,11 @@ const effects = createPageEffects({
   loadCommercialization: async () => calls.push("commercialization"),
   loadTrash: async () => calls.push("trash")
 });
-effects.captures();
 effects.quotes();
 effects.leaveQuotes();
 effects.architecture();
 await new Promise(resolve => setTimeout(resolve, 0));
-for (const expected of ["frame", "captures", "quote-overflow", "quote-scroll", "quote-stop", "architecture"]) {
+for (const expected of ["frame", "quote-overflow", "quote-scroll", "quote-stop", "architecture"]) {
   assert.ok(calls.includes(expected), `missing page effect: ${expected}`);
 }
 

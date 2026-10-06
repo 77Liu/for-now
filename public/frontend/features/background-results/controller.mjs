@@ -104,7 +104,8 @@ export function createBackgroundResultsFeatureController({
     getAccountId: data.getAccountId,
     replaceSnapshot: data.replaceSnapshot,
     request: data.request,
-    refresh: data.refresh
+    refresh: data.refresh,
+    publish: data.publish
   });
   requireFunctions("navigation port", {
     openThoughtDetail: navigation.openThoughtDetail,
@@ -115,7 +116,6 @@ export function createBackgroundResultsFeatureController({
     refreshTarget: annotations.refreshTarget
   });
   requireFunctions("view port", {
-    renderCaptures: view.renderCaptures,
     patchThoughtTarget: view.patchThoughtTarget,
     scheduleAnnotationLayout: view.scheduleAnnotationLayout,
     showToast: view.showToast
@@ -141,7 +141,7 @@ export function createBackgroundResultsFeatureController({
 
   function refreshAppliedTarget(task, target) {
     if (target.kind === "captureTranscription") {
-      view.renderCaptures();
+      data.publish(["captures"]);
       return true;
     }
     if (target.kind === "annotationShenji") {
@@ -150,7 +150,7 @@ export function createBackgroundResultsFeatureController({
     }
     if (target.kind === "contentImageUnderstanding") {
       if (target.contentTargetType === "capture") {
-        view.renderCaptures();
+        data.publish(["captures"]);
         return true;
       }
       if (target.contentTargetType === "comment") {

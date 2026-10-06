@@ -33,6 +33,7 @@ const moduleScopes = new Map([
 
 const frontendScopes = new Map([
   ["actions", "actions"],
+  ["capture-journal", "captures-journals"],
   ["home", "home"],
   ["keepsakes-media", "keepsakes"],
   ["thought-discovery", "discovery"]
@@ -43,6 +44,7 @@ const regressionScopes = new Map([
   ["capture-journal-regression.mjs", ["captures-journals"]],
   ["checkin-health-regression.mjs", ["records"]],
   ["frontend-contract-regression.mjs", allFrontendScopes],
+  ["frontend-capture-journal-feature-regression.mjs", ["captures-journals"]],
   ["frontend-shell-regression.mjs", allFrontendScopes],
   ["g2-a-r2-regression.mjs", ["thoughts"]],
   ["g2-actions-regression.mjs", ["actions"]],

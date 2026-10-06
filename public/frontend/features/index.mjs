@@ -1,6 +1,5 @@
 export function createPageEffects({
   requestFrame = globalThis.requestAnimationFrame,
-  syncCaptureOverflow,
   syncQuoteOverflow,
   setupQuoteBubbleScroll,
   stopQuoteBubbleScroll,
@@ -11,7 +10,6 @@ export function createPageEffects({
   loadTrash
 }) {
   return Object.freeze({
-    captures: () => requestFrame(syncCaptureOverflow),
     quotes: () => requestFrame(() => {
       syncQuoteOverflow();
       setupQuoteBubbleScroll();

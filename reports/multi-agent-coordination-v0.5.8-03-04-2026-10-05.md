@@ -773,3 +773,167 @@ F4.3 -> F5 -> F6 -> F7 -> F8 -> F9 -> F10 -> G6
   恢复后补写 F5 证据，不据此阻塞本地代码检查点。
 - F5 已关闭，下一步进入 F6 捕念/音频/转写与日记；未执行 push、tag、
   Release、Preview、部署、云资源修改、真实付费调用或生产写入。
+
+## 2026-10-06 F6 治理检查点 R5
+
+状态：`f6-dirty-governance-checkpoint / not-validated / not-complete`。本节只冻结
+治理介入时的现场，不把后续探索性测试当成固定候选证据。
+
+### Dirty Candidate Manifest
+
+- 时间：`2026-10-06T18:22:32+0800`
+- HEAD：`9f3747a1c758d79950bba166eb5f22c5ecf06df3`
+- 完整临时 index tree：
+  `de3b9402cabad3466765593aab4b770406e54056`
+- tracked + untracked manifest digest：
+  `2ca137e17868b8294e5dc16a8506156fd20715e85ad1a38d2c8849c8ab0ab424`
+- 范围：12 个 tracked 修改、7 个 untracked 文件；本报告的治理记录在该
+  checkpoint 之后写入，不属于上述 tree。
+
+```text
+M  1367ef73d854d6e0043bc1c75c20f1dfe1f2a5d178a73900a7d6816ba70bbe5c  knowledge/module-boundaries.json
+M  d02e8fd274ed2255c6b197072e2912c570165cb6cd3beef342bb35e23538dbf6  package.json
+M  d72d02159d1c8b21dab83b535fe681b73bb1108814771578af3cedf08590b5dd  public/frontend/app/runtime.mjs
+M  495caa4757bdd72ee4653d5681d15d09ec04be84c5d7702d4745a6a9ad79b860  public/frontend/features/background-results/controller.mjs
+M  c82b143d17a158a1adf08ea61a0c8ed2df44ed683862a07ea11f4aa8f0355a8a  public/frontend/features/index.mjs
+M  498254abfa6cefeedcf44a4929eda4462f57ee619acf80ee7e17015cb42c93aa  public/service-worker.js
+M  90f0b232b93b147291a22498e8b2178db5a16712d15f371849e846adbff9c934  scripts/frontend-background-results-feature-regression.mjs
+M  288d20c1b2b685e8cf1f5faccb8b39cb3ad42ead8ba41f2ccc5c03740a8948dd  scripts/frontend-lazy-descriptor-regression.mjs
+M  604532f32595b0762ed576ff8fe76a48aa28a7471e1ea808023be1304d8d34b3  scripts/frontend-shell-regression.mjs
+M  b26b7ce38c7d6d3ca4398d4cc650a5383b53b0aec223b2ef2a6cb826b0aa77e3  scripts/pwa-regression.mjs
+M  9797b4835b6c42a491508e78cf7875ea6f98d8a06526c59909f43b5a143ef5b2  scripts/ui-regression.mjs
+M  82b659f07a218e6090c77dbcd8b131c9f115e488ad8a7574dad3736e273232db  scripts/web-first-screen-budget-regression.mjs
+?? ce6a6422f01233355321ee51c6dcfba94d5195ef683dc6a7af3091ed0462b5bd  public/frontend/features/capture-journal/capture-audio.mjs
+?? 788702e5c4429f9b58148ff70f03a5b0090ee0624227b258391044bd4f5766ac  public/frontend/features/capture-journal/captures.mjs
+?? 345d1bd1fe62aa84b12e28a5bac0b8c86c1cd65909d83157d251e024b0265a45  public/frontend/features/capture-journal/index.mjs
+?? cd7a11a63ee545b3e9373f30f216da5ffc9633e21d01d7a51329350c98c72be0  public/frontend/features/capture-journal/journals.mjs
+?? 3bdf69e292f410084fa60cc39dbcbde380959ad4f9b177dfdb9e9f5fe763a27b  public/frontend/features/capture-journal/loader.mjs
+?? 844576842628ae14a9508f91506c15a26acbb3b63b90112fc1232378102e4c13  public/frontend/features/capture-journal/presentation.mjs
+?? 6041a473f89bbcd66d7ecad7f526e77ab28b5b6840cdd3638ea8e4ff99cdfc18  scripts/frontend-capture-journal-feature-regression.mjs
+```
+
+### F6 边界、所有权与依赖
+
+| task / owner | base / readSet | writeSet | 验收 / 回报 | 状态 |
+| --- | --- | --- | --- | --- |
+| F6 主集成 / `orchestrator` | HEAD `9f3747a`；F6 dirty tree | capture-journal、runtime、registry、module policy、runner、SW、F6 测试、本报告 | 专项→影响门→固定候选→独立 GO；回报本报告 | `active` |
+| A 技术债 Reviewer / `4ec0b719-3d0a-4e3b-a135-e258395c85af` | 当前 F6 全差分 | 无 | owner/ports/lifecycle 与热点平移建议；不出最终 GO | `active` |
+| B Validator / `f8b2fe87-cf03-4a76-9b6e-5e040683304d` | F6 模块、测试、门禁 | 无 | 冻结 stream/timer/Blob/租约/账户/离页/迟到/草稿/路由矩阵 | `active` |
+| C SOP Owner / `bc2e5fa6-643b-449d-84db-b69f215cb08e` | HEAD `9f3747a`、外部规范与既有 SOP | 仅五个授权 SOP/knowledge 文件；独立工作树 | 文档校验、独立 commit、结构化回报 | `active` |
+| D F7 Scout / `3d23b081-3bfc-4570-bc2d-216bdd006561` | F7 书籍/善言/回顾闭包 | 无 | 下一批 ready 边界、依赖、写集、专项 | `active` |
+| E Evidence/Dispatch Auditor / `351047da-c0c8-49d7-b984-7dc0dc901b4e` | 调度账、Git/工作树、测试事实 | 无 | 名册、资源、DAG、等待原因与下一动作审计 | `active` |
+
+### 资源与写集
+
+- 工作树从 `5/6` 增至 `6/6`；唯一新增写树为
+  `.worktrees/v0.5.8-governance-sop` / `chore/f6-governance-sop`。
+  达到上限后禁止再创建工作树。
+- 当前主树独占 F6 代码、`runtime.mjs`、模块登记、runner、Service Worker
+  和本报告；SOP Owner 不得触碰这些文件。A/B/D/E 均只读，不占写树。
+- 浏览器与端口只由主树按测试命令临时申请；治理检查点时无持久测试服务器。
+  外部云、费用、Base、Preview、发布和生产资源均未授权。
+
+### 必要跨 Feature 差分
+
+- `features/background-results/controller.mjs` 是 F6 必需差分：捕念转写与图片
+  理解的后台结果原先直接调用 runtime 的 `renderCaptures`。页面迁为 lazy
+  controller 后必须改为发布 `captures` domain，由当前激活 feature 接收；
+  否则保留反向 UI 依赖或导致后台结果不刷新。
+- `features/index.mjs` 删除 capture overflow page effect 是 F6 必需差分：
+  overflow 的 DOM 与 resize 生命周期已归 capture controller；保留会造成
+  双 owner 和重复调度。
+- `service-worker.js`、PWA/lazy descriptor/web budget、模块登记与 package
+  runner 都是新增 lazy feature 的缓存、边界和验收接线；不含产品新功能。
+
+### 风险与重排
+
+- 已识别并进入修复环的 P1：编辑已有捕念后恢复的新建媒体草稿必须重新持久化；
+  捕念/日记提交跨路由时必须完成清理且不能复用旧幂等键；预算必须统计真实
+  capture/journal 实现闭包，不能只统计二级 loader。
+- 当前 `captures.mjs=1226`、`journals.mjs=615`、`capture-audio.mjs=591`。
+  行数本身不作为失败门，但 captures 同时拥有 DOM、请求、录音、草稿、提交、
+  同步和跨域动作，已满足热点平移触发条件，必须在最终接线前按职责拆分。
+- A/B/D/E 均为 ready 且已派发；C 获得唯一剩余写槽。没有其他可派发写任务：
+  F6 共享接线必须单写，F7 仅可侦察，V0.5.9 功能被冻结。
+- 唯一下一动作：主树先关闭上述 P1 并拆分 capture-journal owner；随后运行
+  叶子专项，冻结新的完整 tree/manifest，再执行影响门和最终独立复审。
+
+## 2026-10-06 F6 滚动调度 R6
+
+状态：`candidate-pre-freeze / impact-gate-passed-with-recorded-flake`。
+
+### 事件驱动重排
+
+- A `4ec0b719-3d0a-4e3b-a135-e258395c85af` 返回：当前草稿存在捕念
+  DOM、请求、录音、草稿和同步 owner 集中这一 P0 热点平移；最终候选前应拆为
+  view、operations 和薄 controller。该结果已执行，不作为最终 GO。
+- B `f8b2fe87-cf03-4a76-9b6e-5e040683304d` 返回并冻结 F6 矩阵：录音
+  stream/timer/track、Blob URL、并发上传租约、账户代际、离页与迟到响应、
+  捕念/日记草稿和路由恢复。专项现已进入标准 `frontend` suite。
+- D `3d23b081-3bfc-4570-bc2d-216bdd006561` 返回：F7 按
+  `BOOKS -> QUOTES -> REVIEW` 顺序 conditionally ready，依赖 F6 提交。
+  当前不派发写任务的具体原因是 F6 尚未形成冻结提交，不能与共享 runtime
+  接线并发；不是“仍在规划”。
+- E `351047da-c0c8-49d7-b984-7dc0dc901b4e` 返回：治理时 6/6
+  worktrees、F6 NO-GO，唯一下一动作是关闭热点和验证缺口。SOP 写树完成后已
+  安全移除，现为 5/6；浏览器、端口、云、费用、Base 和发布资源均未占用。
+- C `bc2e5fa6-643b-449d-84db-b69f215cb08e` 在独立写树提交
+  `739c63a`，主树串行吸收为 `0255229`。变更只覆盖既有五个 SOP/knowledge
+  文件，未新增平行制度；其写树已移除。
+
+### Owner 收口
+
+- `captures.mjs` 从 1226 行降至 678 行，仅保留端口校验、编辑器协调、事件
+  分派与 mount/unmount/resetSession 生命周期。
+- `captures-view.mjs` 独占捕念列表、标签、音频状态和 overflow DOM 投影；
+  `captures-operations.mjs` 独占保存、删除、转写、朗读及补偿；
+  `capture-drafts.mjs` 独占账户隔离的 session 草稿与旧格式迁移。
+- `capture-audio.mjs` 保持独立录音 owner，覆盖 stream、timer、暂停时长、
+  本地 Blob、对象 URL、幂等上传租约和迟到上传补偿；未与页面 controller
+  合并。`journals.mjs` 保持单页表单/列表/回望生命周期，不承接捕念 owner。
+- runtime 的 `captureDraftAdapter` 已删除，仅向 feature 注入
+  `sessionStorage` 与账户端口。迁移时发现并修复旧适配器会恢复
+  `input[type=file]` 非空值的生产可达缺陷；新快照不保存文件输入，旧快照
+  恢复时也跳过文件输入。
+- `background-results/controller.mjs` 保留在本批：后台捕念转写和图片理解
+  必须发布 `captures` domain，才能解除对 runtime `renderCaptures` 的反向
+  UI 依赖。该跨 feature 修改不含范围外功能。
+
+### 验证事实
+
+- F6 专项：通过。新增 fake MediaRecorder stream/timer/track、暂停计时、
+  Blob URL 精确释放、并发上传单租约、账户迟到补偿、草稿账户隔离和文件输入
+  兼容性验证。
+- `npm run check`：通过；78 个 active modules、237 条 owned routes、
+  6 个收敛中的入口例外。
+- PWA：通过；lazy capture-journal 仍为 cache-on-use，不进入 install
+  precache。
+- Web budget：通过；捕念路由实现 6 个职责模块、23024B，日记 2 个模块、
+  9831B，均低于 40KiB 传输预算。模块数 6 是治理拆分后首次冻结的结构上限，
+  未改变既有首屏、lazy descriptor 或 40KiB 预算。
+- UI：修复文件输入恢复缺陷后独立通过。完整 frontend 第二轮通过前 28 项，
+  最后一项 mobile 在既有思绪详情展开等待上出现一次时序失败；相同代码下
+  `mobile-platform-regression` 随后独立通过。该次记录不冒充完整门通过，
+  固定候选仍须再跑一次完整 frontend。
+
+唯一下一动作：冻结包含上述代码、测试和本记录的新 candidate tree/manifest，
+串行重跑完整 frontend；通过后交最终独立 Reviewer，只接受当前候选引入且
+生产路径可达的 blocker/P0/P1。
+
+## 2026-10-06 F6 冻结候选复审 R7
+
+- 首版冻结候选：tree `396c93e8d12dfbb566e2bed8635880febc4d9b4b`，
+  manifest SHA-256
+  `e528fbf8e386fd555c1a6a0f556750ea1735e80980ee6c294c4d1a06b8549533`。
+- 完整 frontend：29/29 通过，耗时 77143ms；`npm run check` 与 F6 专项
+  同一候选通过。
+- 最终 Reviewer 首轮返回 `0/0/2`。按双人交叉验证，退出时捕念草稿复活项
+  为 `0/2` 确认，依据实际 registry cleanup、账户置空和媒体 manager reset
+  顺序排除；日记跨路由请求租约项为 `2/2` 确认，保留为 P1。
+- 已解除首版冻结并修复该 P1：日记草稿保存与 AI 辅助分别持有跨
+  mount/unmount 单飞租约；remount 时保持控件禁用直到旧请求结束；正式提交
+  与草稿保存互斥。浏览器反例覆盖离页、返回、重复点击、旧请求释放和后续新
+  请求，防止旧 PUT 覆盖新草稿及重复 AI 费用调用。
+
+唯一下一动作：冻结第二版 candidate，重跑专项与 frontend 影响门，并由新的
+独立 Reviewer 复审第二版差分；只有 blocker/P0/P1=`0/0/0` 才允许提交 F6。

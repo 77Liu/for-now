@@ -33,6 +33,7 @@ assert.deepEqual(dynamicSpecifiers, [
   "../features/actions/controller.mjs",
   "../features/annotations/index.mjs",
   "../features/background-results/index.mjs",
+  "../features/capture-journal/index.mjs",
   "../features/export/index.mjs",
   "../features/feedback/index.mjs",
   "../features/health/controller.mjs",
@@ -153,6 +154,13 @@ for (const view of ["thoughts", "together"]) {
     specifier: "../features/thoughts/index.mjs"
   });
 }
+for (const view of ["captures", "journals"]) {
+  assert.deepEqual(descriptors.get(view), {
+    page: view,
+    feature: "frontend.feature.capture-journal",
+    specifier: "../features/capture-journal/index.mjs"
+  });
+}
 for (const view of ["today", "review"]) {
   assert.deepEqual(descriptors.get(view), {
     page: view,
@@ -161,7 +169,7 @@ for (const view of ["today", "review"]) {
   });
 }
 for (const [view, descriptor] of descriptors) {
-  if (["today", "review", "daily", "thoughts", "together", "export", "feedback", "discovery", "notifications"].includes(view)) continue;
+  if (["today", "review", "daily", "captures", "journals", "thoughts", "together", "export", "feedback", "discovery", "notifications"].includes(view)) continue;
   assert.deepEqual(descriptor, {
     page: view,
     feature: "frontend.feature.legacy-pages",
@@ -173,6 +181,7 @@ for (const eagerEdge of [
   "./actions/controller.mjs",
   "./annotations/index.mjs",
   "./background-results/index.mjs",
+  "./capture-journal/index.mjs",
   "./export/index.mjs",
   "./feedback/index.mjs",
   "./notifications/index.mjs",
@@ -186,6 +195,7 @@ for (const deferredF3Edge of ["./annotation-tools.mjs", "./background-results.mj
 }
 for (const hiddenAsset of [
   "frontend/features/background-results/index.mjs",
+  "frontend/features/capture-journal/index.mjs",
   "frontend/features/export/index.mjs",
   "frontend/features/feedback/index.mjs",
   "frontend/features/health/controller.mjs",

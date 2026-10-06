@@ -122,6 +122,9 @@ const controller = createBackgroundResultsFeatureController({
       events.push(`refresh:${domains.join(",")}:${options.chainId || ""}`);
       if (refreshGate) await refreshGate.promise;
       return true;
+    },
+    publish(domains) {
+      events.push(`publish:${domains.join(",")}`);
     }
   },
   navigation: {
@@ -146,9 +149,6 @@ const controller = createBackgroundResultsFeatureController({
     }
   },
   view: {
-    renderCaptures() {
-      events.push("render-captures");
-    },
     patchThoughtTarget(target) {
       events.push(`patch-thought:${target.targetId}`);
       return true;

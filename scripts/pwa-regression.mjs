@@ -299,7 +299,7 @@ assert.equal(startupTimeout.observers.every(observer => observer.disconnected), 
 
 const worker = await fs.readFile(publicPath("service-worker.js"), "utf8");
 assert.match(worker, /const CACHE_VERSION\s*=\s*["'][^"']+["']/);
-assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.8-12["']/);
+assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.8-13["']/);
 const assetSet = name => {
   const source = worker.match(new RegExp(`const ${name}\\s*=\\s*\\[([\\s\\S]*?)\\];`))?.[1] || "";
   return new Set([...source.matchAll(/["']([^"']+)["']/g)].map(match => match[1]));
@@ -343,6 +343,15 @@ for (const asset of [
 ]) assert.ok(shellAssets.has(asset), `预缓存缺少 ${asset}`);
 for (const asset of [
   "frontend/features/background-results/index.mjs",
+  "frontend/features/capture-journal/capture-audio.mjs",
+  "frontend/features/capture-journal/capture-drafts.mjs",
+  "frontend/features/capture-journal/captures-operations.mjs",
+  "frontend/features/capture-journal/captures-view.mjs",
+  "frontend/features/capture-journal/captures.mjs",
+  "frontend/features/capture-journal/index.mjs",
+  "frontend/features/capture-journal/journals.mjs",
+  "frontend/features/capture-journal/loader.mjs",
+  "frontend/features/capture-journal/presentation.mjs",
   "frontend/features/export/index.mjs",
   "frontend/features/feedback/index.mjs",
   "frontend/features/health/controller.mjs",

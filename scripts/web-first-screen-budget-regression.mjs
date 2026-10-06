@@ -34,7 +34,9 @@ const ASSET_BUDGET = Object.freeze({
   defaultRouteModuleCount: 2,
   defaultRouteModuleBytes: 16 * 1024,
   lazyFeatureModuleCount: 3,
-  lazyFeatureModuleBytes: 40 * 1024
+  lazyFeatureModuleBytes: 40 * 1024,
+  lazyRouteImplementationModuleCount: 6,
+  lazyRouteTransferBytes: 40 * 1024
 });
 const HIDDEN_FEATURE_MODULE_PATHS = Object.freeze([
   "/frontend/features/actions/controller.mjs",
@@ -42,6 +44,15 @@ const HIDDEN_FEATURE_MODULE_PATHS = Object.freeze([
   "/frontend/features/background-results/controller.mjs",
   "/frontend/features/background-results/locator.mjs",
   "/frontend/features/background-results/model.mjs",
+  "/frontend/features/capture-journal/index.mjs",
+  "/frontend/features/capture-journal/loader.mjs",
+  "/frontend/features/capture-journal/capture-drafts.mjs",
+  "/frontend/features/capture-journal/captures-operations.mjs",
+  "/frontend/features/capture-journal/captures-view.mjs",
+  "/frontend/features/capture-journal/captures.mjs",
+  "/frontend/features/capture-journal/journals.mjs",
+  "/frontend/features/capture-journal/capture-audio.mjs",
+  "/frontend/features/capture-journal/presentation.mjs",
   "/frontend/features/export/index.mjs",
   "/frontend/features/export/controller.mjs",
   "/frontend/features/export/downloads.mjs",
@@ -166,6 +177,15 @@ async function moduleClosure(entry, { includeEntryDynamic = false } = {}) {
     }
   }
   return { assets: [...assets].sort(), bytes };
+}
+
+async function incrementalTransferClosure(closure, alreadyLoaded = []) {
+  const loaded = new Set(alreadyLoaded);
+  const assets = closure.assets.filter(asset => !loaded.has(asset));
+  const transferBytes = (await Promise.all(assets.map(async asset => (
+    gzipSync(await fs.readFile(publicFile(asset))).byteLength
+  )))).reduce((sum, value) => sum + value, 0);
+  return { assets, transferBytes };
 }
 
 const onboardingV2 = {
@@ -929,6 +949,7 @@ const defaultRouteModules = await moduleClosure([
 ]);
 const lazyFeatureModules = Object.fromEntries(await Promise.all([
   ["actions-workspace", "frontend/features/actions/controller.mjs"],
+  ["capture-journal", "frontend/features/capture-journal/index.mjs"],
   ["export", "frontend/features/export/index.mjs"],
   ["feedback", "frontend/features/feedback/index.mjs"],
   ["health", "frontend/features/health/controller.mjs"],
@@ -936,6 +957,24 @@ const lazyFeatureModules = Object.fromEntries(await Promise.all([
   ["discovery", "frontend/features/thought-discovery/index.mjs"],
   ["thoughts", "frontend/features/thoughts/index.mjs"]
 ].map(async ([view, entry]) => [view, await moduleClosure(entry)])));
+const captureJournalRouteModules = Object.fromEntries(await Promise.all([
+  ["captures", "frontend/features/capture-journal/captures.mjs"],
+  ["journals", "frontend/features/capture-journal/journals.mjs"]
+].map(async ([view, entry]) => {
+  const closure = await moduleClosure(entry);
+  const implementation = await incrementalTransferClosure(
+    closure,
+    deferredRuntime.assets
+  );
+  const descriptor = lazyFeatureModules["capture-journal"];
+  const descriptorTransferBytes = (await Promise.all(descriptor.assets.map(async asset => (
+    gzipSync(await fs.readFile(publicFile(asset))).byteLength
+  )))).reduce((sum, value) => sum + value, 0);
+  return [view, {
+    ...implementation,
+    transferBytes: implementation.transferBytes + descriptorTransferBytes
+  }];
+})));
 const openingCriticalStyleIndex = html.indexOf('<style id="opening-critical-style">');
 const applicationStyleLoadIndex = html.indexOf("const loadApplicationStyles");
 const openingShellIndex = html.indexOf('id="opening-screen"');
@@ -1005,6 +1044,16 @@ for (const [view, closure] of Object.entries(lazyFeatureModules)) {
     closure.assets.some(asset => deferredRuntime.assets.includes(asset)),
     false,
     `${view} lazy 闭包进入了 shell 静态闭包`
+  );
+}
+for (const [view, closure] of Object.entries(captureJournalRouteModules)) {
+  assert.ok(
+    closure.assets.length <= ASSET_BUDGET.lazyRouteImplementationModuleCount,
+    `${view} 路由实现增量 ${closure.assets.length} 个模块超过预算 ${ASSET_BUDGET.lazyRouteImplementationModuleCount}`
+  );
+  assert.ok(
+    closure.transferBytes <= ASSET_BUDGET.lazyRouteTransferBytes,
+    `${view} 路由实现传输 ${closure.transferBytes} B 超过预算 ${ASSET_BUDGET.lazyRouteTransferBytes} B`
   );
 }
 
@@ -1555,6 +1604,10 @@ try {
         lazyFeatureModules: Object.fromEntries(Object.entries(lazyFeatureModules).map(([view, closure]) => [
           view,
           { requests: closure.assets.length, decodedBytes: closure.bytes }
+        ])),
+        captureJournalRouteModules: Object.fromEntries(Object.entries(captureJournalRouteModules).map(([view, closure]) => [
+          view,
+          { implementationRequests: closure.assets.length, transferBytes: closure.transferBytes }
         ]))
       },
       startupJsonDecodedBytesMax: Math.max(...cold.map(item => item.startupJsonDecodedBytes)),

@@ -294,10 +294,17 @@ const mockFetch = `
   window.__journalPatches = 0;
   window.__journalDraft = { journalId: "journal-1", title: "跨端恢复的标题", content: "跨端恢复的正文。", updatedAt: "2026-09-27T08:18:19.000Z" };
   window.__journalDraftSaves = 0;
+  window.__journalDraftRequests = 0;
   window.__journalDraftPayloads = [];
   window.__journalAssistPayloads = [];
   window.__failJournalDraft = false;
+  window.__delayJournalDraft = false;
+  window.__releaseJournalDraft = null;
+  window.__delayJournalAssist = false;
+  window.__releaseJournalAssist = null;
   window.__conflictJournalPatch = false;
+  window.__delayJournalCreate = false;
+  window.__releaseJournalCreate = null;
   window.__bookParses = 0;
   window.__bookUploads = 0;
   window.__keepsakeUploads = 0;
@@ -1160,19 +1167,28 @@ const mockFetch = `
       const targetId=url.split("/")[3];return json({id:"task-transcription-retry",kind:"captureTranscription",targetId,status:"queued",createdAt:new Date().toISOString()})
     }
     if (url === "/api/journal-draft" && init.method === "PUT") {
+      window.__journalDraftRequests += 1;
       if(window.__failJournalDraft){window.__failJournalDraft=false;return Promise.resolve(new Response(JSON.stringify({error:{message:"JOURNAL_STORAGE_INTERNAL",code:"STORAGE_WRITE_FAILED"}}),{status:503,headers:{"content-type":"application/json"}}))}
-      window.__journalDraftSaves += 1;
       const payload = JSON.parse(init.body);
-      window.__journalDraftPayloads.push(payload);
-      window.__journalDraft = { ...payload, updatedAt: "2026-09-27T09:18:19.000Z" };
-      return json(window.__journalDraft);
+      const respond=()=>{
+        window.__journalDraftSaves += 1;
+        window.__journalDraftPayloads.push(payload);
+        window.__journalDraft = { ...payload, updatedAt: "2026-09-27T09:18:19.000Z" };
+        return json(window.__journalDraft);
+      };
+      if(window.__delayJournalDraft){window.__delayJournalDraft=false;return new Promise(resolve=>{window.__releaseJournalDraft=()=>resolve(respond())})}
+      return respond();
     }
     if ((url === "/api/journals" || url === "/api/v1/journals") && init.method === "POST") {
-      window.__journalSaves += 1;
-      const payload = JSON.parse(init.body), item = { id: "journal-new-" + window.__journalSaves, createdAt: new Date().toISOString(), reflections: [], version: 1, ...payload, ...eventTime(payload) };
-      window.__journals.unshift(item);
-      if (!window.__journalDraft?.journalId) window.__journalDraft = null;
-      return url.startsWith("/api/v1/") ? v1(item, { operation: { id: init.headers["x-client-operation-id"], status: "committed" } }) : json(item);
+      const respond=()=>{
+        window.__journalSaves += 1;
+        const payload = JSON.parse(init.body), item = { id: "journal-new-" + window.__journalSaves, createdAt: new Date().toISOString(), reflections: [], version: 1, ...payload, ...eventTime(payload) };
+        window.__journals.unshift(item);
+        if (!window.__journalDraft?.journalId) window.__journalDraft = null;
+        return url.startsWith("/api/v1/") ? v1(item, { operation: { id: init.headers["x-client-operation-id"], status: "committed" } }) : json(item);
+      };
+      if(window.__delayJournalCreate){window.__delayJournalCreate=false;return new Promise(resolve=>{window.__releaseJournalCreate=()=>resolve(respond())})}
+      return respond();
     }
     if (/^\\/api\\/(?:v1\\/)?journals\\/[^/]+$/.test(url) && init.method === "PATCH") {
       const item = window.__journals.find(value => url.endsWith(value.id)), payload = JSON.parse(init.body);
@@ -1195,6 +1211,7 @@ const mockFetch = `
       const payload = JSON.parse(init.body);
       window.__journalAssistPayloads.push(payload);
       const marker = { lead: "🗃", structure: "🏷", topic: "💬" }[payload.mode];
+      if(window.__delayJournalAssist){window.__delayJournalAssist=false;return new Promise(resolve=>{window.__releaseJournalAssist=()=>resolve(streamResponse({mode:payload.mode,content:marker+" 第一行写作锚点。\\n"+marker+" 第二行写作锚点。"}))})}
       return streamResponse({ mode: payload.mode, content: marker + " 第一行写作锚点。\\n" + marker + " 第二行写作锚点。" });
     }
     if (url === "/api/images/parse") {
@@ -2237,7 +2254,7 @@ try {
   assert.ok(new Set(Object.values(viewThemeColors)).size >= 16);
   const captureMediaEventStart = cdp.events.length;
   await evaluate(`document.querySelector('[data-view="captures"]').click();window.dispatchEvent(new Event("resize"));true`);
-  assert.equal(await evaluate(`document.querySelector("#view-captures").classList.contains("active") && Boolean(document.querySelector('[data-capture-id="capture-1"] strong'))`), true);
+  assert.equal(await waitUntil(`document.querySelector("#view-captures").classList.contains("active") && Boolean(document.querySelector('[data-capture-id="capture-1"] strong'))`), true);
   await sleep(150);
   assert.deepEqual(
     cdp.events
@@ -2379,10 +2396,12 @@ try {
   await evaluate(`(()=>{
     document.querySelector("#capture-content").value="不应残留的编辑内容";
     document.querySelector('[data-view="thoughts"]').click();
-    document.querySelector('[data-view="captures"]').click();
-    document.querySelector("#capture-create-toggle").click();
     return true
   })()`);
+  assert.equal(await waitUntil(`document.querySelector("#view-thoughts").classList.contains("active")&&!document.querySelector("#view-thoughts").inert`),true);
+  await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
+  assert.equal(await waitUntil(`!document.querySelector("#view-captures").inert&&!document.querySelector("#view-captures").hasAttribute("aria-busy")&&document.querySelector('[data-capture-id="capture-1"]')`),true);
+  await evaluate(`document.querySelector("#capture-create-toggle").click();true`);
   assert.equal(
     await waitUntil(`!document.querySelector("#capture-editor").hidden&&document.querySelector("#capture-id").value===""&&document.querySelector("#capture-content").value==="关闭后保留的念起"`),
     true,
@@ -2437,7 +2456,7 @@ try {
   assert.equal(await waitUntil(`document.querySelector("#capture-audio-preview").hidden&&document.querySelector("#capture-audio-preview").getClientRects().length===0`),true);
   await evaluate(`document.querySelector("#capture-cancel").click();true`);
   assert.equal(await waitUntil(`!document.querySelector('[data-capture-id="capture-long"] [data-capture-expand]').hidden`), true);
-  assert.equal(await evaluate(`!document.querySelector('[data-capture-id="capture-1"] [data-capture-expand]').hidden`), true);
+  assert.equal(await waitUntil(`!document.querySelector('[data-capture-id="capture-1"] [data-capture-expand]').hidden`), true);
   const captureCardLayout = await evaluate(`(() => {
     const card=document.querySelector('[data-capture-id="capture-long"]'),item=card.querySelector(".capture-item"),viewport=card.querySelector(".capture-content-viewport"),meta=card.querySelector(".capture-meta"),time=card.querySelector(".capture-entry-time"),tags=card.querySelector(".capture-top-tags"),actions=card.querySelector(".capture-actions"),buttons=[...actions.querySelectorAll("button")],lineHeight=parseFloat(getComputedStyle(viewport).lineHeight);
     const buttonRects=buttons.map(button=>button.getBoundingClientRect()),metaRect=meta.getBoundingClientRect(),timeRect=time.getBoundingClientRect(),itemRect=item.getBoundingClientRect();
@@ -2468,8 +2487,12 @@ try {
   await evaluate(`window.__delayCaptureCreate=true;document.querySelector("#capture-content").dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",ctrlKey:true,bubbles:true,cancelable:true}));true`);
   assert.equal(await waitUntil(`typeof window.__releaseCaptureCreate==="function"&&document.querySelector(".capture-timeline-entry.is-syncing")?.textContent.includes("快捷收下的新捕念")`), true);
   assert.deepEqual(await evaluate(`({saves:window.__captureSaves,status:["待同步","正在同步"].includes(document.querySelector(".capture-sync-state")?.textContent),form:document.querySelector("#capture-content").value})`), {saves:0,status:true,form:"快捷收下的新捕念"});
+  await evaluate(`document.querySelector('[data-view="thoughts"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-thoughts").classList.contains("active")&&!document.querySelector("#view-thoughts").inert`),true);
   await evaluate(`window.__failNextStateRefresh=true;window.__releaseCaptureCreate();true`);
-  assert.equal(await waitUntil(`window.__captureSaves === 1 && document.querySelector('[data-capture-id="capture-new-1"]')`), true);
+  assert.equal(await waitUntil(`window.__captureSaves === 1`), true);
+  await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-new-1"]')&&document.querySelector("#capture-id").value===""&&document.querySelector("#capture-content").value===""`), true);
   assert.equal(await waitUntil(`document.querySelector("#toast").textContent==="捕念列表刷新暂时失败。刚才的捕念已经保存。请稍后重试。"`),true);
   assert.equal(await evaluate(`!document.querySelector("#toast").textContent.includes("DISCOVERY_BACKEND_INTERNAL")`),true);
   const capturePayload = await evaluate(`window.__capturePayloads[0]`);
@@ -2501,12 +2524,19 @@ try {
   await evaluate(`window.__failCaptureCreate=true;document.querySelector("#capture-content").value="断网时仍可见";document.querySelector("#capture-form").requestSubmit();true`);
   assert.equal(await waitUntil(`document.querySelector(".capture-sync-state.pending")?.textContent==="待同步"`),true);
   assert.deepEqual(await evaluate(`({saves:window.__captureSaves,visible:document.querySelector(".capture-timeline-entry.is-syncing")?.textContent.includes("断网时仍可见"),form:document.querySelector("#capture-content").value,status:document.querySelector("#capture-status").textContent})`),{saves:2,visible:true,form:"",status:"已记下，网络恢复后自动同步。"});
+  await evaluate(`(()=>{document.querySelector("#capture-create-toggle").click();document.querySelector("#capture-content").value="编辑已有记录后仍保留";const bytes=Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="),value=>value.charCodeAt(0)),transfer=new DataTransfer();transfer.items.add(new File([bytes],"suspended-capture.png",{type:"image/png"}));const input=document.querySelector("#capture-images");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
+  assert.equal(await waitUntil(`document.querySelectorAll('[data-content-image-editor="capture"] .content-image-preview').length===1`),true);
   await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-capture-edit]').click(); true`);
   const captureEditState = await evaluate(`({ datetime: document.querySelector("#capture-date").value, tags: [...document.querySelectorAll("#capture-tag-list .tag-chip")].map(item => item.textContent.trim()) })`);
   assert.equal(captureEditState.datetime, "2026-09-27T15:08:09");
   assert.equal(captureEditState.tags.length, 2);
   await evaluate(`document.querySelector("#capture-date").value = "2026-09-27T23:45:12"; document.querySelector("#capture-form").requestSubmit(); true`);
   assert.equal(await waitUntil(`window.__capturePatchPayloads.length === 1`), true);
+  assert.equal(
+    await waitUntil(`document.querySelector("#capture-id").value===""&&document.querySelector("#capture-content").value==="编辑已有记录后仍保留"&&document.querySelectorAll('[data-content-image-editor="capture"] .content-image-preview').length===1&&new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const request=opening.result.transaction("drafts","readonly").objectStore("drafts").get("user-1:capture");request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(request.result?.items?.[0]?.name==="suspended-capture.png")}})`),
+    true,
+    JSON.stringify(await evaluate(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve({openError:true});opening.onsuccess=()=>{const request=opening.result.transaction("drafts","readonly").objectStore("drafts").get("user-1:capture");request.onerror=()=>resolve({readError:true});request.onsuccess=()=>resolve({id:document.querySelector("#capture-id").value,content:document.querySelector("#capture-content").value,previews:document.querySelectorAll('[data-content-image-editor="capture"] .content-image-preview').length,storedName:request.result?.items?.[0]?.name||"",status:document.querySelector("#capture-status").textContent,exceptions:window.__runtimeExceptions||[]})}})`))
+  );
   assert.equal((await evaluate(`window.__capturePatchPayloads[0].occurredAt`)), "2026-09-27T23:45:12");
   assert.equal((await evaluate(`window.__capturePatchPayloads[0].timeMode`)), "manual");
   await evaluate(`document.querySelector('[data-capture-id="capture-new-1"] [data-capture-edit]').click();document.querySelector("#capture-content").value="在途修改仍可见";window.__delayCapturePatch=true;document.querySelector("#capture-form").requestSubmit();true`);
@@ -2547,8 +2577,10 @@ try {
   assert.deepEqual({sourceId:promoted.sourceId,sourceVersion:promoted.sourceVersion,kind:promoted.kind,chooserHidden:promoted.chooserHidden},{sourceId:"capture-1",sourceVersion:"2",kind:"thought",chooserHidden:true});
   await evaluate(`document.querySelector("#thought-source-cancel").click();true`);
   assert.deepEqual(await evaluate(`(()=>{const form=document.querySelector("#chain-form");return{source:form.elements.sourceCaptureId.value,idea:document.querySelector("#chain-idea").value,chooserHidden:document.querySelector(".thought-record-kind").hidden,status:document.querySelector("#chain-status").textContent}})()`),{source:"",idea:"",chooserHidden:false,status:"已取消从念起展开，可以重新记录。"});
-  await evaluate(`document.querySelector('[data-view="captures"]').click();document.querySelector('[data-capture-id="capture-1"] [data-capture-promote]').click();true`);
-
+  await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-1"] [data-capture-promote]')`),true);
+  await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-capture-promote]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-today").classList.contains("active")&&!document.querySelector("#view-today").inert`),true);
   await evaluate(`document.querySelector('[data-view="journals"]').click(); true`);
   assert.equal(await waitUntil(`document.querySelector("#journal-id").value==="journal-1"`),true);
   const restoredJournalDraft = await evaluate(`({id:document.querySelector("#journal-id").value,title:document.querySelector("#journal-title").value,content:document.querySelector("#journal-content").value,tags:document.querySelector("#journal-tags").value,date:document.querySelector("#journal-date").value,status:document.querySelector("#journal-status").textContent})`);
@@ -2576,13 +2608,45 @@ try {
   assert.equal(journalAfterAssist.value.slice(journalBeforeAssist.length).trim().split("\n").every(line => line.startsWith("🗃 ")), true);
   assert.equal(journalAfterAssist.payload.content, journalBeforeAssist);
   assert.match(journalAfterAssist.status, /已追加/);
+  const journalDraftRequestsBeforeLease = await evaluate(`window.__journalDraftRequests`);
+  await evaluate(`window.__delayJournalDraft=true;document.querySelector("#journal-title").value="先发出的旧草稿";document.querySelector("#journal-draft-save").click();true`);
+  assert.equal(await waitUntil(`typeof window.__releaseJournalDraft==="function"`), true);
+  await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-captures").classList.contains("active")&&!document.querySelector("#view-captures").inert`), true);
+  await evaluate(`document.querySelector('[data-view="journals"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-journals").classList.contains("active")&&!document.querySelector("#view-journals").inert&&document.querySelector("#journal-draft-save").disabled`), true);
+  await evaluate(`document.querySelector("#journal-title").value="后写的新草稿";document.querySelector("#journal-draft-save").click();true`);
+  assert.equal(await evaluate(`window.__journalDraftRequests`), journalDraftRequestsBeforeLease + 1);
+  await evaluate(`window.__releaseJournalDraft();true`);
+  assert.equal(await waitUntil(`!document.querySelector("#journal-draft-save").disabled`), true);
+  await evaluate(`document.querySelector("#journal-draft-save").click();true`);
+  assert.equal(await waitUntil(`window.__journalDraftRequests===${journalDraftRequestsBeforeLease + 2}&&window.__journalDraft?.title==="后写的新草稿"`), true);
+  const journalAssistRequestsBeforeLease = await evaluate(`window.__journalAssistPayloads.length`);
+  await evaluate(`window.__delayJournalAssist=true;document.querySelector('[data-journal-assist="lead"]').click();true`);
+  assert.equal(await waitUntil(`typeof window.__releaseJournalAssist==="function"`), true);
+  await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-captures").classList.contains("active")&&!document.querySelector("#view-captures").inert`), true);
+  await evaluate(`document.querySelector('[data-view="journals"]').click();true`);
+  assert.equal(await waitUntil(`[...document.querySelectorAll("[data-journal-assist]")].every(button=>button.disabled)`), true);
+  await evaluate(`document.querySelector('[data-journal-assist="structure"]').click();true`);
+  assert.equal(await evaluate(`window.__journalAssistPayloads.length`), journalAssistRequestsBeforeLease + 1);
+  await evaluate(`window.__releaseJournalAssist();true`);
+  assert.equal(await waitUntil(`[...document.querySelectorAll("[data-journal-assist]")].every(button=>!button.disabled)`), true);
+  await evaluate(`document.querySelector('[data-journal-assist="structure"]').click();true`);
+  assert.equal(await waitUntil(`window.__journalAssistPayloads.length===${journalAssistRequestsBeforeLease + 2}&&document.querySelector("#journal-content").value.includes("🏷 第一行写作锚点")`), true);
   await evaluate(`document.querySelector("#journal-content").value += "\\n我写下了真实感受。";window.__conflictJournalPatch=true;document.querySelector("#journal-form").requestSubmit(); true`);
   assert.equal(await waitUntil(`document.querySelector("#journal-status").textContent==="这篇日记在其他位置已经变化。当前编辑内容仍保留，已有日记没有被覆盖。请重新读取后核对两端内容。"`),true);
   assert.deepEqual(await evaluate(`({editing:document.querySelector("#journal-content").value.includes("我写下了真实感受"),server:window.__journals.find(item=>item.id==="journal-1").content.includes("我写下了真实感受"),sentinel:document.body.textContent.includes("JOURNAL_CONFLICT_INTERNAL"),patches:window.__journalPatches})`),{editing:true,server:false,sentinel:false,patches:0});
   await evaluate(`document.querySelector("#journal-form").requestSubmit();true`);
   assert.equal(await waitUntil(`window.__journalPatches === 1 && window.__journalDraft === null && document.querySelector("#journal-id").value === ""`), true);
-  await evaluate(`document.querySelector("#journal-title").value = "新日记"; document.querySelector("#journal-content").value = "新建日记正文。";window.__failNextStateRefresh=true;document.querySelector("#journal-form").requestSubmit(); true`);
-  assert.equal(await waitUntil(`window.__journalSaves === 1 && document.querySelector('[data-journal-id="journal-new-1"]')`), true);
+  await evaluate(`document.querySelector("#journal-title").value = "新日记"; document.querySelector("#journal-content").value = "新建日记正文。";window.__delayJournalCreate=true;window.__failNextStateRefresh=true;document.querySelector("#journal-form").requestSubmit(); true`);
+  assert.equal(await waitUntil(`typeof window.__releaseJournalCreate==="function"`),true);
+  await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-captures").classList.contains("active")&&!document.querySelector("#view-captures").inert`),true);
+  await evaluate(`window.__releaseJournalCreate();true`);
+  assert.equal(await waitUntil(`window.__journalSaves===1`),true);
+  await evaluate(`document.querySelector('[data-view="journals"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector('[data-journal-id="journal-new-1"]')&&document.querySelector("#journal-id").value===""&&document.querySelector("#journal-content").value===""`), true);
   assert.equal(await waitUntil(`document.querySelector("#toast").textContent==="日记列表刷新暂时失败。刚才的日记已经保存。请稍后重试。"`),true);
   assert.equal(await evaluate(`!document.body.textContent.includes("DISCOVERY_BACKEND_INTERNAL")`),true);
   await evaluate(`document.querySelector('[data-journal-id="journal-1"]').open = true; document.querySelector('[data-journal-id="journal-1"] [data-journal-reflect]').click(); true`);
@@ -3176,6 +3240,7 @@ try {
   assert.equal(await evaluate(`window.__savedPayloads[0].modelReasoning`), "持久化的模型思考");
   assert.deepEqual(await evaluate(`window.__savedPayloads[0].sourceRef`),{type:"capture",id:"capture-1",version:2});
   await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-1"] [data-capture-thought]')`),true);
   assert.equal(await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-capture-thought]').textContent`),"已展为思考");
   await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-capture-thought]').click();true`);
   assert.equal(await waitUntil(`document.querySelector("#view-thoughts").classList.contains("active")&&document.querySelector('[data-chain-id="auto-root-1"]').open`),true);
@@ -3593,7 +3658,9 @@ try {
   assert.equal(await waitUntil(`!document.querySelector("#view-daily").inert&&!document.querySelector("#view-daily").hasAttribute("aria-busy")`),true);
   await evaluate(`document.querySelector('[data-daily-tab="exercise"]').click();window.__pasteHealth();window.__delayParseKind="exercise";window.__releaseParse=null;document.querySelector("#parse-health-images").click();true`);
   assert.equal(await waitUntil(`typeof window.__releaseParse==="function"`),true);
-  await evaluate(`document.querySelector('[data-view="captures"]').click();window.__logoutSpeechPlayer=document.querySelector('[data-capture-id="capture-1"] [data-speech-player]');window.__logoutSpeechUrl=window.__logoutSpeechPlayer.getAttribute("src");window.__logoutSpeechPlayer.play();true`);
+  await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-1"] [data-speech-player]')`),true);
+  await evaluate(`window.__logoutSpeechPlayer=document.querySelector('[data-capture-id="capture-1"] [data-speech-player]');window.__logoutSpeechUrl=window.__logoutSpeechPlayer.getAttribute("src");window.__logoutSpeechPlayer.play();true`);
   assert.equal(await waitUntil(`!window.__logoutSpeechPlayer.paused`),true);
   await evaluate(`document.querySelector('[data-view="today"]').click();document.querySelector("#chain-question").value="账户 A 的在途草稿";document.querySelector("#chain-answer").value="";document.querySelector("#draft-answer-button").click();true`);
   assert.deepEqual(await evaluate(`({paused:window.__logoutSpeechPlayer.paused,retained:window.__logoutSpeechPlayer.getAttribute("src")===window.__logoutSpeechUrl,revoked:window.__speechRevokedUrls.includes(window.__logoutSpeechUrl)})`),{paused:true,retained:true,revoked:false});
@@ -3676,7 +3743,7 @@ try {
   assert.equal(await evaluate(`!document.querySelector("#section-nav").hidden&&!document.querySelector("[data-section-links='today']").hidden&&document.querySelector("[data-section-links='today'] [data-view='today']").getAttribute("aria-current")==="page"`),true);
   assert.equal(await waitUntil(`Boolean(document.querySelector(".action-column:nth-child(3)")?.textContent.includes("服务器新标题")&&document.querySelector(".action-column:nth-child(3) .checkin-sync-state.pending"))`),true);
   await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
-  assert.equal(await evaluate(`document.querySelector(".capture-sync-state.pending")?.textContent==="待同步"&&document.querySelector("#capture-list").textContent.includes("范围切换时保留的待同步记录")`),true);
+  assert.equal(await waitUntil(`document.querySelector(".capture-sync-state.pending")?.textContent==="待同步"&&document.querySelector("#capture-list").textContent.includes("范围切换时保留的待同步记录")`),true);
   await evaluate(`document.querySelector('[data-view="discovery"]').click();true`);
   assert.equal(await waitUntil(`window.__localHydrateRequests.includes("discovery")`),true);
   await evaluate(`document.querySelector('[data-view="ai-cost"]').click();true`);
@@ -3695,6 +3762,7 @@ try {
   await evaluate(`document.querySelector("#keepsake-grid .content-state-action").click();true`);
   assert.equal(await waitUntil(`!document.querySelector("#keepsake-workspace").hidden`),true);
   await evaluate(`document.querySelector("#keepsake-create-toggle").click();document.querySelector('[data-section="thought"]').click();document.querySelector("[data-section-links='thought'] [data-view='journals']").click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#journal-list .content-state")`),true);
   assert.deepEqual(await evaluate(`(()=>{const state=document.querySelector("#journal-list .content-state");return{title:state.querySelector("strong").textContent,body:state.querySelector("p").textContent,action:state.querySelector("button").textContent,actions:state.querySelectorAll("button").length}})()`),{title:"还没有日记",body:"不需要写完整，一句真实的话也可以成为记录。",action:"写第一篇",actions:1});
   await evaluate(`document.querySelector("#journal-list .content-state-action").click();true`);
   assert.equal(await waitUntil(`document.activeElement===document.querySelector("#journal-content")`),true);
@@ -3825,12 +3893,17 @@ try {
   assert.equal(await evaluate(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const transaction=opening.result.transaction("drafts","readwrite"),store=transaction.objectStore("drafts"),blob=new Blob([new Uint8Array([1,2,3])],{type:"image/png"}),item={blob,name:"targeted.png",type:"image/png",lastModified:1,uploadRequestId:"",uploadedPath:"",lastError:null};store.put({key:"user-1:comment",owner:"user-1",id:"comment",context:{selection:{rootKey:"analysis:analysis-1",targetKey:"content",start:0,end:3,quote:"总判断"},text:"刷新后继续的评论",requestId:"comment-restored"},items:[]});store.put({key:"user-1:thoughtBlock",owner:"user-1",id:"thoughtBlock",context:{rootId:"discarded-root",blockId:"",type:"record",occurredAt:"2026-09-27T12:34",content:"刷新后继续的内容块",version:1,requestId:"block-restored"},items:[item]});store.put({key:"user-1:health:weight:2026-09-27",owner:"user-1",id:"health:weight:2026-09-27",date:"2026-09-27",type:"weight",result:{bodyWaterMass:42.2,description:"刷新后恢复的体成分",attachmentPaths:["/attachments/weight.png"]},items:[{...item,uploadRequestId:"health-restored",uploadedPath:"/attachments/weight.png"}]});transaction.oncomplete=()=>resolve(true);transaction.onerror=()=>resolve(false)}})`),true);
   assert.equal(await evaluate(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const bytes=Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="),value=>value.charCodeAt(0)),blob=new Blob([bytes],{type:"image/png"}),items=[1,2].map(index=>({itemId:"restored-keepsake-"+index,blob,name:"restored-"+index+".png",type:"image/png",lastModified:1,occurredAt:"2026-09-27T12:00:00",title:"恢复小物 "+index,category:"其他",note:"",tags:"",edgeExpansion:8,source:"manual",alphaMask:"",status:"waiting",uploadRequestId:"",createRequestId:"",mediaPaths:null,lastError:null})),request=opening.result.transaction("drafts","readwrite").objectStore("drafts").put({key:"user-1:keepsake-batch",owner:"user-1",id:"keepsake-batch",activeIndex:1,items});request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(true)}})`),true);
   await cdp.send("Page.reload",{ignoreCache:true});await sleep(300);
-  const mediaRestored=await waitUntil(`document.querySelector("#today-date-label")?.textContent.length>0&&document.querySelector("#capture-audio-player").src.startsWith("blob:")&&document.querySelector("#capture-audio-meta").textContent.includes("0:01")&&document.querySelector("#capture-audio-status").textContent.includes("待提交语音")&&document.querySelectorAll(".keepsake-batch-item").length===2`);
-  assert.equal(mediaRestored,true,JSON.stringify(await evaluate(`({date:document.querySelector("#today-date-label")?.textContent,audioSrc:document.querySelector("#capture-audio-player")?.src,audioMeta:document.querySelector("#capture-audio-meta")?.textContent,audioStatus:document.querySelector("#capture-audio-status")?.textContent,keepsakeItems:document.querySelectorAll(".keepsake-batch-item").length,toast:document.querySelector("#toast")?.textContent})`)));
+  const mediaRestored=await waitUntil(`document.querySelector("#today-date-label")?.textContent.length>0&&document.querySelectorAll(".keepsake-batch-item").length===2`);
+  assert.equal(mediaRestored,true,JSON.stringify(await evaluate(`({date:document.querySelector("#today-date-label")?.textContent,keepsakeItems:document.querySelectorAll(".keepsake-batch-item").length,toast:document.querySelector("#toast")?.textContent})`)));
+  assert.deepEqual(await evaluate(`({audioSrc:document.querySelector("#capture-audio-player")?.getAttribute("src")||"",audioMeta:document.querySelector("#capture-audio-meta")?.textContent||"",audioStatus:document.querySelector("#capture-audio-status")?.textContent||""})`),{audioSrc:"",audioMeta:"",audioStatus:""});
   assert.deepEqual(await evaluate(`({capturePreview:Boolean(document.querySelector('[data-content-image-editor="capture"] .content-image-preview')),commentHidden:document.querySelector("#comment-panel").hidden,shenji:Boolean(document.querySelector('[data-shenji-form="analysis-annotation-1"]')),blockHidden:document.querySelector("#thought-block-modal").hidden})`),{capturePreview:false,commentHidden:true,shenji:false,blockHidden:true});
   assert.equal(await evaluate(`!document.body.textContent.includes("LEGACY_AUDIO_PRIVATE_DETAIL")`),true);
   await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
-  assert.equal(await waitUntil(`document.querySelector('[data-content-image-editor="capture"] .content-image-preview')&&document.querySelector("#capture-status").textContent.includes("已恢复 1 张待上传图片")`),true);
+  assert.equal(
+    await waitUntil(`document.querySelector('[data-content-image-editor="capture"] .content-image-preview')&&document.querySelector("#capture-status").textContent.includes("已恢复 1 张待上传图片")&&document.querySelector("#capture-audio-player").src.startsWith("blob:")&&document.querySelector("#capture-audio-meta").textContent.includes("0:01")&&document.querySelector("#capture-audio-status").textContent.includes("待提交语音")`),
+    true,
+    JSON.stringify(await evaluate(`({preview:Boolean(document.querySelector('[data-content-image-editor="capture"] .content-image-preview')),captureStatus:document.querySelector("#capture-status")?.textContent||"",audioSrc:document.querySelector("#capture-audio-player")?.src||"",audioMeta:document.querySelector("#capture-audio-meta")?.textContent||"",audioStatus:document.querySelector("#capture-audio-status")?.textContent||"",exceptions:window.__runtimeExceptions||[]})`))
+  );
   await evaluate(`document.querySelector('[data-view="review"]').click();true`);
   const commentDraftRestored=await waitUntil(`!document.querySelector("#comment-panel").hidden&&document.querySelector("#comment-text").value==="刷新后继续的评论"&&document.querySelector('[data-shenji-form="analysis-annotation-1"] textarea')?.value==="后台同步期间的新草稿"`);
   assert.equal(commentDraftRestored,true,JSON.stringify({
