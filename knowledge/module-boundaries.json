@@ -507,8 +507,8 @@
       "type": "feature",
       "root": "public/frontend/features/health",
       "publicEntry": "public/frontend/features/health/controller.mjs",
-      "allowedDependencies": ["frontend.media"],
-      "owns": { "data": ["account-scoped health image drafts, upload and recognition lifecycle, weight batch review state and disposable daily-page interactions"], "routes": [] },
+      "allowedDependencies": ["frontend.media", "frontend.time"],
+      "owns": { "data": ["account-scoped health image drafts, daily-record presentation and CRUD, upload and recognition lifecycle, durable submission reconciliation, weight batch review state and disposable daily-page interactions"], "routes": [] },
       "tests": ["scripts/frontend-health-feature-regression.mjs", "scripts/frontend-shared-regression.mjs", "scripts/ui-regression.mjs"],
       "status": "active"
     },
@@ -1051,43 +1051,43 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.api-path",
-      "sourceSha256": "b1e184eb4ca7532e10f0826bd8eeffe673777f6cb4f082bf979139e9bba2dfe2",
+      "sourceSha256": "342b3979ae298420a923c939204eaf0709f055b4840a5523e226e1d87eae1a76",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no API path literals",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden literal matched \"^/api(?:/|$)\"", "count": 66 }
+        { "detail": "forbidden literal matched \"^/api(?:/|$)\"", "count": 65 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.dom-query",
-      "sourceSha256": "b1e184eb4ca7532e10f0826bd8eeffe673777f6cb4f082bf979139e9bba2dfe2",
+      "sourceSha256": "342b3979ae298420a923c939204eaf0709f055b4840a5523e226e1d87eae1a76",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page DOM queries",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden identifier \"querySelector\"", "count": 113 },
-        { "detail": "forbidden identifier \"querySelectorAll\"", "count": 33 },
+        { "detail": "forbidden identifier \"querySelector\"", "count": 107 },
+        { "detail": "forbidden identifier \"querySelectorAll\"", "count": 28 },
         { "detail": "forbidden identifier \"getElementById\"", "count": 6 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.event-binding",
-      "sourceSha256": "b1e184eb4ca7532e10f0826bd8eeffe673777f6cb4f082bf979139e9bba2dfe2",
+      "sourceSha256": "342b3979ae298420a923c939204eaf0709f055b4840a5523e226e1d87eae1a76",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page event binding",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden identifier \"addEventListener\"", "count": 229 },
+        { "detail": "forbidden identifier \"addEventListener\"", "count": 226 },
         { "detail": "forbidden identifier \"removeEventListener\"", "count": 3 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.timer",
-      "sourceSha256": "b1e184eb4ca7532e10f0826bd8eeffe673777f6cb4f082bf979139e9bba2dfe2",
+      "sourceSha256": "342b3979ae298420a923c939204eaf0709f055b4840a5523e226e1d87eae1a76",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page timers or animation scheduling",
       "deleteByGate": "G6",
@@ -1101,22 +1101,22 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.template",
-      "sourceSha256": "b1e184eb4ca7532e10f0826bd8eeffe673777f6cb4f082bf979139e9bba2dfe2",
+      "sourceSha256": "342b3979ae298420a923c939204eaf0709f055b4840a5523e226e1d87eae1a76",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page templates",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden syntax template-literal", "count": 670 }
+        { "detail": "forbidden syntax template-literal", "count": 614 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "lines.hard",
-      "sourceSha256": "b1e184eb4ca7532e10f0826bd8eeffe673777f6cb4f082bf979139e9bba2dfe2",
+      "sourceSha256": "342b3979ae298420a923c939204eaf0709f055b4840a5523e226e1d87eae1a76",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs is at or below 180 lines",
       "deleteByGate": "G6",
-      "maxValue": 4663
+      "maxValue": 4527
     }
   ],
   "migrationExceptions": []

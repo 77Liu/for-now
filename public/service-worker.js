@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cike-shell-v0.5.8-10";
+const CACHE_VERSION = "cike-shell-v0.5.8-11";
 const SHELL_ASSETS = [
   "./",
   "index.html",

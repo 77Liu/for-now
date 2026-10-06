@@ -7,26 +7,35 @@ function requireFunction(value,name){if(typeof value!=="function")throw new Type
 export function createHealthFeatureController({
   delegate,
   request,
+  requestV1,
   draftStore,
   listOperations,
+  subscribeOperations,
   getAccountId,
   getActiveDate,
   getActiveType,
   setActiveType,
-  renderRecords,
+  getRecords,
+  replaceRecord,
+  applyPendingRecord,
+  refreshRecords,
   resetOccurrenceInput,
+  occurrenceFields,
   imageDataUrls,
   escapeMarkup,
+  viewerAttachmentPath,
   localDateTimeForDate,
   toLocalDateTimeInput,
   showToast = noop,
+  confirmDelete = message => globalThis.confirm(message),
   typeMeta,
   createId = () => crypto.randomUUID(),
   createFile,
+  readFormData,
   objectUrls = globalThis.URL
 } = {}) {
   for(const method of["mount","render","unmount","resetSession"])requireFunction(delegate?.[method],`delegate.${method}`);
-  for(const[name,value]of Object.entries({request,listOperations,getAccountId,getActiveDate,getActiveType,setActiveType,renderRecords,resetOccurrenceInput,imageDataUrls,escapeMarkup,localDateTimeForDate,toLocalDateTimeInput,showToast,createId}))requireFunction(value,name);
+  for(const[name,value]of Object.entries({request,requestV1,listOperations,subscribeOperations,getAccountId,getActiveDate,getActiveType,setActiveType,getRecords,replaceRecord,applyPendingRecord,refreshRecords,resetOccurrenceInput,occurrenceFields,imageDataUrls,escapeMarkup,viewerAttachmentPath,localDateTimeForDate,toLocalDateTimeInput,showToast,confirmDelete,createId}))requireFunction(value,name);
   if(!typeMeta||HEALTH_DAILY_TYPES.some(type=>!typeMeta[type]))throw new TypeError("Health feature requires typeMeta");
 
   let activation=null,surface=null,mountGeneration=0;
@@ -74,6 +83,47 @@ export function createHealthFeatureController({
     getLatestRequest: () => latestRequest,
     objectUrls
   });
+  let recordsWorkflow=null,interactionsWorkflow=null,recordsWorkflowRequest=null;
+  async function ensureRecords(){
+    if(recordsWorkflow)return recordsWorkflow;
+    const scope=ticket();
+    const pending=recordsWorkflowRequest||import("./records.mjs").then(module=>{
+      const records=module.createHealthRecordsView({
+        view,
+        getRecords,
+        getActiveType,
+        switchType,
+        resetOccurrenceInput,
+        viewerAttachmentPath,
+        escapeMarkup,
+        typeMeta
+      });
+      const interactions=module.createHealthInteractions({
+        lifecycle,
+        view,
+        records,
+        getActiveType,
+        getLatestRequest:()=>latestRequest,
+        bump,
+        switchType,
+        changeWeightBatchDate,
+        mediaOperation,
+        submissionOperation
+      });
+      return{records,interactions}
+    });
+    recordsWorkflowRequest=pending;
+    try{
+      const workflow=await pending;
+      if(!active(scope))throw new DOMException("Feature activation changed","AbortError");
+      recordsWorkflow=workflow.records;
+      interactionsWorkflow=workflow.interactions;
+      return recordsWorkflow
+    }catch(error){
+      if(recordsWorkflowRequest===pending)recordsWorkflowRequest=null;
+      throw error
+    }
+  }
 
   function presentRestoredDrafts() {
     for (const type of HEALTH_DAILY_TYPES) {
@@ -161,7 +211,7 @@ export function createHealthFeatureController({
     view.renderUploader();
     if (type === "weight") view.applyActiveWeightItem();
     view.status().textContent = view.draftStatus(type);
-    renderRecords();
+    recordsWorkflow?.render();
     return true;
   }
 
@@ -169,9 +219,17 @@ export function createHealthFeatureController({
   async function submissionOperation(method, ...args) {
     const scope=ticket();
     try {
+      const records=await ensureRecords();
       const pending = submissionRequest || import("./submission.mjs").then(module => module.createHealthSubmission({
         lifecycle,
         view,
+        records,
+        requestV1,
+        getRecords,
+        replaceRecord,
+        applyPendingRecord,
+        refreshRecords,
+        occurrenceFields,
         getActiveDate,
         getActiveType,
         sameSession,
@@ -180,123 +238,20 @@ export function createHealthFeatureController({
         current,
         bump,
         ticket,
-        createId
+        createId,
+        showToast,
+        typeMeta,
+        confirmDelete,
+        readFormData
       }));
       submissionRequest = pending;
-      const workflow=await pending;if(method==="prepare"?!active(scope):!sameSession(scope))throw new DOMException("Feature session changed","AbortError");return workflow[method](...args);
+      const workflow=await pending;
+      if(["submit","removeRecord"].includes(method)?!active(scope):!sameSession(scope))throw new DOMException("Feature session changed","AbortError");
+      return workflow[method](...args);
     } catch (error) {
       submissionRequest = null;
       throw error;
     }
-  }
-
-  function handleClick(event) {
-    const tab = event.target.closest?.("[data-daily-tab]");
-    if (tab) return switchType(tab.dataset.dailyTab);
-    const select = event.target.closest?.("[data-weight-batch-select]");
-    if (select) {
-      if (latestRequest) return false;
-      view.captureActiveWeightItem();
-      lifecycle.draft("weight").activeIndex = Number(select.dataset.weightBatchSelect) || 0;
-      void lifecycle.persist("weight");
-      view.renderUploader();
-      return view.applyActiveWeightItem();
-    }
-    const remove = event.target.closest?.("[data-health-image-remove]");
-    if (remove) {
-      void mediaOperation("removeImage",Number(remove.dataset.healthImageRemove));
-      return true;
-    }
-    if (event.target.closest?.("#parse-health-images")) {
-      void mediaOperation("parseImages");
-      return true;
-    }
-    const cancel = event.target.closest?.("[data-daily-cancel]");
-    if (!cancel) return false;
-    const type = cancel.closest("[data-daily-form]")?.dataset.dailyForm;
-    view.resetForm(type);
-    if (type === "weight") view.applyActiveWeightItem();
-    return true;
-  }
-
-  function handleChange(event) {
-    const imageInput = event.target.closest?.("#health-images");
-    if (imageInput) {
-      void mediaOperation("setImages",imageInput.files,"本地文件").then(ok => {
-        if (!ok) imageInput.value = "";
-      });
-      return;
-    }
-    const dateInput = event.target.closest?.("[data-weight-batch-date]");
-    if (dateInput) {
-      const draft = lifecycle.draft("weight");
-      const index = Number(dateInput.dataset.weightBatchDate);
-      const item = draft.items[index];
-      if (!item) return;
-      view.captureActiveWeightItem();
-      try {
-        draft.items[index] = changeWeightBatchDate(item, dateInput.value);
-        bump();
-        if (index === draft.activeIndex) view.applyActiveWeightItem();
-        view.renderUploader();
-        void lifecycle.persist("weight");
-      } catch (error) {
-        view.status().textContent = error.message;
-      }
-      return;
-    }
-    handleFormChange(event);
-  }
-
-  function handleFormChange(event) {
-    const target = event.target.closest?.("[data-daily-form]");
-    if (!target) return;
-    bump();
-    if (target.dataset.dailyForm === "weight") {
-      view.captureActiveWeightItem();
-      void lifecycle.persist("weight");
-      view.renderUploader();
-    } else {
-      view.query("#parse-health-images").disabled = !lifecycle.files(getActiveType()).length;
-    }
-  }
-
-  function handleKeydown(event) {
-    if (!event.target.closest?.("#health-upload-box")) return;
-    if (event.key !== "Enter" && event.key !== " ") return;
-    event.preventDefault();
-    view.query("#health-images")?.click();
-  }
-
-  function handleDrag(event) {
-    const box = event.target.closest?.("#health-upload-box");
-    if (!box) return;
-    if (event.type === "dragenter" || event.type === "dragover") {
-      event.preventDefault();
-      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
-      box.classList.add("dragging");
-      return;
-    }
-    if (event.type === "dragleave") {
-      if (!box.contains(event.relatedTarget)) box.classList.remove("dragging");
-      return;
-    }
-    event.preventDefault();
-    box.classList.remove("dragging");
-    const files = [...(event.dataTransfer?.files || [])].filter(
-      item => item.type.startsWith("image/")
-    );
-    void mediaOperation("setImages",files,"拖入图片",["sleep","weight"].includes(getActiveType()));
-  }
-
-  function handlePaste(event) {
-    if (event.target.closest?.("input,textarea,[contenteditable=true]")) return;
-    const files = [...(event.clipboardData?.files || [])].filter(
-      item => item.type.startsWith("image/")
-    );
-    if (!files.length) return;
-    event.preventDefault();
-    void mediaOperation("setImages",files,"剪贴板",["sleep","weight"].includes(getActiveType()));
   }
 
   const unmount = async () => {
@@ -342,31 +297,29 @@ export function createHealthFeatureController({
         await candidate.disposeDelegate();
         throw new DOMException("Feature activation changed", "AbortError");
       }
-      const listeners = [
-        ["click", handleClick],
-        ["change", handleChange],
-        ["input", handleFormChange],
-        ["keydown", handleKeydown],
-        ["dragenter", handleDrag],
-        ["dragover", handleDrag],
-        ["dragleave", handleDrag],
-        ["drop", handleDrag]
-      ];
-      for(const[name,listener]of listeners)candidate.root.addEventListener?.(name,listener);
-      const pasteSurface=candidate.root.ownerDocument||candidate.root;
-      pasteSurface.addEventListener?.("paste",handlePaste);
-      const abort = () => {
-        if (activation === candidate) void unmount();
-      };
-      if (candidate.signal) candidate.signal.addEventListener("abort", abort, { once: true });
-      candidate.unlink = () => {
-        for(const[name,listener]of listeners)candidate.root.removeEventListener?.(name,listener);
-        pasteSurface.removeEventListener?.("paste",handlePaste);
-        candidate.signal?.removeEventListener("abort", abort);
-      };
       activation = candidate;
       try {
+        const records=await ensureRecords();
+        const listeners=Object.entries(interactionsWorkflow.listeners);
+        for(const[name,listener]of listeners)candidate.root.addEventListener?.(name,listener);
+        const pasteSurface=candidate.root.ownerDocument||candidate.root;
+        pasteSurface.addEventListener?.("paste",interactionsWorkflow.paste);
+        const abort=()=>{if(activation===candidate)void unmount()};
+        if(candidate.signal)candidate.signal.addEventListener("abort",abort,{once:true});
+        const unsubscribeOperations=subscribeOperations(record=>{
+          if(activation!==candidate||record?.owner!==String(getAccountId()||"")
+            ||!record?.domains?.includes("dailyRecords"))return;
+          if(record.status==="committed")void submissionOperation("finalizeOperation",record.operationId).catch(()=>{});
+          else if(["failed","conflict"].includes(record.status))void submissionOperation("releaseOperation",record.operationId).catch(()=>{})
+        });
+        candidate.unlink=()=>{
+          for(const[name,listener]of listeners)candidate.root.removeEventListener?.(name,listener);
+          pasteSurface.removeEventListener?.("paste",interactionsWorkflow.paste);
+          candidate.signal?.removeEventListener("abort",abort);
+          unsubscribeOperations()
+        };
         await restore();
+        records.render();
       } catch (error) {
         await unmount();
         throw error;
@@ -374,9 +327,13 @@ export function createHealthFeatureController({
       return () => activation === candidate ? unmount() : false;
     },
     async render(context={}){
+      if(!activation)return false;
       const delegated=delegate.render(context),owner=String(getAccountId()||"");
       if(owner&&lifecycle.owner()!==owner)await restore();
-      return view.renderUploader()||delegated||false;
+      const records=await ensureRecords();
+      const recordsRendered=records.render();
+      const uploaderRendered=view.renderUploader();
+      return recordsRendered||uploaderRendered||delegated||false;
     },
     unmount,
     async resetSession() {
@@ -401,21 +358,7 @@ export function createHealthFeatureController({
     switchType,
     form: view.form,
     resetForm: view.resetForm,
-    renderUploader: view.renderUploader,
-    prepareSubmission:(...args)=>submissionOperation("prepare",...args),
-    markQueued:(...args)=>submissionOperation("markQueued",...args),
-    completeSubmission:(...args)=>submissionOperation("complete",...args),
-    failSubmission:(...args)=>submissionOperation("fail",...args),
-    submissionDisabled(type) {
-      const draft = lifecycle.draft(type);
-      const item = type === "weight" ? draft.items[draft.activeIndex] : null;
-      return type === "weight"
-        ? Boolean(item && (!item.recognition || item.submissionOperationId))
-        : Boolean(draft.submissionOperationId);
-    },
-    weightBatchCount: () => lifecycle.draft("weight").items.length,
-    finalizeOperation:(...args)=>submissionOperation("finalizeOperation",...args),
-    releaseOperation:(...args)=>submissionOperation("releaseOperation",...args)
+    renderUploader: view.renderUploader
   });
 }
 

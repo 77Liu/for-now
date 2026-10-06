@@ -132,7 +132,7 @@ let healthFeatureController=null;
 const checkinsFeatureControllers=new Set();
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,captureComposerOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
+let activeDate=currentLocalDate,activeDailyType="sleep",thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,captureComposerOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
 let notificationsLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,routeDataRequestSerial=0,routeLoadFailureKey="",loadedRouteKey="",fullRouteStateLoaded=false,renderedRouteView="",activeThoughtRouteId="",activeRouteResult=null,thoughtSearchTimer=0,analysisRequestSerial=0;
 let captureEditorTrigger=null,suspendedCaptureCreateDraft=null,captureEditorSerial=0;
 const feedSearchQueries={captures:"",journals:"",thoughts:"",books:"",keepsakes:"",quotes:""};
@@ -981,108 +981,6 @@ function openBookEditor(book){
 }
 
 const dailyTypeMeta={sleep:{label:"睡眠",save:"保存睡眠"},heartRate:{label:"心率",save:"保存心率"},weight:{label:"体重",save:"保存体重"},exercise:{label:"运动",save:"保存运动"}};
-function dailyForm(type=activeDailyType){return $(`[data-daily-form="${CSS.escape(type)}"]`)}
-const resetDailyForm=(type=activeDailyType)=>healthFeatureController?.resetForm(type)??false;
-const switchDailyType=type=>healthFeatureController?.switchType(type)??false;
-const durationLabel=value=>Number.isFinite(Number(value))?`${Math.floor(Number(value)/60)}小时${String(Math.round(Number(value)%60)).padStart(2,"0")}分`:"—";
-const valueLabel=(value,suffix="")=>value==null?"—":`${value}${suffix}`;
-const secondsLabel=value=>Number.isFinite(value)?[Math.floor(value/3600),Math.floor(value%3600/60),value%60].map(part=>String(part).padStart(2,"0")).join(":"):"";
-function fillDailyField(field,value){
-  if(field.matches?.("[data-duration]"))field.value=secondsLabel(value);
-  else if(field.type==="datetime-local")field.value=value?toLocalDateTimeInput(value):"";
-  else field.value=Array.isArray(value)?JSON.stringify(value):value??"";
-}
-function dailyStructuredValues(item){
-  const values=[...dailyForm(item.type).querySelectorAll("[data-health-metric]")].filter(field=>Number.isFinite(item[field.name]));
-  return values.length?`<div class="daily-values">${values.map(field=>`<span><b>${escapeHtml(field.hasAttribute("data-duration")?secondsLabel(item[field.name]):item[field.name])}</b>${escapeHtml(field.closest("label").querySelector("span").textContent)}</span>`).join("")}</div>`:"";
-}
-function weightSummaryValue(value,digits=1,suffix=""){
-  return Number.isFinite(value)?`${Number(value).toFixed(digits)}${suffix}`:"—"
-}
-function dailyAttachmentsMarkup(item){
-  const paths=(Array.isArray(item?.attachmentPaths)?item.attachmentPaths:[]).map(viewerAttachmentPath).filter(Boolean);
-  return paths.length?`<div class="daily-attachments" aria-label="${escapeHtml(dailyTypeMeta[item.type]?.label||"健康")}截图">${paths.map((path,index)=>`<button type="button" data-image-viewer-path="${escapeHtml(path)}">查看截图 ${index+1}</button>`).join("")}</div>`:""
-}
-function weightRecordBody(item,actions,expanded=false){
-  const adjustedWeight=Number.isFinite(item.adjustedWeight)?item.adjustedWeight:item.measuredWeight;
-  const weightDetail=Number.isFinite(item.adjustedWeight)&&Number.isFinite(item.measuredWeight)
-    ?`<div class="weight-record-value"><strong>${item.adjustedWeight.toFixed(2)} kg</strong><span>秤上 ${item.measuredWeight.toFixed(2)} kg · ${item.clothing==="none"?"不穿衣":item.clothing==="light"?"轻便衣物":"厚重衣物"}</span>${item.clothing!=="none"&&Number.isFinite(item.lower95)&&Number.isFinite(item.upper95)?`<small>95% 估计区间 ${item.lower95.toFixed(2)}–${item.upper95.toFixed(2)} kg</small>`:""}</div>`
-    :`<p class="weight-model-note">总重量未填写 · 仅记录体成分或描述</p>`;
-  const description=item.description?`<p class="exercise-description">${escapeHtml(item.description)}</p>`:"";
-  const verification=item.verification?`<p class="weight-model-note">识别核对：${escapeHtml(item.verification)}</p>`:"";
-  const attachments=dailyAttachmentsMarkup(item);
-  return `<div class="weight-record-summary" role="group" aria-label="体重关键指标"><span class="primary"><b>${weightSummaryValue(adjustedWeight,2," kg")}</b><small>${Number.isFinite(item.adjustedWeight)?"体重（衣物校正）":"体重"}</small></span><span><b>${weightSummaryValue(item.bodyFatPercent,1,"%")}</b><small>体脂率</small></span><span><b>${weightSummaryValue(item.muscleMass,1," kg")}</b><small>肌肉量</small></span></div><details class="weight-record-details" ${expanded?"open":""}><summary>查看体成分与记录详情</summary><div class="weight-record-detail-body">${weightDetail}${dailyStructuredValues(item)}${description}${verification}${attachments}<footer>${actions}</footer></div></details>`
-}
-function weightChart(records){
-  const metrics={
-    weight:{label:"体重",unit:"kg",value:item=>Number.isFinite(item.adjustedWeight)?item.adjustedWeight:item.measuredWeight,interval:true},
-    bodyFatPercent:{label:"体脂率",unit:"%",value:item=>item.bodyFatPercent},
-    muscleMass:{label:"肌肉量",unit:"kg",value:item=>item.muscleMass}
-  },metric=metrics[activeWeightTrendMetric]||metrics.weight;
-  const controls=`<div class="weight-chart-heading"><div class="weight-trend-controls" role="group" aria-label="体重趋势指标">${Object.entries(metrics).map(([key,value])=>`<button type="button" data-weight-trend="${key}" class="${key===activeWeightTrendMetric?"active":""}" aria-pressed="${key===activeWeightTrendMetric}">${value.label}</button>`).join("")}</div><small>最近 30 条体重记录</small></div>`;
-  const recent=[...records].sort((a,b)=>(a.measuredAt||eventTimestamp(a)).localeCompare(b.measuredAt||eventTimestamp(b))).slice(-30);
-  const items=recent.map(item=>({...item,_trendAt:item.measuredAt||eventTimestamp(item),_trendValue:metric.value(item)})).filter(item=>Number.isFinite(item._trendValue));
-  if(!items.length)return`${controls}<p class="weight-chart-empty">当前记录没有可绘制的${metric.label}数据。</p>`;
-  const width=900,height=220,left=48,right=24,top=18,bottom=40,values=metric.interval?items.flatMap(item=>[item.lower95,item.upper95,item._trendValue]).filter(Number.isFinite):items.map(item=>item._trendValue),rawMin=Math.min(...values),rawMax=Math.max(...values),padding=rawMax===rawMin?Math.max(Math.abs(rawMin)*.02,.5):Math.max((rawMax-rawMin)*.12,.2),min=Math.max(0,rawMin-padding),max=rawMax+padding,times=items.map(item=>Date.parse(item._trendAt)).map((value,index)=>Number.isFinite(value)?value:index),firstTime=Math.min(...times),lastTime=Math.max(...times),x=index=>items.length===1||firstTime===lastTime?width/2:left+(times[index]-firstTime)*(width-left-right)/(lastTime-firstTime),y=value=>top+(max-value)*(height-top-bottom)/(max-min||1);
-  const grid=[min,(min+max)/2,max].map(value=>`<line x1="${left}" x2="${width-right}" y1="${y(value)}" y2="${y(value)}"/><text x="${left-8}" y="${y(value)+4}" text-anchor="end">${value.toFixed(1)}</text>`).join(""),marks=items.map((item,index)=>{const px=x(index),date=eventDate({occurredAt:item._trendAt}),interval=metric.interval&&item.clothing!=="none"&&Number.isFinite(item.lower95)&&Number.isFinite(item.upper95)?`<line class="weight-interval" x1="${px}" x2="${px}" y1="${y(item.upper95)}" y2="${y(item.lower95)}"/><line class="weight-cap" x1="${px-5}" x2="${px+5}" y1="${y(item.upper95)}" y2="${y(item.upper95)}"/><line class="weight-cap" x1="${px-5}" x2="${px+5}" y1="${y(item.lower95)}" y2="${y(item.lower95)}"/>`:"";return `${interval}<circle class="weight-point" cx="${px}" cy="${y(item._trendValue)}" r="5"><title>${date} · ${metric.label} ${item._trendValue} ${metric.unit}${interval?` · 95% ${item.lower95}～${item.upper95} kg`:""}</title></circle><text class="weight-date" x="${px}" y="${height-14}" text-anchor="middle">${date.slice(5)}</text>`}).join("");
-  const legend=metric.interval?`<div class="weight-chart-legend"><span><i></i>衣物校正值</span><span><i class="interval"></i>穿衣记录 95% 估计区间</span></div>`:`<div class="weight-chart-legend"><span><i></i>${metric.label}（${metric.unit}）</span></div>`;
-  const note=metric.interval?"图中使用衣物校正值；区间来自固定衣物重量假设，不代表体脂秤测量误差或医学置信区间。":"缺失记录不补零、不推算；横向位置按测量时间，日期不连续时保留真实间隔。";
-  return `${controls}${legend}<svg class="weight-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="最近${metric.label}趋势"><g class="weight-grid">${grid}</g>${marks}</svg><p class="weight-chart-note">${note}</p>`;
-}
-function healthMetricChart(records,type){
-  const metrics={
-    sleep:{label:"总睡眠",unit:"小时",value:item=>Number.isFinite(item.totalMinutes)?item.totalMinutes/60:null,title:item=>durationLabel(item.totalMinutes)},
-    heartRate:{label:"心率",unit:"bpm",value:item=>item.average,title:item=>Number.isFinite(item.average)?`平均 ${item.average} bpm`:`范围 ${item.minimum}–${item.maximum} bpm`,range:item=>[item.minimum,item.maximum]},
-    exercise:{label:"运动时长",unit:"分钟",value:item=>Number.isFinite(item.durationSeconds)?item.durationSeconds/60:null,title:item=>secondsLabel(item.durationSeconds)}
-  },metric=metrics[type];
-  if(!metric)return"";
-  const heading=`<div class="weight-chart-heading health-chart-heading"><strong>${metric.label}趋势</strong><small>最近 30 条${dailyTypeMeta[type].label}记录</small></div>`;
-  const recent=[...records].sort((a,b)=>eventTimestamp(a).localeCompare(eventTimestamp(b))).slice(-30),items=recent.map(item=>({...item,_trendAt:eventTimestamp(item),_trendValue:metric.value(item),_trendRange:metric.range?.(item)||[]})).filter(item=>Number.isFinite(item._trendValue)||(item._trendRange.length===2&&item._trendRange.every(Number.isFinite)));
-  if(!items.length)return`${heading}<p class="weight-chart-empty">当前记录没有可绘制的${metric.label}数据。</p>`;
-  const width=900,height=220,left=48,right=24,top=18,bottom=40,values=items.flatMap(item=>[item._trendValue,...item._trendRange].filter(Number.isFinite)),rawMin=Math.min(...values),rawMax=Math.max(...values),padding=rawMax===rawMin?Math.max(Math.abs(rawMin)*.05,1):Math.max((rawMax-rawMin)*.12,.5),min=Math.max(0,rawMin-padding),max=rawMax+padding,times=items.map(item=>Date.parse(item._trendAt)).map((value,index)=>Number.isFinite(value)?value:index),firstTime=Math.min(...times),lastTime=Math.max(...times),x=index=>items.length===1||firstTime===lastTime?width/2:left+(times[index]-firstTime)*(width-left-right)/(lastTime-firstTime),y=value=>top+(max-value)*(height-top-bottom)/(max-min||1);
-  const grid=[min,(min+max)/2,max].map(value=>`<line x1="${left}" x2="${width-right}" y1="${y(value)}" y2="${y(value)}"/><text x="${left-8}" y="${y(value)+4}" text-anchor="end">${value.toFixed(1)}</text>`).join(""),marks=items.map((item,index)=>{const px=x(index),date=eventDate({occurredAt:item._trendAt}),range=item._trendRange,interval=range.length===2&&range.every(Number.isFinite)?`<line class="health-range" x1="${px}" x2="${px}" y1="${y(range[1])}" y2="${y(range[0])}"/><line class="health-range-cap" x1="${px-5}" x2="${px+5}" y1="${y(range[1])}" y2="${y(range[1])}"/><line class="health-range-cap" x1="${px-5}" x2="${px+5}" y1="${y(range[0])}" y2="${y(range[0])}"/>`:"",point=Number.isFinite(item._trendValue)?`<circle class="weight-point" cx="${px}" cy="${y(item._trendValue)}" r="5"><title>${date} · ${metric.title(item)}</title></circle>`:"";return`${interval}${point}<text class="weight-date" x="${px}" y="${height-14}" text-anchor="middle">${date.slice(5)}</text>`}).join("");
-  const legend=type==="heartRate"?`<div class="weight-chart-legend"><span><i></i>平均心率</span><span><i class="range"></i>最低至最高</span></div>`:`<div class="weight-chart-legend"><span><i></i>${metric.label}（${metric.unit}）</span></div>`;
-  return`${heading}${legend}<svg class="weight-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="最近${metric.label}趋势"><g class="weight-grid">${grid}</g>${marks}</svg><p class="weight-chart-note">缺失记录不补零、不推算；横向位置按发生时间，日期不连续时保留真实间隔。</p>`
-}
-function dailyRecordChart(records,type=activeDailyType){return type==="weight"?weightChart(records):healthMetricChart(records,type)}
-function dailyRecordCard(item,{expanded=false}={}){
-  const labels={sleep:"睡眠",heartRate:"心率",weight:"体重",exercise:"运动"},source=item.source==="screenshot"?"截图识别":"手动记录",syncing=item._sync?.status;let body="";
-  const actions=syncing?`<span class="checkin-sync-state ${escapeHtml(syncing)}">${syncing==="pending"?"待同步":"正在同步"}</span>`:`<button type="button" data-daily-edit="${item.id}">编辑</button><button type="button" class="danger" data-daily-delete="${item.id}">删除</button>`;
-  if(item.type==="sleep")body=`<div class="daily-values"><span><b>${durationLabel(item.totalMinutes)}</b>总睡眠</span><span><b>${valueLabel(item.deepMinutes," 分")}</b>深睡 ${valueLabel(item.deepPercent,"%")}</span><span><b>${valueLabel(item.lightMinutes," 分")}</b>浅睡 ${valueLabel(item.lightPercent,"%")}</span><span><b>${valueLabel(item.remMinutes," 分")}</b>快速眼动 ${valueLabel(item.remPercent,"%")}</span><span><b>${valueLabel(item.awakeCount," 次")}</b>清醒 · ${valueLabel(item.awakeMinutes," 分")}</span><span><b>${valueLabel(item.averageHeartRate)}</b>心率 · 血氧 ${valueLabel(item.averageOxygen,"%")} · 呼吸 ${valueLabel(item.respiratoryRate)}</span></div>`;
-  if(item.type==="heartRate")body=`<div class="daily-values"><span><b>${valueLabel(item.minimum)}–${valueLabel(item.maximum)}</b>心率范围</span><span><b>${valueLabel(item.average)}</b>平均</span><span><b>${valueLabel(item.resting)}</b>静息</span><span><b>${valueLabel(item.sleepAverage)}</b>睡眠平均</span></div>${item.trendAnalysis?`<details class="heart-trend-disclosure"><summary>查看当天趋势</summary><p class="heart-trend">${escapeHtml(item.trendAnalysis)}</p></details>`:""}`;
-  if(item.type==="weight")body=weightRecordBody(item,actions,expanded);
-  if(item.type==="exercise"&&item.exerciseType)body=`<h4 class="exercise-type">${escapeHtml(item.exerciseType)}</h4>`;
-  if(item.type==="exercise"){
-    body+=dailyStructuredValues(item);
-    if(item.description)body+=`<section class="exercise-description user"><small>记下感受</small><p>${escapeHtml(item.description)}</p></section>`;
-    if(item.recognitionDescription)body+=`<section class="exercise-description derived"><small>AI 解析描述</small><p>${escapeHtml(item.recognitionDescription)}</p></section>`;
-    if(item.verification)body+=`<p class="weight-model-note">识别核对：${escapeHtml(item.verification)}</p>`;
-  }
-  if(item.type!=="weight")body+=dailyAttachmentsMarkup(item);
-  return `<article class="daily-record-entry${syncing?" is-syncing":""}" data-daily-record-id="${item.id}"><header><div><span>${labels[item.type]}</span><time>${escapeHtml(item.occurredOn)} · ${formatTime(eventTimestamp(item))}</time></div><small>${source}</small></header>${body}${item.type==="weight"?"":`<footer>${actions}</footer>`}</article>`;
-}
-function renderDailyRecords(){
-  const expandedWeightRecords=new Set($$(".weight-record-details[open]").map(details=>details.closest("[data-daily-record-id]")?.dataset.dailyRecordId).filter(Boolean));
-  const items=[...(state.dailyRecords||[])].filter(item=>item.type===activeDailyType).sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a)));
-  $("#daily-history-title").textContent=`${dailyTypeMeta[activeDailyType].label}记录`;$("#daily-history-count").textContent=`${items.length} 条`;$("#daily-record-chart").innerHTML=dailyRecordChart(items);
-  $("#daily-record-list").innerHTML=items.length?items.map(item=>dailyRecordCard(item,{expanded:expandedWeightRecords.has(item.id)})).join(""):empty(`还没有${dailyTypeMeta[activeDailyType].label}记录。`);
-}
-function editDailyRecord(id){
-  const item=(state.dailyRecords||[]).find(record=>record.id===id);if(!item)return;switchDailyType(item.type);const form=dailyForm(item.type);resetDailyForm(item.type);form.elements.recordId.value=item.id;resetOccurrenceInput(form.elements.occurredAt,item);if(form.elements.attachmentPaths)form.elements.attachmentPaths.value=JSON.stringify(item.attachmentPaths||[]);
-  for(const [key,value]of Object.entries(item)){if(["id","type","createdAt","occurredAt","occurredOn","attachmentPaths","trendSegments"].includes(key)||!form.elements[key])continue;fillDailyField(form.elements[key],value)}
-  form.querySelectorAll(".daily-details").forEach(details=>details.open=[...details.querySelectorAll("input")].some(input=>input.value!==""));
-  if(form.elements.bedtime)form.elements.bedtime.value=item.bedtime?toLocalDateTimeInput(item.bedtime):"";if(form.elements.wakeTime)form.elements.wakeTime.value=item.wakeTime?toLocalDateTimeInput(item.wakeTime):"";if(form.elements.trendSegments)form.elements.trendSegments.value=JSON.stringify(item.trendSegments||[]);
-  form.querySelector('[type="submit"]').textContent="保存修改";form.querySelector("[data-daily-cancel]").hidden=false;form.querySelector(".status").textContent="正在编辑已有记录";form.scrollIntoView({behavior:"smooth",block:"center"});
-}
-function dailyFormSubmissionPayload(form,type){
-  const payload=Object.fromEntries(new FormData(form).entries());
-  Object.assign(payload,occurrenceFields(form.elements.occurredAt));
-  delete payload.recordId;payload.type=type;payload.attachmentPaths=payload.attachmentPaths?JSON.parse(payload.attachmentPaths):[];payload.source=payload.attachmentPaths.length?"screenshot":"manual";
-  if(payload.trendSegments){try{payload.trendSegments=JSON.parse(payload.trendSegments)}catch{payload.trendSegments=[]}}
-  form.querySelectorAll('input[type="number"]').forEach(input=>{payload[input.name]=input.value===""?null:Number(input.value)});
-  form.querySelectorAll("[data-duration]").forEach(input=>{payload[input.name]=input.value===""?null:input.value.split(":").reduce((sum,part)=>sum*60+Number(part),0)});
-  return payload
-}
 
 function setAnswerStatus(id,message,kind="working"){document.querySelectorAll(`[data-answer-chain="${CSS.escape(id)}"]`).forEach(button=>{let status=button.closest(".chain-expanded")?.querySelector(".card-action-status");if(!status){status=document.createElement("p");status.className="card-action-status";status.setAttribute("role","status");status.setAttribute("aria-live","polite");button.closest(".chain-expanded")?.append(status)}status.className=`card-action-status ${kind}`;status.textContent=message})}
 async function request(url,options={}){const answerId=url.match(/^\/api\/thoughts\/([^/]+)\/answer$/)?.[1];try{const result=await apiClient.request(url,options);if(answerId)setAnswerStatus(answerId,"回答已生成并保存。","success");return result}catch(error){if(answerId&&error.name!=="AbortError")setAnswerStatus(answerId,`未能生成：${error.message}，可重试。`,"error");throw error}}
@@ -1373,8 +1271,6 @@ async function applyIncrementalSnapshot(snapshot,changes){
 async function updateSyncHealth(event){
   if(!currentUser?.id)return;
   if(event.type==="operation")actionsCoordinator.applyOperationStatus(event);
-  if(event.type==="operation"&&event.status==="committed")await healthFeatureController?.finalizeOperation(event.operationId);
-  if(event.type==="operation"&&["failed","conflict"].includes(event.status))await healthFeatureController?.releaseOperation(event.operationId);
   const metrics=await requestCoordinator.metrics(currentUser.id);
   const oldest=metrics.oldestPendingAt?Math.max(0,Date.now()-new Date(metrics.oldestPendingAt).getTime()):0;
   syncHealth={
@@ -3316,7 +3212,7 @@ async function loadPersonalContext(){
 }
 function openContextSource(button){
   const view=button.dataset.contextView,target=button.dataset.contextTarget,root=button.dataset.contextRoot,date=button.dataset.contextDate,dailyType=button.dataset.contextDailyType;
-  if(date){activeDate=date;if(dailyType&&dailyTypeMeta[dailyType])activeDailyType=dailyType;renderDate();renderSliders();renderDailyRecords();renderThoughts();renderStateChart();renderHomeMood();renderChat()}
+  if(date){activeDate=date;if(dailyType&&dailyTypeMeta[dailyType])activeDailyType=dailyType;renderDate();renderSliders();renderThoughts();renderStateChart();renderHomeMood();renderChat()}
   if(view==="thoughts")openThoughtDetail(root||target);else switchView(view);
   requestAnimationFrame(()=>{
     const selectors={
@@ -3355,7 +3251,7 @@ function renderVisibleRoute(){
   $("#notification-dot").hidden=!Number(state.notificationUnread??notificationUnreadCount);
   if(view==="today"){renderSliders();renderHome()}
   else if(view==="together"){renderChat();renderThoughts()}
-  else if(view==="daily"){renderDailyRecords();healthFeatureController?.renderUploader()}
+  else if(view==="daily")void healthFeatureController?.render().catch(error=>showToast(`日录显示失败：${error.message}`,"error"));
   else if(view==="captures"){renderCaptures();renderCaptureTagComposer();renderCaptureAudioDraft()}
   else if(view==="journals")renderJournals();
   else if(view==="thoughts"){renderThoughts();renderTagComposer()}
@@ -3545,7 +3441,7 @@ async function restartApplicationForUser(user){
   applicationLifecycleReady=true
 }
 const refreshState=(domains,options={})=>refreshCoordinator.refresh(domains,{...options,patchOnly:options.patchOnly===true});
-subscribeState((next,wanted,thoughtOptions)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);if(wanted.has("dailyRecords"))renderDailyRecords();if(wanted.has("captures")){renderCaptures();renderCaptureTagComposer()}if(wanted.has("journals"))renderJournals();if(wanted.has("thoughts")){if(thoughtOptions.patchOnly&&thoughtOptions.chainId)patchThoughtTaskTarget({targetId:thoughtOptions.chainId});else{renderThoughts(thoughtOptions);renderCaptures();renderTagComposer();renderCaptureTagComposer();renderHomeMemories()}reconcileThoughtRoute()}if(wanted.has("speech")){if(!wanted.has("captures")&&!wanted.has("thoughts"))renderCaptures();if(!wanted.has("thoughts"))renderThoughts();renderSettings()}if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("review"))renderReview();if(wanted.has("books")){renderBooks();renderHomeMemories();if(annotationsController?.activeRootKey().startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes")){renderKeepsakes();renderHomeKeepsake()}if(wanted.has("quotes")){renderQuotes();renderHomeMemories()}if(wanted.has("comments"))renderCommentPanel();renderNotificationSummary()});
+subscribeState((next,wanted,thoughtOptions)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);if(wanted.has("dailyRecords"))void healthFeatureController?.render({snapshot:next,changedDomains:wanted}).catch(()=>{});if(wanted.has("captures")){renderCaptures();renderCaptureTagComposer()}if(wanted.has("journals"))renderJournals();if(wanted.has("thoughts")){if(thoughtOptions.patchOnly&&thoughtOptions.chainId)patchThoughtTaskTarget({targetId:thoughtOptions.chainId});else{renderThoughts(thoughtOptions);renderCaptures();renderTagComposer();renderCaptureTagComposer();renderHomeMemories()}reconcileThoughtRoute()}if(wanted.has("speech")){if(!wanted.has("captures")&&!wanted.has("thoughts"))renderCaptures();if(!wanted.has("thoughts"))renderThoughts();renderSettings()}if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("review"))renderReview();if(wanted.has("books")){renderBooks();renderHomeMemories();if(annotationsController?.activeRootKey().startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes")){renderKeepsakes();renderHomeKeepsake()}if(wanted.has("quotes")){renderQuotes();renderHomeMemories()}if(wanted.has("comments"))renderCommentPanel();renderNotificationSummary()});
 function setAnswerModalStep(step){const order=["context","thinking","answer","done"],current=order.indexOf(step);$$("#ai-answer-progress li").forEach((item,index)=>{item.classList.toggle("active",index===current);item.classList.toggle("done",index<current||(step==="done"&&index===current))})}
 function closeAnswerModal(){const modal=$("#ai-answer-modal"),busy=modal.dataset.busy==="true";modal.hidden=true;if(busy)showToast("回答继续在后台生成，完成后会提醒。")}
 async function runAnswerInModal({title,scene="thoughtAnswer",requestCall,onDone,isCurrent=()=>true}){
@@ -3661,19 +3557,29 @@ function createPageFeatureDescriptors(){
       const controller=health.createHealthFeatureController({
         delegate:legacy.createLegacyPageController({view:"daily"}),
         request,
+        requestV1:(url,options,coordination)=>featureRequestV1("daily",url,options,coordination),
         draftStore:mediaDraftStore,
         listOperations:owner=>requestCoordinator.list(owner),
+        subscribeOperations:listener=>requestCoordinator.subscribe(listener),
         getAccountId:()=>currentUser?.id||"",
         getActiveDate:()=>activeDate,
         getActiveType:()=>activeDailyType,
         setActiveType:type=>{activeDailyType=type},
-        renderRecords:renderDailyRecords,
+        getRecords:()=>state.dailyRecords||[],
+        replaceRecord:(id,record)=>{
+          state.dailyRecords=(state.dailyRecords||[]).map(item=>item.id===id?record:item)
+        },
+        applyPendingRecord:applyPendingProjection,
+        refreshRecords:()=>refreshState("dailyRecords"),
         resetOccurrenceInput,
+        occurrenceFields,
         imageDataUrls,
         escapeMarkup:escapeHtml,
+        viewerAttachmentPath,
         localDateTimeForDate,
         toLocalDateTimeInput,
         showToast,
+        confirmDelete:message=>confirm(message),
         typeMeta:dailyTypeMeta,
         createId:()=>crypto.randomUUID()
       });
@@ -3926,43 +3832,7 @@ document.addEventListener("click",async e=>{
   if(button.dataset.journalDelete){const id=button.dataset.journalDelete,item=(state.journals||[]).find(value=>value.id===id);if(!item||!confirm("将这篇日记及其助手回望移入回收站？"))return;button.disabled=true;try{await requestV1(`/api/v1/journals/${encodeURIComponent(id)}`,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`}},{domains:["journals"],recoverCommitted:true,projection:{kind:"record.delete",domain:"journals",id},onQueued:record=>applyPendingProjection(record)});void refreshState("journals").catch(error=>showToast(`日记已移除，但列表刷新失败：${error.message}`,"error"));showToast("日记已移入回收站")}catch(err){if(err.syncStatus==="pending")showToast("日记将在网络恢复后移入回收站");else{await refreshState("journals").catch(()=>{});showToast(err.message,"error");button.disabled=false}}return}
   if(button.dataset.journalReflect){const id=button.dataset.journalReflect;button.disabled=true;try{await runAnswerInModal({title:"回望这篇日记",scene:"diaryReflection",requestCall:onEvent=>requestStream(`/api/journals/${id}/reflect`,{method:"POST",body:"{}"},onEvent),onDone:()=>refreshState("journals")});showToast("日记回望已保存")}catch(err){showToast(err.message,"error")}finally{button.disabled=false}}
 });
-$$("[data-active-date]").forEach(input=>input.addEventListener("change",async e=>{chainDraftVersion+=1;activeDate=e.target.value||activeDate;renderDate();renderSliders();renderDailyRecords();renderThoughts();renderStateChart();renderHomeMood();renderChat();await healthFeatureController?.changeDate(activeDate).catch(error=>showToast(`健康截图恢复失败：${error.message}`,"error"))}));
-document.addEventListener("click",event=>{const button=event.target.closest("[data-weight-trend]");if(!button)return;activeWeightTrendMetric=button.dataset.weightTrend||"weight";renderDailyRecords()});
-$$("[data-daily-form]").forEach(form=>form.addEventListener("submit",async e=>{
-  e.preventDefault();const current=e.currentTarget,type=current.dataset.dailyForm,id=current.elements.recordId.value,existing=id?(state.dailyRecords||[]).find(item=>item.id===id):null,button=current.querySelector('[type="submit"]'),status=current.querySelector(".status"),owner=currentUser?.id,session=sessionSerial,controller=healthFeatureController;let submission;
-  if(!controller){status.textContent="健康记录功能仍在加载，请稍后重试。";return}
-  try{submission=await controller.prepareSubmission({form:current,type,id,payload:dailyFormSubmissionPayload(current,type)})}catch(error){status.textContent=error.message;return}
-  const{payload,requestId}=submission,temporaryId=`pending:${requestId}`;
-  const onQueued=async record=>{
-    applyPendingProjection(record);
-    await controller.markQueued(submission,record.operationId)
-  };
-  button.disabled=true;status.textContent=id?"正在保存修改…":"正在保存…";
-  try{
-    if(id){const result=await requestV1(`/api/v1/daily-records/${encodeURIComponent(id)}`,{method:"PATCH",headers:{"if-match":`"${existing?.version||1}"`},body:JSON.stringify(payload)},{domains:["dailyRecords"],recoverCommitted:true,projection:{kind:"record.update",domain:"dailyRecords",id,payload},onQueued});if(result.data)state.dailyRecords=(state.dailyRecords||[]).map(item=>item.id===id?result.data:item);renderDailyRecords()}
-    else{
-      const result=await requestV1("/api/v1/daily-records",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{
-        domains:["dailyRecords"],
-        projection:{kind:"record.create",domain:"dailyRecords",temporaryId,payload},
-        onQueued
-      });
-      state.dailyRecords=(state.dailyRecords||[]).map(item=>item.id===temporaryId?result.data:item);renderDailyRecords()
-    }
-    if(owner!==currentUser?.id||session!==sessionSerial)return;
-    await controller.completeSubmission(submission);
-    delete current.dataset.requestId;void refreshState("dailyRecords").catch(error=>showToast(`日录已保存，但列表刷新失败：${error.message}`,"error"));showToast(submission.itemId&&controller.weightBatchCount()?"本张体重已保存，请继续核对下一张":id?"日录已更新":`${dailyTypeMeta[type].label}已记录`)
-  }
-  catch(err){
-    if(owner===currentUser?.id&&session===sessionSerial){
-      if(submission.itemId){
-        await controller.failSubmission(submission,err);
-        if(err.syncStatus==="pending"){status.textContent="本张已进入待同步队列，可继续核对其他截图。";showToast("本张体重已进入待同步队列")}
-        else status.textContent=err.message
-      }else if(err.syncStatus==="pending"){status.textContent="已记下，网络恢复后自动同步；截图保留到服务端确认。";showToast("日录已进入待同步队列")}
-      else{await refreshState("dailyRecords").catch(()=>{});status.textContent=err.message}
-    }
-  }finally{button.disabled=controller.submissionDisabled(type)}
-}));
+$$("[data-active-date]").forEach(input=>input.addEventListener("change",async e=>{chainDraftVersion+=1;activeDate=e.target.value||activeDate;renderDate();renderSliders();renderThoughts();renderStateChart();renderHomeMood();renderChat();await healthFeatureController?.changeDate(activeDate).catch(error=>showToast(`健康截图恢复失败：${error.message}`,"error"))}));
 $$("[data-content-image-editor] input[type='file']").forEach(input=>input.addEventListener("change",async event=>{
   const fileInput=event.currentTarget,editor=fileInput.closest("[data-content-image-editor]"),status=editor?.closest("form")?.querySelector(".status");
   try{delete editor.closest("form")?.dataset.requestId;await setContentImageFiles(editor.dataset.contentImageEditor,fileInput.files);fileInput.value="";if(status)status.textContent=""}
@@ -3989,12 +3859,6 @@ document.addEventListener("click",async event=>{
   ]).catch(error=>showToast(`图片暂存失败：${error.message}`,"error"))
 });
 document.addEventListener("click",event=>{const button=event.target.closest("[data-content-image-understand]");if(button)void queueContentImageUnderstanding(button)});
-document.addEventListener("click",async e=>{
-  const button=e.target.closest("[data-daily-edit],[data-daily-delete]");if(!button)return;
-  if(button.dataset.dailyEdit)return editDailyRecord(button.dataset.dailyEdit);
-  const id=button.dataset.dailyDelete,item=(state.dailyRecords||[]).find(value=>value.id===id);if(!item||!confirm("将这条日录移入回收站？"))return;button.disabled=true;
-  try{await requestV1(`/api/v1/daily-records/${encodeURIComponent(id)}`,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`}},{domains:["dailyRecords"],recoverCommitted:true,projection:{kind:"record.delete",domain:"dailyRecords",id},onQueued:record=>applyPendingProjection(record)});void refreshState("dailyRecords").catch(error=>showToast(`日录已移除，但列表刷新失败：${error.message}`,"error"));showToast("日录已移入回收站")}catch(err){if(err.syncStatus==="pending")showToast("日录将在网络恢复后移入回收站");else{await refreshState("dailyRecords").catch(()=>{});showToast(err.message,"error");button.disabled=false}}
-});
 $("#checkin-confirm-all").addEventListener("click",()=>{$$("[data-metric]").forEach(input=>{input.dataset.confirmed="true";input.closest(".metric").classList.remove("unconfirmed");const label=metricConfig()[input.dataset.metric];$(`#${CSS.escape(input.dataset.metric)}-anchor`).textContent=label.anchors[Number(input.value)-1]});navigator.vibrate?.(12);$("#checkin-status").textContent="已确认当前四项，可以直接保存。"});
 $("#chain-tags").addEventListener("keydown",e=>{if(entryKeyIntent(e,{inputKind:"tag"})==="commit-tag"){e.preventDefault();commitDraftTags()}});
 $("#chain-form").elements.recordKind.forEach(input=>input.addEventListener("change",()=>{chainDraftVersion+=1;delete $("#chain-form").dataset.requestId;syncChainRecordKind()}));

@@ -51,6 +51,7 @@ const HIDDEN_FEATURE_MODULE_PATHS = Object.freeze([
   "/frontend/features/health/index.mjs",
   "/frontend/features/health/controller.mjs",
   "/frontend/features/health/drafts.mjs",
+  "/frontend/features/health/records.mjs",
   "/frontend/features/health/recognition.mjs",
   "/frontend/features/health/submission.mjs",
   "/frontend/features/health/view.mjs",
