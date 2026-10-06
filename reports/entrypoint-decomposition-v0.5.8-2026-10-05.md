@@ -854,3 +854,22 @@ V0.5.8 只有在以下条件同时成立时才可关闭：
   backend runner，当前清单为 84 阶段。
 - 独立 reviewer GO，blocker/P0/P1=`0/0/0`。下一步进入 B6；仍未执行
   push、Preview、部署、真实供应商调用、Base 写入或生产写入。
+
+### B6 HTTP 编排检查点
+
+- `5bc5a80` 新增统计 runtime、admin、Owner、upstream proxy、legacy API 与
+  V1 显式注册表及独立专项；`2320d1a` 完成 app/http barrel、`server.mjs`、
+  模块登记、package 与 backend runner 串行接线。
+- 平台快照继续执行本机来源与恒定时间凭据校验；上游代理保持 body 上限、
+  Cookie 改写、Range/缓存响应头和流式背压；Owner 能力检查、商业化预览/
+  写入、统计权限降级、V1 注册次序和 legacy handler 次序均保持原契约。
+- `server.mjs` 由 1162 行降至 1048 行，SHA 为
+  `19b6eab6f353d6086222a8c4730b6b4bb770f760a2ac008bd636e9e691ab987c`；
+  API 路由字面量例外由 25 降至 7，65 个模块、237 条拥有路由和 15 条迁移
+  例外不变。
+- `npm run check`、HTTP 编排专项、reviews/chat、auth、frontend-shell
+  影响门全部通过；完整 backend `90/90` 通过。独立 reviewer GO，
+  blocker/P0/P1=`0/0/0`。
+- 下一步进入 B7，建立 `createHttpApplication()` 与 `createServerRuntime()`，
+  删除全部 server 迁移例外并将入口收口到 `<=40` 行；仍未执行 push、
+  Preview、部署、真实供应商调用、Base 写入或生产写入。
