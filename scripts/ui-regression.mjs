@@ -3075,7 +3075,11 @@ try {
     question:"",answer:"",hidden:true,expanded:"false",followUps:1
   });
   await evaluate(`document.querySelector('[data-view="today"]').click();document.querySelector('[data-view="thoughts"]').click();true`);
-  assert.equal(await evaluate(`[...document.querySelectorAll('[data-chain-id="kept-root"] [data-follow-up-root]')].every(form=>form.hidden&&form.elements.question.value===""&&form.elements.answer.value==="")`),true);
+  assert.equal(
+    await waitUntil(`document.querySelector('[data-chain-id="kept-root"] [data-follow-up-root]')&&[...document.querySelectorAll('[data-chain-id="kept-root"] [data-follow-up-root]')].every(form=>form.hidden&&form.elements.question.value===""&&form.elements.answer.value==="")`),
+    true,
+    JSON.stringify(await evaluate(`({path:location.pathname,cards:document.querySelectorAll("#all-thoughts [data-chain-id]").length,busy:document.querySelector("#view-thoughts").getAttribute("aria-busy"),toast:document.querySelector("#toast").textContent,exceptions:${JSON.stringify(cdp.events.filter(event=>event.method==="Runtime.exceptionThrown").slice(-3).map(event=>event.params.exceptionDetails.exception?.description||event.params.exceptionDetails.text))}})`))
+  );
 
   await evaluate(`(() => {
     const all=document.querySelector('#all-thoughts [data-followup-id="follow-up-1"]');
@@ -3560,7 +3564,9 @@ try {
   await evaluate(`document.querySelector("#toast").hidden = true; true`);
   const aboutDesktopScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-about-desktop.png", Buffer.from(aboutDesktopScreenshot.data, "base64"));
-  await evaluate(`document.querySelector('[data-view="thoughts"]').click();document.querySelector('#all-thoughts [data-chain-id="kept-root"] .chain-summary').click();true`);
+  await evaluate(`document.querySelector('[data-view="thoughts"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector('#all-thoughts [data-chain-id="kept-root"] .chain-summary')`),true);
+  await evaluate(`document.querySelector('#all-thoughts [data-chain-id="kept-root"] .chain-summary').click();true`);
   assert.equal(await waitUntil(`location.pathname==="/thoughts/kept-root"&&document.querySelector('#all-thoughts [data-chain-id="kept-root"]')?.open`),true);
   assert.equal(await evaluate(`(() => { const before=window.__deleteRequests;window.confirm=()=>false;document.querySelector('#all-thoughts [data-chain-id="kept-root"] [data-delete-chain]').click();return window.__deleteRequests===before; })()`),true);
   const chainSpeechRequestsBefore=await evaluate(`window.__speechRequests.length`);
@@ -3578,7 +3584,8 @@ try {
   assert.equal(await evaluate(`(()=>{const controls=document.querySelector('#all-thoughts [data-thought-block-id="answer-kept"] .speech-asset-controls'),button=controls.querySelector("button").getBoundingClientRect(),select=controls.querySelector("select").getBoundingClientRect(),card=controls.closest(".thought-content-block").getBoundingClientRect();return document.documentElement.scrollWidth<=innerWidth&&button.width>=44&&button.height>=44&&select.width>=44&&select.height>=44&&controls.getBoundingClientRect().right<=card.right+.5})()`),true);
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
   await evaluate(`window.confirm=()=>true;window.__conflictThoughtDelete=true;window.__failNextStateRefresh=true;document.querySelector('#all-thoughts [data-chain-id="kept-root"] [data-delete-chain]').click();true`);
-  assert.equal(await waitUntil(`location.pathname==="/thoughts/kept-root"&&!document.querySelector('[data-route-result="unavailable"]')&&document.querySelector('#all-thoughts [data-chain-id="kept-root"]')?.open&&document.querySelector("#toast").textContent.includes("资源版本已变化")`),true);
+  const conflictedThoughtDelete=await waitUntil(`location.pathname==="/thoughts/kept-root"&&!document.querySelector('[data-route-result="unavailable"]')&&document.querySelector('#all-thoughts [data-chain-id="kept-root"]')?.open&&document.querySelector("#toast").textContent.includes("资源版本已变化")`);
+  assert.equal(conflictedThoughtDelete,true,JSON.stringify(await evaluate(`({toast:document.querySelector("#toast").textContent,root:Boolean(document.querySelector('#all-thoughts [data-chain-id="kept-root"]')),route:location.pathname,requests:window.__apiRequests.slice(-8)})`)));
   await evaluate(`window.__failThoughtDeleteNetwork=true;document.querySelector('#all-thoughts [data-chain-id="kept-root"] [data-delete-chain]').click();true`);
   const pendingThoughtDelete=await waitUntil(`!document.querySelector('#all-thoughts [data-chain-id="kept-root"]')&&document.querySelector("#toast").textContent.includes("网络恢复后移入回收站")`);
   assert.equal(pendingThoughtDelete,true,JSON.stringify(await evaluate(`({toast:document.querySelector("#toast").textContent,root:Boolean(document.querySelector('#all-thoughts [data-chain-id="kept-root"]')),route:location.pathname,requests:window.__apiRequests.slice(-8)})`)));
@@ -3692,6 +3699,7 @@ try {
   await evaluate(`document.querySelector("#journal-list .content-state-action").click();true`);
   assert.equal(await waitUntil(`document.activeElement===document.querySelector("#journal-content")`),true);
   await evaluate(`document.querySelector("[data-section-links='thought'] [data-view='thoughts']").click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#all-thoughts .content-state")`),true);
   assert.deepEqual(await evaluate(`(()=>{const state=document.querySelector("#all-thoughts .content-state");return{title:state.querySelector("strong").textContent,body:state.querySelector("p").textContent,action:state.querySelector("button").textContent,actions:state.querySelectorAll("button").length}})()`),{title:"还没有思绪",body:"从一个真实问题开始，初步想法可以稍后补充。",action:"记录第一个问题",actions:1});
   await evaluate(`document.querySelector("#all-thoughts .content-state-action").click();true`);
   assert.equal(await waitUntil(`document.activeElement===document.querySelector("#chain-question")`),true);
@@ -3835,8 +3843,14 @@ try {
   assert.equal(await waitUntil(`document.querySelectorAll(".keepsake-batch-item").length===2`),true);
   assert.deepEqual(await evaluate(`({items:document.querySelectorAll(".keepsake-batch-item").length,count:document.querySelector("#keepsake-batch-count").textContent,active:document.querySelector('[data-keepsake-batch-select="1"]')?.getAttribute("aria-pressed")})`),{items:2,count:"2 件",active:"true"});
   await evaluate(`document.querySelector('[data-view="daily"]').click();true`);
-  assert.equal(await waitUntil(`!document.querySelector("#view-daily").inert&&!document.querySelector("#view-daily").hasAttribute("aria-busy")`),true);
+  await sleep(100);
+  assert.equal(await waitUntil(`document.querySelector("#view-daily").classList.contains("active")&&!document.querySelector("#view-daily").inert&&!document.querySelector("#view-daily").hasAttribute("aria-busy")&&document.querySelector("#daily-records").childElementCount>0`),true);
   await evaluate(`document.querySelector('[data-daily-tab="weight"]').click();true`);
+  assert.equal(
+    await waitUntil(`document.querySelector('[data-daily-form="weight"] [name="bodyWaterMass"]').value==="42.2"&&document.querySelectorAll("#health-image-previews figure").length===1`),
+    true,
+    JSON.stringify(await evaluate(`({path:location.pathname,active:document.querySelector(".view.active")?.id,busy:document.querySelector("#view-daily").getAttribute("aria-busy"),weightTab:document.querySelector('[data-daily-tab="weight"]').getAttribute("aria-selected"),status:document.querySelector("#health-parse-status").textContent,toast:document.querySelector("#toast").textContent})`))
+  );
   assert.deepEqual(await evaluate(`({value:document.querySelector('[data-daily-form="weight"] [name="bodyWaterMass"]').value,description:document.querySelector('[data-daily-form="weight"] [name="description"]').value,images:document.querySelectorAll("#health-image-previews figure").length,status:document.querySelector("#health-parse-status").textContent})`),{value:"42.2",description:"刷新后恢复的体成分",images:1,status:"已恢复识别结果，请核对后保存。"});
   assert.deepEqual(cdp.events
     .filter(event=>event.method==="Runtime.exceptionThrown")

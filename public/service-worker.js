@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cike-shell-v0.5.8-11";
+const CACHE_VERSION = "cike-shell-v0.5.8-12";
 const SHELL_ASSETS = [
   "./",
   "index.html",
@@ -36,7 +36,10 @@ const SHELL_ASSETS = [
   "frontend/features/keepsakes-media/index.mjs",
   "frontend/features/keepsakes-media/placement.mjs",
   "frontend/features/onboarding-v2/index.mjs",
+  "frontend/media/content-image-draft-model.mjs",
+  "frontend/media/content-image-drafts.mjs",
   "frontend/media/index.mjs",
+  "frontend/media/page-audio.mjs",
   "frontend/page-catalog/index.mjs",
   "frontend/pages/index.mjs",
   "frontend/session/index.mjs",
@@ -92,7 +95,8 @@ const LAZY_MODULE_PATHS = [
   "/frontend/features/background-results/",
   "/frontend/features/health/",
   "/frontend/features/notifications/",
-  "/frontend/features/thought-discovery/"
+  "/frontend/features/thought-discovery/",
+  "/frontend/features/thoughts/"
 ];
 
 const isNetworkOnly = url => NETWORK_ONLY_PATHS.some(segment => url.pathname.includes(segment));

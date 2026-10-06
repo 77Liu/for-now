@@ -39,12 +39,14 @@ assert.deepEqual(dynamicSpecifiers, [
   "../features/legacy-pages/index.mjs",
   "../features/notifications/index.mjs",
   "../features/thought-discovery/index.mjs",
+  "../features/thoughts/index.mjs",
+  "../media/content-image-drafts.mjs",
   "./ports.mjs"
 ]);
 for (const specifier of dynamicSpecifiers) {
   assert.equal(
     dynamicImports.filter(value => value === specifier).length,
-    ["./ports.mjs", "../features/actions/controller.mjs", "../features/annotations/index.mjs", "../features/background-results/index.mjs", "../features/health/controller.mjs"]
+    ["./ports.mjs", "../features/actions/controller.mjs", "../features/annotations/index.mjs", "../features/background-results/index.mjs", "../features/health/controller.mjs", "../media/content-image-drafts.mjs"]
       .includes(specifier) ? 1 : 2,
     `${specifier} must have one route-aware prefetch and one descriptor fallback`
   );
@@ -144,6 +146,13 @@ assert.deepEqual(descriptors.get("daily"), {
   feature: "frontend.feature.health",
   specifier: "../features/health/controller.mjs"
 });
+for (const view of ["thoughts", "together"]) {
+  assert.deepEqual(descriptors.get(view), {
+    page: view,
+    feature: "frontend.feature.thoughts",
+    specifier: "../features/thoughts/index.mjs"
+  });
+}
 for (const view of ["today", "review"]) {
   assert.deepEqual(descriptors.get(view), {
     page: view,
@@ -152,7 +161,7 @@ for (const view of ["today", "review"]) {
   });
 }
 for (const [view, descriptor] of descriptors) {
-  if (["today", "review", "daily", "export", "feedback", "discovery", "notifications"].includes(view)) continue;
+  if (["today", "review", "daily", "thoughts", "together", "export", "feedback", "discovery", "notifications"].includes(view)) continue;
   assert.deepEqual(descriptor, {
     page: view,
     feature: "frontend.feature.legacy-pages",
@@ -167,7 +176,8 @@ for (const eagerEdge of [
   "./export/index.mjs",
   "./feedback/index.mjs",
   "./notifications/index.mjs",
-  "./thought-discovery/index.mjs"
+  "./thought-discovery/index.mjs",
+  "./thoughts/index.mjs"
 ]) {
   assert.equal(featuresBarrel.includes(eagerEdge), false, `features barrel keeps eager edge ${eagerEdge}`);
 }
@@ -180,7 +190,8 @@ for (const hiddenAsset of [
   "frontend/features/feedback/index.mjs",
   "frontend/features/health/controller.mjs",
   "frontend/features/notifications/index.mjs",
-  "frontend/features/thought-discovery/index.mjs"
+  "frontend/features/thought-discovery/index.mjs",
+  "frontend/features/thoughts/index.mjs"
 ]) {
   const shellSource = serviceWorker.match(/const SHELL_ASSETS\s*=\s*\[([\s\S]*?)\];/)?.[1] || "";
   assert.equal(shellSource.includes(hiddenAsset), false, `service worker eagerly precaches ${hiddenAsset}`);

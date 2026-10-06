@@ -60,7 +60,15 @@ const HIDDEN_FEATURE_MODULE_PATHS = Object.freeze([
   "/frontend/features/notifications/presentation.mjs",
   "/frontend/features/thought-discovery/index.mjs",
   "/frontend/features/thought-discovery/controller.mjs",
-  "/frontend/features/thought-discovery/headless.mjs"
+  "/frontend/features/thought-discovery/headless.mjs",
+  "/frontend/features/thoughts/index.mjs",
+  "/frontend/features/thoughts/loader.mjs",
+  "/frontend/features/thoughts/controller.mjs",
+  "/frontend/features/thoughts/model.mjs",
+  "/frontend/features/thoughts/operations.mjs",
+  "/frontend/features/thoughts/presentation.mjs",
+  "/frontend/features/thoughts/speech.mjs",
+  "/frontend/features/thoughts/view.mjs"
 ]);
 const HTTP_BUDGET = Object.freeze({
   startupJsonDecodedBytes: 25 * 1024,
@@ -925,7 +933,8 @@ const lazyFeatureModules = Object.fromEntries(await Promise.all([
   ["feedback", "frontend/features/feedback/index.mjs"],
   ["health", "frontend/features/health/controller.mjs"],
   ["notifications", "frontend/features/notifications/index.mjs"],
-  ["discovery", "frontend/features/thought-discovery/index.mjs"]
+  ["discovery", "frontend/features/thought-discovery/index.mjs"],
+  ["thoughts", "frontend/features/thoughts/index.mjs"]
 ].map(async ([view, entry]) => [view, await moduleClosure(entry)])));
 const openingCriticalStyleIndex = html.indexOf('<style id="opening-critical-style">');
 const applicationStyleLoadIndex = html.indexOf("const loadApplicationStyles");

@@ -1,9 +1,17 @@
-export const CONTENT_IMAGE_DRAFT_KEYS = Object.freeze([
-  "capture",
-  "thoughtRoot",
-  "thoughtBlock",
-  "comment"
-]);
+import {
+  CONTENT_IMAGE_DRAFT_KEYS,
+  contentImageLeaseIdentity as leaseIdentity,
+  copyDraftContext as copyContext,
+  copyDraftItem as copyItem,
+  emptyContentImageDraft as emptyDraft,
+  hasContentImageDraft as hasDraft,
+  isUncertainContentImageSubmission
+} from "./content-image-draft-model.mjs";
+
+export {
+  CONTENT_IMAGE_DRAFT_KEYS,
+  isUncertainContentImageSubmission
+} from "./content-image-draft-model.mjs";
 
 const KEEP_CONTEXT = Symbol("keep-context");
 
@@ -12,44 +20,6 @@ function requireFunction(value, name) {
     throw new TypeError(`Content image draft manager requires ${name}`);
   }
   return value;
-}
-
-function copyContext(value) {
-  return value == null ? value : structuredClone(value);
-}
-
-function copyItem(item) {
-  return {
-    ...item,
-    ...(item.lastError ? { lastError: { ...item.lastError } } : {})
-  };
-}
-
-function emptyDraft() {
-  return {
-    items: [],
-    uploadRequestId: "",
-    context: null,
-    revision: 0
-  };
-}
-
-function hasDraft(draft) {
-  return Boolean(
-    draft
-    && (draft.items.length || draft.uploadRequestId || draft.context != null)
-  );
-}
-
-function leaseIdentity(owner, item, fallbackRequestId = "") {
-  const path = String(item?.uploadedPath || "");
-  const requestId = String(item?.uploadRequestId || fallbackRequestId || "");
-  return path && requestId ? JSON.stringify([owner, path, requestId]) : "";
-}
-
-export function isUncertainContentImageSubmission(error) {
-  const status = Number(error?.status || error?.statusCode || 0);
-  return !status || [408, 425, 429].includes(status) || status >= 500;
 }
 
 export function createContentImageDraftManager({
@@ -333,6 +303,25 @@ export function createContentImageDraftManager({
     return snapshot(key);
   }
 
+  function replaceTransient(key, value = {}) {
+    key = requireKey(key);
+    const previous = currentDraft(key);
+    const items = (Array.isArray(value.items) ? value.items : [])
+      .slice(0, maxItems)
+      .map(item => {
+        if (item.path) return { path: item.path };
+        if (!item.file) throw new TypeError("Transient content image item requires file or path");
+        return { ...copyItem(item), preview: createPreview(item.file) };
+      });
+    revokeItems(previous.items);
+    nextDraft(key, {
+      items,
+      uploadRequestId: String(value.uploadRequestId || ""),
+      context: copyContext(value.context ?? null)
+    });
+    return snapshot(key);
+  }
+
   async function select(key, files) {
     key = requireKey(key);
     const operation = ticket();
@@ -359,6 +348,20 @@ export function createContentImageDraftManager({
     await Promise.all(replaced.map(
       item => discardLease(operation, item, previous.uploadRequestId)
     ));
+    return snapshot(key);
+  }
+
+  async function remove(key, index) {
+    key = requireKey(key);
+    if (!Number.isSafeInteger(index)) return false;
+    const operation = ticket(), previous = currentDraft(key);
+    if (!operation.owner || !previous.items[index]) return false;
+    const items = previous.items.map(copyItem);
+    const [removed] = items.splice(index, 1);
+    revokeItem(removed);
+    const current = nextDraft(key, { items });
+    await Promise.all([persistDraft(operation, key, current),
+      discardLease(operation, removed, previous.uploadRequestId)]);
     return snapshot(key);
   }
 
@@ -477,7 +480,9 @@ export function createContentImageDraftManager({
     restore,
     snapshot,
     replaceExisting,
+    replaceTransient,
     select,
+    remove,
     persist,
     submit,
     complete,

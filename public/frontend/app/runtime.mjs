@@ -52,6 +52,7 @@ import {
   validatedAudioBlob,
   validatedImageFiles
 } from "../media/index.mjs";
+import { createPageAudioCoordinator } from "../media/page-audio.mjs";
 import { createPageRouter, createUnavailableRouteResult, ownerViewCapabilities, resolveApplicationRoute, viewSections } from "../pages/index.mjs";
 import { sessionScope, sessionSerial, rotateSession } from "../session/index.mjs";
 import { emptyClientState, state, replaceState, mergeStateSnapshot, resetState, subscribeState, publishDomains, createRefreshCoordinator } from "../state/index.mjs";
@@ -70,6 +71,7 @@ const notificationsFeatureModuleRequest=globalThis.__forNowNotificationsFeatureR
 let annotationsFeatureModuleRequest=globalThis.__forNowAnnotationsFeatureRequest||null;
 let backgroundResultsFeatureModuleRequest=globalThis.__forNowBackgroundResultsFeatureRequest||null;
 let healthFeatureModuleRequest=globalThis.__forNowHealthFeatureRequest||null;
+let thoughtsFeatureModuleRequest=globalThis.__forNowThoughtsFeatureRequest||(["thoughts","together"].includes(initialRuntimeView)?import("../features/thoughts/index.mjs"):null);
 const loadLegacyFeatureModule=()=>legacyFeatureModuleRequest||import("../features/legacy-pages/index.mjs");
 const loadActionsFeatureModule=()=>import("../features/actions/controller.mjs");
 const loadAnnotationsFeatureModule=()=>{
@@ -87,6 +89,11 @@ const loadHealthFeatureModule=()=>{
   healthFeatureModuleRequest=pending;
   return Promise.resolve(pending).catch(error=>{if(healthFeatureModuleRequest===pending)healthFeatureModuleRequest=null;throw error})
 };
+const loadThoughtsFeatureModule=()=>{
+  const pending=thoughtsFeatureModuleRequest||import("../features/thoughts/index.mjs");
+  thoughtsFeatureModuleRequest=pending;
+  return Promise.resolve(pending).catch(error=>{if(thoughtsFeatureModuleRequest===pending)thoughtsFeatureModuleRequest=null;throw error})
+};
 const startupPerformanceEnabled=new URLSearchParams(location.search).has("native-performance");
 const startupMarks={navigationStart:0,moduleLoaded:Number(performance.now().toFixed(1))};
 function markStartup(name){startupMarks[name]=Number(performance.now().toFixed(1));return startupMarks[name]}
@@ -103,6 +110,28 @@ const appUrl=apiClient.appUrl;
 const syncStore=createIndexedDbSyncStore();
 const mediaDraftStore=createIndexedDbMediaDraftStore();
 const onboardingDraftStore=createIndexedDbMediaDraftStore({databaseName:"cike-onboarding-v2-drafts"});
+const pageAudioCoordinator=createPageAudioCoordinator();
+let contentImageDraftManager=null,contentImageDraftManagerRequest=null;
+const uncertainMediaSubmission=error=>{const status=Number(error?.status||error?.statusCode||0);return!status||[408,425,429].includes(status)||status>=500};
+async function initializeContentImageDraftManager(){
+  if(contentImageDraftManager)return contentImageDraftManager;
+  const pending=contentImageDraftManagerRequest||import("../media/content-image-drafts.mjs");
+  contentImageDraftManagerRequest=pending;
+  try{
+    const images=await pending;
+    contentImageDraftManager||=images.createContentImageDraftManager({
+      store:mediaDraftStore,
+      validateFiles:(files,maxItems)=>runPublicValidation(()=>validatedImageFiles(files,maxItems)),
+      uploadPendingItems:uploadPendingMediaItems,
+      uploadItem:async(file,idempotencyKey)=>{
+        const [image]=await imageDataUrls([file]);
+        return(await uploadOriginalImages({request,images:[image],idempotencyKey}))[0]
+      },
+      discardItem:(item,fallbackRequestId)=>discardUploadedMediaItem(item,fallbackRequestId)
+    });
+    return contentImageDraftManager
+  }catch(error){if(contentImageDraftManagerRequest===pending)contentImageDraftManagerRequest=null;throw error}
+}
 const requestCoordinator=createRequestCoordinator({store:syncStore,send:(url,options)=>request(url,options)});
 const refreshCoordinator=createRefreshCoordinator({
   session:sessionScope,
@@ -130,12 +159,13 @@ let runtimeApplication=null,runtimeFeatureRegistry=null,runtimeStatePort=null,ap
 let backgroundResultsController=null,backgroundResultsLoadErrorReported=false,backgroundResultsRetryAttempts=0;
 let healthFeatureController=null;
 const checkinsFeatureControllers=new Set();
+const thoughtsFeatureControllers=new Set();
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-let activeDate=currentLocalDate,activeDailyType="sleep",thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,captureComposerOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
-let notificationsLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,routeDataRequestSerial=0,routeLoadFailureKey="",loadedRouteKey="",fullRouteStateLoaded=false,renderedRouteView="",activeThoughtRouteId="",activeRouteResult=null,thoughtSearchTimer=0,analysisRequestSerial=0;
+let activeDate=currentLocalDate,activeDailyType="sleep",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,captureComposerOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
+let notificationsLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,routeDataRequestSerial=0,routeLoadFailureKey="",loadedRouteKey="",fullRouteStateLoaded=false,renderedRouteView="",analysisRequestSerial=0;
 let captureEditorTrigger=null,suspendedCaptureCreateDraft=null,captureEditorSerial=0;
-const feedSearchQueries={captures:"",journals:"",thoughts:"",books:"",keepsakes:"",quotes:""};
+const feedSearchQueries={captures:"",journals:"",books:"",keepsakes:"",quotes:""};
 const quoteTagPickerConfig=Object.freeze({
   quote:{input:"#quote-tags",selected:"#quote-selected-tags",options:"#quote-tag-options",toggle:"#quote-tag-toggle",status:"#quote-tag-status"},
   selectionQuote:{input:"#selection-quote-tags",selected:"#selection-quote-selected-tags",options:"#selection-quote-tag-options",toggle:"#selection-quote-tag-toggle",status:"#selection-quote-tag-status"}
@@ -146,12 +176,11 @@ let quoteTagStates={
 };
 let keepsakeDraftTags=[];
 const expandedLongContentKeys=new Set();
-let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeKeepsakeId="",homeEditorTrigger=null,activePageAudio=null,voicePreviewAudio=null,voicePreviewObjectUrl="",voicePreviewAbortController=null,voicePreviewVoice="";
+let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeKeepsakeId="",homeEditorTrigger=null,voicePreviewAudio=null,voicePreviewPending=false,voicePreviewPlaying=false,voicePreviewVoice="";
 const keepsakeEditor={file:null,sourceDataUrl:"",sourceImage:null,sourceCanvas:null,maskCanvas:null,autoBase:null,history:[],mode:"keep",drawing:false,lastPoint:null,source:"manual",originalPath:"",cutoutPath:"",mediaDirty:false,renderFrame:0,segmentSerial:0,understandingSerial:0};
 const keepsakeBatch={items:[],activeIndex:0,loading:false};
 let keepsakeBatchPreviewUrls=[],keepsakeBatchPersistTimer=0,keepsakeDerivativeRefreshTimer=0;
 let keepsakeVisibleCount=KEEPSAKE_PAGE_SIZE,keepsakePaginationOwner="",keepsakeLoadObserver=null;
-const contentImageDrafts=Object.fromEntries(["capture","thoughtRoot","thoughtBlock","comment"].map(key=>[key,{items:[],uploadRequestId:"",context:null}]));
 const persistentContentImageKeys=new Set(["capture","thoughtRoot","thoughtBlock","comment"]);
 const captureAudioDraft={blob:null,preview:"",path:"",mimeType:"",bytes:0,durationMs:0,uploadRequestId:"",uploadedPath:"",lastError:null,recorder:null,stream:null,chunks:[],startedAt:0,pausedAt:0,pausedTotal:0,timer:0,serial:0,stopPromise:null};
 const imageViewer={paths:[],index:0,objectUrl:"",requestSerial:0,trigger:null};
@@ -226,7 +255,7 @@ function createRuntimeAnnotationsController(module){return module.createAnnotati
   },
   media:{
     resetDraft:()=>resetContentImageEditor("comment"),
-    startDraft:selection=>{contentImageDraft("comment").context={selection,text:"",requestId:"",assistantClientRequestId:""}},
+    startDraft:selection=>{void contentImageDraftManager.persist("comment",{selection,text:"",requestId:"",assistantClientRequestId:""})},
     persistDraft:()=>persistContentImageDraft("comment"),
     submitDraft:()=>contentImagePaths("comment"),
     buildPayload:imageRecordPayload,
@@ -280,6 +309,8 @@ const scheduleAnnotationLineCounts=()=>annotationsController?.scheduleLayout();
 const restoreAnnotationUiDrafts=()=>annotationsController?.restoreDrafts();
 const renderCommentPanel=(...args)=>annotationsController?.renderPanel(...args);
 const openCommentPanel=(...args)=>annotationsController?.openPanel(...args);
+function patchActiveThoughtTarget(target){for(const controller of thoughtsFeatureControllers)if(controller.patchTarget(target))return true;return false}
+function reconcileActiveThoughtRoute(){for(const controller of thoughtsFeatureControllers)if(controller.reconcileRoute())return true;return false}
 function createRuntimeBackgroundResultsController(module){return module.createBackgroundResultsFeatureController({
   data:{getSnapshot:()=>state,getAccountId:()=>currentUser?.id||"",replaceSnapshot:replaceState,request,refresh:(domains,options)=>refreshState(domains,options)},
   navigation:{openThoughtDetail,switchView},
@@ -287,7 +318,7 @@ function createRuntimeBackgroundResultsController(module){return module.createBa
     openTarget:async(target,isCurrent)=>{const controller=await ensureAnnotationsController();if(!isCurrent())return false;controller.openPanel(commentRootKey(target.resourceType,target.targetId),target.annotationId);return true},
     refreshTarget:target=>{const controller=annotationsController,annotation=controller?.findTaskAnnotation(target);if(annotation&&controller.isActiveRoot(commentRootKey(target.resourceType,target.targetId)))controller.refreshAnnotation(annotation);return true}
   },
-  view:{renderCaptures,patchThoughtTarget:patchThoughtTaskTarget,scheduleAnnotationLayout:scheduleAnnotationLineCounts,showToast},
+  view:{renderCaptures,patchThoughtTarget:patchActiveThoughtTarget,scheduleAnnotationLayout:scheduleAnnotationLineCounts,showToast},
   platform:{document,window,requestFrame:callback=>requestAnimationFrame(callback),escapeSelector:value=>CSS.escape(value)}
 })}
 async function ensureBackgroundResultsController(){
@@ -302,15 +333,7 @@ async function syncBackgroundTaskResults(tasks,owner,session){
     return false
   }
 }
-function pendingAiTask(kind,targetId,subtargetId=""){return(state.aiTasks||[]).find(task=>task.kind===kind&&task.targetId===targetId&&(!subtargetId||task.subtargetId===subtargetId)&&["queued","running","cancelling"].includes(task.status))}
-function followUpFormIdentity(form){
-  if(form.dataset.followUpRoot)return{rootId:form.dataset.followUpRoot,kind:"create",followUpId:""};
-  if(form.dataset.followupManualAnswer)return{rootId:form.dataset.rootId||"",kind:"manual-answer",followUpId:form.dataset.followupManualAnswer};
-  if(form.dataset.followupEdit)return{rootId:form.dataset.rootId||"",kind:"edit",followUpId:form.dataset.followupEdit};
-  return null
-}
-const followUpFormKey=identity=>`follow-up:${identity.rootId}:${identity.kind}:${identity.followUpId||""}`;
-function formIdentity(form,index){const identity=followUpFormIdentity(form);return identity?followUpFormKey(identity):`form:${index}`}
+function formIdentity(form,index){return`form:${index}`}
 function formFieldIdentity(field,index){
   if(field instanceof HTMLInputElement&&field.type==="radio"&&field.name)return`name:${field.name}:value:${field.value}`;
   return field.name?`name:${field.name}`:field.id?`id:${field.id}`:`field:${index}`
@@ -333,8 +356,6 @@ function restoreFormDrafts(root,drafts){
   for(const [index,form]of forms.entries()){
     const draft=drafts.find(item=>item.key===formIdentity(form,index));if(!draft)continue;
     form.hidden=draft.hidden;if(draft.requestId)form.dataset.requestId=draft.requestId;
-    const identity=followUpFormIdentity(form);
-    if(identity?.kind==="create")form.closest("[data-chain-id]")?.querySelector("[data-followup-compose]")?.setAttribute("aria-expanded",String(!form.hidden));
     const fields=[...form.querySelectorAll("input,textarea,select")];
     for(const [fieldIndex,field]of fields.entries()){
       const key=formFieldIdentity(field,fieldIndex),saved=draft.fields.find(item=>item.key===key);if(!saved)continue;
@@ -375,28 +396,6 @@ function clearDurableDraft(formId=""){
   if(!formId){sessionStorage.removeItem(key);return}
   saveDurableDrafts();
   try{const payload=JSON.parse(sessionStorage.getItem(key)||"null");if(!payload)return;payload.forms=(payload.forms||[]).filter(item=>item.key!==`form:${durableDraftForms.indexOf(formId)}`);sessionStorage.setItem(key,JSON.stringify(payload))}catch{}
-}
-function patchThoughtTaskTarget(target){
-  const chain=thoughtChains().find(item=>item.question.id===target.targetId);if(!chain)return false;
-  const cards=[...document.querySelectorAll(`[data-chain-id="${CSS.escape(target.targetId)}"]`)];if(!cards.length)return true;
-  const consumedKey=target.consumeFollowUp?followUpFormKey(target.consumeFollowUp):"";
-  for(const current of cards){
-    const drafts=captureFormDrafts(current).filter(draft=>draft.key!==consumedKey),rootOpen=current.open,openFollowUps=new Set([...current.querySelectorAll("[data-followup-id][open]")].map(item=>item.dataset.followupId)),template=document.createElement("template"),detail=current.classList.contains("thought-detail-record");
-    template.innerHTML=chainCard(chain,false,thoughtSortMode,{detail}).trim();const next=template.content.querySelector(".chain-record");if(!next)continue;
-    current.replaceWith(next);next.open=rootOpen;next.querySelectorAll("[data-followup-id]").forEach(item=>item.open=openFollowUps.has(item.dataset.followupId));restoreFormDrafts(next,drafts);
-    tagCommentableTargets(next.parentElement,[chain]);renderLatex(next);applyCommentAnchors(next);
-    next.addEventListener("toggle",()=>{if(next.open)requestAnimationFrame(()=>syncThoughtBlockOverflow(next))});
-    if(next.open)requestAnimationFrame(()=>syncThoughtBlockOverflow(next))
-  }
-  return true
-}
-function applySavedFollowUp(rootId,saved,{kind,followUpId=""}){
-  const root=state.thoughts.find(item=>item.id===rootId&&item.type==="question");if(!root)return false;
-  root.followUps||=[];
-  const current=root.followUps.find(item=>item.id===saved.id);
-  if(current)Object.assign(current,saved);else root.followUps.push({...saved});
-  root.version=Math.max(1,Number(root.version)||1)+1;root.updatedAt=saved.updatedAt||saved.createdAt||new Date().toISOString();
-  return patchThoughtTaskTarget({targetId:rootId,consumeFollowUp:{rootId,kind,followUpId}})
 }
 const splitTags=v=>String(v||"").split(/[,，#\s]+/).map(x=>x.trim()).filter(Boolean);
 const bookReadingRange=book=>book.readingStartedOn?`${formatDateKey(book.readingStartedOn)} — ${book.readingFinishedOn?formatDateKey(book.readingFinishedOn):"至今"}`:"阅读日期未记录";
@@ -617,7 +616,7 @@ async function rollbackCaptureAudioUpload(attachmentPath){
     captureAudioDraft.uploadedPath="";captureAudioDraft.uploadRequestId="";await persistCaptureAudioDraft();renderCaptureAudioDraft()
   }
 }
-function contentImageDraft(key){return contentImageDrafts[key]}
+function contentImageDraft(key){return contentImageDraftManager?.snapshot(key)||{owner:"",key,items:[],uploadRequestId:"",context:null}}
 function currentContentImageContext(key){
   if(key==="comment")return annotationsController?.commentDraftContext()||null;
   if(key==="thoughtBlock"){
@@ -635,29 +634,10 @@ function currentContentImageContext(key){
   }
   return null
 }
-function revokeContentImageItem(item){if(item?.preview&&item.file)URL.revokeObjectURL(item.preview)}
 async function persistContentImageDraft(key){
   if(!currentUser?.id||!persistentContentImageKeys.has(key)||(key==="capture"&&$("#capture-id")?.value))return;
-  const draft=contentImageDraft(key);if(!draft)return;
-  draft.context=currentContentImageContext(key)||draft.context||null;
-  const hasTextDraft=key==="comment"&&Boolean(draft.context?.selection&&String(draft.context.text||"").trim());
-  if(!draft.items.length&&!hasTextDraft){await mediaDraftStore.delete(currentUser.id,key);return}
-  await mediaDraftStore.put({
-    owner:currentUser.id,
-    id:key,
-    uploadRequestId:draft.uploadRequestId,
-    updatedAt:new Date().toISOString(),
-    context:draft.context,
-    items:draft.items.map(item=>item.path?{path:item.path}:{
-      blob:item.file,
-      name:item.file?.name||"image",
-      type:item.file?.type||"application/octet-stream",
-      lastModified:Number(item.file?.lastModified)||Date.now(),
-      uploadRequestId:item.uploadRequestId||"",
-      uploadedPath:item.uploadedPath||"",
-      lastError:item.lastError||null
-    })
-  })
+  const draft=contentImageDraft(key),context=currentContentImageContext(key)||draft.context||null;
+  return contentImageDraftManager.persist(key,context)
 }
 function contentImageDraftView(key,draft){
   if(key==="capture")return"captures";
@@ -702,33 +682,15 @@ function activateContentImageDraftsForCurrentRoute(owner=currentUser?.id){
 }
 async function restoreContentImageDrafts(owner){
   if(!owner)return;
-  for(const key of persistentContentImageKeys){
-    const stored=await mediaDraftStore.get(owner,key),draft=contentImageDraft(key);
-    const storedItems=Array.isArray(stored?.items)?stored.items:[],hasCommentText=key==="comment"&&Boolean(stored?.context?.selection&&String(stored.context.text||"").trim());
-    if(!draft||draft.items.length||(!storedItems.length&&!hasCommentText))continue;
-    draft.uploadRequestId=stored.uploadRequestId||"";
-    draft.context=stored.context||null;
-    draft.items=storedItems.slice(0,2).map(item=>{
-      if(item.path)return{path:item.path};
-      const file=typeof File==="function"
-        ?new File([item.blob],item.name||"image",{type:item.type||item.blob?.type||"",lastModified:Number(item.lastModified)||Date.now()})
-        :item.blob;
-      return{
-        file,
-        preview:URL.createObjectURL(file),
-        uploadRequestId:item.uploadRequestId||"",
-        uploadedPath:item.uploadedPath||"",
-        lastError:item.lastError||null
-      }
-    });
-  }
+  const manager=await initializeContentImageDraftManager();
+  await manager.restore(owner);
   activateContentImageDraftsForCurrentRoute(owner)
 }
 async function abandonContentImageDraft(owner,key){
-  const draft=contentImageDraft(key);if(!draft)return;
-  await Promise.all(draft.items.map(item=>discardUploadedMediaItem(item,draft.uploadRequestId))).catch(()=>{});
-  draft.items.forEach(revokeContentImageItem);draft.items=[];draft.uploadRequestId="";draft.context=null;renderContentImageEditor(key);
-  await mediaDraftStore.delete(owner,key)
+  if(owner!==currentUser?.id)return false;
+  const changed=await contentImageDraftManager.abandon(key);
+  renderContentImageEditor(key);
+  return changed
 }
 function renderContentImageEditor(key){
   const editor=document.querySelector(`[data-content-image-editor="${CSS.escape(key)}"]`),draft=contentImageDraft(key);if(!editor||!draft)return;
@@ -737,45 +699,27 @@ function renderContentImageEditor(key){
   const input=editor.querySelector('input[type="file"]');if(input)input.disabled=draft.items.length>=2
 }
 function resetContentImageEditor(key,paths=[],{forget=true,preserveStored=false}={}){
-  const draft=contentImageDraft(key);if(!draft)return;
-  const staleItems=forget?draft.items.filter(item=>item.uploadedPath):[];
-  draft.items.forEach(revokeContentImageItem);draft.items=[...new Set(paths)].slice(0,2).map(path=>({path}));draft.uploadRequestId="";draft.context=null;
   const input=document.querySelector(`[data-content-image-editor="${CSS.escape(key)}"] input[type="file"]`);if(input)input.value="";
+  const operation=contentImageDraftManager.replaceExisting(key,paths,{compensate:forget,preserveStored:preserveStored||!forget});
   renderContentImageEditor(key);
-  if(forget){
-    void Promise.all([
-      ...staleItems.map(item=>discardUploadedMediaItem(item)),
-      currentUser?.id&&persistentContentImageKeys.has(key)&&!preserveStored?mediaDraftStore.delete(currentUser.id,key):Promise.resolve()
-    ]).catch(()=>{})
-  }
+  void operation.then(()=>renderContentImageEditor(key)).catch(()=>{});
+  return operation
 }
 async function clearSubmittedContentImageDraft(key){
-  const draft=contentImageDraft(key);if(!draft)return;
-  draft.items.forEach(revokeContentImageItem);draft.items=[];draft.uploadRequestId="";draft.context=null;renderContentImageEditor(key);
-  if(currentUser?.id&&persistentContentImageKeys.has(key))await mediaDraftStore.delete(currentUser.id,key)
+  const changed=await contentImageDraftManager.complete(key);
+  renderContentImageEditor(key);
+  return changed
 }
 async function setContentImageFiles(key,files){
-  const draft=contentImageDraft(key),replaced=draft.items.filter(item=>item.file),existing=draft.items.filter(item=>item.path);
-  const selected=runPublicValidation(()=>validatedImageFiles(files,Math.max(0,2-existing.length)));
-  replaced.forEach(revokeContentImageItem);
-  draft.items=[...existing,...selected.map(file=>({file,preview:URL.createObjectURL(file)}))];draft.uploadRequestId="";renderContentImageEditor(key);
-  await persistContentImageDraft(key);
-  await Promise.all(replaced.map(item=>discardUploadedMediaItem(item))).catch(()=>{})
+  const operation=contentImageDraftManager.select(key,files);
+  renderContentImageEditor(key);
+  const result=await operation;renderContentImageEditor(key);
+  return result
 }
 async function contentImagePaths(key){
-  const draft=contentImageDraft(key);
-  if(!draft.items.some(item=>item.file))return{attachmentPaths:draft.items.filter(item=>item.path).map(item=>item.path),uploadedPaths:[]};
-  await persistContentImageDraft(key);
-  const result=await uploadPendingMediaItems({
-    items:draft.items,
-    upload:async(file,idempotencyKey)=>{
-      const [image]=await imageDataUrls([file]);
-      return(await uploadOriginalImages({request,images:[image],idempotencyKey}))[0]
-    },
-    onProgress:async items=>{draft.items=items;await persistContentImageDraft(key)}
-  });
-  draft.items=result.items;
-  return{attachmentPaths:result.attachmentPaths,uploadedPaths:result.uploadedPaths}
+  const result=await contentImageDraftManager.submit(key);
+  renderContentImageEditor(key);
+  return result
 }
 async function discardUploadedMediaItem(item,fallbackRequestId=""){
   const attachmentPath=item?.uploadedPath,uploadRequestId=item?.uploadRequestId||fallbackRequestId;
@@ -789,16 +733,10 @@ async function discardUploadedImagePath(attachmentPath,uploadRequestId){
   return discardUploadedMediaItem({uploadedPath:attachmentPath,uploadRequestId})
 }
 async function discardContentImageUploads(key,uploadedPaths){
-  if(!uploadedPaths.length)return;
-  const draft=contentImageDraft(key),targets=draft.items.filter(item=>uploadedPaths.includes(item.uploadedPath));
-  for(const item of targets){
-    if(await discardUploadedMediaItem(item,draft.uploadRequestId)){item.uploadedPath="";item.uploadRequestId=""}
-  }
-  await persistContentImageDraft(key).catch(()=>{})
-}
-function uncertainMediaSubmission(error){
-  const status=Number(error?.status||0);
-  return !status||[408,425,429].includes(status)||status>=500
+  if(!uploadedPaths.length)return false;
+  const result=await contentImageDraftManager.rollback(key,Object.assign(new Error("submission failed"),{status:400}),{uploadedPaths});
+  renderContentImageEditor(key);
+  return result
 }
 function viewerAttachmentPath(value){
   return typeof value==="string"&&/^\/attachments\/[\w.-]+$/.test(value)?value:""
@@ -1028,7 +966,7 @@ function restorePendingProjection(snapshot,operationId){
     const prefix=`${snapshot.temporaryId}:`,previousLength=(state.thoughts||[]).length;
     state.thoughts=(state.thoughts||[]).filter(item=>!String(item.id).startsWith(prefix)||item._sync?.operationId!==operationId);
     if(state.thoughts.length===previousLength)return false;
-    renderThoughts();renderCaptures();renderHomeMemories();return true
+    publishDomains(new Set(["thoughts"]));return true
   }
   if(snapshot.kind==="record.update"){
     const collection=state[snapshot.domain],index=collection?.findIndex(item=>item.id===snapshot.value.id)??-1;
@@ -1051,14 +989,14 @@ function restorePendingProjection(snapshot,operationId){
   if(snapshot.kind==="thought.chain.update"){
     const root=snapshot.items.find(entry=>entry.value.id===snapshot.id),index=(state.thoughts||[]).findIndex(item=>item.id===snapshot.id);
     if(!root||index<0||state.thoughts[index]._sync?.operationId!==operationId)return false;
-    state.thoughts[index]=root.value;renderThoughts();renderHomeMemories();return true
+    state.thoughts[index]=root.value;publishDomains(new Set(["thoughts"]));return true
   }
   if(snapshot.kind==="thought.chain.delete"){
     if((state.thoughts||[]).some(item=>item.id===snapshot.id))return false;
     for(const entry of [...snapshot.items].sort((left,right)=>left.index-right.index)){
       if(!state.thoughts.some(item=>item.id===entry.value.id))state.thoughts.splice(Math.min(entry.index,state.thoughts.length),0,entry.value)
     }
-    renderThoughts();renderCaptures();renderHomeMemories();return true
+    publishDomains(new Set(["thoughts"]));return true
   }
   return false
 }
@@ -1080,7 +1018,7 @@ function settlePendingProjection(projection,operationId,data){
     const root=(state.thoughts||[]).find(item=>item.id===projection.id&&item.type==="question");
     if(!root||root._sync?.operationId!==operationId)return false;
     if(data&&typeof data==="object")Object.assign(root,data);
-    delete root._sync;renderThoughts();renderHomeMemories();return true
+    delete root._sync;publishDomains(new Set(["thoughts"]));return true
   }
   return false
 }
@@ -1101,8 +1039,8 @@ async function requestV1(url,options={},coordination={}){
       if(coordination.projection?.kind==="thought.chain.delete"){
         const id=coordination.projection.id,previousLength=(state.thoughts||[]).length;
         state.thoughts=(state.thoughts||[]).filter(item=>item.id!==id&&item.relatedTo!==id);
-        if(state.thoughts.length!==previousLength){renderThoughts();renderCaptures();renderHomeMemories()}
-        reconcileThoughtRoute()
+        if(state.thoughts.length!==previousLength)publishDomains(new Set(["thoughts"]));
+        reconcileActiveThoughtRoute()
       }
     }catch(error){
       if(["failed","conflict"].includes(error?.syncStatus)){
@@ -1134,7 +1072,7 @@ async function loadRouteState(route,requestSerial=++routeDataRequestSerial){
   try{
     const snapshot=await requestRouteState(route);
     if(requestSerial!==routeDataRequestSerial||owner!==currentUser?.id||session!==sessionSerial)return false;
-    clearRouteLoadFailure(route);mergeStateSnapshot(snapshot);loadedRouteKey=key;fullRouteStateLoaded=Boolean(snapshot?._routeProjection?.complete);routeDataReady=true;renderVisibleRoute();reconcileThoughtRoute();return true
+    clearRouteLoadFailure(route);mergeStateSnapshot(snapshot);loadedRouteKey=key;fullRouteStateLoaded=Boolean(snapshot?._routeProjection?.complete);routeDataReady=true;renderVisibleRoute();runtimeFeatureRegistry?.notifyState(state,new Set(Object.keys(snapshot||{})));reconcileActiveThoughtRoute();return true
   }catch(error){
     if(requestSerial===routeDataRequestSerial&&owner===currentUser?.id&&session===sessionSerial){routeLoadFailureKey=key;renderRouteLoadFailure(route);showToast("当前页面读取失败，已有记录没有变化。","error")}
     return false
@@ -1228,19 +1166,19 @@ function applyPendingProjection(record){
     }];
     if(projection.payload.idea)items.push({id:`${projection.temporaryId}:idea`,type:"idea",relatedTo:rootId,content:projection.payload.idea,authorType:"user",occurredAt,createdAt:record.createdAt,version:1,_sync:sync});
     if(projection.payload.answer)items.push({id:`${projection.temporaryId}:answer`,type:"answer",relatedTo:rootId,content:projection.payload.answer,authorType:"user",occurredAt,createdAt:record.createdAt,version:1,_sync:sync});
-    state.thoughts=[...items,...state.thoughts];renderThoughts();renderCaptures();renderHomeMemories();return true
+    state.thoughts=[...items,...state.thoughts];publishDomains(new Set(["thoughts"]));return true
   }
   if(projection.kind==="thought.chain.delete"){
     const previousLength=(state.thoughts||[]).length;
     state.thoughts=(state.thoughts||[]).filter(item=>item.id!==projection.id&&item.relatedTo!==projection.id);
     if(state.thoughts.length===previousLength)return false;
-    renderThoughts();renderCaptures();renderHomeMemories();return true
+    publishDomains(new Set(["thoughts"]));return true
   }
   if(projection.kind==="thought.chain.update"){
     const root=(state.thoughts||[]).find(item=>item.id===projection.id&&item.type==="question");
     if(!root)return false;
     Object.assign(root,{content:projection.payload.question,tags:projection.payload.tags,occurredAt:projection.payload.occurredAt,_sync:sync});
-    renderThoughts();renderHomeMemories();return true
+    publishDomains(new Set(["thoughts"]));return true
   }
   if(projection.kind==="action.command")return actionsCoordinator.applyPendingRecord(record);
   return false
@@ -1409,109 +1347,12 @@ function metricMarker(kind,value,label){if(!Number.isFinite(value))return"";cons
 function sliderTemplate(key,cfg){const ref=metricReference(key,cfg.custom),value=ref.previous??(ref.average==null?3:Math.round(ref.average));return `<div class="metric unconfirmed"><div class="metric-top"><span class="metric-label">${escapeHtml(cfg.label)}</span><span class="anchor" id="${key}-anchor">待确认 · ${escapeHtml(cfg.anchors[value-1])}</span><button class="note-toggle" type="button" data-note="${key}" aria-expanded="false">＋备注</button></div><div class="metric-scale">${metricMarker("previous",ref.previous,"上一次")}${metricMarker("average",ref.average,"近30次平均")}<input type="range" id="metric-${key}" data-metric="${key}" data-custom="${cfg.custom?"1":"0"}" data-confirmed="false" min="1" max="5" value="${value}" step="1" aria-label="${escapeHtml(cfg.label)} 1到5，必须确认"></div><div class="range-labels"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span></div><input class="note-field" id="${key}-note" placeholder="可选：补充一句话" maxlength="800"></div>`}
 function renderSliders(){const cfg=metricConfig();$("#sliders").innerHTML=`<div class="metric-history-legend" aria-label="历史参照图例"><span><i class="previous"></i>上一次</span><span><i class="average"></i>近30次平均</span></div>${Object.entries(cfg).map(([k,v])=>sliderTemplate(k,v)).join("")}`;$$('[data-metric]').forEach(input=>{const update=(confirmed=false)=>{if(confirmed){input.dataset.confirmed="true";input.closest(".metric").classList.remove("unconfirmed")}const prefix=input.dataset.confirmed==="true"?"":"待确认 · ";$(`#${CSS.escape(input.dataset.metric)}-anchor`).textContent=`${prefix}${cfg[input.dataset.metric].anchors[Number(input.value)-1]}`};input.addEventListener("input",()=>update(true));input.addEventListener("change",()=>navigator.vibrate?.(8));input.addEventListener("pointerdown",()=>update(true));update()});$$(".note-toggle").forEach(b=>b.addEventListener("click",()=>{const f=$(`#${CSS.escape(b.dataset.note)}-note`);f.classList.toggle("visible");b.setAttribute("aria-expanded",String(f.classList.contains("visible")));if(f.classList.contains("visible"))f.focus()}))}
 
-const thoughtDate=chain=>eventDate(chain.question);
-const thoughtSortTimestamp=(chain,mode=thoughtSortMode)=>mode==="created"?(chain.question.createdAt||eventTimestamp(chain.question)):eventTimestamp(chain.question);
-function thoughtChains(mode=thoughtSortMode){const roots=state.thoughts.filter(x=>x.type==="question"),ids=new Set(roots.map(x=>x.id));const grouped=roots.map(question=>({question,children:state.thoughts.filter(x=>x.relatedTo===question.id).sort((a,b)=>a.createdAt.localeCompare(b.createdAt))}));state.thoughts.filter(x=>x.type!=="question"&&(!x.relatedTo||!ids.has(x.relatedTo))).forEach(x=>grouped.push({question:{...x,type:"question",content:"（旧记录未关联问题）"},children:[x]}));return grouped.sort((a,b)=>thoughtSortTimestamp(b,mode).localeCompare(thoughtSortTimestamp(a,mode))||String(b.question.id).localeCompare(String(a.question.id)))}
-function thoughtAnswerPreview(content){return plainPreview(content).replace(/^(?:核心判断|给我判断|给你(?:一个)?判断|我的判断|结论)(?:\s*[：:]|\s+)\s*/u,"").trimStart()}
-function isAiThoughtBlock(item){return item?.authorType==="ai"||/^(?:deepseek|codex|openai|model|ai)(?:$|[-_:])/i.test(item?.origin||"")||Boolean(item?.reasoningContent)}
-function compareThoughtOccurrence(left,right){
-  return eventTimestamp(left).localeCompare(eventTimestamp(right))
-    || String(left?.createdAt||"").localeCompare(String(right?.createdAt||""))
-    || String(left?.id||"").localeCompare(String(right?.id||""))
-}
-function currentUserConclusion(children=[]){
-  return children
-    .filter(item=>item.type==="answer"&&item.authorType!=="ai"&&!isAiThoughtBlock(item)&&item.disposition!=="discarded"&&plainPreview(item.content))
-    .sort((left,right)=>compareThoughtOccurrence(right,left))[0]||null
-}
-function initialThoughtIdea(children=[]){
-  return children
-    .filter(item=>item.type==="idea"&&item.authorType!=="ai"&&!isAiThoughtBlock(item)&&item.disposition!=="discarded"&&plainPreview(item.content))
-    .sort(compareThoughtOccurrence)[0]||null
-}
-function thoughtListPreview(children=[],summary=null){
-  if(summary?.content)return{kind:summary.kind,label:summary.kind==="conclusion"?"我的结论":"初步想法",text:summary.content};
-  const conclusion=currentUserConclusion(children);
-  if(conclusion)return{kind:"conclusion",label:"我的结论",text:thoughtAnswerPreview(conclusion.content)};
-  const idea=initialThoughtIdea(children);
-  return idea?{kind:"idea",label:"初步想法",text:plainPreview(idea.content)}:null
-}
-function thoughtMonthLabel(value){
-  const match=String(value||"").match(/^(\d{4})-(\d{2})/);
-  return match?`${match[1]} 年 ${Number(match[2])} 月`:"时间未记录"
-}
 function setLongContentExpanded(key,expanded){if(!key)return;if(expanded)expandedLongContentKeys.add(key);else expandedLongContentKeys.delete(key)}
-function thoughtBlockBody(content,expandKey){
-  return `<div class="thought-block-content-frame"><div class="thought-block-content markdown-content">${renderMarkdown(content||"")}</div></div><button class="thought-block-expand" type="button" data-thought-block-expand data-expand-key="${escapeHtml(expandKey)}" aria-expanded="false" hidden><span>展开全文</span><i aria-hidden="true">⌄</i></button>`
-}
 function speechAssetControlsMarkup({sourceType,sourceId,sourceVersion,label}){
   if(!state.speech?.configured||!speechSourceIdentity(sourceType,sourceId,sourceVersion))return"";
   const asset=speechAssetForSource(state.speech.assets,{sourceType,sourceId,sourceVersion}),path=speechAudioPath(asset),sourceLabel=String(label||"文字朗读"),voiceLabel=(state.speech.voices||[]).find(item=>item.id===asset?.voice)?.label||"",rateOptions=TTS_PLAYBACK_RATES.map(rate=>`<option value="${rate}" ${rate===1?"selected":""}>${rate.toFixed(1)}×</option>`).join("");
   const player=asset&&path?`<div class="capture-speech-player speech-asset-player"><audio controls preload="none" src="${escapeHtml(appUrl(path))}" data-speech-player="${escapeHtml(asset.id)}" aria-label="${escapeHtml(`${sourceLabel}播放器`)}"></audio><span>${escapeHtml(voiceLabel?`${sourceLabel} · ${voiceLabel}`:sourceLabel)}</span></div>`:"";
   return `<section class="speech-asset-controls" data-speech-source-type="${escapeHtml(sourceType)}" data-speech-source-id="${escapeHtml(sourceId)}" data-speech-source-version="${Number(sourceVersion)||1}">${player}<div class="capture-speech-actions speech-asset-actions"><button type="button" data-speech-synthesize data-speech-regenerate="${asset?"true":"false"}" aria-label="${escapeHtml(`${asset?"重新生成":"生成"}${sourceLabel}`)}">${asset?"重新生成":"生成"}</button><label><span>播放倍速</span><select data-speech-playback-rate aria-label="${escapeHtml(`${sourceLabel}播放倍速`)}">${rateOptions}</select></label></div><p class="speech-asset-status" role="status" aria-live="polite"></p></section>`
-}
-function thoughtContentBlock(item,question,{initialIdeaId="",currentConclusionId=""}={}){
-  const ai=isAiThoughtBlock(item),current=item.id===currentConclusionId,labels={idea:item.id===initialIdeaId?"初步想法":"想法",record:"经历",answer:ai?"AI 应答":"我的结论"},label=labels[item.type]||"内容",identity={idea:"◒",record:"▤",answer:ai?"✦":"✓"}[item.type]||"·";
-  const speechControls=ai&&item.type==="answer"?speechAssetControlsMarkup({sourceType:"thoughtAnswer",sourceId:item.id,sourceVersion:item.version||1,label:"AI 回答文字朗读"}):"";
-  return `<article class="thought-content-block ${ai?"ai":""} ${current?"current-conclusion":""}" data-thought-kind="${escapeHtml(item.type)}" data-thought-block-id="${item.id}"><header><div><span class="thought-identity-icon" aria-hidden="true">${identity}</span><b>${label}</b>${current?'<small>当前</small>':""}</div><time>${formatDate(eventTimestamp(item))}</time></header>${contextReceiptMarkup(item.contextReceipt)}${thoughtBlockBody(item.content||item.modelDraft||"",`thought:${question.id}:block:${item.id}`)}${contentImagesMarkup(item,"thoughtBlock")}${speechControls}${item.modelDraft&&item.editedFromModel?`<small class="edit-signal">${item.content?"由 AI 草稿修改后保留":"未保留 AI 草稿"}</small>`:""}<footer><span></span><div><button class="subtle-action" type="button" data-thought-block-edit="${item.id}" data-root-id="${question.id}">编辑</button><button class="subtle-action danger" type="button" data-thought-block-delete="${item.id}" data-root-id="${question.id}">删除</button></div></footer></article>`
-}
-function thoughtFollowUpBlock(followUp,question,index){
-  const pending=pendingAiTask("followUpAnswer",question.id,followUp.id);
-  return `<details class="response-entry thought-content-block followup-block" data-followup-id="${followUp.id}"><summary><div class="response-summary-copy"><div class="response-summary-head"><strong>追问 ${index+1}</strong><span>用户原文</span><small>版本 ${followUp.version||1} · ${formatDate(followUp.updatedAt||followUp.createdAt)}</small></div><p>${escapeHtml(plainPreview(followUp.question))}</p></div></summary><div class="response-entry-body"><div class="followup-question"><b>追问问题</b><div class="markdown-content">${renderMarkdown(followUp.question)}</div></div><div class="followup-answer"><b>追问回答</b>${followUp.answer?`<div class="model-answer-content">${contextReceiptMarkup(followUp.contextReceipt)}<div class="markdown-content">${renderMarkdown(followUp.answer)}</div></div>`:`<form class="manual-followup-answer" data-followup-manual-answer="${followUp.id}" data-root-id="${question.id}" data-version="${followUp.version||1}"><textarea rows="3" placeholder="直接写下回答…" aria-label="追问回答" required></textarea><div><button class="quiet-button" type="submit">保存回答</button><button type="button" class="subtle-action answer-action" data-followup-answer="${followUp.id}" data-root-id="${question.id}" ${pending?"disabled":""}>✦ 给我回答</button></div></form>`}<p class="followup-status" role="status" aria-live="polite">${pending?"回答正在后台生成，可继续使用其他功能。":""}</p></div><div class="followup-record-actions"><button type="button" class="subtle-action" data-followup-edit-toggle="${followUp.id}">编辑</button><button type="button" class="subtle-action danger" data-followup-delete="${followUp.id}" data-root-id="${question.id}">删除</button></div><form class="followup-edit-form" data-followup-edit="${followUp.id}" data-root-id="${question.id}" data-version="${followUp.version||1}" hidden><label>追问问题<textarea rows="3" name="question" required>${escapeHtml(followUp.question)}</textarea></label><label>追问回答（可空）<textarea rows="5" name="answer">${escapeHtml(followUp.answer||"")}</textarea></label><div><button class="quiet-button" type="submit">保存修改</button><button class="subtle-action" type="button" data-followup-edit-cancel="${followUp.id}">取消</button></div></form></div></details>`
-}
-function thoughtStream(question,children){
-  const initialIdeaId=initialThoughtIdea(children)?.id||"",currentConclusionId=currentUserConclusion(children)?.id||"",blockContext={initialIdeaId,currentConclusionId};
-  const items=[
-    ...children.map(item=>({time:eventTimestamp(item),markup:thoughtContentBlock(item,question,blockContext)})),
-    ...(question.remarks||[]).map(remark=>({time:remark.updatedAt||remark.createdAt,markup:`<article class="thought-content-block remark-block"><header><div><b>备注</b><span>用户原文</span></div><time>${formatDate(remark.updatedAt||remark.createdAt)}</time></header>${thoughtBlockBody(remark.text,`thought:${question.id}:remark:${remark.id}`)}<footer><span>版本 ${remark.version||1}</span><div><button class="subtle-action" type="button" data-edit-remark="${remark.id}" data-thought-id="${question.id}">编辑</button><button class="subtle-action danger" type="button" data-delete-remark="${remark.id}" data-thought-id="${question.id}">删除</button></div></footer></article>`})),
-    ...(question.followUps||[]).map((followUp,index)=>({time:followUp.updatedAt||followUp.answeredAt||followUp.createdAt,markup:thoughtFollowUpBlock(followUp,question,index)}))
-  ].sort((a,b)=>String(a.time).localeCompare(String(b.time)));
-  return `<section class="thought-content-stream">${items.length?items.map(item=>item.markup).join(""):'<p class="missing-part">还没有后续内容。</p>'}</section>`
-}
-function chainCard({question,children},showDate=true,sortMode=thoughtSortMode,{detail=false,compactDate=false}={}){
-  const answers=children.filter(x=>x.type==="answer"),answerCount=Number.isFinite(Number(question.answerCount))?Number(question.answerCount):answers.length,preview=thoughtListPreview(children,question.preview),annotationCount=(question.annotations||[]).length+(question.annotationDrift||[]).length,syncing=question._sync?.status;
-  const dispositionActions=`${question.disposition!=="kept"?`<button class="subtle-action" data-disposition="${question.id}" data-value="kept">保留</button>`:""}${question.disposition!=="discarded"?`<button class="subtle-action" data-disposition="${question.id}" data-value="discarded">舍弃</button>`:""}`;
-  const tags=question.tags?.length?`#${question.tags.map(escapeHtml).join(" #")}`:"未标记",tracePending=(state.insights.aiOnlyThoughtIds||[]).includes(question.id)?'<span class="thought-trace-pending">📫没有你的痕迹⏳</span>':"";
-  const actions=syncing
-    ?`<span class="checkin-sync-state ${escapeHtml(syncing)}">${syncing==="pending"?"待同步":"正在同步"}</span>`
-    :`<span class="thought-action-group thought-action-grow"><button class="primary-button" data-thought-block-add="idea" data-root-id="${question.id}">＋ 补充</button><button class="subtle-action" data-followup-compose="${question.id}" aria-expanded="false">追问 →</button><button class="subtle-action answer-action" data-answer-chain="${question.id}">✦ ${answerCount?"重新回答":"给我回答"}</button></span>`;
-  const chainSpeech=syncing?"":speechAssetControlsMarkup({sourceType:"thoughtChain",sourceId:question.id,sourceVersion:question.version||1,label:"整套思绪朗读"});
-  const displayedAt=sortMode==="created"?(question.createdAt||eventTimestamp(question)):eventTimestamp(question),dateLabel=compactDate?eventDate({occurredAt:displayedAt}).slice(-2):eventDate({occurredAt:displayedAt});
-  const moreActions=`<details class="thought-more-menu"><summary aria-label="更多思绪操作" title="更多思绪操作">•••</summary><div><button class="subtle-action" type="button" data-remark="${question.id}">备注</button>${dispositionActions}<button class="subtle-action" type="button" data-edit-chain="${question.id}">编辑问题</button><button class="subtle-action danger" type="button" data-delete-chain="${question.id}">移入回收站</button></div></details>`;
-  const detailHeader=detail?`<header class="thought-detail-header"><div class="thought-detail-nav"><button class="subtle-action" type="button" data-thought-list>‹ 返回</button><div>${annotationCount?`<button class="subtle-action" type="button" data-open-comments="${question.id}">批注 ${annotationCount}</button>`:""}${moreActions}</div></div><div class="thought-detail-meta"><time>${formatDate(displayedAt)}</time> <span>${tags}</span>${tracePending?` ${tracePending}`:""}</div><div class="thought-detail-title thought-question-content markdown-content" role="heading" aria-level="1">${renderMarkdown(question.content||"图片记录")}</div>${contentImagesMarkup(question,"thoughtRoot")}</header>`:"";
-  const summary=detail
-    ?'<summary hidden aria-hidden="true"></summary>'
-    :`<summary class="chain-summary"><div class="summary-content"><strong class="question-preview">${escapeHtml(plainPreview(question.content)||"图片记录")}</strong>${preview?`<p class="thought-preview ${preview.kind}"><span>${preview.kind==="conclusion"?"✓":"◒"} ${preview.label}</span><span class="thought-preview-text">${escapeHtml(preview.text)}</span></p>`:""}<span class="thought-open-label">打开 ↗</span></div><span class="expand-mark" aria-hidden="true">⌄</span></summary>`;
-  return `<article class="thought-timeline-entry${syncing?" is-syncing":""}${detail?" thought-detail-entry":""}">${detail?"":`<div class="timeline-date">${showDate?escapeHtml(dateLabel):""}</div><header class="thought-entry-meta"><time>${formatTime(displayedAt)}</time><div class="thought-entry-markers"><span class="thought-entry-tags">${tags}</span>${tracePending}</div></header>`}<details class="thought-card chain-record${detail?" thought-detail-record":""}" data-chain-id="${question.id}"${detail?" open":""}>${summary}<div class="chain-expanded">${detailHeader}${thoughtStream(question,children)}${syncing?"":`<form class="followup-form" data-follow-up-root="${question.id}" hidden><label><span>追问问题</span><textarea rows="3" name="question" placeholder="补充一个追问…" required></textarea></label><label><span>回答（可选）</span><textarea rows="3" name="answer" placeholder="已有答案时可一起记下"></textarea></label><button class="quiet-button followup-submit" type="submit">保存追问</button><p class="followup-status" role="status" aria-live="polite"></p></form>`}<div class="thought-actions">${actions}</div></div></details><div class="thought-chain-speech">${chainSpeech}</div></article>`
-}
-function chainCardsMarkup(chains,sortMode=thoughtSortMode,{detail=false,groupMonths=false}={}){
-  const displayDate=chain=>sortMode==="created"?eventDate({occurredAt:chain.question.createdAt||eventTimestamp(chain.question)}):thoughtDate(chain);
-  let previousMonth="";
-  return chains.map((chain,index)=>{
-    const date=displayDate(chain),month=date.slice(0,7),heading=groupMonths&&month!==previousMonth?`<h2 class="thought-month">${escapeHtml(thoughtMonthLabel(date))}</h2>`:"";
-    previousMonth=month;
-    return `${heading}${chainCard(chain,index===0||date!==displayDate(chains[index-1]),sortMode,{detail,compactDate:groupMonths})}`
-  }).join("")
-}
-function renderThoughtFilters(chains){const projected=state.thoughtPage?.kind==="list"&&Array.isArray(state.thoughtPage.tags)?state.thoughtPage.tags:[],tags=[...new Set([...projected,...chains.flatMap(({question,children})=>[...(question.tags||[]),...children.flatMap(x=>x.tags||[])])])].sort((a,b)=>a.localeCompare(b,"zh-CN"));if(thoughtFilter!=="all"&&!tags.includes(thoughtFilter))tags.unshift(thoughtFilter);$("#thought-filters").innerHTML=["all",...tags].map(tag=>`<button class="filter-button ${thoughtFilter===tag?"active":""}" data-tag-filter="${escapeHtml(tag)}">${tag==="all"?"全部":`#${escapeHtml(tag)}`}</button>`).join("")}
-function thoughtOpenState(){const roots=new Set(),followUps=new Set();$$('.chain-record[open][data-chain-id]').forEach(card=>roots.add(card.dataset.chainId));$$('.response-entry[open][data-followup-id]').forEach(entry=>{const root=entry.closest('[data-chain-id]')?.dataset.chainId;if(root)followUps.add(`${root}:${entry.dataset.followupId}`)});return{roots,followUps}}
-function restoreThoughtOpenState(openState){$$('[data-chain-id]').forEach(card=>{if(openState.roots.has(card.dataset.chainId))card.open=true;card.querySelectorAll('[data-followup-id]').forEach(entry=>{if(openState.followUps.has(`${card.dataset.chainId}:${entry.dataset.followupId}`))entry.open=true})})}
-function syncThoughtBlockOverflow(root=document){
-  root.querySelectorAll(".thought-content-block:not(.followup-block)").forEach(card=>{
-    const frame=card.querySelector(".thought-block-content-frame"),button=card.querySelector("[data-thought-block-expand]");if(!frame||!button)return;
-    const expanded=expandedLongContentKeys.has(button.dataset.expandKey);card.classList.remove("is-collapsible");
-    const limit=parseFloat(getComputedStyle(frame).getPropertyValue("--thought-block-collapsed-height"))||420,overflows=frame.scrollHeight>limit+1;
-    card.classList.toggle("is-collapsible",overflows);card.classList.toggle("is-expanded",overflows&&expanded);button.hidden=!overflows;button.setAttribute("aria-expanded",String(overflows&&expanded));button.querySelector("span").textContent=overflows&&expanded?"收起":"展开全文";
-  });
-  scheduleAnnotationLineCounts()
-}
-function setupThoughtBlockOverflow(){
-  $$(".chain-record").forEach(card=>card.addEventListener("toggle",()=>{if(card.open)requestAnimationFrame(()=>syncThoughtBlockOverflow(card))}));
-  requestAnimationFrame(()=>$$(".chain-record[open]").forEach(syncThoughtBlockOverflow))
-}
-function unavailableThoughtRouteMarkup(result){
-  const error=result?.error||{},details=error.details||{};
-  return `<section class="empty content-state route-unavailable" role="status" data-route-result="unavailable" data-route-error-code="${escapeHtml(error.code||"RESOURCE_UNAVAILABLE")}" data-route-resource-type="${escapeHtml(details.resourceType||"thought-chain")}"><strong>${escapeHtml(error.message||"这条思绪已不可用")}</strong><p>它可能已被删除，或当前账户无法访问。旧内容不会在这里显示，下面仍是当前可用的思绪列表。</p><button class="quiet-button content-state-action" type="button" data-content-action="dismiss-route-result">继续查看思绪列表</button></section>`
 }
 const routeContentSelectors=Object.freeze({
   today:["#home-memory-grid","#home-keepsake","#action-columns","#habit-list"],
@@ -1519,7 +1360,7 @@ const routeContentSelectors=Object.freeze({
   daily:["#daily-list"],
   captures:["#capture-list"],
   journals:["#journal-list"],
-  thoughts:["#all-thoughts"],
+  thoughts:[],
   review:["#cluster-grid","#analysis-list"],
   books:["#book-memory-sky","#book-grid","#book-detail"],
   keepsakes:["#keepsake-grid","#keepsake-detail"],
@@ -1562,97 +1403,11 @@ function applyApplicationRoute(route){
   $$(".view[aria-busy='true']").forEach(view=>view.removeAttribute("aria-busy"));
   stopPageAudio();
   if(renderedRouteView==="captures"&&route.view!=="captures")closeCaptureEditor({restoreFocus:false});
-  activeRouteResult=route.result||null;
-  if(route.view==="thoughts"){
-    thoughtFilter=route.query?.tag||"all";
-    thoughtSortMode=route.query?.sort==="created"?"created":"occurred";
-    feedSearchQueries.thoughts=route.query?.q||"";
-    if($("#thought-search"))$("#thought-search").value=feedSearchQueries.thoughts;
-    activeThoughtRouteId=route.kind==="detail"&&route.resourceType==="thought-chain"?route.resourceId:""
-  }else activeThoughtRouteId="";
   renderVisibleRoute();
   if(!fullRouteStateLoaded&&(!routeDataReady||loadedRouteKey!==routeDataKey(route))&&currentUser)return loadRouteState(route,requestSerial);
   return null
 }
-function reconcileThoughtRoute(){
-  if(!routeDataReady||!pageRouter)return false;
-  const route=pageRouter.currentRoute();
-  if(route.kind!=="detail"||route.resourceType!=="thought-chain")return false;
-  if((state.thoughts||[]).some(item=>item.id===route.resourceId&&item.type==="question"))return false;
-  pageRouter.showUnavailable(createUnavailableRouteResult({resourceType:"thought-chain",resourceId:route.resourceId,view:"thoughts"}),{view:"thoughts",query:route.query});
-  return true
-}
 function openThoughtDetail(id){return pageRouter?.openDetail("thought-chain",id)}
-function renderThoughts(extraOpen={}){
-  const currentView=pageRouter?.currentRoute()?.view||"today";
-  if(!["together","thoughts"].includes(currentView))return;
-  const allThoughts=$("#all-thoughts"),open=allThoughts.dataset.routeMode==="list"?thoughtOpenState():{roots:new Set(),followUps:new Set()},todayDrafts=captureFormDrafts($("#today-thoughts")),allDrafts=captureFormDrafts(allThoughts);
-  if(extraOpen.chainId)open.roots.add(extraOpen.chainId);
-  if(extraOpen.followUpId)open.followUps.add(`${extraOpen.chainId}:${extraOpen.followUpId}`);
-  const chains=thoughtChains(),today=thoughtChains("occurred").filter(x=>thoughtDate(x)===activeDate).slice(0,5);
-  if(currentView==="together"){
-    $("#today-thoughts").innerHTML=today.length?chainCardsMarkup(today,"occurred"):contentState({title:"这一天还没有思绪",body:"日期里没有记录很正常，已有内容仍在其他日期。",action:{command:"new-thought",label:"记录一个问题"}});
-    const todayFocus=restoreFormDrafts($("#today-thoughts"),todayDrafts);
-    tagCommentableTargets($("#today-thoughts"),today);renderLatex($("#today-thoughts"));applyCommentAnchors($("#today-thoughts"));setupThoughtBlockOverflow();
-    if(todayFocus)requestAnimationFrame(()=>todayFocus.isConnected&&todayFocus.focus({preventScroll:true}));
-    return
-  }
-  $$("[data-thought-sort]").forEach(button=>{const active=button.dataset.thoughtSort===thoughtSortMode;button.classList.toggle("active",active);button.setAttribute("aria-pressed",String(active))});
-  const selected=activeThoughtRouteId?chains.find(({question})=>question.id===activeThoughtRouteId):null,detailMode=Boolean(selected),filters=$("#thought-filters"),sortControls=$(".thought-sort"),searchControl=$("#thought-search-control"),pagination=$("#thought-pagination");
-  $("#view-thoughts").classList.toggle("thought-detail-mode",detailMode);
-  filters.hidden=detailMode;sortControls.hidden=detailMode;searchControl.hidden=detailMode;allThoughts.dataset.routeMode=detailMode?"detail":"list";
-  if(pagination)pagination.hidden=detailMode||!state.thoughtPage?.nextCursor;
-  if(detailMode){
-    allThoughts.innerHTML=chainCardsMarkup([selected],thoughtSortMode,{detail:true});
-    open.roots.add(activeThoughtRouteId)
-  }else{
-    filters.hidden=false;sortControls.hidden=false;searchControl.hidden=false;renderThoughtFilters(chains)
-  }
-  const tagged=thoughtFilter==="all"?chains:chains.filter(({question,children})=>[...(question.tags||[]),...children.flatMap(x=>x.tags||[])].includes(thoughtFilter));
-  const items=!fullRouteStateLoaded&&state.thoughtPage?.kind==="list"
-    ?tagged
-    :tagged.filter(({question,children})=>matchesFeedSearch("thoughts",question.content,question.tags,question.remarks,question.followUps,children.map(item=>[item.content,item.modelDraft,item.tags])));
-  if(!detailMode){
-    const notice=activeRouteResult?.error?.code==="RESOURCE_UNAVAILABLE"?unavailableThoughtRouteMarkup(activeRouteResult):"";
-    const list=items.length
-      ?chainCardsMarkup(items,thoughtSortMode,{groupMonths:true})
-      :normalizedFeedSearch(feedSearchQueries.thoughts)
-        ?feedSearchEmpty("思绪")
-      :thoughtFilter==="all"
-        ?contentState({title:"还没有思绪",body:"从一个真实问题开始，初步想法可以稍后补充。",action:{command:"new-thought",label:"记录第一个问题"}})
-        :contentState({title:`#${thoughtFilter} 下还没有记录`,body:"其他标签的思绪仍然保留。",action:{command:"clear-thought-filter",label:"查看全部思绪"}});
-    allThoughts.innerHTML=notice+list
-  }
-  restoreThoughtOpenState(open);
-  const allFocus=restoreFormDrafts($("#all-thoughts"),allDrafts),focusTarget=allFocus;
-  const visibleItems=detailMode?[selected]:items;
-  tagCommentableTargets($("#all-thoughts"),visibleItems);renderLatex($("#all-thoughts"));applyCommentAnchors($("#all-thoughts"));setupThoughtBlockOverflow();
-  if(pagination&&!pagination.hidden)$("#thought-pagination-status").textContent=`已加载 ${state.thoughts.length} 条`;
-  if(focusTarget)requestAnimationFrame(()=>focusTarget.isConnected&&focusTarget.focus({preventScroll:true}))
-}
-async function loadMoreThoughts(){
-  const button=$("#thought-load-more"),cursor=state.thoughtPage?.nextCursor,route=pageRouter?.currentRoute();
-  if(!button||!cursor||route?.view!=="thoughts"||route.kind==="detail"||(state.thoughts||[]).length>=100)return false;
-  const owner=currentUser?.id,session=sessionSerial,query=new URLSearchParams({limit:"20",cursor});
-  if(route.query?.q)query.set("q",route.query.q);
-  if(route.query?.tag)query.set("tag",route.query.tag);
-  if(route.query?.sort)query.set("sort",route.query.sort);
-  button.disabled=true;$("#thought-pagination-status").textContent="正在加载…";
-  try{
-    const result=await requestV1(`/api/v1/thought-chains?${query}`);
-    if(owner!==currentUser?.id||session!==sessionSerial||routeDataKey(route)!==routeDataKey(pageRouter?.currentRoute()))return false;
-    const known=new Set((state.thoughts||[]).map(item=>item.id));
-    state.thoughts=[...(state.thoughts||[]),...result.data.filter(item=>!known.has(item.id))].slice(0,100);
-    const page=Math.min(5,(Number(route.query?.page)||1)+1),nextCursor=state.thoughts.length<100?result.meta.nextCursor||null:null;
-    state.thoughtPage={kind:"list",query:route.query?.q||"",tag:route.query?.tag||"",sort:route.query?.sort==="created"?"created":"occurred",page,nextCursor,tags:state.thoughtPage?.tags||result.meta.tags||[]};
-    pageRouter.replaceQuery({page},{apply:false});
-    renderThoughts();return true
-  }catch(error){
-    $("#thought-pagination-status").textContent=`继续加载失败：${error.message}`;return false
-  }finally{
-    if(button.isConnected)button.disabled=false
-  }
-}
 
 function captureDerivedTranscription(label,text,lines,kind){
   if(!text)return"";
@@ -1677,41 +1432,30 @@ function captureAudioMarkup(item){
   const speechControls=speech?speechAssetControlsMarkup({sourceType:"capture",sourceId:item.id,sourceVersion:item.version||1,label:"捕念文字朗读"}):"";
   return `<section class="capture-audio-record" data-capture-audio-key="${escapeHtml(presentation.audioKey)}" data-transcription-task-id="${escapeHtml(presentation.transcriptionTaskId)}">${audio?`<div class="capture-audio-source" data-capture-audio-key="${escapeHtml(presentation.audioKey)}"><audio controls preload="none" src="${escapeHtml(appUrl(audio.attachmentPath))}" aria-label="捕念原始录音播放器"></audio><span>${formatAudioDuration(audio.durationMs)} · <b class="capture-audio-playback-state">${escapeHtml(presentation.audioStatus)}</b></span></div>`:""}${layers}${transcriptionState}${speechControls}</section>`
 }
-function pausePageAudio(audio,{rewind=true}={}){
-  if(!audio)return;
-  try{audio.pause()}catch{}
-  if(rewind)try{audio.currentTime=0}catch{}
-}
 function syncVoicePreviewButton(){
   const button=$("#tts-voice-preview");if(!button)return;
-  const voice=$("#tts-default-voice")?.value,selected=(state.speech?.voices||[]).find(item=>item.id===voice),playing=Boolean(voicePreviewAudio&&!voicePreviewAudio.paused);
-  button.disabled=Boolean(voicePreviewAbortController)||!Boolean(selected?.samplePath||state.speech?.configured);
-  button.setAttribute("aria-label",playing?"停止官方音色试音":"播放所选官方音色试音");
+  const voice=$("#tts-default-voice")?.value,selected=(state.speech?.voices||[]).find(item=>item.id===voice);
+  button.disabled=voicePreviewPending||!Boolean(selected?.samplePath||state.speech?.configured);
+  button.setAttribute("aria-label",voicePreviewPlaying?"停止官方音色试音":"播放所选官方音色试音");
   button.title=button.getAttribute("aria-label");
-  const icon=button.querySelector("[aria-hidden]");if(icon)icon.textContent=playing?"■":"▶"
+  const icon=button.querySelector("[aria-hidden]");if(icon)icon.textContent=voicePreviewPlaying?"■":"▶"
 }
 function stopVoicePreview({clearStatus=false}={}){
-  voicePreviewAbortController?.abort();voicePreviewAbortController=null;
-  const audio=voicePreviewAudio;voicePreviewAudio=null;voicePreviewVoice="";
-  if(audio){pausePageAudio(audio);try{audio.removeAttribute("src");audio.load()}catch{}}
-  if(activePageAudio===audio)activePageAudio=null;
-  if(voicePreviewObjectUrl)URL.revokeObjectURL(voicePreviewObjectUrl);
-  voicePreviewObjectUrl="";
+  if(voicePreviewPending)pageAudioCoordinator.stopAll();
+  else if(voicePreviewAudio)pageAudioCoordinator.stop(voicePreviewAudio);
+  voicePreviewAudio=null;voicePreviewPending=false;voicePreviewPlaying=false;voicePreviewVoice="";
   if(clearStatus&&$("#tts-voice-preview-status"))$("#tts-voice-preview-status").textContent="";
   syncVoicePreviewButton()
 }
 function claimPageAudio(audio){
-  if(!audio||activePageAudio===audio)return;
-  const previous=activePageAudio;
-  if(previous===voicePreviewAudio)stopVoicePreview();
-  else pausePageAudio(previous);
-  activePageAudio=audio
+  if(!audio)return false;
+  if(voicePreviewAudio&&audio!==voicePreviewAudio){voicePreviewAudio=null;voicePreviewPending=false;voicePreviewPlaying=false;voicePreviewVoice="";syncVoicePreviewButton()}
+  return pageAudioCoordinator.claim(audio)
 }
 function stopPageAudio(){
-  const active=activePageAudio;activePageAudio=null;
-  if(active&&active!==voicePreviewAudio)pausePageAudio(active);
-  stopVoicePreview({clearStatus:true});
-  document.querySelectorAll("audio").forEach(audio=>pausePageAudio(audio))
+  pageAudioCoordinator.stopAll();voicePreviewAudio=null;voicePreviewPending=false;voicePreviewPlaying=false;voicePreviewVoice="";
+  if($("#tts-voice-preview-status"))$("#tts-voice-preview-status").textContent="";
+  syncVoicePreviewButton()
 }
 function syncSpeechTextOverflow(root=document){
   root.querySelectorAll("[data-speech-text-lines]").forEach(layer=>{
@@ -1777,10 +1521,7 @@ function snapshotCaptureCreateDraft(){
 }
 function restoreSuspendedCaptureCreateDraft(){
   const snapshot=suspendedCaptureCreateDraft;if(!snapshot)return false;
-  const imageDraft=contentImageDraft("capture");
-  imageDraft.items.forEach(revokeContentImageItem);
-  imageDraft.uploadRequestId=snapshot.images.uploadRequestId||"";imageDraft.context=snapshot.images.context||null;
-  imageDraft.items=snapshot.images.items.map(item=>({...item,preview:item.file?URL.createObjectURL(item.file):""}));
+  contentImageDraftManager.replaceTransient("capture",snapshot.images);
   if(captureAudioDraft.preview)URL.revokeObjectURL(captureAudioDraft.preview);
   Object.assign(captureAudioDraft,{blob:null,preview:"",path:"",mimeType:"",bytes:0,durationMs:0,uploadRequestId:"",uploadedPath:"",lastError:null,recorder:null,stream:null,chunks:[],startedAt:0,pausedAt:0,pausedTotal:0,timer:0,stopPromise:null,resolveStop:null,...snapshot.audio});
   captureDraftTags=[...snapshot.tags];restoreFormDrafts({querySelectorAll:()=>[$("#capture-form")]},[snapshot.form]);renderContentImageEditor("capture");renderCaptureAudioDraft();renderCaptureTagComposer();suspendedCaptureCreateDraft=null;return true
@@ -2620,25 +2361,26 @@ function renderTtsDefaultVoice(){
 }
 async function toggleTtsVoicePreview(){
   const control=$("#tts-default-voice"),status=$("#tts-voice-preview-status"),voice=String(control?.value||"");
-  if(voicePreviewAudio&&voicePreviewVoice===voice&&!voicePreviewAudio.paused){stopVoicePreview({clearStatus:true});return}
+  if(voicePreviewPlaying&&voicePreviewVoice===voice){stopVoicePreview({clearStatus:true});return}
   stopVoicePreview({clearStatus:true});
   let payload;
   try{payload=speechPreviewPayload(voice)}catch(error){if(status)status.textContent=error.message;return}
-  const controller=new AbortController();voicePreviewAbortController=controller;voicePreviewVoice=voice;if(status)status.textContent="正在加载官方试音…";syncVoicePreviewButton();
+  voicePreviewPending=true;voicePreviewVoice=voice;if(status)status.textContent="正在加载官方试音…";syncVoicePreviewButton();
   try{
     const selected=(state.speech?.voices||[]).find(item=>item.id===voice),samplePath=String(selected?.samplePath||"");
-    const blob=samplePath
-      ?await apiClient.requestBlob(samplePath,{signal:controller.signal},{fallback:"试音暂时不可用"})
-      :await apiClient.requestBlob("/api/speech/preview",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload),signal:controller.signal},{fallback:"试音暂时不可用"});
-    if(controller.signal.aborted||control.value!==voice||!$("#view-settings").classList.contains("active"))return;
-    voicePreviewObjectUrl=URL.createObjectURL(blob);const audio=new Audio(voicePreviewObjectUrl);voicePreviewAudio=audio;
-    audio.addEventListener("ended",()=>{if(voicePreviewAudio===audio)stopVoicePreview({clearStatus:true})},{once:true});
-    audio.addEventListener("error",()=>{if(voicePreviewAudio===audio){stopVoicePreview();if(status)status.textContent="试音暂时无法播放，请稍后再试。"}},{once:true});
-    claimPageAudio(audio);await audio.play();if(status)status.textContent="";
+    const audio=await pageAudioCoordinator.playBlob(({signal})=>samplePath
+      ?apiClient.requestBlob(samplePath,{signal},{fallback:"试音暂时不可用"})
+      :apiClient.requestBlob("/api/speech/preview",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload),signal},{fallback:"试音暂时不可用"}));
+    if(!audio||control.value!==voice||!$("#view-settings").classList.contains("active")){if(audio)pageAudioCoordinator.stop(audio);return}
+    voicePreviewAudio=audio;voicePreviewPlaying=true;
+    const finish=failed=>{if(voicePreviewAudio!==audio)return;voicePreviewAudio=null;voicePreviewPlaying=false;voicePreviewVoice="";if(failed&&status)status.textContent="试音暂时无法播放，请稍后再试。";else if(status)status.textContent="";syncVoicePreviewButton()};
+    audio.addEventListener("ended",()=>finish(false),{once:true});
+    audio.addEventListener("error",()=>finish(true),{once:true});
+    if(status)status.textContent="";
   }catch(error){
-    if(!controller.signal.aborted){stopVoicePreview();if(status)status.textContent="试音暂时不可用，请稍后再试。"}
+    if(voicePreviewVoice===voice){stopVoicePreview();if(status)status.textContent="试音暂时不可用，请稍后再试。"}
   }finally{
-    if(voicePreviewAbortController===controller)voicePreviewAbortController=null;
+    if(voicePreviewVoice===voice)voicePreviewPending=false;
     syncVoicePreviewButton()
   }
 }
@@ -3212,7 +2954,7 @@ async function loadPersonalContext(){
 }
 function openContextSource(button){
   const view=button.dataset.contextView,target=button.dataset.contextTarget,root=button.dataset.contextRoot,date=button.dataset.contextDate,dailyType=button.dataset.contextDailyType;
-  if(date){activeDate=date;if(dailyType&&dailyTypeMeta[dailyType])activeDailyType=dailyType;renderDate();renderSliders();renderThoughts();renderStateChart();renderHomeMood();renderChat()}
+  if(date){activeDate=date;if(dailyType&&dailyTypeMeta[dailyType])activeDailyType=dailyType;renderDate();renderSliders();publishDomains(new Set(["thoughts"]));renderStateChart();renderHomeMood();renderChat()}
   if(view==="thoughts")openThoughtDetail(root||target);else switchView(view);
   requestAnimationFrame(()=>{
     const selectors={
@@ -3250,11 +2992,9 @@ function renderVisibleRoute(){
   renderDate();renderMine();
   $("#notification-dot").hidden=!Number(state.notificationUnread??notificationUnreadCount);
   if(view==="today"){renderSliders();renderHome()}
-  else if(view==="together"){renderChat();renderThoughts()}
   else if(view==="daily")void healthFeatureController?.render().catch(error=>showToast(`日录显示失败：${error.message}`,"error"));
   else if(view==="captures"){renderCaptures();renderCaptureTagComposer();renderCaptureAudioDraft()}
   else if(view==="journals")renderJournals();
-  else if(view==="thoughts"){renderThoughts();renderTagComposer()}
   else if(view==="review"){renderStateChart();renderReview()}
   else if(view==="books")renderBooks();
   else if(view==="keepsakes"){renderKeepsakes();renderKeepsakeBatch()}
@@ -3293,6 +3033,7 @@ async function load({visibleShell=false,initialSnapshot=null,opening=null}={}){
   Object.keys(routeContentSelectors).forEach(unmountRouteContent);
   replaceState({...structuredClone(emptyClientState),...nextState,onboardingV2:meta.onboardingV2,notificationUnread:meta.notificationUnread,quoteTags:meta.quoteTags||[]});
   loadedRouteKey=routeDataKey(route);fullRouteStateLoaded=Boolean(nextState?._routeProjection?.complete);appVersion=meta.version||"development";releaseVersion=meta.releaseVersion||releaseVersion;featureFlags={...featureFlags,...meta.features};governanceUrl=typeof meta.governanceUrl==="string"?meta.governanceUrl:"";notificationUnreadCount=Number(state.notificationUnread)||0;routeDataReady=true;
+  if(["thoughts","together"].includes(route.view))runtimeFeatureRegistry?.notifyState(state,new Set(Object.keys(nextState||{})));
   const onboardingPending=onboardingBlocksPrivateShell(meta.onboardingV2);
   const requestSecondary=()=>Promise.all([
     request(hasCapability("ai-configuration")?"/api/settings":"/api/preferences"),
@@ -3306,7 +3047,7 @@ async function load({visibleShell=false,initialSnapshot=null,opening=null}={}){
   let openingCompletion=null;
   let secondaryRequest=null;
   if(visibleShell&&!onboardingPending){
-    restoreView?.();renderVisibleRoute();reconcileThoughtRoute();revealUserSession();if(!Number.isFinite(startupMarks.visibleShell))markStartup("visibleShell");
+    restoreView?.();renderVisibleRoute();reconcileActiveThoughtRoute();revealUserSession();if(!Number.isFinite(startupMarks.visibleShell))markStartup("visibleShell");
     await afterVisibleShellPaint();
     if(owner!==currentUser?.id||session!==sessionSerial)return false;
     secondaryRequest=requestSecondary();
@@ -3321,7 +3062,7 @@ async function load({visibleShell=false,initialSnapshot=null,opening=null}={}){
   state.onboardingV2=nextOnboardingV2State.data;llmSettings=nextSettings;onboardingSchema=nextOnboardingSchema;localTestConfig=nextLocalTestConfig;onboardingHydrated=false;
   await onboardingV2Controller.hydrate({schema:nextOnboardingV2Schema.data,state:nextOnboardingV2State.data});
   if(owner!==currentUser?.id||session!==sessionSerial)return false;
-  renderOnboarding();renderVisibleRoute();if(!reconcileThoughtRoute())pageRouter?.activate();restoreDurableDrafts();syncChainRecordKind();scheduleNotificationPoll();
+  renderOnboarding();renderVisibleRoute();if(!reconcileActiveThoughtRoute())pageRouter?.activate();restoreDurableDrafts();syncChainRecordKind();scheduleNotificationPoll();
   if(visibleShell&&onboardingPending){revealUserSession();if(!Number.isFinite(startupMarks.visibleShell))markStartup("visibleShell")}
   if(opening&&onboardingPending){await afterVisibleShellPaint();if(owner!==currentUser?.id||session!==sessionSerial)return false;await opening.ready()}
   markStartup("stableHome");publishStartupTiming();return true
@@ -3342,14 +3083,13 @@ function clearPrivateSessionState(){
   captureEditorSerial+=1;
   closeImageViewer({restoreFocus:false});
   onboardingV2Controller.reset();
-  clearTimeout(thoughtSearchTimer);thoughtSearchTimer=0;
-  resetState();routeDataReady=false;routeDataRequestSerial+=1;routeLoadFailureKey="";loadedRouteKey="";fullRouteStateLoaded=false;activeThoughtRouteId="";activeRouteResult=null;quoteTagStates={quote:createTagMultiSelectState(),selectionQuote:createTagMultiSelectState()};llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
+  resetState();routeDataReady=false;routeDataRequestSerial+=1;routeLoadFailureKey="";loadedRouteKey="";fullRouteStateLoaded=false;quoteTagStates={quote:createTagMultiSelectState(),selectionQuote:createTagMultiSelectState()};llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
   activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationsLoadState="idle";actionsCoordinator.resetSession();annotationsController?.resetSession();personalContext=null;personalContextRequestSerial=0;accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.5.7";homeMemoryKeys=[];homeMemoryByKey=new Map();homeKeepsakeId="";closeHomeEditors({restoreFocus:false});$("#capture-editor").hidden=true;document.body.classList.remove("capture-editor-open");resetOwnerSurfaces();invalidatePageLoads();draftTags=[];captureDraftTags=[];keepsakeDraftTags=[];captureComposerOpen=false;captureEditorTrigger=null;suspendedCaptureCreateDraft=null;expandedLongContentKeys.clear();
   bookParseSerial+=1;for(const url of Object.values(bookPreviewUrls))if(url)URL.revokeObjectURL(url);bookPreviewUrls={cover:"",recognition:""};pendingBookImages={cover:null,recognition:null};editingBookId="";activeBookId="";activeBookFeatureNoteId="";bookCreatorOpen=false;bookDetailCondensed=false;
   keepsakeEditor.segmentSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.history=[];
   clearKeepsakeBatchState();
-  for(const key of Object.keys(contentImageDrafts))resetContentImageEditor(key,[],{forget:false});
-  clearCaptureAudioDraft({forget:false});stopPageAudio();
+  contentImageDraftManager?.resetSession();for(const key of persistentContentImageKeys)renderContentImageEditor(key);
+  clearCaptureAudioDraft({forget:false});pageAudioCoordinator.resetSession();stopPageAudio();
   $$("main form").forEach(form=>{form.reset();delete form.dataset.requestId});$$(".modal-backdrop").forEach(modal=>modal.hidden=true);$("#comment-panel").hidden=true;$("#comment-panel-reopen").hidden=true;$("#selection-tools").hidden=true;$("#annotation-line-counts").hidden=true;document.body.classList.remove("comment-panel-open");
 }
 function showAuthGate(message=""){
@@ -3441,7 +3181,7 @@ async function restartApplicationForUser(user){
   applicationLifecycleReady=true
 }
 const refreshState=(domains,options={})=>refreshCoordinator.refresh(domains,{...options,patchOnly:options.patchOnly===true});
-subscribeState((next,wanted,thoughtOptions)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);if(wanted.has("dailyRecords"))void healthFeatureController?.render({snapshot:next,changedDomains:wanted}).catch(()=>{});if(wanted.has("captures")){renderCaptures();renderCaptureTagComposer()}if(wanted.has("journals"))renderJournals();if(wanted.has("thoughts")){if(thoughtOptions.patchOnly&&thoughtOptions.chainId)patchThoughtTaskTarget({targetId:thoughtOptions.chainId});else{renderThoughts(thoughtOptions);renderCaptures();renderTagComposer();renderCaptureTagComposer();renderHomeMemories()}reconcileThoughtRoute()}if(wanted.has("speech")){if(!wanted.has("captures")&&!wanted.has("thoughts"))renderCaptures();if(!wanted.has("thoughts"))renderThoughts();renderSettings()}if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("review"))renderReview();if(wanted.has("books")){renderBooks();renderHomeMemories();if(annotationsController?.activeRootKey().startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes")){renderKeepsakes();renderHomeKeepsake()}if(wanted.has("quotes")){renderQuotes();renderHomeMemories()}if(wanted.has("comments"))renderCommentPanel();renderNotificationSummary()});
+subscribeState((next,wanted)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);if(wanted.has("dailyRecords"))void healthFeatureController?.render({snapshot:next,changedDomains:wanted}).catch(()=>{});if(wanted.has("captures")){renderCaptures();renderCaptureTagComposer()}if(wanted.has("journals"))renderJournals();if(wanted.has("thoughts")){renderCaptures();renderTagComposer();renderCaptureTagComposer();renderHomeMemories()}if(wanted.has("speech")){if(!wanted.has("captures"))renderCaptures();renderSettings()}if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("review"))renderReview();if(wanted.has("books")){renderBooks();renderHomeMemories();if(annotationsController?.activeRootKey().startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes")){renderKeepsakes();renderHomeKeepsake()}if(wanted.has("quotes")){renderQuotes();renderHomeMemories()}if(wanted.has("comments"))renderCommentPanel();renderNotificationSummary()});
 function setAnswerModalStep(step){const order=["context","thinking","answer","done"],current=order.indexOf(step);$$("#ai-answer-progress li").forEach((item,index)=>{item.classList.toggle("active",index===current);item.classList.toggle("done",index<current||(step==="done"&&index===current))})}
 function closeAnswerModal(){const modal=$("#ai-answer-modal"),busy=modal.dataset.busy==="true";modal.hidden=true;if(busy)showToast("回答继续在后台生成，完成后会提醒。")}
 async function runAnswerInModal({title,scene="thoughtAnswer",requestCall,onDone,isCurrent=()=>true}){
@@ -3587,6 +3327,85 @@ function createPageFeatureDescriptors(){
       return controller
     })
   };
+  const loadThoughtsPage=view=>Promise.all([loadLegacyFeatureModule(),loadThoughtsFeatureModule()]).then(([legacy,thoughts])=>{
+    const delegate=legacy.createLegacyPageController({
+      view,
+      onRender:()=>view==="together"?renderChat():renderTagComposer()
+    });
+    const controller=thoughts.createThoughtsFeatureController({
+      delegate,
+      data:{
+        getSnapshot:()=>state,
+        getAccountId:()=>currentUser?.id||"",
+        getSessionSerial:()=>sessionSerial,
+        isRouteDataReady:()=>routeDataReady,
+        isFullRouteStateLoaded:()=>fullRouteStateLoaded,
+        request,
+        requestV1:(url,options,coordination)=>featureRequestV1(view,url,options,coordination),
+        requestBlob:(url,options,config)=>apiClient.requestBlob(url,options,config),
+        refresh:(domains,options)=>refreshState(domains,options),
+        applyPendingProjection
+      },
+      navigation:{
+        currentRoute:()=>pageRouter.currentRoute(),
+        openDetail:id=>pageRouter.openDetail("thought-chain",id),
+        backToList:(nextView,options)=>pageRouter.backToList(nextView,options),
+        replaceQuery:(query,options)=>pageRouter.replaceQuery(query,options),
+        showUnavailable:(target,options)=>pageRouter.showUnavailable(createUnavailableRouteResult(target),options),
+        clearResult:()=>pageRouter.clearResult()
+      },
+      media:{
+        resetEditor:resetContentImageEditor,
+        persistDraft:persistContentImageDraft,
+        submitDraft:contentImagePaths,
+        completeDraft:clearSubmittedContentImageDraft,
+        rollbackDraft:discardContentImageUploads,
+        uncertainSubmission:uncertainMediaSubmission,
+        contentImagesMarkup,
+        hasDraftItems:key=>contentImageDraft(key).items.length>0
+      },
+      annotations:{
+        tagTargets:tagCommentableTargets,
+        applyAnchors:applyCommentAnchors,
+        scheduleLayout:scheduleAnnotationLineCounts,
+        openPanel:openCommentPanel,
+        rootKey:commentRootKey
+      },
+      crossDomain:{
+        getActiveDate:()=>activeDate,
+        openComposer:button=>openHomeEditor("thought",button),
+        scheduleNotificationPoll
+      },
+      view:{
+        appUrl,
+        contextReceiptMarkup,
+        contentState,
+        renderLatex,
+        showToast,
+        resetOccurrenceInput,
+        occurrenceFields,
+        presentError
+      },
+      platform:{
+        document,
+        window,
+        audio:pageAudioCoordinator,
+        createRequestId:()=>crypto.randomUUID(),
+        confirm:(...args)=>globalThis.confirm(...args),
+        prompt:(...args)=>globalThis.prompt(...args),
+        requestFrame:callback=>requestAnimationFrame(callback),
+        setTimer:(callback,delay)=>setTimeout(callback,delay),
+        clearTimer:timer=>clearTimeout(timer),
+        getComputedStyle:element=>getComputedStyle(element),
+        matchesMedia:query=>matchMedia(query).matches,
+        escapeSelector:value=>CSS.escape(value)
+      }
+    });
+    thoughtsFeatureControllers.add(controller);
+    return controller
+  });
+  descriptors.together={root:()=>$("#view-together"),load:()=>loadThoughtsPage("together")};
+  descriptors.thoughts={root:()=>$("#view-thoughts"),load:()=>loadThoughtsPage("thoughts")};
   descriptors.review={
     root:()=>$("#view-review"),
     load:()=>loadLegacyFeatureModule().then(module=>withCheckins(module.createLegacyPageController({view:"review"})))
@@ -3676,11 +3495,6 @@ function openDiscoveryItem(item){
   const selector={thought:`[data-chain-id="${CSS.escape(id)}"]`,capture:`[data-capture-id="${CSS.escape(id)}"]`,journal:`[data-journal-id="${CSS.escape(id)}"]`,quote:`[data-quote-id="${CSS.escape(id)}"]`}[route.resourceType];
   requestAnimationFrame(()=>{const target=document.querySelector(selector||"");if(target instanceof HTMLDetailsElement)target.open=true;target?.scrollIntoView({behavior:"smooth",block:"center"})})
 }
-function openChainEditor(id){const chain=thoughtChains().find(x=>x.question.id===id);if(!chain)return;$("#edit-chain-id").value=id;$("#edit-chain-datetime").value=toLocalDateTimeInput(eventTimestamp(chain.question));$("#edit-chain-question").value=chain.question.content;$("#edit-chain-tags").value=(chain.question.tags||[]).join(" ");$("#edit-chain-status").textContent="这里只修改主题。初步想法、回答与记录请在各自内容块上编辑。";$("#edit-chain-modal").hidden=false;$("#edit-chain-question").focus()}
-function openThoughtBlockEditor(rootId,type="record",blockId=""){
-  const item=blockId?state.thoughts.find(value=>value.id===blockId&&value.relatedTo===rootId):null,modal=$("#thought-block-modal"),select=$("#thought-block-type");
-  $("#thought-block-root-id").value=rootId;$("#thought-block-id").value=item?.id||"";$("#thought-block-form").dataset.version=String(item?.version||1);delete $("#thought-block-form").dataset.requestId;select.value=item?.type||type;select.disabled=Boolean(item);resetOccurrenceInput($("#thought-block-datetime"),item);$("#thought-block-content").value=item?.content||"";resetContentImageEditor("thoughtBlock",item?.attachmentPaths||[]);$("#thought-block-title").textContent=item?"编辑内容":`新增${select.options[select.selectedIndex].text}`;$("#thought-block-status").textContent="";modal.hidden=false;$("#thought-block-content").focus()
-}
 function openCheckinEditor(id){
   const item=state.checkins.find(value=>value.id===id);if(!item)return;
   $("#edit-checkin-id").value=id;$("#edit-checkin-datetime").value=persistedDateTimeInput(item);$("#edit-checkin-factors").value=(item.factors||[]).join(" ");$("#edit-checkin-status").textContent="";
@@ -3691,7 +3505,7 @@ function openCheckinEditor(id){
 for(const eventName of ["wheel","pointerdown","pointermove","touchstart","touchmove","keydown"])document.addEventListener(eventName,event=>{const viewport=event.target.closest?.(".quote-bubble p.is-auto-scrolling");if(viewport)deferQuoteBubbleScroll(viewport)},{passive:true});
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&$("#view-quotes").classList.contains("active"))setupQuoteBubbleScroll()});
 window.addEventListener("scroll",syncBookDetailCondensed,{passive:true});
-window.addEventListener("resize",()=>requestAnimationFrame(()=>{syncSpeechTextOverflow();syncCaptureOverflow();syncThoughtBlockOverflow();syncQuoteOverflow();setupQuoteBubbleScroll();setupBookTitlePans()}),{passive:true});
+window.addEventListener("resize",()=>requestAnimationFrame(()=>{syncSpeechTextOverflow();syncCaptureOverflow();syncQuoteOverflow();setupQuoteBubbleScroll();setupBookTitlePans()}),{passive:true});
 document.addEventListener("click",e=>{
   const card=e.target.closest(".capture-item");if(!card?.classList.contains("is-expandable"))return;
   const toggle=e.target.closest("[data-capture-expand]");
@@ -3700,11 +3514,8 @@ document.addEventListener("click",e=>{
   toggleCaptureCard(card);
 });
 document.addEventListener("click",e=>{const button=e.target.closest("[data-quote-expand]");if(!button)return;const viewport=button.closest(".quote-entry-card")?.querySelector(".quote-content-viewport");if(!viewport)return;const expanded=!viewport.classList.contains("expanded");setLongContentExpanded(viewport.dataset.expandKey,expanded);viewport.classList.toggle("expanded",expanded);button.textContent=expanded?"收起":"展开";button.setAttribute("aria-expanded",String(expanded));scheduleAnnotationLineCounts()});
-document.addEventListener("click",e=>{const button=e.target.closest("[data-thought-block-expand]");if(!button)return;const card=button.closest(".thought-content-block");if(!card?.classList.contains("is-collapsible"))return;const expanded=!card.classList.contains("is-expanded");setLongContentExpanded(button.dataset.expandKey,expanded);card.classList.toggle("is-expanded",expanded);button.setAttribute("aria-expanded",String(expanded));button.querySelector("span").textContent=expanded?"收起":"展开全文";scheduleAnnotationLineCounts();if(!expanded)card.scrollIntoView({block:"nearest"})});
 document.addEventListener("click",e=>{const button=e.target.closest("[data-speech-text-expand]");if(!button)return;const layer=button.closest("[data-speech-text-lines]");if(!layer?.classList.contains("is-collapsible"))return;const expanded=!layer.classList.contains("is-expanded");layer.classList.toggle("is-expanded",expanded);button.textContent=expanded?"收起":"展开";button.setAttribute("aria-expanded",String(expanded));button.setAttribute("aria-label",`${expanded?"收起":"展开"}${layer.dataset.speechTextLabel||"文稿"}`);requestAnimationFrame(syncCaptureOverflow)});
 document.addEventListener("play",event=>{const audio=event.target;if(!(audio instanceof HTMLAudioElement))return;const controls=audio.closest(".speech-asset-controls"),rate=controls?.querySelector("[data-speech-playback-rate]");if(rate)audio.playbackRate=normalizeTtsPlaybackRate(rate.value);claimPageAudio(audio)},true);
-document.addEventListener("pause",event=>{if(activePageAudio===event.target)activePageAudio=null},true);
-document.addEventListener("ended",event=>{if(activePageAudio===event.target)activePageAudio=null},true);
 document.addEventListener("change",e=>{if(e.target.matches("[data-trash-select]"))$("#trash-purge-selected").disabled=!$("[data-trash-select]:checked")});
 document.addEventListener("click",async e=>{
   const restore=e.target.closest("[data-trash-restore]");if(!restore)return;
@@ -3732,57 +3543,20 @@ document.addEventListener("click",async e=>{
   try{await requestV1(target.url,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`,"idempotency-key":requestId}},{domains:target.domains,resource:target.domain==="books"?`book:${target.id}`:target.url,recoverCommitted:true,projection:{kind:"record.delete",domain:target.domain,id:target.id},onQueued:record=>applyPendingProjection(record)});void refreshState(target.domains).catch(error=>showToast(`${target.label}已移除，但列表刷新失败：${error.message}`,"error"));showToast(`${target.label}已移入回收站`)}
   catch(error){if(error.syncStatus==="pending")showToast(`${target.label}将在网络恢复后移入回收站`);else{await refreshState(target.domains).catch(()=>{});showToast(error.message,"error")}}
 });
-document.addEventListener("click",async e=>{
-  const add=e.target.closest("[data-thought-block-add]"),edit=e.target.closest("[data-thought-block-edit]"),remove=e.target.closest("[data-thought-block-delete]");
-  if(add)return openThoughtBlockEditor(add.dataset.rootId,add.dataset.thoughtBlockAdd);
-  if(edit){const item=state.thoughts.find(value=>value.id===edit.dataset.thoughtBlockEdit);if(item)return openThoughtBlockEditor(edit.dataset.rootId,item.type,item.id)}
-  if(!remove)return;
-  if(!confirm("将这条思绪内容移入回收站？"))return;remove.disabled=true;
-  try{await request(`/api/thoughts/${remove.dataset.thoughtBlockDelete}`,{method:"DELETE"});await refreshState(["thoughts","review"],{chainId:remove.dataset.rootId});showToast("思绪内容已移入回收站")}
-  catch(error){showToast(error.message,"error");remove.disabled=false}
-});
-document.addEventListener("submit",async e=>{const form=e.target.closest("[data-follow-up-root]");if(!form)return;e.preventDefault();const button=form.querySelector('button[type="submit"]'),status=form.querySelector(".followup-status"),rootId=form.dataset.followUpRoot,answer=form.elements.answer.value,clientRequestId=form.dataset.requestId||crypto.randomUUID();form.dataset.requestId=clientRequestId;button.disabled=true;status.textContent="正在保存追问…";try{const saved=await request(`/api/thoughts/${rootId}/follow-ups`,{method:"POST",headers:{"idempotency-key":clientRequestId},body:JSON.stringify({question:form.elements.question.value,answer})});applySavedFollowUp(rootId,saved,{kind:"create"});void refreshState(["thoughts","review"],{chainId:rootId,patchOnly:true}).catch(error=>showToast(`追问已保存，但状态刷新失败：${error.message}`,"error"));showToast(answer.trim()?"追问与回答已保存":"追问已保存")}catch(err){status.textContent=err.message;button.disabled=false}});
-document.addEventListener("submit",async e=>{const form=e.target.closest("[data-followup-manual-answer]");if(!form)return;e.preventDefault();const button=form.querySelector('button[type="submit"]'),status=form.closest(".followup-answer")?.querySelector(".followup-status"),rootId=form.dataset.rootId,followUpId=form.dataset.followupManualAnswer;button.disabled=true;if(status)status.textContent="正在保存回答…";try{const saved=await request(`/api/thoughts/${rootId}/follow-ups/${followUpId}`,{method:"PATCH",body:JSON.stringify({expectedVersion:Number(form.dataset.version)||1,answer:form.querySelector("textarea").value})});applySavedFollowUp(rootId,saved,{kind:"manual-answer",followUpId});void refreshState("thoughts",{chainId:rootId,patchOnly:true}).catch(error=>showToast(`追问回答已保存，但状态刷新失败：${error.message}`,"error"));showToast("追问回答已保存")}catch(err){if(status)status.textContent=err.message;button.disabled=false}});
-document.addEventListener("submit",async e=>{const form=e.target.closest("[data-followup-edit]");if(!form)return;e.preventDefault();const button=form.querySelector('button[type="submit"]'),rootId=form.dataset.rootId,followUpId=form.dataset.followupEdit;button.disabled=true;try{const saved=await request(`/api/thoughts/${rootId}/follow-ups/${followUpId}`,{method:"PATCH",body:JSON.stringify({expectedVersion:Number(form.dataset.version)||1,question:form.elements.question.value,answer:form.elements.answer.value})});applySavedFollowUp(rootId,saved,{kind:"edit",followUpId});void refreshState("thoughts",{chainId:rootId,patchOnly:true}).catch(error=>showToast(`追问已更新，但状态刷新失败：${error.message}`,"error"));showToast("追问已更新")}catch(err){showToast(err.message,"error");button.disabled=false}});
-document.addEventListener("click",e=>{const toggle=e.target.closest("[data-followup-edit-toggle]"),cancel=e.target.closest("[data-followup-edit-cancel]");if(!toggle&&!cancel)return;const trigger=toggle||cancel,id=trigger.dataset.followupEditToggle||trigger.dataset.followupEditCancel,form=trigger.closest("[data-chain-id]")?.querySelector(`[data-followup-edit="${CSS.escape(id)}"]`);if(form){form.hidden=cancel?true:!form.hidden;if(!form.hidden){form.elements.question.focus();form.scrollIntoView({block:"nearest",behavior:matchMedia("(max-width:760px)").matches?"auto":"smooth"})}}});
-document.addEventListener("click",async e=>{const button=e.target.closest("[data-followup-delete]");if(!button)return;if(!confirm("将这条追问及其回答移入回收站？"))return;button.disabled=true;try{await request(`/api/thoughts/${button.dataset.rootId}/follow-ups/${button.dataset.followupDelete}`,{method:"DELETE"});await refreshState("thoughts",{chainId:button.dataset.rootId});showToast("追问已移入回收站")}catch(err){showToast(err.message,"error");button.disabled=false}});
-document.addEventListener("click",async e=>{const button=e.target.closest("[data-followup-answer]");if(!button)return;const rootId=button.dataset.rootId,followUpId=button.dataset.followupAnswer,root=state.thoughts.find(item=>item.id===rootId&&item.type==="question"),followUp=root?.followUps?.find(item=>item.id===followUpId),clientRequestId=button.dataset.requestId||crypto.randomUUID();if(!root||!followUp)return;button.dataset.requestId=clientRequestId;button.disabled=true;const status=button.closest(".followup-answer")?.querySelector(".followup-status");if(status)status.textContent="正在加入后台队列…";try{const task=await request("/api/ai-tasks",{method:"POST",body:JSON.stringify({kind:"followUpAnswer",targetId:rootId,subtargetId:followUpId,inputVersion:root.version||1,subtargetVersion:followUp.version||1,clientRequestId})});if(!state.aiTasks.some(item=>item.id===task.id))state.aiTasks.unshift(task);if(status)status.textContent="回答已进入后台队列，可继续使用其他功能。";await refreshState("notifications");scheduleNotificationPoll();showToast("追问回答已在后台排队")}catch(err){if(status)status.textContent=`未能排队：${err.message}`;showToast(err.message,"error");button.disabled=false}});
 document.addEventListener("click",event=>{const button=event.target.closest("[data-context-source]");if(button)openContextSource(button)});
-document.addEventListener("click",event=>{
-  const summary=event.target.closest(".chain-summary"),back=event.target.closest("[data-thought-list]");
-  if(back){pageRouter.backToList("thoughts",{query:pageRouter.currentRoute().query});return}
-  if(!summary)return;
-  const card=summary.closest("[data-chain-id]");if(!card)return;
-  event.preventDefault();
-  const route=pageRouter.currentRoute();
-  if(route.kind==="detail"&&route.resourceId===card.dataset.chainId)pageRouter.backToList("thoughts",{query:route.query});
-  else openThoughtDetail(card.dataset.chainId)
-});
 $("#capture-create-toggle").addEventListener("click",()=>{
   if(captureComposerOpen){closeCaptureEditor();return}
   openCaptureEditor($("#capture-create-toggle"))
 });
 $("#capture-editor-close").addEventListener("click",()=>closeCaptureEditor());
 $("#capture-editor").addEventListener("click",event=>{if(event.target===event.currentTarget)closeCaptureEditor()});
-$("#thought-create-toggle").addEventListener("click",event=>openHomeEditor("thought",event.currentTarget));
-$("#thought-load-more").addEventListener("click",()=>void loadMoreThoughts());
 $("#analysis-load-more").addEventListener("click",()=>void loadMoreAnalyses());
 document.addEventListener("input",event=>{
   const input=event.target.closest("[data-feed-search]");if(!input)return;
   const scope=input.dataset.feedSearch;if(!(scope in feedSearchQueries))return;
   feedSearchQueries[scope]=input.value;
-  if(scope==="thoughts"&&!fullRouteStateLoaded){
-    clearTimeout(thoughtSearchTimer);
-    thoughtSearchTimer=setTimeout(()=>{
-      const query=normalizedFeedSearch(feedSearchQueries.thoughts),route=pageRouter?.currentRoute();
-      if(route?.view==="thoughts"&&query!==(route.query?.q||""))pageRouter.replaceQuery({q:query||null,page:null})
-    },250);
-    return
-  }
-  ({captures:renderCaptures,journals:renderJournals,thoughts:renderThoughts,books:renderBooks,keepsakes:renderKeepsakes,quotes:renderQuotes})[scope]?.()
+  ({captures:renderCaptures,journals:renderJournals,books:renderBooks,keepsakes:renderKeepsakes,quotes:renderQuotes})[scope]?.()
 });
-document.addEventListener("click",event=>{const button=event.target.closest("[data-thought-sort]");if(!button)return;pageRouter.replaceQuery({sort:button.dataset.thoughtSort==="created"?"created":null})});
-document.addEventListener("click",event=>{const button=event.target.closest("[data-tag-filter]");if(!button)return;event.stopImmediatePropagation();pageRouter.replaceQuery({tag:button.dataset.tagFilter==="all"?null:button.dataset.tagFilter,page:null})});
 document.addEventListener("click",event=>{
   const button=event.target.closest("[data-content-focus],[data-content-action]");if(!button)return;
   if(button.dataset.contentFocus){
@@ -3790,10 +3564,7 @@ document.addEventListener("click",event=>{
     target?.scrollIntoView({behavior:"smooth",block:"center"});target?.focus();return
   }
   const command=button.dataset.contentAction;
-  if(command==="new-thought"){openHomeEditor("thought",button);return}
   if(command==="new-capture"){openCaptureEditor(button);return}
-  if(command==="clear-thought-filter"){pageRouter.replaceQuery({tag:null,page:null});return}
-  if(command==="dismiss-route-result"){pageRouter.clearResult();return}
   if(command==="new-state"){switchView("today");openHomeEditor("state",button);return}
   if(command==="new-keepsake"){$("#keepsake-create-toggle")?.click();return}
   if(command==="run-analysis"){$("#run-analysis")?.click();return}
@@ -3806,7 +3577,7 @@ document.addEventListener("click",event=>{
   if(retries[command])void retries[command]()
 });
 
-document.addEventListener("click",async e=>{const b=e.target.closest("button");if(!b)return;if(b.dataset.view){closeHomeEditors({restoreFocus:false});return switchView(b.dataset.view)}if(b.dataset.go){closeHomeEditors({restoreFocus:false});return switchView(b.dataset.go)}if(b.dataset.openComments)return openCommentPanel(commentRootKey("thought",b.dataset.openComments));if(b.dataset.followupCompose){const form=b.closest(".chain-record")?.querySelector(`[data-follow-up-root="${CSS.escape(b.dataset.followupCompose)}"]`);if(!form)return;form.hidden=!form.hidden;b.setAttribute("aria-expanded",String(!form.hidden));if(!form.hidden){form.elements.question.focus();form.scrollIntoView({block:"nearest",behavior:matchMedia("(max-width:760px)").matches?"auto":"smooth"})}return}if(b.dataset.removeDraftTag!=null){draftTags=draftTags.filter(tag=>tag!==b.dataset.removeDraftTag);return renderTagComposer()}if(b.dataset.removeCaptureTag!=null){captureDraftTags=captureDraftTags.filter(tag=>tag!==b.dataset.removeCaptureTag);return renderCaptureTagComposer()}if(b.dataset.tagFilter!=null){thoughtFilter=b.dataset.tagFilter;return renderThoughts()}if(b.dataset.editChain)return openChainEditor(b.dataset.editChain);if(b.dataset.answerChain){const question=state.thoughts.find(item=>item.id===b.dataset.answerChain&&item.type==="question");if(!question)return;b.disabled=true;try{await startBackgroundChainAnswer(question)}finally{b.disabled=false}return}if(b.dataset.remark){const text=prompt("新增一条备注：");if(text?.trim()){await request(`/api/thoughts/${b.dataset.remark}/remarks`,{method:"POST",body:JSON.stringify({text})});await refreshState("thoughts",{chainId:b.dataset.remark});showToast("备注已保存")}return}if(b.dataset.editRemark){const item=state.thoughts.find(x=>x.id===b.dataset.thoughtId),remark=item?.remarks?.find(x=>x.id===b.dataset.editRemark);if(!remark)return;const text=prompt("编辑备注：",remark.text);if(text?.trim()){await request(`/api/thoughts/${b.dataset.thoughtId}/remarks/${b.dataset.editRemark}`,{method:"PATCH",body:JSON.stringify({text})});await refreshState("thoughts",{chainId:b.dataset.thoughtId});showToast("备注已更新")}return}if(b.dataset.deleteRemark){if(!confirm("将这条备注移入回收站？"))return;await request(`/api/thoughts/${b.dataset.thoughtId}/remarks/${b.dataset.deleteRemark}`,{method:"DELETE"});await refreshState("thoughts",{chainId:b.dataset.thoughtId});showToast("备注已移入回收站");return}if(b.dataset.disposition){await request(`/api/thoughts/${b.dataset.disposition}/disposition`,{method:"PATCH",body:JSON.stringify({disposition:b.dataset.value})});await refreshState(["thoughts","review"],{chainId:b.dataset.disposition});showToast(b.dataset.value==="kept"?"已保留":"已舍弃");return}if(b.dataset.deleteChain){const id=b.dataset.deleteChain,root=(state.thoughts||[]).find(item=>item.id===id&&item.type==="question");if(!root||!confirm("将整套思绪及其内容移入回收站？"))return;b.disabled=true;try{await requestV1(`/api/v1/thought-chains/${encodeURIComponent(id)}`,{method:"DELETE",headers:{"if-match":`"${root.version||1}"`}},{resource:`thought-chain:${id}`,domains:["thoughts","review"],recoverCommitted:true,projection:{kind:"thought.chain.delete",id},onQueued:record=>applyPendingProjection(record)});void refreshState(["thoughts","review"]).catch(error=>showToast(`思绪已移除，但列表刷新失败：${error.message}`,"error"));showToast("整套思绪已移入回收站")}catch(err){if(err.syncStatus==="pending")showToast("思绪将在网络恢复后移入回收站");else{await refreshState(["thoughts","review"]).catch(()=>{});showToast(err.message,"error");b.disabled=false}}}});
+document.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;if(b.dataset.view){closeHomeEditors({restoreFocus:false});return switchView(b.dataset.view)}if(b.dataset.go){closeHomeEditors({restoreFocus:false});return switchView(b.dataset.go)}if(b.dataset.removeDraftTag!=null){draftTags=draftTags.filter(tag=>tag!==b.dataset.removeDraftTag);return renderTagComposer()}if(b.dataset.removeCaptureTag!=null){captureDraftTags=captureDraftTags.filter(tag=>tag!==b.dataset.removeCaptureTag);return renderCaptureTagComposer()}});
 document.addEventListener("click",async e=>{
   const button=e.target.closest("button");if(!button)return;
   if(button.dataset.journalPrompt){const editor=$("#journal-content"),prompt=button.dataset.journalPrompt,prefix=editor.value.trim()?"\n\n":"";editor.setRangeText(`${prefix}${prompt}\n`,editor.selectionStart,editor.selectionEnd,"end");editor.focus();return}
@@ -3827,12 +3598,12 @@ document.addEventListener("click",async e=>{
   if(button.dataset.journalEdit)return editJournal(button.dataset.journalEdit);
   if(button.dataset.editCheckin)return openCheckinEditor(button.dataset.editCheckin);
   if(button.dataset.captureThought){openThoughtDetail(button.dataset.captureThought);return}
-  if(button.dataset.capturePromote){const item=(state.captures||[]).find(value=>value.id===button.dataset.capturePromote);if(!item)return;const form=$("#chain-form");form.reset();form.elements.sourceCaptureId.value=item.id;form.elements.sourceCaptureVersion.value=String(item.version||1);form.elements.recordKind.value="thought";activeDate=eventDate(item)||activeDate;renderDate();renderSliders();renderThoughts();renderStateChart();renderHomeMood();renderChat();$("#chain-question").value="";$("#chain-idea").value=item.content;draftTags=[...(item.tags||[])];renderTagComposer();syncChainRecordKind();$("#chain-status").textContent="这条念起将保留为来源。补上一个明确问题，再形成完整思考。";switchView("today");openHomeEditor("thought",button);$("#chain-question").focus();return}
+  if(button.dataset.capturePromote){const item=(state.captures||[]).find(value=>value.id===button.dataset.capturePromote);if(!item)return;const form=$("#chain-form");form.reset();form.elements.sourceCaptureId.value=item.id;form.elements.sourceCaptureVersion.value=String(item.version||1);form.elements.recordKind.value="thought";activeDate=eventDate(item)||activeDate;renderDate();renderSliders();publishDomains(new Set(["thoughts"]));renderStateChart();renderHomeMood();renderChat();$("#chain-question").value="";$("#chain-idea").value=item.content;draftTags=[...(item.tags||[])];renderTagComposer();syncChainRecordKind();$("#chain-status").textContent="这条念起将保留为来源。补上一个明确问题，再形成完整思考。";switchView("today");openHomeEditor("thought",button);$("#chain-question").focus();return}
   if(button.dataset.captureDelete){const id=button.dataset.captureDelete,item=(state.captures||[]).find(value=>value.id===id);if(!item||!confirm("将这条捕念移入回收站？"))return;button.disabled=true;try{await requestV1(`/api/v1/captures/${encodeURIComponent(id)}`,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`}},{domains:["captures"],recoverCommitted:true,projection:{kind:"record.delete",domain:"captures",id},onQueued:record=>applyPendingProjection(record)});void refreshState("captures").catch(error=>showToast(`捕念已移除，但列表刷新失败：${error.message}`,"error"));showToast("捕念已移入回收站")}catch(err){if(err.syncStatus==="pending")showToast("捕念将在网络恢复后移入回收站");else{await refreshState("captures").catch(()=>{});showToast(err.message,"error");button.disabled=false}}return}
   if(button.dataset.journalDelete){const id=button.dataset.journalDelete,item=(state.journals||[]).find(value=>value.id===id);if(!item||!confirm("将这篇日记及其助手回望移入回收站？"))return;button.disabled=true;try{await requestV1(`/api/v1/journals/${encodeURIComponent(id)}`,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`}},{domains:["journals"],recoverCommitted:true,projection:{kind:"record.delete",domain:"journals",id},onQueued:record=>applyPendingProjection(record)});void refreshState("journals").catch(error=>showToast(`日记已移除，但列表刷新失败：${error.message}`,"error"));showToast("日记已移入回收站")}catch(err){if(err.syncStatus==="pending")showToast("日记将在网络恢复后移入回收站");else{await refreshState("journals").catch(()=>{});showToast(err.message,"error");button.disabled=false}}return}
   if(button.dataset.journalReflect){const id=button.dataset.journalReflect;button.disabled=true;try{await runAnswerInModal({title:"回望这篇日记",scene:"diaryReflection",requestCall:onEvent=>requestStream(`/api/journals/${id}/reflect`,{method:"POST",body:"{}"},onEvent),onDone:()=>refreshState("journals")});showToast("日记回望已保存")}catch(err){showToast(err.message,"error")}finally{button.disabled=false}}
 });
-$$("[data-active-date]").forEach(input=>input.addEventListener("change",async e=>{chainDraftVersion+=1;activeDate=e.target.value||activeDate;renderDate();renderSliders();renderThoughts();renderStateChart();renderHomeMood();renderChat();await healthFeatureController?.changeDate(activeDate).catch(error=>showToast(`健康截图恢复失败：${error.message}`,"error"))}));
+$$("[data-active-date]").forEach(input=>input.addEventListener("change",async e=>{chainDraftVersion+=1;activeDate=e.target.value||activeDate;renderDate();renderSliders();publishDomains(new Set(["thoughts"]));renderStateChart();renderHomeMood();renderChat();await healthFeatureController?.changeDate(activeDate).catch(error=>showToast(`健康截图恢复失败：${error.message}`,"error"))}));
 $$("[data-content-image-editor] input[type='file']").forEach(input=>input.addEventListener("change",async event=>{
   const fileInput=event.currentTarget,editor=fileInput.closest("[data-content-image-editor]"),status=editor?.closest("form")?.querySelector(".status");
   try{delete editor.closest("form")?.dataset.requestId;await setContentImageFiles(editor.dataset.contentImageEditor,fileInput.files);fileInput.value="";if(status)status.textContent=""}
@@ -3847,16 +3618,13 @@ $$("[data-content-image-editor] input[type='file']").forEach(input=>input.addEve
     if(status)status.textContent=message;else showToast(message,"error")
   }
 }));
-for(const selector of["#thought-block-content","#thought-block-type","#thought-block-datetime"])for(const eventName of["input","change"])$(selector)?.addEventListener(eventName,event=>{delete event.currentTarget.closest("form")?.dataset.requestId;if(contentImageDraft("thoughtBlock").items.length)void persistContentImageDraft("thoughtBlock")});
 document.addEventListener("click",async event=>{
   const remove=event.target.closest("[data-content-image-remove]");if(!remove)return;
   const editor=remove.closest("[data-content-image-editor]"),draft=contentImageDraft(editor?.dataset.contentImageEditor),index=Number(remove.dataset.contentImageRemove);
   if(!draft||!Number.isSafeInteger(index)||!draft.items[index])return;
-  const [item]=draft.items.splice(index,1);revokeContentImageItem(item);renderContentImageEditor(editor.dataset.contentImageEditor);
-  await Promise.all([
-    persistContentImageDraft(editor.dataset.contentImageEditor),
-    discardUploadedMediaItem(item,draft.uploadRequestId)
-  ]).catch(error=>showToast(`图片暂存失败：${error.message}`,"error"))
+  await contentImageDraftManager.remove(editor.dataset.contentImageEditor,index)
+    .then(()=>renderContentImageEditor(editor.dataset.contentImageEditor))
+    .catch(error=>showToast(`图片暂存失败：${error.message}`,"error"))
 });
 document.addEventListener("click",event=>{const button=event.target.closest("[data-content-image-understand]");if(button)void queueContentImageUnderstanding(button)});
 $("#checkin-confirm-all").addEventListener("click",()=>{$$("[data-metric]").forEach(input=>{input.dataset.confirmed="true";input.closest(".metric").classList.remove("unconfirmed");const label=metricConfig()[input.dataset.metric];$(`#${CSS.escape(input.dataset.metric)}-anchor`).textContent=label.anchors[Number(input.value)-1]});navigator.vibrate?.(12);$("#checkin-status").textContent="已确认当前四项，可以直接保存。"});
@@ -3900,14 +3668,14 @@ document.addEventListener("click",async event=>{
   }
   const generate=event.target.closest("[data-speech-synthesize]");
   if(generate){
-    const controls=generate.closest(".speech-asset-controls"),sourceType=controls?.dataset.speechSourceType,sourceId=controls?.dataset.speechSourceId,sourceVersion=Number(controls?.dataset.speechSourceVersion),source=sourceType==="capture"?(state.captures||[]).find(item=>item.id===sourceId):(state.thoughts||[]).find(item=>item.id===sourceId&&item.type===(sourceType==="thoughtChain"?"question":"answer")),status=controls?.querySelector(".speech-asset-status");
+    const controls=generate.closest(".speech-asset-controls"),sourceType=controls?.dataset.speechSourceType;if(sourceType!=="capture")return;
+    const sourceId=controls?.dataset.speechSourceId,sourceVersion=Number(controls?.dataset.speechSourceVersion),source=(state.captures||[]).find(item=>item.id===sourceId),status=controls?.querySelector(".speech-asset-status");
     if(!source||Number(source.version||1)!==sourceVersion){if(status)status.textContent="文字来源已经变化，请在当前版本上重新生成。";return}
     const asset=speechAssetForSource(state.speech.assets,{sourceType,sourceId,sourceVersion}),regenerate=generate.dataset.speechRegenerate==="true"&&Boolean(asset),payload=speechSynthesisPayload({sourceType,sourceId,sourceVersion,regenerate});
     stopPageAudio();generate.disabled=true;if(status)status.textContent=regenerate?"正在重新生成…":"正在生成…";let generated=false;
     try{
       await apiClient.requestBlob("/api/speech/synthesize",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)},{fallback:"语音合成失败"});generated=true;
-      const domains=sourceType==="capture"?["speech","captures"]:["speech","thoughts"],options=sourceType==="thoughtAnswer"?{chainId:source.relatedTo}:sourceType==="thoughtChain"?{chainId:source.id}:{};
-      await refreshState(domains,options);showToast(regenerate?"文字朗读已重新生成":"文字朗读已生成")
+      await refreshState(["speech","captures"]);showToast(regenerate?"文字朗读已重新生成":"文字朗读已生成")
     }catch(error){
       if(generated){if(status?.isConnected)status.textContent="音频已生成，但列表刷新失败，请稍后重试读取。";showToast("音频已生成，但列表刷新失败","error")}
       else{if(status)status.textContent=presentError(error,{operation:"生成文字朗读",object:"这次文字朗读",phase:"文字朗读生成",retained:"原音和文字记录没有变化"}).message}
@@ -3917,6 +3685,7 @@ document.addEventListener("click",async event=>{
 });
 document.addEventListener("change",event=>{
   const control=event.target.closest("[data-speech-playback-rate]");if(!control)return;
+  if(control.closest(".speech-asset-controls")?.dataset.speechSourceType!=="capture")return;
   const player=control.closest(".speech-asset-controls")?.querySelector("[data-speech-player]");if(player)player.playbackRate=normalizeTtsPlaybackRate(control.value)
 });
 $("#capture-cancel").addEventListener("click",resetCaptureForm);
@@ -4058,7 +3827,7 @@ $("#chain-form").addEventListener("submit",async e=>{
       state.captures=(state.captures||[]).map(item=>item.id===temporaryId?result:item);renderCaptures();await clearSubmittedContentImageDraft("thoughtRoot");chainDraftVersion+=1;form.reset();clearDurableDraft("chain-form");resetOccurrenceInput($("#chain-datetime"));draftTags=[];renderTagComposer();answerDraft="";answerReasoningDraft="";delete form.dataset.requestId;delete form.dataset.draftId;$("#chain-status").textContent="已收进念起。";closeHomeEditors();void refreshState("captures").catch(error=>showToast(`念起已保存，但页面刷新失败：${error.message}`,"error"));showToast("已收进念起");return
     }
     const needsAnswer=Boolean(original.content.trim()||original.attachmentPaths.length)&&!answer.trim()&&llmSettings.automaticAnswers?.thoughtAnswer===true,payload={...eventTime,question:original.content,attachmentPaths:original.attachmentPaths,idea:$("#chain-idea").value,answer,modelDraft:answerDraft,modelReasoning:answerReasoningDraft,tags:draftTags,generateAnswer:needsAnswer,...(sourceCaptureId?{sourceRef:{type:"capture",id:sourceCaptureId,version:sourceCaptureVersion}}:{})},result=(await requestV1("/api/v1/thought-chains",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{domains:["thoughts","aiTasks","notifications"],projection:{kind:"thought.chain.create",temporaryId,payload},onQueued:record=>applyPendingProjection(record)})).data,question=result.items.find(item=>item.type==="question");
-    state.thoughts=[...result.items,...(state.thoughts||[]).filter(item=>!String(item.id).startsWith(`${temporaryId}:`))];renderThoughts();renderCaptures();renderHomeMemories();await clearSubmittedContentImageDraft("thoughtRoot");chainDraftVersion+=1;form.reset();clearDurableDraft("chain-form");resetOccurrenceInput($("#chain-datetime"));draftTags=[];renderTagComposer();answerDraft="";answerReasoningDraft="";delete form.dataset.requestId;delete form.dataset.draftId;$("#chain-status").textContent=needsAnswer?"思考已保存，后台生成一条图文合并回答。":answer.trim()?"已保存为一套完整思考。":"思考已保存，未自动调用 AI。";closeHomeEditors();void refreshState(["thoughts","review","notifications"],{chainId:question?.id}).catch(error=>showToast(`记录已保存，但页面刷新失败：${error.message}`,"error"));if(needsAnswer&&question){void startBackgroundChainAnswer(question,result.task)}showToast(needsAnswer?"思考已保存，可继续记录":"整套思考已保存，不会重复记录")
+    state.thoughts=[...result.items,...(state.thoughts||[]).filter(item=>!String(item.id).startsWith(`${temporaryId}:`))];publishDomains(new Set(["thoughts"]));await clearSubmittedContentImageDraft("thoughtRoot");chainDraftVersion+=1;form.reset();clearDurableDraft("chain-form");resetOccurrenceInput($("#chain-datetime"));draftTags=[];renderTagComposer();answerDraft="";answerReasoningDraft="";delete form.dataset.requestId;delete form.dataset.draftId;$("#chain-status").textContent=needsAnswer?"思考已保存，后台生成一条图文合并回答。":answer.trim()?"已保存为一套完整思考。":"思考已保存，未自动调用 AI。";closeHomeEditors();void refreshState(["thoughts","review","notifications"],{chainId:question?.id}).catch(error=>showToast(`记录已保存，但页面刷新失败：${error.message}`,"error"));if(needsAnswer&&question){void startBackgroundChainAnswer(question,result.task)}showToast(needsAnswer?"思考已保存，可继续记录":"整套思考已保存，不会重复记录")
   }catch(err){
     if(err.syncStatus==="pending"){await clearSubmittedContentImageDraft("thoughtRoot");chainDraftVersion+=1;form.reset();clearDurableDraft("chain-form");resetOccurrenceInput($("#chain-datetime"));draftTags=[];renderTagComposer();answerDraft="";answerReasoningDraft="";delete form.dataset.requestId;delete form.dataset.draftId;$("#chain-status").textContent=recordKind==="capture"?"念起已留存，网络恢复后自动同步。":"思考已留存，网络恢复后自动同步。";closeHomeEditors();showToast(recordKind==="capture"?"念起已进入待同步队列":"思考已进入待同步队列")}
     else{await discardContentImageUploads("thoughtRoot",uploadedPaths);$("#chain-status").textContent=err.message}
@@ -4070,16 +3839,7 @@ $("#chat-form").addEventListener("submit",async e=>{
   catch(err){$("#chat-status").textContent=err.syncStatus==="pending"?"问题已留存，网络恢复后自动处理。":err.message}
   finally{b.disabled=false}
 });
-$("#edit-chain-form").addEventListener("submit",async e=>{e.preventDefault();const b=e.currentTarget.querySelector('[type="submit"]'),id=$("#edit-chain-id").value,root=state.thoughts.find(item=>item.id===id&&item.type==="question"),payload={occurredAt:$("#edit-chain-datetime").value,question:$("#edit-chain-question").value,tags:splitTags($("#edit-chain-tags").value)};b.disabled=true;$("#edit-chain-status").textContent="正在保存…";try{await requestV1(`/api/v1/thought-chains/${encodeURIComponent(id)}`,{method:"PATCH",headers:{"if-match":`"${root?.version||1}"`},body:JSON.stringify(payload)},{resource:`thought-chain:${id}`,domains:["thoughts"],recoverCommitted:true,projection:{kind:"thought.chain.update",id,payload},onQueued:record=>applyPendingProjection(record)});$("#edit-chain-modal").hidden=true;void refreshState(["thoughts","review"],{chainId:id}).catch(error=>showToast(`思绪已更新，但列表刷新失败：${error.message}`,"error"));showToast("思绪主题已更新")}catch(err){if(err.syncStatus==="pending"){$("#edit-chain-modal").hidden=true;showToast("思绪修改将在网络恢复后同步")}else{await refreshState(["thoughts","review"],{chainId:id}).catch(()=>{});$("#edit-chain-status").textContent=err.message}}finally{b.disabled=false}});
-$("#thought-block-form").addEventListener("submit",async e=>{
-  e.preventDefault();const form=e.currentTarget,button=form.querySelector('[type="submit"]'),rootId=$("#thought-block-root-id").value,id=$("#thought-block-id").value,requestId=form.dataset.requestId||crypto.randomUUID();let uploadedPaths=[];form.dataset.requestId=requestId;button.disabled=true;$("#thought-block-status").textContent="正在保存…";await persistContentImageDraft("thoughtBlock");
-  try{const submission=await contentImagePaths("thoughtBlock");uploadedPaths=submission.uploadedPaths;const original=imageRecordPayload({content:$("#thought-block-content").value,attachmentPaths:submission.attachmentPaths}),payload={type:$("#thought-block-type").value,relatedTo:rootId,...occurrenceFields($("#thought-block-datetime")),...original,...(id?{expectedVersion:Number(form.dataset.version)||1}:{})};await request(id?`/api/thoughts/${id}`:"/api/thoughts",{method:id?"PATCH":"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)});delete form.dataset.requestId;$("#thought-block-modal").hidden=true;resetContentImageEditor("thoughtBlock");await refreshState(["thoughts","review"],{chainId:rootId});showToast(id?"内容已更新":"内容已加入时间线")}
-  catch(error){if(!uncertainMediaSubmission(error))await discardContentImageUploads("thoughtBlock",uploadedPaths);else await persistContentImageDraft("thoughtBlock");$("#thought-block-status").textContent=!Number(error?.status)?"提交状态尚未确认，图片和内容已保留；联网后请再次提交。":error.message}
-  finally{button.disabled=false}
-});
 $("#edit-checkin-form").addEventListener("submit",async e=>{e.preventDefault();const button=e.currentTarget.querySelector('[type="submit"]'),id=$("#edit-checkin-id").value,item=(state.checkins||[]).find(value=>value.id===id),payload={occurredAt:$("#edit-checkin-datetime").value,factors:splitTags($("#edit-checkin-factors").value),custom:{},notes:{}};$$("[data-edit-checkin-metric]").forEach(input=>{const key=input.dataset.editCheckinMetric;if(input.dataset.custom==="1")payload.custom[key]=Number(input.value);else payload[key]=Number(input.value);payload.notes[key]=$(`[data-edit-checkin-note="${CSS.escape(key)}"]`)?.value||""});button.disabled=true;$("#edit-checkin-status").textContent="正在保存修改…";try{await requestV1(`/api/v1/checkins/${encodeURIComponent(id)}`,{method:"PATCH",headers:{"if-match":`"${item?.version||1}"`},body:JSON.stringify(payload)},{domains:["checkins"],recoverCommitted:true,projection:{kind:"record.update",domain:"checkins",id,payload},onQueued:record=>applyPendingProjection(record)});$("#edit-checkin-modal").hidden=true;void refreshState(["checkins","review"]).catch(error=>showToast(`状态已更新，但列表刷新失败：${error.message}`,"error"));showToast("此刻状态已更新")}catch(err){if(err.syncStatus==="pending"){$("#edit-checkin-modal").hidden=true;showToast("状态修改将在网络恢复后同步")}else{await refreshState(["checkins","review"]).catch(()=>{});$("#edit-checkin-status").textContent=err.message}}finally{button.disabled=false}});
-$("#edit-chain-modal .modal-close").addEventListener("click",()=>$("#edit-chain-modal").hidden=true);$("#edit-chain-modal").addEventListener("click",e=>{if(e.target===e.currentTarget)e.currentTarget.hidden=true});
-$("#thought-block-modal .modal-close").addEventListener("click",()=>$("#thought-block-modal").hidden=true);$("#thought-block-modal").addEventListener("click",e=>{if(e.target===e.currentTarget)e.currentTarget.hidden=true});$("#thought-block-type").addEventListener("change",e=>$("#thought-block-title").textContent=`新增${e.currentTarget.options[e.currentTarget.selectedIndex].text}`);
 $("#edit-checkin-modal .modal-close").addEventListener("click",()=>$("#edit-checkin-modal").hidden=true);$("#edit-checkin-modal").addEventListener("click",e=>{if(e.target===e.currentTarget)e.currentTarget.hidden=true});
 $("#ai-answer-close").addEventListener("click",closeAnswerModal);$("#ai-answer-modal").addEventListener("click",e=>{if(e.target===e.currentTarget)closeAnswerModal()});
 document.addEventListener("click",e=>{const button=e.target.closest("[data-image-viewer-path]");if(button)openImageViewer(button)});
@@ -4440,7 +4200,7 @@ $("#tts-voice-preview").addEventListener("click",()=>void toggleTtsVoicePreview(
 $("#tts-generation-rate").addEventListener("input",event=>renderTtsGenerationRate(event.currentTarget.value));
 $("#llm-settings-form").addEventListener("submit",async e=>{e.preventDefault();stopVoicePreview({clearStatus:true});const ownerSettings=hasCapability("ai-configuration"),button=e.currentTarget.querySelector('[type="submit"]'),status=$("#llm-settings-status");button.disabled=true;status.textContent="正在保存…";try{llmSettings=await request(ownerSettings?"/api/settings":"/api/preferences",{method:ownerSettings?"POST":"PATCH",body:JSON.stringify(settingsPayload())});const key=$("#llm-api-key");if(key)key.value="";renderSettings();status.textContent=ownerSettings?"模型、场景与语音设置已保存。":"思考、回答与语音偏好已保存。";showToast("设置已保存")}catch(err){status.textContent=err.message}finally{button.disabled=false}});
 $("#test-llm").addEventListener("click",async e=>{stopVoicePreview({clearStatus:true});const button=e.currentTarget,status=$("#llm-settings-status"),tier=$("#llm-test-tier").value;button.disabled=true;status.textContent=`正在保存并测试 ${tier[0].toUpperCase()+tier.slice(1)}…`;try{llmSettings=await request("/api/settings",{method:"POST",body:JSON.stringify(settingsPayload())});$("#llm-api-key").value="";renderSettings();const result=await request("/api/settings/test",{method:"POST",body:JSON.stringify({tier})}),profile=llmSettings.profiles[tier];status.textContent=`连接成功 · ${profile.model==="deepseek-v4-pro"?"DeepSeek Pro":"DeepSeek Flash"} · ${profile.effort==="none"?"思考关闭":`思考 ${profile.effort.toUpperCase()}`}`;showToast(result.reply||"DeepSeek 连接成功")}catch(err){status.textContent=`连接失败：${err.message}`}finally{button.disabled=false}});
-function syncLocalDate(){const next=localDateKey();if(next===currentLocalDate)return;const followedToday=activeDate===currentLocalDate;currentLocalDate=next;if(followedToday){activeDate=next;renderDate();renderSliders();renderThoughts();renderStateChart();renderHomeMood();renderChat()}}
+function syncLocalDate(){const next=localDateKey();if(next===currentLocalDate)return;const followedToday=activeDate===currentLocalDate;currentLocalDate=next;if(followedToday){activeDate=next;renderDate();renderSliders();publishDomains(new Set(["thoughts"]));renderStateChart();renderHomeMood();renderChat()}}
 function markApplicationForeground(){apiClient.markForeground();syncLocalDate();restoreView?.()}
 setInterval(syncLocalDate,30000);
 document.addEventListener("visibilitychange",()=>{if(document.hidden){saveDurableDrafts();stopCaptureAudioRecording();stopPageAudio()}else markApplicationForeground()});
@@ -4505,6 +4265,7 @@ $("#account-role-list").addEventListener("click",async event=>{
 $("#logout-button").addEventListener("click",logout);$("#logout-button-account").addEventListener("click",logout);
 export async function startApplication(initial = null, { opening = null } = {}) {
   applyCapabilitySurface(initial?.meta?.capabilities||[]);
+  const mediaReady=initializeContentImageDraftManager();
   const portFactories=await portFactoriesRequest;
   const featureRegistry=createFeatureRegistry({
     descriptors:createPageFeatureDescriptors(),
@@ -4515,7 +4276,7 @@ export async function startApplication(initial = null, { opening = null } = {}) 
   runtimeApplication=application;runtimeFeatureRegistry=featureRegistry;runtimeStatePort=statePort;
   const startPromise=application.start(applicationStartInput(initial,opening));
   try {
-    await startPromise;
+    await Promise.all([startPromise,mediaReady]);
     applicationLifecycleReady=true
   } catch (error) {
     showAuthGate();

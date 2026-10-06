@@ -214,7 +214,11 @@ try {
   const firstThoughtPageReady=await waitUntil(`location.pathname==="/now/thoughts"&&document.querySelectorAll("#all-thoughts [data-chain-id]").length===23&&document.querySelector("#thought-pagination").hidden`);
   assert.equal(firstThoughtPageReady,true,JSON.stringify(await evaluate(`({path:location.pathname,search:location.search,cards:document.querySelectorAll("#all-thoughts [data-chain-id]").length,paginationHidden:document.querySelector("#thought-pagination").hidden,paginationText:document.querySelector("#thought-pagination-status").textContent,busy:document.querySelector("#view-thoughts").getAttribute("aria-busy"),body:document.querySelector("#all-thoughts").textContent.slice(0,160)})`)));
   await evaluate(`(()=>{const input=document.querySelector("#thought-search");input.value="thought 22";input.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
-  assert.equal(await waitUntil(`location.search.includes("q=thought+22")&&document.querySelectorAll("#all-thoughts [data-chain-id]").length===1`),true);
+  assert.equal(
+    await waitUntil(`location.search.includes("q=thought+22")&&document.querySelectorAll("#all-thoughts [data-chain-id]").length===1`),
+    true,
+    JSON.stringify(await evaluate(`({search:location.search,value:document.querySelector("#thought-search")?.value,cards:document.querySelectorAll("#all-thoughts [data-chain-id]").length,busy:document.querySelector("#view-thoughts").getAttribute("aria-busy"),toast:document.querySelector("#toast")?.textContent||""})`))
+  );
   await evaluate(`(()=>{const input=document.querySelector("#thought-search");input.value="";input.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
   assert.equal(await waitUntil(`!location.search.includes("q=")&&document.querySelectorAll("#all-thoughts [data-chain-id]").length===20`),true);
   const queryHistoryLength = await evaluate("history.length");

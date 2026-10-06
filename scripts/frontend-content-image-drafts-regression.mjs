@@ -410,6 +410,21 @@ assert.equal(
   "every Blob URL must be revoked exactly once"
 );
 
+{
+  const removeStore = createStore();
+  const removeUrls = createObjectUrls();
+  const removeManager = createManager({
+    store: removeStore,
+    objectUrls: removeUrls,
+    draftKeys: ["thoughtBlock"]
+  });
+  await removeManager.restore("remove-owner");
+  await removeManager.select("thoughtBlock", [image("remove.png")]);
+  assert.equal((await removeManager.remove("thoughtBlock", 0)).items.length, 0);
+  assert.equal(await removeManager.remove("thoughtBlock", 0), false);
+  assert.deepEqual(removeUrls.revoked, removeUrls.created);
+}
+
 console.log(
-  "Content image draft manager checks passed: account generations, isolated keys, partial retry order, rollback classification, compensation, durable reset and idempotent Blob URL cleanup."
+  "Content image draft manager checks passed: account generations, isolated keys, partial retry order, rollback classification, compensation, item removal, durable reset and idempotent Blob URL cleanup."
 );
