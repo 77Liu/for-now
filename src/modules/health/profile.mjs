@@ -1,5 +1,6 @@
 // Values are transcribed observations, not inferred measurements or diagnoses.
 import { promptText, renderPrompt } from "../../shared/prompts/index.mjs";
+import { nullableNumber, safeText } from "../../shared/validation/index.mjs";
 
 const weightFields = {
   measuredWeight: ["秤上体重", "kg", 20, 400],
@@ -51,6 +52,14 @@ function validDate(value) {
     && Number.isFinite(Date.parse(`${value}T00:00:00Z`))
     && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 }
+function recognizedDate(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value || "") ? value : "";
+}
+function recognizedLocalDateTime(value) {
+  const normalized = safeText(value, 40).replace(" ", "T");
+  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(?::(\d{2}))?/.exec(normalized);
+  return match ? `${match[1]}:${match[2] || "00"}` : "";
+}
 
 export function normalizeHealthDetails(kind, value = {}) {
   const result = Object.fromEntries(Object.entries(fieldsFor(kind)).map(([key, config]) => [key, number(value[key], config)]));
@@ -66,6 +75,54 @@ export function normalizeHealthDetails(kind, value = {}) {
 }
 
 export function normalizeHealthImage(kind, value = {}) {
+  if (kind === "sleep") {
+    const deepMinutes = nullableNumber(value.deepMinutes, 0, 1440, true);
+    const lightMinutes = nullableNumber(value.lightMinutes, 0, 1440, true);
+    const remMinutes = nullableNumber(value.remMinutes, 0, 1440, true);
+    const stageTotal = [deepMinutes, lightMinutes, remMinutes].every(Number.isFinite)
+      ? deepMinutes + lightMinutes + remMinutes
+      : null;
+    return {
+      date: recognizedDate(value.date),
+      bedtime: recognizedLocalDateTime(value.bedtime),
+      wakeTime: recognizedLocalDateTime(value.wakeTime),
+      totalMinutes: nullableNumber(value.totalMinutes, 0, 1440, true) ?? stageTotal,
+      deepMinutes,
+      deepPercent: nullableNumber(value.deepPercent, 0, 100),
+      lightMinutes,
+      lightPercent: nullableNumber(value.lightPercent, 0, 100),
+      remMinutes,
+      remPercent: nullableNumber(value.remPercent, 0, 100),
+      awakeCount: nullableNumber(value.awakeCount, 0, 100, true),
+      awakeMinutes: nullableNumber(value.awakeMinutes, 0, 1440, true),
+      averageHeartRate: nullableNumber(value.averageHeartRate, 20, 250),
+      averageOxygen: nullableNumber(value.averageOxygen, 50, 100),
+      respiratoryRate: nullableNumber(value.respiratoryRate, 1, 80),
+      verification: safeText(value.verification, 500)
+    };
+  }
+  if (kind === "heartRate") {
+    return {
+      date: recognizedDate(value.date),
+      minimum: nullableNumber(value.minimum, 20, 250),
+      maximum: nullableNumber(value.maximum, 20, 250),
+      average: nullableNumber(value.average, 20, 250),
+      resting: nullableNumber(value.resting, 20, 250),
+      sleepAverage: nullableNumber(value.sleepAverage, 20, 250),
+      trendAnalysis: safeText(value.trendAnalysis, 1200),
+      trendSegments: (Array.isArray(value.trendSegments) ? value.trendSegments : [])
+        .slice(0, 8)
+        .map(item => ({
+          period: safeText(item?.period, 80),
+          direction: ["下降", "上升", "平稳", "波动"].includes(item?.direction)
+            ? item.direction
+            : "波动",
+          approximateRange: safeText(item?.approximateRange, 80)
+        }))
+        .filter(item => item.period),
+      verification: safeText(value.verification, 500)
+    };
+  }
   const timeKey = kind === "weight" ? "measuredAt" : "startedAt";
   const details = normalizeHealthDetails(kind, value);
   if (kind === "exercise") {
@@ -125,6 +182,16 @@ const unitsFor = kind => Object.entries(fieldsFor(kind)).map(([key, [label, unit
 export function createHealthImageConfig() {
   const common = promptText("health.image.common");
   return {
+    sleep: {
+      scene: "healthRecognition",
+      maxImages: 2,
+      prompt: promptText("health.image.sleep")
+    },
+    heartRate: {
+      scene: "healthRecognition",
+      maxImages: 1,
+      prompt: promptText("health.image.heartRate")
+    },
     weight: {
       scene: "healthRecognition",
       maxImages: 1,
