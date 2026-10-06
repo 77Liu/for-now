@@ -603,6 +603,86 @@
       "status": "active"
     },
     {
+      "id": "frontend.feature.review-model",
+      "type": "feature",
+      "root": "public/frontend/features/review-insights/review/model.mjs",
+      "publicEntry": "public/frontend/features/review-insights/review/model.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["review domain filtering, source availability, sanitized analysis records and experiment projection"], "routes": [] },
+      "tests": ["scripts/frontend-review-insights-feature-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.review-operations",
+      "type": "feature",
+      "root": "public/frontend/features/review-insights/review/operations.mjs",
+      "publicEntry": "public/frontend/features/review-insights/review/operations.mjs",
+      "allowedDependencies": ["frontend.feature.review-model"],
+      "owns": { "data": ["review pagination, detail loading, idempotent analysis, experiment and metric mutations"], "routes": [] },
+      "tests": ["scripts/frontend-review-insights-feature-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.review-presentation",
+      "type": "feature",
+      "root": "public/frontend/features/review-insights/review/presentation.mjs",
+      "publicEntry": "public/frontend/features/review-insights/review/presentation.mjs",
+      "allowedDependencies": ["frontend.feature.review-model"],
+      "owns": { "data": ["review trends, associations, experiments, custom metrics and analysis history markup"], "routes": [] },
+      "tests": ["scripts/frontend-review-insights-feature-regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.review",
+      "type": "feature",
+      "root": "public/frontend/features/review-insights/review",
+      "publicEntry": "public/frontend/features/review-insights/review/controller.mjs",
+      "allowedDependencies": ["frontend.feature.review-model", "frontend.feature.review-operations", "frontend.feature.review-presentation"],
+      "owns": { "data": ["review route lifecycle, account and route generation guards, modal and form event ownership"], "routes": [] },
+      "tests": ["scripts/frontend-review-insights-feature-regression.mjs", "scripts/reviews-chat-regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.statistics-charts",
+      "type": "feature",
+      "root": "public/frontend/features/review-insights/statistics/charts.mjs",
+      "publicEntry": "public/frontend/features/review-insights/statistics/charts.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["statistics number, cost, duration and SVG chart formatting"], "routes": [] },
+      "tests": ["scripts/frontend-review-insights-feature-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.statistics-presentation",
+      "type": "feature",
+      "root": "public/frontend/features/review-insights/statistics/presentation.mjs",
+      "publicEntry": "public/frontend/features/review-insights/statistics/presentation.mjs",
+      "allowedDependencies": ["frontend.feature.statistics-charts"],
+      "owns": { "data": ["record and AI usage statistics markup plus date range projection"], "routes": [] },
+      "tests": ["scripts/frontend-review-insights-feature-regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.statistics",
+      "type": "feature",
+      "root": "public/frontend/features/review-insights/statistics",
+      "publicEntry": "public/frontend/features/review-insights/statistics/controller.mjs",
+      "allowedDependencies": ["frontend.feature.statistics-presentation"],
+      "owns": { "data": ["statistics request lifecycle, date selection and account, route and request generation guards"], "routes": [] },
+      "tests": ["scripts/frontend-review-insights-feature-regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.review-insights",
+      "type": "feature",
+      "root": "public/frontend/features/review-insights",
+      "publicEntry": "public/frontend/features/review-insights/index.mjs",
+      "allowedDependencies": ["frontend.feature.review", "frontend.feature.statistics"],
+      "owns": { "data": ["page-level lazy loading for review and statistics controllers"], "routes": [] },
+      "tests": ["scripts/frontend-review-insights-feature-regression.mjs"],
+      "status": "active"
+    },
+    {
       "id": "frontend.feature.library-model",
       "type": "feature",
       "root": "public/frontend/features/library/model.mjs",
@@ -819,7 +899,7 @@
       "type": "application",
       "root": "public/frontend/app",
       "publicEntry": "public/frontend/app/index.mjs",
-      "allowedDependencies": ["frontend.application", "frontend.ports", "frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.media-content-drafts", "frontend.page-audio", "frontend.page-catalog", "frontend.pages", "frontend.features", "frontend.feature-registry", "frontend.feature.actions-controller", "frontend.feature.annotations", "frontend.feature.background-results", "frontend.feature.capture-journal", "frontend.feature.checkins-model", "frontend.feature.checkins", "frontend.feature.health", "frontend.feature.library", "frontend.feature.quotes", "frontend.feature.thoughts", "frontend.feature.discovery", "frontend.feature.export", "frontend.feature.feedback", "frontend.feature.notifications", "frontend.feature.legacy-pages", "frontend.component.tag-multiselect"],
+      "allowedDependencies": ["frontend.application", "frontend.ports", "frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.media-content-drafts", "frontend.page-audio", "frontend.page-catalog", "frontend.pages", "frontend.features", "frontend.feature-registry", "frontend.feature.actions-controller", "frontend.feature.annotations", "frontend.feature.background-results", "frontend.feature.capture-journal", "frontend.feature.checkins-model", "frontend.feature.checkins", "frontend.feature.health", "frontend.feature.library", "frontend.feature.quotes", "frontend.feature.review-insights", "frontend.feature.thoughts", "frontend.feature.discovery", "frontend.feature.export", "frontend.feature.feedback", "frontend.feature.notifications", "frontend.feature.legacy-pages", "frontend.component.tag-multiselect"],
       "owns": { "data": ["browser bootstrap, dependency composition, feature event binding and page presenter runtime"], "routes": [] },
       "tests": ["scripts/frontend-shell-regression.mjs", "scripts/frontend-contract-regression.mjs", "scripts/frontend-lazy-descriptor-regression.mjs", "scripts/frontend-checkins-feature-regression.mjs", "scripts/frontend-notifications-feature-regression.mjs", "scripts/ui-regression.mjs", "scripts/mobile-platform-regression.mjs"],
       "status": "active"
@@ -1045,6 +1125,7 @@
         "../features/library/index.mjs",
         "../features/notifications/index.mjs",
         "../features/quotes/index.mjs",
+        "../features/review-insights/index.mjs",
         "../features/thought-discovery/index.mjs",
         "../features/thoughts/index.mjs",
         "../media/content-image-drafts.mjs",
@@ -1077,6 +1158,7 @@
         "../features/library/index.mjs",
         "../features/notifications/index.mjs",
         "../features/quotes/index.mjs",
+        "../features/review-insights/index.mjs",
         "../features/thought-discovery/index.mjs",
         "../features/thoughts/index.mjs",
         "../media/content-image-drafts.mjs",
@@ -1179,10 +1261,10 @@
         { "page": "journals", "feature": "frontend.feature.capture-journal", "specifier": "../features/capture-journal/index.mjs" },
         { "page": "thoughts", "feature": "frontend.feature.thoughts", "specifier": "../features/thoughts/index.mjs" },
         { "page": "discovery", "feature": "frontend.feature.discovery", "specifier": "../features/thought-discovery/index.mjs" },
-        { "page": "review", "feature": "frontend.feature.checkins", "specifier": "../features/checkins/index.mjs" },
+        { "page": "review", "feature": "frontend.feature.review-insights", "specifier": "../features/review-insights/index.mjs" },
         { "page": "mine", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
         { "page": "personal-context", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
-        { "page": "statistics", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
+        { "page": "statistics", "feature": "frontend.feature.review-insights", "specifier": "../features/review-insights/index.mjs" },
         { "page": "ai-cost", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
         { "page": "architecture", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
         { "page": "commercialization", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
@@ -1233,43 +1315,43 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.api-path",
-      "sourceSha256": "ee0bd1d255b82fed277276a350ef6678538a77a270d6d2c307e28690f39c63ab",
+      "sourceSha256": "af96e13b4d5ae861029b708a5458d4bde34e3406dc75e7e71676b2c4847a8123",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no API path literals",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden literal matched \"^/api(?:/|$)\"", "count": 54 }
+        { "detail": "forbidden literal matched \"^/api(?:/|$)\"", "count": 51 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.dom-query",
-      "sourceSha256": "ee0bd1d255b82fed277276a350ef6678538a77a270d6d2c307e28690f39c63ab",
+      "sourceSha256": "af96e13b4d5ae861029b708a5458d4bde34e3406dc75e7e71676b2c4847a8123",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page DOM queries",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden identifier \"querySelector\"", "count": 59 },
-        { "detail": "forbidden identifier \"querySelectorAll\"", "count": 14 },
+        { "detail": "forbidden identifier \"querySelector\"", "count": 57 },
+        { "detail": "forbidden identifier \"querySelectorAll\"", "count": 11 },
         { "detail": "forbidden identifier \"getElementById\"", "count": 6 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.event-binding",
-      "sourceSha256": "ee0bd1d255b82fed277276a350ef6678538a77a270d6d2c307e28690f39c63ab",
+      "sourceSha256": "af96e13b4d5ae861029b708a5458d4bde34e3406dc75e7e71676b2c4847a8123",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page event binding",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden identifier \"addEventListener\"", "count": 151 },
+        { "detail": "forbidden identifier \"addEventListener\"", "count": 141 },
         { "detail": "forbidden identifier \"removeEventListener\"", "count": 3 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.timer",
-      "sourceSha256": "ee0bd1d255b82fed277276a350ef6678538a77a270d6d2c307e28690f39c63ab",
+      "sourceSha256": "af96e13b4d5ae861029b708a5458d4bde34e3406dc75e7e71676b2c4847a8123",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page timers or animation scheduling",
       "deleteByGate": "G6",
@@ -1283,22 +1365,22 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.template",
-      "sourceSha256": "ee0bd1d255b82fed277276a350ef6678538a77a270d6d2c307e28690f39c63ab",
+      "sourceSha256": "af96e13b4d5ae861029b708a5458d4bde34e3406dc75e7e71676b2c4847a8123",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page templates",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden syntax template-literal", "count": 404 }
+        { "detail": "forbidden syntax template-literal", "count": 316 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "lines.hard",
-      "sourceSha256": "ee0bd1d255b82fed277276a350ef6678538a77a270d6d2c307e28690f39c63ab",
+      "sourceSha256": "af96e13b4d5ae861029b708a5458d4bde34e3406dc75e7e71676b2c4847a8123",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs is at or below 180 lines",
       "deleteByGate": "G6",
-      "maxValue": 3582
+      "maxValue": 3479
     }
   ],
   "migrationExceptions": []

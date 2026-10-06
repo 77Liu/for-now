@@ -81,6 +81,14 @@ const HIDDEN_FEATURE_MODULE_PATHS = Object.freeze([
   "/frontend/features/quotes/loader.mjs",
   "/frontend/features/quotes/controller.mjs",
   "/frontend/features/quotes/presentation.mjs",
+  "/frontend/features/review-insights/index.mjs",
+  "/frontend/features/review-insights/review/controller.mjs",
+  "/frontend/features/review-insights/review/model.mjs",
+  "/frontend/features/review-insights/review/operations.mjs",
+  "/frontend/features/review-insights/review/presentation.mjs",
+  "/frontend/features/review-insights/statistics/charts.mjs",
+  "/frontend/features/review-insights/statistics/controller.mjs",
+  "/frontend/features/review-insights/statistics/presentation.mjs",
   "/frontend/features/thought-discovery/index.mjs",
   "/frontend/features/thought-discovery/controller.mjs",
   "/frontend/features/thought-discovery/headless.mjs",
@@ -968,6 +976,7 @@ const lazyFeatureModules = Object.fromEntries(await Promise.all([
   ["library", "frontend/features/library/index.mjs"],
   ["notifications", "frontend/features/notifications/index.mjs"],
   ["quotes", "frontend/features/quotes/index.mjs"],
+  ["review-insights", "frontend/features/review-insights/index.mjs"],
   ["discovery", "frontend/features/thought-discovery/index.mjs"],
   ["thoughts", "frontend/features/thoughts/index.mjs"]
 ].map(async ([view, entry]) => [view, await moduleClosure(entry)])));

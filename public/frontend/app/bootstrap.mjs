@@ -14,6 +14,8 @@ if (bootstrapRoute.view === "export") {
   globalThis.__forNowFeedbackFeatureRequest ||= import("../features/feedback/index.mjs");
 } else if (bootstrapRoute.view === "discovery") {
   globalThis.__forNowDiscoveryFeatureRequest ||= import("../features/thought-discovery/index.mjs");
+} else if (["review", "statistics"].includes(bootstrapRoute.view)) {
+  globalThis.__forNowReviewInsightsFeatureRequest ||= import("../features/review-insights/index.mjs");
 } else {
   globalThis.__forNowLegacyFeatureRequest ||= import("../features/legacy-pages/index.mjs");
 }

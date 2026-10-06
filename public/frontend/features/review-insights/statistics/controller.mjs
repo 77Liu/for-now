@@ -44,6 +44,7 @@ export function createStatisticsFeatureController({
   let requestSerial = 0;
   let lastData = null;
   let lastOwner = "";
+  let loadFlight = null;
   const roots = new Set();
 
   const createTicket = () => ({
@@ -69,9 +70,11 @@ export function createStatisticsFeatureController({
     && !ticket.activation.signal?.aborted
   );
 
-  async function load() {
+  async function load({ dedupe = false } = {}) {
     const current = activation;
-    if (!current) return false;
+    const owner = String(data.getAccountId() || "");
+    if (!current || !owner) return false;
+    if (dedupe && loadFlight) return loadFlight;
     const from = current.root.querySelector?.("#statistics-from");
     const to = current.root.querySelector?.("#statistics-to");
     if (!from?.value || !to?.value) {
@@ -90,25 +93,33 @@ export function createStatisticsFeatureController({
     }
     const selectedFrom = from?.value || "";
     const selectedTo = to?.value || "";
+    const pending = (async () => {
+      try {
+        const result = await data.request(
+          `/api/statistics?from=${encodeURIComponent(selectedFrom)}&to=${encodeURIComponent(selectedTo)}`
+        );
+        if (!isCurrent(ticket)) return false;
+        lastData = result;
+        lastOwner = ticket.owner;
+        renderStatisticsPresentation({
+          root: current.root,
+          data: result,
+          view
+        });
+        if (status) status.textContent = "";
+        return true;
+      } catch (error) {
+        if (isCurrent(ticket) && status) status.textContent = error.message;
+        return false;
+      } finally {
+        if (isCurrent(ticket) && button) button.disabled = false;
+      }
+    })();
+    loadFlight = pending;
     try {
-      const result = await data.request(
-        `/api/statistics?from=${encodeURIComponent(selectedFrom)}&to=${encodeURIComponent(selectedTo)}`
-      );
-      if (!isCurrent(ticket)) return false;
-      lastData = result;
-      lastOwner = ticket.owner;
-      renderStatisticsPresentation({
-        root: current.root,
-        data: result,
-        view
-      });
-      if (status) status.textContent = "";
-      return true;
-    } catch (error) {
-      if (isCurrent(ticket) && status) status.textContent = error.message;
-      return false;
+      return await pending;
     } finally {
-      if (isCurrent(ticket) && button) button.disabled = false;
+      if (loadFlight === pending) loadFlight = null;
     }
   }
 
@@ -143,6 +154,7 @@ export function createStatisticsFeatureController({
     activation = null;
     generation += 1;
     requestSerial += 1;
+    loadFlight = null;
     current.unlink();
     return true;
   }
@@ -188,11 +200,15 @@ export function createStatisticsFeatureController({
       if (lastData) {
         renderStatisticsPresentation({ root: current.root, data: lastData, view });
       }
-      void load();
+      void load({ dedupe: true });
       return () => activation === current ? unmount() : false;
     },
     render() {
-      if (!activation || !lastData) return false;
+      if (!activation) return false;
+      if (!lastData) {
+        void load({ dedupe: true });
+        return false;
+      }
       return renderStatisticsPresentation({
         root: activation.root,
         data: lastData,
@@ -205,6 +221,7 @@ export function createStatisticsFeatureController({
       session = {};
       generation += 1;
       requestSerial += 1;
+      loadFlight = null;
       lastData = null;
       lastOwner = "";
       await unmount();

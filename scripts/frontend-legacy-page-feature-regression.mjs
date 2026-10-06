@@ -6,7 +6,7 @@ import {
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
-assert.equal(LEGACY_PAGE_VIEWS.length, 19);
+assert.equal(LEGACY_PAGE_VIEWS.length, 17);
 assert.equal(new Set(LEGACY_PAGE_VIEWS).size, LEGACY_PAGE_VIEWS.length);
 assert.equal(LEGACY_PAGE_VIEWS.includes("export"), false);
 assert.equal(LEGACY_PAGE_VIEWS.includes("feedback"), false);
@@ -14,6 +14,8 @@ assert.equal(LEGACY_PAGE_VIEWS.includes("discovery"), false);
 assert.equal(LEGACY_PAGE_VIEWS.includes("notifications"), false);
 assert.equal(LEGACY_PAGE_VIEWS.includes("books"), false);
 assert.equal(LEGACY_PAGE_VIEWS.includes("quotes"), false);
+assert.equal(LEGACY_PAGE_VIEWS.includes("review"), false);
+assert.equal(LEGACY_PAGE_VIEWS.includes("statistics"), false);
 assert.throws(
   () => createLegacyPageController({ view: "export" }),
   /Unknown legacy page view/

@@ -41,6 +41,7 @@ assert.deepEqual(dynamicSpecifiers, [
   "../features/library/index.mjs",
   "../features/notifications/index.mjs",
   "../features/quotes/index.mjs",
+  "../features/review-insights/index.mjs",
   "../features/thought-discovery/index.mjs",
   "../features/thoughts/index.mjs",
   "../media/content-image-drafts.mjs",
@@ -118,7 +119,11 @@ for (const removed of [
   "function renderBooks(",
   "function renderQuotes(",
   "function renderQuoteSky(",
-  "const bookImageUi="
+  "const bookImageUi=",
+  "function renderReview(",
+  "function renderStatistics(",
+  "function loadStatistics(",
+  "analysisRequestSerial"
 ]) {
   assert.equal(runtime.includes(removed), false, `legacy F2 symbol remains in runtime: ${removed}`);
 }
@@ -177,15 +182,20 @@ for (const view of ["captures", "journals"]) {
     specifier: "../features/capture-journal/index.mjs"
   });
 }
-for (const view of ["today", "review"]) {
+assert.deepEqual(descriptors.get("today"), {
+  page: "today",
+  feature: "frontend.feature.checkins",
+  specifier: "../features/checkins/index.mjs"
+});
+for (const view of ["review", "statistics"]) {
   assert.deepEqual(descriptors.get(view), {
     page: view,
-    feature: "frontend.feature.checkins",
-    specifier: "../features/checkins/index.mjs"
+    feature: "frontend.feature.review-insights",
+    specifier: "../features/review-insights/index.mjs"
   });
 }
 for (const [view, descriptor] of descriptors) {
-  if (["today", "review", "daily", "captures", "journals", "books", "quotes", "thoughts", "together", "export", "feedback", "discovery", "notifications"].includes(view)) continue;
+  if (["today", "review", "statistics", "daily", "captures", "journals", "books", "quotes", "thoughts", "together", "export", "feedback", "discovery", "notifications"].includes(view)) continue;
   assert.deepEqual(descriptor, {
     page: view,
     feature: "frontend.feature.legacy-pages",
@@ -220,6 +230,7 @@ for (const hiddenAsset of [
   "frontend/features/library/index.mjs",
   "frontend/features/notifications/index.mjs",
   "frontend/features/quotes/index.mjs",
+  "frontend/features/review-insights/index.mjs",
   "frontend/features/thought-discovery/index.mjs",
   "frontend/features/thoughts/index.mjs"
 ]) {

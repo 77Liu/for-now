@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cike-shell-v0.5.8-14";
+const CACHE_VERSION = "cike-shell-v0.5.8-15";
 const SHELL_ASSETS = [
   "./",
   "index.html",
@@ -98,6 +98,7 @@ const LAZY_MODULE_PATHS = [
   "/frontend/features/library/",
   "/frontend/features/notifications/",
   "/frontend/features/quotes/",
+  "/frontend/features/review-insights/",
   "/frontend/features/thought-discovery/",
   "/frontend/features/thoughts/"
 ];

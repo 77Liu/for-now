@@ -663,6 +663,56 @@ assert.match(statisticsSurface.root.nodes.get("#ai-token-chart").innerHTML, /推
 assert.match(statisticsSurface.root.nodes.get("#ai-service-summary").innerHTML, /150 Token/);
 assert.match(statisticsSurface.root.nodes.get("#ai-pricing").innerHTML, /历史美元账本/);
 
+let deepLinkOwner = "";
+let deepLinkSession = 0;
+const deepLinkRequests = [];
+const deepLinkSurface = createStatisticsSurface();
+const deepLinkController = createStatisticsFeatureController({
+  data: {
+    request() {
+      const gate = deferred();
+      deepLinkRequests.push(gate);
+      return gate.promise;
+    },
+    getAccountId: () => deepLinkOwner,
+    getSessionSerial: () => deepLinkSession,
+    hasCapability: () => false
+  },
+  navigation: {
+    currentRouteKey: () => "statistics|",
+    isView: view => view === "statistics"
+  },
+  view: {
+    escapeMarkup,
+    formatTrackingStart: value => String(value)
+  },
+  platform: { getCurrentDate: () => "2026-10-06" }
+});
+await deepLinkController.mount({
+  root: deepLinkSurface.root,
+  route: { view: "statistics" },
+  signal: new AbortController().signal
+});
+assert.equal(
+  deepLinkRequests.length,
+  0,
+  "statistics deep link must wait until the account session is ready"
+);
+deepLinkOwner = "deep-link-account";
+deepLinkSession = 1;
+assert.equal(deepLinkController.render(), false);
+assert.equal(deepLinkController.render(), false);
+await waitFor(
+  () => deepLinkRequests.length === 1,
+  "the first valid state notification must start one deduplicated statistics request"
+);
+deepLinkRequests[0].resolve(statisticsFixture);
+await waitFor(
+  () => deepLinkSurface.root.nodes.get("#record-total").innerHTML.includes("9"),
+  "the retried deep-link statistics request must render"
+);
+await deepLinkController.resetSession();
+
 let statisticsOwner = "account-a";
 let statisticsSession = 1;
 let statisticsRoute = "statistics|";

@@ -8,7 +8,6 @@ import {
 } from "../components/tag-multiselect/index.mjs";
 import { createLatexRenderer, escapeHtml, plainPreview, presentError, renderMarkdown } from "../content/index.mjs";
 import {
-  createPageEffects,
   createActionsCoordinator,
   createHomeMemoryPool,
   selectHomeMemories,
@@ -52,11 +51,12 @@ const appEntryUrl=new URL("../../app.js",import.meta.url);
 const applicationBasePath=new URL(".",appEntryUrl).pathname.replace(/\/$/,"")||"/";
 const initialRuntimeView=resolveApplicationRoute(location,{basePath:applicationBasePath}).view;
 const portFactoriesRequest=globalThis.__forNowPortsRequest||import("./ports.mjs");
-const legacyFeatureModuleRequest=globalThis.__forNowLegacyFeatureRequest||(["export","feedback","discovery","notifications","captures","journals","books","quotes"].includes(initialRuntimeView)?null:import("../features/legacy-pages/index.mjs"));
+const legacyFeatureModuleRequest=globalThis.__forNowLegacyFeatureRequest||(["export","feedback","discovery","notifications","captures","journals","books","quotes","review","statistics"].includes(initialRuntimeView)?null:import("../features/legacy-pages/index.mjs"));
 const exportFeatureModuleRequest=globalThis.__forNowExportFeatureRequest||(initialRuntimeView==="export"?import("../features/export/index.mjs"):null);
 const feedbackFeatureModuleRequest=globalThis.__forNowFeedbackFeatureRequest||(initialRuntimeView==="feedback"?import("../features/feedback/index.mjs"):null);
 const discoveryFeatureModuleRequest=globalThis.__forNowDiscoveryFeatureRequest||(initialRuntimeView==="discovery"?import("../features/thought-discovery/index.mjs"):null);
 const notificationsFeatureModuleRequest=globalThis.__forNowNotificationsFeatureRequest||(initialRuntimeView==="notifications"?import("../features/notifications/index.mjs"):null);
+let reviewInsightsFeatureModuleRequest=globalThis.__forNowReviewInsightsFeatureRequest||(["review","statistics"].includes(initialRuntimeView)?import("../features/review-insights/index.mjs"):null);
 let captureJournalFeatureModuleRequest=globalThis.__forNowCaptureJournalFeatureRequest||(["captures","journals"].includes(initialRuntimeView)?import("../features/capture-journal/index.mjs"):null);
 let annotationsFeatureModuleRequest=globalThis.__forNowAnnotationsFeatureRequest||null;
 let backgroundResultsFeatureModuleRequest=globalThis.__forNowBackgroundResultsFeatureRequest||null;
@@ -100,6 +100,11 @@ const loadLibraryFeatureModule=()=>{
   const pending=libraryFeatureModuleRequest||import("../features/library/index.mjs");
   libraryFeatureModuleRequest=pending;
   return Promise.resolve(pending).catch(error=>{if(libraryFeatureModuleRequest===pending)libraryFeatureModuleRequest=null;throw error})
+};
+const loadReviewInsightsFeatureModule=()=>{
+  const pending=reviewInsightsFeatureModuleRequest||import("../features/review-insights/index.mjs");
+  reviewInsightsFeatureModuleRequest=pending;
+  return Promise.resolve(pending).catch(error=>{if(reviewInsightsFeatureModuleRequest===pending)reviewInsightsFeatureModuleRequest=null;throw error})
 };
 const startupPerformanceEnabled=new URLSearchParams(location.search).has("native-performance");
 const startupMarks={navigationStart:0,moduleLoaded:Number(performance.now().toFixed(1))};
@@ -152,7 +157,6 @@ const KEEPSAKE_PAGE_SIZE=12,KEEPSAKE_PREFETCH_MARGIN_PX=160,BACKGROUND_RESULTS_R
 const LOCAL_TEST_VIEW_SCOPES=Object.freeze({today:"today",daily:"daily",captures:"captures",books:"books",quotes:"quotes",keepsakes:"keepsakes",journals:"journals",thoughts:"thoughts",discovery:"discovery",together:"together",review:"review",statistics:"statistics","ai-cost":"statistics",commercialization:"statistics","personal-context":"personal-context",feedback:"feedback",export:"export",trash:"trash"});
 const localTestScopeLoads=new Map();
 const baseMetrics=BASE_CHECKIN_METRICS;
-const trendLabels=Object.fromEntries(Object.entries(baseMetrics).map(([k,v])=>[k,v.label]));
 const llmTiers=["lite","mid","high","ultra"];
 const llmEfforts=["none","high","max"];
 const defaultLlmProfiles={lite:{model:"deepseek-flash",effort:"none"},mid:{model:"deepseek-flash",effort:"high"},high:{model:"deepseek-v4-pro",effort:"high"},ultra:{model:"deepseek-v4-pro",effort:"max"}};
@@ -172,8 +176,8 @@ const checkinsFeatureControllers=new Set();
 const thoughtsFeatureControllers=new Set();
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-let activeDate=currentLocalDate,activeDailyType="sleep",answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],answerTaskSerial=0,activeAnswerTaskId=0,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
-let notificationsLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,routeDataRequestSerial=0,routeLoadFailureKey="",loadedRouteKey="",fullRouteStateLoaded=false,renderedRouteView="",analysisRequestSerial=0;
+let activeDate=currentLocalDate,activeDailyType="sleep",answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],answerTaskSerial=0,activeAnswerTaskId=0,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
+let notificationsLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,routeDataRequestSerial=0,routeLoadFailureKey="",loadedRouteKey="",fullRouteStateLoaded=false,renderedRouteView="";
 const feedSearchQueries={keepsakes:""};
 const quoteTagPickerConfig=Object.freeze({
   selectionQuote:{input:"#selection-quote-tags",selected:"#selection-quote-selected-tags",options:"#selection-quote-tag-options",toggle:"#selection-quote-tag-toggle",status:"#selection-quote-tag-status"}
@@ -1180,87 +1184,6 @@ function stopPageAudio(){
 function renderCheckinSurfaces(domains){for(const controller of checkinsFeatureControllers)controller.renderPresentation({snapshot:state,changedDomains:domains})}
 function renderStateChart(){renderCheckinSurfaces(["checkins","review"])}
 function renderChat(){const chats=state.chats.filter(x=>eventDate(x)===activeDate);$("#chat-history").innerHTML=chats.length?[...chats].reverse().map(x=>`<div class="chat-message user" data-chat-id="${x.id}" data-chat-part="message"><div class="markdown-content">${renderMarkdown(x.message)}</div></div><div class="chat-message agent" data-chat-id="${x.id}" data-chat-part="answer">${contextReceiptMarkup(x.contextReceipt)}<div class="markdown-content">${renderMarkdown(x.answer)}</div><button class="subtle-action danger chat-delete" type="button" data-chat-delete="${x.id}">删除对话</button></div>`).join(""):contentState({title:"这一天还没有对话",body:"发送问题后，共参会结合你已保存的记录回答。",action:{focus:"chat-input",label:"开始提问"}});chats.forEach(item=>{const rootKey=commentRootKey("chat",item.id);markCommentTarget($(`[data-chat-id="${CSS.escape(item.id)}"][data-chat-part="message"]>.markdown-content`),rootKey,"message");markCommentTarget($(`[data-chat-id="${CSS.escape(item.id)}"][data-chat-part="answer"]>.markdown-content`),rootKey,"answer")});renderLatex($("#chat-history"));applyCommentAnchors($("#chat-history"))}
-function experimentCard(item){const start=new Date(item.createdAt),elapsed=Math.max(1,Math.floor((Date.now()-start.getTime())/86400000)+1),relevant=state.checkins.filter(x=>new Date(eventTimestamp(x))>=start),withFactor=relevant.filter(x=>(x.factors||[]).includes(item.factor)),withoutFactor=relevant.filter(x=>!(x.factors||[]).includes(item.factor)),metric=baseMetrics[item.outcome]?item.outcome:"mood",withAvg=avg(withFactor.map(x=>x[metric]).filter(Number.isFinite)),withoutAvg=avg(withoutFactor.map(x=>x[metric]).filter(Number.isFinite)),enough=withFactor.length>=3&&withoutFactor.length>=3,result=enough?`有因素 ${withAvg.toFixed(1)} / 无因素 ${withoutAvg.toFixed(1)}，差值 ${(withAvg-withoutAvg).toFixed(1)}`:`有因素 ${withFactor.length} 次 / 无因素 ${withoutFactor.length} 次；两边各满 3 次后开始显示线索`;return `<article class="experiment-card"><div class="section-title"><b>${escapeHtml(item.hypothesis)}</b><span>${Math.min(elapsed,item.duration)} / ${item.duration} 天</span></div><div class="experiment-progress"><i style="width:${Math.min(100,elapsed/item.duration*100)}%"></i></div><p>每天若做了“<b>${escapeHtml(item.factor)}</b>”，请在今日因素中填入完全相同的词；观察 ${trendLabels[metric]}。</p><footer><small>${escapeHtml(result)}。相关不等于因果。</small><button class="subtle-action danger" type="button" data-experiment-delete="${item.id}">删除</button></footer></article>`}
-
-function renderAssociationFlow(){const dates=new Set(state.checkins.map(x=>x.occurredOn)).size,factors=new Set(state.checkins.flatMap(x=>x.factors||[])).size;$("#association-flow").innerHTML=`<div class="association-flow" role="img" aria-label="延迟相关线索计算流程：记录状态和因素，按日期聚合，按因素分组，对照当天与自然次日情绪，通过样本门槛，最后输出非因果线索"><div class="flow-node"><b>状态记录</b><span>${state.checkins.length} 次状态 · ${factors} 个因素</span></div><i>↓</i><div class="flow-node"><b>按自然日聚合</b><span>${dates} 天；同日多次取平均</span></div><i>↓</i><div class="flow-node"><b>逐个因素分组</b><span>出现该因素的天 vs 未出现的天</span></div><i>↓</i><div class="flow-node"><b>三个对照</b><span>当天情绪 · 自然次日情绪 · 无因素基线</span></div><i>↓</i><div class="flow-node"><b>样本分层</b><span>首次出现即展示；样本增加后再升级为初步线索或可观察</span></div><i>↓</i><div class="flow-node final"><b>延迟关联线索</b><span>只显示均值差异，不推断因果</span></div></div>`}
-function setAssociationFlowOpen(open){const modal=$("#association-flow-modal"),button=$("#association-flow-toggle");modal.hidden=!open;button.setAttribute("aria-expanded",String(open));button.setAttribute("aria-label",open?"关闭计算流程":"查看计算流程");button.title=open?"关闭计算流程":"查看计算流程";if(open)$("#association-flow-close").focus();else button.focus()}
-function trendInsightsMarkup(){
-  const trends=state.insights.trends||[],available=trends.filter(item=>item.current!=null);
-  if(!available.length)return empty("记录一次状态后即可形成当前均值；有第二组数据后再比较变化。");
-  const waiting=available.every(item=>item.previous==null),sampleCount=Math.max(...available.map(item=>item.currentCount||0),state.insights.weekly?.checkins||0);
-  const note=waiting?`<p class="review-observation"><b>当前观察</b><span>先展示已有 ${sampleCount||"少量"} 个记录日的均值；样本增加后自动补充前后变化。</span></p>`:"";
-  return `${note}${trends.map(item=>{const delta=item.previous==null?"当前均值":`${item.current>=item.previous?"+":""}${(item.current-item.previous).toFixed(1)}`,count=item.currentCount?` · ${item.currentCount}天`:"";return `<div class="trend-row trend-${item.metric}"><b>${trendLabels[item.metric]}</b><div class="trend-bar"><span style="width:${(item.current||0)*20}%;--trend-value:${item.current||0}"></span></div><span class="delta">${item.current??"—"} / ${delta}${count}</span></div>`}).join("")}`;
-}
-function associationInsightsMarkup(){
-  const associations=(state.insights.associations||[]).slice(0,3);
-  if(associations.length)return associations.map(item=>{const next=item.nextDay==null?"次日暂无":`次日 ${item.nextDay}（${item.nextDayCount}天）`,baseline=item.baseline==null?"暂无无因素日":`无因素 ${item.baseline}（${item.withoutCount}天）`;return `<div class="association-row"><b>${escapeHtml(item.factor)}</b><span>当天 ${item.sameDay??"—"}（${item.withCount}天） · ${next} · ${baseline}</span><span class="delta">${item.confidence}</span></div>`}).join("");
-  const groups=new Map();for(const item of state.checkins){const value=Number(item.mood);if(!Number.isFinite(value))continue;const key=item.occurredOn;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(value)}
-  const moods=[...groups.values()].map(avg),days=groups.size;
-  if(!moods.length)return empty("记录一次状态后即可形成当前观察；补充当天因素后再寻找关联线索。");
-  return `<p class="review-observation"><b>当前观察</b><span>${days} 个记录日的情绪均值为 ${avg(moods).toFixed(1)}。尚未记录可对照因素，暂时只描述现状。</span></p>`;
-}
-function safeAnalysisRecord(value){
-  const item=structuredClone(value||{});delete item.reasoningContent;delete item.contentTruncated;
-  for(const annotation of[...(item.annotations||[]),...(item.annotationDrift||[])])for(const exchange of annotation.shenji||[])delete exchange.reasoningContent;
-  return item
-}
-async function loadAnalysisDetail(id){
-  const item=(state.analyses||[]).find(value=>value.id===id);
-  if(!item?.contentTruncated)return true;
-  const serial=++analysisRequestSerial,owner=currentUser?.id,session=sessionSerial,routeKey=routeDataKey(pageRouter?.currentRoute());
-  const status=document.querySelector(`[data-analysis-id="${CSS.escape(id)}"] [data-analysis-load-status]`);
-  if(status)status.textContent="正在载入完整复盘…";
-  try{
-    const result=await requestV1(`/api/v1/analyses/${encodeURIComponent(id)}`);
-    if(serial!==analysisRequestSerial||owner!==currentUser?.id||session!==sessionSerial||routeKey!==routeDataKey(pageRouter?.currentRoute()))return false;
-    state.analyses=(state.analyses||[]).map(value=>value.id===id?safeAnalysisRecord(result.data):value);renderAnalysisHistory();return true
-  }catch(error){
-    if(serial===analysisRequestSerial&&status?.isConnected)status.textContent=`完整复盘载入失败：${error.message}`;
-    return false
-  }
-}
-async function loadMoreAnalyses(){
-  const button=$("#analysis-load-more"),cursor=state.analysisPage?.nextCursor,route=pageRouter?.currentRoute();
-  if(!button||!cursor||route?.view!=="review")return false;
-  const serial=++analysisRequestSerial,owner=currentUser?.id,session=sessionSerial,routeKey=routeDataKey(route);
-  button.disabled=true;$("#analysis-pagination-status").textContent="正在加载…";
-  try{
-    const result=await requestV1(`/api/v1/route-state?view=review&cursor=${encodeURIComponent(cursor)}`),snapshot=result.data||{};
-    if(serial!==analysisRequestSerial||owner!==currentUser?.id||session!==sessionSerial||routeKey!==routeDataKey(pageRouter?.currentRoute()))return false;
-    const known=new Set((state.analyses||[]).map(item=>item.id));
-    state.analyses=[...(state.analyses||[]),...(snapshot.analyses||[]).filter(item=>!known.has(item.id))];
-    state.analysisPage={...(state.analysisPage||{}),...(snapshot.analysisPage||{})};
-    renderAnalysisHistory();return true
-  }catch(error){
-    if(serial===analysisRequestSerial)$("#analysis-pagination-status").textContent=`继续加载失败：${error.message}`;
-    return false
-  }finally{
-    if(button.isConnected)button.disabled=false
-  }
-}
-function renderAnalysisHistory(){
-  const list=$("#analysis-list"),known=new Set([...list.querySelectorAll("[data-analysis-id]")].map(item=>item.dataset.analysisId)),opened=new Set([...list.querySelectorAll("[data-analysis-id][open]")].map(item=>item.dataset.analysisId)),items=[...(state.analyses||[])].sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
-  const total=Math.max(items.length,Number(state.analysisPage?.total)||0),pagination=$("#analysis-pagination");
-  $("#analysis-count").textContent=`${total} 份`;
-  const hasSource=Number(state.reviewSourceCount)>0||[state.checkins,state.dailyRecords,state.captures,state.journals,state.thoughts].some(collection=>collection?.length);
-  list.innerHTML=items.length?items.map((item,index)=>{const label=item.reason==="weekly-background"?"后台周复盘":"主动复盘",isNew=!known.has(item.id),open=opened.has(item.id)||(index===0&&(!known.size||isNew));return `<details class="analysis-entry" data-analysis-id="${item.id}" ${open?"open":""}><summary><div><div class="analysis-summary-meta"><time>${formatDate(item.createdAt)}</time><span>${label}</span>${index===0?'<b>最新</b>':""}</div><p>${escapeHtml(plainPreview(item.content))}</p></div><span class="expand-mark" aria-hidden="true">⌄</span></summary><div class="analysis-entry-body">${contextReceiptMarkup(item.contextReceipt)}<div class="analysis-content markdown-content">${renderMarkdown(item.content)}</div>${item.contentTruncated?'<p class="status" data-analysis-load-status>展开后载入完整复盘。</p>':""}<button class="subtle-action danger" type="button" data-analysis-delete="${item.id}">删除复盘</button></div></details>`}).join(""):contentState({title:"还没有认知复盘",body:hasSource?"现有记录已经可以作为起点，复盘结果只是一条可修正的线索。":"先留下任意一条记录，再回到这里形成第一份复盘。",action:hasSource?{command:"run-analysis",label:"开始一次复盘"}:{view:"captures",label:"先留一条记录"}});
-  if(pagination){pagination.hidden=!state.analysisPage?.nextCursor;$("#analysis-pagination-status").textContent=state.analysisPage?.nextCursor?`已加载 ${items.length} / ${total} 份`:""}
-  items.forEach(item=>markCommentTarget(list.querySelector(`[data-analysis-id="${CSS.escape(item.id)}"] .analysis-content`),commentRootKey("analysis",item.id),"content"));
-  list.querySelectorAll("[data-analysis-id]").forEach(entry=>{entry.addEventListener("toggle",()=>{if(entry.open)void loadAnalysisDetail(entry.dataset.analysisId)});if(entry.open)void loadAnalysisDetail(entry.dataset.analysisId)});
-  renderLatex(list);applyCommentAnchors(list);
-}
-function renderReview(){
-  const w=state.insights.weekly||{},reviewValue=w.reviewAgeDays==null?"未开始":w.reviewAgeDays===0?"今天":String(w.reviewAgeDays),reviewUnit=w.reviewAgeDays>0?"天":"";
-  const signals=[
-    {key:"coverage",label:"近 7 日记录覆盖",value:w.activeDays7??0,unit:"/ 7 天",detail:"有任一主动记录的自然日"},
-    {key:"paired",label:"近 30 日身心同日",value:w.pairedDays30??0,unit:"天",detail:"状态与健康记录出现在同一天"},
-    {key:"trace",label:"近 30 日思考留痕率",value:w.traceRate30??"—",unit:w.traceRate30==null?"":"%",detail:w.rootCount30?`${w.tracedRoots30??0} / ${w.rootCount30} 个问题留有你的痕迹`:"近 30 日还没有问题"},
-    {key:"correction",label:"近 30 日主动校正",value:w.correctionActions30??0,unit:"次",detail:"编辑、追问、批注与回望"},
-    {key:"review",label:"距上次认知复盘",value:reviewValue,unit:reviewUnit,detail:w.analysisCount?`累计 ${w.analysisCount} 份认知复盘`:"还没有认知复盘"}
-  ];
-  $("#weekly-summary").innerHTML=signals.map(item=>`<article class="summary-signal" data-signal="${item.key}"><span class="summary-signal-label">${item.label}</span><div class="summary-signal-value"><strong>${item.value}</strong>${item.unit?`<span>${item.unit}</span>`:""}</div><p>${item.detail}</p></article>`).join("");
-  $("#trend-list").innerHTML=trendInsightsMarkup();renderStateChart();$("#association-list").innerHTML=associationInsightsMarkup();renderAssociationFlow();$("#cluster-grid").innerHTML=state.clusters.length?state.clusters.map(g=>`<article class="cluster-card"><div class="section-title"><h2>${escapeHtml(g.theme)}</h2><b>${g.count}</b></div><div class="cluster-stats"><span>保留 ${g.kept}</span><span>舍弃 ${g.discarded}</span><span>未处理 ${g.unreviewed}</span></div><ul>${g.items.slice(0,3).map(x=>`<li>${escapeHtml(x.content.slice(0,54))}${x.content.length>54?"…":""}</li>`).join("")}</ul></article>`).join(""):empty("累积几条思绪后，这里会出现反复主题。");$("#experiment-list").innerHTML=state.experiments.length?state.experiments.map(experimentCard).join(""):`<p class="time-hint">建议从 14 天、一个因素、一个结果开始。</p>`;$("#metric-list").innerHTML=state.customMetrics.length?`<div class="pill-list">${state.customMetrics.map(x=>`<span class="pill">${escapeHtml(x.name)}：${escapeHtml(x.low)} ↔ ${escapeHtml(x.high)}</span>`).join("")}</div>`:`<p class="time-hint">新指标会出现在“此刻状态”中。</p>`;renderAnalysisHistory()
-}
 const dataUrlFromBlob=blob=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error("图片读取失败"));reader.readAsDataURL(blob)});
 const loadImageSource=source=>new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>reject(new Error("图片无法打开，请换一张重试"));image.src=source});
 function blankCanvas(width,height){const canvas=document.createElement("canvas");canvas.width=width;canvas.height=height;return canvas}
@@ -1782,81 +1705,8 @@ function renderLocalTestSettings(){const panel=$("#local-test-settings"),mineSum
 const shiftLocalDateKey=(dateKey,days)=>{const [year,month,day]=String(dateKey).split("-").map(Number),date=new Date(Date.UTC(year,month-1,day+days));return date.toISOString().slice(0,10)};
 const compactNumber=value=>new Intl.NumberFormat("zh-CN",{notation:"compact",maximumFractionDigits:1}).format(Number(value)||0);
 const formatCny=value=>{const number=Number(value)||0,absolute=Math.abs(number),digits=absolute===0?2:absolute>=100?0:absolute>=10?1:absolute>=1?2:absolute>=.1?3:absolute>=.01?4:6;return `${number<0?"-":""}¥${absolute.toFixed(digits)}`};
-const formatCnyAxis=value=>{const number=Number(value)||0;return number!==0&&Math.abs(number)<.000001?`${number<0?"-":""}<¥0.000001`:formatCny(number)};
 const formatDuration=value=>{const milliseconds=Number(value)||0;return milliseconds>=60000?`${(milliseconds/60000).toFixed(1)} 分钟`:milliseconds>=1000?`${(milliseconds/1000).toFixed(1)} 秒`:`${Math.round(milliseconds)} ms`};
-const shortDate=value=>{const [,month,day]=String(value).split("-");return `${Number(month)}/${Number(day)}`};
 const sceneLabels={thoughtPrompt:"思考引子",thoughtDraft:"思考草稿",thoughtAnswer:"思考回答",followUpAnswer:"追问回答",chat:"长期对话",diaryLead:"日记引子",diaryStructure:"日记结构",diaryTopic:"日记话题",diaryReflection:"日记回望",annotationShenji:"批注神鸡",analysis:"认知复盘",bookRecognition:"书目识别",healthRecognition:"健康识别",contentImageUnderstanding:"内容图片理解",capturePolish:"语音整理",lite:"连接测试",mid:"连接测试",high:"连接测试",ultra:"连接测试"};
-const serviceUnitText=item=>(item?.unitUsage||[]).map(unit=>{
-  if(unit.unitType==="token")return`${compactNumber(unit.units)} Token`;
-  if(unit.unitType==="character")return`${compactNumber(unit.units)} 字符`;
-  if(unit.unitType==="audioMillisecond")return formatDuration(unit.units);
-  if(unit.unitType==="page")return`${compactNumber(unit.units)} 页`;
-  if(unit.unitType==="image")return`${compactNumber(unit.units)} 张`;
-  if(unit.unitType==="document")return`${compactNumber(unit.units)} 份`;
-  if(unit.unitType==="call")return`${compactNumber(unit.units)} 次 API 调用`;
-  return`${compactNumber(unit.units)} ${unit.unitType}`
-}).join(" · ")||"—";
-function chartFrame(daily,series,{ariaLabel,valueLabel=compactNumber,actualPeak=false}={}){
-  const width=760,height=260,pad={left:54,right:18,top:16,bottom:38},plotWidth=width-pad.left-pad.right,plotHeight=height-pad.top-pad.bottom,peak=Math.max(0,...series.flatMap(item=>item.values).map(value=>Number(value)||0)),scaleMax=actualPeak?(peak||1):Math.max(1,peak),axisMax=actualPeak?peak:scaleMax,x=index=>pad.left+(daily.length<=1?plotWidth/2:index*plotWidth/(daily.length-1)),y=value=>pad.top+plotHeight-(Number(value)||0)/scaleMax*plotHeight;
-  const grid=(actualPeak&&peak===0?[0]:[0,.5,1]).map(ratio=>{const py=pad.top+plotHeight*(1-ratio);return `<line x1="${pad.left}" y1="${py}" x2="${width-pad.right}" y2="${py}"></line><text x="${pad.left-9}" y="${py+4}" text-anchor="end">${escapeHtml(valueLabel(axisMax*ratio))}</text>`}).join("");
-  const labelIndexes=[0,Math.floor((daily.length-1)/2),daily.length-1].filter((value,index,array)=>array.indexOf(value)===index);
-  const dates=labelIndexes.map(index=>`<text x="${x(index)}" y="${height-12}" text-anchor="${index===0?"start":index===daily.length-1?"end":"middle"}">${escapeHtml(shortDate(daily[index]?.date||""))}</text>`).join("");
-  const paths=series.map(item=>{const points=item.values.map((value,index)=>`${x(index)},${y(value)}`).join(" "),dots=item.values.length<=31?item.values.map((value,index)=>`<circle cx="${x(index)}" cy="${y(value)}" r="3"><title>${escapeHtml(`${item.label} · ${daily[index]?.date} · ${valueLabel(value)}`)}</title></circle>`).join(""):"";return `<g class="analytics-series" style="--series:${item.color}"><polyline points="${points}"></polyline>${dots}</g>`}).join("");
-  const legend=series.map(item=>`<span><i style="--series:${item.color}"></i>${escapeHtml(item.label)}</span>`).join("");
-  return `<svg class="analytics-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(ariaLabel||"统计图")}"><g class="analytics-grid">${grid}${dates}</g>${paths}</svg><div class="analytics-legend">${legend}</div>`;
-}
-function stackedTokenChart(daily){
-  const width=760,height=260,pad={left:54,right:18,top:16,bottom:38},plotWidth=width-pad.left-pad.right,plotHeight=height-pad.top-pad.bottom,answer=daily.map(item=>item.tokens.answer||0),reasoning=daily.map(item=>item.tokens.reasoning||0),total=answer.map((value,index)=>value+reasoning[index]),max=Math.max(1,...total),x=index=>pad.left+(daily.length<=1?plotWidth/2:index*plotWidth/(daily.length-1)),y=value=>pad.top+plotHeight-value/max*plotHeight,path=values=>values.map((value,index)=>`${index?"L":"M"} ${x(index)} ${y(value)}`).join(" "),area=(top,bottom)=>`${path(top)} ${bottom.map((_,index)=>`L ${x(bottom.length-1-index)} ${y(bottom[bottom.length-1-index])}`).join(" ")} Z`;
-  const grid=[0,.5,1].map(ratio=>{const py=pad.top+plotHeight*(1-ratio);return `<line x1="${pad.left}" y1="${py}" x2="${width-pad.right}" y2="${py}"></line><text x="${pad.left-9}" y="${py+4}" text-anchor="end">${escapeHtml(compactNumber(max*ratio))}</text>`}).join("");
-  const labelIndexes=[0,Math.floor((daily.length-1)/2),daily.length-1].filter((value,index,array)=>array.indexOf(value)===index),dates=labelIndexes.map(index=>`<text x="${x(index)}" y="${height-12}" text-anchor="${index===0?"start":index===daily.length-1?"end":"middle"}">${escapeHtml(shortDate(daily[index]?.date||""))}</text>`).join("");
-  return `<svg class="analytics-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="回答与推理 Token 每日面积图"><g class="analytics-grid">${grid}${dates}</g><path class="analytics-area answer" d="${area(answer,answer.map(()=>0))}"></path><path class="analytics-area reasoning" d="${area(total,answer)}"></path><path class="analytics-area-line answer" d="${path(answer)}"></path><path class="analytics-area-line reasoning" d="${path(total)}"></path></svg><div class="analytics-legend"><span><i style="--series:#4f8d78"></i>回答</span><span><i style="--series:#c18c3f"></i>推理</span></div>`;
-}
-function renderStatistics(data){
-  statisticsData=data;
-  const {records,ai}=data;
-  $("#record-total").innerHTML=`<strong>${records.total}</strong><span>累计条目</span>`;
-  $("#record-stat-sections").innerHTML=(records.groups||[]).map(group=>`<section class="record-stat-section"><header><h3>${escapeHtml(group.label)}</h3><span>${group.total} 项</span></header><div class="record-module-list">${group.modules.map(module=>`<article><div class="record-module-title"><b>${escapeHtml(module.label)}</b><strong>${module.total}</strong></div><dl>${module.items.map(item=>`<div><dt>${escapeHtml(item.label)}</dt><dd>${item.count}</dd></div>`).join("")}</dl></article>`).join("")}</div></section>`).join("");
-  const title=$("#statistics-page-title");if(title)title.textContent=ai?"留下了什么，也看见如何使用 AI":"留下了什么";
-  if(!ai)return;
-  const summary=ai.summary,cnyPerUsd=Math.max(.01,Number(ai.pricing?.cnyPerUsd)||7.2),historicalUsdToCny=value=>(Number(value)||0)*cnyPerUsd,totalCost=item=>historicalUsdToCny(item?.costsUsd?.total)+(Number(item?.costCny)||0),componentCost=(item,key)=>(Number(item?.costsCny?.[key])||0)+historicalUsdToCny(item?.costsUsd?.[key]);
-  const totalTokens=summary.tokens.input+summary.tokens.output,cacheRate=summary.tokens.input?summary.tokens.cacheHit/summary.tokens.input*100:0,totalCostCny=totalCost(summary),averageCost=summary.calls?totalCostCny/summary.calls:0,knownStatuses=(summary.successfulCalls||0)+(summary.failedCalls||0),successRate=knownStatuses?(summary.successfulCalls||0)/knownStatuses*100:null,averageDuration=summary.durationKnownCalls?(summary.durationMs||0)/summary.durationKnownCalls:0,vision=ai.modalities?.find(item=>item.modality==="vision")||{calls:summary.visionCalls||0,imageCount:summary.imageCount||0,costsUsd:{total:0},costCny:0};
-  $("#ai-kpis").innerHTML=[
-    ["总费用",formatCny(totalCostCny),summary.costUnknownCalls?`${summary.costUnknownCalls} 次供应商调用费用待账单核对`:"按官方单价折算"],
-    ["调用次数",compactNumber(summary.calls),"次"],
-    ["成功率",successRate==null?"未知":`${successRate.toFixed(successRate>=10?0:1)}%`,`${summary.failedCalls||0} 次失败 · ${summary.unknownStatusCalls||0} 次历史未知`],
-    ["图片理解",compactNumber(vision.calls),`${compactNumber(vision.imageCount)} 张 · ${formatCny(totalCost(vision))}`],
-    ["总 Token",compactNumber(totalTokens),"输入与输出"],
-    ["缓存命中率",`${cacheRate.toFixed(cacheRate>=10?0:1)}%`,`${compactNumber(summary.tokens.cacheHit)} Token`],
-    ["平均费用",formatCny(averageCost),"每次实际请求"],
-    ["平均响应",summary.durationKnownCalls?formatDuration(averageDuration):"未知",`${summary.usageUnknownCalls||0} 次用量未知`]
-  ].map(([label,value,note])=>`<article><span>${label}</span><strong>${value}</strong><small>${note}</small></article>`).join("");
-  $("#ai-tracking-since").textContent=`自 ${new Intl.DateTimeFormat("zh-CN",{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(ai.trackingStartedAt))} 开始统计`;
-  const serviceColors={deepseekText:"#4f8d78",deepseekVision:"#3f7f91",volcengineTts:"#a65f4b",volcengineAsr:"#b77f48",volcengineOcr:"#5c7891",volcengineDocument:"#77658c",aliyunSegmentation:"#c18c3f"},fallbackServiceColors=["#547d87","#9a7052","#6f7651"];
-  const callSeries=(ai.services||[]).map((service,index)=>({label:service.label,color:serviceColors[service.key]||fallbackServiceColors[index%fallbackServiceColors.length],values:ai.daily.map(day=>day.services?.[service.key]?.calls||0)}));
-  $("#ai-calls-chart").innerHTML=chartFrame(ai.daily,callSeries,{ariaLabel:"多供应商服务每日调用次数",valueLabel:value=>String(Math.round(value))});
-  $("#ai-service-summary").innerHTML=`<table><thead><tr><th>服务</th><th>调用</th><th>成功 / 失败</th><th>单位用量</th><th>已知费用</th><th>待账单</th></tr></thead><tbody>${(ai.services||[]).map(service=>`<tr><td>${escapeHtml(service.label)}</td><td>${service.calls}</td><td>${service.successfulCalls||0} / ${service.failedCalls||0}</td><td>${escapeHtml(serviceUnitText(service))}</td><td>${formatCny(totalCost(service))}</td><td>${service.costUnknownCalls?`${service.costUnknownCalls} 次`:"0 次"}</td></tr>`).join("")}</tbody></table>`;
-  $("#ai-token-chart").innerHTML=stackedTokenChart(ai.daily);
-  $("#ai-modality-summary").innerHTML=`<table><thead><tr><th>输入方式</th><th>调用</th><th>成功</th><th>图片</th><th>总 Token</th><th>费用</th><th>平均响应</th></tr></thead><tbody>${(ai.modalities||[]).map(item=>`<tr><td>${escapeHtml(item.label)}</td><td>${item.calls}</td><td>${item.successfulCalls||0}</td><td>${item.imageCount||0}</td><td>${compactNumber((item.tokens?.input||0)+(item.tokens?.output||0))}</td><td>${formatCny(totalCost(item))}${item.costUnknownCalls?` + ${item.costUnknownCalls} 次待账单`:""}</td><td>${item.durationKnownCalls?formatDuration((item.durationMs||0)/item.durationKnownCalls):"未知"}</td></tr>`).join("")}</tbody></table>`;
-  const costSeries=[["input","输入未命中","#5c7891"],["cacheHit","缓存命中","#4f8d78"],["reasoning","推理","#c18c3f"],["output","回答","#a65f4b"]];
-  $("#ai-cost-charts").innerHTML=ai.models.map(model=>`<section><h4>${escapeHtml(model.label)} <span>${model.calls} 次 · ${formatCny(totalCost(model))}</span></h4>${chartFrame(ai.daily,costSeries.map(([key,label,color])=>({label,color,values:ai.daily.map(day=>componentCost(day.models[model.model],key))})),{ariaLabel:`${model.label} 每日费用构成`,valueLabel:formatCnyAxis,actualPeak:true})}</section>`).join("");
-  const maxScene=Math.max(1,...ai.scenes.map(item=>item.calls));
-  $("#ai-scenario-bars").innerHTML=ai.scenes.length?ai.scenes.map(item=>`<div><span>${escapeHtml(sceneLabels[item.scene]||item.scene)}</span><i><b style="width:${item.calls/maxScene*100}%"></b></i><strong>${item.calls}</strong></div>`).join(""):`<div class="analytics-empty">这段时间还没有 AI 调用。</div>`;
-  $("#ai-model-summary").innerHTML=`<table><thead><tr><th>供应商</th><th>调用</th><th>成功</th><th>失败</th><th>总 Token</th><th>已知费用</th><th>核算</th></tr></thead><tbody>${(ai.providers||[]).map(provider=>`<tr><td>${escapeHtml(provider.label)}</td><td>${provider.calls}</td><td>${provider.successfulCalls||0}</td><td>${provider.failedCalls||0}</td><td>${compactNumber((provider.tokens?.input||0)+(provider.tokens?.output||0))}</td><td>${formatCny(totalCost(provider))}</td><td>${provider.costUnknownCalls?`${provider.costUnknownCalls} 次待账单`:"已计入"}</td></tr>`).join("")}</tbody></table>`;
-  const pricing=ai.pricing;
-  $("#ai-pricing").innerHTML=`<p>${escapeHtml(pricing.estimateNote)} ${escapeHtml(pricing.historicalUsdNote||"")}</p><h4>DeepSeek · 人民币 / 百万 Token</h4><div class="pricing-table-wrap"><table><thead><tr><th>模型</th><th>时段</th><th>缓存命中</th><th>输入未命中</th><th>输出</th></tr></thead><tbody>${Object.entries(pricing.models).flatMap(([,model])=>[["offPeak","谷时"],["peak","峰时"]].map(([key,label])=>`<tr><td>${escapeHtml(model.label)}</td><td>${label}</td><td>${formatCny(model[key].cacheHit)}</td><td>${formatCny(model[key].cacheMiss)}</td><td>${formatCny(model[key].output)}</td></tr>`)).join("")}</tbody></table></div><p><a href="${escapeHtml(pricing.source)}" target="_blank" rel="noopener noreferrer">DeepSeek 官方价格</a> · 核对于 ${escapeHtml(pricing.checkedAt)}</p><h4>语音与视觉 · 官方目录价</h4><div class="pricing-table-wrap"><table><thead><tr><th>计费项</th><th>单价</th><th>单位</th><th>来源</th></tr></thead><tbody>${(pricing.providerRates||[]).map(rate=>`<tr><td>${escapeHtml(rate.label)}</td><td>${formatCny(rate.priceCny)}</td><td>${escapeHtml(rate.unitLabel)}</td><td><a href="${escapeHtml(rate.source)}" target="_blank" rel="noopener noreferrer">官方价格</a> · ${escapeHtml(rate.checkedAt)}</td></tr>`).join("")}</tbody></table></div>`;
-}
-function setStatisticsRange(days=7){
-  $("#statistics-to").value=currentLocalDate;$("#statistics-from").value=shiftLocalDateKey(currentLocalDate,1-days);
-  $$("[data-statistics-days]").forEach(button=>button.classList.toggle("active",Number(button.dataset.statisticsDays)===days));
-}
-async function loadStatistics(){
-  const from=$("#statistics-from").value,to=$("#statistics-to").value;if(!from||!to)setStatisticsRange(7);
-  const serial=++statisticsRequestSerial,owner=currentUser?.id,session=sessionSerial,status=$("#statistics-status"),button=$("#statistics-range-form button[type='submit']");
-  button.disabled=true;status.textContent=hasCapability("ai-costs")?"正在汇总记录与 AI 用量…":"正在汇总记录…";
-  try{const data=await request(`/api/statistics?from=${encodeURIComponent($("#statistics-from").value)}&to=${encodeURIComponent($("#statistics-to").value)}`);if(serial!==statisticsRequestSerial||owner!==currentUser?.id||session!==sessionSerial)return;renderStatistics(data);status.textContent=""}
-  catch(error){if(serial===statisticsRequestSerial)status.textContent=error.message}
-  finally{if(serial===statisticsRequestSerial)button.disabled=false}
-}
 function currentAiCostModel(scene){
   const tier=llmSettings.scenarios?.[scene]||defaultLlmScenarios[scene]||"high",profile=llmSettings.profiles?.[tier]||defaultLlmProfiles[tier];
   return{tier,model:profile.model,effort:llmSettings.sceneEfforts?.[scene]||profile.effort,label:`${profile.model==="deepseek-v4-pro"?"Pro":"Flash"} · ${tier[0].toUpperCase()+tier.slice(1)}`};
@@ -2366,7 +2216,6 @@ function renderVisibleRoute(){
   $("#notification-dot").hidden=!Number(state.notificationUnread??notificationUnreadCount);
   if(view==="today"){renderSliders();renderHome()}
   else if(view==="daily")void healthFeatureController?.render().catch(error=>showToast(`日录显示失败：${error.message}`,"error"));
-  else if(view==="review"){renderStateChart();renderReview()}
   else if(view==="keepsakes"){renderKeepsakes();renderKeepsakeBatch()}
   else if(view==="settings"){renderSettings();renderLocalTestSettings()}
   else if(view==="trash")renderTrash();
@@ -2444,7 +2293,7 @@ function setAuthTab(tab){
 }
 function setAuthBusy(value){authBusy=value;$$(".auth-form input,.auth-form button,[data-auth-tab]").forEach(control=>control.disabled=value)}
 function invalidatePageLoads(){
-  statisticsRequestSerial+=1;aiCostRequestSerial+=1;architectureRequestSerial+=1;commercialRequestSerial+=1;personalContextRequestSerial+=1;accountUsersRequestSerial+=1;analysisRequestSerial+=1;
+  aiCostRequestSerial+=1;architectureRequestSerial+=1;commercialRequestSerial+=1;personalContextRequestSerial+=1;accountUsersRequestSerial+=1;
   activeAnswerTaskId=++answerTaskSerial;healthFeatureController?.invalidateSession();clearTimeout(notificationTimer);
   backgroundResultsController?.resetSession();backgroundResultsLoadErrorReported=false;backgroundResultsRetryAttempts=0;refreshCoordinator.reset();
 }
@@ -2452,7 +2301,7 @@ function clearPrivateSessionState(){
   closeImageViewer({restoreFocus:false});
   onboardingV2Controller.reset();
   resetState();routeDataReady=false;routeDataRequestSerial+=1;routeLoadFailureKey="";loadedRouteKey="";fullRouteStateLoaded=false;quoteTagStates={selectionQuote:createTagMultiSelectState()};llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationsLoadState="idle";actionsCoordinator.resetSession();annotationsController?.resetSession();personalContext=null;personalContextRequestSerial=0;accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.5.7";homeMemoryKeys=[];homeMemoryByKey=new Map();homeKeepsakeId="";closeHomeEditors({restoreFocus:false});$("#capture-editor").hidden=true;document.body.classList.remove("capture-editor-open");resetOwnerSurfaces();invalidatePageLoads();draftTags=[];keepsakeDraftTags=[];capturesFeatureController=null;quotesFeatureController=null;libraryFeatureController=null;
+  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationsLoadState="idle";actionsCoordinator.resetSession();annotationsController?.resetSession();personalContext=null;personalContextRequestSerial=0;accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.5.7";homeMemoryKeys=[];homeMemoryByKey=new Map();homeKeepsakeId="";closeHomeEditors({restoreFocus:false});$("#capture-editor").hidden=true;document.body.classList.remove("capture-editor-open");resetOwnerSurfaces();invalidatePageLoads();draftTags=[];keepsakeDraftTags=[];capturesFeatureController=null;quotesFeatureController=null;libraryFeatureController=null;
   keepsakeEditor.segmentSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.history=[];
   clearKeepsakeBatchState();
   contentImageDraftManager?.resetSession();for(const key of persistentContentImageKeys)renderContentImageEditor(key);
@@ -2524,7 +2373,7 @@ function createRuntimeApplicationPorts({createShellPort,createStatePort,createSy
       const attach=controller=>{
         if(!current())return;
         disposeAnnotations=controller.mount({root:document,signal:context.signal});
-        if(currentUser?.id){restoreAnnotationUiDrafts();renderVisibleRoute();activateContentImageDraftsForCurrentRoute()}
+        if(currentUser?.id){restoreAnnotationUiDrafts();renderVisibleRoute();runtimeFeatureRegistry?.notifyState(state);activateContentImageDraftsForCurrentRoute()}
       };
       if(annotationsController)attach(annotationsController);
       else void ensureAnnotationsController().then(attach,error=>{if(current())showToast(`批注功能加载失败：${error.message}`,"error")});
@@ -2547,7 +2396,7 @@ async function restartApplicationForUser(user){
   applicationLifecycleReady=true
 }
 const refreshState=(domains,options={})=>refreshCoordinator.refresh(domains,{...options,patchOnly:options.patchOnly===true});
-subscribeState((next,wanted)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);if(wanted.has("dailyRecords"))void healthFeatureController?.render({snapshot:next,changedDomains:wanted}).catch(()=>{});if(wanted.has("thoughts")){renderTagComposer();renderHomeMemories()}if(wanted.has("speech"))renderSettings();if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("review"))renderReview();if(wanted.has("books")){renderHomeMemories();if(annotationsController?.activeRootKey().startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes")){renderKeepsakes();renderHomeKeepsake()}if(wanted.has("quotes"))renderHomeMemories();if(wanted.has("comments"))renderCommentPanel();renderNotificationSummary()});
+subscribeState((next,wanted)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);if(wanted.has("dailyRecords"))void healthFeatureController?.render({snapshot:next,changedDomains:wanted}).catch(()=>{});if(wanted.has("thoughts")){renderTagComposer();renderHomeMemories()}if(wanted.has("speech"))renderSettings();if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("books")){renderHomeMemories();if(annotationsController?.activeRootKey().startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes")){renderKeepsakes();renderHomeKeepsake()}if(wanted.has("quotes"))renderHomeMemories();if(wanted.has("comments"))renderCommentPanel();renderNotificationSummary()});
 function setAnswerModalStep(step){const order=["context","thinking","answer","done"],current=order.indexOf(step);$$("#ai-answer-progress li").forEach((item,index)=>{item.classList.toggle("active",index===current);item.classList.toggle("done",index<current||(step==="done"&&index===current))})}
 function closeAnswerModal(){const modal=$("#ai-answer-modal"),busy=modal.dataset.busy==="true";modal.hidden=true;if(busy)showToast("回答继续在后台生成，完成后会提醒。")}
 async function runAnswerInModal({title,scene="thoughtAnswer",requestCall,onDone,isCurrent=()=>true}){
@@ -2977,7 +2826,73 @@ function createPageFeatureDescriptors(){
   descriptors.thoughts={root:()=>$("#view-thoughts"),load:()=>loadThoughtsPage("thoughts")};
   descriptors.review={
     root:()=>$("#view-review"),
-    load:()=>loadLegacyFeatureModule().then(module=>withCheckins(module.createLegacyPageController({view:"review"})))
+    load:()=>loadReviewInsightsFeatureModule().then(async module=>{
+      const review=await module.loadReviewFeatureController({
+        data:{
+          getSnapshot:()=>state,
+          getAccountId:()=>currentUser?.id||"",
+          getSessionSerial:()=>sessionSerial,
+          requestV1:(url,options,coordination)=>featureRequestV1("review",url,options,coordination),
+          refresh:(domains,options)=>refreshState(domains,options),
+          applyPendingProjection
+        },
+        navigation:{
+          currentRouteKey:()=>routeDataKey(pageRouter?.currentRoute()),
+          isView:view=>pageRouter?.currentRoute()?.view===view
+        },
+        annotations:{
+          rootKey:commentRootKey,
+          markTarget:markCommentTarget,
+          applyAnchors:applyCommentAnchors
+        },
+        view:{
+          associationModal:()=>$("#association-flow-modal"),
+          contentState,
+          contextReceiptMarkup,
+          escapeMarkup:escapeHtml,
+          escapeSelector:value=>CSS.escape(value),
+          plainPreview,
+          renderMarkdown,
+          renderLatex,
+          formatDate,
+          metricLabel:key=>baseMetrics[key]?.label||key,
+          showToast
+        },
+        platform:{
+          document,
+          createRequestId:()=>crypto.randomUUID(),
+          confirm:(...args)=>globalThis.confirm(...args),
+          now:()=>Date.now()
+        }
+      });
+      const delegate={
+        async mount(context){const dispose=await review.mount(context);activateContentImageDraftsForCurrentRoute();return dispose},
+        render(context){const rendered=review.render(context);if(rendered)activateContentImageDraftsForCurrentRoute();return rendered},
+        unmount:()=>review.unmount(),
+        resetSession:()=>review.resetSession()
+      };
+      return withCheckins(delegate)
+    })
+  };
+  descriptors.statistics={
+    root:()=>$("#view-statistics"),
+    load:()=>loadReviewInsightsFeatureModule().then(module=>module.loadStatisticsFeatureController({
+      data:{
+        request:(url,options)=>withFeatureScope("statistics",()=>request(url,options)),
+        getAccountId:()=>currentUser?.id||"",
+        getSessionSerial:()=>sessionSerial,
+        hasCapability
+      },
+      navigation:{
+        currentRouteKey:()=>routeDataKey(pageRouter?.currentRoute()),
+        isView:view=>pageRouter?.currentRoute()?.view===view
+      },
+      view:{
+        escapeMarkup:escapeHtml,
+        formatTrackingStart:value=>new Intl.DateTimeFormat("zh-CN",{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(value))
+      },
+      platform:{getCurrentDate:()=>currentLocalDate}
+    }))
   };
   descriptors.export={
     root:()=>$("#view-export"),
@@ -3027,13 +2942,7 @@ function createPageFeatureDescriptors(){
   };
   return descriptors
 }
-const pageEffects={...createPageEffects({
-  loadStatistics,
-  loadAiCostPlan,
-  loadArchitecture,
-  loadCommercialization,
-  loadTrash
-}),today:()=>actionsCoordinator.load(),"personal-context":()=>loadPersonalContext(),account:()=>loadAccountUsers()};
+const pageEffects={"ai-cost":()=>loadAiCostPlan(),architecture:()=>loadArchitecture(),commercialization:()=>loadCommercialization(),trash:()=>loadTrash(),today:()=>actionsCoordinator.load(),"personal-context":()=>loadPersonalContext(),account:()=>loadAccountUsers()};
 const lazyPageEffects=new Proxy(pageEffects,{get(target,view){const effect=target[view];if(typeof view!=="string"||!LOCAL_TEST_VIEW_SCOPES[view])return effect;return()=>{void ensureLocalTestViewScope(view).then(async ready=>{if(!ready)return;if(typeof effect==="function")await effect();await restorePendingProjections()})}}});
 pageRouter=createPageRouter({query:$,queryAll:$$,effects:lazyPageEffects,basePath:applicationBasePath,onRouteStart:applyApplicationRoute,canAccessView:(_,capability)=>hasCapability(capability),onDenied:showPermissionPage});
 ({switchView,restoreView}=pageRouter);
@@ -3100,15 +3009,14 @@ $("#trash-purge-selected").addEventListener("click",async e=>{
   finally{button.disabled=!$("[data-trash-select]:checked")}
 });
 document.addEventListener("click",async e=>{
-  const button=e.target.closest("[data-delete-checkin],[data-chat-delete],[data-experiment-delete],[data-analysis-delete]");if(!button)return;
-  const target=button.dataset.deleteCheckin?{id:button.dataset.deleteCheckin,domain:"checkins",url:`/api/v1/checkins/${encodeURIComponent(button.dataset.deleteCheckin)}`,domains:["checkins","review"],label:"状态"}:button.dataset.chatDelete?{id:button.dataset.chatDelete,domain:"chats",url:`/api/v1/chats/${encodeURIComponent(button.dataset.chatDelete)}`,domains:["chats"],label:"对话"}:button.dataset.experimentDelete?{id:button.dataset.experimentDelete,domain:"experiments",url:`/api/v1/experiments/${encodeURIComponent(button.dataset.experimentDelete)}`,domains:["experiments","review"],label:"实验"}:{id:button.dataset.analysisDelete,domain:"analyses",url:`/api/v1/analyses/${encodeURIComponent(button.dataset.analysisDelete)}`,domains:["analyses","review"],label:"复盘"};
+  const button=e.target.closest("[data-delete-checkin],[data-chat-delete]");if(!button)return;
+  const target=button.dataset.deleteCheckin?{id:button.dataset.deleteCheckin,domain:"checkins",url:`/api/v1/checkins/${encodeURIComponent(button.dataset.deleteCheckin)}`,domains:["checkins","review"],label:"状态"}:{id:button.dataset.chatDelete,domain:"chats",url:`/api/v1/chats/${encodeURIComponent(button.dataset.chatDelete)}`,domains:["chats"],label:"对话"};
   if(!confirm(`将这条${target.label}移入回收站？`))return;
   const item=(state[target.domain]||[]).find(value=>value.id===target.id);if(!item)return;const requestId=button.dataset.requestId||crypto.randomUUID();button.dataset.requestId=requestId;button.disabled=true;
   try{await requestV1(target.url,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`,"idempotency-key":requestId}},{domains:target.domains,resource:target.url,recoverCommitted:true,projection:{kind:"record.delete",domain:target.domain,id:target.id},onQueued:record=>applyPendingProjection(record)});void refreshState(target.domains).catch(error=>showToast(`${target.label}已移除，但列表刷新失败：${error.message}`,"error"));showToast(`${target.label}已移入回收站`)}
   catch(error){if(error.syncStatus==="pending")showToast(`${target.label}将在网络恢复后移入回收站`);else{await refreshState(target.domains).catch(()=>{});showToast(error.message,"error")}}
 });
 document.addEventListener("click",event=>{const button=event.target.closest("[data-context-source]");if(button)openContextSource(button)});
-$("#analysis-load-more").addEventListener("click",()=>void loadMoreAnalyses());
 document.addEventListener("input",event=>{
   const input=event.target.closest("[data-feed-search]");if(!input)return;
   const scope=input.dataset.feedSearch;if(!(scope in feedSearchQueries))return;
@@ -3125,7 +3033,6 @@ document.addEventListener("click",event=>{
   const command=button.dataset.contentAction;
   if(command==="new-state"){switchView("today");openHomeEditor("state",button);return}
   if(command==="new-keepsake"){$("#keepsake-create-toggle")?.click();return}
-  if(command==="run-analysis"){$("#run-analysis")?.click();return}
   if(command==="retry-route-state"){button.disabled=true;void loadRouteState(pageRouter?.currentRoute()).finally(()=>{if(button.isConnected)button.disabled=false});return}
   const retries={
     "retry-trash":loadTrash,
@@ -3275,15 +3182,8 @@ document.addEventListener("keydown",e=>{
   if(!answerModal.hidden)return closeAnswerModal();
   if(!$("#thought-block-modal").hidden)return $("#thought-block-modal").hidden=true;
   if(!$("#edit-checkin-modal").hidden)return $("#edit-checkin-modal").hidden=true;
-  if(!$("#association-flow-modal").hidden)return setAssociationFlowOpen(false);
   if(homeEditor)closeHomeEditors()
 });
-$("#association-flow-toggle").addEventListener("click",()=>setAssociationFlowOpen(true));
-$("#association-flow-close").addEventListener("click",()=>setAssociationFlowOpen(false));
-$("#association-flow-modal").addEventListener("click",e=>{if(e.target===e.currentTarget)setAssociationFlowOpen(false)});
-$("#run-analysis").addEventListener("click",async e=>{const button=e.currentTarget;button.disabled=true;$("#analysis-status").textContent="正在比较模型草稿与你最终保留的回答，以及你保留、舍弃和长期缺席的主题…";try{await requestV1("/api/v1/analyses",{method:"POST",headers:{"idempotency-key":crypto.randomUUID()},body:"{}"},{domains:["analyses"]});void refreshState("review").catch(error=>showToast(`复盘已生成，但页面刷新失败：${error.message}`,"error"));$("#analysis-status").textContent="";showToast("认知复盘已生成")}catch(err){$("#analysis-status").textContent=err.message}finally{button.disabled=false}});
-$("#experiment-form").addEventListener("submit",async e=>{e.preventDefault();const form=e.currentTarget,requestId=form.dataset.requestId||crypto.randomUUID();form.dataset.requestId=requestId;try{await requestV1("/api/v1/experiments",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify({hypothesis:$("#experiment-hypothesis").value,factor:$("#experiment-factor").value,outcome:$("#experiment-outcome").value,duration:$("#experiment-duration").value})},{domains:["experiments"]});delete form.dataset.requestId;form.reset();void refreshState("review")}catch(error){if(error.syncStatus!=="pending")showToast(error.message,"error");else{form.reset();showToast("实验已进入待同步队列")}}});
-$("#metric-form").addEventListener("submit",async e=>{e.preventDefault();const form=e.currentTarget,requestId=form.dataset.requestId||crypto.randomUUID();form.dataset.requestId=requestId;try{await requestV1("/api/v1/custom-metrics",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify({name:$("#metric-name").value,low:$("#metric-low").value,high:$("#metric-high").value})},{domains:["customMetrics"]});delete form.dataset.requestId;form.reset();void refreshState(["review","checkins"])}catch(error){if(error.syncStatus!=="pending")showToast(error.message,"error");else{form.reset();showToast("指标已进入待同步队列")}}});
 $("#keepsake-create-toggle").addEventListener("click",()=>{const workspace=$("#keepsake-workspace"),opening=workspace.hidden;if(opening){if(keepsakeBatch.items.length)void loadKeepsakeBatchItem(keepsakeBatch.activeIndex,{capture:false});else resetKeepsakeEditor();workspace.hidden=false;workspace.scrollIntoView({behavior:"smooth",block:"start"})}else{void persistKeepsakeBatch();resetKeepsakeEditor({close:true});renderKeepsakeBatch()}});
 $("#keepsake-load-more").addEventListener("click",loadNextKeepsakePage);
 $("#keepsake-editor-close").addEventListener("click",()=>{void persistKeepsakeBatch();resetKeepsakeEditor({close:true});renderKeepsakeBatch()});
@@ -3399,9 +3299,6 @@ $("#selection-quote-form").addEventListener("submit",async e=>{
     state.quotes=(state.quotes||[]).map(item=>item.id===temporaryId?result.data:item);delete form.dataset.requestId;closeSelectionQuoteModal();void refreshState("quotes").catch(error=>showToast(`善言已保存，但列表刷新失败：${error.message}`,"error"));showToast("选中文字已收为善言")
   }catch(err){if(err.syncStatus==="pending"){closeSelectionQuoteModal();showToast("善言已进入待同步队列")}else status.textContent=err.message}finally{button.disabled=false}
 });
-setStatisticsRange(7);
-$$("[data-statistics-days]").forEach(button=>button.addEventListener("click",()=>{setStatisticsRange(Number(button.dataset.statisticsDays));void loadStatistics()}));
-$("#statistics-range-form").addEventListener("submit",event=>{event.preventDefault();$$("[data-statistics-days]").forEach(button=>button.classList.remove("active"));void loadStatistics()});
 $("#view-architecture")?.addEventListener("click",event=>{
   const stageButton=event.target.closest("[data-architecture-stage]"),termButton=event.target.closest("[data-architecture-term]");
   if(stageButton){architectureStage=Math.max(0,Math.min((architectureSurface?.stages?.length||1)-1,Number(stageButton.dataset.architectureStage)||0));renderArchitecture();return}
