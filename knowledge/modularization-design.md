@@ -39,6 +39,7 @@
 - S3 附件段已拆出上传校验、账户配额串行化、临时图片、存储适配和启动清单核验；统一入口为 `shared/attachments/index.mjs`，根目录旧适配文件已删除。`http/attachments` 接管上传和认证后的 GET/HEAD，账户与模拟模式的上游回退由装配入口注入。截图识别的领域规则、AI 供应商和前端媒体交互继续迁移；真实 PostgreSQL 清单、失败恢复与重启已验收。
 - S3 配置与日志段已拆出：`config` 统一应用运行环境快照；`shared/observability` 拥有异步上下文、私有日志、脱敏与提交后摘要；`http/request` 拥有追踪 ID、base path、错误和完成审计。附件适配与迁移/导出脚本显式传入配置，根日志文件已删除；AI 调用内容与终态规则继续在下一段迁移。
 - V0.5.8 B2 已将本地测试 control/workspace、GET-only 上游水合和账户初始化/启动恢复迁入 `app`，将隔离会话、Cookie 改写和本地测试路由迁入 `http`；workspace reset 使用 staging 与 JSON repository 独占换目录，hydrate 使用 commit 后 pending-control 恢复。JSON 与 PostgreSQL 认证 adapter 均执行提交后审计，注册失败只回收未持久账户目录。`server.mjs` 同批删除旧实现并降至 2295 行；本地专项和 backend 通过，真实 PostgreSQL 16 因当前机器缺少可执行文件待后续环境复核。
+- V0.5.8 B3 已以 `createAiRuntime()` 统一 DeepSeek provider/gate、账户 settings/usage/cost、站点 budget、调用审计、generator 与审计恢复，Owner 设置继承通过 auth 后置 reader 注入；`server.mjs` 删除旧装配并降至 2120 行。完整 backend 82/82 通过，独立复审 blocker/P0/P1 为 0/0/0。Owner 于 2026-10-06 重申服务入口只负责启动，硬上限 100 行；项目继续执行更严格的 `server.mjs <= 40` 与显式组合根目标。
 - S3 AI 已拆出：`ai` 拥有设置归一化、场景选择、用量/单价快照、成本模拟/统计、额度预留、通用 SP/场景约束及调用/重试审计；`shared/persistence` 接管账户文档队列、备份和运行适配，HTTP 接管设置/成本接口。修复 JSON 并发设置覆盖。DeepSeek HTTP/SSE 与图片编码归 `infrastructure/ai-providers`；业务上下文继续迁移。
 - P00 提示词目录已接入：60 个系统提示、场景约束、业务任务和模型可见模板归 `prompts/versions/`；当前激活 `2026.10.02.2` 并保留此前版本。`infrastructure/prompt-catalog` 负责文件与摘要校验，`shared/prompts` 提供不可变运行快照和严格渲染；版本可独立固定，AI 审计记录版本与摘要，代码不保留提示词正文。五问候选提取场景只记录调用元数据与字符数，不在审计日志保存用户原文或完整 Prompt。
 - S3-08 思绪链已收口：整套思绪创建/编辑、内容块、状态、备注、追问、草稿、引子及前台流式回答均经同一领域/应用服务实现；删除继续调用回收事务。旧 URL 仅保留协议适配，不再在入口复制业务逻辑。

@@ -224,6 +224,11 @@ flowchart LR
 2. 以 `import.meta.url` 创建运行时。
 3. 调用 `runtime.start()`。
 
+Owner 于 2026-10-06 再次确认该目标为本轮硬验收：`server.mjs` 只负责启动，
+必须不超过 100 行，继续以不超过 40 行为目标。减少 import 行数本身不算完成；
+不得用无边界 `export *`、目录扫描或动态自注册掩盖依赖，公共 barrel、显式
+registry、runner、`server.mjs` 和 `runtime.mjs` 继续由集成负责人单写。
+
 目标公开契约：
 
 ```text
@@ -790,3 +795,23 @@ V0.5.8 只有在以下条件同时成立时才可关闭：
   `a236da9d26cff0aaaa2e47ab39ffac12b1c9212fe12be5b855edd5961587e087`，
   行数上限 5136；全库例外由 20 降至 16。下一步进入 B3 AI runtime；
   home 继续随 F4-F8 迁移并在 F10 收口。
+
+### B3 AI runtime 检查点
+
+- `280887c` 新增 `createAiRuntime()` 与独立专项，`855200c` 完成 app barrel、
+  `server.mjs`、模块登记、package 和 backend runner 串行接线；旧 AI
+  provider/gate/settings/usage/cost/budget/audit/generator 装配与审计恢复已
+  从入口删除，无双轨。
+- budget recovery 在工厂返回前完成；损坏账本 fail-fast，单 reservation
+  恢复失败记录后继续。Owner 设置继承通过 auth 初始化后的 late-bound reader
+  注入；站点预算、账户额度、gate/stage、provider I/O、usage/audit 和 settle
+  顺序保持不变，未知费用不伪造金额。
+- `npm run check`、AI runtime/budget/domain/provider、observability、auth、
+  local-runtime、segmentation 均通过；完整 backend `82/82`、`278032 ms`
+  通过，包含隔离 Node 下 Volcengine server。独立 reviewer GO，
+  blocker/P0/P1=`0/0/0`。
+- `server.mjs` 由 2295 行降至 2120 行，10 条 G4 例外绑定 SHA
+  `beac6a755b4a1712e0fb38c9f7ee3ff46e332dbf2ad7cb7f371fd6427563eb20`；
+  DeepSeek provider 入口例外已删除，G4 到期条件与 `<=40` 目标未放宽。
+- 当前继续进入 B4；该检查点未执行 push、Preview、部署、真实供应商调用或
+  生产写入。

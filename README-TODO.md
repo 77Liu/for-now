@@ -54,8 +54,10 @@ V0.2.0 历史见
   `a4150e9` 和统计 UI `56337a9` 完成本地验证；`20` 已由 `91a10b7`、
   `6384c7c`、`9830564`、`0f163aa`、`b24722b`、`8607cc6` 和
   `88d37e1` 完成工作区验证；`02` 已冻结三类入口、组合 API、G4/G6
-  例外与 feature lifecycle，最终独立复审 GO。`03/04` 已完成 B1/B2、F1、
-  F2 slice 1 与 actions lifecycle slice，下一步为 B3 AI runtime；当前版本
+  例外与 feature lifecycle，最终独立复审 GO。`03/04` 已完成 B1-B3、F1、
+  F2 slice 1 与 actions lifecycle slice；B3 由 `280887c`、`855200c`
+  迁出 AI runtime，`server.mjs` 降至 2120 行，下一步为 B4。Owner 已确认
+  服务端入口最终只负责启动，硬上限 100 行、项目目标不超过 40 行；当前版本
   未部署、未进入 Preview、未发布。
 - 历史热修：`V0.5.2` P00 热修已完成本地门、线上 Preview、Git/Gitee、
   生产部署及同一历史 M4A 的真实回放验证。完整证据见
@@ -147,7 +149,7 @@ V0.5.8 当前范围是 6 条 P00、8 条 P0。Base 最近一次回读为需求
 | V0.5.8-16 | P00 | 工作区已验证未部署 | `1eb61c9`、`a4150e9`、`56337a9`：七类第三方能力统一用量、官方价格版本、预算和明确账单缺口；独立复审无新增问题 |
 | V0.5.8-20 | P00 | 工作区已验证未部署 | `91a10b7..88d37e1`：同步 HTML 接入 R9.4-F1；FCP 与退出硬门、FCP 后入口请求、secondary 失败和 5 秒 watchdog 迟到锁存均通过 |
 | V0.5.8-02 | P00 | 工作区已验证未部署 | `6730597`：三类真实入口、组合 API/import binding/factory 链、G4/G6 例外和 feature 生命周期已机器冻结；check、前后端、PWA、性能与独立复审通过 |
-| V0.5.8-03 | P00 | 进行中 | `f3724c4`、`47d5a39`、`a35dad8..9ba9f64`：B1/B2 的 Store v16、派生/公开投影、本地测试与账户生命周期已离开入口；`server.mjs` 3283→2295 行，下一步 B3 |
+| V0.5.8-03 | P00 | 进行中 | `f3724c4`、`47d5a39`、`a35dad8..9ba9f64`、`280887c`、`855200c`：B1-B3 已迁出 Store/投影、本地测试/账户生命周期和 AI runtime；`server.mjs` 3283→2120 行，下一步 B4，最终硬门 `<=100`、目标 `<=40` |
 | V0.5.8-04 | P00 | 进行中 | `e7d99d6..eca9576`：F1 application/router/ports、export/feedback/discovery 与 actions 生命周期已接入；runtime 5291→5136 行，完整 home 延至 F10 |
 | V0.5.8-17 | P0 | 待开始 | 共享图片草稿支持逐图 90 度旋转，预览/上传/识别/派生一致 |
 | V0.5.8-18 | P0 | 待开始 | 实现 `proxy/oss-signed/cdn-signed`、短签名、302 和代理回滚 |
@@ -168,9 +170,10 @@ Owner 已接受 V0.5.7 G7，并确认按本计划进入 V0.5.8 本地开发。13
 reviewer 无 blocker/P0/P1/P2。03/04 已由 `f3724c4..2989e61` 完成首批 G3
 检查点，由 `47d5a39` 完成 B1b/B1c，由 `a35dad8..9ba9f64` 完成 B2，
 由 `208cba7`、`48e5d6b` 完成 F1b，由 `c3c4033`、`4ee0921` 完成 F2
-slice 1，并由 `afcf95b..eca9576` 完成 actions lifecycle slice；独立
-Reviewer blocker/P0/P1 均为 `0/0/0`。当前活跃工作树 `5 / 6`，下一步
-执行 B3 AI runtime；完整 home 留待 F10。
+slice 1，并由 `afcf95b..eca9576` 完成 actions lifecycle slice；B3 由
+`280887c`、`855200c` 完成，完整 backend `82/82`、`278032 ms` 通过，
+独立 Reviewer blocker/P0/P1 均为 `0/0/0`。当前活跃工作树 `5 / 6`，
+下一步执行 B4；完整 home 留待 F10。
 该确认不授权 push、云资源修改、真实付费调用、Preview、部署或生产写入。
 20 的完整调度与验证事实见
 `reports/multi-agent-coordination-v0.5.8-20-2026-10-05.md`。

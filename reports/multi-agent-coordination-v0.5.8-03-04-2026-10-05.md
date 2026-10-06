@@ -3,10 +3,10 @@
 - 日期：2026-10-05
 - 起始基线：`f911cde4505d3434ab4afcf4b5614f8e828f4bcc`
 - 当前门禁：`iteration-G3 / entrypoint-G2`
-- 当前状态：`b3-ai-runtime-frozen`
-- 活跃工作树：`6 / 6`
+- 当前状态：`b3-ai-runtime-closed-b4-ready`
+- 活跃工作树：`5 / 6`
 - 机器事实：3 个入口策略、65 个模块、236 条拥有路由、16 条迁移例外；
-  `server.mjs` 由 3283 行降至 2295 行，`runtime.mjs` 当前为 5136 行
+  `server.mjs` 由 3283 行降至 2120 行，`runtime.mjs` 当前为 5136 行
 - 授权边界：允许本地代码、测试、文档与任务提交；不允许 push、tag、Release、
   Preview、部署、云资源修改、真实付费调用或生产写入
 
@@ -84,7 +84,7 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 
 | roleId | specialty | activeContext | ownership | dependencies | communications | evidence | status | next |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `orchestrator` | 契约冻结与串行集成 | `eca9576`；iteration-G3 / entrypoint-G2 | 共享文件与集成树 | 全部角色 | 完成 F2 slice 2 接线、验证与复审 | actions 生命周期已收口；完整 home 仍延至 F10 | `active` | B3 AI runtime |
+| `orchestrator` | 契约冻结与串行集成 | `855200c`；iteration-G3 / entrypoint-G2 | 共享文件与集成树 | 全部角色 | 完成 B3 接线、验证与复审 | AI runtime 已收口；server 目标重申为只启动且 `<=100`，继续执行 `<=40` 硬门 | `active` | B4 媒体运行时 |
 | `backend-scout` | B1-B7 符号与闭包 | `server.mjs` 3283 行 | 只读 | B1a | 建议 B1a→B1b→B1c | 无生产 runtime 骨架 | `closed` | 移交 B1a |
 | `frontend-scout` | F1-F10 页面与 lifecycle | `runtime.mjs` 5291 行 | 只读 | F1a | 先 application/router disposer | registry 未接线 | `closed` | 移交 F1a |
 | `gate-scout` | G4/G6 与测试真实性 | 20 条例外 | 只读 | C0/I | 报告 policy 冲突与死代码假绿 | G4/G6 按预期失败 | `closed` | 等待复核 |
@@ -113,9 +113,9 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 | `f2-actions-validator` | F2 slice 2 独立影响验证 | `eca9576` | 只读 | I3 | 重跑专项、系统与预算门 | check、frontend、Journey、PWA/预算全通过 | `closed` | B3 重新验证 |
 | `f2-actions-reviewers` | actions 生命周期与隔离复审 | `eca9576` 固定差分 | 只读 | V3 | 复现失败路径并清零高优问题 | 最终 GO，blocker/P0/P1=`0/0/0` | `closed` | 下一切片复审 |
 | `b3-ai-runtime-scouts` | AI runtime 闭包与门禁 | `c028a0b`；B3 | 只读 | B3-W/I4 | 冻结装配 API、late-bound owner reader 与失败矩阵 | 精确闭包、消费者和测试缺口已移交 | `closed` | B3 worker |
-| `b3-ai-runtime-worker` | AI runtime 应用工厂 | `c028a0b`；B3 | 新模块与独立专项 | B3-S/I4 | 叶子模块交给调度者接线 | 独立工作树已建立 | `active` | 实现并提交 |
-| `b3-ai-runtime-validator` | B3 独立影响验证 | 待固定集成 SHA | 只读 | I4 | 重跑 AI/认证/后端与入口门 | 未开始 | `queued` | 集成后验证 |
-| `b3-ai-runtime-reviewers` | 预算、审计、账户与启动复审 | 待固定集成差分 | 只读 | V4 | 复现失败路径并清零高优问题 | 未开始 | `queued` | 验证后复审 |
+| `b3-ai-runtime-worker` | AI runtime 应用工厂 | `1f93e3b`；B3 | 新模块与独立专项 | B3-S/I4 | 叶子模块交给调度者接线 | `280887c` 已集成，叶子工作树已移除 | `closed` | B4 |
+| `b3-ai-runtime-validator` | B3 独立影响验证 | `855200c` | 只读 | I4 | 重跑 AI/认证/后端与入口门 | check、影响门和 backend `82/82` 通过 | `closed` | B4 重新验证 |
+| `b3-ai-runtime-reviewers` | 预算、审计、账户与启动复审 | `855200c` 固定差分 | 只读 | V4 | 复现失败路径并清零高优问题 | GO，blocker/P0/P1=`0/0/0` | `closed` | 下一切片复审 |
 
 ## 已关闭问题与保留风险
 
@@ -351,3 +351,26 @@ npm run test:frontend-shell
 - 最低验证：独立 runtime 专项、`npm run check`、`npm run test:ai-budget`、
   AI domain/provider、observability、auth、local-runtime、Volcengine server、
   segmentation 和 backend；真实 provider 调用与远端动作不在本切片授权内。
+
+## B3 AI runtime 检查点
+
+- 本地提交：`280887c`（叶子）与 `855200c`（共享接线）。`createAiRuntime()`
+  统一创建 DeepSeek provider/gate、账户 settings/usage/cost、站点 budget、
+  调用审计与 generator，并提供 auth 后置的 Owner 设置 reader。
+- 工厂等待站点预算恢复完成后才返回；损坏账本 fail-fast，单 reservation
+  恢复失败记录后继续。站点预算拒绝不进入账户额度、gate 或 provider I/O；
+  未知费用保留 billing gap，不伪造金额。
+- `server.mjs` 删除旧装配与审计恢复实现，2295→2120 行，SHA 为
+  `beac6a755b4a1712e0fb38c9f7ee3ff46e332dbf2ad7cb7f371fd6427563eb20`；
+  DeepSeek provider 违规项已从对应 allowlist 删除，10 条 G4 例外继续精确绑定。
+- `npm run check`、AI runtime/budget/domain/provider、observability、auth、
+  local-runtime、segmentation 通过；直接系统 Node 的 Volcengine server
+  命中已知 macOS Sharp Team ID 限制，完整 backend 使用隔离 Node 后包含该项
+  `82/82` 全通过，耗时 `278032 ms`。
+- 本批一次实现者自审与一次独立复审均为 GO，
+  blocker/P0/P1=`0/0/0`。叶子工作树已清理，当前 `5 / 6`。
+- Owner 于 2026-10-06 明确将服务入口只负责启动、`server.mjs <=100` 设为
+  必须结果；本项目继续执行更严格的 `<=40` 目标。不得用无边界 barrel、
+  动态目录扫描或自动注册替代清晰的组合根和显式 registry。
+- 下一步 B4；仍未执行 push、tag、Release、Preview、部署、Base 写入、
+  云资源修改、真实付费调用或生产写入。
