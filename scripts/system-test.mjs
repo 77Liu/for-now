@@ -106,6 +106,7 @@ const suites = {
     ["media application runtime composition", ["scripts/media-runtime-regression.mjs"]],
     ["content application runtime composition", ["scripts/content-runtime-regression.mjs"]],
     ["server HTTP orchestration adapters", ["scripts/http-orchestration-regression.mjs"]],
+    ["server composition and lifecycle", ["scripts/server-runtime-regression.mjs"]],
     ["AI site budget Owner concurrency", ["scripts/ai-budget-control-version-regression.mjs"]],
     ["AI site budget Owner HTTP contract", ["scripts/ai-budget-http-regression.mjs"]],
     ["AI provider transport and attempt policy", ["scripts/ai-provider-regression.mjs"]],

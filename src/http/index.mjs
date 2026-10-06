@@ -1,4 +1,5 @@
 export { createAuthHttp } from "./auth.mjs";
+export { createHttpApplication, SERVER_ROUTE_IDS } from "./application.mjs";
 export {
   createLocalTestHttp,
   createLocalTestSessionVault,
@@ -10,6 +11,7 @@ export { createAnnotationHttp } from "./annotations.mjs";
 export { createTrashHttp } from "./trash.mjs";
 export { createAttachmentHttp } from "./attachments.mjs";
 export { createRequestHandler } from "./request.mjs";
+export { contentTypeFor, createStaticHttp } from "./static.mjs";
 export { createModelResponseHttp } from "./model-responses.mjs";
 export { createAdminHttp } from "./admin.mjs";
 export { createLegacyApi } from "./legacy-api.mjs";
