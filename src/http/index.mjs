@@ -45,6 +45,7 @@ export {
 export { createThoughtHttp } from "./thoughts.mjs";
 export { createCheckinHttp } from "./checkins.mjs";
 export { createHealthRecordHttp } from "./health-records.mjs";
+export { createImageRecognitionHttp } from "./image-recognition.mjs";
 export { createDiscoveryHttp } from "./discovery.mjs";
 export { createExportHttp } from "./exports.mjs";
 export { createActionsHttp } from "./actions.mjs";
