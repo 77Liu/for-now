@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cike-shell-v0.5.8-7";
+const CACHE_VERSION = "cike-shell-v0.5.8-8";
 const SHELL_ASSETS = [
   "./",
   "index.html",
@@ -33,7 +33,6 @@ const SHELL_ASSETS = [
   "frontend/features/keepsakes-media/index.mjs",
   "frontend/features/keepsakes-media/placement.mjs",
   "frontend/features/onboarding-v2/index.mjs",
-  "frontend/features/thought-discovery/background-results.mjs",
   "frontend/media/index.mjs",
   "frontend/page-catalog/index.mjs",
   "frontend/pages/index.mjs",
@@ -87,6 +86,7 @@ const DEFERRED_ASSET_SET = new Set(HOME_BACKGROUND_ASSETS);
 const LAZY_MODULE_PATHS = [
   "/frontend/features/export/",
   "/frontend/features/feedback/",
+  "/frontend/features/background-results/",
   "/frontend/features/notifications/",
   "/frontend/features/thought-discovery/"
 ];

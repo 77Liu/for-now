@@ -32,6 +32,7 @@ const dynamicSpecifiers = [...new Set(dynamicImports)].sort();
 assert.deepEqual(dynamicSpecifiers, [
   "../features/actions/controller.mjs",
   "../features/annotations/index.mjs",
+  "../features/background-results/index.mjs",
   "../features/export/index.mjs",
   "../features/feedback/index.mjs",
   "../features/legacy-pages/index.mjs",
@@ -42,7 +43,7 @@ assert.deepEqual(dynamicSpecifiers, [
 for (const specifier of dynamicSpecifiers) {
   assert.equal(
     dynamicImports.filter(value => value === specifier).length,
-    ["./ports.mjs", "../features/actions/controller.mjs", "../features/annotations/index.mjs"]
+    ["./ports.mjs", "../features/actions/controller.mjs", "../features/annotations/index.mjs", "../features/background-results/index.mjs"]
       .includes(specifier) ? 1 : 2,
     `${specifier} must have one route-aware prefetch and one descriptor fallback`
   );
@@ -52,8 +53,27 @@ assert.match(
   /annotationsFeatureModuleRequest===pending\)annotationsFeatureModuleRequest=null/,
   "annotations loader must clear a rejected import so the next session can retry"
 );
-assert.doesNotMatch(
+assert.match(
   runtime,
+  /backgroundResultsFeatureModuleRequest===pending\)backgroundResultsFeatureModuleRequest=null/,
+  "background results loader must clear a rejected import so polling can retry"
+);
+assert.match(
+  runtime,
+  /backgroundResultsRetryAttempts>0&&backgroundResultsRetryAttempts<BACKGROUND_RESULTS_RETRY_LIMIT/,
+  "the final completed task must retain a bounded poll after lazy-load failure"
+);
+assert.match(
+  runtime,
+  /controller\.needsRetry\(\)\?Math\.min\(BACKGROUND_RESULTS_RETRY_LIMIT,backgroundResultsRetryAttempts\+1\):0/,
+  "transient result reads must retain the same bounded retry path"
+);
+const shellMountSource = runtime.slice(
+  runtime.indexOf("function createRuntimeApplicationPorts"),
+  runtime.indexOf("async function restartApplicationForUser")
+);
+assert.doesNotMatch(
+  shellMountSource,
   /await\s+ensureAnnotationsController\(\)/,
   "annotations import failure must not block application startup"
 );
@@ -125,6 +145,7 @@ for (const [view, descriptor] of descriptors) {
 for (const eagerEdge of [
   "./actions/controller.mjs",
   "./annotations/index.mjs",
+  "./background-results/index.mjs",
   "./export/index.mjs",
   "./feedback/index.mjs",
   "./notifications/index.mjs",
@@ -136,6 +157,7 @@ for (const deferredF3Edge of ["./annotation-tools.mjs", "./background-results.mj
   assert.equal(discoveryEntry.includes(deferredF3Edge), false, `discovery lazy entry includes ${deferredF3Edge}`);
 }
 for (const hiddenAsset of [
+  "frontend/features/background-results/index.mjs",
   "frontend/features/export/index.mjs",
   "frontend/features/feedback/index.mjs",
   "frontend/features/notifications/index.mjs",

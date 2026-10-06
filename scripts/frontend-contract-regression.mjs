@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createApiClient } from "../public/frontend/api/index.mjs";
-import { mergeBackgroundTaskResult } from "../public/frontend/features/thought-discovery/background-results.mjs";
+import { mergeBackgroundTaskResult } from "../public/frontend/features/background-results/index.mjs";
 import { sessionScope, rotateSession } from "../public/frontend/session/index.mjs";
 import { createRefreshCoordinator, subscribeState, resetState, state } from "../public/frontend/state/index.mjs";
 

@@ -26,12 +26,6 @@ export function createPageEffects({
 }
 
 export {
-  backgroundResultFromSnapshot,
-  backgroundTaskTarget,
-  createBackgroundResultController,
-  mergeBackgroundTaskResult
-} from "./thought-discovery/background-results.mjs";
-export {
   createActionsCoordinator,
   createActionsViewModel,
   buildCreateActionCommand,

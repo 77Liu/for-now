@@ -18,7 +18,7 @@ import {
   backgroundResultFromSnapshot,
   createBackgroundResultController,
   mergeBackgroundTaskResult
-} from "../public/frontend/features/thought-discovery/background-results.mjs";
+} from "../public/frontend/features/background-results/index.mjs";
 import {
   annotationMenuItems,
   annotationPresentation,

@@ -164,6 +164,7 @@ const suites = {
     ["F2 lazy discovery controller", ["scripts/frontend-discovery-feature-regression.mjs"]],
     ["F2 explicit legacy page adapters", ["scripts/frontend-legacy-page-feature-regression.mjs"]],
     ["F3 annotations lifecycle and account isolation", ["scripts/frontend-annotations-feature-regression.mjs"]],
+    ["F3 background result lifecycle and cross-content location", ["scripts/frontend-background-results-feature-regression.mjs"]],
     ["F3 lazy notifications controller", ["scripts/frontend-notifications-feature-regression.mjs"]],
     ["notification entry states and retry interactions", ["scripts/notification-entry-regression.mjs"]],
     ["URL and browser history contracts", ["scripts/url-history-regression.mjs"]],

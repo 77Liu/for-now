@@ -9,9 +9,6 @@ import {
 import { createLatexRenderer, escapeHtml, plainPreview, presentError, renderMarkdown } from "../content/index.mjs";
 import {
   createPageEffects,
-  createBackgroundResultController,
-  backgroundResultFromSnapshot,
-  mergeBackgroundTaskResult,
   createActionsCoordinator,
   buildHomeMoodSeries,
   createHomeMemoryPool,
@@ -72,12 +69,18 @@ const feedbackFeatureModuleRequest=globalThis.__forNowFeedbackFeatureRequest||(i
 const discoveryFeatureModuleRequest=globalThis.__forNowDiscoveryFeatureRequest||(initialRuntimeView==="discovery"?import("../features/thought-discovery/index.mjs"):null);
 const notificationsFeatureModuleRequest=globalThis.__forNowNotificationsFeatureRequest||(initialRuntimeView==="notifications"?import("../features/notifications/index.mjs"):null);
 let annotationsFeatureModuleRequest=globalThis.__forNowAnnotationsFeatureRequest||null;
+let backgroundResultsFeatureModuleRequest=globalThis.__forNowBackgroundResultsFeatureRequest||null;
 const loadLegacyFeatureModule=()=>legacyFeatureModuleRequest||import("../features/legacy-pages/index.mjs");
 const loadActionsFeatureModule=()=>import("../features/actions/controller.mjs");
 const loadAnnotationsFeatureModule=()=>{
   const pending=annotationsFeatureModuleRequest||import("../features/annotations/index.mjs");
   annotationsFeatureModuleRequest=pending;
   return Promise.resolve(pending).catch(error=>{if(annotationsFeatureModuleRequest===pending)annotationsFeatureModuleRequest=null;throw error})
+};
+const loadBackgroundResultsFeatureModule=()=>{
+  const pending=backgroundResultsFeatureModuleRequest||import("../features/background-results/index.mjs");
+  backgroundResultsFeatureModuleRequest=pending;
+  return Promise.resolve(pending).catch(error=>{if(backgroundResultsFeatureModuleRequest===pending)backgroundResultsFeatureModuleRequest=null;throw error})
 };
 const startupPerformanceEnabled=new URLSearchParams(location.search).has("native-performance");
 const startupMarks={navigationStart:0,moduleLoaded:Number(performance.now().toFixed(1))};
@@ -104,7 +107,7 @@ const refreshCoordinator=createRefreshCoordinator({
   },
   afterReplace:()=>restorePendingProjections()
 });
-const KEEPSAKE_PAGE_SIZE=12,KEEPSAKE_PREFETCH_MARGIN_PX=160;
+const KEEPSAKE_PAGE_SIZE=12,KEEPSAKE_PREFETCH_MARGIN_PX=160,BACKGROUND_RESULTS_RETRY_LIMIT=3;
 const LOCAL_TEST_VIEW_SCOPES=Object.freeze({today:"today",daily:"daily",captures:"captures",books:"books",quotes:"quotes",keepsakes:"keepsakes",journals:"journals",thoughts:"thoughts",discovery:"discovery",together:"together",review:"review",statistics:"statistics","ai-cost":"statistics",commercialization:"statistics","personal-context":"personal-context",feedback:"feedback",export:"export",trash:"trash"});
 const localTestScopeLoads=new Map();
 const baseMetrics={mood:{label:"情绪",anchors:["非常难受","有些低落","平稳、无明显起伏","感觉不错","轻盈而愉快"]},energy:{label:"精力",anchors:["几乎耗尽","勉强支撑","够用，但有限","精力较好","充沛、想行动"]},stress:{label:"压力",anchors:["快要撑不住","很紧绷","压力明显但可应对","有一点紧绷","身心松弛"]},sleep:{label:"睡眠",anchors:["几乎没休息好","明显不足","基本够用","睡得不错","充分恢复"]}};
@@ -119,7 +122,7 @@ const responseStyleOptions=[["concise","简短"],["standard","标准"],["deep","
 const responseStyleScenes=["thoughtDraft","thoughtAnswer","followUpAnswer","chat","diaryReflection","annotationShenji","analysis"];
 let pageRouter,switchView,restoreView;
 let runtimeApplication=null,runtimeFeatureRegistry=null,runtimeStatePort=null,applicationLifecycleReady=false;
-let backgroundResultController=null;
+let backgroundResultsController=null,backgroundResultsLoadErrorReported=false,backgroundResultsRetryAttempts=0;
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
 let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,captureComposerOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
@@ -270,9 +273,29 @@ const applyCommentAnchors=(...args)=>annotationsController?.applyAnchors(...args
 const scheduleAnnotationLineCounts=()=>annotationsController?.scheduleLayout();
 const restoreAnnotationUiDrafts=()=>annotationsController?.restoreDrafts();
 const renderCommentPanel=(...args)=>annotationsController?.renderPanel(...args);
-const refreshAnnotationCard=annotation=>annotationsController?.refreshAnnotation(annotation);
-const annotationForTask=target=>annotationsController?.findTaskAnnotation(target);
 const openCommentPanel=(...args)=>annotationsController?.openPanel(...args);
+function createRuntimeBackgroundResultsController(module){return module.createBackgroundResultsFeatureController({
+  data:{getSnapshot:()=>state,getAccountId:()=>currentUser?.id||"",replaceSnapshot:replaceState,request,refresh:(domains,options)=>refreshState(domains,options)},
+  navigation:{openThoughtDetail,switchView},
+  annotations:{
+    openTarget:async(target,isCurrent)=>{const controller=await ensureAnnotationsController();if(!isCurrent())return false;controller.openPanel(commentRootKey(target.resourceType,target.targetId),target.annotationId);return true},
+    refreshTarget:target=>{const controller=annotationsController,annotation=controller?.findTaskAnnotation(target);if(annotation&&controller.isActiveRoot(commentRootKey(target.resourceType,target.targetId)))controller.refreshAnnotation(annotation);return true}
+  },
+  view:{renderCaptures,patchThoughtTarget:patchThoughtTaskTarget,scheduleAnnotationLayout:scheduleAnnotationLineCounts,showToast},
+  platform:{document,window,requestFrame:callback=>requestAnimationFrame(callback),escapeSelector:value=>CSS.escape(value)}
+})}
+async function ensureBackgroundResultsController(){
+  if(backgroundResultsController)return backgroundResultsController;const module=await loadBackgroundResultsFeatureModule();
+  backgroundResultsController||=createRuntimeBackgroundResultsController(module);return backgroundResultsController
+}
+async function syncBackgroundTaskResults(tasks,owner,session){
+  if(!(Array.isArray(tasks)&&tasks.some(task=>task?.status==="succeeded"&&task?.resultId))){backgroundResultsRetryAttempts=0;return false}
+  try{const controller=await ensureBackgroundResultsController();if(owner!==currentUser?.id||session!==sessionSerial)return false;backgroundResultsLoadErrorReported=false;const changed=await controller.sync(tasks);backgroundResultsRetryAttempts=controller.needsRetry()?Math.min(BACKGROUND_RESULTS_RETRY_LIMIT,backgroundResultsRetryAttempts+1):0;return changed}catch(error){
+    backgroundResultsRetryAttempts=Math.min(BACKGROUND_RESULTS_RETRY_LIMIT,backgroundResultsRetryAttempts+1);
+    if(owner===currentUser?.id&&session===sessionSerial&&!backgroundResultsLoadErrorReported){backgroundResultsLoadErrorReported=true;showToast(`后台结果模块加载失败：${error.message}`,"error")}
+    return false
+  }
+}
 function pendingAiTask(kind,targetId,subtargetId=""){return(state.aiTasks||[]).find(task=>task.kind===kind&&task.targetId===targetId&&(!subtargetId||task.subtargetId===subtargetId)&&["queued","running","cancelling"].includes(task.status))}
 function followUpFormIdentity(form){
   if(form.dataset.followUpRoot)return{rootId:form.dataset.followUpRoot,kind:"create",followUpId:""};
@@ -1706,28 +1729,20 @@ function publishNotificationState(){
 }
 function scheduleNotificationPoll(){
   clearTimeout(notificationTimer);
-  if(!(state.aiTasks||[]).some(task=>["queued","running","cancelling"].includes(task.status)))return;
+  const active=(state.aiTasks||[]).some(task=>["queued","running","cancelling"].includes(task.status)),retrying=backgroundResultsRetryAttempts>0&&backgroundResultsRetryAttempts<BACKGROUND_RESULTS_RETRY_LIMIT;
+  if(!active&&!retrying)return;
   notificationTimer=setTimeout(async()=>{try{await loadNotifications()}finally{scheduleNotificationPoll()}},1800);
 }
-async function loadNotifications(){const owner=currentUser?.id,session=sessionSerial;notificationsLoadState="loading";publishNotificationState();try{const [notifications,tasks]=await Promise.all([request("/api/notifications"),request("/api/ai-tasks")]);if(owner!==currentUser?.id||session!==sessionSerial)return false;state.notifications=notifications.items||[];state.aiTasks=tasks.items||[];notificationUnreadCount=Number(notifications.unread)||0;state.notificationUnread=notificationUnreadCount;notificationsLoadState="ready";publishNotificationState();await backgroundResultController?.sync(state.aiTasks);return true}catch(error){if(owner===currentUser?.id&&session===sessionSerial){notificationsLoadState="failure";publishNotificationState()}return false}}
+async function loadNotifications(){const owner=currentUser?.id,session=sessionSerial;notificationsLoadState="loading";publishNotificationState();try{const [notifications,tasks]=await Promise.all([request("/api/notifications"),request("/api/ai-tasks")]);if(owner!==currentUser?.id||session!==sessionSerial)return false;state.notifications=notifications.items||[];state.aiTasks=tasks.items||[];notificationUnreadCount=Number(notifications.unread)||0;state.notificationUnread=notificationUnreadCount;notificationsLoadState="ready";publishNotificationState();await syncBackgroundTaskResults(state.aiTasks,owner,session);return true}catch(error){if(owner===currentUser?.id&&session===sessionSerial){notificationsLoadState="failure";publishNotificationState()}return false}}
 async function openAiTaskTarget(task,notification){
-  const resourceType=task?.resourceType||notification?.resourceType||"thought",targetId=task?.targetId||notification?.targetId,subtargetId=task?.subtargetId||notification?.subtargetId||"",kind=task?.kind||"thoughtAnswer";
-  const destination={thought:["thoughts","thoughts"],capture:["captures","captures"],journal:["journals","journals"],chat:["together","chat"],analysis:["review","review"],book:["books","books"],quote:["quotes","quotes"]}[resourceType]||["thoughts","thoughts"];
-  if(resourceType==="thought"&&targetId)openThoughtDetail(targetId);else switchView(destination[0]);
-  await refreshState([destination[1],"notifications"],resourceType==="thought"?{chainId:targetId,followUpId:kind==="followUpAnswer"?subtargetId:""}:{});
-  if(kind==="contentImageUnderstanding"){
-    if(task?.contentTargetType==="comment"&&targetId&&subtargetId){openCommentPanel(commentRootKey(resourceType,targetId),subtargetId);return}
-    if(task?.contentTargetType==="capture")return requestAnimationFrame(()=>document.querySelector(`[data-capture-id="${CSS.escape(task.contentTargetId)}"]`)?.scrollIntoView({behavior:"smooth",block:"center"}));
-    const block=task?.contentTargetType==="thoughtBlock"?state.thoughts.find(item=>item.id===task.contentTargetId):null,rootId=task?.contentTargetType==="thoughtRoot"?task.contentTargetId:block?.relatedTo;
-    if(rootId)return requestAnimationFrame(()=>document.querySelector(`[data-chain-id="${CSS.escape(rootId)}"]`)?.scrollIntoView({behavior:"smooth",block:"center"}))
+  const owner=currentUser?.id,session=sessionSerial;
+  try{
+    const controller=await ensureBackgroundResultsController();if(owner!==currentUser?.id||session!==sessionSerial)return false;
+    backgroundResultsLoadErrorReported=false;backgroundResultsRetryAttempts=0;return await controller.openTarget(task,notification)
+  }catch(error){
+    if(owner===currentUser?.id&&session===sessionSerial)showToast(`无法定位后台结果：${error.message}`,"error");
+    return false
   }
-  if(kind==="annotationShenji"&&targetId&&subtargetId){
-    openCommentPanel(commentRootKey(resourceType,targetId),subtargetId);
-    requestAnimationFrame(()=>document.querySelector(`[data-comment-card="${CSS.escape(subtargetId)}"]`)?.scrollIntoView({behavior:"smooth",block:"center"}));
-    return
-  }
-  if(resourceType==="capture"&&targetId)return requestAnimationFrame(()=>document.querySelector(`[data-capture-id="${CSS.escape(targetId)}"]`)?.scrollIntoView({behavior:"smooth",block:"center"}));
-  if(resourceType==="thought"&&targetId)requestAnimationFrame(()=>document.querySelector(`[data-chain-id="${CSS.escape(targetId)}"]`)?.scrollIntoView({behavior:"smooth",block:"center"}))
 }
 function commitDraftTags(){const input=$("#chain-tags"),values=splitTags(input.value);for(const value of values)if(!draftTags.includes(value))draftTags.push(value);input.value="";renderTagComposer()}
 function renderTagComposer(){const list=$("#chain-tag-list");if(!list)return;list.innerHTML=draftTags.map(tag=>`<span class="tag-chip">#${escapeHtml(tag)}<button type="button" data-remove-draft-tag="${escapeHtml(tag)}" aria-label="移除标签 ${escapeHtml(tag)}">×</button></span>`).join("");const known=[...new Set(state.thoughts.flatMap(item=>item.tags||[]))].filter(tag=>!draftTags.includes(tag));$("#tag-suggestions").innerHTML=known.map(tag=>`<option value="${escapeHtml(tag)}"></option>`).join("")}
@@ -3752,7 +3767,7 @@ function setAuthBusy(value){authBusy=value;$$(".auth-form input,.auth-form butto
 function invalidatePageLoads(){
   statisticsRequestSerial+=1;aiCostRequestSerial+=1;architectureRequestSerial+=1;commercialRequestSerial+=1;personalContextRequestSerial+=1;accountUsersRequestSerial+=1;analysisRequestSerial+=1;
   activeAnswerTaskId=++answerTaskSerial;healthParseSerial+=1;latestHealthRequest=0;bookParseSerial+=1;clearTimeout(notificationTimer);
-  backgroundResultController?.reset();refreshCoordinator.reset();
+  backgroundResultsController?.resetSession();backgroundResultsLoadErrorReported=false;backgroundResultsRetryAttempts=0;refreshCoordinator.reset();
 }
 function clearPrivateSessionState(){
   captureEditorSerial+=1;
@@ -3860,26 +3875,6 @@ async function restartApplicationForUser(user){
   applicationLifecycleReady=true
 }
 const refreshState=(domains,options={})=>refreshCoordinator.refresh(domains,{...options,patchOnly:options.patchOnly===true});
-backgroundResultController=createBackgroundResultController({
-  loadResult:async task=>backgroundResultFromSnapshot(state,task)||(await request(`/api/ai-tasks/${encodeURIComponent(task.id)}/result`)).result,
-  applyResult:({task,target,result})=>{
-    if(backgroundResultFromSnapshot(state,task))return true;
-    const merged=mergeBackgroundTaskResult(state,task,result);if(!merged.changed)return false;
-    replaceState(merged.value);
-    if(target.kind==="captureTranscription"){renderCaptures();return true}
-    if(target.kind==="annotationShenji"){const annotation=annotationForTask(target);if(annotation&&annotationsController.isActiveRoot(commentRootKey(target.resourceType,target.targetId)))refreshAnnotationCard(annotation);return true}
-    if(target.kind==="contentImageUnderstanding"){
-      if(target.contentTargetType==="capture"){renderCaptures();return true}
-      if(target.contentTargetType==="comment"){const annotation=annotationForTask(target);if(annotation&&annotationsController.isActiveRoot(commentRootKey(target.resourceType,target.targetId)))refreshAnnotationCard(annotation);return true}
-      const block=target.contentTargetType==="thoughtBlock"?state.thoughts.find(item=>item.id===target.contentTargetId):null;
-      return patchThoughtTaskTarget({...target,targetId:target.contentTargetType==="thoughtRoot"?target.contentTargetId:block?.relatedTo})
-    }
-    return patchThoughtTaskTarget(target)
-  },
-  captureViewState:()=>({x:window.scrollX,y:window.scrollY,commentScroll:$("#comment-panel")?.scrollTop||0}),
-  restoreViewState:view=>{if(!view)return;window.scrollTo(view.x,view.y);if($("#comment-panel"))$("#comment-panel").scrollTop=view.commentScroll;scheduleAnnotationLineCounts()},
-  onError:error=>showToast(`后台结果同步失败：${error.message}`,"error")
-});
 subscribeState((next,wanted,thoughtOptions)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);if(wanted.has("dailyRecords"))renderDailyRecords();if(wanted.has("captures")){renderCaptures();renderCaptureTagComposer()}if(wanted.has("journals"))renderJournals();if(wanted.has("thoughts")){if(thoughtOptions.patchOnly&&thoughtOptions.chainId)patchThoughtTaskTarget({targetId:thoughtOptions.chainId});else{renderThoughts(thoughtOptions);renderCaptures();renderTagComposer();renderCaptureTagComposer();renderHomeMemories()}reconcileThoughtRoute()}if(wanted.has("speech")){if(!wanted.has("captures")&&!wanted.has("thoughts"))renderCaptures();if(!wanted.has("thoughts"))renderThoughts();renderSettings()}if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("review"))renderReview();if(wanted.has("books")){renderBooks();renderHomeMemories();if(annotationsController?.activeRootKey().startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes")){renderKeepsakes();renderHomeKeepsake()}if(wanted.has("quotes")){renderQuotes();renderHomeMemories()}if(wanted.has("comments"))renderCommentPanel();renderNotificationSummary()});
 function setAnswerModalStep(step){const order=["context","thinking","answer","done"],current=order.indexOf(step);$$("#ai-answer-progress li").forEach((item,index)=>{item.classList.toggle("active",index===current);item.classList.toggle("done",index<current||(step==="done"&&index===current))})}
 function closeAnswerModal(){const modal=$("#ai-answer-modal"),busy=modal.dataset.busy==="true";modal.hidden=true;if(busy)showToast("回答继续在后台生成，完成后会提醒。")}

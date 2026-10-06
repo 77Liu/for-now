@@ -38,6 +38,10 @@ const ASSET_BUDGET = Object.freeze({
 });
 const HIDDEN_FEATURE_MODULE_PATHS = Object.freeze([
   "/frontend/features/actions/controller.mjs",
+  "/frontend/features/background-results/index.mjs",
+  "/frontend/features/background-results/controller.mjs",
+  "/frontend/features/background-results/locator.mjs",
+  "/frontend/features/background-results/model.mjs",
   "/frontend/features/export/index.mjs",
   "/frontend/features/export/controller.mjs",
   "/frontend/features/export/downloads.mjs",
