@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createMediaRuntime } from "../src/app/media-runtime.mjs";
+import { createMediaRuntime } from "../src/app/index.mjs";
 import {
   createHealthImageConfig,
   normalizeHealthImage

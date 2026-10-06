@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import { loadAppConfig } from "./src/config/index.mjs";
-import { createAttachmentStorage, createImageAttachments, cleanAttachmentPaths, cleanupTemporaryFiles, collectAttachmentPaths } from "./src/shared/attachments/index.mjs";
+import { cleanupTemporaryFiles } from "./src/shared/attachments/index.mjs";
 import { createObservability, createRuntimeMemorySampler, errorMetadata, pruneLogs } from "./src/shared/observability/index.mjs";
 import { createThoughtService, createThoughtTaskTarget, stripThoughtAnswerLead } from "./src/modules/thoughts/index.mjs";
 import {
@@ -18,7 +18,7 @@ import { activeTaskForInput, createTaskLifecycle, publicAiTask } from "./src/mod
 import { createNotificationService, notificationUnread } from "./src/modules/notifications/index.mjs";
 import { createTrashService } from "./src/modules/trash/index.mjs";
 import { createCheckinRecords } from "./src/modules/checkins/index.mjs";
-import { captureAudioPayload, createCaptureRecords } from "./src/modules/captures/index.mjs";
+import { createCaptureRecords } from "./src/modules/captures/index.mjs";
 import { createBookRecords } from "./src/modules/books/index.mjs";
 import { createQuoteRecords } from "./src/modules/quotes/index.mjs";
 import { createChatRecords } from "./src/modules/chats/index.mjs";
@@ -34,30 +34,25 @@ import { createUserModelService } from "./src/modules/user-model/index.mjs";
 import {
   normalizeLlmSettings, normalizeAiUsage, systemPrompt
 } from "./src/modules/ai/index.mjs";
-import { createAliyunSegmentationTransport, createVolcengineSpeechTransport, createVolcengineVisionTransport } from "./src/infrastructure/ai-providers/index.mjs";
 import { loadPromptCatalog } from "./src/infrastructure/prompt-catalog/index.mjs";
 import {
-  createKeepsakeImageUnderstanding,
-  createKeepsakeSegmentation,
   createKeepsakeRecords,
   keepsakePayload,
   publicKeepsake,
   originalKeepsakeMedia
 } from "./src/modules/keepsakes/index.mjs";
-import { createRateGate } from "./src/shared/concurrency/index.mjs";
-import { installPromptCatalog, promptText, renderPrompt } from "./src/shared/prompts/index.mjs";
+import { installPromptCatalog } from "./src/shared/prompts/index.mjs";
 import { localDateKey, eventTimeFields } from "./src/shared/time/index.mjs";
 import { buildAdminSnapshot } from "./admin-snapshot.mjs";
-import { createAccountLifecycle, createAnnotationCommands, createAiRuntime, createAiTaskTargets, createBackgroundAi, createLocalTestRuntime, createTrashMutations, createTrashCommands, createAttachmentCleanup, createSpeechCache, createKeepsakeMediaWorkflows, createThoughtWorkflows, createCaptureJournalWorkflows, createLibraryWorkflows, createReviewChatWorkflows, createUserModelExtractionService, createStoreNormalizer, createPublicStateProjection, emptyStore, normalizeCommercialization, personalContextProjection, routeStateProjection, startupProjection, storeForUser, withoutOwnerMetadata, STORE_VERSION, TRASH_RETENTION_DAYS, userModelEvidenceCurrent } from "./src/app/index.mjs";
+import { createAccountLifecycle, createAnnotationCommands, createAiRuntime, createAiTaskTargets, createBackgroundAi, createLocalTestRuntime, createMediaRuntime, createTrashMutations, createTrashCommands, createThoughtWorkflows, createCaptureJournalWorkflows, createReviewChatWorkflows, createUserModelExtractionService, createStoreNormalizer, createPublicStateProjection, emptyStore, normalizeCommercialization, personalContextProjection, routeStateProjection, startupProjection, storeForUser, withoutOwnerMetadata, STORE_VERSION, TRASH_RETENTION_DAYS, userModelEvidenceCurrent } from "./src/app/index.mjs";
 import {
-  createSpeechCacheSweep,
   SPEECH_CACHE_SWEEP_INTERVAL_MS,
   SPEECH_CACHE_SWEEP_STARTUP_DELAY_MS
 } from "./src/app/index.mjs";
-import { safeText, recordVersion, safeIso, nullableNumber } from "./src/shared/validation/index.mjs";
-import { createAuthHttp, createLocalTestHttp, createLocalTestSessionVault, createReadOnlyUpstream, createJsonHttp, createTaskHttp, createAnnotationHttp, createTrashHttp, createAttachmentHttp, createAiSettingsHttp, createAiCostHttp, createAiBudgetHttp, createKeepsakeHttp, createOnboardingHttp, createOnboardingV2Http, createUserModelHttp, createThoughtHttp, createCheckinHttp, createHealthRecordHttp, createDiscoveryHttp, createExportHttp, createActionsHttp, createFeedbackHttp, createCaptureJournalHttp, createLibraryHttp, createReviewsChatHttp, createContentAttachmentsHttp, createSpeechHttp, createVisionHttp, createSyncHttp, createStartupHttp, createPersonalContextHttp, createRequestHandler, createModelResponseHttp, createApiV1Http, openApiV1 } from "./src/http/index.mjs";
-import { createHealthImageConfig, createDailyRecordRecords, normalizeHealthImage } from "./src/modules/health/index.mjs";
-import { createAuthRepository, createJsonStoreRepository, createPostgresRuntime, checkPersistenceMarker, markPostgresDirectory, hasJsonData, METADATA_FIELD, removeIdempotencyResponse } from "./src/shared/persistence/index.mjs";
+import { safeText, recordVersion, safeIso } from "./src/shared/validation/index.mjs";
+import { createAuthHttp, createLocalTestHttp, createLocalTestSessionVault, createReadOnlyUpstream, createJsonHttp, createTaskHttp, createAnnotationHttp, createTrashHttp, createAttachmentHttp, createAiSettingsHttp, createAiCostHttp, createAiBudgetHttp, createKeepsakeHttp, createOnboardingHttp, createOnboardingV2Http, createUserModelHttp, createThoughtHttp, createCheckinHttp, createHealthRecordHttp, createImageRecognitionHttp, createDiscoveryHttp, createExportHttp, createActionsHttp, createFeedbackHttp, createCaptureJournalHttp, createLibraryHttp, createReviewsChatHttp, createContentAttachmentsHttp, createSpeechHttp, createVisionHttp, createSyncHttp, createStartupHttp, createPersonalContextHttp, createRequestHandler, createModelResponseHttp, createApiV1Http, openApiV1 } from "./src/http/index.mjs";
+import { createDailyRecordRecords } from "./src/modules/health/index.mjs";
+import { createAuthRepository, createJsonStoreRepository, createPostgresRuntime, checkPersistenceMarker, markPostgresDirectory, hasJsonData } from "./src/shared/persistence/index.mjs";
 import { isApplicationRoutePath } from "./public/frontend/pages/index.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -89,7 +84,6 @@ const runtimeMemorySampler = createRuntimeMemorySampler({
   logEvent,
   intervalMs: RUNTIME_MEMORY_SAMPLE_INTERVAL_MS
 });
-const attachmentStorage = createAttachmentStorage(appConfig.attachments);
 const PLATFORM_SERVICE_TOKEN_HASH = appConfig.platform.serviceTokenHash;
 const BACKUP_STATUS_FILE = appConfig.platform.backupStatusFile;
 const storagePaths = () => {
@@ -146,17 +140,6 @@ const requestBinding = input => {
   const requestId = safeText(input?.requestId, 100), targetId = safeText(input?.targetId, 100);
   return requestId && targetId ? { requestId, targetId, inputVersion: Math.max(0, Math.round(Number(input.inputVersion) || 0)) } : {};
 };
-const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
-const segmentationGate = createRateGate(SEGMENTATION_GLOBAL_QPS, SEGMENTATION_GLOBAL_CONCURRENCY);
-const speechGate = createRateGate(SPEECH_GLOBAL_QPS, SPEECH_GLOBAL_CONCURRENCY);
-const ocrGate = createRateGate(OCR_GLOBAL_QPS, OCR_GLOBAL_CONCURRENCY);
-const documentParseGate = createRateGate(DOCUMENT_PARSE_GLOBAL_QPS, DOCUMENT_PARSE_GLOBAL_CONCURRENCY);
-const speechProvider = createVolcengineSpeechTransport({
-  ...appConfig.speech,
-  debugServerUrl: appConfig.debug.serverUrl,
-  debugRunId: appConfig.debug.runId
-});
-const visionProvider = createVolcengineVisionTransport(appConfig.vision);
 
 async function writeJsonAtomic(file, value) {
   if (PERSISTENCE_BACKEND === "postgres") throw new Error("JSON writes are disabled in PostgreSQL runtime");
@@ -188,16 +171,6 @@ async function readStoredJson(file, fallback) {
 async function readStore() {
   return storeRepository.read();
 }
-
-const publicStateFromStore = createPublicStateProjection({
-  getUser: () => requestStorage.getStore()?.user,
-  isOwner,
-  speechProvider,
-  visionProvider,
-  hash: sha256,
-  now,
-  today
-});
 
 function updateStore(mutator) {
   return storeRepository.update(mutator);
@@ -284,267 +257,6 @@ const trashMutations = createTrashMutations({
   cancelTask: taskId => cancelBackgroundTask(taskId)
 });
 const { moveCollectionItemToTrash, moveNestedItemToTrash, moveThoughtChainToTrash, moveThoughtBlockToTrash } = trashMutations;
-const attachmentCleanup = createAttachmentCleanup({
-  repository: storeRepository, now, contextKey: () => storagePaths().storeFile,
-  remove: resourcePath => imageAttachments.remove(resourcePath),
-  dispatch: (callback, delay) => {
-    const context = { ...(requestStorage.getStore() || {}) };
-    const timer = setTimeout(() => requestStorage.run(context, callback), delay);
-    timer.unref();
-    return timer;
-  },
-  onRetryFailure: error => logEvent("system", "trash.attachment_cleanup_retry_failed", { level: "error", error: errorMetadata(error) }),
-  onResult: result => logEvent("system", result.pending ? "trash.attachment_cleanup_pending" : "trash.attachment_cleanup_completed", {
-    level: result.pending ? "error" : "info", removedCount: result.removed.length, pendingCount: result.pending
-  })
-});
-const { resume: resumeAttachmentCleanup } = attachmentCleanup;
-const imageAttachments = createImageAttachments({
-  storage: attachmentStorage,
-  getContext: () => ({ ...storagePaths(), ownerId: safeText(requestStorage.getStore()?.user?.id, 100) || "local" }),
-  quotaBytes: ATTACHMENT_USER_QUOTA_BYTES, defaultMaxBytes: DEFAULT_IMAGE_MAX_BYTES,
-  inventory: postgresRuntime?.attachments,
-  cleanFailedUploads: attachmentCleanup.cleanFailedUploads,
-  onCleanupDeferred: error => logEvent("system", "attachment.cleanup_deferred", { level: "error", error: errorMetadata(error) })
-});
-const { save: saveImageDataUrls } = imageAttachments;
-async function saveOriginalImages(req, images) {
-  const key = safeText(req.headers["idempotency-key"], 100);
-  if (!key) throw Object.assign(new Error("原图上传缺少幂等标识"), { statusCode: 400, code: "IDEMPOTENCY_KEY_REQUIRED" });
-  const idempotency = {
-    scope: "attachments.uploadOriginals",
-    key,
-    requestHash: sha256(JSON.stringify(images))
-  };
-  const replay = await storeRepository.readIdempotent?.(idempotency);
-  if (replay !== undefined) {
-    const replayPaths = cleanAttachmentPaths(replay.attachmentPaths);
-    const states = await Promise.allSettled(replayPaths.map(resourcePath => imageAttachments.read(resourcePath)));
-    const missing = states.filter(item => item.status === "rejected" && (
-      ["ENOENT", "NoSuchKey"].includes(item.reason?.code) || Number(item.reason?.status) === 404
-    )).length;
-    const unexpected = states.find(item => item.status === "rejected" && !(
-      ["ENOENT", "NoSuchKey"].includes(item.reason?.code) || Number(item.reason?.status) === 404
-    ));
-    if (unexpected) throw unexpected.reason;
-    if (!missing) return replay;
-    if (missing !== replayPaths.length) {
-      throw Object.assign(new Error("原图上传的幂等结果仅部分可用，请更换请求标识后重试"), {
-        statusCode: 409,
-        code: "IDEMPOTENCY_RESULT_STALE"
-      });
-    }
-    await storeRepository.update(store => removeIdempotencyResponse(store, idempotency));
-  }
-  const uploaded = await imageAttachments.save(images, 2, { maxBytes: ATTACHMENT_UPLOAD_IMAGE_MAX_BYTES });
-  try {
-    const result = await storeRepository.executeIdempotent(
-      idempotency,
-      () => ({ attachmentPaths: uploaded.attachmentPaths }),
-      { onReplay: value => ({ ...value, duplicate: true }) }
-    );
-    if (result.duplicate) await attachmentCleanup.cleanFailedUploads(uploaded.attachmentPaths);
-    return result;
-  } catch (error) {
-    await attachmentCleanup.cleanFailedUploads(uploaded.attachmentPaths).catch(() => {});
-    throw error;
-  }
-}
-async function saveKeepsakeImages(req, input) {
-  const key = safeText(req.headers["idempotency-key"], 100);
-  if (!key) throw Object.assign(new Error("小物图片上传缺少幂等标识"), { statusCode: 400, code: "IDEMPOTENCY_KEY_REQUIRED" });
-  const idempotency = {
-    scope: "attachments.uploadKeepsake",
-    key,
-    requestHash: sha256(JSON.stringify({ image: input.image, alphaMask: input.alphaMask }))
-  };
-  const replay = await storeRepository.readIdempotent?.(idempotency);
-  if (replay !== undefined) {
-    const replayPaths = cleanAttachmentPaths(replay.attachmentPaths, 5);
-    const states = await Promise.allSettled(replayPaths.map(resourcePath => imageAttachments.read(resourcePath)));
-    const missing = states.filter(item => item.status === "rejected" && (
-      ["ENOENT", "NoSuchKey"].includes(item.reason?.code) || Number(item.reason?.status) === 404
-    )).length;
-    const unexpected = states.find(item => item.status === "rejected" && !(
-      ["ENOENT", "NoSuchKey"].includes(item.reason?.code) || Number(item.reason?.status) === 404
-    ));
-    if (unexpected) throw unexpected.reason;
-    if ([2, 5].includes(replayPaths.length) && !missing) {
-      if (replayPaths.length === 2) return replay;
-      const originalPath = replay.originalPath || replayPaths[0];
-      const alphaMaskPath = replay.alphaMaskPath || replayPaths.at(-1);
-      return {
-        ...replay,
-        attachmentPath: originalPath,
-        attachmentPaths: [originalPath, alphaMaskPath],
-        originalPath,
-        alphaMaskPath
-      };
-    }
-    if (missing && missing !== replayPaths.length) {
-      throw Object.assign(new Error("小物媒体上传的幂等结果仅部分可用，请更换请求标识后重试"), {
-        statusCode: 409,
-        code: "IDEMPOTENCY_RESULT_STALE"
-      });
-    }
-    await storeRepository.update(store => removeIdempotencyResponse(store, idempotency));
-  }
-  const uploaded = await imageAttachments.saveKeepsakeSources({
-    image: input.image,
-    alphaMask: input.alphaMask,
-    maxBytes: ATTACHMENT_UPLOAD_IMAGE_MAX_BYTES
-  });
-  try {
-    const result = await storeRepository.executeIdempotent(
-      idempotency,
-      () => ({ attachmentPath: uploaded.paths.originalPath, attachmentPaths: uploaded.attachmentPaths, ...uploaded.paths }),
-      { onReplay: value => ({ ...value, duplicate: true }) }
-    );
-    if (result.duplicate) await attachmentCleanup.cleanFailedUploads(uploaded.attachmentPaths);
-    return result;
-  } catch (error) {
-    await attachmentCleanup.cleanFailedUploads(uploaded.attachmentPaths).catch(() => {});
-    throw error;
-  }
-}
-async function saveOriginalAudio(req, input) {
-  const key = safeText(req.headers["idempotency-key"], 100);
-  if (!key) throw Object.assign(new Error("音频上传缺少幂等标识"), { statusCode: 400, code: "IDEMPOTENCY_KEY_REQUIRED" });
-  const durationMs = Math.round(Number(input.durationMs));
-  if (!Number.isSafeInteger(durationMs) || durationMs < 250 || durationMs > ATTACHMENT_AUDIO_MAX_DURATION_MS) {
-    throw Object.assign(new Error("录音时长必须在 0.25 秒到 10 分钟之间"), { statusCode: 400, code: "INVALID_AUDIO_DURATION" });
-  }
-  const idempotency = {
-    scope: "attachments.uploadAudio",
-    key,
-    requestHash: sha256(JSON.stringify({ audio: input.audio, durationMs }))
-  };
-  const replay = await storeRepository.readIdempotent?.(idempotency);
-  if (replay !== undefined) {
-    const resourcePath = safeText(replay.audio?.attachmentPath, 300);
-    try {
-      if (resourcePath) await imageAttachments.read(resourcePath);
-      if (resourcePath) return replay;
-    } catch (error) {
-      const missing = ["ENOENT", "NoSuchKey"].includes(error?.code) || Number(error?.status) === 404;
-      if (!missing) throw error;
-    }
-    await storeRepository.update(store => removeIdempotencyResponse(store, idempotency));
-  }
-  const uploaded = await imageAttachments.saveAudio(input.audio, { maxBytes: ATTACHMENT_UPLOAD_AUDIO_MAX_BYTES });
-  const audio = {
-    attachmentPath: uploaded.attachmentPath,
-    mimeType: uploaded.mimeType,
-    bytes: uploaded.bytes,
-    durationMs
-  };
-  // #region debug-point B-D:audio-upload
-  fetch(appConfig.debug.serverUrl,{method:"POST",body:JSON.stringify({sessionId:"login-audio-production",runId:appConfig.debug.runId,hypothesisId:"B-D",location:"server.mjs:saveOriginalAudio",msg:"[DEBUG] Audio upload normalized metadata",data:{extension:path.extname(audio.attachmentPath),mimeType:audio.mimeType,bytes:audio.bytes,durationMs:audio.durationMs},ts:Date.now()})}).catch(()=>{});
-  // #endregion
-  try {
-    const result = await storeRepository.executeIdempotent(
-      idempotency,
-      () => ({ audio }),
-      { onReplay: value => ({ ...value, duplicate: true }) }
-    );
-    if (result.duplicate) await attachmentCleanup.cleanFailedUploads([uploaded.attachmentPath]);
-    return result;
-  } catch (error) {
-    await attachmentCleanup.cleanFailedUploads([uploaded.attachmentPath]).catch(() => {});
-    throw error;
-  }
-}
-async function discardOriginalUploads(value, uploadRequestId = "", scope = "attachments.uploadOriginals") {
-  const maxPaths = scope === "attachments.uploadKeepsake" ? 5 : scope === "attachments.uploadAudio" ? 1 : 2;
-  const attachmentPaths = cleanAttachmentPaths(value, maxPaths);
-  const key = safeText(uploadRequestId, 100);
-  if (!key) throw Object.assign(new Error("清理附件上传缺少幂等标识"), { statusCode: 400, code: "IDEMPOTENCY_KEY_REQUIRED" });
-  const prepared = await storeRepository.update(store => {
-    const ledger = store[METADATA_FIELD]?.idempotency?.find(item => (
-      item.scope === scope && item.key === key
-    ));
-    const ledgerPaths = cleanAttachmentPaths(
-      scope === "attachments.uploadAudio"
-        ? [ledger?.response?.audio?.attachmentPath]
-        : ledger?.response?.attachmentPaths,
-      maxPaths
-    );
-    const requested = attachmentPaths.filter(resourcePath => ledgerPaths.includes(resourcePath));
-    const { [METADATA_FIELD]: _metadata, attachmentCleanup: _cleanup, ...visibleStore } = store;
-    const referenced = collectAttachmentPaths(visibleStore);
-    const removable = requested.filter(resourcePath => !referenced.has(resourcePath));
-    if (removable.length) {
-      attachmentCleanup.enqueue(store, new Set(removable));
-      if (removable.length === ledgerPaths.length && requested.length === ledgerPaths.length) {
-        removeIdempotencyResponse(store, { scope, key });
-      }
-    }
-    return { removable };
-  });
-  const result = await attachmentCleanup.resume();
-  return {
-    discarded: result.removed.filter(resourcePath => prepared.removable.includes(resourcePath)),
-    pending: result.pending
-  };
-}
-const discardOriginalAudio = (value, uploadRequestId = "") => discardOriginalUploads(
-  [value],
-  uploadRequestId,
-  "attachments.uploadAudio"
-);
-async function materializeAttachmentFiles(resourcePaths) {
-  const tempDir = path.join(storagePaths().dataDir, "tmp");
-  await fs.mkdir(tempDir, { recursive: true, mode: 0o700 });
-  await fs.chmod(tempDir, 0o700);
-  const files = [];
-  try {
-    for (const resourcePath of cleanAttachmentPaths(resourcePaths)) {
-      const extension = path.extname(resourcePath).toLowerCase();
-      const file = path.join(tempDir, `${crypto.randomUUID()}${[".png", ".jpg", ".jpeg", ".webp"].includes(extension) ? extension : ".jpg"}`);
-      files.push(file);
-      await fs.writeFile(file, await imageAttachments.read(resourcePath), { mode: 0o600 });
-    }
-    return files;
-  } catch (error) {
-    await cleanupTemporaryFiles(files);
-    throw error;
-  }
-}
-const keepsakeMediaWorkflows = createKeepsakeMediaWorkflows({
-  repository: storeRepository,
-  attachments: imageAttachments,
-  cleanup: attachmentCleanup,
-  parse: keepsakePayload,
-  createId: () => crypto.randomUUID(),
-  now,
-  contextKey: () => requestStorage.getStore()?.dataDir || DATA_DIR,
-  dispatch: callback => {
-    const context = { ...(requestStorage.getStore() || {}) };
-    setImmediate(() => requestStorage.run(context, callback));
-  },
-  onError: (id, error) => logEvent("system", "keepsake.derivative_failed", {
-    level: "error", keepsakeId: id, error: errorMetadata(error)
-  })
-});
-const segmentKeepsakeImage = createKeepsakeSegmentation({
-  saveImages: saveImageDataUrls, cleanupFiles: cleanupTemporaryFiles,
-  provider: createAliyunSegmentationTransport({ ...appConfig.segmentation, auditCall: meteredProviderCall }),
-  gate: segmentationGate,
-  onFailure: (error, callGroupId) => logEvent("system", "segmentation.failed", { level: "error", callGroupId, error: errorMetadata(error) })
-});
-const understandKeepsakeImage = createKeepsakeImageUnderstanding({
-  saveImages: saveImageDataUrls,
-  cleanupFiles: cleanupTemporaryFiles,
-  generate: (file, { existingTags = [] } = {}) => runDeepSeek(renderPrompt("keepsake.image.candidates", {
-    existingTags: JSON.stringify(existingTags)
-  }), {
-    imagePath: file,
-    scene: "contentImageUnderstanding",
-    json: true,
-    maxTokens: 1200
-  })
-});
-const trashCommands = createTrashCommands({ repository: storeRepository, trash: trashService, mutations: trashMutations, cleanup: attachmentCleanup });
 const annotationCommands = createAnnotationCommands({ repository: storeRepository, annotations: annotationService, moveNestedItemToTrash });
 const thoughtService = createThoughtService({
   repository: storeRepository,
@@ -696,6 +408,117 @@ const reviewRecords = createReviewRecords({
 const discoveryService = createThoughtDiscoveryService({ repository: storeRepository, now });
 const actionsService = createActionsService({ repository: storeRepository, now, today, createId: () => crypto.randomUUID() });
 const feedbackService = createFeedbackService({ repository: storeRepository, now, createId: () => crypto.randomUUID(), hash: sha256 });
+const mediaRuntime = createMediaRuntime({
+  repository: storeRepository,
+  attachmentStorageConfig: appConfig.attachments,
+  attachmentInventory: postgresRuntime?.attachments,
+  attachmentQuotaBytes: ATTACHMENT_USER_QUOTA_BYTES,
+  defaultImageMaxBytes: DEFAULT_IMAGE_MAX_BYTES,
+  uploadImageMaxBytes: ATTACHMENT_UPLOAD_IMAGE_MAX_BYTES,
+  uploadAudioMaxBytes: ATTACHMENT_UPLOAD_AUDIO_MAX_BYTES,
+  audioMaxDurationMs: ATTACHMENT_AUDIO_MAX_DURATION_MS,
+  getAttachmentContext: () => ({
+    ...storagePaths(),
+    ownerId: safeText(requestStorage.getStore()?.user?.id, 100) || "local"
+  }),
+  getOwnerId: () => safeText(requestStorage.getStore()?.user?.id, 100) || "local",
+  cleanupContextKey: () => storagePaths().storeFile,
+  keepsakeContextKey: () => requestStorage.getStore()?.dataDir || DATA_DIR,
+  dispatchCleanup: (callback, delay) => {
+    const context = { ...(requestStorage.getStore() || {}) };
+    const timer = setTimeout(() => requestStorage.run(context, callback), delay);
+    timer.unref();
+    return timer;
+  },
+  dispatchKeepsake: callback => {
+    const context = { ...(requestStorage.getStore() || {}) };
+    setImmediate(() => requestStorage.run(context, callback));
+  },
+  listAccountIds: async () => AUTH_REQUIRED
+    ? (await readAuth()).users.map(user => user.id)
+    : ["local"],
+  runWithAccount: (accountId, operation) => {
+    const user = { id: accountId };
+    return requestStorage.run({
+      user,
+      traceId: crypto.randomUUID(),
+      dataDir: AUTH_REQUIRED ? userDataDir(user) : DATA_DIR,
+      secrets: [],
+      route: "background/speech-cache-sweep"
+    }, operation);
+  },
+  books: bookRecords,
+  quotes: quoteRecords,
+  parseKeepsake: keepsakePayload,
+  moveCollectionItemToTrash,
+  moveNestedItemToTrash,
+  speechConfig: appConfig.speech,
+  visionConfig: appConfig.vision,
+  segmentationConfig: appConfig.segmentation,
+  speechQps: SPEECH_GLOBAL_QPS,
+  speechConcurrency: SPEECH_GLOBAL_CONCURRENCY,
+  ocrQps: OCR_GLOBAL_QPS,
+  ocrConcurrency: OCR_GLOBAL_CONCURRENCY,
+  documentQps: DOCUMENT_PARSE_GLOBAL_QPS,
+  documentConcurrency: DOCUMENT_PARSE_GLOBAL_CONCURRENCY,
+  segmentationQps: SEGMENTATION_GLOBAL_QPS,
+  segmentationConcurrency: SEGMENTATION_GLOBAL_CONCURRENCY,
+  aiBudgetRuntime,
+  providerBudgetStage,
+  conservativeDeepSeekStage,
+  currentBudgetAccountId,
+  meteredProviderCall,
+  runDeepSeek,
+  now,
+  today,
+  createId: () => crypto.randomUUID(),
+  hash: sha256,
+  logEvent,
+  debugServerUrl: appConfig.debug.serverUrl,
+  debugRunId: appConfig.debug.runId
+});
+const {
+  attachmentStorage,
+  attachmentCleanup,
+  resumeAttachmentCleanup,
+  imageAttachments,
+  saveOriginalImages,
+  saveKeepsakeImages,
+  saveOriginalAudio,
+  discardOriginalUploads,
+  discardOriginalAudio,
+  materializeAttachmentFiles,
+  listAttachmentInventory,
+  prepareCaptureAudio,
+  speechProvider,
+  visionProvider,
+  speechGate,
+  ocrGate,
+  documentParseGate,
+  parseImageRequest,
+  transcribeCapture,
+  speechCache,
+  runSpeechCacheSweep,
+  keepsakeMediaWorkflows,
+  segmentKeepsakeImage,
+  understandKeepsakeImage,
+  libraryWorkflows
+} = mediaRuntime;
+const publicStateFromStore = createPublicStateProjection({
+  getUser: () => requestStorage.getStore()?.user,
+  isOwner,
+  speechProvider,
+  visionProvider,
+  hash: sha256,
+  now,
+  today
+});
+const trashCommands = createTrashCommands({
+  repository: storeRepository,
+  trash: trashService,
+  mutations: trashMutations,
+  cleanup: attachmentCleanup
+});
 
 async function ensureStore() {
   const { dataDir, storeFile } = storagePaths();
@@ -949,175 +772,6 @@ installModelRuntimeSettingsReader(async () => {
   });
 });
 
-function normalizedLocalDateTimeText(value) {
-  const text = safeText(value, 40).replace(" ", "T");
-  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})(?::(\d{2}))?/.exec(text);
-  return match ? `${match[1]}:${match[2] || "00"}` : "";
-}
-
-function normalizeParsedImage(kind, value = {}) {
-  if (kind === "weight" || kind === "exercise") return normalizeHealthImage(kind, value);
-  if (kind === "sleep") {
-    const deepMinutes = nullableNumber(value.deepMinutes, 0, 1440, true), lightMinutes = nullableNumber(value.lightMinutes, 0, 1440, true), remMinutes = nullableNumber(value.remMinutes, 0, 1440, true);
-    const stageTotal = [deepMinutes, lightMinutes, remMinutes].every(Number.isFinite) ? deepMinutes + lightMinutes + remMinutes : null;
-    return {
-      date: /^\d{4}-\d{2}-\d{2}$/.test(value.date || "") ? value.date : "",
-      bedtime: normalizedLocalDateTimeText(value.bedtime),
-      wakeTime: normalizedLocalDateTimeText(value.wakeTime),
-      totalMinutes: nullableNumber(value.totalMinutes, 0, 1440, true) ?? stageTotal,
-      deepMinutes, deepPercent: nullableNumber(value.deepPercent, 0, 100),
-      lightMinutes, lightPercent: nullableNumber(value.lightPercent, 0, 100),
-      remMinutes, remPercent: nullableNumber(value.remPercent, 0, 100),
-      awakeCount: nullableNumber(value.awakeCount, 0, 100, true),
-      awakeMinutes: nullableNumber(value.awakeMinutes, 0, 1440, true),
-      averageHeartRate: nullableNumber(value.averageHeartRate, 20, 250),
-      averageOxygen: nullableNumber(value.averageOxygen, 50, 100),
-      respiratoryRate: nullableNumber(value.respiratoryRate, 1, 80),
-      verification: safeText(value.verification, 500)
-    };
-  }
-  if (kind === "heartRate") {
-    return {
-      date: /^\d{4}-\d{2}-\d{2}$/.test(value.date || "") ? value.date : "",
-      minimum: nullableNumber(value.minimum, 20, 250),
-      maximum: nullableNumber(value.maximum, 20, 250),
-      average: nullableNumber(value.average, 20, 250),
-      resting: nullableNumber(value.resting, 20, 250),
-      sleepAverage: nullableNumber(value.sleepAverage, 20, 250),
-      trendAnalysis: safeText(value.trendAnalysis, 1200),
-      trendSegments: (Array.isArray(value.trendSegments) ? value.trendSegments : []).slice(0, 8).map(item => ({
-        period: safeText(item?.period, 80),
-        direction: ["下降", "上升", "平稳", "波动"].includes(item?.direction) ? item.direction : "波动",
-        approximateRange: safeText(item?.approximateRange, 80)
-      })).filter(item => item.period),
-      verification: safeText(value.verification, 500)
-    };
-  }
-  throw new Error("不支持这种截图类型");
-}
-
-async function recognizeVisualFiles(files, { budgetExecution = null, stageIds = [] } = {}) {
-  if (!visionProvider.configured) return null;
-  const results = [];
-  for (const [index, file] of files.entries()) {
-    const data = await fs.readFile(file);
-    const release = await ocrGate.acquire();
-    try {
-      results.push(await meteredProviderCall({
-        provider: "volcengine",
-        service: "vision",
-        scene: "visionOcr",
-        action: "OCRNormal",
-        request: { imageBytes: data.length },
-        modality: "vision",
-        imageCount: 1,
-        imageBytes: data.length,
-        unitType: "call",
-        units: 1
-      }, async () => {
-        return await visionProvider.recognizeText({ data });
-      }, undefined, budgetExecution ? {
-        execution: budgetExecution,
-        stageId: stageIds[index]
-      } : null));
-    } finally {
-      release();
-    }
-  }
-  return results.map((result, index) => `<image index="${index + 1}">\n${result.text || "（未识别到文字）"}\n</image>`).join("\n");
-}
-
-async function parseImageRequest(input, kind) {
-  const config = IMAGE_PARSE_CONFIG[kind];
-  if (!config) throw new Error("不支持这种截图类型");
-  const images = Array.isArray(input.images) ? input.images : input.image ? [input.image] : [];
-  const requestedPaths = Array.isArray(input.attachmentPaths) ? input.attachmentPaths : [];
-  const attachmentPaths = cleanAttachmentPaths(requestedPaths);
-  if (images.length && requestedPaths.length) throw new Error("截图只能使用一种上传方式");
-  if (requestedPaths.length && (attachmentPaths.length !== requestedPaths.length || attachmentPaths.length > config.maxImages)) {
-    throw new Error(`最多提交 ${config.maxImages} 张有效截图`);
-  }
-  if (!images.length && !attachmentPaths.length) throw new Error(kind === "sleep" ? "睡眠识别需要 1～2 张图片" : "请先上传截图");
-  const uploaded = attachmentPaths.length
-    ? { files: await materializeAttachmentFiles(attachmentPaths), attachmentPaths, cleanupFiles: [] }
-    : await saveImageDataUrls(images, config.maxImages, { needsLocalFiles: true });
-  if (attachmentPaths.length) uploaded.cleanupFiles = uploaded.files;
-  try {
-    const ocrStageIds = visionProvider.configured
-      ? uploaded.files.map((_, index) => `ocr-${index + 1}`)
-      : [];
-    const modelStageId = "deepseek-extraction";
-    const stages = [
-      ...ocrStageIds.map(id => providerBudgetStage({
-        provider: "volcengine",
-        service: "vision",
-        scene: "visionOcr",
-        action: "OCRNormal",
-        unitType: "call",
-        units: 1
-      }, id)),
-      conservativeDeepSeekStage({
-        id: modelStageId,
-        scene: config.scene,
-        model: visionProvider.configured ? "deepseek-v4-pro" : "deepseek-flash"
-      })
-    ];
-    return await aiBudgetRuntime.executeTask({
-      accountId: currentBudgetAccountId(),
-      taskId: `image-parse:${crypto.randomUUID()}`,
-      stages
-    }, async budgetExecution => {
-      const referenceDate = /^\d{4}-\d{2}-\d{2}$/.test(input.referenceDate || "") ? input.referenceDate : today();
-      const dateContext = renderPrompt("health.image.referenceDate", { referenceDate });
-      const recognizedText = await recognizeVisualFiles(uploaded.files, {
-        budgetExecution,
-        stageIds: ocrStageIds
-      });
-      const raw = await runDeepSeek(
-        recognizedText
-          ? `${config.prompt}${dateContext}\n\n以下是火山 OCR 提取的原始文字，请只据此提取字段；无法确认的字段保持为空：\n${recognizedText}`
-          : `${config.prompt}${dateContext}`,
-        {
-          scene: config.scene,
-          ...(recognizedText ? {} : { imagePaths: uploaded.files }),
-          json: true,
-          maxTokens: 4000,
-          budgetExecution,
-          budgetStageIds: [modelStageId]
-        }
-      );
-      let parsed = {};
-      try { parsed = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || ""); }
-      catch { throw new Error("截图已读取，但模型返回格式无法解析，请重试或手动填写"); }
-      return { ...normalizeParsedImage(kind, parsed), attachmentPaths: uploaded.attachmentPaths };
-    });
-  } catch (error) {
-    if (!attachmentPaths.length) await imageAttachments.discard(uploaded.attachmentPaths);
-    throw error;
-  } finally {
-    await cleanupTemporaryFiles(uploaded.cleanupFiles);
-  }
-}
-
-const IMAGE_PARSE_CONFIG = {
-  ...createHealthImageConfig(),
-  book: {
-    scene: "bookRecognition",
-    maxImages: 1,
-    prompt: promptText("health.image.book")
-  },
-  sleep: {
-    scene: "healthRecognition",
-    maxImages: 2,
-    prompt: promptText("health.image.sleep")
-  },
-  heartRate: {
-    scene: "healthRecognition",
-    maxImages: 1,
-    prompt: promptText("health.image.heartRate")
-  }
-};
-
 const contentAttachmentService = createContentAttachmentService({
   repository: storeRepository,
   trash: trashService,
@@ -1148,175 +802,6 @@ const contentAttachmentService = createContentAttachmentService({
   now,
   createId: () => crypto.randomUUID()
 });
-async function prepareCaptureAsrAudio(work, signal) {
-  if (work.audio.asrAttachmentPath) {
-    try {
-      return {
-        audio: await imageAttachments.read(work.audio.asrAttachmentPath),
-        mimeType: work.audio.asrMimeType || "audio/wav"
-      };
-    } catch (error) {
-      const missing = ["ENOENT", "NoSuchKey"].includes(error?.code) || Number(error?.status) === 404;
-      if (!missing) throw error;
-    }
-  }
-  const source = await imageAttachments.read(work.audio.attachmentPath);
-  const prepared = await speechProvider.prepareAsrAudio({
-    audio: source,
-    mimeType: work.audio.mimeType,
-    signal
-  });
-  if (prepared.audio === source && prepared.mimeType === work.audio.mimeType) return prepared;
-  const derived = await imageAttachments.saveAsrAudio({
-    sourcePath: work.audio.attachmentPath,
-    data: prepared.audio,
-    mimeType: prepared.mimeType
-  });
-  const attached = await storeRepository.update(store => {
-    const capture = store.captures?.find(item => item.id === work.capture.id);
-    if (!capture || capture.audio?.attachmentPath !== work.audio.attachmentPath) return false;
-    capture.audio = {
-      ...capture.audio,
-      asrAttachmentPath: derived.attachmentPath,
-      asrMimeType: derived.mimeType,
-      asrBytes: derived.bytes
-    };
-    capture.updatedAt = now();
-    capture.version = recordVersion(capture.version) + 1;
-    return true;
-  });
-  if (!attached) {
-    await attachmentCleanup.cleanFailedUploads([derived.attachmentPath]).catch(() => {});
-    throw Object.assign(new Error("语音原件已经变化，转写派生物未保留"), { code: "TRANSCRIPTION_STALE" });
-  }
-  // #region debug-point E:asr-derivative
-  fetch(appConfig.debug.serverUrl,{method:"POST",body:JSON.stringify({sessionId:"login-audio-production",runId:appConfig.debug.runId,hypothesisId:"E",location:"server.mjs:prepareCaptureAsrAudio",msg:"[DEBUG] ASR derivative persisted",data:{targetId:safeText(work.capture.id,100),sourcePath:work.audio.attachmentPath,derivedPath:derived.attachmentPath,mimeType:derived.mimeType,bytes:derived.bytes},ts:Date.now()})}).catch(()=>{});
-  // #endregion
-  return { audio: prepared.audio, mimeType: prepared.mimeType };
-}
-async function transcribeCapture(work, { signal } = {}) {
-  const preparedAudio = await prepareCaptureAsrAudio(work, signal);
-  const audio = preparedAudio.audio;
-  const audioMimeType = preparedAudio.mimeType;
-  const asrStageId = "speech-recognition";
-  const polishStageId = "deepseek-polish";
-  const condenseStageId = "deepseek-condense";
-  return aiBudgetRuntime.executeTask({
-    accountId: currentBudgetAccountId(),
-    taskId: `capture-transcription:${work.taskId}`,
-    stages: [
-      providerBudgetStage({
-        provider: "volcengine",
-        service: "speech",
-        scene: "speechRecognition",
-        action: "streamingAsr",
-        unitType: "audioMillisecond",
-        units: ATTACHMENT_AUDIO_MAX_DURATION_MS
-      }, asrStageId),
-      conservativeDeepSeekStage({
-        id: polishStageId,
-        scene: "capturePolish"
-      }),
-      conservativeDeepSeekStage({
-        id: condenseStageId,
-        scene: "capturePolish"
-      })
-    ]
-  }, async budgetExecution => {
-    const release = await speechGate.acquire();
-    let transcription;
-    try {
-      transcription = await meteredProviderCall({
-        provider: "volcengine",
-        service: "speech",
-        scene: "speechRecognition",
-        action: "streamingAsr",
-        request: { audioBytes: audio.length, mimeType: audioMimeType },
-        modality: "audio",
-        unitType: "audioMillisecond",
-        units: ATTACHMENT_AUDIO_MAX_DURATION_MS
-      }, () => speechProvider.transcribe({
-          audio,
-          mimeType: audioMimeType,
-          signal
-        }), result => {
-          const durationMs = Math.min(
-            ATTACHMENT_AUDIO_MAX_DURATION_MS,
-            Math.max(0, Math.round(Number(result?.durationMs) || 0))
-          );
-          return durationMs
-            ? {
-                providerRequestId: result?.providerRequestId || "",
-                unitType: "audioMillisecond",
-                units: durationMs
-              }
-            : {
-                providerRequestId: result?.providerRequestId || "",
-                unitType: "audioMillisecond",
-                units: 0,
-                costKnown: false,
-                costSource: "Provider response did not include a measured audio duration"
-              };
-        }, {
-          execution: budgetExecution,
-          stageId: asrStageId
-        });
-    } finally {
-      release();
-    }
-    let polishedText = "", polishErrorCode = "";
-    try {
-      polishedText = await runDeepSeek(
-        renderPrompt("capture.transcription.polish", { rawText: transcription.rawText }),
-        {
-          scene: "capturePolish",
-          maxTokens: 4000,
-          signal,
-          budgetExecution,
-          budgetStageIds: [polishStageId]
-        }
-      );
-    } catch (error) {
-      polishErrorCode = safeText(error.code, 120) || "POLISH_FAILED";
-      await logEvent("system", "capture.transcription_polish_failed", {
-        level: "warn",
-        captureId: work.capture.id,
-        error: errorMetadata(error)
-      });
-    }
-    let condensedText = "", condenseErrorCode = "";
-    try {
-      condensedText = await runDeepSeek(
-        renderPrompt("capture.transcription.condense", {
-          rawText: transcription.rawText,
-          polishedText
-        }),
-        {
-          scene: "capturePolish",
-          maxTokens: 4000,
-          signal,
-          budgetExecution,
-          budgetStageIds: [condenseStageId]
-        }
-      );
-    } catch (error) {
-      condenseErrorCode = safeText(error.code, 120) || "CONDENSE_FAILED";
-      await logEvent("system", "capture.transcription_condense_failed", {
-        level: "warn",
-        captureId: work.capture.id,
-        error: errorMetadata(error)
-      });
-    }
-    return {
-      ...transcription,
-      polishedText,
-      polishErrorCode,
-      condensedText,
-      condenseErrorCode,
-      updatedAt: now()
-    };
-  });
-}
 const taskTargets = createAiTaskTargets({
   thoughts: createThoughtTaskTarget({ createId: () => crypto.randomUUID(), now, stripThoughtAnswerLead }),
   annotations: annotationService,
@@ -1416,45 +901,6 @@ const thoughtWorkflows = createThoughtWorkflows({
   contextKey: () => storagePaths().storeFile
 });
 const taskHttp = createTaskHttp({ backgroundAi, bodyJson, sendJson });
-const speechCache = createSpeechCache({
-  repository: storeRepository,
-  attachments: imageAttachments,
-  cleanup: attachmentCleanup,
-  getOwnerId: () => safeText(requestStorage.getStore()?.user?.id, 100) || "local",
-  hash: sha256,
-  now
-});
-const speechCacheSweep = createSpeechCacheSweep({
-  listAccountIds: async () => AUTH_REQUIRED
-    ? (await readAuth()).users.map(user => user.id)
-    : ["local"],
-  runWithAccount: (accountId, operation) => {
-    const user = { id: accountId };
-    return requestStorage.run({
-      user,
-      traceId: crypto.randomUUID(),
-      dataDir: AUTH_REQUIRED ? userDataDir(user) : DATA_DIR,
-      secrets: [],
-      route: "background/speech-cache-sweep"
-    }, operation);
-  },
-  repository: storeRepository,
-  cleanup: attachmentCleanup,
-  now,
-  onAccountError: (error, { accountId }) => logEvent("system", "speech_cache.sweep_account_failed", {
-    level: "error",
-    accountHash: sha256(accountId),
-    error: errorMetadata(error)
-  })
-});
-async function runSpeechCacheSweep() {
-  const result = await speechCacheSweep.run();
-  await logEvent("system", "speech_cache.sweep_completed", {
-    level: result.failed ? "error" : "info",
-    ...result
-  });
-  return result;
-}
 const speechHttp = createSpeechHttp({
   speech: speechProvider,
   gate: speechGate,
@@ -1523,10 +969,16 @@ const keepsakeHttp = createKeepsakeHttp({
 });
 const attachmentHttp = createAttachmentHttp({
   attachments: imageAttachments,
-  uploadOriginals: saveOriginalImages,
-  uploadKeepsake: saveKeepsakeImages,
+  uploadOriginals: (req, images) => saveOriginalImages(images, {
+    idempotencyKey: req.headers["idempotency-key"]
+  }),
+  uploadKeepsake: (req, input) => saveKeepsakeImages(input, {
+    idempotencyKey: req.headers["idempotency-key"]
+  }),
   discardUploads: discardOriginalUploads,
-  uploadAudio: saveOriginalAudio,
+  uploadAudio: (req, input) => saveOriginalAudio(input, {
+    idempotencyKey: req.headers["idempotency-key"]
+  }),
   discardAudio: discardOriginalAudio,
   bodyJson,
   sendJson,
@@ -1581,46 +1033,6 @@ const healthRecordHttp = createHealthRecordHttp({
   bodyJson, sendJson, sendTrashResult
 });
 const discoveryHttp = createDiscoveryHttp({ discovery: discoveryService, bodyJson });
-async function listAttachmentInventory() {
-  if (postgresRuntime?.attachments?.list) return postgresRuntime.attachments.list();
-  const context = { ...storagePaths(), ownerId: safeText(requestStorage.getStore()?.user?.id, 100) || "local" };
-  return (await attachmentStorage.list({ ownerId: context.ownerId, localDir: context.attachmentsDir }))
-    .map(item => ({
-      path: `/attachments/${item.name}`,
-      storage: attachmentStorage.mode,
-      objectKey: item.objectKey,
-      bytes: item.bytes,
-      state: "verified"
-    }));
-}
-async function prepareCaptureAudio(input) {
-  if (!hasOwn(input, "audio")) return { value: {} };
-  const parsed = captureAudioPayload(input.audio);
-  if (parsed.error || !parsed.value) return parsed;
-  const inventory = await listAttachmentInventory();
-  const row = inventory.find(item => item.path === parsed.value.attachmentPath);
-  if (!row) {
-    return {
-      forbidden: true,
-      error: "语音附件不属于当前账户",
-      code: "ATTACHMENT_NOT_OWNED"
-    };
-  }
-  let audio = { ...parsed.value, bytes: row.bytes };
-  if (audio.asrAttachmentPath) {
-    const asrRow = inventory.find(item => item.path === audio.asrAttachmentPath);
-    if (!asrRow) {
-      return {
-        forbidden: true,
-        error: "转写派生附件不属于当前账户",
-        code: "ATTACHMENT_NOT_OWNED"
-      };
-    }
-    audio = { ...audio, asrBytes: asrRow.bytes };
-  }
-  const validated = captureAudioPayload(audio);
-  return validated.error ? validated : { value: { audio: validated.value } };
-}
 const exportHttp = createExportHttp({
   createExport: createAccountExport,
   snapshot: async () => ({
@@ -1703,64 +1115,18 @@ const captureJournalHttp = createCaptureJournalHttp({
   sendJson,
   respondModel
 });
-const libraryWorkflows = createLibraryWorkflows({
-  repository: storeRepository,
-  books: bookRecords,
-  quotes: quoteRecords,
-  saveImages: saveImageDataUrls,
-  discardAttachments: paths => imageAttachments.discard(paths),
-  cleanupTemporaryFiles,
-  recognizeBook: async files => {
-    const ocrStageIds = visionProvider.configured
-      ? files.map((_, index) => `ocr-${index + 1}`)
-      : [];
-    const modelStageId = "deepseek-book";
-    return aiBudgetRuntime.executeTask({
-      accountId: currentBudgetAccountId(),
-      taskId: `book-recognition:${crypto.randomUUID()}`,
-      stages: [
-        ...ocrStageIds.map(id => providerBudgetStage({
-          provider: "volcengine",
-          service: "vision",
-          scene: "visionOcr",
-          action: "OCRNormal",
-          unitType: "call",
-          units: 1
-        }, id)),
-        conservativeDeepSeekStage({
-          id: modelStageId,
-          scene: IMAGE_PARSE_CONFIG.book.scene,
-          model: visionProvider.configured ? "deepseek-v4-pro" : "deepseek-flash"
-        })
-      ]
-    }, async budgetExecution => {
-      const recognizedText = await recognizeVisualFiles(files, {
-        budgetExecution,
-        stageIds: ocrStageIds
-      });
-      return runDeepSeek(
-        recognizedText
-          ? `${IMAGE_PARSE_CONFIG.book.prompt}\n\n以下是火山 OCR 提取的原始文字，请只据此提取字段；无法确认的字段保持为空：\n${recognizedText}`
-          : IMAGE_PARSE_CONFIG.book.prompt,
-        {
-          scene: IMAGE_PARSE_CONFIG.book.scene,
-          ...(recognizedText ? {} : { imagePaths: files }),
-          json: true,
-          maxTokens: 4000,
-          budgetExecution,
-          budgetStageIds: [modelStageId]
-        }
-      );
-    });
-  },
-  moveCollectionItemToTrash,
-  moveNestedItemToTrash
-});
 const libraryHttp = createLibraryHttp({
   library: libraryWorkflows,
   bodyJson,
   sendJson,
   sendTrashResult
+});
+const imageRecognitionHttp = createImageRecognitionHttp({
+  parseImage: parseImageRequest,
+  parseBook: input => libraryWorkflows.parseBook(input),
+  bodyJson,
+  sendJson,
+  requestBinding
 });
 const reviewChatWorkflows = createReviewChatWorkflows({
   repository: storeRepository,
@@ -1953,20 +1319,7 @@ async function api(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/state") {
     return sendJson(res, 200, publicStateFromStore(await readStore()));
   }
-  if (req.method === "POST" && url.pathname === "/api/images/parse") {
-    const input = await bodyJson(req), kind = ["sleep", "heartRate", "weight", "exercise", "book"].includes(input.kind) ? input.kind : "";
-    if (!kind) return sendJson(res, 400, { error: "截图类型无效" });
-    try {
-      const parsed = kind === "book"
-        ? await libraryWorkflows.parseBook(input)
-        : await parseImageRequest(input, kind);
-      return sendJson(res, 200, { ...parsed, ...requestBinding(input) });
-    }
-    catch (error) {
-      if (/图片|截图|支持|大小/.test(error.message)) return sendJson(res, 400, { error: error.message });
-      throw error;
-    }
-  }
+  if (await imageRecognitionHttp.handle(req, res, url)) return;
   if (await healthRecordHttp.handle(req, res, url)) return;
   if (await checkinHttp.handle(req, res, url)) return;
   if (await thoughtHttp.handle(req, res, url)) return;
