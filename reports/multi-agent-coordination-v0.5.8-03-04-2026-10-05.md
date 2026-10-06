@@ -959,3 +959,113 @@ M  82b659f07a218e6090c77dbcd8b131c9f115e488ad8a7574dad3736e273232db  scripts/web
 - F7 现已满足 F6 依赖；下一批保持 scout 已冻结的
   `BOOKS -> QUOTES -> REVIEW` 顺序。未执行 push、Preview、生产、Base、云资源
   或费用操作。
+
+## 2026-10-06 治理纠偏检查点 R9
+
+状态：`F9 candidate-repair / not-frozen / not-complete`。本节记录
+2026-10-06 23:54（Asia/Shanghai）介入时的真实现场；不得将 F7/F8 切片
+完成或 F9 局部门禁通过解释为 V0.5.8、F10 或 G6 完成。
+
+### 现场与 Dirty Manifest
+
+- 介入时 HEAD：`1e14d2206f282daeb915c8a23c1a090606fc67f2`。
+- 覆盖 tracked + untracked 的临时 index tree：
+  `79395bb99389a4ceeefecbe9dbaa14d5d2ff7ca3`。
+- 介入时共有 19 个 tracked 修改、4 个 untracked 文件；无残留测试进程。
+- 三份独立版本文档已核对 diff、相对链接和 `git diff --check`，只暂存
+  `README.md`、`knowledge/iteration-history.md`、
+  `knowledge/release-notes-rules.md`，独立提交为
+  `a767dbae12ab64ab5cde831238ddae52649fe846`。其余代码未混入该提交。
+- 文档提交后 HEAD 为 `a767dba`；代码 dirty tree 仍为同一完整内容树
+  `79395bb99389a4ceeefecbe9dbaa14d5d2ff7ca3`，共 15 个 tracked 修改和
+  4 个 untracked loader。
+
+```text
+M  1842d17ccd074829f8a54d08999dd84e12946c455e656fb7521fcda0c27c8ee6  README.md
+M  66abdb4db5694299b89239368b8402ef6f301b26cc0c4a0fe95e5f8c3c1f7e32  knowledge/iteration-history.md
+M  47bf7733ccae70a04c1e8c3eaa29254b35b6a92acc8f13c6fbbb61d55c882f7c  knowledge/module-boundaries.json
+M  2973585f387144c0879f11f86eaaab661243a8c69bd9c97ea32ebe83f69cce38  knowledge/release-notes-rules.md
+M  87486c606a4aca7d5ab4c05b3249d45f2f4572e338d71981cef6418ad0ecb3eb  package.json
+M  d54445e11c94152465549ddf32721a2e4e5cbdbc070415e6278da635fd64dca7  public/frontend/app/bootstrap.mjs
+M  586e28b9c48af8f372843ffcaa9fc143472d8d1a37a11276e81a002444331f98  public/frontend/app/runtime.mjs
+M  b47da04d88aa199f91d241cb32e06461f01645424f70438997aa9e0223bd30dc  public/frontend/features/account-settings/settings-controller.mjs
+M  2f9566fb97e10ff921f5b0e25897ceb4065b7ccb3624d1902aecb5ce6ec71674  public/frontend/features/legacy-pages/index.mjs
+M  ab3c2a8fdb356e92be37b72f717e365031e0dfc4c1c55fa4cb10b4e6022aa5e9  public/service-worker.js
+M  fa83a6803721a0744f46ce276b549cff3ca41889b2e4f5d2019e82cf4d625c27  scripts/commit-gate.mjs
+M  70ad0a7318fa9ccaa890800d0d6528eca2b090ed13afabd2b6894e2053419fde  scripts/frontend-lazy-descriptor-regression.mjs
+M  cd229a98057f1679d6c50b2ab3280f162a33a4aea33d894b0159b509f5d780a8  scripts/frontend-legacy-page-feature-regression.mjs
+M  a5b3edd04231fc5a643ea6073eaf5216cc44578f2caf33be64ed4c3f5c3b971a  scripts/frontend-shell-regression.mjs
+M  ada4ade66b42aa289eaa461f34beb5e52e45de2709cfeccf8c6fac3cff454c8b  scripts/pwa-regression.mjs
+M  2977ae1b01e3dd70828875d191ba2100e2a17cc438509966c5fd36f5ee062b8a  scripts/system-test.mjs
+M  6b56c269b408868c742a4da886aedfb65ce351043ddcb6156ce0c9ff2917042a  scripts/ui-regression.mjs
+M  bbcbd8b3d71c3c15c0218444e174bacbeacefaf9a36f5571edb467f9c72804c1  scripts/web-first-screen-budget-regression.mjs
+?? 6d6429c5fe7896f78e169d9d731ba410889735ff7badbbe89d7e84da40142f76  public/frontend/features/account-settings/loader.mjs
+?? 17668a7feac208ad07cf547b63720979c67efc478890539a65c7eb1c70d6b601  public/frontend/features/owner-console/loader.mjs
+?? 77cb26f0fc213fecb006a0bc7fed08787e0df989d1a6d0704b5a7befbf7b5fbb  public/frontend/features/personal-context/loader.mjs
+?? dd2c36dc1104efbf57dad24def637dd3a2609eaa27a356b903d924be35e94d66  public/frontend/features/trash/loader.mjs
+```
+
+### F7-F9 交付与 Agent 追溯
+
+| 批次 | base / 叶子提交 | 主线等价提交 | Agent / writeSet | 专项与状态 |
+| --- | --- | --- | --- | --- |
+| F7 | base `d8d49f2`；books `8536ae5`，quotes `a754fbe`，review `218bc9c` | `8536ae5`、`a754fbe`、`d6e8b97`、`b324aee`、`ef92537`、`4c1c48c` | Scout `3d23b081-3bfc-4570-bc2d-216bdd006561`；Reviewer `3c1e2a71-bd29-4235-9b6c-ff98f182bf6c`；writeSet 为 `features/library`、`features/quotes`、`features/review-insights` 及串行接线文件 | 专项、check、UI、PWA、预算通过；review `0/0/0`；叶子资源已释放 |
+| F8 | base `4c1c48c`；叶子 `ba23e12` | `a0ef6d1`、`b426a55` | Reviewer v2 `ba6d8cd1-4490-4c36-a03a-8c3784f40f8b`、v3 `0a0e7c22-9fe6-42b7-9475-ae16bdbdd32d`；writeSet 为 `features/keepsakes` 及串行接线文件 | 除已登记 macOS Team ID 的 isolated sharp 阻断外，专项分拆复验、check、UI、PWA、预算通过；最终 review `0/0/0`；叶子资源已释放 |
+| F9 | base `b426a55`；basic `143aeaa`、owner `76995cf`、account `a4576d7`、trash `c59791e` | `9ea0e9b`、`47af41a`、`eeb828e`、`1e14d22` | 已知 Trash retry `ee49e882-c1c7-4330-b36f-5ff613c277b9`；Reviewer `a4240321-ba35-4a4f-bf17-320fbee6b31f`、`694bf025-17f8-4eaa-9524-bc7a80dadf58`、`168ecb42-e508-4aff-ae5d-d9e74a4eaf08`、`8ab0d301-9691-46f0-86e2-b3962384beed`；其余已完成 worker ID 未被压缩后的 live registry 保留，不伪造；writeSet 为四个 feature 目录 | 四组叶子专项通过；当前集成尚未冻结，review 曾返回启动时身份/路由竞态 P1，修复后仍待最终复审 |
+
+### 资源纠偏与动态 DAG
+
+- 介入前 10 个 worktree。六个指定叶子 worktree 均 clean，且
+  `git cherry HEAD <leaf>` 均为 `-`，确认 patch-id 已等价吸收后执行
+  非强制 `git worktree remove`；分支保留。介入后共 5 个 worktree，满足
+  `<=6` 硬上限。
+- 当前 Agent API 仍列出 4 条历史 `running` 记录：
+  `2c300f0b-1d53-4b3c-9466-8b8beda8b7e3`、
+  `7e9787e2-7597-4caf-a284-7d2d8b507370`、
+  `8ab0d301-9691-46f0-86e2-b3962384beed`、
+  `f965b11a-142c-4ca6-9c2e-9b80dd2f3938`。其中已完成/已终止任务均已调用
+  close；API 对部分记录返回 `No agent found` 但列表未同步，登记为
+  registry stale，不把它们视为占用写槽或继续运行。
+- 当前无存活写 Agent；共享 `runtime`、`bootstrap`、registry、barrel、
+  runner、Service Worker、`module-boundaries` 继续由主 Agent 单写。
+- `F9 verify/review`：ready，主 Agent 正在修复 Reviewer 提出的启动身份与
+  route-state 竞态；解除条件为当前树专项、影响门、UI、预算通过且新独立
+  Reviewer 返回 `0/0/0`。
+- `F10 runtime composition`：ready 但未派发；`notDispatchedReason` 为
+  F9 尚未冻结且 F10 与同一 runtime/registry 写集冲突。解除事件为 F9 提交。
+- `G6 local candidate`：blocked by F10；解除事件为 runtime `<=180`、
+  25 页面 legacy 归属归零、六类迁移例外归零。
+- 当前 `runtime.mjs=2692`；25 个页面均有 descriptor，其中 6 个仍由
+  legacy adapter 承接；G6 例外为 API 27、DOM query 34/11/4、event
+  77/3、timer 18/5/9/3、template 177、lines 2692，共 6 类，尚未归零。
+- 范围继续冻结为 6 条 P00 与入口解耦；未加入感知模型、提示词内容优化、
+  CDN、开屏设置或任何 V0.5.9 功能。
+
+唯一下一动作：以 `a767dba` 和 dirty tree
+`79395bb99389a4ceeefecbe9dbaa14d5d2ff7ca3` 为保护基线，完成 F9 启动/
+登录 lifecycle P1 复验与独立 `0/0/0`，随后提交 F9；提交事件触发 DAG
+重排并启动 F10，不并行修改共享入口。
+
+## 2026-10-07 F9 检查点关闭 R10
+
+- F9 固定候选 base：`a767dbae12ab64ab5cde831238ddae52649fe846`。
+- staged tree：`7d9bb06b53aef8ee55078d4afc83560c9e97a3fa`；逐文件 manifest
+  SHA-256：`3a072bace0f2d5bcb1f44fac4926db1435b67f15efaedb0886d4eb89d834fb96`。
+- 最终提交：`983f9cc378b15a9c9a277fd91df24bdbc2318f59`，commit tree 与
+  staged tree 一致。
+- `mine/permission/about`、`personal-context`、三个 Owner 页面、
+  `account/settings`、`trash` 已由真实 lazy controller 接管；legacy 页面
+  由 16 个降至 6 个。`runtime.mjs` 当前 2700 行。
+- 两轮复审发现并关闭三项启动 lifecycle P1：初始身份注入、重新登录快照
+  重复、bootstrap 多次换路由/Owner 深链 controller 未追平。最终 Reviewer
+  `8a825d7b-73ce-4e15-869d-5602385d61ae` 对 staged tree 返回
+  blocker/P0/P1=`0/0/0`，`GO`。
+- 同一候选通过 `npm run check`、`test:f9-features`、entrypoints、PWA、
+  web budget 和 UI。Web 首屏 API 最大 9，hidden feature 请求 0；未放宽
+  首屏 API 或 40 KiB 传输预算。
+- F9 已关闭。F10 变为唯一 ready 节点；继续由主 Agent 单写共享入口，
+  `notDispatchedReason` 为工作树上限治理后不再为共享入口创建并行写树。
+
+唯一下一动作：以 `983f9cc` 为基线执行 F10，将剩余 6 个 legacy 页面及
+home/chat/onboarding/auth/shell 运行时职责迁出，达到 runtime `<=180` 且
+六类 G6 迁移例外归零后冻结完整本地候选。
