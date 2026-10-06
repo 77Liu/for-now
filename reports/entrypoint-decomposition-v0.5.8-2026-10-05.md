@@ -949,3 +949,32 @@ V0.5.8 只有在以下条件同时成立时才可关闭：
   blocker/P0/P1=`0/0/0`。下一步进入 F3.3 后台结果与跨内容定位；未执行
   push、tag、Release、真实 Preview/生产部署、Base 写入、云资源修改、
   真实付费调用或生产写入。
+
+### F3.3 后台结果与跨内容定位检查点
+
+- `5ca856d` 新增独立 `frontend.feature.background-results`，将 task target
+  解析、结果查询/幂等合并、视图状态恢复和通知目标定位从 discovery 与
+  `runtime.mjs` 单轨迁出；model、locator、controller 和 public entry 均低于
+  500 行。
+- runtime 仅保留显式 literal lazy loader 与 data/navigation/annotations/
+  view/platform 窄端口；无目录扫描、隐式自注册、通用 service locator 或
+  双实现。后台模块从通用 feature barrel 移除，默认首页无任务时不请求。
+- controller 同时绑定 account/session 和 navigation generation；账户 reset
+  会清空 applied/failed/in-flight 指纹，同账户连续通知不会被较早 refresh
+  反向定位。thought/capture 及跨 journal/chat/analysis/book/quote 的批注
+  目标均由独立 locator 解析。
+- 首次独立复审发现最后 completed task 的首次 import 失败会停止轮询、以及
+  background-results 被错误加入 PWA install precache 两个 P1。前者增加最多
+  3 次有界重试与 failed fingerprint，后者改入 `LAZY_MODULE_PATHS` 首次使用
+  缓存；定向复核最终 GO，blocker/P0/P1=`0/0/0`。
+- `runtime.mjs` 5002→4997 行，SHA
+  `e9fa893d0ce5c128603be37ee25ab303055c812c1b7c7c95397a16267766de90`；
+  DOM query 171→166、timer 54→50、template 722→717，API 68、event
+  binding 247 不变，6 条 browser G6 例外继续精确绑定。
+- `npm run check`、F3 专项、PWA、web budget、完整 frontend `23/23`
+  `85017 ms` 与 Journey Smoke `15/15` `66725 ms` 通过；runtime 静态
+  闭包 `20 modules / 761286 B`，首页隐藏 feature 请求为 0，预算未放宽。
+  首次完整 frontend 在未修改的 keepsake 异步候选断言失败，冻结差分后完整
+  原命令复跑通过。
+- F3 完成并解除 F5 前置，下一步进入 F4；未执行 push、tag、Release、
+  Preview、部署、Base 写入、云资源修改、真实付费调用或生产写入。

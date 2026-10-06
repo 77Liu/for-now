@@ -105,7 +105,7 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 
 | roleId | specialty | activeContext | ownership | dependencies | communications | evidence | status | next |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `orchestrator` | 契约冻结与串行集成 | `78e5fc1`；iteration-G3 / entrypoint-G4-code | 共享文件与集成树 | 全部角色 | 完成 B7、F3.1/F3.2 接线、验证及复审 | server 只启动且 4 行；notifications/annotations lifecycle 已迁出；PG stable 待环境 | `active` | F3.3、F4-F10 / G5-G7 |
+| `orchestrator` | 契约冻结与串行集成 | `5ca856d`；iteration-G3 / entrypoint-G4-code | 共享文件与集成树 | 全部角色 | 完成 B7 与完整 F3 接线、验证及复审 | server 只启动且 4 行；notifications/annotations/background-results 已迁出；PG stable 待环境 | `active` | F4-F10 / G5-G7 |
 | `backend-scout` | B1-B7 符号与闭包 | `server.mjs` 3283 行 | 只读 | B1a | 建议 B1a→B1b→B1c | 无生产 runtime 骨架 | `closed` | 移交 B1a |
 | `frontend-scout` | F1-F10 页面与 lifecycle | `runtime.mjs` 5291 行 | 只读 | F1a | 先 application/router disposer | registry 未接线 | `closed` | 移交 F1a |
 | `gate-scout` | G4/G6 与测试真实性 | 20 条例外 | 只读 | C0/I | 报告 policy 冲突与死代码假绿 | G4/G6 按预期失败 | `closed` | 等待复核 |
@@ -152,6 +152,8 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 | `f3-notifications-reviewers` | 深链、离页接管与 PWA 复审 | `dfbcaf5` 固定差分 | 只读 | I8 | 只报生产可达 blocker/P0/P1 | 两项 P1 修复后 GO，blocker/P0/P1=`0/0/0` | `closed` | F3.2 重新验证 |
 | `f3-annotations-worker` | 批注 presenter、DOM 与账户 lifecycle | `78e5fc1`；F3.2 | annotations 内部模块与专项 | I9 | 由调度者串行接入 runtime/media/shell | 旧实现单轨删除；专项、UI、PWA/预算通过 | `closed` | F3.3 |
 | `f3-annotations-reviewers` | 加载降级、账户迟到和跨 root 复审 | `78e5fc1` 固定差分 | 只读 | I9 | 只报生产可达 blocker/P0/P1 | 三项 P1 修复后 GO，blocker/P0/P1=`0/0/0` | `closed` | F3.3 重新验证 |
+| `f3-background-results-worker` | 结果合并、账户代际与跨内容定位 | `5ca856d`；F3.3 | background-results 内部模块与专项 | I10 | 由调度者串行接入 runtime/annotations/PWA | discovery 错误归属与入口旧实现单轨删除 | `closed` | F4 |
+| `f3-background-results-reviewers` | 最终任务重试、定位竞态与 PWA lazy 边界复审 | `5ca856d` 固定差分 | 只读 | I10 | 只报生产可达 blocker/P0/P1 | 两项 P1 修复后 GO，blocker/P0/P1=`0/0/0` | `closed` | F4 重新验证 |
 
 ## 已关闭问题与保留风险
 
@@ -534,3 +536,28 @@ npm run test:frontend-shell
   blocker/P0/P1=`0/0/0`。当前下一步为 F3.3 后台结果与跨内容定位；未执行
   push、tag、Release、Preview、部署、Base 写入、云资源修改、真实付费调用
   或生产写入。
+
+## F3.3 后台结果与跨内容定位检查点
+
+- 本地提交：`5ca856d`。新增 `features/background-results` 的 model/
+  locator/controller/public entry；旧
+  `thought-discovery/background-results.mjs` 与通用 feature barrel 导出已删除，
+  runtime 只保留显式 lazy loader 和窄端口装配。
+- 结果按 task/result/目标指纹幂等合并；账户 reset 清除 applied/failed/
+  in-flight 状态，迟到结果不写新账户。通知定位覆盖 thought/capture 与
+  journal/chat/analysis/book/quote 批注，同账户连续目标由 navigation
+  generation 隔离。
+- 首次复审发现“最后任务完成时 import 失败后停止轮询”和“隐藏模块进入 install
+  precache”两个 P1；已改为最多 3 次有界重试，并把 background-results 移入
+  `LAZY_MODULE_PATHS` 首次使用缓存。定向复核 GO，
+  blocker/P0/P1=`0/0/0`。
+- `runtime.mjs` 5002→4997 行，SHA
+  `e9fa893d0ce5c128603be37ee25ab303055c812c1b7c7c95397a16267766de90`；
+  DOM query 171→166、timer 54→50、template 722→717，API 68、event
+  binding 247 不变，仍为 6 条 browser G6 例外。
+- `npm run check`、F3 专项、PWA、web budget、完整 frontend `23/23`
+  `85017 ms`、Journey Smoke `15/15` `66725 ms` 通过；runtime 静态闭包
+  `20 / 761286 B`，首页隐藏 feature 请求 0，预算未放宽。首次完整 frontend
+  的 keepsake 异步候选断言失败，冻结差分后原命令复跑全绿。
+- F3 已完成并解除 F5 前置；下一步进入 F4。未执行 push、tag、Release、
+  Preview、部署、Base 写入、云资源修改、真实付费调用或生产写入。
