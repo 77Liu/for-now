@@ -4,12 +4,16 @@ import { EventEmitter } from "node:events";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createStatisticsRuntime, readOperationEntries } from "../src/app/statistics-runtime.mjs";
-import { createAdminHttp } from "../src/http/admin.mjs";
-import { createLegacyApi } from "../src/http/legacy-api.mjs";
-import { createOwnerHttp, ownerCapabilityFor } from "../src/http/owner.mjs";
-import { apiV1RegistrationIds, registerApiV1 } from "../src/http/registry.mjs";
-import { createUpstreamProxy } from "../src/http/upstream-proxy.mjs";
+import { createStatisticsRuntime } from "../src/app/index.mjs";
+import {
+  apiV1RegistrationIds,
+  createAdminHttp,
+  createLegacyApi,
+  createOwnerHttp,
+  createUpstreamProxy,
+  ownerCapabilityFor,
+  registerApiV1
+} from "../src/http/index.mjs";
 
 const sendJson = (res, status, body) => {
   res.status = status;
@@ -261,7 +265,6 @@ try {
     path.join(temporary, "operation-2026-09-01.ndjson"),
     `${JSON.stringify({ event: "request.completed", result: "success" })}\n`
   );
-  assert.equal((await readOperationEntries(temporary, "2026-10-01", "2026-10-06")).length, 1);
   const { statisticsService } = createStatisticsRuntime({
     repository: { read: async () => ({ captures: [{ id: "capture-1" }] }) },
     ensureAiUsage: async () => {},

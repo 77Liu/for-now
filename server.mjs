@@ -11,7 +11,6 @@ import {
 } from "./src/modules/onboarding/index.mjs";
 import { capabilitiesFor, createAuthService, isOwner, publicUser } from "./src/modules/auth/index.mjs";
 import { notificationUnread } from "./src/modules/notifications/index.mjs";
-import { createStatisticsService } from "./src/modules/statistics/index.mjs";
 import { architectureOwnerSurface, commercializationOwnerSurface } from "./src/modules/owner-surfaces/index.mjs";
 import { createThoughtDiscoveryService } from "./src/modules/discovery/index.mjs";
 import { createAccountExport } from "./src/modules/exports/index.mjs";
@@ -27,13 +26,13 @@ import {
 import { installPromptCatalog } from "./src/shared/prompts/index.mjs";
 import { localDateKey, eventTimeFields } from "./src/shared/time/index.mjs";
 import { buildAdminSnapshot } from "./admin-snapshot.mjs";
-import { createAccountLifecycle, createAiRuntime, createContentRuntime, createLocalTestRuntime, createStoreNormalizer, createPublicStateProjection, emptyStore, normalizeCommercialization, routeStateProjection, startupProjection, storeForUser, STORE_VERSION, TRASH_RETENTION_DAYS, userModelEvidenceCurrent } from "./src/app/index.mjs";
+import { createAccountLifecycle, createAiRuntime, createContentRuntime, createLocalTestRuntime, createStatisticsRuntime, createStoreNormalizer, createPublicStateProjection, emptyStore, normalizeCommercialization, routeStateProjection, startupProjection, storeForUser, STORE_VERSION, TRASH_RETENTION_DAYS, userModelEvidenceCurrent } from "./src/app/index.mjs";
 import {
   SPEECH_CACHE_SWEEP_INTERVAL_MS,
   SPEECH_CACHE_SWEEP_STARTUP_DELAY_MS
 } from "./src/app/index.mjs";
 import { safeText, recordVersion, safeIso } from "./src/shared/validation/index.mjs";
-import { createAuthHttp, createLocalTestHttp, createLocalTestSessionVault, createReadOnlyUpstream, createJsonHttp, createTaskHttp, createAnnotationHttp, createTrashHttp, createAttachmentHttp, createAiSettingsHttp, createAiCostHttp, createAiBudgetHttp, createKeepsakeHttp, createOnboardingHttp, createOnboardingV2Http, createUserModelHttp, createThoughtHttp, createCheckinHttp, createHealthRecordHttp, createImageRecognitionHttp, createDiscoveryHttp, createExportHttp, createActionsHttp, createFeedbackHttp, createCaptureJournalHttp, createLibraryHttp, createReviewsChatHttp, createContentAttachmentsHttp, createSpeechHttp, createVisionHttp, createSyncHttp, createStartupHttp, createPersonalContextHttp, createRequestHandler, createModelResponseHttp, createApiV1Http, openApiV1 } from "./src/http/index.mjs";
+import { createAdminHttp, createAuthHttp, createLegacyApi, createLocalTestHttp, createLocalTestSessionVault, createOwnerHttp, createReadOnlyUpstream, createUpstreamProxy, createJsonHttp, createTaskHttp, createAnnotationHttp, createTrashHttp, createAttachmentHttp, createAiSettingsHttp, createAiCostHttp, createAiBudgetHttp, createKeepsakeHttp, createOnboardingHttp, createOnboardingV2Http, createUserModelHttp, createThoughtHttp, createCheckinHttp, createHealthRecordHttp, createImageRecognitionHttp, createDiscoveryHttp, createExportHttp, createActionsHttp, createFeedbackHttp, createCaptureJournalHttp, createLibraryHttp, createReviewsChatHttp, createContentAttachmentsHttp, createSpeechHttp, createVisionHttp, createSyncHttp, createStartupHttp, createPersonalContextHttp, createRequestHandler, createModelResponseHttp, createApiV1Http, openApiV1, registerApiV1 } from "./src/http/index.mjs";
 import { createAuthRepository, createJsonStoreRepository, createPostgresRuntime, checkPersistenceMarker, markPostgresDirectory, hasJsonData } from "./src/shared/persistence/index.mjs";
 import { isApplicationRoutePath } from "./public/frontend/pages/index.mjs";
 
@@ -103,19 +102,6 @@ const now = () => TEST_CURRENT_INSTANT
   ? new Date(Date.parse(TEST_CURRENT_INSTANT) + testClockTick++).toISOString()
   : new Date().toISOString();
 const sha256 = value => crypto.createHash("sha256").update(String(value)).digest("hex");
-const isDirectLoopbackRequest = req => {
-  const remote = String(req.socket.remoteAddress || "");
-  return ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(remote)
-    && !req.headers["x-forwarded-for"];
-};
-const serviceTokenMatches = req => {
-  if (!PLATFORM_SERVICE_TOKEN_HASH) return false;
-  const match = /^Bearer ([A-Za-z0-9._~-]{32,512})$/.exec(String(req.headers.authorization || ""));
-  if (!match) return false;
-  const actual = Buffer.from(sha256(match[1]), "hex");
-  const expected = Buffer.from(PLATFORM_SERVICE_TOKEN_HASH, "hex");
-  return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
-};
 const today = () => TEST_CURRENT_DATE || localDateKey();
 const normalizeStore = createStoreNormalizer({ now, today, currentTime: Date.now });
 const requestBinding = input => {
@@ -435,6 +421,16 @@ const localTestUpstream = createReadOnlyUpstream({
   sessions: localTestSessions,
   requestStorage
 });
+let localTestHttp;
+const proxyToUpstream = createUpstreamProxy({
+  origin: UPSTREAM_ORIGIN,
+  maxBodyBytes: STANDARD_BODY_MAX_BYTES,
+  uploadMaxBodyBytes: ATTACHMENT_UPLOAD_BODY_MAX_BYTES,
+  sendJson,
+  getTraceId: () => requestStorage.getStore().traceId,
+  upstreamCookie: req => localTestHttp.upstreamCookie(req),
+  rewriteResponse: input => localTestHttp.rewriteProxyResponse(input)
+});
 const localTestRuntime = createLocalTestRuntime({
   enabled: LOCAL_TEST_MODE,
   upstreamConfigured: Boolean(UPSTREAM_ORIGIN),
@@ -463,7 +459,7 @@ const localTestRuntime = createLocalTestRuntime({
   upstream: localTestUpstream,
   now
 });
-const localTestHttp = createLocalTestHttp({
+localTestHttp = createLocalTestHttp({
   runtime: localTestRuntime,
   sessions: localTestSessions,
   basePath: APP_BASE_PATH,
@@ -473,13 +469,10 @@ const localTestHttp = createLocalTestHttp({
   proxyToUpstream
 });
 
-async function adminSnapshotApi(req, res, url) {
-  if (url.pathname !== "/api/admin/v1/snapshot") return false;
-  if (req.method !== "GET") return sendJson(res, 405, { error: "Method not allowed" });
-  if (!PLATFORM_SERVICE_TOKEN_HASH) return sendJson(res, 404, { error: "Not found" });
-  if (!isDirectLoopbackRequest(req)) return sendJson(res, 403, { error: "管理员数据接口只允许本机服务访问" });
-  if (!serviceTokenMatches(req)) return sendJson(res, 401, { error: "服务凭据无效" });
-  const snapshot = await buildAdminSnapshot({
+const adminHttp = createAdminHttp({
+  serviceTokenHash: PLATFORM_SERVICE_TOKEN_HASH,
+  buildSnapshot: buildAdminSnapshot,
+  snapshotOptions: {
     dataDir: DATA_DIR,
     version: APP_VERSION,
     cnyPerUsd: AI_COST_CNY_PER_USD,
@@ -489,7 +482,7 @@ async function adminSnapshotApi(req, res, url) {
     attachmentUsageBytes: (ownerId, localDir) => attachmentStorage.usageBytes({ ownerId, localDir }),
     backupStatusFile: BACKUP_STATUS_FILE,
     dailyCallLimit: AI_USER_DAILY_CALL_LIMIT,
-    readAuthData: postgresRuntime ? readAuth : null,
+    readAuthData: postgresRuntime ? () => readAuth() : null,
     readAccountData: postgresRuntime ? account => requestStorage.run({
       ...(requestStorage.getStore() || {}),
       user: account,
@@ -508,63 +501,9 @@ async function adminSnapshotApi(req, res, url) {
         structuredObjects: [store, usage, settings, costPlan].filter(value => value != null).length
       };
     }) : null
-  });
-  return sendJson(res, 200, snapshot);
-}
-
-async function proxyToUpstream(req, res, url) {
-  const chunks = [], maxBytes = ["/api/images/upload", "/api/audio/upload"].includes(url.pathname)
-    ? ATTACHMENT_UPLOAD_BODY_MAX_BYTES
-    : STANDARD_BODY_MAX_BYTES;
-  let bytes = 0;
-  for await (const chunk of req) {
-    bytes += chunk.length;
-    if (bytes > maxBytes) return sendJson(res, 413, { error: "内容过长", code: "BODY_TOO_LARGE" });
-    chunks.push(chunk);
-  }
-  const body = chunks.length ? Buffer.concat(chunks) : undefined;
-  const headers = {};
-  for (const name of ["accept", "content-type", "user-agent", "range", "if-range"]) {
-    if (req.headers[name]) headers[name] = req.headers[name];
-  }
-  const upstreamCookie = localTestHttp.upstreamCookie(req);
-  if (upstreamCookie) headers.cookie = upstreamCookie;
-  headers["x-request-id"] = requestStorage.getStore().traceId;
-  const response = await fetch(`${UPSTREAM_ORIGIN}${url.pathname}${url.search}`, { method: req.method, headers, body, redirect: "manual" });
-  const responseHeaders = {};
-  for (const name of [
-    "content-type",
-    "content-length",
-    "content-range",
-    "accept-ranges",
-    "etag",
-    "last-modified",
-    "cache-control",
-    "location",
-    "x-accel-buffering",
-    "x-request-id"
-  ]) {
-    const value = response.headers.get(name);
-    if (value) responseHeaders[name] = value;
-  }
-  const cookies = response.headers.getSetCookie?.() || (response.headers.get("set-cookie") ? [response.headers.get("set-cookie")] : []);
-  const localResponse = await localTestHttp.rewriteProxyResponse({
-    request: req,
-    pathname: url.pathname,
-    upstreamResponse: response,
-    cookies,
-    responseHeaders
-  });
-  if (!localResponse && cookies.length) {
-    responseHeaders["set-cookie"] = cookies;
-  }
-  res.writeHead(response.status, responseHeaders);
-  if (!response.body) return res.end();
-  for await (const chunk of response.body) {
-    if (!res.write(Buffer.from(chunk))) await new Promise(resolve => res.once("drain", resolve));
-  }
-  res.end();
-}
+  },
+  sendJson
+});
 
 const auditAuthChanges = async (before, after) => {
   const current = requestStorage.getStore() || {};
@@ -836,12 +775,24 @@ const imageRecognitionHttp = createImageRecognitionHttp({
   sendJson,
   requestBinding
 });
-const statisticsService = createStatisticsService({
+const { statisticsService } = createStatisticsRuntime({
   repository: storeRepository,
   ensureAiUsage,
   readAiUsage,
-  readOperationEntries: (from, to) => readOperationEntries(storagePaths().logsDir, from, to),
+  logsDirectory: () => storagePaths().logsDir,
   aiDashboard: (usage, from, to, cnyPerUsd) => aiCosts.dashboard(usage, from, to, cnyPerUsd),
+  today
+});
+const ownerHttp = createOwnerHttp({
+  architectureSurface: architectureOwnerSurface,
+  commercializationSurface: commercializationOwnerSurface,
+  normalizeCommercialization,
+  statistics: statisticsService,
+  readStore,
+  updateStore,
+  bodyJson,
+  sendJson,
+  now,
   today
 });
 const reviewsChatHttp = createReviewsChatHttp({
@@ -902,23 +853,25 @@ const personalContextHttp = createPersonalContextHttp({
     includeOwnerMetadata: isOwner(requestStorage.getStore()?.user)
   })
 });
-apiV1.register("startup", startupHttp.handleV1);
-apiV1.register("sync", syncHttp.handleV1);
-apiV1.register("personal-context", personalContextHttp.handleV1);
-apiV1.register("owner-ai-budget", aiBudgetHttp.handleV1);
-apiV1.register("onboarding-v2", onboardingV2Http.handleV1);
-apiV1.register("user-model", userModelHttp.handleV1);
-apiV1.register("thoughts", thoughtHttp.handleV1);
-apiV1.register("checkins", checkinHttp.handleV1);
-apiV1.register("health", healthRecordHttp.handleV1);
-apiV1.register("discovery", discoveryHttp.handleV1);
-apiV1.register("exports", exportHttp.handleV1);
-apiV1.register("actions", actionsHttp.handleV1);
-apiV1.register("feedback", feedbackHttp.handleV1);
-apiV1.register("captures-journals", captureJournalHttp.handleV1);
-apiV1.register("library", libraryHttp.handleV1);
-apiV1.register("reviews-chat", reviewsChatHttp.handleV1);
-apiV1.register("content-attachments", contentAttachmentsHttp.handleV1);
+registerApiV1(apiV1, {
+  startup: startupHttp.handleV1,
+  sync: syncHttp.handleV1,
+  personalContext: personalContextHttp.handleV1,
+  aiBudget: aiBudgetHttp.handleV1,
+  onboardingV2: onboardingV2Http.handleV1,
+  userModel: userModelHttp.handleV1,
+  thoughts: thoughtHttp.handleV1,
+  checkins: checkinHttp.handleV1,
+  health: healthRecordHttp.handleV1,
+  discovery: discoveryHttp.handleV1,
+  exports: exportHttp.handleV1,
+  actions: actionsHttp.handleV1,
+  feedback: feedbackHttp.handleV1,
+  capturesJournals: captureJournalHttp.handleV1,
+  library: libraryHttp.handleV1,
+  reviewsChat: reviewsChatHttp.handleV1,
+  contentAttachments: contentAttachmentsHttp.handleV1
+});
 
 async function runPeriodicAnalyses() {
   const users = AUTH_REQUIRED ? (await readAuth()).users : [{ id: "local" }];
@@ -931,90 +884,42 @@ async function runPeriodicAnalyses() {
   await pruneLogs(path.join(DATA_DIR, "logs"), AI_AUDIT_RETENTION_DAYS);
 }
 
-async function readOperationEntries(logsDir, from, to) {
-  let names = [];
-  try {
-    names = await fs.readdir(logsDir);
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
-  }
-  const files = names.filter(name => {
-    const match = /^operation-(\d{4}-\d{2}-\d{2})\.ndjson$/.exec(name);
-    return match && match[1] >= from && match[1] <= to;
-  });
-  const entries = [];
-  for (const name of files) {
-    const text = await fs.readFile(path.join(logsDir, name), "utf8");
-    for (const line of text.split("\n")) {
-      if (!line.trim()) continue;
-      try {
-        const item = JSON.parse(line);
-        if (item.event === "request.completed" && item.result === "success") entries.push(item);
-      } catch {}
-    }
-  }
-  return entries;
-}
-
-async function api(req, res, url) {
-  if (req.method === "GET" && url.pathname === "/api/owner/surfaces/architecture") {
-    res.setHeader("cache-control", "private, no-store");
-    return sendJson(res, 200, architectureOwnerSurface());
-  }
-  if (
-    ["GET", "POST"].includes(req.method)
-    && ["/api/owner/surfaces/commercialization", "/api/owner/surfaces/commercialization/preview"].includes(url.pathname)
-  ) {
-    const store = await readStore();
-    const input = req.method === "POST" ? await bodyJson(req) : {};
-    const report = req.method === "POST"
-      ? normalizeCommercialization({ ...store.commercialization, assumptions: input.assumptions })
-      : store.commercialization;
-    const range = {
-      ...(url.searchParams.has("from") ? { from: url.searchParams.get("from") } : {}),
-      ...(url.searchParams.has("to") ? { to: url.searchParams.get("to") } : {})
+const legacyApi = createLegacyApi({
+  beforeStateHandlers: [
+    reviewsChatHttp.handle,
+    captureJournalHttp.handle,
+    libraryHttp.handle,
+    speechHttp.handle,
+    visionHttp.handle,
+    aiCostHttp.handle,
+    aiSettingsHttp.handle,
+    onboardingHttp.handle,
+    taskHttp.handle,
+    trashHttp.handle,
+    attachmentHttp.handle,
+    keepsakeHttp.handle
+  ],
+  afterStateHandlers: [
+    imageRecognitionHttp.handle,
+    healthRecordHttp.handle,
+    checkinHttp.handle,
+    thoughtHttp.handle,
+    annotationHttp
+  ],
+  readMeta: async () => {
+    const user = requestStorage.getStore()?.user;
+    return {
+      version: APP_VERSION,
+      releaseVersion: RELEASE_VERSION,
+      user: publicUser(user),
+      capabilities: capabilitiesFor(user),
+      features: appConfig.features,
+      governanceUrl: isOwner(user) && PLATFORM_SERVICE_TOKEN_HASH ? "/platform/" : ""
     };
-    const statistics = await statisticsService.dashboard(range, { includeOwner: true });
-    if (statistics.error) return sendJson(res, 400, { error: statistics.error, code: statistics.code });
-    res.setHeader("cache-control", "private, no-store");
-    return sendJson(res, 200, commercializationOwnerSurface({
-      report,
-      store,
-      statistics: statistics.value,
-      mode: input.mode || url.searchParams.get("mode") || "validation",
-      currentDate: today()
-    }));
-  }
-  if (await reviewsChatHttp.handle(req, res, url)) return;
-  if (await captureJournalHttp.handle(req, res, url)) return;
-  if (await libraryHttp.handle(req, res, url)) return;
-  if (await speechHttp.handle(req, res, url)) return;
-  if (await visionHttp.handle(req, res, url)) return;
-  if (await aiCostHttp.handle(req, res, url)) return;
-  if (await aiSettingsHttp.handle(req, res, url)) return;
-  if (await onboardingHttp.handle(req, res, url)) return;
-  if (req.method === "PATCH" && url.pathname === "/api/commercialization") {
-    const input = await bodyJson(req), updatedAt = now();
-    const report = await updateStore(store => {
-      store.commercialization = normalizeCommercialization({ ...store.commercialization, assumptions: input.assumptions, updatedAt });
-      return store.commercialization;
-    });
-    return sendJson(res, 200, report);
-  }
-  if (await taskHttp.handle(req, res, url)) return;
-  if (await trashHttp.handle(req, res, url)) return;
-  if (await attachmentHttp.handle(req, res, url)) return;
-  if (await keepsakeHttp.handle(req, res, url)) return;
-  if (req.method === "GET" && url.pathname === "/api/state") {
-    return sendJson(res, 200, publicStateFromStore(await readStore()));
-  }
-  if (await imageRecognitionHttp.handle(req, res, url)) return;
-  if (await healthRecordHttp.handle(req, res, url)) return;
-  if (await checkinHttp.handle(req, res, url)) return;
-  if (await thoughtHttp.handle(req, res, url)) return;
-  if (await annotationHttp(req, res, url)) return;
-  return sendJson(res, 404, { error: "Not found" });
-}
+  },
+  readState: async () => publicStateFromStore(await readStore()),
+  sendJson
+});
 
 const mime = {
   ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -1023,16 +928,6 @@ const mime = {
   ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".avif": "image/avif",
   ".m4a": "audio/mp4", ".mp4": "audio/mp4", ".webm": "audio/webm", ".ogg": "audio/ogg",
   ".wav": "audio/wav", ".mp3": "audio/mpeg"
-};
-const ownerCapabilityFor = url => {
-  if (url.pathname === "/api/owner/surfaces/architecture") return "architecture";
-  if (["/api/owner/surfaces/commercialization", "/api/owner/surfaces/commercialization/preview"].includes(url.pathname)) return "commercialization";
-  if (url.pathname === "/api/ai-cost-plan") return "ai-costs";
-  if (url.pathname === "/api/v1/owner/ai-budget") return "ai-costs";
-  if (url.pathname === "/api/commercialization") return "commercialization";
-  if (url.pathname === "/api/settings" || url.pathname === "/api/settings/test") return "ai-configuration";
-  if (url.pathname === "/api/vision/status") return "ai-configuration";
-  return "";
 };
 await accountLifecycle.recoverAtStartup({
   localTestRuntime,
@@ -1077,7 +972,7 @@ const server = http.createServer(createRequestHandler({
     await localTestHttp.prepareRequestContext(context);
     if (await localTestHttp.handle(req, res, url)) return;
     if (url.pathname.startsWith("/api/admin/")) {
-      const handled = await adminSnapshotApi(req, res, url);
+      const handled = await adminHttp.handle(req, res, url);
       return handled === false ? sendJson(res, 404, { error: "Not found" }) : handled;
     }
     if (UPSTREAM_ORIGIN && !LOCAL_TEST_MODE && (url.pathname.startsWith("/api/") || url.pathname.startsWith("/attachments/"))) return await proxyToUpstream(req, res, url);
@@ -1095,23 +990,14 @@ const server = http.createServer(createRequestHandler({
     }
     if (url.pathname.startsWith("/api/") && !user) return sendRequestError(401, "请先登录", "AUTH_REQUIRED");
     if (url.pathname.startsWith("/attachments/") && !user) return sendJson(res, 401, { error: "请先登录", code: "AUTH_REQUIRED" });
-      const requiredCapability = ownerCapabilityFor(url);
+      const requiredCapability = ownerHttp.capabilityFor(url);
       if (requiredCapability && !isOwner(user)) return sendRequestError(403, "当前账户没有 Owner 权限", "OWNER_REQUIRED");
+      if (await ownerHttp.handle(req, res, url)) return;
       if (url.pathname.startsWith("/api/v1/")) {
         const handled = await apiV1.handle(req, res, url);
         return handled === false ? apiV1.error(res, 404, "Not found", "NOT_FOUND") : handled;
       }
-      if (req.method === "GET" && url.pathname === "/api/meta") {
-        return sendJson(res, 200, {
-          version: APP_VERSION,
-          releaseVersion: RELEASE_VERSION,
-          user: publicUser(user),
-          capabilities: capabilitiesFor(user),
-          features: appConfig.features,
-          governanceUrl: isOwner(user) && PLATFORM_SERVICE_TOKEN_HASH ? "/platform/" : ""
-        });
-      }
-      if (url.pathname.startsWith("/api/")) return await api(req, res, url);
+      if (url.pathname.startsWith("/api/")) return await legacyApi.handle(req, res, url);
       if (await attachmentHttp.handle(req, res, url)) return;
       const applicationRoute = ["GET", "HEAD"].includes(req.method || "GET") && isApplicationRoutePath(url.pathname);
       if (applicationRoute && !context.basePathMatched) return sendJson(res, 404, { error: "Not found", code: "NOT_FOUND" });
