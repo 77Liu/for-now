@@ -815,3 +815,22 @@ V0.5.8 只有在以下条件同时成立时才可关闭：
   DeepSeek provider 入口例外已删除，G4 到期条件与 `<=40` 目标未放宽。
 - 当前继续进入 B4；该检查点未执行 push、Preview、部署、真实供应商调用或
   生产写入。
+
+### B4 媒体 runtime 检查点
+
+- `947c5da` 新增 legacy 图片识别 HTTP adapter；`00087be` 新增
+  `createMediaRuntime()`、附件/视觉/ASR/语音子装配和独立专项；`6eee683`
+  完成 app/http barrel、`server.mjs`、模块登记、package 与 backend runner
+  的串行接线。入口中的旧实现已同批删除，无运行时双轨。
+- 附件账户隔离、上传幂等与陈旧回放、持久补偿清理、OCR 配置/降级、预算
+  stage、ASR 派生物、TTS cache/sweep、健康与书目识别保持原契约；后台任务
+  入队与去重继续留在 B5，不把任务编排混入媒体层。
+- `server.mjs` 由 2120 行降至 1473 行，SHA 为
+  `3c1202bae77ae2bd4d6668e6744adf683c197261e30c4d5776961f441554de29`；
+  拥有路由 237 条，G4 迁移例外 15 条，provider 入口例外已删除。
+- `npm run check`、媒体/附件/records/library/transcription/speech cache、
+  Volcengine provider、auth、observability、AI budget 与主 regression
+  均通过；完整 backend `83/83`、`281838 ms` 通过，包含隔离 Node 下
+  Volcengine server。独立 reviewer GO，blocker/P0/P1=`0/0/0`。
+- 下一步进入 B5；仍未执行 push、Preview、部署、真实供应商调用、Base 写入
+  或生产写入。

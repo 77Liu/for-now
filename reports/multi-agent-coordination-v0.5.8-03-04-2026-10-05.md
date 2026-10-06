@@ -3,10 +3,10 @@
 - 日期：2026-10-05
 - 起始基线：`f911cde4505d3434ab4afcf4b5614f8e828f4bcc`
 - 当前门禁：`iteration-G3 / entrypoint-G2`
-- 当前状态：`b3-ai-runtime-closed-b4-ready`
+- 当前状态：`b4-media-runtime-closed-b5-ready`
 - 活跃工作树：`5 / 6`
-- 机器事实：3 个入口策略、65 个模块、236 条拥有路由、16 条迁移例外；
-  `server.mjs` 由 3283 行降至 2120 行，`runtime.mjs` 当前为 5136 行
+- 机器事实：3 个入口策略、65 个模块、237 条拥有路由、15 条迁移例外；
+  `server.mjs` 由 3283 行降至 1473 行，`runtime.mjs` 当前为 5136 行
 - 授权边界：允许本地代码、测试、文档与任务提交；不允许 push、tag、Release、
   Preview、部署、云资源修改、真实付费调用或生产写入
 
@@ -80,11 +80,22 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 | V4 | `b3-ai-runtime-validator` | 固定集成差分只读验证 | 不改实现或放宽断言 | check、AI budget/provider/observability/auth/local-runtime/backend |
 | R4 | `b3-ai-runtime-reviewers` | AI 装配、恢复、账户与错误边界独立复审 | 只读 | blocker/P0/P1 清零 |
 
+## B4 媒体 runtime 所有权
+
+| task | owner | ownership | forbidden | acceptance |
+| --- | --- | --- | --- | --- |
+| B4-S | `b4-media-scout` | 附件、OCR、健康/书目、ASR/TTS 闭包与既有模块，只读 | 不修改文件、不调用真实供应商 | 精确迁移符号、依赖、复用边界与写集 |
+| B4-G-S | `b4-gate-scout` | storage、records、library、Volcengine 与 backend 门禁，只读 | 不修改实现、不调用远程服务 | 冻结失败矩阵、专项和隔离环境限制 |
+| B4-W | `b4-media-worker` | `src/app/media-runtime.mjs`、内部 media 模块、health 归一化与独立专项 | `server.mjs`、公共 barrel、HTTP、登记、package、runner | 账户隔离、幂等/补偿、OCR fallback、预算 stage、ASR stale 与 sweep |
+| I5 | `orchestrator` | app/http barrel、legacy 图片 handler、`server.mjs` 单轨接线、登记与 runner | 不迁 B5 后台任务入队，不改 schema/Prompt/模型/预算/路由顺序 | 删除入口旧实现，provider 例外归零，入口 SHA/行数收紧 |
+| V5 | `orchestrator` | 冻结差分影响验证 | 不放宽门禁或重复完整 backend | check、媒体专项、影响门、backend |
+| R5 | `b4-media-reviewer` | 附件/媒体/预算/启动闭包独立复审 | 只读 | blocker/P0/P1 清零 |
+
 ## 角色知识账
 
 | roleId | specialty | activeContext | ownership | dependencies | communications | evidence | status | next |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `orchestrator` | 契约冻结与串行集成 | `855200c`；iteration-G3 / entrypoint-G2 | 共享文件与集成树 | 全部角色 | 完成 B3 接线、验证与复审 | AI runtime 已收口；server 目标重申为只启动且 `<=100`，继续执行 `<=40` 硬门 | `active` | B4 媒体运行时 |
+| `orchestrator` | 契约冻结与串行集成 | `6eee683`；iteration-G3 / entrypoint-G2 | 共享文件与集成树 | 全部角色 | 完成 B4 接线、验证与复审 | 媒体 runtime 已收口；server 目标仍为只启动且 `<=100`，继续执行 `<=40` 硬门 | `active` | B5 领域与后台任务装配 |
 | `backend-scout` | B1-B7 符号与闭包 | `server.mjs` 3283 行 | 只读 | B1a | 建议 B1a→B1b→B1c | 无生产 runtime 骨架 | `closed` | 移交 B1a |
 | `frontend-scout` | F1-F10 页面与 lifecycle | `runtime.mjs` 5291 行 | 只读 | F1a | 先 application/router disposer | registry 未接线 | `closed` | 移交 F1a |
 | `gate-scout` | G4/G6 与测试真实性 | 20 条例外 | 只读 | C0/I | 报告 policy 冲突与死代码假绿 | G4/G6 按预期失败 | `closed` | 等待复核 |
@@ -116,6 +127,10 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 | `b3-ai-runtime-worker` | AI runtime 应用工厂 | `1f93e3b`；B3 | 新模块与独立专项 | B3-S/I4 | 叶子模块交给调度者接线 | `280887c` 已集成，叶子工作树已移除 | `closed` | B4 |
 | `b3-ai-runtime-validator` | B3 独立影响验证 | `855200c` | 只读 | I4 | 重跑 AI/认证/后端与入口门 | check、影响门和 backend `82/82` 通过 | `closed` | B4 重新验证 |
 | `b3-ai-runtime-reviewers` | 预算、审计、账户与启动复审 | `855200c` 固定差分 | 只读 | V4 | 复现失败路径并清零高优问题 | GO，blocker/P0/P1=`0/0/0` | `closed` | 下一切片复审 |
+| `b4-media-scouts` | 媒体 runtime 闭包与门禁 | `ccfa8ff`；B4 | 只读 | B4-W/I5 | 冻结附件、识别、ASR/TTS、缓存与隔离测试矩阵 | 精确闭包、已有模块与环境限制已移交 | `closed` | B4 worker |
+| `b4-media-worker` | 媒体 runtime 应用工厂 | `3d313e0`；B4 | media 内部模块、health 归一化与独立专项 | B4-S/I5 | 叶子模块交给调度者接线 | `00087be` 已集成，叶子工作树已移除 | `closed` | B5 |
+| `b4-media-validator` | B4 独立影响验证 | `6eee683` | 只读 | I5 | 重跑媒体/附件/认证/预算与 backend | check、影响门和 backend `83/83` 通过 | `closed` | B5 重新验证 |
+| `b4-media-reviewer` | 媒体账户、预算、清理与启动复审 | `6eee683` 固定差分 | 只读 | V5 | 只报生产可达 blocker/P0/P1 | GO，blocker/P0/P1=`0/0/0` | `closed` | 下一切片复审 |
 
 ## 已关闭问题与保留风险
 
@@ -373,4 +388,24 @@ npm run test:frontend-shell
   必须结果；本项目继续执行更严格的 `<=40` 目标。不得用无边界 barrel、
   动态目录扫描或自动注册替代清晰的组合根和显式 registry。
 - 下一步 B4；仍未执行 push、tag、Release、Preview、部署、Base 写入、
+  云资源修改、真实付费调用或生产写入。
+
+## B4 媒体 runtime 检查点
+
+- 本地提交：`947c5da`（legacy 图片识别 HTTP adapter）、`00087be`
+  （媒体 runtime 与专项）、`6eee683`（共享接线、旧实现删除、登记与 runner）。
+- `createMediaRuntime()` 组合账户级附件上传/清理、provider gate、健康/书目
+  OCR、ASR 派生与转写、小物媒体、TTS cache/sweep；附件、provider、领域
+  normalize 继续复用原有公开模块。后台任务入队与去重仍留给 B5。
+- 上传幂等重放/陈旧结果、账户 inventory 隔离、OCR 配置与 fallback、预算
+  stage、ASR stale cleanup、sleep/heart-rate normalize 及 sweep 单飞均有
+  独立专项；旧入口实现已删除，无双轨。
+- `npm run check` 与 B4 冻结影响门通过；完整 backend `83/83`、
+  `281838 ms` 通过，包含隔离 Node 下 Volcengine server。直接系统 Node
+  的 keepsake media 聚合命令仍命中已知 Sharp Team ID 限制，其所有阶段已由
+  backend 隔离 runner 通过。
+- 独立 reviewer GO，blocker/P0/P1=`0/0/0`。`server.mjs` 2120→1473 行，
+  SHA `3c1202bae77ae2bd4d6668e6744adf683c197261e30c4d5776961f441554de29`；
+  拥有路由 237 条、迁移例外 15 条，provider 入口例外已删除。
+- 当前进入 B5；未执行 push、tag、Release、Preview、部署、Base 写入、
   云资源修改、真实付费调用或生产写入。

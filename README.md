@@ -71,10 +71,10 @@ npm run start:local-test
   先关闭移动端记录/思绪、快捷语音、第三方费用和 250ms 同步开屏，再完成
   大入口纯组装化、私有媒体绕过 ECS、图片旋转、主账户开屏设置和系统协作
   闭环。Owner 已验收 V0.5.7 G7 与 V0.5.8 G1/G2；当前 03/04 已完成
-  B1-B3、F1、F2 slice 1 与 actions lifecycle slice，`server.mjs` 已降至
-  2120 行，`runtime.mjs` 已降至 5136 行；Owner 已明确要求服务端入口最终
+  B1-B4、F1、F2 slice 1 与 actions lifecycle slice，`server.mjs` 已降至
+  1473 行，`runtime.mjs` 已降至 5136 行；Owner 已明确要求服务端入口最终
   只负责启动、不得超过 100 行，并继续执行项目既定 `<=40` 行目标。当前仍为
-  `iteration-G3 / entrypoint-G2`，下一步进入 B4 媒体运行时，见
+  `iteration-G3 / entrypoint-G2`，下一步进入 B5 领域与后台任务装配，见
   `reports/iteration-plan-v0.5.8-2026-10-05.md`。
 - **`v0.1.1` 发布历史保留**：提交 `54a6326f14ca`、标签 `hotfix-v0.1.1-thought-answer` 在 v0.1.0 基础上修复了收集页思绪自动回答任务创建问题，现已由 v0.2.1 替代。
 - **`v0.1.0` 发布历史保留**：主应用功能提交 `5ae6a7035169` 和标签 `release-20260928-p00-p0-commercial-system` 已发布 P00/P0、商业化、AI 成本和五阶段架构设计，并由 v0.1.1 继承。
@@ -307,8 +307,8 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
 - `reports/pre-launch-2026-09-29-v0.2.0.md`：v0.2.0 当前发布候选、两轮检查、人工配置、发行说明、生产阻断和最终 GO 记录。
 - `reports/hotfix-thought-answer-task-2026-09-28.md`：v0.1.1 思绪自动回答严重故障的根因、修复、验证与生产发布记录。
 - `reports/domain-https-cutover-2026-09-29.md`：`77liu.top` 证书切换、HTTP/IP 跳转、续期、回滚点及与 v0.2.0 应用发布的边界。
-- `server.mjs`：临时组合入口；B3 已移出 AI runtime，B4-B7 将继续迁出媒体、
-  领域、HTTP 与生命周期装配，最终只保留 `createServerRuntime()` 和启动。
+- `server.mjs`：临时组合入口；B3/B4 已移出 AI 与媒体 runtime，B5-B7 将继续
+  迁出领域、HTTP 与生命周期装配，最终只保留 `createServerRuntime()` 和启动。
 - `src/shared/persistence/`：JSON/PostgreSQL repository、整批迁移与停写导出恢复。
 - `src/modules/thoughts/`：已拆出的构思领域服务。
 - `src/modules/auth/` 与 `src/http/`：认证/会话领域规则及 HTTP、Cookie、JSON 适配。
