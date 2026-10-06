@@ -937,3 +937,25 @@ M  82b659f07a218e6090c77dbcd8b131c9f115e488ad8a7574dad3736e273232db  scripts/web
 
 唯一下一动作：冻结第二版 candidate，重跑专项与 frontend 影响门，并由新的
 独立 Reviewer 复审第二版差分；只有 blocker/P0/P1=`0/0/0` 才允许提交 F6。
+
+## 2026-10-06 F6 检查点关闭 R8
+
+- 第二版固定候选：
+  - base：`02552299f91aaa34dec9a0a25d12007a60bd19f8`
+  - tree：`d7bef1df3f7eb8441274c0f825f905b7b9d568c0`
+  - 完整 tree manifest SHA-256：
+    `7f2f089795376770a59b0ce63704455c3fc499549965a9c342390466f55cb635`
+  - 相对 base：25 个文件
+- 同一候选证据：
+  - `npm run check`：通过
+  - `npm run test:f6-features`：通过
+  - background-results 与 commit-gate 专项：通过
+  - Web budget：通过；captures 6/23059B，journals 2/9990B
+  - `node scripts/system-test.mjs frontend`：29/29，通过，86130ms
+- 第二版最终独立 Reviewer：无 findings，
+  blocker/P0/P1=`0/0/0`，`GO`。
+- F6 已提交：`e4c53ee`（`feat(frontend): extract capture and journal features`）；
+  commit tree 与第二版固定候选 tree 完全一致。
+- F7 现已满足 F6 依赖；下一批保持 scout 已冻结的
+  `BOOKS -> QUOTES -> REVIEW` 顺序。未执行 push、Preview、生产、Base、云资源
+  或费用操作。
