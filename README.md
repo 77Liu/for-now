@@ -276,7 +276,8 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
   八条 P0、十条交付及后续启动门。
 - `knowledge/volcengine-integration.md`：火山语音、OCR、智能文档解析的服务端配置、隐私边界和真实冒烟命令。
 - `knowledge/product-definition.md`：产品关键词、记录重点、闭环、核心功能、记录边界与价值主张。
-- `knowledge/iteration-history.md`：按日期保存的重要迭代历史。
+- `knowledge/iteration-history.md`：版本开发时间总表、Release 摘要及按日期
+  保存的重要迭代历史。
 - `README-TODO.md`：P00-P3 排期、实施状态、验收标准和阻塞项的单一事实来源。
 - `reports/product-iteration-review-2026-09-27.md`：生产条目审阅范围、需求证据、审阅时实现核对与优化取舍。
 - `reports/iteration-plan-v0.2.0-2026-09-28.md`：最新主账户原文审阅、版本号、P00-P3 判断和本轮执行计划。
