@@ -6,7 +6,7 @@ import {
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
-assert.equal(LEGACY_PAGE_VIEWS.length, 16);
+assert.equal(LEGACY_PAGE_VIEWS.length, 6);
 assert.equal(new Set(LEGACY_PAGE_VIEWS).size, LEGACY_PAGE_VIEWS.length);
 assert.equal(LEGACY_PAGE_VIEWS.includes("export"), false);
 assert.equal(LEGACY_PAGE_VIEWS.includes("feedback"), false);
@@ -17,6 +17,20 @@ assert.equal(LEGACY_PAGE_VIEWS.includes("quotes"), false);
 assert.equal(LEGACY_PAGE_VIEWS.includes("keepsakes"), false);
 assert.equal(LEGACY_PAGE_VIEWS.includes("review"), false);
 assert.equal(LEGACY_PAGE_VIEWS.includes("statistics"), false);
+for (const view of [
+  "mine",
+  "personal-context",
+  "ai-cost",
+  "architecture",
+  "commercialization",
+  "trash",
+  "permission",
+  "account",
+  "settings",
+  "about"
+]) {
+  assert.equal(LEGACY_PAGE_VIEWS.includes(view), false);
+}
 assert.throws(
   () => createLegacyPageController({ view: "export" }),
   /Unknown legacy page view/
@@ -68,7 +82,7 @@ assert.throws(
   let peak = 0;
   let unmounts = 0;
   const controller = createLegacyPageController({
-    view: "settings",
+    view: "thoughts",
     onMount() {
       active += 1;
       peak = Math.max(peak, active);
@@ -99,7 +113,7 @@ assert.throws(
   });
   const events = [];
   const controller = createLegacyPageController({
-    view: "about",
+    view: "daily",
     async onMount() {
       events.push("mount");
       await gate;
@@ -111,7 +125,7 @@ assert.throws(
   const signal = new AbortController();
   const pending = controller.mount({
     root: {},
-    route: { view: "about" },
+    route: { view: "daily" },
     signal: signal.signal
   });
   await flush();

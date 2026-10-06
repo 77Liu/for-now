@@ -4,17 +4,7 @@ export const LEGACY_PAGE_VIEWS = Object.freeze([
   "daily",
   "captures",
   "journals",
-  "thoughts",
-  "mine",
-  "personal-context",
-  "ai-cost",
-  "architecture",
-  "commercialization",
-  "trash",
-  "permission",
-  "account",
-  "settings",
-  "about"
+  "thoughts"
 ]);
 
 const LEGACY_VIEW_SET = new Set(LEGACY_PAGE_VIEWS);

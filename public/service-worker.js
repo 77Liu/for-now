@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cike-shell-v0.5.8-20";
+const CACHE_VERSION = "cike-shell-v0.5.8-21";
 const SHELL_ASSETS = [
   "./",
   "index.html",
@@ -90,6 +90,7 @@ const HOME_BACKGROUND_ASSETS = [
 const NETWORK_ONLY_PATHS = ["/api/", "/attachments/", "/auth/", "/ai/"];
 const DEFERRED_ASSET_SET = new Set(HOME_BACKGROUND_ASSETS);
 const LAZY_MODULE_PATHS = [
+  "/frontend/features/account-settings/",
   "/frontend/features/export/",
   "/frontend/features/feedback/",
   "/frontend/features/background-results/",
@@ -97,11 +98,15 @@ const LAZY_MODULE_PATHS = [
   "/frontend/features/health/",
   "/frontend/features/keepsakes/",
   "/frontend/features/library/",
+  "/frontend/features/mine-shell/",
   "/frontend/features/notifications/",
+  "/frontend/features/owner-console/",
+  "/frontend/features/personal-context/",
   "/frontend/features/quotes/",
   "/frontend/features/review-insights/",
   "/frontend/features/thought-discovery/",
-  "/frontend/features/thoughts/"
+  "/frontend/features/thoughts/",
+  "/frontend/features/trash/"
 ];
 
 const isNetworkOnly = url => NETWORK_ONLY_PATHS.some(segment => url.pathname.includes(segment));

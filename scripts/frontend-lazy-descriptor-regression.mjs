@@ -30,6 +30,7 @@ const dynamicImports = analysis.surface.imports
   .map(entry => entry.specifier);
 const dynamicSpecifiers = [...new Set(dynamicImports)].sort();
 assert.deepEqual(dynamicSpecifiers, [
+  "../features/account-settings/loader.mjs",
   "../features/actions/controller.mjs",
   "../features/annotations/index.mjs",
   "../features/background-results/index.mjs",
@@ -40,18 +41,22 @@ assert.deepEqual(dynamicSpecifiers, [
   "../features/keepsakes/index.mjs",
   "../features/legacy-pages/index.mjs",
   "../features/library/index.mjs",
+  "../features/mine-shell/index.mjs",
   "../features/notifications/index.mjs",
+  "../features/owner-console/loader.mjs",
+  "../features/personal-context/loader.mjs",
   "../features/quotes/index.mjs",
   "../features/review-insights/index.mjs",
   "../features/thought-discovery/index.mjs",
   "../features/thoughts/index.mjs",
+  "../features/trash/loader.mjs",
   "../media/content-image-drafts.mjs",
   "./ports.mjs"
 ]);
 for (const specifier of dynamicSpecifiers) {
   assert.equal(
     dynamicImports.filter(value => value === specifier).length,
-    ["./ports.mjs", "../features/actions/controller.mjs", "../features/annotations/index.mjs", "../features/background-results/index.mjs", "../features/health/controller.mjs", "../media/content-image-drafts.mjs"]
+    ["./ports.mjs", "../features/actions/controller.mjs", "../features/annotations/index.mjs", "../features/background-results/index.mjs", "../features/health/controller.mjs", "../features/owner-console/loader.mjs", "../media/content-image-drafts.mjs"]
       .includes(specifier) ? 1 : 2,
     `${specifier} must have one route-aware prefetch and one descriptor fallback`
   );
@@ -133,7 +138,17 @@ for (const removed of [
   "function renderKeepsakes(",
   "function renderKeepsakeDetail(",
   "function segmentCurrentKeepsake(",
-  "keepsakeBatchPersistTimer"
+  "keepsakeBatchPersistTimer",
+  "function renderMine(",
+  "function renderPersonalContext(",
+  "function loadPersonalContext(",
+  "function renderAccountUsers(",
+  "function loadAccountUsers(",
+  "function renderTrash(",
+  "function loadTrash(",
+  "aiCostRequestSerial",
+  "architectureRequestSerial",
+  "commercialRequestSerial"
 ]) {
   assert.equal(runtime.includes(removed), false, `legacy F2 symbol remains in runtime: ${removed}`);
 }
@@ -209,8 +224,39 @@ for (const view of ["review", "statistics"]) {
     specifier: "../features/review-insights/index.mjs"
   });
 }
+for (const view of ["mine", "permission", "about"]) {
+  assert.deepEqual(descriptors.get(view), {
+    page: view,
+    feature: "frontend.feature.mine-shell",
+    specifier: "../features/mine-shell/index.mjs"
+  });
+}
+assert.deepEqual(descriptors.get("personal-context"), {
+  page: "personal-context",
+  feature: "frontend.feature.personal-context-loader",
+  specifier: "../features/personal-context/loader.mjs"
+});
+for (const view of ["ai-cost", "architecture", "commercialization"]) {
+  assert.deepEqual(descriptors.get(view), {
+    page: view,
+    feature: "frontend.feature.owner-console-loader",
+    specifier: "../features/owner-console/loader.mjs"
+  });
+}
+for (const view of ["account", "settings"]) {
+  assert.deepEqual(descriptors.get(view), {
+    page: view,
+    feature: "frontend.feature.account-settings-loader",
+    specifier: "../features/account-settings/loader.mjs"
+  });
+}
+assert.deepEqual(descriptors.get("trash"), {
+  page: "trash",
+  feature: "frontend.feature.trash-loader",
+  specifier: "../features/trash/loader.mjs"
+});
 for (const [view, descriptor] of descriptors) {
-  if (["today", "review", "statistics", "daily", "captures", "journals", "books", "keepsakes", "quotes", "thoughts", "together", "export", "feedback", "discovery", "notifications"].includes(view)) continue;
+  if (["today", "review", "statistics", "daily", "captures", "journals", "books", "keepsakes", "quotes", "thoughts", "together", "export", "feedback", "discovery", "notifications", "mine", "permission", "about", "personal-context", "ai-cost", "architecture", "commercialization", "account", "settings", "trash"].includes(view)) continue;
   assert.deepEqual(descriptor, {
     page: view,
     feature: "frontend.feature.legacy-pages",
@@ -238,6 +284,7 @@ for (const deferredF3Edge of ["./annotation-tools.mjs", "./background-results.mj
   assert.equal(discoveryEntry.includes(deferredF3Edge), false, `discovery lazy entry includes ${deferredF3Edge}`);
 }
 for (const hiddenAsset of [
+  "frontend/features/account-settings/loader.mjs",
   "frontend/features/background-results/index.mjs",
   "frontend/features/capture-journal/index.mjs",
   "frontend/features/export/index.mjs",
@@ -245,11 +292,15 @@ for (const hiddenAsset of [
   "frontend/features/health/controller.mjs",
   "frontend/features/keepsakes/index.mjs",
   "frontend/features/library/index.mjs",
+  "frontend/features/mine-shell/index.mjs",
   "frontend/features/notifications/index.mjs",
+  "frontend/features/owner-console/loader.mjs",
+  "frontend/features/personal-context/loader.mjs",
   "frontend/features/quotes/index.mjs",
   "frontend/features/review-insights/index.mjs",
   "frontend/features/thought-discovery/index.mjs",
-  "frontend/features/thoughts/index.mjs"
+  "frontend/features/thoughts/index.mjs",
+  "frontend/features/trash/loader.mjs"
 ]) {
   const shellSource = serviceWorker.match(/const SHELL_ASSETS\s*=\s*\[([\s\S]*?)\];/)?.[1] || "";
   assert.equal(shellSource.includes(hiddenAsset), false, `service worker eagerly precaches ${hiddenAsset}`);

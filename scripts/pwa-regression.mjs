@@ -299,7 +299,7 @@ assert.equal(startupTimeout.observers.every(observer => observer.disconnected), 
 
 const worker = await fs.readFile(publicPath("service-worker.js"), "utf8");
 assert.match(worker, /const CACHE_VERSION\s*=\s*["'][^"']+["']/);
-assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.8-20["']/);
+assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.8-21["']/);
 const assetSet = name => {
   const source = worker.match(new RegExp(`const ${name}\\s*=\\s*\\[([\\s\\S]*?)\\];`))?.[1] || "";
   return new Set([...source.matchAll(/["']([^"']+)["']/g)].map(match => match[1]));
@@ -342,6 +342,14 @@ for (const asset of [
   "frontend/styles/r8.css"
 ]) assert.ok(shellAssets.has(asset), `预缓存缺少 ${asset}`);
 for (const asset of [
+  "frontend/features/account-settings/account-controller.mjs",
+  "frontend/features/account-settings/index.mjs",
+  "frontend/features/account-settings/loader.mjs",
+  "frontend/features/account-settings/local-test.mjs",
+  "frontend/features/account-settings/model.mjs",
+  "frontend/features/account-settings/presentation.mjs",
+  "frontend/features/account-settings/settings-controller.mjs",
+  "frontend/features/account-settings/voice-preview.mjs",
   "frontend/features/background-results/index.mjs",
   "frontend/features/capture-journal/capture-audio.mjs",
   "frontend/features/capture-journal/capture-drafts.mjs",
@@ -377,7 +385,26 @@ for (const asset of [
   "frontend/features/library/operations.mjs",
   "frontend/features/library/presentation.mjs",
   "frontend/features/library/view.mjs",
+  "frontend/features/mine-shell/controller.mjs",
+  "frontend/features/mine-shell/index.mjs",
+  "frontend/features/mine-shell/presentation.mjs",
   "frontend/features/notifications/index.mjs",
+  "frontend/features/owner-console/ai-cost-controller.mjs",
+  "frontend/features/owner-console/architecture-controller.mjs",
+  "frontend/features/owner-console/commercialization-controller.mjs",
+  "frontend/features/owner-console/controller.mjs",
+  "frontend/features/owner-console/index.mjs",
+  "frontend/features/owner-console/lifecycle.mjs",
+  "frontend/features/owner-console/loader.mjs",
+  "frontend/features/owner-console/model.mjs",
+  "frontend/features/owner-console/ports.mjs",
+  "frontend/features/owner-console/presentation.mjs",
+  "frontend/features/personal-context/controller.mjs",
+  "frontend/features/personal-context/index.mjs",
+  "frontend/features/personal-context/loader.mjs",
+  "frontend/features/personal-context/navigation.mjs",
+  "frontend/features/personal-context/presentation.mjs",
+  "frontend/features/personal-context/sources.mjs",
   "frontend/features/quotes/controller.mjs",
   "frontend/features/quotes/index.mjs",
   "frontend/features/quotes/loader.mjs",
@@ -398,7 +425,12 @@ for (const asset of [
   "frontend/features/thoughts/operations.mjs",
   "frontend/features/thoughts/presentation.mjs",
   "frontend/features/thoughts/speech.mjs",
-  "frontend/features/thoughts/view.mjs"
+  "frontend/features/thoughts/view.mjs",
+  "frontend/features/trash/controller.mjs",
+  "frontend/features/trash/index.mjs",
+  "frontend/features/trash/loader.mjs",
+  "frontend/features/trash/model.mjs",
+  "frontend/features/trash/presentation.mjs"
 ]) {
   assert.equal(shellAssets.has(asset), false, `lazy feature 不得进入 install 预缓存: ${asset}`);
   assert.ok(

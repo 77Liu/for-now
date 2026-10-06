@@ -873,6 +873,96 @@
       "status": "active"
     },
     {
+      "id": "frontend.feature.mine-shell",
+      "type": "feature",
+      "root": "public/frontend/features/mine-shell",
+      "publicEntry": "public/frontend/features/mine-shell/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["mine summary, denied owner route messaging, about page lifecycle and session scrubbing"], "routes": [] },
+      "tests": ["scripts/frontend-basic-surfaces-feature-regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.personal-context-loader",
+      "type": "feature",
+      "root": "public/frontend/features/personal-context/loader.mjs",
+      "publicEntry": "public/frontend/features/personal-context/loader.mjs",
+      "allowedDependencies": ["frontend.feature.personal-context"],
+      "owns": { "data": ["deferred personal-context implementation loading"], "routes": [] },
+      "tests": ["scripts/frontend-basic-surfaces-feature-regression.mjs", "scripts/frontend-lazy-descriptor-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.personal-context",
+      "type": "feature",
+      "root": "public/frontend/features/personal-context",
+      "publicEntry": "public/frontend/features/personal-context/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["personal context projection, source receipts, source navigation and disposable page lifecycle"], "routes": [] },
+      "tests": ["scripts/frontend-basic-surfaces-feature-regression.mjs", "scripts/personal-context-regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.owner-console-loader",
+      "type": "feature",
+      "root": "public/frontend/features/owner-console/loader.mjs",
+      "publicEntry": "public/frontend/features/owner-console/loader.mjs",
+      "allowedDependencies": ["frontend.feature.owner-console"],
+      "owns": { "data": ["deferred Owner console implementation loading"], "routes": [] },
+      "tests": ["scripts/frontend-owner-console-feature-regression.mjs", "scripts/frontend-lazy-descriptor-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.owner-console",
+      "type": "feature",
+      "root": "public/frontend/features/owner-console",
+      "publicEntry": "public/frontend/features/owner-console/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["Owner AI cost and budget controls, architecture surface, commercialization planning and capability-bound lifecycle"], "routes": [] },
+      "tests": ["scripts/frontend-owner-console-feature-regression.mjs", "scripts/ai-budget-runtime-regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.account-settings-loader",
+      "type": "feature",
+      "root": "public/frontend/features/account-settings/loader.mjs",
+      "publicEntry": "public/frontend/features/account-settings/loader.mjs",
+      "allowedDependencies": ["frontend.feature.account-settings"],
+      "owns": { "data": ["deferred account and settings implementation loading"], "routes": [] },
+      "tests": ["scripts/frontend-account-settings-feature-regression.mjs", "scripts/frontend-lazy-descriptor-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.account-settings",
+      "type": "feature",
+      "root": "public/frontend/features/account-settings",
+      "publicEntry": "public/frontend/features/account-settings/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["account identity and role management, settings, voice preview and local test mode lifecycle"], "routes": [] },
+      "tests": ["scripts/frontend-account-settings-feature-regression.mjs", "scripts/auth-regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.trash-loader",
+      "type": "feature",
+      "root": "public/frontend/features/trash/loader.mjs",
+      "publicEntry": "public/frontend/features/trash/loader.mjs",
+      "allowedDependencies": ["frontend.feature.trash"],
+      "owns": { "data": ["deferred trash implementation loading"], "routes": [] },
+      "tests": ["scripts/frontend-trash-feature-regression.mjs", "scripts/frontend-lazy-descriptor-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.trash",
+      "type": "feature",
+      "root": "public/frontend/features/trash",
+      "publicEntry": "public/frontend/features/trash/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["trash presentation, restore, purge confirmation and account-scoped disposable lifecycle"], "routes": [] },
+      "tests": ["scripts/frontend-trash-feature-regression.mjs", "scripts/trash-regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
       "id": "frontend.feature.legacy-pages",
       "type": "feature",
       "root": "public/frontend/features/legacy-pages",
@@ -959,7 +1049,7 @@
       "type": "application",
       "root": "public/frontend/app",
       "publicEntry": "public/frontend/app/index.mjs",
-      "allowedDependencies": ["frontend.application", "frontend.ports", "frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.media-content-drafts", "frontend.page-audio", "frontend.page-catalog", "frontend.pages", "frontend.features", "frontend.feature-registry", "frontend.feature.actions-controller", "frontend.feature.annotations", "frontend.feature.background-results", "frontend.feature.capture-journal", "frontend.feature.checkins-model", "frontend.feature.checkins", "frontend.feature.health", "frontend.feature.keepsakes", "frontend.feature.keepsakes-media", "frontend.feature.library", "frontend.feature.quotes", "frontend.feature.review-insights", "frontend.feature.thoughts", "frontend.feature.discovery", "frontend.feature.export", "frontend.feature.feedback", "frontend.feature.notifications", "frontend.feature.legacy-pages", "frontend.component.tag-multiselect"],
+      "allowedDependencies": ["frontend.application", "frontend.ports", "frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.media-content-drafts", "frontend.page-audio", "frontend.page-catalog", "frontend.pages", "frontend.features", "frontend.feature-registry", "frontend.feature.actions-controller", "frontend.feature.annotations", "frontend.feature.background-results", "frontend.feature.capture-journal", "frontend.feature.checkins-model", "frontend.feature.checkins", "frontend.feature.health", "frontend.feature.keepsakes", "frontend.feature.keepsakes-media", "frontend.feature.library", "frontend.feature.quotes", "frontend.feature.review-insights", "frontend.feature.thoughts", "frontend.feature.discovery", "frontend.feature.export", "frontend.feature.feedback", "frontend.feature.notifications", "frontend.feature.mine-shell", "frontend.feature.personal-context-loader", "frontend.feature.owner-console-loader", "frontend.feature.account-settings-loader", "frontend.feature.trash-loader", "frontend.feature.legacy-pages", "frontend.component.tag-multiselect"],
       "owns": { "data": ["browser bootstrap, dependency composition, feature event binding and page presenter runtime"], "routes": [] },
       "tests": ["scripts/frontend-shell-regression.mjs", "scripts/frontend-contract-regression.mjs", "scripts/frontend-lazy-descriptor-regression.mjs", "scripts/frontend-checkins-feature-regression.mjs", "scripts/frontend-notifications-feature-regression.mjs", "scripts/ui-regression.mjs", "scripts/mobile-platform-regression.mjs"],
       "status": "active"
@@ -1172,6 +1262,7 @@
         "../content/index.mjs",
         "../feature-registry/index.mjs",
         "../features/actions/controller.mjs",
+        "../features/account-settings/loader.mjs",
         "../features/annotations/index.mjs",
         "../features/background-results/index.mjs",
         "../features/capture-journal/index.mjs",
@@ -1184,11 +1275,15 @@
         "../features/keepsakes/index.mjs",
         "../features/legacy-pages/index.mjs",
         "../features/library/index.mjs",
+        "../features/mine-shell/index.mjs",
         "../features/notifications/index.mjs",
+        "../features/owner-console/loader.mjs",
+        "../features/personal-context/loader.mjs",
         "../features/quotes/index.mjs",
         "../features/review-insights/index.mjs",
         "../features/thought-discovery/index.mjs",
         "../features/thoughts/index.mjs",
+        "../features/trash/loader.mjs",
         "../media/content-image-drafts.mjs",
         "../media/index.mjs",
         "../media/page-audio.mjs",
@@ -1206,6 +1301,7 @@
         "../content/index.mjs",
         "../feature-registry/index.mjs",
         "../features/actions/controller.mjs",
+        "../features/account-settings/loader.mjs",
         "../features/annotations/index.mjs",
         "../features/background-results/index.mjs",
         "../features/capture-journal/index.mjs",
@@ -1218,11 +1314,15 @@
         "../features/keepsakes/index.mjs",
         "../features/legacy-pages/index.mjs",
         "../features/library/index.mjs",
+        "../features/mine-shell/index.mjs",
         "../features/notifications/index.mjs",
+        "../features/owner-console/loader.mjs",
+        "../features/personal-context/loader.mjs",
         "../features/quotes/index.mjs",
         "../features/review-insights/index.mjs",
         "../features/thought-discovery/index.mjs",
         "../features/thoughts/index.mjs",
+        "../features/trash/loader.mjs",
         "../media/content-image-drafts.mjs",
         "../media/index.mjs",
         "../media/page-audio.mjs",
@@ -1324,20 +1424,20 @@
         { "page": "thoughts", "feature": "frontend.feature.thoughts", "specifier": "../features/thoughts/index.mjs" },
         { "page": "discovery", "feature": "frontend.feature.discovery", "specifier": "../features/thought-discovery/index.mjs" },
         { "page": "review", "feature": "frontend.feature.review-insights", "specifier": "../features/review-insights/index.mjs" },
-        { "page": "mine", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
-        { "page": "personal-context", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
+        { "page": "mine", "feature": "frontend.feature.mine-shell", "specifier": "../features/mine-shell/index.mjs" },
+        { "page": "personal-context", "feature": "frontend.feature.personal-context-loader", "specifier": "../features/personal-context/loader.mjs" },
         { "page": "statistics", "feature": "frontend.feature.review-insights", "specifier": "../features/review-insights/index.mjs" },
-        { "page": "ai-cost", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
-        { "page": "architecture", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
-        { "page": "commercialization", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
+        { "page": "ai-cost", "feature": "frontend.feature.owner-console-loader", "specifier": "../features/owner-console/loader.mjs" },
+        { "page": "architecture", "feature": "frontend.feature.owner-console-loader", "specifier": "../features/owner-console/loader.mjs" },
+        { "page": "commercialization", "feature": "frontend.feature.owner-console-loader", "specifier": "../features/owner-console/loader.mjs" },
         { "page": "feedback", "feature": "frontend.feature.feedback", "specifier": "../features/feedback/index.mjs" },
         { "page": "export", "feature": "frontend.feature.export", "specifier": "../features/export/index.mjs" },
         { "page": "notifications", "feature": "frontend.feature.notifications", "specifier": "../features/notifications/index.mjs" },
-        { "page": "trash", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
-        { "page": "permission", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
-        { "page": "account", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
-        { "page": "settings", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
-        { "page": "about", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" }
+        { "page": "trash", "feature": "frontend.feature.trash-loader", "specifier": "../features/trash/loader.mjs" },
+        { "page": "permission", "feature": "frontend.feature.mine-shell", "specifier": "../features/mine-shell/index.mjs" },
+        { "page": "account", "feature": "frontend.feature.account-settings-loader", "specifier": "../features/account-settings/loader.mjs" },
+        { "page": "settings", "feature": "frontend.feature.account-settings-loader", "specifier": "../features/account-settings/loader.mjs" },
+        { "page": "about", "feature": "frontend.feature.mine-shell", "specifier": "../features/mine-shell/index.mjs" }
       ]
     },
     {
@@ -1377,49 +1477,49 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.api-path",
-      "sourceSha256": "57d096727ac5e0b5b7b45b067b1dd51f00f1e793627a3bda3ba1fca77cfb2999",
+      "sourceSha256": "a6a935bd6bf7edc4e723f3ae4b03b102a203a512074fe6e6697f91e794c9cd19",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no API path literals",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden literal matched \"^/api(?:/|$)\"", "count": 47 }
+        { "detail": "forbidden literal matched \"^/api(?:/|$)\"", "count": 27 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.dom-query",
-      "sourceSha256": "57d096727ac5e0b5b7b45b067b1dd51f00f1e793627a3bda3ba1fca77cfb2999",
+      "sourceSha256": "a6a935bd6bf7edc4e723f3ae4b03b102a203a512074fe6e6697f91e794c9cd19",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page DOM queries",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden identifier \"querySelector\"", "count": 54 },
+        { "detail": "forbidden identifier \"querySelector\"", "count": 34 },
         { "detail": "forbidden identifier \"querySelectorAll\"", "count": 11 },
-        { "detail": "forbidden identifier \"getElementById\"", "count": 6 }
+        { "detail": "forbidden identifier \"getElementById\"", "count": 4 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.event-binding",
-      "sourceSha256": "57d096727ac5e0b5b7b45b067b1dd51f00f1e793627a3bda3ba1fca77cfb2999",
+      "sourceSha256": "a6a935bd6bf7edc4e723f3ae4b03b102a203a512074fe6e6697f91e794c9cd19",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page event binding",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden identifier \"addEventListener\"", "count": 104 },
+        { "detail": "forbidden identifier \"addEventListener\"", "count": 77 },
         { "detail": "forbidden identifier \"removeEventListener\"", "count": 3 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.timer",
-      "sourceSha256": "57d096727ac5e0b5b7b45b067b1dd51f00f1e793627a3bda3ba1fca77cfb2999",
+      "sourceSha256": "a6a935bd6bf7edc4e723f3ae4b03b102a203a512074fe6e6697f91e794c9cd19",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page timers or animation scheduling",
       "deleteByGate": "G6",
       "allowlist": [
         { "detail": "forbidden identifier \"cancelAnimationFrame\"", "count": 5 },
-        { "detail": "forbidden identifier \"requestAnimationFrame\"", "count": 17 },
+        { "detail": "forbidden identifier \"requestAnimationFrame\"", "count": 18 },
         { "detail": "forbidden identifier \"setInterval\"", "count": 3 },
         { "detail": "forbidden identifier \"setTimeout\"", "count": 9 }
       ]
@@ -1427,22 +1527,22 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.template",
-      "sourceSha256": "57d096727ac5e0b5b7b45b067b1dd51f00f1e793627a3bda3ba1fca77cfb2999",
+      "sourceSha256": "a6a935bd6bf7edc4e723f3ae4b03b102a203a512074fe6e6697f91e794c9cd19",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page templates",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden syntax template-literal", "count": 275 }
+        { "detail": "forbidden syntax template-literal", "count": 177 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "lines.hard",
-      "sourceSha256": "57d096727ac5e0b5b7b45b067b1dd51f00f1e793627a3bda3ba1fca77cfb2999",
+      "sourceSha256": "a6a935bd6bf7edc4e723f3ae4b03b102a203a512074fe6e6697f91e794c9cd19",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs is at or below 180 lines",
       "deleteByGate": "G6",
-      "maxValue": 3060
+      "maxValue": 2700
     }
   ],
   "migrationExceptions": []

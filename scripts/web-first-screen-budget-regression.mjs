@@ -35,10 +35,18 @@ const ASSET_BUDGET = Object.freeze({
   defaultRouteModuleBytes: 16 * 1024,
   lazyFeatureModuleCount: 3,
   lazyFeatureModuleBytes: 40 * 1024,
-  lazyRouteImplementationModuleCount: 6,
+  lazyRouteImplementationModuleCount: 9,
   lazyRouteTransferBytes: 40 * 1024
 });
 const HIDDEN_FEATURE_MODULE_PATHS = Object.freeze([
+  "/frontend/features/account-settings/account-controller.mjs",
+  "/frontend/features/account-settings/index.mjs",
+  "/frontend/features/account-settings/loader.mjs",
+  "/frontend/features/account-settings/local-test.mjs",
+  "/frontend/features/account-settings/model.mjs",
+  "/frontend/features/account-settings/presentation.mjs",
+  "/frontend/features/account-settings/settings-controller.mjs",
+  "/frontend/features/account-settings/voice-preview.mjs",
   "/frontend/features/actions/controller.mjs",
   "/frontend/features/background-results/index.mjs",
   "/frontend/features/background-results/controller.mjs",
@@ -80,6 +88,22 @@ const HIDDEN_FEATURE_MODULE_PATHS = Object.freeze([
   "/frontend/features/notifications/index.mjs",
   "/frontend/features/notifications/controller.mjs",
   "/frontend/features/notifications/presentation.mjs",
+  "/frontend/features/owner-console/ai-cost-controller.mjs",
+  "/frontend/features/owner-console/architecture-controller.mjs",
+  "/frontend/features/owner-console/commercialization-controller.mjs",
+  "/frontend/features/owner-console/controller.mjs",
+  "/frontend/features/owner-console/index.mjs",
+  "/frontend/features/owner-console/lifecycle.mjs",
+  "/frontend/features/owner-console/loader.mjs",
+  "/frontend/features/owner-console/model.mjs",
+  "/frontend/features/owner-console/ports.mjs",
+  "/frontend/features/owner-console/presentation.mjs",
+  "/frontend/features/personal-context/controller.mjs",
+  "/frontend/features/personal-context/index.mjs",
+  "/frontend/features/personal-context/loader.mjs",
+  "/frontend/features/personal-context/navigation.mjs",
+  "/frontend/features/personal-context/presentation.mjs",
+  "/frontend/features/personal-context/sources.mjs",
   "/frontend/features/library/index.mjs",
   "/frontend/features/library/loader.mjs",
   "/frontend/features/library/controller.mjs",
@@ -88,6 +112,9 @@ const HIDDEN_FEATURE_MODULE_PATHS = Object.freeze([
   "/frontend/features/library/operations.mjs",
   "/frontend/features/library/presentation.mjs",
   "/frontend/features/library/view.mjs",
+  "/frontend/features/mine-shell/controller.mjs",
+  "/frontend/features/mine-shell/index.mjs",
+  "/frontend/features/mine-shell/presentation.mjs",
   "/frontend/features/quotes/index.mjs",
   "/frontend/features/quotes/loader.mjs",
   "/frontend/features/quotes/controller.mjs",
@@ -110,7 +137,12 @@ const HIDDEN_FEATURE_MODULE_PATHS = Object.freeze([
   "/frontend/features/thoughts/operations.mjs",
   "/frontend/features/thoughts/presentation.mjs",
   "/frontend/features/thoughts/speech.mjs",
-  "/frontend/features/thoughts/view.mjs"
+  "/frontend/features/thoughts/view.mjs",
+  "/frontend/features/trash/controller.mjs",
+  "/frontend/features/trash/index.mjs",
+  "/frontend/features/trash/loader.mjs",
+  "/frontend/features/trash/model.mjs",
+  "/frontend/features/trash/presentation.mjs"
 ]);
 const HTTP_BUDGET = Object.freeze({
   startupJsonDecodedBytes: 25 * 1024,
@@ -953,6 +985,9 @@ async function browserDiagnostics(browser, server, error) {
   } catch {}
   return new Error(`${error.message}; diagnostics=${JSON.stringify({
     page,
+    startupRequests: server.requests
+      .filter(item => item.sample === "startup-cold-1" && item.path.startsWith("/api/"))
+      .map(item => ({ sample: item.sample, method: item.method, path: item.path })),
     recentRequests: server.requests.slice(-12).map(item => ({
       sample: item.sample,
       method: item.method,
@@ -979,6 +1014,7 @@ const defaultRouteModules = await moduleClosure([
   "frontend/features/legacy-pages/index.mjs"
 ]);
 const lazyFeatureModules = Object.fromEntries(await Promise.all([
+  ["account-settings", "frontend/features/account-settings/loader.mjs"],
   ["actions-workspace", "frontend/features/actions/controller.mjs"],
   ["capture-journal", "frontend/features/capture-journal/index.mjs"],
   ["export", "frontend/features/export/index.mjs"],
@@ -986,11 +1022,15 @@ const lazyFeatureModules = Object.fromEntries(await Promise.all([
   ["health", "frontend/features/health/controller.mjs"],
   ["keepsakes", "frontend/features/keepsakes/index.mjs"],
   ["library", "frontend/features/library/index.mjs"],
+  ["mine-shell", "frontend/features/mine-shell/index.mjs"],
   ["notifications", "frontend/features/notifications/index.mjs"],
+  ["owner-console", "frontend/features/owner-console/loader.mjs"],
+  ["personal-context", "frontend/features/personal-context/loader.mjs"],
   ["quotes", "frontend/features/quotes/index.mjs"],
   ["review-insights", "frontend/features/review-insights/index.mjs"],
   ["discovery", "frontend/features/thought-discovery/index.mjs"],
-  ["thoughts", "frontend/features/thoughts/index.mjs"]
+  ["thoughts", "frontend/features/thoughts/index.mjs"],
+  ["trash", "frontend/features/trash/loader.mjs"]
 ].map(async ([view, entry]) => [view, await moduleClosure(entry)])));
 const captureJournalRouteModules = Object.fromEntries(await Promise.all([
   ["captures", "frontend/features/capture-journal/captures.mjs"],
@@ -1002,6 +1042,29 @@ const captureJournalRouteModules = Object.fromEntries(await Promise.all([
     deferredRuntime.assets
   );
   const descriptor = lazyFeatureModules["capture-journal"];
+  const descriptorTransferBytes = (await Promise.all(descriptor.assets.map(async asset => (
+    gzipSync(await fs.readFile(publicFile(asset))).byteLength
+  )))).reduce((sum, value) => sum + value, 0);
+  return [view, {
+    ...implementation,
+    transferBytes: implementation.transferBytes + descriptorTransferBytes
+  }];
+})));
+const f9RouteModules = Object.fromEntries(await Promise.all([
+  ["personal-context", "frontend/features/personal-context/index.mjs", "personal-context"],
+  ["ai-cost", "frontend/features/owner-console/index.mjs", "owner-console"],
+  ["architecture", "frontend/features/owner-console/index.mjs", "owner-console"],
+  ["commercialization", "frontend/features/owner-console/index.mjs", "owner-console"],
+  ["account", "frontend/features/account-settings/index.mjs", "account-settings"],
+  ["settings", "frontend/features/account-settings/index.mjs", "account-settings"],
+  ["trash", "frontend/features/trash/index.mjs", "trash"]
+].map(async ([view, entry, descriptorKey]) => {
+  const closure = await moduleClosure(entry);
+  const implementation = await incrementalTransferClosure(
+    closure,
+    deferredRuntime.assets
+  );
+  const descriptor = lazyFeatureModules[descriptorKey];
   const descriptorTransferBytes = (await Promise.all(descriptor.assets.map(async asset => (
     gzipSync(await fs.readFile(publicFile(asset))).byteLength
   )))).reduce((sum, value) => sum + value, 0);
@@ -1081,7 +1144,10 @@ for (const [view, closure] of Object.entries(lazyFeatureModules)) {
     `${view} lazy 闭包进入了 shell 静态闭包`
   );
 }
-for (const [view, closure] of Object.entries(captureJournalRouteModules)) {
+for (const [view, closure] of [
+  ...Object.entries(captureJournalRouteModules),
+  ...Object.entries(f9RouteModules)
+]) {
   assert.ok(
     closure.assets.length <= ASSET_BUDGET.lazyRouteImplementationModuleCount,
     `${view} 路由实现增量 ${closure.assets.length} 个模块超过预算 ${ASSET_BUDGET.lazyRouteImplementationModuleCount}`
@@ -1641,6 +1707,10 @@ try {
           { requests: closure.assets.length, decodedBytes: closure.bytes }
         ])),
         captureJournalRouteModules: Object.fromEntries(Object.entries(captureJournalRouteModules).map(([view, closure]) => [
+          view,
+          { implementationRequests: closure.assets.length, transferBytes: closure.transferBytes }
+        ])),
+        f9RouteModules: Object.fromEntries(Object.entries(f9RouteModules).map(([view, closure]) => [
           view,
           { implementationRequests: closure.assets.length, transferBytes: closure.transferBytes }
         ]))

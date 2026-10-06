@@ -27,8 +27,6 @@ import {
   createIndexedDbMediaDraftStore,
   imageRecordPayload,
   imageUnderstandingPayload,
-  normalizeTtsGenerationRate,
-  speechPreviewPayload,
   uploadPendingMediaItems,
   uploadOriginalImages,
   normalizeTtsPlaybackRate,
@@ -43,15 +41,21 @@ import { createOccurrenceDraft, entryKeyIntent, eventDate, eventTimestamp, forma
 
 const appEntryUrl=new URL("../../app.js",import.meta.url);
 const applicationBasePath=new URL(".",appEntryUrl).pathname.replace(/\/$/,"")||"/";
-const initialRuntimeView=resolveApplicationRoute(location,{basePath:applicationBasePath}).view;
+const initialRuntimeRoute=resolveApplicationRoute(location,{basePath:applicationBasePath});
+const initialRuntimeView=initialRuntimeRoute.view;
 const portFactoriesRequest=globalThis.__forNowPortsRequest||import("./ports.mjs");
-const legacyFeatureModuleRequest=globalThis.__forNowLegacyFeatureRequest||(["export","feedback","discovery","notifications","captures","journals","books","quotes","keepsakes","review","statistics"].includes(initialRuntimeView)?null:import("../features/legacy-pages/index.mjs"));
+const legacyFeatureModuleRequest=globalThis.__forNowLegacyFeatureRequest||(["export","feedback","discovery","notifications","captures","journals","books","quotes","keepsakes","review","mine","personal-context","statistics","ai-cost","architecture","commercialization","trash","permission","account","settings","about"].includes(initialRuntimeView)?null:import("../features/legacy-pages/index.mjs"));
 const exportFeatureModuleRequest=globalThis.__forNowExportFeatureRequest||(initialRuntimeView==="export"?import("../features/export/index.mjs"):null);
 const feedbackFeatureModuleRequest=globalThis.__forNowFeedbackFeatureRequest||(initialRuntimeView==="feedback"?import("../features/feedback/index.mjs"):null);
 const discoveryFeatureModuleRequest=globalThis.__forNowDiscoveryFeatureRequest||(initialRuntimeView==="discovery"?import("../features/thought-discovery/index.mjs"):null);
 const notificationsFeatureModuleRequest=globalThis.__forNowNotificationsFeatureRequest||(initialRuntimeView==="notifications"?import("../features/notifications/index.mjs"):null);
 let reviewInsightsFeatureModuleRequest=globalThis.__forNowReviewInsightsFeatureRequest||(["review","statistics"].includes(initialRuntimeView)?import("../features/review-insights/index.mjs"):null);
 let keepsakesFeatureModuleRequest=globalThis.__forNowKeepsakesFeatureRequest||(initialRuntimeView==="keepsakes"?import("../features/keepsakes/index.mjs"):null);
+let mineShellFeatureModuleRequest=globalThis.__forNowMineShellFeatureRequest||(["mine","permission","about"].includes(initialRuntimeView)?import("../features/mine-shell/index.mjs"):null);
+let personalContextFeatureModuleRequest=globalThis.__forNowPersonalContextFeatureRequest||(initialRuntimeView==="personal-context"?import("../features/personal-context/loader.mjs"):null);
+let ownerConsoleFeatureModuleRequest=null;
+let accountSettingsFeatureModuleRequest=globalThis.__forNowAccountSettingsFeatureRequest||(["account","settings"].includes(initialRuntimeView)?import("../features/account-settings/loader.mjs"):null);
+let trashFeatureModuleRequest=globalThis.__forNowTrashFeatureRequest||(initialRuntimeView==="trash"?import("../features/trash/loader.mjs"):null);
 let captureJournalFeatureModuleRequest=globalThis.__forNowCaptureJournalFeatureRequest||(["captures","journals"].includes(initialRuntimeView)?import("../features/capture-journal/index.mjs"):null);
 let annotationsFeatureModuleRequest=globalThis.__forNowAnnotationsFeatureRequest||null;
 let backgroundResultsFeatureModuleRequest=globalThis.__forNowBackgroundResultsFeatureRequest||null;
@@ -106,6 +110,31 @@ const loadKeepsakesFeatureModule=()=>{
   keepsakesFeatureModuleRequest=pending;
   return Promise.resolve(pending).catch(error=>{if(keepsakesFeatureModuleRequest===pending)keepsakesFeatureModuleRequest=null;throw error})
 };
+const loadMineShellFeatureModule=()=>{
+  const pending=mineShellFeatureModuleRequest||import("../features/mine-shell/index.mjs");
+  mineShellFeatureModuleRequest=pending;
+  return Promise.resolve(pending).catch(error=>{if(mineShellFeatureModuleRequest===pending)mineShellFeatureModuleRequest=null;throw error})
+};
+const loadPersonalContextFeatureModule=()=>{
+  const pending=personalContextFeatureModuleRequest||import("../features/personal-context/loader.mjs");
+  personalContextFeatureModuleRequest=pending;
+  return Promise.resolve(pending).catch(error=>{if(personalContextFeatureModuleRequest===pending)personalContextFeatureModuleRequest=null;throw error})
+};
+const loadOwnerConsoleFeatureModule=()=>{
+  const pending=ownerConsoleFeatureModuleRequest||import("../features/owner-console/loader.mjs");
+  ownerConsoleFeatureModuleRequest=pending;
+  return Promise.resolve(pending).catch(error=>{if(ownerConsoleFeatureModuleRequest===pending)ownerConsoleFeatureModuleRequest=null;throw error})
+};
+const loadAccountSettingsFeatureModule=()=>{
+  const pending=accountSettingsFeatureModuleRequest||import("../features/account-settings/loader.mjs");
+  accountSettingsFeatureModuleRequest=pending;
+  return Promise.resolve(pending).catch(error=>{if(accountSettingsFeatureModuleRequest===pending)accountSettingsFeatureModuleRequest=null;throw error})
+};
+const loadTrashFeatureModule=()=>{
+  const pending=trashFeatureModuleRequest||import("../features/trash/loader.mjs");
+  trashFeatureModuleRequest=pending;
+  return Promise.resolve(pending).catch(error=>{if(trashFeatureModuleRequest===pending)trashFeatureModuleRequest=null;throw error})
+};
 const startupPerformanceEnabled=new URLSearchParams(location.search).has("native-performance");
 const startupMarks={navigationStart:0,moduleLoaded:Number(performance.now().toFixed(1))};
 function markStartup(name){startupMarks[name]=Number(performance.now().toFixed(1));return startupMarks[name]}
@@ -157,14 +186,10 @@ const BACKGROUND_RESULTS_RETRY_LIMIT=3;
 const LOCAL_TEST_VIEW_SCOPES=Object.freeze({today:"today",daily:"daily",captures:"captures",books:"books",quotes:"quotes",keepsakes:"keepsakes",journals:"journals",thoughts:"thoughts",discovery:"discovery",together:"together",review:"review",statistics:"statistics","ai-cost":"statistics",commercialization:"statistics","personal-context":"personal-context",feedback:"feedback",export:"export",trash:"trash"});
 const localTestScopeLoads=new Map();
 const baseMetrics=BASE_CHECKIN_METRICS;
-const llmTiers=["lite","mid","high","ultra"];
-const llmEfforts=["none","high","max"];
 const defaultLlmProfiles={lite:{model:"deepseek-flash",effort:"none"},mid:{model:"deepseek-flash",effort:"high"},high:{model:"deepseek-v4-pro",effort:"high"},ultra:{model:"deepseek-v4-pro",effort:"max"}};
 const defaultLlmScenarios={thoughtPrompt:"lite",thoughtDraft:"high",thoughtAnswer:"ultra",followUpAnswer:"ultra",chat:"high",diaryLead:"lite",diaryStructure:"mid",diaryTopic:"high",diaryReflection:"ultra",annotationShenji:"high",analysis:"ultra",bookRecognition:"mid",healthRecognition:"mid",contentImageUnderstanding:"mid",capturePolish:"mid"};
 const defaultSceneEfforts={...Object.fromEntries(Object.entries(defaultLlmScenarios).map(([scene,tier])=>[scene,defaultLlmProfiles[tier].effort])),onboardingClaimExtraction:"high"};
 const ownerCapabilities=[...new Set([...Object.values(ownerViewCapabilities),"local-testing","ai-configuration","account-roles"])];
-const responseStyleOptions=[["concise","简短"],["standard","标准"],["deep","深入"],["structured","结构化"],["exploratory","开放探索"]];
-const responseStyleScenes=["thoughtDraft","thoughtAnswer","followUpAnswer","chat","diaryReflection","annotationShenji","analysis"];
 let pageRouter,switchView,restoreView;
 let runtimeApplication=null,runtimeFeatureRegistry=null,runtimeStatePort=null,applicationLifecycleReady=false;
 let backgroundResultsController=null,backgroundResultsLoadErrorReported=false,backgroundResultsRetryAttempts=0;
@@ -173,24 +198,26 @@ let capturesFeatureController=null;
 let quotesFeatureController=null;
 let libraryFeatureController=null;
 let keepsakesFeatureController=null;
+const ownerConsoleFeatureControllers=new Set();
+const accountSettingsFeatureControllers=new Set();
 const checkinsFeatureControllers=new Set();
 const thoughtsFeatureControllers=new Set();
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-let activeDate=currentLocalDate,activeDailyType="sleep",answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],answerTaskSerial=0,activeAnswerTaskId=0,currentUser=null,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
-let notificationsLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,routeDataRequestSerial=0,routeLoadFailureKey="",loadedRouteKey="",fullRouteStateLoaded=false,renderedRouteView="";
+let activeDate=currentLocalDate,activeDailyType="sleep",answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],answerTaskSerial=0,activeAnswerTaskId=0,currentUser=null,notificationUnreadCount=0,chainDraftVersion=0,localTestConfig=null,onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
+let notificationsLoadState="idle",routeDataReady=false,routeDataRequestSerial=0,routeLoadFailureKey="",loadedRouteKey="",fullRouteStateLoaded=false,renderedRouteView="";
 const quoteTagPickerConfig=Object.freeze({
   selectionQuote:{input:"#selection-quote-tags",selected:"#selection-quote-selected-tags",options:"#selection-quote-tag-options",toggle:"#selection-quote-tag-toggle",status:"#selection-quote-tag-status"}
 });
 let quoteTagStates={
   selectionQuote:createTagMultiSelectState()
 };
-let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeKeepsakeId="",homeEditorTrigger=null,voicePreviewAudio=null,voicePreviewPending=false,voicePreviewPlaying=false,voicePreviewVoice="";
+let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeKeepsakeId="",homeEditorTrigger=null;
 const persistentContentImageKeys=new Set(["capture","thoughtRoot","thoughtBlock","comment"]);
 const imageViewer={paths:[],index:0,objectUrl:"",requestSerial:0,trigger:null};
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const ownerSurfaceVault=document.createDocumentFragment();
-let ownerSurfaceEntries=null,currentCapabilities=new Set();
+let ownerSurfaceEntries=null,currentCapabilities=new Set(),deniedAccess={},requestedAuthenticatedView="";
 function hasCapability(capability){return currentCapabilities.has(capability)}
 function applyCapabilitySurface(capabilities=[]){
   currentCapabilities=new Set(Array.isArray(capabilities)?capabilities:[]);
@@ -208,6 +235,8 @@ function applyCapabilitySurface(capabilities=[]){
   }
 }
 function showPermissionPage(view,capability){
+  deniedAccess={view,capability};
+  if(!currentUser)requestedAuthenticatedView=view;
   const names={"ai-cost":"AI 成本",architecture:"架构设计",commercialization:"商业化"};
   const title=$("#permission-title"),copy=$("#permission-copy");
   if(title)title.textContent=`${names[view]||"此页面"}仅 Owner 可访问`;
@@ -243,6 +272,30 @@ function contextReceiptMarkup(receipt){
   if(!sources.length)return"";
   const budgetText=budget?`${Number(budget.estimatedUsed)||0} / ${Number(budget.limit)||0} Token 上界`:"";
   return `<details class="context-audit"><summary><span>本次参考</span><small>${sources.length} 条${budgetText?` · ${budgetText}`:""}</small></summary><div class="context-source-list">${sources.map(contextSourceButton).join("")}</div></details>`
+}
+function openContextReceiptSource(button){
+  const view=button.dataset.contextView,target=button.dataset.contextTarget,root=button.dataset.contextRoot,date=button.dataset.contextDate,dailyType=button.dataset.contextDailyType;
+  if(date){activeDate=date;if(dailyType&&dailyTypeMeta[dailyType])activeDailyType=dailyType;renderDate();renderSliders();publishDomains(new Set(["thoughts","activeDate"]));renderStateChart();renderHomeMood();renderChat()}
+  if(view==="thoughts")openThoughtDetail(root||target);else switchView(view);
+  requestAnimationFrame(()=>{
+    const selectors={
+      thoughts:`[data-chain-id="${CSS.escape(root||target)}"]`,
+      captures:`[data-capture-id="${CSS.escape(target)}"]`,
+      journals:`[data-journal-id="${CSS.escape(target)}"]`,
+      together:`[data-chat-id="${CSS.escape(target)}"]`,
+      daily:`[data-daily-record-id="${CSS.escape(target)}"]`,
+      today:`[data-checkin-id="${CSS.escape(target)}"]`
+    },element=document.querySelector(selectors[view]||"");
+    const chain=element?.closest?.("[data-chain-id]")||element;
+    if(chain instanceof HTMLDetailsElement)chain.open=true;
+    let destination=element;
+    if(view==="thoughts"&&element){
+      const key=button.dataset.contextKey||"";
+      if(key.startsWith("question:"))destination=element.querySelector(".thought-question-content")||element;
+      else if(/^(?:idea|record|answer):/.test(key))destination=element.querySelector(`[data-thought-block-id="${CSS.escape(key.split(":").slice(1).join(":"))}"]`)||element
+    }
+    destination?.scrollIntoView({behavior:"smooth",block:"center"})
+  })
 }
 function clearThoughtTracePending(rootKey){const {type,id}=parseCommentRootKey(rootKey);if(type!=="thought"||!id)return;state.insights.aiOnlyThoughtIds=(state.insights.aiOnlyThoughtIds||[]).filter(value=>value!==id);document.querySelectorAll(`[data-chain-id="${CSS.escape(id)}"]`).forEach(card=>card.closest(".thought-timeline-entry")?.querySelector(".thought-trace-pending")?.remove())}
 let annotationsController=null,annotationRootKey=null,parseAnnotationRootKey=null;
@@ -951,8 +1004,7 @@ async function restorePendingProjections(){
 async function applyIncrementalSnapshot(snapshot,changes){
   const domains=mergeStateSnapshot(snapshot);
   actionsCoordinator.applyIncrementalSnapshot(snapshot,{sessionTicket:sessionScope.capture()});
-  if(domains.has("trashCount")&&!$("#view-trash")?.hidden)void loadTrash();
-  const rendered=new Set([...domains].filter(domain=>!["actions","habits","habitCheckins","trashCount"].includes(domain)));
+  const rendered=new Set([...domains].filter(domain=>!["actions","habits","habitCheckins"].includes(domain)));
   if(domains.has("clusters")||domains.has("insights"))rendered.add("review");
   if(rendered.size)publishDomains(rendered);
   await restorePendingProjections();
@@ -973,7 +1025,7 @@ async function updateSyncHealth(event){
     lastPullMs:event.type==="pull"?event.durationMs:syncHealth.lastPullMs,
     lastError:event.type==="error"?(event.code||"SYNC_FAILED"):""
   };
-  renderMine()
+  runtimeFeatureRegistry?.notifyState(state,new Set(["syncHealth"]))
 }
 syncController=createIncrementalSync({
   coordinator:requestCoordinator,
@@ -985,44 +1037,6 @@ syncController=createIncrementalSync({
   },
   onStatus:event=>void updateSyncHealth(event)
 });
-const trashTypeLabels={checkin:"状态",dailyRecord:"健康日录",capture:"捕念",captureAudio:"捕念语音",journal:"日记",journalReflection:"日记回望",thoughtChain:"思绪",thoughtBlock:"思绪内容",thoughtRemark:"思绪备注",thoughtFollowUp:"追问",annotation:"批注",annotationDrift:"漂流批注",chat:"对话",book:"书目",bookNote:"读书记录",keepsake:"小物",quote:"善言",experiment:"实验",analysis:"复盘",customMetric:"自定义指标",action:"行动",habit:"习惯",habitCheckin:"习惯打卡"};
-const trashDetailLabels={content:"内容",question:"问题",idea:"初步想法",answer:"我的结论",title:"标题",message:"内容",text:"内容",note:"备注",description:"说明",summary:"摘要",source:"来源",author:"作者",publisher:"出版社",category:"类别",hypothesis:"假设",factor:"观察因素",outcome:"观察结果",duration:"周期",feeling:"感受",quote:"原文",tags:"标签",occurredOn:"发生日期",disposition:"处理状态",type:"内容类型",origin:"记录方式",authorType:"内容来源"};
-const trashDetailValues={disposition:{kept:"已保留",discarded:"已舍弃"},type:{question:"问题",idea:"初步想法",record:"经历",answer:"回答"},origin:{manual:"手动记录",model:"AI 生成"},authorType:{user:"本人",ai:"AI"}};
-function trashPayload(entry){if(entry.type==="thoughtChain"){const records=entry.payload?.items||[];return records.map(record=>record.item).filter(Boolean)}return[entry.payload]}
-function trashTitle(entry){
-  const items=trashPayload(entry),item=items.find(value=>value.type==="question")||items[0]||{};
-  return plainPreview(item.content||item.question||item.title||item.message||item.source||item.hypothesis||item.name||item.text||"无标题记录").slice(0,120)||"无标题记录"
-}
-function trashDetail(entry){
-  const ignored=new Set(["id","clientRequestId","requestHash","originalPath","cutoutPath","imagePath","attachmentPaths"]);
-  const rows=[];
-  const addRow=(label,value)=>rows.push(`<div><b>${escapeHtml(label)}</b><div class="markdown-content">${renderMarkdown(value)}</div></div>`);
-  const visit=(value,key="",label=trashDetailLabels[key]||"")=>{
-    if(value==null||rows.length>=80)return;
-    if(Array.isArray(value)){
-      if(key==="tags"){const tags=value.map(item=>String(item||"").trim()).filter(Boolean);if(tags.length)addRow(label,tags.map(tag=>`#${tag}`).join(" "))}
-      else value.forEach(item=>visit(item,key,label));
-      return
-    }
-    if(typeof value==="object"){for(const[childKey,item]of Object.entries(value)){if(!ignored.has(childKey))visit(item,childKey,trashDetailLabels[childKey]||"")}return}
-    const text=typeof value==="string"?value.trim():"";
-    if(!label||!text||/^(?:[0-9a-f-]{24,}|\d{4}-\d{2}-\d{2}T)/i.test(text))return;
-    addRow(label,trashDetailValues[key]?.[text]||text)
-  };
-  trashPayload(entry).forEach(item=>visit(item));
-  return rows.join("")||"<p>这条记录没有可预览的文字内容。</p>"
-}
-function renderTrash(){
-  const list=$("#trash-list"),selected=new Set($$("[data-trash-select]:checked").map(input=>input.value));
-  $("#trash-retention").textContent="默认保留 30 天";
-  list.innerHTML=trashItems.length?trashItems.map(entry=>`<article class="trash-entry" data-trash-id="${escapeHtml(entry.id)}"><label class="trash-select"><input type="checkbox" data-trash-select value="${escapeHtml(entry.id)}" ${selected.has(entry.id)?"checked":""}><span>选择</span></label><div class="trash-copy"><header><span>${escapeHtml(trashTypeLabels[entry.type]||entry.type)}</span><time>${formatDate(entry.deletedAt)}</time></header><h2>${escapeHtml(trashTitle(entry))}</h2><p>保留期标记至 ${escapeHtml(formatDate(entry.purgeAfter))}；永久清理始终由你确认。</p><details><summary>查看完整内容</summary><div class="trash-detail">${trashDetail(entry)}</div></details></div><button class="quiet-button" type="button" data-trash-restore="${escapeHtml(entry.id)}">恢复</button></article>`).join(""):contentState({title:"回收站是空的",body:"没有待恢复的记录。删除后的内容会在保留期内出现在这里。",action:{view:"mine",label:"返回我的"}});
-  renderLatex(list);$("#trash-purge-selected").disabled=!selected.size;
-}
-async function loadTrash(){
-  const status=$("#trash-status"),owner=currentUser?.id,session=sessionSerial;status.textContent="正在读取回收站…";
-  try{const result=await request("/api/trash");if(owner!==currentUser?.id||session!==sessionSerial)return false;trashItems=result.items||[];renderTrash();status.textContent="";return true}
-  catch(error){if(owner===currentUser?.id&&session===sessionSerial){status.textContent="";$("#trash-list").innerHTML=contentState({kind:"failure",title:"暂时无法读取回收站",body:"已删除的记录仍按原保留期保存。请检查网络后重试。",action:{command:"retry-trash",label:"重新读取"}})}return false}
-}
 function notificationUnread(snapshot=state){
   const items=snapshot.notifications||[];
   return Number(snapshot.notificationUnread??notificationUnreadCount)||items.filter(item=>!item.readAt&&["succeeded","failed","stale","cancelled"].includes(item.status)).length
@@ -1030,7 +1044,6 @@ function notificationUnread(snapshot=state){
 function renderNotificationSummary(){
   const unread=notificationUnread();
   $("#notification-dot").hidden=!unread;
-  renderMine();
 }
 function publishNotificationState(){
   renderNotificationSummary();
@@ -1125,34 +1138,18 @@ function applyApplicationRoute(route){
   $$(".view[aria-busy='true']").forEach(view=>view.removeAttribute("aria-busy"));
   stopPageAudio();
   renderVisibleRoute();
-  if(!fullRouteStateLoaded&&(!routeDataReady||loadedRouteKey!==routeDataKey(route))&&currentUser)return loadRouteState(route,requestSerial);
+  if(applicationLifecycleReady&&!fullRouteStateLoaded&&(!routeDataReady||loadedRouteKey!==routeDataKey(route))&&currentUser)return loadRouteState(route,requestSerial);
   return null
 }
 function openThoughtDetail(id){return pageRouter?.openDetail("thought-chain",id)}
-function syncVoicePreviewButton(){
-  const button=$("#tts-voice-preview");if(!button)return;
-  const voice=$("#tts-default-voice")?.value,selected=(state.speech?.voices||[]).find(item=>item.id===voice);
-  button.disabled=voicePreviewPending||!Boolean(selected?.samplePath||state.speech?.configured);
-  button.setAttribute("aria-label",voicePreviewPlaying?"停止官方音色试音":"播放所选官方音色试音");
-  button.title=button.getAttribute("aria-label");
-  const icon=button.querySelector("[aria-hidden]");if(icon)icon.textContent=voicePreviewPlaying?"■":"▶"
-}
-function stopVoicePreview({clearStatus=false}={}){
-  if(voicePreviewPending)pageAudioCoordinator.stopAll();
-  else if(voicePreviewAudio)pageAudioCoordinator.stop(voicePreviewAudio);
-  voicePreviewAudio=null;voicePreviewPending=false;voicePreviewPlaying=false;voicePreviewVoice="";
-  if(clearStatus&&$("#tts-voice-preview-status"))$("#tts-voice-preview-status").textContent="";
-  syncVoicePreviewButton()
-}
 function claimPageAudio(audio){
   if(!audio)return false;
-  if(voicePreviewAudio&&audio!==voicePreviewAudio){voicePreviewAudio=null;voicePreviewPending=false;voicePreviewPlaying=false;voicePreviewVoice="";syncVoicePreviewButton()}
+  for(const controller of accountSettingsFeatureControllers)controller.stopAudio?.();
   return pageAudioCoordinator.claim(audio)
 }
 function stopPageAudio(){
-  pageAudioCoordinator.stopAll();voicePreviewAudio=null;voicePreviewPending=false;voicePreviewPlaying=false;voicePreviewVoice="";
-  if($("#tts-voice-preview-status"))$("#tts-voice-preview-status").textContent="";
-  syncVoicePreviewButton()
+  for(const controller of accountSettingsFeatureControllers)controller.stopAudio?.();
+  pageAudioCoordinator.stopAll()
 }
 
 function renderCheckinSurfaces(domains){for(const controller of checkinsFeatureControllers)controller.renderPresentation({snapshot:state,changedDomains:domains})}
@@ -1246,278 +1243,10 @@ function selectionQuoteSource(rootKey){const root=commentRoot(rootKey),label=com
 function closeSelectionQuoteModal(){const modal=$("#selection-quote-modal");modal.hidden=true;$("#selection-quote-form").reset();setQuoteTagPicker("selectionQuote");$("#selection-quote-status").textContent=""}
 function openSelectionQuoteModal(selection){const label=annotationsController.rootLabel(selection.rootKey);$("#selection-quote-content").value=selection.quote;$("#selection-quote-source").value=selectionQuoteSource(selection.rootKey);setQuoteTagPicker("selectionQuote",[label]);resetOccurrenceInput($("#selection-quote-datetime"));$("#selection-quote-status").textContent="";$("#selection-quote-modal").hidden=false;$("#selection-quote-content").focus()}
 function llmProfile(scene="thoughtAnswer"){const tier=llmSettings.scenarios?.[scene]||"high",profile=llmSettings.profiles?.[tier]||defaultLlmProfiles[tier]||defaultLlmProfiles.high;return{tier,...profile,effort:llmSettings.sceneEfforts?.[scene]||profile.effort}}
-function accountTtsVoice(){
-  const voices=state.speech?.voices||[],preferred=String(llmSettings.speech?.defaultVoice||"");
-  return preferred&&(!voices.length||voices.some(voice=>voice.id===preferred))?preferred:state.speech?.defaultVoice||voices[0]?.id||""
-}
-function renderTtsDefaultVoice(){
-  const control=$("#tts-default-voice");if(!control)return;
-  const voices=state.speech?.voices||[],voice=accountTtsVoice();
-  control.innerHTML=voices.length?voices.map(item=>`<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}</option>`).join(""):`<option value="">语音服务未配置</option>`;
-  control.disabled=!voices.length;if(voices.some(item=>item.id===voice))control.value=voice;syncVoicePreviewButton()
-}
-async function toggleTtsVoicePreview(){
-  const control=$("#tts-default-voice"),status=$("#tts-voice-preview-status"),voice=String(control?.value||"");
-  if(voicePreviewPlaying&&voicePreviewVoice===voice){stopVoicePreview({clearStatus:true});return}
-  stopVoicePreview({clearStatus:true});
-  let payload;
-  try{payload=speechPreviewPayload(voice)}catch(error){if(status)status.textContent=error.message;return}
-  voicePreviewPending=true;voicePreviewVoice=voice;if(status)status.textContent="正在加载官方试音…";syncVoicePreviewButton();
-  try{
-    const selected=(state.speech?.voices||[]).find(item=>item.id===voice),samplePath=String(selected?.samplePath||"");
-    const audio=await pageAudioCoordinator.playBlob(({signal})=>samplePath
-      ?apiClient.requestBlob(samplePath,{signal},{fallback:"试音暂时不可用"})
-      :apiClient.requestBlob("/api/speech/preview",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload),signal},{fallback:"试音暂时不可用"}));
-    if(!audio||control.value!==voice||!$("#view-settings").classList.contains("active")){if(audio)pageAudioCoordinator.stop(audio);return}
-    voicePreviewAudio=audio;voicePreviewPlaying=true;
-    const finish=failed=>{if(voicePreviewAudio!==audio)return;voicePreviewAudio=null;voicePreviewPlaying=false;voicePreviewVoice="";if(failed&&status)status.textContent="试音暂时无法播放，请稍后再试。";else if(status)status.textContent="";syncVoicePreviewButton()};
-    audio.addEventListener("ended",()=>finish(false),{once:true});
-    audio.addEventListener("error",()=>finish(true),{once:true});
-    if(status)status.textContent="";
-  }catch(error){
-    if(voicePreviewVoice===voice){stopVoicePreview();if(status)status.textContent="试音暂时不可用，请稍后再试。"}
-  }finally{
-    if(voicePreviewVoice===voice)voicePreviewPending=false;
-    syncVoicePreviewButton()
-  }
-}
-function ttsGenerationRateText(value){return`${(1+normalizeTtsGenerationRate(value)/100).toFixed(2)}×`}
-function renderTtsGenerationRate(value){const rate=normalizeTtsGenerationRate(value),text=ttsGenerationRateText(rate),control=$("#tts-generation-rate"),output=$("#tts-generation-rate-value");if(control){control.value=String(rate);control.setAttribute("aria-valuetext",text.replace("×","倍"));control.style.setProperty("--fill",`${((rate+50)/1.5).toFixed(2)}%`)}if(output)output.textContent=text}
-function settingsPayload(){
-  const payload={sceneEfforts:Object.fromEntries($$("[data-ai-effort]").map(select=>[select.dataset.aiEffort,select.value])),assistantName:$("#assistant-name").value,responseStyles:Object.fromEntries($$("[data-response-style]").map(select=>[select.dataset.responseStyle,select.value])),automaticAnswers:{thoughtAnswer:$("#automatic-thought-answer").checked},speech:{defaultVoice:$("#tts-default-voice")?.value||accountTtsVoice(),generationRate:normalizeTtsGenerationRate($("#tts-generation-rate")?.value)}};
-  if(!hasCapability("ai-configuration"))return payload;
-  const profiles=Object.fromEntries(llmTiers.map(tier=>[tier,{...(llmSettings.profiles?.[tier]||defaultLlmProfiles[tier]),model:$(`[data-profile-model="${tier}"]`).value}]));
-  const visibleScenarios=Object.fromEntries($$("[data-ai-scenario]").map(select=>[select.dataset.aiScenario,select.value]));
-  return{...payload,profiles,scenarios:{...llmSettings.scenarios,...visibleScenarios},apiKey:$("#llm-api-key").value}
-}
-function renderSettings(){
-  if(!$("#llm-settings-form"))return;
-  llmSettings.profiles={...structuredClone(defaultLlmProfiles),...(llmSettings.profiles||{})};llmSettings.scenarios={...defaultLlmScenarios,...(llmSettings.scenarios||{})};llmSettings.sceneEfforts={...defaultSceneEfforts,...(llmSettings.sceneEfforts||{})};llmSettings.automaticAnswers={thoughtAnswer:llmSettings.automaticAnswers?.thoughtAnswer===true};llmSettings.speech={defaultVoice:String(llmSettings.speech?.defaultVoice||""),generationRate:normalizeTtsGenerationRate(llmSettings.speech?.generationRate)};llmSettings.responseStyles=Object.fromEntries(responseStyleScenes.map(scene=>[scene,llmSettings.responseStyles?.[scene]||"standard"]));
-  $("#automatic-thought-answer").checked=llmSettings.automaticAnswers.thoughtAnswer;$("#assistant-name").value=llmSettings.assistantName||"神鸡";renderTtsDefaultVoice();renderTtsGenerationRate(llmSettings.speech.generationRate);
-  for(const tier of llmTiers){const model=$(`[data-profile-model="${tier}"]`);if(model)model.value=llmSettings.profiles[tier].model}
-  $$("[data-ai-scenario]").forEach(select=>{if(!select.options.length)select.innerHTML=llmTiers.map(tier=>`<option value="${tier}">${tier[0].toUpperCase()+tier.slice(1)}</option>`).join("");select.value=llmSettings.scenarios[select.dataset.aiScenario]});
-  $$("[data-ai-effort]").forEach(select=>{if(!select.options.length)select.innerHTML=llmEfforts.map(effort=>`<option value="${effort}">${effort==="none"?"关闭":effort==="high"?"High":"Max"}</option>`).join("");select.value=llmSettings.sceneEfforts[select.dataset.aiEffort]});
-  $$("[data-response-style]").forEach(select=>{if(!select.options.length)select.innerHTML=responseStyleOptions.map(([value,label])=>`<option value="${value}">${label}</option>`).join("");select.value=llmSettings.responseStyles[select.dataset.responseStyle]||"standard"});
-  const badge=$("#llm-key-state"),hint=$("#llm-key-hint");if(badge){badge.textContent=llmSettings.hasApiKey?"密钥已配置":"未配置密钥";badge.classList.toggle("ready",llmSettings.hasApiKey)}if(hint)hint.textContent=llmSettings.hasApiKey?`${llmSettings.keyHint} · 留空保留原密钥`:"仅保存在 Owner 账户";$("#chat-model-label").textContent="结合已保存记录"
-}
-function renderLocalTestSettings(){const panel=$("#local-test-settings"),mineSummary=$("#mine-settings-summary");if(!panel){if(mineSummary)mineSummary.textContent="配置助手称呼、回答风格与思考强度";return}panel.hidden=!localTestConfig?.enabled;if(panel.hidden){if(mineSummary)mineSummary.textContent="配置助手称呼、回答风格与思考强度";return}const modeLabel=localTestConfig.mode==="simulation"?"使用模拟":"冷启测试";if(mineSummary)mineSummary.textContent=`本地测试：使用模拟 / 冷启测试 · 当前${modeLabel}`;$$("[data-local-test-mode]").forEach(button=>{const active=button.dataset.localTestMode===localTestConfig.mode;button.classList.toggle("active",active);button.setAttribute("aria-pressed",String(active));button.disabled=active||(button.dataset.localTestMode==="simulation"&&!localTestConfig.upstreamConfigured)});$("#local-test-badge").textContent=modeLabel;const loadedCount=localTestConfig.loadedScopes?.length||0;$("#local-test-summary").textContent=localTestConfig.mode==="simulation"?`${localTestConfig.sourceUser?.username||"线上主账户"} · ${localTestConfig.recordCount||0} 条已载入 · ${loadedCount?`${loadedCount} 个页面已读取`:"打开页面后读取记录"}`:"空账户工作区；每次切换都会重新清空。";$("#local-test-status").textContent=localTestStatusOverride||(localTestConfig.mode==="simulation"?"当前为使用模拟；记录将在打开页面时读取。":"当前为冷启测试。")}
 const shiftLocalDateKey=(dateKey,days)=>{const [year,month,day]=String(dateKey).split("-").map(Number),date=new Date(Date.UTC(year,month-1,day+days));return date.toISOString().slice(0,10)};
 const compactNumber=value=>new Intl.NumberFormat("zh-CN",{notation:"compact",maximumFractionDigits:1}).format(Number(value)||0);
 const formatCny=value=>{const number=Number(value)||0,absolute=Math.abs(number),digits=absolute===0?2:absolute>=100?0:absolute>=10?1:absolute>=1?2:absolute>=.1?3:absolute>=.01?4:6;return `${number<0?"-":""}¥${absolute.toFixed(digits)}`};
 const formatDuration=value=>{const milliseconds=Number(value)||0;return milliseconds>=60000?`${(milliseconds/60000).toFixed(1)} 分钟`:milliseconds>=1000?`${(milliseconds/1000).toFixed(1)} 秒`:`${Math.round(milliseconds)} ms`};
-const sceneLabels={thoughtPrompt:"思考引子",thoughtDraft:"思考草稿",thoughtAnswer:"思考回答",followUpAnswer:"追问回答",chat:"长期对话",diaryLead:"日记引子",diaryStructure:"日记结构",diaryTopic:"日记话题",diaryReflection:"日记回望",annotationShenji:"批注神鸡",analysis:"认知复盘",bookRecognition:"书目识别",healthRecognition:"健康识别",contentImageUnderstanding:"内容图片理解",capturePolish:"语音整理",lite:"连接测试",mid:"连接测试",high:"连接测试",ultra:"连接测试"};
-function currentAiCostModel(scene){
-  const tier=llmSettings.scenarios?.[scene]||defaultLlmScenarios[scene]||"high",profile=llmSettings.profiles?.[tier]||defaultLlmProfiles[tier];
-  return{tier,model:profile.model,effort:llmSettings.sceneEfforts?.[scene]||profile.effort,label:`${profile.model==="deepseek-v4-pro"?"Pro":"Flash"} · ${tier[0].toUpperCase()+tier.slice(1)}`};
-}
-function aiCostScenarioEstimate(row,model=row.model){
-  const pricing=aiCostStatistics?.ai?.pricing,rates=pricing?.models?.[model]?.[row.pricingPeriod];
-  if(!rates)return{total:0,input:0,output:0,perCall:0};
-  const calls=row.enabled?Math.max(0,Number(row.callsPerMonth)||0):0,input=Math.max(0,Number(row.avgInputTokens)||0),hit=input*Math.max(0,Math.min(100,Number(row.cacheHitPct)||0))/100,miss=input-hit,output=Math.max(0,Number(row.avgReasoningTokens)||0)+Math.max(0,Number(row.avgAnswerTokens)||0),unit=Number(pricing.unitTokens)||1e6;
-  const inputCost=(hit*rates.cacheHit+miss*rates.cacheMiss)/unit,outputCost=output*rates.output/unit,perCall=inputCost+outputCost;
-  return{total:perCall*calls,input:inputCost*calls,output:outputCost*calls,perCall};
-}
-function aiCostPlanFromForm(){
-  const plan=structuredClone(aiCostPlan||{scenarios:[]});
-  plan.monthlyBudgetCny=Number($("#ai-cost-budget").value)||0;
-  plan.contingencyPct=Number($("#ai-cost-contingency").value)||0;
-  plan.cnyPerUsd=Number($("#ai-cost-exchange").value)||0;
-  plan.scenarios=(plan.scenarios||[]).map(row=>{
-    const root=document.querySelector(`[data-ai-cost-row="${CSS.escape(row.scene)}"]`);
-    if(!root)return row;
-    return{...row,enabled:root.querySelector("[data-ai-cost-enabled]").checked,model:root.querySelector('[data-ai-cost-field="model"]').value,pricingPeriod:root.querySelector('[data-ai-cost-field="pricingPeriod"]').value,callsPerMonth:Number(root.querySelector('[data-ai-cost-field="callsPerMonth"]').value)||0,avgInputTokens:Number(root.querySelector('[data-ai-cost-field="avgInputTokens"]').value)||0,cacheHitPct:Number(root.querySelector('[data-ai-cost-field="cacheHitPct"]').value)||0,avgReasoningTokens:Number(root.querySelector('[data-ai-cost-field="avgReasoningTokens"]').value)||0,avgAnswerTokens:Number(root.querySelector('[data-ai-cost-field="avgAnswerTokens"]').value)||0};
-  });
-  return plan;
-}
-function renderAiCostRows(){
-  $("#ai-cost-scenario-rows").innerHTML=(aiCostPlan?.scenarios||[]).map(row=>{
-    const current=currentAiCostModel(row.scene),estimate=aiCostScenarioEstimate(row);
-    return`<tr data-ai-cost-row="${escapeHtml(row.scene)}" class="${row.enabled?"":"disabled"}">
-      <th><label><input type="checkbox" data-ai-cost-enabled ${row.enabled?"checked":""}><span>${escapeHtml(sceneLabels[row.scene]||row.scene)}</span></label></th>
-      <td><strong>${escapeHtml(current.label)}</strong><small>${escapeHtml(current.effort==="none"?"不思考":`思考 ${current.effort.toUpperCase()}`)}</small></td>
-      <td><select data-ai-cost-field="model"><option value="deepseek-flash" ${row.model==="deepseek-flash"?"selected":""}>Flash</option><option value="deepseek-v4-pro" ${row.model==="deepseek-v4-pro"?"selected":""}>Pro</option></select></td>
-      <td><select data-ai-cost-field="pricingPeriod"><option value="peak" ${row.pricingPeriod==="peak"?"selected":""}>峰值</option><option value="offPeak" ${row.pricingPeriod==="offPeak"?"selected":""}>谷时</option></select></td>
-      <td><input type="number" min="0" step="1" data-ai-cost-field="callsPerMonth" value="${escapeHtml(row.callsPerMonth)}"></td>
-      <td><input type="number" min="0" step="1" data-ai-cost-field="avgInputTokens" value="${escapeHtml(row.avgInputTokens)}"></td>
-      <td><input type="number" min="0" max="100" step=".1" data-ai-cost-field="cacheHitPct" value="${escapeHtml(row.cacheHitPct)}"></td>
-      <td><input type="number" min="0" step="1" data-ai-cost-field="avgReasoningTokens" value="${escapeHtml(row.avgReasoningTokens)}"></td>
-      <td><input type="number" min="0" step="1" data-ai-cost-field="avgAnswerTokens" value="${escapeHtml(row.avgAnswerTokens)}"></td>
-      <td data-ai-cost-row-total>${escapeHtml(formatCny(estimate.total))}</td>
-    </tr>`;
-  }).join("");
-}
-function aiCostRecommendations(rows,projected,budget){
-  const recommendations=[],enabled=rows.filter(item=>item.row.enabled).sort((a,b)=>b.estimate.total-a.estimate.total),top=enabled[0],critical=new Set(["thoughtAnswer","followUpAnswer","diaryReflection","analysis"]);
-  if(budget>0&&projected>budget)recommendations.push(["先守住预算",`当前模拟超出月预算 ${formatCny(projected-budget)}，需要降低约 ${((projected-budget)/projected*100).toFixed(0)}%。`,"预算"]);
-  else if(budget>0)recommendations.push(["预算仍有余量",`包含不确定性预留后，距月预算还剩 ${formatCny(budget-projected)}。`,"可控"]);
-  if(top)recommendations.push(["先看最高成本场景",`${sceneLabels[top.row.scene]||top.row.scene}预计 ${formatCny(top.estimate.total)}/月，占基础成本 ${enabled.reduce((sum,item)=>sum+item.estimate.total,0)?(top.estimate.total/enabled.reduce((sum,item)=>sum+item.estimate.total,0)*100).toFixed(0):0}%。`,"优先"]);
-  const downgrade=enabled.filter(item=>item.row.model==="deepseek-v4-pro"&&!critical.has(item.row.scene)).map(item=>({item,saving:item.estimate.total-aiCostScenarioEstimate(item.row,"deepseek-flash").total})).sort((a,b)=>b.saving-a.saving)[0];
-  if(downgrade?.saving>0.01)recommendations.push(["轻量场景可试 Flash",`${sceneLabels[downgrade.item.row.scene]}切换 Flash 预计每月节省 ${formatCny(downgrade.saving)}；先用质量回归验证。`,"模型"]);
-  const longContext=enabled.filter(item=>item.row.avgInputTokens>=20000).sort((a,b)=>b.row.avgInputTokens-a.row.avgInputTokens)[0];
-  if(longContext)recommendations.push(["先压缩输入上下文",`${sceneLabels[longContext.row.scene]}平均输入 ${Number(longContext.row.avgInputTokens).toLocaleString("zh-CN")} Token。设置场景上限通常比直接降模型更稳妥。`,"Token"]);
-  const cacheCandidate=enabled.filter(item=>item.row.avgInputTokens>=8000&&item.row.cacheHitPct<20).sort((a,b)=>b.row.avgInputTokens-a.row.avgInputTokens)[0];
-  if(cacheCandidate)recommendations.push(["提高缓存稳定性",`${sceneLabels[cacheCandidate.row.scene]}缓存命中仅 ${cacheCandidate.row.cacheHitPct}%，可固定系统提示词前缀并减少无效变动。`,"缓存"]);
-  return recommendations.slice(0,5);
-}
-function renderAiCostPlan(syncRows=true){
-  if(!aiCostPlan||!aiCostStatistics)return;
-  if(syncRows){
-    $("#ai-cost-budget").value=aiCostPlan.monthlyBudgetCny;
-    $("#ai-cost-contingency").value=aiCostPlan.contingencyPct;
-    $("#ai-cost-exchange").value=aiCostPlan.cnyPerUsd;
-    renderAiCostRows();
-  }
-  const rows=aiCostPlan.scenarios.map(row=>({row,estimate:aiCostScenarioEstimate(row)})),base=rows.reduce((sum,item)=>sum+item.estimate.total,0),reserve=base*(Number(aiCostPlan.contingencyPct)||0)/100,projected=base+reserve,budget=Number(aiCostPlan.monthlyBudgetCny)||0,observedUsd=Number(aiCostStatistics.ai?.summary?.costsUsd?.total)||0,observed=observedUsd*(Number(aiCostPlan.cnyPerUsd)||7.2)+(Number(aiCostStatistics.ai?.summary?.costCny)||0),difference=budget-projected;
-  for(const item of rows){const root=document.querySelector(`[data-ai-cost-row="${CSS.escape(item.row.scene)}"]`),cell=root?.querySelector("[data-ai-cost-row-total]");root?.classList.toggle("disabled",!item.row.enabled);if(cell)cell.textContent=formatCny(item.estimate.total)}
-  $("#ai-cost-kpis").innerHTML=[
-    ["预计月成本",formatCny(projected),`基础 ${formatCny(base)} + 预留 ${formatCny(reserve)}`,budget&&projected>budget?"negative":"positive"],
-    ["近 30 天实测",formatCny(observed),`${aiCostStatistics.ai?.summary?.calls||0} 次实际调用`],
-    ["预算差额",budget?formatCny(difference):"未设预算",budget?`${difference>=0?"剩余":"超出"} ${formatCny(Math.abs(difference))}`:"填写月度预算",difference>=0?"positive":"negative"],
-    ["预计年成本",formatCny(projected*12),"月度方案 × 12"]
-  ].map(([label,value,note,tone])=>`<article class="${tone||""}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(note)}</small></article>`).join("");
-  const recommendations=aiCostRecommendations(rows,projected,budget);
-  $("#ai-cost-recommendations").innerHTML=recommendations.map(([title,copy,tag],index)=>`<li><b>${String(index+1).padStart(2,"0")}</b><div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(copy)}</p></div><span>${escapeHtml(tag)}</span></li>`).join("")+`<li class="settings-link"><button type="button" data-view="settings">打开模型设置</button><p>模拟方案不会自动修改真实模型配置。</p></li>`;
-  const pricing=aiCostStatistics.ai.pricing,cny=Number(aiCostPlan.cnyPerUsd)||7.2,observedCost=item=>(Number(item?.costsUsd?.total)||0)*cny+(Number(item?.costCny)||0),observedScenes=[...(aiCostStatistics.ai?.scenes||[])].sort((a,b)=>observedCost(b)-observedCost(a)).slice(0,5),p90=Number(aiCostStatistics.ai?.calibration?.p90CostCny)||0,unknownCosts=Number(aiCostStatistics.ai?.summary?.costUnknownCalls)||0;
-  $("#ai-cost-observed").innerHTML=`<dl><div><dt>调用</dt><dd>${aiCostStatistics.ai?.summary?.calls||0} 次${unknownCosts?` · ${unknownCosts} 次费用待账单`:""}</dd></div><div><dt>平均输入</dt><dd>${compactNumber(aiCostStatistics.ai?.calibration?.averageInputTokens||0)} Token</dd></div><div><dt>P90 单次</dt><dd>${formatCny(p90)}</dd></div><div><dt>模拟 / 实测</dt><dd>${observed?`${(projected/observed).toFixed(1)}×`:"—"}</dd></div></dl><div class="ai-cost-observed-scenes">${observedScenes.length?observedScenes.map(item=>`<div><span>${escapeHtml(sceneLabels[item.scene]||item.scene)}</span><strong>${item.calls} 次</strong><small>${formatCny(observedCost(item))}${item.costUnknownCalls?` + ${item.costUnknownCalls} 次待账单`:""}</small></div>`).join(""):"<p>近 30 天暂无可用样本。</p>"}</div>`;
-  $("#ai-cost-pricing").innerHTML=`<div class="pricing-table-wrap"><table><thead><tr><th>模型</th><th>时段</th><th>缓存命中</th><th>输入未命中</th><th>推理/回答</th></tr></thead><tbody>${Object.entries(pricing.models).flatMap(([,model])=>[["offPeak","谷时"],["peak","峰值"]].map(([period,label])=>`<tr><td>${escapeHtml(model.label)}</td><td>${label}</td><td>${formatCny(model[period].cacheHit)}</td><td>${formatCny(model[period].cacheMiss)}</td><td>${formatCny(model[period].output)}</td></tr>`)).join("")}</tbody></table></div><p>单位均为人民币 / 百万 Token；${escapeHtml(pricing.historicalUsdNote||`历史美元账本按 ${cny.toFixed(2)} 元/美元换算。`)}</p>`;
-  $("#ai-cost-plan-state").textContent=budget&&projected>budget?"超过预算":"预算内";
-  $("#ai-cost-plan-state").classList.toggle("over",Boolean(budget&&projected>budget));
-  $("#ai-cost-updated-at").textContent=aiCostPlan.updatedAt?`参数更新于 ${formatDate(aiCostPlan.updatedAt)}`:"尚未保存";
-}
-function renderAiBudgetStatus(){
-  if(!aiBudgetStatus)return;
-  const day=aiBudgetStatus.day||{},month=aiBudgetStatus.month||{},dayUsed=Number(day.committedKnownCostCny||0),dayReserved=Number(day.reservedKnownCostCny||0),monthUsed=Number(month.committedKnownCostCny||0),monthReserved=Number(month.reservedKnownCostCny||0),unknownUsed=Number(day.committedUnknownCalls||0),unknownReserved=Number(day.reservedUnknownCalls||0);
-  $("#ai-budget-period").textContent=`${day.key||"今日"} UTC · ${month.key||"本月"}`;
-  $("#ai-budget-kpis").innerHTML=[
-    ["今日已知费用",`${formatCny(dayUsed+dayReserved)} / ${formatCny(day.effectiveKnownCostLimitCny||0)}`,`${formatCny(dayUsed)} 已结算 · ${formatCny(dayReserved)} 已预留`,day.blocked?.knownCost],
-    ["本月已知费用",`${formatCny(monthUsed+monthReserved)} / ${formatCny(month.effectiveKnownCostLimitCny||0)}`,`${formatCny(monthUsed)} 已结算 · ${formatCny(monthReserved)} 已预留`,month.blocked?.knownCost],
-    ["未知费用调用",`${unknownUsed+unknownReserved} / ${day.unknownCallLimit||0}`,`${unknownUsed} 已发生 · ${unknownReserved} 已预留`,day.blocked?.unknownCost],
-    ["在途任务",String(aiBudgetStatus.activeReservations||0),`控制版本 ${aiBudgetStatus.controlVersion||1}`,false]
-  ].map(([label,value,note,blocked])=>`<article class="${blocked?"blocked":""}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(blocked?`${note} · 已阻断`:note)}</small></article>`).join("")
-}
-async function readAiBudgetStatus(){
-  const response=await apiClient.requestWithMetadata("/api/v1/owner/ai-budget");
-  aiBudgetStatus=response.data?.data||null;aiBudgetEtag=response.etag||"";
-  renderAiBudgetStatus();
-  return aiBudgetStatus
-}
-async function submitAiBudgetCommand(command){
-  if(!aiBudgetEtag)await readAiBudgetStatus();
-  try{
-    const response=await apiClient.requestWithMetadata("/api/v1/owner/ai-budget",{method:"PATCH",headers:{"if-match":aiBudgetEtag},body:JSON.stringify(command)});
-    aiBudgetStatus=response.data?.data||null;aiBudgetEtag=response.etag||"";renderAiBudgetStatus();return aiBudgetStatus
-  }catch(error){
-    if(error.status===412){await readAiBudgetStatus();throw Object.assign(new Error("预算状态已被其他 Owner 更新，已重新读取。"),{code:error.code,status:error.status})}
-    throw error
-  }
-}
-async function loadAiCostPlan(){
-  const serial=++aiCostRequestSerial,owner=currentUser?.id,session=sessionSerial,from=shiftLocalDateKey(currentLocalDate,-29),status=$("#ai-cost-status");status.textContent="正在读取成本方案与近 30 天账本…";
-  try{
-    const [plan,statistics,budgetResponse]=await Promise.all([request("/api/ai-cost-plan"),request(`/api/statistics?from=${encodeURIComponent(from)}&to=${encodeURIComponent(currentLocalDate)}`),apiClient.requestWithMetadata("/api/v1/owner/ai-budget")]);
-    if(serial!==aiCostRequestSerial||owner!==currentUser?.id||session!==sessionSerial)return;
-    aiCostPlan=plan;aiCostStatistics=statistics;aiBudgetStatus=budgetResponse.data?.data||null;aiBudgetEtag=budgetResponse.etag||"";renderAiBudgetStatus();renderAiCostPlan();status.textContent="";
-  }catch(error){if(serial===aiCostRequestSerial)status.textContent=error.message}
-}
-function ownerSurfaceRoot(surface){
-  return document.querySelector(`[data-owner-surface-root="${CSS.escape(surface)}"]`)
-}
-function resetOwnerSurfaces(){
-  clearTimeout(commercialPreviewTimer);commercialPreviewTimer=0;
-  architectureSurface=null;architectureStage=0;architectureTerm="";architectureRequestSerial+=1;
-  commercializationSurface=null;commercialMode="";commercialRequestSerial+=1;
-  for(const surface of["architecture","commercialization"]){
-    const root=ownerSurfaceRoot(surface);if(root)root.replaceChildren()
-  }
-}
-function architectureNodeMarkup([title,detail,state]){return`<article class="${escapeHtml(state||"")}"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(detail)}</span></article>`}
-function renderArchitectureTerm(){
-  const terms=architectureSurface?.terms||[],item=terms.find(term=>term.key===architectureTerm)||terms[0];if(!item)return;
-  architectureTerm=item.key;
-  $$("[data-architecture-term]").forEach(button=>button.classList.toggle("active",button.dataset.architectureTerm===architectureTerm));
-  $("#architecture-term-code").textContent=item.code;$("#architecture-term-name").textContent=item.name;$("#architecture-term-description").textContent=item.description;$("#architecture-term-analogy").textContent=item.analogy;$("#architecture-term-timing").textContent=item.timing
-}
-function renderArchitecture(){
-  const stages=architectureSurface?.stages||[],stage=stages[architectureStage]||stages[0];if(!stage)return;
-  const tabs=$("#architecture-stage-tabs");
-  if(tabs&&!tabs.children.length)tabs.innerHTML=stages.map((item,index)=>`<button class="${index===architectureStage?"active":""}" type="button" role="tab" aria-selected="${index===architectureStage}" data-architecture-stage="${index}">${escapeHtml(item.tab||item.name)}</button>`).join("");
-  $$("[data-architecture-stage]").forEach(button=>{const active=Number(button.dataset.architectureStage)===architectureStage;button.classList.toggle("active",active);button.setAttribute("aria-selected",String(active))});
-  $("#architecture-stage-cost").textContent=stage.cost;$("#architecture-stage-state").textContent=stage.state;$("#architecture-flow-note").textContent=stage.note;
-  $("#architecture-kpis").innerHTML=(architectureSurface.kpis||[]).map(item=>`<article><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(stage[item.key])}</strong><small>${escapeHtml(item.note)}</small></article>`).join("");
-  $("#architecture-main-path").innerHTML=stage.mainPath.map((node,index)=>`${index?'<span aria-hidden="true">→</span>':""}${architectureNodeMarkup(node)}`).join("");
-  $("#architecture-support-paths").innerHTML=stage.supports.map(([title,nodes])=>`<section><h4>${escapeHtml(title)}</h4><div>${nodes.map(architectureNodeMarkup).join("")}</div></section>`).join("");
-  $("#architecture-layer-list").innerHTML=stage.layers.map(([layer,component,spec,reason],index)=>`<article><b>${String(index+1).padStart(2,"0")}</b><strong>${escapeHtml(layer)}</strong><div><h3>${escapeHtml(component)}</h3><span>${escapeHtml(spec)}</span></div><p>${escapeHtml(reason)}</p></article>`).join("");
-  $("#architecture-enter-title").textContent=stage.enter[0];$("#architecture-enter-copy").textContent=stage.enter[1];$("#architecture-defer-title").textContent=stage.defer[0];$("#architecture-defer-copy").textContent=stage.defer[1];
-  const glossary=$("#architecture-glossary-grid");
-  if(glossary&&!glossary.children.length)glossary.innerHTML=(architectureSurface.terms||[]).map(item=>`<button type="button" data-architecture-term="${escapeHtml(item.key)}"><b>${escapeHtml(item.code)}</b><span>${escapeHtml(item.name)}</span></button>`).join("");
-  renderArchitectureTerm()
-}
-async function loadArchitecture(){
-  if(architectureSurface){renderArchitecture();return true}
-  const serial=++architectureRequestSerial,owner=currentUser?.id,session=sessionSerial,root=ownerSurfaceRoot("architecture");if(!root)return false;
-  root.innerHTML='<p class="status" role="status">正在读取管理内容…</p>';
-  try{
-    const surface=await request("/api/owner/surfaces/architecture");
-    if(serial!==architectureRequestSerial||owner!==currentUser?.id||session!==sessionSerial)return false;
-    architectureSurface=surface;architectureStage=0;architectureTerm=surface.terms?.[0]?.key||"";root.innerHTML=surface.markup;renderArchitecture();return true
-  }catch(error){if(serial===architectureRequestSerial)root.innerHTML=`<p class="status error" role="alert">${escapeHtml(error.message)}</p>`;return false}
-}
-function commercialAssumptionsFromForm(){
-  const fallback=commercializationSurface?.report?.assumptions;if(!fallback)return null;
-  const result=structuredClone(fallback);result.stageByModel||={};result.stagePresets||={};
-  $$("[data-commercial-field]").forEach(input=>{
-    const [group,key]=input.dataset.commercialField.split("."),value=Number(input.value);if(!Number.isFinite(value))return;
-    result[group]||={};result[group][key]=value;
-    if(Object.hasOwn(result.stageByModel,group)){
-      const index=Math.max(0,Math.min((result.stagePresets[group]?.length||1)-1,Number(result.stageByModel[group])||0));
-      result.stagePresets[group]||=[];result.stagePresets[group][index]||={};result.stagePresets[group][index][key]=value
-    }
-  });
-  $$("[data-commercial-profile-field]").forEach(input=>{const [profile,key]=input.dataset.commercialProfileField.split("."),value=Number(input.value);if(!Number.isFinite(value))return;result.usageProfiles||={};result.usageProfiles[profile]||={};result.usageProfiles[profile][key]=value});
-  return result
-}
-function populateCommercialAssumptions(assumptions){
-  $$("[data-commercial-field]").forEach(input=>{const [group,key]=input.dataset.commercialField.split(".");input.value=assumptions?.[group]?.[key]??""});
-  $$("[data-commercial-profile-field]").forEach(input=>{const [profile,key]=input.dataset.commercialProfileField.split(".");input.value=assumptions?.usageProfiles?.[profile]?.[key]??""})
-}
-function applyCommercializationSurface(surface,{mount=false}={}){
-  const root=ownerSurfaceRoot("commercialization");if(!root)return false;
-  if(mount||!$("#commercial-assumptions-form"))root.innerHTML=surface.markup;
-  commercializationSurface=surface;commercialMode=surface.mode;
-  populateCommercialAssumptions(surface.report.assumptions);
-  $$("[data-commercial-mode]").forEach(button=>{const active=button.dataset.commercialMode===commercialMode;button.classList.toggle("active",active);button.setAttribute("aria-selected",String(active))});
-  $$("[data-commercial-assumption-group]").forEach(group=>group.hidden=group.dataset.commercialAssumptionGroup!==commercialMode);
-  $("#commercial-stage-slider").value=String(surface.view.stageIndex);
-  for(const [id,value]of Object.entries(surface.view.text||{})){const element=document.getElementById(id);if(element)element.textContent=value}
-  for(const [id,value]of Object.entries(surface.view.html||{})){const element=document.getElementById(id);if(element)element.innerHTML=value}
-  for(const [profile,value]of Object.entries(surface.view.profileCosts||{})){const element=document.querySelector(`[data-commercial-profile-cost="${CSS.escape(profile)}"]`);if(element)element.textContent=value}
-  $("#commercial-profile-share-status").classList.toggle("warning",Boolean(surface.view.shareWarning));
-  $("#commercial-cashflow").hidden=Boolean(surface.view.cashflowHidden);
-  return true
-}
-async function previewCommercialization(assumptions,{statusMessage=""}={}){
-  if(!assumptions)return false;
-  const serial=++commercialRequestSerial,owner=currentUser?.id,session=sessionSerial;
-  try{
-    const from=shiftLocalDateKey(currentLocalDate,-29),surface=await request(`/api/owner/surfaces/commercialization/preview?from=${encodeURIComponent(from)}&to=${encodeURIComponent(currentLocalDate)}`,{method:"POST",body:JSON.stringify({assumptions,mode:commercialMode})});
-    if(serial!==commercialRequestSerial||owner!==currentUser?.id||session!==sessionSerial)return false;
-    applyCommercializationSurface(surface);if(statusMessage)$("#commercial-save-status").textContent=statusMessage;return true
-  }catch(error){if(serial===commercialRequestSerial)$("#commercial-save-status").textContent=error.message;return false}
-}
-function scheduleCommercializationPreview(){
-  clearTimeout(commercialPreviewTimer);
-  commercialPreviewTimer=setTimeout(()=>void previewCommercialization(commercialAssumptionsFromForm()),150)
-}
-async function loadCommercialization(){
-  if(commercializationSurface){applyCommercializationSurface(commercializationSurface);return true}
-  const serial=++commercialRequestSerial,owner=currentUser?.id,session=sessionSerial,root=ownerSurfaceRoot("commercialization");if(!root)return false;
-  root.innerHTML='<p class="status" role="status">正在读取管理内容…</p>';
-  try{
-    const from=shiftLocalDateKey(currentLocalDate,-29),surface=await request(`/api/owner/surfaces/commercialization?from=${encodeURIComponent(from)}&to=${encodeURIComponent(currentLocalDate)}`);
-    if(serial!==commercialRequestSerial||owner!==currentUser?.id||session!==sessionSerial)return false;
-    applyCommercializationSurface(surface,{mount:true});return true
-  }catch(error){if(serial===commercialRequestSerial)root.innerHTML=`<p class="status error" role="alert">${escapeHtml(error.message)}</p>`;return false}
-}
 function openCommercialSource(view,id,date){
   if(view==="together"&&date){activeDate=eventDate({occurredAt:date});renderDate();renderChat()}
   if(view==="thoughts")openThoughtDetail(id);else switchView(view);
@@ -1707,97 +1436,6 @@ function openHomeMemory(item){
   }
   void openQuoteFeature(item.id)
 }
-function renderMine(){
-  const accountName=$("#mine-account-name"),notificationCount=$("#mine-notification-count");
-  if(accountName)accountName.textContent=currentUser?.username||"本机使用";
-  const governance=$("#mine-governance-link");if(governance){governance.hidden=!governanceUrl;if(governanceUrl)governance.href=governanceUrl}
-  if(notificationCount){const unread=Number(state.notificationUnread??notificationUnreadCount)||(state.notifications||[]).filter(item=>!item.readAt&&["succeeded","failed","stale","cancelled"].includes(item.status)).length;notificationCount.textContent=unread?`${unread} 条未读`:""}
-  const syncRow=$(".sync-health-row"),syncStatus=$("#mine-sync-status"),syncCount=$("#mine-sync-count");
-  if(syncRow)syncRow.dataset.syncStatus=syncHealth.status;
-  if(syncStatus)syncStatus.textContent=syncHealth.status==="disabled"?"增量同步已关闭，继续使用写后刷新":syncHealth.status==="conflict"?`${syncHealth.conflicts} 项同步冲突，请核对最新内容后重试`:syncHealth.status==="degraded"?"浏览器不支持持久队列，本次会话使用内存同步":syncHealth.status==="error"?syncHealth.failed?`${syncHealth.failed} 项操作重试失败，请保留当前页面并重新提交`:"同步暂时中断，将在回到前台或网络恢复后重试":syncHealth.pending?`${syncHealth.pending} 项操作等待服务端确认${syncHealth.oldestAgeMs>30000?"，已有操作超过 30 秒":""}`:syncHealth.status==="synced"?`已与服务端对齐${syncHealth.lastPullMs?` · 拉取 ${syncHealth.lastPullMs} ms`:""}${syncHealth.enqueueToAckP95Ms?` · 写确认 P95 ${syncHealth.enqueueToAckP95Ms} ms`:""}`:"正在核对本地操作与服务端状态";
-  if(syncCount)syncCount.textContent=syncHealth.conflicts?`${syncHealth.conflicts} 冲突`:syncHealth.failed?`${syncHealth.failed} 失败`:syncHealth.pending?`${syncHealth.pending} 项`:"";
-  const versionLabel=releaseVersion.startsWith("v")?releaseVersion:`v${releaseVersion}`;
-  for(const element of[$("#sidebar-app-version"),$("#mine-app-version")])if(element)element.textContent=versionLabel
-}
-function renderAccountUsers(){
-  const list=$("#account-role-list"),status=$("#account-role-status");if(!list)return;
-  if(accountUsersLoadState==="loading"){list.innerHTML=contentState({kind:"loading",title:"正在读取账户",body:"角色只包含普通用户与 Owner。"});return}
-  if(accountUsersLoadState==="failure"){list.innerHTML=contentState({kind:"failure",title:"暂时无法读取账户",body:"现有角色没有变化。",action:{command:"retry-account-users",label:"重新读取"}});return}
-  list.innerHTML=accountUsers.map(user=>`<article class="account-role-row" data-account-user="${escapeHtml(user.id)}"><div><strong>${escapeHtml(user.username)}</strong><small>${user.id===currentUser?.id?"当前账户 · ":""}${user.role==="owner"?"Owner":"普通用户"}</small></div><select data-account-role="${escapeHtml(user.id)}" aria-label="${escapeHtml(`${user.username} 的角色`)}"><option value="user" ${user.role==="user"?"selected":""}>普通用户</option><option value="owner" ${user.role==="owner"?"selected":""}>Owner</option></select><button class="quiet-button" type="button" data-account-role-save="${escapeHtml(user.id)}">保存</button></article>`).join("")||contentState({title:"还没有可管理的账户",body:"新账户注册后会显示在这里。"});
-  if(status&&accountUsersLoadState==="ready"&&!status.textContent)status.textContent=""
-}
-async function loadAccountUsers(){
-  if(!hasCapability("account-roles"))return false;
-  const serial=++accountUsersRequestSerial,owner=currentUser?.id,session=sessionSerial;accountUsersLoadState="loading";renderAccountUsers();
-  try{const result=await request("/api/auth/users");if(serial!==accountUsersRequestSerial||owner!==currentUser?.id||session!==sessionSerial)return false;accountUsers=result.users||[];accountUsersLoadState="ready";renderAccountUsers();return true}
-  catch(error){if(serial===accountUsersRequestSerial&&owner===currentUser?.id&&session===sessionSerial){accountUsersLoadState="failure";renderAccountUsers();const status=$("#account-role-status");if(status)status.textContent=error.message}return false}
-}
-function renderPersonalContext(){
-  const summary=$("#personal-context-summary");if(!summary)return;
-  const data=personalContext,status=$("#personal-context-status"),sources=Array.isArray(data?.sources)?data.sources:[],sourceById=new Map(sources.map(source=>[source.id,source])),budget=data?.tokenBudget;
-  if(!data){
-    $("#personal-context-meta").innerHTML="";
-    $("#personal-context-disclosure").textContent="";
-    $("#personal-context-source-count").textContent="0 条";
-    $("#personal-context-source-list").innerHTML="";
-    summary.innerHTML=personalContextLoadState==="failure"
-      ?contentState({kind:"failure",title:"暂时无法核对个人概要",body:"原始记录没有被修改。请检查网络后重试。",action:{command:"retry-personal-context",label:"重新核对"}})
-      :contentState({kind:"loading",title:"正在核对个人概要",body:"只读取当前账户中仍然有效的来源。"});
-    return
-  }
-  const windowLabel=data.timeWindow?.from?`${data.timeWindow.from}${data.timeWindow.to&&data.timeWindow.to!==data.timeWindow.from?` 至 ${data.timeWindow.to}`:""}`:"尚无记录";
-  $("#personal-context-meta").innerHTML=[
-    ["版本",data.version||"未标记"],
-    ["时间窗",windowLabel],
-    ["来源",`${Number(data.sourceCount)||0} 条`],
-    ["Token 上界",budget?`${Number(budget.estimatedUsed)||0} / ${Number(budget.limit)||0}`:"未估算"]
-  ].map(([label,value])=>`<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
-  $("#personal-context-disclosure").textContent=data.disclosure||"";
-  $("#personal-context-source-count").textContent=`${sources.length} 条 · 生成于 ${formatDate(data.generatedAt)}`;
-  $("#personal-context-source-list").innerHTML=sources.length?`<div class="context-source-list">${sources.map(contextSourceButton).join("")}</div>`:contentState({title:"还没有可用来源",body:"先留下记录并明确允许使用，来源才会出现在这里。",action:{view:"captures",label:"留一条记录"}});
-  const conclusions=Array.isArray(data.conclusions)?data.conclusions:[];
-  summary.innerHTML=conclusions.length?conclusions.map(item=>{
-    const evidence=item.sourceIds?.map(id=>sourceById.get(id)).filter(Boolean)||[];
-    return `<details class="personal-context-conclusion" data-context-type="${escapeHtml(item.informationType||"")}"><summary><div><span>${escapeHtml(item.informationTypeLabel||"")}</span><strong>${escapeHtml(item.title||"")}</strong></div><small>${evidence.length} 条来源</small></summary><div class="personal-context-conclusion-body"><p>${escapeHtml(item.text||"").replace(/\n/g,"<br>")}</p><small>${escapeHtml(item.sampleNote||"")}</small>${evidence.length?`<div class="context-source-list">${evidence.map(contextSourceButton).join("")}</div>`:""}</div></details>`
-  }).join(""):contentState({title:"记录还不足以形成概要",body:"这很正常，概要会随已确认的来源逐步更新。",action:{view:"captures",label:"继续记录"}});
-  status.textContent=""
-}
-async function loadPersonalContext(){
-  const serial=++personalContextRequestSerial,owner=currentUser?.id,session=sessionSerial,status=$("#personal-context-status");
-  personalContextLoadState="loading";status.textContent="正在核对当前记录与来源…";renderPersonalContext();
-  try{
-    const response=await requestV1("/api/v1/personal-context");
-    if(serial!==personalContextRequestSerial||owner!==currentUser?.id||session!==sessionSerial)return false;
-    personalContext=response.data;personalContextLoadState="ready";renderPersonalContext();return true
-  }catch(error){
-    if(serial===personalContextRequestSerial&&owner===currentUser?.id&&session===sessionSerial){personalContext=null;personalContextLoadState="failure";status.textContent="";renderPersonalContext()}
-    return false
-  }
-}
-function openContextSource(button){
-  const view=button.dataset.contextView,target=button.dataset.contextTarget,root=button.dataset.contextRoot,date=button.dataset.contextDate,dailyType=button.dataset.contextDailyType;
-  if(date){activeDate=date;if(dailyType&&dailyTypeMeta[dailyType])activeDailyType=dailyType;renderDate();renderSliders();publishDomains(new Set(["thoughts"]));renderStateChart();renderHomeMood();renderChat()}
-  if(view==="thoughts")openThoughtDetail(root||target);else switchView(view);
-  requestAnimationFrame(()=>{
-    const selectors={
-      thoughts:`[data-chain-id="${CSS.escape(root||target)}"]`,
-      captures:`[data-capture-id="${CSS.escape(target)}"]`,
-      journals:`[data-journal-id="${CSS.escape(target)}"]`,
-      together:`[data-chat-id="${CSS.escape(target)}"]`,
-      daily:`[data-daily-record-id="${CSS.escape(target)}"]`,
-      today:`[data-checkin-id="${CSS.escape(target)}"]`
-    },element=document.querySelector(selectors[view]||"");
-    const chain=element?.closest?.("[data-chain-id]")||element;
-    if(chain instanceof HTMLDetailsElement)chain.open=true;
-    let destination=element;
-    if(view==="thoughts"&&element){
-      const key=button.dataset.contextKey||"";
-      if(key.startsWith("question:"))destination=element.querySelector(".thought-question-content")||element;
-      else if(/^(?:idea|record|answer):/.test(key))destination=element.querySelector(`[data-thought-block-id="${CSS.escape(key.split(":").slice(1).join(":"))}"]`)||element
-    }
-    destination?.scrollIntoView({behavior:"smooth",block:"center"})
-  })
-}
 function onboardingBlocksPrivateShell(snapshot){
   return!["completed","skipped"].includes(snapshot?.session?.status)
 }
@@ -1811,14 +1449,10 @@ function renderVisibleRoute(){
   const view=pageRouter?.currentRoute()?.view||"today";
   if(renderedRouteView&&renderedRouteView!==view)unmountRouteContent(renderedRouteView);
   renderedRouteView=view;
-  renderDate();renderMine();
+  renderDate();
   $("#notification-dot").hidden=!Number(state.notificationUnread??notificationUnreadCount);
   if(view==="today"){renderSliders();renderHome()}
   else if(view==="daily")void healthFeatureController?.render().catch(error=>showToast(`日录显示失败：${error.message}`,"error"));
-  else if(view==="settings"){renderSettings();renderLocalTestSettings()}
-  else if(view==="trash")renderTrash();
-  else if(view==="account")renderAccountUsers();
-  else if(view==="personal-context")renderPersonalContext()
   activateContentImageDraftsForCurrentRoute()
 }
 function afterVisibleShellPaint(){
@@ -1836,7 +1470,6 @@ function assertNativeServerCompatibility(meta){
 async function load({visibleShell=false,initialSnapshot=null,opening=null}={}){
   if(!Number.isFinite(startupMarks.loadStart))markStartup("loadStart");
   const owner=currentUser?.id,session=sessionSerial,route=initialSnapshot?.route||pageRouter?.currentRoute()||{view:"today",query:{}};
-  aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";
   const [nextState,meta]=initialSnapshot
     ?[initialSnapshot.state,initialSnapshot.meta]
     :await Promise.all([
@@ -1878,6 +1511,15 @@ async function load({visibleShell=false,initialSnapshot=null,opening=null}={}){
   state.onboardingV2=nextOnboardingV2State.data;llmSettings=nextSettings;onboardingSchema=nextOnboardingSchema;localTestConfig=nextLocalTestConfig;onboardingHydrated=false;
   await onboardingV2Controller.hydrate({schema:nextOnboardingV2Schema.data,state:nextOnboardingV2State.data});
   if(owner!==currentUser?.id||session!==sessionSerial)return false;
+  for(;;){
+    const activeRoute=pageRouter?.currentRoute()||route,activeKey=routeDataKey(activeRoute);
+    if(activeKey!==loadedRouteKey)await loadRouteState(activeRoute);
+    if(owner!==currentUser?.id||session!==sessionSerial)return false;
+    if(activeKey!==routeDataKey(pageRouter?.currentRoute()))continue;
+    if(activeKey!==loadedRouteKey&&routeLoadFailureKey!==activeKey)continue;
+    await runtimeFeatureRegistry?.enter(activeRoute.view,activeRoute);
+    if(activeKey===routeDataKey(pageRouter?.currentRoute()))break
+  }
   renderOnboarding();renderVisibleRoute();if(!reconcileActiveThoughtRoute())pageRouter?.activate();restoreDurableDrafts();syncChainRecordKind();scheduleNotificationPoll();
   if(visibleShell&&onboardingPending){revealUserSession();if(!Number.isFinite(startupMarks.visibleShell))markStartup("visibleShell")}
   if(opening&&onboardingPending){await afterVisibleShellPaint();if(owner!==currentUser?.id||session!==sessionSerial)return false;await opening.ready()}
@@ -1891,7 +1533,6 @@ function setAuthTab(tab){
 }
 function setAuthBusy(value){authBusy=value;$$(".auth-form input,.auth-form button,[data-auth-tab]").forEach(control=>control.disabled=value)}
 function invalidatePageLoads(){
-  aiCostRequestSerial+=1;architectureRequestSerial+=1;commercialRequestSerial+=1;personalContextRequestSerial+=1;accountUsersRequestSerial+=1;
   activeAnswerTaskId=++answerTaskSerial;healthFeatureController?.invalidateSession();clearTimeout(notificationTimer);
   backgroundResultsController?.resetSession();backgroundResultsLoadErrorReported=false;backgroundResultsRetryAttempts=0;refreshCoordinator.reset();
 }
@@ -1899,7 +1540,7 @@ function clearPrivateSessionState(){
   closeImageViewer({restoreFocus:false});
   onboardingV2Controller.reset();
   resetState();routeDataReady=false;routeDataRequestSerial+=1;routeLoadFailureKey="";loadedRouteKey="";fullRouteStateLoaded=false;quoteTagStates={selectionQuote:createTagMultiSelectState()};llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationsLoadState="idle";actionsCoordinator.resetSession();annotationsController?.resetSession();personalContext=null;personalContextRequestSerial=0;accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.5.7";homeMemoryKeys=[];homeMemoryByKey=new Map();homeKeepsakeId="";closeHomeEditors({restoreFocus:false});$("#capture-editor").hidden=true;document.body.classList.remove("capture-editor-open");resetOwnerSurfaces();invalidatePageLoads();draftTags=[];capturesFeatureController=null;quotesFeatureController=null;libraryFeatureController=null;keepsakesFeatureController=null;
+  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);answerDraft="";answerReasoningDraft="";localTestConfig=null;localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationsLoadState="idle";actionsCoordinator.resetSession();annotationsController?.resetSession();governanceUrl="";appVersion="0.5.7";homeMemoryKeys=[];homeMemoryByKey=new Map();homeKeepsakeId="";closeHomeEditors({restoreFocus:false});$("#capture-editor").hidden=true;document.body.classList.remove("capture-editor-open");invalidatePageLoads();draftTags=[];capturesFeatureController=null;quotesFeatureController=null;libraryFeatureController=null;keepsakesFeatureController=null;
   contentImageDraftManager?.resetSession();for(const key of persistentContentImageKeys)renderContentImageEditor(key);
   pageAudioCoordinator.resetSession();stopPageAudio();
   $$("main form").forEach(form=>{form.reset();delete form.dataset.requestId});$$(".modal-backdrop").forEach(modal=>modal.hidden=true);$("#comment-panel").hidden=true;$("#comment-panel-reopen").hidden=true;$("#selection-tools").hidden=true;$("#annotation-line-counts").hidden=true;document.body.classList.remove("comment-panel-open");
@@ -1909,10 +1550,11 @@ function showAuthGate(message=""){
 }
 function renderAccountIdentity(){
   const username=currentUser?.username||"";
-  $("#account-name").textContent=username;$("#account-current-name").textContent=username;$("#account-page-name").textContent=username;$("#account-username").value=username;
+  $("#account-name").textContent=username;
+  runtimeFeatureRegistry?.notifyState(state,new Set(["account"]))
 }
 function prepareUserSession(user,authRequired,{keepVisible=false}={}){
-  rotateSession();applyCapabilitySurface(user?.role==="owner"?ownerCapabilities:[]);if(!keepVisible)document.body.classList.add("auth-locked");if(resetRouteAfterAuthentication)pageRouter?.showList("today",{mode:"replace"});else restoreView?.();currentUser=user;resetRouteAfterAuthentication=false;$("#account-control").hidden=!authRequired;$("#account-authenticated").hidden=!authRequired;$("#account-local-mode").hidden=authRequired;renderAccountIdentity();
+  applyCapabilitySurface(user?.role==="owner"?ownerCapabilities:[]);if(!keepVisible)document.body.classList.add("auth-locked");restoreView?.(resetRouteAfterAuthentication?"today":requestedAuthenticatedView||undefined);currentUser=user;resetRouteAfterAuthentication=false;requestedAuthenticatedView="";$("#account-control").hidden=!authRequired;$("#account-authenticated").hidden=!authRequired;$("#account-local-mode").hidden=authRequired;renderAccountIdentity();
 }
 function revealUserSession(){try{sessionStorage.setItem("cike:authenticated-shell","1")}catch{}document.documentElement.dataset.bootstrapVisible="1";document.body.classList.remove("auth-locked");$("#auth-gate").hidden=true}
 async function activateUserSession(user,authRequired,initialSnapshot=null,opening=null){
@@ -1982,6 +1624,8 @@ async function restartApplicationForUser(user){
   const testConfig=localTestConfig;
   applicationLifecycleReady=false;
   await runtimeApplication.resetSession();
+  currentUser=user;
+  applyCapabilitySurface(user?.role==="owner"?ownerCapabilities:[]);
   await runtimeApplication.start(applicationStartInput({
     session:{authenticated:true,authRequired:true,user,userCount:1},
     testConfig
@@ -1989,7 +1633,7 @@ async function restartApplicationForUser(user){
   applicationLifecycleReady=true
 }
 const refreshState=(domains,options={})=>refreshCoordinator.refresh(domains,{...options,patchOnly:options.patchOnly===true});
-subscribeState((next,wanted)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);if(wanted.has("dailyRecords"))void healthFeatureController?.render({snapshot:next,changedDomains:wanted}).catch(()=>{});if(wanted.has("thoughts")){renderTagComposer();renderHomeMemories()}if(wanted.has("speech"))renderSettings();if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("books")){renderHomeMemories();if(annotationsController?.activeRootKey().startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes"))renderHomeKeepsake();if(wanted.has("quotes"))renderHomeMemories();if(wanted.has("comments"))renderCommentPanel();renderNotificationSummary()});
+subscribeState((next,wanted)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);if(wanted.has("dailyRecords"))void healthFeatureController?.render({snapshot:next,changedDomains:wanted}).catch(()=>{});if(wanted.has("thoughts")){renderTagComposer();renderHomeMemories()}if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("books")){renderHomeMemories();if(annotationsController?.activeRootKey().startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes"))renderHomeKeepsake();if(wanted.has("quotes"))renderHomeMemories();if(wanted.has("comments"))renderCommentPanel();renderNotificationSummary()});
 function setAnswerModalStep(step){const order=["context","thinking","answer","done"],current=order.indexOf(step);$$("#ai-answer-progress li").forEach((item,index)=>{item.classList.toggle("active",index===current);item.classList.toggle("done",index<current||(step==="done"&&index===current))})}
 function closeAnswerModal(){const modal=$("#ai-answer-modal"),busy=modal.dataset.busy==="true";modal.hidden=true;if(busy)showToast("回答继续在后台生成，完成后会提醒。")}
 async function runAnswerInModal({title,scene="thoughtAnswer",requestCall,onDone,isCurrent=()=>true}){
@@ -2032,7 +1676,7 @@ async function ensureLocalTestViewScope(view){
     try{
       const result=await request("/api/local-test-mode/hydrate",{method:"POST",body:JSON.stringify({scope})});
       if(owner!==currentUser?.id||session!==sessionSerial||localTestConfig?.mode!=="simulation")return false;
-      localTestConfig=result.control;replaceState(result.state);runtimeStatePort?.replace(state,Object.keys(result.state||{}),{source:"local-test-hydrate"});notificationUnreadCount=Number(state.notificationUnread)||0;loadedRouteKey=routeDataKey(pageRouter?.currentRoute());renderOnboarding();renderVisibleRoute();renderLocalTestSettings();return true
+      localTestConfig=result.control;replaceState(result.state);runtimeStatePort?.replace(state,Object.keys(result.state||{}),{source:"local-test-hydrate"});notificationUnreadCount=Number(state.notificationUnread)||0;loadedRouteKey=routeDataKey(pageRouter?.currentRoute());renderOnboarding();renderVisibleRoute();return true
     }catch(error){
       if(owner===currentUser?.id&&session===sessionSerial)showToast(`当前页面记录读取失败：${error.message}`,"error");
       return false
@@ -2595,9 +2239,137 @@ function createPageFeatureDescriptors(){
       showToast
     }))
   };
+  const loadMineShellPage=view=>loadMineShellFeatureModule().then(module=>module.createMineShellFeatureController({
+    view,
+    getUser:()=>currentUser,
+    getSnapshot:()=>state,
+    getNotificationUnreadCount:()=>notificationUnreadCount,
+    getSyncHealth:()=>syncHealth,
+    getGovernanceUrl:()=>governanceUrl,
+    getReleaseVersion:()=>releaseVersion,
+    setShellVersion:value=>{const version=$("#sidebar-app-version");if(version)version.textContent=value},
+    getDeniedAccess:()=>deniedAccess
+  }));
+  descriptors.mine={root:()=>$("#view-mine"),load:()=>loadMineShellPage("mine")};
+  descriptors.permission={root:()=>$("#view-permission"),load:()=>loadMineShellPage("permission")};
+  descriptors.about={root:()=>$("#view-about"),load:()=>loadMineShellPage("about")};
+  descriptors["personal-context"]={
+    root:()=>$("#view-personal-context"),
+    load:()=>loadPersonalContextFeatureModule().then(module=>module.createPersonalContextFeatureController({
+      data:{
+        getSnapshot:()=>state,
+        getAccountId:()=>currentUser?.id||"",
+        getSessionSerial:()=>sessionSerial,
+        requestV1:(url,options)=>featureRequestV1("personal-context",url,options)
+      },
+      navigation:{
+        activateDate:(date,dailyType)=>{
+          activeDate=date;
+          if(dailyType&&dailyTypeMeta[dailyType])activeDailyType=dailyType;
+          renderDate();renderSliders();publishDomains(new Set(["thoughts","activeDate"]));renderStateChart();renderHomeMood();renderChat()
+        },
+        switchView,
+        openThoughtDetail
+      },
+      view:{contentState,escapeMarkup:escapeHtml,plainPreview,formatDate},
+      platform:{
+        requestFrame:callback=>requestAnimationFrame(callback),
+        queryDestination:selector=>document.querySelector(selector),
+        escapeSelector:value=>CSS.escape(value),
+        isDetailsElement:value=>value instanceof HTMLDetailsElement
+      }
+    }))
+  };
+  const loadOwnerConsolePage=view=>loadOwnerConsoleFeatureModule().then(module=>{
+    const controller=module.createOwnerConsoleFeatureController({
+      view,
+      request:(url,options)=>withFeatureScope(view,()=>request(url,options)),
+      requestWithMetadata:(url,options)=>withFeatureScope(view,()=>apiClient.requestWithMetadata(url,options)),
+      settings:{snapshot:()=>llmSettings,currentDate:()=>currentLocalDate},
+      capability:{has:hasCapability,accountId:()=>currentUser?.id||"",sessionGeneration:()=>sessionSerial},
+      format:{
+        escapeMarkup:escapeHtml,
+        escapeSelector:value=>CSS.escape(value),
+        cny:formatCny,
+        compactNumber,
+        date:formatDate,
+        shiftDateKey:shiftLocalDateKey
+      },
+      navigation:{openView:viewName=>switchView(viewName),openSource:source=>openCommercialSource(source.view,source.id,source.date)},
+      toast:showToast,
+      confirm:message=>globalThis.confirm(message),
+      timer:{schedule:(callback,delay)=>setTimeout(callback,delay),cancel:timer=>clearTimeout(timer)}
+    });
+    ownerConsoleFeatureControllers.add(controller);
+    return controller
+  });
+  for(const view of["ai-cost","architecture","commercialization"]){
+    descriptors[view]={root:()=>$(`#view-${view}`),load:()=>loadOwnerConsolePage(view)}
+  }
+  const loadAccountSettingsPage=view=>loadAccountSettingsFeatureModule().then(module=>{
+    const controller=module.createAccountSettingsFeatureController({
+      view,
+      auth:{request:authRequest,reset:showAuthGate,logout},
+      request:{
+        json:(url,options)=>request(url,options),
+        blob:(url,options,config)=>apiClient.requestBlob(url,options,config)
+      },
+      currentUser:{
+        get:()=>currentUser,
+        set:user=>{currentUser=user;renderAccountIdentity()}
+      },
+      settings:{get:()=>llmSettings,set:value=>{llmSettings=value}},
+      speech:{get:()=>state.speech||{}},
+      localTest:{
+        get:()=>localTestConfig,
+        set:value=>{localTestConfig=value},
+        clearScopes:()=>localTestScopeLoads.clear(),
+        reload:()=>load(),
+        navigate:viewName=>switchView(viewName),
+        setSummary:value=>{const summary=$("#mine-settings-summary");if(summary)summary.textContent=value}
+      },
+      session:{reset:()=>{
+        rotateSession();
+        invalidatePageLoads();
+        for(const ownerController of ownerConsoleFeatureControllers)ownerController.resetSession()
+      }},
+      pageAudio:pageAudioCoordinator,
+      hasCapability,
+      showToast,
+      confirmAction:message=>globalThis.confirm(message)
+    });
+    accountSettingsFeatureControllers.add(controller);
+    return controller
+  });
+  descriptors.account={root:()=>$("#view-account"),load:()=>loadAccountSettingsPage("account")};
+  descriptors.settings={root:()=>$("#view-settings"),load:()=>loadAccountSettingsPage("settings")};
+  descriptors.trash={
+    root:()=>$("#view-trash"),
+    load:()=>loadTrashFeatureModule().then(module=>module.createTrashFeatureController({
+      data:{
+        getAccountId:()=>currentUser?.id||"",
+        getSessionSerial:()=>sessionSerial,
+        request:(url,options)=>withFeatureScope("trash",()=>request(url,options)),
+        refresh:(domains,options)=>refreshState(domains,options)
+      },
+      view:{
+        formatDate,
+        contentState,
+        escapeMarkup:escapeHtml,
+        plainPreview,
+        renderMarkdown,
+        renderLatex,
+        showToast
+      },
+      platform:{
+        confirm:message=>globalThis.confirm(message),
+        prompt:message=>globalThis.prompt(message)
+      }
+    }))
+  };
   return descriptors
 }
-const pageEffects={"ai-cost":()=>loadAiCostPlan(),architecture:()=>loadArchitecture(),commercialization:()=>loadCommercialization(),trash:()=>loadTrash(),today:()=>actionsCoordinator.load(),"personal-context":()=>loadPersonalContext(),account:()=>loadAccountUsers()};
+const pageEffects={today:()=>{if(applicationLifecycleReady&&currentUser?.id)void actionsCoordinator.load()}};
 const lazyPageEffects=new Proxy(pageEffects,{get(target,view){const effect=target[view];if(typeof view!=="string"||!LOCAL_TEST_VIEW_SCOPES[view])return effect;return()=>{void ensureLocalTestViewScope(view).then(async ready=>{if(!ready)return;if(typeof effect==="function")await effect();await restorePendingProjections()})}}});
 pageRouter=createPageRouter({query:$,queryAll:$$,effects:lazyPageEffects,basePath:applicationBasePath,onRouteStart:applyApplicationRoute,canAccessView:(_,capability)=>hasCapability(capability),onDenied:showPermissionPage});
 ({switchView,restoreView}=pageRouter);
@@ -2648,24 +2420,6 @@ function openCheckinEditor(id){
 }
 
 document.addEventListener("play",event=>{const audio=event.target;if(!(audio instanceof HTMLAudioElement))return;const controls=audio.closest(".speech-asset-controls"),rate=controls?.querySelector("[data-speech-playback-rate]");if(rate)audio.playbackRate=normalizeTtsPlaybackRate(rate.value);claimPageAudio(audio)},true);
-document.addEventListener("change",e=>{if(e.target.matches("[data-trash-select]"))$("#trash-purge-selected").disabled=!$("[data-trash-select]:checked")});
-document.addEventListener("click",async e=>{
-  const restore=e.target.closest("[data-trash-restore]");if(!restore)return;
-  restore.disabled=true;$("#trash-status").textContent="正在恢复…";
-  try{await request(`/api/trash/${restore.dataset.trashRestore}/restore`,{method:"POST",body:"{}"});await refreshState(["dailyRecords","captures","journals","thoughts","checkins","chat","review","books","keepsakes","quotes"]);await loadTrash();showToast("记录已完整恢复")}
-  catch(error){$("#trash-status").textContent=error.message;restore.disabled=false}
-});
-$("#trash-purge-selected").addEventListener("click",async e=>{
-  const button=e.currentTarget,ids=$$("[data-trash-select]:checked").map(input=>input.value);if(!ids.length)return;
-  button.disabled=true;$("#trash-status").textContent="正在生成永久清理清单…";
-  try{
-    const plan=await request("/api/trash/purge-preview",{method:"POST",body:JSON.stringify({ids})}),confirmation=prompt(`将永久清理 ${plan.items.length} 条记录，且无法恢复。请输入“永久删除”继续：`);
-    if(confirmation!=="永久删除"){$("#trash-status").textContent="已取消永久清理。";return}
-    const result=await request("/api/trash/purge",{method:"POST",body:JSON.stringify({ids,planHash:plan.planHash,confirmation})});
-    await loadTrash();showToast(`已永久清理 ${result.purged} 条记录`);
-  }catch(error){$("#trash-status").textContent=error.message}
-  finally{button.disabled=!$("[data-trash-select]:checked")}
-});
 document.addEventListener("click",async e=>{
   const button=e.target.closest("[data-delete-checkin],[data-chat-delete]");if(!button)return;
   const target=button.dataset.deleteCheckin?{id:button.dataset.deleteCheckin,domain:"checkins",url:`/api/v1/checkins/${encodeURIComponent(button.dataset.deleteCheckin)}`,domains:["checkins","review"],label:"状态"}:{id:button.dataset.chatDelete,domain:"chats",url:`/api/v1/chats/${encodeURIComponent(button.dataset.chatDelete)}`,domains:["chats"],label:"对话"};
@@ -2674,7 +2428,10 @@ document.addEventListener("click",async e=>{
   try{await requestV1(target.url,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`,"idempotency-key":requestId}},{domains:target.domains,resource:target.url,recoverCommitted:true,projection:{kind:"record.delete",domain:target.domain,id:target.id},onQueued:record=>applyPendingProjection(record)});void refreshState(target.domains).catch(error=>showToast(`${target.label}已移除，但列表刷新失败：${error.message}`,"error"));showToast(`${target.label}已移入回收站`)}
   catch(error){if(error.syncStatus==="pending")showToast(`${target.label}将在网络恢复后移入回收站`);else{await refreshState(target.domains).catch(()=>{});showToast(error.message,"error")}}
 });
-document.addEventListener("click",event=>{const button=event.target.closest("[data-context-source]");if(button)openContextSource(button)});
+document.addEventListener("click",event=>{
+  const button=event.target.closest("[data-context-source]");
+  if(button&&!button.closest("#view-personal-context"))openContextReceiptSource(button)
+});
 document.addEventListener("click",event=>{
   const button=event.target.closest("[data-content-focus],[data-content-action]");if(!button)return;
   if(button.closest("#view-captures,#view-journals"))return;
@@ -2685,15 +2442,9 @@ document.addEventListener("click",event=>{
   const command=button.dataset.contentAction;
   if(command==="new-state"){switchView("today");openHomeEditor("state",button);return}
   if(command==="retry-route-state"){button.disabled=true;void loadRouteState(pageRouter?.currentRoute()).finally(()=>{if(button.isConnected)button.disabled=false});return}
-  const retries={
-    "retry-trash":loadTrash,
-    "retry-personal-context":loadPersonalContext,
-    "retry-account-users":loadAccountUsers
-  };
-  if(retries[command])void retries[command]()
 });
 
-document.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;if(b.dataset.view){closeHomeEditors({restoreFocus:false});return switchView(b.dataset.view)}if(b.dataset.go){closeHomeEditors({restoreFocus:false});return switchView(b.dataset.go)}if(b.dataset.removeDraftTag!=null){draftTags=draftTags.filter(tag=>tag!==b.dataset.removeDraftTag);return renderTagComposer()}});
+document.addEventListener("click",e=>{const b=e.target.closest("button");if(!b||b.closest("#view-ai-cost,#view-architecture,#view-commercialization"))return;if(b.dataset.view){closeHomeEditors({restoreFocus:false});return switchView(b.dataset.view)}if(b.dataset.go){closeHomeEditors({restoreFocus:false});return switchView(b.dataset.go)}if(b.dataset.removeDraftTag!=null){draftTags=draftTags.filter(tag=>tag!==b.dataset.removeDraftTag);return renderTagComposer()}});
 document.addEventListener("click",async e=>{
   const button=e.target.closest("button");if(!button)return;
   if(button.dataset.editCheckin)return openCheckinEditor(button.dataset.editCheckin);
@@ -2880,84 +2631,6 @@ $("#selection-quote-form").addEventListener("submit",async e=>{
     state.quotes=(state.quotes||[]).map(item=>item.id===temporaryId?result.data:item);delete form.dataset.requestId;closeSelectionQuoteModal();void refreshState("quotes").catch(error=>showToast(`善言已保存，但列表刷新失败：${error.message}`,"error"));showToast("选中文字已收为善言")
   }catch(err){if(err.syncStatus==="pending"){closeSelectionQuoteModal();showToast("善言已进入待同步队列")}else status.textContent=err.message}finally{button.disabled=false}
 });
-$("#view-architecture")?.addEventListener("click",event=>{
-  const stageButton=event.target.closest("[data-architecture-stage]"),termButton=event.target.closest("[data-architecture-term]");
-  if(stageButton){architectureStage=Math.max(0,Math.min((architectureSurface?.stages?.length||1)-1,Number(stageButton.dataset.architectureStage)||0));renderArchitecture();return}
-  if(termButton){architectureTerm=termButton.dataset.architectureTerm;renderArchitectureTerm()}
-});
-$("#ai-budget-add-form").addEventListener("submit",async event=>{
-  event.preventDefault();const form=event.currentTarget,button=form.querySelector('[type="submit"]'),status=$("#ai-budget-status"),amountCny=Number($("#ai-budget-add-amount").value),reason=$("#ai-budget-add-reason").value.trim();button.disabled=true;status.textContent="正在追加临时额度…";
-  try{await submitAiBudgetCommand({command:"addTemporaryBudget",scope:$("#ai-budget-add-scope").value,amountCny,reason});form.reset();status.textContent="临时额度已追加。";showToast("全站预算已更新")}
-  catch(error){status.textContent=error.message}
-  finally{button.disabled=false}
-});
-$("#ai-budget-recover-form").addEventListener("submit",async event=>{
-  event.preventDefault();const form=event.currentTarget,button=form.querySelector('[type="submit"]'),status=$("#ai-budget-status"),reason=$("#ai-budget-recover-reason").value.trim();button.disabled=true;status.textContent="正在解除阻断…";
-  try{await submitAiBudgetCommand({command:"recover",scope:$("#ai-budget-recover-scope").value,reason});form.reset();status.textContent="当前周期阻断已解除。";showToast("预算阻断已解除")}
-  catch(error){status.textContent=error.message}
-  finally{button.disabled=false}
-});
-$("#ai-cost-form").addEventListener("input",()=>{
-  if(!aiCostPlan||!aiCostStatistics)return;
-  aiCostPlan=aiCostPlanFromForm();
-  renderAiCostPlan(false);
-});
-$("#ai-cost-calibrate").addEventListener("click",()=>{
-  if(!aiCostPlan||!aiCostStatistics)return;
-  const observed=new Map((aiCostStatistics.ai?.scenes||[]).map(item=>[item.scene,item]));
-  aiCostPlan=aiCostPlanFromForm();
-  aiCostPlan.scenarios=aiCostPlan.scenarios.map(row=>{
-    const sample=observed.get(row.scene),calls=Number(sample?.calls)||0,current=currentAiCostModel(row.scene);
-    if(!calls)return{...row,enabled:false,model:current.model,callsPerMonth:0};
-    const input=Number(sample.tokens?.input)||0;
-    return{...row,enabled:true,model:current.model,callsPerMonth:calls,avgInputTokens:Math.round(input/calls),cacheHitPct:input?Math.round((Number(sample.tokens?.cacheHit)||0)/input*1000)/10:0,avgReasoningTokens:Math.round((Number(sample.tokens?.reasoning)||0)/calls),avgAnswerTokens:Math.round((Number(sample.tokens?.answer)||0)/calls)};
-  });
-  renderAiCostPlan(true);
-  $("#ai-cost-status").textContent="已按近 30 天实测调用与当前模型配置校准，保存后生效。";
-});
-$("#ai-cost-form").addEventListener("submit",async event=>{
-  event.preventDefault();
-  if(!aiCostPlan)return;
-  const button=event.currentTarget.querySelector('[type="submit"]'),status=$("#ai-cost-status");button.disabled=true;status.textContent="正在保存成本方案…";
-  try{aiCostPlan=await request("/api/ai-cost-plan",{method:"PATCH",body:JSON.stringify(aiCostPlanFromForm())});renderAiCostPlan(true);status.textContent="AI 成本方案已保存。";showToast("AI 成本方案已更新")}
-  catch(error){status.textContent=error.message}
-  finally{button.disabled=false}
-});
-$("#view-commercialization").addEventListener("click",event=>{
-  const button=event.target.closest("[data-commercial-mode]");if(!button||!commercializationSurface)return;
-  const assumptions=commercialAssumptionsFromForm();commercialMode=button.dataset.commercialMode;void previewCommercialization(assumptions)
-});
-$("#view-commercialization").addEventListener("input",event=>{
-  if(!commercializationSurface)return;
-  if(event.target.matches("#commercial-stage-slider")){
-    const assumptions=commercialAssumptionsFromForm(),presets=assumptions?.stagePresets?.[commercialMode]||[],index=Math.max(0,Math.min(presets.length-1,Number(event.target.value)||0));
-    assumptions.stageByModel[commercialMode]=index;assumptions[commercialMode]=structuredClone(presets[index]);void previewCommercialization(assumptions,{statusMessage:"阶段参数已切换，保存后跟随账户。"});return
-  }
-  if(event.target.matches("[data-commercial-field],[data-commercial-profile-field]"))scheduleCommercializationPreview()
-});
-$("#view-commercialization").addEventListener("submit",async event=>{
-  if(event.target.id!=="commercial-assumptions-form")return;
-  event.preventDefault();clearTimeout(commercialPreviewTimer);const button=event.target.querySelector('[type="submit"]'),status=$("#commercial-save-status"),assumptions=commercialAssumptionsFromForm();button.disabled=true;status.textContent="正在保存估算…";
-  try{
-    const report=await request("/api/commercialization",{method:"PATCH",body:JSON.stringify({assumptions})});
-    commercializationSurface={...commercializationSurface,report:{...report,legacyV2:Boolean(report.legacyV2)}};await previewCommercialization(report.assumptions,{statusMessage:"估算参数已保存。"});showToast("商业化估算已更新")
-  }catch(error){status.textContent=error.message}
-  finally{button.disabled=false}
-});
-document.addEventListener("click",event=>{const button=event.target.closest("[data-commercial-source-view]");if(button)openCommercialSource(button.dataset.commercialSourceView,button.dataset.commercialSourceId,button.dataset.commercialSourceDate)});
-$$("[data-local-test-mode]").forEach(button=>button.addEventListener("click",async()=>{
-  const mode=button.dataset.localTestMode,label=mode==="simulation"?"使用模拟":"冷启测试",message=mode==="simulation"?"切换到使用模拟？记录会在打开对应页面时只读加载，线上不会收到任何业务写入。":"清空冷启测试账户并重新开始？";
-  if(!confirm(message))return;
-  rotateSession();resetOwnerSurfaces();invalidatePageLoads();
-  const expectedSession=sessionSerial,expectedOwner=currentUser?.id,controls=$$("[data-local-test-mode]"),status=$("#local-test-status");controls.forEach(control=>control.disabled=true);localTestStatusOverride=mode==="simulation"?"正在切换到使用模拟…":"正在创建空账户…";status.textContent=localTestStatusOverride;
-  try{
-    const nextConfig=await request("/api/local-test-mode",{method:"POST",body:JSON.stringify({mode})});
-    if(expectedSession!==sessionSerial||expectedOwner!==currentUser?.id||nextConfig?.mode!==mode)throw Object.assign(new Error("已忽略不属于当前账户或模式的响应"),{code:"LOCAL_TEST_RESPONSE_MISMATCH"});localTestConfig=nextConfig;localTestScopeLoads.clear();await load();
-    switchView(mode==="cold"?"today":"settings");localTestStatusOverride=mode==="simulation"?"已切换；打开页面时读取对应记录。":"已切换到冷启测试。";renderLocalTestSettings();showToast(`已切换到${label}`)
-  }
-  catch(error){const timeout=["AbortError","TimeoutError"].includes(error?.name)||/aborted due to timeout|timed out/i.test(error?.message||"");localTestStatusOverride=timeout?"线上数据读取超时，请检查网络后重试。":error.message;renderLocalTestSettings()}
-  finally{if(localTestConfig?.upstreamConfigured||mode!=="simulation")controls.forEach(control=>control.disabled=false);renderLocalTestSettings()}
-}));
 $$("[data-onboarding-mode]").forEach(button=>button.addEventListener("click",()=>{collectOnboardingAnswers();onboardingMode=button.dataset.onboardingMode==="detailed"?"detailed":"quick";$("#onboarding-understanding").closest("label").hidden=true;$("#onboarding-status").textContent=onboardingMode==="detailed"?"详细版共 18 题，全部作答后才能完成。":"快速版共 8 题，全部作答后才能完成。";renderOnboardingQuestions()}));
 $$("[data-onboarding-sample]").forEach(button=>button.addEventListener("click",()=>{$("#onboarding-material").value=button.dataset.onboardingSample;$("#onboarding-understanding").closest("label").hidden=true}));
 $("#onboarding-file").addEventListener("change",async event=>{const file=event.currentTarget.files?.[0];if(!file)return;if(file.size>1024*1024){$("#onboarding-status").textContent="导入文件不能超过 1 MB。";event.currentTarget.value="";return}try{$("#onboarding-material").value=await file.text();$("#onboarding-status").textContent=`已读取 ${file.name}，确认前仍可修改。`}catch{$("#onboarding-status").textContent="文件读取失败，请重试。"}});
@@ -2966,12 +2639,6 @@ $("#onboarding-skip").addEventListener("click",()=>{for(const key of["gender","r
 $("#onboarding-legacy-back").addEventListener("click",()=>onboardingV2Controller.backFromLegacy());
 $("#onboarding-form").addEventListener("submit",async event=>{event.preventDefault();const form=event.currentTarget,button=form.querySelector('[type="submit"]'),status=$("#onboarding-status");if(!form.reportValidity()){status.textContent="请完成当前版本的全部题目。";return}button.disabled=true;try{state.onboarding=await request("/api/onboarding",{method:"PATCH",body:JSON.stringify(onboardingPayload())});await load();showToast("旧版问卷已保存，原始选择继续保留")}catch(error){status.textContent=error.message}finally{button.disabled=false}});
 $("#onboarding-v2-reopen").addEventListener("click",()=>{switchView("today");requestAnimationFrame(()=>onboardingV2Controller.reopen())});
-$("#reset-response-styles").addEventListener("click",()=>{$("#assistant-name").value="神鸡";$$("[data-response-style]").forEach(select=>select.value="standard");$("#llm-settings-status").textContent="已恢复默认称呼与风格，保存后生效。"});
-$("#tts-default-voice").addEventListener("change",()=>stopVoicePreview({clearStatus:true}));
-$("#tts-voice-preview").addEventListener("click",()=>void toggleTtsVoicePreview());
-$("#tts-generation-rate").addEventListener("input",event=>renderTtsGenerationRate(event.currentTarget.value));
-$("#llm-settings-form").addEventListener("submit",async e=>{e.preventDefault();stopVoicePreview({clearStatus:true});const ownerSettings=hasCapability("ai-configuration"),button=e.currentTarget.querySelector('[type="submit"]'),status=$("#llm-settings-status");button.disabled=true;status.textContent="正在保存…";try{llmSettings=await request(ownerSettings?"/api/settings":"/api/preferences",{method:ownerSettings?"POST":"PATCH",body:JSON.stringify(settingsPayload())});const key=$("#llm-api-key");if(key)key.value="";renderSettings();status.textContent=ownerSettings?"模型、场景与语音设置已保存。":"思考、回答与语音偏好已保存。";showToast("设置已保存")}catch(err){status.textContent=err.message}finally{button.disabled=false}});
-$("#test-llm").addEventListener("click",async e=>{stopVoicePreview({clearStatus:true});const button=e.currentTarget,status=$("#llm-settings-status"),tier=$("#llm-test-tier").value;button.disabled=true;status.textContent=`正在保存并测试 ${tier[0].toUpperCase()+tier.slice(1)}…`;try{llmSettings=await request("/api/settings",{method:"POST",body:JSON.stringify(settingsPayload())});$("#llm-api-key").value="";renderSettings();const result=await request("/api/settings/test",{method:"POST",body:JSON.stringify({tier})}),profile=llmSettings.profiles[tier];status.textContent=`连接成功 · ${profile.model==="deepseek-v4-pro"?"DeepSeek Pro":"DeepSeek Flash"} · ${profile.effort==="none"?"思考关闭":`思考 ${profile.effort.toUpperCase()}`}`;showToast(result.reply||"DeepSeek 连接成功")}catch(err){status.textContent=`连接失败：${err.message}`}finally{button.disabled=false}});
 function syncLocalDate(){const next=localDateKey();if(next===currentLocalDate)return;const followedToday=activeDate===currentLocalDate;currentLocalDate=next;if(followedToday){activeDate=next;renderDate();renderSliders();publishDomains(new Set(["thoughts","activeDate"]));renderStateChart();renderHomeMood();renderChat()}}
 function markApplicationForeground(){apiClient.markForeground();syncLocalDate();restoreView?.()}
 setInterval(syncLocalDate,30000);
@@ -3005,37 +2672,10 @@ const logout=async()=>{
   catch(error){if(operation===authOperationSerial)$("#auth-status").textContent=`本地内容已锁定；服务端退出失败：${error.message}`}
   finally{if(operation===authOperationSerial){setAuthBusy(false);if($("#auth-status").textContent==="正在退出…")$("#auth-status").textContent=""}}
 };
-$("#username-form").addEventListener("submit",async event=>{
-  event.preventDefault();const form=event.currentTarget,button=form.querySelector('[type="submit"]'),status=$("#username-status");button.disabled=true;status.textContent="正在修改…";
-  try{const result=await authRequest("/api/auth/username",{username:form.elements.username.value},"PATCH");currentUser=result.user;renderAccountIdentity();status.textContent="用户名已更新。";showToast("用户名已更新")}
-  catch(error){status.textContent=error.message}
-  finally{button.disabled=false}
-});
-$("#password-form").addEventListener("submit",async event=>{
-  event.preventDefault();const form=event.currentTarget,button=form.querySelector('[type="submit"]'),status=$("#password-status"),currentPassword=form.elements.currentPassword.value,newPassword=form.elements.newPassword.value,confirmPassword=form.elements.confirmPassword.value;
-  form.elements.confirmPassword.setCustomValidity(newPassword===confirmPassword?"":"两次输入的新密码不一致");
-  if(!form.reportValidity())return;
-  button.disabled=true;status.textContent="正在修改…";
-  try{await authRequest("/api/auth/password",{currentPassword,newPassword},"PATCH");form.reset();status.textContent="密码已更新，其他设备上的登录已退出。";showToast("密码已更新")}
-  catch(error){status.textContent=error.message}
-  finally{button.disabled=false}
-});
-$("#password-form [name='confirmPassword']").addEventListener("input",event=>event.currentTarget.setCustomValidity(""));
-$("#account-role-list").addEventListener("click",async event=>{
-  const button=event.target.closest("[data-account-role-save]");if(!button)return;
-  const userId=button.dataset.accountRoleSave,user=accountUsers.find(item=>item.id===userId),select=$(`[data-account-role="${CSS.escape(userId)}"]`),role=select?.value,status=$("#account-role-status");
-  if(!user||!["user","owner"].includes(role)||role===user.role)return;
-  if(user.role==="owner"&&role==="user"&&!confirm(`撤销 ${user.username} 的 Owner 权限？该账户需要重新登录。`)){select.value=user.role;return}
-  button.disabled=true;status.textContent="正在更新角色…";
-  try{
-    const result=await authRequest(`/api/auth/users/${encodeURIComponent(userId)}/role`,{role},"PATCH");
-    if(userId===currentUser?.id){showAuthGate("账户权限已变更，请重新登录。");return}
-    accountUsers=accountUsers.map(item=>item.id===userId?result.user:item);renderAccountUsers();status.textContent="角色已更新；该账户需要重新登录。"
-  }catch(error){select.value=user.role;status.textContent=error.message}
-  finally{if(button.isConnected)button.disabled=false}
-});
-$("#logout-button").addEventListener("click",logout);$("#logout-button-account").addEventListener("click",logout);
+$("#logout-button").addEventListener("click",logout);
 export async function startApplication(initial = null, { opening = null } = {}) {
+  if(initial?.session?.authenticated)currentUser=initial.session.user||initial.meta?.user||null;
+  if(initial?.state&&initial?.route){routeDataReady=true;loadedRouteKey=routeDataKey(initial.route)}
   applyCapabilitySurface(initial?.meta?.capabilities||[]);
   const mediaReady=initializeContentImageDraftManager();
   const portFactories=await portFactoriesRequest;

@@ -26,6 +26,8 @@ const appBootstrap = await fs.readFile(path.join(ROOT, "public/frontend/app/boot
 const appRuntime = await fs.readFile(path.join(ROOT, "public/frontend/app/runtime.mjs"), "utf8");
 const actionsEntry = await fs.readFile(path.join(ROOT, "public/frontend/features/actions/index.mjs"), "utf8");
 const actionsController = await fs.readFile(path.join(ROOT, "public/frontend/features/actions/controller.mjs"), "utf8");
+const localTestController = await fs.readFile(path.join(ROOT, "public/frontend/features/account-settings/local-test.mjs"), "utf8");
+const ownerArchitectureController = await fs.readFile(path.join(ROOT, "public/frontend/features/owner-console/architecture-controller.mjs"), "utf8");
 const openingEntry = await fs.readFile(path.join(ROOT, "public/frontend/opening/index.mjs"), "utf8");
 const applicationStyles = await fs.readFile(path.join(ROOT, "public/frontend/styles/application.css"), "utf8");
 const r8Styles = await fs.readFile(path.join(ROOT, "public/frontend/styles/r8.css"), "utf8");
@@ -87,7 +89,7 @@ assert.match(appRuntime, /operation=\+\+authOperationSerial;setAuthBusy\(true\)/
 assert.doesNotMatch(appRuntime, /actionsRequestSerial|actionsSnapshot|renderActionsWorkspace|runActionCommand/);
 assert.match(actionsEntry, /ticket\?\.generation === generation/);
 assert.match(actionsController, /root\.addEventListener\(type, listener\)/);
-assert.match(appRuntime, /LOCAL_TEST_RESPONSE_MISMATCH/);
+assert.match(localTestController, /LOCAL_TEST_RESPONSE_MISMATCH/);
 assert.match(appRuntime, /ownerSurfaceVault\.append\(entry\.node\)/);
 assert.match(appRuntime, /AUTH_REAUTH_REQUIRED/);
 assert.match(appRuntime, /sessionStorage\.setItem\("cike:authenticated-shell","1"\)/);
@@ -98,6 +100,20 @@ assert.match(appRuntime, /completeOnboardingSnapshot\(meta\.onboardingV2\)\s*\?P
 assert.match(appRuntime, /await afterVisibleShellPaint\(\)/);
 assert.match(appRuntime, /load\(\{visibleShell:true,initialSnapshot,opening\}\)/);
 assert.match(appRuntime, /initialSnapshot\s*\?\s*\[initialSnapshot\.state,initialSnapshot\.meta\]/);
+assert.match(appRuntime, /if\(initial\?\.session\?\.authenticated\)currentUser=initial\.session\.user\|\|initial\.meta\?\.user\|\|null/);
+assert.match(appRuntime, /if\(initial\?\.state&&initial\?\.route\)\{routeDataReady=true;loadedRouteKey=routeDataKey\(initial\.route\)\}/);
+assert.match(appRuntime, /if\(applicationLifecycleReady&&!fullRouteStateLoaded/);
+const prepareUserSessionSource = appRuntime.slice(
+  appRuntime.indexOf("function prepareUserSession"),
+  appRuntime.indexOf("function revealUserSession")
+);
+assert.doesNotMatch(prepareUserSessionSource, /rotateSession\(\)/);
+assert.match(prepareUserSessionSource, /restoreView\?\.\(resetRouteAfterAuthentication\?"today":requestedAuthenticatedView\|\|undefined\)/);
+assert.match(appRuntime, /if\(!currentUser\)requestedAuthenticatedView=view/);
+assert.match(appRuntime, /for\(;;\)\{\s*const activeRoute=pageRouter\?\.currentRoute\(\)\|\|route,activeKey=routeDataKey\(activeRoute\)/);
+assert.match(appRuntime, /if\(activeKey!==loadedRouteKey&&routeLoadFailureKey!==activeKey\)continue/);
+assert.match(appRuntime, /await runtimeApplication\.resetSession\(\)/);
+assert.match(appRuntime, /await runtimeApplication\.resetSession\(\);\s*currentUser=user;\s*applyCapabilitySurface\(user\?\.role==="owner"\?ownerCapabilities:\[\]\)/);
 assert.match(appRuntime, /document\.documentElement\.dataset\.runtimeReady\s*=\s*"1"/);
 assert.doesNotMatch(appRuntime, /syncChainRecordKind\(\);await loadActionsWorkspace\(\)/);
 assert.match(actionsController, /提交时的行动已保存；等待期间的新输入已保留。/);
@@ -205,7 +221,7 @@ for (const phrase of ["ASR 服务尚未配置", "内容时间线", "最新在前
 for (const phrase of ["2 vCPU / 1.57 GiB", "MAU 18.4 万", "约 ¥290k–730k/月", "先付费招募体验者", "自带密钥 BYOK"]) {
   assert.doesNotMatch(downloadableSource, new RegExp(phrase), `owner-only content leaked into a public HTML/JS asset: ${phrase}`);
 }
-assert.match(appRuntime, /request\("\/api\/owner\/surfaces\/architecture"\)/);
+assert.match(ownerArchitectureController, /const ENDPOINT = "\/api\/owner\/surfaces\/architecture"/);
 assert.doesNotMatch(appRuntime, /const architectureStages=|commercialPaymentFactPattern|commercialStageScales/);
 
 const homePool = createHomeMemoryPool({

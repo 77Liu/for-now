@@ -32,15 +32,20 @@ const moduleScopes = new Map([
 ]);
 
 const frontendScopes = new Map([
+  ["account-settings", "account-settings"],
   ["actions", "actions"],
   ["capture-journal", "captures-journals"],
   ["home", "home"],
   ["keepsakes", "keepsakes"],
   ["keepsakes-media", "keepsakes"],
   ["library", "library"],
+  ["mine-shell", "basic-surfaces"],
+  ["owner-console", "owner-console"],
+  ["personal-context", "basic-surfaces"],
   ["quotes", "library"],
   ["review-insights", "reviews-chat"],
-  ["thought-discovery", "discovery"]
+  ["thought-discovery", "discovery"],
+  ["trash", "trash-ui"]
 ]);
 
 const allFrontendScopes = [...new Set(frontendScopes.values())];
@@ -48,12 +53,16 @@ const regressionScopes = new Map([
   ["capture-journal-regression.mjs", ["captures-journals"]],
   ["checkin-health-regression.mjs", ["records"]],
   ["frontend-contract-regression.mjs", allFrontendScopes],
+  ["frontend-account-settings-feature-regression.mjs", ["account-settings"]],
+  ["frontend-basic-surfaces-feature-regression.mjs", ["basic-surfaces"]],
   ["frontend-capture-journal-feature-regression.mjs", ["captures-journals"]],
   ["frontend-library-feature-regression.mjs", ["library"]],
   ["frontend-keepsakes-feature-regression.mjs", ["keepsakes"]],
+  ["frontend-owner-console-feature-regression.mjs", ["owner-console"]],
   ["frontend-quotes-feature-regression.mjs", ["library"]],
   ["frontend-review-insights-feature-regression.mjs", ["reviews-chat"]],
   ["frontend-shell-regression.mjs", allFrontendScopes],
+  ["frontend-trash-feature-regression.mjs", ["trash-ui"]],
   ["g2-a-r2-regression.mjs", ["thoughts"]],
   ["g2-actions-regression.mjs", ["actions"]],
   ["g2-discovery-regression.mjs", ["discovery"]],

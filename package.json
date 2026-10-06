@@ -27,6 +27,7 @@
     "test:f6-features": "node scripts/frontend-capture-journal-feature-regression.mjs && npm run test:captures-journals && npm run test:transcription && npm run test:speech-cache",
     "test:f7-features": "node scripts/frontend-library-feature-regression.mjs && node scripts/frontend-quotes-feature-regression.mjs && node scripts/frontend-review-insights-feature-regression.mjs && npm run test:library && npm run test:reviews-chat",
     "test:f8-features": "node scripts/frontend-keepsakes-feature-regression.mjs && npm run test:keepsake-media",
+    "test:f9-features": "node scripts/frontend-basic-surfaces-feature-regression.mjs && node scripts/frontend-owner-console-feature-regression.mjs && node scripts/frontend-account-settings-feature-regression.mjs && node scripts/frontend-trash-feature-regression.mjs && node scripts/personal-context-regression.mjs && npm run test:onboarding-v2 && npm run test:auth && npm run test:ai-budget && node scripts/trash-regression.mjs",
     "test:page-router": "node scripts/page-router-lifecycle-regression.mjs",
     "test:auth": "node scripts/auth-regression.mjs",
     "test:api-v1": "node scripts/api-v1-contract-regression.mjs",

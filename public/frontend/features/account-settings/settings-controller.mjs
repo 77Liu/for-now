@@ -324,6 +324,7 @@ export function createSettingsFeatureController({
     render({ changedDomains } = {}) {
       return domainsRelevant(changedDomains) ? render() : false;
     },
+    stopAudio: () => voicePreview.stop({ clearStatus: true }),
     unmount,
     resetSession
   });

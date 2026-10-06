@@ -18,6 +18,16 @@ if (bootstrapRoute.view === "export") {
   globalThis.__forNowKeepsakesFeatureRequest ||= import("../features/keepsakes/index.mjs");
 } else if (["review", "statistics"].includes(bootstrapRoute.view)) {
   globalThis.__forNowReviewInsightsFeatureRequest ||= import("../features/review-insights/index.mjs");
+} else if (["mine", "permission", "about"].includes(bootstrapRoute.view)) {
+  globalThis.__forNowMineShellFeatureRequest ||= import("../features/mine-shell/index.mjs");
+} else if (bootstrapRoute.view === "personal-context") {
+  globalThis.__forNowPersonalContextFeatureRequest ||= import("../features/personal-context/loader.mjs");
+} else if (["account", "settings"].includes(bootstrapRoute.view)) {
+  globalThis.__forNowAccountSettingsFeatureRequest ||= import("../features/account-settings/loader.mjs");
+} else if (bootstrapRoute.view === "trash") {
+  globalThis.__forNowTrashFeatureRequest ||= import("../features/trash/loader.mjs");
+} else if (["ai-cost", "architecture", "commercialization"].includes(bootstrapRoute.view)) {
+  // Owner feature code is loaded only after capability routing accepts the page.
 } else {
   globalThis.__forNowLegacyFeatureRequest ||= import("../features/legacy-pages/index.mjs");
 }

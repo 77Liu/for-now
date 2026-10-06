@@ -1774,8 +1774,10 @@ try {
   })()`), { count: 12, label: "25 件", display:"grid", columns:3, layers: 2, thumb: true, background: true, backgroundOpacity: "0.15", originalReads: 0, tags: "#展览#同行", pagination: "已显示 12 / 25 件" });
   assert.equal(await waitUntil(`[...document.querySelectorAll(".keepsake-card img")].every(image=>image.complete&&image.naturalWidth>0)`),true);
   assert.equal(await waitUntil(`[...document.querySelectorAll(".keepsake-card-image")].every(stack=>stack.dataset.placementState)`),true);
+  assert.equal(await waitUntil(`Boolean(window.__keepsakeObservers.at(-1)?.target)`),true);
   await evaluate(`window.__keepsakeObservers.at(-1).trigger();true`);
   assert.equal(await waitUntil(`document.querySelectorAll(".keepsake-card").length===24&&document.querySelector("#keepsake-pagination-status").textContent==="已显示 24 / 25 件"`),true);
+  assert.equal(await waitUntil(`Boolean(window.__keepsakeObservers.at(-1)?.target)`),true);
   await evaluate(`window.__keepsakeObservers.at(-1).trigger();true`);
   assert.equal(await waitUntil(`document.querySelectorAll(".keepsake-card").length===25&&document.querySelector("#keepsake-pagination").hidden`),true);
   await evaluate(`document.querySelector("[data-keepsake-open]").click(); true`);
@@ -2402,7 +2404,7 @@ try {
     document.querySelector('[data-view="thoughts"]').click();
     return true
   })()`);
-  assert.equal(await waitUntil(`document.querySelector("#view-thoughts").classList.contains("active")&&!document.querySelector("#view-thoughts").inert`),true);
+  assert.equal(await waitUntil(`document.querySelector("#view-thoughts").classList.contains("active")&&!document.querySelector("#view-thoughts").inert&&!document.querySelector("#view-thoughts").hasAttribute("aria-busy")`),true);
   await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
   assert.equal(await waitUntil(`!document.querySelector("#view-captures").inert&&!document.querySelector("#view-captures").hasAttribute("aria-busy")&&document.querySelector('[data-capture-id="capture-1"]')`),true);
   await evaluate(`document.querySelector("#capture-create-toggle").click();true`);
@@ -2478,7 +2480,7 @@ try {
   assert.deepEqual(captureCardLayout, { capped: true, timeInMeta: true, metaAboveCard: true, actionRows: true, actionsCompact: true, actionsRightAligned: true, actionsFloatRight: true, tagsInMeta: true });
   const collapsedCaptureHeight = await evaluate(`document.querySelector('[data-capture-id="capture-long"] .capture-content-viewport').clientHeight`);
   await evaluate(`document.querySelector('[data-capture-id="capture-long"] .capture-item').click(); true`);
-  assert.equal(await evaluate(`(() => { const card=document.querySelector('[data-capture-id="capture-long"]'),item=card.querySelector(".capture-item"),viewport=card.querySelector(".capture-content-viewport"),button=card.querySelector("[data-capture-expand]"); return viewport.clientHeight>${collapsedCaptureHeight}&&item.classList.contains("is-expanded")&&button.getAttribute("aria-expanded")==="true"&&button.textContent.trim()==="⌄"; })()`), true);
+  assert.equal(await waitUntil(`(() => { const card=document.querySelector('[data-capture-id="capture-long"]'),item=card.querySelector(".capture-item"),viewport=card.querySelector(".capture-content-viewport"),button=card.querySelector("[data-capture-expand]"); return viewport.clientHeight>${collapsedCaptureHeight}&&item.classList.contains("is-expanded")&&button.getAttribute("aria-expanded")==="true"&&button.textContent.trim()==="⌄"; })()`), true);
   await evaluate(`(()=>{const input=document.querySelector("#capture-search");input.value="职业规划";input.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
   assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-long"] .capture-item')?.classList.contains("is-expanded")`),true,"capture expansion survives a feed refresh");
   await evaluate(`(()=>{const input=document.querySelector("#capture-search");input.value="";input.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
@@ -2497,7 +2499,11 @@ try {
   assert.equal(await waitUntil(`window.__captureSaves === 1`), true);
   await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
   assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-new-1"]')&&document.querySelector("#capture-id").value===""&&document.querySelector("#capture-content").value===""`), true);
-  assert.equal(await waitUntil(`document.querySelector("#toast").textContent==="捕念列表刷新暂时失败。刚才的捕念已经保存。请稍后重试。"`),true);
+  assert.equal(
+    await waitUntil(`document.querySelector("#toast").textContent==="捕念列表刷新暂时失败。刚才的捕念已经保存。请稍后重试。"`),
+    true,
+    JSON.stringify(await evaluate(`({toast:document.querySelector("#toast").textContent,hidden:document.querySelector("#toast").hidden,requests:window.__apiRequests.slice(-12)})`))
+  );
   assert.equal(await evaluate(`!document.querySelector("#toast").textContent.includes("DISCOVERY_BACKEND_INTERNAL")`),true);
   const capturePayload = await evaluate(`window.__capturePayloads[0]`);
   assert.deepEqual(capturePayload.tags, ["测试"]);
@@ -3321,6 +3327,7 @@ try {
   assert.equal(await waitUntil(`window.__thoughtSaves===${thoughtSavesBeforePending+1}`,160,25),true);
   await evaluate(`document.querySelector('[data-home-editor-close="thought"]').click();true`);
   await evaluate(`document.querySelector('[data-section="mine"]').click(); true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-mine").classList.contains("active")&&!document.querySelector("#view-mine").inert&&!document.querySelector("#view-mine").hasAttribute("aria-busy")`),true);
   const mineDesktop = await evaluate(`(() => ({
     active:document.querySelector("#view-mine").classList.contains("active"),
     sectionHidden:document.querySelector("#section-nav").hidden,
@@ -3531,7 +3538,14 @@ try {
   await fs.writeFile("/tmp/growth-commercialization-mobile.png",Buffer.from(commercializationMobileScreenshot.data,"base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
   await evaluate(`document.querySelector('[data-view="account"]').click(); true`);
-  assert.equal(await waitUntil(`document.querySelectorAll("#account-role-list .account-role-row").length===2`),true);
+  assert.equal(
+    await waitUntil(`document.querySelectorAll("#account-role-list .account-role-row").length===2`),
+    true,
+    JSON.stringify({
+      page: await evaluate(`({active:document.querySelector(".view.active")?.id,busy:document.querySelector("#view-account").getAttribute("aria-busy"),roles:document.querySelector("#account-role-list").textContent,toast:document.querySelector("#toast").textContent,requests:window.__apiRequests.slice(-12)})`),
+      exceptions: cdp.events.filter(event=>event.method==="Runtime.exceptionThrown").slice(-3).map(event=>event.params.exceptionDetails.exception?.description||event.params.exceptionDetails.text)
+    })
+  );
   assert.deepEqual(await evaluate(`({
     active:document.querySelector("#view-account").classList.contains("active"),
     authenticated:!document.querySelector("#account-authenticated").hidden,
@@ -3556,6 +3570,7 @@ try {
   await evaluate(`document.querySelector("#password-form [name='currentPassword']").value="old-password-1"; document.querySelector("#password-form [name='newPassword']").value="new-password-2"; document.querySelector("#password-form [name='confirmPassword']").value="new-password-2"; document.querySelector("#password-form").requestSubmit(); true`);
   assert.equal(await waitUntil(`window.__passwordChanges===1&&document.querySelector("#password-status").textContent.includes("密码已更新")`), true);
   await evaluate(`document.querySelector('[data-view="settings"]').click(); true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-settings").classList.contains("active")&&!document.querySelector("#view-settings").inert&&!document.querySelector("#view-settings").hasAttribute("aria-busy")`),true);
   assert.deepEqual(await evaluate(`(() => {const rate=document.querySelector("#tts-generation-rate"),voice=document.querySelector("#tts-default-voice"),preview=document.querySelector("#tts-voice-preview"),assistant=document.querySelector("#assistant-name").closest("label"),exclusive=document.querySelector("[data-exclusive-agent-comment]");return{profileModels:document.querySelectorAll("[data-profile-model]").length,profileEfforts:document.querySelectorAll("[data-profile-effort]").length,sceneTiers:document.querySelectorAll("[data-ai-scenario]").length,annotationSceneTiers:document.querySelectorAll('[data-ai-scenario="annotationShenji"]').length,sceneEfforts:document.querySelectorAll("[data-ai-effort]").length,responseStyles:document.querySelectorAll("[data-response-style]").length,annotationStyles:document.querySelectorAll('[data-response-style="annotationShenji"]').length,exclusiveLabel:exclusive?.querySelector("span")?.textContent,exclusiveAfterAssistant:assistant.nextElementSibling===exclusive,voice:voice.value,voices:voice.options.length,previewName:preview.getAttribute("aria-label"),previewTitle:preview.title,min:rate.min,max:rate.max,value:rate.value,accessibleName:rate.getAttribute("aria-label"),valueText:rate.getAttribute("aria-valuetext"),label:document.querySelector("#tts-generation-rate-value").textContent}})()`), {
     profileModels: 4,
     profileEfforts: 0,
@@ -3588,8 +3603,10 @@ try {
   await evaluate(`document.querySelector("#tts-voice-preview").click();true`);
   assert.equal(await waitUntil(`window.__speechPreviewRequests.length===1&&!window.__lastSpeechAudio.paused`),true);
   await evaluate(`window.__previewUrlBeforeLeave=window.__lastSpeechAudio.src;document.querySelector("#view-settings .mine-back").click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-mine").classList.contains("active")&&!document.querySelector("#view-mine").inert&&!document.querySelector("#view-mine").hasAttribute("aria-busy")`),true);
   assert.deepEqual(await evaluate(`({stopped:window.__lastSpeechAudio.paused,revoked:window.__speechRevokedUrls.includes(window.__previewUrlBeforeLeave),active:document.querySelector("#view-mine").classList.contains("active")})`),{stopped:true,revoked:true,active:true});
   await evaluate(`document.querySelector('#view-mine [data-view="settings"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-settings").classList.contains("active")&&!document.querySelector("#view-settings").inert&&!document.querySelector("#view-settings").hasAttribute("aria-busy")`),true);
   await evaluate(`document.querySelector('[data-profile-model="lite"]').value = "deepseek-v4-pro";document.querySelector('[data-ai-scenario="diaryLead"]').value = "ultra";document.querySelector("#assistant-name").value="照见";document.querySelector('[data-response-style="thoughtAnswer"]').value="deep";document.querySelector('[data-response-style="annotationShenji"]').value="structured";document.querySelector("#tts-default-voice").value="zh_male_m191_uranus_bigtts";const rate=document.querySelector("#tts-generation-rate");rate.value="25";rate.dispatchEvent(new Event("input",{bubbles:true}));document.querySelector("#llm-settings-form").requestSubmit(); true`);
   assert.equal(await waitUntil(`window.__settingsSaves === 1`), true);
   const savedSettings = await evaluate(`({ model: document.querySelector('[data-profile-model="lite"]').value, preservedProfileEffort:window.__lastSettingsPayload.profiles.lite.effort, scene: document.querySelector('[data-ai-scenario="diaryLead"]').value, preservedAnnotationScenario:window.__lastSettingsPayload.scenarios.annotationShenji, name:document.querySelector("#assistant-name").value, style:document.querySelector('[data-response-style="thoughtAnswer"]').value, annotationStyle:window.__lastSettingsPayload.responseStyles.annotationShenji, defaultVoice:window.__lastSettingsPayload.speech.defaultVoice, generationRate:window.__lastSettingsPayload.speech.generationRate, existingAssetVoice:window.__speechAssets.find(asset=>asset.id==="asset-answer-kept-v1")?.voice, rateLabel:document.querySelector("#tts-generation-rate-value").textContent, rateValueText:document.querySelector("#tts-generation-rate").getAttribute("aria-valuetext") })`);
@@ -3606,10 +3623,12 @@ try {
   await fs.writeFile("/tmp/growth-tier-settings-mobile.png", Buffer.from(settingsMobileScreenshot.data, "base64"));
   assert.equal(await evaluate(`document.querySelector("#section-nav").hidden`), true);
   await evaluate(`document.querySelector("#view-settings .mine-back").click(); true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-mine").classList.contains("active")&&!document.querySelector("#view-mine").inert&&!document.querySelector("#view-mine").hasAttribute("aria-busy")`),true);
   assert.deepEqual(await evaluate(`({active:document.querySelector("#view-mine").classList.contains("active"),version:document.querySelector("#mine-app-version").textContent,centered:getComputedStyle(document.querySelector("#mine-app-version")).textAlign==="center",noOverflow:document.documentElement.scrollWidth<=window.innerWidth})`),{active:true,version:"v0.2.0",centered:true,noOverflow:true});
   const mineMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-mine-mobile.png", Buffer.from(mineMobileScreenshot.data, "base64"));
   await evaluate(`document.querySelector('#view-mine [data-view="about"]').click(); true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-about").classList.contains("active")&&!document.querySelector("#view-about").inert&&!document.querySelector("#view-about").hasAttribute("aria-busy")`),true);
   const aboutMobile = await evaluate(`({
     active: document.querySelector("#view-about").classList.contains("active"),
     loopSteps: document.querySelectorAll(".about-loop li").length,
@@ -3625,6 +3644,7 @@ try {
   await fs.writeFile("/tmp/growth-about-mobile.png", Buffer.from(aboutMobileScreenshot.data, "base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
   await evaluate(`document.querySelector('[data-view="today"]').click(); document.querySelector('[data-section="mine"]').click(); document.querySelector('#view-mine [data-view="about"]').click(); true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-about").classList.contains("active")&&!document.querySelector("#view-about").inert&&!document.querySelector("#view-about").hasAttribute("aria-busy")`),true);
   const aboutDesktop = await evaluate(`(() => {
     return {
       active: document.querySelector("#view-about").classList.contains("active") && document.querySelector('[data-section="mine"]').classList.contains("active") && document.querySelector("#section-nav").hidden,
@@ -3681,7 +3701,7 @@ try {
   await evaluate(`(()=>{const file=new File([new Uint8Array([1,2,3])],"thought-draft.png",{type:"image/png"}),transfer=new DataTransfer();transfer.items.add(file);const input=document.querySelector("#thought-root-images");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
   assert.equal(await waitUntil(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const request=opening.result.transaction("drafts","readonly").objectStore("drafts").get("user-1:thoughtRoot");request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(request.result?.items?.[0]?.name==="thought-draft.png")}})`),true);
   await evaluate(`document.querySelector('[data-section="mine"]').click();true`);
-  assert.equal(await evaluate(`document.querySelector("#view-mine").classList.contains("active")&&document.querySelector("#section-nav").hidden`),true);
+  assert.equal(await waitUntil(`document.querySelector("#view-mine").classList.contains("active")&&!document.querySelector("#view-mine").inert&&!document.querySelector("#view-mine").hasAttribute("aria-busy")&&document.querySelector("#section-nav").hidden`),true);
   const accountSwitchCoreRequests = await evaluate(`["GET /api/auth/me","GET /api/v1/startup","GET /api/v1/route-state","GET /api/local-test-mode"].map(request=>request.endsWith("route-state")?window.__apiRequests.filter(value=>value.startsWith(request)).length:window.__apiRequests.filter(value=>value===request).length)`);
   await evaluate(`window.__delayLogout=true;document.querySelector("#logout-button").click();true`);
   assert.equal(await waitUntil(`!document.querySelector("#auth-gate").hidden`),true);
@@ -3699,11 +3719,15 @@ try {
   await evaluate(`window.__releaseSecondState();true`);
   assert.equal(await waitUntil(`document.querySelector("#account-name").textContent==="second"&&document.querySelector("#auth-gate").hidden&&!document.body.classList.contains("auth-locked")`),true);
   assert.equal(await waitUntil(`window.__apiRequests.filter(value=>value==="GET /api/local-test-mode").length===${accountSwitchCoreRequests[3] + 1}`),true);
-  assert.deepEqual(
-    (await evaluate(`["GET /api/auth/me","GET /api/v1/startup","GET /api/v1/route-state","GET /api/local-test-mode"].map(request=>request.endsWith("route-state")?window.__apiRequests.filter(value=>value.startsWith(request)).length:window.__apiRequests.filter(value=>value===request).length)`)).map((value,index)=>value-accountSwitchCoreRequests[index]),
-    [0, 1, 1, 1],
-    "new login must load the new account snapshot once"
-  );
+  const accountSwitchCoreDeltas = (
+    await evaluate(`["GET /api/auth/me","GET /api/v1/startup","GET /api/v1/route-state","GET /api/local-test-mode"].map(request=>request.endsWith("route-state")?window.__apiRequests.filter(value=>value.startsWith(request)).length:window.__apiRequests.filter(value=>value===request).length)`)
+  ).map((value,index)=>value-accountSwitchCoreRequests[index]);
+  if (JSON.stringify(accountSwitchCoreDeltas) !== JSON.stringify([0, 1, 1, 1])) {
+    throw new Error(`new login must load the new account snapshot once: ${JSON.stringify({
+      deltas: accountSwitchCoreDeltas,
+      requests: await evaluate(`window.__apiRequests.slice(-30)`)
+    })}`);
+  }
   assert.deepEqual(await evaluate(`(() => {
     const links=document.querySelector("[data-section-links='today']");
     return {
@@ -3724,6 +3748,7 @@ try {
     values:[...document.querySelectorAll('[data-daily-form="weight"] input,[data-daily-form="exercise"] input')].filter(input=>!["occurredAt","clothing"].includes(input.name)&&input.value!=="").map(input=>[input.name,input.value])
   })`),{empty:true,previews:0,values:[]});
   await evaluate(`window.confirm=()=>true;document.querySelectorAll(".modal-backdrop").forEach(item=>item.hidden=true);document.querySelector("#toast").hidden=true;document.querySelector('[data-view="settings"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-settings").classList.contains("active")&&!document.querySelector("#view-settings").inert&&!document.querySelector("#view-settings").hasAttribute("aria-busy")`),true);
   assert.deepEqual(await evaluate(`({visible:!document.querySelector("#local-test-settings").hidden,cold:document.querySelector('[data-local-test-mode="cold"]').classList.contains("active"),coldDisabled:document.querySelector('[data-local-test-mode="cold"]').disabled,summaryOk:/空账户工作区/.test(document.querySelector("#local-test-summary").textContent),entryOk:/使用模拟 \\/ 冷启测试 · 当前冷启测试/.test(document.querySelector("#mine-settings-summary").textContent)})`),{visible:true,cold:true,coldDisabled:true,summaryOk:true,entryOk:true});
   const localTestSettingsScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
   await fs.writeFile("/tmp/growth-local-test-settings.png",Buffer.from(localTestSettingsScreenshot.data,"base64"));
@@ -3739,7 +3764,9 @@ try {
   await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
   assert.equal(await waitUntil(`window.__localHydrateRequests.includes("captures")&&document.querySelector("#capture-list").textContent.includes("这个念头")`),true);
   assert.equal(await evaluate(`(window.__attachmentReads||[]).length-window.__attachmentReadsBeforeModeSwitch`),0);
-  await evaluate(`document.querySelector('[data-view="settings"]').click();document.querySelector('[data-view="captures"]').click();true`);
+  await evaluate(`document.querySelector('[data-view="settings"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-settings").classList.contains("active")&&!document.querySelector("#view-settings").inert&&!document.querySelector("#view-settings").hasAttribute("aria-busy")`),true);
+  await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
   await sleep(100);
   assert.equal(await evaluate(`window.__localHydrateRequests.filter(scope=>scope==="captures").length`),1);
   await evaluate(`window.__failCaptureCreate=true;document.querySelector("#capture-content").value="范围切换时保留的待同步记录";document.querySelector("#capture-form").requestSubmit();true`);
@@ -3748,7 +3775,9 @@ try {
   assert.equal(await waitUntil(`Boolean(document.querySelector('[data-action-complete="ui-action"]'))`),true);
   await evaluate(`window.__failActionNetwork=true;document.querySelector('[data-action-complete="ui-action"]').click();true`);
   assert.equal(await waitUntil(`document.querySelector(".action-column:nth-child(3)")?.textContent.includes("服务器新标题")&&document.querySelector(".action-column:nth-child(3) .checkin-sync-state.pending")`),true);
-  await evaluate(`document.querySelector('[data-view="settings"]').click();window.__delayActionList=true;document.querySelector('[data-view="today"]').click();true`);
+  await evaluate(`document.querySelector('[data-view="settings"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-settings").classList.contains("active")&&!document.querySelector("#view-settings").inert&&!document.querySelector("#view-settings").hasAttribute("aria-busy")`),true);
+  await evaluate(`window.__delayActionList=true;document.querySelector('[data-view="today"]').click();true`);
   assert.equal(await waitUntil(`typeof window.__releaseActionList==="function"`),true);
   assert.equal(await evaluate(`!document.querySelector("#section-nav").hidden&&!document.querySelector("[data-section-links='today']").hidden&&document.querySelector("[data-section-links='today'] [data-view='today']").getAttribute("aria-current")==="page"`),true);
   await evaluate(`window.__releaseActionList();true`);
@@ -3900,7 +3929,9 @@ try {
   assert.equal(await waitUntil(`document.querySelector('[data-onboarding-action="first-record"]')&&!document.querySelector('[data-onboarding-action="first-record"]').disabled`),true);
   await evaluate(`document.querySelector('[data-onboarding-action="first-record"]').click();true`);
   assert.equal(await waitUntil(`document.querySelector("#view-captures").classList.contains("active")&&document.querySelector("#onboarding-workspace").hidden&&document.activeElement===document.querySelector("#capture-content")`),true);
-  await evaluate(`document.querySelector('[data-view="personal-context"]').click();document.querySelector("#onboarding-v2-reopen").click();true`);
+  await evaluate(`document.querySelector('[data-view="personal-context"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-personal-context").classList.contains("active")&&!document.querySelector("#view-personal-context").inert&&!document.querySelector("#view-personal-context").hasAttribute("aria-busy")`),true);
+  await evaluate(`document.querySelector("#onboarding-v2-reopen").click();true`);
   assert.equal(await waitUntil(`document.querySelector("#view-today").classList.contains("active")&&!document.querySelector("#onboarding-workspace").hidden&&document.querySelector(".onboarding-v2-review")`),true);
   assert.equal(await evaluate(`window.__onboardingSaves`),0);
   assert.equal(await evaluate(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(false);opening.onsuccess=()=>{const transaction=opening.result.transaction("drafts","readwrite"),request=transaction.objectStore("drafts").put({key:"user-1:capture",owner:"user-1",id:"capture",uploadRequestId:"restored-upload",items:[{blob:new Blob([new Uint8Array([1,2,3])],{type:"image/png"}),name:"restored.png",type:"image/png",lastModified:1}]});request.onerror=()=>resolve(false);request.onsuccess=()=>resolve(true)}})`),true);
@@ -3965,15 +3996,20 @@ try {
     primary:[...document.querySelectorAll(".nav-button")].map(item=>item.textContent.trim())
   })`),{ownerNodes:0,architecture:false,commercialization:false,aiCost:false,aiDashboard:false,modelControls:0,apiKey:false,localTest:false,accountRoles:false,effortControls:16,primary:["◌今日","◇所见","∿所思","○我的"]});
   await evaluate(`(()=>{const button=document.createElement("button");button.dataset.view="architecture";document.body.append(button);button.click();button.remove();return true})()`);
+  assert.equal(await waitUntil(`document.querySelector("#view-permission").classList.contains("active")&&!document.querySelector("#view-permission").inert&&!document.querySelector("#view-permission").hasAttribute("aria-busy")`),true);
   assert.deepEqual(await evaluate(`({permission:document.querySelector("#view-permission").classList.contains("active"),title:document.querySelector("#permission-title").textContent,sensitive:document.querySelector("main").innerText.includes("2 vCPU")||document.querySelector("main").innerText.includes("API 密钥")})`),{permission:true,title:"架构设计仅 Owner 可访问",sensitive:false});
-  await evaluate(`document.querySelector('[data-view="settings"]').click();document.querySelector('[data-ai-effort="thoughtAnswer"]').value="none";document.querySelector("#llm-settings-form").requestSubmit();true`);
+  await evaluate(`document.querySelector('[data-view="settings"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-settings").classList.contains("active")&&!document.querySelector("#view-settings").inert&&!document.querySelector("#view-settings").hasAttribute("aria-busy")`),true);
+  await evaluate(`document.querySelector('[data-ai-effort="thoughtAnswer"]').value="none";document.querySelector("#llm-settings-form").requestSubmit();true`);
   assert.equal(await waitUntil(`window.__preferenceSaves===1&&document.querySelector("#llm-settings-status").textContent.includes("偏好已保存")`),true);
   assert.deepEqual(await evaluate(`({effort:window.__lastSettingsPayload.sceneEfforts.thoughtAnswer,profiles:Object.hasOwn(window.__lastSettingsPayload,"profiles"),scenarios:Object.hasOwn(window.__lastSettingsPayload,"scenarios"),apiKey:Object.hasOwn(window.__lastSettingsPayload,"apiKey")})`),{effort:"none",profiles:false,scenarios:false,apiKey:false});
   await evaluate(`document.querySelector('[data-view="statistics"]').click();true`);
   assert.equal(await waitUntil(`document.querySelector("#record-total strong")?.textContent==="41"`),true);
   assert.deepEqual(await evaluate(`({title:document.querySelector("#statistics-page-title").textContent,aiDashboard:Boolean(document.querySelector("#view-statistics .ai-dashboard"))})`),{title:"留下了什么",aiDashboard:false});
   const reauthCoreRequests = await evaluate(`["GET /api/auth/me","GET /api/v1/startup","GET /api/v1/route-state","GET /api/local-test-mode"].map(request=>request.endsWith("route-state")?window.__apiRequests.filter(value=>value.startsWith(request)).length:window.__apiRequests.filter(value=>value===request).length)`);
-  await evaluate(`document.querySelector('[data-view="settings"]').click();window.__reauthNextPreference=true;document.querySelector("#llm-settings-form").requestSubmit();true`);
+  await evaluate(`document.querySelector('[data-view="settings"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-settings").classList.contains("active")&&!document.querySelector("#view-settings").inert&&!document.querySelector("#view-settings").hasAttribute("aria-busy")`),true);
+  await evaluate(`window.__reauthNextPreference=true;document.querySelector("#llm-settings-form").requestSubmit();true`);
   assert.equal(await waitUntil(`!document.querySelector("#auth-gate").hidden&&document.querySelector("#auth-status").textContent.includes("权限已变更")`),true);
   assert.equal(await evaluate(`document.body.classList.contains("auth-locked")`),true);
   assert.deepEqual(
