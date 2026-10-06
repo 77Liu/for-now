@@ -4,11 +4,11 @@
 
 状态：`G0-G2` 已通过；Owner 已验收 V0.5.7 `G7` 并允许进入 V0.5.8
 本地开发。`V0.5.8-13/15/14/16/20/02` 已完成工作区验证，`03/04`
-已完成 B1-B7、F1-F3、F4.1 与 F4.2；服务端入口 G4 代码、本地系统门及
+已完成 B1-B7 与 F1-F4；服务端入口 G4 代码、本地系统门及
 隔离 PostgreSQL 16.14 stable 门均已通过，G4 已关闭。
 F3.1 通知页、F3.2 批注 lifecycle、F3.3 后台结果/跨内容定位及 F4.1
-状态趋势/历史/首页情绪、F4.2 健康媒体草稿与批量体重均已完成，下一步进入
-F4.3 健康提交/sync；
+状态趋势/历史/首页情绪、F4.2 健康媒体草稿与批量体重、F4.3 日录展示/
+提交/sync 均已完成，下一步进入 F5；
 尚未进入 Preview 或发布。
 
 2026-10-06 经 Owner 授权按完整需求原子重排：V0.5.8 只保留 6 条 P00；
@@ -45,7 +45,7 @@ V0.5.8 关闭时，以上结果必须同时具备本地候选、Preview、发布
 | 数据写源 | PostgreSQL 16.15 |
 | 需求池 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblHW2FjQpyJlSck`，重排后 `rev=413 / 252` |
 | 版本记录 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblGmYXwYXmaddqA`，`v0.5.9=reczz28K2FLyWwBC`，`rev=16 / 31` |
-| 研发交付 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblsidvvCyB8Ty9M`，重排后 `rev=120 / 92` |
+| 研发交付 | `MwUibJRQKaae9hsY9lMceQBYnAh / tblsidvvCyB8Ty9M`，当前 `rev=121 / 92` |
 | 服务端入口 | `server.mjs` 3,283 行 |
 | 浏览器入口 | `public/frontend/app/runtime.mjs` 5,291 行 |
 | V0.5.7 过程报告 | [`V0.5.7 开发过程与复盘`](v0.5.7-development-process-2026-10-05.md) |
@@ -129,12 +129,12 @@ V0.5.8 的 6 条 P00 关联版本记录 `reczz28JaO7yXu1K`；V0.5.9 的 8 条 P0
 | 20 | `reczz28Jd8F4oH1y` | 工作区已验证未部署 | `91a10b7..88d37e1`：同步 HTML 开屏、雨景生命周期、真实 paint 性能门、FCP 后入口、退出/失败/清理、watchdog 锁存及 PWA 升级预算通过 |
 | 02 | `reczz28JPdCVUwBD` | 工作区已验证未部署 | `6730597`：三类真实入口、组合 API/import binding/factory 链、G4/G6 例外和 feature lifecycle 已机器冻结；最终独立复审 GO |
 | 03 | `reczz28JPdCVWPzV` | 工作区已验证未部署 | `f3724c4..17fca0d`：B1-B7 已完成，`server.mjs` 3283→4 行；显式 PostgreSQL 16.14 与隔离签名 Node 下 stable 三段通过，G4 已关闭 |
-| 04 | `reczz28JPdCVXtsA` | 进行中 | `e7d99d6..2050489`：F1-F3、F4.1 状态展示及 F4.2 健康媒体/批量体重 lifecycle 已接入；runtime 5291→4663 行，下一步 F4.3，完整 home 延至 F10 |
+| 04 | `reczz28JPdCVXtsA` | 进行中 | `e7d99d6..5139875`：F1-F4 已完成；日录展示、CRUD、媒体草稿、批量体重与 sync 对账已迁入 health feature；runtime 5291→4527 行，下一步 F5，完整 home 延至 F10 |
 
 13、15、14、16、20 都是行为修复，已在现有入口上完成并固定自动化反例；
 共享热点由集成负责人串行接线。02 已冻结结构契约；03 已完成 B1-B7 并关闭
-G4，04 已完成 F1、F2 slice 1、actions lifecycle、F3、F4.1 和 F4.2；
-完整 F2/G5 尚未完成，下一步进入 F4.3，剩余浏览器入口仍只允许单写集成。
+G4，04 已完成 F1、F2 slice 1、actions lifecycle、F3 和 F4；
+完整 F2/G5 尚未完成，下一步进入 F5，剩余浏览器入口仍只允许单写集成。
 Owner 于 2026-10-06
 重申 `server.mjs` 只能负责启动，硬上限 100 行、目标不超过 40 行；不得用
 无边界 barrel 或动态目录扫描制造表面瘦身。
@@ -233,7 +233,7 @@ flowchart TD
     E --> F["✅ 16 费用完整识别"]
     F --> G["✅ 20 同步开屏与 250ms 门"]
     G --> H["✅ 02 入口契约与结构门"]
-    H --> I["◐ 03/04 入口迁移：G4、F4.2 已关闭"]
+    H --> I["◐ 03/04 入口迁移：G4、F4 已关闭"]
   end
   subgraph NEXT["已迁出｜V0.5.9"]
     I -.-> J["17 图片旋转"]
@@ -301,11 +301,11 @@ flowchart TD
 
 | 阶段 | 目标用时 | 置信度 |
 | --- | ---: | --- |
-| F4.3-F10 与浏览器 G6 | 10-16 h | 中；只允许架构需求内收口 |
+| F5-F10 与浏览器 G6 | 8-14 h | 中；只允许架构需求内收口 |
 | 固定候选、完整门与 Preview | 3-6 h | 中；需要候选无漂移 |
 | 生产发布与观察 | 1-2 h | 中低；需单独授权 |
 
-形成可发布候选的墙钟目标为 14-24 小时；生产关闭预计 1-2 天。新增功能、
+形成可发布候选的剩余墙钟目标为 12-20 小时；生产关闭预计 1-2 天。新增功能、
 候选 SHA 变化、权限/恢复/性能门失败或 Preview 授权变化都会使排期失效，
 必须回到 G1/G2 重排。
 
@@ -323,7 +323,7 @@ flowchart TD
 ### G1：通过
 
 - 本轮冻结 6 条 P00；任何新增功能和 8 条 P0 均进入 V0.5.9。
-- P00 行为已固定，当前只完成入口 F4.3-F10/G6 与候选关闭。
+- P00 行为已固定，当前只完成入口 F5-F10/G6 与候选关闭。
 - 排期是目标量级，不是日期承诺。
 - Owner 于 2026-10-06 授权按完整需求原子拆分并同步 Base/本地计划。
 
@@ -346,7 +346,7 @@ flowchart TD
 - R9.4-F1 配置、开屏 PRD 和入口拆分设计归档到本工作树；CDN 与系统协作
   设计由 V0.5.9 接收。
 - 本计划按生产 `2c395c0` 和当前入口规模重排；Base 当前为需求
-  `rev=413 / 252`、版本 `rev=16 / 31`、交付 `rev=120 / 92`。
+  `rev=413 / 252`、版本 `rev=16 / 31`、交付 `rev=121 / 92`。
 - `V0.5.8-13@a6a442b` 已通过 Journey Smoke 13/13、浏览器 UI、
   URL/history、frontend shell、mobile platform 与语法检查；思绪页创建、
   取消和提交保持 `/thoughts` 与列表上下文；证据提交为 `372201d`。
@@ -475,13 +475,31 @@ flowchart TD
   `76874 ms`、Journey Smoke `15/15` `65658 ms` 通过；health daily 首次
   closure 为 `3 modules / 40953 B`，首页隐藏 feature 请求 0，预算未放宽。
 
+### F4.3 日录展示、提交与 sync
+
+- 本地提交 `5139875` 将日录 presenter、编辑/删除、V1 提交和健康草稿
+  operation 对账迁入 `features/health`，同时删除 runtime 中的旧展示、
+  submit 监听及 health 专属 sync 分支；通用 request coordinator、乐观投影
+  和全应用同步健康指标继续由 app 层持有。
+- 提交 adapter 保持稳定幂等键、`If-Match`、`recoverCommitted`、逐张体重
+  提交与草稿延迟清理；新增 pending、conflict、committed、账户切换和订阅
+  回收反例。日录展示按路由动态加载，OCR 与提交仍只在用户操作后加载。
+- `runtime.mjs` 4663→4527 行，SHA
+  `342b3979ae298420a923c939204eaf0709f055b4840a5523e226e1d87eae1a76`；
+  API 66→65、DOM query 152→141、event binding 232→229、
+  template 670→614，timer 50 不变；模块登记 68、browser G6 例外 6。
+- `npm run check`、F4 专项、sync、PWA、web budget、完整 frontend `25/25`
+  `83034 ms` 与 Journey Smoke `15/15` `63884 ms` 通过；health 静态闭包
+  为 `3 modules / 38617 B`，首页隐藏 feature 请求 0。一次独立复审
+  blocker/P0/P1=`0/0/0`。
+
 ### 2026-10-06 滚动调度与 G4
 
 - 已将事件重排、角色池缩放、候选内容绑定、资源约束和实际时间证据融合到
   现有多 Agent 与迭代规划 SOP；未建立重复控制平台。目标树没有
   `SOP/worktree-lifecycle.md`，根工作区同名文件仍为未提交提案，因此未复制、
   未宣称目标 HEAD 已生效。
-- 当前 5 个注册工作树，低于 6 个硬上限。F4.2 由主调度单写共享入口；
+- 当前 5 个注册工作树，低于 6 个硬上限。F4.3 由主调度单写共享入口；
   Reviewer、PG Validator 与 F5/F6 Scout 使用只读角色，没有新增工作树。
 - 显式 PostgreSQL 16.14 路径预检通过；首次 stable 在主集成阶段因当前 Node
   与 `sharp` Team ID 不同失败。使用既有临时 ad-hoc 签名 Node 隔离后，同一
@@ -493,7 +511,7 @@ flowchart TD
 
 当前未完成：
 
-- 下一步进入 F4.3-F10，完成健康提交/sync 及 browser runtime 收口与
+- 下一步进入 F5-F10，完成剩余 browser runtime 收口与
   G6-G7；服务端入口已收口为 4 行、删除全部 server 迁移例外并通过 G4。
 - 未执行 push、tag、Release、Preview/生产部署或生产写入。
 

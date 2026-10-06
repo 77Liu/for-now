@@ -70,10 +70,9 @@ npm run start:local-test
 - **V0.5.8 已按完整需求原子缩减并继续本地开发**：当前只保留 6 条 P00，
   覆盖移动端记录/思绪、快捷语音、第三方费用、250ms 同步开屏和大入口
   纯组装化；原 8 条 P0 已整体迁入 V0.5.9。Owner 已验收 V0.5.7 G7 与
-  V0.5.8 G1/G2；当前 03/04 已完成
-  B1-B7、F1-F3、F4.1 与 F4.2，`server.mjs` 已降至 4 行，
-  `runtime.mjs` 已降至 4663 行；PostgreSQL 16.14 stable 已在隔离签名 Node
-  下通过，G4 已关闭。当前下一步为 F4.3 健康提交/sync，见
+  V0.5.8 G1/G2；当前 03/04 已完成 B1-B7 与 F1-F4，`server.mjs` 已降至
+  4 行，`runtime.mjs` 已降至 4527 行；PostgreSQL 16.14 stable 已在隔离
+  签名 Node 下通过，G4 已关闭。当前下一步为 F5 思绪领域收口，见
   `reports/iteration-plan-v0.5.8-2026-10-05.md`；V0.5.9 接收计划见
   `reports/iteration-plan-v0.5.9-2026-10-06.md`。
 - **`v0.1.1` 发布历史保留**：提交 `54a6326f14ca`、标签 `hotfix-v0.1.1-thought-answer` 在 v0.1.0 基础上修复了收集页思绪自动回答任务创建问题，现已由 v0.2.1 替代。

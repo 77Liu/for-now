@@ -3,10 +3,10 @@
 - 日期：2026-10-05
 - 起始基线：`f911cde4505d3434ab4afcf4b5614f8e828f4bcc`
 - 当前门禁：`iteration-G4 / entrypoint-G4-closed`
-- 当前状态：`v0.5.8-scope-rebased-f4.3-next`
+- 当前状态：`f4-closed-f5-next`
 - 活跃工作树：`5 / 6`（B6 叶子已清理）
 - 机器事实：3 个入口策略、68 个模块、237 条拥有路由、6 条迁移例外；
-  `server.mjs` 由 3283 行降至 4 行，`runtime.mjs` 当前为 4663 行
+  `server.mjs` 由 3283 行降至 4 行，`runtime.mjs` 当前为 4527 行
 - 授权边界：允许本地代码、测试、文档与任务提交；不允许 push、tag、Release、
   Preview、部署、云资源修改、真实付费调用或生产写入
 
@@ -647,7 +647,7 @@ npm run test:frontend-shell
 | `F4.2` | F4.1 | orchestrator | health feature、runtime、module/SW/runner | check、F4、frontend、PWA、budget、Smoke、review 0/0/0 | `closed` | F4.3 |
 | `G4-PG` | B7 固定后端 manifest | validator | 无仓库写入 | PG 16.14 stable 三段通过 | `closed` | G6 漂移复验 |
 | `SOP-R1` | 调度定稿 | orchestrator | 两份 SOP、目录与本报告 | 入口/输出/退出门可追溯 | `closed` | F4.3 |
-| `F4.3` | F4.2 | orchestrator | health submit/sync 内部模块；runtime 接线单写 | 提交/同步/冲突/账户与离页反例 | `queued` | SOP-R1 后启动 |
+| `F4.3` | F4.2 | orchestrator | health records/submission、runtime、module/SW/runner | check、F4、sync、frontend、PWA、budget、Smoke、review 0/0/0 | `closed` | F5 |
 | `F56-SI` | F4.2 | 下一 Developer | `media/content-image-drafts.mjs` 与专项 | 账户隔离、部分上传、rollback、URL 回收 | `ready` | 仅有一个写槽时优先 |
 | `F56-SA` | F4.2 | 下一 Developer | `media/page-audio.mjs` 与专项 | 播放排他、迟到 blob、reset、URL 回收 | `ready` | 等写槽或与 SI 非重叠并行 |
 | `F5-M` | F56-SI/SA | 待分配 | thoughts media 内部文件与专项 | source version、账户、草稿 key、TTS 反例 | `blocked` | 等共享 API |
@@ -661,7 +661,7 @@ runner 和 Service Worker 始终由 orchestrator 按 F5→F6 串行接线。
 
 | 等待项 | 当前影响 | ETA |
 | --- | --- | --- |
-| F4.3 边界与反例冻结 | 当前唯一下一代码动作 | `待测`；缺少可比实际起止事件 |
+| F5 写集与反例冻结 | 当前唯一下一代码动作 | 复用既有 F5/F6 侦察，先确认思绪非媒体边界 |
 | F56-SI / F56-SA 写槽 | 仅剩 1 个工作树槽，不能同时新建两条写树 | F4.3 检查点后重排，时间 `待测` |
 | CDN/OSS/DNS/证书/费用授权 | 阻塞 19 的真实 Preview，不阻塞本地 F4/F5/F6 | 等 Owner 授权，不给工程 ETA |
 
@@ -726,4 +726,23 @@ F4.3 -> F5 -> F6 -> F7 -> F8 -> F9 -> F10 -> G6
   生产发布与观察目标 1-2 小时，另需授权。
 - 可发布候选墙钟目标为 14-24 小时；生产关闭预计 1-2 天。以上是当前范围
   估算，不以删测试、放宽预算或跳过恢复门维持。
-- 下一唯一动作仍是 F4.3；V0.5.9 只完成接收计划，不启动开发。
+- 下一唯一动作是 F5；V0.5.9 只完成接收计划，不启动开发。
+
+## 2026-10-06 F4.3 日录展示、提交与 sync 检查点 R3
+
+- 代码提交：`5139875`。日录 presenter、编辑/删除、V1 create/update/delete
+  和健康草稿 operation 对账已迁入 `features/health`；runtime 只注入
+  request/state/sync 端口，旧展示、submit 监听和 health 专属 sync 分支删除。
+- `runtime.mjs` 4663→4527 行，SHA
+  `342b3979ae298420a923c939204eaf0709f055b4840a5523e226e1d87eae1a76`；
+  API 65、DOM query 141、event binding 229、template 614、timer 50，
+  6 条 browser G6 例外按当前计数冻结。
+- health 静态闭包 `3 modules / 38617 B`；records 仅在 daily 路由加载，
+  OCR/submission 仍在操作后加载；首页隐藏 health 请求 0，未放宽预算。
+- 新增提交稳定幂等键、pending/conflict、committed 草稿清理、账户迟到和
+  operation 订阅回收反例。`check`、F4、sync、PWA、web budget、完整
+  frontend `25/25` `83034 ms`、Journey Smoke `15/15` `63884 ms` 通过；
+  一次独立复审 blocker/P0/P1=`0/0/0`。
+- Base 交付 `04@reczz28JPdCVXtsA` 已最小字段更新并回读，交付表
+  `rev=121 / 92`；仍为“进行中 / 未发布”，下一步 F5。未执行 push、tag、
+  Release、Preview、部署、云资源修改、真实付费调用或生产写入。

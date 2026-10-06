@@ -1036,3 +1036,22 @@ V0.5.8 只有在以下条件同时成立时才可关闭：
 - 2026-10-06 Owner 按完整需求原子缩减 V0.5.8：入口拆分仍是保留的 P00，
   因此 F4.3-F10/G6 继续执行；图片旋转、私有 CDN、开屏设置和系统协作 8 条
   P0 整体迁入 V0.5.9，不属于本入口迁移的新增功能范围。
+
+### F4.3 日录展示、提交与 sync 检查点
+
+- `5139875` 新增按 `/daily` 路由加载的 `features/health/records.mjs`，
+  将日录列表、趋势、编辑/删除和页面交互迁出 runtime；提交 adapter 接管
+  V1 create/update/delete、乐观投影回调、稳定幂等键和冲突恢复。
+- health controller 在 mount 时订阅通用 operation 流，只处理当前账户的
+  `dailyRecords`，unmount 时解除订阅；committed 才清理持久草稿，
+  failed/conflict 释放提交状态，离页或账户变化后不写回页面。
+- `runtime.mjs` 4663→4527 行，SHA
+  `342b3979ae298420a923c939204eaf0709f055b4840a5523e226e1d87eae1a76`；
+  API 66→65、DOM query 152→141、event binding 232→229、
+  template 670→614，timer 50 不变。6 条 G6 例外按更小计数重新冻结。
+- health 静态闭包保持 `3 modules / 38617 B`，records 仅在 daily 路由加载，
+  OCR/submission 仍在操作后加载，首页隐藏 feature 请求为 0；Service Worker
+  cache version 更新为 `cike-shell-v0.5.8-11`。
+- `npm run check`、F4 专项、sync、PWA、web budget、完整 frontend `25/25`
+  `83034 ms` 与 Journey Smoke `15/15` `63884 ms` 通过；独立复审
+  blocker/P0/P1=`0/0/0`。下一步进入 F5。
