@@ -265,9 +265,9 @@
       "type": "application",
       "root": "src/app",
       "publicEntry": "src/app/index.mjs",
-      "allowedDependencies": ["domain.annotations", "domain.tasks", "domain.notifications", "domain.trash", "domain.onboarding", "domain.user-model", "domain.health", "domain.thoughts", "domain.captures", "domain.journals", "domain.books", "domain.quotes", "domain.chats", "domain.reviews", "domain.content-attachments", "domain.ai", "domain.keepsakes", "infrastructure.ai-providers", "shared.time", "shared.attachments", "shared.content", "shared.validation", "shared.prompts", "shared.speech", "shared.concurrency", "shared.persistence", "shared.observability"],
+      "allowedDependencies": ["domain.annotations", "domain.tasks", "domain.notifications", "domain.trash", "domain.onboarding", "domain.user-model", "domain.health", "domain.checkins", "domain.thoughts", "domain.captures", "domain.journals", "domain.books", "domain.quotes", "domain.chats", "domain.reviews", "domain.content-attachments", "domain.ai", "domain.keepsakes", "infrastructure.ai-providers", "shared.time", "shared.attachments", "shared.content", "shared.validation", "shared.prompts", "shared.speech", "shared.concurrency", "shared.persistence", "shared.observability"],
       "owns": { "data": ["Store v16 defaults, compatibility normalization and commercialization migration", "cross-domain derived thought clusters, trend/association insights and user-trace metrics", "role-aware public Store projection, recursive owner metadata filtering and provider capability snapshots", "local-test control normalization, workspace switching, lazy read-only hydration and merge rules", "account-private initialization and ordered startup recovery across local, authenticated and local-test contexts", "AI provider, gate, account settings/usage/cost, site budget, invocation audit and generator composition", "account-scoped attachment upload, media provider gates, health/book recognition, ASR derivatives and speech cache composition", "cross-domain annotation resource resolution and transactional background AI orchestration", "trash location resolution, versioned restore and durable attachment cleanup orchestration", "cross-domain personal context, source receipts, token budgets, activity selection and thought answer prompt composition", "thought chain creation/task transaction, draft/starter generation and foreground answer idempotency", "capture/journal, library and review/chat application workflows", "account-private capture, thought-answer and thought-chain speech cache keys, source invalidation and attachment lifecycle orchestration", "explicit hash-confirmed historical keepsake media migration", "version-bound onboarding claim extraction preparation and candidate task persistence", "bounded startup and current-route projections"], "routes": [] },
-      "tests": ["scripts/store-normalization-regression.mjs", "scripts/derived-statistics-regression.mjs", "scripts/public-state-regression.mjs", "scripts/local-test-control-regression.mjs", "scripts/account-lifecycle-regression.mjs", "scripts/local-test-runtime-regression.mjs", "scripts/local-test-mode-regression.mjs", "scripts/ai-budget-runtime-regression.mjs", "scripts/ai-runtime-regression.mjs", "scripts/media-runtime-regression.mjs", "scripts/personal-context-regression.mjs", "scripts/onboarding-v2-regression.mjs", "scripts/user-model-extraction-regression.mjs", "scripts/trash-regression.mjs", "scripts/collaboration-regression.mjs", "scripts/capture-journal-regression.mjs", "scripts/capture-transcription-regression.mjs", "scripts/speech-cache-regression.mjs", "scripts/volcengine-server-regression.mjs", "scripts/library-regression.mjs", "scripts/reviews-chat-regression.mjs", "scripts/keepsake-media-migration-regression.mjs", "scripts/startup-projection-regression.mjs", "scripts/regression.mjs", "scripts/api-v1-contract-regression.mjs", "scripts/auth-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
+      "tests": ["scripts/store-normalization-regression.mjs", "scripts/derived-statistics-regression.mjs", "scripts/public-state-regression.mjs", "scripts/local-test-control-regression.mjs", "scripts/account-lifecycle-regression.mjs", "scripts/local-test-runtime-regression.mjs", "scripts/local-test-mode-regression.mjs", "scripts/ai-budget-runtime-regression.mjs", "scripts/ai-runtime-regression.mjs", "scripts/media-runtime-regression.mjs", "scripts/content-runtime-regression.mjs", "scripts/personal-context-regression.mjs", "scripts/onboarding-v2-regression.mjs", "scripts/user-model-extraction-regression.mjs", "scripts/trash-regression.mjs", "scripts/collaboration-regression.mjs", "scripts/capture-journal-regression.mjs", "scripts/capture-transcription-regression.mjs", "scripts/speech-cache-regression.mjs", "scripts/volcengine-server-regression.mjs", "scripts/library-regression.mjs", "scripts/reviews-chat-regression.mjs", "scripts/keepsake-media-migration-regression.mjs", "scripts/startup-projection-regression.mjs", "scripts/regression.mjs", "scripts/api-v1-contract-regression.mjs", "scripts/auth-regression.mjs", "scripts/postgres-runtime-checks.mjs"],
       "status": "active"
     },
     {
@@ -1009,7 +1009,7 @@
     {
       "path": "server.mjs",
       "ruleId": "factory-use",
-      "sourceSha256": "3c1202bae77ae2bd4d6668e6744adf683c197261e30c4d5776961f441554de29",
+      "sourceSha256": "8d6c6d0bf4de8d35aaf9c0e463f612dd395a1062046798edccf5cc9cb483f66e",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs assigns createServerRuntime to runtime and starts it",
       "deleteByGate": "G4",
@@ -1020,7 +1020,7 @@
     {
       "path": "server.mjs",
       "ruleId": "calls",
-      "sourceSha256": "3c1202bae77ae2bd4d6668e6744adf683c197261e30c4d5776961f441554de29",
+      "sourceSha256": "8d6c6d0bf4de8d35aaf9c0e463f612dd395a1062046798edccf5cc9cb483f66e",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs constructs and starts createServerRuntime",
       "deleteByGate": "G4",
@@ -1031,7 +1031,7 @@
     {
       "path": "server.mjs",
       "ruleId": "import-bindings",
-      "sourceSha256": "3c1202bae77ae2bd4d6668e6744adf683c197261e30c4d5776961f441554de29",
+      "sourceSha256": "8d6c6d0bf4de8d35aaf9c0e463f612dd395a1062046798edccf5cc9cb483f66e",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs imports createServerRuntime from ./src/app/index.mjs",
       "deleteByGate": "G4",
@@ -1042,7 +1042,7 @@
     {
       "path": "server.mjs",
       "ruleId": "imports",
-      "sourceSha256": "3c1202bae77ae2bd4d6668e6744adf683c197261e30c4d5776961f441554de29",
+      "sourceSha256": "8d6c6d0bf4de8d35aaf9c0e463f612dd395a1062046798edccf5cc9cb483f66e",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs imports only ./src/app/index.mjs",
       "deleteByGate": "G4",
@@ -1053,25 +1053,12 @@
         { "detail": "import is not allowlisted: \"node:url\"", "count": 1 },
         { "detail": "import is not allowlisted: \"node:crypto\"", "count": 1 },
         { "detail": "import is not allowlisted: \"./src/config/index.mjs\"", "count": 1 },
-        { "detail": "import is not allowlisted: \"./src/shared/attachments/index.mjs\"", "count": 1 },
         { "detail": "import is not allowlisted: \"./src/shared/observability/index.mjs\"", "count": 1 },
-        { "detail": "import is not allowlisted: \"./src/modules/thoughts/index.mjs\"", "count": 1 },
         { "detail": "import is not allowlisted: \"./src/modules/onboarding/index.mjs\"", "count": 1 },
-        { "detail": "import is not allowlisted: \"./src/modules/journals/index.mjs\"", "count": 1 },
         { "detail": "import is not allowlisted: \"./src/modules/auth/index.mjs\"", "count": 1 },
-        { "detail": "import is not allowlisted: \"./src/modules/annotations/index.mjs\"", "count": 1 },
-        { "detail": "import is not allowlisted: \"./src/modules/tasks/index.mjs\"", "count": 1 },
         { "detail": "import is not allowlisted: \"./src/modules/notifications/index.mjs\"", "count": 1 },
-        { "detail": "import is not allowlisted: \"./src/modules/trash/index.mjs\"", "count": 1 },
-        { "detail": "import is not allowlisted: \"./src/modules/checkins/index.mjs\"", "count": 1 },
-        { "detail": "import is not allowlisted: \"./src/modules/captures/index.mjs\"", "count": 1 },
-        { "detail": "import is not allowlisted: \"./src/modules/books/index.mjs\"", "count": 1 },
-        { "detail": "import is not allowlisted: \"./src/modules/quotes/index.mjs\"", "count": 1 },
-        { "detail": "import is not allowlisted: \"./src/modules/chats/index.mjs\"", "count": 1 },
-        { "detail": "import is not allowlisted: \"./src/modules/reviews/index.mjs\"", "count": 1 },
         { "detail": "import is not allowlisted: \"./src/modules/statistics/index.mjs\"", "count": 1 },
         { "detail": "import is not allowlisted: \"./src/modules/owner-surfaces/index.mjs\"", "count": 1 },
-        { "detail": "import is not allowlisted: \"./src/modules/content-attachments/index.mjs\"", "count": 1 },
         { "detail": "import is not allowlisted: \"./src/modules/discovery/index.mjs\"", "count": 1 },
         { "detail": "import is not allowlisted: \"./src/modules/exports/index.mjs\"", "count": 1 },
         { "detail": "import is not allowlisted: \"./src/modules/actions/index.mjs\"", "count": 1 },
@@ -1085,7 +1072,6 @@
         { "detail": "import is not allowlisted: \"./admin-snapshot.mjs\"", "count": 1 },
         { "detail": "import is not allowlisted: \"./src/shared/validation/index.mjs\"", "count": 1 },
         { "detail": "import is not allowlisted: \"./src/http/index.mjs\"", "count": 1 },
-        { "detail": "import is not allowlisted: \"./src/modules/health/index.mjs\"", "count": 1 },
         { "detail": "import is not allowlisted: \"./src/shared/persistence/index.mjs\"", "count": 1 },
         { "detail": "import is not allowlisted: \"./public/frontend/pages/index.mjs\"", "count": 1 }
       ]
@@ -1093,7 +1079,7 @@
     {
       "path": "server.mjs",
       "ruleId": "server.api-path",
-      "sourceSha256": "3c1202bae77ae2bd4d6668e6744adf683c197261e30c4d5776961f441554de29",
+      "sourceSha256": "8d6c6d0bf4de8d35aaf9c0e463f612dd395a1062046798edccf5cc9cb483f66e",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs contains no API route literals",
       "deleteByGate": "G4",
@@ -1104,7 +1090,7 @@
     {
       "path": "server.mjs",
       "ruleId": "server.timer",
-      "sourceSha256": "3c1202bae77ae2bd4d6668e6744adf683c197261e30c4d5776961f441554de29",
+      "sourceSha256": "8d6c6d0bf4de8d35aaf9c0e463f612dd395a1062046798edccf5cc9cb483f66e",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs contains no timer orchestration",
       "deleteByGate": "G4",
@@ -1116,7 +1102,7 @@
     {
       "path": "server.mjs",
       "ruleId": "server.store-state",
-      "sourceSha256": "3c1202bae77ae2bd4d6668e6744adf683c197261e30c4d5776961f441554de29",
+      "sourceSha256": "8d6c6d0bf4de8d35aaf9c0e463f612dd395a1062046798edccf5cc9cb483f66e",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs contains no persistence state",
       "deleteByGate": "G4",
@@ -1129,7 +1115,7 @@
     {
       "path": "server.mjs",
       "ruleId": "server.route-composition",
-      "sourceSha256": "3c1202bae77ae2bd4d6668e6744adf683c197261e30c4d5776961f441554de29",
+      "sourceSha256": "8d6c6d0bf4de8d35aaf9c0e463f612dd395a1062046798edccf5cc9cb483f66e",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs delegates route composition to src/app",
       "deleteByGate": "G4",
@@ -1142,11 +1128,11 @@
     {
       "path": "server.mjs",
       "ruleId": "lines.hard",
-      "sourceSha256": "3c1202bae77ae2bd4d6668e6744adf683c197261e30c4d5776961f441554de29",
+      "sourceSha256": "8d6c6d0bf4de8d35aaf9c0e463f612dd395a1062046798edccf5cc9cb483f66e",
       "owner": "V0.5.8-03",
       "removeWhen": "server.mjs is at or below 40 lines",
       "deleteByGate": "G4",
-      "maxValue": 1473
+      "maxValue": 1162
     },
     {
       "path": "public/frontend/app/runtime.mjs",

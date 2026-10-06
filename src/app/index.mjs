@@ -7,6 +7,7 @@ export {
 } from "./ai-budget-runtime.mjs";
 export { createAiRuntime } from "./ai-runtime.mjs";
 export { createMediaRuntime } from "./media-runtime.mjs";
+export { createContentRuntime } from "./content-runtime.mjs";
 export { createBackgroundAi } from "./background-ai.mjs";
 export { createTrashMutations, createTrashCommands } from "./trash.mjs";
 export { createAttachmentCleanup } from "./attachment-cleanup.mjs";

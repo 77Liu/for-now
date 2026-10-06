@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { AsyncLocalStorage } from "node:async_hooks";
 import crypto from "node:crypto";
 import "./prompt-test-setup.mjs";
-import { createContentRuntime } from "../src/app/content-runtime.mjs";
-import { createEmptyStore } from "../src/app/index.mjs";
+import {
+  createContentRuntime,
+  createEmptyStore
+} from "../src/app/index.mjs";
 
 const clone = value => structuredClone(value);
 const now = () => "2026-10-06T12:00:00.000Z";

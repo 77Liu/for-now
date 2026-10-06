@@ -4,54 +4,36 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import { loadAppConfig } from "./src/config/index.mjs";
-import { cleanupTemporaryFiles } from "./src/shared/attachments/index.mjs";
 import { createObservability, createRuntimeMemorySampler, errorMetadata, pruneLogs } from "./src/shared/observability/index.mjs";
-import { createThoughtService, createThoughtTaskTarget, stripThoughtAnswerLead } from "./src/modules/thoughts/index.mjs";
 import {
   createOnboardingService,
   createOnboardingV2Service
 } from "./src/modules/onboarding/index.mjs";
-import { createJournalRecords } from "./src/modules/journals/index.mjs";
 import { capabilitiesFor, createAuthService, isOwner, publicUser } from "./src/modules/auth/index.mjs";
-import { createAnnotationService } from "./src/modules/annotations/index.mjs";
-import { activeTaskForInput, createTaskLifecycle, publicAiTask } from "./src/modules/tasks/index.mjs";
-import { createNotificationService, notificationUnread } from "./src/modules/notifications/index.mjs";
-import { createTrashService } from "./src/modules/trash/index.mjs";
-import { createCheckinRecords } from "./src/modules/checkins/index.mjs";
-import { createCaptureRecords } from "./src/modules/captures/index.mjs";
-import { createBookRecords } from "./src/modules/books/index.mjs";
-import { createQuoteRecords } from "./src/modules/quotes/index.mjs";
-import { createChatRecords } from "./src/modules/chats/index.mjs";
-import { createReviewRecords } from "./src/modules/reviews/index.mjs";
+import { notificationUnread } from "./src/modules/notifications/index.mjs";
 import { createStatisticsService } from "./src/modules/statistics/index.mjs";
 import { architectureOwnerSurface, commercializationOwnerSurface } from "./src/modules/owner-surfaces/index.mjs";
-import { createContentAttachmentService } from "./src/modules/content-attachments/index.mjs";
 import { createThoughtDiscoveryService } from "./src/modules/discovery/index.mjs";
 import { createAccountExport } from "./src/modules/exports/index.mjs";
 import { createActionsService } from "./src/modules/actions/index.mjs";
 import { createFeedbackService } from "./src/modules/feedback/index.mjs";
 import { createUserModelService } from "./src/modules/user-model/index.mjs";
-import {
-  normalizeLlmSettings, normalizeAiUsage, systemPrompt
-} from "./src/modules/ai/index.mjs";
+import { normalizeLlmSettings, normalizeAiUsage } from "./src/modules/ai/index.mjs";
 import { loadPromptCatalog } from "./src/infrastructure/prompt-catalog/index.mjs";
 import {
-  createKeepsakeRecords,
-  keepsakePayload,
   publicKeepsake,
   originalKeepsakeMedia
 } from "./src/modules/keepsakes/index.mjs";
 import { installPromptCatalog } from "./src/shared/prompts/index.mjs";
 import { localDateKey, eventTimeFields } from "./src/shared/time/index.mjs";
 import { buildAdminSnapshot } from "./admin-snapshot.mjs";
-import { createAccountLifecycle, createAnnotationCommands, createAiRuntime, createAiTaskTargets, createBackgroundAi, createLocalTestRuntime, createMediaRuntime, createTrashMutations, createTrashCommands, createThoughtWorkflows, createCaptureJournalWorkflows, createReviewChatWorkflows, createUserModelExtractionService, createStoreNormalizer, createPublicStateProjection, emptyStore, normalizeCommercialization, personalContextProjection, routeStateProjection, startupProjection, storeForUser, withoutOwnerMetadata, STORE_VERSION, TRASH_RETENTION_DAYS, userModelEvidenceCurrent } from "./src/app/index.mjs";
+import { createAccountLifecycle, createAiRuntime, createContentRuntime, createLocalTestRuntime, createStoreNormalizer, createPublicStateProjection, emptyStore, normalizeCommercialization, routeStateProjection, startupProjection, storeForUser, STORE_VERSION, TRASH_RETENTION_DAYS, userModelEvidenceCurrent } from "./src/app/index.mjs";
 import {
   SPEECH_CACHE_SWEEP_INTERVAL_MS,
   SPEECH_CACHE_SWEEP_STARTUP_DELAY_MS
 } from "./src/app/index.mjs";
 import { safeText, recordVersion, safeIso } from "./src/shared/validation/index.mjs";
 import { createAuthHttp, createLocalTestHttp, createLocalTestSessionVault, createReadOnlyUpstream, createJsonHttp, createTaskHttp, createAnnotationHttp, createTrashHttp, createAttachmentHttp, createAiSettingsHttp, createAiCostHttp, createAiBudgetHttp, createKeepsakeHttp, createOnboardingHttp, createOnboardingV2Http, createUserModelHttp, createThoughtHttp, createCheckinHttp, createHealthRecordHttp, createImageRecognitionHttp, createDiscoveryHttp, createExportHttp, createActionsHttp, createFeedbackHttp, createCaptureJournalHttp, createLibraryHttp, createReviewsChatHttp, createContentAttachmentsHttp, createSpeechHttp, createVisionHttp, createSyncHttp, createStartupHttp, createPersonalContextHttp, createRequestHandler, createModelResponseHttp, createApiV1Http, openApiV1 } from "./src/http/index.mjs";
-import { createDailyRecordRecords } from "./src/modules/health/index.mjs";
 import { createAuthRepository, createJsonStoreRepository, createPostgresRuntime, checkPersistenceMarker, markPostgresDirectory, hasJsonData } from "./src/shared/persistence/index.mjs";
 import { isApplicationRoutePath } from "./public/frontend/pages/index.mjs";
 
@@ -246,240 +228,108 @@ const storeRepository = postgresRuntime ? postgresRuntime.createStoreRepository(
   getContext: () => requestStorage.getStore()
 });
 
-const annotationService = createAnnotationService({ createId: () => crypto.randomUUID(), now });
-const { reanchorAnnotations } = annotationService;
-const trashService = createTrashService({ createId: () => crypto.randomUUID(), now, hash: sha256, retentionDays: TRASH_RETENTION_DAYS });
-let cancelBackgroundTask = () => false;
-const trashMutations = createTrashMutations({
-  trash: trashService,
-  annotations: annotationService,
-  now,
-  cancelTask: taskId => cancelBackgroundTask(taskId)
-});
-const { moveCollectionItemToTrash, moveNestedItemToTrash, moveThoughtChainToTrash, moveThoughtBlockToTrash } = trashMutations;
-const annotationCommands = createAnnotationCommands({ repository: storeRepository, annotations: annotationService, moveNestedItemToTrash });
-const thoughtService = createThoughtService({
-  repository: storeRepository,
-  createId: () => crypto.randomUUID(),
-  now,
-  recordVersion,
-  eventTimeFields,
-  reanchorAnnotations,
-  getCursorScope: () => safeText(requestStorage.getStore()?.user?.id, 100) || "local",
-  reconcileOriginalImages: (...args) => contentAttachmentService.reconcileOriginalImagesInStore(...args)
-});
-const collectionStoreRepository = collection => ({
-  read: async () => (await readStore())[collection],
-  update: mutate => updateStore(store => mutate(store[collection], store.trash, store)),
-  executeIdempotent: (request, operation, options) => storeRepository.executeIdempotent(
-    request,
-    store => operation(store[collection], store.trash, store),
-    options
-  )
-});
-const journalStoreRepository = {
-  read: async () => {
-    const store = await readStore();
-    return { journals: store.journals, journalDraft: store.journalDraft, trash: store.trash };
-  },
-  update: mutate => updateStore(async store => {
-    const value = { journals: store.journals, journalDraft: store.journalDraft, trash: store.trash };
-    const result = await mutate(value);
-    store.journals = value.journals;
-    store.journalDraft = value.journalDraft;
-    store.trash = value.trash;
-    return result;
-  }),
-  executeIdempotent: (request, operation, options) => storeRepository.executeIdempotent(
-    request,
-    async store => {
-      const value = { journals: store.journals, journalDraft: store.journalDraft, trash: store.trash };
-      const result = await operation(value);
-      store.journals = value.journals;
-      store.journalDraft = value.journalDraft;
-      store.trash = value.trash;
-      return result;
-    },
-    options
-  )
-};
-const reviewStoreRepository = {
-  read: async () => {
-    const store = await readStore();
-    return {
-      analyses: store.analyses,
-      experiments: store.experiments,
-      customMetrics: store.customMetrics,
-      trash: store.trash
-    };
-  },
-  update: mutate => updateStore(async store => {
-    const value = {
-      analyses: store.analyses,
-      experiments: store.experiments,
-      customMetrics: store.customMetrics
-    };
-    const result = await mutate(value, store.trash);
-    store.analyses = value.analyses;
-    store.experiments = value.experiments;
-    store.customMetrics = value.customMetrics;
-    return result;
-  }),
-  executeIdempotent: (request, operation, options) => storeRepository.executeIdempotent(
-    request,
-    async store => {
-      const value = {
-        analyses: store.analyses,
-        experiments: store.experiments,
-        customMetrics: store.customMetrics
-      };
-      const result = await operation(value, store.trash);
-      store.analyses = value.analyses;
-      store.experiments = value.experiments;
-      store.customMetrics = value.customMetrics;
-      return result;
-    },
-    options
-  )
-};
-const captureRecords = createCaptureRecords({
-  repository: collectionStoreRepository("captures"),
-  reanchorAnnotations,
-  reconcileOriginalImages: (...args) => contentAttachmentService.reconcileOriginalImagesInStore(...args),
-  reconcileAudioAttachment: (store, { captureId, previousAudio, previousTranscription, nextAudio }) => {
-    if (!previousAudio?.attachmentPath || previousAudio.attachmentPath === nextAudio?.attachmentPath) return null;
-    const entry = trashService.add(store.trash, "captureAudio", {
-      id: captureId,
-      audio: previousAudio,
-      transcription: previousTranscription
-    }, {
-      kind: "captureAudio",
-      parentCollection: "captures",
-      parentId: captureId
-    });
-    return { trashId: entry.id };
-  },
-  now,
-  createId: () => crypto.randomUUID()
-});
-const journalRecords = createJournalRecords({
-  repository: journalStoreRepository,
-  reanchorAnnotations,
-  now,
-  createId: () => crypto.randomUUID()
-});
-const checkinRecords = createCheckinRecords({
-  repository: collectionStoreRepository("checkins"),
-  now,
-  createId: () => crypto.randomUUID()
-});
-const dailyRecordRecords = createDailyRecordRecords({
-  repository: collectionStoreRepository("dailyRecords"),
-  now,
-  createId: () => crypto.randomUUID()
-});
-const keepsakeRecords = createKeepsakeRecords({
-  repository: collectionStoreRepository("keepsakes"),
-  now,
-  createId: () => crypto.randomUUID()
-});
-const bookRecords = createBookRecords({
-  repository: collectionStoreRepository("books"),
-  reanchorAnnotations,
-  now,
-  createId: () => crypto.randomUUID()
-});
-const quoteRecords = createQuoteRecords({
-  repository: collectionStoreRepository("quotes"),
-  reanchorAnnotations,
-  now,
-  createId: () => crypto.randomUUID()
-});
-const chatRecords = createChatRecords({
-  repository: collectionStoreRepository("chats"),
-  now,
-  createId: () => crypto.randomUUID()
-});
-const reviewRecords = createReviewRecords({
-  repository: reviewStoreRepository,
-  now,
-  createId: () => crypto.randomUUID()
-});
 const discoveryService = createThoughtDiscoveryService({ repository: storeRepository, now });
 const actionsService = createActionsService({ repository: storeRepository, now, today, createId: () => crypto.randomUUID() });
 const feedbackService = createFeedbackService({ repository: storeRepository, now, createId: () => crypto.randomUUID(), hash: sha256 });
-const mediaRuntime = createMediaRuntime({
+const contentRuntime = createContentRuntime({
   repository: storeRepository,
-  attachmentStorageConfig: appConfig.attachments,
-  attachmentInventory: postgresRuntime?.attachments,
-  attachmentQuotaBytes: ATTACHMENT_USER_QUOTA_BYTES,
-  defaultImageMaxBytes: DEFAULT_IMAGE_MAX_BYTES,
-  uploadImageMaxBytes: ATTACHMENT_UPLOAD_IMAGE_MAX_BYTES,
-  uploadAudioMaxBytes: ATTACHMENT_UPLOAD_AUDIO_MAX_BYTES,
-  audioMaxDurationMs: ATTACHMENT_AUDIO_MAX_DURATION_MS,
-  getAttachmentContext: () => ({
-    ...storagePaths(),
-    ownerId: safeText(requestStorage.getStore()?.user?.id, 100) || "local"
-  }),
-  getOwnerId: () => safeText(requestStorage.getStore()?.user?.id, 100) || "local",
-  cleanupContextKey: () => storagePaths().storeFile,
-  keepsakeContextKey: () => requestStorage.getStore()?.dataDir || DATA_DIR,
-  dispatchCleanup: (callback, delay) => {
-    const context = { ...(requestStorage.getStore() || {}) };
-    const timer = setTimeout(() => requestStorage.run(context, callback), delay);
-    timer.unref();
-    return timer;
-  },
-  dispatchKeepsake: callback => {
+  trashRetentionDays: TRASH_RETENTION_DAYS,
+  getAccountId: () => requestStorage.getStore()?.user?.id || "local",
+  getCursorScope: () => safeText(requestStorage.getStore()?.user?.id, 100) || "local",
+  backgroundContextKey: () => requestStorage.getStore()?.dataDir || DATA_DIR,
+  workflowContextKey: () => storagePaths().storeFile,
+  dispatchBackground: callback => {
     const context = { ...(requestStorage.getStore() || {}) };
     setImmediate(() => requestStorage.run(context, callback));
   },
-  listAccountIds: async () => AUTH_REQUIRED
-    ? (await readAuth()).users.map(user => user.id)
-    : ["local"],
-  runWithAccount: (accountId, operation) => {
-    const user = { id: accountId };
-    return requestStorage.run({
-      user,
-      traceId: crypto.randomUUID(),
-      dataDir: AUTH_REQUIRED ? userDataDir(user) : DATA_DIR,
-      secrets: [],
-      route: "background/speech-cache-sweep"
-    }, operation);
-  },
-  books: bookRecords,
-  quotes: quoteRecords,
-  parseKeepsake: keepsakePayload,
-  moveCollectionItemToTrash,
-  moveNestedItemToTrash,
-  speechConfig: appConfig.speech,
-  visionConfig: appConfig.vision,
-  segmentationConfig: appConfig.segmentation,
-  speechQps: SPEECH_GLOBAL_QPS,
-  speechConcurrency: SPEECH_GLOBAL_CONCURRENCY,
-  ocrQps: OCR_GLOBAL_QPS,
-  ocrConcurrency: OCR_GLOBAL_CONCURRENCY,
-  documentQps: DOCUMENT_PARSE_GLOBAL_QPS,
-  documentConcurrency: DOCUMENT_PARSE_GLOBAL_CONCURRENCY,
-  segmentationQps: SEGMENTATION_GLOBAL_QPS,
-  segmentationConcurrency: SEGMENTATION_GLOBAL_CONCURRENCY,
-  aiBudgetRuntime,
-  providerBudgetStage,
-  conservativeDeepSeekStage,
-  currentBudgetAccountId,
-  meteredProviderCall,
   runDeepSeek,
   now,
   today,
+  currentTime: () => Date.now(),
   createId: () => crypto.randomUUID(),
   hash: sha256,
   logEvent,
   debugServerUrl: appConfig.debug.serverUrl,
-  debugRunId: appConfig.debug.runId
+  debugRunId: appConfig.debug.runId,
+  mediaOptions: {
+    attachmentStorageConfig: appConfig.attachments,
+    attachmentInventory: postgresRuntime?.attachments,
+    attachmentQuotaBytes: ATTACHMENT_USER_QUOTA_BYTES,
+    defaultImageMaxBytes: DEFAULT_IMAGE_MAX_BYTES,
+    uploadImageMaxBytes: ATTACHMENT_UPLOAD_IMAGE_MAX_BYTES,
+    uploadAudioMaxBytes: ATTACHMENT_UPLOAD_AUDIO_MAX_BYTES,
+    audioMaxDurationMs: ATTACHMENT_AUDIO_MAX_DURATION_MS,
+    getAttachmentContext: () => ({
+      ...storagePaths(),
+      ownerId: safeText(requestStorage.getStore()?.user?.id, 100) || "local"
+    }),
+    getOwnerId: () => safeText(requestStorage.getStore()?.user?.id, 100) || "local",
+    cleanupContextKey: () => storagePaths().storeFile,
+    keepsakeContextKey: () => requestStorage.getStore()?.dataDir || DATA_DIR,
+    dispatchCleanup: (callback, delay) => {
+      const context = { ...(requestStorage.getStore() || {}) };
+      const timer = setTimeout(() => requestStorage.run(context, callback), delay);
+      timer.unref();
+      return timer;
+    },
+    dispatchKeepsake: callback => {
+      const context = { ...(requestStorage.getStore() || {}) };
+      setImmediate(() => requestStorage.run(context, callback));
+    },
+    listAccountIds: async () => AUTH_REQUIRED
+      ? (await readAuth()).users.map(user => user.id)
+      : ["local"],
+    runWithAccount: (accountId, operation) => {
+      const user = { id: accountId };
+      return requestStorage.run({
+        user,
+        traceId: crypto.randomUUID(),
+        dataDir: AUTH_REQUIRED ? userDataDir(user) : DATA_DIR,
+        secrets: [],
+        route: "background/speech-cache-sweep"
+      }, operation);
+    },
+    speechConfig: appConfig.speech,
+    visionConfig: appConfig.vision,
+    segmentationConfig: appConfig.segmentation,
+    speechQps: SPEECH_GLOBAL_QPS,
+    speechConcurrency: SPEECH_GLOBAL_CONCURRENCY,
+    ocrQps: OCR_GLOBAL_QPS,
+    ocrConcurrency: OCR_GLOBAL_CONCURRENCY,
+    documentQps: DOCUMENT_PARSE_GLOBAL_QPS,
+    documentConcurrency: DOCUMENT_PARSE_GLOBAL_CONCURRENCY,
+    segmentationQps: SEGMENTATION_GLOBAL_QPS,
+    segmentationConcurrency: SEGMENTATION_GLOBAL_CONCURRENCY,
+    aiBudgetRuntime,
+    providerBudgetStage,
+    conservativeDeepSeekStage,
+    currentBudgetAccountId,
+    meteredProviderCall
+  }
 });
 const {
+  annotationCommands,
+  trashService,
+  trashMutations,
+  thoughtService,
+  captureRecords,
+  journalRecords,
+  checkinRecords,
+  dailyRecordRecords,
+  keepsakeRecords,
+  chatRecords,
+  reviewRecords,
+  contentAttachmentService,
+  backgroundAi,
+  requestCaptureTranscription,
+  thoughtWorkflows,
+  captureJournalWorkflows,
+  reviewChatWorkflows,
+  userModelExtractions,
+  projectPersonalContext,
+  maybeRunPeriodicAnalysis,
+  trashCommands,
   attachmentStorage,
-  attachmentCleanup,
   resumeAttachmentCleanup,
   imageAttachments,
   saveOriginalImages,
@@ -487,7 +337,6 @@ const {
   saveOriginalAudio,
   discardOriginalUploads,
   discardOriginalAudio,
-  materializeAttachmentFiles,
   listAttachmentInventory,
   prepareCaptureAudio,
   speechProvider,
@@ -496,14 +345,18 @@ const {
   ocrGate,
   documentParseGate,
   parseImageRequest,
-  transcribeCapture,
   speechCache,
   runSpeechCacheSweep,
   keepsakeMediaWorkflows,
   segmentKeepsakeImage,
   understandKeepsakeImage,
   libraryWorkflows
-} = mediaRuntime;
+} = contentRuntime;
+const {
+  moveCollectionItemToTrash,
+  moveNestedItemToTrash,
+  moveThoughtBlockToTrash
+} = trashMutations;
 const publicStateFromStore = createPublicStateProjection({
   getUser: () => requestStorage.getStore()?.user,
   isOwner,
@@ -512,12 +365,6 @@ const publicStateFromStore = createPublicStateProjection({
   hash: sha256,
   now,
   today
-});
-const trashCommands = createTrashCommands({
-  repository: storeRepository,
-  trash: trashService,
-  mutations: trashMutations,
-  cleanup: attachmentCleanup
 });
 
 async function ensureStore() {
@@ -772,134 +619,6 @@ installModelRuntimeSettingsReader(async () => {
   });
 });
 
-const contentAttachmentService = createContentAttachmentService({
-  repository: storeRepository,
-  trash: trashService,
-  attachmentInventory: listAttachmentInventory,
-  getAccountId: () => requestStorage.getStore()?.user?.id || "local",
-  cancelTask: taskId => cancelBackgroundTask(taskId),
-  requestImageUnderstanding: async work => {
-    const created = await backgroundAi.enqueue({
-      kind: "contentImageUnderstanding",
-      resourceType: work.taskResourceType,
-      targetId: work.taskTargetId,
-      subtargetId: work.taskSubtargetId,
-      inputVersion: work.inputVersion,
-      payload: {
-        targetType: work.targetType,
-        targetId: work.targetId,
-        attachmentPaths: work.attachmentPaths
-      },
-      clientRequestId: work.clientRequestId
-    });
-    if (created.unsupported) throw Object.assign(new Error("不支持这种后台任务"), { statusCode: 400, code: "UNSUPPORTED_AI_TASK" });
-    if (created.missing) throw Object.assign(new Error("图片原文目标不存在或已经变化"), { statusCode: 404, code: "CONTENT_ATTACHMENT_TARGET_NOT_FOUND" });
-    if (created.invalid) throw Object.assign(new Error("图片理解请求缺少幂等标识"), { statusCode: 400, code: "IDEMPOTENCY_KEY_REQUIRED" });
-    if (created.conflict) throw Object.assign(new Error("同一幂等键不能用于不同图片理解请求"), { statusCode: 409, code: "IDEMPOTENCY_KEY_REUSED" });
-    if (created.versionConflict) throw Object.assign(new Error("图片原文已变化，请刷新后重试"), { statusCode: 409, code: "VERSION_CONFLICT" });
-    return publicAiTask(created.task);
-  },
-  now,
-  createId: () => crypto.randomUUID()
-});
-const taskTargets = createAiTaskTargets({
-  thoughts: createThoughtTaskTarget({ createId: () => crypto.randomUUID(), now, stripThoughtAnswerLead }),
-  annotations: annotationService,
-  contentAttachments: contentAttachmentService,
-  hash: sha256,
-  now
-});
-const backgroundAi = createBackgroundAi({
-  repository: storeRepository,
-  tasks: createTaskLifecycle({ createId: () => crypto.randomUUID(), now, hash: sha256 }),
-  notifications: createNotificationService({ createId: () => crypto.randomUUID(), now }),
-  targets: taskTargets,
-  generate: async (work, { signal } = {}) => {
-    if (work.kind === "captureTranscription") return transcribeCapture(work, { signal });
-    const imagePaths = work.attachmentPaths?.length
-      ? await materializeAttachmentFiles(work.attachmentPaths)
-      : [];
-    try {
-      const result = await runDeepSeek(work.prompt, {
-        scene: work.scene,
-        systemPrompt: work.systemPrompt || systemPrompt(),
-        captureReasoning: true,
-        json: work.json === true,
-        maxTokens: work.maxTokens || 16000,
-        auditPrompt: work.auditPrompt !== false,
-        contextReceipt: work.contextReceipt || null,
-        imagePaths,
-        signal
-      });
-      return work.scene === "contentImageUnderstanding"
-        ? { ...result, model: "deepseek-flash" }
-        : result;
-    } finally {
-      await cleanupTemporaryFiles(imagePaths);
-    }
-  },
-  contextKey: () => requestStorage.getStore()?.dataDir || DATA_DIR,
-  dispatch: callback => {
-    const context = { ...(requestStorage.getStore() || {}) };
-    setImmediate(() => requestStorage.run(context, callback));
-  },
-  onError: (taskId, error) => logEvent("system", "ai_task.failed", { level: "error", taskId, error: errorMetadata(error) })
-});
-cancelBackgroundTask = taskId => backgroundAi.cancel(taskId);
-async function requestCaptureTranscription(capture, { force = false } = {}) {
-  if (!speechProvider.configured || !capture?.audio?.attachmentPath) return null;
-  if (!speechProvider.supportedAsrMimeTypes.includes(capture.audio.mimeType)) {
-    if (!force) return null;
-    throw Object.assign(new Error("当前 WebM 原件不能直接转写，请改用 M4A、Ogg 或 WAV"), {
-      statusCode: 422,
-      code: "ASR_UNSUPPORTED_AUDIO_FORMAT"
-    });
-  }
-  const audio = {
-    attachmentPath: safeText(capture.audio.attachmentPath, 300),
-    mimeType: safeText(capture.audio.mimeType, 100),
-    bytes: Math.max(0, Math.round(Number(capture.audio.bytes) || 0)),
-    durationMs: Math.max(0, Math.round(Number(capture.audio.durationMs) || 0))
-  };
-  // #region debug-point C-E:transcription-input
-  fetch(appConfig.debug.serverUrl,{method:"POST",body:JSON.stringify({sessionId:"login-audio-production",runId:appConfig.debug.runId,hypothesisId:"C-E",location:"server.mjs:requestCaptureTranscription",msg:"[DEBUG] Transcription input selected",data:{targetId:safeText(capture.id,100),extension:path.extname(audio.attachmentPath),mimeType:audio.mimeType,bytes:audio.bytes,durationMs:audio.durationMs,force},ts:Date.now()})}).catch(()=>{});
-  // #endregion
-  const inputHash = sha256(JSON.stringify({ targetId: capture.id, audio }));
-  const active = activeTaskForInput((await readStore()).aiTasks, {
-    kind: "captureTranscription",
-    targetId: capture.id,
-    inputHash
-  });
-  if (active) return publicAiTask(active);
-  const audioKey = sha256(JSON.stringify(capture.audio)).slice(0, 24);
-  const created = await backgroundAi.enqueue({
-    kind: "captureTranscription",
-    resourceType: "capture",
-    targetId: capture.id,
-    clientRequestId: force
-      ? `capture-transcription:${capture.id}:${audioKey}:${crypto.randomUUID()}`
-      : `capture-transcription:${capture.id}:${audioKey}`
-  });
-  if (!created.task) {
-    if (created.alreadyAnswered) return null;
-    throw Object.assign(new Error("语音转写任务无法创建"), {
-      statusCode: created.missing ? 404 : created.versionConflict ? 409 : 400,
-      code: created.versionConflict ? "VERSION_CONFLICT" : "TRANSCRIPTION_TASK_REJECTED"
-    });
-  }
-  return publicAiTask(created.task);
-}
-const thoughtWorkflows = createThoughtWorkflows({
-  repository: storeRepository,
-  thoughts: thoughtService,
-  backgroundAi,
-  removeChain: (store, id) => moveThoughtChainToTrash(store, id),
-  removeBlock: (store, id) => moveThoughtBlockToTrash(store, id),
-  generate: runDeepSeek,
-  hash: sha256,
-  publicTask: publicAiTask,
-  contextKey: () => storagePaths().storeFile
-});
 const taskHttp = createTaskHttp({ backgroundAi, bodyJson, sendJson });
 const speechHttp = createSpeechHttp({
   speech: speechProvider,
@@ -939,10 +658,7 @@ const onboardingV2Http = createOnboardingV2Http({
     repository: storeRepository,
     now
   }),
-  extractions: createUserModelExtractionService({
-    repository: storeRepository,
-    backgroundAi
-  }),
+  extractions: userModelExtractions,
   bodyJson
 });
 const userModelHttp = createUserModelHttp({
@@ -1092,14 +808,6 @@ const removeJournalReflection = (journalId, reflectionId, expectedVersion = null
     annotationTargetKeys: [`reflection:${reflectionId}`]
   });
 });
-const captureJournalWorkflows = createCaptureJournalWorkflows({
-  repository: storeRepository,
-  journals: journalRecords,
-  generate: runDeepSeek,
-  hash: sha256,
-  contextKey: () => storagePaths().storeFile,
-  today
-});
 const captureJournalHttp = createCaptureJournalHttp({
   captures: captureRecords,
   journals: journalRecords,
@@ -1127,15 +835,6 @@ const imageRecognitionHttp = createImageRecognitionHttp({
   bodyJson,
   sendJson,
   requestBinding
-});
-const reviewChatWorkflows = createReviewChatWorkflows({
-  repository: storeRepository,
-  chats: chatRecords,
-  reviews: reviewRecords,
-  generate: runDeepSeek,
-  hash: sha256,
-  contextKey: () => storagePaths().storeFile,
-  currentTime: () => Date.now()
 });
 const statisticsService = createStatisticsService({
   repository: storeRepository,
@@ -1199,10 +898,9 @@ const syncHttp = createSyncHttp({
 });
 const personalContextHttp = createPersonalContextHttp({
   readStore,
-  project: store => {
-    const projection = personalContextProjection(store, { generatedAt: now() });
-    return isOwner(requestStorage.getStore()?.user) ? projection : withoutOwnerMetadata(projection);
-  }
+  project: store => projectPersonalContext(store, {
+    includeOwnerMetadata: isOwner(requestStorage.getStore()?.user)
+  })
 });
 apiV1.register("startup", startupHttp.handleV1);
 apiV1.register("sync", syncHttp.handleV1);
@@ -1221,15 +919,6 @@ apiV1.register("captures-journals", captureJournalHttp.handleV1);
 apiV1.register("library", libraryHttp.handleV1);
 apiV1.register("reviews-chat", reviewsChatHttp.handleV1);
 apiV1.register("content-attachments", contentAttachmentsHttp.handleV1);
-
-async function maybeRunPeriodicAnalysis() {
-  try {
-    const result = await reviewChatWorkflows.maybeRunPeriodicAnalysis();
-    if (result) await logEvent("system", "analysis.completed", { level: "info" });
-  } catch (error) {
-    await logEvent("system", "analysis.failed", { level: "error", error: errorMetadata(error) });
-  }
-}
 
 async function runPeriodicAnalyses() {
   const users = AUTH_REQUIRED ? (await readAuth()).users : [{ id: "local" }];
