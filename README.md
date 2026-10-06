@@ -67,14 +67,15 @@ npm run start:local-test
   `rev=342 / 235`、交付 `rev=104 / 83`；证据见
   `reports/pre-launch-2026-10-05-v0.5.7.md` 和
   `reports/hotfix-v0.5.7-audio-on-demand-2026-10-05.md`。
-- **V0.5.8 已完成重排并进入本地开发**：当前范围为 6 条 P00、8 条 P0，
-  先关闭移动端记录/思绪、快捷语音、第三方费用和 250ms 同步开屏，再完成
-  大入口纯组装化、私有媒体绕过 ECS、图片旋转、主账户开屏设置和系统协作
-  闭环。Owner 已验收 V0.5.7 G7 与 V0.5.8 G1/G2；当前 03/04 已完成
+- **V0.5.8 已按完整需求原子缩减并继续本地开发**：当前只保留 6 条 P00，
+  覆盖移动端记录/思绪、快捷语音、第三方费用、250ms 同步开屏和大入口
+  纯组装化；原 8 条 P0 已整体迁入 V0.5.9。Owner 已验收 V0.5.7 G7 与
+  V0.5.8 G1/G2；当前 03/04 已完成
   B1-B7、F1-F3、F4.1 与 F4.2，`server.mjs` 已降至 4 行，
   `runtime.mjs` 已降至 4663 行；PostgreSQL 16.14 stable 已在隔离签名 Node
   下通过，G4 已关闭。当前下一步为 F4.3 健康提交/sync，见
-  `reports/iteration-plan-v0.5.8-2026-10-05.md`。
+  `reports/iteration-plan-v0.5.8-2026-10-05.md`；V0.5.9 接收计划见
+  `reports/iteration-plan-v0.5.9-2026-10-06.md`。
 - **`v0.1.1` 发布历史保留**：提交 `54a6326f14ca`、标签 `hotfix-v0.1.1-thought-answer` 在 v0.1.0 基础上修复了收集页思绪自动回答任务创建问题，现已由 v0.2.1 替代。
 - **`v0.1.0` 发布历史保留**：主应用功能提交 `5ae6a7035169` 和标签 `release-20260928-p00-p0-commercial-system` 已发布 P00/P0、商业化、AI 成本和五阶段架构设计，并由 v0.1.1 继承。
 - **中台已上线**：独立中台提交为 `d157537f7f4c`，发布标签为 `release-20260928-platform-mvp`；公网 `/platform/` 只读治理控制面已部署。
@@ -270,8 +271,10 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
   OSS、短时签名、媒体 CDN、Range、缓存、费用、灰度与回滚设计。
 - `knowledge/rain-config-confirmed-r9.4-f1.json`：250ms 同步开屏采用的
   R9.4-F1 冻结默认参数。
-- `reports/iteration-plan-v0.5.8-2026-10-05.md`：V0.5.8 P00/P0 范围、
-  前置条件、交付切片、分层验证和 G0-G7 关闭条件。
+- `reports/iteration-plan-v0.5.8-2026-10-05.md`：V0.5.8 六条 P00、
+  入口收口切片、分层验证和 G0-G7 关闭条件。
+- `reports/iteration-plan-v0.5.9-2026-10-06.md`：从 V0.5.8 整体迁出的
+  八条 P0、十条交付及后续启动门。
 - `knowledge/volcengine-integration.md`：火山语音、OCR、智能文档解析的服务端配置、隐私边界和真实冒烟命令。
 - `knowledge/product-definition.md`：产品关键词、记录重点、闭环、核心功能、记录边界与价值主张。
 - `knowledge/iteration-history.md`：按日期保存的重要迭代历史。
