@@ -3,8 +3,8 @@
 - 日期：2026-10-05
 - 起始基线：`f911cde4505d3434ab4afcf4b5614f8e828f4bcc`
 - 当前门禁：`iteration-G3 / entrypoint-G2`
-- 当前状态：`f2-slice-2-closed-b3-ready`
-- 活跃工作树：`5 / 6`
+- 当前状态：`b3-ai-runtime-frozen`
+- 活跃工作树：`6 / 6`
 - 机器事实：3 个入口策略、65 个模块、236 条拥有路由、16 条迁移例外；
   `server.mjs` 由 3283 行降至 2295 行，`runtime.mjs` 当前为 5136 行
 - 授权边界：允许本地代码、测试、文档与任务提交；不允许 push、tag、Release、
@@ -69,6 +69,17 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 | V3 | `f2-actions-validator` | 固定差分只读验证 | 不改实现或断言 | actions 专项、check、frontend/Journey、PWA/预算 |
 | R3 | `f2-actions-reviewers` | coordinator/controller 与集成差分独立复审 | 只读 | blocker/P0/P1 清零 |
 
+## B3 AI runtime 所有权
+
+| task | owner | ownership | forbidden | acceptance |
+| --- | --- | --- | --- | --- |
+| B3-S | `b3-ai-runtime-scout` | AI 装配闭包、消费者与依赖，只读 | 不修改文件、不调用真实供应商或远程服务 | 精确迁移符号、公开 API、循环依赖与接线顺序 |
+| B3-G-S | `b3-ai-runtime-gate-scout` | AI 预算、provider、审计与启动恢复测试，只读 | 不修改实现、不执行 Preview/生产动作 | 失败矩阵、现有证据与缺口 |
+| B3-W | `b3-ai-runtime-worker` | `src/app/ai-runtime.mjs` 与独立专项 | `server.mjs`、app barrel、模块登记、package、HTTP 与其他领域 | provider/gate/settings/usage/cost/budget/audit/generator 工厂和恢复契约 |
+| I4 | `orchestrator` | app barrel、`server.mjs` 单轨接线、模块登记、runner 与状态文档 | 不改路由、Store/schema、Prompt、模型参数、价格、预算策略或 provider 行为 | 删除入口旧装配，无双轨，入口 SHA/行数收紧 |
+| V4 | `b3-ai-runtime-validator` | 固定集成差分只读验证 | 不改实现或放宽断言 | check、AI budget/provider/observability/auth/local-runtime/backend |
+| R4 | `b3-ai-runtime-reviewers` | AI 装配、恢复、账户与错误边界独立复审 | 只读 | blocker/P0/P1 清零 |
+
 ## 角色知识账
 
 | roleId | specialty | activeContext | ownership | dependencies | communications | evidence | status | next |
@@ -101,6 +112,10 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 | `f2-actions-worker` | actions coordinator/controller | `5781115`；F2 slice 2 | actions 内部文件与独立专项 | F2-A-S/I3 | 叶子模块交给调度者接线 | 叶子提交已集成，工作树已移除 | `closed` | 后续按新切片重新派发 |
 | `f2-actions-validator` | F2 slice 2 独立影响验证 | `eca9576` | 只读 | I3 | 重跑专项、系统与预算门 | check、frontend、Journey、PWA/预算全通过 | `closed` | B3 重新验证 |
 | `f2-actions-reviewers` | actions 生命周期与隔离复审 | `eca9576` 固定差分 | 只读 | V3 | 复现失败路径并清零高优问题 | 最终 GO，blocker/P0/P1=`0/0/0` | `closed` | 下一切片复审 |
+| `b3-ai-runtime-scouts` | AI runtime 闭包与门禁 | `c028a0b`；B3 | 只读 | B3-W/I4 | 冻结装配 API、late-bound owner reader 与失败矩阵 | 精确闭包、消费者和测试缺口已移交 | `closed` | B3 worker |
+| `b3-ai-runtime-worker` | AI runtime 应用工厂 | `c028a0b`；B3 | 新模块与独立专项 | B3-S/I4 | 叶子模块交给调度者接线 | 独立工作树已建立 | `active` | 实现并提交 |
+| `b3-ai-runtime-validator` | B3 独立影响验证 | 待固定集成 SHA | 只读 | I4 | 重跑 AI/认证/后端与入口门 | 未开始 | `queued` | 集成后验证 |
+| `b3-ai-runtime-reviewers` | 预算、审计、账户与启动复审 | 待固定集成差分 | 只读 | V4 | 复现失败路径并清零高优问题 | 未开始 | `queued` | 验证后复审 |
 
 ## 已关闭问题与保留风险
 
@@ -314,3 +329,25 @@ npm run test:frontend-shell
 下一步：按已完成的只读侦察进入 B3 AI runtime；完整 home 继续随 F4-F8
 分域迁移，并在 F10 替换 descriptor。当前仍为
 `iteration-G3 / entrypoint-G2`，不代表完整 F2、G5、Release 或 V0.5.9 已开始。
+
+## B3 AI runtime 冻结
+
+- 基线：`c028a0bb7b33c8c9b0258b21dc2ffabad50dde2a`；叶子工作树
+  `.worktrees/v0.5.8-b3-ai-runtime` 建立后为 `6 / 6`。
+- 新增 `createAiRuntime()`，统一拥有 provider/gate、账户 settings/usage/cost、
+  站点 budget、调用审计、DeepSeek generator 和审计恢复。HTTP、媒体处理与
+  领域 workflow 继续留在现有模块，只消费显式 runtime 输出。
+- Owner 模型设置继承必须通过 late-bound reader 在 auth 初始化后注入，保留
+  普通账户继承 Owner provider/profile/scenario/API key 的当前行为。
+- 启动顺序固定为 budget recovery 完成后才返回 runtime；损坏预算账本继续
+  fail-fast，单条 reservation 恢复失败继续记录并允许启动。
+- 调用顺序固定为站点预算预留、账户额度预留、gate、stage start、provider I/O、
+  usage/audit、settle；未知费用不得伪造金额，预算拒绝不得触发 provider I/O。
+- 保持设置/用量/成本文件名、版本、Prompt、模型、effort、重试、timeout、路由、
+  状态码、ETag、Store/schema 与 handler 顺序不变。
+- 叶子只改 `src/app/ai-runtime.mjs` 和独立专项；app barrel、`server.mjs`、
+  `knowledge/module-boundaries.json`、`package.json` 与系统 runner 由调度者
+  在固定叶子提交后串行接线。
+- 最低验证：独立 runtime 专项、`npm run check`、`npm run test:ai-budget`、
+  AI domain/provider、observability、auth、local-runtime、Volcengine server、
+  segmentation 和 backend；真实 provider 调用与远端动作不在本切片授权内。
