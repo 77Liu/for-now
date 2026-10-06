@@ -114,13 +114,7 @@ export function createKeepsakeOperations({
       if (!prepared) return false;
       canvas.editor().originalPath = "";
       canvas.editor().cutoutPath = "";
-      const upload = query("#keepsake-upload-box");
-      const editor = query("#keepsake-editor");
-      const understand = query("#keepsake-understand");
-      if (upload) upload.hidden = true;
-      if (editor) editor.hidden = false;
-      if (understand) understand.disabled = false;
-      effects.renderCanvases();
+      presentation.revealPreparedImage();
       setText(
         "#keepsake-segment-status",
         `${source} · ${view.formatBytes(file.size)} · 正在识别主体…`
@@ -316,7 +310,7 @@ export function createKeepsakeOperations({
       canvas.editor().originalPath = original.originalPath;
       canvas.editor().cutoutPath = sources.alphaMaskPath;
       canvas.editor().source = item.source || "manual";
-      effects.renderCanvases();
+      presentation.revealPreparedImage();
       setText(
         "#keepsake-segment-status",
         "编辑图与蒙版已载入，可涂抹修正或重新识别。"

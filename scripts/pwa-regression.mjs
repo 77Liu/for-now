@@ -299,7 +299,7 @@ assert.equal(startupTimeout.observers.every(observer => observer.disconnected), 
 
 const worker = await fs.readFile(publicPath("service-worker.js"), "utf8");
 assert.match(worker, /const CACHE_VERSION\s*=\s*["'][^"']+["']/);
-assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.8-15["']/);
+assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.8-20["']/);
 const assetSet = name => {
   const source = worker.match(new RegExp(`const ${name}\\s*=\\s*\\[([\\s\\S]*?)\\];`))?.[1] || "";
   return new Set([...source.matchAll(/["']([^"']+)["']/g)].map(match => match[1]));
@@ -358,6 +358,17 @@ for (const asset of [
   "frontend/features/health/records.mjs",
   "frontend/features/health/recognition.mjs",
   "frontend/features/health/submission.mjs",
+  "frontend/features/keepsakes/batch-operations.mjs",
+  "frontend/features/keepsakes/canvas.mjs",
+  "frontend/features/keepsakes/controller.mjs",
+  "frontend/features/keepsakes/drafts.mjs",
+  "frontend/features/keepsakes/index.mjs",
+  "frontend/features/keepsakes/interactions.mjs",
+  "frontend/features/keepsakes/loader.mjs",
+  "frontend/features/keepsakes/model.mjs",
+  "frontend/features/keepsakes/operations.mjs",
+  "frontend/features/keepsakes/presentation-markup.mjs",
+  "frontend/features/keepsakes/presentation.mjs",
   "frontend/features/library/controller.mjs",
   "frontend/features/library/index.mjs",
   "frontend/features/library/loader.mjs",

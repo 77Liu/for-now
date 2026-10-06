@@ -898,6 +898,7 @@ for (const file of [
   "presentation.mjs",
   "interactions.mjs",
   "controller.mjs",
+  "loader.mjs",
   "index.mjs"
 ]) {
   const source = await readFile(

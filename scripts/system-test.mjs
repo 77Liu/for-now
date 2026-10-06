@@ -176,6 +176,7 @@ const suites = {
     ["F7 library presentation and lifecycle", ["scripts/frontend-library-feature-regression.mjs"]],
     ["F7 quote presentation and lifecycle", ["scripts/frontend-quotes-feature-regression.mjs"]],
     ["F7 review insights and statistics lifecycle", ["scripts/frontend-review-insights-feature-regression.mjs"]],
+    ["F8 keepsake page lifecycle and media compensation", ["scripts/frontend-keepsakes-feature-regression.mjs"]],
     ["URL and browser history contracts", ["scripts/url-history-regression.mjs"]],
     ["PWA shell cache and private-data boundaries", ["scripts/pwa-regression.mjs"]],
     ["desktop and responsive UI", ["scripts/ui-regression.mjs"]],

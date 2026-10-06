@@ -11,7 +11,6 @@ import {
   uniqueKeepsakeTags
 } from "./model.mjs";
 import { createKeepsakeMarkup } from "./presentation-markup.mjs";
-
 function requireFunctions(group, values) {
   for (const [name, value] of Object.entries(values)) {
     if (typeof value !== "function") {
@@ -19,7 +18,6 @@ function requireFunctions(group, values) {
     }
   }
 }
-
 export function createKeepsakePresentation({
   state,
   data,
@@ -239,6 +237,15 @@ export function createKeepsakePresentation({
     return true;
   }
 
+  function revealPreparedImage() {
+    const upload = query("#keepsake-upload-box"), editor = query("#keepsake-editor"),
+      understand = query("#keepsake-understand");
+    if (upload) upload.hidden = true;
+    if (editor) editor.hidden = false;
+    if (understand) understand.disabled = false;
+    renderCanvases();
+    return true;
+  }
   function populateBatchItem(item, index, activeDate) {
     const form = query("#keepsake-form");
     if (form) form.dataset.batchItemId = item.itemId;
@@ -479,6 +486,7 @@ export function createKeepsakePresentation({
     candidateFields,
     captureBatchItem,
     resetEditor,
+    revealPreparedImage,
     populateBatchItem,
     beginEdit,
     submissionPayload,

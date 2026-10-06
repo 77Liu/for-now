@@ -57,7 +57,8 @@ export function createKeepsakeInteractions({
   }
 
   function handleEditorButton(button) {
-    if (button.id === "keepsake-create-toggle") return toggleCreator();
+    if (button.id === "keepsake-create-toggle"
+        || button.dataset.contentAction === "new-keepsake") return toggleCreator();
     if (button.id === "keepsake-load-more") return loadNextPage();
     if (button.id === "keepsake-editor-close") {
       void drafts.persist({ capture: presentation.captureBatchItem });

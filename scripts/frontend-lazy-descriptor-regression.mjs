@@ -37,6 +37,7 @@ assert.deepEqual(dynamicSpecifiers, [
   "../features/export/index.mjs",
   "../features/feedback/index.mjs",
   "../features/health/controller.mjs",
+  "../features/keepsakes/index.mjs",
   "../features/legacy-pages/index.mjs",
   "../features/library/index.mjs",
   "../features/notifications/index.mjs",
@@ -108,6 +109,11 @@ assert.equal(
   true,
   "the default-route checkins controller must stay in the static runtime closure"
 );
+assert.match(
+  runtime,
+  /createFile:\(blob,name,options\)=>new File\(\[blob\],name,options\)/,
+  "restored keepsake Files must preserve the complete FilePropertyBag"
+);
 for (const removed of [
   "renderActionsWorkspace",
   "runActionCommand",
@@ -123,7 +129,11 @@ for (const removed of [
   "function renderReview(",
   "function renderStatistics(",
   "function loadStatistics(",
-  "analysisRequestSerial"
+  "analysisRequestSerial",
+  "function renderKeepsakes(",
+  "function renderKeepsakeDetail(",
+  "function segmentCurrentKeepsake(",
+  "keepsakeBatchPersistTimer"
 ]) {
   assert.equal(runtime.includes(removed), false, `legacy F2 symbol remains in runtime: ${removed}`);
 }
@@ -163,6 +173,11 @@ assert.deepEqual(descriptors.get("books"), {
   feature: "frontend.feature.library",
   specifier: "../features/library/index.mjs"
 });
+assert.deepEqual(descriptors.get("keepsakes"), {
+  page: "keepsakes",
+  feature: "frontend.feature.keepsakes",
+  specifier: "../features/keepsakes/index.mjs"
+});
 assert.deepEqual(descriptors.get("daily"), {
   page: "daily",
   feature: "frontend.feature.health",
@@ -195,7 +210,7 @@ for (const view of ["review", "statistics"]) {
   });
 }
 for (const [view, descriptor] of descriptors) {
-  if (["today", "review", "statistics", "daily", "captures", "journals", "books", "quotes", "thoughts", "together", "export", "feedback", "discovery", "notifications"].includes(view)) continue;
+  if (["today", "review", "statistics", "daily", "captures", "journals", "books", "keepsakes", "quotes", "thoughts", "together", "export", "feedback", "discovery", "notifications"].includes(view)) continue;
   assert.deepEqual(descriptor, {
     page: view,
     feature: "frontend.feature.legacy-pages",
@@ -210,6 +225,7 @@ for (const eagerEdge of [
   "./capture-journal/index.mjs",
   "./export/index.mjs",
   "./feedback/index.mjs",
+  "./keepsakes/index.mjs",
   "./library/index.mjs",
   "./notifications/index.mjs",
   "./quotes/index.mjs",
@@ -227,6 +243,7 @@ for (const hiddenAsset of [
   "frontend/features/export/index.mjs",
   "frontend/features/feedback/index.mjs",
   "frontend/features/health/controller.mjs",
+  "frontend/features/keepsakes/index.mjs",
   "frontend/features/library/index.mjs",
   "frontend/features/notifications/index.mjs",
   "frontend/features/quotes/index.mjs",

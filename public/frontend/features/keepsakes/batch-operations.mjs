@@ -68,8 +68,8 @@ export function createKeepsakeBatchOperations({
       });
       if (!prepared || !isCurrent(ticket, item)) return false;
       presentation.populateBatchItem(item, index, data.getActiveDate());
+      presentation.revealPreparedImage();
       item.status = item.alphaMask ? "ready" : "editing";
-      effects.renderCanvases();
       effects.renderBatch();
       if (!item.alphaMask) void segment();
       return true;

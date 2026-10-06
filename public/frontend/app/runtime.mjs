@@ -11,15 +11,9 @@ import {
   createActionsCoordinator,
   createHomeMemoryPool,
   selectHomeMemories,
-  applyKeepsakeImageCandidates,
-  createKeepsakeBatchItems,
-  discardKeepsakeMedia,
-  KEEPSAKE_BATCH_MAX_ITEMS,
   keepsakePlacementCss,
   keepsakeMediaSources,
-  nextKeepsakeBatchIndex,
   scanKeepsakeAlpha,
-  uploadKeepsakeMedia,
   createOnboardingV2Controller
 } from "../features/index.mjs";
 import {
@@ -51,12 +45,13 @@ const appEntryUrl=new URL("../../app.js",import.meta.url);
 const applicationBasePath=new URL(".",appEntryUrl).pathname.replace(/\/$/,"")||"/";
 const initialRuntimeView=resolveApplicationRoute(location,{basePath:applicationBasePath}).view;
 const portFactoriesRequest=globalThis.__forNowPortsRequest||import("./ports.mjs");
-const legacyFeatureModuleRequest=globalThis.__forNowLegacyFeatureRequest||(["export","feedback","discovery","notifications","captures","journals","books","quotes","review","statistics"].includes(initialRuntimeView)?null:import("../features/legacy-pages/index.mjs"));
+const legacyFeatureModuleRequest=globalThis.__forNowLegacyFeatureRequest||(["export","feedback","discovery","notifications","captures","journals","books","quotes","keepsakes","review","statistics"].includes(initialRuntimeView)?null:import("../features/legacy-pages/index.mjs"));
 const exportFeatureModuleRequest=globalThis.__forNowExportFeatureRequest||(initialRuntimeView==="export"?import("../features/export/index.mjs"):null);
 const feedbackFeatureModuleRequest=globalThis.__forNowFeedbackFeatureRequest||(initialRuntimeView==="feedback"?import("../features/feedback/index.mjs"):null);
 const discoveryFeatureModuleRequest=globalThis.__forNowDiscoveryFeatureRequest||(initialRuntimeView==="discovery"?import("../features/thought-discovery/index.mjs"):null);
 const notificationsFeatureModuleRequest=globalThis.__forNowNotificationsFeatureRequest||(initialRuntimeView==="notifications"?import("../features/notifications/index.mjs"):null);
 let reviewInsightsFeatureModuleRequest=globalThis.__forNowReviewInsightsFeatureRequest||(["review","statistics"].includes(initialRuntimeView)?import("../features/review-insights/index.mjs"):null);
+let keepsakesFeatureModuleRequest=globalThis.__forNowKeepsakesFeatureRequest||(initialRuntimeView==="keepsakes"?import("../features/keepsakes/index.mjs"):null);
 let captureJournalFeatureModuleRequest=globalThis.__forNowCaptureJournalFeatureRequest||(["captures","journals"].includes(initialRuntimeView)?import("../features/capture-journal/index.mjs"):null);
 let annotationsFeatureModuleRequest=globalThis.__forNowAnnotationsFeatureRequest||null;
 let backgroundResultsFeatureModuleRequest=globalThis.__forNowBackgroundResultsFeatureRequest||null;
@@ -106,6 +101,11 @@ const loadReviewInsightsFeatureModule=()=>{
   reviewInsightsFeatureModuleRequest=pending;
   return Promise.resolve(pending).catch(error=>{if(reviewInsightsFeatureModuleRequest===pending)reviewInsightsFeatureModuleRequest=null;throw error})
 };
+const loadKeepsakesFeatureModule=()=>{
+  const pending=keepsakesFeatureModuleRequest||import("../features/keepsakes/index.mjs");
+  keepsakesFeatureModuleRequest=pending;
+  return Promise.resolve(pending).catch(error=>{if(keepsakesFeatureModuleRequest===pending)keepsakesFeatureModuleRequest=null;throw error})
+};
 const startupPerformanceEnabled=new URLSearchParams(location.search).has("native-performance");
 const startupMarks={navigationStart:0,moduleLoaded:Number(performance.now().toFixed(1))};
 function markStartup(name){startupMarks[name]=Number(performance.now().toFixed(1));return startupMarks[name]}
@@ -153,7 +153,7 @@ const refreshCoordinator=createRefreshCoordinator({
   },
   afterReplace:()=>restorePendingProjections()
 });
-const KEEPSAKE_PAGE_SIZE=12,KEEPSAKE_PREFETCH_MARGIN_PX=160,BACKGROUND_RESULTS_RETRY_LIMIT=3;
+const BACKGROUND_RESULTS_RETRY_LIMIT=3;
 const LOCAL_TEST_VIEW_SCOPES=Object.freeze({today:"today",daily:"daily",captures:"captures",books:"books",quotes:"quotes",keepsakes:"keepsakes",journals:"journals",thoughts:"thoughts",discovery:"discovery",together:"together",review:"review",statistics:"statistics","ai-cost":"statistics",commercialization:"statistics","personal-context":"personal-context",feedback:"feedback",export:"export",trash:"trash"});
 const localTestScopeLoads=new Map();
 const baseMetrics=BASE_CHECKIN_METRICS;
@@ -172,25 +172,20 @@ let healthFeatureController=null;
 let capturesFeatureController=null;
 let quotesFeatureController=null;
 let libraryFeatureController=null;
+let keepsakesFeatureController=null;
 const checkinsFeatureControllers=new Set();
 const thoughtsFeatureControllers=new Set();
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-let activeDate=currentLocalDate,activeDailyType="sleep",answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],answerTaskSerial=0,activeAnswerTaskId=0,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
+let activeDate=currentLocalDate,activeDailyType="sleep",answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],answerTaskSerial=0,activeAnswerTaskId=0,currentUser=null,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
 let notificationsLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,routeDataRequestSerial=0,routeLoadFailureKey="",loadedRouteKey="",fullRouteStateLoaded=false,renderedRouteView="";
-const feedSearchQueries={keepsakes:""};
 const quoteTagPickerConfig=Object.freeze({
   selectionQuote:{input:"#selection-quote-tags",selected:"#selection-quote-selected-tags",options:"#selection-quote-tag-options",toggle:"#selection-quote-tag-toggle",status:"#selection-quote-tag-status"}
 });
 let quoteTagStates={
   selectionQuote:createTagMultiSelectState()
 };
-let keepsakeDraftTags=[];
 let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeKeepsakeId="",homeEditorTrigger=null,voicePreviewAudio=null,voicePreviewPending=false,voicePreviewPlaying=false,voicePreviewVoice="";
-const keepsakeEditor={file:null,sourceDataUrl:"",sourceImage:null,sourceCanvas:null,maskCanvas:null,autoBase:null,history:[],mode:"keep",drawing:false,lastPoint:null,source:"manual",originalPath:"",cutoutPath:"",mediaDirty:false,renderFrame:0,segmentSerial:0,understandingSerial:0};
-const keepsakeBatch={items:[],activeIndex:0,loading:false};
-let keepsakeBatchPreviewUrls=[],keepsakeBatchPersistTimer=0,keepsakeDerivativeRefreshTimer=0;
-let keepsakeVisibleCount=KEEPSAKE_PAGE_SIZE,keepsakePaginationOwner="",keepsakeLoadObserver=null;
 const persistentContentImageKeys=new Set(["capture","thoughtRoot","thoughtBlock","comment"]);
 const imageViewer={paths:[],index:0,objectUrl:"",requestSerial:0,trigger:null};
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
@@ -1073,27 +1068,6 @@ function syncChainRecordKind(){
   $("#chain-submit").textContent=captureMode?"收进念起":"收进思绪箱"
 }
 function normalizedFeedSearch(value){return String(value||"").normalize("NFKC").toLocaleLowerCase("zh-CN").replace(/\s+/g," ").trim()}
-function feedSearchText(...values){
-  const parts=[];
-  const append=value=>{
-    if(value==null)return;
-    if(Array.isArray(value)){value.forEach(append);return}
-    if(typeof value==="object"){Object.values(value).forEach(append);return}
-    parts.push(String(value))
-  };
-  values.forEach(append);
-  return normalizedFeedSearch(parts.join(" "))
-}
-function matchesFeedSearch(scope,...values){
-  const query=normalizedFeedSearch(feedSearchQueries[scope]);
-  if(!query)return true;
-  return query.split(" ").every(term=>feedSearchText(...values).includes(term))
-}
-function feedCountLabel(scope,visible,total,unit){
-  return normalizedFeedSearch(feedSearchQueries[scope])
-    ?`${visible} / ${total} ${unit}`
-    :`${total} ${unit}`
-}
 function feedSearchEmpty(label){return contentState({title:`没有匹配的${label}`,body:"换一个关键词，原有记录不会受到影响。"})}
 function metricConfig(){return createCheckinMetricConfig(state.customMetrics)}
 const metricValue=checkinMetricValue;
@@ -1187,287 +1161,17 @@ function renderChat(){const chats=state.chats.filter(x=>eventDate(x)===activeDat
 const dataUrlFromBlob=blob=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error("图片读取失败"));reader.readAsDataURL(blob)});
 const loadImageSource=source=>new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>reject(new Error("图片无法打开，请换一张重试"));image.src=source});
 function blankCanvas(width,height){const canvas=document.createElement("canvas");canvas.width=width;canvas.height=height;return canvas}
-function clearKeepsakeHistory(){keepsakeEditor.history=[];$("#keepsake-undo").disabled=true}
-function pushKeepsakeHistory(){
-  if(!keepsakeEditor.maskCanvas)return;
-  const canvas=keepsakeEditor.maskCanvas,ctx=canvas.getContext("2d",{willReadFrequently:true});
-  keepsakeEditor.history.push(ctx.getImageData(0,0,canvas.width,canvas.height));
-  if(keepsakeEditor.history.length>12)keepsakeEditor.history.shift();
-  $("#keepsake-undo").disabled=false;
-}
-function paintMaskOverlay(target,mask,color="#55b98a"){
-  const overlay=blankCanvas(mask.width,mask.height),ctx=overlay.getContext("2d");
-  ctx.fillStyle=color;ctx.fillRect(0,0,overlay.width,overlay.height);ctx.globalCompositeOperation="destination-in";ctx.drawImage(mask,0,0);
-  target.drawImage(overlay,0,0);
-}
-function keepsakeCutoutCanvas(){
-  const source=keepsakeEditor.sourceCanvas,mask=keepsakeEditor.maskCanvas;if(!source||!mask)return null;
-  const cutout=blankCanvas(source.width,source.height),ctx=cutout.getContext("2d");
-  ctx.drawImage(source,0,0);ctx.globalCompositeOperation="destination-in";ctx.drawImage(mask,0,0);ctx.globalCompositeOperation="source-over";
-  return cutout;
-}
-function renderKeepsakeCanvases(){
-  if(!keepsakeEditor.sourceCanvas||!keepsakeEditor.maskCanvas)return;
-  const source=keepsakeEditor.sourceCanvas,mask=keepsakeEditor.maskCanvas,editor=$("#keepsake-mask-canvas"),preview=$("#keepsake-preview-canvas");
-  for(const canvas of[editor,preview]){if(canvas.width!==source.width||canvas.height!==source.height){canvas.width=source.width;canvas.height=source.height}}
-  const editCtx=editor.getContext("2d"),previewCtx=preview.getContext("2d");
-  editCtx.clearRect(0,0,editor.width,editor.height);editCtx.drawImage(source,0,0);editCtx.save();editCtx.globalAlpha=.48;paintMaskOverlay(editCtx,mask);editCtx.restore();
-  const backgroundOpacity=Math.max(0,Math.min(30,Number($("#keepsake-background-opacity").value)||0))/100;
-  previewCtx.clearRect(0,0,preview.width,preview.height);previewCtx.save();previewCtx.globalAlpha=backgroundOpacity;previewCtx.drawImage(source,0,0);previewCtx.restore();previewCtx.drawImage(keepsakeCutoutCanvas(),0,0);
-}
-function scheduleKeepsakeRender(){if(!keepsakeEditor.renderFrame)keepsakeEditor.renderFrame=requestAnimationFrame(()=>{keepsakeEditor.renderFrame=0;renderKeepsakeCanvases()})}
-function maskImageDataFromCanvas(canvas){return canvas.getContext("2d",{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height)}
-function dilatedMask(imageData,radius){
-  const {width,height,data}=imageData,r=Math.max(0,Math.round(radius));if(!r)return new ImageData(new Uint8ClampedArray(data),width,height);
-  const stride=width+1,integral=new Uint32Array((height+1)*stride);
-  for(let y=0;y<height;y++){let row=0;for(let x=0;x<width;x++){row+=data[(y*width+x)*4+3]>20?1:0;integral[(y+1)*stride+x+1]=integral[y*stride+x+1]+row}}
-  const output=new ImageData(width,height),pixels=output.data;
-  for(let y=0;y<height;y++){const top=Math.max(0,y-r),bottom=Math.min(height-1,y+r);for(let x=0;x<width;x++){const left=Math.max(0,x-r),right=Math.min(width-1,x+r),count=integral[(bottom+1)*stride+right+1]-integral[top*stride+right+1]-integral[(bottom+1)*stride+left]+integral[top*stride+left];if(count){const i=(y*width+x)*4;pixels[i]=pixels[i+1]=pixels[i+2]=pixels[i+3]=255}}}
-  return output;
-}
-function softenedMask(imageData,radius=1){
-  const {width,height,data}=imageData,r=Math.max(1,Math.round(radius)),stride=width+1,integral=new Uint32Array((height+1)*stride);
-  for(let y=0;y<height;y++){let row=0;for(let x=0;x<width;x++){row+=data[(y*width+x)*4+3];integral[(y+1)*stride+x+1]=integral[y*stride+x+1]+row}}
-  const output=new ImageData(width,height),pixels=output.data;
-  for(let y=0;y<height;y++){const top=Math.max(0,y-r),bottom=Math.min(height-1,y+r);for(let x=0;x<width;x++){const left=Math.max(0,x-r),right=Math.min(width-1,x+r),count=(bottom-top+1)*(right-left+1),alpha=Math.round((integral[(bottom+1)*stride+right+1]-integral[top*stride+right+1]-integral[(bottom+1)*stride+left]+integral[top*stride+left])/count),i=(y*width+x)*4;pixels[i]=pixels[i+1]=pixels[i+2]=255;pixels[i+3]=alpha}}
-  return output;
-}
-function applyKeepsakeExpansion({history=false}={}){
-  if(!keepsakeEditor.autoBase||!keepsakeEditor.maskCanvas)return;
-  if(history)pushKeepsakeHistory();
-  const value=Number($("#keepsake-edge-expansion").value),radius=Math.round(Math.max(keepsakeEditor.maskCanvas.width,keepsakeEditor.maskCanvas.height)*value/1000);
-  keepsakeEditor.maskCanvas.getContext("2d").putImageData(softenedMask(dilatedMask(keepsakeEditor.autoBase,radius),Math.max(1,Math.round(Math.max(keepsakeEditor.maskCanvas.width,keepsakeEditor.maskCanvas.height)/800))),0,0);
-  keepsakeEditor.mediaDirty=true;
-  scheduleKeepsakeRender();
-}
-function keepsakeWorkingImage(maxSide){
-  const source=keepsakeEditor.sourceCanvas,scale=Math.min(1,maxSide/Math.max(source.width,source.height)),width=Math.max(1,Math.round(source.width*scale)),height=Math.max(1,Math.round(source.height*scale)),canvas=blankCanvas(width,height);
-  canvas.getContext("2d").drawImage(source,0,0,width,height);
-  return canvas;
-}
-async function applySegmentedKeepsakeMask(cutoutUrl,serial){
-  const target=keepsakeEditor.maskCanvas,cutout=await loadImageSource(cutoutUrl);
-  if(serial!==keepsakeEditor.segmentSerial||target!==keepsakeEditor.maskCanvas)return false;
-  const temp=blankCanvas(target.width,target.height),tempCtx=temp.getContext("2d",{willReadFrequently:true});
-  tempCtx.drawImage(cutout,0,0,temp.width,temp.height);
-  const cutoutData=tempCtx.getImageData(0,0,temp.width,temp.height),maskData=new ImageData(temp.width,temp.height);
-  for(let i=0;i<cutoutData.data.length;i+=4)maskData.data[i]=maskData.data[i+1]=maskData.data[i+2]=maskData.data[i+3]=cutoutData.data[i+3];
-  target.getContext("2d").putImageData(maskData,0,0);
-  keepsakeEditor.autoBase=maskImageDataFromCanvas(target);keepsakeEditor.source="auto";keepsakeEditor.mediaDirty=true;applyKeepsakeExpansion();
-  return true;
-}
-function keepsakeSegmentationDataUrl(){
-  return keepsakeWorkingImage(1600).toDataURL("image/jpeg",.9);
-}
-function keepsakeUnderstandingDataUrl(){
-  return keepsakeWorkingImage(1200).toDataURL("image/jpeg",.88)
-}
-function keepsakeCandidateFields(){
-  return{title:$("#keepsake-title").value,tags:keepsakeTagsFromInput().join(" "),note:$("#keepsake-note").value}
-}
-async function understandCurrentKeepsake(){
-  const button=$("#keepsake-understand"),status=$("#keepsake-understanding-status"),form=$("#keepsake-form");if(!keepsakeEditor.sourceCanvas){status.textContent="请先放入一张照片。";return false}
-  const serial=++keepsakeEditor.understandingSerial,owner=currentUser?.id,session=sessionSerial,requestId=crypto.randomUUID(),batchItem=activeKeepsakeBatchItem(),targetId=$("#keepsake-id").value||batchItem?.itemId||(form.dataset.candidateTargetId||=crypto.randomUUID()),baseline=keepsakeCandidateFields();
-  if(batchItem){batchItem.understandingState="pending";batchItem.candidateRequestId=requestId;renderKeepsakeBatch();void persistKeepsakeBatch({capture:false})}
-  button.disabled=true;status.textContent="正在识别名称、备注与已有标签…";
-  try{
-    const existingTags=uniqueKeepsakeTags((state.keepsakes||[]).flatMap(item=>item.tags||[]));
-    const result=await request("/api/keepsakes/understand",{method:"POST",body:JSON.stringify({requestId,targetId,inputVersion:serial,image:keepsakeUnderstandingDataUrl(),existingTags})});
-    if(serial!==keepsakeEditor.understandingSerial||owner!==currentUser?.id||session!==sessionSerial||result.requestId!==requestId||result.targetId!==targetId||Number(result.inputVersion)!==serial)return false;
-    const merged=applyKeepsakeImageCandidates(keepsakeCandidateFields(),baseline,result,{existingTags});
-    $("#keepsake-title").value=merged.value.title;setKeepsakeTags(splitTags(merged.value.tags));$("#keepsake-note").value=merged.value.note;
-    if(batchItem===activeKeepsakeBatchItem()){batchItem.understandingState="ready";captureActiveKeepsakeBatchItem({captureMask:false});await persistKeepsakeBatch({capture:false});renderKeepsakeBatch()}
-    const labels={title:"名称",tags:"标签",note:"备注"};
-    status.textContent=merged.applied.length?`已填入${merged.applied.map(key=>labels[key]).join("、")}候选，可继续修改。`:"候选已生成；现有手动内容保持不变。";
-    return true
-  }catch(error){
-    if(serial!==keepsakeEditor.understandingSerial)return false;
-    status.textContent=`字段候选未完成：${error.message}`;
-    if(batchItem===activeKeepsakeBatchItem()){batchItem.understandingState="failed";await persistKeepsakeBatch({capture:false});renderKeepsakeBatch()}
-    return false
-  }finally{if(serial===keepsakeEditor.understandingSerial)button.disabled=false}
-}
-const keepsakeBatchDraftKey="keepsake-batch";
-function activeKeepsakeBatchItem(){
-  return keepsakeBatch.items[keepsakeBatch.activeIndex]||null
-}
-function keepsakeBatchStatus(item,index){
-  if(item.status==="saving")return"正在保存";
-  if(item.status==="uploading")return"正在上传";
-  if(item.status==="failed")return item.lastError?.message||"失败，可重试";
-  if(item.alphaMask)return"已编辑，待保存";
-  return index===keepsakeBatch.activeIndex?"正在编辑":"待编辑"
-}
-function revokeKeepsakeBatchPreviews(){
-  keepsakeBatchPreviewUrls.forEach(url=>URL.revokeObjectURL(url));keepsakeBatchPreviewUrls=[]
-}
-function renderKeepsakeBatch(){
-  const section=$("#keepsake-batch"),list=$("#keepsake-batch-list");if(!section||!list)return;
-  const items=keepsakeBatch.items;section.hidden=!items.length;$("#keepsake-batch-count").textContent=items.length?`${items.length} 件`:"";
-  revokeKeepsakeBatchPreviews();keepsakeBatchPreviewUrls=items.map(item=>URL.createObjectURL(item.file));
-  list.innerHTML=items.map((item,index)=>`<article class="keepsake-batch-item${index===keepsakeBatch.activeIndex?" active":""}${item.status==="failed"?" failed":""}">
-    <button class="keepsake-batch-select" type="button" data-keepsake-batch-select="${index}" aria-pressed="${index===keepsakeBatch.activeIndex}">
-      <img src="${keepsakeBatchPreviewUrls[index]}" alt=""><span><b>${escapeHtml(item.title||item.file?.name||`小物 ${index+1}`)}</b><small>${escapeHtml(keepsakeBatchStatus(item,index))}</small></span>
-    </button>
-    <button class="keepsake-batch-remove" type="button" data-keepsake-batch-remove="${index}" aria-label="取消第 ${index+1} 件小物" ${item.status==="saving"?"disabled":""}>×</button>
-  </article>`).join("");
-  $("#keepsake-upload-box").hidden=Boolean(items.length);
-  $("#keepsake-editor").hidden=!items.length&&!$("#keepsake-id").value
-}
-function keepsakeMaskHasSubject(){
-  const data=keepsakeEditor.maskCanvas?maskImageDataFromCanvas(keepsakeEditor.maskCanvas).data:null;
-  if(!data)return false;
-  for(let index=3;index<data.length;index+=4)if(data[index]>20)return true;
-  return false
-}
-function captureActiveKeepsakeBatchItem({captureMask=true}={}){
-  const item=activeKeepsakeBatchItem(),form=$("#keepsake-form");
-  if(!item||form.dataset.batchItemId!==item.itemId||!keepsakeEditor.sourceCanvas)return;
-  const hasMask=captureMask&&keepsakeMaskHasSubject();
-  Object.assign(item,{
-    title:$("#keepsake-title").value,
-    occurredAt:$("#keepsake-datetime").value,
-    tags:keepsakeTagsFromInput().join(" "),
-    note:$("#keepsake-note").value,
-    edgeExpansion:Number($("#keepsake-edge-expansion").value)||0,
-    backgroundOpacityPct:Number($("#keepsake-background-opacity").value)||0,
-    source:keepsakeEditor.source,
-    alphaMask:hasMask?keepsakeEditor.maskCanvas.toDataURL("image/png"):item.alphaMask,
-    status:["uploading","saving","failed"].includes(item.status)?item.status:hasMask||item.alphaMask?"ready":"editing"
-  })
-}
-async function persistKeepsakeBatch({capture=true}={}){
-  const owner=currentUser?.id;if(!owner)return;
-  if(capture)captureActiveKeepsakeBatchItem();
-  if(!keepsakeBatch.items.length){await mediaDraftStore.delete(owner,keepsakeBatchDraftKey);return}
-  await mediaDraftStore.put({
-    owner,id:keepsakeBatchDraftKey,activeIndex:keepsakeBatch.activeIndex,updatedAt:new Date().toISOString(),
-    items:keepsakeBatch.items.map(item=>({
-      ...item,
-      blob:item.file,
-      name:item.file?.name||"keepsake",
-      type:item.file?.type||"application/octet-stream",
-      lastModified:Number(item.file?.lastModified)||Date.now(),
-      file:undefined
-    }))
-  })
-}
-async function loadKeepsakeBatchItem(index,{capture=true}={}){
-  if(keepsakeBatch.loading||!keepsakeBatch.items[index])return false;
-  if(capture){const previous=activeKeepsakeBatchItem();if(previous?.understandingState==="pending")previous.understandingState="waiting";await persistKeepsakeBatch()}
-  keepsakeBatch.loading=true;resetKeepsakeEditor();keepsakeBatch.activeIndex=index;const item=keepsakeBatch.items[index],serial=keepsakeEditor.segmentSerial;
-  $("#keepsake-workspace").hidden=false;$("#keepsake-form").dataset.batchItemId=item.itemId;$("#keepsake-editor-eyebrow").textContent=`批次 ${index+1} / ${keepsakeBatch.items.length}`;$("#keepsake-editor-title").textContent=item.title||`第 ${index+1} 件小物`;
-  renderKeepsakeBatch();
-  try{
-    const[dataUrl]=await imageDataUrls([item.file]);
-    if(serial!==keepsakeEditor.segmentSerial||item!==activeKeepsakeBatchItem())return false;
-    if(!await prepareKeepsakeImage({dataUrl,file:item.file,cutoutUrl:item.alphaMask||"",auto:false,serial}))return false;
-    $("#keepsake-title").value=item.title;setOccurrenceMode($("#keepsake-datetime"),"manual");$("#keepsake-datetime").value=item.occurredAt||localDateTimeForDate(activeDate);setKeepsakeTags(splitTags(item.tags));$("#keepsake-note").value=item.note;$("#keepsake-edge-expansion").value=String(item.edgeExpansion);$("#keepsake-edge-output").value=String(item.edgeExpansion);$("#keepsake-background-opacity").value=String(item.backgroundOpacityPct??15);$("#keepsake-background-output").value=`${item.backgroundOpacityPct??15}%`;
-    $("#keepsake-save").textContent=keepsakeBatch.items.length>1?`保存第 ${index+1} 件`:"保存小物";$("#keepsake-save-status").textContent=item.lastError?.message||"";
-    item.status=item.alphaMask?"ready":"editing";renderKeepsakeBatch();
-    if(!item.alphaMask)void segmentCurrentKeepsake();
-    return true
-  }catch(error){item.status="failed";item.lastError={message:error.message};$("#keepsake-segment-status").textContent=error.message;renderKeepsakeBatch();return false}
-  finally{keepsakeBatch.loading=false;void persistKeepsakeBatch({capture:false})}
-}
-async function setKeepsakeBatchFiles(files,source="本地文件"){
-  const current=keepsakeBatch.items,nextFiles=[...current.map(item=>item.file),...files],validated=validatedImageFiles(nextFiles,KEEPSAKE_BATCH_MAX_ITEMS),created=createKeepsakeBatchItems(validated.slice(current.length),{occurredAt:localDateTimeForDate(activeDate)});
-  keepsakeBatch.items=[...current,...created];if(!current.length)keepsakeBatch.activeIndex=0;
-  $("#keepsake-workspace").hidden=false;renderKeepsakeBatch();await persistKeepsakeBatch();
-  if(!current.length)await loadKeepsakeBatchItem(0,{capture:false});
-  $("#keepsake-segment-status").textContent=`${source} · 已加入 ${created.length} 张，批次共 ${keepsakeBatch.items.length} 件。`;
-  return true
-}
-async function restoreKeepsakeBatch(owner){
-  if(!owner||keepsakeBatch.items.length)return false;
-  const stored=await mediaDraftStore.get(owner,keepsakeBatchDraftKey);if(!stored?.items?.length)return false;
-  keepsakeBatch.items=stored.items.slice(0,KEEPSAKE_BATCH_MAX_ITEMS).map(item=>{
-    const{category:legacyCategory,...draft}=item;void legacyCategory;
-    return{
-      ...draft,
-      understandingState:item.understandingState==="ready"?"ready":"waiting",
-      candidateRequestId:"",
-      file:typeof File==="function"?new File([item.blob],item.name||"keepsake",{type:item.type||item.blob?.type||"",lastModified:Number(item.lastModified)||Date.now()}):item.blob,
-      blob:undefined
-    }
-  });
-  keepsakeBatch.activeIndex=Math.max(0,Math.min(Number(stored.activeIndex)||0,keepsakeBatch.items.length-1));renderKeepsakeBatch();
-  return true
-}
-async function removeKeepsakeBatchItem(index,{discard=true}={}){
-  captureActiveKeepsakeBatchItem();const previousIndex=keepsakeBatch.activeIndex,wasActive=index===previousIndex,[item]=keepsakeBatch.items.splice(index,1);if(!item)return;
-  if(discard&&item.mediaPaths&&item.uploadRequestId)await discardKeepsakeMedia({request,attachmentPaths:item.mediaPaths.attachmentPaths||Object.values(item.mediaPaths),uploadRequestId:item.uploadRequestId}).catch(()=>{});
-  keepsakeBatch.activeIndex=wasActive?nextKeepsakeBatchIndex(keepsakeBatch.items,index):Math.max(0,previousIndex-(index<previousIndex?1:0));
-  if(keepsakeBatch.items.length){await persistKeepsakeBatch();renderKeepsakeBatch();if(wasActive)await loadKeepsakeBatchItem(keepsakeBatch.activeIndex,{capture:false})}
-  else{await mediaDraftStore.delete(currentUser?.id,keepsakeBatchDraftKey);resetKeepsakeEditor();renderKeepsakeBatch()}
-}
-function clearKeepsakeBatchState(){
-  clearTimeout(keepsakeBatchPersistTimer);keepsakeBatchPersistTimer=0;revokeKeepsakeBatchPreviews();keepsakeBatch.items=[];keepsakeBatch.activeIndex=0;keepsakeBatch.loading=false;renderKeepsakeBatch()
-}
-function scheduleKeepsakeBatchPersist(){
-  captureActiveKeepsakeBatchItem({captureMask:false});const item=activeKeepsakeBatchItem(),card=item&&document.querySelector(`[data-keepsake-batch-select="${keepsakeBatch.activeIndex}"]`);
-  if(card){card.querySelector("b").textContent=item.title||item.file?.name||`小物 ${keepsakeBatch.activeIndex+1}`;card.querySelector("small").textContent=keepsakeBatchStatus(item,keepsakeBatch.activeIndex)}
-  clearTimeout(keepsakeBatchPersistTimer);keepsakeBatchPersistTimer=setTimeout(()=>void persistKeepsakeBatch({capture:false}),250)
-}
-function resetKeepsakeEditor({close=false}={}){
-  const pendingCandidate=activeKeepsakeBatchItem();if(pendingCandidate?.understandingState==="pending")pendingCandidate.understandingState="waiting";
-  keepsakeEditor.segmentSerial+=1;keepsakeEditor.understandingSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.source="manual";keepsakeEditor.originalPath="";keepsakeEditor.cutoutPath="";keepsakeEditor.mediaDirty=false;keepsakeEditor.drawing=false;keepsakeEditor.lastPoint=null;
-  keepsakeEditor.mode="keep";$("#keepsake-brush-keep").classList.add("active");$("#keepsake-brush-erase").classList.remove("active");$("#keepsake-brush-keep").setAttribute("aria-pressed","true");$("#keepsake-brush-erase").setAttribute("aria-pressed","false");
-  $("#keepsake-auto-segment").disabled=false;
-  clearKeepsakeHistory();$("#keepsake-form").reset();delete $("#keepsake-form").dataset.batchItemId;delete $("#keepsake-form").dataset.requestId;delete $("#keepsake-form").dataset.uploadRequestId;delete $("#keepsake-form").dataset.candidateTargetId;$("#keepsake-id").value="";resetOccurrenceInput($("#keepsake-datetime"));$("#keepsake-edge-expansion").value="8";$("#keepsake-edge-output").value="8";$("#keepsake-background-opacity").value="15";$("#keepsake-background-output").value="15%";$("#keepsake-image").value="";$("#keepsake-tag-toggle").setAttribute("aria-expanded","false");setKeepsakeTags([]);$("#keepsake-editor").hidden=true;$("#keepsake-editor").removeAttribute("aria-busy");$("#keepsake-upload-box").hidden=false;$("#keepsake-upload-box").classList.remove("dragging","has-image");$("#keepsake-upload-title").textContent="选择、粘贴或拖入 1–8 张小物照片";$("#keepsake-upload-hint").textContent="每张逐项编辑与保存 · PNG / JPEG / WebP · 单张 8 MB · 批次合计 48 MB";$("#keepsake-segment-status").textContent="";$("#keepsake-understanding-status").textContent="";$("#keepsake-understand").disabled=true;$("#keepsake-save-status").textContent="";$("#keepsake-save").textContent="保存小物";$("#keepsake-save").disabled=false;$("#keepsake-cancel-edit").hidden=true;$("#keepsake-editor-eyebrow").textContent="新建留存";$("#keepsake-editor-title").textContent="拍下或放入一张照片";
-  if(close)$("#keepsake-workspace").hidden=true;
-}
-function invalidateKeepsakeSegmentation(){keepsakeEditor.segmentSerial+=1;$("#keepsake-auto-segment").disabled=false}
-async function prepareKeepsakeImage({dataUrl,file=null,cutoutUrl="",auto=true,mediaDirty=true,serial=++keepsakeEditor.segmentSerial}){
-  const image=await loadImageSource(dataUrl),maxSide=1600,scale=Math.min(1,maxSide/Math.max(image.naturalWidth,image.naturalHeight)),width=Math.max(1,Math.round(image.naturalWidth*scale)),height=Math.max(1,Math.round(image.naturalHeight*scale)),sourceCanvas=blankCanvas(width,height),maskCanvas=blankCanvas(width,height);
-  if(serial!==keepsakeEditor.segmentSerial)return false;
-  sourceCanvas.getContext("2d").drawImage(image,0,0,width,height);
-  if(cutoutUrl){const cutout=await loadImageSource(cutoutUrl),temp=blankCanvas(width,height),tempCtx=temp.getContext("2d",{willReadFrequently:true});tempCtx.drawImage(cutout,0,0,width,height);const sourceData=tempCtx.getImageData(0,0,width,height),maskData=new ImageData(width,height);for(let i=0;i<sourceData.data.length;i+=4)maskData.data[i]=maskData.data[i+1]=maskData.data[i+2]=maskData.data[i+3]=sourceData.data[i+3];maskCanvas.getContext("2d").putImageData(maskData,0,0)}
-  if(serial!==keepsakeEditor.segmentSerial)return false;
-  keepsakeEditor.file=file;keepsakeEditor.sourceDataUrl=dataUrl;keepsakeEditor.sourceImage=image;keepsakeEditor.sourceCanvas=sourceCanvas;keepsakeEditor.maskCanvas=maskCanvas;keepsakeEditor.autoBase=null;keepsakeEditor.source="manual";keepsakeEditor.mediaDirty=mediaDirty;clearKeepsakeHistory();
-  $("#keepsake-upload-box").hidden=true;$("#keepsake-editor").hidden=false;$("#keepsake-understand").disabled=false;renderKeepsakeCanvases();
-  if(auto)await segmentCurrentKeepsake();
-  return true;
-}
-async function setKeepsakeFile(file,source="本地文件"){
-  const status=$("#keepsake-segment-status");try{[file]=validatedImageFiles([file])}catch(error){status.textContent=error.message;return false}
-  const serial=++keepsakeEditor.segmentSerial;$("#keepsake-auto-segment").disabled=false;
-  $("#keepsake-workspace").hidden=false;status.textContent="正在读取照片…";
-  try{const [dataUrl]=await imageDataUrls([file]);if(serial!==keepsakeEditor.segmentSerial)return false;if(!await prepareKeepsakeImage({dataUrl,file,auto:false,serial}))return false;keepsakeEditor.originalPath="";keepsakeEditor.cutoutPath="";status.textContent=`${source} · ${formatBytes(file.size)} · 正在识别主体…`;void segmentCurrentKeepsake();return true}catch(error){if(serial===keepsakeEditor.segmentSerial)status.textContent=error.message;return false}
-}
-async function segmentCurrentKeepsake(){
-  const button=$("#keepsake-auto-segment"),status=$("#keepsake-segment-status");if(!keepsakeEditor.sourceDataUrl)return status.textContent="请先放入一张照片。";
-  const serial=++keepsakeEditor.segmentSerial,owner=currentUser?.id,session=sessionSerial,requestId=crypto.randomUUID(),targetId=$("#keepsake-id").value||$("#keepsake-form").dataset.batchItemId||"keepsake-draft";button.disabled=true;status.textContent="正在识别主体，通常需要数秒…";pushKeepsakeHistory();
-  try{
-    const result=await request("/api/keepsakes/segment",{method:"POST",body:JSON.stringify({requestId,targetId,inputVersion:serial,image:keepsakeSegmentationDataUrl()})});
-    if(serial!==keepsakeEditor.segmentSerial||owner!==currentUser?.id||session!==sessionSerial||(result.requestId&&result.requestId!==requestId))return;
-    if(!result.cutout)throw new Error("服务未返回透明轮廓");
-    if(!await applySegmentedKeepsakeMask(result.cutout,serial))return;
-    status.textContent="自动轮廓已生成，可继续涂抹修正。";
-    if(activeKeepsakeBatchItem()){captureActiveKeepsakeBatchItem();await persistKeepsakeBatch();renderKeepsakeBatch()}
-  }catch(error){if(serial===keepsakeEditor.segmentSerial)status.textContent=`自动提取未完成：${error.message}。仍可手动涂抹。`}
-  finally{if(serial===keepsakeEditor.segmentSerial)button.disabled=false}
-}
-function keepsakeCanvasPoint(event){
-  const canvas=$("#keepsake-mask-canvas"),rect=canvas.getBoundingClientRect();
-  return{x:(event.clientX-rect.left)*canvas.width/rect.width,y:(event.clientY-rect.top)*canvas.height/rect.height};
-}
-function paintKeepsakeStroke(from,to){
-  const canvas=keepsakeEditor.maskCanvas;if(!canvas)return;const ctx=canvas.getContext("2d"),display=$("#keepsake-mask-canvas"),scale=canvas.width/display.getBoundingClientRect().width,size=Number($("#keepsake-brush-size").value)*scale;
-  ctx.save();ctx.globalCompositeOperation=keepsakeEditor.mode==="erase"?"destination-out":"source-over";ctx.strokeStyle="#fff";ctx.fillStyle="#fff";ctx.lineWidth=size;ctx.lineCap="round";ctx.lineJoin="round";ctx.beginPath();ctx.moveTo(from.x,from.y);ctx.lineTo(to.x,to.y);ctx.stroke();ctx.beginPath();ctx.arc(to.x,to.y,size/2,0,Math.PI*2);ctx.fill();ctx.restore();keepsakeEditor.source="manual";keepsakeEditor.mediaDirty=true;scheduleKeepsakeRender();
-}
-function keepsakeImageMarkup(item,className="",loading="lazy",mode="list"){
-  let imagePath="",backgroundPath="";
-  try{({imagePath,backgroundPath=""}=keepsakeMediaSources(item,mode))}
+function homeKeepsakeImageMarkup(item){
+  let imagePath="";
+  try{({imagePath}=keepsakeMediaSources(item,"home"))}
   catch{
     const status=item.media?.status||item.derivativeState,label=status==="pending"?"正在生成":status==="failed"?"生成失败":"暂无图片";
-    return `<span class="keepsake-image-stack ${className} is-unavailable" data-keepsake-media="${escapeHtml(item.id||"")}"><span class="keepsake-media-placeholder">${label}</span></span>`
+    return `<span class="keepsake-image-stack home-v02-keepsake-stack is-unavailable" data-keepsake-media="${escapeHtml(item.id||"")}"><span class="keepsake-media-placeholder">${label}</span></span>`
   }
-  if(mode==="home")backgroundPath="";
   const opacity=Math.max(0,Math.min(30,Number(item.backgroundOpacityPct??15)))/100;
-  return `<span class="keepsake-image-stack ${className}" data-keepsake-media="${escapeHtml(item.id||imagePath)}" style="--keepsake-background-opacity:${opacity}">${backgroundPath?`<img class="keepsake-image-background" src="${escapeHtml(appUrl(backgroundPath))}" alt="" loading="${loading}">`:""}<img class="keepsake-image-cutout" src="${escapeHtml(appUrl(imagePath))}" alt="${escapeHtml(item.title)}" loading="${loading}"></span>`;
+  return `<span class="keepsake-image-stack home-v02-keepsake-stack" data-keepsake-media="${escapeHtml(item.id||imagePath)}" style="--keepsake-background-opacity:${opacity}"><img class="keepsake-image-cutout" src="${escapeHtml(appUrl(imagePath))}" alt="${escapeHtml(item.title)}" loading="eager"></span>`;
 }
-function placeKeepsakeImage(stack){
+function placeHomeKeepsakeImage(stack){
   if(!stack||stack.dataset.placementState==="ready"||stack.dataset.placementState==="loading")return;
   const image=stack.querySelector(".keepsake-image-cutout");if(!image?.src)return;
   const apply=()=>{
@@ -1488,113 +1192,8 @@ function placeKeepsakeImage(stack){
   };
   if(image.complete)apply();else image.addEventListener("load",apply,{once:true})
 }
-function setupKeepsakePlacements(root=document){
-  root.querySelectorAll(".keepsake-card-image,.home-v02-keepsake-stack").forEach(placeKeepsakeImage)
-}
-function uniqueKeepsakeTags(values){
-  const tags=[],seen=new Set();for(const value of values||[]){const tag=String(value||"").trim(),key=tag.toLocaleLowerCase("zh-CN");if(!tag||seen.has(key))continue;seen.add(key);tags.push(tag);if(tags.length===8)break}return tags
-}
-function keepsakeTagsFromInput(){return uniqueKeepsakeTags([...keepsakeDraftTags,...splitTags($("#keepsake-tags").value)])}
-function setKeepsakeTags(values){
-  keepsakeDraftTags=uniqueKeepsakeTags(values);$("#keepsake-tags").value="";renderKeepsakeTagSuggestions()
-}
-function commitKeepsakeTagInput(){
-  const values=splitTags($("#keepsake-tags").value);if(!values.length)return false;
-  keepsakeDraftTags=uniqueKeepsakeTags([...keepsakeDraftTags,...values]);$("#keepsake-tags").value="";renderKeepsakeTagSuggestions();scheduleKeepsakeBatchPersist();return true
-}
-function renderKeepsakeTagSuggestions(){
-  const root=$("#keepsake-tag-suggestions"),selected=$("#keepsake-selected-tags"),toggle=$("#keepsake-tag-toggle");if(!root||!selected||!toggle)return;
-  selected.innerHTML=keepsakeDraftTags.map(tag=>`<span>${escapeHtml(tag)}<button type="button" data-keepsake-tag-remove="${escapeHtml(tag)}" aria-label="移除标签 ${escapeHtml(tag)}">×</button></span>`).join("");
-  const selectedKeys=new Set(keepsakeDraftTags.map(tag=>tag.toLocaleLowerCase("zh-CN"))),query=normalizedFeedSearch($("#keepsake-tags").value);
-  const tags=uniqueKeepsakeTags((state.keepsakes||[]).flatMap(item=>item.tags||[])).filter(tag=>!selectedKeys.has(tag.toLocaleLowerCase("zh-CN"))&&(!query||normalizedFeedSearch(tag).includes(query)));
-  root.innerHTML=tags.length?tags.map(tag=>`<button type="button" role="option" aria-selected="false" data-keepsake-tag-suggestion="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join(""):`<span class="keepsake-tag-empty">${query?"没有匹配项，按回车创建":"还没有可选标签"}</span>`;
-  root.hidden=toggle.getAttribute("aria-expanded")!=="true"
-}
-function keepsakeTagsMarkup(tags){
-  return (tags||[]).length?`<span class="keepsake-tags">${tags.map(tag=>`<span>#${escapeHtml(tag)}</span>`).join("")}</span>`:"";
-}
-function keepsakeDerivativeLabel(item){
-  return item.derivativeState==="pending"?"正在生成清晰图":item.derivativeState==="failed"?"清晰图待重试":""
-}
-function keepsakeCardMarkup(item,loading="lazy"){
-  const derivativeLabel=keepsakeDerivativeLabel(item);
-  return `<article class="keepsake-card" data-keepsake-id="${escapeHtml(item.id)}"><button class="keepsake-card-open" type="button" data-keepsake-open="${escapeHtml(item.id)}" aria-label="查看 ${escapeHtml(item.title)} 详情">${keepsakeImageMarkup(item,"keepsake-card-image",loading)}<span class="keepsake-card-copy"><span class="keepsake-card-meta"><time>${formatDate(eventTimestamp(item))}</time></span><strong>${escapeHtml(item.title)}</strong>${derivativeLabel?`<span class="keepsake-derivative-state">${derivativeLabel}</span>`:""}${item.note?`<span class="keepsake-card-note">${escapeHtml(item.note)}</span>`:""}${keepsakeTagsMarkup(item.tags)}</span></button><div class="keepsake-card-actions">${item.derivativeState==="failed"?`<button type="button" data-keepsake-derive="${escapeHtml(item.id)}">重试清晰图</button>`:""}<button type="button" data-keepsake-edit="${escapeHtml(item.id)}">编辑</button><button type="button" class="danger" data-keepsake-delete="${escapeHtml(item.id)}">删除</button></div></article>`
-}
-function loadNextKeepsakePage(){
-  const total=(state.keepsakes||[]).length,next=Math.min(total,keepsakeVisibleCount+KEEPSAKE_PAGE_SIZE);
-  if(next===keepsakeVisibleCount)return;
-  keepsakeVisibleCount=next;renderKeepsakes()
-}
-function observeNextKeepsakePage(){
-  keepsakeLoadObserver?.disconnect();keepsakeLoadObserver=null;
-  const sentinel=$("#keepsake-pagination");
-  if(!sentinel||sentinel.hidden||typeof IntersectionObserver==="undefined")return;
-  keepsakeLoadObserver=new IntersectionObserver(entries=>{if(entries.some(entry=>entry.isIntersecting))loadNextKeepsakePage()},{root:null,rootMargin:`${KEEPSAKE_PREFETCH_MARGIN_PX}px 0px`});
-  keepsakeLoadObserver.observe(sentinel)
-}
-function scheduleKeepsakeDerivativeRefresh(){
-  if(keepsakeDerivativeRefreshTimer||(state.keepsakes||[]).every(item=>item.derivativeState!=="pending"))return;
-  const owner=currentUser?.id,session=sessionSerial;
-  keepsakeDerivativeRefreshTimer=setTimeout(async()=>{
-    keepsakeDerivativeRefreshTimer=0;if(owner!==currentUser?.id||session!==sessionSerial)return;
-    try{await refreshState("keepsakes")}catch{}
-    if(owner===currentUser?.id&&session===sessionSerial)scheduleKeepsakeDerivativeRefresh()
-  },750)
-}
-function renderKeepsakeDetail(item){
-  const original=activeKeepsakeView==="original",detail=$("#keepsake-detail");
-  const derivativeLabel=keepsakeDerivativeLabel(item);
-  detail.dataset.keepsakeId=item.id;
-  detail.innerHTML=`<nav class="keepsake-detail-nav"><button class="book-back" type="button" data-keepsake-back>← 返回陈列</button><div class="keepsake-detail-actions">${item.derivativeState==="failed"?`<button class="text-button" type="button" data-keepsake-derive="${escapeHtml(item.id)}">重试清晰图</button>`:""}<button class="text-button" type="button" data-keepsake-edit="${escapeHtml(item.id)}">编辑</button><button class="text-button danger" type="button" data-keepsake-delete="${escapeHtml(item.id)}">删除</button></div></nav>
-    <div class="keepsake-detail-layout">
-      <section class="keepsake-detail-media">
-        <div class="keepsake-detail-viewbar"><span>${original?"原始照片":derivativeLabel||`主体清晰 · 环境 ${Math.max(0,Math.min(30,Number(item.backgroundOpacityPct??15)))}%`}</span><div class="segmented-control" aria-label="图片显示方式"><button type="button" data-keepsake-view="presentation" aria-pressed="${String(!original)}" class="${original?"":"active"}">呈现</button><button type="button" data-keepsake-view="original" aria-pressed="${String(original)}" class="${original?"active":""}">原图</button></div></div>
-        <div class="keepsake-detail-image-wrap">${keepsakeImageMarkup(original?{...item,originalPath:activeKeepsakeOriginalPath}:item,"keepsake-detail-image","eager",original?"original":"detail")}</div>
-      </section>
-      <section class="keepsake-detail-copy">
-        <p class="eyebrow">小物留存</p>
-        <h2>${escapeHtml(item.title)}</h2>
-        <time datetime="${escapeHtml(eventTimestamp(item))}">${escapeHtml(formatDateKey(eventDate(item)))} · ${formatTime(eventTimestamp(item))}</time>
-        ${keepsakeTagsMarkup(item.tags)}
-        <p class="keepsake-detail-note">${item.note?escapeHtml(item.note):"没有留下文字备注。"}</p>
-      </section>
-    </div>`;
-}
-function renderKeepsakes(){
-  const allItems=[...(state.keepsakes||[])].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a)));
-  const items=allItems.filter(item=>matchesFeedSearch("keepsakes",item.title,item.tags,item.note));
-  const owner=currentUser?.id||"";if(owner!==keepsakePaginationOwner){keepsakePaginationOwner=owner;keepsakeVisibleCount=KEEPSAKE_PAGE_SIZE}
-  keepsakeVisibleCount=Math.max(KEEPSAKE_PAGE_SIZE,Math.min(keepsakeVisibleCount,Math.max(items.length,KEEPSAKE_PAGE_SIZE)));
-  let detailItem=allItems.find(item=>item.id===activeKeepsakeId);if(activeKeepsakeId&&!detailItem){activeKeepsakeId="";activeKeepsakeView="presentation"}
-  detailItem=allItems.find(item=>item.id===activeKeepsakeId);const inDetail=Boolean(detailItem),library=$(".keepsake-library"),detail=$("#keepsake-detail"),pagination=$("#keepsake-pagination");
-  scheduleKeepsakeDerivativeRefresh();
-  $("#view-keepsakes").classList.toggle("keepsake-detail-mode",inDetail);$("#keepsake-search-control").hidden=inDetail;$("#keepsake-count").textContent=allItems.length?feedCountLabel("keepsakes",items.length,allItems.length,"件"):"";$("#keepsake-library-count").textContent=feedCountLabel("keepsakes",items.length,allItems.length,"件");$("#keepsake-create-toggle").hidden=inDetail;library.hidden=inDetail;detail.hidden=!inDetail;renderKeepsakeTagSuggestions();
-  if(inDetail){keepsakeLoadObserver?.disconnect();if(pagination)pagination.hidden=true;renderKeepsakeDetail(detailItem);return}
-  detail.innerHTML="";
-  const visibleItems=items.slice(0,keepsakeVisibleCount);
-  $("#keepsake-grid").innerHTML=items.length?visibleItems.map((item,index)=>keepsakeCardMarkup(item,index<4?"eager":"lazy")).join(""):allItems.length?feedSearchEmpty("小物"):contentState({title:"还没有小物",body:"从一张照片开始，名称和轮廓之后都可以修改。",action:{command:"new-keepsake",label:"收第一件小物"}});
-  if(pagination){pagination.hidden=!items.length||visibleItems.length>=items.length;$("#keepsake-pagination-status").textContent=`已显示 ${visibleItems.length} / ${items.length} 件`;$("#keepsake-load-more").hidden=pagination.hidden}
-  requestAnimationFrame(()=>{setupKeepsakePlacements($("#keepsake-grid"));observeNextKeepsakePage()})
-}
-async function editKeepsake(id){
-  const item=(state.keepsakes||[]).find(value=>value.id===id);if(!item)return;
-  resetKeepsakeEditor();const serial=keepsakeEditor.segmentSerial;
-  activeKeepsakeId="";activeKeepsakeView="presentation";renderKeepsakes();$("#keepsake-workspace").hidden=false;$("#keepsake-upload-box").hidden=true;$("#keepsake-editor").hidden=false;$("#keepsake-editor").setAttribute("aria-busy","true");$("#keepsake-editor-eyebrow").textContent="编辑留存";$("#keepsake-editor-title").textContent=item.title;$("#keepsake-id").value=item.id;$("#keepsake-title").value=item.title;resetOccurrenceInput($("#keepsake-datetime"),item);setKeepsakeTags(item.tags||[]);$("#keepsake-note").value=item.note||"";$("#keepsake-edge-expansion").value=String(item.edgeExpansion??8);$("#keepsake-edge-output").value=String(item.edgeExpansion??8);$("#keepsake-background-opacity").value=String(item.backgroundOpacityPct??15);$("#keepsake-background-output").value=`${item.backgroundOpacityPct??15}%`;$("#keepsake-save").textContent="保存修改";$("#keepsake-save").disabled=true;$("#keepsake-cancel-edit").hidden=false;$("#keepsake-segment-status").textContent="正在载入编辑图与蒙版…";$("#keepsake-workspace").scrollIntoView({behavior:"smooth",block:"start"});
-  try{const original=await request(`/api/keepsakes/${encodeURIComponent(id)}/original`),media=keepsakeMediaSources(item,"edit"),[editImage,alphaMask]=await Promise.all([apiClient.readBlob(media.imagePath),apiClient.readBlob(media.alphaMaskPath)]),[dataUrl,cutoutUrl]=await Promise.all([dataUrlFromBlob(editImage),dataUrlFromBlob(alphaMask)]);if(serial!==keepsakeEditor.segmentSerial)return;if(!await prepareKeepsakeImage({dataUrl,cutoutUrl,auto:false,mediaDirty:false,serial}))return;keepsakeEditor.originalPath=original.originalPath;keepsakeEditor.cutoutPath=media.alphaMaskPath;keepsakeEditor.source=item.source||"manual";$("#keepsake-segment-status").textContent="编辑图与蒙版已载入，可涂抹修正或重新识别。"}catch(error){if(serial===keepsakeEditor.segmentSerial)$("#keepsake-segment-status").textContent=`编辑资源未能载入：${error.message}。可取消后重试。`}finally{if(serial===keepsakeEditor.segmentSerial){$("#keepsake-editor").removeAttribute("aria-busy");$("#keepsake-save").disabled=!keepsakeEditor.sourceCanvas}}
-}
-function openKeepsakeDetail(id){
-  if(!(state.keepsakes||[]).some(item=>item.id===id))return;activeKeepsakeId=id;activeKeepsakeView="presentation";activeKeepsakeOriginalPath="";resetKeepsakeEditor({close:true});renderKeepsakes();window.scrollTo({top:0,behavior:"smooth"});
-}
-async function setKeepsakeDetailView(view){
-  if(!activeKeepsakeId)return;
-  const targetId=activeKeepsakeId;
-  if(view==="original"&&!activeKeepsakeOriginalPath){
-    const result=await request(`/api/keepsakes/${encodeURIComponent(targetId)}/original`);
-    if(targetId!==activeKeepsakeId)return;
-    activeKeepsakeOriginalPath=result.originalPath||"";
-    if(!activeKeepsakeOriginalPath)throw new Error("原图不可用");
-  }
-  activeKeepsakeView=view==="original"?"original":"presentation";const item=(state.keepsakes||[]).find(value=>value.id===activeKeepsakeId);if(item)renderKeepsakeDetail(item);
+function setupHomeKeepsakePlacement(root=document){
+  root.querySelectorAll(".home-v02-keepsake-stack").forEach(placeHomeKeepsakeImage)
 }
 function quoteTagCandidates(){
   return[...(state.quoteTags||[]),...(state.quotes||[]).flatMap(item=>item.tags||[])]
@@ -1958,7 +1557,7 @@ const onboardingV2Controller=createOnboardingV2Controller({
   toast:showToast
 });
 function renderOnboarding(){onboardingV2Controller.render()}
-function renderDate(){$$("[data-active-date]").forEach(input=>input.value=activeDate);installOccurrenceControls();if(!$("#quote-id")?.value)resetOccurrenceInput($("#quote-datetime"));if(!$("#keepsake-id")?.value)resetOccurrenceInput($("#keepsake-datetime"));for(const input of[$("#chain-datetime"),$("#checkin-datetime"),$("#chat-datetime")])resetOccurrenceInput(input);$$("[data-daily-form]").forEach(form=>{if(!form.elements.recordId.value)resetOccurrenceInput(form.elements.occurredAt)});const d=new Date(`${activeDate}T12:00:00`),today=activeDate===localDateKey(),label=new Intl.DateTimeFormat("zh-CN",{year:"numeric",month:"long",day:"numeric",weekday:"long"}).format(d);$$("[data-active-date-label]").forEach(element=>element.textContent=element.id==="today-date-label"?activeDate.replaceAll("-","/"):label);$$("[data-active-date-heading]").forEach(element=>{const view=element.closest(".view")?.id;element.textContent=!today?"回到这一天":view==="view-daily"?"今天，留下了什么？":view==="view-together"?"今天，一起看看":"今天，你感觉怎么样？"})}
+function renderDate(){$$("[data-active-date]").forEach(input=>input.value=activeDate);installOccurrenceControls();if(!$("#quote-id")?.value)resetOccurrenceInput($("#quote-datetime"));for(const input of[$("#chain-datetime"),$("#checkin-datetime"),$("#chat-datetime")])resetOccurrenceInput(input);$$("[data-daily-form]").forEach(form=>{if(!form.elements.recordId.value)resetOccurrenceInput(form.elements.occurredAt)});const d=new Date(`${activeDate}T12:00:00`),today=activeDate===localDateKey(),label=new Intl.DateTimeFormat("zh-CN",{year:"numeric",month:"long",day:"numeric",weekday:"long"}).format(d);$$("[data-active-date-label]").forEach(element=>element.textContent=element.id==="today-date-label"?activeDate.replaceAll("-","/"):label);$$("[data-active-date-heading]").forEach(element=>{const view=element.closest(".view")?.id;element.textContent=!today?"回到这一天":view==="view-daily"?"今天，留下了什么？":view==="view-together"?"今天，一起看看":"今天，你感觉怎么样？"})}
 function homeMemorySource(item){
   const date=item.occurredAt?formatDate(item.occurredAt):formatDateKey(item.occurredOn);
   if(item.type==="book")return `书间 · 《${item.sourceTitle||"未命名书目"}》 · ${date}`;
@@ -2034,7 +1633,7 @@ function renderHomeKeepsake(){
   const preview=document.createElement("span");
   preview.className=`home-v02-keepsake-preview${item?"":" empty"}`;
   if(item){
-    const template=document.createElement("template");template.innerHTML=keepsakeImageMarkup(item,"home-v02-keepsake-stack","eager","home");preview.append(template.content)
+    const template=document.createElement("template");template.innerHTML=homeKeepsakeImageMarkup(item);preview.append(template.content)
   }else{
     preview.textContent="物";
     preview.setAttribute("aria-hidden","true")
@@ -2057,7 +1656,7 @@ function renderHomeKeepsake(){
   button.append(preview,copy,arrow);
   button.setAttribute("aria-label",item?`打开小物：${item.title}`:"打开小物");
   container.replaceChildren(button);
-  if(item)requestAnimationFrame(()=>setupKeepsakePlacements(container))
+  if(item)requestAnimationFrame(()=>setupHomeKeepsakePlacement(container))
 }
 function renderHomeMood(){renderCheckinSurfaces(["checkins"])}
 function renderHome(){
@@ -2216,7 +1815,6 @@ function renderVisibleRoute(){
   $("#notification-dot").hidden=!Number(state.notificationUnread??notificationUnreadCount);
   if(view==="today"){renderSliders();renderHome()}
   else if(view==="daily")void healthFeatureController?.render().catch(error=>showToast(`日录显示失败：${error.message}`,"error"));
-  else if(view==="keepsakes"){renderKeepsakes();renderKeepsakeBatch()}
   else if(view==="settings"){renderSettings();renderLocalTestSettings()}
   else if(view==="trash")renderTrash();
   else if(view==="account")renderAccountUsers();
@@ -2301,9 +1899,7 @@ function clearPrivateSessionState(){
   closeImageViewer({restoreFocus:false});
   onboardingV2Controller.reset();
   resetState();routeDataReady=false;routeDataRequestSerial+=1;routeLoadFailureKey="";loadedRouteKey="";fullRouteStateLoaded=false;quoteTagStates={selectionQuote:createTagMultiSelectState()};llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationsLoadState="idle";actionsCoordinator.resetSession();annotationsController?.resetSession();personalContext=null;personalContextRequestSerial=0;accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.5.7";homeMemoryKeys=[];homeMemoryByKey=new Map();homeKeepsakeId="";closeHomeEditors({restoreFocus:false});$("#capture-editor").hidden=true;document.body.classList.remove("capture-editor-open");resetOwnerSurfaces();invalidatePageLoads();draftTags=[];keepsakeDraftTags=[];capturesFeatureController=null;quotesFeatureController=null;libraryFeatureController=null;
-  keepsakeEditor.segmentSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.history=[];
-  clearKeepsakeBatchState();
+  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationsLoadState="idle";actionsCoordinator.resetSession();annotationsController?.resetSession();personalContext=null;personalContextRequestSerial=0;accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.5.7";homeMemoryKeys=[];homeMemoryByKey=new Map();homeKeepsakeId="";closeHomeEditors({restoreFocus:false});$("#capture-editor").hidden=true;document.body.classList.remove("capture-editor-open");resetOwnerSurfaces();invalidatePageLoads();draftTags=[];capturesFeatureController=null;quotesFeatureController=null;libraryFeatureController=null;keepsakesFeatureController=null;
   contentImageDraftManager?.resetSession();for(const key of persistentContentImageKeys)renderContentImageEditor(key);
   pageAudioCoordinator.resetSession();stopPageAudio();
   $$("main form").forEach(form=>{form.reset();delete form.dataset.requestId});$$(".modal-backdrop").forEach(modal=>modal.hidden=true);$("#comment-panel").hidden=true;$("#comment-panel-reopen").hidden=true;$("#selection-tools").hidden=true;$("#annotation-line-counts").hidden=true;document.body.classList.remove("comment-panel-open");
@@ -2323,10 +1919,7 @@ async function activateUserSession(user,authRequired,initialSnapshot=null,openin
   prepareUserSession(user,authRequired,{keepVisible:Boolean(initialSnapshot?.visibleShell)});
   try{
     if(!await load({visibleShell:true,initialSnapshot,opening}))return false;
-    await Promise.all([
-      restoreContentImageDrafts(user?.id).catch(error=>showToast(`待上传图片恢复失败：${error.message}`,"error")),
-      restoreKeepsakeBatch(user?.id).catch(error=>showToast(`小物批次恢复失败：${error.message}`,"error"))
-    ]);
+    await restoreContentImageDrafts(user?.id).catch(error=>showToast(`待上传图片恢复失败：${error.message}`,"error"));
     await restorePendingProjections();
     revealUserSession();
     return true
@@ -2396,7 +1989,7 @@ async function restartApplicationForUser(user){
   applicationLifecycleReady=true
 }
 const refreshState=(domains,options={})=>refreshCoordinator.refresh(domains,{...options,patchOnly:options.patchOnly===true});
-subscribeState((next,wanted)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);if(wanted.has("dailyRecords"))void healthFeatureController?.render({snapshot:next,changedDomains:wanted}).catch(()=>{});if(wanted.has("thoughts")){renderTagComposer();renderHomeMemories()}if(wanted.has("speech"))renderSettings();if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("books")){renderHomeMemories();if(annotationsController?.activeRootKey().startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes")){renderKeepsakes();renderHomeKeepsake()}if(wanted.has("quotes"))renderHomeMemories();if(wanted.has("comments"))renderCommentPanel();renderNotificationSummary()});
+subscribeState((next,wanted)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);if(wanted.has("dailyRecords"))void healthFeatureController?.render({snapshot:next,changedDomains:wanted}).catch(()=>{});if(wanted.has("thoughts")){renderTagComposer();renderHomeMemories()}if(wanted.has("speech"))renderSettings();if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("books")){renderHomeMemories();if(annotationsController?.activeRootKey().startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes"))renderHomeKeepsake();if(wanted.has("quotes"))renderHomeMemories();if(wanted.has("comments"))renderCommentPanel();renderNotificationSummary()});
 function setAnswerModalStep(step){const order=["context","thinking","answer","done"],current=order.indexOf(step);$$("#ai-answer-progress li").forEach((item,index)=>{item.classList.toggle("active",index===current);item.classList.toggle("done",index<current||(step==="done"&&index===current))})}
 function closeAnswerModal(){const modal=$("#ai-answer-modal"),busy=modal.dataset.busy==="true";modal.hidden=true;if(busy)showToast("回答继续在后台生成，完成后会提醒。")}
 async function runAnswerInModal({title,scene="thoughtAnswer",requestCall,onDone,isCurrent=()=>true}){
@@ -2699,6 +2292,68 @@ function createPageFeatureDescriptors(){
       return controller
     })
   };
+  descriptors.keepsakes={
+    root:()=>$("#view-keepsakes"),
+    load:()=>loadKeepsakesFeatureModule().then(module=>{
+      const controller=module.createKeepsakeFeatureController({
+        data:{
+          getSnapshot:()=>state,
+          getAccountId:()=>currentUser?.id||"",
+          getSessionSerial:()=>sessionSerial,
+          getActiveDate:()=>activeDate,
+          request:(url,options)=>withFeatureScope("keepsakes",()=>request(url,options)),
+          refresh:(domains,options)=>refreshState(domains,options)
+        },
+        media:{
+          validateImages:(files,maxItems)=>runPublicValidation(()=>validatedImageFiles(files,maxItems)),
+          imageDataUrls,
+          readBlob:path=>apiClient.readBlob(path),
+          dataUrlFromBlob
+        },
+        drafts:mediaDraftStore,
+        navigation:{scrollTo:options=>window.scrollTo(options)},
+        view:{
+          appUrl,
+          contentState,
+          escapeMarkup:escapeHtml,
+          eventTimestamp,
+          eventDate,
+          formatDate,
+          formatDateKey,
+          formatTime,
+          resetOccurrenceInput,
+          occurrenceFields,
+          splitTags,
+          formatBytes,
+          feedCountLabel:(_,visible,total,unit)=>normalizedFeedSearch($("#keepsake-search")?.value)?`${visible} / ${total} ${unit}`:`${total} ${unit}`,
+          feedSearchEmpty,
+          localDateTimeForDate,
+          setOccurrenceMode,
+          showToast,
+          uncertainSubmission:uncertainMediaSubmission
+        },
+        platform:{
+          document,
+          window,
+          objectUrls:URL,
+          IntersectionObserver:globalThis.IntersectionObserver,
+          createFile:(blob,name,options)=>new File([blob],name,options),
+          createRequestId:()=>crypto.randomUUID(),
+          createCanvas:(width,height)=>blankCanvas(width,height),
+          createImageData:(width,height,data)=>data?new ImageData(data,width,height):new ImageData(width,height),
+          loadImage:loadImageSource,
+          requestFrame:callback=>requestAnimationFrame(callback),
+          cancelFrame:frame=>cancelAnimationFrame(frame),
+          setTimer:(callback,delay)=>setTimeout(callback,delay),
+          clearTimer:timer=>clearTimeout(timer),
+          now:()=>Date.now(),
+          confirm:(...args)=>globalThis.confirm(...args)
+        }
+      });
+      keepsakesFeatureController=controller;
+      return controller
+    })
+  };
   descriptors.quotes={
     root:()=>$("#view-quotes"),
     load:()=>loadQuotesFeatureModule().then(module=>{
@@ -2958,6 +2613,10 @@ async function openQuoteFeature(id){
   await Promise.resolve(switchView("quotes"));
   return quotesFeatureController?.openItem(id)||false
 }
+async function openKeepsakeFeature(id){
+  await Promise.resolve(switchView("keepsakes"));
+  return id?keepsakesFeatureController?.openItem(id)||false:true
+}
 $("#home-open-thought").addEventListener("click",event=>openHomeEditor("thought",event.currentTarget));
 $("#home-record-voice").addEventListener("click",event=>void openCaptureFeature("openQuickVoice",event.currentTarget));
 $("#home-record-state").addEventListener("click",event=>openHomeEditor("state",event.currentTarget));
@@ -2969,8 +2628,7 @@ $("#home-memory-grid").addEventListener("click",event=>{
 $("#home-keepsake").addEventListener("click",event=>{
   const button=event.target.closest("[data-home-keepsake]");
   if(!button)return;
-  switchView("keepsakes");
-  if(button.dataset.homeKeepsake)openKeepsakeDetail(button.dataset.homeKeepsake)
+  void openKeepsakeFeature(button.dataset.homeKeepsake)
 });
 $$("[data-home-editor-close]").forEach(button=>button.addEventListener("click",()=>closeHomeEditors()));
 $$(".home-v02-editor-backdrop").forEach(editor=>editor.addEventListener("click",event=>{if(event.target===editor)closeHomeEditors()}));
@@ -3017,12 +2675,6 @@ document.addEventListener("click",async e=>{
   catch(error){if(error.syncStatus==="pending")showToast(`${target.label}将在网络恢复后移入回收站`);else{await refreshState(target.domains).catch(()=>{});showToast(error.message,"error")}}
 });
 document.addEventListener("click",event=>{const button=event.target.closest("[data-context-source]");if(button)openContextSource(button)});
-document.addEventListener("input",event=>{
-  const input=event.target.closest("[data-feed-search]");if(!input)return;
-  const scope=input.dataset.feedSearch;if(!(scope in feedSearchQueries))return;
-  feedSearchQueries[scope]=input.value;
-  if(scope==="keepsakes")renderKeepsakes()
-});
 document.addEventListener("click",event=>{
   const button=event.target.closest("[data-content-focus],[data-content-action]");if(!button)return;
   if(button.closest("#view-captures,#view-journals"))return;
@@ -3032,7 +2684,6 @@ document.addEventListener("click",event=>{
   }
   const command=button.dataset.contentAction;
   if(command==="new-state"){switchView("today");openHomeEditor("state",button);return}
-  if(command==="new-keepsake"){$("#keepsake-create-toggle")?.click();return}
   if(command==="retry-route-state"){button.disabled=true;void loadRouteState(pageRouter?.currentRoute()).finally(()=>{if(button.isConnected)button.disabled=false});return}
   const retries={
     "retry-trash":loadTrash,
@@ -3080,7 +2731,7 @@ for(const selector of["#chain-question","#chain-idea","#chain-answer"])$(selecto
 $("#chain-form").addEventListener("reset",event=>{chainDraftVersion+=1;resetContentImageEditor("thoughtRoot");delete event.currentTarget.dataset.draftId;event.currentTarget.elements.sourceCaptureId.value="";event.currentTarget.elements.sourceCaptureVersion.value="";queueMicrotask(syncChainRecordKind)});
 for(const id of durableDraftForms)for(const eventName of["input","change"])document.getElementById(id)?.addEventListener(eventName,saveDurableDrafts);
 document.addEventListener("keydown",event=>{
-  const field=event.target.closest?.("input,textarea"),form=field?.closest?.("#chain-form,#checkin-form,#chat-form,[data-daily-form],[data-book-entry-form],#keepsake-form,#quote-form,#selection-quote-form,#thought-block-form");
+  const field=event.target.closest?.("input,textarea"),form=field?.closest?.("#chain-form,#checkin-form,#chat-form,[data-daily-form],[data-book-entry-form],#quote-form,#selection-quote-form,#thought-block-form");
   if(!field||!form||field===document.activeElement&&["chain-tags","quote-tags","selection-quote-tags"].includes(field.id))return;
   const intent=entryKeyIntent(event,{inputKind:field.tagName==="TEXTAREA"?"multiline":"field"});
   if(intent==="submit")return void occurrenceKeyboardSubmit(event,form,field.tagName==="TEXTAREA"?"multiline":"field");
@@ -3183,76 +2834,6 @@ document.addEventListener("keydown",e=>{
   if(!$("#thought-block-modal").hidden)return $("#thought-block-modal").hidden=true;
   if(!$("#edit-checkin-modal").hidden)return $("#edit-checkin-modal").hidden=true;
   if(homeEditor)closeHomeEditors()
-});
-$("#keepsake-create-toggle").addEventListener("click",()=>{const workspace=$("#keepsake-workspace"),opening=workspace.hidden;if(opening){if(keepsakeBatch.items.length)void loadKeepsakeBatchItem(keepsakeBatch.activeIndex,{capture:false});else resetKeepsakeEditor();workspace.hidden=false;workspace.scrollIntoView({behavior:"smooth",block:"start"})}else{void persistKeepsakeBatch();resetKeepsakeEditor({close:true});renderKeepsakeBatch()}});
-$("#keepsake-load-more").addEventListener("click",loadNextKeepsakePage);
-$("#keepsake-editor-close").addEventListener("click",()=>{void persistKeepsakeBatch();resetKeepsakeEditor({close:true});renderKeepsakeBatch()});
-$("#keepsake-cancel-edit").addEventListener("click",()=>{resetKeepsakeEditor();$("#keepsake-workspace").scrollIntoView({behavior:"smooth",block:"start"})});
-$("#keepsake-image").addEventListener("change",async e=>{const fileInput=e.currentTarget,files=[...(fileInput.files||[])];if(!files.length)return;try{if($("#keepsake-id").value)await setKeepsakeFile(files[0]);else await setKeepsakeBatchFiles(files)}catch(error){$("#keepsake-segment-status").textContent=error.message}finally{fileInput.value=""}});
-$("#keepsake-batch-add").addEventListener("click",()=>$("#keepsake-image").click());
-document.addEventListener("click",e=>{const button=e.target.closest("[data-keepsake-batch-select]");if(button&&!keepsakeBatch.loading)void loadKeepsakeBatchItem(Number(button.dataset.keepsakeBatchSelect))});
-document.addEventListener("click",e=>{const button=e.target.closest("[data-keepsake-batch-remove]");if(button&&!keepsakeBatch.loading)void removeKeepsakeBatchItem(Number(button.dataset.keepsakeBatchRemove))});
-$("#keepsake-upload-box").addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();$("#keepsake-image").click()}});
-$("#keepsake-upload-box").addEventListener("dragenter",e=>{e.preventDefault();e.currentTarget.classList.add("dragging")});
-$("#keepsake-upload-box").addEventListener("dragover",e=>{e.preventDefault();e.dataTransfer.dropEffect="copy";e.currentTarget.classList.add("dragging")});
-$("#keepsake-upload-box").addEventListener("dragleave",e=>{if(!e.currentTarget.contains(e.relatedTarget))e.currentTarget.classList.remove("dragging")});
-$("#keepsake-upload-box").addEventListener("drop",e=>{e.preventDefault();e.currentTarget.classList.remove("dragging");const files=[...(e.dataTransfer?.files||[])].filter(item=>item.type.startsWith("image/"));if(!files.length)return $("#keepsake-segment-status").textContent="拖入的内容里没有可用图片。";if($("#keepsake-id").value)void setKeepsakeFile(files[0],"拖入图片");else void setKeepsakeBatchFiles(files,"拖入图片").catch(error=>$("#keepsake-segment-status").textContent=error.message)});
-document.addEventListener("paste",e=>{if(!$("#view-keepsakes").classList.contains("active")||(e.target instanceof Element&&e.target.closest("input,textarea,[contenteditable=true]")))return;const files=[...(e.clipboardData?.files||[])].filter(item=>item.type.startsWith("image/"));if(!files.length)return;e.preventDefault();if($("#keepsake-id").value)void setKeepsakeFile(files[0],"剪贴板");else void setKeepsakeBatchFiles(files,"剪贴板").catch(error=>$("#keepsake-segment-status").textContent=error.message)});
-$("#keepsake-auto-segment").addEventListener("click",segmentCurrentKeepsake);
-$("#keepsake-understand").addEventListener("click",understandCurrentKeepsake);
-$("#keepsake-tag-toggle").addEventListener("click",event=>{const expanded=event.currentTarget.getAttribute("aria-expanded")!=="true";event.currentTarget.setAttribute("aria-expanded",String(expanded));renderKeepsakeTagSuggestions();if(expanded)$("#keepsake-tags").focus()});
-$("#keepsake-tags").addEventListener("keydown",event=>{if(event.key==="Enter"||event.key===","){event.preventDefault();commitKeepsakeTagInput()}else if(event.key==="Backspace"&&!event.currentTarget.value&&keepsakeDraftTags.length){keepsakeDraftTags.pop();renderKeepsakeTagSuggestions();scheduleKeepsakeBatchPersist()}});
-$("#keepsake-tags").addEventListener("input",()=>{renderKeepsakeTagSuggestions();if(activeKeepsakeBatchItem())scheduleKeepsakeBatchPersist()});
-$("#keepsake-tags").addEventListener("blur",()=>{if($("#keepsake-tags").value.trim())commitKeepsakeTagInput()});
-$("#keepsake-brush-keep").addEventListener("click",()=>{keepsakeEditor.mode="keep";$("#keepsake-brush-keep").classList.add("active");$("#keepsake-brush-erase").classList.remove("active");$("#keepsake-brush-keep").setAttribute("aria-pressed","true");$("#keepsake-brush-erase").setAttribute("aria-pressed","false")});
-$("#keepsake-brush-erase").addEventListener("click",()=>{keepsakeEditor.mode="erase";$("#keepsake-brush-erase").classList.add("active");$("#keepsake-brush-keep").classList.remove("active");$("#keepsake-brush-erase").setAttribute("aria-pressed","true");$("#keepsake-brush-keep").setAttribute("aria-pressed","false")});
-$("#keepsake-brush-size").addEventListener("input",e=>{$("#keepsake-brush-output").value=e.currentTarget.value;const cursor=$("#keepsake-canvas-cursor");cursor.style.width=cursor.style.height=`${e.currentTarget.value}px`});
-$("#keepsake-edge-expansion").addEventListener("input",e=>{$("#keepsake-edge-output").value=e.currentTarget.value;if(keepsakeEditor.autoBase){applyKeepsakeExpansion();$("#keepsake-segment-status").textContent="已按当前场景边缘重新生成自动轮廓；之后仍可手动修正。"}});
-$("#keepsake-background-opacity").addEventListener("input",event=>{$("#keepsake-background-output").value=`${event.currentTarget.value}%`;scheduleKeepsakeRender()});
-$("#keepsake-reset-mask").addEventListener("click",()=>{if(!keepsakeEditor.maskCanvas)return;invalidateKeepsakeSegmentation();pushKeepsakeHistory();keepsakeEditor.maskCanvas.getContext("2d").clearRect(0,0,keepsakeEditor.maskCanvas.width,keepsakeEditor.maskCanvas.height);keepsakeEditor.autoBase=null;keepsakeEditor.source="manual";keepsakeEditor.mediaDirty=true;scheduleKeepsakeRender();const item=activeKeepsakeBatchItem();if(item){item.alphaMask="";item.status="editing";void persistKeepsakeBatch({capture:false});renderKeepsakeBatch()}$("#keepsake-segment-status").textContent="轮廓已清空，可用“保留”笔刷重新涂抹。"});
-$("#keepsake-undo").addEventListener("click",()=>{const previous=keepsakeEditor.history.pop();if(!previous||!keepsakeEditor.maskCanvas)return;invalidateKeepsakeSegmentation();keepsakeEditor.maskCanvas.getContext("2d").putImageData(previous,0,0);keepsakeEditor.mediaDirty=true;$("#keepsake-undo").disabled=!keepsakeEditor.history.length;scheduleKeepsakeRender();if(activeKeepsakeBatchItem()){captureActiveKeepsakeBatchItem();void persistKeepsakeBatch();renderKeepsakeBatch()}});
-const keepsakePaintCanvas=$("#keepsake-mask-canvas");
-keepsakePaintCanvas.addEventListener("pointerdown",e=>{if(!keepsakeEditor.maskCanvas)return;e.preventDefault();invalidateKeepsakeSegmentation();keepsakePaintCanvas.setPointerCapture(e.pointerId);pushKeepsakeHistory();keepsakeEditor.drawing=true;keepsakeEditor.lastPoint=keepsakeCanvasPoint(e);paintKeepsakeStroke(keepsakeEditor.lastPoint,keepsakeEditor.lastPoint)});
-keepsakePaintCanvas.addEventListener("pointermove",e=>{const rect=keepsakePaintCanvas.getBoundingClientRect(),cursor=$("#keepsake-canvas-cursor");cursor.hidden=false;cursor.style.left=`${e.clientX-rect.left}px`;cursor.style.top=`${e.clientY-rect.top}px`;if(!keepsakeEditor.drawing)return;const next=keepsakeCanvasPoint(e);paintKeepsakeStroke(keepsakeEditor.lastPoint,next);keepsakeEditor.lastPoint=next});
-const endKeepsakeStroke=e=>{keepsakeEditor.drawing=false;keepsakeEditor.lastPoint=null;if(e.pointerId!=null&&keepsakePaintCanvas.hasPointerCapture(e.pointerId))keepsakePaintCanvas.releasePointerCapture(e.pointerId);if(activeKeepsakeBatchItem()){captureActiveKeepsakeBatchItem();void persistKeepsakeBatch();renderKeepsakeBatch()}};
-keepsakePaintCanvas.addEventListener("pointerup",endKeepsakeStroke);keepsakePaintCanvas.addEventListener("pointercancel",endKeepsakeStroke);keepsakePaintCanvas.addEventListener("pointerleave",()=>{$("#keepsake-canvas-cursor").hidden=true});
-for(const selector of["#keepsake-title","#keepsake-datetime","#keepsake-note","#keepsake-edge-expansion","#keepsake-background-opacity"])for(const eventName of["input","change"])$(selector).addEventListener(eventName,()=>{if(activeKeepsakeBatchItem())scheduleKeepsakeBatchPersist()});
-$("#keepsake-edge-expansion").addEventListener("change",()=>{if(activeKeepsakeBatchItem()){captureActiveKeepsakeBatchItem();void persistKeepsakeBatch();renderKeepsakeBatch()}});
-$("#keepsake-form").addEventListener("submit",async e=>{
-  e.preventDefault();const form=e.currentTarget,button=$("#keepsake-save"),status=$("#keepsake-save-status"),id=$("#keepsake-id").value,batchItem=!id&&form.dataset.batchItemId?keepsakeBatch.items.find(item=>item.itemId===form.dataset.batchItemId):null;if(!keepsakeEditor.sourceCanvas||!keepsakeEditor.maskCanvas)return status.textContent="请先放入一张照片。";
-  const alpha=maskImageDataFromCanvas(keepsakeEditor.maskCanvas).data;let hasSubject=false;for(let index=3;index<alpha.length;index+=4)if(alpha[index]>20){hasSubject=true;break}if(!hasSubject)return status.textContent="轮廓还是空的，请自动识别或用“保留”笔刷涂出主体。";
-  button.disabled=true;status.textContent="正在生成压缩图…";
-  try{
-    const mediaChanged=!id||Boolean(batchItem)||keepsakeEditor.mediaDirty||Boolean(keepsakeEditor.file),alphaMask=mediaChanged?keepsakeEditor.maskCanvas.toDataURL("image/png"):"";
-    const basePayload={...occurrenceFields($("#keepsake-datetime")),title:$("#keepsake-title").value,note:$("#keepsake-note").value,tags:keepsakeTagsFromInput(),source:keepsakeEditor.source,edgeExpansion:Number($("#keepsake-edge-expansion").value),backgroundOpacityPct:Number($("#keepsake-background-opacity").value)};
-    if(batchItem){
-      captureActiveKeepsakeBatchItem();batchItem.status="uploading";batchItem.lastError=null;batchItem.uploadRequestId||=crypto.randomUUID();renderKeepsakeBatch();await persistKeepsakeBatch();
-      if(!batchItem.mediaPaths)batchItem.mediaPaths=await uploadKeepsakeMedia({request,image:keepsakeEditor.sourceDataUrl,alphaMask,idempotencyKey:batchItem.uploadRequestId});
-      batchItem.status="saving";batchItem.createRequestId||=crypto.randomUUID();await persistKeepsakeBatch();renderKeepsakeBatch();
-      const{attachmentPaths,...mediaPaths}=batchItem.mediaPaths;
-      await request("/api/keepsakes",{method:"POST",headers:{"idempotency-key":batchItem.createRequestId},body:JSON.stringify({...basePayload,...mediaPaths,cutoutPath:""})});
-      const index=keepsakeBatch.items.findIndex(item=>item.itemId===batchItem.itemId);if(index>=0)await removeKeepsakeBatchItem(index,{discard:false});
-      if(!keepsakeBatch.items.length){$("#keepsake-workspace").hidden=true;window.scrollTo({top:0,behavior:"auto"})}
-      await refreshState(["keepsakes","review"]);showToast(keepsakeBatch.items.length?"本件小物已保存，请继续处理下一件":"小物批次已保存完成");return
-    }
-    const payload={...basePayload,...(mediaChanged?{alphaMask,...(!id||keepsakeEditor.file?{image:keepsakeEditor.sourceDataUrl}: {})}:{})};
-    const requestId=form.dataset.requestId||crypto.randomUUID();form.dataset.requestId=requestId;
-    await request(id?`/api/keepsakes/${id}`:"/api/keepsakes",{method:id?"PATCH":"POST",headers:id?{}:{"idempotency-key":requestId},body:JSON.stringify(payload)});resetKeepsakeEditor({close:true});await refreshState(["keepsakes","review"]);window.scrollTo({top:0,behavior:"auto"});showToast(id?"小物留存已更新":"小物已数字留存");
-  }catch(error){
-    if(batchItem){batchItem.status="failed";batchItem.lastError={message:error.message};if(!uncertainMediaSubmission(error)&&batchItem.mediaPaths){await discardKeepsakeMedia({request,attachmentPaths:batchItem.mediaPaths.attachmentPaths,uploadRequestId:batchItem.uploadRequestId}).catch(()=>{});batchItem.mediaPaths=null;batchItem.uploadRequestId="";batchItem.createRequestId=""}await persistKeepsakeBatch();renderKeepsakeBatch()}
-    status.textContent=error.message
-  }finally{button.disabled=false}
-});
-document.addEventListener("click",async e=>{
-  const tagSuggestion=e.target.closest("[data-keepsake-tag-suggestion]"),tagRemove=e.target.closest("[data-keepsake-tag-remove]"),back=e.target.closest("[data-keepsake-back]"),view=e.target.closest("[data-keepsake-view]"),derive=e.target.closest("[data-keepsake-derive]"),edit=e.target.closest("[data-keepsake-edit]"),remove=e.target.closest("[data-keepsake-delete]"),open=e.target.closest("[data-keepsake-open]");
-  if(tagSuggestion){keepsakeDraftTags=uniqueKeepsakeTags([...keepsakeDraftTags,tagSuggestion.dataset.keepsakeTagSuggestion]);$("#keepsake-tags").value="";renderKeepsakeTagSuggestions();scheduleKeepsakeBatchPersist();$("#keepsake-tags").focus();return}
-  if(tagRemove){keepsakeDraftTags=keepsakeDraftTags.filter(tag=>tag!==tagRemove.dataset.keepsakeTagRemove);renderKeepsakeTagSuggestions();scheduleKeepsakeBatchPersist();return}
-  if(back){activeKeepsakeId="";activeKeepsakeView="presentation";activeKeepsakeOriginalPath="";renderKeepsakes();window.scrollTo({top:0,behavior:"smooth"});return}
-  if(view){view.disabled=true;try{await setKeepsakeDetailView(view.dataset.keepsakeView)}catch(error){showToast(error.message,"error")}finally{view.disabled=false}return}
-  if(derive){derive.disabled=true;try{await request(`/api/keepsakes/${encodeURIComponent(derive.dataset.keepsakeDerive)}/derive`,{method:"POST",body:"{}"});await refreshState("keepsakes");showToast("正在重新生成清晰图")}catch(error){showToast(error.message,"error");derive.disabled=false}return}
-  if(edit){edit.disabled=true;try{await editKeepsake(edit.dataset.keepsakeEdit)}finally{if(edit.isConnected)edit.disabled=false}return}
-  if(remove){if(!confirm("将这件小物移入回收站？原图与轮廓会保留 30 天。"))return;remove.disabled=true;try{await request(`/api/keepsakes/${remove.dataset.keepsakeDelete}`,{method:"DELETE"});await refreshState(["keepsakes","review"]);showToast("小物已移入回收站")}catch(error){showToast(error.message,"error");remove.disabled=false}return}
-  if(open)openKeepsakeDetail(open.dataset.keepsakeOpen);
 });
 for(const key of Object.keys(quoteTagPickerConfig)){
   const elements=quoteTagPickerElements(key);

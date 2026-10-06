@@ -1,1 +1,1 @@
-export { createKeepsakeFeatureController } from "./controller.mjs";
+export { createKeepsakeFeatureController } from "./loader.mjs";

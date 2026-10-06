@@ -813,6 +813,66 @@
       "status": "active"
     },
     {
+      "id": "frontend.feature.keepsakes-media",
+      "type": "feature",
+      "root": "public/frontend/features/keepsakes-media",
+      "publicEntry": "public/frontend/features/keepsakes-media/index.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["keepsake media upload, compensation, source selection and transparent placement geometry"], "routes": [] },
+      "tests": ["scripts/keepsake-media-workflows-regression.mjs", "scripts/keepsake-placement-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.keepsakes-model",
+      "type": "feature",
+      "root": "public/frontend/features/keepsakes/model.mjs",
+      "publicEntry": "public/frontend/features/keepsakes/model.mjs",
+      "allowedDependencies": [],
+      "owns": { "data": ["keepsake page state, search, pagination and derived labels"], "routes": [] },
+      "tests": ["scripts/frontend-keepsakes-feature-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.keepsakes-drafts",
+      "type": "feature",
+      "root": "public/frontend/features/keepsakes/drafts.mjs",
+      "publicEntry": "public/frontend/features/keepsakes/drafts.mjs",
+      "allowedDependencies": ["frontend.feature.keepsakes-media", "frontend.feature.keepsakes-model"],
+      "owns": { "data": ["account-scoped keepsake batch persistence, write ordering and Blob URL lifecycle"], "routes": [] },
+      "tests": ["scripts/frontend-keepsakes-feature-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.keepsakes-batch-operations",
+      "type": "feature",
+      "root": "public/frontend/features/keepsakes/batch-operations.mjs",
+      "publicEntry": "public/frontend/features/keepsakes/batch-operations.mjs",
+      "allowedDependencies": ["frontend.feature.keepsakes-media"],
+      "owns": { "data": ["keepsake batch editing, idempotent upload, persistence and compensation"], "routes": [] },
+      "tests": ["scripts/frontend-keepsakes-feature-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.keepsakes-operations",
+      "type": "feature",
+      "root": "public/frontend/features/keepsakes/operations.mjs",
+      "publicEntry": "public/frontend/features/keepsakes/operations.mjs",
+      "allowedDependencies": ["frontend.feature.keepsakes-media", "frontend.feature.keepsakes-batch-operations", "frontend.feature.keepsakes-model"],
+      "owns": { "data": ["keepsake segmentation, understanding, editing, CRUD and late-result guards"], "routes": [] },
+      "tests": ["scripts/frontend-keepsakes-feature-regression.mjs"],
+      "status": "active"
+    },
+    {
+      "id": "frontend.feature.keepsakes",
+      "type": "feature",
+      "root": "public/frontend/features/keepsakes",
+      "publicEntry": "public/frontend/features/keepsakes/index.mjs",
+      "allowedDependencies": ["frontend.feature.keepsakes-media", "frontend.feature.keepsakes-model", "frontend.feature.keepsakes-drafts", "frontend.feature.keepsakes-batch-operations", "frontend.feature.keepsakes-operations"],
+      "owns": { "data": ["keepsake gallery, detail, canvas mask editing, batch drafts, media compensation and disposable page lifecycle"], "routes": [] },
+      "tests": ["scripts/frontend-keepsakes-feature-regression.mjs", "scripts/keepsake-media-workflows-regression.mjs", "scripts/attachment-derivatives-regression.mjs", "scripts/keepsake-placement-regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
       "id": "frontend.feature.legacy-pages",
       "type": "feature",
       "root": "public/frontend/features/legacy-pages",
@@ -869,7 +929,7 @@
       "type": "feature",
       "root": "public/frontend/features",
       "publicEntry": "public/frontend/features/index.mjs",
-      "allowedDependencies": ["frontend.feature.actions", "frontend.feature.home"],
+      "allowedDependencies": ["frontend.feature.actions", "frontend.feature.home", "frontend.feature.keepsakes-media"],
       "owns": { "data": ["page-entry side effects for overflow, animation and on-demand data loading"], "routes": [] },
       "tests": ["scripts/frontend-shell-regression.mjs", "scripts/ui-regression.mjs"],
       "status": "active"
@@ -899,7 +959,7 @@
       "type": "application",
       "root": "public/frontend/app",
       "publicEntry": "public/frontend/app/index.mjs",
-      "allowedDependencies": ["frontend.application", "frontend.ports", "frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.media-content-drafts", "frontend.page-audio", "frontend.page-catalog", "frontend.pages", "frontend.features", "frontend.feature-registry", "frontend.feature.actions-controller", "frontend.feature.annotations", "frontend.feature.background-results", "frontend.feature.capture-journal", "frontend.feature.checkins-model", "frontend.feature.checkins", "frontend.feature.health", "frontend.feature.library", "frontend.feature.quotes", "frontend.feature.review-insights", "frontend.feature.thoughts", "frontend.feature.discovery", "frontend.feature.export", "frontend.feature.feedback", "frontend.feature.notifications", "frontend.feature.legacy-pages", "frontend.component.tag-multiselect"],
+      "allowedDependencies": ["frontend.application", "frontend.ports", "frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.media-content-drafts", "frontend.page-audio", "frontend.page-catalog", "frontend.pages", "frontend.features", "frontend.feature-registry", "frontend.feature.actions-controller", "frontend.feature.annotations", "frontend.feature.background-results", "frontend.feature.capture-journal", "frontend.feature.checkins-model", "frontend.feature.checkins", "frontend.feature.health", "frontend.feature.keepsakes", "frontend.feature.keepsakes-media", "frontend.feature.library", "frontend.feature.quotes", "frontend.feature.review-insights", "frontend.feature.thoughts", "frontend.feature.discovery", "frontend.feature.export", "frontend.feature.feedback", "frontend.feature.notifications", "frontend.feature.legacy-pages", "frontend.component.tag-multiselect"],
       "owns": { "data": ["browser bootstrap, dependency composition, feature event binding and page presenter runtime"], "routes": [] },
       "tests": ["scripts/frontend-shell-regression.mjs", "scripts/frontend-contract-regression.mjs", "scripts/frontend-lazy-descriptor-regression.mjs", "scripts/frontend-checkins-feature-regression.mjs", "scripts/frontend-notifications-feature-regression.mjs", "scripts/ui-regression.mjs", "scripts/mobile-platform-regression.mjs"],
       "status": "active"
@@ -1121,6 +1181,7 @@
         "../features/feedback/index.mjs",
         "../features/health/controller.mjs",
         "../features/index.mjs",
+        "../features/keepsakes/index.mjs",
         "../features/legacy-pages/index.mjs",
         "../features/library/index.mjs",
         "../features/notifications/index.mjs",
@@ -1154,6 +1215,7 @@
         "../features/feedback/index.mjs",
         "../features/health/controller.mjs",
         "../features/index.mjs",
+        "../features/keepsakes/index.mjs",
         "../features/legacy-pages/index.mjs",
         "../features/library/index.mjs",
         "../features/notifications/index.mjs",
@@ -1257,7 +1319,7 @@
         { "page": "captures", "feature": "frontend.feature.capture-journal", "specifier": "../features/capture-journal/index.mjs" },
         { "page": "books", "feature": "frontend.feature.library", "specifier": "../features/library/index.mjs" },
         { "page": "quotes", "feature": "frontend.feature.quotes", "specifier": "../features/quotes/index.mjs" },
-        { "page": "keepsakes", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
+        { "page": "keepsakes", "feature": "frontend.feature.keepsakes", "specifier": "../features/keepsakes/index.mjs" },
         { "page": "journals", "feature": "frontend.feature.capture-journal", "specifier": "../features/capture-journal/index.mjs" },
         { "page": "thoughts", "feature": "frontend.feature.thoughts", "specifier": "../features/thoughts/index.mjs" },
         { "page": "discovery", "feature": "frontend.feature.discovery", "specifier": "../features/thought-discovery/index.mjs" },
@@ -1315,23 +1377,23 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.api-path",
-      "sourceSha256": "af96e13b4d5ae861029b708a5458d4bde34e3406dc75e7e71676b2c4847a8123",
+      "sourceSha256": "57d096727ac5e0b5b7b45b067b1dd51f00f1e793627a3bda3ba1fca77cfb2999",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no API path literals",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden literal matched \"^/api(?:/|$)\"", "count": 51 }
+        { "detail": "forbidden literal matched \"^/api(?:/|$)\"", "count": 47 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.dom-query",
-      "sourceSha256": "af96e13b4d5ae861029b708a5458d4bde34e3406dc75e7e71676b2c4847a8123",
+      "sourceSha256": "57d096727ac5e0b5b7b45b067b1dd51f00f1e793627a3bda3ba1fca77cfb2999",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page DOM queries",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden identifier \"querySelector\"", "count": 57 },
+        { "detail": "forbidden identifier \"querySelector\"", "count": 54 },
         { "detail": "forbidden identifier \"querySelectorAll\"", "count": 11 },
         { "detail": "forbidden identifier \"getElementById\"", "count": 6 }
       ]
@@ -1339,48 +1401,48 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.event-binding",
-      "sourceSha256": "af96e13b4d5ae861029b708a5458d4bde34e3406dc75e7e71676b2c4847a8123",
+      "sourceSha256": "57d096727ac5e0b5b7b45b067b1dd51f00f1e793627a3bda3ba1fca77cfb2999",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page event binding",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden identifier \"addEventListener\"", "count": 141 },
+        { "detail": "forbidden identifier \"addEventListener\"", "count": 104 },
         { "detail": "forbidden identifier \"removeEventListener\"", "count": 3 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.timer",
-      "sourceSha256": "af96e13b4d5ae861029b708a5458d4bde34e3406dc75e7e71676b2c4847a8123",
+      "sourceSha256": "57d096727ac5e0b5b7b45b067b1dd51f00f1e793627a3bda3ba1fca77cfb2999",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page timers or animation scheduling",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden identifier \"cancelAnimationFrame\"", "count": 4 },
-        { "detail": "forbidden identifier \"requestAnimationFrame\"", "count": 18 },
+        { "detail": "forbidden identifier \"cancelAnimationFrame\"", "count": 5 },
+        { "detail": "forbidden identifier \"requestAnimationFrame\"", "count": 17 },
         { "detail": "forbidden identifier \"setInterval\"", "count": 3 },
-        { "detail": "forbidden identifier \"setTimeout\"", "count": 10 }
+        { "detail": "forbidden identifier \"setTimeout\"", "count": 9 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.template",
-      "sourceSha256": "af96e13b4d5ae861029b708a5458d4bde34e3406dc75e7e71676b2c4847a8123",
+      "sourceSha256": "57d096727ac5e0b5b7b45b067b1dd51f00f1e793627a3bda3ba1fca77cfb2999",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page templates",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden syntax template-literal", "count": 316 }
+        { "detail": "forbidden syntax template-literal", "count": 275 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "lines.hard",
-      "sourceSha256": "af96e13b4d5ae861029b708a5458d4bde34e3406dc75e7e71676b2c4847a8123",
+      "sourceSha256": "57d096727ac5e0b5b7b45b067b1dd51f00f1e793627a3bda3ba1fca77cfb2999",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs is at or below 180 lines",
       "deleteByGate": "G6",
-      "maxValue": 3479
+      "maxValue": 3060
     }
   ],
   "migrationExceptions": []
