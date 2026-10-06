@@ -401,7 +401,7 @@ export function createLibraryFeatureController({
       for (const type of ["dragenter", "dragover", "dragleave", "drop"]) {
         listen(current.root, type, handleDrag);
       }
-      listen(current.root, "paste", handlePaste);
+      listen(platform.document, "paste", handlePaste);
       listen(platform.window, "scroll", libraryView.syncDetailCondensed, { passive: true });
       listen(platform.window, "resize", () => {
         requestFeatureFrame(libraryView.setupTitlePans);

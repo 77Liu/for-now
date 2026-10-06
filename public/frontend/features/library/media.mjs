@@ -180,7 +180,12 @@ export function createLibraryMedia({
           images
         })
       });
-      if (!targetCurrent(ticket)) return false;
+      if (!targetCurrent(ticket)) {
+        if (isCurrent(ticket) && ticket.bookId === state.editingBookId) {
+          status.textContent = "识别已完成，但当前书目已经变化，未自动回填。";
+        }
+        return false;
+      }
       if ((result.requestId && result.requestId !== requestId)
           || (result.targetId && result.targetId !== targetId)
           || (Object.hasOwn(result, "inputVersion")

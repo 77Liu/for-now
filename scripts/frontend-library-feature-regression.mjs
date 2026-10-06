@@ -130,6 +130,8 @@ class FakeRoot extends FakeEventTarget {
 }
 
 const lifecycleWindow = new FakeEventTarget();
+const lifecycleDocument = new FakeEventTarget();
+lifecycleDocument.createElement = () => ({});
 const lifecycleUrls = [];
 const lifecycleFrames = new Map();
 let lifecycleFrameSequence = 0;
@@ -178,7 +180,7 @@ const lifecycleController = createLibraryFeatureController({
     entryKeyIntent: () => "none"
   },
   platform: {
-    document: { createElement: () => ({}) },
+    document: lifecycleDocument,
     window: lifecycleWindow,
     objectUrls: {
       createObjectURL: () => "blob:lifecycle",
@@ -206,7 +208,7 @@ const lifecycleController = createLibraryFeatureController({
 const lifecycleRoot = new FakeRoot();
 const rootEvents = [
   "click", "submit", "input", "change", "focusin", "pointerdown", "keydown",
-  "dragenter", "dragover", "dragleave", "drop", "paste"
+  "dragenter", "dragover", "dragleave", "drop"
 ];
 let staleDispose = null;
 for (let cycle = 0; cycle < 20; cycle += 1) {
@@ -218,6 +220,7 @@ for (let cycle = 0; cycle < 20; cycle += 1) {
   for (const type of rootEvents) assert.equal(lifecycleRoot.listenerCount(type), 1);
   assert.equal(lifecycleWindow.listenerCount("scroll"), 1);
   assert.equal(lifecycleWindow.listenerCount("resize"), 1);
+  assert.equal(lifecycleDocument.listenerCount("paste"), 1);
   if (staleDispose) assert.equal(await staleDispose(), false);
   staleDispose = dispose;
 }
@@ -226,6 +229,7 @@ assert.equal(await staleDispose(), false);
 for (const type of rootEvents) assert.equal(lifecycleRoot.listenerCount(type), 0);
 assert.equal(lifecycleWindow.listenerCount("scroll"), 0);
 assert.equal(lifecycleWindow.listenerCount("resize"), 0);
+assert.equal(lifecycleDocument.listenerCount("paste"), 0);
 
 await lifecycleController.mount({
   root: lifecycleRoot,

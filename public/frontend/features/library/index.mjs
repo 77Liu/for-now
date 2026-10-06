@@ -1,1 +1,1 @@
-export { createLibraryFeatureController } from "./controller.mjs";
+export { createLibraryFeatureController } from "./loader.mjs";
