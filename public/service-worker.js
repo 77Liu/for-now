@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cike-shell-v0.5.8-9";
+const CACHE_VERSION = "cike-shell-v0.5.8-10";
 const SHELL_ASSETS = [
   "./",
   "index.html",
@@ -30,7 +30,6 @@ const SHELL_ASSETS = [
   "frontend/features/checkins/controller.mjs",
   "frontend/features/checkins/index.mjs",
   "frontend/features/checkins/presentation.mjs",
-  "frontend/features/health/weight-batch.mjs",
   "frontend/features/home/index.mjs",
   "frontend/features/index.mjs",
   "frontend/features/legacy-pages/index.mjs",
@@ -91,6 +90,7 @@ const LAZY_MODULE_PATHS = [
   "/frontend/features/export/",
   "/frontend/features/feedback/",
   "/frontend/features/background-results/",
+  "/frontend/features/health/",
   "/frontend/features/notifications/",
   "/frontend/features/thought-discovery/"
 ];

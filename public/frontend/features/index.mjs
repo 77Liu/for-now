@@ -62,16 +62,6 @@ export {
   uploadKeepsakeMedia
 } from "./keepsakes-media/index.mjs";
 export {
-  WEIGHT_BATCH_MAX_ITEMS,
-  applyWeightBatchRecognition,
-  changeWeightBatchDate,
-  createWeightBatchItems,
-  nextWeightBatchIndex,
-  recognizedWeightDate,
-  validWeightBatchDate,
-  weightBatchRecordInput
-} from "./health/weight-batch.mjs";
-export {
   createOnboardingV2Controller,
   mergeOnboardingV2Conflict,
   onboardingV2ConflictRows,

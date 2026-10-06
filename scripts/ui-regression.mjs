@@ -303,6 +303,8 @@ const mockFetch = `
   window.__keepsakeUploads = 0;
   window.__contentImageUploads = 0;
   window.__healthUploads = { sleep: 0, heartRate: 0, weight: 0, exercise: 0 };
+  window.__delayHealthUpload = false;
+  window.__releaseHealthUpload = null;
   window.__imageDiscards = [];
   window.__bookSaves = 0;
   window.__bookPatches = 0;
@@ -1217,7 +1219,11 @@ const mockFetch = `
       if(payload.purpose==="original"&&images.length){
         if(window.__failContentImageUpload){window.__failContentImageUpload=false;return Promise.resolve(new Response(JSON.stringify({error:{message:"OSS_NO_SUCH_KEY_INTERNAL",code:"STORAGE_UPLOAD_FAILED"}}),{status:503,headers:{"content-type":"application/json"}}))}
         if(document.querySelector("#view-books")?.classList.contains("active")){window.__bookUploads += 1;const attachmentPath="/attachments/cover-"+window.__bookUploads+".png";return json({attachmentPath,attachmentPaths:[attachmentPath]},201)}
-        if(document.querySelector("#view-daily")?.classList.contains("active")){const type=document.querySelector("[data-daily-tab].active")?.dataset.dailyTab||"weight",index=++window.__healthUploads[type],extension=type==="sleep"?"jpg":"png",attachmentPath="/attachments/"+type+(type==="sleep"?"-"+index:"")+"."+extension;return json({attachmentPath,attachmentPaths:[attachmentPath]},201)}
+        if(document.querySelector("#view-daily")?.classList.contains("active")){
+          const type=document.querySelector("[data-daily-tab].active")?.dataset.dailyTab||"weight",index=++window.__healthUploads[type],extension=type==="sleep"?"jpg":"png",attachmentPath="/attachments/"+type+(type==="sleep"?"-"+index:"")+"."+extension,response=()=>json({attachmentPath,attachmentPaths:[attachmentPath]},201);
+          if(window.__delayHealthUpload)return new Promise(resolve=>{window.__releaseHealthUpload=()=>{window.__delayHealthUpload=false;resolve(response())}});
+          return response()
+        }
         const attachmentPaths=images.map(()=>"/attachments/content-"+(++window.__contentImageUploads)+".png");return json({attachmentPath:attachmentPaths[0],attachmentPaths},201)
       }
       if (document.querySelector("#view-keepsakes")?.classList.contains("active")) {
@@ -2021,14 +2027,17 @@ try {
   assert.equal(await waitUntil(`document.querySelector("#checkin-status").textContent.includes("同步冲突")`),true);
   assert.deepEqual(await evaluate(`({form:document.querySelector("#checkin-factors").value,visible:document.querySelector("#checkin-history").textContent.includes("冲突状态"),modalHidden:document.querySelector("#home-state-editor").hidden})`),{form:"冲突状态",visible:false,modalHidden:false});
   await evaluate(`document.querySelector('[data-view="daily"]').click(); true`);
+  assert.equal(await waitUntil(`!document.querySelector("#view-daily").inert&&!document.querySelector("#view-daily").hasAttribute("aria-busy")`),true);
   assert.equal(await evaluate(`document.querySelector("#view-daily").classList.contains("active")&&document.querySelector("#view-daily .daily-record-card h2").textContent==="日录"&&!document.querySelector("#view-daily .today-chat")&&!document.querySelector("#view-daily #today-thoughts")`), true);
-  const healthUpload = await evaluate(`(() => {
+  await evaluate(`(() => {
     const bytes=Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="),value=>value.charCodeAt(0));
-    const paste=file=>{const event=new Event("paste",{bubbles:true,cancelable:true});Object.defineProperty(event,"clipboardData",{value:{files:[file]}});document.body.dispatchEvent(event)};
-    paste(new File([bytes],"sleep-overview.png",{type:"image/png"}));const afterFirst=document.querySelectorAll("#health-image-previews figure").length;
-    paste(new File([bytes],"sleep-detail.png",{type:"image/png"}));
-    return { tabs:document.querySelectorAll("[data-daily-tab]").length, afterFirst, previews:document.querySelectorAll("#health-image-previews figure").length, removeButtons:document.querySelectorAll("[data-health-image-remove]").length, parseEnabled:!document.querySelector("#parse-health-images").disabled };
+    window.__pasteHealthFile=name=>{const event=new Event("paste",{bubbles:true,cancelable:true});Object.defineProperty(event,"clipboardData",{value:{files:[new File([bytes],name,{type:"image/png"})]}});document.body.dispatchEvent(event)};
+    window.__pasteHealthFile("sleep-overview.png");return true;
   })()`);
+  assert.equal(await waitUntil(`document.querySelectorAll("#health-image-previews figure").length===1`),true);
+  await evaluate(`window.__pasteHealthFile("sleep-detail.png");true`);
+  assert.equal(await waitUntil(`document.querySelectorAll("#health-image-previews figure").length===2`),true);
+  const healthUpload = await evaluate(`({tabs:document.querySelectorAll("[data-daily-tab]").length,afterFirst:1,previews:document.querySelectorAll("#health-image-previews figure").length,removeButtons:document.querySelectorAll("[data-health-image-remove]").length,parseEnabled:!document.querySelector("#parse-health-images").disabled})`);
   assert.deepEqual(healthUpload,{tabs:4,afterFirst:1,previews:2,removeButtons:2,parseEnabled:true});
   await evaluate(`document.querySelector("#parse-health-images").click(); true`);
   assert.equal(await waitUntil(`window.__healthParses===1&&document.querySelector('[data-daily-form="sleep"] [name="totalMinutes"]').value==="462"`),true);
@@ -2092,7 +2101,7 @@ try {
   await evaluate(`(() => {const input=document.querySelector('[data-daily-form="weight"] [name="description"]');input.value="核对后修改的体成分描述";input.dispatchEvent(new Event("input",{bubbles:true}));window.__releaseParse();return true})()`);
   assert.equal(await waitUntil(`document.querySelector("#health-parse-status").textContent.includes("当前表单已经变化")`),true);
   await evaluate(`document.querySelector('[data-daily-form="weight"]').requestSubmit();true`);
-  assert.equal(await waitUntil(`window.__dailySaves===2&&document.querySelector('[data-daily-record-id="daily-2"]')`),true);
+  assert.equal(await waitUntil(`window.__dailySaves===2&&document.querySelector('[data-daily-record-id="daily-2"]')`),true,JSON.stringify(await evaluate(`({saves:window.__dailySaves,status:document.querySelector('[data-daily-form="weight"] .status').textContent,toast:document.querySelector("#toast").textContent,requests:window.__apiRequests.slice(-8)})`)));
   assert.equal(await evaluate(`(() => {const item=window.__dailyRecords.find(item=>item.id==="daily-2"),card=document.querySelector('[data-daily-record-id="daily-2"]'),details=card.querySelector(".weight-record-details"),summary=[...card.querySelectorAll(".weight-record-summary>span")].map(entry=>entry.textContent.trim());return item.measuredWeight===null&&item.bodyWaterMass===42.2&&item.description==="核对后修改的体成分描述"&&item.attachmentPaths[0]==="/attachments/weight.png"&&card.querySelectorAll(".daily-attachments [data-image-viewer-path]").length===1&&summary.join("|")==="—体重|—体脂率|53.6 kg肌肉量"&&!details.open&&document.querySelector('[data-daily-record-id="weight-existing"] .weight-record-details').open&&card.textContent.includes("总重量未填写")&&card.textContent.includes("42.2")&&!card.textContent.includes("NaN")&&document.querySelectorAll("#health-image-previews figure").length===0&&document.querySelector('[data-daily-form="weight"] [name="verification"]').value===""})()`),true);
   await evaluate(`document.querySelector('[data-daily-edit="daily-2"]').click();true`);
   assert.equal(await evaluate(`document.querySelector('[data-daily-form="weight"] [name="bodyWaterMass"]').value==="42.2"&&document.querySelector('[data-daily-form="weight"] [name="measuredWeight"]').value===""`),true);
@@ -2166,7 +2175,7 @@ try {
   await fs.writeFile("/tmp/growth-weight-batch-mobile.png",Buffer.from((await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false})).data,"base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
   await evaluate(`document.querySelector('[data-daily-form="weight"]').requestSubmit();true`);
-  assert.equal(await waitUntil(`window.__dailySaves===4&&document.querySelectorAll(".weight-batch-item").length===2`),true);
+  assert.equal(await waitUntil(`window.__dailySaves===4&&document.querySelectorAll(".weight-batch-item").length===2`),true,JSON.stringify(await evaluate(`({saves:window.__dailySaves,items:document.querySelectorAll(".weight-batch-item").length,status:document.querySelector('[data-daily-form="weight"] .status').textContent,disabled:document.querySelector('[data-daily-form="weight"] [type="submit"]').disabled})`)));
   assert.deepEqual(await evaluate(`(()=>{const item=window.__dailyRecords.find(value=>value.id==="daily-4");return{date:item.occurredOn,paths:item.attachmentPaths.length,nextDate:document.querySelector('[data-daily-form="weight"] [name="occurredAt"]').value.slice(0,10)}})()`),{date:"2026-09-21",paths:1,nextDate:"2026-09-22"});
   for(const remaining of[1,0]){
     await evaluate(`document.querySelector(".weight-batch-remove").click();true`);
@@ -2181,6 +2190,20 @@ try {
     await evaluate(`document.querySelector(".weight-batch-remove").click();true`);
     assert.equal(await waitUntil(`document.querySelectorAll(".weight-batch-item").length===${remaining}`),true)
   }
+  const lateUploadDiscardStart=await evaluate(`window.__imageDiscards.length`);
+  await evaluate(`document.querySelector('[data-daily-tab="heartRate"]').click();window.__delayHealthUpload=true;window.__releaseHealthUpload=null;window.__pasteHealth();document.querySelector("#parse-health-images").click();true`);
+  assert.equal(await waitUntil(`typeof window.__releaseHealthUpload==="function"`),true);
+  await evaluate(`document.querySelector('[data-view="together"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-together").classList.contains("active")`),true);
+  await evaluate(`window.__releaseHealthUpload();true`);
+  assert.equal(await waitUntil(`window.__imageDiscards.length===${lateUploadDiscardStart+1}`),true);
+  await evaluate(`document.querySelector('[data-view="daily"]').click();true`);
+  assert.equal(await waitUntil(`!document.querySelector("#view-daily").inert&&!document.querySelector("#view-daily").hasAttribute("aria-busy")`),true);
+  await evaluate(`document.querySelector('[data-daily-tab="heartRate"]').click();true`);
+  assert.deepEqual(await evaluate(`({previews:document.querySelectorAll("#health-image-previews figure").length,parseEnabled:!document.querySelector("#parse-health-images").disabled,inputEnabled:!document.querySelector("#health-images").disabled,dateEnabled:![...document.querySelectorAll("#view-daily [data-active-date]")].some(input=>input.disabled),discards:window.__imageDiscards.length})`),{previews:1,parseEnabled:true,inputEnabled:true,dateEnabled:true,discards:lateUploadDiscardStart+1});
+  await evaluate(`document.querySelector("[data-health-image-remove]").click();true`);
+  assert.equal(await waitUntil(`document.querySelectorAll("#health-image-previews figure").length===0`),true);
+  assert.equal(await evaluate(`window.__imageDiscards.length`),lateUploadDiscardStart+1);
   await evaluate(`document.querySelector('[data-view="together"]').click(); true`);
   const todayThoughtTimeline = await evaluate(`(() => {
     const list=document.querySelector("#today-thoughts"),entries=[...list.querySelectorAll(".thought-timeline-entry")],cards=entries.map(entry=>entry.querySelector(".chain-record")),cardRects=cards.map(card=>card.getBoundingClientRect()),contentRects=cards.map(card=>card.querySelector(".summary-content").getBoundingClientRect()),date=entries[0].querySelector(".timeline-date").getBoundingClientRect(),meta=entries[0].querySelector(".thought-entry-meta").getBoundingClientRect(),pending=entries[0].querySelector(".thought-trace-pending"),tags=entries[0].querySelector(".thought-entry-tags").getBoundingClientRect();
@@ -3559,7 +3582,9 @@ try {
   await evaluate(`window.__failThoughtDeleteNetwork=true;document.querySelector('#all-thoughts [data-chain-id="kept-root"] [data-delete-chain]').click();true`);
   const pendingThoughtDelete=await waitUntil(`!document.querySelector('#all-thoughts [data-chain-id="kept-root"]')&&document.querySelector("#toast").textContent.includes("网络恢复后移入回收站")`);
   assert.equal(pendingThoughtDelete,true,JSON.stringify(await evaluate(`({toast:document.querySelector("#toast").textContent,root:Boolean(document.querySelector('#all-thoughts [data-chain-id="kept-root"]')),route:location.pathname,requests:window.__apiRequests.slice(-8)})`)));
-  await evaluate(`document.querySelector('[data-view="daily"]').click();document.querySelector('[data-daily-tab="exercise"]').click();window.__pasteHealth();window.__delayParseKind="exercise";window.__releaseParse=null;document.querySelector("#parse-health-images").click();true`);
+  await evaluate(`document.querySelector('[data-view="daily"]').click();true`);
+  assert.equal(await waitUntil(`!document.querySelector("#view-daily").inert&&!document.querySelector("#view-daily").hasAttribute("aria-busy")`),true);
+  await evaluate(`document.querySelector('[data-daily-tab="exercise"]').click();window.__pasteHealth();window.__delayParseKind="exercise";window.__releaseParse=null;document.querySelector("#parse-health-images").click();true`);
   assert.equal(await waitUntil(`typeof window.__releaseParse==="function"`),true);
   await evaluate(`document.querySelector('[data-view="captures"]').click();window.__logoutSpeechPlayer=document.querySelector('[data-capture-id="capture-1"] [data-speech-player]');window.__logoutSpeechUrl=window.__logoutSpeechPlayer.getAttribute("src");window.__logoutSpeechPlayer.play();true`);
   assert.equal(await waitUntil(`!window.__logoutSpeechPlayer.paused`),true);
@@ -3606,7 +3631,11 @@ try {
   await evaluate(`window.__releaseParse();true`);
   await sleep(1000);
   assert.equal(await evaluate(`document.querySelector("#chain-answer").value===""&&document.querySelector("#ai-answer-modal").hidden`),true);
-  assert.equal(await evaluate(`[...document.querySelectorAll('[data-daily-form="weight"] input,[data-daily-form="exercise"] input')].filter(input=>!["occurredAt","clothing"].includes(input.name)).every(input=>input.value==="")&&document.querySelectorAll("#health-image-previews figure").length===0`),true);
+  assert.deepEqual(await evaluate(`({
+    empty:[...document.querySelectorAll('[data-daily-form="weight"] input,[data-daily-form="exercise"] input')].filter(input=>!["occurredAt","clothing"].includes(input.name)).every(input=>input.value===""),
+    previews:document.querySelectorAll("#health-image-previews figure").length,
+    values:[...document.querySelectorAll('[data-daily-form="weight"] input,[data-daily-form="exercise"] input')].filter(input=>!["occurredAt","clothing"].includes(input.name)&&input.value!=="").map(input=>[input.name,input.value])
+  })`),{empty:true,previews:0,values:[]});
   await evaluate(`window.confirm=()=>true;document.querySelectorAll(".modal-backdrop").forEach(item=>item.hidden=true);document.querySelector("#toast").hidden=true;document.querySelector('[data-view="settings"]').click();true`);
   assert.deepEqual(await evaluate(`({visible:!document.querySelector("#local-test-settings").hidden,cold:document.querySelector('[data-local-test-mode="cold"]').classList.contains("active"),coldDisabled:document.querySelector('[data-local-test-mode="cold"]').disabled,summaryOk:/空账户工作区/.test(document.querySelector("#local-test-summary").textContent),entryOk:/使用模拟 \\/ 冷启测试 · 当前冷启测试/.test(document.querySelector("#mine-settings-summary").textContent)})`),{visible:true,cold:true,coldDisabled:true,summaryOk:true,entryOk:true});
   const localTestSettingsScreenshot=await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
@@ -3805,7 +3834,9 @@ try {
   assert.deepEqual(await evaluate(`({commentOpen:!document.querySelector("#comment-panel").hidden,commentText:document.querySelector("#comment-text").value,commentImages:document.querySelectorAll('[data-content-image-editor="comment"] .content-image-preview').length,shenjiText:document.querySelector('[data-shenji-form="analysis-annotation-1"] textarea').value,blockOpen:!document.querySelector("#thought-block-modal").hidden,blockText:document.querySelector("#thought-block-content").value,blockRoot:document.querySelector("#thought-block-root-id").value,blockImages:document.querySelectorAll('[data-content-image-editor="thoughtBlock"] .content-image-preview').length})`),{commentOpen:false,commentText:"刷新后继续的评论",commentImages:0,shenjiText:"后台同步期间的新草稿",blockOpen:true,blockText:"刷新后继续的内容块",blockRoot:"discarded-root",blockImages:1});
   assert.equal(await waitUntil(`document.querySelectorAll(".keepsake-batch-item").length===2`),true);
   assert.deepEqual(await evaluate(`({items:document.querySelectorAll(".keepsake-batch-item").length,count:document.querySelector("#keepsake-batch-count").textContent,active:document.querySelector('[data-keepsake-batch-select="1"]')?.getAttribute("aria-pressed")})`),{items:2,count:"2 件",active:"true"});
-  await evaluate(`document.querySelector('[data-view="daily"]').click();document.querySelector('[data-daily-tab="weight"]').click();true`);
+  await evaluate(`document.querySelector('[data-view="daily"]').click();true`);
+  assert.equal(await waitUntil(`!document.querySelector("#view-daily").inert&&!document.querySelector("#view-daily").hasAttribute("aria-busy")`),true);
+  await evaluate(`document.querySelector('[data-daily-tab="weight"]').click();true`);
   assert.deepEqual(await evaluate(`({value:document.querySelector('[data-daily-form="weight"] [name="bodyWaterMass"]').value,description:document.querySelector('[data-daily-form="weight"] [name="description"]').value,images:document.querySelectorAll("#health-image-previews figure").length,status:document.querySelector("#health-parse-status").textContent})`),{value:"42.2",description:"刷新后恢复的体成分",images:1,status:"已恢复识别结果，请核对后保存。"});
   assert.deepEqual(cdp.events
     .filter(event=>event.method==="Runtime.exceptionThrown")

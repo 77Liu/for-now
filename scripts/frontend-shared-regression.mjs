@@ -57,13 +57,15 @@ import {
 } from "../public/frontend/media/index.mjs";
 import {
   applyKeepsakeImageCandidates,
+} from "../public/frontend/features/index.mjs";
+import {
   WEIGHT_BATCH_MAX_ITEMS,
   applyWeightBatchRecognition,
   changeWeightBatchDate,
   createWeightBatchItems,
   nextWeightBatchIndex,
   weightBatchRecordInput
-} from "../public/frontend/features/index.mjs";
+} from "../public/frontend/features/health/controller.mjs";
 
 const volatileMediaStore = createIndexedDbMediaDraftStore({ indexedDBImpl: null });
 assert.equal(volatileMediaStore.durable, false);
@@ -106,7 +108,6 @@ if (process.argv.includes("--timezone-case")) {
     new URL("../public/frontend/content/index.mjs", import.meta.url),
     new URL("../public/frontend/time/index.mjs", import.meta.url),
     new URL("../public/frontend/media/index.mjs", import.meta.url),
-    new URL("../public/frontend/features/health/weight-batch.mjs", import.meta.url)
   ];
   for (const url of moduleUrls) {
     const source = await fs.readFile(url, "utf8");

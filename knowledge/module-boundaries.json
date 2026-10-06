@@ -503,6 +503,16 @@
       "status": "active"
     },
     {
+      "id": "frontend.feature.health",
+      "type": "feature",
+      "root": "public/frontend/features/health",
+      "publicEntry": "public/frontend/features/health/controller.mjs",
+      "allowedDependencies": ["frontend.media"],
+      "owns": { "data": ["account-scoped health image drafts, upload and recognition lifecycle, weight batch review state and disposable daily-page interactions"], "routes": [] },
+      "tests": ["scripts/frontend-health-feature-regression.mjs", "scripts/frontend-shared-regression.mjs", "scripts/ui-regression.mjs"],
+      "status": "active"
+    },
+    {
       "id": "frontend.feature.discovery",
       "type": "feature",
       "root": "public/frontend/features/thought-discovery",
@@ -639,7 +649,7 @@
       "type": "application",
       "root": "public/frontend/app",
       "publicEntry": "public/frontend/app/index.mjs",
-      "allowedDependencies": ["frontend.application", "frontend.ports", "frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.page-catalog", "frontend.pages", "frontend.features", "frontend.feature-registry", "frontend.feature.actions-controller", "frontend.feature.annotations", "frontend.feature.background-results", "frontend.feature.checkins-model", "frontend.feature.checkins", "frontend.feature.discovery", "frontend.feature.export", "frontend.feature.feedback", "frontend.feature.notifications", "frontend.feature.legacy-pages", "frontend.component.tag-multiselect"],
+      "allowedDependencies": ["frontend.application", "frontend.ports", "frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.page-catalog", "frontend.pages", "frontend.features", "frontend.feature-registry", "frontend.feature.actions-controller", "frontend.feature.annotations", "frontend.feature.background-results", "frontend.feature.checkins-model", "frontend.feature.checkins", "frontend.feature.health", "frontend.feature.discovery", "frontend.feature.export", "frontend.feature.feedback", "frontend.feature.notifications", "frontend.feature.legacy-pages", "frontend.component.tag-multiselect"],
       "owns": { "data": ["browser bootstrap, dependency composition, feature event binding and page presenter runtime"], "routes": [] },
       "tests": ["scripts/frontend-shell-regression.mjs", "scripts/frontend-contract-regression.mjs", "scripts/frontend-lazy-descriptor-regression.mjs", "scripts/frontend-checkins-feature-regression.mjs", "scripts/frontend-notifications-feature-regression.mjs", "scripts/ui-regression.mjs", "scripts/mobile-platform-regression.mjs"],
       "status": "active"
@@ -858,6 +868,7 @@
         "../features/checkins/index.mjs",
         "../features/export/index.mjs",
         "../features/feedback/index.mjs",
+        "../features/health/controller.mjs",
         "../features/index.mjs",
         "../features/legacy-pages/index.mjs",
         "../features/notifications/index.mjs",
@@ -883,6 +894,7 @@
         "../features/checkins/index.mjs",
         "../features/export/index.mjs",
         "../features/feedback/index.mjs",
+        "../features/health/controller.mjs",
         "../features/index.mjs",
         "../features/legacy-pages/index.mjs",
         "../features/notifications/index.mjs",
@@ -977,7 +989,7 @@
       "pageFeatureDescriptors": [
         { "page": "today", "feature": "frontend.feature.checkins", "specifier": "../features/checkins/index.mjs" },
         { "page": "together", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
-        { "page": "daily", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
+        { "page": "daily", "feature": "frontend.feature.health", "specifier": "../features/health/controller.mjs" },
         { "page": "captures", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
         { "page": "books", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
         { "page": "quotes", "feature": "frontend.feature.legacy-pages", "specifier": "../features/legacy-pages/index.mjs" },
@@ -1039,43 +1051,43 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.api-path",
-      "sourceSha256": "23887c7a4f7a837d41181ae0d8f3abf47d1ab00cc27252564fb8357b33801fb5",
+      "sourceSha256": "b1e184eb4ca7532e10f0826bd8eeffe673777f6cb4f082bf979139e9bba2dfe2",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no API path literals",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden literal matched \"^/api(?:/|$)\"", "count": 68 }
+        { "detail": "forbidden literal matched \"^/api(?:/|$)\"", "count": 66 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.dom-query",
-      "sourceSha256": "23887c7a4f7a837d41181ae0d8f3abf47d1ab00cc27252564fb8357b33801fb5",
+      "sourceSha256": "b1e184eb4ca7532e10f0826bd8eeffe673777f6cb4f082bf979139e9bba2dfe2",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page DOM queries",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden identifier \"querySelector\"", "count": 124 },
-        { "detail": "forbidden identifier \"querySelectorAll\"", "count": 36 },
+        { "detail": "forbidden identifier \"querySelector\"", "count": 113 },
+        { "detail": "forbidden identifier \"querySelectorAll\"", "count": 33 },
         { "detail": "forbidden identifier \"getElementById\"", "count": 6 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.event-binding",
-      "sourceSha256": "23887c7a4f7a837d41181ae0d8f3abf47d1ab00cc27252564fb8357b33801fb5",
+      "sourceSha256": "b1e184eb4ca7532e10f0826bd8eeffe673777f6cb4f082bf979139e9bba2dfe2",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page event binding",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden identifier \"addEventListener\"", "count": 243 },
+        { "detail": "forbidden identifier \"addEventListener\"", "count": 229 },
         { "detail": "forbidden identifier \"removeEventListener\"", "count": 3 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.timer",
-      "sourceSha256": "23887c7a4f7a837d41181ae0d8f3abf47d1ab00cc27252564fb8357b33801fb5",
+      "sourceSha256": "b1e184eb4ca7532e10f0826bd8eeffe673777f6cb4f082bf979139e9bba2dfe2",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page timers or animation scheduling",
       "deleteByGate": "G6",
@@ -1089,22 +1101,22 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.template",
-      "sourceSha256": "23887c7a4f7a837d41181ae0d8f3abf47d1ab00cc27252564fb8357b33801fb5",
+      "sourceSha256": "b1e184eb4ca7532e10f0826bd8eeffe673777f6cb4f082bf979139e9bba2dfe2",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page templates",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden syntax template-literal", "count": 696 }
+        { "detail": "forbidden syntax template-literal", "count": 670 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "lines.hard",
-      "sourceSha256": "23887c7a4f7a837d41181ae0d8f3abf47d1ab00cc27252564fb8357b33801fb5",
+      "sourceSha256": "b1e184eb4ca7532e10f0826bd8eeffe673777f6cb4f082bf979139e9bba2dfe2",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs is at or below 180 lines",
       "deleteByGate": "G6",
-      "maxValue": 4962
+      "maxValue": 4663
     }
   ],
   "migrationExceptions": []

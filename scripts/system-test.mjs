@@ -167,6 +167,8 @@ const suites = {
     ["F3 background result lifecycle and cross-content location", ["scripts/frontend-background-results-feature-regression.mjs"]],
     ["F3 lazy notifications controller", ["scripts/frontend-notifications-feature-regression.mjs"]],
     ["notification entry states and retry interactions", ["scripts/notification-entry-regression.mjs"]],
+    ["F4 check-in presentation lifecycle", ["scripts/frontend-checkins-feature-regression.mjs"]],
+    ["F4 health media draft lifecycle", ["scripts/frontend-health-feature-regression.mjs"]],
     ["URL and browser history contracts", ["scripts/url-history-regression.mjs"]],
     ["PWA shell cache and private-data boundaries", ["scripts/pwa-regression.mjs"]],
     ["desktop and responsive UI", ["scripts/ui-regression.mjs"]],

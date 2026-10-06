@@ -35,6 +35,7 @@ assert.deepEqual(dynamicSpecifiers, [
   "../features/background-results/index.mjs",
   "../features/export/index.mjs",
   "../features/feedback/index.mjs",
+  "../features/health/controller.mjs",
   "../features/legacy-pages/index.mjs",
   "../features/notifications/index.mjs",
   "../features/thought-discovery/index.mjs",
@@ -43,7 +44,7 @@ assert.deepEqual(dynamicSpecifiers, [
 for (const specifier of dynamicSpecifiers) {
   assert.equal(
     dynamicImports.filter(value => value === specifier).length,
-    ["./ports.mjs", "../features/actions/controller.mjs", "../features/annotations/index.mjs", "../features/background-results/index.mjs"]
+    ["./ports.mjs", "../features/actions/controller.mjs", "../features/annotations/index.mjs", "../features/background-results/index.mjs", "../features/health/controller.mjs"]
       .includes(specifier) ? 1 : 2,
     `${specifier} must have one route-aware prefetch and one descriptor fallback`
   );
@@ -138,6 +139,11 @@ assert.deepEqual(descriptors.get("notifications"), {
   feature: "frontend.feature.notifications",
   specifier: "../features/notifications/index.mjs"
 });
+assert.deepEqual(descriptors.get("daily"), {
+  page: "daily",
+  feature: "frontend.feature.health",
+  specifier: "../features/health/controller.mjs"
+});
 for (const view of ["today", "review"]) {
   assert.deepEqual(descriptors.get(view), {
     page: view,
@@ -146,7 +152,7 @@ for (const view of ["today", "review"]) {
   });
 }
 for (const [view, descriptor] of descriptors) {
-  if (["today", "review", "export", "feedback", "discovery", "notifications"].includes(view)) continue;
+  if (["today", "review", "daily", "export", "feedback", "discovery", "notifications"].includes(view)) continue;
   assert.deepEqual(descriptor, {
     page: view,
     feature: "frontend.feature.legacy-pages",
@@ -172,6 +178,7 @@ for (const hiddenAsset of [
   "frontend/features/background-results/index.mjs",
   "frontend/features/export/index.mjs",
   "frontend/features/feedback/index.mjs",
+  "frontend/features/health/controller.mjs",
   "frontend/features/notifications/index.mjs",
   "frontend/features/thought-discovery/index.mjs"
 ]) {

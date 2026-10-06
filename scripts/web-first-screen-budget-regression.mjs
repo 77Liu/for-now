@@ -48,6 +48,12 @@ const HIDDEN_FEATURE_MODULE_PATHS = Object.freeze([
   "/frontend/features/feedback/index.mjs",
   "/frontend/features/feedback/controller.mjs",
   "/frontend/features/feedback/model.mjs",
+  "/frontend/features/health/index.mjs",
+  "/frontend/features/health/controller.mjs",
+  "/frontend/features/health/drafts.mjs",
+  "/frontend/features/health/recognition.mjs",
+  "/frontend/features/health/submission.mjs",
+  "/frontend/features/health/view.mjs",
   "/frontend/features/notifications/index.mjs",
   "/frontend/features/notifications/controller.mjs",
   "/frontend/features/notifications/presentation.mjs",
@@ -916,6 +922,7 @@ const lazyFeatureModules = Object.fromEntries(await Promise.all([
   ["actions-workspace", "frontend/features/actions/controller.mjs"],
   ["export", "frontend/features/export/index.mjs"],
   ["feedback", "frontend/features/feedback/index.mjs"],
+  ["health", "frontend/features/health/controller.mjs"],
   ["notifications", "frontend/features/notifications/index.mjs"],
   ["discovery", "frontend/features/thought-discovery/index.mjs"]
 ].map(async ([view, entry]) => [view, await moduleClosure(entry)])));

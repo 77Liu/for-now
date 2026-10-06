@@ -21,12 +21,6 @@ import {
   nextKeepsakeBatchIndex,
   scanKeepsakeAlpha,
   uploadKeepsakeMedia,
-  WEIGHT_BATCH_MAX_ITEMS,
-  applyWeightBatchRecognition,
-  changeWeightBatchDate,
-  createWeightBatchItems,
-  nextWeightBatchIndex,
-  weightBatchRecordInput,
   createOnboardingV2Controller
 } from "../features/index.mjs";
 import {
@@ -75,6 +69,7 @@ const discoveryFeatureModuleRequest=globalThis.__forNowDiscoveryFeatureRequest||
 const notificationsFeatureModuleRequest=globalThis.__forNowNotificationsFeatureRequest||(initialRuntimeView==="notifications"?import("../features/notifications/index.mjs"):null);
 let annotationsFeatureModuleRequest=globalThis.__forNowAnnotationsFeatureRequest||null;
 let backgroundResultsFeatureModuleRequest=globalThis.__forNowBackgroundResultsFeatureRequest||null;
+let healthFeatureModuleRequest=globalThis.__forNowHealthFeatureRequest||null;
 const loadLegacyFeatureModule=()=>legacyFeatureModuleRequest||import("../features/legacy-pages/index.mjs");
 const loadActionsFeatureModule=()=>import("../features/actions/controller.mjs");
 const loadAnnotationsFeatureModule=()=>{
@@ -86,6 +81,11 @@ const loadBackgroundResultsFeatureModule=()=>{
   const pending=backgroundResultsFeatureModuleRequest||import("../features/background-results/index.mjs");
   backgroundResultsFeatureModuleRequest=pending;
   return Promise.resolve(pending).catch(error=>{if(backgroundResultsFeatureModuleRequest===pending)backgroundResultsFeatureModuleRequest=null;throw error})
+};
+const loadHealthFeatureModule=()=>{
+  const pending=healthFeatureModuleRequest||import("../features/health/controller.mjs");
+  healthFeatureModuleRequest=pending;
+  return Promise.resolve(pending).catch(error=>{if(healthFeatureModuleRequest===pending)healthFeatureModuleRequest=null;throw error})
 };
 const startupPerformanceEnabled=new URLSearchParams(location.search).has("native-performance");
 const startupMarks={navigationStart:0,moduleLoaded:Number(performance.now().toFixed(1))};
@@ -128,10 +128,11 @@ const responseStyleScenes=["thoughtDraft","thoughtAnswer","followUpAnswer","chat
 let pageRouter,switchView,restoreView;
 let runtimeApplication=null,runtimeFeatureRegistry=null,runtimeStatePort=null,applicationLifecycleReady=false;
 let backgroundResultsController=null,backgroundResultsLoadErrorReported=false,backgroundResultsRetryAttempts=0;
+let healthFeatureController=null;
 const checkinsFeatureControllers=new Set();
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,captureComposerOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
+let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,captureComposerOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
 let notificationsLoadState="idle",personalContextLoadState="idle",accountUsersLoadState="idle",accountUsers=[],accountUsersRequestSerial=0,routeDataReady=false,routeDataRequestSerial=0,routeLoadFailureKey="",loadedRouteKey="",fullRouteStateLoaded=false,renderedRouteView="",activeThoughtRouteId="",activeRouteResult=null,thoughtSearchTimer=0,analysisRequestSerial=0;
 let captureEditorTrigger=null,suspendedCaptureCreateDraft=null,captureEditorSerial=0;
 const feedSearchQueries={captures:"",journals:"",thoughts:"",books:"",keepsakes:"",quotes:""};
@@ -152,7 +153,6 @@ let keepsakeBatchPreviewUrls=[],keepsakeBatchPersistTimer=0,keepsakeDerivativeRe
 let keepsakeVisibleCount=KEEPSAKE_PAGE_SIZE,keepsakePaginationOwner="",keepsakeLoadObserver=null;
 const contentImageDrafts=Object.fromEntries(["capture","thoughtRoot","thoughtBlock","comment"].map(key=>[key,{items:[],uploadRequestId:"",context:null}]));
 const persistentContentImageKeys=new Set(["capture","thoughtRoot","thoughtBlock","comment"]);
-const healthImageDrafts=Object.fromEntries(["sleep","heartRate","weight","exercise"].map(type=>[type,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0}]));
 const captureAudioDraft={blob:null,preview:"",path:"",mimeType:"",bytes:0,durationMs:0,uploadRequestId:"",uploadedPath:"",lastError:null,recorder:null,stream:null,chunks:[],startedAt:0,pausedAt:0,pausedTotal:0,timer:0,serial:0,stopPromise:null};
 const imageViewer={paths:[],index:0,objectUrl:"",requestSerial:0,trigger:null};
 const quoteScrollStates=new WeakMap();
@@ -981,292 +981,9 @@ function openBookEditor(book){
 }
 
 const dailyTypeMeta={sleep:{label:"睡眠",save:"保存睡眠"},heartRate:{label:"心率",save:"保存心率"},weight:{label:"体重",save:"保存体重"},exercise:{label:"运动",save:"保存运动"}};
-let latestHealthRequest=0;
-const healthDraftKey=(type,date)=>type==="weight"?"health:weight:batch":`health:${type}:${date}`;
-const healthImageDraft=(type=activeDailyType)=>healthImageDrafts[type];
-function healthDraftStatus(type,draft){
-  if(type==="weight"){
-    if(draft.items.some(item=>item.submissionOperationId))return"部分体重记录已在待同步队列，其余截图仍可继续核对。";
-    if(draft.items.some(item=>item.recognition))return"已恢复识别结果，请核对后保存。";
-    return draft.items.length?`已恢复 ${draft.items.length} 张待识别截图。`:""
-  }
-  return draft.submissionOperationId?"日录已在待同步队列，截图保留到服务端确认。":draft.result?"已恢复识别结果，请核对后保存。":draft.items.length?`已恢复 ${draft.items.length} 张待识别截图。`:""
-}
-async function persistHealthImageDraft(type=activeDailyType){
-  const owner=currentUser?.id,draft=healthImageDraft(type);if(!owner||!draft)return;
-  if(!draft.items.length){await mediaDraftStore.delete(owner,healthDraftKey(type,draft.date||activeDate));return}
-  await mediaDraftStore.put({
-    owner,id:healthDraftKey(type,draft.date),type,date:draft.date,result:draft.result,submissionOperationId:draft.submissionOperationId||"",activeIndex:draft.activeIndex||0,
-    updatedAt:new Date().toISOString(),
-    items:draft.items.map(item=>({
-      blob:item.file,name:item.file?.name||"image",type:item.file?.type||"application/octet-stream",lastModified:Number(item.file?.lastModified)||Date.now(),
-      itemId:item.itemId||"",assignedDate:item.assignedDate||"",revision:Number(item.revision)||1,status:item.status||"selected",
-      recognition:item.recognition||null,recognitionRequestId:item.recognitionRequestId||"",createRequestId:item.createRequestId||"",
-      submissionOperationId:item.submissionOperationId||"",recognizedDate:item.recognizedDate||"",dateMismatch:Boolean(item.dateMismatch),
-      recognitionError:item.recognitionError||null,reviewValues:item.reviewValues||null,
-      uploadRequestId:item.uploadRequestId||"",uploadedPath:item.uploadedPath||"",lastError:item.lastError||null
-    }))
-  })
-}
-function applyHealthRecognitionResult(type,result){
-  const form=dailyForm(type);if(!form||!result)return;
-  let normalized=result;
-  if(type==="exercise"){const{description,...rest}=result;normalized={...rest,...(!result.recognitionDescription&&description?{recognitionDescription:description}:{})}}
-  for(const [key,value]of Object.entries(normalized)){if(["attachmentPaths","date"].includes(key)||!form.elements[key])continue;fillDailyField(form.elements[key],value)}
-  form.elements.attachmentPaths.value=JSON.stringify(result.attachmentPaths||[]);
-  const recognizedTime=result.wakeTime||result.measuredAt||result.startedAt;
-  if(recognizedTime){setOccurrenceMode(form.elements.occurredAt,"manual");fillDailyField(form.elements.occurredAt,recognizedTime)}
-  else if(result.date){setOccurrenceMode(form.elements.occurredAt,"manual");form.elements.occurredAt.value=localDateTimeForDate(result.date)}
-  form.querySelectorAll(".daily-details").forEach(details=>details.open=[...details.querySelectorAll("input")].some(input=>input.value!==""))
-}
-async function restoreHealthImageDrafts(owner,date=activeDate){
-  if(!owner)return;
-  const operations=new Map((await requestCoordinator.list(owner)).map(record=>[record.operationId,record]));
-  for(const type of Object.keys(dailyTypeMeta)){
-    let stored=await mediaDraftStore.get(owner,healthDraftKey(type,date)),legacyWeightDraft=false;
-    if(type==="weight"&&!stored?.items?.length){stored=await mediaDraftStore.get(owner,`health:weight:${date}`);legacyWeightDraft=Boolean(stored?.items?.length)}
-    if(!stored?.items?.length)continue;
-    const draft=healthImageDraft(type);draft.date=type==="weight"?(stored.date||date):date;draft.result=stored.result||null;draft.submissionOperationId=stored.submissionOperationId||"";draft.activeIndex=Number(stored.activeIndex)||0;
-    draft.items=stored.items.slice(0,type==="sleep"?2:type==="weight"?WEIGHT_BATCH_MAX_ITEMS:1).map((item,index)=>{
-      const file=typeof File==="function"?new File([item.blob],item.name||"image",{type:item.type||item.blob?.type||"",lastModified:Number(item.lastModified)||Date.now()}):item.blob;
-      return{
-        file,itemId:item.itemId||crypto.randomUUID(),assignedDate:item.assignedDate||stored.date||date,revision:Number(item.revision)||1,
-        status:item.status||((item.recognition||index===0&&stored.result)?"review":"selected"),
-        recognition:item.recognition||index===0&&stored.result||null,recognitionRequestId:item.recognitionRequestId||"",
-        createRequestId:item.createRequestId||"",submissionOperationId:item.submissionOperationId||"",
-        recognizedDate:item.recognizedDate||"",dateMismatch:Boolean(item.dateMismatch),recognitionError:item.recognitionError||null,
-        reviewValues:item.reviewValues||null,
-        uploadRequestId:item.uploadRequestId||"",uploadedPath:item.uploadedPath||"",lastError:item.lastError||null
-      }
-    });
-    if(type==="weight"){
-      draft.items=draft.items.filter(item=>{
-        const operation=item.submissionOperationId?operations.get(item.submissionOperationId):null;
-        return operation?.status!=="committed"
-      });
-      for(const item of draft.items){
-        const operation=item.submissionOperationId?operations.get(item.submissionOperationId):null;
-        if(["failed","conflict"].includes(operation?.status)){item.submissionOperationId="";item.createRequestId="";item.status=operation.status}
-      }
-      draft.activeIndex=Math.max(0,Math.min(draft.activeIndex,draft.items.length-1))
-    }else{
-      const operation=draft.submissionOperationId?operations.get(draft.submissionOperationId):null;
-      if(operation?.status==="committed"){await discardHealthImageDraft(type);continue}
-      if(["failed","conflict"].includes(operation?.status)){draft.submissionOperationId="";await persistHealthImageDraft(type)}
-    }
-    healthFiles[type]=draft.items.map(item=>item.file);
-    const form=dailyForm(type);
-    if(type!=="weight"&&draft.submissionOperationId&&form){form.dataset.requestId=draft.submissionOperationId;form.querySelector('[type="submit"]').disabled=true}
-    if(type!=="weight"&&draft.result)applyHealthRecognitionResult(type,draft.result)
-    if(legacyWeightDraft){await persistHealthImageDraft("weight");await mediaDraftStore.delete(owner,`health:weight:${date}`)}
-  }
-  renderHealthUploader();
-  applyActiveWeightBatchItem();
-  const active=healthImageDraft(),message=healthDraftStatus(activeDailyType,active);if(message)$("#health-parse-status").textContent=message
-}
-async function discardHealthImageDraft(type=activeDailyType,{deleteStored=true}={}){
-  const draft=healthImageDraft(type),date=draft.date||activeDate;
-  await Promise.all(draft.items.map(item=>discardUploadedMediaItem(item))).catch(()=>{});
-  if(deleteStored&&currentUser?.id)await mediaDraftStore.delete(currentUser.id,healthDraftKey(type,date));
-  Object.assign(draft,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0});healthFiles[type]=[]
-}
-async function finalizeHealthDraftOperation(operationId){
-  if(!operationId)return;
-  for(const type of Object.keys(dailyTypeMeta)){
-    const draft=healthImageDraft(type);
-    if(type==="weight"){
-      const index=draft.items.findIndex(item=>item.submissionOperationId===operationId);if(index<0)continue;
-      draft.items.splice(index,1);draft.activeIndex=nextWeightBatchIndex(draft.items,index);healthFiles.weight=draft.items.map(item=>item.file);
-      if(draft.items.length)await persistHealthImageDraft(type);else if(currentUser?.id)await mediaDraftStore.delete(currentUser.id,healthDraftKey(type,draft.date||activeDate));
-      renderHealthUploader();if(draft.items.length)applyActiveWeightBatchItem();else resetDailyForm("weight");continue
-    }
-    if(draft.submissionOperationId!==operationId)continue;
-    await discardHealthImageDraft(type);
-    if(type===activeDailyType){const form=dailyForm(type);if(form?.dataset.requestId===operationId){delete form.dataset.requestId;resetDailyForm(type)}resetHealthImages({forget:false})}
-  }
-}
-async function releaseHealthDraftOperation(operationId){
-  if(!operationId)return;
-  for(const type of Object.keys(dailyTypeMeta)){
-    const draft=healthImageDraft(type);
-    if(type==="weight"){
-      const item=draft.items.find(value=>value.submissionOperationId===operationId);if(!item)continue;
-      item.submissionOperationId="";item.createRequestId="";item.status="failed";await persistHealthImageDraft(type);renderHealthUploader();applyActiveWeightBatchItem();continue
-    }
-    if(draft.submissionOperationId!==operationId)continue;
-    draft.submissionOperationId="";await persistHealthImageDraft(type);
-    const form=dailyForm(type);if(form)form.querySelector('[type="submit"]').disabled=false
-  }
-}
-async function healthImagePaths(type,date){
-  const draft=healthImageDraft(type);if(draft.date!==date)throw new Error("截图所属日期已变化，请重新选择");
-  const result=await uploadPendingMediaItems({
-    items:draft.items,
-    upload:async(file,idempotencyKey)=>{
-      const [image]=await imageDataUrls([file]);
-      return(await uploadOriginalImages({request,images:[image],idempotencyKey}))[0]
-    },
-    onProgress:async items=>{draft.items=items;await persistHealthImageDraft(type)}
-  });
-  draft.items=result.items;await persistHealthImageDraft(type);
-  return result
-}
-function weightBatchStatus(item,index){
-  if(item.submissionOperationId||item.status==="queued")return"待同步";
-  if(item.status==="recognizing")return"正在识别";
-  if(item.status==="uploading")return"正在上传";
-  if(item.status==="conflict")return"同步冲突，核对后重试";
-  if(item.recognitionError||item.lastError)return item.recognitionError?.message||item.lastError?.message||"处理失败，可重试";
-  if(item.recognition)return item.dateMismatch?`识别日期 ${item.recognizedDate}，请核对`:"已识别，待核对";
-  return `第 ${index+1} 张 · 待识别`
-}
-function captureActiveWeightBatchItem(){
-  const draft=healthImageDraft("weight"),item=draft.items[draft.activeIndex],form=dailyForm("weight");
-  if(!item?.recognition||form?.dataset.weightBatchItemId!==item.itemId)return;
-  item.reviewValues=Object.fromEntries(new FormData(form).entries());
-  item.reviewValues.occurredAt=form.elements.occurredAt.value;
-  item.reviewValues.occurrenceMode=form.elements.occurredAt.dataset.occurrenceMode||"manual"
-}
-function applyActiveWeightBatchItem(){
-  if(activeDailyType!=="weight")return;
-  const draft=healthImageDraft("weight"),item=draft.items[draft.activeIndex],form=dailyForm("weight");
-  if(!form||!item)return;
-  delete form.dataset.requestId;delete form.dataset.weightBatchItemId;resetDailyForm("weight");
-  if(!item.recognition){
-    form.querySelector('[type="submit"]').disabled=true;
-    form.querySelector(".status").textContent=item?.recognitionError?.message||"选择已识别的截图后核对并保存。";
-    return
-  }
-  applyHealthRecognitionResult("weight",{...item.recognition,attachmentPaths:[item.uploadedPath]});
-  const values=item.reviewValues||{};
-  for(const[key,value]of Object.entries(values)){
-    if(["recordId","attachmentPaths","occurrenceMode"].includes(key)||!form.elements[key])continue;
-    if(key==="clothing"){[...form.elements.clothing].forEach(input=>input.checked=input.value===value);continue}
-    fillDailyField(form.elements[key],value)
-  }
-  const recognizedTime=String(values.occurredAt||item.recognition.measuredAt||"");
-  const clock=/T(\d{2}:\d{2}(?::\d{2})?)/.exec(recognizedTime)?.[1]||localDateTimeForDate(item.assignedDate).slice(11);
-  setOccurrenceMode(form.elements.occurredAt,"manual");form.elements.occurredAt.value=`${item.assignedDate}T${clock}`;
-  form.elements.attachmentPaths.value=JSON.stringify([item.uploadedPath]);form.dataset.weightBatchItemId=item.itemId;
-  form.querySelector('[type="submit"]').textContent=draft.items.length>1?`保存第 ${draft.activeIndex+1} 张`:"保存体重";
-  form.querySelector('[type="submit"]').disabled=Boolean(item.submissionOperationId);
-  form.querySelector(".status").textContent=item.dateMismatch?`截图识别日期为 ${item.recognizedDate}，当前归入 ${item.assignedDate}；请确认日期后保存。`:"请核对当前截图的日期和指标后保存。"
-}
-async function uploadWeightBatchItem(draft,index){
-  const item=draft.items[index],itemId=item.itemId;
-  const uploaded=await uploadPendingMediaItems({
-    items:[item],
-    upload:async(file,idempotencyKey)=>{
-      const [image]=await imageDataUrls([file]);
-      return(await uploadOriginalImages({request,images:[image],idempotencyKey}))[0]
-    },
-    onProgress:async items=>{
-      const current=draft.items.findIndex(value=>value.itemId===itemId);
-      if(current<0)return;
-      draft.items[current]={...draft.items[current],...items[0]};await persistHealthImageDraft("weight")
-    }
-  });
-  const current=draft.items.findIndex(value=>value.itemId===itemId);
-  if(current<0)throw new Error("这张截图已从批次移除");
-  draft.items[current]={...draft.items[current],...uploaded.items[0]};
-  return draft.items[current]
-}
-async function recognizeWeightBatch({serial,owner,session,status,forceActive=false}){
-  const draft=healthImageDraft("weight");let completed=0,failed=0;
-  for(let index=0;index<draft.items.length;index+=1){
-    let item=draft.items[index];
-    if((item.recognition&&!(forceActive&&index===draft.activeIndex))||item.submissionOperationId)continue;
-    if(serial!==healthParseSerial||owner!==currentUser?.id||session!==sessionSerial)return;
-    item.status="uploading";item.recognitionError=null;renderHealthUploader();await persistHealthImageDraft("weight");
-    try{
-      item=await uploadWeightBatchItem(draft,index);
-      const revision=item.revision,requestId=forceActive&&index===draft.activeIndex?crypto.randomUUID():item.recognitionRequestId||crypto.randomUUID(),targetId=`daily:weight:${item.itemId}:${item.assignedDate}`;
-      item.recognitionRequestId=requestId;item.status="recognizing";renderHealthUploader();await persistHealthImageDraft("weight");
-      const result=await request("/api/images/parse",{method:"POST",body:JSON.stringify({requestId,targetId,inputVersion:revision,kind:"weight",referenceDate:item.assignedDate,attachmentPaths:[item.uploadedPath]})});
-      const current=draft.items.find(value=>value.itemId===item.itemId);
-      if(serial!==healthParseSerial||owner!==currentUser?.id||session!==sessionSerial||!current||(result.requestId&&result.requestId!==requestId)||(result.targetId&&result.targetId!==targetId)||(Object.hasOwn(result,"inputVersion")&&Number(result.inputVersion)!==revision)){
-        if(owner===currentUser?.id&&session===sessionSerial)status.textContent="识别已完成，但当前表单已经变化或截图日期已调整，未自动回填。";
-        return
-      }
-      Object.assign(current,applyWeightBatchRecognition(current,{...result,attachmentPaths:[current.uploadedPath]},{requestId,expectedRevision:revision}).item);completed+=1
-    }catch(error){
-      const current=draft.items.find(value=>value.itemId===item.itemId);if(!current)continue;
-      current.status="failed";current.recognitionError={message:error.message||"识别失败"};failed+=1
-    }
-    await persistHealthImageDraft("weight");renderHealthUploader()
-  }
-  const firstReview=draft.items.findIndex(item=>item.recognition&&!item.submissionOperationId);
-  if(firstReview>=0)draft.activeIndex=firstReview;
-  await persistHealthImageDraft("weight");renderHealthUploader();applyActiveWeightBatchItem();
-  status.textContent=failed?`${completed} 张已识别，${failed} 张失败；修正后可直接重试失败项。`:`${completed} 张已逐图识别，请逐项核对日期和指标后保存。`
-}
-async function removeWeightBatchItem(index,{discard=true}={}){
-  const draft=healthImageDraft("weight");captureActiveWeightBatchItem();
-  const[item]=draft.items.splice(index,1);if(!item)return;
-  if(discard)await discardUploadedMediaItem(item).catch(()=>{});
-  draft.activeIndex=nextWeightBatchIndex(draft.items,index);healthFiles.weight=draft.items.map(value=>value.file);
-  if(draft.items.length)await persistHealthImageDraft("weight");
-  else if(currentUser?.id)await mediaDraftStore.delete(currentUser.id,healthDraftKey("weight",draft.date||activeDate));
-  renderHealthUploader();if(draft.items.length)applyActiveWeightBatchItem();else resetDailyForm("weight")
-}
-function resetHealthImages({forget=true}={}){
-  healthParseSerial+=1;
-  const type=activeDailyType,draft=healthImageDraft(type);
-  healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=[];
-  healthFiles[type]=[];$("#health-images").value="";$("#health-image-previews").innerHTML="";$("#health-upload-box").classList.remove("has-image","dragging");$("#parse-health-images").disabled=true;$("#health-parse-status").textContent="";
-  if(forget)void discardHealthImageDraft(type).catch(()=>{});
-  else Object.assign(draft,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0})
-}
-function renderHealthUploader(){
-  const visible=Boolean(dailyTypeMeta[activeDailyType]),workflow=$("#health-image-workflow");workflow.hidden=!visible;if(!visible)return;
-  const draft=healthImageDraft(),max=activeDailyType==="sleep"?2:activeDailyType==="weight"?WEIGHT_BATCH_MAX_ITEMS:1,files=healthFiles[activeDailyType]||[];
-  $("#health-images").multiple=max>1;$("#health-upload-title").textContent=activeDailyType==="weight"?`选择 1–${max} 张体重截图`:`优先上传 ${max===2?"1–2":"1"} 张${dailyTypeMeta[activeDailyType].label}截图`;
-  const hints={sleep:"总览与详情可一起识别",heartRate:"包含日视图与今日概览",weight:"体重或体成分报告，未显示的字段留空",exercise:"运动详情，项目、时长与心率可一起识别"};
-  $("#health-upload-hint").textContent=`点击、粘贴或拖入 · ${hints[activeDailyType]}${activeDailyType==="weight"?" · 每张明确对应日期":""} · 单张 8 MB · 批次合计 48 MB`;
-  healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=files.map(file=>URL.createObjectURL(file));
-  $("#health-image-previews").classList.toggle("weight-batch",activeDailyType==="weight");
-  $("#health-image-previews").innerHTML=files.map((file,index)=>{
-    if(activeDailyType!=="weight")return`<figure><img src="${healthPreviewUrls[index]}" alt="待识别截图 ${index+1}"><figcaption>${escapeHtml(file.name||`截图 ${index+1}`)} · ${formatBytes(file.size)}</figcaption><button type="button" data-health-image-remove="${index}" aria-label="移除截图 ${index+1}">×</button></figure>`;
-    const item=draft.items[index],active=index===draft.activeIndex;
-    return`<figure class="weight-batch-item${active?" active":""}${item?.recognitionError||item?.lastError?" failed":""}">
-      <button class="weight-batch-select" type="button" data-weight-batch-select="${index}" aria-pressed="${active}" aria-label="核对第 ${index+1} 张体重截图"><img src="${healthPreviewUrls[index]}" alt=""><span><b>${escapeHtml(file.name||`截图 ${index+1}`)}</b><small>${escapeHtml(weightBatchStatus(item,index))}</small></span></button>
-      <label class="weight-batch-date"><span>对应日期</span><input type="date" data-weight-batch-date="${index}" value="${escapeHtml(item?.assignedDate||activeDate)}" ${latestHealthRequest||item?.submissionOperationId?"disabled":""}></label>
-      <button class="weight-batch-remove" type="button" data-health-image-remove="${index}" aria-label="移除第 ${index+1} 张截图" ${latestHealthRequest||item?.submissionOperationId?"disabled":""}>×</button>
-    </figure>`
-  }).join("");
-  $("#health-upload-box").classList.toggle("has-image",files.length>0);
-  $("#parse-health-images").textContent=activeDailyType==="weight"?(draft.items.some(item=>item.recognitionError||!item.recognition)?"识别待处理截图":"重新识别当前截图"):"识别并回填";
-  $("#parse-health-images").disabled=!files.length||Boolean(latestHealthRequest)||activeDailyType==="weight"&&draft.items.every(item=>item.submissionOperationId);
-}
-function setHealthImages(files,source="已选择",append=false){
-  const status=$("#health-parse-status"),type=activeDailyType,max=type==="sleep"?2:type==="weight"?WEIGHT_BATCH_MAX_ITEMS:1,draft=healthImageDraft(type);
-  if(latestHealthRequest){status.textContent="正在识别当前截图，请完成后再替换。";return false}
-  healthParseSerial+=1;
-  try{
-    const current=type==="weight"||draft.date===activeDate?draft.items:[],next=append?[...current.map(item=>item.file),...files]:[...files],validated=validatedImageFiles(next,max),retained=new Set(validated),removed=current.filter(item=>!retained.has(item.file));
-    const created=type==="weight"?createWeightBatchItems(validated.filter(file=>!current.some(item=>item.file===file)),{assignedDate:activeDate}):[];
-    draft.date=activeDate;draft.result=null;draft.submissionOperationId="";draft.items=validated.map(file=>current.find(item=>item.file===file)||(type==="weight"?created.shift():{file}));draft.activeIndex=Math.min(draft.activeIndex||0,Math.max(0,draft.items.length-1));healthFiles[type]=validated;
-    if(type==="weight")applyActiveWeightBatchItem();renderHealthUploader();
-    void Promise.all([persistHealthImageDraft(type),...removed.map(item=>discardUploadedMediaItem(item))]).catch(()=>{});
-    status.textContent=type==="weight"?`${source}${append?"已追加":""} · ${healthFiles[type].length} 张图片已进入批次，请先确认每张对应日期。`:`${source}${append?"已追加":""} · ${healthFiles[type].length} 张图片已就绪，识别后仍可修改。`;return true
-  }catch(error){status.textContent=error.message;return false}
-}
 function dailyForm(type=activeDailyType){return $(`[data-daily-form="${CSS.escape(type)}"]`)}
-function resetDailyForm(type=activeDailyType){
-  healthParseSerial+=1;latestHealthRequest=0;
-  const form=dailyForm(type);if(!form)return;form.reset();delete form.dataset.weightBatchItemId;form.elements.recordId.value="";if(form.elements.attachmentPaths)form.elements.attachmentPaths.value="";resetOccurrenceInput(form.elements.occurredAt);form.querySelector('[type="submit"]').textContent=dailyTypeMeta[type].save;form.querySelector('[type="submit"]').disabled=false;form.querySelector("[data-daily-cancel]").hidden=true;form.querySelector(".status").textContent="";
-  for(const key of["verification","trendSegments"])if(form.elements[key])form.elements[key].value="";
-  form.querySelectorAll(".daily-details").forEach(details=>details.open=false);
-  if(type===activeDailyType){$("#health-parse-status").textContent="";$("#parse-health-images").disabled=!(healthFiles[type]||[]).length}
-  if(type==="weight")form.elements.clothing.value="none";
-}
-function switchDailyType(type){
-  if(!dailyTypeMeta[type])return;healthParseSerial+=1;activeDailyType=type;
-  latestHealthRequest=0;const draft=healthImageDraft(type);
-  $$("[data-daily-tab]").forEach(button=>{const active=button.dataset.dailyTab===type;button.classList.toggle("active",active);button.setAttribute("aria-selected",String(active))});
-  $$("[data-daily-form]").forEach(form=>{const active=form.dataset.dailyForm===type;form.hidden=!active;form.classList.toggle("active",active)});
-  renderHealthUploader();if(type==="weight")applyActiveWeightBatchItem();$("#health-parse-status").textContent=healthDraftStatus(type,draft);renderDailyRecords();
-}
+const resetDailyForm=(type=activeDailyType)=>healthFeatureController?.resetForm(type)??false;
+const switchDailyType=type=>healthFeatureController?.switchType(type)??false;
 const durationLabel=value=>Number.isFinite(Number(value))?`${Math.floor(Number(value)/60)}小时${String(Math.round(Number(value)%60)).padStart(2,"0")}分`:"—";
 const valueLabel=(value,suffix="")=>value==null?"—":`${value}${suffix}`;
 const secondsLabel=value=>Number.isFinite(value)?[Math.floor(value/3600),Math.floor(value%3600/60),value%60].map(part=>String(part).padStart(2,"0")).join(":"):"";
@@ -1656,8 +1373,8 @@ async function applyIncrementalSnapshot(snapshot,changes){
 async function updateSyncHealth(event){
   if(!currentUser?.id)return;
   if(event.type==="operation")actionsCoordinator.applyOperationStatus(event);
-  if(event.type==="operation"&&event.status==="committed")await finalizeHealthDraftOperation(event.operationId);
-  if(event.type==="operation"&&["failed","conflict"].includes(event.status))await releaseHealthDraftOperation(event.operationId);
+  if(event.type==="operation"&&event.status==="committed")await healthFeatureController?.finalizeOperation(event.operationId);
+  if(event.type==="operation"&&["failed","conflict"].includes(event.status))await healthFeatureController?.releaseOperation(event.operationId);
   const metrics=await requestCoordinator.metrics(currentUser.id);
   const oldest=metrics.oldestPendingAt?Math.max(0,Date.now()-new Date(metrics.oldestPendingAt).getTime()):0;
   syncHealth={
@@ -3638,7 +3355,7 @@ function renderVisibleRoute(){
   $("#notification-dot").hidden=!Number(state.notificationUnread??notificationUnreadCount);
   if(view==="today"){renderSliders();renderHome()}
   else if(view==="together"){renderChat();renderThoughts()}
-  else if(view==="daily"){renderDailyRecords();renderHealthUploader()}
+  else if(view==="daily"){renderDailyRecords();healthFeatureController?.renderUploader()}
   else if(view==="captures"){renderCaptures();renderCaptureTagComposer();renderCaptureAudioDraft()}
   else if(view==="journals")renderJournals();
   else if(view==="thoughts"){renderThoughts();renderTagComposer()}
@@ -3722,7 +3439,7 @@ function setAuthTab(tab){
 function setAuthBusy(value){authBusy=value;$$(".auth-form input,.auth-form button,[data-auth-tab]").forEach(control=>control.disabled=value)}
 function invalidatePageLoads(){
   statisticsRequestSerial+=1;aiCostRequestSerial+=1;architectureRequestSerial+=1;commercialRequestSerial+=1;personalContextRequestSerial+=1;accountUsersRequestSerial+=1;analysisRequestSerial+=1;
-  activeAnswerTaskId=++answerTaskSerial;healthParseSerial+=1;latestHealthRequest=0;bookParseSerial+=1;clearTimeout(notificationTimer);
+  activeAnswerTaskId=++answerTaskSerial;healthFeatureController?.invalidateSession();bookParseSerial+=1;clearTimeout(notificationTimer);
   backgroundResultsController?.resetSession();backgroundResultsLoadErrorReported=false;backgroundResultsRetryAttempts=0;refreshCoordinator.reset();
 }
 function clearPrivateSessionState(){
@@ -3732,14 +3449,12 @@ function clearPrivateSessionState(){
   clearTimeout(thoughtSearchTimer);thoughtSearchTimer=0;
   resetState();routeDataReady=false;routeDataRequestSerial+=1;routeLoadFailureKey="";loadedRouteKey="";fullRouteStateLoaded=false;activeThoughtRouteId="";activeRouteResult=null;quoteTagStates={quote:createTagMultiSelectState(),selectionQuote:createTagMultiSelectState()};llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
   activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationsLoadState="idle";actionsCoordinator.resetSession();annotationsController?.resetSession();personalContext=null;personalContextRequestSerial=0;accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.5.7";homeMemoryKeys=[];homeMemoryByKey=new Map();homeKeepsakeId="";closeHomeEditors({restoreFocus:false});$("#capture-editor").hidden=true;document.body.classList.remove("capture-editor-open");resetOwnerSurfaces();invalidatePageLoads();draftTags=[];captureDraftTags=[];keepsakeDraftTags=[];captureComposerOpen=false;captureEditorTrigger=null;suspendedCaptureCreateDraft=null;expandedLongContentKeys.clear();
-  healthParseSerial+=1;latestHealthRequest=0;healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=[];healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]};for(const draft of Object.values(healthImageDrafts))Object.assign(draft,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0});
   bookParseSerial+=1;for(const url of Object.values(bookPreviewUrls))if(url)URL.revokeObjectURL(url);bookPreviewUrls={cover:"",recognition:""};pendingBookImages={cover:null,recognition:null};editingBookId="";activeBookId="";activeBookFeatureNoteId="";bookCreatorOpen=false;bookDetailCondensed=false;
   keepsakeEditor.segmentSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.history=[];
   clearKeepsakeBatchState();
   for(const key of Object.keys(contentImageDrafts))resetContentImageEditor(key,[],{forget:false});
   clearCaptureAudioDraft({forget:false});stopPageAudio();
   $$("main form").forEach(form=>{form.reset();delete form.dataset.requestId});$$(".modal-backdrop").forEach(modal=>modal.hidden=true);$("#comment-panel").hidden=true;$("#comment-panel-reopen").hidden=true;$("#selection-tools").hidden=true;$("#annotation-line-counts").hidden=true;document.body.classList.remove("comment-panel-open");
-  Object.keys(dailyTypeMeta).forEach(resetDailyForm);
 }
 function showAuthGate(message=""){
   const localTestEnabled=Boolean(localTestConfig?.enabled),resetApplication=applicationLifecycleReady;applicationLifecycleReady=false;resetRouteAfterAuthentication||=Boolean(currentUser);syncController?.stop();syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};rotateSession();clearPrivateSessionState();if(resetApplication){void runtimeFeatureRegistry?.resetSession().catch(()=>{});runtimeStatePort?.resetSession()}currentUser=null;applyCapabilitySurface([]);try{sessionStorage.removeItem("cike:authenticated-shell")}catch{}delete document.documentElement.dataset.bootstrapVisible;document.body.classList.add("auth-locked");$("#auth-gate").hidden=false;$("#account-control").hidden=true;$("#account-authenticated").hidden=true;const registerTab=$('[data-auth-tab="register"]');if(registerTab)registerTab.hidden=localTestEnabled;if(message)$("#auth-status").textContent=message;
@@ -3759,7 +3474,6 @@ async function activateUserSession(user,authRequired,initialSnapshot=null,openin
     await Promise.all([
       restoreContentImageDrafts(user?.id).catch(error=>showToast(`待上传图片恢复失败：${error.message}`,"error")),
       restoreCaptureAudioDraft(user?.id).catch(error=>showToast(`待提交语音恢复失败：${error.message}`,"error")),
-      restoreHealthImageDrafts(user?.id).catch(error=>showToast(`健康截图恢复失败：${error.message}`,"error")),
       restoreKeepsakeBatch(user?.id).catch(error=>showToast(`小物批次恢复失败：${error.message}`,"error"))
     ]);
     await restorePendingProjections();
@@ -3939,6 +3653,32 @@ function createPageFeatureDescriptors(){
         onResetSession:()=>{workspaceController?.resetSession();workspaceController=null;actionsCoordinator.resetSession()}
       });
       return withCheckins(delegate)
+    })
+  };
+  descriptors.daily={
+    root:()=>$("#view-daily"),
+    load:()=>Promise.all([loadLegacyFeatureModule(),loadHealthFeatureModule()]).then(([legacy,health])=>{
+      const controller=health.createHealthFeatureController({
+        delegate:legacy.createLegacyPageController({view:"daily"}),
+        request,
+        draftStore:mediaDraftStore,
+        listOperations:owner=>requestCoordinator.list(owner),
+        getAccountId:()=>currentUser?.id||"",
+        getActiveDate:()=>activeDate,
+        getActiveType:()=>activeDailyType,
+        setActiveType:type=>{activeDailyType=type},
+        renderRecords:renderDailyRecords,
+        resetOccurrenceInput,
+        imageDataUrls,
+        escapeMarkup:escapeHtml,
+        localDateTimeForDate,
+        toLocalDateTimeInput,
+        showToast,
+        typeMeta:dailyTypeMeta,
+        createId:()=>crypto.randomUUID()
+      });
+      healthFeatureController=controller;
+      return controller
     })
   };
   descriptors.review={
@@ -4186,45 +3926,16 @@ document.addEventListener("click",async e=>{
   if(button.dataset.journalDelete){const id=button.dataset.journalDelete,item=(state.journals||[]).find(value=>value.id===id);if(!item||!confirm("将这篇日记及其助手回望移入回收站？"))return;button.disabled=true;try{await requestV1(`/api/v1/journals/${encodeURIComponent(id)}`,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`}},{domains:["journals"],recoverCommitted:true,projection:{kind:"record.delete",domain:"journals",id},onQueued:record=>applyPendingProjection(record)});void refreshState("journals").catch(error=>showToast(`日记已移除，但列表刷新失败：${error.message}`,"error"));showToast("日记已移入回收站")}catch(err){if(err.syncStatus==="pending")showToast("日记将在网络恢复后移入回收站");else{await refreshState("journals").catch(()=>{});showToast(err.message,"error");button.disabled=false}}return}
   if(button.dataset.journalReflect){const id=button.dataset.journalReflect;button.disabled=true;try{await runAnswerInModal({title:"回望这篇日记",scene:"diaryReflection",requestCall:onEvent=>requestStream(`/api/journals/${id}/reflect`,{method:"POST",body:"{}"},onEvent),onDone:()=>refreshState("journals")});showToast("日记回望已保存")}catch(err){showToast(err.message,"error")}finally{button.disabled=false}}
 });
-$$("[data-active-date]").forEach(input=>input.addEventListener("change",async e=>{chainDraftVersion+=1;healthParseSerial+=1;captureActiveWeightBatchItem();await persistHealthImageDraft("weight").catch(()=>{});activeDate=e.target.value||activeDate;healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=[];healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]};for(const draft of Object.values(healthImageDrafts))Object.assign(draft,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0});renderDate();renderSliders();renderDailyRecords();renderThoughts();renderStateChart();renderHomeMood();renderChat();void restoreHealthImageDrafts(currentUser?.id,activeDate).catch(error=>showToast(`健康截图恢复失败：${error.message}`,"error"))}));
-$$("[data-daily-tab]").forEach(button=>button.addEventListener("click",()=>switchDailyType(button.dataset.dailyTab)));
+$$("[data-active-date]").forEach(input=>input.addEventListener("change",async e=>{chainDraftVersion+=1;activeDate=e.target.value||activeDate;renderDate();renderSliders();renderDailyRecords();renderThoughts();renderStateChart();renderHomeMood();renderChat();await healthFeatureController?.changeDate(activeDate).catch(error=>showToast(`健康截图恢复失败：${error.message}`,"error"))}));
 document.addEventListener("click",event=>{const button=event.target.closest("[data-weight-trend]");if(!button)return;activeWeightTrendMetric=button.dataset.weightTrend||"weight";renderDailyRecords()});
-$("#health-images").addEventListener("change",e=>{if(!setHealthImages(e.currentTarget.files,"本地文件"))e.currentTarget.value=""});
-$("#health-upload-box").addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();$("#health-images").click()}});
-$("#health-upload-box").addEventListener("dragenter",e=>{e.preventDefault();e.currentTarget.classList.add("dragging")});
-$("#health-upload-box").addEventListener("dragover",e=>{e.preventDefault();e.dataTransfer.dropEffect="copy";e.currentTarget.classList.add("dragging")});
-$("#health-upload-box").addEventListener("dragleave",e=>{if(!e.currentTarget.contains(e.relatedTarget))e.currentTarget.classList.remove("dragging")});
-$("#health-upload-box").addEventListener("drop",e=>{e.preventDefault();e.currentTarget.classList.remove("dragging");const files=[...(e.dataTransfer?.files||[])].filter(item=>item.type.startsWith("image/"));setHealthImages(files,"拖入图片",["sleep","weight"].includes(activeDailyType))});
-document.addEventListener("paste",e=>{if(!$("#view-daily").classList.contains("active")||!dailyTypeMeta[activeDailyType]||(e.target instanceof Element&&e.target.closest("input,textarea,[contenteditable=true]")))return;const files=[...(e.clipboardData?.files||[])].filter(item=>item.type.startsWith("image/"));if(!files.length)return;e.preventDefault();setHealthImages(files,"剪贴板",["sleep","weight"].includes(activeDailyType))});
-document.addEventListener("click",e=>{const button=e.target.closest("[data-weight-batch-select]");if(!button||latestHealthRequest)return;captureActiveWeightBatchItem();const draft=healthImageDraft("weight");draft.activeIndex=Number(button.dataset.weightBatchSelect)||0;void persistHealthImageDraft("weight");renderHealthUploader();applyActiveWeightBatchItem()});
-document.addEventListener("change",e=>{const input=e.target.closest("[data-weight-batch-date]");if(!input)return;const draft=healthImageDraft("weight"),index=Number(input.dataset.weightBatchDate),item=draft.items[index];if(!item)return;captureActiveWeightBatchItem();try{draft.items[index]=changeWeightBatchDate(item,input.value);if(index===draft.activeIndex)applyActiveWeightBatchItem();renderHealthUploader();void persistHealthImageDraft("weight")}catch(error){$("#health-parse-status").textContent=error.message}});
-document.addEventListener("click",e=>{const button=e.target.closest("[data-health-image-remove]");if(!button)return;if(latestHealthRequest)return;healthParseSerial+=1;const type=activeDailyType,index=Number(button.dataset.healthImageRemove);if(type==="weight"){void removeWeightBatchItem(index).then(()=>{$("#health-parse-status").textContent=healthFiles.weight.length?`批次剩余 ${healthFiles.weight.length} 张截图。`:"体重批次已清空。"});return}const draft=healthImageDraft(),[item]=draft.items.splice(index,1);healthFiles[type]=draft.items.map(value=>value.file);draft.result=null;renderHealthUploader();void Promise.all([persistHealthImageDraft(type),discardUploadedMediaItem(item)]).catch(()=>{});$("#health-parse-status").textContent=healthFiles[type].length?`已保留 ${healthFiles[type].length} 张图片。`:"请重新选择或粘贴截图。"});
-$("#parse-health-images").addEventListener("click",async e=>{
-  const button=e.currentTarget,type=activeDailyType,date=activeDate,files=[...(healthFiles[type]||[])],status=$("#health-parse-status"),serial=++healthParseSerial,owner=currentUser?.id,session=sessionSerial;if(!files.length)return status.textContent="请先选择、粘贴或拖入截图。";
-  latestHealthRequest=serial;
-  button.disabled=true;$("#health-images").disabled=true;$$("[data-active-date]").forEach(control=>control.disabled=true);status.textContent="正在安全上传原图…";
-  try{
-    if(type==="weight"){const forceActive=healthImageDraft("weight").items.every(item=>item.recognition||item.submissionOperationId);await recognizeWeightBatch({serial,owner,session,status,forceActive});return}
-    const submission=await healthImagePaths(type,date);if(serial!==healthParseSerial||type!==activeDailyType||date!==activeDate||owner!==currentUser?.id||session!==sessionSerial)return;
-    status.textContent="正在识别并核对字段…";
-    const requestId=crypto.randomUUID(),targetId=`daily:${type}:${date}`,result=await request("/api/images/parse",{method:"POST",body:JSON.stringify({requestId,targetId,inputVersion:serial,kind:type,referenceDate:date,attachmentPaths:submission.attachmentPaths})});if(serial!==healthParseSerial||type!==activeDailyType||date!==activeDate||owner!==currentUser?.id||session!==sessionSerial||(result.requestId&&result.requestId!==requestId)||(result.targetId&&result.targetId!==targetId)||(Object.hasOwn(result,"inputVersion")&&Number(result.inputVersion)!==serial)){if(latestHealthRequest===serial&&type===activeDailyType&&owner===currentUser?.id&&session===sessionSerial)status.textContent="识别已完成，但当前表单已经变化，未自动回填。";return}
-    const draft=healthImageDraft(type);draft.result=result;await persistHealthImageDraft(type);applyHealthRecognitionResult(type,result);
-    status.textContent=result.verification||"识别完成。请核对后保存，空白字段可以手动补充。";showToast("截图已识别并回填");
-  }catch(err){if(serial===healthParseSerial&&owner===currentUser?.id&&session===sessionSerial)status.textContent=err.message}
-  finally{$("#health-images").disabled=false;$$("[data-active-date]").forEach(control=>control.disabled=false);if(latestHealthRequest===serial)latestHealthRequest=0;if(type===activeDailyType&&owner===currentUser?.id&&session===sessionSerial)renderHealthUploader()}
-});
 $$("[data-daily-form]").forEach(form=>form.addEventListener("submit",async e=>{
-  e.preventDefault();const current=e.currentTarget,type=current.dataset.dailyForm,id=current.elements.recordId.value,existing=id?(state.dailyRecords||[]).find(item=>item.id===id):null,button=current.querySelector('[type="submit"]'),status=current.querySelector(".status"),serial=++healthParseSerial,owner=currentUser?.id,session=sessionSerial,batchDraft=type==="weight"&&!id?healthImageDraft("weight"):null;let batchItem=batchDraft?.items.find(item=>item.itemId===current.dataset.weightBatchItemId)||null,payload;
-  if(batchItem){captureActiveWeightBatchItem();batchItem=batchDraft.items.find(item=>item.itemId===batchItem.itemId)||batchItem}
-  try{payload=dailyFormSubmissionPayload(current,type);if(batchItem)payload=weightBatchRecordInput(batchItem,payload)}catch(error){status.textContent=error.message;return}
-  const requestId=batchItem?(batchItem.createRequestId||crypto.randomUUID()):(current.dataset.requestId||crypto.randomUUID()),temporaryId=`pending:${requestId}`;latestHealthRequest=0;
-  if(!id){current.dataset.requestId=requestId;if(batchItem)batchItem.createRequestId=requestId}
+  e.preventDefault();const current=e.currentTarget,type=current.dataset.dailyForm,id=current.elements.recordId.value,existing=id?(state.dailyRecords||[]).find(item=>item.id===id):null,button=current.querySelector('[type="submit"]'),status=current.querySelector(".status"),owner=currentUser?.id,session=sessionSerial,controller=healthFeatureController;let submission;
+  if(!controller){status.textContent="健康记录功能仍在加载，请稍后重试。";return}
+  try{submission=await controller.prepareSubmission({form:current,type,id,payload:dailyFormSubmissionPayload(current,type)})}catch(error){status.textContent=error.message;return}
+  const{payload,requestId}=submission,temporaryId=`pending:${requestId}`;
   const onQueued=async record=>{
     applyPendingProjection(record);
-    const draft=healthImageDraft(type);
-    if(batchItem){
-      const queued=draft.items.find(item=>item.itemId===batchItem.itemId);if(queued){queued.submissionOperationId=record.operationId;queued.status="queued";await persistHealthImageDraft(type);renderHealthUploader()}
-    }else if(payload.attachmentPaths.length&&draft.date===activeDate&&draft.items.length){draft.submissionOperationId=record.operationId;await persistHealthImageDraft(type)}
+    await controller.markQueued(submission,record.operationId)
   };
   button.disabled=true;status.textContent=id?"正在保存修改…":"正在保存…";
   try{
@@ -4238,30 +3949,20 @@ $$("[data-daily-form]").forEach(form=>form.addEventListener("submit",async e=>{
       state.dailyRecords=(state.dailyRecords||[]).map(item=>item.id===temporaryId?result.data:item);renderDailyRecords()
     }
     if(owner!==currentUser?.id||session!==sessionSerial)return;
-    if(batchItem){
-      const index=batchDraft.items.findIndex(item=>item.itemId===batchItem.itemId);if(index>=0)await removeWeightBatchItem(index,{discard:false})
-    }else if(serial===healthParseSerial&&type===activeDailyType){
-      if(type==="weight"&&healthImageDraft("weight").items.length){resetDailyForm(type);applyActiveWeightBatchItem()}
-      else{await discardHealthImageDraft(type);resetDailyForm(type);resetHealthImages({forget:false})}
-    }
-    delete current.dataset.requestId;void refreshState("dailyRecords").catch(error=>showToast(`日录已保存，但列表刷新失败：${error.message}`,"error"));showToast(batchItem&&batchDraft.items.length?"本张体重已保存，请继续核对下一张":id?"日录已更新":`${dailyTypeMeta[type].label}已记录`)
+    await controller.completeSubmission(submission);
+    delete current.dataset.requestId;void refreshState("dailyRecords").catch(error=>showToast(`日录已保存，但列表刷新失败：${error.message}`,"error"));showToast(submission.itemId&&controller.weightBatchCount()?"本张体重已保存，请继续核对下一张":id?"日录已更新":`${dailyTypeMeta[type].label}已记录`)
   }
   catch(err){
     if(owner===currentUser?.id&&session===sessionSerial){
-      if(batchItem){
-        const item=batchDraft.items.find(value=>value.itemId===batchItem.itemId);
-        if(item){
-          if(err.syncStatus==="pending"){item.status="queued";status.textContent="本张已进入待同步队列，可继续核对其他截图。";showToast("本张体重已进入待同步队列")}
-          else{item.status=err.syncStatus==="conflict"?"conflict":"failed";item.submissionOperationId="";item.createRequestId="";status.textContent=err.message}
-          await persistHealthImageDraft("weight");renderHealthUploader();applyActiveWeightBatchItem()
-        }
+      if(submission.itemId){
+        await controller.failSubmission(submission,err);
+        if(err.syncStatus==="pending"){status.textContent="本张已进入待同步队列，可继续核对其他截图。";showToast("本张体重已进入待同步队列")}
+        else status.textContent=err.message
       }else if(err.syncStatus==="pending"){status.textContent="已记下，网络恢复后自动同步；截图保留到服务端确认。";showToast("日录已进入待同步队列")}
       else{await refreshState("dailyRecords").catch(()=>{});status.textContent=err.message}
     }
-  }finally{const activeBatch=type==="weight"?healthImageDraft("weight").items[healthImageDraft("weight").activeIndex]:null;button.disabled=batchDraft?Boolean(activeBatch&&!activeBatch.recognition||activeBatch?.submissionOperationId):Boolean(healthImageDraft(type).submissionOperationId)}
+  }finally{button.disabled=controller.submissionDisabled(type)}
 }));
-for(const type of Object.keys(dailyTypeMeta))for(const event of["input","change"])dailyForm(type)?.addEventListener(event,()=>{healthParseSerial+=1;if(type==="weight"){captureActiveWeightBatchItem();void persistHealthImageDraft("weight");renderHealthUploader()}else $("#parse-health-images").disabled=!(healthFiles[activeDailyType]||[]).length});
-$$("[data-daily-cancel]").forEach(button=>button.addEventListener("click",()=>{const type=button.closest("[data-daily-form]").dataset.dailyForm;resetDailyForm(type);if(type==="weight")applyActiveWeightBatchItem()}));
 $$("[data-content-image-editor] input[type='file']").forEach(input=>input.addEventListener("change",async event=>{
   const fileInput=event.currentTarget,editor=fileInput.closest("[data-content-image-editor]"),status=editor?.closest("form")?.querySelector(".status");
   try{delete editor.closest("form")?.dataset.requestId;await setContentImageFiles(editor.dataset.contentImageEditor,fileInput.files);fileInput.value="";if(status)status.textContent=""}
