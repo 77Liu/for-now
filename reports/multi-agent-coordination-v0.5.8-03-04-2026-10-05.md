@@ -3,10 +3,10 @@
 - 日期：2026-10-05
 - 起始基线：`f911cde4505d3434ab4afcf4b5614f8e828f4bcc`
 - 当前门禁：`iteration-G3 / entrypoint-G2`
-- 当前状态：`b4-media-runtime-closed-b5-ready`
+- 当前状态：`b5-content-runtime-closed-b6-ready`
 - 活跃工作树：`5 / 6`
 - 机器事实：3 个入口策略、65 个模块、237 条拥有路由、15 条迁移例外；
-  `server.mjs` 由 3283 行降至 1473 行，`runtime.mjs` 当前为 5136 行
+  `server.mjs` 由 3283 行降至 1162 行，`runtime.mjs` 当前为 5136 行
 - 授权边界：允许本地代码、测试、文档与任务提交；不允许 push、tag、Release、
   Preview、部署、云资源修改、真实付费调用或生产写入
 
@@ -91,11 +91,21 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 | V5 | `orchestrator` | 冻结差分影响验证 | 不放宽门禁或重复完整 backend | check、媒体专项、影响门、backend |
 | R5 | `b4-media-reviewer` | 附件/媒体/预算/启动闭包独立复审 | 只读 | blocker/P0/P1 清零 |
 
+## B5 内容 runtime 所有权
+
+| task | owner | ownership | forbidden | acceptance |
+| --- | --- | --- | --- | --- |
+| B5-S | `orchestrator` | thoughts/captures/journals/reviews、后台任务、个人语境闭包与测试 | 不修改代码、不调用远程服务 | 精确依赖、循环引用、接线顺序和失败矩阵 |
+| B5-W | `b5-content-worker` | `src/app/content-runtime.mjs`、`src/app/content/*` 与独立专项 | `server.mjs`、公共 barrel、登记、package、runner | 账户隔离、幂等并发、迟到拒写、ASR 去重、个人语境脱敏 |
+| I6 | `orchestrator` | app barrel、`server.mjs` 单轨接线、登记、package 与 runner | 不改 schema/Prompt/模型/预算/路由顺序 | 删除入口旧装配，无双轨，入口 SHA/行数收紧 |
+| V6 | `orchestrator` | 冻结差分影响验证 | 不放宽门禁或重复完整 backend | check、内容专项、影响门、backend |
+| R6 | `b5-content-reviewer` | 内容/后台任务/账户与媒体接线独立复审 | 只读 | blocker/P0/P1 清零 |
+
 ## 角色知识账
 
 | roleId | specialty | activeContext | ownership | dependencies | communications | evidence | status | next |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `orchestrator` | 契约冻结与串行集成 | `6eee683`；iteration-G3 / entrypoint-G2 | 共享文件与集成树 | 全部角色 | 完成 B4 接线、验证与复审 | 媒体 runtime 已收口；server 目标仍为只启动且 `<=100`，继续执行 `<=40` 硬门 | `active` | B5 领域与后台任务装配 |
+| `orchestrator` | 契约冻结与串行集成 | `342571d`；iteration-G3 / entrypoint-G2 | 共享文件与集成树 | 全部角色 | 完成 B5 接线、验证与复审 | 内容 runtime 已收口；server 目标仍为只启动且 `<=100`，继续执行 `<=40` 硬门 | `active` | B6 owner/statistics/admin/legacy HTTP |
 | `backend-scout` | B1-B7 符号与闭包 | `server.mjs` 3283 行 | 只读 | B1a | 建议 B1a→B1b→B1c | 无生产 runtime 骨架 | `closed` | 移交 B1a |
 | `frontend-scout` | F1-F10 页面与 lifecycle | `runtime.mjs` 5291 行 | 只读 | F1a | 先 application/router disposer | registry 未接线 | `closed` | 移交 F1a |
 | `gate-scout` | G4/G6 与测试真实性 | 20 条例外 | 只读 | C0/I | 报告 policy 冲突与死代码假绿 | G4/G6 按预期失败 | `closed` | 等待复核 |
@@ -131,6 +141,9 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 | `b4-media-worker` | 媒体 runtime 应用工厂 | `3d313e0`；B4 | media 内部模块、health 归一化与独立专项 | B4-S/I5 | 叶子模块交给调度者接线 | `00087be` 已集成，叶子工作树已移除 | `closed` | B5 |
 | `b4-media-validator` | B4 独立影响验证 | `6eee683` | 只读 | I5 | 重跑媒体/附件/认证/预算与 backend | check、影响门和 backend `83/83` 通过 | `closed` | B5 重新验证 |
 | `b4-media-reviewer` | 媒体账户、预算、清理与启动复审 | `6eee683` 固定差分 | 只读 | V5 | 只报生产可达 blocker/P0/P1 | GO，blocker/P0/P1=`0/0/0` | `closed` | 下一切片复审 |
+| `b5-content-worker` | 内容 runtime 应用工厂 | `0273b68`；B5 | content runtime、内部资源/后台/工作流模块与独立专项 | B5-S/I6 | 叶子模块交给调度者接线 | `cac2496` 已集成，叶子工作树已移除 | `closed` | B6 |
+| `b5-content-validator` | B5 影响验证 | `342571d` | 只读 | I6 | 重跑内容/任务/媒体与 backend | check、影响门和 backend `83/83` 通过；新专项已纳入后续 84 阶段 runner | `closed` | B6 重新验证 |
+| `b5-content-reviewer` | 内容、任务、账户与媒体接线复审 | `342571d` 固定差分 | 只读 | V6 | 只报生产可达 blocker/P0/P1 | GO，blocker/P0/P1=`0/0/0` | `closed` | 下一切片复审 |
 
 ## 已关闭问题与保留风险
 
@@ -408,4 +421,25 @@ npm run test:frontend-shell
   SHA `3c1202bae77ae2bd4d6668e6744adf683c197261e30c4d5776961f441554de29`；
   拥有路由 237 条、迁移例外 15 条，provider 入口例外已删除。
 - 当前进入 B5；未执行 push、tag、Release、Preview、部署、Base 写入、
+  云资源修改、真实付费调用或生产写入。
+
+## B5 内容 runtime 检查点
+
+- 本地提交：`cac2496`（content runtime、内部资源/后台/工作流模块与专项）、
+  `342571d`（共享接线、旧实现删除、登记、package 与 backend runner）。
+- `createContentRuntime()` 统一组合领域 repository adapter、记录服务、批注/
+  回收、内容附件、媒体子运行时、后台任务、ASR 入队、thought/capture/journal/
+  review/chat 工作流、用户模型提取与个人语境投影；内部按职责拆成三个子模块，
+  未把高热点从入口平移到单文件。
+- 账户隔离、持久幂等、后台并发/迟到结果、ASR 格式与去重、内容附件回收、
+  个人语境 owner 元数据均保持原契约；入口旧实现已删除，无双轨、动态扫描或
+  隐式自注册。
+- `npm run check`、B5 独立专项及 thoughts、captures/journals、transcription、
+  reviews/chat、tasks、personal-context、user-model、content-attachments、
+  media 影响门通过；完整 backend `83/83` 通过。新专项已加入后续 backend
+  runner，当前清单为 84 阶段。
+- 独立 reviewer GO，blocker/P0/P1=`0/0/0`。`server.mjs` 1473→1162 行，
+  SHA `8d6c6d0bf4de8d35aaf9c0e463f612dd395a1062046798edccf5cc9cb483f66e`；
+  65 个模块、237 条拥有路由和 15 条迁移例外不变。
+- 当前进入 B6；未执行 push、tag、Release、Preview、部署、Base 写入、
   云资源修改、真实付费调用或生产写入。

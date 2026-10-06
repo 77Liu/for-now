@@ -834,3 +834,23 @@ V0.5.8 只有在以下条件同时成立时才可关闭：
   Volcengine server。独立 reviewer GO，blocker/P0/P1=`0/0/0`。
 - 下一步进入 B5；仍未执行 push、Preview、部署、真实供应商调用、Base 写入
   或生产写入。
+
+### B5 内容 runtime 检查点
+
+- `cac2496` 新增 `createContentRuntime()` 与独立专项，内部按
+  `content/resources.mjs`、`content/background.mjs` 和
+  `content/workflows.mjs` 分责；`342571d` 完成 app barrel、`server.mjs`、
+  模块登记、package 与 backend runner 的串行接线。
+- 领域 repository adapter、记录服务、批注/回收、内容附件、媒体子运行时、
+  后台任务、ASR 入队、thought/capture/journal/review/chat 工作流、用户模型
+  提取和个人语境投影均由单一组合工厂创建；入口旧实现已删除，无运行时双轨，
+  也未引入动态扫描、自注册或无边界 barrel。
+- `server.mjs` 由 1473 行降至 1162 行，SHA 为
+  `8d6c6d0bf4de8d35aaf9c0e463f612dd395a1062046798edccf5cc9cb483f66e`；
+  拥有路由 237 条，G4 迁移例外 15 条，行数门继续收紧。
+- `npm run check`、content runtime、thoughts、captures/journals、reviews/chat、
+  tasks、personal-context、user-model、content-attachments 与 media 影响门
+  全部通过；完整 backend `83/83` 通过。新 content runtime 专项已加入后续
+  backend runner，当前清单为 84 阶段。
+- 独立 reviewer GO，blocker/P0/P1=`0/0/0`。下一步进入 B6；仍未执行
+  push、Preview、部署、真实供应商调用、Base 写入或生产写入。
