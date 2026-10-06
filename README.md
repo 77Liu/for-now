@@ -71,10 +71,9 @@ npm run start:local-test
   先关闭移动端记录/思绪、快捷语音、第三方费用和 250ms 同步开屏，再完成
   大入口纯组装化、私有媒体绕过 ECS、图片旋转、主账户开屏设置和系统协作
   闭环。Owner 已验收 V0.5.7 G7 与 V0.5.8 G1/G2；当前 03/04 已完成
-  B1-B4、F1、F2 slice 1 与 actions lifecycle slice，`server.mjs` 已降至
-  1473 行，`runtime.mjs` 已降至 5136 行；Owner 已明确要求服务端入口最终
-  只负责启动、不得超过 100 行，并继续执行项目既定 `<=40` 行目标。当前仍为
-  `iteration-G3 / entrypoint-G2`，下一步进入 B5 领域与后台任务装配，见
+  B1-B7、F1-F3、F4.1 与 F4.2，`server.mjs` 已降至 4 行，
+  `runtime.mjs` 已降至 4663 行；PostgreSQL 16.14 stable 已在隔离签名 Node
+  下通过，G4 已关闭。当前下一步为 F4.3 健康提交/sync，见
   `reports/iteration-plan-v0.5.8-2026-10-05.md`。
 - **`v0.1.1` 发布历史保留**：提交 `54a6326f14ca`、标签 `hotfix-v0.1.1-thought-answer` 在 v0.1.0 基础上修复了收集页思绪自动回答任务创建问题，现已由 v0.2.1 替代。
 - **`v0.1.0` 发布历史保留**：主应用功能提交 `5ae6a7035169` 和标签 `release-20260928-p00-p0-commercial-system` 已发布 P00/P0、商业化、AI 成本和五阶段架构设计，并由 v0.1.1 继承。

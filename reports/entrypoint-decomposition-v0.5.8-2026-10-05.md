@@ -1003,3 +1003,32 @@ V0.5.8 只有在以下条件同时成立时才可关闭：
   blocker/P0/P1=`0/0/0`。
 - 下一步进入 F4.2 健康媒体草稿与批量体重；未执行 push、tag、Release、
   Preview、部署、Base 写入、云资源修改、真实付费调用或生产写入。
+
+### F4.2 健康媒体 lifecycle 检查点
+
+- `c65b7f0` 将体重批次纯规则和账户/日期级 IndexedDB 草稿归入
+  `features/health/drafts.mjs`；`4e2d7b8` 增加操作后加载的 OCR/上传与提交
+  adapter；`c01ae57` 建立 daily controller、view 和专项；`2050489` 完成
+  runtime、descriptor、PWA、模块登记与 runner 单轨接线。
+- daily 页面首次进入显式加载 `controller + drafts + view`，严格保持
+  `3 modules / 40953 B`；OCR 与提交 adapter 只在用户操作后加载。模块不进入
+  install precache，默认首页隐藏 health 请求为 0。
+- controller 拥有健康图片草稿、预览 URL、表单回填、逐图体重状态和页面事件；
+  持久化按 owner/date 隔离，体重兼容旧日期 key 并迁入账户级 batch key。
+  直接 `/daily` 在账户就绪后的首次 render 补 hydrate；route unmount、日期
+  变化与账户 reset 均以 session/mount/revision ticket 拒绝旧结果。
+- 离页后本次新上传成功的路径会被单次补偿 discard，并从草稿同步清除
+  `uploadedPath/uploadRequestId` 后持久化；重新进入时控件恢复可用，已有旧
+  上传不被误删。多轮独立复审发现并关闭 3 个 P1，最终
+  blocker/P0/P1=`0/0/0`。
+- `runtime.mjs` 4962→4663 行，SHA
+  `b1e184eb4ca7532e10f0826bd8eeffe673777f6cb4f082bf979139e9bba2dfe2`；
+  API 68→66、DOM query 166→152、event binding 246→232、
+  template 696→670、timer 50；6 条 browser G6 例外继续精确绑定。
+- `npm run check`、F4 专项、PWA、web budget、完整 frontend `25/25`
+  `76874 ms` 与 Journey Smoke `15/15` `65658 ms` 通过，测试阈值未放宽。
+  下一步为 F4.3 日录展示/提交/sync 收口。
+- G4 的显式 PostgreSQL 16.14 预检已通过；首次 stable 因当前 Node 与
+  `sharp` Team ID 不同失败，随后使用项目既有临时 ad-hoc 签名 Node 隔离
+  重跑，AI budget、主 PostgreSQL 集成和 lifecycle/idempotency 三段全部
+  通过。服务端入口 G4 因而关闭；失败样本保留，未修改数据库断言或阈值。

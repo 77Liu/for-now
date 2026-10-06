@@ -2,11 +2,11 @@
 
 - 日期：2026-10-05
 - 起始基线：`f911cde4505d3434ab4afcf4b5614f8e828f4bcc`
-- 当前门禁：`iteration-G3 / entrypoint-G4-code`（PostgreSQL stable 待环境）
-- 当前状态：`f4.1-checkins-presentation-closed-g4-pg-pending`
+- 当前门禁：`iteration-G4 / entrypoint-G4-closed`
+- 当前状态：`f4.2-health-media-closed`
 - 活跃工作树：`5 / 6`（B6 叶子已清理）
-- 机器事实：3 个入口策略、67 个模块、237 条拥有路由、6 条迁移例外；
-  `server.mjs` 由 3283 行降至 4 行，`runtime.mjs` 当前为 4962 行
+- 机器事实：3 个入口策略、68 个模块、237 条拥有路由、6 条迁移例外；
+  `server.mjs` 由 3283 行降至 4 行，`runtime.mjs` 当前为 4663 行
 - 授权边界：允许本地代码、测试、文档与任务提交；不允许 push、tag、Release、
   Preview、部署、云资源修改、真实付费调用或生产写入
 
@@ -584,3 +584,97 @@ npm run test:frontend-shell
   `699.7/701.4 ms`。两路独立复审最终 blocker/P0/P1=`0/0/0`。
 - 下一步进入 F4.2 健康媒体草稿与批量体重；未执行 push、tag、Release、
   Preview、部署、Base 写入、云资源修改、真实付费调用或生产写入。
+
+## 2026-10-06 滚动调度周期 R1
+
+### 现场与候选
+
+- 触发：Owner 要求将“滚动迭代调度器”和“热点入口雷达”融合进现有 SOP，
+  同时保护并完成 F4.2。
+- 基线：`601e2d9dafda3b2e188c1d096817cec2ff6230a3`。
+- F4.2 代码检查点：`c65b7f0`、`4e2d7b8`、`c01ae57`、`2050489`；
+  当前代码候选为 `2050489`，运行时 SHA
+  `b1e184eb4ca7532e10f0826bd8eeffe673777f6cb4f082bf979139e9bba2dfe2`。
+- 工作树：实际注册 `5/6`。根工作区的 `SOP/worktree-lifecycle.md` 是未提交
+  提案，目标工作树没有该文件；本轮不复制、不清理根工作区，只把已核对原则
+  融入目标树现有 SOP。
+- 授权：本地代码、测试、SOP、事实文档和任务提交；不含 push、tag、Release、
+  Preview/生产部署、云资源、真实付费调用、Base 或生产写入。
+
+### 本轮事件
+
+| 时间（+08:00） | 事件 | 候选 / 证据 | 决定 |
+| --- | --- | --- | --- |
+| 14:45:41–14:46:30 | F4.2 四个本地提交形成 | `c65b7f0..2050489` | 固定代码候选，停止共享入口写入 |
+| 实际时间未完整记录 | 首轮独立复审 | 2 个 P1：空 owner 冷启、迟到上传租约 | 返回修复环 |
+| 实际时间未完整记录 | 定向复审 | 1 个 P1：重入后控件仍禁用 | 返回修复环 |
+| 实际时间未完整记录 | 最终复审 | blocker/P0/P1=`0/0/0` | F4.2 review 冻结 |
+| 实际时间未完整记录 | PG stable 首次运行 | 预检通过；`sharp` Team ID 导致主集成失败 | 记录环境失败，不改阈值 |
+| 实际时间未完整记录 | PG stable 隔离复跑 | ad-hoc 签名 Node；三段退出码 0 | 关闭 G4 PG 子门与 G4 |
+
+缺少 Agent 启动/结束的完整事件时间，因此不生成虚假耗时甘特图；Git 提交时间
+只作为里程碑，不解释为开发工时。
+
+### 当前角色名册
+
+| roleId / task | 实际角色 | ownership | evidence | status | next |
+| --- | --- | --- | --- | --- | --- |
+| `orchestrator` | 主调度/唯一集成写者 | F4.2 共享入口、SOP 和本轮事实文档 | 四个代码提交、分层门禁 | `active` | 文档检查点后进入 F4.3 |
+| `f4_2_review_close` | 独立 Reviewer | 只读固定差分 | 3 个 P1 关闭后 `0/0/0` | `closed` | F4.3 重新审查 |
+| `g4_pg_stable` | Validator | 只读 PG manifest 与本地临时资源 | 首次环境失败；隔离复跑三段通过 | `closed` | G6 候选漂移时按矩阵复验 |
+| `f5_f6_scout` | Scout | 只读媒体/语音边界 | F56-SI/SA、F5-M、F6-M 契约 | `closed` | 等 F4.3 与写槽 |
+
+本轮同时使用的 SubAgent 峰值为 3；五角色仅为预算，不是持续满载目标。只读
+角色未创建工作树，5/6 工作树状态保持不变。
+
+### 工作树处置
+
+| 路径 / 分支 | HEAD 与状态 | 处置 |
+| --- | --- | --- |
+| 根工作区 / `wip/root-dirty-before-v0.4.0-owner-integration` | `4eb5de7`，大量已跟踪与未跟踪治理/UI 现场 | 保留，不修改、不清理 |
+| `.worktrees/v0.4.0-g2-capability` | `82ca060`，`public/index.html` 脏 | 保留，归属待原 owner 收口 |
+| `.worktrees/v0.5.0-integration` | `505ac90`，恢复脚本与调试现场脏 | 保留，归属待原 owner 收口 |
+| `.worktrees/v0.5.8-p00-p0` | `2050489`，仅 SOP/状态文档待提交 | 当前唯一集成写树 |
+| `platform-console` / `platform/main` | `d157537`，工作树干净，独立产品线 | 保留，不并入主应用 |
+
+现有两个 stash 均保留：2026-10-01 的未完成产品定义编辑，以及 2026-09-30
+的 P3 探索资产。当前没有可在不判断归属的情况下安全删除的工作树。
+
+### 重排后的 DAG 与写集
+
+| taskId | dependsOn | owner | writeSet | gate / acceptance | state | next |
+| --- | --- | --- | --- | --- | --- | --- |
+| `F4.2` | F4.1 | orchestrator | health feature、runtime、module/SW/runner | check、F4、frontend、PWA、budget、Smoke、review 0/0/0 | `closed` | F4.3 |
+| `G4-PG` | B7 固定后端 manifest | validator | 无仓库写入 | PG 16.14 stable 三段通过 | `closed` | G6 漂移复验 |
+| `SOP-R1` | 调度定稿 | orchestrator | 两份 SOP、目录与本报告 | 入口/输出/退出门可追溯 | `closed` | F4.3 |
+| `F4.3` | F4.2 | orchestrator | health submit/sync 内部模块；runtime 接线单写 | 提交/同步/冲突/账户与离页反例 | `queued` | SOP-R1 后启动 |
+| `F56-SI` | F4.2 | 下一 Developer | `media/content-image-drafts.mjs` 与专项 | 账户隔离、部分上传、rollback、URL 回收 | `ready` | 仅有一个写槽时优先 |
+| `F56-SA` | F4.2 | 下一 Developer | `media/page-audio.mjs` 与专项 | 播放排他、迟到 blob、reset、URL 回收 | `ready` | 等写槽或与 SI 非重叠并行 |
+| `F5-M` | F56-SI/SA | 待分配 | thoughts media 内部文件与专项 | source version、账户、草稿 key、TTS 反例 | `blocked` | 等共享 API |
+| `F6-M` | F56-SI/SA | 待分配 | captures audio 内部文件与专项 | stream/timer/reset、上传回滚、旧 identity | `blocked` | 等共享 API |
+
+`F56-SI` 与 `F56-SA` 可并行准备，F5-M/F6-M 也可在 API 冻结后并行；当前
+只剩一个工作树槽，因此最多新增一条叶子写线。runtime、barrel、registry、
+runner 和 Service Worker 始终由 orchestrator 按 F5→F6 串行接线。
+
+### 关键等待与 ETA
+
+| 等待项 | 当前影响 | ETA |
+| --- | --- | --- |
+| F4.3 边界与反例冻结 | 当前唯一下一代码动作 | `待测`；缺少可比实际起止事件 |
+| F56-SI / F56-SA 写槽 | 仅剩 1 个工作树槽，不能同时新建两条写树 | F4.3 检查点后重排，时间 `待测` |
+| CDN/OSS/DNS/证书/费用授权 | 阻塞 19 的真实 Preview，不阻塞本地 F4/F5/F6 | 等 Owner 授权，不给工程 ETA |
+
+### F4.2 与门禁证据
+
+- `runtime.mjs` 4962→4663 行；API 68→66、DOM query 166→152、
+  event binding 246→232、template 696→670、timer 50；模块 68、路由 237、
+  browser G6 例外 6。
+- health daily 首次 closure `3 modules / 40953 B`，默认首页隐藏模块请求 0；
+  OCR 和提交 adapter 只在用户动作后加载，预算未放宽。
+- `npm run check`、`test:f4-features`、PWA、web budget、完整 frontend
+  `25/25` `76874 ms`、Journey Smoke `15/15` `65658 ms` 通过。
+- PostgreSQL 首次失败与隔离成功均保留；25 文件 manifest 为
+  `bf9cf4886b09b90bb349d3c7b2ae9d65d92b1474f69aa19988db0b86faf90116`。
+- 当前唯一下一动作：提交 SOP/事实文档检查点，然后冻结 F4.3；不执行任何
+  push、tag、Release、Preview、部署、Base、云资源或生产写入。

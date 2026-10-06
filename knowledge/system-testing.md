@@ -153,6 +153,7 @@
 | `scripts/opening-controller-regression.mjs` | R9.4-F1 参数、慢提示、内容 inert、退出/失败/重试状态机、背景异步、DPR、确定性雨滴物理和页面生命周期清理 |
 | `scripts/frontend-shell-regression.mjs` | 根 JS/CSS 薄入口、25 个 HTML 视图与 canonical path 登记一致、页面组切换、按需加载与离开页面清理 |
 | `scripts/frontend-feature-lifecycle-regression.mjs` | feature 延迟加载、重复进入、状态合并、AbortSignal、失败重试、清理、账户重置与 stop |
+| `scripts/frontend-health-feature-regression.mjs` | 健康媒体草稿的账户/日期隔离、直接 daily 冷启恢复、批次终态恢复、租约清理和重复挂载 |
 | `scripts/web-first-screen-budget-regression.mjs` | Fast 4G 下同步开屏 250ms、ready 后 140ms 退出、深链、失败重试、减少动态效果、首屏请求与媒体零预取预算 |
 | `scripts/url-history-regression.mjs` | 部署基路径下直接打开、旧路径归一、query replace、详情 push、前进后退、滚动恢复与删除对象安全回退 |
 | `scripts/ui-regression.mjs` | 页面主流程、G2 行动/习惯与寻迹渲染、账户切换、输入保留、异步结果、通知跳转、桌面与响应式布局 |
@@ -263,6 +264,26 @@ Store v15 新领域、元数据顺序与扩展字段、JSON `null` 幂等响应�
 PostgreSQL 脱敏快照和小物派生路径；机器证据见
 `../reports/g2-r4-postgres-2026-09-30.json`。生产仍必须
 使用受支持的标准 PostgreSQL 构建，本地兼容构建不构成生产配置或切换证据。
+
+2026-10-06 V0.5.8 G4 复验：目标工作树默认发现路径未命中，但显式设置
+`PG_TEST_BIN=/Users/bytedance/Documents/Codex/个人成长追踪/data/pg-integration-tools/postgresql-16.14/bin`
+后预检通过，版本为 PostgreSQL 16.14。随后 `test:postgres:stable` 在真实
+数据库业务阶段以退出码 1 停止：AI budget 的 3 项检查通过，
+`postgres-integration.mjs` 因当前 Node 进程与 `sharp` 原生模块 Team ID
+不同而得到 `IMAGE_PROCESSOR_UNAVAILABLE`，ledger 专项因 `&&` 短路未运行。
+25 个 PostgreSQL 相关文件的 manifest 前后均为
+`bf9cf4886b09b90bb349d3c7b2ae9d65d92b1474f69aa19988db0b86faf90116`；
+未连接生产且临时集群已清理。该结果证明工具路径可用，但不能关闭 G4；后续应
+使用现有 ad-hoc 签名 Node 隔离入口消除 `sharp` 环境冲突后，对固定候选重跑
+完整 stable 门，不修改业务断言或阈值。
+
+同日按上述既有 `scripts/test-node-binary.mjs` 方案，将当前 Node 复制到系统临时
+目录并 ad-hoc 签名，再把该目录中的 `node` 置于 `PATH` 首位，使用相同
+`PG_TEST_BIN` 重跑 `npm run test:postgres:stable`，退出码为 0。AI budget
+PostgreSQL 3 项、主 PostgreSQL 集成 46 项及 lifecycle/idempotency 的精确重放、
+冲突、永久清理、重启和跨进程序列化均通过；临时 Node 与数据库集群已清理。
+因此 V0.5.8 的 G4 PostgreSQL stable 子门可关闭。该证据绑定上述 25 文件
+manifest；F4.2 同期只修改浏览器模块和测试，不改变数据库候选。
 
 复现命令（macOS Terminal 中运行，或在 Codex 中批准本机端口访问后执行）：
 

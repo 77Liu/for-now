@@ -49,7 +49,13 @@
   所有新增生产文件均小于 500 行；未使用目录扫描、隐式自注册或运行时双轨。
   `server.mjs` 由 1048 行降至 4 行，9 条 server 例外归零，
   `check:entrypoints:g4` 和完整 system `416224 ms` 通过，独立复审
-  blocker/P0/P1 为 0/0/0。真实 PostgreSQL 16 因本机缺少工具未复验。
+  blocker/P0/P1 为 0/0/0。2026-10-06 使用显式 PostgreSQL 16.14 工具路径
+  与临时 ad-hoc 签名 Node 重跑 stable 三段通过，G4 已关闭。
+- V0.5.8 F4.2 已建立 `frontend.feature.health`，由 daily 路由显式加载
+  controller、草稿 lifecycle 与 view；OCR/上传和提交 adapter 再按用户动作
+  加载。账户/日期隔离、直接 daily 冷启、重复 mount、迟到结果、上传租约
+  补偿和批量体重恢复均有反例；`runtime.mjs` 由 4962 行降至 4663 行，
+  首页隐藏 health 请求为 0。
 - S3 AI 已拆出：`ai` 拥有设置归一化、场景选择、用量/单价快照、成本模拟/统计、额度预留、通用 SP/场景约束及调用/重试审计；`shared/persistence` 接管账户文档队列、备份和运行适配，HTTP 接管设置/成本接口。修复 JSON 并发设置覆盖。DeepSeek HTTP/SSE 与图片编码归 `infrastructure/ai-providers`；业务上下文继续迁移。
 - P00 提示词目录已接入：60 个系统提示、场景约束、业务任务和模型可见模板归 `prompts/versions/`；当前激活 `2026.10.02.2` 并保留此前版本。`infrastructure/prompt-catalog` 负责文件与摘要校验，`shared/prompts` 提供不可变运行快照和严格渲染；版本可独立固定，AI 审计记录版本与摘要，代码不保留提示词正文。五问候选提取场景只记录调用元数据与字符数，不在审计日志保存用户原文或完整 Prompt。
 - S3-08 思绪链已收口：整套思绪创建/编辑、内容块、状态、备注、追问、草稿、引子及前台流式回答均经同一领域/应用服务实现；删除继续调用回收事务。旧 URL 仅保留协议适配，不再在入口复制业务逻辑。

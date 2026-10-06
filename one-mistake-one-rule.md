@@ -188,3 +188,24 @@
 - 详细案例：见 `reports/hotfix-v0.5.7-audio-on-demand-2026-10-05.md`、
   `reports/v0.5.7-development-process-2026-10-05.md` 与
   `scripts/ui-regression.mjs`。
+
+## 延迟页面把 mount 当成账户就绪
+
+- 简要错误：路由 feature 在应用 state port 之前挂载，首次直接打开该页面时
+  用空 owner 恢复草稿；认证完成后没有再次 hydrate，导致草稿不可见且新草稿
+  无法持久化。
+- 正确规则：依赖账户的 lazy feature 必须区分“页面已挂载”和“账户已就绪”；
+  state 首次 render 时核对实际 owner，owner 缺失或变化时重新 hydrate，并用
+  session ticket 拒绝旧账户迟到结果。
+- 详细案例：见 `public/frontend/features/health/controller.mjs` 与
+  `scripts/frontend-health-feature-regression.mjs`。
+
+## 迟到上传只拒收结果却遗留资源
+
+- 简要错误：页面离开后拒绝迟到上传结果，但没有回收已生成附件，也没有清除
+  草稿中的上传路径/幂等键，重入后会引用已删除附件或留下孤儿租约。
+- 正确规则：上传型异步任务失效时，必须只对本次新产生的路径执行一次补偿清理，
+  同步清空对应草稿的路径与请求标识并持久化；既有路径不得误删，账户变化后
+  不得借新账户身份清理旧账户资源。
+- 详细案例：见 `public/frontend/features/health/recognition.mjs` 与
+  `scripts/ui-regression.mjs`。

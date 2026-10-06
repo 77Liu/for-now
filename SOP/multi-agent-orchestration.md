@@ -214,7 +214,50 @@ Reviewer：
 完整系统、候选和发布门仍按项目分层测试与发布 SOP 执行，不能用并行 Agent
 数量替代测试深度或 Owner 授权。
 
-## 11. 异常处理
+## 11. 事件驱动的滚动调度
+
+以下事件发生后，调度者必须做一次轻量重排：新批次开始、候选固定、Agent
+交付、review finding 新增或关闭、测试完成或失败、写集变化、资源释放，以及
+Owner 调整范围或授权。
+
+每次重排按固定顺序执行：
+
+1. 重读 HEAD、工作区、工作树和真实 Agent 名册，区分提交基线与未提交候选。
+2. 更新唯一 DAG 的依赖、状态、关键路径和证据有效性。
+3. 检查共享写者、工作树、端口、数据库、浏览器和外部授权等资源约束。
+4. 按“未关闭 blocker/P0/P1 → 当前验收关键路径 → 已就绪共享接线 →
+   下一叶子实现 → 下一批侦察”选择任务。
+5. 复用已有 Agent，关闭已结束或被替代任务；没有独立价值时允许待命。
+6. 回写角色账、决策、实际事件时间和唯一下一动作。
+
+默认最多两条不重叠叶子写线。调度者、Developer、Reviewer、Validator、Scout
+是角色预算，不是必须持续占满的 Agent 数；实际并发服从宿主槽位和有效任务数。
+工作树数量不能代替 Agent 数，提交时间不能代替任务起止时间。
+
+## 12. 候选、证据与资源
+
+Review GO 和测试通过必须绑定固定 SHA；候选尚未提交时，绑定暂存 tree 或包含
+文件路径、内容哈希和工作区状态的候选清单。候选代码、测试桩、依赖、配置或
+环境发生相关变化后，按证据失效矩阵重跑，不能沿用旧结论。
+
+调度事件至少记录：
+
+```text
+time / from / to / taskId / checkpointSha / candidateTreeOrManifest / status
+fact-or-decision / evidence / risk / blockedBy / affectedFiles / next
+```
+
+排队、返工和耗时只采用实际事件；缺少开始或结束证据时写 `unknown`。测试期间
+冻结候选或使用隔离副本；共享入口、registry、barrel、runner、Service Worker
+及公共契约继续由调度者单写。
+
+热点测量会触发拆分评估，但不自动扩大范围。候选必须先写明职责、状态/资源
+owner、依赖、公开 API、不变量、负例、写集、影响测试和旧实现删除条件，再由
+调度者决定是否进入当前 DAG。指标定义和边界仍以
+`knowledge/module-boundaries.json` 与 `knowledge/modularization-design.md`
+为准。
+
+## 13. 异常处理
 
 | 情况 | 处理 |
 | --- | --- |
@@ -226,12 +269,12 @@ Reviewer：
 | 工作树达到 6 个 | 不再新建；先集成、归档或删除已结束工作树 |
 | 需要外部授权 | 停在本地可验证边界，记录具体授权对象和恢复入口 |
 
-## 12. 最小调度记录模板
+## 14. 最小调度记录模板
 
 ```text
 # <范围> 多 Agent 调度记录
 
-基线 / 当前 HEAD / 工作树数量 / 授权边界
+基线 / 当前 HEAD / 候选 tree 或 manifest / 工作树数量 / 授权边界
 
 ## 任务图
 节点、依赖、所有权、验收、接入顺序
@@ -241,7 +284,7 @@ roleId、specialty、activeContext、ownership、dependencies、
 communications、evidence、status、next
 
 ## 决策与通信
-时间、发送方、接收方、事实、决定、影响
+实际时间、发送方、接收方、事实、决定、风险、阻塞、影响文件、下一交接
 
 ## 验证与审查
 命令、结果、失败样本、review findings、关闭提交
