@@ -3,10 +3,10 @@
 - 日期：2026-10-05
 - 起始基线：`f911cde4505d3434ab4afcf4b5614f8e828f4bcc`
 - 当前门禁：`iteration-G3 / entrypoint-G4-code`（PostgreSQL stable 待环境）
-- 当前状态：`f3.1-notifications-closed-g4-pg-pending`
+- 当前状态：`f3.2-annotations-closed-g4-pg-pending`
 - 活跃工作树：`5 / 6`（B6 叶子已清理）
 - 机器事实：3 个入口策略、65 个模块、237 条拥有路由、6 条迁移例外；
-  `server.mjs` 由 3283 行降至 4 行，`runtime.mjs` 当前为 5130 行
+  `server.mjs` 由 3283 行降至 4 行，`runtime.mjs` 当前为 5002 行
 - 授权边界：允许本地代码、测试、文档与任务提交；不允许 push、tag、Release、
   Preview、部署、云资源修改、真实付费调用或生产写入
 
@@ -105,7 +105,7 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 
 | roleId | specialty | activeContext | ownership | dependencies | communications | evidence | status | next |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `orchestrator` | 契约冻结与串行集成 | `dfbcaf5`；iteration-G3 / entrypoint-G4-code | 共享文件与集成树 | 全部角色 | 完成 B7 与 F3.1 接线、验证及复审 | server 只启动且 4 行；notifications 已 lazy；PG stable 待环境 | `active` | F3.2/F3.3、F4-F10 / G5-G7 |
+| `orchestrator` | 契约冻结与串行集成 | `78e5fc1`；iteration-G3 / entrypoint-G4-code | 共享文件与集成树 | 全部角色 | 完成 B7、F3.1/F3.2 接线、验证及复审 | server 只启动且 4 行；notifications/annotations lifecycle 已迁出；PG stable 待环境 | `active` | F3.3、F4-F10 / G5-G7 |
 | `backend-scout` | B1-B7 符号与闭包 | `server.mjs` 3283 行 | 只读 | B1a | 建议 B1a→B1b→B1c | 无生产 runtime 骨架 | `closed` | 移交 B1a |
 | `frontend-scout` | F1-F10 页面与 lifecycle | `runtime.mjs` 5291 行 | 只读 | F1a | 先 application/router disposer | registry 未接线 | `closed` | 移交 F1a |
 | `gate-scout` | G4/G6 与测试真实性 | 20 条例外 | 只读 | C0/I | 报告 policy 冲突与死代码假绿 | G4/G6 按预期失败 | `closed` | 等待复核 |
@@ -150,6 +150,8 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 | `b7-server-reviewer` | 服务端组合根、路由顺序与生命周期复审 | `17fca0d` 前冻结差分 | 只读 | B7 | 只报生产可达 blocker/P0/P1 | GO；真实 JSON 启动、ready、SIGTERM 与日志复验通过，`0/0/0` | `closed` | F3-F10 |
 | `f3-notifications-worker` | 通知 presenter 与页面 lifecycle | `a45cba7`；F3.1 | notifications 内部模块与专项 | I8 | 叶子模块交给调度者接线 | controller/presenter 与迟到隔离专项已集成 | `closed` | F3.2 |
 | `f3-notifications-reviewers` | 深链、离页接管与 PWA 复审 | `dfbcaf5` 固定差分 | 只读 | I8 | 只报生产可达 blocker/P0/P1 | 两项 P1 修复后 GO，blocker/P0/P1=`0/0/0` | `closed` | F3.2 重新验证 |
+| `f3-annotations-worker` | 批注 presenter、DOM 与账户 lifecycle | `78e5fc1`；F3.2 | annotations 内部模块与专项 | I9 | 由调度者串行接入 runtime/media/shell | 旧实现单轨删除；专项、UI、PWA/预算通过 | `closed` | F3.3 |
+| `f3-annotations-reviewers` | 加载降级、账户迟到和跨 root 复审 | `78e5fc1` 固定差分 | 只读 | I9 | 只报生产可达 blocker/P0/P1 | 三项 P1 修复后 GO，blocker/P0/P1=`0/0/0` | `closed` | F3.3 重新验证 |
 
 ## 已关闭问题与保留风险
 
@@ -508,3 +510,27 @@ npm run test:frontend-shell
   reviewer GO，blocker/P0/P1=`0/0/0`。
 - 当前下一步为 F3.2 批注 lifecycle；未执行 push、tag、Release、Preview、
   部署、Base 写入、云资源修改、真实付费调用或生产写入。
+
+## F3.2 批注 lifecycle 检查点
+
+- 本地提交：`78e5fc1`。新增 `features/annotations` 的 model/view/operations/
+  controller 与专项；原 `thought-discovery/annotation-tools.mjs` 已迁移，
+  runtime 内批注状态、锚点、面板、草稿和事件监听单轨删除。
+- controller 经 shell 生命周期挂载，重复 mount 不叠加监听，reset 清理 timer、
+  animation frame 和私有 DOM；请求使用 account/session/activation 票据，
+  回复、互转和删除额外绑定发起时 root。评论图片与通知通过窄端口复用。
+- 显式动态 import 不阻断应用启动，失败缓存会清除供后续 session 重试；失效
+  session 不提示，controller 不可用时 books 状态刷新安全降级。Service Worker
+  缓存版本升至 `cike-shell-v0.5.8-7`，无目录扫描、隐式注册或双轨。
+- `runtime.mjs` 5130→5002 行，SHA
+  `eea3d7a1065273c38583255bdd5564382b6cba145400e9ba647aa07608662787`；
+  API 69→68、DOM query 203→171、event binding 269→247、timer 60→54、
+  template 772→722，剩余 6 条 browser G6 例外。
+- `npm run check`、F3 专项、PWA、web budget、frontend `22/22`
+  `76841 ms`、Journey Smoke `15/15` `62771 ms` 通过；runtime 静态闭包
+  `21 / 776503 B`、隐藏 feature 请求 0，预算未放宽。首次 frontend 末项
+  因测试服务启动超时失败，独立 mobile 与完整原命令复跑均通过。
+- 两轮独立复审共发现并关闭 3 个 P1，最终 GO，
+  blocker/P0/P1=`0/0/0`。当前下一步为 F3.3 后台结果与跨内容定位；未执行
+  push、tag、Release、Preview、部署、Base 写入、云资源修改、真实付费调用
+  或生产写入。

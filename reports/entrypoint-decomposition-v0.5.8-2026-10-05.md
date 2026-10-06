@@ -919,3 +919,33 @@ V0.5.8 只有在以下条件同时成立时才可关闭：
   GO，blocker/P0/P1=`0/0/0`。下一步进入 F3.2 批注 lifecycle；未执行
   push、tag、Release、真实 Preview/生产部署、Base 写入、云资源修改、
   真实付费调用或生产写入。
+
+### F3.2 批注 lifecycle 检查点
+
+- `78e5fc1` 新增 `frontend.feature.annotations`，将批注 presenter、root
+  解析、锚点/行计数、评论面板、神鸡草稿和创建/回复/互转/删除事件从
+  `runtime.mjs` 单轨迁出；模块拆为 model/view/operations/controller，
+  每个生产文件不超过 500 行。
+- controller 由 shell 按账户生命周期挂载，重复 mount 不叠加 document/
+  window/visualViewport 监听，reset 会取消 timer 与 animation frame、清空
+  私有 DOM；异步结果绑定发起时的账户、session、activation 和 root。
+- 内容图片仍由 media 端口负责，批注仅接收 comment draft 的窄接口；通知刷新、
+  跨内容跳转和思绪 trace 清理由显式端口注入，没有建立万能 locator、目录扫描、
+  隐式自注册或运行时双轨。
+- annotations 使用显式动态 import，模块失败不阻断应用启动，失败 Promise
+  会清空供后续 session 重试，失效 session 不显示错误；Service Worker
+  预缓存该全局交互模块，离线壳能力不退化。
+- `runtime.mjs` 由 5130 行降至 5002 行，SHA
+  `eea3d7a1065273c38583255bdd5564382b6cba145400e9ba647aa07608662787`；
+  API 字面量 69→68、DOM query 203→171、event binding 269→247、
+  timer 60→54、template 772→722，仍为 6 条 browser G6 迁移例外。
+- `npm run check`、F3 专项、PWA、web budget、完整 frontend `22/22`
+  `76841 ms` 与 Journey Smoke `15/15` `62771 ms` 通过；runtime 静态
+  闭包 `21 modules / 776503 B`，首页隐藏 feature 请求为 0，预算未放宽。
+  首次完整 frontend 的末项因测试服务启动超时失败，独立 mobile 通过后完整
+  原命令复跑全绿。
+- 独立复审先后发现模块失败阻断启动/无法重试、失效 session 提示、空 controller
+  的 books 状态刷新三个 P1；均修复并补回归，最终 reviewer GO，
+  blocker/P0/P1=`0/0/0`。下一步进入 F3.3 后台结果与跨内容定位；未执行
+  push、tag、Release、真实 Preview/生产部署、Base 写入、云资源修改、
+  真实付费调用或生产写入。

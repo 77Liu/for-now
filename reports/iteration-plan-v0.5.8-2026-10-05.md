@@ -6,7 +6,8 @@
 本地开发。`V0.5.8-13/15/14/16/20/02` 已完成工作区验证，`03/04`
 已完成 B1-B7、F1、F2 slice 1 及 actions lifecycle slice；服务端入口
 G4 代码与本地系统门已通过，真实 PostgreSQL 稳定门待具备工具后复验。
-F3.1 通知页 lifecycle 已完成，下一步进入 F3.2 批注 lifecycle；尚未进入
+F3.1 通知页与 F3.2 批注 lifecycle 已完成，下一步进入 F3.3 后台结果与
+跨内容定位；尚未进入
 Preview 或发布。
 
 执行依据：`SOP/iteration-planning.md`、`SOP/iteration-retrospective.md`、
@@ -122,12 +123,12 @@ V0.5.8 的 14 条需求均关联版本记录 `reczz28JaO7yXu1K`，发布状态�
 | 20 | `reczz28Jd8F4oH1y` | 工作区已验证未部署 | `91a10b7..88d37e1`：同步 HTML 开屏、雨景生命周期、真实 paint 性能门、FCP 后入口、退出/失败/清理、watchdog 锁存及 PWA 升级预算通过 |
 | 02 | `reczz28JPdCVUwBD` | 工作区已验证未部署 | `6730597`：三类真实入口、组合 API/import binding/factory 链、G4/G6 例外和 feature lifecycle 已机器冻结；最终独立复审 GO |
 | 03 | `reczz28JPdCVWPzV` | 工作区已验证未部署 | `f3724c4`、`47d5a39`、`a35dad8..9ba9f64`、`280887c`、`855200c`、`947c5da`、`00087be`、`6eee683`、`cac2496`、`342571d`、`5bc5a80`、`2320d1a`、`17fca0d`：B1-B7 已迁出 Store/投影、本地测试/账户、AI、媒体/内容 runtime、HTTP 编排和服务生命周期；`server.mjs` 3283→4 行，entrypoint-G4 代码门通过，PG stable 待环境 |
-| 04 | `reczz28JPdCVXtsA` | 进行中 | `e7d99d6..dfbcaf5`：F1 application/router/ports、export/feedback/discovery/actions 与 F3.1 notifications 生命周期已接入；完整 home 延至 F10，后续进入 F3.2/F3.3 与 F4-F10 |
+| 04 | `reczz28JPdCVXtsA` | 进行中 | `e7d99d6..78e5fc1`：F1 application/router/ports、export/feedback/discovery/actions、F3.1 notifications 与 F3.2 annotations 生命周期已接入；完整 home 延至 F10，后续进入 F3.3 与 F4-F10 |
 
 13、15、14、16、20 都是行为修复，已在现有入口上完成并固定自动化反例；
 共享热点由集成负责人串行接线。02 已冻结结构契约；03 已完成 B1-B7，
 04 已完成 F1、F2 slice 1 与 actions lifecycle slice；完整 F2/G5 尚未完成，
-下一步进入 F3.2 批注 lifecycle，剩余浏览器入口仍只允许单写集成。Owner 于 2026-10-06
+下一步进入 F3.3 后台结果与跨内容定位，剩余浏览器入口仍只允许单写集成。Owner 于 2026-10-06
 重申 `server.mjs` 只能负责启动，硬上限 100 行、目标不超过 40 行；不得用
 无边界 barrel 或动态目录扫描制造表面瘦身。
 
@@ -411,10 +412,24 @@ flowchart TD
   保持 0。`check`、F3 专项、PWA、web budget、frontend `21/21`
   `81488 ms`、Journey Smoke `15/15` 通过，最终 reviewer
   blocker/P0/P1=`0/0/0`。
+- F3.2 由 `78e5fc1` 将批注 presenter、锚点/行计数、评论面板、草稿与
+  创建/回复/互转/删除事件迁入 `features/annotations`，通过显式 ports
+  复用内容图片、通知和跨内容导航；shell 按账户挂载并在 reset 时清理监听、
+  timer、animation frame 与私有 DOM。
+- annotations 模块为显式延迟加载，加载失败不阻断应用启动，失败 Promise
+  会清除以供后续 session 重试；旧 session 的迟到请求和加载失败不得写状态、
+  DOM 或提示。`runtime.mjs` 5130→5002 行，SHA
+  `eea3d7a1065273c38583255bdd5564382b6cba145400e9ba647aa07608662787`；
+  API 69→68、DOM query 203→171、event binding 269→247、timer 60→54、
+  template 772→722，6 条 browser G6 例外继续精确绑定。
+- `npm run check`、F3 专项、PWA、web budget、frontend `22/22`
+  `76841 ms`、Journey Smoke `15/15` `62771 ms` 通过；runtime 静态闭包
+  `21 / 776503 B`，首页隐藏 feature 请求为 0，预算未放宽。独立复审先后
+  关闭 3 个 P1，最终 reviewer GO，blocker/P0/P1=`0/0/0`。
 
 当前未完成：
 
-- 下一步进入 F3.2/F3.3，再继续 F4-F10，完成 browser runtime 收口与
+- 下一步进入 F3.3，再继续 F4-F10，完成 browser runtime 收口与
   G5-G7；服务端入口已
   收口为 4 行并删除全部 server 迁移例外。
 - `reczz28Jd8F4nDzn` 仍等待真实 CDN/OSS/DNS/证书/费用授权。

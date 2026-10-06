@@ -151,7 +151,7 @@ V0.5.8 当前范围是 6 条 P00、8 条 P0。Base 最近一次回读为需求
 | V0.5.8-20 | P00 | 工作区已验证未部署 | `91a10b7..88d37e1`：同步 HTML 接入 R9.4-F1；FCP 与退出硬门、FCP 后入口请求、secondary 失败和 5 秒 watchdog 迟到锁存均通过 |
 | V0.5.8-02 | P00 | 工作区已验证未部署 | `6730597`：三类真实入口、组合 API/import binding/factory 链、G4/G6 例外和 feature 生命周期已机器冻结；check、前后端、PWA、性能与独立复审通过 |
 | V0.5.8-03 | P00 | 进行中 | `f3724c4`、`47d5a39`、`a35dad8..9ba9f64`、`280887c`、`855200c`、`947c5da`、`00087be`、`6eee683`：B1-B4 已迁出 Store/投影、本地测试/账户、AI 与媒体 runtime；`server.mjs` 3283→1473 行，下一步 B5，最终硬门 `<=100`、目标 `<=40` |
-| V0.5.8-04 | P00 | 进行中 | `e7d99d6..dfbcaf5`：F1 application/router/ports、export/feedback/discovery/actions 与 F3.1 notifications 生命周期已接入；runtime 5291→5130 行，批注/后台结果/定位及完整 home 继续后续切片 |
+| V0.5.8-04 | P00 | 进行中 | `e7d99d6..78e5fc1`：F1 application/router/ports、export/feedback/discovery/actions、F3.1 notifications 与 F3.2 annotations 生命周期已接入；runtime 5291→5002 行，后台结果/定位及完整 home 继续后续切片 |
 | V0.5.8-17 | P0 | 待开始 | 共享图片草稿支持逐图 90 度旋转，预览/上传/识别/派生一致 |
 | V0.5.8-18 | P0 | 待开始 | 实现 `proxy/oss-signed/cdn-signed`、短签名、302 和代理回滚 |
 | V0.5.8-19 | P0 | 阻塞 | 需 Owner 单独授权 CDN/OSS/DNS/证书/费用配置后做真实 Preview 验收 |
