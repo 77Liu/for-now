@@ -10,7 +10,6 @@ import { createLatexRenderer, escapeHtml, plainPreview, presentError, renderMark
 import {
   createPageEffects,
   createActionsCoordinator,
-  buildHomeMoodSeries,
   createHomeMemoryPool,
   selectHomeMemories,
   applyKeepsakeImageCandidates,
@@ -30,6 +29,12 @@ import {
   weightBatchRecordInput,
   createOnboardingV2Controller
 } from "../features/index.mjs";
+import {
+  BASE_CHECKIN_METRICS,
+  checkinMetricValue,
+  createCheckinMetricConfig
+} from "../features/checkins-model/index.mjs";
+import { createCheckinsFeatureController } from "../features/checkins/index.mjs";
 import {
   AUDIO_MAX_DURATION_MS,
   captureAudioIdentity,
@@ -110,7 +115,7 @@ const refreshCoordinator=createRefreshCoordinator({
 const KEEPSAKE_PAGE_SIZE=12,KEEPSAKE_PREFETCH_MARGIN_PX=160,BACKGROUND_RESULTS_RETRY_LIMIT=3;
 const LOCAL_TEST_VIEW_SCOPES=Object.freeze({today:"today",daily:"daily",captures:"captures",books:"books",quotes:"quotes",keepsakes:"keepsakes",journals:"journals",thoughts:"thoughts",discovery:"discovery",together:"together",review:"review",statistics:"statistics","ai-cost":"statistics",commercialization:"statistics","personal-context":"personal-context",feedback:"feedback",export:"export",trash:"trash"});
 const localTestScopeLoads=new Map();
-const baseMetrics={mood:{label:"情绪",anchors:["非常难受","有些低落","平稳、无明显起伏","感觉不错","轻盈而愉快"]},energy:{label:"精力",anchors:["几乎耗尽","勉强支撑","够用，但有限","精力较好","充沛、想行动"]},stress:{label:"压力",anchors:["快要撑不住","很紧绷","压力明显但可应对","有一点紧绷","身心松弛"]},sleep:{label:"睡眠",anchors:["几乎没休息好","明显不足","基本够用","睡得不错","充分恢复"]}};
+const baseMetrics=BASE_CHECKIN_METRICS;
 const trendLabels=Object.fromEntries(Object.entries(baseMetrics).map(([k,v])=>[k,v.label]));
 const llmTiers=["lite","mid","high","ultra"];
 const llmEfforts=["none","high","max"];
@@ -123,6 +128,7 @@ const responseStyleScenes=["thoughtDraft","thoughtAnswer","followUpAnswer","chat
 let pageRouter,switchView,restoreView;
 let runtimeApplication=null,runtimeFeatureRegistry=null,runtimeStatePort=null,applicationLifecycleReady=false;
 let backgroundResultsController=null,backgroundResultsLoadErrorReported=false,backgroundResultsRetryAttempts=0;
+const checkinsFeatureControllers=new Set();
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
 let activeDate=currentLocalDate,activeDailyType="sleep",activeWeightTrendMetric="weight",healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]},healthPreviewUrls=[],thoughtFilter="all",thoughtSortMode="occurred",quoteTimer,quoteScrollFrame=0,quoteSkyIndex=0,answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],captureDraftTags=[],answerTaskSerial=0,activeAnswerTaskId=0,pendingBookImages={cover:null,recognition:null},bookPreviewUrls={cover:"",recognition:""},bookImagePasteTarget="recognition",editingBookId="",activeBookId="",bookCreatorOpen=false,captureComposerOpen=false,journalDraftRestored=false,pendingBookNoteId="",activeBookFeatureNoteId="",bookDetailCondensed=false,activeKeepsakeId="",activeKeepsakeView="presentation",activeKeepsakeOriginalPath="",currentUser=null,statisticsData=null,statisticsRequestSerial=0,aiCostPlan=null,aiCostStatistics=null,aiBudgetStatus=null,aiBudgetEtag="",aiCostRequestSerial=0,architectureSurface=null,architectureStage=0,architectureTerm="",architectureRequestSerial=0,commercializationSurface=null,commercialMode="",commercialRequestSerial=0,commercialPreviewTimer=0,trashItems=[],notificationUnreadCount=0,chainDraftVersion=0,healthParseSerial=0,bookParseSerial=0,localTestConfig=null,localTestStatusOverride="",onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,personalContext=null,personalContextRequestSerial=0,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.7",releaseVersion="0.5.7",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
@@ -1783,8 +1789,8 @@ function feedCountLabel(scope,visible,total,unit){
     :`${total} ${unit}`
 }
 function feedSearchEmpty(label){return contentState({title:`没有匹配的${label}`,body:"换一个关键词，原有记录不会受到影响。"})}
-function metricConfig(){const custom=Object.fromEntries((state.customMetrics||[]).map(x=>[x.id,{label:x.name,anchors:[x.low,"偏低","居中","偏高",x.high],custom:true}]));return{...baseMetrics,...custom}}
-function metricValue(checkin,key,custom){return custom?checkin.custom?.[key]:checkin[key]}
+function metricConfig(){return createCheckinMetricConfig(state.customMetrics)}
+const metricValue=checkinMetricValue;
 function metricReference(key,custom){const eligible=state.checkins.filter(x=>x.occurredOn<=activeDate).sort((a,b)=>b.occurredOn.localeCompare(a.occurredOn)||eventTimestamp(b).localeCompare(eventTimestamp(a)));const previous=eligible.map(x=>metricValue(x,key,custom)).find(x=>Number.isFinite(Number(x)));const history=eligible.slice(0,30).map(x=>Number(metricValue(x,key,custom))).filter(Number.isFinite);return{previous:previous==null?null:Number(previous),average:avg(history)}}
 function metricMarker(kind,value,label){if(!Number.isFinite(value))return"";const position=Math.max(0,Math.min(100,(value-1)*25)),thumbOffset=11-position*.22,left=`calc(${position}% + ${thumbOffset.toFixed(3)}px)`;return `<span class="metric-history-marker ${kind}" style="left:${left}" data-position="${position}" role="img" aria-label="${label} ${value.toFixed(2)}" title="${label} ${value.toFixed(2)}"></span>`}
 function sliderTemplate(key,cfg){const ref=metricReference(key,cfg.custom),value=ref.previous??(ref.average==null?3:Math.round(ref.average));return `<div class="metric unconfirmed"><div class="metric-top"><span class="metric-label">${escapeHtml(cfg.label)}</span><span class="anchor" id="${key}-anchor">待确认 · ${escapeHtml(cfg.anchors[value-1])}</span><button class="note-toggle" type="button" data-note="${key}" aria-expanded="false">＋备注</button></div><div class="metric-scale">${metricMarker("previous",ref.previous,"上一次")}${metricMarker("average",ref.average,"近30次平均")}<input type="range" id="metric-${key}" data-metric="${key}" data-custom="${cfg.custom?"1":"0"}" data-confirmed="false" min="1" max="5" value="${value}" step="1" aria-label="${escapeHtml(cfg.label)} 1到5，必须确认"></div><div class="range-labels"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span></div><input class="note-field" id="${key}-note" placeholder="可选：补充一句话" maxlength="800"></div>`}
@@ -2247,26 +2253,8 @@ function editJournal(id){
   $("#journal-id").value=item.id;$("#journal-title").value=item.title||"";resetOccurrenceInput($("#journal-date"),item);$("#journal-content").value=item.content;$("#journal-tags").value=(item.tags||[]).map(tag=>`#${tag}`).join(" ");$("#journal-submit").textContent="保存修改";$("#journal-cancel").hidden=false;$("#journal-status").textContent=item.reflections?.length?"修改原文后，已有回望仍会保留并标记为旧版本。":"正在编辑已有日记";$("#journal-form").scrollIntoView({behavior:"smooth",block:"start"});$("#journal-content").focus();
 }
 
-function renderCheckinHistory(items){
-  const list=$("#checkin-history"),ordered=[...items].sort((a,b)=>eventTimestamp(b).localeCompare(eventTimestamp(a))),cfg=metricConfig();
-  if(!ordered.length){list.innerHTML="";return}
-  list.innerHTML=`<div class="checkin-history-heading"><b>单次记录</b><span>${ordered.length} 次</span></div><div class="checkin-history-list">${ordered.map(item=>{const values=Object.entries(cfg).map(([key,meta])=>{const value=metricValue(item,key,meta.custom);return Number.isFinite(Number(value))?`<span>${escapeHtml(meta.label)} ${Number(value)}</span>`:""}).filter(Boolean).join(""),factors=item.factors?.length?`因素：${item.factors.map(escapeHtml).join("、")}`:"未记录因素",syncing=item._sync?.status,actions=syncing?`<span class="checkin-sync-state ${escapeHtml(syncing)}">${syncing==="pending"?"待同步":"正在同步"}</span>`:`<span><button type="button" data-edit-checkin="${escapeHtml(item.id)}" aria-label="编辑 ${escapeHtml(eventDate(item))} ${formatTime(eventTimestamp(item))} 的状态">编辑</button><button type="button" class="danger" data-delete-checkin="${escapeHtml(item.id)}" aria-label="删除这次状态">删除</button></span>`;return `<article class="checkin-history-entry${syncing?" is-syncing":""}" data-checkin-id="${escapeHtml(item.id)}"><header><time>${escapeHtml(eventDate(item))} · ${formatTime(eventTimestamp(item))}</time>${actions}</header><div>${values}</div><p>${factors}</p></article>`}).join("")}</div>`;
-}
-function renderStateChart(){
-  const days=Number($("#chart-range")?.value||30),cutoff=new Date(`${activeDate}T12:00:00`);cutoff.setDate(cutoff.getDate()-days+1);
-  const available=state.checkins.filter(item=>item.occurredOn<=activeDate),eligible=available.filter(item=>new Date(`${item.occurredOn}T12:00:00`)>=cutoff),groups=new Map();
-  for(const item of eligible){if(!groups.has(item.occurredOn))groups.set(item.occurredOn,[]);groups.get(item.occurredOn).push(item)}
-  renderCheckinHistory(available);
-  const dates=[...groups.keys()].sort();if(!dates.length){$("#state-chart").innerHTML=contentState({title:"还没有状态趋势",body:"第一次记录只会形成起点，后续记录会按日期连成趋势。",action:{command:"new-state",label:"记录此刻状态"}});return}
-  const mean=(items,getter)=>{const values=items.map(getter).map(Number).filter(Number.isFinite);return values.length?avg(values):null},round=value=>Math.round(value*100)/100;
-  const daily=dates.map(date=>{const entries=groups.get(date),mood=mean(entries,x=>x.mood),energy=mean(entries,x=>x.energy),stress=mean(entries,x=>x.stress),sleep=mean(entries,x=>x.sleep),composite=[mood,energy,stress,sleep].every(Number.isFinite)?0.3*mood+0.3*energy+0.25*sleep+0.15*stress:null;return{date,entries:entries.length,mood,energy,stress,sleep,composite,score:composite==null?null:Math.round((composite-1)*25),custom:Object.fromEntries((state.customMetrics||[]).map(metric=>[metric.id,mean(entries,x=>x.custom?.[metric.id])]))}});
-  const palette=["#7885c8","#70a68c","#d39a78","#a990c8","#7aa8b8","#b2a56b","#cb87a1"],series=[{key:"mood",label:"情绪",color:palette[0]},{key:"energy",label:"精力",color:palette[1]},{key:"stress",label:"压力",color:palette[2]},{key:"sleep",label:"睡眠",color:palette[3]},...(state.customMetrics||[]).map((metric,index)=>({key:`custom.${metric.id}`,label:metric.name,color:palette[(index+4)%palette.length]}))];
-  const valueOf=(day,key)=>key.startsWith("custom.")?day.custom[key.slice(7)]:day[key],width=900,height=250,left=42,right=18,top=20,bottom=42,x=index=>daily.length===1?width/2:left+index*(width-left-right)/(daily.length-1),y=value=>top+(5-value)*(height-top-bottom)/4,pathFor=key=>daily.map((day,index)=>({index,value:valueOf(day,key)})).filter(point=>Number.isFinite(point.value)).map((point,index)=>`${index?"L":"M"}${x(point.index)},${y(point.value)}`).join(" ");
-  const labels=daily.map((day,index)=>(index===0||index===daily.length-1||daily.length<=7)?`<text x="${x(index)}" y="232" text-anchor="middle">${day.date.slice(5)}</text>`:"").join(""),grid=[1,2,3,4,5].map(value=>`<line x1="${left}" x2="${width-right}" y1="${y(value)}" y2="${y(value)}"/><text x="25" y="${y(value)+4}">${value}</text>`).join("");
-  const paleLines=series.map(item=>{const path=pathFor(item.key),dots=daily.map((day,index)=>{const value=valueOf(day,item.key);return Number.isFinite(value)?`<circle class="metric-dot" style="--series:${item.color}" cx="${x(index)}" cy="${y(value)}" r="3.5"><title>${day.date} · ${item.label} ${round(value)} · ${day.entries} 次提交均值</title></circle>`:""}).join("");return path?`<path class="metric-line" style="--series:${item.color}" d="${path}"/>${dots}`:""}).join("");
-  const scorePath=pathFor("composite"),scoreDots=daily.map((day,index)=>Number.isFinite(day.composite)?`<circle class="score-dot" cx="${x(index)}" cy="${y(day.composite)}" r="5"><title>${day.date} · 综合 ${day.score}/100 · ${day.entries} 次提交均值</title></circle>`:"").join(""),current=daily.at(-1),summary=[["情绪",current.mood],["精力",current.energy],["压力",current.stress],["睡眠",current.sleep]].map(([label,value])=>`${label} ${round(value)}`).join(" · ");
-  $("#state-chart").innerHTML=`<div class="chart-stats"><span><b>${daily.length}</b> 个记录日</span><span><b>${eligible.length}</b> 次提交</span><span><b>${current.score??"—"}</b> 最新综合分</span></div><div class="chart-day-summary"><b>${current.date}</b><span>${current.entries} 次提交取均值：${summary}</span></div><div class="chart-legend">${series.map(item=>`<span><i style="--series:${item.color}"></i>${escapeHtml(item.label)}</span>`).join("")}<span class="score-legend"><i></i>综合状态</span></div><svg class="timeline-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="所有状态指标的每日均值与综合状态趋势"><g class="chart-grid">${grid}${labels}</g>${paleLines}<path class="score-line" d="${scorePath}"/>${scoreDots}</svg><p class="score-method">所有指标均为 1 最差、5 最好。综合分 = 情绪 30% + 精力 30% + 睡眠 25% + 压力状态 15%，再换算为 0–100。自定义指标只展示趋势，不擅自计入总分。</p>`
-}
+function renderCheckinSurfaces(domains){for(const controller of checkinsFeatureControllers)controller.renderPresentation({snapshot:state,changedDomains:domains})}
+function renderStateChart(){renderCheckinSurfaces(["checkins","review"])}
 function renderChat(){const chats=state.chats.filter(x=>eventDate(x)===activeDate);$("#chat-history").innerHTML=chats.length?[...chats].reverse().map(x=>`<div class="chat-message user" data-chat-id="${x.id}" data-chat-part="message"><div class="markdown-content">${renderMarkdown(x.message)}</div></div><div class="chat-message agent" data-chat-id="${x.id}" data-chat-part="answer">${contextReceiptMarkup(x.contextReceipt)}<div class="markdown-content">${renderMarkdown(x.answer)}</div><button class="subtle-action danger chat-delete" type="button" data-chat-delete="${x.id}">删除对话</button></div>`).join(""):contentState({title:"这一天还没有对话",body:"发送问题后，共参会结合你已保存的记录回答。",action:{focus:"chat-input",label:"开始提问"}});chats.forEach(item=>{const rootKey=commentRootKey("chat",item.id);markCommentTarget($(`[data-chat-id="${CSS.escape(item.id)}"][data-chat-part="message"]>.markdown-content`),rootKey,"message");markCommentTarget($(`[data-chat-id="${CSS.escape(item.id)}"][data-chat-part="answer"]>.markdown-content`),rootKey,"answer")});renderLatex($("#chat-history"));applyCommentAnchors($("#chat-history"))}
 function experimentCard(item){const start=new Date(item.createdAt),elapsed=Math.max(1,Math.floor((Date.now()-start.getTime())/86400000)+1),relevant=state.checkins.filter(x=>new Date(eventTimestamp(x))>=start),withFactor=relevant.filter(x=>(x.factors||[]).includes(item.factor)),withoutFactor=relevant.filter(x=>!(x.factors||[]).includes(item.factor)),metric=baseMetrics[item.outcome]?item.outcome:"mood",withAvg=avg(withFactor.map(x=>x[metric]).filter(Number.isFinite)),withoutAvg=avg(withoutFactor.map(x=>x[metric]).filter(Number.isFinite)),enough=withFactor.length>=3&&withoutFactor.length>=3,result=enough?`有因素 ${withAvg.toFixed(1)} / 无因素 ${withoutAvg.toFixed(1)}，差值 ${(withAvg-withoutAvg).toFixed(1)}`:`有因素 ${withFactor.length} 次 / 无因素 ${withoutFactor.length} 次；两边各满 3 次后开始显示线索`;return `<article class="experiment-card"><div class="section-title"><b>${escapeHtml(item.hypothesis)}</b><span>${Math.min(elapsed,item.duration)} / ${item.duration} 天</span></div><div class="experiment-progress"><i style="width:${Math.min(100,elapsed/item.duration*100)}%"></i></div><p>每天若做了“<b>${escapeHtml(item.factor)}</b>”，请在今日因素中填入完全相同的词；观察 ${trendLabels[metric]}。</p><footer><small>${escapeHtml(result)}。相关不等于因果。</small><button class="subtle-action danger" type="button" data-experiment-delete="${item.id}">删除</button></footer></article>`}
 
@@ -3492,39 +3480,7 @@ function renderHomeKeepsake(){
   container.replaceChildren(button);
   if(item)requestAnimationFrame(()=>setupKeepsakePlacements(container))
 }
-function renderHomeMood(){
-  const svg=$("#home-mood-sparkline");
-  if(!svg)return;
-  const series=buildHomeMoodSeries(state.checkins||[],activeDate,7),available=series.filter(item=>Number.isFinite(item.value)),namespace="http://www.w3.org/2000/svg",x=index=>10+index*260/Math.max(1,series.length-1),y=value=>49-(value-1)*10;
-  svg.replaceChildren();
-  if(!available.length){
-    const label=document.createElementNS(namespace,"text");
-    label.setAttribute("x","3");label.setAttribute("y","34");label.textContent="还没有记录";
-    svg.append(label);svg.setAttribute("aria-label","近 7 日还没有情绪记录");return
-  }
-  let segment=[];
-  const drawSegment=()=>{
-    if(segment.length>1){
-      const line=document.createElementNS(namespace,"polyline");
-      line.setAttribute("points",segment.map(item=>`${x(item.index)},${y(item.value)}`).join(" "));
-      svg.append(line)
-    }
-    segment=[]
-  };
-  series.forEach((item,index)=>{
-    if(Number.isFinite(item.value))segment.push({...item,index});
-    else drawSegment()
-  });
-  drawSegment();
-  series.forEach((item,index)=>{
-    if(!Number.isFinite(item.value))return;
-    const point=document.createElementNS(namespace,"circle"),title=document.createElementNS(namespace,"title");
-    point.setAttribute("cx",x(index));point.setAttribute("cy",y(item.value));point.setAttribute("r","2.6");
-    title.textContent=`${item.date} · 情绪 ${item.value.toFixed(2)} · ${item.count} 次记录均值`;
-    point.append(title);svg.append(point)
-  });
-  svg.setAttribute("aria-label",`近 7 日有 ${available.length} 个情绪记录日；查看趋势可读详细数值。`)
-}
+function renderHomeMood(){renderCheckinSurfaces(["checkins"])}
 function renderHome(){
   renderHomeMemories();
   renderHomeKeepsake();
@@ -3948,6 +3904,10 @@ function createPageFeatureDescriptors(){
     root:()=>$(`#view-${view}`),
     load:()=>loadLegacyFeatureModule().then(module=>module.createLegacyPageController({view}))
   }]));
+  const withCheckins=delegate=>{
+    const controller=createCheckinsFeatureController({delegate,getSnapshot:()=>state,getActiveDate:()=>activeDate,document,emptyStateMarkup:contentState});
+    checkinsFeatureControllers.add(controller);return controller
+  };
   descriptors.today={
     root:()=>$("#view-today"),
     load:()=>loadLegacyFeatureModule().then(module=>{
@@ -3965,7 +3925,7 @@ function createPageFeatureDescriptors(){
         }catch(error){workspaceModuleRequest=null;if(bridge===current&&!current.signal?.aborted)showToast(`行动与习惯加载失败：${error.message}`,"error");return false}
         finally{if(bridge===current)current.loading=false}
       };
-      return module.createLegacyPageController({
+      const delegate=module.createLegacyPageController({
         view:"today",
         onMount:context=>{
           const details=context.root.querySelector(".home-v02-secondary"),toggle=()=>void loadWorkspace();
@@ -3977,8 +3937,13 @@ function createPageFeatureDescriptors(){
           const current=bridge;bridge=null;current?.details?.removeEventListener("toggle",current.toggle);current?.unsubscribe?.();if(current?.mounted)workspaceController?.unmount()
         },
         onResetSession:()=>{workspaceController?.resetSession();workspaceController=null;actionsCoordinator.resetSession()}
-      })
+      });
+      return withCheckins(delegate)
     })
+  };
+  descriptors.review={
+    root:()=>$("#view-review"),
+    load:()=>loadLegacyFeatureModule().then(module=>withCheckins(module.createLegacyPageController({view:"review"})))
   };
   descriptors.export={
     root:()=>$("#view-export"),
@@ -4221,7 +4186,7 @@ document.addEventListener("click",async e=>{
   if(button.dataset.journalDelete){const id=button.dataset.journalDelete,item=(state.journals||[]).find(value=>value.id===id);if(!item||!confirm("将这篇日记及其助手回望移入回收站？"))return;button.disabled=true;try{await requestV1(`/api/v1/journals/${encodeURIComponent(id)}`,{method:"DELETE",headers:{"if-match":`"${item.version||1}"`}},{domains:["journals"],recoverCommitted:true,projection:{kind:"record.delete",domain:"journals",id},onQueued:record=>applyPendingProjection(record)});void refreshState("journals").catch(error=>showToast(`日记已移除，但列表刷新失败：${error.message}`,"error"));showToast("日记已移入回收站")}catch(err){if(err.syncStatus==="pending")showToast("日记将在网络恢复后移入回收站");else{await refreshState("journals").catch(()=>{});showToast(err.message,"error");button.disabled=false}}return}
   if(button.dataset.journalReflect){const id=button.dataset.journalReflect;button.disabled=true;try{await runAnswerInModal({title:"回望这篇日记",scene:"diaryReflection",requestCall:onEvent=>requestStream(`/api/journals/${id}/reflect`,{method:"POST",body:"{}"},onEvent),onDone:()=>refreshState("journals")});showToast("日记回望已保存")}catch(err){showToast(err.message,"error")}finally{button.disabled=false}}
 });
-$$("[data-active-date]").forEach(input=>input.addEventListener("change",async e=>{chainDraftVersion+=1;healthParseSerial+=1;captureActiveWeightBatchItem();await persistHealthImageDraft("weight").catch(()=>{});activeDate=e.target.value||activeDate;healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=[];healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]};for(const draft of Object.values(healthImageDrafts))Object.assign(draft,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0});renderDate();renderSliders();renderDailyRecords();renderThoughts();renderStateChart();renderHomeMood();renderChat();void restoreHealthImageDrafts(currentUser?.id,activeDate).catch(error=>showToast(`健康截图恢复失败：${error.message}`,"error"))}));$("#chart-range").addEventListener("change",renderStateChart);
+$$("[data-active-date]").forEach(input=>input.addEventListener("change",async e=>{chainDraftVersion+=1;healthParseSerial+=1;captureActiveWeightBatchItem();await persistHealthImageDraft("weight").catch(()=>{});activeDate=e.target.value||activeDate;healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=[];healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]};for(const draft of Object.values(healthImageDrafts))Object.assign(draft,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0});renderDate();renderSliders();renderDailyRecords();renderThoughts();renderStateChart();renderHomeMood();renderChat();void restoreHealthImageDrafts(currentUser?.id,activeDate).catch(error=>showToast(`健康截图恢复失败：${error.message}`,"error"))}));
 $$("[data-daily-tab]").forEach(button=>button.addEventListener("click",()=>switchDailyType(button.dataset.dailyTab)));
 document.addEventListener("click",event=>{const button=event.target.closest("[data-weight-trend]");if(!button)return;activeWeightTrendMetric=button.dataset.weightTrend||"weight";renderDailyRecords()});
 $("#health-images").addEventListener("change",e=>{if(!setHealthImages(e.currentTarget.files,"本地文件"))e.currentTarget.value=""});

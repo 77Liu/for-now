@@ -96,6 +96,11 @@ for (const specifier of dynamicSpecifiers) {
     `${specifier} must not have an eager import`
   );
 }
+assert.equal(
+  analysis.surface.imports.some(entry => !entry.dynamic && entry.specifier === "../features/checkins/index.mjs"),
+  true,
+  "the default-route checkins controller must stay in the static runtime closure"
+);
 for (const removed of [
   "renderActionsWorkspace",
   "runActionCommand",
@@ -133,8 +138,15 @@ assert.deepEqual(descriptors.get("notifications"), {
   feature: "frontend.feature.notifications",
   specifier: "../features/notifications/index.mjs"
 });
+for (const view of ["today", "review"]) {
+  assert.deepEqual(descriptors.get(view), {
+    page: view,
+    feature: "frontend.feature.checkins",
+    specifier: "../features/checkins/index.mjs"
+  });
+}
 for (const [view, descriptor] of descriptors) {
-  if (["export", "feedback", "discovery", "notifications"].includes(view)) continue;
+  if (["today", "review", "export", "feedback", "discovery", "notifications"].includes(view)) continue;
   assert.deepEqual(descriptor, {
     page: view,
     feature: "frontend.feature.legacy-pages",

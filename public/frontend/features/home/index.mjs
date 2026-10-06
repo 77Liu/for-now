@@ -1,16 +1,9 @@
 const text = value => typeof value === "string" ? value.trim() : "";
 const timestamp = item => text(item?.occurredAt || item?.createdAt);
-const dateKeyPattern = /^\d{4}-\d{2}-\d{2}$/;
 const typeOrder = ["thought", "book", "quote"];
 
 function dateKey(item) {
   return text(item?.occurredOn) || timestamp(item).slice(0, 10);
-}
-
-function shiftDateKey(value, offset) {
-  if (!dateKeyPattern.test(value)) return "";
-  const [year, month, day] = value.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, day + offset)).toISOString().slice(0, 10);
 }
 
 export function isAiDerivedHomeContent(item = {}) {
@@ -124,23 +117,4 @@ export function selectHomeMemories(pool = [], {
   }
 
   return selected;
-}
-
-export function buildHomeMoodSeries(checkins = [], endDate, days = 7) {
-  if (!dateKeyPattern.test(endDate) || !Number.isInteger(days) || days < 1) return [];
-  const dates = Array.from({ length: days }, (_, index) => shiftDateKey(endDate, index - days + 1));
-  const groups = new Map(dates.map(date => [date, []]));
-  for (const item of checkins) {
-    const date = dateKey(item);
-    const mood = Number(item?.mood);
-    if (groups.has(date) && Number.isFinite(mood) && mood >= 1 && mood <= 5) groups.get(date).push(mood);
-  }
-  return dates.map(date => {
-    const values = groups.get(date);
-    return {
-      date,
-      count: values.length,
-      value: values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null
-    };
-  });
 }

@@ -43,7 +43,6 @@ export {
   projectActionCommand
 } from "./actions/index.mjs";
 export {
-  buildHomeMoodSeries,
   createHomeMemoryPool,
   isAiDerivedHomeContent,
   selectHomeMemories

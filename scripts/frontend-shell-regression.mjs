@@ -3,11 +3,11 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  buildHomeMoodSeries,
   createHomeMemoryPool,
   createPageEffects,
   selectHomeMemories
 } from "../public/frontend/features/index.mjs";
+import { buildHomeMoodSeries } from "../public/frontend/features/checkins-model/index.mjs";
 import {
   applicationRouteUrl,
   canonicalPagePaths,

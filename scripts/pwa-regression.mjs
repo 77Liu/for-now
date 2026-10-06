@@ -299,7 +299,7 @@ assert.equal(startupTimeout.observers.every(observer => observer.disconnected), 
 
 const worker = await fs.readFile(publicPath("service-worker.js"), "utf8");
 assert.match(worker, /const CACHE_VERSION\s*=\s*["'][^"']+["']/);
-assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.8-8["']/);
+assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.8-9["']/);
 const assetSet = name => {
   const source = worker.match(new RegExp(`const ${name}\\s*=\\s*\\[([\\s\\S]*?)\\];`))?.[1] || "";
   return new Set([...source.matchAll(/["']([^"']+)["']/g)].map(match => match[1]));
@@ -330,6 +330,10 @@ for (const asset of [
   "frontend/features/annotations/operations.mjs",
   "frontend/features/annotations/presentation.mjs",
   "frontend/features/annotations/view.mjs",
+  "frontend/features/checkins-model/index.mjs",
+  "frontend/features/checkins/controller.mjs",
+  "frontend/features/checkins/index.mjs",
+  "frontend/features/checkins/presentation.mjs",
   "frontend/sync/index.mjs",
   "frontend/styles/application.css",
   "frontend/styles/r8.css"
