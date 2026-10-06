@@ -38,9 +38,7 @@ import {
   createWeightBatchItems,
   nextWeightBatchIndex,
   weightBatchRecordInput,
-  createOnboardingV2Controller,
-  notificationEntryMarkup,
-  transitionNotificationRetry
+  createOnboardingV2Controller
 } from "../features/index.mjs";
 import {
   AUDIO_MAX_DURATION_MS,
@@ -75,10 +73,11 @@ const appEntryUrl=new URL("../../app.js",import.meta.url);
 const applicationBasePath=new URL(".",appEntryUrl).pathname.replace(/\/$/,"")||"/";
 const initialRuntimeView=resolveApplicationRoute(location,{basePath:applicationBasePath}).view;
 const portFactoriesRequest=globalThis.__forNowPortsRequest||import("./ports.mjs");
-const legacyFeatureModuleRequest=globalThis.__forNowLegacyFeatureRequest||(["export","feedback","discovery"].includes(initialRuntimeView)?null:import("../features/legacy-pages/index.mjs"));
+const legacyFeatureModuleRequest=globalThis.__forNowLegacyFeatureRequest||(["export","feedback","discovery","notifications"].includes(initialRuntimeView)?null:import("../features/legacy-pages/index.mjs"));
 const exportFeatureModuleRequest=globalThis.__forNowExportFeatureRequest||(initialRuntimeView==="export"?import("../features/export/index.mjs"):null);
 const feedbackFeatureModuleRequest=globalThis.__forNowFeedbackFeatureRequest||(initialRuntimeView==="feedback"?import("../features/feedback/index.mjs"):null);
 const discoveryFeatureModuleRequest=globalThis.__forNowDiscoveryFeatureRequest||(initialRuntimeView==="discovery"?import("../features/thought-discovery/index.mjs"):null);
+const notificationsFeatureModuleRequest=globalThis.__forNowNotificationsFeatureRequest||(initialRuntimeView==="notifications"?import("../features/notifications/index.mjs"):null);
 const loadLegacyFeatureModule=()=>legacyFeatureModuleRequest||import("../features/legacy-pages/index.mjs");
 const loadActionsFeatureModule=()=>import("../features/actions/controller.mjs");
 const startupPerformanceEnabled=new URLSearchParams(location.search).has("native-performance");
@@ -136,7 +135,7 @@ let quoteTagStates={
   quote:createTagMultiSelectState(),
   selectionQuote:createTagMultiSelectState()
 };
-let notificationRetryingTaskIds=[],keepsakeDraftTags=[];
+let keepsakeDraftTags=[];
 let annotationUiDrafts={};
 const expandedLongContentKeys=new Set();
 let homeMemoryKeys=[],homeMemoryByKey=new Map(),homeKeepsakeId="",homeEditorTrigger=null,activePageAudio=null,voicePreviewAudio=null,voicePreviewObjectUrl="",voicePreviewAbortController=null,voicePreviewVoice="";
@@ -1774,25 +1773,25 @@ async function loadTrash(){
   try{const result=await request("/api/trash");if(owner!==currentUser?.id||session!==sessionSerial)return false;trashItems=result.items||[];renderTrash();status.textContent="";return true}
   catch(error){if(owner===currentUser?.id&&session===sessionSerial){status.textContent="";$("#trash-list").innerHTML=contentState({kind:"failure",title:"暂时无法读取回收站",body:"已删除的记录仍按原保留期保存。请检查网络后重试。",action:{command:"retry-trash",label:"重新读取"}})}return false}
 }
-function renderNotifications(){
-  const items=state.notifications||[],tasks=new Map((state.aiTasks||[]).map(task=>[task.id,task])),unread=Number(state.notificationUnread??notificationUnreadCount)||items.filter(item=>!item.readAt&&["succeeded","failed","stale","cancelled"].includes(item.status)).length;
+function notificationUnread(snapshot=state){
+  const items=snapshot.notifications||[];
+  return Number(snapshot.notificationUnread??notificationUnreadCount)||items.filter(item=>!item.readAt&&["succeeded","failed","stale","cancelled"].includes(item.status)).length
+}
+function renderNotificationSummary(){
+  const unread=notificationUnread();
   $("#notification-dot").hidden=!unread;
-  $("#notification-list").innerHTML=items.length
-    ?items.map(item=>notificationEntryMarkup(item,tasks.get(item.taskId),{retryingTaskIds:notificationRetryingTaskIds,formatTimestamp:formatDate})).join("")
-    :notificationsLoadState==="failure"
-      ?contentState({kind:"failure",title:"暂时无法读取通知",body:"后台任务和已有结果没有被删除。请检查网络后重试。",action:{command:"retry-notifications",label:"重新读取"}})
-      :notificationsLoadState==="loading"
-        ?contentState({kind:"loading",title:"正在读取通知",body:"后台任务会继续运行，不需要停留在当前页面。"})
-        :contentState({title:"没有需要处理的通知",body:"后台任务开始后，进度和结果会出现在这里。",action:{view:"mine",label:"返回我的"}});
-  $("#notifications-status").textContent=notificationsLoadState==="failure"&&items.length?"任务进度暂未更新，可以重新进入本页读取。":"";
   renderMine();
+}
+function publishNotificationState(){
+  renderNotificationSummary();
+  runtimeFeatureRegistry?.notifyState(state,new Set(["notifications","aiTasks","notificationUnread"]))
 }
 function scheduleNotificationPoll(){
   clearTimeout(notificationTimer);
   if(!(state.aiTasks||[]).some(task=>["queued","running","cancelling"].includes(task.status)))return;
   notificationTimer=setTimeout(async()=>{try{await loadNotifications()}finally{scheduleNotificationPoll()}},1800);
 }
-async function loadNotifications(){const owner=currentUser?.id,session=sessionSerial;notificationsLoadState="loading";renderNotifications();try{const [notifications,tasks]=await Promise.all([request("/api/notifications"),request("/api/ai-tasks")]);if(owner!==currentUser?.id||session!==sessionSerial)return false;state.notifications=notifications.items||[];state.aiTasks=tasks.items||[];notificationUnreadCount=Number(notifications.unread)||0;state.notificationUnread=notificationUnreadCount;notificationsLoadState="ready";renderNotifications();await backgroundResultController?.sync(state.aiTasks);return true}catch(error){if(owner===currentUser?.id&&session===sessionSerial){notificationsLoadState="failure";renderNotifications()}return false}}
+async function loadNotifications(){const owner=currentUser?.id,session=sessionSerial;notificationsLoadState="loading";publishNotificationState();try{const [notifications,tasks]=await Promise.all([request("/api/notifications"),request("/api/ai-tasks")]);if(owner!==currentUser?.id||session!==sessionSerial)return false;state.notifications=notifications.items||[];state.aiTasks=tasks.items||[];notificationUnreadCount=Number(notifications.unread)||0;state.notificationUnread=notificationUnreadCount;notificationsLoadState="ready";publishNotificationState();await backgroundResultController?.sync(state.aiTasks);return true}catch(error){if(owner===currentUser?.id&&session===sessionSerial){notificationsLoadState="failure";publishNotificationState()}return false}}
 async function openAiTaskTarget(task,notification){
   const resourceType=task?.resourceType||notification?.resourceType||"thought",targetId=task?.targetId||notification?.targetId,subtargetId=task?.subtargetId||notification?.subtargetId||"",kind=task?.kind||"thoughtAnswer";
   const destination={thought:["thoughts","thoughts"],capture:["captures","captures"],journal:["journals","journals"],chat:["together","chat"],analysis:["review","review"],book:["books","books"],quote:["quotes","quotes"]}[resourceType]||["thoughts","thoughts"];
@@ -3759,7 +3758,6 @@ function renderVisibleRoute(){
   else if(view==="keepsakes"){renderKeepsakes();renderKeepsakeBatch()}
   else if(view==="quotes")renderQuotes();
   else if(view==="settings"){renderSettings();renderLocalTestSettings()}
-  else if(view==="notifications")renderNotifications();
   else if(view==="trash")renderTrash();
   else if(view==="account")renderAccountUsers();
   else if(view==="personal-context")renderPersonalContext()
@@ -3844,7 +3842,7 @@ function clearPrivateSessionState(){
   onboardingV2Controller.reset();
   clearTimeout(thoughtSearchTimer);thoughtSearchTimer=0;
   resetState();routeDataReady=false;routeDataRequestSerial+=1;routeLoadFailureKey="";loadedRouteKey="";fullRouteStateLoaded=false;activeThoughtRouteId="";activeRouteResult=null;quoteTagStates={quote:createTagMultiSelectState(),selectionQuote:createTagMultiSelectState()};llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationRetryingTaskIds=[];notificationsLoadState="idle";actionsCoordinator.resetSession();personalContext=null;personalContextRequestSerial=0;accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.5.7";homeMemoryKeys=[];homeMemoryByKey=new Map();homeKeepsakeId="";closeHomeEditors({restoreFocus:false});$("#capture-editor").hidden=true;document.body.classList.remove("capture-editor-open");resetOwnerSurfaces();invalidatePageLoads();draftTags=[];captureDraftTags=[];keepsakeDraftTags=[];captureComposerOpen=false;captureEditorTrigger=null;suspendedCaptureCreateDraft=null;pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";commentPanelOpen=false;annotationUiDrafts={};expandedLongContentKeys.clear();
+  activeAnswerTaskId=++answerTaskSerial;clearTimeout(notificationTimer);clearTimeout(keepsakeDerivativeRefreshTimer);keepsakeDerivativeRefreshTimer=0;answerDraft="";answerReasoningDraft="";trashItems=[];aiCostPlan=null;aiCostStatistics=null;aiBudgetStatus=null;aiBudgetEtag="";statisticsData=null;localTestConfig=null;localTestStatusOverride="";localTestScopeLoads.clear();onboardingSchema=null;onboardingMode="quick";onboardingDraftAnswers={};onboardingHydrated=false;notificationUnreadCount=0;notificationsLoadState="idle";actionsCoordinator.resetSession();personalContext=null;personalContextRequestSerial=0;accountUsers=[];accountUsersLoadState="idle";governanceUrl="";appVersion="0.5.7";homeMemoryKeys=[];homeMemoryByKey=new Map();homeKeepsakeId="";closeHomeEditors({restoreFocus:false});$("#capture-editor").hidden=true;document.body.classList.remove("capture-editor-open");resetOwnerSurfaces();invalidatePageLoads();draftTags=[];captureDraftTags=[];keepsakeDraftTags=[];captureComposerOpen=false;captureEditorTrigger=null;suspendedCaptureCreateDraft=null;pendingSelection=null;activeCommentRoot="";activeAnnotationId="";activeShenjiComposer="";commentPanelOpen=false;annotationUiDrafts={};expandedLongContentKeys.clear();
   healthParseSerial+=1;latestHealthRequest=0;healthPreviewUrls.forEach(url=>URL.revokeObjectURL(url));healthPreviewUrls=[];healthFiles={sleep:[],heartRate:[],weight:[],exercise:[]};for(const draft of Object.values(healthImageDrafts))Object.assign(draft,{date:"",items:[],result:null,submissionOperationId:"",activeIndex:0});
   bookParseSerial+=1;for(const url of Object.values(bookPreviewUrls))if(url)URL.revokeObjectURL(url);bookPreviewUrls={cover:"",recognition:""};pendingBookImages={cover:null,recognition:null};editingBookId="";activeBookId="";activeBookFeatureNoteId="";bookCreatorOpen=false;bookDetailCondensed=false;
   keepsakeEditor.segmentSerial+=1;keepsakeEditor.file=null;keepsakeEditor.sourceDataUrl="";keepsakeEditor.sourceImage=null;keepsakeEditor.sourceCanvas=null;keepsakeEditor.maskCanvas=null;keepsakeEditor.autoBase=null;keepsakeEditor.history=[];
@@ -3953,7 +3951,7 @@ backgroundResultController=createBackgroundResultController({
   restoreViewState:view=>{if(!view)return;window.scrollTo(view.x,view.y);if($("#comment-panel"))$("#comment-panel").scrollTop=view.commentScroll;scheduleAnnotationLineCounts()},
   onError:error=>showToast(`后台结果同步失败：${error.message}`,"error")
 });
-subscribeState((next,wanted,thoughtOptions)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);if(wanted.has("dailyRecords"))renderDailyRecords();if(wanted.has("captures")){renderCaptures();renderCaptureTagComposer()}if(wanted.has("journals"))renderJournals();if(wanted.has("thoughts")){if(thoughtOptions.patchOnly&&thoughtOptions.chainId)patchThoughtTaskTarget({targetId:thoughtOptions.chainId});else{renderThoughts(thoughtOptions);renderCaptures();renderTagComposer();renderCaptureTagComposer();renderHomeMemories()}reconcileThoughtRoute()}if(wanted.has("speech")){if(!wanted.has("captures")&&!wanted.has("thoughts"))renderCaptures();if(!wanted.has("thoughts"))renderThoughts();renderSettings()}if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("review"))renderReview();if(wanted.has("books")){renderBooks();renderHomeMemories();if(activeCommentRoot.startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes")){renderKeepsakes();renderHomeKeepsake()}if(wanted.has("quotes")){renderQuotes();renderHomeMemories()}if(wanted.has("comments"))renderCommentPanel();renderNotifications()});
+subscribeState((next,wanted,thoughtOptions)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);if(wanted.has("dailyRecords"))renderDailyRecords();if(wanted.has("captures")){renderCaptures();renderCaptureTagComposer()}if(wanted.has("journals"))renderJournals();if(wanted.has("thoughts")){if(thoughtOptions.patchOnly&&thoughtOptions.chainId)patchThoughtTaskTarget({targetId:thoughtOptions.chainId});else{renderThoughts(thoughtOptions);renderCaptures();renderTagComposer();renderCaptureTagComposer();renderHomeMemories()}reconcileThoughtRoute()}if(wanted.has("speech")){if(!wanted.has("captures")&&!wanted.has("thoughts"))renderCaptures();if(!wanted.has("thoughts"))renderThoughts();renderSettings()}if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("review"))renderReview();if(wanted.has("books")){renderBooks();renderHomeMemories();if(activeCommentRoot.startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes")){renderKeepsakes();renderHomeKeepsake()}if(wanted.has("quotes")){renderQuotes();renderHomeMemories()}if(wanted.has("comments"))renderCommentPanel();renderNotificationSummary()});
 function setAnswerModalStep(step){const order=["context","thinking","answer","done"],current=order.indexOf(step);$$("#ai-answer-progress li").forEach((item,index)=>{item.classList.toggle("active",index===current);item.classList.toggle("done",index<current||(step==="done"&&index===current))})}
 function closeAnswerModal(){const modal=$("#ai-answer-modal"),busy=modal.dataset.busy==="true";modal.hidden=true;if(busy)showToast("回答继续在后台生成，完成后会提醒。")}
 async function runAnswerInModal({title,scene="thoughtAnswer",requestCall,onDone,isCurrent=()=>true}){
@@ -4089,6 +4087,21 @@ function createPageFeatureDescriptors(){
       restorePendingStatuses:pendingDiscoveryStatuses
     }))
   };
+  descriptors.notifications={
+    root:()=>$("#view-notifications"),
+    load:()=>(notificationsFeatureModuleRequest||import("../features/notifications/index.mjs")).then(module=>module.createNotificationsFeatureController({
+      request,
+      loadNotifications:()=>withFeatureScope("notifications",loadNotifications),
+      scheduleNotificationPoll,
+      openTarget:openAiTaskTarget,
+      getSnapshot:()=>state,
+      getLoadState:()=>notificationsLoadState,
+      getUnreadCount:()=>notificationUnreadCount,
+      isSessionReady:()=>Boolean(currentUser?.id),
+      formatDate,
+      showToast
+    }))
+  };
   return descriptors
 }
 const pageEffects={...createPageEffects({
@@ -4100,8 +4113,6 @@ const pageEffects={...createPageEffects({
   loadAiCostPlan,
   loadArchitecture,
   loadCommercialization,
-  loadNotifications,
-  scheduleNotificationPoll,
   loadTrash
 }),today:()=>actionsCoordinator.load(),"personal-context":()=>loadPersonalContext(),account:()=>loadAccountUsers()};
 const lazyPageEffects=new Proxy(pageEffects,{get(target,view){const effect=target[view];if(typeof effect!=="function"||typeof view!=="string"||!LOCAL_TEST_VIEW_SCOPES[view])return effect;return()=>{void ensureLocalTestViewScope(view).then(async ready=>{if(!ready)return;await effect();await restorePendingProjections()})}}});
@@ -4183,22 +4194,6 @@ $("#trash-purge-selected").addEventListener("click",async e=>{
     await loadTrash();showToast(`已永久清理 ${result.purged} 条记录`);
   }catch(error){$("#trash-status").textContent=error.message}
   finally{button.disabled=!$("[data-trash-select]:checked")}
-});
-$("#notifications-read-all").addEventListener("click",async e=>{const button=e.currentTarget;button.disabled=true;try{await request("/api/notifications/read-all",{method:"POST",body:"{}"});await loadNotifications()}catch(error){$("#notifications-status").textContent=error.message}finally{button.disabled=false}});
-document.addEventListener("click",async e=>{
-  const read=e.target.closest("[data-notification-read]"),open=e.target.closest("[data-notification-open]"),retry=e.target.closest("[data-task-retry]");if(!read&&!open&&!retry)return;
-  try{
-    if(retry){
-      const started=transitionNotificationRetry(notificationRetryingTaskIds,{type:"start",taskId:retry.dataset.taskRetry});if(!started.accepted)return;
-      notificationRetryingTaskIds=[...started.retryingTaskIds];renderNotifications();
-      try{await request(`/api/ai-tasks/${retry.dataset.taskRetry}/retry`,{method:"POST",body:"{}"});await loadNotifications();scheduleNotificationPoll();showToast("任务已重新排队")}
-      finally{notificationRetryingTaskIds=[...transitionNotificationRetry(notificationRetryingTaskIds,{type:"finish",taskId:retry.dataset.taskRetry}).retryingTaskIds];renderNotifications()}
-      return
-    }
-    const id=(read||open).dataset.notificationId||read?.dataset.notificationRead;if(id)await request(`/api/notifications/${id}/read`,{method:"PATCH",body:"{}"});
-    if(open){const task=(state.aiTasks||[]).find(item=>item.id===open.dataset.notificationTask),notification=(state.notifications||[]).find(item=>item.id===id);await openAiTaskTarget(task,notification)}
-    else await loadNotifications()
-  }catch(error){$("#notifications-status").textContent=error.message}
 });
 document.addEventListener("click",async e=>{
   const button=e.target.closest("[data-delete-checkin],[data-chat-delete],[data-experiment-delete],[data-analysis-delete],[data-book-delete]");if(!button)return;
@@ -4325,7 +4320,6 @@ document.addEventListener("click",event=>{
   if(command==="run-analysis"){$("#run-analysis")?.click();return}
   if(command==="retry-route-state"){button.disabled=true;void loadRouteState(pageRouter?.currentRoute()).finally(()=>{if(button.isConnected)button.disabled=false});return}
   const retries={
-    "retry-notifications":loadNotifications,
     "retry-trash":loadTrash,
     "retry-personal-context":loadPersonalContext,
     "retry-account-users":loadAccountUsers

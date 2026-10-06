@@ -299,7 +299,7 @@ assert.equal(startupTimeout.observers.every(observer => observer.disconnected), 
 
 const worker = await fs.readFile(publicPath("service-worker.js"), "utf8");
 assert.match(worker, /const CACHE_VERSION\s*=\s*["'][^"']+["']/);
-assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.8-5["']/);
+assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.8-6["']/);
 const assetSet = name => {
   const source = worker.match(new RegExp(`const ${name}\\s*=\\s*\\[([\\s\\S]*?)\\];`))?.[1] || "";
   return new Set([...source.matchAll(/["']([^"']+)["']/g)].map(match => match[1]));
@@ -331,6 +331,7 @@ for (const asset of [
 for (const asset of [
   "frontend/features/export/index.mjs",
   "frontend/features/feedback/index.mjs",
+  "frontend/features/notifications/index.mjs",
   "frontend/features/thought-discovery/index.mjs"
 ]) {
   assert.equal(shellAssets.has(asset), false, `lazy feature 不得进入 install 预缓存: ${asset}`);
@@ -420,7 +421,7 @@ assert.match(worker, /if\s*\(\s*isNetworkOnly\(url\)\s*\)\s*return/);
   const context = {
     caches: {
       async keys() {
-        return ["cike-shell-v0.5.8-5"];
+        return ["cike-shell-v0.5.8-6"];
       },
       async delete() {
         return true;

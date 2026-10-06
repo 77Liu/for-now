@@ -457,17 +457,14 @@ const effects = createPageEffects({
   loadAiCostPlan: async () => calls.push("ai-cost"),
   loadArchitecture: async () => calls.push("architecture"),
   loadCommercialization: async () => calls.push("commercialization"),
-  loadNotifications: async () => calls.push("notifications"),
-  scheduleNotificationPoll: () => calls.push("notification-poll"),
   loadTrash: async () => calls.push("trash")
 });
 effects.captures();
 effects.quotes();
 effects.leaveQuotes();
 effects.architecture();
-effects.notifications();
 await new Promise(resolve => setTimeout(resolve, 0));
-for (const expected of ["frame", "captures", "quote-overflow", "quote-scroll", "quote-stop", "architecture", "notifications", "notification-poll"]) {
+for (const expected of ["frame", "captures", "quote-overflow", "quote-scroll", "quote-stop", "architecture"]) {
   assert.ok(calls.includes(expected), `missing page effect: ${expected}`);
 }
 

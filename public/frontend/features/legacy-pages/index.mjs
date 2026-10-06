@@ -15,7 +15,6 @@ export const LEGACY_PAGE_VIEWS = Object.freeze([
   "ai-cost",
   "architecture",
   "commercialization",
-  "notifications",
   "trash",
   "permission",
   "account",

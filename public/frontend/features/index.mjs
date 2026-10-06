@@ -8,8 +8,6 @@ export function createPageEffects({
   loadAiCostPlan,
   loadArchitecture,
   loadCommercialization,
-  loadNotifications,
-  scheduleNotificationPoll,
   loadTrash
 }) {
   return Object.freeze({
@@ -23,7 +21,6 @@ export function createPageEffects({
     "ai-cost": () => loadAiCostPlan(),
     architecture: () => loadArchitecture(),
     commercialization: () => loadCommercialization(),
-    notifications: () => loadNotifications().then(() => scheduleNotificationPoll()),
     trash: () => loadTrash()
   });
 }
@@ -98,8 +95,3 @@ export {
   onboardingV2PendingResolution,
   onboardingV2PatchFromDraft
 } from "./onboarding-v2/index.mjs";
-export {
-  notificationEntryMarkup,
-  notificationEntryState,
-  transitionNotificationRetry
-} from "./notifications/index.mjs";

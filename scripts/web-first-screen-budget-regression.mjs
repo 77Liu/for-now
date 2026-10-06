@@ -44,6 +44,9 @@ const HIDDEN_FEATURE_MODULE_PATHS = Object.freeze([
   "/frontend/features/feedback/index.mjs",
   "/frontend/features/feedback/controller.mjs",
   "/frontend/features/feedback/model.mjs",
+  "/frontend/features/notifications/index.mjs",
+  "/frontend/features/notifications/controller.mjs",
+  "/frontend/features/notifications/presentation.mjs",
   "/frontend/features/thought-discovery/index.mjs",
   "/frontend/features/thought-discovery/controller.mjs",
   "/frontend/features/thought-discovery/headless.mjs"
@@ -909,6 +912,7 @@ const lazyFeatureModules = Object.fromEntries(await Promise.all([
   ["actions-workspace", "frontend/features/actions/controller.mjs"],
   ["export", "frontend/features/export/index.mjs"],
   ["feedback", "frontend/features/feedback/index.mjs"],
+  ["notifications", "frontend/features/notifications/index.mjs"],
   ["discovery", "frontend/features/thought-discovery/index.mjs"]
 ].map(async ([view, entry]) => [view, await moduleClosure(entry)])));
 const openingCriticalStyleIndex = html.indexOf('<style id="opening-critical-style">');

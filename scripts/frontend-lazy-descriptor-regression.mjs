@@ -34,6 +34,7 @@ assert.deepEqual(dynamicSpecifiers, [
   "../features/export/index.mjs",
   "../features/feedback/index.mjs",
   "../features/legacy-pages/index.mjs",
+  "../features/notifications/index.mjs",
   "../features/thought-discovery/index.mjs",
   "./ports.mjs"
 ]);
@@ -85,8 +86,13 @@ assert.deepEqual(descriptors.get("discovery"), {
   feature: "frontend.feature.discovery",
   specifier: "../features/thought-discovery/index.mjs"
 });
+assert.deepEqual(descriptors.get("notifications"), {
+  page: "notifications",
+  feature: "frontend.feature.notifications",
+  specifier: "../features/notifications/index.mjs"
+});
 for (const [view, descriptor] of descriptors) {
-  if (["export", "feedback", "discovery"].includes(view)) continue;
+  if (["export", "feedback", "discovery", "notifications"].includes(view)) continue;
   assert.deepEqual(descriptor, {
     page: view,
     feature: "frontend.feature.legacy-pages",
@@ -98,6 +104,7 @@ for (const eagerEdge of [
   "./actions/controller.mjs",
   "./export/index.mjs",
   "./feedback/index.mjs",
+  "./notifications/index.mjs",
   "./thought-discovery/index.mjs"
 ]) {
   assert.equal(featuresBarrel.includes(eagerEdge), false, `features barrel keeps eager edge ${eagerEdge}`);
@@ -108,6 +115,7 @@ for (const deferredF3Edge of ["./annotation-tools.mjs", "./background-results.mj
 for (const hiddenAsset of [
   "frontend/features/export/index.mjs",
   "frontend/features/feedback/index.mjs",
+  "frontend/features/notifications/index.mjs",
   "frontend/features/thought-discovery/index.mjs"
 ]) {
   const shellSource = serviceWorker.match(/const SHELL_ASSETS\s*=\s*\[([\s\S]*?)\];/)?.[1] || "";
