@@ -27,7 +27,7 @@ import {
   groupAnnotationLineCounts,
   submitAnnotationAssistantTask,
   sortAnnotationItemsByPosition
-} from "../public/frontend/features/thought-discovery/annotation-tools.mjs";
+} from "../public/frontend/features/annotations/index.mjs";
 
 const timestamp = value => `2026-09-29T${value}:00.000Z`;
 const document = {

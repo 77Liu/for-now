@@ -1,4 +1,4 @@
-const CACHE_VERSION = "cike-shell-v0.5.8-6";
+const CACHE_VERSION = "cike-shell-v0.5.8-7";
 const SHELL_ASSETS = [
   "./",
   "index.html",
@@ -20,6 +20,12 @@ const SHELL_ASSETS = [
   "frontend/components/tag-multiselect/index.mjs",
   "frontend/features/actions/controller.mjs",
   "frontend/features/actions/index.mjs",
+  "frontend/features/annotations/controller.mjs",
+  "frontend/features/annotations/index.mjs",
+  "frontend/features/annotations/model.mjs",
+  "frontend/features/annotations/operations.mjs",
+  "frontend/features/annotations/presentation.mjs",
+  "frontend/features/annotations/view.mjs",
   "frontend/features/health/weight-batch.mjs",
   "frontend/features/home/index.mjs",
   "frontend/features/index.mjs",
@@ -27,7 +33,6 @@ const SHELL_ASSETS = [
   "frontend/features/keepsakes-media/index.mjs",
   "frontend/features/keepsakes-media/placement.mjs",
   "frontend/features/onboarding-v2/index.mjs",
-  "frontend/features/thought-discovery/annotation-tools.mjs",
   "frontend/features/thought-discovery/background-results.mjs",
   "frontend/media/index.mjs",
   "frontend/page-catalog/index.mjs",

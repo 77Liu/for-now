@@ -31,6 +31,7 @@ const dynamicImports = analysis.surface.imports
 const dynamicSpecifiers = [...new Set(dynamicImports)].sort();
 assert.deepEqual(dynamicSpecifiers, [
   "../features/actions/controller.mjs",
+  "../features/annotations/index.mjs",
   "../features/export/index.mjs",
   "../features/feedback/index.mjs",
   "../features/legacy-pages/index.mjs",
@@ -41,10 +42,31 @@ assert.deepEqual(dynamicSpecifiers, [
 for (const specifier of dynamicSpecifiers) {
   assert.equal(
     dynamicImports.filter(value => value === specifier).length,
-    ["./ports.mjs", "../features/actions/controller.mjs"].includes(specifier) ? 1 : 2,
+    ["./ports.mjs", "../features/actions/controller.mjs", "../features/annotations/index.mjs"]
+      .includes(specifier) ? 1 : 2,
     `${specifier} must have one route-aware prefetch and one descriptor fallback`
   );
 }
+assert.match(
+  runtime,
+  /annotationsFeatureModuleRequest===pending\)annotationsFeatureModuleRequest=null/,
+  "annotations loader must clear a rejected import so the next session can retry"
+);
+assert.doesNotMatch(
+  runtime,
+  /await\s+ensureAnnotationsController\(\)/,
+  "annotations import failure must not block application startup"
+);
+assert.match(
+  runtime,
+  /error=>\{if\(current\(\)\)showToast\(`批注功能加载失败/,
+  "stale annotation imports must not report into a later session"
+);
+assert.match(
+  runtime,
+  /annotationsController\?\.activeRootKey\(\)\.startsWith\("book:"\)/,
+  "state updates must tolerate an unavailable annotations module"
+);
 assert.deepEqual(analysis.surface.nonLiteralImports, []);
 
 for (const specifier of dynamicSpecifiers) {
@@ -102,6 +124,7 @@ for (const [view, descriptor] of descriptors) {
 
 for (const eagerEdge of [
   "./actions/controller.mjs",
+  "./annotations/index.mjs",
   "./export/index.mjs",
   "./feedback/index.mjs",
   "./notifications/index.mjs",

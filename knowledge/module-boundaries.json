@@ -463,13 +463,13 @@
       "status": "active"
     },
     {
-      "id": "frontend.feature.discovery-annotations",
+      "id": "frontend.feature.annotations",
       "type": "feature",
-      "root": "public/frontend/features/thought-discovery/annotation-tools.mjs",
-      "publicEntry": "public/frontend/features/thought-discovery/annotation-tools.mjs",
+      "root": "public/frontend/features/annotations",
+      "publicEntry": "public/frontend/features/annotations/index.mjs",
       "allowedDependencies": [],
-      "owns": { "data": ["annotation presentation, ordering, copy, mention intent and assistant task submission"], "routes": [] },
-      "tests": ["scripts/g2-a-r2-regression.mjs"],
+      "owns": { "data": ["annotation presentation, ordering, copy, mention intent, assistant task submission, anchors, panel state, drafts and disposable account lifecycle"], "routes": [] },
+      "tests": ["scripts/g2-a-r2-regression.mjs", "scripts/frontend-annotations-feature-regression.mjs", "scripts/ui-regression.mjs"],
       "status": "active"
     },
     {
@@ -589,7 +589,7 @@
       "type": "feature",
       "root": "public/frontend/features",
       "publicEntry": "public/frontend/features/index.mjs",
-      "allowedDependencies": ["frontend.feature.discovery-annotations", "frontend.feature.discovery-background-results", "frontend.feature.actions", "frontend.feature.home"],
+      "allowedDependencies": ["frontend.feature.discovery-background-results", "frontend.feature.actions", "frontend.feature.home"],
       "owns": { "data": ["page-entry side effects for overflow, animation and on-demand data loading"], "routes": [] },
       "tests": ["scripts/frontend-shell-regression.mjs", "scripts/ui-regression.mjs"],
       "status": "active"
@@ -619,7 +619,7 @@
       "type": "application",
       "root": "public/frontend/app",
       "publicEntry": "public/frontend/app/index.mjs",
-      "allowedDependencies": ["frontend.application", "frontend.ports", "frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.page-catalog", "frontend.pages", "frontend.features", "frontend.feature-registry", "frontend.feature.actions-controller", "frontend.feature.discovery", "frontend.feature.export", "frontend.feature.feedback", "frontend.feature.notifications", "frontend.feature.legacy-pages", "frontend.component.tag-multiselect"],
+      "allowedDependencies": ["frontend.application", "frontend.ports", "frontend.api", "frontend.session", "frontend.state", "frontend.sync", "frontend.content", "frontend.time", "frontend.media", "frontend.page-catalog", "frontend.pages", "frontend.features", "frontend.feature-registry", "frontend.feature.actions-controller", "frontend.feature.annotations", "frontend.feature.discovery", "frontend.feature.export", "frontend.feature.feedback", "frontend.feature.notifications", "frontend.feature.legacy-pages", "frontend.component.tag-multiselect"],
       "owns": { "data": ["browser bootstrap, dependency composition, feature event binding and page presenter runtime"], "routes": [] },
       "tests": ["scripts/frontend-shell-regression.mjs", "scripts/frontend-contract-regression.mjs", "scripts/frontend-lazy-descriptor-regression.mjs", "scripts/frontend-notifications-feature-regression.mjs", "scripts/ui-regression.mjs", "scripts/mobile-platform-regression.mjs"],
       "status": "active"
@@ -832,6 +832,7 @@
         "../content/index.mjs",
         "../feature-registry/index.mjs",
         "../features/actions/controller.mjs",
+        "../features/annotations/index.mjs",
         "../features/export/index.mjs",
         "../features/feedback/index.mjs",
         "../features/index.mjs",
@@ -853,6 +854,7 @@
         "../content/index.mjs",
         "../feature-registry/index.mjs",
         "../features/actions/controller.mjs",
+        "../features/annotations/index.mjs",
         "../features/export/index.mjs",
         "../features/feedback/index.mjs",
         "../features/index.mjs",
@@ -1011,72 +1013,72 @@
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.api-path",
-      "sourceSha256": "7639dc9a63d4f904ab727c3d0afbf76075ebf37d8cec65cff355d30c8674447f",
+      "sourceSha256": "eea3d7a1065273c38583255bdd5564382b6cba145400e9ba647aa07608662787",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no API path literals",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden literal matched \"^/api(?:/|$)\"", "count": 69 }
+        { "detail": "forbidden literal matched \"^/api(?:/|$)\"", "count": 68 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.dom-query",
-      "sourceSha256": "7639dc9a63d4f904ab727c3d0afbf76075ebf37d8cec65cff355d30c8674447f",
+      "sourceSha256": "eea3d7a1065273c38583255bdd5564382b6cba145400e9ba647aa07608662787",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page DOM queries",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden identifier \"querySelector\"", "count": 147 },
-        { "detail": "forbidden identifier \"querySelectorAll\"", "count": 50 },
+        { "detail": "forbidden identifier \"querySelector\"", "count": 129 },
+        { "detail": "forbidden identifier \"querySelectorAll\"", "count": 36 },
         { "detail": "forbidden identifier \"getElementById\"", "count": 6 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.event-binding",
-      "sourceSha256": "7639dc9a63d4f904ab727c3d0afbf76075ebf37d8cec65cff355d30c8674447f",
+      "sourceSha256": "eea3d7a1065273c38583255bdd5564382b6cba145400e9ba647aa07608662787",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page event binding",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden identifier \"addEventListener\"", "count": 266 },
+        { "detail": "forbidden identifier \"addEventListener\"", "count": 244 },
         { "detail": "forbidden identifier \"removeEventListener\"", "count": 3 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.timer",
-      "sourceSha256": "7639dc9a63d4f904ab727c3d0afbf76075ebf37d8cec65cff355d30c8674447f",
+      "sourceSha256": "eea3d7a1065273c38583255bdd5564382b6cba145400e9ba647aa07608662787",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page timers or animation scheduling",
       "deleteByGate": "G6",
       "allowlist": [
         { "detail": "forbidden identifier \"cancelAnimationFrame\"", "count": 3 },
-        { "detail": "forbidden identifier \"requestAnimationFrame\"", "count": 41 },
+        { "detail": "forbidden identifier \"requestAnimationFrame\"", "count": 38 },
         { "detail": "forbidden identifier \"setInterval\"", "count": 3 },
-        { "detail": "forbidden identifier \"setTimeout\"", "count": 13 }
+        { "detail": "forbidden identifier \"setTimeout\"", "count": 10 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "browser.template",
-      "sourceSha256": "7639dc9a63d4f904ab727c3d0afbf76075ebf37d8cec65cff355d30c8674447f",
+      "sourceSha256": "eea3d7a1065273c38583255bdd5564382b6cba145400e9ba647aa07608662787",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs contains no page templates",
       "deleteByGate": "G6",
       "allowlist": [
-        { "detail": "forbidden syntax template-literal", "count": 772 }
+        { "detail": "forbidden syntax template-literal", "count": 722 }
       ]
     },
     {
       "path": "public/frontend/app/runtime.mjs",
       "ruleId": "lines.hard",
-      "sourceSha256": "7639dc9a63d4f904ab727c3d0afbf76075ebf37d8cec65cff355d30c8674447f",
+      "sourceSha256": "eea3d7a1065273c38583255bdd5564382b6cba145400e9ba647aa07608662787",
       "owner": "V0.5.8-04",
       "removeWhen": "runtime.mjs is at or below 180 lines",
       "deleteByGate": "G6",
-      "maxValue": 5130
+      "maxValue": 5002
     }
   ],
   "migrationExceptions": []

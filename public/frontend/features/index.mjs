@@ -32,15 +32,6 @@ export {
   mergeBackgroundTaskResult
 } from "./thought-discovery/background-results.mjs";
 export {
-  annotationMenuItems,
-  annotationPresentation,
-  commentSubmissionIntent,
-  copyAnnotationContent,
-  groupAnnotationLineCounts,
-  submitAnnotationAssistantTask,
-  sortAnnotationItemsByPosition
-} from "./thought-discovery/annotation-tools.mjs";
-export {
   createActionsCoordinator,
   createActionsViewModel,
   buildCreateActionCommand,

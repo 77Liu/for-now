@@ -3039,7 +3039,11 @@ try {
     question:"失败后保留的追问",answer:"",hidden:false,requestId:await evaluate(`document.querySelector('#all-thoughts [data-follow-up-root]').dataset.requestId||""`)
   });
   await evaluate(`document.querySelector('#all-thoughts [data-chain-id="kept-root"] [data-follow-up-root]').requestSubmit();true`);
-  assert.equal(await waitUntil(`window.__followUpSaves===1&&document.querySelector('#all-thoughts [data-chain-id="kept-root"] [data-follow-up-root]').hidden`),true);
+  const followUpRetryCompleted=await waitUntil(`window.__followUpSaves===1&&document.querySelector('#all-thoughts [data-chain-id="kept-root"] [data-follow-up-root]').hidden`);
+  assert.equal(followUpRetryCompleted,true,JSON.stringify({
+    ui:await evaluate(`(()=>{const form=document.querySelector('#all-thoughts [data-chain-id="kept-root"] [data-follow-up-root]');return{saves:window.__followUpSaves,status:form?.querySelector(".followup-status")?.textContent||"",hidden:form?.hidden,requestId:form?.dataset.requestId||""}})()`),
+    exceptions:cdp.events.filter(event=>event.method==="Runtime.exceptionThrown").slice(-3).map(event=>event.params.exceptionDetails.exception?.description||event.params.exceptionDetails.text)
+  }));
   const followUpCreateKeys=await evaluate(`window.__followUpCreateKeys`);
   assert.equal(followUpCreateKeys.length,2);
   assert.ok(followUpCreateKeys[0]);
@@ -3791,7 +3795,11 @@ try {
   await evaluate(`document.querySelector('[data-view="captures"]').click();true`);
   assert.equal(await waitUntil(`document.querySelector('[data-content-image-editor="capture"] .content-image-preview')&&document.querySelector("#capture-status").textContent.includes("已恢复 1 张待上传图片")`),true);
   await evaluate(`document.querySelector('[data-view="review"]').click();true`);
-  assert.equal(await waitUntil(`!document.querySelector("#comment-panel").hidden&&document.querySelector("#comment-text").value==="刷新后继续的评论"&&document.querySelector('[data-shenji-form="analysis-annotation-1"] textarea')?.value==="后台同步期间的新草稿"`),true);
+  const commentDraftRestored=await waitUntil(`!document.querySelector("#comment-panel").hidden&&document.querySelector("#comment-text").value==="刷新后继续的评论"&&document.querySelector('[data-shenji-form="analysis-annotation-1"] textarea')?.value==="后台同步期间的新草稿"`);
+  assert.equal(commentDraftRestored,true,JSON.stringify({
+    ui:await evaluate(`({hidden:document.querySelector("#comment-panel").hidden,text:document.querySelector("#comment-text").value,assistant:document.querySelector('[data-shenji-form="analysis-annotation-1"] textarea')?.value||"",root:document.querySelector("#comment-panel").dataset.commentRoot||"",annotations:window.__analyses[0].annotations.map(item=>item.id)})`),
+    exceptions:cdp.events.filter(event=>event.method==="Runtime.exceptionThrown").slice(-3).map(event=>event.params.exceptionDetails.exception?.description||event.params.exceptionDetails.text)
+  }));
   await evaluate(`document.querySelector('[data-view="thoughts"]').click();true`);
   assert.equal(await waitUntil(`!document.querySelector("#thought-block-modal").hidden&&document.querySelector("#thought-block-content").value==="刷新后继续的内容块"&&document.querySelectorAll('[data-content-image-editor="thoughtBlock"] .content-image-preview').length===1`),true);
   assert.deepEqual(await evaluate(`({commentOpen:!document.querySelector("#comment-panel").hidden,commentText:document.querySelector("#comment-text").value,commentImages:document.querySelectorAll('[data-content-image-editor="comment"] .content-image-preview').length,shenjiText:document.querySelector('[data-shenji-form="analysis-annotation-1"] textarea').value,blockOpen:!document.querySelector("#thought-block-modal").hidden,blockText:document.querySelector("#thought-block-content").value,blockRoot:document.querySelector("#thought-block-root-id").value,blockImages:document.querySelectorAll('[data-content-image-editor="thoughtBlock"] .content-image-preview').length})`),{commentOpen:false,commentText:"刷新后继续的评论",commentImages:0,shenjiText:"后台同步期间的新草稿",blockOpen:true,blockText:"刷新后继续的内容块",blockRoot:"discarded-root",blockImages:1});

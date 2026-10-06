@@ -299,7 +299,7 @@ assert.equal(startupTimeout.observers.every(observer => observer.disconnected), 
 
 const worker = await fs.readFile(publicPath("service-worker.js"), "utf8");
 assert.match(worker, /const CACHE_VERSION\s*=\s*["'][^"']+["']/);
-assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.8-6["']/);
+assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.8-7["']/);
 const assetSet = name => {
   const source = worker.match(new RegExp(`const ${name}\\s*=\\s*\\[([\\s\\S]*?)\\];`))?.[1] || "";
   return new Set([...source.matchAll(/["']([^"']+)["']/g)].map(match => match[1]));
@@ -324,6 +324,12 @@ for (const asset of [
   "frontend/opening/rain-engine.mjs",
   "frontend/features/actions/controller.mjs",
   "frontend/features/actions/index.mjs",
+  "frontend/features/annotations/controller.mjs",
+  "frontend/features/annotations/index.mjs",
+  "frontend/features/annotations/model.mjs",
+  "frontend/features/annotations/operations.mjs",
+  "frontend/features/annotations/presentation.mjs",
+  "frontend/features/annotations/view.mjs",
   "frontend/sync/index.mjs",
   "frontend/styles/application.css",
   "frontend/styles/r8.css"
