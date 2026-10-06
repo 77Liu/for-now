@@ -2,6 +2,12 @@ import { renderCheckinsPresentation } from "./presentation.mjs";
 
 const noop = () => {};
 const RELEVANT_DOMAINS = new Set(["checkins", "customMetrics", "review"]);
+const emptyDelegate = Object.freeze({
+  mount: () => noop,
+  render: () => false,
+  unmount: noop,
+  resetSession: noop
+});
 
 function requireFunction(value, name) {
   if (typeof value !== "function") {
@@ -11,7 +17,7 @@ function requireFunction(value, name) {
 }
 
 export function createCheckinsFeatureController({
-  delegate,
+  delegate = emptyDelegate,
   getSnapshot,
   getActiveDate,
   document,

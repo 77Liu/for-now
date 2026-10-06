@@ -407,6 +407,10 @@ const runtime = await readFile(
   new URL("../public/frontend/app/runtime.mjs", import.meta.url),
   "utf8"
 );
+const descriptorRuntime = await readFile(
+  new URL("../public/frontend/app/runtime/page-descriptors-primary.mjs", import.meta.url),
+  "utf8"
+);
 for (const removed of [
   "function renderCaptures(",
   "function renderJournals(",
@@ -417,8 +421,8 @@ for (const removed of [
   assert.equal(runtime.includes(removed), false, `runtime retains F6 implementation: ${removed}`);
 }
 assert.match(runtime, /import\("\.\.\/features\/capture-journal\/index\.mjs"\)/);
-assert.match(runtime, /descriptors\.captures=.*loadCaptureJournalPage\("captures"\)/);
-assert.match(runtime, /descriptors\.journals=.*loadCaptureJournalPage\("journals"\)/);
+assert.match(descriptorRuntime, /descriptors\.captures=.*loadCaptureJournalPage\("captures"\)/);
+assert.match(descriptorRuntime, /descriptors\.journals=.*loadCaptureJournalPage\("journals"\)/);
 assert.ok(changes.length > 0);
 
 console.log(

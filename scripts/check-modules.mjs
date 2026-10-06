@@ -159,8 +159,8 @@ if (await exists(htmlPath)) {
   );
   assert.equal(
     analyses.flatMap(analysis => analysis.surface.nonLiteralImports).length,
-    1,
-    "public/index.html must contain only the frozen runtime prefetch import"
+    2,
+    "public/index.html must contain only the frozen runtime prefetch imports"
   );
   const runtimeScriptIndex = analyses.findIndex(
     analysis => analysis.surface.nonLiteralImports.length > 0
@@ -174,6 +174,11 @@ if (await exists(htmlPath)) {
     html.split('import(new URL("frontend/app/runtime.mjs", document.baseURI).href)').length - 1,
     1,
     "public/index.html runtime prefetch import changed"
+  );
+  assert.equal(
+    html.split('import(new URL("frontend/app/runtime/kernel.mjs", document.baseURI).href)').length - 1,
+    1,
+    "public/index.html runtime kernel prefetch import changed"
   );
 }
 

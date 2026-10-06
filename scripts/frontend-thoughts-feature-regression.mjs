@@ -166,6 +166,10 @@ const runtime = await readFile(
   new URL("../public/frontend/app/runtime.mjs", import.meta.url),
   "utf8"
 );
+const descriptorRuntime = await readFile(
+  new URL("../public/frontend/app/runtime/page-descriptors-insights.mjs", import.meta.url),
+  "utf8"
+);
 for (const removed of [
   "function renderThoughts(",
   "function thoughtChains(",
@@ -176,8 +180,8 @@ for (const removed of [
   assert.equal(runtime.includes(removed), false, `runtime retains thought implementation: ${removed}`);
 }
 assert.match(runtime, /import\("\.\.\/features\/thoughts\/index\.mjs"\)/);
-assert.match(runtime, /descriptors\.thoughts=.*loadThoughtsPage\("thoughts"\)/);
-assert.match(runtime, /descriptors\.together=.*loadThoughtsPage\("together"\)/);
+assert.match(descriptorRuntime, /descriptors\.thoughts=.*loadThoughtsPage\("thoughts"\)/);
+assert.match(descriptorRuntime, /descriptors\.together=.*loadThoughtsPage\("together"\)/);
 
 for (const file of [
   "controller.mjs",

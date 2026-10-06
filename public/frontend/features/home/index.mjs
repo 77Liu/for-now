@@ -2,6 +2,8 @@ const text = value => typeof value === "string" ? value.trim() : "";
 const timestamp = item => text(item?.occurredAt || item?.createdAt);
 const typeOrder = ["thought", "book", "quote"];
 
+export { createHomeFeatureController } from "./controller.mjs";
+
 function dateKey(item) {
   return text(item?.occurredOn) || timestamp(item).slice(0, 10);
 }

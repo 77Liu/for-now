@@ -127,9 +127,12 @@ const devices = [
   }
 ];
 
-const runtimeSource = await fs.readFile(path.join(ROOT, "public/frontend/app/runtime.mjs"), "utf8");
+const startupTimingSource = await fs.readFile(
+  path.join(ROOT, "public/frontend/app/runtime/startup-timing.mjs"),
+  "utf8"
+);
 const uiTestSource = await fs.readFile(path.join(ROOT, "ios/App/AppUITests/AppUITests.swift"), "utf8");
-assert.match(runtimeSource, /startupPerformanceEnabled&&document\.documentElement\.dataset\.nativePerformance/);
+assert.match(startupTimingSource, /!enabled && document\.documentElement\.dataset\.nativePerformance !== "1"/);
 assert.match(uiTestSource, /try attachStartupBreakdown\(in: measuredApp\)/);
 assert.match(uiTestSource, /JSONSerialization\.jsonObject\(with: data\)/);
 

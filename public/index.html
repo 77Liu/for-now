@@ -40,6 +40,7 @@
           addEventListener("DOMContentLoaded", () => {
             document.body.classList.remove("auth-locked");
             window.__forNowRuntimeRequest = import(new URL("frontend/app/runtime.mjs", document.baseURI).href);
+            window.__forNowRuntimeKernelRequest = import(new URL("frontend/app/runtime/kernel.mjs", document.baseURI).href);
           }, { once: true });
         }
       }

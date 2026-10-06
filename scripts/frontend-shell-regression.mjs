@@ -23,7 +23,14 @@ import {
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const appEntry = await fs.readFile(path.join(ROOT, "public/app.js"), "utf8");
 const appBootstrap = await fs.readFile(path.join(ROOT, "public/frontend/app/bootstrap.mjs"), "utf8");
-const appRuntime = await fs.readFile(path.join(ROOT, "public/frontend/app/runtime.mjs"), "utf8");
+const runtimeEntry = await fs.readFile(path.join(ROOT, "public/frontend/app/runtime.mjs"), "utf8");
+const appRuntime = (await Promise.all([
+  "public/frontend/app/runtime/kernel.mjs",
+  "public/frontend/app/runtime/collaboration-runtime.mjs",
+  "public/frontend/app/runtime/global-events.mjs",
+  "public/frontend/app/runtime/home-runtime.mjs",
+  "public/frontend/app/runtime/session-runtime.mjs"
+].map(file => fs.readFile(path.join(ROOT, file), "utf8")))).join("\n");
 const actionsEntry = await fs.readFile(path.join(ROOT, "public/frontend/features/actions/index.mjs"), "utf8");
 const actionsController = await fs.readFile(path.join(ROOT, "public/frontend/features/actions/controller.mjs"), "utf8");
 const localTestController = await fs.readFile(path.join(ROOT, "public/frontend/features/account-settings/local-test.mjs"), "utf8");
@@ -79,13 +86,13 @@ for (const endpoint of ["/api/auth/me", "/api/v1/startup"]) {
 assert.ok(appBootstrap.indexOf("const startupRequest = globalThis.__forNowStartupRequest") < appBootstrap.indexOf("const prefetchedRouteRequest = globalThis.__forNowRouteRequest"));
 assert.ok(appBootstrap.indexOf("const visibleShell = revealAuthenticatedShell") < appBootstrap.indexOf("const [session, testConfigResult, routeResult]"));
 assert.doesNotMatch(appBootstrap, /requestJson\("\/api\/state"\)|requestJson\("\/api\/meta"\)/);
-assert.match(appRuntime, /export async function startApplication\(initial = null, \{ opening = null \} = \{\}\)/);
-assert.doesNotMatch(appRuntime, /^bootstrap\(\)\.catch/m);
-assert.doesNotMatch(appRuntime, /from "\.\/frontend\//);
-assert.doesNotMatch(appRuntime, /function render\(\)/);
+assert.match(runtimeEntry, /export async function startApplication\(initial = null, \{ opening = null \} = \{\}\)/);
+assert.doesNotMatch(runtimeEntry, /^bootstrap\(\)\.catch/m);
+assert.doesNotMatch(runtimeEntry, /from "\.\/frontend\//);
+assert.doesNotMatch(runtimeEntry, /function render\(\)/);
 assert.match(appRuntime, /button\.tabIndex=active\?0:-1/);
 assert.match(appRuntime, /\["ArrowLeft","ArrowRight","Home","End"\]/);
-assert.match(appRuntime, /operation=\+\+authOperationSerial;setAuthBusy\(true\)/);
+assert.match(appRuntime, /operation=\+\+runtime\.authOperationSerial;setAuthBusy\(true\)/);
 assert.doesNotMatch(appRuntime, /actionsRequestSerial|actionsSnapshot|renderActionsWorkspace|runActionCommand/);
 assert.match(actionsEntry, /ticket\?\.generation === generation/);
 assert.match(actionsController, /root\.addEventListener\(type, listener\)/);
@@ -102,18 +109,18 @@ assert.match(appRuntime, /load\(\{visibleShell:true,initialSnapshot,opening\}\)/
 assert.match(appRuntime, /initialSnapshot\s*\?\s*\[initialSnapshot\.state,initialSnapshot\.meta\]/);
 assert.match(appRuntime, /if\(initial\?\.session\?\.authenticated\)currentUser=initial\.session\.user\|\|initial\.meta\?\.user\|\|null/);
 assert.match(appRuntime, /if\(initial\?\.state&&initial\?\.route\)\{routeDataReady=true;loadedRouteKey=routeDataKey\(initial\.route\)\}/);
-assert.match(appRuntime, /if\(applicationLifecycleReady&&!fullRouteStateLoaded/);
+assert.match(appRuntime, /if\(!\["initial","activate"\]\.includes\(source\)&&!fullRouteStateLoaded&&\(!routeDataReady\|\|loadedRouteKey!==routeDataKey\(route\)\)&&currentUser\)/);
 const prepareUserSessionSource = appRuntime.slice(
   appRuntime.indexOf("function prepareUserSession"),
   appRuntime.indexOf("function revealUserSession")
 );
 assert.doesNotMatch(prepareUserSessionSource, /rotateSession\(\)/);
-assert.match(prepareUserSessionSource, /restoreView\?\.\(resetRouteAfterAuthentication\?"today":requestedAuthenticatedView\|\|undefined\)/);
-assert.match(appRuntime, /if\(!currentUser\)requestedAuthenticatedView=view/);
-assert.match(appRuntime, /for\(;;\)\{\s*const activeRoute=pageRouter\?\.currentRoute\(\)\|\|route,activeKey=routeDataKey\(activeRoute\)/);
-assert.match(appRuntime, /if\(activeKey!==loadedRouteKey&&routeLoadFailureKey!==activeKey\)continue/);
-assert.match(appRuntime, /await runtimeApplication\.resetSession\(\)/);
-assert.match(appRuntime, /await runtimeApplication\.resetSession\(\);\s*currentUser=user;\s*applyCapabilitySurface\(user\?\.role==="owner"\?ownerCapabilities:\[\]\)/);
+assert.match(prepareUserSessionSource, /restoreView\?\.\(runtime\.resetRouteAfterAuthentication\?"today":runtime\.requestedAuthenticatedView\|\|undefined\)/);
+assert.match(appRuntime, /if\(!runtime\.currentUser\)runtime\.requestedAuthenticatedView=view/);
+assert.match(appRuntime, /for\(;;\)\{\s*const activeRoute=runtime\.pageRouter\?\.currentRoute\(\)\|\|route,activeKey=routeDataKey\(activeRoute\)/);
+assert.match(appRuntime, /if\(activeKey!==runtime\.loadedRouteKey&&runtime\.routeLoadFailureKey!==activeKey\)continue/);
+assert.match(appRuntime, /await runtime\.runtimeApplication\.resetSession\(\)/);
+assert.match(appRuntime, /await runtime\.runtimeApplication\.resetSession\(\);\s*runtime\.currentUser=user;\s*applyCapabilitySurface\(user\?\.role==="owner"\?ownerCapabilities:\[\]\)/);
 assert.match(appRuntime, /document\.documentElement\.dataset\.runtimeReady\s*=\s*"1"/);
 assert.doesNotMatch(appRuntime, /syncChainRecordKind\(\);await loadActionsWorkspace\(\)/);
 assert.match(actionsController, /提交时的行动已保存；等待期间的新输入已保留。/);
@@ -155,6 +162,7 @@ assert.equal((html.match(/priority: "high"/g) || []).length, 2);
 assert.match(html, /sessionStorage\.getItem\("cike:authenticated-shell"\) === "1"/);
 assert.match(html, /window\.__forNowRouteRequest = fetch\(new URL\("api\/v1\/route-state\?view=today", document\.baseURI\)\.href/);
 assert.match(html, /window\.__forNowRuntimeRequest = import\(new URL\("frontend\/app\/runtime\.mjs", document\.baseURI\)\.href\)/);
+assert.match(html, /window\.__forNowRuntimeKernelRequest = import\(new URL\("frontend\/app\/runtime\/kernel\.mjs", document\.baseURI\)\.href\)/);
 assert.match(html, /document\.body\.classList\.remove\("auth-locked"\)/);
 assert.doesNotMatch(html, /const routeRoots = new Set/);
 assert.doesNotMatch(html, /<link rel="preload" href="frontend\/styles\/application\.css" as="style">/);

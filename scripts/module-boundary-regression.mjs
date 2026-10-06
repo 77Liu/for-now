@@ -40,7 +40,10 @@ try {
   await write("server.mjs", "export {};\n");
   await write("admin-snapshot.mjs", "export {};\n");
   await write("public/app.js", "export {};\n");
-  const inlineRuntimeScript = 'window.__runtime = import(new URL("frontend/app/runtime.mjs", document.baseURI).href);';
+  const inlineRuntimeScript = [
+    'window.__runtime = import(new URL("frontend/app/runtime.mjs", document.baseURI).href);',
+    'window.__kernel = import(new URL("frontend/app/runtime/kernel.mjs", document.baseURI).href);'
+  ].join("\n");
   await write(
     "public/index.html",
     `<script>${inlineRuntimeScript}</script>\n`
@@ -171,13 +174,13 @@ try {
   await write("admin-snapshot.mjs", "export {};\n");
   await write(
     "public/index.html",
-    '<script>window.__runtime = import(new URL("frontend/app/runtime.mjs", document.baseURI).href); const target = "./private.mjs"; void import(target);</script>\n'
+    '<script>window.__runtime = import(new URL("frontend/app/runtime.mjs", document.baseURI).href); window.__kernel = import(new URL("frontend/app/runtime/kernel.mjs", document.baseURI).href); const target = "./private.mjs"; void import(target);</script>\n'
   );
   expectFailure(run(), /only the frozen runtime prefetch import/);
 
   await write(
     "public/index.html",
-    '<script>// import(new URL("frontend/app/runtime.mjs", document.baseURI).href)\nconst target = "./private.mjs"; void import(target);</script>\n'
+    '<script>window.__runtime = import(new URL("frontend/app/runtime.mjs", document.baseURI).href); window.__kernel = import(new URL("frontend/app/runtime/kernel.mjs", document.baseURI).href);\n// changed frozen script</script>\n'
   );
   expectFailure(run(), /runtime prefetch script changed/);
 } finally {

@@ -5,6 +5,12 @@ import { createThoughtSpeech } from "./speech.mjs";
 import { createThoughtView } from "./view.mjs";
 
 const noop = () => {};
+const emptyDelegate = Object.freeze({
+  mount: () => noop,
+  render: () => false,
+  unmount: noop,
+  resetSession: noop
+});
 
 function requireFunctions(group, values) {
   for (const [name, value] of Object.entries(values)) {
@@ -19,7 +25,7 @@ function abortFailure() {
 }
 
 export function createThoughtsFeatureController({
-  delegate,
+  delegate = emptyDelegate,
   data = {},
   navigation = {},
   media = {},

@@ -7,6 +7,39 @@ const runtime = await fs.readFile(
   new URL("../public/frontend/app/runtime.mjs", import.meta.url),
   "utf8"
 );
+const kernel = await fs.readFile(
+  new URL("../public/frontend/app/runtime/kernel.mjs", import.meta.url),
+  "utf8"
+);
+const loaders = await fs.readFile(
+  new URL("../public/frontend/app/runtime/loaders.mjs", import.meta.url),
+  "utf8"
+);
+const sessionRuntime = await fs.readFile(
+  new URL("../public/frontend/app/runtime/session-runtime.mjs", import.meta.url),
+  "utf8"
+);
+const collaborationRuntime = await fs.readFile(
+  new URL("../public/frontend/app/runtime/collaboration-runtime.mjs", import.meta.url),
+  "utf8"
+);
+const dataRuntime = await fs.readFile(
+  new URL("../public/frontend/app/runtime/data-runtime.mjs", import.meta.url),
+  "utf8"
+);
+const primaryDescriptors = await fs.readFile(
+  new URL("../public/frontend/app/runtime/page-descriptors-primary.mjs", import.meta.url),
+  "utf8"
+);
+const runtimeImplementation = [
+  runtime,
+  kernel,
+  loaders,
+  sessionRuntime,
+  collaborationRuntime,
+  dataRuntime,
+  primaryDescriptors
+].join("\n");
 const featuresBarrel = await fs.readFile(
   new URL("../public/frontend/features/index.mjs", import.meta.url),
   "utf8"
@@ -39,7 +72,6 @@ assert.deepEqual(dynamicSpecifiers, [
   "../features/feedback/index.mjs",
   "../features/health/controller.mjs",
   "../features/keepsakes/index.mjs",
-  "../features/legacy-pages/index.mjs",
   "../features/library/index.mjs",
   "../features/mine-shell/index.mjs",
   "../features/notifications/index.mjs",
@@ -50,40 +82,43 @@ assert.deepEqual(dynamicSpecifiers, [
   "../features/thought-discovery/index.mjs",
   "../features/thoughts/index.mjs",
   "../features/trash/loader.mjs",
-  "../media/content-image-drafts.mjs",
-  "./ports.mjs"
+  "./runtime/kernel.mjs"
 ]);
 for (const specifier of dynamicSpecifiers) {
   assert.equal(
     dynamicImports.filter(value => value === specifier).length,
-    ["./ports.mjs", "../features/actions/controller.mjs", "../features/annotations/index.mjs", "../features/background-results/index.mjs", "../features/health/controller.mjs", "../features/owner-console/loader.mjs", "../media/content-image-drafts.mjs"]
-      .includes(specifier) ? 1 : 2,
-    `${specifier} must have one route-aware prefetch and one descriptor fallback`
+    1,
+    `${specifier} must have one literal composition loader`
   );
 }
+assert.equal(
+  analysis.surface.imports.some(entry => !entry.dynamic && entry.specifier === "../features/checkins/index.mjs"),
+  true,
+  "the default-route checkins controller must stay in the static runtime closure"
+);
 assert.match(
-  runtime,
-  /annotationsFeatureModuleRequest===pending\)annotationsFeatureModuleRequest=null/,
+  loaders,
+  /if \(requests\[name\] === pending\) requests\[name\] = null/,
   "annotations loader must clear a rejected import so the next session can retry"
 );
 assert.match(
-  runtime,
-  /backgroundResultsFeatureModuleRequest===pending\)backgroundResultsFeatureModuleRequest=null/,
+  loaders,
+  /backgroundResults: \(\) => retryable\("backgroundResults"\)/,
   "background results loader must clear a rejected import so polling can retry"
 );
 assert.match(
-  runtime,
-  /backgroundResultsRetryAttempts>0&&backgroundResultsRetryAttempts<BACKGROUND_RESULTS_RETRY_LIMIT/,
+  runtimeImplementation,
+  /runtime\.backgroundResultsRetryAttempts>0&&runtime\.backgroundResultsRetryAttempts<backgroundResultsRetryLimit/,
   "the final completed task must retain a bounded poll after lazy-load failure"
 );
 assert.match(
-  runtime,
-  /controller\.needsRetry\(\)\?Math\.min\(BACKGROUND_RESULTS_RETRY_LIMIT,backgroundResultsRetryAttempts\+1\):0/,
+  runtimeImplementation,
+  /controller\.needsRetry\(\)\?Math\.min\(backgroundResultsRetryLimit,runtime\.backgroundResultsRetryAttempts\+1\):0/,
   "transient result reads must retain the same bounded retry path"
 );
-const shellMountSource = runtime.slice(
-  runtime.indexOf("function createRuntimeApplicationPorts"),
-  runtime.indexOf("async function restartApplicationForUser")
+const shellMountSource = sessionRuntime.slice(
+  sessionRuntime.indexOf("function createRuntimeApplicationPorts"),
+  sessionRuntime.indexOf("async function restartApplicationForUser")
 );
 assert.doesNotMatch(
   shellMountSource,
@@ -91,12 +126,12 @@ assert.doesNotMatch(
   "annotations import failure must not block application startup"
 );
 assert.match(
-  runtime,
+  runtimeImplementation,
   /error=>\{if\(current\(\)\)showToast\(`批注功能加载失败/,
   "stale annotation imports must not report into a later session"
 );
 assert.match(
-  runtime,
+  kernel,
   /annotationsController\?\.activeRootKey\(\)\.startsWith\("book:"\)/,
   "state updates must tolerate an unavailable annotations module"
 );
@@ -109,13 +144,8 @@ for (const specifier of dynamicSpecifiers) {
     `${specifier} must not have an eager import`
   );
 }
-assert.equal(
-  analysis.surface.imports.some(entry => !entry.dynamic && entry.specifier === "../features/checkins/index.mjs"),
-  true,
-  "the default-route checkins controller must stay in the static runtime closure"
-);
 assert.match(
-  runtime,
+  primaryDescriptors,
   /createFile:\(blob,name,options\)=>new File\(\[blob\],name,options\)/,
   "restored keepsake Files must preserve the complete FilePropertyBag"
 );
@@ -150,7 +180,7 @@ for (const removed of [
   "architectureRequestSerial",
   "commercialRequestSerial"
 ]) {
-  assert.equal(runtime.includes(removed), false, `legacy F2 symbol remains in runtime: ${removed}`);
+  assert.equal(runtimeImplementation.includes(removed), false, `legacy F2 symbol remains in runtime owners: ${removed}`);
 }
 
 const browserPolicy = boundaries.entrypointPolicies.find(policy => policy.kind === "browser");
@@ -255,14 +285,10 @@ assert.deepEqual(descriptors.get("trash"), {
   feature: "frontend.feature.trash-loader",
   specifier: "../features/trash/loader.mjs"
 });
-for (const [view, descriptor] of descriptors) {
-  if (["today", "review", "statistics", "daily", "captures", "journals", "books", "keepsakes", "quotes", "thoughts", "together", "export", "feedback", "discovery", "notifications", "mine", "permission", "about", "personal-context", "ai-cost", "architecture", "commercialization", "account", "settings", "trash"].includes(view)) continue;
-  assert.deepEqual(descriptor, {
-    page: view,
-    feature: "frontend.feature.legacy-pages",
-    specifier: "../features/legacy-pages/index.mjs"
-  });
-}
+assert.equal(
+  [...descriptors.values()].some(descriptor => descriptor.feature.includes("legacy")),
+  false
+);
 
 for (const eagerEdge of [
   "./actions/controller.mjs",
@@ -306,4 +332,4 @@ for (const hiddenAsset of [
   assert.equal(shellSource.includes(hiddenAsset), false, `service worker eagerly precaches ${hiddenAsset}`);
 }
 
-console.log("Frontend lazy descriptor regression passed: direct literal loaders, explicit legacy adapters, no eager barrel edges and no hidden feature precache.");
+console.log("Frontend lazy descriptor regression passed: direct literal loaders, explicit feature owners, no eager barrel edges and no hidden feature precache.");

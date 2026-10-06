@@ -28,8 +28,6 @@ if (bootstrapRoute.view === "export") {
   globalThis.__forNowTrashFeatureRequest ||= import("../features/trash/loader.mjs");
 } else if (["ai-cost", "architecture", "commercialization"].includes(bootstrapRoute.view)) {
   // Owner feature code is loaded only after capability routing accepts the page.
-} else {
-  globalThis.__forNowLegacyFeatureRequest ||= import("../features/legacy-pages/index.mjs");
 }
 const startupMarks = {
   navigationStart: 0,

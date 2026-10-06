@@ -183,8 +183,9 @@ export function createCaptureOperations({
       }
       if (!sameSession(ticket)) return false;
       data.publish(["captures"]);
+      const refreshing = data.refresh("captures");
       await resetForm({ submitted: true });
-      void data.refresh("captures").catch(error => view.showToast(view.presentError(error, {
+      void refreshing.catch(error => view.showToast(view.presentError(error, {
         operation: "刷新捕念列表",
         object: "捕念列表",
         phase: "捕念列表刷新",

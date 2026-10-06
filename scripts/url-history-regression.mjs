@@ -297,7 +297,19 @@ try {
     true
   );
   await evaluate(`document.querySelector('.home-v02-memory[data-home-memory-type="thought"] [data-home-memory-open]').click();true`);
-  assert.equal(await waitUntil(`location.pathname.startsWith("/now/thoughts/")&&document.querySelector("#all-thoughts").dataset.routeMode==="detail"`), true);
+  assert.equal(
+    await waitUntil(`location.pathname.startsWith("/now/thoughts/")&&document.querySelector("#all-thoughts").dataset.routeMode==="detail"`),
+    true,
+    JSON.stringify(await evaluate(`({
+      path:location.pathname,
+      search:location.search,
+      active:document.querySelector(".view.active")?.id,
+      mode:document.querySelector("#all-thoughts")?.dataset.routeMode||"",
+      cards:document.querySelectorAll("#all-thoughts [data-chain-id]").length,
+      unavailable:document.querySelector('[data-route-result="unavailable"]')?.outerHTML||"",
+      toast:document.querySelector("#toast")?.textContent||""
+    })`))
+  );
   await evaluate(`document.querySelector("[data-thought-list]").click();true`);
   assert.equal(await waitUntil(`location.pathname==="/now/today"&&document.querySelector("#view-today").classList.contains("active")`), true);
 

@@ -32,6 +32,7 @@ export {
   projectActionCommand
 } from "./actions/index.mjs";
 export {
+  createHomeFeatureController,
   createHomeMemoryPool,
   isAiDerivedHomeContent,
   selectHomeMemories

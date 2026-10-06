@@ -1010,8 +1010,7 @@ const modulePreloads = [...html.matchAll(/<link\b[^>]*>/gi)]
 const modules = await moduleClosure(["app.js", ...modulePreloads], { includeEntryDynamic: true });
 const deferredRuntime = await moduleClosure("frontend/app/runtime.mjs");
 const defaultRouteModules = await moduleClosure([
-  "frontend/app/ports.mjs",
-  "frontend/features/legacy-pages/index.mjs"
+  "frontend/app/ports.mjs"
 ]);
 const lazyFeatureModules = Object.fromEntries(await Promise.all([
   ["account-settings", "frontend/features/account-settings/loader.mjs"],

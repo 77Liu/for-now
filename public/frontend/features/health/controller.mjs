@@ -2,10 +2,11 @@ import { changeWeightBatchDate, createHealthDraftLifecycle, HEALTH_DAILY_TYPES }
 import { createHealthView } from "./view.mjs";
 
 const noop=()=>{};
+const emptyDelegate=Object.freeze({mount:()=>noop,render:()=>false,unmount:noop,resetSession:noop});
 function requireFunction(value,name){if(typeof value!=="function")throw new TypeError(`Health feature requires ${name}`);return value}
 
 export function createHealthFeatureController({
-  delegate,
+  delegate=emptyDelegate,
   request,
   requestV1,
   draftStore,

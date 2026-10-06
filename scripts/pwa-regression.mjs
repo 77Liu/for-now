@@ -299,7 +299,7 @@ assert.equal(startupTimeout.observers.every(observer => observer.disconnected), 
 
 const worker = await fs.readFile(publicPath("service-worker.js"), "utf8");
 assert.match(worker, /const CACHE_VERSION\s*=\s*["'][^"']+["']/);
-assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.8-21["']/);
+assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.8-22["']/);
 const assetSet = name => {
   const source = worker.match(new RegExp(`const ${name}\\s*=\\s*\\[([\\s\\S]*?)\\];`))?.[1] || "";
   return new Set([...source.matchAll(/["']([^"']+)["']/g)].map(match => match[1]));
@@ -317,6 +317,21 @@ for (const asset of [
   "frontend/app/bootstrap.mjs",
   "frontend/app/ports.mjs",
   "frontend/app/runtime.mjs",
+  "frontend/app/runtime/collaboration-runtime.mjs",
+  "frontend/app/runtime/content-media-runtime.mjs",
+  "frontend/app/runtime/data-runtime.mjs",
+  "frontend/app/runtime/durable-form-drafts.mjs",
+  "frontend/app/runtime/global-events.mjs",
+  "frontend/app/runtime/home-runtime.mjs",
+  "frontend/app/runtime/kernel.mjs",
+  "frontend/app/runtime/loaders.mjs",
+  "frontend/app/runtime/page-descriptors-account.mjs",
+  "frontend/app/runtime/page-descriptors-insights.mjs",
+  "frontend/app/runtime/page-descriptors-primary.mjs",
+  "frontend/app/runtime/page-descriptors.mjs",
+  "frontend/app/runtime/session-runtime.mjs",
+  "frontend/app/runtime/startup-timing.mjs",
+  "frontend/components/occurrence-control/index.mjs",
   "frontend/feature-registry/index.mjs",
   "frontend/opening/config.mjs",
   "frontend/opening/controller.mjs",
@@ -334,6 +349,7 @@ for (const asset of [
   "frontend/features/checkins/controller.mjs",
   "frontend/features/checkins/index.mjs",
   "frontend/features/checkins/presentation.mjs",
+  "frontend/features/home/controller.mjs",
   "frontend/media/content-image-draft-model.mjs",
   "frontend/media/content-image-drafts.mjs",
   "frontend/media/page-audio.mjs",
