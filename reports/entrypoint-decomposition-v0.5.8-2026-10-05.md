@@ -894,6 +894,28 @@ V0.5.8 只有在以下条件同时成立时才可关闭：
   资源隔离后原命令通过。真实 PostgreSQL 16 稳定门因本机缺少
   `postgres/initdb/pg_ctl` 未运行，未冒充通过。
 - 当前达到 `iteration-G3 / entrypoint-G4-code`；完整 G4 仍待具备工具后的
-  PostgreSQL stable 证据。下一步恢复 F3-F10 与 G5-G7；本检查点未执行
+  PostgreSQL stable 证据。下一步进入 F3.1 与后续 F3-F10；本检查点未执行
+  push、tag、Release、真实 Preview/生产部署、Base 写入、云资源修改、
+  真实付费调用或生产写入。
+
+### F3.1 通知页 lifecycle 检查点
+
+- `a45cba7` 新增 notifications presenter/controller 与独立专项，
+  `dfbcaf5` 完成 runtime、显式 descriptor、legacy adapter、模块登记、
+  runner、PWA 和首屏预算串行接线；通知页由路由按需加载，入口旧 presenter
+  与事件绑定已删除，无双轨。
+- controller 公开 `mount/render/unmount/resetSession`，只在页面 root 上绑定
+  click。直接通知深链会等待 session ready 后加载；同账户重试已被服务端接受
+  后，即使用户离页仍继续刷新全局通知并启动 poll；账户 reset 后迟到响应不再
+  写 DOM、跳转或提示。
+- `runtime.mjs` 由 5136 行降至 5130 行，SHA
+  `7639dc9a63d4f904ab727c3d0afbf76075ebf37d8cec65cff355d30c8674447f`；
+  API 字面量 70→69、事件绑定 268→266、模板 774→772，其余 6 条 browser
+  G6 例外继续精确绑定。
+- `npm run check`、F3 专项、PWA、web budget、完整 frontend `21/21`
+  `81488 ms` 与 Journey Smoke `15/15` 通过；通知 lazy closure 为
+  `3 modules / 16954 B`，首页隐藏 feature 请求为 0，预算未放宽。
+- 一次独立复审先发现直接深链与离页接管两个 P1，修复并补反例后最终 reviewer
+  GO，blocker/P0/P1=`0/0/0`。下一步进入 F3.2 批注 lifecycle；未执行
   push、tag、Release、真实 Preview/生产部署、Base 写入、云资源修改、
   真实付费调用或生产写入。
