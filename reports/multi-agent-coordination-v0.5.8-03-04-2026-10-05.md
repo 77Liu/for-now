@@ -3,10 +3,10 @@
 - 日期：2026-10-05
 - 起始基线：`f911cde4505d3434ab4afcf4b5614f8e828f4bcc`
 - 当前门禁：`iteration-G3 / entrypoint-G4-code`（PostgreSQL stable 待环境）
-- 当前状态：`f3.2-annotations-closed-g4-pg-pending`
+- 当前状态：`f4.1-checkins-presentation-closed-g4-pg-pending`
 - 活跃工作树：`5 / 6`（B6 叶子已清理）
-- 机器事实：3 个入口策略、65 个模块、237 条拥有路由、6 条迁移例外；
-  `server.mjs` 由 3283 行降至 4 行，`runtime.mjs` 当前为 5002 行
+- 机器事实：3 个入口策略、67 个模块、237 条拥有路由、6 条迁移例外；
+  `server.mjs` 由 3283 行降至 4 行，`runtime.mjs` 当前为 4962 行
 - 授权边界：允许本地代码、测试、文档与任务提交；不允许 push、tag、Release、
   Preview、部署、云资源修改、真实付费调用或生产写入
 
@@ -105,7 +105,7 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 
 | roleId | specialty | activeContext | ownership | dependencies | communications | evidence | status | next |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `orchestrator` | 契约冻结与串行集成 | `5ca856d`；iteration-G3 / entrypoint-G4-code | 共享文件与集成树 | 全部角色 | 完成 B7 与完整 F3 接线、验证及复审 | server 只启动且 4 行；notifications/annotations/background-results 已迁出；PG stable 待环境 | `active` | F4-F10 / G5-G7 |
+| `orchestrator` | 契约冻结与串行集成 | `5505d29`；iteration-G3 / entrypoint-G4-code | 共享文件与集成树 | 全部角色 | 完成 B7、F3 与 F4.1 接线、验证及复审 | server 只启动且 4 行；checkins presenter 已迁出；PG stable 待环境 | `active` | F4.2-F10 / G5-G7 |
 | `backend-scout` | B1-B7 符号与闭包 | `server.mjs` 3283 行 | 只读 | B1a | 建议 B1a→B1b→B1c | 无生产 runtime 骨架 | `closed` | 移交 B1a |
 | `frontend-scout` | F1-F10 页面与 lifecycle | `runtime.mjs` 5291 行 | 只读 | F1a | 先 application/router disposer | registry 未接线 | `closed` | 移交 F1a |
 | `gate-scout` | G4/G6 与测试真实性 | 20 条例外 | 只读 | C0/I | 报告 policy 冲突与死代码假绿 | G4/G6 按预期失败 | `closed` | 等待复核 |
@@ -560,4 +560,27 @@ npm run test:frontend-shell
   `20 / 761286 B`，首页隐藏 feature 请求 0，预算未放宽。首次完整 frontend
   的 keepsake 异步候选断言失败，冻结差分后原命令复跑全绿。
 - F3 已完成并解除 F5 前置；下一步进入 F4。未执行 push、tag、Release、
+  Preview、部署、Base 写入、云资源修改、真实付费调用或生产写入。
+
+## F4.1 状态趋势与首页情绪检查点
+
+- 本地提交：`0e1f869`（checkins model/presenter/controller 与专项）、
+  `5505d29`（runtime、descriptor、模块登记、runner 和 PWA 接线）。
+- 状态指标、同日均值趋势、单次历史和首页 7 日情绪从 home/runtime 单轨迁入
+  `features/checkins-model` 与 `features/checkins`。controller 监听当前 route
+  root，但明确呈现 `today/review` 两个 surface，保证首页乐观状态即时进入
+  隐藏历史；reset 清理当前和已离页账户 DOM。
+- 首次 UI 定向门暴露仅更新当前 route root 的兼容回归；首次首屏门依次暴露
+  actions 三次读取提前、剩余一次提前读取和动态模块串行延迟。最终改为 mount
+  只绘制自有 surface、runtime 窄调用 presentation、默认首页 controller
+  静态解析；所有硬阈值保持原值。
+- `runtime.mjs` 4997→4962 行，SHA
+  `23887c7a4f7a837d41181ae0d8f3abf47d1ab00cc27252564fb8357b33801fb5`；
+  event binding 247→246、template 717→696，API 68、DOM query 166、
+  timer 50 不变；模块登记 67，仍为 6 条 browser G6 例外。
+- `npm run check`、F4.1、records、records-v1、frontend-shared、UI、PWA、
+  web budget、Journey Smoke `15/15` `64234 ms` 通过；首屏闭包
+  `24 / 771187 B`、隐藏 feature 请求 0、API 最大 9/10、冷/暖 P75
+  `699.7/701.4 ms`。两路独立复审最终 blocker/P0/P1=`0/0/0`。
+- 下一步进入 F4.2 健康媒体草稿与批量体重；未执行 push、tag、Release、
   Preview、部署、Base 写入、云资源修改、真实付费调用或生产写入。

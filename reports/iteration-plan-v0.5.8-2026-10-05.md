@@ -6,8 +6,9 @@
 本地开发。`V0.5.8-13/15/14/16/20/02` 已完成工作区验证，`03/04`
 已完成 B1-B7、F1、F2 slice 1 及 actions lifecycle slice；服务端入口
 G4 代码与本地系统门已通过，真实 PostgreSQL 稳定门待具备工具后复验。
-F3.1 通知页、F3.2 批注 lifecycle 与 F3.3 后台结果/跨内容定位均已完成，
-下一步进入 F4 状态/健康前端拆分；尚未进入 Preview 或发布。
+F3.1 通知页、F3.2 批注 lifecycle、F3.3 后台结果/跨内容定位及 F4.1
+状态趋势/历史/首页情绪均已完成，下一步进入 F4.2 健康媒体草稿与批量体重；
+尚未进入 Preview 或发布。
 
 执行依据：`SOP/iteration-planning.md`、`SOP/iteration-retrospective.md`、
 `knowledge/engineering-rules.md`、`knowledge/pre-launch-confirmation.md`、
@@ -122,7 +123,7 @@ V0.5.8 的 14 条需求均关联版本记录 `reczz28JaO7yXu1K`，发布状态�
 | 20 | `reczz28Jd8F4oH1y` | 工作区已验证未部署 | `91a10b7..88d37e1`：同步 HTML 开屏、雨景生命周期、真实 paint 性能门、FCP 后入口、退出/失败/清理、watchdog 锁存及 PWA 升级预算通过 |
 | 02 | `reczz28JPdCVUwBD` | 工作区已验证未部署 | `6730597`：三类真实入口、组合 API/import binding/factory 链、G4/G6 例外和 feature lifecycle 已机器冻结；最终独立复审 GO |
 | 03 | `reczz28JPdCVWPzV` | 工作区已验证未部署 | `f3724c4`、`47d5a39`、`a35dad8..9ba9f64`、`280887c`、`855200c`、`947c5da`、`00087be`、`6eee683`、`cac2496`、`342571d`、`5bc5a80`、`2320d1a`、`17fca0d`：B1-B7 已迁出 Store/投影、本地测试/账户、AI、媒体/内容 runtime、HTTP 编排和服务生命周期；`server.mjs` 3283→4 行，entrypoint-G4 代码门通过，PG stable 待环境 |
-| 04 | `reczz28JPdCVXtsA` | 进行中 | `e7d99d6..5ca856d`：F1 application/router/ports、export/feedback/discovery/actions 与完整 F3 生命周期已接入；完整 home 延至 F10，后续进入 F4-F10 |
+| 04 | `reczz28JPdCVXtsA` | 进行中 | `e7d99d6..5505d29`：F1-F3 与 F4.1 状态趋势/历史/首页情绪 lifecycle 已接入；完整 home 延至 F10，后续进入 F4.2-F10 |
 
 13、15、14、16、20 都是行为修复，已在现有入口上完成并固定自动化反例；
 共享热点由集成负责人串行接线。02 已冻结结构契约；03 已完成 B1-B7，
@@ -443,10 +444,26 @@ flowchart TD
   在未修改的 keepsake 异步候选断言失败，最终冻结差分原命令复跑全绿。
   独立复审发现并关闭有界重试和 PWA 预缓存两个 P1，最终 reviewer GO，
   blocker/P0/P1=`0/0/0`。
+- F4.1 由 `0e1f869`、`5505d29` 将状态指标定义、同日均值趋势、单次历史与
+  首页 7 日情绪迁入 `features/checkins-model` 和 `features/checkins`；
+  `today/review` 通过同一可回收 controller 呈现，事件仍限定当前 route root，
+  跨页 surface 由 document 级明确所有权保持乐观投影即时一致。
+- controller 重复 mount 不叠加监听，账户 reset 会清空当前及已离页 surface；
+  checkins 作为默认首页可见关键路径进入静态闭包和 PWA install cache，不作为
+  隐藏 lazy feature。`runtime.mjs` 4997→4962 行，SHA
+  `23887c7a4f7a837d41181ae0d8f3abf47d1ab00cc27252564fb8357b33801fb5`；
+  event binding 247→246、template 717→696，API 68、DOM query 166、
+  timer 50 与 6 条 browser G6 例外不变。
+- `npm run check`、F4.1 专项、records、records-v1、frontend-shared、UI、
+  PWA、web budget 与 Journey Smoke `15/15` `64234 ms` 通过；首屏静态闭包
+  `24 / 771187 B`，隐藏 feature 请求 0，API 请求最大 9/10，冷/暖 P75
+  `699.7/701.4 ms`。首次 UI 暴露首页乐观记录未同步隐藏历史，首屏门随后
+  暴露 actions 读取提前及动态模块串行延迟；均在冻结差分内修复，阈值未放宽。
+  两路独立复审最终 blocker/P0/P1=`0/0/0`。
 
 当前未完成：
 
-- 下一步进入 F4-F10，完成 browser runtime 收口与
+- 下一步进入 F4.2-F10，完成健康媒体/批量体重及 browser runtime 收口与
   G5-G7；服务端入口已
   收口为 4 行并删除全部 server 迁移例外。
 - `reczz28Jd8F4nDzn` 仍等待真实 CDN/OSS/DNS/证书/费用授权。

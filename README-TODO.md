@@ -151,7 +151,7 @@ V0.5.8 当前范围是 6 条 P00、8 条 P0。Base 最近一次回读为需求
 | V0.5.8-20 | P00 | 工作区已验证未部署 | `91a10b7..88d37e1`：同步 HTML 接入 R9.4-F1；FCP 与退出硬门、FCP 后入口请求、secondary 失败和 5 秒 watchdog 迟到锁存均通过 |
 | V0.5.8-02 | P00 | 工作区已验证未部署 | `6730597`：三类真实入口、组合 API/import binding/factory 链、G4/G6 例外和 feature 生命周期已机器冻结；check、前后端、PWA、性能与独立复审通过 |
 | V0.5.8-03 | P00 | 工作区已验证未部署 | `f3724c4..17fca0d`：B1-B7 已迁出 Store/投影、本地测试/账户、AI、媒体/内容 runtime、HTTP 编排和服务生命周期；`server.mjs` 3283→4 行，真实 PostgreSQL stable 待环境 |
-| V0.5.8-04 | P00 | 进行中 | `e7d99d6..5ca856d`：F1 application/router/ports、export/feedback/discovery/actions 与完整 F3 生命周期已接入；runtime 5291→4997 行，下一步 F4，完整 home 延至 F10 |
+| V0.5.8-04 | P00 | 进行中 | `e7d99d6..5505d29`：F1-F3 与 F4.1 状态趋势/历史/首页情绪 lifecycle 已接入；runtime 5291→4962 行，下一步 F4.2 健康媒体草稿/批量体重，完整 home 延至 F10 |
 | V0.5.8-17 | P0 | 待开始 | 共享图片草稿支持逐图 90 度旋转，预览/上传/识别/派生一致 |
 | V0.5.8-18 | P0 | 待开始 | 实现 `proxy/oss-signed/cdn-signed`、短签名、302 和代理回滚 |
 | V0.5.8-19 | P0 | 阻塞 | 需 Owner 单独授权 CDN/OSS/DNS/证书/费用配置后做真实 Preview 验收 |

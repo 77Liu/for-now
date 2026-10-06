@@ -978,3 +978,28 @@ V0.5.8 只有在以下条件同时成立时才可关闭：
   原命令复跑通过。
 - F3 完成并解除 F5 前置，下一步进入 F4；未执行 push、tag、Release、
   Preview、部署、Base 写入、云资源修改、真实付费调用或生产写入。
+
+### F4.1 状态趋势与首页情绪检查点
+
+- `0e1f869` 新增 `features/checkins-model` 与 `features/checkins`，统一拥有
+  状态指标、同日均值趋势、单次历史、首页 7 日情绪以及可回收页面 controller；
+  `5505d29` 完成 runtime、`today/review` descriptor、模块登记、runner 和
+  PWA 串行接线，旧 presenter 与首页 mood 聚合单轨删除。
+- checkins controller 的事件监听限定当前 route root，presentation 明确覆盖
+  `today/review` 两个 surface，使首页乐观创建可即时更新隐藏历史；重复 mount
+  不叠加监听，账户 reset 也会清空已经离页的旧账户 DOM。
+- checkins 是默认首页可见关键路径，采用显式静态依赖并进入 PWA install cache；
+  没有加入通用 barrel、动态目录扫描或隐式注册。首次动态接线使 actions 读取
+  提前并造成串行模块延迟，已改为 mount 仅绘制自有 surface、默认 controller
+  静态解析，性能预算未放宽。
+- `runtime.mjs` 4997→4962 行，SHA
+  `23887c7a4f7a837d41181ae0d8f3abf47d1ab00cc27252564fb8357b33801fb5`；
+  event binding 247→246、template 717→696，API 68、DOM query 166、
+  timer 50 与 6 条 browser G6 例外不变。
+- `npm run check`、F4.1 专项、records、records-v1、frontend-shared、UI、
+  PWA、web budget 与 Journey Smoke `15/15` `64234 ms` 通过。首屏静态
+  闭包 `24 modules / 771187 B`，隐藏 feature 请求 0，API 最大 9/10，
+  冷/暖 first-readable P75 `699.7/701.4 ms`；两路独立复审最终
+  blocker/P0/P1=`0/0/0`。
+- 下一步进入 F4.2 健康媒体草稿与批量体重；未执行 push、tag、Release、
+  Preview、部署、Base 写入、云资源修改、真实付费调用或生产写入。
