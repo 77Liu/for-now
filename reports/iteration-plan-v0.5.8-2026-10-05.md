@@ -4,8 +4,9 @@
 
 状态：`G0-G2` 已通过；Owner 已验收 V0.5.7 `G7` 并允许进入 V0.5.8
 本地开发。`V0.5.8-13/15/14/16/20/02` 已完成工作区验证，`03/04`
-已完成 B1-B6、F1、F2 slice 1 及 actions lifecycle slice，下一步为 B7；
-尚未进入 Preview 或发布。
+已完成 B1-B7、F1、F2 slice 1 及 actions lifecycle slice；服务端入口
+G4 代码与本地系统门已通过，真实 PostgreSQL 稳定门待具备工具后复验。
+下一步恢复 F3-F10；尚未进入 Preview 或发布。
 
 执行依据：`SOP/iteration-planning.md`、`SOP/iteration-retrospective.md`、
 `knowledge/engineering-rules.md`、`knowledge/pre-launch-confirmation.md`、
@@ -119,13 +120,13 @@ V0.5.8 的 14 条需求均关联版本记录 `reczz28JaO7yXu1K`，发布状态�
 | 16 | `reczz28Jd8F4nPjw` | 工作区已验证未部署 | `1eb61c9`、`a4150e9`、`56337a9`：七类能力统一用量、官方价格版本、预算和明确账单缺口；独立复审无新增问题 |
 | 20 | `reczz28Jd8F4oH1y` | 工作区已验证未部署 | `91a10b7..88d37e1`：同步 HTML 开屏、雨景生命周期、真实 paint 性能门、FCP 后入口、退出/失败/清理、watchdog 锁存及 PWA 升级预算通过 |
 | 02 | `reczz28JPdCVUwBD` | 工作区已验证未部署 | `6730597`：三类真实入口、组合 API/import binding/factory 链、G4/G6 例外和 feature lifecycle 已机器冻结；最终独立复审 GO |
-| 03 | `reczz28JPdCVWPzV` | 进行中 | `f3724c4`、`47d5a39`、`a35dad8..9ba9f64`、`280887c`、`855200c`、`947c5da`、`00087be`、`6eee683`、`cac2496`、`342571d`、`5bc5a80`、`2320d1a`：B1-B6 已迁出 Store/投影、本地测试/账户、AI、媒体/内容 runtime 与 HTTP 编排；`server.mjs` 3283→1048 行，下一步 B7 |
+| 03 | `reczz28JPdCVWPzV` | 工作区已验证未部署 | `f3724c4`、`47d5a39`、`a35dad8..9ba9f64`、`280887c`、`855200c`、`947c5da`、`00087be`、`6eee683`、`cac2496`、`342571d`、`5bc5a80`、`2320d1a`、`17fca0d`：B1-B7 已迁出 Store/投影、本地测试/账户、AI、媒体/内容 runtime、HTTP 编排和服务生命周期；`server.mjs` 3283→4 行，entrypoint-G4 代码门通过，PG stable 待环境 |
 | 04 | `reczz28JPdCVXtsA` | 进行中 | `e7d99d6..eca9576`：F1 application/router/ports、export/feedback/discovery 与 actions 生命周期已接入；完整 home 延至 F10，后续仍有 F3-F10 |
 
 13、15、14、16、20 都是行为修复，已在现有入口上完成并固定自动化反例；
-共享热点由集成负责人串行接线。02 已冻结结构契约；03 已完成 B1-B6，
+共享热点由集成负责人串行接线。02 已冻结结构契约；03 已完成 B1-B7，
 04 已完成 F1、F2 slice 1 与 actions lifecycle slice；完整 F2/G5 尚未完成，
-下一步先按依赖进入 B7，两个入口仍只允许单写集成。Owner 于 2026-10-06
+下一步恢复 F3-F10，剩余浏览器入口仍只允许单写集成。Owner 于 2026-10-06
 重申 `server.mjs` 只能负责启动，硬上限 100 行、目标不超过 40 行；不得用
 无边界 barrel 或动态目录扫描制造表面瘦身。
 
@@ -386,9 +387,10 @@ flowchart TD
   `947c5da`、`00087be`、`6eee683` 完成 B4 媒体 runtime 与图片识别 handler；
   `cac2496`、`342571d` 完成 B5 内容 runtime、后台任务和个人语境接线；
   `5bc5a80`、`2320d1a` 完成 B6 统计 runtime、admin/Owner/upstream、
-  legacy API 与 V1 显式 registry 接线。
-  当前登记 65 个模块、237 条拥有路由，15 条例外绑定入口 SHA；
-  `server.mjs` 为 1048 行，runtime 为 5136 行。B1b/B1c backend
+  legacy API 与 V1 显式 registry 接线；`17fca0d` 完成 B7 服务端组合根、
+  HTTP application、静态资源和启动/关闭生命周期。
+  当前登记 65 个模块、237 条拥有路由、6 条 browser G6 例外；
+  `server.mjs` 为 4 行，runtime 为 5136 行。B1b/B1c backend
   `326672 ms`、F1b frontend `77626 ms`、Journey Smoke `14/14` 和最终
   web budget `24 / 819195 B` 通过；actions 最终 frontend `76840 ms`、
   Journey Smoke `15/15`，固定预算 `23 / 819147 B`，最终 Reviewer
@@ -397,15 +399,15 @@ flowchart TD
   backend `82/82`、`278032 ms` 通过；B4 完整 backend `83/83`、
   `281838 ms` 通过；B5 check、影响门及完整 backend `83/83` 通过；B6
   check、HTTP 编排/鉴权/统计/UI 影响门及完整 backend `90/90` 通过，
-  独立 reviewer blocker/P0/P1=`0/0/0`。真实
-  PostgreSQL 16 因本机缺少可执行文件未运行。
-  当前仍是 iteration-G3，
-  `check:entrypoints:g4` 仍会按设计拒绝已到期的 server 例外。
+  B7 check/影响门与完整 system `416224 ms` 通过，backend runner
+  `91/91`；独立 reviewer blocker/P0/P1=`0/0/0`。真实 PostgreSQL 16
+  因本机缺少可执行文件未运行。当前为
+  `iteration-G3 / entrypoint-G4-code`，完整 G4 的 PG stable 证据待环境。
 
 当前未完成：
 
-- 下一步推进 B7，将 `server.mjs` 收口到只启动且不超过
-  100 行（目标不超过 40 行）；完整 home 与 F2/G5 继续按 F4-F10 收口。
+- 下一步恢复 F3-F10，完成 browser runtime 收口与 G5-G7；服务端入口已
+  收口为 4 行并删除全部 server 迁移例外。
 - `reczz28Jd8F4nDzn` 仍等待真实 CDN/OSS/DNS/证书/费用授权。
 - 未执行 push、tag、Release、Preview/生产部署或生产写入。
 

@@ -2,11 +2,11 @@
 
 - 日期：2026-10-05
 - 起始基线：`f911cde4505d3434ab4afcf4b5614f8e828f4bcc`
-- 当前门禁：`iteration-G3 / entrypoint-G2`
-- 当前状态：`b6-http-orchestration-closed-b7-ready`
+- 当前门禁：`iteration-G3 / entrypoint-G4-code`（PostgreSQL stable 待环境）
+- 当前状态：`b7-server-entrypoint-code-closed-g4-pg-pending`
 - 活跃工作树：`5 / 6`（B6 叶子已清理）
-- 机器事实：3 个入口策略、65 个模块、237 条拥有路由、15 条迁移例外；
-  `server.mjs` 由 3283 行降至 1048 行，`runtime.mjs` 当前为 5136 行
+- 机器事实：3 个入口策略、65 个模块、237 条拥有路由、6 条迁移例外；
+  `server.mjs` 由 3283 行降至 4 行，`runtime.mjs` 当前为 5136 行
 - 授权边界：允许本地代码、测试、文档与任务提交；不允许 push、tag、Release、
   Preview、部署、云资源修改、真实付费调用或生产写入
 
@@ -105,7 +105,7 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 
 | roleId | specialty | activeContext | ownership | dependencies | communications | evidence | status | next |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `orchestrator` | 契约冻结与串行集成 | `2320d1a`；iteration-G3 / entrypoint-G2 | 共享文件与集成树 | 全部角色 | 完成 B6 接线、验证与复审 | HTTP 编排已收口；server 目标仍为只启动且 `<=100`，继续执行 `<=40` 硬门 | `active` | B7 createHttpApplication/createServerRuntime |
+| `orchestrator` | 契约冻结与串行集成 | `17fca0d`；iteration-G3 / entrypoint-G4-code | 共享文件与集成树 | 全部角色 | 完成 B7 接线、验证与复审 | server 只启动且 4 行，server 例外归零；PG stable 待环境 | `active` | 恢复 F3-F10 / G5-G7 |
 | `backend-scout` | B1-B7 符号与闭包 | `server.mjs` 3283 行 | 只读 | B1a | 建议 B1a→B1b→B1c | 无生产 runtime 骨架 | `closed` | 移交 B1a |
 | `frontend-scout` | F1-F10 页面与 lifecycle | `runtime.mjs` 5291 行 | 只读 | F1a | 先 application/router disposer | registry 未接线 | `closed` | 移交 F1a |
 | `gate-scout` | G4/G6 与测试真实性 | 20 条例外 | 只读 | C0/I | 报告 policy 冲突与死代码假绿 | G4/G6 按预期失败 | `closed` | 等待复核 |
@@ -147,6 +147,7 @@ barrel、登记和 package/system runner 均由调度者串行处理。
 | `b6-http-worker` | Owner/statistics/admin/legacy HTTP 编排 | `c7903cc`；B6 | 新 app/http 模块与专项 | I7 | 叶子模块交给调度者接线 | `5bc5a80` 已集成，待清理叶子工作树 | `closed` | B7 |
 | `b6-http-validator` | B6 影响与完整后端验证 | `2320d1a` | 只读 | I7 | 重跑 check、Owner/鉴权/统计/UI 与 backend | check、影响门和 backend `90/90` 通过 | `closed` | B7 重新验证 |
 | `b6-http-reviewer` | HTTP 顺序、权限、代理与单轨复审 | `2320d1a` 固定差分 | 只读 | V7 | 只报生产可达 blocker/P0/P1 | GO，blocker/P0/P1=`0/0/0` | `closed` | 下一切片复审 |
+| `b7-server-reviewer` | 服务端组合根、路由顺序与生命周期复审 | `17fca0d` 前冻结差分 | 只读 | B7 | 只报生产可达 blocker/P0/P1 | GO；真实 JSON 启动、ready、SIGTERM 与日志复验通过，`0/0/0` | `closed` | F3-F10 |
 
 ## 已关闭问题与保留风险
 
@@ -462,3 +463,25 @@ npm run test:frontend-shell
   API 字面量例外 25→7，65 个模块、237 条拥有路由、15 条迁移例外不变。
 - 当前进入 B7；未执行 push、tag、Release、Preview、部署、Base 写入、
   云资源修改、真实付费调用或生产写入。
+
+## B7 服务端入口收口检查点
+
+- 本地提交：`17fca0d`。`server.mjs` 只保留 `createServerRuntime` 导入、
+  runtime 构造和 `start()`，1048→4 行；配置/持久化 foundation、账户访问、
+  平台/内容 HTTP adapter、V1/legacy wiring、静态资源与生命周期按职责拆分，
+  所有新增生产文件均小于 500 行。
+- `createHttpApplication()` 返回 `handle/routeIds`，9 段 handler 顺序保持
+  health/readiness → local-test/proxy → admin → auth → owner → v1 → legacy
+  → attachment → static；`createServerRuntime()` 公开 `start/ready/stop`。
+  未引入动态扫描、隐式自注册、无边界 barrel 或运行时双轨。
+- `npm run check`、server runtime/HTTP/auth/local-mode/API v1、容量边界、
+  deploy/preview 模拟和隔离 memory soak 通过；完整 `test:system`
+  `416224 ms` 全通过，backend runner 为 `91/91`。第一次 memory soak 与
+  两个 deploy 模拟并行导致 cold-start 超时，隔离原命令后通过，未放宽阈值。
+- 独立 reviewer GO，blocker/P0/P1=`0/0/0`；另行复验真实 JSON 启动、
+  `/readyz`、SIGTERM 退出码 0 和 started/stopped 日志通过。
+- 真实 PostgreSQL 16 因缺少 `postgres/initdb/pg_ctl` 未运行。当前为
+  `iteration-G3 / entrypoint-G4-code`，完整 G4 的 PG stable 证据待环境；
+  剩余 6 条迁移例外均属于 browser G6；
+  未执行 push、tag、Release、真实 Preview/生产部署、Base 写入、云资源修改、
+  真实付费调用或生产写入。

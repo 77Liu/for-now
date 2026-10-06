@@ -43,6 +43,13 @@
 - V0.5.8 B4 已以 `createMediaRuntime()` 统一附件上传/清理、媒体 provider gate、健康/书目识别、ASR 派生、TTS cache/sweep 与小物媒体装配；内部按 attachments、uploads、vision、ASR、speech、providers 分责，复用既有领域和基础设施实现。`server.mjs` 删除旧实现并降至 1473 行，provider 入口例外归零；完整 backend 83/83 通过，独立复审 blocker/P0/P1 为 0/0/0。后台任务入队/去重留在 B5，最终入口 `<=40` 目标不变。
 - V0.5.8 B5 已以 `createContentRuntime()` 统一内容记录 repository 适配、批注/回收、内容附件、媒体子运行时、后台任务、ASR 入队、thought/capture/journal/review/chat 工作流、用户模型提取和个人语境投影；内部拆分为 `content/resources.mjs`、`content/background.mjs` 与 `content/workflows.mjs`，避免把热点平移到单一组合文件。`server.mjs` 删除旧装配并降至 1162 行；`check`、B5 影响门和完整 backend 83/83 通过，独立复审 blocker/P0/P1 为 0/0/0。后续 backend runner 已纳入 content runtime 专项，当前阶段数为 84；下一步 B6 迁出 owner/statistics/admin/legacy HTTP 编排，最终入口 `<=40` 目标不变。
 - V0.5.8 B6 已将统计日志适配、平台 admin 快照鉴权、上游代理、Owner 路由、legacy API 顺序和 V1 显式注册表迁入 `src/app`/`src/http`。平台凭据与 loopback、账户权限、body 上限、Cookie/响应头、流式背压及路由顺序保持不变；未引入动态扫描或隐式自注册。`server.mjs` 删除旧实现并由 1162 行降至 1048 行，API 字面量例外由 25 降至 7；`check`、影响门和完整 backend 90/90 通过，独立复审 blocker/P0/P1 为 0/0/0。下一步 B7 建立 `createHttpApplication()` 与 `createServerRuntime()`，删除 server 迁移例外并达到 `<=40`。
+- V0.5.8 B7 已建立 `createServerRuntime()`、`createHttpApplication()` 和
+  `start/ready/stop` 生命周期。配置/持久化 foundation、账户/auth/local-test、
+  平台与内容 HTTP adapter、显式 registry、静态资源和 scheduler 按职责拆分，
+  所有新增生产文件均小于 500 行；未使用目录扫描、隐式自注册或运行时双轨。
+  `server.mjs` 由 1048 行降至 4 行，9 条 server 例外归零，
+  `check:entrypoints:g4` 和完整 system `416224 ms` 通过，独立复审
+  blocker/P0/P1 为 0/0/0。真实 PostgreSQL 16 因本机缺少工具未复验。
 - S3 AI 已拆出：`ai` 拥有设置归一化、场景选择、用量/单价快照、成本模拟/统计、额度预留、通用 SP/场景约束及调用/重试审计；`shared/persistence` 接管账户文档队列、备份和运行适配，HTTP 接管设置/成本接口。修复 JSON 并发设置覆盖。DeepSeek HTTP/SSE 与图片编码归 `infrastructure/ai-providers`；业务上下文继续迁移。
 - P00 提示词目录已接入：60 个系统提示、场景约束、业务任务和模型可见模板归 `prompts/versions/`；当前激活 `2026.10.02.2` 并保留此前版本。`infrastructure/prompt-catalog` 负责文件与摘要校验，`shared/prompts` 提供不可变运行快照和严格渲染；版本可独立固定，AI 审计记录版本与摘要，代码不保留提示词正文。五问候选提取场景只记录调用元数据与字符数，不在审计日志保存用户原文或完整 Prompt。
 - S3-08 思绪链已收口：整套思绪创建/编辑、内容块、状态、备注、追问、草稿、引子及前台流式回答均经同一领域/应用服务实现；删除继续调用回收事务。旧 URL 仅保留协议适配，不再在入口复制业务逻辑。
@@ -58,7 +65,7 @@
 
 | 文件 | 当前职责 | 主要风险 |
 | --- | --- | --- |
-| `server.mjs` | 启动、HTTP、认证、数据、AI、附件、统计、任务和静态资源 | 任何后端 Feature 都可能修改同一文件 |
+| `server.mjs` | 仅构造并启动 `createServerRuntime()` | 只允许入口协议或进程启动方式变更 |
 | `public/frontend/app/runtime.mjs` | 浏览器应用组合、页面 presenter 与 feature 事件绑定 | 剩余页面 presenter 后续按领域继续细分，入口文件不再承载实现 |
 | `public/index.html` | 全部页面结构和弹层 | 页面结构变更容易误伤其他入口 |
 | `public/frontend/styles/application.css` | 当前全站令牌、布局、组件、页面和响应式样式；根 CSS 仅作稳定入口 | 后续按页面维护时仍需防止选择器覆盖 |
@@ -67,7 +74,8 @@
 重构成功必须同时满足：
 
 - 用户可见行为和生产契约保持不变，除非另有独立 Feature 明确批准。
-- 启动入口保持薄：只负责配置、依赖装配、路由注册、生命周期和关闭。
+- 启动入口保持薄：只负责构造并启动公开 runtime；配置、依赖装配、路由、
+  生命周期和关闭均由所属 app/http 模块负责。
 - 每个模块只有一个公开入口；外部代码不深层导入模块内部文件。
 - 业务模块不直接依赖浏览器 DOM、Node HTTP 对象、具体 JSON 文件或第三方 SDK。
 - 共享模块不包含任何具体 Feature 的业务判断。

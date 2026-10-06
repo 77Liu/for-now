@@ -873,3 +873,27 @@ V0.5.8 只有在以下条件同时成立时才可关闭：
 - 下一步进入 B7，建立 `createHttpApplication()` 与 `createServerRuntime()`，
   删除全部 server 迁移例外并将入口收口到 `<=40` 行；仍未执行 push、
   Preview、部署、真实供应商调用、Base 写入或生产写入。
+
+### B7 服务端入口收口检查点
+
+- `17fca0d` 新增 `createServerRuntime()`、`createHttpApplication()` 与
+  `start/ready/stop` 生命周期；配置/持久化 foundation、账户/auth/local-test、
+  平台 HTTP、内容 HTTP、显式 V1/legacy wiring、静态资源和 scheduler 分文件
+  装配。所有新增生产文件均不超过 500 行，没有目录扫描、隐式自注册或双轨实现。
+- `server.mjs` 由 1048 行降至 4 行，SHA 为
+  `450a346e773297ac3caa76716e621e797dbfe75be7c9892e6f58f22080e26d0f`；
+  只从 `src/app/index.mjs` 导入 `createServerRuntime`，以 `import.meta.url`
+  构造并启动。9 条 server 迁移例外全部删除，当前仅剩 6 条 browser G6
+  例外；65 个模块、237 条拥有路由不变，`check:entrypoints:g4` 通过。
+- 新增 server runtime 专项并纳入 backend runner，固定 9 段处理顺序、静态
+  fallback、base path、启动恢复和生命周期契约。`npm run check`、HTTP/
+  auth/local-mode/API v1/容量边界、deploy/preview 模拟与隔离 memory soak
+  通过；完整 `test:system` 全通过，耗时 `416224 ms`，其中 backend 为
+  `91/91`。独立 reviewer GO，blocker/P0/P1=`0/0/0`。
+- memory soak 首次与两个 deploy 模拟并行时在 cold start 超时，未调整阈值；
+  资源隔离后原命令通过。真实 PostgreSQL 16 稳定门因本机缺少
+  `postgres/initdb/pg_ctl` 未运行，未冒充通过。
+- 当前达到 `iteration-G3 / entrypoint-G4-code`；完整 G4 仍待具备工具后的
+  PostgreSQL stable 证据。下一步恢复 F3-F10 与 G5-G7；本检查点未执行
+  push、tag、Release、真实 Preview/生产部署、Base 写入、云资源修改、
+  真实付费调用或生产写入。
