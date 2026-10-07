@@ -85,7 +85,9 @@ export function createCaptureAudioDraft({
   let recordingSerial = 0;
   let startPending = false;
   let uploadFlight = null;
+  let storageMutation = Promise.resolve();
   let value = emptyAudio();
+  const submissionTicket = Symbol("captureAudioSubmissionTicket");
 
   const owner = () => String(getAccountId() || "");
   const snapshot = () => Object.freeze({
@@ -100,9 +102,12 @@ export function createCaptureAudioDraft({
     return snapshot();
   };
   const sessionTicket = () => ({ generation, owner: owner() });
-  const contentTicket = () => ({
+  const intentTicket = () => ({
     ...sessionTicket(),
-    revision,
+    revision
+  });
+  const contentTicket = () => ({
+    ...intentTicket(),
     blob: value.blob,
     uploadRequestId: value.uploadRequestId
   });
@@ -111,12 +116,20 @@ export function createCaptureAudioDraft({
     && ticket.generation === generation
     && ticket.owner === owner()
   );
-  const sameContent = ticket => Boolean(
+  const sameIntent = ticket => Boolean(
     sameSession(ticket)
     && ticket.revision === revision
+  );
+  const sameContent = ticket => Boolean(
+    sameIntent(ticket)
     && ticket.blob === value.blob
     && ticket.uploadRequestId === value.uploadRequestId
   );
+  const enqueueStorageMutation = operation => {
+    const pending = storageMutation.then(operation, operation);
+    storageMutation = pending.catch(() => {});
+    return pending;
+  };
   const stopTracks = stream => {
     stream?.getTracks?.().forEach(track => track.stop());
     if (!stream || value.stream === stream) value.stream = null;
@@ -132,11 +145,12 @@ export function createCaptureAudioDraft({
     revision += 1;
     return emit();
   };
-  const normalizedResult = result => ({
+  const normalizedResult = (result, ticket = contentTicket()) => Object.freeze({
     attachmentPath: result.attachmentPath,
     mimeType: result.mimeType,
     bytes: result.bytes,
-    durationMs: result.durationMs
+    durationMs: result.durationMs,
+    [submissionTicket]: ticket
   });
 
   async function discardUpload(
@@ -158,11 +172,11 @@ export function createCaptureAudioDraft({
   async function persist() {
     const accountId = owner();
     if (!accountId || isEditing()) return false;
-    const ticket = sessionTicket();
+    const ticket = contentTicket();
     const hasAudio = value.blob || value.path || value.uploadedPath;
     if (!hasAudio) {
-      await store.delete(accountId, draftKey);
-      return sameSession(ticket);
+      await enqueueStorageMutation(() => store.delete(accountId, draftKey));
+      return sameIntent(ticket);
     }
     const audio = value.path ? {
       path: value.path,
@@ -178,20 +192,25 @@ export function createCaptureAudioDraft({
       uploadedPath: value.uploadedPath,
       lastError: value.lastError
     };
-    await store.put({
+    const record = {
       owner: accountId,
       id: draftKey,
       updatedAt: new Date(now()).toISOString(),
       audio
+    };
+    return enqueueStorageMutation(async () => {
+      if (!sameContent(ticket)) return false;
+      await store.put(record);
+      return sameContent(ticket);
     });
-    return sameSession(ticket);
   }
 
   async function restore(accountId) {
-    const ticket = sessionTicket();
+    const ticket = intentTicket();
     if (!accountId || accountId !== owner() || value.blob || value.path) return false;
+    await storageMutation;
     const stored = await store.get(accountId, draftKey);
-    if (!sameSession(ticket)) return false;
+    if (!sameIntent(ticket)) return false;
     const audio = stored?.audio;
     if (!audio || (stored.owner && stored.owner !== accountId)) return false;
     if (audio.path) {
@@ -241,14 +260,15 @@ export function createCaptureAudioDraft({
       await Promise.all([
         stalePath ? discardUpload(stalePath, staleRequestId) : Promise.resolve(false),
         accountId && !preserveStored
-          ? store.delete(accountId, draftKey)
+          ? enqueueStorageMutation(() => store.delete(accountId, draftKey))
           : Promise.resolve(false)
       ]);
     }
     return true;
   }
 
-  async function setBlob(blob, durationMs, { notice = "" } = {}) {
+  async function setBlob(blob, durationMs, { notice = "", ticket = null } = {}) {
+    if (ticket && !sameIntent(ticket)) throw abortFailure();
     const audio = validatedAudioBlob(blob, durationMs);
     const stalePath = value.uploadedPath;
     const staleRequestId = value.uploadRequestId;
@@ -266,9 +286,13 @@ export function createCaptureAudioDraft({
   }
 
   async function importFile(file) {
+    revision += 1;
+    const ticket = intentTicket();
     const durationMs = await readDuration(file);
+    if (!sameIntent(ticket)) return false;
     await setBlob(file, durationMs, {
-      notice: "音频已保存在本机，提交后同步。"
+      notice: "音频已保存在本机，提交后同步。",
+      ticket
     });
     return true;
   }
@@ -297,7 +321,7 @@ export function createCaptureAudioDraft({
     if (startPending || ["recording", "paused"].includes(value.recorder?.state)) return false;
     if ((value.blob || value.path || value.uploadedPath)
       && !confirmReplace("用新录音替换当前语音？")) return false;
-    const ticket = sessionTicket();
+    let ticket = intentTicket();
     const serial = ++recordingSerial;
     let stream = null;
     startPending = true;
@@ -306,10 +330,12 @@ export function createCaptureAudioDraft({
     emit();
     try {
       stream = await mediaDevices.getUserMedia({ audio: true });
-      if (!sameSession(ticket) || serial !== recordingSerial) {
+      if (!sameIntent(ticket) || serial !== recordingSerial) {
         stopTracks(stream);
         return false;
       }
+      revision += 1;
+      ticket = intentTicket();
       const mimeType = preferredRecorderMime(MediaRecorderConstructor);
       const recorder = mimeType
         ? new MediaRecorderConstructor(stream, { mimeType })
@@ -335,7 +361,7 @@ export function createCaptureAudioDraft({
           clearTimer(value.timer);
           value.timer = 0;
           stopTracks(stream);
-          if (!sameSession(ticket) || serial !== recordingSerial) return;
+          if (!sameIntent(ticket) || serial !== recordingSerial) return;
           const durationMs = Math.min(
             AUDIO_MAX_DURATION_MS,
             now() - value.startedAt - value.pausedTotal
@@ -346,7 +372,8 @@ export function createCaptureAudioDraft({
           value.recorder = null;
           try {
             await setBlob(blob, durationMs, {
-              notice: "录音已保存在本机，提交后同步。"
+              notice: "录音已保存在本机，提交后同步。",
+              ticket
             });
           } catch (error) {
             value.lastError = presentError(error, {
@@ -377,7 +404,7 @@ export function createCaptureAudioDraft({
       return true;
     } catch (error) {
       if (stream) stopTracks(stream);
-      if (sameSession(ticket) && serial === recordingSerial) {
+      if (sameIntent(ticket) && serial === recordingSerial) {
         value.recorder = null;
         value.lastError = recordingError(error);
       }
@@ -415,34 +442,51 @@ export function createCaptureAudioDraft({
   }
 
   async function cancel() {
-    if (!["recording", "paused"].includes(value.recorder?.state)) return clear();
+    if (!value.stopPromise
+      && !["recording", "paused"].includes(value.recorder?.state)) return clear();
     recordingSerial += 1;
+    revision += 1;
     clearTimer(value.timer);
     value.timer = 0;
     try { value.recorder.stop(); } catch {}
     stopTracks(value.stream);
     const resolveStop = value.resolveStop;
-    value.recorder = null;
-    value.chunks = [];
-    value.startedAt = 0;
-    value.pausedAt = 0;
-    value.pausedTotal = 0;
-    value.lastError = null;
-    value.stopPromise = null;
-    value.resolveStop = null;
+    Object.assign(value, {
+      recorder: null,
+      stream: null,
+      chunks: [],
+      startedAt: 0,
+      pausedAt: 0,
+      pausedTotal: 0,
+      lastError: null,
+      stopPromise: null,
+      resolveStop: null
+    });
     resolveStop?.();
     emit();
     return true;
   }
 
+  async function prepareSubmission() {
+    if (startPending) {
+      recordingSerial += 1;
+      startPending = false;
+    }
+    await stop();
+    revision += 1;
+    emit();
+    return snapshot();
+  }
+
   async function forSubmission() {
+    let ticket = contentTicket();
     if (value.path) {
       return normalizedResult({
         attachmentPath: value.path,
         mimeType: value.mimeType,
         bytes: value.bytes,
         durationMs: value.durationMs
-      });
+      }, ticket);
     }
     if (!value.blob) return null;
     const valid = validatedAudioBlob(value.blob, value.durationMs);
@@ -452,7 +496,7 @@ export function createCaptureAudioDraft({
         mimeType: value.mimeType,
         bytes: value.bytes,
         durationMs: value.durationMs
-      });
+      }, ticket);
     }
     if (uploadFlight
       && uploadFlight.generation === generation
@@ -465,14 +509,16 @@ export function createCaptureAudioDraft({
     value.notice = "";
     revision += 1;
     emit();
-    const ticket = contentTicket();
+    ticket = contentTicket();
     const pending = (async () => {
       await persist();
       if (!sameContent(ticket)) throw abortFailure();
       try {
+        const encodedAudio = await encodeAudio(valid.blob);
+        if (!sameContent(ticket)) throw abortFailure();
         const result = await uploadOriginalAudio({
           request,
-          audio: await encodeAudio(valid.blob),
+          audio: encodedAudio,
           durationMs: valid.durationMs,
           idempotencyKey: ticket.uploadRequestId
         });
@@ -489,8 +535,9 @@ export function createCaptureAudioDraft({
         });
         revision += 1;
         emit();
+        ticket = contentTicket();
         await persist();
-        return normalizedResult(result);
+        return normalizedResult(result, ticket);
       } catch (error) {
         if (sameContent(ticket) && error.name !== "AbortError") {
           value.lastError = presentError(error, {
@@ -514,8 +561,11 @@ export function createCaptureAudioDraft({
   }
 
   async function rollback(attachmentPath) {
+    const ticket = contentTicket();
+    const staleRequestId = value.uploadRequestId;
     if (!attachmentPath || attachmentPath !== value.uploadedPath) return false;
-    if (!await discardUpload()) return false;
+    if (!await discardUpload(attachmentPath, staleRequestId)) return false;
+    if (!sameContent(ticket)) return false;
     value.uploadedPath = "";
     value.uploadRequestId = "";
     revision += 1;
@@ -561,7 +611,9 @@ export function createCaptureAudioDraft({
   async function complete() {
     await clear({ forget: false, preserveStored: true });
     const accountId = owner();
-    if (accountId) await store.delete(accountId, draftKey);
+    if (accountId) {
+      await enqueueStorageMutation(() => store.delete(accountId, draftKey));
+    }
     return true;
   }
 
@@ -573,8 +625,13 @@ export function createCaptureAudioDraft({
     togglePause,
     stop,
     cancel,
+    prepareSubmission,
     importFile,
     forSubmission,
+    isCurrentSubmission(result) {
+      const ticket = result?.[submissionTicket];
+      return Boolean(ticket && sameContent(ticket));
+    },
     rollback,
     clear,
     complete,

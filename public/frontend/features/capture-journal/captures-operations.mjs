@@ -99,7 +99,7 @@ export function createCaptureOperations({
     }
     try {
       stage = "audio";
-      await audio.stop();
+      await audio.prepareSubmission();
       if (!sameSession(ticket)) throw abortFailure();
       stage = "images";
       const submission = await media.submitDraft("capture");
@@ -111,11 +111,13 @@ export function createCaptureOperations({
       stage = "audio";
       const audioResult = await audio.forSubmission();
       if (!sameSession(ticket)) throw abortFailure();
+      if (audioResult && !audio.isCurrentSubmission(audioResult)) throw abortFailure();
       if (audioResult?.attachmentPath === audio.snapshot().uploadedPath) {
         uploadedAudioPath = audioResult.attachmentPath;
         captureView.showStatus("#capture-status", "语音已上传，正在同步记录…");
       }
       stage = "validation";
+      if (audioResult && !audio.isCurrentSubmission(audioResult)) throw abortFailure();
       const payload = publicValidation(() => ({
         ...view.occurrenceFields(query("#capture-date")),
         ...captureRecordPayload({

@@ -211,6 +211,68 @@ assert.equal(await pendingStart, false);
 assert.equal(stoppedTracks, 1);
 assert.equal(pendingAudio.snapshot().active, false);
 
+const submissionPermissionGate = deferred();
+let submissionPermissionStarted = 0;
+let submissionPermissionStopped = 0;
+const submissionPendingAudio = createCaptureAudioDraft({
+  store: createMemoryMediaDraftStore(),
+  getAccountId: () => "submission-pending-account",
+  isEditing: () => false,
+  presentError: error => ({ message: error.message }),
+  encodeAudio: async () => "data:audio/webm;base64,dGVzdA==",
+  readDuration: async () => 1200,
+  request: async () => ({ discarded: [] }),
+  mediaDevices: {
+    getUserMedia() {
+      submissionPermissionStarted += 1;
+      return submissionPermissionGate.promise;
+    }
+  },
+  MediaRecorderConstructor: class {},
+  objectUrls,
+  createId: () => "submission-pending-request",
+  now: () => 1000,
+  setTimer: () => 1,
+  clearTimer: () => {},
+  confirmReplace: () => true
+});
+const submissionPendingStart = submissionPendingAudio.start();
+assert.equal(submissionPermissionStarted, 1);
+await submissionPendingAudio.prepareSubmission();
+submissionPermissionGate.resolve({
+  getTracks: () => [{ stop: () => { submissionPermissionStopped += 1; } }]
+});
+assert.equal(await submissionPendingStart, false);
+assert.equal(submissionPermissionStopped, 1);
+assert.equal(await submissionPendingAudio.forSubmission(), null);
+
+const pendingDurationGate = deferred();
+const pendingDurationStarted = deferred();
+const submissionPendingFile = createCaptureAudioDraft({
+  store: createMemoryMediaDraftStore(),
+  getAccountId: () => "submission-file-account",
+  isEditing: () => false,
+  presentError: error => ({ message: error.message }),
+  encodeAudio: async () => "data:audio/webm;base64,dGVzdA==",
+  readDuration: async () => {
+    pendingDurationStarted.resolve();
+    return pendingDurationGate.promise;
+  },
+  request: async () => ({ discarded: [] }),
+  objectUrls,
+  createId: () => "submission-file-request",
+  now: () => 1000,
+  setTimer: () => 1,
+  clearTimer: () => {},
+  confirmReplace: () => true
+});
+const pendingFileImport = submissionPendingFile.importFile(blob);
+await pendingDurationStarted.promise;
+await submissionPendingFile.prepareSubmission();
+pendingDurationGate.resolve(1200);
+assert.equal(await pendingFileImport, false);
+assert.equal(await submissionPendingFile.forSubmission(), null);
+
 await store.put({
   owner: "account-a",
   id: "capture-audio",
@@ -327,6 +389,302 @@ assert.ok(clearedTimers.includes(9));
 assert.equal(recorderAudio.snapshot().preview, "blob:recorder-1");
 await recorderAudio.clear();
 assert.deepEqual(recorderUrls.revoked, ["blob:recorder-1"]);
+
+let delayedRecorder = null;
+class DelayedMediaRecorder extends EventTarget {
+  static isTypeSupported() {
+    return true;
+  }
+
+  constructor(stream, { mimeType = "audio/webm" } = {}) {
+    super();
+    this.stream = stream;
+    this.mimeType = mimeType;
+    this.state = "inactive";
+    delayedRecorder = this;
+  }
+
+  start() {
+    this.state = "recording";
+  }
+
+  stop() {
+    this.state = "inactive";
+  }
+
+  flushStop() {
+    const data = new Event("dataavailable");
+    Object.defineProperty(data, "data", {
+      value: new Blob(["late-recording"], { type: this.mimeType })
+    });
+    this.dispatchEvent(data);
+    this.dispatchEvent(new Event("stop"));
+  }
+}
+const delayedRecorderStore = createMemoryMediaDraftStore();
+let delayedRecorderRequests = 0;
+const delayedRecorderAudio = createCaptureAudioDraft({
+  store: delayedRecorderStore,
+  getAccountId: () => "delayed-recorder-account",
+  isEditing: () => false,
+  presentError: error => ({ message: error.message }),
+  encodeAudio: async () => "data:audio/webm;base64,dGVzdA==",
+  readDuration: async () => 1200,
+  request: async () => {
+    delayedRecorderRequests += 1;
+    return { discarded: [] };
+  },
+  mediaDevices: {
+    async getUserMedia() {
+      return { getTracks: () => [{ stop() {} }] };
+    }
+  },
+  MediaRecorderConstructor: DelayedMediaRecorder,
+  objectUrls: recorderUrls,
+  createId: () => "delayed-recorder-request",
+  now: () => 2000,
+  setTimer: () => 10,
+  clearTimer: () => {},
+  confirmReplace: () => true
+});
+assert.equal(await delayedRecorderAudio.start(), true);
+const delayedStop = delayedRecorderAudio.stop();
+const delayedRemoval = delayedRecorderAudio.cancel();
+delayedRecorder.flushStop();
+await Promise.all([delayedStop, delayedRemoval]);
+assert.equal(delayedRecorderAudio.snapshot().blob, null);
+assert.equal(
+  await delayedRecorderStore.get("delayed-recorder-account", "capture-audio"),
+  null
+);
+assert.equal(await delayedRecorderAudio.forSubmission(), null);
+assert.equal(delayedRecorderRequests, 0);
+assert.equal(await delayedRecorderAudio.start(), true);
+const cancelledRecorder = delayedRecorder;
+assert.equal(await delayedRecorderAudio.cancel(), true);
+cancelledRecorder.flushStop();
+assert.equal(delayedRecorderAudio.snapshot().blob, null);
+assert.equal(await delayedRecorderAudio.forSubmission(), null);
+assert.equal(delayedRecorderRequests, 0);
+
+const replacementStore = createMemoryMediaDraftStore();
+const replacementAudio = createCaptureAudioDraft({
+  store: replacementStore,
+  getAccountId: () => "replacement-account",
+  isEditing: () => false,
+  presentError: error => ({ message: error.message }),
+  encodeAudio: async () => "data:audio/webm;base64,dGVzdA==",
+  readDuration: async () => 1200,
+  request: async () => ({ discarded: [] }),
+  mediaDevices: {
+    async getUserMedia() {
+      return { getTracks: () => [{ stop() {} }] };
+    }
+  },
+  MediaRecorderConstructor: DelayedMediaRecorder,
+  objectUrls: recorderUrls,
+  createId: () => "replacement-request",
+  now: () => 2000,
+  setTimer: () => 11,
+  clearTimer: () => {},
+  confirmReplace: () => true
+});
+await replacementAudio.importFile(blob);
+assert.equal(await replacementAudio.start(), true);
+const replacementStop = replacementAudio.stop();
+assert.equal(await replacementAudio.cancel(), true);
+delayedRecorder.flushStop();
+await replacementStop;
+assert.equal(
+  replacementAudio.snapshot().blob,
+  blob,
+  "cancelling a replacement recording must preserve the previous audio"
+);
+assert.equal(
+  (await replacementStore.get("replacement-account", "capture-audio")).audio.blob.size,
+  blob.size
+);
+
+const stalePutGate = deferred();
+const stalePutStarted = deferred();
+const stalePutRecords = new Map();
+let stalePutRequests = 0;
+const stalePutStore = {
+  async get(owner, id) {
+    return stalePutRecords.get(`${owner}:${id}`) || null;
+  },
+  async put(record) {
+    stalePutStarted.resolve();
+    await stalePutGate.promise;
+    stalePutRecords.set(`${record.owner}:${record.id}`, record);
+  },
+  async delete(owner, id) {
+    stalePutRecords.delete(`${owner}:${id}`);
+  }
+};
+const stalePutAudio = createCaptureAudioDraft({
+  store: stalePutStore,
+  getAccountId: () => "stale-put-account",
+  isEditing: () => false,
+  presentError: error => ({ message: error.message }),
+  encodeAudio: async () => "data:audio/webm;base64,dGVzdA==",
+  readDuration: async () => 1200,
+  request: async () => {
+    stalePutRequests += 1;
+    return { discarded: [] };
+  },
+  objectUrls: recorderUrls,
+  createId: () => "stale-put-request",
+  now: () => 1000,
+  setTimer: () => 1,
+  clearTimer: () => {},
+  confirmReplace: () => true
+});
+const staleImport = stalePutAudio.importFile(blob);
+await stalePutStarted.promise;
+const stalePutClear = stalePutAudio.clear();
+stalePutGate.resolve();
+await Promise.all([staleImport, stalePutClear]);
+assert.equal(
+  await stalePutStore.get("stale-put-account", "capture-audio"),
+  null,
+  "an audio draft removed during a delayed put must not return to storage"
+);
+assert.equal(await stalePutAudio.forSubmission(), null);
+assert.equal(stalePutRequests, 0, "removed audio must not start upload or discard requests");
+
+const staleRestoreGate = deferred();
+const staleRestoreStarted = deferred();
+const staleRestoreStore = {
+  async get() {
+    staleRestoreStarted.resolve();
+    await staleRestoreGate.promise;
+    return {
+      owner: "stale-restore-account",
+      id: "capture-audio",
+      audio: {
+        blob,
+        mimeType: "audio/webm",
+        bytes: blob.size,
+        durationMs: 1200
+      }
+    };
+  },
+  async put() {},
+  async delete() {}
+};
+const staleRestoreAudio = createCaptureAudioDraft({
+  store: staleRestoreStore,
+  getAccountId: () => "stale-restore-account",
+  isEditing: () => false,
+  presentError: error => ({ message: error.message }),
+  encodeAudio: async () => "data:audio/webm;base64,dGVzdA==",
+  readDuration: async () => 1200,
+  request: async () => ({ discarded: [] }),
+  objectUrls: recorderUrls,
+  createId: () => "stale-restore-request",
+  now: () => 1000,
+  setTimer: () => 1,
+  clearTimer: () => {},
+  confirmReplace: () => true
+});
+const staleRestore = staleRestoreAudio.restore("stale-restore-account");
+await staleRestoreStarted.promise;
+await staleRestoreAudio.clear();
+staleRestoreGate.resolve();
+assert.equal(
+  await staleRestore,
+  false,
+  "a restore that finishes after removal must be ignored"
+);
+assert.equal(staleRestoreAudio.snapshot().blob, null);
+assert.equal(await staleRestoreAudio.forSubmission(), null);
+
+const encodeGate = deferred();
+const encodeStarted = deferred();
+let encodeAccount = "encode-account-a";
+let encodedUploads = 0;
+const encodedAudio = createCaptureAudioDraft({
+  store: createMemoryMediaDraftStore(),
+  getAccountId: () => encodeAccount,
+  isEditing: () => false,
+  presentError: error => ({ message: error.message }),
+  encodeAudio: async () => {
+    encodeStarted.resolve();
+    return encodeGate.promise;
+  },
+  readDuration: async () => 1200,
+  request: async url => {
+    if (url === "/api/audio/upload") encodedUploads += 1;
+    return { discarded: [] };
+  },
+  objectUrls: recorderUrls,
+  createId: () => "encode-request",
+  now: () => 1000,
+  setTimer: () => 1,
+  clearTimer: () => {},
+  confirmReplace: () => true
+});
+await encodedAudio.importFile(blob);
+const encodedSubmission = encodedAudio.forSubmission();
+await encodeStarted.promise;
+encodeAccount = "encode-account-b";
+encodedAudio.resetSession();
+encodeGate.resolve("data:audio/webm;base64,dGVzdA==");
+await assert.rejects(encodedSubmission, { name: "AbortError" });
+assert.equal(encodedUploads, 0, "account reset during encoding must prevent upload");
+
+const discardGate = deferred();
+const discardStarted = deferred();
+let rollbackAccount = "rollback-account-a";
+const rollbackStore = createMemoryMediaDraftStore();
+const rollbackAudio = createCaptureAudioDraft({
+  store: rollbackStore,
+  getAccountId: () => rollbackAccount,
+  isEditing: () => false,
+  presentError: error => ({ message: error.message }),
+  encodeAudio: async () => "data:audio/webm;base64,dGVzdA==",
+  readDuration: async () => 1200,
+  request: async (url, options) => {
+    if (url === "/api/audio/upload") {
+      return {
+        audio: {
+          attachmentPath: "/attachments/rollback.webm",
+          mimeType: "audio/webm",
+          bytes: 5,
+          durationMs: 1200
+        }
+      };
+    }
+    if (url === "/api/audio/discard") {
+      discardStarted.resolve();
+      await discardGate.promise;
+      return { discarded: [JSON.parse(options.body).attachmentPath] };
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  },
+  objectUrls: recorderUrls,
+  createId: () => "rollback-request",
+  now: () => 1000,
+  setTimer: () => 1,
+  clearTimer: () => {},
+  confirmReplace: () => true
+});
+await rollbackAudio.importFile(blob);
+const rollbackSubmission = await rollbackAudio.forSubmission();
+const staleRollback = rollbackAudio.rollback(rollbackSubmission.attachmentPath);
+await discardStarted.promise;
+rollbackAccount = "rollback-account-b";
+rollbackAudio.resetSession();
+const newAccountBlob = new Blob(["new-account"], { type: "audio/webm" });
+await rollbackAudio.importFile(newAccountBlob);
+discardGate.resolve();
+assert.equal(await staleRollback, false);
+assert.equal(rollbackAudio.snapshot().blob, newAccountBlob);
+assert.equal(
+  (await rollbackStore.get("rollback-account-b", "capture-audio")).audio.blob.size,
+  newAccountBlob.size
+);
 
 const sessionValues = new Map();
 const storage = {

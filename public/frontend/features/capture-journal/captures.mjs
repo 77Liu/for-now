@@ -375,6 +375,14 @@ export function createCapturesFeatureController({
     if (button.id === "capture-create-toggle") {
       return editorOpen ? closeEditor() : openEditor(button);
     }
+    if (submissionPromise && [
+      "capture-editor-close",
+      "capture-cancel",
+      "capture-audio-record",
+      "capture-audio-pause",
+      "capture-audio-stop",
+      "capture-audio-remove"
+    ].includes(button.id)) return false;
     if (button.id === "capture-editor-close") return closeEditor();
     if (button.id === "capture-cancel") return resetForm();
     if (button.id === "capture-audio-record") return audio.start();
@@ -435,6 +443,10 @@ export function createCapturesFeatureController({
 
   async function handleChange(event) {
     if (event.target.id === "capture-audio-file") {
+      if (submissionPromise) {
+        event.target.value = "";
+        return;
+      }
       const file = event.target.files?.[0];
       if (!file) return;
       try {
@@ -558,9 +570,10 @@ export function createCapturesFeatureController({
       const pending = operations.submit(event.target);
       submissionPromise = pending;
       captureView.renderList();
+      captureView.renderAudio();
       void pending.finally(() => {
         if (submissionPromise === pending) submissionPromise = null;
-        if (isActive()) captureView.renderList();
+        if (isActive()) captureView.render();
       });
     });
     listen(current.root, "input", handleInput);

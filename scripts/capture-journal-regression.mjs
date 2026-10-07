@@ -480,6 +480,7 @@ const captureInput = {
   tags: ["接口"],
   occurredAt: "2026-09-29T02:03:04.000Z"
 };
+const transcriptionsBeforeTextCapture = requestedTranscriptions.length;
 response = await request("account-a", "POST", "/api/v1/captures", {
   headers: { "idempotency-key": "capture-create-1" },
   body: captureInput
@@ -487,6 +488,11 @@ response = await request("account-a", "POST", "/api/v1/captures", {
 assert.equal(response.status, 201);
 assert.equal(response.body.meta.traceId, "trace-account-a");
 assert.equal(response.headers.get("etag"), "\"1\"");
+assert.equal(
+  requestedTranscriptions.length,
+  transcriptionsBeforeTextCapture,
+  "a pure text capture must not enqueue ASR"
+);
 const captureId = response.body.data.id;
 
 response = await request("account-a", "POST", "/api/v1/captures", {

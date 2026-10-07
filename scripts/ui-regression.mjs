@@ -204,6 +204,8 @@ const mockFetch = `
   window.__failMicrophonePermission = false;
   window.__audioUploadKeys = [];
   window.__failAudioUpload = false;
+  window.__delayAudioUpload = false;
+  window.__releaseAudioUpload = null;
   window.__failTranscriptionQueue = false;
   const nativeCreateObjectUrl = URL.createObjectURL.bind(URL);
   const nativeRevokeObjectUrl = URL.revokeObjectURL.bind(URL);
@@ -1159,8 +1161,12 @@ const mockFetch = `
     }
     if (url === "/api/audio/upload" && init.method === "POST") {
       const payload=JSON.parse(init.body),key=init.headers?.["idempotency-key"]||"";window.__audioUploadKeys.push(key);
-      if(window.__failAudioUpload){window.__failAudioUpload=false;return Promise.resolve(new Response(JSON.stringify({error:{message:"AUDIO_STORAGE_INTERNAL",code:"STORAGE_UPLOAD_FAILED"}}),{status:503,headers:{"content-type":"application/json"}}))}
-      return json({audio:{attachmentPath:"/attachments/capture-upload.webm",mimeType:"audio/webm",bytes:4,durationMs:payload.durationMs}})
+      const respond=()=>{
+        if(window.__failAudioUpload){window.__failAudioUpload=false;return new Response(JSON.stringify({error:{message:"AUDIO_STORAGE_INTERNAL",code:"STORAGE_UPLOAD_FAILED"}}),{status:503,headers:{"content-type":"application/json"}})}
+        return new Response(JSON.stringify({audio:{attachmentPath:"/attachments/capture-upload.webm",mimeType:"audio/webm",bytes:4,durationMs:payload.durationMs}}),{status:200,headers:{"content-type":"application/json"}})
+      };
+      if(window.__delayAudioUpload){window.__delayAudioUpload=false;return new Promise(resolve=>{window.__releaseAudioUpload=()=>resolve(respond())})}
+      return Promise.resolve(respond())
     }
     if (url === "/api/audio/discard" && init.method === "POST") {
       const payload=JSON.parse(init.body);return json({discarded:[payload.attachmentPath],pending:0})
@@ -2481,12 +2487,15 @@ try {
   assert.equal(await waitUntil(`document.querySelector("#capture-audio-status").textContent.includes("录音已暂停")`),true);
   await evaluate(`document.querySelector("#capture-audio-pause").click();window.__advanceNow(320);document.querySelector("#capture-audio-stop").click();true`);
   assert.equal(await waitUntil(`document.querySelector("#capture-audio-status").textContent.includes("录音已保存在本机")&&!document.querySelector("#capture-audio-preview").hidden`),true);
-  await evaluate(`document.querySelector("#capture-content").value="带语音的捕念草稿";window.__failAudioUpload=true;document.querySelector("#capture-form").requestSubmit();true`);
-  assert.equal(await waitUntil(`document.querySelector("#capture-audio-status").textContent==="捕念语音上传暂时失败。原音草稿仍保存在本机。请稍后重试。"`),true);
-  assert.deepEqual(await evaluate(`({captureStatus:document.querySelector("#capture-status").textContent,audioVisible:!document.querySelector("#capture-audio-preview").hidden,sentinel:document.body.textContent.includes("AUDIO_STORAGE_INTERNAL"),keys:window.__audioUploadKeys.length})`),{captureStatus:"捕念语音上传暂时失败。捕念草稿和待提交语音仍保存在当前页面。请稍后重试。",audioVisible:true,sentinel:false,keys:1});
+  await evaluate(`document.querySelector("#capture-content").value="带语音的捕念草稿";window.__delayAudioUpload=true;window.__failAudioUpload=true;document.querySelector("#capture-form").requestSubmit();true`);
+  assert.equal(await waitUntil(`typeof window.__releaseAudioUpload==="function"`),true);
+  assert.deepEqual(await evaluate(`(()=>{const remove=document.querySelector("#capture-audio-remove"),file=document.querySelector("#capture-audio-file"),record=document.querySelector("#capture-audio-record"),preview=document.querySelector("#capture-audio-preview");remove.click();return{removeDisabled:remove.disabled,fileDisabled:file.disabled,recordDisabled:record.disabled,previewVisible:!preview.hidden}})()`),{removeDisabled:true,fileDisabled:true,recordDisabled:true,previewVisible:true});
+  await evaluate(`window.__releaseAudioUpload();true`);
+  assert.equal(await waitUntil(`document.querySelector("#capture-audio-status").textContent==="捕念语音上传暂时失败。原音草稿仍保存在本机。请稍后重试。"&&document.querySelector("#capture-status").textContent==="捕念语音上传暂时失败。捕念草稿和待提交语音仍保存在当前页面。请稍后重试。"&&!document.querySelector("#capture-audio-remove").disabled`),true);
+  assert.deepEqual(await evaluate(`({captureStatus:document.querySelector("#capture-status").textContent,audioVisible:!document.querySelector("#capture-audio-preview").hidden,removeEnabled:!document.querySelector("#capture-audio-remove").disabled,sentinel:document.body.textContent.includes("AUDIO_STORAGE_INTERNAL"),keys:window.__audioUploadKeys.length})`),{captureStatus:"捕念语音上传暂时失败。捕念草稿和待提交语音仍保存在当前页面。请稍后重试。",audioVisible:true,removeEnabled:true,sentinel:false,keys:1});
   assert.deepEqual(await evaluate(`new Promise(resolve=>{const opening=indexedDB.open("cike-media-drafts",1);opening.onerror=()=>resolve(null);opening.onsuccess=()=>{const request=opening.result.transaction("drafts","readonly").objectStore("drafts").get("user-1:capture-audio");request.onerror=()=>resolve(null);request.onsuccess=()=>resolve({lastError:request.result?.audio?.lastError||"",uploadRequestId:request.result?.audio?.uploadRequestId||""})}})`),{lastError:"捕念语音上传暂时失败。原音草稿仍保存在本机。请稍后重试。",uploadRequestId:await evaluate(`window.__audioUploadKeys[0]`)});
   await evaluate(`window.__failAudioUpload=true;document.querySelector("#capture-form").requestSubmit();true`);
-  assert.equal(await waitUntil(`window.__audioUploadKeys.length===2`),true);
+  assert.equal(await waitUntil(`window.__audioUploadKeys.length===2&&document.querySelector("#capture-status").textContent==="捕念语音上传暂时失败。捕念草稿和待提交语音仍保存在当前页面。请稍后重试。"&&!document.querySelector("#capture-audio-remove").disabled`),true);
   assert.equal(await evaluate(`window.__audioUploadKeys[0]===window.__audioUploadKeys[1]&&window.__audioUploadKeys[0].length>0`),true);
   await evaluate(`document.querySelector("#capture-audio-remove").click();true`);
   assert.equal(await waitUntil(`document.querySelector("#capture-audio-preview").hidden&&document.querySelector("#capture-audio-preview").getClientRects().length===0`),true);

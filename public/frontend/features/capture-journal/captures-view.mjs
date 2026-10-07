@@ -46,21 +46,26 @@ export function createCapturesView({
     const remove = query("#capture-audio-remove");
     const file = query("#capture-audio-file");
     const paused = state.recordingState === "paused";
+    const submitting = isSubmitting();
     if (record) {
       record.hidden = state.active;
-      record.disabled = state.startPending;
+      record.disabled = state.startPending || submitting;
     }
     if (pause) {
       pause.hidden = !state.active;
+      pause.disabled = submitting;
       pause.textContent = paused ? "▶" : "Ⅱ";
       pause.title = paused ? "继续录音" : "暂停录音";
       pause.setAttribute("aria-label", pause.title);
     }
-    if (stop) stop.hidden = !state.active;
-    if (file) file.disabled = state.active || state.startPending;
+    if (stop) {
+      stop.hidden = !state.active;
+      stop.disabled = submitting;
+    }
+    if (file) file.disabled = state.active || state.startPending || submitting;
     if (remove) {
       remove.hidden = !state.active && !source;
-      remove.disabled = state.startPending;
+      remove.disabled = state.startPending || submitting;
       remove.title = state.active ? "取消录音" : "移除语音";
       remove.setAttribute("aria-label", remove.title);
     }
