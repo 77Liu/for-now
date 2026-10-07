@@ -1,0 +1,836 @@
+{
+  "schemaVersion": 1,
+  "fixtureSetVersion": "2026.10.07.1",
+  "dataPolicy": "synthetic-only",
+  "thresholds": {
+    "materialRelevanceRate": 0.85,
+    "criticalEvidenceMissRate": 0,
+    "evidenceSupportRate": 1,
+    "freshnessMisstatementRate": 0
+  },
+  "dimensions": [
+    "extraction",
+    "temporal-reasoning",
+    "knowledge-update",
+    "restraint",
+    "new-data-visibility",
+    "concurrency",
+    "deduplication",
+    "scale-semantics",
+    "task-relevance",
+    "complete-chain",
+    "permission-isolation",
+    "evidence-invalidation",
+    "source-fidelity",
+    "feedback-learning",
+    "generalization-boundary",
+    "personalization-benefit"
+  ],
+  "fixtures": [
+    {
+      "id": "extraction-source-identity",
+      "dimension": "extraction",
+      "task": "Separate an explicit user statement from a quote and an AI draft.",
+      "requiresRealModel": true,
+      "materials": [
+        {
+          "id": "current:extraction-task",
+          "channel": "current",
+          "text": "Identify only what I explicitly stated.",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "capture:extraction-explicit",
+          "channel": "history",
+          "storeKind": "capture",
+          "text": "I explicitly prefer a written checklist for this project.",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "capture:extraction-quote",
+          "channel": "history",
+          "storeKind": "capture",
+          "text": "A quoted article says everyone prefers daily reminders.",
+          "relevant": false,
+          "forbiddenReason": "third-party-as-user"
+        },
+        {
+          "id": "thought-ai:extraction-draft",
+          "channel": "history",
+          "storeKind": "thoughtAi",
+          "text": "The AI draft guessed a stable personality trait.",
+          "relevant": false,
+          "forbiddenReason": "ai-as-user"
+        }
+      ],
+      "assertionOracle": [
+        {
+          "id": "quote-treated-as-user-fact",
+          "supportedBySourceIds": [],
+          "semanticallyCorrect": false,
+          "timeSensitive": false,
+          "freshnessMisstatement": false
+        }
+      ],
+      "stubAssertions": {
+        "general": [],
+        "legacy": [
+          {
+            "id": "quote-treated-as-user-fact",
+            "sourceIds": ["capture:extraction-quote"]
+          }
+        ]
+      },
+      "expectedFailureCodes": {
+        "general": ["critical-evidence-missed"],
+        "legacy": [
+          "evidence-support-below-100",
+          "forbidden-source-used",
+          "material-relevance-below-85",
+          "semantic-assertion-mismatch"
+        ]
+      }
+    },
+    {
+      "id": "historical-event-not-current-state",
+      "dimension": "temporal-reasoning",
+      "task": "Explain a historical low-energy day without calling it the current state.",
+      "requiresRealModel": true,
+      "materials": [
+        {
+          "id": "current:temporal-task",
+          "channel": "current",
+          "text": "What happened during the older low-energy period?",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "checkin:temporal-old",
+          "channel": "history",
+          "storeKind": "checkin",
+          "text": "Historical check-in with low energy.",
+          "relevant": true,
+          "required": true,
+          "timeSensitive": true,
+          "occurredOn": "2026-08-01",
+          "payload": {
+            "mood": 2,
+            "energy": 1,
+            "stress": 2,
+            "sleep": 2
+          }
+        },
+        {
+          "id": "checkin:temporal-recent",
+          "channel": "history",
+          "storeKind": "checkin",
+          "text": "Recent check-in with recovered energy.",
+          "relevant": true,
+          "required": true,
+          "timeSensitive": true,
+          "occurredOn": "2026-10-06",
+          "payload": {
+            "mood": 4,
+            "energy": 4,
+            "stress": 4,
+            "sleep": 4
+          }
+        }
+      ],
+      "assertionOracle": [
+        {
+          "id": "old-state-described-as-current",
+          "supportedBySourceIds": ["checkin:temporal-old"],
+          "semanticallyCorrect": false,
+          "timeSensitive": true,
+          "freshnessMisstatement": true
+        }
+      ],
+      "stubAssertions": {
+        "general": [],
+        "legacy": [
+          {
+            "id": "old-state-described-as-current",
+            "sourceIds": ["checkin:temporal-old"]
+          }
+        ]
+      },
+      "expectedFailureCodes": {
+        "general": ["critical-evidence-missed"],
+        "legacy": ["freshness-misstatement", "semantic-assertion-mismatch"]
+      }
+    },
+    {
+      "id": "new-version-supersedes-old",
+      "dimension": "knowledge-update",
+      "task": "Use the revised project goal and keep the old version out of the answer.",
+      "requiresRealModel": true,
+      "materials": [
+        {
+          "id": "current:update-task",
+          "channel": "current",
+          "text": "Plan against my revised project goal.",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "capture:update-new",
+          "channel": "history",
+          "storeKind": "capture",
+          "text": "The revised goal is to validate one workflow before expanding.",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "capture:update-old",
+          "channel": "history",
+          "storeKind": "capture",
+          "text": "The old goal was to launch every workflow together.",
+          "relevant": false,
+          "contextAllowed": false,
+          "forbiddenReason": "superseded"
+        }
+      ],
+      "stubAssertions": {
+        "general": [],
+        "legacy": []
+      },
+      "expectedFailureCodes": {
+        "general": ["critical-evidence-missed"],
+        "legacy": []
+      }
+    },
+    {
+      "id": "unknown-relationship-identity",
+      "dimension": "restraint",
+      "task": "Answer without inventing an unknown relationship identity.",
+      "requiresRealModel": true,
+      "materials": [
+        {
+          "id": "current:restraint-task",
+          "channel": "current",
+          "text": "How should I phrase this message to someone whose relationship is unspecified?",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "capture:restraint-guess",
+          "channel": "history",
+          "storeKind": "capture",
+          "text": "An abandoned guess said the recipient was a manager.",
+          "relevant": false,
+          "contextAllowed": false,
+          "forbiddenReason": "unsupported-inference"
+        }
+      ],
+      "stubAssertions": {
+        "general": [],
+        "legacy": []
+      },
+      "expectedFailureCodes": {
+        "general": [],
+        "legacy": []
+      }
+    },
+    {
+      "id": "saved-original-visible-before-extraction",
+      "dimension": "new-data-visibility",
+      "task": "Use the just-saved original text before any background extraction finishes.",
+      "materials": [
+        {
+          "id": "capture:new-data-original",
+          "channel": "current",
+          "storeKind": "capture",
+          "text": "I can only spend twenty minutes on this today.",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "dailyRecord:new-data-old-health",
+          "channel": "history",
+          "storeKind": "dailyRecord",
+          "text": "An unrelated historical weight measurement.",
+          "relevant": false,
+          "occurredOn": "2026-09-01",
+          "payload": {
+            "type": "weight",
+            "measuredWeight": 70
+          }
+        }
+      ],
+      "stubAssertions": {
+        "general": [],
+        "legacy": []
+      },
+      "expectedFailureCodes": {
+        "general": [],
+        "legacy": ["material-relevance-below-85"]
+      }
+    },
+    {
+      "id": "late-v2-cannot-overwrite-v3",
+      "dimension": "concurrency",
+      "task": "Use source version 3 and reject a late result produced from version 2.",
+      "materials": [
+        {
+          "id": "current:concurrency-task",
+          "channel": "current",
+          "text": "Use the latest saved wording.",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "capture:concurrency-v3",
+          "channel": "history",
+          "storeKind": "capture",
+          "text": "Version 3: the deadline moved to Friday.",
+          "relevant": true,
+          "required": true,
+          "version": 3
+        },
+        {
+          "id": "capture:concurrency-v2",
+          "channel": "history",
+          "storeKind": "capture",
+          "text": "Version 2: the deadline was Wednesday.",
+          "relevant": false,
+          "contextAllowed": false,
+          "forbiddenReason": "stale-result",
+          "version": 2
+        }
+      ],
+      "executableCases": [
+        {
+          "id": "late-v2-after-v3",
+          "steps": [
+            {"type": "source-saved", "version": 2},
+            {"type": "task-created", "version": 2},
+            {"type": "source-saved", "version": 3},
+            {"type": "result-arrived", "version": 2},
+            {"type": "task-created", "version": 3},
+            {"type": "result-arrived", "version": 3}
+          ],
+          "expected": {
+            "activeVersion": 3,
+            "acceptedResultVersions": [3],
+            "rejectedResultVersions": [2]
+          }
+        },
+        {
+          "id": "v2-finishes-before-v3",
+          "steps": [
+            {"type": "source-saved", "version": 2},
+            {"type": "task-created", "version": 2},
+            {"type": "result-arrived", "version": 2},
+            {"type": "source-saved", "version": 3},
+            {"type": "task-created", "version": 3},
+            {"type": "result-arrived", "version": 3}
+          ],
+          "expected": {
+            "activeVersion": 3,
+            "acceptedResultVersions": [2, 3],
+            "rejectedResultVersions": []
+          }
+        }
+      ],
+      "stubAssertions": {
+        "general": [],
+        "legacy": []
+      },
+      "expectedFailureCodes": {
+        "general": ["critical-evidence-missed"],
+        "legacy": []
+      }
+    },
+    {
+      "id": "same-event-across-two-records",
+      "dimension": "deduplication",
+      "task": "Count one real event once even when it appears in two record types.",
+      "materials": [
+        {
+          "id": "current:dedup-task",
+          "channel": "current",
+          "text": "How often did this event happen?",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "capture:dedup-capture",
+          "channel": "history",
+          "storeKind": "capture",
+          "text": "The same workshop note captured quickly.",
+          "relevant": true,
+          "required": true,
+          "eventId": "event-workshop-1",
+          "deduplicate": true
+        },
+        {
+          "id": "journal:dedup-journal",
+          "channel": "history",
+          "storeKind": "journal",
+          "text": "The same workshop note copied into a journal.",
+          "relevant": true,
+          "eventId": "event-workshop-1",
+          "deduplicate": true
+        }
+      ],
+      "stubAssertions": {
+        "general": [],
+        "legacy": []
+      },
+      "expectedFailureCodes": {
+        "general": ["critical-evidence-missed"],
+        "legacy": ["duplicate-event-used"]
+      }
+    },
+    {
+      "id": "stress-five-means-relaxed",
+      "dimension": "scale-semantics",
+      "task": "Interpret the product stress scale in its documented direction.",
+      "materials": [
+        {
+          "id": "current:scale-task",
+          "channel": "current",
+          "text": "Interpret my recorded stress-state score.",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "checkin:scale-five",
+          "channel": "history",
+          "storeKind": "checkin",
+          "text": "Stress-state score 5 means physically and mentally relaxed.",
+          "relevant": true,
+          "required": true,
+          "payload": {
+            "mood": 4,
+            "energy": 4,
+            "stress": 5,
+            "sleep": 4
+          }
+        }
+      ],
+      "assertionOracle": [
+        {
+          "id": "stress-five-described-as-severe",
+          "supportedBySourceIds": ["checkin:scale-five"],
+          "semanticallyCorrect": false,
+          "timeSensitive": false,
+          "freshnessMisstatement": false
+        }
+      ],
+      "stubAssertions": {
+        "general": [],
+        "legacy": [
+          {
+            "id": "stress-five-described-as-severe",
+            "sourceIds": ["checkin:scale-five"]
+          }
+        ]
+      },
+      "expectedFailureCodes": {
+        "general": ["critical-evidence-missed"],
+        "legacy": ["semantic-assertion-mismatch"]
+      }
+    },
+    {
+      "id": "concept-review-excludes-health-dump",
+      "dimension": "task-relevance",
+      "task": "Review a taxonomy statement using project intent, not unrelated health data.",
+      "requiresRealModel": true,
+      "materials": [
+        {
+          "id": "current:relevance-task",
+          "channel": "current",
+          "text": "Is this taxonomy statement accurate for the product discussion?",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "capture:relevance-project",
+          "channel": "history",
+          "storeKind": "capture",
+          "text": "The product intent is to distinguish recall from application.",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "dailyRecord:relevance-health",
+          "channel": "history",
+          "storeKind": "dailyRecord",
+          "text": "An unrelated body-fat measurement.",
+          "relevant": false,
+          "payload": {
+            "type": "weight",
+            "bodyFatPercent": 20
+          }
+        },
+        {
+          "id": "capture:relevance-ui",
+          "channel": "history",
+          "storeKind": "capture",
+          "text": "An unrelated image-upload layout request.",
+          "relevant": false
+        }
+      ],
+      "stubAssertions": {
+        "general": [],
+        "legacy": []
+      },
+      "expectedFailureCodes": {
+        "general": ["critical-evidence-missed"],
+        "legacy": ["material-relevance-below-85"]
+      }
+    },
+    {
+      "id": "early-constraint-kept-in-follow-up",
+      "dimension": "complete-chain",
+      "task": "Keep an early constraint while answering a later follow-up.",
+      "materials": [
+        {
+          "id": "current:chain-root",
+          "channel": "current",
+          "text": "Design a migration that does not interrupt writes.",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "current:chain-constraint",
+          "channel": "current",
+          "text": "The first turn requires compatibility with old clients.",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "current:chain-follow-up",
+          "channel": "current",
+          "text": "Now compare the two migration options.",
+          "relevant": true,
+          "required": true
+        }
+      ],
+      "stubAssertions": {
+        "general": [],
+        "legacy": []
+      },
+      "expectedFailureCodes": {
+        "general": [],
+        "legacy": []
+      }
+    },
+    {
+      "id": "denied-and-cross-account-sources",
+      "dimension": "permission-isolation",
+      "task": "Answer without using denied or another account's material.",
+      "materials": [
+        {
+          "id": "current:permission-task",
+          "channel": "current",
+          "text": "Answer using only material I currently allow.",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "capture:permission-denied",
+          "channel": "history",
+          "storeKind": "capture",
+          "text": "A same-account source excluded from context.",
+          "relevant": false,
+          "contextAllowed": false,
+          "forbiddenReason": "context-denied"
+        },
+        {
+          "id": "capture:permission-other-account",
+          "channel": "history",
+          "storeKind": "capture",
+          "text": "A source belonging to another account.",
+          "relevant": false,
+          "account": "other",
+          "forbiddenReason": "cross-account"
+        }
+      ],
+      "executableCases": [
+        {
+          "id": "revoked-before-selection",
+          "accountId": "account-a",
+          "sourceAccountId": "account-a",
+          "selectedPermissionRevision": 2,
+          "currentPermissionRevision": 2,
+          "contextAllowed": false,
+          "expected": "permission-denied"
+        },
+        {
+          "id": "revoked-after-selection",
+          "accountId": "account-a",
+          "sourceAccountId": "account-a",
+          "selectedPermissionRevision": 1,
+          "currentPermissionRevision": 2,
+          "contextAllowed": false,
+          "expected": "permission-stale"
+        },
+        {
+          "id": "other-account",
+          "accountId": "account-a",
+          "sourceAccountId": "account-b",
+          "selectedPermissionRevision": 2,
+          "currentPermissionRevision": 2,
+          "contextAllowed": true,
+          "expected": "account-mismatch"
+        },
+        {
+          "id": "allowed-current-revision",
+          "accountId": "account-a",
+          "sourceAccountId": "account-a",
+          "selectedPermissionRevision": 2,
+          "currentPermissionRevision": 2,
+          "contextAllowed": true,
+          "expected": "allowed"
+        }
+      ],
+      "stubAssertions": {
+        "general": [],
+        "legacy": []
+      },
+      "expectedFailureCodes": {
+        "general": [],
+        "legacy": []
+      }
+    },
+    {
+      "id": "derived-summary-after-root-delete",
+      "dimension": "evidence-invalidation",
+      "task": "Do not use a derived summary after its only root evidence is deleted.",
+      "materials": [
+        {
+          "id": "current:invalidation-task",
+          "channel": "current",
+          "text": "Answer after I deleted the source note.",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "capture:invalidation-root",
+          "channel": "history",
+          "storeKind": "capture",
+          "text": "The deleted root note.",
+          "relevant": false,
+          "contextAllowed": false,
+          "forbiddenReason": "deleted-root"
+        },
+        {
+          "id": "capture:invalidation-derived",
+          "channel": "history",
+          "storeKind": "capture",
+          "text": "A stale summary derived only from the deleted root.",
+          "relevant": true,
+          "forbiddenReason": "invalidated-derived"
+        }
+      ],
+      "stubAssertions": {
+        "general": [],
+        "legacy": []
+      },
+      "expectedFailureCodes": {
+        "general": [],
+        "legacy": ["forbidden-source-used"]
+      }
+    },
+    {
+      "id": "device-guidance-is-not-user-fact",
+      "dimension": "source-fidelity",
+      "task": "Separate measured values, device guidance and user statements.",
+      "requiresRealModel": true,
+      "materials": [
+        {
+          "id": "current:fidelity-task",
+          "channel": "current",
+          "text": "Summarize what was measured without turning device guidance into my belief.",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "dailyRecord:fidelity-report",
+          "channel": "history",
+          "storeKind": "dailyRecord",
+          "text": "Measured body fat 20 percent; device guidance says to gain muscle.",
+          "relevant": true,
+          "required": true,
+          "payload": {
+            "type": "weight",
+            "bodyFatPercent": 20,
+            "description": "Device guidance: gain muscle."
+          }
+        }
+      ],
+      "assertionOracle": [
+        {
+          "id": "device-guidance-treated-as-user-belief",
+          "supportedBySourceIds": [],
+          "semanticallyCorrect": false,
+          "timeSensitive": false,
+          "freshnessMisstatement": false
+        }
+      ],
+      "stubAssertions": {
+        "general": [],
+        "legacy": [
+          {
+            "id": "device-guidance-treated-as-user-belief",
+            "sourceIds": ["dailyRecord:fidelity-report"]
+          }
+        ]
+      },
+      "expectedFailureCodes": {
+        "general": ["critical-evidence-missed"],
+        "legacy": ["evidence-support-below-100", "semantic-assertion-mismatch"]
+      }
+    },
+    {
+      "id": "failed-advice-reason-affects-next-answer",
+      "dimension": "feedback-learning",
+      "task": "Avoid repeating advice that failed for an explicit reason.",
+      "requiresRealModel": true,
+      "materials": [
+        {
+          "id": "current:feedback-task",
+          "channel": "current",
+          "text": "Suggest a next step that accounts for my previous result.",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "capture:feedback-result",
+          "channel": "history",
+          "storeKind": "capture",
+          "text": "The hourly reminder failed because it interrupted focused work.",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "capture:feedback-unrelated",
+          "channel": "history",
+          "storeKind": "capture",
+          "text": "An unrelated old suggestion about reading lists.",
+          "relevant": false
+        }
+      ],
+      "stubAssertions": {
+        "general": [],
+        "legacy": []
+      },
+      "expectedFailureCodes": {
+        "general": ["critical-evidence-missed"],
+        "legacy": ["material-relevance-below-85"]
+      }
+    },
+    {
+      "id": "current-instruction-overrides-scene-preference",
+      "dimension": "generalization-boundary",
+      "task": "Follow the current request for detail despite a concise default in another scene.",
+      "materials": [
+        {
+          "id": "current:boundary-task",
+          "channel": "current",
+          "text": "For this design review, explain the trade-offs in detail.",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "capture:boundary-preference",
+          "channel": "history",
+          "storeKind": "capture",
+          "text": "For daily status summaries, prefer concise answers.",
+          "relevant": true
+        }
+      ],
+      "assertionOracle": [
+        {
+          "id": "concise-preference-applied-outside-scope",
+          "supportedBySourceIds": ["capture:boundary-preference"],
+          "semanticallyCorrect": false,
+          "timeSensitive": false,
+          "freshnessMisstatement": false
+        }
+      ],
+      "stubAssertions": {
+        "general": [],
+        "legacy": [
+          {
+            "id": "concise-preference-applied-outside-scope",
+            "sourceIds": ["capture:boundary-preference"]
+          }
+        ]
+      },
+      "expectedFailureCodes": {
+        "general": [],
+        "legacy": ["semantic-assertion-mismatch"]
+      }
+    },
+    {
+      "id": "same-task-three-way-comparison",
+      "dimension": "personalization-benefit",
+      "task": "Plan a realistic next step using relevant constraints and prior outcomes.",
+      "requiresRealModel": true,
+      "materials": [
+        {
+          "id": "current:benefit-task",
+          "channel": "current",
+          "text": "What is the most realistic next step today?",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "capture:benefit-time",
+          "channel": "history",
+          "storeKind": "capture",
+          "text": "Only thirty minutes are available today.",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "capture:benefit-result",
+          "channel": "history",
+          "storeKind": "capture",
+          "text": "A smaller checklist worked better than a broad plan last time.",
+          "relevant": true,
+          "required": true
+        },
+        {
+          "id": "dailyRecord:benefit-health",
+          "channel": "history",
+          "storeKind": "dailyRecord",
+          "text": "An unrelated historical weight measurement.",
+          "relevant": false,
+          "payload": {
+            "type": "weight",
+            "measuredWeight": 69
+          }
+        },
+        {
+          "id": "journal:benefit-unrelated",
+          "channel": "history",
+          "storeKind": "journal",
+          "text": "An unrelated journal entry about a film.",
+          "relevant": false
+        },
+        {
+          "id": "capture:benefit-ui",
+          "channel": "history",
+          "storeKind": "capture",
+          "text": "An unrelated request about icon spacing.",
+          "relevant": false
+        }
+      ],
+      "stubAssertions": {
+        "general": [],
+        "legacy": []
+      },
+      "expectedFailureCodes": {
+        "general": ["critical-evidence-missed"],
+        "legacy": ["material-relevance-below-85"]
+      }
+    }
+  ]
+}

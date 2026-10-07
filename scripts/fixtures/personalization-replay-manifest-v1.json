@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "fixtureSetVersion": "2026.10.07.1",
+  "fixtureSetFingerprint": "64af56c52e888f97919f190e072e02a9fdf957b03dc864283e392b2255c12a69",
+  "baseline": {
+    "commit": "2d8687a1f26f6e4b7e859d13c4d502da0f6a2c7d",
+    "tree": "50a42b7de427558bd6852748ba2766cc948cf401"
+  },
+  "candidate": {
+    "status": "not-frozen",
+    "commit": null,
+    "tree": null
+  },
+  "baselineResultFingerprints": {
+    "general": "f36209cdae42ebb7b9dcde7130af9bf2269e83f0d40ad34333c90e7c97a97797",
+    "legacy": "7d8d97b948c49d2d4ad02e996681205428b3b7515fd83780dc818ec7418086a2"
+  },
+  "promptCatalog": {
+    "version": "2026.10.04.2",
+    "sha256": "cc8d8235d3134a0779653abbb76515a93f138cde496bb8356a8acdf26ef60295"
+  },
+  "requestContract": {
+    "scene": "thoughtAnswer",
+    "responseStyle": "standard",
+    "provider": "deepseek",
+    "model": "deepseek-v4-pro",
+    "reasoningEffort": "max",
+    "maxOutputTokens": 16000,
+    "stream": false,
+    "responseFormat": "text",
+    "repetitionsPerVariant": 2,
+    "promptIds": [
+      "ai.system.core",
+      "ai.scene.thoughtAnswer",
+      "ai.style.standard",
+      "ai.identity.named",
+      "ai.user.wrapper",
+      "thought.task.answer",
+      "context.personal"
+    ]
+  },
+  "execution": {
+    "general": "deterministic-stub",
+    "legacy": "deterministic-stub",
+    "new": "not-implemented",
+    "realModel": "not-authorized"
+  }
+}
