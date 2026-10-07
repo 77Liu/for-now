@@ -71,6 +71,7 @@ export function createContentBackground({
   annotationService,
   contentAttachments,
   mediaRuntime,
+  getAccountId,
   backgroundContextKey,
   dispatchBackground,
   runDeepSeek,
@@ -90,6 +91,7 @@ export function createContentBackground({
     }),
     annotations: annotationService,
     contentAttachments,
+    getAccountId,
     hash,
     now
   });

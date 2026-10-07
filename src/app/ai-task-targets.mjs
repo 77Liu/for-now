@@ -1,19 +1,30 @@
 import { safeText, recordVersion } from "../shared/validation/index.mjs";
 import { renderPrompt } from "../shared/prompts/index.mjs";
 import { annotationExcerpt, annotationPrompt, shenjiSystemPrompt } from "../modules/annotations/index.mjs";
-import { thoughtChainContext, thoughtTaskResult } from "../modules/thoughts/index.mjs";
+import { thoughtTaskResult } from "../modules/thoughts/index.mjs";
 import { parseClaimExtractionOutput } from "../modules/user-model/index.mjs";
-import { personalContextProjection, personalContextReceiptFingerprint, thoughtAnswerPrompt } from "./personal-context.mjs";
+import { thoughtAnswerPrompt } from "./personal-context.mjs";
 import { annotationResource, annotationResourceSource, annotationResourceContext } from "./annotation-resources.mjs";
 import { prepareUserModelExtraction } from "./user-model.mjs";
+import {
+  contextDerivedOutputAllowed,
+  thoughtTaskCurrentMaterial,
+  workingContextProjection,
+  workingContextReceiptFingerprint
+} from "./task-context.mjs";
 
 export function createAiTaskTargets({
   thoughts,
   annotations,
   contentAttachments = null,
+  getAccountId = () => "local",
   hash,
   now = () => new Date().toISOString()
 }) {
+  const selectedHistory = sections => (
+    [sections.historicalContext, sections.noticeContext].filter(Boolean).join("\n")
+  );
+
   function captureTranscriptionWork(store, task) {
     const capture = store.captures?.find(item => item.id === task.targetId);
     if (!capture?.audio?.attachmentPath) return null;
@@ -66,24 +77,149 @@ export function createAiTaskTargets({
     if (!root || !annotation) return null;
     const source = annotationResourceSource(store, resourceType, root, annotation.targetKey);
     if (!source || !source.includes(annotation.quote)) return null;
+    const accountId = getAccountId();
     const message = safeText(task.payload?.message, 6000), excerpt = annotationExcerpt(source, annotation), context = annotationResourceContext(resourceType, root);
-    const previousItems = (annotation.shenji || []).map(item => ({ id: item.id, message: item.message || "", answer: item.answer || "", reasoningContent: item.reasoningContent || "" }));
-    const rootContext = resourceType === "thought" ? `<original_question>${root.content}</original_question>` : `<source_type>${context.label}</source_type>\n<source_title>${context.title}</source_title>`;
-    const personalContext = personalContextProjection(store);
-    const prompt = annotationPrompt({ personalContext: personalContext.prompt, rootContext, annotation, excerpt, previousItems, message });
+    const validPreviousItems = (annotation.shenji || [])
+      .filter(item => contextDerivedOutputAllowed(store, item, accountId, {
+        kind: "annotationShenji",
+        targetId: root.id,
+        subtargetId: annotation.id
+      }));
+    const previousItems = validPreviousItems
+      .map(item => ({ id: item.id, message: item.message || "", answer: item.answer || "", reasoningContent: item.reasoningContent || "" }));
+    const previousEvidenceChecks = validPreviousItems.flatMap(item => (
+      Array.isArray(item.contextReceipt?.evidenceChecks)
+        ? item.contextReceipt.evidenceChecks
+        : []
+    ));
+    const baseRootContext = resourceType === "thought"
+      ? `<original_question>${root.content}</original_question>`
+      : `<source_type>${context.label}</source_type>\n<source_title>${context.title}</source_title>`;
+    const targetMatch = /^(idea|record|answer|followup-question|followup-answer|reflection|note):(.+)$/
+      .exec(annotation.targetKey);
+    const targetType = targetMatch?.[1] || "";
+    const targetId = targetMatch?.[2] || root.id;
+    const target = targetId === root.id
+      ? root
+      : resourceType === "thought"
+        ? ["followup-question", "followup-answer"].includes(targetType)
+          ? (root.followUps || []).find(item => item.id === targetId)
+          : store.thoughts.find(item => item.id === targetId && item.relatedTo === root.id)
+        : [
+            ...(root.reflections || []),
+            ...(root.notes || []),
+            ...(root.followUps || [])
+          ].find(item => item.id === targetId);
+    if (!target) return null;
+    const rootContext = [
+      baseRootContext,
+      ...(targetId !== root.id
+        ? [`<annotated_source_full>${source}</annotated_source_full>`]
+        : [])
+    ].join("\n");
+    const requestId = safeText(task.clientRequestId || task.id, 100) || `${annotation.id}:message`;
+    const currentMaterial = [...(targetId !== root.id ? [{
+      id: `current:${resourceType}:${root.id}:root`,
+      accountId,
+      text: baseRootContext,
+      attachmentPaths: root.attachmentPaths,
+      recordType: "当前记录",
+      contextAllowed: root.contextAllowed !== false,
+      validation: "version",
+      occurredAt: root.occurredAt || root.createdAt,
+      sourceRef: {
+        resourceType,
+        resourceId: root.id,
+        rootId: root.id,
+        targetKey: "",
+        version: recordVersion(root.version)
+      }
+    }] : []), {
+      id: `current:${resourceType}:${root.id}:${annotation.targetKey}`,
+      accountId,
+      text: source,
+      attachmentPaths: target.attachmentPaths,
+      recordType: "被批注正文",
+      contextAllowed: target.contextAllowed !== false && target.disposition !== "discarded",
+      validation: "version",
+      occurredAt: root.occurredAt || root.createdAt,
+      sourceRef: {
+        resourceType,
+        resourceId: targetId,
+        rootId: root.id,
+        targetKey: annotation.targetKey,
+        version: recordVersion(target.version)
+      }
+    }, {
+      id: `current:${resourceType}:${root.id}:annotation:${annotation.id}`,
+      accountId,
+      text: [
+        annotation.quote,
+        annotation.text,
+        ...previousItems.flatMap(item => [item.message, item.answer])
+      ].filter(Boolean).join("\n"),
+      attachmentPaths: annotation.attachmentPaths,
+      recordType: "当前批注对话",
+      contextAllowed: annotation.contextAllowed !== false,
+      validation: "version",
+      evidenceChecks: previousEvidenceChecks,
+      occurredAt: annotation.createdAt || root.occurredAt || root.createdAt,
+      sourceRef: {
+        resourceType,
+        resourceId: annotation.id,
+        rootId: root.id,
+        targetKey: `annotation:${annotation.id}`,
+        version: recordVersion(annotation.version)
+      }
+    }, {
+      id: `current:annotation-request:${requestId}`,
+      accountId,
+      text: message || "回应当前批注",
+      recordType: "当前追问",
+      validation: "immutable",
+      sourceRef: {
+        resourceType: "annotationRequest",
+        resourceId: requestId,
+        rootId: root.id,
+        targetKey: "message",
+        version: 1
+      }
+    }];
+    const workingContext = workingContextProjection(store, {
+      accountId,
+      scene: "annotationShenji",
+      task: {
+        kind: "annotationShenji",
+        text: message || annotation.text || annotation.quote || "回应当前批注",
+        targetId: task.targetId,
+        subtargetId: annotation.id
+      },
+      generatedAt: task.createdAt || now(),
+      currentMaterial,
+      compilePrompt: sections => annotationPrompt({
+        personalContext: selectedHistory(sections),
+        rootContext,
+        annotation,
+        excerpt,
+        previousItems,
+        message
+      })
+    });
     const inputHash = hash(JSON.stringify({
       resourceType, targetId: task.targetId, annotationId: annotation.id, targetKey: annotation.targetKey,
       source, quote: annotation.quote, text: annotation.text || "", previous: previousItems, message
     }));
     return {
       annotation,
-      prompt,
+      attachmentPaths: workingContext.attachmentPaths,
+      prompt: workingContext.prompt,
       inputHash,
       inputVersion: recordVersion(root.version),
+      subtargetVersion: recordVersion(annotation.version),
       scene: "annotationShenji",
       systemPrompt: shenjiSystemPrompt(),
-      contextReceipt: personalContext.receipt,
-      contextFingerprint: personalContextReceiptFingerprint(personalContext.receipt)
+      contextReceipt: workingContext.receipt,
+      contextFingerprint: workingContextReceiptFingerprint(workingContext.receipt)
     };
   }
 
@@ -160,30 +296,57 @@ export function createAiTaskTargets({
       const work = thoughts.inspect(store.thoughts, task);
       if (!work) return null;
       const { root, followUp, inputVersion, subtargetVersion } = work;
-      const personalContext = personalContextProjection(store);
+      const accountId = getAccountId();
+      const followUpAnswer = task.kind === "followUpAnswer";
+      const workingContext = workingContextProjection(store, {
+        accountId,
+        scene: task.kind,
+        task: {
+          kind: task.kind,
+          text: task.kind === "followUpAnswer"
+            ? followUp.question
+            : root.content || "请结合当前图片回答。",
+          targetId: root.id,
+          subtargetId: followUp?.id || ""
+        },
+        generatedAt: task.createdAt || now(),
+        currentMaterial: thoughtTaskCurrentMaterial(store, root, {
+          accountId,
+          currentFollowUpId: followUp?.id || ""
+        }),
+        compilePrompt: sections => thoughtAnswerPrompt(
+          selectedHistory(sections),
+          sections.currentContext,
+          followUpAnswer
+        )
+      });
       if (task.kind === "thoughtAnswer") {
-        const prompt = thoughtAnswerPrompt(personalContext.prompt, thoughtChainContext(store.thoughts, root));
-        const attachmentPaths = Array.isArray(root.attachmentPaths) ? root.attachmentPaths : [];
+        const attachmentPaths = workingContext.attachmentPaths;
         return {
           ...work,
           attachmentPaths,
           inputHash: hash(JSON.stringify({ targetId: root.id, inputVersion, attachmentPaths })),
-          prompt,
+          prompt: workingContext.prompt,
           scene: "thoughtAnswer",
-          contextReceipt: personalContext.receipt,
-          contextFingerprint: personalContextReceiptFingerprint(personalContext.receipt)
+          contextReceipt: workingContext.receipt,
+          contextFingerprint: workingContextReceiptFingerprint(workingContext.receipt)
         };
       }
-      const chain = thoughtChainContext(store.thoughts, root, followUp.id);
-      const prompt = thoughtAnswerPrompt(personalContext.prompt, chain, true);
-      const inputHash = hash(JSON.stringify({ targetId: root.id, inputVersion, subtargetId: followUp.id, subtargetVersion, chain }));
+      const inputHash = hash(JSON.stringify({
+        targetId: root.id,
+        inputVersion,
+        subtargetId: followUp.id,
+        subtargetVersion,
+        currentMaterial: workingContext.receipt.currentMaterial
+      }));
       return {
         ...work,
+        attachmentPaths: workingContext.attachmentPaths,
         inputHash,
-        prompt,
+        prompt: workingContext.prompt,
         scene: "followUpAnswer",
-        contextReceipt: personalContext.receipt,
-        contextFingerprint: personalContextReceiptFingerprint(personalContext.receipt)
+        contextReceipt: workingContext.receipt,
+        contextFingerprint: workingContextReceiptFingerprint(workingContext.receipt)
       };
     },
     save(store, work, task, result) {

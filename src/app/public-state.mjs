@@ -57,7 +57,7 @@ export function createPublicStateProjection({
       ...visible,
       captures: visible.captures.map(publicCapture),
       keepsakes: visible.keepsakes.map(publicKeepsake),
-      aiTasks: store.aiTasks.slice(0, 100).map(publicAiTask),
+      aiTasks: store.aiTasks.filter(task => task.internal !== true).slice(0, 100).map(publicAiTask),
       notificationUnread: notificationUnread(store.notifications),
       clusters: deriveThoughtClusters(store),
       insights: deriveStateInsights(store, { currentDate: today() }),

@@ -493,7 +493,7 @@ export function createThoughtService({
     },
 
     saveGeneratedAnswerInStore(store, {
-      id, clientRequestId, sourceVersion, content, reasoningContent, contextReceipt = null
+      id, clientRequestId, sourceVersion, sourceTaskId = "", content, reasoningContent, contextReceipt = null
     }) {
       const duplicate = store.thoughts.find(item => item.relatedTo === id && item.type === "answer" && item.clientRequestId === clientRequestId);
       if (duplicate) return { value: duplicate, duplicate: true };
@@ -518,6 +518,7 @@ export function createThoughtService({
         sourceVersion,
         generation: store.thoughts.filter(item => item.relatedTo === id && item.type === "answer").length + 1,
         clientRequestId,
+        ...(sourceTaskId ? { sourceTaskId } : {}),
         ...(reasoningContent ? { reasoningContent } : {}),
         ...(contextReceipt ? { contextReceipt: structuredClone(contextReceipt) } : {})
       };

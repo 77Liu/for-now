@@ -409,7 +409,15 @@ export function createStoreNormalizer({
       attempts: Math.max(0, Math.round(Number(item.attempts) || 0)),
       errorCode: safeText(item.errorCode, 100)
     }));
-    store.aiTasks = store.aiTasks.filter(item => item && item.id && item.kind);
+    store.aiTasks = store.aiTasks.filter(item => item && item.id && item.kind).map(item => ({
+      ...item,
+      ...(previousVersion < STORE_VERSION
+        && item.kind === "annotationShenji"
+        && Number(item.inputVersion) > 0
+        && !Number(item.subtargetVersion)
+        ? { legacyUnversionedSubtarget: true }
+        : {})
+    }));
     store.notifications = store.notifications.filter(item => item && item.id);
     store.userClaims = normalizeUserClaims(store.userClaims);
     store.modelUnknowns = normalizeModelUnknowns(store.modelUnknowns);

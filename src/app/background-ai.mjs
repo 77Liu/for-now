@@ -66,6 +66,7 @@ export function createBackgroundAi({ repository, tasks, notifications, targets, 
           return;
         }
         const resultId = targets.save(value, currentWork, task, result);
+        if (work.contextFingerprint) currentTask.contextFingerprint = work.contextFingerprint;
         tasks.complete(currentTask, "succeeded", { resultId });
         notifications.upsertTask(value.notifications, currentTask, "succeeded");
       });
@@ -150,16 +151,20 @@ export function createBackgroundAi({ repository, tasks, notifications, targets, 
       for (const id of ids) schedule(id);
     },
     async list() {
-      return { items: (await repository.read()).aiTasks.map(publicAiTask) };
+      return {
+        items: (await repository.read()).aiTasks
+          .filter(task => task.internal !== true)
+          .map(publicAiTask)
+      };
     },
     async get(id) {
       const task = (await repository.read()).aiTasks.find(item => item.id === id);
-      return task ? publicAiTask(task) : null;
+      return task && task.internal !== true ? publicAiTask(task) : null;
     },
     async getResult(id) {
       const store = await repository.read();
       const task = store.aiTasks.find(item => item.id === id);
-      if (!task) return null;
+      if (!task || task.internal === true) return null;
       return { task: publicAiTask(task), result: task.status === "succeeded" ? targets.result(store, task) : null };
     },
     async listNotifications() {

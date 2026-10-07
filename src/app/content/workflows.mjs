@@ -13,6 +13,8 @@ export function createContentWorkflows({
   backgroundAi,
   trashMutations,
   runDeepSeek,
+  getAccountId,
+  materializeAttachmentFiles,
   workflowContextKey,
   now,
   today,
@@ -33,7 +35,10 @@ export function createContentWorkflows({
     generate: runDeepSeek,
     hash,
     publicTask: publicAiTask,
-    contextKey: workflowContextKey
+    getAccountId,
+    materializeAttachmentFiles,
+    contextKey: workflowContextKey,
+    now
   });
   const captureJournalWorkflows = createCaptureJournalWorkflows({
     repository,

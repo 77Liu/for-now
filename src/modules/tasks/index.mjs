@@ -54,9 +54,14 @@ export function activeTaskForInput(tasks, input) {
 }
 
 export function taskInputMatches(task, work) {
+  const legacyAnnotationVersion = task?.kind === "annotationShenji"
+    && task.legacyUnversionedSubtarget === true
+    && (task.inputVersion || 0) > 0
+    && (task.subtargetVersion || 0) === 0;
   return Boolean(work && !work.alreadyAnswered
     && (work.inputVersion || 0) === task.inputVersion
-    && (work.subtargetVersion || 0) === (task.subtargetVersion || 0)
+    && (legacyAnnotationVersion
+      || (work.subtargetVersion || 0) === (task.subtargetVersion || 0))
     && (!task.inputHash || task.inputHash === work.inputHash));
 }
 

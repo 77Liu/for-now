@@ -55,6 +55,18 @@ export {
   prepareThoughtAnswer
 } from "./personal-context.mjs";
 export {
+  WORKING_CONTEXT_RECEIPT_ITEM_LIMIT,
+  WORKING_CONTEXT_RECEIPT_BYTE_LIMIT,
+  WORKING_CONTEXT_VERSION,
+  WORKING_CONTEXT_TOKEN_BUDGET,
+  contextDerivedOutputAllowed,
+  taskContextSourceMaterial,
+  thoughtTaskCurrentMaterial,
+  workingContextProjection,
+  workingContextReceiptFingerprint,
+  workingContextReceiptMatches
+} from "./task-context.mjs";
+export {
   STORE_VERSION,
   TRASH_RETENTION_DAYS,
   createEmptyStore,

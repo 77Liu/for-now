@@ -16,7 +16,9 @@ export function annotationResourceSource(store, resourceType, root, targetKey) {
   if (resourceType === "thought") {
     if (targetKey === `question:${root.id}`) return markdownText(root.content);
     const [type, id] = String(targetKey || "").split(":");
-    if (type === "idea" || type === "answer") return markdownText(store.thoughts.find(item => item.id === id && item.relatedTo === root.id)?.content || "");
+    if (["idea", "record", "answer"].includes(type)) {
+      return markdownText(store.thoughts.find(item => item.id === id && item.relatedTo === root.id)?.content || "");
+    }
     const followUp = (root.followUps || []).find(item => item.id === id);
     if (type === "followup-question") return markdownText(followUp?.question || "");
     if (type === "followup-answer") return markdownText(followUp?.answer || "");

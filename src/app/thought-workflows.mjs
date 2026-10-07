@@ -1,20 +1,24 @@
 import { safeText, recordVersion } from "../shared/validation/index.mjs";
+import { cleanupTemporaryFiles } from "../shared/attachments/index.mjs";
 import { userPrompt } from "../modules/ai/index.mjs";
 import {
   stripThoughtAnswerLead,
-  thoughtChainContext,
   thoughtDraftInput,
   thoughtPromptSystem,
   thoughtStarterPrompt
 } from "../modules/thoughts/index.mjs";
 import {
   compactPersonalContextReceipt,
-  personalContextProjection,
-  personalContextReceiptMatches,
   thoughtAnswerPrompt,
   thoughtPromptContext,
   userAnswerContext
 } from "./personal-context.mjs";
+import {
+  thoughtTaskCurrentMaterial,
+  workingContextProjection,
+  workingContextReceiptFingerprint,
+  workingContextReceiptMatches
+} from "./task-context.mjs";
 
 const failure = (message, code, statusCode = 400) => Object.assign(new Error(message), { code, statusCode });
 
@@ -27,9 +31,86 @@ export function createThoughtWorkflows({
   generate,
   hash,
   publicTask,
-  contextKey
+  getAccountId = () => "local",
+  materializeAttachmentFiles = async () => [],
+  contextKey,
+  now = () => new Date().toISOString()
 }) {
   const activeAnswers = new Map();
+  const selectedHistory = sections => (
+    [sections.historicalContext, sections.noticeContext].filter(Boolean).join("\n")
+  );
+  const answerContextOptions = (store, root) => ({
+    accountId: getAccountId(),
+    scene: "thoughtAnswer",
+    task: {
+      kind: "thoughtAnswer",
+      text: root.content || "请结合当前图片回答。",
+      targetId: root.id,
+      subtargetId: ""
+    },
+    currentMaterial: thoughtTaskCurrentMaterial(store, root, {
+      accountId: getAccountId()
+    }),
+    compilePrompt: sections => thoughtAnswerPrompt(
+      selectedHistory(sections),
+      sections.currentContext
+    )
+  });
+  const saveForegroundAnswer = (store, {
+    id,
+    clientRequestId,
+    requestHash,
+    sourceVersion,
+    result,
+    contextReceipt
+  }) => {
+    const contextFingerprint = workingContextReceiptFingerprint(contextReceipt);
+    if (!contextFingerprint) {
+      throw failure("本次回答缺少可验证的上下文凭据", "INVALID_CONTEXT_RECEIPT", 500);
+    }
+    const sourceTaskId = `foreground:${hash(JSON.stringify({
+      kind: "thoughtAnswer",
+      id,
+      clientRequestId,
+      requestHash,
+      contextFingerprint
+    })).slice(0, 64)}`;
+    const saved = thoughts.saveGeneratedAnswerInStore(store, {
+      id,
+      clientRequestId,
+      sourceVersion,
+      sourceTaskId,
+      content: stripThoughtAnswerLead(result.content),
+      reasoningContent: result.reasoningContent,
+      contextReceipt: compactPersonalContextReceipt(contextReceipt)
+    });
+    if (!saved.value || saved.duplicate) return saved;
+    const completedAt = now();
+    store.aiTasks.unshift({
+      id: sourceTaskId,
+      kind: "thoughtAnswer",
+      resourceType: "thought",
+      targetId: id,
+      subtargetId: "",
+      inputVersion: sourceVersion,
+      subtargetVersion: 0,
+      inputHash: requestHash,
+      payload: {},
+      clientRequestId,
+      requestHash,
+      status: "succeeded",
+      createdAt: contextReceipt.generatedAt,
+      startedAt: contextReceipt.generatedAt,
+      completedAt,
+      updatedAt: completedAt,
+      attempt: 1,
+      resultId: saved.value.id,
+      contextFingerprint,
+      internal: true
+    });
+    return saved;
+  };
 
   return {
     async createChain(input) {
@@ -160,19 +241,28 @@ export function createThoughtWorkflows({
             const question = store.thoughts.find(item => item.id === id && item.type === "question");
             if (!question) throw failure("问题不存在", "THOUGHT_NOT_FOUND", 404);
             const sourceVersion = recordVersion(question.version);
-            const personalContext = personalContextProjection(store);
-            const result = await generate(
-              thoughtAnswerPrompt(personalContext.prompt, thoughtChainContext(store.thoughts, question)),
-              {
-              scene: "thoughtAnswer",
-              captureReasoning: true,
-              contextReceipt: personalContext.receipt,
-              onDelta: event => {
-                for (const listener of entry.listeners) listener(event);
-              }
-              }
+            const workingContext = workingContextProjection(
+              store,
+              answerContextOptions(store, question)
             );
-            const saved = await save({ sourceVersion, result, contextReceipt: personalContext.receipt });
+            const imagePaths = workingContext.attachmentPaths.length
+              ? await materializeAttachmentFiles(workingContext.attachmentPaths)
+              : [];
+            let result;
+            try {
+              result = await generate(workingContext.prompt, {
+                scene: "thoughtAnswer",
+                captureReasoning: true,
+                contextReceipt: workingContext.receipt,
+                imagePaths,
+                onDelta: event => {
+                  for (const listener of entry.listeners) listener(event);
+                }
+              });
+            } finally {
+              await cleanupTemporaryFiles(imagePaths);
+            }
+            const saved = await save({ sourceVersion, result, contextReceipt: workingContext.receipt });
             if (saved.stale) {
               throw failure("问题已被修改或删除，本次回答未写入", "STALE_AI_RESULT", 409);
             }
@@ -183,16 +273,21 @@ export function createThoughtWorkflows({
             return generateAndSave(store, ({ sourceVersion, result, contextReceipt }) => repository.executeIdempotent(
               ledgerRequest,
               current => {
-                if (!personalContextReceiptMatches(current, contextReceipt)) {
+                const currentQuestion = current.thoughts.find(item => item.id === id && item.type === "question");
+                if (!currentQuestion || !workingContextReceiptMatches(
+                  current,
+                  contextReceipt,
+                  answerContextOptions(current, currentQuestion)
+                )) {
                   throw failure("个人语境已变化，本次回答未写入", "STALE_PERSONAL_CONTEXT", 409);
                 }
-                const saved = thoughts.saveGeneratedAnswerInStore(current, {
+                const saved = saveForegroundAnswer(current, {
                   id,
                   clientRequestId,
+                  requestHash,
                   sourceVersion,
-                  content: stripThoughtAnswerLead(result.content),
-                  reasoningContent: result.reasoningContent,
-                  contextReceipt: compactPersonalContextReceipt(contextReceipt)
+                  result,
+                  contextReceipt
                 });
                 if (saved.stale) {
                   throw failure("问题已被修改或删除，本次回答未写入", "STALE_AI_RESULT", 409);
@@ -203,16 +298,21 @@ export function createThoughtWorkflows({
           }
           const store = await repository.read();
           return generateAndSave(store, ({ sourceVersion, result, contextReceipt }) => repository.update(current => {
-            if (!personalContextReceiptMatches(current, contextReceipt)) {
+            const currentQuestion = current.thoughts.find(item => item.id === id && item.type === "question");
+            if (!currentQuestion || !workingContextReceiptMatches(
+              current,
+              contextReceipt,
+              answerContextOptions(current, currentQuestion)
+            )) {
               throw failure("个人语境已变化，本次回答未写入", "STALE_PERSONAL_CONTEXT", 409);
             }
-            return thoughts.saveGeneratedAnswerInStore(current, {
+            return saveForegroundAnswer(current, {
               id,
               clientRequestId,
+              requestHash,
               sourceVersion,
-              content: stripThoughtAnswerLead(result.content),
-              reasoningContent: result.reasoningContent,
-              contextReceipt: compactPersonalContextReceipt(contextReceipt)
+              result,
+              contextReceipt
             });
           }));
         });
