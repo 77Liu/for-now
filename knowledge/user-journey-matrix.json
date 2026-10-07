@@ -194,8 +194,8 @@
       "tier": "smoke",
       "status": "automated",
       "normalPath": ["从首页麦克风或念起页进入", "上传音频或现场录音", "预览", "提交", "后台转写", "查看原文与整理稿"],
-      "failureAndRecovery": ["麦克风拒绝", "上传中断", "ASR 未配置", "刷新恢复"],
-      "assertions": ["首页麦克风在同一用户手势内启动现有录音链且不重复请求", "念起页上传入口优先", "普通录音控件默认折叠", "原件持久化", "失败可重试且不伪造转写"],
+      "failureAndRecovery": ["麦克风拒绝", "权限等待时关闭", "录音中取消", "完成后移除并立即提交", "迟到 dataavailable/IndexedDB 写入", "上传中断", "ASR 未配置", "刷新恢复", "退出或切换账户"],
+      "assertions": ["首页麦克风在同一用户手势内启动现有录音链且不重复请求", "念起页上传入口优先", "普通录音控件默认折叠", "原件持久化", "失败可重试且不伪造转写", "取消或移除后纯文本提交零音频附件、零上传、零 ASR、零账本项", "迟到录音、持久化和任务结果不得恢复已移除内容或写入新账户"],
       "evidence": [
         {"script": "scripts/ui-regression.mjs", "anchor": "capture-audio-recorder"},
         {"script": "scripts/capture-transcription-regression.mjs", "anchor": "Capture transcription"}
