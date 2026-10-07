@@ -457,21 +457,12 @@ export function deduplicateEvidenceByEvent(values) {
   };
 }
 
-function latestEventForSource(store, sourceKey, accountId) {
-  return list(store?.perceptionEvents)
-    .map(normalizePerceptionEvent)
-    .filter(event => (
-      event
-      && event.accountId === accountId
-      && evidenceSourceKey(event.sourceRef) === sourceKey
-    ))
-    .sort((left, right) => (
-      right.sourceRef.version - left.sourceRef.version
-      || right.permissionRevision - left.permissionRevision
-      || compareText(right.recordedAt, left.recordedAt)
-      || compareText(right.id, left.id)
-    ))[0] || null;
-}
+const compareEventsNewestFirst = (left, right) => (
+  right.sourceRef.version - left.sourceRef.version
+  || right.permissionRevision - left.permissionRevision
+  || compareText(right.recordedAt, left.recordedAt)
+  || compareText(right.id, left.id)
+);
 
 const SOURCE_COLLECTIONS = Object.freeze({
   checkin: "checkins",
@@ -495,15 +486,22 @@ const SOURCE_COLLECTIONS = Object.freeze({
   modelUnknown: "modelUnknowns"
 });
 
-function storedSourceState(store, sourceRef) {
+function storedSourceState(store, sourceRef, activeIndexes = null) {
   const collection = SOURCE_COLLECTIONS[sourceRef.resourceType];
   if (!collection) return null;
-  const active = list(store?.[collection]).find(item => item?.id === sourceRef.resourceId);
+  const active = activeIndexes?.get(collection)?.get(sourceRef.resourceId)
+    || list(store?.[collection]).find(item => item?.id === sourceRef.resourceId);
   if (active) {
     return {
       exists: true,
       deleted: false,
-      version: positiveInteger(active.version)
+      version: positiveInteger(active.version),
+      modelDerived: active.informationType === "model_derived"
+        || active.authorType === "ai"
+        || /^(?:deepseek|codex|openai|model|ai)(?:$|[-_:])/i.test(String(active.origin || ""))
+        || Boolean(active.modelDraft)
+        || Boolean(active.sourceTaskId)
+        || Boolean(active.contextReceipt)
     };
   }
   for (const entry of list(store?.trash)) {
@@ -535,22 +533,22 @@ function storedSourceState(store, sourceRef) {
   return null;
 }
 
-function currentStateForEvidence(store, evidence, accountId) {
+function currentStateForEvidence(store, evidence, accountId, indexes = {}) {
   const sourceKey = evidenceSourceKey(evidence.sourceRef);
-  const event = latestEventForSource(store, sourceKey, accountId);
-  const storedSource = storedSourceState(store, evidence.sourceRef);
-  const permission = list(store?.evidencePermissions)
-    .map(normalizeEvidencePermission)
-    .find(item => item?.accountId === accountId && item.sourceKey === sourceKey) || null;
+  const event = indexes.latestEvents?.get(sourceKey) || null;
+  const storedSource = storedSourceState(store, evidence.sourceRef, indexes.activeSources);
+  const permission = indexes.permissions?.get(sourceKey) || null;
   const dependencies = evidence.derivedFrom.map(dependency => {
-    const dependencyEvent = latestEventForSource(store, dependency.sourceKey, accountId);
+    const dependencyEvent = indexes.latestEvents?.get(dependency.sourceKey) || null;
     const dependencyRef = parseEvidenceSourceKey(dependency.sourceKey);
     const storedDependency = dependencyRef
-      ? storedSourceState(store, { ...dependencyRef, version: dependency.version })
+      ? storedSourceState(
+          store,
+          { ...dependencyRef, version: dependency.version },
+          indexes.activeSources
+        )
       : null;
-    const dependencyPermission = list(store?.evidencePermissions)
-      .map(normalizeEvidencePermission)
-      .find(item => item?.accountId === accountId && item.sourceKey === dependency.sourceKey) || null;
+    const dependencyPermission = indexes.permissions?.get(dependency.sourceKey) || null;
     return {
       accountId,
       sourceKey: dependency.sourceKey,
@@ -577,6 +575,67 @@ function currentStateForEvidence(store, evidence, accountId) {
     permission,
     dependencies
   };
+}
+
+function derivedDependenciesUsable(
+  store,
+  evidence,
+  accountId,
+  purpose,
+  indexes,
+  evidenceBySourceKey,
+  trail,
+  memo
+) {
+  const memoKey = `${purpose}\u0000${evidence.id}`;
+  if (memo.has(memoKey)) return memo.get(memoKey);
+  if (trail.has(memoKey)) return false;
+  trail.add(memoKey);
+  let usable = true;
+  for (const dependency of evidence.derivedFrom) {
+    const derivedEvidence = list(evidenceBySourceKey.get(dependency.sourceKey)).filter(item => (
+      item.sourceRef.version === dependency.version
+      && item.contentSha256 === dependency.contentSha256
+      && item.permissionRevision === dependency.permissionRevision
+      && item.derivedFrom.length > 0
+    ));
+    const dependencyRef = parseEvidenceSourceKey(dependency.sourceKey);
+    const dependencyState = dependencyRef
+      ? storedSourceState(
+          store,
+          { ...dependencyRef, version: dependency.version },
+          indexes.activeSources
+        )
+      : null;
+    if (!derivedEvidence.length && dependencyState?.modelDerived) {
+      usable = false;
+      break;
+    }
+    for (const candidate of derivedEvidence) {
+      const direct = evaluateEvidence(
+        candidate,
+        currentStateForEvidence(store, candidate, accountId, indexes),
+        { accountId, purpose }
+      );
+      if (!direct.usable || !derivedDependenciesUsable(
+        store,
+        candidate,
+        accountId,
+        purpose,
+        indexes,
+        evidenceBySourceKey,
+        trail,
+        memo
+      )) {
+        usable = false;
+        break;
+      }
+    }
+    if (!usable) break;
+  }
+  trail.delete(memoKey);
+  memo.set(memoKey, usable);
+  return usable;
 }
 
 function validatedStoredCollections(store, accountId) {
@@ -622,9 +681,35 @@ export function evaluateStoredEvidenceChecks(store, checks, {
     return { usable: false, reasons: [EVIDENCE_ERROR_CODES.INVALID], results: [] };
   }
   const evidenceById = new Map();
+  const evidenceBySourceKey = new Map();
   for (const evidence of normalizedStore.evidenceSources) {
     evidenceById.set(evidence.id, evidence);
+    const sourceKey = evidenceSourceKey(evidence.sourceRef);
+    evidenceBySourceKey.set(sourceKey, [
+      ...list(evidenceBySourceKey.get(sourceKey)),
+      evidence
+    ]);
   }
+  const permissions = new Map(normalizedStore.evidencePermissions.map(item => [
+    item.sourceKey,
+    item
+  ]));
+  const latestEvents = new Map();
+  for (const event of normalizedStore.perceptionEvents) {
+    const sourceKey = evidenceSourceKey(event.sourceRef);
+    const current = latestEvents.get(sourceKey);
+    if (!current || compareEventsNewestFirst(event, current) < 0) {
+      latestEvents.set(sourceKey, event);
+    }
+  }
+  const activeSources = new Map();
+  for (const collection of new Set(Object.values(SOURCE_COLLECTIONS))) {
+    activeSources.set(collection, new Map(
+      list(store[collection]).filter(item => item?.id).map(item => [item.id, item])
+    ));
+  }
+  const indexes = { permissions, latestEvents, activeSources };
+  const dependencyMemo = new Map();
   const seen = new Set();
   const results = [];
   for (const check of checks) {
@@ -661,14 +746,33 @@ export function evaluateStoredEvidenceChecks(store, checks, {
       });
       continue;
     }
+    const evaluated = evaluateEvidence(
+      evidence,
+      currentStateForEvidence(
+        { ...store, ...normalizedStore },
+        evidence,
+        expectedAccountId,
+        indexes
+      ),
+      { accountId: expectedAccountId, purpose }
+    );
+    if (evaluated.usable && !derivedDependenciesUsable(
+      { ...store, ...normalizedStore },
+      evidence,
+      expectedAccountId,
+      purpose,
+      indexes,
+      evidenceBySourceKey,
+      new Set(),
+      dependencyMemo
+    )) {
+      evaluated.usable = false;
+      addReason(evaluated.reasons, EVIDENCE_ERROR_CODES.DEPENDENCY_STALE);
+    }
     results.push({
       evidenceId,
       purpose,
-      ...evaluateEvidence(
-        evidence,
-        currentStateForEvidence({ ...store, ...normalizedStore }, evidence, expectedAccountId),
-        { accountId: expectedAccountId, purpose }
-      )
+      ...evaluated
     });
   }
   return {
