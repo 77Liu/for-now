@@ -559,8 +559,9 @@ V0.5.8 只有同时满足以下条件才可关闭：
   `fa9d00a8a1d90444ced242d97365106b80e004cb`，947 文件 manifest
   SHA-256 为
   `7bc21cf97421a14884060cc1caaa92bd8d76333f2980134c0800046defdcd9e0`。
-- `origin/main`、`origin/preview/v0.5.8` 和 annotated tag `v0.5.8`
-  均固定到同一提交；Gitee Release ID `1187350` 已创建。
+- 发布时 `origin/main`、`origin/preview/v0.5.8` 和 annotated tag
+  `v0.5.8` 均固定到同一提交；Gitee Release ID `1187350` 已创建。
+  发布后 `main` 继续接收纯文档复盘/SOP，tag 与生产提交不移动。
 - 发布前即时备份、OSS 上传和隔离恢复通过。备份 SHA-256 为
   `bb5a720fca140ccafa833d433a61244630e5ea907aae610b3d0531fdca5bcb7b`。
 - 生产于 14:23:43 切换到候选，本机/公网 readyz 与 release 指针一致。

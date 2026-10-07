@@ -413,8 +413,10 @@ PostgreSQL 与附件读取正常。由于本版没有数据迁移，常规代码
 
 ## 生产发布、短时回滚与再次上线
 
-- `origin/main`、`origin/preview/v0.5.8` 和 annotated tag `v0.5.8` 均固定
-  到 `7067ba65eeafccb953080e00988f62728d3b75a8`；tag peel 已核对。
+- 发布时 `origin/main`、`origin/preview/v0.5.8` 和 annotated tag
+  `v0.5.8` 均固定到
+  `7067ba65eeafccb953080e00988f62728d3b75a8`；tag peel 已核对。发布后
+  `main` 可继续承载复盘/SOP 文档，tag 与生产运行提交不移动。
 - Gitee Release ID 为 `1187350`：
   <https://gitee.com/Liu_772021/for-now/releases/tag/v0.5.8>。标题为
   “v0.5.8 - 高优体验与入口收口”，正文保留三项固定栏目并在顶部披露
