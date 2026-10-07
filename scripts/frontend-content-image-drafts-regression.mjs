@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
 import {
   uploadPendingMediaItems,
   validatedImageFiles
@@ -9,12 +13,266 @@ import {
   isUncertainContentImageSubmission,
   rotateContentImageFile
 } from "../public/frontend/media/content-image-drafts.mjs";
+import { resolveHeadlessBrowser } from "./browser-runtime.mjs";
 
 const moduleSource = await readFile(
   new URL("../public/frontend/media/content-image-drafts.mjs", import.meta.url),
   "utf8"
 );
+const rotationModuleSource = await readFile(
+  new URL("../public/frontend/media/content-image-draft-model.mjs", import.meta.url),
+  "utf8"
+);
 assert.doesNotMatch(moduleSource, /\b(?:window|router)\b|state\.thoughts/);
+
+const sleep = milliseconds => new Promise(resolve => {
+  setTimeout(resolve, milliseconds);
+});
+
+async function freePort() {
+  const server = http.createServer();
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const { port } = server.address();
+  await new Promise(resolve => server.close(resolve));
+  return port;
+}
+
+async function pageDebuggerUrl(port, browser) {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    if (browser.exitCode != null) {
+      throw new Error(`Image rotation browser exited early: ${browser.exitCode}`);
+    }
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/json/list`);
+      const pages = await response.json();
+      const page = pages.find(item => item.type === "page");
+      if (page) return page.webSocketDebuggerUrl;
+    } catch {}
+    await sleep(50);
+  }
+  throw new Error("Timed out waiting for the image rotation browser");
+}
+
+class Cdp {
+  constructor(url) {
+    this.socket = new WebSocket(url);
+    this.nextId = 1;
+    this.pending = new Map();
+    this.ready = new Promise((resolve, reject) => {
+      this.socket.addEventListener("open", resolve, { once: true });
+      this.socket.addEventListener("error", reject, { once: true });
+    });
+    this.socket.addEventListener("message", event => {
+      const message = JSON.parse(event.data);
+      const callback = this.pending.get(message.id);
+      if (!callback) return;
+      this.pending.delete(message.id);
+      if (message.error) callback.reject(new Error(message.error.message));
+      else callback.resolve(message.result);
+    });
+  }
+
+  async send(method, params = {}) {
+    await this.ready;
+    const id = this.nextId++;
+    const response = new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+    });
+    this.socket.send(JSON.stringify({ id, method, params }));
+    return response;
+  }
+
+  close() {
+    this.socket.close();
+  }
+}
+
+async function stopBrowser(browser) {
+  if (browser.exitCode != null || browser.signalCode != null) return;
+  const exited = new Promise(resolve => browser.once("exit", resolve));
+  browser.kill("SIGKILL");
+  await exited;
+}
+
+async function inspectExifRotationInBrowser() {
+  const server = http.createServer((request, response) => {
+    if (request.url === "/content-image-draft-model.mjs") {
+      response.writeHead(200, {
+        "cache-control": "no-store",
+        "content-type": "text/javascript; charset=utf-8"
+      });
+      response.end(rotationModuleSource);
+      return;
+    }
+    if (request.url === "/") {
+      response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      response.end("<!doctype html><title>image rotation regression</title>");
+      return;
+    }
+    response.writeHead(404).end();
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const { port } = server.address();
+  const debugPort = await freePort();
+  const profile = await mkdtemp(path.join(os.tmpdir(), "content-image-rotation-"));
+  const browser = spawn(resolveHeadlessBrowser(), [
+    "--headless=new",
+    "--disable-background-networking",
+    "--disable-breakpad",
+    "--disable-component-update",
+    "--disable-crash-reporter",
+    "--disable-default-apps",
+    "--disable-gpu",
+    "--disable-sync",
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--password-store=basic",
+    "--use-mock-keychain",
+    `--remote-debugging-port=${debugPort}`,
+    `--user-data-dir=${profile}`,
+    `http://127.0.0.1:${port}/`
+  ], { stdio: "ignore" });
+
+  let cdp;
+  try {
+    cdp = new Cdp(await pageDebuggerUrl(debugPort, browser));
+    await cdp.send("Runtime.enable");
+    const expression = `(async () => {
+      const { rotateContentImageFile } = await import(
+        ${JSON.stringify(`http://127.0.0.1:${port}/content-image-draft-model.mjs`)}
+      );
+      const fixtureCanvas = new OffscreenCanvas(40, 24);
+      const fixtureContext = fixtureCanvas.getContext("2d");
+      fixtureContext.fillStyle = "#ff0000";
+      fixtureContext.fillRect(0, 0, 20, 12);
+      fixtureContext.fillStyle = "#00ff00";
+      fixtureContext.fillRect(20, 0, 20, 12);
+      fixtureContext.fillStyle = "#0000ff";
+      fixtureContext.fillRect(0, 12, 20, 12);
+      fixtureContext.fillStyle = "#ffff00";
+      fixtureContext.fillRect(20, 12, 20, 12);
+      const rawJpeg = new Uint8Array(await (
+        await fixtureCanvas.convertToBlob({
+          type: "image/jpeg",
+          quality: 1
+        })
+      ).arrayBuffer());
+      const exifOrientation6 = Uint8Array.from([
+        0xff, 0xe1, 0x00, 0x22,
+        0x45, 0x78, 0x69, 0x66, 0x00, 0x00,
+        0x4d, 0x4d, 0x00, 0x2a, 0x00, 0x00, 0x00, 0x08,
+        0x00, 0x01,
+        0x01, 0x12, 0x00, 0x03, 0x00, 0x00, 0x00, 0x01,
+        0x00, 0x06, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00
+      ]);
+      const bytes = new Uint8Array(rawJpeg.length + exifOrientation6.length);
+      bytes.set(rawJpeg.subarray(0, 2), 0);
+      bytes.set(exifOrientation6, 2);
+      bytes.set(rawJpeg.subarray(2), 2 + exifOrientation6.length);
+      const file = new File([bytes], "orientation-6.jpg", {
+        type: "image/jpeg",
+        lastModified: 1
+      });
+      const sample = async blob => {
+        const bitmap = await createImageBitmap(blob, {
+          imageOrientation: "from-image"
+        });
+        try {
+          const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+          const context = canvas.getContext("2d", { willReadFrequently: true });
+          context.drawImage(bitmap, 0, 0);
+          const points = [
+            [0.25, 0.25],
+            [0.75, 0.25],
+            [0.25, 0.75],
+            [0.75, 0.75]
+          ];
+          return {
+            size: [bitmap.width, bitmap.height],
+            pixels: points.map(([x, y]) => Array.from(context.getImageData(
+              Math.floor(bitmap.width * x),
+              Math.floor(bitmap.height * y),
+              1,
+              1
+            ).data))
+          };
+        } finally {
+          bitmap.close();
+        }
+      };
+      const source = await sample(file);
+      const rotatedFile = await rotateContentImageFile(file, {
+        quarterTurns: 1
+      });
+      const rotated = await sample(rotatedFile);
+      const corrupted = bytes.slice();
+      corrupted[0] = 0;
+      corrupted[1] = 0;
+      let corruptedFixtureRejected = false;
+      try {
+        await rotateContentImageFile(
+          new File([corrupted], "corrupted.jpg", { type: "image/jpeg" })
+        );
+      } catch {
+        corruptedFixtureRejected = true;
+      }
+      return {
+        fixture: {
+          exifSignature: Array.from(bytes.subarray(6, 12)),
+          orientation: (bytes[30] << 8) | bytes[31]
+        },
+        source,
+        rotated,
+        corruptedFixtureRejected
+      };
+    })()`;
+    const response = await cdp.send("Runtime.evaluate", {
+      expression,
+      awaitPromise: true,
+      returnByValue: true
+    });
+    if (response.exceptionDetails) {
+      throw new Error(
+        response.exceptionDetails.exception?.description
+          || response.exceptionDetails.text
+      );
+    }
+    return response.result.value;
+  } finally {
+    cdp?.close();
+    await stopBrowser(browser);
+    await new Promise(resolve => server.close(resolve));
+    await rm(profile, { force: true, recursive: true });
+  }
+}
+
+function assertPixelColor(pixel, color, label) {
+  const [red, green, blue, alpha] = pixel;
+  assert.equal(alpha, 255, `${label} must be opaque`);
+  if (color === "red") {
+    assert.ok(red > 180 && green < 90 && blue < 90, `${label}: ${pixel}`);
+  } else if (color === "green") {
+    assert.ok(red < 90 && green > 150 && blue < 90, `${label}: ${pixel}`);
+  } else if (color === "blue") {
+    assert.ok(red < 90 && green < 90 && blue > 180, `${label}: ${pixel}`);
+  } else {
+    assert.ok(red > 180 && green > 150 && blue < 90, `${label}: ${pixel}`);
+  }
+}
+
+function assertPixelGrid(actual, expected, label) {
+  assert.equal(actual.length, expected.length);
+  for (const [index, color] of expected.entries()) {
+    assertPixelColor(actual[index], color, `${label} pixel ${index}`);
+  }
+}
 
 function deferred() {
   let resolve;
@@ -225,45 +483,34 @@ function createManager({
 }
 
 {
-  const baseJpeg = Buffer.from(
-    "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////"
-      + "2wBDAf//////////////////////////////////////////////////////////////////////////////////////"
-      + "wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/"
-      + "9oADAMBAAIQAxAAAAF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAA"
-      + "AAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPwF//8QAFBABAAAAAAAAAAAAAAAA"
-      + "AAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPyF//9oADAMBAAIAAwAAABAf/"
-      + "xAAUEQEAAAAAAAAAAAAAAAAAAAAQ/9oACAEDAQE/EB//xAAUEQEAAAAAAAAAAAAAAAAAAAAQ/9oACAECAQE/EB//"
-      + "xAAUEAEAAAAAAAAAAAAAAAAAAAAQ/9oACAEBAAE/EB//2Q==",
-    "base64"
+  const browserResult = await inspectExifRotationInBrowser();
+  assert.deepEqual(
+    browserResult.fixture.exifSignature,
+    [0x45, 0x78, 0x69, 0x66, 0x00, 0x00]
   );
-  const sof = baseJpeg.findIndex(
-    (value, index) => value === 0xff && baseJpeg[index + 1] === 0xc0
+  assert.equal(browserResult.fixture.orientation, 6);
+  assert.deepEqual(browserResult.source.size, [24, 40]);
+  assertPixelGrid(
+    browserResult.source.pixels,
+    ["blue", "red", "yellow", "green"],
+    "EXIF-oriented source"
   );
-  assert.ok(sof > 0, "the local fixture must contain a JPEG SOF marker");
-  baseJpeg.writeUInt16BE(3, sof + 5);
-  baseJpeg.writeUInt16BE(2, sof + 7);
-  const exifOrientation6 = Buffer.from([
-    0xff, 0xe1, 0x00, 0x22,
-    0x45, 0x78, 0x69, 0x66, 0x00, 0x00,
-    0x4d, 0x4d, 0x00, 0x2a, 0x00, 0x00, 0x00, 0x08,
-    0x00, 0x01,
-    0x01, 0x12, 0x00, 0x03, 0x00, 0x00, 0x00, 0x01,
-    0x00, 0x06, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00
-  ]);
-  const fixture = Buffer.concat([
-    baseJpeg.subarray(0, 2),
-    exifOrientation6,
-    baseJpeg.subarray(2)
-  ]);
-  assert.equal(fixture.subarray(6, 12).toString("ascii"), "Exif\u0000\u0000");
-  assert.equal(fixture.readUInt16BE(30), 6);
+  assert.deepEqual(browserResult.rotated.size, [40, 24]);
+  assertPixelGrid(
+    browserResult.rotated.pixels,
+    ["yellow", "blue", "green", "red"],
+    "clockwise output"
+  );
+  assert.equal(
+    browserResult.corruptedFixtureRejected,
+    true,
+    "the browser must reject a corrupted copy of the EXIF fixture"
+  );
 
   const transforms = [];
   const bitmap = {
     width: 3,
     height: 2,
-    pixels: ["A", "B", "C", "D", "E", "F"],
     closeCalls: 0,
     close() {
       this.closeCalls += 1;
@@ -282,7 +529,6 @@ function createManager({
         },
         drawImage(source, x, y) {
           transforms.push(["drawImage", source, x, y]);
-          canvas.pixels = ["C", "F", "B", "E", "A", "D"];
         }
       };
     }
@@ -290,14 +536,12 @@ function createManager({
   const normalized = await rotateContentImageFile(
     {
       ...image("exif-portrait.jpg"),
-      type: "image/jpeg",
-      bytes: fixture
+      type: "image/jpeg"
     },
     {
       quarterTurns: 3,
       async decodeImage(file, options) {
         assert.equal(file.name, "exif-portrait.jpg");
-        assert.equal(file.bytes, fixture);
         assert.deepEqual(options, { imageOrientation: "from-image" });
         return bitmap;
       },
@@ -310,8 +554,7 @@ function createManager({
         assert.deepEqual(options, { type: "image/jpeg", quality: 0.92 });
         return {
           type: "image/jpeg",
-          size: 24,
-          pixels: value.pixels.join("")
+          size: 24
         };
       },
       createFile(parts, name, options) {
@@ -324,10 +567,47 @@ function createManager({
     ["rotate", -Math.PI / 2],
     ["drawImage", bitmap, 0, 0]
   ]);
-  assert.equal(normalized.blob.pixels, "CFBEAD");
   assert.equal(normalized.name, "exif-portrait.jpg");
   assert.equal(normalized.type, "image/jpeg");
   assert.equal(bitmap.closeCalls, 1);
+}
+
+{
+  let webpEncoding;
+  const bitmap = {
+    width: 4,
+    height: 2,
+    close() {}
+  };
+  const canvas = {
+    getContext() {
+      return {
+        translate() {},
+        rotate() {},
+        drawImage() {}
+      };
+    }
+  };
+  await rotateContentImageFile(
+    { ...image("quality.webp"), type: "image/webp" },
+    {
+      decodeImage: async () => bitmap,
+      createCanvas: () => canvas,
+      async encodeCanvas(value, options) {
+        assert.equal(value, canvas);
+        webpEncoding = options;
+        return { type: "image/webp", size: 24 };
+      },
+      createFile(parts, name, options) {
+        return { blob: parts[0], name, ...options, size: parts[0].size };
+      }
+    }
+  );
+  assert.deepEqual(
+    webpEncoding,
+    { type: "image/webp", quality: 0.92 },
+    "WebP rotation must encode with quality 0.92"
+  );
 }
 
 {
