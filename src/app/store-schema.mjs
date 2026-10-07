@@ -3,7 +3,7 @@ import {
   defaultOnboardingV2
 } from "../modules/onboarding/index.mjs";
 
-export const STORE_VERSION = 16;
+export const STORE_VERSION = 17;
 export const TRASH_RETENTION_DAYS = 30;
 export const COMMERCIALIZATION_VERSION = 3;
 
@@ -71,7 +71,8 @@ export const STORE_COLLECTION_KEYS = [
   "checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books",
   "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "trash",
   "attachmentCleanup", "speechCache", "aiTasks", "notifications", "actions", "habits",
-  "habitCheckins", "feedback", "validationLedger", "userClaims", "modelUnknowns"
+  "habitCheckins", "feedback", "validationLedger", "userClaims", "modelUnknowns",
+  "evidenceSources", "evidencePermissions", "perceptionEvents"
 ];
 
 export const emptyStore = {
@@ -101,6 +102,9 @@ export const emptyStore = {
   validationLedger: [],
   userClaims: [],
   modelUnknowns: [],
+  evidenceSources: [],
+  evidencePermissions: [],
+  perceptionEvents: [],
   onboarding: defaultOnboarding,
   onboardingV2: defaultOnboardingV2,
   commercialization: defaultCommercialization

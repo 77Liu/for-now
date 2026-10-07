@@ -8,6 +8,7 @@ import {
   createAuthRepository,
   createJsonStoreRepository,
   discoverJsonStores,
+  mapStoreObjects,
   publicPersistenceDocument,
   rebuildStoreObjects,
   storeContentSha256
@@ -296,6 +297,25 @@ assert.deepEqual(
 );
 assert.deepEqual(durablePlan.business.lifecycles.map(item => item.position), durablePlan.business.lifecycles.map((_, index) => index));
 assert.deepEqual(durablePlan.business.idempotency.map(item => item.position), [0, 1]);
+const evidenceMetadataFile = path.join(root, "evidence-metadata-store.json");
+await fs.writeFile(evidenceMetadataFile, `${JSON.stringify(migrationStore("metadata-evidence"), null, 2)}\n`);
+const evidenceMetadataRepository = createJsonStoreRepository({
+  getFile: () => evidenceMetadataFile,
+  readDocument,
+  writeDocument,
+  normalize: value => value,
+  emptyDocument: {},
+  getContext: () => ({ clientOperationId: "permission-revoke", traceId: "permission-trace" })
+});
+await evidenceMetadataRepository.update(store => {
+  const permission = store.evidencePermissions[0];
+  permission.contextAllowed = false;
+  permission.revision += 1;
+});
+const permissionChange = (await evidenceMetadataRepository.readPersistenceMetadata()).sync.changes
+  .find(item => item.domain === "evidencePermissions");
+assert.equal(permissionChange.resourceId, JSON.stringify(["capture", "shared-id", "", ""]));
+assert.equal(permissionChange.version, 3);
 const unorderedMetadata = structuredClone(durablePlan.business);
 unorderedMetadata.lifecycles.reverse();
 unorderedMetadata.idempotency.reverse();
@@ -412,6 +432,64 @@ assert.ok(plan.business.relations.some(row => row.relation === "source" && row.t
 assert.ok(fullPlan.business.relations.some(row => row.relation === "result" && row.targetId === "exchange-1" && row.resolution === "live"));
 assert.ok(fullPlan.business.objects.some(row => row.kind === "annotationExchange" && row.parentKey));
 assert.ok(fullPlan.business.objects.some(row => row.kind === "thought" && !Object.hasOwn(row.payload, "followUps")));
+assert.equal(fullPlan.snapshot.version, 17);
+assert.deepEqual(
+  new Set(fullPlan.business.objects
+    .filter(row => ["evidenceSource", "evidencePermission", "perceptionEvent"].includes(row.kind))
+    .map(row => row.kind)),
+  new Set(["evidenceSource", "evidencePermission", "perceptionEvent"])
+);
+const mappedPermission = fullPlan.business.objects.find(row => row.kind === "evidencePermission");
+assert.equal(mappedPermission.id, mappedPermission.payload.sourceKey);
+assert.equal(mappedPermission.version, mappedPermission.payload.revision);
+assert.ok(fullPlan.business.relations.some(row => (
+  row.objectKey === JSON.stringify(["evidenceSources", "evidence-capture-1"])
+  && row.relation === "source"
+  && row.targetId === "shared-id"
+  && row.resolution === "live"
+)));
+assert.ok(fullPlan.business.relations.some(row => (
+  row.objectKey === JSON.stringify(["evidenceSources", "evidence-claim-1"])
+  && row.relation === "derivedFrom:0"
+  && row.targetId === "shared-id"
+  && row.resolution === "live"
+)));
+assert.throws(() => mapStoreObjects("other-account", fixture), /Cross-account object/);
+for (const corrupt of [
+  store => {
+    store.evidencePermissions.push({
+      ...store.evidencePermissions[0],
+      updatedAt: "2026-09-29T02:00:00.000Z"
+    });
+  },
+  store => {
+    store.perceptionEvents.push({
+      ...store.perceptionEvents[0],
+      id: "duplicate-event-input"
+    });
+  },
+  store => {
+    store.evidenceSources.push({
+      ...store.evidenceSources[0],
+      id: "duplicate-evidence",
+      recordedAt: "2026-09-29T02:00:00.000Z"
+    });
+  },
+  store => {
+    store.evidencePermissions[0].sourceKey = '[ "capture", "shared-id", "", "" ]';
+  },
+  store => {
+    store.evidenceSources[0].sourceRef = {
+      resourceType: "capture",
+      resourceId: "shared-id",
+      version: 3
+    };
+  }
+]) {
+  const malformed = migrationStore();
+  corrupt(malformed);
+  assert.throws(() => mapStoreObjects("fixture-account", malformed));
+}
 fixture.captures[0].content = "后续内存修改";
 assert.equal(fullPlan.snapshot.captures[0].content, "原始捕念");
 assert.equal(storeContentSha256(rebuildStoreObjects(fullPlan.business)), fullPlan.contentSha256);
@@ -500,7 +578,7 @@ for (const corrupt of [
   store => { store.aiTasks[2].subtargetId = "missing"; },
   store => { store.aiTasks[2].targetId = ""; }
 ]) {
-  const broken = migrationStore();
+  const broken = migrationStore("broken");
   corrupt(broken);
   assert.throws(() => buildPostgresMigrationPlan({ accountId: "broken", store: broken }));
 }

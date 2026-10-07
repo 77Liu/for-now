@@ -10,7 +10,9 @@ const COLLECTIONS = {
   attachmentCleanup: "attachmentCleanup", aiTasks: "aiTask", notifications: "notification",
   actions: "action", habits: "habit", habitCheckins: "habitCheckin",
   feedback: "feedback", validationLedger: "validationLedger",
-  userClaims: "userClaim", modelUnknowns: "modelUnknown"
+  userClaims: "userClaim", modelUnknowns: "modelUnknown",
+  evidenceSources: "evidenceSource", evidencePermissions: "evidencePermission",
+  perceptionEvents: "perceptionEvent"
 };
 const SINGLETONS = new Set(["journalDraft", "onboarding", "onboardingV2", "commercialization"]);
 const ANNOTATED = ["annotations", "annotationDrift"];
@@ -31,6 +33,44 @@ const own = (object, key) => Object.hasOwn(object, key);
 const objectValue = value => value !== null && typeof value === "object" && !Array.isArray(value);
 const keyOf = parts => JSON.stringify(parts);
 const lifecycleOf = (item, kind) => item?.lifecycle === "draft" || kind === "journalDraft" ? "draft" : "formal";
+const EVIDENCE_KINDS = new Set(["evidenceSource", "evidencePermission", "perceptionEvent"]);
+const objectId = (item, kind) => kind === "evidencePermission" ? item?.sourceKey : item?.id;
+const objectVersion = (item, kind) => (
+  kind === "evidencePermission"
+    ? item?.revision
+    : EVIDENCE_KINDS.has(kind) ? 1 : item?.version
+);
+const sourceReference = sourceKey => {
+  try {
+    const value = JSON.parse(sourceKey);
+    if (!Array.isArray(value)
+      || value.length !== 4
+      || typeof value[0] !== "string"
+      || !value[0]
+      || typeof value[1] !== "string"
+      || !value[1]
+      || typeof value[2] !== "string"
+      || typeof value[3] !== "string"
+      || JSON.stringify(value) !== sourceKey) {
+      return null;
+    }
+    const [resourceType, resourceId, rootId, targetKey] = value;
+    return { resourceType, resourceId, rootId, targetKey };
+  } catch {
+    return null;
+  }
+};
+const validSourceRef = sourceRef => (
+  objectValue(sourceRef)
+  && typeof sourceRef.resourceType === "string"
+  && Boolean(sourceRef.resourceType)
+  && typeof sourceRef.resourceId === "string"
+  && Boolean(sourceRef.resourceId)
+  && typeof sourceRef.rootId === "string"
+  && typeof sourceRef.targetKey === "string"
+  && Number.isSafeInteger(sourceRef.version)
+  && sourceRef.version > 0
+);
 
 export function canonicalJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
@@ -48,6 +88,7 @@ export function mapStoreObjects(accountId, store) {
   const fields = [], objects = [], relations = [], attachmentRefs = [], lifecycles = [], idempotency = [];
   const identities = new Map();
   const originals = new Map();
+  const evidenceIdentities = new Set();
 
   const attachments = (value, ownerKey, fieldName, segments = []) => {
     if (typeof value === "string" && /^\/attachments\/[\w.-]+$/.test(value)) {
@@ -59,7 +100,43 @@ export function mapStoreObjects(accountId, store) {
 
   const addObject = (item, { collection, kind, parentKey = null, field, position, parts, singleton = false, inheritedLifecycle = "" }) => {
     if (!objectValue(item)) throw new Error(`Invalid object in ${collection}.${field}`);
-    const id = singleton ? field : kind === "attachmentCleanup" ? item.path : item.id;
+    if (EVIDENCE_KINDS.has(kind) && item.accountId !== accountId) {
+      throw new Error(`Cross-account object in ${collection}.${field}`);
+    }
+    if (kind === "evidencePermission" && !sourceReference(item.sourceKey)) {
+      throw new Error(`Invalid evidence permission source key in ${collection}.${field}`);
+    }
+    if (["evidenceSource", "perceptionEvent"].includes(kind) && !validSourceRef(item.sourceRef)) {
+      throw new Error(`Invalid evidence source reference in ${collection}.${field}`);
+    }
+    if (kind === "evidenceSource" && (!Array.isArray(item.derivedFrom)
+      || !item.derivedFrom.every(dependency => (
+        objectValue(dependency) && Boolean(sourceReference(dependency.sourceKey))
+      )))) {
+      throw new Error(`Invalid evidence dependency in ${collection}.${field}`);
+    }
+    const evidenceIdentity = kind === "evidenceSource"
+      ? canonicalJson(Object.fromEntries(Object.entries(item).filter(([key]) => !["id", "recordedAt"].includes(key))))
+      : kind === "evidencePermission" ? item.sourceKey
+        : kind === "perceptionEvent" ? canonicalJson({
+          accountId: item.accountId,
+          eventId: item.eventId,
+          kind: item.kind,
+          sourceRef: item.sourceRef,
+          contentSha256: item.contentSha256,
+          permissionRevision: item.permissionRevision,
+          perceptionVersion: item.perceptionVersion
+        }) : "";
+    if (evidenceIdentity) {
+      const scopedIdentity = `${kind}\u0000${evidenceIdentity}`;
+      if (evidenceIdentities.has(scopedIdentity)) {
+        throw new Error(`Duplicate evidence identity in ${collection}.${field}`);
+      }
+      evidenceIdentities.add(scopedIdentity);
+    }
+    const id = singleton
+      ? field
+      : kind === "attachmentCleanup" ? item.path : objectId(item, kind);
     if (typeof id !== "string" || !id) throw new Error(`Missing id in ${collection}.${field}`);
     const objectKey = keyOf([...parts, id]);
     if (identities.has(objectKey)) throw new Error(`Duplicate id in ${collection}.${field}: ${id}`);
@@ -71,7 +148,9 @@ export function mapStoreObjects(accountId, store) {
       content: ["content", "text", "message", "question", "title", "note"].map(key => item[key]).find(value => typeof value === "string") || "",
       status: typeof item.status === "string" ? item.status : "",
       authorType: typeof item.authorType === "string" ? item.authorType : "",
-      version: Number.isSafeInteger(item.version) && item.version > 0 ? item.version : 1,
+      version: Number.isSafeInteger(objectVersion(item, kind)) && objectVersion(item, kind) > 0
+        ? objectVersion(item, kind)
+        : 1,
       lifecycle: objectLifecycle,
       tombstone: kind === "trash",
       deletedAt: kind === "trash" ? item.deletedAt || null : null,
@@ -164,6 +243,25 @@ export function mapStoreObjects(accountId, store) {
       targetCollection: collection, targetId: String(id), resolution: target ? "live" : "historical"
     });
   };
+  const linkSource = (row, relation, sourceRef) => {
+    if (!objectValue(sourceRef)) return;
+    const collection = RESOURCE_COLLECTIONS[sourceRef.resourceType];
+    if (!collection || !sourceRef.resourceId) return;
+    const directKey = keyOf([collection, sourceRef.resourceId]);
+    let targetKey = identities.has(directKey) ? directKey : null;
+    if (!targetKey && sourceRef.rootId) {
+      const candidates = objects.filter(candidate => {
+        if (candidate.collection !== collection || candidate.id !== sourceRef.resourceId) return false;
+        try {
+          return JSON.parse(candidate.objectKey).includes(sourceRef.rootId);
+        } catch {
+          return false;
+        }
+      });
+      if (candidates.length === 1) targetKey = candidates[0].objectKey;
+    }
+    link(row, relation, collection, sourceRef.resourceId, false, targetKey || directKey);
+  };
   for (const row of objects) {
     const item = originals.get(row.objectKey);
     if (row.kind === "thought") {
@@ -200,6 +298,16 @@ export function mapStoreObjects(accountId, store) {
         link(row, `relatedEvidence:${index}`, "userClaims", claimId);
       }
       link(row, "resolvedBy", "userClaims", item.resolvedBy);
+    }
+    if (row.kind === "evidenceSource") {
+      linkSource(row, "source", item.sourceRef);
+      for (const [index, dependency] of (item.derivedFrom || []).entries()) {
+        linkSource(row, `derivedFrom:${index}`, sourceReference(dependency.sourceKey));
+      }
+    }
+    if (row.kind === "perceptionEvent") linkSource(row, "source", item.sourceRef);
+    if (row.kind === "evidencePermission") {
+      linkSource(row, "source", sourceReference(item.sourceKey));
     }
     if (row.kind === "journalDraft" && item.journalId) link(row, "journal", "journals", item.journalId, true);
     if (row.kind === "notification") link(row, "task", "aiTasks", item.taskId);

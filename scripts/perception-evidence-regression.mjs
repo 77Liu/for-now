@@ -8,12 +8,14 @@ import {
   PERCEPTION_EVENT_KINDS,
   deduplicateEvidenceByEvent,
   evaluateEvidence,
+  evaluateStoredEvidenceChecks,
   evidenceEventKey,
   evidenceFingerprint,
   evidenceSourceKey,
   normalizeEvidencePermission,
   normalizeEvidenceSource,
-  normalizePerceptionEvent
+  normalizePerceptionEvent,
+  revokeEvidencePermissionsForResource
 } from "../src/modules/user-model/index.mjs";
 
 const hash = value => crypto.createHash("sha256").update(value).digest("hex");
@@ -479,5 +481,189 @@ assert.equal(
 );
 assert.match(evidenceFingerprint(evidence), /^[a-f0-9]{64}$/);
 assert.equal(evidenceFingerprint(null), "");
+
+const stored = {
+  evidenceSources: [evidence],
+  evidencePermissions: [permission, {
+    schemaVersion: 1,
+    accountId: "account-a",
+    sourceKey: dependency.sourceKey,
+    contextAllowed: true,
+    learningAllowed: true,
+    revision: dependency.permissionRevision,
+    updatedAt: "2026-10-07T00:00:00.000Z"
+  }, {
+    schemaVersion: 1,
+    accountId: "account-a",
+    sourceKey: secondDependency.sourceKey,
+    contextAllowed: true,
+    learningAllowed: true,
+    revision: secondDependency.permissionRevision,
+    updatedAt: "2026-10-07T00:00:00.000Z"
+  }],
+  perceptionEvents: [
+    normalizedEvent,
+    normalizePerceptionEvent({
+      ...event,
+      id: "late-stale-event",
+      sourceRef: { ...sourceRef, version: 2 },
+      contentSha256: hash("stale source"),
+      recordedAt: "2026-10-07T01:00:00.000Z"
+    }),
+    normalizePerceptionEvent({
+      ...event,
+      id: "dependency-event-1",
+      sourceRef: {
+        resourceType: "journal",
+        resourceId: "journal-1",
+        rootId: "",
+        targetKey: "",
+        version: dependency.version
+      },
+      eventId: "supporting-event-1",
+      contentSha256: dependency.contentSha256,
+      permissionRevision: dependency.permissionRevision
+    }),
+    normalizePerceptionEvent({
+      ...event,
+      id: "dependency-event-2",
+      sourceRef: {
+        resourceType: "thought",
+        resourceId: "thought-2",
+        rootId: "",
+        targetKey: "question:thought-2",
+        version: secondDependency.version
+      },
+      eventId: "supporting-event-2",
+      contentSha256: secondDependency.contentSha256,
+      permissionRevision: secondDependency.permissionRevision
+    })
+  ]
+};
+const check = {
+  evidenceId: evidence.id,
+  evidenceFingerprint: evidenceFingerprint(evidence),
+  purpose: "context"
+};
+assert.equal(evaluateStoredEvidenceChecks(stored, [check], {
+  accountId: "account-a"
+}).usable, true);
+const unrelatedTrashCollision = structuredClone(stored);
+unrelatedTrashCollision.trash = [{
+  id: "trash-unrelated",
+  type: "journal",
+  resourceId: sourceRef.resourceId,
+  location: {
+    kind: "collection",
+    collection: "journals",
+    index: 0
+  },
+  payload: {
+    id: sourceRef.resourceId,
+    version: sourceRef.version
+  }
+}];
+assert.equal(evaluateStoredEvidenceChecks(unrelatedTrashCollision, [check], {
+  accountId: "account-a"
+}).usable, true);
+const nestedTrashCollision = structuredClone(stored);
+nestedTrashCollision.trash = [{
+  id: "trash-nested",
+  type: "annotation",
+  resourceId: sourceRef.resourceId,
+  location: {
+    kind: "nested",
+    parentCollection: "captures",
+    parentId: "other-capture",
+    field: "annotations",
+    index: 0
+  },
+  payload: {
+    id: sourceRef.resourceId,
+    version: sourceRef.version
+  }
+}];
+assert.equal(evaluateStoredEvidenceChecks(nestedTrashCollision, [check], {
+  accountId: "account-a"
+}).usable, true);
+assert.deepEqual(evaluateStoredEvidenceChecks(stored, [{
+  ...check,
+  purpose: "learning"
+}], {
+  accountId: "account-a"
+}).reasons, ["EVIDENCE_PERMISSION_DENIED"]);
+assert.deepEqual(evaluateStoredEvidenceChecks(stored, [{
+  ...check,
+  evidenceFingerprint: hash("stale evidence snapshot")
+}], {
+  accountId: "account-a"
+}).reasons, ["EVIDENCE_VERSION_STALE"]);
+assert.deepEqual(evaluateStoredEvidenceChecks(stored, [
+  check,
+  check
+], {
+  accountId: "account-a"
+}).reasons, ["EVIDENCE_INVALID"]);
+assert.deepEqual(evaluateStoredEvidenceChecks(stored, null, {
+  accountId: "account-a"
+}).reasons, ["EVIDENCE_INVALID"]);
+assert.deepEqual(evaluateStoredEvidenceChecks({
+  ...stored,
+  evidencePermissions: [...stored.evidencePermissions, stored.evidencePermissions[0]]
+}, [check], {
+  accountId: "account-a"
+}).reasons, ["EVIDENCE_INVALID"]);
+assert.deepEqual(evaluateStoredEvidenceChecks({
+  ...stored,
+  perceptionEvents: [...stored.perceptionEvents, {
+    ...stored.perceptionEvents[0],
+    id: "duplicate-input"
+  }]
+}, [check], {
+  accountId: "account-a"
+}).reasons, ["EVIDENCE_INVALID"]);
+assert.deepEqual(evaluateStoredEvidenceChecks({
+  ...stored,
+  evidenceSources: [...stored.evidenceSources, {
+    ...stored.evidenceSources[0],
+    id: "other-account-evidence",
+    accountId: "account-b"
+  }]
+}, [check], {
+  accountId: "account-a"
+}).reasons, ["EVIDENCE_ACCOUNT_MISMATCH"]);
+assert.equal(evaluateStoredEvidenceChecks({}, [], {
+  accountId: "account-a"
+}).usable, true);
+
+const revokedStore = structuredClone(stored);
+assert.equal(revokeEvidencePermissionsForResource(revokedStore, {
+  accountId: "account-a",
+  resourceType: "capture",
+  resourceId: "capture-1"
+}, "2026-10-07T01:00:00.000Z"), 1);
+assert.deepEqual(revokedStore.evidencePermissions.find(item => item.sourceKey === sourceKey), {
+  ...permission,
+  contextAllowed: false,
+  learningAllowed: false,
+  revision: 5,
+  updatedAt: "2026-10-07T01:00:00.000Z"
+});
+assert.deepEqual(evaluateStoredEvidenceChecks(revokedStore, [check], {
+  accountId: "account-a"
+}).reasons, ["EVIDENCE_PERMISSION_DENIED", "EVIDENCE_PERMISSION_STALE"]);
+assert.equal(revokeEvidencePermissionsForResource(revokedStore, {
+  accountId: "account-a",
+  resourceType: "thought",
+  resourceId: "thought-2"
+}, "2026-10-07T02:00:00.000Z"), 1);
+assert.throws(
+  () => revokeEvidencePermissionsForResource(revokedStore, {
+    accountId: "account-a",
+    resourceType: "capture",
+    resourceId: "capture-1"
+  }, "not-a-date"),
+  /requires a valid store/
+);
 
 console.log("Perception evidence checks passed: strict source/event/permission normalization, account and permission isolation, version/hash invalidation, restore safety, dependency invalidation, deterministic fingerprinting and event deduplication.");

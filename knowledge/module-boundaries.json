@@ -89,7 +89,8 @@
       "owns": {
         "data": [
           "source-bound user claims, model unknowns, candidate activation, correction, rejection, retraction and stale-source projection",
-          "strict candidate extraction output parsing, source span validation and extraction limits"
+          "strict candidate extraction output parsing, source span validation and extraction limits",
+          "account-bound evidence/event/permission contracts, source identity, dependency validity and deterministic event deduplication"
         ],
         "routes": [
           "GET /api/v1/user-model",
@@ -100,6 +101,7 @@
         "scripts/user-model-claims-regression.mjs",
         "scripts/user-model-api-regression.mjs",
         "scripts/user-model-extraction-regression.mjs",
+        "scripts/perception-evidence-regression.mjs",
         "scripts/personal-context-regression.mjs",
         "scripts/postgres-runtime-checks.mjs"
       ],
@@ -740,7 +742,7 @@
       ],
       "owns": {
         "data": [
-          "Store v16 defaults, compatibility normalization and commercialization migration",
+          "Store v17 defaults, strict evidence collection normalization and commercialization migration",
           "cross-domain derived thought clusters, trend/association insights and user-trace metrics",
           "role-aware public Store projection, recursive owner metadata filtering and provider capability snapshots",
           "local-test control normalization, workspace switching, lazy read-only hydration and merge rules",
@@ -2504,6 +2506,7 @@
           "JSON/PostgreSQL repository contract, runtime transactions and account isolation",
           "root-level private JSON and non-RLS PostgreSQL persistence for atomic site-wide AI budget state",
           "PostgreSQL identity/config/usage mapping, atomic registration, attachment inventory and recovery",
+          "evidence/event/permission object identity, relation mapping and round-trip preservation",
           "Atomic migration, runtime overwrite protection, offline relational export",
           "account-scoped monotonic change cursor and bounded incremental sync ledger"
         ],

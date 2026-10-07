@@ -11,7 +11,8 @@ const STORE_COLLECTION_KEYS = [
   "checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books",
   "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "trash",
   "attachmentCleanup", "speechCache", "aiTasks", "notifications", "actions", "habits",
-  "habitCheckins", "feedback", "validationLedger", "userClaims", "modelUnknowns"
+  "habitCheckins", "feedback", "validationLedger", "userClaims", "modelUnknowns",
+  "evidenceSources", "evidencePermissions", "perceptionEvents"
 ];
 const fixedNow = "2026-10-05T01:02:03.000Z";
 const fixedCurrentTime = Date.parse("2026-10-05T04:05:06.000Z");
@@ -21,7 +22,7 @@ const normalizeWithFixedClock = createStoreNormalizer({
   currentTime: () => fixedCurrentTime
 });
 
-assert.equal(STORE_VERSION, 16);
+assert.equal(STORE_VERSION, 17);
 assert.equal(TRASH_RETENTION_DAYS, 30);
 assert.equal(emptyStore.version, STORE_VERSION);
 assert.equal(normalizeStore({ version: STORE_VERSION }).version, STORE_VERSION);
@@ -200,7 +201,9 @@ assert.deepEqual(normalizeCommercialization(commercialization), commercializatio
 assert.deepEqual(normalizeWithFixedClock(normalized), normalized);
 
 const malformedCollections = Object.fromEntries(
-  STORE_COLLECTION_KEYS.map((key, index) => [key, [null, "bad", { nope: true }][index % 3]])
+  STORE_COLLECTION_KEYS
+    .filter(key => !["evidenceSources", "evidencePermissions", "perceptionEvents"].includes(key))
+    .map((key, index) => [key, [null, "bad", { nope: true }][index % 3]])
 );
 const recovered = normalizeWithFixedClock({
   version: STORE_VERSION,
@@ -224,5 +227,40 @@ assert.deepEqual(allDomainInput, allDomainSnapshot);
 assert.deepEqual(normalizeWithFixedClock(allDomainNormalized), allDomainNormalized);
 assert.deepEqual(allDomainNormalized.unknownExtension, allDomainInput.unknownExtension);
 for (const key of STORE_COLLECTION_KEYS) assert.ok(Array.isArray(allDomainNormalized[key]));
+assert.equal(allDomainNormalized.evidenceSources.length, 2);
+assert.equal(allDomainNormalized.evidencePermissions.length, 2);
+assert.equal(allDomainNormalized.perceptionEvents.length, 1);
+assert.equal(allDomainNormalized.evidenceSources[0].accountId, "fixture-account");
+assert.deepEqual(
+  allDomainNormalized.evidencePermissions.map(item => item.revision),
+  [2, 1]
+);
+
+const legacyV16 = normalizeWithFixedClock({
+  version: 16,
+  thoughts: [],
+  captures: []
+});
+assert.equal(legacyV16.version, 17);
+assert.deepEqual(legacyV16.evidenceSources, []);
+assert.deepEqual(legacyV16.evidencePermissions, []);
+assert.deepEqual(legacyV16.perceptionEvents, []);
+
+for (const corrupt of [
+  store => { store.evidenceSources = {}; },
+  store => { store.evidenceSources.push({ id: "invalid" }); },
+  store => { store.evidenceSources.push({ ...store.evidenceSources[0] }); },
+  store => { store.evidenceSources.push({ ...store.evidenceSources[0], id: "duplicate-semantic" }); },
+  store => { store.evidencePermissions.push({ ...store.evidencePermissions[0] }); },
+  store => { store.perceptionEvents.push({ ...store.perceptionEvents[0] }); },
+  store => { store.perceptionEvents.push({ ...store.perceptionEvents[0], id: "duplicate-event-input" }); }
+]) {
+  const invalid = migrationStore();
+  corrupt(invalid);
+  assert.throws(
+    () => normalizeWithFixedClock(invalid),
+    error => error.code === "STORAGE_READ_FAILED"
+  );
+}
 
 console.log("Store normalization regression passed.");

@@ -47,6 +47,9 @@ export function createPublicStateProjection({
       trash,
       attachmentCleanup: _attachmentCleanup,
       speechCache: _speechCache,
+      evidenceSources: _evidenceSources,
+      evidencePermissions: _evidencePermissions,
+      perceptionEvents: _perceptionEvents,
       ...visible
     } = storeForUser(store, user, isOwner);
     const ownerId = safeText(user?.id, 100) || "local";

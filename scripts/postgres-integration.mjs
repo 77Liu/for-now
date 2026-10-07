@@ -95,7 +95,10 @@ try {
   await admin.query("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA for_now TO migration_app");
   const client = await connect("migration_app");
   const peer = await connect("migration_app");
-  const source = buildPostgresMigrationPlan({ accountId: "fixture-template", store: migrationStore() }).snapshot;
+  const source = buildPostgresMigrationPlan({
+    accountId: "account-a",
+    store: migrationStore("account-a")
+  }).snapshot;
   source._persistence.futureMetadata = { retained: true };
   source._persistence.lifecycles[0].futureLifecycle = { retained: true };
   source._persistence.idempotency.push({
@@ -108,7 +111,7 @@ try {
     futureLedger: { retained: true }
   });
   const plan = buildPostgresMigrationPlan({ accountId: "account-a", store: source });
-  const other = migrationStore();
+  const other = migrationStore("account-b");
   other.captures[0].content = "账户 B 的原文";
   other.captures.push({ id: "only-b", content: "B 独有" });
   const otherPlan = buildPostgresMigrationPlan({ accountId: "account-b", store: other });
@@ -121,6 +124,52 @@ try {
   assert.equal(imported.reused, false);
   assert.deepEqual(await read(client, "account-a"), plan.snapshot);
   assert.deepEqual(await read(client, "account-b"), otherPlan.snapshot);
+  const evidenceRows = await inAccount(client, "account-a", () => client.query(`
+    SELECT kind, id, version
+    FROM for_now.store_objects
+    WHERE collection IN ('evidenceSources', 'evidencePermissions', 'perceptionEvents')
+    ORDER BY kind, id
+  `));
+  assert.deepEqual(
+    evidenceRows.rows.reduce((counts, row) => ({
+      ...counts,
+      [row.kind]: (counts[row.kind] || 0) + 1
+    }), {}),
+    { evidencePermission: 2, evidenceSource: 2, perceptionEvent: 1 }
+  );
+  assert.ok(evidenceRows.rows
+    .filter(row => row.kind === "evidencePermission")
+    .every(row => row.id.startsWith("[") && row.version >= 1));
+  const evidenceRelations = await inAccount(client, "account-a", () => client.query(`
+    SELECT relation, target_id, resolution
+    FROM for_now.store_relations
+    WHERE object_key LIKE '["evidenceSources"%'
+       OR object_key LIKE '["evidencePermissions"%'
+       OR object_key LIKE '["perceptionEvents"%'
+    ORDER BY object_key, relation
+  `));
+  assert.ok(evidenceRelations.rows.some(row => (
+    row.relation === "source"
+    && row.target_id === "shared-id"
+    && row.resolution === "live"
+  )));
+  assert.ok(evidenceRelations.rows.some(row => (
+    row.relation === "derivedFrom:0"
+    && row.target_id === "shared-id"
+    && row.resolution === "live"
+  )));
+  assert.equal(
+    await inAccount(client, "account-b", async () => {
+      const result = await client.query(`
+        SELECT count(*)::int AS count
+        FROM for_now.store_objects
+        WHERE collection IN ('evidenceSources', 'evidencePermissions', 'perceptionEvents')
+          AND payload->>'accountId' = 'account-a'
+      `);
+      return result.rows[0].count;
+    }),
+    0
+  );
   await admin.query(`
     UPDATE for_now.store_fields
     SET payload = jsonb_build_object('version', payload->'version')
@@ -136,7 +185,10 @@ try {
   assert.equal(repeated.runId, imported.runId);
   const both = await Promise.all([applyPostgresMigration(client, plan), applyPostgresMigration(peer, plan)]);
   assert.ok(both.every(result => result.reused));
-  const freshPlan = buildPostgresMigrationPlan({ accountId: "concurrent-account", store: source });
+  const freshPlan = buildPostgresMigrationPlan({
+    accountId: "concurrent-account",
+    store: migrationStore("concurrent-account")
+  });
   const firstImports = await Promise.all([applyPostgresMigration(client, freshPlan), applyPostgresMigration(peer, freshPlan)]);
   assert.equal(firstImports.filter(result => !result.reused).length, 1);
 
@@ -233,7 +285,14 @@ try {
     await client.query("ROLLBACK");
   }
   assert.deepEqual(exported, updated.snapshot);
-  const restorePlan = buildPostgresMigrationPlan({ accountId: "restored-account", store: exported });
+  const restoredStore = structuredClone(exported);
+  for (const collection of ["evidenceSources", "evidencePermissions", "perceptionEvents"]) {
+    for (const item of restoredStore[collection]) item.accountId = "restored-account";
+  }
+  const restorePlan = buildPostgresMigrationPlan({
+    accountId: "restored-account",
+    store: restoredStore
+  });
   await applyPostgresMigration(client, restorePlan);
   assert.deepEqual(await read(client, "restored-account"), restorePlan.snapshot);
   const bundleChecks = await runBundleChecks({ admin, client, connect, temporary });

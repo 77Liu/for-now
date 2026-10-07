@@ -29,7 +29,10 @@ const COLLECTION_TYPES = {
   feedback: "feedback",
   validationLedger: "validationLedger",
   userClaims: "userClaim",
-  modelUnknowns: "modelUnknown"
+  modelUnknowns: "modelUnknown",
+  evidenceSources: "evidenceSource",
+  evidencePermissions: "evidencePermission",
+  perceptionEvents: "perceptionEvent"
 };
 const CHILD_TYPES = {
   remarks: "thoughtRemark",
@@ -49,6 +52,15 @@ const lifecycle = (item, type) => (
   item?.lifecycle === "draft" || type === "journalDraft" ? "draft" : "formal"
 );
 const identity = (resourceType, resourceId) => `${resourceType}\u0000${resourceId}`;
+const resourceId = (resourceType, item) => (
+  resourceType === "evidencePermission" ? item?.sourceKey : item?.id
+);
+const collectionIdentity = (collection, item) => (
+  collection === "evidencePermissions" ? item?.sourceKey : item?.id
+);
+const collectionVersion = (collection, item) => (
+  collection === "evidencePermissions" ? item?.revision : item?.version
+);
 const clone = value => structuredClone(value);
 const serialized = value => JSON.stringify(value);
 const sha256 = value => crypto.createHash("sha256").update(value).digest("hex");
@@ -92,15 +104,16 @@ function pruneIdempotency(metadata, at) {
 }
 
 function addResource(resources, resourceType, item, inheritedLifecycle = "", parentKey = "") {
-  if (!objectValue(item) || typeof item.id !== "string" || !item.id) return;
+  const id = resourceId(resourceType, item);
+  if (!objectValue(item) || typeof id !== "string" || !id) return;
   const currentLifecycle = inheritedLifecycle || lifecycle(item, resourceType);
-  const resourceKey = `${parentKey ? `${parentKey}/` : ""}${resourceType}:${item.id}`;
+  const resourceKey = `${parentKey ? `${parentKey}/` : ""}${resourceType}:${id}`;
   const key = resourceKey;
   if (resources.has(key)) throw new Error(`Duplicate lifecycle resource: ${resourceType}/${item.id}`);
   resources.set(key, {
     resourceKey,
     resourceType,
-    resourceId: item.id,
+    resourceId: id,
     lifecycle: currentLifecycle,
     createdAt: timestamp(item.createdAt)
   });
@@ -277,20 +290,22 @@ function topLevelChanges(before, after) {
     if ([METADATA_FIELD, "version", "attachmentCleanup"].includes(domain)) continue;
     const previous = before?.[domain], current = after?.[domain];
     if (Array.isArray(previous) || Array.isArray(current)) {
-      const left = new Map((previous || []).map(item => [String(item?.id || ""), item]));
-      const right = new Map((current || []).map(item => [String(item?.id || ""), item]));
+      const left = new Map((previous || []).map(item => [String(collectionIdentity(domain, item) || ""), item]));
+      const right = new Map((current || []).map(item => [String(collectionIdentity(domain, item) || ""), item]));
       for (const resourceId of new Set([...left.keys(), ...right.keys()])) {
         const oldValue = left.get(resourceId), nextValue = right.get(resourceId);
         if (serialized(oldValue) === serialized(nextValue)) continue;
         changes.push({
           domain,
           resourceId,
-          version: Math.max(0, Math.round(Number(nextValue?.version || oldValue?.version) || 0)),
+          version: Math.max(0, Math.round(Number(
+            collectionVersion(domain, nextValue) || collectionVersion(domain, oldValue)
+          ) || 0)),
           changeType: oldValue == null ? "create" : nextValue == null ? "delete" : "update"
         });
       }
-      const previousOrder = (previous || []).map(item => String(item?.id || ""));
-      const currentOrder = (current || []).map(item => String(item?.id || ""));
+      const previousOrder = (previous || []).map(item => String(collectionIdentity(domain, item) || ""));
+      const currentOrder = (current || []).map(item => String(collectionIdentity(domain, item) || ""));
       if (serialized(previousOrder) !== serialized(currentOrder)
         && !changes.some(item => item.domain === domain && item.changeType !== "update")) {
         changes.push({ domain, resourceId: "", version: 0, changeType: "reorder" });

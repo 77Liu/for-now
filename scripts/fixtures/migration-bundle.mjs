@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { migrationStore } from "./migration-store.mjs";
@@ -25,8 +26,13 @@ export async function writeMigrationBundleFixture(directory) {
   for (const user of auth.users) {
     const root = path.join(directory, "users", user.id);
     await fs.mkdir(path.join(root, "attachments"), { recursive: true, mode: 0o700 });
-    const store = migrationStore();
+    const store = migrationStore(user.id);
     store.captures[0].content = user.id;
+    const contentSha256 = crypto.createHash("sha256").update(user.id).digest("hex");
+    store.evidenceSources[0].contentSha256 = contentSha256;
+    store.evidenceSources[0].contentLength = user.id.length;
+    store.evidenceSources[1].derivedFrom[0].contentSha256 = contentSha256;
+    store.perceptionEvents[0].contentSha256 = contentSha256;
     const values = {
       "store.json": store,
       "llm-settings.json": {

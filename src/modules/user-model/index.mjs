@@ -8,12 +8,15 @@ export {
   PERCEPTION_EVENT_KINDS,
   deduplicateEvidenceByEvent,
   evaluateEvidence,
+  evaluateStoredEvidenceChecks,
   evidenceEventKey,
   evidenceFingerprint,
   evidenceSourceKey,
   normalizeEvidencePermission,
   normalizeEvidenceSource,
-  normalizePerceptionEvent
+  normalizePerceptionEvent,
+  parseEvidenceSourceKey,
+  revokeEvidencePermissionsForResource
 } from "./evidence.mjs";
 
 export const USER_MODEL_DOMAINS = Object.freeze([

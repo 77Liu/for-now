@@ -85,6 +85,9 @@ const store = {
   commercialization: {
     assumptions: { privateRevenue: 999 }
   },
+  evidenceSources: [{ id: "private-evidence", accountId: "member" }],
+  evidencePermissions: [{ sourceKey: "[\"capture\",\"capture\",\"\",\"\"]", accountId: "member" }],
+  perceptionEvents: [{ id: "private-perception-event", accountId: "member" }],
   ownerExtension: {
     visible: true,
     tokenBudget: { limit: 5000 }
@@ -116,6 +119,9 @@ assert.equal(Object.hasOwn(ownerState, "commercialization"), false);
 assert.equal(Object.hasOwn(ownerState, "trash"), false);
 assert.equal(Object.hasOwn(ownerState, "attachmentCleanup"), false);
 assert.equal(Object.hasOwn(ownerState, "speechCache"), false);
+assert.equal(Object.hasOwn(ownerState, "evidenceSources"), false);
+assert.equal(Object.hasOwn(ownerState, "evidencePermissions"), false);
+assert.equal(Object.hasOwn(ownerState, "perceptionEvents"), false);
 assert.equal(ownerState.trashCount, 2);
 assert.equal(ownerState.notificationUnread, 1);
 assert.equal(ownerState.aiTasks.length, 100);
@@ -150,6 +156,9 @@ const memberState = projectPublicState(store);
 assert.equal(memberState.ownerExtension.visible, true);
 assert.equal(Object.hasOwn(memberState.ownerExtension, "tokenBudget"), false);
 assert.equal(JSON.stringify(memberState).includes("tokenBudget"), false);
+assert.equal(Object.hasOwn(memberState, "evidenceSources"), false);
+assert.equal(Object.hasOwn(memberState, "evidencePermissions"), false);
+assert.equal(Object.hasOwn(memberState, "perceptionEvents"), false);
 assert.deepEqual(memberState.speech.assets, [], "speech assets must be account-bound");
 assert.deepEqual(store, snapshot, "public projection must not modify Store");
 

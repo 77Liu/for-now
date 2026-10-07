@@ -3,9 +3,11 @@ import crypto from "node:crypto";
 const claimText = "正在适应新的工作节奏";
 const claimHash = crypto.createHash("sha256").update(claimText).digest("hex");
 
-export function migrationStore() {
+export function migrationStore(accountId = "fixture-account") {
+  const captureSourceKey = JSON.stringify(["capture", "shared-id", "", ""]);
+  const claimSourceKey = JSON.stringify(["userClaim", "claim-1", "", ""]);
   return {
-    version: 15,
+    version: 17,
     checkins: [{ id: "shared-id", mood: 4, custom: { calm: 3 }, notes: { mood: "原始心情" } }],
     dailyRecords: [{ id: "health-1", type: "exercise", duration: 30, attachmentPaths: ["/attachments/run.png"] }],
     captures: [{
@@ -123,6 +125,90 @@ export function migrationStore() {
       updatedAt: "2026-10-02T01:03:00.000Z",
       version: 1,
       sourceTaskId: "task-onboarding-claims"
+    }],
+    evidenceSources: [{
+      schemaVersion: 1,
+      id: "evidence-capture-1",
+      accountId,
+      sourceRef: {
+        resourceType: "capture",
+        resourceId: "shared-id",
+        rootId: "",
+        targetKey: "",
+        version: 3
+      },
+      eventId: "event-shared-1",
+      origin: "user",
+      informationType: "user_viewpoint",
+      contentSha256: crypto.createHash("sha256").update("原始捕念").digest("hex"),
+      contentLength: "原始捕念".length,
+      span: [0, "原始捕念".length],
+      occurredAt: "2026-09-29T01:00:00.000Z",
+      recordedAt: "2026-09-29T01:00:01.000Z",
+      permissionRevision: 2,
+      derivedFrom: []
+    }, {
+      schemaVersion: 1,
+      id: "evidence-claim-1",
+      accountId,
+      sourceRef: {
+        resourceType: "userClaim",
+        resourceId: "claim-1",
+        rootId: "",
+        targetKey: "",
+        version: 2
+      },
+      eventId: "event-shared-1",
+      origin: "ai",
+      informationType: "model_derived",
+      contentSha256: claimHash,
+      contentLength: claimText.length,
+      span: null,
+      occurredAt: "2026-10-02T01:00:00.000Z",
+      recordedAt: "2026-10-02T01:03:00.000Z",
+      permissionRevision: 1,
+      derivedFrom: [{
+        sourceKey: captureSourceKey,
+        version: 3,
+        contentSha256: crypto.createHash("sha256").update("原始捕念").digest("hex"),
+        permissionRevision: 2
+      }]
+    }],
+    evidencePermissions: [{
+      schemaVersion: 1,
+      accountId,
+      sourceKey: captureSourceKey,
+      contextAllowed: true,
+      learningAllowed: true,
+      revision: 2,
+      updatedAt: "2026-09-29T01:00:01.000Z"
+    }, {
+      schemaVersion: 1,
+      accountId,
+      sourceKey: claimSourceKey,
+      contextAllowed: true,
+      learningAllowed: false,
+      revision: 1,
+      updatedAt: "2026-10-02T01:03:00.000Z"
+    }],
+    perceptionEvents: [{
+      schemaVersion: 1,
+      id: "perception-event-1",
+      accountId,
+      kind: "created",
+      sourceRef: {
+        resourceType: "capture",
+        resourceId: "shared-id",
+        rootId: "",
+        targetKey: "",
+        version: 3
+      },
+      eventId: "event-shared-1",
+      contentSha256: crypto.createHash("sha256").update("原始捕念").digest("hex"),
+      occurredAt: "2026-09-29T01:00:00.000Z",
+      recordedAt: "2026-09-29T01:00:01.000Z",
+      permissionRevision: 2,
+      perceptionVersion: "perception-v1"
     }],
     commercialization: { model: "subscription", parameters: { price: 12.5 } },
     unknownExtension: JSON.parse('{"__proto__":{"keep":true},"values":[null,false,0,""],"path":"/attachments/extension.png"}')

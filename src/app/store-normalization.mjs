@@ -3,7 +3,12 @@ import {
   normalizeOnboardingV2
 } from "../modules/onboarding/index.mjs";
 import {
+  evidenceEventKey,
+  evidenceFingerprint,
+  normalizeEvidencePermission,
+  normalizeEvidenceSource,
   normalizeModelUnknowns,
+  normalizePerceptionEvent,
   normalizeUserClaims
 } from "../modules/user-model/index.mjs";
 import { normalizeKeepsake } from "../modules/keepsakes/index.mjs";
@@ -33,6 +38,20 @@ const clone = value => structuredClone(value);
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 const clamp5 = value => Math.min(5, Math.max(1, Number(value) || 3));
 const round = value => value == null ? null : Math.round(value * 100) / 100;
+const storageInvalid = message => Object.assign(new Error(message), {
+  code: "STORAGE_READ_FAILED"
+});
+const strictCollection = (source, key, normalize, identity) => {
+  if (!hasOwn(source, key)) return [];
+  if (!Array.isArray(source[key])) throw storageInvalid(`Store ${key} must be an array`);
+  const values = source[key].map(normalize);
+  if (values.some(item => !item)) throw storageInvalid(`Store ${key} contains an invalid record`);
+  const identities = values.map(identity);
+  if (identities.some(value => !value) || new Set(identities).size !== identities.length) {
+    throw storageInvalid(`Store ${key} contains duplicate identities`);
+  }
+  return values;
+};
 const WEIGHT_CLOTHING_MODEL = {
   none: { label: "不穿衣", mean: 0, lower: 0, upper: 0 },
   light: { label: "轻便衣物", mean: 0.5, lower: 0.1, upper: 0.9 },
@@ -394,6 +413,36 @@ export function createStoreNormalizer({
     store.notifications = store.notifications.filter(item => item && item.id);
     store.userClaims = normalizeUserClaims(store.userClaims);
     store.modelUnknowns = normalizeModelUnknowns(store.modelUnknowns);
+    store.evidenceSources = strictCollection(
+      source,
+      "evidenceSources",
+      normalizeEvidenceSource,
+      item => `${item.id}\u0000${evidenceFingerprint(item)}`
+    );
+    if (new Set(store.evidenceSources.map(item => item.id)).size !== store.evidenceSources.length) {
+      throw storageInvalid("Store evidenceSources contains duplicate ids");
+    }
+    if (new Set(store.evidenceSources.map(evidenceFingerprint)).size !== store.evidenceSources.length) {
+      throw storageInvalid("Store evidenceSources contains duplicate evidence");
+    }
+    store.evidencePermissions = strictCollection(
+      source,
+      "evidencePermissions",
+      normalizeEvidencePermission,
+      item => item.sourceKey
+    );
+    store.perceptionEvents = strictCollection(
+      source,
+      "perceptionEvents",
+      normalizePerceptionEvent,
+      item => `${item.id}\u0000${evidenceEventKey(item)}`
+    );
+    if (new Set(store.perceptionEvents.map(item => item.id)).size !== store.perceptionEvents.length) {
+      throw storageInvalid("Store perceptionEvents contains duplicate ids");
+    }
+    if (new Set(store.perceptionEvents.map(evidenceEventKey)).size !== store.perceptionEvents.length) {
+      throw storageInvalid("Store perceptionEvents contains duplicate event inputs");
+    }
     store.onboarding = normalizeOnboarding(store.onboarding);
     if (previousVersion < 14 && !Object.keys(store.onboarding.answers).length) {
       const hasRecords = ["checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books", "keepsakes", "quotes"].some(key => store[key].length);

@@ -124,6 +124,13 @@ export function evidenceSourceKey(value) {
     : "";
 }
 
+export function parseEvidenceSourceKey(value) {
+  const sourceKey = normalizeSourceKey(value);
+  if (!sourceKey) return null;
+  const [resourceType, resourceId, rootId, targetKey] = JSON.parse(sourceKey);
+  return { resourceType, resourceId, rootId, targetKey };
+}
+
 function normalizeDependency(value) {
   if (!objectValue(value)) return null;
   const sourceKey = normalizeSourceKey(value.sourceKey);
@@ -448,6 +455,276 @@ export function deduplicateEvidenceByEvent(values) {
     duplicateEvidenceCount: normalized.length - result.length,
     groups: result
   };
+}
+
+function latestEventForSource(store, sourceKey, accountId) {
+  return list(store?.perceptionEvents)
+    .map(normalizePerceptionEvent)
+    .filter(event => (
+      event
+      && event.accountId === accountId
+      && evidenceSourceKey(event.sourceRef) === sourceKey
+    ))
+    .sort((left, right) => (
+      right.sourceRef.version - left.sourceRef.version
+      || right.permissionRevision - left.permissionRevision
+      || compareText(right.recordedAt, left.recordedAt)
+      || compareText(right.id, left.id)
+    ))[0] || null;
+}
+
+const SOURCE_COLLECTIONS = Object.freeze({
+  checkin: "checkins",
+  dailyRecord: "dailyRecords",
+  capture: "captures",
+  journal: "journals",
+  thought: "thoughts",
+  chat: "chats",
+  book: "books",
+  keepsake: "keepsakes",
+  quote: "quotes",
+  experiment: "experiments",
+  analysis: "analyses",
+  customMetric: "customMetrics",
+  action: "actions",
+  habit: "habits",
+  habitCheckin: "habitCheckins",
+  feedback: "feedback",
+  validationLedger: "validationLedger",
+  userClaim: "userClaims",
+  modelUnknown: "modelUnknowns"
+});
+
+function storedSourceState(store, sourceRef) {
+  const collection = SOURCE_COLLECTIONS[sourceRef.resourceType];
+  if (!collection) return null;
+  const active = list(store?.[collection]).find(item => item?.id === sourceRef.resourceId);
+  if (active) {
+    return {
+      exists: true,
+      deleted: false,
+      version: positiveInteger(active.version)
+    };
+  }
+  for (const entry of list(store?.trash)) {
+    if (entry?.type === "thoughtChain" && Array.isArray(entry.payload?.items)) {
+      const record = entry.payload.items
+        .map(item => item?.item)
+        .find(item => item?.id === sourceRef.resourceId);
+      if (sourceRef.resourceType === "thought" && record) {
+        return { exists: true, deleted: true, version: positiveInteger(record.version) };
+      }
+    }
+    const location = objectValue(entry?.location) ? entry.location : {};
+    const matchesLocation = location.kind === "collection"
+      ? location.collection === collection
+        && (sourceRef.rootId ? location.parentId === sourceRef.rootId : !location.parentId)
+      : location.kind === "nested"
+        ? Boolean(sourceRef.rootId)
+          && location.parentCollection === collection
+          && location.parentId === sourceRef.rootId
+        : !sourceRef.rootId && SOURCE_COLLECTIONS[entry?.type] === collection;
+    if (matchesLocation && entry?.payload?.id === sourceRef.resourceId) {
+      return {
+        exists: true,
+        deleted: true,
+        version: positiveInteger(entry.payload.version)
+      };
+    }
+  }
+  return null;
+}
+
+function currentStateForEvidence(store, evidence, accountId) {
+  const sourceKey = evidenceSourceKey(evidence.sourceRef);
+  const event = latestEventForSource(store, sourceKey, accountId);
+  const storedSource = storedSourceState(store, evidence.sourceRef);
+  const permission = list(store?.evidencePermissions)
+    .map(normalizeEvidencePermission)
+    .find(item => item?.accountId === accountId && item.sourceKey === sourceKey) || null;
+  const dependencies = evidence.derivedFrom.map(dependency => {
+    const dependencyEvent = latestEventForSource(store, dependency.sourceKey, accountId);
+    const dependencyRef = parseEvidenceSourceKey(dependency.sourceKey);
+    const storedDependency = dependencyRef
+      ? storedSourceState(store, { ...dependencyRef, version: dependency.version })
+      : null;
+    const dependencyPermission = list(store?.evidencePermissions)
+      .map(normalizeEvidencePermission)
+      .find(item => item?.accountId === accountId && item.sourceKey === dependency.sourceKey) || null;
+    return {
+      accountId,
+      sourceKey: dependency.sourceKey,
+      exists: Boolean(storedDependency || dependencyEvent),
+      deleted: storedDependency
+        ? storedDependency.deleted
+        : dependencyEvent?.kind === "deleted",
+      version: storedDependency?.version || dependencyEvent?.sourceRef.version || 0,
+      contentSha256: dependencyEvent?.contentSha256 || "",
+      permissionRevision: dependencyPermission?.revision || 0,
+      contextAllowed: dependencyPermission?.contextAllowed === true,
+      learningAllowed: dependencyPermission?.learningAllowed === true
+    };
+  });
+  return {
+    source: (storedSource || event) ? {
+      accountId,
+      sourceKey,
+      exists: true,
+      deleted: storedSource ? storedSource.deleted : event.kind === "deleted",
+      version: storedSource?.version || event.sourceRef.version,
+      contentSha256: event?.contentSha256 || ""
+    } : null,
+    permission,
+    dependencies
+  };
+}
+
+function validatedStoredCollections(store, accountId) {
+  if (!objectValue(store)
+    || !Array.isArray(store.evidenceSources)
+    || !Array.isArray(store.evidencePermissions)
+    || !Array.isArray(store.perceptionEvents)) {
+    return null;
+  }
+  const evidenceSources = store.evidenceSources.map(normalizeEvidenceSource);
+  const evidencePermissions = store.evidencePermissions.map(normalizeEvidencePermission);
+  const perceptionEvents = store.perceptionEvents.map(normalizePerceptionEvent);
+  if ([...evidenceSources, ...evidencePermissions, ...perceptionEvents].some(item => !item)) return null;
+  if ([...evidenceSources, ...evidencePermissions, ...perceptionEvents]
+    .some(item => item.accountId !== accountId)) {
+    return { accountMismatch: true };
+  }
+  const identities = [
+    evidenceSources.map(item => item.id),
+    evidenceSources.map(evidenceFingerprint),
+    evidencePermissions.map(item => item.sourceKey),
+    perceptionEvents.map(item => item.id),
+    perceptionEvents.map(evidenceEventKey)
+  ];
+  if (identities.some(values => new Set(values).size !== values.length)) return null;
+  return { evidenceSources, evidencePermissions, perceptionEvents };
+}
+
+export function evaluateStoredEvidenceChecks(store, checks, {
+  accountId,
+  defaultPurpose = "context"
+} = {}) {
+  const expectedAccountId = requiredText(accountId, 100);
+  if (!expectedAccountId || !Array.isArray(checks) || !PURPOSE_SET.has(defaultPurpose)) {
+    return { usable: false, reasons: [EVIDENCE_ERROR_CODES.INVALID], results: [] };
+  }
+  if (!checks.length) return { usable: true, reasons: [], results: [] };
+  const normalizedStore = validatedStoredCollections(store, expectedAccountId);
+  if (normalizedStore?.accountMismatch) {
+    return { usable: false, reasons: [EVIDENCE_ERROR_CODES.ACCOUNT_MISMATCH], results: [] };
+  }
+  if (!normalizedStore) {
+    return { usable: false, reasons: [EVIDENCE_ERROR_CODES.INVALID], results: [] };
+  }
+  const evidenceById = new Map();
+  for (const evidence of normalizedStore.evidenceSources) {
+    evidenceById.set(evidence.id, evidence);
+  }
+  const seen = new Set();
+  const results = [];
+  for (const check of checks) {
+    const evidenceId = requiredText(check?.evidenceId, 100);
+    const expectedFingerprint = requiredText(check?.evidenceFingerprint, 64);
+    const purpose = check?.purpose == null ? defaultPurpose : check.purpose;
+    if (!evidenceId
+      || seen.has(evidenceId)
+      || !validHash(expectedFingerprint)
+      || !PURPOSE_SET.has(purpose)) {
+      return { usable: false, reasons: [EVIDENCE_ERROR_CODES.INVALID], results: [] };
+    }
+    seen.add(evidenceId);
+    const evidence = evidenceById.get(evidenceId);
+    if (!evidence) {
+      results.push({
+        evidenceId,
+        purpose,
+        usable: false,
+        reasons: [EVIDENCE_ERROR_CODES.SOURCE_MISSING],
+        currentVersion: 0,
+        currentPermissionRevision: 0
+      });
+      continue;
+    }
+    if (evidenceFingerprint(evidence) !== expectedFingerprint) {
+      results.push({
+        evidenceId,
+        purpose,
+        usable: false,
+        reasons: [EVIDENCE_ERROR_CODES.VERSION_STALE],
+        currentVersion: evidence.sourceRef.version,
+        currentPermissionRevision: evidence.permissionRevision
+      });
+      continue;
+    }
+    results.push({
+      evidenceId,
+      purpose,
+      ...evaluateEvidence(
+        evidence,
+        currentStateForEvidence({ ...store, ...normalizedStore }, evidence, expectedAccountId),
+        { accountId: expectedAccountId, purpose }
+      )
+    });
+  }
+  return {
+    usable: results.every(result => result.usable),
+    reasons: sortUnique(results.flatMap(result => result.reasons)),
+    results
+  };
+}
+
+export function revokeEvidencePermissionsForResource(store, {
+  accountId,
+  resourceType,
+  resourceId,
+  targetId = ""
+} = {}, updatedAt) {
+  if (!Array.isArray(store?.evidencePermissions)) {
+    throw new TypeError("Evidence permission revocation requires a valid store, source and timestamp");
+  }
+  accountId = requiredText(accountId, 100);
+  resourceType = requiredText(resourceType, 40);
+  resourceId = requiredText(resourceId, 100);
+  targetId = optionalText(targetId, 100);
+  updatedAt = requiredIso(updatedAt);
+  if (!accountId
+    || !resourceType
+    || !resourceId
+    || targetId === null
+    || !updatedAt) {
+    throw new TypeError("Evidence permission revocation requires a valid store, source and timestamp");
+  }
+  let changed = 0;
+  store.evidencePermissions = store.evidencePermissions.map(value => {
+    const permission = normalizeEvidencePermission(value);
+    if (!permission) throw new TypeError("Evidence permission store contains an invalid record");
+    if (permission.accountId !== accountId) {
+      throw new TypeError("Evidence permission store contains a cross-account record");
+    }
+    const sourceRef = parseEvidenceSourceKey(permission.sourceKey);
+    const targetMatches = !targetId
+      || sourceRef.resourceId === targetId
+      || sourceRef.targetKey.endsWith(`:${targetId}`);
+    if (sourceRef.resourceType !== resourceType
+      || !targetMatches
+      || (sourceRef.resourceId !== resourceId && sourceRef.rootId !== resourceId)) {
+      return permission;
+    }
+    changed += 1;
+    return {
+      ...permission,
+      contextAllowed: false,
+      learningAllowed: false,
+      revision: permission.revision + 1,
+      updatedAt
+    };
+  });
+  return changed;
 }
 
 function sortUnique(values) {
