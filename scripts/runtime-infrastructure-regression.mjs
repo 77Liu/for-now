@@ -49,8 +49,10 @@ assert.throws(() => config({ NODE_ENV: "test", TEST_CURRENT_DATE: "2026-02-30" }
 assert.equal(defaults.localTestResetOnStart, false);
 assert.equal(config({ LOCAL_TEST_MODE: "1", LOCAL_TEST_RESET_ON_START: "1" }).localTestResetOnStart, true);
 assert.equal(config({ LOCAL_TEST_RESET_ON_START: "1" }).localTestResetOnStart, false);
-assert.equal(defaults.periodicAnalysisEnabled, true);
+assert.equal(defaults.periodicAnalysisEnabled, false);
 assert.equal(config({ PERIODIC_ANALYSIS_ENABLED: "0" }).periodicAnalysisEnabled, false);
+assert.equal(config({ PERIODIC_ANALYSIS_ENABLED: "1" }).periodicAnalysisEnabled, true);
+assert.equal(config({ PERIODIC_ANALYSIS_ENABLED: "yes" }).periodicAnalysisEnabled, false);
 assert.equal(defaults.speechCacheSweepEnabled, false);
 assert.equal(config({ NODE_ENV: "test", SPEECH_CACHE_SWEEP_ENABLED: "1" }).speechCacheSweepEnabled, false);
 assert.equal(config({ NODE_ENV: "production" }).speechCacheSweepEnabled, true);

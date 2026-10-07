@@ -99,13 +99,36 @@ export const reviewsChatPaths = Object.freeze({
     get: listOperation("listAnalyses", "Analysis", "认知复盘列表"),
     post: createOperation("createAnalysis", "", "Analysis", "已生成并保存认知复盘")
   },
-  "/analyses/{id}": resourcePath({
-    parameter: "AnalysisId",
-    getOperationId: "getAnalysis",
-    deleteOperationId: "deleteAnalysis",
-    schema: "Analysis",
-    description: "认知复盘详情"
-  }),
+  "/analyses/{id}": {
+    ...resourcePath({
+      parameter: "AnalysisId",
+      getOperationId: "getAnalysis",
+      deleteOperationId: "deleteAnalysis",
+      schema: "Analysis",
+      description: "认知复盘详情"
+    }),
+    patch: {
+      operationId: "reviewAnalysis",
+      parameters: [{ $ref: "#/components/parameters/IfMatch" }],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: { $ref: "#/components/schemas/AnalysisReviewInput" }
+          }
+        }
+      },
+      responses: {
+        "200": {
+          description: "已记录用户对周期回望的核对结果",
+          ...response({ $ref: "#/components/schemas/Analysis" })
+        },
+        "412": { $ref: "#/components/responses/PreconditionFailed" },
+        "428": { $ref: "#/components/responses/PreconditionRequired" },
+        ...errors
+      }
+    }
+  },
   "/experiments": {
     get: listOperation("listExperiments", "Experiment", "个人实验列表"),
     post: createOperation("createExperiment", "ExperimentInput", "Experiment", "已创建个人实验")
@@ -199,11 +222,23 @@ export const reviewsChatComponents = Object.freeze({
         ...versionFields,
         reason: { type: "string" },
         content: { type: "string" },
+        reviewStatus: { enum: ["candidate", "confirmed", "rejected", "legacy"] },
+        reviewedAt: { type: "string" },
+        reviewDisposition: { type: "string" },
         reasoningContent: { type: "string" },
         annotations: { type: "array", items: { type: "object", additionalProperties: true } },
         annotationDrift: { type: "array", items: { type: "object", additionalProperties: true } }
       },
       additionalProperties: true
+    },
+    AnalysisReviewInput: {
+      type: "object",
+      required: ["decision"],
+      properties: {
+        decision: { enum: ["confirm", "reject"] },
+        reason: { type: "string", maxLength: 500 }
+      },
+      additionalProperties: false
     },
     ExperimentInput: {
       type: "object",

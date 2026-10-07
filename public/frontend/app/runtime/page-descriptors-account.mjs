@@ -33,7 +33,7 @@ export function installAccountDescriptors(descriptors, ports) {
         getSnapshot:()=>state,
         getAccountId:()=>runtime.currentUser?.id||"",
         getSessionSerial:()=>sessionSerial,
-        requestV1:(url,options)=>featureRequestV1("personal-context",url,options)
+        requestV1:(url,options,coordination)=>featureRequestV1("personal-context",url,options,coordination)
       },
       navigation:{
         activateDate:(date,dailyType)=>{
@@ -49,7 +49,9 @@ export function installAccountDescriptors(descriptors, ports) {
         requestFrame:callback=>requestAnimationFrame(callback),
         queryDestination:selector=>document.querySelector(selector),
         escapeSelector:value=>CSS.escape(value),
-        isDetailsElement:value=>value instanceof HTMLDetailsElement
+        isDetailsElement:value=>value instanceof HTMLDetailsElement,
+        confirm:message=>globalThis.confirm(message),
+        createRequestId:()=>crypto.randomUUID()
       }
     }))
   };

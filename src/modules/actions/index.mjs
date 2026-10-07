@@ -1,8 +1,10 @@
 export {
   ACTION_PRIORITIES,
   ACTION_STATUSES,
+  ACTION_FEEDBACK_OUTCOMES,
   HABIT_CADENCES,
   HABIT_STATUSES,
+  actionCompletionFeedback,
   actionPayload,
   assertActionsData,
   habitAdjustmentPayload,

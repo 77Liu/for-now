@@ -136,6 +136,30 @@ assert.equal(
   confirmedProjection.overview.conclusions.some(item => item.id === "user-claim-claim-1"),
   true
 );
+const changedConfirmedSource = clone(accounts.get("account-a"));
+changedConfirmedSource.onboardingV2 = onboarding("已修改的当前处境", 2);
+const disputedProjection = userModelProjection(changedConfirmedSource);
+assert.equal(
+  disputedProjection.claims.find(item => item.id === "claim-1").lifecycle,
+  "disputed",
+  "an active claim must become disputed when its source changes"
+);
+assert.equal(disputedProjection.activeClaimCount, 0);
+assert.equal(disputedProjection.disputedClaimCount, 1);
+assert.equal(
+  personalContextProjection(changedConfirmedSource).overview.conclusions
+    .some(item => item.id === "user-claim-claim-1"),
+  false,
+  "a disputed claim must not remain in the answer context"
+);
+const withdrawnConfirmedSource = clone(accounts.get("account-a"));
+withdrawnConfirmedSource.onboardingV2.session.answers.currentContext.contextAllowed = false;
+assert.equal(
+  userModelProjection(withdrawnConfirmedSource).claims
+    .find(item => item.id === "claim-1").lifecycle,
+  "disputed",
+  "withdrawing the source permission must dispute an active claim"
+);
 
 assert.deepEqual(await run("account-a", () => service.patchClaim(
   "claim-1",

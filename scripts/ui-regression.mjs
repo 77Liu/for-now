@@ -397,6 +397,7 @@ const mockFetch = `
   window.__delayActionDelete = false;
   window.__releaseActionDelete = null;
   window.__failActionNetwork = false;
+  window.__failActionCompleteConflict = false;
   window.__actionListVersion = 1;
   window.__actionListStatus = "todo";
   window.__delayHabitCreate = false;
@@ -639,7 +640,43 @@ const mockFetch = `
       { id: "facts", informationType: "user_fact", informationTypeLabel: "用户事实", title: "近期状态", text: "最近一次状态记录已保留。", sourceIds: ["checkin:checkin-latest"], sampleNote: "缺失记录不代表没有发生。" },
       { id: "views", informationType: "user_viewpoint", informationTypeLabel: "用户观点", title: "近期思考", text: "没有初步想法的问题", sourceIds: ["thought:kept-root:question:kept-root"], sampleNote: "逐条呈现用户原文。" },
       { id: "summary", informationType: "model_summary", informationTypeLabel: "模型摘要", title: "初始理解", text: "这只是可修正的初始理解。", sourceIds: [], sampleNote: "不是用户事实。" }
-    ]
+    ],
+    userModel: {
+      readiness: "usable",
+      activeClaimCount: 1,
+      disputedClaimCount: 1,
+      candidateCount: 1,
+      staleCandidateCount: 0,
+      unknowns: [],
+      claims: [
+        { id:"context-active",domain:"goals",domainLabel:"目标",statement:"保持稳定推进",scope:"本月",epistemic:"known",lifecycle:"active",contextAllowed:true,version:2 },
+        { id:"context-candidate",domain:"behavior",domainLabel:"行为",statement:"午后适合专注",scope:"",epistemic:"hypothesis",lifecycle:"candidate",contextAllowed:true,version:1 },
+        { id:"context-disputed",domain:"context",domainLabel:"处境",statement:"旧来源已经变化",scope:"",epistemic:"hypothesis",lifecycle:"disputed",contextAllowed:false,version:3 }
+      ]
+    },
+    sourcePermissions: [{
+      sourceKey: JSON.stringify(["capture","capture-1","",""]),
+      sourceRef: {resourceType:"capture",resourceId:"capture-1",rootId:"",targetKey:"",version:1},
+      recordType:"念起",
+      excerpt:"这个念头先不要想完整",
+      status:"active",
+      contextAllowed:true,
+      learningAllowed:false,
+      learningStatus:"off",
+      revision:1,
+      updatedAt:"2026-09-27T07:08:09.000Z",
+      occurredAt:"2026-09-27T07:08:09.000Z"
+    }],
+    periodicSyntheses: [{
+      id:"context-synthesis",
+      content:"本周完成了一项行动，但结果仍需更多反馈。",
+      reason:"manual",
+      reviewStatus:"candidate",
+      reviewedAt:"",
+      reviewDisposition:"",
+      createdAt:"2026-09-27T09:00:00.000Z",
+      version:1
+    }]
   };
   window.__thoughts = [
     { id: "answer-kept", createdAt: "2026-09-27T01:10:00.000Z", occurredAt: "2026-09-27T04:10:00.000Z", occurredOn: "2026-09-27", type: "answer", content: "**核心判断**\\n第一行\\n第二行\\n第三行\\n第四行\\n第五行\\n第六行", attachmentPaths: ["/attachments/thought-block.png"], modelDraft: "**核心判断**\\n第一行\\n第二行\\n第三行\\n第四行\\n第五行\\n第六行", editedFromModel: false, origin: "deepseek", reasoningContent: "**持久化**的模型思考", contextReceipt: window.__contextReceipt, tags: [], relatedTo: "kept-root", disposition: "kept", version: 1 },
@@ -767,11 +804,17 @@ const mockFetch = `
       return v1({task,result:task?.status==="succeeded"?{claims:window.__userModel.claims,unknowns:window.__userModel.unknowns}:null});
     }
     if(url==="/api/v1/user-model"&&(!init.method||init.method==="GET"))return v1(window.__userModel);
+    if(url==="/api/v1/user-model/evidence-permissions"&&init.method==="PATCH"){
+      const payload=JSON.parse(init.body||"{}"),permission=window.__personalContext.sourcePermissions.find(item=>item.sourceKey===JSON.stringify([payload.sourceRef.resourceType,payload.sourceRef.resourceId,payload.sourceRef.rootId||"",payload.sourceRef.targetKey||""]));
+      if(!permission)return json({data:null,error:{message:"来源已变化",code:"EVIDENCE_SOURCE_STALE"},meta:{}},409);
+      permission.contextAllowed=payload.contextAllowed;permission.learningAllowed=payload.learningAllowed;permission.learningStatus=payload.learningAllowed?"queued":"off";permission.revision+=1;permission.updatedAt=new Date().toISOString();
+      return v1({permission,unchanged:false,learningRefreshQueued:payload.learningAllowed});
+    }
     if(url.startsWith("/api/v1/user-model/claims/")&&init.method==="PATCH"){
-      const id=decodeURIComponent(url.split("/").at(-1)),payload=JSON.parse(init.body||"{}"),claim=window.__userModel.claims.find(item=>item.id===id);
+      const id=decodeURIComponent(url.split("/").at(-1)),payload=JSON.parse(init.body||"{}"),models=[window.__userModel,window.__personalContext.userModel],model=models.find(item=>item.claims.some(claim=>claim.id===id)),claim=model?.claims.find(item=>item.id===id);
       if(!claim)return Promise.resolve(new Response(JSON.stringify({data:null,error:{message:"候选不存在",code:"CLAIM_NOT_FOUND"},meta:{}}),{status:404,headers:{"content-type":"application/json"}}));
-      claim.lifecycle=payload.action==="reject"?"retracted":"active";claim.statement=payload.statement||claim.statement;claim.scope=payload.scope??claim.scope;claim.epistemic=payload.epistemic||claim.epistemic;claim.contextAllowed=payload.contextAllowed!==false;claim.version+=1;claim.updatedAt=new Date().toISOString();
-      window.__userModel.candidateCount=window.__userModel.claims.filter(item=>item.lifecycle==="candidate").length;window.__userModel.activeClaimCount=window.__userModel.claims.filter(item=>item.lifecycle==="active").length;
+      claim.lifecycle=["reject","retract"].includes(payload.action)?"retracted":"active";claim.statement=payload.statement||claim.statement;claim.scope=payload.scope??claim.scope;claim.epistemic=payload.epistemic||claim.epistemic;claim.contextAllowed=payload.contextAllowed!==false;claim.version+=1;claim.updatedAt=new Date().toISOString();
+      model.candidateCount=model.claims.filter(item=>item.lifecycle==="candidate").length;model.activeClaimCount=model.claims.filter(item=>item.lifecycle==="active").length;model.disputedClaimCount=model.claims.filter(item=>item.lifecycle==="disputed").length;
       return v1({claim});
     }
     if (url.startsWith("/api/v1/sync?")) return v1({ cursor: window.__syncCursor, changes: [], snapshot: {} });
@@ -813,6 +856,11 @@ const mockFetch = `
     if (url === "/api/v1/actions/ui-action" && init.method === "DELETE" && window.__delayActionDelete) {
       return new Promise(resolve=>{window.__releaseActionDelete=()=>{window.__delayActionDelete=false;resolve(new Response(JSON.stringify({error:{message:"删除校验失败",code:"VALIDATION_ERROR"}}),{status:400,headers:{"content-type":"application/json"}}))}});
     }
+    if (url === "/api/v1/actions/ui-action/complete" && init.method === "POST" && window.__failActionCompleteConflict) {
+      window.__failActionCompleteConflict = false;
+      window.__actionListVersion += 1;
+      return Promise.resolve(new Response(JSON.stringify({error:{message:"资源版本已变化，请重新读取后再提交",code:"PRECONDITION_FAILED",details:{currentVersion:window.__actionListVersion}}}),{status:412,headers:{"content-type":"application/json"}}));
+    }
     if (url === "/api/v1/actions/ui-action/complete" && init.method === "POST" && window.__failActionNetwork) {
       window.__failActionNetwork = false;
       return Promise.reject(new TypeError("Load failed"));
@@ -841,6 +889,15 @@ const mockFetch = `
     }
     if (url.startsWith("/api/v1/feedback")) return v1([{id:"ui-feedback",type:"experience",feature:"思绪",appVersion:"0.2.0",body:"界面清晰",context:{selected:false,summary:""},status:"submitted",version:1,createdAt:"2026-09-27T04:00:00.000Z",updatedAt:"2026-09-27T04:00:00.000Z"}]);
     if (url === "/api/v1/personal-context") return v1(window.__personalContext);
+    if(/^\\/api\\/v1\\/analyses\\/[^/]+$/.test(url)&&init.method==="PATCH"){
+      const id=url.split("/").at(-1),payload=JSON.parse(init.body||"{}"),item=window.__personalContext.periodicSyntheses.find(value=>value.id===id);
+      if(!item)return json({data:null,error:{message:"复盘不存在",code:"ANALYSIS_NOT_FOUND"},meta:{}},404);
+      item.reviewStatus=payload.decision==="confirm"?"confirmed":"rejected";item.reviewedAt=new Date().toISOString();item.version+=1;return v1(item);
+    }
+    if(url==="/api/v1/analyses"&&init.method==="POST"){
+      const item={id:"context-synthesis-new",content:"新生成的周期回望",reason:"manual",reviewStatus:"candidate",reviewedAt:"",reviewDisposition:"",createdAt:new Date().toISOString(),version:1};
+      window.__personalContext.periodicSyntheses.unshift(item);return v1(item);
+    }
     if (url.includes("/api/v1/exports/account?format=manifest")) return v1({snapshotVersion:15,summary:{resources:12,attachments:2,attachmentReferences:3,orphanReferences:0}});
     if (url.includes("/api/v1/exports/account?format=json")) return v1({format:"json",filename:"for-now-ui.json",mimeType:"application/json;charset=utf-8",content:"{}\\n"});
     if (url.includes("/api/v1/exports/account?format=markdown")) return v1({format:"markdown",filename:"for-now-ui.md",mimeType:"text/markdown;charset=utf-8",content:"# For Now\\n"});
@@ -1731,6 +1788,11 @@ try {
   });
   await evaluate(`window.__releaseActionUpdate();true`);
   assert.equal(await waitUntil(`document.querySelector('[data-action-complete="ui-action"]')&&!document.querySelector(".action-entry .checkin-sync-state")`),true);
+  await evaluate(`(()=>{const details=document.querySelector(".action-completion"),outcome=details.querySelector("[data-action-outcome]"),note=details.querySelector("[data-action-feedback]");details.open=true;outcome.value="mixed";note.value="冲突后仍应保留";window.__failActionCompleteConflict=true;details.querySelector("[data-action-complete]").click();return true})()`);
+  if(!await waitUntil(`window.__actionListVersion>=3&&document.querySelector("#toast").textContent.includes("同步冲突")`)){
+    throw new Error(await evaluate(`JSON.stringify({version:window.__actionListVersion,flag:window.__failActionCompleteConflict,toast:document.querySelector("#toast").textContent,button:Boolean(document.querySelector('[data-action-complete="ui-action"]')),draft:document.querySelector(".action-completion [data-action-feedback]")?.value||"",requests:window.__apiRequests.slice(-12)})`))
+  }
+  assert.deepEqual(await evaluate(`({outcome:document.querySelector(".action-completion [data-action-outcome]")?.value,note:document.querySelector(".action-completion [data-action-feedback]")?.value,open:document.querySelector(".action-completion")?.open})`),{outcome:"mixed",note:"冲突后仍应保留",open:true});
   await evaluate(`window.confirm=()=>true;window.__delayActionDelete=true;document.querySelector('[data-action-delete="ui-action"]').click();true`);
   assert.equal(await waitUntil(`!document.querySelector("#action-columns").textContent.includes("服务器新标题")`),true);
   assert.equal(await waitUntil(`typeof window.__releaseActionDelete==="function"`),true);
@@ -3384,11 +3446,30 @@ try {
   await evaluate(`document.querySelector('#view-mine [data-view="personal-context"]').click();true`);
   assert.equal(await waitUntil(`document.querySelectorAll("#personal-context-summary .personal-context-conclusion").length===3`),true);
   await evaluate(`document.querySelector("#toast").hidden=true;document.querySelectorAll(".modal-backdrop,.home-v02-editor-backdrop").forEach(item=>item.hidden=true);true`);
-  assert.deepEqual(await evaluate(`(()=>({active:document.querySelector("#view-personal-context").classList.contains("active"),meta:document.querySelectorAll("#personal-context-meta>div").length,types:[...document.querySelectorAll("#personal-context-summary .personal-context-conclusion")].map(item=>item.dataset.contextType),collapsed:[...document.querySelectorAll("#personal-context-summary .personal-context-conclusion")].every(item=>!item.open),sources:document.querySelectorAll("#personal-context-source-list .context-source-item").length,noOverflow:document.documentElement.scrollWidth<=innerWidth}))()`),{active:true,meta:4,types:["user_fact","user_viewpoint","model_summary"],collapsed:true,sources:2,noOverflow:true});
+  assert.deepEqual(await evaluate(`(()=>({active:document.querySelector("#view-personal-context").classList.contains("active"),meta:document.querySelectorAll("#personal-context-meta>div").length,types:[...document.querySelectorAll("#personal-context-summary .personal-context-conclusion")].map(item=>item.dataset.contextType),collapsed:[...document.querySelectorAll("#personal-context-summary .personal-context-conclusion")].every(item=>!item.open),sources:document.querySelectorAll("#personal-context-source-list .context-source-item").length,claims:document.querySelectorAll("#personal-context-claims [data-claim-id]").length,permissions:document.querySelectorAll("#personal-context-permissions [data-permission-index]").length,syntheses:document.querySelectorAll("#personal-context-syntheses article[data-synthesis-id]").length,disputed:document.querySelector("#personal-context-claims").textContent.includes("来源已变化"),manualButton:!document.querySelector("#personal-context-run-synthesis").disabled,noOverflow:document.documentElement.scrollWidth<=innerWidth}))()`),{active:true,meta:4,types:["user_fact","user_viewpoint","model_summary"],collapsed:true,sources:2,claims:3,permissions:1,syntheses:1,disputed:true,manualButton:true,noOverflow:true});
+  await evaluate(`(()=>{const form=document.querySelector('[data-claim-id="context-active"] [data-claim-form]');form.elements.statement.value="";form.querySelector('[data-claim-action="revise"]').click();return true})()`);
+  await sleep(80);
+  assert.equal(await evaluate(`window.__personalContext.userModel.claims.find(item=>item.id==="context-active").version`),2);
+  await evaluate(`(()=>{const form=document.querySelector('[data-claim-id="context-active"] [data-claim-form]');form.elements.statement.value="保持稳定推进并减少切换";form.requestSubmit();return true})()`);
+  if(!await waitUntil(`document.querySelector('[data-claim-id="context-active"] textarea')?.value==="保持稳定推进并减少切换"&&window.__personalContext.userModel.claims.find(item=>item.id==="context-active").version===3`)){
+    throw new Error(await evaluate(`JSON.stringify({claim:window.__personalContext.userModel.claims.find(item=>item.id==="context-active"),value:document.querySelector('[data-claim-id="context-active"] textarea')?.value||"",status:document.querySelector('[data-claim-id="context-active"] [data-claim-status]')?.textContent||"",requests:window.__apiRequests.slice(-10)})`))
+  }
+  await evaluate(`(()=>{const input=document.querySelector('#personal-context-permissions [data-permission-field="learningAllowed"]');input.checked=true;input.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
+  assert.equal(await waitUntil(`window.__personalContext.sourcePermissions[0].revision===2&&document.querySelector('#personal-context-permissions [data-permission-field="learningAllowed"]')?.checked`),true);
+  assert.equal(await evaluate(`window.__personalContext.sourcePermissions[0].learningStatus`),"queued");
+  await evaluate(`document.querySelector('[data-synthesis-id="context-synthesis"] [data-synthesis-action="confirm"]').click();true`);
+  assert.equal(await waitUntil(`window.__personalContext.periodicSyntheses[0].reviewStatus==="confirmed"&&document.querySelector("#personal-context-syntheses").textContent.includes("已确认")`),true);
   await sleep(250);
   await fs.writeFile("/tmp/growth-personal-context-desktop.png",Buffer.from((await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false})).data,"base64"));
+  await evaluate(`document.querySelector("#personal-context-permissions").scrollIntoView({block:"start",behavior:"instant"});true`);
+  await sleep(100);
+  assert.equal(await evaluate(`[...document.querySelectorAll(".personal-context-governance-item")].every(item=>item.getBoundingClientRect().right<=innerWidth)`),true);
+  await fs.writeFile("/tmp/growth-personal-context-governance-desktop.png",Buffer.from((await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false})).data,"base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:2,mobile:true});await sleep(100);
   assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth&&document.querySelector("#personal-context-meta").getBoundingClientRect().right<=innerWidth`),true);
+  await evaluate(`document.querySelector("#personal-context-synthesis-title").scrollIntoView({block:"start",behavior:"instant"});true`);
+  await sleep(100);
+  assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth&&document.querySelector("#personal-context-syntheses").getBoundingClientRect().right<=innerWidth&&document.querySelector("#personal-context-run-synthesis").getBoundingClientRect().height>=44`),true);
   await fs.writeFile("/tmp/growth-personal-context-mobile.png",Buffer.from((await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false})).data,"base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
   await evaluate(`document.querySelector('#personal-context-summary [data-context-view="thoughts"]').click();true`);

@@ -1,8 +1,5 @@
 import crypto from "node:crypto";
-import {
-  personalContextProjection,
-  personalContextReceiptFingerprint
-} from "../../src/app/index.mjs";
+import { personalContextProjection } from "../../src/app/index.mjs";
 import {
   defaultLlmSettings,
   llmSettingsForScene,
@@ -33,6 +30,18 @@ function fingerprint(value) {
 
 function textFingerprint(value) {
   return crypto.createHash("sha256").update(String(value ?? "")).digest("hex");
+}
+
+function legacyReceiptFingerprint(receipt) {
+  return JSON.stringify({
+    version: receipt?.version || "",
+    tokenLimit: receipt?.tokenBudget?.limit || 0,
+    promptSha256: receipt?.promptSha256 || "",
+    sources: list(receipt?.sources).map(source => ({
+      id: source.id,
+      contentSha256: String(source.contentSha256 || "").slice(0, 64)
+    }))
+  });
 }
 
 function requestEvidence(fixture, contextPrompt) {
@@ -233,7 +242,7 @@ export function createLegacyReplayAdapter({
         projectionVersion: projection.receipt?.version || "",
         promptSha256: projection.receipt?.promptSha256 || "",
         receiptFingerprintSha256: fingerprint(
-          personalContextReceiptFingerprint(projection.receipt)
+          legacyReceiptFingerprint(projection.receipt)
         ),
         sourceFingerprintSha256: fingerprint(list(projection.receipt?.sources).map(source => ({
           id: source.id,

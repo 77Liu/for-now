@@ -33,6 +33,7 @@ const empty = () => ({
   captures: [],
   journals: [],
   chats: [],
+  analyses: [],
   evidenceSources: [],
   evidencePermissions: [],
   perceptionEvents: [],
@@ -171,6 +172,280 @@ assert.ok(projection.overview.sources.some(source => source.resourceType === "ca
 assert.equal(projection.overview.sources.some(source => ["discarded-capture", "disabled-capture", "ai-answer"].includes(source.resourceId)), false);
 assert.equal(JSON.stringify(projection.overview).includes("PRIVATE_REASONING"), false);
 assert.ok(projection.overview.conclusions.every(item => item.sourceIds.every(id => projection.overview.sources.some(source => source.id === id))));
+const permissionDeniedStore = structuredClone(store);
+permissionDeniedStore.captures.unshift({
+  ...event,
+  id: "permission-denied-capture",
+  content: "PERMISSION_DENIED_CONTEXT",
+  version: 1
+});
+permissionDeniedStore.evidencePermissions.push({
+  schemaVersion: 1,
+  accountId: "a",
+  sourceKey: JSON.stringify(["capture", "permission-denied-capture", "", ""]),
+  contextAllowed: false,
+  learningAllowed: true,
+  revision: 2,
+  updatedAt: now()
+});
+assert.equal(
+  personalContextProjection(permissionDeniedStore).prompt.includes("PERMISSION_DENIED_CONTEXT"),
+  false,
+  "a context permission withdrawal must remove the source from legacy personal-context prompts"
+);
+assert.equal(
+  diaryActivityContext(permissionDeniedStore, "2026-09-28").includes("PERMISSION_DENIED_CONTEXT"),
+  false,
+  "diary assistance must not bypass a withdrawn context permission"
+);
+assert.equal(
+  thoughtPromptContext(permissionDeniedStore, "2026-09-28").text.includes("PERMISSION_DENIED_CONTEXT"),
+  false,
+  "thought starters must not bypass a withdrawn context permission"
+);
+assert.equal(
+  personalContextProjection(permissionDeniedStore, {
+    permissionPurpose: "learning"
+  }).prompt.includes("PERMISSION_DENIED_CONTEXT"),
+  true,
+  "learning consent must remain independent from answer-context consent"
+);
+permissionDeniedStore.evidencePermissions[0].learningAllowed = false;
+assert.equal(
+  personalContextProjection(permissionDeniedStore, {
+    permissionPurpose: "learning"
+  }).prompt.includes("PERMISSION_DENIED_CONTEXT"),
+  false,
+  "periodic synthesis must exclude a source after learning permission is withdrawn"
+);
+const permissionBoundStore = structuredClone(store);
+permissionBoundStore.captures[0].id = "permission-bound-capture";
+permissionBoundStore.evidencePermissions.push({
+  schemaVersion: 1,
+  accountId: "a",
+  sourceKey: JSON.stringify(["capture", "permission-bound-capture", "", ""]),
+  contextAllowed: true,
+  learningAllowed: false,
+  revision: 1,
+  updatedAt: now()
+});
+const permissionBoundReceipt = personalContextProjection(permissionBoundStore).receipt;
+permissionBoundStore.evidencePermissions[0].revision = 3;
+assert.equal(
+  personalContextReceiptMatches(permissionBoundStore, permissionBoundReceipt),
+  false,
+  "permission ABA must invalidate a previously compiled context receipt"
+);
+const synthesisStore = empty();
+synthesisStore.captures.push({
+  ...event,
+  id: "synthesis-source",
+  content: "SYNTHESIS_SOURCE",
+  version: 1
+});
+synthesisStore.evidencePermissions.push({
+  schemaVersion: 1,
+  accountId: "a",
+  sourceKey: JSON.stringify(["capture", "synthesis-source", "", ""]),
+  contextAllowed: true,
+  learningAllowed: true,
+  revision: 1,
+  updatedAt: now()
+});
+const synthesisReceipt = compactPersonalContextReceipt(personalContextProjection(
+  synthesisStore,
+  { generatedAt: now(), permissionPurpose: "learning" }
+).receipt);
+synthesisStore.analyses.push(
+  {
+    id: "confirmed-synthesis",
+    reason: "manual",
+    content: "CONFIRMED_MODEL_SYNTHESIS",
+    reviewStatus: "confirmed",
+    contextReceipt: synthesisReceipt,
+    createdAt: now(),
+    reviewedAt: now(),
+    version: 2
+  },
+  {
+    id: "candidate-synthesis",
+    reason: "manual",
+    content: "CANDIDATE_MODEL_SYNTHESIS",
+    reviewStatus: "candidate",
+    contextReceipt: synthesisReceipt,
+    createdAt: now(),
+    version: 1
+  }
+);
+const synthesisProjection = personalContextProjection(synthesisStore);
+assert.match(synthesisProjection.prompt, /CONFIRMED_MODEL_SYNTHESIS/);
+assert.doesNotMatch(synthesisProjection.prompt, /CANDIDATE_MODEL_SYNTHESIS/);
+assert.ok(synthesisProjection.overview.conclusions.some(item => (
+  item.id === "confirmed-analysis-confirmed-synthesis"
+  && item.informationType === "model_summary"
+)));
+synthesisStore.evidencePermissions[0].revision = 2;
+assert.doesNotMatch(
+  personalContextProjection(synthesisStore).prompt,
+  /CONFIRMED_MODEL_SYNTHESIS/,
+  "confirmed synthesis must leave context when its learning evidence becomes stale"
+);
+const feedbackSynthesisStore = empty();
+feedbackSynthesisStore.actions = [{
+  id: "feedback-action",
+  title: "验证方案",
+  status: "done",
+  completedAt: now(),
+  completionFeedback: {
+    outcome: "helpful",
+    note: "ACTION_FEEDBACK_EVIDENCE",
+    learningAllowed: true,
+    recordedAt: now()
+  },
+  statusHistory: [{
+    from: "doing",
+    to: "done",
+    reason: "complete",
+    changedAt: now(),
+    feedback: {
+      outcome: "helpful",
+      note: "ACTION_FEEDBACK_EVIDENCE",
+      learningAllowed: true,
+      recordedAt: now()
+    }
+  }],
+  version: 2
+}];
+const feedbackReceipt = compactPersonalContextReceipt(personalContextProjection(
+  feedbackSynthesisStore,
+  { generatedAt: now(), permissionPurpose: "learning" }
+).receipt);
+assert.ok(
+  feedbackReceipt.sources.some(source => source.resourceType === "action"),
+  "explicitly authorized action feedback must be bound into the learning receipt"
+);
+feedbackSynthesisStore.analyses.push({
+  id: "feedback-synthesis",
+  reason: "manual",
+  content: "ACTION_FEEDBACK_SYNTHESIS",
+  reviewStatus: "confirmed",
+  contextReceipt: feedbackReceipt,
+  createdAt: now(),
+  reviewedAt: now(),
+  version: 2
+});
+assert.match(
+  personalContextProjection(feedbackSynthesisStore).prompt,
+  /ACTION_FEEDBACK_SYNTHESIS/
+);
+feedbackSynthesisStore.actions[0].completionFeedback.learningAllowed = false;
+feedbackSynthesisStore.actions[0].statusHistory[0].feedback.learningAllowed = false;
+assert.doesNotMatch(
+  personalContextProjection(feedbackSynthesisStore).prompt,
+  /ACTION_FEEDBACK_SYNTHESIS/,
+  "revoking action-feedback learning consent must invalidate its confirmed synthesis"
+);
+const longSynthesisStore = empty();
+longSynthesisStore.thoughts = Array.from({ length: 55 }, (_, index) => ({
+  ...event,
+  id: `long-thought-${index}`,
+  type: "question",
+  authorType: "user",
+  content: `LONG_SYNTHESIS_SOURCE_${index}`,
+  version: 1
+}));
+longSynthesisStore.evidencePermissions = longSynthesisStore.thoughts.map(item => ({
+  schemaVersion: 1,
+  accountId: "a",
+  sourceKey: JSON.stringify(["thought", item.id, item.id, `question:${item.id}`]),
+  contextAllowed: false,
+  learningAllowed: true,
+  revision: 1,
+  updatedAt: now()
+}));
+const longSynthesisReceipt = compactPersonalContextReceipt(personalContextProjection(
+  longSynthesisStore,
+  { generatedAt: now(), permissionPurpose: "learning" }
+).receipt);
+assert.equal(longSynthesisReceipt.sources.length, 55);
+longSynthesisStore.analyses.push({
+  id: "long-synthesis",
+  reason: "manual",
+  content: "LONG_CONFIRMED_SYNTHESIS",
+  reviewStatus: "confirmed",
+  contextReceipt: longSynthesisReceipt,
+  createdAt: now(),
+  reviewedAt: now(),
+  version: 2
+});
+assert.match(personalContextProjection(longSynthesisStore).prompt, /LONG_CONFIRMED_SYNTHESIS/);
+longSynthesisStore.evidencePermissions[50].learningAllowed = false;
+longSynthesisStore.evidencePermissions[50].revision = 2;
+assert.doesNotMatch(
+  personalContextProjection(longSynthesisStore).prompt,
+  /LONG_CONFIRMED_SYNTHESIS/,
+  "withdrawing source 51 of 80 must invalidate a confirmed synthesis"
+);
+const wideSynthesisStore = empty();
+const wideRoot = {
+  ...event,
+  id: "wide-root",
+  type: "question",
+  authorType: "user",
+  content: "WIDE_ROOT",
+  version: 1
+};
+wideSynthesisStore.thoughts = [
+  wideRoot,
+  ...Array.from({ length: 100 }, (_, index) => ({
+    ...event,
+    id: `wide-child-${index}`,
+    relatedTo: wideRoot.id,
+    type: "record",
+    authorType: "user",
+    content: `WIDE_CHILD_${index}`,
+    version: 1
+  }))
+];
+wideSynthesisStore.evidencePermissions = wideSynthesisStore.thoughts.map(item => ({
+  schemaVersion: 1,
+  accountId: "a",
+  sourceKey: JSON.stringify([
+    "thought",
+    item.id,
+    item.type === "question" ? item.id : item.relatedTo,
+    `${item.type}:${item.id}`
+  ]),
+  contextAllowed: false,
+  learningAllowed: true,
+  revision: 1,
+  updatedAt: now()
+}));
+const wideReceipt = compactPersonalContextReceipt(personalContextProjection(
+  wideSynthesisStore,
+  { generatedAt: now(), permissionPurpose: "learning" }
+).receipt);
+assert.equal(wideReceipt.sources.length, 80);
+assert.equal(wideReceipt.sources.some(source => source.resourceId === "wide-child-90"), false);
+wideSynthesisStore.analyses.push({
+  id: "wide-synthesis",
+  reason: "manual",
+  content: "WIDE_CONFIRMED_SYNTHESIS",
+  reviewStatus: "confirmed",
+  contextReceipt: wideReceipt,
+  createdAt: now(),
+  reviewedAt: now(),
+  version: 2
+});
+assert.match(personalContextProjection(wideSynthesisStore).prompt, /WIDE_CONFIRMED_SYNTHESIS/);
+wideSynthesisStore.evidencePermissions.find(permission => (
+  permission.sourceKey.includes("wide-child-50")
+)).revision = 2;
+assert.doesNotMatch(
+  personalContextProjection(wideSynthesisStore).prompt,
+  /WIDE_CONFIRMED_SYNTHESIS/,
+  "withdrawing a selected child source must invalidate the synthesis"
+);
 const durableReceipt = compactPersonalContextReceipt(projection.receipt);
 assert.equal(durableReceipt.sources.some(source => Object.hasOwn(source, "excerpt")), false);
 assert.equal(personalContextReceiptMatches(store, durableReceipt), true);
@@ -179,7 +454,7 @@ changedOnboarding.onboarding.material = `${changedOnboarding.onboarding.material
 assert.equal(personalContextReceiptMatches(changedOnboarding, durableReceipt), false);
 const changedSourceVersion = structuredClone(store);
 changedSourceVersion.captures[0].version = Number(changedSourceVersion.captures[0].version || 1) + 1;
-assert.equal(personalContextReceiptMatches(changedSourceVersion, durableReceipt), true);
+assert.equal(personalContextReceiptMatches(changedSourceVersion, durableReceipt), false);
 const changedSourceContent = structuredClone(store);
 changedSourceContent.captures[0].content = "CHANGED_RAW_CAPTURE";
 assert.equal(personalContextReceiptMatches(changedSourceContent, durableReceipt), false);

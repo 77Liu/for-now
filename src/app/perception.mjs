@@ -6,6 +6,7 @@ import {
   normalizeEvidencePermission,
   normalizeEvidenceSource,
   normalizePerceptionEvent,
+  parseEvidenceSourceKey,
   parsePerceptionExtractionOutput,
   perceptionExtractionSchema,
   PERCEPTION_MAX_SOURCE_CHARS,
@@ -50,9 +51,42 @@ function taskRequestId(hash, accountId, sourceRef, eventId, contentSha256, permi
   ])).slice(0, 64)}`;
 }
 
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map(key => (
+      `${JSON.stringify(key)}:${canonicalJson(value[key])}`
+    )).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function taskInputHash(hash, payload, persistedInputHash = "") {
+  const legacyPayload = {
+    accountId: payload?.accountId || "",
+    sourceRef: {
+      resourceType: payload?.sourceRef?.resourceType || "",
+      resourceId: payload?.sourceRef?.resourceId || "",
+      rootId: payload?.sourceRef?.rootId || "",
+      targetKey: payload?.sourceRef?.targetKey || "",
+      version: payload?.sourceRef?.version || 0
+    },
+    perceptionEventId: payload?.perceptionEventId || "",
+    eventId: payload?.eventId || "",
+    contentSha256: payload?.contentSha256 || "",
+    permissionRevision: payload?.permissionRevision || 0,
+    perceptionVersion: payload?.perceptionVersion || ""
+  };
+  const legacyHash = hash(JSON.stringify(legacyPayload));
+  if (persistedInputHash === legacyHash) return legacyHash;
+  return hash(canonicalJson(payload || {}));
+}
+
 function sourceSnapshots(store) {
   const snapshots = new Map();
   const sourceIndexes = new Map([
+    ["checkins", new Map(list(store?.checkins).filter(item => item?.id).map(item => [item.id, item]))],
+    ["dailyRecords", new Map(list(store?.dailyRecords).filter(item => item?.id).map(item => [item.id, item]))],
     ["captures", new Map(list(store?.captures).filter(item => item?.id).map(item => [item.id, item]))],
     ["journals", new Map(list(store?.journals).filter(item => item?.id).map(item => [item.id, item]))],
     ["thoughts", new Map(list(store?.thoughts).filter(item => item?.id).map(item => [item.id, item]))]
@@ -77,7 +111,8 @@ function sourceSnapshots(store) {
       occurredAt: safeIso(occurredAt),
       eventId: safeText(eventId, 100) || latestEventIds.get(sourceKey) || "",
       version: source.version,
-      contentSha256: source.contentSha256
+      contentSha256: source.contentSha256,
+      text: safeText(source.text, 240)
     });
   };
   const addAnnotations = (resourceType, root) => {
@@ -101,6 +136,24 @@ function sourceSnapshots(store) {
       }
     }
   };
+  for (const checkin of list(store?.checkins)) {
+    add({
+      resourceType: "checkin",
+      resourceId: checkin.id,
+      rootId: "",
+      targetKey: "",
+      version: recordVersion(checkin.version)
+    }, checkin.occurredAt || checkin.createdAt);
+  }
+  for (const record of list(store?.dailyRecords)) {
+    add({
+      resourceType: "dailyRecord",
+      resourceId: record.id,
+      rootId: "",
+      targetKey: "",
+      version: recordVersion(record.version)
+    }, record.occurredAt || record.createdAt);
+  }
 
   for (const capture of list(store?.captures)) {
     add({
@@ -192,6 +245,114 @@ function sourceSnapshots(store) {
   return snapshots;
 }
 
+const permissionRecordType = sourceRef => {
+  const key = sourceRef?.targetKey || "";
+  if (key === "transcription") return "语音转写";
+  if (key.startsWith("annotation-reply:")) return "批注回复";
+  if (key.startsWith("annotation:")) return "批注";
+  if (key.startsWith("followup-question:")) return "思绪追问";
+  if (key.startsWith("followup-answer:")) return "追问回答";
+  if (key.startsWith("question:")) return "思绪问题";
+  if (key.startsWith("idea:")) return "初步想法";
+  if (key.startsWith("record:")) return "思绪记录";
+  if (key.startsWith("answer:")) return "用户回答";
+  return {
+    checkin: "此刻状态",
+    dailyRecord: "健康记录",
+    capture: "念起",
+    journal: "日记",
+    thought: "思绪"
+  }[sourceRef?.resourceType] || "原始记录";
+};
+
+export function evidencePermissionProjection(store, {
+  accountId,
+  limit = null
+} = {}) {
+  accountId = safeText(accountId, 100);
+  if (!accountId) return [];
+  const snapshots = sourceSnapshots(store);
+  const permissions = new Map();
+  for (const value of list(store?.evidencePermissions)) {
+    const permission = normalizeEvidencePermission(value);
+    if (!permission || permission.accountId !== accountId || permissions.has(permission.sourceKey)) {
+      throw new Error("Perception permission state is invalid");
+    }
+    permissions.set(permission.sourceKey, permission);
+  }
+  const latestEvents = new Map();
+  for (const event of list(store?.perceptionEvents)) {
+    if (event?.accountId !== accountId) continue;
+    const sourceKey = sourceIdentity(event.sourceRef);
+    if (sourceKey) latestEvents.set(sourceKey, event);
+  }
+  const latestTasks = new Map();
+  for (const task of list(store?.aiTasks)) {
+    if (task?.kind !== PERCEPTION_TASK_KIND || task.payload?.accountId !== accountId) continue;
+    const key = JSON.stringify([
+      sourceIdentity(task.payload?.sourceRef),
+      task.payload?.sourceRef?.version,
+      task.payload?.contentSha256,
+      task.payload?.permissionRevision
+    ]);
+    if (!latestTasks.has(key)) latestTasks.set(key, task);
+  }
+  const readyEvidence = new Set(list(store?.evidenceSources)
+    .filter(evidence => evidence?.accountId === accountId)
+    .map(evidence => JSON.stringify([
+      sourceIdentity(evidence.sourceRef),
+      evidence.sourceRef?.version,
+      evidence.contentSha256,
+      evidence.permissionRevision
+    ])));
+  const keys = new Set([...snapshots.keys(), ...permissions.keys()]);
+  const projected = [...keys].map(sourceKey => {
+    const snapshot = snapshots.get(sourceKey) || null;
+    const event = latestEvents.get(sourceKey) || null;
+    const permission = permissions.get(sourceKey) || {
+      schemaVersion: 1,
+      sourceKey,
+      contextAllowed: true,
+      learningAllowed: false,
+      revision: 0,
+      updatedAt: ""
+    };
+    const sourceRef = snapshot?.sourceRef
+      || event?.sourceRef
+      || { ...parseEvidenceSourceKey(sourceKey), version: 1 };
+    const latestTask = latestTasks.get(JSON.stringify([
+      sourceKey,
+      sourceRef.version,
+      snapshot?.contentSha256,
+      permission.revision
+    ]));
+    const ready = readyEvidence.has(JSON.stringify([
+      sourceKey,
+      sourceRef.version,
+      snapshot?.contentSha256,
+      permission.revision
+    ]));
+    return {
+      sourceKey,
+      sourceRef,
+      recordType: permissionRecordType(sourceRef),
+      excerpt: safeText(snapshot?.text, 240),
+      status: snapshot ? "active" : event?.kind === "deleted" ? "deleted" : "unavailable",
+      contextAllowed: permission.contextAllowed,
+      learningAllowed: permission.learningAllowed,
+      revision: permission.revision,
+      updatedAt: permission.updatedAt,
+      learningStatus: permission.learningAllowed
+        ? ready ? "ready" : latestTask?.status || "idle"
+        : "off",
+      occurredAt: snapshot?.occurredAt || event?.occurredAt || ""
+    };
+  }).sort((left, right) => left.sourceKey.localeCompare(right.sourceKey));
+  return Number.isSafeInteger(limit) && limit > 0
+    ? projected.slice(0, limit)
+    : projected;
+}
+
 export function createPerceptionRuntime({
   getAccountId,
   createId = () => crypto.randomUUID(),
@@ -210,6 +371,7 @@ export function createPerceptionRuntime({
     occurredAt = "",
     contextAllowed,
     learningAllowed,
+    expectedPermissionRevision = null,
     eventKind = "",
     eventId = ""
   } = {}, createTask) {
@@ -236,6 +398,13 @@ export function createPerceptionRuntime({
       throw new Error("Perception permission state is invalid");
     }
     const previousPermission = matches[0] || null;
+    if (expectedPermissionRevision != null
+      && expectedPermissionRevision !== (previousPermission?.revision || 0)) {
+      return {
+        versionConflict: true,
+        currentRevision: previousPermission?.revision || 0
+      };
+    }
     const nextContextAllowed = typeof contextAllowed === "boolean"
       ? contextAllowed
       : previousPermission?.contextAllowed ?? true;
@@ -246,6 +415,13 @@ export function createPerceptionRuntime({
       previousPermission.contextAllowed !== nextContextAllowed
       || previousPermission.learningAllowed !== nextLearningAllowed
     );
+    if (previousPermission && !permissionChanged && eventKind === "permission_changed") {
+      return {
+        permission: previousPermission,
+        unchanged: true,
+        taskIds: []
+      };
+    }
     const permission = normalizeEvidencePermission({
       schemaVersion: 1,
       accountId,
@@ -305,8 +481,10 @@ export function createPerceptionRuntime({
       item?.accountId === accountId
       && sourceIdentity(item.sourceRef) === sourceKey
       && item.contentSha256 === source.contentSha256
-      && item.permissionRevision === permission.revision
-      && item.sourceRef?.version !== sourceRef.version
+      && (
+        item.permissionRevision !== permission.revision
+        || item.sourceRef?.version !== sourceRef.version
+      )
       && list(item.derivedFrom).length === 0
     ));
     if (priorEvidence.length) {
@@ -319,7 +497,8 @@ export function createPerceptionRuntime({
           sourceRef,
           eventId: normalizedEventId,
           occurredAt: normalizedOccurredAt,
-          recordedAt
+          recordedAt,
+          permissionRevision: permission.revision
         });
         const fingerprint = evidenceFingerprint(next);
         if (!next || !fingerprint || existing.has(fingerprint)) continue;
@@ -489,7 +668,7 @@ export function createPerceptionRuntime({
         permissionRevision: permission.revision
       },
       inputVersion: source.version,
-      inputHash: hash(JSON.stringify(task.payload)),
+      inputHash: taskInputHash(hash, task.payload, task.inputHash),
       prompt: workingContext.prompt,
       scene: PERCEPTION_TASK_KIND,
       json: true,
@@ -618,6 +797,12 @@ export function createPerceptionRuntime({
   return Object.freeze({
     observeInStore,
     prepare,
+    projectPermissions(store, options = {}) {
+      return evidencePermissionProjection(store, {
+        accountId: getAccountId(),
+        ...options
+      });
+    },
     recordLifecycleInStore,
     result,
     save
@@ -727,19 +912,71 @@ export function createPerceptionService({
   runtime,
   backgroundAi
 } = {}) {
-  if (!repository?.update
+  if (!repository?.read
+    || !repository?.update
     || typeof runtime?.observeInStore !== "function"
     || typeof backgroundAi?.createInStore !== "function"
     || typeof backgroundAi?.schedule !== "function") {
     throw new TypeError("Perception service dependencies are required");
   }
   return Object.freeze({
+    async listPermissions({ afterId = "", limit = 50 } = {}) {
+      const items = runtime.projectPermissions(await repository.read());
+      const start = afterId
+        ? items.findIndex(item => item.sourceKey === afterId) + 1
+        : 0;
+      if (afterId && start === 0) return { invalidCursor: true, items: [], nextId: "" };
+      const page = items.slice(start, start + limit);
+      return {
+        items: page,
+        nextId: start + page.length < items.length ? page.at(-1)?.sourceKey || "" : "",
+        total: items.length
+      };
+    },
     async observe(input) {
       const observed = await repository.update(store => runtime.observeInStore(
         store,
         input,
         taskInput => backgroundAi.createInStore(store, taskInput)
       ));
+      for (const taskId of new Set(list(observed.taskIds))) {
+        try {
+          backgroundAi.schedule(taskId);
+        } catch {
+          // The durable queued task is recovered on the next startup.
+        }
+      }
+      return observed;
+    },
+    async updatePermissions({
+      sourceRef,
+      contextAllowed,
+      learningAllowed,
+      expectedRevision
+    } = {}) {
+      if (typeof contextAllowed !== "boolean"
+        || typeof learningAllowed !== "boolean"
+        || !Number.isSafeInteger(expectedRevision)
+        || expectedRevision < 0) {
+        return { invalid: true };
+      }
+      const observed = await repository.update(store => {
+        const source = sourceSnapshots(store).get(sourceIdentity(sourceRef));
+        if (!source || source.version !== sourceRef?.version) {
+          return { skipped: true, reason: "SOURCE_NOT_ELIGIBLE", taskIds: [] };
+        }
+        return runtime.observeInStore(
+          store,
+          {
+            sourceRef,
+            contextAllowed,
+            learningAllowed,
+            expectedPermissionRevision: expectedRevision,
+            eventKind: "permission_changed"
+          },
+          taskInput => backgroundAi.createInStore(store, taskInput)
+        );
+      });
       for (const taskId of new Set(list(observed.taskIds))) {
         try {
           backgroundAi.schedule(taskId);

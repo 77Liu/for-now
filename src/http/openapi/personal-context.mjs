@@ -2,7 +2,7 @@ export const personalContextPaths = {
   "/personal-context": {
     get: {
       operationId: "getPersonalContext",
-      summary: "查看当前账户的只读个人概要与来源",
+      summary: "查看当前账户的个人概要、可纠正理解与来源许可",
       responses: {
         "200": {
           description: "结构化个人概要、时间窗、预算和来源",
@@ -39,6 +39,7 @@ export const personalContextComponents = {
         "occurredAt",
         "occurredOn",
         "version",
+        "permissionRevision",
         "excerpt",
         "location"
       ],
@@ -52,6 +53,7 @@ export const personalContextComponents = {
         occurredAt: { type: "string" },
         occurredOn: { type: "string" },
         version: { type: "integer", minimum: 1 },
+        permissionRevision: { type: "integer", minimum: 0 },
         excerpt: { type: "string" },
         evidence: {
           type: "array",
@@ -86,6 +88,60 @@ export const personalContextComponents = {
         sampleNote: { type: "string" }
       }
     },
+    PersonalContextSourcePermission: {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "sourceKey",
+        "sourceRef",
+        "recordType",
+        "excerpt",
+        "status",
+        "contextAllowed",
+        "learningAllowed",
+        "learningStatus",
+        "revision",
+        "updatedAt",
+        "occurredAt"
+      ],
+      properties: {
+        sourceKey: { type: "string" },
+        sourceRef: { $ref: "#/components/schemas/EvidenceSourceRef" },
+        recordType: { type: "string" },
+        excerpt: { type: "string" },
+        status: { enum: ["active", "deleted", "unavailable"] },
+        contextAllowed: { type: "boolean" },
+        learningAllowed: { type: "boolean" },
+        learningStatus: { type: "string" },
+        revision: { type: "integer", minimum: 0 },
+        updatedAt: { type: "string" },
+        occurredAt: { type: "string" }
+      }
+    },
+    PersonalContextPeriodicSynthesis: {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "id",
+        "content",
+        "reason",
+        "reviewStatus",
+        "reviewedAt",
+        "reviewDisposition",
+        "createdAt",
+        "version"
+      ],
+      properties: {
+        id: { type: "string" },
+        content: { type: "string" },
+        reason: { enum: ["manual", "weekly-background"] },
+        reviewStatus: { enum: ["candidate", "confirmed", "rejected", "stale", "legacy"] },
+        reviewedAt: { type: "string" },
+        reviewDisposition: { type: "string" },
+        createdAt: { type: "string" },
+        version: { type: "integer", minimum: 1 }
+      }
+    },
     PersonalContextOverview: {
       type: "object",
       required: [
@@ -97,6 +153,8 @@ export const personalContextComponents = {
         "sourceCount",
         "sources",
         "conclusions",
+        "userModel",
+        "periodicSyntheses",
         "disclosure",
         "readOnly"
       ],
@@ -122,6 +180,11 @@ export const personalContextComponents = {
         sourceCount: { type: "integer", minimum: 0 },
         sources: { type: "array", items: { $ref: "#/components/schemas/PersonalContextSource" } },
         conclusions: { type: "array", items: { $ref: "#/components/schemas/PersonalContextConclusion" } },
+        userModel: { $ref: "#/components/schemas/UserModel" },
+        periodicSyntheses: {
+          type: "array",
+          items: { $ref: "#/components/schemas/PersonalContextPeriodicSynthesis" }
+        },
         disclosure: { type: "string" },
         readOnly: { const: true }
       }

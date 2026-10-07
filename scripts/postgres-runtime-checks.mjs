@@ -518,12 +518,21 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       if (perceptionTask && !["queued", "running"].includes(perceptionTask.status)) break;
       await pause(25);
     }
-    assert.equal(perceptionTask?.status, "succeeded");
+    assert.equal(perceptionTask?.status, "succeeded", JSON.stringify({
+      task: perceptionTask,
+      permission: perceptionState.evidencePermissions.find(item => (
+        item.sourceKey === evidenceSourceKey(perceptionSourceRef)
+      )),
+      events: perceptionState.perceptionEvents.filter(item => (
+        item.sourceRef?.resourceId === perceptionSource.id
+      )),
+      source: perceptionState.captures.find(item => item.id === perceptionSource.id)
+    }));
     const perceptionEvidence = perceptionState.evidenceSources.find(item => (
       item.sourceTaskId === perceptionTask.id
     ));
     assert.ok(perceptionEvidence);
-    assert.equal(perceptionEvidence.sourceRef.version, perceptionUpdate.body.version);
+    assert.equal(perceptionEvidence.sourceRef.version, perceptionUpdate.body.data.version);
     assert.equal(
       (await request(app.base, "/api/ai-tasks", { cookie })).body.items.some(item => (
         item.kind === "perceptionExtraction"

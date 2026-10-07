@@ -78,6 +78,10 @@ try {
   for (const route of ["/discovery", "/exports/account", "/actions", "/habits", "/feedback", "/validation-ledger"]) {
     assert.ok(specification.body.paths[route], `OpenAPI missing ${route}`);
   }
+  assert.equal(
+    specification.body.paths["/actions/{id}/complete"].post.requestBody.required,
+    false
+  );
 
   const chain = await request("/api/v1/thought-chains", {
     method: "POST",

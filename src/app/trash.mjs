@@ -32,6 +32,20 @@ function speechSourcesInTrash(entries) {
   return { sources, thoughtBlockIds };
 }
 
+function revokeActionFeedbackLearning(action, revokedAt) {
+  const revoke = feedback => feedback
+    ? { ...feedback, learningAllowed: false, revokedAt }
+    : feedback;
+  if (action?.completionFeedback) {
+    action.completionFeedback = revoke(action.completionFeedback);
+  }
+  if (Array.isArray(action?.statusHistory)) {
+    action.statusHistory = action.statusHistory.map(entry => (
+      entry?.feedback ? { ...entry, feedback: revoke(entry.feedback) } : entry
+    ));
+  }
+}
+
 function speechCacheForTrash(store, entries) {
   const { sources, thoughtBlockIds } = speechSourcesInTrash(entries);
   return (Array.isArray(store.speechCache) ? store.speechCache : []).filter(entry => (
@@ -66,14 +80,14 @@ export function createTrashMutations({
     validationLedger: "validationLedger", userClaims: "userClaim",
     modelUnknowns: "modelUnknown"
   };
-  const revokeEvidence = (store, collection, id, targetId = "") => {
+  const revokeEvidence = (store, collection, id, targetId = "", revokedAt = now()) => {
     store.evidencePermissions ||= [];
     return revokeEvidencePermissionsForResource(store, {
       accountId: getAccountId(),
       resourceType: resourceTypes[collection] || collection,
       resourceId: id,
       targetId
-    }, now());
+    }, revokedAt);
   };
   const cancelAiTasks = (store, matches) => {
     const runningTaskIds = [];
@@ -136,8 +150,10 @@ export function createTrashMutations({
     if (index < 0) return trash.find(store.trash, type, id);
     const runningTaskIds = cancelTargetTasks(store, collection, id);
     if (collection === "journals" && store.journalDraft?.journalId === id) store.journalDraft.journalId = "";
-    revokeEvidence(store, collection, id);
+    const revokedAt = now();
+    revokeEvidence(store, collection, id, "", revokedAt);
     const [payload] = items.splice(index, 1);
+    if (collection === "actions") revokeActionFeedbackLearning(payload, revokedAt);
     return afterCommit(trash.add(store.trash, type, payload, { kind: "collection", collection, index }), runningTaskIds);
   }
 

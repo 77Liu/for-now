@@ -43,6 +43,71 @@ export const userModelPaths = {
       }
     }
   },
+  "/user-model/evidence-permissions": {
+    get: {
+      operationId: "listEvidencePermissions",
+      summary: "分页读取原始来源的回答与学习许可",
+      parameters: [
+        { $ref: "#/components/parameters/Cursor" },
+        { $ref: "#/components/parameters/Limit" }
+      ],
+      responses: {
+        "200": {
+          description: "来源许可列表",
+          content: {
+            "application/json": {
+              schema: {
+                allOf: [
+                  { $ref: "#/components/schemas/SuccessEnvelope" },
+                  {
+                    type: "object",
+                    properties: {
+                      data: {
+                        type: "array",
+                        items: { $ref: "#/components/schemas/EvidencePermissionView" }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "400": { $ref: "#/components/responses/BadRequest" },
+        "401": { $ref: "#/components/responses/Unauthorized" }
+      }
+    },
+    patch: {
+      operationId: "updateEvidencePermission",
+      summary: "更新原始来源的回答与学习许可",
+      parameters: [{ $ref: "#/components/parameters/IfMatch" }],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: { $ref: "#/components/schemas/EvidencePermissionPatch" }
+          }
+        }
+      },
+      responses: {
+        "200": {
+          description: "更新后的来源许可",
+          headers: { ETag: { schema: { type: "string" } } },
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/EvidencePermissionUpdateResponse" }
+            }
+          }
+        },
+        "401": { $ref: "#/components/responses/Unauthorized" },
+        "409": { $ref: "#/components/responses/Conflict" },
+        "412": { $ref: "#/components/responses/PreconditionFailed" },
+        "422": { description: "来源许可输入无效" },
+        "428": { $ref: "#/components/responses/PreconditionRequired" },
+        "503": { description: "来源许可服务暂不可用" }
+      }
+    }
+  },
   "/user-model/claims/{id}": {
     patch: {
       operationId: "patchUserClaim",
@@ -120,6 +185,7 @@ export const userModelComponents = {
       properties: {
         id: { type: "string" },
         domain: { enum: ["context", "goals", "state", "behavior", "mind", "values", "relationships", "collaboration"] },
+        domainLabel: { type: "string" },
         statement: { type: "string", maxLength: 1000 },
         scope: { type: "string", maxLength: 500 },
         epistemic: { enum: ["known", "hypothesis"] },
@@ -187,6 +253,7 @@ export const userModelComponents = {
         "claims",
         "unknowns",
         "activeClaimCount",
+        "disputedClaimCount",
         "candidateCount",
         "staleCandidateCount"
       ],
@@ -195,9 +262,81 @@ export const userModelComponents = {
         claims: { type: "array", items: { $ref: "#/components/schemas/UserClaim" } },
         unknowns: { type: "array", items: { $ref: "#/components/schemas/ModelUnknown" } },
         activeClaimCount: { type: "integer", minimum: 0 },
+        disputedClaimCount: { type: "integer", minimum: 0 },
         candidateCount: { type: "integer", minimum: 0 },
         staleCandidateCount: { type: "integer", minimum: 0 }
       }
+    },
+    EvidenceSourceRef: {
+      type: "object",
+      additionalProperties: false,
+      required: ["resourceType", "resourceId", "rootId", "targetKey", "version"],
+      properties: {
+        resourceType: { type: "string", maxLength: 40 },
+        resourceId: { type: "string", maxLength: 100 },
+        rootId: { type: "string", maxLength: 100 },
+        targetKey: { type: "string", maxLength: 120 },
+        version: { type: "integer", minimum: 1 }
+      }
+    },
+    EvidencePermissionPatch: {
+      type: "object",
+      additionalProperties: false,
+      required: ["sourceRef", "contextAllowed", "learningAllowed"],
+      properties: {
+        sourceRef: { $ref: "#/components/schemas/EvidenceSourceRef" },
+        contextAllowed: { type: "boolean" },
+        learningAllowed: { type: "boolean" }
+      }
+    },
+    EvidencePermissionView: {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "sourceKey",
+        "sourceRef",
+        "recordType",
+        "excerpt",
+        "status",
+        "contextAllowed",
+        "learningAllowed",
+        "learningStatus",
+        "revision",
+        "updatedAt",
+        "occurredAt"
+      ],
+      properties: {
+        sourceKey: { type: "string" },
+        sourceRef: { $ref: "#/components/schemas/EvidenceSourceRef" },
+        recordType: { type: "string" },
+        excerpt: { type: "string" },
+        status: { enum: ["active", "deleted", "unavailable"] },
+        contextAllowed: { type: "boolean" },
+        learningAllowed: { type: "boolean" },
+        learningStatus: { type: "string" },
+        revision: { type: "integer", minimum: 0 },
+        updatedAt: { type: "string" },
+        occurredAt: { type: "string" }
+      }
+    },
+    EvidencePermissionUpdateResponse: {
+      allOf: [
+        { $ref: "#/components/schemas/SuccessEnvelope" },
+        {
+          type: "object",
+          properties: {
+            data: {
+              type: "object",
+              required: ["permission", "unchanged", "learningRefreshQueued"],
+              properties: {
+                permission: { type: "object", additionalProperties: true },
+                unchanged: { type: "boolean" },
+                learningRefreshQueued: { type: "boolean" }
+              }
+            }
+          }
+        }
+      ]
     },
     UserClaimPatch: {
       type: "object",

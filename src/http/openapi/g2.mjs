@@ -105,7 +105,13 @@ export const g2Paths = Object.freeze({
     delete: versionedOperation("deleteAction", "删除行动", "ActionId", "delete")
   },
   "/actions/{id}/complete": {
-    post: versionedOperation("completeAction", "完成行动", "ActionId", "update", false)
+    post: {
+      ...versionedOperation("completeAction", "完成行动并记录反馈", "ActionId"),
+      requestBody: {
+        ...jsonBody({ $ref: "#/components/schemas/ActionCompletionFeedbackInput" }),
+        required: false
+      }
+    }
   },
   "/actions/{id}/reopen": {
     post: versionedOperation("reopenAction", "撤销行动完成", "ActionId", "update", false)
@@ -200,6 +206,18 @@ export const g2Components = Object.freeze({
             }
           ]
         }
+      },
+      additionalProperties: false
+    },
+    ActionCompletionFeedbackInput: {
+      type: "object",
+      properties: {
+        outcome: {
+          type: "string",
+          enum: ["helpful", "mixed", "unhelpful", "unsure"]
+        },
+        note: { type: "string", maxLength: 1000 },
+        learningAllowed: { type: "boolean", default: false }
       },
       additionalProperties: false
     },

@@ -71,7 +71,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     localTestMainUserId: String(env.LOCAL_TEST_MAIN_USER_ID || "").trim(),
     localTestResetOnStart: localTestMode && env.LOCAL_TEST_RESET_ON_START === "1",
     testCurrentDate,
-    periodicAnalysisEnabled: env.PERIODIC_ANALYSIS_ENABLED !== "0",
+    periodicAnalysisEnabled: env.PERIODIC_ANALYSIS_ENABLED === "1",
     speechCacheSweepEnabled,
     runtimeMemorySampleIntervalMs: Math.max(50, Math.min(3_600_000, Number(env.RUNTIME_MEMORY_SAMPLE_INTERVAL_MS) || 60_000)),
     deepSeekApiUrl: env.DEEPSEEK_API_URL || "https://api.deepseek.com/chat/completions",

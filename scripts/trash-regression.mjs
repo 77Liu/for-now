@@ -91,6 +91,9 @@ const empty = () => ({
   })],
   aiTasks: [],
   notifications: [],
+  actions: [],
+  habits: [],
+  habitCheckins: [],
   keepsakes: [], captures: [], checkins: [], dailyRecords: []
 });
 const context = new AsyncLocalStorage(), account = () => context.getStore() || "a";
@@ -230,6 +233,41 @@ assert.equal((await commands.restore(duplicate.id)).conflict, true);
 assert.equal((await commands.list()).items.some(item => item.id === duplicate.id), true);
 await repository.update(store => trash.add(store.trash, "broken", { id: "broken" }, { kind: "unknown" }));
 assert.equal((await commands.restore((await commands.list()).items[0].id)).invalid, true);
+
+reset();
+await repository.update(store => {
+  store.actions.push({
+    id: "feedback-action",
+    title: "完成验证",
+    status: "done",
+    version: 2,
+    completionFeedback: {
+      outcome: "helpful",
+      note: "有效",
+      learningAllowed: true,
+      recordedAt: now()
+    },
+    statusHistory: [{
+      from: "doing",
+      to: "done",
+      reason: "complete",
+      changedAt: now(),
+      feedback: {
+        outcome: "helpful",
+        note: "有效",
+        learningAllowed: true,
+        recordedAt: now()
+      }
+    }]
+  });
+});
+const deletedAction = await move("actions", "action", "feedback-action");
+assert.equal(deletedAction.payload.completionFeedback.learningAllowed, false);
+assert.equal(deletedAction.payload.statusHistory[0].feedback.learningAllowed, false);
+await commands.restore(deletedAction.id);
+const restoredAction = (await repository.read()).actions[0];
+assert.equal(restoredAction.completionFeedback.learningAllowed, false);
+assert.equal(restoredAction.statusHistory[0].feedback.learningAllowed, false);
 
 reset();
 await repository.update(store => {

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { localDateKey } from "../../shared/time/index.mjs";
 import { recordVersion } from "../../shared/validation/index.mjs";
 import {
+  actionCompletionFeedback,
   actionPayload,
   assertActionsData,
   habitAdjustmentPayload,
@@ -48,19 +49,35 @@ function versionResult(record, expectedVersion) {
     : { currentVersion };
 }
 
-function actionTransition(action, nextStatus, changedAt, reason) {
+function actionTransition(action, nextStatus, changedAt, reason, feedback = null) {
   const currentStatus = action.status || "todo";
   if (currentStatus === nextStatus) return action;
   const completing = nextStatus === "done";
   const undoing = currentStatus === "done" && nextStatus !== "done";
+  const revokeFeedback = value => value
+    ? { ...value, learningAllowed: false, revokedAt: changedAt }
+    : value;
   return {
     ...action,
     status: nextStatus,
     completedAt: completing ? changedAt : "",
     statusBeforeCompletion: completing ? currentStatus : undoing ? "" : action.statusBeforeCompletion || "",
+    ...(undoing && action.completionFeedback
+      ? { completionFeedback: revokeFeedback(action.completionFeedback) }
+      : {}),
     statusHistory: [
-      ...historyOf(action.statusHistory),
-      { from: currentStatus, to: nextStatus, reason, changedAt }
+      ...historyOf(action.statusHistory).map(entry => (
+        undoing && entry?.feedback
+          ? { ...entry, feedback: revokeFeedback(entry.feedback) }
+          : entry
+      )),
+      {
+        from: currentStatus,
+        to: nextStatus,
+        reason,
+        changedAt,
+        ...(feedback ? { feedback: clone(feedback) } : {})
+      }
     ]
   };
 }
@@ -207,7 +224,41 @@ export function createActionsService({
     return updateActionRecord(id, { status: parsedStatus.value }, options);
   }
 
-  const completeAction = (id, options = {}) => updateActionRecord(id, { status: "done" }, options, "complete");
+  async function completeAction(id, input = {}, options = {}) {
+    if (Object.hasOwn(input || {}, "expectedVersion")
+      && !Object.hasOwn(input || {}, "outcome")
+      && !Object.hasOwn(input || {}, "note")
+      && !Object.hasOwn(input || {}, "learningAllowed")) {
+      options = input;
+      input = {};
+    }
+    const parsedId = normalizeIdentifier(id, "行动 ID");
+    if (parsedId.error) return parsedId;
+    const parsedVersion = normalizeExpectedVersion(options.expectedVersion);
+    if (parsedVersion.error) return parsedVersion;
+    const feedback = actionCompletionFeedback(input);
+    if (feedback.error) return feedback;
+    const changedAt = timestamp(now());
+    return updateData(data => {
+      const index = data.actions.findIndex(item => item.id === parsedId.value);
+      if (index < 0) return { missing: true };
+      const current = data.actions[index];
+      const version = versionResult(current, parsedVersion.value);
+      if (version.conflict) return version.conflict;
+      if (current.status === "done") return { value: current, unchanged: true };
+      const completionFeedback = feedback.value
+        ? { ...feedback.value, recordedAt: changedAt }
+        : null;
+      const next = {
+        ...actionTransition(current, "done", changedAt, "complete", completionFeedback),
+        ...(completionFeedback ? { completionFeedback } : {}),
+        updatedAt: changedAt,
+        version: version.currentVersion + 1
+      };
+      data.actions[index] = next;
+      return { value: next };
+    });
+  }
 
   async function undoActionCompletion(id, options = {}) {
     const parsedId = normalizeIdentifier(id, "行动 ID");

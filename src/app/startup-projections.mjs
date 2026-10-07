@@ -343,7 +343,17 @@ function analysisProjection(item) {
   const receipt = receiptProjection(item?.contextReceipt);
   const content = String(item?.content || "");
   return {
-    ...scalarFields(item, ["id", "version", "syncVersion", "createdAt", "updatedAt", "reason"]),
+    ...scalarFields(item, [
+      "id",
+      "version",
+      "syncVersion",
+      "createdAt",
+      "updatedAt",
+      "reason",
+      "reviewStatus",
+      "reviewedAt",
+      "reviewDisposition"
+    ]),
     content: content.slice(0, limits.analysisContentChars),
     ...(content.length > limits.analysisContentChars ? { contentTruncated: true } : {}),
     annotations: list(item?.annotations).slice(0, limits.annotationsPerAnalysis).map(annotationProjection),

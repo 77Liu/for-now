@@ -202,7 +202,7 @@ export function createTrashFeatureController({
       if (!isCurrent(ticket)) return false;
       await loadCandidate(candidate, { force: true });
       if (!isCurrent(ticket)) return false;
-      view.showToast("记录已完整恢复");
+      view.showToast("记录已恢复；用于回答和学习的许可仍保持关闭");
       return true;
     } catch (error) {
       if (!isCurrent(ticket)) return false;

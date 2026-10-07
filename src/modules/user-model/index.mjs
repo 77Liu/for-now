@@ -299,9 +299,10 @@ function patchInput(input, current) {
 }
 
 function currentClaim(store, claim, isEvidenceCurrent) {
-  return claim.lifecycle === "candidate" && !claim.evidence.every(evidence => isEvidenceCurrent(store, evidence))
-    ? { ...claim, lifecycle: "stale" }
-    : claim;
+  if (claim.evidence.every(evidence => isEvidenceCurrent(store, evidence))) return claim;
+  if (claim.lifecycle === "candidate") return { ...claim, lifecycle: "stale" };
+  if (claim.lifecycle === "active") return { ...claim, lifecycle: "disputed" };
+  return claim;
 }
 
 export function projectUserModel(store, { isEvidenceCurrent = () => true } = {}) {
@@ -313,6 +314,7 @@ export function projectUserModel(store, { isEvidenceCurrent = () => true } = {})
     claims,
     unknowns,
     activeClaimCount: claims.filter(claim => claim.lifecycle === "active").length,
+    disputedClaimCount: claims.filter(claim => claim.lifecycle === "disputed").length,
     candidateCount: claims.filter(claim => claim.lifecycle === "candidate").length,
     staleCandidateCount: claims.filter(claim => claim.lifecycle === "stale").length
   };
@@ -353,15 +355,20 @@ export function createUserModelService({
         const current = store.userClaims[index];
         const currentVersion = recordVersion(current.version);
         if (expectedVersion !== currentVersion) return { versionConflict: true, currentVersion };
-        if (current.lifecycle === "candidate"
-          && !current.evidence.every(evidence => isEvidenceCurrent(store, evidence))) {
+        const evidenceCurrent = current.evidence.every(evidence => isEvidenceCurrent(store, evidence));
+        const requestedAction = safeText(input?.action, 20);
+        if (!evidenceCurrent
+          && ["candidate", "active", "disputed"].includes(current.lifecycle)
+          && !["reject", "retract"].includes(requestedAction)) {
           const changedAt = timestamp();
+          const lifecycle = current.lifecycle === "candidate" ? "stale" : "disputed";
           const stale = {
             ...current,
-            lifecycle: "stale",
+            lifecycle,
             disposition: "source_changed",
-            updatedAt: changedAt,
-            version: currentVersion + 1
+            ...(current.lifecycle === lifecycle
+              ? {}
+              : { updatedAt: changedAt, version: currentVersion + 1 })
           };
           store.userClaims[index] = stale;
           return { stale: true, value: stale };
@@ -416,8 +423,10 @@ export function createUserModelService({
           store.userClaims.unshift(value);
           return { value, previous };
         }
-        const expectedLifecycle = action === "reject" ? "candidate" : "active";
-        if (current.lifecycle !== expectedLifecycle) {
+        const allowedLifecycles = action === "reject"
+          ? ["candidate", "stale"]
+          : ["active", "disputed"];
+        if (!allowedLifecycles.includes(current.lifecycle)) {
           return { invalidState: true, currentLifecycle: current.lifecycle };
         }
         const value = {

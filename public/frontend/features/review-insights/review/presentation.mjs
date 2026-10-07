@@ -149,7 +149,14 @@ function analysisHistoryMarkup(root, snapshot, {
   list.innerHTML = items.length
     ? items.map((item, index) => {
       const id = view.escapeMarkup(item.id);
-      const label = item.reason === "weekly-background" ? "后台周复盘" : "主动复盘";
+      const baseLabel = item.reason === "weekly-background" ? "后台周复盘" : "主动复盘";
+      const label = item.reviewStatus === "candidate"
+        ? `${baseLabel} · 待确认`
+        : item.reviewStatus === "confirmed"
+          ? `${baseLabel} · 已确认`
+          : item.reviewStatus === "rejected"
+            ? `${baseLabel} · 已拒绝`
+            : baseLabel;
       const isNew = !known.has(item.id);
       const open = opened.has(item.id) || (index === 0 && (!known.size || isNew));
       return `<details class="analysis-entry" data-analysis-id="${id}" ${open ? "open" : ""}><summary><div><div class="analysis-summary-meta"><time>${view.formatDate(

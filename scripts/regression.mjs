@@ -840,6 +840,26 @@ try {
   assert.deepEqual(editedQuote.tags, ["更新"]);
   assert.equal(editedQuote.annotations[0].quote, "测试");
 
+  const synthesisAction = await (await fetch(`${base}/api/v1/actions`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "idempotency-key": "analysis-feedback-source"
+    },
+    body: JSON.stringify({ title: "验证复盘输入" })
+  })).json();
+  const synthesisFeedback = await fetch(`${base}/api/v1/actions/${synthesisAction.data.id}/complete`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "if-match": "\"1\""
+    },
+    body: JSON.stringify({
+      outcome: "unsure",
+      learningAllowed: true
+    })
+  });
+  assert.equal(synthesisFeedback.status, 200);
   const firstAnalysis = await (await fetch(`${base}/api/analysis/run`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
   const secondAnalysis = await (await fetch(`${base}/api/analysis/run`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
   const persistedAnalyses = JSON.parse(await fs.readFile(path.join(dataDir, "store.json"), "utf8")).analyses;

@@ -208,12 +208,12 @@ export function createContentRecords({
       createId
     }),
     checkinRecords: createCheckinRecords({
-      repository: collectionRepository("checkins"),
+      repository: createCollectionRepository(sourceRepository, "checkins"),
       now,
       createId
     }),
     dailyRecordRecords: createDailyRecordRecords({
-      repository: collectionRepository("dailyRecords"),
+      repository: createCollectionRepository(sourceRepository, "dailyRecords"),
       now,
       createId
     }),

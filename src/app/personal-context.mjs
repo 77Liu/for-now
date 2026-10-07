@@ -8,6 +8,7 @@ import {
   onboardingV2Context,
   onboardingV2ContextEntries
 } from "../modules/onboarding/index.mjs";
+import { evidenceSourceKey } from "../modules/user-model/index.mjs";
 import { describeDailyRecord } from "../modules/health/index.mjs";
 import { thoughtChainContext, thoughtTask } from "../modules/thoughts/index.mjs";
 import { userPrompt } from "../modules/ai/index.mjs";
@@ -40,12 +41,41 @@ const PROFILE_LABELS = Object.freeze({
 });
 
 const list = value => Array.isArray(value) ? value : [];
-const contextAllowed = item => item
+const legacyContextAllowed = item => item
   && item.contextAllowed !== false
   && item.allowInContext !== false
   && item.disposition !== "discarded";
+const modelAuthored = item => (
+  item?.authorType === "ai"
+  || /^(?:deepseek|codex|openai|model|ai)(?:$|[-_:])/i.test(String(item?.origin || ""))
+  || Boolean(item?.modelDraft)
+  || Boolean(item?.sourceTaskId)
+  || Boolean(item?.contextReceipt)
+);
+const contextAllowed = (store, item, sourceRef, purpose = "context") => {
+  if (!legacyContextAllowed(item)) return false;
+  const sourceKey = evidenceSourceKey(sourceRef);
+  if (!sourceKey) return purpose === "context";
+  const permissions = list(store?.evidencePermissions)
+    .filter(permission => permission?.sourceKey === sourceKey);
+  if (permissions.length === 0) return purpose === "context";
+  if (permissions.length !== 1) return false;
+  return purpose === "learning"
+    ? permissions[0].learningAllowed === true
+    : permissions[0].contextAllowed === true;
+};
 const eventTime = item => safeText(item?.occurredAt || item?.createdAt || item?.updatedAt, 100);
 const eventDate = item => safeText(item?.occurredOn || eventTime(item).slice(0, 10), 10);
+const sourceRef = (resourceType, item, {
+  rootId = "",
+  targetKey = ""
+} = {}) => ({
+  resourceType,
+  resourceId: safeText(item?.id, 100),
+  rootId: safeText(rootId, 100),
+  targetKey: safeText(targetKey, 120),
+  version: Math.max(1, Math.round(Number(item?.version) || 1))
+});
 const excerpt = value => {
   const text = safeText(value, 240).replace(/\s+/g, " ").trim();
   return String(value ?? "").replace(/\s+/g, " ").trim().length > text.length ? `${text}…` : text;
@@ -250,9 +280,182 @@ function onboardingProjection(store) {
   };
 }
 
-function contextEntries(store) {
+function confirmedSynthesisProjection(store) {
+  const entries = list(store?.analyses)
+    .filter(item => (
+      ["manual", "weekly-background"].includes(item?.reason)
+      && item?.reviewStatus === "confirmed"
+      && item?.contextReceipt?.permissionPurpose === "learning"
+      && safeText(item?.content, 3000)
+    ))
+    .slice(0, 5)
+    .filter(item => personalContextReceiptMatches(store, item.contextReceipt))
+    .slice(0, 3);
+  if (!entries.length) return { prompt: "", sources: [], conclusions: [] };
+  const sources = entries.map(item => contextSource(item, {
+    resourceType: "analysis",
+    recordType: "已确认周期回望",
+    informationType: "model_summary",
+    text: safeText(item.content, 3000),
+    view: "reviews",
+    targetKey: "content"
+  }));
+  return {
+    prompt: `用户确认保留的周期回望（模型摘要，不是用户事实）：\n${
+      entries.map(item => `- ${safeText(item.content, 3000)}`).join("\n")
+    }`,
+    sources,
+    conclusions: entries.map((item, index) => ({
+      id: `confirmed-analysis-${safeText(item.id, 100)}`,
+      informationType: "model_summary",
+      informationTypeLabel: INFORMATION_TYPE_LABELS.model_summary,
+      title: "已确认周期回望",
+      text: safeText(item.content, 3000),
+      sourceIds: [sources[index].id],
+      sampleNote: "这是经你确认保留的模型综合，不会被当作用户原话或客观事实。"
+    }))
+  };
+}
+
+export function learningThoughtSelection(store) {
+  const selected = [];
+  const add = (item, ref, content, recordType, type = item.type) => {
+    if (selected.length >= 80 || !safeText(content, 4000)) return;
+    selected.push({
+      ...item,
+      type,
+      content,
+      tags: type === "question" ? item.tags : [],
+      modelDraft: "",
+      followUps: [],
+      relatedTo: ref.rootId,
+      _learningSourceRef: ref,
+      _learningRecordType: recordType
+    });
+  };
+  for (const item of list(store?.thoughts)) {
+    if (selected.length >= 80) break;
+    if (!legacyContextAllowed(item) || modelAuthored(item)) continue;
+    if (item?.type !== "question") {
+      const ref = sourceRef("thought", item, {
+        rootId: item.relatedTo,
+        targetKey: `${item.type}:${item.id}`
+      });
+      if (contextAllowed(store, item, ref, "learning")) {
+        add(
+          item,
+          ref,
+          item.content,
+          item.type === "idea" ? "初步想法" : item.type === "record" ? "思绪记录" : "用户回答"
+        );
+      }
+      continue;
+    }
+    const rootRef = sourceRef("thought", item, {
+      rootId: item.id,
+      targetKey: `question:${item.id}`
+    });
+    if (contextAllowed(store, item, rootRef, "learning")) {
+      add(item, rootRef, item.content, "思绪问题", "question");
+    }
+    for (const followUp of list(item.followUps)) {
+      if (selected.length >= 80) break;
+      if (!legacyContextAllowed(followUp)) continue;
+      const questionRef = sourceRef("thought", followUp, {
+        rootId: item.id,
+        targetKey: `followup-question:${followUp.id}`
+      });
+      if (contextAllowed(store, followUp, questionRef, "learning")) {
+        add(followUp, questionRef, followUp.question, "思绪追问", "followUpQuestion");
+      }
+      if (selected.length >= 80) break;
+      const answerRef = sourceRef("thought", followUp, {
+        rootId: item.id,
+        targetKey: `followup-answer:${followUp.id}`
+      });
+      if (!modelAuthored(followUp)
+        && contextAllowed(store, followUp, answerRef, "learning")) {
+        add(followUp, answerRef, followUp.answer, "追问回答", "followUpAnswer");
+      }
+    }
+  }
+  return selected;
+}
+
+function learningReceiptSources(store) {
+  const sources = list(store?.thoughts).flatMap(item => {
+    const ref = item?._learningSourceRef || sourceRef("thought", item, {
+      rootId: item.type === "question" ? item.id : item.relatedTo,
+      targetKey: `${item.type}:${item.id}`
+    });
+    return item?.content ? [contextSource(item, {
+      id: ref.resourceId,
+      resourceType: "thought",
+      recordType: item._learningRecordType
+        || (item.type === "question" ? "思绪问题" : "思绪记录"),
+      informationType: "user_viewpoint",
+      text: item.content,
+      view: "thoughts",
+      rootId: ref.rootId,
+      targetKey: ref.targetKey
+    })] : [];
+  });
+  const feedbackSources = [];
+  for (const action of list(store?.actions)) {
+    const validFeedback = feedback => (
+      feedback
+      && feedback.learningAllowed === true
+      && (
+        ["helpful", "mixed", "unhelpful", "unsure"].includes(feedback.outcome)
+        || safeText(feedback.note, 1000)
+      )
+    );
+    const completions = list(action.statusHistory)
+      .map((entry, index) => ({ entry, index }))
+      .filter(({ entry }) => entry?.to === "done" && validFeedback(entry.feedback));
+    const feedbackEntries = completions.length
+      ? completions.map(({ entry, index }) => ({
+          feedback: entry.feedback,
+          completedAt: entry.changedAt || action.completedAt,
+          key: `completion-feedback:${index}`
+        }))
+      : validFeedback(action.completionFeedback)
+        ? [{
+            feedback: action.completionFeedback,
+            completedAt: action.completionFeedback.recordedAt || action.completedAt,
+            key: "completion-feedback:current"
+          }]
+        : [];
+    for (const entry of feedbackEntries) {
+      feedbackSources.push(contextSource({
+        ...action,
+        occurredAt: entry.completedAt,
+        occurredOn: safeText(entry.completedAt, 100).slice(0, 10)
+      }, {
+        id: action.id,
+        resourceType: "action",
+        recordType: "行动完成反馈",
+        informationType: "user_viewpoint",
+        text: JSON.stringify({
+          title: safeText(action.title, 120),
+          outcome: entry.feedback.outcome,
+          note: safeText(entry.feedback.note, 1000)
+        }),
+        view: "actions",
+        targetId: action.id,
+        targetKey: entry.key
+      }));
+    }
+  }
+  sources.push(...feedbackSources.slice(0, 40));
+  return sources;
+}
+
+function contextEntries(store, purpose = "context") {
   const sections = {
-    checkins: list(store?.checkins).filter(contextAllowed).slice(0, CONTEXT_SECTION_LIMITS.checkins).map((item, index) => {
+    checkins: list(store?.checkins).filter(item => (
+      contextAllowed(store, item, sourceRef("checkin", item), purpose)
+    )).slice(0, CONTEXT_SECTION_LIMITS.checkins).map((item, index) => {
       const text = `${item.occurredOn} 情绪${item.mood}/精力${item.energy}/压力状态${item.stress}/睡眠${item.sleep}${item.factors?.length ? `；因素：${item.factors.join("、")}` : ""}`;
       return {
         text,
@@ -266,7 +469,9 @@ function contextEntries(store) {
         })]
       };
     }),
-    dailyRecords: list(store?.dailyRecords).filter(contextAllowed).slice(0, CONTEXT_SECTION_LIMITS.dailyRecords).map((item, index) => {
+    dailyRecords: list(store?.dailyRecords).filter(item => (
+      contextAllowed(store, item, sourceRef("dailyRecord", item), purpose)
+    )).slice(0, CONTEXT_SECTION_LIMITS.dailyRecords).map((item, index) => {
       const description = describeDailyRecord(item), text = `${item.occurredOn} ${description}`;
       return {
         text,
@@ -280,7 +485,9 @@ function contextEntries(store) {
         })]
       };
     }),
-    captures: list(store?.captures).filter(contextAllowed).slice(0, CONTEXT_SECTION_LIMITS.captures).map((item, index) => {
+    captures: list(store?.captures).filter(item => (
+      contextAllowed(store, item, sourceRef("capture", item), purpose)
+    )).slice(0, CONTEXT_SECTION_LIMITS.captures).map((item, index) => {
       const text = `${item.occurredOn}：${safeText(item.content, 500)}${item.tags?.length ? `（${item.tags.join("、")}）` : ""}`;
       return {
         text,
@@ -294,7 +501,9 @@ function contextEntries(store) {
         })]
       };
     }),
-    journals: list(store?.journals).filter(contextAllowed).slice(0, CONTEXT_SECTION_LIMITS.journals).map((item, index) => {
+    journals: list(store?.journals).filter(item => (
+      contextAllowed(store, item, sourceRef("journal", item), purpose)
+    )).slice(0, CONTEXT_SECTION_LIMITS.journals).map((item, index) => {
       const text = `${item.occurredOn}${item.title ? `《${safeText(item.title, 80)}》` : ""}：${safeText(item.content, 700)}`;
       return {
         text,
@@ -309,10 +518,22 @@ function contextEntries(store) {
       };
     }),
     thoughts: list(store?.thoughts)
-      .filter(item => item.type === "question" && item.authorType !== "ai" && contextAllowed(item))
+      .filter(item => item.type === "question"
+        && item.authorType !== "ai"
+        && contextAllowed(store, item, sourceRef("thought", item, {
+          rootId: item.id,
+          targetKey: `question:${item.id}`
+        }), purpose))
       .slice(0, CONTEXT_SECTION_LIMITS.thoughts)
       .map((root, index) => {
-        const children = list(store?.thoughts).filter(item => item.relatedTo === root.id && item.authorType !== "ai" && contextAllowed(item));
+        const children = list(store?.thoughts).filter(item => (
+          item.relatedTo === root.id
+          && item.authorType !== "ai"
+          && contextAllowed(store, item, sourceRef("thought", item, {
+            rootId: root.id,
+            targetKey: `${item.type}:${item.id}`
+          }), purpose)
+        ));
         const ideas = children.filter(item => item.type === "idea");
         const records = children.filter(item => item.type === "record");
         const answers = children.filter(item => item.type === "answer");
@@ -362,11 +583,12 @@ function renderPersonalPrompt(onboarding, sections) {
   });
 }
 
-function receiptFor(prompt, sources, generatedAt, tokenLimit) {
+function receiptFor(prompt, sources, generatedAt, tokenLimit, permissionPurpose) {
   const dates = sources.map(source => source.occurredOn).filter(Boolean).sort();
   const estimatedUsed = estimatePersonalContextTokens(prompt);
   return {
     version: PERSONAL_CONTEXT_PROJECTION_VERSION,
+    ...(permissionPurpose === "learning" ? { permissionPurpose } : {}),
     generatedAt,
     promptSha256: crypto.createHash("sha256").update(prompt).digest("hex"),
     timeWindow: { from: dates[0] || "", to: dates.at(-1) || "" },
@@ -381,14 +603,35 @@ function receiptFor(prompt, sources, generatedAt, tokenLimit) {
   };
 }
 
+function permissionRevisionFor(store, source) {
+  const sourceKey = evidenceSourceKey({
+    resourceType: source?.resourceType,
+    resourceId: source?.resourceId,
+    rootId: source?.location?.rootId || "",
+    targetKey: source?.location?.targetKey || "",
+    version: Math.max(1, Math.round(Number(source?.version) || 1))
+  });
+  if (!sourceKey) return 0;
+  const permissions = list(store?.evidencePermissions)
+    .filter(permission => permission?.sourceKey === sourceKey);
+  return permissions.length === 1
+    ? Math.max(0, Math.round(Number(permissions[0].revision) || 0))
+    : 0;
+}
+
 export function personalContextReceiptFingerprint(receipt) {
   return JSON.stringify({
     version: receipt?.version || "",
+    ...(receipt?.permissionPurpose === "learning"
+      ? { permissionPurpose: "learning" }
+      : {}),
     tokenLimit: receipt?.tokenBudget?.limit || 0,
     promptSha256: receipt?.promptSha256 || "",
     sources: list(receipt?.sources).map(source => ({
       id: source.id,
-      contentSha256: safeText(source.contentSha256, 64)
+      version: Math.max(1, Math.round(Number(source.version) || 1)),
+      contentSha256: safeText(source.contentSha256, 64),
+      permissionRevision: Math.max(0, Math.round(Number(source.permissionRevision) || 0))
     }))
   });
 }
@@ -404,7 +647,8 @@ export function compactPersonalContextReceipt(receipt) {
 export function personalContextReceiptMatches(store, receipt) {
   if (!receipt || typeof receipt !== "object") return false;
   const current = personalContextProjection(store, {
-    tokenLimit: receipt.tokenBudget?.limit || PERSONAL_CONTEXT_TOKEN_BUDGET
+    tokenLimit: receipt.tokenBudget?.limit || PERSONAL_CONTEXT_TOKEN_BUDGET,
+    permissionPurpose: receipt.permissionPurpose || "context"
   }).receipt;
   return personalContextReceiptFingerprint(current) === personalContextReceiptFingerprint(receipt);
 }
@@ -439,15 +683,33 @@ function recentConclusions(sources) {
 
 export function personalContextProjection(store, {
   generatedAt = new Date().toISOString(),
-  tokenLimit = PERSONAL_CONTEXT_TOKEN_BUDGET
+  tokenLimit = PERSONAL_CONTEXT_TOKEN_BUDGET,
+  permissionPurpose = "context"
 } = {}) {
+  permissionPurpose = permissionPurpose === "learning" ? "learning" : "context";
   tokenLimit = Math.max(1200, Math.round(Number(tokenLimit) || PERSONAL_CONTEXT_TOKEN_BUDGET));
-  const onboarding = onboardingProjection(store);
-  const userModel = userModelContextProjection(store);
-  onboarding.prompt = [onboarding.prompt, userModel.prompt].filter(Boolean).join("\n");
+  const onboarding = permissionPurpose === "learning"
+    ? { prompt: "", sources: [], conclusions: [] }
+    : onboardingProjection(store);
+  const userModel = permissionPurpose === "learning"
+    ? { prompt: "", sources: [], conclusions: [] }
+    : userModelContextProjection(store);
+  const syntheses = permissionPurpose === "learning"
+    ? { prompt: "", sources: [], conclusions: [] }
+    : confirmedSynthesisProjection(store);
+  onboarding.prompt = [
+    onboarding.prompt,
+    userModel.prompt,
+    syntheses.prompt
+  ].filter(Boolean).join("\n");
   onboarding.sources.push(...userModel.sources);
+  onboarding.sources.push(...syntheses.sources);
   onboarding.conclusions.push(...userModel.conclusions);
-  const sections = contextEntries(store);
+  onboarding.conclusions.push(...syntheses.conclusions);
+  const projectionStore = permissionPurpose === "learning"
+    ? { ...store, thoughts: learningThoughtSelection(store) }
+    : store;
+  const sections = contextEntries(projectionStore, permissionPurpose);
   let prompt = renderPersonalPrompt(onboarding, sections);
   while (estimatePersonalContextTokens(prompt) > tokenLimit) {
     const removable = CONTEXT_REMOVAL_ORDER.find(key => sections[key].length);
@@ -456,11 +718,17 @@ export function personalContextProjection(store, {
     else break;
     prompt = renderPersonalPrompt(onboarding, sections);
   }
-  const sources = [
+  const sourceCandidates = [
     ...onboarding.sources,
-    ...Object.values(sections).flatMap(entries => entries.flatMap(entry => entry.sources))
+    ...Object.values(sections).flatMap(entries => entries.flatMap(entry => entry.sources)),
+    ...(permissionPurpose === "learning" ? learningReceiptSources(projectionStore) : [])
   ];
-  const receipt = receiptFor(prompt, sources, generatedAt, tokenLimit);
+  const sources = [...new Map(sourceCandidates.map(source => [source.id, source])).values()]
+    .map(source => ({
+      ...source,
+      permissionRevision: permissionRevisionFor(store, source)
+    }));
+  const receipt = receiptFor(prompt, sources, generatedAt, tokenLimit, permissionPurpose);
   return {
     prompt,
     receipt,
@@ -476,17 +744,46 @@ export function personalContextProjection(store, {
 export function diaryActivityContext(store, occurredOn) {
   const previousDate = shiftDateKey(occurredOn, -1);
   const describeDate = date => {
-    const checkins = store.checkins.filter(item => item.occurredOn === date).slice(0, 5).map(item => `状态：情绪${item.mood}/精力${item.energy}/压力状态${item.stress}/睡眠${item.sleep}${item.factors?.length ? `；因素：${item.factors.join("、")}` : ""}`);
-    const dailyRecords = store.dailyRecords.filter(item => item.occurredOn === date).slice(0, 8).map(describeDailyRecord);
-    const captures = store.captures.filter(item => item.occurredOn === date).slice(0, 8).map(item => `捕念：${item.content}`);
-    const journals = store.journals.filter(item => item.occurredOn === date).slice(0, 3).map(item => `日记${item.title ? `《${item.title}》` : ""}：${item.content}`);
-    const thoughts = store.thoughts.filter(item => item.type === "question" && item.occurredOn === date).slice(0, 8).map(item => `思绪：${item.content}`);
+    const checkins = list(store?.checkins).filter(item => (
+      item.occurredOn === date
+      && contextAllowed(store, item, sourceRef("checkin", item))
+    )).slice(0, 5).map(item => `状态：情绪${item.mood}/精力${item.energy}/压力状态${item.stress}/睡眠${item.sleep}${item.factors?.length ? `；因素：${item.factors.join("、")}` : ""}`);
+    const dailyRecords = list(store?.dailyRecords).filter(item => (
+      item.occurredOn === date
+      && contextAllowed(store, item, sourceRef("dailyRecord", item))
+    )).slice(0, 8).map(describeDailyRecord);
+    const captures = list(store?.captures).filter(item => (
+      item.occurredOn === date
+      && contextAllowed(store, item, sourceRef("capture", item))
+    )).slice(0, 8).map(item => `捕念：${item.content}`);
+    const journals = list(store?.journals).filter(item => (
+      item.occurredOn === date
+      && contextAllowed(store, item, sourceRef("journal", item))
+    )).slice(0, 3).map(item => `日记${item.title ? `《${item.title}》` : ""}：${item.content}`);
+    const thoughts = list(store?.thoughts).filter(item => (
+      item.type === "question"
+      && item.occurredOn === date
+      && contextAllowed(store, item, sourceRef("thought", item, {
+        rootId: item.id,
+        targetKey: `question:${item.id}`
+      }))
+    )).slice(0, 8).map(item => `思绪：${item.content}`);
     return [...checkins, ...dailyRecords, ...captures, ...journals, ...thoughts].join("\n") || "（暂无记录）";
   };
   const recent = [
-    ...store.captures.map(item => ({ date: item.occurredOn, text: `捕念：${item.content}` })),
-    ...store.journals.map(item => ({ date: item.occurredOn, text: `日记${item.title ? `《${item.title}》` : ""}：${item.content}` })),
-    ...store.thoughts.filter(item => item.type === "question").map(item => ({ date: item.occurredOn, text: `思绪：${item.content}` }))
+    ...list(store?.captures).filter(item => (
+      contextAllowed(store, item, sourceRef("capture", item))
+    )).map(item => ({ date: item.occurredOn, text: `捕念：${item.content}` })),
+    ...list(store?.journals).filter(item => (
+      contextAllowed(store, item, sourceRef("journal", item))
+    )).map(item => ({ date: item.occurredOn, text: `日记${item.title ? `《${item.title}》` : ""}：${item.content}` })),
+    ...list(store?.thoughts).filter(item => (
+      item.type === "question"
+      && contextAllowed(store, item, sourceRef("thought", item, {
+        rootId: item.id,
+        targetKey: `question:${item.id}`
+      }))
+    )).map(item => ({ date: item.occurredOn, text: `思绪：${item.content}` }))
   ].filter(item => item.date <= occurredOn).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 16).map(item => `${item.date} ${item.text}`).join("\n");
   return renderPrompt("context.diaryActivity", {
     selectedDate: occurredOn, todayRecords: describeDate(occurredOn), previousDate,
@@ -496,12 +793,26 @@ export function diaryActivityContext(store, occurredOn) {
 
 export function thoughtPromptContext(store, occurredOn) {
   const entries = [
-    ...store.captures.map(item => ({ date: item.occurredOn, time: item.occurredAt || item.createdAt, text: `捕念：${safeText(item.content, 500)}` })),
-    ...store.journals.map(item => ({ date: item.occurredOn, time: item.occurredAt || item.createdAt, text: `日记${item.title ? `《${safeText(item.title, 80)}》` : ""}：${safeText(item.content, 700)}` })),
-    ...store.thoughts.filter(item => item.type === "question").map(item => ({ date: item.occurredOn, time: item.occurredAt || item.createdAt, text: `曾经的问题：${safeText(item.content, 500)}` })),
-    ...store.chats.map(item => ({ date: item.occurredOn, time: item.occurredAt || item.createdAt, text: `长期对话中的提问：${safeText(item.message, 500)}` })),
-    ...store.checkins.map(item => ({ date: item.occurredOn, time: item.occurredAt || item.createdAt, text: `状态：情绪${item.mood}/精力${item.energy}/压力状态${item.stress}/睡眠${item.sleep}${item.factors?.length ? `；因素：${item.factors.map(value => safeText(value, 40)).join("、")}` : ""}` })),
-    ...store.dailyRecords.map(item => ({ date: item.occurredOn, time: item.occurredAt || item.createdAt, text: describeDailyRecord(item) }))
+    ...list(store?.captures).filter(item => (
+      contextAllowed(store, item, sourceRef("capture", item))
+    )).map(item => ({ date: item.occurredOn, time: item.occurredAt || item.createdAt, text: `捕念：${safeText(item.content, 500)}` })),
+    ...list(store?.journals).filter(item => (
+      contextAllowed(store, item, sourceRef("journal", item))
+    )).map(item => ({ date: item.occurredOn, time: item.occurredAt || item.createdAt, text: `日记${item.title ? `《${safeText(item.title, 80)}》` : ""}：${safeText(item.content, 700)}` })),
+    ...list(store?.thoughts).filter(item => (
+      item.type === "question"
+      && contextAllowed(store, item, sourceRef("thought", item, {
+        rootId: item.id,
+        targetKey: `question:${item.id}`
+      }))
+    )).map(item => ({ date: item.occurredOn, time: item.occurredAt || item.createdAt, text: `曾经的问题：${safeText(item.content, 500)}` })),
+    ...list(store?.chats).map(item => ({ date: item.occurredOn, time: item.occurredAt || item.createdAt, text: `长期对话中的提问：${safeText(item.message, 500)}` })),
+    ...list(store?.checkins).filter(item => (
+      contextAllowed(store, item, sourceRef("checkin", item))
+    )).map(item => ({ date: item.occurredOn, time: item.occurredAt || item.createdAt, text: `状态：情绪${item.mood}/精力${item.energy}/压力状态${item.stress}/睡眠${item.sleep}${item.factors?.length ? `；因素：${item.factors.map(value => safeText(value, 40)).join("、")}` : ""}` })),
+    ...list(store?.dailyRecords).filter(item => (
+      contextAllowed(store, item, sourceRef("dailyRecord", item))
+    )).map(item => ({ date: item.occurredOn, time: item.occurredAt || item.createdAt, text: describeDailyRecord(item) }))
   ].filter(item => item.date && item.date <= occurredOn).sort((a, b) => b.time.localeCompare(a.time)).slice(0, 12);
   return {
     hasHistory: entries.length > 0,

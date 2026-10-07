@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { readFile } from "node:fs/promises";
 import {
+  actionCompletionFeedback,
   actionPayload,
   assertActionsData,
   createActionsService,
@@ -70,6 +71,14 @@ const repository = {
 const run = (accountId, operation) => context.run(accountId, operation);
 const failNextCommit = accountId => failures.set(accountId, (failures.get(accountId) || 0) + 1);
 const snapshot = accountId => clone(accounts.get(accountId));
+
+assert.deepEqual(actionCompletionFeedback({ learningAllowed: true }), {
+  value: {
+    outcome: "unsure",
+    note: "",
+    learningAllowed: true
+  }
+});
 
 let idSequence = 0;
 let timeSequence = 0;
@@ -244,6 +253,11 @@ assert.deepEqual(snapshot("account-a"), beforeStaleAction);
 
 const completedAction = (await run("account-a", () => service.completeAction(
   createdAction.id,
+  {
+    outcome: "helpful",
+    note: "完成后更清楚下一步",
+    learningAllowed: true
+  },
   { expectedVersion: 2 }
 ))).value;
 assert.equal(completedAction.status, "done");
@@ -251,6 +265,13 @@ assert.equal(completedAction.version, 3);
 assert.equal(completedAction.completedAt, completedAction.updatedAt);
 assert.equal(completedAction.statusBeforeCompletion, "doing");
 assert.equal(completedAction.statusHistory.at(-1).reason, "complete");
+assert.deepEqual(completedAction.completionFeedback, {
+  outcome: "helpful",
+  note: "完成后更清楚下一步",
+  learningAllowed: true,
+  recordedAt: completedAction.completedAt
+});
+assert.deepEqual(completedAction.statusHistory.at(-1).feedback, completedAction.completionFeedback);
 const repeatedCompletion = await run("account-a", () => service.completeAction(
   createdAction.id,
   { expectedVersion: 3 }
@@ -269,6 +290,23 @@ assert.equal(reopenedAction.status, "doing");
 assert.equal(reopenedAction.completedAt, "");
 assert.equal(reopenedAction.version, 4);
 assert.equal(reopenedAction.statusHistory.at(-1).reason, "undoCompletion");
+assert.equal(reopenedAction.completionFeedback.learningAllowed, false);
+assert.equal(reopenedAction.statusHistory[1].feedback.learningAllowed, false);
+assert.equal(reopenedAction.completionFeedback.revokedAt, reopenedAction.updatedAt);
+accounts.get("account-a").actions.unshift({
+  ...completedAction,
+  id: "direct-status-reopen"
+});
+const directlyReopened = (await run("account-a", () => service.setActionStatus(
+  "direct-status-reopen",
+  "doing",
+  { expectedVersion: 3 }
+))).value;
+assert.equal(directlyReopened.completionFeedback.learningAllowed, false);
+assert.equal(directlyReopened.statusHistory[1].feedback.learningAllowed, false);
+accounts.get("account-a").actions = accounts.get("account-a").actions.filter(
+  item => item.id !== "direct-status-reopen"
+);
 const todoAction = (await run("account-a", () => service.setActionStatus(
   createdAction.id,
   "todo",
@@ -574,6 +612,20 @@ assert.deepEqual(buildUpdateActionCommand("action-1", { title: "更新" }, 3), {
 assert.deepEqual(buildCompleteActionCommand("action-1", 3), {
   type: "actions.complete",
   id: "action-1",
+  expectedVersion: 3
+});
+assert.deepEqual(buildCompleteActionCommand("action-1", {
+  outcome: "mixed",
+  note: " 有帮助但仍需调整 ",
+  learningAllowed: true
+}, 3), {
+  type: "actions.complete",
+  id: "action-1",
+  input: {
+    outcome: "mixed",
+    note: "有帮助但仍需调整",
+    learningAllowed: true
+  },
   expectedVersion: 3
 });
 assert.deepEqual(buildUndoActionCompletionCommand("action-1", 4), {

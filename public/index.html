@@ -977,7 +977,7 @@
         <div><p class="eyebrow">当前语境</p><h1>个人概要</h1></div>
         <div class="personal-context-heading-actions">
           <button class="quiet-button" id="onboarding-v2-reopen" type="button">回看五问</button>
-          <span class="context-readonly-badge">只读</span>
+          <span class="context-readonly-badge">可纠正</span>
         </div>
       </header>
       <p class="status" id="personal-context-status" role="status" aria-live="polite"></p>
@@ -993,6 +993,27 @@
           </div>
         </div>
         <div class="personal-context-summary" id="personal-context-summary"></div>
+      </section>
+      <section class="personal-context-section" aria-labelledby="personal-context-claims-title">
+        <div class="personal-context-section-heading">
+          <div><p class="eyebrow">由你决定</p><h2 id="personal-context-claims-title">长期理解</h2></div>
+        </div>
+        <div class="personal-context-governance-list" id="personal-context-claims"></div>
+      </section>
+      <section class="personal-context-section" aria-labelledby="personal-context-permissions-title">
+        <div class="personal-context-section-heading">
+          <div><p class="eyebrow">分别授权</p><h2 id="personal-context-permissions-title">来源许可</h2></div>
+        </div>
+        <div class="personal-context-governance-list" id="personal-context-permissions"></div>
+        <button class="quiet-button" id="personal-context-permissions-more" type="button" hidden>加载更多来源</button>
+      </section>
+      <section class="personal-context-section" aria-labelledby="personal-context-synthesis-title">
+        <div class="personal-context-section-heading">
+          <div><p class="eyebrow">由你发起</p><h2 id="personal-context-synthesis-title">周期回望</h2></div>
+          <button class="quiet-button" id="personal-context-run-synthesis" type="button">生成一次回望</button>
+        </div>
+        <p class="status" id="personal-context-synthesis-status" role="status" aria-live="polite"></p>
+        <div class="personal-context-governance-list" id="personal-context-syntheses"></div>
       </section>
       <details class="personal-context-sources">
         <summary><span>当前来源</span><small id="personal-context-source-count">0 条</small></summary>

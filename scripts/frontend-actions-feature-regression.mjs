@@ -1501,6 +1501,11 @@ function createController(coordinator, overrides = {}) {
     );
   }
   assert.deepEqual(calls.map(call => call.command.type), expected);
+  assert.deepEqual(calls[1].command.input, {
+    outcome: "unsure",
+    note: "",
+    learningAllowed: false
+  });
   assert.deepEqual(calls[3].command.input, { title: "新标题", priority: "P0" });
   assert.equal(calls[5].options.idempotencyKey, "controller-request-1");
   assert.deepEqual(calls[5].command.input, {

@@ -4,6 +4,12 @@ export const ACTION_PRIORITIES = Object.freeze(["none", "P0", "P1", "P2", "P3"])
 export const ACTION_STATUSES = Object.freeze(["todo", "doing", "done"]);
 export const HABIT_STATUSES = Object.freeze(["active", "paused"]);
 export const HABIT_CADENCES = Object.freeze(["daily", "weekly"]);
+export const ACTION_FEEDBACK_OUTCOMES = Object.freeze([
+  "helpful",
+  "mixed",
+  "unhelpful",
+  "unsure"
+]);
 
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 const isObject = value => Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -107,6 +113,32 @@ export function actionPayload(input, existing = null) {
       priority: priority.value,
       status: status.value,
       sourceRef: sourceRef.value
+    }
+  };
+}
+
+export function actionCompletionFeedback(input = {}) {
+  if (!isObject(input)) return { error: "行动反馈必须是对象" };
+  const hasFeedback = hasOwn(input, "outcome")
+    || hasOwn(input, "note")
+    || hasOwn(input, "learningAllowed");
+  if (!hasFeedback) return { value: null };
+  const outcome = enumValue(
+    input.outcome || "unsure",
+    ACTION_FEEDBACK_OUTCOMES,
+    "行动结果"
+  );
+  if (outcome.error) return outcome;
+  const note = normalizedText(input.note, {
+    field: "行动反馈",
+    max: 1000
+  });
+  if (note.error) return note;
+  return {
+    value: {
+      outcome: outcome.value,
+      note: note.value,
+      learningAllowed: input.learningAllowed === true
     }
   };
 }

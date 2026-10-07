@@ -328,6 +328,37 @@ try {
     status: "committed"
   });
 
+  const learningPermission = await request("/api/v1/user-model/evidence-permissions", {
+    method: "PATCH",
+    cookie: owner,
+    headers: { "if-match": "\"1\"" },
+    body: {
+      sourceRef: {
+        resourceType: "checkin",
+        resourceId: checkinId,
+        rootId: "",
+        targetKey: "",
+        version: 1
+      },
+      contextAllowed: true,
+      learningAllowed: true
+    }
+  });
+  assert.equal(learningPermission.response.status, 200);
+  assert.equal(learningPermission.body.data.permission.learningAllowed, true);
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const permissions = await request(
+      "/api/v1/user-model/evidence-permissions?limit=100",
+      { cookie: owner }
+    );
+    const checkinPermission = permissions.body.data.find(item => (
+      item.sourceRef.resourceType === "checkin"
+      && item.sourceRef.resourceId === checkinId
+    ));
+    if (["failed", "succeeded", "ready"].includes(checkinPermission?.learningStatus)) break;
+    await delay(25);
+  }
+
   const analysisBody = "{}";
   const analysisHeaders = {
     "content-type": "application/json",
@@ -753,7 +784,40 @@ try {
   })).response.status, 200);
   const restored = await request(`/api/v1/thought-chains/${firstId}`, { cookie: owner });
   assert.equal(restored.response.headers.get("etag"), "\"3\"");
-  assert.equal((await request("/api/v1/personal-context", { cookie: owner })).body.data.sources.some(source => source.resourceId === firstId), true);
+  assert.equal(
+    (await request("/api/v1/personal-context", { cookie: owner }))
+      .body.data.sources.some(source => source.resourceId === firstId),
+    false
+  );
+  const permissionPageAfterRestore = await request(
+    "/api/v1/user-model/evidence-permissions?limit=100",
+    { cookie: owner }
+  );
+  const restoredRootPermission = permissionPageAfterRestore.body.data.find(item => (
+    item.sourceRef.resourceType === "thought"
+    && item.sourceRef.resourceId === firstId
+    && item.sourceRef.targetKey === `question:${firstId}`
+  ));
+  assert.ok(restoredRootPermission);
+  const restoredPermission = await request("/api/v1/user-model/evidence-permissions", {
+    method: "PATCH",
+    cookie: owner,
+    headers: { "if-match": `"${restoredRootPermission.revision}"` },
+    body: {
+      sourceRef: restoredRootPermission.sourceRef,
+      contextAllowed: true,
+      learningAllowed: false
+    }
+  });
+  assert.equal(restoredPermission.response.status, 200, JSON.stringify({
+    request: restoredRootPermission,
+    response: restoredPermission.body
+  }));
+  assert.equal(
+    (await request("/api/v1/personal-context", { cookie: owner }))
+      .body.data.sources.some(source => source.resourceId === firstId),
+    true
+  );
 
   const undated = await request("/api/v1/thought-chains", {
     method: "POST", cookie: owner, headers: { "idempotency-key": "chain-with-server-time" }, body: { question: "由服务端填写时间" }

@@ -5,10 +5,20 @@ export const PERSONAL_CONTEXT_SELECTORS = Object.freeze({
   meta: "#personal-context-meta",
   disclosure: "#personal-context-disclosure",
   summary: "#personal-context-summary",
+  claims: "#personal-context-claims",
+  permissions: "#personal-context-permissions",
+  permissionsMore: "#personal-context-permissions-more",
+  syntheses: "#personal-context-syntheses",
+  synthesisStatus: "#personal-context-synthesis-status",
+  runSynthesis: "#personal-context-run-synthesis",
   sourceCount: "#personal-context-source-count",
   sourceList: "#personal-context-source-list",
   retry: '[data-content-action="retry-personal-context"]',
-  source: "[data-context-source]"
+  source: "[data-context-source]",
+  claimAction: "[data-claim-action]",
+  claimForm: "[data-claim-form]",
+  permissionToggle: "[data-permission-field]",
+  synthesisAction: "[data-synthesis-action]"
 });
 
 const query = (root, selector) => root.querySelector?.(selector) || null;
@@ -19,6 +29,97 @@ function sourceMarkup(source, options) {
     escapeMarkup: options.escapeMarkup,
     plainPreview: options.plainPreview
   });
+}
+
+const CLAIM_LIFECYCLE_LABELS = Object.freeze({
+  candidate: "待确认",
+  active: "正在使用",
+  disputed: "来源已变化",
+  stale: "来源已变化"
+});
+
+function claimMarkup(claim, escapeMarkup) {
+  const id = escapeMarkup(claim?.id || "");
+  const version = Number(claim?.version) || 1;
+  const lifecycle = claim?.lifecycle || "candidate";
+  const label = CLAIM_LIFECYCLE_LABELS[lifecycle] || lifecycle;
+  const editable = ["candidate", "active"].includes(lifecycle);
+  const primaryAction = lifecycle === "candidate" ? "confirm" : "revise";
+  const primaryLabel = lifecycle === "candidate" ? "确认采用" : "保存修正";
+  const secondaryAction = lifecycle === "candidate" ? "reject" : "retract";
+  const secondaryLabel = lifecycle === "candidate" ? "不用这条" : "撤回";
+  return `<article class="personal-context-governance-item" data-claim-id="${id}" data-claim-lifecycle="${
+    escapeMarkup(lifecycle)
+  }" data-claim-version="${version}"><header><span>${escapeMarkup(claim?.domainLabel || claim?.domain || "理解")}</span><b>${
+    escapeMarkup(label)
+  }</b></header>${editable
+    ? `<form data-claim-form="${id}" data-claim-primary-action="${primaryAction}"><label><span>理解内容</span><textarea name="statement" maxlength="1000" required>${escapeMarkup(
+      claim?.statement || ""
+    )}</textarea></label><label><span>适用范围</span><input name="scope" maxlength="500" value="${
+      escapeMarkup(claim?.scope || "")
+    }"></label><label><span>认识状态</span><select name="epistemic"><option value="known"${
+      claim?.epistemic === "known" ? " selected" : ""
+    }>我确认的事实</option><option value="hypothesis"${
+      claim?.epistemic === "hypothesis" ? " selected" : ""
+    }>待验证理解</option></select></label><label class="personal-context-toggle"><input name="contextAllowed" type="checkbox"${
+      claim?.contextAllowed === false ? "" : " checked"
+    }><span>用于后续回答</span></label><footer><button class="primary-button" type="submit" data-claim-action="${
+      primaryAction
+    }" data-version="${version}">${primaryLabel}</button><button class="subtle-action danger" type="button" data-claim-action="${
+      secondaryAction
+    }" data-version="${version}">${secondaryLabel}</button></footer><p class="status" data-claim-status role="status" aria-live="polite"></p></form>`
+    : `<p>${lifecycle === "disputed"
+      ? "对应原文已经变化，这条理解不会继续用于回答。"
+      : "对应原文已经变化，请重新整理后再确认。"
+    }</p>${["disputed", "stale"].includes(lifecycle)
+      ? `<button class="subtle-action danger" type="button" data-claim-action="${
+        lifecycle === "stale" ? "reject" : "retract"
+      }" data-version="${version}">${lifecycle === "stale" ? "不用这条" : "撤回"}</button>`
+      : ""
+    }<p class="status" data-claim-status role="status" aria-live="polite"></p>`
+  }</article>`;
+}
+
+function permissionMarkup(permission, index, escapeMarkup) {
+  const disabled = permission?.status !== "active";
+  const state = permission?.status === "deleted"
+    ? "记录在回收站中，恢复后仍保持关闭"
+    : permission?.status === "active"
+      ? permission?.learningStatus === "failed"
+        ? "学习更新失败，可重新关闭后再开启"
+        : "许可更改会立即使旧派生依据失效"
+      : "来源当前不可用";
+  return `<article class="personal-context-governance-item" data-permission-index="${index}"><header><span>${
+    escapeMarkup(permission?.recordType || "原始记录")
+  }</span><b>版本 ${Number(permission?.sourceRef?.version) || 1}</b></header><p>${
+    escapeMarkup(permission?.excerpt || state)
+  }</p><fieldset ${disabled ? "disabled" : ""}><legend>允许范围</legend><label class="personal-context-toggle"><input type="checkbox" data-permission-field="contextAllowed"${
+    permission?.contextAllowed ? " checked" : ""
+  }><span>用于后续回答</span></label><label class="personal-context-toggle"><input type="checkbox" data-permission-field="learningAllowed"${
+    permission?.learningAllowed ? " checked" : ""
+  }><span>允许形成或更新理解</span></label></fieldset><small>${escapeMarkup(state)}</small><p class="status" data-permission-status role="status" aria-live="polite"></p></article>`;
+}
+
+function synthesisMarkup(item, escapeMarkup, plainPreview, formatDate) {
+  const id = escapeMarkup(item?.id || "");
+  const version = Number(item?.version) || 1;
+  const status = item?.reviewStatus === "confirmed"
+    ? "已确认"
+    : item?.reviewStatus === "rejected"
+      ? "已拒绝"
+      : item?.reviewStatus === "stale"
+        ? "来源已变化"
+        : item?.reviewStatus === "candidate"
+          ? "待确认"
+          : "历史复盘";
+  const actions = item?.reviewStatus === "candidate"
+    ? `<footer><button class="quiet-button" type="button" data-synthesis-action="confirm" data-synthesis-id="${id}" data-version="${version}">确认已核对</button><button class="subtle-action danger" type="button" data-synthesis-action="reject" data-synthesis-id="${id}" data-version="${version}">拒绝</button></footer>`
+    : "";
+  return `<article class="personal-context-governance-item" data-synthesis-id="${id}"><header><time>${
+    escapeMarkup(formatDate(item?.createdAt))
+  }</time><b>${escapeMarkup(status)}</b></header><p>${escapeMarkup(
+    plainPreview(item?.content || "")
+  )}</p>${actions}<p class="status" data-synthesis-item-status role="status" aria-live="polite"></p></article>`;
 }
 
 export function renderPersonalContextSurface({
@@ -36,6 +137,11 @@ export function renderPersonalContextSurface({
   const status = query(root, PERSONAL_CONTEXT_SELECTORS.status);
   const meta = query(root, PERSONAL_CONTEXT_SELECTORS.meta);
   const disclosure = query(root, PERSONAL_CONTEXT_SELECTORS.disclosure);
+  const claims = query(root, PERSONAL_CONTEXT_SELECTORS.claims);
+  const permissions = query(root, PERSONAL_CONTEXT_SELECTORS.permissions);
+  const permissionsMore = query(root, PERSONAL_CONTEXT_SELECTORS.permissionsMore);
+  const syntheses = query(root, PERSONAL_CONTEXT_SELECTORS.syntheses);
+  const runSynthesis = query(root, PERSONAL_CONTEXT_SELECTORS.runSynthesis);
   const sourceCount = query(root, PERSONAL_CONTEXT_SELECTORS.sourceCount);
   const sourceList = query(root, PERSONAL_CONTEXT_SELECTORS.sourceList);
   const sources = Array.isArray(data?.sources) ? data.sources : [];
@@ -43,6 +149,11 @@ export function renderPersonalContextSurface({
   if (!data) {
     if (meta) meta.innerHTML = "";
     if (disclosure) disclosure.textContent = "";
+    if (claims) claims.innerHTML = "";
+    if (permissions) permissions.innerHTML = "";
+    if (permissionsMore) permissionsMore.hidden = true;
+    if (syntheses) syntheses.innerHTML = "";
+    if (runSynthesis) runSynthesis.disabled = loadState === "loading";
     if (sourceCount) sourceCount.textContent = "0 条";
     if (sourceList) sourceList.innerHTML = "";
     summary.innerHTML = loadState === "failure"
@@ -64,6 +175,14 @@ export function renderPersonalContextSurface({
   }
 
   const sourceById = new Map(sources.map(source => [source?.id, source]));
+  const userClaims = (Array.isArray(data?.userModel?.claims) ? data.userModel.claims : [])
+    .filter(claim => ["candidate", "active", "disputed", "stale"].includes(claim?.lifecycle));
+  const sourcePermissions = Array.isArray(data?.sourcePermissions)
+    ? data.sourcePermissions
+    : [];
+  const periodicSyntheses = Array.isArray(data?.periodicSyntheses)
+    ? data.periodicSyntheses
+    : [];
   const budget = data.tokenBudget;
   const windowLabel = data.timeWindow?.from
     ? `${data.timeWindow.from}${
@@ -106,6 +225,39 @@ export function renderPersonalContextSurface({
         action: { view: "captures", label: "留一条记录" }
       });
   }
+  if (claims) {
+    claims.innerHTML = userClaims.length
+      ? userClaims.map(claim => claimMarkup(claim, escapeMarkup)).join("")
+      : contentState({
+        title: "还没有待确认的长期理解",
+        body: "系统不会把自动整理直接当作关于你的事实。"
+      });
+  }
+  if (permissions) {
+    permissions.innerHTML = sourcePermissions.length
+      ? sourcePermissions.map((permission, index) => (
+        permissionMarkup(permission, index, escapeMarkup)
+      )).join("")
+      : contentState({
+        title: "还没有可单独设置的来源",
+        body: "新的念起、日记和思绪会默认允许用于回答，学习保持关闭。"
+      });
+  }
+  if (permissionsMore) {
+    permissionsMore.hidden = !data.sourcePermissionNextCursor;
+    permissionsMore.disabled = false;
+  }
+  if (syntheses) {
+    syntheses.innerHTML = periodicSyntheses.length
+      ? periodicSyntheses.map(item => (
+        synthesisMarkup(item, escapeMarkup, plainPreview, formatDate)
+      )).join("")
+      : contentState({
+        title: "还没有周期回望",
+        body: "需要时手动生成；系统不会在后台自动开启。"
+      });
+  }
+  if (runSynthesis) runSynthesis.disabled = false;
 
   const conclusions = Array.isArray(data.conclusions) ? data.conclusions : [];
   summary.innerHTML = conclusions.length
@@ -151,12 +303,27 @@ export function scrubPersonalContextSurface(root) {
   const meta = query(root, PERSONAL_CONTEXT_SELECTORS.meta);
   const disclosure = query(root, PERSONAL_CONTEXT_SELECTORS.disclosure);
   const summary = query(root, PERSONAL_CONTEXT_SELECTORS.summary);
+  const claims = query(root, PERSONAL_CONTEXT_SELECTORS.claims);
+  const permissions = query(root, PERSONAL_CONTEXT_SELECTORS.permissions);
+  const permissionsMore = query(root, PERSONAL_CONTEXT_SELECTORS.permissionsMore);
+  const syntheses = query(root, PERSONAL_CONTEXT_SELECTORS.syntheses);
+  const synthesisStatus = query(root, PERSONAL_CONTEXT_SELECTORS.synthesisStatus);
+  const runSynthesis = query(root, PERSONAL_CONTEXT_SELECTORS.runSynthesis);
   const sourceCount = query(root, PERSONAL_CONTEXT_SELECTORS.sourceCount);
   const sourceList = query(root, PERSONAL_CONTEXT_SELECTORS.sourceList);
   if (status) status.textContent = "";
   if (meta) meta.innerHTML = "";
   if (disclosure) disclosure.textContent = "";
   if (summary) summary.innerHTML = "";
+  if (claims) claims.innerHTML = "";
+  if (permissions) permissions.innerHTML = "";
+  if (permissionsMore) {
+    permissionsMore.hidden = true;
+    permissionsMore.disabled = false;
+  }
+  if (syntheses) syntheses.innerHTML = "";
+  if (synthesisStatus) synthesisStatus.textContent = "";
+  if (runSynthesis) runSynthesis.disabled = false;
   if (sourceCount) sourceCount.textContent = "0 条";
   if (sourceList) sourceList.innerHTML = "";
 }

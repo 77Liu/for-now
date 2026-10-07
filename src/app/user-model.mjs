@@ -2,7 +2,6 @@ import crypto from "node:crypto";
 import { onboardingV2ContextEntries } from "../modules/onboarding/index.mjs";
 import {
   CLAIM_EXTRACTION_MAX_CHARS,
-  normalizeUserClaims,
   projectUserModel
 } from "../modules/user-model/index.mjs";
 import { renderPrompt } from "../shared/prompts/index.mjs";
@@ -41,7 +40,10 @@ export function userModelEvidenceCurrent(store, evidence) {
   if (evidence?.sourceType !== "onboardingV2Answer") return false;
   const entry = onboardingV2ContextEntries(store?.onboardingV2)
     .find(item => item.id === evidence.sourceId);
-  if (!entry || entry.version !== evidence.sourceVersion || contentHash(entry.text) !== evidence.contentSha256) {
+  if (!entry
+    || entry.contextAllowed === false
+    || entry.version !== evidence.sourceVersion
+    || contentHash(entry.text) !== evidence.contentSha256) {
     return false;
   }
   const [start, end] = evidence.span || [];
@@ -49,7 +51,7 @@ export function userModelEvidenceCurrent(store, evidence) {
 }
 
 export function activeUserModelEntries(store) {
-  return normalizeUserClaims(store?.userClaims)
+  return projectUserModel(store, { isEvidenceCurrent: userModelEvidenceCurrent }).claims
     .filter(claim => claim.lifecycle === "active" && claim.contextAllowed !== false)
     .map(claim => ({
       ...claim,

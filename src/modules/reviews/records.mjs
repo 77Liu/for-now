@@ -41,10 +41,15 @@ export function reflectionEvidence({
   checkins = [],
   dailyRecords = [],
   captures = [],
-  journals = []
+  journals = [],
+  actions = [],
+  permissionPurpose = "context"
 } = {}) {
+  const learningOnly = permissionPurpose === "learning";
   const thoughtRoots = thoughts.filter(item => item.type === "question");
-  const reflectionData = thoughts.slice(0, 80).map(item => ({
+  const thoughtEvidence = thoughts.slice(0, 80).map(item => ({
+    id: safeText(item.id, 100),
+    version: recordVersion(item.version),
     type: item.type,
     content: item.content,
     tags: item.tags,
@@ -52,14 +57,65 @@ export function reflectionEvidence({
     modelDraft: item.modelDraft,
     relatedTo: item.relatedTo,
     followUps: (item.followUps || []).map(followUp => ({
+      id: safeText(followUp.id, 100),
+      version: recordVersion(followUp.version),
       question: followUp.question,
       answer: followUp.answer
     }))
-  })).filter(item => item.content);
+  })).filter(item => item.content || item.followUps.length);
+  const actionFeedback = actions.flatMap(action => {
+    const completions = (Array.isArray(action.statusHistory) ? action.statusHistory : [])
+      .filter(entry => (
+        entry?.to === "done"
+        && entry.feedback
+        && (
+          ["helpful", "mixed", "unhelpful", "unsure"].includes(entry.feedback.outcome)
+          || safeText(entry.feedback.note, 1000)
+        )
+        && (!learningOnly || entry.feedback.learningAllowed === true)
+      ))
+      .map(entry => ({
+        type: "actionFeedback",
+        actionId: safeText(action.id, 100),
+        title: safeText(action.title, 120),
+        completedAt: safeText(entry.changedAt || action.completedAt, 100),
+        outcome: ["helpful", "mixed", "unhelpful", "unsure"].includes(entry.feedback?.outcome)
+          ? entry.feedback.outcome
+          : "",
+        note: safeText(entry.feedback?.note, 1000),
+        learningAllowed: entry.feedback?.learningAllowed === true
+      }));
+    if (completions.length
+      || !action.completionFeedback
+      || (learningOnly && action.completionFeedback.learningAllowed !== true)) {
+      return completions;
+    }
+    return [{
+      type: "actionFeedback",
+      actionId: safeText(action.id, 100),
+      title: safeText(action.title, 120),
+      completedAt: safeText(action.completionFeedback.recordedAt || action.completedAt, 100),
+      outcome: ["helpful", "mixed", "unhelpful", "unsure"].includes(action.completionFeedback.outcome)
+        ? action.completionFeedback.outcome
+        : "",
+      note: safeText(action.completionFeedback.note, 1000),
+      learningAllowed: action.completionFeedback.learningAllowed === true
+    }];
+  });
+  const reflectionData = [
+    ...thoughtEvidence,
+    ...actionFeedback.slice(0, 40)
+  ];
   return {
-    evidenceCount: thoughtRoots.length + checkins.length + dailyRecords.length + captures.length + journals.length,
+    evidenceCount: thoughtEvidence.length
+      + checkins.length
+      + dailyRecords.length
+      + captures.length
+      + journals.length
+      + actionFeedback.length,
     evidenceLevel: thoughtRoots.length >= 3 ? "常规样本" : "冷启动低样本",
-    reflectionData
+    reflectionData,
+    actionFeedbackCount: actionFeedback.length
   };
 }
 
@@ -210,6 +266,9 @@ export function createReviewRecords({
       const value = {
         reason: input.reason,
         content: input.content,
+        reviewStatus: input.reviewStatus || "candidate",
+        reviewedAt: input.reviewedAt || "",
+        reviewDisposition: input.reviewDisposition || "",
         annotations: [],
         annotationDrift: [],
         ...(input.reasoningContent ? { reasoningContent: input.reasoningContent } : {}),
@@ -228,11 +287,43 @@ export function createReviewRecords({
       return createRecordInStore(document, "analyses", "analysis", {
         reason: input.reason,
         content: input.content,
+        reviewStatus: input.reviewStatus || "candidate",
+        reviewedAt: input.reviewedAt || "",
+        reviewDisposition: input.reviewDisposition || "",
         annotations: [],
         annotationDrift: [],
         ...(input.reasoningContent ? { reasoningContent: input.reasoningContent } : {}),
         ...(input.contextReceipt ? { contextReceipt: clone(input.contextReceipt) } : {})
       }, { clientRequestId, requestHash });
+    },
+
+    reviewAnalysis(id, input = {}, { expectedVersion } = {}) {
+      const decision = input?.decision;
+      if (!["confirm", "reject"].includes(decision)) {
+        return Promise.resolve({ error: "复盘确认操作无效" });
+      }
+      return repository.update((document, trash) => {
+        const data = readData({ ...document, trash: trash ?? document?.trash });
+        const index = data.analyses.findIndex(item => item.id === id);
+        if (index < 0) return { missing: true };
+        const current = data.analyses[index];
+        const version = recordVersion(current.version);
+        if (expectedVersion !== version) {
+          return { versionConflict: true, currentVersion: version };
+        }
+        if (["confirmed", "rejected"].includes(current.reviewStatus)) {
+          return { invalidState: true, currentStatus: current.reviewStatus };
+        }
+        const value = {
+          ...current,
+          reviewStatus: decision === "confirm" ? "confirmed" : "rejected",
+          reviewedAt: now(),
+          reviewDisposition: safeText(input.reason, 500),
+          version: version + 1
+        };
+        data.analyses[index] = value;
+        return { value: clone(value) };
+      });
     },
 
     async createExperiment(input, { clientRequestId = "" } = {}) {

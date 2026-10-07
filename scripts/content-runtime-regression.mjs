@@ -385,6 +385,23 @@ await scope.run("account-b", async () => {
   );
 });
 
+stores.get("account-a").analyses.unshift({
+  id: "stale-confirmed-synthesis",
+  reason: "manual",
+  content: "不得继续用于回答的旧综合",
+  reviewStatus: "confirmed",
+  reviewedAt: "2026-09-29T01:00:00.000Z",
+  reviewDisposition: "",
+  contextReceipt: {
+    version: "2026.10.02.2",
+    permissionPurpose: "learning",
+    promptSha256: "0".repeat(64),
+    tokenBudget: { limit: 20000 },
+    sources: []
+  },
+  createdAt: "2026-09-29T00:00:00.000Z",
+  version: 2
+});
 const publicContext = runtime.projectPersonalContext(
   stores.get("account-a")
 );
@@ -394,6 +411,8 @@ const ownerContext = runtime.projectPersonalContext(
 );
 assert.equal("tokenBudget" in publicContext.receipt, false);
 assert.equal("tokenBudget" in ownerContext.receipt, true);
+assert.equal(publicContext.overview.periodicSyntheses[0].reviewStatus, "stale");
+assert.doesNotMatch(publicContext.prompt, /不得继续用于回答的旧综合/);
 assert.ok(debugEvents.some(event => (
   event.body.hypothesisId === "C-E"
   && event.body.location === "src/app/content/background.mjs:requestCaptureTranscription"

@@ -35,6 +35,30 @@ export function createReviewsChatHttp({
       : v1.error(res, 404, missingMessage, missingCode);
   }
 
+  function mutationV1(res, v1, result) {
+    if (result?.missing) {
+      return v1.error(res, 404, "这次复盘不存在", "ANALYSIS_NOT_FOUND");
+    }
+    if (result?.versionConflict) {
+      return v1.error(
+        res,
+        412,
+        "复盘状态已变化，请重新读取后再提交",
+        "PRECONDITION_FAILED",
+        { currentVersion: result.currentVersion }
+      );
+    }
+    if (result?.invalidState) {
+      return v1.error(res, 409, "这份复盘已经处理", "ANALYSIS_STATE_CONFLICT", {
+        currentStatus: result.currentStatus
+      });
+    }
+    if (result?.error) return v1.error(res, 422, result.error, "ANALYSIS_REVIEW_INVALID");
+    return v1.success(res, 200, result.value, {
+      etag: v1.versionEtag(result.value.version)
+    });
+  }
+
   async function removeV1(res, v1, {
     collection,
     type,
@@ -135,6 +159,14 @@ export function createReviewsChatHttp({
         "这次复盘不存在",
         "ANALYSIS_NOT_FOUND"
       );
+    }
+    if (req.method === "PATCH" && /^\/api\/v1\/analyses\/[^/]+$/.test(url.pathname)) {
+      const result = await reviewRecords.reviewAnalysis(
+        url.pathname.split("/")[4],
+        await bodyJson(req),
+        { expectedVersion: v1.expectedVersion(req) }
+      );
+      return mutationV1(res, v1, result);
     }
     if (req.method === "DELETE" && /^\/api\/v1\/analyses\/[^/]+$/.test(url.pathname)) {
       return removeV1(res, v1, {

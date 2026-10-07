@@ -1,11 +1,18 @@
 import { errorMetadata } from "../../shared/observability/index.mjs";
 import { publicAiTask } from "../../modules/tasks/index.mjs";
 import { createCaptureJournalWorkflows } from "../capture-journal-workflows.mjs";
-import { personalContextProjection } from "../personal-context.mjs";
+import {
+  personalContextProjection,
+  personalContextReceiptMatches
+} from "../personal-context.mjs";
 import { withoutOwnerMetadata } from "../public-state.mjs";
 import { createReviewChatWorkflows } from "../review-chat-workflows.mjs";
 import { createThoughtWorkflows } from "../thought-workflows.mjs";
-import { createUserModelExtractionService } from "../user-model.mjs";
+import {
+  createUserModelExtractionService,
+  USER_MODEL_DOMAIN_LABELS,
+  userModelProjection
+} from "../user-model.mjs";
 
 export function createContentWorkflows({
   repository,
@@ -56,6 +63,7 @@ export function createContentWorkflows({
     generate: runDeepSeek,
     hash,
     contextKey: workflowContextKey,
+    getAccountId,
     currentTime
   });
 
@@ -69,7 +77,41 @@ export function createContentWorkflows({
     }),
     projectPersonalContext(store, { includeOwnerMetadata = false } = {}) {
       const projection = personalContextProjection(store, { generatedAt: now() });
-      return includeOwnerMetadata ? projection : withoutOwnerMetadata(projection);
+      const userModel = userModelProjection(store);
+      const governed = {
+        ...projection,
+        overview: {
+          ...projection.overview,
+          userModel: {
+            ...userModel,
+            claims: userModel.claims.map(claim => ({
+              ...claim,
+              domainLabel: USER_MODEL_DOMAIN_LABELS[claim.domain] || claim.domain
+            }))
+          },
+          periodicSyntheses: (Array.isArray(store?.analyses) ? store.analyses : [])
+            .filter(item => ["manual", "weekly-background"].includes(item?.reason))
+            .slice(0, 5)
+            .map(item => {
+              const stale = item.reviewStatus === "confirmed"
+                && (
+                  item.contextReceipt?.permissionPurpose !== "learning"
+                  || !personalContextReceiptMatches(store, item.contextReceipt)
+                );
+              return {
+                id: String(item.id || ""),
+                content: String(item.content || "").slice(0, 1200),
+                reason: item.reason,
+                reviewStatus: stale ? "stale" : item.reviewStatus || "legacy",
+                reviewedAt: item.reviewedAt || "",
+                reviewDisposition: item.reviewDisposition || "",
+                createdAt: item.createdAt || "",
+                version: Math.max(1, Math.round(Number(item.version) || 1))
+              };
+            })
+        }
+      };
+      return includeOwnerMetadata ? governed : withoutOwnerMetadata(governed);
     },
     async maybeRunPeriodicAnalysis() {
       try {

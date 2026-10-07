@@ -1,5 +1,6 @@
 export {
   createPersonalContextFeatureController,
+  EVIDENCE_PERMISSIONS_ENDPOINT,
   PERSONAL_CONTEXT_ENDPOINT
 } from "./controller.mjs";
 

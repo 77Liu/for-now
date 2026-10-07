@@ -52,6 +52,12 @@ function emptyStore() {
     experiments: [],
     analyses: [],
     customMetrics: [],
+    actions: [],
+    habits: [],
+    habitCheckins: [],
+    evidenceSources: [],
+    evidencePermissions: [],
+    perceptionEvents: [],
     trash: [],
     commercialization: { assumptions: { common: { usdCny: 7.2 } } },
     onboarding: {}
@@ -61,7 +67,8 @@ function emptyStore() {
 const stores = new Map([
   ["account-a", emptyStore()],
   ["account-b", emptyStore()],
-  ["account-empty", emptyStore()]
+  ["account-empty", emptyStore()],
+  ["account-denied", emptyStore()]
 ]);
 stores.get("account-a").thoughts = [0, 1, 2].map(index => ({
   id: `thought-${index}`,
@@ -74,6 +81,15 @@ stores.get("account-a").thoughts = [0, 1, 2].map(index => ({
   occurredOn: "2026-09-29",
   occurredAt: timestamp
 }));
+stores.get("account-a").evidencePermissions = stores.get("account-a").thoughts.map(item => ({
+  schemaVersion: 1,
+  accountId: "account-a",
+  sourceKey: JSON.stringify(["thought", item.id, item.id, `question:${item.id}`]),
+  contextAllowed: true,
+  learningAllowed: true,
+  revision: 1,
+  updatedAt: timestamp
+}));
 stores.get("account-a").chats = Array.from({ length: 13 }, (_, index) => ({
   id: `history-${index}`,
   createdAt: timestamp,
@@ -85,6 +101,61 @@ stores.get("account-a").chats = Array.from({ length: 13 }, (_, index) => ({
   annotationDrift: [],
   version: 1
 }));
+stores.get("account-a").actions = [
+  {
+    id: "action-feedback",
+    title: "完成最小验证",
+    status: "done",
+    completedAt: timestamp,
+    completionFeedback: {
+      outcome: "mixed",
+      note: "方案有效，但需要减少切换",
+      learningAllowed: true,
+      recordedAt: timestamp
+    },
+    statusHistory: [{
+      from: "doing",
+      to: "done",
+      reason: "complete",
+      changedAt: timestamp,
+      feedback: {
+        outcome: "mixed",
+        note: "方案有效，但需要减少切换",
+        learningAllowed: true,
+        recordedAt: timestamp
+      }
+    }],
+    version: 2
+  },
+  {
+    id: "action-without-feedback",
+    title: "只记录完成",
+    status: "done",
+    completedAt: timestamp,
+    statusHistory: [{
+      from: "doing",
+      to: "done",
+      reason: "complete",
+      changedAt: timestamp
+    }],
+    version: 2
+  }
+];
+stores.get("account-a").habits = [{
+  id: "habit-feedback",
+  title: "每日回望",
+  status: "active",
+  frequency: { cadence: "daily", target: 1 },
+  version: 1
+}];
+stores.get("account-a").habitCheckins = [{
+  id: "habit-checkin-feedback",
+  habitId: "habit-feedback",
+  occurredOn: "2026-09-29",
+  feeling: "更容易收尾",
+  adjustment: "下次提前十分钟",
+  version: 1
+}];
 stores.get("account-b").thoughts = [{
   id: "account-b-thought",
   type: "question",
@@ -96,11 +167,33 @@ stores.get("account-b").thoughts = [{
   occurredOn: "2026-09-29",
   occurredAt: timestamp
 }];
+stores.get("account-b").evidencePermissions = [{
+  schemaVersion: 1,
+  accountId: "account-b",
+  sourceKey: JSON.stringify([
+    "thought",
+    "account-b-thought",
+    "account-b-thought",
+    "question:account-b-thought"
+  ]),
+  contextAllowed: true,
+  learningAllowed: true,
+  revision: 1,
+  updatedAt: timestamp
+}];
 
 let failCommit = false;
 const fullRepository = {
   async read() {
     return structuredClone(stores.get(accountId()));
+  },
+  async update(mutate) {
+    const id = accountId();
+    const store = structuredClone(stores.get(id));
+    const result = await mutate(store);
+    if (failCommit) throw new Error("injected commit failure");
+    stores.set(id, store);
+    return structuredClone(result);
   }
 };
 const chatRepository = {
@@ -171,9 +264,33 @@ assert.deepEqual(customMetricPayload({ name: "专注" }).value, {
   high: "很高"
 });
 const evidence = reflectionEvidence(stores.get("account-a"));
-assert.equal(evidence.evidenceCount, 3);
+assert.equal(evidence.evidenceCount, 4);
 assert.equal(evidence.evidenceLevel, "常规样本");
 assert.equal(evidence.reflectionData[0].followUps[0].answer, "回答");
+assert.equal(evidence.actionFeedbackCount, 1);
+assert.ok(evidence.reflectionData.some(item => (
+  item.type === "actionFeedback"
+  && item.outcome === "mixed"
+  && item.note === "方案有效，但需要减少切换"
+)));
+assert.equal(evidence.reflectionData.some(item => (
+  item.type === "actionFeedback" && item.actionId === "action-without-feedback"
+)), false);
+assert.equal(evidence.reflectionData.some(item => item.type === "habitFeedback"), false);
+assert.equal(reflectionEvidence({
+  actions: [{
+    ...stores.get("account-a").actions[0],
+    completionFeedback: {
+      ...stores.get("account-a").actions[0].completionFeedback,
+      learningAllowed: false
+    },
+    statusHistory: stores.get("account-a").actions[0].statusHistory.map(entry => ({
+      ...entry,
+      feedback: { ...entry.feedback, learningAllowed: false }
+    }))
+  }],
+  permissionPurpose: "learning"
+}).actionFeedbackCount, 0);
 assert.equal(reflectionEvidence({
   thoughts: Array.from({ length: 90 }, (_, index) => ({ type: "record", content: String(index) }))
 }).reflectionData.length, 80);
@@ -182,11 +299,20 @@ const generationCalls = [];
 let releaseGeneration;
 const pauseGeneration = new Promise(resolve => { releaseGeneration = resolve; });
 let pauseNextChat = false;
+let pauseNextAnalysis = false;
+let releaseAnalysis = () => {};
+let analysisStarted = Promise.resolve();
+let markAnalysisStarted = () => {};
 const generate = async (prompt, options) => {
   generationCalls.push({ prompt, options });
   if (pauseNextChat && options.scene === "chat") {
     pauseNextChat = false;
     await pauseGeneration;
+  }
+  if (pauseNextAnalysis && options.scene === "analysis") {
+    pauseNextAnalysis = false;
+    markAnalysisStarted();
+    await new Promise(resolve => { releaseAnalysis = resolve; });
   }
   return options.scene === "chat"
     ? { content: "共参回答", reasoningContent: "共参思考" }
@@ -202,6 +328,136 @@ const workflows = createReviewChatWorkflows({
   currentTime: () => Date.parse("2026-09-29T08:00:00.000Z")
 });
 const eventTime = { occurredAt: timestamp, occurredOn: "2026-09-29" };
+
+stores.get("account-denied").thoughts = [{
+  id: "denied-thought",
+  type: "question",
+  content: "REVOKED_SYNTHESIS_SECRET",
+  authorType: "user",
+  version: 1
+}];
+stores.get("account-denied").evidencePermissions = [{
+  schemaVersion: 1,
+  accountId: "account-denied",
+  sourceKey: JSON.stringify([
+    "thought",
+    "denied-thought",
+    "denied-thought",
+    "question:denied-thought"
+  ]),
+  contextAllowed: true,
+  learningAllowed: false,
+  revision: 1,
+  updatedAt: timestamp
+}];
+stores.get("account-denied").actions = [{
+  id: "denied-action-feedback",
+  title: "不应自动学习的行动",
+  status: "done",
+  completionFeedback: {
+    outcome: "helpful",
+    note: "PRIVATE_ACTION_FEEDBACK",
+    learningAllowed: false,
+    recordedAt: timestamp
+  },
+  statusHistory: [{
+    from: "doing",
+    to: "done",
+    reason: "complete",
+    changedAt: timestamp,
+    feedback: {
+      outcome: "helpful",
+      note: "PRIVATE_ACTION_FEEDBACK",
+      learningAllowed: false,
+      recordedAt: timestamp
+    }
+  }],
+  version: 2
+}];
+const deniedCallsBefore = generationCalls.length;
+await assert.rejects(
+  run("account-denied", () => workflows.runAnalysis({
+    clientRequestId: "denied-analysis"
+  })),
+  /先留下一条状态、健康、捕念、日记或思绪记录/
+);
+assert.equal(generationCalls.length, deniedCallsBefore);
+assert.equal(generationCalls.some(call => call.prompt.includes("REVOKED_SYNTHESIS_SECRET")), false);
+stores.get("account-denied").actions[0].completionFeedback.learningAllowed = true;
+stores.get("account-denied").actions[0].statusHistory[0].feedback.learningAllowed = true;
+const feedbackAnalysis = await run("account-denied", () => workflows.runAnalysis({
+  clientRequestId: "allowed-feedback-analysis"
+}));
+assert.equal(generationCalls.length, deniedCallsBefore + 1);
+assert.match(generationCalls.at(-1).prompt, /PRIVATE_ACTION_FEEDBACK/);
+assert.doesNotMatch(generationCalls.at(-1).prompt, /REVOKED_SYNTHESIS_SECRET/);
+assert.ok(feedbackAnalysis.value.contextReceipt.sources.some(source => (
+  source.resourceType === "action"
+  && source.resourceId === "denied-action-feedback"
+)));
+stores.get("account-denied").thoughts[0].followUps = [{
+  id: "denied-follow-up",
+  question: "DENIED_FOLLOW_UP_QUESTION",
+  answer: "DENIED_FOLLOW_UP_ANSWER",
+  version: 1
+}];
+stores.get("account-denied").evidencePermissions[0].learningAllowed = true;
+stores.get("account-denied").evidencePermissions.push(
+  {
+    schemaVersion: 1,
+    accountId: "account-denied",
+    sourceKey: JSON.stringify([
+      "thought",
+      "denied-follow-up",
+      "denied-thought",
+      "followup-question:denied-follow-up"
+    ]),
+    contextAllowed: true,
+    learningAllowed: false,
+    revision: 1,
+    updatedAt: timestamp
+  },
+  {
+    schemaVersion: 1,
+    accountId: "account-denied",
+    sourceKey: JSON.stringify([
+      "thought",
+      "denied-follow-up",
+      "denied-thought",
+      "followup-answer:denied-follow-up"
+    ]),
+    contextAllowed: true,
+    learningAllowed: false,
+    revision: 1,
+    updatedAt: timestamp
+  }
+);
+await run("account-denied", () => workflows.runAnalysis({
+  clientRequestId: "nested-denied-analysis"
+}));
+assert.doesNotMatch(generationCalls.at(-1).prompt, /DENIED_FOLLOW_UP/);
+stores.get("account-denied").evidencePermissions[0].learningAllowed = false;
+stores.get("account-denied").evidencePermissions[2].learningAllowed = true;
+stores.get("account-denied").actions[0].completionFeedback.learningAllowed = false;
+stores.get("account-denied").actions[0].statusHistory[0].feedback.learningAllowed = false;
+await run("account-denied", () => workflows.runAnalysis({
+  clientRequestId: "answer-only-analysis"
+}));
+assert.doesNotMatch(generationCalls.at(-1).prompt, /DENIED_FOLLOW_UP_QUESTION/);
+assert.match(generationCalls.at(-1).prompt, /DENIED_FOLLOW_UP_ANSWER/);
+stores.get("account-denied").evidencePermissions[1].learningAllowed = true;
+const childOnlyAnalysis = await run("account-denied", () => workflows.runAnalysis({
+  clientRequestId: "child-only-analysis"
+}));
+assert.doesNotMatch(generationCalls.at(-1).prompt, /REVOKED_SYNTHESIS_SECRET/);
+assert.match(generationCalls.at(-1).prompt, /DENIED_FOLLOW_UP_QUESTION/);
+assert.match(generationCalls.at(-1).prompt, /DENIED_FOLLOW_UP_ANSWER/);
+assert.ok(childOnlyAnalysis.value.contextReceipt.sources.some(source => (
+  source.location?.targetKey === "followup-question:denied-follow-up"
+)));
+assert.ok(childOnlyAnalysis.value.contextReceipt.sources.some(source => (
+  source.location?.targetKey === "followup-answer:denied-follow-up"
+)));
 
 const legacyChat = await run("account-a", () => workflows.answerChat({
   message: "  请结合长期记录回答  ",
@@ -267,17 +523,58 @@ assert.equal(analysis.value.contextReceipt.version, "2026.10.02.2");
 assert.equal(analysis.value.version, 1);
 assert.equal(generationCalls.length, analysisCallsBefore + 1);
 assert.equal(generationCalls.at(-1).options.scene, "analysis");
+assert.match(generationCalls.at(-1).options.systemPrompt, /周期综合/);
 assert.equal(generationCalls.at(-1).options.captureReasoning, true);
 assert.equal(analysis.value.contextReceipt.promptSha256, generationCalls.at(-1).options.contextReceipt.promptSha256);
 assert.equal(analysis.value.contextReceipt.sources.some(source => Object.hasOwn(source, "excerpt")), false);
 assert.match(generationCalls.at(-1).prompt, /当前证据等级：常规样本/);
 assert.match(generationCalls.at(-1).prompt, /复盘证据 0/);
+assert.match(generationCalls.at(-1).prompt, /方案有效，但需要减少切换/);
+assert.doesNotMatch(generationCalls.at(-1).prompt, /更容易收尾/);
 assert.doesNotMatch(generationCalls.at(-1).prompt, /共参思考/);
+assert.equal(analysis.value.reviewStatus, "candidate");
+const confirmedAnalysis = await run("account-a", () => reviews.reviewAnalysis(
+  analysis.value.id,
+  { decision: "confirm", reason: "核对过来源" },
+  { expectedVersion: 1 }
+));
+assert.equal(confirmedAnalysis.value.reviewStatus, "confirmed");
+assert.equal(confirmedAnalysis.value.reviewDisposition, "核对过来源");
+assert.equal(confirmedAnalysis.value.version, 2);
+assert.deepEqual(await run("account-a", () => reviews.reviewAnalysis(
+  analysis.value.id,
+  { decision: "reject" },
+  { expectedVersion: 1 }
+)), { versionConflict: true, currentVersion: 2 });
 const repeatedAnalysis = await run("account-a", () => workflows.runAnalysis({
   clientRequestId: "analysis-request-1"
 }));
 assert.equal(repeatedAnalysis.duplicate, true);
 assert.equal(generationCalls.length, analysisCallsBefore + 1);
+pauseNextAnalysis = true;
+analysisStarted = new Promise(resolve => { markAnalysisStarted = resolve; });
+const staleAnalysis = run("account-a", () => workflows.runAnalysis({
+  clientRequestId: "analysis-permission-aba"
+}));
+await analysisStarted;
+stores.get("account-a").evidencePermissions[0].revision += 2;
+releaseAnalysis();
+await assert.rejects(
+  staleAnalysis,
+  error => error.code === "STALE_PERSONAL_CONTEXT"
+);
+pauseNextAnalysis = true;
+analysisStarted = new Promise(resolve => { markAnalysisStarted = resolve; });
+const abaAnalysis = run("account-a", () => workflows.runAnalysis({
+  clientRequestId: "analysis-source-aba"
+}));
+await analysisStarted;
+stores.get("account-a").thoughts[0].version = 3;
+releaseAnalysis();
+await assert.rejects(
+  abaAnalysis,
+  error => error.code === "STALE_PERSONAL_CONTEXT"
+);
 await assert.rejects(
   run("account-empty", () => workflows.runAnalysis()),
   /先留下一条状态、健康、捕念、日记或思绪记录/
@@ -290,6 +587,15 @@ stores.get("account-b").thoughts = Array.from({ length: 5 }, (_, index) => ({
   tags: [],
   followUps: [],
   authorType: "user"
+}));
+stores.get("account-b").evidencePermissions = stores.get("account-b").thoughts.map(item => ({
+  schemaVersion: 1,
+  accountId: "account-b",
+  sourceKey: JSON.stringify(["thought", item.id, item.id, `question:${item.id}`]),
+  contextAllowed: true,
+  learningAllowed: true,
+  revision: 1,
+  updatedAt: timestamp
 }));
 const periodic = await run("account-b", () => workflows.maybeRunPeriodicAnalysis());
 assert.equal(periodic.reason, "weekly-background");
@@ -351,7 +657,22 @@ durableStore.thoughts.push({
   followUps: [],
   authorType: "user",
   occurredOn: "2026-09-29",
-  occurredAt: timestamp
+  occurredAt: timestamp,
+  version: 1
+});
+durableStore.evidencePermissions.push({
+  schemaVersion: 1,
+  accountId: durableAccount,
+  sourceKey: JSON.stringify([
+    "thought",
+    "durable-evidence",
+    "durable-evidence",
+    "question:durable-evidence"
+  ]),
+  contextAllowed: true,
+  learningAllowed: true,
+  revision: 1,
+  updatedAt: timestamp
 });
 const durableStores = new Map([[durableAccount, durableStore]]);
 const durableLedgers = new Map();
@@ -467,6 +788,7 @@ const durableReviewRepository = {
 };
 const durableWorkflowRepository = {
   read: () => durableRepository.read(),
+  update: operation => durableRepository.update(operation),
   readIdempotent: request => durableRepository.readIdempotent(request)
 };
 const durableChats = createChatRecords({
@@ -903,6 +1225,24 @@ async function v1Request(account, method, pathname, { body = {}, headers = {} } 
   return { handled, status: res.status, body: res.body, headers: responseHeaders };
 }
 
+const pendingAnalysis = stores.get("account-a").analyses.find(item => (
+  item.reviewStatus === "candidate"
+));
+await assert.rejects(
+  v1Request("account-a", "PATCH", `/api/v1/analyses/${pendingAnalysis.id}`, {
+    body: { decision: "confirm" }
+  }),
+  error => error.code === "PRECONDITION_REQUIRED" && error.statusCode === 428
+);
+response = await v1Request("account-a", "PATCH", `/api/v1/analyses/${pendingAnalysis.id}`, {
+  headers: { "if-match": "\"1\"" },
+  body: { decision: "reject", reason: "来源不足" }
+});
+assert.equal(response.status, 200);
+assert.equal(response.body.data.reviewStatus, "rejected");
+assert.equal(response.body.data.reviewDisposition, "来源不足");
+assert.equal(response.headers.get("etag"), "\"2\"");
+
 response = await v1Request("account-a", "POST", "/api/v1/custom-metrics", {
   headers: { "idempotency-key": "metric-v1-1" },
   body: { name: "清晰度", low: "模糊", high: "清楚" }
@@ -1001,7 +1341,7 @@ const operationsFrom = paths => Object.entries(paths).flatMap(([route, pathItem]
     .map(([method, operation]) => ({ route, method, operation }))
 ));
 const fragmentOperations = operationsFrom(reviewsChatPaths);
-assert.equal(fragmentOperations.length, 17);
+assert.equal(fragmentOperations.length, 18);
 const operationIds = operationsFrom(assembledOpenApi.paths).map(({ route, method, operation }) => {
   assert.ok(operation.operationId, `Missing operationId for ${method.toUpperCase()} ${route}`);
   return operation.operationId;

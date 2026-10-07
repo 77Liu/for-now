@@ -102,6 +102,9 @@ function actionViewModel(action) {
     createdAt: action.createdAt || "",
     updatedAt: action.updatedAt || action.createdAt || "",
     completedAt: action.completedAt || "",
+    completionFeedback: action.completionFeedback
+      ? copy(action.completionFeedback)
+      : null,
     sync: action._sync ? copy(action._sync) : null,
     transitionCount: Array.isArray(action.statusHistory) ? action.statusHistory.length : 0,
     canComplete: status !== "done",
@@ -207,7 +210,13 @@ export function projectActionCommand(data = {}, pendingCommand = {}, sync = {}) 
       ...item,
       statusBeforeCompletion: item.status === "done" ? item.statusBeforeCompletion : item.status,
       status: "done",
-      completedAt: sync.createdAt || item.completedAt || ""
+      completedAt: sync.createdAt || item.completedAt || "",
+      ...(pendingCommand.input ? {
+        completionFeedback: {
+          ...copy(pendingCommand.input),
+          recordedAt: sync.createdAt || ""
+        }
+      } : {})
     }));
   } else if (pendingCommand.type === "actions.undoCompletion") {
     changed = update(value.actions, pendingCommand.id, item => ({
@@ -283,10 +292,21 @@ export const buildSetActionStatusCommand = (id, status, expectedVersion) => comm
   status: text(status)
 }, expectedVersion));
 
-export const buildCompleteActionCommand = (id, expectedVersion) => command(withVersion({
-  type: "actions.complete",
-  id: requiredId(id, "行动 ID")
-}, expectedVersion));
+export const buildCompleteActionCommand = (id, inputOrVersion, expectedVersion) => {
+  const input = inputOrVersion && typeof inputOrVersion === "object"
+    ? {
+        outcome: text(inputOrVersion.outcome) || "unsure",
+        note: text(inputOrVersion.note),
+        learningAllowed: inputOrVersion.learningAllowed === true
+      }
+    : null;
+  const version = input ? expectedVersion : inputOrVersion;
+  return command(withVersion({
+    type: "actions.complete",
+    id: requiredId(id, "行动 ID"),
+    ...(input ? { input } : {})
+  }, version));
+};
 
 export const buildUndoActionCompletionCommand = (id, expectedVersion) => command(withVersion({
   type: "actions.undoCompletion",
@@ -381,7 +401,11 @@ function actionCommandRequest(pendingCommand) {
     "actions.create": [ACTIONS_ENDPOINT, "POST", pendingCommand.input],
     "actions.update": [`${ACTIONS_ENDPOINT}/${id}`, "PATCH", pendingCommand.input],
     "actions.setStatus": [`${ACTIONS_ENDPOINT}/${id}`, "PATCH", { status: pendingCommand.status }],
-    "actions.complete": [`${ACTIONS_ENDPOINT}/${id}/complete`, "POST"],
+    "actions.complete": [
+      `${ACTIONS_ENDPOINT}/${id}/complete`,
+      "POST",
+      pendingCommand.input
+    ],
     "actions.undoCompletion": [`${ACTIONS_ENDPOINT}/${id}/reopen`, "POST"],
     "actions.delete": [`${ACTIONS_ENDPOINT}/${id}`, "DELETE"],
     "habits.create": [HABITS_ENDPOINT, "POST", pendingCommand.input],

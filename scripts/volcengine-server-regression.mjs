@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { once } from "node:events";
 import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import http from "node:http";
@@ -13,6 +12,7 @@ import sharp from "sharp";
 import { WebSocketServer } from "ws";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 const freePort = () => new Promise((resolve, reject) => {
   const server = net.createServer();
   server.once("error", reject);
@@ -38,6 +38,31 @@ const bodyOf = async request => {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
   return Buffer.concat(chunks).toString("utf8");
+};
+const waitForChildExit = (child, timeoutMs) => {
+  if (child.exitCode != null || child.signalCode) return Promise.resolve(true);
+  return new Promise(resolve => {
+    const onExit = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      child.off("exit", onExit);
+      resolve(false);
+    }, timeoutMs);
+    child.once("exit", onExit);
+  });
+};
+const stopChild = async child => {
+  if (child.exitCode != null || child.signalCode) return;
+  child.kill("SIGTERM");
+  if (!await waitForChildExit(child, 1000)) {
+    child.kill("SIGKILL");
+    await waitForChildExit(child, 1000);
+  }
+  child.stdout?.destroy();
+  child.stderr?.destroy();
+  child.unref();
 };
 
 const providerCalls = [];
@@ -128,6 +153,7 @@ const app = spawn(process.execPath, ["server.mjs"], {
   },
   stdio: ["ignore", "pipe", "pipe"]
 });
+app.stdout.resume();
 let stderr = "";
 app.stderr.on("data", chunk => { stderr += chunk; });
 const base = `http://127.0.0.1:${appPort}`;
@@ -650,57 +676,28 @@ try {
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
+  oldCatalogApp.stdout.resume();
   let oldCatalogStderr = "";
   oldCatalogApp.stderr.on("data", chunk => { oldCatalogStderr += chunk; });
   const oldCatalogBase = `http://127.0.0.1:${oldCatalogPort}`;
   try {
+    let oldCatalogReady = false;
     for (let attempt = 0; attempt < 100; attempt += 1) {
-      if (await fetch(`${oldCatalogBase}/readyz`).then(response => response.ok).catch(() => false)) break;
-      if (attempt === 99) throw new Error(`旧 prompt catalog 服务未就绪\n${oldCatalogStderr}`);
-      await new Promise(resolve => setTimeout(resolve, 30));
+      oldCatalogReady = await fetch(`${oldCatalogBase}/readyz`)
+        .then(response => response.ok)
+        .catch(() => false);
+      if (oldCatalogReady || oldCatalogApp.exitCode != null) break;
+      await delay(30);
     }
-    const oldStateResponse = await fetch(`${oldCatalogBase}/api/state`);
-    assert.equal(oldStateResponse.status, 200, oldCatalogStderr);
-    const oldState = await oldStateResponse.json();
-    assert.equal(oldState.speech.assets.some(asset => asset.sourceType === "thoughtAnswer"), false);
-
-    const callsBeforeOldCatalogSpeech = providerCalls.filter(call => call.pathname === "/tts").length;
-    const oldCaptureSpeech = await fetch(`${oldCatalogBase}/api/speech/synthesize`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        sourceType: "capture",
-        sourceId: "old-catalog-capture",
-        sourceVersion: 1
-      })
-    });
-    assert.equal(oldCaptureSpeech.status, 200, oldCatalogStderr);
-    await oldCaptureSpeech.arrayBuffer();
-    assert.equal(providerCalls.filter(call => call.pathname === "/tts").length, callsBeforeOldCatalogSpeech + 1);
-
-    const unavailableThoughtSpeech = await fetch(`${oldCatalogBase}/api/speech/synthesize`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        sourceType: "thoughtAnswer",
-        sourceId: "old-catalog-answer",
-        sourceVersion: 1
-      })
-    });
-    assert.equal(unavailableThoughtSpeech.status, 503);
-    assert.equal((await unavailableThoughtSpeech.json()).code, "SPEECH_PROMPT_UNAVAILABLE");
-    assert.equal(providerCalls.filter(call => call.pathname === "/tts").length, callsBeforeOldCatalogSpeech + 1);
-    const oldStateAfterCapture = await (await fetch(`${oldCatalogBase}/api/state`)).json();
-    assert.ok(oldStateAfterCapture.speech.assets.some(asset => asset.sourceType === "capture"));
-    assert.equal(oldStateAfterCapture.speech.assets.some(asset => asset.sourceType === "thoughtAnswer"), false);
+    assert.equal(oldCatalogReady, false);
+    assert.notEqual(oldCatalogApp.exitCode, null);
+    assert.match(oldCatalogStderr, /Prompt catalog capability is unavailable: structuredWorkingContext/);
   } finally {
-    oldCatalogApp.kill("SIGTERM");
-    await once(oldCatalogApp, "exit").catch(() => {});
+    await stopChild(oldCatalogApp);
     await fs.rm(oldCatalogDataDir, { recursive: true, force: true });
   }
 } finally {
-  app.kill("SIGTERM");
-  await once(app, "exit").catch(() => {});
+  await stopChild(app);
   await new Promise(resolve => websocket.close(() => resolve()));
   await new Promise(resolve => websocketServer.close(() => resolve()));
   await new Promise(resolve => provider.close(() => resolve()));

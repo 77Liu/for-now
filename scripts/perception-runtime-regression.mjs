@@ -79,6 +79,30 @@ const perceptionRuntime = createPerceptionRuntime({
   now,
   hash
 });
+const healthProjectionStore = createEmptyStore();
+healthProjectionStore.checkins.push({
+  id: "checkin-permission",
+  mood: 3,
+  energy: 3,
+  stress: 3,
+  sleep: 3,
+  occurredAt: "2026-10-07T07:00:00.000Z",
+  createdAt: "2026-10-07T07:00:00.000Z",
+  version: 1
+});
+healthProjectionStore.dailyRecords.push({
+  id: "daily-permission",
+  type: "weight",
+  measuredWeight: 70,
+  occurredAt: "2026-10-07T07:00:00.000Z",
+  createdAt: "2026-10-07T07:00:00.000Z",
+  version: 1
+});
+assert.deepEqual(
+  perceptionRuntime.projectPermissions(healthProjectionStore)
+    .map(item => [item.sourceRef.resourceType, item.revision]),
+  [["checkin", 0], ["dailyRecord", 0]]
+);
 let backgroundAi;
 const repository = createPerceptionAwareRepository({
   repository: baseRepository,
@@ -142,6 +166,51 @@ assert.equal(store.evidencePermissions[0].contextAllowed, true);
 assert.equal(store.evidencePermissions[0].learningAllowed, false);
 assert.equal(store.aiTasks.length, 0);
 assert.equal(scheduled.length, 0);
+assert.deepEqual(
+  perceptionRuntime.projectPermissions(store).map(item => ({
+    resourceId: item.sourceRef.resourceId,
+    status: item.status,
+    contextAllowed: item.contextAllowed,
+    learningAllowed: item.learningAllowed,
+    revision: item.revision
+  })),
+  [{
+    resourceId: "capture-a",
+    status: "active",
+    contextAllowed: true,
+    learningAllowed: false,
+    revision: 1
+  }]
+);
+store.thoughts.push({
+  id: "ai-answer",
+  relatedTo: "missing-root",
+  type: "answer",
+  authorType: "ai",
+  origin: "deepseek",
+  content: "不得重新学习的模型回答",
+  version: 1
+});
+const rejectedAiPermission = await perception.updatePermissions({
+  sourceRef: {
+    resourceType: "thought",
+    resourceId: "ai-answer",
+    rootId: "missing-root",
+    targetKey: "answer:ai-answer",
+    version: 1
+  },
+  contextAllowed: true,
+  learningAllowed: true,
+  expectedRevision: 0
+});
+assert.deepEqual(rejectedAiPermission, {
+  skipped: true,
+  reason: "SOURCE_NOT_ELIGIBLE",
+  taskIds: []
+});
+assert.equal(store.evidencePermissions.some(item => item.sourceKey.includes("ai-answer")), false);
+assert.equal(store.aiTasks.length, 0);
+store.thoughts.length = 0;
 
 const enabled = await perception.observe({
   sourceRef: sourceRef("capture-a", 1),
@@ -157,6 +226,39 @@ assert.equal(enabled.event.occurredAt, "2026-10-07T07:00:00.000Z");
 assert.equal(store.aiTasks.length, 1);
 assert.equal(store.notifications.length, 0);
 assert.equal(scheduled.length, 1);
+assert.equal(
+  perceptionRuntime.prepare(store, {
+    ...enabled.task,
+    payload: Object.fromEntries(Object.entries(enabled.task.payload).reverse())
+  }).inputHash,
+  perceptionRuntime.prepare(store, enabled.task).inputHash,
+  "perception task hashes must survive JSONB key reordering"
+);
+const legacyPayload = {
+  accountId: enabled.task.payload.accountId,
+  sourceRef: {
+    resourceType: enabled.task.payload.sourceRef.resourceType,
+    resourceId: enabled.task.payload.sourceRef.resourceId,
+    rootId: enabled.task.payload.sourceRef.rootId,
+    targetKey: enabled.task.payload.sourceRef.targetKey,
+    version: enabled.task.payload.sourceRef.version
+  },
+  perceptionEventId: enabled.task.payload.perceptionEventId,
+  eventId: enabled.task.payload.eventId,
+  contentSha256: enabled.task.payload.contentSha256,
+  permissionRevision: enabled.task.payload.permissionRevision,
+  perceptionVersion: enabled.task.payload.perceptionVersion
+};
+const legacyTask = {
+  ...enabled.task,
+  inputHash: hash(JSON.stringify(legacyPayload)),
+  payload: Object.fromEntries(Object.entries(legacyPayload).reverse())
+};
+assert.equal(
+  perceptionRuntime.prepare(store, legacyTask).inputHash,
+  legacyTask.inputHash,
+  "queued tasks written with the pre-canonical hash must remain resumable"
+);
 assert.deepEqual(await backgroundAi.enqueue({
   kind: " perceptionExtraction ",
   resourceType: "capture",
@@ -182,6 +284,51 @@ assert.equal(modelWork[0].json, true);
 assert.match(modelWork[0].prompt, /perceptionExtraction/);
 assert.equal((await backgroundAi.list()).items.length, 0);
 assert.equal(store.notifications.length, 0);
+
+const permissionConflict = await perception.updatePermissions({
+  sourceRef: sourceRef("capture-a", 1),
+  contextAllowed: false,
+  learningAllowed: false,
+  expectedRevision: 1
+});
+assert.deepEqual(permissionConflict, { versionConflict: true, currentRevision: 2 });
+assert.equal(store.evidencePermissions[0].contextAllowed, true);
+assert.equal(store.evidencePermissions[0].learningAllowed, true);
+const scheduledBeforeRevocation = scheduled.length;
+const revoked = await perception.updatePermissions({
+  sourceRef: sourceRef("capture-a", 1),
+  contextAllowed: false,
+  learningAllowed: false,
+  expectedRevision: 2
+});
+assert.equal(revoked.permission.revision, 3);
+assert.equal(revoked.permission.contextAllowed, false);
+assert.equal(revoked.permission.learningAllowed, false);
+assert.equal(revoked.event.kind, "permission_changed");
+assert.equal(scheduled.length, scheduledBeforeRevocation);
+assert.equal(perceptionRuntime.projectPermissions(store)[0].contextAllowed, false);
+const unchangedRevocation = await perception.updatePermissions({
+  sourceRef: sourceRef("capture-a", 1),
+  contextAllowed: false,
+  learningAllowed: false,
+  expectedRevision: 3
+});
+assert.equal(unchangedRevocation.unchanged, true);
+assert.equal(store.evidencePermissions[0].revision, 3);
+const reenabled = await perception.updatePermissions({
+  sourceRef: sourceRef("capture-a", 1),
+  contextAllowed: true,
+  learningAllowed: true,
+  expectedRevision: 3
+});
+assert.equal(reenabled.permission.revision, 4);
+assert.equal(reenabled.reason, "SOURCE_CONTENT_REUSED");
+assert.deepEqual(reenabled.taskIds, []);
+assert.ok(store.evidenceSources.some(item => (
+  item.sourceRef.resourceId === "capture-a"
+  && item.sourceRef.version === 1
+  && item.permissionRevision === 4
+)));
 
 await repository.update(document => {
   const capture = document.captures[0];
@@ -724,6 +871,39 @@ assert.ok(
   `10,000-source unchanged scan took ${scanDurationMs.toFixed(1)} ms`
 );
 assert.equal(performanceStore.perceptionEvents.length, 0);
+assert.equal(
+  createPerceptionRuntime({
+    getAccountId: () => "performance"
+  }).projectPermissions(performanceStore).length,
+  10_000,
+  "permission governance must not silently truncate older sources"
+);
+const performancePermissionRuntime = createPerceptionRuntime({
+  getAccountId: () => "performance"
+});
+const performancePermissionService = createPerceptionService({
+  repository: {
+    read: async () => performanceStore,
+    update: async operation => operation(performanceStore)
+  },
+  runtime: performancePermissionRuntime,
+  backgroundAi: {
+    createInStore: () => null,
+    schedule: () => {}
+  }
+});
+const firstPermissionPage = await performancePermissionService.listPermissions({
+  limit: 100
+});
+assert.equal(firstPermissionPage.items.length, 100);
+assert.equal(firstPermissionPage.total, 10_000);
+assert.ok(firstPermissionPage.nextId);
+const secondPermissionPage = await performancePermissionService.listPermissions({
+  afterId: firstPermissionPage.nextId,
+  limit: 100
+});
+assert.equal(secondPermissionPage.items.length, 100);
+assert.notEqual(secondPermissionPage.items[0].sourceKey, firstPermissionPage.items[0].sourceKey);
 
 console.log(
   `Perception runtime checks passed: transactional source events, explicit learning permission, internal task isolation, stale-result rejection, retry recovery, account fail-closed behavior, and a 10,000-source scan in ${scanDurationMs.toFixed(1)} ms.`

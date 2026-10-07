@@ -47,8 +47,11 @@ export function createActionsHttp({ actions, remove, bodyJson }) {
     }
     if (req.method === "POST" && /^\/api\/v1\/actions\/[^/]+\/(?:complete|reopen)$/.test(url.pathname)) {
       const parts = url.pathname.split("/");
-      const operation = parts[5] === "complete" ? actions.completeAction : actions.undoActionCompletion;
-      return sendResult(res, v1, await operation(parts[4], { expectedVersion: v1.expectedVersion(req) }));
+      const expectedVersion = v1.expectedVersion(req);
+      const result = parts[5] === "complete"
+        ? await actions.completeAction(parts[4], await bodyJson(req), { expectedVersion })
+        : await actions.undoActionCompletion(parts[4], { expectedVersion });
+      return sendResult(res, v1, result);
     }
     if (req.method === "DELETE" && /^\/api\/v1\/actions\/[^/]+$/.test(url.pathname)) {
       return sendResult(res, v1, await remove("action", url.pathname.split("/")[4], v1.expectedVersion(req)));

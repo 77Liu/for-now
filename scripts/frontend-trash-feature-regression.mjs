@@ -488,7 +488,7 @@ await assertStaleResponseRejected("generation", harness => {
   restoreGate.resolve({ restored: true });
   await waitFor(() => harness.toasts.length === 1, "restore did not finish");
   assert.deepEqual(harness.refreshes, [TRASH_RESTORE_DOMAINS]);
-  assert.deepEqual(harness.toasts[0], ["记录已完整恢复"]);
+  assert.deepEqual(harness.toasts[0], ["记录已恢复；用于回答和学习的许可仍保持关闭"]);
   assert.equal(listReads, 2);
   assert.match(root.list.innerHTML, /回收站是空的/);
   harness.controller.unmount();

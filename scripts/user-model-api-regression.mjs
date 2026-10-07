@@ -88,8 +88,50 @@ const sendJson = (res, status, value) => {
   res.headersSent = true;
   return value;
 };
+const permissionWrites = [];
 const http = createUserModelHttp({
   userModel,
+  permissions: {
+    async listPermissions({ afterId, limit }) {
+      assert.equal(afterId, "");
+      assert.equal(limit, 50);
+      return {
+        items: [{
+          sourceKey: JSON.stringify(["capture", "capture-a", "", ""]),
+          sourceRef: {
+            resourceType: "capture",
+            resourceId: "capture-a",
+            rootId: "",
+            targetKey: "",
+            version: 1
+          },
+          contextAllowed: true,
+          learningAllowed: false,
+          revision: 1
+        }],
+        nextId: "",
+        total: 1
+      };
+    },
+    async updatePermissions(input) {
+      permissionWrites.push(structuredClone(input));
+      if (input.expectedRevision === 9) {
+        return { versionConflict: true, currentRevision: 2 };
+      }
+      return {
+        permission: {
+          schemaVersion: 1,
+          accountId: context.getStore().accountId,
+          sourceKey: JSON.stringify(["capture", "capture-a", "", ""]),
+          contextAllowed: input.contextAllowed,
+          learningAllowed: input.learningAllowed,
+          revision: input.expectedRevision + 1,
+          updatedAt: "2026-10-02T03:00:00.000Z"
+        },
+        taskIds: input.learningAllowed ? ["internal-task"] : []
+      };
+    }
+  },
   bodyJson: async req => req.body || {}
 });
 const api = createApiV1Http({
@@ -124,6 +166,67 @@ assert.equal(response.body.meta.traceId, "trace-account-a");
 response = await request("account-b", "GET", "/api/v1/user-model");
 assert.equal(response.status, 200);
 assert.deepEqual(response.body.data.claims, []);
+response = await request(
+  "account-a",
+  "GET",
+  "/api/v1/user-model/evidence-permissions?limit=50"
+);
+assert.equal(response.status, 200);
+assert.equal(response.body.data.length, 1);
+assert.equal(response.body.meta.total, 1);
+assert.equal(response.body.meta.nextCursor, null);
+
+await assert.rejects(
+  request("account-a", "PATCH", "/api/v1/user-model/evidence-permissions", {
+    body: {
+      sourceRef: {
+        resourceType: "capture",
+        resourceId: "capture-a",
+        rootId: "",
+        targetKey: "",
+        version: 1
+      },
+      contextAllowed: false,
+      learningAllowed: false
+    }
+  }),
+  error => error.code === "PRECONDITION_REQUIRED" && error.statusCode === 428
+);
+response = await request("account-a", "PATCH", "/api/v1/user-model/evidence-permissions", {
+  headers: { "if-match": "\"0\"" },
+  body: {
+    sourceRef: {
+      resourceType: "capture",
+      resourceId: "capture-a",
+      rootId: "",
+      targetKey: "",
+      version: 1
+    },
+    contextAllowed: false,
+    learningAllowed: false
+  }
+});
+assert.equal(response.status, 200);
+assert.equal(response.body.data.permission.revision, 1);
+assert.equal(response.body.data.learningRefreshQueued, false);
+assert.equal(response.headers.get("etag"), "\"1\"");
+assert.equal(permissionWrites[0].expectedRevision, 0);
+response = await request("account-a", "PATCH", "/api/v1/user-model/evidence-permissions", {
+  headers: { "if-match": "\"9\"" },
+  body: {
+    sourceRef: {
+      resourceType: "capture",
+      resourceId: "capture-a",
+      rootId: "",
+      targetKey: "",
+      version: 1
+    },
+    contextAllowed: true,
+    learningAllowed: true
+  }
+});
+assert.equal(response.status, 412);
+assert.equal(response.body.error.details.currentVersion, 2);
 
 await assert.rejects(
   request("account-a", "PATCH", "/api/v1/user-model/claims/claim-a", {
@@ -189,6 +292,7 @@ assert.equal(response.body.error.code, "CLAIM_ACTION_INVALID");
 
 assert.strictEqual(openApiV1.paths["/user-model"], userModelOpenApiFragment.paths["/user-model"]);
 assert.ok(openApiV1.paths["/user-model/claims/{id}"]);
+assert.ok(openApiV1.paths["/user-model/evidence-permissions"]);
 assert.ok(openApiV1.components.schemas.UserClaim);
 assert.equal(
   openApiV1.paths["/user-model/claims/{id}"].patch.parameters.some(parameter => (

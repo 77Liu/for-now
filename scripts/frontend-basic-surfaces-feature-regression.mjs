@@ -8,6 +8,7 @@ import {
   syncHealthPresentation
 } from "../public/frontend/features/mine-shell/index.mjs";
 import {
+  EVIDENCE_PERMISSIONS_ENDPOINT,
   PERSONAL_CONTEXT_ENDPOINT,
   PERSONAL_CONTEXT_SELECTORS,
   createPersonalContextFeatureController,
@@ -37,6 +38,7 @@ async function waitFor(predicate, message) {
 class FakeNode {
   constructor(root, dataset = {}) {
     this.root = root;
+    this.id = dataset.id || "";
     this.dataset = { ...dataset };
     this.hidden = false;
     this.href = "";
@@ -69,7 +71,12 @@ class FakeNode {
     if (name === "href") this.href = "";
   }
 
+  setAttribute(name, value) {
+    this[name] = String(value);
+  }
+
   closest(selector) {
+    if (selector.startsWith("#") && this.id === selector.slice(1)) return this;
     if (
       selector === PERSONAL_CONTEXT_SELECTORS.retry
       && this.dataset.contentAction === "retry-personal-context"
@@ -82,12 +89,28 @@ class FakeNode {
     ) {
       return this;
     }
+    if (
+      selector === PERSONAL_CONTEXT_SELECTORS.claimAction
+      && Object.hasOwn(this.dataset, "claimAction")
+    ) {
+      return this;
+    }
+    if (
+      selector === PERSONAL_CONTEXT_SELECTORS.permissionToggle
+      && Object.hasOwn(this.dataset, "permissionField")
+    ) {
+      return this;
+    }
     if (selector === "[data-chain-id]") return this.chain || null;
     return null;
   }
 
   querySelector(selector) {
     return this.children.get(selector) || null;
+  }
+
+  querySelectorAll() {
+    return [];
   }
 
   scrollIntoView(options) {
@@ -97,7 +120,11 @@ class FakeNode {
 
 class FakeRoot {
   constructor(selectors = []) {
-    this.nodes = new Map(selectors.map(selector => [selector, new FakeNode(this)]));
+    this.nodes = new Map(selectors.map(selector => {
+      const node = new FakeNode(this);
+      if (selector.startsWith("#")) node.id = selector.slice(1);
+      return [selector, node];
+    }));
     this.listeners = new Map();
     this.writes = 0;
     this.queries = 0;
@@ -164,6 +191,12 @@ const personalContextSelectors = [
   PERSONAL_CONTEXT_SELECTORS.meta,
   PERSONAL_CONTEXT_SELECTORS.disclosure,
   PERSONAL_CONTEXT_SELECTORS.summary,
+  PERSONAL_CONTEXT_SELECTORS.claims,
+  PERSONAL_CONTEXT_SELECTORS.permissions,
+  PERSONAL_CONTEXT_SELECTORS.permissionsMore,
+  PERSONAL_CONTEXT_SELECTORS.syntheses,
+  PERSONAL_CONTEXT_SELECTORS.synthesisStatus,
+  PERSONAL_CONTEXT_SELECTORS.runSynthesis,
   PERSONAL_CONTEXT_SELECTORS.sourceCount,
   PERSONAL_CONTEXT_SELECTORS.sourceList
 ];
@@ -246,6 +279,85 @@ function sampleContext(label = "A") {
         sampleNote: "可由来源核对",
         sourceIds: ["source-thought", "source-deleted"]
       }
+    ],
+    userModel: {
+      readiness: "usable",
+      activeClaimCount: 1,
+      disputedClaimCount: 1,
+      candidateCount: 1,
+      staleCandidateCount: 0,
+      unknowns: [],
+      claims: [
+        {
+          id: "claim-active",
+          domain: "goals",
+          statement: "持续完成关键任务",
+          scope: "本月",
+          epistemic: "known",
+          lifecycle: "active",
+          contextAllowed: true,
+          version: 2
+        },
+        {
+          id: "claim-candidate",
+          domain: "behavior",
+          statement: "午后更适合专注工作",
+          scope: "",
+          epistemic: "hypothesis",
+          lifecycle: "candidate",
+          contextAllowed: true,
+          version: 1
+        },
+        {
+          id: "claim-disputed",
+          domain: "context",
+          statement: "已变化的理解",
+          scope: "",
+          epistemic: "hypothesis",
+          lifecycle: "disputed",
+          contextAllowed: false,
+          version: 3
+        }
+      ]
+    },
+    sourcePermissions: [{
+      sourceKey: JSON.stringify(["capture", "capture-a", "", ""]),
+      sourceRef: {
+        resourceType: "capture",
+        resourceId: "capture-a",
+        rootId: "",
+        targetKey: "",
+        version: 2
+      },
+      recordType: "念起",
+      excerpt: "当前可管理的来源",
+      status: "active",
+      contextAllowed: true,
+      learningAllowed: false,
+      learningStatus: "off",
+      revision: 1
+    }],
+    periodicSyntheses: [
+      {
+        id: "synthesis-1",
+        content: "本周完成了一项行动，但效果仍待继续观察。",
+        reason: "manual",
+        reviewStatus: "candidate",
+        reviewedAt: "",
+        reviewDisposition: "",
+        createdAt: "2026-10-06T08:00:00.000Z",
+        version: 1
+      },
+      {
+        id: "synthesis-stale",
+        content: "来源变化后不可继续使用。",
+        reason: "manual",
+        reviewStatus: "stale",
+        reviewedAt: "2026-10-06T09:00:00.000Z",
+        reviewDisposition: "",
+        createdAt: "2026-10-06T08:30:00.000Z",
+        version: 2
+      }
     ]
   };
 }
@@ -300,7 +412,9 @@ function personalPorts({
         return destinations.get(selector) || null;
       },
       escapeSelector: value => String(value).replaceAll('"', '\\"'),
-      isDetailsElement: element => element?.details === true
+      isDetailsElement: element => element?.details === true,
+      confirm: () => true,
+      createRequestId: () => "personal-context-request"
     }
   };
 }
@@ -503,6 +617,12 @@ assert.equal(
     root.node(PERSONAL_CONTEXT_SELECTORS.summary).innerHTML,
     /第一行 success<br>第二行/
   );
+  assert.match(root.node(PERSONAL_CONTEXT_SELECTORS.claims).innerHTML, /data-claim-action="revise"/);
+  assert.match(root.node(PERSONAL_CONTEXT_SELECTORS.claims).innerHTML, /来源已变化/);
+  assert.match(root.node(PERSONAL_CONTEXT_SELECTORS.permissions).innerHTML, /用于后续回答/);
+  assert.match(root.node(PERSONAL_CONTEXT_SELECTORS.permissions).innerHTML, /允许形成或更新理解/);
+  assert.match(root.node(PERSONAL_CONTEXT_SELECTORS.syntheses).innerHTML, /本周完成了一项行动/);
+  assert.match(root.node(PERSONAL_CONTEXT_SELECTORS.syntheses).innerHTML, /来源已变化/);
 
   const thoughtDetails = new FakeNode(null);
   thoughtDetails.details = true;
@@ -548,6 +668,54 @@ assert.equal(
   assert.equal(dispose(), true);
   assert.equal(dispose(), false);
   assert.equal(root.listenerCount(), 0);
+}
+
+{
+  const permissionPages = [
+    {
+      data: sampleContext("page-1").sourcePermissions,
+      meta: { nextCursor: "next-page", total: 2 }
+    },
+    {
+      data: [{
+        ...sampleContext("page-2").sourcePermissions[0],
+        sourceKey: JSON.stringify(["journal", "journal-b", "", ""]),
+        sourceRef: {
+          resourceType: "journal",
+          resourceId: "journal-b",
+          rootId: "",
+          targetKey: "",
+          version: 1
+        },
+        recordType: "日记",
+        excerpt: "第二页来源"
+      }],
+      meta: { nextCursor: null, total: 2 }
+    }
+  ];
+  const overview = sampleContext("paged");
+  delete overview.sourcePermissions;
+  const root = new FakeRoot(personalContextSelectors);
+  const controller = createPersonalContextFeatureController(personalPorts({
+    async requestV1(path) {
+      if (path === PERSONAL_CONTEXT_ENDPOINT) return { data: overview };
+      assert.match(path, new RegExp(`^${EVIDENCE_PERMISSIONS_ENDPOINT.replaceAll("/", "\\/")}`));
+      return permissionPages.shift();
+    }
+  }));
+  controller.mount({ root, signal: new AbortController().signal });
+  await waitFor(
+    () => /当前可管理的来源/.test(root.node(PERSONAL_CONTEXT_SELECTORS.permissions).innerHTML),
+    "first permission page did not render"
+  );
+  assert.equal(root.node(PERSONAL_CONTEXT_SELECTORS.permissionsMore).hidden, false);
+  assert.equal(root.click({ id: "personal-context-permissions-more" }), true);
+  await waitFor(
+    () => /第二页来源/.test(root.node(PERSONAL_CONTEXT_SELECTORS.permissions).innerHTML),
+    "second permission page did not render"
+  );
+  assert.equal(root.node(PERSONAL_CONTEXT_SELECTORS.permissionsMore).hidden, true);
+  controller.unmount();
 }
 
 {
@@ -668,6 +836,10 @@ await assertRejectedLateResult("generation", controls => controls.unmount());
   assert.equal(root.node(PERSONAL_CONTEXT_SELECTORS.meta).innerHTML, "");
   assert.equal(root.node(PERSONAL_CONTEXT_SELECTORS.disclosure).textContent, "");
   assert.equal(root.node(PERSONAL_CONTEXT_SELECTORS.summary).innerHTML, "");
+  assert.equal(root.node(PERSONAL_CONTEXT_SELECTORS.claims).innerHTML, "");
+  assert.equal(root.node(PERSONAL_CONTEXT_SELECTORS.permissions).innerHTML, "");
+  assert.equal(root.node(PERSONAL_CONTEXT_SELECTORS.syntheses).innerHTML, "");
+  assert.equal(root.node(PERSONAL_CONTEXT_SELECTORS.synthesisStatus).textContent, "");
   assert.equal(root.node(PERSONAL_CONTEXT_SELECTORS.sourceCount).textContent, "0 条");
   assert.equal(root.node(PERSONAL_CONTEXT_SELECTORS.sourceList).innerHTML, "");
   const writes = root.writes;

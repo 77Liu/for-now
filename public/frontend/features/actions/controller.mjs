@@ -20,21 +20,14 @@ export const ACTIONS_SELECTORS = Object.freeze({
     "[data-habit-delete]"
   ].join(",")
 });
-
 const emptyActionDraft = () => ({ title: "", priority: "none" });
-const emptyHabitDraft = () => ({
-  title: "",
-  cadence: "daily",
-  target: "1"
-});
-
+const emptyHabitDraft = () => ({ title: "", cadence: "daily", target: "1" });
 const escapeHtml = value => String(value ?? "").replace(/[&<>"]/g, character => ({
   "&": "&amp;",
   "<": "&lt;",
   ">": "&gt;",
   '"': "&quot;"
 })[character]);
-
 function formControl(form, name) {
   return form?.elements?.[name] || form?.elements?.namedItem?.(name) || null;
 }
@@ -93,14 +86,30 @@ function actionSyncMarkup(sync) {
   return `<span class="checkin-sync-state ${escapeHtml(sync.status)}">${label}</span>`;
 }
 
-function actionButtons(item) {
+function actionButtons(item, completionDraft = null) {
   if (item.sync) return actionSyncMarkup(item.sync);
   const primary = item.status === "todo"
     ? `<button class="quiet-button" type="button" data-action-start="${escapeHtml(item.id)}" data-version="${item.version}">开始</button>`
     : item.status === "doing"
-      ? `<button class="quiet-button" type="button" data-action-complete="${escapeHtml(item.id)}" data-version="${item.version}">完成</button>`
+      ? `<details class="action-completion" ${completionDraft?.open ? "open" : ""}><summary>完成</summary><div data-action-feedback-form><label><span>结果</span><select data-action-outcome>${[
+        ["unsure", "暂不确定"],
+        ["helpful", "有帮助"],
+        ["mixed", "部分有帮助"],
+        ["unhelpful", "没有帮助"]
+      ].map(([value, label]) => `<option value="${value}"${
+        (completionDraft?.outcome || "unsure") === value ? " selected" : ""
+      }>${label}</option>`).join("")}</select></label><label><span>反馈</span><input data-action-feedback maxlength="1000" placeholder="可选：结果、限制或下一步" value="${
+        escapeHtml(completionDraft?.note || "")
+      }"></label><label class="action-feedback-consent"><input type="checkbox" data-action-feedback-learning${completionDraft?.learningAllowed ? " checked" : ""}><span>允许用于周期回望</span></label><button class="quiet-button" type="button" data-action-complete="${escapeHtml(item.id)}" data-version="${item.version}">确认完成</button></div></details>`
       : `<button class="subtle-action" type="button" data-action-reopen="${escapeHtml(item.id)}" data-version="${item.version}">撤销完成</button>`;
   return `${primary}<button class="subtle-action" type="button" data-action-edit="${escapeHtml(item.id)}" data-version="${item.version}">编辑</button><button class="subtle-action danger" type="button" data-action-delete="${escapeHtml(item.id)}" data-version="${item.version}" aria-label="删除行动">删除</button>`;
+}
+
+function actionFeedbackMarkup(item) {
+  const feedback = item.completionFeedback;
+  if (!feedback) return "";
+  const labels = { helpful: "有帮助", mixed: "部分有帮助", unhelpful: "没有帮助", unsure: "暂不确定" };
+  return `<p class="action-feedback-result"><b>${labels[feedback.outcome] || labels.unsure}</b>${feedback.note ? `<span>${escapeHtml(feedback.note)}</span>` : ""}</p>`;
 }
 
 function habitButtons(item) {
@@ -111,21 +120,19 @@ function habitButtons(item) {
   return `${checkin}<button class="subtle-action" type="button" data-habit-toggle="${escapeHtml(item.id)}" data-enabled="${String(item.enabled)}" data-version="${item.version}">${item.enabled ? "暂停" : "启用"}</button><button class="subtle-action" type="button" data-habit-adjust="${escapeHtml(item.id)}" data-version="${item.version}">调整</button><button class="subtle-action danger" type="button" data-habit-delete="${escapeHtml(item.id)}" data-version="${item.version}">删除</button>`;
 }
 
-function renderColumns(view) {
+function renderColumns(view, completionDrafts = new Map()) {
   return view.actionColumns.map(column => (
     `<section class="action-column"><header><b>${column.label}</b><span>${column.count}</span></header>${column.items.length
-      ? column.items.map(item => `<article class="action-entry${item.sync ? " is-syncing" : ""}"><div><span class="action-priority priority-${item.priority.toLowerCase()}">${item.priorityLabel}</span><h3>${escapeHtml(item.title)}</h3><small>${escapeHtml(item.sourceLabel)}</small></div><div class="action-entry-buttons">${actionButtons(item)}</div></article>`).join("")
+      ? column.items.map(item => `<article class="action-entry${item.sync ? " is-syncing" : ""}" data-action-id="${escapeHtml(item.id)}"><div><span class="action-priority priority-${item.priority.toLowerCase()}">${item.priorityLabel}</span><h3>${escapeHtml(item.title)}</h3><small>${escapeHtml(item.sourceLabel)}</small>${actionFeedbackMarkup(item)}</div><div class="action-entry-buttons">${actionButtons(item, completionDrafts.get(item.id))}</div></article>`).join("")
       : '<div class="empty">暂无</div>'}</section>`
   )).join("");
 }
-
 function renderHabits(view) {
   if (!view.habits.length) return '<div class="empty">还没有习惯。</div>';
   return view.habits.map(item => (
     `<article class="habit-entry${item.sync ? " is-syncing" : ""}"><header><div><h3>${escapeHtml(item.title)}</h3><span>${escapeHtml(item.frequencyLabel)} · ${item.period.count}/${item.period.target}</span></div><b class="${item.period.complete ? "complete" : ""}">${item.period.complete ? "已达成" : item.statusLabel}</b></header><div class="habit-progress"><i style="width:${Math.min(100, item.period.count / item.period.target * 100)}%"></i></div>${item.latestFeeling ? `<p>${escapeHtml(item.latestFeeling)}</p>` : ""}<footer>${habitButtons(item)}</footer></article>`
   )).join("");
 }
-
 function requireCoordinator(value) {
   for (const method of [
     "snapshot",
@@ -201,6 +208,7 @@ export function createActionsFeatureController(deps = {}) {
   let actionSubmit = null;
   let habitSubmit = null;
   const checkinRequests = new Map();
+  const completionDrafts = new Map();
   const sessionRoots = new Set();
 
   const queryRoot = (root, selector) => root?.querySelector?.(selector) || null;
@@ -274,6 +282,13 @@ export function createActionsFeatureController(deps = {}) {
     return "";
   };
 
+  const captureCompletionDrafts = root => {
+    for (const container of root?.querySelectorAll?.("[data-action-feedback-form]") || []) {
+      const id = container.closest?.("[data-action-id]")?.dataset?.actionId;
+      if (!id) continue;
+      completionDrafts.set(id, { outcome: container.querySelector?.("[data-action-outcome]")?.value || "unsure", note: container.querySelector?.("[data-action-feedback]")?.value || "", learningAllowed: container.querySelector?.("[data-action-feedback-learning]")?.checked === true, open: container.closest?.(".action-completion")?.open === true });
+    }
+  };
   const syncForm = (candidate, kind, { restore = false } = {}) => {
     const selector = kind === "action"
       ? ACTIONS_SELECTORS.actionForm
@@ -319,6 +334,7 @@ export function createActionsFeatureController(deps = {}) {
 
   const renderSnapshot = (candidate, snapshot) => {
     if (!isActive(candidate)) return false;
+    captureCompletionDrafts(candidate.root);
     const columns = query(candidate, ACTIONS_SELECTORS.actionColumns);
     const habits = query(candidate, ACTIONS_SELECTORS.habitList);
     const summary = query(candidate, ACTIONS_SELECTORS.summary);
@@ -326,7 +342,7 @@ export function createActionsFeatureController(deps = {}) {
     if (summary) {
       summary.textContent = `${view.summary.openActions} 项待推进 · ${view.summary.checkedToday}/${view.summary.activeHabits} 个习惯已打卡`;
     }
-    if (columns) columns.innerHTML = renderColumns(view);
+    if (columns) columns.innerHTML = renderColumns(view, completionDrafts);
     if (habits) habits.innerHTML = renderHabits(view);
     syncForm(candidate, "action");
     syncForm(candidate, "habit");
@@ -503,7 +519,15 @@ export function createActionsFeatureController(deps = {}) {
     if (data.actionStart) {
       command = commands.setActionStatus(data.actionStart, "doing", data.version);
     } else if (data.actionComplete) {
-      command = commands.completeAction(data.actionComplete, data.version);
+      const feedback = button.closest("[data-action-feedback-form]");
+      const draft = {
+        outcome: feedback?.querySelector("[data-action-outcome]")?.value || "unsure",
+        note: feedback?.querySelector("[data-action-feedback]")?.value || "",
+        learningAllowed: feedback?.querySelector("[data-action-feedback-learning]")?.checked === true,
+        open: true
+      };
+      completionDrafts.set(data.actionComplete, draft);
+      command = commands.completeAction(data.actionComplete, draft, data.version);
     } else if (data.actionReopen) {
       command = commands.undoActionCompletion(data.actionReopen, data.version);
     } else if (data.actionEdit) {
@@ -586,6 +610,7 @@ export function createActionsFeatureController(deps = {}) {
     setButtonBusy(candidate, button, true);
     try {
       await coordinator.runCommand(command, { idempotencyKey });
+      if (data.actionComplete) completionDrafts.delete(data.actionComplete);
       if (data.habitCheckin) checkinRequests.delete(`habit:${data.habitCheckin}`);
       if (isActive(candidate)) showToast("已更新");
       return true;
@@ -624,6 +649,7 @@ export function createActionsFeatureController(deps = {}) {
       const habitForm = queryRoot(candidate.root, ACTIONS_SELECTORS.habitForm);
       if (actionForm) updateDraft("action", actionForm);
       if (habitForm) updateDraft("habit", habitForm);
+      captureCompletionDrafts(candidate.root);
     }
     candidate.signal?.removeEventListener?.("abort", candidate.dispose);
     for (const [type, listener] of Object.entries(listeners)) {
@@ -755,6 +781,7 @@ export function createActionsFeatureController(deps = {}) {
     actionSubmit = null;
     habitSubmit = null;
     checkinRequests.clear();
+    completionDrafts.clear();
     coordinator.resetSession();
     for (const root of sessionRoots) scrubRoot(root);
     sessionRoots.clear();

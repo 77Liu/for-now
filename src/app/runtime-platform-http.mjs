@@ -145,6 +145,7 @@ export function createRuntimePlatformHttp({
       createId,
       now
     }),
+    permissions: contentRuntime.perception,
     bodyJson
   });
   const trashHttp = createTrashHttp({
