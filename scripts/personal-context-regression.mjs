@@ -219,6 +219,8 @@ assert.deepEqual(thoughtAnswerWork.attachmentPaths, [
   "/attachments/record-image.png"
 ]);
 assert.equal(thoughtAnswerWork.contextReceipt.version, WORKING_CONTEXT_VERSION);
+assert.equal(thoughtAnswerWork.contextReceipt.promptContract.mode, "structured-json");
+assert.equal(thoughtAnswerWork.contextReceipt.promptContract.roleId, "orchestration.role.answer");
 assert.ok(thoughtAnswerWork.contextReceipt.sources.some(source => source.resourceId === "root"));
 assert.equal(
   thoughtAnswerWork.contextReceipt.tokenBudget.estimatedUsed,
@@ -238,6 +240,7 @@ const followUpWork = targets.prepare(store, {
   subtargetId: "follow-33"
 });
 assert.equal(followUpWork.contextReceipt.version, WORKING_CONTEXT_VERSION);
+assert.equal(followUpWork.contextReceipt.promptContract.taskPromptId, "thought.task.followUp");
 assert.ok(followUpWork.prompt.includes("RAW_FOLLOW_64"));
 root.annotations[0].attachmentPaths = ["/attachments/comment-image.png"];
 const annotationWork = targets.prepare(store, { kind: "annotationShenji", resourceType: "thought", targetId: root.id, subtargetId: "mark", payload: { message: "CURRENT_QUESTION" } });
@@ -245,6 +248,19 @@ for (const expected of ["RAW_QUESTION", "RAW_COMMENT", "PREVIOUS_QUESTION", "PRE
 assert.equal(annotationWork.prompt.includes("PRIVATE_REASONING"), false);
 assert.equal(annotationWork.contextReceipt.version, WORKING_CONTEXT_VERSION);
 assert.equal(annotationWork.subtargetVersion, 1);
+const annotationPayload = JSON.parse(
+  /<working_context_data format="application\/json">(.+)<\/working_context_data>/s
+    .exec(annotationWork.prompt)[1]
+);
+assert.deepEqual(annotationPayload.currentTask.details.annotation, {
+  kind: "comment",
+  before: "",
+  focus: "RAW_QUESTION",
+  after: "",
+  comment: "RAW_COMMENT",
+  turns: [{ message: "PREVIOUS_QUESTION", answer: "PREVIOUS_ANSWER" }],
+  message: "CURRENT_QUESTION"
+});
 assert.deepEqual(annotationWork.attachmentPaths, [
   "/attachments/thought-image.png",
   "/attachments/comment-image.png"

@@ -47,6 +47,7 @@
     "test:perception-evidence": "node scripts/perception-evidence-regression.mjs",
     "test:evidence-persistence": "node scripts/store-normalization-regression.mjs && node scripts/persistence-regression.mjs && node scripts/trash-regression.mjs",
     "test:task-context": "node scripts/task-context-selection-regression.mjs && node scripts/personal-context-regression.mjs && node scripts/collaboration-regression.mjs",
+    "test:prompt-roles": "node scripts/prompt-role-injection-regression.mjs",
     "test:personalization-replay": "node scripts/personalization-replay-regression.mjs",
     "test:keepsake-media": "node scripts/keepsake-media-workflows-regression.mjs && node scripts/attachment-derivatives-regression.mjs && node scripts/keepsake-media-migration-regression.mjs && node scripts/keepsake-placement-regression.mjs",
     "test:g2": "node scripts/g2-discovery-regression.mjs && node scripts/g2-export-regression.mjs && node scripts/g2-actions-regression.mjs && node scripts/g2-feedback-regression.mjs && node scripts/g2-integration-regression.mjs",

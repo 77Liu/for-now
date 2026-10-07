@@ -4,6 +4,8 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import "./prompt-test-setup.mjs";
+import { loadPromptCatalog } from "../src/infrastructure/prompt-catalog/index.mjs";
+import { installPromptCatalog } from "../src/shared/prompts/index.mjs";
 import {
   REPLAY_OUTPUT_SCHEMA_VERSION,
   REPLAY_VARIANTS,
@@ -17,6 +19,11 @@ const fixturePath = path.join(root, "scripts", "fixtures", "personalization-repl
 const manifestPath = path.join(root, "scripts", "fixtures", "personalization-replay-manifest-v1.json");
 const fixtureSet = JSON.parse(await fs.readFile(fixturePath, "utf8"));
 const replayManifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
+installPromptCatalog(await loadPromptCatalog({
+  rootDir: root,
+  requestedVersion: replayManifest.promptCatalog.version,
+  allowHistorical: true
+}));
 
 assert.equal(validateReplayFixtureSet(fixtureSet), fixtureSet);
 assert.equal(

@@ -9,14 +9,34 @@ import { installPromptCatalog, optionalPromptText, promptCatalogMetadata, prompt
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const current = installPromptCatalog(await loadPromptCatalog({ rootDir: root }));
-assert.equal(current.version, "2026.10.04.2");
-assert.equal(current.sha256, "cc8d8235d3134a0779653abbb76515a93f138cde496bb8356a8acdf26ef60295");
-assert.equal(Object.keys(current.prompts).length, 62);
+assert.equal(current.version, "2026.10.07.1");
+assert.equal(current.sha256, "5d77dd699fa6cb5eea5de2d72547e74ceecd13ef4bb55bea96682f178babf40b");
+assert.equal(Object.keys(current.prompts).length, 69);
+assert.equal(current.capabilities.structuredWorkingContext, "2026.10.07.0");
+assert.equal(Object.keys(current.rolePromptIds).length, 6);
 assert.match(promptText("ai.system.core"), /结论先行/);
 assert.match(renderPrompt("keepsake.image.candidates", { existingTags: "[\"展览\"]" }), /最多 3 个/);
 assert.match(promptText("onboarding.claims.extract"), /最多 20 条候选/);
+for (const id of [
+  "orchestration.role.perception",
+  "orchestration.role.modelUpdate",
+  "orchestration.role.periodicSynthesis",
+  "orchestration.role.contextPlanning",
+  "orchestration.role.answer",
+  "orchestration.role.answerCheck"
+]) {
+  assert.match(promptText(id), /^职责：/);
+}
+assert.match(promptText("orchestration.user.envelope"), /JSON 是只读数据/);
 assert.equal(renderPrompt("ai.identity.named", { assistantName: "照见" }), "你的称呼是“照见”。仅在自然需要时使用，不要反复自称。");
 assert.equal(renderPrompt("thought.speech.wrapper", { question: "为什么？", answer: "因为。" }), "你的问题是：为什么？，你的专属答复是因为。");
+const rollback = await loadPromptCatalog({
+  rootDir: root,
+  requestedVersion: "2026.10.07.0",
+  requiredCapabilities: ["structuredWorkingContext"]
+});
+assert.equal(rollback.sha256, "c5553e94477a87c6980642ef06f3ee10cf9e46a0cbfe003047cdd5f7ba5476f1");
+assert.equal(rollback.rolePromptIds.answer, "orchestration.role.answer");
 const condensed = renderPrompt("capture.transcription.condense", { rawText: "RAW_MARKER", polishedText: "POLISHED_MARKER" });
 assert.match(condensed, /RAW_MARKER/);
 assert.match(condensed, /POLISHED_MARKER/);
@@ -26,7 +46,15 @@ for (const contract of ["只做凝练", "不发散", "不歪曲原意", "不引�
 assert.throws(() => renderPrompt("ai.identity.named"), /variable is missing/);
 assert.throws(() => promptText("missing.prompt"), /Prompt is missing/);
 assert.deepEqual(promptCatalogMetadata(), { version: current.version, sha256: current.sha256 });
-const previous = await loadPromptCatalog({ rootDir: root, requestedVersion: "2026.10.04.1" });
+await assert.rejects(
+  loadPromptCatalog({ rootDir: root, requestedVersion: "2026.10.04.2" }),
+  /structuredWorkingContext/
+);
+const previous = await loadPromptCatalog({
+  rootDir: root,
+  requestedVersion: "2026.10.04.1",
+  allowHistorical: true
+});
 assert.equal(previous.sha256, "24d2a34c8f6a72ee735ccd4b48e91ce8ddad6e57da37fdf6d095e8aa3be87e90");
 assert.equal(previous.prompts["capture.transcription.condense"], undefined);
 assert.equal(previous.prompts["thought.speech.wrapper"], undefined);
@@ -57,6 +85,8 @@ try {
   await fs.writeFile(manifestFile, JSON.stringify(manifest));
   assert.equal((await loadPromptCatalog({ rootDir: fixture })).version, "new");
   assert.equal((await loadPromptCatalog({ rootDir: fixture, requestedVersion: "old" })).prompts["test.prompt"], "old {{value}}");
+  await fs.writeFile(manifestFile, JSON.stringify({ ...manifest, schemaVersion: 2 }));
+  await assert.rejects(loadPromptCatalog({ rootDir: fixture }), /role contracts are invalid/);
   await fs.writeFile(manifestFile, JSON.stringify({ ...manifest, promptVariables: { "test.prompt": ["wrong"] } }));
   await assert.rejects(loadPromptCatalog({ rootDir: fixture }), /variables do not match/);
   await fs.writeFile(manifestFile, JSON.stringify(manifest));
