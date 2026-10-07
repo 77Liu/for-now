@@ -36,6 +36,8 @@ export function createContentImageDraftManager({
   rotateFile = rotateContentImageFile,
   createFile = (parts, name, options) => new File(parts, name, options),
   objectUrls = globalThis.URL,
+  domRoot = globalThis.document,
+  scheduleDomUpdate = callback => globalThis.queueMicrotask(callback),
   createId = () => crypto.randomUUID(),
   now = () => Date.now()
 } = {}) {
@@ -50,6 +52,7 @@ export function createContentImageDraftManager({
   requireFunction(createFile, "createFile");
   requireFunction(objectUrls?.createObjectURL, "objectUrls.createObjectURL");
   requireFunction(objectUrls?.revokeObjectURL, "objectUrls.revokeObjectURL");
+  requireFunction(scheduleDomUpdate, "scheduleDomUpdate");
   requireFunction(createId, "createId");
   requireFunction(now, "now");
   if (!Number.isSafeInteger(maxItems) || maxItems < 1) {
@@ -62,11 +65,12 @@ export function createContentImageDraftManager({
   }
   const allowedKeys = new Set(keys);
   const ownedPreviews = new Set();
-  const revokedPreviews = new Set();
   const successfulLeases = new Set();
   const pendingLeases = new Map();
   const storeQueues = new Map();
   const draftQueues = new Map();
+  const scheduledDomKeys = new Set();
+  const rotatingDomItems = new Set();
   let owner = "";
   let generation = 0;
   let itemSequence = 0;
@@ -121,11 +125,13 @@ export function createContentImageDraftManager({
   };
   const revokeItem = item => {
     const preview = String(item?.preview || "");
-    if (!preview || !ownedPreviews.has(preview) || revokedPreviews.has(preview)) {
-      return false;
+    if (!preview || !ownedPreviews.delete(preview)) return false;
+    try {
+      objectUrls.revokeObjectURL(preview);
+    } catch (error) {
+      ownedPreviews.add(preview);
+      throw error;
     }
-    revokedPreviews.add(preview);
-    objectUrls.revokeObjectURL(preview);
     return true;
   };
   const revokeItems = items => {
@@ -137,8 +143,82 @@ export function createContentImageDraftManager({
     drafts = new Map(keys.map(key => [key, emptyDraft()]));
   };
 
+  function renderDomControls(key) {
+    if (!domRoot?.querySelector || !domRoot?.createElement) return false;
+    const editor = domRoot.querySelector(
+      `[data-content-image-editor="${key}"]`
+    );
+    const previews = editor?.querySelector?.("[data-content-image-previews]");
+    if (!previews?.querySelectorAll) return false;
+    const items = currentDraft(key).items;
+    const figures = [...previews.querySelectorAll(".content-image-preview")];
+    for (const [index, figure] of figures.entries()) {
+      const item = items[index];
+      let button = figure.querySelector?.("[data-content-image-rotate]");
+      if (!item?.file || item.path) {
+        button?.remove?.();
+        continue;
+      }
+      const image = figure.querySelector?.("img");
+      if (image && item.preview) image.src = item.preview;
+      if (!button) {
+        button = domRoot.createElement("button");
+        button.type = "button";
+        button.textContent = "↻";
+        button.title = "顺时针旋转图片";
+        button.style.right = "36px";
+        button.style.color = "var(--blue)";
+        figure.append(button);
+      }
+      button.dataset.contentImageRotate = String(index);
+      button.setAttribute("aria-label", `顺时针旋转图片 ${index + 1}`);
+      const rotating = rotatingDomItems.has(item[DRAFT_ITEM_ID]);
+      button.disabled = rotating;
+      if (rotating) button.setAttribute("aria-busy", "true");
+      else button.removeAttribute("aria-busy");
+    }
+    return true;
+  }
+
+  function scheduleDomControls(key) {
+    if (!domRoot?.querySelector || scheduledDomKeys.has(key)) return;
+    scheduledDomKeys.add(key);
+    scheduleDomUpdate(() => {
+      scheduledDomKeys.delete(key);
+      renderDomControls(key);
+    });
+  }
+
+  async function handleDomRotation(event) {
+    const button = event.target?.closest?.("[data-content-image-rotate]");
+    const editor = button?.closest?.("[data-content-image-editor]");
+    const key = String(editor?.dataset?.contentImageEditor || "");
+    const index = Number(button?.dataset?.contentImageRotate);
+    if (!button || !allowedKeys.has(key) || !Number.isSafeInteger(index)) return;
+    const item = currentDraft(key).items[index];
+    if (!item?.file || item.path) return;
+    const identity = itemIdentity(item);
+    const status = editor.closest?.("form")?.querySelector?.(".status");
+    rotatingDomItems.add(identity);
+    renderDomControls(key);
+    try {
+      const result = await rotate(key, index);
+      if (result && status?.textContent?.startsWith("图片旋转失败：")) {
+        status.textContent = "";
+      }
+    } catch (error) {
+      if (status) {
+        status.textContent = `图片旋转失败：${error?.message || "请稍后重试"}`;
+      }
+    } finally {
+      rotatingDomItems.delete(identity);
+      renderDomControls(key);
+    }
+  }
+
   function publicDraft(key) {
     const value = currentDraft(key);
+    scheduleDomControls(key);
     return Object.freeze({
       owner,
       key,
@@ -211,6 +291,14 @@ export function createContentImageDraftManager({
         name: item.file?.name || "image",
         type: item.file?.type || "application/octet-stream",
         lastModified: Number(item.file?.lastModified) || now(),
+        originalBlob: item.originalFile || item.file,
+        originalName: item.originalFile?.name || item.file?.name || "image",
+        originalType: item.originalFile?.type || item.file?.type
+          || "application/octet-stream",
+        originalLastModified: Number(
+          item.originalFile?.lastModified || item.file?.lastModified
+        ) || now(),
+        quarterTurns: Number(item.quarterTurns) || 0,
         uploadRequestId: item.uploadRequestId || "",
         uploadedPath: item.uploadedPath || "",
         lastError: item.lastError ? { ...item.lastError } : null
@@ -284,8 +372,22 @@ export function createContentImageDraftManager({
             type: item.type || item.blob?.type || "",
             lastModified: Number(item.lastModified) || now()
           });
+          const storedTurns = Number(item.quarterTurns) || 0;
+          const quarterTurns = item.originalBlob
+            ? ((storedTurns % 4) + 4) % 4
+            : 0;
+          const originalFile = quarterTurns
+            ? createFile([item.originalBlob], item.originalName || item.name || "image", {
+              type: item.originalType || item.originalBlob?.type || item.type || "",
+              lastModified: Number(
+                item.originalLastModified || item.lastModified
+              ) || now()
+            })
+            : file;
           restoredItems.push({
             file,
+            originalFile,
+            quarterTurns,
             preview: createPreview(file),
             uploadRequestId: item.uploadRequestId || "",
             uploadedPath: item.uploadedPath || "",
@@ -356,7 +458,13 @@ export function createContentImageDraftManager({
       .map(item => {
         if (item.path) return { path: item.path };
         if (!item.file) throw new TypeError("Transient content image item requires file or path");
-        return { ...copyItem(item), preview: createPreview(item.file) };
+        const quarterTurns = ((Number(item.quarterTurns) || 0) % 4 + 4) % 4;
+        return {
+          ...copyItem(item),
+          originalFile: item.originalFile || item.file,
+          quarterTurns,
+          preview: createPreview(item.file)
+        };
       });
     revokeItems(previous.items);
     nextDraft(key, {
@@ -377,7 +485,12 @@ export function createContentImageDraftManager({
     const selectedItems = [];
     try {
       for (const file of selected) {
-        selectedItems.push({ file, preview: createPreview(file) });
+        selectedItems.push({
+          file,
+          originalFile: file,
+          quarterTurns: 0,
+          preview: createPreview(file)
+        });
       }
     } catch (error) {
       revokeItems(selectedItems);
@@ -426,10 +539,14 @@ export function createContentImageDraftManager({
       const item = before.items[itemIndex];
       if (itemIndex < 0 || !item?.file || item.path) return false;
       const sourceFile = item.file;
-      const rotatedFile = await rotateFile(sourceFile, {
-        direction: "clockwise",
-        quarterTurns: 1
-      });
+      const originalFile = item.originalFile || sourceFile;
+      const quarterTurns = ((Number(item.quarterTurns) || 0) + 1) % 4;
+      const rotatedFile = quarterTurns
+        ? await rotateFile(originalFile, {
+          direction: "clockwise",
+          quarterTurns
+        })
+        : originalFile;
       if (!isCurrent(operation)) return false;
       if (!rotatedFile) throw new Error("图片旋转没有生成可用文件");
       const latest = currentDraft(key);
@@ -443,6 +560,8 @@ export function createContentImageDraftManager({
       const replacement = {
         ...latestItem,
         file: rotatedFile,
+        originalFile,
+        quarterTurns,
         preview: "",
         uploadRequestId: "",
         uploadedPath: ""
@@ -593,6 +712,8 @@ export function createContentImageDraftManager({
     owner = "";
     return changed;
   }
+
+  domRoot?.addEventListener?.("click", handleDomRotation);
 
   return Object.freeze({
     restore,

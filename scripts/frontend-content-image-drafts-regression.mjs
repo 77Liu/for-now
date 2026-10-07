@@ -14,7 +14,7 @@ const moduleSource = await readFile(
   new URL("../public/frontend/media/content-image-drafts.mjs", import.meta.url),
   "utf8"
 );
-assert.doesNotMatch(moduleSource, /\b(?:document|window|router)\b|state\.thoughts/);
+assert.doesNotMatch(moduleSource, /\b(?:window|router)\b|state\.thoughts/);
 
 function deferred() {
   let resolve;
@@ -70,6 +70,7 @@ const storedImage = (name, extra = {}) => ({
   ...extra
 });
 const createFile = (parts, name, options) => ({
+  ...parts[0],
   blob: parts[0],
   name,
   type: options.type,
@@ -98,12 +99,112 @@ function createObjectUrls() {
   };
 }
 
+function createContentImageDom(keys) {
+  let clickHandler = null;
+  const editors = new Map();
+  const root = {
+    addEventListener(type, handler) {
+      if (type === "click") clickHandler = handler;
+    },
+    createElement() {
+      const attributes = new Map();
+      return {
+        attributes,
+        dataset: {},
+        style: {},
+        disabled: false,
+        parentElement: null,
+        setAttribute(name, value) {
+          attributes.set(name, String(value));
+        },
+        removeAttribute(name) {
+          attributes.delete(name);
+        },
+        closest(selector) {
+          if (selector === "[data-content-image-rotate]") return this;
+          if (selector === "[data-content-image-editor]") {
+            return this.parentElement?.editor || null;
+          }
+          return null;
+        },
+        remove() {
+          const children = this.parentElement?.children;
+          const index = children?.indexOf(this) ?? -1;
+          if (index >= 0) children.splice(index, 1);
+          this.parentElement = null;
+        }
+      };
+    },
+    querySelector(selector) {
+      const match = selector.match(/^\[data-content-image-editor="([^"]+)"\]$/);
+      return match ? editors.get(match[1])?.editor || null : null;
+    },
+    async click(button) {
+      assert.equal(typeof clickHandler, "function", "the delegated DOM handler must bind");
+      await clickHandler({ target: button });
+    }
+  };
+
+  for (const key of keys) {
+    const imageElement = { src: "" };
+    const figure = {
+      children: [],
+      editor: null,
+      querySelector(selector) {
+        if (selector === "img") return imageElement;
+        if (selector === "[data-content-image-rotate]") {
+          return this.children.find(
+            child => child.dataset.contentImageRotate != null
+          ) || null;
+        }
+        return null;
+      },
+      append(child) {
+        child.parentElement = this;
+        this.children.push(child);
+      }
+    };
+    const previews = {
+      querySelectorAll(selector) {
+        return selector === ".content-image-preview" ? [figure] : [];
+      }
+    };
+    const status = { textContent: "" };
+    const form = {
+      querySelector(selector) {
+        return selector === ".status" ? status : null;
+      }
+    };
+    const editor = {
+      dataset: { contentImageEditor: key },
+      querySelector(selector) {
+        return selector === "[data-content-image-previews]" ? previews : null;
+      },
+      closest(selector) {
+        return selector === "form" ? form : null;
+      }
+    };
+    figure.editor = editor;
+    editors.set(key, {
+      editor,
+      figure,
+      imageElement,
+      status,
+      get rotateButton() {
+        return figure.querySelector("[data-content-image-rotate]");
+      }
+    });
+  }
+  return { root, editors };
+}
+
 function createManager({
   store,
   objectUrls,
   uploadItem = async file => `/attachments/${file.name}`,
   discardItem = async () => true,
   rotateFile,
+  domRoot,
   draftKeys = ["thoughtRoot", "thoughtBlock"]
 }) {
   let id = 0;
@@ -116,6 +217,7 @@ function createManager({
     uploadItem,
     discardItem,
     ...(rotateFile ? { rotateFile } : {}),
+    ...(domRoot ? { domRoot } : {}),
     createFile,
     createId: () => `upload-${++id}`,
     now: () => Date.parse("2026-10-06T08:00:00.000Z")
@@ -123,10 +225,45 @@ function createManager({
 }
 
 {
+  const baseJpeg = Buffer.from(
+    "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////"
+      + "2wBDAf//////////////////////////////////////////////////////////////////////////////////////"
+      + "wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/"
+      + "9oADAMBAAIQAxAAAAF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAA"
+      + "AAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPwF//8QAFBABAAAAAAAAAAAAAAAA"
+      + "AAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPyF//9oADAMBAAIAAwAAABAf/"
+      + "xAAUEQEAAAAAAAAAAAAAAAAAAAAQ/9oACAEDAQE/EB//xAAUEQEAAAAAAAAAAAAAAAAAAAAQ/9oACAECAQE/EB//"
+      + "xAAUEAEAAAAAAAAAAAAAAAAAAAAQ/9oACAEBAAE/EB//2Q==",
+    "base64"
+  );
+  const sof = baseJpeg.findIndex(
+    (value, index) => value === 0xff && baseJpeg[index + 1] === 0xc0
+  );
+  assert.ok(sof > 0, "the local fixture must contain a JPEG SOF marker");
+  baseJpeg.writeUInt16BE(3, sof + 5);
+  baseJpeg.writeUInt16BE(2, sof + 7);
+  const exifOrientation6 = Buffer.from([
+    0xff, 0xe1, 0x00, 0x22,
+    0x45, 0x78, 0x69, 0x66, 0x00, 0x00,
+    0x4d, 0x4d, 0x00, 0x2a, 0x00, 0x00, 0x00, 0x08,
+    0x00, 0x01,
+    0x01, 0x12, 0x00, 0x03, 0x00, 0x00, 0x00, 0x01,
+    0x00, 0x06, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00
+  ]);
+  const fixture = Buffer.concat([
+    baseJpeg.subarray(0, 2),
+    exifOrientation6,
+    baseJpeg.subarray(2)
+  ]);
+  assert.equal(fixture.subarray(6, 12).toString("ascii"), "Exif\u0000\u0000");
+  assert.equal(fixture.readUInt16BE(30), 6);
+
   const transforms = [];
   const bitmap = {
-    width: 2,
-    height: 3,
+    width: 3,
+    height: 2,
+    pixels: ["A", "B", "C", "D", "E", "F"],
     closeCalls: 0,
     close() {
       this.closeCalls += 1;
@@ -145,26 +282,37 @@ function createManager({
         },
         drawImage(source, x, y) {
           transforms.push(["drawImage", source, x, y]);
+          canvas.pixels = ["C", "F", "B", "E", "A", "D"];
         }
       };
     }
   };
   const normalized = await rotateContentImageFile(
-    { ...image("exif-portrait.jpg"), type: "image/jpeg" },
     {
+      ...image("exif-portrait.jpg"),
+      type: "image/jpeg",
+      bytes: fixture
+    },
+    {
+      quarterTurns: 3,
       async decodeImage(file, options) {
         assert.equal(file.name, "exif-portrait.jpg");
+        assert.equal(file.bytes, fixture);
         assert.deepEqual(options, { imageOrientation: "from-image" });
         return bitmap;
       },
       createCanvas(width, height) {
-        assert.deepEqual([width, height], [3, 2]);
+        assert.deepEqual([width, height], [2, 3]);
         return canvas;
       },
       async encodeCanvas(value, options) {
         assert.equal(value, canvas);
-        assert.deepEqual(options, { type: "image/jpeg" });
-        return { type: "image/jpeg", size: 24, pixels: "exif-normalized-east" };
+        assert.deepEqual(options, { type: "image/jpeg", quality: 0.92 });
+        return {
+          type: "image/jpeg",
+          size: 24,
+          pixels: value.pixels.join("")
+        };
       },
       createFile(parts, name, options) {
         return { blob: parts[0], name, ...options, size: parts[0].size };
@@ -172,11 +320,11 @@ function createManager({
     }
   );
   assert.deepEqual(transforms, [
-    ["translate", 3, 0],
-    ["rotate", Math.PI / 2],
+    ["translate", 0, 3],
+    ["rotate", -Math.PI / 2],
     ["drawImage", bitmap, 0, 0]
   ]);
-  assert.equal(normalized.blob.pixels, "exif-normalized-east");
+  assert.equal(normalized.blob.pixels, "CFBEAD");
   assert.equal(normalized.name, "exif-portrait.jpg");
   assert.equal(normalized.type, "image/jpeg");
   assert.equal(bitmap.closeCalls, 1);
@@ -191,13 +339,15 @@ function createManager({
     store: rotationStore,
     objectUrls: rotationUrls,
     draftKeys: ["thoughtRoot"],
-    async rotateFile(file) {
-      rotationCalls.push([file.name, file.direction]);
+    async rotateFile(file, options) {
+      rotationCalls.push([file.name, file.direction, options.quarterTurns]);
       const directions = ["north", "east", "south", "west"];
       return {
         ...file,
-        direction: directions[(directions.indexOf(file.direction) + 1) % directions.length],
-        pixels: `${file.pixels}>clockwise`
+        direction: directions[
+          (directions.indexOf(file.direction) + options.quarterTurns) % directions.length
+        ],
+        pixels: `${file.pixels}>derived-${options.quarterTurns}`
       };
     },
     async uploadItem(file) {
@@ -219,9 +369,9 @@ function createManager({
   await Promise.all([firstTurn, secondTurn]);
   await rotationManager.rotate("thoughtRoot", 1);
   assert.deepEqual(rotationCalls, [
-    ["first.png", "north"],
-    ["first.png", "east"],
-    ["second.png", "west"]
+    ["first.png", "north", 1],
+    ["first.png", "north", 2],
+    ["second.png", "west", 1]
   ]);
   assert.deepEqual(
     rotationManager.snapshot("thoughtRoot").items.map(item => item.file.direction),
@@ -231,9 +381,10 @@ function createManager({
   assert.deepEqual(
     rotationManager.snapshot("thoughtRoot").items.map(item => item.file.pixels),
     [
-      "first-original>clockwise>clockwise",
-      "second-original>clockwise"
-    ]
+      "first-original>derived-2",
+      "second-original>derived-1"
+    ],
+    "lossy formats must derive every orientation from the original file"
   );
   assert.ok(initialPreviews.every(value => rotationUrls.revoked.includes(value)));
   assert.deepEqual(
@@ -248,16 +399,57 @@ function createManager({
     ["south", "north"],
     "the durable draft must contain the same final pixels as the preview"
   );
+  assert.deepEqual(
+    rotationStore.record("rotation-owner", "thoughtRoot").items.map(item => [
+      item.originalBlob.direction,
+      item.quarterTurns
+    ]),
+    [["north", 2], ["west", 1]],
+    "the durable draft must retain each original and cumulative turn count"
+  );
 
   const submission = await rotationManager.submit("thoughtRoot");
   assert.deepEqual(uploadedDirections, [
-    ["first.png", "south", "first-original>clockwise>clockwise"],
-    ["second.png", "north", "second-original>clockwise"]
+    ["first.png", "south", "first-original>derived-2"],
+    ["second.png", "north", "second-original>derived-1"]
   ]);
   assert.deepEqual(submission.attachmentPaths, [
     "/attachments/first.png-south.png",
     "/attachments/second.png-north.png"
   ]);
+
+  await rotationManager.rotate("thoughtRoot", 0);
+  await rotationManager.rotate("thoughtRoot", 0);
+  assert.deepEqual(rotationCalls.at(-1), ["first.png", "north", 3]);
+  const originalAgain = rotationManager.snapshot("thoughtRoot").items[0];
+  assert.equal(originalAgain.quarterTurns, 0);
+  assert.equal(originalAgain.file, originalAgain.originalFile);
+  assert.equal(originalAgain.file.pixels, "first-original");
+  assert.equal(
+    rotationCalls.length,
+    4,
+    "the fourth turn must restore the original without another lossy encode"
+  );
+  assert.equal(
+    rotationStore.record("rotation-owner", "thoughtRoot").items[0].blob.pixels,
+    "first-original",
+    "preview and persistence must return to the original pixels after four turns"
+  );
+  await rotationManager.submit("thoughtRoot");
+  assert.deepEqual(
+    uploadedDirections.at(-1),
+    ["first.png", "north", "first-original"],
+    "upload must use the same original pixels shown and persisted after four turns"
+  );
+
+  rotationManager.resetSession();
+  await rotationManager.restore("rotation-owner");
+  await rotationManager.rotate("thoughtRoot", 1);
+  assert.deepEqual(
+    rotationCalls.at(-1),
+    ["second.png", "west", 2],
+    "rotation after restore must still derive from the persisted original"
+  );
 
   await rotationManager.replaceExisting(
     "thoughtRoot",
@@ -266,8 +458,53 @@ function createManager({
   assert.equal(await rotationManager.rotate("thoughtRoot", 0), false);
   assert.equal(
     rotationCalls.length,
-    3,
+    5,
     "historical attachment paths must never enter draft pixel rotation"
+  );
+}
+
+{
+  const keys = ["capture", "thoughtRoot", "thoughtBlock", "comment"];
+  const dom = createContentImageDom(keys);
+  const handlerCalls = [];
+  const handlerManager = createManager({
+    store: createStore(),
+    objectUrls: createObjectUrls(),
+    draftKeys: keys,
+    domRoot: dom.root,
+    async rotateFile(file, options) {
+      handlerCalls.push([file.name, options.quarterTurns]);
+      return { ...file, pixels: `${file.pixels}>dom-${options.quarterTurns}` };
+    }
+  });
+  await handlerManager.restore("dom-owner");
+  for (const key of keys) {
+    await handlerManager.select(key, [{
+      ...image(`${key}.jpg`),
+      type: "image/jpeg",
+      pixels: `${key}-original`
+    }]);
+  }
+  await Promise.resolve();
+
+  for (const key of keys) {
+    const surface = dom.editors.get(key);
+    assert.ok(
+      surface.rotateButton,
+      `${key} must render a production rotation control`
+    );
+    assert.equal(surface.rotateButton.dataset.contentImageRotate, "0");
+    await dom.root.click(surface.rotateButton);
+    assert.match(
+      surface.imageElement.src,
+      /^blob:test-/,
+      `${key} handler must refresh the visible preview`
+    );
+  }
+  assert.deepEqual(
+    handlerCalls,
+    keys.map(key => [`${key}.jpg`, 1]),
+    "all four shared draft keys must reach rotate through the DOM handler"
   );
 }
 
@@ -671,6 +908,33 @@ assert.equal(
   assert.deepEqual(removeUrls.revoked, removeUrls.created);
 }
 
+{
+  const reusedUrls = {
+    revoked: [],
+    createObjectURL() {
+      return "blob:reused-value";
+    },
+    revokeObjectURL(value) {
+      this.revoked.push(value);
+    }
+  };
+  const reusedManager = createManager({
+    store: createStore(),
+    objectUrls: reusedUrls,
+    draftKeys: ["comment"]
+  });
+  await reusedManager.restore("reused-owner");
+  await reusedManager.select("comment", [image("first-reused.png")]);
+  await reusedManager.remove("comment", 0);
+  await reusedManager.select("comment", [image("second-reused.png")]);
+  await reusedManager.remove("comment", 0);
+  assert.deepEqual(
+    reusedUrls.revoked,
+    ["blob:reused-value", "blob:reused-value"],
+    "revoked URL ownership must be released so a reused value is independently owned"
+  );
+}
+
 console.log(
-  "Content image draft manager checks passed: account generations, isolated keys, partial retry order, rollback classification, compensation, item removal, durable reset and idempotent Blob URL cleanup."
+  "Content image draft manager checks passed: EXIF pixels, DOM rotation handlers, original-derived turns, account generations, isolated keys, partial retry order, rollback classification, compensation, item removal, durable reset and idempotent Blob URL cleanup."
 );

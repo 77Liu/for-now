@@ -43,18 +43,25 @@ function defaultCanvasEncoder(canvas, options) {
       blob => blob
         ? resolve(blob)
         : reject(new Error("无法保存旋转后的图片")),
-      options.type
+      options.type,
+      options.quality
     );
   });
 }
 
 export async function rotateContentImageFile(file, {
+  quarterTurns = 1,
   decodeImage = defaultImageDecoder,
   createCanvas = defaultCanvas,
   encodeCanvas = defaultCanvasEncoder,
   createFile = (parts, name, options) => new File(parts, name, options)
 } = {}) {
   if (!file) throw new TypeError("A content image file is required");
+  if (!Number.isSafeInteger(quarterTurns)) {
+    throw new TypeError("Content image quarterTurns must be an integer");
+  }
+  const turns = ((quarterTurns % 4) + 4) % 4;
+  if (!turns) return file;
   const image = await decodeImage(file, { imageOrientation: "from-image" });
   try {
     const width = Math.round(Number(image?.width));
@@ -63,16 +70,32 @@ export async function rotateContentImageFile(file, {
       || !Number.isSafeInteger(height) || height < 1) {
       throw new Error("无法读取图片尺寸");
     }
-    const canvas = createCanvas(height, width);
+    const swapsDimensions = turns % 2 === 1;
+    const canvas = createCanvas(
+      swapsDimensions ? height : width,
+      swapsDimensions ? width : height
+    );
     const context = canvas?.getContext?.("2d");
     if (!context) throw new Error("当前浏览器不支持图片旋转");
-    context.translate(height, 0);
-    context.rotate(Math.PI / 2);
+    if (turns === 1) {
+      context.translate(height, 0);
+      context.rotate(Math.PI / 2);
+    } else if (turns === 2) {
+      context.translate(width, height);
+      context.rotate(Math.PI);
+    } else {
+      context.translate(0, width);
+      context.rotate(-Math.PI / 2);
+    }
     context.drawImage(image, 0, 0);
     const requestedType = ["image/png", "image/jpeg", "image/webp"].includes(file.type)
       ? file.type
       : "image/png";
-    const blob = await encodeCanvas(canvas, { type: requestedType });
+    const encoding = { type: requestedType };
+    if (["image/jpeg", "image/webp"].includes(requestedType)) {
+      encoding.quality = 0.92;
+    }
+    const blob = await encodeCanvas(canvas, encoding);
     if (!blob || !Number.isFinite(Number(blob.size)) || Number(blob.size) < 1) {
       throw new Error("旋转后的图片内容为空");
     }
