@@ -1137,3 +1137,70 @@ home/chat/onboarding/auth/shell 运行时职责迁出，达到 runtime `<=180` �
 
 唯一下一动作：保持本地候选冻结；只有取得明确的远端 Release 授权和对应
 环境后，才可执行 push/tag/Release/Preview/生产动作或补跑受环境约束的门禁。
+
+## 2026-10-07 Release 收口 R12
+
+状态：`queue-1 exit verified / local release gates passed / round-2 review GO /
+preview authorization pending`。
+
+### 候选重冻结
+
+- 队列 1 出口复核通过：G6 为 3 policies / 108 modules / 237 routes /
+  0 exceptions，25 个页面无 legacy adapter，第一轮 reviewer
+  blocker/P0/P1=`0/0/0`，worktree `5 / 6`。
+- Release 冻结发现 Web、npm 和 iOS 仍保留 V0.5.7 元数据，因此 R11 的
+  Release 身份废止；运行功能没有回退或重做。
+- 独立元数据提交：
+  `6bca4295a0317e6274e7d5fed6c292284c7578f9`；
+  tree：`4fd2fbca6256879862e92d3654c20261ca00d176`。
+- 946 文件 manifest：
+  `/tmp/v0.5.8-release-6bca4295a0317e6274e7d5fed6c292284c7578f9.manifest`；
+  SHA-256：
+  `7076aba155aed3229064529513b84781a14365b8ba7abe35d1f0f23bf2b8b10a`。
+- Release 门开始和结束时 HEAD/tree/manifest 一致，工作区干净，5 个
+  worktree，无残留测试进程。
+
+### 完整 Release 门
+
+- `npm run check`：通过。
+- backend：91 阶段，`332231 ms`；frontend：36 阶段，`83677 ms`。
+- 独立 system：`429676 ms`；PostgreSQL 16.14 stable 主 46 项及 ledger
+  全通过。
+- PWA 与 web budget 通过；warm firstReadable P75 `750.0/750 ms`，
+  cold P75 `748.7/1000 ms`，hidden feature 请求 0。
+- Journey Release 工件
+  `artifacts/user-journeys/2026-10-06T20-00-21-874Z.json`：
+  passed，`457035 ms`；内含 system `440613 ms`、PostgreSQL
+  `15122 ms`、生产依赖审计 `1300 ms` / 0 vulnerabilities。
+- Release Journey 共 20 条、18 条自动化；
+  `local-online-snapshot` 与 `responsive-visual-accessibility` 为 partial，
+  留待 Preview 人工补验。
+- 独立 `npm run test:restore` 通过。
+- 旧候选曾保留一次 warm P75 `751.4>750 ms` 的失败样本，隔离复跑为
+  `736.6 ms`；新候选门为 `750.0 ms`，阈值未放宽，Preview 继续重点观察。
+
+### 第二轮审计与调度
+
+- 新独立只读 Reviewer `v058_release_round2_review` 审查
+  `2c395c029540..6bca4295a031`，只接受候选引入、生产可达、稳定复现的
+  blocker/P0/P1。
+- Reviewer 未发现符合项，blocker/P0/P1=`0/0/0`，`GO`；未修改文件或
+  执行任何远端动作。
+- 当前没有 ready 的编码节点，不再派发实现任务。Release 文档、TODO、计划和
+  本调度记录由主 Agent 单写，形成独立 docs/status 提交；纯说明文档不使
+  `6bca429` 的行为测试失效。
+
+### 外部状态与下一动作
+
+- Base URL 已解析为 `MwUibJRQKaae9hsY9lMceQBYnAh`；读取 Table 时缺少
+  `base:table:read`，授权请求被跳过，因此本轮未写 Base，也未声称远端状态
+  已更新。
+- 完整授权包见
+  `reports/pre-launch-2026-10-07-v0.5.8.md`。状态仅为“待验收 / 待发布”，
+  不写“已发布”。
+- 唯一下一动作：冻结 docs/status 提交和最终 manifest，取得针对该最终 SHA
+  的明确授权后执行 Preview；Preview 验收后必须再次授权，才可 tag、创建
+  Gitee Release、备份/恢复和生产部署。
+- 禁止自行 push、tag、创建 Release、部署 Preview/生产、调用付费服务或
+  写入生产。任何 blocker/P0/P1、恢复失败、持续 5xx、重启、OOM 或 SHA
+  漂移立即停止并回滚。

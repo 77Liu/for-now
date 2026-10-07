@@ -2,14 +2,12 @@
 
 计划日期：2026-10-05
 
-状态：`G0-G2` 已通过；Owner 已验收 V0.5.7 `G7` 并允许进入 V0.5.8
-本地开发。`V0.5.8-13/15/14/16/20/02` 已完成工作区验证，`03/04`
-已完成 B1-B7 与 F1-F5；服务端入口 G4 代码、本地系统门及
-隔离 PostgreSQL 16.14 stable 门均已通过，G4 已关闭。
-F3.1 通知页、F3.2 批注 lifecycle、F3.3 后台结果/跨内容定位及 F4.1
-状态趋势/历史/首页情绪、F4.2 健康媒体草稿与批量体重、F4.3 日录展示/
-提交/sync 以及 F5 思绪列表/详情/追问/备注/TTS 均已完成，下一步进入 F6；
-尚未进入 Preview 或发布。
+状态：`G0-G6` 已通过；Owner 已验收 V0.5.7 `G7` 并允许完成 V0.5.8
+本地开发。`V0.5.8-13/15/14/16/20/02/03/04` 已进入固定本地候选；
+`server.mjs` 为 4 行，`runtime.mjs` 为 53 行，25 个页面均使用显式
+descriptor，六类 G6 迁移例外归零。已测试候选 `6bca429` 通过完整 Release
+门与第二轮 blocker/P0/P1=`0/0/0` 审计；当前待首次 Preview 授权，尚未
+push、tag、创建 Release、部署 Preview/生产或写入生产。
 
 2026-10-06 经 Owner 授权按完整需求原子重排：V0.5.8 只保留 6 条 P00；
 原 8 条 P0 和交付 `05–10、17–19、21` 整体迁入 V0.5.9。F4.3–F10 与
@@ -129,7 +127,7 @@ V0.5.8 的 6 条 P00 关联版本记录 `reczz28JaO7yXu1K`；V0.5.9 的 8 条 P0
 | 20 | `reczz28Jd8F4oH1y` | 工作区已验证未部署 | `91a10b7..88d37e1`：同步 HTML 开屏、雨景生命周期、真实 paint 性能门、FCP 后入口、退出/失败/清理、watchdog 锁存及 PWA 升级预算通过 |
 | 02 | `reczz28JPdCVUwBD` | 工作区已验证未部署 | `6730597`：三类真实入口、组合 API/import binding/factory 链、G4/G6 例外和 feature lifecycle 已机器冻结；最终独立复审 GO |
 | 03 | `reczz28JPdCVWPzV` | 工作区已验证未部署 | `f3724c4..17fca0d`：B1-B7 已完成，`server.mjs` 3283→4 行；显式 PostgreSQL 16.14 与隔离签名 Node 下 stable 三段通过，G4 已关闭 |
-| 04 | `reczz28JPdCVXtsA` | 进行中 | `e7d99d6..74ac884`：F1-F5 已完成；health 与 thoughts 已按路由迁移，共享图片草稿/页面音频接线；runtime 5291→4288 行，下一步 F6，完整 home 延至 F10 |
+| 04 | `reczz28JPdCVXtsA` | 待验收 | `e7d99d6..d28ea57`：F1-F10 已完成；25 个页面由显式 descriptor/controller 单轨承接，runtime 5291→53 行，六类 G6 例外归零 |
 
 13、15、14、16、20 都是行为修复，已在现有入口上完成并固定自动化反例；
 共享热点由集成负责人串行接线。02 已冻结结构契约；03 已完成 B1-B7 并关闭
@@ -168,8 +166,8 @@ Owner 于 2026-10-06
 
 | 顺序 | 交付 ID | 状态 | 完成条件 |
 | ---: | --- | --- | --- |
-| 11 | `reczz28JPdamLqYH` | 待开始 | 6 条 P00 全部达到 G3，入口完成 G6，固定候选并通过完整门与 Preview |
-| 12 | `reczz28JPdamMe1C` | 待开始 | 获得 G5 授权后完成 Git/Gitee、生产、观察、回填和 G7 |
+| 11 | `reczz28JPdamLqYH` | 待验收 | 6 条 P00、G6、固定候选、完整本地 Release 门和第二轮审计已完成；等待首次授权后执行 Preview 与两个 partial 人工项 |
+| 12 | `reczz28JPdamMe1C` | 待发布 | 等待 Preview 验收和第二次明确授权后完成 tag/Gitee Release、生产备份恢复、部署、观察、回填和 G7 |
 
 ## 6. 关键能力边界
 
@@ -242,8 +240,8 @@ flowchart TD
     I -.-> M["05-10 系统协作闭环"]
   end
   subgraph RELEASE["阶段三｜V0.5.8 候选与关闭"]
-    I --> O["○ 11 集成审计与固定候选"]
-    O --> P["○ G5 Owner 发布授权"]
+    I --> O["✅ 11 本地候选与第二轮审计"]
+    O --> P["○ G5 Preview 授权"]
     P --> Q["○ 12 发布、生产观察与 G7"]
   end
 ```
@@ -522,11 +520,27 @@ flowchart TD
   准备，但工作树当前为 `5/6`，最多只新增一条写线；runtime、barrel、
   registry、runner 和 Service Worker 接线仍按 F5→F6 由主调度串行完成。
 
-当前未完成：
+### 2026-10-07 本地 Release 候选
 
-- 下一步进入 F6-F10，完成剩余 browser runtime 收口与
-  G6-G7；服务端入口已收口为 4 行、删除全部 server 迁移例外并通过 G4。
-- 未执行 push、tag、Release、Preview/生产部署或生产写入。
+- F6-F10 与 G6 已关闭。`server.mjs` 为 4 行，`runtime.mjs` 为 53 行；
+  25 个页面使用显式 descriptor/controller，3 个入口策略、108 个 active
+  modules、237 条 owned routes、0 个迁移例外。
+- 已测试候选为 `6bca4295a0317e6274e7d5fed6c292284c7578f9`，tree 为
+  `4fd2fbca6256879862e92d3654c20261ca00d176`；946 文件 manifest 的
+  SHA-256 为
+  `7076aba155aed3229064529513b84781a14365b8ba7abe35d1f0f23bf2b8b10a`。
+- check、backend、frontend、system、PostgreSQL 16.14 stable、PWA、
+  web budget、Journey Release、依赖审计和恢复门均通过。Journey Release
+  用时 `457035 ms`，依赖审计为 0 vulnerabilities。
+- 第二轮独立审计只接受候选引入、生产可达且稳定复现的高优问题，结果
+  blocker/P0/P1=`0/0/0`，GO。
+- Release Journey 的 `local-online-snapshot` 与
+  `responsive-visual-accessibility` 仍为 partial，必须在 Preview 人工补验。
+- 完整发布说明、配置清单、数据库/媒体边界、备份恢复、生产步骤、观察指标和
+  回滚命令见
+  [`V0.5.8 发布前记录`](pre-launch-2026-10-07-v0.5.8.md)。
+- 当前没有 ready 的编码节点。尚未执行 push、tag、Release、Preview/生产
+  部署、真实付费调用或生产写入；下一步只允许在明确授权后执行 Preview。
 
 V0.5.8 只有同时满足以下条件才可关闭：
 
