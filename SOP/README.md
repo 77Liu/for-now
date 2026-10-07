@@ -16,6 +16,10 @@
   任务建立调度者、思考秘书、侦察员、并行开发者、验证者与 reviewer 的任务图、
   角色知识账、事件驱动重排、ready 派发责任、完整候选证据绑定、文件所有权、
   通信协议、串行集成及工作树门禁。
+- [`night-continuous-development.md`](night-continuous-development.md)：生成
+  三条可从任意进度恢复的夜间 Prompt，以当前关键路径、质量/Preview 和后续
+  版本开发三条车道持续重排；缺少生产权限只阻塞节点，不阻止隔离 Preview、
+  后续版本本地代码和安全备用任务继续推进。
 - [`ui-ux-optimization.md`](ui-ux-optimization.md)：从现状证据、用户任务、
   信息架构和内容审计出发，完成流程、线框、视觉系统、交互原型、实施交接与
   全端设计验收；包含冷启动、组件无漂移和用户文案专项。

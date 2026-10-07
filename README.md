@@ -238,6 +238,8 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
 - `one-mistake-one-rule.md`：复发风险错误与对应行为规则。
 - `SOP/README.md`：标准作业流程目录；迭代复盘与过程报告按
   `SOP/iteration-retrospective.md` 执行。
+- `SOP/night-continuous-development.md`：夜间三 Prompt 队列、隔离 Preview
+  持续授权、跨版本本地开发和权限阻塞后的安全备用车道。
 - `knowledge/engineering-rules.md`：代码范围、设计原则、验证、提交与发布规则。
 - `knowledge/pre-launch-confirmation.md`：上线前双轮检查、人工配置与确认、证据失效、Git/服务器发布和观察关闭流程。
 - `knowledge/development-release-checklist.md`：新功能测试完成、准备上线时执行的阻断式自查清单。
