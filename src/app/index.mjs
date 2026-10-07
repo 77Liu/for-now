@@ -67,6 +67,13 @@ export {
   workingContextReceiptMatches
 } from "./task-context.mjs";
 export {
+  STRUCTURED_WORKING_CONTEXT_SCHEMA_VERSION,
+  answerRolePrompt,
+  compileWorkingContextPrompt,
+  promptRoleText,
+  workingContextPromptContract
+} from "./prompt-context.mjs";
+export {
   STORE_VERSION,
   TRASH_RETENTION_DAYS,
   createEmptyStore,

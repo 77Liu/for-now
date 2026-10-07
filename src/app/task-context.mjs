@@ -408,6 +408,9 @@ function contextSections(task, currentMaterial, historicalMaterial, notice) {
   const noticeContext = notice ? `<retrieval_notice>${notice}</retrieval_notice>` : "";
   return {
     task,
+    currentMaterial,
+    historicalMaterial,
+    notice,
     currentContext,
     historicalContext,
     noticeContext,
@@ -424,11 +427,13 @@ function contextSections(task, currentMaterial, historicalMaterial, notice) {
 
 function compiledPrompt(compilePrompt, task, currentMaterial, historicalMaterial, notice) {
   const sections = contextSections(task, currentMaterial, historicalMaterial, notice);
-  const prompt = compilePrompt ? compilePrompt(sections) : sections.workingContext;
+  const compiled = compilePrompt ? compilePrompt(sections) : sections.workingContext;
+  const prompt = typeof compiled === "string" ? compiled : compiled?.prompt;
+  const promptContract = typeof compiled === "string" ? null : compiled?.contract || null;
   if (typeof prompt !== "string" || !prompt.trim()) {
     fail("Working context compiler returned an invalid prompt", "TASK_CONTEXT_INVALID");
   }
-  return prompt;
+  return { prompt, promptContract };
 }
 
 function selectionReceipt({
@@ -444,7 +449,8 @@ function selectionReceipt({
   status,
   historyRetrieval,
   notice,
-  prompt
+  prompt,
+  promptContract
 }) {
   const selected = [
     ...currentMaterial.map(item => ({
@@ -517,6 +523,7 @@ function selectionReceipt({
     excluded: excluded.slice(0, WORKING_CONTEXT_RECEIPT_ITEM_LIMIT),
     evidenceChecks: [...evidenceChecks.values()],
     promptSha256: digest(prompt),
+    promptContract: promptContract ? structuredClone(promptContract) : null,
     timeWindow: {
       from: occurredAt[0]?.slice(0, 10) || "",
       to: occurredAt.at(-1)?.slice(0, 10) || ""
@@ -564,14 +571,14 @@ export function workingContextProjection(store, {
   tokenLimit = Math.max(1, Math.round(Number(tokenLimit) || WORKING_CONTEXT_TOKEN_BUDGET));
   maxHistorical = Math.max(0, Math.min(50, Math.round(Number(maxHistorical) || 0)));
   const degradedNotice = "历史证据暂不可用，本次仅依据当前材料。";
-  const currentPrompt = compiledPrompt(
+  const currentCompiled = compiledPrompt(
     compilePrompt,
     task,
     currentMaterial,
     [],
     degradedNotice
   );
-  if (Buffer.byteLength(currentPrompt, "utf8") > tokenLimit) {
+  if (Buffer.byteLength(currentCompiled.prompt, "utf8") > tokenLimit) {
     fail("Current material exceeds the working-context budget", "CURRENT_MATERIAL_BUDGET_EXCEEDED");
   }
 
@@ -625,7 +632,7 @@ export function workingContextProjection(store, {
           [...selectedHistory, candidate],
           notice
         );
-        if (Buffer.byteLength(tentative, "utf8") > tokenLimit) reasons.push("token-budget");
+        if (Buffer.byteLength(tentative.prompt, "utf8") > tokenLimit) reasons.push("token-budget");
       }
       if (reasons.length) {
         excluded.push({
@@ -639,7 +646,7 @@ export function workingContextProjection(store, {
       }
     }
   }
-  const prompt = compiledPrompt(compilePrompt, task, currentMaterial, selectedHistory, notice);
+  const compiled = compiledPrompt(compilePrompt, task, currentMaterial, selectedHistory, notice);
   const receipt = selectionReceipt({
     accountId,
     scene,
@@ -653,10 +660,11 @@ export function workingContextProjection(store, {
     status,
     historyRetrieval,
     notice,
-    prompt
+    prompt: compiled.prompt,
+    promptContract: compiled.promptContract
   });
   return {
-    prompt,
+    prompt: compiled.prompt,
     receipt,
     attachmentPaths: [...new Set(currentMaterial.flatMap(item => item.attachmentPaths))]
   };
@@ -665,6 +673,7 @@ export function workingContextProjection(store, {
 export function workingContextReceiptFingerprint(receipt) {
   const generatedAt = safeIso(receipt?.generatedAt);
   const timeWindow = receipt?.timeWindow;
+  const promptContract = receipt?.promptContract;
   if (receipt?.schemaVersion !== 2
     || receipt?.version !== WORKING_CONTEXT_VERSION
     || !generatedAt
@@ -688,7 +697,19 @@ export function workingContextReceiptFingerprint(receipt) {
     || (timeWindow.from && !validDateOnly(timeWindow.from))
     || (timeWindow.to && !validDateOnly(timeWindow.to))
     || Boolean(timeWindow.from) !== Boolean(timeWindow.to)
-    || (timeWindow.from && timeWindow.from > timeWindow.to)) {
+    || (timeWindow.from && timeWindow.from > timeWindow.to)
+    || (promptContract != null && (
+      promptContract?.schemaVersion !== 1
+      || !["structured-json", "legacy"].includes(promptContract.mode)
+      || typeof promptContract.catalogVersion !== "string"
+      || !promptContract.catalogVersion
+      || !validDigest(promptContract.catalogSha256)
+      || (promptContract.mode === "structured-json" && (
+        !promptContract.roleId
+        || !promptContract.taskPromptId
+        || !promptContract.envelopeId
+      ))
+    ))) {
     return "";
   }
   const currentIds = receipt.currentMaterial.map(item => item?.id);
@@ -725,6 +746,7 @@ export function workingContextReceiptFingerprint(receipt) {
     selected: receipt.selected,
     evidenceChecks: receipt.evidenceChecks,
     promptSha256: receipt.promptSha256,
+    ...(promptContract != null ? { promptContract } : {}),
     timeWindow: receipt.timeWindow,
     tokenBudget: { limit: receipt.tokenBudget?.limit },
     accountBindingSha256: receipt.accountBindingSha256

@@ -9,10 +9,10 @@ import {
 } from "../modules/thoughts/index.mjs";
 import {
   compactPersonalContextReceipt,
-  thoughtAnswerPrompt,
   thoughtPromptContext,
   userAnswerContext
 } from "./personal-context.mjs";
+import { compileWorkingContextPrompt } from "./prompt-context.mjs";
 import {
   thoughtTaskCurrentMaterial,
   workingContextProjection,
@@ -37,9 +37,6 @@ export function createThoughtWorkflows({
   now = () => new Date().toISOString()
 }) {
   const activeAnswers = new Map();
-  const selectedHistory = sections => (
-    [sections.historicalContext, sections.noticeContext].filter(Boolean).join("\n")
-  );
   const answerContextOptions = (store, root) => ({
     accountId: getAccountId(),
     scene: "thoughtAnswer",
@@ -52,10 +49,10 @@ export function createThoughtWorkflows({
     currentMaterial: thoughtTaskCurrentMaterial(store, root, {
       accountId: getAccountId()
     }),
-    compilePrompt: sections => thoughtAnswerPrompt(
-      selectedHistory(sections),
-      sections.currentContext
-    )
+    compilePrompt: sections => compileWorkingContextPrompt({
+      ...sections,
+      scene: "thoughtAnswer"
+    })
   });
   const saveForegroundAnswer = (store, {
     id,

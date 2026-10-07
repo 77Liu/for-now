@@ -1,10 +1,10 @@
 import { safeText, recordVersion } from "../shared/validation/index.mjs";
 import { renderPrompt } from "../shared/prompts/index.mjs";
-import { annotationExcerpt, annotationPrompt, shenjiSystemPrompt } from "../modules/annotations/index.mjs";
+import { annotationExcerpt, shenjiSystemPrompt } from "../modules/annotations/index.mjs";
 import { thoughtTaskResult } from "../modules/thoughts/index.mjs";
 import { parseClaimExtractionOutput } from "../modules/user-model/index.mjs";
-import { thoughtAnswerPrompt } from "./personal-context.mjs";
 import { annotationResource, annotationResourceSource, annotationResourceContext } from "./annotation-resources.mjs";
+import { compileWorkingContextPrompt } from "./prompt-context.mjs";
 import { prepareUserModelExtraction } from "./user-model.mjs";
 import {
   contextDerivedOutputAllowed,
@@ -21,10 +21,6 @@ export function createAiTaskTargets({
   hash,
   now = () => new Date().toISOString()
 }) {
-  const selectedHistory = sections => (
-    [sections.historicalContext, sections.noticeContext].filter(Boolean).join("\n")
-  );
-
   function captureTranscriptionWork(store, task) {
     const capture = store.captures?.find(item => item.id === task.targetId);
     if (!capture?.audio?.attachmentPath) return null;
@@ -111,12 +107,6 @@ export function createAiTaskTargets({
             ...(root.followUps || [])
           ].find(item => item.id === targetId);
     if (!target) return null;
-    const rootContext = [
-      baseRootContext,
-      ...(targetId !== root.id
-        ? [`<annotated_source_full>${source}</annotated_source_full>`]
-        : [])
-    ].join("\n");
     const requestId = safeText(task.clientRequestId || task.id, 100) || `${annotation.id}:message`;
     const currentMaterial = [...(targetId !== root.id ? [{
       id: `current:${resourceType}:${root.id}:root`,
@@ -139,7 +129,7 @@ export function createAiTaskTargets({
       accountId,
       text: source,
       attachmentPaths: target.attachmentPaths,
-      recordType: "被批注正文",
+      recordType: `${context.label}·被批注正文`,
       contextAllowed: target.contextAllowed !== false && target.disposition !== "discarded",
       validation: "version",
       occurredAt: root.occurredAt || root.createdAt,
@@ -196,13 +186,28 @@ export function createAiTaskTargets({
       },
       generatedAt: task.createdAt || now(),
       currentMaterial,
-      compilePrompt: sections => annotationPrompt({
-        personalContext: selectedHistory(sections),
-        rootContext,
-        annotation,
-        excerpt,
-        previousItems,
-        message
+      compilePrompt: sections => compileWorkingContextPrompt({
+        ...sections,
+        scene: "annotationShenji",
+        taskDetails: {
+          resource: {
+            type: resourceType,
+            label: context.label,
+            title: context.title
+          },
+          annotation: {
+            kind: annotation.kind || "comment",
+            before: excerpt.before,
+            focus: excerpt.focus,
+            after: excerpt.after,
+            comment: annotation.text || "",
+            turns: previousItems.map(item => ({
+              message: item.message,
+              answer: item.answer
+            })),
+            message
+          }
+        }
       })
     });
     const inputHash = hash(JSON.stringify({
@@ -297,7 +302,6 @@ export function createAiTaskTargets({
       if (!work) return null;
       const { root, followUp, inputVersion, subtargetVersion } = work;
       const accountId = getAccountId();
-      const followUpAnswer = task.kind === "followUpAnswer";
       const workingContext = workingContextProjection(store, {
         accountId,
         scene: task.kind,
@@ -314,11 +318,10 @@ export function createAiTaskTargets({
           accountId,
           currentFollowUpId: followUp?.id || ""
         }),
-        compilePrompt: sections => thoughtAnswerPrompt(
-          selectedHistory(sections),
-          sections.currentContext,
-          followUpAnswer
-        )
+        compilePrompt: sections => compileWorkingContextPrompt({
+          ...sections,
+          scene: task.kind
+        })
       });
       if (task.kind === "thoughtAnswer") {
         const attachmentPaths = workingContext.attachmentPaths;
