@@ -49,6 +49,7 @@ const store = {
     inputVersion: 1,
     status: "succeeded",
     createdAt: CURRENT_TIME,
+    internal: index === 0,
     payload: { privatePrompt: "do not expose" },
     tokenBudget: { private: true }
   })),
@@ -125,6 +126,7 @@ assert.equal(Object.hasOwn(ownerState, "perceptionEvents"), false);
 assert.equal(ownerState.trashCount, 2);
 assert.equal(ownerState.notificationUnread, 1);
 assert.equal(ownerState.aiTasks.length, 100);
+assert.equal(ownerState.aiTasks.some(item => item.id === "task-0"), false);
 assert.equal(Object.hasOwn(ownerState.aiTasks[0], "payload"), false);
 assert.equal(Object.hasOwn(ownerState.captures[0], "speechCache"), false);
 assert.equal(Object.hasOwn(ownerState.keepsakes[0], "originalPath"), false);

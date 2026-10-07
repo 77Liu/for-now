@@ -9,22 +9,36 @@ import { journalAssistPrompt, journalReflectionInput, markJournalAssistContent }
 import {
   PERSONAL_CONTEXT_PROJECTION_VERSION,
   PERSONAL_CONTEXT_TOKEN_BUDGET,
+  WORKING_CONTEXT_VERSION,
   compactPersonalContextReceipt,
+  contextDerivedOutputAllowed,
   estimatePersonalContextTokens,
   personalContextProjection,
   personalContextReceiptMatches,
   userAnswerContext,
   diaryActivityContext,
   thoughtPromptContext,
-  prepareThoughtAnswer,
-  createAiTaskTargets
+  createAiTaskTargets,
+  workingContextReceiptFingerprint
 } from "../src/app/index.mjs";
 import { createJsonStoreRepository } from "../src/shared/persistence/index.mjs";
 import { createOnboardingHttp, createPersonalContextHttp } from "../src/http/index.mjs";
 
 const now = () => "2026-09-29T01:00:00.000Z";
 const hash = value => crypto.createHash("sha256").update(value).digest("hex");
-const empty = () => ({ thoughts: [], checkins: [], dailyRecords: [], captures: [], journals: [], chats: [], onboarding: structuredClone(defaultOnboarding) });
+const empty = () => ({
+  thoughts: [],
+  checkins: [],
+  dailyRecords: [],
+  captures: [],
+  journals: [],
+  chats: [],
+  evidenceSources: [],
+  evidencePermissions: [],
+  perceptionEvents: [],
+  trash: [],
+  onboarding: structuredClone(defaultOnboarding)
+});
 const context = new AsyncLocalStorage();
 const account = () => context.getStore() || "a";
 const documents = new Map([["a", empty()], ["b", empty()]]);
@@ -116,7 +130,7 @@ const root = {
 store.thoughts = [
   root,
   { ...event, id: "idea", relatedTo: root.id, type: "idea", authorType: "user", content: "RAW_IDEA" },
-  { ...event, id: "record", relatedTo: root.id, type: "record", authorType: "user", content: "RAW_RECORD" },
+  { ...event, id: "record", relatedTo: root.id, type: "record", authorType: "user", content: "RAW_RECORD", attachmentPaths: ["/attachments/record-image.png"] },
   { ...event, id: "user-answer", relatedTo: root.id, type: "answer", authorType: "user", content: "RAW_USER_ANSWER" },
   { ...event, id: "ai-answer", relatedTo: root.id, type: "answer", authorType: "ai", content: "AI_FINAL_ANSWER", modelDraft: "OLD_AI_DRAFT", tags: ["AI_ONLY_TAG"], reasoningContent: "PRIVATE_REASONING" },
   { ...event, id: "ai-draft", relatedTo: root.id, type: "answer", authorType: "ai", content: "", modelDraft: "AI_DRAFT_FALLBACK", reasoningContent: "PRIVATE_REASONING" }
@@ -192,20 +206,144 @@ for (const expected of ["RAW_QUESTION", "RAW_IDEA", "RAW_USER_ANSWER", "AI_FINAL
 assert.equal(chain.includes("PRIVATE_REASONING"), false);
 assert.equal(chain.includes("OLD_AI_DRAFT"), false);
 assert.deepEqual(store, original);
+root.annotations[0].shenji[0].contextReceipt = durableReceipt;
 const targets = createAiTaskTargets({
   thoughts: createThoughtTaskTarget({ createId: () => "generated", now, stripThoughtAnswerLead }),
-  annotations: createAnnotationService({ createId: () => "annotation", now }), hash
+  annotations: createAnnotationService({ createId: () => "annotation", now }),
+  getAccountId: () => "account-a",
+  hash
 });
 const thoughtAnswerWork = targets.prepare(store, { kind: "thoughtAnswer", targetId: root.id });
-assert.equal(thoughtAnswerWork.prompt, prepareThoughtAnswer(store, root));
-assert.deepEqual(thoughtAnswerWork.attachmentPaths, ["/attachments/thought-image.png"]);
-assert.equal(thoughtAnswerWork.contextReceipt.version, PERSONAL_CONTEXT_PROJECTION_VERSION);
+assert.deepEqual(thoughtAnswerWork.attachmentPaths, [
+  "/attachments/thought-image.png",
+  "/attachments/record-image.png"
+]);
+assert.equal(thoughtAnswerWork.contextReceipt.version, WORKING_CONTEXT_VERSION);
 assert.ok(thoughtAnswerWork.contextReceipt.sources.some(source => source.resourceId === "root"));
-assert.equal(targets.prepare(store, { kind: "followUpAnswer", targetId: root.id, subtargetId: "follow-33" }).prompt, prepareThoughtAnswer(store, root, "follow-33"));
+assert.equal(
+  thoughtAnswerWork.contextReceipt.tokenBudget.estimatedUsed,
+  Buffer.byteLength(thoughtAnswerWork.prompt, "utf8")
+);
+assert.ok(
+  thoughtAnswerWork.contextReceipt.tokenBudget.estimatedUsed
+    <= thoughtAnswerWork.contextReceipt.tokenBudget.limit
+);
+for (const expected of ["RAW_QUESTION", "RAW_IDEA", "RAW_RECORD", "RAW_USER_ANSWER", "RAW_FOLLOW_64"]) {
+  assert.ok(thoughtAnswerWork.prompt.includes(expected), expected);
+}
+assert.equal(thoughtAnswerWork.prompt.match(/RAW_RECORD/g)?.length, 1);
+const followUpWork = targets.prepare(store, {
+  kind: "followUpAnswer",
+  targetId: root.id,
+  subtargetId: "follow-33"
+});
+assert.equal(followUpWork.contextReceipt.version, WORKING_CONTEXT_VERSION);
+assert.ok(followUpWork.prompt.includes("RAW_FOLLOW_64"));
+root.annotations[0].attachmentPaths = ["/attachments/comment-image.png"];
 const annotationWork = targets.prepare(store, { kind: "annotationShenji", resourceType: "thought", targetId: root.id, subtargetId: "mark", payload: { message: "CURRENT_QUESTION" } });
 for (const expected of ["RAW_QUESTION", "RAW_COMMENT", "PREVIOUS_QUESTION", "PREVIOUS_ANSWER", "CURRENT_QUESTION"]) assert.ok(annotationWork.prompt.includes(expected));
 assert.equal(annotationWork.prompt.includes("PRIVATE_REASONING"), false);
-assert.equal(annotationWork.contextReceipt.version, PERSONAL_CONTEXT_PROJECTION_VERSION);
+assert.equal(annotationWork.contextReceipt.version, WORKING_CONTEXT_VERSION);
+assert.equal(annotationWork.subtargetVersion, 1);
+assert.deepEqual(annotationWork.attachmentPaths, [
+  "/attachments/thought-image.png",
+  "/attachments/comment-image.png"
+]);
+root.annotations.push({
+  id: "child-mark",
+  kind: "comment",
+  targetKey: "idea:idea",
+  quote: "RAW_IDEA",
+  start: 0,
+  end: 8,
+  text: "子块批注",
+  version: 1,
+  shenji: []
+});
+const childAnnotationWork = targets.prepare(store, {
+  id: "child-annotation-task",
+  kind: "annotationShenji",
+  resourceType: "thought",
+  targetId: root.id,
+  subtargetId: "child-mark",
+  clientRequestId: "child-annotation-request",
+  payload: { message: "继续" }
+});
+assert.equal(childAnnotationWork.contextReceipt.currentMaterial.find(item => (
+  item.sourceKey === JSON.stringify(["thought", "idea", "root", "idea:idea"])
+)).version, 1);
+root.annotations.push({
+  id: "record-mark",
+  kind: "comment",
+  targetKey: "record:record",
+  quote: "RAW_RECORD",
+  start: 0,
+  end: 10,
+  text: "内容块批注",
+  version: 1,
+  shenji: []
+});
+assert.ok(targets.prepare(store, {
+  id: "record-annotation-task",
+  kind: "annotationShenji",
+  resourceType: "thought",
+  targetId: root.id,
+  subtargetId: "record-mark",
+  clientRequestId: "record-annotation-request",
+  payload: { message: "继续内容块" }
+}));
+const annotatedFollowUp = root.followUps.find(item => item.id === "follow-33");
+annotatedFollowUp.attachmentPaths = ["/attachments/follow-up-image.png"];
+annotatedFollowUp.question = `FOLLOWUPFOCUS${"中".repeat(2400)}FOLLOWUPTAIL`;
+root.annotations.push({
+  id: "follow-up-mark",
+  kind: "comment",
+  targetKey: "followup-question:follow-33",
+  quote: "FOLLOWUPFOCUS",
+  start: 0,
+  end: 13,
+  text: "追问批注",
+  attachmentPaths: ["/attachments/follow-up-comment.png"],
+  version: 1,
+  shenji: []
+});
+const followUpAnnotationWork = targets.prepare(store, {
+  id: "follow-up-annotation-task",
+  kind: "annotationShenji",
+  resourceType: "thought",
+  targetId: root.id,
+  subtargetId: "follow-up-mark",
+  clientRequestId: "follow-up-annotation-request",
+  payload: { message: "继续追问" }
+});
+assert.ok(followUpAnnotationWork);
+assert.ok(followUpAnnotationWork.prompt.includes("FOLLOWUPFOCUS"));
+assert.ok(followUpAnnotationWork.prompt.includes("FOLLOWUPTAIL"));
+assert.deepEqual(followUpAnnotationWork.attachmentPaths, [
+  "/attachments/thought-image.png",
+  "/attachments/follow-up-image.png",
+  "/attachments/follow-up-comment.png"
+]);
+store.aiTasks = [{
+  id: "child-annotation-task",
+  kind: "annotationShenji",
+  targetId: root.id,
+  subtargetId: "child-mark",
+  clientRequestId: "child-annotation-request",
+  payload: { message: "继续" },
+  resultId: "child-exchange",
+  status: "succeeded",
+  contextFingerprint: workingContextReceiptFingerprint(childAnnotationWork.contextReceipt)
+}];
+assert.equal(contextDerivedOutputAllowed(store, {
+  id: "child-exchange",
+  sourceTaskId: "child-annotation-task",
+  contextReceipt: childAnnotationWork.contextReceipt
+}, "account-a", {
+  kind: "annotationShenji",
+  targetId: root.id,
+  subtargetId: "child-mark"
+}), true);
 const excerpt = annotationExcerpt("前".repeat(1500) + "焦点" + "后".repeat(1500), { start: 1500, end: 1502, quote: "焦点" });
 assert.equal(excerpt.before.length, 1000);
 assert.equal(excerpt.after.length, 1000);

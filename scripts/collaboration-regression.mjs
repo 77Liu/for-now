@@ -8,7 +8,12 @@ import { createAnnotationService } from "../src/modules/annotations/index.mjs";
 import { createThoughtTaskTarget } from "../src/modules/thoughts/index.mjs";
 import { createTaskLifecycle } from "../src/modules/tasks/index.mjs";
 import { createNotificationService } from "../src/modules/notifications/index.mjs";
-import { createAnnotationCommands, createAiTaskTargets, createBackgroundAi } from "../src/app/index.mjs";
+import {
+  WORKING_CONTEXT_VERSION,
+  createAnnotationCommands,
+  createAiTaskTargets,
+  createBackgroundAi
+} from "../src/app/index.mjs";
 import { createAnnotationHttp } from "../src/http/index.mjs";
 
 const now = () => "2026-09-29T03:00:00.000Z";
@@ -23,7 +28,8 @@ const context = new AsyncLocalStorage();
 const account = () => context.getStore() || "a";
 const empty = () => ({
   thoughts: [{ id: "root", type: "question", version: 1, content: "原问题", tags: [], followUps: [{ id: "follow-up", question: "为什么", answer: "", version: 1 }], annotations: [], annotationDrift: [] }],
-  captures: [], journals: [], books: [], chats: [], analyses: [], quotes: [], aiTasks: [], notifications: [], checkins: [], dailyRecords: []
+  captures: [], journals: [], books: [], chats: [], analyses: [], quotes: [], aiTasks: [], notifications: [], checkins: [], dailyRecords: [],
+  evidenceSources: [], evidencePermissions: [], perceptionEvents: [], trash: []
 });
 const documents = new Map([["a", empty()], ["b", empty()]]);
 const commits = [];
@@ -42,7 +48,7 @@ const repository = createJsonStoreRepository({
     commits.push({ key, document: structuredClone(document) });
   }
 });
-const targets = createAiTaskTargets({ thoughts, annotations, hash });
+const targets = createAiTaskTargets({ thoughts, annotations, getAccountId: account, hash });
 const scheduled = [], calls = [];
 let generate = async () => ({ content: "生成回答", reasoningContent: "私有思考" });
 const background = createBackgroundAi({
@@ -128,7 +134,7 @@ assert.equal((await background.get(created[0].task.id)).status, "succeeded");
 assert.equal((await background.listNotifications()).unread, 1);
 assert.equal((await repository.read()).thoughts.filter(item => item.sourceTaskId === created[0].task.id).length, 1);
 const persistedAnswer = (await repository.read()).thoughts.find(item => item.sourceTaskId === created[0].task.id);
-assert.equal(persistedAnswer.contextReceipt.version, "2026.10.02.2");
+assert.equal(persistedAnswer.contextReceipt.version, WORKING_CONTEXT_VERSION);
 assert.ok(persistedAnswer.contextReceipt.sources.some(source => source.resourceId === "root"));
 assert.equal(persistedAnswer.contextReceipt.sources.some(source => Object.hasOwn(source, "excerpt")), false);
 assert.equal(persistedAnswer.contextReceipt.promptSha256, calls[0].contextReceipt.promptSha256);
@@ -166,10 +172,10 @@ await repository.update(store => {
     version: 1
   });
 });
-contextOutput.resolve({ content: "不得采用失效上下文" });
+contextOutput.resolve({ content: "不相关的新记录不应废止回答" });
 await contextDriftRun;
-assert.equal((await background.get(contextDriftTask.task.id)).status, "stale");
-assert.equal((await repository.read()).thoughts.some(item => item.sourceTaskId === contextDriftTask.task.id), false);
+assert.equal((await background.get(contextDriftTask.task.id)).status, "succeeded");
+assert.equal((await repository.read()).thoughts.some(item => item.sourceTaskId === contextDriftTask.task.id), true);
 
 const annotationEntered = gate(), annotationOutput = gate();
 generate = async () => { annotationEntered.resolve(); return annotationOutput.promise; };
@@ -270,7 +276,7 @@ await bothEntered.promise;
 bothOutput.resolve({ content: "按各自账户保存" });
 await Promise.all([accountA, accountB]);
 assert.deepEqual(calls.slice(-2).map(call => call.account).sort(), ["a", "b"]);
-const accountReceiptHashes = [];
+const accountReceiptBindings = [];
 for (const owner of ["a", "b"]) {
   await context.run(owner, async () => {
     assert.equal((await background.get(sharedTask.id)).status, "succeeded");
@@ -278,9 +284,9 @@ for (const owner of ["a", "b"]) {
     assert.ok(answer);
     assert.equal(answer.contextReceipt.sources.some(source => Object.hasOwn(source, "excerpt")), false);
     assert.match(answer.contextReceipt.promptSha256, /^[a-f0-9]{64}$/);
-    accountReceiptHashes.push(answer.contextReceipt.promptSha256);
+    accountReceiptBindings.push(answer.contextReceipt.accountBindingSha256);
   });
 }
-assert.notEqual(accountReceiptHashes[0], accountReceiptHashes[1]);
+assert.notEqual(accountReceiptBindings[0], accountReceiptBindings[1]);
 
 console.log("Collaboration checks passed: visible-text anchors, drift preservation, legacy routes, atomic task/notification results, idempotency, late results, retry, restart and account isolation.");

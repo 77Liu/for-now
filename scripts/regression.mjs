@@ -644,6 +644,14 @@ try {
   assert.equal(answer?.authorType, "ai");
   assert.equal(answer?.occurredOn, "2026-09-27");
   assert.equal(answer?.occurredAt, persisted.thoughts.find(item => item.id === "question-1").occurredAt);
+  const answerStore = JSON.parse(await fs.readFile(path.join(dataDir, "store.json"), "utf8"));
+  const answerSourceTask = answerStore.aiTasks.find(item => item.id === answer?.sourceTaskId);
+  assert.equal(answerSourceTask?.internal, true);
+  assert.equal(answerSourceTask?.status, "succeeded");
+  assert.equal(answerSourceTask?.resultId, answer.id);
+  assert.match(answerSourceTask?.contextFingerprint || "", /^[a-f0-9]{64}$/);
+  assert.equal(persisted.aiTasks.some(item => item.id === answer.sourceTaskId), false);
+  assert.equal((await fetch(`${base}/api/ai-tasks/${answer.sourceTaskId}`)).status, 404);
   const answerRequest = modelRequests.at(-1);
   assert.deepEqual([answerRequest.model, answerRequest.reasoning_effort], ["deepseek-v4-pro", "max"]);
   assert.match(answerRequest.messages[0].content, /禁止用“核心判断”/);

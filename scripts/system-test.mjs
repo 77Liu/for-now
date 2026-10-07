@@ -115,6 +115,7 @@ const suites = {
     ["segmentation transport, audit and temporary lifecycle", ["scripts/segmentation-regression.mjs"]],
     ["keepsake records and event time contracts", ["scripts/keepsake-time-regression.mjs"]],
     ["onboarding, business prompts and personal context", ["scripts/personal-context-regression.mjs"]],
+    ["task-specific working context selection", ["scripts/task-context-selection-regression.mjs"]],
     ["onboarding v2 data compatibility", ["scripts/onboarding-v2-regression.mjs"]],
     ["onboarding v2 session API", ["scripts/onboarding-v2-session-regression.mjs"]],
     ["onboarding v2 frontend state", ["scripts/onboarding-v2-frontend-regression.mjs"]],

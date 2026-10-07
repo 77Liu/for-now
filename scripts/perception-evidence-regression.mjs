@@ -636,6 +636,145 @@ assert.equal(evaluateStoredEvidenceChecks({}, [], {
   accountId: "account-a"
 }).usable, true);
 
+const chainSource = (resourceId, content, derivedFrom = []) => normalizeEvidenceSource({
+  schemaVersion: 1,
+  id: `evidence-${resourceId}`,
+  accountId: "account-a",
+  sourceRef: {
+    resourceType: "capture",
+    resourceId,
+    rootId: "",
+    targetKey: "",
+    version: 1
+  },
+  eventId: `event-${resourceId}`,
+  origin: derivedFrom.length ? "ai" : "user",
+  informationType: derivedFrom.length ? "model_derived" : "user_viewpoint",
+  contentSha256: hash(content),
+  contentLength: content.length,
+  span: [0, content.length],
+  occurredAt: "2026-10-06T00:00:00.000Z",
+  recordedAt: "2026-10-07T00:00:00.000Z",
+  permissionRevision: 1,
+  derivedFrom
+});
+const chainPermission = evidence => ({
+  schemaVersion: 1,
+  accountId: "account-a",
+  sourceKey: evidenceSourceKey(evidence.sourceRef),
+  contextAllowed: true,
+  learningAllowed: true,
+  revision: 1,
+  updatedAt: "2026-10-07T00:00:00.000Z"
+});
+const chainEvent = evidence => normalizePerceptionEvent({
+  schemaVersion: 1,
+  id: `perception-${evidence.id}`,
+  accountId: "account-a",
+  kind: "created",
+  sourceRef: evidence.sourceRef,
+  eventId: evidence.eventId,
+  contentSha256: evidence.contentSha256,
+  occurredAt: evidence.occurredAt,
+  recordedAt: evidence.recordedAt,
+  permissionRevision: 1,
+  perceptionVersion: "perception-v1"
+});
+const chainRoot = chainSource("chain-root", "原始约束");
+const chainMiddle = chainSource("chain-middle", "中间摘要", [{
+  sourceKey: evidenceSourceKey(chainRoot.sourceRef),
+  version: chainRoot.sourceRef.version,
+  contentSha256: chainRoot.contentSha256,
+  permissionRevision: chainRoot.permissionRevision
+}]);
+const chainTop = chainSource("chain-top", "最终建议", [{
+  sourceKey: evidenceSourceKey(chainMiddle.sourceRef),
+  version: chainMiddle.sourceRef.version,
+  contentSha256: chainMiddle.contentSha256,
+  permissionRevision: chainMiddle.permissionRevision
+}]);
+const recursiveStore = {
+  captures: [
+    { id: "chain-root", version: 1, content: "原始约束", origin: "manual" },
+    { id: "chain-middle", version: 1, content: "中间摘要", origin: "deepseek" },
+    { id: "chain-top", version: 1, content: "最终建议", origin: "deepseek" }
+  ],
+  evidenceSources: [chainRoot, chainMiddle, chainTop],
+  evidencePermissions: [chainRoot, chainMiddle, chainTop].map(chainPermission),
+  perceptionEvents: [chainRoot, chainMiddle, chainTop].map(chainEvent)
+};
+const chainTopCheck = {
+  evidenceId: chainTop.id,
+  evidenceFingerprint: evidenceFingerprint(chainTop),
+  purpose: "context"
+};
+assert.equal(evaluateStoredEvidenceChecks(recursiveStore, [chainTopCheck], {
+  accountId: "account-a"
+}).usable, true);
+const missingMiddleEvidenceStore = {
+  ...recursiveStore,
+  evidenceSources: [chainRoot, chainTop]
+};
+assert.deepEqual(evaluateStoredEvidenceChecks(missingMiddleEvidenceStore, [chainTopCheck], {
+  accountId: "account-a"
+}).reasons, [EVIDENCE_ERROR_CODES.DEPENDENCY_STALE]);
+const revokedRecursiveStore = structuredClone(recursiveStore);
+Object.assign(revokedRecursiveStore.evidencePermissions.find(item => (
+  item.sourceKey === evidenceSourceKey(chainRoot.sourceRef)
+)), {
+  contextAllowed: false,
+  learningAllowed: false,
+  revision: 2
+});
+assert.deepEqual(evaluateStoredEvidenceChecks(revokedRecursiveStore, [chainTopCheck], {
+  accountId: "account-a"
+}).reasons, [EVIDENCE_ERROR_CODES.DEPENDENCY_STALE]);
+
+const cycleARef = {
+  resourceType: "capture",
+  resourceId: "cycle-a",
+  rootId: "",
+  targetKey: "",
+  version: 1
+};
+const cycleBRef = {
+  resourceType: "capture",
+  resourceId: "cycle-b",
+  rootId: "",
+  targetKey: "",
+  version: 1
+};
+const cycleAContent = hash("cycle a");
+const cycleBContent = hash("cycle b");
+const cycleA = chainSource("cycle-a", "cycle a", [{
+  sourceKey: evidenceSourceKey(cycleBRef),
+  version: 1,
+  contentSha256: cycleBContent,
+  permissionRevision: 1
+}]);
+const cycleB = chainSource("cycle-b", "cycle b", [{
+  sourceKey: evidenceSourceKey(cycleARef),
+  version: 1,
+  contentSha256: cycleAContent,
+  permissionRevision: 1
+}]);
+const cycleStore = {
+  captures: [
+    { id: "cycle-a", version: 1, content: "cycle a", origin: "deepseek" },
+    { id: "cycle-b", version: 1, content: "cycle b", origin: "deepseek" }
+  ],
+  evidenceSources: [cycleA, cycleB],
+  evidencePermissions: [cycleA, cycleB].map(chainPermission),
+  perceptionEvents: [cycleA, cycleB].map(chainEvent)
+};
+assert.deepEqual(evaluateStoredEvidenceChecks(cycleStore, [{
+  evidenceId: cycleA.id,
+  evidenceFingerprint: evidenceFingerprint(cycleA),
+  purpose: "context"
+}], {
+  accountId: "account-a"
+}).reasons, [EVIDENCE_ERROR_CODES.DEPENDENCY_STALE]);
+
 const revokedStore = structuredClone(stored);
 assert.equal(revokeEvidencePermissionsForResource(revokedStore, {
   accountId: "account-a",
