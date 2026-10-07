@@ -91,7 +91,8 @@
         "data": [
           "source-bound user claims, model unknowns, candidate activation, correction, rejection, retraction and stale-source projection",
           "strict candidate extraction output parsing, source span validation and extraction limits",
-          "account-bound evidence/event/permission contracts, source identity, dependency validity and deterministic event deduplication"
+          "account-bound evidence/event/permission contracts, source identity, dependency validity and deterministic event deduplication",
+          "strict perception extraction output parsing and source-span candidate normalization"
         ],
         "routes": [
           "GET /api/v1/user-model",
@@ -103,6 +104,7 @@
         "scripts/user-model-api-regression.mjs",
         "scripts/user-model-extraction-regression.mjs",
         "scripts/perception-evidence-regression.mjs",
+        "scripts/perception-runtime-regression.mjs",
         "scripts/personal-context-regression.mjs",
         "scripts/postgres-runtime-checks.mjs"
       ],
@@ -760,6 +762,7 @@
           "account-private capture, thought-answer and thought-chain speech cache keys, source invalidation and attachment lifecycle orchestration",
           "explicit hash-confirmed historical keepsake media migration",
           "version-bound onboarding claim extraction preparation and candidate task persistence",
+          "transactional continuous-perception producers, permission-gated internal tasks and stale-result rejection",
           "bounded startup and current-route projections",
           "server configuration, persistence, service wiring, startup recovery, scheduler and shutdown composition"
         ],
@@ -784,6 +787,7 @@
       "scripts/prompt-role-injection-regression.mjs",
         "scripts/onboarding-v2-regression.mjs",
         "scripts/user-model-extraction-regression.mjs",
+        "scripts/perception-runtime-regression.mjs",
         "scripts/trash-regression.mjs",
         "scripts/collaboration-regression.mjs",
         "scripts/capture-journal-regression.mjs",

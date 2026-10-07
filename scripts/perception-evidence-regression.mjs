@@ -106,6 +106,7 @@ for (const invalid of [
   { ...rawEvidence, span: [1] },
   { ...rawEvidence, origin: "model" },
   { ...rawEvidence, informationType: "personality" },
+  { ...rawEvidence, sourceTaskId: {} },
   { ...rawEvidence, permissionRevision: 0 },
   { ...rawEvidence, derivedFrom: null },
   { ...rawEvidence, derivedFrom: [{ ...dependency, sourceKey: "capture:capture-1" }] },
@@ -136,6 +137,15 @@ assert.notEqual(evidence, evidenceInput);
 assert.deepEqual(evidenceInput, rawEvidence);
 assert.equal(evidence.occurredAt, "2026-10-06T00:00:00.000Z");
 assert.equal(evidence.recordedAt, "2026-10-07T00:00:00.000Z");
+const taskBoundEvidence = normalizeEvidenceSource({
+  ...rawEvidence,
+  sourceTaskId: "perception-task-1"
+});
+assert.equal(taskBoundEvidence.sourceTaskId, "perception-task-1");
+assert.equal(
+  evidenceFingerprint(taskBoundEvidence),
+  evidenceFingerprint({ ...taskBoundEvidence, sourceTaskId: "perception-task-2" })
+);
 assert.equal(evidenceSourceKey(evidence.sourceRef), sourceKey);
 assert.equal(evidenceSourceKey({ ...sourceRef, version: 99 }), sourceKey);
 assert.equal(evidenceSourceKey({ resourceType: "capture", resourceId: "a:b", version: 1 }), JSON.stringify(["capture", "a:b", "", ""]));

@@ -124,6 +124,7 @@ const suites = {
     ["user model API", ["scripts/user-model-api-regression.mjs"]],
     ["user model extraction tasks", ["scripts/user-model-extraction-regression.mjs"]],
     ["perception evidence contracts", ["scripts/perception-evidence-regression.mjs"]],
+    ["continuous perception runtime", ["scripts/perception-runtime-regression.mjs"]],
     ["annotations, background tasks and notifications", ["scripts/collaboration-regression.mjs"]],
     ["trash, restore and durable attachment cleanup", ["scripts/trash-regression.mjs"]],
     ["backend regression", ["scripts/regression.mjs"]],

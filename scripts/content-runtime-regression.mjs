@@ -136,8 +136,16 @@ const runtime = createContentRuntime({
     accountId: accountId(),
     callback
   }),
-  runDeepSeek: async () => ({
-    content: "生成内容",
+  runDeepSeek: async (_prompt, options = {}) => ({
+    content: options.scene === "perceptionExtraction"
+      ? JSON.stringify({
+          evidence: [{
+            origin: "user",
+            informationType: "user_viewpoint",
+            span: [0, 4]
+          }]
+        })
+      : "生成内容",
     reasoningContent: "推理内容"
   }),
   now,
@@ -180,6 +188,9 @@ await scope.run("account-a", async () => {
     }
   }, { clientRequestId: "capture-a" });
   assert.equal(created.value.content, "账户 A 的语音捕念");
+  assert.equal(stores.get("account-a").perceptionEvents.length, 1);
+  assert.equal(stores.get("account-a").evidencePermissions.length, 1);
+  assert.equal(stores.get("account-a").evidencePermissions[0].learningAllowed, false);
   const attachments = await runtime.contentAttachmentService.get(
     "capture",
     created.value.id
@@ -201,7 +212,159 @@ await scope.run("account-a", async () => {
     item => item.id === created.value.id
   );
   assert.equal(stored.transcription.status, "ready");
+  assert.equal(stored.transcription.version, 1);
   assert.equal(stored.transcription.polishedText, "润色转写");
+  assert.ok(stores.get("account-a").perceptionEvents.some(item => (
+    item.sourceRef.resourceId === created.value.id
+    && item.sourceRef.targetKey === "transcription"
+  )));
+
+  const audioOnly = await runtime.captureRecords.create({
+    content: "",
+    occurredAt: "2026-10-06T08:30:00.000Z",
+    occurredOn: "2026-10-06",
+    attachmentPaths: [],
+    audio: {
+      attachmentPath: "/attachments/account-a-audio-only.m4a",
+      mimeType: "audio/mp4",
+      bytes: 2048,
+      durationMs: 3000
+    }
+  }, { clientRequestId: "capture-audio-only" });
+  assert.equal(stores.get("account-a").perceptionEvents.some(item => (
+    item.sourceRef.resourceId === audioOnly.value.id
+  )), false);
+  const audioOnlyTask = await runtime.requestCaptureTranscription(audioOnly.value);
+  await runtime.backgroundAi.run(audioOnlyTask.id);
+  assert.deepEqual(
+    stores.get("account-a").perceptionEvents
+      .filter(item => item.sourceRef.resourceId === audioOnly.value.id)
+      .map(item => item.sourceRef.targetKey),
+    ["transcription"]
+  );
+  const transcriptPermission = await runtime.perception.observe({
+    sourceRef: {
+      resourceType: "capture",
+      resourceId: audioOnly.value.id,
+      rootId: "",
+      targetKey: "transcription",
+      version: 1
+    },
+    learningAllowed: true,
+    eventKind: "permission_changed"
+  });
+  await runtime.backgroundAi.run(transcriptPermission.task.id);
+  assert.ok(stores.get("account-a").evidenceSources.some(item => (
+    item.sourceRef.resourceId === audioOnly.value.id
+    && item.sourceRef.targetKey === "transcription"
+  )));
+
+  const journal = await runtime.journalRecords.create({
+    title: "今天",
+    content: "完成了一次可靠的接线",
+    occurredAt: "2026-10-06T09:00:00.000Z",
+    occurredOn: "2026-10-06"
+  }, { clientRequestId: "journal-a" });
+  const thought = await runtime.thoughtWorkflows.createChain({
+    questionText: "怎样验证持续感知？",
+    eventTime: {
+      occurredAt: "2026-10-06T10:00:00.000Z",
+      occurredOn: "2026-10-06"
+    },
+    eventTimeHash: "2026-10-06T10:00:00.000Z",
+    tags: [],
+    clientRequestId: "thought-a",
+    generateAnswer: false,
+    attachmentPaths: [],
+    idea: "",
+    answer: "",
+    modelDraft: "",
+    modelReasoning: "",
+    sourceRef: {
+      type: "capture",
+      id: created.value.id,
+      version: stored.version
+    }
+  });
+  const root = thought.items.find(item => item.type === "question");
+  const annotation = await runtime.annotationCommands.create(
+    "thought",
+    root.id,
+    {
+      kind: "comment",
+      targetKey: `question:${root.id}`,
+      quote: "持续感知",
+      start: 4,
+      end: 8,
+      text: "这里需要保留来源版本"
+    },
+    { clientRequestId: "annotation-a" }
+  );
+  assert.ok(journal.value.id);
+  assert.ok(annotation.value.id);
+  const reply = await runtime.annotationCommands.reply(
+    "thought",
+    root.id,
+    annotation.value.id,
+    { text: "补充一条用户回复" }
+  );
+  assert.ok(reply.value.id);
+  assert.deepEqual(
+    new Set(stores.get("account-a").perceptionEvents.map(item => item.sourceRef.resourceType)),
+    new Set(["capture", "journal", "thought"])
+  );
+  assert.equal(stores.get("account-a").perceptionEvents.length, 9);
+  assert.ok(stores.get("account-a").perceptionEvents.some(item => (
+    item.sourceRef.resourceId === reply.value.id
+    && item.sourceRef.targetKey === `annotation-reply:${annotation.value.id}`
+  )));
+  const internalTasks = stores.get("account-a").aiTasks.filter(task => task.internal === true);
+  assert.equal(internalTasks.length, 1);
+  assert.equal((await runtime.backgroundAi.list()).items.some(task => (
+    task.kind === "perceptionExtraction"
+  )), false);
+  assert.equal(stores.get("account-a").notifications.some(item => (
+    item.taskId === internalTasks[0].id
+  )), false);
+  const sourceEvents = stores.get("account-a").perceptionEvents;
+  assert.equal(
+    sourceEvents.findLast(item => item.sourceRef.resourceId === root.id).eventId,
+    sourceEvents.findLast(item => (
+      item.sourceRef.resourceId === created.value.id
+      && item.sourceRef.targetKey === ""
+    )).eventId
+  );
+  const removedAnnotation = await runtime.annotationCommands.remove(
+    "thought",
+    root.id,
+    annotation.value.id
+  );
+  assert.equal(stores.get("account-a").perceptionEvents.length, 12);
+  assert.equal(stores.get("account-a").perceptionEvents.filter(item => (
+    item.kind === "deleted"
+    && [annotation.value.id, reply.value.id].includes(item.sourceRef.resourceId)
+  )).length, 2);
+  const nestedPermissions = stores.get("account-a").evidencePermissions.filter(item => (
+    item.sourceKey.includes(annotation.value.id)
+    || item.sourceKey.includes(reply.value.id)
+  ));
+  assert.equal(nestedPermissions.length, 2);
+  assert.ok(nestedPermissions.every(item => (
+    item.contextAllowed === false && item.learningAllowed === false
+  )));
+  await runtime.trashCommands.restore(removedAnnotation.id);
+  assert.equal(stores.get("account-a").perceptionEvents.length, 15);
+  assert.equal(stores.get("account-a").perceptionEvents.filter(item => (
+    item.kind === "restored"
+    && [annotation.value.id, reply.value.id].includes(item.sourceRef.resourceId)
+  )).length, 2);
+  const restoredPermissions = stores.get("account-a").evidencePermissions.filter(item => (
+    item.sourceKey.includes(annotation.value.id)
+    || item.sourceKey.includes(reply.value.id)
+  ));
+  assert.ok(restoredPermissions.every(item => (
+    item.contextAllowed === false && item.learningAllowed === false
+  )));
 });
 
 await scope.run("account-b", async () => {

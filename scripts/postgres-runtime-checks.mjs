@@ -13,6 +13,7 @@ import {
   exportPostgresDirectory, readPostgresBundle, storeContentSha256
 } from "../src/shared/persistence/index.mjs";
 import { createAttachmentCleanup, createSpeechCacheSweep } from "../src/app/index.mjs";
+import { evidenceSourceKey } from "../src/modules/user-model/index.mjs";
 import { dailyAiUsage } from "./monitor-health.mjs";
 import { syncOperationFingerprint } from "../public/frontend/sync/index.mjs";
 import { runAiBudgetPostgresChecks } from "./ai-budget-postgres-checks.mjs";
@@ -103,7 +104,15 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     for await (const chunk of req) rawBody += chunk;
     const payload = JSON.parse(rawBody || "{}");
     const content = payload.response_format?.type === "json_object"
-      ? JSON.stringify({
+      ? JSON.stringify(JSON.stringify(payload.messages || []).includes("perceptionExtraction")
+        ? {
+            evidence: [{
+              origin: "user",
+              informationType: "user_viewpoint",
+              span: [0, 4]
+            }]
+          }
+        : {
           claims: [{
             domain: "context",
             statement: "正在验证 PostgreSQL 五问提取",
@@ -362,12 +371,29 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal((await fetch(`${app.base}${attachmentPath}`, { headers: { cookie } })).status, 200);
     assert.equal((await fetch(`${app.base}${attachmentPath}`, { headers: { cookie: otherCookie } })).status, 404);
     assert.equal((await database.query("SELECT state FROM for_now.attachment_inventory WHERE account_id = $1", [id])).rows[0].state, "verified");
+    const perceptionBeforeWrites = await account(id, () => repo.read());
     const writes = await Promise.all(Array.from({ length: 6 }, (_, index) => request(app.base, "/api/captures", {
       method: "POST", cookie, body: { content: `HTTP 持久记录 ${index}`, occurredAt: "2026-09-29T02:00:00.000Z" }
     })));
     assert.ok(writes.every(value => value.status === 201), JSON.stringify(writes));
     const state = await request(app.base, "/api/state", { cookie });
     assert.equal(state.body.captures.length, 6);
+    assert.equal(Object.hasOwn(state.body, "perceptionEvents"), false);
+    assert.equal(Object.hasOwn(state.body, "evidencePermissions"), false);
+    const perceivedCaptures = await account(id, () => repo.read());
+    assert.equal(
+      perceivedCaptures.perceptionEvents.length,
+      (perceptionBeforeWrites.perceptionEvents || []).length + 6
+    );
+    assert.equal(
+      perceivedCaptures.evidencePermissions.length,
+      (perceptionBeforeWrites.evidencePermissions || []).length + 6
+    );
+    assert.ok(perceivedCaptures.evidencePermissions.every(item => (
+      item.accountId === id
+      && item.contextAllowed === true
+      && item.learningAllowed === false
+    )));
     assert.equal((await request(app.base, "/api/state", { cookie: otherCookie })).body.captures.length, 0);
     const receiptCapture = state.body.captures[1], receiptBody = { content: "HTTP 持久记录已修改" };
     const receiptFingerprint = await syncOperationFingerprint({
@@ -387,6 +413,11 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       body: receiptBody
     });
     assert.equal(receiptUpdate.status, 200, JSON.stringify(receiptUpdate.body));
+    const perceivedUpdate = await account(id, () => repo.read());
+    assert.equal(
+      perceivedUpdate.perceptionEvents.length,
+      perceivedCaptures.perceptionEvents.length + 1
+    );
     const receiptState = await request(app.base, `/api/v1/sync/operations/postgres-receipt-update?fingerprint=${receiptFingerprint}`, { cookie });
     assert.equal(receiptState.status, 200);
     assert.equal(receiptState.body.data.status, "committed");
@@ -452,6 +483,54 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     const annotatedRoot = (await account(id, () => repo.read())).thoughts.find(item => item.id === backgroundTask.targetId);
     assert.equal(annotatedRoot.annotations[0].shenji[0].sourceTaskId, annotationTask.body.id);
     assert.equal(providerCalls, 2);
+    const perceptionSource = (await account(id, () => repo.read())).captures.find(
+      item => item.id === receiptCapture.id
+    );
+    const perceptionSourceRef = {
+      resourceType: "capture",
+      resourceId: perceptionSource.id,
+      rootId: "",
+      targetKey: "",
+      version: perceptionSource.version
+    };
+    await account(id, () => repo.update(value => {
+      const sourceKey = evidenceSourceKey(perceptionSourceRef);
+      const permission = value.evidencePermissions.find(item => item.sourceKey === sourceKey);
+      permission.learningAllowed = true;
+      permission.revision += 1;
+      permission.updatedAt = "2026-10-07T08:00:00.000Z";
+    }));
+    const perceptionUpdate = await request(app.base, `/api/v1/captures/${perceptionSource.id}`, {
+      method: "PATCH",
+      cookie,
+      headers: { "if-match": `"${perceptionSource.version}"` },
+      body: { content: "PostgreSQL 感知证据" }
+    });
+    assert.equal(perceptionUpdate.status, 200, JSON.stringify(perceptionUpdate.body));
+    let perceptionState;
+    let perceptionTask;
+    for (let attempt = 0; attempt < 160; attempt += 1) {
+      perceptionState = await account(id, () => repo.read());
+      perceptionTask = perceptionState.aiTasks.find(item => (
+        item.kind === "perceptionExtraction"
+        && item.targetId === perceptionSource.id
+      ));
+      if (perceptionTask && !["queued", "running"].includes(perceptionTask.status)) break;
+      await pause(25);
+    }
+    assert.equal(perceptionTask?.status, "succeeded");
+    const perceptionEvidence = perceptionState.evidenceSources.find(item => (
+      item.sourceTaskId === perceptionTask.id
+    ));
+    assert.ok(perceptionEvidence);
+    assert.equal(perceptionEvidence.sourceRef.version, perceptionUpdate.body.version);
+    assert.equal(
+      (await request(app.base, "/api/ai-tasks", { cookie })).body.items.some(item => (
+        item.kind === "perceptionExtraction"
+      )),
+      false
+    );
+    assert.equal(providerCalls, 3);
     const onboardingPatch = await request(app.base, "/api/v1/onboarding-v2/session", {
       method: "PATCH",
       cookie,
@@ -628,7 +707,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     const interruptedTask = await waitTask(app.base, cookie, "restart-running");
     assert.equal(interruptedTask.status, "failed");
     assert.match(interruptedTask.error, /避免重复计费/);
-    assert.equal(providerCalls, 4, "Restart must only replay queued tasks");
+    assert.equal(providerCalls, 5, "Restart must only replay queued tasks");
     const inventory = (await database.query("SELECT path,state FROM for_now.attachment_inventory WHERE account_id = $1", [id])).rows;
     assert.deepEqual(inventory, [{ path: "/attachments/interrupted-present.png", state: "verified" }]);
     assert.deepEqual((await account(id, () => repo.read())).attachmentCleanup, []);
@@ -749,7 +828,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.equal((await fetch(`${restoredApp.base}/attachments/interrupted-present.png`, { headers: { cookie: otherCookie } })).status, 404);
     assert.equal((await request(restoredApp.base, "/api/ai-tasks/restart-queued", { cookie })).body.status, "succeeded");
     assert.equal((await request(restoredApp.base, "/api/ai-tasks/restart-running", { cookie })).body.status, "failed");
-    assert.equal(providerCalls, 4);
+    assert.equal(providerCalls, 5);
     await assert.rejects(applyPostgresBundle(restoredMigration, bundle), /entered runtime/);
     return ["runtime role validation", ...budgetChecks,
       "atomic registration rollback", "cross-connection serialized writes",
