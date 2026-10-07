@@ -46,7 +46,7 @@ function harness({
     authRequired,
     postgresRuntime,
     requestStorage,
-    emptyStore: { version: 16, captures: [] },
+    emptyStore: { version: 17, captures: [] },
     normalizeStore: value => ({ ...value, normalized: true }),
     normalizeLlmSettings: () => ({ version: 5, kind: "settings" }),
     normalizeAiUsage: () => ({ version: 1, entries: [] }),
@@ -138,7 +138,7 @@ function harness({
   const target = postgres.lifecycle.userDataDir(user);
   assert.deepEqual(provisions, [{
     id: "pg-user",
-    store: { version: 16, captures: [], normalized: true },
+    store: { version: 17, captures: [], normalized: true },
     documents: {
       settings: { version: 5, kind: "settings" },
       usage: { version: 1, entries: [] }

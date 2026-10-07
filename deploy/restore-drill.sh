@@ -66,7 +66,7 @@ validation=$(sudo -u for-now /usr/local/bin/node "$release/scripts/validate-rest
   "$work/data" --require-relational-export)
 session_token=$(printf "%s" "$validation" | /usr/local/bin/node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).sessionToken')
 expected_records=$(printf "%s" "$validation" | /usr/local/bin/node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).records')
-expected_collection_evidence=$(printf "%s" "$validation" | /usr/local/bin/node -pe 'JSON.stringify(JSON.parse(require("fs").readFileSync(0,"utf8")).collectionEvidence)')
+expected_collection_evidence=$(printf "%s" "$validation" | /usr/local/bin/node -pe 'JSON.stringify(JSON.parse(require("fs").readFileSync(0,"utf8")).apiCollectionEvidence)')
 first_attachment=$(printf "%s" "$validation" | /usr/local/bin/node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).firstAttachment')
 
 setsid sudo -u for-now env \
@@ -98,12 +98,12 @@ if [ "$actual_records" != "$expected_records" ]; then
   echo "Restored API record count mismatch." >&2
   exit 1
 fi
-actual_collection_evidence=$(printf "%s" "$state" | /usr/local/bin/node -e '
+actual_collection_evidence=$(printf "%s" "$state" | EXPECTED_COLLECTION_EVIDENCE="$expected_collection_evidence" /usr/local/bin/node -e '
 const crypto=require("node:crypto"),value=JSON.parse(require("fs").readFileSync(0,"utf8"));
 const objectValue=input=>input!==null&&typeof input==="object"&&!Array.isArray(input);
 const canonical=input=>Array.isArray(input)?`[${input.map(canonical).join(",")}]`:objectValue(input)?`{${Object.keys(input).sort().map(key=>`${JSON.stringify(key)}:${canonical(input[key])}`).join(",")}}`:JSON.stringify(input);
 const digest=input=>crypto.createHash("sha256").update(canonical(input)).digest("hex");
-const collections=["checkins","dailyRecords","captures","journals","thoughts","chats","books","keepsakes","quotes","experiments","analyses","customMetrics","actions","habits","habitCheckins","feedback","validationLedger"];
+const collections=Object.keys(JSON.parse(process.env.EXPECTED_COLLECTION_EVIDENCE));
 process.stdout.write(JSON.stringify(Object.fromEntries(collections.map(key=>[key,{count:(value[key]||[]).length,idsSha256:digest((value[key]||[]).map(item=>String(item?.id||"")).sort()),contentSha256:digest(value[key]||[])}]))));
 ')
 if [ "$actual_collection_evidence" != "$expected_collection_evidence" ]; then

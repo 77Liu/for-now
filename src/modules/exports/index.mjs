@@ -21,6 +21,9 @@ const RESOURCE_TYPES = Object.freeze({
   validationLedger: "validationLedger",
   userClaims: "userClaim",
   modelUnknowns: "modelUnknown",
+  evidenceSources: "evidenceSource",
+  evidencePermissions: "evidencePermission",
+  perceptionEvents: "perceptionEvent",
   trash: "trash"
 });
 const SINGLETON_TYPES = Object.freeze({
@@ -187,7 +190,7 @@ function timestampsOf(item) {
 }
 
 function versionOf(item) {
-  const version = Number(item.version);
+  const version = Number(item.version ?? item.revision);
   return Number.isSafeInteger(version) && version > 0 ? version : 1;
 }
 
@@ -196,7 +199,9 @@ function resourceRows(store, options, omitted) {
   const append = (resourceType, item, fallbackId = "") => {
     if (!objectValue(item)) return;
     const fields = sanitize(item, options, omitted);
-    const id = typeof item.id === "string" || typeof item.id === "number" ? String(item.id) : fallbackId;
+    const id = typeof item.id === "string" || typeof item.id === "number"
+      ? String(item.id)
+      : resourceType === "evidencePermission" ? String(item.sourceKey || "") : fallbackId;
     const metadata = { resourceType, id, version: versionOf(item), timestamps: timestampsOf(item) };
     const attachmentReferences = collectAttachmentReferences(fields, metadata)
       .sort(compareBy(["path", "fieldPath", "resourceType", "resourceId"]));

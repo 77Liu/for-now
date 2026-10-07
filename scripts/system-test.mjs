@@ -67,7 +67,7 @@ const suites = {
     ["local test HTTP syntax", ["--check", "scripts/local-test-http-regression.mjs"]],
     ["local test mode syntax", ["--check", "scripts/local-test-mode-regression.mjs"]],
     ["local test launcher syntax", ["--check", "scripts/local-test-preview.mjs"]],
-    ["Store v16 defaults and compatibility normalization", ["scripts/store-normalization-regression.mjs"]],
+    ["Store v17 defaults and compatibility normalization", ["scripts/store-normalization-regression.mjs"]],
     ["cross-domain derived statistics", ["scripts/derived-statistics-regression.mjs"]],
     ["role-aware public Store projection", ["scripts/public-state-regression.mjs"]],
     ["account initialization and startup recovery", ["scripts/account-lifecycle-regression.mjs"]],

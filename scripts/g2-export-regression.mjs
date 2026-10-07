@@ -12,6 +12,7 @@ import {
   createDownloadDescriptors
 } from "../public/frontend/features/export/index.mjs";
 import { createExportHttp } from "../src/http/index.mjs";
+import { migrationStore } from "./fixtures/migration-store.mjs";
 
 const snapshot = {
   accountId: "account/42",
@@ -211,6 +212,16 @@ assert.deepEqual(
   new Set(g2Manifest.resources.map(resource => resource.resourceType)),
   new Set(["action", "habit", "habitCheckin", "feedback", "validationLedger", "commercialization"])
 );
+const evidenceManifest = buildExportManifest({
+  accountId: "fixture-account",
+  store: migrationStore()
+});
+assert.equal(evidenceManifest.resources.filter(item => item.resourceType === "evidenceSource").length, 2);
+assert.equal(evidenceManifest.resources.filter(item => item.resourceType === "evidencePermission").length, 2);
+assert.equal(evidenceManifest.resources.filter(item => item.resourceType === "perceptionEvent").length, 1);
+assert.ok(evidenceManifest.resources
+  .filter(item => item.resourceType === "evidencePermission")
+  .every(item => item.id && item.version >= 1));
 const unverifiedManifest = buildExportManifest({
   accountId: "internal-test",
   store: {

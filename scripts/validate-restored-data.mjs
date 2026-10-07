@@ -113,7 +113,12 @@ for (const account of backupManifest.accounts) {
 }
 if (manifestAccounts.size !== auth.users.length) throw new Error("Restored attachment manifest account set does not match");
 
-const collections = ["checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "actions", "habits", "habitCheckins", "feedback", "validationLedger"];
+const apiCollections = ["checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "actions", "habits", "habitCheckins", "feedback", "validationLedger"];
+const privateCollections = ["evidenceSources", "evidencePermissions", "perceptionEvents"];
+const collections = [...apiCollections, ...privateCollections];
+const collectionIdentity = (key, item) => String(
+  key === "evidencePermissions" ? item?.sourceKey : item?.id || ""
+);
 let totalRecords = 0, totalAttachmentReferences = 0, localAttachments = 0, records = 0, firstAttachment = "";
 let collectionEvidence = {};
 const exportAccounts = new Map((exportManifest?.accounts || []).map(account => [String(account.accountId), account]));
@@ -141,18 +146,22 @@ for (const user of auth.users) {
     }
   }
   for (const key of collections) {
-    if (!Array.isArray(store[key])) throw new Error(`Restored store is missing ${key}`);
-    totalRecords += store[key].length;
+    const values = Array.isArray(store[key])
+      ? store[key]
+      : Number(store.version || 1) < 17 && privateCollections.includes(key) ? []
+        : null;
+    if (!values) throw new Error(`Restored store is missing ${key}`);
+    totalRecords += values.length;
     if (user.id === auth.users[0].id) {
       const visibleCollection = key === "captures"
-        ? store[key].map(restoredPublicCapture)
+        ? values.map(restoredPublicCapture)
         : key === "keepsakes"
-          ? store[key].map(publicKeepsake)
-          : store[key];
-      records += visibleCollection.length;
+          ? values.map(publicKeepsake)
+          : values;
+      if (apiCollections.includes(key)) records += visibleCollection.length;
       collectionEvidence[key] = {
         count: visibleCollection.length,
-        idsSha256: digest(visibleCollection.map(item => String(item?.id || "")).sort()),
+        idsSha256: digest(visibleCollection.map(item => collectionIdentity(key, item)).sort()),
         contentSha256: digest(visibleCollection)
       };
     }
@@ -225,6 +234,9 @@ console.log(JSON.stringify({
   aiBudgetSha256,
   relationalExport: Boolean(exportManifest),
   collectionEvidence,
+  apiCollectionEvidence: Object.fromEntries(
+    apiCollections.map(key => [key, collectionEvidence[key]])
+  ),
   attachmentManifest: {
     format: backupManifest.format,
     sourceAttachmentStorage: backupManifest.sourceAttachmentStorage,

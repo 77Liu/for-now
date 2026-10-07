@@ -15,7 +15,8 @@ import { publicKeepsake } from "../src/modules/keepsakes/index.mjs";
 const run = promisify(execFile), root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "growth-restore-validation-"));
 const sourceDir = path.join(temporary, "source"), dataDir = path.join(temporary, "backup");
-const collections = ["checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "actions", "habits", "habitCheckins", "feedback", "validationLedger"];
+const collections = ["checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "actions", "habits", "habitCheckins", "feedback", "validationLedger", "evidenceSources", "evidencePermissions", "perceptionEvents"];
+const legacyCollections = collections.filter(key => !["evidenceSources", "evidencePermissions", "perceptionEvents"].includes(key));
 const objectValue = value => value !== null && typeof value === "object" && !Array.isArray(value);
 const canonical = value => Array.isArray(value)
   ? `[${value.map(canonical).join(",")}]`
@@ -37,9 +38,9 @@ try {
   for (const user of users) {
     const dir = path.join(sourceDir, "users", user.id), attachments = path.join(dir, "attachments");
     await fs.mkdir(attachments, { recursive: true });
-    const store = Object.fromEntries(collections.map(key => [key, []]));
+    const store = Object.fromEntries(legacyCollections.map(key => [key, []]));
     const documents = {};
-    store.version = 15;
+    store.version = 16;
     if (user.id === "first") {
       store._persistence = {
         idempotency: [{
@@ -295,6 +296,8 @@ try {
   assert.doesNotMatch(backupScript, /tar[^\n]*"\$DATA_DIR"/);
   assert.match(restoreScript, /ATTACHMENT_STORAGE=local/);
   assert.match(restoreScript, /--require-relational-export/);
+  assert.match(restoreScript, /apiCollectionEvidence/);
+  assert.match(restoreScript, /Object\.keys\(JSON\.parse\(process\.env\.EXPECTED_COLLECTION_EVIDENCE\)\)/);
   assert.doesNotMatch(restoreScript, /ATTACHMENT_STORAGE="\$\{ATTACHMENT_STORAGE/);
   console.log("Restore validation checks passed: AI budget and relational hashes, complete attachment manifest, missing/tampered rejection, remote materialization, local-only drill and temporary authenticated session.");
 } finally {

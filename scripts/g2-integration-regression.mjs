@@ -236,7 +236,7 @@ try {
     assert.ok(exportedTypes.has(type), `export missing ${type}`);
   }
   assert.equal(exported.body.data.accountId.length > 0, true);
-  assert.equal(exported.body.data.snapshotVersion, 16);
+  assert.equal(exported.body.data.snapshotVersion, 17);
   assert.doesNotMatch(JSON.stringify(exported.body.data), /g2-contract-password|invitation/);
 
   console.log("G2 integration checks passed: OpenAPI, discovery, idempotent actions, habit cascade restore, feedback privacy, validation consent, account isolation and full export.");
