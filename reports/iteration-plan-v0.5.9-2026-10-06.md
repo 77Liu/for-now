@@ -244,7 +244,7 @@ flowchart TD
 | `06` 任务选材 | `orchestrator`；personal-context/app assembler、receipt 专项 | `05b`；固定夹具 | 思绪完整链、批注、复盘；selection/replay 专项 + Smoke | 失败只用当前获准材料并声明历史不可用；stub | `validated / d8bd3a8` |
 | `07` 提示词职责化 | `orchestrator` 单写 Prompt 新版本、manifest、结构化编译器 | `06` working-context schema | prompt catalog、注入/越权、AI audit | 旧目录不可变；回滚兼容版本仍执行最新硬门；stub | `validated / 4e2f760` |
 | `08` 持续感知 | `orchestrator`；记录 adapter、任务 kind、候选协调 | `05b+07`；隔离任务/通知资源 | capture/journal/thought/annotation、重启/迟到/跨账户 | 原文先保存；最多一个感知任务/来源版本；stub | `validated / 5f3b69a` |
-| `09` 纠正失效 | `orchestrator`；user-model、trash/restore、许可与前端控制 | `08`；隔离 Store/PG | personal-context、删除恢复、多端并发、旧任务拒写 | 重算失败时旧依据继续禁用；主动综合默认关闭 | `blocked by 08` |
+| `09` 纠正失效 | `orchestrator`；user-model、trash/restore、许可与前端控制 | `08`；隔离 Store/PG | personal-context、删除恢复、多端并发、旧任务拒写 | 重算失败时旧依据继续禁用；主动综合默认关闭 | `validated / e9b1f25` |
 | `10b` 依据与回放门 | `orchestrator`；receipt/UI、runner、指标报告 | `06–09+10a`；串行浏览器 | 16 类回放、通用/旧/新对照、Smoke/Daily | stub 不冒充真实模型；真实上限 48 次，待授权 | `blocked by 06–09` |
 | `17` 图片旋转 | `developer-media`；共享图片草稿/预览及定向测试 | G2；Sharp/Canvas 合成图片 | `capture-text-image` 及四入口矩阵、UI/PWA | 新草稿 only；失败保留原件；真实云 `0` | `validated / cf4d34a` |
 | `18` 媒体代码 | `developer-media`；签发策略、302、proxy 回滚和测试 | G2；本地 mock OSS/CDN | auth、attachment Range/CORS/cache、安全负例 | 默认 proxy；TTL 60s；真实云 `0` | `ready / not dispatched` |
@@ -401,7 +401,7 @@ V0.5.8 G7 已在原报告关闭；本次审阅未把这个条件重新标成待�
 | G0 | 九条已有来源、必要字段及交付关联；留存快照复核通过。新增候选另行逐项处理；飞书“待开始”不能直接解释为需求“本轮已选” |
 | G1 | 已通过：九条全部纳入；入口、阈值、默认关闭策略、60 秒媒体 TTL 与不做范围见 2.2 |
 | G2 | 已通过（局部阻塞）：基线、DAG、所有权、旅程、资源、调用预算、迁移和恢复见 3.2；`19` 等待云授权 |
-| G3 | 进行中：`22@bd52ebf`、`10a@bc066bd`、`05a@7cce77b`、`05b@3bbf564`、`06@d8bd3a8`、`07@4e2f760`、`17@cf4d34a`、`08@5f3b69a` 已本地验证未部署；主线转入 `09`，`18/21` 可继续调度 |
+| G3 | 进行中：`22@bd52ebf`、`10a@bc066bd`、`05a@7cce77b`、`05b@3bbf564`、`06@d8bd3a8`、`07@4e2f760`、`17@cf4d34a`、`08@5f3b69a`、`09@e9b1f25` 已本地验证未部署；主线转入 `10b`，`18/21` 可继续调度 |
 | G4 | 未开始：全部入选原子汇合；固定完整候选 SHA，版本/依赖锁/制品/iOS/配置存在性检查，系统/Release、真实回放及必要 Preview、备份恢复通过 |
 | G5 | 未开始：两轮审查完成、阻断项关闭，Owner 对具体远端及生产动作最终 GO |
 | G6 | 未开始：生产运行提交与获准候选一致；按动作副作用清单执行获准冒烟，覆盖录音零副作用、纠正撤回、多账户/匿名和媒体路径；至少 30 分钟有效观察，首样本、样本数、END 和独立终态审计通过 |
@@ -506,3 +506,21 @@ internal task，发送前和落库前均重验账户、来源版本/hash、许�
 `0/0/0/0 GO`；PostgreSQL 16.14 stable、Journey Smoke `15/15`、`check`、
 user-model、task-context、content runtime、认证和持久化专项通过。全程真实
 模型/云调用为 0，未执行 push、Preview、Release 或生产操作。
+
+### 5.4 2026-10-07 `09` 纠正与失效
+
+`09` 以 `e9b1f25` 完成理解确认、修正、拒绝与撤回，来源级
+`contextAllowed` / `learningAllowed` 双许可，行动完成反馈，以及默认关闭、
+显式触发并需确认的周期回望。已确认综合仅作为模型摘要进入个人上下文；任一
+实际输入的来源版本、内容或许可变化后立即退出回答上下文并显示来源已变化。
+
+学习回执与综合输入共享同一份最多 80 个原子思绪选集，独立覆盖根问题、普通
+子记录、追问问题和追问回答；行动反馈最多 40 条，撤销完成、删除和恢复均不
+恢复学习许可。许可写入通过当前原始来源白名单校验，AI 生成内容、伪造来源和
+旧版本来源不能被重新授权。PostgreSQL JSONB 键序通过规范 hash 消除差异，并
+兼容本地已有的旧感知任务 hash。
+
+最终独立审查为 `0/0/0 GO`。`npm run check`、backend/frontend 系统门、
+PostgreSQL 16.14 stable、Journey Smoke `15/15`、UI 和固定
+general/legacy replay 均通过。全部供应商调用使用本地 stub；未执行真实模型、
+云资源、push、Preview、Release 或生产操作。

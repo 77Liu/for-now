@@ -6,7 +6,7 @@
   `.worktrees/v0.5.9-integration`
 - 生产基线：`v0.5.8@7067ba65eeafccb953080e00988f62728d3b75a8`
 - 当前门禁：`G1/G2 passed-for-local-development`，
-  `G3-22/10a/05a/05b/06 validated`，`G3-07/17 active`
+  `G3-22/10a/05a/05b/06/07/08/09/17 validated`，`G3-10b active`
 - 授权：本地规划、开发、测试和本地提交；不含 push `main`、tag、Release、
   生产、云配置、真实付费调用或生产数据写入
 
@@ -15,11 +15,10 @@
 | 工作树 | HEAD / 分支 | 状态 | 负责人 / 下一步 |
 | --- | --- | --- | --- |
 | 项目根 | `f3164f6 / main` | 干净 | 只读基线，不在根目录开发 |
-| `v0.5.9-integration` | `d8bd3a8 / feat/v0.5.9-integration` | `06` 代码已提交，文档待提交 | orchestrator；转入 `07` |
-| `v0.5.9-image-rotation` | `edefd18 / feat/v0.5.9-image-rotation` | `17` 首轮审查 NO-GO，修复中 | developer-17-fix |
+| `v0.5.9-integration` | `e9b1f25 / feat/v0.5.9-integration` | `09` 代码与测试已提交，文档待提交 | orchestrator；转入 `10b` |
 
-当前 `3/6`。旧工作树已在可恢复归档后非强制移除；不得删除、reset、stash
-或提交仍在活动的 `06/17` 现场。
+当前 `2/6`。旧工作树及已吸收的 `17` 工作树均已在可恢复归档后非强制移除；
+不得在根目录 `main` 开发，也不得删除、reset 或 stash 当前集成现场。
 
 受保护未提交资产：
 
@@ -39,9 +38,9 @@ G1/G2
 ├─ 05a evidence contract [validated: 7cce77b]
 │  └─ 05b persistence [validated: 3bbf564]
 │     ├─ 06 task selection [validated: d8bd3a8]
-│     │  └─ 07 prompt roles [active]
-│     │     └─ 08 continuous perception
-│     │        └─ 09 correction/invalidation
+│     │  └─ 07 prompt roles [validated: 4e2f760]
+│     │     └─ 08 continuous perception [validated: 5f3b69a]
+│     │        └─ 09 correction/invalidation [validated: e9b1f25]
 │     └──────────────────────────┐
 │                                └─ 10b receipt/replay gate
 ├─ 17 image rotation [active: first review NO-GO]
@@ -58,7 +57,7 @@ manifest、module registry、runner、Service Worker 和发布文件由
 
 | roleId | specialty / activeContext | ownership | evidence / status | next |
 | --- | --- | --- | --- | --- |
-| `orchestrator` | 唯一 DAG、G1/G2、集成与共享文件 | V0.5.9 集成树和共享热点 | 22、10a、05a/05b 已验证；`active` | 实现 06 任务选材 |
+| `orchestrator` | 唯一 DAG、G1/G2、集成与共享文件 | V0.5.9 集成树和共享热点 | 22、10a、05a/05b、06–09、17 已验证；`active` | 实现 10b 依据与回放门 |
 | `scout-audio-race` | recorder → draft → upload → ASR/账本 | 只读 | 定位 revision/persist/restore/submission 竞态；`closed` | 交给 developer-22 |
 | `scout-personalization` | 05–10 现有 receipt/user-model/task/prompt/PG | 只读 | 定位固定投影、许可失效、注入和 outbox 缺口；`closed` | 交给 05a/10a |
 | `developer-22` | 快捷语音移除 P00 | capture audio/controller/operations/view 和定向测试 | `bd52ebf`；`closed` | 交给版本集成 |
@@ -86,6 +85,7 @@ manifest、module registry、runner、Service Worker 和发布文件由
 | `worktree-governor-v059` | 历史现场归档与工作树治理 | 旧工作树、stash、archive refs | 4 棵旧树已安全移除，2 条 stash 已归档/核对后清零；`closed` | 保持总数 ≤6 |
 | `developer-17` | 图片连续旋转 | 图片草稿内部 2 模块和专项 | `edefd18`；首轮 `0/1/1/1 NO-GO` | 修复 UI 可达性、重复编码和 URL 集合 |
 | `reviewer-17-r1` | 旋转入口、像素、并发和资源清理 | 只读 | `0/1/1/1 NO-GO`；`closed` | 等待增量修复后复审 |
+| `reviewer-09-r4…r18` | 纠正、双许可、回执、恢复与跨存储一致性 | 只读 | 关闭行动反馈复权、80 原子边界、伪造来源和 JSONB hash 漂移；最终 `0/0/0 GO` | 交给 10b |
 
 `developer-22` 不能作为自己的唯一 reviewer。Reviewer 和 Validator 复用现有
 工作树，只读执行；`17` 使用独立分支/工作树，与 `06/07` 写集不重叠。
@@ -290,10 +290,25 @@ manifest、module registry、runner、Service Worker 和发布文件由
   Journey Smoke `15/15` 与 PostgreSQL 16.14 stable 通过；10,000 来源扫描
   本机约 40–95 ms。未执行真实模型、云资源、push、Preview、Release 或生产。
 
+## 6.9 09 纠正、许可与周期综合
+
+- 提交 `e9b1f25` 完成用户理解的确认、修正、拒绝和撤回；失效来源将 active
+  claim 投影为 disputed，并立即从后续回答上下文排除。
+- 来源管理提供分页读取和基于 ETag 的双许可更新。许可写入先校验当前原始来源
+  白名单，拒绝 AI 内容、伪造引用和旧版本；删除后恢复不恢复许可。
+- 行动完成可记录结果、备注和显式学习许可。撤销完成或删除行动会原子撤销当前
+  与历史反馈许可，恢复后仍保持关闭。
+- 周期综合默认关闭，仅允许手动触发；生成前后校验相同的最多 80 个原子思绪
+  与最多 40 条行动反馈。确认结果仍标记为模型摘要，任一来源或许可变化后从
+  回答上下文移除并显示 stale。
+- 多轮独立审查最终为 `0/0/0 GO`。`npm run check`、backend/frontend、
+  PostgreSQL 16.14 stable、Journey Smoke `15/15`、UI 和冻结
+  general/legacy replay 均通过；所有供应商均为本地 stub，外部调用为 0。
+
 ## 7. NO-GO 与下一动作
 
 - 当前不是候选；不得执行 Preview、Release 或生产动作。
 - `22` 仅为工作区已验证未部署，不能写成需求已发布或生产问题已关闭。
-- 主线下一动作：在集成树推进 `09` 纠正、许可撤回与派生失效；随后进入
-  `10b` 最终回放。`18/21` 可按独立写集调度，`19` 继续等待云资源与费用授权。
+- 主线下一动作：在集成树推进 `10b` 最终回放与依据 UI。`18/21` 可按独立
+  写集调度，`19` 继续等待云资源与费用授权。
   不调用真实模型，不执行 Preview、push、tag、Release 或生产动作。
