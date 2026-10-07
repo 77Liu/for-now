@@ -8,7 +8,8 @@
   `wip/root-dirty-before-v0.4.0-owner-integration@4eb5de747224`
 - 集成工作树：
   `.worktrees/sop-main-integration`
-- 状态：内容与静态门已验证，待提交和快进 `main`
+- 状态：**已集成并推送 `main`**
+- 内容提交：`f9fb5b64dae7353edc733561fc90a55d6453ed58`
 
 ## 1. 为什么 IDE 仍显示大量 `U/M`
 
@@ -87,5 +88,5 @@ G0-G7 主流程。这使重要 SOP 仍依赖根工作区现场，属于收尾漏
 - [x] `main` 原有多 Agent、夜间持续开发和 iOS 性能 SOP 未回退；
 - [x] `npm run check` 通过；
 - [x] 变更只包含 SOP、生命周期总纲和本报告；
-- [ ] 提交后快进并推送 `main`；
+- [x] 提交后快进并推送 `main`；
 - [x] 根 `wip`、其他脏工作树和 stash 均未修改。
