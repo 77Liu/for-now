@@ -50,15 +50,17 @@ V0.2.0 历史见
   均确认播放前原始录音/TTS 请求为 0、点击后返回 `206`。热修后
   30 分 04 秒观察为 0 重启、0 5xx、0 warning/error、0 OOM，结论继续运行。
 - 下一版本候选：V0.5.8 的 6 条 P00 与入口 G6 已完成本地收口；原 8 条 P0
-  继续由 V0.5.9 接收。已测试候选为 `6bca4295a031`，tree 为
-  `4fd2fbca6256`，manifest SHA-256 为 `7076aba1...b10a`。`server.mjs`
+  继续由 V0.5.9 接收。首次 Preview 候选 `6a27598` 在真实注册旅程发现未登录
+  启动 P1 后已立即回滚，Preview 与生产均保持 `2c395c029540`。替换行为候选为
+  `ffc731d83d88`，tree 为 `d5392e56cdd1`，初始 manifest SHA-256 为
+  `28922d32...d6c`。`server.mjs`
   为 4 行、`runtime.mjs` 为 53 行，25 个页面均使用显式 descriptor，
   G6 为 3 policies / 108 modules / 237 routes / 0 exceptions。check、
   backend、frontend、system、PostgreSQL 16.14 stable、PWA、web budget、
-  Journey Release、依赖审计和恢复门均通过；两轮独立 Reviewer 最终
-  blocker/P0/P1=`0/0/0`。当前状态为本地候选待验收，尚未 push、tag、
-  创建 Release、部署 Preview/生产或写入生产。发布计划、配置、迁移边界和
-  回滚命令见
+  Journey Release、依赖审计和恢复门已对替换候选重跑通过；新一轮独立
+  Reviewer 为 blocker/P0/P1=`0/0/0`。当前状态为替换候选待验收，尚未获得
+  针对新最终 SHA 的 Preview 授权，未 tag、未创建 Release、未部署生产或写入
+  生产。发布计划、失败证据、配置、迁移边界和回滚命令见
   `reports/pre-launch-2026-10-07-v0.5.8.md`。
 - 历史热修：`V0.5.2` P00 热修已完成本地门、线上 Preview、Git/Gitee、
   生产部署及同一历史 M4A 的真实回放验证。完整证据见
@@ -152,7 +154,7 @@ V0.5.8 当前范围是 6 条 P00。最近成功回读的 Base 为需求
 | V0.5.8-02 | P00 | 工作区已验证未部署 | `6730597`：三类真实入口、组合 API/import binding/factory 链、G4/G6 例外和 feature 生命周期已机器冻结；check、前后端、PWA、性能与独立复审通过 |
 | V0.5.8-03 | P00 | 待验收 | `f3724c4..17fca0d`：B1-B7 已迁出 Store/投影、本地测试/账户、AI、媒体/内容 runtime、HTTP 编排和服务生命周期；`server.mjs` 3283→4 行；PostgreSQL 16.14 stable 三段及最终 Release 复跑通过，G4 已关闭 |
 | V0.5.8-04 | P00 | 待验收 | `e7d99d6..d28ea57`：F1-F10 已完成，25 个页面全部使用显式 descriptor；`runtime.mjs` 5291→53 行，六类 G6 例外归零，G6 已关闭 |
-| V0.5.8-11 | P0 | 待验收 | `6bca429` 已固定 946 文件 manifest；完整 Release Journey、依赖审计、恢复门和第二轮 0/0/0 审计通过，等待首次授权后执行 Preview 与两个 partial 人工项 |
+| V0.5.8-11 | P0 | 待验收 | 首次候选 `6a27598` 的 Preview 注册旅程发现未登录启动 P1 后已回滚；`ffc731d` 已修复并固定 947 文件初始 manifest，完整 Release Journey、依赖审计、恢复门和新一轮 0/0/0 审计通过，等待针对新最终 SHA 的 Preview 授权 |
 | V0.5.8-12 | P0 | 待发布 | 等待 Preview 验收和第二次明确授权后执行 tag/Gitee Release、即时备份与恢复、生产部署、至少 30 分钟观察、回填和复盘 |
 
 ## V0.5.9 接收范围
@@ -174,12 +176,13 @@ V0.5.9 版本记录为 `reczz28K2FLyWwBC`，接收 8 条 P0 和 10 条交付。�
 | V0.5.9-21 | P0 | 待开始 | 主账户开屏偏好、服务端权限、revision 和账户缓存隔离 |
 
 Owner 已接受 V0.5.7 G7，并确认按本计划进入 V0.5.8 本地开发。13、15、14、
-16、20、02、03 和 04 均已进入固定本地 Release 候选。最终候选
-`6bca429` 的 system 为 `429676 ms`，Journey Release 为 `457035 ms`；
-PostgreSQL stable、PWA、web budget、依赖审计和恢复门通过，第二轮独立
-Reviewer 为 blocker/P0/P1=`0/0/0`。当前活跃工作树 `5 / 6`，没有 ready
-的编码节点；唯一下一动作是取得针对最终文档收口 SHA 的 Preview 授权。
-该确认不授权 push、云资源修改、真实付费调用、Preview、部署或生产写入。
+16、20、02、03 和 04 均已进入固定本地 Release 候选。替换候选
+`ffc731d` 的 system 为 `461.28 s`，Journey Release 为 `595825 ms`；
+PostgreSQL stable、PWA、web budget、依赖审计和恢复门通过，新一轮独立
+Reviewer 为 blocker/P0/P1=`0/0/0`。当前活跃工作树 `6 / 6`，没有 ready
+的编码节点；唯一下一动作是取得针对最终文档收口 SHA 的新 Preview 授权。
+旧授权已随 `6a27598` 的失败与回滚消耗，不授权更新远端分支、云资源修改、
+真实付费调用、重新部署 Preview、生产部署或生产写入。
 20 的完整调度与验证事实见
 `reports/multi-agent-coordination-v0.5.8-20-2026-10-05.md`。
 

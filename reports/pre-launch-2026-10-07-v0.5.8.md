@@ -2,7 +2,7 @@
 
 日期：2026-10-07
 
-状态：**本地 Release 候选已固定并通过第二轮审计；待 Preview 授权，未发布**
+状态：**首次 Preview 验收发现 P1 并已回滚；替换候选已固定并通过复验，待新 Preview 授权，未发布**
 
 生产基线：
 `hotfix-v0.5.7-audio-on-demand@2c395c0295404a6c7bd5a076bb66b11c6e72c3f2`
@@ -10,15 +10,15 @@
 候选分支：`feat/v0.5.8-p00-p0`
 
 已测试行为候选：
-`6bca4295a0317e6274e7d5fed6c292284c7578f9`
+`ffc731d83d88026ce12e3b5ae988cc61c1f1d1b1`
 
-候选 tree：`4fd2fbca6256879862e92d3654c20261ca00d176`
+候选 tree：`d5392e56cdd1eb21ba7f34578990167eab30dfdb`
 
-完整 tree manifest：946 个文件；
-`/tmp/v0.5.8-release-6bca4295a0317e6274e7d5fed6c292284c7578f9.manifest`
+完整 tree manifest：947 个文件；
+`/tmp/v0.5.8-release-ffc731d83d88026ce12e3b5ae988cc61c1f1d1b1.manifest`
 
 manifest SHA-256：
-`7076aba155aed3229064529513b84781a14365b8ba7abe35d1f0f23bf2b8b10a`
+`28922d3233bbf2fa2043958631427624850cc4c46251735453e80d0305227d6c`
 
 计划标签：`v0.5.8`
 
@@ -26,7 +26,7 @@ manifest SHA-256：
 
 说明：本文件与 TODO、迭代计划、调度记录属于纯文档收口。文档提交形成的最终
 授权 SHA 会在提交后另行冻结；只要运行代码、依赖、配置和测试文件的 blob
-与 `6bca429` 一致，本地行为证据继续有效。任何上述内容变化都会废止受影响
+与 `ffc731d` 一致，本地行为证据继续有效。任何上述内容变化都会废止受影响
 证据并返回候选冻结阶段。
 
 ## 发布目标与范围
@@ -54,13 +54,28 @@ V0.5.8 只交付已冻结的 6 条 P00：
   0 个 active migration exceptions。
 - API、DOM、event、timer、template、lines 六类迁移例外全部归零。
 - 第一轮独立 Reviewer 对功能候选返回 blocker/P0/P1=`0/0/0`。
-- 工作树为 `5 / 6`，工作区在 Release 门开始和结束时均干净。
+- 工作树为 `6 / 6`，工作区在 Release 门开始和结束时均干净。
 
 原功能候选为
 `d28ea5787d63cd385733f0bc09d769f335e1c94f`。发布冻结发现 Web、npm 和
 iOS 仍保留 V0.5.7 元数据，因此旧 manifest 被废止；版本元数据以独立提交
 `6bca429` 修正后重新冻结并执行 Release 门。依赖集合没有变化，
 `package-lock.json` 只同步根版本号。
+
+首次授权后的 docs/status 候选
+`6a27598f054cec0b476ced898397a7572f8f8754` 曾被推送到
+`origin/preview/v0.5.8` 并部署到隔离 Preview。真实注册旅程稳定触发
+`TypeError: Cannot read properties of null (reading 'replaceExisting')`，
+调用链为 `content-media-runtime.mjs:118`、
+`global-events.mjs:141`、`session-runtime.mjs:107`；同时未登录首页提前请求
+actions/habits 私有接口。该 P1 触发立即回滚，Preview 与生产均恢复并保持
+`2c395c029540`，生产从未切换到 V0.5.8。
+
+修复提交 `ffc731d` 恢复未初始化媒体 manager 的 no-op 语义，并让首页
+actions workspace 只在存在当前账户时加载；真实浏览器新增未登录冷启动反例，
+Service Worker 缓存键更新为 `cike-shell-v0.5.8-23`。因此 `6a27598` 的
+授权和全部旧 Release 证据均已失效，远端 Preview 分支仍指向该失败候选，
+不得再次部署。
 
 ## 中文发行说明
 
@@ -128,6 +143,18 @@ iOS 仍保留 V0.5.7 元数据，因此旧 manifest 被废止；版本元数据�
 **解决方案：** 业务入口延后到真实首个 paint 后，失败与超时进入不可逆锁存，
 迟到结果不再复活开屏。
 
+#### 未登录冷启动触发私有首页生命周期
+
+**Bug 描述：** 首次 Preview 的注册旅程在未登录启动时触发表单 reset，
+媒体草稿 manager 尚未完成初始化，页面出现运行时异常；首页同时提前请求
+actions/habits 私有数据。
+
+**原因：** 入口拆分后，未登录 shell 仍经过已登录首页的媒体 reset 和
+actions workspace 加载路径。
+
+**解决方案：** 未初始化媒体 manager 时 reset 保持 no-op；首页 controller
+以当前账户作为加载门，未登录状态不导入 workspace、不读取私有 actions/habits。
+
 ### 架构调整
 
 - 服务端入口从 3283 行降为 4 行，Store、账户、AI、媒体、内容、HTTP 和服务
@@ -145,51 +172,59 @@ iOS 仍保留 V0.5.7 元数据，因此旧 manifest 被废止；版本元数据�
 此前浏览器大入口集中承担页面实现，隐藏页面容易进入启动闭包。现在页面按真实
 descriptor/controller 装配，首页隐藏 feature 请求为 0。固定 Fast 4G 门中：
 
-- cold firstReadable P75 为 `748.7 ms`，预算 `1000 ms`；
-- warm firstReadable P75 为 `750.0 ms`，预算 `750 ms`；
+- cold firstReadable P75 为 `698.3 ms`，预算 `1000 ms`；
+- warm firstReadable P75 为 `700.5 ms`，预算 `750 ms`；
 - 首屏请求、API 请求与 deferred runtime 均在固定预算内。
 
-warm P75 没有余量，Preview 必须重复采样并观察公网尾部；不得放宽阈值或只保留
-通过样本。
+旧候选曾在门内触及 `750.0 ms` 阈值，新候选本地样本仍不能替代公网尾部；
+Preview 必须重复采样，不得放宽阈值或只保留通过样本。
 
 ## 独立审计
 
 - 第一轮审计针对 F10/G6 功能候选，blocker/P0/P1=`0/0/0`，GO。
-- 第二轮审计针对生产基线 `2c395c0` 到已测试候选 `6bca429` 的完整差分，
+- 旧候选第二轮审计针对生产基线 `2c395c0` 到 `6bca429`，当时为
+  blocker/P0/P1=`0/0/0`；首次真实 Preview 随后推翻该 GO 并触发回滚。
+- 替换候选第二轮审计针对生产基线 `2c395c0` 到已测试候选 `ffc731d` 的完整差分，
   只接受候选引入、生产可达、稳定复现的 blocker/P0/P1。
-- 第二轮未发现符合条件的问题，blocker/P0/P1=`0/0/0`，GO。
+- 完整 Reviewer 未发现符合条件的问题，blocker/P0/P1=`0/0/0`，GO。
+- 针对未登录媒体 manager 预初始化的一条审阅意见经两名 Validator 复核为
+  `minor` / 误报：该路径只加载静态模块并创建空内存 manager，不读草稿、
+  不发私有 API，不进入本次 blocker/P0/P1 报告。
 
 ## 自动验证
 
 候选开始和结束时均核对：
 
-- HEAD `6bca4295a0317e6274e7d5fed6c292284c7578f9`；
-- tree `4fd2fbca6256879862e92d3654c20261ca00d176`；
-- manifest SHA-256 `7076aba1...b10a`；
-- 工作区干净、5 个 worktree、无残留测试进程。
+- HEAD `ffc731d83d88026ce12e3b5ae988cc61c1f1d1b1`；
+- tree `d5392e56cdd1eb21ba7f34578990167eab30dfdb`；
+- manifest SHA-256 `28922d32...d6c`；
+- 工作区干净、6 个 worktree、无候选测试残留进程。
 
 | 命令 / 子门 | 结果 |
 | --- | --- |
 | `npm run check` | 通过；G6 3 policies / 108 modules / 237 routes / 0 exceptions |
-| `npm run test:backend` | 通过；91 阶段，`332231 ms` |
-| `npm run test:frontend` | 通过；36 阶段，`83677 ms` |
-| `npm run test:system` | 通过；`429676 ms` |
+| `npm run test:backend` | 通过；91 阶段，`360.27 s` |
+| `npm run test:frontend` | 通过；36 阶段，`88964 ms` |
+| `npm run test:system` | 通过；`461.28 s` |
 | `npm run test:postgres:stable` | 通过；PostgreSQL 16.14，主 46 项及 ledger 全通过 |
 | `npm run test:pwa` | 通过 |
-| `npm run test:web-budget` | 通过；warm P75 `750.0 ms`，cold P75 `748.7 ms` |
-| `npm run test:journeys:release` | 通过；`457035 ms` |
-| Release 内完整系统 | 通过；`440613 ms` |
-| Release 内 PostgreSQL stable | 通过；`15122 ms` |
-| Release 内生产依赖审计 | 通过；`1300 ms`，0 vulnerabilities |
-| `npm run test:restore` | 通过 |
+| `npm run test:web-budget` | 通过；warm P75 `700.5 ms`，cold P75 `698.3 ms` |
+| `npm run test:journeys:release` | 通过；`595825 ms` |
+| Release 内完整系统 | 通过；`573905 ms` |
+| Release 内 PostgreSQL stable | 通过；`16770 ms` |
+| Release 内生产依赖审计 | 通过；`5150 ms`，0 vulnerabilities |
+| `npm run test:restore` | 通过；`2.31 s` |
 
 PostgreSQL 使用项目根目录被 Git 忽略的 16.14 工具链，并用临时 ad-hoc 签名
 Node 兼容本机 Sharp 签名约束；测试只创建本地临时集群，不连接生产数据库。
+默认签名 Node 的首次尝试在业务数据库启动后因本机 Sharp Team ID 限制返回
+`IMAGE_PROCESSOR_UNAVAILABLE`；临时 ad-hoc Node 下从头重跑通过，该失败属于
+已登记环境差异，不涉及候选或依赖变更。
 
 旧候选的一次完整系统运行曾在 warm firstReadable P75 得到
-`751.4 ms > 750 ms`，该失败保留；隔离复跑为 `736.6 ms`。版本元数据修正后的
-新候选 Release 门一次通过，warm P75 恰为 `750.0 ms`。该结果是 Preview 的
-重点风险，不解释为性能余量。
+`751.4 ms > 750 ms`，该失败保留；隔离复跑为 `736.6 ms`，之后曾在门内得到
+`750.0 ms`。替换候选独立预算门为 `700.5 ms`；公网性能仍是 Preview 的
+重点风险，不把本地改善解释为线上余量。
 
 Release Journey 共 20 条，18 条自动化，整体状态 passed。以下 2 条仍为
 partial，必须在 Preview 人工补验：
@@ -241,9 +276,12 @@ partial，必须在 Preview 人工补验：
 
 ## Preview 计划
 
-取得针对最终授权 SHA 的第一次明确授权后：
+取得针对新的最终授权 SHA 的明确授权后：
 
-1. push 经审阅的候选，并建立 `preview/v0.5.8` 指向同一 SHA。
+1. push 经审阅的候选，并以
+   `--force-with-lease=refs/heads/preview/v0.5.8:6a27598f054cec0b476ced898397a7572f8f8754`
+   将 `preview/v0.5.8` 从已回滚的失败候选更新到同一新 SHA；不得使用无租约
+   force push。
 2. 执行：
 
    ```bash
@@ -253,10 +291,12 @@ partial，必须在 Preview 人工补验：
 3. 核对 `https://77liu.top/preview/readyz` 返回同一 SHA，生产
    `https://77liu.top/now/readyz` 仍为 `2c395c029540`。
 4. 执行 20 条 Journey 对应路径、两个 partial 人工项、320/390/1440 px、
-   深链、账户切换、离线同步、PWA 更新和重复性能采样。
+   注册/未登录冷启动、深链、账户切换、离线同步、PWA 更新和重复性能采样。
 5. 至少观察 15 分钟 Preview 的 5xx、console error、进程重启、RSS、OOM、
    API 错误和版本漂移。
-6. 任何 blocker/P0/P1、恢复失败、持续 5xx、重启、OOM、性能稳定超限或
+6. 通过受支持的账户路径核对并清理首次失败 Preview 可能留下的随机
+   `v058preview*` 合成账户；当前没有该账户密码，不直接编辑 JSON 数据。
+7. 任何 blocker/P0/P1、恢复失败、持续 5xx、重启、OOM、性能稳定超限或
    SHA 漂移都停止流程并回滚 Preview：
 
    ```bash
@@ -349,12 +389,16 @@ PostgreSQL 与附件读取正常。由于本版没有数据迁移，常规代码
 - [x] 独立第二轮审计 0/0/0
 - [x] 恢复门
 - [ ] Base 回填“待验收 / 待发布”
-- [ ] 第一次授权：push 与 Preview
+- [x] 旧候选 `6a27598` 第一次授权、push 与 Preview 部署
+- [x] 旧候选真实 Preview P1、立即回滚与生产未变核对
+- [x] 替换候选 `ffc731d` 修复、完整 Release 复验与新一轮 0/0/0
+- [ ] 新授权：更新远端 Preview 分支并部署新的最终 SHA
 - [ ] Preview 验收及两个 partial 人工项
 - [ ] 第二次授权：tag、Gitee Release、生产操作和费用范围
 - [ ] 发布前即时备份与隔离恢复
 - [ ] 生产部署、冒烟和至少 30 分钟观察
 - [ ] G7 关闭、Base/TODO/时间表/Release 摘要/复盘收尾
 
-当前停在第一次明确授权之前。不得自行 push、tag、创建 Release、部署
-Preview/生产、调用付费服务或写入生产。
+当前停在替换候选的新 Preview 授权之前。旧授权只覆盖 `6a27598`，不得用于
+`ffc731d` 或其后的 docs/status 最终 SHA；不得自行更新远端分支、push、tag、
+创建 Release、部署 Preview/生产、调用付费服务或写入生产。

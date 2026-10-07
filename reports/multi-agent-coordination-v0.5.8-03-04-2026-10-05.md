@@ -1204,3 +1204,95 @@ preview authorization pending`。
 - 禁止自行 push、tag、创建 Release、部署 Preview/生产、调用付费服务或
   写入生产。任何 blocker/P0/P1、恢复失败、持续 5xx、重启、OOM 或 SHA
   漂移立即停止并回滚。
+
+## 2026-10-07 Preview 失败、替换候选与新授权门 R13
+
+状态：`first preview failed and rolled back / replacement candidate verified /
+round-3 review GO / new preview authorization pending`。
+
+### 首次 Preview 与回滚
+
+- 用户授权只覆盖固定候选
+  `6a27598f054cec0b476ced898397a7572f8f8754` 的 push 和隔离 Preview，
+  不包含 tag、Gitee Release、生产或付费调用。
+- `origin/preview/v0.5.8` 已更新到 `6a27598`，Preview readyz 曾确认同一
+  SHA；生产始终保持 `2c395c029540`。
+- 真实注册旅程稳定复现 P1：
+  `TypeError: Cannot read properties of null (reading 'replaceExisting')`，
+  调用链为 `content-media-runtime.mjs:118` ->
+  `global-events.mjs:141` -> `session-runtime.mjs:107`。
+- 与生产基线对照后同时确认：候选未登录冷启动提前请求 actions/habits 私有
+  数据；生产基线只请求 startup/auth/local-test。
+- 按停止条件立即回滚 Preview。当前只读公网核对显示 Preview 与生产 readyz
+  均为 `2c395c029540`；生产未发生候选切换。Preview 临时邀请码配置已恢复，
+  备份文件已清理。
+- 远端 `preview/v0.5.8` 仍指向失败候选 `6a27598`，不得再次部署。首次旅程
+  可能在隔离 Preview JSON 数据中留下一个随机 `v058preview*` 合成账户；
+  当前没有其密码，后续只能通过受支持账户路径核对和清理，不直接编辑 JSON。
+
+### 修复与替换候选
+
+- 修复提交：
+  `ffc731d83d88026ce12e3b5ae988cc61c1f1d1b1`
+  （`fix(frontend): guard unauthenticated startup lifecycle`）。
+- tree：`d5392e56cdd1eb21ba7f34578990167eab30dfdb`。
+- 947 文件初始 manifest：
+  `/tmp/v0.5.8-release-ffc731d83d88026ce12e3b5ae988cc61c1f1d1b1.manifest`；
+  SHA-256：
+  `28922d3233bbf2fa2043958631427624850cc4c46251735453e80d0305227d6c`。
+- 媒体 manager 未初始化时，图片编辑器 reset 恢复原入口 no-op 语义；
+  Home controller 新增当前账户加载门，未登录不加载 actions workspace、
+  不触发 actions/habits 私有请求。
+- 真实浏览器 UI 新增未登录冷启动反例：认证门稳定显示、无 runtime
+  exception、无 actions/habits 请求；F10 controller 与 PWA 缓存键断言同步。
+- 运行代码、测试与 Service Worker 已变化，`6a27598` 的旧授权、manifest、
+  Release 门和审计证据全部失效。
+
+### 替换候选完整复验
+
+- `npm run check`：通过；G6 为 3 policies / 108 modules / 237 routes /
+  0 exceptions，Prompt catalog 62 条通过。
+- backend：91 阶段通过，`360.27 s`；frontend：36 阶段通过，
+  `88964 ms`；独立 system 通过，`461.28 s`。
+- PostgreSQL 16.14 stable：默认签名 Node 首次被本机 Sharp Team ID 限制
+  阻断；复用 `prepareTestNodeBinary` 的临时 ad-hoc Node 后从头通过主
+  46 项及 lifecycle/idempotency，`19.88 s`。只创建本地临时集群。
+- PWA 通过；独立 web budget 通过，warm firstReadable P75
+  `700.5/750 ms`，cold P75 `698.3/1000 ms`。
+- Release Journey 工件
+  `artifacts/user-journeys/2026-10-07T04-13-17-036Z.json`：
+  passed，`595825 ms`；内含 system `573905 ms`、PostgreSQL stable
+  `16770 ms`、生产依赖审计 `5150 ms` / 0 vulnerabilities。
+- 独立恢复门通过，`2.31 s`。所有门结束后 HEAD/tree/manifest 与开始一致，
+  工作区干净；6 个 worktree，满足 `<=6`。
+
+### 独立审计与 Agent 名册
+
+| Agent | 角色 | 范围 | 结论 |
+| --- | --- | --- | --- |
+| `release_reviewer_full` | 独立 Reviewer | `2c395c0..ffc731d` 完整代码差分 | 无 blocker/P0/P1，`0/0/0` |
+| `release_reviewer_fix` | 定向 Reviewer | `6a27598..ffc731d` 未登录生命周期 | actions/habits 防护通过；提出媒体 manager 预初始化意见 |
+| `validate_media_init_1` | Validator | 预初始化意见复核 | 路径存在，但只加载静态模块并创建空 manager，判为 `minor` |
+| `validate_media_init_2` | Validator | 预初始化意见复核 | 未证实生产高严重度影响，判为误报 |
+
+按审计口径，只接受候选引入、生产可达、稳定复现的 blocker/P0/P1。媒体
+manager 预初始化不读取草稿、不发私有 API，未达到报告阈值；最终
+blocker/P0/P1=`0/0/0`，`GO`。上述 Agent 均已请求关闭；API 若继续显示
+历史 running 记录，按既有 registry stale 处理，不视为写资源。
+
+### 外部状态与下一动作
+
+- Base 仍缺 `base:table:read`，本轮未回填、未回读，不冒充远端已更新；
+  TODO 继续只写“待验收 / 待发布”。
+- 本地文档由主 Agent 单写并形成独立 docs/status 提交。提交后重新生成最终
+  SHA/tree/manifest；只要运行代码、依赖、配置和测试 blob 与 `ffc731d`
+  一致，替换候选行为证据继续有效。
+- 旧授权不适用于替换候选。唯一下一动作是取得针对新最终 SHA 的明确授权，
+  使用固定租约
+  `--force-with-lease=refs/heads/preview/v0.5.8:6a27598f054cec0b476ced898397a7572f8f8754`
+  更新远端 Preview 分支并重新部署。
+- 新 Preview 必须重跑注册/未登录冷启动、20 条 Journey、两个 partial、
+  PWA、性能和至少 15 分钟观察；通过后仍须第二次授权才可 tag、创建
+  Gitee Release、备份/恢复和生产部署。
+- 当前不得自行更新远端分支、push、tag、创建 Release、部署 Preview/生产、
+  调用付费服务或写入生产。
