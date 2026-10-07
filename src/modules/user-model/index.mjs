@@ -1,5 +1,20 @@
 import crypto from "node:crypto";
 import { recordVersion, safeIso, safeText } from "../../shared/validation/index.mjs";
+export {
+  EVIDENCE_ERROR_CODES,
+  EVIDENCE_INFORMATION_TYPES,
+  EVIDENCE_ORIGINS,
+  EVIDENCE_PURPOSES,
+  PERCEPTION_EVENT_KINDS,
+  deduplicateEvidenceByEvent,
+  evaluateEvidence,
+  evidenceEventKey,
+  evidenceFingerprint,
+  evidenceSourceKey,
+  normalizeEvidencePermission,
+  normalizeEvidenceSource,
+  normalizePerceptionEvent
+} from "./evidence.mjs";
 
 export const USER_MODEL_DOMAINS = Object.freeze([
   "context",
