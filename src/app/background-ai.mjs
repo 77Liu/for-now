@@ -2,22 +2,40 @@ import { taskInputMatches, publicAiTask } from "../modules/tasks/index.mjs";
 import { notificationUnread } from "../modules/notifications/index.mjs";
 import { compactPersonalContextReceipt } from "./personal-context.mjs";
 
+const INTERNAL_RECOVERY_LIMIT = 2;
+
 export function createBackgroundAi({ repository, tasks, notifications, targets, generate, dispatch, contextKey, onError }) {
+  const internalKinds = new Set(["perceptionExtraction"]);
   const running = new Set();
   const controllers = new Map();
+  const notify = (store, task, status, message) => (
+    task.internal === true
+      ? null
+      : notifications.upsertTask(store.notifications, task, status, message)
+  );
   const notifyCreated = (store, created) => {
-    if (created.task && !created.duplicate) notifications.upsertTask(store.notifications, created.task, "queued", "已进入后台队列");
+    if (created.task && !created.duplicate) notify(store, created.task, "queued", "已进入后台队列");
     return created;
   };
   const createInStore = (store, input = {}) => notifyCreated(store, tasks.create(store.aiTasks, input, task => targets.prepare(store, task)));
   const schedule = taskId => dispatch(() => void run(taskId).catch(error => onError(taskId, error)));
   const stale = (store, task, message) => {
     tasks.complete(task, "stale", { error: "目标已修改或删除" });
-    notifications.upsertTask(store.notifications, task, "stale", message);
+    notify(store, task, "stale", message);
   };
   const cancelled = (store, task) => {
     tasks.complete(task, "cancelled", { error: "目标已删除，生成结果未写入" });
-    notifications.upsertTask(store.notifications, task, "cancelled", task.error);
+    notify(store, task, "cancelled", task.error);
+  };
+  const currentWork = async (taskId, expectedWork) => {
+    const store = await repository.read();
+    const task = store.aiTasks.find(item => item.id === taskId);
+    if (!task || task.status !== "running") return null;
+    const work = targets.prepare(store, task);
+    if (!taskInputMatches(task, work)) return null;
+    if (expectedWork.contextFingerprint
+      && expectedWork.contextFingerprint !== work?.contextFingerprint) return null;
+    return work;
   };
 
   async function run(taskId) {
@@ -31,7 +49,7 @@ export function createBackgroundAi({ repository, tasks, notifications, targets, 
         const task = tasks.claim(store.aiTasks, taskId);
         if (!task) return false;
         targets.started?.(store, task);
-        notifications.upsertTask(store.notifications, task, "running", "正在生成");
+        notify(store, task, "running", "正在生成");
         return true;
       });
       if (!claimed) return;
@@ -47,7 +65,10 @@ export function createBackgroundAi({ repository, tasks, notifications, targets, 
         });
         return;
       }
-      const generated = await generate(work, { signal: controller.signal });
+      const generated = await generate(work, {
+        signal: controller.signal,
+        isCurrent: async () => Boolean(await currentWork(taskId, work))
+      });
       const result = work.contextReceipt && generated && typeof generated === "object" && !Array.isArray(generated)
         ? { ...generated, contextReceipt: compactPersonalContextReceipt(work.contextReceipt) }
         : generated;
@@ -68,23 +89,39 @@ export function createBackgroundAi({ repository, tasks, notifications, targets, 
         const resultId = targets.save(value, currentWork, task, result);
         if (work.contextFingerprint) currentTask.contextFingerprint = work.contextFingerprint;
         tasks.complete(currentTask, "succeeded", { resultId });
-        notifications.upsertTask(value.notifications, currentTask, "succeeded");
+        notify(value, currentTask, "succeeded");
       });
     } catch (error) {
       await repository.update(store => {
         const task = store.aiTasks.find(item => item.id === taskId);
         if (!task) return;
         if (["cancelled", "cancelling"].includes(task.status)) cancelled(store, task);
+        else if (error?.code === "AI_TASK_STALE") {
+          stale(store, task, "目标已变化，未调用外部模型");
+        }
         else {
           targets.fail?.(store, task, error);
           tasks.complete(task, "failed", { error: error.message });
-          notifications.upsertTask(store.notifications, task, "failed", task.error || "生成失败");
+          notify(store, task, "failed", task.error || "生成失败");
         }
       });
     } finally {
       controllers.delete(key);
       running.delete(key);
     }
+  }
+
+  async function retryTask(id, { includeInternal = false } = {}) {
+    const created = await repository.update(store => {
+      const source = store.aiTasks.find(item => item.id === id);
+      if (source?.internal === true && !includeInternal) return { missing: true };
+      return notifyCreated(
+        store,
+        tasks.retry(store.aiTasks, id, task => targets.prepare(store, task))
+      );
+    });
+    if (!created.duplicate && created.task) schedule(created.task.id);
+    return created;
   }
 
   return {
@@ -102,7 +139,7 @@ export function createBackgroundAi({ repository, tasks, notifications, targets, 
         const task = store.aiTasks.find(item => item.id === taskId);
         if (!task || !["queued", "running"].includes(task.status)) return null;
         tasks.complete(task, "cancelled", { error: "用户取消了本次生成" });
-        notifications.upsertTask(store.notifications, task, "cancelled", task.error);
+        notify(store, task, "cancelled", task.error);
         return publicAiTask(task);
       });
       const controller = controllers.get(`${contextKey()}:${taskId}`);
@@ -110,6 +147,9 @@ export function createBackgroundAi({ repository, tasks, notifications, targets, 
       return value;
     },
     async enqueue(input) {
+      if (internalKinds.has(String(input?.kind ?? "").trim())) {
+        return { unsupported: true };
+      }
       const idempotency = tasks.idempotency?.(input);
       let created;
       if (idempotency && typeof repository.executeIdempotent === "function") {
@@ -134,19 +174,32 @@ export function createBackgroundAi({ repository, tasks, notifications, targets, 
       if (!created.duplicate && created.task?.status === "queued") schedule(created.task.id);
       return created;
     },
-    async retry(id) {
-      const created = await repository.update(store => notifyCreated(store, tasks.retry(store.aiTasks, id, task => targets.prepare(store, task))));
-      if (!created.duplicate && created.task) schedule(created.task.id);
-      return created;
-    },
+    retry: id => retryTask(id),
+    retryInternal: id => retryTask(id, { includeInternal: true }),
     async resume() {
       const ids = await repository.update(store => {
         const { queued, interrupted } = tasks.recover(store.aiTasks);
+        const recovered = [];
         for (const task of interrupted) {
           targets.fail?.(store, task, { code: "TASK_INTERRUPTED" });
-          notifications.upsertTask(store.notifications, task, "failed", task.error);
+          notify(store, task, "failed", task.error);
+          const recoveryAttempt = Math.max(0, Math.round(Number(task.recoveryAttempt) || 0));
+          if (task.internal === true && recoveryAttempt < INTERNAL_RECOVERY_LIMIT) {
+            const retry = notifyCreated(
+              store,
+              tasks.retry(
+                store.aiTasks,
+                task.id,
+                candidate => targets.prepare(store, candidate)
+              )
+            );
+            if (!retry.duplicate && retry.task?.status === "queued") {
+              retry.task.recoveryAttempt = recoveryAttempt + 1;
+              recovered.push(retry.task.id);
+            }
+          }
         }
-        return queued;
+        return [...queued, ...recovered];
       });
       for (const id of ids) schedule(id);
     },

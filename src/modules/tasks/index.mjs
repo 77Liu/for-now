@@ -6,7 +6,8 @@ const TASK_KINDS = new Set([
   "annotationShenji",
   "contentImageUnderstanding",
   "captureTranscription",
-  "onboardingClaimExtraction"
+  "onboardingClaimExtraction",
+  "perceptionExtraction"
 ]);
 const ACTIVE_TASK_STATUSES = new Set(["queued", "running"]);
 const REUSABLE_EXTRACTION_STATUSES = new Set(["queued", "running", "succeeded"]);
@@ -92,6 +93,16 @@ export function createTaskLifecycle({ createId, now, hash }) {
         inputVersion: normalized.requestedInputVersion
       }));
     }
+    if (normalized.kind === "perceptionExtraction") {
+      return hash(JSON.stringify({
+        kind: normalized.kind,
+        resourceType: normalized.resourceType,
+        targetId: normalized.targetId,
+        subtargetId: normalized.subtargetId,
+        inputVersion: normalized.requestedInputVersion,
+        payload: normalized.payload
+      }));
+    }
     return hash(JSON.stringify({ kind: normalized.kind, resourceType: normalized.resourceType, targetId: normalized.targetId, subtargetId: normalized.subtargetId, payload: normalized.payload }));
   };
   const normalizeRequest = input => {
@@ -100,7 +111,9 @@ export function createTaskLifecycle({ createId, now, hash }) {
       ? "capture"
       : kind === "onboardingClaimExtraction"
         ? "onboardingV2"
-      : ["annotationShenji", "contentImageUnderstanding"].includes(kind) ? safeText(input.resourceType, 40) : "thought";
+      : ["annotationShenji", "contentImageUnderstanding", "perceptionExtraction"].includes(kind)
+        ? safeText(input.resourceType, 40)
+        : "thought";
     const payload = kind === "annotationShenji"
       ? { message: safeText(input.payload?.message ?? input.message, 6000) }
       : kind === "contentImageUnderstanding"
@@ -110,6 +123,22 @@ export function createTaskLifecycle({ createId, now, hash }) {
             attachmentPaths: [...new Set((Array.isArray(input.payload?.attachmentPaths) ? input.payload.attachmentPaths : [])
               .filter(value => typeof value === "string" && /^\/attachments\/[\w.-]+$/.test(value)))].slice(0, 2)
           }
+        : kind === "perceptionExtraction"
+          ? {
+              accountId: safeText(input.payload?.accountId, 100),
+              sourceRef: {
+                resourceType: safeText(input.payload?.sourceRef?.resourceType, 40),
+                resourceId: safeText(input.payload?.sourceRef?.resourceId, 100),
+                rootId: safeText(input.payload?.sourceRef?.rootId, 100),
+                targetKey: safeText(input.payload?.sourceRef?.targetKey, 120),
+                version: Math.max(0, Math.round(Number(input.payload?.sourceRef?.version) || 0))
+              },
+              perceptionEventId: safeText(input.payload?.perceptionEventId, 100),
+              eventId: safeText(input.payload?.eventId, 100),
+              contentSha256: safeText(input.payload?.contentSha256, 64),
+              permissionRevision: Math.max(0, Math.round(Number(input.payload?.permissionRevision) || 0)),
+              perceptionVersion: safeText(input.payload?.perceptionVersion, 100)
+            }
         : {};
     const requestedInputVersion = Number(input.inputVersion) > 0 ? Math.round(Number(input.inputVersion)) : 0;
     const requestedSubtargetVersion = Number(input.subtargetVersion) > 0 ? Math.round(Number(input.subtargetVersion)) : 0;
@@ -141,10 +170,19 @@ export function createTaskLifecycle({ createId, now, hash }) {
       );
       if (reusable) return { task: reusable, duplicate: true };
     }
+    if (kind === "perceptionExtraction") {
+      const existing = taskForInput(
+        tasks,
+        { kind, targetId, inputHash: work.inputHash },
+        REUSABLE_EXTRACTION_STATUSES
+      );
+      if (existing) return { task: existing, duplicate: true };
+    }
     const task = {
       id: createId(), kind, resourceType, targetId, subtargetId,
       inputVersion: work.inputVersion || 0, subtargetVersion: work.subtargetVersion || 0, inputHash: work.inputHash,
-      payload, clientRequestId, requestHash: inputRequestHash, status: "queued", createdAt: now(), updatedAt: now(), attempt: 0
+      payload, clientRequestId, requestHash: inputRequestHash, status: "queued", createdAt: now(), updatedAt: now(), attempt: 0,
+      ...(kind === "perceptionExtraction" ? { internal: true } : {})
     };
     tasks.unshift(task);
     work.markQueued?.(task);

@@ -5,6 +5,11 @@ import { createContentBackground, enqueueContentImageUnderstanding } from "./con
 import { createContentFoundation, createContentRecords } from "./content/resources.mjs";
 import { createContentWorkflows } from "./content/workflows.mjs";
 import { createMediaRuntime } from "./media-runtime.mjs";
+import {
+  createPerceptionAwareRepository,
+  createPerceptionRuntime,
+  createPerceptionService
+} from "./perception.mjs";
 import { createTrashCommands } from "./trash.mjs";
 
 const requiredFunction = (value, name) => {
@@ -52,8 +57,20 @@ export function createContentRuntime({
 
   let backgroundAi;
   let mediaRuntime;
-  const foundation = createContentFoundation({
+  const perceptionRuntime = createPerceptionRuntime({
+    getAccountId,
+    createId,
+    now,
+    hash
+  });
+  const contentRepository = createPerceptionAwareRepository({
     repository,
+    perception: perceptionRuntime,
+    createTask: (store, input) => backgroundAi?.createInStore(store, input),
+    scheduleTask: taskId => backgroundAi?.schedule(taskId)
+  });
+  const foundation = createContentFoundation({
+    repository: contentRepository,
     trashRetentionDays,
     getAccountId,
     cancelTask: taskId => backgroundAi?.cancel(taskId) || false,
@@ -62,7 +79,7 @@ export function createContentRuntime({
     hash
   });
   const contentAttachmentService = createContentAttachmentService({
-    repository,
+    repository: contentRepository,
     trash: foundation.trashService,
     attachmentInventory: (...args) => {
       if (!mediaRuntime) throw new Error("Content media runtime is not initialized");
@@ -78,6 +95,7 @@ export function createContentRuntime({
   });
   const records = createContentRecords({
     repository,
+    sourceRepository: contentRepository,
     foundation,
     contentAttachments: contentAttachmentService,
     getCursorScope,
@@ -86,7 +104,7 @@ export function createContentRuntime({
   });
   mediaRuntime = mediaFactory({
     ...mediaOptions,
-    repository,
+    repository: contentRepository,
     books: records.bookRecords,
     quotes: records.quoteRecords,
     parseKeepsake: keepsakePayload,
@@ -103,9 +121,10 @@ export function createContentRuntime({
     debugFetch
   });
   const background = createContentBackground({
-    repository,
+    repository: contentRepository,
     annotationService: foundation.annotationService,
     contentAttachments: contentAttachmentService,
+    perception: perceptionRuntime,
     mediaRuntime,
     getAccountId,
     backgroundContextKey,
@@ -120,8 +139,14 @@ export function createContentRuntime({
     debugFetch
   });
   backgroundAi = background.backgroundAi;
+  const perception = createPerceptionService({
+    repository,
+    runtime: perceptionRuntime,
+    backgroundAi
+  });
   const workflows = createContentWorkflows({
     repository,
+    sourceRepository: contentRepository,
     records,
     backgroundAi,
     trashMutations: foundation.trashMutations,
@@ -136,7 +161,7 @@ export function createContentRuntime({
     logEvent
   });
   const trashCommands = createTrashCommands({
-    repository,
+    repository: contentRepository,
     trash: foundation.trashService,
     mutations: foundation.trashMutations,
     cleanup: mediaRuntime.attachmentCleanup
@@ -149,6 +174,8 @@ export function createContentRuntime({
     ...background,
     ...workflows,
     contentAttachmentService,
+    perception,
+    updateSourceStore: operation => contentRepository.update(operation),
     trashCommands
   };
 }

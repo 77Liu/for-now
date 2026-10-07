@@ -133,7 +133,7 @@ export function createAnnotationService({ createId, now }) {
     reply(root, annotationId, text) {
       const annotation = root?.annotations?.find(item => item.id === annotationId);
       if (!annotation || annotation.kind !== "comment") return { missing: true };
-      const reply = { id: createId(), text, createdAt: now() };
+      const reply = { id: createId(), text, createdAt: now(), version: 1 };
       annotation.replies ||= [];
       annotation.replies.push(reply);
       return { value: reply };

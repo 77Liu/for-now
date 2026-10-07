@@ -224,6 +224,9 @@ function normalizeCaptureTranscription(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return {
     ...value,
+    ...(Number.isSafeInteger(value.version) && value.version > 0
+      ? { version: recordVersion(value.version) }
+      : {}),
     rawText: safeText(value.rawText, 120_000),
     polishedText: safeText(value.polishedText, 120_000),
     condensedText: safeText(value.condensedText, 120_000),

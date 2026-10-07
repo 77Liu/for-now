@@ -9,6 +9,7 @@ import { createUserModelExtractionService } from "../user-model.mjs";
 
 export function createContentWorkflows({
   repository,
+  sourceRepository = repository,
   records,
   backgroundAi,
   trashMutations,
@@ -23,7 +24,7 @@ export function createContentWorkflows({
   logEvent
 }) {
   const thoughtWorkflows = createThoughtWorkflows({
-    repository,
+    repository: sourceRepository,
     thoughts: records.thoughtService,
     backgroundAi,
     removeChain: (store, id) => (

@@ -70,6 +70,7 @@ export function createContentBackground({
   repository,
   annotationService,
   contentAttachments,
+  perception,
   mediaRuntime,
   getAccountId,
   backgroundContextKey,
@@ -91,6 +92,7 @@ export function createContentBackground({
     }),
     annotations: annotationService,
     contentAttachments,
+    perception,
     getAccountId,
     hash,
     now
@@ -100,14 +102,24 @@ export function createContentBackground({
     tasks: createTaskLifecycle({ createId, now, hash }),
     notifications: createNotificationService({ createId, now }),
     targets: taskTargets,
-    generate: async (work, { signal } = {}) => {
+    generate: async (work, { signal, isCurrent } = {}) => {
       if (work.kind === "captureTranscription") {
+        if (typeof isCurrent === "function" && !await isCurrent()) {
+          throw Object.assign(new Error("目标已变化，未调用外部模型"), {
+            code: "AI_TASK_STALE"
+          });
+        }
         return mediaRuntime.transcribeCapture(work, { signal });
       }
       const imagePaths = work.attachmentPaths?.length
         ? await mediaRuntime.materializeAttachmentFiles(work.attachmentPaths)
         : [];
       try {
+        if (typeof isCurrent === "function" && !await isCurrent()) {
+          throw Object.assign(new Error("目标已变化，未调用外部模型"), {
+            code: "AI_TASK_STALE"
+          });
+        }
         const result = await runDeepSeek(work.prompt, {
           scene: work.scene,
           systemPrompt: work.systemPrompt || systemPrompt(),

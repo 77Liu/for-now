@@ -74,6 +74,13 @@ export {
   workingContextPromptContract
 } from "./prompt-context.mjs";
 export {
+  PERCEPTION_PROMPT_SOURCE_BYTE_LIMIT,
+  PERCEPTION_TASK_KIND,
+  createPerceptionAwareRepository,
+  createPerceptionRuntime,
+  createPerceptionService
+} from "./perception.mjs";
+export {
   STORE_VERSION,
   TRASH_RETENTION_DAYS,
   createEmptyStore,

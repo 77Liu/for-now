@@ -189,7 +189,9 @@ function sourceRecord(store, sourceRef, indexes = null) {
       ...list(root.reflections),
       ...list(root.notes),
       ...list(root.annotations),
-      ...list(root.annotationDrift)
+      ...list(root.annotationDrift),
+      ...list(root.annotations).flatMap(value => list(value?.replies)),
+      ...list(root.annotationDrift).flatMap(value => list(value?.replies))
     ];
     item = nested.find(value => value?.id === sourceRef.resourceId) || null;
   }
@@ -226,6 +228,14 @@ function targetText({ item, root }, sourceRef) {
     ));
   }
   const targetKey = sourceRef.targetKey;
+  if (sourceRef.resourceType === "capture" && targetKey === "transcription") {
+    return String(
+      item.transcription?.condensedText
+        || item.transcription?.polishedText
+        || item.transcription?.rawText
+        || ""
+    );
+  }
   if (!targetKey || targetKey === "content") {
     return [
       item.title,
@@ -256,6 +266,7 @@ function targetText({ item, root }, sourceRef) {
       .find(value => value?.id === id);
     return String(annotation?.text || annotation?.quote || "");
   }
+  if (type === "annotation-reply") return String(item?.text || "");
   if (targetKey === "message") return String(item.message || "");
   if (targetKey === "answer") return String(item.answer || "");
   if (targetKey === "description") return String(item.description || "");
@@ -271,7 +282,10 @@ export function taskContextSourceMaterial(store, sourceRef, indexes = null) {
   if (!text) return null;
   return {
     text,
-    version: recordVersion(located.item.version),
+    version: sourceRef.resourceType === "capture"
+      && sourceRef.targetKey === "transcription"
+      ? recordVersion(located.item.transcription?.version)
+      : recordVersion(located.item.version),
     contentSha256: digest(text)
   };
 }

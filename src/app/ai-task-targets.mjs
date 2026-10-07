@@ -17,6 +17,7 @@ export function createAiTaskTargets({
   thoughts,
   annotations,
   contentAttachments = null,
+  perception = null,
   getAccountId = () => "local",
   hash,
   now = () => new Date().toISOString()
@@ -61,7 +62,11 @@ export function createAiTaskTargets({
           condensedText: safeText(capture.transcription?.condensedText, 120_000),
           updatedAt: capture.transcription?.updatedAt || "",
           errorCode: "",
-          condenseErrorCode: ""
+          condenseErrorCode: "",
+          ...(Number.isSafeInteger(capture.transcription?.version)
+            && capture.transcription.version > 0
+            ? { version: capture.transcription.version }
+            : {})
         };
       }
     };
@@ -274,6 +279,9 @@ export function createAiTaskTargets({
 
   return {
     result(store, task) {
+      if (task.kind === "perceptionExtraction") {
+        return perception?.result(store, task) || null;
+      }
       if (task.kind === "captureTranscription") {
         return store.captures?.find(item => item.id === task.targetId) || null;
       }
@@ -293,6 +301,9 @@ export function createAiTaskTargets({
       return annotations.taskResult(annotationResource(store, task.resourceType, task.targetId), task);
     },
     prepare(store, task) {
+      if (task.kind === "perceptionExtraction") {
+        return perception?.prepare(store, task) || null;
+      }
       if (task.kind === "captureTranscription") return captureTranscriptionWork(store, task);
       if (task.kind === "contentImageUnderstanding") return contentImageWork(store, task);
       if (task.kind === "onboardingClaimExtraction") return onboardingClaimExtractionWork(store, task);
@@ -353,13 +364,22 @@ export function createAiTaskTargets({
       };
     },
     save(store, work, task, result) {
+      if (task.kind === "perceptionExtraction") {
+        if (!perception) throw new Error("Perception task target is unavailable");
+        return perception.save(store, work, task, result);
+      }
       if (task.kind === "captureTranscription") {
         const capture = store.captures?.find(item => item.id === task.targetId);
         if (!capture || capture.audio?.attachmentPath !== work.audio.attachmentPath) {
           throw Object.assign(new Error("语音原件已经变化，转写结果未写入"), { code: "TRANSCRIPTION_STALE" });
         }
+        const previousTranscriptionVersion = Number.isSafeInteger(capture.transcription?.version)
+          && capture.transcription.version > 0
+          ? capture.transcription.version
+          : 0;
         capture.transcription = {
           status: "ready",
+          version: previousTranscriptionVersion + 1,
           provider: safeText(result.provider, 100) || "volcengine-seedasr-2.0",
           rawText: safeText(result.rawText, 120_000),
           polishedText: safeText(result.polishedText, 120_000),
@@ -430,7 +450,11 @@ export function createAiTaskTargets({
         condensedText: safeText(capture.transcription?.condensedText, 120_000),
         updatedAt: now(),
         errorCode: safeText(error?.code, 120) || "ASR_FAILED",
-        condenseErrorCode: safeText(capture.transcription?.condenseErrorCode, 120)
+          condenseErrorCode: safeText(capture.transcription?.condenseErrorCode, 120),
+          ...(Number.isSafeInteger(capture.transcription?.version)
+            && capture.transcription.version > 0
+            ? { version: capture.transcription.version }
+            : {})
       };
     }
   };

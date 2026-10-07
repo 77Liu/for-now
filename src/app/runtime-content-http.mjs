@@ -47,7 +47,8 @@ export function createRuntimeContentHttp({
     parseImageRequest,
     listAttachmentInventory,
     prepareCaptureAudio,
-    libraryWorkflows
+    libraryWorkflows,
+    updateSourceStore = updateStore
   } = contentRuntime;
   const {
     moveCollectionItemToTrash,
@@ -64,8 +65,8 @@ export function createRuntimeContentHttp({
   const thoughtHttp = createThoughtHttp({
     service: thoughtService,
     workflows: thoughtWorkflows,
-    removeBlock: id => updateStore(store => moveThoughtBlockToTrash(store, id)),
-    removeNested: input => updateStore(store => moveNestedItemToTrash(store, input)),
+    removeBlock: id => updateSourceStore(store => moveThoughtBlockToTrash(store, id)),
+    removeNested: input => updateSourceStore(store => moveNestedItemToTrash(store, input)),
     backgroundAi,
     sendTaskCreation: taskHttp.sendCreation,
     eventTimeFields,
@@ -183,7 +184,7 @@ export function createRuntimeContentHttp({
     type,
     id,
     expectedVersion = null
-  ) => updateStore(store => {
+  ) => updateSourceStore(store => {
     const record = store[collection]?.find(item => item.id === id);
     if (record && expectedVersion != null) {
       const currentVersion = recordVersion(record.version);
@@ -197,7 +198,7 @@ export function createRuntimeContentHttp({
     journalId,
     reflectionId,
     expectedVersion = null
-  ) => updateStore(store => {
+  ) => updateSourceStore(store => {
     const journal = store.journals.find(item => item.id === journalId);
     const reflection = journal?.reflections?.find(item => item.id === reflectionId);
     if (reflection && expectedVersion != null) {

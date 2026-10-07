@@ -144,6 +144,7 @@ const createReviewRepository = repository => ({
 
 export function createContentRecords({
   repository,
+  sourceRepository = repository,
   foundation,
   contentAttachments,
   getCursorScope,
@@ -158,7 +159,7 @@ export function createContentRecords({
     createCollectionRepository(repository, collection)
   );
   const thoughtService = createThoughtService({
-    repository,
+    repository: sourceRepository,
     createId,
     now,
     recordVersion,
@@ -170,7 +171,7 @@ export function createContentRecords({
     )
   });
   const captureRecords = createCaptureRecords({
-    repository: collectionRepository("captures"),
+    repository: createCollectionRepository(sourceRepository, "captures"),
     reanchorAnnotations: annotationService.reanchorAnnotations,
     reconcileOriginalImages: (...args) => (
       contentAttachments.reconcileOriginalImagesInStore(...args)
@@ -201,7 +202,7 @@ export function createContentRecords({
     thoughtService,
     captureRecords,
     journalRecords: createJournalRecords({
-      repository: createJournalRepository(repository),
+      repository: createJournalRepository(sourceRepository),
       reanchorAnnotations: annotationService.reanchorAnnotations,
       now,
       createId
