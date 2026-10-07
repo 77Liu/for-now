@@ -5,7 +5,8 @@
 - 分支 / 工作树：`feat/v0.5.9-integration` /
   `.worktrees/v0.5.9-integration`
 - 生产基线：`v0.5.8@7067ba65eeafccb953080e00988f62728d3b75a8`
-- 当前门禁：`G1/G2 passed-for-local-development`，`G3-22 active`
+- 当前门禁：`G1/G2 passed-for-local-development`，`G3-22 validated`，
+  `G3-10a active`
 - 授权：本地规划、开发、测试和本地提交；不含 push `main`、tag、Release、
   生产、云配置、真实付费调用或生产数据写入
 
@@ -35,8 +36,8 @@
 
 ```text
 G1/G2
-├─ 22 audio removal race [active]
-├─ 10a replay fixtures [ready, no slot]
+├─ 22 audio removal race [validated: bd52ebf]
+├─ 10a replay fixtures [active]
 ├─ 05a evidence contract [ready, no slot]
 │  └─ 05b persistence
 │     ├─ 06 task selection
@@ -62,9 +63,12 @@ manifest、module registry、runner、Service Worker 和发布文件由
 | `orchestrator` | 唯一 DAG、G1/G2、集成与共享文件 | V0.5.9 集成树和共享热点 | Base/Git/生产/规则/风险核对完成；`active` | 固定 22 失败反例 |
 | `scout-audio-race` | recorder → draft → upload → ASR/账本 | 只读 | 定位 revision/persist/restore/submission 竞态；`closed` | 交给 developer-22 |
 | `scout-personalization` | 05–10 现有 receipt/user-model/task/prompt/PG | 只读 | 定位固定投影、许可失效、注入和 outbox 缺口；`closed` | 交给 05a/10a |
-| `developer-22` | 快捷语音移除 P00 | capture audio/controller/operations/view 和定向测试 | 与 orchestrator 同一执行者、不同角色；`active` | 先失败断言，再最小修复 |
-| `reviewer-22` | 固定 22 差分独立审查 | 只读 | 尚未派发；`queued` | 候选 tree 固定后审查 |
-| `validator-22` | 影响测试、Journey Smoke、零副作用 | 测试 artifact，只读代码 | 尚未派发；`queued` | reviewer GO 后运行 |
+| `developer-22` | 快捷语音移除 P00 | capture audio/controller/operations/view 和定向测试 | `bd52ebf`；`closed` | 交给版本集成 |
+| `reviewer-22-r1` | 固定 22 差分独立审查 | 只读 | `0/1/3 NO-GO`；`closed` | findings 已修复 |
+| `reviewer-22-r2` | 四项 finding 复审 | 只读 | `0/0/1 NO-GO`；`closed` | 交叉时序已修复 |
+| `reviewer-22-r3` | 最终 tree 复审 | 只读 | `3fda6d1d...`，`0/0/0 GO`；`closed` | 无 |
+| `validator-22` | 影响测试、Journey Smoke、零副作用 | 测试 artifact，只读代码 | F6/UI/Smoke/frontend 通过；`closed` | 交给版本系统门 |
+| `developer-10a` | 16 类回放夹具、旧基线与指标 | 新 fixture/runner/说明 | `active` | 先固定判定与旧方案结果 |
 
 `developer-22` 不能作为自己的唯一 reviewer。Reviewer 和 Validator 复用现有
 工作树，只读执行，不创建第七个工作树。
@@ -81,8 +85,8 @@ manifest、module registry、runner、Service Worker 和发布文件由
 - 真实模型对照：尚无本次费用和私人数据授权；本地只跑 stub/确定性回放。
 - push/tag/Release/生产：均未授权。
 
-这些阻塞不影响 `22`、`10a`、`05a`、`17`、`18`、`21` 的本地准备；当前未派发
-只因工作树 `6/6` 和 P00 唯一写槽。
+这些阻塞不影响 `10a`、`05a`、`17`、`18`、`21` 的本地准备；`10a` 已取得
+唯一写槽，其余未派发只因工作树 `6/6` 和集成树单写。
 
 ## 5. 22 任务契约
 
@@ -113,10 +117,32 @@ manifest、module registry、runner、Service Worker 和发布文件由
 | 16:24 | validator-local | PG16 preflight、Journey schema、Prompt catalog | 全部通过 |
 | 16:25 | orchestrator | 创建 V0.5.9 集成树，总数 6/6 | 不再创建工作树 |
 | 16:27 | orchestrator → developer-22 | G1/G2 通过，22 唯一活动写线 | 建立失败断言 |
+| 16:31 | test → developer-22 | 延迟 IndexedDB put 在 delete 后复活草稿 | 修复前失败反例固定 |
+| 16:43 | reviewer-r1 → developer-22 | `0/1/3 NO-GO`：编码、取消、pending、rollback | 全部修复并补反例 |
+| 16:58 | reviewer-r2 → developer-22 | `0/0/1 NO-GO`：stop-pending 替换取消 | 修复并补交叉时序 |
+| 17:05 | reviewer-r3 → orchestrator | tree `3fda6d1d...`，`0/0/0 GO` | 提交 `bd52ebf` |
+| 17:06 | orchestrator → developer-10a | 22 写槽释放，重算 DAG | 10a 进入 active |
+
+## 6.1 22 验证与审查
+
+- 修复前失败：延迟草稿 `put` 在移除后的 `delete` 之后完成，已移除 Blob
+  重回 IndexedDB。
+- 实现：草稿写删串行；recorder、restore、encode/upload、rollback 与提交结果
+  绑定账户、generation 和 revision；提交封存 pending permission/file；提交
+  期间音频控件禁用。
+- 对抗用例：迟到 stop/dataavailable、put、restore、encode、rollback，
+  active cancel、stop-pending cancel、替换时保留旧音频、账户切换和纯文本
+  ASR 抑制。
+- 最终 tree：`3fda6d1d8481e3b1ed5d89cfe96b77d2f4df1c19`。
+- 本地提交：`bd52ebf`。
+- 通过：`npm run check`、`test:f6-features`、`test:auth`、
+  `test:media-runtime`、`test:ui`、`test:journeys:smoke`（15/15）、
+  `test:frontend`（36 stages）。
+- 未执行：真实 ASR/DeepSeek、Preview、生产和 Release；调用预算实际为 0。
 
 ## 7. NO-GO 与下一动作
 
 - 当前不是候选；不得执行 Preview、Release 或生产动作。
-- 22 在失败断言、实现、专项、Journey、独立 review 和本地提交完成前不得关闭。
-- 唯一下一动作：为延迟 `put/restore/stop` 和“移除后立即纯文本提交”建立稳定
-  失败断言，确认修复前至少一条失败。
+- `22` 仅为工作区已验证未部署，不能写成需求已发布或生产问题已关闭。
+- 唯一下一动作：实现 `10a` 的 16 类固定回放 fixture、旧固定堆叠基线和
+  指标计算；不得调用真实模型。

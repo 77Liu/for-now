@@ -4,7 +4,7 @@
 
 审阅修订：2026-10-07（Asia/Shanghai）
 
-状态：`G0/G1/G2 已通过（本地开发） / G3 进行中（22） / 未发布`
+状态：`G0/G1/G2 已通过 / 22 本地 G3 已完成 / 10a 进行中 / 未发布`
 
 V0.5.9 接收从 V0.5.8 按完整需求原子迁出的 8 条 P0，并接收 V0.5.8
 生产冒烟新增的 1 条 P00。当前没有实现、候选、Preview 或发布证据；不得把
@@ -164,7 +164,7 @@ G1 结论：九条范围、做/不做、入口、验收、兼容和关键默认�
 flowchart TD
   A["✅ V0.5.8 G7（原报告）"] --> P["✅ G1 范围与验收冻结"]
   P --> Q["✅ G2 基线/契约/风险/资源就绪"]
-  Q --> L["◐ 22 快捷语音 P00 首批"]
+  Q --> L["✅ 22 快捷语音 P00 本地 G3"]
   Q --> B["⬜ 05 事件/证据及失效硬门"]
   B --> C["06 任务选材"]
   C --> D["07 提示词与注入"]
@@ -236,8 +236,8 @@ flowchart TD
 
 | 节点 | 负责人 / 写集 | 硬前置与资源 | 旅程 / 验证 | 恢复与调用预算 | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| `22` | `developer-22`；capture audio/controller/operations/view 及定向测试 | G2；集成树、合成音频、stub、隔离 IndexedDB | `capture-audio`；F6、UI、router/session、零网络/账本断言 | 无 schema；回退代码即可；真实供应商 `0` | `active` |
-| `10a` 固定夹具 | `orchestrator`；新增回放 fixture/runner/说明，不改生产行为 | G2；与 `22` 写集不重叠，但当前无工作树槽位 | `thought-source-answer`、`personal-context-governance`；16 类基线 | 仅 stub；失败样本保留 | `ready / not dispatched` |
+| `22` | `developer-22`；capture audio/controller/operations/view 及定向测试 | G2；集成树、合成音频、stub、隔离 IndexedDB | `capture-audio`；F6、UI、router/session、零网络/账本断言 | 无 schema；回退代码即可；真实供应商 `0` | `validated / bd52ebf` |
+| `10a` 固定夹具 | `orchestrator`；新增回放 fixture/runner/说明，不改生产行为 | G2；复用集成树串行写槽 | `thought-source-answer`、`personal-context-governance`；16 类基线 | 仅 stub；失败样本保留 | `active` |
 | `05a` 证据领域契约 | `orchestrator`；新 perception/evidence 领域模块及专项 | `22` 检查点后；不接 HTTP/schema | 许可、来源、时间、去重、版本纯函数专项 | 无外部调用；删除模块即可回退 | `ready / not dispatched` |
 | `05b` 持久化接线 | `orchestrator` 单写 Store/JSON/PG mapping、module registry | `05a`；PG16、旧 Store fixture、隔离数据库 | persistence、trash、auth、PG stable、restore | 向后兼容迁移；失败停止消费，原文保留 | `blocked by 05a` |
 | `06` 任务选材 | `orchestrator`；personal-context/app assembler、receipt 专项 | `05b`；固定夹具 | 思绪完整链、批注、复盘；selection/replay 专项 + Smoke | 失败只用当前获准材料并声明历史不可用；stub | `blocked by 05b` |
@@ -250,10 +250,11 @@ flowchart TD
 | `19` 真实媒体验收 | `validator-media`；只写忽略目录证据与获准 Base 字段 | `18` + CDN/OSS/DNS/证书/费用授权 | 专项 Preview、匿名/越权/过期、HIT/MISS、206/416 | 失败切回 proxy；不得改生产 | `blocked by Owner/cloud` |
 | `21` 主账户设置 | `developer-opening`；设置契约、权限、UI 与测试 | G2；现有 opening engine/capability | 未登录、注册、退出、账户切换、opening/UI/PWA | 读取失败回退冻结默认；真实云 `0` | `ready / not dispatched` |
 
-`ready` 未派发原因统一为：当前工作树 `6/6`，唯一写槽优先交付 P00 `22`，
-且共享集成树只能单写。责任人为 `orchestrator`；解除条件为 `22` 完成
-G3、独立 review 和本地提交后释放写者；下一复核事件为该提交或任何工作树
-资源变化。不得强删三个脏历史现场腾槽位。
+`22` 已完成失败断言、修复、专项、Journey Smoke、前端里程碑门、三轮独立
+review 收敛和本地提交 `bd52ebf`。当前唯一写槽转给 `10a`。其余 `ready`
+节点未派发原因为工作树 `6/6` 且集成树单写；责任人为 `orchestrator`，解除
+条件为 `10a` 形成可审查检查点或工作树资源发生变化，下一复核事件为该事件。
+不得强删三个脏历史现场腾槽位。
 
 风险预验证已完成：
 
@@ -274,8 +275,8 @@ G3、独立 review 和本地提交后释放写者；下一复核事件为该提�
   兼容入口，不连接现有数据库。
 - 本地阶段真实 DeepSeek、火山、阿里云和 OSS 调用预算均为 `0`。
 
-G2 结论：`22` 已满足直接开发条件；`10a/05a/17/18/21` 在契约上 ready，
-但因工作树上限与 P00 唯一写槽暂不派发；其余节点按硬依赖或外部授权阻塞。
+G2 结论：`22` 已完成本地 G3；`10a` 已派发；`05a/17/18/21` 在契约上
+ready，但因工作树上限与唯一写槽暂不派发；其余节点按硬依赖或外部授权阻塞。
 
 ## 4. 验收与禁止项
 
@@ -393,7 +394,7 @@ V0.5.8 G7 已在原报告关闭；本次审阅未把这个条件重新标成待�
 | G0 | 九条已有来源、必要字段及交付关联；留存快照复核通过。新增候选另行逐项处理；飞书“待开始”不能直接解释为需求“本轮已选” |
 | G1 | 已通过：九条全部纳入；入口、阈值、默认关闭策略、60 秒媒体 TTL 与不做范围见 2.2 |
 | G2 | 已通过（局部阻塞）：基线、DAG、所有权、旅程、资源、调用预算、迁移和恢复见 3.2；`19` 等待云授权 |
-| G3 | 进行中：`22` 为唯一活动写线；其余节点按 3.2 的 ready/blocked 状态滚动调度 |
+| G3 | 进行中：`22@bd52ebf` 已本地验证未部署；`10a` 为唯一活动写线；其余节点按 3.2 滚动调度 |
 | G4 | 未开始：全部入选原子汇合；固定完整候选 SHA，版本/依赖锁/制品/iOS/配置存在性检查，系统/Release、真实回放及必要 Preview、备份恢复通过 |
 | G5 | 未开始：两轮审查完成、阻断项关闭，Owner 对具体远端及生产动作最终 GO |
 | G6 | 未开始：生产运行提交与获准候选一致；按动作副作用清单执行获准冒烟，覆盖录音零副作用、纠正撤回、多账户/匿名和媒体路径；至少 30 分钟有效观察，首样本、样本数、END 和独立终态审计通过 |
@@ -421,3 +422,10 @@ Journey 和 Prompt 风险核对。Owner 当前指令已冻结九条范围并授�
 开发；G1/G2 按 2.2/3.2 通过，`22` 进入 G3。原
 `.worktrees/v0.5.8-p00-p0` 中未提交的审阅计划、计划图和图片提示词继续原样
 保留；本分支只迁入计划正文，不覆盖或顺带提交原图片资产。
+
+16:29–17:05 +0800，`22` 先以延迟 IndexedDB `put` 建立修复前失败断言，
+再统一 recorder、restore、persist、upload、rollback 与 submission 的账户和
+意图代次。两轮 Reviewer 共发现并关闭 `0/1/4` 个 P0/P1，最终固定 tree
+`3fda6d1d8481e3b1ed5d89cfe96b77d2f4df1c19` 为 `0/0/0 GO`；本地提交为
+`bd52ebf`。F6、auth、media runtime、UI、Journey Smoke `15/15`、check 和
+frontend 里程碑门通过；全程真实供应商调用为 0，未执行 Preview 或发布。
