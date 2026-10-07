@@ -6,12 +6,27 @@ const parseJson = (text, file) => {
   try { return JSON.parse(text); }
   catch { throw new Error(`Prompt catalog JSON is invalid: ${file}`); }
 };
+const REQUIRED_ROLE_NAMES = Object.freeze([
+  "perception",
+  "modelUpdate",
+  "periodicSynthesis",
+  "contextPlanning",
+  "answer",
+  "answerCheck"
+]);
 
-export async function loadPromptCatalog({ rootDir, requestedVersion = "" }) {
+export async function loadPromptCatalog({
+  rootDir,
+  requestedVersion = "",
+  requiredCapabilities = [],
+  allowHistorical = false
+}) {
   const directory = path.join(rootDir, "prompts");
   const manifestFile = path.join(directory, "manifest.json");
   const manifest = parseJson(await fs.readFile(manifestFile, "utf8"), manifestFile);
-  if (manifest.schemaVersion !== 1 || !Array.isArray(manifest.versions)) throw new Error("Prompt manifest schema is unsupported");
+  if (![1, 2].includes(manifest.schemaVersion) || !Array.isArray(manifest.versions)) {
+    throw new Error("Prompt manifest schema is unsupported");
+  }
   const version = String(requestedVersion || manifest.activeVersion || "");
   const selectedIndex = manifest.versions.findIndex(item => item.version === version);
   const selected = manifest.versions[selectedIndex];
@@ -50,5 +65,51 @@ export async function loadPromptCatalog({ rootDir, requestedVersion = "" }) {
     }
     if (!prompts[id]) throw new Error(`Required prompt is missing: ${id}`);
   }
-  return Object.freeze({ version, sha256, prompts: Object.freeze(prompts) });
+  const rolePromptIds = manifest.rolePromptIds;
+  if (manifest.schemaVersion >= 2 || rolePromptIds != null) {
+    if (typeof rolePromptIds !== "object"
+      || Array.isArray(rolePromptIds)
+      || JSON.stringify(Object.keys(rolePromptIds).sort())
+        !== JSON.stringify([...REQUIRED_ROLE_NAMES].sort())
+      || new Set(Object.values(rolePromptIds)).size !== REQUIRED_ROLE_NAMES.length) {
+      throw new Error("Prompt role contracts are invalid");
+    }
+    for (const id of Object.values(rolePromptIds)) {
+      if (typeof id !== "string" || !manifest.requiredPromptIds.includes(id)) {
+        throw new Error(`Prompt role is not required: ${id}`);
+      }
+      const introducedIn = manifest.promptIntroducedIn?.[id];
+      const introducedIndex = manifest.versions.findIndex(item => item.version === introducedIn);
+      if (introducedIndex < 0) throw new Error(`Prompt role introduction is unavailable: ${id}`);
+      if (selectedIndex >= introducedIndex && !prompts[id]) {
+        throw new Error(`Prompt role is missing: ${id}`);
+      }
+    }
+  }
+  const capabilities = manifest.capabilities;
+  if (manifest.schemaVersion >= 2
+    && (!capabilities || typeof capabilities !== "object" || Array.isArray(capabilities))) {
+    throw new Error("Prompt capabilities are invalid");
+  }
+  for (const capability of requiredCapabilities) {
+    const introducedIn = capabilities?.[capability];
+    const introducedIndex = manifest.versions.findIndex(item => item.version === introducedIn);
+    if (introducedIndex < 0 || selectedIndex < introducedIndex) {
+      throw new Error(`Prompt catalog capability is unavailable: ${capability}`);
+    }
+  }
+  if (manifest.schemaVersion >= 2 && !allowHistorical) {
+    const structuredVersion = capabilities?.structuredWorkingContext;
+    const structuredIndex = manifest.versions.findIndex(item => item.version === structuredVersion);
+    if (structuredIndex < 0 || selectedIndex < structuredIndex) {
+      throw new Error("Prompt catalog capability is unavailable: structuredWorkingContext");
+    }
+  }
+  return Object.freeze({
+    version,
+    sha256,
+    prompts: Object.freeze(prompts),
+    rolePromptIds: Object.freeze({ ...(rolePromptIds || {}) }),
+    capabilities: Object.freeze({ ...(capabilities || {}) })
+  });
 }

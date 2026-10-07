@@ -1,6 +1,6 @@
 {
-  "schemaVersion": 1,
-  "activeVersion": "2026.10.04.2",
+  "schemaVersion": 2,
+  "activeVersion": "2026.10.07.1",
   "versions": [
     {
       "version": "2026.09.29.1",
@@ -36,11 +36,28 @@
       "version": "2026.10.04.2",
       "file": "2026.10.04.2.json",
       "sha256": "cc8d8235d3134a0779653abbb76515a93f138cde496bb8356a8acdf26ef60295"
+    },
+    {
+      "version": "2026.10.07.0",
+      "file": "2026.10.07.0.json",
+      "sha256": "c5553e94477a87c6980642ef06f3ee10cf9e46a0cbfe003047cdd5f7ba5476f1"
+    },
+    {
+      "version": "2026.10.07.1",
+      "file": "2026.10.07.1.json",
+      "sha256": "5d77dd699fa6cb5eea5de2d72547e74ceecd13ef4bb55bea96682f178babf40b"
     }
   ],
   "promptIntroducedIn": {
     "capture.transcription.condense": "2026.10.04.2",
-    "thought.speech.wrapper": "2026.10.04.2"
+    "thought.speech.wrapper": "2026.10.04.2",
+    "orchestration.role.perception": "2026.10.07.0",
+    "orchestration.role.modelUpdate": "2026.10.07.0",
+    "orchestration.role.periodicSynthesis": "2026.10.07.0",
+    "orchestration.role.contextPlanning": "2026.10.07.0",
+    "orchestration.role.answer": "2026.10.07.0",
+    "orchestration.role.answerCheck": "2026.10.07.0",
+    "orchestration.user.envelope": "2026.10.07.0"
   },
   "promptVariables": {
     "ai.identity.named": ["assistantName"],
@@ -64,7 +81,8 @@
     "capture.transcription.polish": ["rawText"],
     "capture.transcription.condense": ["rawText", "polishedText"],
     "onboarding.claims.extract": ["schema", "sources"],
-    "analysis.review": ["personalContext", "reflectionData", "evidenceLevel"]
+    "analysis.review": ["personalContext", "reflectionData", "evidenceLevel"],
+    "orchestration.user.envelope": ["payload", "taskContract"]
   },
   "requiredPromptIds": [
     "ai.system.core",
@@ -128,6 +146,24 @@
     "capture.transcription.polish",
     "capture.transcription.condense",
     "onboarding.claims.extract",
-    "analysis.review"
-  ]
+    "analysis.review",
+    "orchestration.role.perception",
+    "orchestration.role.modelUpdate",
+    "orchestration.role.periodicSynthesis",
+    "orchestration.role.contextPlanning",
+    "orchestration.role.answer",
+    "orchestration.role.answerCheck",
+    "orchestration.user.envelope"
+  ],
+  "rolePromptIds": {
+    "perception": "orchestration.role.perception",
+    "modelUpdate": "orchestration.role.modelUpdate",
+    "periodicSynthesis": "orchestration.role.periodicSynthesis",
+    "contextPlanning": "orchestration.role.contextPlanning",
+    "answer": "orchestration.role.answer",
+    "answerCheck": "orchestration.role.answerCheck"
+  },
+  "capabilities": {
+    "structuredWorkingContext": "2026.10.07.0"
+  }
 }

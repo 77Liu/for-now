@@ -9,7 +9,9 @@ export function installPromptCatalog(catalog) {
   activeCatalog = Object.freeze({
     version: String(catalog.version),
     sha256: String(catalog.sha256),
-    prompts: Object.freeze({ ...catalog.prompts })
+    prompts: Object.freeze({ ...catalog.prompts }),
+    rolePromptIds: Object.freeze({ ...(catalog.rolePromptIds || {}) }),
+    capabilities: Object.freeze({ ...(catalog.capabilities || {}) })
   });
   return activeCatalog;
 }
@@ -30,6 +32,11 @@ export function optionalPromptText(id) {
   return typeof value === "string" ? value : "";
 }
 
+export function promptRoleId(role) {
+  const id = current().rolePromptIds[role];
+  return typeof id === "string" ? id : "";
+}
+
 export function renderPrompt(id, values = {}) {
   const template = promptText(id);
   const required = new Set([...template.matchAll(placeholderPattern)].map(match => match[1]));
@@ -42,4 +49,12 @@ export function renderPrompt(id, values = {}) {
 export function promptCatalogMetadata() {
   const { version, sha256 } = current();
   return { version, sha256 };
+}
+
+export function promptCatalogCapabilities() {
+  const { rolePromptIds, capabilities } = current();
+  return {
+    rolePromptIds: { ...rolePromptIds },
+    capabilities: { ...capabilities }
+  };
 }

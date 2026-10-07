@@ -55,7 +55,8 @@ export async function createRuntimeFoundation({
   const appConfig = loadAppConfig({ rootDir });
   installPromptCatalog(await loadPromptCatalog({
     rootDir,
-    requestedVersion: appConfig.promptCatalogVersion
+    requestedVersion: appConfig.promptCatalogVersion,
+    requiredCapabilities: ["structuredWorkingContext"]
   }));
 
   const {
