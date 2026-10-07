@@ -5,15 +5,18 @@ import {
   copyDraftItem as copyItem,
   emptyContentImageDraft as emptyDraft,
   hasContentImageDraft as hasDraft,
-  isUncertainContentImageSubmission
+  isUncertainContentImageSubmission,
+  rotateContentImageFile
 } from "./content-image-draft-model.mjs";
 
 export {
   CONTENT_IMAGE_DRAFT_KEYS,
-  isUncertainContentImageSubmission
+  isUncertainContentImageSubmission,
+  rotateContentImageFile
 } from "./content-image-draft-model.mjs";
 
 const KEEP_CONTEXT = Symbol("keep-context");
+const DRAFT_ITEM_ID = Symbol("content-image-draft-item");
 
 function requireFunction(value, name) {
   if (typeof value !== "function") {
@@ -30,6 +33,7 @@ export function createContentImageDraftManager({
   uploadPendingItems,
   uploadItem,
   discardItem,
+  rotateFile = rotateContentImageFile,
   createFile = (parts, name, options) => new File(parts, name, options),
   objectUrls = globalThis.URL,
   createId = () => crypto.randomUUID(),
@@ -42,6 +46,7 @@ export function createContentImageDraftManager({
   requireFunction(uploadPendingItems, "uploadPendingItems");
   requireFunction(uploadItem, "uploadItem");
   requireFunction(discardItem, "discardItem");
+  requireFunction(rotateFile, "rotateFile");
   requireFunction(createFile, "createFile");
   requireFunction(objectUrls?.createObjectURL, "objectUrls.createObjectURL");
   requireFunction(objectUrls?.revokeObjectURL, "objectUrls.revokeObjectURL");
@@ -61,8 +66,10 @@ export function createContentImageDraftManager({
   const successfulLeases = new Set();
   const pendingLeases = new Map();
   const storeQueues = new Map();
+  const draftQueues = new Map();
   let owner = "";
   let generation = 0;
+  let itemSequence = 0;
   let drafts = new Map(keys.map(key => [key, emptyDraft()]));
 
   const requireKey = value => {
@@ -78,6 +85,24 @@ export function createContentImageDraftManager({
     && operation.owner === owner
     && operation.generation === generation
   );
+  const itemIdentity = item => {
+    if (!item[DRAFT_ITEM_ID]) {
+      Object.defineProperty(item, DRAFT_ITEM_ID, {
+        value: ++itemSequence,
+        enumerable: true
+      });
+    }
+    return item[DRAFT_ITEM_ID];
+  };
+  const copyTrackedItem = item => {
+    const copy = copyItem(item);
+    if (item[DRAFT_ITEM_ID]) {
+      Object.defineProperty(copy, DRAFT_ITEM_ID, {
+        value: item[DRAFT_ITEM_ID]
+      });
+    }
+    return copy;
+  };
   const currentDraft = key => drafts.get(requireKey(key));
   const nextDraft = (key, value) => {
     const current = currentDraft(key);
@@ -117,7 +142,11 @@ export function createContentImageDraftManager({
     return Object.freeze({
       owner,
       key,
-      items: Object.freeze(value.items.map(item => Object.freeze(copyItem(item)))),
+      items: Object.freeze(value.items.map(item => {
+        const copy = copyItem(item);
+        delete copy[DRAFT_ITEM_ID];
+        return Object.freeze(copy);
+      })),
       uploadRequestId: value.uploadRequestId,
       context: copyContext(value.context)
     });
@@ -148,6 +177,22 @@ export function createContentImageDraftManager({
       },
       () => {
         if (storeQueues.get(queueKey) === task) storeQueues.delete(queueKey);
+      }
+    );
+    return task;
+  }
+
+  function queueDraft(operation, key, action) {
+    const queueKey = JSON.stringify([operation.owner, operation.generation, key]);
+    const previous = draftQueues.get(queueKey) || Promise.resolve();
+    const task = previous.catch(() => {}).then(action);
+    draftQueues.set(queueKey, task);
+    void task.then(
+      () => {
+        if (draftQueues.get(queueKey) === task) draftQueues.delete(queueKey);
+      },
+      () => {
+        if (draftQueues.get(queueKey) === task) draftQueues.delete(queueKey);
       }
     );
     return task;
@@ -356,7 +401,7 @@ export function createContentImageDraftManager({
     if (!Number.isSafeInteger(index)) return false;
     const operation = ticket(), previous = currentDraft(key);
     if (!operation.owner || !previous.items[index]) return false;
-    const items = previous.items.map(copyItem);
+    const items = previous.items.map(copyTrackedItem);
     const [removed] = items.splice(index, 1);
     revokeItem(removed);
     const current = nextDraft(key, { items });
@@ -365,40 +410,113 @@ export function createContentImageDraftManager({
     return snapshot(key);
   }
 
+  async function rotate(key, index) {
+    key = requireKey(key);
+    if (!Number.isSafeInteger(index)) return false;
+    const operation = ticket();
+    const initial = currentDraft(key).items[index];
+    if (!operation.owner || !initial?.file || initial.path) return false;
+    const identity = itemIdentity(initial);
+    return queueDraft(operation, key, async () => {
+      if (!isCurrent(operation)) return false;
+      const before = currentDraft(key);
+      const itemIndex = before.items.findIndex(
+        item => item[DRAFT_ITEM_ID] === identity
+      );
+      const item = before.items[itemIndex];
+      if (itemIndex < 0 || !item?.file || item.path) return false;
+      const sourceFile = item.file;
+      const rotatedFile = await rotateFile(sourceFile, {
+        direction: "clockwise",
+        quarterTurns: 1
+      });
+      if (!isCurrent(operation)) return false;
+      if (!rotatedFile) throw new Error("图片旋转没有生成可用文件");
+      const latest = currentDraft(key);
+      const latestIndex = latest.items.findIndex(
+        value => value[DRAFT_ITEM_ID] === identity
+      );
+      const latestItem = latest.items[latestIndex];
+      if (latestIndex < 0 || latestItem?.file !== sourceFile || latestItem.path) {
+        return false;
+      }
+      const replacement = {
+        ...latestItem,
+        file: rotatedFile,
+        preview: "",
+        uploadRequestId: "",
+        uploadedPath: ""
+      };
+      Object.defineProperty(replacement, DRAFT_ITEM_ID, { value: identity });
+      delete replacement.lastError;
+      let adopted = false;
+      try {
+        replacement.preview = createPreview(rotatedFile);
+        const items = latest.items.map((value, itemIndex) => (
+          itemIndex === latestIndex ? replacement : value
+        ));
+        await persistDraft(operation, key, { ...latest, items });
+        if (!isCurrent(operation)) return false;
+        const current = currentDraft(key);
+        const currentIndex = current.items.findIndex(
+          value => value[DRAFT_ITEM_ID] === identity
+        );
+        const currentItem = current.items[currentIndex];
+        if (currentIndex < 0 || currentItem?.file !== sourceFile || currentItem.path) {
+          return false;
+        }
+        nextDraft(key, {
+          items: current.items.map((value, itemIndex) => (
+            itemIndex === currentIndex ? replacement : value
+          ))
+        });
+        adopted = true;
+        revokeItem(currentItem);
+        await discardLease(operation, currentItem, current.uploadRequestId);
+        return isCurrent(operation) ? snapshot(key) : false;
+      } finally {
+        if (!adopted) revokeItem(replacement);
+      }
+    });
+  }
+
   async function submit(key) {
     key = requireKey(key);
     const operation = ticket();
     if (!operation.owner) return false;
-    let latestItems = currentDraft(key).items.map(copyItem);
-    await persistDraft(operation, key, currentDraft(key));
-    try {
-      const result = await uploadPendingItems({
-        items: latestItems,
-        upload: uploadItem,
-        createId,
-        onProgress: async items => {
-          latestItems = items.map(copyItem);
-          if (!isCurrent(operation)) return;
+    return queueDraft(operation, key, async () => {
+      if (!isCurrent(operation)) return false;
+      let latestItems = currentDraft(key).items.map(copyTrackedItem);
+      await persistDraft(operation, key, currentDraft(key));
+      try {
+        const result = await uploadPendingItems({
+          items: latestItems,
+          upload: uploadItem,
+          createId,
+          onProgress: async items => {
+            latestItems = items.map(copyTrackedItem);
+            if (!isCurrent(operation)) return;
+            const current = nextDraft(key, { items: latestItems });
+            await persistDraft(operation, key, current);
+          }
+        });
+        if (!isCurrent(operation)) return false;
+        const current = nextDraft(key, {
+          items: result.items.map(copyTrackedItem)
+        });
+        await persistDraft(operation, key, current);
+        return {
+          attachmentPaths: [...result.attachmentPaths],
+          uploadedPaths: [...result.uploadedPaths]
+        };
+      } catch (error) {
+        if (isCurrent(operation)) {
           const current = nextDraft(key, { items: latestItems });
           await persistDraft(operation, key, current);
         }
-      });
-      if (!isCurrent(operation)) return false;
-      const current = nextDraft(key, {
-        items: result.items.map(copyItem)
-      });
-      await persistDraft(operation, key, current);
-      return {
-        attachmentPaths: [...result.attachmentPaths],
-        uploadedPaths: [...result.uploadedPaths]
-      };
-    } catch (error) {
-      if (isCurrent(operation)) {
-        const current = nextDraft(key, { items: latestItems });
-        await persistDraft(operation, key, current);
+        throw error;
       }
-      throw error;
-    }
+    });
   }
 
   async function complete(key) {
@@ -483,6 +601,7 @@ export function createContentImageDraftManager({
     replaceTransient,
     select,
     remove,
+    rotate,
     persist,
     submit,
     complete,

@@ -6,7 +6,8 @@ import {
 } from "../public/frontend/media/index.mjs";
 import {
   createContentImageDraftManager,
-  isUncertainContentImageSubmission
+  isUncertainContentImageSubmission,
+  rotateContentImageFile
 } from "../public/frontend/media/content-image-drafts.mjs";
 
 const moduleSource = await readFile(
@@ -79,13 +80,16 @@ const createFile = (parts, name, options) => ({
 function createObjectUrls() {
   let sequence = 0;
   const created = [];
+  const createdFiles = [];
   const revoked = [];
   return {
     created,
+    createdFiles,
     revoked,
     createObjectURL(file) {
       const value = `blob:test-${++sequence}-${file.name}`;
       created.push(value);
+      createdFiles.push(file);
       return value;
     },
     revokeObjectURL(value) {
@@ -99,6 +103,7 @@ function createManager({
   objectUrls,
   uploadItem = async file => `/attachments/${file.name}`,
   discardItem = async () => true,
+  rotateFile,
   draftKeys = ["thoughtRoot", "thoughtBlock"]
 }) {
   let id = 0;
@@ -110,10 +115,251 @@ function createManager({
     uploadPendingItems: uploadPendingMediaItems,
     uploadItem,
     discardItem,
+    ...(rotateFile ? { rotateFile } : {}),
     createFile,
     createId: () => `upload-${++id}`,
     now: () => Date.parse("2026-10-06T08:00:00.000Z")
   });
+}
+
+{
+  const transforms = [];
+  const bitmap = {
+    width: 2,
+    height: 3,
+    closeCalls: 0,
+    close() {
+      this.closeCalls += 1;
+    }
+  };
+  const canvas = {
+    width: 3,
+    height: 2,
+    getContext() {
+      return {
+        translate(x, y) {
+          transforms.push(["translate", x, y]);
+        },
+        rotate(radians) {
+          transforms.push(["rotate", radians]);
+        },
+        drawImage(source, x, y) {
+          transforms.push(["drawImage", source, x, y]);
+        }
+      };
+    }
+  };
+  const normalized = await rotateContentImageFile(
+    { ...image("exif-portrait.jpg"), type: "image/jpeg" },
+    {
+      async decodeImage(file, options) {
+        assert.equal(file.name, "exif-portrait.jpg");
+        assert.deepEqual(options, { imageOrientation: "from-image" });
+        return bitmap;
+      },
+      createCanvas(width, height) {
+        assert.deepEqual([width, height], [3, 2]);
+        return canvas;
+      },
+      async encodeCanvas(value, options) {
+        assert.equal(value, canvas);
+        assert.deepEqual(options, { type: "image/jpeg" });
+        return { type: "image/jpeg", size: 24, pixels: "exif-normalized-east" };
+      },
+      createFile(parts, name, options) {
+        return { blob: parts[0], name, ...options, size: parts[0].size };
+      }
+    }
+  );
+  assert.deepEqual(transforms, [
+    ["translate", 3, 0],
+    ["rotate", Math.PI / 2],
+    ["drawImage", bitmap, 0, 0]
+  ]);
+  assert.equal(normalized.blob.pixels, "exif-normalized-east");
+  assert.equal(normalized.name, "exif-portrait.jpg");
+  assert.equal(normalized.type, "image/jpeg");
+  assert.equal(bitmap.closeCalls, 1);
+}
+
+{
+  const rotationStore = createStore();
+  const rotationUrls = createObjectUrls();
+  const rotationCalls = [];
+  const uploadedDirections = [];
+  const rotationManager = createManager({
+    store: rotationStore,
+    objectUrls: rotationUrls,
+    draftKeys: ["thoughtRoot"],
+    async rotateFile(file) {
+      rotationCalls.push([file.name, file.direction]);
+      const directions = ["north", "east", "south", "west"];
+      return {
+        ...file,
+        direction: directions[(directions.indexOf(file.direction) + 1) % directions.length],
+        pixels: `${file.pixels}>clockwise`
+      };
+    },
+    async uploadItem(file) {
+      uploadedDirections.push([file.name, file.direction, file.pixels]);
+      return `/attachments/${file.name}-${file.direction}.png`;
+    }
+  });
+  await rotationManager.restore("rotation-owner");
+  await rotationManager.select("thoughtRoot", [
+    { ...image("first.png"), direction: "north", pixels: "first-original" },
+    { ...image("second.png"), direction: "west", pixels: "second-original" }
+  ]);
+  const initialPreviews = rotationManager.snapshot("thoughtRoot").items.map(
+    item => item.preview
+  );
+
+  const firstTurn = rotationManager.rotate("thoughtRoot", 0);
+  const secondTurn = rotationManager.rotate("thoughtRoot", 0);
+  await Promise.all([firstTurn, secondTurn]);
+  await rotationManager.rotate("thoughtRoot", 1);
+  assert.deepEqual(rotationCalls, [
+    ["first.png", "north"],
+    ["first.png", "east"],
+    ["second.png", "west"]
+  ]);
+  assert.deepEqual(
+    rotationManager.snapshot("thoughtRoot").items.map(item => item.file.direction),
+    ["south", "north"],
+    "each draft item must continue from its own current direction"
+  );
+  assert.deepEqual(
+    rotationManager.snapshot("thoughtRoot").items.map(item => item.file.pixels),
+    [
+      "first-original>clockwise>clockwise",
+      "second-original>clockwise"
+    ]
+  );
+  assert.ok(initialPreviews.every(value => rotationUrls.revoked.includes(value)));
+  assert.deepEqual(
+    rotationUrls.createdFiles.slice(-2).map(file => file.direction),
+    ["south", "north"],
+    "preview URLs must use each item's final rotated file"
+  );
+  assert.deepEqual(
+    rotationStore.record("rotation-owner", "thoughtRoot").items.map(
+      item => item.blob.direction
+    ),
+    ["south", "north"],
+    "the durable draft must contain the same final pixels as the preview"
+  );
+
+  const submission = await rotationManager.submit("thoughtRoot");
+  assert.deepEqual(uploadedDirections, [
+    ["first.png", "south", "first-original>clockwise>clockwise"],
+    ["second.png", "north", "second-original>clockwise"]
+  ]);
+  assert.deepEqual(submission.attachmentPaths, [
+    "/attachments/first.png-south.png",
+    "/attachments/second.png-north.png"
+  ]);
+
+  await rotationManager.replaceExisting(
+    "thoughtRoot",
+    ["/attachments/historical.png"]
+  );
+  assert.equal(await rotationManager.rotate("thoughtRoot", 0), false);
+  assert.equal(
+    rotationCalls.length,
+    3,
+    "historical attachment paths must never enter draft pixel rotation"
+  );
+}
+
+{
+  const failureStore = createStore();
+  const failureUrls = createObjectUrls();
+  const failureGate = deferred();
+  const failureManager = createManager({
+    store: failureStore,
+    objectUrls: failureUrls,
+    draftKeys: ["thoughtRoot"],
+    rotateFile: () => failureGate.promise
+  });
+  await failureManager.restore("failure-owner");
+  await failureManager.select("thoughtRoot", [
+    { ...image("cancelled.png"), direction: "north" }
+  ]);
+  const preview = failureManager.snapshot("thoughtRoot").items[0].preview;
+  const pendingRotation = failureManager.rotate("thoughtRoot", 0);
+  await Promise.resolve();
+  assert.equal((await failureManager.remove("thoughtRoot", 0)).items.length, 0);
+  failureGate.resolve({
+    ...image("cancelled.png"),
+    direction: "east"
+  });
+  assert.equal(await pendingRotation, false);
+  assert.deepEqual(failureUrls.created, [preview]);
+  assert.deepEqual(failureUrls.revoked, [preview]);
+  assert.equal(failureStore.record("failure-owner", "thoughtRoot"), null);
+
+  const expected = new Error("pixel decode failed");
+  const rejectManager = createManager({
+    store: createStore(),
+    objectUrls: createObjectUrls(),
+    draftKeys: ["thoughtRoot"],
+    rotateFile: async () => {
+      throw expected;
+    }
+  });
+  await rejectManager.restore("failure-owner");
+  await rejectManager.select("thoughtRoot", [
+    { ...image("failed.png"), direction: "south" }
+  ]);
+  const before = rejectManager.snapshot("thoughtRoot").items[0];
+  await assert.rejects(rejectManager.rotate("thoughtRoot", 0), expected);
+  assert.deepEqual(rejectManager.snapshot("thoughtRoot").items[0], before);
+}
+
+{
+  const accountRotationGate = deferred();
+  const accountRotationStore = createStore([{
+    owner: "rotation-b",
+    id: "thoughtRoot",
+    items: [storedImage("rotation-b.png", { direction: "west" })]
+  }]);
+  const accountRotationUrls = createObjectUrls();
+  const accountRotationManager = createManager({
+    store: accountRotationStore,
+    objectUrls: accountRotationUrls,
+    draftKeys: ["thoughtRoot"],
+    rotateFile: () => accountRotationGate.promise
+  });
+  await accountRotationManager.restore("rotation-a");
+  await accountRotationManager.select("thoughtRoot", [
+    { ...image("rotation-a.png"), direction: "north" }
+  ]);
+  const accountARotation = accountRotationManager.rotate("thoughtRoot", 0);
+  await Promise.resolve();
+  assert.equal(await accountRotationManager.restore("rotation-b"), true);
+  const putsBeforeLateRotation = accountRotationStore.calls.filter(
+    call => call[0] === "put"
+  ).length;
+  accountRotationGate.resolve({
+    ...image("rotation-a.png"),
+    direction: "east"
+  });
+  assert.equal(await accountARotation, false);
+  assert.equal(accountRotationManager.snapshot().owner, "rotation-b");
+  assert.equal(
+    accountRotationManager.snapshot("thoughtRoot").items[0].file.name,
+    "rotation-b.png"
+  );
+  assert.equal(
+    accountRotationStore.calls.filter(call => call[0] === "put").length,
+    putsBeforeLateRotation,
+    "a late rotation from account A must not persist into account B"
+  );
+  assert.equal(
+    accountRotationUrls.created.length,
+    2,
+    "a stale transformed file must not allocate a preview URL"
+  );
 }
 
 const accountAGate = deferred();
