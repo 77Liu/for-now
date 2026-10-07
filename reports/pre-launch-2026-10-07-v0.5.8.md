@@ -2,7 +2,7 @@
 
 日期：2026-10-07
 
-状态：**首次 Preview 验收发现 P1 并已回滚；替换候选已固定并通过复验，待新 Preview 授权，未发布**
+状态：**Git/Gitee 与生产已发布；Owner 接受已知问题，生产观察通过**
 
 生产基线：
 `hotfix-v0.5.7-audio-on-demand@2c395c0295404a6c7bd5a076bb66b11c6e72c3f2`
@@ -19,6 +19,15 @@
 
 manifest SHA-256：
 `28922d3233bbf2fa2043958631427624850cc4c46251735453e80d0305227d6c`
+
+最终发布提交：
+`7067ba65eeafccb953080e00988f62728d3b75a8`
+
+最终发布 tree：
+`fa9d00a8a1d90444ced242d97365106b80e004cb`
+
+最终发布 manifest SHA-256：
+`7bc21cf97421a14884060cc1caaa92bd8d76333f2980134c0800046defdcd9e0`
 
 计划标签：`v0.5.8`
 
@@ -388,17 +397,65 @@ PostgreSQL 与附件读取正常。由于本版没有数据迁移，常规代码
 - [x] 依赖审计 0 vulnerabilities
 - [x] 独立第二轮审计 0/0/0
 - [x] 恢复门
-- [ ] Base 回填“待验收 / 待发布”
+- [x] Base 回填并回读最终“已完成 / 已发布”
 - [x] 旧候选 `6a27598` 第一次授权、push 与 Preview 部署
 - [x] 旧候选真实 Preview P1、立即回滚与生产未变核对
 - [x] 替换候选 `ffc731d` 修复、完整 Release 复验与新一轮 0/0/0
-- [ ] 新授权：更新远端 Preview 分支并部署新的最终 SHA
-- [ ] Preview 验收及两个 partial 人工项
-- [ ] 第二次授权：tag、Gitee Release、生产操作和费用范围
-- [ ] 发布前即时备份与隔离恢复
-- [ ] 生产部署、冒烟和至少 30 分钟观察
-- [ ] G7 关闭、Base/TODO/时间表/Release 摘要/复盘收尾
+- [x] 新授权：更新远端 Preview 分支并部署新的最终 SHA
+- [x] Preview SHA/readyz；另保留 15 分 04 秒辅助观察和人工路径证据
+- [x] 最终授权：tag、Gitee Release、生产备份/恢复、部署、冒烟和观察
+- [x] 发布前即时备份与隔离恢复
+- [x] 生产部署、问题发现、短时回滚及 Owner 明确接受问题后的再次上线
+- [x] 快捷语音移除竞态登记为 V0.5.9 P00 `reczz28KQX8Q7mhL` /
+  `V0.5.9-22`
+- [x] 新一轮至少 30 分钟生产观察
+- [x] G7 关闭、Base/TODO/时间表/Release 摘要/复盘收尾
 
-当前停在替换候选的新 Preview 授权之前。旧授权只覆盖 `6a27598`，不得用于
-`ffc731d` 或其后的 docs/status 最终 SHA；不得自行更新远端分支、push、tag、
-创建 Release、部署 Preview/生产、调用付费服务或写入生产。
+## 生产发布、短时回滚与再次上线
+
+- `origin/main`、`origin/preview/v0.5.8` 和 annotated tag `v0.5.8` 均固定
+  到 `7067ba65eeafccb953080e00988f62728d3b75a8`；tag peel 已核对。
+- Gitee Release ID 为 `1187350`：
+  <https://gitee.com/Liu_772021/for-now/releases/tag/v0.5.8>。标题为
+  “v0.5.8 - 高优体验与入口收口”，正文保留三项固定栏目并在顶部披露
+  已知问题及 V0.5.9 修复项。
+- 发布前即时备份为 `for-now-20261007T062155Z.tar.gz`，
+  `90,574,969 B`，SHA-256
+  `bb5a720fca140ccafa833d433a61244630e5ea907aae610b3d0531fdca5bcb7b`；
+  主归档和校验文件已上传 OSS。
+- 隔离恢复验证 4 个账户、273 条总记录、91 个附件引用、97 个附件、
+  233 条公开 API 记录，附件 HTTP 通过。
+- 生产于 2026-10-07 14:23:43 +0800 切换到 `7067ba65eeaf`。本机和公网
+  readyz、release 指针、systemd、Nginx 及远端 Git 对象一致。
+- 生产冒烟发现快捷语音移除竞态：界面移除录音后，纯文本捕念仍附带并上传
+  4 秒音频，触发真实 ASR。任务以 `EMPTY_ASR_TEXT` 失败，用量为
+  `costKnown=false`；首次按 P1 停止条件回滚。
+- 同一冒烟还确认思绪保存会自动创建回答任务并产生一次 DeepSeek 调用，
+  已知费用 `¥0.081525`。后续写入立即停止；不能把本轮写成“未调用真实
+  供应商”。
+- 生产留下 1 条合成 capture、1 条合成 thought question、1 条模型 answer、
+  2 个 AI task 和 2 条 notification。这里只记录对象 ID/状态，不复制正文；
+  未在没有新生产写授权时擅自清理。
+- 第一次 31 点生产观察在 14:26:30 至 14:40:34 取得 15 个稳定样本：
+  SHA/PID 一致、重启/5xx/应用与 PostgreSQL warning/OOM 为 0，RSS
+  `99.94-155.57 MiB`。窗口因 P1 回滚中止，没有结束标记，不算通过。
+- 14:41:35 首次回滚后，旧发布流程与新 Owner 指令曾发生生产 writer 冲突；
+  旧流程在 14:49:22 再次恢复 `2c395c0`。随后 Owner 明确覆盖回滚决定，
+  接受该已知问题并要求直接上线 V0.5.8；旧观察进程已终止，生产再次部署
+  `7067ba6`。
+- 已知问题已登记为 V0.5.9 P00 需求 `reczz28KQX8Q7mhL` 和交付
+  `reczz28KQXODFJ1l`（`V0.5.9-22`），验收要求纯文本提交零音频、零上传、
+  零 ASR 和零账本项。
+- Owner 接受后的生产观察从 14:55:20 到 15:25:35，取得 31 个一分钟样本，
+  持续 30 分 15 秒。全部样本为同一 PID `700761`、同一 SHA
+  `7067ba65eeaf`、`NRestarts=0`；RSS `103.23-153.28 MiB`，可用内存最低
+  约 `662.78 MiB`，Swap 固定 `536,576 B`，磁盘 57%；Nginx 5xx、
+  systemd warning、应用 JSON warning/error、PostgreSQL warning、内核 OOM
+  均为 0，monitor 持续 success。
+- 观察完整写出 31 个样本和 `END` 标记，不使用豁免补足样本。
+- Base 回读：需求表 `rev=450`，6 条 V0.5.8 需求均为“已完成/已发布”；
+  交付表 `rev=127`，10 条发布相关交付均为“已完成/已发布”；版本表
+  `rev=20`，记录开发区间和已知问题转移。
+
+当前生产与 Preview 均应保持 `7067ba65eeaf`。不重复触发已知媒体竞态；
+V0.5.9 修复默认使用合成音频和供应商 stub，真实供应商复验需单独费用授权。

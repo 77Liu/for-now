@@ -1296,3 +1296,81 @@ blocker/P0/P1=`0/0/0`，`GO`。上述 Agent 均已请求关闭；API 若继续�
   Gitee Release、备份/恢复和生产部署。
 - 当前不得自行更新远端分支、push、tag、创建 Release、部署 Preview/生产、
   调用付费服务或写入生产。
+
+## 2026-10-07 正式发布 P1、回滚与调度失效 R14
+
+状态：`production P1 / rolled back / candidate invalid / repair queue`。
+
+### 发布事实
+
+- Owner 最终授权固定
+  `7067ba65eeafccb953080e00988f62728d3b75a8` 的 main、tag、Release、
+  备份恢复、生产部署、冒烟和观察。
+- `origin/main`、`origin/preview/v0.5.8`、annotated tag `v0.5.8` 与
+  Gitee Release `1187350` 均固定到 `7067ba6`。
+- 即时备份 `for-now-20261007T062155Z.tar.gz` 为 90,574,969 B，
+  SHA-256
+  `bb5a720fca140ccafa833d433a61244630e5ea907aae610b3d0531fdca5bcb7b`；
+  隔离恢复验证 4 账户、273 条记录、91 个附件引用、97 个附件和
+  233 条公开 API 记录。
+- 生产于 14:23:43 部署 `7067ba6`；本版没有执行数据库或媒体迁移。
+
+### 生产 P1
+
+- 首页快捷语音冒烟中，界面已经移除录音，但纯文本捕念提交仍附带并上传
+  4 秒音频，触发真实 ASR。任务最终为 `EMPTY_ASR_TEXT`，账本
+  `costKnown=false`。
+- 思绪保存还自动创建回答任务，产生一次 DeepSeek 调用，已知费用
+  `¥0.081525`。这证明按按钮文案判断“未调用供应商”的冒烟前提错误。
+- 生产新增 1 条 capture、1 个失败 ASR task/notification、1 个 thought
+  question、1 个成功 answer task/notification 和 1 个 answer。对象 ID
+  已写入开发过程报告，未复制正文、未在无新授权时清理。
+- 该录音竞态同时触及数据意图和费用边界，按 Owner 预设停止条件判为 P1；
+  生产于 14:41:35 回滚到 `2c395c0`，31 点候选观察在 15 个稳定样本后中止。
+
+### 陈旧外部动作
+
+- 首次回滚后，一条没有感知新状态的并发部署命令于 14:46:04 再次执行
+  `DEPLOY_BRANCH=main for-now-deploy`，14:46:07 把同一失败 SHA 重新切入
+  生产。该动作没有代码修复、候选重冻结或新授权，不能恢复候选有效性。
+- 记录 Agent 发现生产 SHA 漂移后停止无效观察，并于 14:49:22 再次恢复
+  `2c395c0`。发布调度新增单一生产 writer 和
+  `releaseAttemptId`/fencing：候选失效或回滚必须取消全部旧部署/观察任务，
+  每次外部副作用前重新核对代次和生产 SHA。
+
+### 当前角色与下一动作
+
+| 角色 | 状态 | 责任 |
+| --- | --- | --- |
+| 发布负责人 | `blocked` | 候选失效；禁止再次部署 `7067ba6` |
+| 观察任务 | `cancelled` | 两个候选观察均因 P1/陈旧重部署失效 |
+| 复盘记录 | `active` | 固定失败、回滚、SOP 和工作树证据 |
+| 修复开发者 | `not dispatched` | 本轮复盘不修改产品代码；下一队列接手 |
+
+唯一产品下一动作是为“录制/恢复 -> 移除 -> 立即纯文本提交 -> 零上传/
+零 ASR”建立失败反例并修复。修复后必须重新形成行为 SHA、tree、manifest，
+运行 capture/UI/PWA、system、Release Journey 和独立 Reviewer；未经新的
+生产授权不得再次部署。V0.5.9 继续由 V0.5.8 G7 阻断。
+
+## 2026-10-07 Owner 接受已知问题并恢复发布 R15
+
+状态：`owner override / production live / 31-sample observation passed /
+known issue deferred to v0.5.9 / G7 closed`。
+
+- 最新 Owner 指令明确覆盖 R14 的“保持回滚”结论：撤销回滚，直接上线
+  `v0.5.8@7067ba6`，快捷语音移除竞态加入下一版本修复。
+- 旧回滚观察进程已终止；生产外部动作恢复为单一 writer。生产与 Preview
+  readyz 均重新固定为 `7067ba65eeaf`，远端 main/tag 未变化。
+- 已知问题已登记为 V0.5.9 P00 需求 `reczz28KQX8Q7mhL` 与交付
+  `reczz28KQXODFJ1l`（`V0.5.9-22`），并与 V0.5.9 版本记录关联。
+- 不再重复触发该媒体路径；新的生产观察从 Owner 接受后的最后一次部署
+  重新计时。
+- R14 关于生产动作单写、发布代次和隐式费用副作用的 SOP 结论继续有效；仅
+  “候选必须保持回滚”的决策被 Owner 最新指令覆盖。
+- 观察从 14:55:20 到 15:25:35 取得 31 个一分钟样本，SHA/PID 固定，
+  `NRestarts=0`，RSS `103.23-153.28 MiB`，可用内存最低约
+  `662.78 MiB`，Swap 固定 `536,576 B`，磁盘 57%，Nginx 5xx、应用/
+  PostgreSQL warning、OOM 均为 0，monitor 持续 success。
+- 观察完整写出 31 个样本和 `END`。Base 回读为需求 `rev=450`、
+  交付 `rev=127`、版本 `rev=20`；V0.5.8 需求和发布相关交付均为
+  已完成/已发布，G7 关闭。
