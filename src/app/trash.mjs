@@ -1,5 +1,6 @@
 import { recordVersion } from "../shared/validation/index.mjs";
 import { collectAttachmentPaths } from "../shared/attachments/index.mjs";
+import { revokeEvidencePermissionsForResource } from "../modules/user-model/index.mjs";
 
 const AFTER_COMMIT = Symbol.for("for-now.after-commit");
 const speechSourceKey = (sourceType, sourceId) => `${sourceType}\u0000${sourceId}`;
@@ -44,12 +45,35 @@ function speechCacheForTrash(store, entries) {
   ));
 }
 
-export function createTrashMutations({ trash, annotations, now, cancelTask = () => {} }) {
+export function createTrashMutations({
+  trash,
+  annotations,
+  now,
+  getAccountId,
+  cancelTask = () => {}
+}) {
+  if (typeof getAccountId !== "function") {
+    throw new TypeError("Trash mutations require an account resolver");
+  }
   const advance = record => { record.version = recordVersion(record.version) + 1; record.updatedAt = now(); };
   const insert = (items, index, item) => items.splice(Math.min(Math.max(0, Number(index) || 0), items.length), 0, structuredClone(item));
   const resourceTypes = {
     thoughts: "thought", captures: "capture", journals: "journal", chats: "chat",
-    analyses: "analysis", books: "book", quotes: "quote"
+    analyses: "analysis", books: "book", quotes: "quote", checkins: "checkin",
+    dailyRecords: "dailyRecord", keepsakes: "keepsake", experiments: "experiment",
+    customMetrics: "customMetric", actions: "action", habits: "habit",
+    habitCheckins: "habitCheckin", feedback: "feedback",
+    validationLedger: "validationLedger", userClaims: "userClaim",
+    modelUnknowns: "modelUnknown"
+  };
+  const revokeEvidence = (store, collection, id, targetId = "") => {
+    store.evidencePermissions ||= [];
+    return revokeEvidencePermissionsForResource(store, {
+      accountId: getAccountId(),
+      resourceType: resourceTypes[collection] || collection,
+      resourceId: id,
+      targetId
+    }, now());
   };
   const cancelAiTasks = (store, matches) => {
     const runningTaskIds = [];
@@ -112,6 +136,7 @@ export function createTrashMutations({ trash, annotations, now, cancelTask = () 
     if (index < 0) return trash.find(store.trash, type, id);
     const runningTaskIds = cancelTargetTasks(store, collection, id);
     if (collection === "journals" && store.journalDraft?.journalId === id) store.journalDraft.journalId = "";
+    revokeEvidence(store, collection, id);
     const [payload] = items.splice(index, 1);
     return afterCommit(trash.add(store.trash, type, payload, { kind: "collection", collection, index }), runningTaskIds);
   }
@@ -122,6 +147,7 @@ export function createTrashMutations({ trash, annotations, now, cancelTask = () 
     const items = Array.isArray(parent[field]) ? parent[field] : [], index = items.findIndex(item => item.id === id);
     if (index < 0) return trash.find(store.trash, type, id);
     const [payload] = items.splice(index, 1);
+    revokeEvidence(store, parentCollection, parentId, id);
     const entry = trash.add(store.trash, type, payload, { kind: "nested", parentCollection, parentId, field, index });
     entry.dependents = annotations.detachTargets(parent, annotationTargetKeys);
     const runningTaskIds = cancelSubtargetTasks(store, parentCollection, parentId, [
@@ -140,6 +166,7 @@ export function createTrashMutations({ trash, annotations, now, cancelTask = () 
       (task.resourceType || (["thoughtAnswer", "followUpAnswer"].includes(task.kind) ? "thought" : "")) === "thought"
       && ids.has(task.targetId)
     ));
+    for (const sourceId of ids) revokeEvidence(store, "thoughts", sourceId);
     store.thoughts = store.thoughts.filter(item => !ids.has(item.id));
     return afterCommit(trash.add(store.trash, "thoughtChain", { id, items: indexed }, { kind: "thoughtChain" }), runningTaskIds);
   }

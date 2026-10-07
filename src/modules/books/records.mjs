@@ -235,7 +235,7 @@ export function createBookRecords({
         reanchorAnnotations(book, "description", book.description || "", parsed.value.description);
         Object.assign(book, parsed.value, {
           updatedAt: now(),
-          ...(expectedVersion != null ? { version: currentVersion + 1 } : {})
+          version: currentVersion + 1
         });
         return { value: book };
       });
@@ -306,12 +306,10 @@ export function createBookRecords({
         reanchorAnnotations(book, `note:${noteId}`, note.content || "", parsed.value.content);
         Object.assign(note, parsed.value, {
           updatedAt: now(),
-          ...(expectedVersion != null ? { version: currentVersion + 1 } : {})
+          version: currentVersion + 1
         });
-        if (expectedVersion != null) {
-          book.version = recordVersion(book.version) + 1;
-          book.updatedAt = now();
-        }
+        book.version = recordVersion(book.version) + 1;
+        book.updatedAt = now();
         return { value: note };
       });
     }

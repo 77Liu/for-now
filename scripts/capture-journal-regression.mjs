@@ -595,6 +595,7 @@ response = await request("account-a", "PATCH", `/api/journals/${legacyJournalId}
 assert.equal(response.status, 200);
 assert.equal(response.body.title, "");
 assert.deepEqual(response.body.tags, []);
+assert.equal(response.body.version, 2);
 assert.equal(await run("account-a", () => journals.getDraft()), null);
 
 response = await request("account-a", "PUT", "/api/v1/journal-draft", {

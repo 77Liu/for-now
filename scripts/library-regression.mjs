@@ -296,6 +296,7 @@ const legacyBookUpdated = (await run("account-a", () => library.updateBook(legac
 }))).value;
 assert.equal(legacyBookUpdated.author, "", "legacy PATCH continues clearing omitted text fields");
 assert.equal(legacyBookUpdated.readingStartedOn, "2026-09-01");
+assert.equal(legacyBookUpdated.version, 2);
 assert.equal(legacyBookUpdated.annotations[0].start, 6);
 assert.ok(reanchors.some(item => item.rootId === legacyBook.id && item.targetKey === "description"));
 assert.deepEqual(await run("account-a", () => library.updateBook(legacyBook.id, {
@@ -392,6 +393,7 @@ const legacyNoteUpdated = (await run("account-a", () => library.updateBookNote(
 ))).value;
 assert.equal(legacyNoteUpdated.type, "record");
 assert.equal(legacyNoteUpdated.favorite, "sprout");
+assert.equal(legacyNoteUpdated.version, 2);
 assert.ok(reanchors.some(item => item.targetKey === `note:${legacyNote.id}`));
 assert.equal((await run("account-a", () => library.updateBookNote(
   legacyBook.id,
@@ -463,6 +465,7 @@ const legacyQuoteUpdated = (await run("account-a", () => library.updateQuote(leg
   content: "增加文字的测试善言含锚点"
 }))).value;
 assert.deepEqual(legacyQuoteUpdated.tags, [], "legacy PATCH continues clearing omitted tags");
+assert.equal(legacyQuoteUpdated.version, 2);
 assert.ok(reanchors.some(item => item.rootId === legacyQuote.id && item.targetKey === "content"));
 assert.equal((await run("account-a", () => library.updateQuote(legacyQuote.id, {
   occurredAt: "bad",

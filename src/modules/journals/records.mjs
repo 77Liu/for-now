@@ -172,7 +172,7 @@ export function createJournalRecords({
         }
         Object.assign(journal, parsed.value, {
           updatedAt: now(),
-          ...(expectedVersion != null ? { version: currentVersion + 1 } : {})
+          version: currentVersion + 1
         });
         if (state.journalDraft?.journalId === id) state.journalDraft = null;
         return { value: journal };

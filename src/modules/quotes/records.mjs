@@ -151,7 +151,7 @@ export function createQuoteRecords({
         reanchorAnnotations(quote, "content", quote.content || "", parsed.value.content);
         Object.assign(quote, parsed.value, {
           updatedAt: now(),
-          ...(expectedVersion != null ? { version: currentVersion + 1 } : {})
+          version: currentVersion + 1
         });
         return { value: quote };
       });

@@ -18,6 +18,7 @@ import { createTrashMutations } from "../trash.mjs";
 export function createContentFoundation({
   repository,
   trashRetentionDays,
+  getAccountId,
   cancelTask,
   now,
   createId,
@@ -34,6 +35,7 @@ export function createContentFoundation({
     trash: trashService,
     annotations: annotationService,
     now,
+    getAccountId,
     cancelTask
   });
   const annotationCommands = createAnnotationCommands({

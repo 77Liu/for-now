@@ -207,7 +207,10 @@ export function createKeepsakeRecords({ repository, now = () => new Date().toISO
         if (!keepsake) return { missing: true };
         const parsed = keepsakePayload(input, keepsake);
         if (parsed.error) return parsed;
-        Object.assign(keepsake, parsed.value, { updatedAt: now() });
+        Object.assign(keepsake, parsed.value, {
+          updatedAt: now(),
+          version: recordVersion(keepsake.version) + 1
+        });
         delete keepsake.category;
         return { value: keepsake };
       });

@@ -245,6 +245,7 @@ failCommit = false;
 const updated = (await run("a", () => records.update(a.value.id, { title: "新标题", occurredOn: "2026-10-01" }))).value;
 assert.equal(updated.createdAt, before[0].createdAt);
 assert.equal(updated.occurredOn, "2026-10-01");
+assert.equal(updated.version, 2);
 assert.equal(updated.originalPath, before[0].originalPath);
 assert.equal(updated.backgroundOpacityPct, 15);
 assert.equal(accounts.get("b")[0].title, "票券");

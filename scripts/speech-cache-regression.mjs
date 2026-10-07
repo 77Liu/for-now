@@ -541,7 +541,7 @@ const annotations = createAnnotationService({
   createId: () => `annotation-${trashSequence}`,
   now
 });
-const mutations = createTrashMutations({ trash, annotations, now });
+const mutations = createTrashMutations({ trash, annotations, now, getAccountId: accountId });
 const commands = createTrashCommands({ repository, trash, mutations, cleanup });
 
 await context.run("account-a", async () => {

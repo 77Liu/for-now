@@ -6,6 +6,12 @@ import { createJsonStoreRepository } from "../src/shared/persistence/index.mjs";
 import { collectAttachmentPaths } from "../src/shared/attachments/index.mjs";
 import { createTrashService } from "../src/modules/trash/index.mjs";
 import { createAnnotationService } from "../src/modules/annotations/index.mjs";
+import {
+  evaluateStoredEvidenceChecks,
+  evidenceFingerprint,
+  normalizeEvidenceSource,
+  normalizePerceptionEvent
+} from "../src/modules/user-model/index.mjs";
 import { createTrashMutations, createTrashCommands, createAttachmentCleanup, createAiTaskTargets } from "../src/app/index.mjs";
 import { createTrashHttp } from "../src/http/index.mjs";
 import { taskInputMatches } from "../src/modules/tasks/index.mjs";
@@ -17,14 +23,72 @@ const createId = () => `trash-${++sequence}`;
 const annotations = createAnnotationService({ createId, now });
 const trash = createTrashService({ createId, now, hash, retentionDays: 30 });
 const cancelledRunningTasks = [];
-const mutations = createTrashMutations({ trash, annotations, now, cancelTask: id => cancelledRunningTasks.push(id) });
+const mutations = createTrashMutations({
+  trash,
+  annotations,
+  now,
+  getAccountId: () => account(),
+  cancelTask: id => cancelledRunningTasks.push(id)
+});
 const annotation = (id, targetKey) => ({ id, targetKey, quote: "正文", text: "评论", replies: [{ id: "reply", text: "原回复" }] });
+const journalSourceKey = JSON.stringify(["journal", "journal", "", ""]);
+const journalHash = hash("正文");
+const journalEvidence = normalizeEvidenceSource({
+  schemaVersion: 1,
+  id: "journal-evidence",
+  accountId: "a",
+  sourceRef: {
+    resourceType: "journal",
+    resourceId: "journal",
+    rootId: "",
+    targetKey: "",
+    version: 2
+  },
+  eventId: "journal-event",
+  origin: "user",
+  informationType: "user_viewpoint",
+  contentSha256: journalHash,
+  contentLength: "正文".length,
+  span: [0, "正文".length],
+  occurredAt: "2026-09-02T01:02:03.000Z",
+  recordedAt: "2026-09-29T03:00:00.000Z",
+  permissionRevision: 1,
+  derivedFrom: []
+});
+const journalEvidenceCheck = {
+  evidenceId: journalEvidence.id,
+  evidenceFingerprint: evidenceFingerprint(journalEvidence),
+  purpose: "context"
+};
 const empty = () => ({
   trash: [], attachmentCleanup: [],
   books: [{ id: "book", title: "书名", version: 3, notes: [{ id: "note", content: "笔记正文" }], annotations: [annotation("mark", "note:note")], annotationDrift: [{ ...annotation("drift", "old"), originalTargetKey: "note:note", originalContext: { focus: "正文" } }] }],
   thoughts: [{ id: "root", type: "question", version: 4, content: "正文", annotations: [annotation("thought-mark", "answer:answer")], annotationDrift: [] }, { id: "answer", relatedTo: "root", type: "answer", content: "正文" }],
   journals: [{ id: "journal", version: 2, content: "正文", createdAt: "2026-09-01T01:02:03.000Z", occurredAt: "2026-09-02T01:02:03.000Z", annotations: [annotation("journal-mark", "content")], annotationDrift: [] }],
   journalDraft: { journalId: "journal", title: "编辑中的标题", content: "编辑中的正文" },
+  evidencePermissions: [{
+    schemaVersion: 1,
+    accountId: "a",
+    sourceKey: journalSourceKey,
+    contextAllowed: true,
+    learningAllowed: true,
+    revision: 1,
+    updatedAt: "2026-09-29T03:00:00.000Z"
+  }],
+  evidenceSources: [journalEvidence],
+  perceptionEvents: [normalizePerceptionEvent({
+    schemaVersion: 1,
+    id: "journal-created",
+    accountId: "a",
+    kind: "created",
+    sourceRef: journalEvidence.sourceRef,
+    eventId: journalEvidence.eventId,
+    contentSha256: journalHash,
+    occurredAt: journalEvidence.occurredAt,
+    recordedAt: journalEvidence.recordedAt,
+    permissionRevision: 1,
+    perceptionVersion: "perception-v1"
+  })],
   aiTasks: [],
   notifications: [],
   keepsakes: [], captures: [], checkins: [], dailyRecords: []
@@ -130,12 +194,34 @@ assert.equal(afterJournalDelete.aiTasks.find(item => item.id === "running-journa
 assert.equal(afterJournalDelete.notifications.find(item => item.taskId === "queued-journal-task").status, "cancelled");
 assert.equal(afterJournalDelete.notifications.find(item => item.taskId === "running-journal-task").status, "cancelling");
 assert.deepEqual(cancelledRunningTasks, ["running-journal-task"]);
+assert.deepEqual(afterJournalDelete.evidencePermissions[0], {
+  schemaVersion: 1,
+  accountId: "a",
+  sourceKey: journalSourceKey,
+  contextAllowed: false,
+  learningAllowed: false,
+  revision: 2,
+  updatedAt: now()
+});
+assert.deepEqual(evaluateStoredEvidenceChecks(afterJournalDelete, [journalEvidenceCheck], {
+  accountId: "a"
+}).reasons, ["EVIDENCE_SOURCE_DELETED"]);
 await commands.restore(journal.id);
 const restoredJournal = (await repository.read()).journals[0];
 lifecycle = await repository.readPersistenceMetadata();
 assert.equal(lifecycle.lifecycles.find(item => item.resourceType === "journal" && item.resourceId === "journal").state, "active");
 assert.ok(lifecycle.lifecycles.find(item => item.resourceType === "journal" && item.resourceId === "journal").history.some(item => item.event === "restored"));
 assert.equal(restoredJournal.version, beforeJournal.version + 1);
+assert.equal((await repository.read()).evidencePermissions[0].contextAllowed, false);
+assert.equal((await repository.read()).evidencePermissions[0].learningAllowed, false);
+assert.equal((await repository.read()).evidencePermissions[0].revision, 2);
+assert.deepEqual(evaluateStoredEvidenceChecks(await repository.read(), [journalEvidenceCheck], {
+  accountId: "a"
+}).reasons, [
+  "EVIDENCE_PERMISSION_DENIED",
+  "EVIDENCE_PERMISSION_STALE",
+  "EVIDENCE_VERSION_STALE"
+]);
 for (const key of ["id", "content", "createdAt", "occurredAt", "annotations"]) assert.deepEqual(restoredJournal[key], beforeJournal[key]);
 assert.equal(taskInputMatches({ ...annotationTask, inputVersion: original.inputVersion, inputHash: original.inputHash }, targets.prepare(await repository.read(), annotationTask)), false);
 const duplicate = await move("journals", "journal", "journal");
@@ -154,6 +240,8 @@ await assert.rejects(move("journals", "journal", "journal"), /injected commit fa
 assert.deepEqual(cancelledRunningTasks, []);
 assert.equal((await repository.read()).journals[0].id, "journal");
 assert.equal((await repository.read()).aiTasks[0].status, "running");
+assert.equal((await repository.read()).evidencePermissions[0].contextAllowed, true);
+assert.equal((await repository.read()).evidencePermissions[0].revision, 1);
 
 reset();
 await repository.update(store => {

@@ -103,7 +103,7 @@ export function createCheckinRecords({
         if (parsed.error) return parsed;
         Object.assign(entry, parsed.value, {
           updatedAt: now(),
-          ...(expectedVersion != null ? { version: currentVersion + 1 } : {})
+          version: currentVersion + 1
         });
         return { value: entry };
       });

@@ -146,7 +146,7 @@ const updatedCheckin = (await run("account-a", () => checkins.update(createdChec
   notes: { [`${"m".repeat(70)}`]: "更新备注" }
 }))).value;
 assert.equal(updatedCheckin.createdAt, originalCheckin.createdAt);
-assert.equal(updatedCheckin.version, 7);
+assert.equal(updatedCheckin.version, 8);
 assert.deepEqual(updatedCheckin.annotations, originalCheckin.annotations);
 assert.deepEqual(updatedCheckin.extension, originalCheckin.extension);
 assert.equal(Object.keys(updatedCheckin.notes)[0].length, 60);
@@ -252,7 +252,7 @@ const updatedWeight = (await run("account-a", () => dailyRecords.update(createdW
   musclePercent: null
 }))).value;
 assert.equal(updatedWeight.createdAt, originalWeight.createdAt);
-assert.equal(updatedWeight.version, 4);
+assert.equal(updatedWeight.version, 5);
 assert.equal(updatedWeight.bodyWaterMass, 42.2);
 assert.equal(updatedWeight.measuredWeight, null);
 assert.equal(updatedWeight.adjustedWeight, null);

@@ -55,6 +55,7 @@ export function createContentRuntime({
   const foundation = createContentFoundation({
     repository,
     trashRetentionDays,
+    getAccountId,
     cancelTask: taskId => backgroundAi?.cancel(taskId) || false,
     now,
     createId,

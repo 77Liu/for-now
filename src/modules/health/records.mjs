@@ -186,7 +186,7 @@ export function createDailyRecordRecords({
           id: entry.id,
           createdAt: entry.createdAt,
           updatedAt: now(),
-          ...(expectedVersion != null ? { version: currentVersion + 1 } : {})
+          version: currentVersion + 1
         };
         Object.assign(entry, next);
         return { value: entry };
