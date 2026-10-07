@@ -5,8 +5,8 @@
 - 分支 / 工作树：`feat/v0.5.9-integration` /
   `.worktrees/v0.5.9-integration`
 - 生产基线：`v0.5.8@7067ba65eeafccb953080e00988f62728d3b75a8`
-- 当前门禁：`G1/G2 passed-for-local-development`，`G3-22/10a validated`，
-  `G3-05a active`
+- 当前门禁：`G1/G2 passed-for-local-development`，`G3-22/10a/05a validated`，
+  `G3-05b active`
 - 授权：本地规划、开发、测试和本地提交；不含 push `main`、tag、Release、
   生产、云配置、真实付费调用或生产数据写入
 
@@ -38,8 +38,8 @@
 G1/G2
 ├─ 22 audio removal race [validated: bd52ebf]
 ├─ 10a replay fixtures [validated: bc066bd]
-├─ 05a evidence contract [active]
-│  └─ 05b persistence
+├─ 05a evidence contract [validated: 7cce77b]
+│  └─ 05b persistence [active]
 │     ├─ 06 task selection
 │     │  └─ 07 prompt roles
 │     │     └─ 08 continuous perception
@@ -74,7 +74,14 @@ manifest、module registry、runner、Service Worker 和发布文件由
 | `reviewer-10a-r3` | executionMode 信源复核 | 只读 | `0/0/1 NO-GO`；`closed` | 双信源绕过已修复 |
 | `reviewer-10a-r4` | 最终回放基线复审 | 只读 | `0/0/0 GO`；`closed` | 无 |
 | `scout-05a` | evidence/event/permission 领域边界 | 只读 | API、字段、20 条反例和 05b 边界已固定；`closed` | 交给 developer-05a |
-| `developer-05a` | evidence/event/permission 纯领域契约 | `src/modules/user-model/evidence.mjs`、公共导出、专项 | `active` | 先固定失败断言 |
+| `developer-05a` | evidence/event/permission 纯领域契约 | `src/modules/user-model/evidence.mjs`、公共导出、专项 | `7cce77b`；`closed` | 交给 05b |
+| `reviewer-05a-r1` | 账户、许可、版本、依赖与时间安全 | 只读 | `0/2/2 NO-GO`；`closed` | 缺失账户、空依赖等已修复 |
+| `reviewer-05a-r2` | source key 规范化复核 | 只读 | `0/0/1 NO-GO`；`closed` | 非规范 key 绕过已修复 |
+| `reviewer-05a-r3` | 删除状态与重复依赖复核 | 只读 | `0/0/2 NO-GO`；`closed` | fail-closed 已修复 |
+| `reviewer-05a-r4` | 去重输入与 locale 确定性复核 | 只读 | `0/0/2 NO-GO`；`closed` | 非数组和 locale 已修复 |
+| `reviewer-05a-r5` | 最终证据契约复审 | 只读 | `0/0/0 GO`；`closed` | 无 |
+| `validator-05a` | 专项、user-model、模块与 backend 门 | 只读 | backend 通过（333,982 ms）；`closed` | 交给 05b |
+| `developer-05b` | Store/JSON/PG 映射与生命周期接线 | schema、normalization、persistence、trash、专项 | `active` | 先冻结迁移与恢复反例 |
 
 `developer-22` 不能作为自己的唯一 reviewer。Reviewer 和 Validator 复用现有
 工作树，只读执行，不创建第七个工作树。
@@ -91,7 +98,7 @@ manifest、module registry、runner、Service Worker 和发布文件由
 - 真实模型对照：尚无本次费用和私人数据授权；本地只跑 stub/确定性回放。
 - push/tag/Release/生产：均未授权。
 
-这些阻塞不影响 `05a`、`17`、`18`、`21` 的本地准备；`05a` 已取得唯一写槽，
+这些阻塞不影响 `05b`、`17`、`18`、`21` 的本地准备；`05b` 已取得唯一写槽，
 其余未派发只因工作树 `6/6` 和集成树单写。
 
 ## 5. 22 任务契约
@@ -134,6 +141,11 @@ manifest、module registry、runner、Service Worker 和发布文件由
 | 17:31 | reviewer-10a-r2 → developer-10a | `0/0/3 NO-GO`：空断言、完整 manifest、行为边界 | fail-closed 并补执行边界 |
 | 17:40 | reviewer-10a-r3 → developer-10a | `0/0/1 NO-GO`：双 executionMode 信源 | 强制 adapter/output identity 一致 |
 | 17:46 | reviewer-10a-r4 → orchestrator | `0/0/0 GO` | 提交 `fb1961b`、`bc066bd`，写槽转 05a |
+| 17:52 | orchestrator → developer-05a | 读取现有 user-model/task/trash 边界 | 固定纯领域写集，不提前接持久化 |
+| 17:58 | reviewer-05a-r1 → developer-05a | `0/2/2 NO-GO`：账户、空依赖、时间、幂等键 | 全部改为严格契约 |
+| 18:08 | reviewer-05a-r2 → developer-05a | `0/0/1 NO-GO`：非规范 source key 绕过 | 统一解析规范四元组 |
+| 18:15 | reviewer-05a-r3/r4 → developer-05a | 重复依赖、deleted、非数组、locale 共 4 个 P1 | 双时序与多 locale 反例通过 |
+| 18:22 | reviewer-05a-r5 → orchestrator | `0/0/0 GO` | 提交 `7cce77b`，写槽转 05b |
 
 ## 6.1 22 验证与审查
 
@@ -168,9 +180,24 @@ manifest、module registry、runner、Service Worker 和发布文件由
   `npm run test:personalization-replay`、个人上下文/用户模型专项和 Journey
   schema 通过；生产行为和真实模型未运行，调用数为 0。
 
+## 6.3 05a 验证与审查
+
+- 在已登记的 `domain.user-model` 内新增纯领域 evidence 模块；没有修改 Store、
+  PostgreSQL、HTTP、registry、Prompt 或前端。
+- source identity 使用规范 JSON 四元组；证据绑定账户、来源版本、内容 hash、
+  span、事件、严格 RFC3339 双时间、许可 revision 和派生依赖。
+- `contextAllowed` 与 `learningAllowed` 独立；跨账户、缺失/删除来源、版本/hash
+  变化、许可 revision 变化及任一依赖失效均 fail-closed。
+- 事件幂等键绑定账户、事件、操作、来源 identity/version、hash、许可 revision
+  与 perception version；证据 fingerprint 排除随机 ID/记录时间并使用固定
+  code-unit 排序。
+- 首轮 `0/2/2`，五轮独立审查最终 `0/0/0 GO`。专项 114 条以上断言、
+  `test:user-model`、check、模块边界和 backend system（333,982 ms）通过；
+  外部调用为 0。
+
 ## 7. NO-GO 与下一动作
 
 - 当前不是候选；不得执行 Preview、Release 或生产动作。
 - `22` 仅为工作区已验证未部署，不能写成需求已发布或生产问题已关闭。
-- 唯一下一动作：实现 `05a` 的 evidence/event/permission 纯领域契约和失败
-  断言；不改 Store schema、HTTP、module registry，不调用真实模型。
+- 唯一下一动作：实现 `05b` 的 Store v17、JSON/PostgreSQL round-trip、
+  trash/restore 与后台消费前硬门；不接 HTTP/UI，不调用真实模型。
