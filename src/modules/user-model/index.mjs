@@ -18,6 +18,13 @@ export {
   parseEvidenceSourceKey,
   revokeEvidencePermissionsForResource
 } from "./evidence.mjs";
+export {
+  PERCEPTION_MAX_EVIDENCE,
+  PERCEPTION_MAX_SOURCE_CHARS,
+  PERCEPTION_VERSION,
+  parsePerceptionExtractionOutput,
+  perceptionExtractionSchema
+} from "./perception.mjs";
 
 export const USER_MODEL_DOMAINS = Object.freeze([
   "context",

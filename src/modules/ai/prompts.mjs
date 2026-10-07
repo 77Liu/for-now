@@ -10,9 +10,12 @@ export function systemPrompt() {
 }
 
 export function systemPromptForScene(basePrompt, scene, settings = {}) {
-  const role = ["thoughtAnswer", "followUpAnswer", "annotationShenji"].includes(scene)
-    ? optionalPromptText(promptRoleId("answer"))
-    : "";
+  const roleName = scene === "perceptionExtraction"
+    ? "perception"
+    : ["thoughtAnswer", "followUpAnswer", "annotationShenji"].includes(scene)
+      ? "answer"
+      : "";
+  const role = roleName ? optionalPromptText(promptRoleId(roleName)) : "";
   const contract = optionalPromptText(`ai.scene.${scene}`);
   const style = promptText(`ai.style.${settings.responseStyle || "standard"}`);
   const identity = settings.assistantName ? renderPrompt("ai.identity.named", { assistantName: settings.assistantName }) : "";

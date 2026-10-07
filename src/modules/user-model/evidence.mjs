@@ -161,6 +161,7 @@ export function normalizeEvidenceSource(value) {
   if (!objectValue(value) || value.schemaVersion !== 1) return null;
   const id = requiredText(value.id, 100);
   const accountId = requiredText(value.accountId, 100);
+  const sourceTaskId = optionalText(value.sourceTaskId, 100);
   const sourceRef = normalizeSourceRef(value.sourceRef);
   const eventId = requiredText(value.eventId, 100);
   const origin = requiredText(value.origin, 40);
@@ -175,6 +176,7 @@ export function normalizeEvidenceSource(value) {
   const derivedInput = value.derivedFrom;
   if (!id
     || !accountId
+    || sourceTaskId === null
     || !sourceRef
     || !eventId
     || !ORIGIN_SET.has(origin)
@@ -218,7 +220,8 @@ export function normalizeEvidenceSource(value) {
     occurredAt,
     recordedAt,
     permissionRevision,
-    derivedFrom
+    derivedFrom,
+    ...(sourceTaskId ? { sourceTaskId } : {})
   };
 }
 
@@ -309,7 +312,12 @@ function canonical(value) {
 export function evidenceFingerprint(value) {
   const evidence = normalizeEvidenceSource(value);
   if (!evidence) return "";
-  const { id: _id, recordedAt: _recordedAt, ...stableInput } = evidence;
+  const {
+    id: _id,
+    recordedAt: _recordedAt,
+    sourceTaskId: _sourceTaskId,
+    ...stableInput
+  } = evidence;
   return crypto.createHash("sha256").update(JSON.stringify(canonical(stableInput))).digest("hex");
 }
 
@@ -492,10 +500,14 @@ function storedSourceState(store, sourceRef, activeIndexes = null) {
   const active = activeIndexes?.get(collection)?.get(sourceRef.resourceId)
     || list(store?.[collection]).find(item => item?.id === sourceRef.resourceId);
   if (active) {
+    const sourceVersion = sourceRef.resourceType === "capture"
+      && sourceRef.targetKey === "transcription"
+      ? positiveInteger(active.transcription?.version) || 1
+      : positiveInteger(active.version);
     return {
       exists: true,
       deleted: false,
-      version: positiveInteger(active.version),
+      version: sourceVersion,
       modelDerived: active.informationType === "model_derived"
         || active.authorType === "ai"
         || /^(?:deepseek|codex|openai|model|ai)(?:$|[-_:])/i.test(String(active.origin || ""))
@@ -523,10 +535,14 @@ function storedSourceState(store, sourceRef, activeIndexes = null) {
           && location.parentId === sourceRef.rootId
         : !sourceRef.rootId && SOURCE_COLLECTIONS[entry?.type] === collection;
     if (matchesLocation && entry?.payload?.id === sourceRef.resourceId) {
+      const sourceVersion = sourceRef.resourceType === "capture"
+        && sourceRef.targetKey === "transcription"
+        ? positiveInteger(entry.payload.transcription?.version) || 1
+        : positiveInteger(entry.payload.version);
       return {
         exists: true,
         deleted: true,
-        version: positiveInteger(entry.payload.version)
+        version: sourceVersion
       };
     }
   }

@@ -246,13 +246,14 @@ try {
   assert.deepEqual(migrated.insights.associations.map(item => [item.factor, item.withCount, item.confidence]), [["冷启动因素", 1, "单日观察"]]);
   assert.equal((await fs.readdir(dataDir)).some(name => name.includes("v3-pre-v17") && name.endsWith(".bak")), true);
   const migratedSettings = await (await fetch(`${base}/api/settings`)).json();
-  assert.equal(migratedSettings.version, 10);
+  assert.equal(migratedSettings.version, 11);
   assert.deepEqual(Object.keys(migratedSettings.profiles), ["lite", "mid", "high", "ultra"]);
   assert.deepEqual(migratedSettings.scenarios, {
     thoughtPrompt: "lite", thoughtDraft: "high", thoughtAnswer: "ultra", followUpAnswer: "ultra", chat: "high",
     diaryLead: "lite", diaryStructure: "mid", diaryTopic: "high", diaryReflection: "ultra",
     annotationShenji: "high", analysis: "ultra", bookRecognition: "mid", healthRecognition: "mid",
-    contentImageUnderstanding: "mid", capturePolish: "mid", onboardingClaimExtraction: "mid"
+    contentImageUnderstanding: "mid", capturePolish: "mid", onboardingClaimExtraction: "mid",
+    perceptionExtraction: "lite"
   });
   assert.equal(migratedSettings.sceneEfforts.thoughtAnswer, "max");
   assert.equal(migratedSettings.sceneEfforts.diaryLead, "none");
@@ -263,9 +264,9 @@ try {
     generationRate: -10
   });
   const storedSettings = JSON.parse(await fs.readFile(path.join(dataDir, "llm-settings.json"), "utf8"));
-  assert.equal(storedSettings.version, 10);
+  assert.equal(storedSettings.version, 11);
   assert.equal(storedSettings.apiKey, "test-key");
-  assert.equal((await fs.readdir(dataDir)).some(name => name.includes("v2-pre-v10") && name.endsWith(".bak")), true);
+  assert.equal((await fs.readdir(dataDir)).some(name => name.includes("v2-pre-v11") && name.endsWith(".bak")), true);
   const initialStatistics = await (await fetch(`${base}/api/statistics`)).json();
   assert.equal(initialStatistics.ai.summary.calls, 0);
   assert.equal(initialStatistics.ai.daily.length, 7);
@@ -282,7 +283,7 @@ try {
   assert.equal(JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"), "utf8")).version, 5);
   const initialAiCostPlan = await (await fetch(`${base}/api/ai-cost-plan`)).json();
   assert.equal(initialAiCostPlan.version, 1);
-  assert.equal(initialAiCostPlan.scenarios.length, 16);
+  assert.equal(initialAiCostPlan.scenarios.length, 17);
   assert.equal(initialAiCostPlan.scenarios.find(item => item.scene === "thoughtAnswer").model, "deepseek-v4-pro");
   const savedAiCostPlan = await (await fetch(`${base}/api/ai-cost-plan`, {
     method: "PATCH",
@@ -297,7 +298,7 @@ try {
   assert.equal(savedAiCostPlan.monthlyBudgetCny, 66);
   assert.equal(savedAiCostPlan.contingencyPct, 500);
   assert.equal(savedAiCostPlan.cnyPerUsd, 7.1);
-  assert.equal(savedAiCostPlan.scenarios.length, 16);
+  assert.equal(savedAiCostPlan.scenarios.length, 17);
   assert.deepEqual(savedAiCostPlan.scenarios.find(item => item.scene === "thoughtPrompt"), { scene: "thoughtPrompt", enabled: false, model: "deepseek-flash", pricingPeriod: "offPeak", callsPerMonth: 12, avgInputTokens: 8888, cacheHitPct: 100, avgReasoningTokens: 10, avgAnswerTokens: 20 });
   assert.equal(JSON.parse(await fs.readFile(path.join(dataDir, "ai-cost-plan.json"), "utf8")).monthlyBudgetCny, 66);
   const onboardingSchema = await (await fetch(`${base}/api/onboarding/schema`)).json();

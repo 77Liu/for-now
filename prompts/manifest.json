@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "activeVersion": "2026.10.07.1",
+  "activeVersion": "2026.10.07.2",
   "versions": [
     {
       "version": "2026.09.29.1",
@@ -46,6 +46,11 @@
       "version": "2026.10.07.1",
       "file": "2026.10.07.1.json",
       "sha256": "5d77dd699fa6cb5eea5de2d72547e74ceecd13ef4bb55bea96682f178babf40b"
+    },
+    {
+      "version": "2026.10.07.2",
+      "file": "2026.10.07.2.json",
+      "sha256": "0aec29fffd8ba55b33ef74f4b69b1b0876e53b8e4a0fd49ccfd27349a1dc26c1"
     }
   ],
   "promptIntroducedIn": {
@@ -57,7 +62,9 @@
     "orchestration.role.contextPlanning": "2026.10.07.0",
     "orchestration.role.answer": "2026.10.07.0",
     "orchestration.role.answerCheck": "2026.10.07.0",
-    "orchestration.user.envelope": "2026.10.07.0"
+    "orchestration.user.envelope": "2026.10.07.0",
+    "ai.scene.perceptionExtraction": "2026.10.07.2",
+    "perception.source.extract": "2026.10.07.2"
   },
   "promptVariables": {
     "ai.identity.named": ["assistantName"],
@@ -102,6 +109,7 @@
     "ai.scene.contentImageUnderstanding",
     "ai.scene.capturePolish",
     "ai.scene.onboardingClaimExtraction",
+    "ai.scene.perceptionExtraction",
     "ai.style.concise",
     "ai.style.standard",
     "ai.style.deep",
@@ -146,6 +154,7 @@
     "capture.transcription.polish",
     "capture.transcription.condense",
     "onboarding.claims.extract",
+    "perception.source.extract",
     "analysis.review",
     "orchestration.role.perception",
     "orchestration.role.modelUpdate",

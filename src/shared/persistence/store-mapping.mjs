@@ -116,7 +116,9 @@ export function mapStoreObjects(accountId, store) {
       throw new Error(`Invalid evidence dependency in ${collection}.${field}`);
     }
     const evidenceIdentity = kind === "evidenceSource"
-      ? canonicalJson(Object.fromEntries(Object.entries(item).filter(([key]) => !["id", "recordedAt"].includes(key))))
+      ? canonicalJson(Object.fromEntries(Object.entries(item).filter(([key]) => (
+          !["id", "recordedAt", "sourceTaskId"].includes(key)
+        ))))
       : kind === "evidencePermission" ? item.sourceKey
         : kind === "perceptionEvent" ? canonicalJson({
           accountId: item.accountId,

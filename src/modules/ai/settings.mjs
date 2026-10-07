@@ -1,11 +1,11 @@
 import { safeText } from "../../shared/validation/index.mjs";
 import { normalizeTtsGenerationRate, TTS_GENERATION_RATE_DEFAULT } from "../../shared/speech/index.mjs";
 
-export const LLM_SETTINGS_VERSION = 10;
+export const LLM_SETTINGS_VERSION = 11;
 export const LLM_MODELS = ["deepseek-flash", "deepseek-v4-pro"];
 export const LLM_EFFORTS = ["none", "high", "max"];
 export const LLM_TIERS = ["lite", "mid", "high", "ultra"];
-export const LLM_SCENARIOS = ["thoughtPrompt", "thoughtDraft", "thoughtAnswer", "followUpAnswer", "chat", "diaryLead", "diaryStructure", "diaryTopic", "diaryReflection", "annotationShenji", "analysis", "bookRecognition", "healthRecognition", "contentImageUnderstanding", "capturePolish", "onboardingClaimExtraction"];
+export const LLM_SCENARIOS = ["thoughtPrompt", "thoughtDraft", "thoughtAnswer", "followUpAnswer", "chat", "diaryLead", "diaryStructure", "diaryTopic", "diaryReflection", "annotationShenji", "analysis", "bookRecognition", "healthRecognition", "contentImageUnderstanding", "capturePolish", "onboardingClaimExtraction", "perceptionExtraction"];
 const RESPONSE_STYLES = ["concise", "standard", "deep", "structured", "exploratory"];
 const RESPONSE_STYLE_SCENARIOS = ["thoughtDraft", "thoughtAnswer", "followUpAnswer", "chat", "diaryReflection", "annotationShenji", "analysis"];
 
@@ -34,7 +34,8 @@ export const defaultLlmSettings = {
     healthRecognition: "mid",
     contentImageUnderstanding: "mid",
     capturePolish: "mid",
-    onboardingClaimExtraction: "mid"
+    onboardingClaimExtraction: "mid",
+    perceptionExtraction: "lite"
   },
   sceneEfforts: {
     thoughtPrompt: "none",
@@ -52,7 +53,8 @@ export const defaultLlmSettings = {
     healthRecognition: "high",
     contentImageUnderstanding: "high",
     capturePolish: "high",
-    onboardingClaimExtraction: "high"
+    onboardingClaimExtraction: "high",
+    perceptionExtraction: "none"
   },
   assistantName: "神鸡",
   responseStyles: Object.fromEntries(RESPONSE_STYLE_SCENARIOS.map(scene => [scene, "standard"])),

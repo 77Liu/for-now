@@ -23,6 +23,8 @@ for (const [model, effort, tier] of [["deepseek-flash", "none", "lite"], ["deeps
   assert.deepEqual(settings.profiles[tier], { model, effort });
 }
 const initial = normalizeLlmSettings({ apiKey: "private-test-value" });
+assert.equal(initial.scenarios.perceptionExtraction, "lite");
+assert.equal(initial.sceneEfforts.perceptionExtraction, "none");
 assert.deepEqual(initial.speech, { defaultVoice: "", generationRate: -10 });
 assert.equal(normalizeLlmSettings({ speech: { generationRate: -80 } }).speech.generationRate, -50);
 assert.equal(normalizeLlmSettings({ speech: { generationRate: 140 } }).speech.generationRate, 100);
@@ -253,6 +255,10 @@ const sampleUsage = normalizeAiUsage({ trackingStartedAt: now(), entries: [
   { ...historical, scene: "chat", createdAt: now(), status: "failed" },
   { ...peak, scene: "chat", createdAt: "2026-07-01T12:00:00Z" }
 ] });
+assert.equal(normalizeAiUsage({
+  trackingStartedAt: now(),
+  entries: [{ ...peak, id: "perception", callId: "perception", scene: "perceptionExtraction" }]
+}).entries[0].scene, "perceptionExtraction");
 const costOptions = { date: "2026-09-29", cnyPerUsd: 7.2 };
 const costDefault = defaultAiCostPlan(initial, sampleUsage, costOptions);
 const chat = costDefault.scenarios.find(item => item.scene === "chat");
@@ -264,7 +270,11 @@ const costNormalized = normalizeAiCostPlan({ monthlyBudgetCny: -1, scenarios: [{
 assert.equal(costNormalized.monthlyBudgetCny, 0);
 assert.equal(costNormalized.scenarios.find(item => item.scene === "chat").cacheHitPct, 100);
 assert.equal(costNormalized.scenarios.find(item => item.scene === "chat").avgInputTokens, 2);
-assert.equal(costNormalized.scenarios.length, 16);
+assert.equal(costNormalized.scenarios.length, 17);
+assert.equal(
+  costNormalized.scenarios.find(item => item.scene === "perceptionExtraction").callsPerMonth,
+  100
+);
 const dashboard = usageDashboard(sampleUsage, "2026-09-28", "2026-09-29", 6.5, 7.2);
 assert.equal(dashboard.summary.calls, 2);
 assert.equal(dashboard.summary.usageUnknownCalls, 1);
@@ -378,7 +388,7 @@ try {
   await run("a", async () => {
     await fs.writeFile(getFile(), JSON.stringify(legacy));
     await settings.ensure();
-    assert.equal((await fs.stat(`${getFile()}.v2-pre-v10.20260929010000.bak`)).mode & 0o777, 0o600);
+    assert.equal((await fs.stat(`${getFile()}.v2-pre-v11.20260929010000.bak`)).mode & 0o777, 0o600);
     await Promise.all([
       settings.update(current => mergeLlmSettings(current, { assistantName: "并发名称" })),
       settings.update(current => mergeLlmSettings(current, { apiKey: "next-test-value" }))

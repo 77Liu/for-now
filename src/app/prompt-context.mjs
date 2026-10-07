@@ -8,15 +8,17 @@ import {
 
 export const STRUCTURED_WORKING_CONTEXT_SCHEMA_VERSION = 1;
 
-const ANSWER_SCENES = new Set([
-  "thoughtAnswer",
-  "followUpAnswer",
-  "annotationShenji"
-]);
+const ROLE_BY_SCENE = Object.freeze({
+  thoughtAnswer: "answer",
+  followUpAnswer: "answer",
+  annotationShenji: "answer",
+  perceptionExtraction: "perception"
+});
 const TASK_PROMPT_BY_SCENE = Object.freeze({
   thoughtAnswer: "thought.task.answer",
   followUpAnswer: "thought.task.followUp",
-  annotationShenji: "annotation.task.default"
+  annotationShenji: "annotation.task.default",
+  perceptionExtraction: "perception.source.extract"
 });
 const list = value => Array.isArray(value) ? value : [];
 
@@ -49,12 +51,12 @@ export function promptRoleText(role) {
 }
 
 export function answerRolePrompt(scene) {
-  return ANSWER_SCENES.has(scene) ? promptRoleText("answer") : "";
+  return ROLE_BY_SCENE[scene] === "answer" ? promptRoleText("answer") : "";
 }
 
 export function workingContextPromptContract(scene) {
   const taskPromptId = TASK_PROMPT_BY_SCENE[scene] || "";
-  const roleId = ANSWER_SCENES.has(scene) ? promptRoleId("answer") : "";
+  const roleId = promptRoleId(ROLE_BY_SCENE[scene]);
   const envelopeId = "orchestration.user.envelope";
   const catalog = promptCatalogMetadata();
   const structured = Boolean(
@@ -83,8 +85,8 @@ export function compileWorkingContextPrompt({
   notice = "",
   taskDetails = null
 }) {
-  if (!ANSWER_SCENES.has(scene) || task?.kind !== scene) {
-    throw new Error("Structured working context requires a matching answer scene");
+  if (!ROLE_BY_SCENE[scene] || task?.kind !== scene) {
+    throw new Error("Structured working context requires a matching scene");
   }
   const contract = workingContextPromptContract(scene);
   if (contract.mode === "legacy") {
