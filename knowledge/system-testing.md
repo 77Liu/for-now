@@ -158,7 +158,7 @@ ports / dataDir / database / browserProfile / result / evidence
 | `scripts/persistence-ledger-postgres-regression.mjs` | 真 PostgreSQL 生命周期、幂等响应精确重放/冲突、永久清理后防重复、进程重启与跨进程序列化 |
 | `scripts/boundaries-regression.mjs` | AI/分割限流、每日额度、请求体与附件额度 |
 | `scripts/monitor-regression.mjs` | 服务、磁盘、备份、AI 连续失败、费用告警和恢复通知 |
-| `scripts/restore-validation-regression.mjs` | 恢复数据解析、Store v15 全集合逐项数量/ID/内容摘要、附件引用、缺集合反向断言和临时认证会话 |
+| `scripts/restore-validation-regression.mjs` | 恢复数据解析、Store v16→v17 私有证据集合兼容、公开集合逐项数量/ID/内容摘要、附件引用、缺集合反向断言和临时认证会话 |
 | `scripts/deploy-regression.mjs` | 候选构建、模块目录语法检查、双证书域名 Nginx 配置安装、依赖失败、健康失败、Nginx 失败和原子回滚 |
 | `scripts/sync-coordinator-regression.mjs` | durable-first 队列、资源串并行、确定性 P95、408/425/429/5xx 分类、Retry-After、退避上限、成功/失败审计裁剪、关闭→重开恢复、跨标签失效通知和增量 cursor |
 
@@ -305,7 +305,7 @@ PG_TEST_BIN=/tmp/for-now-postgresql-16.14/bin npm run test:postgres
 ```
 
 该路径实际通过 PostgreSQL 16.14 全门禁和独立持久幂等专项。主门禁现覆盖
-Store v15 新领域、元数据顺序与扩展字段、JSON `null` 幂等响应、旧表从账户
+Store v17（含证据/许可/感知事件）新领域、元数据顺序与扩展字段、JSON `null` 幂等响应、旧表从账户
 快照精确升级、全量关系恢复对比、自动回答默认关闭、设置并发、治理中台
 PostgreSQL 脱敏快照和小物派生路径；机器证据见
 `../reports/g2-r4-postgres-2026-09-30.json`。生产仍必须

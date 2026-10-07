@@ -4,7 +4,7 @@
 
 审阅修订：2026-10-07（Asia/Shanghai）
 
-状态：`G0/G1/G2 已通过 / 22、10a、05a 本地 G3 已完成 / 05b 进行中 / 未发布`
+状态：`G0/G1/G2 已通过 / 22、10a、05a/05b 本地 G3 已完成 / 06 进行中 / 未发布`
 
 V0.5.9 接收从 V0.5.8 按完整需求原子迁出的 8 条 P0，并接收 V0.5.8
 生产冒烟新增的 1 条 P00。当前没有实现、候选、Preview 或发布证据；不得把
@@ -240,8 +240,8 @@ flowchart TD
 | `22` | `developer-22`；capture audio/controller/operations/view 及定向测试 | G2；集成树、合成音频、stub、隔离 IndexedDB | `capture-audio`；F6、UI、router/session、零网络/账本断言 | 无 schema；回退代码即可；真实供应商 `0` | `validated / bd52ebf` |
 | `10a` 固定夹具 | `orchestrator`；新增回放 fixture/runner/说明，不改生产行为 | G2；复用集成树串行写槽 | `thought-source-answer`、`personal-context-governance`；16 类基线 | 仅 stub；失败样本保留 | `validated / bc066bd` |
 | `05a` 证据领域契约 | `orchestrator`；`domain.user-model` 内 evidence 纯领域模块及专项，不提前改 registry | `10a` 检查点后；不接 HTTP/schema | 许可、来源、时间、去重、版本纯函数专项 | 无外部调用；删除模块即可回退 | `validated / 7cce77b` |
-| `05b` 持久化接线 | `orchestrator` 单写 Store/JSON/PG mapping、module registry | `05a`；PG16、旧 Store fixture、隔离数据库 | persistence、trash、auth、PG stable、restore | 向后兼容迁移；失败停止消费，原文保留 | `active` |
-| `06` 任务选材 | `orchestrator`；personal-context/app assembler、receipt 专项 | `05b`；固定夹具 | 思绪完整链、批注、复盘；selection/replay 专项 + Smoke | 失败只用当前获准材料并声明历史不可用；stub | `blocked by 05b` |
+| `05b` 持久化接线 | `orchestrator` 单写 Store/JSON/PG mapping、module registry | `05a`；PG16、旧 Store fixture、隔离数据库 | persistence、trash、auth、PG stable、restore | 向后兼容迁移；失败停止消费，原文保留 | `validated / 3bbf564` |
+| `06` 任务选材 | `orchestrator`；personal-context/app assembler、receipt 专项 | `05b`；固定夹具 | 思绪完整链、批注、复盘；selection/replay 专项 + Smoke | 失败只用当前获准材料并声明历史不可用；stub | `active` |
 | `07` 提示词职责化 | `orchestrator` 单写 Prompt 新版本、manifest、结构化编译器 | `06` working-context schema | prompt catalog、注入/越权、AI audit | 旧目录不可变；回滚兼容版本仍执行最新硬门；stub | `blocked by 06` |
 | `08` 持续感知 | `orchestrator`；记录 adapter、任务 kind、候选协调 | `05b+07`；隔离任务/通知资源 | capture/journal/thought/annotation、重启/迟到/跨账户 | 原文先保存；最多一个感知任务/来源版本；stub | `blocked by 05b/07` |
 | `09` 纠正失效 | `orchestrator`；user-model、trash/restore、许可与前端控制 | `08`；隔离 Store/PG | personal-context、删除恢复、多端并发、旧任务拒写 | 重算失败时旧依据继续禁用；主动综合默认关闭 | `blocked by 08` |
@@ -257,7 +257,9 @@ review 收敛和本地提交 `bd52ebf`。`10a` 已冻结 16 类虚构 fixture、
 runner，提交为 `fb1961b`、`bc066bd`；新编排、真实模型和生产行为明确未运行。
 `05a` 以 `7cce77b` 固定严格来源 identity、RFC3339 时序、双许可、版本/hash、
 派生依赖、感知器版本幂等键和事件去重，独立审查收敛为 `0/0/0 GO`，后端系统门
-通过。当前唯一写槽转给 `05b`。`17/18/21` 未派发原因为工作树 `6/6` 且集成树单写；
+通过。`05b` 以 `cea417d`、`ed3f64b`、`3bbf564` 完成 Store v17、JSON/PG、
+导出恢复、来源版本与删除撤权接线，最终独立审查为 `0/0/0 GO`；后台任务硬门
+明确留给 `08`。当前唯一写槽转给 `06`。`17/18/21` 未派发原因为工作树 `6/6` 且集成树单写；
 责任人为 `orchestrator`，解除条件为关键路径检查点或工作树资源变化，下一复核
 事件为 `05a` 提交。不得强删三个脏历史现场腾槽位。
 
@@ -399,7 +401,7 @@ V0.5.8 G7 已在原报告关闭；本次审阅未把这个条件重新标成待�
 | G0 | 九条已有来源、必要字段及交付关联；留存快照复核通过。新增候选另行逐项处理；飞书“待开始”不能直接解释为需求“本轮已选” |
 | G1 | 已通过：九条全部纳入；入口、阈值、默认关闭策略、60 秒媒体 TTL 与不做范围见 2.2 |
 | G2 | 已通过（局部阻塞）：基线、DAG、所有权、旅程、资源、调用预算、迁移和恢复见 3.2；`19` 等待云授权 |
-| G3 | 进行中：`22@bd52ebf`、`10a@bc066bd`、`05a@7cce77b` 已本地验证未部署；`05b` 为唯一活动写线；其余节点按 3.2 滚动调度 |
+| G3 | 进行中：`22@bd52ebf`、`10a@bc066bd`、`05a@7cce77b`、`05b@3bbf564` 已本地验证未部署；`06` 为唯一活动写线；其余节点按 3.2 滚动调度 |
 | G4 | 未开始：全部入选原子汇合；固定完整候选 SHA，版本/依赖锁/制品/iOS/配置存在性检查，系统/Release、真实回放及必要 Preview、备份恢复通过 |
 | G5 | 未开始：两轮审查完成、阻断项关闭，Owner 对具体远端及生产动作最终 GO |
 | G6 | 未开始：生产运行提交与获准候选一致；按动作副作用清单执行获准冒烟，覆盖录音零副作用、纠正撤回、多账户/匿名和媒体路径；至少 30 分钟有效观察，首样本、样本数、END 和独立终态审计通过 |
@@ -452,3 +454,13 @@ hash、删除恢复、派生依赖、规范 source key、感知器版本幂等�
 和跨 locale 稳定去重。五轮审查由 `0/2/2` 收敛到 `0/0/0 GO`；本地提交
 `7cce77b`，`test:user-model`、专项、check、模块边界及 backend system
 （333,982 ms）通过。持久化与业务接线仍属于 `05b`，外部调用为 0。
+
+18:31–20:09 +0800，`05b` 将 Store 升级为 v17，新增 evidence/event/permission
+三类私有集合的严格 normalization、JSON/PostgreSQL 对象和关系映射、账户导出
+与 v16→v17 恢复兼容。删除会撤销双许可且恢复不恢复许可；既有可编辑来源统一
+单调推进版本，私有集合不进入 `/api/state`。两轮审查关闭恢复探针、旧备份、
+permission revision、公开投影、trash identity 和 legacy PATCH 版本问题，
+最终 `0/0/0 GO`。本地提交为 `cea417d`、`ed3f64b`、`3bbf564`；PG 16.14
+stable、check、user-model、persistence、restore、G2 及来源领域专项通过，
+外部调用为 0。后台任务供应商调用前/落库前的 `evidenceChecks` 硬门由 `08`
+在真实 producer 接入后验证，不以 dormant 接线虚报完成。

@@ -5,8 +5,8 @@
 - 分支 / 工作树：`feat/v0.5.9-integration` /
   `.worktrees/v0.5.9-integration`
 - 生产基线：`v0.5.8@7067ba65eeafccb953080e00988f62728d3b75a8`
-- 当前门禁：`G1/G2 passed-for-local-development`，`G3-22/10a/05a validated`，
-  `G3-05b active`
+- 当前门禁：`G1/G2 passed-for-local-development`，`G3-22/10a/05a/05b validated`，
+  `G3-06 active`
 - 授权：本地规划、开发、测试和本地提交；不含 push `main`、tag、Release、
   生产、云配置、真实付费调用或生产数据写入
 
@@ -39,8 +39,8 @@ G1/G2
 ├─ 22 audio removal race [validated: bd52ebf]
 ├─ 10a replay fixtures [validated: bc066bd]
 ├─ 05a evidence contract [validated: 7cce77b]
-│  └─ 05b persistence [active]
-│     ├─ 06 task selection
+│  └─ 05b persistence [validated: 3bbf564]
+│     ├─ 06 task selection [active]
 │     │  └─ 07 prompt roles
 │     │     └─ 08 continuous perception
 │     │        └─ 09 correction/invalidation
@@ -60,7 +60,7 @@ manifest、module registry、runner、Service Worker 和发布文件由
 
 | roleId | specialty / activeContext | ownership | evidence / status | next |
 | --- | --- | --- | --- | --- |
-| `orchestrator` | 唯一 DAG、G1/G2、集成与共享文件 | V0.5.9 集成树和共享热点 | 22、10a 已验证；`active` | 实现 05a 领域契约 |
+| `orchestrator` | 唯一 DAG、G1/G2、集成与共享文件 | V0.5.9 集成树和共享热点 | 22、10a、05a/05b 已验证；`active` | 实现 06 任务选材 |
 | `scout-audio-race` | recorder → draft → upload → ASR/账本 | 只读 | 定位 revision/persist/restore/submission 竞态；`closed` | 交给 developer-22 |
 | `scout-personalization` | 05–10 现有 receipt/user-model/task/prompt/PG | 只读 | 定位固定投影、许可失效、注入和 outbox 缺口；`closed` | 交给 05a/10a |
 | `developer-22` | 快捷语音移除 P00 | capture audio/controller/operations/view 和定向测试 | `bd52ebf`；`closed` | 交给版本集成 |
@@ -81,7 +81,9 @@ manifest、module registry、runner、Service Worker 和发布文件由
 | `reviewer-05a-r4` | 去重输入与 locale 确定性复核 | 只读 | `0/0/2 NO-GO`；`closed` | 非数组和 locale 已修复 |
 | `reviewer-05a-r5` | 最终证据契约复审 | 只读 | `0/0/0 GO`；`closed` | 无 |
 | `validator-05a` | 专项、user-model、模块与 backend 门 | 只读 | backend 通过（333,982 ms）；`closed` | 交给 05b |
-| `developer-05b` | Store/JSON/PG 映射与生命周期接线 | schema、normalization、persistence、trash、专项 | `active` | 先冻结迁移与恢复反例 |
+| `developer-05b` | Store/JSON/PG 映射与生命周期接线 | schema、normalization、persistence、trash、专项 | `cea417d`、`ed3f64b`、`3bbf564`；`closed` | 交给 06/08 |
+| `reviewer-05b-a/b` | 账户、恢复、版本、公开投影与 trash identity | 只读 | 两轮关闭 3 个 P1、1 个 P2，最终 `0/0/0 GO`；`closed` | 无 |
+| `validator-05b` | JSON/PG16、恢复、领域与模块门 | 只读 | PG 16.14 stable、check、专项通过；`closed` | 交给 06 |
 
 `developer-22` 不能作为自己的唯一 reviewer。Reviewer 和 Validator 复用现有
 工作树，只读执行，不创建第七个工作树。
@@ -98,7 +100,7 @@ manifest、module registry、runner、Service Worker 和发布文件由
 - 真实模型对照：尚无本次费用和私人数据授权；本地只跑 stub/确定性回放。
 - push/tag/Release/生产：均未授权。
 
-这些阻塞不影响 `05b`、`17`、`18`、`21` 的本地准备；`05b` 已取得唯一写槽，
+这些阻塞不影响 `06`、`17`、`18`、`21` 的本地准备；`06` 已取得唯一写槽，
 其余未派发只因工作树 `6/6` 和集成树单写。
 
 ## 5. 22 任务契约
@@ -146,6 +148,9 @@ manifest、module registry、runner、Service Worker 和发布文件由
 | 18:08 | reviewer-05a-r2 → developer-05a | `0/0/1 NO-GO`：非规范 source key 绕过 | 统一解析规范四元组 |
 | 18:15 | reviewer-05a-r3/r4 → developer-05a | 重复依赖、deleted、非数组、locale 共 4 个 P1 | 双时序与多 locale 反例通过 |
 | 18:22 | reviewer-05a-r5 → orchestrator | `0/0/0 GO` | 提交 `7cce77b`，写槽转 05b |
+| 18:31 | orchestrator → developer-05b | 冻结 v16→v17、JSON/PG、trash/restore 失败断言 | Store v17 与持久化接线进入 active |
+| 19:24 | reviewers-05b → developer-05b | 恢复探针、旧备份、revision、公开投影、trash identity、legacy 版本 findings | 全部修复并补反例 |
+| 20:09 | reviewers-05b-final → orchestrator | 当前差分 `0/0/0 GO` | 提交 `cea417d`、`ed3f64b`、`3bbf564`，写槽转 06 |
 
 ## 6.1 22 验证与审查
 
@@ -195,9 +200,23 @@ manifest、module registry、runner、Service Worker 和发布文件由
   `test:user-model`、check、模块边界和 backend system（333,982 ms）通过；
   外部调用为 0。
 
+## 6.4 05b 验证与审查
+
+- Store v17 新增 evidence source、permission、perception event 三类私有集合；
+  非数组、非法记录、重复 ID/语义输入均以 `STORAGE_READ_FAILED` 拒绝。
+- JSON 与 PostgreSQL 16.14 round-trip、RLS、source/derived relation、账户导出、
+  v16 恢复和动态 API 集合探针通过；PG counts 为 `33/46/29/6/34/1`。
+- 删除顶层、嵌套和思绪链来源会撤销双许可并推进 revision，恢复不恢复许可；
+  同 ID 不同类型/嵌套 trash 不会误伤无关来源。可编辑来源的 legacy/v1 更新
+  都单调推进版本。
+- 私有三集合不进入 `/api/state`；两轮 Reviewer 关闭 3 个 P1、1 个 P2，
+  最终 `0/0/0 GO`。真实供应商和云调用均为 0。
+- 后台任务发送前/落库前复查等待 `06` 产出 `evidenceChecks` 后由 `08` 激活，
+  当前不保留无 producer 的名义接线。
+
 ## 7. NO-GO 与下一动作
 
 - 当前不是候选；不得执行 Preview、Release 或生产动作。
 - `22` 仅为工作区已验证未部署，不能写成需求已发布或生产问题已关闭。
-- 唯一下一动作：实现 `05b` 的 Store v17、JSON/PostgreSQL round-trip、
-  trash/restore 与后台消费前硬门；不接 HTTP/UI，不调用真实模型。
+- 唯一下一动作：实现 `06` 的 scene/task/current material、候选/选入/排除回执
+  和失败降级；不改 Prompt catalog，不调用真实模型。
