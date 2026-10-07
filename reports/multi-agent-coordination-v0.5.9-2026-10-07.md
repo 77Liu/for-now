@@ -5,8 +5,8 @@
 - 分支 / 工作树：`feat/v0.5.9-integration` /
   `.worktrees/v0.5.9-integration`
 - 生产基线：`v0.5.8@7067ba65eeafccb953080e00988f62728d3b75a8`
-- 当前门禁：`G1/G2 passed-for-local-development`，`G3-22 validated`，
-  `G3-10a active`
+- 当前门禁：`G1/G2 passed-for-local-development`，`G3-22/10a validated`，
+  `G3-05a active`
 - 授权：本地规划、开发、测试和本地提交；不含 push `main`、tag、Release、
   生产、云配置、真实付费调用或生产数据写入
 
@@ -37,8 +37,8 @@
 ```text
 G1/G2
 ├─ 22 audio removal race [validated: bd52ebf]
-├─ 10a replay fixtures [active]
-├─ 05a evidence contract [ready, no slot]
+├─ 10a replay fixtures [validated: bc066bd]
+├─ 05a evidence contract [active]
 │  └─ 05b persistence
 │     ├─ 06 task selection
 │     │  └─ 07 prompt roles
@@ -60,7 +60,7 @@ manifest、module registry、runner、Service Worker 和发布文件由
 
 | roleId | specialty / activeContext | ownership | evidence / status | next |
 | --- | --- | --- | --- | --- |
-| `orchestrator` | 唯一 DAG、G1/G2、集成与共享文件 | V0.5.9 集成树和共享热点 | Base/Git/生产/规则/风险核对完成；`active` | 固定 22 失败反例 |
+| `orchestrator` | 唯一 DAG、G1/G2、集成与共享文件 | V0.5.9 集成树和共享热点 | 22、10a 已验证；`active` | 实现 05a 领域契约 |
 | `scout-audio-race` | recorder → draft → upload → ASR/账本 | 只读 | 定位 revision/persist/restore/submission 竞态；`closed` | 交给 developer-22 |
 | `scout-personalization` | 05–10 现有 receipt/user-model/task/prompt/PG | 只读 | 定位固定投影、许可失效、注入和 outbox 缺口；`closed` | 交给 05a/10a |
 | `developer-22` | 快捷语音移除 P00 | capture audio/controller/operations/view 和定向测试 | `bd52ebf`；`closed` | 交给版本集成 |
@@ -68,7 +68,13 @@ manifest、module registry、runner、Service Worker 和发布文件由
 | `reviewer-22-r2` | 四项 finding 复审 | 只读 | `0/0/1 NO-GO`；`closed` | 交叉时序已修复 |
 | `reviewer-22-r3` | 最终 tree 复审 | 只读 | `3fda6d1d...`，`0/0/0 GO`；`closed` | 无 |
 | `validator-22` | 影响测试、Journey Smoke、零副作用 | 测试 artifact，只读代码 | F6/UI/Smoke/frontend 通过；`closed` | 交给版本系统门 |
-| `developer-10a` | 16 类回放夹具、旧基线与指标 | 新 fixture/runner/说明 | `active` | 先固定判定与旧方案结果 |
+| `developer-10a` | 16 类回放夹具、旧基线与指标 | 新 fixture/runner/说明 | `fb1961b`、`bc066bd`；`closed` | 交给 05a/10b |
+| `reviewer-10a-r1` | fixture、指标、adapter 与基线可信度 | 只读 | `0/0/5 NO-GO`；`closed` | 五项均已修复 |
+| `reviewer-10a-r2` | 首轮五项复核 | 只读 | `0/0/3 NO-GO`；`closed` | 空断言、完整 manifest、行为边界已修复 |
+| `reviewer-10a-r3` | executionMode 信源复核 | 只读 | `0/0/1 NO-GO`；`closed` | 双信源绕过已修复 |
+| `reviewer-10a-r4` | 最终回放基线复审 | 只读 | `0/0/0 GO`；`closed` | 无 |
+| `scout-05a` | evidence/event/permission 领域边界 | 只读 | API、字段、20 条反例和 05b 边界已固定；`closed` | 交给 developer-05a |
+| `developer-05a` | evidence/event/permission 纯领域契约 | `src/modules/user-model/evidence.mjs`、公共导出、专项 | `active` | 先固定失败断言 |
 
 `developer-22` 不能作为自己的唯一 reviewer。Reviewer 和 Validator 复用现有
 工作树，只读执行，不创建第七个工作树。
@@ -85,8 +91,8 @@ manifest、module registry、runner、Service Worker 和发布文件由
 - 真实模型对照：尚无本次费用和私人数据授权；本地只跑 stub/确定性回放。
 - push/tag/Release/生产：均未授权。
 
-这些阻塞不影响 `10a`、`05a`、`17`、`18`、`21` 的本地准备；`10a` 已取得
-唯一写槽，其余未派发只因工作树 `6/6` 和集成树单写。
+这些阻塞不影响 `05a`、`17`、`18`、`21` 的本地准备；`05a` 已取得唯一写槽，
+其余未派发只因工作树 `6/6` 和集成树单写。
 
 ## 5. 22 任务契约
 
@@ -122,6 +128,12 @@ manifest、module registry、runner、Service Worker 和发布文件由
 | 16:58 | reviewer-r2 → developer-22 | `0/0/1 NO-GO`：stop-pending 替换取消 | 修复并补交叉时序 |
 | 17:05 | reviewer-r3 → orchestrator | tree `3fda6d1d...`，`0/0/0 GO` | 提交 `bd52ebf` |
 | 17:06 | orchestrator → developer-10a | 22 写槽释放，重算 DAG | 10a 进入 active |
+| 17:10 | developer-10a | 固定 16 类 fixture、三方案接口、旧投影基线与四项指标 | 新编排/真实模型保持 not-run |
+| 17:18 | validator-10a | `check`、F9、personal-context、user-model、Journey schema | 通过；真实供应商调用 0 |
+| 17:20 | reviewer-10a-r1 → developer-10a | `0/0/5 NO-GO`：自报、指纹、维度、分母、代表任务 | 逐项修复 |
+| 17:31 | reviewer-10a-r2 → developer-10a | `0/0/3 NO-GO`：空断言、完整 manifest、行为边界 | fail-closed 并补执行边界 |
+| 17:40 | reviewer-10a-r3 → developer-10a | `0/0/1 NO-GO`：双 executionMode 信源 | 强制 adapter/output identity 一致 |
+| 17:46 | reviewer-10a-r4 → orchestrator | `0/0/0 GO` | 提交 `fb1961b`、`bc066bd`，写槽转 05a |
 
 ## 6.1 22 验证与审查
 
@@ -140,9 +152,25 @@ manifest、module registry、runner、Service Worker 和发布文件由
   `test:frontend`（36 stages）。
 - 未执行：真实 ASR/DeepSeek、Preview、生产和 Release；调用预算实际为 0。
 
+## 6.2 10a 验证与审查
+
+- 夹具版本 `2026.10.07.1`，16 类各一项，8 个代表任务为真实模型待验收集。
+- manifest 固定起始 commit/tree、Prompt catalog、完整 SP/UP、模型参数、
+  两次重复预算和 general/legacy 结果指纹；候选保持 `not-frozen`。
+- general 仅当前材料，10/16 有历史关键证据漏选；因无候选材料和回答断言，
+  相关率/支持率为 `null`，状态 `not-evaluable`。
+- legacy 材料相关率 `65.2174%`、关键证据漏选率 `0%`、证据支持率 `60%`、
+  新鲜度误述率 `100%`，11/16 保留已知失败。
+- runner 不采信 adapter 自报评分；空断言、未知引用、输出身份伪装、Prompt/
+  来源/结果指纹漂移均 fail-closed。new/真实模型 adapter 在 10b grader 接入前
+  拒绝执行。
+- `npm run check`、`npm run test:f9-features`、
+  `npm run test:personalization-replay`、个人上下文/用户模型专项和 Journey
+  schema 通过；生产行为和真实模型未运行，调用数为 0。
+
 ## 7. NO-GO 与下一动作
 
 - 当前不是候选；不得执行 Preview、Release 或生产动作。
 - `22` 仅为工作区已验证未部署，不能写成需求已发布或生产问题已关闭。
-- 唯一下一动作：实现 `10a` 的 16 类固定回放 fixture、旧固定堆叠基线和
-  指标计算；不得调用真实模型。
+- 唯一下一动作：实现 `05a` 的 evidence/event/permission 纯领域契约和失败
+  断言；不改 Store schema、HTTP、module registry，不调用真实模型。
