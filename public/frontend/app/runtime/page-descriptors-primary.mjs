@@ -36,6 +36,7 @@ export function installPrimaryDescriptors(descriptors, ports) {
     load:()=>withCheckins(createHomeFeatureController({
       coordinator:actionsCoordinator,
       loadWorkspace:runtimeFeatureLoaders.actions,
+      canLoad:()=>Boolean(runtime.currentUser?.id),
       showToast,
       prompt:(...args)=>globalThis.prompt(...args),
       confirm:(...args)=>globalThis.confirm(...args)

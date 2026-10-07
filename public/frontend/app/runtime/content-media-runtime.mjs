@@ -115,6 +115,7 @@ function renderContentImageEditor(key){
 }
 function resetContentImageEditor(key,paths=[],{forget=true,preserveStored=false}={}){
   const input=document.querySelector(`[data-content-image-editor="${CSS.escape(key)}"] input[type="file"]`);if(input)input.value="";
+  if(!contentImageDraftManager)return Promise.resolve(false);
   const operation=contentImageDraftManager.replaceExisting(key,paths,{compensate:forget,preserveStored:preserveStored||!forget});
   renderContentImageEditor(key);
   void operation.then(()=>renderContentImageEditor(key)).catch(()=>{});

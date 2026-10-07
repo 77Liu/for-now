@@ -10,6 +10,7 @@ function requireFunction(value, name) {
 export function createHomeFeatureController({
   coordinator,
   loadWorkspace,
+  canLoad = () => true,
   showToast = noop,
   prompt = (...args) => globalThis.prompt(...args),
   confirm = (...args) => globalThis.confirm(...args)
@@ -19,6 +20,7 @@ export function createHomeFeatureController({
   requireFunction(coordinator?.viewModel, "coordinator.viewModel");
   requireFunction(coordinator?.resetSession, "coordinator.resetSession");
   requireFunction(loadWorkspace, "loadWorkspace");
+  requireFunction(canLoad, "canLoad");
   requireFunction(showToast, "showToast");
   requireFunction(prompt, "prompt");
   requireFunction(confirm, "confirm");
@@ -44,6 +46,7 @@ export function createHomeFeatureController({
 
   const ensureWorkspace = async candidate => {
     if (!current(candidate)
+        || !canLoad()
         || !candidate.details?.open
         || candidate.mounted
         || candidate.loading) return false;
@@ -119,7 +122,7 @@ export function createHomeFeatureController({
     },
     render(context = {}) {
       const candidate = activation;
-      if (!current(candidate)) return false;
+      if (!current(candidate) || !canLoad()) return false;
       void coordinator.load({ ensure: true });
       return candidate.mounted
         ? workspaceController?.render?.({ ...context, snapshot: undefined })

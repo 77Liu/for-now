@@ -851,6 +851,7 @@ const mockFetch = `
       return v1(items,{nextCursor})
     }
     if (url === "/api/v1/startup") {
+      if(location.search.includes("ui-unauthenticated-startup=1"))return json({data:null,error:{code:"AUTH_REQUIRED",message:"请先登录"},meta:{}},401);
       window.__startupEvents.push("startup:response");
       const owner=window.__accountUser.role==="owner";
       return v1({ protocolVersion:1,version:"build-fixture",releaseVersion:"0.2.0",user:window.__accountUser,capabilities:owner?["ai-costs","architecture","commercialization","local-testing","ai-configuration","account-roles"]:[],features:{incrementalSync:true},governanceUrl:owner?"/platform/":"",accountCursor:window.__syncCursor,notificationUnread:window.__notifications.filter(item=>!item.readAt).length,quoteTags:["阅读","摘录","长期"],onboardingV2:window.__onboardingV2 });
@@ -865,7 +866,9 @@ const mockFetch = `
       const owner=window.__accountUser.role==="owner";
       return json({ version: "build-fixture", releaseVersion: "0.5.7", user: window.__accountUser, capabilities:owner?["ai-costs","architecture","commercialization","local-testing","ai-configuration","account-roles"]:[], governanceUrl:owner?"/platform/":"" });
     }
-    if (url === "/api/auth/me") return json({ authenticated: true, authRequired: true, registrationAvailable: true, user: window.__accountUser, capabilities:window.__accountUser.role==="owner"?["account-roles"]:[], userCount: 2 });
+    if (url === "/api/auth/me") return location.search.includes("ui-unauthenticated-startup=1")
+      ?json({authenticated:false,authRequired:true,registrationAvailable:true,user:null,capabilities:[],userCount:2},401)
+      :json({ authenticated: true, authRequired: true, registrationAvailable: true, user: window.__accountUser, capabilities:window.__accountUser.role==="owner"?["account-roles"]:[], userCount: 2 });
     if (url === "/api/auth/users" && (!init.method || init.method === "GET")) return json({users:[window.__accountUser,{id:"member-1",username:"member",role:"user",createdAt:"2026-09-27T00:00:00.000Z"}]});
     if (/^\\/api\\/auth\\/users\\/[^/]+\\/role$/.test(url) && init.method === "PATCH") {
       window.__roleChanges+=1;
@@ -1505,7 +1508,6 @@ try {
   await cdp.send("Network.enable");
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: mockFetch });
-  await cdp.send("Page.navigate", { url: new URL("thoughts/kept-root", APP_URL).href });
   const evaluate = async expression => {
     const response = await cdp.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
     if (response.exceptionDetails) throw new Error(response.exceptionDetails.exception?.description || response.exceptionDetails.text);
@@ -1518,8 +1520,36 @@ try {
     }
     return false;
   };
+  const unauthenticatedEventStart = cdp.events.length;
+  await cdp.send("Page.navigate", { url: new URL("today?ui-unauthenticated-startup=1", APP_URL).href });
+  assert.equal(
+    await waitUntil(`document.documentElement?.dataset.runtimeReady==="1"&&document.querySelector("#auth-gate")?.hidden===false&&document.body?.classList.contains("auth-locked")`),
+    true,
+    "fresh unauthenticated startup must settle on the auth gate"
+  );
+  assert.deepEqual(
+    cdp.events.slice(unauthenticatedEventStart)
+      .filter(event => event.method === "Runtime.exceptionThrown")
+      .map(event => event.params.exceptionDetails.exception?.description || event.params.exceptionDetails.text),
+    [],
+    "fresh unauthenticated startup must not raise runtime exceptions"
+  );
+  assert.deepEqual(
+    await evaluate(`window.__apiRequests.filter(request=>request.includes("/api/v1/actions")||request.includes("/api/v1/habits"))`),
+    [],
+    "fresh unauthenticated startup must not request private home data"
+  );
+
+  await evaluate(`sessionStorage.setItem("ui-delay-next-startup-secondary","1");true`);
+  await cdp.send("Page.navigate", { url: new URL("thoughts/kept-root", APP_URL).href });
   const coreReady = await waitUntil(`window.__startupEvents.includes("route:response")&&window.__startupEvents.includes("startup:response")&&typeof window.__releaseStartupSecondary==="function"`);
-  assert.equal(coreReady, true);
+  assert.equal(coreReady, true, JSON.stringify(await evaluate(`({
+    url:location.href,
+    startupEvents:window.__startupEvents,
+    requests:window.__apiRequests,
+    locked:document.body?.classList.contains("auth-locked"),
+    gateHidden:document.querySelector("#auth-gate")?.hidden
+  })`)));
   assert.deepEqual(await evaluate(`(() => {
     const events=window.__startupEvents;
     const visibleIndex=events.indexOf("shell:visible"),secondaryIndex=events.indexOf("settings:request");

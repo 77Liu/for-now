@@ -133,9 +133,14 @@ for (const modulePath of runtimeModules) {
     today: "2026-10-06"
   };
   const rendered = [];
+  let allowed = false;
+  let loads = 0;
   const controller = createHomeFeatureController({
     coordinator: {
-      load: async () => true,
+      load: async () => {
+        loads += 1;
+        return true;
+      },
       subscribe(listener) {
         listener(actionSnapshot);
         return () => {};
@@ -151,6 +156,7 @@ for (const modulePath of runtimeModules) {
       },
       resetSession() {}
     },
+    canLoad: () => allowed,
     loadWorkspace: async () => ({
       createActionsFeatureController: () => ({
         mount() {},
@@ -166,11 +172,23 @@ for (const modulePath of runtimeModules) {
   const activation = new AbortController();
   await controller.mount({ root: rootElement, signal: activation.signal });
   await new Promise(resolve => setImmediate(resolve));
+  assert.equal(controller.render({
+    snapshot: { actions: [], habits: [], habitCheckins: [] },
+    changedDomains: ["actions"]
+  }), false);
+  assert.equal(loads, 0);
+  assert.equal(rendered.length, 0);
+  await controller.unmount();
+
+  allowed = true;
+  await controller.mount({ root: rootElement, signal: activation.signal });
+  await new Promise(resolve => setImmediate(resolve));
   controller.render({
     snapshot: { actions: [], habits: [], habitCheckins: [] },
     changedDomains: ["actions"]
   });
   assert.equal(summary.textContent, "1 项待推进 · 0/0 个习惯已打卡");
+  assert.equal(loads, 1);
   assert.equal(rendered.length, 2);
   assert.equal(rendered.every(context => context?.snapshot === undefined), true);
   await controller.unmount();
