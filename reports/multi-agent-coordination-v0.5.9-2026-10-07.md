@@ -5,8 +5,8 @@
 - 分支 / 工作树：`feat/v0.5.9-integration` /
   `.worktrees/v0.5.9-integration`
 - 生产基线：`v0.5.8@7067ba65eeafccb953080e00988f62728d3b75a8`
-- 当前门禁：`G1/G2 passed-for-local-development`，`G3-22/10a/05a/05b validated`，
-  `G3-06 active`
+- 当前门禁：`G1/G2 passed-for-local-development`，
+  `G3-22/10a/05a/05b/06 validated`，`G3-07/17 active`
 - 授权：本地规划、开发、测试和本地提交；不含 push `main`、tag、Release、
   生产、云配置、真实付费调用或生产数据写入
 
@@ -15,13 +15,11 @@
 | 工作树 | HEAD / 分支 | 状态 | 负责人 / 下一步 |
 | --- | --- | --- | --- |
 | 项目根 | `f3164f6 / main` | 干净 | 只读基线，不在根目录开发 |
-| `v0.4.0-g2-capability` | `82ca060 / v0.4.0-g2-capability` | `public/index.html` 脏 | 历史现场，保留 |
-| `v0.5.0-integration` | `505ac90 / feat/v0.5.5-comment-voice` | restore/debug 文件脏 | 历史现场，保留 |
-| `v0.5.8-p00-p0` | `1bab107 / feat/v0.5.8-p00-p0` | 计划、TODO、图片资产脏 | 规划来源，原样保留 |
-| `platform-console` | `d157537 / platform/main` | 干净，独立产品线 | 不纳入主应用 |
-| `v0.5.9-integration` | `f3164f6 / feat/v0.5.9-integration` | 当前集成树 | 唯一 writer |
+| `v0.5.9-integration` | `d8bd3a8 / feat/v0.5.9-integration` | `06` 代码已提交，文档待提交 | orchestrator；转入 `07` |
+| `v0.5.9-image-rotation` | `edefd18 / feat/v0.5.9-image-rotation` | `17` 首轮审查 NO-GO，修复中 | developer-17-fix |
 
-当前 `6/6`，不得创建新工作树。不得删除、reset、stash 或提交其他现场。
+当前 `3/6`。旧工作树已在可恢复归档后非强制移除；不得删除、reset、stash
+或提交仍在活动的 `06/17` 现场。
 
 受保护未提交资产：
 
@@ -30,7 +28,7 @@
 | V0.5.9 已审阅计划 | `45c1bb9c...24afc8` | 正文机械迁入本分支后继续修订 |
 | 计划报告图片 | `bdd261d6...0c6e9` | 仅保留原现场，不顺带提交 |
 | 图片提示词 | `eb8428e0...a1d1c` | 仅保留原现场，不顺带提交 |
-| 旧工作树 TODO | `fd5db59d...f96ec` | 含全文件格式化噪声，不迁入 |
+| 旧工作树 TODO | `fd5db59d...f96ec` | 已随 `archive/v0.5.9-plan-assets-20261007@7cdecfb` 归档；格式噪声不迁入 main |
 
 ## 2. DAG
 
@@ -40,13 +38,13 @@ G1/G2
 ├─ 10a replay fixtures [validated: bc066bd]
 ├─ 05a evidence contract [validated: 7cce77b]
 │  └─ 05b persistence [validated: 3bbf564]
-│     ├─ 06 task selection [active]
-│     │  └─ 07 prompt roles
+│     ├─ 06 task selection [validated: d8bd3a8]
+│     │  └─ 07 prompt roles [active]
 │     │     └─ 08 continuous perception
 │     │        └─ 09 correction/invalidation
 │     └──────────────────────────┐
 │                                └─ 10b receipt/replay gate
-├─ 17 image rotation [ready, no slot]
+├─ 17 image rotation [active: first review NO-GO]
 ├─ 18 media delivery code [ready, no slot]
 │  └─ 19 real CDN/OSS Preview [blocked: Owner/cloud]
 └─ 21 owner opening settings [ready, no slot]
@@ -84,9 +82,13 @@ manifest、module registry、runner、Service Worker 和发布文件由
 | `developer-05b` | Store/JSON/PG 映射与生命周期接线 | schema、normalization、persistence、trash、专项 | `cea417d`、`ed3f64b`、`3bbf564`；`closed` | 交给 06/08 |
 | `reviewer-05b-a/b` | 账户、恢复、版本、公开投影与 trash identity | 只读 | 两轮关闭 3 个 P1、1 个 P2，最终 `0/0/0 GO`；`closed` | 无 |
 | `validator-05b` | JSON/PG16、恢复、领域与模块门 | 只读 | PG 16.14 stable、check、专项通过；`closed` | 交给 06 |
+| `reviewer-06-r1…r11` | 选材、回执、派生来源、兼容与性能 | 只读 | 多轮关闭许可、预算、来源绑定、递归失效、附件和长正文问题；最终 `0/0/0/0 GO` | 交给 07/08/10b |
+| `worktree-governor-v059` | 历史现场归档与工作树治理 | 旧工作树、stash、archive refs | 4 棵旧树已安全移除，2 条 stash 已归档/核对后清零；`closed` | 保持总数 ≤6 |
+| `developer-17` | 图片连续旋转 | 图片草稿内部 2 模块和专项 | `edefd18`；首轮 `0/1/1/1 NO-GO` | 修复 UI 可达性、重复编码和 URL 集合 |
+| `reviewer-17-r1` | 旋转入口、像素、并发和资源清理 | 只读 | `0/1/1/1 NO-GO`；`closed` | 等待增量修复后复审 |
 
 `developer-22` 不能作为自己的唯一 reviewer。Reviewer 和 Validator 复用现有
-工作树，只读执行，不创建第七个工作树。
+工作树，只读执行；`17` 使用独立分支/工作树，与 `06/07` 写集不重叠。
 
 ## 4. G1/G2 决策
 
@@ -100,8 +102,9 @@ manifest、module registry、runner、Service Worker 和发布文件由
 - 真实模型对照：尚无本次费用和私人数据授权；本地只跑 stub/确定性回放。
 - push/tag/Release/生产：均未授权。
 
-这些阻塞不影响 `06`、`17`、`18`、`21` 的本地准备；`06` 已取得唯一写槽，
-其余未派发只因工作树 `6/6` 和集成树单写。
+这些阻塞不影响 `07`、`17`、`18`、`21` 的本地准备。工作树治理后已从
+`6/6` 降为 `3/6`；`07` 占集成树共享写槽，`17` 占独立前端写槽，`18/21`
+因最多两条叶子写线暂不派发。
 
 ## 5. 22 任务契约
 
@@ -151,6 +154,11 @@ manifest、module registry、runner、Service Worker 和发布文件由
 | 18:31 | orchestrator → developer-05b | 冻结 v16→v17、JSON/PG、trash/restore 失败断言 | Store v17 与持久化接线进入 active |
 | 19:24 | reviewers-05b → developer-05b | 恢复探针、旧备份、revision、公开投影、trash identity、legacy 版本 findings | 全部修复并补反例 |
 | 20:09 | reviewers-05b-final → orchestrator | 当前差分 `0/0/0 GO` | 提交 `cea417d`、`ed3f64b`、`3bbf564`，写槽转 06 |
+| 20:10 | orchestrator | 启动 `06`，固定 scene/task/current material 与 receipt v2 | 思绪根/追问/批注纵向接线 |
+| 21:52 | reviewers-06-r8 | `0/0/6 NO-GO`：追问定位、来源凭据、时间、兼容、递归依赖、图片 | 建立反例并逐项修复 |
+| 23:14 | worktree-governor | 三类历史现场、平台树和两条 stash 完成可恢复归档 | 工作树 `6→3`，创建 `17` 独立树 |
+| 23:14 | developer-17 | 首版图片旋转提交 `edefd18` | Reviewer `0/1/1/1 NO-GO`，增量修复中 |
+| 23:27 | reviewer-06-r11 → orchestrator | `06` 当前差分 `0/0/0/0 GO` | 四笔提交至 `d8bd3a8`，转入文档与固定 tree 门 |
 
 ## 6.1 22 验证与审查
 
@@ -214,9 +222,45 @@ manifest、module registry、runner、Service Worker 和发布文件由
 - 后台任务发送前/落库前复查等待 `06` 产出 `evidenceChecks` 后由 `08` 激活，
   当前不保留无 producer 的名义接线。
 
+## 6.5 06 验证与审查
+
+- `working-context v2` 统一记录 scene/task、当前材料、候选/选入/排除、
+  Evidence checks、来源版本/hash、账户绑定、时间窗和最终 user prompt 预算。
+- 思绪根回答、追问和批注均发送完整当前链；纯图片及根/内容块/追问/评论附件
+  进入相同请求。检索不可用时显式降级为仅当前材料。
+- 生成前后重算 receipt；v2 派生输出必须绑定 succeeded task、结果 ID、
+  task tuple 与 context fingerprint。同步回答使用不公开的内部成功任务；
+  public state 及 task list/get/result 均不暴露该凭据。
+- Evidence 依赖按链递归校验；底层删除、撤权、版本变化、可识别的中间派生
+  evidence 缺失和循环依赖均 fail-closed。1000 条 Evidence 本地检查低于
+  `50 ms`。
+- 16 类 selection-only 回放执行完成：当前材料、许可、失效与事件去重门通过；
+  相关选择 `11/14`，保留 2 个语义漏选给 `08/10b`，不计作最终质量通过。
+  general/legacy 固定指纹未漂移，真实模型调用为 0。
+- 多轮 Reviewer 从 `0/1/3`、`0/0/2`、`0/0/2`、`0/0/1` 收敛到
+  `0/0/0/0 GO`。代码与测试提交：`c07dc54`、`8140622`、`f1f574c`、
+  `d8bd3a8`。
+- 已通过专项、核心、API v1、content/AI runtime、F3、auth、user-model、
+  check、冻结 replay 与 Journey Smoke `15/15`。跨最终修改的 backend
+  结果只作影响面证据；固定文档提交后须重跑完整 backend。
+
+## 6.6 工作树治理与 17 写线
+
+- `archive/v0.5.9-plan-assets-20261007@7cdecfb` 保存 V0.5.9 计划原稿、
+  图片和提示词；`archive/v0.4.0-g2-capability-20261007@07d77ba`、
+  `archive/v0.5.0-integration-20261007@9a2c5e4` 与
+  `archive/exploration-feature-atlas-20260930@207dbd9` 保存其他独有资产。
+- v0.5.0 调试材料移至仓库外权限 `0700/0600` 的
+  `个人成长追踪-local-archive/20261007/v0.5.0-integration-sensitive`。
+  两条 stash 经覆盖/归档核验后清零；旧工作树均非强制移除。
+- `17` 从 `2bb3819` 创建独立工作树并提交首版 `edefd18`。首轮 Reviewer
+  发现 UI 不可达、JPEG 多代编码和 Blob URL 集合增长，当前由
+  `developer-17-fix` 在原 3 文件写集内修复，尚未进入集成分支。
+
 ## 7. NO-GO 与下一动作
 
 - 当前不是候选；不得执行 Preview、Release 或生产动作。
 - `22` 仅为工作区已验证未部署，不能写成需求已发布或生产问题已关闭。
-- 唯一下一动作：实现 `06` 的 scene/task/current material、候选/选入/排除回执
-  和失败降级；不改 Prompt catalog，不调用真实模型。
+- 主线下一动作：在集成树推进 `07` 职责化提示词与注入防线；并行线继续关闭
+  `17` 首轮 findings。两线通过独立审查后由 orchestrator 串行集成；不调用
+  真实模型，不执行 Preview、push、tag、Release 或生产动作。
