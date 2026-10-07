@@ -145,6 +145,7 @@ ports / dataDir / database / browserProfile / result / evidence
 | `scripts/segmentation-regression.mjs` | 阿里云 SDK 无重试、同步/异步结果、提交官方价、轮询/下载零重复费用、失败状态/轮询超时、PNG 下载大小/格式/超时、调用组及账户审计、审计失败不重放、限流/在途/上传失败释放、临时图片清理与异步绑定；均为本地替身 |
 | `scripts/keepsake-time-regression.mjs` | 小物载荷/旧记录/扩展保留、局部更新兼容、账户集合隔离与失败提交；UTC/上海/纽约、夏令时、本地日/时分合成、严格日期及旧发生日期解析 |
 | `scripts/prompt-catalog-regression.mjs` | 提示词目录版本选择、SHA-256、必需 ID、占位符契约、提示词正文与代码分离 |
+| `scripts/perception-runtime-regression.mjs` | 核心来源事务化事件、双许可、内部任务隔离、调用前/落库前重验、失败及连续重启恢复、跨来源去重、JSON 落盘和 10,000 来源性能门 |
 | `scripts/collaboration-regression.mjs` | 可见文本/重复引文、漂流保留、两套批注 URL、评论创建幂等、任务结果/通知原子提交、失败回滚、并发幂等/重试、迟到拒写、重启与跨账户同 ID 任务 |
 | `scripts/trash-regression.mjs` | 整记录/嵌套恢复版本、批注与漂流回附、父记录缺失/冲突、二次确认与清单变化、共享附件保留、两次提交失败、清理重试和调度账户隔离 |
 | `scripts/regression.mjs` | JSON 迁移、CRUD、回收站、异步绑定、幂等、版本竞态、AI 任务、健康附件两阶段识别与清理 |

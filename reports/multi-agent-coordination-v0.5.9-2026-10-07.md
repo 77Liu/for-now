@@ -159,6 +159,11 @@ manifest、module registry、runner、Service Worker 和发布文件由
 | 23:14 | worktree-governor | 三类历史现场、平台树和两条 stash 完成可恢复归档 | 工作树 `6→3`，创建 `17` 独立树 |
 | 23:14 | developer-17 | 首版图片旋转提交 `edefd18` | Reviewer `0/1/1/1 NO-GO`，增量修复中 |
 | 23:27 | reviewer-06-r11 → orchestrator | `06` 当前差分 `0/0/0/0 GO` | 四笔提交至 `d8bd3a8`，转入文档与固定 tree 门 |
+| 23:30 | orchestrator | `07` 职责化 Prompt 三笔提交至 `4e2f760` | 注入与回滚审查 `0/0/0 GO` |
+| 23:45 | developer-17 → orchestrator | 连续旋转修复及真实 EXIF 测试完成 | 串行集成至 `cf4d34a`，Reviewer `0/0/0/1 GO` |
+| 00:05 | orchestrator | `08` 建立失败优先测试并接入持续感知 | capture/journal/thought/annotation/ASR 进入事务 adapter |
+| 01:45 | reviewers-08-r1…r6 → orchestrator | 逐轮关闭 event 归并、版本、恢复、internal 隔离、转写、删除恢复、预算与性能问题 | 最终 `0/0/0/0 GO` |
+| 01:50 | validator-08 | JSON、PG16.14 stable、Journey Smoke、check 与影响专项 | 全部通过；真实供应商调用 0 |
 
 ## 6.1 22 验证与审查
 
@@ -254,13 +259,41 @@ manifest、module registry、runner、Service Worker 和发布文件由
   `个人成长追踪-local-archive/20261007/v0.5.0-integration-sensitive`。
   两条 stash 经覆盖/归档核验后清零；旧工作树均非强制移除。
 - `17` 从 `2bb3819` 创建独立工作树并提交首版 `edefd18`。首轮 Reviewer
-  发现 UI 不可达、JPEG 多代编码和 Blob URL 集合增长，当前由
-  `developer-17-fix` 在原 3 文件写集内修复，尚未进入集成分支。
+  发现 UI 不可达、JPEG 多代编码和 Blob URL 集合增长；问题已在独立写集修复，
+  最终以 `1b065de`、`92457a0`、`cf4d34a` 串行进入集成分支。
+
+## 6.7 07 与 17 收口
+
+- `07` 以 `ce3e568`、`0bbfdad`、`4e2f760` 完成六类职责提示词、manifest
+  驱动角色映射、结构化 JSON 工作上下文、注入负例与安全回滚目录。
+- `17` 以 `1b065de`、`92457a0`、`cf4d34a` 完成 capture、thought root、
+  thought block、comment 四个图片草稿入口的连续旋转。每次从原始文件按累计
+  quarter-turn 派生，JPEG/WebP 固定质量，Blob URL 有界回收。
+- `17` 真实 Chromium EXIF Orientation 6 与像素位置通过；并行浏览器启动仍有
+  已知 P2 readiness 竞态，串行正式门稳定通过。两项均未调用外部供应商。
+
+## 6.8 08 持续感知
+
+- 提交 `fb14d47` 定义不可变 Prompt 目录 `2026.10.07.2`、严格 JSON/span
+  解析、`sourceTaskId` 溯源，以及 `perceptionExtraction=lite/none` 成本场景。
+- 提交 `0198e55` 将 capture、journal、thought、annotation/reply 与 ASR
+  transcription 接入事务化 source adapter；原文、event、permission 和任务
+  同次提交，任务在 commit 后调度。
+- 提交 `5f3b69a` 固定专项与真实持久化断言。internal task 不进入公开
+  task/state/notification；旧感知器、跨账户、撤权、版本/hash 变化在调用前和
+  落库前 fail-closed。运行中断最多自动恢复两次，供应商失败保留原文和任务。
+- 同一来源正文未变但聚合版本推进时复用已校验证据，不重复模型调用；capture
+  来源可把稳定 event ID 传给关联 thought，跨来源选择按 event 聚合。删除和
+  恢复记录独立 lifecycle event，恢复不恢复许可。
+- 五轮独立审查从 `0/1/5/1` 收敛为 `0/0/0/0 GO`。`npm run check`、
+  `test:user-model`、`test:task-context`、`test:content-runtime`、认证/持久化、
+  Journey Smoke `15/15` 与 PostgreSQL 16.14 stable 通过；10,000 来源扫描
+  本机约 40–95 ms。未执行真实模型、云资源、push、Preview、Release 或生产。
 
 ## 7. NO-GO 与下一动作
 
 - 当前不是候选；不得执行 Preview、Release 或生产动作。
 - `22` 仅为工作区已验证未部署，不能写成需求已发布或生产问题已关闭。
-- 主线下一动作：在集成树推进 `07` 职责化提示词与注入防线；并行线继续关闭
-  `17` 首轮 findings。两线通过独立审查后由 orchestrator 串行集成；不调用
-  真实模型，不执行 Preview、push、tag、Release 或生产动作。
+- 主线下一动作：在集成树推进 `09` 纠正、许可撤回与派生失效；随后进入
+  `10b` 最终回放。`18/21` 可按独立写集调度，`19` 继续等待云资源与费用授权。
+  不调用真实模型，不执行 Preview、push、tag、Release 或生产动作。

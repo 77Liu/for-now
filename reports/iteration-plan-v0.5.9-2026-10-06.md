@@ -241,12 +241,12 @@ flowchart TD
 | `10a` 固定夹具 | `orchestrator`；新增回放 fixture/runner/说明，不改生产行为 | G2；复用集成树串行写槽 | `thought-source-answer`、`personal-context-governance`；16 类基线 | 仅 stub；失败样本保留 | `validated / bc066bd` |
 | `05a` 证据领域契约 | `orchestrator`；`domain.user-model` 内 evidence 纯领域模块及专项，不提前改 registry | `10a` 检查点后；不接 HTTP/schema | 许可、来源、时间、去重、版本纯函数专项 | 无外部调用；删除模块即可回退 | `validated / 7cce77b` |
 | `05b` 持久化接线 | `orchestrator` 单写 Store/JSON/PG mapping、module registry | `05a`；PG16、旧 Store fixture、隔离数据库 | persistence、trash、auth、PG stable、restore | 向后兼容迁移；失败停止消费，原文保留 | `validated / 3bbf564` |
-| `06` 任务选材 | `orchestrator`；personal-context/app assembler、receipt 专项 | `05b`；固定夹具 | 思绪完整链、批注、复盘；selection/replay 专项 + Smoke | 失败只用当前获准材料并声明历史不可用；stub | `active` |
-| `07` 提示词职责化 | `orchestrator` 单写 Prompt 新版本、manifest、结构化编译器 | `06` working-context schema | prompt catalog、注入/越权、AI audit | 旧目录不可变；回滚兼容版本仍执行最新硬门；stub | `blocked by 06` |
-| `08` 持续感知 | `orchestrator`；记录 adapter、任务 kind、候选协调 | `05b+07`；隔离任务/通知资源 | capture/journal/thought/annotation、重启/迟到/跨账户 | 原文先保存；最多一个感知任务/来源版本；stub | `blocked by 05b/07` |
+| `06` 任务选材 | `orchestrator`；personal-context/app assembler、receipt 专项 | `05b`；固定夹具 | 思绪完整链、批注、复盘；selection/replay 专项 + Smoke | 失败只用当前获准材料并声明历史不可用；stub | `validated / d8bd3a8` |
+| `07` 提示词职责化 | `orchestrator` 单写 Prompt 新版本、manifest、结构化编译器 | `06` working-context schema | prompt catalog、注入/越权、AI audit | 旧目录不可变；回滚兼容版本仍执行最新硬门；stub | `validated / 4e2f760` |
+| `08` 持续感知 | `orchestrator`；记录 adapter、任务 kind、候选协调 | `05b+07`；隔离任务/通知资源 | capture/journal/thought/annotation、重启/迟到/跨账户 | 原文先保存；最多一个感知任务/来源版本；stub | `validated / 5f3b69a` |
 | `09` 纠正失效 | `orchestrator`；user-model、trash/restore、许可与前端控制 | `08`；隔离 Store/PG | personal-context、删除恢复、多端并发、旧任务拒写 | 重算失败时旧依据继续禁用；主动综合默认关闭 | `blocked by 08` |
 | `10b` 依据与回放门 | `orchestrator`；receipt/UI、runner、指标报告 | `06–09+10a`；串行浏览器 | 16 类回放、通用/旧/新对照、Smoke/Daily | stub 不冒充真实模型；真实上限 48 次，待授权 | `blocked by 06–09` |
-| `17` 图片旋转 | `developer-media`；共享图片草稿/预览及定向测试 | G2；Sharp/Canvas 合成图片 | `capture-text-image` 及四入口矩阵、UI/PWA | 新草稿 only；失败保留原件；真实云 `0` | `ready / not dispatched` |
+| `17` 图片旋转 | `developer-media`；共享图片草稿/预览及定向测试 | G2；Sharp/Canvas 合成图片 | `capture-text-image` 及四入口矩阵、UI/PWA | 新草稿 only；失败保留原件；真实云 `0` | `validated / cf4d34a` |
 | `18` 媒体代码 | `developer-media`；签发策略、302、proxy 回滚和测试 | G2；本地 mock OSS/CDN | auth、attachment Range/CORS/cache、安全负例 | 默认 proxy；TTL 60s；真实云 `0` | `ready / not dispatched` |
 | `19` 真实媒体验收 | `validator-media`；只写忽略目录证据与获准 Base 字段 | `18` + CDN/OSS/DNS/证书/费用授权 | 专项 Preview、匿名/越权/过期、HIT/MISS、206/416 | 失败切回 proxy；不得改生产 | `blocked by Owner/cloud` |
 | `21` 主账户设置 | `developer-opening`；设置契约、权限、UI 与测试 | G2；现有 opening engine/capability | 未登录、注册、退出、账户切换、opening/UI/PWA | 读取失败回退冻结默认；真实云 `0` | `ready / not dispatched` |
@@ -401,7 +401,7 @@ V0.5.8 G7 已在原报告关闭；本次审阅未把这个条件重新标成待�
 | G0 | 九条已有来源、必要字段及交付关联；留存快照复核通过。新增候选另行逐项处理；飞书“待开始”不能直接解释为需求“本轮已选” |
 | G1 | 已通过：九条全部纳入；入口、阈值、默认关闭策略、60 秒媒体 TTL 与不做范围见 2.2 |
 | G2 | 已通过（局部阻塞）：基线、DAG、所有权、旅程、资源、调用预算、迁移和恢复见 3.2；`19` 等待云授权 |
-| G3 | 进行中：`22@bd52ebf`、`10a@bc066bd`、`05a@7cce77b`、`05b@3bbf564`、`06@d8bd3a8` 已本地验证未部署；`07` 与独立写线 `17` 继续推进；其余节点按 3.2 滚动调度 |
+| G3 | 进行中：`22@bd52ebf`、`10a@bc066bd`、`05a@7cce77b`、`05b@3bbf564`、`06@d8bd3a8`、`07@4e2f760`、`17@cf4d34a`、`08@5f3b69a` 已本地验证未部署；主线转入 `09`，`18/21` 可继续调度 |
 | G4 | 未开始：全部入选原子汇合；固定完整候选 SHA，版本/依赖锁/制品/iOS/配置存在性检查，系统/Release、真实回放及必要 Preview、备份恢复通过 |
 | G5 | 未开始：两轮审查完成、阻断项关闭，Owner 对具体远端及生产动作最终 GO |
 | G6 | 未开始：生产运行提交与获准候选一致；按动作副作用清单执行获准冒烟，覆盖录音零副作用、纠正撤回、多账户/匿名和媒体路径；至少 30 分钟有效观察，首样本、样本数、END 和独立终态审计通过 |
@@ -485,3 +485,24 @@ selection-only 使用 16 类固定夹具执行了当前材料、许可、失效�
 默认词法选材路径，相关选择为 `11/14`，并明确保留“同事件计数”和“既往结果
 影响下一步”两个语义漏选。该结果只证明 `06` 编排与硬门，不冒充 `10b` 质量
 通过；语义检索由 `08` 接入，最终阈值与真实模型对照仍由 `10b` 验收。
+
+### 5.3 2026-10-07 后续检查点
+
+`07` 以 `ce3e568`、`0bbfdad`、`4e2f760` 完成六类职责提示词、manifest
+角色映射、结构化 JSON 边界、注入负例和兼容回滚；`17` 以 `1b065de`、
+`92457a0`、`cf4d34a` 完成四个图片草稿入口的连续旋转、原件派生、EXIF
+像素和 Blob URL 生命周期验证。
+
+`08` 以 `fb14d47`、`0198e55`、`5f3b69a` 完成 capture、journal、thought、
+annotation/reply 与 ASR 转写来源的事务化感知。默认只记录私有 event 与双许可，
+`learningAllowed=false` 时不创建模型任务；显式开启后使用 `lite/none` 的
+internal task，发送前和落库前均重验账户、来源版本/hash、许可 revision 与
+感知器版本。删除/恢复会写 lifecycle event，恢复不恢复许可；同正文的聚合版本
+推进只迁移已验证证据，不重复调用模型。
+
+专项覆盖 JSON 提交与重启、连续两次中断的有界恢复、公开任务接口隔离、旧版本
+与迟到结果拒写、跨来源 event 去重、中文 UTF-8 预算及 10,000 来源扫描
+（本机约 40–95 ms）。独立审查由 `0/1/5/1` 经多轮修复收敛为
+`0/0/0/0 GO`；PostgreSQL 16.14 stable、Journey Smoke `15/15`、`check`、
+user-model、task-context、content runtime、认证和持久化专项通过。全程真实
+模型/云调用为 0，未执行 push、Preview、Release 或生产操作。
