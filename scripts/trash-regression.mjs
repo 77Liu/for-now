@@ -168,9 +168,10 @@ await repository.update(store => {
 assert.equal((await commands.restore(linkedChain.id)).conflict, true);
 
 reset();
-const targets = createAiTaskTargets({ annotations, hash });
+const targets = createAiTaskTargets({ annotations, getAccountId: account, hash });
 const annotationTask = { kind: "annotationShenji", resourceType: "journal", targetId: "journal", subtargetId: "journal-mark" };
 const original = targets.prepare(await repository.read(), annotationTask);
+assert.ok(original, "允许来源的当前账户应可准备删除前任务");
 const beforeJournal = (await repository.read()).journals[0];
 await repository.update(store => {
   store.aiTasks.push(
@@ -226,7 +227,9 @@ assert.deepEqual(evaluateStoredEvidenceChecks(await repository.read(), [journalE
   "EVIDENCE_VERSION_STALE"
 ]);
 for (const key of ["id", "content", "createdAt", "occurredAt", "annotations"]) assert.deepEqual(restoredJournal[key], beforeJournal[key]);
-assert.equal(taskInputMatches({ ...annotationTask, inputVersion: original.inputVersion, inputHash: original.inputHash }, targets.prepare(await repository.read(), annotationTask)), false);
+const restoredWork = targets.prepare(await repository.read(), annotationTask);
+assert.equal(restoredWork, null, "恢复原文不会恢复已撤回的来源许可");
+assert.equal(taskInputMatches({ ...annotationTask, inputVersion: original.inputVersion, inputHash: original.inputHash }, restoredWork), false);
 const duplicate = await move("journals", "journal", "journal");
 await repository.update(store => store.journals.push(structuredClone(beforeJournal)));
 assert.equal((await commands.restore(duplicate.id)).conflict, true);
