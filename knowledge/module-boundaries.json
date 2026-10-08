@@ -3,6 +3,24 @@
   "inlineRuntimeBootstrapSha256": "8c036447b7a9fe176ae2e7ed47f39642206842d40771832df0f5a6f5aa4dc2ce",
   "modules": [
     {
+      "id": "shared.opening",
+      "type": "shared",
+      "root": "public/frontend/shared/opening",
+      "publicEntry": "public/frontend/shared/opening/index.mjs",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "frozen opening defaults, bounded rain configuration and revision/ETag contract"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/opening-preferences-regression.mjs",
+        "scripts/opening-controller-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
       "id": "infrastructure.prompt-catalog",
       "type": "infrastructure",
       "root": "src/infrastructure/prompt-catalog",
@@ -407,6 +425,7 @@
       "root": "src/modules/ai",
       "publicEntry": "src/modules/ai/index.mjs",
       "allowedDependencies": [
+        "shared.opening",
         "shared.validation",
         "shared.observability",
         "shared.time",
@@ -421,6 +440,8 @@
         "cost plan normalization, usage aggregates, role-aware system prompt composition and model attempt policy"
         ],
         "routes": [
+          "GET /api/opening-preferences",
+          "PUT /api/opening-preferences",
           "GET /api/settings",
           "POST /api/settings",
           "POST /api/settings/test",
@@ -431,6 +452,7 @@
         ]
       },
       "tests": [
+        "scripts/opening-preferences-regression.mjs",
         "scripts/ai-domain-regression.mjs",
         "scripts/ai-budget-regression.mjs",
         "scripts/ai-budget-control-version-regression.mjs",
@@ -2234,7 +2256,9 @@
       "type": "feature",
       "root": "public/frontend/opening",
       "publicEntry": "public/frontend/opening/index.mjs",
-      "allowedDependencies": [],
+      "allowedDependencies": [
+        "shared.opening"
+      ],
       "owns": {
         "data": [
           "R9.4-F1 opening configuration, rain rendering, startup feedback lifecycle and content interaction lock"
@@ -2434,6 +2458,7 @@
       "root": "src/http",
       "publicEntry": "src/http/index.mjs",
       "allowedDependencies": [
+        "shared.opening",
         "domain.auth",
         "domain.ai",
         "domain.tasks",

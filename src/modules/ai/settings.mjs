@@ -1,6 +1,8 @@
 import { safeText } from "../../shared/validation/index.mjs";
 import { normalizeTtsGenerationRate, TTS_GENERATION_RATE_DEFAULT } from "../../shared/speech/index.mjs";
 
+import { openingPreferences } from "../../../public/frontend/shared/opening/index.mjs";
+
 export const LLM_SETTINGS_VERSION = 11;
 export const LLM_MODELS = ["deepseek-flash", "deepseek-v4-pro"];
 export const LLM_EFFORTS = ["none", "high", "max"];
@@ -60,6 +62,7 @@ export const defaultLlmSettings = {
   responseStyles: Object.fromEntries(RESPONSE_STYLE_SCENARIOS.map(scene => [scene, "standard"])),
   automaticAnswers: { thoughtAnswer: false },
   speech: { defaultVoice: "", generationRate: TTS_GENERATION_RATE_DEFAULT },
+  opening: openingPreferences(),
   apiKey: ""
 };
 
@@ -79,6 +82,7 @@ function legacyLlmTier(model, effort) {
 
 export function normalizeLlmSettings(value = {}) {
   const settings = structuredClone(defaultLlmSettings);
+  settings.opening = openingPreferences(value.opening);
   settings.apiKey = safeText(value.apiKey, 300);
   settings.assistantName = safeText(value.assistantName, 24) || defaultLlmSettings.assistantName;
   settings.automaticAnswers.thoughtAnswer = value.automaticAnswers?.thoughtAnswer === true;
@@ -148,7 +152,7 @@ export function mergeLlmSettings(current, input) {
     profiles[tier] = { model: input.model || profiles[tier].model, effort: input.effort || profiles[tier].effort };
     if (input.effort) sceneEfforts.thoughtAnswer = input.effort;
   }
-  return normalizeLlmSettings({ version: LLM_SETTINGS_VERSION, provider: "deepseek", profiles, scenarios, sceneEfforts, assistantName: input.assistantName ?? current.assistantName, responseStyles: input.responseStyles || current.responseStyles, automaticAnswers: input.automaticAnswers || current.automaticAnswers, speech: { ...current.speech, ...(input.speech || {}) }, apiKey });
+  return normalizeLlmSettings({ opening: current.opening, version: LLM_SETTINGS_VERSION, provider: "deepseek", profiles, scenarios, sceneEfforts, assistantName: input.assistantName ?? current.assistantName, responseStyles: input.responseStyles || current.responseStyles, automaticAnswers: input.automaticAnswers || current.automaticAnswers, speech: { ...current.speech, ...(input.speech || {}) }, apiKey });
 }
 
 export function mergeUserAiPreferences(current, input) {

@@ -10,7 +10,7 @@ export function ownerCapabilityFor(url) {
   if (url.pathname === "/api/ai-cost-plan") return "ai-costs";
   if (url.pathname === "/api/v1/owner/ai-budget") return "ai-costs";
   if (url.pathname === "/api/commercialization") return "commercialization";
-  if (url.pathname === "/api/settings" || url.pathname === "/api/settings/test") {
+  if (url.pathname === "/api/opening-preferences" || url.pathname === "/api/settings" || url.pathname === "/api/settings/test") {
     return "ai-configuration";
   }
   if (url.pathname === "/api/vision/status") return "ai-configuration";

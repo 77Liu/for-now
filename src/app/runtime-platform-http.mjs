@@ -23,6 +23,7 @@ import {
   createOnboardingV2Service
 } from "../modules/onboarding/index.mjs";
 import { createUserModelService } from "../modules/user-model/index.mjs";
+import { isOwner } from "../modules/auth/index.mjs";
 import { userModelEvidenceCurrent } from "./user-model.mjs";
 
 export function createRuntimePlatformHttp({
@@ -106,6 +107,7 @@ export function createRuntimePlatformHttp({
   });
   const aiSettingsHttp = createAiSettingsHttp({
     settings: llmSettingsService,
+    canConfigureOpening: () => isOwner(requestStorage.getStore()?.user),
     speech: speechProvider,
     generate: runDeepSeek,
     bodyJson,

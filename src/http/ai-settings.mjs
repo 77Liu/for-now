@@ -7,9 +7,10 @@ import {
   publicUserAiPreferences
 } from "../modules/ai/index.mjs";
 import { resolveConfiguredTtsVoice } from "../shared/speech/index.mjs";
+import { openingPreferences, openingEtag } from "../../public/frontend/shared/opening/index.mjs";
 import { safeText } from "../shared/validation/index.mjs";
 
-export function createAiSettingsHttp({ settings, speech = {}, generate, bodyJson, sendJson }) {
+export function createAiSettingsHttp({ settings, speech = {}, generate, bodyJson, sendJson, canConfigureOpening = () => false }) {
   const withValidSpeechVoice = value => ({
     ...value,
     speech: {
@@ -31,7 +32,33 @@ export function createAiSettingsHttp({ settings, speech = {}, generate, bodyJson
   const publicPreferences = value => publicUserAiPreferences(withValidSpeechVoice(value));
   const automaticAnswer = async input => automaticAnswerDecision(await settings.read(), input);
   async function handle(req, res, url) {
-    if (req.method === "GET" && url.pathname === "/api/preferences") {
+    if (url.pathname === "/api/opening-preferences") {
+      res.setHeader("cache-control", "private, no-store");
+      if (!canConfigureOpening()) {
+        sendJson(res, 403, { code: "OWNER_REQUIRED", error: "仅主账户可以设置开场氛围" });
+      } else if (req.method === "GET") {
+        const value = openingPreferences((await settings.read()).opening);
+        res.setHeader("etag", openingEtag(value));
+        sendJson(res, 200, value);
+      } else if (req.method === "PUT") {
+        const input = await bodyJson(req);
+        try {
+          const next = await settings.update(current => {
+            const previous = openingPreferences(current.opening);
+            if (input?.revision !== previous.revision || req.headers["if-match"] !== openingEtag(previous)) {
+              throw Object.assign(new Error("开场设置已在别处更新，草稿已保留，请重新加载后再保存"), { code: "OPENING_CONFLICT", current: previous });
+            }
+            return { ...current, opening: { ...openingPreferences(input), revision: previous.revision + 1 } };
+          });
+          res.setHeader("etag", openingEtag(next.opening));
+          sendJson(res, 200, next.opening);
+        } catch (error) {
+          if (error.code !== "OPENING_CONFLICT") throw error;
+          res.setHeader("etag", openingEtag(error.current));
+          sendJson(res, 409, { code: error.code, error: error.message, current: error.current });
+        }
+      } else sendJson(res, 405, { error: "不支持此操作" });
+    } else if (req.method === "GET" && url.pathname === "/api/preferences") {
       sendJson(res, 200, publicPreferences(await settings.read()));
     } else if (req.method === "PATCH" && url.pathname === "/api/preferences") {
       const input = withValidSpeechInput(await bodyJson(req));
