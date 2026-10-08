@@ -24,6 +24,8 @@ const SEARCH_STOP_TERMS = new Set([
   "h2:内容",
   "h2:历史",
   "h2:材料",
+  "p:unrel",
+  "w:an",
   "w:about",
   "w:current",
   "w:from",
@@ -31,8 +33,19 @@ const SEARCH_STOP_TERMS = new Set([
   "w:project",
   "w:that",
   "w:this",
+  "w:unrelated",
   "w:with",
   "w:your"
+]);
+const SEARCH_CONCEPTS = Object.freeze([
+  Object.freeze({
+    id: "outcome",
+    terms: new Set(["effective", "failed", "outcome", "result", "succeeded", "worked"])
+  }),
+  Object.freeze({
+    id: "history",
+    terms: new Set(["earlier", "historical", "last", "previous", "prior"])
+  })
 ]);
 
 const SOURCE_COLLECTIONS = Object.freeze({
@@ -96,8 +109,10 @@ function normalizedTask(value) {
   const text = safeText(value?.text, 50_000);
   const targetId = safeText(value?.targetId, 100);
   const subtargetId = safeText(value?.subtargetId, 100);
+  const eventId = safeText(value?.eventId, 100);
+  const eventScoped = value?.eventScoped === true;
   if (!kind || !text) fail("Working context requires a task kind and text", "TASK_CONTEXT_INVALID");
-  return { kind, text, targetId, subtargetId };
+  return { kind, text, targetId, subtargetId, eventId, eventScoped };
 }
 
 function normalizedCurrentMaterial(values, accountId) {
@@ -167,6 +182,42 @@ function activeSourceIndexes(store) {
     collection,
     new Map(list(store?.[collection]).filter(item => item?.id).map(item => [item.id, item]))
   ]));
+}
+
+function currentMaterialEventId(store, accountId, currentMaterial) {
+  const currentVersionsByKey = new Map();
+  for (const item of currentMaterial) {
+    if (!item?.sourceKey) continue;
+    const versions = currentVersionsByKey.get(item.sourceKey) || new Set();
+    versions.add(item.sourceRef.version);
+    currentVersionsByKey.set(item.sourceKey, versions);
+  }
+  if (!currentVersionsByKey.size) return "";
+  const eventIds = new Set(list(store?.perceptionEvents)
+    .filter(event => (
+      event?.accountId === accountId
+      && event?.eventId
+      && currentVersionsByKey.get(sourceIdentity(event.sourceRef))
+        ?.has(recordVersion(event.sourceRef?.version))
+    ))
+    .map(event => event.eventId));
+  return eventIds.size === 1 ? [...eventIds][0] : "";
+}
+
+function hasDeicticEventReference(value) {
+  const text = String(value ?? "");
+  const englishReference = (
+    /\b(?:this|that|these|those)(?:\s+[\p{L}\p{N}-]+){0,3}\s+(?:event|incident)\b/iu.test(text)
+    || /\b(?:this|that|these|those|it)\b(?:\s+[\p{L}\p{N}-]+){0,4}\s+(?:happen(?:ed|s|ing)?|occur(?:red|s|ring)?)\b/iu.test(text)
+    || /\b(?:was|is|has been|had been)\s+(?:this|that|it)\s+repeat(?:ed|ing)\b/iu.test(text)
+    || /\bwhat\s+happened\b/iu.test(text)
+    || /^\s*did\s+it\s*[?!.]?\s*$/iu.test(text)
+  );
+  const chineseReference = (
+    /(?:这事|那事|那回事|这个事件|那个事件|这件事|那件事|这次事件|那次事件|本次事件|此次事件|该事件|该活动)/u.test(text)
+    || /(?:这|那|它|本次|此次).{0,12}(?:发生|出现|重复|次数|几次|多少次)/u.test(text)
+  );
+  return englishReference || chineseReference;
 }
 
 function sourceRecord(store, sourceRef, indexes = null) {
@@ -359,13 +410,16 @@ function searchTerms(value) {
       const singular = token.length > 4 && token.endsWith("s") ? token.slice(0, -1) : token;
       terms.add(`w:${singular}`);
       if (singular.length >= 5) terms.add(`p:${singular.slice(0, 5)}`);
+      for (const concept of SEARCH_CONCEPTS) {
+        if (concept.terms.has(singular)) terms.add(`c:${concept.id}`);
+      }
     }
   }
   for (const term of SEARCH_STOP_TERMS) terms.delete(term);
   return terms;
 }
 
-function relevanceScore(queryTerms, candidate, taskText) {
+function relevanceScore(queryTerms, candidate, taskText, taskEventId = "") {
   const terms = searchTerms(candidate.text);
   let score = 0;
   for (const term of terms) {
@@ -377,6 +431,9 @@ function relevanceScore(queryTerms, candidate, taskText) {
     .replace(/[^\p{Script=Han}]+/gu, "")
     .replace(/(?:怎么办|怎么样|如何|请问|帮我|一下|为什么|是否|怎么)/gu, "");
   if (focusedHan.length >= 2 && focusedHan.length <= 6 && candidate.text.includes(focusedHan)) {
+    score += HISTORY_RELEVANCE_MIN_SCORE;
+  }
+  if (taskEventId && candidate.eventId === taskEventId) {
     score += HISTORY_RELEVANCE_MIN_SCORE;
   }
   return score;
@@ -501,6 +558,8 @@ function selectionReceipt({
       kind: task.kind,
       targetId: task.targetId,
       subtargetId: task.subtargetId,
+      ...(task.eventId ? { eventId: task.eventId } : {}),
+      ...(task.eventScoped ? { eventScoped: true } : {}),
       textSha256: digest(task.text)
     },
     status,
@@ -582,6 +641,12 @@ export function workingContextProjection(store, {
   }
   const task = normalizedTask(inputTask);
   const currentMaterial = normalizedCurrentMaterial(inputCurrentMaterial, accountId);
+  const queryParts = [task.text, ...currentMaterial.map(item => item.text)];
+  const queryText = queryParts.join("\n");
+  const hasDeicticEvent = task.eventScoped || hasDeicticEventReference(task.text);
+  if (!task.eventId && hasDeicticEvent) {
+    task.eventId = currentMaterialEventId(store, accountId, currentMaterial);
+  }
   tokenLimit = Math.max(1, Math.round(Number(tokenLimit) || WORKING_CONTEXT_TOKEN_BUDGET));
   maxHistorical = Math.max(0, Math.min(50, Math.round(Number(maxHistorical) || 0)));
   const degradedNotice = "历史证据暂不可用，本次仅依据当前材料。";
@@ -617,11 +682,12 @@ export function workingContextProjection(store, {
   const selectedHistory = [];
   let rankedCandidates = [];
   if (status === "complete") {
-    const queryTerms = searchTerms([task.text, ...currentMaterial.map(item => item.text)].join("\n"));
+    const queryTerms = searchTerms(queryText);
     const currentSourceKeys = new Set(currentMaterial.map(item => item.sourceKey));
+    const unresolvedDeicticEvent = hasDeicticEvent && !task.eventId;
     rankedCandidates = candidates.map(candidate => ({
       ...candidate,
-      relevanceScore: relevanceScore(queryTerms, candidate, task.text)
+      relevanceScore: relevanceScore(queryTerms, candidate, task.text, task.eventId)
     })).sort((left, right) => (
       right.relevanceScore - left.relevanceScore
       || compareText(right.recordedAt, left.recordedAt)
@@ -632,6 +698,12 @@ export function workingContextProjection(store, {
       const reasons = [...candidate.reasons];
       if (!reasons.length && currentSourceKeys.has(candidate.sourceKey)) {
         reasons.push("current-material-duplicate");
+      }
+      if (!reasons.length && task.eventId && candidate.eventId !== task.eventId) {
+        reasons.push("event-mismatch");
+      }
+      if (!reasons.length && unresolvedDeicticEvent) {
+        reasons.push("event-reference-unresolved");
       }
       if (!reasons.length && candidate.relevanceScore < HISTORY_RELEVANCE_MIN_SCORE) {
         reasons.push("task-irrelevant");
@@ -695,6 +767,9 @@ export function workingContextReceiptFingerprint(receipt) {
     || !receipt.task
     || typeof receipt.task.kind !== "string"
     || !receipt.task.kind
+    || (receipt.task.eventId != null
+      && (typeof receipt.task.eventId !== "string" || receipt.task.eventId.length > 100))
+    || (receipt.task.eventScoped != null && receipt.task.eventScoped !== true)
     || !validDigest(receipt.task.textSha256)
     || !validDigest(receipt.promptSha256)
     || !validDigest(receipt.accountBindingSha256)

@@ -307,6 +307,10 @@ assert.equal(workingContextReceiptFingerprint({
 }), "");
 assert.equal(workingContextReceiptFingerprint({
   ...projection.receipt,
+  task: { ...projection.receipt.task, eventId: { forged: true } }
+}), "");
+assert.equal(workingContextReceiptFingerprint({
+  ...projection.receipt,
   timeWindow: { from: "2026-10-32", to: "2026-10-01" }
 }), "");
 assert.equal(workingContextReceiptMatches(store, {
@@ -789,7 +793,7 @@ const replayState = fixture => {
       id: evidenceId,
       accountId,
       sourceRef,
-      eventId: material.eventId || `event-${fixture.id}-${index}`,
+      eventId: material.eventId || `replay-event-${index}`,
       origin: material.forbiddenReason === "third-party-as-user" ? "third_party" : "user",
       informationType: "user_viewpoint",
       contentSha256: source.contentSha256,
@@ -827,6 +831,9 @@ const replayState = fixture => {
   }
   return { replayStore, current, evidenceToMaterial };
 };
+const replayTaskEventIds = new Map([
+  ["same-event-across-two-records", "event-workshop-1"]
+]);
 const replayResults = replayFixtureSet.fixtures.map(fixture => {
   const { replayStore, current, evidenceToMaterial } = replayState(fixture);
   const replayProjection = workingContextProjection(replayStore, {
@@ -836,7 +843,8 @@ const replayResults = replayFixtureSet.fixtures.map(fixture => {
       kind: "thoughtAnswer",
       text: fixture.task,
       targetId: fixture.id,
-      subtargetId: ""
+      subtargetId: "",
+      eventId: replayTaskEventIds.get(fixture.id) || ""
     },
     currentMaterial: current,
     generatedAt
@@ -875,14 +883,336 @@ const replayMissing = replayResults.flatMap(result => result.missingRequiredIds)
 const replaySelected = replayResults.reduce((total, result) => total + result.selectedCount, 0);
 const replayRelevant = replayResults.reduce((total, result) => total + result.relevantSelectedCount, 0);
 assert.equal(replayResults.length, 16);
-assert.deepEqual(replayMissing, [
-  "capture:dedup-capture",
-  "capture:benefit-result"
-]);
-assert.ok(replayRelevant / replaySelected >= 0.7);
+assert.deepEqual(replayMissing, []);
+assert.ok(replayRelevant / replaySelected >= 0.85);
+
+const eventDistractorFixture = structuredClone(replayFixtureSet.fixtures.find(
+  fixture => fixture.id === "same-event-across-two-records"
+));
+eventDistractorFixture.materials.push({
+  id: "capture:dedup-dentist",
+  channel: "history",
+  storeKind: "capture",
+  text: "Tomorrow I need a dentist appointment.",
+  relevant: false,
+  eventId: "event-dentist-1"
+});
+const eventDistractorState = replayState(eventDistractorFixture);
+const eventDistractorProjection = workingContextProjection(eventDistractorState.replayStore, {
+  accountId,
+  scene: "thoughtAnswer",
+  task: {
+    kind: "thoughtAnswer",
+    text: eventDistractorFixture.task,
+    targetId: eventDistractorFixture.id,
+    subtargetId: "",
+    eventId: replayTaskEventIds.get(eventDistractorFixture.id) || ""
+  },
+  currentMaterial: eventDistractorState.current,
+  generatedAt
+});
+const eventDistractorSelection = eventDistractorProjection.receipt.selected
+  .filter(item => item.channel === "history")
+  .map(item => eventDistractorState.evidenceToMaterial.get(item.evidenceId)?.id);
+assert.ok(eventDistractorSelection.includes("capture:dedup-capture"));
+assert.equal(eventDistractorSelection.includes("journal:dedup-journal"), false);
+assert.equal(
+  eventDistractorSelection.includes("capture:dedup-dentist"),
+  false,
+  JSON.stringify({
+    selected: eventDistractorSelection,
+    candidates: eventDistractorProjection.receipt.candidates
+  })
+);
+const inferredEventState = replayState(eventDistractorFixture);
+const inferredCurrent = inferredEventState.current[0];
+inferredEventState.replayStore.perceptionEvents.push(normalizePerceptionEvent({
+  schemaVersion: 1,
+  id: "perception-current-workshop",
+  accountId,
+  kind: "created",
+  sourceRef: inferredCurrent.sourceRef,
+  eventId: "event-workshop-1",
+  contentSha256: hash(inferredCurrent.text),
+  occurredAt: generatedAt,
+  recordedAt: generatedAt,
+  permissionRevision: 1,
+  perceptionVersion: "selection-replay-v1"
+}));
+const inferredEventProjection = workingContextProjection(inferredEventState.replayStore, {
+  accountId,
+  scene: "thoughtAnswer",
+  task: {
+    kind: "thoughtAnswer",
+    text: eventDistractorFixture.task,
+    targetId: eventDistractorFixture.id,
+    subtargetId: "",
+    eventScoped: true
+  },
+  currentMaterial: inferredEventState.current,
+  generatedAt
+});
+const inferredEventSelection = inferredEventProjection.receipt.selected
+  .filter(item => item.channel === "history")
+  .map(item => inferredEventState.evidenceToMaterial.get(item.evidenceId)?.id);
+assert.ok(inferredEventSelection.includes("capture:dedup-capture"));
+assert.equal(inferredEventSelection.includes("capture:dedup-dentist"), false);
+const laterBoundCurrent = [{
+  ...inferredEventState.current[0],
+  id: "current:unbound-leading-material",
+  text: "Count the relevant occurrence.",
+  sourceRef: {
+    ...inferredEventState.current[0].sourceRef,
+    resourceId: "unbound-leading-material"
+  }
+}, ...inferredEventState.current];
+const laterBoundProjection = workingContextProjection(inferredEventState.replayStore, {
+  accountId,
+  scene: "thoughtAnswer",
+  task: {
+    kind: "thoughtAnswer",
+    text: eventDistractorFixture.task,
+    targetId: eventDistractorFixture.id,
+    subtargetId: "",
+    eventScoped: true
+  },
+  currentMaterial: laterBoundCurrent,
+  generatedAt
+});
+assert.ok(laterBoundProjection.receipt.selected.some(item => (
+  item.evidenceId
+  && inferredEventState.evidenceToMaterial.get(item.evidenceId)?.id === "capture:dedup-capture"
+)));
+const conflictingCurrentEventStore = structuredClone(inferredEventState.replayStore);
+conflictingCurrentEventStore.perceptionEvents.push(normalizePerceptionEvent({
+  schemaVersion: 1,
+  id: "perception-current-dentist",
+  accountId,
+  kind: "created",
+  sourceRef: laterBoundCurrent[0].sourceRef,
+  eventId: "event-dentist-1",
+  contentSha256: hash(laterBoundCurrent[0].text),
+  occurredAt: generatedAt,
+  recordedAt: generatedAt,
+  permissionRevision: 1,
+  perceptionVersion: "selection-replay-v1"
+}));
+const conflictingCurrentEventProjection = workingContextProjection(conflictingCurrentEventStore, {
+  accountId,
+  scene: "thoughtAnswer",
+  task: {
+    kind: "thoughtAnswer",
+    text: eventDistractorFixture.task,
+    targetId: eventDistractorFixture.id,
+    subtargetId: "",
+    eventScoped: true
+  },
+  currentMaterial: laterBoundCurrent,
+  generatedAt
+});
+assert.equal(
+  conflictingCurrentEventProjection.receipt.selected.some(item => item.channel === "history"),
+  false,
+  "multiple current event identities must fail closed"
+);
+const conflictingEventHistory = structuredClone(inferredEventState.replayStore);
+conflictingEventHistory.perceptionEvents.push(normalizePerceptionEvent({
+  schemaVersion: 1,
+  id: "perception-current-conflict",
+  accountId,
+  kind: "updated",
+  sourceRef: inferredEventState.current[0].sourceRef,
+  eventId: "event-dentist-1",
+  contentSha256: hash(inferredEventState.current[0].text),
+  occurredAt: generatedAt,
+  recordedAt: generatedAt,
+  permissionRevision: 1,
+  perceptionVersion: "selection-replay-v1"
+}));
+const conflictingEventHistoryProjection = workingContextProjection(conflictingEventHistory, {
+  accountId,
+  scene: "thoughtAnswer",
+  task: {
+    kind: "thoughtAnswer",
+    text: eventDistractorFixture.task,
+    targetId: eventDistractorFixture.id,
+    subtargetId: "",
+    eventScoped: true
+  },
+  currentMaterial: inferredEventState.current,
+  generatedAt
+});
+assert.equal(
+  conflictingEventHistoryProjection.receipt.selected.some(item => item.channel === "history"),
+  false,
+  "multiple event identities for one current source version must fail closed"
+);
+const versionedCurrentEvents = structuredClone(inferredEventState.replayStore);
+const versionTwoCurrent = {
+  ...inferredEventState.current[0],
+  id: "current:dedup-task-v2",
+  sourceRef: {
+    ...inferredEventState.current[0].sourceRef,
+    version: 2
+  }
+};
+versionedCurrentEvents.perceptionEvents.push(normalizePerceptionEvent({
+  schemaVersion: 1,
+  id: "perception-current-v2",
+  accountId,
+  kind: "updated",
+  sourceRef: versionTwoCurrent.sourceRef,
+  eventId: "event-dentist-1",
+  contentSha256: hash(versionTwoCurrent.text),
+  occurredAt: generatedAt,
+  recordedAt: generatedAt,
+  permissionRevision: 1,
+  perceptionVersion: "selection-replay-v1"
+}));
+const versionedCurrentProjection = workingContextProjection(versionedCurrentEvents, {
+  accountId,
+  scene: "thoughtAnswer",
+  task: {
+    kind: "thoughtAnswer",
+    text: eventDistractorFixture.task,
+    targetId: eventDistractorFixture.id,
+    subtargetId: "",
+    eventScoped: true
+  },
+  currentMaterial: [inferredEventState.current[0], versionTwoCurrent],
+  generatedAt
+});
+assert.equal(
+  versionedCurrentProjection.receipt.selected.some(item => item.channel === "history"),
+  false,
+  "multiple versions of one current source must not collapse their event identities"
+);
+const staleCurrentEvent = structuredClone(inferredEventState.current);
+staleCurrentEvent[0].sourceRef.version = 2;
+const staleCurrentEventProjection = workingContextProjection(inferredEventState.replayStore, {
+  accountId,
+  scene: "thoughtAnswer",
+  task: {
+    kind: "thoughtAnswer",
+    text: eventDistractorFixture.task,
+    targetId: eventDistractorFixture.id,
+    subtargetId: "",
+    eventScoped: true
+  },
+  currentMaterial: staleCurrentEvent,
+  generatedAt
+});
+assert.equal(
+  staleCurrentEventProjection.receipt.selected.some(item => item.channel === "history"),
+  false,
+  "a stale current-source event must not bind historical evidence"
+);
+const chineseEventFixture = structuredClone(eventDistractorFixture);
+chineseEventFixture.task = "这个事件发生了几次？";
+chineseEventFixture.materials.find(item => item.channel === "current").text = "这件事出现了多少次？";
+const chineseEventState = replayState(chineseEventFixture);
+const chineseEventProjection = workingContextProjection(chineseEventState.replayStore, {
+  accountId,
+  scene: "thoughtAnswer",
+  task: {
+    kind: "thoughtAnswer",
+    text: chineseEventFixture.task,
+    targetId: chineseEventFixture.id,
+    subtargetId: "",
+    eventId: replayTaskEventIds.get(chineseEventFixture.id) || ""
+  },
+  currentMaterial: chineseEventState.current,
+  generatedAt
+});
+const chineseEventSelection = chineseEventProjection.receipt.selected
+  .filter(item => item.channel === "history")
+  .map(item => chineseEventState.evidenceToMaterial.get(item.evidenceId)?.id);
+assert.ok(chineseEventSelection.includes("capture:dedup-capture"));
+assert.equal(chineseEventSelection.includes("capture:dedup-dentist"), false);
+
+for (const taskText of [
+  "How often did this workshop event happen?",
+  "How often did that workshop event happen?",
+  "How often did that workshop happen?",
+  "How often did those workshops happen?",
+  "How often did this happen?",
+  "How often did it happen?",
+  "How often was this repeated?",
+  "How many times was it repeated?",
+  "What happened?",
+  "Tell me what happened.",
+  "那件活动发生了几次？",
+  "这事发生了几次？",
+  "那回事发生了几次？",
+  "该工作坊事件发生了几次？",
+  "该事件发生了几次？",
+  "这发生了几次？",
+  "它发生了几次？",
+  "本次发生了几次？",
+  "此次发生了什么？",
+  "此次事件发生了几次？"
+]) {
+  const ambiguousEventFixture = structuredClone(eventDistractorFixture);
+  ambiguousEventFixture.task = taskText;
+  ambiguousEventFixture.materials.find(item => item.channel === "current").text = taskText;
+  ambiguousEventFixture.materials.push({
+    id: "journal:dedup-dentist-copy",
+    channel: "history",
+    storeKind: "journal",
+    text: "A different workshop event was copied into a journal.",
+    relevant: false,
+    eventId: "event-dentist-1"
+  });
+  const ambiguousEventState = replayState(ambiguousEventFixture);
+  const ambiguousEventProjection = workingContextProjection(ambiguousEventState.replayStore, {
+    accountId,
+    scene: "thoughtAnswer",
+    task: {
+      kind: "thoughtAnswer",
+      text: ambiguousEventFixture.task,
+      targetId: ambiguousEventFixture.id,
+      subtargetId: "",
+      eventId: ""
+    },
+    currentMaterial: ambiguousEventState.current,
+    generatedAt
+  });
+  assert.equal(
+    ambiguousEventProjection.receipt.selected.some(item => item.channel === "history"),
+    false,
+    `ambiguous deictic event lookup must fail closed: ${taskText}`
+  );
+}
+for (const taskText of [
+  "这个方案有什么风险？",
+  "那个目标是什么意思？"
+]) {
+  const ordinaryProjection = workingContextProjection(eventDistractorState.replayStore, {
+    accountId,
+    scene: "thoughtAnswer",
+    task: {
+      kind: "thoughtAnswer",
+      text: taskText,
+      targetId: eventDistractorFixture.id,
+      subtargetId: ""
+    },
+    currentMaterial: [{
+      ...eventDistractorState.current[0],
+      text: taskText
+    }],
+    generatedAt
+  });
+  assert.equal(
+    ordinaryProjection.receipt.excluded.some(item => (
+      item.reasons.includes("event-reference-unresolved")
+    )),
+    false,
+    `ordinary demonstrative query must not become an event-scoped task: ${taskText}`
+  );
+}
 
 console.log(
   "Task context selection checks passed: complete current chains, evidence-gated relevance, "
   + `event deduplication, degraded retrieval, receipt invalidation and 16-fixture selection replay `
-  + `(relevance ${replayRelevant}/${replaySelected}, known semantic misses ${replayMissing.length}).`
+  + `(relevance ${replayRelevant}/${replaySelected}, semantic misses ${replayMissing.length}).`
 );
