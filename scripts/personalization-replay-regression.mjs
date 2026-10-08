@@ -79,7 +79,7 @@ assert.equal(
 );
 assert.equal(
   report.replayManifestFingerprint,
-  "5b818065ac754b8ba98460bbbc802a552d0991db10b713ca58ff6f474f9f4383"
+  "f1213f9497c58ec364bfdc7f7a040a519bc59630525936213da3e7073e139c55"
 );
 assert.equal(report.variants.general.status, "baseline-observed");
 assert.equal(report.variants.legacy.status, "baseline-observed");

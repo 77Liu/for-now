@@ -12,7 +12,12 @@ import {
   WORKING_CONTEXT_VERSION,
   createAnnotationCommands,
   createAiTaskTargets,
-  createBackgroundAi
+  createBackgroundAi,
+  createPerceptionRuntime,
+  createPerceptionService,
+  compactPersonalContextReceipt,
+  personalContextProjection,
+  contextDerivedOutputAllowed
 } from "../src/app/index.mjs";
 import { createAnnotationHttp } from "../src/http/index.mjs";
 
@@ -54,7 +59,7 @@ let generate = async () => ({ content: "生成回答", reasoningContent: "私有
 const background = createBackgroundAi({
   repository, tasks, notifications, targets, contextKey: account,
   dispatch: callback => scheduled.push({ account: account(), callback }),
-  generate: async work => { calls.push({ account: account(), scene: work.scene, prompt: work.prompt, contextReceipt: work.contextReceipt }); return generate(work); },
+  generate: async (work, options) => { calls.push({ account: account(), scene: work.scene, prompt: work.prompt, contextReceipt: work.contextReceipt }); return generate(work, options); },
   onError: (id, error) => { throw error; }
 });
 const commands = createAnnotationCommands({ repository, annotations, moveNestedItemToTrash: () => { throw new Error("unexpected delete"); } });
@@ -288,5 +293,149 @@ for (const owner of ["a", "b"]) {
   });
 }
 assert.notEqual(accountReceiptBindings[0], accountReceiptBindings[1]);
+
+// Permission changes use the same service and source refs as the permission UI.
+const permissionRuntime = createPerceptionRuntime({ getAccountId: account, now, createId });
+const permissionService = createPerceptionService({ repository, runtime: permissionRuntime,
+  backgroundAi: { createInStore: () => ({}), schedule: () => {} } });
+const setPermission = async (sourceRef, contextAllowed, expectedRevision = 0) => (
+  permissionService.updatePermissions({ sourceRef, contextAllowed, learningAllowed: false, expectedRevision })
+);
+const thoughtRef = (id, key) => ({ resourceType: "thought", resourceId: id,
+  rootId: "root", targetKey: key, version: 1 });
+for (const resourceType of ["thought", "journal", "capture"]) {
+  documents.set("a", empty());
+  await repository.update(store => {
+    const root = resourceType === "thought" ? store.thoughts[0]
+      : { id: "root", content: "原问题", version: 1, annotations: [] };
+    root.reasoningContent = "PRIVATE_REASONING_FROM_OLD_RESULT";
+    root.annotations.push({ id: "permission-mark", quote: "原问题", text: "许可评论",
+      targetKey: resourceType === "thought" ? "question:root" : "content", version: 1, start: 0, end: 3 });
+    if (resourceType !== "thought") store[resourceType === "journal" ? "journals" : "captures"].push(root);
+  });
+  const task = { id: "permission-request", kind: "annotationShenji", resourceType,
+    targetId: "root", subtargetId: "permission-mark", payload: { message: "分析批注" }, createdAt: now() };
+  const sourceRef = permissionRuntime.projectPermissions(await repository.read())
+    .find(item => item.sourceRef.resourceType === resourceType && item.sourceRef.resourceId === "root").sourceRef;
+  const allowedWork = targets.prepare(await repository.read(), task);
+  assert.ok(allowedWork.prompt.includes("原问题"));
+  assert.equal(allowedWork.prompt.includes("PRIVATE_REASONING_FROM_OLD_RESULT"), false);
+  await setPermission(sourceRef, false);
+  assert.equal(targets.prepare(await repository.read(), task), null, `${resourceType} canonical source denial`);
+  await setPermission(sourceRef, true, 1);
+  const markRef = { resourceType, resourceId: "permission-mark", rootId: "root",
+    targetKey: "annotation:permission-mark", version: 1 };
+  await setPermission(markRef, false);
+  assert.equal(targets.prepare(await repository.read(), task), null, `${resourceType} annotation denial`);
+}
+
+// A historical root is optional for a child annotation, including the resource title.
+documents.set("a", empty());
+await repository.update(store => {
+  store.thoughts[0].content = "REVOKED_ROOT_TITLE";
+  store.thoughts.push({ id: "child", relatedTo: "root", type: "record", content: "获准正文", version: 1 });
+  store.thoughts[0].annotations.push({ id: "child-mark", quote: "正文", text: "当前批注",
+    targetKey: "record:child", start: 2, end: 4, version: 1 });
+});
+const childTaskInput = { kind: "annotationShenji", resourceType: "thought", targetId: "root",
+  subtargetId: "child-mark", clientRequestId: "child-first", payload: { message: "分析正文" } };
+generate = async () => ({ content: "OLD_ANNOTATION_DERIVED" });
+const childFirst = await background.enqueue(childTaskInput);
+await background.run(childFirst.task.id);
+assert.equal((await background.get(childFirst.task.id)).status, "succeeded");
+const childSecond = await background.enqueue({ ...childTaskInput, clientRequestId: "child-second" });
+await background.run(childSecond.task.id);
+await setPermission(thoughtRef("root", "question:root"), false);
+const childWork = targets.prepare(await repository.read(), { ...childFirst.task, id: "child-new", clientRequestId: "child-new" });
+assert.ok(childWork.prompt.includes("获准正文"));
+assert.equal(childWork.prompt.includes("REVOKED_ROOT_TITLE"), false);
+assert.equal(childWork.prompt.includes("OLD_ANNOTATION_DERIVED"), false, "ancestor permission closure invalidates turns");
+
+// Revoke between prepare and the provider's final send guard: no synthetic provider send.
+documents.set("a", empty());
+await repository.update(store => store.thoughts.push({ id: "old-block", relatedTo: "root",
+  type: "record", content: "SEND_REVOKED", version: 1 }));
+let providerSends = 0;
+generate = async (_work, options) => {
+  await setPermission(thoughtRef("old-block", "record:old-block"), false);
+  if (!await options.isCurrent()) throw Object.assign(new Error("许可已变化"), { code: "AI_TASK_STALE" });
+  providerSends += 1;
+  return { content: "不应发送" };
+};
+const sendRevoked = await background.enqueue({ ...input, clientRequestId: "permission-before-send" });
+await background.run(sendRevoked.task.id);
+assert.equal(providerSends, 0);
+assert.equal((await background.get(sendRevoked.task.id)).status, "stale");
+
+// Revoke during generation: atomic completion cannot persist the late result.
+documents.set("a", empty());
+await repository.update(store => store.thoughts.push({ id: "old-block", relatedTo: "root",
+  type: "record", content: "SAVE_REVOKED", version: 1 }));
+const permissionEntered = gate(), permissionOutput = gate();
+generate = async () => { permissionEntered.resolve(); return permissionOutput.promise; };
+const saveRevoked = await background.enqueue({ ...input, clientRequestId: "permission-before-save" });
+const saveRunning = background.run(saveRevoked.task.id);
+await permissionEntered.promise;
+await setPermission(thoughtRef("old-block", "record:old-block"), false);
+permissionOutput.resolve({ content: "不应落库" });
+await saveRunning;
+assert.equal((await background.get(saveRevoked.task.id)).status, "stale");
+assert.equal((await repository.read()).thoughts.some(item => item.sourceTaskId === saveRevoked.task.id), false);
+assert.equal((await background.listNotifications()).items.find(item => item.taskId === saveRevoked.task.id).status, "stale");
+console.log("Permission collaboration checks passed: 3 canonical annotation sources, annotation denial, optional root/title, ancestor turns, send guard and atomic late-save rejection; externalCalls=0.");
+
+// Legacy parent dependencies survive two real task completions, including learning consent.
+for (const change of ["permission", "content", "version", "learning"]) {
+  documents.set("a", empty());
+  await repository.update(store => {
+    store.captures.push({ id: "legacy-history", content: "SyntheticLegacyHistory", version: 1,
+      occurredOn: now().slice(0, 10), occurredAt: now() });
+    store.thoughts[0].annotations.push({ id: "legacy-mark", quote: "原问题", text: "当前批注",
+      targetKey: "question:root", start: 0, end: 3, version: 1, shenji: [] });
+  });
+  const historyRef = { resourceType: "capture", resourceId: "legacy-history", rootId: "", targetKey: "", version: 1 };
+  await permissionService.updatePermissions({ sourceRef: historyRef, contextAllowed: change !== "learning",
+    learningAllowed: change === "learning", expectedRevision: 0 });
+  await repository.update(store => {
+    const receipt = compactPersonalContextReceipt(personalContextProjection(store, {
+      generatedAt: now(), permissionPurpose: change === "learning" ? "learning" : "context"
+    }).receipt);
+    assert.ok(receipt.sources.some(item => item.resourceId === "legacy-history"));
+    store.thoughts[0].annotations[0].shenji.push({ id: "legacy-parent", message: "旧问题",
+      answer: "SyntheticLegacyParent", contextReceipt: receipt });
+  });
+  const request = { kind: "annotationShenji", resourceType: "thought", targetId: "root",
+    subtargetId: "legacy-mark", payload: { message: "生成新批注" } };
+  const children = [];
+  for (const generation of [1, 2]) {
+    generate = async () => ({ content: `SyntheticLegacyChild${generation}` });
+    const createdChild = await background.enqueue({ ...request, clientRequestId: `legacy-${change}-${generation}` });
+    await background.run(createdChild.task.id);
+    assert.equal((await background.get(createdChild.task.id)).status, "succeeded");
+    const child = (await repository.read()).thoughts[0].annotations[0].shenji
+      .find(item => item.sourceTaskId === createdChild.task.id);
+    assert.ok(child);
+    assert.equal(child.contextReceipt.legacyDependencies.length, 1, "deduplicate inherited legacy closure");
+    assert.equal(JSON.stringify(child.contextReceipt.legacyDependencies).includes('"excerpt"'), false);
+    children.push(child);
+  }
+  if (["permission", "learning"].includes(change)) {
+    await permissionService.updatePermissions({ sourceRef: historyRef, contextAllowed: false,
+      learningAllowed: false, expectedRevision: 1 });
+  } else {
+    await repository.update(store => {
+      if (change === "content") store.captures[0].content = "EditedLegacyHistory";
+      else store.captures[0].version += 1;
+    });
+  }
+  const changedStore = await repository.read();
+  for (const child of children) assert.equal(contextDerivedOutputAllowed(changedStore, child, "a", {
+    kind: request.kind, targetId: request.targetId, subtargetId: request.subtargetId
+  }), false, `legacy ${change} invalidates both descendants`);
+  const next = targets.prepare(changedStore, { ...request, id: `legacy-next-${change}`, createdAt: now() });
+  assert.equal(next.prompt.includes("SyntheticLegacyParent"), false);
+  assert.equal(next.prompt.includes("SyntheticLegacyChild"), false);
+}
+console.log("Legacy collaboration closure checks passed: 2 actual task generations, permission/content/version/learning changes, deduplication and no excerpts; externalCalls=0.");
 
 console.log("Collaboration checks passed: visible-text anchors, drift preservation, legacy routes, atomic task/notification results, idempotency, late results, retry, restart and account isolation.");

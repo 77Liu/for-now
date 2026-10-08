@@ -8,6 +8,8 @@ import { compileWorkingContextPrompt } from "./prompt-context.mjs";
 import { prepareUserModelExtraction } from "./user-model.mjs";
 import {
   contextDerivedOutputAllowed,
+  contextDerivedLegacyDependencies,
+  taskContextSourcePermission,
   thoughtTaskCurrentMaterial,
   workingContextProjection,
   workingContextReceiptFingerprint
@@ -93,6 +95,8 @@ export function createAiTaskTargets({
         ? item.contextReceipt.evidenceChecks
         : []
     ));
+    const previousPermissionChecks = validPreviousItems.flatMap(item => item.contextReceipt?.permissionChecks || []);
+    const previousLegacyDependencies = validPreviousItems.flatMap(item => contextDerivedLegacyDependencies(store, item));
     const baseRootContext = resourceType === "thought"
       ? `<original_question>${root.content}</original_question>`
       : `<source_type>${context.label}</source_type>\n<source_title>${context.title}</source_title>`;
@@ -112,8 +116,37 @@ export function createAiTaskTargets({
             ...(root.followUps || [])
           ].find(item => item.id === targetId);
     if (!target) return null;
+    const rootSourceRef = {
+      resourceType, resourceId: root.id,
+      rootId: ["capture", "journal"].includes(resourceType) ? "" : root.id,
+      targetKey: resourceType === "thought" ? `question:${root.id}` : "",
+      version: recordVersion(root.version)
+    };
+    const targetSourceRef = targetId === root.id ? rootSourceRef : {
+      resourceType, resourceId: targetId, rootId: root.id,
+      targetKey: annotation.targetKey, version: recordVersion(target.version)
+    };
+    const annotationSourceRef = {
+      resourceType, resourceId: annotation.id, rootId: root.id,
+      targetKey: `annotation:${annotation.id}`, version: recordVersion(annotation.version)
+    };
+    const rootAllowed = root.contextAllowed !== false && root.disposition !== "discarded"
+      && taskContextSourcePermission(store, rootSourceRef, accountId).contextAllowed;
+    if (target.contextAllowed === false || target.disposition === "discarded"
+      || annotation.contextAllowed === false
+      || !taskContextSourcePermission(store, targetSourceRef, accountId).contextAllowed
+      || !taskContextSourcePermission(store, annotationSourceRef, accountId).contextAllowed) return null;
+    const userTarget = target.authorType === "user" || targetType === "followup-question"
+      || (targetId === root.id && resourceType !== "analysis"
+        && !(resourceType === "chat" && annotation.targetKey === "answer"));
+    const modelTarget = !userTarget && (target.authorType === "ai" || Boolean(target.modelDraft || target.reasoningContent)
+      || /^(?:deepseek|codex|openai|model|ai)(?:$|[-_:])/i.test(String(target.origin || "")));
+    const targetTask = modelTarget && store.aiTasks?.find(item => item.id === target.sourceTaskId);
+    if (modelTarget && !contextDerivedOutputAllowed(store, target, accountId, targetTask && {
+      kind: targetTask.kind, targetId: targetTask.targetId, subtargetId: targetTask.subtargetId || ""
+    })) return null;
     const requestId = safeText(task.clientRequestId || task.id, 100) || `${annotation.id}:message`;
-    const currentMaterial = [...(targetId !== root.id ? [{
+    const currentMaterial = [...(targetId !== root.id && rootAllowed ? [{
       id: `current:${resourceType}:${root.id}:root`,
       accountId,
       text: baseRootContext,
@@ -122,13 +155,7 @@ export function createAiTaskTargets({
       contextAllowed: root.contextAllowed !== false,
       validation: "version",
       occurredAt: root.occurredAt || root.createdAt,
-      sourceRef: {
-        resourceType,
-        resourceId: root.id,
-        rootId: root.id,
-        targetKey: "",
-        version: recordVersion(root.version)
-      }
+      sourceRef: rootSourceRef
     }] : []), {
       id: `current:${resourceType}:${root.id}:${annotation.targetKey}`,
       accountId,
@@ -138,13 +165,10 @@ export function createAiTaskTargets({
       contextAllowed: target.contextAllowed !== false && target.disposition !== "discarded",
       validation: "version",
       occurredAt: root.occurredAt || root.createdAt,
-      sourceRef: {
-        resourceType,
-        resourceId: targetId,
-        rootId: root.id,
-        targetKey: annotation.targetKey,
-        version: recordVersion(target.version)
-      }
+      sourceRef: targetSourceRef,
+      evidenceChecks: modelTarget ? target.contextReceipt?.evidenceChecks || [] : [],
+      permissionChecks: modelTarget ? target.contextReceipt?.permissionChecks || [] : [],
+      legacyDependencies: modelTarget ? contextDerivedLegacyDependencies(store, target) : []
     }, {
       id: `current:${resourceType}:${root.id}:annotation:${annotation.id}`,
       accountId,
@@ -158,20 +182,17 @@ export function createAiTaskTargets({
       contextAllowed: annotation.contextAllowed !== false,
       validation: "version",
       evidenceChecks: previousEvidenceChecks,
+      permissionChecks: previousPermissionChecks,
+      legacyDependencies: previousLegacyDependencies,
       occurredAt: annotation.createdAt || root.occurredAt || root.createdAt,
-      sourceRef: {
-        resourceType,
-        resourceId: annotation.id,
-        rootId: root.id,
-        targetKey: `annotation:${annotation.id}`,
-        version: recordVersion(annotation.version)
-      }
+      sourceRef: annotationSourceRef
     }, {
       id: `current:annotation-request:${requestId}`,
       accountId,
       text: message || "回应当前批注",
       recordType: "当前追问",
       validation: "immutable",
+      authorization: "current-request",
       sourceRef: {
         resourceType: "annotationRequest",
         resourceId: requestId,
@@ -198,7 +219,7 @@ export function createAiTaskTargets({
           resource: {
             type: resourceType,
             label: context.label,
-            title: context.title
+            title: rootAllowed ? context.title : ""
           },
           annotation: {
             kind: annotation.kind || "comment",

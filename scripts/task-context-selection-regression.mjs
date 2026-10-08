@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
+import "./prompt-test-setup.mjs";
 import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import {
   WORKING_CONTEXT_RECEIPT_BYTE_LIMIT,
   WORKING_CONTEXT_VERSION,
   contextDerivedOutputAllowed,
+  compactPersonalContextReceipt,
+  personalContextProjection,
+  createPerceptionRuntime,
+  createPerceptionService,
   taskContextSourceMaterial,
   thoughtTaskCurrentMaterial,
   workingContextProjection,
@@ -1210,6 +1215,249 @@ for (const taskText of [
     `ordinary demonstrative query must not become an event-scoped task: ${taskText}`
   );
 }
+
+// Exercise the real permission service, including current-chain material without extracted evidence.
+const permissionFixture = () => {
+  const question = {
+    id: "permission-root", type: "question", content: "整理当前计划", version: 1,
+    createdAt: generatedAt,
+    remarks: [{ id: "old-remark", text: "REVOKED_REMARK", version: 1 }],
+    followUps: [
+      { id: "old-followup", question: "REVOKED_QUESTION", answer: "REVOKED_ANSWER", version: 1 },
+      { id: "active-followup", question: "当前明确追问", version: 1 }
+    ],
+    annotations: [{ id: "old-annotation", quote: "整理", text: "REVOKED_ANNOTATION", version: 1 }]
+  };
+  const value = {
+    thoughts: [question, { id: "old-record", relatedTo: question.id, type: "record",
+      content: "REVOKED_RECORD", attachmentPaths: ["/attachments/revoked.png"], version: 1 }],
+    aiTasks: [], evidenceSources: [], evidencePermissions: [], perceptionEvents: []
+  };
+  let serial = 0;
+  const runtime = createPerceptionRuntime({ getAccountId: () => accountId, now: () => generatedAt,
+    createId: () => `permission-id-${++serial}` });
+  const service = createPerceptionService({
+    repository: { read: async () => structuredClone(value), update: async fn => fn(value) },
+    runtime,
+    backgroundAi: { createInStore: () => ({}), schedule: () => {} }
+  });
+  const ref = (resourceId, targetKey) => ({ resourceType: "thought", resourceId,
+    rootId: question.id, targetKey, version: 1 });
+  const build = (currentFollowUpId = "") => ({
+    accountId, scene: currentFollowUpId ? "followUpAnswer" : "thoughtAnswer",
+    task: { kind: currentFollowUpId ? "followUpAnswer" : "thoughtAnswer",
+      targetId: question.id, subtargetId: currentFollowUpId,
+      text: currentFollowUpId ? question.followUps.find(item => item.id === currentFollowUpId).question : question.content },
+    currentMaterial: thoughtTaskCurrentMaterial(value, question, { accountId, currentFollowUpId }),
+    generatedAt
+  });
+  const updatePermission = async options => options.sourceRef.targetKey.startsWith("remark:")
+    // Remarks are not enumerated by the current HTTP/service source directory.
+    // Use the existing runtime permission contract, not a fabricated evidence check.
+    ? runtime.observeInStore(value, { ...options, expectedPermissionRevision: options.expectedRevision,
+      eventKind: "permission_changed" }, () => ({}))
+    : service.updatePermissions(options);
+  return { value, question, service, ref, build, updatePermission };
+};
+const bindDerived = (fixture, receipt, id = "permission-derived") => {
+  const item = { id, relatedTo: fixture.question.id, type: "answer", authorType: "ai",
+    content: "合成派生输出", version: 1, sourceTaskId: `${id}-task`, contextReceipt: receipt };
+  fixture.value.thoughts.push(item);
+  fixture.value.aiTasks.push({ id: item.sourceTaskId, status: "succeeded", kind: "thoughtAnswer",
+    targetId: fixture.question.id, subtargetId: "", resultId: id,
+    contextFingerprint: workingContextReceiptFingerprint(receipt) });
+  return item;
+};
+let permissionBoundaryCases = 0;
+for (const [resourceId, targetKey, revokedText] of [
+  ["old-record", "record:old-record", "REVOKED_RECORD"],
+  ["old-remark", "remark:old-remark", "REVOKED_REMARK"],
+  ["old-followup", "followup-question:old-followup", "REVOKED_QUESTION"],
+  ["old-followup", "followup-answer:old-followup", "REVOKED_ANSWER"],
+  ["old-annotation", "annotation:old-annotation", "REVOKED_ANNOTATION"]
+]) {
+  const fixture = permissionFixture(), sourceRef = fixture.ref(resourceId, targetKey);
+  const allowed = await fixture.updatePermission({ sourceRef, contextAllowed: true,
+    learningAllowed: false, expectedRevision: 0 });
+  assert.equal(allowed.permission.revision, 1);
+  const input = fixture.build(), before = workingContextProjection(fixture.value, input);
+  assert.ok(before.prompt.includes(revokedText));
+  assert.ok(before.receipt.permissionChecks.some(check => (
+    check.sourceKey === sourceKey(sourceRef) && check.permissionRevision === 1
+  )));
+  assert.equal(before.receipt.evidenceChecks.length, 0);
+  const first = bindDerived(fixture, before.receipt);
+  assert.equal(contextDerivedOutputAllowed(fixture.value, first, accountId), true);
+  const descendant = bindDerived(fixture,
+    workingContextProjection(fixture.value, fixture.build()).receipt, "permission-descendant");
+  assert.equal(contextDerivedOutputAllowed(fixture.value, descendant, accountId), true);
+  const revoked = await fixture.updatePermission({ sourceRef, contextAllowed: false,
+    learningAllowed: false, expectedRevision: 1 });
+  assert.equal(revoked.permission.revision, 2);
+  const after = workingContextProjection(fixture.value, fixture.build());
+  assert.equal(after.prompt.includes(revokedText), false, targetKey);
+  if (resourceId === "old-record") assert.equal(after.attachmentPaths.includes("/attachments/revoked.png"), false);
+  assert.equal(contextDerivedOutputAllowed(fixture.value, first, accountId), false);
+  assert.equal(contextDerivedOutputAllowed(fixture.value, descendant, accountId), false);
+  assert.equal(workingContextReceiptMatches(fixture.value, before.receipt, input), false);
+  assert.throws(() => workingContextProjection(fixture.value, input),
+    error => error.code === "CURRENT_MATERIAL_PERMISSION_DENIED");
+  // Re-authorizing cannot resurrect a result generated under an earlier revision.
+  const restored = await fixture.updatePermission({ sourceRef, contextAllowed: true,
+    learningAllowed: false, expectedRevision: 2 });
+  assert.equal(restored.permission.revision, 3);
+  assert.equal(contextDerivedOutputAllowed(fixture.value, first, accountId), false);
+  assert.equal(contextDerivedOutputAllowed(fixture.value, descendant, accountId), false);
+  assert.ok(workingContextProjection(fixture.value, fixture.build()).prompt.includes(revokedText));
+  permissionBoundaryCases += 1;
+}
+const explicitFixture = permissionFixture();
+const activeRootRef = explicitFixture.ref(explicitFixture.question.id, `question:${explicitFixture.question.id}`);
+await explicitFixture.service.updatePermissions({ sourceRef: activeRootRef, contextAllowed: false,
+  learningAllowed: false, expectedRevision: 0 });
+const rootRequest = workingContextProjection(explicitFixture.value, explicitFixture.build());
+assert.ok(rootRequest.prompt.includes(explicitFixture.question.content));
+assert.equal(rootRequest.receipt.currentMaterial[0].authorization, "current-request");
+assert.equal(rootRequest.receipt.currentMaterial[0].permissionRevision, 1);
+assert.equal(contextDerivedOutputAllowed(explicitFixture.value,
+  bindDerived(explicitFixture, rootRequest.receipt), accountId), false,
+"an explicit request does not authorize later derived reuse");
+const activeFollowUp = explicitFixture.question.followUps[1];
+await explicitFixture.service.updatePermissions({
+  sourceRef: explicitFixture.ref(activeFollowUp.id, `followup-question:${activeFollowUp.id}`),
+  contextAllowed: false, learningAllowed: false, expectedRevision: 0
+});
+const followRequest = workingContextProjection(explicitFixture.value, explicitFixture.build(activeFollowUp.id));
+assert.ok(followRequest.prompt.includes(activeFollowUp.question));
+assert.equal(followRequest.receipt.currentMaterial.some(item => item.sourceKey === sourceKey(activeRootRef)), false);
+assert.equal(followRequest.receipt.currentMaterial.find(item => item.sourceKey === sourceKey(
+  explicitFixture.ref(activeFollowUp.id, `followup-question:${activeFollowUp.id}`)
+)).authorization, "current-request");
+assert.equal(followRequest.prompt.includes("REVOKED_RECORD"), true, "unset user material remains usable");
+const spoofed = explicitFixture.build(activeFollowUp.id);
+spoofed.currentMaterial.push({ ...thoughtTaskCurrentMaterial(explicitFixture.value, explicitFixture.question, { accountId })[0],
+  id: "forged-current-request", authorization: "current-request" });
+assert.throws(() => workingContextProjection(explicitFixture.value, spoofed),
+  error => error.code === "CURRENT_MATERIAL_PERMISSION_DENIED");
+const invalidPermission = permissionFixture();
+const invalidRef = invalidPermission.ref("old-record", "record:old-record");
+await invalidPermission.service.updatePermissions({ sourceRef: invalidRef, contextAllowed: true,
+  learningAllowed: false, expectedRevision: 0 });
+const validPermissionInput = invalidPermission.build();
+const validReceipt = workingContextProjection(invalidPermission.value, validPermissionInput).receipt;
+const legacyReceipt = structuredClone(validReceipt);
+delete legacyReceipt.permissionChecks;
+assert.equal(workingContextReceiptFingerprint(legacyReceipt), "");
+assert.equal(contextDerivedOutputAllowed(invalidPermission.value,
+  bindDerived(invalidPermission, legacyReceipt, "legacy-no-permissions"), accountId), false);
+invalidPermission.value.evidencePermissions[0].accountId = "other-account";
+assert.throws(() => workingContextProjection(invalidPermission.value, validPermissionInput),
+  error => error.code === "CURRENT_MATERIAL_PERMISSION_INVALID");
+invalidPermission.value.evidencePermissions[0].accountId = accountId;
+invalidPermission.value.evidencePermissions.push(structuredClone(invalidPermission.value.evidencePermissions[0]));
+assert.throws(() => workingContextProjection(invalidPermission.value, validPermissionInput),
+  error => error.code === "CURRENT_MATERIAL_PERMISSION_INVALID");
+invalidPermission.value.evidencePermissions.pop();
+invalidPermission.value.evidencePermissions[0].revision = 0;
+assert.throws(() => workingContextProjection(invalidPermission.value, validPermissionInput),
+  error => error.code === "CURRENT_MATERIAL_PERMISSION_INVALID");
+console.log(`Current source permission boundaries passed: ${permissionBoundaryCases} source kinds (4 service API, 1 existing remark runtime); `
+  + "stale sends, direct/ancestor derived reuse, re-allow revision, explicit request isolation, unset user materials, "
+  + "legacy receipts, account mismatch, duplicate and invalid permission state; externalCalls=0, ports=0.");
+
+// Legacy receipts remain usable, but every descendant must retain their full matcher dependencies.
+const legacyFixture = async (purpose = "context") => {
+  const fixture = permissionFixture();
+  const capture = { id: "legacy-third-source", content: "LEGACY_THIRD_SOURCE", version: 1,
+    occurredOn: "2026-10-07", occurredAt: generatedAt };
+  fixture.value.captures = [capture];
+  const sourceRef = { resourceType: "capture", resourceId: capture.id, rootId: "", targetKey: "", version: 1 };
+  await fixture.service.updatePermissions({ sourceRef, contextAllowed: true,
+    learningAllowed: true, expectedRevision: 0 });
+  const receipt = compactPersonalContextReceipt(personalContextProjection(fixture.value,
+    { generatedAt, permissionPurpose: purpose }).receipt);
+  const parent = { id: "legacy-parent", relatedTo: fixture.question.id, type: "answer", authorType: "ai",
+    content: "LEGACY_PARENT_OUTPUT", version: 1, contextReceipt: receipt };
+  fixture.value.thoughts.push(parent);
+  assert.equal(contextDerivedOutputAllowed(fixture.value, parent, accountId), true);
+  return { ...fixture, capture, sourceRef, receipt, parent };
+};
+let legacyBoundaryCases = 0;
+for (const mutation of ["context-permission", "content", "version", "learning-permission"]) {
+  const fixture = await legacyFixture(mutation === "learning-permission" ? "learning" : "context");
+  const input = fixture.build();
+  const before = workingContextProjection(fixture.value, input);
+  assert.equal(before.receipt.legacyDependencies.length, 1);
+  assert.ok(before.receipt.legacyDependencies[0].sources.some(source => source.resourceId === fixture.capture.id));
+  assert.equal(before.receipt.legacyDependencies[0].sources.some(source => Object.hasOwn(source, "excerpt")), false);
+  const child = bindDerived(fixture, before.receipt, `legacy-child-${mutation}`);
+  child.content = "LEGACY_CHILD_OUTPUT";
+  assert.equal(contextDerivedOutputAllowed(fixture.value, child, accountId), true);
+  const nextInput = fixture.build();
+  const descendantReceipt = workingContextProjection(fixture.value, nextInput).receipt;
+  assert.equal(descendantReceipt.legacyDependencies.length, 1, "duplicate inherited receipts must be compacted, not multiplied");
+  const descendant = bindDerived(fixture, descendantReceipt, `legacy-descendant-${mutation}`);
+  descendant.content = "LEGACY_DESCENDANT_OUTPUT";
+  assert.equal(contextDerivedOutputAllowed(fixture.value, descendant, accountId), true);
+  if (mutation === "content") fixture.capture.content = "LEGACY_SOURCE_EDITED_WITHOUT_VERSION_BUMP";
+  else if (mutation === "version") fixture.capture.version += 1;
+  else await fixture.service.updatePermissions({ sourceRef: fixture.sourceRef,
+    contextAllowed: mutation !== "context-permission", learningAllowed: mutation !== "learning-permission",
+    expectedRevision: 1 });
+  assert.equal(contextDerivedOutputAllowed(fixture.value, fixture.parent, accountId), false);
+  assert.equal(contextDerivedOutputAllowed(fixture.value, child, accountId), false);
+  assert.equal(contextDerivedOutputAllowed(fixture.value, descendant, accountId), false);
+  const after = workingContextProjection(fixture.value, fixture.build());
+  assert.equal(after.prompt.includes("LEGACY_PARENT_OUTPUT"), false);
+  assert.equal(after.prompt.includes("LEGACY_CHILD_OUTPUT"), false);
+  assert.equal(after.prompt.includes("LEGACY_DESCENDANT_OUTPUT"), false);
+  assert.throws(() => workingContextProjection(fixture.value, input),
+    error => error.code === "CURRENT_MATERIAL_LEGACY_STALE");
+  assert.equal(workingContextReceiptMatches(fixture.value, before.receipt, input), false);
+  legacyBoundaryCases += 1;
+}
+const mixedLegacy = await legacyFixture();
+const learningReceipt = compactPersonalContextReceipt(personalContextProjection(mixedLegacy.value,
+  { generatedAt, permissionPurpose: "learning" }).receipt);
+mixedLegacy.value.thoughts.push({ ...mixedLegacy.parent, id: "legacy-learning-parent",
+  content: "LEARNING_PARENT_OUTPUT", contextReceipt: learningReceipt });
+const mixedProjection = workingContextProjection(mixedLegacy.value, mixedLegacy.build());
+assert.deepEqual(new Set(mixedProjection.receipt.legacyDependencies.map(receipt => receipt.permissionPurpose || "context")),
+  new Set(["context", "learning"]), "context and learning dependency matchers must both survive");
+const noDependencies = structuredClone(mixedProjection.receipt);
+delete noDependencies.legacyDependencies;
+assert.equal(workingContextReceiptFingerprint(noDependencies), "");
+const previousContract = { ...mixedProjection.receipt, version: "2026.10.08.1" };
+assert.equal(workingContextReceiptFingerprint(previousContract), "");
+const removedDependency = { ...mixedProjection.receipt, legacyDependencies: [] };
+assert.notEqual(workingContextReceiptFingerprint(removedDependency), workingContextReceiptFingerprint(mixedProjection.receipt));
+const budgetInput = mixedLegacy.build();
+// Distinct valid token-limit receipts must fail at 101 unique dependencies, never be truncated to 100.
+budgetInput.currentMaterial[0].legacyDependencies = Array.from({ length: 101 }, (_, index) => (
+  compactPersonalContextReceipt(personalContextProjection(mixedLegacy.value,
+    { generatedAt, tokenLimit: 10_000 + index }).receipt)
+));
+assert.throws(() => workingContextProjection(mixedLegacy.value, budgetInput),
+  error => error.code === "WORKING_CONTEXT_RECEIPT_TOO_LARGE");
+const byteInput = mixedLegacy.build();
+byteInput.currentMaterial[0].legacyDependencies = [{ ...mixedLegacy.receipt,
+  padding: "x".repeat(WORKING_CONTEXT_RECEIPT_BYTE_LIMIT) }];
+assert.throws(() => workingContextProjection(mixedLegacy.value, byteInput),
+  error => ["CURRENT_MATERIAL_LEGACY_INVALID", "WORKING_CONTEXT_RECEIPT_TOO_LARGE"].includes(error.code));
+const duplicateInput = mixedLegacy.build();
+duplicateInput.currentMaterial[0].legacyDependencies = Array.from({ length: 101 }, () => mixedLegacy.receipt);
+const deduplicated = workingContextProjection(mixedLegacy.value, duplicateInput);
+assert.equal(deduplicated.receipt.legacyDependencies.length, 2, "101 copies deduplicate while the separate learning receipt remains");
+const malformedInput = mixedLegacy.build();
+malformedInput.currentMaterial[0].legacyDependencies = [{ sources: [] }];
+assert.throws(() => workingContextProjection(mixedLegacy.value, malformedInput),
+  error => error.code === "CURRENT_MATERIAL_LEGACY_INVALID");
+const emptyDependencies = workingContextProjection(store, options).receipt;
+assert.deepEqual(emptyDependencies.legacyDependencies, []);
+assert.match(workingContextReceiptFingerprint(emptyDependencies), /^[a-f0-9]{64}$/);
+console.log(`Legacy dependency boundaries passed: ${legacyBoundaryCases} mutation kinds across parent/child/descendant, `
+  + "full compact receipts, content/version/context/learning revocation, fingerprint binding, old-contract rejection, "
+  + "mixed purposes, deduplication, 100-item/192KiB fail-closed bounds; no external calls or ports.");
 
 console.log(
   "Task context selection checks passed: complete current chains, evidence-gated relevance, "

@@ -4,13 +4,18 @@ import {
   evaluateStoredEvidenceChecks,
   evidenceFingerprint,
   evidenceSourceKey,
+  normalizeEvidencePermission,
   normalizeEvidenceSource,
   parseEvidenceSourceKey
 } from "../modules/user-model/index.mjs";
 import { recordVersion, safeIso, safeText } from "../shared/validation/index.mjs";
-import { personalContextReceiptMatches } from "./personal-context.mjs";
+import {
+  compactPersonalContextReceipt,
+  personalContextReceiptFingerprint,
+  personalContextReceiptMatches
+} from "./personal-context.mjs";
 
-export const WORKING_CONTEXT_VERSION = "2026.10.07.1";
+export const WORKING_CONTEXT_VERSION = "2026.10.09.1";
 export const WORKING_CONTEXT_TOKEN_BUDGET = 20_000;
 export const WORKING_CONTEXT_RECEIPT_ITEM_LIMIT = 100;
 export const WORKING_CONTEXT_RECEIPT_BYTE_LIMIT = 192 * 1024;
@@ -115,7 +120,110 @@ function normalizedTask(value) {
   return { kind, text, targetId, subtargetId, eventId, eventScoped };
 }
 
-function normalizedCurrentMaterial(values, accountId) {
+// Read the existing account/source-key permission contract; absence is revision zero.
+export function taskContextSourcePermission(store, sourceRef, accountId) {
+  const sourceKey = sourceIdentity(sourceRef);
+  if (!sourceKey || !safeText(accountId, 100)) {
+    fail("Current source permission identity is invalid", "CURRENT_MATERIAL_INVALID");
+  }
+  const matches = list(store?.evidencePermissions).filter(item => item?.sourceKey === sourceKey);
+  if (!matches.length) return { contextAllowed: true, permissionRevision: 0 };
+  const permission = matches.length === 1 ? normalizeEvidencePermission(matches[0]) : null;
+  if (!permission || permission.accountId !== accountId) {
+    fail("Current source permission state is invalid", "CURRENT_MATERIAL_PERMISSION_INVALID");
+  }
+  return { contextAllowed: permission.contextAllowed, permissionRevision: permission.revision };
+}
+
+const permissionChecksValid = checks => Array.isArray(checks) && checks.every(check => (
+  parseEvidenceSourceKey(check?.sourceKey)
+  && Number.isSafeInteger(check.permissionRevision)
+  && check.permissionRevision >= 0
+));
+
+function permissionChecksMatch(store, checks, accountId) {
+  if (!permissionChecksValid(checks)) return false;
+  try {
+    return checks.every(check => {
+      const current = taskContextSourcePermission(store, parseEvidenceSourceKey(check.sourceKey), accountId);
+      return current.contextAllowed && current.permissionRevision === check.permissionRevision;
+    });
+  } catch {
+    return false;
+  }
+}
+
+function legacyDependenciesValid(values) {
+  if (!Array.isArray(values) || values.length > WORKING_CONTEXT_RECEIPT_ITEM_LIMIT) return false;
+  try {
+    return Buffer.byteLength(JSON.stringify(values), "utf8") <= WORKING_CONTEXT_RECEIPT_BYTE_LIMIT
+      && values.every(receipt => receipt && typeof receipt === "object" && !Array.isArray(receipt)
+        && receipt.schemaVersion !== 2 && validDigest(receipt.promptSha256)
+        && Array.isArray(receipt.sources)
+        && receipt.sources.every(source => source && !Object.hasOwn(source, "excerpt")));
+  } catch {
+    return false;
+  }
+}
+
+function normalizedLegacyDependencies(store, values) {
+  if (!Array.isArray(values)) {
+    fail("Legacy context dependencies are invalid", "CURRENT_MATERIAL_LEGACY_INVALID");
+  }
+  const unique = new Map();
+  for (const value of values) {
+    const compact = compactPersonalContextReceipt(value);
+    if (!legacyDependenciesValid([compact])) {
+      fail("Legacy context dependency cannot be converted", "CURRENT_MATERIAL_LEGACY_INVALID");
+    }
+    const fingerprint = personalContextReceiptFingerprint(compact);
+    if (!unique.has(fingerprint)) {
+      if (!personalContextReceiptMatches(store, compact)) {
+        fail("Legacy context dependency changed", "CURRENT_MATERIAL_LEGACY_STALE");
+      }
+      unique.set(fingerprint, compact);
+    }
+    if (unique.size > WORKING_CONTEXT_RECEIPT_ITEM_LIMIT) {
+      fail("Legacy context dependencies exceed their budget", "WORKING_CONTEXT_RECEIPT_TOO_LARGE");
+    }
+  }
+  const dependencies = [...unique.values()];
+  if (!legacyDependenciesValid(dependencies)) {
+    fail("Legacy context dependencies exceed their budget", "WORKING_CONTEXT_RECEIPT_TOO_LARGE");
+  }
+  return dependencies;
+}
+
+function legacyDependenciesMatch(store, values) {
+  if (!legacyDependenciesValid(values)) return false;
+  try { return values.every(receipt => personalContextReceiptMatches(store, receipt)); }
+  catch { return false; }
+}
+
+// Preserve the existing legacy matcher, including content/version and learning-purpose checks.
+export function contextDerivedLegacyDependencies(store, item) {
+  const receipt = item?.contextReceipt;
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)
+    || (receipt.schemaVersion === 2 && !workingContextReceiptFingerprint(receipt))) {
+    fail("Derived context receipt is invalid", "CURRENT_MATERIAL_LEGACY_INVALID");
+  }
+  return normalizedLegacyDependencies(store, receipt.schemaVersion === 2
+    ? receipt.legacyDependencies : [receipt]);
+}
+
+function explicitCurrentRequest(item, task) {
+  const ref = item.sourceRef;
+  if (item.authorization !== "current-request") return false;
+  return (ref.resourceType === "thought" && (
+    (task.kind === "thoughtAnswer" && ref.resourceId === task.targetId && ref.rootId === task.targetId
+      && ref.targetKey === `question:${task.targetId}`)
+    || (task.kind === "followUpAnswer" && ref.rootId === task.targetId
+      && ref.resourceId === task.subtargetId && ref.targetKey === `followup-question:${task.subtargetId}`)
+  )) || (task.kind === "annotationShenji" && ref.resourceType === "annotationRequest"
+    && ref.rootId === task.targetId && item.validation === "immutable");
+}
+
+function normalizedCurrentMaterial(values, accountId, store, task) {
   if (!Array.isArray(values) || !values.length) {
     fail("Working context requires current material", "CURRENT_MATERIAL_REQUIRED");
   }
@@ -140,6 +248,17 @@ function normalizedCurrentMaterial(values, accountId) {
     }
     if (evidenceChecks.some(check => !check.evidenceId || !validDigest(check.evidenceFingerprint))) {
       fail("Working context current material evidence is invalid", "CURRENT_MATERIAL_INVALID");
+    }
+    if (!evaluateStoredEvidenceChecks(store, evidenceChecks, { accountId }).usable) {
+      fail("Working context current evidence changed", "CURRENT_MATERIAL_EVIDENCE_STALE");
+    }
+    const legacyDependencies = normalizedLegacyDependencies(store, value.legacyDependencies ?? []);
+    const authorization = explicitCurrentRequest(value, task) ? "current-request" : "source-permission";
+    const permission = taskContextSourcePermission(store, value.sourceRef, accountId);
+    const permissionChecks = value.permissionChecks == null ? [] : value.permissionChecks;
+    if ((!permission.contextAllowed && authorization !== "current-request")
+      || !permissionChecksMatch(store, permissionChecks, accountId)) {
+      fail("Working context current source permission changed", "CURRENT_MATERIAL_PERMISSION_DENIED");
     }
     seen.add(id);
     const sourceRef = {
@@ -171,6 +290,10 @@ function normalizedCurrentMaterial(values, accountId) {
         ? value.validation
         : "content",
       evidenceChecks,
+      authorization,
+      permissionRevision: permission.permissionRevision,
+      permissionChecks: permissionChecks.map(check => ({ ...check })),
+      legacyDependencies,
       chainId: safeText(value.chainId, 100),
       chainOrder: Number.isSafeInteger(value.chainOrder) ? value.chainOrder : index
     };
@@ -508,6 +631,7 @@ function compiledPrompt(compilePrompt, task, currentMaterial, historicalMaterial
 }
 
 function selectionReceipt({
+  store,
   accountId,
   scene,
   task,
@@ -574,6 +698,8 @@ function selectionReceipt({
       attachmentCount: item.attachmentPaths.length,
       attachmentPathsSha256: digest(JSON.stringify(item.attachmentPaths)),
       validation: item.validation,
+      authorization: item.authorization,
+      permissionRevision: item.permissionRevision,
       chainId: item.chainId,
       chainOrder: item.chainOrder
     })),
@@ -595,6 +721,12 @@ function selectionReceipt({
     excludedSetSha256: digest(JSON.stringify(excluded)),
     excluded: excluded.slice(0, WORKING_CONTEXT_RECEIPT_ITEM_LIMIT),
     evidenceChecks: [...evidenceChecks.values()],
+    permissionChecks: [...new Map(currentMaterial.flatMap(item => [
+      { sourceKey: item.sourceKey, permissionRevision: item.permissionRevision },
+      ...item.permissionChecks
+    ]).map(check => [check.sourceKey, check])).values()],
+    legacyDependencies: normalizedLegacyDependencies(store,
+      currentMaterial.flatMap(item => item.legacyDependencies)),
     promptSha256: digest(prompt),
     promptContract: promptContract ? structuredClone(promptContract) : null,
     timeWindow: {
@@ -640,7 +772,7 @@ export function workingContextProjection(store, {
     fail("Working context requires account, scene and retrieval dependencies", "TASK_CONTEXT_INVALID");
   }
   const task = normalizedTask(inputTask);
-  const currentMaterial = normalizedCurrentMaterial(inputCurrentMaterial, accountId);
+  const currentMaterial = normalizedCurrentMaterial(inputCurrentMaterial, accountId, store, task);
   const queryParts = [task.text, ...currentMaterial.map(item => item.text)];
   const queryText = queryParts.join("\n");
   const hasDeicticEvent = task.eventScoped || hasDeicticEventReference(task.text);
@@ -734,6 +866,7 @@ export function workingContextProjection(store, {
   }
   const compiled = compiledPrompt(compilePrompt, task, currentMaterial, selectedHistory, notice);
   const receipt = selectionReceipt({
+    store,
     accountId,
     scene,
     task,
@@ -777,6 +910,8 @@ export function workingContextReceiptFingerprint(receipt) {
     || !receipt.currentMaterial.length
     || !Array.isArray(receipt.selected)
     || !Array.isArray(receipt.evidenceChecks)
+    || !permissionChecksValid(receipt.permissionChecks)
+    || !legacyDependenciesValid(receipt.legacyDependencies)
     || !receipt.tokenBudget
     || !Number.isSafeInteger(receipt.tokenBudget.limit)
     || receipt.tokenBudget.limit < 1
@@ -817,6 +952,11 @@ export function workingContextReceiptFingerprint(receipt) {
       || item.settledVersion < item.version
       || !validDigest(item.contentSha256)
       || !["content", "version", "immutable"].includes(item.validation)
+      || !["current-request", "source-permission"].includes(item.authorization)
+      || !Number.isSafeInteger(item.permissionRevision)
+      || item.permissionRevision < 0
+      || !receipt.permissionChecks.some(check => check.sourceKey === item.sourceKey
+        && check.permissionRevision === item.permissionRevision)
     ))
     || receipt.selected.some(item => (
       item?.channel === "history" && !evidenceIds.has(item.evidenceId)
@@ -834,6 +974,8 @@ export function workingContextReceiptFingerprint(receipt) {
     currentMaterial: receipt.currentMaterial,
     selected: receipt.selected,
     evidenceChecks: receipt.evidenceChecks,
+    permissionChecks: receipt.permissionChecks,
+    legacyDependencies: receipt.legacyDependencies,
     promptSha256: receipt.promptSha256,
     ...(promptContract != null ? { promptContract } : {}),
     timeWindow: receipt.timeWindow,
@@ -870,7 +1012,7 @@ function currentMaterialSnapshotMatches(store, snapshot, task = null) {
   const expectedVersion = Number.isSafeInteger(snapshot.settledVersion)
     ? snapshot.settledVersion
     : snapshot.version;
-  if (!located) return false;
+  if (!located || located.item.contextAllowed === false || located.item.disposition === "discarded") return false;
   if (snapshot.validation === "version") {
     return recordVersion(located.item.version) === expectedVersion;
   }
@@ -884,7 +1026,10 @@ function currentMaterialSnapshotMatches(store, snapshot, task = null) {
 export function contextDerivedOutputAllowed(store, item, accountId, expectedTask = null) {
   const receipt = item?.contextReceipt;
   if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) return false;
-  if (receipt.schemaVersion !== 2) return personalContextReceiptMatches(store, receipt);
+  if (receipt.schemaVersion !== 2) {
+    try { contextDerivedLegacyDependencies(store, item); return true; }
+    catch { return false; }
+  }
   const expected = expectedTask || (
     item?.type === "answer" && item.relatedTo
       ? { kind: "thoughtAnswer", targetId: item.relatedTo, subtargetId: "" }
@@ -909,6 +1054,8 @@ export function contextDerivedOutputAllowed(store, item, accountId, expectedTask
   }
   if (!contextFingerprint
     || receipt.accountBindingSha256 !== digest(accountId)
+    || !permissionChecksMatch(store, receipt.permissionChecks, accountId)
+    || !legacyDependenciesMatch(store, receipt.legacyDependencies)
     || !Array.isArray(receipt.currentMaterial)
     || !receipt.currentMaterial.every(snapshot => (
       currentMaterialSnapshotMatches(store, snapshot, sourceTask)
@@ -930,11 +1077,20 @@ export function thoughtTaskCurrentMaterial(store, root, {
     validation = "content",
     settledVersionDelta = 0,
     contextAllowed = item?.contextAllowed !== false && item?.disposition !== "discarded",
-    evidenceChecks = []
+    evidenceChecks = [],
+    permissionChecks = [],
+    legacyDependencies = [],
+    authorization = "source-permission"
   } = {}) => {
     const normalizedText = safeText(text, 120_000);
     const attachmentPaths = list(item?.attachmentPaths);
     if (!item?.id || (!normalizedText && !attachmentPaths.length)) return;
+    const sourceRef = {
+      resourceType: "thought", resourceId: item.id, rootId: root.id, targetKey,
+      version: recordVersion(item.version)
+    };
+    if (!taskContextSourcePermission(store, sourceRef, accountId).contextAllowed
+      && authorization !== "current-request") return;
     materials.push({
       id: `current:thought:${root.id}:${targetKey}`,
       accountId,
@@ -946,6 +1102,9 @@ export function thoughtTaskCurrentMaterial(store, root, {
       contextAllowed,
       validation,
       evidenceChecks,
+      permissionChecks,
+      legacyDependencies,
+      authorization,
       settledVersion: recordVersion(item.version) + settledVersionDelta,
       occurredAt: safeText(item.occurredAt || item.createdAt || root.occurredAt || root.createdAt, 100),
       chainId: root.id,
@@ -961,7 +1120,8 @@ export function thoughtTaskCurrentMaterial(store, root, {
   };
   add(root, `question:${root.id}`, root.content, "思绪问题", {
     contextAllowed: root.contextAllowed !== false && root.disposition !== "discarded",
-    settledVersionDelta: currentFollowUpId ? 1 : 0
+    settledVersionDelta: currentFollowUpId ? 1 : 0,
+    authorization: currentFollowUpId ? "source-permission" : "current-request"
   });
   for (const item of list(store?.thoughts).filter(value => value?.relatedTo === root.id)) {
     const modelOutput = item.authorType === "ai"
@@ -982,7 +1142,9 @@ export function thoughtTaskCurrentMaterial(store, root, {
     if (!allowed) continue;
     add(item, `${item.type}:${item.id}`, item.content || item.modelDraft, recordType, {
       contextAllowed: allowed,
-      evidenceChecks: modelOutput ? list(item.contextReceipt?.evidenceChecks) : []
+      evidenceChecks: modelOutput ? list(item.contextReceipt?.evidenceChecks) : [],
+      permissionChecks: modelOutput ? list(item.contextReceipt?.permissionChecks) : [],
+      legacyDependencies: modelOutput ? contextDerivedLegacyDependencies(store, item) : []
     });
   }
   for (const item of list(root.remarks)) {
@@ -1003,7 +1165,8 @@ export function thoughtTaskCurrentMaterial(store, root, {
       item.id === currentFollowUpId ? "当前追问" : "历史追问",
       {
         validation: "version",
-        settledVersionDelta: item.id === currentFollowUpId ? 1 : 0
+        settledVersionDelta: item.id === currentFollowUpId ? 1 : 0,
+        authorization: item.id === currentFollowUpId ? "current-request" : "source-permission"
       }
     );
     if (item.answer) {
@@ -1013,7 +1176,7 @@ export function thoughtTaskCurrentMaterial(store, root, {
           targetId: root.id,
           subtargetId: item.id
         }));
-      if (!modelOutput || allowed) {
+      if (allowed) {
         add(
           item,
           `followup-answer:${item.id}`,
@@ -1023,7 +1186,9 @@ export function thoughtTaskCurrentMaterial(store, root, {
             validation: "version",
             settledVersionDelta: item.id === currentFollowUpId ? 1 : 0,
             contextAllowed: allowed,
-            evidenceChecks: modelOutput ? list(item.contextReceipt?.evidenceChecks) : []
+            evidenceChecks: modelOutput ? list(item.contextReceipt?.evidenceChecks) : [],
+            permissionChecks: modelOutput ? list(item.contextReceipt?.permissionChecks) : [],
+            legacyDependencies: modelOutput ? contextDerivedLegacyDependencies(store, item) : []
           }
         );
       }
@@ -1031,13 +1196,13 @@ export function thoughtTaskCurrentMaterial(store, root, {
   }
   for (const item of list(root.annotations)) {
     if (item?.contextAllowed === false || item?.disposition === "discarded") continue;
-    const conversation = list(item.shenji)
+    const validTurns = list(item.shenji)
       .filter(turn => contextDerivedOutputAllowed(store, turn, accountId, {
         kind: "annotationShenji",
         targetId: root.id,
         subtargetId: item.id
-      }))
-      .map(turn => `${turn.message || ""}\n${turn.answer || ""}`.trim())
+      }));
+    const conversation = validTurns.map(turn => `${turn.message || ""}\n${turn.answer || ""}`.trim())
       .filter(Boolean)
       .join("\n");
     add(
@@ -1045,7 +1210,12 @@ export function thoughtTaskCurrentMaterial(store, root, {
       `annotation:${item.id}`,
       [item.quote, item.text, conversation].filter(Boolean).join("\n"),
       "批注与追问",
-      { validation: "version" }
+      {
+        validation: "version",
+        evidenceChecks: validTurns.flatMap(turn => list(turn.contextReceipt?.evidenceChecks)),
+        permissionChecks: validTurns.flatMap(turn => list(turn.contextReceipt?.permissionChecks)),
+        legacyDependencies: validTurns.flatMap(turn => contextDerivedLegacyDependencies(store, turn))
+      }
     );
   }
   return materials;

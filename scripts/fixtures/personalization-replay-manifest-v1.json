@@ -15,7 +15,7 @@
     "status": "local-evaluated",
     "commit": null,
     "tree": null,
-    "resultFingerprint": "069ebf3653ab85a83dacfa899ac1cde83abffe746b7b156b2ab94cb21c7b3d9b",
+    "resultFingerprint": "e7d0f8d394fb13491a8ba819e923eb25b5e4c5d0eacd98bce56949e4095c25de",
     "graderVersion": "deterministic-citation-v1",
     "taskBindings": {
       "same-event-across-two-records": {
