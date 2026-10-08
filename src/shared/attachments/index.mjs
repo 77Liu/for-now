@@ -6,6 +6,7 @@ import {
 } from "./uploads.mjs";
 
 export { createAttachmentStorage } from "./storage.mjs";
+export { createAttachmentDelivery, validateDeliveryConfig, MEDIA_DELIVERY_TTL_SECONDS } from "./delivery.mjs";
 export { cleanupTemporaryFiles };
 export { AUDIO_MIME_TYPES, decodeAudioDataUrl } from "./audio.mjs";
 export { cleanAttachmentPaths, imageDimensions, readImageFile } from "./images.mjs";

@@ -855,6 +855,7 @@
       "tests": [
         "scripts/attachment-storage-regression.mjs",
         "scripts/attachment-range-regression.mjs",
+        "scripts/attachment-delivery-regression.mjs",
         "scripts/attachment-upload-regression.mjs",
         "scripts/attachment-derivatives-regression.mjs",
         "scripts/keepsake-media-migration-regression.mjs",

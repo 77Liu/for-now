@@ -10,7 +10,15 @@ export function loadAttachmentConfig(env = process.env) {
     roleName: env.ALIBABA_CLOUD_ECS_RAM_ROLE || "",
     disableIMDSv1: String(env.ALIBABA_CLOUD_IMDSV1_DISABLED || "true").toLowerCase() !== "false",
     mockDir: env.OSS_MOCK_DIR || "",
-    testMode: env.NODE_ENV === "test"
+    testMode: env.NODE_ENV === "test",
+    delivery: Object.freeze({
+      mode: env.MEDIA_DELIVERY_MODE || "proxy",
+      bucket: env.MEDIA_DELIVERY_BUCKET || "",
+      endpoint: env.MEDIA_DELIVERY_OSS_ENDPOINT || "",
+      region: env.OSS_REGION || "cn-beijing",
+      cdnOrigin: env.MEDIA_CDN_ORIGIN || "",
+      cdnKey: env.MEDIA_CDN_AUTH_KEY || ""
+    })
   });
 }
 
@@ -35,6 +43,10 @@ export function loadAppConfig({ rootDir, env = process.env }) {
   if (localTestMode && authRequired) throw new Error("LOCAL_TEST_MODE uses upstream authentication and cannot enable local AUTH_REQUIRED");
   const attachments = loadAttachmentConfig(env);
   if (localTestMode && attachments.mode === "oss") throw new Error("LOCAL_TEST_MODE cannot use OSS attachment storage");
+  if (localTestMode && attachments.delivery.mode !== "proxy") throw new Error("LOCAL_TEST_MODE cannot sign cloud media URLs");
+  if (attachments.delivery.mode !== "proxy" && attachments.mode !== "oss" && env.NODE_ENV !== "test") {
+    throw new Error("Signed media delivery requires OSS source storage");
+  }
   const canonicalProduction = env.NODE_ENV === "production" && !localTestMode && !upstreamOrigin;
   const speechCacheSweepEnabled = canonicalProduction
     && String(env.SPEECH_CACHE_SWEEP_ENABLED ?? "1").trim() !== "0";

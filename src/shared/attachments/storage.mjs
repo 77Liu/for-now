@@ -3,6 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import OSS from "ali-oss";
 import Credential from "@alicloud/credentials";
+import { createAttachmentDelivery } from "./delivery.mjs";
 
 const cleanSegment = value => String(value || "").replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 160);
 const missing = error => ["ENOENT", "NoSuchKey"].includes(error?.code) || Number(error?.status) === 404;
@@ -79,18 +80,19 @@ const localReadSource = async file => {
 export function createAttachmentStorage({
   mode = "local", bucket = "", prefix = "for-now-attachments",
   endpoint = "", region = "cn-beijing", roleName = "",
-  mockDir = "", testMode = false, disableIMDSv1 = true
+  mockDir = "", testMode = false, disableIMDSv1 = true, delivery = {}
 } = {}) {
   if (!["local", "oss", "mock"].includes(mode)) throw new Error("ATTACHMENT_STORAGE must be local, oss, or mock");
   if (mode === "mock" && !testMode) throw new Error("Mock attachment storage is test-only");
   if (mode === "oss" && (!bucket || !endpoint)) throw new Error("OSS attachment storage requires OSS_ATTACHMENT_BUCKET and OSS_ENDPOINT");
 
   const objectPrefix = prefix.replace(/^\/+|\/+$/g, "");
+  const distribution = createAttachmentDelivery({ config: delivery, sourceBucket: bucket, roleName, disableIMDSv1 });
   const credentials = mode === "oss" ? new Credential.default(roleName ? {
     type: "ecs_ram_role",
     roleName,
     disableIMDSv1
-  } : {}) : null;
+  } : null) : null;
 
   const objectKey = (ownerId, name) => `${objectPrefix}/${cleanSegment(ownerId) || "local"}/${cleanSegment(name)}`;
   const mockFile = (ownerId, name) => path.join(mockDir, objectKey(ownerId, name));
@@ -113,15 +115,18 @@ export function createAttachmentStorage({
     if (mode === "local") {
       await fs.writeFile(localFile, data, { mode: 0o600 });
       await fs.chmod(localFile, 0o600);
+      await distribution.put({ ownerId, name, data, mimeType });
       return;
     }
     if (mode === "mock") {
       const file = mockFile(ownerId, name);
       await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
       await fs.writeFile(file, data, { mode: 0o600 });
+      await distribution.put({ ownerId, name, data, mimeType });
       return;
     }
     await (await client()).put(objectKey(ownerId, name), data, { mime: mimeType });
+    await distribution.put({ ownerId, name, data, mimeType });
   }
 
   async function get({ ownerId, name, localFile, allowLocalFallback = true }) {
@@ -223,6 +228,7 @@ export function createAttachmentStorage({
   }
 
   async function remove({ ownerId, name, localFile }) {
+    await distribution.remove({ ownerId, name });
     const removeLocal = file => fs.unlink(file).catch(error => { if (error.code !== "ENOENT") throw error; });
     if (mode === "local") return removeLocal(localFile);
     if (mode === "mock") await removeLocal(mockFile(ownerId, name));
@@ -305,5 +311,5 @@ export function createAttachmentStorage({
     return result.sort((left, right) => left.name.localeCompare(right.name));
   }
 
-  return { mode, objectKey, put, get, openRead, inspect, remove, usageBytes, list };
+  return { mode, objectKey, put, get, openRead, inspect, remove, usageBytes, list, signDelivery: distribution.sign };
 }
