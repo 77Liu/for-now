@@ -2665,7 +2665,7 @@ try {
   assert.equal(await waitUntil(`typeof window.__releaseCapturePatch==="function"&&document.querySelector('[data-capture-id="capture-new-1"].is-syncing')?.textContent.includes("在途修改仍可见")`),true);
   assert.equal(await evaluate(`document.querySelector('[data-capture-id="capture-new-1"] .capture-sync-state').textContent`),"待同步");
   await evaluate(`window.__releaseCapturePatch();true`);
-  assert.equal(await waitUntil(`window.__capturePatchPayloads.length===2&&!document.querySelector('[data-capture-id="capture-new-1"]').classList.contains("is-syncing")`),true);
+  assert.equal(await waitUntil(`window.__capturePatchPayloads.length===2&&!document.querySelector('[data-capture-id="capture-new-1"]').classList.contains("is-syncing")&&document.querySelector("#capture-create-toggle")?.disabled===false&&document.querySelector("#capture-id")?.value===""`),true);
   await evaluate(`document.querySelector('[data-capture-id="capture-new-1"] [data-capture-edit]').click();document.querySelector("#capture-content").value="响应丢失但已提交";window.__loseCapturePatchResponse=true;document.querySelector("#capture-form").requestSubmit();true`);
   assert.equal(await waitUntil(`window.__receiptLookups>=1&&window.__capturePatchPayloads.length===3&&document.querySelector('[data-capture-id="capture-new-1"]')?.textContent.includes("响应丢失但已提交")&&!document.querySelector('[data-capture-id="capture-new-1"]').classList.contains("is-syncing")`),true);
   await evaluate(`document.querySelector('[data-capture-id="capture-new-1"] [data-capture-edit]').click();document.querySelector("#capture-content").value="冲突内容不应留下";window.__conflictCapturePatch=true;window.__failNextStateRefresh=true;document.querySelector("#capture-form").requestSubmit();true`);
