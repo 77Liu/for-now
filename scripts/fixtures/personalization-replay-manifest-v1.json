@@ -2,14 +2,51 @@
   "schemaVersion": 1,
   "fixtureSetVersion": "2026.10.07.1",
   "fixtureSetFingerprint": "64af56c52e888f97919f190e072e02a9fdf957b03dc864283e392b2255c12a69",
+  "fixtureBaseline": {
+    "commit": "fb1961b28f27e9708fa15ddf38506747db6879e0",
+    "blob": "cfc2f86a673ab25c536ac7d0cd0db534670707dc",
+    "sha256": "8abce086dbf44bfe7eff159a84b326d4cb0e684c732e7bb8c943523a35424972"
+  },
   "baseline": {
     "commit": "2d8687a1f26f6e4b7e859d13c4d502da0f6a2c7d",
     "tree": "50a42b7de427558bd6852748ba2766cc948cf401"
   },
   "candidate": {
-    "status": "not-frozen",
+    "status": "local-evaluated",
     "commit": null,
-    "tree": null
+    "tree": null,
+    "resultFingerprint": "069ebf3653ab85a83dacfa899ac1cde83abffe746b7b156b2ab94cb21c7b3d9b",
+    "graderVersion": "deterministic-citation-v1",
+    "taskBindings": {
+      "same-event-across-two-records": {
+        "sourceMaterialId": "capture:dedup-capture",
+        "eventScoped": true
+      }
+    },
+    "promptCatalog": {
+      "version": "2026.10.07.2",
+      "sha256": "0aec29fffd8ba55b33ef74f4b69b1b0876e53b8e4a0fd49ccfd27349a1dc26c1"
+    },
+    "requestContract": {
+      "scene": "thoughtAnswer",
+      "responseStyle": "standard",
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "reasoningEffort": "max",
+      "maxOutputTokens": 16000,
+      "stream": false,
+      "responseFormat": "text",
+      "repetitionsPerVariant": 2,
+      "promptIds": [
+        "ai.system.core",
+        "orchestration.role.answer",
+        "ai.scene.thoughtAnswer",
+        "ai.style.standard",
+        "ai.identity.named",
+        "thought.task.answer",
+        "orchestration.user.envelope"
+      ]
+    }
   },
   "baselineResultFingerprints": {
     "general": "f36209cdae42ebb7b9dcde7130af9bf2269e83f0d40ad34333c90e7c97a97797",
@@ -42,7 +79,7 @@
   "execution": {
     "general": "deterministic-stub",
     "legacy": "deterministic-stub",
-    "new": "not-implemented",
+    "new": "deterministic-stub",
     "realModel": "not-authorized"
   }
 }

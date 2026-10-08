@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -7,9 +8,13 @@ import "./prompt-test-setup.mjs";
 import { loadPromptCatalog } from "../src/infrastructure/prompt-catalog/index.mjs";
 import { installPromptCatalog } from "../src/shared/prompts/index.mjs";
 import {
+  REPLAY_ANSWER_GRADER_VERSION,
   REPLAY_OUTPUT_SCHEMA_VERSION,
   REPLAY_VARIANTS,
+  createDeterministicCitationGrader,
+  createGeneralReplayAdapter,
   createLegacyReplayAdapter,
+  createNewReplayAdapter,
   runReplaySuite,
   validateReplayFixtureSet
 } from "./lib/personalization-replay.mjs";
@@ -17,7 +22,8 @@ import {
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const fixturePath = path.join(root, "scripts", "fixtures", "personalization-replay-v1.json");
 const manifestPath = path.join(root, "scripts", "fixtures", "personalization-replay-manifest-v1.json");
-const fixtureSet = JSON.parse(await fs.readFile(fixturePath, "utf8"));
+const fixtureText = await fs.readFile(fixturePath, "utf8");
+const fixtureSet = JSON.parse(fixtureText);
 const replayManifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
 installPromptCatalog(await loadPromptCatalog({
   rootDir: root,
@@ -26,6 +32,28 @@ installPromptCatalog(await loadPromptCatalog({
 }));
 
 assert.equal(validateReplayFixtureSet(fixtureSet), fixtureSet);
+assert.equal(
+  replayManifest.fixtureBaseline.commit,
+  "fb1961b28f27e9708fa15ddf38506747db6879e0"
+);
+assert.equal(
+  execFileSync("git", [
+    "rev-parse",
+    `${replayManifest.fixtureBaseline.commit}:scripts/fixtures/personalization-replay-v1.json`
+  ], { cwd: root, encoding: "utf8" }).trim(),
+  replayManifest.fixtureBaseline.blob
+);
+assert.equal(
+  crypto.createHash("sha256").update(fixtureText).digest("hex"),
+  replayManifest.fixtureBaseline.sha256
+);
+assert.equal(
+  execFileSync("git", [
+    "show",
+    `${replayManifest.fixtureBaseline.commit}:scripts/fixtures/personalization-replay-v1.json`
+  ], { cwd: root, encoding: "utf8" }),
+  fixtureText
+);
 assert.equal(
   execFileSync("git", ["show", "-s", "--format=%T", replayManifest.baseline.commit], {
     cwd: root,
@@ -43,6 +71,7 @@ assert.equal(JSON.stringify(fixtureSet).includes("/Users/"), false);
 
 const report = runReplaySuite(fixtureSet, { manifest: replayManifest });
 assert.equal(report.schemaVersion, REPLAY_OUTPUT_SCHEMA_VERSION);
+assert.equal(report.gateEligible, false);
 assert.deepEqual(REPLAY_VARIANTS, ["general", "legacy", "new"]);
 assert.equal(
   report.fixtureSetFingerprint,
@@ -50,7 +79,7 @@ assert.equal(
 );
 assert.equal(
   report.replayManifestFingerprint,
-  "4d6e399c507e655cab909a7d1feda41dbdd36399049d063d5436191b63e730d8"
+  "5b818065ac754b8ba98460bbbc802a552d0991db10b713ca58ff6f474f9f4383"
 );
 assert.equal(report.variants.general.status, "baseline-observed");
 assert.equal(report.variants.legacy.status, "baseline-observed");
@@ -59,10 +88,25 @@ assert.equal(report.variants.legacy.gateEligible, false);
 assert.equal(report.variants.general.qualityStatus, "not-evaluable");
 assert.equal(report.variants.legacy.qualityStatus, "known-baseline-gaps");
 assert.equal(report.variants.new.status, "not-run");
-assert.equal(report.variants.new.reason, "new-orchestrator-not-implemented");
+assert.equal(report.variants.new.reason, "not-selected-for-baseline-phase");
 assert.equal(report.realModelEvaluation.status, "not-run");
 assert.equal(report.coverage.productionBehavior, "not-run");
 assert.equal(report.realModelEvaluation.fixtureIds.length, 8);
+assert.throws(
+  () => runReplaySuite(fixtureSet, { manifest: replayManifest, adapters: [] }),
+  /Replay adapters do not match the baseline manifest contract/
+);
+assert.throws(
+  () => runReplaySuite(fixtureSet, {
+    manifest: replayManifest,
+    adapters: [
+      createGeneralReplayAdapter(),
+      createGeneralReplayAdapter(),
+      createLegacyReplayAdapter()
+    ]
+  }),
+  /Replay adapters do not match the baseline manifest contract/
+);
 assert.deepEqual(report.realModelEvaluation.fixtureIds, [
   "extraction-source-identity",
   "historical-event-not-current-state",
@@ -138,6 +182,10 @@ const restraint = report.variants.general.fixtures.find(
 assert.equal(restraint.metrics.materialRelevanceRate, null);
 
 const legacy = createLegacyReplayAdapter();
+const baselineAdapters = legacyAdapter => [
+  createGeneralReplayAdapter(),
+  legacyAdapter
+];
 const driftedLegacy = {
   ...legacy,
   run(fixture, context) {
@@ -149,7 +197,10 @@ const driftedLegacy = {
   }
 };
 assert.throws(
-  () => runReplaySuite(fixtureSet, { manifest: replayManifest, adapters: [driftedLegacy] }),
+  () => runReplaySuite(fixtureSet, {
+    manifest: replayManifest,
+    adapters: baselineAdapters(driftedLegacy)
+  }),
   /Replay baseline drift for new-version-supersedes-old\/legacy/
 );
 
@@ -164,6 +215,12 @@ emptyTask.fixtures[0].task = "";
 assert.throws(
   () => validateReplayFixtureSet(emptyTask),
   /must have a non-empty task/
+);
+const invalidThresholds = structuredClone(fixtureSet);
+invalidThresholds.thresholds.materialRelevanceRate = null;
+assert.throws(
+  () => validateReplayFixtureSet(invalidThresholds),
+  /thresholds do not match/
 );
 
 const selfGradingAdapter = {
@@ -181,7 +238,7 @@ const selfGradingAdapter = {
 };
 const selfGradingReport = runReplaySuite(fixtureSet, {
   manifest: replayManifest,
-  adapters: [selfGradingAdapter]
+  adapters: baselineAdapters(selfGradingAdapter)
 });
 assert.deepEqual(
   selfGradingReport.variants.legacy.aggregate,
@@ -198,7 +255,7 @@ const emptyAssertionAdapter = {
 assert.throws(
   () => runReplaySuite(fixtureSet, {
     manifest: replayManifest,
-    adapters: [emptyAssertionAdapter]
+    adapters: baselineAdapters(emptyAssertionAdapter)
   }),
   /Replay deterministic assertions drift/
 );
@@ -216,7 +273,7 @@ const spoofedModeAdapter = {
 assert.throws(
   () => runReplaySuite(fixtureSet, {
     manifest: replayManifest,
-    adapters: [spoofedModeAdapter]
+    adapters: baselineAdapters(spoofedModeAdapter)
   }),
   /Replay adapter identity mismatch/
 );
@@ -224,20 +281,12 @@ assert.throws(
 assert.throws(
   () => runReplaySuite(fixtureSet, {
     manifest: replayManifest,
-    adapters: [{
-      id: "new",
-      executionMode: "model",
-      run: fixture => ({
-        schemaVersion: 1,
-        variant: "new",
-        executionMode: "model",
-        fixtureId: fixture.id,
-        selectedSourceIds: fixture.materials.filter(item => item.required).map(item => item.id),
-        assertions: []
-      })
-    }]
+    adapters: [createNewReplayAdapter({
+      taskBindings: replayManifest.candidate.taskBindings
+    })],
+    phase: "candidate"
   }),
-  /requires the trusted 10b answer grader/
+  /Replay prompt catalog does not match the active catalog/
 );
 
 const staleManifest = structuredClone(replayManifest);
@@ -245,6 +294,201 @@ staleManifest.promptCatalog.sha256 = "0".repeat(64);
 assert.throws(
   () => runReplaySuite(fixtureSet, { manifest: staleManifest }),
   /Replay prompt catalog does not match/
+);
+
+installPromptCatalog(await loadPromptCatalog({
+  rootDir: root,
+  requestedVersion: replayManifest.candidate.promptCatalog.version,
+  allowHistorical: true
+}));
+const candidateAdapter = createNewReplayAdapter({
+  taskBindings: replayManifest.candidate.taskBindings
+});
+const citationGrader = createDeterministicCitationGrader();
+assert.equal(citationGrader.id, REPLAY_ANSWER_GRADER_VERSION);
+const candidateReport = runReplaySuite(fixtureSet, {
+  manifest: replayManifest,
+  adapters: [candidateAdapter],
+  phase: "candidate"
+});
+assert.equal(candidateReport.gateEligible, false);
+assert.equal(candidateReport.variants.general.status, "not-run");
+assert.equal(candidateReport.variants.legacy.status, "not-run");
+assert.equal(candidateReport.variants.new.status, "candidate-observed");
+assert.equal(candidateReport.variants.new.gateEligible, false);
+assert.equal(candidateReport.variants.new.selectionReceiptGateEligible, true);
+assert.equal(
+  candidateReport.variants.new.qualityStatus,
+  "semantic-and-freshness-model-evaluation-pending"
+);
+assert.deepEqual(candidateReport.variants.new.pendingEvaluations, [
+  "semantic-correctness",
+  "freshness",
+  "personalization-benefit"
+]);
+assert.equal(
+  candidateReport.variants.new.fingerprint,
+  replayManifest.candidate.resultFingerprint
+);
+assert.deepEqual(candidateReport.variants.new.aggregate, {
+  fixtureCount: 16,
+  failingFixtureCount: 0,
+  materialRelevanceRate: 1,
+  criticalEvidenceMissRate: 0,
+  evidenceSupportRate: 1,
+  freshnessMisstatementRate: null,
+  forbiddenSourceUseCount: 0,
+  duplicateEventUseCount: 0,
+  currentMaterialLossCount: 0
+});
+assert.equal(
+  candidateReport.coverage.productionBehavior,
+  "selection-and-receipt-contract-executed"
+);
+assert.equal(candidateReport.realModelEvaluation.status, "not-run");
+assert.throws(
+  () => runReplaySuite(fixtureSet, {
+    manifest: replayManifest,
+    adapters: [],
+    phase: "candidate"
+  }),
+  /Replay adapters do not match the candidate manifest contract/
+);
+assert.throws(
+  () => runReplaySuite(fixtureSet, {
+    manifest: replayManifest,
+    adapters: [candidateAdapter, candidateAdapter],
+    phase: "candidate"
+  }),
+  /Replay adapters do not match the candidate manifest contract/
+);
+const unfrozenCandidate = structuredClone(replayManifest);
+unfrozenCandidate.candidate.status = "not-frozen";
+assert.throws(
+  () => runReplaySuite(fixtureSet, {
+    manifest: unfrozenCandidate,
+    adapters: [candidateAdapter],
+    phase: "candidate"
+  }),
+  /requires local-evaluated manifest status/
+);
+const forgedCandidateCatalog = structuredClone(replayManifest);
+forgedCandidateCatalog.candidate.promptCatalog.sha256 = "0".repeat(64);
+assert.throws(
+  () => runReplaySuite(fixtureSet, {
+    manifest: forgedCandidateCatalog,
+    adapters: [candidateAdapter],
+    phase: "candidate"
+  }),
+  /Replay prompt catalog does not match/
+);
+const forgedCandidateRequest = structuredClone(replayManifest);
+forgedCandidateRequest.candidate.requestContract.model = "bogus-model";
+assert.throws(
+  () => runReplaySuite(fixtureSet, {
+    manifest: forgedCandidateRequest,
+    adapters: [candidateAdapter],
+    phase: "candidate"
+  }),
+  /Replay request contract mismatch: model/
+);
+const forgedTaskBinding = structuredClone(replayManifest);
+forgedTaskBinding.candidate.taskBindings["same-event-across-two-records"].sourceMaterialId =
+  "capture:not-in-fixture";
+assert.throws(
+  () => runReplaySuite(fixtureSet, {
+    manifest: forgedTaskBinding,
+    adapters: [candidateAdapter],
+    phase: "candidate"
+  }),
+  /Replay candidate task binding is invalid/
+);
+const missingTaskBinding = structuredClone(replayManifest);
+delete missingTaskBinding.candidate.taskBindings["same-event-across-two-records"];
+assert.throws(
+  () => runReplaySuite(fixtureSet, {
+    manifest: missingTaskBinding,
+    adapters: [candidateAdapter],
+    phase: "candidate"
+  }),
+  /Replay candidate task bindings are incomplete/
+);
+for (const result of candidateReport.variants.new.fixtures) {
+  assert.match(result.adapterEvidence.receiptFingerprintSha256, /^[a-f0-9]{64}$/);
+  assert.equal(result.adapterEvidence.receiptStatus, "complete");
+  assert.equal(result.adapterEvidence.historyRetrievalStatus, "ok");
+  assert.equal(result.adapterEvidence.promptContract.mode, "structured-json");
+  assert.equal(
+    result.adapterEvidence.promptCatalog.version,
+    replayManifest.candidate.promptCatalog.version
+  );
+}
+
+const firstFixture = fixtureSet.fixtures[0];
+const honestOutput = candidateAdapter.run(firstFixture, { fixtureIndex: 0 });
+const selfGradedClaim = structuredClone(honestOutput);
+selfGradedClaim.answerClaims[0].supported = true;
+assert.throws(
+  () => citationGrader.grade(firstFixture, selfGradedClaim, { fixtureIndex: 0 }),
+  /answer claim is invalid/
+);
+const unselectedCitation = structuredClone(honestOutput);
+unselectedCitation.answerClaims[0].sourceIds = ["capture:extraction-quote"];
+assert.throws(
+  () => citationGrader.grade(firstFixture, unselectedCitation, { fixtureIndex: 0 }),
+  /unknown or unselected source/
+);
+const unsupportedCitation = structuredClone(honestOutput);
+const unsupportedText = "X".repeat(unsupportedCitation.answerClaims[0].text.length);
+unsupportedCitation.answerText = `${unsupportedText}${unsupportedCitation.answerText.slice(
+  unsupportedCitation.answerClaims[0].answerSpan[1]
+)}`;
+unsupportedCitation.answerClaims[0].text = unsupportedText;
+assert.equal(
+  citationGrader.grade(firstFixture, unsupportedCitation, { fixtureIndex: 0 })[0].supported,
+  false
+);
+const fragmentCitation = {
+  ...honestOutput,
+  answerText: "I",
+  answerClaims: [{
+    id: "fragment",
+    text: "I",
+    answerSpan: [0, 1],
+    sourceIds: [honestOutput.selectedSourceIds[0]]
+  }]
+};
+assert.equal(
+  citationGrader.grade(firstFixture, fragmentCitation, { fixtureIndex: 0 })[0].supported,
+  false
+);
+assert.throws(
+  () => citationGrader.grade(firstFixture, {
+    ...honestOutput,
+    answerText: `${honestOutput.answerText}\nUNSUPPORTED FABRICATION`
+  }, { fixtureIndex: 0 }),
+  /contains ungraded content/
+);
+assert.throws(
+  () => citationGrader.grade(firstFixture, {
+    ...honestOutput,
+    answerText: "",
+    answerClaims: []
+  }, { fixtureIndex: 0 }),
+  /requires non-empty claims/
+);
+assert.throws(
+  () => citationGrader.grade(firstFixture, {
+    ...honestOutput,
+    answerText: "   ",
+    answerClaims: [{
+      id: "whitespace",
+      text: "   ",
+      answerSpan: [0, 3],
+      sourceIds: [honestOutput.selectedSourceIds[0]]
+    }]
+  }, { fixtureIndex: 0 }),
+  /requires non-empty claims/
 );
 
 console.log(JSON.stringify({
@@ -259,6 +503,10 @@ console.log(JSON.stringify({
     fingerprint: report.variants.legacy.fingerprint,
     aggregate: report.variants.legacy.aggregate
   },
-  new: report.variants.new,
+  new: {
+    fingerprint: candidateReport.variants.new.fingerprint,
+    aggregate: candidateReport.variants.new.aggregate,
+    selectionReceiptGateEligible: candidateReport.variants.new.selectionReceiptGateEligible
+  },
   realModelEvaluation: report.realModelEvaluation
 }, null, 2));
