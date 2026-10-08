@@ -37,6 +37,7 @@ async function load({visibleShell=false,initialSnapshot=null,opening=null}={}){
   if(owner!==runtime.currentUser?.id||session!==runtime.sessionSerial)return false;
   if(!Number.isFinite(startupMarks.coreSnapshotReady))markStartup("coreSnapshotReady");assertNativeServerCompatibility(meta);
   runtime.currentUser={...runtime.currentUser,...(meta.user||{})};applyCapabilitySurface(meta.capabilities||[]);
+  opening?.applyPreferences?.(runtime.currentUser?.role === "owner" ? meta.openingPreferences : undefined);
   Object.keys(routeContentSelectors).forEach(unmountRouteContent);
   replaceState({...structuredClone(emptyClientState),...nextState,onboardingV2:meta.onboardingV2,notificationUnread:meta.notificationUnread,quoteTags:meta.quoteTags||[]});
   runtime.loadedRouteKey=routeDataKey(route);runtime.fullRouteStateLoaded=Boolean(nextState?._routeProjection?.complete);runtime.appVersion=meta.version||"development";runtime.releaseVersion=meta.releaseVersion||runtime.releaseVersion;runtime.featureFlags={...runtime.featureFlags,...meta.features};runtime.governanceUrl=typeof meta.governanceUrl==="string"?meta.governanceUrl:"";runtime.notificationUnreadCount=Number(state.notificationUnread)||0;runtime.routeDataReady=true;

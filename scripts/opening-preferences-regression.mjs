@@ -61,6 +61,12 @@ try {
   assert.equal((await json("/api/preferences", { cookie: other })).body.opening, undefined);
   assert.equal((await json("/api/preferences", { cookie: owner })).body.opening, undefined);
   assert.equal((await json("/api/settings", { cookie: owner })).body.opening, undefined);
+  for (const url of ["/api/meta", "/api/v1/startup"]) {
+    const own = (await json(url, { cookie: owner })).body;
+    assert.deepEqual((own.data || own).openingPreferences, saved);
+    const ordinary = (await json(url, { cookie: other })).body;
+    assert.equal((ordinary.data || ordinary).openingPreferences, undefined);
+  }
   // Successful CAS persists across a complete server restart.
   await runtime.stop({ signal: "test" }); runtime = createServerRuntime({ rootUrl: pathToFileURL(path.resolve("server.mjs")).href });
   const restarted = await runtime.start(); await runtime.ready();

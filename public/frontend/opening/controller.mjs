@@ -1,4 +1,4 @@
-import { validateOpeningConfig } from "./config.mjs";
+import { validateOpeningConfig } from "../shared/opening/index.mjs";
 
 export const OPENING_SELECTORS = Object.freeze({
   root: "#opening-screen",
@@ -82,7 +82,7 @@ export function createOpeningController(options = {}) {
   const contentTargets = normalizeContentTargets(contentTargetsOption);
   const lifecycleTarget = lifecycleTargetOption || document?.defaultView;
   const matchMedia = injectedMatchMedia || document?.defaultView?.matchMedia?.bind(document.defaultView);
-  const config = validateOpeningConfig(configOption);
+  let config = validateOpeningConfig(configOption);
   const duration = Math.max(0, Math.min(140, Number(exitDuration) || 0));
   const parsedSlowDelay = Number(slowDelay);
   const openingSlowDelay = Number.isFinite(parsedSlowDelay) && parsedSlowDelay >= 0
@@ -205,9 +205,9 @@ export function createOpeningController(options = {}) {
     }
   }
 
-  function activateRain(candidate, expectedGeneration) {
+  function activateRain(candidate, expectedGeneration, expectedConfig = config) {
     if (!candidate) return false;
-    if (!current(expectedGeneration) || state !== "opening") {
+    if (!current(expectedGeneration) || state !== "opening" || expectedConfig !== config || !config.enabled) {
       candidate.dispose?.();
       return false;
     }
@@ -227,6 +227,35 @@ export function createOpeningController(options = {}) {
     return true;
   }
 
+  function startRain() {
+    if (!reducedMotion && config.enabled && canvas) {
+      const expectedGeneration = activeGeneration;
+      const expectedConfig = config;
+      try {
+        const candidate = createRain(canvas, config.config, {
+          ...rainEnvironment,
+          ...directRainEnvironment,
+          seed
+        });
+        if (candidate && typeof candidate.then === "function") {
+          Promise.resolve(candidate)
+            .then(nextRain => activateRain(nextRain, expectedGeneration, expectedConfig))
+            .catch(error => {
+              if (current(expectedGeneration) && state === "opening" && expectedConfig === config) {
+                releaseRain();
+                onVisualError(error);
+              }
+            });
+        } else {
+          activateRain(candidate, expectedGeneration, expectedConfig);
+        }
+      } catch (error) {
+        releaseRain();
+        onVisualError(error);
+      }
+    }
+  }
+
   function start() {
     if (disposed) return null;
     generation += 1;
@@ -238,6 +267,8 @@ export function createOpeningController(options = {}) {
 
     setContentInert(true);
     root.hidden = false;
+    const brand = root.querySelector?.(".opening-brand");
+    if (brand) brand.hidden = !config.showBrand;
     setBusy(root, true);
     transition("opening");
     if (recovery) recovery.hidden = true;
@@ -253,32 +284,24 @@ export function createOpeningController(options = {}) {
         if (state === "opening") status.textContent = openingSlowMessage;
       }, openingSlowDelay, expectedGeneration);
     }
-    if (!reducedMotion && config.enabled && canvas) {
-      const expectedGeneration = activeGeneration;
-      try {
-        const candidate = createRain(canvas, config.config, {
-          ...rainEnvironment,
-          ...directRainEnvironment,
-          seed
-        });
-        if (candidate && typeof candidate.then === "function") {
-          Promise.resolve(candidate)
-            .then(nextRain => activateRain(nextRain, expectedGeneration))
-            .catch(error => {
-              if (current(expectedGeneration) && state === "opening") {
-                releaseRain();
-                onVisualError(error);
-              }
-            });
-        } else {
-          activateRain(candidate, expectedGeneration);
-        }
-      } catch (error) {
-        releaseRain();
-        onVisualError(error);
-      }
-    }
+    startRain();
     return activeGeneration;
+  }
+
+  function applyPreferences(value) {
+    if (disposed) return false;
+    const next = validateOpeningConfig(value);
+    if (next.enabled === config.enabled && next.showBrand === config.showBrand
+      && Object.keys(next.config).every(key => next.config[key] === config.config[key])) return true;
+    config = next;
+    const brand = root.querySelector?.(".opening-brand");
+    if (brand) brand.hidden = !config.showBrand;
+    if (state === "opening") {
+      if (!config.enabled) releaseRain();
+      else if (rain) rain.update?.(config.config);
+      else startRain();
+    }
+    return true;
   }
 
   function ready(candidateGeneration) {
@@ -342,5 +365,5 @@ export function createOpeningController(options = {}) {
   retry?.addEventListener?.("click", handleRetry);
   lifecycleTarget?.addEventListener?.("pagehide", handlePageHide);
 
-  return Object.freeze({ start, ready, fail, dispose });
+  return Object.freeze({ start, ready, fail, dispose, applyPreferences });
 }

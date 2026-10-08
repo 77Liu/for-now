@@ -1,3 +1,4 @@
+import { openingPreferences } from "../../public/frontend/shared/opening/index.mjs";
 import path from "node:path";
 import {
   createApiV1Http,
@@ -143,6 +144,11 @@ export function createRuntimeHttpWiring({
     getContext: () => requestStorage.getStore(),
     openApi: openApiV1
   });
+  const readOpeningPreferences = async user => {
+    if (!isOwner(user)) return undefined;
+    try { return openingPreferences((await aiRuntime.readLlmSettings()).opening); }
+    catch { return openingPreferences(); }
+  };
   const startupHttp = createStartupHttp({
     readStartup: async () => {
       const store = await readStore();
@@ -152,6 +158,7 @@ export function createRuntimeHttpWiring({
         user: publicUser(user),
         version: appConfig.version,
         releaseVersion,
+        openingPreferences: await readOpeningPreferences(user),
         capabilities: capabilitiesFor(user),
         features: appConfig.features,
         governanceUrl: isOwner(user) && appConfig.platform.serviceTokenHash
@@ -252,6 +259,7 @@ export function createRuntimeHttpWiring({
         version: appConfig.version,
         releaseVersion,
         user: publicUser(user),
+        ...(isOwner(user) ? { openingPreferences: await readOpeningPreferences(user) } : {}),
         capabilities: capabilitiesFor(user),
         features: appConfig.features,
         governanceUrl: isOwner(user) && appConfig.platform.serviceTokenHash

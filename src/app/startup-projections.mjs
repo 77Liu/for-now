@@ -540,6 +540,7 @@ export function startupProjection({
   capabilities = [],
   features = {},
   governanceUrl = "",
+  openingPreferences,
   unread = 0
 }) {
   return {
@@ -547,6 +548,7 @@ export function startupProjection({
     version,
     releaseVersion,
     user: clone(user),
+    ...(openingPreferences ? { openingPreferences: clone(openingPreferences) } : {}),
     capabilities: [...capabilities],
     features: clone(features),
     governanceUrl,

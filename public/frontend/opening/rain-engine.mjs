@@ -1,4 +1,4 @@
-import { RAIN_DEFAULTS, validateRainConfig } from "./config.mjs";
+import { RAIN_DEFAULTS, validateRainConfig } from "../shared/opening/index.mjs";
 
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 const smooth = value => value * value * (3 - 2 * value);

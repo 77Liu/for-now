@@ -7,7 +7,7 @@ export {
   RAIN_LIMITS,
   validateOpeningConfig,
   validateRainConfig
-} from "./config.mjs";
+} from "../shared/opening/index.mjs";
 export { createOpeningController, OPENING_SELECTORS } from "./controller.mjs";
 export async function loadGlassRain() {
   return (await import("./rain-engine.mjs")).GlassRain;
@@ -61,7 +61,7 @@ export function startOpening({
     root,
     contentTargets: [...document.body.children].filter(element => element !== root),
     backgroundSource,
-    exitDuration: 100,
+    exitDuration: 80,
     onRetry: () => location.reload(),
     onStateChange(state) {
       if (state === "opening") markOnce(performance, "openingAnimationStarted");
@@ -73,6 +73,7 @@ export function startOpening({
   const generation = controller.start();
 
   return Object.freeze({
+    applyPreferences: controller.applyPreferences,
     ready() {
       markOnce(performance, "openingReady");
       const accepted = controller.ready(generation);

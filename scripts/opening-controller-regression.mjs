@@ -479,6 +479,40 @@ assert.deepEqual(validateOpeningConfig({
 }
 
 {
+  const fixture = createFixture();
+  const brand = new FakeElement(); fixture.root.children.set(".opening-brand", brand);
+  const pending = [];
+  const controller = createOpeningController({ ...fixture.controllerOptions,
+    createRain: (...args) => new Promise((resolve, reject) => pending.push({
+      resolve: () => resolve(fixture.createRain(...args)), reject
+    }))
+  });
+  controller.start();
+  controller.applyPreferences({ showBrand: false, config: { density: 8 } });
+  assert.equal(brand.hidden, true);
+  assert.equal(pending.length, 2);
+  pending[1].resolve(); await Promise.resolve(); await Promise.resolve();
+  const activeRain = fixture.rains[0]; assert.equal(activeRain.config.density, 8);
+  pending[0].reject(new Error("stale default renderer")); await Promise.resolve(); await Promise.resolve();
+  assert.equal(activeRain.disposals, 0, "old async rain failure cannot dispose the current account renderer");
+  controller.applyPreferences({ enabled: false });
+  assert.equal(activeRain.disposals, 1); assert.equal(brand.hidden, false);
+  controller.dispose(); assert.equal(controller.applyPreferences(), false);
+}
+
+{
+  const fixture = createFixture(); const pending = [];
+  const controller = createOpeningController({ ...fixture.controllerOptions,
+    createRain: (...args) => new Promise(resolve => pending.push(() => resolve(fixture.createRain(...args))))
+  });
+  controller.start(); controller.applyPreferences({ enabled: false });
+  pending[0](); await Promise.resolve(); await Promise.resolve();
+  assert.equal(fixture.rains[0].starts, 0);
+  assert.equal(fixture.rains[0].disposals, 1, "account preference arriving before rain import rejects stale default renderer");
+  controller.dispose();
+}
+
+{
   const startError = new Error("rain start failed");
   const visualErrors = [];
   const fixture = createFixture({ startError });

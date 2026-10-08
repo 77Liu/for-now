@@ -725,6 +725,7 @@
       "root": "src/app",
       "publicEntry": "src/app/index.mjs",
       "allowedDependencies": [
+        "shared.opening",
         "config",
         "infrastructure.prompt-catalog",
         "application.owner-surfaces",
