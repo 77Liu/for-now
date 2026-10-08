@@ -116,6 +116,8 @@ const suites = {
     ["keepsake records and event time contracts", ["scripts/keepsake-time-regression.mjs"]],
     ["onboarding, business prompts and personal context", ["scripts/personal-context-regression.mjs"]],
     ["task-specific working context selection", ["scripts/task-context-selection-regression.mjs"]],
+    ["working context source and timestamp boundaries", ["scripts/working-context-source-boundaries-regression.mjs"]],
+    ["explicit quality boundaries replay plan", ["scripts/personalization-quality-plan-regression.mjs"]],
     ["fixed synthetic live replay request identities", ["scripts/personalization-live-regression.mjs"]],
     ["live replay ledger recovery and blind evidence", ["scripts/personalization-live-runner-regression.mjs"]],
     ["live replay exclusive execution and source identity", ["scripts/personalization-live-lock-regression.mjs"]],

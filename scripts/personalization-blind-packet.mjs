@@ -8,10 +8,11 @@ import { verifyFrozenReplaySource } from "./lib/replay-source.mjs";
 import { replayGroundTruth } from "./lib/personalization-task-input.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
-const [input, destination, ...unknown] = process.argv.slice(2);
-assert.ok(input && destination && !unknown.length, "Usage: node scripts/personalization-blind-packet.mjs report.json output-directory");
+const [input, destination, ...options] = process.argv.slice(2);
+assert.ok(input && destination && (options.length === 0
+  || (options.length === 2 && options[0] === "--manifest")), "Usage: node scripts/personalization-blind-packet.mjs report.json output-directory [--manifest v2|v3]");
 const report = JSON.parse(await fs.readFile(path.resolve(input), "utf8"));
-const plan = await buildPersonalizationLivePlan(root);
+const plan = await buildPersonalizationLivePlan(root, { manifestVersion: options[1] ?? "v2" });
 assert.equal(report.purpose, plan.purpose); assert.equal(report.requestInputVersion, plan.requestInputVersion);
 assert.equal(report.mode, "live"); assert.equal(report.status, "generation-complete");
 assert.equal(report.planFingerprint, plan.planFingerprint); assert.match(report.candidateTree, /^[a-f0-9]{40}$/);
@@ -20,6 +21,9 @@ assert.equal(report.results.length, 48); assert.equal(new Set(report.results.map
 for (const row of report.results) {
   const request = plan.requests.find(request => request.id === row.id);
   assert.ok(request && row.status === "passed");
+  for (const field of ["fixtureId", "variant", "repetition", "promptCatalog", "selectedSourceIds"]) {
+    assert.deepEqual(row[field], request[field], `Replay row identity mismatch: ${field}`);
+  }
   assert.equal(row.requestSha256, request.requestSha256);
   assert.equal(liveFingerprint(row.auditRequest), liveFingerprint({ messages: request.messages, parameters: request.parameters }));
   assert.ok(typeof row.answerText === "string" && row.answerText.trim());

@@ -7,16 +7,18 @@ import { createDeepSeekTransport } from "../src/infrastructure/ai-providers/inde
 import { buildPersonalizationLivePlan, liveFingerprint } from "./lib/personalization-live.mjs";
 import { verifyFrozenReplaySource } from "./lib/replay-source.mjs";
 const root = path.resolve(import.meta.dirname, "..");
-const plan = await buildPersonalizationLivePlan(root);
 for (let index = 2; index < process.argv.length; index += 1) {
   const argument = process.argv[index];
-  if (["--output", "--tree"].includes(argument)) {
+  if (["--output", "--tree", "--manifest"].includes(argument)) {
     assert.ok(process.argv[++index] && !process.argv[index].startsWith("--"), `${argument} requires a value`);
   } else assert.equal(argument, "--live", `Unknown argument: ${argument}`);
 }
+const manifestFlag = process.argv.indexOf("--manifest");
+const manifestVersion = manifestFlag >= 0 ? process.argv[manifestFlag + 1] : "v2";
+const plan = await buildPersonalizationLivePlan(root, { manifestVersion });
 const live = process.argv.includes("--live");
 const outputFlag = process.argv.indexOf("--output");
-let output = path.resolve(outputFlag >= 0 ? process.argv[outputFlag + 1] : path.join(root, "reports/personalization-live-current-task-v2-v0.5.9.json"));
+let output = path.resolve(outputFlag >= 0 ? process.argv[outputFlag + 1] : path.join(root, `reports/personalization-live-${plan.requestInputVersion}-v0.5.9.json`));
 const treeFlag = process.argv.indexOf("--tree");
 const candidateTree = treeFlag >= 0 ? process.argv[treeFlag + 1] : execFileSync("git", ["rev-parse", "HEAD^{tree}"], { cwd: root, encoding: "utf8" }).trim();
 assert.match(candidateTree, /^[a-f0-9]{40}$/);
@@ -46,6 +48,7 @@ if (!live) {
       report = JSON.parse(await fs.readFile(output, "utf8"));
     }
     catch (error) { if (error.code !== "ENOENT") throw error; }
+    assert.ok(!report || manifestVersion === "v2", "The quality-boundaries matrix requires a new ledger and cannot resume an old one");
     if (report) {
       assert.equal(report.purpose, plan.purpose); assert.equal(report.requestInputVersion, plan.requestInputVersion);
       assert.equal(report.planFingerprint, plan.planFingerprint); assert.equal(report.candidateTree, candidateTree);

@@ -343,6 +343,8 @@
       "evidence": [
         {"script": "scripts/personal-context-regression.mjs", "anchor": "Personal context"},
         {"script": "scripts/personalization-live-regression.mjs", "anchor": "Live replay plan passed"},
+        {"script": "scripts/working-context-source-boundaries-regression.mjs", "anchor": "actual projection refuses explicit invalid"},
+        {"script": "scripts/personalization-quality-plan-regression.mjs", "anchor": "Quality boundaries plan passed"},
         {"script": "scripts/personalization-live-runner-regression.mjs", "anchor": "Live replay runner passed"},
         {"script": "scripts/ui-regression.mjs", "anchor": "personal-context-source-list"}
       ]

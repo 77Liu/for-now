@@ -12,17 +12,23 @@ import { replayCurrentTask, assertReplayCurrentCoverage, REPLAY_INPUT_VERSION, R
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object"
   ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
 export const liveFingerprint = value => crypto.createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
-export async function buildPersonalizationLivePlan(rootDir) {
+export async function buildPersonalizationLivePlan(rootDir, { manifestVersion = "v2" } = {}) {
+  assert.ok(typeof manifestVersion === "string" && ["v2", "v3"].includes(manifestVersion), "Unknown replay manifest selector");
+  const inputVersion = manifestVersion === "v2" ? REPLAY_INPUT_VERSION : "source-time-boundaries-v3";
+  const purpose = manifestVersion === "v2" ? REPLAY_PURPOSE : "personalization-source-time-boundaries-v3";
   const text = await fs.readFile(path.join(rootDir, "scripts/fixtures/personalization-replay-v1.json"), "utf8");
   const fixtures = validateReplayFixtureSet(JSON.parse(text));
-  const manifest = JSON.parse(await fs.readFile(path.join(rootDir, "scripts/fixtures/personalization-replay-manifest-v2.json"), "utf8"));
+  const manifest = JSON.parse(await fs.readFile(path.join(rootDir, `scripts/fixtures/personalization-replay-manifest-${manifestVersion}.json`), "utf8"));
   assert.equal(crypto.createHash("sha256").update(text).digest("hex"), manifest.fixtureBaseline.sha256);
-  assert.equal(manifest.requestInputContract.version, REPLAY_INPUT_VERSION);
-  assert.equal(manifest.requestInputContract.purpose, REPLAY_PURPOSE);
+  assert.equal(manifest.requestInputContract.version, inputVersion);
+  assert.equal(manifest.requestInputContract.purpose, purpose);
   const requests = [];
   for (const variant of ["general", "legacy", "new"]) {
     const catalog = variant === "new" ? manifest.candidate.promptCatalog : manifest.promptCatalog;
-    await installPromptCatalog(await loadPromptCatalog({ rootDir, requestedVersion: catalog.version, allowHistorical: true }));
+    const loadedCatalog = await loadPromptCatalog({ rootDir, requestedVersion: catalog.version, allowHistorical: true });
+    assert.equal(loadedCatalog.version, catalog.version);
+    assert.equal(loadedCatalog.sha256, catalog.sha256, "Replay catalog differs from selected manifest");
+    await installPromptCatalog(loadedCatalog);
     for (const [fixtureIndex, fixture] of fixtures.fixtures.entries()) {
       if (!fixture.requiresRealModel) continue;
       let context = "";
@@ -55,7 +61,7 @@ export async function buildPersonalizationLivePlan(rootDir) {
     + request.parameters.maxOutputTokens * pricing.outputPerMillion) / 1e6;
   const reservedCny = requests.reduce((sum, row) => sum + row.reservedCny, 0);
   assert.ok(reservedCny <= 30, "Live plan exceeds frozen CNY30 ceiling");
-  return { schemaVersion: 1, purpose: REPLAY_PURPOSE, requestInputVersion: REPLAY_INPUT_VERSION, fixtureSha256: manifest.fixtureBaseline.sha256,
+  return { schemaVersion: 1, purpose, requestInputVersion: inputVersion, fixtureSha256: manifest.fixtureBaseline.sha256,
     fixtureSetFingerprint: manifest.fixtureSetFingerprint, manifestFingerprint: liveFingerprint(manifest),
     planFingerprint: liveFingerprint(requests), fixtureCount: 8, maxCalls: 48, maxCostCny: 30,
     reservedCny, concurrency: 1, retries: 0, timeoutMs: 90000, pricing,

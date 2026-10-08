@@ -826,7 +826,9 @@
         "scripts/api-v1-contract-regression.mjs",
         "scripts/auth-regression.mjs",
         "scripts/postgres-runtime-checks.mjs",
-        "scripts/personalization-live-regression.mjs"
+        "scripts/personalization-live-regression.mjs",
+        "scripts/working-context-source-boundaries-regression.mjs",
+        "scripts/personalization-quality-plan-regression.mjs"
       ],
       "status": "active"
     },
