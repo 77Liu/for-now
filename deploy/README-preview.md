@@ -95,8 +95,7 @@ evidence that this repository has been deployed.
      /etc/systemd/system/for-now-preview.service
    sudo install -o root -g root -m 0644 deploy/nginx-for-now-preview.conf \
      /etc/nginx/snippets/for-now-preview.conf
-   sudo install -o root -g root -m 0755 deploy/deploy-preview.sh \
-     /usr/local/sbin/for-now-preview-deploy
+   sudo /bin/bash deploy/install-release-fence.sh
    ```
 
 5. Compare the active Nginx site with `deploy/nginx-dysf.conf`. The only
@@ -127,10 +126,17 @@ not alter `/now` or its upstream.
 
 ## Deploy
 
-Publish an explicitly reviewed branch under `preview/*`, then run:
+Install the independently reviewed guard with
+`sudo /bin/bash deploy/install-release-fence.sh` before using the updated deployer (see
+[production guard installation](README.md#deploy-updates)). Publish an explicitly
+reviewed branch under `preview/*`, then issue a fresh `preview` decision through
+`/usr/local/lib/for-now-release/release-fence.mjs issue` with `--action deploy`, the
+reviewed full SHA, current Preview SHA (or 40 zeroes when absent), and the previous
+Preview attempt ID as the CAS precondition. Use the returned new attempt ID:
 
 ```bash
-sudo DEPLOY_BRANCH=preview/v0.5.0 for-now-preview-deploy deploy
+sudo DEPLOY_BRANCH=preview/v0.5.0 RELEASE_ATTEMPT_ID="$issued_attempt_id" \
+  RELEASE_CANDIDATE_SHA="$reviewed_sha" for-now-preview-deploy deploy
 ```
 
 The deployer fetches the independent bare mirror, archives the branch commit
@@ -140,7 +146,7 @@ files for public text assets. Only a completed immutable candidate receives a
 `.preview-deploy-ready` marker.
 
 After candidate validation it snapshots Preview-managed configuration, installs
-the Preview unit/snippet/deployer, atomically switches
+the Preview unit/snippet, atomically switches
 `/opt/for-now-preview/app`, restarts only `for-now-preview.service`, and polls:
 
 ```text
@@ -148,26 +154,39 @@ http://127.0.0.1:4175/preview/readyz
 ```
 
 Nginx reloads only after readiness succeeds. Re-running the same branch commit
-reuses the marked immutable release and does not run `npm ci` again.
+reuses the marked immutable release and does not run `npm ci` again, but requires
+a fresh attempt ID. Replaying an old, completed or invalidated same-SHA command
+fails. The fetched SHA is checked before candidate dependency installation.
+The independently installed guarded deploy entry is preserved even when a
+rollback target contains an old pre-fence deploy script. Preview checks only its
+own decision and active SHA; it cannot claim production.
+Use `invalidate --target preview --expected-attempt-id "$issued_attempt_id"` to
+cancel. A revoked worker stops before its next shared effect; configuration
+already installed before cancellation must be recovered by the new owner.
 
 ## Rollback
 
-Roll back to the recorded previous Preview release:
+Issue a fresh `preview` decision with `--action rollback`, candidate SHA equal
+to the completed rollback target, baseline SHA equal to current Preview, and the
+previous attempt ID as CAS precondition. Then roll back to the recorded previous
+Preview release:
 
 ```bash
-sudo DEPLOY_BRANCH=preview/v0.5.0 for-now-preview-deploy rollback
+sudo DEPLOY_BRANCH=preview/v0.5.0 RELEASE_ATTEMPT_ID="$issued_attempt_id" \
+  RELEASE_CANDIDATE_SHA="$rollback_sha" for-now-preview-deploy rollback
 ```
 
 Or select a completed release by its full 40-character commit:
 
 ```bash
-sudo DEPLOY_BRANCH=preview/v0.5.0 \
-  for-now-preview-deploy rollback REVIEWED_PREVIEW_COMMIT
+sudo DEPLOY_BRANCH=preview/v0.5.0 RELEASE_ATTEMPT_ID="$issued_attempt_id" \
+  RELEASE_CANDIDATE_SHA="$rollback_sha" for-now-preview-deploy rollback "$rollback_sha"
 ```
 
 Rollback uses the same atomic switch, restart, and readiness gate. A failed
-deploy or failed rollback restores only the former Preview symlink, Preview
-environment version, Preview service/snippet/deployer, and prior Preview
+deploy or failed rollback that still owns its decision restores only the former
+Preview symlink, Preview
+environment version, Preview service/snippet, and prior Preview
 service state. If no former Preview release exists, the Preview service is
 stopped. Production code, service, environment, and data are never rollback
 targets.

@@ -93,7 +93,7 @@ No application release or data change was part of that operation.
 
 7. Install `deploy/nginx-dysf.conf` as `/etc/nginx/sites-available/dysf`, then
    run `sudo nginx -t && sudo systemctl reload nginx`.
-8. Run `sudo for-now-deploy`.
+8. Install the reviewed release guard and issue a production attempt as described under “Deploy updates”, then run the deployer with that attempt.
 9. Before the first account is registered, migrate the existing local data with
    `deploy/migrate-data.sh user@server`.
 10. Verify `sudo /usr/local/sbin/for-now-backup`, then enable the timer with
@@ -221,11 +221,47 @@ restore result are maintained in `knowledge/operations-capacity.md`.
 
 ## Deploy updates
 
-Push code to the `main` branch, then run:
+After review and authorization, install the guard from the reviewed checkout:
 
 ```bash
-sudo for-now-deploy
+sudo /bin/bash deploy/install-release-fence.sh
 ```
+
+The installer stores both guarded deploy entries in `/usr/local/sbin` and the
+CLI and helper outside candidate releases under
+`/usr/local/lib/for-now-release`, with private root-owned decision state under
+`/var/lib/for-now-release`. It refuses installation while either target has an
+execution receipt or a decision writer. Use this installer from a verified checkout when upgrading an older
+installation; pushing a candidate does not install the guard or entries. Runtime
+deployment and rollback never replace the independently installed deploy entries,
+so recovery to a pre-fence release cannot remove enforcement.
+
+The release owner first reads `production` with the installed CLI, then issues a
+new attempt for the reviewed full 40-character candidate SHA and current active
+SHA (the first 40 characters of the active release directory; 40 zeroes for a
+first installation). Pass the previous `attemptId` as `--expected-attempt-id` on
+all later issue/invalidate operations; omit it only if no prior decision exists:
+
+```bash
+sudo /usr/local/bin/node /usr/local/lib/for-now-release/release-fence.mjs issue \
+  --target production --candidate-sha "$reviewed_sha" --baseline-sha "$active_sha" \
+  --action deploy --expected-attempt-id "$previous_attempt_id"
+sudo RELEASE_ATTEMPT_ID="$issued_attempt_id" RELEASE_CANDIDATE_SHA="$reviewed_sha" \
+  for-now-deploy
+```
+
+The returned JSON supplies `issued_attempt_id`; approvals last one hour and are
+single use. Fetch must resolve to the approved SHA before candidate build. Each
+shared write/restart checks the attempt, worker PID and active SHA again.
+Repeating a completed or invalidated attempt fails even for the same candidate;
+a reviewed same-SHA retry requires a fresh issue and still reuses ready assets.
+Candidate rejection or rollback invalidates the old attempt. Owner cancellation
+uses `invalidate --target production --expected-attempt-id "$issued_attempt_id"`.
+An authorized automatic rollback advances to a new attempt; a worker whose
+authority was superseded cannot restore its old configuration or symlinks. If
+cancellation follows partial configuration changes, the new owner must inspect
+and recover them with a fresh decision. Never delete or steal an execution receipt
+while its worker is alive. Production and Preview decisions are independent.
 
 The deploy script rejects both `explore/*` and `checkpoint/*`; an intermediate
 checkpoint must first pass the release review and be promoted through an
@@ -239,8 +275,8 @@ the budget singleton exists, and that each role has exactly its permitted
 privileges. Only then does deployment mark the immutable release ready, switch
 the active symlink, restart systemd, and check `/readyz`. Re-running the same
 commit never runs `npm ci` inside the active release. Failure after configuration
-installation restores the previous code, managed service/Nginx files, deployment
-tools, and `/etc/for-now.env` (including `APP_VERSION`). An unhealthy recovery is
+installation, while the worker still owns its decision, restores the previous code, managed service/Nginx files, deployment
+backup tools, and `/etc/for-now.env` (including `APP_VERSION`). An unhealthy recovery is
 reported explicitly; the deployment remains failed. Data is not rolled back by
 this script. Take and verify a data backup before a release with migrations.
 
@@ -249,27 +285,16 @@ this script. Take and verify a data backup before a release with migrations.
 Changing the pin requires a service restart, and a missing or modified catalog
 causes startup and candidate validation to fail rather than falling back.
 
-An older installed deployer may lack dependency installation or still check the
-removed root `logging.mjs` and `attachment-storage.mjs`. It cannot update itself
-until a release succeeds. Before deploying the modularized application, verify
-that the installed deployer checks `src/` and `public/frontend/`; if it still
-requires those removed files, bootstrap it from the reviewed, pushed commit.
-Merely pushing the new script is insufficient:
+An older installed deployer may lack dependency installation, modular checks or
+fencing. Before deployment, transfer and verify the reviewed checkout and run its
+`deploy/install-release-fence.sh`; do not bootstrap only a candidate deploy script.
+The separately installed guard, core and both deploy entries form one reviewed
+tooling unit. Its upgrade is blocked while any deployment owns an execution
+receipt. Application release success and code/config rollback do not change it.
 
-```bash
-# Replace with the reviewed full commit ID; do not export uncommitted files.
-release_commit=REVIEWED_COMMIT_ID
-git show "$release_commit:deploy/deploy.sh" > /tmp/for-now-deploy-reviewed
-scp -i .secrets/for-now-deploy /tmp/for-now-deploy-reviewed \
-  root@123.57.140.24:/tmp/for-now-deploy-reviewed
-ssh -i .secrets/for-now-deploy root@123.57.140.24 \
-  'install -o root -g root -m 0755 /tmp/for-now-deploy-reviewed /usr/local/sbin/for-now-deploy'
-```
-
-Then run the usual deploy command after checking that `main` still points to the
-reviewed commit. These are future release instructions, not evidence of a
-deployment. Local rollback control flow is covered by `npm run test:deploy`;
-real systemd/Nginx recovery still requires target-environment validation.
+These are future release instructions, not evidence of a deployment. Local
+rollback control flow is covered by `npm run test:deploy`; real systemd/Nginx
+recovery still requires target-environment validation.
 Production RAM credentials have completed a real
 `SegmentHDCommonImage → GetAsyncJobResult → PNG download` smoke test.
 

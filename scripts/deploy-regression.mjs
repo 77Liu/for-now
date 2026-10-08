@@ -4,12 +4,16 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { installReleaseFenceFixture, issueReleaseFenceFixture, preFenceReleaseDeployerFixture } from "./lib/release-fence-fixture.mjs";
 import { gunzipSync } from "node:zlib";
 
 // Run the real Bash control flow with all privileged/network commands replaced.
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const fixture = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "growth-deploy-")));
+const baselineCommit = "1111111111111111111111111111111111111111";
 const commit = "abcdef0123456789abcdef0123456789abcdef01";
+const legacyDeployer = preFenceReleaseDeployerFixture("production");
+assert.doesNotMatch(legacyDeployer,/release_fence_init/);
 const source = await fs.readFile(path.join(root, "deploy/deploy.sh"), "utf8");
 const nginx = await fs.readFile(path.join(root, "deploy/nginx-for-now.conf"), "utf8");
 const envExample = await fs.readFile(path.join(root, "deploy/for-now.env.example"), "utf8");
@@ -39,7 +43,7 @@ const files = [
   "/etc/systemd/system/for-now-monitor.timer", "/usr/local/sbin/for-now-backup", "/usr/local/sbin/for-now-restore-drill",
   "/usr/local/sbin/for-now-migrate-attachments",
   "/var/www/app-portal/index.html", "/etc/nginx/snippets/for-now.conf",
-  "/etc/nginx/snippets/acme-challenge.conf", "/etc/nginx/sites-available/dysf", "/usr/local/sbin/for-now-deploy"
+  "/etc/nginx/snippets/acme-challenge.conf", "/etc/nginx/sites-available/dysf"
 ];
 const certificateFiles = [
   "/etc/letsencrypt/live/123.57.140.24/fullchain.pem",
@@ -48,18 +52,21 @@ const certificateFiles = [
   "/etc/letsencrypt/live/77liu.top/privkey.pem"
 ];
 try {
-  for (const scenario of ["success", "restart", "health", "nginx", "dependencies", "same_commit_dependencies", "exploration", "exploration_branch", "checkpoint_branch", "postgres_incompatible", "postgres_preflight"]) {
+  for (const scenario of ["success", "restart", "health", "nginx", "dependencies", "same_commit_dependencies", "exploration", "exploration_branch", "checkpoint_branch", "postgres_incompatible", "postgres_preflight", "stale_same_commit", "candidate_mismatch", "baseline_mismatch", "first_install_health", "invalidate_build", "invalidate_before_switch", "new_decision_after_switch"]) {
     const backendEnv = ["postgres_incompatible", "postgres_preflight"].includes(scenario)
       ? "PERSISTENCE_BACKEND=postgres\nDATABASE_URL=postgresql://data\nAUTH_DATABASE_URL=postgresql://auth\nAI_BUDGET_DATABASE_URL=postgresql://budget\n"
       : "";
     const dir = path.join(fixture, scenario), bin = path.join(dir, "bin"), base = path.join(dir, "opt/for-now");
     const exactRelease = path.join(base, "releases", commit);
-    const previous = scenario === "same_commit_dependencies" ? exactRelease : path.join(base, "releases", "previous");
+    const previous = scenario === "same_commit_dependencies" ? exactRelease : path.join(base, "releases", baselineCommit);
     await fs.mkdir(bin, { recursive: true });
+    await fs.writeFile(path.join(dir, "commands.log"), "");
     await fs.mkdir(previous, { recursive: true });
     await fs.mkdir(path.join(dir, "usr/bin"), { recursive: true });
     await fs.writeFile(path.join(dir, "usr/bin/ffmpeg"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
     await fs.writeFile(path.join(previous, "active-sentinel"), "unchanged\n");
+    await fs.mkdir(path.join(previous,"deploy"),{recursive:true});
+    await fs.writeFile(path.join(previous,"deploy/deploy.sh"),legacyDeployer);
     if (scenario === "postgres_preflight") {
       await fs.mkdir(path.join(previous, "src/shared/persistence"), { recursive: true });
       await fs.writeFile(path.join(previous, "src/shared/persistence/postgres-runtime.mjs"), "export {};\n");
@@ -76,7 +83,8 @@ try {
       await fs.copyFile(path.join(root, "scripts", file), path.join(dir, "archive/scripts", file));
     }
     if (scenario === "exploration") await fs.writeFile(path.join(dir, "archive/public/explore-unexpected.txt"), "local exploration only\n");
-    await fs.symlink(previous, path.join(base, "app"));
+    if(scenario !== "first_install_health") await fs.symlink(previous, path.join(base, "app"));
+    if(scenario === "first_install_health") { await fs.cp(path.join(dir,"archive"),exactRelease,{recursive:true}); await fs.writeFile(path.join(exactRelease,".deploy-ready"),""); }
     for (const file of [...files, "/home/for-now/.ssh/gitee_deploy", "/usr/local/bin/npm", "/usr/local/bin/node"]) {
       await fs.mkdir(path.dirname(path.join(dir, file)), { recursive: true });
       await fs.writeFile(path.join(dir, file), file.endsWith(".env")
@@ -87,6 +95,9 @@ try {
       await fs.mkdir(path.dirname(path.join(dir, file)), { recursive: true });
       await fs.writeFile(path.join(dir, file), "test certificate fixture\n");
     }
+    const releaseFence = await installReleaseFenceFixture(root, dir);
+    const approval = issueReleaseFenceFixture(releaseFence, { target: "production", candidateSha: scenario === "candidate_mismatch" ? "f".repeat(40) : commit, baselineSha: scenario === "baseline_mismatch" ? "f".repeat(40) : scenario === "first_install_health" ? "0".repeat(40) : path.basename(previous) });
+    if (scenario === "stale_same_commit") await releaseFence.fence.invalidate({ target: "production", expectedAttemptId: approval.attemptId });
     const shim = path.join(bin, "shim.mjs");
     await fs.writeFile(shim, `#!${process.execPath}
 import fs from "node:fs";
@@ -94,7 +105,22 @@ import path from "node:path";
 import {spawnSync} from "node:child_process";
 const name=path.basename(process.argv[1]), args=process.argv.slice(2), dir=process.env.DEPLOY_FIXTURE, scenario=process.env.DEPLOY_SCENARIO;
 fs.appendFileSync(path.join(dir,"commands.log"),name+" "+args.join(" ")+"\\n");
-const current=fs.realpathSync(path.join(dir,"opt/for-now/app")), isNew=current.endsWith("${commit}");
+const link=path.join(dir,"opt/for-now/app");
+let current; try {current=fs.realpathSync(link)}catch(error){if(error.code!=="ENOENT")throw error; current=path.resolve(link)}
+const isNew=current.endsWith("${commit}");
+const supersede = action => {
+  const cli = ${JSON.stringify(releaseFence.cli)};
+  const state = JSON.parse(fs.readFileSync(path.join(dir,"var/lib/for-now-release/production.json"),"utf8"));
+  const options = [cli, action, "--target", "production", "--expected-attempt-id", state.attemptId];
+  if(action==="issue") options.push("--candidate-sha", "${baselineCommit}", "--baseline-sha", path.basename(current).slice(0,40), "--action", "rollback");
+  const r = spawnSync(${JSON.stringify(process.execPath)}, options, {encoding:"utf8"});
+  if(r.status!==0) throw new Error(r.stderr);
+  fs.writeFileSync(path.join(dir,"superseded.json"),r.stdout);
+};
+if(scenario==="invalidate_build"&&name==="npm")supersede("invalidate");
+if(scenario==="invalidate_before_switch"&&name==="systemctl"&&args[0]==="daemon-reload")supersede("invalidate");
+if(scenario==="new_decision_after_switch"&&name==="systemctl"&&args[0]==="restart"){supersede("issue");process.exit(1);}
+
 if(name==="sudo"){const r=spawnSync(args[2],args.slice(3),{env:process.env,stdio:"inherit"});process.exit(r.status??1)}
 if(name==="runuser"){const split=args.indexOf("--"),r=spawnSync(args[split+1],args.slice(split+2),{env:process.env,stdio:"inherit"});process.exit(r.status??1)}
 if(name==="id")console.log("0");
@@ -104,7 +130,7 @@ if(name==="npm"&&["dependencies","same_commit_dependencies"].includes(scenario))
 if(name==="node"&&args[0]==="--check"&&!fs.existsSync(args[1]))process.exit(1);
 if(name==="node"&&args[0]?.endsWith("/scripts/postgres-runtime-preflight.mjs")&&scenario==="postgres_preflight")process.exit(1);
 if(name==="systemctl"&&args[0]==="restart"&&isNew&&scenario==="restart")process.exit(1);
-if(name==="curl"&&isNew&&scenario==="health")process.exit(1);
+if(name==="curl"&&isNew&&["health","first_install_health"].includes(scenario))process.exit(1);
 if(name==="nginx"&&scenario==="nginx")process.exit(1);
 if(name==="mv")fs.renameSync(args.at(-2),args.at(-1));
 if(name==="readlink")console.log(current);
@@ -123,7 +149,7 @@ if(name==="sed"){const file=args.at(-1),version=args[1].split("APP_VERSION=")[2]
       script = script.replaceAll(prefix, `${dir}${prefix}`);
     }
     script = script.replaceAll("/usr/bin/ffmpeg", path.join(dir, "usr/bin/ffmpeg"));
-    const scriptFile = path.join(dir, "deploy.sh");
+    const scriptFile = path.join(dir, "usr/local/sbin/for-now-deploy");
     await fs.writeFile(scriptFile, script);
     const result = spawnSync("/bin/bash", [scriptFile], {
       env: {
@@ -131,10 +157,12 @@ if(name==="sed"){const file=args.at(-1),version=args[1].split("APP_VERSION=")[2]
         PATH: `${bin}:/usr/bin:/bin`,
         DEPLOY_FIXTURE: dir,
         DEPLOY_SCENARIO: scenario,
+        RELEASE_ATTEMPT_ID: approval.attemptId,
+        RELEASE_CANDIDATE_SHA: approval.candidateSha,
         ...(scenario === "exploration_branch" ? { DEPLOY_BRANCH: "explore/nightly-p3-20260928" } : {}),
         ...(scenario === "checkpoint_branch" ? { DEPLOY_BRANCH: "checkpoint/v0.2.0-g2-20260930" } : {})
       },
-      encoding: "utf8", timeout: 60000
+      encoding: "utf8", timeout: 180000
     });
     if (scenario === "exploration") assert.match(result.stderr, /Production release contains local exploration assets/);
     if (["exploration_branch", "checkpoint_branch"].includes(scenario)) assert.match(result.stderr, /Non-release branches cannot be used/);
@@ -144,10 +172,11 @@ if(name==="sed"){const file=args.at(-1),version=args[1].split("APP_VERSION=")[2]
       assert.doesNotMatch(commands, /systemctl (?:restart|daemon-reload)|install .*\/etc\/systemd|mv .*\/opt\/for-now\/app/);
     }
     const succeeded = successfulScenarios.has(scenario);
-    assert.equal(result.status, succeeded ? 0 : 1, `${scenario}: ${result.stderr}`);
-    const active = await fs.realpath(path.join(base, "app"));
-    if (succeeded) assert.equal(path.basename(active), commit);
-    else assert.equal(active, previous);
+    assert.equal(result.status, succeeded ? 0 : 1, `${scenario}: ${result.stderr}; signal=${result.signal}; error=${result.error?.message || "none"}`);
+    const active = await fs.realpath(path.join(base, "app")).catch(error=>{if(error.code === "ENOENT") return null; throw error;});
+    const sharedBeforeRevocation = ["invalidate_before_switch", "new_decision_after_switch"].includes(scenario);
+    if (succeeded || scenario === "new_decision_after_switch") assert.equal(path.basename(active), commit);
+    else assert.equal(active, scenario === "first_install_health" ? null : previous);
     if (succeeded) {
       const commands = await fs.readFile(path.join(dir, "commands.log"), "utf8");
       assert.equal((await fs.stat(base)).mode & 0o777, 0o755);
@@ -180,17 +209,46 @@ if(name==="sed"){const file=args.at(-1),version=args[1].split("APP_VERSION=")[2]
       assert.ok(compressedRuntime.length < runtime.length);
     }
     const env = await fs.readFile(path.join(dir, "etc/for-now.env"), "utf8");
-    assert.equal(env, `APP_VERSION=${succeeded ? commit.slice(0, 12) : "old-version"}\nOSS_ATTACHMENT_BUCKET=for-now\nOSS_ENDPOINT=https://oss-cn-beijing-internal.aliyuncs.com\nOSS_REGION=cn-beijing\nFEISHU_ALERT_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/test\nPLATFORM_SERVICE_TOKEN_HASH=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nUNCHANGED=yes\n${backendEnv}`);
-    if (!succeeded) {
+    assert.equal(env, `APP_VERSION=${succeeded || scenario === "new_decision_after_switch" ? commit.slice(0, 12) : "old-version"}\nOSS_ATTACHMENT_BUCKET=for-now\nOSS_ENDPOINT=https://oss-cn-beijing-internal.aliyuncs.com\nOSS_REGION=cn-beijing\nFEISHU_ALERT_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/test\nPLATFORM_SERVICE_TOKEN_HASH=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nUNCHANGED=yes\n${backendEnv}`);
+    if (!succeeded && !sharedBeforeRevocation) {
       for (const file of files.filter(file => !file.endsWith(".env"))) {
         assert.equal(await fs.readFile(path.join(dir, file), "utf8"), `old:${file}\n`, `${scenario}: restore ${file}`);
       }
     }
+    assert.equal(await fs.readFile(scriptFile,"utf8"),script,"application deploy/rollback must preserve the independently installed guarded entry");
+    const commandLog = await fs.readFile(path.join(dir, "commands.log"), "utf8");
+    if (["stale_same_commit", "candidate_mismatch", "baseline_mismatch"].includes(scenario)) {
+      assert.doesNotMatch(commandLog, /npm |install |systemctl restart|mv .*\/app/);
+      assert.match(result.stderr, ["stale_same_commit", "baseline_mismatch"].includes(scenario) ? /RELEASE_FENCE_REJECTED/ : /differs from approved candidate/);
+    }
+    if (scenario === "invalidate_build") assert.doesNotMatch(commandLog, /install |systemctl restart|mv .*\/app/);
+    if (scenario === "invalidate_before_switch") {
+      assert.match(commandLog, /install .*for-now.service/); // Config writes happened before revocation; the new owner must recover them.
+      assert.doesNotMatch(commandLog, /systemctl restart|mv .*\/app/);
+      assert.match(result.stderr, /Old worker cannot roll back/);
+    }
+    if (scenario === "new_decision_after_switch") {
+      assert.equal(commandLog.match(/systemctl restart/g)?.length, 1, "old worker must not restart during rollback");
+      assert.equal(commandLog.match(/mv .*\/app\n/g)?.length, 1, "old rollback must not overwrite the new decision");
+      assert.equal((await releaseFence.fence.read("production")).attemptId, JSON.parse(await fs.readFile(path.join(dir, "superseded.json"), "utf8")).attemptId);
+      assert.match(result.stderr, /Old worker cannot roll back/);
+    }
+    if (succeeded) {
+      const runAgain = nonce => spawnSync("/bin/bash", [scriptFile], { env: { ...process.env, PATH: `${bin}:/usr/bin:/bin`, DEPLOY_FIXTURE: dir, DEPLOY_SCENARIO: scenario,
+        RELEASE_ATTEMPT_ID: nonce.attemptId, RELEASE_CANDIDATE_SHA: nonce.candidateSha }, encoding: "utf8", timeout: 180000 });
+      const stale = runAgain(approval);
+      assert.equal(stale.status, 1); assert.match(stale.stderr, /RELEASE_FENCE_REJECTED/);
+      const fresh = issueReleaseFenceFixture(releaseFence, { target: "production", candidateSha: commit, baselineSha: commit });
+      assert.equal(runAgain(fresh).status, 0);
+      assert.equal((await fs.readFile(path.join(dir, "commands.log"), "utf8")).match(/^npm /gm)?.length, 1, "fresh same SHA must reuse completed release");
+    }
+    await assert.rejects(fs.access(path.join(releaseFence.directory, "production.json.execution")), { code: "ENOENT" });
     assert.equal(await fs.readFile(path.join(previous, "active-sentinel"), "utf8"), "unchanged\n");
     assert.equal((await fs.readdir(base)).some(name => name.startsWith(".deploy-rollback.")), false);
     assert.equal((await fs.readdir(path.join(base, "releases"))).some(name => name.startsWith(`.${commit}.`)), false);
+    console.log(`Deploy scenario passed: ${scenario}`);
   }
-  console.log("Deploy checks passed: modular candidate and prompt validation, exploration asset/branch rejection, domain/platform Nginx and monitoring gates, PostgreSQL rollback compatibility, same-commit safety, failure recovery, and code/config/version restoration. No remote commands executed.");
+  console.log("Deploy checks passed: modular candidate and prompt validation, exploration asset/branch rejection, domain/platform Nginx and monitoring gates, PostgreSQL rollback compatibility, same-commit fresh-nonce reuse, stale/candidate/baseline rejection, in-flight cancellation, superseding rollback ownership, failure recovery, and code/config/version restoration. No remote commands executed.");
 } finally {
   await fs.rm(fixture, { recursive: true, force: true });
 }

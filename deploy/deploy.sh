@@ -43,32 +43,36 @@ if ! grep -Eq '^FEISHU_ALERT_WEBHOOK=https://(open\.feishu\.cn|open\.larkoffice\
   exit 1
 fi
 
-mkdir -p "$mirror" "$releases"
-chown root:root "$base" "$releases"
-chown -R for-now:for-now "$mirror"
-chmod 0755 "$base" "$releases"
-chmod 0700 "$mirror"
+source /usr/local/lib/for-now-release/release-fence.sh
+release_fence_init production "$current" deploy
+
+release_guard mkdir -p "$mirror" "$releases"
+release_guard chown root:root "$base" "$releases"
+release_guard chown -R for-now:for-now "$mirror"
+release_guard chmod 0755 "$base" "$releases"
+release_guard chmod 0700 "$mirror"
 if [ ! -d "$mirror" ]; then
-  sudo -u for-now env GIT_SSH_COMMAND="$git_ssh" git clone --mirror "$repo_url" "$mirror"
+  release_guard sudo -u for-now env GIT_SSH_COMMAND="$git_ssh" git clone --mirror "$repo_url" "$mirror"
 else
-  sudo -u for-now env GIT_SSH_COMMAND="$git_ssh" git --git-dir="$mirror" fetch --prune origin
+  release_guard sudo -u for-now env GIT_SSH_COMMAND="$git_ssh" git --git-dir="$mirror" fetch --prune origin
 fi
 
-commit=$(sudo -u for-now git --git-dir="$mirror" rev-parse "refs/heads/$branch")
+commit=$(release_guard sudo -u for-now git --git-dir="$mirror" rev-parse "refs/heads/$branch")
+if [ "$commit" != "$RELEASE_CANDIDATE_SHA" ]; then echo "Fetched commit differs from approved candidate." >&2; exit 1; fi
 release="$releases/$commit"
-previous=$(readlink -f "$current" 2>/dev/null || true)
+previous=$(release_fence_resolve_directory "$current")
 if [ ! -f "$release/.deploy-ready" ]; then
-  candidate=$(mktemp -d "$releases/.${commit}.XXXXXX")
-  cleanup_candidate() { rm -rf "$candidate"; }
+  candidate=$(release_guard mktemp -d "$releases/.${commit}.XXXXXX")
+  cleanup_candidate() { rm -rf "$candidate"; release_fence_cleanup; }
   trap cleanup_candidate EXIT
-  sudo -u for-now git --git-dir="$mirror" archive "$commit" | tar -x -C "$candidate"
+  release_guard sudo -u for-now git --git-dir="$mirror" archive "$commit" | tar -x -C "$candidate"
   forbidden=$(/usr/bin/find "$candidate/public" -mindepth 1 -maxdepth 1 -name 'explore*' -print -quit)
   if [ -n "$forbidden" ]; then
     echo "Production release contains local exploration assets: ${forbidden#"$candidate/"}" >&2
     exit 1
   fi
-  chown -R for-now:for-now "$candidate"
-  sudo -u for-now /usr/local/bin/npm --prefix "$candidate" ci --omit=dev
+  release_guard chown -R for-now:for-now "$candidate"
+  release_guard sudo -u for-now /usr/local/bin/npm --prefix "$candidate" ci --omit=dev
   /usr/local/bin/node --check "$candidate/server.mjs"
   while IFS= read -r module_file; do
     /usr/local/bin/node --check "$module_file"
@@ -83,24 +87,25 @@ if [ ! -f "$release/.deploy-ready" ]; then
   /bin/bash -n "$candidate/deploy/backup-to-oss.sh" "$candidate/deploy/restore-drill.sh" \
     "$candidate/deploy/migrate-attachments-to-oss.sh"
   while IFS= read -r -d '' text_file; do
+    release_guard true
     /usr/bin/gzip -n -6 -c "$text_file" > "${text_file}.gz"
   done < <(/usr/bin/find "$candidate/public" -type f \
     \( -name '*.css' -o -name '*.html' -o -name '*.js' -o -name '*.mjs' \
        -o -name '*.svg' -o -name '*.webmanifest' \) -print0)
-  touch "$candidate/.deploy-ready"
-  chown -R root:root "$candidate"
-  chmod 0755 "$candidate"
+  release_guard touch "$candidate/.deploy-ready"
+  release_guard chown -R root:root "$candidate"
+  release_guard chmod 0755 "$candidate"
   if [ -e "$release" ]; then
     release="$releases/${commit}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
   fi
-  mv "$candidate" "$release"
-  trap - EXIT
+  release_guard mv "$candidate" "$release"
+  trap release_fence_cleanup EXIT
 fi
-chown -R root:root "$release"
-chmod 0755 "$release"
+release_guard chown -R root:root "$release"
+release_guard chmod 0755 "$release"
 if [ -n "$previous" ] && [ -d "$previous" ]; then
-  chown -R root:root "$previous"
-  chmod 0755 "$previous"
+  release_guard chown -R root:root "$previous"
+  release_guard chmod 0755 "$previous"
 fi
 
 # A PostgreSQL cutover is a separate offline procedure. Generic code rollback
@@ -121,7 +126,7 @@ if grep -Eq '^PERSISTENCE_BACKEND=postgres$' /etc/for-now.env; then
 fi
 
 # Keep config and version together with the previous code on every failure path.
-rollback_dir=$(mktemp -d "$base/.deploy-rollback.XXXXXX")
+rollback_dir=$(release_guard mktemp -d "$base/.deploy-rollback.XXXXXX")
 managed_files=(
   /etc/for-now.env
   /etc/systemd/system/for-now.service
@@ -136,11 +141,10 @@ managed_files=(
   /etc/nginx/snippets/for-now.conf
   /etc/nginx/snippets/acme-challenge.conf
   /etc/nginx/sites-available/dysf
-  /usr/local/sbin/for-now-deploy
 )
 for index in "${!managed_files[@]}"; do
   file=${managed_files[$index]}
-  if [ -e "$file" ]; then cp -p "$file" "$rollback_dir/$index"; fi
+  if [ -e "$file" ]; then release_guard cp -p "$file" "$rollback_dir/$index"; fi
 done
 switched=0
 monitor_was_enabled=0
@@ -149,73 +153,76 @@ rollback() {
   status=$?
   trap - EXIT
   set +e
+  release_fence_begin_rollback || { rm -rf "$rollback_dir"; exit "$status"; }
   for index in "${!managed_files[@]}"; do
     file=${managed_files[$index]}
-    if [ -e "$rollback_dir/$index" ]; then cp -p "$rollback_dir/$index" "$file"; else rm -f "$file"; fi
+    if [ -e "$rollback_dir/$index" ]; then release_guard cp -p "$rollback_dir/$index" "$file"; else release_guard rm -f "$file"; fi
   done
-  systemctl daemon-reload
-  if [ "$monitor_was_enabled" -eq 1 ]; then systemctl enable --now for-now-monitor.timer
-  else systemctl disable --now for-now-monitor.timer; fi
+  release_guard systemctl daemon-reload
+  if [ "$monitor_was_enabled" -eq 1 ]; then release_guard systemctl enable --now for-now-monitor.timer
+  else release_guard systemctl disable --now for-now-monitor.timer; fi
   if [ "$switched" -eq 1 ]; then
     if [ -n "$previous" ] && [ -d "$previous" ]; then
-      ln -sfn "$previous" "$base/.app-rollback"
-      mv -Tf "$base/.app-rollback" "$current"
-      if ! systemctl restart for-now.service || ! curl -fsS http://127.0.0.1:4173/readyz >/dev/null 2>&1; then
+      release_guard ln -sfn "$previous" "$base/.app-rollback"
+      release_guard mv -Tf "$base/.app-rollback" "$current"
+      if ! release_guard systemctl restart for-now.service || ! curl -fsS http://127.0.0.1:4173/readyz >/dev/null 2>&1; then
         echo "Previous release restored but recovery is unhealthy; inspect for-now.service." >&2
       fi
     else
-      rm -f "$current"
-      systemctl stop for-now.service
+      release_guard rm -f "$current"
+      release_guard systemctl stop for-now.service
       echo "No previous release exists; service stopped." >&2
     fi
   fi
-  nginx -t && systemctl reload nginx
+  nginx -t && release_guard systemctl reload nginx
   rm -rf "$rollback_dir"
+  release_fence_cleanup
   echo "Deployment failed; code/config rollback attempted." >&2
   exit "$status"
 }
 trap rollback EXIT
-install -o root -g root -m 0644 "$release/deploy/for-now.service" /etc/systemd/system/for-now.service
-install -o root -g root -m 0644 "$release/deploy/for-now-backup.service" /etc/systemd/system/for-now-backup.service
-install -o root -g root -m 0644 "$release/deploy/for-now-backup.timer" /etc/systemd/system/for-now-backup.timer
-install -o root -g root -m 0644 "$release/deploy/for-now-monitor.service" /etc/systemd/system/for-now-monitor.service
-install -o root -g root -m 0644 "$release/deploy/for-now-monitor.timer" /etc/systemd/system/for-now-monitor.timer
-install -o root -g root -m 0755 "$release/deploy/backup-to-oss.sh" /usr/local/sbin/for-now-backup
-install -o root -g root -m 0755 "$release/deploy/restore-drill.sh" /usr/local/sbin/for-now-restore-drill
-install -o root -g root -m 0755 "$release/deploy/migrate-attachments-to-oss.sh" /usr/local/sbin/for-now-migrate-attachments
-install -o root -g root -m 0644 "$release/deploy/portal.html" /var/www/app-portal/index.html
-install -o root -g root -m 0644 "$release/deploy/nginx-for-now.conf" /etc/nginx/snippets/for-now.conf
-install -o root -g root -m 0644 "$release/deploy/nginx-acme-challenge.conf" /etc/nginx/snippets/acme-challenge.conf
+release_guard install -o root -g root -m 0644 "$release/deploy/for-now.service" /etc/systemd/system/for-now.service
+release_guard install -o root -g root -m 0644 "$release/deploy/for-now-backup.service" /etc/systemd/system/for-now-backup.service
+release_guard install -o root -g root -m 0644 "$release/deploy/for-now-backup.timer" /etc/systemd/system/for-now-backup.timer
+release_guard install -o root -g root -m 0644 "$release/deploy/for-now-monitor.service" /etc/systemd/system/for-now-monitor.service
+release_guard install -o root -g root -m 0644 "$release/deploy/for-now-monitor.timer" /etc/systemd/system/for-now-monitor.timer
+release_guard install -o root -g root -m 0755 "$release/deploy/backup-to-oss.sh" /usr/local/sbin/for-now-backup
+release_guard install -o root -g root -m 0755 "$release/deploy/restore-drill.sh" /usr/local/sbin/for-now-restore-drill
+release_guard install -o root -g root -m 0755 "$release/deploy/migrate-attachments-to-oss.sh" /usr/local/sbin/for-now-migrate-attachments
+release_guard install -o root -g root -m 0644 "$release/deploy/portal.html" /var/www/app-portal/index.html
+release_guard install -o root -g root -m 0644 "$release/deploy/nginx-for-now.conf" /etc/nginx/snippets/for-now.conf
+release_guard install -o root -g root -m 0644 "$release/deploy/nginx-acme-challenge.conf" /etc/nginx/snippets/acme-challenge.conf
 if [ -f /etc/letsencrypt/live/123.57.140.24/fullchain.pem ] && \
    [ -f /etc/letsencrypt/live/123.57.140.24/privkey.pem ] && \
    [ -f /etc/letsencrypt/live/77liu.top/fullchain.pem ] && \
    [ -f /etc/letsencrypt/live/77liu.top/privkey.pem ]; then
-  install -o root -g root -m 0644 "$release/deploy/nginx-dysf.conf" /etc/nginx/sites-available/dysf
+  release_guard install -o root -g root -m 0644 "$release/deploy/nginx-dysf.conf" /etc/nginx/sites-available/dysf
 fi
-systemctl daemon-reload
+release_guard systemctl daemon-reload
 nginx -t
-ln -sfn "$release" "$base/.app-next"
-mv -Tf "$base/.app-next" "$current"
+release_guard ln -sfn "$release" "$base/.app-next"
+release_guard mv -Tf "$base/.app-next" "$current"
 switched=1
 
 if grep -q '^APP_VERSION=' /etc/for-now.env; then
-  sed -i "s/^APP_VERSION=.*/APP_VERSION=${commit:0:12}/" /etc/for-now.env
+  release_guard sed -i "s/^APP_VERSION=.*/APP_VERSION=${commit:0:12}/" /etc/for-now.env
 else
+  release_guard true
   printf 'APP_VERSION=%s\n' "${commit:0:12}" >> /etc/for-now.env
 fi
 
-systemctl restart for-now.service
+release_guard systemctl restart for-now.service
 for attempt in $(seq 1 30); do
   if curl -fsS http://127.0.0.1:4173/readyz >/dev/null 2>&1; then
-    systemctl reload nginx
-    systemctl enable --now for-now-monitor.timer
-    install -o root -g root -m 0755 "$release/deploy/deploy.sh" /usr/local/sbin/for-now-deploy
-    trap - EXIT
+    release_guard systemctl reload nginx
+    release_guard systemctl enable --now for-now-monitor.timer
+    trap release_fence_cleanup EXIT
     rm -rf "$rollback_dir"
     # Keep both the active release and the immediate rollback target.
     while IFS= read -r stale; do
-      if [ "$stale" != "$release" ] && [ "$stale" != "$previous" ]; then rm -rf "$stale"; fi
+      if [ "$stale" != "$release" ] && [ "$stale" != "$previous" ]; then release_guard rm -rf "$stale"; fi
     done < <(find "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -rn | tail -n +6 | cut -d' ' -f2-)
+    release_fence_finish
     echo "Deployed ${commit:0:12}"
     exit 0
   fi

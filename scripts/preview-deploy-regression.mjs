@@ -4,6 +4,7 @@ import fsSync, { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { installReleaseFenceFixture, issueReleaseFenceFixture, preFenceReleaseDeployerFixture } from "./lib/release-fence-fixture.mjs";
 import { gunzipSync } from "node:zlib";
 
 // Run the real Preview Bash control flow with privileged and network commands shimmed.
@@ -11,6 +12,8 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const temporary = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "for-now-preview-deploy-")));
 const firstCommit = "1111111111111111111111111111111111111111";
 const secondCommit = "2222222222222222222222222222222222222222";
+const legacyDeployer = preFenceReleaseDeployerFixture("preview");
+assert.doesNotMatch(legacyDeployer,/release_fence_init/);
 const deploySource = await fs.readFile(path.join(root, "deploy/deploy-preview.sh"), "utf8");
 const serviceSource = await fs.readFile(path.join(root, "deploy/for-now-preview.service"), "utf8");
 const nginxSource = await fs.readFile(path.join(root, "deploy/nginx-for-now-preview.conf"), "utf8");
@@ -95,7 +98,8 @@ async function preseedRelease(directory, commit) {
   const release = path.join(directory, "opt/for-now-preview/releases", commit);
   await fs.mkdir(path.join(release, "deploy"), { recursive: true });
   for (const name of ["deploy-preview.sh", "for-now-preview.service", "nginx-for-now-preview.conf"]) {
-    await fs.copyFile(path.join(root, "deploy", name), path.join(release, "deploy", name));
+    if(name === "deploy-preview.sh") await fs.writeFile(path.join(release,"deploy",name),legacyDeployer);
+    else await fs.copyFile(path.join(root, "deploy", name), path.join(release, "deploy", name));
   }
   await fs.writeFile(path.join(release, ".preview-deploy-ready"), `preview-deploy-v1 ${commit}\n`);
   return release;
@@ -157,6 +161,15 @@ fs.appendFileSync(log, name + " " + args.join(" ") + "\\n");
 const stateFile = path.join(dir, "systemd-state.json");
 const state = () => JSON.parse(fs.readFileSync(stateFile, "utf8"));
 const saveState = value => fs.writeFileSync(stateFile, JSON.stringify(value));
+const supersede = action => {
+  const cli = path.join(dir,"usr/local/lib/for-now-release/release-fence.mjs");
+  const state = JSON.parse(fs.readFileSync(path.join(dir,"var/lib/for-now-release/preview.json"),"utf8"));
+  const args = [cli,action,"--target","preview","--expected-attempt-id",state.attemptId];
+  if(action === "issue") args.push("--candidate-sha", "${firstCommit}", "--baseline-sha", currentCommit(), "--action", "rollback");
+  const result = spawnSync(${JSON.stringify(process.execPath)},args,{encoding:"utf8"});
+  if(result.status!==0) throw new Error(result.stderr);
+  fs.writeFileSync(path.join(dir,"superseded.json"),result.stdout);
+};
 const currentCommit = () => {
   try { return path.basename(fs.realpathSync(path.join(dir, "opt/for-now-preview/app"))).slice(0, 40); }
   catch { return ""; }
@@ -195,6 +208,7 @@ if (name === "git") {
   process.exit(0);
 }
 if (name === "npm") {
+  if(scenario === "invalidate_build") supersede("invalidate");
   if (scenario === "dependencies") process.exit(1);
   process.exit(0);
 }
@@ -205,6 +219,8 @@ if (name === "node") {
 }
 if (name === "systemctl") {
   const value = state();
+  if(scenario === "invalidate_before_switch" && args[0] === "daemon-reload") supersede("invalidate");
+  if(scenario === "new_decision_after_switch" && args[0] === "restart") { supersede("issue"); process.exit(1); }
   if (args[0] === "is-enabled") process.exit(value.enabled ? 0 : 1);
   if (args[0] === "is-active") process.exit(value.active ? 0 : 1);
   if (args[0] === "enable") value.enabled = true;
@@ -241,7 +257,16 @@ if (name === "mv") {
 }
 if (name === "readlink") {
   try { console.log(fs.realpathSync(args.at(-1))); process.exit(0); }
-  catch { process.exit(1); }
+  catch(error) {
+    // GNU readlink -f permits an existing parent and a missing last component;
+    // ELOOP and other failures must stay failures.
+    let entryExists = false;
+    try { fs.lstatSync(args.at(-1)); entryExists = true; } catch {}
+    if(error.code === "ENOENT" && !entryExists && fs.existsSync(path.dirname(args.at(-1)))) {
+      console.log(path.resolve(args.at(-1))); process.exit(0);
+    }
+    process.exit(1);
+  }
 }
 if (["chown", "sleep"].includes(name)) process.exit(0);
 process.exit(0);
@@ -306,6 +331,7 @@ async function setupScenario(name, {
   await fs.writeFile(path.join(directory, "srv/for-now/data/production-sentinel"), "production data unchanged\n");
   await fs.writeFile(path.join(directory, "systemd-state.json"), JSON.stringify(systemd));
   await fs.writeFile(path.join(directory, "commands.log"), "");
+  const releaseFence = await installReleaseFenceFixture(root, directory);
   await writeShim(directory, bin);
 
   let script = deploySource.replace(
@@ -317,9 +343,9 @@ async function setupScenario(name, {
   }
   script = script.replaceAll("/usr/bin/stat", path.join(bin, "stat"));
   script = script.replaceAll("/usr/bin/ffmpeg", path.join(directory, "usr/bin/ffmpeg"));
-  const scriptFile = path.join(directory, "deploy-preview.sh");
+  const scriptFile = path.join(directory, "usr/local/sbin/for-now-preview-deploy");
   await fs.writeFile(scriptFile, script, { mode: 0o755 });
-  return { directory, bin, scriptFile, targetCommit };
+  return { directory, bin, scriptFile, targetCommit, releaseFence, installedSource:script };
 }
 
 function invoke(fixture, args = ["deploy"], environment = {}) {
@@ -328,13 +354,22 @@ function invoke(fixture, args = ["deploy"], environment = {}) {
     targetCommit: environment.targetCommit || fixture.targetCommit,
     failHealthCommit: environment.failHealthCommit || ""
   }));
+  const link = path.join(fixture.directory,"opt/for-now-preview/app");
+  let baselineSha = "0".repeat(40);
+  try { baselineSha = path.basename(fsSync.realpathSync(link)).slice(0,40); } catch (error) { if(error.code !== "ENOENT") throw error; }
+  let candidateSha = environment.approvedCandidate || environment.targetCommit || fixture.targetCommit;
+  if(args[0] === "rollback") candidateSha = args[1] || path.basename(fsSync.realpathSync(path.join(fixture.directory,"opt/for-now-preview/previous"))).slice(0,40);
+  const approval = environment.approval || issueReleaseFenceFixture(fixture.releaseFence, { target:"preview", candidateSha, baselineSha, action:args[0] });
+  fixture.lastApproval = approval;
   return spawnSync("/bin/bash", [fixture.scriptFile, ...args], {
     env: {
       ...process.env,
-      DEPLOY_BRANCH: environment.branch || "preview/v0.5.0"
+      DEPLOY_BRANCH: environment.branch || "preview/v0.5.0",
+      RELEASE_ATTEMPT_ID: approval.attemptId,
+      RELEASE_CANDIDATE_SHA: approval.candidateSha
     },
     encoding: "utf8",
-    timeout: 120000
+    timeout: 180000
   });
 }
 
@@ -362,6 +397,8 @@ try {
     assert.deepEqual(gunzipSync(compressedRuntime), runtime);
     assert.ok(compressedRuntime.length < runtime.length);
 
+    const stale = invoke(fixture, ["deploy"], { approval: fixture.lastApproval });
+    assert.equal(stale.status, 1); assert.match(stale.stderr, /RELEASE_FENCE_REJECTED/);
     const second = invoke(fixture);
     assert.equal(second.status, 0, second.stderr);
     const commands = await fs.readFile(path.join(fixture.directory, "commands.log"), "utf8");
@@ -380,7 +417,21 @@ try {
     assert.equal(result.status, 1, result.stderr);
     assert.match(result.stderr, /only Preview code\/configuration was rolled back/);
     assert.deepEqual(await previewSnapshot(fixture.directory), previewBefore);
+    assert.equal(await fs.readFile(fixture.scriptFile,"utf8"),fixture.installedSource,"failure recovery must preserve the guarded entry");
     assert.deepEqual(await productionSnapshot(fixture.directory), productionBefore);
+  }
+
+  {
+    const fixture = await setupScenario("first-install-health", { targetCommit: firstCommit });
+    await preseedRelease(fixture.directory, firstCommit);
+    const productionBefore = await productionSnapshot(fixture.directory);
+    const before = await previewSnapshot(fixture.directory);
+    const result = invoke(fixture, ["deploy"], { failHealthCommit: firstCommit });
+    assert.equal(result.status, 1, result.stderr);
+    assert.deepEqual(await previewSnapshot(fixture.directory), before, "failed first installation must remove newly installed managed files and active links");
+    assert.deepEqual(JSON.parse(await fs.readFile(path.join(fixture.directory,"systemd-state.json"),"utf8")), { enabled:false, active:false });
+    assert.deepEqual(await productionSnapshot(fixture.directory), productionBefore);
+    await assert.rejects(fs.access(path.join(fixture.releaseFence.directory,"preview.json.execution")), {code:"ENOENT"});
   }
 
   {
@@ -391,11 +442,24 @@ try {
     });
     const productionBefore = await productionSnapshot(fixture.directory);
     const result = invoke(fixture, ["rollback"]);
+    assert.equal(await fs.readFile(fixture.scriptFile,"utf8"),fixture.installedSource,"old pre-fence rollback target must not downgrade the installed entry");
+    const stale = invoke(fixture,["rollback"],{approval:fixture.lastApproval});
+    assert.equal(stale.status,1); assert.match(stale.stderr,/RELEASE_FENCE_REJECTED/);
     assert.equal(result.status, 0, result.stderr);
     assert.equal(path.basename(await fs.realpath(path.join(fixture.directory, "opt/for-now-preview/app"))), firstCommit);
     assert.equal(path.basename(await fs.realpath(path.join(fixture.directory, "opt/for-now-preview/previous"))), secondCommit);
     assert.match(await fs.readFile(path.join(fixture.directory, "etc/for-now-preview.env"), "utf8"), /^APP_VERSION=111111111111$/m);
     assert.deepEqual(await productionSnapshot(fixture.directory), productionBefore);
+  }
+
+  {
+    const fixture = await setupScenario("rollback-candidate-mismatch", {activeCommit:secondCommit,previousCommit:firstCommit});
+    const before = await previewSnapshot(fixture.directory);
+    const approval = issueReleaseFenceFixture(fixture.releaseFence, {target:"preview",candidateSha:secondCommit,baselineSha:secondCommit,action:"rollback"});
+    const result = invoke(fixture,["rollback"],{approval});
+    assert.equal(result.status,1); assert.match(result.stderr,/Preview target differs from approved candidate/);
+    assert.deepEqual(await previewSnapshot(fixture.directory),before);
+    assert.doesNotMatch(await fs.readFile(path.join(fixture.directory,"commands.log"),"utf8"),/install |systemctl restart|mv .*\/app/);
   }
 
   {
@@ -454,8 +518,61 @@ try {
     assert.deepEqual({ ...after, environment: previewBefore.environment }, previewBefore);
   }
 
+  {
+    const fixture = await setupScenario("looping-previous-link", {activeCommit:firstCommit,targetCommit:secondCommit});
+    await preseedRelease(fixture.directory,secondCommit);
+    const before = await previewSnapshot(fixture.directory);
+    const previous = path.join(fixture.directory,"opt/for-now-preview/previous");
+    await fs.symlink(previous,previous);
+    const result = invoke(fixture);
+    assert.equal(result.status,1); assert.match(result.stderr,/Release link cannot be resolved/);
+    assert.equal(await fs.readlink(previous),previous,"reject must preserve the broken link for new-owner recovery");
+    await fs.unlink(previous);
+    assert.deepEqual(await previewSnapshot(fixture.directory),before);
+    assert.doesNotMatch(await fs.readFile(path.join(fixture.directory,"commands.log"),"utf8"),/install |systemctl restart|mv .*\/app/);
+    await assert.rejects(fs.access(path.join(fixture.releaseFence.directory,"preview.json.execution")),{code:"ENOENT"});
+  }
+
+  for (const scenario of ["candidate_mismatch", "stale_same_commit", "baseline_mismatch", "invalidate_build", "invalidate_before_switch", "new_decision_after_switch"]) {
+    const fixture = await setupScenario(scenario, { activeCommit: firstCommit, targetCommit: secondCommit });
+    const productionBefore = await productionSnapshot(fixture.directory);
+    const before = await previewSnapshot(fixture.directory);
+    let environment = { scenario };
+    if(scenario === "candidate_mismatch") environment.approvedCandidate = "f".repeat(40);
+    if(["stale_same_commit", "baseline_mismatch"].includes(scenario)) {
+      const approval = issueReleaseFenceFixture(fixture.releaseFence, { target: "preview", candidateSha: secondCommit, baselineSha: scenario === "baseline_mismatch" ? "f".repeat(40) : firstCommit });
+      if(scenario === "stale_same_commit") await fixture.releaseFence.fence.invalidate({target:"preview",expectedAttemptId:approval.attemptId});
+      environment.approval = approval;
+    }
+    const result = invoke(fixture,["deploy"],environment);
+    assert.equal(result.status, 1, `${scenario}: ${result.stderr}`);
+    const commands = await fs.readFile(path.join(fixture.directory,"commands.log"),"utf8");
+    const after = await previewSnapshot(fixture.directory);
+    if(["candidate_mismatch", "stale_same_commit", "baseline_mismatch", "invalidate_build"].includes(scenario)) {
+      assert.deepEqual(after,before);
+      assert.doesNotMatch(commands,/install |systemctl restart|mv .*\/app/);
+      if(scenario !== "invalidate_build") assert.doesNotMatch(commands,/npm /);
+    }
+    if(scenario === "invalidate_before_switch") {
+      assert.equal(after.active,before.active);
+      assert.match(commands,/install .*for-now-preview.service/); // New owner must recover configuration already installed.
+      assert.doesNotMatch(commands,/systemctl restart|mv .*\/app/);
+      assert.match(result.stderr,/Old worker cannot roll back/);
+    }
+    if(scenario === "new_decision_after_switch") {
+      assert.equal(path.basename(after.active),secondCommit);
+      assert.equal(commands.match(/systemctl restart/g)?.length,1);
+      assert.equal(commands.match(/mv .*\/app\n/g)?.length,1);
+      assert.equal((await fixture.releaseFence.fence.read("preview")).attemptId,JSON.parse(await fs.readFile(path.join(fixture.directory,"superseded.json"),"utf8")).attemptId);
+      assert.match(result.stderr,/Old worker cannot roll back/);
+    }
+    await assert.rejects(fs.access(path.join(fixture.releaseFence.directory,"preview.json.execution")),{code:"ENOENT"});
+    assert.deepEqual(await productionSnapshot(fixture.directory),productionBefore);
+    assert.equal((await fs.readdir(path.join(fixture.directory,"opt/for-now-preview"))).some(name=>name.startsWith(".preview-deploy-rollback.")),false);
+  }
+
   console.log(
-    "Preview deploy checks passed: installation, isolated candidate validation, static gzip, same-commit idempotency, " +
+    "Preview deploy checks passed: installation, isolated candidate validation, static gzip, same-commit fresh-nonce idempotency, stale/candidate/baseline rejection, in-flight cancellation, superseding rollback ownership, " +
     "explicit/failed rollback, preview-only branch and environment gates, and unchanged production code/service/env/data. " +
     "No remote commands, provider calls, push, or deployment executed."
   );

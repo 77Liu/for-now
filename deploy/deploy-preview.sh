@@ -16,7 +16,6 @@ data_dir=/srv/for-now-preview/data
 env_file=/etc/for-now-preview.env
 service_file=/etc/systemd/system/for-now-preview.service
 nginx_file=/etc/nginx/snippets/for-now-preview.conf
-deployer_file=/usr/local/sbin/for-now-preview-deploy
 runtime_user=for-now-preview
 runtime_home=/home/for-now-preview
 ssh_key=$runtime_home/.ssh/gitee_deploy
@@ -77,7 +76,7 @@ fi
 
 validate_environment() {
   local keys line key value
-  keys=$(mktemp)
+  keys=$(release_guard mktemp)
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       ""|\#*) continue ;;
@@ -167,13 +166,16 @@ validate_environment() {
   done
 }
 
+source /usr/local/lib/for-now-release/release-fence.sh
+release_fence_init preview "$current" "$action"
+
 validate_environment
 
-mkdir -p "$base" "$mirror" "$releases" "$data_dir"
-chown "root:root" "$base" "$releases"
-chown "$runtime_user:$runtime_user" "$mirror" "$data_dir"
-chmod 0755 "$base" "$releases"
-chmod 0700 "$mirror" "$data_dir"
+release_guard mkdir -p "$base" "$mirror" "$releases" "$data_dir"
+release_guard chown "root:root" "$base" "$releases"
+release_guard chown "$runtime_user:$runtime_user" "$mirror" "$data_dir"
+release_guard chmod 0755 "$base" "$releases"
+release_guard chmod 0700 "$mirror" "$data_dir"
 
 preview_run() {
   runuser -u "$runtime_user" -- env -i HOME="$runtime_home" PATH="$PATH" \
@@ -187,15 +189,16 @@ preview_git() {
 candidate=
 cleanup_candidate() {
   if [ -n "$candidate" ] && [ -d "$candidate" ]; then rm -rf "$candidate"; fi
+  release_fence_cleanup
 }
 
 target=
 target_commit=
 if [ "$action" = "deploy" ]; then
   if [ ! -f "$mirror/HEAD" ]; then
-    preview_git clone --mirror "$repo_url" "$mirror"
+    release_guard preview_git clone --mirror "$repo_url" "$mirror"
   else
-    preview_git --git-dir="$mirror" fetch --prune origin
+    release_guard preview_git --git-dir="$mirror" fetch --prune origin
   fi
 
   target_commit=$(preview_git --git-dir="$mirror" rev-parse --verify "refs/heads/$branch^{commit}")
@@ -203,14 +206,15 @@ if [ "$action" = "deploy" ]; then
     echo "Preview branch did not resolve to a 40-character commit." >&2
     exit 1
   fi
+  if [ "$target_commit" != "$RELEASE_CANDIDATE_SHA" ]; then echo "Preview target differs from approved candidate." >&2; exit 1; fi
   target=$releases/$target_commit
   if [ ! -f "$target/.preview-deploy-ready" ] || \
      ! grep -Fqx "preview-deploy-v1 $target_commit" "$target/.preview-deploy-ready"; then
-    candidate=$(mktemp -d "$releases/.${target_commit}.XXXXXX")
+    candidate=$(release_guard mktemp -d "$releases/.${target_commit}.XXXXXX")
     trap cleanup_candidate EXIT
-    preview_git --git-dir="$mirror" archive "$target_commit" | tar -x -C "$candidate"
-    chown -R "$runtime_user:$runtime_user" "$candidate"
-    preview_run npm --prefix "$candidate" ci --omit=dev
+    release_guard preview_git --git-dir="$mirror" archive "$target_commit" | tar -x -C "$candidate"
+    release_guard chown -R "$runtime_user:$runtime_user" "$candidate"
+    release_guard preview_run npm --prefix "$candidate" ci --omit=dev
 
     /usr/local/bin/node --check "$candidate/server.mjs"
     /usr/local/bin/node --check "$candidate/admin-snapshot.mjs"
@@ -224,25 +228,26 @@ if [ "$action" = "deploy" ]; then
     preview_run /usr/local/bin/node "$candidate/scripts/prompt-catalog-regression.mjs"
 
     while IFS= read -r -d '' text_file; do
+      release_guard true
       /usr/bin/gzip -n -6 -c "$text_file" > "${text_file}.gz"
     done < <(/usr/bin/find "$candidate/public" -type f \
       \( -name '*.css' -o -name '*.html' -o -name '*.js' -o -name '*.mjs' \
          -o -name '*.svg' -o -name '*.webmanifest' \) -print0)
     printf 'preview-deploy-v1 %s\n' "$target_commit" > "$candidate/.preview-deploy-ready"
-    chown -R "root:root" "$candidate"
-    chmod 0755 "$candidate"
+    release_guard chown -R "root:root" "$candidate"
+    release_guard chmod 0755 "$candidate"
     if [ -e "$target" ]; then
       target="$releases/${target_commit}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
     fi
-    mv "$candidate" "$target"
+    release_guard mv "$candidate" "$target"
     candidate=
-    trap - EXIT
+    trap release_fence_cleanup EXIT
   fi
 else
   if [ -n "$selector" ]; then
     target=$releases/$selector
   else
-    target=$(readlink -f "$previous_link" 2>/dev/null || true)
+    target=$(release_fence_resolve_directory "$previous_link")
   fi
   case "$target" in
     "$releases"/*) ;;
@@ -267,10 +272,11 @@ else
   fi
 fi
 
+if [ "$target_commit" != "$RELEASE_CANDIDATE_SHA" ]; then echo "Preview target differs from approved candidate." >&2; exit 1; fi
+
 for required_file in \
   deploy/for-now-preview.service \
-  deploy/nginx-for-now-preview.conf \
-  deploy/deploy-preview.sh
+  deploy/nginx-for-now-preview.conf
 do
   if [ ! -f "$target/$required_file" ]; then
     echo "Preview release is missing $required_file." >&2
@@ -278,18 +284,17 @@ do
   fi
 done
 
-active=$(readlink -f "$current" 2>/dev/null || true)
-saved_previous=$(readlink -f "$previous_link" 2>/dev/null || true)
-rollback_dir=$(mktemp -d "$base/.preview-deploy-rollback.XXXXXX")
+active=$(release_fence_resolve_directory "$current")
+saved_previous=$(release_fence_resolve_directory "$previous_link")
+rollback_dir=$(release_guard mktemp -d "$base/.preview-deploy-rollback.XXXXXX")
 managed_files=(
   "$env_file"
   "$service_file"
   "$nginx_file"
-  "$deployer_file"
 )
 for index in "${!managed_files[@]}"; do
   file=${managed_files[$index]}
-  if [ -e "$file" ]; then cp -p "$file" "$rollback_dir/$index"; fi
+  if [ -e "$file" ]; then release_guard cp -p "$file" "$rollback_dir/$index"; fi
 done
 service_was_enabled=0
 service_was_active=0
@@ -300,10 +305,10 @@ switched=0
 restore_link() {
   local destination=$1 link=$2 temporary=$3
   if [ -n "$destination" ] && [ -d "$destination" ]; then
-    ln -sfn "$destination" "$temporary"
-    mv -Tf "$temporary" "$link"
+    release_guard ln -sfn "$destination" "$temporary"
+    release_guard mv -Tf "$temporary" "$link"
   else
-    rm -f "$temporary" "$link"
+    release_guard rm -f "$temporary" "$link"
   fi
 }
 
@@ -311,35 +316,36 @@ rollback_failed_deployment() {
   status=$?
   trap - EXIT
   set +e
+  release_fence_begin_rollback || { rm -rf "$rollback_dir"; exit "$status"; }
   for index in "${!managed_files[@]}"; do
     file=${managed_files[$index]}
-    if [ -e "$rollback_dir/$index" ]; then cp -p "$rollback_dir/$index" "$file"; else rm -f "$file"; fi
+    if [ -e "$rollback_dir/$index" ]; then release_guard cp -p "$rollback_dir/$index" "$file"; else release_guard rm -f "$file"; fi
   done
   if [ "$switched" -eq 1 ]; then
     restore_link "$active" "$current" "$base/.app-recovery"
     restore_link "$saved_previous" "$previous_link" "$base/.previous-recovery"
   fi
-  systemctl daemon-reload
-  if [ "$service_was_enabled" -eq 1 ]; then systemctl enable for-now-preview.service
-  else systemctl disable for-now-preview.service; fi
+  release_guard systemctl daemon-reload
+  if [ "$service_was_enabled" -eq 1 ]; then release_guard systemctl enable for-now-preview.service
+  else release_guard systemctl disable for-now-preview.service; fi
   if [ "$service_was_active" -eq 1 ] && [ -n "$active" ]; then
-    if ! systemctl restart for-now-preview.service || ! curl -fsS "$ready_url" >/dev/null 2>&1; then
+    if ! release_guard systemctl restart for-now-preview.service || ! curl -fsS "$ready_url" >/dev/null 2>&1; then
       echo "Previous Preview release was restored but is unhealthy; inspect for-now-preview.service." >&2
     fi
   else
-    systemctl stop for-now-preview.service
+    release_guard systemctl stop for-now-preview.service
   fi
-  nginx -t && systemctl reload nginx
+  nginx -t && release_guard systemctl reload nginx
   rm -rf "$rollback_dir"
+  release_fence_cleanup
   echo "Preview deployment failed; only Preview code/configuration was rolled back." >&2
   exit "$status"
 }
 trap rollback_failed_deployment EXIT
 
-install -o root -g root -m 0644 "$target/deploy/for-now-preview.service" "$service_file"
-install -o root -g root -m 0644 "$target/deploy/nginx-for-now-preview.conf" "$nginx_file"
-install -o root -g root -m 0755 "$target/deploy/deploy-preview.sh" "$deployer_file"
-systemctl daemon-reload
+release_guard install -o root -g root -m 0644 "$target/deploy/for-now-preview.service" "$service_file"
+release_guard install -o root -g root -m 0644 "$target/deploy/nginx-for-now-preview.conf" "$nginx_file"
+release_guard systemctl daemon-reload
 nginx -t
 
 switched=1
@@ -348,7 +354,7 @@ if [ "$active" != "$target" ]; then
   restore_link "$target" "$current" "$base/.app-next"
 fi
 
-next_env=$(mktemp /etc/.for-now-preview.env.XXXXXX)
+next_env=$(release_guard mktemp /etc/.for-now-preview.env.XXXXXX)
 awk -v version="${target_commit:0:12}" '
   BEGIN { found = 0 }
   /^APP_VERSION=/ {
@@ -359,16 +365,17 @@ awk -v version="${target_commit:0:12}" '
   { print }
   END { if (!found) print "APP_VERSION=" version }
 ' "$env_file" > "$next_env"
-install -o root -g root -m 0600 "$next_env" "$env_file"
+release_guard install -o root -g root -m 0600 "$next_env" "$env_file"
 rm -f "$next_env"
 
-systemctl enable for-now-preview.service
-systemctl restart for-now-preview.service
+release_guard systemctl enable for-now-preview.service
+release_guard systemctl restart for-now-preview.service
 for attempt in $(seq 1 30); do
   if curl -fsS "$ready_url" >/dev/null 2>&1; then
-    systemctl reload nginx
-    trap - EXIT
+    release_guard systemctl reload nginx
+    trap release_fence_cleanup EXIT
     rm -rf "$rollback_dir"
+    release_fence_finish
     echo "$action Preview ${target_commit:0:12}"
     exit 0
   fi
