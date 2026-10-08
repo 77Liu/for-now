@@ -15,10 +15,10 @@ try {
       if(options.headers.authorization!=='Bearer synthetic-api-key')throw new Error('wrong synthetic credential');
       appendFileSync(process.env.REPLAY_TEST_TRACE,JSON.stringify({url,body:JSON.parse(options.body)})+'\\n');
       if(process.env.REPLAY_TEST_FAILURE==='1')return new Response(JSON.stringify({error:{code:'SYNTHETIC_FAILURE'}}),{status:503});
-      return new Response(JSON.stringify({id:'synthetic-id',model:'deepseek-v4-pro',choices:[{finish_reason:'stop',message:{content:'合成回答',reasoning_content:'合成审计内容'}}],usage:{prompt_tokens:4,completion_tokens:8,total_tokens:12}}),{status:200});};`, { mode: 0o600 });
+      return new Response(JSON.stringify({id:'synthetic-id',model:process.env.REPLAY_TEST_FAILURE==='model'?'unexpected-model':'deepseek-v4-pro',choices:[{finish_reason:process.env.REPLAY_TEST_FAILURE==='finish'?'unexpected-finish':'stop',message:{content:'合成回答',reasoning_content:'合成审计内容'}}],usage:process.env.REPLAY_TEST_FAILURE==='usage'?null:{prompt_tokens:4,completion_tokens:8,total_tokens:12}}),{status:200});};`, { mode: 0o600 });
   const run = fail => spawnSync(process.execPath, ["--import", stub, "scripts/personalization-live-replay.mjs", "--live",
     "--tree", tree, "--output", output], {
-    cwd: root, encoding: "utf8", env: { ...process.env, REPLAY_API_KEY: "synthetic-api-key", REPLAY_TEST_TRACE: trace, REPLAY_TEST_FAILURE: fail ? "1" : "0" }
+    cwd: root, encoding: "utf8", env: { ...process.env, REPLAY_API_KEY: "synthetic-api-key", REPLAY_TEST_TRACE: trace, REPLAY_TEST_FAILURE: fail === true ? "1" : fail || "0" }
   });
   assert.equal(run(false).status, 0);
   let report = JSON.parse(await fs.readFile(output, "utf8"));
@@ -59,5 +59,19 @@ try {
   assert.equal((await fs.readFile(trace, "utf8")).trim().split("\n").length, 1);
   assert.notEqual(run(false).status, 0, "uncertain call is never resubmitted");
   assert.equal((await fs.readFile(trace, "utf8")).trim().split("\n").length, 1);
+  for (const failure of ["usage", "model", "finish"]) {
+    await fs.rm(output); await fs.rm(trace);
+    assert.notEqual(run(failure).status, 0);
+    const rejected = JSON.parse(await fs.readFile(output, "utf8"));
+    const row = rejected.results[0];
+    assert.equal(rejected.results.length, 1); assert.equal(row.status, "failed-or-uncertain");
+    assert.equal(row.providerRequestId, "synthetic-id"); assert.equal(row.httpStatus, 200);
+    assert.equal(row.partialAnswerText, "合成回答"); assert.equal(row.auditReasoningContent, "合成审计内容");
+    assert.equal(row.modelReturned, failure === "model" ? "unexpected-model" : "deepseek-v4-pro");
+    assert.equal(row.finishReason, failure === "finish" ? "unexpected-finish" : "stop");
+    assert.equal(row.usage?.completion_tokens ?? null, failure === "usage" ? null : 8);
+    assert.equal((await fs.readFile(trace, "utf8")).trim().split("\n").length, 1);
+    assert.notEqual(run(false).status, 0, "Rejected observation never triggers a retry");
+  }
   console.log("Live replay runner passed: private ledger, 48 calls bounded, cost record, no keys, idempotent resume, first failure stops and uncertain calls are not retried. External calls: 0.");
 } finally { await fs.rm(temporary, { recursive: true, force: true }); }

@@ -79,8 +79,9 @@ if (!live) {
       row.wireRequestSha256 = liveFingerprint(row.auditWireRequest);
       report.results.push(row); await persist(); // A crash leaves an uncertain call, never silently resubmitted.
       const startedAt = Date.now();
+      let observedResult;
       try {
-        const result = await transport.complete({ apiKey, signal: AbortSignal.timeout(plan.timeoutMs), messages: request.messages,
+        const result = observedResult = await transport.complete({ apiKey, signal: AbortSignal.timeout(plan.timeoutMs), messages: request.messages,
           parameters: wireParameters });
         const usage = result.usage;
         assert.ok(Number.isSafeInteger(usage?.prompt_tokens) && usage.prompt_tokens >= 0);
@@ -97,12 +98,12 @@ if (!live) {
           providerCreatedAt: result.providerCreatedAt, finishReason: result.finishReason, httpStatus: result.httpStatus });
       } catch (error) {
         Object.assign(row, { status: "failed-or-uncertain", errorCode: String(error.code || error.name || "UNKNOWN"),
-          httpStatus: Number(error.httpStatus || 0), finishReason: error.finishReason || "",
-          providerRequestId: error.providerRequestId || "", modelReturned: error.modelReturned || "",
-          providerCreatedAt: error.providerCreatedAt || "", systemFingerprint: error.systemFingerprint || "",
-          partialAnswerText: error.partialContent || "", partialAnswerSha256: liveFingerprint(error.partialContent || ""),
-          auditReasoningContent: error.partialReasoningContent || "", reasoningSha256: liveFingerprint(error.partialReasoningContent || ""),
-          ...(error.usage ? { usage: error.usage } : {}) });
+          httpStatus: Number(error.httpStatus ?? observedResult?.httpStatus ?? 0), finishReason: error.finishReason ?? observedResult?.finishReason ?? "",
+          providerRequestId: error.providerRequestId ?? observedResult?.providerRequestId ?? "", modelReturned: error.modelReturned ?? observedResult?.modelReturned ?? "",
+          providerCreatedAt: error.providerCreatedAt ?? observedResult?.providerCreatedAt ?? "", systemFingerprint: error.systemFingerprint ?? observedResult?.systemFingerprint ?? "",
+          partialAnswerText: error.partialContent ?? observedResult?.content ?? "", partialAnswerSha256: liveFingerprint(error.partialContent ?? observedResult?.content ?? ""),
+          auditReasoningContent: error.partialReasoningContent ?? observedResult?.reasoningContent ?? "", reasoningSha256: liveFingerprint(error.partialReasoningContent ?? observedResult?.reasoningContent ?? ""),
+          usage: error.usage ?? observedResult?.usage ?? null });
         report.status = "failed";
       }
       row.durationMs = Date.now() - startedAt; row.finishedAt = new Date().toISOString();
