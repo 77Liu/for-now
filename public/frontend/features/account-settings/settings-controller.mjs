@@ -1,3 +1,4 @@
+import { createOpeningPreferencesController } from "./opening-controller.mjs";
 import {
   normalizeAccountSettings,
   settingsPayload
@@ -53,6 +54,7 @@ export function createSettingsFeatureController({
     confirmAction
   })) requireFunction(value, name);
 
+  const openingPreferencesController = createOpeningPreferencesController({ request, currentUser, hasCapability });
   const voicePreview = createVoicePreviewController({
     requestBlob: request.blob,
     getSpeech: speech.get,
@@ -263,6 +265,7 @@ export function createSettingsFeatureController({
     for (const [type, listener] of Object.entries(listeners)) {
       candidate.root.removeEventListener(type, listener);
     }
+    openingPreferencesController.unmount();
     voicePreview.unmount();
     localTestController.unmount();
     pendingSave = null;
@@ -287,6 +290,7 @@ export function createSettingsFeatureController({
       root.addEventListener(type, listener);
     }
     signal?.addEventListener?.("abort", dispose, { once: true });
+    openingPreferencesController.mount({ root, signal });
     voicePreview.mount({ root, signal });
     localTestController.mount({ root, signal });
     render(candidate);
@@ -302,6 +306,7 @@ export function createSettingsFeatureController({
     session = {};
     pendingSave = null;
     pendingTest = null;
+    openingPreferencesController.resetSession();
     voicePreview.resetSession();
     localTestController.resetSession();
     for (const root of roots) {

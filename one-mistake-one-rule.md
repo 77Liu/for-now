@@ -265,3 +265,10 @@
 - 详细案例：见
   `reports/v0.5.8-development-process-2026-10-07.md` 与
   `knowledge/pre-launch-confirmation.md`。
+
+
+## 会话清理重新查询已撤销的主账户节点
+
+- 简要错误：退出后权限层已移除主账户设置 DOM，草稿控制器仍从 document 重新查询状态节点，清理异常阻断下一账户启动。
+- 正确规则：挂载时保存需要清理的节点和资源引用；reset/dispose 必须允许节点已脱离文档，且异步结果不得重建旧会话状态。以“路由卸载后私有节点移除再 reset”和真实浏览器退出/重登录反例验证。
+- 详细案例：`scripts/frontend-opening-preferences-regression.mjs` 与 `scripts/ui-regression.mjs`。

@@ -1,3 +1,4 @@
+export { createOpeningPreferencesController } from "./opening-controller.mjs";
 import { createAccountFeatureController } from "./account-controller.mjs";
 import { createSettingsFeatureController } from "./settings-controller.mjs";
 

@@ -359,6 +359,7 @@ for (const asset of [
   "frontend/styles/r8.css"
 ]) assert.ok(shellAssets.has(asset), `预缓存缺少 ${asset}`);
 for (const asset of [
+  "frontend/features/account-settings/opening-controller.mjs",
   "frontend/features/account-settings/account-controller.mjs",
   "frontend/features/account-settings/index.mjs",
   "frontend/features/account-settings/loader.mjs",

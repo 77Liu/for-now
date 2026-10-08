@@ -1078,6 +1078,17 @@ const mockFetch = `
       ], aiOnlyThoughtIds: ["kept-root"], weekly: { checkins: 2, activeDays7: 4, pairedDays30: 2, rootCount30: 5, tracedRoots30: 3, traceRate30: 60, correctionActions30: 7, reviewAgeDays: 0, analysisCount: 2 } }
       });
     }
+    if (url === "/api/opening-preferences") {
+      window.__openingPreferences ||= { revision: 0, enabled: true, showBrand: true, config: { density: 3.5 } };
+      if (window.__accountUser?.role !== "owner") return json({ error: "仅主账户可设置", code: "OWNER_REQUIRED" }, 403);
+      if (!init.method || init.method === "GET") return json(window.__openingPreferences);
+      const input = JSON.parse(init.body);
+      if (input.revision !== window.__openingPreferences.revision || init.headers["if-match"] !== '"opening-' + window.__openingPreferences.revision + '"') {
+        return json({ error: "开场设置冲突", code: "OPENING_CONFLICT" }, 409);
+      }
+      window.__openingPreferences = { ...input, revision: input.revision + 1 };
+      return json(window.__openingPreferences);
+    }
     if (url === "/api/settings" && (!init.method || init.method === "GET")) {
       window.__startupEvents.push("settings:request");
       const respond=()=>json({
@@ -3712,6 +3723,22 @@ try {
     valueText: "0.90倍",
     label: "0.90×"
   });
+  assert.equal(await waitUntil(`document.querySelector("#opening-preferences-status").textContent.includes("已加载")`), true);
+  await evaluate(`(()=>{const form=document.querySelector("#opening-preferences-form");form.elements.density.value="8";form.elements.density.dispatchEvent(new Event("input",{bubbles:true}));window.__openingPreferences.revision++;form.requestSubmit();return true})()`);
+  assert.equal(await waitUntil(`document.querySelector("#opening-preferences-status").textContent.includes("草稿已保留")`), true);
+  assert.equal(await evaluate(`document.querySelector("#opening-preferences-form").elements.density.value`), "8");
+  await evaluate(`document.querySelector('[data-opening-action="reload"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#opening-preferences-status").textContent.includes("草稿已恢复")`), true);
+  await evaluate(`document.querySelector("#opening-preferences-form").requestSubmit();true`);
+  assert.equal(await waitUntil(`document.querySelector("#opening-preferences-status").textContent.includes("已保存")&&window.__openingPreferences.revision===2`), true);
+  assert.equal(await evaluate(`sessionStorage.getItem("cike:opening-draft:user-1")`), null);
+  await evaluate(`(()=>{const field=document.querySelector("#opening-preferences-form").elements.density;field.value="6";field.dispatchEvent(new Event("input",{bubbles:true}));document.querySelector('[data-view="today"]').click();return true})()`);
+  assert.equal(await waitUntil(`document.querySelector("#view-today").classList.contains("active")`), true);
+  await evaluate(`document.querySelector('[data-view="settings"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#opening-preferences-status").textContent.includes("草稿已恢复")&&!document.querySelector("#view-settings").inert`), true);
+  assert.equal(await evaluate(`document.querySelector("#opening-preferences-form").elements.density.value`), "6");
+  await evaluate(`document.querySelector('[data-opening-action="reset"]').click();document.querySelector("#opening-preferences-form").requestSubmit();true`);
+  assert.equal(await waitUntil(`document.querySelector("#opening-preferences-status").textContent.includes("已保存")&&window.__openingPreferences.revision===3`), true);
   await evaluate(`document.querySelector("#tts-voice-preview").click();true`);
   assert.equal(await waitUntil(`window.__speechStaticPreviewRequests.length===1&&window.__speechPreviewRequests.length===0&&!window.__lastSpeechAudio.paused&&document.querySelector("#tts-voice-preview").getAttribute("aria-label")==="停止官方音色试音"`),true);
   assert.equal(await evaluate(`window.__speechStaticPreviewRequests[0]`),"/assets/audio/voice-previews/zh_male_shaonianzixin_uranus_bigtts.mp3");
@@ -3834,7 +3861,7 @@ try {
   assert.equal(await waitUntil(`typeof window.__releaseLogin==="function"`),true);
   assert.equal(await evaluate(`[...document.querySelectorAll(".auth-form input,.auth-form button,[data-auth-tab]")].every(item=>item.disabled)`),true);
   await evaluate(`window.__releaseLogin();true`);
-  assert.equal(await waitUntil(`document.querySelector("#account-name").textContent==="second"&&typeof window.__releaseSecondState==="function"`),true);
+  assert.equal(await waitUntil(`document.querySelector("#account-name").textContent==="second"&&typeof window.__releaseSecondState==="function"`),true,JSON.stringify({page:await evaluate(`({status:document.querySelector("#auth-status").textContent,account:document.querySelector("#account-name").textContent,requests:window.__apiRequests.slice(-8)})`),exceptions:cdp.events.filter(event=>event.method==="Runtime.exceptionThrown").slice(-3).map(event=>event.params.exceptionDetails.exception?.description||event.params.exceptionDetails.text)}));
   assert.deepEqual(await evaluate(`({locked:document.body.classList.contains("auth-locked"),gateVisible:!document.querySelector("#auth-gate").hidden,privateSurfaceHidden:getComputedStyle(document.querySelector("main")).visibility==="hidden"})`),{locked:true,gateVisible:true,privateSurfaceHidden:true});
   await evaluate(`window.__releaseSecondState();true`);
   assert.equal(await waitUntil(`document.querySelector("#account-name").textContent==="second"&&document.querySelector("#auth-gate").hidden&&!document.body.classList.contains("auth-locked")`),true);

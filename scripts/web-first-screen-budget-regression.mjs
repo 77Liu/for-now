@@ -39,6 +39,7 @@ const ASSET_BUDGET = Object.freeze({
   lazyRouteTransferBytes: 40 * 1024
 });
 const HIDDEN_FEATURE_MODULE_PATHS = Object.freeze([
+  "/frontend/features/account-settings/opening-controller.mjs",
   "/frontend/features/account-settings/account-controller.mjs",
   "/frontend/features/account-settings/index.mjs",
   "/frontend/features/account-settings/loader.mjs",

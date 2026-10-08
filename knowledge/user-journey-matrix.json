@@ -83,8 +83,12 @@
       "status": "automated",
       "normalPath": ["直接打开首页或深链", "250ms 内看到开屏", "等待真实路由或登录页完成", "140ms 内退出开屏"],
       "failureAndRecovery": ["启动请求失败后保留开屏", "整页重试并保留深链", "减少动态效果时立即退出", "页面离开时释放动画资源"],
-      "assertions": ["开屏 DOM 与关键样式同步解析", "应用内容在交接前 inert", "不因缓存壳提前消失", "失败可重试", "无新增首屏偏好请求", "雨景和监听器均可释放"],
+      "assertions": [
+        "主账户偏好随已登录启动响应加载；普通账户服务端拒绝；冲突保留草稿且账户隔离",
+        "开屏 DOM 与关键样式同步解析", "应用内容在交接前 inert", "不因缓存壳提前消失", "失败可重试", "无新增首屏偏好请求", "雨景和监听器均可释放"],
       "evidence": [
+        {"script": "scripts/opening-preferences-regression.mjs", "anchor": "Opening preferences passed"},
+        {"script": "scripts/frontend-opening-preferences-regression.mjs", "anchor": "Opening frontend preferences passed"},
         {"script": "scripts/opening-controller-regression.mjs", "anchor": "Opening controller checks passed"},
         {"script": "scripts/web-first-screen-budget-regression.mjs", "anchor": "opening first contentful paint"},
         {"script": "scripts/frontend-shell-regression.mjs", "anchor": "opening-critical-style"}

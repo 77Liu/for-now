@@ -2181,7 +2181,7 @@
       "type": "feature",
       "root": "public/frontend/features/account-settings",
       "publicEntry": "public/frontend/features/account-settings/index.mjs",
-      "allowedDependencies": [],
+      "allowedDependencies": ["shared.opening"],
       "owns": {
         "data": [
           "account identity and role management, settings, voice preview and local test mode lifecycle"
@@ -2189,6 +2189,7 @@
         "routes": []
       },
       "tests": [
+        "scripts/frontend-opening-preferences-regression.mjs",
         "scripts/frontend-account-settings-feature-regression.mjs",
         "scripts/auth-regression.mjs",
         "scripts/ui-regression.mjs"

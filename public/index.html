@@ -1302,6 +1302,28 @@
         </div>
         <p class="status" id="local-test-status" role="status" aria-live="polite"></p>
       </section>
+      <form class="card settings-card" id="opening-preferences-form" data-owner-capability="ai-configuration">
+        <div class="settings-heading"><div><h2>开场与雨滴氛围</h2><p>仅在你的主账户生效；保存后下次打开应用时使用。</p></div></div>
+        <label class="settings-toggle"><input name="enabled" type="checkbox"><span>雨滴动效</span></label>
+        <label class="settings-toggle"><input name="showBrand" type="checkbox"><span>显示开场品牌</span></label>
+        <label class="settings-toggle"><input name="protectBrand" type="checkbox"><span>雨滴避开品牌区域</span></label>
+        <details class="settings-section"><summary>雨滴细节</summary><div class="scenario-grid">
+            <label class="field"><span>雨滴密度</span><input name="density" type="number" min="0" max="10" step="0.5" required></label>
+            <label class="field"><span>滑落比例</span><input name="trailPercent" type="number" min="0" max="100" step="1" required></label>
+            <label class="field"><span>雨滴大小</span><input name="dropSize" type="number" min="2" max="14" step="0.5" required></label>
+            <label class="field"><span>滑落宽度</span><input name="trailWidth" type="number" min="2" max="22" step="0.5" required></label>
+            <label class="field"><span>滑落速度</span><input name="speed" type="number" min="15" max="180" step="1" required></label>
+            <label class="field"><span>弯曲程度</span><input name="bend" type="number" min="0" max="100" step="1" required></label>
+            <label class="field"><span>水花数量</span><input name="splash" type="number" min="0" max="10" step="1" required></label>
+            <label class="field"><span>滑痕时长</span><input name="trailLife" type="number" min="1" max="18" step="0.5" required></label>
+            <label class="field"><span>雨珠时长</span><input name="beadLife" type="number" min="2" max="25" step="0.5" required></label>
+            <label class="field"><span>雨滴对比</span><input name="contrast" type="number" min="20" max="140" step="1" required></label>
+            <label class="field"><span>滑落等待</span><input name="slideDelay" type="number" min="0" max="250" step="1" required></label>
+            <label class="field"><span>滑落长度</span><input name="slideLength" type="number" min="60" max="400" step="1" required></label>
+        </div></details>
+        <div class="settings-actions"><button class="primary-button" type="submit">保存开场设置</button><button class="subtle-action" type="button" data-opening-action="reload">读取最新版本，保留草稿</button><button class="subtle-action" type="button" data-opening-action="reset">恢复默认</button></div>
+        <p class="status" id="opening-preferences-status" role="status" aria-live="polite"></p>
+      </form>
       <form class="card settings-card" id="llm-settings-form">
         <div class="settings-heading"><div><h2>回答与语音</h2><p>每个场景的思考强度、回答风格和语音速度分别生效。</p></div><span class="connection-badge" id="llm-key-state" data-owner-capability="ai-configuration">未配置密钥</span></div>
         <section class="settings-section">

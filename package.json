@@ -54,6 +54,7 @@
     "test:g2": "node scripts/g2-discovery-regression.mjs && node scripts/g2-export-regression.mjs && node scripts/g2-actions-regression.mjs && node scripts/g2-feedback-regression.mjs && node scripts/g2-integration-regression.mjs",
     "test:frontend-shared": "node scripts/frontend-shared-regression.mjs && npm run test:tag-multiselect",
     "test:tag-multiselect": "node scripts/tag-multiselect-regression.mjs",
+    "test:opening:frontend": "node scripts/frontend-opening-preferences-regression.mjs",
     "test:opening:preferences": "node scripts/opening-preferences-regression.mjs",
     "test:opening": "node scripts/opening-controller-regression.mjs",
     "test:frontend-shell": "node scripts/frontend-shell-regression.mjs",
