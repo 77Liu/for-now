@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawnSync, execFileSync } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,6 +8,7 @@ const stub = path.join(temporary, "provider-stub.mjs");
 const trace = path.join(temporary, "calls.ndjson");
 const output = path.join(temporary, "report.json");
 const root = path.resolve(import.meta.dirname, "..");
+const tree = process.env.REPLAY_VALIDATION_TREE || execFileSync("git", ["rev-parse", "HEAD^{tree}"], { cwd: root, encoding: "utf8" }).trim();
 try {
   await fs.writeFile(stub, `import {appendFileSync} from 'node:fs';
     globalThis.fetch=async(url,options)=>{if(url!=='https://api.deepseek.com/chat/completions')throw new Error('wrong endpoint');
@@ -16,7 +17,7 @@ try {
       if(process.env.REPLAY_TEST_FAILURE==='1')return new Response(JSON.stringify({error:{code:'SYNTHETIC_FAILURE'}}),{status:503});
       return new Response(JSON.stringify({id:'synthetic-id',model:'deepseek-v4-pro',choices:[{finish_reason:'stop',message:{content:'合成回答',reasoning_content:'合成审计内容'}}],usage:{prompt_tokens:4,completion_tokens:8,total_tokens:12}}),{status:200});};`, { mode: 0o600 });
   const run = fail => spawnSync(process.execPath, ["--import", stub, "scripts/personalization-live-replay.mjs", "--live",
-    "--tree", "30aa3c5b0df516df9df49ae6036cceb41ee2f753", "--output", output], {
+    "--tree", tree, "--output", output], {
     cwd: root, encoding: "utf8", env: { ...process.env, REPLAY_API_KEY: "synthetic-api-key", REPLAY_TEST_TRACE: trace, REPLAY_TEST_FAILURE: fail ? "1" : "0" }
   });
   assert.equal(run(false).status, 0);

@@ -1,0 +1,50 @@
+import assert from "node:assert/strict";
+import { spawn, spawnSync, execFileSync } from "node:child_process";
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+const root = path.resolve(import.meta.dirname, "..");
+const tree = process.env.REPLAY_VALIDATION_TREE || execFileSync("git", ["rev-parse", "HEAD^{tree}"], { cwd: root, encoding: "utf8" }).trim();
+const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "replay-lock-test-"));
+const output = path.join(temporary, "report.json"), trace = path.join(temporary, "calls.ndjson");
+const release = path.join(temporary, "release"), stub = path.join(temporary, "stub.mjs");
+const children = [];
+const args = target => ["--import", stub, "scripts/personalization-live-replay.mjs", "--live", "--tree", tree, "--output", target];
+const options = { cwd: root, encoding: "utf8", env: { ...process.env, REPLAY_API_KEY: "synthetic-api-key", REPLAY_TEST_TRACE: trace, REPLAY_TEST_RELEASE: release } };
+const calls = async () => { try { return (await fs.readFile(trace, "utf8")).trim().split("\n").length; } catch (error) { if (error.code === "ENOENT") return 0; throw error; } };
+const waitFor = async predicate => { const deadline = Date.now() + 15000; while (!await predicate()) { assert.ok(Date.now() < deadline, "Synthetic worker barrier timed out"); await new Promise(resolve => setTimeout(resolve, 20)); } };
+try {
+  await fs.writeFile(stub, `import {appendFileSync,existsSync} from 'node:fs';
+    globalThis.fetch=async()=>{appendFileSync(process.env.REPLAY_TEST_TRACE,'synthetic-call\\n');
+      while(!existsSync(process.env.REPLAY_TEST_RELEASE))await new Promise(resolve=>setTimeout(resolve,20));
+      return new Response(JSON.stringify({id:'empty-response-id',created:1700000000,model:'deepseek-v4-pro',system_fingerprint:'fixture',
+        choices:[{finish_reason:'length',message:{content:'',reasoning_content:'private synthetic reasoning'}}],
+        usage:{prompt_tokens:12,completion_tokens:2048,total_tokens:2060}}),{status:200});};`, { mode: 0o600 });
+  const first = spawn(process.execPath, args(output), options); children.push(first);
+  let firstLog = ""; first.stdout.on("data", chunk => { firstLog += chunk; }); first.stderr.on("data", chunk => { firstLog += chunk; });
+  const completed = new Promise(resolve => first.on("exit", code => resolve(code)));
+  await waitFor(async () => await calls() === 1);
+  await fs.symlink(temporary, path.join(temporary, "alias"));
+  const second = spawnSync(process.execPath, args(path.join(temporary, "alias/report.json")), options);
+  assert.notEqual(second.status, 0); assert.match(second.stderr, /LIVE_REPLAY_BUSY/);
+  assert.equal(await calls(), 1, "Concurrent aliased ledger never issues another request");
+  await fs.writeFile(release, "release"); assert.equal(await completed, 1, firstLog);
+  const report = JSON.parse(await fs.readFile(output, "utf8")), row = report.results[0];
+  assert.equal(report.results.length, 1); assert.equal(row.errorCode, "EMPTY_DEEPSEEK_CONTENT");
+  assert.equal(row.providerRequestId, "empty-response-id"); assert.equal(row.finishReason, "length");
+  assert.equal(row.modelReturned, "deepseek-v4-pro"); assert.equal(row.providerCreatedAt, "2023-11-14T22:13:20.000Z");
+  assert.equal(row.systemFingerprint, "fixture"); assert.equal(row.httpStatus, 200);
+  assert.equal(row.auditReasoningContent, "private synthetic reasoning"); assert.equal(row.partialAnswerText, "");
+  assert.equal(row.usage.completion_tokens, 2048); assert.equal(report.sourceIdentity.tree, tree);
+  assert.equal((await fs.readFile(output, "utf8")).includes("synthetic-api-key"), false);
+  await assert.rejects(fs.stat(`${output}.lock`), { code: "ENOENT" });
+  assert.notEqual(spawnSync(process.execPath, args(output), options).status, 0);
+  assert.equal(await calls(), 1, "Failed row is preserved without retry");
+  await fs.mkdir(`${output}.lock`, { mode: 0o700 });
+  const stale = spawnSync(process.execPath, args(output), options);
+  assert.notEqual(stale.status, 0); assert.match(stale.stderr, /LIVE_REPLAY_BUSY/);
+  assert.equal(await calls(), 1, "Stale ownership is never stolen");
+  const forged = spawnSync(process.execPath, args(path.join(temporary, "forged.json")).map(value => value === tree ? "a".repeat(40) : value), options);
+  assert.notEqual(forged.status, 0); assert.equal(await calls(), 1, "Unknown source tree fails before fetch");
+  console.log("Live replay lock passed: concurrent aliases issue one request, stale locks block, failure metadata preserved, source identity enforced. External calls: 0.");
+} finally { for (const child of children) if (child.exitCode === null) child.kill("SIGKILL"); await fs.rm(temporary, { recursive: true, force: true }); }

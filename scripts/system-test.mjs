@@ -118,6 +118,8 @@ const suites = {
     ["task-specific working context selection", ["scripts/task-context-selection-regression.mjs"]],
     ["fixed synthetic live replay request identities", ["scripts/personalization-live-regression.mjs"]],
     ["live replay ledger recovery and blind evidence", ["scripts/personalization-live-runner-regression.mjs"]],
+    ["live replay exclusive execution and source identity", ["scripts/personalization-live-lock-regression.mjs"]],
+    ["frozen replay source verification", ["scripts/replay-source-regression.mjs"]],
     ["role-separated prompt orchestration", ["scripts/prompt-role-injection-regression.mjs"]],
     ["onboarding v2 data compatibility", ["scripts/onboarding-v2-regression.mjs"]],
     ["onboarding v2 session API", ["scripts/onboarding-v2-session-regression.mjs"]],

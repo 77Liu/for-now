@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { buildPersonalizationLivePlan, liveFingerprint } from "./lib/personalization-live.mjs";
+import { verifyFrozenReplaySource } from "./lib/replay-source.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const [input, destination, ...unknown] = process.argv.slice(2);
@@ -11,6 +12,7 @@ const report = JSON.parse(await fs.readFile(path.resolve(input), "utf8"));
 const plan = await buildPersonalizationLivePlan(root);
 assert.equal(report.mode, "live"); assert.equal(report.status, "generation-complete");
 assert.equal(report.planFingerprint, plan.planFingerprint); assert.match(report.candidateTree, /^[a-f0-9]{40}$/);
+await verifyFrozenReplaySource(root, report.candidateTree);
 assert.equal(report.results.length, 48); assert.equal(new Set(report.results.map(row => row.id)).size, 48);
 for (const row of report.results) {
   const request = plan.requests.find(request => request.id === row.id);
