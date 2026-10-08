@@ -140,7 +140,8 @@ const suites = {
     ["attachment storage", ["scripts/attachment-storage-regression.mjs"]],
     ["attachment byte range streaming", ["scripts/attachment-range-regression.mjs"]],
     ["Owner opening preference permission and revision contracts", ["scripts/opening-preferences-regression.mjs"]],
-    ["private media signed delivery", ["scripts/attachment-delivery-regression.mjs", "scripts/attachment-delivery-http-regression.mjs"]],
+    ["private media signed delivery", ["scripts/attachment-delivery-regression.mjs"]],
+    ["private media signed HTTP delivery", ["scripts/attachment-delivery-http-regression.mjs"]],
     ["synthetic media live smoke evidence integrity", ["scripts/media-delivery-live-smoke-regression.mjs"]],
     ["attachment uploads, quotas and recovery", ["scripts/attachment-upload-regression.mjs"]],
     ["capacity boundaries", ["scripts/boundaries-regression.mjs"]],
@@ -205,6 +206,13 @@ const suites = {
     ["exploration UI isolation", ["scripts/exploration-regression.mjs"]]
   ]
 };
+
+for (const stages of Object.values(suites)) {
+  for (const [name, args] of stages) {
+    assert.ok(args.filter(argument => /\.mjs$/.test(argument)).length <= 1,
+      `${name}: each Node stage must execute one script; register other scripts separately`);
+  }
+}
 
 if (![...Object.keys(suites), "all"].includes(requestedSuite)) {
   throw new Error(`未知系统测试分组：${requestedSuite}。可选值：backend、load、performance、frontend、exploration、all`);
