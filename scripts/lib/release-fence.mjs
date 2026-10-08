@@ -100,6 +100,16 @@ export function createReleaseFence({ directory, now = () => Date.now() }) {
       else if (options.actualSha !== value.candidateSha) throw fail("Observation is not for the active candidate");
       return value;
     },
+    effect: (options, operation) => serialize(options.target, async () => {
+      if (typeof operation !== "function" || operation.constructor?.name === "AsyncFunction") throw fail("Release effects must be synchronous");
+      const value = validate(await read(options.target), options); await receipt(options.target, value);
+      // Keep the decision writer lock across the final filesystem effect, not long preparation/imports.
+      const result = operation();
+      if (result && typeof result.then === "function") {
+        try { await result; } finally { throw fail("Release effects must be synchronous"); }
+      }
+      return result;
+    }),
     rollback: options => serialize(options.target, async () => {
       const value = validate(await read(options.target), options, "executing", true); await receipt(options.target, value);
       const next = { ...value, attemptId: crypto.randomBytes(16).toString("hex"), generation: value.generation + 1,
