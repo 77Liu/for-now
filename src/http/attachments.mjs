@@ -15,6 +15,7 @@ export function createAttachmentHttp({
   uploadImageMaxBytes,
   contentType,
   onMissing,
+  signDelivery = null,
   debugServerUrl = "",
   debugRunId = "pre-fix"
 }) {
@@ -152,6 +153,22 @@ export function createAttachmentHttp({
               }
               if (evaluated.kind === "range") {
                 range = { start: evaluated.start, end: evaluated.end };
+              }
+            }
+            if (typeof signDelivery === "function" && !req.headers["if-range"] && !req.aborted && !res.destroyed) {
+              let signed = null;
+              try { signed = await signDelivery(url.pathname, { method: req.method, bytes: total }); }
+              catch { /* A cloud signing failure keeps the existing authenticated proxy path. */ }
+              if (signed?.url) {
+                await closeSource(source);
+                if (!req.aborted && !res.destroyed) {
+                  res.writeHead(302, {
+                    location: signed.url, "cache-control": "private, no-store",
+                    "referrer-policy": "no-referrer", "content-length": "0"
+                  });
+                  res.end();
+                }
+                return true;
               }
             }
             const status = range ? 206 : 200;

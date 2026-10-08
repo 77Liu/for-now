@@ -10,6 +10,7 @@ import {
 } from "../../shared/attachments/index.mjs";
 import { createAttachmentCleanup } from "../attachment-cleanup.mjs";
 import { createAttachmentUploadWorkflows } from "./upload-workflows.mjs";
+import { speechDeliveryAttachmentPaths } from "../speech-cache.mjs";
 
 const DEFAULT_AUDIO_MAX_DURATION_MS = 10 * 60 * 1000;
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
@@ -148,6 +149,30 @@ export function createAttachmentRuntime({
     return validated.error ? validated : { value: { audio: validated.value } };
   }
 
+  const activeDeliveryPaths = (store, ownerId) => new Set([
+    ...(Array.isArray(store.keepsakes) ? store.keepsakes : [])
+      .flatMap(item => [item.thumbPath, item.displayPath]).filter(Boolean),
+    ...speechDeliveryAttachmentPaths(store, { ownerHash: hash(ownerId), currentTime: now(), hash })
+  ]);
+
+  async function signAttachmentDelivery(resourcePath, { method, bytes } = {}) {
+    const context = getAttachmentContext();
+    if (attachmentStorageConfig.delivery?.mode === "proxy"
+      || !attachmentStorageConfig.delivery?.mode
+      || !context.ownerId || context.ownerId === "local") return null;
+    const inventory = await listAttachmentInventory();
+    if (!inventory.some(item => item.path === resourcePath && item.state === "verified")) return null;
+    const store = await repository.read();
+    if (!activeDeliveryPaths(store, context.ownerId).has(resourcePath)) return null;
+    const signed = await attachmentStorage.signDelivery({
+      ownerId: context.ownerId, name: resourcePath.slice("/attachments/".length), method, bytes
+    });
+    const latest = await repository.read();
+    if (getAttachmentContext().ownerId !== context.ownerId
+      || !activeDeliveryPaths(latest, context.ownerId).has(resourcePath)) return null;
+    return signed;
+  }
+
   return {
     attachmentStorage,
     attachmentCleanup,
@@ -157,6 +182,7 @@ export function createAttachmentRuntime({
     ...uploadWorkflows,
     materializeAttachmentFiles,
     listAttachmentInventory,
+    signAttachmentDelivery,
     prepareCaptureAudio
   };
 }

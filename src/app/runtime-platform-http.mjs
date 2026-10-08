@@ -178,6 +178,7 @@ export function createRuntimePlatformHttp({
   });
   const attachmentHttp = createAttachmentHttp({
     attachments: imageAttachments,
+    signDelivery: contentRuntime.signAttachmentDelivery,
     uploadOriginals: (req, images) => saveOriginalImages(images, {
       idempotencyKey: req.headers["idempotency-key"]
     }),

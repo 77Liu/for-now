@@ -547,3 +547,8 @@ V0.3.0 不复用上述 G2 的长期未提交工作树。当前调度、任务编
 
 任何共享契约、schema、模块登记、根入口、全局样式或依赖锁仍由单一集成
 负责人修改；支线发现公共缺口时返回串行主链，不在多个分支分别演化。
+
+
+### V0.5.9 私有媒体分发边界
+
+`shared.attachments` 的 delivery 策略仅复制服务端生成的 thumb/display WebP 与 TTS MP3 到独立私有分发桶；原件、Alpha、编辑源与原始录音继续代理。app/media/attachments 拥有当前账户与有效业务引用校验，发送前后拒绝删除/失效 TTS；HTTP 保留认证、HEAD、Range/416 和 If-Range 代理语义。新生产模块仍归既有附件模块，不新建服务。默认 proxy，短签名固定 60 秒；真实 CDN 鉴权缓存、CORS 和过期由 19 真实 Preview 验收，不以 SDK 桩关闭。

@@ -23,10 +23,11 @@
       "status": "automated",
       "normalPath": ["登录", "读取首页", "退出", "另一账户登录"],
       "failureAndRecovery": ["登录响应延迟", "状态响应乱序", "退出时仍有后台请求"],
-      "assertions": ["界面锁定与解锁", "账户数据隔离", "IndexedDB/会话草稿清理", "旧响应不得写入新会话"],
+      "assertions": ["界面锁定与解锁", "账户数据隔离", "IndexedDB/会话草稿清理", "旧响应不得写入新会话", "签发只使用当前账户的有效来源，失败回退 proxy"],
       "evidence": [
         {"script": "scripts/ui-regression.mjs", "anchor": "window.__delayLogout=true"},
-        {"script": "scripts/auth-regression.mjs", "anchor": "Auth checks passed"}
+        {"script": "scripts/auth-regression.mjs", "anchor": "Auth checks passed"},
+        {"script": "scripts/attachment-delivery-http-regression.mjs", "anchor": "Attachment delivery HTTP checks passed"}
       ]
     },
     {
@@ -179,10 +180,11 @@
       "status": "automated",
       "normalPath": ["输入文字", "上传图片", "提交", "刷新", "查看记录"],
       "failureAndRecovery": ["上传失败", "提交后刷新失败", "重复提交"],
-      "assertions": ["成功反馈", "业务记录与图片顺序正确", "刷新后持久存在", "幂等且无重复记录"],
+      "assertions": ["成功反馈", "业务记录与图片顺序正确", "刷新后持久存在", "幂等且无重复记录", "签发只使用当前账户的有效来源，失败回退 proxy"],
       "evidence": [
         {"script": "scripts/ui-regression.mjs", "anchor": "data-content-image-editor=\"capture\""},
-        {"script": "scripts/content-attachments-regression.mjs", "anchor": "Content attachment"}
+        {"script": "scripts/content-attachments-regression.mjs", "anchor": "Content attachment"},
+        {"script": "scripts/attachment-delivery-http-regression.mjs", "anchor": "Attachment delivery HTTP checks passed"}
       ]
     },
     {
@@ -211,13 +213,14 @@
       "status": "automated",
       "normalPath": ["设置账户默认生成语速", "提交语音捕念", "播放原音", "查看双层整理稿", "播放已有朗读", "显式重新生成"],
       "failureAndRecovery": ["转写失败但原音可用", "原音替换后旧结果迟到", "刷新或跨标签更新", "朗读请求期间记录变化", "移动端拒绝自动播放后手动重试", "停止、换源或切换账户"],
-      "assertions": ["原音播放器绑定当前附件", "已生成朗读通过持久资产端点恢复", "默认音色变化不改写历史音频", "只有显式重新生成才替换同一变体", "拒绝自动播放后保留持久音源", "切换音源和账户只停止播放且不删除资产", "可播放与转写状态分离", "任务 ID 可追溯", "迟到转写不覆盖新原音", "生成语速使用账户默认且限制在 -50～100", "播放倍速不进入合成请求", "0.5–2.0 倍速白名单且播放中切换生效"],
+      "assertions": ["原音播放器绑定当前附件", "已生成朗读通过持久资产端点恢复", "默认音色变化不改写历史音频", "只有显式重新生成才替换同一变体", "拒绝自动播放后保留持久音源", "切换音源和账户只停止播放且不删除资产", "可播放与转写状态分离", "任务 ID 可追溯", "迟到转写不覆盖新原音", "生成语速使用账户默认且限制在 -50～100", "播放倍速不进入合成请求", "签发只使用当前账户的有效来源，失败回退 proxy", "0.5–2.0 倍速白名单且播放中切换生效"],
       "evidence": [
         {"script": "scripts/ui-regression.mjs", "anchor": "audio-tts-playback"},
         {"script": "scripts/capture-transcription-regression.mjs", "anchor": "stale-audio isolation"},
         {"script": "scripts/frontend-contract-regression.mjs", "anchor": "旧原音的迟到结果"},
         {"script": "scripts/ai-domain-regression.mjs", "anchor": "generationRate"},
-        {"script": "scripts/volcengine-server-regression.mjs", "anchor": "speech_rate"}
+        {"script": "scripts/volcengine-server-regression.mjs", "anchor": "speech_rate"},
+        {"script": "scripts/attachment-delivery-http-regression.mjs", "anchor": "Attachment delivery HTTP checks passed"}
       ]
     },
     {

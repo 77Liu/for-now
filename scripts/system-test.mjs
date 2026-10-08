@@ -135,6 +135,7 @@ const suites = {
     ["observability", ["scripts/observability-regression.mjs"]],
     ["attachment storage", ["scripts/attachment-storage-regression.mjs"]],
     ["attachment byte range streaming", ["scripts/attachment-range-regression.mjs"]],
+    ["private media signed delivery", ["scripts/attachment-delivery-regression.mjs", "scripts/attachment-delivery-http-regression.mjs"]],
     ["attachment uploads, quotas and recovery", ["scripts/attachment-upload-regression.mjs"]],
     ["capacity boundaries", ["scripts/boundaries-regression.mjs"]],
     ["backup recovery and readiness", ["scripts/backup-regression.mjs"]],

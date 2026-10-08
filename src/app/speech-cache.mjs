@@ -153,7 +153,7 @@ function resolveSpeechSource(store, sourceType, sourceId) {
   return { source: answer, text, sourceVersion: recordVersion(answer.version) };
 }
 
-export function publicSpeechAssets(store, {
+function currentSpeechEntries(store, {
   ownerHash = "",
   currentTime = new Date().toISOString(),
   hash
@@ -171,7 +171,16 @@ export function publicSpeechAssets(store, {
         entry.sourceId
       );
       if (!current?.text || entry.textHash !== hash(current.text)) return [];
-      return [{
+      return [{ entry, current }];
+    });
+}
+
+export function speechDeliveryAttachmentPaths(store, options) {
+  return new Set(currentSpeechEntries(store, options).map(({ entry }) => entry.attachmentPath));
+}
+
+export function publicSpeechAssets(store, options = {}) {
+  return currentSpeechEntries(store, options).map(({ entry, current }) => ({
         id: entryId(entry),
         sourceType: entry.sourceType,
         sourceId: entry.sourceId,
@@ -182,8 +191,7 @@ export function publicSpeechAssets(store, {
         bytes: Math.max(0, Math.round(Number(entry.bytes) || 0)),
         createdAt: safeText(entry.createdAt, 100),
         expiresAt: safeText(entry.expiresAt, 100)
-      }];
-    });
+      }));
 }
 
 export function createSpeechCache({

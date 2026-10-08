@@ -101,6 +101,7 @@
     "test:deploy": "node scripts/deploy-regression.mjs",
     "test:deploy:preview": "node scripts/preview-deploy-regression.mjs",
     "test:storage": "node scripts/attachment-storage-regression.mjs",
+    "test:media-delivery": "node scripts/attachment-delivery-regression.mjs && node scripts/attachment-delivery-http-regression.mjs",
     "test:media-delivery:core": "node scripts/attachment-delivery-regression.mjs",
     "test:media-delivery:live": "node scripts/media-delivery-live-smoke.mjs",
     "test:oss": "node scripts/oss-attachment-smoke.mjs",
