@@ -149,7 +149,8 @@ const suites = {
     ["restore validation", ["scripts/restore-validation-regression.mjs"]],
     ["release attempt fencing and stale-task rejection", ["scripts/release-fence-regression.mjs"]],
     ["deployment rollback", ["scripts/deploy-regression.mjs"]],
-    ["protected media deployment configuration", ["scripts/media-config-regression.mjs", "scripts/media-transfer-regression.mjs"]],
+    ["protected media deployment configuration", ["scripts/media-config-regression.mjs"]],
+    ["media configuration transfer entry", ["scripts/media-transfer-regression.mjs"]],
     ["isolated online Preview deployment", ["scripts/preview-deploy-regression.mjs"]]
   ],
   load: [
