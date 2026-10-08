@@ -589,7 +589,7 @@ function publicSource(material) {
   };
 }
 
-function contextSections(task, currentMaterial, historicalMaterial, notice) {
+function contextSections(task, currentMaterial, historicalMaterial, notice, generatedAt) {
   const render = (title, values) => [
     `<${title}>`,
     ...values.map((item, index) => (
@@ -605,6 +605,7 @@ function contextSections(task, currentMaterial, historicalMaterial, notice) {
     currentMaterial,
     historicalMaterial,
     notice,
+    generatedAt,
     currentContext,
     historicalContext,
     noticeContext,
@@ -619,8 +620,8 @@ function contextSections(task, currentMaterial, historicalMaterial, notice) {
   };
 }
 
-function compiledPrompt(compilePrompt, task, currentMaterial, historicalMaterial, notice) {
-  const sections = contextSections(task, currentMaterial, historicalMaterial, notice);
+function compiledPrompt(compilePrompt, task, currentMaterial, historicalMaterial, notice, generatedAt) {
+  const sections = contextSections(task, currentMaterial, historicalMaterial, notice, generatedAt);
   const compiled = compilePrompt ? compilePrompt(sections) : sections.workingContext;
   const prompt = typeof compiled === "string" ? compiled : compiled?.prompt;
   const promptContract = typeof compiled === "string" ? null : compiled?.contract || null;
@@ -750,6 +751,21 @@ function selectionReceipt({
   return receipt;
 }
 
+function workingContextTimestamp(value) {
+  if (typeof value !== "string") return "";
+  const parts = /^(\d{4}|[+-]\d{6})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!parts) return "";
+  const [year, month, day, hour, minute, second] = parts.slice(1, 7).map(Number);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (month < 1 || month > 12 || day < 1 || day > days[month - 1]
+    || hour > 23 || minute > 59 || second > 59) return "";
+  const zone = parts[8];
+  if (zone !== "Z" && (Number(zone.slice(1, 3)) > 23 || Number(zone.slice(4, 6)) > 59)) return "";
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? new Date(time).toISOString() : "";
+}
+
 export function workingContextProjection(store, {
   accountId: inputAccountId,
   scene: inputScene,
@@ -763,7 +779,7 @@ export function workingContextProjection(store, {
 } = {}) {
   const accountId = safeText(inputAccountId, 100);
   const scene = safeText(inputScene, 40);
-  generatedAt = safeIso(generatedAt);
+  generatedAt = workingContextTimestamp(generatedAt);
   if (!accountId
     || !scene
     || !generatedAt
@@ -787,7 +803,8 @@ export function workingContextProjection(store, {
     task,
     currentMaterial,
     [],
-    degradedNotice
+    degradedNotice,
+    generatedAt
   );
   if (Buffer.byteLength(currentCompiled.prompt, "utf8") > tokenLimit) {
     fail("Current material exceeds the working-context budget", "CURRENT_MATERIAL_BUDGET_EXCEEDED");
@@ -848,7 +865,8 @@ export function workingContextProjection(store, {
           task,
           currentMaterial,
           [...selectedHistory, candidate],
-          notice
+          notice,
+          generatedAt
         );
         if (Buffer.byteLength(tentative.prompt, "utf8") > tokenLimit) reasons.push("token-budget");
       }
@@ -864,7 +882,7 @@ export function workingContextProjection(store, {
       }
     }
   }
-  const compiled = compiledPrompt(compilePrompt, task, currentMaterial, selectedHistory, notice);
+  const compiled = compiledPrompt(compilePrompt, task, currentMaterial, selectedHistory, notice, generatedAt);
   const receipt = selectionReceipt({
     store,
     accountId,

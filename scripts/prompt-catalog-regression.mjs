@@ -9,9 +9,9 @@ import { installPromptCatalog, optionalPromptText, promptCatalogMetadata, prompt
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const current = installPromptCatalog(await loadPromptCatalog({ rootDir: root }));
-assert.equal(current.version, "2026.10.07.2");
-assert.equal(current.sha256, "0aec29fffd8ba55b33ef74f4b69b1b0876e53b8e4a0fd49ccfd27349a1dc26c1");
-assert.equal(Object.keys(current.prompts).length, 71);
+assert.equal(current.version, "2026.10.09.1");
+assert.equal(current.sha256, "222de519c0530e4cea6c4bc25592bbc838c37faff478fd6c115adde36e75afc8");
+assert.equal(Object.keys(current.prompts).length, 72);
 assert.equal(current.capabilities.structuredWorkingContext, "2026.10.07.0");
 assert.equal(Object.keys(current.rolePromptIds).length, 6);
 assert.match(promptText("ai.system.core"), /结论先行/);

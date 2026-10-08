@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "activeVersion": "2026.10.07.2",
+  "activeVersion": "2026.10.09.1",
   "versions": [
     {
       "version": "2026.09.29.1",
@@ -51,6 +51,11 @@
       "version": "2026.10.07.2",
       "file": "2026.10.07.2.json",
       "sha256": "0aec29fffd8ba55b33ef74f4b69b1b0876e53b8e4a0fd49ccfd27349a1dc26c1"
+    },
+    {
+      "version": "2026.10.09.1",
+      "file": "2026.10.09.1.json",
+      "sha256": "222de519c0530e4cea6c4bc25592bbc838c37faff478fd6c115adde36e75afc8"
     }
   ],
   "promptIntroducedIn": {
@@ -64,7 +69,8 @@
     "orchestration.role.answerCheck": "2026.10.07.0",
     "orchestration.user.envelope": "2026.10.07.0",
     "ai.scene.perceptionExtraction": "2026.10.07.2",
-    "perception.source.extract": "2026.10.07.2"
+    "perception.source.extract": "2026.10.07.2",
+    "orchestration.context.boundaries": "2026.10.09.1"
   },
   "promptVariables": {
     "ai.identity.named": ["assistantName"],
@@ -162,7 +168,8 @@
     "orchestration.role.contextPlanning",
     "orchestration.role.answer",
     "orchestration.role.answerCheck",
-    "orchestration.user.envelope"
+    "orchestration.user.envelope",
+    "orchestration.context.boundaries"
   ],
   "rolePromptIds": {
     "perception": "orchestration.role.perception",
@@ -173,6 +180,7 @@
     "answerCheck": "orchestration.role.answerCheck"
   },
   "capabilities": {
-    "structuredWorkingContext": "2026.10.07.0"
+    "structuredWorkingContext": "2026.10.07.0",
+    "taskSourceBoundaries": "2026.10.09.1"
   }
 }

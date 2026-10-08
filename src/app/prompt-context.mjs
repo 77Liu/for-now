@@ -5,6 +5,7 @@ import {
   promptText,
   renderPrompt
 } from "../shared/prompts/index.mjs";
+import { safeIso } from "../shared/validation/index.mjs";
 
 export const STRUCTURED_WORKING_CONTEXT_SCHEMA_VERSION = 1;
 
@@ -82,6 +83,7 @@ export function compileWorkingContextPrompt({
   task,
   currentMaterial,
   historicalMaterial,
+  generatedAt = "",
   notice = "",
   taskDetails = null
 }) {
@@ -92,10 +94,14 @@ export function compileWorkingContextPrompt({
   if (contract.mode === "legacy") {
     throw new Error(`Prompt catalog ${contract.catalogVersion} does not support structured working context`);
   }
+  const sourceBoundaries = optionalPromptText("orchestration.context.boundaries");
+  const asOf = typeof generatedAt === "string" && generatedAt === safeIso(generatedAt)
+    ? generatedAt || null : null;
   const history = list(historicalMaterial).map(materialPayload);
   const payload = {
     schemaVersion: STRUCTURED_WORKING_CONTEXT_SCHEMA_VERSION,
     scene,
+    ...(sourceBoundaries ? { asOf } : {}),
     currentTask: {
       kind: String(task?.kind || ""),
       text: String(task?.text || ""),
@@ -124,7 +130,7 @@ export function compileWorkingContextPrompt({
   };
   return {
     prompt: renderPrompt(contract.envelopeId, {
-      taskContract: promptText(contract.taskPromptId),
+      taskContract: [promptText(contract.taskPromptId), sourceBoundaries].filter(Boolean).join("\n\n"),
       payload: promptSafeJson(payload)
     }),
     contract
