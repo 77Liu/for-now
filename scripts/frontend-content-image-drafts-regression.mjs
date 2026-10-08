@@ -48,7 +48,7 @@ async function pageDebuggerUrl(port, browser) {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/json/list`);
       const pages = await response.json();
-      const page = pages.find(item => item.type === "page");
+      const page = pages.find(item => item.type === "page" && item.url === "about:blank");
       if (page) return page.webSocketDebuggerUrl;
     } catch {}
     await sleep(50);
@@ -57,8 +57,8 @@ async function pageDebuggerUrl(port, browser) {
 }
 
 class Cdp {
-  constructor(url) {
-    this.socket = new WebSocket(url);
+  constructor(url, Socket = WebSocket) {
+    this.socket = new Socket(url);
     this.nextId = 1;
     this.pending = new Map();
     this.ready = new Promise((resolve, reject) => {
@@ -70,24 +70,123 @@ class Cdp {
       const callback = this.pending.get(message.id);
       if (!callback) return;
       this.pending.delete(message.id);
-      if (message.error) callback.reject(new Error(message.error.message));
+      clearTimeout(callback.timer);
+      if (message.error) callback.reject(Object.assign(new Error(`${callback.method}: ${message.error.message}`), {
+        cdpMethod: callback.method, cdpMessage: message.error.message
+      }));
       else callback.resolve(message.result);
     });
-  }
-
-  async send(method, params = {}) {
-    await this.ready;
-    const id = this.nextId++;
-    const response = new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+    for (const event of ["error", "close"]) this.socket.addEventListener(event, () => {
+      for (const callback of this.pending.values()) {
+        clearTimeout(callback.timer); callback.reject(new Error(`CDP ${event} while waiting for ${callback.method}`));
+      }
+      this.pending.clear();
     });
-    this.socket.send(JSON.stringify({ id, method, params }));
-    return response;
   }
 
-  close() {
-    this.socket.close();
+  send(method, params = {}, timeoutMs = 10_000) {
+    const id = this.nextId++;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id); reject(new Error(`CDP ${method} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+      this.pending.set(id, { resolve, reject, timer, method });
+      this.ready.then(() => {
+        if (this.pending.has(id)) this.socket.send(JSON.stringify({ id, method, params }));
+      }).catch(error => {
+        clearTimeout(timer); this.pending.delete(id); reject(error);
+      });
+    });
   }
+
+  close() { this.socket.close(); }
+}
+
+async function waitForFixtureReady(cdp, { url, title, timeoutMs = 10_000,
+  now = () => Date.now(), wait = sleep, pollMs = 25 } = {}) {
+  const deadline = now() + timeoutMs;
+  let contextDestroys = 0;
+  while (now() < deadline) {
+    try {
+      const result = await cdp.send("Runtime.evaluate", {
+        expression: "({url:location.href,title:document.title,readyState:document.readyState})", returnByValue: true
+      }, Math.max(1, deadline - now()));
+      if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
+      const value = result.result?.value;
+      if (value?.url === url && value?.title === title && value?.readyState === "complete" && now() < deadline) return;
+    } catch (error) {
+      if (error.cdpMethod !== "Runtime.evaluate" || error.cdpMessage !== "Execution context was destroyed."
+        || ++contextDestroys > 3) throw error;
+    }
+    await wait(Math.min(pollMs, Math.max(0, deadline - now())));
+  }
+  throw new Error("Image rotation fixture readiness timed out (URL/title/complete required)");
+}
+
+async function readinessChecks() {
+  const url = "http://fixture.invalid/", title = "image rotation regression";
+  const ready = { url, title, readyState: "complete" };
+  let cases = 0;
+  const inspect = async ({ probes = [ready], fixtureError = "", pixel = [255, 0, 0, 255], timeoutMs = 30,
+    socketEvent = "", neverOpen = false } = {}) => {
+    let probeCalls = 0, fixtureCalls = 0, clock = 0;
+    class FakeSocket {
+      listeners = new Map();
+      constructor() { if (!neverOpen) queueMicrotask(() => this.emit("open", {})); }
+      addEventListener(name, callback) {
+        if (!this.listeners.has(name)) this.listeners.set(name, []);
+        this.listeners.get(name).push(callback);
+      }
+      emit(name, event) { for (const callback of this.listeners.get(name) || []) callback(event); }
+      close() { this.emit("close", {}); }
+      send(text) {
+        const command = JSON.parse(text);
+        queueMicrotask(() => {
+          const fixture = command.params.awaitPromise === true;
+          if (fixture) fixtureCalls += 1;
+          const value = fixture ? { pixel } : probes[Math.min(probeCalls++, probes.length - 1)];
+          if (socketEvent) { this.emit(socketEvent, {}); return; }
+          if (value?.pending) return;
+          const error = fixture ? fixtureError : value?.protocolError;
+          this.emit("message", { data: JSON.stringify(error ? { id: command.id, error: { message: error } }
+            : { id: command.id, result: value?.exceptionDetails ? { exceptionDetails: value.exceptionDetails }
+              : { result: { value } } }) });
+        });
+      }
+    }
+    const cdp = new Cdp("ws://fixture.invalid", FakeSocket);
+    let error;
+    try {
+      await waitForFixtureReady(cdp, { url, title, timeoutMs, now: () => clock, wait: async ms => { clock += ms; }, pollMs: 5 });
+      const result = await cdp.send("Runtime.evaluate", { expression: "single fixture with internal side effects", awaitPromise: true }, timeoutMs);
+      assertPixelColor(result.result.value.pixel, "red", "fake fixture pixel");
+    } catch (failure) { error = failure; }
+    finally { cdp.close(); }
+    assert.equal(cdp.pending.size, 0);
+    return { error, probeCalls, fixtureCalls };
+  };
+  for (const probes of [[{ ...ready, readyState: "loading" }, { ...ready, readyState: "interactive" }, ready],
+    [{ protocolError: "Execution context was destroyed." }, ready]]) {
+    const result = await inspect({ probes }); assert.equal(result.error, undefined); assert.equal(result.fixtureCalls, 1); cases += 1;
+  }
+  for (const probes of [[{ ...ready, url: "about:blank" }], [{ ...ready, title: "wrong title" }], [{ ...ready, readyState: "loading" }]]) {
+    const result = await inspect({ probes }); assert.match(result.error.message, /readiness timed out/);
+    assert.equal(result.fixtureCalls, 0); cases += 1;
+  }
+  const repeated = await inspect({ probes: [{ protocolError: "Execution context was destroyed." }] });
+  assert.equal(repeated.probeCalls, 4); assert.equal(repeated.fixtureCalls, 0); assert.match(repeated.error.message, /context was destroyed/); cases += 1;
+  for (const options of [{ probes: [{ pending: true }] }, { neverOpen: true }]) {
+    const result = await inspect({ ...options, timeoutMs: 15 }); assert.match(result.error.message, /timed out/);
+    assert.equal(result.fixtureCalls, 0); cases += 1;
+  }
+  for (const options of [{ probes: [{ protocolError: "Cannot find default execution context." }] },
+    { probes: [{ exceptionDetails: { text: "probe JS error" } }] }, { socketEvent: "close" }, { socketEvent: "error" }]) {
+    const result = await inspect(options); assert.ok(result.error); assert.equal(result.fixtureCalls, 0); cases += 1;
+  }
+  for (const options of [{ fixtureError: "Execution context was destroyed." }, { fixtureError: "fixture execution failed" }, { pixel: [0, 0, 0, 255] }]) {
+    const result = await inspect(options); assert.ok(result.error); assert.equal(result.fixtureCalls, 1); cases += 1;
+  }
+  console.log(JSON.stringify({ suite: "image-fixture-cdp-readiness", status: "passed", cases, externalCalls: 0, browserLaunches: 0 }));
 }
 
 async function stopBrowser(browser) {
@@ -136,13 +235,18 @@ async function inspectExifRotationInBrowser() {
     "--use-mock-keychain",
     `--remote-debugging-port=${debugPort}`,
     `--user-data-dir=${profile}`,
-    `http://127.0.0.1:${port}/`
+    "about:blank"
   ], { stdio: "ignore" });
 
   let cdp;
   try {
     cdp = new Cdp(await pageDebuggerUrl(debugPort, browser));
+    await cdp.send("Page.enable");
     await cdp.send("Runtime.enable");
+    const fixtureUrl = `http://127.0.0.1:${port}/`;
+    const navigation = await cdp.send("Page.navigate", { url: fixtureUrl });
+    assert.ok(!navigation.errorText, `Image rotation fixture navigation failed: ${navigation.errorText}`);
+    await waitForFixtureReady(cdp, { url: fixtureUrl, title: "image rotation regression" });
     const expression = `(async () => {
       const { rotateContentImageFile } = await import(
         ${JSON.stringify(`http://127.0.0.1:${port}/content-image-draft-model.mjs`)}
@@ -273,6 +377,9 @@ function assertPixelGrid(actual, expected, label) {
     assertPixelColor(actual[index], color, `${label} pixel ${index}`);
   }
 }
+
+await readinessChecks();
+if (process.argv.includes("--cdp-readiness-only")) process.exit(0);
 
 function deferred() {
   let resolve;
