@@ -195,7 +195,7 @@ assert.match(html, /document\.head\.append\(entry\)/);
 assert.doesNotMatch(appEntry, /fetch\(|XMLHttpRequest|location\.(?:assign|replace)/);
 assert.match(openingEntry, /createOpeningController/);
 assert.match(openingEntry, /const generation = controller\.start\(\)/);
-assert.match(openingEntry, /exitDuration: 100/);
+assert.match(openingEntry, /exitDuration: 80/);
 assert.match(openingEntry, /onRetry: \(\) => location\.reload\(\)/);
 assert.match(openingEntry, /"openingAnimationStarted"/);
 assert.match(openingEntry, /"openingExitStart"/);
