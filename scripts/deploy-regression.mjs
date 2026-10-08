@@ -243,7 +243,8 @@ if(name==="sed"){const file=args.at(-1),version=args[1].split("APP_VERSION=")[2]
     if (media) {
       assert.ok(!(result.stdout + result.stderr).includes("FixtureOnlyKey123456789"));
       const profileExists = await fs.access(path.join(dir, "etc/for-now-media-delivery.json")).then(() => true, () => false);
-      assert.equal(profileExists, ["media_success", "media_new_decision_after_switch"].includes(scenario));
+      // Revocation after the fenced effect keeps both committed files; the stale worker cannot undo them.
+      assert.equal(profileExists, ["media_success", "media_invalidate_after_apply", "media_new_decision_after_switch"].includes(scenario));
       if (profileExists) assert.deepEqual(JSON.parse(await fs.readFile(path.join(dir, "etc/for-now-media-delivery.json"), "utf8")), JSON.parse(await fs.readFile(path.join(root, "deploy/media-delivery.production.json"), "utf8")));
       assert.equal((await fs.stat(path.join(dir, "etc/for-now.env"))).mode & 0o777, 0o600);
       if (["media_invalid", "media_missing_candidate", "media_wrong_commit", "media_invalidate_before_apply", "media_invalidate_after_apply"].includes(scenario)) {
