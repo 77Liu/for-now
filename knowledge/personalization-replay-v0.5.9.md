@@ -1,7 +1,7 @@
 # V0.5.9 个性化固定回放契约
 
-状态：`10a 本地基线`。本文件定义确定性夹具和评估接口，不代表新编排已实现，
-也不代表真实模型质量已验收。
+状态：`10b 确定性实现已验证；真实模型质量待验收`。本文件定义固定夹具、
+评估接口与真实回放的证据边界；本地评分不代表真实语义或个性化收益已通过。
 
 ## 固定资产
 
@@ -11,10 +11,10 @@
 - 专项：`scripts/personalization-replay-regression.mjs`
 - 夹具版本：`2026.10.07.1`
 - 数据边界：仅虚构数据，不读取生产或个人正文
-- 供应商边界：仅确定性 stub，真实模型调用数为 `0`
+- 当前执行证据：确定性 stub 和供应商传输桩，真实模型调用数为 `0`
 - 起始代码基线：commit `2d8687a1f26f6e4b7e859d13c4d502da0f6a2c7d`，
   tree `50a42b7de427558bd6852748ba2766cc948cf401`
-- 候选状态：`not-frozen`，直到 G4 才能填写候选 commit/tree
+- 候选状态：manifest 已登记本地编排候选；G4完整发布候选另行冻结。工具输出必须带实际执行 tree，不能把本地 manifest 当作发布GO。
 
 夹具逐项覆盖抽取、时间、更新、克制、新数据可见、并发、去重、量表、任务
 相关、完整链、许可、失效、来源忠实、反馈、泛化边界和个性化收益，共 16 类。
@@ -46,7 +46,7 @@ adapter 输入单个 fixture，输出：
 
 - `general` 只选本轮当前材料。
 - `legacy` 调用现有 `personalContextProjection`，复现固定类别堆叠。
-- `new` 保留同一接口，待 `06–09` 形成新编排后接入；当前明确为 `not-run`。
+- `new` 已调用真实本地编排，并由可信确定性引用grader核对来源与完整回答覆盖；真实模型语义仍为 `not-run`。
 
 adapter 只报告断言 ID 和引用，不能自报“受支持”或“正确”；评分从 fixture
 中的独立 `assertionOracle` 读取。stub 断言只验证 evaluator、来源绑定和失败
@@ -54,9 +54,25 @@ adapter 只报告断言 ID 和引用，不能自报“受支持”或“正确�
 执行不得据此宣称个性化收益。固定的 8 个代表任务已单独标记，授权后每种方案
 运行两次，调用上限为 48 次。
 
-10a runner 只接受冻结的 `general` / `legacy` deterministic adapter，并始终
-输出 `gateEligible=false`。任何 `new` 或真实模型 adapter 在 10b 的可信回答
-grader 接入前都会 fail-closed；空断言或 `null` 指标不能成为候选通过证据。
+10a历史runner只接受冻结的 `general` / `legacy` deterministic adapter。
+10b已接入 `new` 与可信确定性grader；回答span、原始来源文本与引用逐项核对，
+不接受adapter自报评分。真实模型适配仍须独立语义评估；空断言或 `null`
+指标不能成为候选通过证据。确定性和生成工具始终输出 `gateEligible=false`。
+
+## 真实生成工具与盲评
+
+- `npm run replay:personalization:plan -- --tree <tree>` 默认只输出冻结计划，无外部调用。
+- 显式 `node scripts/personalization-live-replay.mjs --live --tree <tree> --output <private-report.json>` 才执行真实生成；凭据只从进程环境 `REPLAY_API_KEY` 读取，固定目的地 `https://api.deepseek.com/chat/completions`，工具不读取生产数据库或用户正文。
+- 8任务×3方案×2次，最多48次、单并发、0自动重试、90秒单次超时；模型/Prompt/参数逐项匹配冻结请求SHA。按峰值单价、不计缓存优惠保守预留，计划总额不得超过30元。
+- 账本在调用前记录in-flight并以0600原子保存；失败、超时、崩溃留下未知调用，禁止自动重试。恢复检查候选/计划/请求/答案指纹，已完成请求不重复调用；不把未知账单记零。
+- 账本记录完整wire请求、回答、reasoning、usage、返回模型和finish状态；文件属于私有审计资产，不进入公共报告或产品UI。该合成验收工具使用隔离审计账本，不写生产全站费用账本，真实费用仍须据供应商账单核对。
+- `npm run replay:personalization:blind -- <private-report.json> <new-directory>` 只接受48条完整、指纹一致的回答，生成不含方案名的Owner材料、未填评分模板和单独私有解盲映射。已有文件拒绝覆盖，不能重新排列挑选有利样本。
+- Owner先评两次回答的来源忠实、新鲜度、注入与实际帮助，再解盲。至少7/8不劣、4/8明显更有帮助；所有空项保持未评，生成成功或模板生成不构成质量通过。
+- `npm run test:personalization-live` 用全局fetch桩验证传输、48次上限、账本权限、完整恢复、首次失败停止、漂移拒绝与盲评打包，外部调用为0。
+
+2026-10-08凭据动作的自动审批拒绝已登记在根目录权威计划第9节，随后Owner
+明确授权该凭据来源、目的地与用途；仅限本次48调用/30元合成回放。执行包装层
+只在内存读取该凭据并传给子进程环境，不保存在工具账本，不输出密钥。
 
 ## 指标
 

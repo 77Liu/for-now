@@ -28,7 +28,7 @@
       "allowedDependencies": [],
       "owns": {
         "data": [
-        "prompt manifest loading, immutable version selection, SHA-256 verification and role-contract validation"
+          "prompt manifest loading, immutable version selection, SHA-256 verification and role-contract validation"
         ],
         "routes": []
       },
@@ -47,14 +47,14 @@
       "allowedDependencies": [],
       "owns": {
         "data": [
-        "installed prompt snapshot, role mapping, prompt lookup, strict placeholder rendering and audit metadata",
+          "installed prompt snapshot, role mapping, prompt lookup, strict placeholder rendering and audit metadata",
           "all model-visible stable prompt text stored under prompts/versions"
         ],
         "routes": []
       },
       "tests": [
         "scripts/prompt-catalog-regression.mjs",
-      "scripts/prompt-role-injection-regression.mjs",
+        "scripts/prompt-role-injection-regression.mjs",
         "scripts/ai-provider-regression.mjs",
         "scripts/personal-context-regression.mjs"
       ],
@@ -437,7 +437,7 @@
           "model profiles, scenes, settings migration and public projections",
           "usage normalization, price snapshots, account quotas and invocation audit",
           "site-wide budget periods, atomic task reservations, threshold and unknown-cost events",
-        "cost plan normalization, usage aggregates, role-aware system prompt composition and model attempt policy"
+          "cost plan normalization, usage aggregates, role-aware system prompt composition and model attempt policy"
         ],
         "routes": [
           "GET /api/opening-preferences",
@@ -489,7 +489,8 @@
         "scripts/volcengine-server-regression.mjs",
         "scripts/segmentation-regression.mjs",
         "scripts/regression.mjs",
-        "scripts/observability-regression.mjs"
+        "scripts/observability-regression.mjs",
+        "scripts/personalization-live-runner-regression.mjs"
       ],
       "status": "active"
     },
@@ -778,7 +779,7 @@
           "cross-domain annotation resource resolution and transactional background AI orchestration",
           "trash location resolution, versioned restore and durable attachment cleanup orchestration",
           "cross-domain personal context, source receipts, token budgets, activity selection and thought answer prompt composition",
-      "task-specific working context, current-material fast paths, evidence-gated selection, structured prompt compilation and selection receipts",
+          "task-specific working context, current-material fast paths, evidence-gated selection, structured prompt compilation and selection receipts",
           "thought chain creation/task transaction, draft/starter generation and foreground answer idempotency",
           "capture/journal, library and review/chat application workflows",
           "statistics service composition and bounded operation-log reads",
@@ -807,7 +808,7 @@
         "scripts/server-runtime-regression.mjs",
         "scripts/personal-context-regression.mjs",
         "scripts/task-context-selection-regression.mjs",
-      "scripts/prompt-role-injection-regression.mjs",
+        "scripts/prompt-role-injection-regression.mjs",
         "scripts/onboarding-v2-regression.mjs",
         "scripts/user-model-extraction-regression.mjs",
         "scripts/perception-runtime-regression.mjs",
@@ -824,7 +825,8 @@
         "scripts/regression.mjs",
         "scripts/api-v1-contract-regression.mjs",
         "scripts/auth-regression.mjs",
-        "scripts/postgres-runtime-checks.mjs"
+        "scripts/postgres-runtime-checks.mjs",
+        "scripts/personalization-live-regression.mjs"
       ],
       "status": "active"
     },
@@ -2181,7 +2183,9 @@
       "type": "feature",
       "root": "public/frontend/features/account-settings",
       "publicEntry": "public/frontend/features/account-settings/index.mjs",
-      "allowedDependencies": ["shared.opening"],
+      "allowedDependencies": [
+        "shared.opening"
+      ],
       "owns": {
         "data": [
           "account identity and role management, settings, voice preview and local test mode lifecycle"

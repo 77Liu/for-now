@@ -342,6 +342,8 @@
       "assertions": ["只读投影", "来源存在性与版本可见", "Token 硬预算", "不读取私密原始媒体"],
       "evidence": [
         {"script": "scripts/personal-context-regression.mjs", "anchor": "Personal context"},
+        {"script": "scripts/personalization-live-regression.mjs", "anchor": "Live replay plan passed"},
+        {"script": "scripts/personalization-live-runner-regression.mjs", "anchor": "Live replay runner passed"},
         {"script": "scripts/ui-regression.mjs", "anchor": "personal-context-source-list"}
       ]
     },

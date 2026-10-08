@@ -116,6 +116,8 @@ const suites = {
     ["keepsake records and event time contracts", ["scripts/keepsake-time-regression.mjs"]],
     ["onboarding, business prompts and personal context", ["scripts/personal-context-regression.mjs"]],
     ["task-specific working context selection", ["scripts/task-context-selection-regression.mjs"]],
+    ["fixed synthetic live replay request identities", ["scripts/personalization-live-regression.mjs"]],
+    ["live replay ledger recovery and blind evidence", ["scripts/personalization-live-runner-regression.mjs"]],
     ["role-separated prompt orchestration", ["scripts/prompt-role-injection-regression.mjs"]],
     ["onboarding v2 data compatibility", ["scripts/onboarding-v2-regression.mjs"]],
     ["onboarding v2 session API", ["scripts/onboarding-v2-session-regression.mjs"]],
