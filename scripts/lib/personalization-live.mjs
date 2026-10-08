@@ -8,14 +8,17 @@ import { thoughtTask } from "../../src/modules/thoughts/index.mjs";
 import { installPromptCatalog } from "../../src/shared/prompts/index.mjs";
 import { loadPromptCatalog } from "../../src/infrastructure/prompt-catalog/index.mjs";
 import { createGeneralReplayAdapter, createLegacyReplayAdapter, createNewReplayAdapter, validateReplayFixtureSet } from "./personalization-replay.mjs";
+import { replayCurrentTask, assertReplayCurrentCoverage, REPLAY_INPUT_VERSION, REPLAY_PURPOSE } from "./personalization-task-input.mjs";
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object"
   ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
 export const liveFingerprint = value => crypto.createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
 export async function buildPersonalizationLivePlan(rootDir) {
   const text = await fs.readFile(path.join(rootDir, "scripts/fixtures/personalization-replay-v1.json"), "utf8");
   const fixtures = validateReplayFixtureSet(JSON.parse(text));
-  const manifest = JSON.parse(await fs.readFile(path.join(rootDir, "scripts/fixtures/personalization-replay-manifest-v1.json"), "utf8"));
+  const manifest = JSON.parse(await fs.readFile(path.join(rootDir, "scripts/fixtures/personalization-replay-manifest-v2.json"), "utf8"));
   assert.equal(crypto.createHash("sha256").update(text).digest("hex"), manifest.fixtureBaseline.sha256);
+  assert.equal(manifest.requestInputContract.version, REPLAY_INPUT_VERSION);
+  assert.equal(manifest.requestInputContract.purpose, REPLAY_PURPOSE);
   const requests = [];
   for (const variant of ["general", "legacy", "new"]) {
     const catalog = variant === "new" ? manifest.candidate.promptCatalog : manifest.promptCatalog;
@@ -32,7 +35,8 @@ export async function buildPersonalizationLivePlan(rootDir) {
       const parameters = output.adapterEvidence.parameters;
       const settings = llmSettingsForScene(defaultLlmSettings, "thoughtAnswer");
       const messages = [{ role: "system", content: systemPromptForScene(systemPrompt(), "thoughtAnswer", settings) },
-        { role: "user", content: variant === "new" ? context : userPrompt({ context, chain: fixture.task, task: thoughtTask("answer") }) }];
+        { role: "user", content: variant === "new" ? context : userPrompt({ context, chain: replayCurrentTask(fixture), task: thoughtTask("answer") }) }];
+      assertReplayCurrentCoverage(fixture, messages, output.selectedSourceIds);
       assert.equal(liveFingerprint({ messages, parameters }), output.adapterEvidence.fullRequestSha256,
         `Live request differs from frozen replay identity: ${fixture.id}/${variant}`);
       assert.equal(parameters.maxOutputTokens, 16000); assert.equal(parameters.reasoningEffort, "max");
@@ -51,7 +55,7 @@ export async function buildPersonalizationLivePlan(rootDir) {
     + request.parameters.maxOutputTokens * pricing.outputPerMillion) / 1e6;
   const reservedCny = requests.reduce((sum, row) => sum + row.reservedCny, 0);
   assert.ok(reservedCny <= 30, "Live plan exceeds frozen CNY30 ceiling");
-  return { schemaVersion: 1, fixtureSha256: manifest.fixtureBaseline.sha256,
+  return { schemaVersion: 1, purpose: REPLAY_PURPOSE, requestInputVersion: REPLAY_INPUT_VERSION, fixtureSha256: manifest.fixtureBaseline.sha256,
     fixtureSetFingerprint: manifest.fixtureSetFingerprint, manifestFingerprint: liveFingerprint(manifest),
     planFingerprint: liveFingerprint(requests), fixtureCount: 8, maxCalls: 48, maxCostCny: 30,
     reservedCny, concurrency: 1, retries: 0, timeoutMs: 90000, pricing,

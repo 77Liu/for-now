@@ -21,7 +21,7 @@ import {
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const fixturePath = path.join(root, "scripts", "fixtures", "personalization-replay-v1.json");
-const manifestPath = path.join(root, "scripts", "fixtures", "personalization-replay-manifest-v1.json");
+const manifestPath = path.join(root, "scripts", "fixtures", "personalization-replay-manifest-v2.json");
 const fixtureText = await fs.readFile(fixturePath, "utf8");
 const fixtureSet = JSON.parse(fixtureText);
 const replayManifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
@@ -79,7 +79,7 @@ assert.equal(
 );
 assert.equal(
   report.replayManifestFingerprint,
-  "f1213f9497c58ec364bfdc7f7a040a519bc59630525936213da3e7073e139c55"
+  "6104b3b984d0a0cf0444715726394032f6500c07dc74aa456fef84b1726ff48c"
 );
 assert.equal(report.variants.general.status, "baseline-observed");
 assert.equal(report.variants.legacy.status, "baseline-observed");
@@ -142,11 +142,11 @@ assert.deepEqual(report.variants.legacy.aggregate, {
 });
 assert.equal(
   report.variants.general.fingerprint,
-  "f36209cdae42ebb7b9dcde7130af9bf2269e83f0d40ad34333c90e7c97a97797"
+  "bd471f451b53f29b018fcef62978abe0bff020da6ad81817ff986177592a709d"
 );
 assert.equal(
   report.variants.legacy.fingerprint,
-  "7d8d97b948c49d2d4ad02e996681205428b3b7515fd83780dc818ec7418086a2"
+  "732d37b4122e6aaff718c6e543f457867202e69e5f7192de8272cd400c607484"
 );
 assert.match(
   report.variants.legacy.fixtures[0].adapterEvidence.promptSha256,

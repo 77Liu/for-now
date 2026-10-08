@@ -22,6 +22,8 @@ import {
 } from "../../src/modules/user-model/index.mjs";
 import { promptCatalogMetadata } from "../../src/shared/prompts/index.mjs";
 
+import { replayCurrentMaterials, replayCurrentTask, replaySourceRecord, replayMaterialOrigin, REPLAY_ACCOUNT_ID, REPLAY_GENERATED_AT, REPLAY_INPUT_VERSION, REPLAY_PURPOSE } from "./personalization-task-input.mjs";
+
 export const REPLAY_OUTPUT_SCHEMA_VERSION = 1;
 export const REPLAY_VARIANTS = Object.freeze(["general", "legacy", "new"]);
 export const REPLAY_ANSWER_GRADER_VERSION = "deterministic-citation-v1";
@@ -31,9 +33,6 @@ export const APPROVED_REPLAY_FIXTURE_FINGERPRINT =
 const list = value => Array.isArray(value) ? value : [];
 const sortUnique = values => [...new Set(values)].sort();
 const ratio = (numerator, denominator) => denominator ? Number((numerator / denominator).toFixed(6)) : null;
-const itemId = material => material.id.split(":").slice(1).join(":");
-const REPLAY_ACCOUNT_ID = "replay-account";
-const REPLAY_GENERATED_AT = "2026-10-07T12:30:00.000Z";
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
@@ -67,7 +66,7 @@ function requestEvidence(fixture, contextPrompt) {
   const effectiveSystemPrompt = systemPromptForScene(systemPrompt(), scene, settings);
   const effectiveUserPrompt = userPrompt({
     context: contextPrompt,
-    chain: fixture.task,
+    chain: replayCurrentTask(fixture),
     task: thoughtTask("answer")
   });
   const parameters = {
@@ -137,21 +136,10 @@ function executeFixtureCases(fixture) {
   });
 }
 
-function sourceRecord(material, fixtureIndex, materialIndex) {
-  const occurredOn = material.occurredOn || `2026-09-${String((fixtureIndex + materialIndex) % 27 + 1).padStart(2, "0")}`;
-  return {
-    id: itemId(material),
-    occurredOn,
-    occurredAt: `${occurredOn}T08:00:00.000Z`,
-    createdAt: `${occurredOn}T08:00:00.000Z`,
-    updatedAt: `${occurredOn}T08:00:00.000Z`,
-    version: material.version || 1,
-    contextAllowed: material.contextAllowed !== false,
-    ...(material.disposition ? { disposition: material.disposition } : {})
-  };
-}
+const sourceRecord = replaySourceRecord;
 
 function legacyStore(fixture, fixtureIndex) {
+  const allowedCurrentIds = new Set(replayCurrentMaterials(fixture).map(material => material.id));
   const store = {
     onboarding: {},
     onboardingV2: {},
@@ -163,7 +151,8 @@ function legacyStore(fixture, fixtureIndex) {
     thoughts: []
   };
   list(fixture.materials).forEach((material, materialIndex) => {
-    if (!material.storeKind || material.account === "other") return;
+    if ((material.channel === "current" && !allowedCurrentIds.has(material.id))
+      || !material.storeKind || material.account === "other") return;
     const record = sourceRecord(material, fixtureIndex, materialIndex);
     if (material.storeKind === "capture") {
       store.captures.push({ ...record, content: material.text, tags: [] });
@@ -212,11 +201,13 @@ function newReplayState(fixture, fixtureIndex, { taskEventId = "" } = {}) {
     perceptionEvents: [],
     trash: []
   };
+  const allowedCurrentIds = new Set(replayCurrentMaterials(fixture).map(material => material.id));
   const currentMaterial = [];
   const evidenceToMaterialId = new Map();
   const sourceTextByMaterialId = new Map();
   for (const [materialIndex, material] of list(fixture.materials).entries()) {
     if (material.channel === "current") {
+      if (!allowedCurrentIds.has(material.id)) continue;
       const current = {
         id: material.id,
         accountId: REPLAY_ACCOUNT_ID,
@@ -306,11 +297,7 @@ function newReplayState(fixture, fixtureIndex, { taskEventId = "" } = {}) {
     const contextAllowed = material.contextAllowed !== false
       && material.forbiddenReason !== "invalidated-derived"
       && material.storeKind !== "thoughtAi";
-    const origin = material.forbiddenReason === "third-party-as-user"
-      ? "third_party"
-      : material.storeKind === "thoughtAi" ? "ai"
-        : material.storeKind === "dailyRecord" ? "device"
-          : "user";
+    const origin = replayMaterialOrigin(material);
     const informationType = material.storeKind === "dailyRecord"
       ? "measured_fact"
       : material.storeKind === "thoughtAi" ? "model_derived"
@@ -369,11 +356,7 @@ function newReplayState(fixture, fixtureIndex, { taskEventId = "" } = {}) {
 }
 
 function currentSourceIds(fixture) {
-  return list(fixture.materials)
-    .filter(material => material.channel === "current"
-      && material.contextAllowed !== false
-      && material.account !== "other")
-    .map(material => material.id);
+  return replayCurrentMaterials(fixture).map(material => material.id);
 }
 
 function stubAssertions(fixture, variant, selectedSourceIds) {
@@ -402,7 +385,7 @@ export function createGeneralReplayAdapter() {
     executionMode: "deterministic-stub",
     run(fixture) {
       return replayOutput(fixture, "general", currentSourceIds(fixture), {
-        selectionPolicy: "current-material-only-v1",
+        selectionPolicy: "current-material-only-v2",
         ...requestEvidence(fixture, "")
       });
     }
@@ -801,6 +784,10 @@ export function validateReplayManifest(fixtureSet, manifest, {
   phase = "baseline"
 } = {}) {
   if (manifest?.schemaVersion !== 1) throw new Error("Replay manifest schemaVersion must be 1");
+  if (manifest.requestInputContract?.version !== REPLAY_INPUT_VERSION
+    || manifest.requestInputContract?.purpose !== REPLAY_PURPOSE) {
+    throw new Error("Replay manifest requires the same-current-task-v2 contract");
+  }
   if (!["baseline", "candidate"].includes(phase)) throw new Error("Replay manifest phase is invalid");
   if (manifest.fixtureSetVersion !== fixtureSet.fixtureSetVersion) {
     throw new Error("Replay manifest fixture version does not match");

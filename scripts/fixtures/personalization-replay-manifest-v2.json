@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "fixtureSetVersion": "2026.10.07.1",
+  "fixtureSetFingerprint": "64af56c52e888f97919f190e072e02a9fdf957b03dc864283e392b2255c12a69",
+  "fixtureBaseline": {
+    "commit": "fb1961b28f27e9708fa15ddf38506747db6879e0",
+    "blob": "cfc2f86a673ab25c536ac7d0cd0db534670707dc",
+    "sha256": "8abce086dbf44bfe7eff159a84b326d4cb0e684c732e7bb8c943523a35424972"
+  },
+  "baseline": {
+    "commit": "2d8687a1f26f6e4b7e859d13c4d502da0f6a2c7d",
+    "tree": "50a42b7de427558bd6852748ba2766cc948cf401"
+  },
+  "candidate": {
+    "status": "local-evaluated",
+    "commit": null,
+    "tree": null,
+    "resultFingerprint": "e7d0f8d394fb13491a8ba819e923eb25b5e4c5d0eacd98bce56949e4095c25de",
+    "graderVersion": "deterministic-citation-v1",
+    "taskBindings": {
+      "same-event-across-two-records": {
+        "sourceMaterialId": "capture:dedup-capture",
+        "eventScoped": true
+      }
+    },
+    "promptCatalog": {
+      "version": "2026.10.07.2",
+      "sha256": "0aec29fffd8ba55b33ef74f4b69b1b0876e53b8e4a0fd49ccfd27349a1dc26c1"
+    },
+    "requestContract": {
+      "scene": "thoughtAnswer",
+      "responseStyle": "standard",
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "reasoningEffort": "max",
+      "maxOutputTokens": 16000,
+      "stream": false,
+      "responseFormat": "text",
+      "repetitionsPerVariant": 2,
+      "promptIds": [
+        "ai.system.core",
+        "orchestration.role.answer",
+        "ai.scene.thoughtAnswer",
+        "ai.style.standard",
+        "ai.identity.named",
+        "thought.task.answer",
+        "orchestration.user.envelope"
+      ]
+    }
+  },
+  "baselineResultFingerprints": {
+    "general": "bd471f451b53f29b018fcef62978abe0bff020da6ad81817ff986177592a709d",
+    "legacy": "732d37b4122e6aaff718c6e543f457867202e69e5f7192de8272cd400c607484"
+  },
+  "promptCatalog": {
+    "version": "2026.10.04.2",
+    "sha256": "cc8d8235d3134a0779653abbb76515a93f138cde496bb8356a8acdf26ef60295"
+  },
+  "requestContract": {
+    "scene": "thoughtAnswer",
+    "responseStyle": "standard",
+    "provider": "deepseek",
+    "model": "deepseek-v4-pro",
+    "reasoningEffort": "max",
+    "maxOutputTokens": 16000,
+    "stream": false,
+    "responseFormat": "text",
+    "repetitionsPerVariant": 2,
+    "promptIds": [
+      "ai.system.core",
+      "ai.scene.thoughtAnswer",
+      "ai.style.standard",
+      "ai.identity.named",
+      "ai.user.wrapper",
+      "thought.task.answer",
+      "context.personal"
+    ]
+  },
+  "execution": {
+    "general": "deterministic-stub",
+    "legacy": "deterministic-stub",
+    "new": "deterministic-stub",
+    "realModel": "not-authorized"
+  },
+  "requestInputContract": {
+    "version": "current-task-v2",
+    "purpose": "personalization-same-current-task-v2",
+    "previousManifestFileSha256": "69dd91fa84409b025c2aa582989e687cf1e8bbc0d14842896644a773bbb226cc"
+  }
+}

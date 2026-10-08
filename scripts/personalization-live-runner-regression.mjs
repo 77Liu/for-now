@@ -22,6 +22,8 @@ try {
   });
   assert.equal(run(false).status, 0);
   let report = JSON.parse(await fs.readFile(output, "utf8"));
+  assert.equal(report.purpose, "personalization-same-current-task-v2");
+  assert.equal(report.requestInputVersion, "current-task-v2");
   assert.equal(report.status, "generation-complete"); assert.equal(report.results.length, 48); assert.equal(report.gateEligible, false);
   assert.ok(report.recordedCostUpperBoundCny <= 30);
   assert.equal((await fs.readFile(trace, "utf8")).trim().split("\n").length, 48);
@@ -29,6 +31,12 @@ try {
   assert.equal((await fs.readFile(output, "utf8")).includes("synthetic-api-key"), false);
   assert.equal(run(false).status, 0, "complete resume makes zero calls");
   assert.equal((await fs.readFile(trace, "utf8")).trim().split("\n").length, 48);
+  const savedReport = structuredClone(report);
+  report.purpose = "old-input-generation"; delete report.requestInputVersion;
+  await fs.writeFile(output, JSON.stringify(report));
+  assert.notEqual(run(false).status, 0, "Old generation cannot resume with a corrected input contract");
+  assert.equal((await fs.readFile(trace, "utf8")).trim().split("\n").length, 48);
+  report = savedReport; await fs.writeFile(output, JSON.stringify(report));
   const calls = (await fs.readFile(trace, "utf8")).trim().split("\n").map(JSON.parse);
   for (const [index, row] of report.results.entries()) assert.deepEqual(row.auditWireRequest, calls[index].body);
   const packetDirectory = path.join(temporary, "blind-packet");
@@ -37,6 +45,12 @@ try {
   const ownerPacket = JSON.parse(await fs.readFile(path.join(packetDirectory, "owner-packet.json"), "utf8"));
   const mapping = JSON.parse(await fs.readFile(path.join(packetDirectory, "private-unblind-map.json"), "utf8"));
   const review = JSON.parse(await fs.readFile(path.join(packetDirectory, "owner-review-template.json"), "utf8"));
+  assert.equal(ownerPacket.purpose, "personalization-same-current-task-v2");
+  const temporalTruth = ownerPacket.cases.find(item => item.materials.some(material => material.id === "checkin:temporal-old")).groundTruth;
+  assert.equal(temporalTruth.sources.find(source => source.id === "checkin:temporal-old").effectiveOccurredAt, "2026-08-01T08:00:00.000Z");
+  assert.equal(temporalTruth.sources.find(source => source.id === "checkin:temporal-old").payload.energy, 1);
+  const packetMarkdown = await fs.readFile(path.join(packetDirectory, "owner-packet.md"), "utf8");
+  assert.ok(packetMarkdown.includes("2026-08-01T08:00:00.000Z") && packetMarkdown.includes("\"energy\":1"));
   assert.equal(ownerPacket.cases.length, 8); assert.equal(mapping.mapping.length, 24);
   assert.equal(review.status, "not-reviewed"); assert.equal(review.gateEligible, false);
   for (const item of ownerPacket.cases) for (const sample of item.samples) {

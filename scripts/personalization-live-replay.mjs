@@ -16,7 +16,7 @@ for (let index = 2; index < process.argv.length; index += 1) {
 }
 const live = process.argv.includes("--live");
 const outputFlag = process.argv.indexOf("--output");
-let output = path.resolve(outputFlag >= 0 ? process.argv[outputFlag + 1] : path.join(root, "reports/personalization-live-v0.5.9.json"));
+let output = path.resolve(outputFlag >= 0 ? process.argv[outputFlag + 1] : path.join(root, "reports/personalization-live-current-task-v2-v0.5.9.json"));
 const treeFlag = process.argv.indexOf("--tree");
 const candidateTree = treeFlag >= 0 ? process.argv[treeFlag + 1] : execFileSync("git", ["rev-parse", "HEAD^{tree}"], { cwd: root, encoding: "utf8" }).trim();
 assert.match(candidateTree, /^[a-f0-9]{40}$/);
@@ -47,6 +47,7 @@ if (!live) {
     }
     catch (error) { if (error.code !== "ENOENT") throw error; }
     if (report) {
+      assert.equal(report.purpose, plan.purpose); assert.equal(report.requestInputVersion, plan.requestInputVersion);
       assert.equal(report.planFingerprint, plan.planFingerprint); assert.equal(report.candidateTree, candidateTree);
       assert.equal(report.maxCostCny, plan.maxCostCny); assert.equal(report.maxCalls, plan.maxCalls);
       assert.ok(report.results.every(row => requests.some(request => request.id === row.id
