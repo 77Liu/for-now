@@ -144,6 +144,7 @@ const suites = {
     ["backup recovery and readiness", ["scripts/backup-regression.mjs"]],
     ["monitoring", ["scripts/monitor-regression.mjs"]],
     ["restore validation", ["scripts/restore-validation-regression.mjs"]],
+    ["release attempt fencing and stale-task rejection", ["scripts/release-fence-regression.mjs"]],
     ["deployment rollback", ["scripts/deploy-regression.mjs"]],
     ["isolated online Preview deployment", ["scripts/preview-deploy-regression.mjs"]]
   ],
