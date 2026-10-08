@@ -36,7 +36,7 @@ assert.match(envExample, /^AI_BUDGET_DATABASE_URL=$/m);
 assert.match(envExample, /^MONITOR_PLATFORM_ENABLED=0$/m);
 assert.match(envExample, /^MONITOR_PLATFORM_SERVICE_NAME=for-now-platform\.service$/m);
 assert.match(envExample, /^MONITOR_PLATFORM_READY_URL=http:\/\/127\.0\.0\.1:4280\/readyz$/m);
-const successfulScenarios = new Set(["success"]);
+const successfulScenarios = new Set(["success", "media_success"]);
 const files = [
   "/etc/for-now.env", "/etc/systemd/system/for-now.service", "/etc/systemd/system/for-now-backup.service",
   "/etc/systemd/system/for-now-backup.timer", "/etc/systemd/system/for-now-monitor.service",
@@ -52,7 +52,9 @@ const certificateFiles = [
   "/etc/letsencrypt/live/77liu.top/privkey.pem"
 ];
 try {
-  for (const scenario of ["success", "restart", "health", "nginx", "dependencies", "same_commit_dependencies", "exploration", "exploration_branch", "checkpoint_branch", "postgres_incompatible", "postgres_preflight", "stale_same_commit", "candidate_mismatch", "baseline_mismatch", "first_install_health", "invalidate_build", "invalidate_before_switch", "new_decision_after_switch"]) {
+  for (const scenario of ["success", "restart", "health", "nginx", "dependencies", "same_commit_dependencies", "exploration", "exploration_branch", "checkpoint_branch", "postgres_incompatible", "postgres_preflight", "stale_same_commit", "candidate_mismatch", "baseline_mismatch", "first_install_health", "invalidate_build", "invalidate_before_switch", "new_decision_after_switch", "media_success", "media_health", "media_invalid", "media_missing_candidate", "media_wrong_commit", "media_invalidate_before_apply", "media_invalidate_after_apply", "media_new_decision_after_switch"]) {
+    const media = scenario.startsWith("media_");
+    const mediaEnv = media ? "ATTACHMENT_STORAGE=oss\nALIBABA_CLOUD_ECS_RAM_ROLE=ForNowEcsBackupRole\n" : "";
     const backendEnv = ["postgres_incompatible", "postgres_preflight"].includes(scenario)
       ? "PERSISTENCE_BACKEND=postgres\nDATABASE_URL=postgresql://data\nAUTH_DATABASE_URL=postgresql://auth\nAI_BUDGET_DATABASE_URL=postgresql://budget\n"
       : "";
@@ -88,14 +90,33 @@ try {
     for (const file of [...files, "/home/for-now/.ssh/gitee_deploy", "/usr/local/bin/npm", "/usr/local/bin/node"]) {
       await fs.mkdir(path.dirname(path.join(dir, file)), { recursive: true });
       await fs.writeFile(path.join(dir, file), file.endsWith(".env")
-        ? `APP_VERSION=old-version\nOSS_ATTACHMENT_BUCKET=for-now\nOSS_ENDPOINT=https://oss-cn-beijing-internal.aliyuncs.com\nOSS_REGION=cn-beijing\nFEISHU_ALERT_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/test\nPLATFORM_SERVICE_TOKEN_HASH=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nUNCHANGED=yes\n${backendEnv}`
+        ? `APP_VERSION=old-version\nOSS_ATTACHMENT_BUCKET=for-now\nOSS_ENDPOINT=https://oss-cn-beijing-internal.aliyuncs.com\nOSS_REGION=cn-beijing\nFEISHU_ALERT_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/test\nPLATFORM_SERVICE_TOKEN_HASH=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nUNCHANGED=yes\n${backendEnv}${mediaEnv}`
         : `old:${file}\n`);
     }
     for (const file of certificateFiles) {
       await fs.mkdir(path.dirname(path.join(dir, file)), { recursive: true });
       await fs.writeFile(path.join(dir, file), "test certificate fixture\n");
     }
+    if (media) {
+      await fs.chmod(path.join(dir, "etc/for-now.env"), 0o600);
+      await fs.writeFile(path.join(dir, "etc/for-now-media-cdn.key"), "FixtureOnlyKey123456789\n", { mode: 0o600 });
+      const profile = JSON.parse(await fs.readFile(path.join(root, "deploy/media-delivery.production.json"), "utf8"));
+      if (scenario === "media_invalid") profile.MEDIA_DELIVERY_BUCKET = "for-now";
+      await fs.writeFile(path.join(dir, "media-profile.json"), JSON.stringify(profile), { mode: 0o600 });
+      if (scenario !== "media_missing_candidate") {
+        await fs.writeFile(path.join(dir, "archive/src/config/index.mjs"), `export function loadAttachmentConfig(e) { return {
+          mode:e.ATTACHMENT_STORAGE,bucket:e.OSS_ATTACHMENT_BUCKET,region:e.OSS_REGION,roleName:e.ALIBABA_CLOUD_ECS_RAM_ROLE,
+          delivery:{mode:e.MEDIA_DELIVERY_MODE,bucket:e.MEDIA_DELIVERY_BUCKET,endpoint:e.MEDIA_DELIVERY_OSS_ENDPOINT,cdnOrigin:e.MEDIA_CDN_ORIGIN,cdnKey:e.MEDIA_CDN_AUTH_KEY}
+        }};`);
+        await fs.writeFile(path.join(dir, "archive/src/shared/attachments/delivery.mjs"), "export function validateDeliveryConfig(c,b) { if(c.bucket===b) throw new Error('source'); return c; }");
+      }
+    }
     const releaseFence = await installReleaseFenceFixture(root, dir);
+    const mediaHelperPath = path.join(dir,"archive/deploy/apply-media-config.mjs");
+    await fs.writeFile(mediaHelperPath,(await fs.readFile(mediaHelperPath,"utf8"))
+      .replaceAll("/usr/local/lib/for-now-release",path.join(dir,"usr/local/lib/for-now-release"))
+      .replaceAll("/var/lib/for-now-release",releaseFence.directory)
+      .replaceAll("/etc/for-now-media-delivery.json",path.join(dir,"etc/for-now-media-delivery.json")));
     const approval = issueReleaseFenceFixture(releaseFence, { target: "production", candidateSha: scenario === "candidate_mismatch" ? "f".repeat(40) : commit, baselineSha: scenario === "baseline_mismatch" ? "f".repeat(40) : scenario === "first_install_health" ? "0".repeat(40) : path.basename(previous) });
     if (scenario === "stale_same_commit") await releaseFence.fence.invalidate({ target: "production", expectedAttemptId: approval.attemptId });
     const shim = path.join(bin, "shim.mjs");
@@ -119,7 +140,7 @@ const supersede = action => {
 };
 if(scenario==="invalidate_build"&&name==="npm")supersede("invalidate");
 if(scenario==="invalidate_before_switch"&&name==="systemctl"&&args[0]==="daemon-reload")supersede("invalidate");
-if(scenario==="new_decision_after_switch"&&name==="systemctl"&&args[0]==="restart"){supersede("issue");process.exit(1);}
+if(["new_decision_after_switch","media_new_decision_after_switch"].includes(scenario)&&name==="systemctl"&&args[0]==="restart"){supersede("issue");process.exit(1);}
 
 if(name==="sudo"){const r=spawnSync(args[2],args.slice(3),{env:process.env,stdio:"inherit"});process.exit(r.status??1)}
 if(name==="runuser"){const split=args.indexOf("--"),r=spawnSync(args[split+1],args.slice(split+2),{env:process.env,stdio:"inherit"});process.exit(r.status??1)}
@@ -129,8 +150,14 @@ if(name==="git"&&args.includes("archive")){const r=spawnSync("/usr/bin/tar",["-c
 if(name==="npm"&&["dependencies","same_commit_dependencies"].includes(scenario))process.exit(1);
 if(name==="node"&&args[0]==="--check"&&!fs.existsSync(args[1]))process.exit(1);
 if(name==="node"&&args[0]?.endsWith("/scripts/postgres-runtime-preflight.mjs")&&scenario==="postgres_preflight")process.exit(1);
+if(name==="node"&&args[0]?.endsWith("/deploy/apply-media-config.mjs")){
+ const checking=args.at(-1)==="--check";
+ const r=spawnSync(${JSON.stringify(process.execPath)},args,{env:process.env,stdio:"inherit"});
+ if(r.status===0&&((checking&&scenario==="media_invalidate_before_apply")||(!checking&&scenario==="media_invalidate_after_apply")))supersede("invalidate");
+ process.exit(r.status??1);
+}
 if(name==="systemctl"&&args[0]==="restart"&&isNew&&scenario==="restart")process.exit(1);
-if(name==="curl"&&isNew&&["health","first_install_health"].includes(scenario))process.exit(1);
+if(name==="curl"&&isNew&&["health","first_install_health","media_health"].includes(scenario))process.exit(1);
 if(name==="nginx"&&scenario==="nginx")process.exit(1);
 if(name==="mv")fs.renameSync(args.at(-2),args.at(-1));
 if(name==="readlink")console.log(current);
@@ -160,7 +187,9 @@ if(name==="sed"){const file=args.at(-1),version=args[1].split("APP_VERSION=")[2]
         RELEASE_ATTEMPT_ID: approval.attemptId,
         RELEASE_CANDIDATE_SHA: approval.candidateSha,
         ...(scenario === "exploration_branch" ? { DEPLOY_BRANCH: "explore/nightly-p3-20260928" } : {}),
-        ...(scenario === "checkpoint_branch" ? { DEPLOY_BRANCH: "checkpoint/v0.2.0-g2-20260930" } : {})
+        ...(scenario === "checkpoint_branch" ? { DEPLOY_BRANCH: "checkpoint/v0.2.0-g2-20260930" } : {}),
+        ...(media ? { DEPLOY_MEDIA_CONFIG: path.join(dir, "media-profile.json") } : {}),
+        ...(scenario === "media_wrong_commit" ? { DEPLOY_EXPECTED_COMMIT: "0".repeat(40) } : {})
       },
       encoding: "utf8", timeout: 180000
     });
@@ -174,8 +203,8 @@ if(name==="sed"){const file=args.at(-1),version=args[1].split("APP_VERSION=")[2]
     const succeeded = successfulScenarios.has(scenario);
     assert.equal(result.status, succeeded ? 0 : 1, `${scenario}: ${result.stderr}; signal=${result.signal}; error=${result.error?.message || "none"}`);
     const active = await fs.realpath(path.join(base, "app")).catch(error=>{if(error.code === "ENOENT") return null; throw error;});
-    const sharedBeforeRevocation = ["invalidate_before_switch", "new_decision_after_switch"].includes(scenario);
-    if (succeeded || scenario === "new_decision_after_switch") assert.equal(path.basename(active), commit);
+    const sharedBeforeRevocation = ["invalidate_before_switch", "new_decision_after_switch", "media_invalidate_before_apply", "media_invalidate_after_apply", "media_new_decision_after_switch"].includes(scenario);
+    if (succeeded || ["new_decision_after_switch", "media_new_decision_after_switch"].includes(scenario)) assert.equal(path.basename(active), commit);
     else assert.equal(active, scenario === "first_install_health" ? null : previous);
     if (succeeded) {
       const commands = await fs.readFile(path.join(dir, "commands.log"), "utf8");
@@ -209,7 +238,18 @@ if(name==="sed"){const file=args.at(-1),version=args[1].split("APP_VERSION=")[2]
       assert.ok(compressedRuntime.length < runtime.length);
     }
     const env = await fs.readFile(path.join(dir, "etc/for-now.env"), "utf8");
-    assert.equal(env, `APP_VERSION=${succeeded || scenario === "new_decision_after_switch" ? commit.slice(0, 12) : "old-version"}\nOSS_ATTACHMENT_BUCKET=for-now\nOSS_ENDPOINT=https://oss-cn-beijing-internal.aliyuncs.com\nOSS_REGION=cn-beijing\nFEISHU_ALERT_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/test\nPLATFORM_SERVICE_TOKEN_HASH=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nUNCHANGED=yes\n${backendEnv}`);
+    const mediaApplied = ["media_success", "media_invalidate_after_apply", "media_new_decision_after_switch"].includes(scenario) ? "MEDIA_DELIVERY_MODE=cdn-signed\nMEDIA_DELIVERY_BUCKET=for-now-distribution\nMEDIA_DELIVERY_OSS_ENDPOINT=https://oss-cn-beijing.aliyuncs.com\nMEDIA_CDN_ORIGIN=https://media.77liu.top\nMEDIA_CDN_AUTH_KEY=FixtureOnlyKey123456789\n" : "";
+    assert.equal(env, `APP_VERSION=${succeeded || ["new_decision_after_switch", "media_new_decision_after_switch"].includes(scenario) ? commit.slice(0, 12) : "old-version"}\nOSS_ATTACHMENT_BUCKET=for-now\nOSS_ENDPOINT=https://oss-cn-beijing-internal.aliyuncs.com\nOSS_REGION=cn-beijing\nFEISHU_ALERT_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/test\nPLATFORM_SERVICE_TOKEN_HASH=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nUNCHANGED=yes\n${backendEnv}${mediaEnv}${mediaApplied}`);
+    if (media) {
+      assert.ok(!(result.stdout + result.stderr).includes("FixtureOnlyKey123456789"));
+      const profileExists = await fs.access(path.join(dir, "etc/for-now-media-delivery.json")).then(() => true, () => false);
+      assert.equal(profileExists, ["media_success", "media_new_decision_after_switch"].includes(scenario));
+      if (profileExists) assert.deepEqual(JSON.parse(await fs.readFile(path.join(dir, "etc/for-now-media-delivery.json"), "utf8")), JSON.parse(await fs.readFile(path.join(root, "deploy/media-delivery.production.json"), "utf8")));
+      assert.equal((await fs.stat(path.join(dir, "etc/for-now.env"))).mode & 0o777, 0o600);
+      if (["media_invalid", "media_missing_candidate", "media_wrong_commit", "media_invalidate_before_apply", "media_invalidate_after_apply"].includes(scenario)) {
+        assert.doesNotMatch(await fs.readFile(path.join(dir, "commands.log"), "utf8"), /systemctl (?:restart|daemon-reload)|install .*\/etc\/systemd|mv .*\/opt\/for-now\/app/);
+      }
+    }
     if (!succeeded && !sharedBeforeRevocation) {
       for (const file of files.filter(file => !file.endsWith(".env"))) {
         assert.equal(await fs.readFile(path.join(dir, file), "utf8"), `old:${file}\n`, `${scenario}: restore ${file}`);
@@ -227,7 +267,7 @@ if(name==="sed"){const file=args.at(-1),version=args[1].split("APP_VERSION=")[2]
       assert.doesNotMatch(commandLog, /systemctl restart|mv .*\/app/);
       assert.match(result.stderr, /Old worker cannot roll back/);
     }
-    if (scenario === "new_decision_after_switch") {
+    if (["new_decision_after_switch", "media_new_decision_after_switch"].includes(scenario)) {
       assert.equal(commandLog.match(/systemctl restart/g)?.length, 1, "old worker must not restart during rollback");
       assert.equal(commandLog.match(/mv .*\/app\n/g)?.length, 1, "old rollback must not overwrite the new decision");
       assert.equal((await releaseFence.fence.read("production")).attemptId, JSON.parse(await fs.readFile(path.join(dir, "superseded.json"), "utf8")).attemptId);
@@ -248,7 +288,7 @@ if(name==="sed"){const file=args.at(-1),version=args[1].split("APP_VERSION=")[2]
     assert.equal((await fs.readdir(path.join(base, "releases"))).some(name => name.startsWith(`.${commit}.`)), false);
     console.log(`Deploy scenario passed: ${scenario}`);
   }
-  console.log("Deploy checks passed: modular candidate and prompt validation, exploration asset/branch rejection, domain/platform Nginx and monitoring gates, PostgreSQL rollback compatibility, same-commit fresh-nonce reuse, stale/candidate/baseline rejection, in-flight cancellation, superseding rollback ownership, failure recovery, and code/config/version restoration. No remote commands executed.");
+  console.log("Deploy checks passed: modular candidate and prompt validation, exploration asset/branch rejection, domain/platform Nginx and monitoring gates, PostgreSQL rollback compatibility, protected media apply/profile rollback and revocation races, same-commit fresh-nonce reuse, stale/candidate/baseline rejection, in-flight cancellation, superseding rollback ownership, failure recovery, and code/config/version restoration. No remote commands executed.");
 } finally {
   await fs.rm(fixture, { recursive: true, force: true });
 }

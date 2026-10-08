@@ -59,6 +59,10 @@ fi
 
 commit=$(release_guard sudo -u for-now git --git-dir="$mirror" rev-parse "refs/heads/$branch")
 if [ "$commit" != "$RELEASE_CANDIDATE_SHA" ]; then echo "Fetched commit differs from approved candidate." >&2; exit 1; fi
+if [ -n "${DEPLOY_EXPECTED_COMMIT:-}" ] && [ "$commit" != "$DEPLOY_EXPECTED_COMMIT" ]; then
+  echo "Release branch changed; expected commit does not match. Deployment stopped." >&2
+  exit 1
+fi
 release="$releases/$commit"
 previous=$(release_fence_resolve_directory "$current")
 if [ ! -f "$release/.deploy-ready" ]; then
@@ -108,6 +112,16 @@ if [ -n "$previous" ] && [ -d "$previous" ]; then
   release_guard chmod 0755 "$previous"
 fi
 
+media_profile=${DEPLOY_MEDIA_CONFIG:-/etc/for-now-media-delivery.json}
+if [ -n "${DEPLOY_MEDIA_CONFIG:-}" ] || [ -e "$media_profile" ]; then
+  if [ ! -f "$release/deploy/apply-media-config.mjs" ]; then
+    echo "Candidate lacks the media configuration deploy hook." >&2
+    exit 1
+  fi
+  /usr/local/bin/node "$release/deploy/apply-media-config.mjs" \
+    "$media_profile" /etc/for-now.env /etc/for-now-media-cdn.key "$release" --check
+fi
+
 # A PostgreSQL cutover is a separate offline procedure. Generic code rollback
 # must never start a JSON-only release against the old, now stale JSON files.
 if grep -Eq '^PERSISTENCE_BACKEND=postgres$' /etc/for-now.env; then
@@ -129,6 +143,7 @@ fi
 rollback_dir=$(release_guard mktemp -d "$base/.deploy-rollback.XXXXXX")
 managed_files=(
   /etc/for-now.env
+  /etc/for-now-media-delivery.json
   /etc/systemd/system/for-now.service
   /etc/systemd/system/for-now-backup.service
   /etc/systemd/system/for-now-backup.timer
@@ -181,6 +196,12 @@ rollback() {
   exit "$status"
 }
 trap rollback EXIT
+if [ -n "${DEPLOY_MEDIA_CONFIG:-}" ] || [ -e "$media_profile" ]; then
+  release_guard /usr/local/bin/node "$release/deploy/apply-media-config.mjs" \
+    "$media_profile" /etc/for-now.env /etc/for-now-media-cdn.key "$release" \
+    --apply-fenced "$release_fence_target" "$RELEASE_ATTEMPT_ID" "$RELEASE_CANDIDATE_SHA" \
+    "$(release_fence_current_sha)" "$$"
+fi
 release_guard install -o root -g root -m 0644 "$release/deploy/for-now.service" /etc/systemd/system/for-now.service
 release_guard install -o root -g root -m 0644 "$release/deploy/for-now-backup.service" /etc/systemd/system/for-now-backup.service
 release_guard install -o root -g root -m 0644 "$release/deploy/for-now-backup.timer" /etc/systemd/system/for-now-backup.timer

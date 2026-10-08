@@ -221,6 +221,44 @@ restore result are maintained in `knowledge/operations-capacity.md`.
 
 ## Deploy updates
 
+### 受保护的私有媒体分发接入
+
+云资源与对象验收见 [媒体配置记录](../knowledge/aliyun-media-distribution-config.md)。
+应用分发须绑定完成独立审查的完整候选、实际应用验收和新 production decision。
+先按发布记录安装独立 guard、核验旧部署 worker 已停止，再签发精确候选与当前
+生产 SHA 的 attempt。安装 guard 不等于部署应用，Preview 与生产决定分开记录。
+
+在包含本版部署交付的已审 main 提交目录执行：
+
+```bash
+bash deploy/deploy-with-media.sh <40位受审main提交SHA> <32位新production-attempt-ID>
+```
+
+入口核对四份本地文件与受审 Git 对象，使用项目 SSH 专用钥匙与严格 known_hosts，
+只上传非敏感 profile 和哈希清单到 root 私有临时目录。远端核对 profile 哈希及
+独立安装的 for-now-deploy 字节；不上传或运行候选内的部署脚本，不自行签发决定。
+guard 在配置应用、profile 持久化、切换和回滚等共享副作用前重查代次；陈旧
+worker 被拒绝，不能恢复新决定的配置。
+
+CDN key 留在服务器 /etc/for-now-media-cdn.key，root:root/0600，不进入参数、
+笔记本、源码或输出。候选 helper 校验源存储、配置映射与 delivery validator，
+再原子写入 /etc/for-now.env 的 MEDIA_*。只读 --check 不改配置；非法配置、
+旧候选、公开权限或符号链接均拒绝。成功后 /etc/for-now-media-delivery.json
+以0600持久化，后续正常受guard部署继续应用；失败按当前有效决定恢复原环境
+与 profile 的原内容或原缺失状态。
+
+回到 proxy 需要受审配置操作：移除持久 profile 并设置 MEDIA_DELIVERY_MODE=proxy，
+再按新的发布决定重启。原件、即时撤销对象仍遵循现有 proxy 策略；有 profile 时
+后续部署会再次启用分发。代码回滚不替代数据库/附件恢复。
+
+```bash
+npm run test:media-deploy
+npm run test:deploy
+```
+
+本轮不处理媒体证书续期、自动化或提醒，Owner已明确暂缓；云配置报告与合成
+对象通过不能代替实际账户、浏览器媒体、删除撤权和热缓存有效期的应用验收。
+
 After review and authorization, install the guard from the reviewed checkout:
 
 ```bash
@@ -309,3 +347,5 @@ UPSTREAM_ORIGIN=https://77liu.top/now ./启动.command
 
 The local Node process serves local frontend files and proxies API, session, SSE,
 and attachment traffic to the cloud.
+
+媒体 helper 只允许只读 `--check` 或绑定 production attempt、完整候选、活跃基线及父部署 PID 的 `--apply-fenced`。候选模块加载和私有临时文件 fsync 在锁外完成；随后导入独立安装的 guard，在与 issue/invalidate 共用的决策锁内重新校验并同步提交 env 与持久 profile。撤销先取得锁时，两文件均不提交；提交先取得锁时，撤销等待临界区结束。两个 rename 并非跨文件崩溃事务；中途 I/O/进程故障由原有受当前决策约束的备份与回滚处理，不允许旧 worker 撤回新的发布决定。

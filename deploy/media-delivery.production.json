@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "MEDIA_DELIVERY_MODE": "cdn-signed",
+  "MEDIA_DELIVERY_BUCKET": "for-now-distribution",
+  "MEDIA_DELIVERY_OSS_ENDPOINT": "https://oss-cn-beijing.aliyuncs.com",
+  "MEDIA_CDN_ORIGIN": "https://media.77liu.top"
+}

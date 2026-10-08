@@ -101,6 +101,7 @@
     "test:third-party": "node scripts/third-party-live-smoke.mjs",
     "test:backup": "node scripts/backup-regression.mjs",
     "test:deploy": "node scripts/deploy-regression.mjs",
+    "test:media-deploy": "node scripts/media-config-regression.mjs && node scripts/media-transfer-regression.mjs",
     "test:deploy:preview": "node scripts/preview-deploy-regression.mjs",
     "test:storage": "node scripts/attachment-storage-regression.mjs",
     "test:media-delivery": "node scripts/attachment-delivery-regression.mjs && node scripts/attachment-delivery-http-regression.mjs",
