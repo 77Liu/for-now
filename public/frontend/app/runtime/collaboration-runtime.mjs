@@ -66,7 +66,7 @@ function contextReceiptMarkup(receipt){
   const sources=Array.isArray(receipt?.sources)?receipt.sources:[],budget=receipt?.tokenBudget;
   if(!sources.length)return"";
   const budgetText=budget?`${Number(budget.estimatedUsed)||0} / ${Number(budget.limit)||0} Token 上界`:"";
-  return `<details class="context-audit"><summary><span>本次参考</span><small>${sources.length} 条${budgetText?` · ${budgetText}`:""}</small></summary><div class="context-source-list">${sources.map(contextSourceButton).join("")}</div></details>`
+  return `<details class="context-audit"><summary><span>本次参考</span><small>${sources.length} 条编排选入${budgetText?` · ${budgetText}`:""}</small></summary><p class="context-audit-note">这些材料在回答前被选入，不代表回答逐条引用。</p><div class="context-source-list">${sources.map(contextSourceButton).join("")}</div></details>`
 }
 function openContextReceiptSource(button){
   const view=button.dataset.contextView,target=button.dataset.contextTarget,root=button.dataset.contextRoot,date=button.dataset.contextDate,dailyType=button.dataset.contextDailyType;

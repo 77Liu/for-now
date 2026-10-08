@@ -1900,6 +1900,7 @@ h1{letter-spacing:0}
 .context-audit>summary::-webkit-details-marker{display:none}
 .context-audit>summary span{font-weight:750;color:#4e685a}
 .context-audit>summary small{font-size:.66rem}
+.context-audit-note{margin:0 0 6px;color:var(--view-muted);font-size:.68rem;line-height:1.5}
 .context-audit .context-source-item{grid-template-columns:minmax(105px,.3fr) minmax(0,1fr) auto;padding:8px 0}
 .heart-trend-disclosure{margin-top:8px;border-top:1px solid var(--view-line)}
 .heart-trend-disclosure>summary{display:flex;min-height:44px;align-items:center;color:var(--view-muted);cursor:pointer;font-size:.76rem;font-weight:750;list-style:none}
