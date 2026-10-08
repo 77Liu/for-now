@@ -882,6 +882,7 @@
         "scripts/attachment-range-regression.mjs",
         "scripts/attachment-delivery-regression.mjs",
         "scripts/attachment-delivery-http-regression.mjs",
+        "scripts/media-delivery-live-smoke-regression.mjs",
         "scripts/attachment-upload-regression.mjs",
         "scripts/attachment-derivatives-regression.mjs",
         "scripts/keepsake-media-migration-regression.mjs",

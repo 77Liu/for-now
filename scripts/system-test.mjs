@@ -11,7 +11,7 @@ const requestedSuite = process.argv[2] || "all";
 const ISOLATION_PROBE = "__isolation-probe";
 const productionEnvironmentKey = key => (
   ["DATABASE_URL", "AUTH_DATABASE_URL", "AI_BUDGET_DATABASE_URL", "APP_URL", "UPSTREAM_ORIGIN"].includes(key)
-  || /^(?:OSS_|ALIYUN_|ALIBABA_CLOUD_|DEEPSEEK_|FEISHU_|VOLCENGINE_)/.test(key)
+  || /^(?:OSS_|MEDIA_|ALIYUN_|ALIBABA_CLOUD_|DEEPSEEK_|FEISHU_|VOLCENGINE_)/.test(key)
   || /^(?:PG_BACKUP_DATABASE_URL|PG_SCHEMA_DATABASE_URL)$/.test(key)
 );
 const isolatedEnvironment = source => {
@@ -30,7 +30,7 @@ if (requestedSuite === ISOLATION_PROBE) {
     "DATABASE_URL", "AUTH_DATABASE_URL", "AI_BUDGET_DATABASE_URL", "PG_BACKUP_DATABASE_URL", "PG_SCHEMA_DATABASE_URL",
     "APP_URL", "OSS_ENDPOINT", "OSS_BUCKET", "ALIYUN_ACCESS_KEY_ID", "DEEPSEEK_API_KEY",
     "VOLCENGINE_SPEECH_API_KEY", "VOLCENGINE_ACCESS_KEY_ID", "VOLCENGINE_SECRET_ACCESS_KEY",
-    "FEISHU_ALERT_WEBHOOK"
+    "FEISHU_ALERT_WEBHOOK", "MEDIA_CDN_AUTH_KEY", "MEDIA_DELIVERY_BUCKET"
   ]) {
     assert.equal(process.env[key], undefined, `system test child inherited ${key}`);
   }
@@ -141,6 +141,7 @@ const suites = {
     ["attachment byte range streaming", ["scripts/attachment-range-regression.mjs"]],
     ["Owner opening preference permission and revision contracts", ["scripts/opening-preferences-regression.mjs"]],
     ["private media signed delivery", ["scripts/attachment-delivery-regression.mjs", "scripts/attachment-delivery-http-regression.mjs"]],
+    ["synthetic media live smoke evidence integrity", ["scripts/media-delivery-live-smoke-regression.mjs"]],
     ["attachment uploads, quotas and recovery", ["scripts/attachment-upload-regression.mjs"]],
     ["capacity boundaries", ["scripts/boundaries-regression.mjs"]],
     ["backup recovery and readiness", ["scripts/backup-regression.mjs"]],
@@ -229,6 +230,8 @@ function runNode(args) {
       APP_URL: "https://production.invalid/now/",
       OSS_ENDPOINT: "oss-production.invalid",
       OSS_BUCKET: "production-bucket",
+      MEDIA_CDN_AUTH_KEY: "production-secret",
+      MEDIA_DELIVERY_BUCKET: "production-distribution-bucket",
       ALIYUN_ACCESS_KEY_ID: "production-secret",
       DEEPSEEK_API_KEY: "production-secret",
       VOLCENGINE_SPEECH_API_KEY: "production-secret",

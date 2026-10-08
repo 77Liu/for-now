@@ -367,6 +367,22 @@
       ]
     },
     {
+      "id": "private-media-distribution",
+      "title": "通过短签名读取当前账户的私有派生媒体",
+      "role": "媒体访问用户与发布验收者",
+      "goal": "正文完整可播放，缓存命中仍拒绝无效签名，验收合成对象可追踪清理",
+      "risk": "critical",
+      "tier": "release",
+      "status": "partial",
+      "normalPath": ["核对私有桶和云端60秒鉴权", "签发当前有效派生对象", "GET/HEAD/Range读取", "再次签发命中缓存", "到期拒绝", "删除合成验收对象并独立查源缺失"],
+      "failureAndRecovery": ["跨账户/失效引用拒绝，签发故障回proxy", "同长度错误正文", "伪HIT响应", "热缓存无效签名", "源删除失败", "清理元数据403或超时"],
+      "assertions": ["账户和活跃业务引用控制签发", "完整正文与Range字节哈希一致", "热缓存仍验证签名与60秒到期", "416与CORS响应符合契约", "清理未知非零退出，不把签发null当对象不存在", "真实云验收不能由本地mock代替"],
+      "evidence": [
+        {"script": "scripts/attachment-delivery-http-regression.mjs", "anchor": "Attachment delivery HTTP checks passed"},
+        {"script": "scripts/media-delivery-live-smoke-regression.mjs", "anchor": "media-delivery-live-smoke-regression"}
+      ]
+    },
+    {
       "id": "responsive-visual-accessibility",
       "title": "桌面、移动端、iOS 兼容性与视觉回归",
       "role": "键盘、触摸与小屏用户",
