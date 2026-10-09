@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { fileURLToPath } from "node:url";
 import { buildPersonalizationLivePlan, liveFingerprint } from "./lib/personalization-live.mjs";
-const root = new URL("..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("..", import.meta.url));
 const plan = await buildPersonalizationLivePlan(root);
 assert.equal(plan.requests.length, 48); assert.equal(new Set(plan.requests.map(row => row.id)).size, 48);
 assert.equal(new Set(plan.requests.map(row => row.fixtureId)).size, 8);
