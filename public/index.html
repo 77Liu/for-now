@@ -22,6 +22,7 @@
     @media(max-width:720px){#opening-screen::before{background-image:image-set(url("assets/r8/app-background-mobile.e8ad4d7f0f47.avif") type("image/avif"),url("assets/r8/app-background-mobile.22cba13ff0d1.webp") type("image/webp"))}.opening-brand-mark{width:58px;height:58px;font-size:27px}}
     @media(prefers-reduced-motion:reduce){.opening-brand{animation:none}}
   </style>
+  <script src="release-info.js"></script>
   <script>
     window.__forNowStartupRequest = fetch(new URL("api/v1/startup", document.baseURI).pathname, {
       priority: "high",
@@ -262,7 +263,7 @@
     </nav>
     <div class="sidebar-footer">
       <div class="account-control" id="account-control" hidden><span id="account-name"></span><button id="logout-button" type="button">退出</button></div>
-      <p class="sidebar-version" id="sidebar-app-version">v0.5.10</p>
+      <p class="sidebar-version" id="sidebar-app-version" data-release-version></p>
     </div>
   </aside>
 
@@ -968,7 +969,7 @@
           <span class="mine-row-arrow" aria-hidden="true">›</span>
         </button>
       </section>
-      <p class="mine-version" id="mine-app-version">v0.5.10</p>
+      <p class="mine-version" id="mine-app-version" data-release-version></p>
     </section>
 
     <section class="view" id="view-personal-context">

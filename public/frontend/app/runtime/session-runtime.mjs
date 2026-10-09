@@ -101,14 +101,94 @@ function invalidatePageLoads(){
 function clearPrivateSessionState(){
   closeImageViewer({restoreFocus:false});
   onboardingV2Controller.reset();
-  resetState();runtime.routeDataReady=false;runtime.routeDataRequestSerial+=1;runtime.routeLoadFailureKey="";runtime.loadedRouteKey="";runtime.fullRouteStateLoaded=false;runtime.quoteTagStates={selectionQuote:createTagMultiSelectState()};runtime.llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-  runtime.activeAnswerTaskId=++runtime.answerTaskSerial;clearTimeout(runtime.notificationTimer);runtime.answerDraft="";runtime.answerReasoningDraft="";runtime.localTestConfig=null;localTestScopeLoads.clear();runtime.onboardingSchema=null;runtime.onboardingMode="quick";runtime.onboardingDraftAnswers={};runtime.onboardingHydrated=false;runtime.notificationUnreadCount=0;runtime.notificationsLoadState="idle";actionsCoordinator.resetSession();runtime.annotationsController?.resetSession();runtime.governanceUrl="";runtime.appVersion="0.5.10";runtime.homeMemoryKeys=[];runtime.homeMemoryByKey=new Map();runtime.homeKeepsakeId="";closeHomeEditors({restoreFocus:false});$("#capture-editor").hidden=true;document.body.classList.remove("capture-editor-open");invalidatePageLoads();runtime.draftTags=[];runtime.capturesFeatureController=null;runtime.quotesFeatureController=null;runtime.libraryFeatureController=null;runtime.keepsakeFeatureController=null;
-  runtime.contentImageDraftManager?.resetSession();for(const key of persistentContentImageKeys)renderContentImageEditor(key);
-  pageAudioCoordinator.resetSession();stopPageAudio();
-  $$("main form").forEach(form=>{form.reset();delete form.dataset.requestId});$$(".modal-backdrop").forEach(modal=>modal.hidden=true);$("#comment-panel").hidden=true;$("#comment-panel-reopen").hidden=true;$("#selection-tools").hidden=true;$("#annotation-line-counts").hidden=true;document.body.classList.remove("comment-panel-open");
+  resetState();
+  runtime.routeDataReady=false;
+  runtime.routeDataRequestSerial+=1;
+  runtime.routeLoadFailureKey="";
+  runtime.loadedRouteKey="";
+  runtime.fullRouteStateLoaded=false;
+  runtime.quoteTagStates={selectionQuote:createTagMultiSelectState()};
+  runtime.llmSettings={
+    provider:"deepseek",
+    profiles:structuredClone(defaultLlmProfiles),
+    scenarios:{...defaultLlmScenarios},
+    sceneEfforts:{...defaultSceneEfforts},
+    automaticAnswers:{thoughtAnswer:false},
+    speech:{defaultVoice:"",generationRate:-10},
+    hasApiKey:false,
+    keyHint:""
+  };
+
+  runtime.activeAnswerTaskId=++runtime.answerTaskSerial;
+  clearTimeout(runtime.notificationTimer);
+  runtime.answerDraft="";
+  runtime.answerReasoningDraft="";
+  runtime.localTestConfig=null;
+  localTestScopeLoads.clear();
+  runtime.onboardingSchema=null;
+  runtime.onboardingMode="quick";
+  runtime.onboardingDraftAnswers={};
+  runtime.onboardingHydrated=false;
+  runtime.notificationUnreadCount=0;
+  runtime.notificationsLoadState="idle";
+  actionsCoordinator.resetSession();
+  runtime.annotationsController?.resetSession();
+  runtime.governanceUrl="";
+  runtime.appVersion=runtime.releaseVersion.split(/[+-]/,1)[0]||"development";
+  runtime.homeMemoryKeys=[];
+  runtime.homeMemoryByKey=new Map();
+  runtime.homeKeepsakeId="";
+  closeHomeEditors({restoreFocus:false});
+  $("#capture-editor").hidden=true;
+  document.body.classList.remove("capture-editor-open");
+  invalidatePageLoads();
+  runtime.draftTags=[];
+  runtime.capturesFeatureController=null;
+  runtime.quotesFeatureController=null;
+  runtime.libraryFeatureController=null;
+  runtime.keepsakeFeatureController=null;
+
+  runtime.contentImageDraftManager?.resetSession();
+  for(const key of persistentContentImageKeys)renderContentImageEditor(key);
+  pageAudioCoordinator.resetSession();
+  stopPageAudio();
+  $$("main form").forEach(form=>{
+    form.reset();
+    delete form.dataset.requestId;
+  });
+  $$(".modal-backdrop").forEach(modal=>modal.hidden=true);
+  $("#comment-panel").hidden=true;
+  $("#comment-panel-reopen").hidden=true;
+  $("#selection-tools").hidden=true;
+  $("#annotation-line-counts").hidden=true;
+  document.body.classList.remove("comment-panel-open");
 }
 function showAuthGate(message=""){
-  const localTestEnabled=Boolean(runtime.localTestConfig?.enabled),resetApplication=runtime.applicationLifecycleReady;runtime.applicationLifecycleReady=false;runtime.resetRouteAfterAuthentication||=Boolean(runtime.currentUser);runtime.syncController?.stop();runtime.syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};rotateSession();clearPrivateSessionState();if(resetApplication){void runtime.runtimeFeatureRegistry?.resetSession().catch(()=>{});runtime.runtimeStatePort?.resetSession()}runtime.currentUser=null;applyCapabilitySurface([]);try{sessionStorage.removeItem("cike:authenticated-shell")}catch{}delete document.documentElement.dataset.bootstrapVisible;document.body.classList.add("auth-locked");$("#auth-gate").hidden=false;$("#account-control").hidden=true;$("#account-authenticated").hidden=true;const registerTab=$('[data-auth-tab="register"]');if(registerTab)registerTab.hidden=localTestEnabled;if(message)$("#auth-status").textContent=message;
+  const localTestEnabled=Boolean(runtime.localTestConfig?.enabled);
+  const resetApplication=runtime.applicationLifecycleReady;
+  runtime.applicationLifecycleReady=false;
+  runtime.resetRouteAfterAuthentication||=Boolean(runtime.currentUser);
+  runtime.syncController?.stop();
+  runtime.syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
+  rotateSession();
+  clearPrivateSessionState();
+  if(resetApplication){
+    void runtime.runtimeFeatureRegistry?.resetSession().catch(()=>{});
+    runtime.runtimeStatePort?.resetSession();
+  }
+  runtime.currentUser=null;
+  applyCapabilitySurface([]);
+  try{
+    sessionStorage.removeItem("cike:authenticated-shell");
+  }catch{}
+  delete document.documentElement.dataset.bootstrapVisible;
+  document.body.classList.add("auth-locked");
+  $("#auth-gate").hidden=false;
+  $("#account-control").hidden=true;
+  $("#account-authenticated").hidden=true;
+  const registerTab=$('[data-auth-tab="register"]');
+  if(registerTab)registerTab.hidden=localTestEnabled;
+  if(message)$("#auth-status").textContent=message;
 }
 function renderAccountIdentity(){
   const username=runtime.currentUser?.username||"";

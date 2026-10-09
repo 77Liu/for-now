@@ -2,7 +2,7 @@ import { createApiClient } from "../../api/index.mjs";
 import { createTagMultiSelectState, handleTagMultiSelectKey, reduceTagMultiSelectState } from "../../components/tag-multiselect/index.mjs";
 import { createLatexRenderer, escapeHtml, plainPreview, presentError, renderMarkdown } from "../../content/index.mjs";
 import { createActionsCoordinator, createHomeMemoryPool, selectHomeMemories, keepsakePlacementCss, keepsakeMediaSources, scanKeepsakeAlpha, createOnboardingV2Controller } from "../../features/index.mjs";
-import { BASE_CHECKIN_METRICS, checkinMetricValue, createCheckinMetricConfig } from "../../features/checkins-model/index.mjs";
+import { BASE_CHECKIN_METRICS } from "../../features/checkins-model/index.mjs";
 import { captureRecordPayload, createIndexedDbMediaDraftStore, imageRecordPayload, imageUnderstandingPayload, uploadPendingMediaItems, uploadOriginalImages, normalizeTtsPlaybackRate, validatedImageFiles } from "../../media/index.mjs";
 import { createPageAudioCoordinator } from "../../media/page-audio.mjs";
 import { createPageRouter, createUnavailableRouteResult, ownerViewCapabilities, viewSections } from "../../pages/index.mjs";
@@ -17,6 +17,7 @@ import { createStartupTiming } from "./startup-timing.mjs";
 import { createDurableFormDrafts } from "./durable-form-drafts.mjs";
 import { createDataRuntime } from "./data-runtime.mjs";
 import { createHomeRuntime } from "./home-runtime.mjs";
+import { createThoughtDraftTagComposer } from "./thought-draft-tag-composer.mjs";
 import { createSessionRuntime } from "./session-runtime.mjs";
 import { installGlobalEvents } from "./global-events.mjs";
 import { createContentMediaRuntime } from "./content-media-runtime.mjs";
@@ -61,6 +62,8 @@ const defaultLlmProfiles={lite:{model:"deepseek-flash",effort:"none"},mid:{model
 const defaultLlmScenarios={thoughtPrompt:"lite",thoughtDraft:"high",thoughtAnswer:"ultra",followUpAnswer:"ultra",chat:"high",diaryLead:"lite",diaryStructure:"mid",diaryTopic:"high",diaryReflection:"ultra",annotationShenji:"high",analysis:"ultra",bookRecognition:"mid",healthRecognition:"mid",contentImageUnderstanding:"mid",capturePolish:"mid"};
 const defaultSceneEfforts={...Object.fromEntries(Object.entries(defaultLlmScenarios).map(([scene,tier])=>[scene,defaultLlmProfiles[tier].effort])),onboardingClaimExtraction:"high"};
 const ownerCapabilities=[...new Set([...Object.values(ownerViewCapabilities),"local-testing","ai-configuration","account-roles"])];
+const defaultReleaseVersion=globalThis.CIKE_RELEASE_INFO?.releaseVersion||"development";
+const defaultAppVersion=globalThis.CIKE_RELEASE_INFO?.appVersion||"development";
 let pageRouter,switchView,restoreView;
 let runtimeApplication=null,runtimeFeatureRegistry=null,runtimeStatePort=null,applicationLifecycleReady=false;
 let backgroundResultsController=null,backgroundResultsLoadErrorReported=false,backgroundResultsRetryAttempts=0;
@@ -76,7 +79,7 @@ const checkinsFeatureControllers=new Set();
 const thoughtsFeatureControllers=new Set();
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-let activeDate=currentLocalDate,activeDailyType="sleep",answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],answerTaskSerial=0,activeAnswerTaskId=0,currentUser=null,notificationUnreadCount=0,chainDraftVersion=0,localTestConfig=null,onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion="0.5.10",releaseVersion="0.5.10+hotfix.1",featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
+let activeDate=currentLocalDate,activeDailyType="sleep",answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],answerTaskSerial=0,activeAnswerTaskId=0,currentUser=null,notificationUnreadCount=0,chainDraftVersion=0,localTestConfig=null,onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion=defaultAppVersion,releaseVersion=defaultReleaseVersion,featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
 let notificationsLoadState="idle",routeDataReady=false,routeDataRequestSerial=0,routeLoadFailureKey="",loadedRouteKey="",fullRouteStateLoaded=false,renderedRouteView="";
 const runtimeState={
   get pageRouter(){return pageRouter},set pageRouter(value){pageRouter=value},
@@ -186,7 +189,6 @@ function contentState({kind="empty",title,body,action=null,className=""}){
   const role=stateKind==="failure"?' role="alert"':stateKind==="loading"?' role="status"':"";
   return `<section class="empty content-state ${stateKind}${extraClass?` ${extraClass}`:""}"${role}><strong>${escapeHtml(title)}</strong><p>${escapeHtml(body)}</p>${actionMarkup}</section>`
 }
-const avg=v=>v.length?v.reduce((s,x)=>s+Number(x),0)/v.length:null;
 function runPublicValidation(callback){
   try{return callback()}
   catch(error){
@@ -220,8 +222,14 @@ const dataRuntime=createDataRuntime({
   backgroundResultsRetryLimit:BACKGROUND_RESULTS_RETRY_LIMIT
 });
 const {requestCoordinator,refreshCoordinator,setAnswerStatus,request,requestV1,routeDataKey,routeStateUrl,requestRouteState,loadRouteState,listAllV1,optionalRequest,optionalPublicRequest,requestStream,showToast,applyPendingProjection,restorePendingProjection,restorePendingProjections,applyIncrementalSnapshot,updateSyncHealth,notificationUnread,renderNotificationSummary,publishNotificationState,scheduleNotificationPoll,loadNotifications,openAiTaskTarget,refreshState}=dataRuntime;
-function commitDraftTags(){const input=$("#chain-tags"),values=splitTags(input.value);for(const value of values)if(!draftTags.includes(value))draftTags.push(value);input.value="";renderTagComposer()}
-function renderTagComposer(){const list=$("#chain-tag-list");if(!list)return;list.innerHTML=draftTags.map(tag=>`<span class="tag-chip">#${escapeHtml(tag)}<button type="button" data-remove-draft-tag="${escapeHtml(tag)}" aria-label="移除标签 ${escapeHtml(tag)}">×</button></span>`).join("");const known=[...new Set(state.thoughts.flatMap(item=>item.tags||[]))].filter(tag=>!draftTags.includes(tag));$("#tag-suggestions").innerHTML=known.map(tag=>`<option value="${escapeHtml(tag)}"></option>`).join("")}
+const draftTagComposer=createThoughtDraftTagComposer({
+  $,getState:()=>state,escapeHtml,splitTags,
+  getDraftTags:()=>draftTags,
+  addDraftTag:tag=>{
+    if(!draftTags.includes(tag))draftTags.push(tag);
+  }
+});
+const {commitDraftTags,renderTagComposer}=draftTagComposer;
 function chainRecordKind(){return $("#chain-form").elements.recordKind?.value==="capture"?"capture":"thought"}
 function syncChainRecordKind(){
   const form=$("#chain-form"),sourceMode=Boolean(form.elements.sourceCaptureId.value),captureMode=!sourceMode&&chainRecordKind()==="capture";
@@ -236,13 +244,6 @@ function syncChainRecordKind(){
 }
 function normalizedFeedSearch(value){return String(value||"").normalize("NFKC").toLocaleLowerCase("zh-CN").replace(/\s+/g," ").trim()}
 function feedSearchEmpty(label){return contentState({title:`没有匹配的${label}`,body:"换一个关键词，原有记录不会受到影响。"})}
-function metricConfig(){return createCheckinMetricConfig(state.customMetrics)}
-const metricValue=checkinMetricValue;
-function metricReference(key,custom){const eligible=state.checkins.filter(x=>x.occurredOn<=activeDate).sort((a,b)=>b.occurredOn.localeCompare(a.occurredOn)||eventTimestamp(b).localeCompare(eventTimestamp(a)));const previous=eligible.map(x=>metricValue(x,key,custom)).find(x=>Number.isFinite(Number(x)));const history=eligible.slice(0,30).map(x=>Number(metricValue(x,key,custom))).filter(Number.isFinite);return{previous:previous==null?null:Number(previous),average:avg(history)}}
-function metricMarker(kind,value,label){if(!Number.isFinite(value))return"";const position=Math.max(0,Math.min(100,(value-1)*25)),thumbOffset=11-position*.22,left=`calc(${position}% + ${thumbOffset.toFixed(3)}px)`;return `<span class="metric-history-marker ${kind}" style="left:${left}" data-position="${position}" role="img" aria-label="${label} ${value.toFixed(2)}" title="${label} ${value.toFixed(2)}"></span>`}
-function sliderTemplate(key,cfg){const ref=metricReference(key,cfg.custom),value=ref.previous??(ref.average==null?3:Math.round(ref.average));return `<div class="metric unconfirmed"><div class="metric-top"><span class="metric-label">${escapeHtml(cfg.label)}</span><span class="anchor" id="${key}-anchor">待确认 · ${escapeHtml(cfg.anchors[value-1])}</span><button class="note-toggle" type="button" data-note="${key}" aria-expanded="false">＋备注</button></div><div class="metric-scale">${metricMarker("previous",ref.previous,"上一次")}${metricMarker("average",ref.average,"近30次平均")}<input type="range" id="metric-${key}" data-metric="${key}" data-custom="${cfg.custom?"1":"0"}" data-confirmed="false" min="1" max="5" value="${value}" step="1" aria-label="${escapeHtml(cfg.label)} 1到5，必须确认"></div><div class="range-labels"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span></div><input class="note-field" id="${key}-note" placeholder="可选：补充一句话" maxlength="800"></div>`}
-function renderSliders(){const cfg=metricConfig();$("#sliders").innerHTML=`<div class="metric-history-legend" aria-label="历史参照图例"><span><i class="previous"></i>上一次</span><span><i class="average"></i>近30次平均</span></div>${Object.entries(cfg).map(([k,v])=>sliderTemplate(k,v)).join("")}`;$$('[data-metric]').forEach(input=>{const update=(confirmed=false)=>{if(confirmed){input.dataset.confirmed="true";input.closest(".metric").classList.remove("unconfirmed")}const prefix=input.dataset.confirmed==="true"?"":"待确认 · ";$(`#${CSS.escape(input.dataset.metric)}-anchor`).textContent=`${prefix}${cfg[input.dataset.metric].anchors[Number(input.value)-1]}`};input.addEventListener("input",()=>update(true));input.addEventListener("change",()=>navigator.vibrate?.(8));input.addEventListener("pointerdown",()=>update(true));update()});$$(".note-toggle").forEach(b=>b.addEventListener("click",()=>{const f=$(`#${CSS.escape(b.dataset.note)}-note`);f.classList.toggle("visible");b.setAttribute("aria-expanded",String(f.classList.contains("visible")));if(f.classList.contains("visible"))f.focus()}))}
-
 const routeContentSelectors=Object.freeze({
   today:["#home-memory-grid","#home-keepsake","#action-columns","#habit-list"],
   together:["#chat-history","#today-thoughts"],
@@ -308,11 +309,35 @@ function stopPageAudio(){
 
 function renderCheckinSurfaces(domains){for(const controller of checkinsFeatureControllers)controller.renderPresentation({snapshot:state,changedDomains:domains})}
 function renderStateChart(){renderCheckinSurfaces(["checkins","review"])}
-const homeRuntime=createHomeRuntime({runtime:runtimeState,$,$$,state,eventDate,eventTimestamp,formatDate,formatDateKey,localDateKey,plainPreview,escapeHtml,renderMarkdown,contextReceiptMarkup,contentState,commentRootKey,markCommentTarget,renderLatex,applyCommentAnchors,appUrl,keepsakeMediaSources,keepsakePlacementCss,scanKeepsakeAlpha,createHomeMemoryPool,selectHomeMemories,quoteTagPickerConfig,createTagMultiSelectState,reduceTagMultiSelectState,commentRoot,commentRootLabel,parseCommentRootKey,resetOccurrenceInput,defaultLlmProfiles,createOnboardingV2Controller,requestV1,onboardingDraftStore,switchView:(...args)=>switchView(...args),openThoughtDetail:(...args)=>openThoughtDetail(...args),openCaptureFeature:(...args)=>openCaptureFeature(...args),showToast,installOccurrenceControls,renderSliders,publishDomains,renderStateChart,renderCheckinSurfaces,unmountRouteContent,activateContentImageDraftsForCurrentRoute});
-const {renderChat,dataUrlFromBlob,loadImageSource,blankCanvas,renderHomeMemories,renderHomeKeepsake,renderHomeMood,renderHome,quoteTagCandidates,quoteTagPickerElements,renderQuoteTagPicker,updateQuoteTagPicker,setQuoteTagPicker,quoteTagsForSubmission,closeSelectionQuoteModal,openSelectionQuoteModal,llmProfile,shiftLocalDateKey,compactNumber,formatCny,formatDuration,openCommercialSource,collectOnboardingAnswers,renderOnboardingQuestions,onboardingPayload,renderLegacyOnboarding,onboardingV2Controller,renderOnboarding,renderDate,closeHomeEditors,openHomeEditor,trapHomeEditorFocus,openHomeMemory,onboardingBlocksPrivateShell,completeOnboardingSnapshot,renderVisibleRoute,afterVisibleShellPaint,assertNativeServerCompatibility}=homeRuntime;
+const homeRuntime=createHomeRuntime({runtime:runtimeState,$,$$,state,eventDate,eventTimestamp,formatDate,formatDateKey,localDateKey,plainPreview,escapeHtml,renderMarkdown,contextReceiptMarkup,contentState,commentRootKey,markCommentTarget,renderLatex,applyCommentAnchors,appUrl,keepsakeMediaSources,keepsakePlacementCss,scanKeepsakeAlpha,createHomeMemoryPool,selectHomeMemories,quoteTagPickerConfig,createTagMultiSelectState,reduceTagMultiSelectState,commentRoot,commentRootLabel,parseCommentRootKey,resetOccurrenceInput,defaultLlmProfiles,createOnboardingV2Controller,requestV1,onboardingDraftStore,switchView:(...args)=>switchView(...args),openThoughtDetail:(...args)=>openThoughtDetail(...args),openCaptureFeature:(...args)=>openCaptureFeature(...args),showToast,installOccurrenceControls,publishDomains,renderStateChart,renderCheckinSurfaces,unmountRouteContent,activateContentImageDraftsForCurrentRoute});
+const {renderChat,metricConfig,metricValue,renderSliders,dataUrlFromBlob,loadImageSource,blankCanvas,renderHomeMemories,renderHomeKeepsake,renderHomeMood,renderHome,quoteTagCandidates,quoteTagPickerElements,renderQuoteTagPicker,updateQuoteTagPicker,setQuoteTagPicker,quoteTagsForSubmission,closeSelectionQuoteModal,openSelectionQuoteModal,llmProfile,shiftLocalDateKey,compactNumber,formatCny,formatDuration,openCommercialSource,collectOnboardingAnswers,renderOnboardingQuestions,onboardingPayload,renderLegacyOnboarding,onboardingV2Controller,renderOnboarding,renderDate,closeHomeEditors,openHomeEditor,trapHomeEditorFocus,openHomeMemory,onboardingBlocksPrivateShell,completeOnboardingSnapshot,renderVisibleRoute,afterVisibleShellPaint,assertNativeServerCompatibility}=homeRuntime;
 const sessionRuntime=createSessionRuntime({runtime:runtimeState,$,$$,state,sessionSerial,rotateSession,emptyClientState,replaceState,resetState,createTagMultiSelectState,defaultLlmProfiles,defaultLlmScenarios,defaultSceneEfforts,ownerCapabilities,localTestScopeLoads,ownerConsoleFeatureControllers,accountSettingsFeatureControllers,checkinsFeatureControllers,thoughtsFeatureControllers,persistentContentImageKeys,startupMarks,markStartup,adoptStartupMarks,publishStartupTiming,requestRouteState,requestV1,request,optionalRequest,optionalPublicRequest,routeDataKey,loadRouteState,restorePendingProjections,refreshCoordinator,actionsCoordinator:{resetSession:()=>actionsCoordinator.resetSession()},onboardingV2Controller,completeOnboardingSnapshot,onboardingBlocksPrivateShell,afterVisibleShellPaint,assertNativeServerCompatibility,applyCapabilitySurface,renderVisibleRoute,reconcileActiveThoughtRoute,renderOnboarding,hasCapability,routeContentSelectors,unmountRouteContent,restoreView:(...args)=>restoreView?.(...args),restoreDurableDrafts,syncChainRecordKind,scheduleNotificationPoll,restoreContentImageDrafts,restoreAnnotationUiDrafts,ensureAnnotationsController,subscribeState,activateContentImageDraftsForCurrentRoute,renderContentImageEditor,pageAudioCoordinator,stopPageAudio,closeImageViewer,closeHomeEditors,showToast,apiClient});
 const {load,setAuthTab,setAuthBusy,invalidatePageLoads,clearPrivateSessionState,showAuthGate,renderAccountIdentity,prepareUserSession,revealUserSession,activateUserSession,authRequest,bootstrap,applicationStartInput,createRuntimeApplicationPorts,restartApplicationForUser}=sessionRuntime;
-subscribeState((next,wanted)=>{notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);if(wanted.has("dailyRecords"))void healthFeatureController?.render({snapshot:next,changedDomains:wanted}).catch(()=>{});if(wanted.has("thoughts")){renderTagComposer();renderHomeMemories()}if(wanted.has("checkins")){renderStateChart();renderSliders();renderHomeMood()}if(wanted.has("chat")||wanted.has("chats"))renderChat();if(wanted.has("books")){renderHomeMemories();if(annotationsController?.activeRootKey().startsWith("book:"))renderCommentPanel()}if(wanted.has("keepsakes"))renderHomeKeepsake();if(wanted.has("quotes"))renderHomeMemories();if(wanted.has("comments"))renderCommentPanel();renderNotificationSummary()});
+subscribeState((next,wanted)=>{
+  notificationUnreadCount=Number(next.notificationUnread)||notificationUnreadCount;
+  if(wanted.has("onboardingV2"))onboardingV2Controller.reconcile(next.onboardingV2);
+  if(wanted.has("dailyRecords")){
+    void healthFeatureController?.render({snapshot:next,changedDomains:wanted}).catch(()=>{});
+  }
+  if(wanted.has("thoughts")){
+    renderTagComposer();
+    renderHomeMemories();
+  }
+  if(wanted.has("checkins")){
+    renderStateChart();
+    renderSliders();
+    renderHomeMood();
+  }
+  if(wanted.has("chat")||wanted.has("chats"))renderChat();
+  if(wanted.has("books")){
+    renderHomeMemories();
+    if(annotationsController?.activeRootKey().startsWith("book:"))renderCommentPanel();
+  }
+  if(wanted.has("keepsakes"))renderHomeKeepsake();
+  if(wanted.has("quotes"))renderHomeMemories();
+  if(wanted.has("comments"))renderCommentPanel();
+  renderNotificationSummary();
+});
 function setAnswerModalStep(step){const order=["context","thinking","answer","done"],current=order.indexOf(step);$$("#ai-answer-progress li").forEach((item,index)=>{item.classList.toggle("active",index===current);item.classList.toggle("done",index<current||(step==="done"&&index===current))})}
 function closeAnswerModal(){const modal=$("#ai-answer-modal"),busy=modal.dataset.busy==="true";modal.hidden=true;if(busy)showToast("回答继续在后台生成，完成后会提醒。")}
 async function runAnswerInModal({title,scene="thoughtAnswer",requestCall,onDone,isCurrent=()=>true}){

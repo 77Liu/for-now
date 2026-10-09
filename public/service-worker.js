@@ -1,7 +1,10 @@
-const CACHE_VERSION = "cike-shell-v0.5.10-hotfix.1-opening-1";
+importScripts("./release-info.js");
+
+const CACHE_VERSION = globalThis.CIKE_RELEASE_INFO.cacheVersion;
 const SHELL_ASSETS = [
   "./",
   "index.html",
+  "release-info.js",
   "drift.css",
   "app.js",
   "manifest.webmanifest",
@@ -16,7 +19,10 @@ const SHELL_ASSETS = [
   "frontend/app/runtime/data-runtime.mjs",
   "frontend/app/runtime/durable-form-drafts.mjs",
   "frontend/app/runtime/global-events.mjs",
+  "frontend/app/runtime/home-chat-renderer.mjs",
+  "frontend/app/runtime/home-checkin-renderer.mjs",
   "frontend/app/runtime/home-runtime.mjs",
+  "frontend/app/runtime/home-selection-quote-modal.mjs",
   "frontend/app/runtime/kernel.mjs",
   "frontend/app/runtime/loaders.mjs",
   "frontend/app/runtime/page-descriptors-account.mjs",
@@ -25,6 +31,7 @@ const SHELL_ASSETS = [
   "frontend/app/runtime/page-descriptors.mjs",
   "frontend/app/runtime/session-runtime.mjs",
   "frontend/app/runtime/startup-timing.mjs",
+  "frontend/app/runtime/thought-draft-tag-composer.mjs",
   "frontend/components/occurrence-control/index.mjs",
   "frontend/feature-registry/index.mjs",
   "frontend/shared/opening/index.mjs",
@@ -128,6 +135,21 @@ const LAZY_MODULE_PATHS = [
 const isNetworkOnly = url => NETWORK_ONLY_PATHS.some(segment => url.pathname.includes(segment));
 const deferredAsset = url => [...DEFERRED_ASSET_SET].find(asset => url.pathname.endsWith(`/${asset}`));
 const lazyModule = url => LAZY_MODULE_PATHS.some(segment => url.pathname.includes(segment));
+const refreshReleaseInfo = async request => {
+  const cached = await caches.match(request);
+  try {
+    const response = await fetch(request);
+    if (!response.ok && cached) return cached;
+    if (response.ok) {
+      const cache = await caches.open(CACHE_VERSION);
+      await cache.put(request, response.clone());
+    }
+    return response;
+  } catch (error) {
+    if (cached) return cached;
+    throw error;
+  }
+};
 const cacheOnUse = async request => {
   const cache = await caches.open(CACHE_VERSION);
   const cached = await cache.match(request);
@@ -155,6 +177,10 @@ self.addEventListener("fetch", event => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
   if (isNetworkOnly(url)) return;
+  if (url.pathname.endsWith("/release-info.js")) {
+    event.respondWith(refreshReleaseInfo(request));
+    return;
+  }
   const deferred = deferredAsset(url);
   if (deferred || lazyModule(url)) {
     event.respondWith(cacheOnUse(request));

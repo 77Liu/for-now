@@ -51,6 +51,7 @@ await Promise.all([
   mkdir(artifactDir, { recursive: true })
 ]);
 
+await run(process.execPath, ["scripts/sync-release-metadata.mjs", "--check"]);
 await rm(derivedData, { recursive: true, force: true });
 await run("npx", ["cap", "sync", "ios"]);
 const nativeIndex = path.join(root, "ios", "App", "App", "public", "index.html");

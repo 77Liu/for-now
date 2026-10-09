@@ -30,26 +30,55 @@ for (const [file, expectedSize] of [
 }
 
 const html = await fs.readFile(publicPath("index.html"), "utf8");
-const packageReleaseVersion = JSON.parse(await fs.readFile(path.join(ROOT, "package.json"), "utf8")).version;
-const releaseVersion = packageReleaseVersion.split("+", 1)[0];
-assert.equal(packageReleaseVersion, "0.5.10+hotfix.1");
-assert.equal(releaseVersion, "0.5.10");
+const packageJson = JSON.parse(await fs.readFile(path.join(ROOT, "package.json"), "utf8"));
+const packageReleaseVersion = packageJson.version;
+const releaseVersion = packageReleaseVersion.split(/[+-]/, 1)[0];
 const lock = JSON.parse(await fs.readFile(path.join(ROOT, "package-lock.json"), "utf8"));
 assert.equal(lock.version, packageReleaseVersion);
 assert.equal(lock.packages[""].version, packageReleaseVersion);
+const releaseInfoSource = await fs.readFile(publicPath("release-info.js"), "utf8");
+const releaseInfoContext = {};
+vm.runInNewContext(releaseInfoSource, releaseInfoContext);
+assert.equal(releaseInfoContext.CIKE_RELEASE_INFO.releaseVersion, packageReleaseVersion);
+assert.equal(releaseInfoContext.CIKE_RELEASE_INFO.appVersion, releaseVersion);
+assert.equal(releaseInfoContext.CIKE_RELEASE_INFO.cacheVersion, `cike-shell-${packageReleaseVersion}`);
+const releaseLabels = [{ textContent: "" }, { textContent: "" }];
+let releaseLabelReady;
+vm.runInNewContext(releaseInfoSource, {
+  document: {
+    readyState: "loading",
+    addEventListener(eventName, handler) {
+      assert.equal(eventName, "DOMContentLoaded");
+      releaseLabelReady = handler;
+    },
+    querySelectorAll(selector) {
+      assert.equal(selector, "[data-release-version]");
+      return releaseLabels;
+    }
+  }
+});
+releaseLabelReady();
+assert.deepEqual(releaseLabels.map(label => label.textContent), [`v${releaseVersion}`, `v${releaseVersion}`]);
 const kernel = await fs.readFile(publicPath("frontend/app/runtime/kernel.mjs"), "utf8");
-assert.match(kernel, /appVersion="0\.5\.10",releaseVersion="0\.5\.10\+hotfix\.1"/);
+assert.match(kernel, /globalThis\.CIKE_RELEASE_INFO\?\.releaseVersion/);
+assert.match(kernel, /globalThis\.CIKE_RELEASE_INFO\?\.appVersion/);
 const sessionRuntime = await fs.readFile(publicPath("frontend/app/runtime/session-runtime.mjs"), "utf8");
-assert.match(sessionRuntime, /runtime\.appVersion="0\.5\.10"/);
+assert.match(sessionRuntime, /runtime\.appVersion=runtime\.releaseVersion\.split\(/);
 const iosProject = await fs.readFile(path.join(ROOT, "ios/App/App.xcodeproj/project.pbxproj"), "utf8");
 const iosMarketingVersions = [...iosProject.matchAll(/MARKETING_VERSION = ([^;]+);/g)].map(match => match[1]);
 assert.equal(iosMarketingVersions.length, 4);
-assert.ok(iosMarketingVersions.every(version => version === releaseVersion));
-const iosBuildNumbers = [...iosProject.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)].map(match => match[1]);
+assert.ok(iosMarketingVersions.every(version => version === '"$(APP_MARKETING_VERSION)"'));
+const iosBuildNumbers = [...iosProject.matchAll(/CURRENT_PROJECT_VERSION = ([^;]+);/g)].map(match => match[1]);
 assert.equal(iosBuildNumbers.length, 4);
-assert.ok(iosBuildNumbers.every(version => version === "7"));
-assert.ok(html.includes(`id="sidebar-app-version">v${releaseVersion}</p>`));
-assert.ok(html.includes(`id="mine-app-version">v${releaseVersion}</p>`));
+assert.ok(iosBuildNumbers.every(version => version === '"$(APP_BUILD_NUMBER)"'));
+assert.match(iosProject, /baseConfigurationReference = C10000010000000000000001 \/\* release-version\.xcconfig \*\//);
+const iosDebugConfig = await fs.readFile(path.join(ROOT, "ios/debug.xcconfig"), "utf8");
+assert.match(iosDebugConfig, /^#include "release-version\.xcconfig"/);
+const iosReleaseConfig = await fs.readFile(path.join(ROOT, "ios/release-version.xcconfig"), "utf8");
+assert.ok(iosReleaseConfig.includes(`APP_MARKETING_VERSION = ${releaseVersion}`));
+assert.ok(iosReleaseConfig.includes(`APP_BUILD_NUMBER = ${packageJson.release.iosBuildNumber}`));
+assert.equal((html.match(/data-release-version/g) || []).length, 2);
+assert.match(html, /<script src="release-info\.js"><\/script>/);
 assert.match(html, /rel="apple-touch-icon"[^>]+apple-touch-icon\.png/);
 assert.match(html, /document\.documentElement\.dataset\.runtimeReady\s*===\s*["']1["']/);
 assert.match(html, /setTimeout\(registerWorker,\s*1500\)/);
@@ -318,8 +347,9 @@ assertFailureLocked(startupTimeout, "runtimeReady after startup watchdog");
 assert.equal(startupTimeout.observers.every(observer => observer.disconnected), true);
 
 const worker = await fs.readFile(publicPath("service-worker.js"), "utf8");
-assert.match(worker, /const CACHE_VERSION\s*=\s*["'][^"']+["']/);
-assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.10-hotfix\.1-opening-1["']/);
+assert.match(worker, /importScripts\(["']\.\/release-info\.js["']\)/);
+assert.match(worker, /const CACHE_VERSION\s*=\s*globalThis\.CIKE_RELEASE_INFO\.cacheVersion/);
+assert.match(worker, /event\.respondWith\(refreshReleaseInfo\(request\)\)/);
 const assetSet = name => {
   const source = worker.match(new RegExp(`const ${name}\\s*=\\s*\\[([\\s\\S]*?)\\];`))?.[1] || "";
   return new Set([...source.matchAll(/["']([^"']+)["']/g)].map(match => match[1]));
@@ -331,6 +361,7 @@ const lazyModulePaths = assetSet("LAZY_MODULE_PATHS");
 for (const asset of [
   "./",
   "index.html",
+  "release-info.js",
   "drift.css",
   "app.js",
   "frontend/app/application.mjs",
@@ -544,6 +575,9 @@ assert.match(worker, /if\s*\(\s*isNetworkOnly\(url\)\s*\)\s*return/);
   const stored = new Map();
   const networkRequests = [];
   let online = true;
+  let releaseInfoStatus = 200;
+  const releaseInfoUrl = "https://pwa.test/release-info.js";
+  const currentReleaseInfo = "current release metadata";
   const requestKey = request => typeof request === "string" ? request : request.url;
   const cache = {
     async addAll() {},
@@ -555,6 +589,10 @@ assert.match(worker, /if\s*\(\s*isNetworkOnly\(url\)\s*\)\s*return/);
     }
   };
   const context = {
+    importScripts(scriptPath) {
+      assert.equal(scriptPath, "./release-info.js");
+      vm.runInNewContext(releaseInfoSource, context);
+    },
     caches: {
       async keys() {
         return ["cike-shell-v0.5.8-6"];
@@ -572,8 +610,9 @@ assert.match(worker, /if\s*\(\s*isNetworkOnly\(url\)\s*\)\s*return/);
     fetch: async request => {
       networkRequests.push(requestKey(request));
       if (!online) throw new Error("offline");
-      return new Response("export feature", {
-        status: 200,
+      const body = requestKey(request) === releaseInfoUrl ? currentReleaseInfo : "export feature";
+      return new Response(body, {
+        status: requestKey(request) === releaseInfoUrl ? releaseInfoStatus : 200,
         headers: { "content-type": "text/javascript" }
       });
     },
@@ -592,10 +631,10 @@ assert.match(worker, /if\s*\(\s*isNetworkOnly\(url\)\s*\)\s*return/);
   };
   vm.runInNewContext(worker, context);
   const request = new Request("https://pwa.test/frontend/features/export/index.mjs");
-  const dispatch = async () => {
+  const dispatch = async (targetRequest = request) => {
     let response;
     handlers.get("fetch")({
-      request,
+      request: targetRequest,
       respondWith(value) {
         response = Promise.resolve(value);
       }
@@ -605,9 +644,19 @@ assert.match(worker, /if\s*\(\s*isNetworkOnly\(url\)\s*\)\s*return/);
   };
   assert.equal(await (await dispatch()).text(), "export feature");
   assert.equal(stored.has(request.url), true);
+  const releaseInfoRequest = new Request(releaseInfoUrl);
+  stored.set(releaseInfoRequest.url, new Response("stale release metadata"));
+  assert.equal(await (await dispatch(releaseInfoRequest)).text(), currentReleaseInfo);
+  assert.equal(stored.has(releaseInfoRequest.url), true);
+  assert.equal(await stored.get(releaseInfoRequest.url).clone().text(), currentReleaseInfo);
+  stored.set(releaseInfoRequest.url, new Response("stale release metadata"));
+  releaseInfoStatus = 503;
+  assert.equal(await (await dispatch(releaseInfoRequest)).text(), "stale release metadata");
+  assert.equal(await stored.get(releaseInfoRequest.url).clone().text(), "stale release metadata");
   online = false;
   assert.equal(await (await dispatch()).text(), "export feature");
-  assert.deepEqual(networkRequests, [request.url]);
+  assert.equal(await (await dispatch(releaseInfoRequest)).text(), "stale release metadata");
+  assert.deepEqual(networkRequests, [request.url, releaseInfoRequest.url, releaseInfoRequest.url, releaseInfoRequest.url]);
 }
 
 console.log(`PWA contracts passed: install icons, ${visitedModules.size} cached modules, offline KaTeX closure, lazy module cache-on-use, deferred backgrounds, navigation fallback, and private/network-only exclusions.`);
