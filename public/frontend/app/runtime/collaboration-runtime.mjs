@@ -37,7 +37,17 @@ function showPermissionPage(view,capability){
   if(title)title.textContent=`${names[view]||"此页面"}仅 Owner 可访问`;
   if(copy)copy.textContent=`当前账户没有访问此管理页面的权限（${capability}）。敏感内容未加载，你仍可继续使用个人记录与偏好设置。`
 }
-const createLatexAsset=(tagName,properties,kind)=>new Promise((resolve,reject)=>{const element=document.createElement(tagName);Object.assign(element,properties);element.dataset.latexAsset=kind;element.onload=resolve;element.onerror=()=>{document.querySelectorAll("[data-latex-asset]").forEach(asset=>asset.remove());reject(new Error(`LATEX_ASSET_LOAD_FAILED:${kind}`))};document.head.append(element)});
+const createLatexAsset=(tagName,properties,kind)=>new Promise((resolve,reject)=>{
+  const element=document.createElement(tagName);
+  Object.assign(element,properties);
+  element.dataset.latexAsset=kind;
+  element.onload=resolve;
+  element.onerror=()=>{
+    document.querySelectorAll("[data-latex-asset]").forEach(asset=>asset.remove());
+    reject(new Error(`LATEX_ASSET_LOAD_FAILED:${kind}`))
+  };
+  document.head.append(element)
+});
 const renderLatex=createLatexRenderer({createAsset:createLatexAsset,getKatex:()=>window.katex,resolveAssetUrl:appUrl});
 function currentContextSource(source){
   const type=source?.resourceType,id=source?.resourceId,key=source?.location?.targetKey||"";
@@ -59,7 +69,20 @@ function currentContextSource(source){
   return{...base,text:item.description||item.exerciseType||`${item.type||"健康"}记录`}
 }
 function contextSourceButton(source){
-  const location=source?.location||{},live=source.excerpt?{exists:true,matches:true,text:source.excerpt}:currentContextSource(source),matches=Boolean(source.excerpt)||live.exists&&live.version===Number(source.version||1)&&(source.resourceType!=="onboarding"||!source.occurredAt||live.occurredAt===source.occurredAt),canOpen=live.exists&&location.view&&location.view!=="personal-context",copy=!live.exists?"来源已删除或当前不可用":matches?live.text:"来源当前版本已变化；旧摘录未保留";
+  const location=source?.location||{};
+  const live=source.excerpt
+    ?{exists:true,matches:true,text:source.excerpt}
+    :currentContextSource(source);
+  const matches=Boolean(source.excerpt)
+    ||live.exists
+      &&live.version===Number(source.version||1)
+      &&(source.resourceType!=="onboarding"||!source.occurredAt||live.occurredAt===source.occurredAt);
+  const canOpen=live.exists&&location.view&&location.view!=="personal-context";
+  const copy=!live.exists
+    ?"来源已删除或当前不可用"
+    :matches
+      ?live.text
+      :"来源当前版本已变化；旧摘录未保留";
   return `<article class="context-source-item${live.exists&&matches?"":" unavailable"}"><div><b>${escapeHtml(source.recordType||"记录")}</b><small>${escapeHtml(source.occurredOn||"时间未记")} · 版本 ${Number(source.version)||1}</small></div><p>${escapeHtml(plainPreview(copy))}</p>${canOpen?`<button class="subtle-action" type="button" data-context-source data-context-view="${escapeHtml(location.view)}" data-context-target="${escapeHtml(location.targetId||source.resourceId||"")}" data-context-root="${escapeHtml(location.rootId||"")}" data-context-key="${escapeHtml(location.targetKey||"")}" data-context-date="${escapeHtml(location.occurredOn||source.occurredOn||"")}" data-context-daily-type="${escapeHtml(location.dailyType||"")}">查看${matches?"原记录":"当前版本"}</button>`:""}</article>`
 }
 function contextReceiptMarkup(receipt){
@@ -70,7 +93,16 @@ function contextReceiptMarkup(receipt){
 }
 function openContextReceiptSource(button){
   const view=button.dataset.contextView,target=button.dataset.contextTarget,root=button.dataset.contextRoot,date=button.dataset.contextDate,dailyType=button.dataset.contextDailyType;
-  if(date){runtime.activeDate=date;if(dailyType&&dailyTypeMeta[dailyType])runtime.activeDailyType=dailyType;renderDate();renderSliders();publishDomains(new Set(["thoughts","activeDate"]));renderStateChart();renderHomeMood();renderChat()}
+  if(date){
+    runtime.activeDate=date;
+    if(dailyType&&dailyTypeMeta[dailyType])runtime.activeDailyType=dailyType;
+    renderDate();
+    renderSliders();
+    publishDomains(new Set(["thoughts","activeDate"]));
+    renderStateChart();
+    renderHomeMood();
+    renderChat()
+  }
   if(view==="thoughts")openThoughtDetail(root||target);else switchView(view);
   requestAnimationFrame(()=>{
     const selectors={
@@ -80,7 +112,8 @@ function openContextReceiptSource(button){
       together:`[data-chat-id="${CSS.escape(target)}"]`,
       daily:`[data-daily-record-id="${CSS.escape(target)}"]`,
       today:`[data-checkin-id="${CSS.escape(target)}"]`
-    },element=document.querySelector(selectors[view]||"");
+    };
+    const element=document.querySelector(selectors[view]||"");
     const chain=element?.closest?.("[data-chain-id]")||element;
     if(chain instanceof HTMLDetailsElement)chain.open=true;
     let destination=element;
@@ -92,7 +125,16 @@ function openContextReceiptSource(button){
     destination?.scrollIntoView({behavior:"smooth",block:"center"})
   })
 }
-function clearThoughtTracePending(rootKey){const {type,id}=parseCommentRootKey(rootKey);if(type!=="thought"||!id)return;state.insights.aiOnlyThoughtIds=(state.insights.aiOnlyThoughtIds||[]).filter(value=>value!==id);document.querySelectorAll(`[data-chain-id="${CSS.escape(id)}"]`).forEach(card=>card.closest(".thought-timeline-entry")?.querySelector(".thought-trace-pending")?.remove())}
+function clearThoughtTracePending(rootKey){
+  const {type,id}=parseCommentRootKey(rootKey);
+  if(type!=="thought"||!id)return;
+
+  state.insights.aiOnlyThoughtIds=(state.insights.aiOnlyThoughtIds||[])
+    .filter(value=>value!==id);
+  document.querySelectorAll(`[data-chain-id="${CSS.escape(id)}"]`).forEach(card=>{
+    card.closest(".thought-timeline-entry")?.querySelector(".thought-trace-pending")?.remove()
+  })
+}
 function createRuntimeAnnotationsController(module){return module.createAnnotationsFeatureController({
   data:{
     getSnapshot:()=>state,
@@ -172,21 +214,53 @@ function createRuntimeBackgroundResultsController(module){return module.createBa
   data:{getSnapshot:()=>state,getAccountId:()=>runtime.currentUser?.id||"",replaceSnapshot:replaceState,request,refresh:(domains,options)=>refreshState(domains,options),publish:domains=>publishDomains(new Set(domains))},
   navigation:{openThoughtDetail,switchView},
   annotations:{
-    openTarget:async(target,isCurrent)=>{const controller=await ensureAnnotationsController();if(!isCurrent())return false;controller.openPanel(commentRootKey(target.resourceType,target.targetId),target.annotationId);return true},
-    refreshTarget:target=>{const controller=runtime.annotationsController,annotation=controller?.findTaskAnnotation(target);if(annotation&&controller.isActiveRoot(commentRootKey(target.resourceType,target.targetId)))controller.refreshAnnotation(annotation);return true}
+    openTarget:async(target,isCurrent)=>{
+      const controller=await ensureAnnotationsController();
+      if(!isCurrent())return false;
+      controller.openPanel(commentRootKey(target.resourceType,target.targetId),target.annotationId);
+      return true
+    },
+    refreshTarget:target=>{
+      const controller=runtime.annotationsController;
+      const annotation=controller?.findTaskAnnotation(target);
+      if(annotation&&controller.isActiveRoot(commentRootKey(target.resourceType,target.targetId))){
+        controller.refreshAnnotation(annotation)
+      }
+      return true
+    }
   },
   view:{patchThoughtTarget:patchActiveThoughtTarget,scheduleAnnotationLayout:scheduleAnnotationLineCounts,showToast},
   platform:{document,window,requestFrame:callback=>requestAnimationFrame(callback),escapeSelector:value=>CSS.escape(value)}
 })}
 async function ensureBackgroundResultsController(){
-  if(runtime.backgroundResultsController)return runtime.backgroundResultsController;const module=await loadBackgroundResultsFeatureModule();
-  runtime.backgroundResultsController||=createRuntimeBackgroundResultsController(module);return runtime.backgroundResultsController
+  if(runtime.backgroundResultsController)return runtime.backgroundResultsController;
+  const module=await loadBackgroundResultsFeatureModule();
+  runtime.backgroundResultsController||=createRuntimeBackgroundResultsController(module);
+  return runtime.backgroundResultsController
 }
 async function syncBackgroundTaskResults(tasks,owner,session){
-  if(!(Array.isArray(tasks)&&tasks.some(task=>task?.status==="succeeded"&&task?.resultId))){runtime.backgroundResultsRetryAttempts=0;return false}
-  try{const controller=await ensureBackgroundResultsController();if(owner!==runtime.currentUser?.id||session!==runtime.sessionSerial)return false;runtime.backgroundResultsLoadErrorReported=false;const changed=await controller.sync(tasks);runtime.backgroundResultsRetryAttempts=controller.needsRetry()?Math.min(backgroundResultsRetryLimit,runtime.backgroundResultsRetryAttempts+1):0;return changed}catch(error){
+  const hasResults=Array.isArray(tasks)
+    &&tasks.some(task=>task?.status==="succeeded"&&task?.resultId);
+  if(!hasResults){
+    runtime.backgroundResultsRetryAttempts=0;
+    return false
+  }
+  try{
+    const controller=await ensureBackgroundResultsController();
+    if(owner!==runtime.currentUser?.id||session!==runtime.sessionSerial)return false;
+    runtime.backgroundResultsLoadErrorReported=false;
+    const changed=await controller.sync(tasks);
+    runtime.backgroundResultsRetryAttempts=controller.needsRetry()
+      ?Math.min(backgroundResultsRetryLimit,runtime.backgroundResultsRetryAttempts+1)
+      :0;
+    return changed
+  }catch(error){
     runtime.backgroundResultsRetryAttempts=Math.min(backgroundResultsRetryLimit,runtime.backgroundResultsRetryAttempts+1);
-    if(owner===runtime.currentUser?.id&&session===runtime.sessionSerial&&!runtime.backgroundResultsLoadErrorReported){runtime.backgroundResultsLoadErrorReported=true;showToast(`后台结果模块加载失败：${error.message}`,"error")}
+    const isCurrentSession=owner===runtime.currentUser?.id&&session===runtime.sessionSerial;
+    if(isCurrentSession&&!runtime.backgroundResultsLoadErrorReported){
+      runtime.backgroundResultsLoadErrorReported=true;
+      showToast(`后台结果模块加载失败：${error.message}`,"error")
+    }
     return false
   }
 }

@@ -1,8 +1,43 @@
 const REQUIRED_METHODS=Object.freeze({router:["start","currentRoute"],featureRegistry:["enter","leave","notifyState","resetSession","stop"],session:["resetSession"],state:["start","subscribe","snapshot","resetSession","stop"],sync:["start","resetSession","stop"],shell:["start","resetSession","stop"]});
-function assertPort(name,port){if(!port||typeof port!=="object")throw new TypeError(`${name} port is required`);for(const method of REQUIRED_METHODS[name])if(typeof port[method]!=="function")throw new TypeError(`${name}.${method} must be a function`)}
-function routeView(route){const view=route?.view;if(typeof view!=="string"||!view)throw new TypeError("router route must provide a non-empty view");return view}
-function captureOutcome(operation){try{return Promise.resolve(operation()).then(()=>null,error=>error)}catch(error){return Promise.resolve(error)}}
-function deferred(){let resolve,reject;const promise=new Promise((done,fail)=>{resolve=done;reject=fail});return{promise,resolve,reject}}
+function assertPort(name, port) {
+  if (!port || typeof port !== "object") {
+    throw new TypeError(`${name} port is required`);
+  }
+  for (const method of REQUIRED_METHODS[name]) {
+    if (typeof port[method] !== "function") {
+      throw new TypeError(`${name}.${method} must be a function`);
+    }
+  }
+}
+
+function routeView(route) {
+  const view = route?.view;
+  if (typeof view !== "string" || !view) {
+    throw new TypeError("router route must provide a non-empty view");
+  }
+  return view;
+}
+
+function captureOutcome(operation) {
+  try {
+    return Promise.resolve(operation()).then(
+      () => null,
+      error => error
+    );
+  } catch (error) {
+    return Promise.resolve(error);
+  }
+}
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return {promise, resolve, reject};
+}
 async function collectOutcome(errors,outcome) {
 const error=await outcome;
 if(error) errors.push(error);

@@ -30,8 +30,33 @@ const refreshCoordinator=createRefreshCoordinator({
   },
   afterReplace:()=>restorePendingProjections()
 });
-function setAnswerStatus(id,message,kind="working"){document.querySelectorAll(`[data-answer-chain="${CSS.escape(id)}"]`).forEach(button=>{let status=button.closest(".chain-expanded")?.querySelector(".card-action-status");if(!status){status=document.createElement("p");status.className="card-action-status";status.setAttribute("role","status");status.setAttribute("aria-live","polite");button.closest(".chain-expanded")?.append(status)}status.className=`card-action-status ${kind}`;status.textContent=message})}
-async function request(url,options={}){const answerId=url.match(/^\/api\/thoughts\/([^/]+)\/answer$/)?.[1];try{const result=await apiClient.request(url,options);if(answerId)setAnswerStatus(answerId,"回答已生成并保存。","success");return result}catch(error){if(answerId&&error.name!=="AbortError")setAnswerStatus(answerId,`未能生成：${error.message}，可重试。`,"error");throw error}}
+function setAnswerStatus(id,message,kind="working"){
+  document.querySelectorAll(`[data-answer-chain="${CSS.escape(id)}"]`).forEach(button=>{
+    let status=button.closest(".chain-expanded")?.querySelector(".card-action-status");
+    if(!status){
+      status=document.createElement("p");
+      status.className="card-action-status";
+      status.setAttribute("role","status");
+      status.setAttribute("aria-live","polite");
+      button.closest(".chain-expanded")?.append(status)
+    }
+    status.className=`card-action-status ${kind}`;
+    status.textContent=message
+  })
+}
+async function request(url,options={}){
+  const answerId=url.match(/^\/api\/thoughts\/([^/]+)\/answer$/)?.[1];
+  try{
+    const result=await apiClient.request(url,options);
+    if(answerId)setAnswerStatus(answerId,"回答已生成并保存。","success");
+    return result
+  }catch(error){
+    if(answerId&&error.name!=="AbortError"){
+      setAnswerStatus(answerId,`未能生成：${error.message}，可重试。`,"error")
+    }
+    throw error
+  }
+}
 function syncDomainsFor(url){
   const path=new URL(url,"https://local.invalid").pathname,routes=[
     [/\/captures(?:\/|$)/,["captures"]],[/\/journals?(?:\/|$)/,["journals"]],[/\/checkins(?:\/|$)/,["checkins"]],
@@ -206,10 +231,25 @@ const optionalPublicRequest=async url=>{
 };
 async function requestStream(url,options={},onEvent=()=>{}){
   const answerId=url.match(/^\/api\/thoughts\/([^/]+)\/answer$/)?.[1];
-  try{const result=await apiClient.requestStream(url,options,onEvent);if(answerId)setAnswerStatus(answerId,"回答已生成并保存。","success");return result}
-  catch(error){if(answerId&&error.name!=="AbortError")setAnswerStatus(answerId,`未能生成：${error.message}，可重试。`,"error");throw error}
+  try{
+    const result=await apiClient.requestStream(url,options,onEvent);
+    if(answerId)setAnswerStatus(answerId,"回答已生成并保存。","success");
+    return result
+  }catch(error){
+    if(answerId&&error.name!=="AbortError"){
+      setAnswerStatus(answerId,`未能生成：${error.message}，可重试。`,"error")
+    }
+    throw error
+  }
 }
-function showToast(message,kind="success"){const t=$("#toast");t.textContent=message;t.className=`toast ${kind}`;t.hidden=false;clearTimeout(runtime.toastTimer);runtime.toastTimer=setTimeout(()=>t.hidden=true,3200)}
+function showToast(message,kind="success"){
+  const toast=$("#toast");
+  toast.textContent=message;
+  toast.className=`toast ${kind}`;
+  toast.hidden=false;
+  clearTimeout(runtime.toastTimer);
+  runtime.toastTimer=setTimeout(()=>toast.hidden=true,3200)
+}
 function applyPendingProjection(record){
   const projection=record?.projection;
   if(!projection)return false;
@@ -360,14 +400,45 @@ function scheduleNotificationPoll(){
   if(!active&&!retrying)return;
   runtime.notificationTimer=setTimeout(async()=>{try{await loadNotifications()}finally{scheduleNotificationPoll()}},1800);
 }
-async function loadNotifications(){const owner=runtime.currentUser?.id,session=sessionSerial;runtime.notificationsLoadState="loading";publishNotificationState();try{const [notifications,tasks]=await Promise.all([request("/api/notifications"),request("/api/ai-tasks")]);if(owner!==runtime.currentUser?.id||session!==sessionSerial)return false;state.notifications=notifications.items||[];state.aiTasks=tasks.items||[];runtime.notificationUnreadCount=Number(notifications.unread)||0;state.notificationUnread=runtime.notificationUnreadCount;runtime.notificationsLoadState="ready";publishNotificationState();await syncBackgroundTaskResults(state.aiTasks,owner,session);return true}catch(error){if(owner===runtime.currentUser?.id&&session===sessionSerial){runtime.notificationsLoadState="failure";publishNotificationState()}return false}}
+async function loadNotifications(){
+  const owner=runtime.currentUser?.id,session=sessionSerial;
+  runtime.notificationsLoadState="loading";
+  publishNotificationState();
+  try{
+    const [notifications,tasks]=await Promise.all([
+      request("/api/notifications"),
+      request("/api/ai-tasks")
+    ]);
+    if(owner!==runtime.currentUser?.id||session!==sessionSerial)return false;
+
+    state.notifications=notifications.items||[];
+    state.aiTasks=tasks.items||[];
+    runtime.notificationUnreadCount=Number(notifications.unread)||0;
+    state.notificationUnread=runtime.notificationUnreadCount;
+    runtime.notificationsLoadState="ready";
+    publishNotificationState();
+    await syncBackgroundTaskResults(state.aiTasks,owner,session);
+    return true
+  }catch(error){
+    if(owner===runtime.currentUser?.id&&session===sessionSerial){
+      runtime.notificationsLoadState="failure";
+      publishNotificationState()
+    }
+    return false
+  }
+}
 async function openAiTaskTarget(task,notification){
   const owner=runtime.currentUser?.id,session=sessionSerial;
   try{
-    const controller=await ensureBackgroundResultsController();if(owner!==runtime.currentUser?.id||session!==sessionSerial)return false;
-    runtime.backgroundResultsLoadErrorReported=false;runtime.backgroundResultsRetryAttempts=0;return await controller.openTarget(task,notification)
+    const controller=await ensureBackgroundResultsController();
+    if(owner!==runtime.currentUser?.id||session!==sessionSerial)return false;
+    runtime.backgroundResultsLoadErrorReported=false;
+    runtime.backgroundResultsRetryAttempts=0;
+    return await controller.openTarget(task,notification)
   }catch(error){
-    if(owner===runtime.currentUser?.id&&session===sessionSerial)showToast(`无法定位后台结果：${error.message}`,"error");
+    if(owner===runtime.currentUser?.id&&session===sessionSerial){
+      showToast(`无法定位后台结果：${error.message}`,"error")
+    }
     return false
   }
 }
