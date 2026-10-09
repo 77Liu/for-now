@@ -206,8 +206,9 @@ for (const id of ["a", "b"]) {
   assert.equal(terminalAudit.schemaVersion, 3);
   assert.equal(terminalAudit.traceId, `trace-${id}`);
   assert.equal(terminalAudit.request.userPrompt, `account-${id}`);
-  assert.equal(terminalAudit.request.promptCatalog.version, "2026.10.07.2");
-  assert.match(terminalAudit.request.promptCatalog.sha256, /^[a-f0-9]{64}$/);
+  assert.equal(terminalAudit.request.promptCatalog.version, "2026.10.09.1");
+  assert.equal(terminalAudit.request.promptCatalog.sha256, "222de519c0530e4cea6c4bc25592bbc838c37faff478fd6c115adde36e75afc8");
+  assert.deepEqual(terminalAudit.request.promptCatalog, startedAudit.request.promptCatalog);
   assert.deepEqual(terminalAudit.request.contextReceipt, startedAudit.request.contextReceipt);
   assert.equal(terminalAudit.request.contextReceipt.sources[0].resourceId, `source-${id}`);
 }
