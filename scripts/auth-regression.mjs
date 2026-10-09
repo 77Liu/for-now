@@ -38,6 +38,48 @@ async function jsonRequest(url, options = {}) {
   return { response, body };
 }
 
+async function completeEmptyV2Onboarding(cookie, requestId) {
+  const headers = { cookie };
+  const schema = await jsonRequest(`${base}/now/api/v1/onboarding-v2/schema`, { headers });
+  assert.equal(schema.response.status, 200);
+  const baseline = await jsonRequest(`${base}/now/api/v1/onboarding-v2/session`, { headers });
+  assert.equal(baseline.response.status, 200);
+  const answers = Object.fromEntries(schema.body.data.questions
+    .filter(question => question.questionId !== "collaboration")
+    .map(question => [question.questionId, {
+      answerDisposition: "declined",
+      contextAllowed: false
+    }]));
+  const completed = await jsonRequest(`${base}/now/api/v1/onboarding-v2/session`, {
+    method: "PATCH",
+    headers: {
+      ...headers,
+      "if-match": baseline.response.headers.get("etag"),
+      "idempotency-key": `${requestId}-onboarding`
+    },
+    body: JSON.stringify({
+      selectedFlow: "v2",
+      status: "completed",
+      answers,
+      collaboration: {
+        answerDisposition: "declined",
+        contextAllowed: false
+      }
+    })
+  });
+  assert.equal(completed.response.status, 200, JSON.stringify(completed.body));
+  const extraction = await jsonRequest(`${base}/now/api/v1/onboarding-v2/extractions`, {
+    method: "POST",
+    headers: {
+      ...headers,
+      "idempotency-key": `${requestId}-extraction`
+    },
+    body: JSON.stringify({ sourceRevision: completed.body.data.session.revision })
+  });
+  assert.equal(extraction.response.status, 200, JSON.stringify(extraction.body));
+  assert.equal(extraction.body.data.status, "ready");
+}
+
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "for-now-auth-"));
 const port = await freePort();
 const base = `http://127.0.0.1:${port}`;
@@ -67,7 +109,13 @@ const provider = http.createServer(async (req, res) => {
   for await (const chunk of req) { void chunk; }
   providerCalls += 1;
   res.setHeader("content-type", "application/json");
-  res.end(JSON.stringify({ choices: [{ message: { content: "isolated response" }, finish_reason: "stop" }], usage: { prompt_tokens: 2, completion_tokens: 1 } }));
+  res.end(JSON.stringify({
+    choices: [{
+      message: { content: JSON.stringify({ answer: "isolated response", citations: [] }) },
+      finish_reason: "stop"
+    }],
+    usage: { prompt_tokens: 2, completion_tokens: 1 }
+  }));
 });
 await new Promise(resolve => provider.listen(0, "127.0.0.1", resolve));
 let errors = "";
@@ -381,6 +429,9 @@ try {
     const state = await jsonRequest(`${base}/now/api/state`, { headers: { cookie } });
     assert.equal(state.body.onboarding.material, material);
   }));
+  await Promise.all([[ownerCookie, "owner"], [secondCookie, "second"]].map(([cookie, user]) => (
+    completeEmptyV2Onboarding(cookie, `auth-${user}`)
+  )));
   assert.equal((await jsonRequest(`${base}/now/api/settings`, {
     method: "POST", headers: { cookie: ownerCookie }, body: JSON.stringify({ apiKey: "audit-test-key" })
   })).response.status, 200);
@@ -558,7 +609,11 @@ try {
       if (!["queued", "running"].includes(resumedTask.status)) break;
       await sleep(50);
     }
-    assert.equal(resumedTask.status, queuedTask.inputVersion ? "succeeded" : "stale");
+    assert.equal(
+      resumedTask.status,
+      queuedTask.inputVersion ? "succeeded" : "stale",
+      JSON.stringify(resumedTask)
+    );
     resumedTasks.set(queuedTask.id, resumedTask);
   }
   const resumedState = (await jsonRequest(`${base}/now/api/state`, { headers: { cookie: secondCookie } })).body;
