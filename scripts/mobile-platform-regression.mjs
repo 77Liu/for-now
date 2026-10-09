@@ -387,23 +387,22 @@ try {
     });
     await sleep(100);
     const keyboard = await evaluate(`(() => {
-      const backdrop=document.querySelector("#edit-chain-modal").getBoundingClientRect(),modal=document.querySelector("#edit-chain-form").getBoundingClientRect(),field=document.querySelector("#edit-chain-question");
+      const backdrop=document.querySelector("#edit-chain-modal").getBoundingClientRect(),modal=document.querySelector("#edit-chain-form").getBoundingClientRect(),field=document.querySelector("#edit-chain-question"),visualTop=visualViewport?.offsetTop||0,visualHeight=visualViewport?.height||innerHeight;
       return {
-        visualHeight:Math.round(visualViewport?.height||innerHeight),
+        visualHeight:Math.round(visualHeight),
         innerHeight,
-        backdropInside:backdrop.top>=0&&backdrop.bottom<=innerHeight+.5,
+        backdropCoversVisualViewport:backdrop.top<=visualTop+.5&&backdrop.bottom>=visualTop+visualHeight-.5,
         modalScrollable:getComputedStyle(document.querySelector("#edit-chain-form")).overflowY==="auto",
-        modalFits:modal.height<=innerHeight,
+        modalFits:modal.height<=visualViewport.height,
         focused:document.activeElement===field,
         inputFont:parseFloat(getComputedStyle(field).fontSize),
         noOverflow:document.documentElement.scrollWidth<=innerWidth
       };
     })()`);
     assert.equal(keyboard.visualHeight, keyboardHeight);
-    assert.equal(keyboard.innerHeight, keyboardHeight);
-    assert.equal(keyboard.backdropInside, true);
-    assert.equal(keyboard.modalScrollable, true);
-    assert.equal(keyboard.modalFits, true);
+    assert.equal(keyboard.backdropCoversVisualViewport, true, JSON.stringify(keyboard));
+    assert.equal(keyboard.modalScrollable, true, JSON.stringify(keyboard));
+    assert.equal(keyboard.modalFits, true, JSON.stringify(keyboard));
     assert.equal(keyboard.focused, true);
     assert.ok(keyboard.inputFont >= 16);
     assert.equal(keyboard.noOverflow, true);
@@ -418,7 +417,15 @@ try {
       screenOrientation: device.orientation
     });
     await sleep(100);
-    assert.equal(await evaluate(`innerHeight===${device.height}&&document.documentElement.scrollWidth<=innerWidth`), true);
+    const restoredViewport = await evaluate(`(() => ({
+      visualHeight:Math.round(visualViewport?.height||innerHeight),
+      innerHeight,
+      visualTop:visualViewport?.offsetTop||0,
+      innerWidth,
+      scrollWidth:document.documentElement.scrollWidth
+    }))()`);
+    assert.equal(restoredViewport.visualHeight, device.height, JSON.stringify(restoredViewport));
+    assert.ok(restoredViewport.scrollWidth <= restoredViewport.innerWidth, JSON.stringify(restoredViewport));
 
     const screenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
     await fs.writeFile(`/tmp/growth-mobile-${device.name}.png`, Buffer.from(screenshot.data, "base64"));

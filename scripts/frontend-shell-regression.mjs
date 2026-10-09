@@ -26,6 +26,7 @@ const appBootstrap = await fs.readFile(path.join(ROOT, "public/frontend/app/boot
 const runtimeEntry = await fs.readFile(path.join(ROOT, "public/frontend/app/runtime.mjs"), "utf8");
 const appRuntime = (await Promise.all([
   "public/frontend/app/runtime/kernel.mjs",
+  "public/frontend/app/runtime/auth-events.mjs",
   "public/frontend/app/runtime/collaboration-runtime.mjs",
   "public/frontend/app/runtime/global-events.mjs",
   "public/frontend/app/runtime/home-runtime.mjs",
@@ -91,8 +92,8 @@ assert.doesNotMatch(runtimeEntry, /^bootstrap\(\)\.catch/m);
 assert.doesNotMatch(runtimeEntry, /from "\.\/frontend\//);
 assert.doesNotMatch(runtimeEntry, /function render\(\)/);
 assert.match(appRuntime, /button\.tabIndex=active\?0:-1/);
-assert.match(appRuntime, /\["ArrowLeft","ArrowRight","Home","End"\]/);
-assert.match(appRuntime, /operation=\+\+runtime\.authOperationSerial;setAuthBusy\(true\)/);
+assert.match(appRuntime, /\[\s*"ArrowLeft"\s*,\s*"ArrowRight"\s*,\s*"Home"\s*,\s*"End"\s*\]/);
+assert.match(appRuntime, /operation\s*=\s*\+\+\s*runtime\.authOperationSerial\s*;\s*setAuthBusy\(true\)/);
 assert.doesNotMatch(appRuntime, /actionsRequestSerial|actionsSnapshot|renderActionsWorkspace|runActionCommand/);
 assert.match(actionsEntry, /ticket\?\.generation === generation/);
 assert.match(actionsController, /root\.addEventListener\(type, listener\)/);

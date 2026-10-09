@@ -108,12 +108,12 @@ assert.match(
 );
 assert.match(
   runtimeImplementation,
-  /runtime\.backgroundResultsRetryAttempts>0&&runtime\.backgroundResultsRetryAttempts<backgroundResultsRetryLimit/,
+  /runtime\.backgroundResultsRetryAttempts\s*>\s*0\s*&&\s*runtime\.backgroundResultsRetryAttempts\s*<\s*backgroundResultsRetryLimit/,
   "the final completed task must retain a bounded poll after lazy-load failure"
 );
 assert.match(
   runtimeImplementation,
-  /controller\.needsRetry\(\)\?Math\.min\(backgroundResultsRetryLimit,runtime\.backgroundResultsRetryAttempts\+1\):0/,
+  /controller\.needsRetry\(\)\s*\?\s*Math\.min\(backgroundResultsRetryLimit\s*,\s*runtime\.backgroundResultsRetryAttempts\s*\+\s*1\)\s*:\s*0/,
   "transient result reads must retain the same bounded retry path"
 );
 const shellMountSource = sessionRuntime.slice(
