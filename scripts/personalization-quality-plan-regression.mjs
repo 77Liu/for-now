@@ -43,7 +43,27 @@ try {
     assert.ok(user.includes("asOf"));
     assert.equal(request.repetition, previous.repetition);
   }
-  for (const manifestVersion of ["v1", "v4", "../v3", "", null, 3, {}, true]) {
+  const interpreted = await buildPersonalizationLivePlan(root, { manifestVersion: "v4" });
+  assert.equal(repaired.planFingerprint, "f9300f1f75b2f7589604f00a73b6d59597b47c1f732296da227c1fb771e4a886");
+  assert.equal(interpreted.purpose, "personalization-source-time-interpretation-v4");
+  assert.equal(interpreted.requests.length, 48);
+  assert.notEqual(interpreted.planFingerprint, repaired.planFingerprint);
+  for (const request of interpreted.requests) {
+    const previous = repaired.requests.find(row => row.id === request.id);
+    if (request.variant !== "new") { assert.deepEqual(request, previous); continue; }
+    assert.deepEqual(request.parameters, previous.parameters);
+    assert.deepEqual(request.selectedSourceIds, previous.selectedSourceIds);
+    assert.equal(request.promptCatalog.version, "2026.10.09.3");
+    assert.notEqual(request.requestSha256, previous.requestSha256);
+    const parse = text => JSON.parse(/<working_context_data format="application\/json">(.+)<\/working_context_data>/s.exec(text)[1]);
+    const current = parse(request.messages[1].content), old = parse(previous.messages[1].content);
+    assert.ok(current.currentMaterial.every(item => !Object.hasOwn(item, "temporalScope")));
+    for (const key of ["currentMaterial", "applicableUserModel", "relevantEpisodes", "unresolved"]) {
+      for (const item of current[key]) delete item.temporalScope;
+    }
+    assert.deepEqual(current, old);
+  }
+  for (const manifestVersion of ["v1", "v5", "../v3", "", null, 3, {}, true]) {
     await assert.rejects(buildPersonalizationLivePlan("/unread-root", { manifestVersion }), /Unknown replay manifest selector/);
   }
   assert.equal(externalCalls, 0);

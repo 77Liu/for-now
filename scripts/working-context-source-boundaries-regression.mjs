@@ -129,6 +129,58 @@ check("larger trusted contract stays inside actual current-material byte budget"
   assert.throws(() => workingContextProjection(store, { ...projectionOptions, tokenLimit: Buffer.byteLength(projection.prompt) - 1 }),
     error => error.code === "CURRENT_MATERIAL_BUDGET_EXCEEDED");
 });
+check("current submission is not a claim that its described event is current", () => {
+  const text = "Last year I had thirty minutes. If it happens again, I may try a checklist.";
+  const value = compileWorkingContextPrompt({ scene: "thoughtAnswer", task, generatedAt: reference,
+    currentMaterial: [{ ...current[0], text, occurredAt: "2025-04-01T08:00:00.000Z" }] });
+  const item = readPayload(value.prompt).currentMaterial[0];
+  assert.equal(Object.hasOwn(item, "temporalScope"), false);
+  assert.equal(item.occurredAt, "2025-04-01T08:00:00.000Z");
+  assert.equal(item.text, text);
+  assert.ok(value.prompt.includes(promptText("orchestration.context.temporal")));
+});
+check("source time is compared as an instant without replacing missing event time", () => {
+  const values = [
+    ["2026-09-17T08:00:00.000Z", "historical-record"],
+    ["2026-10-07T20:30:00+08:00", "reference-time-record"],
+    ["2026-10-08T08:00:00.000Z", "future-record"],
+    ["+010000-01-01T08:00:00.000Z", "future-record"],
+    ["", "unknown"], ["2026-02-30T08:00:00.000Z", "unknown"]
+  ];
+  const materials = values.map(([occurredAt], index) => ({ id: `source-${index}`, occurredAt,
+    createdAt: reference, updatedAt: reference, text: "Only thirty minutes are available today.",
+    sourceRef: { resourceType: "capture" } }));
+  const input = JSON.stringify(materials);
+  const payload = readPayload(compileWorkingContextPrompt({ scene: "thoughtAnswer", task,
+    currentMaterial: current, historicalMaterial: materials, generatedAt: reference }).prompt);
+  assert.deepEqual(payload.relevantEpisodes.map(item => item.temporalScope), values.map(item => item[1]));
+  assert.deepEqual(payload.relevantEpisodes.map(item => item.occurredAt), values.map(item => item[0]));
+  assert.equal(JSON.stringify(materials), input);
+  const missingReference = readPayload(compileWorkingContextPrompt({ scene: "thoughtAnswer", task,
+    currentMaterial: current, historicalMaterial: materials }).prompt);
+  assert.ok(missingReference.relevantEpisodes.every(item => item.temporalScope === "unknown"));
+});
+check("answer system and task contracts make insufficient evidence a valid answer", () => {
+  for (const scene of ["thoughtAnswer", "followUpAnswer", "annotationShenji"]) {
+    const system = systemPromptForScene(systemPrompt(), scene);
+    assert.ok(system.includes(promptText("orchestration.role.answer")));
+    assert.ok(system.includes("资料不足以确定就是有效的明确回答"));
+    assert.ok(system.includes("表达风格和篇幅目标不能覆盖证据边界"));
+    const value = compileWorkingContextPrompt({ scene, task: { ...task, kind: scene },
+      currentMaterial: current, historicalMaterial: [], generatedAt: reference });
+    assert.ok(value.prompt.includes("资料不足时，明确说明尚不能判断"));
+  }
+});
+installPromptCatalog(await loadPromptCatalog({ rootDir: root, requestedVersion: "2026.10.09.1", allowHistorical: true }));
+check("previous source-boundary catalog retains original payload and does not gain temporal fields", () => {
+  const value = compileWorkingContextPrompt({ scene: "thoughtAnswer", task, currentMaterial: current,
+    historicalMaterial: [{ id: "old", occurredAt: reference, text: "Only thirty minutes today." }], generatedAt: reference });
+  const payload = readPayload(value.prompt);
+  assert.equal(payload.asOf, reference);
+  assert.equal(Object.hasOwn(payload.currentMaterial[0], "temporalScope"), false);
+  assert.equal(Object.hasOwn(payload.relevantEpisodes[0], "temporalScope"), false);
+});
+installPromptCatalog(await loadPromptCatalog({ rootDir: root }));
 const messages = [{ role: "system", content: systemPromptForScene(systemPrompt(), "thoughtAnswer") }, { role: "user", content: projection.prompt }];
 let mockRequests = 0;
 const transport = createDeepSeekTransport({ endpoint: "https://example.invalid/synthetic-only", fetchImpl: async (endpoint, request) => {

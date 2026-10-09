@@ -13,9 +13,11 @@ const canonical = value => Array.isArray(value) ? value.map(canonical) : value &
   ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
 export const liveFingerprint = value => crypto.createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
 export async function buildPersonalizationLivePlan(rootDir, { manifestVersion = "v2" } = {}) {
-  assert.ok(typeof manifestVersion === "string" && ["v2", "v3"].includes(manifestVersion), "Unknown replay manifest selector");
-  const inputVersion = manifestVersion === "v2" ? REPLAY_INPUT_VERSION : "source-time-boundaries-v3";
-  const purpose = manifestVersion === "v2" ? REPLAY_PURPOSE : "personalization-source-time-boundaries-v3";
+  assert.ok(typeof manifestVersion === "string" && ["v2", "v3", "v4"].includes(manifestVersion), "Unknown replay manifest selector");
+  const inputVersion = manifestVersion === "v2" ? REPLAY_INPUT_VERSION
+    : manifestVersion === "v3" ? "source-time-boundaries-v3" : "source-time-interpretation-v4";
+  const purpose = manifestVersion === "v2" ? REPLAY_PURPOSE
+    : manifestVersion === "v3" ? "personalization-source-time-boundaries-v3" : "personalization-source-time-interpretation-v4";
   const text = await fs.readFile(path.join(rootDir, "scripts/fixtures/personalization-replay-v1.json"), "utf8");
   const fixtures = validateReplayFixtureSet(JSON.parse(text));
   const manifest = JSON.parse(await fs.readFile(path.join(rootDir, `scripts/fixtures/personalization-replay-manifest-${manifestVersion}.json`), "utf8"));

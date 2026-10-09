@@ -6,6 +6,7 @@ import {
   renderPrompt
 } from "../shared/prompts/index.mjs";
 import { safeIso } from "../shared/validation/index.mjs";
+import { workingContextTimestamp } from "./task-context.mjs";
 
 export const STRUCTURED_WORKING_CONTEXT_SCHEMA_VERSION = 1;
 
@@ -32,7 +33,7 @@ function promptSafeJson(value) {
     .replace(/\u2029/g, "\\u2029");
 }
 
-function materialPayload(item) {
+function materialPayload(item, temporalScope = "") {
   return {
     id: String(item?.id || ""),
     channel: String(item?.channel || ""),
@@ -41,6 +42,7 @@ function materialPayload(item) {
     origin: String(item?.origin || "user"),
     informationType: String(item?.informationType || "user_viewpoint"),
     occurredAt: String(item?.occurredAt || ""),
+    ...(temporalScope ? { temporalScope } : {}),
     text: String(item?.text || ""),
     attachmentCount: list(item?.attachmentPaths).length
   };
@@ -95,9 +97,18 @@ export function compileWorkingContextPrompt({
     throw new Error(`Prompt catalog ${contract.catalogVersion} does not support structured working context`);
   }
   const sourceBoundaries = optionalPromptText("orchestration.context.boundaries");
+  const temporalContract = optionalPromptText("orchestration.context.temporal");
   const asOf = typeof generatedAt === "string" && generatedAt === safeIso(generatedAt)
     ? generatedAt || null : null;
-  const history = list(historicalMaterial).map(materialPayload);
+  const temporalScope = item => {
+    if (!temporalContract) return "";
+    const occurredAt = workingContextTimestamp(item?.occurredAt);
+    if (!occurredAt || !asOf) return "unknown";
+    return Date.parse(occurredAt) < Date.parse(asOf) ? "historical-record"
+      : Date.parse(occurredAt) > Date.parse(asOf) ? "future-record" : "reference-time-record";
+  };
+  const history = list(historicalMaterial).map(item => materialPayload(item,
+    temporalScope(item)));
   const payload = {
     schemaVersion: STRUCTURED_WORKING_CONTEXT_SCHEMA_VERSION,
     scene,
@@ -111,7 +122,7 @@ export function compileWorkingContextPrompt({
         ? { details: structuredClone(taskDetails) }
         : {})
     },
-    currentMaterial: list(currentMaterial).map(materialPayload),
+    currentMaterial: list(currentMaterial).map(item => materialPayload(item)),
     applicableUserModel: history.filter(item => item.resourceType === "userClaim"),
     relevantEpisodes: history.filter(item => (
       !["userClaim", "modelUnknown"].includes(item.resourceType)
@@ -130,7 +141,7 @@ export function compileWorkingContextPrompt({
   };
   return {
     prompt: renderPrompt(contract.envelopeId, {
-      taskContract: [promptText(contract.taskPromptId), sourceBoundaries].filter(Boolean).join("\n\n"),
+      taskContract: [promptText(contract.taskPromptId), sourceBoundaries, temporalContract].filter(Boolean).join("\n\n"),
       payload: promptSafeJson(payload)
     }),
     contract
