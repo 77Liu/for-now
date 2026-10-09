@@ -64,7 +64,7 @@
     "test:web-budget": "node scripts/web-first-screen-budget-regression.mjs",
     "test:performance-gate": "node scripts/system-test.mjs performance",
     "test:url-history": "node scripts/url-history-regression.mjs",
-    "test:pwa": "node scripts/sync-release-metadata.mjs --check && node scripts/pwa-regression.mjs",
+    "test:pwa": "node scripts/sync-release-metadata.mjs --check && node scripts/release-metadata-regression.mjs && node scripts/pwa-regression.mjs",
     "test:notifications": "node scripts/notification-entry-regression.mjs",
     "test:ui": "node scripts/ui-regression.mjs",
     "test:journeys:validate": "node scripts/user-journey-regression.mjs validate",

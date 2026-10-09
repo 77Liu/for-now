@@ -16,7 +16,7 @@ import {
   currentContextSource
 } from "../public/frontend/features/personal-context/index.mjs";
 
-assert.equal(versionLabel("0.5.10+hotfix.1"), "v0.5.10");
+assert.equal(versionLabel("42.7.3+fixture.1"), "v42.7.3");
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
