@@ -143,6 +143,37 @@ try {
   assert.equal(initial.ai.services.find(item => item.key === "aliyunSegmentation").failedCalls, 1);
   assert.equal(initial.ai.daily.at(-1).services.aliyunSegmentation.costUnknownCalls, 1);
 
+  const onboardingSchemaResponse = await request("/api/v1/onboarding-v2/schema", undefined, "GET");
+  assert.equal(onboardingSchemaResponse.status, 200);
+  const onboardingSchema = await onboardingSchemaResponse.json();
+  const onboardingBaseline = await fetch(`${base}/api/v1/onboarding-v2/session`);
+  const onboardingSession = await onboardingBaseline.json();
+  const onboardingAnswers = Object.fromEntries(onboardingSchema.data.questions
+    .filter(question => question.questionId !== "collaboration")
+    .map(question => [question.questionId, {
+      answerDisposition: "declined",
+      contextAllowed: false
+    }]));
+  const onboardingCompleted = await request("/api/v1/onboarding-v2/session", {
+    selectedFlow: "v2",
+    status: "completed",
+    answers: onboardingAnswers,
+    collaboration: {
+      answerDisposition: "declined",
+      contextAllowed: false
+    }
+  }, "PATCH", {
+    "if-match": onboardingBaseline.headers.get("etag"),
+    "idempotency-key": "observability-onboarding-v2"
+  });
+  assert.equal(onboardingCompleted.status, 200);
+  const completedBody = await onboardingCompleted.json();
+  const extraction = await request("/api/v1/onboarding-v2/extractions", {
+    sourceRevision: completedBody.data.session.revision
+  }, "POST", { "idempotency-key": "observability-empty-model-ready" });
+  assert.equal(extraction.status, 200);
+  assert.equal((await extraction.json()).data.status, "ready");
+
   const good = await request("/api/settings/test", {});
   assert.equal(good.status, 200);
   let entries = JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"))).entries;
