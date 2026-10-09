@@ -2,7 +2,7 @@
 
 计划日期：2026-10-10
 
-状态：`G1 已冻结 / G2-G3 进行中 / 未发布`
+状态：`G1-G4 已完成 / G5-G7 发布执行中 / 未发布`
 
 本版以冷启问答形成可追溯、可供回答使用的核心用户模型为 P00 主线。当前
 代码基线为已收口 V0.5.10 的 `codex/v0.5.10-minimum@6228f34`；根目录
@@ -64,3 +64,10 @@ G1 已冻结上述三个需求，不自动接入未知状态的 UI 候选。G2 �
 当前仍未验证 provider 对引用标记的实际遵循情况，因此 P00 仅承诺服务端可核验
 引用，不将模型声称视作已使用来源的证明。真实 provider 回放单独按固定夹具和
 有界费用授权执行，不阻塞无付费的核心确定性验证。
+
+## 4. G3-G4 候选记录
+
+- 独立冷启审查在专项冻结对象上未发现 P0/P1；审查范围、风险与仍未验证事项记于 `reports/multi-agent-coordination-v0.5.11-2026-10-10.md`。
+- 2026-10-10 的冷启回归专项及 `node scripts/user-journey-regression.mjs smoke` 通过；Journey 共 17 项，16 项自动通过，`p00-existing-user-core-model-supplement` 保持 `partial`。
+- 元数据使用 `npm run release:set -- 0.5.11` 对应脚本生成器完成；release metadata、PWA 回归和 `--check` 通过。Web 显示/缓存版本为 `0.5.11`，iOS metadata build 为 8；本版不生成或分发原生制品。
+- 唯一发行说明与 G5/G6/G7 记录：`reports/pre-launch-2026-10-10-v0.5.11.md`。生产 provider 遵从、真实生产生成和 iOS 制品未验收；发布时保留这些限制。
