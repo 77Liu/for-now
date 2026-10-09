@@ -1,0 +1,68 @@
+{
+  "windowUtc": {
+    "start": "2026-10-09T10:45:22Z",
+    "end": "2026-10-09T11:15:29Z"
+  },
+  "observationSamples": {
+    "count": 31,
+    "durationSeconds": 1807,
+    "serviceRestarts": 0,
+    "runningSha": "dc10b25974eb",
+    "pid": 765758
+  },
+  "historicalReadOnlyLogBackfill": {
+    "applicationSystemNdjson": {
+      "records": 38,
+      "firstRecordUtc": "2026-10-09T10:45:31.829Z",
+      "lastRecordUtc": "2026-10-09T11:14:31.829Z",
+      "requestCompleted": 8,
+      "httpStatusCounts": {
+        "200": 6,
+        "401": 2
+      },
+      "unauthenticated401Categories": {
+        "authMe": 1,
+        "state": 1
+      },
+      "app5xx": 0,
+      "http5xx": 0,
+      "requestFailed": 0,
+      "warnings": 2,
+      "errors": 0,
+      "storageLoggingAiLogFailures": 0
+    },
+    "systemdJournal": {
+      "warningOrHigher": 0
+    },
+    "nginxAccess": {
+      "filesRead": 15,
+      "dateCandidates": 12666,
+      "parseFailures": 0,
+      "requestsInWindow": 79,
+      "firstRequestUtc": "2026-10-09T10:45:40Z",
+      "lastRequestUtc": "2026-10-09T11:14:03Z",
+      "http5xx": 0
+    },
+    "nginxError": {
+      "filesRead": 15,
+      "dateCandidates": 87,
+      "parseFailures": 0,
+      "eventsInWindow": 5,
+      "levels": {
+        "crit": 5
+      },
+      "classification": {
+        "tlsHandshakeBadKeyShare": 5
+      },
+      "httpRequestsCreated": 0
+    },
+    "rawLogLinesRetained": false
+  },
+  "limitations": [
+    "Application denominator is 8 completed requests; Nginx denominator is 79 HTTP requests. Do not describe either as a long-run reliability rate.",
+    "The 401 responses were the unauthenticated auth/me and state checks.",
+    "The 5 TLS handshake failures occurred before HTTP request creation; their client origin was not inspected.",
+    "This was a historical read-only log backfill, not live error-rate sampling during the observation window.",
+    "Production authenticated save/read, account-isolation, and attachment journeys remain unverified."
+  ]
+}
