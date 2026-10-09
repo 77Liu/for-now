@@ -34,7 +34,7 @@ V0.2.0 历史见
 ## 版本与当前基线
 
 - 生产当前运行：`v0.5.9@dc10b25974ebcdeef12bc5987b50cbc60b979037`，交付范围为 Web MVP，生产媒体继续使用默认 private proxy。
-  31 个分钟样本覆盖 30 分 07 秒，期间 PID 不变、重启数为 0、ready SHA 一致。事后只读回查该窗口：应用 5xx 为 `0/8`、Nginx HTTP 5xx 为 `0/79`、journald warning+ 为 0；另有 2 个预期未登录 401 与 5 个 HTTP 前 TLS `bad_key_share` 握手失败，未把它们隐去或外推长期错误率。因尚无专用生产合成账户凭据，保存/读取、跨账户拒绝和附件代理旅程未验证，G6 尚未关闭，Gitee Release 保持预发布。PostgreSQL 为唯一正式写源；原回滚点
+  31 个分钟样本覆盖 30 分 07 秒，期间 PID 不变、重启数为 0、ready SHA 一致。事后只读回查该窗口：应用 5xx 为 `0/8`、Nginx HTTP 5xx 为 `0/79`、journald warning+ 为 0；另有 2 个预期未登录 401 与 5 个 HTTP 前 TLS `bad_key_share` 握手失败，未把它们隐去或外推长期错误率。2026-10-09 G6 运维观察限定关闭；生产认证后 A/B 保存/读取、隔离和附件代理旅程仍未执行，在 Web MVP 范围内明确延期未验收，不记 PASS。执行者在 Owner 持续授权范围内，按现有证据判断当前没有可信未关闭 P00/P0，并接受该未验收旅程的延期风险。Gitee `v0.5.9` Release 已正式发布，[发行页](https://gitee.com/Liu_772021/for-now/releases/tag/v0.5.9)显示 tag `v0.5.9` 和短 SHA `dc10b25`；完整 SHA `dc10b25974ebcdeef12bc5987b50cbc60b979037` 与生产记录一致。完整决定见 [`V0.5.9 最终 G6/G7 收口`](reports/pre-launch-2026-10-08-v0.5.9.md#2026-10-09-最终-g6g7-收口与正式发行)。PostgreSQL 为唯一正式写源；原回滚点
   `hotfix-v0.5.7-audio-on-demand@2c395c0295404a6c7bd5a076bb66b11c6e72c3f2`
   继续保留。
 - 上一热修：V0.5.4 已修复增量同步空轮询、寻迹失败静默/阻断、设置页重复
