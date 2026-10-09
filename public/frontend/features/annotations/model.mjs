@@ -1,3 +1,5 @@
+import { isPendingAiTaskStatus } from "../../shared/ai-task-status.mjs";
+
 const ROOT_COLLECTIONS = Object.freeze({
   capture: "captures",
   journal: "journals",
@@ -132,7 +134,7 @@ export function createAnnotationModel({ getSnapshot, getAccountId, storage }) {
       task.kind === kind
       && task.targetId === targetId
       && (!subtargetId || task.subtargetId === subtargetId)
-      && ["queued", "running", "cancelling"].includes(task.status)
+      && isPendingAiTaskStatus(task.status)
     ));
   }
   function endpoint(value, suffix = "") {

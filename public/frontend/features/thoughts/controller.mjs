@@ -1,4 +1,5 @@
 import { normalizeTtsPlaybackRate } from "../../media/index.mjs";
+import { isPendingAiTaskStatus } from "../../shared/ai-task-status.mjs";
 import { createThoughtOperations } from "./operations.mjs";
 import { createThoughtPresentation } from "./presentation.mjs";
 import { createThoughtSpeech } from "./speech.mjs";
@@ -266,7 +267,9 @@ export function createThoughtsFeatureController({
         .find(item => item.id === button.dataset.answerChain && item.type === "question");
       if (!question) return;
       button.disabled = true;
-      try { await operations.startBackgroundAnswer(question); } finally { button.disabled = false; }
+      let task = null;
+      try { task = await operations.startBackgroundAnswer(question); }
+      finally { button.disabled = isPendingAiTaskStatus(task?.status); }
     } else if (button.dataset.remark) {
       await operations.changeRemark(button, "create");
     } else if (button.dataset.editRemark) {
@@ -422,7 +425,7 @@ export function createThoughtsFeatureController({
         : new Set(typeof context.changedDomains === "string"
           ? [context.changedDomains]
           : context.changedDomains);
-      const rendered = changed === null || changed.has("thoughts") || changed.has("speech")
+      const rendered = changed === null || changed.has("thoughts") || changed.has("speech") || changed.has("aiTasks")
         ? thoughtView.render(context)
         : false;
       return rendered || delegated || false;

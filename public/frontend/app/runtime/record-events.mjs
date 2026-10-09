@@ -6,6 +6,7 @@ export function installRecordSubmissionEvents({
   contentImagePaths,imageRecordPayload,captureRecordPayload,publishDomains,
   clearSubmittedContentImageDraft,discardContentImageUploads,
   renderTagComposer,closeHomeEditors,request,runAnswerInModal,requestStream,
+  resolvePersonalizedTask,
   startBackgroundChainAnswer,commitDraftTags,chainRecordKind,syncChainRecordKind
 } = {}) {
   $("#thought-prompt-button").addEventListener("click",async event=>{
@@ -14,6 +15,7 @@ export function installRecordSubmissionEvents({
     const status=$("#thought-prompt-status");
     const selectedDate=runtime.activeDate;
     const owner=runtime.currentUser?.id;
+    const session=runtime.sessionSerial;
     const requestId=crypto.randomUUID();
     const targetId=$("#chain-form").dataset.draftId||crypto.randomUUID();
     const inputVersion=runtime.chainDraftVersion;
@@ -32,14 +34,35 @@ export function installRecordSubmissionEvents({
     button.textContent="正在想…";
     status.textContent="正在找一个可以接住的开头…";
     try{
-      const result=await request("/api/thought-prompts",{
+      const initialResponse=await request("/api/thought-prompts",{
         method:"POST",
         body:JSON.stringify({requestId,targetId,inputVersion,...occurrenceFields($("#chain-datetime"))})
       });
+      const settled=await resolvePersonalizedTask(initialResponse,{
+        operationLabel:"引子",
+        expectedKind:"thoughtPrompt",
+        onStatus:message=>{
+          if(owner===runtime.currentUser?.id&&session===runtime.sessionSerial)status.textContent=message
+        }
+      });
+      if(settled.abandoned)return false;
+      const result=settled.result;
+      const taskMismatch=settled.task&&(
+        settled.task.targetId!==targetId
+        ||(settled.task.inputVersion!=null&&Number(settled.task.inputVersion)!==Number(inputVersion))
+      );
+      const resultMismatch=(result.requestId&&result.requestId!==requestId)
+        ||(result.targetId&&result.targetId!==targetId)
+        ||(result.inputVersion!=null&&Number(result.inputVersion)!==Number(inputVersion));
+      if(taskMismatch||resultMismatch){
+        status.textContent="引子任务与当前请求不匹配，结果未填入。请重新发起。";
+        return false;
+      }
       const inputChanged=changed||question.value.trim()||runtime.activeDate!==selectedDate
-        ||runtime.currentUser?.id!==owner||(result.requestId&&result.requestId!==requestId);
+        ||runtime.currentUser?.id!==owner||runtime.sessionSerial!==session
+        ||runtime.chainDraftVersion!==inputVersion;
       if(inputChanged){
-        status.textContent="引子已生成；当前输入已变化，请继续你的思考。";
+        status.textContent=`引子已生成，当前输入已变化，未覆盖。结果：${result.prompt||""}`;
         return
       }
       question.value=result.prompt||"";
@@ -87,6 +110,12 @@ export function installRecordSubmissionEvents({
       await runAnswerInModal({
         title:"生成可编辑回答草稿",
         scene:"thoughtDraft",
+        expectedTaskKind:"thoughtDraft",
+        expectedTaskTargetId:targetId,
+        expectedTaskInputVersion:inputVersion,
+        expectedTaskRequestId:requestId,
+        isSessionCurrent:()=>runtime.currentUser?.id===owner
+          &&runtime.sessionSerial===session,
         isCurrent,
         requestCall:onEvent=>requestStream("/api/answer-drafts",{
           method:"POST",
@@ -255,18 +284,46 @@ export function installRecordSubmissionEvents({
     button.disabled=true;
     $("#chat-status").textContent="正在结合你已保存的记录…";
     try{
-      await requestV1("/api/v1/chats",{
+      const owner=runtime.currentUser?.id;
+      const session=runtime.sessionSerial;
+      const initialResponse=await requestV1("/api/v1/chats",{
         method:"POST",
         headers:{"idempotency-key":requestId},
         body:JSON.stringify(payload)
       },{domains:["chats"]});
+      const settled=await resolvePersonalizedTask(initialResponse,{
+        operationLabel:"对话回答",
+        expectedKind:"chat",
+        onStatus:message=>{
+          if(owner===runtime.currentUser?.id&&session===runtime.sessionSerial)$("#chat-status").textContent=message
+        }
+      });
+      if(settled.abandoned)return;
+      if(owner!==runtime.currentUser?.id||session!==runtime.sessionSerial)return;
+      const saved=settled.result;
+      if(saved.message!==payload.message
+        ||saved.occurredAt!==payload.occurredAt
+        ||saved.occurredOn!==payload.occurredOn){
+        throw new Error("后台对话结果与本次问题不匹配，输入已保留。")
+      }
+      const unchanged=JSON.stringify({
+        ...occurrenceFields($("#chat-datetime")),
+        message:$("#chat-input").value
+      })===JSON.stringify(payload);
       delete form.dataset.requestId;
-      $("#chat-input").value="";
-      resetOccurrenceInput($("#chat-datetime"));
+      if(unchanged){
+        $("#chat-input").value="";
+        resetOccurrenceInput($("#chat-datetime"));
+      }
       void refreshState("chat")
         .catch(error=>showToast(`回答已保存，但页面刷新失败：${error.message}`,"error"));
-      $("#chat-status").textContent=""
+      $("#chat-status").textContent=unchanged
+        ?"回答已生成并保存。"
+        :"回答已生成；你后来修改的输入已保留。"
     }catch(error){
+      if (error.taskId) {
+        delete form.dataset.requestId;
+      }
       $("#chat-status").textContent=error.syncStatus==="pending"
         ?"问题已留存，网络恢复后自动处理。"
         :error.message

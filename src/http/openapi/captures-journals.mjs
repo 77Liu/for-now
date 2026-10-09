@@ -133,9 +133,11 @@ export const captureJournalPaths = Object.freeze({
     post: {
       operationId: "assistJournal",
       description: "Accept: text/event-stream 时返回阶段、增量及统一完成结果。",
+      parameters: [idempotency],
       requestBody: jsonBody("JournalAssistInput"),
       responses: {
         "200": { description: "写作辅助内容", ...response({ $ref: "#/components/schemas/JournalAssistResult" }) },
+        "202": { description: "核心用户模型未就绪；写作辅助任务已持久化等待", ...response({ $ref: "#/components/schemas/PersonalizedAiTask" }) },
         ...errors
       }
     }
@@ -149,6 +151,7 @@ export const captureJournalPaths = Object.freeze({
       parameters: [idempotency],
       responses: {
         "201": { description: "回望已生成", ...response({ $ref: "#/components/schemas/JournalReflection" }) },
+        "202": { description: "核心用户模型未就绪；日记回望任务已持久化等待", ...response({ $ref: "#/components/schemas/PersonalizedAiTask" }) },
         ...errors
       }
     }

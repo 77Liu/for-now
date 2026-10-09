@@ -1,5 +1,6 @@
 import { plainPreview } from "../../content/index.mjs";
 import { eventDate, eventTimestamp } from "../../time/index.mjs";
+import { isPendingAiTaskStatus } from "../../shared/ai-task-status.mjs";
 
 export function normalizeThoughtSearch(value) {
   return String(value || "")
@@ -169,6 +170,6 @@ export function pendingThoughtTask(tasks, kind, targetId, subtargetId = "") {
     task.kind === kind
     && task.targetId === targetId
     && (!subtargetId || task.subtargetId === subtargetId)
-    && ["queued", "running", "cancelling"].includes(task.status)
+    && isPendingAiTaskStatus(task.status)
   ));
 }

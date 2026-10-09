@@ -1,4 +1,5 @@
 import { safeText } from "../shared/validation/index.mjs";
+import { publicAiTask } from "../modules/tasks/index.mjs";
 
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 const optionalIdempotencyKey = req => {
@@ -33,6 +34,19 @@ export function createThoughtHttp({
   const eventTimeHash = (input, eventTime) => hasOwn(input, "occurredAt")
     ? eventTime.occurredAt
     : hasOwn(input, "occurredOn") ? `date:${input.occurredOn}` : "";
+  const sendV1ThoughtAnswerTask = (res, v1, created) => {
+    if (created.unsupported) return v1.error(res, 400, "不支持这种后台任务", "UNSUPPORTED_AI_TASK");
+    if (created.missing) return v1.error(res, 404, "问题不存在或已经变化", "THOUGHT_NOT_FOUND");
+    if (created.invalid) return v1.error(res, 400, "回答请求缺少幂等标识", "IDEMPOTENCY_KEY_REQUIRED");
+    if (created.conflict) return v1.error(res, 409, "同一幂等键不能用于不同内容", "IDEMPOTENCY_KEY_REUSED");
+    if (created.alreadyAnswered) return v1.error(res, 409, "问题已经有回答", "TARGET_ALREADY_ANSWERED");
+    if (created.versionConflict || created.subtargetVersionConflict) {
+      return v1.error(res, 409, "问题已经更新，请刷新后重试", "VERSION_CONFLICT", {
+        currentVersion: created.currentVersion
+      });
+    }
+    return v1.success(res, created.duplicate ? 200 : 202, publicAiTask(created.task));
+  };
 
   async function handleV1(req, res, url, v1) {
     if (req.method === "GET" && url.pathname === "/api/v1/thought-chains") {
@@ -139,6 +153,8 @@ export function createThoughtHttp({
     }
     if (req.method === "POST" && /^\/api\/v1\/thought-chains\/[^/]+\/answers$/.test(url.pathname)) {
       const id = url.pathname.split("/")[4], clientRequestId = v1.idempotencyKey(req);
+      const waiting = await workflows.queueAnswerIfCold({ id, clientRequestId });
+      if (waiting) return sendV1ThoughtAnswerTask(res, v1, waiting);
       await respondModel(req, res, {
         status: 201,
         run: onDelta => workflows.answerRoot({ id, clientRequestId, onDelta }),
@@ -221,26 +237,50 @@ export function createThoughtHttp({
     } else if (req.method === "POST" && url.pathname === "/api/answer-drafts") {
       const input = await bodyJson(req), question = safeText(input.question), binding = requestBinding(input);
       if (!question) return sendJson(res, 400, { error: "请先填写问题" });
-      const requestId = binding.requestId || safeText(input.requestId, 100) || createId();
+      const requestId = binding.requestId
+        || safeText(input.requestId, 100)
+        || optionalIdempotencyKey(req)
+        || createId();
+      const taskBinding = {
+        requestId,
+        targetId: binding.targetId || safeText(input.targetId, 100) || `legacy-draft:${requestId}`,
+        inputVersion: binding.inputVersion || Math.max(0, Math.round(Number(input.inputVersion) || 0))
+      };
+      const waiting = await workflows.queueDraftIfCold({
+        question,
+        idea: safeText(input.idea),
+        ...taskBinding
+      });
+      if (waiting) return sendTaskCreation(res, waiting);
       await respondModel(req, res, {
         run: onDelta => workflows.createDraft({
           question,
           idea: safeText(input.idea),
           requestId,
-          targetId: binding.targetId || safeText(input.targetId, 100) || `legacy-draft:${requestId}`,
-          inputVersion: Math.max(0, Math.round(Number(input.inputVersion) || 0)),
+          targetId: taskBinding.targetId,
+          inputVersion: taskBinding.inputVersion,
           onDelta
         })
       });
     } else if (req.method === "POST" && url.pathname === "/api/thought-prompts") {
       const input = await bodyJson(req), eventTime = eventTimeFields(input);
       if (!eventTime) return sendJson(res, 400, { error: "发生时间格式不正确" });
+      const binding = requestBinding(input);
+      const requestId = binding.requestId
+        || safeText(input.requestId, 100)
+        || optionalIdempotencyKey(req)
+        || createId();
+      const waiting = await workflows.queueStarterIfCold({ eventTime, binding, requestId });
+      if (waiting) return sendTaskCreation(res, waiting);
       await respondModel(req, res, {
-        run: onDelta => workflows.createStarter({ eventTime, binding: requestBinding(input), onDelta })
+        run: onDelta => workflows.createStarter({ eventTime, binding: { ...binding, requestId }, onDelta })
       });
     } else if (req.method === "POST" && /^\/api\/thoughts\/[^/]+\/answer$/.test(url.pathname)) {
-      const id = url.pathname.split("/")[3], input = await bodyJson(req), clientRequestId = safeText(input.clientRequestId, 100);
+      const id = url.pathname.split("/")[3], input = await bodyJson(req);
+      const clientRequestId = safeText(input.clientRequestId, 100) || optionalIdempotencyKey(req);
       if (!clientRequestId) return sendJson(res, 400, { error: "回答请求缺少幂等标识", code: "IDEMPOTENCY_KEY_REQUIRED" });
+      const waiting = await workflows.queueAnswerIfCold({ id, clientRequestId });
+      if (waiting) return sendTaskCreation(res, waiting);
       await respondModel(req, res, {
         status: 201,
         run: onDelta => workflows.answerRoot({ id, clientRequestId, onDelta })

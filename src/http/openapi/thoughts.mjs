@@ -117,9 +117,13 @@ export const thoughtPaths = Object.freeze({
       operationId: "generateThoughtAnswer",
       parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }],
       responses: {
-        "201": {
-          description: "生成并保存回答；Accept: text/event-stream 时以 SSE 返回阶段、增量及统一完成结果",
-          ...response({ $ref: "#/components/schemas/Thought" })
+        "200": {
+          description: "幂等请求复用既有后台回答任务",
+          ...response({ $ref: "#/components/schemas/ThoughtAnswerTask" })
+        },
+        "202": {
+          description: "回答任务已持久化；核心用户模型未就绪时状态为 waiting_for_user_model",
+          ...response({ $ref: "#/components/schemas/ThoughtAnswerTask" })
         },
         ...errors
       }
@@ -148,6 +152,32 @@ export const thoughtComponents = Object.freeze({
         sourceRef: { $ref: "#/components/schemas/ThoughtSourceRef" }
       },
       additionalProperties: true
+    },
+    ThoughtAnswerTask: {
+      type: "object",
+      required: [
+        "id", "kind", "resourceType", "targetId", "subtargetId", "inputVersion",
+        "subtargetVersion", "status", "createdAt", "startedAt", "completedAt",
+        "resultId", "error", "retryOf"
+      ],
+      properties: {
+        id: { type: "string" },
+        kind: { const: "thoughtAnswer" },
+        resourceType: { const: "thought" },
+        targetId: { type: "string" },
+        subtargetId: { type: "string" },
+        inputVersion: { type: "integer", minimum: 0 },
+        subtargetVersion: { type: "integer", minimum: 0 },
+        status: { enum: ["queued", "running", "waiting_for_user_model", "succeeded", "failed", "stale", "cancelled"] },
+        createdAt: { type: "string", format: "date-time" },
+        startedAt: { type: "string" },
+        completedAt: { type: "string" },
+        resultId: { type: "string" },
+        error: { type: "string" },
+        errorCode: { type: "string" },
+        retryOf: { type: "string" }
+      },
+      additionalProperties: false
     },
     ThoughtSourceRef: {
       type: "object",

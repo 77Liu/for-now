@@ -64,6 +64,14 @@ const contextAllowed = (store, item, sourceRef, purpose = "context") => {
     ? permissions[0].learningAllowed === true
     : permissions[0].contextAllowed === true;
 };
+const contextPermissionRevision = (store, ref) => {
+  const sourceKey = evidenceSourceKey(ref);
+  const permissions = list(store?.evidencePermissions)
+    .filter(permission => permission?.sourceKey === sourceKey);
+  return permissions.length === 1
+    ? Math.max(0, Math.round(Number(permissions[0].revision) || 0))
+    : 0;
+};
 const eventTime = item => safeText(item?.occurredAt || item?.createdAt || item?.updatedAt, 100);
 const eventDate = item => safeText(item?.occurredOn || eventTime(item).slice(0, 10), 10);
 const sourceRef = (resourceType, item, {
@@ -792,31 +800,55 @@ export function diaryActivityContext(store, occurredOn) {
 }
 
 export function thoughtPromptContext(store, occurredOn) {
+  const entry = (resourceType, item, text, options = {}) => {
+    const ref = sourceRef(resourceType, item, options);
+    return {
+      date: item.occurredOn,
+      time: item.occurredAt || item.createdAt,
+      text,
+      sourceRef: ref,
+      permissionRevision: contextPermissionRevision(store, ref)
+    };
+  };
   const entries = [
     ...list(store?.captures).filter(item => (
       contextAllowed(store, item, sourceRef("capture", item))
-    )).map(item => ({ date: item.occurredOn, time: item.occurredAt || item.createdAt, text: `捕念：${safeText(item.content, 500)}` })),
+    )).map(item => entry("capture", item, `捕念：${safeText(item.content, 500)}`)),
     ...list(store?.journals).filter(item => (
       contextAllowed(store, item, sourceRef("journal", item))
-    )).map(item => ({ date: item.occurredOn, time: item.occurredAt || item.createdAt, text: `日记${item.title ? `《${safeText(item.title, 80)}》` : ""}：${safeText(item.content, 700)}` })),
+    )).map(item => entry("journal", item, `日记${item.title ? `《${safeText(item.title, 80)}》` : ""}：${safeText(item.content, 700)}`)),
     ...list(store?.thoughts).filter(item => (
       item.type === "question"
       && contextAllowed(store, item, sourceRef("thought", item, {
         rootId: item.id,
         targetKey: `question:${item.id}`
       }))
-    )).map(item => ({ date: item.occurredOn, time: item.occurredAt || item.createdAt, text: `曾经的问题：${safeText(item.content, 500)}` })),
-    ...list(store?.chats).map(item => ({ date: item.occurredOn, time: item.occurredAt || item.createdAt, text: `长期对话中的提问：${safeText(item.message, 500)}` })),
+    )).map(item => entry("thought", item, `曾经的问题：${safeText(item.content, 500)}`, {
+      rootId: item.id,
+      targetKey: `question:${item.id}`
+    })),
+    ...list(store?.chats).filter(item => (
+      contextAllowed(store, item, sourceRef("chat", item, { targetKey: "message" }))
+    )).map(item => entry("chat", item, `长期对话中的提问：${safeText(item.message, 500)}`, {
+      targetKey: "message"
+    })),
     ...list(store?.checkins).filter(item => (
       contextAllowed(store, item, sourceRef("checkin", item))
-    )).map(item => ({ date: item.occurredOn, time: item.occurredAt || item.createdAt, text: `状态：情绪${item.mood}/精力${item.energy}/压力状态${item.stress}/睡眠${item.sleep}${item.factors?.length ? `；因素：${item.factors.map(value => safeText(value, 40)).join("、")}` : ""}` })),
+    )).map(item => entry("checkin", item, `状态：情绪${item.mood}/精力${item.energy}/压力状态${item.stress}/睡眠${item.sleep}${item.factors?.length ? `；因素：${item.factors.map(value => safeText(value, 40)).join("、")}` : ""}`)),
     ...list(store?.dailyRecords).filter(item => (
       contextAllowed(store, item, sourceRef("dailyRecord", item))
-    )).map(item => ({ date: item.occurredOn, time: item.occurredAt || item.createdAt, text: describeDailyRecord(item) }))
+    )).map(item => entry("dailyRecord", item, describeDailyRecord(item)))
   ].filter(item => item.date && item.date <= occurredOn).sort((a, b) => b.time.localeCompare(a.time)).slice(0, 12);
   return {
     hasHistory: entries.length > 0,
-    text: entries.length ? entries.map((item, index) => `${index + 1}. ${item.date} ${item.text}`).join("\n") : "（没有历史记录）"
+    text: entries.length ? entries.map((item, index) => `${index + 1}. ${item.date} ${item.text}`).join("\n") : "（没有历史记录）",
+    contextFingerprint: crypto.createHash("sha256").update(JSON.stringify(entries.map(item => ({
+      sourceRef: item.sourceRef,
+      permissionRevision: item.permissionRevision,
+      date: item.date,
+      time: item.time,
+      text: item.text
+    })))).digest("hex")
   };
 }
 

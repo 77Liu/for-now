@@ -304,17 +304,54 @@ export function createThoughtTaskTarget({ createId, now, stripThoughtAnswerLead 
     saveAnswer(thoughts, work, task, result) {
       let answer = thoughts.find(item => item.sourceTaskId === task.id);
       if (!answer) {
-        const root = work.root, generation = thoughts.filter(item => item.relatedTo === root.id && item.type === "answer").length + 1, content = stripThoughtAnswerLead(result.content);
-        answer = { id: createId(), createdAt: now(), occurredAt: root.occurredAt, occurredOn: root.occurredOn, type: "answer", content, modelDraft: content, editedFromModel: false, tags: root.tags, relatedTo: root.id, disposition: root.disposition || "kept", remarks: [], origin: "deepseek", authorType: "ai", version: 1, sourceVersion: task.inputVersion, generation, sourceTaskId: task.id, ...(result.reasoningContent ? { reasoningContent: result.reasoningContent } : {}), ...(result.contextReceipt ? { contextReceipt: structuredClone(result.contextReceipt) } : {}) };
+        const root = work.root;
+        const generation = thoughts.filter(item => (
+          item.relatedTo === root.id && item.type === "answer"
+        )).length + 1;
+        const content = stripThoughtAnswerLead(result.content);
+        answer = {
+          id: createId(),
+          createdAt: now(),
+          occurredAt: root.occurredAt,
+          occurredOn: root.occurredOn,
+          type: "answer",
+          content,
+          modelDraft: content,
+          editedFromModel: false,
+          tags: root.tags,
+          relatedTo: root.id,
+          disposition: root.disposition || "kept",
+          remarks: [],
+          origin: "deepseek",
+          authorType: "ai",
+          version: 1,
+          sourceVersion: task.inputVersion,
+          generation,
+          sourceTaskId: task.id,
+          ...(result.reasoningContent ? { reasoningContent: result.reasoningContent } : {}),
+          ...(result.contextReceipt ? { contextReceipt: structuredClone(result.contextReceipt) } : {}),
+          ...(Array.isArray(result.citations) ? { citations: structuredClone(result.citations) } : {}),
+          ...(result.citationStatus ? { citationStatus: result.citationStatus } : {})
+        };
         thoughts.unshift(answer);
       }
       return answer.id;
     },
     saveFollowUp(work, task, result) {
-      const root = work.root, current = work.followUp;
-      current.answer = result.content; current.modelDraft = result.content; current.answeredAt = now(); current.origin = "deepseek"; current.authorType = "ai"; current.version = normalizedVersion(current.version) + 1; current.clientRequestId = task.clientRequestId; current.sourceTaskId = task.id;
+      const root = work.root;
+      const current = work.followUp;
+      current.answer = result.content;
+      current.modelDraft = result.content;
+      current.answeredAt = now();
+      current.origin = "deepseek";
+      current.authorType = "ai";
+      current.version = normalizedVersion(current.version) + 1;
+      current.clientRequestId = task.clientRequestId;
+      current.sourceTaskId = task.id;
       if (result.reasoningContent) current.reasoningContent = result.reasoningContent;
       if (result.contextReceipt) current.contextReceipt = structuredClone(result.contextReceipt);
+      if (Array.isArray(result.citations)) current.citations = structuredClone(result.citations);
+      if (result.citationStatus) current.citationStatus = result.citationStatus;
       root.version = normalizedVersion(root.version) + 1; root.updatedAt = now();
       return current.id;
     }

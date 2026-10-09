@@ -148,6 +148,17 @@ export function createRuntimePlatformHttp({
       now
     }),
     permissions: contentRuntime.perception,
+    canReadModelDetails: () => isOwner(requestStorage.getStore()?.user),
+    onPermissionsChanged: async () => {
+      try {
+        await backgroundAi?.releaseWaiting?.();
+      } catch (error) {
+        await logEvent("system", "ai_task.waiting_release_failed", {
+          level: "error",
+          message: error?.message || String(error)
+        });
+      }
+    },
     bodyJson
   });
   const trashHttp = createTrashHttp({

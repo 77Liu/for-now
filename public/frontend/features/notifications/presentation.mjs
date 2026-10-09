@@ -1,6 +1,9 @@
+import { WAITING_FOR_USER_MODEL_STATUS } from "../../shared/ai-task-status.mjs";
+
 const STATUS_LABELS = Object.freeze({
   queued: "排队中",
   running: "处理中",
+  [WAITING_FOR_USER_MODEL_STATUS]: "等待核心用户模型",
   succeeded: "已完成",
   failed: "失败",
   stale: "目标已变化",
@@ -13,7 +16,13 @@ const TASK_TITLES = Object.freeze({
   annotationShenji: "批注回复",
   contentImageUnderstanding: "图片理解",
   captureTranscription: "语音转写",
-  onboardingClaimExtraction: "资料整理"
+  onboardingClaimExtraction: "资料整理",
+  thoughtDraft: "思绪回答草稿",
+  thoughtPrompt: "思绪引子",
+  journalAssist: "日记辅助",
+  journalReflection: "日记回望",
+  chat: "共参对话",
+  analysis: "认知复盘"
 });
 
 const RETRYABLE_STATUSES = new Set(["failed", "stale"]);

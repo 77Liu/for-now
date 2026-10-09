@@ -1,3 +1,4 @@
+import { pendingAiTaskMessage } from "../../shared/ai-task-status.mjs";
 import { annotationMenuItems, annotationPresentation, groupAnnotationLineCounts, sortAnnotationItemsByPosition } from "./presentation.mjs";
 import { annotationRootKey, parseAnnotationRootKey } from "./model.mjs";
 
@@ -239,10 +240,40 @@ export function createAnnotationView({
     const { id: targetId } = parseAnnotationRootKey(ui.activeRootKey);
     const pending = model.pendingTask("annotationShenji", targetId, annotation.id);
     const assistant = (annotation.shenji || []).map(item => (
-      `<div class="shenji-turn">${item.message ? `<div class="shenji-user"><span>@你</span><div class="markdown-content">${renderMarkdown(item.message)}</div></div>` : ""}<div class="shenji-answer markdown-content"><span class="shenji-label">@神鸡</span>${renderMarkdown(item.answer)}</div>${contextReceiptMarkup(item.contextReceipt)}<small>${formatDate(item.createdAt)}</small></div>`
+      `<div class="shenji-turn">${item.message ? `<div class="shenji-user"><span>@你</span><div class="markdown-content">${renderMarkdown(item.message)}</div></div>` : ""}<div class="shenji-answer markdown-content"><span class="shenji-label">@神鸡</span>${renderMarkdown(item.answer)}</div>${contextReceiptMarkup(item.contextReceipt, item.citations, item.citationStatus)}<small>${formatDate(item.createdAt)}</small></div>`
     )).join("");
     const images = contentImagesMarkup(annotation, "comment");
-    return `<article class="comment-card ${mark ? `${presentation.kind}-card` : ""} ${ui.activeAnnotationId === annotation.id ? "active" : ""}" data-comment-card="${annotation.id}">${mark ? `<span class="annotation-kind">${escapeHtml(presentation.label)}</span>` : ""}<blockquote>${escapeHtml(annotation.quote)}</blockquote>${mark ? "" : `${annotation.text ? `<p>${escapeHtml(annotation.text)}</p>` : ""}<small>${formatDate(annotation.createdAt)}</small>${(annotation.replies || []).map(reply => `<div class="comment-reply"><p>${escapeHtml(reply.text)}</p><small>${formatDate(reply.createdAt)}</small></div>`).join("")}<form class="comment-reply-form" data-comment-reply="${annotation.id}"><input placeholder="回复这条评论…" required><button type="submit">回复</button></form>`}${images}${assistant ? `<div class="shenji-thread">${assistant}</div>` : ""}<form class="shenji-form" data-shenji-form="${annotation.id}" data-comment-root="${escapeHtml(ui.activeRootKey)}" ${ui.activeAssistantComposer === annotation.id ? "" : "hidden"}><div><span class="shenji-label">@神鸡</span><textarea name="message" rows="3" placeholder="可留空直接询问标记内容，也可补充你的问题…"></textarea></div><button type="submit" ${pending ? "disabled" : ""}>发送</button><p class="shenji-status" role="status">${pending ? "回复正在后台生成，可继续使用其他功能。" : ""}</p></form><div class="annotation-actions"><button type="button" class="shenji-toggle" data-shenji-toggle="${annotation.id}">@神鸡</button>${menuMarkup(annotation)}</div></article>`;
+    const replyMarkup = mark ? "" : `
+      ${annotation.text ? `<p>${escapeHtml(annotation.text)}</p>` : ""}
+      <small>${formatDate(annotation.createdAt)}</small>
+      ${(annotation.replies || []).map(reply => (
+        `<div class="comment-reply"><p>${escapeHtml(reply.text)}</p><small>${formatDate(reply.createdAt)}</small></div>`
+      )).join("")}
+      <form class="comment-reply-form" data-comment-reply="${annotation.id}">
+        <input placeholder="回复这条评论…" required><button type="submit">回复</button>
+      </form>`;
+    const pendingMessage = pending
+      ? escapeHtml(pendingAiTaskMessage(pending, "回复正在后台生成，可继续使用其他功能。"))
+      : "";
+    const assistantForm = `<form class="shenji-form" data-shenji-form="${annotation.id}" data-comment-root="${escapeHtml(ui.activeRootKey)}" ${ui.activeAssistantComposer === annotation.id ? "" : "hidden"}>
+      <div>
+        <span class="shenji-label">@神鸡</span>
+        <textarea name="message" rows="3" placeholder="可留空直接询问标记内容，也可补充你的问题…"></textarea>
+      </div>
+      <button type="submit" ${pending ? "disabled" : ""}>发送</button>
+      <p class="shenji-status" role="status">${pendingMessage}</p>
+    </form>`;
+    return `<article class="comment-card ${mark ? `${presentation.kind}-card` : ""} ${ui.activeAnnotationId === annotation.id ? "active" : ""}" data-comment-card="${annotation.id}">
+      ${mark ? `<span class="annotation-kind">${escapeHtml(presentation.label)}</span>` : ""}
+      <blockquote>${escapeHtml(annotation.quote)}</blockquote>
+      ${replyMarkup}${images}
+      ${assistant ? `<div class="shenji-thread">${assistant}</div>` : ""}
+      ${assistantForm}
+      <div class="annotation-actions">
+        <button type="button" class="shenji-toggle" data-shenji-toggle="${annotation.id}">@神鸡</button>
+        ${menuMarkup(annotation)}
+      </div>
+    </article>`;
   }
   function driftCard(annotation) {
     const context = annotation.originalContext
@@ -251,7 +282,7 @@ export function createAnnotationView({
       `<div class="comment-reply"><p>${escapeHtml(item.text)}</p><small>${formatDate(item.createdAt)}</small></div>`
     )).join("");
     const assistant = (annotation.shenji || []).map(item => (
-      `<div class="shenji-turn">${item.message ? `<div class="shenji-user"><span>@你</span><div class="markdown-content">${renderMarkdown(item.message)}</div></div>` : ""}<div class="shenji-answer markdown-content"><span class="shenji-label">@神鸡</span>${renderMarkdown(item.answer)}</div>${contextReceiptMarkup(item.contextReceipt)}</div>`
+      `<div class="shenji-turn">${item.message ? `<div class="shenji-user"><span>@你</span><div class="markdown-content">${renderMarkdown(item.message)}</div></div>` : ""}<div class="shenji-answer markdown-content"><span class="shenji-label">@神鸡</span>${renderMarkdown(item.answer)}</div>${contextReceiptMarkup(item.contextReceipt, item.citations, item.citationStatus)}</div>`
     )).join("");
     return `<article class="drift-card" data-drift-card="${annotation.id}"><div class="drift-meta"><span>${annotation.kind === "highlight" ? "失效划线" : "失效评论"}</span><small>${escapeHtml(annotation.driftReason || "原文已变化")}</small></div><div class="drift-context"><span>${escapeHtml(context.before)}</span><mark>${escapeHtml(context.focus || annotation.quote)}</mark><span>${escapeHtml(context.after)}</span></div>${annotation.text ? `<p>${escapeHtml(annotation.text)}</p>` : ""}${replies}${assistant}<button type="button" class="comment-delete" data-drift-delete="${annotation.id}">删除漂流记录</button></article>`;
   }

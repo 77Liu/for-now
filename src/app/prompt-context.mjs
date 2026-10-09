@@ -33,9 +33,10 @@ function promptSafeJson(value) {
     .replace(/\u2029/g, "\\u2029");
 }
 
-function materialPayload(item, temporalScope = "") {
+function materialPayload(item, temporalScope = "", includeCitationId = false) {
   return {
     id: String(item?.id || ""),
+    ...(includeCitationId ? { citationId: `context:${String(item?.id || "")}` } : {}),
     channel: String(item?.channel || ""),
     resourceType: String(item?.sourceRef?.resourceType || ""),
     recordType: String(item?.recordType || item?.informationType || ""),
@@ -85,6 +86,7 @@ export function compileWorkingContextPrompt({
   task,
   currentMaterial,
   historicalMaterial,
+  coreUserModel = null,
   generatedAt = "",
   notice = "",
   taskDetails = null
@@ -98,6 +100,10 @@ export function compileWorkingContextPrompt({
   }
   const sourceBoundaries = optionalPromptText("orchestration.context.boundaries");
   const temporalContract = optionalPromptText("orchestration.context.temporal");
+  const answerCitationContract = ROLE_BY_SCENE[scene] === "answer"
+    ? optionalPromptText("orchestration.answer.citations")
+    : "";
+  const includeCitationIds = Boolean(answerCitationContract);
   const asOf = typeof generatedAt === "string" && generatedAt === safeIso(generatedAt)
     ? generatedAt || null : null;
   const temporalScope = item => {
@@ -108,9 +114,38 @@ export function compileWorkingContextPrompt({
       : Date.parse(occurredAt) > Date.parse(asOf) ? "future-record" : "reference-time-record";
   };
   const history = list(historicalMaterial).map(item => materialPayload(item,
-    temporalScope(item)));
+    temporalScope(item), includeCitationIds));
   const payload = {
     schemaVersion: STRUCTURED_WORKING_CONTEXT_SCHEMA_VERSION,
+    ...(coreUserModel && typeof coreUserModel === "object" ? {
+      coreUserModel: {
+        fingerprint: String(coreUserModel.fingerprint || ""),
+        claims: list(coreUserModel.claims).map(item => ({
+          domain: String(item?.domain || ""),
+          epistemic: String(item?.epistemic || ""),
+          statement: String(item?.statement || ""),
+          scope: String(item?.scope || ""),
+          evidence: list(item?.evidence).map(evidence => ({
+            sourceId: String(evidence?.sourceId || ""),
+            citationId: String(evidence?.citationId || ""),
+            sourceVersion: Number(evidence?.sourceVersion) || 0,
+            exactQuote: String(evidence?.exactQuote || "")
+          }))
+        })),
+        answers: list(coreUserModel.answers).map(item => ({
+          sourceId: String(item?.sourceId || ""),
+          citationId: String(item?.citationId || ""),
+          title: String(item?.title || ""),
+          informationType: String(item?.informationType || ""),
+          text: String(item?.text || ""),
+          sourceVersion: Number(item?.sourceVersion) || 0
+        })),
+        unknowns: list(coreUserModel.unknowns).map(item => ({
+          questionId: String(item?.questionId || ""),
+          answerDisposition: String(item?.answerDisposition || "")
+        }))
+      }
+    } : {}),
     scene,
     ...(sourceBoundaries ? { asOf } : {}),
     currentTask: {
@@ -122,7 +157,7 @@ export function compileWorkingContextPrompt({
         ? { details: structuredClone(taskDetails) }
         : {})
     },
-    currentMaterial: list(currentMaterial).map(item => materialPayload(item)),
+    currentMaterial: list(currentMaterial).map(item => materialPayload(item, "", includeCitationIds)),
     applicableUserModel: history.filter(item => item.resourceType === "userClaim"),
     relevantEpisodes: history.filter(item => (
       !["userClaim", "modelUnknown"].includes(item.resourceType)
@@ -141,7 +176,12 @@ export function compileWorkingContextPrompt({
   };
   return {
     prompt: renderPrompt(contract.envelopeId, {
-      taskContract: [promptText(contract.taskPromptId), sourceBoundaries, temporalContract].filter(Boolean).join("\n\n"),
+      taskContract: [
+        promptText(contract.taskPromptId),
+        answerCitationContract,
+        sourceBoundaries,
+        temporalContract
+      ].filter(Boolean).join("\n\n"),
       payload: promptSafeJson(payload)
     }),
     contract

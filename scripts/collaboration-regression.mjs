@@ -53,7 +53,7 @@ const repository = createJsonStoreRepository({
     commits.push({ key, document: structuredClone(document) });
   }
 });
-const targets = createAiTaskTargets({ thoughts, annotations, getAccountId: account, hash });
+const targets = createAiTaskTargets({ thoughts, annotations, getAccountId: account, hash, now });
 const scheduled = [], calls = [];
 let generate = async () => ({ content: "生成回答", reasoningContent: "私有思考" });
 const background = createBackgroundAi({

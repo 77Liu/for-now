@@ -687,6 +687,18 @@ assert.equal((await request("account-a", "POST", "/api/journals/assist", {
 response = await request("account-a", "POST", "/api/v1/journals/assist", {
   body: { mode: "topic", occurredOn: "2026-09-29", content: "继续梳理" }
 });
+assert.equal(response.status, 400);
+assert.equal(response.body.error.code, "IDEMPOTENCY_KEY_REQUIRED");
+response = await request("account-a", "POST", "/api/v1/journals/assist", {
+  headers: { "idempotency-key": "x".repeat(101) },
+  body: { mode: "topic", occurredOn: "2026-09-29", content: "继续梳理" }
+});
+assert.equal(response.status, 400);
+assert.equal(response.body.error.code, "INVALID_IDEMPOTENCY_KEY");
+response = await request("account-a", "POST", "/api/v1/journals/assist", {
+  headers: { "idempotency-key": "journal-assist-1" },
+  body: { mode: "topic", occurredOn: "2026-09-29", content: "继续梳理" }
+});
 assert.equal(response.status, 200);
 assert.equal(response.body.error, null);
 assert.equal(response.body.data.mode, "topic");

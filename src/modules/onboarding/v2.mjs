@@ -17,6 +17,11 @@ const SESSION_STEPS = new Set([
 ]);
 const SELECTED_FLOWS = new Set(["undecided", "legacy", "v2"]);
 const HORIZONS = new Set(["3m", "6m", "12m", "custom", "unknown"]);
+const ANSWER_DISPOSITIONS = new Set(["unknown", "declined"]);
+const ANSWER_DISPOSITION_LABELS = Object.freeze({
+  unknown: "目前不知道",
+  declined: "不愿回答"
+});
 const ANSWER_DEFINITIONS = Object.freeze({
   currentContext: { kind: "text", max: 2000, title: "当前处境", informationType: "user_fact" },
   desiredChanges: { kind: "list", max: 300, horizon: true, title: "希望的变化", informationType: "user_viewpoint" },
@@ -49,6 +54,7 @@ const QUESTION_SCHEMA = Object.freeze([
     prompt: "你现在处在怎样的生活阶段？有哪些正在发生、会影响你选择的事？",
     kind: "text",
     canSkip: true,
+    answerDispositions: Object.entries(ANSWER_DISPOSITION_LABELS).map(([value, label]) => ({ value, label })),
     limits: { maxLength: 2000 }
   },
   {
@@ -58,6 +64,7 @@ const QUESTION_SCHEMA = Object.freeze([
     prompt: "接下来一段时间，你最希望发生哪些变化？",
     kind: "list",
     canSkip: true,
+    answerDispositions: Object.entries(ANSWER_DISPOSITION_LABELS).map(([value, label]) => ({ value, label })),
     limits: { maxItems: 3, itemMaxLength: 300, horizonMaxLength: 100 },
     horizons: ["3m", "6m", "12m", "custom", "unknown"]
   },
@@ -68,6 +75,7 @@ const QUESTION_SCHEMA = Object.freeze([
     prompt: "最近有哪些事情正在消耗你，或让推进变得困难？",
     kind: "list",
     canSkip: true,
+    answerDispositions: Object.entries(ANSWER_DISPOSITION_LABELS).map(([value, label]) => ({ value, label })),
     limits: { maxItems: 3, itemMaxLength: 300 }
   },
   {
@@ -77,6 +85,7 @@ const QUESTION_SCHEMA = Object.freeze([
     prompt: "你最近的作息、工作学习、运动或社交，大致是什么节奏？",
     kind: "text",
     canSkip: true,
+    answerDispositions: Object.entries(ANSWER_DISPOSITION_LABELS).map(([value, label]) => ({ value, label })),
     limits: { maxLength: 2000 }
   },
   {
@@ -86,6 +95,7 @@ const QUESTION_SCHEMA = Object.freeze([
     prompt: "你希望我用什么方式和你一起想、一起做？",
     kind: "collaboration",
     canSkip: true,
+    answerDispositions: Object.entries(ANSWER_DISPOSITION_LABELS).map(([value, label]) => ({ value, label })),
     limits: { additionalBoundaryMaxLength: 1000 },
     axes: {
       responseLength: {
@@ -130,7 +140,8 @@ export const defaultOnboardingV2 = {
       suggestionMode: { value: "actionFirst", source: "system_default" },
       challengeStyle: { value: "gentle", source: "system_default" },
       additionalBoundary: "",
-      contextAllowed: true
+      contextAllowed: true,
+      answerVersion: 0
     },
     startedAt: "",
     pausedAt: "",
@@ -189,10 +200,14 @@ function normalizeAnswer(questionId, value) {
   const content = definition.kind === "text"
     ? { rawText: safeText(value.rawText, definition.max) }
     : { structuredValue: normalizeList(value.structuredValue, definition.max, definition.horizon) };
-  if (!(content.rawText || content.structuredValue?.length)) return null;
+  const answerDisposition = ANSWER_DISPOSITIONS.has(value.answerDisposition)
+    ? value.answerDisposition
+    : "";
+  if (!(content.rawText || content.structuredValue?.length) && !answerDisposition) return null;
   return {
     questionId,
     ...content,
+    ...(answerDisposition ? { answerDisposition } : {}),
     occurredAt: safeIso(value.occurredAt),
     updatedAt: safeIso(value.updatedAt),
     version: recordVersion(value.version),
@@ -211,22 +226,45 @@ function normalizeCollaboration(value) {
       source: supplied ? "user" : "system_default"
     };
   }
+  const answerDisposition = ANSWER_DISPOSITIONS.has(input.answerDisposition)
+    ? input.answerDisposition
+    : "";
+  const hasUserResponse = Boolean(answerDisposition || input.additionalBoundary)
+    || Object.keys(COLLABORATION_AXES).some(key => result[key].source === "user");
   return {
     ...result,
     additionalBoundary: safeText(input.additionalBoundary, 1000),
-    contextAllowed: input.contextAllowed !== false
+    contextAllowed: input.contextAllowed !== false,
+    ...(answerDisposition ? { answerDisposition } : {}),
+    answerVersion: integer(input.answerVersion, hasUserResponse ? 1 : 0)
   };
 }
 
 function readinessFor(session) {
   const answers = session.answers;
   const collaboration = session.collaboration;
-  const userCollaboration = Object.keys(COLLABORATION_AXES).some(
-    key => collaboration[key].source === "user"
-  ) || Boolean(collaboration.additionalBoundary);
-  const hasInput = Boolean(Object.keys(answers).length || userCollaboration);
+  const answeredContent = answer => Boolean(
+    answer
+    && !ANSWER_DISPOSITIONS.has(answer.answerDisposition)
+    && (answer.rawText || answer.structuredValue?.length)
+  );
+  const userCollaboration = !ANSWER_DISPOSITIONS.has(collaboration.answerDisposition) && (
+    Object.keys(COLLABORATION_AXES).some(key => collaboration[key].source === "user")
+    || Boolean(collaboration.additionalBoundary)
+  );
+  const hasExplicitDisposition = Object.values(answers).some(answer => (
+    ANSWER_DISPOSITIONS.has(answer.answerDisposition)
+  )) || ANSWER_DISPOSITIONS.has(collaboration.answerDisposition);
+  const hasInput = Boolean(
+    Object.values(answers).some(answeredContent)
+    || userCollaboration
+    || hasExplicitDisposition
+  );
   if (!hasInput) return "empty";
-  if (answers.currentContext && (answers.desiredChanges || answers.recentObstacles)) return "usable";
+  if (answeredContent(answers.currentContext)
+    && (answeredContent(answers.desiredChanges) || answeredContent(answers.recentObstacles))) {
+    return "usable";
+  }
   return "partial";
 }
 
@@ -324,9 +362,15 @@ function parseTextAnswer(questionId, input, fields) {
     fieldError(fields, `answers.${questionId}`, "必须是对象或 null");
     return null;
   }
-  if (!hasOwn(input, "rawText") || typeof input.rawText !== "string") {
+  const answerDisposition = input.answerDisposition;
+  const hasDispositionField = hasOwn(input, "answerDisposition");
+  const hasDisposition = ANSWER_DISPOSITIONS.has(answerDisposition);
+  if (hasDispositionField && !hasDisposition) {
+    fieldError(fields, `answers.${questionId}.answerDisposition`, "回答状态无效");
+  }
+  if ((!hasOwn(input, "rawText") || typeof input.rawText !== "string") && !hasDispositionField) {
     fieldError(fields, `answers.${questionId}.rawText`, "必须是字符串");
-  } else if (input.rawText.trim().length > definition.max) {
+  } else if (typeof input.rawText === "string" && input.rawText.trim().length > definition.max) {
     fieldError(fields, `answers.${questionId}.rawText`, `最多 ${definition.max} 个字符`);
   }
   if (hasOwn(input, "occurredAt") && input.occurredAt && !safeIso(input.occurredAt)) {
@@ -337,6 +381,7 @@ function parseTextAnswer(questionId, input, fields) {
   }
   return {
     rawText: safeText(input.rawText, definition.max),
+    ...(hasDisposition ? { answerDisposition } : {}),
     ...(hasOwn(input, "occurredAt") ? { occurredAt: safeIso(input.occurredAt) } : {}),
     ...(hasOwn(input, "contextAllowed") ? { contextAllowed: input.contextAllowed } : {})
   };
@@ -348,15 +393,22 @@ function parseListAnswer(questionId, input, fields) {
     fieldError(fields, `answers.${questionId}`, "必须是对象或 null");
     return null;
   }
-  if (!Array.isArray(input.structuredValue)) {
+  const answerDisposition = input.answerDisposition;
+  const hasDispositionField = hasOwn(input, "answerDisposition");
+  const hasDisposition = ANSWER_DISPOSITIONS.has(answerDisposition);
+  if (hasDispositionField && !hasDisposition) {
+    fieldError(fields, `answers.${questionId}.answerDisposition`, "回答状态无效");
+  }
+  if (!Array.isArray(input.structuredValue) && !hasDispositionField) {
     fieldError(fields, `answers.${questionId}.structuredValue`, "必须是数组");
     return null;
   }
-  if (input.structuredValue.length > 3) {
+  const suppliedValues = Array.isArray(input.structuredValue) ? input.structuredValue : [];
+  if (suppliedValues.length > 3) {
     fieldError(fields, `answers.${questionId}.structuredValue`, "最多 3 项");
   }
   const structuredValue = [];
-  for (const [index, item] of input.structuredValue.slice(0, 3).entries()) {
+  for (const [index, item] of suppliedValues.slice(0, 3).entries()) {
     const base = `answers.${questionId}.structuredValue.${index}`;
     if (!objectValue(item)) {
       fieldError(fields, base, "必须是对象");
@@ -397,6 +449,7 @@ function parseListAnswer(questionId, input, fields) {
   }
   return {
     structuredValue,
+    ...(hasDisposition ? { answerDisposition } : {}),
     ...(hasOwn(input, "occurredAt") ? { occurredAt: safeIso(input.occurredAt) } : {}),
     ...(hasOwn(input, "contextAllowed") ? { contextAllowed: input.contextAllowed } : {})
   };
@@ -433,6 +486,11 @@ function parseCollaboration(input, fields) {
     if (typeof input.contextAllowed !== "boolean") {
       fieldError(fields, "collaboration.contextAllowed", "必须是布尔值");
     } else result.contextAllowed = input.contextAllowed;
+  }
+  if (hasOwn(input, "answerDisposition")) {
+    if (!ANSWER_DISPOSITIONS.has(input.answerDisposition)) {
+      fieldError(fields, "collaboration.answerDisposition", "回答状态无效");
+    } else result.answerDisposition = input.answerDisposition;
   }
   return result;
 }
@@ -479,9 +537,17 @@ function parseSessionPatch(input) {
 const answerComparable = answer => answer ? {
   ...(hasOwn(answer, "rawText") ? { rawText: answer.rawText } : {}),
   ...(hasOwn(answer, "structuredValue") ? { structuredValue: answer.structuredValue } : {}),
+  ...(hasOwn(answer, "answerDisposition") ? { answerDisposition: answer.answerDisposition } : {}),
   occurredAt: answer.occurredAt,
   contextAllowed: answer.contextAllowed
 } : null;
+
+const collaborationComparable = collaboration => ({
+  ...Object.fromEntries(Object.keys(COLLABORATION_AXES).map(key => [key, collaboration[key]])),
+  additionalBoundary: collaboration.additionalBoundary,
+  answerDisposition: collaboration.answerDisposition || "",
+  contextAllowed: collaboration.contextAllowed
+});
 
 function mergeAnswer(questionId, patch, existing, at) {
   if (patch === null) return null;
@@ -489,10 +555,15 @@ function mergeAnswer(questionId, patch, existing, at) {
   const content = definition.kind === "text"
     ? { rawText: patch.rawText }
     : { structuredValue: patch.structuredValue };
-  if (!(content.rawText || content.structuredValue?.length)) return null;
+  const hasContent = Boolean(content.rawText || content.structuredValue?.length);
+  const answerDisposition = ANSWER_DISPOSITIONS.has(patch.answerDisposition)
+    ? patch.answerDisposition
+    : hasContent ? "" : existing?.answerDisposition || "";
+  if (!hasContent && !answerDisposition) return null;
   const next = {
     questionId,
     ...content,
+    ...(answerDisposition ? { answerDisposition } : {}),
     occurredAt: hasOwn(patch, "occurredAt") ? patch.occurredAt : existing?.occurredAt || at,
     contextAllowed: hasOwn(patch, "contextAllowed") ? patch.contextAllowed : existing?.contextAllowed !== false
   };
@@ -533,9 +604,20 @@ function applySessionPatch(store, patch, expectedVersion, at) {
   if (hasOwn(patch.collaboration, "additionalBoundary")) {
     collaboration.additionalBoundary = patch.collaboration.additionalBoundary;
   }
+  const hasCollaborationAnswerFields = Object.keys(COLLABORATION_AXES).some(
+    key => hasOwn(patch.collaboration, key)
+  ) || hasOwn(patch.collaboration, "additionalBoundary");
+  if (hasOwn(patch.collaboration, "answerDisposition")) {
+    collaboration.answerDisposition = patch.collaboration.answerDisposition;
+  } else if (hasCollaborationAnswerFields) {
+    delete collaboration.answerDisposition;
+  }
   if (hasOwn(patch.collaboration, "contextAllowed")) {
     collaboration.contextAllowed = patch.collaboration.contextAllowed;
   }
+  const collaborationChanged = canonicalJson(collaborationComparable(collaboration))
+    !== canonicalJson(collaborationComparable(current.session.collaboration));
+  collaboration.answerVersion = current.session.collaboration.answerVersion + Number(collaborationChanged);
   const requestedStatus = patch.status || current.session.status;
   const status = selectedFlow === "legacy" ? "skipped" : requestedStatus === "skipped" ? "skipped" : requestedStatus;
   const requestedStep = patch.step || current.session.step;
@@ -612,11 +694,14 @@ export function onboardingV2ContextEntries(value) {
   for (const [questionId, definition] of Object.entries(ANSWER_DEFINITIONS)) {
     const answer = onboarding.session.answers[questionId];
     if (!answer?.contextAllowed) continue;
+    const disposition = ANSWER_DISPOSITION_LABELS[answer.answerDisposition];
     entries.push({
       id: questionId,
       title: definition.title,
-      informationType: definition.informationType,
-      text: definition.kind === "text" ? answer.rawText : listText(answer.structuredValue),
+      informationType: disposition ? "user_viewpoint" : definition.informationType,
+      text: disposition
+        ? `用户对“${definition.title}”的选择：${disposition}`
+        : definition.kind === "text" ? answer.rawText : listText(answer.structuredValue),
       occurredAt: answer.occurredAt,
       updatedAt: answer.updatedAt,
       version: answer.version
@@ -624,15 +709,18 @@ export function onboardingV2ContextEntries(value) {
   }
   const collaboration = onboarding.session.collaboration;
   if (collaboration.contextAllowed) {
+    const disposition = ANSWER_DISPOSITION_LABELS[collaboration.answerDisposition];
     const userAxes = Object.entries(COLLABORATION_AXES)
       .filter(([key]) => collaboration[key].source === "user")
       .map(([key, definition]) => definition.labels[collaboration[key].value]);
-    const text = [
-      userAxes.length ? `明确选择：${userAxes.join("；")}` : "",
-      collaboration.additionalBoundary
-        ? `补充边界：${collaboration.additionalBoundary}`
-        : ""
-    ].filter(Boolean).join("\n");
+    const text = disposition
+      ? `用户对“怎么帮助”的选择：${disposition}`
+      : [
+        userAxes.length ? `明确选择：${userAxes.join("；")}` : "",
+        collaboration.additionalBoundary
+          ? `补充边界：${collaboration.additionalBoundary}`
+          : ""
+      ].filter(Boolean).join("\n");
     if (text) {
       entries.push({
         id: "collaboration",
@@ -641,7 +729,7 @@ export function onboardingV2ContextEntries(value) {
         text,
         occurredAt: onboarding.session.startedAt,
         updatedAt: onboarding.session.updatedAt,
-        version: Math.max(1, onboarding.session.revision)
+        version: collaboration.answerVersion || Math.max(1, onboarding.session.revision)
       });
     }
   }

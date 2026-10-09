@@ -21,6 +21,7 @@ export function installGlobalEvents({
   entryKeyIntent,imageRecordPayload,captureRecordPayload,contentImagePaths,
   clearSubmittedContentImageDraft,discardContentImageUploads,llmProfile,
   runAnswerInModal,requestStream,startBackgroundChainAnswer,request,
+  resolvePersonalizedTask,
   quoteTagPickerConfig,quoteTagPickerElements,updateQuoteTagPicker,
   renderQuoteTagPicker,quoteTagsForSubmission,quoteTagCandidates,
   closeSelectionQuoteModal,
@@ -325,6 +326,7 @@ installRecordSubmissionEvents({
   contentImagePaths, imageRecordPayload, captureRecordPayload, publishDomains,
   clearSubmittedContentImageDraft, discardContentImageUploads,
   renderTagComposer, closeHomeEditors, request, runAnswerInModal, requestStream,
+  resolvePersonalizedTask,
   startBackgroundChainAnswer, commitDraftTags, chainRecordKind,
   syncChainRecordKind
 });

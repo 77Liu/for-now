@@ -140,7 +140,7 @@ store.journals = [{ ...event, title: "RAW_TITLE", content: "RAW_JOURNAL", tags: 
 store.captures = [{ ...event, content: "RAW_CAPTURE", tags: ["原始"] }];
 store.captures.push({ ...event, id: "discarded-capture", content: "DISCARDED_CONTEXT", disposition: "discarded" });
 store.captures.push({ ...event, id: "disabled-capture", content: "DISABLED_CONTEXT", contextAllowed: false });
-store.chats = [{ ...event, message: "RAW_CHAT", answer: "AI_CHAT", reasoningContent: "PRIVATE_REASONING" }];
+store.chats = [{ ...event, id: "chat-1", message: "RAW_CHAT", answer: "AI_CHAT", reasoningContent: "PRIVATE_REASONING" }];
 store.dailyRecords = [
   { ...event, type: "weight", measuredWeight: null, bodyFatPercent: 21, description: "RAW_HEALTH" },
   { ...event, type: "exercise", exerciseType: "力量训练", durationSeconds: 3123, activeCalories: 324, totalCalories: null },
@@ -173,6 +173,7 @@ assert.equal(projection.overview.sources.some(source => ["discarded-capture", "d
 assert.equal(JSON.stringify(projection.overview).includes("PRIVATE_REASONING"), false);
 assert.ok(projection.overview.conclusions.every(item => item.sourceIds.every(id => projection.overview.sources.some(source => source.id === id))));
 const permissionDeniedStore = structuredClone(store);
+const allowedStarter = thoughtPromptContext(store, "2026-09-28");
 permissionDeniedStore.captures.unshift({
   ...event,
   id: "permission-denied-capture",
@@ -183,6 +184,15 @@ permissionDeniedStore.evidencePermissions.push({
   schemaVersion: 1,
   accountId: "a",
   sourceKey: JSON.stringify(["capture", "permission-denied-capture", "", ""]),
+  contextAllowed: false,
+  learningAllowed: true,
+  revision: 2,
+  updatedAt: now()
+});
+permissionDeniedStore.evidencePermissions.push({
+  schemaVersion: 1,
+  accountId: "a",
+  sourceKey: JSON.stringify(["chat", "chat-1", "", "message"]),
   contextAllowed: false,
   learningAllowed: true,
   revision: 2,
@@ -203,6 +213,10 @@ assert.equal(
   false,
   "thought starters must not bypass a withdrawn context permission"
 );
+const deniedStarter = thoughtPromptContext(permissionDeniedStore, "2026-09-28");
+assert.equal(deniedStarter.text.includes("RAW_CHAT"), false, "thought starters must respect chat context permissions");
+assert.notEqual(deniedStarter.contextFingerprint, allowedStarter.contextFingerprint,
+  "thought starter context fingerprints must change when a source permission changes");
 assert.equal(
   personalContextProjection(permissionDeniedStore, {
     permissionPurpose: "learning"

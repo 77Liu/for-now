@@ -50,6 +50,7 @@ export {
   userModelOpenApiFragment
 } from "./openapi/user-model.mjs";
 export { createThoughtHttp } from "./thoughts.mjs";
+export { sendPersonalizedTaskLegacy, sendPersonalizedTaskV1 } from "./ai-task-responses.mjs";
 export { createCheckinHttp } from "./checkins.mjs";
 export { createHealthRecordHttp } from "./health-records.mjs";
 export { createImageRecognitionHttp } from "./image-recognition.mjs";

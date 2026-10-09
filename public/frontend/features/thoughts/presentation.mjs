@@ -24,6 +24,7 @@ import {
   thoughtListPreview,
   thoughtMonthLabel
 } from "./model.mjs";
+import { pendingAiTaskMessage } from "../../shared/ai-task-status.mjs";
 
 function requireFunction(value, name) {
   if (typeof value !== "function") {
@@ -102,7 +103,12 @@ export function createThoughtPresentation({
         label: "AI 回答文字朗读"
       })
       : "";
-    return `<article class="thought-content-block ${ai ? "ai" : ""} ${current ? "current-conclusion" : ""}" data-thought-kind="${escapeHtml(item.type)}" data-thought-block-id="${escapeHtml(item.id)}"><header><div><span class="thought-identity-icon" aria-hidden="true">${identities[item.type] || "·"}</span><b>${labels[item.type] || "内容"}</b>${current ? "<small>当前</small>" : ""}</div><time>${formatDate(eventTimestamp(item))}</time></header>${contextReceiptMarkup(item.contextReceipt)}${thoughtBlockBody(item.content || item.modelDraft || "", `thought:${question.id}:block:${item.id}`)}${contentImagesMarkup(item, "thoughtBlock")}${speech}${item.modelDraft && item.editedFromModel ? `<small class="edit-signal">${item.content ? "由 AI 草稿修改后保留" : "未保留 AI 草稿"}</small>` : ""}<footer><span></span><div><button class="subtle-action" type="button" data-thought-block-edit="${escapeHtml(item.id)}" data-root-id="${escapeHtml(question.id)}">编辑</button><button class="subtle-action danger" type="button" data-thought-block-delete="${escapeHtml(item.id)}" data-root-id="${escapeHtml(question.id)}">删除</button></div></footer></article>`;
+    const answerEvidence = contextReceiptMarkup(
+      item.contextReceipt,
+      item.citations,
+      item.citationStatus
+    );
+    return `<article class="thought-content-block ${ai ? "ai" : ""} ${current ? "current-conclusion" : ""}" data-thought-kind="${escapeHtml(item.type)}" data-thought-block-id="${escapeHtml(item.id)}"><header><div><span class="thought-identity-icon" aria-hidden="true">${identities[item.type] || "·"}</span><b>${labels[item.type] || "内容"}</b>${current ? "<small>当前</small>" : ""}</div><time>${formatDate(eventTimestamp(item))}</time></header>${answerEvidence}${thoughtBlockBody(item.content || item.modelDraft || "", `thought:${question.id}:block:${item.id}`)}${contentImagesMarkup(item, "thoughtBlock")}${speech}${item.modelDraft && item.editedFromModel ? `<small class="edit-signal">${item.content ? "由 AI 草稿修改后保留" : "未保留 AI 草稿"}</small>` : ""}<footer><span></span><div><button class="subtle-action" type="button" data-thought-block-edit="${escapeHtml(item.id)}" data-root-id="${escapeHtml(question.id)}">编辑</button><button class="subtle-action danger" type="button" data-thought-block-delete="${escapeHtml(item.id)}" data-root-id="${escapeHtml(question.id)}">删除</button></div></footer></article>`;
   }
 
   function followUpBlock(followUp, question, index) {
@@ -112,7 +118,49 @@ export function createThoughtPresentation({
       question.id,
       followUp.id
     );
-    return `<details class="response-entry thought-content-block followup-block" data-followup-id="${escapeHtml(followUp.id)}"><summary><div class="response-summary-copy"><div class="response-summary-head"><strong>追问 ${index + 1}</strong><span>用户原文</span><small>版本 ${followUp.version || 1} · ${formatDate(followUp.updatedAt || followUp.createdAt)}</small></div><p>${escapeHtml(plainPreview(followUp.question))}</p></div></summary><div class="response-entry-body"><div class="followup-question"><b>追问问题</b><div class="markdown-content">${renderMarkdown(followUp.question)}</div></div><div class="followup-answer"><b>追问回答</b>${followUp.answer ? `<div class="model-answer-content">${contextReceiptMarkup(followUp.contextReceipt)}<div class="markdown-content">${renderMarkdown(followUp.answer)}</div></div>` : `<form class="manual-followup-answer" data-followup-manual-answer="${escapeHtml(followUp.id)}" data-root-id="${escapeHtml(question.id)}" data-version="${followUp.version || 1}"><textarea rows="3" placeholder="直接写下回答…" aria-label="追问回答" required></textarea><div><button class="quiet-button" type="submit">保存回答</button><button type="button" class="subtle-action answer-action" data-followup-answer="${escapeHtml(followUp.id)}" data-root-id="${escapeHtml(question.id)}" ${pending ? "disabled" : ""}>✦ 给我回答</button></div></form>`}<p class="followup-status" role="status" aria-live="polite">${pending ? "回答正在后台生成，可继续使用其他功能。" : ""}</p></div><div class="followup-record-actions"><button type="button" class="subtle-action" data-followup-edit-toggle="${escapeHtml(followUp.id)}">编辑</button><button type="button" class="subtle-action danger" data-followup-delete="${escapeHtml(followUp.id)}" data-root-id="${escapeHtml(question.id)}">删除</button></div><form class="followup-edit-form" data-followup-edit="${escapeHtml(followUp.id)}" data-root-id="${escapeHtml(question.id)}" data-version="${followUp.version || 1}" hidden><label>追问问题<textarea rows="3" name="question" required>${escapeHtml(followUp.question)}</textarea></label><label>追问回答（可空）<textarea rows="5" name="answer">${escapeHtml(followUp.answer || "")}</textarea></label><div><button class="quiet-button" type="submit">保存修改</button><button class="subtle-action" type="button" data-followup-edit-cancel="${escapeHtml(followUp.id)}">取消</button></div></form></div></details>`;
+    const answerMarkup = followUp.answer
+      ? `<div class="model-answer-content">${contextReceiptMarkup(followUp.contextReceipt, followUp.citations, followUp.citationStatus)}<div class="markdown-content">${renderMarkdown(followUp.answer)}</div></div>`
+      : `<form class="manual-followup-answer" data-followup-manual-answer="${escapeHtml(followUp.id)}" data-root-id="${escapeHtml(question.id)}" data-version="${followUp.version || 1}">
+          <textarea rows="3" placeholder="直接写下回答…" aria-label="追问回答" required></textarea>
+          <div>
+            <button class="quiet-button" type="submit">保存回答</button>
+            <button type="button" class="subtle-action answer-action" data-followup-answer="${escapeHtml(followUp.id)}" data-root-id="${escapeHtml(question.id)}" ${pending ? "disabled" : ""}>✦ 给我回答</button>
+          </div>
+        </form>`;
+    const editFormMarkup = `<form class="followup-edit-form" data-followup-edit="${escapeHtml(followUp.id)}" data-root-id="${escapeHtml(question.id)}" data-version="${followUp.version || 1}" hidden>
+      <label>追问问题<textarea rows="3" name="question" required>${escapeHtml(followUp.question)}</textarea></label>
+      <label>追问回答（可空）<textarea rows="5" name="answer">${escapeHtml(followUp.answer || "")}</textarea></label>
+      <div>
+        <button class="quiet-button" type="submit">保存修改</button>
+        <button class="subtle-action" type="button" data-followup-edit-cancel="${escapeHtml(followUp.id)}">取消</button>
+      </div>
+    </form>`;
+    const pendingMessage = pending
+      ? escapeHtml(pendingAiTaskMessage(pending, "回答正在后台生成，可继续使用其他功能。"))
+      : "";
+    return `<details class="response-entry thought-content-block followup-block" data-followup-id="${escapeHtml(followUp.id)}">
+      <summary>
+        <div class="response-summary-copy">
+          <div class="response-summary-head">
+            <strong>追问 ${index + 1}</strong><span>用户原文</span>
+            <small>版本 ${followUp.version || 1} · ${formatDate(followUp.updatedAt || followUp.createdAt)}</small>
+          </div>
+          <p>${escapeHtml(plainPreview(followUp.question))}</p>
+        </div>
+      </summary>
+      <div class="response-entry-body">
+        <div class="followup-question"><b>追问问题</b><div class="markdown-content">${renderMarkdown(followUp.question)}</div></div>
+        <div class="followup-answer">
+          <b>追问回答</b>${answerMarkup}
+          <p class="followup-status" role="status" aria-live="polite">${pendingMessage}</p>
+        </div>
+        <div class="followup-record-actions">
+          <button type="button" class="subtle-action" data-followup-edit-toggle="${escapeHtml(followUp.id)}">编辑</button>
+          <button type="button" class="subtle-action danger" data-followup-delete="${escapeHtml(followUp.id)}" data-root-id="${escapeHtml(question.id)}">删除</button>
+        </div>
+        ${editFormMarkup}
+      </div>
+    </details>`;
   }
 
   function stream(question, children) {
@@ -140,6 +188,7 @@ export function createThoughtPresentation({
     compactDate = false
   } = {}) {
     const answers = children.filter(item => item.type === "answer");
+    const pendingAnswer = pendingThoughtTask(getSnapshot().aiTasks, "thoughtAnswer", question.id);
     const answerCount = Number.isFinite(Number(question.answerCount))
       ? Number(question.answerCount)
       : answers.length;
@@ -154,9 +203,17 @@ export function createThoughtPresentation({
     const tracePending = (getSnapshot().insights?.aiOnlyThoughtIds || []).includes(question.id)
       ? '<span class="thought-trace-pending">📫没有你的痕迹⏳</span>'
       : "";
+    const answerButton = `<button class="subtle-action answer-action" data-answer-chain="${escapeHtml(question.id)}" ${pendingAnswer ? "disabled" : ""}>✦ ${answerCount ? "重新回答" : "给我回答"}</button>`;
+    const pendingAnswerStatus = pendingAnswer
+      ? `<p class="card-action-status working" role="status" aria-live="polite">${escapeHtml(pendingAiTaskMessage(pendingAnswer, "回答正在后台生成，可继续使用其他功能。"))}</p>`
+      : "";
     const actions = syncing
       ? `<span class="checkin-sync-state ${escapeHtml(syncing)}">${syncing === "pending" ? "待同步" : "正在同步"}</span>`
-      : `<span class="thought-action-group thought-action-grow"><button class="primary-button" data-thought-block-add="idea" data-root-id="${escapeHtml(question.id)}">＋ 补充</button><button class="subtle-action" data-followup-compose="${escapeHtml(question.id)}" aria-expanded="false">追问 →</button><button class="subtle-action answer-action" data-answer-chain="${escapeHtml(question.id)}">✦ ${answerCount ? "重新回答" : "给我回答"}</button></span>`;
+      : `<span class="thought-action-group thought-action-grow">
+          <button class="primary-button" data-thought-block-add="idea" data-root-id="${escapeHtml(question.id)}">＋ 补充</button>
+          <button class="subtle-action" data-followup-compose="${escapeHtml(question.id)}" aria-expanded="false">追问 →</button>
+          ${answerButton}
+        </span>${pendingAnswerStatus}`;
     const chainSpeech = syncing
       ? ""
       : speechControlsMarkup({

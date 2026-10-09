@@ -10,10 +10,22 @@ function expectedPermissionRevision(req, v1) {
   return /^(?:W\/)?\"0\"$/.test(value) ? 0 : v1.expectedVersion(req);
 }
 
-export function createUserModelHttp({ userModel, permissions, bodyJson }) {
+export function createUserModelHttp({
+  userModel,
+  permissions,
+  bodyJson,
+  canReadModelDetails = () => false,
+  onPermissionsChanged = async () => {}
+}) {
   async function handleV1(req, res, url, v1) {
     if (req.method === "GET" && url.pathname === "/api/v1/user-model") {
-      return v1.success(res, 200, await userModel.get());
+      const model = await userModel.get();
+      if (canReadModelDetails()) return v1.success(res, 200, model);
+      return v1.success(res, 200, {
+        readiness: model.readiness,
+        claims: [],
+        unknowns: []
+      });
     }
     if (req.method === "GET"
       && url.pathname === "/api/v1/user-model/evidence-permissions") {
@@ -65,6 +77,7 @@ export function createUserModelHttp({ userModel, permissions, bodyJson }) {
           { reason: result.reason }
         );
       }
+      await onPermissionsChanged(result);
       return v1.success(res, 200, {
         permission: result.permission,
         unchanged: result.unchanged === true,

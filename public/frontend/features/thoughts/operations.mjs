@@ -1,5 +1,6 @@
 import { imageRecordPayload } from "../../media/index.mjs";
 import { toLocalDateTimeInput } from "../../time/index.mjs";
+import { isWaitingForUserModelTask, pendingAiTaskMessage } from "../../shared/ai-task-status.mjs";
 
 const noop = () => {};
 const routeIdentity = route => JSON.stringify([
@@ -56,8 +57,10 @@ export function createThoughtOperations({
       });
       if (!isCurrent(ticket)) return false;
       if (!snapshot().aiTasks.some(item => item.id === task.id)) snapshot().aiTasks.unshift(task);
-      setAnswerStatus(question.id, "回答已进入后台队列。");
-      viewPort.showToast("回答已在后台排队");
+      setAnswerStatus(question.id, pendingAiTaskMessage(task, "回答已进入后台队列。"));
+      viewPort.showToast(isWaitingForUserModelTask(task)
+        ? "回答等待核心用户模型就绪"
+        : "回答已在后台排队");
       await data.refresh("notifications");
       if (isCurrent(ticket)) crossDomain.scheduleNotificationPoll();
       return task;
@@ -291,10 +294,12 @@ export function createThoughtOperations({
       });
       if (!isCurrent(ticket)) return false;
       if (!snapshot().aiTasks.some(item => item.id === task.id)) snapshot().aiTasks.unshift(task);
-      if (status) status.textContent = "回答已进入后台队列，可继续使用其他功能。";
+      if (status) status.textContent = pendingAiTaskMessage(task, "回答已进入后台队列，可继续使用其他功能。");
       await data.refresh("notifications");
       if (isCurrent(ticket)) crossDomain.scheduleNotificationPoll();
-      viewPort.showToast("追问回答已在后台排队");
+      viewPort.showToast(isWaitingForUserModelTask(task)
+        ? "追问回答等待核心用户模型就绪"
+        : "追问回答已在后台排队");
       return true;
     } catch (error) {
       if (isCurrent(ticket)) {

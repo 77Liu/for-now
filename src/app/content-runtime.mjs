@@ -157,6 +157,7 @@ export function createContentRuntime({
     now,
     today,
     currentTime,
+    createId,
     hash,
     logEvent
   });

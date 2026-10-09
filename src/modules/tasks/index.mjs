@@ -1,14 +1,35 @@
 import { safeText } from "../../shared/validation/index.mjs";
+import { WAITING_FOR_USER_MODEL_STATUS } from "../../shared/core-model-gate.mjs";
 
 const TASK_KINDS = new Set([
   "thoughtAnswer",
   "followUpAnswer",
+  "thoughtDraft",
+  "thoughtPrompt",
+  "journalAssist",
+  "journalReflection",
+  "chat",
+  "analysis",
   "annotationShenji",
   "contentImageUnderstanding",
   "captureTranscription",
   "onboardingClaimExtraction",
   "perceptionExtraction"
 ]);
+export { WAITING_FOR_USER_MODEL_STATUS };
+export const PERSONALIZED_TASK_INTENT_BYTE_BUDGET = 32_000;
+const PUBLIC_RESOURCE_TYPES = Object.freeze({
+  thoughtAnswer: "thought",
+  followUpAnswer: "thought",
+  thoughtDraft: "thought",
+  thoughtPrompt: "thought",
+  journalAssist: "journal",
+  journalReflection: "journal",
+  chat: "chat",
+  analysis: "analysis",
+  captureTranscription: "capture",
+  onboardingClaimExtraction: "onboardingV2"
+});
 const ACTIVE_TASK_STATUSES = new Set(["queued", "running"]);
 const REUSABLE_EXTRACTION_STATUSES = new Set(["queued", "running", "succeeded"]);
 
@@ -16,13 +37,7 @@ export function publicAiTask(task) {
   return {
     id: task.id,
     kind: task.kind,
-    resourceType: task.resourceType || (
-      task.kind === "thoughtAnswer" || task.kind === "followUpAnswer"
-        ? "thought"
-        : task.kind === "captureTranscription"
-          ? "capture"
-          : task.kind === "onboardingClaimExtraction" ? "onboardingV2" : ""
-    ),
+    resourceType: task.resourceType || PUBLIC_RESOURCE_TYPES[task.kind] || "",
     targetId: task.targetId,
     subtargetId: task.subtargetId || "",
     inputVersion: task.inputVersion,
@@ -33,6 +48,7 @@ export function publicAiTask(task) {
     completedAt: task.completedAt || "",
     resultId: task.resultId || "",
     error: task.error || "",
+    ...(task.errorCode ? { errorCode: task.errorCode } : {}),
     retryOf: task.retryOf || "",
     ...(task.kind === "contentImageUnderstanding" ? {
       contentTargetType: task.payload?.targetType || "",
@@ -111,9 +127,51 @@ export function createTaskLifecycle({ createId, now, hash }) {
       ? "capture"
       : kind === "onboardingClaimExtraction"
         ? "onboardingV2"
+      : ["thoughtDraft", "thoughtPrompt"].includes(kind)
+        ? "thought"
+      : ["journalAssist", "journalReflection"].includes(kind)
+        ? "journal"
+      : kind === "chat" ? "chat"
+      : kind === "analysis" ? "analysis"
       : ["annotationShenji", "contentImageUnderstanding", "perceptionExtraction"].includes(kind)
         ? safeText(input.resourceType, 40)
         : "thought";
+    const binding = {
+      requestId: safeText(input.payload?.binding?.requestId, 100),
+      targetId: safeText(input.payload?.binding?.targetId, 100),
+      inputVersion: Math.max(0, Math.round(Number(input.payload?.binding?.inputVersion) || 0))
+    };
+    const personalizedPayload = kind === "thoughtDraft"
+      ? {
+          question: safeText(input.payload?.question, 6_000),
+          idea: safeText(input.payload?.idea, 6_000),
+          binding
+        }
+      : kind === "thoughtPrompt"
+        ? {
+            occurredOn: safeText(input.payload?.occurredOn, 10),
+            binding
+          }
+      : kind === "journalAssist"
+        ? {
+            mode: ["lead", "structure", "topic"].includes(input.payload?.mode) ? input.payload.mode : "",
+            occurredOn: safeText(input.payload?.occurredOn, 10),
+            title: safeText(input.payload?.title, 120),
+            content: safeText(input.payload?.content, 50_000),
+            binding
+          }
+      : kind === "journalReflection"
+        ? {}
+      : kind === "chat"
+        ? {
+            message: safeText(input.payload?.message),
+            occurredAt: safeText(input.payload?.occurredAt, 100),
+            occurredOn: safeText(input.payload?.occurredOn, 10),
+            eventTimeHash: safeText(input.payload?.eventTimeHash, 100)
+          }
+      : kind === "analysis"
+        ? { reason: safeText(input.payload?.reason, 40) || "manual" }
+        : null;
     const payload = kind === "annotationShenji"
       ? { message: safeText(input.payload?.message ?? input.message, 6000) }
       : kind === "contentImageUnderstanding"
@@ -123,6 +181,8 @@ export function createTaskLifecycle({ createId, now, hash }) {
             attachmentPaths: [...new Set((Array.isArray(input.payload?.attachmentPaths) ? input.payload.attachmentPaths : [])
               .filter(value => typeof value === "string" && /^\/attachments\/[\w.-]+$/.test(value)))].slice(0, 2)
           }
+        : personalizedPayload
+          ? personalizedPayload
         : kind === "perceptionExtraction"
           ? {
               accountId: safeText(input.payload?.accountId, 100),
@@ -145,24 +205,64 @@ export function createTaskLifecycle({ createId, now, hash }) {
     return { kind, resourceType, targetId, subtargetId, clientRequestId, payload, requestedInputVersion, requestedSubtargetVersion };
   };
 
-  function create(tasks, input, inspectTarget) {
+  function create(tasks, input, inspectTarget, {
+    deferTargetInspection = false,
+    requestedIntent = null
+  } = {}) {
     const normalized = normalizeRequest(input);
     const { kind, resourceType, targetId, subtargetId, clientRequestId, payload, requestedInputVersion, requestedSubtargetVersion } = normalized;
     if (!TASK_KINDS.has(kind)) return { unsupported: true };
     if (!clientRequestId) return { invalid: true };
+    if (["thoughtDraft", "thoughtPrompt", "journalAssist", "journalReflection", "chat", "analysis"].includes(kind)
+      && new TextEncoder().encode(JSON.stringify(payload)).length > PERSONALIZED_TASK_INTENT_BYTE_BUDGET) {
+      return { inputTooLarge: true, maxBytes: PERSONALIZED_TASK_INTENT_BYTE_BUDGET };
+    }
+    if (kind === "journalAssist" && !payload.mode) return { invalidIntent: true };
+    if (kind === "thoughtDraft" && !payload.question) return { invalidIntent: true };
+    if (kind === "chat" && (!payload.message || !payload.occurredAt || !payload.occurredOn)) return { invalidIntent: true };
     const inputRequestHash = requestHash(normalized);
     const duplicate = tasks.find(item => item.clientRequestId === clientRequestId);
     if (duplicate) return duplicate.requestHash === inputRequestHash ? { task: duplicate, duplicate: true } : { conflict: true };
-    const work = inspectTarget(normalized);
-    if (!work) return { missing: true };
-    if (work.alreadyAnswered) return { alreadyAnswered: true };
-    if (requestedInputVersion && requestedInputVersion !== work.inputVersion) return { versionConflict: true, currentVersion: work.inputVersion };
-    if (requestedSubtargetVersion && requestedSubtargetVersion !== work.subtargetVersion) return { subtargetVersionConflict: true, currentVersion: work.subtargetVersion };
-    if (kind === "captureTranscription") {
+    if (deferTargetInspection && (
+      (["thoughtAnswer", "followUpAnswer", "annotationShenji", "journalReflection"].includes(kind) && !targetId)
+      || (kind === "followUpAnswer" && !subtargetId)
+      || (kind === "annotationShenji" && !subtargetId)
+    )) return { missing: true };
+    const createdAt = now();
+    const inspectionInput = { ...normalized, createdAt };
+    const work = deferTargetInspection ? null : inspectTarget(inspectionInput);
+    if (!deferTargetInspection && !work) return { missing: true };
+    if (work?.alreadyAnswered) return { alreadyAnswered: true };
+    if (!deferTargetInspection && requestedInputVersion && requestedInputVersion !== work.inputVersion) return { versionConflict: true, currentVersion: work.inputVersion };
+    if (!deferTargetInspection && requestedSubtargetVersion && requestedSubtargetVersion !== work.subtargetVersion) return { subtargetVersionConflict: true, currentVersion: work.subtargetVersion };
+    const intentInputVersion = Math.max(0, Number(requestedIntent?.inputVersion) || 0);
+    const intentSubtargetVersion = Math.max(0, Number(requestedIntent?.subtargetVersion) || 0);
+    if (deferTargetInspection && requestedIntent) {
+      if (requestedIntent.alreadyAnswered) return { alreadyAnswered: true };
+      if (requestedInputVersion && requestedInputVersion !== intentInputVersion) {
+        return { versionConflict: true, currentVersion: intentInputVersion };
+      }
+      if (requestedSubtargetVersion && requestedSubtargetVersion !== intentSubtargetVersion) {
+        return { subtargetVersionConflict: true, currentVersion: intentSubtargetVersion };
+      }
+    }
+    if (kind === "journalReflection") {
+      const inputHash = deferTargetInspection
+        ? String(requestedIntent?.inputHash ?? "")
+        : String(work?.inputHash ?? "");
+      const active = inputHash && tasks.find(item => (
+        item.kind === kind
+        && item.targetId === targetId
+        && ["queued", "running", WAITING_FOR_USER_MODEL_STATUS].includes(item.status)
+        && (item.inputHash === inputHash || item.requestedIntentInputHash === inputHash)
+      ));
+      if (active) return { task: active, duplicate: true };
+    }
+    if (!deferTargetInspection && kind === "captureTranscription") {
       const active = activeTaskForInput(tasks, { kind, targetId, inputHash: work.inputHash });
       if (active) return { task: active, duplicate: true };
     }
-    if (kind === "onboardingClaimExtraction") {
+    if (!deferTargetInspection && kind === "onboardingClaimExtraction") {
       const reusable = taskForInput(
         tasks,
         { kind, targetId, inputHash: work.inputHash },
@@ -170,7 +270,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
       );
       if (reusable) return { task: reusable, duplicate: true };
     }
-    if (kind === "perceptionExtraction") {
+    if (!deferTargetInspection && kind === "perceptionExtraction") {
       const existing = taskForInput(
         tasks,
         { kind, targetId, inputHash: work.inputHash },
@@ -180,20 +280,87 @@ export function createTaskLifecycle({ createId, now, hash }) {
     }
     const task = {
       id: createId(), kind, resourceType, targetId, subtargetId,
-      inputVersion: work.inputVersion || 0, subtargetVersion: work.subtargetVersion || 0, inputHash: work.inputHash,
-      payload, clientRequestId, requestHash: inputRequestHash, status: "queued", createdAt: now(), updatedAt: now(), attempt: 0,
+      inputVersion: deferTargetInspection
+        ? (intentInputVersion || requestedInputVersion)
+        : work.inputVersion || 0,
+      subtargetVersion: deferTargetInspection
+        ? (intentSubtargetVersion || requestedSubtargetVersion)
+        : work.subtargetVersion || 0,
+      inputHash: deferTargetInspection ? "" : work.inputHash,
+      requestedInputVersion: deferTargetInspection
+        ? (intentInputVersion || requestedInputVersion)
+        : work.inputVersion || 0,
+      requestedSubtargetVersion: deferTargetInspection
+        ? (intentSubtargetVersion || requestedSubtargetVersion)
+        : work.subtargetVersion || 0,
+      ...(!deferTargetInspection ? { requestedInputHash: work.inputHash || "" } : {}),
+      ...(deferTargetInspection && requestedIntent ? {
+        requestedIntentInputVersion: intentInputVersion,
+        requestedIntentSubtargetVersion: intentSubtargetVersion,
+        requestedIntentInputHash: String(requestedIntent.inputHash ?? "")
+      } : {}),
+      payload, clientRequestId, requestHash: inputRequestHash,
+      status: deferTargetInspection ? WAITING_FOR_USER_MODEL_STATUS : "queued",
+      createdAt, updatedAt: createdAt, attempt: 0,
       ...(kind === "perceptionExtraction" ? { internal: true } : {})
     };
     tasks.unshift(task);
-    work.markQueued?.(task);
+    work?.markQueued?.(task);
     return { task, duplicate: false };
   }
 
-  function complete(task, status, { resultId = task.resultId || "", error = "" } = {}) {
+  function promoteWaiting(tasks, id, work, intent = null) {
+    const task = tasks.find(item => item.id === id);
+    if (!task || task.status !== WAITING_FOR_USER_MODEL_STATUS) return { missing: true };
+    const requestedInputVersion = Math.max(0, Number(task.requestedInputVersion) || 0);
+    const requestedSubtargetVersion = Math.max(0, Number(task.requestedSubtargetVersion) || 0);
+    const hasRequestedIntent = Object.hasOwn(task, "requestedIntentInputVersion")
+      || Object.hasOwn(task, "requestedIntentSubtargetVersion")
+      || Object.hasOwn(task, "requestedIntentInputHash");
+    const intentMatches = !hasRequestedIntent || Boolean(intent && typeof intent === "object"
+      && (!Object.hasOwn(task, "requestedIntentInputVersion")
+        || Math.max(0, Number(intent.inputVersion) || 0) === task.requestedIntentInputVersion)
+      && (!Object.hasOwn(task, "requestedIntentSubtargetVersion")
+        || Math.max(0, Number(intent.subtargetVersion) || 0) === task.requestedIntentSubtargetVersion)
+      && (!Object.hasOwn(task, "requestedIntentInputHash")
+        || String(intent.inputHash ?? "") === task.requestedIntentInputHash));
+    const inputVersionMatches = !Object.hasOwn(task, "requestedInputVersion")
+      || requestedInputVersion === (work?.inputVersion || 0);
+    const subtargetVersionMatches = !Object.hasOwn(task, "requestedSubtargetVersion")
+      || requestedSubtargetVersion === (work?.subtargetVersion || 0);
+    if (!work || work.alreadyAnswered
+      || !intentMatches
+      || !inputVersionMatches
+      || !subtargetVersionMatches
+      || (Object.hasOwn(task, "requestedInputHash")
+        && task.requestedInputHash !== (work.inputHash || ""))) {
+      complete(task, "stale", { error: "等待期间目标已变化，请刷新后重新发起" });
+      return { task, stale: true };
+    }
+    task.inputVersion = work.inputVersion || 0;
+    task.subtargetVersion = work.subtargetVersion || 0;
+    task.inputHash = work.inputHash || "";
+    task.status = "queued";
+    task.updatedAt = now();
+    task.error = "";
+    task.errorCode = "";
+    if (!Object.hasOwn(task, "requestedInputHash")) {
+      task.requestedInputHash = work.inputHash || "";
+    }
+    work.markQueued?.(task);
+    return { task, queued: true };
+  }
+
+  function complete(task, status, {
+    resultId = task.resultId || "",
+    error = "",
+    errorCode = ""
+  } = {}) {
     task.status = status;
     task.completedAt = now();
     task.updatedAt = task.completedAt;
     task.error = safeText(error, 500);
+    task.errorCode = safeText(errorCode, 100);
     if (status === "succeeded") task.resultId = resultId;
   }
 
@@ -205,7 +372,24 @@ export function createTaskLifecycle({ createId, now, hash }) {
       return { scope: "aiTasks.create", key: normalized.clientRequestId, requestHash: requestHash(normalized) };
     },
     complete,
-    retry(tasks, id, inspectTarget) {
+    promoteWaiting,
+    waitForUserModel(tasks, id) {
+      const task = tasks.find(item => item.id === id);
+      if (!task || task.status !== "queued") return null;
+      if (!Object.hasOwn(task, "requestedInputVersion")) {
+        task.requestedInputVersion = task.inputVersion || 0;
+      }
+      if (!Object.hasOwn(task, "requestedSubtargetVersion")) {
+        task.requestedSubtargetVersion = task.subtargetVersion || 0;
+      }
+      if (!Object.hasOwn(task, "requestedInputHash")) {
+        task.requestedInputHash = task.inputHash || "";
+      }
+      task.status = WAITING_FOR_USER_MODEL_STATUS;
+      task.updatedAt = now();
+      return task;
+    },
+    retry(tasks, id, inspectTarget, options = {}) {
       const previous = tasks.find(item => item.id === id);
       if (!previous || !["failed", "stale"].includes(previous.status)) return { missing: true };
       const existing = tasks.find(item => item.retryOf === previous.id);
@@ -213,7 +397,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
       const created = create(tasks, {
         kind: previous.kind, resourceType: previous.resourceType, targetId: previous.targetId, subtargetId: previous.subtargetId,
         payload: previous.payload, clientRequestId: `retry:${previous.id}`
-      }, inspectTarget);
+      }, inspectTarget, options);
       if (created.task) created.task.retryOf = previous.id;
       return created;
     },

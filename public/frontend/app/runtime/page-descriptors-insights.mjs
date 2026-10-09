@@ -3,7 +3,7 @@ import { state } from "../../state/index.mjs";
 
 export function installInsightsDescriptors(descriptors, ports) {
   const {
-    runtime,runtimeFeatureLoaders,$,request,featureRequestV1,featureListAllV1,
+    runtime,runtimeFeatureLoaders,$,request,resolvePersonalizedTask,featureRequestV1,featureListAllV1,
     refreshState,applyPendingProjection,apiClient,withCheckins,resetContentImageEditor,
     persistContentImageDraft,contentImagePaths,clearSubmittedContentImageDraft,
     discardContentImageUploads,uncertainMediaSubmission,contentImagesMarkup,
@@ -108,6 +108,7 @@ export function installInsightsDescriptors(descriptors, ports) {
           getAccountId:()=>runtime.currentUser?.id||"",
           getSessionSerial:()=>sessionSerial,
           requestV1:(url,options,coordination)=>featureRequestV1("review",url,options,coordination),
+          resolvePersonalizedTask,
           refresh:(domains,options)=>refreshState(domains,options),
           applyPendingProjection
         },

@@ -58,6 +58,9 @@ export function createOnboardingV2Http({ onboardingV2, extractions = null, bodyJ
         sourceRevision: input.sourceRevision,
         clientRequestId: v1.idempotencyKey(req)
       });
+      if (result.ready) {
+        return v1.success(res, 200, { status: "ready" });
+      }
       if (result.invalid) {
         return v1.error(res, 422, "提取请求无效", "CLAIM_EXTRACTION_REQUEST_INVALID", {
           fields: result.fields

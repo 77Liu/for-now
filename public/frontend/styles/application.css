@@ -2120,3 +2120,11 @@ body.image-viewer-open{overflow:hidden}
   .comment-panel-reopen{display:none}
   .annotation-line-counts button{transform:translateX(-100%)}
 }
+.matched-citations{margin:12px 0;padding:10px 12px;border-left:3px solid #5f8d70;background:#f4f8f4}
+.matched-citations summary{color:#426b50;font-size:.8rem;font-weight:700;cursor:pointer}
+.matched-citations ol{display:grid;gap:8px;margin:10px 0 0;padding-left:22px}
+.matched-citations li{padding-left:3px;line-height:1.55}
+.matched-citations q{display:block;color:#33453a}
+.matched-citations small{display:block;margin-top:3px;color:#7b887e;font-size:.7rem}
+.matched-citations > p,
+.citation-empty-note{margin:9px 0;color:#7c837d;font-size:.76rem}

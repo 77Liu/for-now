@@ -4,6 +4,7 @@ import {
   renderPersonalContextSurface,
   scrubPersonalContextSurface
 } from "./presentation.mjs";
+import { resolveSynchronousPersonalizedResponse } from "../../shared/personalized-ai-task.mjs";
 
 export const PERSONAL_CONTEXT_ENDPOINT = "/api/v1/personal-context";
 export const EVIDENCE_PERMISSIONS_ENDPOINT = "/api/v1/user-model/evidence-permissions";
@@ -27,6 +28,8 @@ export function createPersonalContextFeatureController({
   // A cached app shell can pair this controller with an older descriptor. Keep
   // the overview readable, but decline destructive actions without confirmation.
   const confirm = typeof platform.confirm === "function" ? platform.confirm : () => false;
+  const resolvePersonalizedTask = data.resolvePersonalizedTask
+    || (async response => resolveSynchronousPersonalizedResponse(response));
   requireFunctions("data port", {
     getSnapshot: data.getSnapshot,
     getAccountId: data.getAccountId,
@@ -398,7 +401,7 @@ export function createPersonalContextFeatureController({
       button.disabled = true;
       if (status) status.textContent = "正在生成周期回望…";
       try {
-        await data.requestV1(
+        const initialResponse = await data.requestV1(
           "/api/v1/analyses",
           {
             method: "POST",
@@ -408,12 +411,21 @@ export function createPersonalContextFeatureController({
           },
           { domains: ["analyses"] }
         );
+        const settled = await resolvePersonalizedTask(initialResponse, {
+          operationLabel: "周期回望",
+          expectedKind: "analysis",
+          onStatus: message => {
+            if (isActive(candidate) && status) status.textContent = message;
+          }
+        });
+        if (settled.abandoned) return false;
         if (!isActive(candidate)) return false;
         if (status) status.textContent = "回望已生成，请核对后确认";
         const loaded = await load(candidate);
         if (loaded) synthesisRequestId = "";
         return loaded;
       } catch (error) {
+        if (error.taskId) synthesisRequestId = "";
         if (!isActive(candidate)) return false;
         if (status) {
           status.dataset.state = "error";

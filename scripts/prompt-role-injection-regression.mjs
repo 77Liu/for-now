@@ -80,6 +80,12 @@ const sections = {
 const compiled = compileWorkingContextPrompt({
   scene: "thoughtAnswer",
   ...sections,
+  coreUserModel: {
+    fingerprint: "a".repeat(64),
+    claims: [{ domain: "context", epistemic: "known", statement: "用户确认的稳定模型", scope: "近期", evidence: [{ sourceId: "currentContext", citationId: "core:onboarding:currentContext", sourceVersion: 2, exactQuote: "用户原话" }] }],
+    answers: [{ sourceId: "currentContext", citationId: "core:onboarding:currentContext", title: "当前处境", informationType: "user_fact", text: "用户原话", sourceVersion: 2 }],
+    unknowns: [{ questionId: "dailyRhythm", answerDisposition: "unknown" }]
+  },
   taskDetails: {
     annotation: {
       kind: "comment",
@@ -108,6 +114,13 @@ const payloadText = /<working_context_data format="application\/json">(.+)<\/wor
   .exec(compiled.prompt)?.[1];
 const payload = JSON.parse(payloadText);
 assert.equal(payload.schemaVersion, STRUCTURED_WORKING_CONTEXT_SCHEMA_VERSION);
+assert.deepEqual(Object.keys(payload).slice(0, 3), ["schemaVersion", "coreUserModel", "scene"]);
+assert.deepEqual(payload.coreUserModel, {
+  fingerprint: "a".repeat(64),
+  claims: [{ domain: "context", epistemic: "known", statement: "用户确认的稳定模型", scope: "近期", evidence: [{ sourceId: "currentContext", citationId: "core:onboarding:currentContext", sourceVersion: 2, exactQuote: "用户原话" }] }],
+  answers: [{ sourceId: "currentContext", citationId: "core:onboarding:currentContext", title: "当前处境", informationType: "user_fact", text: "用户原话", sourceVersion: 2 }],
+  unknowns: [{ questionId: "dailyRhythm", answerDisposition: "unknown" }]
+});
 assert.equal(payload.scene, "thoughtAnswer");
 assert.equal(payload.currentTask.text, malicious);
 assert.equal(payload.currentTask.details.annotation.kind, "comment");
@@ -117,7 +130,9 @@ assert.deepEqual(payload.currentTask.details.annotation.turns, [{
   answer: malicious
 }]);
 assert.equal(payload.currentMaterial[0].text, malicious);
+assert.equal(payload.currentMaterial[0].citationId, "context:current:root");
 assert.equal(payload.relevantEpisodes[0].text, malicious);
+assert.equal(payload.relevantEpisodes[0].citationId, "context:evidence:history");
 assert.equal(payload.evidencePackets[0].evidenceId, "history");
 assert.deepEqual(payload.unresolved, [{ kind: "retrieval", message: malicious }]);
 
@@ -268,6 +283,22 @@ assert.match(
   /只使用经过选择的有效材料/
 );
 assert.equal(rollback.version, "2026.10.07.0");
+
+installPromptCatalog(await loadPromptCatalog({
+  rootDir: root,
+  requestedVersion: "2026.10.07.2",
+  allowHistorical: true
+}));
+const historicalPrompt = compileWorkingContextPrompt({
+  scene: "thoughtAnswer",
+  ...sections
+}).prompt;
+const historicalPayload = JSON.parse(
+  /<working_context_data format="application\/json">(.+)<\/working_context_data>/s
+    .exec(historicalPrompt)[1]
+);
+assert.equal(Object.hasOwn(historicalPayload.currentMaterial[0], "citationId"), false);
+assert.equal(Object.hasOwn(historicalPayload.relevantEpisodes[0], "citationId"), false);
 
 const previous = installPromptCatalog(await loadPromptCatalog({
   rootDir: root,

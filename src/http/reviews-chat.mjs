@@ -1,3 +1,10 @@
+import { CORE_MODEL_NOT_READY_CODE } from "../shared/core-model-gate.mjs";
+import { safeText } from "../shared/validation/index.mjs";
+import {
+  sendPersonalizedTaskLegacy,
+  sendPersonalizedTaskV1
+} from "./ai-task-responses.mjs";
+
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 
 export function createReviewsChatHttp({
@@ -96,12 +103,27 @@ export function createReviewsChatHttp({
     if (req.method === "POST" && url.pathname === "/api/v1/chats") {
       const input = await bodyJson(req);
       const eventTime = eventTimeFields(input);
-      const result = await workflows.answerChat({
+      const waiting = await workflows.queueChatIfCold({
         message: input.message,
         eventTime,
         eventTimeHash: eventTime ? eventTimeHash(input, eventTime) : "",
         clientRequestId: v1.idempotencyKey(req)
       });
+      if (waiting) return sendPersonalizedTaskV1(res, v1, waiting);
+      let result;
+      try {
+        result = await workflows.answerChat({
+          message: input.message,
+          eventTime,
+          eventTimeHash: eventTime ? eventTimeHash(input, eventTime) : "",
+          clientRequestId: v1.idempotencyKey(req)
+        });
+      } catch (error) {
+        if (error?.code === CORE_MODEL_NOT_READY_CODE) {
+          return v1.error(res, error.statusCode, error.message, error.code, error.details);
+        }
+        throw error;
+      }
       if (result.error) return v1.error(res, 400, result.error, "VALIDATION_ERROR");
       if (result.conflict) return v1.error(res, 409, "同一幂等键不能用于不同内容", "IDEMPOTENCY_KEY_REUSED");
       return v1.success(res, result.duplicate ? 200 : 201, result.value, {
@@ -135,6 +157,11 @@ export function createReviewsChatHttp({
     if (req.method === "POST" && url.pathname === "/api/v1/analyses") {
       try {
         await bodyJson(req);
+        const waiting = await workflows.queueAnalysisIfCold({
+          reason: "manual",
+          clientRequestId: v1.idempotencyKey(req)
+        });
+        if (waiting) return sendPersonalizedTaskV1(res, v1, waiting);
         const result = await workflows.runAnalysis({
           reason: "manual",
           clientRequestId: v1.idempotencyKey(req)
@@ -144,6 +171,9 @@ export function createReviewsChatHttp({
           etag: v1.versionEtag(result.value.version)
         });
       } catch (error) {
+        if (error?.code === CORE_MODEL_NOT_READY_CODE) {
+          return v1.error(res, error.statusCode, error.message, error.code, error.details);
+        }
         if (error.message === "先留下一条状态、健康、捕念、日记或思绪记录，再开始认知复盘") {
           return v1.error(res, 400, error.message, "REVIEW_EVIDENCE_REQUIRED");
         }
@@ -257,10 +287,20 @@ export function createReviewsChatHttp({
     } else if (req.method === "POST" && url.pathname === "/api/chat") {
       const input = await bodyJson(req);
       const eventTime = eventTimeFields(input);
+      const clientRequestId = safeText(input.clientRequestId, 100)
+        || safeText(req.headers?.["idempotency-key"] ?? req.headers?.get?.("idempotency-key"), 100);
+      const waiting = await workflows.queueChatIfCold({
+        message: input.message,
+        eventTime,
+        eventTimeHash: eventTime ? eventTimeHash(input, eventTime) : "",
+        clientRequestId
+      });
+      if (waiting) return sendPersonalizedTaskLegacy(res, sendJson, waiting);
       const result = await workflows.answerChat({
         message: input.message,
         eventTime,
-        eventTimeHash: eventTime ? eventTimeHash(input, eventTime) : ""
+        eventTimeHash: eventTime ? eventTimeHash(input, eventTime) : "",
+        clientRequestId
       });
       if (result.error) sendJson(res, 400, { error: result.error });
       else sendJson(res, 200, result.value);
@@ -271,7 +311,12 @@ export function createReviewsChatHttp({
         "这段对话不存在"
       );
     } else if (req.method === "POST" && url.pathname === "/api/analysis/run") {
-      sendJson(res, 201, (await workflows.runAnalysis({ reason: "manual" })).value);
+      const input = await bodyJson(req);
+      const clientRequestId = safeText(input.clientRequestId, 100)
+        || safeText(req.headers?.["idempotency-key"] ?? req.headers?.get?.("idempotency-key"), 100);
+      const waiting = await workflows.queueAnalysisIfCold({ reason: "manual", clientRequestId });
+      if (waiting) return sendPersonalizedTaskLegacy(res, sendJson, waiting);
+      sendJson(res, 201, (await workflows.runAnalysis({ reason: "manual", clientRequestId })).value);
     } else if (req.method === "DELETE" && /^\/api\/analyses\/[^/]+$/.test(url.pathname)) {
       await sendTrashResult(
         res,

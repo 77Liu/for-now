@@ -33,7 +33,7 @@ const listOperation = (operationId, schema, description) => ({
   }
 });
 
-const createOperation = (operationId, input, schema, description) => ({
+const createOperation = (operationId, input, schema, description, { coldTask = false } = {}) => ({
   operationId,
   parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }],
   ...(input ? {
@@ -45,6 +45,9 @@ const createOperation = (operationId, input, schema, description) => ({
   responses: {
     "200": { description: "幂等请求复用既有记录", ...response({ $ref: `#/components/schemas/${schema}` }) },
     "201": { description, ...response({ $ref: `#/components/schemas/${schema}` }) },
+    ...(coldTask ? {
+      "202": { description: "核心用户模型未就绪；任务已持久化等待", ...response({ $ref: "#/components/schemas/PersonalizedAiTask" }) }
+    } : {}),
     ...errors
   }
 });
@@ -86,7 +89,7 @@ const resourcePath = ({
 export const reviewsChatPaths = Object.freeze({
   "/chats": {
     get: listOperation("listChats", "Chat", "共参记录列表"),
-    post: createOperation("createChat", "ChatInput", "Chat", "已生成并保存共参回答")
+    post: createOperation("createChat", "ChatInput", "Chat", "已生成并保存共参回答", { coldTask: true })
   },
   "/chats/{id}": resourcePath({
     parameter: "ChatId",
@@ -97,7 +100,7 @@ export const reviewsChatPaths = Object.freeze({
   }),
   "/analyses": {
     get: listOperation("listAnalyses", "Analysis", "认知复盘列表"),
-    post: createOperation("createAnalysis", "", "Analysis", "已生成并保存认知复盘")
+    post: createOperation("createAnalysis", "", "Analysis", "已生成并保存认知复盘", { coldTask: true })
   },
   "/analyses/{id}": {
     ...resourcePath({

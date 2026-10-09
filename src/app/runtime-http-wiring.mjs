@@ -51,7 +51,7 @@ export function createRuntimeHttpWiring({
 }) {
   const { now, today } = clock;
   const { createId } = identifiers;
-  const { requestStorage } = observability;
+  const { requestStorage, logEvent } = observability;
   const {
     storeRepository,
     storagePaths,
@@ -144,6 +144,23 @@ export function createRuntimeHttpWiring({
     getContext: () => requestStorage.getStore(),
     openApi: openApiV1
   });
+  const onboardingV2Handler = async (req, res, url, v1) => {
+    const handled = await platformHttp.onboardingV2Http.handleV1(req, res, url, v1);
+    if (handled !== false
+      && req.method === "PATCH"
+      && url.pathname === "/api/v1/onboarding-v2/session"
+      && Number(res.statusCode || 200) < 400) {
+      try {
+        await contentRuntime.backgroundAi?.releaseWaiting?.();
+      } catch (error) {
+        await logEvent("system", "ai_task.waiting_release_failed", {
+          level: "error",
+          message: error?.message || String(error)
+        });
+      }
+    }
+    return handled;
+  };
   const readOpeningPreferences = async user => {
     if (!isOwner(user)) return undefined;
     try { return openingPreferences((await aiRuntime.readLlmSettings()).opening); }
@@ -194,7 +211,7 @@ export function createRuntimeHttpWiring({
     sync: syncHttp.handleV1,
     personalContext: personalContextHttp.handleV1,
     aiBudget: platformHttp.aiBudgetHttp.handleV1,
-    onboardingV2: platformHttp.onboardingV2Http.handleV1,
+    onboardingV2: onboardingV2Handler,
     userModel: platformHttp.userModelHttp.handleV1,
     thoughts: contentHttp.thoughtHttp.handleV1,
     checkins: contentHttp.checkinHttp.handleV1,

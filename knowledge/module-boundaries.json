@@ -400,7 +400,8 @@
       "root": "src/modules/content-attachments",
       "publicEntry": "src/modules/content-attachments/index.mjs",
       "allowedDependencies": [
-        "shared.validation"
+        "shared.validation",
+        "shared.core-model-gate"
       ],
       "owns": {
         "data": [
@@ -760,6 +761,7 @@
         "shared.attachments",
         "shared.content",
         "shared.validation",
+        "shared.core-model-gate",
         "shared.prompts",
         "shared.speech",
         "shared.concurrency",
@@ -932,6 +934,24 @@
       "status": "active"
     },
     {
+      "id": "shared.core-model-gate",
+      "type": "shared",
+      "root": "src/shared/core-model-gate.mjs",
+      "publicEntry": "src/shared/core-model-gate.mjs",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "core user model readiness errors and waiting task status"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/personalized-ai-model-gate-regression.mjs",
+        "scripts/background-ai-model-gate-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
       "id": "shared.speech",
       "type": "shared",
       "root": "src/shared/speech",
@@ -996,7 +1016,8 @@
       "root": "src/modules/tasks",
       "publicEntry": "src/modules/tasks/index.mjs",
       "allowedDependencies": [
-        "shared.validation"
+        "shared.validation",
+        "shared.core-model-gate"
       ],
       "owns": {
         "data": [
@@ -1310,7 +1331,9 @@
       "type": "feature",
       "root": "public/frontend/features/annotations",
       "publicEntry": "public/frontend/features/annotations/index.mjs",
-      "allowedDependencies": [],
+      "allowedDependencies": [
+        "frontend.ai-task-status"
+      ],
       "owns": {
         "data": [
           "annotation presentation, ordering, copy, mention intent, assistant task submission, anchors, panel state, drafts and disposable account lifecycle"
@@ -1474,7 +1497,9 @@
         "frontend.time",
         "frontend.feature.capture-audio",
         "frontend.feature.capture-drafts",
-        "frontend.feature.capture-journal-presentation"
+        "frontend.feature.capture-journal-presentation",
+        "frontend.personalized-ai-task",
+        "frontend.ai-task-status"
       ],
       "owns": {
         "data": [
@@ -1556,7 +1581,8 @@
       "root": "public/frontend/features/review-insights/review/operations.mjs",
       "publicEntry": "public/frontend/features/review-insights/review/operations.mjs",
       "allowedDependencies": [
-        "frontend.feature.review-model"
+        "frontend.feature.review-model",
+        "frontend.personalized-ai-task"
       ],
       "owns": {
         "data": [
@@ -1791,7 +1817,8 @@
       "publicEntry": "public/frontend/features/thoughts/model.mjs",
       "allowedDependencies": [
         "frontend.content",
-        "frontend.time"
+        "frontend.time",
+        "frontend.ai-task-status"
       ],
       "owns": {
         "data": [
@@ -1813,7 +1840,8 @@
         "frontend.content",
         "frontend.media",
         "frontend.time",
-        "frontend.feature.thoughts-model"
+        "frontend.feature.thoughts-model",
+        "frontend.ai-task-status"
       ],
       "owns": {
         "data": [
@@ -1837,7 +1865,8 @@
         "frontend.media",
         "frontend.time",
         "frontend.feature.thoughts-model",
-        "frontend.feature.thoughts-presentation"
+        "frontend.feature.thoughts-presentation",
+        "frontend.ai-task-status"
       ],
       "owns": {
         "data": [
@@ -2108,7 +2137,9 @@
       "type": "feature",
       "root": "public/frontend/features/personal-context",
       "publicEntry": "public/frontend/features/personal-context/index.mjs",
-      "allowedDependencies": [],
+      "allowedDependencies": [
+        "frontend.personalized-ai-task"
+      ],
       "owns": {
         "data": [
           "personal context projection, source receipts, source navigation and disposable page lifecycle"
@@ -2301,7 +2332,9 @@
       "type": "feature",
       "root": "public/frontend/features/notifications",
       "publicEntry": "public/frontend/features/notifications/index.mjs",
-      "allowedDependencies": [],
+      "allowedDependencies": [
+        "frontend.ai-task-status"
+      ],
       "owns": {
         "data": [
           "notification entry presentation, retry state, safe semantic markup and disposable notification page lifecycle"
@@ -2311,6 +2344,42 @@
       "tests": [
         "scripts/notification-entry-regression.mjs",
         "scripts/frontend-notifications-feature-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "frontend.ai-task-status",
+      "type": "shared",
+      "root": "public/frontend/shared/ai-task-status.mjs",
+      "publicEntry": "public/frontend/shared/ai-task-status.mjs",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "shared status and user-facing messages for personalized AI tasks"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/personalized-ai-task-ui-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "frontend.personalized-ai-task",
+      "type": "shared",
+      "root": "public/frontend/shared/personalized-ai-task.mjs",
+      "publicEntry": "public/frontend/shared/personalized-ai-task.mjs",
+      "allowedDependencies": [
+        "frontend.ai-task-status"
+      ],
+      "owns": {
+        "data": [
+          "shared lifecycle and response resolution for personalized AI tasks"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/personalized-ai-task-ui-regression.mjs"
       ],
       "status": "active"
     },
@@ -2371,6 +2440,85 @@
       "status": "active"
     },
     {
+      "id": "frontend.app.data-runtime",
+      "type": "application",
+      "root": "public/frontend/app/runtime/data-runtime.mjs",
+      "publicEntry": "public/frontend/app/runtime/data-runtime.mjs",
+      "allowedDependencies": [
+        "frontend.session",
+        "frontend.state",
+        "frontend.time",
+        "frontend.ai-task-status",
+        "frontend.app.personalized-task-runtime"
+      ],
+      "owns": {
+        "data": [
+          "route and notification data runtime coordination"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/frontend-notifications-feature-regression.mjs",
+        "scripts/personalized-ai-task-ui-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "frontend.app.personalized-task-runtime",
+      "type": "application",
+      "root": "public/frontend/app/runtime/personalized-task-runtime.mjs",
+      "publicEntry": "public/frontend/app/runtime/personalized-task-runtime.mjs",
+      "allowedDependencies": [
+        "frontend.personalized-ai-task"
+      ],
+      "owns": {
+        "data": [
+          "account-scoped personalized task polling and result coordination"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/personalized-ai-task-ui-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "frontend.app.answer-modal-runtime",
+      "type": "application",
+      "root": "public/frontend/app/runtime/answer-modal-runtime.mjs",
+      "publicEntry": "public/frontend/app/runtime/answer-modal-runtime.mjs",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "answer modal task and session lifecycle"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/personalized-ai-task-ui-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "frontend.app.record-events",
+      "type": "application",
+      "root": "public/frontend/app/runtime/record-events.mjs",
+      "publicEntry": "public/frontend/app/runtime/record-events.mjs",
+      "allowedDependencies": [
+        "frontend.state"
+      ],
+      "owns": {
+        "data": [
+          "record submission event handlers and durable task request retries"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/personalized-ai-task-ui-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
       "id": "frontend.app",
       "type": "application",
       "root": "public/frontend/app",
@@ -2415,7 +2563,12 @@
         "frontend.feature.trash-loader",
         "frontend.component.tag-multiselect",
         "frontend.component.occurrence-control",
-        "frontend.feature.home"
+        "frontend.feature.home",
+        "frontend.ai-task-status",
+        "frontend.personalized-ai-task",
+        "frontend.app.data-runtime",
+        "frontend.app.answer-modal-runtime",
+        "frontend.app.record-events"
       ],
       "owns": {
         "data": [
@@ -2481,6 +2634,7 @@
         "domain.reviews",
         "domain.statistics",
         "domain.content-attachments",
+        "shared.core-model-gate",
         "shared.validation",
         "shared.observability",
         "shared.speech"

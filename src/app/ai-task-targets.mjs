@@ -5,7 +5,10 @@ import { thoughtTaskResult } from "../modules/thoughts/index.mjs";
 import { parseClaimExtractionOutput } from "../modules/user-model/index.mjs";
 import { annotationResource, annotationResourceSource, annotationResourceContext } from "./annotation-resources.mjs";
 import { compileWorkingContextPrompt } from "./prompt-context.mjs";
-import { prepareUserModelExtraction } from "./user-model.mjs";
+import {
+  coreUserModelProjection,
+  prepareUserModelExtraction
+} from "./user-model.mjs";
 import {
   contextDerivedOutputAllowed,
   contextDerivedLegacyDependencies,
@@ -24,6 +27,37 @@ export function createAiTaskTargets({
   hash,
   now = () => new Date().toISOString()
 }) {
+  function answerCitationSources(workingContext, coreUserModel) {
+    const sources = [...(workingContext.citationSources || [])];
+    const coreSources = (coreUserModel?.answers || []).map(answer => ({
+      citationId: answer.citationId,
+      text: answer.text,
+      source: {
+        id: answer.citationId,
+        resourceType: "onboardingV2",
+        resourceId: answer.sourceId,
+        recordType: answer.title,
+        origin: "user",
+        informationType: answer.informationType,
+        version: answer.sourceVersion,
+        contentSha256: "",
+        location: {
+          view: "personal-context",
+          targetId: answer.sourceId,
+          rootId: "",
+          targetKey: `answer:${answer.sourceId}`,
+          occurredOn: ""
+        }
+      }
+    }));
+    return [...coreSources, ...sources].filter(item => (
+      typeof item.citationId === "string"
+      && item.citationId
+      && typeof item.text === "string"
+      && item.text
+    ));
+  }
+
   function captureTranscriptionWork(store, task) {
     const capture = store.captures?.find(item => item.id === task.targetId);
     if (!capture?.audio?.attachmentPath) return null;
@@ -201,6 +235,7 @@ export function createAiTaskTargets({
         version: 1
       }
     }];
+    const coreUserModel = coreUserModelProjection(store);
     const workingContext = workingContextProjection(store, {
       accountId,
       scene: "annotationShenji",
@@ -215,6 +250,7 @@ export function createAiTaskTargets({
       compilePrompt: sections => compileWorkingContextPrompt({
         ...sections,
         scene: "annotationShenji",
+        coreUserModel,
         taskDetails: {
           resource: {
             type: resourceType,
@@ -236,9 +272,11 @@ export function createAiTaskTargets({
         }
       })
     });
+    const contextFingerprint = workingContextReceiptFingerprint(workingContext.receipt);
     const inputHash = hash(JSON.stringify({
       resourceType, targetId: task.targetId, annotationId: annotation.id, targetKey: annotation.targetKey,
-      source, quote: annotation.quote, text: annotation.text || "", previous: previousItems, message
+      source, quote: annotation.quote, text: annotation.text || "", previous: previousItems, message,
+      contextFingerprint
     }));
     return {
       annotation,
@@ -250,7 +288,10 @@ export function createAiTaskTargets({
       scene: "annotationShenji",
       systemPrompt: shenjiSystemPrompt(),
       contextReceipt: workingContext.receipt,
-      contextFingerprint: workingContextReceiptFingerprint(workingContext.receipt)
+      contextFingerprint,
+      citationSources: answerCitationSources(workingContext, coreUserModel),
+      json: true,
+      citationsEnabled: true
     };
   }
 
@@ -298,7 +339,79 @@ export function createAiTaskTargets({
     return prepared.value || null;
   }
 
+  function inspectIntent(store, task) {
+    if (["thoughtAnswer", "followUpAnswer"].includes(task?.kind)) {
+      const inspected = thoughts.inspect(store.thoughts, task);
+      if (!inspected) return false;
+      if (task.inputVersion > 0 && task.inputVersion !== inspected.inputVersion) return false;
+      if (task.kind === "followUpAnswer"
+        && task.subtargetVersion > 0
+        && task.subtargetVersion !== inspected.subtargetVersion) return false;
+      return {
+        inputVersion: inspected.inputVersion,
+        subtargetVersion: inspected.subtargetVersion || 0,
+        alreadyAnswered: inspected.alreadyAnswered === true,
+        inputHash: hash(JSON.stringify({
+          kind: task.kind,
+          targetId: task.targetId,
+          subtargetId: task.subtargetId || "",
+          inputVersion: inspected.inputVersion,
+          subtargetVersion: inspected.subtargetVersion || 0,
+          content: inspected.root.content || "",
+          attachmentPaths: inspected.root.attachmentPaths || [],
+          followUpQuestion: inspected.followUp?.question || ""
+        }))
+      };
+    }
+    if (task?.kind !== "annotationShenji") return false;
+    const resourceType = safeText(task.resourceType, 40);
+    const root = annotationResource(store, resourceType, task.targetId);
+    const annotation = root?.annotations?.find(item => item.id === task.subtargetId);
+    const source = root && annotation
+      ? annotationResourceSource(store, resourceType, root, annotation.targetKey)
+      : null;
+    if (!root || !annotation || !source?.includes(annotation.quote)) return false;
+    const accountId = getAccountId();
+    const rootRef = {
+      resourceType,
+      resourceId: root.id,
+      rootId: ["capture", "journal"].includes(resourceType) ? "" : root.id,
+      targetKey: resourceType === "thought" ? `question:${root.id}` : "",
+      version: recordVersion(root.version)
+    };
+    const annotationRef = {
+      resourceType,
+      resourceId: annotation.id,
+      rootId: root.id,
+      targetKey: `annotation:${annotation.id}`,
+      version: recordVersion(annotation.version)
+    };
+    if (!(root.contextAllowed !== false
+      && root.disposition !== "discarded"
+      && annotation.contextAllowed !== false
+      && taskContextSourcePermission(store, rootRef, accountId).contextAllowed
+      && taskContextSourcePermission(store, annotationRef, accountId).contextAllowed)) return false;
+    return {
+      inputVersion: recordVersion(root.version),
+      subtargetVersion: recordVersion(annotation.version),
+      inputHash: hash(JSON.stringify({
+        kind: task.kind,
+        resourceType,
+        targetId: root.id,
+        subtargetId: annotation.id,
+        inputVersion: recordVersion(root.version),
+        subtargetVersion: recordVersion(annotation.version),
+        targetKey: annotation.targetKey,
+        source,
+        quote: annotation.quote,
+        text: annotation.text || "",
+        message: safeText(task.payload?.message, 6000)
+      }))
+    };
+  }
+
   return {
+    inspectIntent,
     result(store, task) {
       if (task.kind === "perceptionExtraction") {
         return perception?.result(store, task) || null;
@@ -334,6 +447,7 @@ export function createAiTaskTargets({
       if (!work) return null;
       const { root, followUp, inputVersion, subtargetVersion } = work;
       const accountId = getAccountId();
+      const coreUserModel = coreUserModelProjection(store);
       const workingContext = workingContextProjection(store, {
         accountId,
         scene: task.kind,
@@ -352,19 +466,29 @@ export function createAiTaskTargets({
         }),
         compilePrompt: sections => compileWorkingContextPrompt({
           ...sections,
-          scene: task.kind
+          scene: task.kind,
+          coreUserModel
         })
       });
+      const contextFingerprint = workingContextReceiptFingerprint(workingContext.receipt);
       if (task.kind === "thoughtAnswer") {
         const attachmentPaths = workingContext.attachmentPaths;
         return {
           ...work,
           attachmentPaths,
-          inputHash: hash(JSON.stringify({ targetId: root.id, inputVersion, attachmentPaths })),
+          inputHash: hash(JSON.stringify({
+            targetId: root.id,
+            inputVersion,
+            attachmentPaths,
+            contextFingerprint
+          })),
           prompt: workingContext.prompt,
           scene: "thoughtAnswer",
           contextReceipt: workingContext.receipt,
-          contextFingerprint: workingContextReceiptFingerprint(workingContext.receipt)
+          contextFingerprint,
+          citationSources: answerCitationSources(workingContext, coreUserModel),
+          json: true,
+          citationsEnabled: true
         };
       }
       const inputHash = hash(JSON.stringify({
@@ -372,7 +496,8 @@ export function createAiTaskTargets({
         inputVersion,
         subtargetId: followUp.id,
         subtargetVersion,
-        currentMaterial: workingContext.receipt.currentMaterial
+        currentMaterial: workingContext.receipt.currentMaterial,
+        contextFingerprint
       }));
       return {
         ...work,
@@ -381,7 +506,10 @@ export function createAiTaskTargets({
         prompt: workingContext.prompt,
         scene: "followUpAnswer",
         contextReceipt: workingContext.receipt,
-        contextFingerprint: workingContextReceiptFingerprint(workingContext.receipt)
+        contextFingerprint,
+        citationSources: answerCitationSources(workingContext, coreUserModel),
+        json: true,
+        citationsEnabled: true
       };
     },
     save(store, work, task, result) {

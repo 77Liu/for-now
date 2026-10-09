@@ -16,7 +16,8 @@ import {
 } from "./personal-context.mjs";
 
 export const WORKING_CONTEXT_VERSION = "2026.10.09.1";
-export const WORKING_CONTEXT_TOKEN_BUDGET = 20_000;
+export const WORKING_CONTEXT_PROMPT_BYTE_BUDGET = 32_000;
+export const WORKING_CONTEXT_TOKEN_BUDGET = WORKING_CONTEXT_PROMPT_BYTE_BUDGET;
 export const WORKING_CONTEXT_RECEIPT_ITEM_LIMIT = 100;
 export const WORKING_CONTEXT_RECEIPT_BYTE_LIMIT = 192 * 1024;
 const HISTORY_RELEVANCE_MIN_SCORE = 6;
@@ -772,7 +773,7 @@ export function workingContextProjection(store, {
   task: inputTask,
   currentMaterial: inputCurrentMaterial,
   generatedAt = new Date().toISOString(),
-  tokenLimit = WORKING_CONTEXT_TOKEN_BUDGET,
+  tokenLimit = WORKING_CONTEXT_PROMPT_BYTE_BUDGET,
   maxHistorical = 8,
   retrieveHistorical = source => source?.evidenceSources,
   compilePrompt = null
@@ -795,7 +796,7 @@ export function workingContextProjection(store, {
   if (!task.eventId && hasDeicticEvent) {
     task.eventId = currentMaterialEventId(store, accountId, currentMaterial);
   }
-  tokenLimit = Math.max(1, Math.round(Number(tokenLimit) || WORKING_CONTEXT_TOKEN_BUDGET));
+  tokenLimit = Math.max(1, Math.round(Number(tokenLimit) || WORKING_CONTEXT_PROMPT_BYTE_BUDGET));
   maxHistorical = Math.max(0, Math.min(50, Math.round(Number(maxHistorical) || 0)));
   const degradedNotice = "历史证据暂不可用，本次仅依据当前材料。";
   const currentCompiled = compiledPrompt(
@@ -903,7 +904,19 @@ export function workingContextProjection(store, {
   return {
     prompt: compiled.prompt,
     receipt,
-    attachmentPaths: [...new Set(currentMaterial.flatMap(item => item.attachmentPaths))]
+    attachmentPaths: [...new Set(currentMaterial.flatMap(item => item.attachmentPaths))],
+    citationSources: [
+      ...currentMaterial.map(item => ({
+        citationId: `context:${item.id}`,
+        text: item.text,
+        source: publicSource(item)
+      })),
+      ...selectedHistory.map(item => ({
+        citationId: `context:${item.id}`,
+        text: item.text,
+        source: publicSource({ ...item, channel: "history" })
+      }))
+    ]
   };
 }
 

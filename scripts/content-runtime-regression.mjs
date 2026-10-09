@@ -365,6 +365,27 @@ await scope.run("account-a", async () => {
   assert.ok(restoredPermissions.every(item => (
     item.contextAllowed === false && item.learningAllowed === false
   )));
+
+  await repository.update(store => {
+    store.aiTasks.push({
+      id: "waiting-thought-answer",
+      kind: "thoughtAnswer",
+      resourceType: "thought",
+      targetId: root.id,
+      status: "waiting_for_user_model",
+      inputVersion: root.version,
+      payload: {}
+    });
+    store.notifications.push({
+      id: "waiting-thought-notification",
+      taskId: "waiting-thought-answer",
+      status: "waiting_for_user_model"
+    });
+  });
+  await runtime.thoughtWorkflows.removeChain(root.id);
+  assert.equal(stores.get("account-a").aiTasks.find(item => item.id === "waiting-thought-answer").status, "cancelled",
+    "deleting a target cancels a model-waiting task before it can be released");
+  assert.equal(stores.get("account-a").notifications.find(item => item.taskId === "waiting-thought-answer").status, "cancelled");
 });
 
 await scope.run("account-b", async () => {

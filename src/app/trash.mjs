@@ -1,6 +1,7 @@
 import { recordVersion } from "../shared/validation/index.mjs";
 import { collectAttachmentPaths } from "../shared/attachments/index.mjs";
 import { revokeEvidencePermissionsForResource } from "../modules/user-model/index.mjs";
+import { WAITING_FOR_USER_MODEL_STATUS } from "../modules/tasks/index.mjs";
 
 const AFTER_COMMIT = Symbol.for("for-now.after-commit");
 const speechSourceKey = (sourceType, sourceId) => `${sourceType}\u0000${sourceId}`;
@@ -92,14 +93,14 @@ export function createTrashMutations({
   const cancelAiTasks = (store, matches) => {
     const runningTaskIds = [];
     for (const task of store.aiTasks || []) {
-      if (!["queued", "running", "cancelling"].includes(task.status) || !matches(task)) continue;
-      const timestamp = now(), queued = task.status === "queued";
+      if (!["queued", "running", "cancelling", WAITING_FOR_USER_MODEL_STATUS].includes(task.status) || !matches(task)) continue;
+      const timestamp = now(), notStarted = ["queued", WAITING_FOR_USER_MODEL_STATUS].includes(task.status);
       Object.assign(task, {
-        status: queued ? "cancelled" : "cancelling",
+        status: notStarted ? "cancelled" : "cancelling",
         updatedAt: timestamp,
-        error: queued ? "目标已删除，任务未调用" : "目标已删除，正在停止生成"
+        error: notStarted ? "目标已删除，任务未调用" : "目标已删除，正在停止生成"
       });
-      if (queued) task.completedAt = timestamp;
+      if (notStarted) task.completedAt = timestamp;
       else {
         task.cancellationRequestedAt ||= timestamp;
         runningTaskIds.push(task.id);
@@ -109,7 +110,7 @@ export function createTrashMutations({
         status: task.status,
         message: task.error,
         updatedAt: timestamp,
-        ...(queued ? { readAt: "" } : {})
+        ...(notStarted ? { readAt: "" } : {})
       });
     }
     return runningTaskIds;

@@ -1,6 +1,8 @@
 import { sessionScope, sessionSerial } from "../../session/index.mjs";
 import { mergeStateSnapshot, publishDomains, state } from "../../state/index.mjs";
 import { localDateKey } from "../../time/index.mjs";
+import { isPendingAiTaskStatus } from "../../shared/ai-task-status.mjs";
+import { createPersonalizedTaskRuntime } from "./personalized-task-runtime.mjs";
 
 export function createDataRuntime({
   runtime,
@@ -398,7 +400,7 @@ function publishNotificationState(){
 function scheduleNotificationPoll(){
   clearTimeout(runtime.notificationTimer);
   const active=(state.aiTasks||[])
-    .some(task=>["queued","running","cancelling"].includes(task.status));
+    .some(task=>isPendingAiTaskStatus(task.status));
   const retrying=runtime.backgroundResultsRetryAttempts>0
     &&runtime.backgroundResultsRetryAttempts<backgroundResultsRetryLimit;
   if(!active&&!retrying)return;
@@ -453,11 +455,21 @@ async function openAiTaskTarget(task,notification){
   }
 }
 const refreshState=(domains,options={})=>refreshCoordinator.refresh(domains,{...options,patchOnly:options.patchOnly===true});
+const resolvePersonalizedTask=createPersonalizedTaskRuntime({
+  runtime,
+  request,
+  getSessionSerial:()=>sessionSerial,
+  getTasks:()=>state.aiTasks,
+  setTasks:tasks=>{state.aiTasks=tasks},
+  publish:publishDomains,
+  scheduleNotificationPoll
+});
 return Object.freeze({
   requestCoordinator,
   refreshCoordinator,
   setAnswerStatus,
   request,
+  resolvePersonalizedTask,
   requestV1,
   routeDataKey,
   routeStateUrl,

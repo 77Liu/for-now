@@ -16,6 +16,7 @@ import { createPageFeatureDescriptors } from "./page-descriptors.mjs";
 import { createStartupTiming } from "./startup-timing.mjs";
 import { createDurableFormDrafts } from "./durable-form-drafts.mjs";
 import { createDataRuntime } from "./data-runtime.mjs";
+import { createAnswerModalRuntime } from "./answer-modal-runtime.mjs";
 import { createHomeRuntime } from "./home-runtime.mjs";
 import { createThoughtDraftTagComposer } from "./thought-draft-tag-composer.mjs";
 import { createSessionRuntime } from "./session-runtime.mjs";
@@ -79,7 +80,7 @@ const checkinsFeatureControllers=new Set();
 const thoughtsFeatureControllers=new Set();
 let currentLocalDate=localDateKey();
 let llmSettings={provider:"deepseek",profiles:structuredClone(defaultLlmProfiles),scenarios:{...defaultLlmScenarios},sceneEfforts:{...defaultSceneEfforts},automaticAnswers:{thoughtAnswer:false},speech:{defaultVoice:"",generationRate:-10},hasApiKey:false,keyHint:""};
-let activeDate=currentLocalDate,activeDailyType="sleep",answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],answerTaskSerial=0,activeAnswerTaskId=0,currentUser=null,notificationUnreadCount=0,chainDraftVersion=0,localTestConfig=null,onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion=defaultAppVersion,releaseVersion=defaultReleaseVersion,featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
+let activeDate=currentLocalDate,activeDailyType="sleep",answerDraft="",answerReasoningDraft="",toastTimer,notificationTimer,draftTags=[],currentUser=null,notificationUnreadCount=0,chainDraftVersion=0,localTestConfig=null,onboardingSchema=null,onboardingMode="quick",onboardingDraftAnswers={},onboardingHydrated=false,governanceUrl="",authOperationSerial=0,authBusy=false,resetRouteAfterAuthentication=false,appVersion=defaultAppVersion,releaseVersion=defaultReleaseVersion,featureFlags={incrementalSync:true},syncController=null,syncHealth={status:"idle",pending:0,conflicts:0,failed:0,oldestAgeMs:0,enqueueToAckP95Ms:0,lastPullMs:0,lastError:""};
 let notificationsLoadState="idle",routeDataReady=false,routeDataRequestSerial=0,routeLoadFailureKey="",loadedRouteKey="",fullRouteStateLoaded=false,renderedRouteView="";
 const runtimeState={
   get pageRouter(){return pageRouter},set pageRouter(value){pageRouter=value},
@@ -90,8 +91,6 @@ const runtimeState={
   get applicationLifecycleReady(){return applicationLifecycleReady},set applicationLifecycleReady(value){applicationLifecycleReady=value},
   get resetRouteAfterAuthentication(){return resetRouteAfterAuthentication},set resetRouteAfterAuthentication(value){resetRouteAfterAuthentication=value},
   get requestedAuthenticatedView(){return requestedAuthenticatedView},set requestedAuthenticatedView(value){requestedAuthenticatedView=value},
-  get activeAnswerTaskId(){return activeAnswerTaskId},set activeAnswerTaskId(value){activeAnswerTaskId=value},
-  get answerTaskSerial(){return answerTaskSerial},set answerTaskSerial(value){answerTaskSerial=value},
   get chainDraftVersion(){return chainDraftVersion},set chainDraftVersion(value){chainDraftVersion=value},
   get authOperationSerial(){return authOperationSerial},set authOperationSerial(value){authOperationSerial=value},
   get answerDraft(){return answerDraft},set answerDraft(value){answerDraft=value},
@@ -221,7 +220,7 @@ const dataRuntime=createDataRuntime({
   syncBackgroundTaskResults,ensureBackgroundResultsController,
   backgroundResultsRetryLimit:BACKGROUND_RESULTS_RETRY_LIMIT
 });
-const {requestCoordinator,refreshCoordinator,setAnswerStatus,request,requestV1,routeDataKey,routeStateUrl,requestRouteState,loadRouteState,listAllV1,optionalRequest,optionalPublicRequest,requestStream,showToast,applyPendingProjection,restorePendingProjection,restorePendingProjections,applyIncrementalSnapshot,updateSyncHealth,notificationUnread,renderNotificationSummary,publishNotificationState,scheduleNotificationPoll,loadNotifications,openAiTaskTarget,refreshState}=dataRuntime;
+const {requestCoordinator,refreshCoordinator,setAnswerStatus,request,requestV1,resolvePersonalizedTask,routeDataKey,routeStateUrl,requestRouteState,loadRouteState,listAllV1,optionalRequest,optionalPublicRequest,requestStream,showToast,applyPendingProjection,restorePendingProjection,restorePendingProjections,applyIncrementalSnapshot,updateSyncHealth,notificationUnread,renderNotificationSummary,publishNotificationState,scheduleNotificationPoll,loadNotifications,openAiTaskTarget,refreshState}=dataRuntime;
 const draftTagComposer=createThoughtDraftTagComposer({
   $,getState:()=>state,escapeHtml,splitTags,
   getDraftTags:()=>draftTags,
@@ -338,31 +337,15 @@ subscribeState((next,wanted)=>{
   if(wanted.has("comments"))renderCommentPanel();
   renderNotificationSummary();
 });
-function setAnswerModalStep(step){const order=["context","thinking","answer","done"],current=order.indexOf(step);$$("#ai-answer-progress li").forEach((item,index)=>{item.classList.toggle("active",index===current);item.classList.toggle("done",index<current||(step==="done"&&index===current))})}
-function closeAnswerModal(){const modal=$("#ai-answer-modal"),busy=modal.dataset.busy==="true";modal.hidden=true;if(busy)showToast("回答继续在后台生成，完成后会提醒。")}
-async function runAnswerInModal({title,scene="thoughtAnswer",requestCall,onDone,isCurrent=()=>true}){
-  const taskId=++answerTaskSerial,modal=$("#ai-answer-modal"),result=$("#ai-answer-result"),output=$("#ai-answer-output"),status=$("#ai-answer-status");
-  activeAnswerTaskId=taskId;modal.hidden=false;modal.dataset.busy="true";$("#ai-answer-title").textContent=title;output.hidden=true;result.innerHTML="";status.className="status answer-modal-status";status.textContent="正在整理个人语境与完整问答链…";setAnswerModalStep("context");
-  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-  if(activeAnswerTaskId===taskId){setAnswerModalStep("thinking");status.textContent="正在整理回答…"}
-  let answer="",renderFrame=0,answerStarted=false;
-  const renderAnswer=()=>{renderFrame=0;if(activeAnswerTaskId!==taskId)return;result.innerHTML=renderMarkdown(answer);renderLatex(result);result.scrollIntoView({block:"nearest"})};
-  const scheduleAnswerRender=()=>{if(!renderFrame)renderFrame=requestAnimationFrame(renderAnswer)};
-  const onEvent=event=>{
-    if(activeAnswerTaskId!==taskId)return;
-    if(event.type==="reasoning"){setAnswerModalStep("thinking");status.textContent="正在整理回答…";return}
-    if(event.type==="content"){answer+=event.delta||"";if(!answerStarted){answerStarted=true;output.hidden=false;setAnswerModalStep("answer");status.textContent="正在生成回答…"}scheduleAnswerRender()}
-  };
-  try{
-    const response=await requestCall(onEvent),finalAnswer=response.draft||response.content||response.answer||answer;
-    answer=finalAnswer;if(renderFrame)cancelAnimationFrame(renderFrame);
-    if(activeAnswerTaskId===taskId){renderAnswer();output.hidden=!answer;if(isCurrent()&&onDone)await onDone(response);setAnswerModalStep("done");status.textContent=isCurrent()?"回答已生成并保存。":"回答已生成，但目标输入已经变化，未自动写入。";modal.dataset.busy="false"}
-    return response;
-  }catch(error){
-    if(activeAnswerTaskId===taskId){status.className="status answer-modal-status error";status.textContent=`未能生成：${error.message}`;modal.dataset.busy="false"}
-    throw error;
-  }
-}
+const answerModalRuntime=createAnswerModalRuntime({
+  $,
+  $$,
+  renderMarkdown,
+  renderLatex,
+  showToast,
+  resolvePersonalizedTask
+});
+const {close:closeAnswerModal,run:runAnswerInModal}=answerModalRuntime;
 async function startBackgroundChainAnswer(question,existingTask=null){
   try{
     const task=existingTask||await request("/api/ai-tasks",{method:"POST",body:JSON.stringify({kind:"thoughtAnswer",targetId:question.id,inputVersion:question.version||1,clientRequestId:crypto.randomUUID()})});
@@ -414,7 +397,7 @@ const readAudioDraftDuration=blob=>new Promise((resolve,reject)=>{
   const done=value=>{URL.revokeObjectURL(source);audio.removeAttribute("src");audio.load();value instanceof Error?reject(value):resolve(value)};
   audio.preload="metadata";audio.addEventListener("loadedmetadata",()=>Number.isFinite(audio.duration)&&audio.duration>0?done(Math.round(audio.duration*1000)):done(new Error("无法读取音频时长")),{once:true});audio.addEventListener("error",()=>done(new Error("无法读取音频时长")),{once:true});audio.src=source
 });
-const globalEvents=installGlobalEvents({runtime:runtimeState,$,$$,actionsCoordinator,localTestViewScopes:LOCAL_TEST_VIEW_SCOPES,ensureLocalTestViewScope,restorePendingProjections,createPageRouter,applicationBasePath,applyApplicationRoute,hasCapability,showPermissionPage,renderHomeMemories,openHomeMemory,openHomeEditor,closeHomeEditors,renderDate,renderSliders,publishDomains,renderStateChart,renderHomeMood,renderChat,showToast,pageAudioCoordinator,claimPageAudio,stopPageAudio,normalizeTtsPlaybackRate,requestV1,refreshState,applyPendingProjection,contentImageDraft,renderContentImageEditor,setContentImageFiles,queueContentImageUnderstanding,metricConfig,metricValue,splitTags,clearDurableDraft,saveDurableDrafts,durableDraftForms,resetOccurrenceInput,occurrenceFields,occurrenceKeyboardSubmit,entryKeyIntent,imageRecordPayload,captureRecordPayload,contentImagePaths,clearSubmittedContentImageDraft,discardContentImageUploads,llmProfile,runAnswerInModal,requestStream,startBackgroundChainAnswer,request,quoteTagPickerConfig,quoteTagPickerElements,updateQuoteTagPicker,renderQuoteTagPicker,quoteTagsForSubmission,quoteTagCandidates,closeSelectionQuoteModal,collectOnboardingAnswers,renderOnboardingQuestions,onboardingPayload,onboardingV2Controller,load,localDateKey,apiClient,setAuthTab,setAuthBusy,authRequest,restartApplicationForUser,showAuthGate,mediaDraftStore,state,sessionSerial,persistedDateTimeInput,escapeHtml,presentError,openThoughtDetail,openContextReceiptSource,loadRouteState,renderTagComposer,commitDraftTags,chainRecordKind,syncChainRecordKind,resetContentImageEditor,closeAnswerModal,openImageViewer,closeImageViewer,moveImageViewer,trapHomeEditorFocus,handleTagMultiSelectKey});
+const globalEvents=installGlobalEvents({runtime:runtimeState,$,$$,actionsCoordinator,localTestViewScopes:LOCAL_TEST_VIEW_SCOPES,ensureLocalTestViewScope,restorePendingProjections,createPageRouter,applicationBasePath,applyApplicationRoute,hasCapability,showPermissionPage,renderHomeMemories,openHomeMemory,openHomeEditor,closeHomeEditors,renderDate,renderSliders,publishDomains,renderStateChart,renderHomeMood,renderChat,showToast,pageAudioCoordinator,claimPageAudio,stopPageAudio,normalizeTtsPlaybackRate,requestV1,refreshState,applyPendingProjection,contentImageDraft,renderContentImageEditor,setContentImageFiles,queueContentImageUnderstanding,metricConfig,metricValue,splitTags,clearDurableDraft,saveDurableDrafts,durableDraftForms,resetOccurrenceInput,occurrenceFields,occurrenceKeyboardSubmit,entryKeyIntent,imageRecordPayload,captureRecordPayload,contentImagePaths,clearSubmittedContentImageDraft,discardContentImageUploads,llmProfile,runAnswerInModal,requestStream,startBackgroundChainAnswer,request,resolvePersonalizedTask,quoteTagPickerConfig,quoteTagPickerElements,updateQuoteTagPicker,renderQuoteTagPicker,quoteTagsForSubmission,quoteTagCandidates,closeSelectionQuoteModal,collectOnboardingAnswers,renderOnboardingQuestions,onboardingPayload,onboardingV2Controller,load,localDateKey,apiClient,setAuthTab,setAuthBusy,authRequest,restartApplicationForUser,showAuthGate,mediaDraftStore,state,sessionSerial,persistedDateTimeInput,escapeHtml,presentError,openThoughtDetail,openContextReceiptSource,loadRouteState,renderTagComposer,commitDraftTags,chainRecordKind,syncChainRecordKind,resetContentImageEditor,closeAnswerModal,openImageViewer,closeImageViewer,moveImageViewer,trapHomeEditorFocus,handleTagMultiSelectKey});
 ({pageRouter,switchView,restoreView}=globalEvents);
 const {openCaptureFeature,openLibraryFeature,openQuoteFeature,openKeepsakeFeature,openDiscoveryItem,openCheckinEditor,logout}=globalEvents;
 export async function createRuntimeComposition(initial = null, {
@@ -440,9 +423,9 @@ export async function createRuntimeComposition(initial = null, {
   const {statePort,syncPort,shellPort,sessionPort}=createRuntimeApplicationPorts(portFactories);
   const descriptors=createPageFeatureDescriptors({
     runtime:runtimeState,runtimeFeatureLoaders,$,actionsCoordinator,showToast,
-    request,featureRequestV1,featureListAllV1,mediaDraftStore,requestCoordinator,
+    request,resolvePersonalizedTask,featureRequestV1,featureListAllV1,mediaDraftStore,requestCoordinator,
     refreshState,applyPendingProjection,resetOccurrenceInput,occurrenceFields,
-    imageDataUrls,viewerAttachmentPath,requestStream,apiClient,contentImageDraft,
+    imageDataUrls,viewerAttachmentPath,requestStream,resolvePersonalizedTask,apiClient,contentImageDraft,
     activateContentImageDraft,renderContentImageEditor,resetContentImageEditor,
     persistContentImageDraft,contentImagePaths,
     clearSubmittedContentImageDraft,discardContentImageUploads,setContentImageFiles,

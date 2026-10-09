@@ -1,5 +1,6 @@
 export { createAnnotationCommands } from "./annotation-resources.mjs";
 export { createAiTaskTargets } from "./ai-task-targets.mjs";
+export { parseVerifiedAnswer } from "./answer-citations.mjs";
 export {
   createAiBudgetRuntime,
   deepSeekBudgetStages,
@@ -12,6 +13,7 @@ export { createStatisticsRuntime } from "./statistics-runtime.mjs";
 export { createServerLifecycle } from "./server-lifecycle.mjs";
 export { createServerRuntime } from "./server-runtime.mjs";
 export { createBackgroundAi } from "./background-ai.mjs";
+export { createContentBackground } from "./content/background.mjs";
 export { createTrashMutations, createTrashCommands } from "./trash.mjs";
 export { createAttachmentCleanup } from "./attachment-cleanup.mjs";
 export {
@@ -35,8 +37,10 @@ export { createReviewChatWorkflows } from "./review-chat-workflows.mjs";
 export {
   USER_MODEL_DOMAIN_LABELS,
   activeUserModelEntries,
+  coreUserModelProjection,
   createUserModelExtractionService,
   prepareUserModelExtraction,
+  userModelCoreReadiness,
   userModelEvidenceCurrent,
   userModelProjection
 } from "./user-model.mjs";
@@ -59,6 +63,7 @@ export {
   WORKING_CONTEXT_RECEIPT_BYTE_LIMIT,
   WORKING_CONTEXT_VERSION,
   WORKING_CONTEXT_TOKEN_BUDGET,
+  WORKING_CONTEXT_PROMPT_BYTE_BUDGET,
   contextDerivedOutputAllowed,
   taskContextSourceMaterial,
   thoughtTaskCurrentMaterial,

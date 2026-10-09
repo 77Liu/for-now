@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { WAITING_FOR_USER_MODEL_STATUS } from "../../shared/core-model-gate.mjs";
 import { recordVersion, safeText } from "../../shared/validation/index.mjs";
 import {
   CONTENT_ATTACHMENT_MAX_IMAGES,
@@ -236,15 +237,15 @@ export function createContentAttachmentService({
       if (task.kind !== "contentImageUnderstanding"
         || task.payload?.targetType !== targetType
         || task.payload?.targetId !== targetId
-        || !["queued", "running", "cancelling"].includes(task.status)
+        || !["queued", "running", "cancelling", WAITING_FOR_USER_MODEL_STATUS].includes(task.status)
         || !(task.payload?.attachmentPaths || []).some(path => removed.has(path))) continue;
-      const queued = task.status === "queued";
+      const notStarted = ["queued", WAITING_FOR_USER_MODEL_STATUS].includes(task.status);
       Object.assign(task, {
-        status: queued ? "cancelled" : "cancelling",
+        status: notStarted ? "cancelled" : "cancelling",
         updatedAt: changedAt,
-        error: queued ? "原始图片已移除，任务未调用" : "原始图片已移除，正在停止理解"
+        error: notStarted ? "原始图片已移除，任务未调用" : "原始图片已移除，正在停止理解"
       });
-      if (queued) task.completedAt = changedAt;
+      if (notStarted) task.completedAt = changedAt;
       else {
         task.cancellationRequestedAt ||= changedAt;
         running.push(task.id);
@@ -254,7 +255,7 @@ export function createContentAttachmentService({
         status: task.status,
         message: task.error,
         updatedAt: changedAt,
-        ...(queued ? { readAt: "" } : {})
+        ...(notStarted ? { readAt: "" } : {})
       });
     }
     return running;

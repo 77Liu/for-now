@@ -104,6 +104,34 @@ export function createJournalRecords({
     operation,
     { onReplay: markReplay }
   );
+  const addReflectionInStore = (state, journalId, input, {
+    clientRequestId = "",
+    requestHash = "",
+    useLegacyLookup = true
+  } = {}) => {
+    if (clientRequestId && useLegacyLookup) {
+      const duplicate = priorReflectionRequest(state, clientRequestId);
+      if (duplicate) {
+        return duplicate.journalId === journalId && duplicate.reflection.requestHash === requestHash
+          ? { value: duplicate.reflection, duplicate: true }
+          : { conflict: true };
+      }
+    }
+    const journal = state.journals.find(item => item.id === journalId);
+    if (!journal) return { missing: true };
+    const reflection = {
+      id: createId(),
+      createdAt: now(),
+      sourceUpdatedAt: input.sourceUpdatedAt,
+      content: input.content,
+      ...(input.reasoningContent ? { reasoningContent: input.reasoningContent } : {}),
+      ...(input.contextReceipt ? { contextReceipt: structuredClone(input.contextReceipt) } : {}),
+      ...(clientRequestId ? { version: 1, clientRequestId, requestHash } : {})
+    };
+    journal.reflections ||= [];
+    journal.reflections.unshift(reflection);
+    return { value: reflection, duplicate: false };
+  };
 
   return {
     async list(options) {
@@ -243,39 +271,24 @@ export function createJournalRecords({
     },
 
     addReflection(journalId, input, { clientRequestId = "", requestHash = "" } = {}) {
-      const add = (state, useLegacyLookup = true) => {
-        if (clientRequestId && useLegacyLookup) {
-          const duplicate = priorReflectionRequest(state, clientRequestId);
-          if (duplicate) {
-            return duplicate.journalId === journalId && duplicate.reflection.requestHash === requestHash
-              ? { value: duplicate.reflection, duplicate: true }
-              : { conflict: true };
-          }
-        }
-        const journal = state.journals.find(item => item.id === journalId);
-        if (!journal) return { missing: true };
-        const reflection = {
-          id: createId(),
-          createdAt: now(),
-          sourceUpdatedAt: input.sourceUpdatedAt,
-          content: input.content,
-          ...(input.reasoningContent ? { reasoningContent: input.reasoningContent } : {}),
-          ...(input.contextReceipt ? { contextReceipt: structuredClone(input.contextReceipt) } : {}),
-          ...(clientRequestId ? { version: 1, clientRequestId, requestHash } : {})
-        };
-        journal.reflections ||= [];
-        journal.reflections.unshift(reflection);
-        return { value: reflection, duplicate: false };
-      };
       if (clientRequestId && typeof repository.executeIdempotent === "function") {
         return executeIdempotent(
           JOURNAL_REFLECTION_IDEMPOTENCY_SCOPE,
           clientRequestId,
           requestHash,
-          state => add(state, false)
+          state => addReflectionInStore(state, journalId, input, {
+            clientRequestId,
+            requestHash,
+            useLegacyLookup: false
+          })
         );
       }
-      return repository.update(state => add(state));
-    }
+      return repository.update(state => addReflectionInStore(state, journalId, input, {
+        clientRequestId,
+        requestHash
+      }));
+    },
+
+    addReflectionInStore
   };
 }

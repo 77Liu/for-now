@@ -6,13 +6,35 @@ import { safeText } from "../shared/validation/index.mjs";
 import { deriveStateInsights, deriveThoughtClusters } from "./derived-statistics.mjs";
 import { publicSpeechAssets } from "./speech-cache.mjs";
 
-export function withoutOwnerMetadata(value) {
-  if (Array.isArray(value)) return value.map(withoutOwnerMetadata);
+export function withoutOwnerMetadata(value, field = "") {
+  if (Array.isArray(value)) {
+    return value
+      .map(item => withoutOwnerMetadata(item, field))
+      .filter(item => item !== null);
+  }
   if (!value || typeof value !== "object") return value;
+  if (["userClaim", "modelUnknown"].includes(value.resourceType)
+    || /^user-claim-/.test(String(value.id || ""))) {
+    return null;
+  }
+  if (field === "userModel") {
+    return {
+      readiness: withoutOwnerMetadata(value.readiness),
+      claims: [],
+      unknowns: []
+    };
+  }
   return Object.fromEntries(
     Object.entries(value)
-      .filter(([key]) => key !== "tokenBudget")
-      .map(([key, item]) => [key, withoutOwnerMetadata(item)])
+      .filter(([key]) => !["tokenBudget", "userClaims", "modelUnknowns"].includes(key))
+      .map(([key, item]) => {
+        if (key === "sourceIds" && Array.isArray(item)) {
+          return [key, item.filter(id => (
+            !/^(?:userClaim|modelUnknown):/.test(String(id))
+          ))];
+        }
+        return [key, withoutOwnerMetadata(item, key)];
+      })
   );
 }
 

@@ -1,4 +1,5 @@
 import { sanitizeAnalysisRecord } from "./model.mjs";
+import { resolveSynchronousPersonalizedResponse } from "../../../shared/personalized-ai-task.mjs";
 
 const noop = () => {};
 
@@ -18,6 +19,8 @@ export function createReviewOperations({
   const requestIds = new Map();
 
   const query = selector => getRoot()?.querySelector?.(selector) || null;
+  const resolvePersonalizedTask = data.resolvePersonalizedTask
+    || (async response => resolveSynchronousPersonalizedResponse(response));
   const requestId = key => {
     if (!requestIds.has(key)) requestIds.set(key, platform.createRequestId());
     return requestIds.get(key);
@@ -156,7 +159,7 @@ export function createReviewOperations({
         status.textContent = "正在比较模型草稿与你最终保留的回答，以及你保留、舍弃和长期缺席的主题…";
       }
       try {
-        await data.requestV1(
+        const initialResponse = await data.requestV1(
           "/api/v1/analyses",
           {
             method: "POST",
@@ -165,6 +168,14 @@ export function createReviewOperations({
           },
           { domains: ["analyses"] }
         );
+        const settled = await resolvePersonalizedTask(initialResponse, {
+          operationLabel: "认知复盘",
+          expectedKind: "analysis",
+          onStatus: message => {
+            if (isCurrent(ticket) && status) status.textContent = message;
+          }
+        });
+        if (settled.abandoned) return false;
         requestIds.delete(key);
         if (!isCurrent(ticket)) return false;
         if (status) status.textContent = "";
@@ -172,6 +183,7 @@ export function createReviewOperations({
         view.showToast("认知复盘已生成");
         return true;
       } catch (error) {
+        if (error.taskId) requestIds.delete(key);
         if (!isCurrent(ticket)) return false;
         if (error.syncStatus === "pending") {
           if (status) status.textContent = "认知复盘已进入待同步队列。";

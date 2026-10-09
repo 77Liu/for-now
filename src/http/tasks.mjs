@@ -5,6 +5,8 @@ export function createTaskHttp({ backgroundAi, bodyJson, sendJson }) {
     if (created.unsupported) return sendJson(res, 400, { error: "不支持这种后台任务" });
     if (created.missing) return sendJson(res, 404, { error: "任务目标不存在或正文已变化" });
     if (created.invalid) return sendJson(res, 400, { error: "任务缺少幂等标识", code: "IDEMPOTENCY_KEY_REQUIRED" });
+    if (created.invalidIntent) return sendJson(res, 400, { error: "生成请求内容无效", code: "INVALID_AI_TASK_INTENT" });
+    if (created.inputTooLarge) return sendJson(res, 413, { error: "待处理内容过长，请缩短后重试", code: "AI_TASK_INTENT_TOO_LARGE", maxBytes: created.maxBytes });
     if (created.conflict) return sendJson(res, 409, { error: "同一请求标识不能用于不同任务", code: "IDEMPOTENCY_KEY_REUSED" });
     if (created.alreadyAnswered) return sendJson(res, 409, { error: "目标已经有回答", code: "TARGET_ALREADY_ANSWERED" });
     if (created.versionConflict || created.subtargetVersionConflict) return sendJson(res, 409, { error: "目标已经更新，请刷新后重试", code: "VERSION_CONFLICT", currentVersion: created.currentVersion });

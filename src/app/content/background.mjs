@@ -15,6 +15,8 @@ import {
 } from "../../modules/thoughts/index.mjs";
 import { createAiTaskTargets } from "../ai-task-targets.mjs";
 import { createBackgroundAi } from "../background-ai.mjs";
+import { userModelCoreReadiness } from "../user-model.mjs";
+import { parseVerifiedAnswer } from "../answer-citations.mjs";
 
 const taskFailure = (message, statusCode, code) => Object.assign(
   new Error(message),
@@ -102,7 +104,28 @@ export function createContentBackground({
     tasks: createTaskLifecycle({ createId, now, hash }),
     notifications: createNotificationService({ createId, now }),
     targets: taskTargets,
+    shouldWaitForModel: (store, input) => (
+      [
+        "thoughtAnswer",
+        "followUpAnswer",
+        "annotationShenji",
+        "thoughtDraft",
+        "thoughtPrompt",
+        "journalAssist",
+        "journalReflection",
+        "chat",
+        "analysis"
+      ].includes(input?.kind)
+      && !userModelCoreReadiness(store).ready
+    ),
+    inspectIntent: taskTargets.inspectIntent,
     generate: async (work, { signal, isCurrent } = {}) => {
+      if (work.preflightError) {
+        throw Object.assign(new Error(work.preflightError.message), {
+          code: work.preflightError.code || "AI_TASK_INPUT_INVALID",
+          statusCode: 400
+        });
+      }
       if (work.kind === "captureTranscription") {
         if (typeof isCurrent === "function" && !await isCurrent()) {
           throw Object.assign(new Error("目标已变化，未调用外部模型"), {
@@ -131,9 +154,14 @@ export function createContentBackground({
           imagePaths,
           signal
         });
-        return work.scene === "contentImageUnderstanding"
-          ? { ...result, model: "deepseek-flash" }
-          : result;
+        const verifiedAnswer = work.citationsEnabled
+          ? parseVerifiedAnswer(result.content, work.citationSources)
+          : null;
+        return {
+          ...result,
+          ...(verifiedAnswer || {}),
+          ...(work.scene === "contentImageUnderstanding" ? { model: "deepseek-flash" } : {})
+        };
       } finally {
         await cleanupTemporaryFiles(imagePaths);
       }

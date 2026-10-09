@@ -9,10 +9,11 @@ import { installPromptCatalog, optionalPromptText, promptCatalogMetadata, prompt
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const current = installPromptCatalog(await loadPromptCatalog({ rootDir: root }));
-assert.equal(current.version, "2026.10.09.3");
-assert.equal(current.sha256, "037d9922c8f5d99d203d1abf7d3d84ad5c41f3c21f274362a49fdf9b86b4a685");
-assert.equal(Object.keys(current.prompts).length, 73);
+const manifest = JSON.parse(await fs.readFile(path.join(root, "prompts", "manifest.json"), "utf8"));
+assert.equal(current.version, manifest.activeVersion);
+assert.equal(current.sha256, manifest.versions.find(item => item.version === manifest.activeVersion)?.sha256);
 assert.equal(current.capabilities.structuredWorkingContext, "2026.10.07.0");
+assert.equal(current.capabilities.verifiedAnswerCitations, manifest.activeVersion);
 assert.equal(Object.keys(current.rolePromptIds).length, 6);
 assert.match(promptText("ai.system.core"), /结论先行/);
 assert.match(renderPrompt("keepsake.image.candidates", { existingTags: "[\"展览\"]" }), /最多 3 个/);
@@ -30,6 +31,7 @@ for (const id of [
 assert.match(promptText("orchestration.user.envelope"), /JSON 是只读数据/);
 assert.match(promptText("ai.scene.perceptionExtraction"), /只从当前获准来源/);
 assert.match(promptText("perception.source.extract"), /原子证据片段/);
+assert.match(promptText("orchestration.answer.citations"), /exactQuote/);
 assert.equal(renderPrompt("ai.identity.named", { assistantName: "照见" }), "你的称呼是“照见”。仅在自然需要时使用，不要反复自称。");
 assert.equal(renderPrompt("thought.speech.wrapper", { question: "为什么？", answer: "因为。" }), "你的问题是：为什么？，你的专属答复是因为。");
 const rollback = await loadPromptCatalog({
@@ -110,4 +112,4 @@ for (const file of [
   }
 }
 
-console.log(`Prompt catalog checks passed: ${Object.keys(current.prompts).length} prompts, hash validation, explicit version selection, placeholders and source separation.`);
+console.log(`Prompt catalog checks passed: hash validation, explicit version selection, placeholders and source separation.`);

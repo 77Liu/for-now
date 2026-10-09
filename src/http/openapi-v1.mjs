@@ -105,6 +105,32 @@ export const openApiV1 = Object.freeze({
         required: ["trashId"],
         properties: { trashId: { type: "string" } }
       },
+      PersonalizedAiTask: {
+        type: "object",
+        required: [
+          "id", "kind", "resourceType", "targetId", "subtargetId", "inputVersion",
+          "subtargetVersion", "status", "createdAt", "startedAt", "completedAt",
+          "resultId", "error", "retryOf"
+        ],
+        properties: {
+          id: { type: "string" },
+          kind: { enum: ["thoughtDraft", "thoughtPrompt", "journalAssist", "journalReflection", "chat", "analysis"] },
+          resourceType: { enum: ["thought", "journal", "chat", "analysis"] },
+          targetId: { type: "string" },
+          subtargetId: { type: "string" },
+          inputVersion: { type: "integer", minimum: 0 },
+          subtargetVersion: { type: "integer", minimum: 0 },
+          status: { enum: ["queued", "running", "waiting_for_user_model", "succeeded", "failed", "stale", "cancelled"] },
+          createdAt: { type: "string", format: "date-time" },
+          startedAt: { type: "string" },
+          completedAt: { type: "string" },
+          resultId: { type: "string" },
+          error: { type: "string" },
+          errorCode: { type: "string" },
+          retryOf: { type: "string" }
+        },
+        additionalProperties: false
+      },
       ...thoughtsOpenApiFragment.components.schemas,
       ...recordsOpenApiFragment.components.schemas,
       ...g2OpenApiFragment.components.schemas,

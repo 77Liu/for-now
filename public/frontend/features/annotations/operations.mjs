@@ -1,3 +1,4 @@
+import { isWaitingForUserModelTask, pendingAiTaskMessage } from "../../shared/ai-task-status.mjs";
 import {
   annotationPresentation,
   commentSubmissionIntent,
@@ -81,9 +82,10 @@ export function createAnnotationOperations({
       }
     });
     if (isCurrent(operation) && status) {
+      const taskMessage = pendingAiTaskMessage(result.task, "已进入后台队列，可继续使用其他功能。");
       status.textContent = result.notificationRefreshError
-        ? "任务已提交，但通知刷新失败；稍后会自动重试刷新。"
-        : "已进入后台队列，可继续使用其他功能。";
+        ? `${taskMessage} 通知刷新失败，稍后会自动重试刷新。`
+        : taskMessage;
     }
     return result;
   }
@@ -293,7 +295,9 @@ export function createAnnotationOperations({
       showToast(
         result.notificationRefreshError
           ? "神鸡任务已提交，但通知刷新失败"
-          : "神鸡回复已在后台排队",
+          : isWaitingForUserModelTask(result.task)
+            ? "神鸡回复等待核心用户模型就绪"
+            : "神鸡回复已在后台排队",
         result.notificationRefreshError ? "error" : "success"
       );
     } catch (error) {

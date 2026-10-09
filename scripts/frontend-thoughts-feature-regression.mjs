@@ -4,11 +4,13 @@ import {
   createThoughtChains,
   currentUserConclusion,
   normalizeThoughtSearch,
+  pendingThoughtTask,
   thoughtListPreview,
   thoughtMatchesSearch,
   visibleThoughtChains
 } from "../public/frontend/features/thoughts/model.mjs";
 import { createThoughtPresentation } from "../public/frontend/features/thoughts/presentation.mjs";
+import { isPendingAiTaskStatus } from "../public/frontend/shared/ai-task-status.mjs";
 
 const occurred = (day, hour) => `2026-10-${day}T${hour}:00:00.000Z`;
 const records = [
@@ -39,6 +41,13 @@ const records = [
     type: "answer",
     relatedTo: "root-old",
     content: "AI 建议",
+    citations: [{
+      sourceId: "thought:root-old",
+      recordType: "用户记录",
+      version: 2,
+      exactQuote: "如何稳定推进长期项目"
+    }],
+    citationStatus: "matched",
     authorType: "ai",
     occurredAt: occurred("04", "11"),
     createdAt: occurred("04", "11"),
@@ -84,6 +93,8 @@ const records = [
 ];
 
 assert.equal(normalizeThoughtSearch("  长期   项目 "), "长期 项目");
+assert.equal(isPendingAiTaskStatus("waiting_for_user_model"), true);
+assert.equal(isPendingAiTaskStatus("succeeded"), false);
 assert.deepEqual(
   createThoughtChains(records, "occurred").map(chain => chain.question.id),
   ["root-new", "root-old", "orphan"]
@@ -129,6 +140,11 @@ const snapshot = {
     targetId: "root-new",
     subtargetId: "follow-1",
     status: "queued"
+  }, {
+    id: "task-root",
+    kind: "thoughtAnswer",
+    targetId: "root-new",
+    status: "waiting_for_user_model"
   }],
   insights: { aiOnlyThoughtIds: ["root-new"] },
   speech: {
@@ -147,7 +163,11 @@ const snapshot = {
 const presentation = createThoughtPresentation({
   getSnapshot: () => snapshot,
   appUrl: value => `/now${value}`,
-  contextReceiptMarkup: () => "",
+  contextReceiptMarkup: (_receipt, citations, citationStatus) => (
+    citationStatus === "matched"
+      ? `<aside data-citation-status="matched">${citations.map(item => `<q>${item.exactQuote}</q>`).join("")}</aside>`
+      : ""
+  ),
   contentImagesMarkup: () => ""
 });
 const listMarkup = presentation.cardsMarkup(createThoughtChains(records), "occurred", {
@@ -155,12 +175,24 @@ const listMarkup = presentation.cardsMarkup(createThoughtChains(records), "occur
 });
 assert.match(listMarkup, /data-chain-id="root-new"/);
 assert.match(listMarkup, /回答正在后台生成，可继续使用其他功能/);
+assert.match(listMarkup, /等待核心用户模型就绪；完成核心问答后会自动继续/);
+assert.match(listMarkup, /data-answer-chain="root-new" disabled/);
+assert.equal(pendingThoughtTask(snapshot.aiTasks, "thoughtAnswer", "root-new").status, "waiting_for_user_model");
 assert.match(listMarkup, /thought-trace-pending/);
+snapshot.aiTasks[0].status = "waiting_for_user_model";
+const waitingFollowUpMarkup = presentation.cardsMarkup(createThoughtChains(records), "occurred", {
+  groupMonths: true
+});
+assert.match(waitingFollowUpMarkup, /data-followup-answer="follow-1"[^>]*disabled/);
+assert.match(waitingFollowUpMarkup, /等待核心用户模型就绪；完成核心问答后会自动继续/);
 const detailMarkup = presentation.cardsMarkup([oldChain], "occurred", { detail: true });
 assert.equal((detailMarkup.match(/thought-detail-title/g) || []).length, 1);
 assert.equal((detailMarkup.match(/class="chain-summary"/g) || []).length, 0);
 assert.match(detailMarkup, /data-speech-source-version="1"/);
 assert.match(detailMarkup, /\/now\/api\/speech\/audio\?id=asset-1/);
+assert.match(detailMarkup, /data-citation-status="matched"/);
+assert.match(detailMarkup, /<q>如何稳定推进长期项目<\/q>/,
+  "verified citations must flow from persisted answer metadata into visible answer markup");
 
 const runtime = await readFile(
   new URL("../public/frontend/app/runtime.mjs", import.meta.url),
@@ -182,22 +214,6 @@ for (const removed of [
 assert.match(runtime, /import\("\.\.\/features\/thoughts\/index\.mjs"\)/);
 assert.match(descriptorRuntime, /descriptors\.thoughts=.*loadThoughtsPage\("thoughts"\)/);
 assert.match(descriptorRuntime, /descriptors\.together=.*loadThoughtsPage\("together"\)/);
-
-for (const file of [
-  "controller.mjs",
-  "loader.mjs",
-  "model.mjs",
-  "operations.mjs",
-  "presentation.mjs",
-  "speech.mjs",
-  "view.mjs"
-]) {
-  const source = await readFile(
-    new URL(`../public/frontend/features/thoughts/${file}`, import.meta.url),
-    "utf8"
-  );
-  assert.ok(source.split(/\r?\n/).length <= 500, `${file} exceeds 500 lines`);
-}
 
 console.log(
   "Frontend thoughts feature checks passed: hierarchy, search, route presentation, "

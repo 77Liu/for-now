@@ -9,10 +9,13 @@ import {
 } from "../modules/thoughts/index.mjs";
 import {
   compactPersonalContextReceipt,
+  personalContextProjection,
+  personalContextReceiptFingerprint,
   thoughtPromptContext,
   userAnswerContext
 } from "./personal-context.mjs";
 import { compileWorkingContextPrompt } from "./prompt-context.mjs";
+import { assertCoreModelReady } from "../shared/core-model-gate.mjs";
 import {
   thoughtTaskCurrentMaterial,
   workingContextProjection,
@@ -32,6 +35,7 @@ export function createThoughtWorkflows({
   hash,
   publicTask,
   getAccountId = () => "local",
+  coreModelReadiness = () => ({ ready: true }),
   materializeAttachmentFiles = async () => [],
   contextKey,
   now = () => new Date().toISOString()
@@ -108,8 +112,128 @@ export function createThoughtWorkflows({
     });
     return saved;
   };
+  const thoughtIntentHash = task => hash(JSON.stringify({
+    kind: task.kind,
+    targetId: task.targetId || "",
+    payload: task.payload || {}
+  }));
+  const queueColdTask = async (kind, targetId, payload, clientRequestId) => {
+    const store = await repository.read();
+    if (coreModelReadiness(store)?.ready !== false) return null;
+    return backgroundAi.enqueue({
+      kind,
+      targetId,
+      payload,
+      clientRequestId
+    });
+  };
+  const personalizedTaskHandler = {
+    inspectIntent(_store, task) {
+      if (!task || !["thoughtDraft", "thoughtPrompt"].includes(task.kind)) return false;
+      return {
+        inputVersion: Math.max(0, Number(task.payload?.binding?.inputVersion) || 0),
+        subtargetVersion: 0,
+        inputHash: thoughtIntentHash(task)
+      };
+    },
+    prepare(store, task) {
+      if (task.kind === "thoughtDraft") {
+        const payload = task.payload;
+        const personalContext = personalContextProjection(store);
+        return {
+          kind: task.kind,
+          inputVersion: Math.max(0, Number(payload.binding?.inputVersion) || 0),
+          subtargetVersion: 0,
+          inputHash: thoughtIntentHash(task),
+          prompt: userPrompt({
+            context: personalContext.prompt,
+            ...thoughtDraftInput(payload.question, payload.idea)
+          }),
+          contextFingerprint: hash(JSON.stringify({
+            receipt: personalContextReceiptFingerprint(personalContext.receipt),
+            prompt: personalContext.prompt
+          })),
+          scene: "thoughtDraft",
+          maxTokens: 16000,
+          taskOutput: {
+            requestId: payload.binding?.requestId || task.clientRequestId,
+            targetId: payload.binding?.targetId || task.targetId || "",
+            inputVersion: Math.max(0, Number(payload.binding?.inputVersion) || 0)
+          }
+        };
+      }
+      if (task.kind === "thoughtPrompt") {
+        const payload = task.payload;
+        const context = thoughtPromptContext(store, payload.occurredOn);
+        return {
+          kind: task.kind,
+          inputVersion: Math.max(0, Number(payload.binding?.inputVersion) || 0),
+          subtargetVersion: 0,
+          inputHash: thoughtIntentHash(task),
+          prompt: thoughtStarterPrompt(payload.occurredOn, context),
+          contextFingerprint: context.contextFingerprint,
+          scene: "thoughtPrompt",
+          systemPrompt: thoughtPromptSystem(),
+          maxTokens: 400,
+          taskOutput: {
+            hasHistory: context.hasHistory,
+            requestId: payload.binding?.requestId || task.clientRequestId,
+            targetId: payload.binding?.targetId || task.targetId || "",
+            inputVersion: Math.max(0, Number(payload.binding?.inputVersion) || 0)
+          }
+        };
+      }
+      return null;
+    },
+    save(_store, work, task, result) {
+      if (task.kind === "thoughtDraft") {
+        task.output = {
+          ...work.taskOutput,
+          draft: stripThoughtAnswerLead(result.content),
+          reasoningContent: result.reasoningContent || ""
+        };
+      } else {
+        task.output = {
+          ...work.taskOutput,
+          prompt: safeText(result.content, 160).replace(/\s+/g, " ")
+        };
+      }
+      return task.id;
+    },
+    result(_store, task) {
+      return task.output || null;
+    }
+  };
 
   return {
+    personalizedTaskHandler,
+    async queueDraftIfCold({ question, idea, requestId, targetId, inputVersion }) {
+      return queueColdTask("thoughtDraft", targetId || requestId, {
+        question,
+        idea,
+        binding: { requestId, targetId, inputVersion }
+      }, requestId);
+    },
+    async queueStarterIfCold({ eventTime, binding = {}, requestId }) {
+      const clientRequestId = requestId || binding.requestId;
+      return queueColdTask("thoughtPrompt", binding.targetId || clientRequestId, {
+        occurredOn: eventTime.occurredOn,
+        binding: {
+          requestId: clientRequestId,
+          targetId: binding.targetId || "",
+          inputVersion: Math.max(0, Number(binding.inputVersion) || 0)
+        }
+      }, clientRequestId);
+    },
+    async queueAnswerIfCold({ id, clientRequestId }) {
+      const store = await repository.read();
+      if (coreModelReadiness(store)?.ready !== false) return null;
+      return backgroundAi.enqueue({
+        kind: "thoughtAnswer",
+        targetId: id,
+        clientRequestId
+      });
+    },
     async createChain(input) {
       const requestHash = hash(JSON.stringify({
         question: input.questionText,
@@ -176,6 +300,7 @@ export function createThoughtWorkflows({
 
     async createDraft({ question, idea, requestId, targetId, inputVersion, onDelta }) {
       const store = await repository.read();
+      assertCoreModelReady(coreModelReadiness(store));
       const result = await generate(userPrompt({
         context: userAnswerContext(store),
         ...thoughtDraftInput(question, idea)
@@ -191,6 +316,7 @@ export function createThoughtWorkflows({
 
     async createStarter({ eventTime, binding, onDelta }) {
       const store = await repository.read();
+      assertCoreModelReady(coreModelReadiness(store));
       const context = thoughtPromptContext(store, eventTime.occurredOn);
       const result = await generate(thoughtStarterPrompt(eventTime.occurredOn, context), {
         scene: "thoughtPrompt",
@@ -228,6 +354,7 @@ export function createThoughtWorkflows({
             if (persisted !== undefined) return persisted.value || persisted;
           }
           const generateAndSave = async (store, save) => {
+            assertCoreModelReady(coreModelReadiness(store));
             const duplicate = store.thoughts.find(item => item.type === "answer" && item.clientRequestId === clientRequestId);
             if (duplicate) {
               if (duplicate.relatedTo !== id) {

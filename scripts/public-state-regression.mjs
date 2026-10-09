@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import {
   createEmptyStore,
-  createPublicStateProjection
+  createPublicStateProjection,
+  withoutOwnerMetadata
 } from "../src/app/index.mjs";
 
 process.env.TZ = "Asia/Shanghai";
@@ -93,6 +94,8 @@ const store = {
     visible: true,
     tokenBudget: { limit: 5000 }
   },
+  userClaims: [{ id: "private-claim", statement: "MODEL_DETAIL_MARKER" }],
+  modelUnknowns: [{ id: "private-unknown", question: "UNKNOWN_DETAIL_MARKER" }],
   checkins: [{
     id: "checkin",
     occurredOn: CURRENT_DATE,
@@ -132,6 +135,8 @@ assert.equal(Object.hasOwn(ownerState.captures[0], "speechCache"), false);
 assert.equal(Object.hasOwn(ownerState.keepsakes[0], "originalPath"), false);
 assert.equal(Object.hasOwn(ownerState.keepsakes[0], "requestHash"), false);
 assert.equal(ownerState.ownerExtension.tokenBudget.limit, 5000);
+assert.equal(ownerState.userClaims[0].statement, "MODEL_DETAIL_MARKER");
+assert.equal(ownerState.modelUnknowns[0].question, "UNKNOWN_DETAIL_MARKER");
 assert.deepEqual(ownerState.clusters.map(item => [item.theme, item.count]), [["工作与创造", 1]]);
 assert.equal(ownerState.insights.weekly.rootCount30, 1);
 assert.deepEqual(ownerState.speech, {
@@ -156,6 +161,40 @@ assert.deepEqual(ownerState.vision, { configured: true });
 
 const memberState = projectPublicState(store);
 assert.equal(memberState.ownerExtension.visible, true);
+assert.equal(Object.hasOwn(memberState, "userClaims"), false);
+assert.equal(Object.hasOwn(memberState, "modelUnknowns"), false);
+assert.equal(JSON.stringify(memberState).includes("MODEL_DETAIL_MARKER"), false);
+assert.equal(JSON.stringify(memberState).includes("UNKNOWN_DETAIL_MARKER"), false);
+const privateContextOverview = withoutOwnerMetadata({
+  userModel: {
+    readiness: "ready",
+    claims: [{ statement: "MODEL_DETAIL_MARKER" }],
+    unknowns: [{ question: "UNKNOWN_DETAIL_MARKER" }]
+  }
+});
+assert.deepEqual(privateContextOverview.userModel, {
+  readiness: "ready",
+  claims: [],
+  unknowns: []
+});
+const sanitizedContext = withoutOwnerMetadata({
+  sources: [
+    { id: "userClaim:c1", resourceType: "userClaim", excerpt: "MODEL_SOURCE_MARKER" },
+    { id: "thought:t1", resourceType: "thought", excerpt: "VISIBLE_SOURCE" }
+  ],
+  conclusions: [
+    { id: "user-claim-c1", sourceIds: ["userClaim:c1"], text: "MODEL_CONCLUSION_MARKER" },
+    { id: "recent-facts", sourceIds: ["thought:t1"], text: "VISIBLE_CONCLUSION" }
+  ]
+});
+assert.deepEqual(sanitizedContext.sources.map(source => source.id), ["thought:t1"]);
+assert.deepEqual(sanitizedContext.conclusions, [{
+  id: "recent-facts",
+  sourceIds: ["thought:t1"],
+  text: "VISIBLE_CONCLUSION"
+}]);
+assert.equal(JSON.stringify(sanitizedContext).includes("MODEL_SOURCE_MARKER"), false);
+assert.equal(JSON.stringify(sanitizedContext).includes("MODEL_CONCLUSION_MARKER"), false);
 assert.equal(Object.hasOwn(memberState.ownerExtension, "tokenBudget"), false);
 assert.equal(JSON.stringify(memberState).includes("tokenBudget"), false);
 assert.equal(Object.hasOwn(memberState, "evidenceSources"), false);

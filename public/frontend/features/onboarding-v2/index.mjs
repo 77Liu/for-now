@@ -1,6 +1,10 @@
 const QUESTION_IDS = ["currentContext", "desiredChanges", "recentObstacles", "dailyRhythm", "collaboration"];
 const QUESTION_STEPS = ["q1", "q2", "q3", "q4", "q5"];
 const STEP_TITLES = ["现在的生活", "希望的变化", "最近的困扰", "日常节奏", "怎么帮助"];
+const ANSWER_DISPOSITIONS = Object.freeze({
+  unknown: "目前不知道",
+  declined: "不愿回答"
+});
 const DOMAIN_LABELS = {
   context: "处境",
   goals: "目标",
@@ -35,6 +39,11 @@ const AXES = {
 
 const clone = value => structuredClone(value);
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
+const needsCoreModelTopUp = state => (
+  state?.session?.status === "skipped"
+  || state?.migration?.selectedFlow === "legacy"
+  || state?.migration?.entryPolicy === "already_onboarded"
+);
 const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, character => ({
   "&": "&amp;",
   "<": "&lt;",
@@ -62,6 +71,9 @@ function answerInput(answer) {
   return {
     ...(own(answer, "rawText") ? { rawText: answer.rawText } : {}),
     ...(own(answer, "structuredValue") ? { structuredValue: clone(answer.structuredValue) } : {}),
+    ...(ANSWER_DISPOSITIONS[answer.answerDisposition]
+      ? { answerDisposition: answer.answerDisposition }
+      : {}),
     ...(answer.occurredAt ? { occurredAt: answer.occurredAt } : {}),
     contextAllowed: answer.contextAllowed !== false
   };
@@ -70,7 +82,10 @@ function answerInput(answer) {
 function collaborationInput(collaboration = {}) {
   const result = {
     additionalBoundary: String(collaboration.additionalBoundary || ""),
-    contextAllowed: collaboration.contextAllowed !== false
+    contextAllowed: collaboration.contextAllowed !== false,
+    ...(ANSWER_DISPOSITIONS[collaboration.answerDisposition]
+      ? { answerDisposition: collaboration.answerDisposition }
+      : {})
   };
   for (const [key, definition] of Object.entries(AXES)) {
     const axis = collaboration[key];
@@ -123,6 +138,8 @@ export function onboardingV2PatchFromDraft(draft, {
 function answerText(id, draft) {
   if (id === "collaboration") {
     const collaboration = draft?.collaboration || defaultCollaboration();
+    const disposition = ANSWER_DISPOSITIONS[collaboration.answerDisposition];
+    if (disposition) return disposition;
     const selected = Object.entries(AXES).map(([key, definition]) => {
       const axis = collaboration[key];
       const label = definition.values.find(([value]) => value === axis?.value)?.[1] || "";
@@ -134,6 +151,8 @@ function answerText(id, draft) {
     ].filter(Boolean).join("\n");
   }
   const answer = draft?.answers?.[id];
+  const disposition = ANSWER_DISPOSITIONS[answer?.answerDisposition];
+  if (disposition) return disposition;
   if (own(answer, "rawText")) return answer.rawText || "";
   return (answer?.structuredValue || []).map(item => {
     const horizon = HORIZONS.find(([value]) => value === item.horizon)?.[1];
@@ -233,6 +252,27 @@ function collaborationMarkup(draft) {
   </label><p class="onboarding-v2-default-note">没有选择的项目会使用清楚标注的系统默认，不会冒充你的偏好。</p>`;
 }
 
+function answerDispositionMarkup(questionId, draft) {
+  const answer = questionId === "collaboration"
+    ? draft.collaboration
+    : draft.answers?.[questionId];
+  const selected = ANSWER_DISPOSITIONS[answer?.answerDisposition]
+    ? answer.answerDisposition
+    : "answered";
+  const options = [
+    ["answered", "填写回答"],
+    ["unknown", ANSWER_DISPOSITIONS.unknown],
+    ["declined", ANSWER_DISPOSITIONS.declined]
+  ];
+  return `<fieldset class="onboarding-v2-axis onboarding-v2-disposition">
+    <legend>本题回答</legend>
+    <div>${options.map(([value, label]) => `<label>
+      <input type="radio" name="onboarding-disposition-${questionId}" data-onboarding-answer-disposition="${questionId}" value="${value}" ${selected === value ? "checked" : ""}>
+      <span>${label}</span>
+    </label>`).join("")}</div>
+  </fieldset>`;
+}
+
 function reviewMarkup(draft, { extracting = false } = {}) {
   const hasAnswer = QUESTION_IDS.slice(0, 4).some(questionId => Boolean(answerText(questionId, draft)))
     || Object.keys(AXES).some(key => draft.collaboration?.[key]?.source === "user")
@@ -265,6 +305,15 @@ function candidatesMarkup(task, userModel, error = "") {
   ));
   const unknowns = (userModel?.unknowns || []).filter(item => item.sourceTaskId === task?.id);
   const pending = claims.filter(item => item.lifecycle === "candidate");
+  if (task?.status === "ready") {
+    return `<span class="eyebrow">核心模型状态已刷新 · 按未知就绪</span>
+      <h1>核心模型已就绪。</h1>
+      <p class="onboarding-v2-lead">五问均已明确完成，但没有获准用于后续回答的内容，因此核心模型按未知状态就绪。${error ? `模型摘要暂时无法刷新：${escapeHtml(error)}` : "核心模型摘要状态已刷新。"}</p>
+      <div class="onboarding-v2-actions">
+        <button class="primary-button" type="button" data-onboarding-action="review">回看回答并管理授权</button>
+        <button class="quiet-button" type="button" data-onboarding-action="complete">按原文开始使用</button>
+      </div>`;
+  }
   if (error || ["failed", "stale", "cancelled"].includes(task?.status)) {
     return `<span class="eyebrow">原文已保留 · 整理未完成</span>
       <h1>这次没有生成可确认的候选。</h1>
@@ -373,6 +422,7 @@ export function createOnboardingV2Controller({
   let userModel = null;
   let extractionError = "";
   let extractionPoll = 0;
+  let visibleQuestionBaseline = null;
 
   const panel = () => query("#onboarding-workspace");
   const content = () => query("#onboarding-v2-content");
@@ -456,8 +506,17 @@ export function createOnboardingV2Controller({
         recoverCommitted: true
       });
       extractionTask = clone(result.data);
+      if (extractionTask?.status === "ready") {
+        status("没有获准内容 · 核心模型按未知就绪");
+        try {
+          await loadUserModel();
+        } catch (error) {
+          extractionError = error.message || "核心模型已按未知就绪，但摘要状态暂时无法刷新。";
+        }
+        return;
+      }
       status("原文已保存 · 候选正在整理");
-      void pollExtraction();
+      if (extractionTask?.id) void pollExtraction();
     } catch (error) {
       extractionError = error.message || "原文已保留，可以直接开始使用或稍后重试。";
       status("原文已保存 · 整理未完成");
@@ -526,20 +585,50 @@ export function createOnboardingV2Controller({
 
   function captureVisibleStep() {
     if (!draft) return;
-    const occurredAt = draft.answers?.[QUESTION_IDS[QUESTION_STEPS.indexOf(uiStep)]]?.occurredAt || currentIso();
-    if (uiStep === "q1" || uiStep === "q4") {
-      const questionId = uiStep === "q1" ? "currentContext" : "dailyRhythm";
-      const rawText = String(query("#onboarding-v2-answer")?.value || "").trim();
-      if (rawText) {
-        draft.answers[questionId] = {
-          questionId,
-          rawText,
-          occurredAt,
-          contextAllowed: draft.answers?.[questionId]?.contextAllowed !== false
-        };
-      } else delete draft.answers[questionId];
+    const index = QUESTION_STEPS.indexOf(uiStep);
+    const questionId = QUESTION_IDS[index];
+    const currentAnswer = questionId === "collaboration"
+      ? draft.collaboration
+      : draft.answers?.[questionId];
+    const occurredAt = currentAnswer?.occurredAt || currentIso();
+    const selectedDisposition = query(`[data-onboarding-answer-disposition="${questionId}"]:checked`)?.value || "answered";
+    if (questionId === "collaboration") {
+      if (ANSWER_DISPOSITIONS[selectedDisposition]) {
+        draft.collaboration.answerDisposition = selectedDisposition;
+      } else {
+        delete draft.collaboration.answerDisposition;
+        for (const key of Object.keys(AXES)) {
+          const selected = document.querySelector(`[data-onboarding-axis="${key}"]:checked`);
+          draft.collaboration[key] = selected
+            ? { value: selected.value, source: "user" }
+            : { value: defaultCollaboration()[key].value, source: "system_default" };
+        }
+        draft.collaboration.additionalBoundary = String(query("#onboarding-boundary")?.value || "").trim();
+      }
+    } else if (ANSWER_DISPOSITIONS[selectedDisposition]) {
+      draft.answers[questionId] = {
+        ...(currentAnswer || {}),
+        questionId,
+        answerDisposition: selectedDisposition,
+        occurredAt,
+        contextAllowed: currentAnswer?.contextAllowed !== false
+      };
+    } else {
+      if (currentAnswer?.answerDisposition) delete currentAnswer.answerDisposition;
+      if (questionId === "currentContext" || questionId === "dailyRhythm") {
+        const rawText = String(query("#onboarding-v2-answer")?.value || "").trim();
+        if (rawText) {
+          draft.answers[questionId] = {
+            ...(currentAnswer || {}),
+            questionId,
+            rawText,
+            occurredAt,
+            contextAllowed: currentAnswer?.contextAllowed !== false
+          };
+        } else delete draft.answers[questionId];
+      }
     }
-    if (uiStep === "q2") {
+    if (questionId === "desiredChanges" && !ANSWER_DISPOSITIONS[selectedDisposition]) {
       const structuredValue = [...document.querySelectorAll('[data-onboarding-list="desiredChanges"]')].map(input => {
         const index = Number(input.dataset.index), text = input.value.trim();
         let horizon = query(`[data-onboarding-horizon][data-index="${index}"]`)?.value || "unknown";
@@ -549,34 +638,27 @@ export function createOnboardingV2Controller({
       }).filter(Boolean);
       if (structuredValue.length) {
         draft.answers.desiredChanges = {
+          ...(currentAnswer || {}),
           questionId: "desiredChanges",
           structuredValue,
           occurredAt,
-          contextAllowed: draft.answers?.desiredChanges?.contextAllowed !== false
+          contextAllowed: currentAnswer?.contextAllowed !== false
         };
       } else delete draft.answers.desiredChanges;
     }
-    if (uiStep === "q3") {
+    if (questionId === "recentObstacles" && !ANSWER_DISPOSITIONS[selectedDisposition]) {
       const structuredValue = [...document.querySelectorAll('[data-onboarding-list="recentObstacles"]')]
         .map(input => input.value.trim() ? { text: input.value.trim() } : null)
         .filter(Boolean);
       if (structuredValue.length) {
         draft.answers.recentObstacles = {
+          ...(currentAnswer || {}),
           questionId: "recentObstacles",
           structuredValue,
           occurredAt,
-          contextAllowed: draft.answers?.recentObstacles?.contextAllowed !== false
+          contextAllowed: currentAnswer?.contextAllowed !== false
         };
       } else delete draft.answers.recentObstacles;
-    }
-    if (uiStep === "q5") {
-      for (const key of Object.keys(AXES)) {
-        const selected = document.querySelector(`[data-onboarding-axis="${key}"]:checked`);
-        draft.collaboration[key] = selected
-          ? { value: selected.value, source: "user" }
-          : { value: defaultCollaboration()[key].value, source: "system_default" };
-      }
-      draft.collaboration.additionalBoundary = String(query("#onboarding-boundary")?.value || "").trim();
     }
     draft.status = "draft";
     draft.step = uiStep;
@@ -664,18 +746,14 @@ export function createOnboardingV2Controller({
 
   async function saveCurrent(nextStep, {
     status: nextStatus = "draft",
-    clear = false,
+    captureCurrent = true,
     full = false,
     hide = false,
     firstAction = false
   } = {}) {
-    if (QUESTION_STEPS.includes(uiStep)) captureVisibleStep();
-    if (uiStep === "review") captureReviewPermissions();
-    const questionId = QUESTION_IDS[QUESTION_STEPS.indexOf(uiStep)] || "";
-    if (clear && questionId) {
-      if (questionId === "collaboration") draft.collaboration = defaultCollaboration();
-      else delete draft.answers[questionId];
-    }
+    if (captureCurrent && QUESTION_STEPS.includes(uiStep)) captureVisibleStep();
+    if (captureCurrent && uiStep === "review") captureReviewPermissions();
+    const questionId = captureCurrent ? QUESTION_IDS[QUESTION_STEPS.indexOf(uiStep)] || "" : "";
     draft.step = nextStep;
     draft.status = nextStatus;
     draft.localDirty = true;
@@ -702,9 +780,40 @@ export function createOnboardingV2Controller({
     steps.innerHTML = `<p>五个问题<br><span>约 3–5 分钟，可随时略过</span></p>${STEP_TITLES.map((title, index) => `<button type="button" data-onboarding-action="goto" data-step="${QUESTION_STEPS[index]}" class="${uiStep === QUESTION_STEPS[index] ? "active" : ""}" ${["welcome", "resume", "firstAction", "conflict"].includes(uiStep) ? "disabled" : ""}><span>${String(index + 1).padStart(2, "0")}</span>${title}</button>`).join("")}<p>原文属于你。<br><span>整理与推测可以不同意。</span></p>`;
   }
 
+  function ensureVisibleQuestionBaseline(questionId) {
+    if (visibleQuestionBaseline?.step === uiStep) return;
+    visibleQuestionBaseline = {
+      step: uiStep,
+      questionId,
+      answer: clone(questionId === "collaboration"
+        ? draft.collaboration
+        : draft.answers?.[questionId] || null)
+    };
+  }
+
+  function restoreVisibleQuestionBaseline() {
+    if (!visibleQuestionBaseline || visibleQuestionBaseline.step !== uiStep) return;
+    const { questionId, answer } = visibleQuestionBaseline;
+    if (questionId === "collaboration") {
+      draft.collaboration = clone(answer || defaultCollaboration());
+    } else if (answer) {
+      draft.answers[questionId] = clone(answer);
+    } else {
+      delete draft.answers[questionId];
+    }
+  }
+
+  function updateVisibleAnswerFields(questionId) {
+    const selected = query(`[data-onboarding-answer-disposition="${questionId}"]:checked`)?.value;
+    const fields = query(`[data-onboarding-answer-fields="${questionId}"]`);
+    if (fields) fields.hidden = selected !== "answered";
+  }
+
   function renderQuestion() {
     const index = QUESTION_STEPS.indexOf(uiStep), question = schema?.questions?.[index];
     if (!question) return "";
+    const questionId = QUESTION_IDS[index];
+    ensureVisibleQuestionBaseline(questionId);
     const bodies = [
       textAnswerMarkup("currentContext", draft, { placeholder: "例如：最近一边学习一边实习，时间比较紧。" }),
       desiredChangesMarkup(draft),
@@ -719,14 +828,20 @@ export function createOnboardingV2Controller({
       "作息、工作学习、运动或独处，挑与你有关的说。",
       "这些选择会影响回答方式，也可以随时调整。"
     ];
+    const answer = questionId === "collaboration"
+      ? draft.collaboration
+      : draft.answers?.[questionId];
+    const showAnswerFields = !ANSWER_DISPOSITIONS[answer?.answerDisposition];
     return `<span class="eyebrow">${index + 1} / 5 · ${STEP_TITLES[index]}</span>
       <h1>${escapeHtml(question.prompt)}</h1>
       <p class="onboarding-v2-lead">${hints[index]}</p>
-      ${bodies[index]}
+      ${answerDispositionMarkup(questionId, draft)}
+      <div data-onboarding-answer-fields="${questionId}" ${showAnswerFields ? "" : "hidden"}>${bodies[index]}</div>
+      <p class="onboarding-v2-help">留白表示尚未回答；“目前不知道”和“不愿回答”会分别明确记录。之后可以重新选择并补答。</p>
       <div class="onboarding-v2-actions">
         <button class="subtle-action" type="button" data-onboarding-action="back">上一步</button>
         <button class="primary-button" type="button" data-onboarding-action="next">${index === 4 ? "回看我的回答" : "下一步"}</button>
-        <button class="subtle-action" type="button" data-onboarding-action="skip">这题先跳过</button>
+        <button class="subtle-action" type="button" data-onboarding-action="skip">暂不回答</button>
       </div>
       <p class="onboarding-v2-help">不会把留空解释成你的性格或态度。无需填写完整才可使用。</p>`;
   }
@@ -739,7 +854,7 @@ export function createOnboardingV2Controller({
         <span class="eyebrow">不从标签开始</span>
         <h1>先认识此刻的你。</h1>
         <p>你在哪里，想往哪里去，<br>又希望怎样被帮助。</p>
-        <p class="onboarding-v2-lead">五个生活问题，建立一点足够有用的了解。每题都可以跳过，之后再慢慢补充。</p>
+        <p class="onboarding-v2-lead">五个生活问题由你本人回答，用来建立核心用户模型；不会从历史记录推断。每题都可以跳过，之后再慢慢补充。</p>
         <div class="onboarding-v2-actions">
           <button class="primary-button" type="button" data-onboarding-action="start">${resumable ? "继续上次填写" : "开始了解"}</button>
           <button class="quiet-button" type="button" data-onboarding-action="use">先用起来</button>
@@ -820,7 +935,10 @@ export function createOnboardingV2Controller({
     }
     if (action === "skip") {
       const index = QUESTION_STEPS.indexOf(uiStep);
-      return saveCurrent(index === 4 ? "review" : QUESTION_STEPS[index + 1], { clear: true });
+      restoreVisibleQuestionBaseline();
+      return saveCurrent(index === 4 ? "review" : QUESTION_STEPS[index + 1], {
+        captureCurrent: false
+      });
     }
     if (action === "back") {
       if (uiStep === "review") return saveCurrent("q5");
@@ -894,6 +1012,9 @@ export function createOnboardingV2Controller({
     if (!event.target.closest("#onboarding-v2-content") || !draft) return;
     if (uiStep === "review") captureReviewPermissions();
     else if (QUESTION_STEPS.includes(uiStep)) captureVisibleStep();
+    if (event.target.matches("[data-onboarding-answer-disposition]")) {
+      updateVisibleAnswerFields(event.target.dataset.onboardingAnswerDisposition);
+    }
     if (event.target.matches("[data-onboarding-horizon]")) {
       const custom = query(`[data-onboarding-horizon-text][data-index="${event.target.dataset.index}"]`);
       if (custom) custom.hidden = event.target.value !== "custom";
@@ -913,6 +1034,7 @@ export function createOnboardingV2Controller({
   return {
     async hydrate({ schema: nextSchema, state: nextState }) {
       clearExtractionPoll();
+      visibleQuestionBaseline = null;
       schema = clone(nextSchema);
       serverState = clone(nextState);
       dismissed = false;
@@ -977,8 +1099,10 @@ export function createOnboardingV2Controller({
       forceVisible = true;
       showFirstAction = false;
       legacyMode = false;
+      visibleQuestionBaseline = null;
       draft = onboardingV2DraftFromState(serverState, { owner: owner() });
-      uiStep = "review";
+      uiStep = needsCoreModelTopUp(serverState) ? "q1" : "review";
+      draft.step = uiStep;
       render();
       panel()?.scrollIntoView({ behavior: "smooth", block: "start" });
     },
@@ -995,6 +1119,7 @@ export function createOnboardingV2Controller({
     },
     reset() {
       clearExtractionPoll();
+      visibleQuestionBaseline = null;
       schema = null;
       serverState = null;
       draft = null;

@@ -43,6 +43,12 @@ function mockDeepSeek() {
       if (messages.includes("同一次睡眠记录")) return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ date: "2026-09-27", bedtime: "2026-09-27T02:58:00", wakeTime: "2026-09-27T10:40:00", totalMinutes: 462, deepMinutes: 134, deepPercent: 29, lightMinutes: 221, lightPercent: 48, remMinutes: 107, remPercent: 23, awakeCount: null, awakeMinutes: null, averageHeartRate: 49, averageOxygen: 98, respiratoryRate: 15, verification: "两张图已合并" }) } }], usage }));
       if (messages.includes("心率日视图")) return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ date: "2026-09-26", minimum: 46, maximum: 82, average: 60, resting: 52, sleepAverage: 50, trendAnalysis: "凌晨下降，午后与晚间出现两次抬升，夜间回落。", trendSegments: [{ period: "00:00-06:00", direction: "下降", approximateRange: "约46-64" }], verification: "今日概览可直接核对" }) } }], usage }));
       if (messages.includes("书籍截图")) return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ title: "测试书", author: "测试作者", verification: "图片已识别" }) } }], usage }));
+      if (input.response_format?.type === "json_object" && messages.includes("citationId")) {
+        return res.end(JSON.stringify({ choices: [{ message: {
+          content: JSON.stringify({ answer: "同步回答", citations: [] }),
+          reasoning_content: "同步模型思考"
+        } }], usage }));
+      }
       return res.end(JSON.stringify({ choices: [{ message: { content: "同步回答", reasoning_content: "同步模型思考" } }], usage }));
     }
     assert.equal(input.stream, true);
@@ -107,6 +113,20 @@ async function waitForTask(base, taskId, attempts = 80) {
     await sleep(25);
   }
   throw new Error(`后台任务 ${taskId} 未在限定时间内结束，最后状态为 ${task?.status}`);
+}
+
+async function waitForBackgroundIdle(base, attempts = 120) {
+  let activeTasks = [];
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const response = await fetch(`${base}/api/ai-tasks`);
+    const value = await response.json();
+    activeTasks = (value.items || []).filter(task => (
+      ["queued", "running", "waiting_for_user_model"].includes(task.status)
+    ));
+    if (activeTasks.length === 0) return;
+    await sleep(25);
+  }
+  throw new Error(`后台任务未收敛：${JSON.stringify(activeTasks)}`);
 }
 
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "growth-regression-"));
@@ -346,6 +366,36 @@ try {
   assert.equal(stateAfterLegacyOnboarding.onboarding.material, "ONBOARDING_PRIVATE_MATERIAL");
   assert.equal(stateAfterLegacyOnboarding.onboardingV2.migration.selectedFlow, "legacy");
 
+  const onboardingV2Schema = await (await fetch(`${base}/api/v1/onboarding-v2/schema`)).json();
+  const onboardingV2SessionResponse = await fetch(`${base}/api/v1/onboarding-v2/session`);
+  const onboardingV2Session = await onboardingV2SessionResponse.json();
+  const declinedAnswers = Object.fromEntries(onboardingV2Schema.data.questions
+    .filter(question => question.questionId !== "collaboration")
+    .map(question => [question.questionId, { answerDisposition: "declined", contextAllowed: false }]));
+  const completedV2Response = await fetch(`${base}/api/v1/onboarding-v2/session`, {
+    method: "PATCH",
+    headers: {
+      "content-type": "application/json",
+      "if-match": onboardingV2SessionResponse.headers.get("etag"),
+      "idempotency-key": "regression-v2-onboarding-ready"
+    },
+    body: JSON.stringify({
+      selectedFlow: "v2",
+      status: "completed",
+      answers: declinedAnswers,
+      collaboration: { answerDisposition: "declined", contextAllowed: false }
+    })
+  });
+  assert.equal(completedV2Response.status, 200, await completedV2Response.clone().text());
+  const completedV2 = await completedV2Response.json();
+  const readyExtractionResponse = await fetch(`${base}/api/v1/onboarding-v2/extractions`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "idempotency-key": "regression-v2-extraction-ready" },
+    body: JSON.stringify({ sourceRevision: completedV2.data.session.revision })
+  });
+  assert.equal(readyExtractionResponse.status, 200, await readyExtractionResponse.clone().text());
+  assert.equal((await readyExtractionResponse.json()).data.status, "ready");
+
   const commercializationResponse = await fetch(`${base}/api/commercialization`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
@@ -473,7 +523,13 @@ try {
     body: JSON.stringify({ occurredAt: "2026-09-27T20:00:00" })
   });
   assert.equal(thoughtPromptResponse.status, 200);
-  assert.deepEqual(await thoughtPromptResponse.json(), { prompt: "同步回答", hasHistory: true });
+  const thoughtPromptResult = await thoughtPromptResponse.json();
+  assert.deepEqual(
+    { prompt: thoughtPromptResult.prompt, hasHistory: thoughtPromptResult.hasHistory },
+    { prompt: "同步回答", hasHistory: true }
+  );
+  assert.equal(typeof thoughtPromptResult.requestId, "string");
+  assert.ok(thoughtPromptResult.requestId);
   const thoughtPromptRequest = modelRequests.at(-1);
   assert.deepEqual([thoughtPromptRequest.model, thoughtPromptRequest.reasoning_effort, thoughtPromptRequest.max_tokens], ["deepseek-flash", "none", 400]);
   assert.match(thoughtPromptRequest.messages[0].content, /18～55/);
@@ -633,11 +689,10 @@ try {
     headers: { "content-type": "application/json", accept: "text/event-stream" },
     body: JSON.stringify({ clientRequestId: "question-1-generation-1" })
   });
-  const reader = answerResponse.body.getReader(), decoder = new TextDecoder();
-  let partial = "";
-  while (!partial.includes('"type":"reasoning"')) partial += decoder.decode((await reader.read()).value, { stream: true });
-  await reader.cancel();
-  await sleep(500);
+  const answerEvents = await readEvents(answerResponse);
+  assert.equal(answerEvents.at(-1).type, "done");
+  assert.equal(answerEvents.at(-1).result.content, "流式回答已完成。");
+  assert.equal(answerEvents.at(-1).result.reasoningContent, "先核对问题。再形成判断。");
   const persisted = await (await fetch(`${base}/api/state`)).json();
   const answer = persisted.thoughts.find(item => item.relatedTo === "question-1" && item.type === "answer");
   assert.equal(answer?.content, "流式回答已完成。");
@@ -726,7 +781,7 @@ try {
   const concurrentFollowUpTasks = await Promise.all(concurrentFollowUpResponses.map(response => response.json()));
   assert.equal(concurrentFollowUpTasks[0].id, concurrentFollowUpTasks[1].id);
   const concurrentFollowUpResult = await waitForTask(base, concurrentFollowUpTasks[0].id);
-  assert.equal(concurrentFollowUpResult.status, "succeeded");
+  assert.equal(concurrentFollowUpResult.status, "succeeded", JSON.stringify(concurrentFollowUpResult));
   assert.equal(modelRequests.length - concurrentFollowUpModelCount, 1);
   const stateAfterConcurrentFollowUp = await (await fetch(`${base}/api/state`)).json();
   const savedConcurrentFollowUp = stateAfterConcurrentFollowUp.thoughts.find(item => item.id === concurrentQuestion.id).followUps.find(item => item.id === concurrentFollowUp.id);
@@ -1718,6 +1773,7 @@ try {
   ]);
   assert.equal(rankedAssociations.some(item => item.factor === "单日因素"), false);
 
+  await waitForBackgroundIdle(base);
   const automaticChainModelCount = modelRequests.length;
   const automaticChainInput = {
     clientRequestId: "automatic-chain-answer",
@@ -1744,10 +1800,20 @@ try {
   assert.equal(duplicateAutomaticChainResponse.status, 200);
   const duplicateAutomaticChain = await duplicateAutomaticChainResponse.json();
   assert.equal(duplicateAutomaticChain.task.id, automaticChain.task.id);
-  assert.equal((await waitForTask(base, automaticChain.task.id)).status, "succeeded");
+  let completedAutomaticAnswerTask = await waitForTask(base, automaticChain.task.id);
+  if (completedAutomaticAnswerTask.status === "stale") {
+    assert.equal(completedAutomaticAnswerTask.errorCode, "AI_TASK_STALE");
+    const retryResponse = await fetch(`${base}/api/ai-tasks/${automaticChain.task.id}/retry`, {
+      method: "POST"
+    });
+    assert.equal(retryResponse.status, 202);
+    const retryTask = await retryResponse.json();
+    completedAutomaticAnswerTask = await waitForTask(base, retryTask.id);
+  }
+  assert.equal(completedAutomaticAnswerTask.status, "succeeded", JSON.stringify(completedAutomaticAnswerTask));
   assert.equal(modelRequests.length - automaticChainModelCount, 1);
   const stateAfterAutomaticChain = await (await fetch(`${base}/api/state`)).json();
-  assert.equal(stateAfterAutomaticChain.thoughts.filter(item => item.sourceTaskId === automaticChain.task.id).length, 1);
+  assert.equal(stateAfterAutomaticChain.thoughts.filter(item => item.sourceTaskId === completedAutomaticAnswerTask.id).length, 1);
 
   const midnight = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23", timeZone: "Asia/Shanghai" }).format(new Date("2026-09-26T16:56:18.237Z"));
   assert.equal(midnight, "00:56:18");

@@ -75,6 +75,24 @@ assert.equal(notificationEntryState({
   message: "当前录音格式无法直接转写，请保留原音并重新尝试"
 }, failedTask, { formatTimestamp }).message, "当前录音格式无法直接转写，请保留原音并重新尝试");
 
+const waitingNotification = {
+  ...failedNotification,
+  status: "waiting_for_user_model",
+  message: "等待核心用户模型就绪"
+};
+const waitingTask = {
+  id: failedTask.id,
+  kind: failedTask.kind,
+  targetId: failedTask.targetId,
+  status: "waiting_for_user_model"
+};
+const waitingState = notificationEntryState(waitingNotification, waitingTask, { formatTimestamp });
+assert.equal(waitingState.statusLabel, "等待核心用户模型");
+assert.equal(waitingState.message, "等待核心用户模型就绪");
+assert.equal(waitingState.canRetry, false, "waiting tasks are pending, not retryable");
+assert.match(notificationEntryMarkup(waitingNotification, waitingTask, { formatTimestamp }),
+  /状态：等待核心用户模型/);
+
 const started = transitionNotificationRetry([], { type: "start", taskId: failedTask.id });
 assert.equal(started.accepted, true);
 assert.deepEqual(started.retryingTaskIds, ["task-asr-1"]);

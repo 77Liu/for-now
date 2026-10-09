@@ -3,8 +3,39 @@ import {
   createNotificationsFeatureController,
   NOTIFICATION_SELECTORS
 } from "../public/frontend/features/notifications/index.mjs";
+import { createDataRuntime } from "../public/frontend/app/runtime/data-runtime.mjs";
+import { state } from "../public/frontend/state/index.mjs";
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
+
+{
+  const runtime = {};
+  const data = createDataRuntime({
+    runtime,
+    apiClient: {},
+    syncStore: {},
+    createRequestCoordinator: () => ({}),
+    createRefreshCoordinator: () => ({}),
+    createIncrementalSync: () => ({}),
+    $: () => null,
+    getActionsCoordinator: () => ({}),
+    renderStateChart() {},
+    renderHomeMood() {},
+    reconcileActiveThoughtRoute() {},
+    clearRouteLoadFailure() {},
+    renderVisibleRoute() {},
+    renderRouteLoadFailure() {},
+    syncBackgroundTaskResults: async () => {},
+    ensureBackgroundResultsController: () => ({}),
+    backgroundResultsRetryLimit: 3
+  });
+  state.aiTasks = [{ id: "waiting-task", status: "waiting_for_user_model" }];
+  data.scheduleNotificationPoll();
+  assert.ok(runtime.notificationTimer, "model-waiting tasks keep notification polling active");
+  clearTimeout(runtime.notificationTimer);
+  runtime.notificationTimer = null;
+  state.aiTasks = [];
+}
 function deferred() {
   let resolve, reject;
   const promise = new Promise((done, fail) => {

@@ -85,11 +85,22 @@ function contextSourceButton(source){
       :"来源当前版本已变化；旧摘录未保留";
   return `<article class="context-source-item${live.exists&&matches?"":" unavailable"}"><div><b>${escapeHtml(source.recordType||"记录")}</b><small>${escapeHtml(source.occurredOn||"时间未记")} · 版本 ${Number(source.version)||1}</small></div><p>${escapeHtml(plainPreview(copy))}</p>${canOpen?`<button class="subtle-action" type="button" data-context-source data-context-view="${escapeHtml(location.view)}" data-context-target="${escapeHtml(location.targetId||source.resourceId||"")}" data-context-root="${escapeHtml(location.rootId||"")}" data-context-key="${escapeHtml(location.targetKey||"")}" data-context-date="${escapeHtml(location.occurredOn||source.occurredOn||"")}" data-context-daily-type="${escapeHtml(location.dailyType||"")}">查看${matches?"原记录":"当前版本"}</button>`:""}</article>`
 }
-function contextReceiptMarkup(receipt){
-  const sources=Array.isArray(receipt?.sources)?receipt.sources:[],budget=receipt?.tokenBudget;
-  if(!sources.length)return"";
-  const budgetText=budget?`${Number(budget.estimatedUsed)||0} / ${Number(budget.limit)||0} Token 上界`:"";
-  return `<details class="context-audit"><summary><span>本次参考</span><small>${sources.length} 条编排选入${budgetText?` · ${budgetText}`:""}</small></summary><p class="context-audit-note">这些材料在回答前被选入，不代表回答逐条引用。</p><div class="context-source-list">${sources.map(contextSourceButton).join("")}</div></details>`
+function contextReceiptMarkup(receipt, citations = [], citationStatus = "") {
+  const sources = Array.isArray(receipt?.sources) ? receipt.sources : [];
+  const budget = receipt?.tokenBudget;
+  const verified = Array.isArray(citations) ? citations : [];
+  const citationMarkup = citationStatus === "matched"
+    ? `<details class="matched-citations"><summary>已匹配原文引用（${verified.length}）</summary><p>引用片段与本次提供的原文逐字匹配；请结合原文上下文判断它是否支持回答。</p><ol>${verified.map(item => (
+      `<li><q>${escapeHtml(item.exactQuote || "")}</q><small>${escapeHtml(item.recordType || "原文")} · 版本 ${Number(item.version) || 1}</small></li>`
+    )).join("")}</ol></details>`
+    : citationStatus === "none"
+      ? "<p class=\"citation-empty-note\">本次回答没有能与原文逐字匹配的引用。</p>"
+      : "";
+  if (!sources.length) return citationMarkup;
+  const budgetText = budget
+    ? `${Number(budget.estimatedUsed) || 0} / ${Number(budget.limit) || 0} UTF-8 字节上界`
+    : "";
+  return `${citationMarkup}<details class="context-audit"><summary><span>本次参考</span><small>${sources.length} 条编排选入${budgetText ? ` · ${budgetText}` : ""}</small></summary><p class="context-audit-note">这些材料在回答前被选入，不代表回答逐条引用。</p><div class="context-source-list">${sources.map(contextSourceButton).join("")}</div></details>`;
 }
 function openContextReceiptSource(button){
   const view=button.dataset.contextView,target=button.dataset.contextTarget,root=button.dataset.contextRoot,date=button.dataset.contextDate,dailyType=button.dataset.contextDailyType;

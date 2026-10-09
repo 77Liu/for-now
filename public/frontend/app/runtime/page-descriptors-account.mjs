@@ -3,7 +3,7 @@ import { publishDomains, state } from "../../state/index.mjs";
 
 export function installAccountDescriptors(descriptors, ports) {
   const {
-    runtime,runtimeFeatureLoaders,$,showToast,request,featureRequestV1,
+    runtime,runtimeFeatureLoaders,$,showToast,request,resolvePersonalizedTask,featureRequestV1,
     withFeatureScope,refreshState,contentState,renderLatex,renderAccountIdentity,
     formatCny,compactNumber,formatDate,shiftLocalDateKey,openCommercialSource,
     switchView,openThoughtDetail,renderDate,renderSliders,renderStateChart,
@@ -33,7 +33,8 @@ export function installAccountDescriptors(descriptors, ports) {
         getSnapshot:()=>state,
         getAccountId:()=>runtime.currentUser?.id||"",
         getSessionSerial:()=>sessionSerial,
-        requestV1:(url,options,coordination)=>featureRequestV1("personal-context",url,options,coordination)
+        requestV1:(url,options,coordination)=>featureRequestV1("personal-context",url,options,coordination),
+        resolvePersonalizedTask
       },
       navigation:{
         activateDate:(date,dailyType)=>{

@@ -40,6 +40,20 @@ const selectedJourneys = validateOnly
 
 const commandSets = {
   smoke: [
+    ["cold-start questionnaire compatibility", process.execPath, ["scripts/onboarding-v2-regression.mjs"]],
+    ["cold-start session and answer recovery", process.execPath, ["scripts/onboarding-v2-session-regression.mjs"]],
+    ["cold-start answer editing and conflict recovery", process.execPath, ["scripts/onboarding-v2-frontend-regression.mjs"]],
+    ["user-model provenance and account isolation", process.execPath, ["scripts/user-model-claims-regression.mjs"]],
+    ["user-model core readiness and permission boundary", process.execPath, ["scripts/user-model-core-readiness-regression.mjs"]],
+    ["verified answer citation contract", process.execPath, ["scripts/answer-citations-regression.mjs"]],
+    ["production background core-model gate", process.execPath, ["scripts/content-background-production-gate-regression.mjs"]],
+    ["personalized AI cold-start request gate", process.execPath, ["scripts/personalized-ai-model-gate-regression.mjs"]],
+    ["persistent AI wait and restart recovery", process.execPath, ["scripts/background-ai-model-gate-regression.mjs"]],
+    ["personalized AI task UI recovery", process.execPath, ["scripts/personalized-ai-task-ui-regression.mjs"]],
+    ["AI task permission revocation", process.execPath, ["scripts/personalized-ai-permission-revocation-regression.mjs"]],
+    ["review chat source permissions", process.execPath, ["scripts/review-chat-permission-boundary-regression.mjs"]],
+    ["user-model API permissions and version checks", process.execPath, ["scripts/user-model-api-regression.mjs"]],
+    ["user-model extraction queue and recovery", process.execPath, ["scripts/user-model-extraction-regression.mjs"]],
     ["frontend contracts", process.execPath, ["scripts/frontend-contract-regression.mjs"]],
     ["frontend shared contracts", process.execPath, ["scripts/frontend-shared-regression.mjs"]],
     ["URL and browser history", process.execPath, ["scripts/url-history-regression.mjs"]],

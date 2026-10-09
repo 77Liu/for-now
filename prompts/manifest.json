@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "activeVersion": "2026.10.09.3",
+  "activeVersion": "2026.10.10.1",
   "versions": [
     {
       "version": "2026.09.29.1",
@@ -66,6 +66,11 @@
       "version": "2026.10.09.3",
       "file": "2026.10.09.3.json",
       "sha256": "037d9922c8f5d99d203d1abf7d3d84ad5c41f3c21f274362a49fdf9b86b4a685"
+    },
+    {
+      "version": "2026.10.10.1",
+      "file": "2026.10.10.1.json",
+      "sha256": "ebdad1e89b585a9251ccc2ad9339f29390f22290b8f36ee99e072b0bbcce3897"
     }
   ],
   "promptIntroducedIn": {
@@ -81,32 +86,130 @@
     "ai.scene.perceptionExtraction": "2026.10.07.2",
     "perception.source.extract": "2026.10.07.2",
     "orchestration.context.boundaries": "2026.10.09.1",
-    "orchestration.context.temporal": "2026.10.09.2"
+    "orchestration.context.temporal": "2026.10.09.2",
+    "orchestration.answer.citations": "2026.10.10.1"
   },
   "promptVariables": {
-    "ai.identity.named": ["assistantName"],
-    "ai.user.wrapper": ["chain", "context", "task"],
-    "context.personal": ["onboarding", "focus", "checkins", "dailyRecords", "captures", "journals", "thoughts"],
-    "context.diaryActivity": ["selectedDate", "todayRecords", "previousDate", "previousDayRecords", "recentRecords"],
-    "thought.chain": ["question", "ideas", "answers", "followUps"],
-    "thought.chain.followUp": ["index", "id", "current", "question", "answer"],
-    "thought.draft.context": ["question", "idea"],
-    "thought.speech.wrapper": ["question", "answer"],
-    "thought.starter.wrapper": ["occurredOn", "hasHistory", "context", "task"],
-    "journal.assist.wrapper": ["activityContext", "title", "content", "task"],
-    "journal.reflection.context": ["occurredOn", "title", "content", "tags"],
-    "annotation.turn": ["index", "message", "answer"],
-    "annotation.user": ["personalContext", "rootContext", "kind", "before", "focus", "after", "comment", "previous", "message"],
-    "health.image.weight": ["common", "units", "schema"],
-    "health.image.exercise": ["common", "units", "schema"],
-    "health.image.referenceDate": ["referenceDate"],
-    "content.image.understanding": ["originalText", "targetType"],
-    "keepsake.image.candidates": ["existingTags"],
-    "capture.transcription.polish": ["rawText"],
-    "capture.transcription.condense": ["rawText", "polishedText"],
-    "onboarding.claims.extract": ["schema", "sources"],
-    "analysis.review": ["personalContext", "reflectionData", "evidenceLevel"],
-    "orchestration.user.envelope": ["payload", "taskContract"]
+    "ai.identity.named": [
+      "assistantName"
+    ],
+    "ai.user.wrapper": [
+      "chain",
+      "context",
+      "task"
+    ],
+    "context.personal": [
+      "onboarding",
+      "focus",
+      "checkins",
+      "dailyRecords",
+      "captures",
+      "journals",
+      "thoughts"
+    ],
+    "context.diaryActivity": [
+      "selectedDate",
+      "todayRecords",
+      "previousDate",
+      "previousDayRecords",
+      "recentRecords"
+    ],
+    "thought.chain": [
+      "question",
+      "ideas",
+      "answers",
+      "followUps"
+    ],
+    "thought.chain.followUp": [
+      "index",
+      "id",
+      "current",
+      "question",
+      "answer"
+    ],
+    "thought.draft.context": [
+      "question",
+      "idea"
+    ],
+    "thought.speech.wrapper": [
+      "question",
+      "answer"
+    ],
+    "thought.starter.wrapper": [
+      "occurredOn",
+      "hasHistory",
+      "context",
+      "task"
+    ],
+    "journal.assist.wrapper": [
+      "activityContext",
+      "title",
+      "content",
+      "task"
+    ],
+    "journal.reflection.context": [
+      "occurredOn",
+      "title",
+      "content",
+      "tags"
+    ],
+    "annotation.turn": [
+      "index",
+      "message",
+      "answer"
+    ],
+    "annotation.user": [
+      "personalContext",
+      "rootContext",
+      "kind",
+      "before",
+      "focus",
+      "after",
+      "comment",
+      "previous",
+      "message"
+    ],
+    "health.image.weight": [
+      "common",
+      "units",
+      "schema"
+    ],
+    "health.image.exercise": [
+      "common",
+      "units",
+      "schema"
+    ],
+    "health.image.referenceDate": [
+      "referenceDate"
+    ],
+    "content.image.understanding": [
+      "originalText",
+      "targetType"
+    ],
+    "keepsake.image.candidates": [
+      "existingTags"
+    ],
+    "capture.transcription.polish": [
+      "rawText"
+    ],
+    "capture.transcription.condense": [
+      "rawText",
+      "polishedText"
+    ],
+    "onboarding.claims.extract": [
+      "schema",
+      "sources"
+    ],
+    "analysis.review": [
+      "personalContext",
+      "reflectionData",
+      "evidenceLevel"
+    ],
+    "orchestration.user.envelope": [
+      "payload",
+      "taskContract"
+    ],
+    "orchestration.answer.citations": []
   },
   "requiredPromptIds": [
     "ai.system.core",
@@ -181,7 +284,8 @@
     "orchestration.role.answerCheck",
     "orchestration.user.envelope",
     "orchestration.context.boundaries",
-    "orchestration.context.temporal"
+    "orchestration.context.temporal",
+    "orchestration.answer.citations"
   ],
   "rolePromptIds": {
     "perception": "orchestration.role.perception",
@@ -194,6 +298,7 @@
   "capabilities": {
     "structuredWorkingContext": "2026.10.07.0",
     "taskSourceBoundaries": "2026.10.09.1",
-    "explicitSourceTime": "2026.10.09.2"
+    "explicitSourceTime": "2026.10.09.2",
+    "verifiedAnswerCitations": "2026.10.10.1"
   }
 }

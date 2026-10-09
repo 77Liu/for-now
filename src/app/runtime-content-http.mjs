@@ -231,6 +231,7 @@ export function createRuntimeContentHttp({
     ),
     removeReflection: removeJournalReflection,
     sendTrashResult,
+    sendTaskCreation: taskHttp.sendCreation,
     bodyJson,
     sendJson,
     respondModel

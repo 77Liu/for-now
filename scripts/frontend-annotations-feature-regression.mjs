@@ -169,7 +169,13 @@ let snapshot = {
     }],
     annotationDrift: []
   }],
-  aiTasks: []
+  aiTasks: [{
+    id: "waiting-annotation-task",
+    kind: "annotationShenji",
+    targetId: "root",
+    subtargetId: "annotation-1",
+    status: "waiting_for_user_model"
+  }]
 };
 const requestGate = deferred();
 const toasts = [];
@@ -240,6 +246,10 @@ assert.equal(document.count("click"), 1, "repeat mount must not duplicate docume
 assert.equal(window.count("scroll"), 1, "repeat mount must not duplicate window listeners");
 
 controller.openPanel("thought:root", "annotation-1");
+assert.match(document.elements["comment-panel-list"].innerHTML,
+  /等待核心用户模型就绪；完成核心问答后会自动继续/);
+assert.match(document.elements["comment-panel-list"].innerHTML,
+  /data-shenji-form="annotation-1"[\s\S]*?<button type="submit" disabled>/);
 const oldAnnotation = snapshot.thoughts[0].annotations[0];
 document.dispatch("click", new FakeAction({
   annotationMenu: "to-highlight",

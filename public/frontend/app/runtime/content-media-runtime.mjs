@@ -1,4 +1,5 @@
 import { state } from "../../state/index.mjs";
+import { isPendingAiTaskStatus, isWaitingForUserModelTask, pendingAiTaskMessage } from "../../shared/ai-task-status.mjs";
 
 export function createContentMediaRuntime({
   runtime,$,mediaDraftStore,runPublicValidation,validatedImageFiles,
@@ -206,14 +207,33 @@ function moveImageViewer(step){
   if(next===imageViewer.index)return;
   imageViewer.index=next;void loadImageViewerImage()
 }
-function pendingContentImageTask(targetType,targetId){
-  return(state.aiTasks||[]).find(task=>task.kind==="contentImageUnderstanding"&&task.contentTargetType===targetType&&task.contentTargetId===targetId&&["queued","running","cancelling"].includes(task.status))
+function pendingContentImageTask(targetType, targetId) {
+  return (state.aiTasks || []).find(task => (
+    task.kind === "contentImageUnderstanding"
+    && task.contentTargetType === targetType
+    && task.contentTargetId === targetId
+    && isPendingAiTaskStatus(task.status)
+  ));
 }
-function contentImagesMarkup(resource,targetType){
-  const paths=Array.isArray(resource?.attachmentPaths)?resource.attachmentPaths:[],understandings=Array.isArray(resource?.imageUnderstandings)?resource.imageUnderstandings:[];
-  if(!paths.length&&!understandings.length)return"";
-  const pending=pendingContentImageTask(targetType,resource.id);
-  return `<section class="content-attachments" data-content-attachments="${escapeHtml(targetType)}:${escapeHtml(resource.id)}">${paths.length?`<div class="content-originals">${paths.map((source,index)=>`<button class="content-original-button" type="button" data-image-viewer-path="${escapeHtml(source)}" title="查看原图 ${index+1}" aria-label="查看原图 ${index+1}"><img src="${escapeHtml(appUrl(source))}" alt="图片 ${index+1}" loading="lazy"></button>`).join("")}</div>`:""}${understandings.map(item=>`<div class="content-understanding"><small>AI 图片理解</small><div class="markdown-content">${renderMarkdown(item.content)}</div></div>`).join("")}${paths.length?`<div class="content-image-actions"><button type="button" data-content-image-understand="${escapeHtml(targetType)}" data-content-target-id="${escapeHtml(resource.id)}" data-content-version="${resource.version||1}" ${pending?"disabled":""}>✦ ${understandings.length?"重新理解":"理解图片"}</button><span class="content-image-task-status">${pending?"正在后台理解…":""}</span></div>`:""}</section>`
+function contentImagesMarkup(resource, targetType) {
+  const paths = Array.isArray(resource?.attachmentPaths) ? resource.attachmentPaths : [];
+  const understandings = Array.isArray(resource?.imageUnderstandings)
+    ? resource.imageUnderstandings
+    : [];
+  if (!paths.length && !understandings.length) return "";
+  const pending = pendingContentImageTask(targetType, resource.id);
+  const originals = paths.length
+    ? `<div class="content-originals">${paths.map((source, index) => (
+      `<button class="content-original-button" type="button" data-image-viewer-path="${escapeHtml(source)}" title="查看原图 ${index + 1}" aria-label="查看原图 ${index + 1}"><img src="${escapeHtml(appUrl(source))}" alt="图片 ${index + 1}" loading="lazy"></button>`
+    )).join("")}</div>`
+    : "";
+  const understandingMarkup = understandings.map(item => (
+    `<div class="content-understanding"><small>AI 图片理解</small><div class="markdown-content">${renderMarkdown(item.content)}</div></div>`
+  )).join("");
+  const actions = paths.length
+    ? `<div class="content-image-actions"><button type="button" data-content-image-understand="${escapeHtml(targetType)}" data-content-target-id="${escapeHtml(resource.id)}" data-content-version="${resource.version || 1}" ${pending ? "disabled" : ""}>✦ ${understandings.length ? "重新理解" : "理解图片"}</button><span class="content-image-task-status">${pending ? pendingAiTaskMessage(pending, "正在后台理解…") : ""}</span></div>`
+    : "";
+  return `<section class="content-attachments" data-content-attachments="${escapeHtml(targetType)}:${escapeHtml(resource.id)}">${originals}${understandingMarkup}${actions}</section>`;
 }
 function contentImageResource(targetType,targetId){
   if(targetType==="capture")return(state.captures||[]).find(item=>item.id===targetId)||null;
@@ -228,28 +248,45 @@ function contentImageResource(targetType,targetId){
   }
   return null
 }
-async function queueContentImageUnderstanding(button){
-  const targetType=button.dataset.contentImageUnderstand,targetId=button.dataset.contentTargetId,resource=contentImageResource(targetType,targetId),requestId=button.dataset.requestId||crypto.randomUUID();
-  if(!resource?.attachmentPaths?.length)return;
-  button.dataset.requestId=requestId;
-  button.disabled=true;const status=button.parentElement?.querySelector(".content-image-task-status");if(status)status.textContent="正在加入后台队列…";
-  try{
-    const response=await requestV1("/api/v1/content-attachments/understandings",{
-      method:"POST",
-      headers:{"idempotency-key":requestId},
-      body:JSON.stringify(imageUnderstandingPayload({targetType,targetId,inputVersion:resource.version||1,attachmentPaths:resource.attachmentPaths}))
-    }),task=response.data;
-    if(task&&!state.aiTasks.some(item=>item.id===task.id))state.aiTasks.unshift(task);
-    if(status)status.textContent="正在后台理解…";
-    await refreshState("notifications");scheduleNotificationPoll();showToast("图片理解已进入后台队列")
-  }catch(error){
+async function queueContentImageUnderstanding(button) {
+  const targetType = button.dataset.contentImageUnderstand;
+  const targetId = button.dataset.contentTargetId;
+  const resource = contentImageResource(targetType, targetId);
+  const requestId = button.dataset.requestId || crypto.randomUUID();
+  if (!resource?.attachmentPaths?.length) return;
+  button.dataset.requestId = requestId;
+  button.disabled = true;
+  const status = button.parentElement?.querySelector(".content-image-task-status");
+  if (status) status.textContent = "正在加入后台队列…";
+  try {
+    const response = await requestV1("/api/v1/content-attachments/understandings", {
+      method: "POST",
+      headers: { "idempotency-key": requestId },
+      body: JSON.stringify(imageUnderstandingPayload({
+        targetType,
+        targetId,
+        inputVersion: resource.version || 1,
+        attachmentPaths: resource.attachmentPaths
+      }))
+    });
+    const task = response.data;
+    if (task && !state.aiTasks.some(item => item.id === task.id)) state.aiTasks.unshift(task);
+    if (status) status.textContent = pendingAiTaskMessage(task, "正在后台理解…");
+    await refreshState("notifications");
+    scheduleNotificationPoll();
+    showToast(isWaitingForUserModelTask(task)
+      ? "图片理解等待核心用户模型就绪"
+      : "图片理解已进入后台队列");
+  } catch (error) {
     const message=presentError(error,{
       operation:"提交图片理解",
       object:"这次图片理解",
       phase:"图片理解排队",
       retained:"原图和已有记录已经保存"
     }).message;
-    if(status)status.textContent=message;button.disabled=false;showToast(message,"error")
+    if (status) status.textContent = message;
+    button.disabled = false;
+    showToast(message, "error");
   }
 }
 return Object.freeze({

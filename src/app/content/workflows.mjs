@@ -11,6 +11,7 @@ import { createThoughtWorkflows } from "../thought-workflows.mjs";
 import {
   createUserModelExtractionService,
   USER_MODEL_DOMAIN_LABELS,
+  userModelCoreReadiness,
   userModelProjection
 } from "../user-model.mjs";
 
@@ -27,6 +28,7 @@ export function createContentWorkflows({
   now,
   today,
   currentTime,
+  createId,
   hash,
   logEvent
 }) {
@@ -43,6 +45,7 @@ export function createContentWorkflows({
     generate: runDeepSeek,
     hash,
     publicTask: publicAiTask,
+    coreModelReadiness: userModelCoreReadiness,
     getAccountId,
     materializeAttachmentFiles,
     contextKey: workflowContextKey,
@@ -51,8 +54,11 @@ export function createContentWorkflows({
   const captureJournalWorkflows = createCaptureJournalWorkflows({
     repository,
     journals: records.journalRecords,
+    backgroundAi,
     generate: runDeepSeek,
     hash,
+    createId,
+    coreModelReadiness: userModelCoreReadiness,
     contextKey: workflowContextKey,
     today
   });
@@ -60,12 +66,21 @@ export function createContentWorkflows({
     repository,
     chats: records.chatRecords,
     reviews: records.reviewRecords,
+    backgroundAi,
     generate: runDeepSeek,
     hash,
+    coreModelReadiness: userModelCoreReadiness,
     contextKey: workflowContextKey,
     getAccountId,
-    currentTime
+    currentTime,
+    createId
   });
+  backgroundAi.registerHandler("thoughtDraft", thoughtWorkflows.personalizedTaskHandler);
+  backgroundAi.registerHandler("thoughtPrompt", thoughtWorkflows.personalizedTaskHandler);
+  backgroundAi.registerHandler("journalAssist", captureJournalWorkflows.personalizedTaskHandler);
+  backgroundAi.registerHandler("journalReflection", captureJournalWorkflows.personalizedTaskHandler);
+  backgroundAi.registerHandler("chat", reviewChatWorkflows.personalizedTaskHandler);
+  backgroundAi.registerHandler("analysis", reviewChatWorkflows.personalizedTaskHandler);
 
   return {
     thoughtWorkflows,

@@ -1,11 +1,16 @@
+import crypto from "node:crypto";
 import { chatHistory, chatMessage } from "../modules/chats/index.mjs";
 import { reflectionEvidence, reflectionPrompt } from "../modules/reviews/index.mjs";
 import { userPrompt } from "../modules/ai/index.mjs";
 import { renderPrompt } from "../shared/prompts/index.mjs";
+import { assertCoreModelReady } from "../shared/core-model-gate.mjs";
+import { evidenceSourceKey, normalizeEvidencePermission } from "../modules/user-model/index.mjs";
+import { recordVersion } from "../shared/validation/index.mjs";
 import {
   compactPersonalContextReceipt,
   learningThoughtSelection,
   personalContextProjection,
+  personalContextReceiptFingerprint,
   personalContextReceiptMatches
 } from "./personal-context.mjs";
 
@@ -17,16 +22,23 @@ const sourceEligible = item => item
   && item.contextAllowed !== false
   && item.allowInContext !== false
   && item.disposition !== "discarded";
+const stalePersonalizedChat = () => Object.assign(
+  new Error("聊天上下文或来源权限已变化，本次应答未写入"),
+  { code: "AI_TASK_STALE", statusCode: 409 }
+);
 
 export function createReviewChatWorkflows({
   repository,
   chats,
   reviews,
+  backgroundAi,
   generate,
   hash,
+  coreModelReadiness = () => ({ ready: true }),
   contextKey = () => "local",
   getAccountId = contextKey,
-  currentTime = () => Date.now()
+  currentTime = () => Date.now(),
+  createId = () => crypto.randomUUID()
 }) {
   if (!repository
     || typeof repository.read !== "function"
@@ -44,6 +56,194 @@ export function createReviewChatWorkflows({
   }
 
   const active = new Map();
+  const intentHash = task => hash(JSON.stringify({
+    kind: task.kind,
+    targetId: task.targetId || "",
+    payload: task.payload || {}
+  }));
+  const queueColdTask = async (kind, targetId, payload, clientRequestId) => {
+    const store = await repository.read();
+    if (coreModelReadiness(store)?.ready !== false) return null;
+    return backgroundAi.enqueue({ kind, targetId, payload, clientRequestId });
+  };
+  const chatHistorySnapshot = store => {
+    const accountId = String(getAccountId() || "");
+    const eligible = [];
+    const permissionRevisions = [];
+    const permissions = Array.isArray(store?.evidencePermissions)
+      ? store.evidencePermissions
+      : [];
+    for (const item of Array.isArray(store?.chats) ? store.chats : []) {
+      if (!sourceEligible(item)) continue;
+      const sourceRef = {
+        resourceType: "chat",
+        resourceId: String(item.id || ""),
+        rootId: "",
+        targetKey: "message",
+        version: recordVersion(item.version)
+      };
+      const sourceKey = evidenceSourceKey(sourceRef);
+      if (!sourceKey) continue;
+      const matching = permissions.filter(permission => permission?.sourceKey === sourceKey);
+      let permissionRevision = 0;
+      if (matching.length) {
+        const permission = matching.length === 1
+          ? normalizeEvidencePermission(matching[0])
+          : null;
+        if (!permission || permission.accountId !== accountId
+          || permission.contextAllowed !== true) {
+          continue;
+        }
+        permissionRevision = permission.revision;
+      }
+      eligible.push(item);
+      permissionRevisions.push([sourceKey, permissionRevision]);
+    }
+    const selected = eligible.slice(0, 12);
+    const selectedPermissions = permissionRevisions.slice(0, selected.length);
+    const history = chatHistory(selected);
+    return {
+      history,
+      permissionRevisions: selectedPermissions,
+      fingerprint: hash(JSON.stringify({
+        accountId,
+        history,
+        permissionRevisions: selectedPermissions
+      }))
+    };
+  };
+  const assertChatHistoryCurrent = (store, expectedFingerprint, expectedPermissionRevisions) => {
+    const current = chatHistorySnapshot(store);
+    if (!expectedFingerprint
+      || current.fingerprint !== expectedFingerprint
+      || JSON.stringify(current.permissionRevisions) !== JSON.stringify(expectedPermissionRevisions)) {
+      throw stalePersonalizedChat();
+    }
+  };
+  const personalizedTaskHandler = {
+    inspectIntent(_store, task) {
+      if (!["chat", "analysis"].includes(task?.kind)) return false;
+      return { inputVersion: 0, subtargetVersion: 0, inputHash: intentHash(task) };
+    },
+    prepare(store, task) {
+      if (task.kind === "chat") {
+        const payload = task.payload;
+        const eventTime = {
+          occurredAt: payload.occurredAt,
+          occurredOn: payload.occurredOn
+        };
+        if (!eventTime.occurredAt || !eventTime.occurredOn) return null;
+        const personalContext = personalContextProjection(store);
+        const history = chatHistorySnapshot(store);
+        const contextReceipt = {
+          ...personalContext.receipt,
+          chatHistoryFingerprint: history.fingerprint,
+          chatHistoryPermissionRevisions: history.permissionRevisions
+        };
+        return {
+          kind: task.kind,
+          inputVersion: 0,
+          subtargetVersion: 0,
+          inputHash: intentHash(task),
+          prompt: userPrompt({ context: personalContext.prompt, task: payload.message }),
+          scene: "chat",
+          history: history.history,
+          contextReceipt,
+          contextFingerprint: hash(JSON.stringify({
+            receipt: personalContextReceiptFingerprint(personalContext.receipt),
+            history: history.fingerprint
+          }))
+        };
+      }
+      if (task.kind === "analysis") {
+        const { personalContext, evidence, evidenceHash } = analysisSnapshot(store);
+        if (!evidence.evidenceCount) {
+          return {
+            kind: task.kind,
+            inputVersion: 0,
+            subtargetVersion: 0,
+            inputHash: intentHash(task),
+            preflightError: {
+              code: "REVIEW_EVIDENCE_REQUIRED",
+              message: "先留下一条状态、健康、捕念、日记或思绪记录，再开始认知复盘"
+            }
+          };
+        }
+        return {
+          kind: task.kind,
+          inputVersion: 0,
+          subtargetVersion: 0,
+          inputHash: intentHash(task),
+          prompt: reflectionPrompt({
+            personalContext: personalContext.prompt,
+            reflectionData: evidence.reflectionData,
+            evidenceLevel: evidence.evidenceLevel
+          }),
+          scene: "analysis",
+          systemPrompt: renderPrompt("orchestration.role.periodicSynthesis"),
+          contextReceipt: personalContext.receipt,
+          evidenceHash,
+          contextFingerprint: hash(JSON.stringify({
+            receipt: personalContextReceiptFingerprint(personalContext.receipt),
+            evidenceHash
+          }))
+        };
+      }
+      return null;
+    },
+    save(document, work, task, result) {
+      if (task.kind === "chat") {
+        const generatedReceipt = result?.contextReceipt;
+        if (!personalContextReceiptMatches(document, generatedReceipt)) {
+          throw stalePersonalizedChat();
+        }
+        assertChatHistoryCurrent(
+          document,
+          generatedReceipt.chatHistoryFingerprint,
+          generatedReceipt.chatHistoryPermissionRevisions
+        );
+        const payload = task.payload;
+        const requestHash = hash(JSON.stringify({
+          message: payload.message,
+          occurredAt: payload.eventTimeHash
+        }));
+        const saved = chats.saveInStore(document, {
+          message: payload.message,
+          eventTime: {
+            occurredAt: payload.occurredAt,
+            occurredOn: payload.occurredOn
+          },
+          answer: result.content,
+          reasoningContent: result.reasoningContent,
+          contextReceipt: compactPersonalContextReceipt(generatedReceipt)
+        }, { clientRequestId: task.clientRequestId, requestHash });
+        if (saved.conflict) throw idempotencyConflict();
+        if (saved.error) throw new Error(saved.error);
+        return saved.value.id;
+      }
+      const generated = {
+        reason: task.payload.reason || "manual",
+        content: result.content,
+        reasoningContent: result.reasoningContent,
+        contextReceipt: work.contextReceipt,
+        evidenceHash: work.evidenceHash
+      };
+      assertAnalysisCurrent(document, generated);
+      const requestHash = hash(JSON.stringify({ reason: generated.reason }));
+      const saved = reviews.saveAnalysisInStore(document, {
+        ...generated,
+        contextReceipt: compactPersonalContextReceipt(work.contextReceipt)
+      }, { clientRequestId: task.clientRequestId, requestHash });
+      if (saved.conflict) throw idempotencyConflict();
+      if (saved.error) throw new Error(saved.error);
+      return saved.value.id;
+    },
+    result(store, task) {
+      if (task.kind === "chat") return (store.chats || []).find(item => item.id === task.resultId) || null;
+      if (task.kind === "analysis") return (store.analyses || []).find(item => item.id === task.resultId) || null;
+      return null;
+    }
+  };
   const analysisEvidence = (store, allowedSourceKeys, permissionPurpose) => {
     const allowed = (type, id, rootId = "", targetKey = "") => allowedSourceKeys.has(
       JSON.stringify([type, String(id || ""), String(rootId || ""), String(targetKey || "")])
@@ -186,28 +386,41 @@ export function createReviewChatWorkflows({
       findExisting: () => chats.findRequest(clientRequestId, requestHash),
       generateValue: async () => {
         const store = await repository.read();
+        assertCoreModelReady(coreModelReadiness(store));
         const personalContext = personalContextProjection(store);
+        const history = chatHistorySnapshot(store);
+        const contextReceipt = {
+          ...personalContext.receipt,
+          chatHistoryFingerprint: history.fingerprint,
+          chatHistoryPermissionRevisions: history.permissionRevisions
+        };
         const result = await generate(userPrompt({
           context: personalContext.prompt,
           task: message
         }), {
           scene: "chat",
-          history: chatHistory(store.chats),
+          history: history.history,
           captureReasoning: true,
-          contextReceipt: personalContext.receipt
+          contextReceipt
         });
         return {
           message,
           eventTime,
           answer: result.content,
           reasoningContent: result.reasoningContent,
-          contextReceipt: personalContext.receipt
+          contextReceipt
         };
       },
       save: async generated => {
-        if (!personalContextReceiptMatches(await repository.read(), generated.contextReceipt)) {
-          throw Object.assign(new Error("个人语境已变化，本次应答未写入"), { code: "STALE_PERSONAL_CONTEXT", statusCode: 409 });
+        const current = await repository.read();
+        if (!personalContextReceiptMatches(current, generated.contextReceipt)) {
+          throw stalePersonalizedChat();
         }
+        assertChatHistoryCurrent(
+          current,
+          generated.contextReceipt?.chatHistoryFingerprint,
+          generated.contextReceipt?.chatHistoryPermissionRevisions
+        );
         return chats.save({
           ...generated,
           contextReceipt: compactPersonalContextReceipt(generated.contextReceipt)
@@ -216,8 +429,13 @@ export function createReviewChatWorkflows({
       saveInStore: typeof chats.saveInStore === "function"
         ? (document, generated) => {
             if (!personalContextReceiptMatches(document, generated.contextReceipt)) {
-              throw Object.assign(new Error("个人语境已变化，本次应答未写入"), { code: "STALE_PERSONAL_CONTEXT", statusCode: 409 });
+              throw stalePersonalizedChat();
             }
+            assertChatHistoryCurrent(
+              document,
+              generated.contextReceipt?.chatHistoryFingerprint,
+              generated.contextReceipt?.chatHistoryPermissionRevisions
+            );
             return chats.saveInStore(document, {
               ...generated,
               contextReceipt: compactPersonalContextReceipt(generated.contextReceipt)
@@ -239,6 +457,7 @@ export function createReviewChatWorkflows({
       findExisting: () => reviews.findAnalysisRequest(clientRequestId, requestHash),
       generateValue: async () => {
         const store = await repository.read();
+        assertCoreModelReady(coreModelReadiness(store));
         const {
           personalContext,
           evidence,
@@ -303,5 +522,28 @@ export function createReviewChatWorkflows({
     })).value;
   }
 
-  return { answerChat, runAnalysis, maybeRunPeriodicAnalysis };
+  return {
+    answerChat,
+    runAnalysis,
+    maybeRunPeriodicAnalysis,
+    personalizedTaskHandler,
+    async queueChatIfCold({ message, eventTime, eventTimeHash = "", clientRequestId = "" }) {
+      const store = await repository.read();
+      if (coreModelReadiness(store)?.ready !== false) return null;
+      const parsed = chatMessage({ message });
+      if (parsed.error) return { error: parsed.error };
+      if (!eventTime?.occurredAt || !eventTime?.occurredOn) return { error: "发生时间格式不正确" };
+      const requestId = clientRequestId || createId();
+      return queueColdTask("chat", "", {
+        message: parsed.value,
+        occurredAt: eventTime.occurredAt,
+        occurredOn: eventTime.occurredOn,
+        eventTimeHash
+      }, requestId);
+    },
+    async queueAnalysisIfCold({ reason = "manual", clientRequestId = "" } = {}) {
+      const requestId = clientRequestId || createId();
+      return queueColdTask("analysis", "", { reason }, requestId);
+    }
+  };
 }

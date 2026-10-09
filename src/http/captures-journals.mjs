@@ -1,4 +1,6 @@
 import { safeText } from "../shared/validation/index.mjs";
+import { CORE_MODEL_NOT_READY_CODE } from "../shared/core-model-gate.mjs";
+import { sendPersonalizedTaskV1 } from "./ai-task-responses.mjs";
 
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 const legacyTags = input => Array.isArray(input.tags) ? input.tags : [];
@@ -9,7 +11,11 @@ const requestBinding = input => {
     ? { requestId, targetId, inputVersion: Math.max(0, Math.round(Number(input.inputVersion) || 0)) }
     : {};
 };
-
+const requestIdFrom = (req, input = {}) => (
+  safeText(req.headers?.["idempotency-key"] ?? req.headers?.get?.("idempotency-key"), 100)
+  || safeText(input.clientRequestId, 100)
+  || safeText(input.requestId, 100)
+);
 export function createCaptureJournalHttp({
   captures,
   journals,
@@ -21,10 +27,15 @@ export function createCaptureJournalHttp({
   removeJournal,
   removeReflection,
   sendTrashResult,
+  sendTaskCreation,
   bodyJson,
   sendJson,
   respondModel
 }) {
+  const sendQueued = (res, created) => sendTaskCreation
+    ? sendTaskCreation(res, created)
+    : sendJson(res, created.duplicate ? 200 : 202, created.task);
+
   async function prepareCapture(input) {
     const audioOnly = input.audio
       && !safeText(input.content, 12000)
@@ -134,11 +145,23 @@ export function createCaptureJournalHttp({
       if (!["lead", "structure", "topic"].includes(input.mode)) {
         return v1.error(res, 400, "日记辅助类型无效", "VALIDATION_ERROR");
       }
-      await respondModel(req, res, {
-        run: onDelta => workflows.assist(input, { binding: requestBinding(input), onDelta }),
-        formatResult: value => v1.envelope(value),
-        formatError: error => ({ type: "error", ...v1.errorEnvelope(error) })
+      const waiting = await workflows.queueAssistIfCold(input, {
+        binding: requestBinding(input),
+        clientRequestId: v1.idempotencyKey(req)
       });
+      if (waiting) return sendPersonalizedTaskV1(res, v1, waiting);
+      try {
+        await respondModel(req, res, {
+          run: onDelta => workflows.assist(input, { binding: requestBinding(input), onDelta }),
+          formatResult: value => v1.envelope(value),
+          formatError: error => ({ type: "error", ...v1.errorEnvelope(error) })
+        });
+      } catch (error) {
+        if (error?.code === CORE_MODEL_NOT_READY_CODE) {
+          return v1.error(res, error.statusCode, error.message, error.code, error.details);
+        }
+        throw error;
+      }
       return true;
     }
     if (req.method === "GET" && /^\/api\/v1\/journals\/[^/]+$/.test(url.pathname)) {
@@ -169,12 +192,21 @@ export function createCaptureJournalHttp({
       const id = url.pathname.split("/")[4];
       if (!await journals.get(id)) return v1.error(res, 404, "这篇日记不存在", "JOURNAL_NOT_FOUND");
       const clientRequestId = v1.idempotencyKey(req);
-      await respondModel(req, res, {
-        status: 201,
-        run: onDelta => workflows.reflect({ id, clientRequestId, onDelta }),
-        formatResult: value => v1.envelope(value),
-        formatError: error => ({ type: "error", ...v1.errorEnvelope(error) })
-      });
+      const waiting = await workflows.queueReflectionIfCold({ id, clientRequestId });
+      if (waiting) return sendPersonalizedTaskV1(res, v1, waiting);
+      try {
+        await respondModel(req, res, {
+          status: 201,
+          run: onDelta => workflows.reflect({ id, clientRequestId, onDelta }),
+          formatResult: value => v1.envelope(value),
+          formatError: error => ({ type: "error", ...v1.errorEnvelope(error) })
+        });
+      } catch (error) {
+        if (error?.code === CORE_MODEL_NOT_READY_CODE) {
+          return v1.error(res, error.statusCode, error.message, error.code, error.details);
+        }
+        throw error;
+      }
       return true;
     }
     if (req.method === "DELETE" && /^\/api\/v1\/journals\/[^/]+\/reflections\/[^/]+$/.test(url.pathname)) {
@@ -261,6 +293,11 @@ export function createCaptureJournalHttp({
       if (!["lead", "structure", "topic"].includes(input.mode)) {
         sendJson(res, 400, { error: "日记辅助类型无效" });
       } else {
+        const waiting = await workflows.queueAssistIfCold(input, {
+          binding: requestBinding(input),
+          clientRequestId: requestIdFrom(req, input)
+        });
+        if (waiting) return sendQueued(res, waiting);
         await respondModel(req, res, {
           run: onDelta => workflows.assist(input, { binding: requestBinding(input), onDelta })
         });
@@ -270,9 +307,13 @@ export function createCaptureJournalHttp({
       if (!await journals.get(id)) {
         sendJson(res, 404, { error: "这篇日记不存在" });
       } else {
+        const input = await bodyJson(req);
+        const clientRequestId = requestIdFrom(req, input);
+        const waiting = await workflows.queueReflectionIfCold({ id, clientRequestId });
+        if (waiting) return sendQueued(res, waiting);
         await respondModel(req, res, {
           status: 201,
-          run: onDelta => workflows.reflect({ id, onDelta })
+          run: onDelta => workflows.reflect({ id, clientRequestId, onDelta })
         });
       }
     } else return false;

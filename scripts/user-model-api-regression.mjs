@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { isOwner } from "../src/modules/auth/index.mjs";
 import { userModelEvidenceCurrent } from "../src/app/index.mjs";
 import { defaultOnboarding, normalizeOnboardingV2 } from "../src/modules/onboarding/index.mjs";
 import { createUserModelService, normalizeUserClaim } from "../src/modules/user-model/index.mjs";
@@ -58,8 +59,13 @@ const stores = new Map([
   }],
   ["account-b", {
     onboardingV2: onboarding("另一个账户"),
-    userClaims: [],
-    modelUnknowns: []
+    userClaims: [candidate("private-claim", "PRIVATE_MODEL_STATEMENT")],
+    modelUnknowns: [{
+      id: "private-unknown",
+      question: "PRIVATE_MODEL_QUESTION",
+      domain: "context",
+      relatedEvidence: ["private-source-id"]
+    }]
   }]
 ]);
 const repository = {
@@ -89,6 +95,7 @@ const sendJson = (res, status, value) => {
   return value;
 };
 const permissionWrites = [];
+const permissionChanges = [];
 const http = createUserModelHttp({
   userModel,
   permissions: {
@@ -132,7 +139,9 @@ const http = createUserModelHttp({
       };
     }
   },
-  bodyJson: async req => req.body || {}
+  canReadModelDetails: () => isOwner(context.getStore()?.user),
+  bodyJson: async req => req.body || {},
+  onPermissionsChanged: async result => permissionChanges.push(result.permission.revision)
 });
 const api = createApiV1Http({
   sendJson,
@@ -141,7 +150,11 @@ const api = createApiV1Http({
 });
 api.register("user-model", http.handleV1);
 
-async function request(accountId, method, pathname, { body = {}, headers = {} } = {}) {
+async function request(accountId, method, pathname, {
+  body = {},
+  headers = {},
+  role = accountId === "account-a" ? "owner" : "user"
+} = {}) {
   const responseHeaders = new Map();
   const res = {
     headersSent: false,
@@ -151,7 +164,12 @@ async function request(accountId, method, pathname, { body = {}, headers = {} } 
     }
   };
   const handled = await context.run(
-    { accountId, traceId: `trace-${accountId}`, method },
+    {
+      accountId,
+      user: { id: accountId, role },
+      traceId: `trace-${accountId}`,
+      method
+    },
     () => api.handle({ method, headers, body }, res, new URL(`http://local${pathname}`))
   );
   return { handled, status: res.status, body: res.body, headers: responseHeaders };
@@ -166,6 +184,15 @@ assert.equal(response.body.meta.traceId, "trace-account-a");
 response = await request("account-b", "GET", "/api/v1/user-model");
 assert.equal(response.status, 200);
 assert.deepEqual(response.body.data.claims, []);
+assert.deepEqual(response.body.data.unknowns, []);
+assert.deepEqual(Object.keys(response.body.data).sort(), ["claims", "readiness", "unknowns"]);
+assert.equal(JSON.stringify(response.body.data).includes("PRIVATE_MODEL_"), false);
+assert.equal(JSON.stringify(response.body.data).includes("private-source-id"), false);
+assert.equal(Object.hasOwn(response.body.data, "canExpand"), false);
+response = await request("account-a", "GET", "/api/v1/user-model");
+assert.equal(response.status, 200);
+assert.equal(response.body.data.claims[0].statement, "正在适应新的工作节奏");
+assert.equal(response.body.data.claims[0].evidence[0].sourceId, "currentContext");
 response = await request(
   "account-a",
   "GET",
@@ -211,6 +238,7 @@ assert.equal(response.body.data.permission.revision, 1);
 assert.equal(response.body.data.learningRefreshQueued, false);
 assert.equal(response.headers.get("etag"), "\"1\"");
 assert.equal(permissionWrites[0].expectedRevision, 0);
+assert.deepEqual(permissionChanges, [1], "successful source-permission changes release waiting AI work");
 response = await request("account-a", "PATCH", "/api/v1/user-model/evidence-permissions", {
   headers: { "if-match": "\"9\"" },
   body: {
@@ -227,6 +255,7 @@ response = await request("account-a", "PATCH", "/api/v1/user-model/evidence-perm
 });
 assert.equal(response.status, 412);
 assert.equal(response.body.error.details.currentVersion, 2);
+assert.deepEqual(permissionChanges, [1], "a rejected permission conflict does not trigger task release");
 
 await assert.rejects(
   request("account-a", "PATCH", "/api/v1/user-model/claims/claim-a", {

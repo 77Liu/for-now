@@ -1,5 +1,7 @@
 import { eventTimestamp, formatTime } from "../../time/index.mjs";
 import { journalCardMarkup, matchesFeedSearch } from "./presentation.mjs";
+import { resolveSynchronousPersonalizedResponse } from "../../shared/personalized-ai-task.mjs";
+import { isPendingAiTaskStatus } from "../../shared/ai-task-status.mjs";
 
 const noop = () => {};
 const splitTags = value => String(value || "")
@@ -60,6 +62,8 @@ export function createJournalsFeatureController({
   if (!platform.document) throw new TypeError("Journals feature requires document");
 
   const { document } = platform;
+  const resolvePersonalizedTask = data.resolvePersonalizedTask
+    || (async response => resolveSynchronousPersonalizedResponse(response));
   let activation = null;
   let surface = null;
   let submissionPromise = null;
@@ -239,7 +243,7 @@ export function createJournalsFeatureController({
       const requestId = platform.createRequestId();
       const targetId = journalId || "journal-draft";
       const inputVersion = Date.now();
-      const result = await data.requestStream(
+      const initialResponse = await data.requestStream(
         "/api/journals/assist",
         {
           method: "POST",
@@ -260,14 +264,38 @@ export function createJournalsFeatureController({
           }
         }
       );
-      if (!current(operation) || (result.requestId && result.requestId !== requestId)) {
+      const settled = await resolvePersonalizedTask(initialResponse, {
+        operationLabel: labels[mode],
+        expectedKind: "journalAssist",
+        onStatus: message => {
+          if (current(operation)) status.textContent = message;
+        }
+      });
+      if (settled.abandoned) return false;
+      const result = settled.result;
+      const taskMismatch = settled.task && (
+        settled.task.targetId !== targetId
+        || (Number(settled.task.inputVersion) > 0
+          && Number(settled.task.inputVersion) !== Number(inputVersion))
+      );
+      const resultMismatch = (result.requestId && result.requestId !== requestId)
+        || (result.targetId && result.targetId !== targetId)
+        || (result.inputVersion != null
+          && Number(result.inputVersion) !== Number(inputVersion));
+      if (taskMismatch || resultMismatch) {
+        if (current(operation)) {
+          status.textContent = `${labels[mode]}任务与当前请求不匹配，结果未写入。`;
+        }
+        return false;
+      }
+      if (!current(operation)) {
         return false;
       }
       if (query("#journal-date").value !== date
         || query("#journal-title").value !== title
         || editor.value !== content
         || query("#journal-id").value !== journalId) {
-        status.textContent = `${labels[mode]}已生成，但当前日记已经变化，未自动追加。`;
+        status.textContent = `${labels[mode]}已生成，但当前日记已经变化，未自动追加。结果：${result.content || streamed}`;
         return false;
       }
       const addition = (result.content || streamed).trim();
@@ -486,22 +514,46 @@ export function createJournalsFeatureController({
   async function reflect(button) {
     const id = button.dataset.journalReflect;
     const operation = ticket();
+    const journal = (data.getSnapshot().journals || [])
+      .find(item => item.id === id);
+    const inputVersion = Math.max(1, Math.round(Number(journal?.version) || 1));
+    const activeTask = (data.getSnapshot().aiTasks || []).find(task => (
+      task.kind === "journalReflection"
+      && task.targetId === id
+      && Number(task.inputVersion) === inputVersion
+      && isPendingAiTaskStatus(task.status)
+    ));
+    const requestId = activeTask
+      ? ""
+      : (button.dataset.requestId || platform.createRequestId());
+    if (requestId) button.dataset.requestId = requestId;
     button.disabled = true;
     try {
       await assistant.runAnswer({
         title: "回望这篇日记",
         scene: "diaryReflection",
+        expectedTaskKind: "journalReflection",
+        expectedTaskTargetId: id,
+        isSessionCurrent: () => sameAccount(operation),
         isCurrent: () => current(operation),
-        requestCall: onEvent => data.requestStream(
-          `/api/journals/${encodeURIComponent(id)}/reflect`,
-          { method: "POST", body: "{}" },
-          onEvent
-        ),
+        requestCall: onEvent => activeTask
+          ? Promise.resolve({ data: activeTask })
+          : data.requestStream(
+            `/api/journals/${encodeURIComponent(id)}/reflect`,
+            {
+              method: "POST",
+              headers: { "idempotency-key": requestId },
+              body: "{}"
+            },
+            onEvent
+          ),
         onDone: () => data.refresh("journals")
       });
+      delete button.dataset.requestId;
       if (current(operation)) view.showToast("日记回望已保存");
       return true;
     } catch (error) {
+      if (error.taskId) delete button.dataset.requestId;
       if (current(operation)) view.showToast(error.message, "error");
       return false;
     } finally {

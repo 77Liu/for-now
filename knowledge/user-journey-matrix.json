@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-05",
+  "updatedAt": "2026-10-10",
   "tiers": {
     "smoke": "每个候选功能提交前，验证前端契约和真实浏览器关键旅程。",
     "daily": "覆盖前端全回归、认证、同步和本地测试模式。",
@@ -363,9 +363,52 @@
       "evidence": [
         {"script": "scripts/onboarding-v2-regression.mjs", "anchor": "Onboarding v2 compatibility"},
         {"script": "scripts/onboarding-v2-session-regression.mjs", "anchor": "Onboarding v2 session contracts"},
-        {"script": "scripts/onboarding-v2-frontend-regression.mjs", "anchor": "Onboarding v2 frontend contracts"},
+        {"script": "scripts/onboarding-v2-frontend-regression.mjs", "anchor": "Onboarding v2 contracts passed"},
         {"script": "scripts/ui-regression.mjs", "anchor": "onboarding-v2-content"},
         {"script": "scripts/regression.mjs", "anchor": "onboardingV2.migration.entryPolicy"}
+      ]
+    },
+    {
+      "id": "p00-existing-user-core-model-supplement",
+      "title": "已有用户通过明确补答入口补齐核心用户模型",
+      "role": "已有账户用户",
+      "goal": "保留已有资料，通过明确的问答补充核心模型，不用历史记录代替用户回答",
+      "risk": "critical",
+      "tier": "smoke",
+      "status": "partial",
+      "normalPath": ["登录已有账户", "打开核心模型补答入口", "逐题回答或明确标记未知/不愿回答", "检查原文和来源", "确认模型就绪"],
+      "failureAndRecovery": ["已有资料迁移", "部分答题后刷新", "回答版本发生变化", "模型生成失败后恢复", "账户切换"],
+      "assertions": ["补答由用户明确发起", "历史资料不会替代用户回答", "保留逐题原文、版本和来源", "未知与拒答不被补写", "生成内容只提炼合格用户回答", "其他账户不可读取或覆盖"],
+      "evidence": [
+        {"script": "scripts/onboarding-v2-session-regression.mjs", "anchor": "Onboarding v2 session contracts passed"},
+        {"script": "scripts/onboarding-v2-frontend-regression.mjs", "anchor": "Onboarding v2 contracts passed"},
+        {"script": "scripts/user-model-claims-regression.mjs", "anchor": "User model claim checks passed"},
+        {"script": "scripts/user-model-extraction-regression.mjs", "anchor": "User model extraction checks passed"}
+      ]
+    },
+    {
+      "id": "p00-ai-waits-for-core-model-ready",
+      "title": "核心模型就绪前的 AI 请求等待与恢复",
+      "role": "冷启动中的用户",
+      "goal": "核心模型未就绪时保存其他 AI 请求意图，待模型就绪后使用最新上下文继续",
+      "risk": "critical",
+      "tier": "smoke",
+      "status": "automated",
+      "normalPath": ["提交需要个人语境的 AI 请求", "模型未就绪时看到等待状态", "完成核心问答并生成模型", "等待任务按最新问题和模型版本继续", "查看结果与引用"],
+      "failureAndRecovery": ["核心生成失败或取消", "问题或来源在等待期间变化", "等待期间重启", "账户切换", "模型生成任务不得等待自身就绪"],
+      "assertions": ["等待期间保留任务意图", "等待期间不编译回答上下文或调用回答模型", "核心生成任务优先且不形成自等待", "就绪后使用当前账户、当前问题和最新有效模型版本", "过期、撤权或取消任务不继续执行", "重启后等待任务可恢复"],
+      "evidence": [
+        {"script": "scripts/personalized-ai-model-gate-regression.mjs", "anchor": "个性化 AI 冷启回归通过"},
+        {"script": "scripts/background-ai-model-gate-regression.mjs", "anchor": "restart-safe waiting"},
+        {"script": "scripts/personalized-ai-task-ui-regression.mjs", "anchor": "Personalized AI task UI checks passed"},
+        {"script": "scripts/personalized-ai-permission-revocation-regression.mjs", "anchor": "三个场景均在 provider 运行期间撤权后 stale"},
+        {"script": "scripts/review-chat-permission-boundary-regression.mjs", "anchor": "Review chat permission boundary regression passed"},
+        {"script": "scripts/user-model-core-readiness-regression.mjs", "anchor": "User model core readiness regression passed."},
+        {"script": "scripts/answer-citations-regression.mjs", "anchor": "Answer citation regression passed"},
+        {"script": "scripts/content-background-production-gate-regression.mjs", "anchor": "Production background assembly keeps personalized answer tasks waiting"},
+        {"script": "scripts/user-model-extraction-regression.mjs", "anchor": "assert.equal(created.task.status, \"queued\");"},
+        {"script": "scripts/user-model-extraction-regression.mjs", "anchor": "User model extraction checks passed"},
+        {"script": "scripts/user-model-api-regression.mjs", "anchor": "User model API checks passed"}
       ]
     },
     {

@@ -377,11 +377,20 @@ await context.run({ accountId: "account-a" }, async () => {
         targetId: "thought-block",
         status: "running",
         payload: { targetType: "thoughtBlock", targetId: "thought-block", attachmentPaths: [PATHS.a2] }
+      },
+      {
+        id: "waiting-image-task",
+        kind: "contentImageUnderstanding",
+        resourceType: "thought",
+        targetId: "thought-block",
+        status: "waiting_for_user_model",
+        payload: { targetType: "thoughtBlock", targetId: "thought-block", attachmentPaths: [PATHS.a2] }
       }
     );
     store.notifications.push(
       { id: "queued-notification", taskId: "queued-image-task", status: "queued" },
-      { id: "running-notification", taskId: "running-image-task", status: "running" }
+      { id: "running-notification", taskId: "running-image-task", status: "running" },
+      { id: "waiting-notification", taskId: "waiting-image-task", status: "waiting_for_user_model" }
     );
   });
 
@@ -401,6 +410,8 @@ await context.run({ accountId: "account-a" }, async () => {
   assert.equal(afterRemoval.thoughts.find(item => item.id === "thought-block").imageUnderstandings.length, 0);
   assert.equal(afterRemoval.aiTasks.find(item => item.id === "queued-image-task").status, "cancelled");
   assert.equal(afterRemoval.aiTasks.find(item => item.id === "running-image-task").status, "cancelling");
+  assert.equal(afterRemoval.aiTasks.find(item => item.id === "waiting-image-task").status, "cancelled");
+  assert.equal(afterRemoval.notifications.find(item => item.taskId === "waiting-image-task").status, "cancelled");
   assert.deepEqual(cancelledTasks, ["running-image-task"]);
   assert.ok(collectAttachmentPaths(afterRemoval).has(PATHS.a2), "trash payload must retain the attachment cleanup reference");
 

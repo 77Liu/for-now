@@ -7,6 +7,15 @@ import "./prompt-test-setup.mjs";
 import { createDeepSeekTransport } from "../src/infrastructure/ai-providers/index.mjs";
 import { createAiGenerator, createAiAudit, createAiUsageService, normalizeLlmSettings } from "../src/modules/ai/index.mjs";
 
+const promptManifest = JSON.parse(await fs.readFile(
+  new URL("../prompts/manifest.json", import.meta.url),
+  "utf8"
+));
+const activePromptVersion = promptManifest.versions.find(item => (
+  item.version === promptManifest.activeVersion
+));
+assert.ok(activePromptVersion, "the active prompt version must exist in the catalog");
+
 const usage = { prompt_tokens: 100, completion_tokens: 20, completion_tokens_details: { reasoning_tokens: 5 } };
 const jsonResponse = (content = "回答", finish = "stop") => new Response(JSON.stringify({
   id: "body-id", model: "deepseek-v4-pro", created: 1790643600, system_fingerprint: "fingerprint", usage,
@@ -208,8 +217,8 @@ for (const id of ["a", "b"]) {
   assert.equal(terminalAudit.schemaVersion, 3);
   assert.equal(terminalAudit.traceId, `trace-${id}`);
   assert.equal(terminalAudit.request.userPrompt, `account-${id}`);
-  assert.equal(terminalAudit.request.promptCatalog.version, "2026.10.09.3");
-  assert.equal(terminalAudit.request.promptCatalog.sha256, "037d9922c8f5d99d203d1abf7d3d84ad5c41f3c21f274362a49fdf9b86b4a685");
+  assert.equal(terminalAudit.request.promptCatalog.version, promptManifest.activeVersion);
+  assert.equal(terminalAudit.request.promptCatalog.sha256, activePromptVersion.sha256);
   assert.deepEqual(terminalAudit.request.promptCatalog, startedAudit.request.promptCatalog);
   assert.deepEqual(terminalAudit.request.contextReceipt, startedAudit.request.contextReceipt);
   assert.equal(terminalAudit.request.contextReceipt.sources[0].resourceId, `source-${id}`);

@@ -5,6 +5,17 @@ import { createAnnotationService } from "../src/modules/annotations/index.mjs";
 import { createNotificationService } from "../src/modules/notifications/index.mjs";
 import { activeTaskForInput, createTaskLifecycle } from "../src/modules/tasks/index.mjs";
 
+assert.equal(activeTaskForInput([{
+  kind: "captureTranscription",
+  targetId: "capture-waiting",
+  inputHash: "audio-hash",
+  status: "waiting_for_user_model"
+}], {
+  kind: "captureTranscription",
+  targetId: "capture-waiting",
+  inputHash: "audio-hash"
+}), null, "waiting tasks are not runnable active tasks for input de-duplication");
+
 let tick = 0;
 const now = () => `2026-10-01T00:00:${String(++tick).padStart(2, "0")}.000Z`;
 const hash = value => crypto.createHash("sha256").update(value).digest("hex");

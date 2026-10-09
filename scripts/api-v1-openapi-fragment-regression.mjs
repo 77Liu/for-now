@@ -4,6 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   openApiV1,
+  captureJournalPaths,
+  reviewsChatPaths,
   speechComponents,
   speechOpenApiFragment,
   speechPaths,
@@ -95,6 +97,37 @@ for (const privateField of ["attachmentPath", "ownerHash", "textHash"]) {
 
 const thoughtPathNames = Object.keys(thoughtPaths);
 assert.deepEqual(thoughtPaths, pick(openApiV1.paths, thoughtPathNames));
+const thoughtAnswerOperation = thoughtPaths["/thought-chains/{id}/answers"].post;
+assert.equal(thoughtAnswerOperation.responses["200"].content["application/json"].schema.allOf[1].properties.data.$ref,
+  "#/components/schemas/ThoughtAnswerTask");
+assert.equal(thoughtAnswerOperation.responses["202"].content["application/json"].schema.allOf[1].properties.data.$ref,
+  "#/components/schemas/ThoughtAnswerTask");
+assert.ok(thoughtComponents.schemas.ThoughtAnswerTask.properties.status.enum.includes("waiting_for_user_model"));
+assert.equal(thoughtComponents.schemas.ThoughtAnswerTask.properties.kind.const, "thoughtAnswer");
+assert.equal(thoughtComponents.schemas.ThoughtAnswerTask.properties.errorCode.type, "string");
+
+const personalizedTaskSchema = openApiV1.components.schemas.PersonalizedAiTask;
+assert.ok(personalizedTaskSchema.properties.status.enum.includes("waiting_for_user_model"));
+for (const [paths, route, method] of [
+  [captureJournalPaths, "/journals/assist", "post"],
+  [captureJournalPaths, "/journals/{id}/reflections", "post"],
+  [reviewsChatPaths, "/chats", "post"],
+  [reviewsChatPaths, "/analyses", "post"]
+]) {
+  const responseSchema = paths[route][method].responses["202"]
+    ?.content?.["application/json"]?.schema?.allOf?.[1]?.properties?.data;
+  assert.equal(responseSchema?.$ref, "#/components/schemas/PersonalizedAiTask",
+    `202 ${method.toUpperCase()} ${route} must document its persisted task`);
+}
+const journalAssistParameters = resolvedParameters(openApiV1, "/journals/assist", "post");
+assert.ok(journalAssistParameters.some(parameter => (
+  parameter.in === "header"
+    && parameter.name === "Idempotency-Key"
+    && parameter.required === true
+)));
+for (const kind of ["thoughtDraft", "thoughtPrompt", "journalAssist", "journalReflection", "chat", "analysis"]) {
+  assert.ok(personalizedTaskSchema.properties.kind.enum.includes(kind), `${kind} must be part of the task schema`);
+}
 
 const ownedParameters = ["ThoughtChainId"];
 const ownedSchemas = Object.keys(thoughtComponents.schemas);

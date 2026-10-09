@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createMemoryMediaDraftStore } from "../public/frontend/media/index.mjs";
+import { createCaptureJournalFeatureController } from "../public/frontend/features/capture-journal/index.mjs";
 import { createCaptureAudioDraft } from "../public/frontend/features/capture-journal/capture-audio.mjs";
 import { createCaptureDraftStore } from "../public/frontend/features/capture-journal/capture-drafts.mjs";
 import {
@@ -782,6 +783,136 @@ assert.match(runtime, /import\("\.\.\/features\/capture-journal\/index\.mjs"\)/)
 assert.match(descriptorRuntime, /descriptors\.captures=.*loadCaptureJournalPage\("captures"\)/);
 assert.match(descriptorRuntime, /descriptors\.journals=.*loadCaptureJournalPage\("journals"\)/);
 assert.ok(changes.length > 0);
+
+const reflectionSnapshot = {
+  journals: [{
+    id: "journal-reflection-1",
+    content: "要回望的正文",
+    version: 3,
+    createdAt: "2026-10-09T10:00:00.000Z",
+    updatedAt: "2026-10-09T10:00:00.000Z",
+    reflections: []
+  }],
+  aiTasks: []
+};
+const reflectionHandlers = {};
+const reflectionList = { innerHTML: "" };
+const reflectionElements = new Map();
+const reflectionRoot = {
+  addEventListener(type, listener) { reflectionHandlers[type] = listener; },
+  removeEventListener() {},
+  querySelector(selector) {
+    if (selector === "#journal-list") return reflectionList;
+    if (!reflectionElements.has(selector)) reflectionElements.set(selector, { textContent: "", value: "" });
+    return reflectionElements.get(selector);
+  },
+  querySelectorAll() { return []; }
+};
+const reflectionButton = {
+  dataset: { journalReflect: "journal-reflection-1" },
+  disabled: false,
+  isConnected: true
+};
+const reflectionCalls = [];
+const reflectionRequests = [];
+const reflectionTaskIds = [];
+const reflectionTaskVersions = [];
+let reflectionRequestNumber = 0;
+const journalsController = createCaptureJournalFeatureController({
+  page: "journals",
+  data: {
+    getSnapshot: () => reflectionSnapshot,
+    getAccountId: () => "owner-a",
+    getSessionSerial: () => 1,
+    request: async () => ({}),
+    requestV1: async () => ({}),
+    requestStream: async (_url, options) => {
+      reflectionRequests.push(options);
+      return { data: {
+        id: `reflection-task-${reflectionRequests.length}`,
+        kind: "journalReflection",
+        targetId: "journal-reflection-1",
+        inputVersion: reflectionSnapshot.journals[0].version,
+        status: "waiting_for_user_model"
+      } };
+    },
+    refresh: async () => ({}),
+    applyPendingProjection() {},
+    publish() {}
+  },
+  annotations: { markTarget() {}, applyAnchors() {}, rootKey: () => "journal-root" },
+  assistant: {
+    async runAnswer(options) {
+      reflectionCalls.push(options);
+      const response = await options.requestCall(() => {});
+      reflectionTaskIds.push(response.data.id);
+      reflectionTaskVersions.push(response.data.inputVersion);
+      throw Object.assign(new Error("任务失败"), { taskId: response.data.id });
+    }
+  },
+  view: {
+    contentState: () => "",
+    contextReceiptMarkup: () => "",
+    renderLatex() {},
+    showToast() {},
+    presentError: error => error.message,
+    resetOccurrenceInput() {},
+    occurrenceFields: () => ({}),
+    entryKeyIntent: () => ""
+  },
+  platform: {
+    document: {},
+    createRequestId: () => `reflection-request-${++reflectionRequestNumber}`,
+    requestFrame: callback => callback(),
+    confirm: () => true,
+    escapeSelector: value => value
+  }
+});
+await journalsController.mount({ root: reflectionRoot });
+const clickReflection = async () => {
+  reflectionHandlers.click({ target: { closest: () => reflectionButton } });
+  await new Promise(resolve => setImmediate(resolve));
+};
+await clickReflection();
+const firstReflectionKey = reflectionRequests.at(-1).headers["idempotency-key"];
+assert.ok(firstReflectionKey);
+assert.equal(reflectionButton.dataset.requestId, undefined,
+  "a terminal reflection task clears its key so the user can retry");
+await clickReflection();
+const secondReflectionKey = reflectionRequests.at(-1).headers["idempotency-key"];
+assert.notEqual(secondReflectionKey, firstReflectionKey,
+  "a retried reflection uses a fresh idempotency key");
+
+reflectionSnapshot.aiTasks = [{
+  id: "reflection-task-after-reload",
+  kind: "journalReflection",
+  targetId: "journal-reflection-1",
+  inputVersion: 3,
+  status: "waiting_for_user_model"
+}];
+const requestCountBeforeResume = reflectionRequests.length;
+await clickReflection();
+assert.equal(reflectionRequests.length, requestCountBeforeResume,
+  "a task already present in the account snapshot is resumed instead of duplicated");
+assert.equal(reflectionTaskIds.at(-1), "reflection-task-after-reload");
+assert.equal(reflectionTaskVersions.at(-1), 3);
+assert.equal(reflectionCalls.at(-1).expectedTaskKind, "journalReflection");
+
+reflectionSnapshot.journals[0].version = 4;
+reflectionSnapshot.journals[0].updatedAt = "2026-10-10T10:00:00.000Z";
+const requestCountBeforeEditedReflection = reflectionRequests.length;
+await clickReflection();
+assert.equal(reflectionRequests.length, requestCountBeforeEditedReflection + 1,
+  "editing the journal must submit a new reflection instead of resuming an older version");
+const editedReflectionKey = reflectionRequests.at(-1).headers["idempotency-key"];
+assert.ok(editedReflectionKey);
+assert.notEqual(editedReflectionKey, secondReflectionKey,
+  "an edited journal reflection uses a fresh idempotency key");
+assert.notEqual(reflectionTaskIds.at(-1), "reflection-task-after-reload",
+  "an edited journal reflection creates a new task instead of restoring the old task");
+assert.equal(reflectionCalls.at(-1).expectedTaskKind, "journalReflection");
+assert.equal(reflectionTaskVersions.at(-1), 4,
+  "a new reflection task carries the edited journal version");
 
 console.log(
   "Frontend capture/journal checks passed: presentation, recording lifecycle, exact URL "
