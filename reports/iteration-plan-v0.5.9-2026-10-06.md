@@ -396,6 +396,8 @@ G1 在既有 60–300 秒范围内冻结 TTL；撤回后停止新签发，已签
 V0.5.8 G7 已在原报告关闭；本次审阅未把这个条件重新标成待完成，也未把它
 等同于 V0.5.9 G1/G2 已通过。接下来按以下独立门禁推进：
 
+> 以下 G0–G7 状态均为 2026-10-07 的计划快照；后续生产状态与当前 G6 决定见 §5.5。
+
 | 门禁 | 当前结论与退出条件 |
 | --- | --- |
 | G0 | 九条已有来源、必要字段及交付关联；留存快照复核通过。新增候选另行逐项处理；飞书“待开始”不能直接解释为需求“本轮已选” |
@@ -524,3 +526,22 @@ user-model、task-context、content runtime、认证和持久化专项通过。�
 PostgreSQL 16.14 stable、Journey Smoke `15/15`、UI 和固定
 general/legacy replay 均通过。全部供应商调用使用本地 stub；未执行真实模型、
 云资源、push、Preview、Release 或生产操作。
+
+### 5.5 2026-10-09 生产 G6 回查与 G7 回流
+
+最终运行目标为生产 `dc10b25974ebcdeef12bc5987b50cbc60b979037`。31 个样本覆盖
+30 分 07 秒，PID 固定、重启为 0。事后按相同 UTC 窗口聚合应用、journald 与
+Nginx 留存日志：应用 API `5xx=0/8`，Nginx HTTP `5xx=0/79`，warning+ journald
+为 0；两条 warning 对应未登录 `auth/me`/`state` 的 401。另记录五条
+`crit` TLS `bad_key_share` 握手失败（HTTP 建立前），不并入 HTTP 错误率，客户端
+身份未检查。详细无正文聚合证据及限制见
+[`production-error-aggregate.json`](evidence/v0.5.9-2026-10-09/production-error-aggregate.json)
+和 [`pre-launch-2026-10-08-v0.5.9.md`](pre-launch-2026-10-08-v0.5.9.md)。
+
+G6 的历史服务端 HTTP 错误信号子项通过；生产认证后保存/读取、跨账户拒绝与
+附件 proxy 旅程未通过也未标为失败：缺少专用生产合成 A/B 凭据或邀请码明文，
+既有 E2E runner 拒绝 `/now/`，认证 API 无账户删除接口。为避免用真实账户或
+留下无清理方案的生产写入，未创建测试账户；G6 整体保持未关闭，Gitee Release
+继续预发布。重新执行核心生产旅程前，需要同时具备专用合成身份与受支持的
+精确清理方式。G7 回流记录已落在预发布报告；独立开发队列继续，V0.5.10 的
+`25bb29d` 仍留在隔离分支，没有合并或部署。
