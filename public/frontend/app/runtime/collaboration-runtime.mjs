@@ -191,7 +191,12 @@ async function ensureAnnotationsController(){
   return runtime.annotationsController
 }
 const commentRootKey=(type,id)=>runtime.annotationRootKey?runtime.annotationRootKey(type,id):`${type}:${id}`;
-const parseCommentRootKey=value=>runtime.parseAnnotationRootKey?runtime.parseAnnotationRootKey(value):(()=>{const divider=String(value||"").indexOf(":");return divider<1?{type:"",id:""}:{type:value.slice(0,divider),id:value.slice(divider+1)}})();
+const parseCommentRootKey=value=>{
+  if(runtime.parseAnnotationRootKey)return runtime.parseAnnotationRootKey(value);
+  const divider=String(value||"").indexOf(":");
+  if(divider<1)return{type:"",id:""};
+  return{type:value.slice(0,divider),id:value.slice(divider+1)}
+};
 const commentRoot=value=>runtime.annotationsController?.getRoot(value)||null;
 const commentRootLabel=value=>runtime.annotationsController?.rootLabel(value)||"正文";
 const markCommentTarget=(...args)=>runtime.annotationsController?.markTarget(...args);
@@ -201,7 +206,12 @@ const scheduleAnnotationLineCounts=()=>runtime.annotationsController?.scheduleLa
 const restoreAnnotationUiDrafts=()=>runtime.annotationsController?.restoreDrafts();
 const renderCommentPanel=(...args)=>runtime.annotationsController?.renderPanel(...args);
 const openCommentPanel=(...args)=>runtime.annotationsController?.openPanel(...args);
-function patchActiveThoughtTarget(target){for(const controller of thoughtsFeatureControllers)if(controller.patchTarget(target))return true;return false}
+function patchActiveThoughtTarget(target){
+  for(const controller of thoughtsFeatureControllers){
+    if(controller.patchTarget(target))return true
+  }
+  return false
+}
 function reconcileActiveThoughtRoute(){
   let reconciled=false;
   for(const controller of thoughtsFeatureControllers){

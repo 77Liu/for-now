@@ -384,7 +384,8 @@ runtime.syncController=createIncrementalSync({
 });
 function notificationUnread(snapshot=state){
   const items=snapshot.notifications||[];
-  return Number(snapshot.notificationUnread??runtime.notificationUnreadCount)||items.filter(item=>!item.readAt&&["succeeded","failed","stale","cancelled"].includes(item.status)).length
+  const unreadCount=Number(snapshot.notificationUnread??runtime.notificationUnreadCount);
+  return unreadCount||items.filter(item=>!item.readAt&&["succeeded","failed","stale","cancelled"].includes(item.status)).length
 }
 function renderNotificationSummary(){
   const unread=notificationUnread();
@@ -396,9 +397,18 @@ function publishNotificationState(){
 }
 function scheduleNotificationPoll(){
   clearTimeout(runtime.notificationTimer);
-  const active=(state.aiTasks||[]).some(task=>["queued","running","cancelling"].includes(task.status)),retrying=runtime.backgroundResultsRetryAttempts>0&&runtime.backgroundResultsRetryAttempts<backgroundResultsRetryLimit;
+  const active=(state.aiTasks||[])
+    .some(task=>["queued","running","cancelling"].includes(task.status));
+  const retrying=runtime.backgroundResultsRetryAttempts>0
+    &&runtime.backgroundResultsRetryAttempts<backgroundResultsRetryLimit;
   if(!active&&!retrying)return;
-  runtime.notificationTimer=setTimeout(async()=>{try{await loadNotifications()}finally{scheduleNotificationPoll()}},1800);
+  runtime.notificationTimer=setTimeout(async()=>{
+    try{
+      await loadNotifications()
+    }finally{
+      scheduleNotificationPoll()
+    }
+  },1800);
 }
 async function loadNotifications(){
   const owner=runtime.currentUser?.id,session=sessionSerial;
