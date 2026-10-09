@@ -94,7 +94,7 @@ const run = (id, callback) => {
 };
 let attempt = 0;
 responseFactory = () => jsonResponse(attempt++ ? "重试回答" : "", attempt === 1 ? "length" : "stop");
-assert.equal(await run("retry", () => generate("短辅助", { retryWithoutThinking: true })), "重试回答");
+assert.equal(await run("retry", () => generate("合成思绪问题", { scene: "thoughtAnswer" })), "重试回答");
 assert.equal(attempt, 2);
 assert.deepEqual(transportCalls.slice(-2).map(call => call.body.thinking.type), ["enabled", "disabled"]);
 assert.deepEqual(accounts.get("retry").entries.map(entry => [entry.status, entry.retryScheduled]), [["failed", true], ["success", false]]);
@@ -156,7 +156,9 @@ assert.equal(transportCalls.length, callsBeforeSiteRejection);
 
 responseFactory = () => jsonResponse("", "stop");
 attempt = transportCalls.length;
-await assert.rejects(run("once", () => generate("只调用一次")), { code: "EMPTY_DEEPSEEK_CONTENT" });
+await assert.rejects(run("once", () => generate("明确不重试", {
+  scene: "thoughtAnswer", retryWithoutThinking: false
+})), { code: "EMPTY_DEEPSEEK_CONTENT" });
 assert.equal(transportCalls.length - attempt, 1);
 
 const limited = createAiUsageService({ repository: { read: async () => ledger() }, getAccountKey: () => context.getStore().user.id, dailyCallLimit: 1, dailyCostLimitCny: 100, cnyPerUsd: 7.2 });

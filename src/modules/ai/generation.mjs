@@ -43,7 +43,7 @@ export function createAiGenerator({
     captureReasoning = false,
     contextReceipt = null,
     maxTokens = 16000,
-    retryWithoutThinking = false,
+    retryWithoutThinking = scene === "thoughtAnswer",
     timeoutMs = 300000,
     signal = null,
     auditPrompt = true,
