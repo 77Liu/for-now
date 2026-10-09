@@ -182,3 +182,9 @@ Owner授权启用subagent后，root为唯一集成者/共享文件写者；deplo
 Preview 先部署同一发布 SHA，验证 ready、匿名401、合成账户A登录/保存/读取、A与B隔离及私有附件 proxy；失败则只回滚 Preview，不能宣称生产通过。生产通过现有 guard 部署后，在真实生产再用合成账户复验登录、保存/读取和跨账户拒绝；不发真实用户正文，不触发模型或媒体供应商消费。观察复用一个连续30分钟窗口：至少每分钟记录 ready/运行 SHA、服务PID/重启变化、错误率与备份状态。只有核心路径持续健康、无数据/账户隔离回归、运行SHA与标签一致且proxy有效，才关闭G6；严重数据/安全/核心不可用立即止损并按上文回滚，非核心问题登记继续，不将本次小样本外推为长期95%。
 
 发行说明的最终版以本节前“中文发行说明草稿”三个栏目为基础：仍须明确 signed CDN 未启用；实际 Git tag、Gitee Release 与 Preview/生产运行SHA在完成后回填。当前root其它工作区改动不属于本次集成或发布提交。
+
+### 2026-10-09 G6 生产观察窗口结果
+
+**运维采样窗口通过；G6 验收未关闭，发行状态保持预发布。** 生产观察从 `2026-10-09T10:45:22Z` 到 `2026-10-09T11:15:29Z`，31 个有效样本，覆盖 30 分 07 秒，间隔为 60–61 秒。每个样本均记录 `for-now.service=active`、PID `765758`、重启数 `0`、ready SHA `dc10b25974eb`、媒体 `proxy-default` 和备份 timer `active`。观察日志：[production-observation.log](evidence/v0.5.9-2026-10-09/production-observation.log)，SHA-256 `0e6acf73aebc88f662f680ab99587cce0065832e4fb8c4c8407091bc505f8498`。
+
+本窗口日志没有采集应用错误率或 Nginx 5xx，也没有执行生产账户登录、保存/读取、跨账户拒绝或附件访问的合成用户旅程；本轮只确认了匿名 `readyz`/主页 HTTP 200 与未登录 `auth/me`/`state` HTTP 401。Release04 的双合成账户 PostgreSQL 验证属于隔离候选环境，不能代替生产用户旅程。本次新鲜生产备份仍只通过 checksum 与 `pg_restore --list` 检查，没有在本轮做隔离恢复。上述缺项均不标为通过，G6 不关闭，Gitee Release 保持预发布；生产已运行 SHA 与 `v0.5.9` tag 目标仍为 `dc10b25974ebcdeef12bc5987b50cbc60b979037`。
