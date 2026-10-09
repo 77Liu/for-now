@@ -24,6 +24,9 @@ export function createPersonalContextFeatureController({
   view = {},
   platform = {}
 } = {}) {
+  // A cached app shell can pair this controller with an older descriptor. Keep
+  // the overview readable, but decline destructive actions without confirmation.
+  const confirm = typeof platform.confirm === "function" ? platform.confirm : () => false;
   requireFunctions("data port", {
     getSnapshot: data.getSnapshot,
     getAccountId: data.getAccountId,
@@ -46,7 +49,6 @@ export function createPersonalContextFeatureController({
     queryDestination: platform.queryDestination,
     escapeSelector: platform.escapeSelector,
     isDetailsElement: platform.isDetailsElement,
-    confirm: platform.confirm,
     createRequestId: platform.createRequestId
   });
 
@@ -205,7 +207,7 @@ export function createPersonalContextFeatureController({
     const key = `claim:${claimId}`;
     if (!claim || writes.has(key)) return false;
     if (["reject", "retract"].includes(action)
-      && !platform.confirm(action === "reject"
+      && !confirm(action === "reject"
         ? "不用这条理解？"
         : "撤回后，这条理解不会再用于后续回答。仍要撤回？")) {
       return false;
@@ -435,7 +437,7 @@ export function createPersonalContextFeatureController({
     const item = contextData?.periodicSyntheses?.find?.(value => value.id === id);
     const key = `synthesis:${id}`;
     if (!item || !["confirm", "reject"].includes(action) || writes.has(key)) return false;
-    if (action === "reject" && !platform.confirm("拒绝这份回望？它不会成为长期理解。")) {
+    if (action === "reject" && !confirm("拒绝这份回望？它不会成为长期理解。")) {
       return false;
     }
     const card = button.closest?.("[data-synthesis-id]");

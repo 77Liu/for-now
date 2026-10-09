@@ -369,7 +369,8 @@ function personalPorts({
   getSessionSerial = () => 1,
   navigationLog = [],
   frames = [],
-  destinations = new Map()
+  destinations = new Map(),
+  confirm = () => true
 } = {}) {
   return {
     data: {
@@ -413,7 +414,7 @@ function personalPorts({
       },
       escapeSelector: value => String(value).replaceAll('"', '\\"'),
       isDetailsElement: element => element?.details === true,
-      confirm: () => true,
+      confirm,
       createRequestId: () => "personal-context-request"
     }
   };
@@ -883,7 +884,100 @@ await assertRejectedLateResult("generation", controls => controls.unmount());
   assert.equal(root.listenerCount(), 0);
 }
 
+{
+  const requests = [];
+  const ports = personalPorts({
+    async requestV1(path) {
+      requests.push(path);
+      return { data: sampleContext("missing-confirm") };
+    }
+  });
+  delete ports.platform.confirm;
+  const controller = createPersonalContextFeatureController(ports);
+  const root = new FakeRoot(personalContextSelectors);
+  controller.mount({ root, signal: new AbortController().signal });
+  await waitFor(
+    () => /结论 missing-confirm/.test(root.node(PERSONAL_CONTEXT_SELECTORS.summary).innerHTML),
+    "personal context should remain readable when a cached shell omits confirmation"
+  );
+
+  const card = new FakeNode(root, { claimId: "claim-candidate", claimVersion: "1" });
+  const reject = new FakeNode(root, { claimAction: "reject" });
+  reject.closest = selector => {
+    if (selector === PERSONAL_CONTEXT_SELECTORS.claimAction) return reject;
+    if (selector === "[data-claim-id]") return card;
+    return null;
+  };
+  const event = { target: reject, preventDefault() {} };
+  for (const listener of [...(root.listeners.get("click") || [])]) listener(event);
+  const synthesisReject = new FakeNode(root, {
+    synthesisId: "synthesis-1",
+    synthesisAction: "reject"
+  });
+  synthesisReject.closest = selector => (
+    selector === PERSONAL_CONTEXT_SELECTORS.synthesisAction ? synthesisReject : null
+  );
+  const synthesisEvent = { target: synthesisReject, preventDefault() {} };
+  for (const listener of [...(root.listeners.get("click") || [])]) listener(synthesisEvent);
+  await flush();
+  assert.deepEqual(requests, [PERSONAL_CONTEXT_ENDPOINT]);
+  controller.unmount();
+}
+
+{
+  const requests = [];
+  const events = [];
+  const ports = personalPorts({
+    confirm(message) {
+      events.push(["confirm", message]);
+      return true;
+    },
+    async requestV1(path) {
+      requests.push(path);
+      if (path.includes("/user-model/claims/")) events.push(["write", path]);
+      return { data: sampleContext("descriptor") };
+    }
+  });
+  const controller = createPersonalContextFeatureController(ports);
+  const root = new FakeRoot(personalContextSelectors);
+  controller.mount({ root, signal: new AbortController().signal });
+  await waitFor(
+    () => /结论 descriptor/.test(root.node(PERSONAL_CONTEXT_SELECTORS.summary).innerHTML),
+    "personal-context controller did not mount with its injected confirmation port"
+  );
+  const card = new FakeNode(root, { claimId: "claim-candidate", claimVersion: "1" });
+  const reject = new FakeNode(root, { claimAction: "reject" });
+  reject.closest = selector => {
+    if (selector === PERSONAL_CONTEXT_SELECTORS.claimAction) return reject;
+    if (selector === "[data-claim-id]") return card;
+    return null;
+  };
+  const event = { target: reject, preventDefault() {} };
+  for (const listener of [...(root.listeners.get("click") || [])]) listener(event);
+  await waitFor(
+    () => events.some(([kind]) => kind === "write"),
+    "injected confirmation did not permit claim rejection"
+  );
+  assert.deepEqual(events, [
+    ["confirm", "不用这条理解？"],
+    ["write", "/api/v1/user-model/claims/claim-candidate"]
+  ]);
+  assert.ok(requests.includes(PERSONAL_CONTEXT_ENDPOINT));
+  controller.unmount();
+
+  const accountDescriptor = await readFile(
+    new URL("../public/frontend/app/runtime/page-descriptors-account.mjs", import.meta.url),
+    "utf8"
+  );
+  const personalContextDescriptor = /descriptors\["personal-context"\]=\{([\s\S]*?)\n  \};/u.exec(
+    accountDescriptor
+  )?.[1] || "";
+  assert.ok(personalContextDescriptor, "personal-context account descriptor must exist");
+  assert.match(personalContextDescriptor, /confirm:message=>globalThis\.confirm\(message\)/);
+}
+
 console.log(
   "Frontend basic surfaces checks passed: mine/permission/about rendering, delayed roots, "
-  + "20-cycle listener cleanup, personal-context retry/reset/stale isolation and source location."
+  + "20-cycle listener cleanup, personal-context retry/reset/stale isolation, cached-shell "
+  + "read-only fallback, and account confirmation wiring."
 );
