@@ -79,7 +79,7 @@ export function syncHealthPresentation(value = {}) {
 }
 
 export function versionLabel(value) {
-  const version = String(value ?? "");
+  const version = String(value ?? "").split("+", 1)[0];
   return version.startsWith("v") ? version : `v${version}`;
 }
 

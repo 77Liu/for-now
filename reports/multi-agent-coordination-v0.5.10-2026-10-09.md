@@ -1,6 +1,6 @@
 # V0.5.10 并行协作记录（2026-10-09）
 
-本记录覆盖本地 V0.5.10 的思绪回答失败与个人概要入口故障两个切片。范围是隔离分支开发和本地验证；不含 push、tag、Release、部署、生产 API 回放或生产数据写入。用户已授权开发及本地提交。
+本记录覆盖本地 V0.5.10 的思绪回答失败与个人概要入口故障两个切片，是开发阶段快照。文中的“未 push、未部署”和“发布未完成”指本记录撰写时的状态；最终 G5–G7、发布对象和观察结论见 [V0.5.10 发布记录](release-v0.5.10-2026-10-09.md)。用户已授权开发及本地提交。
 
 ## 任务与交接
 
@@ -20,7 +20,7 @@
 - 个人概要：截图错误来自前端构造期端口校验。通过公开静态文件只读核对，当前 production descriptor 注入 `confirm`，未调用业务 API。仓库事实不能说明截图会话当时加载的资源代次，因此把旧壳与新模块混用作为兼容假设，根因仍待客户端资源哈希证据。
 - 最小兼容行为：controller 未收到函数型确认端口时仍允许读取页面，但把 claim reject/retract 与 synthesis reject 全部默认为取消，避免无确认写入。测试直接走 controller click listener 验证缺失端口时只 GET；以同一 controller 交互验证注入确认回调后先确认再 PATCH；account descriptor 的 `globalThis.confirm` 注入由公开源码契约断言覆盖。模块边界不允许脚本深导入内部 runtime descriptor。
 - 个人概要需求记录 `recvxyhccy2eV8` 仍待评估、未发布；没有修改 Base 发布关联或需求状态，也未把“补答/模型合并”扩成当前代码范围。
-- 所有回归使用合成夹具；没有读取生产用户正文、调用真实模型或执行任何生产写操作。未 push、未部署。
+- 本阶段回归使用合成夹具；没有读取生产用户正文、调用真实模型或执行生产写操作。本记录对应阶段未 push、未部署。
 
 ## 当前状态
 
@@ -29,4 +29,4 @@ AI 修复已本地提交 `be83c24486e6cee39cd1298018ec06ac60194fe7`，工作树�
 - `public/frontend/features/personal-context/controller.mjs`
 - `scripts/frontend-basic-surfaces-feature-regression.mjs`
 
-验证：完整 package `check` 的 211 条 Node 命令等价展开全部退出 0；`scripts/system-test.mjs frontend` 48/48 项通过（91.8 秒）；`frontend-basic-surfaces-feature-regression.mjs`、`frontend-runtime-composition-regression.mjs`、`frontend-lazy-descriptor-regression.mjs`、语法及差分检查也全部通过。独立验证与最终复审均 GO。`npm` 命令本身在当前环境不存在，验证使用固定 bundled Node 逐条展开。自动 `commit-gate` 未运行：其分支 allowlist 不含当前 `codex/` 分支，且环境没有 `npm`；用户已明确授权本地提交。V0.5.10 整版和生产发布仍未完成。
+验证：完整 package `check` 的 211 条 Node 命令等价展开全部退出 0；`scripts/system-test.mjs frontend` 48/48 项通过（91.8 秒）；`frontend-basic-surfaces-feature-regression.mjs`、`frontend-runtime-composition-regression.mjs`、`frontend-lazy-descriptor-regression.mjs`、语法及差分检查也全部通过。独立验证与最终复审均 GO。`npm` 命令本身在当前环境不存在，验证使用固定 bundled Node 逐条展开。自动 `commit-gate` 未运行：其分支 allowlist 不含当前 `codex/` 分支，且环境没有 `npm`；用户已明确授权本地提交。以上为本文成稿时的阶段状态，最终发布结论见发布记录。

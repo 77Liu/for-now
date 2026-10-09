@@ -5,7 +5,8 @@ import {
   createMineFeatureController,
   createPermissionFeatureController,
   notificationUnread,
-  syncHealthPresentation
+  syncHealthPresentation,
+  versionLabel
 } from "../public/frontend/features/mine-shell/index.mjs";
 import {
   EVIDENCE_PERMISSIONS_ENDPOINT,
@@ -14,6 +15,8 @@ import {
   createPersonalContextFeatureController,
   currentContextSource
 } from "../public/frontend/features/personal-context/index.mjs";
+
+assert.equal(versionLabel("0.5.10+hotfix.1"), "v0.5.10");
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 

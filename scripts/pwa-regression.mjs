@@ -30,6 +30,26 @@ for (const [file, expectedSize] of [
 }
 
 const html = await fs.readFile(publicPath("index.html"), "utf8");
+const packageReleaseVersion = JSON.parse(await fs.readFile(path.join(ROOT, "package.json"), "utf8")).version;
+const releaseVersion = packageReleaseVersion.split("+", 1)[0];
+assert.equal(packageReleaseVersion, "0.5.10+hotfix.1");
+assert.equal(releaseVersion, "0.5.10");
+const lock = JSON.parse(await fs.readFile(path.join(ROOT, "package-lock.json"), "utf8"));
+assert.equal(lock.version, packageReleaseVersion);
+assert.equal(lock.packages[""].version, packageReleaseVersion);
+const kernel = await fs.readFile(publicPath("frontend/app/runtime/kernel.mjs"), "utf8");
+assert.match(kernel, /appVersion="0\.5\.10",releaseVersion="0\.5\.10\+hotfix\.1"/);
+const sessionRuntime = await fs.readFile(publicPath("frontend/app/runtime/session-runtime.mjs"), "utf8");
+assert.match(sessionRuntime, /runtime\.appVersion="0\.5\.10"/);
+const iosProject = await fs.readFile(path.join(ROOT, "ios/App/App.xcodeproj/project.pbxproj"), "utf8");
+const iosMarketingVersions = [...iosProject.matchAll(/MARKETING_VERSION = ([^;]+);/g)].map(match => match[1]);
+assert.equal(iosMarketingVersions.length, 4);
+assert.ok(iosMarketingVersions.every(version => version === releaseVersion));
+const iosBuildNumbers = [...iosProject.matchAll(/CURRENT_PROJECT_VERSION = (\d+);/g)].map(match => match[1]);
+assert.equal(iosBuildNumbers.length, 4);
+assert.ok(iosBuildNumbers.every(version => version === "7"));
+assert.ok(html.includes(`id="sidebar-app-version">v${releaseVersion}</p>`));
+assert.ok(html.includes(`id="mine-app-version">v${releaseVersion}</p>`));
 assert.match(html, /rel="apple-touch-icon"[^>]+apple-touch-icon\.png/);
 assert.match(html, /document\.documentElement\.dataset\.runtimeReady\s*===\s*["']1["']/);
 assert.match(html, /setTimeout\(registerWorker,\s*1500\)/);
@@ -299,7 +319,7 @@ assert.equal(startupTimeout.observers.every(observer => observer.disconnected), 
 
 const worker = await fs.readFile(publicPath("service-worker.js"), "utf8");
 assert.match(worker, /const CACHE_VERSION\s*=\s*["'][^"']+["']/);
-assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.9-opening-1["']/);
+assert.match(worker, /const CACHE_VERSION\s*=\s*["']cike-shell-v0\.5\.10-hotfix\.1-opening-1["']/);
 const assetSet = name => {
   const source = worker.match(new RegExp(`const ${name}\\s*=\\s*\\[([\\s\\S]*?)\\];`))?.[1] || "";
   return new Set([...source.matchAll(/["']([^"']+)["']/g)].map(match => match[1]));
