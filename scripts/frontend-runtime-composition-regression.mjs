@@ -32,6 +32,7 @@ assert.equal(
 );
 
 const runtimeModules = [
+  "public/frontend/app/runtime/auth-events.mjs",
   "public/frontend/app/runtime/collaboration-runtime.mjs",
   "public/frontend/app/runtime/content-media-runtime.mjs",
   "public/frontend/app/runtime/data-runtime.mjs",
@@ -43,6 +44,7 @@ const runtimeModules = [
   "public/frontend/app/runtime/home-selection-quote-modal.mjs",
   "public/frontend/app/runtime/kernel.mjs",
   "public/frontend/app/runtime/loaders.mjs",
+  "public/frontend/app/runtime/onboarding-events.mjs",
   "public/frontend/app/runtime/page-descriptors-account.mjs",
   "public/frontend/app/runtime/page-descriptors-insights.mjs",
   "public/frontend/app/runtime/page-descriptors-primary.mjs",

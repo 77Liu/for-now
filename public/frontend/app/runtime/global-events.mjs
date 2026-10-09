@@ -1,5 +1,7 @@
 import { sessionSerial } from "../../session/index.mjs";
 import { publishDomains, state } from "../../state/index.mjs";
+import { installAuthEvents } from "./auth-events.mjs";
+import { installOnboardingEvents } from "./onboarding-events.mjs";
 
 export function installGlobalEvents({
   runtime,$,$$,actionsCoordinator,localTestViewScopes,ensureLocalTestViewScope,
@@ -32,6 +34,10 @@ const pageEffects={today:()=>{if(runtime.applicationLifecycleReady&&runtime.curr
 const lazyPageEffects=new Proxy(pageEffects,{get(target,view){const effect=target[view];if(typeof view!=="string"||!localTestViewScopes[view])return effect;return()=>{void ensureLocalTestViewScope(view).then(async ready=>{if(!ready)return;if(typeof effect==="function")await effect();await restorePendingProjections()})}}});
 const pageRouter=createPageRouter({query:$,queryAll:$$,effects:lazyPageEffects,basePath:applicationBasePath,onRouteStart:applyApplicationRoute,canAccessView:(_,capability)=>hasCapability(capability),onDenied:showPermissionPage});
 const {switchView,restoreView}=pageRouter;
+installOnboardingEvents({
+  $, $$, runtime, collectOnboardingAnswers, renderOnboardingQuestions,
+  onboardingPayload, onboardingV2Controller, load, request, showToast, switchView
+});
 async function openCaptureFeature(action,trigger=null){
   await Promise.resolve(switchView("captures"));
   return runtime.capturesFeatureController?.[action]?.(trigger)||false
@@ -103,12 +109,40 @@ document.addEventListener("click",event=>{
   if(command==="retry-route-state"){button.disabled=true;void loadRouteState(pageRouter?.currentRoute()).finally(()=>{if(button.isConnected)button.disabled=false});return}
 });
 
-document.addEventListener("click",e=>{const b=e.target.closest("button");if(!b||b.closest("#view-ai-cost,#view-architecture,#view-commercialization"))return;if(b.dataset.view){closeHomeEditors({restoreFocus:false});return switchView(b.dataset.view)}if(b.dataset.go){closeHomeEditors({restoreFocus:false});return switchView(b.dataset.go)}if(b.dataset.removeDraftTag!=null){runtime.draftTags=runtime.draftTags.filter(tag=>tag!==b.dataset.removeDraftTag);return renderTagComposer()}});
+document.addEventListener("click", event => {
+  const button = event.target.closest("button");
+  if (!button || button.closest("#view-ai-cost,#view-architecture,#view-commercialization")) {
+    return;
+  }
+  if (button.dataset.view) {
+    closeHomeEditors({restoreFocus: false});
+    return switchView(button.dataset.view);
+  }
+  if (button.dataset.go) {
+    closeHomeEditors({restoreFocus: false});
+    return switchView(button.dataset.go);
+  }
+  if (button.dataset.removeDraftTag != null) {
+    runtime.draftTags = runtime.draftTags.filter(tag => tag !== button.dataset.removeDraftTag);
+    return renderTagComposer();
+  }
+});
 document.addEventListener("click",async e=>{
   const button=e.target.closest("button");if(!button)return;
   if(button.dataset.editCheckin)return openCheckinEditor(button.dataset.editCheckin);
 });
-$$("[data-active-date]").forEach(input=>input.addEventListener("change",async e=>{runtime.chainDraftVersion+=1;runtime.activeDate=e.target.value||runtime.activeDate;renderDate();renderSliders();publishDomains(new Set(["thoughts","activeDate"]));renderStateChart();renderHomeMood();renderChat();await runtime.healthFeatureController?.changeDate(runtime.activeDate).catch(error=>showToast(`健康截图恢复失败：${error.message}`,"error"))}));
+$$("[data-active-date]").forEach(input => input.addEventListener("change", async event => {
+  runtime.chainDraftVersion += 1;
+  runtime.activeDate = event.target.value || runtime.activeDate;
+  renderDate();
+  renderSliders();
+  publishDomains(new Set(["thoughts", "activeDate"]));
+  renderStateChart();
+  renderHomeMood();
+  renderChat();
+  await runtime.healthFeatureController?.changeDate(runtime.activeDate)
+    .catch(error => showToast(`健康截图恢复失败：${error.message}`, "error"));
+}));
 $$("[data-content-image-editor] input[type='file']").forEach(input=>input.addEventListener("change",async event=>{
   const fileInput=event.currentTarget,editor=fileInput.closest("[data-content-image-editor]"),status=editor?.closest("form")?.querySelector(".status");
   if(editor?.dataset.contentImageEditor==="capture")return;
@@ -133,12 +167,48 @@ document.addEventListener("click",async event=>{
     .catch(error=>showToast(`图片暂存失败：${error.message}`,"error"))
 });
 document.addEventListener("click",event=>{const button=event.target.closest("[data-content-image-understand]");if(button)void queueContentImageUnderstanding(button)});
-$("#checkin-confirm-all").addEventListener("click",()=>{$$("[data-metric]").forEach(input=>{input.dataset.confirmed="true";input.closest(".metric").classList.remove("unconfirmed");const label=metricConfig()[input.dataset.metric];$(`#${CSS.escape(input.dataset.metric)}-anchor`).textContent=label.anchors[Number(input.value)-1]});navigator.vibrate?.(12);$("#checkin-status").textContent="已确认当前四项，可以直接保存。"});
+$("#checkin-confirm-all").addEventListener("click", () => {
+  $$("[data-metric]").forEach(input => {
+    input.dataset.confirmed = "true";
+    input.closest(".metric").classList.remove("unconfirmed");
+    const label = metricConfig()[input.dataset.metric];
+    $(`#${CSS.escape(input.dataset.metric)}-anchor`).textContent = label.anchors[Number(input.value) - 1];
+  });
+  navigator.vibrate?.(12);
+  $("#checkin-status").textContent = "已确认当前四项，可以直接保存。";
+});
 $("#chain-tags").addEventListener("keydown",e=>{if(entryKeyIntent(e,{inputKind:"tag"})==="commit-tag"){e.preventDefault();commitDraftTags()}});
 $("#chain-form").elements.recordKind.forEach(input=>input.addEventListener("change",()=>{runtime.chainDraftVersion+=1;delete $("#chain-form").dataset.requestId;syncChainRecordKind()}));
-$("#thought-source-cancel").addEventListener("click",()=>{const form=$("#chain-form");form.reset();clearDurableDraft("chain-form");resetOccurrenceInput($("#chain-datetime"));runtime.draftTags=[];renderTagComposer();runtime.answerDraft="";runtime.answerReasoningDraft="";$("#chain-status").textContent="已取消从念起展开，可以重新记录。";$("#chain-question").focus()});
-for(const selector of["#chain-question","#chain-idea","#chain-answer"])$(selector).addEventListener("input",()=>{runtime.chainDraftVersion+=1;if(selector!=="#chain-answer"){runtime.answerDraft="";runtime.answerReasoningDraft=""}delete $("#chain-form").dataset.requestId});
-$("#chain-form").addEventListener("reset",event=>{runtime.chainDraftVersion+=1;resetContentImageEditor("thoughtRoot");delete event.currentTarget.dataset.draftId;event.currentTarget.elements.sourceCaptureId.value="";event.currentTarget.elements.sourceCaptureVersion.value="";queueMicrotask(syncChainRecordKind)});
+$("#thought-source-cancel").addEventListener("click", () => {
+  const form = $("#chain-form");
+  form.reset();
+  clearDurableDraft("chain-form");
+  resetOccurrenceInput($("#chain-datetime"));
+  runtime.draftTags = [];
+  renderTagComposer();
+  runtime.answerDraft = "";
+  runtime.answerReasoningDraft = "";
+  $("#chain-status").textContent = "已取消从念起展开，可以重新记录。";
+  $("#chain-question").focus();
+});
+for (const selector of ["#chain-question", "#chain-idea", "#chain-answer"]) {
+  $(selector).addEventListener("input", () => {
+    runtime.chainDraftVersion += 1;
+    if (selector !== "#chain-answer") {
+      runtime.answerDraft = "";
+      runtime.answerReasoningDraft = "";
+    }
+    delete $("#chain-form").dataset.requestId;
+  });
+}
+$("#chain-form").addEventListener("reset", event => {
+  runtime.chainDraftVersion += 1;
+  resetContentImageEditor("thoughtRoot");
+  delete event.currentTarget.dataset.draftId;
+  event.currentTarget.elements.sourceCaptureId.value = "";
+  event.currentTarget.elements.sourceCaptureVersion.value = "";
+  queueMicrotask(syncChainRecordKind);
+});
 for(const id of durableDraftForms)for(const eventName of["input","change"])document.getElementById(id)?.addEventListener(eventName,saveDurableDrafts);
 document.addEventListener("keydown",event=>{
   const field=event.target.closest?.("input,textarea"),form=field?.closest?.("#chain-form,#checkin-form,#chat-form,[data-daily-form],[data-book-entry-form],#quote-form,#selection-quote-form,#thought-block-form");
@@ -339,54 +409,64 @@ document.addEventListener("click",event=>{
 $("#selection-quote-close").addEventListener("click",closeSelectionQuoteModal);
 $("#selection-quote-modal").addEventListener("click",e=>{if(e.target===e.currentTarget)closeSelectionQuoteModal()});
 $("#selection-quote-form").addEventListener("submit",async e=>{
-  e.preventDefault();const form=e.currentTarget,button=form.querySelector('[type="submit"]'),status=$("#selection-quote-status"),payload={...occurrenceFields($("#selection-quote-datetime")),source:$("#selection-quote-source").value,content:$("#selection-quote-content").value,tags:quoteTagsForSubmission("selectionQuote")},requestId=form.dataset.requestId||crypto.randomUUID(),temporaryId=`pending:${requestId}`;form.dataset.requestId=requestId;button.disabled=true;status.textContent="正在收藏…";
+  e.preventDefault();
+  const form = e.currentTarget;
+  const button = form.querySelector('[type="submit"]');
+  const status = $("#selection-quote-status");
+  const payload = {
+    ...occurrenceFields($("#selection-quote-datetime")),
+    source: $("#selection-quote-source").value,
+    content: $("#selection-quote-content").value,
+    tags: quoteTagsForSubmission("selectionQuote")
+  };
+  const requestId = form.dataset.requestId || crypto.randomUUID();
+  const temporaryId = `pending:${requestId}`;
+  form.dataset.requestId = requestId;
+  button.disabled = true;
+  status.textContent = "正在收藏…";
   try{
     const result=await requestV1("/api/v1/quotes",{method:"POST",headers:{"idempotency-key":requestId},body:JSON.stringify(payload)},{domains:["quotes"],projection:{kind:"record.create",domain:"quotes",temporaryId,payload},onQueued:record=>applyPendingProjection(record)});
-    state.quotes=(state.quotes||[]).map(item=>item.id===temporaryId?result.data:item);delete form.dataset.requestId;closeSelectionQuoteModal();void refreshState("quotes").catch(error=>showToast(`善言已保存，但列表刷新失败：${error.message}`,"error"));showToast("选中文字已收为善言")
-  }catch(err){if(err.syncStatus==="pending"){closeSelectionQuoteModal();showToast("善言已进入待同步队列")}else status.textContent=err.message}finally{button.disabled=false}
+    state.quotes = (state.quotes || []).map(item => item.id === temporaryId ? result.data : item);
+    delete form.dataset.requestId;
+    closeSelectionQuoteModal();
+    void refreshState("quotes").catch(error => {
+      showToast(`善言已保存，但列表刷新失败：${error.message}`, "error");
+    });
+    showToast("选中文字已收为善言");
+  } catch (error) {
+    if (error.syncStatus === "pending") {
+      closeSelectionQuoteModal();
+      showToast("善言已进入待同步队列");
+    } else {
+      status.textContent = error.message;
+    }
+  } finally {
+    button.disabled = false;
+  }
 });
-$$("[data-onboarding-mode]").forEach(button=>button.addEventListener("click",()=>{collectOnboardingAnswers();runtime.onboardingMode=button.dataset.onboardingMode==="detailed"?"detailed":"quick";$("#onboarding-understanding").closest("label").hidden=true;$("#onboarding-status").textContent=runtime.onboardingMode==="detailed"?"详细版共 18 题，全部作答后才能完成。":"快速版共 8 题，全部作答后才能完成。";renderOnboardingQuestions()}));
-$$("[data-onboarding-sample]").forEach(button=>button.addEventListener("click",()=>{$("#onboarding-material").value=button.dataset.onboardingSample;$("#onboarding-understanding").closest("label").hidden=true}));
-$("#onboarding-file").addEventListener("change",async event=>{const file=event.currentTarget.files?.[0];if(!file)return;if(file.size>1024*1024){$("#onboarding-status").textContent="导入文件不能超过 1 MB。";event.currentTarget.value="";return}try{$("#onboarding-material").value=await file.text();$("#onboarding-status").textContent=`已读取 ${file.name}，确认前仍可修改。`}catch{$("#onboarding-status").textContent="文件读取失败，请重试。"}});
-$("#onboarding-preview").addEventListener("click",async()=>{const form=$("#onboarding-form"),status=$("#onboarding-status");if(!form.reportValidity()){status.textContent="请先完成当前版本的全部题目。";return}status.textContent="正在整理初始认知…";try{const result=await request("/api/onboarding/preview",{method:"POST",body:JSON.stringify(onboardingPayload())}),understanding=$("#onboarding-understanding");understanding.value=result.understanding;understanding.closest("label").hidden=false;understanding.focus();status.textContent="这是可修改的初步理解，后续真实记录优先。"}catch(error){status.textContent=error.message}});
-$("#onboarding-skip").addEventListener("click",()=>{for(const key of["gender","region","occupation","major","school","introduction","works"]){const field=$(`#onboarding-${key}`);if(field)field.value=""}$$('#onboarding-interests input[type="checkbox"]').forEach(input=>input.checked=false);$("#onboarding-material").value="";$("#onboarding-file").value="";$("#onboarding-understanding").value="";$("#onboarding-understanding").closest("label").hidden=true;$("#onboarding-optional").open=false;$("#onboarding-status").textContent="已略过可选资料；完成全部题目后即可开始。"});
-$("#onboarding-legacy-back").addEventListener("click",()=>onboardingV2Controller.backFromLegacy());
-$("#onboarding-form").addEventListener("submit",async event=>{event.preventDefault();const form=event.currentTarget,button=form.querySelector('[type="submit"]'),status=$("#onboarding-status");if(!form.reportValidity()){status.textContent="请完成当前版本的全部题目。";return}button.disabled=true;try{state.onboarding=await request("/api/onboarding",{method:"PATCH",body:JSON.stringify(onboardingPayload())});await load();showToast("旧版问卷已保存，原始选择继续保留")}catch(error){status.textContent=error.message}finally{button.disabled=false}});
-$("#onboarding-v2-reopen").addEventListener("click",()=>{switchView("today");requestAnimationFrame(()=>onboardingV2Controller.reopen())});
-function syncLocalDate(){const next=localDateKey();if(next===runtime.currentLocalDate)return;const followedToday=runtime.activeDate===runtime.currentLocalDate;runtime.currentLocalDate=next;if(followedToday){runtime.activeDate=next;renderDate();renderSliders();publishDomains(new Set(["thoughts","activeDate"]));renderStateChart();renderHomeMood();renderChat()}}
+function syncLocalDate() {
+  const next = localDateKey();
+  if (next === runtime.currentLocalDate) return;
+  const followedToday = runtime.activeDate === runtime.currentLocalDate;
+  runtime.currentLocalDate = next;
+  if (!followedToday) return;
+  runtime.activeDate = next;
+  renderDate();
+  renderSliders();
+  publishDomains(new Set(["thoughts", "activeDate"]));
+  renderStateChart();
+  renderHomeMood();
+  renderChat();
+}
 function markApplicationForeground(){apiClient.markForeground();syncLocalDate();restoreView?.()}
 setInterval(syncLocalDate,30000);
 document.addEventListener("visibilitychange",()=>{if(document.hidden){saveDurableDrafts();stopPageAudio()}else markApplicationForeground()});
 window.addEventListener("pagehide",()=>{saveDurableDrafts();stopPageAudio()});
 window.addEventListener("pageshow",markApplicationForeground);
-$$("[data-auth-tab]").forEach(button=>{
-  button.addEventListener("click",()=>setAuthTab(button.dataset.authTab));
-  button.addEventListener("keydown",event=>{
-    if(!["ArrowLeft","ArrowRight","Home","End"].includes(event.key))return;
-    const tabs=$$("[data-auth-tab]").filter(item=>!item.hidden&&!item.disabled);
-    if(tabs.length<2)return;
-    event.preventDefault();
-    const current=Math.max(0,tabs.indexOf(button));
-    const next=event.key==="Home"?tabs[0]:event.key==="End"?tabs.at(-1):tabs[(current+(event.key==="ArrowRight"?1:-1)+tabs.length)%tabs.length];
-    setAuthTab(next.dataset.authTab);next.focus()
-  })
+const logout = installAuthEvents({
+  $, $$, runtime, onboardingV2Controller, clearDurableDraft, mediaDraftStore,
+  setAuthTab, setAuthBusy, authRequest, restartApplicationForUser, showAuthGate
 });
-for(const [formId,endpoint]of[["login-form","/api/auth/login"],["register-form","/api/auth/register"]]){
-  $(`#${formId}`).addEventListener("submit",async event=>{
-    event.preventDefault();const form=event.currentTarget,fields=new FormData(form),status=$("#auth-status"),operation=++runtime.authOperationSerial;setAuthBusy(true);status.textContent=formId==="login-form"?"正在登录…":"正在创建账户…";
-    try{const result=await authRequest(endpoint,Object.fromEntries(fields));if(operation!==runtime.authOperationSerial)return;form.reset();await restartApplicationForUser(result.user)}
-    catch(error){if(operation===runtime.authOperationSerial)status.textContent=error.message}
-    finally{if(operation===runtime.authOperationSerial)setAuthBusy(false)}
-  });
-}
-const logout=async()=>{
-  if(onboardingV2Controller.hasUnsynced()&&!confirm("当前有尚未同步的五问草稿。退出会从此设备清除这份草稿，仍要退出？"))return;
-  const operation=++runtime.authOperationSerial,owner=runtime.currentUser?.id;clearDurableDraft();const clearing=owner?Promise.all([mediaDraftStore.clear(owner),onboardingV2Controller.clearOwner(owner)]):Promise.resolve();showAuthGate();setAuthTab("login");setAuthBusy(true);$("#auth-status").textContent="正在退出…";
-  try{await Promise.all([clearing,authRequest("/api/auth/logout",{})])}
-  catch(error){if(operation===runtime.authOperationSerial)$("#auth-status").textContent=`本地内容已锁定；服务端退出失败：${error.message}`}
-  finally{if(operation===runtime.authOperationSerial){setAuthBusy(false);if($("#auth-status").textContent==="正在退出…")$("#auth-status").textContent=""}}
-};
-$("#logout-button").addEventListener("click",logout);
 return Object.freeze({
   pageRouter,
   switchView,

@@ -1599,7 +1599,16 @@ try {
   assert.equal(
     await waitUntil(`document.documentElement?.dataset.runtimeReady==="1"&&document.querySelector("#auth-gate")?.hidden===false&&document.body?.classList.contains("auth-locked")`),
     true,
-    "fresh unauthenticated startup must settle on the auth gate"
+    JSON.stringify({
+      message: "fresh unauthenticated startup must settle on the auth gate",
+      state: await evaluate(`({ready:document.documentElement?.dataset.runtimeReady,readyState:document.readyState,authHidden:document.querySelector("#auth-gate")?.hidden,bodyClass:document.body?.className,status:document.querySelector("#auth-status")?.textContent,startupEvents:window.__startupEvents,requests:window.__apiRequests?.slice(-12),entries:performance.getEntriesByType("resource").slice(-20).map(entry=>entry.name)})`),
+      exceptions: cdp.events.slice(unauthenticatedEventStart)
+        .filter(event => event.method === "Runtime.exceptionThrown")
+        .map(event => event.params.exceptionDetails.exception?.description || event.params.exceptionDetails.text),
+      failedRequests: cdp.events.slice(unauthenticatedEventStart)
+        .filter(event => event.method === "Network.loadingFailed")
+        .map(event => event.params.errorText)
+    })
   );
   assert.deepEqual(
     cdp.events.slice(unauthenticatedEventStart)
