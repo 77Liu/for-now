@@ -221,7 +221,62 @@ $("#chat-form").addEventListener("submit",async e=>{
   catch(err){$("#chat-status").textContent=err.syncStatus==="pending"?"问题已留存，网络恢复后自动处理。":err.message}
   finally{b.disabled=false}
 });
-$("#edit-checkin-form").addEventListener("submit",async e=>{e.preventDefault();const button=e.currentTarget.querySelector('[type="submit"]'),id=$("#edit-checkin-id").value,item=(state.checkins||[]).find(value=>value.id===id),payload={occurredAt:$("#edit-checkin-datetime").value,factors:splitTags($("#edit-checkin-factors").value),custom:{},notes:{}};$$("[data-edit-checkin-metric]").forEach(input=>{const key=input.dataset.editCheckinMetric;if(input.dataset.custom==="1")payload.custom[key]=Number(input.value);else payload[key]=Number(input.value);payload.notes[key]=$(`[data-edit-checkin-note="${CSS.escape(key)}"]`)?.value||""});button.disabled=true;$("#edit-checkin-status").textContent="正在保存修改…";try{await requestV1(`/api/v1/checkins/${encodeURIComponent(id)}`,{method:"PATCH",headers:{"if-match":`"${item?.version||1}"`},body:JSON.stringify(payload)},{domains:["checkins"],recoverCommitted:true,projection:{kind:"record.update",domain:"checkins",id,payload},onQueued:record=>applyPendingProjection(record)});$("#edit-checkin-modal").hidden=true;void refreshState(["checkins","review"]).catch(error=>showToast(`状态已更新，但列表刷新失败：${error.message}`,"error"));showToast("此刻状态已更新")}catch(err){if(err.syncStatus==="pending"){$("#edit-checkin-modal").hidden=true;showToast("状态修改将在网络恢复后同步")}else{await refreshState(["checkins","review"]).catch(()=>{});$("#edit-checkin-status").textContent=err.message}}finally{button.disabled=false}});
+$("#edit-checkin-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector('[type="submit"]');
+  const id = $("#edit-checkin-id").value;
+  const item = (state.checkins || []).find(value => value.id === id);
+  const payload = {
+    occurredAt: $("#edit-checkin-datetime").value,
+    factors: splitTags($("#edit-checkin-factors").value),
+    custom: {},
+    notes: {}
+  };
+
+  $$('[data-edit-checkin-metric]').forEach(input => {
+    const key = input.dataset.editCheckinMetric;
+    if (input.dataset.custom === "1") {
+      payload.custom[key] = Number(input.value);
+    } else {
+      payload[key] = Number(input.value);
+    }
+    payload.notes[key] = $(`[data-edit-checkin-note="${CSS.escape(key)}"]`)?.value || "";
+  });
+
+  button.disabled = true;
+  $("#edit-checkin-status").textContent = "正在保存修改…";
+  try {
+    await requestV1(
+      `/api/v1/checkins/${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        headers: { "if-match": `"${item?.version || 1}"` },
+        body: JSON.stringify(payload)
+      },
+      {
+        domains: ["checkins"],
+        recoverCommitted: true,
+        projection: { kind: "record.update", domain: "checkins", id, payload },
+        onQueued: record => applyPendingProjection(record)
+      }
+    );
+    $("#edit-checkin-modal").hidden = true;
+    void refreshState(["checkins", "review"])
+      .catch(error => showToast(`状态已更新，但列表刷新失败：${error.message}`, "error"));
+    showToast("此刻状态已更新");
+  } catch (error) {
+    if (error.syncStatus === "pending") {
+      $("#edit-checkin-modal").hidden = true;
+      showToast("状态修改将在网络恢复后同步");
+    } else {
+      await refreshState(["checkins", "review"]).catch(() => {});
+      $("#edit-checkin-status").textContent = error.message;
+    }
+  } finally {
+    button.disabled = false;
+  }
+});
 $("#edit-checkin-modal .modal-close").addEventListener("click",()=>$("#edit-checkin-modal").hidden=true);$("#edit-checkin-modal").addEventListener("click",e=>{if(e.target===e.currentTarget)e.currentTarget.hidden=true});
 $("#ai-answer-close").addEventListener("click",closeAnswerModal);$("#ai-answer-modal").addEventListener("click",e=>{if(e.target===e.currentTarget)closeAnswerModal()});
 document.addEventListener("click",e=>{const button=e.target.closest("[data-image-viewer-path]");if(button)openImageViewer(button)});

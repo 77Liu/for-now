@@ -2087,7 +2087,15 @@ try {
   await fs.writeFile("/tmp/growth-review-signals-mobile.png", Buffer.from(reviewMobileScreenshot.data, "base64"));
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 820, deviceScaleFactor: 1, mobile: false });
   await evaluate(`document.querySelector('[data-view="together"]').click(); true`);
-  assert.equal(await waitUntil(`Boolean(document.querySelector(".chat-message.user strong"))`),true);
+  const chatRendered = await waitUntil(`Boolean(document.querySelector(".chat-message.user strong"))`);
+  assert.equal(chatRendered, true, JSON.stringify({
+    history: await evaluate(`document.querySelector("#chat-history")?.innerText`),
+    requests: await evaluate(`window.__apiRequests.filter(request=>request.includes("/api/v1/chats"))`),
+    exceptions: cdp.events
+      .filter(event => event.method === "Runtime.exceptionThrown")
+      .slice(-5)
+      .map(event => event.params.exceptionDetails.exception?.description || event.params.exceptionDetails.text)
+  }));
   assert.equal(await evaluate(`Boolean(document.querySelector(".chat-message.user strong")) && document.querySelector(".chat-message.agent h2")?.textContent === "模型回答" && !document.querySelector("#chat-history").textContent.includes("PRIVATE_CHAT_REASONING")`), true);
   assert.equal(await evaluate(`[...document.querySelectorAll(".chat-message>.markdown-content")].every(item => item.classList.contains("commentable"))`), true);
   assert.equal(await evaluate(`document.querySelector("#view-together").classList.contains("active")&&document.querySelector("[data-section-links='today'] [data-view='together']").classList.contains("active")&&document.querySelector("#view-together h2").textContent==="共参"&&document.querySelector("#view-together .recent-section h2").textContent==="一日心迹"`), true);
@@ -4108,7 +4116,14 @@ try {
   assert.equal(await waitUntil(`!document.querySelector("#thought-block-modal").hidden&&document.querySelector("#thought-block-content").value==="刷新后继续的内容块"&&document.querySelectorAll('[data-content-image-editor="thoughtBlock"] .content-image-preview').length===1`),true);
   assert.deepEqual(await evaluate(`({commentOpen:!document.querySelector("#comment-panel").hidden,commentText:document.querySelector("#comment-text").value,commentImages:document.querySelectorAll('[data-content-image-editor="comment"] .content-image-preview').length,shenjiText:document.querySelector('[data-shenji-form="analysis-annotation-1"] textarea').value,blockOpen:!document.querySelector("#thought-block-modal").hidden,blockText:document.querySelector("#thought-block-content").value,blockRoot:document.querySelector("#thought-block-root-id").value,blockImages:document.querySelectorAll('[data-content-image-editor="thoughtBlock"] .content-image-preview').length})`),{commentOpen:false,commentText:"刷新后继续的评论",commentImages:0,shenjiText:"后台同步期间的新草稿",blockOpen:true,blockText:"刷新后继续的内容块",blockRoot:"discarded-root",blockImages:1});
   await evaluate(`document.querySelector('[data-view="keepsakes"]').click();true`);
-  assert.equal(await waitUntil(`document.querySelectorAll(".keepsake-batch-item").length===2`),true);
+  const keepsakeBatchRestored = await waitUntil(`document.querySelectorAll(".keepsake-batch-item").length===2`);
+  assert.equal(keepsakeBatchRestored, true, JSON.stringify(await evaluate(`({
+    activeView:document.querySelector(".view.active")?.id,
+    batchItems:document.querySelectorAll(".keepsake-batch-item").length,
+    batchStatus:document.querySelector("#keepsake-batch-status")?.textContent,
+    batchCount:document.querySelector("#keepsake-batch-count")?.textContent,
+    exceptions:window.__runtimeExceptions||[]
+  })`)));
   assert.deepEqual(await evaluate(`({items:document.querySelectorAll(".keepsake-batch-item").length,count:document.querySelector("#keepsake-batch-count").textContent,active:document.querySelector('[data-keepsake-batch-select="1"]')?.getAttribute("aria-pressed")})`),{items:2,count:"2 件",active:"true"});
   await evaluate(`document.querySelector('[data-view="daily"]').click();true`);
   await sleep(100);

@@ -54,7 +54,7 @@ SOLID 是面向对象设计的诊断工具，不是必须逐条套用的模板�
 - 清理本次改动产生的未使用 import、变量、函数、临时文件和测试数据。
 - 发现无关问题时记录在交付说明或 TODO；除非它阻塞当前任务，否则不扩大修改范围。
 
-代码量不是独立目标。优先减少不必要复杂度，但不得用“更少行数”换取语义含糊、重复业务规则或缺失验证。
+代码量不是独立目标。不得为压低行数而把非平凡函数或方法写成单行，或把无关语句串在一行；按逻辑换行，优先可读性。优先减少不必要复杂度，但不得用“更少行数”换取语义含糊、重复业务规则或缺失验证。
 
 ## 3. 修改流程
 
@@ -147,6 +147,7 @@ npm test
 - 推荐 Conventional Commits：`feat:`、`fix:`、`perf:`、`refactor:`、`test:`、`docs:`、`build:`。
 - 主题行尽量不超过 72 个字符并表达具体结果；正文解释原因、取舍和不明显的影响，不写 `update file`、`fix bug` 等无信息内容。
 - Git 发布版本时必须附中文更新说明，详细写明用户可见变化、关键技术与数据变化、配置迁移、测试证据、已知限制和回滚方式；仅有英文提交标题不构成完整版本说明。内容分类和写法以 `knowledge/release-notes-rules.md` 为准，发布流程以 `knowledge/pre-launch-confirmation.md` 为准。
+- 每个 release/tag 的完整发行记录只维护一份权威文件，并指定唯一 writer；并行 Agent 只提供事实、证据或 review，不得另建同名副本或同时编辑该文件。Gitee Release 从该文件等价同步。
 - 每个推送到共享远端的 Git 标签都必须创建对应 Gitee Release；发行说明必须相对同一产品线的上一发行版，保留“新功能”“Bug 修复”“架构调整”三个核对栏目并按 `knowledge/release-notes-rules.md` 提供完整更新内容。三个栏目不可省略，无变化时明确写“无”。
 - 不为了追求“小步”把一个不可独立验证的改动机械拆成大量提交。
 - Agent 可以在已指定的短期任务分支上，通过
@@ -192,6 +193,8 @@ npm test
 
 ### 5.3 发布
 
+- 发布版本以 `package.json` 的 `version` 为唯一来源。使用
+  `npm run release:set -- <版本号>` 更新版本；该命令同步锁文件、Web 版本元数据、Service Worker 缓存键和 iOS 版本，并在版本变化时递增 iOS build number。不要手改版本；确需由工具改写后，必须同时更新 `release.iosBuildNumber` 再运行 `npm run release:sync`。`npm run test:pwa` 校验派生文件和版本更新行为。
 - 发布前必须确认本地测试通过、目标提交已推送、工作区中的其他改动不会被带入。
 - 确定准备上线时，必须按 `knowledge/development-release-checklist.md` 完成自查；阻断项未通过或未附证据时不得发布。
 - 远端标签、Gitee Release、目标完整哈希、上一发行版和发行说明必须一一对应；只推标签未创建发行版不算发布完成。

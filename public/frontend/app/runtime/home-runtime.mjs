@@ -1,4 +1,7 @@
 import { publishDomains, state } from "../../state/index.mjs";
+import { createHomeChatRenderer } from "./home-chat-renderer.mjs";
+import { createHomeCheckinRenderer } from "./home-checkin-renderer.mjs";
+import { createHomeSelectionQuoteModal } from "./home-selection-quote-modal.mjs";
 
 export function createHomeRuntime({
   runtime,$,$$,eventDate,eventTimestamp,formatDate,formatDateKey,
@@ -10,11 +13,17 @@ export function createHomeRuntime({
   reduceTagMultiSelectState,commentRoot,commentRootLabel,parseCommentRootKey,
   resetOccurrenceInput,defaultLlmProfiles,createOnboardingV2Controller,
   requestV1,onboardingDraftStore,switchView,openThoughtDetail,
-  openCaptureFeature,showToast,installOccurrenceControls,renderSliders,
+  openCaptureFeature,showToast,installOccurrenceControls,
   renderStateChart,renderCheckinSurfaces,unmountRouteContent,
   activateContentImageDraftsForCurrentRoute
 } = {}) {
-function renderChat(){const chats=state.chats.filter(x=>eventDate(x)===runtime.activeDate);$("#chat-history").innerHTML=chats.length?[...chats].reverse().map(x=>`<div class="chat-message user" data-chat-id="${x.id}" data-chat-part="message"><div class="markdown-content">${renderMarkdown(x.message)}</div></div><div class="chat-message agent" data-chat-id="${x.id}" data-chat-part="answer">${contextReceiptMarkup(x.contextReceipt)}<div class="markdown-content">${renderMarkdown(x.answer)}</div><button class="subtle-action danger chat-delete" type="button" data-chat-delete="${x.id}">删除对话</button></div>`).join(""):contentState({title:"这一天还没有对话",body:"发送问题后，共参会结合你已保存的记录回答。",action:{focus:"chat-input",label:"开始提问"}});chats.forEach(item=>{const rootKey=commentRootKey("chat",item.id);markCommentTarget($(`[data-chat-id="${CSS.escape(item.id)}"][data-chat-part="message"]>.markdown-content`),rootKey,"message");markCommentTarget($(`[data-chat-id="${CSS.escape(item.id)}"][data-chat-part="answer"]>.markdown-content`),rootKey,"answer")});renderLatex($("#chat-history"));applyCommentAnchors($("#chat-history"))}
+const renderChat=createHomeChatRenderer({
+  getState:()=>state,runtime,eventDate,$,renderMarkdown,contextReceiptMarkup,contentState,
+  commentRootKey,markCommentTarget,renderLatex,applyCommentAnchors
+});
+const {metricConfig,metricValue,renderSliders}=createHomeCheckinRenderer({
+  $, $$, getState:()=>state, runtime, eventTimestamp, escapeHtml
+});
 const dataUrlFromBlob=blob=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error("图片读取失败"));reader.readAsDataURL(blob)});
 const loadImageSource=source=>new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>reject(new Error("图片无法打开，请换一张重试"));image.src=source});
 function blankCanvas(width,height){const canvas=document.createElement("canvas");canvas.width=width;canvas.height=height;return canvas}
@@ -99,9 +108,10 @@ function quoteTagsForSubmission(key){
   renderQuoteTagPicker(key);
   return[...(runtime.quoteTagStates[key]?.selected||[])]
 }
-function selectionQuoteSource(rootKey){const root=commentRoot(rootKey),label=commentRootLabel(rootKey),{type}=parseCommentRootKey(rootKey);const title=type==="book"?root?.title:type==="journal"?root?.title||root?.content:type==="quote"?root?.source:type==="chat"?root?.message:root?.content;return `${label}${title?` · ${plainPreview(title).slice(0,60)}`:""}`}
-function closeSelectionQuoteModal(){const modal=$("#selection-quote-modal");modal.hidden=true;$("#selection-quote-form").reset();setQuoteTagPicker("selectionQuote");$("#selection-quote-status").textContent=""}
-function openSelectionQuoteModal(selection){const label=runtime.annotationsController.rootLabel(selection.rootKey);$("#selection-quote-content").value=selection.quote;$("#selection-quote-source").value=selectionQuoteSource(selection.rootKey);setQuoteTagPicker("selectionQuote",[label]);resetOccurrenceInput($("#selection-quote-datetime"));$("#selection-quote-status").textContent="";$("#selection-quote-modal").hidden=false;$("#selection-quote-content").focus()}
+const {closeSelectionQuoteModal,openSelectionQuoteModal}=createHomeSelectionQuoteModal({
+  runtime,$,commentRoot,commentRootLabel,parseCommentRootKey,plainPreview,
+  setQuoteTagPicker,resetOccurrenceInput
+});
 function llmProfile(scene="thoughtAnswer"){const tier=runtime.llmSettings.scenarios?.[scene]||"high",profile=runtime.llmSettings.profiles?.[tier]||defaultLlmProfiles[tier]||defaultLlmProfiles.high;return{tier,...profile,effort:runtime.llmSettings.sceneEfforts?.[scene]||profile.effort}}
 const shiftLocalDateKey=(dateKey,days)=>{const [year,month,day]=String(dateKey).split("-").map(Number),date=new Date(Date.UTC(year,month-1,day+days));return date.toISOString().slice(0,10)};
 const compactNumber=value=>new Intl.NumberFormat("zh-CN",{notation:"compact",maximumFractionDigits:1}).format(Number(value)||0);
@@ -116,9 +126,56 @@ function openCommercialSource(view,id,date){
     target?.scrollIntoView({behavior:"smooth",block:"center"});
   });
 }
-function collectOnboardingAnswers(){for(const input of $$('#onboarding-questions input[type="radio"]:checked'))runtime.onboardingDraftAnswers[input.name.replace(/^onboarding-/,"")]=input.value;return runtime.onboardingDraftAnswers}
-function renderOnboardingQuestions(){const list=$("#onboarding-questions");if(!list||!runtime.onboardingSchema)return;const questions=runtime.onboardingSchema.questions.filter(question=>question.tier==="quick"||runtime.onboardingMode==="detailed");list.className="onboarding-question-list";list.innerHTML=questions.map((question,index)=>`<section class="onboarding-question"><header><span>${escapeHtml(question.dimension)} · ${String(index+1).padStart(2,"0")}</span><h3>${escapeHtml(question.prompt)}</h3></header><div class="onboarding-options">${question.options.map(option=>`<label><input type="radio" name="onboarding-${escapeHtml(question.id)}" value="${escapeHtml(option.value)}" ${runtime.onboardingDraftAnswers[question.id]===option.value?"checked":""} required><span>${escapeHtml(option.label)}</span></label>`).join("")}</div></section>`).join("");$$("[data-onboarding-mode]").forEach(button=>{const active=button.dataset.onboardingMode===runtime.onboardingMode;button.classList.toggle("active",active);button.setAttribute("aria-pressed",String(active))})}
-function onboardingPayload(){collectOnboardingAnswers();return{status:"completed",questionnaireMode:runtime.onboardingMode,answers:runtime.onboardingDraftAnswers,profile:{gender:$("#onboarding-gender").value,region:$("#onboarding-region").value,occupation:$("#onboarding-occupation").value,major:$("#onboarding-major").value,school:$("#onboarding-school").value,introduction:$("#onboarding-introduction").value,works:$("#onboarding-works").value},interests:$$('#onboarding-interests input[type="checkbox"]:checked').map(input=>input.value),material:$("#onboarding-material").value,understanding:$("#onboarding-understanding").value}}
+function collectOnboardingAnswers(){
+  const selectedAnswers=$$('#onboarding-questions input[type="radio"]:checked');
+  for(const input of selectedAnswers){
+    const questionId=input.name.replace(/^onboarding-/,"");
+    runtime.onboardingDraftAnswers[questionId]=input.value;
+  }
+  return runtime.onboardingDraftAnswers
+}
+function renderOnboardingQuestions(){
+  const list=$("#onboarding-questions");
+  if(!list||!runtime.onboardingSchema)return;
+  const questions=runtime.onboardingSchema.questions.filter(question=>
+    question.tier==="quick"||runtime.onboardingMode==="detailed"
+  );
+  list.className="onboarding-question-list";
+  list.innerHTML=questions.map((question,index)=>{
+    const heading=`<header><span>${escapeHtml(question.dimension)} · ${String(index+1).padStart(2,"0")}</span><h3>${escapeHtml(question.prompt)}</h3></header>`;
+    const options=question.options.map(option=>{
+      const checked=runtime.onboardingDraftAnswers[question.id]===option.value;
+      return `<label><input type="radio" name="onboarding-${escapeHtml(question.id)}" value="${escapeHtml(option.value)}" ${checked?"checked":""} required><span>${escapeHtml(option.label)}</span></label>`;
+    }).join("");
+    return `<section class="onboarding-question">${heading}<div class="onboarding-options">${options}</div></section>`;
+  }).join("");
+  $$('[data-onboarding-mode]').forEach(button=>{
+    const active=button.dataset.onboardingMode===runtime.onboardingMode;
+    button.classList.toggle("active",active);
+    button.setAttribute("aria-pressed",String(active));
+  })
+}
+function onboardingPayload(){
+  collectOnboardingAnswers();
+  const profile={
+    gender:$("#onboarding-gender").value,
+    region:$("#onboarding-region").value,
+    occupation:$("#onboarding-occupation").value,
+    major:$("#onboarding-major").value,
+    school:$("#onboarding-school").value,
+    introduction:$("#onboarding-introduction").value,
+    works:$("#onboarding-works").value
+  };
+  return{
+    status:"completed",
+    questionnaireMode:runtime.onboardingMode,
+    answers:runtime.onboardingDraftAnswers,
+    profile,
+    interests:$$('#onboarding-interests input[type="checkbox"]:checked').map(input=>input.value),
+    material:$("#onboarding-material").value,
+    understanding:$("#onboarding-understanding").value
+  }
+}
 function renderLegacyOnboarding(){
   if(!runtime.onboardingSchema)return;
   if(!runtime.onboardingHydrated){
@@ -146,7 +203,43 @@ const onboardingV2Controller=createOnboardingV2Controller({
   toast:showToast
 });
 function renderOnboarding(){onboardingV2Controller.render()}
-function renderDate(){$$("[data-active-date]").forEach(input=>input.value=runtime.activeDate);installOccurrenceControls();if(!$("#quote-id")?.value)resetOccurrenceInput($("#quote-datetime"));for(const input of[$("#chain-datetime"),$("#checkin-datetime"),$("#chat-datetime")])resetOccurrenceInput(input);$$("[data-daily-form]").forEach(form=>{if(!form.elements.recordId.value)resetOccurrenceInput(form.elements.occurredAt)});const d=new Date(`${runtime.activeDate}T12:00:00`),today=runtime.activeDate===localDateKey(),label=new Intl.DateTimeFormat("zh-CN",{year:"numeric",month:"long",day:"numeric",weekday:"long"}).format(d);$$("[data-active-date-label]").forEach(element=>element.textContent=element.id==="today-date-label"?runtime.activeDate.replaceAll("-","/"):label);$$("[data-active-date-heading]").forEach(element=>{const view=element.closest(".view")?.id;element.textContent=!today?"回到这一天":view==="view-daily"?"今天，留下了什么？":view==="view-together"?"今天，一起看看":"今天，你感觉怎么样？"})}
+function renderDate(){
+  $$('[data-active-date]').forEach(input=>input.value=runtime.activeDate);
+  installOccurrenceControls();
+  if(!$("#quote-id")?.value)resetOccurrenceInput($("#quote-datetime"));
+  for(const input of[$("#chain-datetime"),$("#checkin-datetime"),$("#chat-datetime")]){
+    resetOccurrenceInput(input);
+  }
+  $$('[data-daily-form]').forEach(form=>{
+    if(!form.elements.recordId.value)resetOccurrenceInput(form.elements.occurredAt);
+  });
+
+  const date=new Date(`${runtime.activeDate}T12:00:00`);
+  const today=runtime.activeDate===localDateKey();
+  const label=new Intl.DateTimeFormat("zh-CN",{
+    year:"numeric",
+    month:"long",
+    day:"numeric",
+    weekday:"long"
+  }).format(date);
+  $$('[data-active-date-label]').forEach(element=>{
+    element.textContent=element.id==="today-date-label"
+      ?runtime.activeDate.replaceAll("-","/")
+      :label;
+  });
+  $$('[data-active-date-heading]').forEach(element=>{
+    const view=element.closest(".view")?.id;
+    if(!today){
+      element.textContent="回到这一天";
+    }else if(view==="view-daily"){
+      element.textContent="今天，留下了什么？";
+    }else if(view==="view-together"){
+      element.textContent="今天，一起看看";
+    }else{
+      element.textContent="今天，你感觉怎么样？";
+    }
+  })
+}
 function homeMemorySource(item){
   const date=item.occurredAt?formatDate(item.occurredAt):formatDateKey(item.occurredOn);
   if(item.type==="book")return `书间 · 《${item.sourceTitle||"未命名书目"}》 · ${date}`;
@@ -334,6 +427,9 @@ function assertNativeServerCompatibility(meta){
 }
 return Object.freeze({
   renderChat,
+  metricConfig,
+  metricValue,
+  renderSliders,
   dataUrlFromBlob,
   loadImageSource,
   blankCanvas,

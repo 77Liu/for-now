@@ -37,7 +37,10 @@ const runtimeModules = [
   "public/frontend/app/runtime/data-runtime.mjs",
   "public/frontend/app/runtime/durable-form-drafts.mjs",
   "public/frontend/app/runtime/global-events.mjs",
+  "public/frontend/app/runtime/home-chat-renderer.mjs",
+  "public/frontend/app/runtime/home-checkin-renderer.mjs",
   "public/frontend/app/runtime/home-runtime.mjs",
+  "public/frontend/app/runtime/home-selection-quote-modal.mjs",
   "public/frontend/app/runtime/kernel.mjs",
   "public/frontend/app/runtime/loaders.mjs",
   "public/frontend/app/runtime/page-descriptors-account.mjs",
@@ -45,7 +48,8 @@ const runtimeModules = [
   "public/frontend/app/runtime/page-descriptors-primary.mjs",
   "public/frontend/app/runtime/page-descriptors.mjs",
   "public/frontend/app/runtime/session-runtime.mjs",
-  "public/frontend/app/runtime/startup-timing.mjs"
+  "public/frontend/app/runtime/startup-timing.mjs",
+  "public/frontend/app/runtime/thought-draft-tag-composer.mjs"
 ];
 for (const modulePath of runtimeModules) {
   const source = await read(modulePath);
