@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { promises as fs } from "node:fs";
 import os from "node:os";
@@ -278,6 +279,11 @@ const fakeFfmpeg = path.join(transcodeFixtureDir, "ffmpeg");
 const slowFfmpeg = path.join(transcodeFixtureDir, "slow-ffmpeg");
 await fs.writeFile(fakeFfmpeg, "#!/bin/sh\nprintf 'RIFF'\nhead -c 60 /dev/zero\n", { mode: 0o700 });
 await fs.writeFile(slowFfmpeg, "#!/bin/sh\nsleep 1\n", { mode: 0o700 });
+// Prepare the generated executable before measuring the transport's own timeout.
+const fixtureOutput = await new Promise((resolve, reject) => {
+  execFile(fakeFfmpeg, [], { timeout: 5_000, encoding: "buffer" }, (error, stdout) => error ? reject(error) : resolve(stdout));
+});
+assert.deepEqual(fixtureOutput, Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(60)]));
 assert.equal((await createVolcengineSpeechTransport({
   apiKey: "speech-secret",
   WebSocketImpl: MockWebSocket,
