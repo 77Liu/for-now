@@ -43,6 +43,7 @@ const commandSets = {
     ["cold-start questionnaire compatibility", process.execPath, ["scripts/onboarding-v2-regression.mjs"]],
     ["cold-start session and answer recovery", process.execPath, ["scripts/onboarding-v2-session-regression.mjs"]],
     ["cold-start answer editing and conflict recovery", process.execPath, ["scripts/onboarding-v2-frontend-regression.mjs"]],
+    ["existing-user core-model supplement browser journey", process.execPath, ["scripts/onboarding-v2-existing-user-browser-regression.mjs"]],
     ["user-model provenance and account isolation", process.execPath, ["scripts/user-model-claims-regression.mjs"]],
     ["user-model core readiness and permission boundary", process.execPath, ["scripts/user-model-core-readiness-regression.mjs"]],
     ["verified answer citation contract", process.execPath, ["scripts/answer-citations-regression.mjs"]],
