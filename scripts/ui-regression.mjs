@@ -636,6 +636,52 @@ const mockFetch = `
     sources: window.__contextReceipt.sources.slice(0,2).map(source => ({ ...source, excerpt: source.resourceType==="thought"?"没有初步想法的问题":"情绪4 / 精力2 / 压力4 / 睡眠5" })),
     readOnly: true,
     disclosure: "概要由当前账户内仍有效的记录实时投影。",
+    recordCompressionTrend: {
+      timezone: "Asia/Shanghai",
+      localDates: ["2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27"],
+      coverage: {
+        windowDays: 7,
+        summaryDays: 1,
+        missingDays: 6,
+        missingDates: ["2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24", "2026-09-25", "2026-09-26"],
+        partialDays: 0,
+        truncatedDays: 0
+      },
+      disclosure: "以下是 AI 对当前获准原始记录的整理，不代表你直接说过这些话。",
+      days: [
+        ...["2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24", "2026-09-25", "2026-09-26"].map(localDate => ({
+          localDate,
+          status: "missing",
+          completeness: "unknown",
+          daily: [],
+          thoughts: [],
+          themes: [],
+          metrics: []
+        })),
+        {
+          localDate: "2026-09-27",
+          status: "ready",
+          completeness: "complete",
+          daily: [{
+            text: "情绪与精力记录有保留。",
+            sources: [{
+              id: "2026-09-27:checkin-latest",
+              resourceType: "checkin",
+              resourceId: "checkin-latest",
+              recordType: "此刻状态",
+              informationType: "user_original",
+              occurredOn: "2026-09-27",
+              version: 1,
+              excerpt: "情绪4 / 精力2 / 压力4 / 睡眠5",
+              location: { view: "today", targetId: "checkin-latest", rootId: "", targetKey: "", occurredOn: "2026-09-27" }
+            }]
+          }],
+          thoughts: [],
+          themes: [],
+          metrics: []
+        }
+      ]
+    },
     conclusions: [
       { id: "facts", informationType: "user_fact", informationTypeLabel: "用户事实", title: "近期状态", text: "最近一次状态记录已保留。", sourceIds: ["checkin:checkin-latest"], sampleNote: "缺失记录不代表没有发生。" },
       { id: "views", informationType: "user_viewpoint", informationTypeLabel: "用户观点", title: "近期思考", text: "没有初步想法的问题", sourceIds: ["thought:kept-root:question:kept-root"], sampleNote: "逐条呈现用户原文。" },
@@ -689,7 +735,7 @@ const mockFetch = `
     task.completedAt = new Date().toISOString();
     let result = null;
     if (task.kind === "thoughtAnswer") {
-      result = { id: "answer-" + task.id, createdAt: task.completedAt, occurredAt: task.completedAt, occurredOn: task.completedAt.slice(0, 10), type: "answer", content: "**即时回答**：后台结果已局部合并。", modelDraft: "**即时回答**：后台结果已局部合并。", editedFromModel: false, origin: "deepseek", reasoningContent: "后台持久化思考", contextReceipt: window.__contextReceipt, tags: [], relatedTo: task.targetId, sourceTaskId: task.id, version: 1 };
+      result = { id: "answer-" + task.id, createdAt: task.completedAt, occurredAt: task.completedAt, occurredOn: task.completedAt.slice(0, 10), type: "answer", content: "**即时回答**：后台结果已局部合并。", modelDraft: "**即时回答**：后台结果已局部合并。", editedFromModel: false, origin: "deepseek", reasoningContent: "后台持久化思考", contextReceipt: window.__contextReceipt, citations: [{ exactQuote: "捕念原文中的准确引用", recordType: "捕念", version: 2 }], citationStatus: "matched", tags: [], relatedTo: task.targetId, sourceTaskId: task.id, version: 1 };
       window.__thoughts.unshift(result);
     } else if (task.kind === "followUpAnswer") {
       const root = window.__thoughts.find(item => item.id === task.targetId), followUp = root?.followUps?.find(item => item.id === task.subtargetId);
@@ -2608,7 +2654,7 @@ try {
   })()`);
   assert.deepEqual(captureCardLayout, { capped: true, timeInMeta: true, metaAboveCard: true, actionRows: true, actionsCompact: true, actionsRightAligned: true, actionsFloatRight: true, tagsInMeta: true });
   const collapsedCaptureHeight = await evaluate(`document.querySelector('[data-capture-id="capture-long"] .capture-content-viewport').clientHeight`);
-  await evaluate(`document.querySelector('[data-capture-id="capture-long"] .capture-item').click(); true`);
+  await evaluate(`window.getSelection()?.removeAllRanges(); document.querySelector('[data-capture-id="capture-long"] .capture-item').click(); true`);
   assert.equal(await waitUntil(`(() => { const card=document.querySelector('[data-capture-id="capture-long"]'),item=card.querySelector(".capture-item"),viewport=card.querySelector(".capture-content-viewport"),button=card.querySelector("[data-capture-expand]"); return viewport.clientHeight>${collapsedCaptureHeight}&&item.classList.contains("is-expanded")&&button.getAttribute("aria-expanded")==="true"&&button.textContent.trim()==="⌄"; })()`), true);
   await evaluate(`(()=>{const input=document.querySelector("#capture-search");input.value="职业规划";input.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
   assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-long"] .capture-item')?.classList.contains("is-expanded")`),true,"capture expansion survives a feed refresh");
@@ -3415,7 +3461,7 @@ try {
   const stateRequestsBeforeBackgroundMerge=await evaluate(`window.__stateRequests`);
   await evaluate(`(() => { window.__holdAiTasks=false;const task=window.__aiTasks.find(item=>item.targetId==="kept-root"&&item.status==="running");window.__completeAiTask(task);return true })()`);
   if(!await waitUntil(`[...document.querySelectorAll('[data-chain-id="kept-root"] .thought-block-content')].some(item=>item.textContent.includes("后台结果已局部合并"))`,160,25))throw new Error(await evaluate(`JSON.stringify({tasks:window.__aiTasks,results:window.__taskResults,reads:{notifications:window.__notificationReads,tasks:window.__taskReads},toast:document.querySelector("#toast").textContent,answers:[...document.querySelectorAll('[data-chain-id="kept-root"] .thought-block-content')].map(item=>item.textContent)})`));
-  assert.deepEqual(await evaluate(`(()=>{const answer=[...document.querySelectorAll('[data-chain-id="kept-root"] .thought-content-block.ai')].find(item=>item.textContent.includes("后台结果已局部合并")),receipt=answer.querySelector(".context-audit"),open=receipt.open;receipt.open=true;return{receipt:Boolean(receipt),open,label:receipt.querySelector("summary").textContent.includes("本次参考"),selectedLabel:receipt.querySelector("summary").textContent.includes("3 条编排选入"),selectionNotice:receipt.querySelector(".context-audit-note")?.textContent||"",sources:receipt.querySelectorAll(".context-source-item").length,unavailable:[...receipt.querySelectorAll(".context-source-item")].some(item=>item.textContent.includes("来源已删除或当前不可用")),answerCitation:receipt.textContent.includes("回答引用"),reasoning:Boolean(answer.querySelector(".saved-reasoning")),privateText:answer.textContent.includes("后台持久化思考")}})()`),{receipt:true,open:false,label:true,selectedLabel:true,selectionNotice:"这些材料在回答前被选入，不代表回答逐条引用。",sources:3,unavailable:true,answerCitation:false,reasoning:false,privateText:false});
+  assert.deepEqual(await evaluate(`(()=>{const answer=[...document.querySelectorAll('[data-chain-id="kept-root"] .thought-content-block.ai')].find(item=>item.textContent.includes("后台结果已局部合并")),receipt=answer.querySelector(".context-audit"),citation=answer.querySelector(".matched-citations");receipt.open=true;return{receipt:Boolean(receipt),open:receipt.open,label:receipt.querySelector("summary").textContent.includes("本次参考"),selectedLabel:receipt.querySelector("summary").textContent.includes("3 条编排选入"),selectionNotice:receipt.querySelector(".context-audit-note")?.textContent||"",sources:receipt.querySelectorAll(".context-source-item").length,unavailable:[...receipt.querySelectorAll(".context-source-item")].some(item=>item.textContent.includes("来源已删除或当前不可用")),answerCitation:Boolean(citation&&citation.querySelector("summary").textContent.includes("已匹配原文引用（1）")),citationQuote:citation?.querySelector("q")?.textContent||"",citationVersion:citation?.querySelector("small")?.textContent||"",reasoning:Boolean(answer.querySelector(".saved-reasoning")),privateText:answer.textContent.includes("后台持久化思考")}})()`),{receipt:true,open:true,label:true,selectedLabel:true,selectionNotice:"这些材料在回答前被选入，不代表回答逐条引用。",sources:3,unavailable:true,answerCitation:true,citationQuote:"捕念原文中的准确引用",citationVersion:"捕念 · 版本 2",reasoning:false,privateText:false});
   assert.deepEqual(await evaluate(`(() => {const input=document.querySelector('#all-thoughts [data-chain-id="kept-root"] [data-follow-up-root] textarea[name="question"]');return{value:input.value,formHidden:input.closest("form").hidden,cardOpen:input.closest("[data-chain-id]").open,focused:document.activeElement===input,stateRequests:window.__stateRequests}})()`),{value:"轮询期间不能丢失",formHidden:false,cardOpen:true,focused:true,stateRequests:stateRequestsBeforeBackgroundMerge});
   await evaluate(`document.querySelector("#chain-question").value = "第二条不应被阻塞"; document.querySelector("#chain-answer").value = "手写回答"; document.querySelector("#chain-form").requestSubmit(); true`);
   assert.equal(await waitUntil(`window.__thoughtSaves === 3 && !document.querySelector('#chain-form [type="submit"]').disabled && document.querySelector("#chain-question").value === ""`, 80, 25), true);
@@ -3473,6 +3519,10 @@ try {
   await fs.writeFile("/tmp/growth-mine-desktop.png", Buffer.from(mineDesktopScreenshot.data, "base64"));
   await evaluate(`document.querySelector('#view-mine [data-view="personal-context"]').click();true`);
   assert.equal(await waitUntil(`document.querySelectorAll("#personal-context-summary .personal-context-conclusion").length===3`),true);
+  assert.equal(await evaluate(`document.querySelectorAll("#personal-context-record-trend [data-record-compression-date]").length`),7,
+    "personal context must display all seven local dates in its daily compression trend");
+  assert.equal(await evaluate(`document.querySelector("#personal-context-record-trend").textContent.includes("缺失日期：2026-09-21、2026-09-22、2026-09-23、2026-09-24、2026-09-25、2026-09-26")`),true);
+  assert.equal(await evaluate(`document.querySelector("#personal-context-record-trend-disclosure").textContent.includes("不代表你直接说过")`),true);
   await evaluate(`document.querySelector("#toast").hidden=true;document.querySelectorAll(".modal-backdrop,.home-v02-editor-backdrop").forEach(item=>item.hidden=true);true`);
   assert.deepEqual(await evaluate(`(()=>({active:document.querySelector("#view-personal-context").classList.contains("active"),meta:document.querySelectorAll("#personal-context-meta>div").length,types:[...document.querySelectorAll("#personal-context-summary .personal-context-conclusion")].map(item=>item.dataset.contextType),collapsed:[...document.querySelectorAll("#personal-context-summary .personal-context-conclusion")].every(item=>!item.open),sources:document.querySelectorAll("#personal-context-source-list .context-source-item").length,claims:document.querySelectorAll("#personal-context-claims [data-claim-id]").length,permissions:document.querySelectorAll("#personal-context-permissions [data-permission-index]").length,syntheses:document.querySelectorAll("#personal-context-syntheses article[data-synthesis-id]").length,disputed:document.querySelector("#personal-context-claims").textContent.includes("来源已变化"),manualButton:!document.querySelector("#personal-context-run-synthesis").disabled,noOverflow:document.documentElement.scrollWidth<=innerWidth}))()`),{active:true,meta:4,types:["user_fact","user_viewpoint","model_summary"],collapsed:true,sources:2,claims:3,permissions:1,syntheses:1,disputed:true,manualButton:true,noOverflow:true});
   await evaluate(`(()=>{const form=document.querySelector('[data-claim-id="context-active"] [data-claim-form]');form.elements.statement.value="";form.querySelector('[data-claim-action="revise"]').click();return true})()`);

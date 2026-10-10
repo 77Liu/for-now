@@ -583,7 +583,7 @@ for (const flow of onDeltaFlows) {
     delivered.push(event);
   });
   if (flow.name === "reflect") {
-    assert.deepEqual(delivered.map(event => event.content), ["valid reflect output"],
+    assert.deepEqual(delivered.map(event => event.delta), ["valid reflect output"],
       "reflect: only the verified final answer is sent after persistence");
   } else {
     assert.deepEqual(delivered.map(event => event.content), ["first", "second"],

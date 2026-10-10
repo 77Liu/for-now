@@ -5,6 +5,8 @@ export const PERSONAL_CONTEXT_SELECTORS = Object.freeze({
   meta: "#personal-context-meta",
   disclosure: "#personal-context-disclosure",
   summary: "#personal-context-summary",
+  recordTrend: "#personal-context-record-trend",
+  recordTrendDisclosure: "#personal-context-record-trend-disclosure",
   claims: "#personal-context-claims",
   permissions: "#personal-context-permissions",
   permissionsMore: "#personal-context-permissions-more",
@@ -122,6 +124,59 @@ function synthesisMarkup(item, escapeMarkup, plainPreview, formatDate) {
   )}</p>${actions}<p class="status" data-synthesis-item-status role="status" aria-live="polite"></p></article>`;
 }
 
+function recordTrendMarkup(trend, options) {
+  if (!trend || !Array.isArray(trend.days) || !trend.days.length) {
+    return options.contentState({
+      title: "近七日整理暂不可用",
+      body: "当前账户还没有可核验的七日窗口。"
+    });
+  }
+  const sourceMarkup = source => contextSourceMarkup(source, {
+    snapshot: options.snapshot,
+    escapeMarkup: options.escapeMarkup,
+    plainPreview: options.plainPreview
+  });
+  const rowMarkup = (row, label) => `<div class="personal-context-conclusion-body"><p><b>${
+    options.escapeMarkup(label)
+  }：</b>${options.escapeMarkup(row.text)}</p><div class="context-source-list">${
+    row.sources.map(sourceMarkup).join("")
+  }</div></div>`;
+  const coverage = trend.coverage || {};
+  return `<div class="record-compression-coverage"><strong>${
+    Number(coverage.summaryDays) || 0
+  } / ${Number(coverage.windowDays) || trend.days.length} 天有有效整理 · ${
+    options.escapeMarkup(trend.timezone || "记录时区未设置")
+  }</strong><span>缺失日期：${
+    coverage.missingDates.length
+      ? coverage.missingDates.map(options.escapeMarkup).join("、")
+      : "无"
+  } · ${
+    Number(coverage.partialDays) || 0
+  } 天部分覆盖 · ${Number(coverage.truncatedDays) || 0} 天达到输入上限</span></div>${
+    trend.days.map(day => {
+      const missing = day.status !== "ready";
+      const sections = [
+        ...day.daily.map(row => rowMarkup(row, "当日记录")),
+        ...day.thoughts.map(row => rowMarkup(row, "思绪")),
+        ...day.themes.map(row => rowMarkup(row, "其他主题")),
+        ...day.metrics.map(metric => rowMarkup({
+          text: `${metric.name}：${metric.value}${metric.unit ? ` ${metric.unit}` : ""}`,
+          sources: metric.sources
+        }, "记录指标"))
+      ].join("");
+      return `<details class="personal-context-conclusion record-compression-day" data-record-compression-date="${
+        options.escapeMarkup(day.localDate)
+      }"><summary><div><span>${options.escapeMarkup(day.localDate)}</span><strong>${
+        missing ? "暂无有效整理" : day.completeness === "partial" ? "部分覆盖" : "已整理"
+      }</strong></div><small>${missing ? "缺失日期" : sections ? "查看整理与来源" : "没有可展示的获准条目"}</small></summary>${
+        missing
+          ? `<p class="personal-context-conclusion-body">这一天没有当前有效且获准使用的日摘要。</p>`
+          : sections
+      }</details>`;
+    }).join("")
+  }`;
+}
+
 export function renderPersonalContextSurface({
   root,
   data,
@@ -133,6 +188,8 @@ export function renderPersonalContextSurface({
   formatDate
 }) {
   const summary = query(root, PERSONAL_CONTEXT_SELECTORS.summary);
+  const recordTrend = query(root, PERSONAL_CONTEXT_SELECTORS.recordTrend);
+  const recordTrendDisclosure = query(root, PERSONAL_CONTEXT_SELECTORS.recordTrendDisclosure);
   if (!summary) return false;
   const status = query(root, PERSONAL_CONTEXT_SELECTORS.status);
   const meta = query(root, PERSONAL_CONTEXT_SELECTORS.meta);
@@ -171,6 +228,19 @@ export function renderPersonalContextSurface({
         title: "正在核对个人概要",
         body: "只读取当前账户中仍然有效的来源。"
       });
+    if (recordTrend) recordTrend.innerHTML = loadState === "failure"
+      ? contentState({
+        kind: "failure",
+        title: "暂时无法读取七日日摘要",
+        body: "请重新核对当前账户的权限与来源。",
+        action: { command: "retry-personal-context", label: "重新核对" }
+      })
+      : contentState({
+        kind: "loading",
+        title: "正在核对七日日摘要",
+        body: "只显示当前账户中来源仍有效且获准使用的整理。"
+      });
+    if (recordTrendDisclosure) recordTrendDisclosure.textContent = "";
     return true;
   }
 
@@ -294,6 +364,17 @@ export function renderPersonalContextSurface({
       body: "这很正常，概要会随已确认的来源逐步更新。",
       action: { view: "captures", label: "继续记录" }
     });
+  if (recordTrendDisclosure) {
+    recordTrendDisclosure.textContent = data.recordCompressionTrend?.disclosure || "";
+  }
+  if (recordTrend) {
+    recordTrend.innerHTML = recordTrendMarkup(data.recordCompressionTrend, {
+      contentState,
+      escapeMarkup,
+      plainPreview,
+      snapshot
+    });
+  }
   if (status) status.textContent = "";
   return true;
 }
@@ -303,6 +384,8 @@ export function scrubPersonalContextSurface(root) {
   const meta = query(root, PERSONAL_CONTEXT_SELECTORS.meta);
   const disclosure = query(root, PERSONAL_CONTEXT_SELECTORS.disclosure);
   const summary = query(root, PERSONAL_CONTEXT_SELECTORS.summary);
+  const recordTrend = query(root, PERSONAL_CONTEXT_SELECTORS.recordTrend);
+  const recordTrendDisclosure = query(root, PERSONAL_CONTEXT_SELECTORS.recordTrendDisclosure);
   const claims = query(root, PERSONAL_CONTEXT_SELECTORS.claims);
   const permissions = query(root, PERSONAL_CONTEXT_SELECTORS.permissions);
   const permissionsMore = query(root, PERSONAL_CONTEXT_SELECTORS.permissionsMore);
@@ -315,6 +398,8 @@ export function scrubPersonalContextSurface(root) {
   if (meta) meta.innerHTML = "";
   if (disclosure) disclosure.textContent = "";
   if (summary) summary.innerHTML = "";
+  if (recordTrend) recordTrend.innerHTML = "";
+  if (recordTrendDisclosure) recordTrendDisclosure.textContent = "";
   if (claims) claims.innerHTML = "";
   if (permissions) permissions.innerHTML = "";
   if (permissionsMore) {
