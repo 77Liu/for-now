@@ -66,7 +66,7 @@ function mockDeepSeek() {
     const contentDeltas = isDiaryAssist
       ? ["第一行写作锚点。", "\n第二行写作锚点。"]
       : isVerifiedAnswer
-        ? ['{"answer":"流式回答', '已完成。","citations":[]}']
+        ? ['{"answer":"**结论**：流式回答', '已完成。","citations":[]}']
         : ["**结论**：", "流式回答已完成。"];
     const events = [
       { choices: [{ delta: { reasoning_content: "先核对问题。" } }] },
@@ -624,6 +624,10 @@ try {
   const reflectionEvents = await readEvents(reflectionResponse);
   assert.equal(reflectionEvents.at(-1).type, "done");
   assert.equal(reflectionEvents.at(-1).result.content, "**结论**：流式回答已完成。");
+  assert.equal(
+    reflectionEvents.filter(event => event.type === "content").map(event => event.delta).join(""),
+    reflectionEvents.at(-1).result.content
+  );
   assert.equal(reflectionEvents.at(-1).result.reasoningContent, "先核对问题。再形成判断。");
   const reflectionRequest = modelRequests.at(-1);
   assert.deepEqual([reflectionRequest.model, reflectionRequest.reasoning_effort], ["deepseek-v4-pro", "max"]);

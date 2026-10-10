@@ -37,6 +37,28 @@ const citationSystemPrompt = base => [
   base,
   promptText("orchestration.answer.citations")
 ].filter(Boolean).join("\n\n");
+const replayVerifiedAnswerDeltas = (notify, deltas, content) => {
+  if (typeof notify !== "function") return;
+  const contentCount = deltas.filter(event => event.type === "content").length;
+  const chunkCount = Math.min(content.length, Math.max(1, contentCount));
+  const chunkSize = Math.ceil(content.length / chunkCount);
+  const chunks = [];
+  for (let start = 0; start < content.length; start += chunkSize) {
+    chunks.push(content.slice(start, start + chunkSize));
+  }
+  let nextContent = 0;
+  for (const event of deltas) {
+    if (event.type === "reasoning") {
+      notify(event);
+    } else if (event.type === "content") {
+      const delta = chunks[nextContent++];
+      if (delta) notify({ type: "content", delta });
+    }
+  }
+  while (nextContent < chunks.length) {
+    notify({ type: "content", delta: chunks[nextContent++] });
+  }
+};
 const journalCitationSource = journal => ({
   citationId: `current-journal:${String(journal.id || "")}:${recordVersion(journal.version)}`,
   text: String(journal.content || ""),
@@ -470,6 +492,7 @@ export function createCaptureJournalWorkflows({
         const citationContext = JSON.stringify({
           currentMaterial: { citationId: currentJournal.citationId }
         });
+        const bufferedDeltas = [];
         const result = await generate(userPrompt({
           context: stableContext(coreModel, trend.trend, [personalContext.prompt, citationContext]
             .filter(Boolean).join("\n\n")),
@@ -479,7 +502,8 @@ export function createCaptureJournalWorkflows({
           json: true,
           systemPrompt: citationSystemPrompt(diarySystemPrompt()),
           captureReasoning: true,
-          contextReceipt: personalContext.receipt
+          contextReceipt: personalContext.receipt,
+          onDelta: notify ? event => bufferedDeltas.push(event) : null
         });
         const currentStore = await repository.read();
         assertCoreModelCurrent(currentStore, coreModel);
@@ -550,7 +574,7 @@ export function createCaptureJournalWorkflows({
         }
         if (saved.missing) throw new Error("这篇日记已被删除");
         if (!saved.duplicate && verified.content) {
-          notify?.({ type: "delta", content: verified.content });
+          replayVerifiedAnswerDeltas(notify, bufferedDeltas, verified.content);
         }
         return saved.duplicate ? replayResult(saved) : saved.value;
       };
