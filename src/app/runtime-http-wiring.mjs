@@ -22,7 +22,7 @@ import {
   architectureOwnerSurface,
   commercializationOwnerSurface
 } from "../modules/owner-surfaces/index.mjs";
-import { pruneLogs } from "../shared/observability/index.mjs";
+import { errorMetadata, pruneLogs } from "../shared/observability/index.mjs";
 import { eventTimeFields } from "../shared/time/index.mjs";
 import { safeText } from "../shared/validation/index.mjs";
 import {
@@ -59,6 +59,54 @@ export function createRetryableSlotRunner() {
   };
 }
 
+const countMetric = value => Number.isSafeInteger(value) ? Math.max(0, value) : 0;
+
+export function createRecordCompressionScanObserver({
+  logEvent,
+  requestStorage,
+  now = () => Date.now()
+} = {}) {
+  if (typeof logEvent !== "function") throw new TypeError("压缩扫描观测需要 logEvent");
+  const emit = (...args) => requestStorage?.run
+    ? requestStorage.run({ secrets: [] }, () => logEvent(...args))
+    : logEvent(...args);
+  return async function observe(scan) {
+    const startedAt = now();
+    await emit("system", "record_compression.scan_started", { level: "info" });
+    try {
+      const { result, metrics = {} } = await scan();
+      const counts = {
+        candidateCount: countMetric(metrics.candidateCount),
+        queuedCount: countMetric(metrics.queuedCount),
+        waitingCount: countMetric(metrics.waitingCount),
+        skippedCount: countMetric(metrics.skippedCount),
+        failureCount: 0,
+        budgetExhaustedCount: countMetric(metrics.budgetExhaustedCount),
+        durationMs: Math.max(0, countMetric(now() - startedAt))
+      };
+      if (counts.budgetExhaustedCount > 0) {
+        await emit("system", "record_compression.budget_exhausted", {
+          level: "warn",
+          candidateCount: counts.candidateCount,
+          budgetExhaustedCount: counts.budgetExhaustedCount
+        });
+      }
+      await emit("system", "record_compression.scan_finished", {
+        level: "info",
+        ...counts
+      });
+      return result;
+    } catch (error) {
+      await emit("system", "record_compression.scan_failed", {
+        level: "error",
+        failureCount: 1,
+        error: errorMetadata(error)
+      });
+      throw error;
+    }
+  };
+}
+
 export function createRuntimeHttpWiring({
   appConfig,
   releaseVersion,
@@ -86,6 +134,7 @@ export function createRuntimeHttpWiring({
   const {
     ensureAiUsage,
     readAiUsage,
+    readRecordCompressionBudget,
     aiCosts,
     ensureAuditLogs
   } = aiRuntime;
@@ -188,6 +237,10 @@ export function createRuntimeHttpWiring({
     return handled;
   };
   const runRecordCompressionSlot = createRetryableSlotRunner();
+  const observeRecordCompressionScan = createRecordCompressionScanObserver({
+    logEvent,
+    requestStorage
+  });
   async function runRecordCompressionScheduler() {
     if (!appConfig.recordCompressionEnabled) return { disabled: true };
     const timestamp = now();
@@ -204,23 +257,47 @@ export function createRuntimeHttpWiring({
     const due = (parts.hour === "06" && parts.minute === "00")
       || (parts.hour === "18" && parts.minute === "05");
     if (!due) return { skipped: "outside-slot" };
-    return runRecordCompressionSlot(slotKey, async () => {
+    return runRecordCompressionSlot(slotKey, () => observeRecordCompressionScan(async () => {
       const users = appConfig.authRequired
         ? (await readAuth()).users
         : [{ id: "local" }];
       const eligibleUsers = Array.isArray(users) ? users : [];
+      const globalDay = `${parts.year}-${parts.month}-${parts.day}`;
+      const compressionBudgetState = typeof readRecordCompressionBudget === "function"
+        ? await readRecordCompressionBudget()
+        : null;
+      const compressionBudgetDay = compressionBudgetState?.recordCompressionQuota?.days
+        ?.find(item => item.key === globalDay);
+      const compressionBudgetReservations = Array.isArray(compressionBudgetDay?.reservations)
+        ? compressionBudgetDay.reservations
+        : [];
+      const compressionQuotaCalls = Math.max(0, Number(compressionBudgetDay?.calls) || 0);
+      const compressionQuotaCostCny = Math.max(0, Number(compressionBudgetDay?.costMicros) || 0) / 1_000_000;
+      const compressionQuotaReservedCalls = compressionBudgetReservations.reduce(
+        (sum, item) => sum + Math.max(0, Number(item.calls) || 0),
+        0
+      );
+      const compressionQuotaReservedCny = compressionBudgetReservations.reduce(
+        (sum, item) => sum + Math.max(0, Number(item.costMicros) || 0),
+        0
+      ) / 1_000_000;
+      const compressionQuotaTaskIds = new Set(compressionBudgetReservations
+        .map(item => String(item.taskId || ""))
+        .filter(Boolean));
       let knownCalls = 0;
       let reservedCalls = 0;
       let knownSpentCny = 0;
       let reservedCny = 0;
       let queued = 0;
       let skipped = 0;
+      let budgetExhaustedCount = 0;
       let waitingBudgetCount = 0;
       let promotedBudgetWaitCount = 0;
       let invalidatedBudgetWaitCount = 0;
       let skippedBudgetWaitCount = 0;
       const accountUsageById = new Map();
-      const globalDay = `${parts.year}-${parts.month}-${parts.day}`;
+      const activeTaskIds = new Set();
+      let newlyQueuedCalls = 0;
       const contextFor = user => ({
         user,
         traceId: createId(),
@@ -249,10 +326,16 @@ export function createRuntimeHttpWiring({
             }, 0);
           const activeTasks = (Array.isArray(store?.aiTasks) ? store.aiTasks : [])
             .filter(task => task.kind === RECORD_COMPRESSION_TASK_KIND
-              && ["queued", "running"].includes(task.status)).length;
-          return { accountSpent, activeTasks, invocations: dailyEntries.length };
+              && ["queued", "running"].includes(task.status));
+          return {
+            accountSpent,
+            activeTasks: activeTasks.length,
+            activeTaskIds: activeTasks.map(task => String(task.id || "")).filter(Boolean),
+            invocations: dailyEntries.length
+          };
         });
         accountUsageById.set(String(user.id || "local"), accountUsage);
+        for (const taskId of accountUsage.activeTaskIds) activeTaskIds.add(taskId);
         knownSpentCny += accountUsage.accountSpent;
         knownCalls += accountUsage.invocations;
         reservedCny += accountUsage.activeTasks * appConfig.recordCompressionPerCallBudgetCny;
@@ -260,6 +343,8 @@ export function createRuntimeHttpWiring({
       }
       const dailyCapacity = appConfig.recordCompressionDailyInvocationLimit;
       const perCallBudgetCny = appConfig.recordCompressionPerCallBudgetCny;
+      const unreservedActiveTasks = [...activeTaskIds]
+        .filter(taskId => !compressionQuotaTaskIds.has(taskId)).length;
       const maxCallsForBudget = remainingCny => {
         if (!(perCallBudgetCny > 0) || !Number.isFinite(remainingCny)) return 0;
         const remainingMicros = Math.floor(Math.max(0, remainingCny) * 1_000_000);
@@ -277,19 +362,29 @@ export function createRuntimeHttpWiring({
           invocations: 0,
           activeTasks: 0
         };
-        const remainingCalls = Math.max(0, dailyCapacity - knownCalls - reservedCalls);
+        const globalReservedCalls = compressionQuotaReservedCalls
+          + unreservedActiveTasks + newlyQueuedCalls;
+        const remainingCalls = Math.max(0,
+          dailyCapacity - Math.max(knownCalls, compressionQuotaCalls) - globalReservedCalls
+        );
         const accountRemainingCalls = recordCompressionAccountQueueAllowance({
           dailyLimit: appConfig.recordCompressionAccountDailyInvocationLimit,
           knownCalls: accountUsage.invocations,
           reservedCalls: accountUsage.activeTasks
         });
         const remainingBudget = appConfig.recordCompressionDailyBudgetCny
-          - knownSpentCny - reservedCny;
+          - Math.max(knownSpentCny, compressionQuotaCostCny)
+          - compressionQuotaReservedCny
+          - (unreservedActiveTasks + newlyQueuedCalls) * perCallBudgetCny;
         const availableQueueAllowance = Math.min(
           remainingCalls,
           accountRemainingCalls,
           maxCallsForBudget(remainingBudget)
         );
+        if (accountRemainingCalls > 0
+          && (remainingCalls === 0 || maxCallsForBudget(remainingBudget) === 0)) {
+          budgetExhaustedCount += 1;
+        }
         const slot = parts.hour === "06" ? "morning" : "evening";
         const maxQueued = recordCompressionSlotQueueAllowance(slot, availableQueueAllowance);
         const scanResult = await requestStorage.run(contextFor(user), () => (
@@ -312,6 +407,7 @@ export function createRuntimeHttpWiring({
           : (scanResult?.queued || scanResult?.retried ? 1 : 0);
         if (accountQueued) {
           queued += accountQueued;
+          newlyQueuedCalls += accountQueued;
           reservedCalls += accountQueued;
           reservedCny += accountQueued * perCallBudgetCny;
         } else if (!scanResult?.waitingBudgetCount) {
@@ -319,20 +415,29 @@ export function createRuntimeHttpWiring({
         }
       }
       return {
-        slotKey,
-        queued,
-        queuedCount: queued,
-        waitingBudgetCount,
-        promotedBudgetWaitCount,
-        invalidatedBudgetWaitCount,
-        skippedBudgetWaitCount,
-        skipped,
-        knownCalls,
-        reservedCalls,
-        knownSpentCny,
-        reservedCny
+        result: {
+          slotKey,
+          queued,
+          queuedCount: queued,
+          waitingBudgetCount,
+          promotedBudgetWaitCount,
+          invalidatedBudgetWaitCount,
+          skippedBudgetWaitCount,
+          skipped,
+          knownCalls,
+          reservedCalls,
+          knownSpentCny,
+          reservedCny
+        },
+        metrics: {
+          candidateCount: eligibleUsers.length,
+          queuedCount: queued,
+          waitingCount: waitingBudgetCount,
+          skippedCount: skipped + skippedBudgetWaitCount,
+          budgetExhaustedCount
+        }
       };
-    });
+    }));
   }
   const readOpeningPreferences = async user => {
     if (!isOwner(user)) return undefined;

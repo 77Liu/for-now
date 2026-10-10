@@ -142,6 +142,84 @@ export const personalContextComponents = {
         version: { type: "integer", minimum: 1 }
       }
     },
+    RecordCompressionTrendSource: {
+      type: "object",
+      required: ["id", "resourceType", "resourceId", "recordType", "informationType", "occurredOn", "version", "excerpt", "location"],
+      properties: {
+        id: { type: "string" },
+        resourceType: { type: "string" },
+        resourceId: { type: "string" },
+        recordType: { type: "string" },
+        informationType: { const: "user_original" },
+        occurredOn: { type: "string", format: "date" },
+        version: { type: "integer", minimum: 1 },
+        excerpt: { type: "string" },
+        location: {
+          type: "object",
+          required: ["view", "targetId", "rootId", "targetKey", "occurredOn"],
+          properties: {
+            view: { enum: ["today", "daily", "thoughts", "journals", "captures", "quotes", "keepsakes"] },
+            targetId: { type: "string" },
+            rootId: { type: "string" },
+            targetKey: { type: "string" },
+            occurredOn: { type: "string", format: "date" }
+          }
+        }
+      }
+    },
+    RecordCompressionTrendRow: {
+      type: "object",
+      required: ["text", "sources"],
+      properties: {
+        text: { type: "string" },
+        sources: { type: "array", items: { $ref: "#/components/schemas/RecordCompressionTrendSource" } }
+      }
+    },
+    RecordCompressionTrendDay: {
+      type: "object",
+      required: ["localDate", "status", "completeness", "daily", "thoughts", "themes", "metrics"],
+      properties: {
+        localDate: { type: "string", format: "date" },
+        status: { enum: ["ready", "missing"] },
+        completeness: { type: "string" },
+        daily: { type: "array", items: { $ref: "#/components/schemas/RecordCompressionTrendRow" } },
+        thoughts: { type: "array", items: { $ref: "#/components/schemas/RecordCompressionTrendRow" } },
+        themes: { type: "array", items: { $ref: "#/components/schemas/RecordCompressionTrendRow" } },
+        metrics: { type: "array", items: { $ref: "#/components/schemas/RecordCompressionTrendMetric" } }
+      }
+    },
+    RecordCompressionTrendMetric: {
+      type: "object",
+      required: ["name", "value", "unit", "sources"],
+      properties: {
+        name: { type: "string" },
+        value: {},
+        unit: { type: "string" },
+        sources: { type: "array", items: { $ref: "#/components/schemas/RecordCompressionTrendSource" } }
+      }
+    },
+    RecordCompressionTrend: {
+      type: "object",
+      required: ["timezone", "localDates", "coverage", "disclosure", "days"],
+      properties: {
+        timezone: { type: "string" },
+        localDates: { type: "array", items: { type: "string", format: "date" } },
+        coverage: {
+          type: "object",
+          required: ["windowDays", "summaryDays", "missingDays", "missingDates", "partialDays", "truncatedDays"],
+          properties: {
+            windowDays: { type: "integer", minimum: 0 },
+            summaryDays: { type: "integer", minimum: 0 },
+            missingDays: { type: "integer", minimum: 0 },
+            missingDates: { type: "array", items: { type: "string", format: "date" } },
+            partialDays: { type: "integer", minimum: 0 },
+            truncatedDays: { type: "integer", minimum: 0 }
+          }
+        },
+        disclosure: { type: "string" },
+        days: { type: "array", items: { $ref: "#/components/schemas/RecordCompressionTrendDay" } }
+      }
+    },
     PersonalContextOverview: {
       type: "object",
       required: [
@@ -155,6 +233,7 @@ export const personalContextComponents = {
         "conclusions",
         "userModel",
         "periodicSyntheses",
+        "recordCompressionTrend",
         "disclosure",
         "readOnly"
       ],
@@ -184,6 +263,12 @@ export const personalContextComponents = {
         periodicSyntheses: {
           type: "array",
           items: { $ref: "#/components/schemas/PersonalContextPeriodicSynthesis" }
+        },
+        recordCompressionTrend: {
+          anyOf: [
+            { $ref: "#/components/schemas/RecordCompressionTrend" },
+            { type: "null" }
+          ]
         },
         disclosure: { type: "string" },
         readOnly: { const: true }

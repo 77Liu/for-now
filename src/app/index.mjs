@@ -9,6 +9,7 @@ export {
 export { createAiRuntime } from "./ai-runtime.mjs";
 export { createMediaRuntime } from "./media-runtime.mjs";
 export { createContentRuntime } from "./content-runtime.mjs";
+export { projectRecordCompressionTrendForUser } from "./content/workflows.mjs";
 export {
   createRecordCompressionService,
   currentRecordCompressionTrend,
@@ -18,7 +19,10 @@ export {
 export { createStatisticsRuntime } from "./statistics-runtime.mjs";
 export { createServerLifecycle } from "./server-lifecycle.mjs";
 export { createServerRuntime } from "./server-runtime.mjs";
-export { createRetryableSlotRunner } from "./runtime-http-wiring.mjs";
+export {
+  createRecordCompressionScanObserver,
+  createRetryableSlotRunner
+} from "./runtime-http-wiring.mjs";
 export { createBackgroundAi } from "./background-ai.mjs";
 export { createContentBackground } from "./content/background.mjs";
 export { createTrashMutations, createTrashCommands } from "./trash.mjs";

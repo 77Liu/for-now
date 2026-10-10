@@ -6,6 +6,7 @@ import {
   createEmptyStore,
   currentRecordCompressionTrend,
   DEFAULT_RECORD_TIMEZONE,
+  projectRecordCompressionTrendForUser,
   recordCompressionAccountOrder
 } from "../src/app/index.mjs";
 import {
@@ -181,6 +182,19 @@ assert.deepEqual(trend.payload.missingDates, [
   "2026-10-04", "2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09"
 ]);
 assert.ok(trend.payload.localDates.includes("2026-10-10"));
+const initialUserTrend = projectRecordCompressionTrendForUser(trend);
+assert.equal(initialUserTrend.days.length, 7);
+assert.equal(initialUserTrend.days.find(day => day.localDate === "2026-10-10").status, "ready");
+assert.deepEqual(initialUserTrend.coverage.missingDates, trend.payload.missingDates);
+const otherAccountStore = createEmptyStore();
+const otherAccountTrend = projectRecordCompressionTrendForUser(currentRecordCompressionTrend(otherAccountStore, {
+  accountId: "account-b",
+  timezone: DEFAULT_RECORD_TIMEZONE,
+  asOf: now(),
+  hash
+}));
+assert.equal(otherAccountTrend.days.find(day => day.localDate === "2026-10-10").status, "missing",
+  "an account-scoped empty store must not inherit another account's ready summaries");
 
 const sourceRef = {
   resourceType: "thought",
@@ -212,6 +226,10 @@ const changedTrend = currentRecordCompressionTrend(store, {
 });
 assert.equal(changedTrend.payload.availableDays, 0);
 assert.ok(changedTrend.payload.missingDates.includes("2026-10-10"));
+const permissionFilteredUserView = projectRecordCompressionTrendForUser(changedTrend);
+assert.equal(permissionFilteredUserView.days.find(day => day.localDate === "2026-10-10").status, "missing",
+  "permission withdrawal must remove the existing summary from the user-visible trend");
+assert.equal(JSON.stringify(permissionFilteredUserView).includes("把散落的事情整理"), false);
 
 const allowed = await runtime.perception.updatePermissions({
   sourceRef,
@@ -584,6 +602,14 @@ await runtime.updateSourceStore(current => {
   source.content = "最早日期的来源被编辑，必须允许旧日期重新压缩。";
   source.version += 1;
 });
+const staleSevenDayView = projectRecordCompressionTrendForUser(currentRecordCompressionTrend(store, {
+  accountId: "account-a",
+  timezone: DEFAULT_RECORD_TIMEZONE,
+  asOf: now(),
+  hash
+}));
+assert.equal(staleSevenDayView.days.find(day => day.localDate === "2026-10-04").status, "missing",
+  "editing a source must immediately hide its now-stale daily summary from the user view");
 const dirtyHistoryBatch = await runtime.runRecordCompressionScan({
   asOf: now(), slot: "backfill", backfillDates: 2, maxQueued: 1
 });

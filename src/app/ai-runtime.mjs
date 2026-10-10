@@ -17,6 +17,7 @@ import {
 } from "../modules/ai/index.mjs";
 import { createDeepSeekTransport } from "../infrastructure/ai-providers/index.mjs";
 import { createRateGate } from "../shared/concurrency/index.mjs";
+import { DEFAULT_RECORD_TIMEZONE } from "../shared/time/index.mjs";
 import { RECORD_COMPRESSION_TASK_KIND } from "../modules/record-compressions/index.mjs";
 import {
   createAccountDocumentRepository,
@@ -50,6 +51,8 @@ export async function createAiRuntime({
   aiConcurrency,
   userDailyCallLimit,
   userDailyCostLimitCny,
+  recordCompressionDailyBudgetCny = 0,
+  recordCompressionDailyInvocationLimit = 0,
   recordCompressionPerCallBudgetCny = 0,
   cnyPerUsd,
   auditTextLimit,
@@ -91,6 +94,10 @@ export async function createAiRuntime({
   const aiBudgetService = createAiBudgetServiceImpl({
     repository: aiBudgetRepository,
     policy: budgetPolicy,
+    recordCompressionDailyBudgetCny,
+    recordCompressionDailyInvocationLimit,
+    recordCompressionScene: RECORD_COMPRESSION_TASK_KIND,
+    recordCompressionTimezone: DEFAULT_RECORD_TIMEZONE,
     now,
     createId
   });
@@ -419,6 +426,7 @@ export async function createAiRuntime({
     deepSeekProvider,
     aiBudgetRepository,
     aiBudgetService,
+    readRecordCompressionBudget: () => aiBudgetService.read(),
     aiBudgetRuntime,
     aiBudgetRecovery,
     settingsRepository,

@@ -228,6 +228,8 @@ export async function createRuntimeFoundation({
     aiConcurrency,
     userDailyCallLimit: aiDailyCalls,
     userDailyCostLimitCny: aiDailyCostCny,
+    recordCompressionDailyBudgetCny: appConfig.recordCompressionDailyBudgetCny,
+    recordCompressionDailyInvocationLimit: appConfig.recordCompressionDailyInvocationLimit,
     recordCompressionPerCallBudgetCny: appConfig.recordCompressionPerCallBudgetCny,
     cnyPerUsd: usdCny,
     auditTextLimit: aiAuditTextLimit,

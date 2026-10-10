@@ -627,6 +627,7 @@ function contextTrendFrom(store, {
   }
 
   const sources = [];
+  const displaySources = [];
   const citationSources = [];
   for (const localDate of localDates) {
     const input = currentInputs.get(localDate);
@@ -642,6 +643,17 @@ function contextTrendFrom(store, {
       const citationId = `trend:${localDate}:${sourceId}`;
       const promptText = text.slice(0, 360);
       sources.push({ citationId, sourceId, localDate, text: promptText });
+      displaySources.push({
+        sourceId,
+        localDate,
+        text: promptText,
+        recordId: manifest.recordId,
+        resourceType: manifest.resourceType,
+        subtype: manifest.subtype,
+        version: manifest.version,
+        rootId: manifest.rootId || "",
+        targetKey: manifest.targetKey || ""
+      });
       citationSources.push({
         citationId,
         text: promptText,
@@ -737,6 +749,11 @@ function contextTrendFrom(store, {
   }));
   const citationIds = new Set(payload.sources.map(source => source.citationId));
   return {
+    timezone,
+    localDates,
+    coverage: structuredClone(trend.coverage),
+    displayDays: structuredClone(trend.days),
+    displaySources,
     payload,
     citationSources: citationSources.filter(source => citationIds.has(source.citationId)),
     fingerprint: hash(JSON.stringify({

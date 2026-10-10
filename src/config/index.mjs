@@ -1,6 +1,9 @@
 import path from "node:path";
 
 export const RECORD_COMPRESSION_ACCOUNT_DAILY_INVOCATION_LIMIT = 2;
+export const RECORD_COMPRESSION_MAX_DAILY_BUDGET_CNY = 1;
+export const RECORD_COMPRESSION_MAX_PER_CALL_BUDGET_CNY = 0.25;
+export const RECORD_COMPRESSION_MAX_DAILY_INVOCATION_LIMIT = 4;
 
 export function recordCompressionAccountQueueAllowance({
   dailyLimit = RECORD_COMPRESSION_ACCOUNT_DAILY_INVOCATION_LIMIT,
@@ -78,11 +81,14 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     && !localTestMode
     && Number.isFinite(recordCompressionDailyBudgetCny)
     && recordCompressionDailyBudgetCny > 0
+    && recordCompressionDailyBudgetCny <= RECORD_COMPRESSION_MAX_DAILY_BUDGET_CNY
     && Number.isFinite(recordCompressionPerCallBudgetCny)
     && recordCompressionPerCallBudgetCny > 0
+    && recordCompressionPerCallBudgetCny <= RECORD_COMPRESSION_MAX_PER_CALL_BUDGET_CNY
     && recordCompressionPerCallBudgetCny <= recordCompressionDailyBudgetCny
     && /^[1-9]\d*$/.test(invocationLimitText)
-    && Number.isSafeInteger(configuredInvocationLimit);
+    && Number.isSafeInteger(configuredInvocationLimit)
+    && configuredInvocationLimit <= RECORD_COMPRESSION_MAX_DAILY_INVOCATION_LIMIT;
   const configuredBackfillDates = Number(env.RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN);
   const platformServiceTokenHash = String(env.PLATFORM_SERVICE_TOKEN_HASH || "").toLowerCase();
   if (platformServiceTokenHash && !/^[a-f0-9]{64}$/.test(platformServiceTokenHash)) {

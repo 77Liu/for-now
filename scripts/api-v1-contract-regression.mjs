@@ -138,6 +138,13 @@ try {
   assert.ok(specification.body.paths["/sync"]);
   assert.ok(specification.body.paths["/sync/operations/{operationId}"]);
   assert.ok(specification.body.paths["/personal-context"]);
+  assert.deepEqual(
+    specification.body.components.schemas.PersonalContextOverview.properties.recordCompressionTrend.anyOf,
+    [
+      { $ref: "#/components/schemas/RecordCompressionTrend" },
+      { type: "null" }
+    ]
+  );
   assert.ok(specification.body.paths["/onboarding-v2/schema"]);
   assert.ok(specification.body.paths["/onboarding-v2/session"]);
   assert.ok(specification.body.paths["/onboarding-v2/extractions"]);
@@ -599,10 +606,19 @@ try {
   assert.deepEqual(firstRoot.sourceRef, { type: "capture", id: sourceCaptureId, version: 1 });
   const ownerContext = await request("/api/v1/personal-context", { cookie: owner });
   assert.equal(ownerContext.response.status, 200);
+  assert.ok(ownerContext.body.data.recordCompressionTrend);
+  assert.equal(ownerContext.body.data.recordCompressionTrend.coverage.summaryDays, 0);
+  assert.equal(ownerContext.body.data.recordCompressionTrend.days.length, 7);
+  assert.ok(ownerContext.body.data.recordCompressionTrend.days.every(day => day.status === "missing"));
   assert.equal(ownerContext.body.data.readOnly, true);
   assert.ok(ownerContext.body.data.tokenBudget.estimatedUsed <= ownerContext.body.data.tokenBudget.limit);
   assert.ok(ownerContext.body.data.sources.some(source => source.resourceId === firstId && source.excerpt === firstInput.question));
-  assert.equal((await request("/api/v1/personal-context", { cookie: other })).body.data.sources.some(source => source.resourceId === firstId), false);
+  const otherContext = await request("/api/v1/personal-context", { cookie: other });
+  assert.equal(otherContext.body.data.sources.some(source => source.resourceId === firstId), false);
+  assert.ok(otherContext.body.data.recordCompressionTrend);
+  assert.equal(otherContext.body.data.recordCompressionTrend.coverage.summaryDays, 0);
+  assert.equal(otherContext.body.data.recordCompressionTrend.days.length, 7);
+  assert.ok(otherContext.body.data.recordCompressionTrend.days.every(day => day.status === "missing"));
 
   const replay = await request("/api/v1/thought-chains", {
     method: "POST", cookie: owner, headers: { "idempotency-key": "chain-contract-1" }, body: firstInput
