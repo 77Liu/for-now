@@ -1,6 +1,6 @@
 # V0.5.11 发布记录
 
-状态：已发布并部署；生产 30 分钟观察窗口进行中，G6/G7 尚未关闭。
+状态：已发布并部署；生产 30 分钟观察窗口完成，G6/G7 已关闭。
 
 ## 发布对象
 
@@ -55,4 +55,4 @@ G5 已完成：冻结候选、备份完整性/隔离恢复依据和 Preview 冒�
 
 ## G6 / G7
 
-Gitee tag：`https://gitee.com/Liu_772021/for-now/releases/tag/v0.5.11`。G6：生产公网 `/now/readyz` 返回候选 SHA，页面 200、版本 `0.5.11`、快照 API 404、服务 active；30 分钟观察进行中（当前 1/31 分钟样本通过、PID 未重启）。窗口结束后追加样本汇总和结论。G7 复盘随后记录；未实际完成的状态保持未关闭。
+Gitee tag：`https://gitee.com/Liu_772021/for-now/releases/tag/v0.5.11`。G6：生产公网 `/now/readyz` 返回候选 SHA `5c839e432012`，页面 200、版本 `0.5.11`、快照 API 404、服务 active。30 分钟共 31 次分钟样本全部通过：readiness SHA 与 systemd active SHA 均为 `5c839e432012090011043e5c16ab823724add2af`，服务持续 active，重启计数始终为 0。G7：冷启 P00 的 smoke 验证通过；既有用户核心模型补答旅程仍按矩阵保留 `partial`，真实 provider 遵从性与 iOS 制品不属于本次验收范围。未发现需要回滚或暂停的生产异常。

@@ -77,6 +77,7 @@ npm run start:local-test
   `reports/v0.5.8-development-process-2026-10-07.md`，发布证据见
   `reports/pre-launch-2026-10-07-v0.5.8.md`；V0.5.9 接收计划见
   `reports/iteration-plan-v0.5.9-2026-10-06.md`。
+- **V0.5.11 已发布并关闭观察**：当前生产基线为 `5c839e432012090011043e5c16ab823724add2af`；31 个分钟样本全部通过，服务零重启。当前 V0.5.12 候选在本地实现日记录压缩与七天趋势 P0，并补齐已有用户核心模型补答闭环；发布与生产扫描尚未执行。证据见 `reports/pre-launch-2026-10-10-v0.5.11.md`、`reports/iteration-plan-v0.5.12-2026-10-10.md` 和 `reports/pre-launch-2026-10-10-v0.5.12.md`。
 - **`v0.1.1` 发布历史保留**：提交 `54a6326f14ca`、标签 `hotfix-v0.1.1-thought-answer` 在 v0.1.0 基础上修复了收集页思绪自动回答任务创建问题，现已由 v0.2.1 替代。
 - **`v0.1.0` 发布历史保留**：主应用功能提交 `5ae6a7035169` 和标签 `release-20260928-p00-p0-commercial-system` 已发布 P00/P0、商业化、AI 成本和五阶段架构设计，并由 v0.1.1 继承。
 - **中台已上线**：独立中台提交为 `d157537f7f4c`，发布标签为 `release-20260928-platform-mvp`；公网 `/platform/` 只读治理控制面已部署。
@@ -278,6 +279,7 @@ ssh -i .secrets/for-now-deploy root@123.57.140.24 \
   入口收口切片、分层验证和 G0-G7 关闭条件。
 - `reports/iteration-plan-v0.5.9-2026-10-06.md`：从 V0.5.8 整体迁出的
   八条 P0、十条交付及后续启动门。
+- `reports/iteration-plan-v0.5.12-2026-10-10.md`：日记录压缩、七天趋势和已有用户补答 P0 的实现、验证及发布状态。
 - `knowledge/volcengine-integration.md`：火山语音、OCR、智能文档解析的服务端配置、隐私边界和真实冒烟命令。
 - `knowledge/product-definition.md`：产品关键词、记录重点、闭环、核心功能、记录边界与价值主张。
 - `knowledge/iteration-history.md`：版本开发时间总表、Release 摘要及按日期
