@@ -92,6 +92,7 @@ export function createContentRuntime({
     perception: perceptionRuntime,
     createTask: (store, input) => backgroundAi?.createInStore(store, input),
     scheduleTask: taskId => backgroundAi?.schedule(taskId),
+    refreshTaskInputs: (store, taskIds) => backgroundAi?.refreshQueuedTaskInputs(store, taskIds),
     onStoreMutation: (store, beforeStore) => {
       const staleRunningTaskIds = recordCompressionService.invalidateChangedSources(store, beforeStore);
       for (const taskId of staleRunningTaskIds) backgroundAi?.cancel(taskId);

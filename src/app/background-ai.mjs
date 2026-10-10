@@ -69,6 +69,18 @@ export function createBackgroundAi({
       return false;
     }
   };
+  const refreshQueuedTaskInputs = (store, taskIds) => {
+    for (const taskId of taskIds) {
+      const task = store.aiTasks.find(item => item.id === taskId);
+      if (!task || task.status !== "queued") continue;
+      const work = prepareTarget(store, task);
+      if (!work
+        || (work.inputVersion || 0) !== task.inputVersion
+        || (work.subtargetVersion || 0) !== (task.subtargetVersion || 0)) continue;
+      task.inputHash = work.inputHash || "";
+      task.requestedInputHash = work.inputHash || "";
+    }
+  };
   const requestedIntentMatches = (task, intent) => {
     const hasIntent = Object.hasOwn(task, "requestedIntentInputVersion")
       || Object.hasOwn(task, "requestedIntentSubtargetVersion")
@@ -445,6 +457,7 @@ export function createBackgroundAi({
       await releaseWaiting();
     },
     releaseWaiting,
+    refreshQueuedTaskInputs,
     async list() {
       return {
         items: (await repository.read()).aiTasks

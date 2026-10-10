@@ -330,6 +330,222 @@ assert.ok(store.evidenceSources.some(item => (
   && item.permissionRevision === 4
 )));
 
+// Same-transaction permissions may change a newly-created queued task's
+// context fingerprint. Only that new task may be rebound; old, non-queued,
+// or version-stale tasks must retain their original fingerprints.
+const queueFixtureStore = createEmptyStore();
+queueFixtureStore.captures.push(
+  { id: "queue-stable", content: "稳定目标", occurredAt: "2026-10-07T07:00:00.000Z", createdAt: "2026-10-07T07:00:00.000Z", version: 7 },
+  { id: "queue-changing", content: "待修改目标", occurredAt: "2026-10-07T07:00:00.000Z", createdAt: "2026-10-07T07:00:00.000Z", version: 1 },
+  { id: "queue-sync", content: "同步事务目标", occurredAt: "2026-10-07T07:00:00.000Z", createdAt: "2026-10-07T07:00:00.000Z", version: 3 }
+);
+let queueStore = queueFixtureStore;
+const queueIdempotency = new Map();
+const queueRepositoryBase = {
+  async read() { return clone(queueStore); },
+  async update(operation) {
+    const draft = clone(queueStore);
+    const result = await operation(draft);
+    queueStore = draft;
+    return clone(result);
+  },
+  async transact(operation) {
+    const draft = clone(queueStore);
+    const commit = async () => { queueStore = clone(draft); };
+    return operation({ document: draft, commit });
+  },
+  async executeIdempotent(request, operation, { onReplay = value => value } = {}) {
+    const key = `${request.scope}:${request.key}`;
+    if (queueIdempotency.has(key)) return clone(onReplay(clone(queueIdempotency.get(key))));
+    const draft = clone(queueStore);
+    const result = await operation(draft);
+    queueStore = draft;
+    queueIdempotency.set(key, clone(result));
+    return clone(result);
+  }
+};
+const queuePermissionRuntime = createPerceptionRuntime({
+  getAccountId: () => "queue-account",
+  createId,
+  now,
+  hash
+});
+const queueTargets = {
+  prepare(document, task) {
+    const target = document.captures.find(item => item.id === task.targetId);
+    if (!target) return null;
+    const permission = document.evidencePermissions.find(item => (
+      item.sourceKey === evidenceSourceKey(sourceRef(target.id, target.version))
+    ));
+    if (task.payload?.requiresLearning && permission?.learningAllowed !== true) return null;
+    return {
+      inputVersion: target.version,
+      subtargetVersion: 0,
+      inputHash: hash(JSON.stringify({
+        targetVersion: target.version,
+        permissionRevision: permission?.revision || 0
+      }))
+    };
+  }
+};
+let queueBackground;
+const queueScheduled = [];
+const refreshCalls = [];
+const queueRepository = createPerceptionAwareRepository({
+  repository: queueRepositoryBase,
+  perception: queuePermissionRuntime,
+  createTask: () => null,
+  scheduleTask: taskId => queueBackground.schedule(taskId),
+  refreshTaskInputs: (document, taskIds) => {
+    refreshCalls.push([...taskIds]);
+    queueBackground.refreshQueuedTaskInputs(document, taskIds);
+  }
+});
+queueBackground = createBackgroundAi({
+  repository: queueRepository,
+  tasks: createTaskLifecycle({ createId, now, hash }),
+  notifications: createNotificationService({ createId, now }),
+  targets: queueTargets,
+  generate: async () => { throw new Error("stale queued work must not call the model"); },
+  dispatch: callback => queueScheduled.push(callback),
+  contextKey: () => "queue-account",
+  now,
+  onError: error => { throw error; }
+});
+const queueTask = (document, { id, targetId, inputVersion, status = "queued", requiresLearning = false }) => {
+  const task = {
+    id,
+    kind: "queueFingerprintFixture",
+    resourceType: "capture",
+    targetId,
+    subtargetId: "",
+    inputVersion,
+    subtargetVersion: 0,
+    inputHash: hash(JSON.stringify({ targetVersion: inputVersion, permissionRevision: 0 })),
+    requestedInputHash: hash(JSON.stringify({ targetVersion: inputVersion, permissionRevision: 0 })),
+    status,
+    payload: { requiresLearning }
+  };
+  document.aiTasks.push(task);
+  return task;
+};
+queueTask(queueStore, { id: "preexisting-queued", targetId: "queue-stable", inputVersion: 7 });
+queueTask(queueStore, { id: "preexisting-running", targetId: "queue-stable", inputVersion: 7, status: "running" });
+queueTask(queueStore, { id: "preexisting-waiting", targetId: "queue-stable", inputVersion: 7, status: "waiting_for_user_model" });
+const changedTargetTaskHash = hash(JSON.stringify({ targetVersion: 1, permissionRevision: 0 }));
+let createdStableTaskId = "";
+let createdChangedTaskId = "";
+const sourceRefreshedTransaction = await queueRepository.executeIdempotent(
+  { scope: "queue-fingerprint", key: "same-transaction" },
+  document => {
+    const stableTask = queueTask(document, { id: "new-stable-queued", targetId: "queue-stable", inputVersion: 7 });
+    const changedTask = queueTask(document, { id: "new-changed-queued", targetId: "queue-changing", inputVersion: 1 });
+    createdStableTaskId = stableTask.id;
+    createdChangedTaskId = changedTask.id;
+    queuePermissionRuntime.observeInStore(document, {
+      sourceRef: sourceRef("queue-stable", 7),
+      contextAllowed: true,
+      learningAllowed: true
+    });
+    const changed = document.captures.find(item => item.id === "queue-changing");
+    changed.version = 2;
+    changed.content = "修改后目标";
+    document.captures.push({
+      id: "queue-permission-trigger",
+      content: "权限落定后才可用于新上下文",
+      occurredAt: "2026-10-07T07:00:00.000Z",
+      createdAt: "2026-10-07T07:00:00.000Z",
+      version: 1
+    });
+    return { taskIds: [stableTask.id, changedTask.id] };
+  }
+);
+assert.deepEqual(sourceRefreshedTransaction.taskIds, [createdStableTaskId, createdChangedTaskId]);
+assert.equal(queueStore.evidencePermissions.some(item => (
+  item.sourceKey === evidenceSourceKey(sourceRef("queue-stable", 7))
+)), true, "perception permission must settle before queued task hashes are refreshed");
+const refreshedStableTask = queueStore.aiTasks.find(item => item.id === createdStableTaskId);
+const refreshedChangedTask = queueStore.aiTasks.find(item => item.id === createdChangedTaskId);
+assert.equal(refreshedStableTask.inputHash, queueTargets.prepare(queueStore, refreshedStableTask).inputHash,
+  "a new same-version queued task must bind the final post-perception input hash");
+assert.equal(refreshedStableTask.requestedInputHash, refreshedStableTask.inputHash);
+assert.equal(queueStore.aiTasks.find(item => item.id === "preexisting-queued").inputHash,
+  hash(JSON.stringify({ targetVersion: 7, permissionRevision: 0 })),
+  "a queued task that predates this transaction must not be rebound");
+assert.equal(queueStore.aiTasks.find(item => item.id === "preexisting-running").inputHash,
+  hash(JSON.stringify({ targetVersion: 7, permissionRevision: 0 })),
+  "running tasks must not be rebound");
+assert.equal(queueStore.aiTasks.find(item => item.id === "preexisting-waiting").inputHash,
+  hash(JSON.stringify({ targetVersion: 7, permissionRevision: 0 })),
+  "waiting tasks must not be rebound");
+assert.equal(refreshedChangedTask.inputHash, changedTargetTaskHash,
+  "a new task whose target version changed in the transaction must remain stale");
+assert.deepEqual(refreshCalls, [[createdStableTaskId, createdChangedTaskId]]);
+const refreshCountBeforeReplay = refreshCalls.length;
+const replayedQueueResult = await queueRepository.executeIdempotent(
+  { scope: "queue-fingerprint", key: "same-transaction" },
+  () => { throw new Error("idempotency replay must not rerun task creation"); },
+  { onReplay: result => ({ ...result, duplicate: true }) }
+);
+assert.equal(replayedQueueResult.duplicate, true);
+assert.equal(refreshCalls.length, refreshCountBeforeReplay,
+  "idempotency replay must not rebind a task created by the original transaction");
+assert.equal(queueScheduled.length, 0, "fixture transaction must not schedule unrelated perception work");
+
+let syncTaskId = "";
+await queueRepository.transact(async ({ document, commit }) => {
+  const task = queueTask(document, {
+    id: "new-sync-queued",
+    targetId: "queue-sync",
+    inputVersion: 3
+  });
+  syncTaskId = task.id;
+  queuePermissionRuntime.observeInStore(document, {
+    sourceRef: sourceRef("queue-sync", 3),
+    contextAllowed: true,
+    learningAllowed: true
+  });
+  await commit();
+  return syncTaskId;
+});
+const syncTask = queueStore.aiTasks.find(item => item.id === syncTaskId);
+assert.equal(syncTask.inputHash, queueTargets.prepare(queueStore, syncTask).inputHash,
+  "explicit synchronous transactions must persist the post-perception input hash before scheduling");
+
+const queuePerception = createPerceptionService({
+  repository: queueRepository,
+  runtime: queuePermissionRuntime,
+  backgroundAi: queueBackground
+});
+const revocationHash = queueTargets.prepare(queueStore, {
+  id: "revocation-task", kind: "queueFingerprintFixture", targetId: "queue-stable", inputVersion: 7,
+  payload: { requiresLearning: true }
+}).inputHash;
+queueStore.aiTasks.push({
+  id: "queued-before-revocation",
+  kind: "queueFingerprintFixture",
+  resourceType: "capture",
+  targetId: "queue-stable",
+  subtargetId: "",
+  inputVersion: 7,
+  subtargetVersion: 0,
+  inputHash: revocationHash,
+  requestedInputHash: revocationHash,
+  status: "queued",
+  payload: { requiresLearning: true }
+});
+await queuePerception.updatePermissions({
+  sourceRef: sourceRef("queue-stable", 7),
+  contextAllowed: false,
+  learningAllowed: false,
+  expectedRevision: 1
+});
+assert.equal(queueStore.aiTasks.find(item => item.id === "queued-before-revocation").inputHash, revocationHash,
+  "revoking permission must not rebind an already-queued task");
+await queueBackground.run("queued-before-revocation");
+assert.equal(queueStore.aiTasks.find(item => item.id === "queued-before-revocation").status, "stale",
+  "the actual queued task must stale after its learning permission is revoked");
+
 await repository.update(document => {
   const capture = document.captures[0];
   capture.content = "第一版修改";
