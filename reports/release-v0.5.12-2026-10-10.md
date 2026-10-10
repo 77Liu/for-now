@@ -1,6 +1,8 @@
 # V0.5.12 更新说明
 
-版本状态：开发中，候选内容持续验证；发布时间待正式发布后回填。
+版本状态：已发布，生产限定观察通过。
+发布提交：`4359648b41608429832e2ce4897bd12163a5d812`（tree `3acb46da5e8cb609f41adcb1c866434736208380`）。
+生产版本：`4359648b4160`；Gitee Release：[V0.5.12：日记录压缩与七天趋势 P0](https://gitee.com/Liu_772021/for-now/releases/tag/v0.5.12)。
 版本定位：日记录压缩与七天趋势 P0，同时补齐已有用户的核心模型补答闭环。
 
 ## 发布核对摘要
@@ -54,10 +56,13 @@
 - 日压缩专项：14/14 通过，覆盖预算、权限、来源变化、日期、分片、持久等待、趋势上下文、引用契约和用户可见摘要。
 - P00 smoke：17/17 journey 通过；已有用户补答另由本地 loopback provider mock 与真实 headless Chrome 验证，覆盖候选确认、来源追溯、刷新恢复与账户隔离。
 - 日级 journey：22 条中 21 条自动覆盖，压缩趋势与前端桌面/响应式、认证隔离均通过；`local-online-snapshot` 仍保留 partial 状态。
-- PostgreSQL 16.14 四项本地集成、前端全门通过；后端完整门在实现/测试 tree `2466bfa0ebabf7de40844efad8a7665529c00e99` 通过。后续 OpenAPI nullable 修复由当前 API 专项回归和模块检查复验，独立 review 为 GO。后端模拟无远端命令或部署；当前没有生产 provider 调用、数据扫描或写入。
+- PostgreSQL 16.14 四项本地集成、前端全门通过；后端完整门在实现/测试 tree `2466bfa0ebabf7de40844efad8a7665529c00e99` 通过。后续 OpenAPI nullable 修复由当前 API 专项回归和模块检查复验，独立 review 为 GO。后端模拟阶段使用本地 fixture，不执行远端命令或部署；生产动作与合成夹具验证见下文。
 
 ## 配置、验证与风险
 
-- PostgreSQL schema initializer 必须在候选部署前运行；发布前还须完成严格角色预检、生产数据库与附件备份、隔离恢复演练和配置核验。
-- 生产扫描默认关闭；只有通过冻结候选、独立 review 和正式发布门后才可评估启用。
-- 本地回归使用合成数据和 loopback mock，不证明真实 provider 输出质量；预发布、生产发布、生产观察及 G6/G7 尚未执行。
+- 生产发布使用冻结提交 `4359648b41608429832e2ce4897bd12163a5d812`。运行时代码与已审候选 `229df17bb876464f60d5c28f10258582aa857c90` 完全一致；后续提交仅收口发布文档。
+- Gitee `main`、`preview/v0.5.12` 和 `v0.5.12` 标签均指向发布提交；Preview 与生产 readiness、生产活动目录均核对为该 SHA。生产 fence attempt：`2ccf758e956c55bcdfadbd8823dc6cd3`。
+- 发布前备份归档 `/var/backups/for-now/for-now-20261010T054857Z.tar.gz` 的 SHA-256 校验通过；JSON/附件恢复演练通过（4 用户、481 条记录、109 个附件引用、115 个本地附件、264 条公开 API 记录）。另以真实备份在 PostgreSQL 16.15 隔离实例执行数据恢复，4 个账户、306 条业务记录及预算 sidecar/单例检查通过；临时数据库和角色均已清理。生产 schema initializer 幂等执行、runtime data/auth/budget 角色预检通过。
+- 生产压缩扫描已启用：每日预算 ¥1、单次峰值 ¥0.25、每日最多 4 次、每轮最多回填 1 天。DeepSeek 真实 provider 冒烟仅发送合成夹具；2 次调用中 1 次以足够输出额度成功，未发送生产用户正文，凭据未记录。
+- 生产观察于 2026-10-10 14:01:02–14:31:13（Asia/Shanghai）完成，31/31 个连续一分钟样本、持续 30 分 11 秒。readiness SHA 与活动 SHA 全程为 `4359648b41608429832e2ce4897bd12163a5d812`；服务保持 active、PID `870806` 未变、重启 0 次，公网 `/now/` 每次均为 HTTP 200。脱敏压缩账本在观察窗口调用 0 次、成本 ¥0、等待 0。验收矩阵中的 `local-online-snapshot`、`private-media-distribution`、`responsive-visual-accessibility` 保持 partial，不计为通过。
+- 本地回归与生产冒烟使用合成输入，不代表真实用户内容质量评估。运行中版本可按既有 `.511` 代码回滚目标回退；数据恢复仍使用备份流程。

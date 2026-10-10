@@ -77,7 +77,7 @@ npm run start:local-test
   `reports/v0.5.8-development-process-2026-10-07.md`，发布证据见
   `reports/pre-launch-2026-10-07-v0.5.8.md`；V0.5.9 接收计划见
   `reports/iteration-plan-v0.5.9-2026-10-06.md`。
-- **V0.5.11 已发布并关闭观察**：当前生产基线为 `5c839e432012090011043e5c16ab823724add2af`；31 个分钟样本全部通过，服务零重启。当前 V0.5.12 候选在本地实现日记录压缩与七天趋势 P0，并补齐已有用户核心模型补答闭环；发布与生产扫描尚未执行。证据见 `reports/pre-launch-2026-10-10-v0.5.11.md`、`reports/iteration-plan-v0.5.12-2026-10-10.md` 和 `reports/pre-launch-2026-10-10-v0.5.12.md`。
+- **V0.5.12 已发布并通过限定生产观察**：当前生产版本 `4359648b41608429832e2ce4897bd12163a5d812` 已完成 Preview、备份/恢复、schema 初始化、严格 PG 角色预检和 Gitee Release；日压缩按 ¥1/日、¥0.25/次、最多 4 次/日及 1 天回填限额启用。31 个一分钟样本、持续 30 分 11 秒，SHA/readiness 一致、零重启、公网 200、观察期间压缩调用与费用为 0。P00、日压缩/七天趋势 P0 已通过本地验收，三个 release-tier partial 仍保留。证据见 `reports/iteration-plan-v0.5.12-2026-10-10.md`、`reports/pre-launch-2026-10-10-v0.5.12.md` 和唯一发行说明 `reports/release-v0.5.12-2026-10-10.md`。
 - **`v0.1.1` 发布历史保留**：提交 `54a6326f14ca`、标签 `hotfix-v0.1.1-thought-answer` 在 v0.1.0 基础上修复了收集页思绪自动回答任务创建问题，现已由 v0.2.1 替代。
 - **`v0.1.0` 发布历史保留**：主应用功能提交 `5ae6a7035169` 和标签 `release-20260928-p00-p0-commercial-system` 已发布 P00/P0、商业化、AI 成本和五阶段架构设计，并由 v0.1.1 继承。
 - **中台已上线**：独立中台提交为 `d157537f7f4c`，发布标签为 `release-20260928-platform-mvp`；公网 `/platform/` 只读治理控制面已部署。
