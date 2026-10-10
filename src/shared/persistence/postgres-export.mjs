@@ -4,7 +4,7 @@ import path from "node:path";
 import { AI_BUDGET_DOCUMENT_FILE } from "./ai-budget-repository.mjs";
 import { ACCOUNT_DOCUMENT_FILES } from "./document-mapping.mjs";
 import { readAuthDocument } from "./postgres-documents.mjs";
-import { readPostgresBundle } from "./postgres-bundle.mjs";
+import { readPostgresBundle, RECORD_COMPRESSION_QUOTA_FILE } from "./postgres-bundle.mjs";
 import { storeContentSha256 } from "./store-mapping.mjs";
 
 // The recovery role has read-only privileges in both schemas. It must still be
@@ -32,6 +32,7 @@ export async function exportPostgresDirectory(client, { outputDir, readAttachmen
     const bundle = await readPostgresBundle(client, ids);
     const write = (file, value) => fs.writeFile(file, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
     await write(path.join(stage, AI_BUDGET_DOCUMENT_FILE), bundle.aiBudget);
+    await write(path.join(stage, RECORD_COMPRESSION_QUOTA_FILE), bundle.recordCompressionQuota);
     if (bundle.auth) await write(path.join(stage, "auth.json"), bundle.auth);
     for (const account of bundle.accounts) {
       await client.query("SELECT set_config('app.account_id', $1, true)", [account.accountId]);
@@ -67,6 +68,10 @@ export async function exportPostgresDirectory(client, { outputDir, readAttachmen
       aiBudget: {
         file: AI_BUDGET_DOCUMENT_FILE,
         sha256: storeContentSha256(bundle.aiBudget)
+      },
+      recordCompressionQuota: {
+        file: RECORD_COMPRESSION_QUOTA_FILE,
+        sha256: storeContentSha256(bundle.recordCompressionQuota)
       },
       accounts: bundle.accounts.map(row => ({
         accountId: row.accountId, storeSha256: storeContentSha256(row.store),

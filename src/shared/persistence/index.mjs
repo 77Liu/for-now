@@ -12,7 +12,11 @@ export {
   migrateJsonStoresToPostgres
 } from "./postgres-migration.mjs";
 export { canonicalJson, mapStoreObjects, rebuildStoreObjects, storeContentSha256 } from "./store-mapping.mjs";
-export { readPostgresStoreObjects } from "./postgres-objects.mjs";
+export {
+  clearStoreObjects,
+  readPostgresStoreObjects,
+  writeStoreObjects
+} from "./postgres-objects.mjs";
 export {
   IDEMPOTENCY_RETENTION_DAYS,
   METADATA_FIELD,
@@ -29,5 +33,8 @@ export {
   readAccountDocument, writeAccountDocument, readAuthDocument, writeAuthDocument,
   readAttachmentInventory
 } from "./postgres-documents.mjs";
-export { discoverJsonBundle, applyPostgresBundle, readPostgresBundle } from "./postgres-bundle.mjs";
+export {
+  EMPTY_RECORD_COMPRESSION_QUOTA, RECORD_COMPRESSION_QUOTA_FILE,
+  validateRecordCompressionQuota, discoverJsonBundle, applyPostgresBundle, readPostgresBundle
+} from "./postgres-bundle.mjs";
 export { exportPostgresDirectory } from "./postgres-export.mjs";

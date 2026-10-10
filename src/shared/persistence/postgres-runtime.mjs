@@ -19,6 +19,27 @@ import {
 const accountKey = id => `for-now-account:${id}`;
 const invalid = message => Object.assign(new Error(message), { code: "STORAGE_CONFIGURATION_INVALID" });
 const conflict = () => Object.assign(new Error("数据已变更，请刷新后重试"), { statusCode: 409, code: "VERSION_CONFLICT" });
+function validateRecordCompressionQuota(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.days)) {
+    throw invalid("PostgreSQL record-compression quota state is missing or invalid");
+  }
+  for (const day of value.days) {
+    if (typeof day?.key !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(day.key)
+      || !Number.isSafeInteger(day.calls) || day.calls < 0
+      || !Number.isSafeInteger(day.costMicros) || day.costMicros < 0
+      || !Array.isArray(day.reservations)) {
+      throw invalid("PostgreSQL record-compression quota day is invalid");
+    }
+    for (const reservation of day.reservations) {
+      if (typeof reservation?.reservationId !== "string" || !reservation.reservationId
+        || !Number.isSafeInteger(reservation.calls) || reservation.calls <= 0
+        || !Number.isSafeInteger(reservation.costMicros) || reservation.costMicros < 0) {
+        throw invalid("PostgreSQL record-compression quota reservation is invalid");
+      }
+    }
+  }
+  return structuredClone(value);
+}
 
 async function transaction(client, operation, readOnly = false) {
   await client.query(readOnly ? "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY" : "BEGIN");
@@ -51,6 +72,8 @@ async function validateRole(pool, kind) {
         has_table_privilege(current_user, budget.oid, 'TRIGGER') AS budget_trigger,
         has_table_privilege(current_user, budget.oid, 'SELECT WITH GRANT OPTION') AS budget_select_grant,
         has_table_privilege(current_user, budget.oid, 'UPDATE WITH GRANT OPTION') AS budget_update_grant,
+        EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = budget.oid
+          AND a.attname = 'record_compression_quota' AND a.attnum > 0 AND NOT a.attisdropped) AS has_record_compression_quota,
         EXISTS (
           SELECT 1 FROM pg_class privileged
           JOIN pg_namespace privileged_schema ON privileged_schema.oid = privileged.relnamespace
@@ -88,6 +111,7 @@ async function validateRole(pool, kind) {
       throw invalid("PostgreSQL data/auth runtime roles must not access for_now.site_ai_budget");
     }
     if (kind === "budget" && (!role.budget_select || !role.budget_update
+      || !role.has_record_compression_quota
       || role.budget_insert || role.budget_delete || role.budget_truncate
       || role.budget_references || role.budget_trigger
       || role.budget_select_grant || role.budget_update_grant
@@ -371,10 +395,13 @@ export async function createPostgresRuntime({
       try {
         return await transaction(client, async () => {
           const row = (await client.query(
-            "SELECT document FROM for_now.site_ai_budget WHERE id = true"
+            "SELECT document, record_compression_quota AS \"recordCompressionQuota\" FROM for_now.site_ai_budget WHERE id = true"
           )).rows[0];
           if (!row) throw invalid("PostgreSQL AI budget singleton is missing");
-          return structuredClone(row.document);
+          return {
+            ...structuredClone(row.document),
+            recordCompressionQuota: validateRecordCompressionQuota(row.recordCompressionQuota)
+          };
         }, true);
       } finally { client.release(); }
     },
@@ -384,17 +411,19 @@ export async function createPostgresRuntime({
       try {
         return await transaction(client, async () => {
           const row = (await client.query(
-            "SELECT document FROM for_now.site_ai_budget WHERE id = true FOR UPDATE"
+            "SELECT document, record_compression_quota AS \"recordCompressionQuota\" FROM for_now.site_ai_budget WHERE id = true FOR UPDATE"
           )).rows[0];
           if (!row) throw invalid("PostgreSQL AI budget singleton is missing");
           const document = structuredClone(row.document);
-          const result = await mutator(document);
+          const atomicState = { recordCompressionQuota: validateRecordCompressionQuota(row.recordCompressionQuota) };
+          const result = await mutator(document, atomicState);
           if (!document || typeof document !== "object" || Array.isArray(document)) {
             throw new TypeError("AI budget update must preserve an object document");
           }
+          atomicState.recordCompressionQuota = validateRecordCompressionQuota(atomicState.recordCompressionQuota);
           await client.query(
-            "UPDATE for_now.site_ai_budget SET document = $1::jsonb WHERE id = true",
-            [JSON.stringify(document)]
+            "UPDATE for_now.site_ai_budget SET document = $1::jsonb, record_compression_quota = $2::jsonb WHERE id = true",
+            [JSON.stringify(document), JSON.stringify(atomicState.recordCompressionQuota)]
           );
           return result;
         });

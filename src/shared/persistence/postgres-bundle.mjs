@@ -13,6 +13,33 @@ import {
 import { readPostgresStoreObjects } from "./postgres-objects.mjs";
 import { rebuildStoreObjects } from "./store-mapping.mjs";
 
+export const RECORD_COMPRESSION_QUOTA_FILE = "record-compression-quota.json";
+export const EMPTY_RECORD_COMPRESSION_QUOTA = Object.freeze({ days: [] });
+
+export function validateRecordCompressionQuota(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.days)) {
+    throw new Error("Invalid record compression quota bundle");
+  }
+  for (const day of value.days) {
+    if (!day || typeof day !== "object" || Array.isArray(day)
+      || !/^\d{4}-\d{2}-\d{2}$/.test(day.key)
+      || !Number.isSafeInteger(day.calls) || day.calls < 0
+      || !Number.isSafeInteger(day.costMicros) || day.costMicros < 0
+      || !Array.isArray(day.reservations)) {
+      throw new Error("Invalid record compression quota bundle");
+    }
+    for (const reservation of day.reservations) {
+      if (!reservation || typeof reservation !== "object" || Array.isArray(reservation)
+        || !["reservationId", "accountId", "taskId"].every(key => typeof reservation[key] === "string")
+        || !Number.isSafeInteger(reservation.calls) || reservation.calls < 0
+        || !Number.isSafeInteger(reservation.costMicros) || reservation.costMicros < 0) {
+        throw new Error("Invalid record compression quota bundle");
+      }
+    }
+  }
+  return value;
+}
+
 const digest = value => crypto.createHash("sha256").update(value).digest("hex");
 const equal = (a, b) => canonicalJson(a) === canonicalJson(b);
 const defaultInspect = async ({ name, localFile }) => {
@@ -43,6 +70,9 @@ export async function discoverJsonBundle(dataDir, { inspectAttachment = defaultI
   const auth = await read(path.join(dataDir, "auth.json"), true);
   if (auth) mapAuthDocument(auth);
   const aiBudget = await read(path.join(dataDir, AI_BUDGET_DOCUMENT_FILE), true) || {};
+  const quotaFile = path.join(dataDir, RECORD_COMPRESSION_QUOTA_FILE);
+  const quotaValue = await read(quotaFile, true);
+  const recordCompressionQuota = validateRecordCompressionQuota(quotaValue ?? EMPTY_RECORD_COMPRESSION_QUOTA);
   const owners = auth?.users.length ? auth.users : [{ id: "local", createdAt: "" }];
   const accounts = [];
   for (const user of owners) {
@@ -87,17 +117,20 @@ export async function discoverJsonBundle(dataDir, { inspectAttachment = defaultI
     }
     accounts.push({ plan, documents, inventory });
   }
-  const contentSha256 = bundleContentHash({ aiBudget, auth, accounts });
+  const recordCompressionQuotaPresent = quotaValue !== null;
+  const contentSha256 = bundleContentHash({ aiBudget, recordCompressionQuota, recordCompressionQuotaPresent, auth, accounts });
   // Relative filenames make copied snapshots reproducible.
   const sourceSha256 = storeContentSha256({
     sources: sources.map(({ file, sha256 }) => ({ file: path.relative(dataDir, file), sha256 })),
     contentSha256
   });
-  return { aiBudget, auth, accounts, sources, sourceSha256, contentSha256 };
+  return { aiBudget, recordCompressionQuota, recordCompressionQuotaPresent, auth, accounts, sources, sourceSha256, contentSha256 };
 }
 
-const bundleContentHash = ({ aiBudget, auth, accounts }) => storeContentSha256({
+const bundleContentHash = ({ aiBudget, recordCompressionQuota, recordCompressionQuotaPresent, auth, accounts }) => storeContentSha256({
   aiBudget,
+  recordCompressionQuota,
+  recordCompressionQuotaPresent,
   auth,
   accounts: accounts.map(({ plan, documents, inventory }) => ({ accountId: plan.accountId, store: plan.snapshot, documents, inventory }))
 });
@@ -151,11 +184,20 @@ export async function applyPostgresBundle(client, bundle, { expectedTargetSha256
       }
     }
     const budgetRow = (await client.query(
-      "SELECT document FROM for_now.site_ai_budget WHERE id = true FOR UPDATE"
+      "SELECT document, record_compression_quota AS \"recordCompressionQuota\" FROM for_now.site_ai_budget WHERE id = true FOR UPDATE"
     )).rows[0];
     if (!budgetRow) throw new Error("AI budget singleton is missing");
+    const currentQuota = validateRecordCompressionQuota(budgetRow.recordCompressionQuota);
+    if (!previous && !equal(currentQuota, EMPTY_RECORD_COMPRESSION_QUOTA) && !equal(currentQuota, bundle.recordCompressionQuota)) {
+      throw new Error("Record compression quota exists without bundle evidence; refusing legacy bundle reset");
+    }
+    if (previous && !reused && !bundle.recordCompressionQuotaPresent
+      && !equal(currentQuota, EMPTY_RECORD_COMPRESSION_QUOTA)) {
+      throw new Error("Legacy bundle cannot replace existing record compression quota");
+    }
     if (reused) {
       if (!equal(budgetRow.document, bundle.aiBudget)) throw new Error("AI budget content mismatch");
+      if (!equal(currentQuota, bundle.recordCompressionQuota)) throw new Error("Record compression quota content mismatch");
     } else {
       if (!previous && !equal(budgetRow.document, {})) {
         throw new Error("AI budget data exists without bundle evidence");
@@ -184,14 +226,19 @@ export async function applyPostgresBundle(client, bundle, { expectedTargetSha256
     } else if (await readAuthDocument(client)) throw new Error("Unexpected auth data");
     if (!reused) {
       await client.query(
-        "UPDATE for_now.site_ai_budget SET document = $1::jsonb WHERE id = true",
-        [JSON.stringify(bundle.aiBudget)]
+        "UPDATE for_now.site_ai_budget SET document = $1::jsonb, record_compression_quota = $2::jsonb WHERE id = true",
+        [JSON.stringify(bundle.aiBudget), JSON.stringify(bundle.recordCompressionQuota)]
       );
     }
     if (!equal((await client.query(
       "SELECT document FROM for_now.site_ai_budget WHERE id = true"
     )).rows[0]?.document, bundle.aiBudget)) {
       throw new Error("AI budget content mismatch");
+    }
+    if (!equal((await client.query(
+      "SELECT record_compression_quota FROM for_now.site_ai_budget WHERE id = true"
+    )).rows[0]?.record_compression_quota, bundle.recordCompressionQuota)) {
+      throw new Error("Record compression quota content mismatch");
     }
     await verifyJsonBundleSources(bundle);
     await verifyAttachmentSources(bundle, inspectAttachment);
@@ -213,7 +260,7 @@ export async function applyPostgresBundle(client, bundle, { expectedTargetSha256
 export async function readPostgresBundle(client, accountIds) {
   const auth = await readAuthDocument(client), accounts = [];
   const budgetRow = (await client.query(
-    "SELECT document FROM for_now.site_ai_budget WHERE id = true"
+    "SELECT document, record_compression_quota AS \"recordCompressionQuota\" FROM for_now.site_ai_budget WHERE id = true"
   )).rows[0];
   if (!budgetRow) throw new Error("AI budget singleton is missing");
   for (const accountId of accountIds) {
@@ -226,5 +273,10 @@ export async function readPostgresBundle(client, accountIds) {
     }
     accounts.push({ accountId, store, documents, inventory: await readAttachmentInventory(client, accountId) });
   }
-  return { aiBudget: budgetRow.document, auth, accounts };
+  return {
+    aiBudget: budgetRow.document,
+    recordCompressionQuota: validateRecordCompressionQuota(budgetRow.recordCompressionQuota),
+    auth,
+    accounts
+  };
 }

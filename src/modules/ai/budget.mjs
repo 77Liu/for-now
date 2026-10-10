@@ -157,6 +157,30 @@ function normalizeReservation(item) {
   };
 }
 
+function normalizeRecordCompressionQuota(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const days = (Array.isArray(value.days) ? value.days : []).map(item => {
+    const key = text(item?.key, 10);
+    if (!DAY_PATTERN.test(key)) return null;
+    const reservations = (Array.isArray(item.reservations) ? item.reservations : [])
+      .map(row => ({
+        reservationId: text(row?.reservationId, 100),
+        accountId: text(row?.accountId, 100),
+        taskId: text(row?.taskId, 160),
+        calls: integer(row?.calls),
+        costMicros: integer(row?.costMicros)
+      }))
+      .filter(row => row.reservationId);
+    return {
+      key,
+      calls: integer(item.calls),
+      costMicros: integer(item.costMicros),
+      reservations: [...new Map(reservations.map(row => [row.reservationId, row])).values()]
+    };
+  }).filter(Boolean).sort((left, right) => left.key.localeCompare(right.key)).slice(-32);
+  return { days };
+}
+
 function normalizeEvents(value) {
   const events = [];
   const ids = new Set();
@@ -193,8 +217,55 @@ export function normalizeAiBudgetState(value = {}, { policy = value?.policy } = 
     days: uniquePeriods(days),
     months: uniquePeriods(months),
     reservations: [...new Map(reservations.map(item => [item.id, item])).values()],
-    events: normalizeEvents(source.events)
+    events: normalizeEvents(source.events),
+    ...(source.recordCompressionQuota !== undefined
+      ? { recordCompressionQuota: normalizeRecordCompressionQuota(source.recordCompressionQuota) || { days: [] } }
+      : {})
   };
+}
+
+function ensureRecordCompressionQuotaDay(state, dayKey) {
+  if (!state.recordCompressionQuota) state.recordCompressionQuota = { days: [] };
+  let day = state.recordCompressionQuota.days.find(item => item.key === dayKey);
+  if (!day) {
+    day = { key: dayKey, calls: 0, costMicros: 0, reservations: [] };
+    state.recordCompressionQuota.days.push(day);
+    state.recordCompressionQuota.days.sort((left, right) => left.key.localeCompare(right.key));
+    state.recordCompressionQuota.days = state.recordCompressionQuota.days.slice(-32);
+  }
+  return day;
+}
+
+function compressionQuotaDayKey(timestamp, timezone) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date(timestamp));
+}
+
+function settleRecordCompressionQuota(state, reservationId, calls, costMicros) {
+  for (const day of state.recordCompressionQuota?.days || []) {
+    const index = day.reservations.findIndex(item => item.reservationId === reservationId);
+    if (index < 0) continue;
+    day.reservations.splice(index, 1);
+    day.calls += calls;
+    day.costMicros += costMicros;
+    return true;
+  }
+  return false;
+}
+
+function releaseRecordCompressionQuota(state, reservationId) {
+  for (const day of state.recordCompressionQuota?.days || []) {
+    const index = day.reservations.findIndex(item => item.reservationId === reservationId);
+    if (index >= 0) {
+      day.reservations.splice(index, 1);
+      return true;
+    }
+  }
+  return false;
 }
 
 function ensureDay(state, key) {
@@ -343,6 +414,7 @@ function releaseReservation(state, index, reservation, {
   details = {}
 }) {
   state.reservations.splice(index, 1);
+  releaseRecordCompressionQuota(state, reservation.id);
   return appendEvent(state, {
     type: "ai.budget.reservation_released",
     severity: "info",
@@ -596,6 +668,10 @@ function incrementControlVersion(state) {
 export function createAiBudgetService({
   repository,
   policy: configuredPolicy = AI_BUDGET_POLICY,
+  recordCompressionDailyBudgetCny = 0,
+  recordCompressionDailyInvocationLimit = 0,
+  recordCompressionScene = "",
+  recordCompressionTimezone = "",
   now = () => new Date().toISOString(),
   createId = () => crypto.randomUUID()
 }) {
@@ -603,10 +679,35 @@ export function createAiBudgetService({
     throw new TypeError("AI budget service requires an atomic repository with read() and update()");
   }
   const policy = normalizeAiBudgetPolicy(configuredPolicy);
+  const compressionBudgetMicros = recordCompressionDailyBudgetCny > 0
+    ? costMicros(recordCompressionDailyBudgetCny)
+    : 0;
+  const compressionCallLimit = Number(recordCompressionDailyInvocationLimit);
+  if (compressionBudgetMicros > 0
+    && (!Number.isSafeInteger(compressionCallLimit) || compressionCallLimit <= 0)) {
+    throw new TypeError("AI budget record-compression invocation limit must be a positive safe integer");
+  }
+  if (compressionBudgetMicros > 0
+    && (typeof recordCompressionScene !== "string" || !recordCompressionScene.trim())) {
+    throw new TypeError("AI budget record-compression scene is required");
+  }
+  if (compressionBudgetMicros > 0
+    && (typeof recordCompressionTimezone !== "string" || !recordCompressionTimezone.trim())) {
+    throw new TypeError("AI budget record-compression timezone is required");
+  }
+  if (compressionBudgetMicros > 0) new Intl.DateTimeFormat("en", { timeZone: recordCompressionTimezone });
   const normalize = value => normalizeAiBudgetState(value, { policy });
-  const update = mutator => repository.update(document => {
+  const update = mutator => repository.update((document, atomicState = null) => {
     const state = normalize(document);
+    if (atomicState?.recordCompressionQuota) {
+      state.recordCompressionQuota = normalizeRecordCompressionQuota(atomicState.recordCompressionQuota)
+        || { days: [] };
+    }
     const result = mutator(state);
+    if (atomicState) {
+      atomicState.recordCompressionQuota = state.recordCompressionQuota || { days: [] };
+      delete state.recordCompressionQuota;
+    }
     replaceDocument(document, state);
     return result;
   });
@@ -665,6 +766,51 @@ export function createAiBudgetService({
           }, createId);
           return { rejection: { reasons, eventId: event.id } };
         }
+        const compressionStages = recordCompressionScene
+          ? plan.stages.filter(stage => stage.scene === recordCompressionScene)
+          : [];
+        let compressionDay = null;
+        let compressionCostMicros = 0;
+        if (compressionStages.length && compressionBudgetMicros > 0) {
+          if (compressionStages.some(stage => !stage.costKnown)) {
+            const reason = {
+              code: "AI_RECORD_COMPRESSION_COST_UNKNOWN",
+              message: "思绪压缩任务缺少可计量的费用上限，已阻止调用"
+            };
+            const event = appendEvent(state, {
+              type: "ai.budget.reservation_rejected",
+              severity: "critical",
+              createdAt: timestamp,
+              accountId: plan.accountId,
+              taskId: plan.taskId,
+              periodKey: keys.day,
+              reasons: [reason]
+            }, createId);
+            return { rejection: { reasons: [reason], eventId: event.id } };
+          }
+          const quotaDayKey = compressionQuotaDayKey(timestamp, recordCompressionTimezone);
+          compressionDay = ensureRecordCompressionQuotaDay(state, quotaDayKey);
+          compressionCostMicros = reservationKnownCost({ stages: compressionStages });
+          const heldCalls = compressionDay.reservations.reduce((sum, item) => sum + item.calls, 0);
+          const heldCostMicros = compressionDay.reservations.reduce((sum, item) => sum + item.costMicros, 0);
+          if (compressionDay.calls + heldCalls + compressionStages.length > compressionCallLimit
+            || compressionDay.costMicros + heldCostMicros + compressionCostMicros > compressionBudgetMicros) {
+            const reason = {
+              code: "AI_RECORD_COMPRESSION_DAILY_LIMIT",
+              message: "今日思绪压缩额度已用完，任务未调用模型"
+            };
+            const event = appendEvent(state, {
+              type: "ai.budget.reservation_rejected",
+              severity: "critical",
+              createdAt: timestamp,
+              accountId: plan.accountId,
+              taskId: plan.taskId,
+              periodKey: quotaDayKey,
+              reasons: [reason]
+            }, createId);
+            return { rejection: { reasons: [reason], eventId: event.id } };
+          }
+        }
         const reservation = {
           ...plan,
           createdAt: timestamp,
@@ -672,6 +818,15 @@ export function createAiBudgetService({
           month: keys.month
         };
         state.reservations.push(reservation);
+        if (compressionDay) {
+          compressionDay.reservations.push({
+            reservationId: plan.id,
+            accountId: plan.accountId,
+            taskId: plan.taskId,
+            calls: compressionStages.length,
+            costMicros: compressionCostMicros
+          });
+        }
         const nextExposure = periodExposure(state, day, month, plan.accountId);
         const context = {
           accountId: plan.accountId,
@@ -702,7 +857,7 @@ export function createAiBudgetService({
       });
       if (result.rejection) {
         const primary = result.rejection.reasons[0];
-        throw budgetError(primary.code, rejectionMessage(primary.code), {
+        throw budgetError(primary.code, primary.message || rejectionMessage(primary.code), {
           reasons: result.rejection.reasons,
           eventId: result.rejection.eventId
         });
@@ -832,6 +987,31 @@ export function createAiBudgetService({
             unknownCalls += 1;
             settledStages.push({ stageId: stage.id, started: true, costKnown: false, actualCostCny: 0 });
           }
+        }
+        const compressionStageIds = new Set(reservation.stages
+          .filter(stage => recordCompressionScene && stage.scene === recordCompressionScene)
+          .map(stage => stage.id));
+        const compressionSettlement = settledStages.filter(stage => (
+          compressionStageIds.has(stage.stageId) && stage.started
+        ));
+        if (compressionSettlement.length) {
+          const actualCompressionCostMicros = compressionSettlement.reduce(
+            (sum, settledStage) => {
+              const reservedStage = reservation.stages.find(stage => stage.id === settledStage.stageId);
+              return sum + (settledStage.costKnown
+                ? costMicros(settledStage.actualCostCny)
+                : (reservedStage?.estimatedCostMicros || 0));
+            },
+            0
+          );
+          settleRecordCompressionQuota(
+            state,
+            reservation.id,
+            compressionSettlement.length,
+            actualCompressionCostMicros
+          );
+        } else {
+          releaseRecordCompressionQuota(state, reservation.id);
         }
         state.reservations.splice(index, 1);
         day.knownCostMicros += knownCostMicros;

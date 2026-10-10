@@ -20,6 +20,29 @@ const withoutSiteBudget = async (_details, execute) => execute({
   runStage: async (_stageId, operation) => operation({ recordUsage: () => false })
 });
 
+const textContentForBudget = content => {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter(part => part?.type === "text" && typeof part.text === "string")
+    .map(part => part.text)
+    .join("\n");
+};
+
+export function conservativeDeepSeekInputTokenUpperBound(messages) {
+  const list = Array.isArray(messages) ? messages : [];
+  const encoder = new TextEncoder();
+  return Math.max(1, list.reduce((total, message) => {
+    const textMessage = {
+      role: typeof message?.role === "string" ? message.role : "unknown",
+      content: textContentForBudget(message?.content)
+    };
+    // JSON escaping makes this byte count at least as large as the source text;
+    // add generous room for provider chat-template and per-message tokens.
+    return total + encoder.encode(JSON.stringify(textMessage)).length + 256;
+  }, 0));
+}
+
 export function createAiGenerator({
   readSettings,
   provider,
@@ -60,6 +83,7 @@ export function createAiGenerator({
     const imageInputs = await Promise.all(visualPaths.map(provider.imageInput));
     const imageAudit = imageInputs.map(item => item.audit);
     const userContent = imageInputs.length ? [{ type: "text", text: prompt }, ...imageInputs.map(item => item.content)] : prompt;
+    const messages = [{ role: "system", content: effectiveSystemPrompt }, ...history, { role: "user", content: userContent }];
     const context = getContext() || {};
     const receipt = contextReceipt && typeof contextReceipt === "object" && !Array.isArray(contextReceipt)
       ? structuredClone(contextReceipt)
@@ -125,7 +149,6 @@ export function createAiGenerator({
               ...(onDelta ? { stream_options: { include_usage: true } } : {}),
               ...(json ? { response_format: { type: "json_object" } } : {})
             };
-            const messages = [{ role: "system", content: effectiveSystemPrompt }, ...history, { role: "user", content: userContent }];
             await audit.start({
               id: callId, callId, callGroupId, traceId, actor: { userId }, provider: "deepseek",
               scene, startedAt: createdAt, attempt: attempt + 1, maxAttempts: efforts.length,
@@ -226,7 +249,9 @@ export function createAiGenerator({
         scene,
         model,
         maxAttempts: efforts.length,
-        maxInputTokens: Math.max(1, requestChars + visualPaths.length * 128_000),
+        maxInputTokens: scene === "recordCompression"
+          ? conservativeDeepSeekInputTokenUpperBound(messages) + visualPaths.length * 128_000
+          : Math.max(1, requestChars + visualPaths.length * 128_000),
         maxOutputTokens: Math.max(0, Math.round(Number(maxTokens) || 0))
       };
       return budgetExecution

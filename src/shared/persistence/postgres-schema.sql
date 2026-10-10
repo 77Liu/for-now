@@ -252,8 +252,11 @@ ALTER TABLE for_now.attachment_inventory ADD CONSTRAINT attachment_inventory_val
 -- runtime budget role receives SELECT/UPDATE on this singleton.
 CREATE TABLE IF NOT EXISTS for_now.site_ai_budget (
   id boolean PRIMARY KEY DEFAULT true CHECK (id),
-  document jsonb NOT NULL CHECK (jsonb_typeof(document) = 'object')
+  document jsonb NOT NULL CHECK (jsonb_typeof(document) = 'object'),
+  record_compression_quota jsonb NOT NULL DEFAULT '{"days":[]}'::jsonb
 );
+ALTER TABLE for_now.site_ai_budget
+  ADD COLUMN IF NOT EXISTS record_compression_quota jsonb NOT NULL DEFAULT '{"days":[]}'::jsonb;
 INSERT INTO for_now.site_ai_budget(id, document) VALUES (true, '{}'::jsonb)
 ON CONFLICT (id) DO NOTHING;
 REVOKE ALL ON TABLE for_now.site_ai_budget FROM PUBLIC;

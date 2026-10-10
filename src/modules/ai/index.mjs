@@ -21,4 +21,4 @@ export { OFFICIAL_PROVIDER_PRICING } from "./provider-pricing.mjs";
 export { createAiAudit, usageEntryFromAudit } from "./audit.mjs";
 export { defaultAiCostPlan, normalizeAiCostPlan, createAiCostService, usageDashboard } from "./costs.mjs";
 export { systemPrompt, systemPromptForScene, userPrompt } from "./prompts.mjs";
-export { createAiGenerator } from "./generation.mjs";
+export { conservativeDeepSeekInputTokenUpperBound, createAiGenerator } from "./generation.mjs";
