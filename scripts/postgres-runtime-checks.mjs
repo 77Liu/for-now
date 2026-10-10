@@ -12,11 +12,13 @@ import {
   canonicalJson, discoverJsonBundle, applyPostgresBundle,
   exportPostgresDirectory, readPostgresBundle, storeContentSha256
 } from "../src/shared/persistence/index.mjs";
-import { createAttachmentCleanup, createSpeechCacheSweep } from "../src/app/index.mjs";
+import { createAttachmentCleanup, createSpeechCacheSweep, userModelCoreReadiness } from "../src/app/index.mjs";
 import { evidenceSourceKey } from "../src/modules/user-model/index.mjs";
+import { onboardingV2Schema } from "../src/modules/onboarding/index.mjs";
 import { dailyAiUsage } from "./monitor-health.mjs";
 import { syncOperationFingerprint } from "../public/frontend/sync/index.mjs";
 import { runAiBudgetPostgresChecks } from "./ai-budget-postgres-checks.mjs";
+import "./prompt-test-setup.mjs";
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const empty = () => ({ version: 14, thoughts: [], captures: [], attachmentCleanup: [] });
@@ -103,8 +105,9 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     let rawBody = "";
     for await (const chunk of req) rawBody += chunk;
     const payload = JSON.parse(rawBody || "{}");
+    const serializedMessages = JSON.stringify(payload.messages || []);
     const content = payload.response_format?.type === "json_object"
-      ? JSON.stringify(JSON.stringify(payload.messages || []).includes("perceptionExtraction")
+      ? JSON.stringify(serializedMessages.includes("perceptionExtraction")
         ? {
             evidence: [{
               origin: "user",
@@ -112,17 +115,19 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
               span: [0, 4]
             }]
           }
-        : {
-          claims: [{
-            domain: "context",
-            statement: "正在验证 PostgreSQL 五问提取",
-            scope: "",
-            epistemic: "known",
-            evidenceStrength: "self_report",
-            evidence: [{ sourceId: "currentContext", span: [0, extractionText.length] }]
-          }],
-          unknowns: []
-        })
+        : serializedMessages.includes(extractionText)
+          ? {
+              claims: [{
+                domain: "context",
+                statement: "正在验证 PostgreSQL 五问提取",
+                scope: "",
+                epistemic: "known",
+                evidenceStrength: "self_report",
+                evidence: [{ sourceId: "currentContext", span: [0, extractionText.length] }]
+              }],
+              unknowns: []
+          }
+          : { answer: "数据库中的模型回答", citations: [] })
       : "数据库中的模型回答";
     providerCalls += 1;
     res.setHeader("content-type", "application/json");
@@ -362,6 +367,31 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.ok(registration && second, JSON.stringify(registrations));
     assert.equal((await register("runtime-owner")).status, 409);
     const cookie = registration.cookie, otherCookie = second.cookie, id = registration.body.user.id;
+    const unknownCoreAnswers = Object.fromEntries(onboardingV2Schema.questions
+      .filter(question => question.questionId !== "collaboration")
+      .map(question => [question.questionId, {
+        answerDisposition: "unknown",
+        contextAllowed: false
+      }]));
+    const initialCoreSession = await request(app.base, "/api/v1/onboarding-v2/session", {
+      method: "PATCH",
+      cookie,
+      headers: { "if-match": "\"1\"", "idempotency-key": "postgres-core-ready-empty" },
+      body: {
+        status: "completed",
+        step: "candidates",
+        answers: unknownCoreAnswers,
+        collaboration: { answerDisposition: "unknown", contextAllowed: false }
+      }
+    });
+    assert.equal(initialCoreSession.status, 200, JSON.stringify(initialCoreSession.body));
+    assert.equal(initialCoreSession.body.data.session.revision, 1);
+    const initializedCoreStore = await account(id, () => repo.read());
+    const initializedCoreReadiness = userModelCoreReadiness(initializedCoreStore);
+    assert.equal(initializedCoreReadiness.ready, true, JSON.stringify({
+      readiness: initializedCoreReadiness,
+      onboardingV2: initializedCoreStore.onboardingV2
+    }));
     const png = syntheticPng();
     const upload = await request(app.base, "/api/images/upload", {
       method: "POST", cookie, body: { image: `data:image/png;base64,${png.toString("base64")}` }
@@ -462,7 +492,15 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     assert.deepEqual(chainResponses.map(value => value.status).sort(), [200, 201]);
     const backgroundTask = chainResponses[0].body.task;
     assert.equal(backgroundTask.id, chainResponses[1].body.task.id);
-    assert.equal((await waitTask(app.base, cookie, backgroundTask.id)).status, "succeeded");
+    const backgroundTaskResult = await waitTask(app.base, cookie, backgroundTask.id);
+    assert.equal(backgroundTaskResult.status, "succeeded", JSON.stringify({
+      task: backgroundTaskResult,
+      storedTask: (await account(id, () => repo.read())).aiTasks.find(item => item.id === backgroundTask.id),
+      providerCalls,
+      thoughts: (await request(app.base, "/api/state", { cookie })).body.thoughts
+        .filter(item => item.id === backgroundTask.targetId || item.relatedTo === backgroundTask.targetId)
+        .map(({ id, type, version, content, relatedTo }) => ({ id, type, version, content, relatedTo }))
+    }));
     assert.equal(providerCalls, 1);
     assert.equal((await request(app.base, `/api/ai-tasks/${backgroundTask.id}`, { cookie: otherCookie })).status, 404);
     const resultState = await account(id, () => repo.read());
@@ -543,21 +581,23 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
     const onboardingPatch = await request(app.base, "/api/v1/onboarding-v2/session", {
       method: "PATCH",
       cookie,
-      headers: { "if-match": "\"1\"", "idempotency-key": "postgres-onboarding-source" },
+      headers: { "if-match": "\"2\"", "idempotency-key": "postgres-onboarding-source" },
       body: {
         status: "completed",
         step: "candidates",
         answers: {
+          ...unknownCoreAnswers,
           currentContext: {
             rawText: extractionText,
             occurredAt: "2026-09-29T02:10:00.000Z",
             contextAllowed: true
           }
-        }
+        },
+        collaboration: { answerDisposition: "unknown", contextAllowed: false }
       }
     });
     assert.equal(onboardingPatch.status, 200, JSON.stringify(onboardingPatch.body));
-    assert.equal(onboardingPatch.body.data.session.revision, 1);
+    assert.equal(onboardingPatch.body.data.session.revision, 2);
     const budgetBeforeExtraction = (await database.query(
       "SELECT document FROM for_now.site_ai_budget WHERE id = true"
     )).rows[0].document;
@@ -571,7 +611,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
         method: "POST",
         cookie,
         headers: { "idempotency-key": `postgres-extraction-${suffix}` },
-        body: { sourceRevision: 1 }
+        body: { sourceRevision: 2 }
       }
     )));
     assert.deepEqual(extractionResponses.map(item => item.status).sort(), [200, 202]);
@@ -582,7 +622,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       method: "POST",
       cookie,
       headers: { "idempotency-key": "postgres-extraction-refresh" },
-      body: { sourceRevision: 1 }
+      body: { sourceRevision: 2 }
     });
     assert.equal(extractionRefresh.status, 200, JSON.stringify(extractionRefresh.body));
     assert.equal(extractionRefresh.body.data.id, extractionTaskIds[0]);
@@ -697,7 +737,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       });
       await repo.update(value => {
         value.onboarding.futureOnboarding = { retained: true };
-        const completed = value.aiTasks.find(item => item.id === backgroundTask.id);
+        const completed = value.aiTasks.find(item => item.id === extractionTaskIds[0]);
         for (const status of ["queued", "running"]) value.aiTasks.push({
           ...completed, id: `restart-${status}`, clientRequestId: `restart-${status}`, status,
           resultId: "", completedAt: "", startedAt: "", attempt: 0
@@ -796,9 +836,15 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
       JSON.parse(await fs.readFile(path.join(restoredDir, "ai-budget.json"), "utf8")),
       expectedRelational.aiBudget
     );
+    assert.deepEqual(
+      JSON.parse(await fs.readFile(path.join(restoredDir, "record-compression-quota.json"), "utf8")),
+      expectedRelational.recordCompressionQuota
+    );
     const exportManifest = JSON.parse(await fs.readFile(path.join(restoredDir, "export-manifest.json"), "utf8"));
     assert.equal(exportManifest.aiBudget.file, "ai-budget.json");
     assert.equal(exportManifest.aiBudget.sha256, storeContentSha256(expectedRelational.aiBudget));
+    assert.equal(exportManifest.recordCompressionQuota.file, "record-compression-quota.json");
+    assert.equal(exportManifest.recordCompressionQuota.sha256, storeContentSha256(expectedRelational.recordCompressionQuota));
     await database.query("CREATE DATABASE runtime_restored");
     const restoredAdmin = await connect("postgres", "runtime_restored");
     await initializePostgresSchema(restoredAdmin);

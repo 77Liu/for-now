@@ -171,11 +171,168 @@ export async function runAiBudgetPostgresChecks({
     throw new Error("abort PostgreSQL budget mutation");
   }), /abort PostgreSQL budget mutation/);
   assert.deepEqual(await firstRepository.read(), beforeRollback);
-  await admin.query("UPDATE for_now.site_ai_budget SET document = '{}'::jsonb WHERE id = true");
+  await admin.query(`
+    UPDATE for_now.site_ai_budget
+    SET document = '{}'::jsonb, record_compression_quota = '{"days":[]}'::jsonb
+    WHERE id = true
+  `);
+
+  const compressionService = (repository, prefix) => {
+    let sequence = 0;
+    return createAiBudgetService({
+      repository,
+      policy,
+      recordCompressionDailyBudgetCny: 1.2,
+      recordCompressionDailyInvocationLimit: 2,
+      recordCompressionScene: "recordCompression",
+      recordCompressionTimezone: "Asia/Shanghai",
+      now: () => "2026-10-02T01:00:00.000Z",
+      createId: () => `${prefix}-compression-${++sequence}`
+    });
+  };
+  const compressionFirst = compressionService(firstRepository, "first");
+  const compressionSecond = compressionService(secondRepository, "second");
+  const compressionPlan = taskId => ({
+    accountId: `compression-${taskId}`,
+    taskId,
+    stages: [{
+      id: "compression-model",
+      provider: "deepseek",
+      service: "chat-completions",
+      scene: "recordCompression",
+      costKnown: true,
+      estimatedCostCny: 0.5
+    }]
+  });
+  const compressionAdmission = await Promise.allSettled([
+    compressionFirst.reserveTask(compressionPlan("compression-task-a")),
+    compressionSecond.reserveTask(compressionPlan("compression-task-b")),
+    compressionFirst.reserveTask(compressionPlan("compression-task-c")),
+    compressionSecond.reserveTask(compressionPlan("compression-task-d"))
+  ]);
+  assert.equal(compressionAdmission.filter(item => item.status === "fulfilled").length, 2);
+  assert.equal(
+    compressionAdmission.filter(item => item.status === "rejected")
+      .every(item => item.reason.code === "AI_RECORD_COMPRESSION_DAILY_LIMIT"),
+    true
+  );
+  const compressionHeld = compressionAdmission
+    .filter(item => item.status === "fulfilled")
+    .map(item => item.value.reservation);
+  const releasedCompression = compressionHeld[0];
+  await compressionFirst.releaseTask({ reservationId: releasedCompression.id, reason: "regression_cancel" });
+  assert.deepEqual(await compressionSecond.releaseTask({
+    reservationId: releasedCompression.id,
+    reason: "regression_duplicate_cancel"
+  }), { released: false, duplicate: true, event: null });
+  const afterRelease = await compressionFirst.reserveTask(compressionPlan("compression-task-after-release"));
+  await compressionFirst.startStage({
+    reservationId: compressionHeld[1].id,
+    stageId: "compression-model"
+  });
+  await compressionSecond.settleTask({
+    reservationId: compressionHeld[1].id,
+    stages: [{ stageId: "compression-model", started: true, actualCostCny: 0.25 }],
+    outcome: "completed"
+  });
+  await assert.rejects(
+    compressionFirst.settleTask({
+      reservationId: compressionHeld[1].id,
+      stages: [{ stageId: "compression-model", started: true, actualCostCny: 0.25 }],
+      outcome: "completed"
+    }),
+    error => error.code === "AI_BUDGET_RESERVATION_NOT_FOUND"
+  );
+  await assert.rejects(
+    compressionSecond.reserveTask(compressionPlan("compression-task-after-settlement")),
+    error => error.code === "AI_RECORD_COMPRESSION_DAILY_LIMIT"
+  );
+  await compressionFirst.releaseTask({ reservationId: afterRelease.reservation.id, reason: "regression_cleanup" });
+  await admin.query(`
+    UPDATE for_now.site_ai_budget
+    SET document = '{}'::jsonb, record_compression_quota = '{"days":[]}'::jsonb
+    WHERE id = true
+  `);
+  const costLimitedService = (repository, prefix) => createAiBudgetService({
+    repository,
+    policy,
+    recordCompressionDailyBudgetCny: 0.6,
+    recordCompressionDailyInvocationLimit: 10,
+    recordCompressionScene: "recordCompression",
+    recordCompressionTimezone: "Asia/Shanghai",
+    now: () => "2026-10-02T01:00:00.000Z",
+    createId: (() => {
+      let sequence = 0;
+      return () => `${prefix}-compression-cost-${++sequence}`;
+    })()
+  });
+  const costLimitedFirst = costLimitedService(firstRepository, "first");
+  const costLimitedSecond = costLimitedService(secondRepository, "second");
+  const costAdmission = await Promise.allSettled([
+    costLimitedFirst.reserveTask(compressionPlan("compression-cost-task-a")),
+    costLimitedSecond.reserveTask(compressionPlan("compression-cost-task-b"))
+  ]);
+  assert.equal(costAdmission.filter(item => item.status === "fulfilled").length, 1);
+  assert.equal(
+    costAdmission.find(item => item.status === "rejected").reason.code,
+    "AI_RECORD_COMPRESSION_DAILY_LIMIT"
+  );
+  const costReservation = costAdmission.find(item => item.status === "fulfilled").value.reservation;
+  // Simulate a rollback binary that only knows how to replace the legacy document.
+  await admin.query("UPDATE for_now.site_ai_budget SET document = document WHERE id = true");
+  await assert.rejects(
+    costLimitedSecond.reserveTask(compressionPlan("compression-cost-task-after-legacy-write")),
+    error => error.code === "AI_RECORD_COMPRESSION_DAILY_LIMIT"
+  );
+  await costLimitedFirst.releaseTask({ reservationId: costReservation.id, reason: "regression_cleanup" });
+  const afterCostRelease = await costLimitedSecond.reserveTask(compressionPlan("compression-cost-task-after-release"));
+  await costLimitedSecond.releaseTask({ reservationId: afterCostRelease.reservation.id, reason: "regression_cleanup" });
+  await admin.query(`
+    UPDATE for_now.site_ai_budget
+    SET document = '{}'::jsonb, record_compression_quota = '{"days":[]}'::jsonb
+    WHERE id = true
+  `);
+
+  const unknownCostService = (repository, prefix) => createAiBudgetService({
+    repository,
+    policy,
+    recordCompressionDailyBudgetCny: 0.6,
+    recordCompressionDailyInvocationLimit: 10,
+    recordCompressionScene: "recordCompression",
+    recordCompressionTimezone: "Asia/Shanghai",
+    now: () => "2026-10-02T01:00:00.000Z",
+    createId: (() => {
+      let sequence = 0;
+      return () => `${prefix}-compression-unknown-${++sequence}`;
+    })()
+  });
+  const unknownCostFirst = unknownCostService(firstRepository, "first");
+  const unknownCostSecond = unknownCostService(secondRepository, "second");
+  const unknownCostPlan = compressionPlan("compression-task-unknown-settlement");
+  const unknownReservation = await unknownCostFirst.reserveTask(unknownCostPlan);
+  await unknownCostFirst.startStage({
+    reservationId: unknownReservation.reservation.id,
+    stageId: "compression-model"
+  });
+  await unknownCostFirst.settleTask({
+    reservationId: unknownReservation.reservation.id,
+    stages: [{ stageId: "compression-model", started: true, costKnown: false }],
+    outcome: "failed"
+  });
+  await assert.rejects(
+    unknownCostSecond.reserveTask(compressionPlan("compression-task-after-unknown-cost")),
+    error => error.code === "AI_RECORD_COMPRESSION_DAILY_LIMIT"
+  );
+  await admin.query(`
+    UPDATE for_now.site_ai_budget
+    SET document = '{}'::jsonb, record_compression_quota = '{"days":[]}'::jsonb
+    WHERE id = true
+  `);
 
   return [
     "isolated AI budget role and denied data/auth direct access",
     "global AI budget cross-account concurrency",
-    "global AI budget database and mutator rollback"
+    "global AI budget database and mutator rollback",
+    "record-compression cross-process call/cost reservation, cancellation release, and settlement"
   ];
 }
