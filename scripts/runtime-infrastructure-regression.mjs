@@ -91,17 +91,17 @@ assert.equal(slotAttempts, 2);
 const compressionProduction = config({
   NODE_ENV: "production",
   RECORD_COMPRESSION_ENABLED: "1",
-  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "35",
-  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "0.5",
-  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "35",
-  RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN: "0"
+  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "0.75",
+  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "0.25",
+  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "3",
+  RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN: "1"
 });
 assert.equal(compressionProduction.recordCompressionEnabled, true);
-assert.equal(compressionProduction.recordCompressionDailyBudgetCny, 35);
-assert.equal(compressionProduction.recordCompressionPerCallBudgetCny, 0.5);
-assert.equal(compressionProduction.recordCompressionDailyInvocationLimit, 35);
+assert.equal(compressionProduction.recordCompressionDailyBudgetCny, 0.75);
+assert.equal(compressionProduction.recordCompressionPerCallBudgetCny, 0.25);
+assert.equal(compressionProduction.recordCompressionDailyInvocationLimit, 3);
 assert.equal(compressionProduction.recordCompressionAccountDailyInvocationLimit, 2);
-assert.equal(compressionProduction.recordCompressionMaxBackfillDatesPerScan, 0);
+assert.equal(compressionProduction.recordCompressionMaxBackfillDatesPerScan, 1);
 assert.equal(config({
   RECORD_COMPRESSION_ENABLED: "1",
   RECORD_COMPRESSION_DAILY_BUDGET_CNY: "10",
@@ -142,9 +142,9 @@ assert.equal(config({
 assert.equal(config({
   NODE_ENV: "production",
   RECORD_COMPRESSION_ENABLED: "1",
-  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "10",
-  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "1",
-  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "48"
+  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "1",
+  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "0.25",
+  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "4"
 }).recordCompressionEnabled, true);
 assert.equal(config({
   NODE_ENV: "production",
@@ -152,6 +152,27 @@ assert.equal(config({
   RECORD_COMPRESSION_DAILY_BUDGET_CNY: "10",
   RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "11"
 }).recordCompressionEnabled, false);
+assert.equal(config({
+  NODE_ENV: "production",
+  RECORD_COMPRESSION_ENABLED: "1",
+  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "1.01",
+  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "0.25",
+  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "4"
+}).recordCompressionEnabled, false, "daily compression budget must stay within its hard cap");
+assert.equal(config({
+  NODE_ENV: "production",
+  RECORD_COMPRESSION_ENABLED: "1",
+  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "1",
+  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "0.251",
+  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "4"
+}).recordCompressionEnabled, false, "per-call compression budget must stay within its hard cap");
+assert.equal(config({
+  NODE_ENV: "production",
+  RECORD_COMPRESSION_ENABLED: "1",
+  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "1",
+  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "0.25",
+  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "5"
+}).recordCompressionEnabled, false, "daily compression calls must stay within their hard cap");
 assert.equal(config({
   NODE_ENV: "test",
   LOCAL_TEST_MODE: "1",

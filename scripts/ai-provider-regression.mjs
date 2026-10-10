@@ -5,7 +5,13 @@ import os from "node:os";
 import path from "node:path";
 import "./prompt-test-setup.mjs";
 import { createDeepSeekTransport } from "../src/infrastructure/ai-providers/index.mjs";
-import { createAiGenerator, createAiAudit, createAiUsageService, normalizeLlmSettings } from "../src/modules/ai/index.mjs";
+import {
+  conservativeDeepSeekInputTokenUpperBound,
+  createAiGenerator,
+  createAiAudit,
+  createAiUsageService,
+  normalizeLlmSettings
+} from "../src/modules/ai/index.mjs";
 
 const promptManifest = JSON.parse(await fs.readFile(
   new URL("../prompts/manifest.json", import.meta.url),
@@ -157,6 +163,32 @@ assert.equal(transportCalls.length, callsBeforeStaleGate,
 assert.equal(compressionGateAcquisitions, 2);
 assert.equal(compressionGateReleases, 2);
 assert.equal(compressionGateHeld, false);
+
+let compressionBudgetDetails;
+const boundedCompressionGenerate = createAiGenerator({
+  provider,
+  readSettings: async () => settings,
+  getContext: () => context.getStore(),
+  reserveAttempt: quota.reserveAttempt,
+  gate,
+  audit,
+  executeBudgetTask: async (details, execute) => {
+    compressionBudgetDetails = details;
+    return execute({ runStage: async (_id, operation) => operation({ recordUsage: () => false }) });
+  }
+});
+responseFactory = () => jsonResponse("预算上界合成完成");
+const unicodeCompressionPrompt = "中文🧭\u0000\u001f\ud800";
+await run("compression-token-bound", () => boundedCompressionGenerate(unicodeCompressionPrompt, {
+  scene: "recordCompression",
+  retryWithoutThinking: false,
+  history: [{ role: "user", content: "多字节历史 e\u0301" }]
+}));
+const compressionRequestMessages = transportCalls.at(-1).body.messages;
+assert.equal(compressionBudgetDetails.scene, "recordCompression");
+assert.equal(compressionBudgetDetails.maxInputTokens,
+  conservativeDeepSeekInputTokenUpperBound(compressionRequestMessages),
+  "record compression must pass the escaped UTF-8 upper bound to budget estimation");
 
 function queuedGate() {
   let held = false;

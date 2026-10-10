@@ -45,8 +45,11 @@ if (requestedSuite === ISOLATION_PROBE) {
 const recordCompressionSuite = [
   ["daily record compression input boundaries", ["scripts/record-compression-input-regression.mjs"]],
   ["daily record compression output budgets", ["scripts/record-compression-output-regression.mjs"]],
+  ["record compression conservative provider token bound", ["scripts/record-compression-token-bound-regression.mjs"]],
+  ["record compression scheduler observability and privacy", ["scripts/record-compression-observability-regression.mjs"]],
   ["timezone-aware seven-day trend", ["scripts/record-compression-trend-regression.mjs"]],
   ["record compression trend context and citations", ["scripts/record-compression-trend-context-regression.mjs"]],
+  ["user-visible daily summaries, source authorization and trend coverage", ["scripts/record-compression-user-view-regression.mjs"]],
   ["chat, analysis and diary trend citation contract", ["scripts/record-compression-answer-citation-regression.mjs"]],
   ["historical supplement input contract", ["scripts/record-compression-supplement-regression.mjs"]],
   ["historical supplement service and persistent candidates", ["scripts/record-compression-supplement-service-regression.mjs"]],
