@@ -47,15 +47,36 @@ class Cdp {
     this.socket = new WebSocket(url);
     this.nextId = 1;
     this.pending = new Map();
+    this.connectionError = null;
     this.ready = new Promise((resolve, reject) => {
-      this.socket.addEventListener("open", resolve, { once: true });
-      this.socket.addEventListener("error", reject, { once: true });
+      let settled = false;
+      let connectionTimer;
+      const fail = message => {
+        const error = new Error(message);
+        this.connectionError ||= error;
+        if (!settled) {
+          settled = true;
+          clearTimeout(connectionTimer);
+          reject(error);
+        }
+        this.rejectPending(this.connectionError);
+      };
+      this.socket.addEventListener("open", () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(connectionTimer);
+        resolve();
+      }, { once: true });
+      this.socket.addEventListener("error", () => fail("移动平台浏览器调试连接失败"), { once: true });
+      this.socket.addEventListener("close", () => fail("移动平台浏览器调试连接已关闭"), { once: true });
+      connectionTimer = setTimeout(() => fail("移动平台浏览器调试连接超时"), 10000);
     });
     this.socket.addEventListener("message", event => {
       const message = JSON.parse(event.data);
       const callback = this.pending.get(message.id);
       if (!callback) return;
       this.pending.delete(message.id);
+      clearTimeout(callback.timer);
       if (message.error) callback.reject(new Error(message.error.message));
       else callback.resolve(message.result);
     });
@@ -63,10 +84,33 @@ class Cdp {
 
   async send(method, params = {}) {
     await this.ready;
+    if (this.connectionError || this.socket.readyState !== WebSocket.OPEN) {
+      throw this.connectionError || new Error("移动平台浏览器调试连接不可用");
+    }
     const id = this.nextId++;
-    const response = new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }));
-    this.socket.send(JSON.stringify({ id, method, params }));
+    const response = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`移动平台浏览器调试命令超时：${method}`));
+      }, 10000);
+      this.pending.set(id, { resolve, reject, timer });
+      try {
+        this.socket.send(JSON.stringify({ id, method, params }));
+      } catch (error) {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        reject(error);
+      }
+    });
     return response;
+  }
+
+  rejectPending(error) {
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
+    this.pending.clear();
   }
 }
 
