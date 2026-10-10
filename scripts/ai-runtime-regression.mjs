@@ -253,7 +253,8 @@ function createHarness({
       return provider;
     },
     createRateGate: (qps, concurrency) => {
-      captures.gateOptions = { qps, concurrency };
+      captures.gateOptions ||= [];
+      captures.gateOptions.push({ qps, concurrency });
       return {
         async acquire() {
           events.push("gate");
@@ -448,9 +449,13 @@ const deepSeekGeneratorDouble = (options, { events }) => async () => (
   assert.equal(harness.captures.costOptions.repository, runtime.costRepository);
   assert.equal(harness.captures.auditOptions.updateUsage, runtime.updateAiUsage);
   assert.equal(harness.captures.providerOptions.endpoint, "https://provider.invalid/chat/completions");
-  assert.deepEqual(harness.captures.gateOptions, { qps: 20, concurrency: 20 });
+  assert.deepEqual(harness.captures.gateOptions, [
+    { qps: 20, concurrency: 20 },
+    { qps: 20, concurrency: 1 }
+  ]);
   assert.equal(harness.captures.generatorOptions.provider, runtime.deepSeekProvider);
   assert.equal(harness.captures.generatorOptions.gate, runtime.aiGate);
+  assert.equal(harness.captures.generatorOptions.sceneGates.recordCompression, runtime.recordCompressionGate);
   assert.equal((await runtime.runDeepSeek()).marker, "member");
 
   runtime.installModelRuntimeSettingsReader(async () => ({

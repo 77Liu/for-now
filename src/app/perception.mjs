@@ -34,6 +34,16 @@ const modelAuthored = item => (
   || Boolean(item?.sourceTaskId)
   || Boolean(item?.contextReceipt)
 );
+const mutationSourceCollections = [
+  "checkins", "dailyRecords", "captures", "journals", "thoughts", "quotes", "keepsakes", "evidencePermissions"
+];
+
+function sourceMutationSnapshot(store) {
+  return Object.fromEntries(mutationSourceCollections.map(collection => [
+    collection,
+    structuredClone(list(store?.[collection]))
+  ]));
+}
 
 function sourceEventId(hash, accountId, sourceKey) {
   return `source:${hash(JSON.stringify([accountId, sourceKey])).slice(0, 64)}`;
@@ -840,14 +850,16 @@ export function createPerceptionAwareRepository({
   repository,
   perception,
   createTask,
-  scheduleTask
+  scheduleTask,
+  onStoreMutation = () => {}
 } = {}) {
   if (!repository?.read
     || !repository?.update
     || typeof perception?.observeInStore !== "function"
     || typeof perception?.recordLifecycleInStore !== "function"
     || typeof createTask !== "function"
-    || typeof scheduleTask !== "function") {
+    || typeof scheduleTask !== "function"
+    || typeof onStoreMutation !== "function") {
     throw new TypeError("Perception-aware repository dependencies are required");
   }
   const observeChanges = (before, store, taskIds) => {
@@ -873,14 +885,16 @@ export function createPerceptionAwareRepository({
       }
     }
   };
-  return {
+  const awareRepository = {
     ...repository,
     async update(operation) {
       const taskIds = [];
       const result = await repository.update(async store => {
+        const beforeStore = sourceMutationSnapshot(store);
         const before = sourceSnapshots(store);
         const value = await operation(store);
         observeChanges(before, store, taskIds);
+        onStoreMutation(store, beforeStore);
         return value;
       });
       schedule(taskIds);
@@ -894,9 +908,11 @@ export function createPerceptionAwareRepository({
       const result = await repository.executeIdempotent(
         request,
         async store => {
+          const beforeStore = sourceMutationSnapshot(store);
           const before = sourceSnapshots(store);
           const value = await operation(store);
           observeChanges(before, store, taskIds);
+          onStoreMutation(store, beforeStore);
           return value;
         },
         options
@@ -905,6 +921,30 @@ export function createPerceptionAwareRepository({
       return result;
     }
   };
+  if (typeof repository.transact === "function") {
+    awareRepository.transact = async operation => {
+      const taskIds = [];
+      const result = await repository.transact(async context => {
+        let beforeStore = sourceMutationSnapshot(context.document);
+        let beforeSources = sourceSnapshots(context.document);
+        const commit = context.commit;
+        return operation({
+          ...context,
+          async commit(...args) {
+            observeChanges(beforeSources, context.document, taskIds);
+            onStoreMutation(context.document, beforeStore);
+            const value = await commit(...args);
+            beforeStore = sourceMutationSnapshot(context.document);
+            beforeSources = sourceSnapshots(context.document);
+            return value;
+          }
+        });
+      });
+      schedule(taskIds);
+      return result;
+    };
+  }
+  return awareRepository;
 }
 
 export function createPerceptionService({

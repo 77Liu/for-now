@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "activeVersion": "2026.10.10.1",
+  "activeVersion": "2026.10.10.4",
   "versions": [
     {
       "version": "2026.09.29.1",
@@ -71,6 +71,21 @@
       "version": "2026.10.10.1",
       "file": "2026.10.10.1.json",
       "sha256": "ebdad1e89b585a9251ccc2ad9339f29390f22290b8f36ee99e072b0bbcce3897"
+    },
+    {
+      "version": "2026.10.10.2",
+      "file": "2026.10.10.2.json",
+      "sha256": "fa6b9f4d9e92bce1c523b5345e54d33827e581445b0284c92894b17417afbb23"
+    },
+    {
+      "version": "2026.10.10.3",
+      "file": "2026.10.10.3.json",
+      "sha256": "6a96b8d2ecfd32f1ca0cf31fc56cfae59cb9b60a547fd4ea05f561bb15363d84"
+    },
+    {
+      "version": "2026.10.10.4",
+      "file": "2026.10.10.4.json",
+      "sha256": "1c4a5bba9bc0033946401985e7deaab3adab621d8986d9859b9d75d0388ef494"
     }
   ],
   "promptIntroducedIn": {
@@ -87,7 +102,12 @@
     "perception.source.extract": "2026.10.07.2",
     "orchestration.context.boundaries": "2026.10.09.1",
     "orchestration.context.temporal": "2026.10.09.2",
-    "orchestration.answer.citations": "2026.10.10.1"
+    "orchestration.answer.citations": "2026.10.10.4",
+    "recordCompression.system.daily": "2026.10.10.2",
+    "recordCompression.task.daily": "2026.10.10.2",
+    "orchestration.context.sevenDayTrend": "2026.10.10.4",
+    "recordCompression.system.historicalSupplement": "2026.10.10.4",
+    "recordCompression.task.historicalSupplement": "2026.10.10.4"
   },
   "promptVariables": {
     "ai.identity.named": [
@@ -209,7 +229,15 @@
       "payload",
       "taskContract"
     ],
-    "orchestration.answer.citations": []
+    "orchestration.answer.citations": [],
+    "recordCompression.system.daily": [],
+    "recordCompression.task.daily": [
+      "input"
+    ],
+    "recordCompression.system.historicalSupplement": [],
+    "recordCompression.task.historicalSupplement": [
+      "input"
+    ]
   },
   "requiredPromptIds": [
     "ai.system.core",
@@ -285,7 +313,12 @@
     "orchestration.user.envelope",
     "orchestration.context.boundaries",
     "orchestration.context.temporal",
-    "orchestration.answer.citations"
+    "orchestration.answer.citations",
+    "recordCompression.system.daily",
+    "recordCompression.task.daily",
+    "orchestration.context.sevenDayTrend",
+    "recordCompression.system.historicalSupplement",
+    "recordCompression.task.historicalSupplement"
   ],
   "rolePromptIds": {
     "perception": "orchestration.role.perception",
@@ -299,6 +332,8 @@
     "structuredWorkingContext": "2026.10.07.0",
     "taskSourceBoundaries": "2026.10.09.1",
     "explicitSourceTime": "2026.10.09.2",
-    "verifiedAnswerCitations": "2026.10.10.1"
+    "verifiedAnswerCitations": "2026.10.10.1",
+    "sevenDayTrendContext": "2026.10.10.4",
+    "historicalUserSupplementContext": "2026.10.10.4"
   }
 }

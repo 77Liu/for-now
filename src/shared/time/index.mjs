@@ -1,5 +1,7 @@
 import { safeText } from "../validation/index.mjs";
 
+export const DEFAULT_RECORD_TIMEZONE = "Asia/Shanghai";
+
 export const localDateKey = (value = new Date()) => {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "";

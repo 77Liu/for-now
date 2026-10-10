@@ -15,8 +15,8 @@ import { publicKeepsake } from "../src/modules/keepsakes/index.mjs";
 const run = promisify(execFile), root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "growth-restore-validation-"));
 const sourceDir = path.join(temporary, "source"), dataDir = path.join(temporary, "backup");
-const collections = ["checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "actions", "habits", "habitCheckins", "feedback", "validationLedger", "evidenceSources", "evidencePermissions", "perceptionEvents"];
-const legacyCollections = collections.filter(key => !["evidenceSources", "evidencePermissions", "perceptionEvents"].includes(key));
+const collections = ["checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "recordCompressions", "customMetrics", "actions", "habits", "habitCheckins", "feedback", "validationLedger", "evidenceSources", "evidencePermissions", "perceptionEvents"];
+const legacyCollections = collections.filter(key => !["recordCompressions", "evidenceSources", "evidencePermissions", "perceptionEvents"].includes(key));
 const objectValue = value => value !== null && typeof value === "object" && !Array.isArray(value);
 const canonical = value => Array.isArray(value)
   ? `[${value.map(canonical).join(",")}]`
@@ -30,6 +30,35 @@ try {
     version: 1,
     periods: [{ key: "2026-10-03", knownCostMicros: 1_250_000 }],
     reservations: []
+  };
+  const recordCompression = {
+    id: "compression-day-2026-09-29",
+    version: 1,
+    revision: 1,
+    status: "ready",
+    schemaVersion: "record-compression-output.v1",
+    localDate: "2026-09-29",
+    timezone: "Asia/Shanghai",
+    periodStart: "2026-09-28T16:00:00.000Z",
+    periodEnd: "2026-09-29T16:00:00.000Z",
+    promptVersion: "daily-record-compression.v1",
+    sourceManifestHash: "a".repeat(64),
+    generatedAt: "2026-09-29T16:10:00.000Z",
+    window: {
+      start: "2026-09-28T16:00:00.000Z",
+      endExclusive: "2026-09-29T16:00:00.000Z",
+      localDate: "2026-09-29",
+      asOf: "2026-09-29T16:00:00.000Z",
+      timezone: "Asia/Shanghai",
+      completeness: "complete"
+    },
+    daily: { observations: [{ text: "真实摘要正文应保留。", sourceIds: ["daily-source"] }], metricKeys: [], missing: [] },
+    thoughtsIdeas: { focus: [], changes: [], openQuestions: [] },
+    other: { themes: [], collectedQuotes: [] },
+    metrics: [],
+    sourceManifest: [{ sourceId: "daily-source", recordId: "daily-record", sourceHash: "b".repeat(64) }],
+    sourceRefs: [{ sourceId: "daily-source", resourceType: "dailyRecord", recordId: "daily-record", version: 2, permissionRevision: 1 }],
+    tokenUsage: { estimated: true, method: "test", outputTokens: 10 }
   };
   const relationalAccounts = [];
   await fs.mkdir(sourceDir, { recursive: true });
@@ -67,6 +96,7 @@ try {
         },
         speechCache: [{ cacheKey: "private-cache-entry" }]
       });
+      store.recordCompressions = [recordCompression];
       store.books.push({ id: "book", imagePath: "/attachments/cover.png" });
       store.keepsakes.push({
         id: "keepsake",
@@ -135,18 +165,22 @@ try {
     firstAttachment: result.firstAttachment
   }, {
     users: 2,
-    records: 8,
-    totalRecords: 9,
+    records: 9,
+    totalRecords: 10,
     attachmentReferences: 1,
     localAttachments: 1,
     firstAttachment: "/attachments/cover.png"
   });
   for (const key of collections) {
-    assert.equal(result.collectionEvidence[key].count, ["captures", "books", "keepsakes", "actions", "habits", "habitCheckins", "feedback", "validationLedger"].includes(key) ? 1 : 0);
+    assert.equal(result.collectionEvidence[key].count, ["captures", "books", "keepsakes", "recordCompressions", "actions", "habits", "habitCheckins", "feedback", "validationLedger"].includes(key) ? 1 : 0);
     assert.match(result.collectionEvidence[key].idsSha256, /^[a-f0-9]{64}$/);
     assert.match(result.collectionEvidence[key].contentSha256, /^[a-f0-9]{64}$/);
   }
   const restoredKeepsakes = JSON.parse(await fs.readFile(path.join(dataDir, "users", "first", "store.json"), "utf8")).keepsakes;
+  const restoredRecordCompressions = JSON.parse(await fs.readFile(path.join(dataDir, "users", "first", "store.json"), "utf8")).recordCompressions;
+  assert.deepEqual(restoredRecordCompressions, [recordCompression]);
+    assert.deepEqual(restoredRecordCompressions[0].daily, recordCompression.daily);
+  assert.deepEqual(restoredRecordCompressions[0].sourceRefs, recordCompression.sourceRefs);
   const restoredCaptures = JSON.parse(await fs.readFile(path.join(dataDir, "users", "first", "store.json"), "utf8")).captures;
   const expectedCaptures = restoredCaptures.map(item => {
     const { speechCache: _speechCache, ...capture } = item;

@@ -9,6 +9,39 @@ import { safeIso } from "../shared/validation/index.mjs";
 import { workingContextTimestamp } from "./task-context.mjs";
 
 export const STRUCTURED_WORKING_CONTEXT_SCHEMA_VERSION = 1;
+export const WORKING_CONTEXT_SERIALIZATION_ORDER = Object.freeze({
+  POLICY_V1: "policy-v1",
+  LEGACY_REPLAY_V1: "legacy-replay-v1"
+});
+
+const PAYLOAD_KEY_ORDER = Object.freeze({
+  [WORKING_CONTEXT_SERIALIZATION_ORDER.POLICY_V1]: Object.freeze([
+    "coreUserModel",
+    "historicalUserSupplement",
+    "sevenDayTrend",
+    "relevantEpisodes",
+    "applicableUserModel",
+    "currentTask",
+    "currentMaterial",
+    "scene",
+    "asOf",
+    "evidencePackets",
+    "unresolved",
+    "schemaVersion"
+  ]),
+  [WORKING_CONTEXT_SERIALIZATION_ORDER.LEGACY_REPLAY_V1]: Object.freeze([
+    "schemaVersion",
+    "coreUserModel",
+    "scene",
+    "asOf",
+    "currentTask",
+    "currentMaterial",
+    "applicableUserModel",
+    "relevantEpisodes",
+    "evidencePackets",
+    "unresolved"
+  ])
+});
 
 const ROLE_BY_SCENE = Object.freeze({
   thoughtAnswer: "answer",
@@ -31,6 +64,16 @@ function promptSafeJson(value) {
     .replace(/&/g, "\\u0026")
     .replace(/\u2028/g, "\\u2028")
     .replace(/\u2029/g, "\\u2029");
+}
+
+function orderPayloadKeys(payload, serializationOrder) {
+  const preferred = PAYLOAD_KEY_ORDER[serializationOrder];
+  if (!preferred) throw new Error(`Unknown working context serialization order: ${serializationOrder}`);
+  const keys = [
+    ...preferred.filter(key => Object.hasOwn(payload, key)),
+    ...Object.keys(payload).filter(key => !preferred.includes(key))
+  ];
+  return Object.fromEntries(keys.map(key => [key, payload[key]]));
 }
 
 function materialPayload(item, temporalScope = "", includeCitationId = false) {
@@ -87,6 +130,9 @@ export function compileWorkingContextPrompt({
   currentMaterial,
   historicalMaterial,
   coreUserModel = null,
+  historicalUserSupplement = null,
+  recentTrend = null,
+  serializationOrder = WORKING_CONTEXT_SERIALIZATION_ORDER.POLICY_V1,
   generatedAt = "",
   notice = "",
   taskDetails = null
@@ -103,6 +149,9 @@ export function compileWorkingContextPrompt({
   const answerCitationContract = ROLE_BY_SCENE[scene] === "answer"
     ? optionalPromptText("orchestration.answer.citations")
     : "";
+  const sevenDayTrendContract = recentTrend || historicalUserSupplement
+    ? optionalPromptText("orchestration.context.sevenDayTrend")
+    : "";
   const includeCitationIds = Boolean(answerCitationContract);
   const asOf = typeof generatedAt === "string" && generatedAt === safeIso(generatedAt)
     ? generatedAt || null : null;
@@ -116,7 +165,6 @@ export function compileWorkingContextPrompt({
   const history = list(historicalMaterial).map(item => materialPayload(item,
     temporalScope(item), includeCitationIds));
   const payload = {
-    schemaVersion: STRUCTURED_WORKING_CONTEXT_SCHEMA_VERSION,
     ...(coreUserModel && typeof coreUserModel === "object" ? {
       coreUserModel: {
         fingerprint: String(coreUserModel.fingerprint || ""),
@@ -146,8 +194,17 @@ export function compileWorkingContextPrompt({
         }))
       }
     } : {}),
-    scene,
-    ...(sourceBoundaries ? { asOf } : {}),
+    ...(historicalUserSupplement && typeof historicalUserSupplement === "object"
+      && !Array.isArray(historicalUserSupplement) ? {
+        historicalUserSupplement: structuredClone(historicalUserSupplement)
+      } : {}),
+    ...(recentTrend && typeof recentTrend === "object" && !Array.isArray(recentTrend) ? {
+      sevenDayTrend: structuredClone(recentTrend)
+    } : {}),
+    relevantEpisodes: history.filter(item => (
+      !["userClaim", "modelUnknown"].includes(item.resourceType)
+    )),
+    applicableUserModel: history.filter(item => item.resourceType === "userClaim"),
     currentTask: {
       kind: String(task?.kind || ""),
       text: String(task?.text || ""),
@@ -158,10 +215,8 @@ export function compileWorkingContextPrompt({
         : {})
     },
     currentMaterial: list(currentMaterial).map(item => materialPayload(item, "", includeCitationIds)),
-    applicableUserModel: history.filter(item => item.resourceType === "userClaim"),
-    relevantEpisodes: history.filter(item => (
-      !["userClaim", "modelUnknown"].includes(item.resourceType)
-    )),
+    scene,
+    ...(sourceBoundaries ? { asOf } : {}),
     evidencePackets: list(historicalMaterial).map(item => ({
       id: String(item?.id || ""),
       evidenceId: String(item?.evidenceId || ""),
@@ -172,7 +227,8 @@ export function compileWorkingContextPrompt({
     unresolved: [
       ...history.filter(item => item.resourceType === "modelUnknown"),
       ...(notice ? [{ kind: "retrieval", message: String(notice) }] : [])
-    ]
+    ],
+    schemaVersion: STRUCTURED_WORKING_CONTEXT_SCHEMA_VERSION
   };
   return {
     prompt: renderPrompt(contract.envelopeId, {
@@ -180,9 +236,10 @@ export function compileWorkingContextPrompt({
         promptText(contract.taskPromptId),
         answerCitationContract,
         sourceBoundaries,
-        temporalContract
+        temporalContract,
+        sevenDayTrendContract
       ].filter(Boolean).join("\n\n"),
-      payload: promptSafeJson(payload)
+      payload: promptSafeJson(orderPayloadKeys(payload, serializationOrder))
     }),
     contract
   };

@@ -164,7 +164,9 @@ function analysisHistoryMarkup(root, snapshot, {
       )}</time><span>${label}</span>${index === 0 ? "<b>最新</b>" : ""}</div><p>${view.escapeMarkup(
         view.plainPreview(item.content)
       )}</p></div><span class="expand-mark" aria-hidden="true">⌄</span></summary><div class="analysis-entry-body">${view.contextReceiptMarkup(
-        item.contextReceipt
+        item.contextReceipt,
+        item.citations,
+        item.citationStatus
       )}<div class="analysis-content markdown-content">${view.renderMarkdown(
         item.content
       )}</div>${item.contentTruncated

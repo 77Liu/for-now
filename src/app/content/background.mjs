@@ -73,6 +73,8 @@ export function createContentBackground({
   annotationService,
   contentAttachments,
   perception,
+  recordCompressionTarget = null,
+  getRecentTrend = () => null,
   mediaRuntime,
   getAccountId,
   backgroundContextKey,
@@ -95,6 +97,8 @@ export function createContentBackground({
     annotations: annotationService,
     contentAttachments,
     perception,
+    recordCompressionTarget,
+    getRecentTrend,
     getAccountId,
     hash,
     now
@@ -103,6 +107,7 @@ export function createContentBackground({
     repository,
     tasks: createTaskLifecycle({ createId, now, hash }),
     notifications: createNotificationService({ createId, now }),
+    now,
     targets: taskTargets,
     shouldWaitForModel: (store, input) => (
       [
@@ -146,14 +151,20 @@ export function createContentBackground({
         const result = await runDeepSeek(work.prompt, {
           scene: work.scene,
           systemPrompt: work.systemPrompt || systemPrompt(),
-          captureReasoning: true,
+          captureReasoning: work.captureReasoning !== false,
           json: work.json === true,
           maxTokens: work.maxTokens || 16000,
           auditPrompt: work.auditPrompt !== false,
           contextReceipt: work.contextReceipt || null,
           imagePaths,
+          isCurrent,
           signal
         });
+        if (work.citationsEnabled && typeof isCurrent === "function" && !await isCurrent()) {
+          throw Object.assign(new Error("目标或来源已变化，回答未写入"), {
+            code: "AI_TASK_STALE"
+          });
+        }
         const verifiedAnswer = work.citationsEnabled
           ? parseVerifiedAnswer(result.content, work.citationSources)
           : null;
@@ -167,6 +178,7 @@ export function createContentBackground({
       }
     },
     contextKey: backgroundContextKey,
+    now,
     dispatch: dispatchBackground,
     onError: (taskId, error) => logEvent("system", "ai_task.failed", {
       level: "error",

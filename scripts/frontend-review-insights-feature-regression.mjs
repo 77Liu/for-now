@@ -221,6 +221,8 @@ const reviewSnapshot = () => ({
     createdAt: "2026-10-06T09:00:00.000Z",
     reason: "manual",
     content: "**当前结论**",
+    citations: [{ exactQuote: "原文：我在周三坚持晨练。", recordType: "思绪" }],
+    citationStatus: "matched",
     contentTruncated: false
   }],
   analysisPage: { nextCursor: "cursor-1", total: 2 },
@@ -250,10 +252,16 @@ const reviewSnapshot = () => ({
   },
   reviewSourceCount: 1
 });
+const citationCalls = [];
 const reviewView = modal => ({
   associationModal: () => modal,
   contentState: ({ title }) => `<empty>${title}</empty>`,
-  contextReceiptMarkup: () => "",
+  contextReceiptMarkup: (receipt, citations, citationStatus) => {
+    citationCalls.push({ receipt, citations, citationStatus });
+    return citationStatus === "matched"
+      ? `<details class="matched-citations"><summary>已匹配原文引用（${citations.length}）</summary><q>${escapeMarkup(citations[0].exactQuote)}</q></details>`
+      : "";
+  },
   escapeMarkup,
   escapeSelector: value => String(value),
   plainPreview: value => String(value || "").replaceAll("*", ""),
@@ -318,6 +326,11 @@ renderReviewPresentation({
 assert.match(renderedReview.root.nodes.get("#weekly-summary").innerHTML, /近 7 日记录覆盖/);
 assert.match(renderedReview.root.nodes.get("#trend-list").innerHTML, /情绪/);
 assert.match(renderedReview.root.nodes.get("#cluster-grid").innerHTML, /如何稳定行动/);
+assert.equal(citationCalls.length, 1);
+assert.equal(citationCalls[0].citationStatus, "matched");
+assert.equal(citationCalls[0].citations[0].exactQuote, "原文：我在周三坚持晨练。");
+assert.match(renderedReview.root.nodes.get("#analysis-list").innerHTML, /已匹配原文引用（1）/);
+assert.match(renderedReview.root.nodes.get("#analysis-list").innerHTML, /原文：我在周三坚持晨练。/);
 assert.match(renderedReview.modal.nodes.get("#association-flow").innerHTML, /按自然日聚合/);
 clearReviewPresentation(renderedReview.root, renderedReview.modal);
 assert.equal(renderedReview.root.nodes.get("#weekly-summary").innerHTML, "");

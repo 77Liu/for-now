@@ -14,7 +14,8 @@ const TASK_KINDS = new Set([
   "contentImageUnderstanding",
   "captureTranscription",
   "onboardingClaimExtraction",
-  "perceptionExtraction"
+  "perceptionExtraction",
+  "recordCompression"
 ]);
 export { WAITING_FOR_USER_MODEL_STATUS };
 export const PERSONALIZED_TASK_INTENT_BYTE_BUDGET = 32_000;
@@ -28,10 +29,12 @@ const PUBLIC_RESOURCE_TYPES = Object.freeze({
   chat: "chat",
   analysis: "analysis",
   captureTranscription: "capture",
-  onboardingClaimExtraction: "onboardingV2"
+  onboardingClaimExtraction: "onboardingV2",
+  recordCompression: "recordCompression"
 });
 const ACTIVE_TASK_STATUSES = new Set(["queued", "running"]);
 const REUSABLE_EXTRACTION_STATUSES = new Set(["queued", "running", "succeeded"]);
+export const WAITING_FOR_BUDGET_STATUS = "waitingBudget";
 
 export function publicAiTask(task) {
   return {
@@ -133,7 +136,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
         ? "journal"
       : kind === "chat" ? "chat"
       : kind === "analysis" ? "analysis"
-      : ["annotationShenji", "contentImageUnderstanding", "perceptionExtraction"].includes(kind)
+      : ["annotationShenji", "contentImageUnderstanding", "perceptionExtraction", "recordCompression"].includes(kind)
         ? safeText(input.resourceType, 40)
         : "thought";
     const binding = {
@@ -199,6 +202,31 @@ export function createTaskLifecycle({ createId, now, hash }) {
               permissionRevision: Math.max(0, Math.round(Number(input.payload?.permissionRevision) || 0)),
               perceptionVersion: safeText(input.payload?.perceptionVersion, 100)
             }
+        : kind === "recordCompression"
+          ? (() => {
+              const historicalSupplement = input.payload?.operation === "historicalSupplement";
+              const payload = {
+                operation: historicalSupplement ? "historicalSupplement" : "daily",
+                localDate: safeText(input.payload?.localDate, 10),
+                timezone: safeText(input.payload?.timezone, 100),
+                promptVersion: safeText(input.payload?.promptVersion, 100),
+                sourceManifestHash: safeText(input.payload?.sourceManifestHash, 64),
+                recordId: safeText(input.payload?.recordId, 100)
+              };
+              if (historicalSupplement) {
+                const batchIndex = Number(input.payload?.batchIndex);
+                return {
+                  ...payload,
+                  windowStart: safeText(input.payload?.windowStart, 10),
+                  windowEnd: safeText(input.payload?.windowEnd, 10),
+                  batchIndex: Number.isSafeInteger(batchIndex) && batchIndex >= 0
+                    ? Math.min(1023, batchIndex)
+                    : 0,
+                  inputAsOf: safeText(input.payload?.inputAsOf, 40)
+                };
+              }
+              return payload;
+            })()
         : {};
     const requestedInputVersion = Number(input.inputVersion) > 0 ? Math.round(Number(input.inputVersion)) : 0;
     const requestedSubtargetVersion = Number(input.subtargetVersion) > 0 ? Math.round(Number(input.subtargetVersion)) : 0;
@@ -207,11 +235,13 @@ export function createTaskLifecycle({ createId, now, hash }) {
 
   function create(tasks, input, inspectTarget, {
     deferTargetInspection = false,
-    requestedIntent = null
+    requestedIntent = null,
+    waitingBudget = false
   } = {}) {
     const normalized = normalizeRequest(input);
     const { kind, resourceType, targetId, subtargetId, clientRequestId, payload, requestedInputVersion, requestedSubtargetVersion } = normalized;
     if (!TASK_KINDS.has(kind)) return { unsupported: true };
+    if (waitingBudget && kind !== "recordCompression") return { unsupported: true };
     if (!clientRequestId) return { invalid: true };
     if (["thoughtDraft", "thoughtPrompt", "journalAssist", "journalReflection", "chat", "analysis"].includes(kind)
       && new TextEncoder().encode(JSON.stringify(payload)).length > PERSONALIZED_TASK_INTENT_BYTE_BUDGET) {
@@ -300,12 +330,14 @@ export function createTaskLifecycle({ createId, now, hash }) {
         requestedIntentInputHash: String(requestedIntent.inputHash ?? "")
       } : {}),
       payload, clientRequestId, requestHash: inputRequestHash,
-      status: deferTargetInspection ? WAITING_FOR_USER_MODEL_STATUS : "queued",
+      status: deferTargetInspection
+        ? WAITING_FOR_USER_MODEL_STATUS
+        : waitingBudget ? WAITING_FOR_BUDGET_STATUS : "queued",
       createdAt, updatedAt: createdAt, attempt: 0,
-      ...(kind === "perceptionExtraction" ? { internal: true } : {})
+      ...(["perceptionExtraction", "recordCompression"].includes(kind) ? { internal: true } : {})
     };
     tasks.unshift(task);
-    work?.markQueued?.(task);
+    if (!waitingBudget) work?.markQueued?.(task);
     return { task, duplicate: false };
   }
 
@@ -351,6 +383,19 @@ export function createTaskLifecycle({ createId, now, hash }) {
     return { task, queued: true };
   }
 
+  function promoteBudgetWaiting(tasks, id, work) {
+    const task = tasks.find(item => item.id === id);
+    if (!task || task.kind !== "recordCompression"
+      || task.status !== WAITING_FOR_BUDGET_STATUS) return { missing: true };
+    if (!taskInputMatches(task, work)) return { task, stale: true };
+    task.status = "queued";
+    task.updatedAt = now();
+    task.error = "";
+    task.errorCode = "";
+    work.markQueued?.(task);
+    return { task, queued: true };
+  }
+
   function complete(task, status, {
     resultId = task.resultId || "",
     error = "",
@@ -373,6 +418,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
     },
     complete,
     promoteWaiting,
+    promoteBudgetWaiting,
     waitForUserModel(tasks, id) {
       const task = tasks.find(item => item.id === id);
       if (!task || task.status !== "queued") return null;

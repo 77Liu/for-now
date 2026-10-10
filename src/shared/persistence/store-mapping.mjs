@@ -6,7 +6,7 @@ const COLLECTIONS = {
   checkins: "checkin", dailyRecords: "dailyRecord", captures: "capture",
   journals: "journal", thoughts: "thought", chats: "chat", books: "book",
   keepsakes: "keepsake", quotes: "quote", experiments: "experiment",
-  analyses: "analysis", customMetrics: "customMetric", trash: "trash",
+  analyses: "analysis", recordCompressions: "recordCompression", customMetrics: "customMetric", trash: "trash",
   attachmentCleanup: "attachmentCleanup", aiTasks: "aiTask", notifications: "notification",
   actions: "action", habits: "habit", habitCheckins: "habitCheckin",
   feedback: "feedback", validationLedger: "validationLedger",
@@ -14,7 +14,7 @@ const COLLECTIONS = {
   evidenceSources: "evidenceSource", evidencePermissions: "evidencePermission",
   perceptionEvents: "perceptionEvent"
 };
-const SINGLETONS = new Set(["journalDraft", "onboarding", "onboardingV2", "commercialization"]);
+const SINGLETONS = new Set(["journalDraft", "onboarding", "onboardingV2", "commercialization", "historicalUserSupplement"]);
 const ANNOTATED = ["annotations", "annotationDrift"];
 const CHILDREN = {
   thought: ["remarks", "followUps", ...ANNOTATED],

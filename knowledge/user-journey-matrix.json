@@ -399,6 +399,8 @@
       "assertions": ["等待期间保留任务意图", "等待期间不编译回答上下文或调用回答模型", "核心生成任务优先且不形成自等待", "就绪后使用当前账户、当前问题和最新有效模型版本", "过期、撤权或取消任务不继续执行", "重启后等待任务可恢复"],
       "evidence": [
         {"script": "scripts/personalized-ai-model-gate-regression.mjs", "anchor": "个性化 AI 冷启回归通过"},
+        {"script": "scripts/journal-chat-core-context-regression.mjs", "anchor": "P00 core-only prefix, stale core/source refusal, atomic saves, and buffered SSE checks passed"},
+        {"script": "scripts/thought-workflows-p00-regression.mjs", "anchor": "core-only prompt prefix, verified citations, and revoked or stale-context output suppression"},
         {"script": "scripts/background-ai-model-gate-regression.mjs", "anchor": "restart-safe waiting"},
         {"script": "scripts/personalized-ai-task-ui-regression.mjs", "anchor": "Personalized AI task UI checks passed"},
         {"script": "scripts/personalized-ai-permission-revocation-regression.mjs", "anchor": "三个场景均在 provider 运行期间撤权后 stale"},
@@ -409,6 +411,24 @@
         {"script": "scripts/user-model-extraction-regression.mjs", "anchor": "assert.equal(created.task.status, \"queued\");"},
         {"script": "scripts/user-model-extraction-regression.mjs", "anchor": "User model extraction checks passed"},
         {"script": "scripts/user-model-api-regression.mjs", "anchor": "User model API checks passed"}
+      ]
+    },
+    {
+      "id": "daily-record-compression-seven-day-trend",
+      "title": "日记录压缩与七天趋势的来源、预算和回答边界",
+      "role": "已积累个人记录的用户",
+      "goal": "按账户本地日期压缩获准记录，生成可追溯的七天趋势，并在个性化回答中核验引用",
+      "risk": "critical",
+      "tier": "daily",
+      "status": "partial",
+      "normalPath": ["产生获准记录", "由调度登记有界压缩任务", "查看日摘要与完整性", "在回答中使用当前合法趋势并核对来源"],
+      "failureAndRecovery": ["空输入不创建任务", "预算耗尽时有界等待并可重启恢复", "撤权或来源变化使任务失效", "来源变化不沿用旧摘要", "AI参考与用户事实分离"],
+      "assertions": ["日界线采用账户时区且调度时区固定", "统计不合并数值相同但身份不同的独立测量", "重复导入仅按持久来源身份去重", "限额等待恢复后再次检查来源、权限和预算", "回答引用只校验模型实际收到的原文，且不会给AI参考分配用户引用", "日记辅助不使用没有引用契约的趋势", "聊天与复盘界面展示已验证的引用", "生产扫描默认关闭"],
+      "evidence": [
+        {"script": "scripts/record-compression-input-regression.mjs", "anchor": "Record compression input regression passed"},
+        {"script": "scripts/record-compression-budget-wait-regression.mjs", "anchor": "durable budget-wait, recovery, bounds and diagnostics regression passed"},
+        {"script": "scripts/record-compression-answer-citation-regression.mjs", "anchor": "answer citations are verified, AI-reference IDs are excluded, and plain-text journal assistance receives no trend"},
+        {"script": "scripts/record-compression-service-regression.mjs", "anchor": "stale-input fence and seven-day trend integration regression passed"}
       ]
     },
     {

@@ -1,5 +1,14 @@
-import { taskInputMatches, publicAiTask, WAITING_FOR_USER_MODEL_STATUS } from "../modules/tasks/index.mjs";
+import {
+  taskInputMatches,
+  publicAiTask,
+  WAITING_FOR_BUDGET_STATUS,
+  WAITING_FOR_USER_MODEL_STATUS
+} from "../modules/tasks/index.mjs";
 import { notificationUnread } from "../modules/notifications/index.mjs";
+import {
+  RECORD_COMPRESSION_MAX_BUDGET_WAITING_TASKS_PER_ACCOUNT,
+  RECORD_COMPRESSION_TASK_KIND
+} from "../modules/record-compressions/index.mjs";
 import { compactPersonalContextReceipt } from "./personal-context.mjs";
 
 const INTERNAL_RECOVERY_LIMIT = 2;
@@ -12,11 +21,13 @@ export function createBackgroundAi({
   generate,
   dispatch,
   contextKey,
+  now = () => new Date().toISOString(),
   onError,
   shouldWaitForModel = () => false,
   inspectIntent = targets?.inspectIntent
 }) {
-  const internalKinds = new Set(["perceptionExtraction"]);
+  const internalKinds = new Set(["perceptionExtraction", RECORD_COMPRESSION_TASK_KIND]);
+  const isInternalTask = task => task?.internal === true || internalKinds.has(task?.kind);
   const taskHandlers = new Map();
   const running = new Set();
   const controllers = new Map();
@@ -37,6 +48,12 @@ export function createBackgroundAi({
     }
     return created;
   };
+  const visibleNotifications = store => {
+    const internalTaskIds = new Set((store.aiTasks || [])
+      .filter(isInternalTask)
+      .map(task => task.id));
+    return (store.notifications || []).filter(item => !internalTaskIds.has(item.taskId));
+  };
   const inspectRequestedIntent = (store, input) => {
     const inspector = taskHandlers.get(input?.kind)?.inspectIntent || inspectIntent;
     if (typeof inspector !== "function") return null;
@@ -45,6 +62,13 @@ export function createBackgroundAi({
   };
   const targetFor = task => taskHandlers.get(task?.kind) || targets;
   const prepareTarget = (store, task) => targetFor(task).prepare(store, task);
+  const taskInputsCurrent = (store, task) => {
+    try {
+      return taskInputMatches(task, prepareTarget(store, task));
+    } catch {
+      return false;
+    }
+  };
   const requestedIntentMatches = (task, intent) => {
     const hasIntent = Object.hasOwn(task, "requestedIntentInputVersion")
       || Object.hasOwn(task, "requestedIntentSubtargetVersion")
@@ -66,7 +90,15 @@ export function createBackgroundAi({
       && String(intent.inputHash ?? "") !== task.requestedIntentInputHash) return false;
     return true;
   };
-  const createInStore = (store, input = {}) => {
+  const createInStore = (store, input = {}, { waitingBudget = false } = {}) => {
+    if (waitingBudget) {
+      const existing = store.aiTasks.find(task => task.clientRequestId === input?.clientRequestId);
+      const pending = store.aiTasks.filter(task => task.kind === RECORD_COMPRESSION_TASK_KIND
+        && task.status === WAITING_FOR_BUDGET_STATUS).length;
+      if (!existing && pending >= RECORD_COMPRESSION_MAX_BUDGET_WAITING_TASKS_PER_ACCOUNT) {
+        return { budgetQueueFull: true };
+      }
+    }
     const waiting = Boolean(shouldWaitForModel(store, input));
     const requestedIntent = waiting ? inspectRequestedIntent(store, input) : null;
     if (waiting && !requestedIntent) return { missing: true };
@@ -74,11 +106,12 @@ export function createBackgroundAi({
       store.aiTasks,
       input,
       task => prepareTarget(store, task),
-      { deferTargetInspection: waiting, requestedIntent }
+      { deferTargetInspection: waiting, requestedIntent, waitingBudget }
     ));
   };
   const schedule = taskId => dispatch(() => void run(taskId).catch(error => onError(taskId, error)));
   const stale = (store, task, message) => {
+    targetFor(task).stale?.(store, task);
     tasks.complete(task, "stale", {
       error: "目标已修改或删除",
       errorCode: "AI_TASK_STALE"
@@ -86,6 +119,7 @@ export function createBackgroundAi({
     notify(store, task, "stale", message);
   };
   const cancelled = (store, task) => {
+    targetFor(task).stale?.(store, task);
     tasks.complete(task, "cancelled", {
       error: "目标已删除，生成结果未写入",
       errorCode: "AI_TASK_CANCELLED"
@@ -181,7 +215,9 @@ export function createBackgroundAi({
         const task = store.aiTasks.find(item => item.id === taskId);
         if (!task) return;
         if (["cancelled", "cancelling"].includes(task.status)) cancelled(store, task);
-        else if (error?.code === "AI_TASK_STALE") {
+        else if (error?.code === "AI_TASK_STALE"
+          || (error?.code === "AI_TASK_CANCELLED"
+            && !taskInputsCurrent(store, task))) {
           stale(store, task, "目标已变化，未调用外部模型");
         }
         else {
@@ -202,7 +238,10 @@ export function createBackgroundAi({
   async function retryTask(id, { includeInternal = false } = {}) {
     const created = await repository.update(store => {
       const source = store.aiTasks.find(item => item.id === id);
-      if (source?.internal === true && !includeInternal) return { missing: true };
+      if (isInternalTask(source)
+        && (!includeInternal || source.kind === RECORD_COMPRESSION_TASK_KIND)) {
+        return { missing: true };
+      }
       const retryInput = source && {
         kind: source.kind,
         resourceType: source.resourceType,
@@ -226,6 +265,84 @@ export function createBackgroundAi({
     return created;
   }
 
+  async function enqueueTask(input, { internal = false, waitingBudget = false } = {}) {
+    const kind = String(input?.kind ?? "").trim();
+    if (internal ? kind !== RECORD_COMPRESSION_TASK_KIND : internalKinds.has(kind)) {
+      return { unsupported: true };
+    }
+    if (waitingBudget && (!internal || kind !== RECORD_COMPRESSION_TASK_KIND)) {
+      return { unsupported: true };
+    }
+    const idempotency = tasks.idempotency?.(input);
+    let created;
+    if (idempotency && typeof repository.executeIdempotent === "function") {
+      try {
+        created = await repository.executeIdempotent(
+          idempotency,
+          store => {
+            const result = createInStore(store, input, { waitingBudget });
+            if (!result.task) throw Object.assign(new Error("AI task was not created"), { taskResult: result });
+            return result;
+          },
+          { onReplay: result => ({ ...result, duplicate: true }) }
+        );
+      } catch (error) {
+        if (error.taskResult) created = error.taskResult;
+        else if (error.code === "IDEMPOTENCY_KEY_REUSED") created = { conflict: true };
+        else throw error;
+      }
+    } else {
+      created = await repository.update(store => createInStore(store, input, { waitingBudget }));
+    }
+    if (!created.duplicate && created.task?.status === "queued") schedule(created.task.id);
+    return created;
+  }
+
+  async function promoteInternalBudgetWaiting(limit = 0, { operation = "", localDate = "" } = {}) {
+    const promotionLimit = Number(limit) === Number.POSITIVE_INFINITY
+      ? Number.POSITIVE_INFINITY
+      : Number.isFinite(Number(limit))
+      ? Math.max(0, Math.floor(Number(limit)))
+      : 0;
+    const result = await repository.update(store => {
+      const scheduled = [];
+      let invalidatedCount = 0;
+      const waiting = store.aiTasks
+        .filter(task => task.kind === RECORD_COMPRESSION_TASK_KIND
+          && task.status === WAITING_FOR_BUDGET_STATUS
+          && (!operation || task.payload?.operation === operation)
+          && (!localDate || task.payload?.localDate === localDate))
+        .sort((left, right) => (
+          String(left.payload?.localDate || left.payload?.windowStart || "")
+            .localeCompare(String(right.payload?.localDate || right.payload?.windowStart || ""))
+          || String(left.payload?.windowStart || "").localeCompare(String(right.payload?.windowStart || ""))
+          || String(left.createdAt).localeCompare(String(right.createdAt))
+        ));
+      for (const task of waiting) {
+        const work = prepareTarget(store, task);
+        if (!taskInputMatches(task, work)) {
+          stale(store, task, "预算等待期间来源或权限已变化，等待任务已失效");
+          invalidatedCount += 1;
+          continue;
+        }
+        if (scheduled.length >= promotionLimit) continue;
+        const promoted = tasks.promoteBudgetWaiting(store.aiTasks, task.id, work);
+        if (promoted.queued) {
+          notify(store, task, "queued", "预算已恢复，任务已重新校验并进入后台队列");
+          scheduled.push(task.id);
+        }
+      }
+      return {
+        taskIds: scheduled,
+        invalidatedCount,
+        waitingBudgetCount: store.aiTasks.filter(task => task.kind === RECORD_COMPRESSION_TASK_KIND
+          && task.status === WAITING_FOR_BUDGET_STATUS).length
+      };
+    });
+    for (const id of result.taskIds) schedule(id);
+    return { ...result, queuedCount: result.taskIds.length };
+  }
+
   async function releaseWaiting() {
     const scheduledIds = await repository.update(store => {
       const scheduled = [];
@@ -237,13 +354,20 @@ export function createBackgroundAi({
           continue;
         }
         if (shouldWaitForModel(store, task)) continue;
+        // Every task in this branch was held behind the core-model gate. Fix a
+        // single context timestamp at release so date-sensitive trend windows
+        // do not drift between promotion, retry, and the eventual save check.
+        task.contextGeneratedAt = now();
         const work = prepareTarget(store, task);
         const promoted = tasks.promoteWaiting(store.aiTasks, task.id, work, intent);
         if (promoted.queued) {
           notify(store, task, "queued", "核心用户模型已就绪，任务已进入后台队列");
           scheduled.push(task.id);
         } else if (promoted.stale) {
+          delete task.contextGeneratedAt;
           notify(store, task, "stale", task.error);
+        } else {
+          delete task.contextGeneratedAt;
         }
       }
       return scheduled;
@@ -275,6 +399,7 @@ export function createBackgroundAi({
       const value = await repository.update(store => {
         const task = store.aiTasks.find(item => item.id === taskId);
         if (!task || !["queued", "running", WAITING_FOR_USER_MODEL_STATUS].includes(task.status)) return null;
+        targetFor(task).stale?.(store, task);
         tasks.complete(task, "cancelled", { error: "用户取消了本次生成" });
         notify(store, task, "cancelled", task.error);
         return publicAiTask(task);
@@ -283,34 +408,10 @@ export function createBackgroundAi({
       controller?.abort();
       return value;
     },
-    async enqueue(input) {
-      if (internalKinds.has(String(input?.kind ?? "").trim())) {
-        return { unsupported: true };
-      }
-      const idempotency = tasks.idempotency?.(input);
-      let created;
-      if (idempotency && typeof repository.executeIdempotent === "function") {
-        try {
-          created = await repository.executeIdempotent(
-            idempotency,
-            store => {
-              const result = createInStore(store, input);
-              if (!result.task) throw Object.assign(new Error("AI task was not created"), { taskResult: result });
-              return result;
-            },
-            { onReplay: result => ({ ...result, duplicate: true }) }
-          );
-        } catch (error) {
-          if (error.taskResult) created = error.taskResult;
-          else if (error.code === "IDEMPOTENCY_KEY_REUSED") created = { conflict: true };
-          else throw error;
-        }
-      } else {
-        created = await repository.update(store => createInStore(store, input));
-      }
-      if (!created.duplicate && created.task?.status === "queued") schedule(created.task.id);
-      return created;
-    },
+    enqueue: input => enqueueTask(input),
+    enqueueInternal: input => enqueueTask(input, { internal: true }),
+    enqueueBudgetWaiting: input => enqueueTask(input, { internal: true, waitingBudget: true }),
+    promoteInternalBudgetWaiting,
     retry: id => retryTask(id),
     retryInternal: id => retryTask(id, { includeInternal: true }),
     async resume() {
@@ -321,7 +422,9 @@ export function createBackgroundAi({
           targetFor(task).fail?.(store, task, { code: "TASK_INTERRUPTED" });
           notify(store, task, "failed", task.error);
           const recoveryAttempt = Math.max(0, Math.round(Number(task.recoveryAttempt) || 0));
-          if (task.internal === true && recoveryAttempt < INTERNAL_RECOVERY_LIMIT) {
+          if (isInternalTask(task)
+            && task.kind !== RECORD_COMPRESSION_TASK_KIND
+            && recoveryAttempt < INTERNAL_RECOVERY_LIMIT) {
             const retry = notifyCreated(
               store,
               tasks.retry(
@@ -345,29 +448,34 @@ export function createBackgroundAi({
     async list() {
       return {
         items: (await repository.read()).aiTasks
-          .filter(task => task.internal !== true)
+          .filter(task => !isInternalTask(task))
           .map(publicAiTask)
       };
     },
     async get(id) {
       const task = (await repository.read()).aiTasks.find(item => item.id === id);
-      return task && task.internal !== true ? publicAiTask(task) : null;
+      return task && !isInternalTask(task) ? publicAiTask(task) : null;
     },
     async getResult(id) {
       const store = await repository.read();
       const task = store.aiTasks.find(item => item.id === id);
-      if (!task || task.internal === true) return null;
+      if (!task || isInternalTask(task)) return null;
       return { task: publicAiTask(task), result: task.status === "succeeded" ? targetFor(task).result(store, task) : null };
     },
     async listNotifications() {
-      const { notifications: items } = await repository.read();
+      const store = await repository.read();
+      const items = visibleNotifications(store);
       return { unread: notificationUnread(items), items };
     },
     readNotification(id) {
-      return repository.update(store => notifications.read(store.notifications, id));
+      return repository.update(store => {
+        const item = (store.notifications || []).find(value => value.id === id);
+        if (!item || visibleNotifications(store).every(value => value.id !== id)) return null;
+        return notifications.read(store.notifications, id);
+      });
     },
     readAllNotifications() {
-      return repository.update(store => notifications.readAll(store.notifications));
+      return repository.update(store => notifications.readAll(visibleNotifications(store)));
     }
   };
 }

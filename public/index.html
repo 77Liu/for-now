@@ -1269,6 +1269,22 @@
           <button class="primary-button" type="submit">修改用户名</button>
           <p class="status" id="username-status" role="status" aria-live="polite"></p>
         </form>
+        <form class="card account-form" id="record-timezone-form">
+          <div class="settings-heading"><div><h2>记录时区</h2><p>用于确定记录日期和每日趋势窗口。</p></div></div>
+          <label class="field"><span>账户记录时区</span><input id="account-record-timezone" name="timezone" type="text" list="record-timezone-suggestions" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="100" aria-describedby="record-timezone-help" required></label>
+          <datalist id="record-timezone-suggestions">
+            <option value="Asia/Shanghai"></option>
+            <option value="UTC"></option>
+            <option value="America/Los_Angeles"></option>
+            <option value="America/New_York"></option>
+            <option value="Europe/London"></option>
+            <option value="Europe/Paris"></option>
+            <option value="Asia/Tokyo"></option>
+          </datalist>
+          <p class="account-rule" id="record-timezone-help">输入有效的 IANA 时区，例如 Asia/Shanghai 或 America/Los_Angeles。</p>
+          <button class="primary-button" type="submit">保存记录时区</button>
+          <p class="status" id="record-timezone-status" role="status" aria-live="polite"></p>
+        </form>
         <form class="card account-form" id="password-form">
           <div class="settings-heading"><div><h2>密码</h2><p>修改密码前需验证当前密码。</p></div></div>
           <label class="field"><span>当前密码</span><input name="currentPassword" type="password" autocomplete="current-password" maxlength="128" required></label>
@@ -1404,6 +1420,7 @@
             <label><span>健康截图识别</span><select data-ai-scenario="healthRecognition" aria-label="场景档位：健康截图识别"></select></label>
             <label><span>内容图片理解</span><select data-ai-scenario="contentImageUnderstanding" aria-label="场景档位：内容图片理解"></select></label>
             <label><span>语音整理</span><select data-ai-scenario="capturePolish" aria-label="场景档位：语音整理"></select></label>
+            <label><span>日记录压缩</span><select data-ai-scenario="recordCompression" aria-label="场景档位：日记录压缩"></select></label>
           </div>
         </section>
         <label class="field" data-owner-capability="ai-configuration"><span>API 密钥 <i id="llm-key-hint">仅保存在本机</i></span><input id="llm-api-key" type="password" autocomplete="new-password" placeholder="sk-…（留空则保留已保存的密钥）"></label>

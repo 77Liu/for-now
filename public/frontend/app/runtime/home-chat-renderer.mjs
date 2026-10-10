@@ -18,7 +18,7 @@ export function createHomeChatRenderer({
     history.innerHTML = chats.length
       ? [...chats].reverse().map(item =>
         `<div class="chat-message user" data-chat-id="${item.id}" data-chat-part="message"><div class="markdown-content">${renderMarkdown(item.message)}</div></div>`
-          + `<div class="chat-message agent" data-chat-id="${item.id}" data-chat-part="answer">${contextReceiptMarkup(item.contextReceipt)}<div class="markdown-content">${renderMarkdown(item.answer)}</div><button class="subtle-action danger chat-delete" type="button" data-chat-delete="${item.id}">删除对话</button></div>`
+          + `<div class="chat-message agent" data-chat-id="${item.id}" data-chat-part="answer">${contextReceiptMarkup(item.contextReceipt, item.citations, item.citationStatus)}<div class="markdown-content">${renderMarkdown(item.answer)}</div><button class="subtle-action danger chat-delete" type="button" data-chat-delete="${item.id}">删除对话</button></div>`
       ).join("")
       : contentState({
         title: "这一天还没有对话",

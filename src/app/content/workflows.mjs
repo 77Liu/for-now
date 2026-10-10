@@ -25,6 +25,7 @@ export function createContentWorkflows({
   getAccountId,
   materializeAttachmentFiles,
   workflowContextKey,
+  getRecentTrend = () => null,
   now,
   today,
   currentTime,
@@ -47,6 +48,7 @@ export function createContentWorkflows({
     publicTask: publicAiTask,
     coreModelReadiness: userModelCoreReadiness,
     getAccountId,
+    getRecentTrend,
     materializeAttachmentFiles,
     contextKey: workflowContextKey,
     now
@@ -59,6 +61,8 @@ export function createContentWorkflows({
     hash,
     createId,
     coreModelReadiness: userModelCoreReadiness,
+    getRecentTrend,
+    currentTime,
     contextKey: workflowContextKey,
     today
   });
@@ -72,6 +76,7 @@ export function createContentWorkflows({
     coreModelReadiness: userModelCoreReadiness,
     contextKey: workflowContextKey,
     getAccountId,
+    getRecentTrend,
     currentTime,
     createId
   });

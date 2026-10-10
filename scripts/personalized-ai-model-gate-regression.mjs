@@ -5,7 +5,9 @@ import {
   createBackgroundAi,
   createThoughtWorkflows,
   createCaptureJournalWorkflows,
-  createReviewChatWorkflows
+  createReviewChatWorkflows,
+  prepareUserModelExtraction,
+  userModelCoreReadiness
 } from "../src/app/index.mjs";
 import {
   createThoughtHttp,
@@ -15,11 +17,12 @@ import {
   sendPersonalizedTaskV1
 } from "../src/http/index.mjs";
 import { createTaskLifecycle, WAITING_FOR_USER_MODEL_STATUS } from "../src/modules/tasks/index.mjs";
+import { defaultOnboardingV2, normalizeOnboardingV2 } from "../src/modules/onboarding/index.mjs";
 import { eventTimeFields } from "../src/shared/time/index.mjs";
 
 const hash = value => crypto.createHash("sha256").update(String(value)).digest("hex");
-let ready = false;
-const readiness = () => ({ ready, reason: ready ? "ready" : "model_generation_pending" });
+let store;
+const readiness = () => userModelCoreReadiness(store);
 let nextId = 0;
 const createId = () => `generated-${++nextId}`;
 const eventTime = eventTimeFields({ occurredAt: "2026-10-09T02:00:00.000Z" });
@@ -41,7 +44,8 @@ const generate = async work => {
   return { content: "不应在冷启时生成", reasoningContent: "" };
 };
 const backgroundOperations = [];
-const store = {
+store = {
+  onboardingV2: normalizeOnboardingV2({ migration: { selectedFlow: "v2" } }, defaultOnboardingV2),
   chats: [],
   journals: [{
     id: "journal-1",
@@ -379,7 +383,44 @@ assert.equal(oversized.body.code, "AI_TASK_INTENT_TOO_LARGE");
 const reflectionTask = store.aiTasks.find(task => task.kind === "journalReflection");
 store.journals[0].version = 2;
 store.journals[0].updatedAt = "2026-10-10T00:00:00.000Z";
-ready = true;
+store.onboardingV2 = normalizeOnboardingV2({
+  session: {
+    id: "onboarding-v2",
+    status: "completed",
+    step: "firstAction",
+    revision: 8,
+    answers: {
+      currentContext: { rawText: "正在适应新的工作节奏", contextAllowed: true, version: 2 },
+      desiredChanges: { structuredValue: [{ text: "建立稳定的运动习惯", horizon: "3m" }], contextAllowed: true, version: 1 },
+      recentObstacles: { structuredValue: [{ text: "容易被临时任务打断" }], contextAllowed: true, version: 1 },
+      dailyRhythm: { rawText: "通常在晚上做复盘", contextAllowed: true, version: 1 }
+    },
+    collaboration: {
+      responseLength: { value: "concise", source: "user" },
+      suggestionMode: { value: "reasonFirst", source: "user" },
+      challengeStyle: { value: "direct", source: "user" },
+      additionalBoundary: "",
+      contextAllowed: true,
+      answerVersion: 1
+    },
+    completedAt: "2026-10-10T00:00:00.000Z",
+    updatedAt: "2026-10-10T00:00:00.000Z"
+  },
+  migration: { selectedFlow: "v2" }
+}, defaultOnboardingV2);
+const extraction = prepareUserModelExtraction(store, {
+  sourceRevision: store.onboardingV2.session.revision
+});
+assert.ok(extraction.value, "ready transition must have a complete, permitted core-model extraction input");
+store.aiTasks.push({
+  id: "core-model-extraction",
+  kind: "onboardingClaimExtraction",
+  status: "succeeded",
+  targetId: "onboarding-v2",
+  inputVersion: store.onboardingV2.session.revision,
+  inputHash: extraction.value.inputHash
+});
+assert.equal(readiness().ready, true, "gate release requires a real ready-model fixture");
 await backgroundAi.releaseWaiting();
 assert.equal(reflectionTask.status, "stale", "a journal edited during the wait must not receive a stale reflection");
 assert.equal(store.aiTasks.filter(task => task.kind === "journalReflection" && task.status === "stale").length, 1);

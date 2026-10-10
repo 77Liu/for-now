@@ -197,13 +197,16 @@ const journals = createJournalRecords({
 });
 
 const generationCalls = [];
+const formatGeneratedAnswer = (content, options) => options?.json === true
+  ? JSON.stringify({ answer: content, citations: [] })
+  : content;
 const generate = async (prompt, options) => {
   assert.equal(activeWriteTransactions, 0, "model generation must not run inside a repository write transaction");
   ledgerEvents.push({ type: "generate", scene: options.scene });
   generationCalls.push({ prompt, options });
   options.onDelta?.({ type: "delta", content: "增量" });
   return options.scene === "diaryReflection"
-    ? { content: "回望正文", reasoningContent: "模型思考" }
+    ? { content: formatGeneratedAnswer("回望正文", options), reasoningContent: "模型思考" }
     : { content: "第一行\n\n第二行", reasoningContent: "" };
 };
 const workflows = createCaptureJournalWorkflows({
@@ -897,9 +900,12 @@ let fallbackGenerationCalls = 0;
 const fallbackWorkflows = createCaptureJournalWorkflows({
   repository: { read: async () => structuredClone(fallbackStore) },
   journals: fallbackJournals,
-  generate: async () => {
+  generate: async (_prompt, options) => {
     fallbackGenerationCalls += 1;
-    return { content: "兼容路径回望", reasoningContent: "" };
+    return {
+      content: formatGeneratedAnswer("兼容路径回望", options),
+      reasoningContent: ""
+    };
   },
   hash: value => crypto.createHash("sha256").update(value).digest("hex")
 });

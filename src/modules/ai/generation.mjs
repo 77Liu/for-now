@@ -26,6 +26,7 @@ export function createAiGenerator({
   getContext,
   reserveAttempt,
   gate,
+  sceneGates = {},
   audit,
   executeBudgetTask = withoutSiteBudget,
   now = () => new Date().toISOString(),
@@ -46,6 +47,7 @@ export function createAiGenerator({
     retryWithoutThinking = scene === "thoughtAnswer",
     timeoutMs = 300000,
     signal = null,
+    isCurrent = async () => true,
     auditPrompt = true,
     budgetExecution = null,
     budgetStageIds = null
@@ -105,9 +107,16 @@ export function createAiGenerator({
             },
             commit: typeof commitQuota === "function" ? () => commitQuota() : () => {}
           };
-          let releaseCapacity, providerStarted = false;
+          let releaseSceneCapacity, releaseCapacity, providerStarted = false;
           try {
+            const sceneGate = sceneGates?.[scene];
+            if (sceneGate?.acquire) releaseSceneCapacity = await sceneGate.acquire();
             releaseCapacity = await gate.acquire();
+            if (typeof isCurrent === "function" && !(await isCurrent())) {
+              throw Object.assign(new Error("AI task inputs changed while waiting for provider capacity"), {
+                code: "AI_TASK_STALE"
+              });
+            }
             const effort = efforts[attempt], createdAt = now(), startedMs = Date.now();
             const callId = createId();
             const parameters = {
@@ -204,6 +213,7 @@ export function createAiGenerator({
             }
           } finally {
             releaseCapacity?.();
+            releaseSceneCapacity?.();
             if (!providerStarted) releaseQuota?.();
           }
         }

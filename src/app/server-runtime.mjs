@@ -60,6 +60,7 @@ export function createServerRuntime({
         localTestRuntime: access.localTestRuntime,
         readAuth: access.readAuth,
         runPeriodicAnalyses: wiring.runPeriodicAnalyses,
+        runRecordCompressionScheduler: wiring.runRecordCompressionScheduler,
         runSpeechCacheSweep: wiring.runSpeechCacheSweep,
         observability: foundation.observability,
         postgresRuntime: foundation.persistence.postgresRuntime,

@@ -1,5 +1,24 @@
 import path from "node:path";
 
+export const RECORD_COMPRESSION_ACCOUNT_DAILY_INVOCATION_LIMIT = 2;
+
+export function recordCompressionAccountQueueAllowance({
+  dailyLimit = RECORD_COMPRESSION_ACCOUNT_DAILY_INVOCATION_LIMIT,
+  knownCalls = 0,
+  reservedCalls = 0
+} = {}) {
+  if (!Number.isSafeInteger(dailyLimit) || dailyLimit < 1) return 0;
+  const normalizedCalls = value => Number.isFinite(value)
+    ? Math.max(0, Math.floor(value))
+    : dailyLimit;
+  return Math.max(0, dailyLimit - normalizedCalls(knownCalls) - normalizedCalls(reservedCalls));
+}
+
+export function recordCompressionSlotQueueAllowance(slot, availableCalls) {
+  if (!Number.isSafeInteger(availableCalls) || availableCalls < 0) return 0;
+  return slot === "morning" ? Math.max(0, availableCalls - 1) : availableCalls;
+}
+
 export function loadAttachmentConfig(env = process.env) {
   return Object.freeze({
     mode: env.ATTACHMENT_STORAGE || "local",
@@ -50,6 +69,21 @@ export function loadAppConfig({ rootDir, env = process.env }) {
   const canonicalProduction = env.NODE_ENV === "production" && !localTestMode && !upstreamOrigin;
   const speechCacheSweepEnabled = canonicalProduction
     && String(env.SPEECH_CACHE_SWEEP_ENABLED ?? "1").trim() !== "0";
+  const recordCompressionDailyBudgetCny = Number(env.RECORD_COMPRESSION_DAILY_BUDGET_CNY);
+  const recordCompressionPerCallBudgetCny = Number(env.RECORD_COMPRESSION_PER_CALL_BUDGET_CNY);
+  const invocationLimitText = String(env.RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT ?? "").trim();
+  const configuredInvocationLimit = Number(invocationLimitText);
+  const recordCompressionEnabled = env.RECORD_COMPRESSION_ENABLED === "1"
+    && canonicalProduction
+    && !localTestMode
+    && Number.isFinite(recordCompressionDailyBudgetCny)
+    && recordCompressionDailyBudgetCny > 0
+    && Number.isFinite(recordCompressionPerCallBudgetCny)
+    && recordCompressionPerCallBudgetCny > 0
+    && recordCompressionPerCallBudgetCny <= recordCompressionDailyBudgetCny
+    && /^[1-9]\d*$/.test(invocationLimitText)
+    && Number.isSafeInteger(configuredInvocationLimit);
+  const configuredBackfillDates = Number(env.RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN);
   const platformServiceTokenHash = String(env.PLATFORM_SERVICE_TOKEN_HASH || "").toLowerCase();
   if (platformServiceTokenHash && !/^[a-f0-9]{64}$/.test(platformServiceTokenHash)) {
     throw new Error("PLATFORM_SERVICE_TOKEN_HASH must be a 64-character SHA-256 digest");
@@ -84,6 +118,15 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     localTestResetOnStart: localTestMode && env.LOCAL_TEST_RESET_ON_START === "1",
     testCurrentDate,
     periodicAnalysisEnabled: env.PERIODIC_ANALYSIS_ENABLED === "1",
+    recordCompressionEnabled,
+    recordCompressionDailyBudgetCny: recordCompressionEnabled ? recordCompressionDailyBudgetCny : 0,
+    recordCompressionPerCallBudgetCny: recordCompressionEnabled ? recordCompressionPerCallBudgetCny : 0,
+    recordCompressionDailyInvocationLimit: recordCompressionEnabled ? configuredInvocationLimit : 0,
+    recordCompressionAccountDailyInvocationLimit: RECORD_COMPRESSION_ACCOUNT_DAILY_INVOCATION_LIMIT,
+    recordCompressionMaxBackfillDatesPerScan: Math.max(
+      0,
+      Math.min(2, Math.floor(Number.isFinite(configuredBackfillDates) ? configuredBackfillDates : 1))
+    ),
     speechCacheSweepEnabled,
     runtimeMemorySampleIntervalMs: Math.max(50, Math.min(3_600_000, Number(env.RUNTIME_MEMORY_SAMPLE_INTERVAL_MS) || 60_000)),
     deepSeekApiUrl: env.DEEPSEEK_API_URL || "https://api.deepseek.com/chat/completions",

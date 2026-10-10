@@ -8,6 +8,7 @@ import { createActionsService } from "../modules/actions/index.mjs";
 import { createThoughtDiscoveryService } from "../modules/discovery/index.mjs";
 import { createFeedbackService } from "../modules/feedback/index.mjs";
 import { isOwner } from "../modules/auth/index.mjs";
+import { DEFAULT_RECORD_TIMEZONE } from "../modules/record-compressions/index.mjs";
 import { installPromptCatalog } from "../shared/prompts/index.mjs";
 import {
   createJsonStoreRepository,
@@ -56,7 +57,7 @@ export async function createRuntimeFoundation({
   installPromptCatalog(await loadPromptCatalog({
     rootDir,
     requestedVersion: appConfig.promptCatalogVersion,
-    requiredCapabilities: ["structuredWorkingContext", "verifiedAnswerCitations"]
+    requiredCapabilities: ["structuredWorkingContext", "verifiedAnswerCitations", "sevenDayTrendContext"]
   }));
 
   const {
@@ -227,6 +228,7 @@ export async function createRuntimeFoundation({
     aiConcurrency,
     userDailyCallLimit: aiDailyCalls,
     userDailyCostLimitCny: aiDailyCostCny,
+    recordCompressionPerCallBudgetCny: appConfig.recordCompressionPerCallBudgetCny,
     cnyPerUsd: usdCny,
     auditTextLimit: aiAuditTextLimit,
     auditRetentionDays: aiAuditRetentionDays,
@@ -271,6 +273,7 @@ export async function createRuntimeFoundation({
     repository: storeRepository,
     trashRetentionDays: TRASH_RETENTION_DAYS,
     getAccountId: () => requestStorage.getStore()?.user?.id || "local",
+    getTimezone: () => requestStorage.getStore()?.user?.recordTimezone || DEFAULT_RECORD_TIMEZONE,
     getCursorScope: () => safeText(requestStorage.getStore()?.user?.id, 100) || "local",
     backgroundContextKey: () => requestStorage.getStore()?.dataDir || dataDir,
     workflowContextKey: () => storagePaths().storeFile,
@@ -279,6 +282,10 @@ export async function createRuntimeFoundation({
       setImmediate(() => requestStorage.run(context, callback));
     },
     runDeepSeek: aiRuntime.runDeepSeek,
+    readAiUsage: aiRuntime.readAiUsage,
+    recordCompressionDailyBudgetCny: appConfig.recordCompressionDailyBudgetCny,
+    recordCompressionPerCallBudgetCny: appConfig.recordCompressionPerCallBudgetCny,
+    recordCompressionMaxBackfillDatesPerScan: appConfig.recordCompressionMaxBackfillDatesPerScan,
     now,
     today,
     currentTime: () => Date.now(),

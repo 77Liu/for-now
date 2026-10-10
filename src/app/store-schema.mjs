@@ -2,8 +2,9 @@ import {
   defaultOnboarding,
   defaultOnboardingV2
 } from "../modules/onboarding/index.mjs";
+import { emptyHistoricalUserSupplement } from "../modules/record-compressions/index.mjs";
 
-export const STORE_VERSION = 17;
+export const STORE_VERSION = 18;
 export const TRASH_RETENTION_DAYS = 30;
 export const COMMERCIALIZATION_VERSION = 3;
 
@@ -69,7 +70,7 @@ export const defaultCommercialization = {
 
 export const STORE_COLLECTION_KEYS = [
   "checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books",
-  "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "trash",
+  "keepsakes", "quotes", "experiments", "analyses", "recordCompressions", "customMetrics", "trash",
   "attachmentCleanup", "speechCache", "aiTasks", "notifications", "actions", "habits",
   "habitCheckins", "feedback", "validationLedger", "userClaims", "modelUnknowns",
   "evidenceSources", "evidencePermissions", "perceptionEvents"
@@ -89,6 +90,7 @@ export const emptyStore = {
   quotes: [],
   experiments: [],
   analyses: [],
+  recordCompressions: [],
   customMetrics: [],
   trash: [],
   attachmentCleanup: [],
@@ -105,6 +107,7 @@ export const emptyStore = {
   evidenceSources: [],
   evidencePermissions: [],
   perceptionEvents: [],
+  historicalUserSupplement: emptyHistoricalUserSupplement(),
   onboarding: defaultOnboarding,
   onboardingV2: defaultOnboardingV2,
   commercialization: defaultCommercialization

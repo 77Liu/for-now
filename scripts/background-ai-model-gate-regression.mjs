@@ -29,6 +29,7 @@ const repository = {
 const scheduled = [];
 let prepareCalls = 0;
 const preparedCreatedAt = [];
+const preparedContextGeneratedAt = [];
 let intentChecks = 0;
 let modelCalls = 0;
 let generatedPrompt = "";
@@ -70,6 +71,7 @@ assert.equal(updatedReflection.duplicate, false,
 const background = createBackgroundAi({
   repository,
   tasks: lifecycle,
+  now,
   notifications: {
     upsertTask(items, task, status, message) {
       items.push({ taskId: task.id, status, message });
@@ -90,6 +92,7 @@ const background = createBackgroundAi({
     prepare(current, task) {
       prepareCalls += 1;
       preparedCreatedAt.push(task.createdAt || "");
+      preparedContextGeneratedAt.push(task.contextGeneratedAt || "");
       const version = current.targetVersions[task.targetId];
       if (!version) return null;
       return {
@@ -194,14 +197,21 @@ assert.equal(store.aiTasks.find(task => task.id === freshWaiting.task.id).status
 assert.equal(store.aiTasks.find(task => task.id === changedIntentHash.task.id).status, "stale",
   "initial waiting task target content is pinned independently of version numbers");
 assert.equal(prepareCalls, 0, "restart does not compile context for a still-waiting task");
+tick = 86_400;
 store.coreReady = true;
 assert.equal(await background.releaseWaiting(), 1);
 assert.equal(store.aiTasks.find(task => task.id === freshWaiting.task.id).status, "queued");
+assert.equal(store.aiTasks.find(task => task.id === freshWaiting.task.id).createdAt.slice(0, 10), "2026-10-10");
+assert.equal(store.aiTasks.find(task => task.id === freshWaiting.task.id).contextGeneratedAt.slice(0, 10), "2026-10-11",
+  "a waiting task captures its trend window when readiness is released, including after midnight");
 assert.equal(store.aiTasks.find(task => task.id === freshWaiting.task.id).inputVersion, 2);
 assert.equal(prepareCalls, 1);
+assert.equal(preparedContextGeneratedAt.at(-1), store.aiTasks.find(task => task.id === freshWaiting.task.id).contextGeneratedAt);
 assert.equal(scheduled.length, 1);
 assert.equal(await background.releaseWaiting(), 0);
 assert.equal(scheduled.length, 1, "repeated release does not schedule the same task twice");
+assert.equal(store.aiTasks.find(task => task.id === freshWaiting.task.id).contextGeneratedAt.slice(0, 10), "2026-10-11",
+  "repeated readiness checks preserve the single generated trend snapshot");
 
 await background.run(freshWaiting.task.id);
 assert.equal(modelCalls, 1);

@@ -22,7 +22,8 @@ const TASK_TITLES = Object.freeze({
   journalAssist: "日记辅助",
   journalReflection: "日记回望",
   chat: "共参对话",
-  analysis: "认知复盘"
+  analysis: "认知复盘",
+  recordCompression: "日记录压缩"
 });
 
 const RETRYABLE_STATUSES = new Set(["failed", "stale"]);

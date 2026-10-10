@@ -12,6 +12,7 @@ export function createServerLifecycle({
   localTestRuntime,
   readAuth,
   runPeriodicAnalyses,
+  runRecordCompressionScheduler,
   runSpeechCacheSweep,
   observability,
   postgresRuntime,
@@ -43,6 +44,17 @@ export function createServerLifecycle({
       schedule(
         () => void runPeriodicAnalyses().catch(periodicFailure),
         3_600_000,
+        true
+      );
+    }
+    if (appConfig.recordCompressionEnabled) {
+      schedule(
+        () => void runRecordCompressionScheduler().catch(periodicFailure),
+        5_000
+      );
+      schedule(
+        () => void runRecordCompressionScheduler().catch(periodicFailure),
+        30_000,
         true
       );
     }

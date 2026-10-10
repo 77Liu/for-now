@@ -36,7 +36,8 @@ const AI_COST_SCENARIO_DEFAULTS = {
   contentImageUnderstanding: { callsPerMonth: 10, avgInputTokens: 6000, cacheHitPct: 0, avgReasoningTokens: 800, avgAnswerTokens: 700 },
   capturePolish: { callsPerMonth: 20, avgInputTokens: 1200, cacheHitPct: 0, avgReasoningTokens: 100, avgAnswerTokens: 600 },
   onboardingClaimExtraction: { callsPerMonth: 1, avgInputTokens: 5000, cacheHitPct: 0, avgReasoningTokens: 800, avgAnswerTokens: 1800 },
-  perceptionExtraction: { callsPerMonth: 100, avgInputTokens: 3000, cacheHitPct: 0, avgReasoningTokens: 0, avgAnswerTokens: 500 }
+  perceptionExtraction: { callsPerMonth: 100, avgInputTokens: 3000, cacheHitPct: 0, avgReasoningTokens: 0, avgAnswerTokens: 500 },
+  recordCompression: { callsPerMonth: 14, avgInputTokens: 12000, cacheHitPct: 0, avgReasoningTokens: 0, avgAnswerTokens: 900 }
 };
 
 export function defaultAiCostPlan(settings, usage, { date = localDateKey(), cnyPerUsd } = {}) {

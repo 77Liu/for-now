@@ -124,6 +124,8 @@ export function createJournalRecords({
       createdAt: now(),
       sourceUpdatedAt: input.sourceUpdatedAt,
       content: input.content,
+      ...(Array.isArray(input.citations) ? { citations: structuredClone(input.citations) } : {}),
+      ...(input.citationStatus ? { citationStatus: safeText(input.citationStatus, 20) } : {}),
       ...(input.reasoningContent ? { reasoningContent: input.reasoningContent } : {}),
       ...(input.contextReceipt ? { contextReceipt: structuredClone(input.contextReceipt) } : {}),
       ...(clientRequestId ? { version: 1, clientRequestId, requestHash } : {})

@@ -42,7 +42,22 @@ if (requestedSuite === ISOLATION_PROBE) {
   process.exit(0);
 }
 
+const recordCompressionSuite = [
+  ["daily record compression input boundaries", ["scripts/record-compression-input-regression.mjs"]],
+  ["daily record compression output budgets", ["scripts/record-compression-output-regression.mjs"]],
+  ["timezone-aware seven-day trend", ["scripts/record-compression-trend-regression.mjs"]],
+  ["record compression trend context and citations", ["scripts/record-compression-trend-context-regression.mjs"]],
+  ["chat, analysis and diary trend citation contract", ["scripts/record-compression-answer-citation-regression.mjs"]],
+  ["historical supplement input contract", ["scripts/record-compression-supplement-regression.mjs"]],
+  ["historical supplement service and persistent candidates", ["scripts/record-compression-supplement-service-regression.mjs"]],
+  ["record compression task cursor persistence", ["scripts/record-compression-task-cursor-regression.mjs"]],
+  ["record compression internal task boundary", ["scripts/record-compression-internal-task-regression.mjs"]],
+  ["record compression durable budget waits", ["scripts/record-compression-budget-wait-regression.mjs"]],
+  ["daily compression service and stale-input fence", ["scripts/record-compression-service-regression.mjs"]]
+];
+
 const suites = {
+  "record-compressions": recordCompressionSuite,
   isolation: [
     ["production environment isolation", ["scripts/system-test.mjs", ISOLATION_PROBE]]
   ],
@@ -55,6 +70,7 @@ const suites = {
     ["local task commit gate", ["scripts/commit-gate-regression.mjs"]],
     ["PostgreSQL test preflight", ["scripts/postgres-test-preflight-regression.mjs"]],
     ["versioned prompt catalog", ["scripts/prompt-catalog-regression.mjs"]],
+    ...recordCompressionSuite,
     ["server syntax", ["--check", "server.mjs"]],
     ["runtime configuration, context and logging contracts", ["scripts/runtime-infrastructure-regression.mjs"]],
     ["frontend syntax", ["--check", "public/app.js"]],
@@ -67,7 +83,7 @@ const suites = {
     ["local test HTTP syntax", ["--check", "scripts/local-test-http-regression.mjs"]],
     ["local test mode syntax", ["--check", "scripts/local-test-mode-regression.mjs"]],
     ["local test launcher syntax", ["--check", "scripts/local-test-preview.mjs"]],
-    ["Store v17 defaults and compatibility normalization", ["scripts/store-normalization-regression.mjs"]],
+    ["Store v18 defaults and compatibility normalization", ["scripts/store-normalization-regression.mjs"]],
     ["cross-domain derived statistics", ["scripts/derived-statistics-regression.mjs"]],
     ["role-aware public Store projection", ["scripts/public-state-regression.mjs"]],
     ["account initialization and startup recovery", ["scripts/account-lifecycle-regression.mjs"]],
@@ -173,6 +189,7 @@ const suites = {
   ],
   frontend: [
     ["browser application lifecycle", ["scripts/frontend-application-regression.mjs"]],
+    ["home chat verified citation rendering", ["scripts/home-chat-citation-renderer-regression.mjs"]],
     ["browser session, state, sync and shell ports", ["scripts/frontend-app-ports-regression.mjs"]],
     ["disposable page router lifecycle", ["scripts/page-router-lifecycle-regression.mjs"]],
     ["frontend API, session and state contracts", ["scripts/frontend-contract-regression.mjs"]],
@@ -224,7 +241,7 @@ for (const stages of Object.values(suites)) {
 }
 
 if (![...Object.keys(suites), "all"].includes(requestedSuite)) {
-  throw new Error(`未知系统测试分组：${requestedSuite}。可选值：backend、load、performance、frontend、exploration、all`);
+  throw new Error(`未知系统测试分组：${requestedSuite}。可选值：${[...Object.keys(suites), "all"].join("、")}`);
 }
 
 let testNode = process.execPath;

@@ -26,14 +26,17 @@ function modelProvider() {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     const input = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    const content = input.response_format?.type === "json_object"
+      ? JSON.stringify({ answer: "v1 回答", citations: [] })
+      : "核心判断：v1 回答";
     const usage = { prompt_tokens: 10, completion_tokens: 4, completion_tokens_details: { reasoning_tokens: 1 } };
     if (!input.stream) {
       res.setHeader("content-type", "application/json");
-      return res.end(JSON.stringify({ choices: [{ message: { content: "核心判断：v1 回答", reasoning_content: "v1 思考" } }], usage }));
+      return res.end(JSON.stringify({ choices: [{ message: { content, reasoning_content: "v1 思考" } }], usage }));
     }
     res.writeHead(200, { "content-type": "text/event-stream" });
     res.write(`data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: "v1 思考" } }] })}\n\n`);
-    res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: "核心判断：v1 回答" } }] })}\n\n`);
+    res.write(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`);
     res.write(`data: ${JSON.stringify({ choices: [], usage })}\n\n`);
     res.end("data: [DONE]\n\n");
   });

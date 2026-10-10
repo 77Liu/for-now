@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { healthImageFixtures } from "./fixtures/health-images.mjs";
 import { normalizeHealthImage, describeHealthDetails } from "../src/modules/health/index.mjs";
+import { LLM_SCENARIOS, LLM_SETTINGS_VERSION } from "../src/modules/ai/index.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -53,16 +54,24 @@ function mockDeepSeek() {
     }
     assert.equal(input.stream, true);
     res.writeHead(200, { "content-type": "text/event-stream" });
-    const serializedMessages = JSON.stringify(input.messages), isDiaryAssist = serializedMessages.includes("<current_draft priority"), isDiaryTopic = serializedMessages.includes("只输出一个主题句和一个问句");
+    const serializedMessages = JSON.stringify(input.messages);
+    const isDiaryAssist = serializedMessages.includes("<current_draft priority");
+    const isDiaryTopic = serializedMessages.includes("只输出一个主题句和一个问句");
+    const isVerifiedAnswer = input.response_format?.type === "json_object"
+      && serializedMessages.includes("citationId");
     if (isDiaryTopic && input.thinking?.type === "enabled") {
       res.write(`data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: "思考已经耗尽首轮输出预算。" }, finish_reason: "length" }], usage })}\n\n`);
       return res.end("data: [DONE]\n\n");
     }
+    const contentDeltas = isDiaryAssist
+      ? ["第一行写作锚点。", "\n第二行写作锚点。"]
+      : isVerifiedAnswer
+        ? ['{"answer":"流式回答', '已完成。","citations":[]}']
+        : ["**结论**：", "流式回答已完成。"];
     const events = [
       { choices: [{ delta: { reasoning_content: "先核对问题。" } }] },
       { choices: [{ delta: { reasoning_content: "再形成判断。" } }] },
-      { choices: [{ delta: { content: isDiaryAssist ? "第一行写作锚点。" : "**结论**：" } }] },
-      { choices: [{ delta: { content: isDiaryAssist ? "\n第二行写作锚点。" : "流式回答已完成。" } }] }
+      ...contentDeltas.map(content => ({ choices: [{ delta: { content } }] }))
     ];
     for (const event of events) {
       res.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -195,7 +204,7 @@ try {
     ...migratedState,
     commercialization: JSON.parse(await fs.readFile(path.join(dataDir, "store.json"), "utf8")).commercialization
   };
-  assert.equal(migrated.version, 17);
+  assert.equal(migrated.version, 18);
   assert.equal(migrated.commercialization.version, 3);
   assert.equal(migrated.commercialization.assumptions.validation.participants, 5);
   assert.equal(migrated.commercialization.assumptions.validation.rewardPerParticipantCny, 100);
@@ -264,16 +273,16 @@ try {
     ["mood", 1, 0], ["energy", 1, 0], ["stress", 1, 0], ["sleep", 1, 0]
   ]);
   assert.deepEqual(migrated.insights.associations.map(item => [item.factor, item.withCount, item.confidence]), [["冷启动因素", 1, "单日观察"]]);
-  assert.equal((await fs.readdir(dataDir)).some(name => name.includes("v3-pre-v17") && name.endsWith(".bak")), true);
+  assert.equal((await fs.readdir(dataDir)).some(name => name.includes("v3-pre-v18") && name.endsWith(".bak")), true);
   const migratedSettings = await (await fetch(`${base}/api/settings`)).json();
-  assert.equal(migratedSettings.version, 11);
+  assert.equal(migratedSettings.version, LLM_SETTINGS_VERSION);
   assert.deepEqual(Object.keys(migratedSettings.profiles), ["lite", "mid", "high", "ultra"]);
   assert.deepEqual(migratedSettings.scenarios, {
     thoughtPrompt: "lite", thoughtDraft: "high", thoughtAnswer: "ultra", followUpAnswer: "ultra", chat: "high",
     diaryLead: "lite", diaryStructure: "mid", diaryTopic: "high", diaryReflection: "ultra",
     annotationShenji: "high", analysis: "ultra", bookRecognition: "mid", healthRecognition: "mid",
     contentImageUnderstanding: "mid", capturePolish: "mid", onboardingClaimExtraction: "mid",
-    perceptionExtraction: "lite"
+    perceptionExtraction: "lite", recordCompression: "lite"
   });
   assert.equal(migratedSettings.sceneEfforts.thoughtAnswer, "max");
   assert.equal(migratedSettings.sceneEfforts.diaryLead, "none");
@@ -284,9 +293,9 @@ try {
     generationRate: -10
   });
   const storedSettings = JSON.parse(await fs.readFile(path.join(dataDir, "llm-settings.json"), "utf8"));
-  assert.equal(storedSettings.version, 11);
+  assert.equal(storedSettings.version, LLM_SETTINGS_VERSION);
   assert.equal(storedSettings.apiKey, "test-key");
-  assert.equal((await fs.readdir(dataDir)).some(name => name.includes("v2-pre-v11") && name.endsWith(".bak")), true);
+  assert.equal((await fs.readdir(dataDir)).some(name => name.includes(`v2-pre-v${LLM_SETTINGS_VERSION}`) && name.endsWith(".bak")), true);
   const initialStatistics = await (await fetch(`${base}/api/statistics`)).json();
   assert.equal(initialStatistics.ai.summary.calls, 0);
   assert.equal(initialStatistics.ai.daily.length, 7);
@@ -303,7 +312,7 @@ try {
   assert.equal(JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"), "utf8")).version, 5);
   const initialAiCostPlan = await (await fetch(`${base}/api/ai-cost-plan`)).json();
   assert.equal(initialAiCostPlan.version, 1);
-  assert.equal(initialAiCostPlan.scenarios.length, 17);
+  assert.equal(initialAiCostPlan.scenarios.length, LLM_SCENARIOS.length);
   assert.equal(initialAiCostPlan.scenarios.find(item => item.scene === "thoughtAnswer").model, "deepseek-v4-pro");
   const savedAiCostPlan = await (await fetch(`${base}/api/ai-cost-plan`, {
     method: "PATCH",
@@ -318,7 +327,7 @@ try {
   assert.equal(savedAiCostPlan.monthlyBudgetCny, 66);
   assert.equal(savedAiCostPlan.contingencyPct, 500);
   assert.equal(savedAiCostPlan.cnyPerUsd, 7.1);
-  assert.equal(savedAiCostPlan.scenarios.length, 17);
+  assert.equal(savedAiCostPlan.scenarios.length, LLM_SCENARIOS.length);
   assert.deepEqual(savedAiCostPlan.scenarios.find(item => item.scene === "thoughtPrompt"), { scene: "thoughtPrompt", enabled: false, model: "deepseek-flash", pricingPeriod: "offPeak", callsPerMonth: 12, avgInputTokens: 8888, cacheHitPct: 100, avgReasoningTokens: 10, avgAnswerTokens: 20 });
   assert.equal(JSON.parse(await fs.readFile(path.join(dataDir, "ai-cost-plan.json"), "utf8")).monthlyBudgetCny, 66);
   const onboardingSchema = await (await fetch(`${base}/api/onboarding/schema`)).json();

@@ -3,13 +3,20 @@ import {
   STORE_VERSION, TRASH_RETENTION_DAYS, createEmptyStore, emptyStore,
   createStoreNormalizer, normalizeCommercialization, normalizeStore
 } from "../src/app/index.mjs";
+import { mapStoreObjects, rebuildStoreObjects } from "../src/shared/persistence/index.mjs";
+import {
+  buildHistoricalUserSupplementInput,
+  emptyHistoricalUserSupplement,
+  HISTORICAL_USER_SUPPLEMENT_OUTPUT_SCHEMA_VERSION,
+  parseHistoricalUserSupplementOutput
+} from "../src/modules/record-compressions/index.mjs";
 import { migrationStore } from "./fixtures/migration-store.mjs";
 
 process.env.TZ = "Asia/Shanghai";
 
 const STORE_COLLECTION_KEYS = [
   "checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books",
-  "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "trash",
+  "keepsakes", "quotes", "experiments", "analyses", "recordCompressions", "customMetrics", "trash",
   "attachmentCleanup", "speechCache", "aiTasks", "notifications", "actions", "habits",
   "habitCheckins", "feedback", "validationLedger", "userClaims", "modelUnknowns",
   "evidenceSources", "evidencePermissions", "perceptionEvents"
@@ -22,7 +29,7 @@ const normalizeWithFixedClock = createStoreNormalizer({
   currentTime: () => fixedCurrentTime
 });
 
-assert.equal(STORE_VERSION, 17);
+assert.equal(STORE_VERSION, 18);
 assert.equal(TRASH_RETENTION_DAYS, 30);
 assert.equal(emptyStore.version, STORE_VERSION);
 assert.equal(normalizeStore({ version: STORE_VERSION }).version, STORE_VERSION);
@@ -30,6 +37,26 @@ for (const key of STORE_COLLECTION_KEYS) assert.deepEqual(emptyStore[key], []);
 const isolatedDefault = createEmptyStore();
 isolatedDefault.checkins.push({ id: "local-only" });
 assert.deepEqual(createEmptyStore().checkins, []);
+assert.deepEqual(createEmptyStore().recordCompressions, []);
+assert.deepEqual(createEmptyStore().historicalUserSupplement, emptyHistoricalUserSupplement());
+
+const supplementSource = {
+  sourceId: "capture:capture:supplement-source",
+  origin: "user_original",
+  occurredOn: "2026-10-04",
+  sourceHash: "c".repeat(64),
+  permissionRevision: 3,
+  text: "我会按优先级逐项推进。"
+};
+const supplementInput = buildHistoricalUserSupplementInput({ userSources: [supplementSource] });
+const historicalUserSupplement = parseHistoricalUserSupplementOutput({
+  schemaVersion: HISTORICAL_USER_SUPPLEMENT_OUTPUT_SCHEMA_VERSION,
+  candidates: [{
+    statement: "按优先级逐项推进。",
+    exactQuote: "按优先级逐项推进",
+    sourceId: supplementSource.sourceId
+  }]
+}, { input: supplementInput });
 
 const input = {
   version: 1,
@@ -63,6 +90,48 @@ const input = {
     updatedAt: "not-an-iso-date",
     internalOnly: "drop"
   },
+  recordCompressions: [{
+    id: "compression-day-2026-10-05",
+    version: 0,
+    revision: 2,
+    status: "ready",
+    schemaVersion: "record-compression-output.v1",
+    localDate: "2026-10-05",
+    timezone: "Asia/Shanghai",
+    periodStart: "2026-10-04T16:00:00.000Z",
+    periodEnd: "2026-10-05T16:00:00.000Z",
+    promptVersion: "daily-record-compression.v1",
+    sourceManifestHash: "a".repeat(64),
+    generatedAt: "2026-10-05T16:10:00.000Z",
+    window: {
+      start: "2026-10-04T16:00:00.000Z",
+      endExclusive: "2026-10-05T16:00:00.000Z",
+      localDate: "2026-10-05",
+      asOf: "2026-10-05T16:00:00.000Z",
+      timezone: "Asia/Shanghai",
+      completeness: "complete"
+    },
+    daily: { observations: [{ text: "睡眠时间比昨天更规律。", nature: "user_subjective", sourceIds: ["source-1"] }], metricKeys: [], missing: [] },
+    thoughtsIdeas: { focus: [{ text: "完成项目收尾", nature: "user_subjective", sourceIds: ["source-1"] }], changes: [], openQuestions: [] },
+    other: { themes: [], collectedQuotes: [] },
+    aiReference: [{ text: "仅供参考", origin: "ai_generated", sourceIds: [] }],
+    stableUserCandidates: [],
+    conflicts: [],
+    coverage: { total: 1, included: 1, excluded: 0, truncated: false },
+    metrics: [],
+    warnings: [],
+    tokenUsage: { estimated: true, method: "test", outputTokens: 10, moduleTokens: {}, stableCandidatesTokens: 0, truncated: false },
+    sourceManifest: [{ sourceId: "source-1", recordId: "daily-record-1", sourceHash: "b".repeat(64) }],
+    sourceRefs: [{
+      sourceId: "source-1",
+      recordId: "daily-record-1",
+      version: 3,
+      permissionRevision: 2,
+      contentSha256: "b".repeat(64)
+    }],
+    futureMetadata: { retained: [null, "unknown-field"] }
+  }],
+  historicalUserSupplement,
   bookDraft: { content: "legacy draft" },
   trash: [
     {
@@ -140,6 +209,14 @@ assert.deepEqual(normalized.checkins[0].futureRecordField, { retained: true });
 assert.equal(normalized.checkins[1].occurredOn, "2026-10-05");
 assert.equal(normalized.checkins[1].occurredAt, "2026-10-05T04:05:06.000Z");
 assert.deepEqual(normalized.captures[0].futureCaptureField, ["keep"]);
+assert.equal(normalized.recordCompressions[0].version, 1);
+assert.equal(normalized.recordCompressions[0].revision, 2);
+assert.equal(normalized.recordCompressions[0].status, "ready");
+assert.equal(normalized.recordCompressions[0].timezone, "Asia/Shanghai");
+assert.deepEqual(normalized.recordCompressions[0].daily, input.recordCompressions[0].daily);
+assert.deepEqual(normalized.recordCompressions[0].sourceRefs, input.recordCompressions[0].sourceRefs);
+assert.deepEqual(normalized.recordCompressions[0].futureMetadata, input.recordCompressions[0].futureMetadata);
+assert.deepEqual(normalized.historicalUserSupplement, historicalUserSupplement);
 assert.deepEqual(normalized.publicExtension, input.publicExtension);
 assert.notStrictEqual(normalized.publicExtension, input.publicExtension);
 assert.equal(normalized.onboarding.status, "completed");
@@ -199,6 +276,18 @@ assert.deepEqual(commercialization.legacyV2, {
 });
 assert.deepEqual(normalizeCommercialization(commercialization), commercialization);
 assert.deepEqual(normalizeWithFixedClock(normalized), normalized);
+const compressionJsonRoundTrip = normalizeWithFixedClock(JSON.parse(JSON.stringify(normalized)));
+assert.deepEqual(compressionJsonRoundTrip.recordCompressions, normalized.recordCompressions);
+const compressionPostgresMap = mapStoreObjects("compression-account", normalized);
+const mappedCompression = compressionPostgresMap.objects.find(row => row.kind === "recordCompression");
+assert.equal(mappedCompression.collection, "recordCompressions");
+assert.deepEqual(mappedCompression.payload.daily, normalized.recordCompressions[0].daily);
+assert.deepEqual(mappedCompression.payload.sourceRefs, normalized.recordCompressions[0].sourceRefs);
+const mappedHistoricalSupplement = compressionPostgresMap.objects.find(row => row.kind === "historicalUserSupplement");
+assert.equal(compressionPostgresMap.fields.find(field => field.field === "historicalUserSupplement").shape, "object");
+assert.equal(mappedHistoricalSupplement.collection, "historicalUserSupplement");
+assert.deepEqual(mappedHistoricalSupplement.payload, normalized.historicalUserSupplement);
+assert.deepEqual(rebuildStoreObjects(compressionPostgresMap), normalized);
 
 const malformedCollections = Object.fromEntries(
   STORE_COLLECTION_KEYS
@@ -241,10 +330,69 @@ const legacyV16 = normalizeWithFixedClock({
   thoughts: [],
   captures: []
 });
-assert.equal(legacyV16.version, 17);
+assert.equal(legacyV16.version, 18);
 assert.deepEqual(legacyV16.evidenceSources, []);
 assert.deepEqual(legacyV16.evidencePermissions, []);
 assert.deepEqual(legacyV16.perceptionEvents, []);
+const legacyV17 = normalizeWithFixedClock({ version: 17 });
+assert.equal(legacyV17.version, 18);
+assert.deepEqual(legacyV17.recordCompressions, []);
+
+const validCompressionEnvelope = (id, status = "ready") => ({
+  id,
+  version: 1,
+  revision: 1,
+  status,
+  schemaVersion: "record-compression-output.v1",
+  localDate: "2026-10-05",
+  timezone: "Asia/Shanghai",
+  promptVersion: "daily-record-compression.v1",
+  sourceManifestHash: "a".repeat(64),
+  generatedAt: "2026-10-05T16:10:00.000Z",
+  window: {
+    start: "2026-10-04T16:00:00.000Z",
+    endExclusive: "2026-10-05T16:00:00.000Z",
+    localDate: "2026-10-05",
+    timezone: "Asia/Shanghai",
+    completeness: "complete"
+  },
+  sourceManifest: [],
+  ...(status === "ready" ? {
+    daily: { observations: [], metricKeys: [], missing: [] },
+    thoughtsIdeas: { focus: [], changes: [], openQuestions: [] },
+    other: { themes: [], collectedQuotes: [] },
+    metrics: [],
+    sourceRefs: [],
+    tokenUsage: { estimated: true, outputTokens: 0 },
+    periodStart: "2026-10-04T16:00:00.000Z",
+    periodEnd: "2026-10-05T16:00:00.000Z"
+  } : {})
+});
+const invalidCompressionMetadata = normalizeWithFixedClock({
+  version: 18,
+  recordCompressions: [
+    { ...validCompressionEnvelope("invalid-date"), localDate: "2026-02-30" },
+    { ...validCompressionEnvelope("invalid-timezone"), timezone: "Mars/Olympus" },
+    { ...validCompressionEnvelope("invalid-status"), status: "pending" },
+    validCompressionEnvelope("ready"),
+    validCompressionEnvelope("queued", "queued"),
+    validCompressionEnvelope("running", "running"),
+    validCompressionEnvelope("failed", "failed"),
+    validCompressionEnvelope("invalidated", "invalidated"),
+    {
+      ...validCompressionEnvelope("invalid-period"),
+      periodStart: "2026-10-05T12:00:00.000Z",
+      periodEnd: "2026-10-05T11:00:00.000Z"
+    }
+  ]
+}).recordCompressions;
+assert.deepEqual(invalidCompressionMetadata.map(item => item.status), [
+  "invalidated", "invalidated", "invalidated", "ready", "queued", "running", "failed", "invalidated", "invalidated"
+]);
+assert.equal(invalidCompressionMetadata[0].localDate, "");
+assert.equal(invalidCompressionMetadata[1].timezone, "");
+assert.equal(invalidCompressionMetadata[2].status, "invalidated");
+assert.equal(invalidCompressionMetadata[3].timezone, "Asia/Shanghai");
 
 for (const corrupt of [
   store => { store.evidenceSources = {}; },

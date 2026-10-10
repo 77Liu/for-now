@@ -111,6 +111,126 @@ assert.equal(new Set(accounts.get("retry").entries.map(entry => entry.callGroupI
 assert.equal(new Set(accounts.get("retry").entries.map(entry => entry.callId)).size, 2);
 assert.equal(active, 0);
 
+let compressionGateHeld = false, compressionGateAcquisitions = 0, compressionGateReleases = 0;
+const compressionGate = {
+  async acquire() {
+    assert.equal(compressionGateHeld, false, "a compression slot cannot be acquired twice");
+    compressionGateHeld = true;
+    compressionGateAcquisitions += 1;
+    return () => {
+      compressionGateHeld = false;
+      compressionGateReleases += 1;
+    };
+  }
+};
+const compressionAwareGenerate = createAiGenerator({
+  provider,
+  readSettings: async () => settings,
+  getContext: () => context.getStore(),
+  reserveAttempt: quota.reserveAttempt,
+  gate: {
+    async acquire() {
+      assert.equal(compressionGateHeld, true,
+        "the compression slot must be held before entering the shared AI queue");
+      return () => {};
+    }
+  },
+  sceneGates: { recordCompression: compressionGate },
+  audit
+});
+responseFactory = () => jsonResponse("压缩完成");
+assert.equal(await run("compression-gate", () => compressionAwareGenerate("日压缩合成输入", {
+  scene: "recordCompression",
+  retryWithoutThinking: false
+})), "压缩完成");
+assert.equal(compressionGateAcquisitions, 1);
+assert.equal(compressionGateReleases, 1);
+assert.equal(compressionGateHeld, false);
+const callsBeforeStaleGate = transportCalls.length;
+await assert.rejects(run("compression-gate-stale", () => compressionAwareGenerate("已撤权的合成输入", {
+  scene: "recordCompression",
+  retryWithoutThinking: false,
+  isCurrent: async () => false
+})), { code: "AI_TASK_STALE" });
+assert.equal(transportCalls.length, callsBeforeStaleGate,
+  "inputs that change while waiting for a provider slot must not be sent");
+assert.equal(compressionGateAcquisitions, 2);
+assert.equal(compressionGateReleases, 2);
+assert.equal(compressionGateHeld, false);
+
+function queuedGate() {
+  let held = false;
+  let acquisitionCount = 0;
+  const queued = [];
+  const acquisitionListeners = [];
+  const release = () => {
+    const next = queued.shift();
+    if (next) next(makeRelease());
+    else held = false;
+  };
+  const makeRelease = () => {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      release();
+    };
+  };
+  return {
+    get acquisitionCount() { return acquisitionCount; },
+    waitForAcquisitions(count) {
+      if (acquisitionCount >= count) return Promise.resolve();
+      return new Promise(resolve => acquisitionListeners.push({ count, resolve }));
+    },
+    async acquire() {
+      acquisitionCount += 1;
+      for (let index = acquisitionListeners.length - 1; index >= 0; index -= 1) {
+        if (acquisitionListeners[index].count <= acquisitionCount) {
+          acquisitionListeners.splice(index, 1)[0].resolve();
+        }
+      }
+      if (!held) {
+        held = true;
+        return makeRelease();
+      }
+      return new Promise(resolve => queued.push(resolve));
+    }
+  };
+}
+
+const heldSceneGate = queuedGate();
+const heldGlobalGate = queuedGate();
+const releaseHeldScene = await heldSceneGate.acquire();
+const releaseHeldGlobal = await heldGlobalGate.acquire();
+const staleAfterGateGenerate = createAiGenerator({
+  provider,
+  readSettings: async () => settings,
+  getContext: () => context.getStore(),
+  reserveAttempt: quota.reserveAttempt,
+  gate: heldGlobalGate,
+  sceneGates: { recordCompression: heldSceneGate },
+  audit
+});
+let sourceStillCurrent = true;
+const isCurrent = async () => sourceStillCurrent;
+const callsBeforePermissionChange = transportCalls.length;
+const gatedAttempt = run("compression-gate-permission-race", async () => {
+  assert.equal(await isCurrent(), true, "the task starts with a current source snapshot");
+  return staleAfterGateGenerate("已撤权的合成输入", {
+    scene: "recordCompression",
+    retryWithoutThinking: false,
+    isCurrent
+  });
+});
+await heldSceneGate.waitForAcquisitions(2);
+sourceStillCurrent = false;
+releaseHeldScene();
+await heldGlobalGate.waitForAcquisitions(2);
+releaseHeldGlobal();
+await assert.rejects(gatedAttempt, { code: "AI_TASK_STALE" });
+assert.equal(transportCalls.length, callsBeforePermissionChange,
+  "permission changes while waiting on scene/global gates must prevent the provider send");
+
 const siteBudgetExecutions = [];
 const siteBudgetGenerate = createAiGenerator({
   provider,

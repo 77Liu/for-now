@@ -421,6 +421,31 @@
       "status": "active"
     },
     {
+      "id": "domain.record-compressions",
+      "type": "domain",
+      "root": "src/modules/record-compressions",
+      "publicEntry": "src/modules/record-compressions/index.mjs",
+      "allowedDependencies": [
+        "shared.time",
+        "shared.validation"
+      ],
+      "owns": {
+        "data": [
+          "bounded, permission-filtered daily record snapshots with versioned source manifests and measured values",
+          "validated daily summary output, deterministic token budgets and stable-candidate provenance",
+          "timezone-aware seven-day trend windows with source-current eligibility and compatible-unit aggregation"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/record-compression-input-regression.mjs",
+        "scripts/record-compression-output-regression.mjs",
+        "scripts/record-compression-trend-regression.mjs",
+        "scripts/record-compression-service-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
       "id": "domain.ai",
       "type": "domain",
       "root": "src/modules/ai",
@@ -749,6 +774,7 @@
         "domain.chats",
         "domain.reviews",
         "domain.statistics",
+        "domain.record-compressions",
         "domain.content-attachments",
         "domain.ai",
         "domain.keepsakes",
@@ -771,7 +797,7 @@
       ],
       "owns": {
         "data": [
-          "Store v17 defaults, strict evidence collection normalization and commercialization migration",
+          "Store v18 defaults, strict evidence collection normalization and commercialization migration",
           "cross-domain derived thought clusters, trend/association insights and user-trace metrics",
           "role-aware public Store projection, recursive owner metadata filtering and provider capability snapshots",
           "local-test control normalization, workspace switching, lazy read-only hydration and merge rules",
@@ -2594,10 +2620,12 @@
       "type": "domain",
       "root": "src/modules/auth",
       "publicEntry": "src/modules/auth/index.mjs",
-      "allowedDependencies": [],
+      "allowedDependencies": [
+        "shared.time"
+      ],
       "owns": {
         "data": [
-          "account identity, password validation, session lifecycle and login attempt limits"
+          "account identity, password validation, session lifecycle, login attempt limits and record timezone preferences"
         ],
         "routes": [
           "GET /api/auth/me",
@@ -2605,6 +2633,7 @@
           "POST /api/auth/login",
           "PATCH /api/auth/username",
           "PATCH /api/auth/password",
+          "PATCH /api/auth/timezone",
           "POST /api/auth/logout"
         ]
       },

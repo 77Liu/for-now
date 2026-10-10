@@ -12,6 +12,11 @@ import {
   normalizeUserClaims
 } from "../modules/user-model/index.mjs";
 import { normalizeKeepsake } from "../modules/keepsakes/index.mjs";
+import {
+  DEFAULT_RECORD_TIMEZONE,
+  isRecordCompressionRecordEnvelope,
+  normalizeHistoricalUserSupplement
+} from "../modules/record-compressions/index.mjs";
 import { localDateKey, localDateTimeOn, strictDateKey } from "../shared/time/index.mjs";
 import {
   nullableNumber,
@@ -38,6 +43,7 @@ const clone = value => structuredClone(value);
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 const clamp5 = value => Math.min(5, Math.max(1, Number(value) || 3));
 const round = value => value == null ? null : Math.round(value * 100) / 100;
+const RECORD_COMPRESSION_STATUSES = new Set(["queued", "running", "failed", "ready", "invalidated"]);
 const storageInvalid = message => Object.assign(new Error(message), {
   code: "STORAGE_READ_FAILED"
 });
@@ -51,6 +57,69 @@ const strictCollection = (source, key, normalize, identity) => {
     throw storageInvalid(`Store ${key} contains duplicate identities`);
   }
   return values;
+};
+const validTimezone = value => {
+  if (typeof value !== "string" || !value) return false;
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+};
+const normalizeRecordCompression = item => {
+  if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+  const id = safeText(item.id, 100);
+  if (!id) return null;
+
+  const summaryWindow = item.summary?.window;
+  const dateValue = item.localDate
+    || item.localPeriodKey
+    || item.window?.localDate
+    || summaryWindow?.localDate;
+  const localDate = strictDateKey(dateValue) || "";
+  const timezoneValue = safeText(
+    item.timezone || item.window?.timezone || summaryWindow?.timezone,
+    100
+  );
+  const timezone = timezoneValue
+    ? validTimezone(timezoneValue) ? timezoneValue : ""
+    : DEFAULT_RECORD_TIMEZONE;
+  const requestedStatus = safeText(item.status, 30);
+  const status = RECORD_COMPRESSION_STATUSES.has(requestedStatus)
+    ? requestedStatus
+    : "invalidated";
+  const localDateMismatch = [item.window?.localDate, summaryWindow?.localDate]
+    .filter(Boolean)
+    .some(value => strictDateKey(value) !== localDate);
+  const timezoneMismatch = [item.window?.timezone, summaryWindow?.timezone]
+    .filter(Boolean)
+    .some(value => value !== timezone);
+  const hasPeriodBounds = hasOwn(item, "periodStart") || hasOwn(item, "periodEnd");
+  const periodStart = hasOwn(item, "periodStart") ? safeIso(item.periodStart) : "";
+  const periodEnd = hasOwn(item, "periodEnd") ? safeIso(item.periodEnd) : "";
+  const invalidPeriodBounds = hasPeriodBounds && (
+    !periodStart
+    || !periodEnd
+    || Date.parse(periodStart) >= Date.parse(periodEnd)
+  );
+
+  const normalized = {
+    ...item,
+    id,
+    version: recordVersion(item.version),
+    revision: recordVersion(item.revision),
+    localDate,
+    timezone,
+    ...(hasOwn(item, "periodStart") ? { periodStart } : {}),
+    ...(hasOwn(item, "periodEnd") ? { periodEnd } : {}),
+    status: localDate && timezone && !localDateMismatch && !timezoneMismatch
+      && !invalidPeriodBounds ? status : "invalidated"
+  };
+  if (!isRecordCompressionRecordEnvelope(normalized, { ready: status === "ready" })) {
+    normalized.status = "invalidated";
+  }
+  return normalized;
 };
 const WEIGHT_CLOTHING_MODEL = {
   none: { label: "不穿衣", mean: 0, lower: 0, upper: 0 },
@@ -269,6 +338,11 @@ export function createStoreNormalizer({
     const previousVersion = Number(source.version || 1);
     const hasOnboardingV2 = Object.hasOwn(source || {}, "onboardingV2");
     const store = { ...clone(emptyStore), ...source, version: STORE_VERSION };
+    try {
+      store.historicalUserSupplement = normalizeHistoricalUserSupplement(store.historicalUserSupplement);
+    } catch (error) {
+      throw storageInvalid(error.message);
+    }
     for (const key of STORE_COLLECTION_KEYS) if (!Array.isArray(store[key])) store[key] = [];
     store.checkins = store.checkins.map(item => ({ factors: [], custom: {}, notes: {}, ...item, ...normalizedEventTime(item, previousVersion), sleep: item.sleep || 3, stress: previousVersion < 3 ? 6 - clamp5(item.stress) : clamp5(item.stress), version: recordVersion(item.version) }));
     store.dailyRecords = store.dailyRecords.map(item => {
@@ -337,6 +411,9 @@ export function createStoreNormalizer({
     store.keepsakes = store.keepsakes.map(item => normalizeKeepsake(item, normalizedEventTime(item, previousVersion)));
     store.quotes = store.quotes.map(item => ({ tags: [], annotations: [], annotationDrift: [], ...item, ...normalizedEventTime(item, previousVersion), version: recordVersion(item.version) }));
     store.analyses = store.analyses.map(item => ({ annotations: [], annotationDrift: [], ...item, version: recordVersion(item.version) }));
+    store.recordCompressions = store.recordCompressions
+      .map(normalizeRecordCompression)
+      .filter(Boolean);
     for (const collection of ["captures", "journals", "thoughts", "chats", "books", "quotes", "analyses"]) {
       for (const item of store[collection]) {
         item.annotations = (item.annotations || []).map(annotation => ({

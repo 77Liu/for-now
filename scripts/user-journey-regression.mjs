@@ -54,12 +54,15 @@ const commandSets = {
     ["review chat source permissions", process.execPath, ["scripts/review-chat-permission-boundary-regression.mjs"]],
     ["user-model API permissions and version checks", process.execPath, ["scripts/user-model-api-regression.mjs"]],
     ["user-model extraction queue and recovery", process.execPath, ["scripts/user-model-extraction-regression.mjs"]],
+    ["P00 journal, chat, and thought workflow context contracts", process.execPath, ["scripts/journal-chat-core-context-regression.mjs"]],
+    ["P00 thought answer source and freshness contracts", process.execPath, ["scripts/thought-workflows-p00-regression.mjs"]],
     ["frontend contracts", process.execPath, ["scripts/frontend-contract-regression.mjs"]],
     ["frontend shared contracts", process.execPath, ["scripts/frontend-shared-regression.mjs"]],
     ["URL and browser history", process.execPath, ["scripts/url-history-regression.mjs"]],
     ["real-browser UI journeys", process.execPath, ["scripts/ui-regression.mjs"]]
   ],
   daily: [
+    ["daily compression and seven-day trend suite", process.execPath, ["scripts/system-test.mjs", "record-compressions"]],
     ["frontend system suite", process.execPath, ["scripts/system-test.mjs", "frontend"]],
     ["authentication and account isolation", process.execPath, ["scripts/auth-regression.mjs"]],
     ["local online snapshot", process.execPath, ["scripts/local-test-mode-regression.mjs"]]

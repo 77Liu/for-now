@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { compileWorkingContextPrompt, personalContextProjection } from "../../src/app/index.mjs";
+import { compileWorkingContextPrompt, personalContextProjection, WORKING_CONTEXT_SERIALIZATION_ORDER } from "../../src/app/index.mjs";
 import { defaultLlmSettings, llmSettingsForScene, systemPrompt, systemPromptForScene, userPrompt } from "../../src/modules/ai/index.mjs";
 import { thoughtTask } from "../../src/modules/thoughts/index.mjs";
 import { installPromptCatalog } from "../../src/shared/prompts/index.mjs";
@@ -38,7 +38,10 @@ export async function buildPersonalizationLivePlan(rootDir, { manifestVersion = 
         ? createLegacyReplayAdapter({ project(store, options) {
           const result = personalContextProjection(store, options); context = result.prompt; return result;
         } }) : createNewReplayAdapter({ taskBindings: manifest.candidate.taskBindings,
-          compile(options) { const result = compileWorkingContextPrompt(options); context = result.prompt; return result; } });
+          compile(options) { const result = compileWorkingContextPrompt({
+            ...options,
+            serializationOrder: WORKING_CONTEXT_SERIALIZATION_ORDER.LEGACY_REPLAY_V1
+          }); context = result.prompt; return result; } });
       const output = adapter.run(fixture, { fixtureIndex });
       const parameters = output.adapterEvidence.parameters;
       const settings = llmSettingsForScene(defaultLlmSettings, "thoughtAnswer");

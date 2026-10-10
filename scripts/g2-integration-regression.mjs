@@ -6,6 +6,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { STORE_VERSION } from "../src/app/index.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
@@ -240,7 +241,7 @@ try {
     assert.ok(exportedTypes.has(type), `export missing ${type}`);
   }
   assert.equal(exported.body.data.accountId.length > 0, true);
-  assert.equal(exported.body.data.snapshotVersion, 17);
+  assert.equal(exported.body.data.snapshotVersion, STORE_VERSION);
   assert.doesNotMatch(JSON.stringify(exported.body.data), /g2-contract-password|invitation/);
 
   console.log("G2 integration checks passed: OpenAPI, discovery, idempotent actions, habit cascade restore, feedback privacy, validation consent, account isolation and full export.");

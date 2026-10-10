@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import {
   AUTH_DOCUMENT_VERSION,
+  DEFAULT_RECORD_TIMEZONE,
   capabilitiesFor,
   createAuthService,
   normalizeAuthDocument,
@@ -86,7 +87,8 @@ assert.deepEqual(publicUser(normalized.users[0]), {
   id: "main",
   username: "main",
   role: "owner",
-  createdAt: "2026-09-28T01:00:00.000Z"
+  createdAt: "2026-09-28T01:00:00.000Z",
+  recordTimezone: DEFAULT_RECORD_TIMEZONE
 });
 assert.deepEqual(capabilitiesFor(normalized.users[1]), []);
 assert.ok(capabilitiesFor(normalized.users[0]).includes("account-roles"));

@@ -41,7 +41,7 @@ export async function loadPromptCatalog({
   }
   const prompts = {};
   for (const [id, value] of Object.entries(document.prompts)) {
-    if (!/^[a-z][a-z0-9]*(?:\.[a-zA-Z0-9]+)+$/.test(id) || typeof value !== "string" || !value.trim()) {
+    if (!/^[a-z][a-zA-Z0-9]*(?:\.[a-zA-Z0-9]+)+$/.test(id) || typeof value !== "string" || !value.trim()) {
       throw new Error(`Prompt entry is invalid: ${id}`);
     }
     prompts[id] = value;

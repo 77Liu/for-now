@@ -17,6 +17,7 @@ import {
 } from "../modules/ai/index.mjs";
 import { createDeepSeekTransport } from "../infrastructure/ai-providers/index.mjs";
 import { createRateGate } from "../shared/concurrency/index.mjs";
+import { RECORD_COMPRESSION_TASK_KIND } from "../modules/record-compressions/index.mjs";
 import {
   createAccountDocumentRepository,
   createAiBudgetRepository
@@ -29,7 +30,8 @@ import {
 import { safeText } from "../shared/validation/index.mjs";
 import {
   createAiBudgetRuntime,
-  deepSeekBudgetStages
+  deepSeekBudgetStages,
+  estimateDeepSeekPeakCostCny
 } from "./ai-budget-runtime.mjs";
 
 const DEFAULT_BILLING_GAP = "运行时计量单位或合同单价尚未完成映射";
@@ -48,6 +50,7 @@ export async function createAiRuntime({
   aiConcurrency,
   userDailyCallLimit,
   userDailyCostLimitCny,
+  recordCompressionPerCallBudgetCny = 0,
   cnyPerUsd,
   auditTextLimit,
   auditRetentionDays,
@@ -80,6 +83,7 @@ export async function createAiRuntime({
   const createId = () => cryptoApi.randomUUID();
 
   const aiGate = createRateGateImpl(aiQps, aiConcurrency);
+  const recordCompressionGate = createRateGateImpl(aiQps, 1);
   const aiBudgetRepository = createAiBudgetRepositoryImpl({
     runtime: postgresRuntime,
     dataRoot
@@ -292,6 +296,20 @@ export async function createAiRuntime({
 
   async function executeDeepSeekBudgetTask(details, execute) {
     try {
+        if (details.scene === RECORD_COMPRESSION_TASK_KIND) {
+        const maximumCost = estimateDeepSeekPeakCostCny({
+          model: details.model,
+          maxInputTokens: details.maxInputTokens,
+          maxOutputTokens: details.maxOutputTokens
+        });
+        if (!(recordCompressionPerCallBudgetCny > 0)
+          || maximumCost > recordCompressionPerCallBudgetCny) {
+          throw Object.assign(new Error("日压缩单次费用超过已配置上限"), {
+            statusCode: 429,
+            code: "RECORD_COMPRESSION_PER_CALL_BUDGET"
+          });
+        }
+      }
       return await aiBudgetRuntime.executeTask({
         accountId: details.accountId,
         taskId: details.taskId,
@@ -339,6 +357,7 @@ export async function createAiRuntime({
     getContext: () => requestStorage.getStore(),
     reserveAttempt: reserveAiAttempt,
     gate: aiGate,
+    sceneGates: { [RECORD_COMPRESSION_TASK_KIND]: recordCompressionGate },
     audit: aiAudit,
     executeBudgetTask: executeDeepSeekBudgetTask,
     now,
@@ -396,6 +415,7 @@ export async function createAiRuntime({
 
   return Object.freeze({
     aiGate,
+    recordCompressionGate,
     deepSeekProvider,
     aiBudgetRepository,
     aiBudgetService,

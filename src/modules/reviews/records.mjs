@@ -266,6 +266,8 @@ export function createReviewRecords({
       const value = {
         reason: input.reason,
         content: input.content,
+        ...(Array.isArray(input.citations) ? { citations: clone(input.citations) } : {}),
+        ...(input.citationStatus ? { citationStatus: safeText(input.citationStatus, 20) } : {}),
         reviewStatus: input.reviewStatus || "candidate",
         reviewedAt: input.reviewedAt || "",
         reviewDisposition: input.reviewDisposition || "",
@@ -287,6 +289,8 @@ export function createReviewRecords({
       return createRecordInStore(document, "analyses", "analysis", {
         reason: input.reason,
         content: input.content,
+        ...(Array.isArray(input.citations) ? { citations: clone(input.citations) } : {}),
+        ...(input.citationStatus ? { citationStatus: safeText(input.citationStatus, 20) } : {}),
         reviewStatus: input.reviewStatus || "candidate",
         reviewedAt: input.reviewedAt || "",
         reviewDisposition: input.reviewDisposition || "",

@@ -432,7 +432,7 @@ assert.ok(plan.business.relations.some(row => row.relation === "source" && row.t
 assert.ok(fullPlan.business.relations.some(row => row.relation === "result" && row.targetId === "exchange-1" && row.resolution === "live"));
 assert.ok(fullPlan.business.objects.some(row => row.kind === "annotationExchange" && row.parentKey));
 assert.ok(fullPlan.business.objects.some(row => row.kind === "thought" && !Object.hasOwn(row.payload, "followUps")));
-assert.equal(fullPlan.snapshot.version, 17);
+assert.equal(fullPlan.snapshot.version, 18);
 assert.deepEqual(
   new Set(fullPlan.business.objects
     .filter(row => ["evidenceSource", "evidencePermission", "perceptionEvent"].includes(row.kind))

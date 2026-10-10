@@ -7,7 +7,7 @@ export function migrationStore(accountId = "fixture-account") {
   const captureSourceKey = JSON.stringify(["capture", "shared-id", "", ""]);
   const claimSourceKey = JSON.stringify(["userClaim", "claim-1", "", ""]);
   return {
-    version: 17,
+    version: 18,
     checkins: [{ id: "shared-id", mood: 4, custom: { calm: 3 }, notes: { mood: "原始心情" } }],
     dailyRecords: [{ id: "health-1", type: "exercise", duration: 30, attachmentPaths: ["/attachments/run.png"] }],
     captures: [{

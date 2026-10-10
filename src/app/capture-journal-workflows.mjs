@@ -6,8 +6,11 @@ import {
   personalContextReceiptFingerprint,
   personalContextReceiptMatches
 } from "./personal-context.mjs";
+import { coreUserModelProjection } from "./user-model.mjs";
 import { userPrompt } from "../modules/ai/index.mjs";
+import { promptText } from "../shared/prompts/index.mjs";
 import { assertCoreModelReady } from "../shared/core-model-gate.mjs";
+import { evidenceSourceKey } from "../modules/user-model/index.mjs";
 import {
   diaryAssistSystemPrompt,
   diarySystemPrompt,
@@ -18,13 +21,42 @@ import {
 } from "../modules/journals/index.mjs";
 import { eventTimeFields, localDateKey } from "../shared/time/index.mjs";
 import { recordVersion, safeText } from "../shared/validation/index.mjs";
+import { answerCitationSources, parseVerifiedAnswer } from "./answer-citations.mjs";
 
 const ASSIST_SCENES = {
   lead: "diaryLead",
   structure: "diaryStructure",
   topic: "diaryTopic"
 };
+const list = value => Array.isArray(value) ? value : [];
+const trendCitationSources = trend => [
+  ...list(trend?.historicalUserSupplementCitationSources),
+  ...list(trend?.citationSources)
+];
+const citationSystemPrompt = base => [
+  base,
+  promptText("orchestration.answer.citations")
+].filter(Boolean).join("\n\n");
+const journalCitationSource = journal => ({
+  citationId: `current-journal:${String(journal.id || "")}:${recordVersion(journal.version)}`,
+  text: String(journal.content || ""),
+  source: {
+    resourceType: "journal",
+    resourceId: String(journal.id || ""),
+    recordType: "当前日记",
+    version: recordVersion(journal.version),
+    location: {
+      view: "journal-reflection",
+      targetId: String(journal.id || ""),
+      rootId: String(journal.id || ""),
+      targetKey: "content",
+      occurredOn: String(journal.occurredOn || "")
+    }
+  }
+});
 const failure = (message, code, statusCode = 400) => Object.assign(new Error(message), { code, statusCode });
+const staleCoreModel = () => failure("核心用户模型或来源权限已变化，本次结果未写入", "AI_TASK_STALE", 409);
+const staleJournalContext = () => failure("日记来源或趋势已变化，本次结果未写入", "AI_TASK_STALE", 409);
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 const replayResult = replay => {
   const value = replay && typeof replay === "object" && hasOwn(replay, "value")
@@ -41,10 +73,130 @@ export function createCaptureJournalWorkflows({
   hash,
   createId = () => crypto.randomUUID(),
   coreModelReadiness = () => ({ ready: true }),
+  getRecentTrend = () => null,
+  currentTime = () => Date.now(),
   contextKey = () => "",
   today = () => localDateKey()
 }) {
   const activeReflections = new Map();
+  const coreModelSnapshot = store => {
+    if (!coreModelReadiness(store)?.ready) return null;
+    const projected = coreUserModelProjection(store);
+    // Legacy workflow tests inject a ready gate without a v2 onboarding fixture.
+    // The production wiring uses userModelCoreReadiness, for which a ready model is always projected.
+    const model = projected || {
+      schemaVersion: 1,
+      claims: [],
+      answers: [],
+      unknowns: [],
+      fingerprint: hash("core-user-model-empty-compatibility.v1")
+    };
+    const sourceKeys = list(model.answers).map(answer => evidenceSourceKey({
+      resourceType: "onboardingV2",
+      resourceId: answer.sourceId,
+      rootId: "",
+      targetKey: `answer:${answer.sourceId}`,
+      version: answer.sourceVersion
+    })).filter(Boolean);
+    const permissionVector = list(store?.evidencePermissions)
+      .filter(permission => sourceKeys.includes(permission?.sourceKey))
+      .map(permission => [
+        String(permission.sourceKey || ""),
+        String(permission.accountId || ""),
+        permission.contextAllowed === true,
+        Math.max(0, Math.round(Number(permission.revision) || 0))
+      ])
+      .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+    const permissionFingerprint = hash(JSON.stringify(permissionVector));
+    return {
+      model,
+      modelFingerprint: model.fingerprint,
+      permissionFingerprint,
+      fingerprint: hash(JSON.stringify({
+        modelFingerprint: model.fingerprint,
+        permissionFingerprint
+      }))
+    };
+  };
+  const coreContextPayload = (snapshot, trend) => JSON.stringify({
+    coreUserModel: {
+      fingerprint: snapshot.model.fingerprint,
+      claims: list(snapshot.model.claims),
+      answers: list(snapshot.model.answers),
+      unknowns: list(snapshot.model.unknowns)
+    },
+    ...(trend?.historicalUserSupplement && typeof trend.historicalUserSupplement === "object"
+      ? { historicalUserSupplement: trend.historicalUserSupplement }
+      : {}),
+    ...(trend?.payload && typeof trend.payload === "object"
+      ? { sevenDayTrend: trend.payload }
+      : {})
+  });
+  const assertCoreModelCurrent = (store, expected) => {
+    const current = coreModelSnapshot(store);
+    if (!current || current.fingerprint !== expected?.fingerprint) throw staleCoreModel();
+  };
+  const stableContext = (snapshot, trend, dynamicContext = "") => [
+    coreContextPayload(snapshot, trend),
+    String(dynamicContext || "")
+  ].filter(Boolean).join("\n\n");
+  const trendFor = (store, asOf) => getRecentTrend(store, asOf);
+  const contextAsOf = () => new Date(currentTime()).toISOString();
+  const trendSnapshot = (store, generatedAt) => {
+    const trend = trendFor(store, generatedAt);
+    return { generatedAt, trend, fingerprint: trend?.fingerprint || "" };
+  };
+  const assertTrendCurrent = (store, expected) => {
+    const current = trendFor(store, expected?.generatedAt);
+    if ((current?.fingerprint || "") !== (expected?.fingerprint || "")) {
+      throw staleJournalContext();
+    }
+  };
+  const journalTargetSnapshot = (store, binding = {}) => {
+    const targetId = String(binding?.targetId || "");
+    if (!targetId) return { targetId, fingerprint: "" };
+    if (targetId === "journal-draft") {
+      const draft = store?.journalDraft;
+      return {
+        targetId,
+        fingerprint: hash(JSON.stringify(draft ? {
+          journalId: String(draft.journalId || ""),
+          title: String(draft.title || ""),
+          content: String(draft.content || "")
+        } : null))
+      };
+    }
+    const journal = list(store?.journals).find(item => item?.id === targetId);
+    return {
+      targetId,
+      fingerprint: hash(JSON.stringify(journal ? {
+        id: journal.id,
+        title: journal.title,
+        content: journal.content,
+        tags: journal.tags,
+        occurredAt: journal.occurredAt,
+        occurredOn: journal.occurredOn,
+        createdAt: journal.createdAt,
+        updatedAt: journal.updatedAt,
+        version: recordVersion(journal.version)
+      } : null))
+    };
+  };
+  const assertJournalTargetCurrent = (store, binding, expected) => {
+    if (journalTargetSnapshot(store, binding).fingerprint !== expected?.fingerprint) {
+      throw staleJournalContext();
+    }
+  };
+  const assertAssistContextCurrent = (store, expected) => {
+    assertCoreModelCurrent(store, expected.coreModel);
+    if (!personalContextReceiptMatches(store, expected.personalContext.receipt)
+      || hash(diaryActivityContext(store, expected.occurredOn)) !== expected.activityFingerprint) {
+      throw staleJournalContext();
+    }
+    assertJournalTargetCurrent(store, expected.binding, expected.target);
+    if (expected.trend) assertTrendCurrent(store, expected.trend);
+  };
+  const taskContextAsOf = task => task.contextGeneratedAt || task.createdAt || contextAsOf();
   const intentHash = (kind, targetId, payload) => hash(JSON.stringify({
     kind,
     targetId: targetId || "",
@@ -79,23 +231,30 @@ export function createCaptureJournalWorkflows({
     prepare(store, task) {
       if (task.kind === "journalAssist") {
         const payload = task.payload;
+        const coreModel = coreModelSnapshot(store);
+        if (!coreModel) return null;
         const personalContext = personalContextProjection(store);
         const activityContext = diaryActivityContext(store, payload.occurredOn);
+        const prompt = journalAssistPrompt(stableContext(coreModel, null, activityContext), {
+          mode: payload.mode,
+          title: payload.title,
+          content: payload.content
+        });
         return {
           kind: task.kind,
           inputVersion: 0,
           subtargetVersion: 0,
           inputHash: intentHash(task.kind, task.targetId, task.payload),
-          prompt: journalAssistPrompt(activityContext, {
-            mode: payload.mode,
-            title: payload.title,
-            content: payload.content
-          }),
+          prompt,
           contextFingerprint: hash(JSON.stringify({
             receipt: personalContextReceiptFingerprint(personalContext.receipt),
             prompt: personalContext.prompt,
-            activityContext
+            activityContext,
+            coreModel: coreModel.fingerprint
           })),
+          coreModelFingerprint: coreModel.fingerprint,
+          coreModelModelFingerprint: coreModel.modelFingerprint,
+          coreModelPermissionFingerprint: coreModel.permissionFingerprint,
           scene: ASSIST_SCENES[payload.mode],
           systemPrompt: diaryAssistSystemPrompt(),
           maxTokens: 2_000,
@@ -109,26 +268,50 @@ export function createCaptureJournalWorkflows({
         const journal = store.journals.find(item => item.id === task.targetId);
         if (!journal) return null;
         const sourceUpdatedAt = journal.updatedAt || journal.createdAt;
+        const coreModel = coreModelSnapshot(store);
+        if (!coreModel) return null;
+        const trend = trendFor(store, taskContextAsOf(task));
         const personalContext = personalContextProjection(store);
+        const currentJournal = journalCitationSource(journal);
+        const citationContext = JSON.stringify({
+          currentMaterial: { citationId: currentJournal.citationId }
+        });
         return {
           kind: task.kind,
           inputVersion: recordVersion(journal.version),
           subtargetVersion: 0,
           inputHash: reflectionIntent(store, task).inputHash,
           prompt: userPrompt({
-            context: personalContext.prompt,
+            context: stableContext(coreModel, trend, [personalContext.prompt, citationContext]
+              .filter(Boolean).join("\n\n")),
             ...journalReflectionInput(journal)
           }),
           scene: "diaryReflection",
-          systemPrompt: diarySystemPrompt(),
+          json: true,
+          citationsEnabled: true,
+          citationSources: answerCitationSources(coreModel.model, [
+            ...trendCitationSources(trend),
+            currentJournal
+          ]),
+          systemPrompt: citationSystemPrompt(diarySystemPrompt()),
           contextReceipt: personalContext.receipt,
-          contextFingerprint: personalContextReceiptFingerprint(personalContext.receipt),
+          contextFingerprint: hash(JSON.stringify({
+            receipt: personalContextReceiptFingerprint(personalContext.receipt),
+            coreModel: coreModel.fingerprint,
+            trend: trend?.fingerprint || ""
+          })),
+          coreModelFingerprint: coreModel.fingerprint,
+          coreModelModelFingerprint: coreModel.modelFingerprint,
+          coreModelPermissionFingerprint: coreModel.permissionFingerprint,
           sourceUpdatedAt
         };
       }
       return null;
     },
     save(store, work, task, result) {
+      assertCoreModelCurrent(store, {
+        fingerprint: work.coreModelFingerprint
+      });
       if (task.kind === "journalAssist") {
         task.output = {
           mode: work.taskOutput.mode,
@@ -140,6 +323,10 @@ export function createCaptureJournalWorkflows({
       const saved = journals.addReflectionInStore(store, task.targetId, {
         sourceUpdatedAt: work.sourceUpdatedAt,
         content: result.content,
+        ...(Array.isArray(result.citations) ? {
+          citations: result.citations,
+          citationStatus: result.citationStatus
+        } : {}),
         reasoningContent: result.reasoningContent,
         contextReceipt: compactPersonalContextReceipt(work.contextReceipt)
       }, {
@@ -202,8 +389,21 @@ export function createCaptureJournalWorkflows({
         || (/^\d{4}-\d{2}-\d{2}$/.test(input.occurredOn || "") ? input.occurredOn : today());
       const store = await repository.read();
       assertCoreModelReady(coreModelReadiness(store));
+      const coreModel = coreModelSnapshot(store);
+      const activityContext = diaryActivityContext(store, occurredOn);
+      const personalContext = personalContextProjection(store);
+      const target = journalTargetSnapshot(store, binding);
+      const freshness = {
+        coreModel,
+        occurredOn,
+        binding,
+        target,
+        personalContext,
+        activityFingerprint: hash(activityContext)
+      };
+      const bufferedDeltas = [];
       const result = await generate(
-        journalAssistPrompt(diaryActivityContext(store, occurredOn), {
+        journalAssistPrompt(stableContext(coreModel, null, activityContext), {
           mode,
           title: safeText(input.title, 120),
           content: safeText(input.content, 50000)
@@ -214,9 +414,11 @@ export function createCaptureJournalWorkflows({
           maxTokens: 2000,
           retryWithoutThinking: true,
           captureReasoning: true,
-          onDelta
+          onDelta: event => bufferedDeltas.push(event)
         }
       );
+      assertAssistContextCurrent(await repository.read(), freshness);
+      for (const event of bufferedDeltas) onDelta?.(event);
       return {
         mode,
         content: markJournalAssistContent(mode, result.content),
@@ -253,30 +455,103 @@ export function createCaptureJournalWorkflows({
         if (!journal) throw failure("这篇日记不存在", "JOURNAL_NOT_FOUND", 404);
         assertCoreModelReady(coreModelReadiness(store));
         const sourceUpdatedAt = journal.updatedAt || journal.createdAt;
+        const coreModel = coreModelSnapshot(store);
+        const generatedAt = contextAsOf();
+        const trend = trendSnapshot(store, generatedAt);
         const personalContext = personalContextProjection(store);
+        const target = journalTargetSnapshot(store, { targetId: id });
+        const freshness = {
+          coreModel,
+          trend,
+          personalContext,
+          target
+        };
+        const currentJournal = journalCitationSource(journal);
+        const citationContext = JSON.stringify({
+          currentMaterial: { citationId: currentJournal.citationId }
+        });
         const result = await generate(userPrompt({
-          context: personalContext.prompt,
+          context: stableContext(coreModel, trend.trend, [personalContext.prompt, citationContext]
+            .filter(Boolean).join("\n\n")),
           ...journalReflectionInput(journal)
         }), {
           scene: "diaryReflection",
-          systemPrompt: diarySystemPrompt(),
+          json: true,
+          systemPrompt: citationSystemPrompt(diarySystemPrompt()),
           captureReasoning: true,
-          contextReceipt: personalContext.receipt,
-          onDelta: notify
+          contextReceipt: personalContext.receipt
         });
-        if (!personalContextReceiptMatches(await repository.read(), personalContext.receipt)) {
+        const currentStore = await repository.read();
+        assertCoreModelCurrent(currentStore, coreModel);
+        if (!personalContextReceiptMatches(currentStore, personalContext.receipt)) {
           throw failure("个人语境已变化，本次回望未写入", "STALE_PERSONAL_CONTEXT", 409);
         }
-        const saved = await journals.addReflection(id, {
+        assertJournalTargetCurrent(currentStore, { targetId: id }, target);
+        assertTrendCurrent(currentStore, trend);
+        const verified = parseVerifiedAnswer(result.content, answerCitationSources(coreModel.model, [
+          ...trendCitationSources(trend.trend),
+          currentJournal
+        ]));
+        const validateFreshness = document => {
+          assertCoreModelCurrent(document, freshness.coreModel);
+          if (!personalContextReceiptMatches(document, freshness.personalContext.receipt)) {
+            throw failure("个人语境已变化，本次回望未写入", "STALE_PERSONAL_CONTEXT", 409);
+          }
+          assertJournalTargetCurrent(document, { targetId: id }, freshness.target);
+          assertTrendCurrent(document, freshness.trend);
+        };
+        const reflectionInput = {
           sourceUpdatedAt,
-          content: result.content,
+          content: verified.content,
+          ...(verified.citations ? {
+            citations: verified.citations,
+            citationStatus: verified.citationStatus
+          } : {}),
           reasoningContent: result.reasoningContent,
           contextReceipt: compactPersonalContextReceipt(personalContext.receipt)
-        }, { clientRequestId, requestHash });
+        };
+        let saved;
+        if (idempotencyRequest && typeof repository.executeIdempotent === "function") {
+          let executed = false;
+          saved = await repository.executeIdempotent(idempotencyRequest, document => {
+            executed = true;
+            validateFreshness(document);
+            const response = journals.addReflectionInStore(document, id, reflectionInput, {
+              clientRequestId,
+              requestHash,
+              useLegacyLookup: false
+            });
+            if (response.conflict) {
+              throw failure("同一幂等键不能用于不同内容", "IDEMPOTENCY_KEY_REUSED", 409);
+            }
+            if (response.missing) throw staleJournalContext();
+            return response;
+          }, {
+            onReplay: value => value && typeof value === "object"
+              ? { ...value, duplicate: true }
+              : value
+          });
+          if (!executed && saved && typeof saved === "object") saved = { ...saved, duplicate: true };
+        } else if (typeof repository.update === "function") {
+          saved = await repository.update(document => {
+            validateFreshness(document);
+            return journals.addReflectionInStore(document, id, reflectionInput, {
+              clientRequestId,
+              requestHash
+            });
+          });
+        } else {
+          // Compatibility for legacy adapters that expose only read(); the journal
+          // records layer still owns its atomic/idempotent write transaction.
+          saved = await journals.addReflection(id, reflectionInput, { clientRequestId, requestHash });
+        }
         if (saved.conflict) {
           throw failure("同一幂等键不能用于不同内容", "IDEMPOTENCY_KEY_REUSED", 409);
         }
         if (saved.missing) throw new Error("这篇日记已被删除");
+        if (!saved.duplicate && verified.content) {
+          notify?.({ type: "delta", content: verified.content });
+        }
         return saved.duplicate ? replayResult(saved) : saved.value;
       };
 

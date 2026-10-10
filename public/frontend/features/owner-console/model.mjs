@@ -32,7 +32,8 @@ export const DEFAULT_LLM_SCENARIOS = Object.freeze({
   bookRecognition: "mid",
   healthRecognition: "mid",
   contentImageUnderstanding: "mid",
-  capturePolish: "mid"
+  capturePolish: "mid",
+  recordCompression: "lite"
 });
 
 export const DEFAULT_SCENE_EFFORTS = Object.freeze({
@@ -57,6 +58,7 @@ export const DEFAULT_SCENE_LABELS = Object.freeze({
   healthRecognition: "健康识别",
   contentImageUnderstanding: "内容图片理解",
   capturePolish: "语音整理",
+  recordCompression: "日记录压缩",
   lite: "连接测试",
   mid: "连接测试",
   high: "连接测试",

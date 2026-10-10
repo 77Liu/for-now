@@ -11,6 +11,10 @@ import {
   createPerceptionService
 } from "./perception.mjs";
 import { createTrashCommands } from "./trash.mjs";
+import {
+  createRecordCompressionService,
+  DEFAULT_RECORD_TIMEZONE
+} from "./record-compressions.mjs";
 
 const requiredFunction = (value, name) => {
   if (typeof value !== "function") throw new TypeError(`Content runtime ${name} is required`);
@@ -21,11 +25,16 @@ export function createContentRuntime({
   mediaOptions = {},
   trashRetentionDays,
   getAccountId,
+  getTimezone = () => DEFAULT_RECORD_TIMEZONE,
   getCursorScope = getAccountId,
   backgroundContextKey,
   workflowContextKey,
   dispatchBackground,
   runDeepSeek,
+  readAiUsage = async () => ({ entries: [] }),
+  recordCompressionDailyBudgetCny = 0,
+  recordCompressionPerCallBudgetCny = 0,
+  recordCompressionMaxBackfillDatesPerScan = 1,
   now = () => new Date().toISOString(),
   today,
   currentTime = () => Date.now(),
@@ -63,11 +72,30 @@ export function createContentRuntime({
     now,
     hash
   });
+  const recordCompressionService = createRecordCompressionService({
+    repository,
+    getAccountId,
+    getTimezone,
+    now,
+    createId,
+    hash,
+    readAiUsage,
+    dailyBudgetCny: recordCompressionDailyBudgetCny,
+    perCallBudgetCny: recordCompressionPerCallBudgetCny,
+    maxBackfillDatesPerScan: recordCompressionMaxBackfillDatesPerScan
+  });
+  const getRecentTrend = (store, asOf) => (
+    recordCompressionService.getCurrentTrend(store, asOf)
+  );
   const contentRepository = createPerceptionAwareRepository({
     repository,
     perception: perceptionRuntime,
     createTask: (store, input) => backgroundAi?.createInStore(store, input),
-    scheduleTask: taskId => backgroundAi?.schedule(taskId)
+    scheduleTask: taskId => backgroundAi?.schedule(taskId),
+    onStoreMutation: (store, beforeStore) => {
+      const staleRunningTaskIds = recordCompressionService.invalidateChangedSources(store, beforeStore);
+      for (const taskId of staleRunningTaskIds) backgroundAi?.cancel(taskId);
+    }
   });
   const foundation = createContentFoundation({
     repository: contentRepository,
@@ -125,6 +153,8 @@ export function createContentRuntime({
     annotationService: foundation.annotationService,
     contentAttachments: contentAttachmentService,
     perception: perceptionRuntime,
+    recordCompressionTarget: recordCompressionService.target,
+    getRecentTrend,
     mediaRuntime,
     getAccountId,
     backgroundContextKey,
@@ -139,8 +169,9 @@ export function createContentRuntime({
     debugFetch
   });
   backgroundAi = background.backgroundAi;
+  const recordCompressionJobs = recordCompressionService.attach(backgroundAi);
   const perception = createPerceptionService({
-    repository,
+    repository: contentRepository,
     runtime: perceptionRuntime,
     backgroundAi
   });
@@ -154,6 +185,7 @@ export function createContentRuntime({
     getAccountId,
     materializeAttachmentFiles: mediaRuntime.materializeAttachmentFiles,
     workflowContextKey,
+    getRecentTrend,
     now,
     today,
     currentTime,
@@ -174,6 +206,7 @@ export function createContentRuntime({
     ...mediaRuntime,
     ...background,
     ...workflows,
+    runRecordCompressionScan: options => recordCompressionJobs.scan(options),
     contentAttachmentService,
     perception,
     updateSourceStore: operation => contentRepository.update(operation),

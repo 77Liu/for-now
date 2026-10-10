@@ -3722,7 +3722,7 @@ try {
   assert.deepEqual(await evaluate(`(() => {const rate=document.querySelector("#tts-generation-rate"),voice=document.querySelector("#tts-default-voice"),preview=document.querySelector("#tts-voice-preview"),assistant=document.querySelector("#assistant-name").closest("label"),exclusive=document.querySelector("[data-exclusive-agent-comment]");return{profileModels:document.querySelectorAll("[data-profile-model]").length,profileEfforts:document.querySelectorAll("[data-profile-effort]").length,sceneTiers:document.querySelectorAll("[data-ai-scenario]").length,annotationSceneTiers:document.querySelectorAll('[data-ai-scenario="annotationShenji"]').length,sceneEfforts:document.querySelectorAll("[data-ai-effort]").length,responseStyles:document.querySelectorAll("[data-response-style]").length,annotationStyles:document.querySelectorAll('[data-response-style="annotationShenji"]').length,exclusiveLabel:exclusive?.querySelector("span")?.textContent,exclusiveAfterAssistant:assistant.nextElementSibling===exclusive,voice:voice.value,voices:voice.options.length,previewName:preview.getAttribute("aria-label"),previewTitle:preview.title,min:rate.min,max:rate.max,value:rate.value,accessibleName:rate.getAttribute("aria-label"),valueText:rate.getAttribute("aria-valuetext"),label:document.querySelector("#tts-generation-rate-value").textContent}})()`), {
     profileModels: 4,
     profileEfforts: 0,
-    sceneTiers: 14,
+    sceneTiers: 15,
     annotationSceneTiers: 0,
     sceneEfforts: 16,
     responseStyles: 7,

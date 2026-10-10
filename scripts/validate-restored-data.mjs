@@ -113,8 +113,14 @@ for (const account of backupManifest.accounts) {
 }
 if (manifestAccounts.size !== auth.users.length) throw new Error("Restored attachment manifest account set does not match");
 
-const apiCollections = ["checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "actions", "habits", "habitCheckins", "feedback", "validationLedger"];
+const apiCollections = ["checkins", "dailyRecords", "captures", "journals", "thoughts", "chats", "books", "keepsakes", "quotes", "experiments", "analyses", "recordCompressions", "customMetrics", "actions", "habits", "habitCheckins", "feedback", "validationLedger"];
 const privateCollections = ["evidenceSources", "evidencePermissions", "perceptionEvents"];
+const missingCollectionDefaults = {
+  recordCompressions: 18,
+  evidenceSources: 17,
+  evidencePermissions: 17,
+  perceptionEvents: 17
+};
 const collections = [...apiCollections, ...privateCollections];
 const collectionIdentity = (key, item) => String(
   key === "evidencePermissions" ? item?.sourceKey : item?.id || ""
@@ -146,9 +152,10 @@ for (const user of auth.users) {
     }
   }
   for (const key of collections) {
+    const storeVersion = Number(store.version || 1);
     const values = Array.isArray(store[key])
       ? store[key]
-      : Number(store.version || 1) < 17 && privateCollections.includes(key) ? []
+      : storeVersion < (missingCollectionDefaults[key] || 0) ? []
         : null;
     if (!values) throw new Error(`Restored store is missing ${key}`);
     totalRecords += values.length;

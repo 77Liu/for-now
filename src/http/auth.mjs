@@ -25,6 +25,7 @@ export function createAuthHttp({ service, sendJson, bodyJson, authRequired, base
   const routes = new Set([
     "GET /api/auth/me", "POST /api/auth/register", "POST /api/auth/login",
     "GET /api/auth/users", "PATCH /api/auth/username", "PATCH /api/auth/password",
+    "PATCH /api/auth/timezone",
     "POST /api/auth/logout"
   ]);
   return {
@@ -60,7 +61,9 @@ export function createAuthHttp({ service, sendJson, bodyJson, authRequired, base
           ? await service.setRole(requestToken(req), url.pathname.split("/")[4], input.role)
           : url.pathname.endsWith("/username")
             ? await service.rename(requestToken(req), input)
-            : await service.changePassword(requestToken(req), input);
+            : url.pathname.endsWith("/timezone")
+              ? await service.setRecordTimezone(requestToken(req), input)
+              : await service.changePassword(requestToken(req), input);
         return sendJson(res, 200, { authenticated: true, user: publicUser(user) });
       } catch (error) {
         if (error.statusCode) return sendJson(res, error.statusCode, { error: error.message, ...(error.code ? { code: error.code } : {}) });

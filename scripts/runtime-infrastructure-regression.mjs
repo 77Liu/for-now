@@ -3,10 +3,16 @@ import { promises as fs } from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { loadAppConfig, loadAttachmentConfig } from "../src/config/index.mjs";
+import {
+  loadAppConfig,
+  loadAttachmentConfig,
+  recordCompressionAccountQueueAllowance,
+  recordCompressionSlotQueueAllowance
+} from "../src/config/index.mjs";
 import { createObservability, pruneLogs } from "../src/shared/observability/index.mjs";
 import { createJsonHttp, createRequestHandler } from "../src/http/index.mjs";
 import { createAttachmentStorage } from "../src/shared/attachments/index.mjs";
+import { createRetryableSlotRunner } from "../src/app/index.mjs";
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "growth-infrastructure-"));
 const config = env => loadAppConfig({ rootDir: root, env });
@@ -50,6 +56,109 @@ assert.equal(defaults.localTestResetOnStart, false);
 assert.equal(config({ LOCAL_TEST_MODE: "1", LOCAL_TEST_RESET_ON_START: "1" }).localTestResetOnStart, true);
 assert.equal(config({ LOCAL_TEST_RESET_ON_START: "1" }).localTestResetOnStart, false);
 assert.equal(defaults.periodicAnalysisEnabled, false);
+assert.equal(defaults.recordCompressionEnabled, false);
+assert.equal(defaults.recordCompressionDailyBudgetCny, 0);
+assert.equal(defaults.recordCompressionDailyInvocationLimit, 0);
+assert.equal(defaults.recordCompressionAccountDailyInvocationLimit, 2);
+assert.equal(defaults.recordCompressionMaxBackfillDatesPerScan, 1);
+assert.equal(recordCompressionAccountQueueAllowance({ knownCalls: 1, reservedCalls: 0 }), 1);
+assert.equal(recordCompressionAccountQueueAllowance({ knownCalls: 0, reservedCalls: 2 }), 0);
+assert.equal(recordCompressionAccountQueueAllowance({ knownCalls: Number.NaN }), 0,
+  "unknown consumed-call counts must fail closed");
+assert.equal(recordCompressionSlotQueueAllowance("morning", 2), 1,
+  "the morning scheduler must reserve one daily invocation for the evening snapshot");
+assert.equal(recordCompressionSlotQueueAllowance("morning", 1), 0);
+assert.equal(recordCompressionSlotQueueAllowance("evening", 2), 2);
+assert.equal(recordCompressionSlotQueueAllowance("morning", Number.NaN), 0);
+const runSlot = createRetryableSlotRunner();
+let slotAttempts = 0;
+const slotKey = "2026-10-10T06:00";
+await assert.rejects(runSlot(slotKey, async () => {
+  slotAttempts += 1;
+  throw new Error("temporary storage failure");
+}), /temporary storage failure/);
+assert.deepEqual(await runSlot(slotKey, async () => {
+  slotAttempts += 1;
+  return { queuedCount: 1 };
+}), { queuedCount: 1 },
+"a failed scheduler round must leave its slot available for retry in the same minute");
+assert.deepEqual(await runSlot(slotKey, async () => {
+  slotAttempts += 1;
+  return { queuedCount: 1 };
+}), { skipped: "outside-slot" },
+"only a successfully completed scheduler round marks its slot");
+assert.equal(slotAttempts, 2);
+const compressionProduction = config({
+  NODE_ENV: "production",
+  RECORD_COMPRESSION_ENABLED: "1",
+  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "35",
+  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "0.5",
+  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "35",
+  RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN: "0"
+});
+assert.equal(compressionProduction.recordCompressionEnabled, true);
+assert.equal(compressionProduction.recordCompressionDailyBudgetCny, 35);
+assert.equal(compressionProduction.recordCompressionPerCallBudgetCny, 0.5);
+assert.equal(compressionProduction.recordCompressionDailyInvocationLimit, 35);
+assert.equal(compressionProduction.recordCompressionAccountDailyInvocationLimit, 2);
+assert.equal(compressionProduction.recordCompressionMaxBackfillDatesPerScan, 0);
+assert.equal(config({
+  RECORD_COMPRESSION_ENABLED: "1",
+  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "10",
+  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "1"
+}).recordCompressionEnabled, false);
+assert.equal(config({
+  NODE_ENV: "production",
+  RECORD_COMPRESSION_ENABLED: "1",
+  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "10",
+  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "1"
+}).recordCompressionEnabled, false, "daily invocation limit must be explicitly frozen");
+assert.equal(config({
+  NODE_ENV: "production",
+  RECORD_COMPRESSION_ENABLED: "1",
+  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "10",
+  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "48"
+}).recordCompressionEnabled, false, "per-call budget must be explicitly configured");
+assert.equal(config({
+  NODE_ENV: "production",
+  RECORD_COMPRESSION_ENABLED: "1",
+  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "1",
+  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "48"
+}).recordCompressionEnabled, false, "daily budget must be explicitly configured");
+assert.equal(config({
+  NODE_ENV: "production",
+  RECORD_COMPRESSION_ENABLED: "1",
+  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "10",
+  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "1",
+  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "2.5"
+}).recordCompressionEnabled, false, "daily invocation limit must be a positive integer");
+assert.equal(config({
+  NODE_ENV: "production",
+  RECORD_COMPRESSION_ENABLED: "1",
+  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "10",
+  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "1",
+  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "0"
+}).recordCompressionEnabled, false, "daily invocation limit must be positive");
+assert.equal(config({
+  NODE_ENV: "production",
+  RECORD_COMPRESSION_ENABLED: "1",
+  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "10",
+  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "1",
+  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "48"
+}).recordCompressionEnabled, true);
+assert.equal(config({
+  NODE_ENV: "production",
+  RECORD_COMPRESSION_ENABLED: "1",
+  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "10",
+  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "11"
+}).recordCompressionEnabled, false);
+assert.equal(config({
+  NODE_ENV: "test",
+  LOCAL_TEST_MODE: "1",
+  RECORD_COMPRESSION_ENABLED: "1",
+  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "10",
+  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "1"
+}).recordCompressionEnabled, false);
 assert.equal(config({ PERIODIC_ANALYSIS_ENABLED: "0" }).periodicAnalysisEnabled, false);
 assert.equal(config({ PERIODIC_ANALYSIS_ENABLED: "1" }).periodicAnalysisEnabled, true);
 assert.equal(config({ PERIODIC_ANALYSIS_ENABLED: "yes" }).periodicAnalysisEnabled, false);

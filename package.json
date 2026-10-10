@@ -135,7 +135,8 @@
     "replay:personalization:plan": "node scripts/personalization-live-replay.mjs",
     "replay:personalization:blind": "node scripts/personalization-blind-packet.mjs",
     "test:release-fence": "node scripts/release-fence-regression.mjs",
-    "test:quality-boundaries": "node scripts/working-context-source-boundaries-regression.mjs && node scripts/personalization-quality-plan-regression.mjs"
+    "test:quality-boundaries": "node scripts/working-context-source-boundaries-regression.mjs && node scripts/personalization-quality-plan-regression.mjs",
+    "test:record-compressions": "node scripts/system-test.mjs record-compressions"
   },
   "dependencies": {
     "@alicloud/credentials": "2.4.7",

@@ -307,7 +307,7 @@ PG_TEST_BIN=/tmp/for-now-postgresql-16.14/bin npm run test:postgres
 ```
 
 该路径实际通过 PostgreSQL 16.14 全门禁和独立持久幂等专项。主门禁现覆盖
-Store v17（含证据/许可/感知事件）新领域、元数据顺序与扩展字段、JSON `null` 幂等响应、旧表从账户
+Store v18（含证据/许可/感知事件与日压缩摘要）新领域、元数据顺序与扩展字段、JSON `null` 幂等响应、旧表从账户
 快照精确升级、全量关系恢复对比、自动回答默认关闭、设置并发、治理中台
 PostgreSQL 脱敏快照和小物派生路径；机器证据见
 `../reports/g2-r4-postgres-2026-09-30.json`。生产仍必须

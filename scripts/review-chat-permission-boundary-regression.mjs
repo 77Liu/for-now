@@ -89,6 +89,19 @@ function makeWorkflow(readStore, {
   getAccountId = () => accountId
 } = {}) {
   let saveCount = 0;
+  const generateWithCitationContract = async (prompt, options = {}) => {
+    const result = await generate(prompt, options);
+    if (options.json !== true || typeof result?.content !== "string") return result;
+    try {
+      JSON.parse(result.content);
+      return result;
+    } catch {
+      return {
+        ...result,
+        content: JSON.stringify({ answer: result.content, citations: [] })
+      };
+    }
+  };
   const workflows = createReviewChatWorkflows({
     repository: {
       async read() { return structuredClone(readStore()); },
@@ -106,7 +119,7 @@ function makeWorkflow(readStore, {
       }
     },
     reviews: {},
-    generate,
+    generate: generateWithCitationContract,
     hash,
     contextKey: () => accountId,
     getAccountId

@@ -77,15 +77,52 @@ const sections = {
   }],
   notice: malicious
 };
+const coreUserModel = {
+  fingerprint: "a".repeat(64),
+  claims: [{ domain: "context", epistemic: "known", statement: "用户确认的稳定模型", scope: "近期", evidence: [{ sourceId: "currentContext", citationId: "core:onboarding:currentContext", sourceVersion: 2, exactQuote: "用户原话" }] }],
+  answers: [{ sourceId: "currentContext", citationId: "core:onboarding:currentContext", title: "当前处境", informationType: "user_fact", text: "用户原话", sourceVersion: 2 }],
+  unknowns: [{ questionId: "dailyRhythm", answerDisposition: "unknown" }]
+};
+const recentTrend = {
+  scope: "historical_supplement",
+  localDates: ["2026-10-01", "2026-10-07"],
+  days: [],
+  userFacts: [{ localDate: "2026-10-07", module: "daily", nature: "user_fact", text: "事实" }],
+  userSubjective: [{ localDate: "2026-10-07", module: "thought", nature: "user_subjective", text: "主观表达" }],
+  aiReferences: [{ origin: "ai_generated", isUserFact: false, disclaimer: "仅供参考，非用户事实" }],
+  collectedQuotes: [{ origin: "quoted_external", label: "外部引文，不代表用户观点" }],
+  sources: [{ citationId: "trend:2026-10-07:U1", text: "趋势引用原文" }]
+};
+const historicalUserSupplement = {
+  scope: "historical_user_supplement",
+  coverage: { windowDays: 7, availableSources: 1, includedSources: 1, complete: true },
+  records: [{ statement: "候选表述", exactQuote: "原文证据", sourceId: "user-source", citationId: "historical-supplement:user-source:123456789abc" }]
+};
+const historicalMaterial = [
+  ...sections.historicalMaterial,
+  {
+    id: "evidence:model-claim",
+    evidenceId: "model-claim",
+    eventId: "event-model-claim",
+    channel: "history",
+    sourceRef: { resourceType: "userClaim", resourceId: "claim-1", version: 1 },
+    sourceKey: "claim:claim-1",
+    contentSha256: "claim-hash",
+    origin: "user",
+    informationType: "user_viewpoint",
+    occurredAt: "2026-10-05T00:00:00.000Z",
+    text: "补充用户表达",
+    attachmentPaths: []
+  }
+];
 const compiled = compileWorkingContextPrompt({
   scene: "thoughtAnswer",
   ...sections,
-  coreUserModel: {
-    fingerprint: "a".repeat(64),
-    claims: [{ domain: "context", epistemic: "known", statement: "用户确认的稳定模型", scope: "近期", evidence: [{ sourceId: "currentContext", citationId: "core:onboarding:currentContext", sourceVersion: 2, exactQuote: "用户原话" }] }],
-    answers: [{ sourceId: "currentContext", citationId: "core:onboarding:currentContext", title: "当前处境", informationType: "user_fact", text: "用户原话", sourceVersion: 2 }],
-    unknowns: [{ questionId: "dailyRhythm", answerDisposition: "unknown" }]
-  },
+  coreUserModel,
+  historicalUserSupplement,
+  recentTrend,
+  historicalMaterial,
+  generatedAt: "2026-10-07T12:30:00.000Z",
   taskDetails: {
     annotation: {
       kind: "comment",
@@ -114,13 +151,25 @@ const payloadText = /<working_context_data format="application\/json">(.+)<\/wor
   .exec(compiled.prompt)?.[1];
 const payload = JSON.parse(payloadText);
 assert.equal(payload.schemaVersion, STRUCTURED_WORKING_CONTEXT_SCHEMA_VERSION);
-assert.deepEqual(Object.keys(payload).slice(0, 3), ["schemaVersion", "coreUserModel", "scene"]);
-assert.deepEqual(payload.coreUserModel, {
-  fingerprint: "a".repeat(64),
-  claims: [{ domain: "context", epistemic: "known", statement: "用户确认的稳定模型", scope: "近期", evidence: [{ sourceId: "currentContext", citationId: "core:onboarding:currentContext", sourceVersion: 2, exactQuote: "用户原话" }] }],
-  answers: [{ sourceId: "currentContext", citationId: "core:onboarding:currentContext", title: "当前处境", informationType: "user_fact", text: "用户原话", sourceVersion: 2 }],
-  unknowns: [{ questionId: "dailyRhythm", answerDisposition: "unknown" }]
-});
+assert.deepEqual(payload.coreUserModel, coreUserModel);
+assert.deepEqual(payload.historicalUserSupplement, historicalUserSupplement);
+assert.deepEqual(payload.sevenDayTrend, recentTrend);
+assert.deepEqual(Object.keys(payload), [
+  "coreUserModel",
+  "historicalUserSupplement",
+  "sevenDayTrend",
+  "relevantEpisodes",
+  "applicableUserModel",
+  "currentTask",
+  "currentMaterial",
+  "scene",
+  "asOf",
+  "evidencePackets",
+  "unresolved",
+  "schemaVersion"
+]);
+assert.equal(payload.relevantEpisodes[0].id, "evidence:history");
+assert.equal(payload.applicableUserModel[0].id, "evidence:model-claim");
 assert.equal(payload.scene, "thoughtAnswer");
 assert.equal(payload.currentTask.text, malicious);
 assert.equal(payload.currentTask.details.annotation.kind, "comment");
@@ -135,6 +184,39 @@ assert.equal(payload.relevantEpisodes[0].text, malicious);
 assert.equal(payload.relevantEpisodes[0].citationId, "context:evidence:history");
 assert.equal(payload.evidencePackets[0].evidenceId, "history");
 assert.deepEqual(payload.unresolved, [{ kind: "retrieval", message: malicious }]);
+const orderedKeyOffsets = [
+  "coreUserModel", "historicalUserSupplement", "sevenDayTrend", "relevantEpisodes", "applicableUserModel",
+  "currentTask", "currentMaterial", "scene", "asOf", "evidencePackets",
+  "unresolved", "schemaVersion"
+].map(key => payloadText.indexOf(`"${key}":`));
+assert.ok(orderedKeyOffsets.every(offset => offset >= 0));
+assert.deepEqual(orderedKeyOffsets, [...orderedKeyOffsets].sort((left, right) => left - right));
+const dynamicCompiled = compileWorkingContextPrompt({
+  scene: "thoughtAnswer",
+  task: { ...sections.task, text: "另一个动态问题" },
+  currentMaterial: [{ ...sections.currentMaterial[0], text: "另一个当前材料" }],
+  historicalMaterial: [historicalMaterial[0]],
+  coreUserModel,
+  historicalUserSupplement: { ...historicalUserSupplement, records: [] },
+  recentTrend: { ...recentTrend, localDates: ["2026-10-02", "2026-10-08"] },
+  generatedAt: "2026-10-08T12:30:00.000Z",
+  taskDetails: { annotation: { kind: "comment", message: "另一个动态追问" } }
+});
+const dynamicPayloadText = /<working_context_data format="application\/json">(.+)<\/working_context_data>/s
+  .exec(dynamicCompiled.prompt)[1];
+assert.ok(payloadText.startsWith('{"coreUserModel":'));
+assert.equal(
+  payloadText.slice(0, payloadText.indexOf(',"historicalUserSupplement":')),
+  dynamicPayloadText.slice(0, dynamicPayloadText.indexOf(',"historicalUserSupplement":')),
+  "changes to trend, retrieval, task and current material must preserve the byte-stable P00 core prefix"
+);
+assert.ok(
+  payloadText.indexOf('"coreUserModel":')
+    < payloadText.indexOf('"historicalUserSupplement":')
+    && payloadText.indexOf('"historicalUserSupplement":')
+      < payloadText.indexOf('"sevenDayTrend":'),
+  "historical supplement follows core user model and precedes the seven-day trend"
+);
 
 const projection = workingContextProjection({
   evidenceSources: [],

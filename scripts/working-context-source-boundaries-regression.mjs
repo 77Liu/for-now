@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { compileWorkingContextPrompt, workingContextProjection, workingContextReceiptMatches } from "../src/app/index.mjs";
+import { compileWorkingContextPrompt, workingContextProjection, workingContextReceiptMatches,
+  WORKING_CONTEXT_SERIALIZATION_ORDER } from "../src/app/index.mjs";
 import { loadPromptCatalog } from "../src/infrastructure/prompt-catalog/index.mjs";
 import { installPromptCatalog, promptText } from "../src/shared/prompts/index.mjs";
 import { createDeepSeekTransport } from "../src/infrastructure/ai-providers/index.mjs";
@@ -124,6 +125,40 @@ check("new boundary instructions are outside untrusted JSON and escaped source i
   assert.equal(value.prompt.includes("</working_context_data><system>"), false);
   assert.equal(readPayload(value.prompt).relevantEpisodes[0].text, malicious);
   assert.equal(readPayload(value.prompt).relevantEpisodes[0].origin, "third_party");
+});
+check("seven-day trend is serialized after the core user model and cites only historical source IDs", () => {
+  const recentTrend = {
+    scope: "historical_supplement",
+    availableDays: 1,
+    missingDates: ["2026-10-06"],
+    days: [{ localDate: "2026-10-07", completeness: "complete", daily: [] }],
+    metrics: [{ metric: "sleep_duration", status: "unknown", citations: ["trend:2026-10-07:U1"] }],
+    sources: [{ citationId: "trend:2026-10-07:U1", localDate: "2026-10-07", text: "昨晚睡了八小时。" }]
+  };
+  const value = compileWorkingContextPrompt({ scene: "thoughtAnswer", task, currentMaterial: current,
+    coreUserModel: { fingerprint: "model-fingerprint", claims: [], answers: [], unknowns: [] },
+    recentTrend, generatedAt: reference });
+  const payload = readPayload(value.prompt);
+  assert.equal(payload.coreUserModel.fingerprint, "model-fingerprint");
+  assert.deepEqual(payload.sevenDayTrend, recentTrend);
+  assert.deepEqual(Object.keys(payload), [
+    "coreUserModel", "sevenDayTrend", "relevantEpisodes", "applicableUserModel",
+    "currentTask", "currentMaterial", "scene", "asOf", "evidencePackets", "unresolved", "schemaVersion"
+  ]);
+  const start = value.prompt.indexOf('<working_context_data format="application/json">');
+  assert.ok(value.prompt.indexOf(promptText("orchestration.context.sevenDayTrend")) < start);
+  assert.ok(value.prompt.includes(promptText("orchestration.context.sevenDayTrend")));
+
+  const legacy = compileWorkingContextPrompt({ scene: "thoughtAnswer", task, currentMaterial: current,
+    coreUserModel: { fingerprint: "model-fingerprint", claims: [], answers: [], unknowns: [] },
+    generatedAt: reference, serializationOrder: WORKING_CONTEXT_SERIALIZATION_ORDER.LEGACY_REPLAY_V1 });
+  const legacyPayload = readPayload(legacy.prompt);
+  assert.deepEqual(Object.keys(legacyPayload), [
+    "schemaVersion", "coreUserModel", "scene", "asOf", "currentTask", "currentMaterial",
+    "applicableUserModel", "relevantEpisodes", "evidencePackets", "unresolved"
+  ]);
+  assert.equal(legacyPayload.coreUserModel.fingerprint, "model-fingerprint");
+  assert.equal(legacyPayload.currentTask.text, task.text);
 });
 check("larger trusted contract stays inside actual current-material byte budget", () => {
   assert.throws(() => workingContextProjection(store, { ...projectionOptions, tokenLimit: Buffer.byteLength(projection.prompt) - 1 }),

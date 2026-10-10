@@ -65,10 +65,12 @@ export function createAccountFeatureController({
   function renderIdentity(candidate = activation, { force = false } = {}) {
     if (!active(candidate)) return false;
     const currentUserValue = user();
-    const nextKey = `${currentUserValue?.id || ""}:${currentUserValue?.username || ""}`;
+    const nextKey = `${currentUserValue?.id || ""}:${currentUserValue?.username || ""}:${currentUserValue?.recordTimezone || ""}`;
     if (!force && nextKey === identityKey) return false;
     identityKey = nextKey;
     renderAccountIdentity(candidate.root, currentUserValue);
+    const timezone = query(candidate, ACCOUNT_SELECTORS.recordTimezone);
+    if (timezone) timezone.value = currentUserValue?.recordTimezone || "";
     return true;
   }
 
@@ -176,6 +178,34 @@ export function createAccountFeatureController({
     }
   }
 
+  async function submitRecordTimezone(candidate, form) {
+    const operation = ticket(candidate);
+    const button = form.querySelector?.('[type="submit"]');
+    const status = query(candidate, ACCOUNT_SELECTORS.recordTimezoneStatus);
+    if (button) button.disabled = true;
+    if (status) status.textContent = "正在保存…";
+    try {
+      const result = await auth.request("/api/auth/timezone", {
+        timezone: formControl(form, "timezone")?.value || ""
+      }, "PATCH");
+      if (!sameSession(operation)) return false;
+      currentUser.set(result.user);
+      if (current(operation)) {
+        identityKey = "";
+        renderIdentity(candidate, { force: true });
+        const nextStatus = query(candidate, ACCOUNT_SELECTORS.recordTimezoneStatus);
+        if (nextStatus) nextStatus.textContent = "记录时区已更新。";
+      }
+      showToast("记录时区已更新");
+      return true;
+    } catch (error) {
+      if (current(operation) && status) status.textContent = error?.message || "记录时区保存失败";
+      return false;
+    } finally {
+      if (current(operation) && button && button.isConnected !== false) button.disabled = false;
+    }
+  }
+
   async function changeRole(candidate, button) {
     if (!active(candidate) || !hasCapability("account-roles")) return false;
     const userId = String(button.dataset?.accountRoleSave || "");
@@ -231,6 +261,9 @@ export function createAccountFeatureController({
     if (event.target === query(candidate, ACCOUNT_SELECTORS.usernameForm)) {
       event.preventDefault?.();
       void submitUsername(candidate, event.target);
+    } else if (event.target === query(candidate, ACCOUNT_SELECTORS.recordTimezoneForm)) {
+      event.preventDefault?.();
+      void submitRecordTimezone(candidate, event.target);
     } else if (event.target === query(candidate, ACCOUNT_SELECTORS.passwordForm)) {
       event.preventDefault?.();
       void submitPassword(candidate, event.target);
@@ -330,6 +363,8 @@ export function createAccountFeatureController({
         ACCOUNT_SELECTORS.pageName,
         ACCOUNT_SELECTORS.username,
         ACCOUNT_SELECTORS.usernameStatus,
+        ACCOUNT_SELECTORS.recordTimezone,
+        ACCOUNT_SELECTORS.recordTimezoneStatus,
         ACCOUNT_SELECTORS.passwordStatus,
         ACCOUNT_SELECTORS.roleList,
         ACCOUNT_SELECTORS.roleStatus
@@ -340,7 +375,11 @@ export function createAccountFeatureController({
         else if (selector === ACCOUNT_SELECTORS.roleList) element.innerHTML = "";
         else element.textContent = "";
       }
-      for (const selector of [ACCOUNT_SELECTORS.usernameForm, ACCOUNT_SELECTORS.passwordForm]) {
+      for (const selector of [
+        ACCOUNT_SELECTORS.usernameForm,
+        ACCOUNT_SELECTORS.recordTimezoneForm,
+        ACCOUNT_SELECTORS.passwordForm
+      ]) {
         const form = root.querySelector?.(selector);
         form?.reset?.();
         const button = form?.querySelector?.('[type="submit"]');

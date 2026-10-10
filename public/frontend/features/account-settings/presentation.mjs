@@ -11,6 +11,9 @@ import {
 export const ACCOUNT_SELECTORS = Object.freeze({
   usernameForm: "#username-form",
   usernameStatus: "#username-status",
+  recordTimezoneForm: "#record-timezone-form",
+  recordTimezone: "#account-record-timezone",
+  recordTimezoneStatus: "#record-timezone-status",
   passwordForm: "#password-form",
   passwordStatus: "#password-status",
   currentName: "#account-current-name",

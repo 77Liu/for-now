@@ -1,6 +1,6 @@
 export { createAnnotationCommands } from "./annotation-resources.mjs";
 export { createAiTaskTargets } from "./ai-task-targets.mjs";
-export { parseVerifiedAnswer } from "./answer-citations.mjs";
+export { answerCitationSources, parseVerifiedAnswer } from "./answer-citations.mjs";
 export {
   createAiBudgetRuntime,
   deepSeekBudgetStages,
@@ -9,9 +9,16 @@ export {
 export { createAiRuntime } from "./ai-runtime.mjs";
 export { createMediaRuntime } from "./media-runtime.mjs";
 export { createContentRuntime } from "./content-runtime.mjs";
+export {
+  createRecordCompressionService,
+  currentRecordCompressionTrend,
+  DEFAULT_RECORD_TIMEZONE,
+  recordCompressionAccountOrder
+} from "./record-compressions.mjs";
 export { createStatisticsRuntime } from "./statistics-runtime.mjs";
 export { createServerLifecycle } from "./server-lifecycle.mjs";
 export { createServerRuntime } from "./server-runtime.mjs";
+export { createRetryableSlotRunner } from "./runtime-http-wiring.mjs";
 export { createBackgroundAi } from "./background-ai.mjs";
 export { createContentBackground } from "./content/background.mjs";
 export { createTrashMutations, createTrashCommands } from "./trash.mjs";
@@ -73,6 +80,7 @@ export {
 } from "./task-context.mjs";
 export {
   STRUCTURED_WORKING_CONTEXT_SCHEMA_VERSION,
+  WORKING_CONTEXT_SERIALIZATION_ORDER,
   answerRolePrompt,
   compileWorkingContextPrompt,
   promptRoleText,

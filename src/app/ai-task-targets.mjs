@@ -3,6 +3,7 @@ import { renderPrompt } from "../shared/prompts/index.mjs";
 import { annotationExcerpt, shenjiSystemPrompt } from "../modules/annotations/index.mjs";
 import { thoughtTaskResult } from "../modules/thoughts/index.mjs";
 import { parseClaimExtractionOutput } from "../modules/user-model/index.mjs";
+import { RECORD_COMPRESSION_TASK_KIND } from "../modules/record-compressions/index.mjs";
 import { annotationResource, annotationResourceSource, annotationResourceContext } from "./annotation-resources.mjs";
 import { compileWorkingContextPrompt } from "./prompt-context.mjs";
 import {
@@ -23,6 +24,8 @@ export function createAiTaskTargets({
   annotations,
   contentAttachments = null,
   perception = null,
+  recordCompressionTarget = null,
+  getRecentTrend = () => null,
   getAccountId = () => "local",
   hash,
   now = () => new Date().toISOString()
@@ -428,6 +431,9 @@ export function createAiTaskTargets({
           unknowns: (store.modelUnknowns || []).filter(item => item.sourceTaskId === task.id)
         };
       }
+      if (task.kind === RECORD_COMPRESSION_TASK_KIND) {
+        return recordCompressionTarget?.result(store, task) || null;
+      }
       if (task.kind === "thoughtAnswer" || task.kind === "followUpAnswer") {
         return thoughtTaskResult(store.thoughts, task);
       }
@@ -441,6 +447,9 @@ export function createAiTaskTargets({
       if (task.kind === "captureTranscription") return captureTranscriptionWork(store, task);
       if (task.kind === "contentImageUnderstanding") return contentImageWork(store, task);
       if (task.kind === "onboardingClaimExtraction") return onboardingClaimExtractionWork(store, task);
+      if (task.kind === RECORD_COMPRESSION_TASK_KIND) {
+        return recordCompressionTarget?.prepare(store, task) || null;
+      }
       if (task.kind === "annotationShenji") return annotationWork(store, task);
       if (!["thoughtAnswer", "followUpAnswer"].includes(task.kind)) return null;
       const work = thoughts.inspect(store.thoughts, task);
@@ -448,6 +457,8 @@ export function createAiTaskTargets({
       const { root, followUp, inputVersion, subtargetVersion } = work;
       const accountId = getAccountId();
       const coreUserModel = coreUserModelProjection(store);
+      const generatedAt = task.contextGeneratedAt || task.createdAt || now();
+      const recentTrend = getRecentTrend(store, generatedAt);
       const workingContext = workingContextProjection(store, {
         accountId,
         scene: task.kind,
@@ -459,7 +470,7 @@ export function createAiTaskTargets({
           targetId: root.id,
           subtargetId: followUp?.id || ""
         },
-        generatedAt: task.createdAt || now(),
+        generatedAt,
         currentMaterial: thoughtTaskCurrentMaterial(store, root, {
           accountId,
           currentFollowUpId: followUp?.id || ""
@@ -467,7 +478,9 @@ export function createAiTaskTargets({
         compilePrompt: sections => compileWorkingContextPrompt({
           ...sections,
           scene: task.kind,
-          coreUserModel
+          coreUserModel,
+          historicalUserSupplement: recentTrend?.historicalUserSupplement || null,
+          recentTrend: recentTrend?.payload || null
         })
       });
       const contextFingerprint = workingContextReceiptFingerprint(workingContext.receipt);
@@ -480,13 +493,18 @@ export function createAiTaskTargets({
             targetId: root.id,
             inputVersion,
             attachmentPaths,
-            contextFingerprint
+            contextFingerprint,
+            recentTrendFingerprint: recentTrend?.fingerprint || ""
           })),
           prompt: workingContext.prompt,
           scene: "thoughtAnswer",
           contextReceipt: workingContext.receipt,
           contextFingerprint,
-          citationSources: answerCitationSources(workingContext, coreUserModel),
+          citationSources: [
+            ...answerCitationSources(workingContext, coreUserModel),
+            ...(recentTrend?.historicalUserSupplementCitationSources || []),
+            ...(recentTrend?.citationSources || [])
+          ],
           json: true,
           citationsEnabled: true
         };
@@ -497,7 +515,8 @@ export function createAiTaskTargets({
         subtargetId: followUp.id,
         subtargetVersion,
         currentMaterial: workingContext.receipt.currentMaterial,
-        contextFingerprint
+        contextFingerprint,
+        recentTrendFingerprint: recentTrend?.fingerprint || ""
       }));
       return {
         ...work,
@@ -507,12 +526,19 @@ export function createAiTaskTargets({
         scene: "followUpAnswer",
         contextReceipt: workingContext.receipt,
         contextFingerprint,
-        citationSources: answerCitationSources(workingContext, coreUserModel),
+        citationSources: [
+          ...answerCitationSources(workingContext, coreUserModel),
+          ...(recentTrend?.historicalUserSupplementCitationSources || []),
+          ...(recentTrend?.citationSources || [])
+        ],
         json: true,
         citationsEnabled: true
       };
     },
     save(store, work, task, result) {
+      if (task.kind === RECORD_COMPRESSION_TASK_KIND) {
+        return recordCompressionTarget?.save(store, work, task, result) || null;
+      }
       if (task.kind === "perceptionExtraction") {
         if (!perception) throw new Error("Perception task target is unavailable");
         return perception.save(store, work, task, result);
@@ -583,11 +609,19 @@ export function createAiTaskTargets({
       return annotations.saveTaskReply(work.annotation, task, result);
     },
     started(store, task) {
+      if (task.kind === RECORD_COMPRESSION_TASK_KIND) {
+        recordCompressionTarget?.started?.(store, task);
+        return;
+      }
       if (task.kind !== "captureTranscription") return;
       const work = captureTranscriptionWork(store, task);
       if (work && task.inputHash === work.inputHash) work.capture.transcription.status = "transcribing";
     },
     fail(store, task, error) {
+      if (task.kind === RECORD_COMPRESSION_TASK_KIND) {
+        recordCompressionTarget?.fail?.(store, task, error);
+        return;
+      }
       if (task.kind !== "captureTranscription") return;
       const capture = store.captures?.find(item => item.id === task.targetId);
       if (!capture?.audio?.attachmentPath) return;
@@ -605,6 +639,11 @@ export function createAiTaskTargets({
             ? { version: capture.transcription.version }
             : {})
       };
+    },
+    stale(store, task) {
+      if (task.kind === RECORD_COMPRESSION_TASK_KIND) {
+        recordCompressionTarget?.stale?.(store, task);
+      }
     }
   };
 }

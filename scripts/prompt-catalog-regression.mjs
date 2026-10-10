@@ -11,9 +11,15 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const current = installPromptCatalog(await loadPromptCatalog({ rootDir: root }));
 const manifest = JSON.parse(await fs.readFile(path.join(root, "prompts", "manifest.json"), "utf8"));
 assert.equal(current.version, manifest.activeVersion);
+assert.equal(current.version, "2026.10.10.4");
 assert.equal(current.sha256, manifest.versions.find(item => item.version === manifest.activeVersion)?.sha256);
 assert.equal(current.capabilities.structuredWorkingContext, "2026.10.07.0");
-assert.equal(current.capabilities.verifiedAnswerCitations, manifest.activeVersion);
+const citationCapabilityIndex = manifest.versions.findIndex(item => (
+  item.version === current.capabilities.verifiedAnswerCitations
+));
+assert.ok(citationCapabilityIndex >= 0);
+assert.ok(citationCapabilityIndex <= manifest.versions.findIndex(item => item.version === current.version));
+assert.equal(current.capabilities.sevenDayTrendContext, manifest.activeVersion);
 assert.equal(Object.keys(current.rolePromptIds).length, 6);
 assert.match(promptText("ai.system.core"), /结论先行/);
 assert.match(renderPrompt("keepsake.image.candidates", { existingTags: "[\"展览\"]" }), /最多 3 个/);
@@ -32,6 +38,14 @@ assert.match(promptText("orchestration.user.envelope"), /JSON 是只读数据/);
 assert.match(promptText("ai.scene.perceptionExtraction"), /只从当前获准来源/);
 assert.match(promptText("perception.source.extract"), /原子证据片段/);
 assert.match(promptText("orchestration.answer.citations"), /exactQuote/);
+assert.match(promptText("orchestration.context.sevenDayTrend"), /missingDates/);
+assert.match(promptText("orchestration.context.sevenDayTrend"), /status\s*为\s*unknown/);
+assert.match(promptText("orchestration.context.sevenDayTrend"), /collectedQuotes/);
+assert.match(promptText("orchestration.context.sevenDayTrend"), /aiReferences/);
+assert.match(promptText("recordCompression.system.historicalSupplement"), /部分覆盖/);
+assert.match(promptText("recordCompression.task.historicalSupplement"), /120 tokens/);
+assert.match(promptText("recordCompression.task.daily"), /stableUserCandidates 字段仅为旧 schema 兼容，必须输出空数组/);
+assert.match(promptText("orchestration.answer.citations"), /historicalUserSupplement\.records/);
 assert.equal(renderPrompt("ai.identity.named", { assistantName: "照见" }), "你的称呼是“照见”。仅在自然需要时使用，不要反复自称。");
 assert.equal(renderPrompt("thought.speech.wrapper", { question: "为什么？", answer: "因为。" }), "你的问题是：为什么？，你的专属答复是因为。");
 const rollback = await loadPromptCatalog({

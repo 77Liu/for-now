@@ -296,6 +296,9 @@ assert.equal(reflectionEvidence({
 }).reflectionData.length, 80);
 
 const generationCalls = [];
+const formatGeneratedAnswer = (content, options) => options?.json === true
+  ? JSON.stringify({ answer: content, citations: [] })
+  : content;
 let releaseGeneration;
 const pauseGeneration = new Promise(resolve => { releaseGeneration = resolve; });
 let pauseNextChat = false;
@@ -315,8 +318,8 @@ const generate = async (prompt, options) => {
     await new Promise(resolve => { releaseAnalysis = resolve; });
   }
   return options.scene === "chat"
-    ? { content: "共参回答", reasoningContent: "共参思考" }
-    : { content: "复盘结论", reasoningContent: "复盘思考" };
+    ? { content: formatGeneratedAnswer("共参回答", options), reasoningContent: "共参思考" }
+    : { content: formatGeneratedAnswer("复盘结论", options), reasoningContent: "复盘思考" };
 };
 const workflows = createReviewChatWorkflows({
   repository: fullRepository,
@@ -823,8 +826,8 @@ const durableGenerate = async (prompt, options) => {
     });
   }
   return options.scene === "chat"
-    ? { content: "持久共参回答", reasoningContent: "持久共参思考" }
-    : { content: "持久复盘结论", reasoningContent: "持久复盘思考" };
+    ? { content: formatGeneratedAnswer("持久共参回答", options), reasoningContent: "持久共参思考" }
+    : { content: formatGeneratedAnswer("持久复盘结论", options), reasoningContent: "持久复盘思考" };
 };
 const durableWorkflowOptions = {
   repository: durableRepository,

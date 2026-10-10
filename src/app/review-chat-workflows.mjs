@@ -1,11 +1,13 @@
 import crypto from "node:crypto";
 import { chatHistory, chatMessage } from "../modules/chats/index.mjs";
 import { reflectionEvidence, reflectionPrompt } from "../modules/reviews/index.mjs";
-import { userPrompt } from "../modules/ai/index.mjs";
-import { renderPrompt } from "../shared/prompts/index.mjs";
+import { systemPrompt, userPrompt } from "../modules/ai/index.mjs";
+import { promptText, renderPrompt } from "../shared/prompts/index.mjs";
+import { answerCitationSources, parseVerifiedAnswer } from "./answer-citations.mjs";
 import { assertCoreModelReady } from "../shared/core-model-gate.mjs";
 import { evidenceSourceKey, normalizeEvidencePermission } from "../modules/user-model/index.mjs";
 import { recordVersion } from "../shared/validation/index.mjs";
+import { coreUserModelProjection } from "./user-model.mjs";
 import {
   compactPersonalContextReceipt,
   learningThoughtSelection,
@@ -26,6 +28,24 @@ const stalePersonalizedChat = () => Object.assign(
   new Error("聊天上下文或来源权限已变化，本次应答未写入"),
   { code: "AI_TASK_STALE", statusCode: 409 }
 );
+const staleCoreModel = () => Object.assign(
+  new Error("核心用户模型或来源权限已变化，本次结果未写入"),
+  { code: "AI_TASK_STALE", statusCode: 409 }
+);
+const staleTrend = () => Object.assign(
+  new Error("生成期间七日趋势已变化，本次结果未写入"),
+  { code: "AI_TASK_STALE", statusCode: 409 }
+);
+const list = value => Array.isArray(value) ? value : [];
+const trendCitationSources = trend => [
+  ...list(trend?.historicalUserSupplementCitationSources),
+  ...list(trend?.citationSources)
+];
+const citationSystemPrompt = (base, additional = "") => [
+  base,
+  promptText("orchestration.answer.citations"),
+  additional
+].filter(Boolean).join("\n\n");
 
 export function createReviewChatWorkflows({
   repository,
@@ -35,6 +55,7 @@ export function createReviewChatWorkflows({
   generate,
   hash,
   coreModelReadiness = () => ({ ready: true }),
+  getRecentTrend = () => null,
   contextKey = () => "local",
   getAccountId = contextKey,
   currentTime = () => Date.now(),
@@ -56,6 +77,78 @@ export function createReviewChatWorkflows({
   }
 
   const active = new Map();
+  const coreModelSnapshot = store => {
+    if (!coreModelReadiness(store)?.ready) return null;
+    const projected = coreUserModelProjection(store);
+    // Legacy workflow tests inject a ready gate without a v2 onboarding fixture.
+    // The production wiring uses userModelCoreReadiness, for which a ready model is always projected.
+    const model = projected || {
+      schemaVersion: 1,
+      claims: [],
+      answers: [],
+      unknowns: [],
+      fingerprint: hash("core-user-model-empty-compatibility.v1")
+    };
+    const sourceKeys = list(model.answers).map(answer => evidenceSourceKey({
+      resourceType: "onboardingV2",
+      resourceId: answer.sourceId,
+      rootId: "",
+      targetKey: `answer:${answer.sourceId}`,
+      version: answer.sourceVersion
+    })).filter(Boolean);
+    const permissionVector = list(store?.evidencePermissions)
+      .filter(permission => sourceKeys.includes(permission?.sourceKey))
+      .map(permission => [
+        String(permission.sourceKey || ""),
+        String(permission.accountId || ""),
+        permission.contextAllowed === true,
+        Math.max(0, Math.round(Number(permission.revision) || 0))
+      ])
+      .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+    const permissionFingerprint = hash(JSON.stringify(permissionVector));
+    return {
+      model,
+      modelFingerprint: model.fingerprint,
+      permissionFingerprint,
+      fingerprint: hash(JSON.stringify({
+        modelFingerprint: model.fingerprint,
+        permissionFingerprint
+      }))
+    };
+  };
+  const coreContextPayload = (snapshot, trend) => JSON.stringify({
+    coreUserModel: {
+      fingerprint: snapshot.model.fingerprint,
+      claims: list(snapshot.model.claims),
+      answers: list(snapshot.model.answers),
+      unknowns: list(snapshot.model.unknowns)
+    },
+    ...(trend?.historicalUserSupplement && typeof trend.historicalUserSupplement === "object"
+      ? { historicalUserSupplement: trend.historicalUserSupplement }
+      : {}),
+    ...(trend?.payload && typeof trend.payload === "object"
+      ? { sevenDayTrend: trend.payload }
+      : {})
+  });
+  const stableContext = (snapshot, trend, dynamicContext = "") => [
+    coreContextPayload(snapshot, trend),
+    String(dynamicContext || "")
+  ].filter(Boolean).join("\n\n");
+  const trendSnapshot = (store, generatedAt) => {
+    const trend = getRecentTrend(store, generatedAt);
+    return { generatedAt, trend, fingerprint: trend?.fingerprint || "" };
+  };
+  const assertTrendCurrent = (store, generatedAt, expectedFingerprint) => {
+    const current = getRecentTrend(store, generatedAt);
+    if ((current?.fingerprint || "") !== (expectedFingerprint || "")) throw staleTrend();
+  };
+  const taskContextAsOf = task => (
+    task.contextGeneratedAt || task.createdAt || new Date(currentTime()).toISOString()
+  );
+  const assertCoreModelCurrent = (store, expected) => {
+    const current = coreModelSnapshot(store);
+    if (!current || current.fingerprint !== expected?.fingerprint) throw staleCoreModel();
+  };
   const intentHash = task => hash(JSON.stringify({
     kind: task.kind,
     targetId: task.targetId || "",
@@ -133,6 +226,10 @@ export function createReviewChatWorkflows({
           occurredOn: payload.occurredOn
         };
         if (!eventTime.occurredAt || !eventTime.occurredOn) return null;
+        const coreModel = coreModelSnapshot(store);
+        if (!coreModel) return null;
+        const generatedAt = taskContextAsOf(task);
+        const trend = trendSnapshot(store, generatedAt);
         const personalContext = personalContextProjection(store);
         const history = chatHistorySnapshot(store);
         const contextReceipt = {
@@ -145,18 +242,37 @@ export function createReviewChatWorkflows({
           inputVersion: 0,
           subtargetVersion: 0,
           inputHash: intentHash(task),
-          prompt: userPrompt({ context: personalContext.prompt, task: payload.message }),
+          prompt: userPrompt({
+            context: stableContext(coreModel, trend.trend, personalContext.prompt),
+            task: payload.message
+          }),
           scene: "chat",
+          json: true,
+          citationsEnabled: true,
+          citationSources: answerCitationSources(coreModel.model, trendCitationSources(trend.trend)),
+          systemPrompt: citationSystemPrompt(systemPrompt()),
           history: history.history,
           contextReceipt,
           contextFingerprint: hash(JSON.stringify({
             receipt: personalContextReceiptFingerprint(personalContext.receipt),
-            history: history.fingerprint
-          }))
+            history: history.fingerprint,
+            coreModel: coreModel.fingerprint,
+            trend: trend?.fingerprint || ""
+          })),
+          coreModelFingerprint: coreModel.fingerprint,
+          coreModelModelFingerprint: coreModel.modelFingerprint,
+          coreModelPermissionFingerprint: coreModel.permissionFingerprint,
+          trendGeneratedAt: generatedAt,
+          trendFingerprint: trend.fingerprint
         };
       }
       if (task.kind === "analysis") {
+        const coreModel = coreModelSnapshot(store);
+        if (!coreModel) return null;
+        const generatedAt = taskContextAsOf(task);
+        const trend = trendSnapshot(store, generatedAt);
         const { personalContext, evidence, evidenceHash } = analysisSnapshot(store);
+        const citationEvidence = analysisSources(evidence);
         if (!evidence.evidenceCount) {
           return {
             kind: task.kind,
@@ -175,23 +291,42 @@ export function createReviewChatWorkflows({
           subtargetVersion: 0,
           inputHash: intentHash(task),
           prompt: reflectionPrompt({
-            personalContext: personalContext.prompt,
-            reflectionData: evidence.reflectionData,
+            personalContext: stableContext(coreModel, trend.trend, personalContext.prompt),
+            reflectionData: citationEvidence.reflectionData,
             evidenceLevel: evidence.evidenceLevel
           }),
           scene: "analysis",
-          systemPrompt: renderPrompt("orchestration.role.periodicSynthesis"),
+          json: true,
+          citationsEnabled: true,
+          citationSources: answerCitationSources(coreModel.model, [
+            ...trendCitationSources(trend.trend),
+            ...citationEvidence.sources
+          ]),
+          systemPrompt: citationSystemPrompt(
+            renderPrompt("orchestration.role.periodicSynthesis"),
+            "reflectionData 中明确标记的 citationId 对应本轮获准的思绪、追问、回答或行动反馈原文。"
+          ),
           contextReceipt: personalContext.receipt,
           evidenceHash,
           contextFingerprint: hash(JSON.stringify({
             receipt: personalContextReceiptFingerprint(personalContext.receipt),
-            evidenceHash
-          }))
+            evidenceHash,
+            coreModel: coreModel.fingerprint,
+            trend: trend?.fingerprint || ""
+          })),
+          coreModelFingerprint: coreModel.fingerprint,
+          coreModelModelFingerprint: coreModel.modelFingerprint,
+          coreModelPermissionFingerprint: coreModel.permissionFingerprint,
+          trendGeneratedAt: generatedAt,
+          trendFingerprint: trend.fingerprint
         };
       }
       return null;
     },
     save(document, work, task, result) {
+      assertCoreModelCurrent(document, {
+        fingerprint: work.coreModelFingerprint
+      });
       if (task.kind === "chat") {
         const generatedReceipt = result?.contextReceipt;
         if (!personalContextReceiptMatches(document, generatedReceipt)) {
@@ -202,6 +337,7 @@ export function createReviewChatWorkflows({
           generatedReceipt.chatHistoryFingerprint,
           generatedReceipt.chatHistoryPermissionRevisions
         );
+        assertTrendCurrent(document, work.trendGeneratedAt, work.trendFingerprint);
         const payload = task.payload;
         const requestHash = hash(JSON.stringify({
           message: payload.message,
@@ -214,6 +350,10 @@ export function createReviewChatWorkflows({
             occurredOn: payload.occurredOn
           },
           answer: result.content,
+          ...(Array.isArray(result.citations) ? {
+            citations: result.citations,
+            citationStatus: result.citationStatus
+          } : {}),
           reasoningContent: result.reasoningContent,
           contextReceipt: compactPersonalContextReceipt(generatedReceipt)
         }, { clientRequestId: task.clientRequestId, requestHash });
@@ -224,9 +364,16 @@ export function createReviewChatWorkflows({
       const generated = {
         reason: task.payload.reason || "manual",
         content: result.content,
+        ...(Array.isArray(result.citations) ? {
+          citations: result.citations,
+          citationStatus: result.citationStatus
+        } : {}),
         reasoningContent: result.reasoningContent,
         contextReceipt: work.contextReceipt,
-        evidenceHash: work.evidenceHash
+        evidenceHash: work.evidenceHash,
+        coreModelFingerprint: work.coreModelFingerprint,
+        trendGeneratedAt: work.trendGeneratedAt,
+        trendFingerprint: work.trendFingerprint
       };
       assertAnalysisCurrent(document, generated);
       const requestHash = hash(JSON.stringify({ reason: generated.reason }));
@@ -285,7 +432,67 @@ export function createReviewChatWorkflows({
       evidenceHash: analysisEvidenceHash({ evidence, permissionVector })
     };
   };
+  const analysisSources = evidence => {
+    const sources = [];
+    const reflectionData = list(evidence?.reflectionData).map((item, index) => {
+      if (item?.id) {
+        const citationId = `analysis:${item.type || "record"}:${item.id}:${item.version || 0}`;
+        if (item.content) {
+          sources.push({
+            citationId,
+            text: String(item.content),
+            source: {
+              resourceType: ["question", "answer"].includes(item.type) ? "thought" : "action",
+              resourceId: String(item.id),
+              recordType: String(item.type || "思绪记录"),
+              version: recordVersion(item.version)
+            }
+          });
+        }
+        const followUps = list(item.followUps).map((followUp, followUpIndex) => {
+          const followUpCitationId = `${citationId}:follow-up:${followUp.id || followUpIndex}`;
+          const text = [followUp.question, followUp.answer].filter(Boolean).join("\n");
+          if (text) {
+            sources.push({
+              citationId: followUpCitationId,
+              text,
+              source: {
+                resourceType: "thought",
+                resourceId: String(item.id),
+                recordType: "思绪追问与回答",
+                version: recordVersion(followUp.version || item.version)
+              }
+            });
+          }
+          return { ...followUp, citationId: followUpCitationId };
+        });
+        return { ...item, citationId, followUps };
+      }
+      if (item?.actionId) {
+        const citationId = `analysis:action-feedback:${item.actionId}:${item.completedAt || index}`;
+        const text = [item.title, item.note, item.outcome].filter(Boolean).join("\n");
+        if (text) {
+          sources.push({
+            citationId,
+            text,
+            source: {
+              resourceType: "action",
+              resourceId: String(item.actionId),
+              recordType: "行动反馈",
+              version: 0
+            }
+          });
+        }
+        return { ...item, citationId };
+      }
+      return item;
+    });
+    return { reflectionData, sources };
+  };
   const assertAnalysisCurrent = (store, generated) => {
+    assertCoreModelCurrent(store, {
+      fingerprint: generated.coreModelFingerprint
+    });
     const snapshot = analysisSnapshot(
       store,
       generated.contextReceipt?.permissionPurpose || "learning"
@@ -297,6 +504,7 @@ export function createReviewChatWorkflows({
         statusCode: 409
       });
     }
+    assertTrendCurrent(store, generated.trendGeneratedAt, generated.trendFingerprint);
   };
 
   async function readPersistent(request) {
@@ -387,6 +595,9 @@ export function createReviewChatWorkflows({
       generateValue: async () => {
         const store = await repository.read();
         assertCoreModelReady(coreModelReadiness(store));
+        const coreModel = coreModelSnapshot(store);
+        const generatedAt = new Date(currentTime()).toISOString();
+        const trend = trendSnapshot(store, generatedAt);
         const personalContext = personalContextProjection(store);
         const history = chatHistorySnapshot(store);
         const contextReceipt = {
@@ -395,24 +606,51 @@ export function createReviewChatWorkflows({
           chatHistoryPermissionRevisions: history.permissionRevisions
         };
         const result = await generate(userPrompt({
-          context: personalContext.prompt,
+          context: stableContext(coreModel, trend.trend, personalContext.prompt),
           task: message
         }), {
           scene: "chat",
           history: history.history,
+          json: true,
+          systemPrompt: citationSystemPrompt(systemPrompt()),
           captureReasoning: true,
           contextReceipt
         });
+        const current = await repository.read();
+        assertCoreModelCurrent(current, coreModel);
+        if (!personalContextReceiptMatches(current, contextReceipt)) {
+          throw stalePersonalizedChat();
+        }
+        assertChatHistoryCurrent(
+          current,
+          contextReceipt.chatHistoryFingerprint,
+          contextReceipt.chatHistoryPermissionRevisions
+        );
+        assertTrendCurrent(current, generatedAt, trend.fingerprint);
+        const verified = parseVerifiedAnswer(result.content, answerCitationSources(
+          coreModel.model,
+          trendCitationSources(trend.trend)
+        ));
         return {
           message,
           eventTime,
-          answer: result.content,
+          answer: verified.content,
+          ...(verified.citations ? {
+            citations: verified.citations,
+            citationStatus: verified.citationStatus
+          } : {}),
           reasoningContent: result.reasoningContent,
-          contextReceipt
+          contextReceipt,
+          coreModelFingerprint: coreModel.fingerprint,
+          trendGeneratedAt: generatedAt,
+          trendFingerprint: trend.fingerprint
         };
       },
       save: async generated => {
         const current = await repository.read();
+        assertCoreModelCurrent(current, {
+          fingerprint: generated.coreModelFingerprint
+        });
         if (!personalContextReceiptMatches(current, generated.contextReceipt)) {
           throw stalePersonalizedChat();
         }
@@ -421,13 +659,17 @@ export function createReviewChatWorkflows({
           generated.contextReceipt?.chatHistoryFingerprint,
           generated.contextReceipt?.chatHistoryPermissionRevisions
         );
-        return chats.save({
+        assertTrendCurrent(current, generated.trendGeneratedAt, generated.trendFingerprint);
+        const input = {
           ...generated,
           contextReceipt: compactPersonalContextReceipt(generated.contextReceipt)
-        }, { clientRequestId, requestHash });
-      },
-      saveInStore: typeof chats.saveInStore === "function"
-        ? (document, generated) => {
+        };
+        if (clientRequestId && typeof repository.executeIdempotent !== "function") {
+          return chats.save(input, { clientRequestId, requestHash });
+        }
+        if (typeof chats.saveInStore === "function") {
+          return repository.update(document => {
+            assertCoreModelCurrent(document, { fingerprint: generated.coreModelFingerprint });
             if (!personalContextReceiptMatches(document, generated.contextReceipt)) {
               throw stalePersonalizedChat();
             }
@@ -436,6 +678,26 @@ export function createReviewChatWorkflows({
               generated.contextReceipt?.chatHistoryFingerprint,
               generated.contextReceipt?.chatHistoryPermissionRevisions
             );
+            assertTrendCurrent(document, generated.trendGeneratedAt, generated.trendFingerprint);
+            return chats.saveInStore(document, input, { clientRequestId, requestHash });
+          });
+        }
+        return chats.save(input, { clientRequestId, requestHash });
+      },
+      saveInStore: typeof chats.saveInStore === "function"
+        ? (document, generated) => {
+            assertCoreModelCurrent(document, {
+              fingerprint: generated.coreModelFingerprint
+            });
+            if (!personalContextReceiptMatches(document, generated.contextReceipt)) {
+              throw stalePersonalizedChat();
+            }
+            assertChatHistoryCurrent(
+              document,
+              generated.contextReceipt?.chatHistoryFingerprint,
+              generated.contextReceipt?.chatHistoryPermissionRevisions
+            );
+            assertTrendCurrent(document, generated.trendGeneratedAt, generated.trendFingerprint);
             return chats.saveInStore(document, {
               ...generated,
               contextReceipt: compactPersonalContextReceipt(generated.contextReceipt)
@@ -458,30 +720,58 @@ export function createReviewChatWorkflows({
       generateValue: async () => {
         const store = await repository.read();
         assertCoreModelReady(coreModelReadiness(store));
+        const coreModel = coreModelSnapshot(store);
         const {
           personalContext,
           evidence,
           evidenceHash
         } = analysisSnapshot(store);
+        const generatedAt = new Date(currentTime()).toISOString();
+        const trend = trendSnapshot(store, generatedAt);
         if (!evidence.evidenceCount) {
           throw new Error("先留下一条状态、健康、捕念、日记或思绪记录，再开始认知复盘");
         }
+        const citationEvidence = analysisSources(evidence);
         const result = await generate(reflectionPrompt({
-          personalContext: personalContext.prompt,
-          reflectionData: evidence.reflectionData,
+          personalContext: stableContext(coreModel, trend.trend, personalContext.prompt),
+          reflectionData: citationEvidence.reflectionData,
           evidenceLevel: evidence.evidenceLevel
         }), {
           scene: "analysis",
-          systemPrompt: renderPrompt("orchestration.role.periodicSynthesis"),
+          json: true,
+          systemPrompt: citationSystemPrompt(
+            renderPrompt("orchestration.role.periodicSynthesis"),
+            "reflectionData 中明确标记的 citationId 对应本轮获准的思绪、追问、回答或行动反馈原文。"
+          ),
           captureReasoning: true,
           contextReceipt: personalContext.receipt
         });
+        const freshness = {
+          reason,
+          contextReceipt: personalContext.receipt,
+          evidenceHash,
+          coreModelFingerprint: coreModel.fingerprint,
+          trendGeneratedAt: generatedAt,
+          trendFingerprint: trend.fingerprint
+        };
+        assertAnalysisCurrent(await repository.read(), freshness);
+        const verified = parseVerifiedAnswer(result.content, answerCitationSources(coreModel.model, [
+          ...trendCitationSources(trend.trend),
+          ...citationEvidence.sources
+        ]));
         return {
           reason,
-          content: result.content,
+          content: verified.content,
+          ...(verified.citations ? {
+            citations: verified.citations,
+            citationStatus: verified.citationStatus
+          } : {}),
           reasoningContent: result.reasoningContent,
           contextReceipt: personalContext.receipt,
-          evidenceHash
+          evidenceHash,
+          coreModelFingerprint: coreModel.fingerprint,
+          trendGeneratedAt: generatedAt,
+          trendFingerprint: trend.fingerprint
         };
       },
       save: async generated => {

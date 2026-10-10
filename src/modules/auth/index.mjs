@@ -1,8 +1,10 @@
 import crypto from "node:crypto";
+import { DEFAULT_RECORD_TIMEZONE } from "../../shared/time/index.mjs";
 
-export const AUTH_DOCUMENT_VERSION = 2;
+export const AUTH_DOCUMENT_VERSION = 3;
 export const SESSION_TTL_MS = 30 * 86400000;
 export const AUTH_ROLES = Object.freeze(["user", "owner"]);
+export { DEFAULT_RECORD_TIMEZONE };
 export const OWNER_CAPABILITIES = Object.freeze([
   "ai-costs",
   "architecture",
@@ -13,9 +15,33 @@ export const OWNER_CAPABILITIES = Object.freeze([
 ]);
 const roleOf = user => AUTH_ROLES.includes(user?.role) ? user.role : "user";
 const versionOf = value => Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : 1;
+const normalizeRecordTimezone = value => {
+  if (typeof value !== "string" || !value.trim()) return DEFAULT_RECORD_TIMEZONE;
+  try {
+    return new Intl.DateTimeFormat("en", { timeZone: value.trim() }).resolvedOptions().timeZone;
+  } catch {
+    return DEFAULT_RECORD_TIMEZONE;
+  }
+};
+const requestedRecordTimezone = value => {
+  if (typeof value !== "string" || !value.trim() || value.trim().length > 100) {
+    fail(400, "记录时区必须是有效的 IANA 时区", "AUTH_TIMEZONE_INVALID");
+  }
+  try {
+    return new Intl.DateTimeFormat("en", { timeZone: value.trim() }).resolvedOptions().timeZone;
+  } catch {
+    fail(400, "记录时区必须是有效的 IANA 时区", "AUTH_TIMEZONE_INVALID");
+  }
+};
 export const isOwner = user => roleOf(user) === "owner";
 export const capabilitiesFor = user => isOwner(user) ? [...OWNER_CAPABILITIES] : [];
-export const publicUser = user => ({ id: user.id, username: user.username, role: roleOf(user), createdAt: user.createdAt });
+export const publicUser = user => ({
+  id: user.id,
+  username: user.username,
+  role: roleOf(user),
+  createdAt: user.createdAt,
+  recordTimezone: normalizeRecordTimezone(user?.recordTimezone)
+});
 const now = () => new Date().toISOString();
 const sha256 = value => crypto.createHash("sha256").update(String(value)).digest("hex");
 const fail = (statusCode, message, code) => { throw Object.assign(new Error(message), { statusCode, ...(code ? { code } : {}) }); };
@@ -47,7 +73,8 @@ export function normalizeAuthDocument(value = {}) {
   auth.users = (Array.isArray(auth.users) ? auth.users : []).map((user, index) => ({
     ...user,
     role: AUTH_ROLES.includes(user?.role) ? user.role : index === 0 ? "owner" : "user",
-    sessionVersion: versionOf(user?.sessionVersion)
+    sessionVersion: versionOf(user?.sessionVersion),
+    recordTimezone: normalizeRecordTimezone(user?.recordTimezone)
   }));
   const users = new Map(auth.users.map(user => [user.id, user]));
   auth.sessions = (Array.isArray(auth.sessions) ? auth.sessions : []).map(session => ({
@@ -147,6 +174,7 @@ export function createAuthService({ repository, initializeUserStorage, authRequi
             passwordHash: hashed,
             role: auth.users.length === 0 ? "owner" : "user",
             sessionVersion: 1,
+            recordTimezone: DEFAULT_RECORD_TIMEZONE,
             createdAt: now()
           };
           rollbackStorage = await initializeUserStorage(user, auth.users.length === 0);
@@ -222,6 +250,18 @@ export function createAuthService({ repository, initializeUserStorage, authRequi
         if (!user) fail(404, "账户不存在");
         if (auth.users.some(item => item.id !== user.id && item.username.toLocaleLowerCase() === username.toLocaleLowerCase())) fail(409, "用户名已存在");
         user.username = username;
+        user.updatedAt = now();
+        return user;
+      });
+    },
+    async setRecordTimezone(token, input) {
+      accountMode();
+      const requester = await requireUser(token);
+      const recordTimezone = requestedRecordTimezone(input?.timezone);
+      return update(auth => {
+        const user = auth.users.find(item => item.id === requester.id);
+        if (!user) fail(404, "账户不存在", "AUTH_USER_NOT_FOUND");
+        user.recordTimezone = recordTimezone;
         user.updatedAt = now();
         return user;
       });

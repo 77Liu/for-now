@@ -2,6 +2,60 @@ import { safeText } from "../shared/validation/index.mjs";
 
 const objectValue = value => value && typeof value === "object" && !Array.isArray(value);
 
+export function answerCitationSources(coreUserModel, additionalSources = []) {
+  const sourcesById = new Map();
+  const addSource = (citationId, text, metadata = {}) => {
+    if (typeof citationId !== "string" || !citationId || typeof text !== "string" || !text) return;
+    const existing = sourcesById.get(citationId);
+    if (existing) {
+      if (!existing.text.includes(text)) existing.text += `\n${text}`;
+      return;
+    }
+    sourcesById.set(citationId, {
+      citationId,
+      text,
+      source: {
+        id: citationId,
+        resourceType: metadata.resourceType || "onboardingV2",
+        resourceId: metadata.sourceId || "",
+        recordType: metadata.recordType || "核心用户模型证据",
+        origin: "user",
+        informationType: metadata.informationType || "user_viewpoint",
+        version: metadata.version || 0,
+        contentSha256: "",
+        location: {
+          view: "personal-context",
+          targetId: metadata.sourceId || "",
+          rootId: "",
+          targetKey: metadata.targetKey || `answer:${metadata.sourceId || ""}`,
+          occurredOn: ""
+        }
+      }
+    });
+  };
+  for (const answer of Array.isArray(coreUserModel?.answers) ? coreUserModel.answers : []) {
+    addSource(answer.citationId, answer.text, {
+      sourceId: answer.sourceId,
+      recordType: answer.title,
+      informationType: answer.informationType,
+      version: answer.sourceVersion
+    });
+  }
+  for (const claim of Array.isArray(coreUserModel?.claims) ? coreUserModel.claims : []) {
+    for (const evidence of Array.isArray(claim?.evidence) ? claim.evidence : []) {
+      addSource(evidence.citationId, evidence.exactQuote, {
+        sourceId: evidence.sourceId,
+        recordType: "核心用户模型证据",
+        version: evidence.sourceVersion
+      });
+    }
+  }
+  for (const source of Array.isArray(additionalSources) ? additionalSources : []) {
+    addSource(source?.citationId, source?.text, source?.source || {});
+  }
+  return [...sourcesById.values()];
+}
+
 export function parseVerifiedAnswer(raw, availableSources = []) {
   let document;
   try {

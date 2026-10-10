@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { createPageAudioCoordinator } from "../public/frontend/media/page-audio.mjs";
 import {
   ACCOUNT_SELECTORS,
@@ -9,6 +10,12 @@ import {
   normalizeAccountSettings,
   settingsPayload
 } from "../public/frontend/features/account-settings/index.mjs";
+
+const accountMarkup = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
+assert.match(accountMarkup, /id="record-timezone-form"/);
+assert.match(accountMarkup, /id="account-record-timezone" name="timezone"/);
+assert.match(accountMarkup, /record-timezone-suggestions/);
+assert.match(accountMarkup, /id="record-timezone-status" role="status"/);
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 function deferred() {
@@ -178,6 +185,8 @@ function createAccountRoot() {
   const root = new FakeRoot();
   const username = element({ id: "account-username", name: "username" });
   const usernameForm = new FakeForm("username-form", { username });
+  const recordTimezone = element({ id: "account-record-timezone", name: "timezone" });
+  const recordTimezoneForm = new FakeForm("record-timezone-form", { timezone: recordTimezone });
   const currentPassword = element({ name: "currentPassword" });
   const newPassword = element({ name: "newPassword" });
   const confirmPassword = element({ name: "confirmPassword" });
@@ -189,6 +198,8 @@ function createAccountRoot() {
   const values = {
     username,
     usernameForm,
+    recordTimezone,
+    recordTimezoneForm,
     currentPassword,
     newPassword,
     confirmPassword,
@@ -196,17 +207,21 @@ function createAccountRoot() {
     currentName: element({ id: "account-current-name" }),
     pageName: element({ id: "account-page-name" }),
     usernameStatus: element({ id: "username-status" }),
+    recordTimezoneStatus: element({ id: "record-timezone-status" }),
     passwordStatus: element({ id: "password-status" }),
     roleList: element({ id: "account-role-list" }),
     roleStatus: element({ id: "account-role-status" }),
     logout: element({ id: "logout-button-account", tagName: "BUTTON" })
   };
   root.register(ACCOUNT_SELECTORS.usernameForm, usernameForm);
+  root.register(ACCOUNT_SELECTORS.recordTimezoneForm, recordTimezoneForm);
   root.register(ACCOUNT_SELECTORS.passwordForm, passwordForm);
   root.register(ACCOUNT_SELECTORS.username, username);
+  root.register(ACCOUNT_SELECTORS.recordTimezone, recordTimezone);
   root.register(ACCOUNT_SELECTORS.currentName, values.currentName);
   root.register(ACCOUNT_SELECTORS.pageName, values.pageName);
   root.register(ACCOUNT_SELECTORS.usernameStatus, values.usernameStatus);
+  root.register(ACCOUNT_SELECTORS.recordTimezoneStatus, values.recordTimezoneStatus);
   root.register(ACCOUNT_SELECTORS.passwordStatus, values.passwordStatus);
   root.register(ACCOUNT_SELECTORS.roleList, values.roleList);
   root.register(ACCOUNT_SELECTORS.roleStatus, values.roleStatus);
@@ -340,7 +355,7 @@ const baseSpeech = () => ({
 });
 
 function createSettingsHarness(overrides = {}) {
-  let user = { id: "account-a", username: "甲", role: "user" };
+  let user = { id: "account-a", username: "甲", role: "user", recordTimezone: "Asia/Shanghai" };
   let value = baseSettings();
   let speechValue = baseSpeech();
   let localConfig = null;
@@ -443,7 +458,7 @@ function createSettingsHarness(overrides = {}) {
 }
 
 {
-  let user = { id: "account-a", username: "甲", role: "user" };
+  let user = { id: "account-a", username: "甲", role: "user", recordTimezone: "Asia/Shanghai" };
   let listRequests = 0;
   const account = createAccountFeatureController({
     auth: { request: async () => ({}), reset() {}, logout() {} },
@@ -473,11 +488,63 @@ function createSettingsHarness(overrides = {}) {
   }
   assert.equal(listRequests, 0, "regular accounts must not request the role list");
   account.mount({ root: fixture.root });
+  assert.equal(fixture.recordTimezone.value, "Asia/Shanghai", "old accounts default to the record timezone");
   fixture.usernameStatus.textContent = "private";
+  fixture.recordTimezone.value = "private";
+  fixture.recordTimezoneStatus.textContent = "private";
   account.resetSession();
   assert.equal(fixture.username.value, "");
   assert.equal(fixture.usernameStatus.textContent, "");
+  assert.equal(fixture.recordTimezone.value, "");
+  assert.equal(fixture.recordTimezoneStatus.textContent, "");
   assert.equal(fixture.roleList.innerHTML, "");
+}
+
+{
+  let user = { id: "account-a", username: "甲", role: "user", recordTimezone: "Asia/Shanghai" };
+  const authCalls = [];
+  const toasts = [];
+  const account = createAccountFeatureController({
+    auth: {
+      async request(path, body, method) {
+        authCalls.push([path, body, method]);
+        if (body.timezone === "Mars/Olympus") throw new Error("记录时区必须是有效的 IANA 时区");
+        user = { ...user, recordTimezone: body.timezone };
+        return { user };
+      },
+      reset() {},
+      logout() {}
+    },
+    request: async () => ({ users: [] }),
+    currentUser: { get: () => user, set: next => { user = next; } },
+    hasCapability: () => false,
+    showToast: message => toasts.push(message),
+    confirmAction: () => true
+  });
+  const fixture = createAccountRoot();
+  account.mount({ root: fixture.root });
+  assert.equal(fixture.recordTimezone.value, "Asia/Shanghai");
+  fixture.recordTimezone.value = "America/Los_Angeles";
+  fixture.root.dispatch("submit", fixture.recordTimezoneForm);
+  await waitFor(() => toasts.includes("记录时区已更新"), "record timezone request did not settle");
+  assert.deepEqual(authCalls[0], [
+    "/api/auth/timezone",
+    { timezone: "America/Los_Angeles" },
+    "PATCH"
+  ]);
+  assert.equal(user.recordTimezone, "America/Los_Angeles");
+  assert.equal(fixture.recordTimezone.value, "America/Los_Angeles");
+  assert.equal(fixture.recordTimezoneStatus.textContent, "记录时区已更新。");
+
+  fixture.recordTimezone.value = "Mars/Olympus";
+  fixture.root.dispatch("submit", fixture.recordTimezoneForm);
+  await waitFor(
+    () => fixture.recordTimezoneStatus.textContent === "记录时区必须是有效的 IANA 时区",
+    "invalid record timezone error was not shown"
+  );
+  assert.equal(user.recordTimezone, "America/Los_Angeles");
+  assert.equal(fixture.recordTimezoneForm.submit.disabled, false);
+  account.unmount();
 }
 
 {

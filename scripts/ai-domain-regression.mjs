@@ -4,7 +4,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  LLM_SCENARIOS, defaultLlmSettings, normalizeLlmSettings, mergeLlmSettings, publicLlmSettings,
+  LLM_SETTINGS_VERSION, LLM_SCENARIOS, defaultLlmSettings, normalizeLlmSettings, mergeLlmSettings, publicLlmSettings,
   mergeUserAiPreferences, publicUserAiPreferences, llmSettingsForScene, createLlmSettingsService,
   normalizeAiUsage, deepSeekUsageEntry, createAiUsageService, createAiAudit,
   automaticAnswerDecision, defaultAiCostPlan, normalizeAiCostPlan, createAiCostService, usageDashboard,
@@ -270,7 +270,7 @@ const costNormalized = normalizeAiCostPlan({ monthlyBudgetCny: -1, scenarios: [{
 assert.equal(costNormalized.monthlyBudgetCny, 0);
 assert.equal(costNormalized.scenarios.find(item => item.scene === "chat").cacheHitPct, 100);
 assert.equal(costNormalized.scenarios.find(item => item.scene === "chat").avgInputTokens, 2);
-assert.equal(costNormalized.scenarios.length, 17);
+assert.equal(costNormalized.scenarios.length, LLM_SCENARIOS.length);
 assert.equal(
   costNormalized.scenarios.find(item => item.scene === "perceptionExtraction").callsPerMonth,
   100
@@ -388,7 +388,7 @@ try {
   await run("a", async () => {
     await fs.writeFile(getFile(), JSON.stringify(legacy));
     await settings.ensure();
-    assert.equal((await fs.stat(`${getFile()}.v2-pre-v11.20260929010000.bak`)).mode & 0o777, 0o600);
+    assert.equal((await fs.stat(`${getFile()}.v2-pre-v${LLM_SETTINGS_VERSION}.20260929010000.bak`)).mode & 0o777, 0o600);
     await Promise.all([
       settings.update(current => mergeLlmSettings(current, { assistantName: "并发名称" })),
       settings.update(current => mergeLlmSettings(current, { apiKey: "next-test-value" }))

@@ -25,14 +25,39 @@ import {
 import { pruneLogs } from "../shared/observability/index.mjs";
 import { eventTimeFields } from "../shared/time/index.mjs";
 import { safeText } from "../shared/validation/index.mjs";
+import {
+  recordCompressionAccountQueueAllowance,
+  recordCompressionSlotQueueAllowance
+} from "../config/index.mjs";
 import { createRuntimeContentHttp } from "./runtime-content-http.mjs";
 import { createRuntimePlatformHttp } from "./runtime-platform-http.mjs";
 import { createStatisticsRuntime } from "./statistics-runtime.mjs";
 import { normalizeCommercialization } from "./store-normalization.mjs";
 import {
+  DEFAULT_RECORD_TIMEZONE,
+  recordCompressionAccountOrder,
+  RECORD_COMPRESSION_TASK_KIND
+} from "./record-compressions.mjs";
+import {
   routeStateProjection,
   startupProjection
 } from "./startup-projections.mjs";
+
+export function createRetryableSlotRunner() {
+  let lastCompletedSlot = "";
+  let runningSlot = "";
+  return async (slotKey, operation) => {
+    if (slotKey === lastCompletedSlot || runningSlot) return { skipped: "outside-slot" };
+    runningSlot = slotKey;
+    try {
+      const result = await operation();
+      lastCompletedSlot = slotKey;
+      return result;
+    } finally {
+      if (runningSlot === slotKey) runningSlot = "";
+    }
+  };
+}
 
 export function createRuntimeHttpWiring({
   appConfig,
@@ -71,7 +96,8 @@ export function createRuntimeHttpWiring({
     reviewChatWorkflows,
     projectPersonalContext,
     maybeRunPeriodicAnalysis,
-    runSpeechCacheSweep
+    runSpeechCacheSweep,
+    runRecordCompressionScan
   } = contentRuntime;
   const {
     sendJson,
@@ -161,6 +187,153 @@ export function createRuntimeHttpWiring({
     }
     return handled;
   };
+  const runRecordCompressionSlot = createRetryableSlotRunner();
+  async function runRecordCompressionScheduler() {
+    if (!appConfig.recordCompressionEnabled) return { disabled: true };
+    const timestamp = now();
+    const parts = Object.fromEntries(new Intl.DateTimeFormat("en", {
+      timeZone: DEFAULT_RECORD_TIMEZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23"
+    }).formatToParts(new Date(timestamp)).map(part => [part.type, part.value]));
+    const slotKey = `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+    const due = (parts.hour === "06" && parts.minute === "00")
+      || (parts.hour === "18" && parts.minute === "05");
+    if (!due) return { skipped: "outside-slot" };
+    return runRecordCompressionSlot(slotKey, async () => {
+      const users = appConfig.authRequired
+        ? (await readAuth()).users
+        : [{ id: "local" }];
+      const eligibleUsers = Array.isArray(users) ? users : [];
+      let knownCalls = 0;
+      let reservedCalls = 0;
+      let knownSpentCny = 0;
+      let reservedCny = 0;
+      let queued = 0;
+      let skipped = 0;
+      let waitingBudgetCount = 0;
+      let promotedBudgetWaitCount = 0;
+      let invalidatedBudgetWaitCount = 0;
+      let skippedBudgetWaitCount = 0;
+      const accountUsageById = new Map();
+      const globalDay = `${parts.year}-${parts.month}-${parts.day}`;
+      const contextFor = user => ({
+        user,
+        traceId: createId(),
+        dataDir: appConfig.authRequired ? userDataDir(user) : paths.dataDir,
+        secrets: [],
+        route: "background/record-compression"
+      });
+      for (const user of eligibleUsers) {
+        const accountUsage = await requestStorage.run(contextFor(user), async () => {
+          const [usage, store] = await Promise.all([readAiUsage(), readStore()]);
+          const dailyEntries = (Array.isArray(usage?.entries) ? usage.entries : [])
+            .filter(entry => entry?.scene === RECORD_COMPRESSION_TASK_KIND
+              && Number.isFinite(Date.parse(entry.createdAt))
+              && new Intl.DateTimeFormat("en-CA", {
+                timeZone: DEFAULT_RECORD_TIMEZONE,
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit"
+              }).format(new Date(entry.createdAt)) === globalDay);
+          const accountSpent = dailyEntries
+            .reduce((sum, entry) => {
+              if (entry.costKnown !== true || !Number.isFinite(entry.costCny)) {
+                return Number.POSITIVE_INFINITY;
+              }
+              return sum + entry.costCny;
+            }, 0);
+          const activeTasks = (Array.isArray(store?.aiTasks) ? store.aiTasks : [])
+            .filter(task => task.kind === RECORD_COMPRESSION_TASK_KIND
+              && ["queued", "running"].includes(task.status)).length;
+          return { accountSpent, activeTasks, invocations: dailyEntries.length };
+        });
+        accountUsageById.set(String(user.id || "local"), accountUsage);
+        knownSpentCny += accountUsage.accountSpent;
+        knownCalls += accountUsage.invocations;
+        reservedCny += accountUsage.activeTasks * appConfig.recordCompressionPerCallBudgetCny;
+        reservedCalls += accountUsage.activeTasks;
+      }
+      const dailyCapacity = appConfig.recordCompressionDailyInvocationLimit;
+      const perCallBudgetCny = appConfig.recordCompressionPerCallBudgetCny;
+      const maxCallsForBudget = remainingCny => {
+        if (!(perCallBudgetCny > 0) || !Number.isFinite(remainingCny)) return 0;
+        const remainingMicros = Math.floor(Math.max(0, remainingCny) * 1_000_000);
+        const perCallMicros = Math.ceil(perCallBudgetCny * 1_000_000);
+        return perCallMicros > 0 ? Math.floor(remainingMicros / perCallMicros) : 0;
+      };
+      const { orderedUsers } = recordCompressionAccountOrder(eligibleUsers, {
+        globalDay,
+        knownCalls,
+        reservedCalls
+      });
+      for (let index = 0; index < orderedUsers.length; index += 1) {
+        const user = orderedUsers[index];
+        const accountUsage = accountUsageById.get(String(user.id || "local")) || {
+          invocations: 0,
+          activeTasks: 0
+        };
+        const remainingCalls = Math.max(0, dailyCapacity - knownCalls - reservedCalls);
+        const accountRemainingCalls = recordCompressionAccountQueueAllowance({
+          dailyLimit: appConfig.recordCompressionAccountDailyInvocationLimit,
+          knownCalls: accountUsage.invocations,
+          reservedCalls: accountUsage.activeTasks
+        });
+        const remainingBudget = appConfig.recordCompressionDailyBudgetCny
+          - knownSpentCny - reservedCny;
+        const availableQueueAllowance = Math.min(
+          remainingCalls,
+          accountRemainingCalls,
+          maxCallsForBudget(remainingBudget)
+        );
+        const slot = parts.hour === "06" ? "morning" : "evening";
+        const maxQueued = recordCompressionSlotQueueAllowance(slot, availableQueueAllowance);
+        const scanResult = await requestStorage.run(contextFor(user), () => (
+          runRecordCompressionScan({ asOf: timestamp, slot, maxQueued })
+        ));
+        waitingBudgetCount += Number.isSafeInteger(scanResult?.waitingBudgetCount)
+          ? Math.max(0, scanResult.waitingBudgetCount)
+          : 0;
+        promotedBudgetWaitCount += Number.isSafeInteger(scanResult?.promotedBudgetWaitCount)
+          ? Math.max(0, scanResult.promotedBudgetWaitCount)
+          : 0;
+        invalidatedBudgetWaitCount += Number.isSafeInteger(scanResult?.invalidatedBudgetWaitCount)
+          ? Math.max(0, scanResult.invalidatedBudgetWaitCount)
+          : 0;
+        skippedBudgetWaitCount += Number.isSafeInteger(scanResult?.skippedBudgetWaitCount)
+          ? Math.max(0, scanResult.skippedBudgetWaitCount)
+          : 0;
+        const accountQueued = Number.isSafeInteger(scanResult?.queuedCount)
+          ? Math.max(0, scanResult.queuedCount)
+          : (scanResult?.queued || scanResult?.retried ? 1 : 0);
+        if (accountQueued) {
+          queued += accountQueued;
+          reservedCalls += accountQueued;
+          reservedCny += accountQueued * perCallBudgetCny;
+        } else if (!scanResult?.waitingBudgetCount) {
+          skipped += 1;
+        }
+      }
+      return {
+        slotKey,
+        queued,
+        queuedCount: queued,
+        waitingBudgetCount,
+        promotedBudgetWaitCount,
+        invalidatedBudgetWaitCount,
+        skippedBudgetWaitCount,
+        skipped,
+        knownCalls,
+        reservedCalls,
+        knownSpentCny,
+        reservedCny
+      };
+    });
+  }
   const readOpeningPreferences = async user => {
     if (!isOwner(user)) return undefined;
     try { return openingPreferences((await aiRuntime.readLlmSettings()).opening); }
@@ -295,6 +468,7 @@ export function createRuntimeHttpWiring({
     legacyApi,
     attachmentHttp: platformHttp.attachmentHttp,
     runPeriodicAnalyses,
+    runRecordCompressionScheduler,
     runSpeechCacheSweep
   };
 }

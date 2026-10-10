@@ -6,6 +6,21 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { AUTH_DOCUMENT_VERSION, DEFAULT_RECORD_TIMEZONE, normalizeAuthDocument } from "../src/modules/auth/index.mjs";
+import { STORE_VERSION } from "../src/app/index.mjs";
+import { LLM_SETTINGS_VERSION } from "../src/modules/ai/index.mjs";
+
+const legacyAuth = normalizeAuthDocument({
+  version: 2,
+  users: [
+    { id: "legacy-user", username: "legacy" },
+    { id: "invalid-zone-user", username: "invalid-zone", recordTimezone: "Mars/Olympus" }
+  ]
+});
+assert.equal(AUTH_DOCUMENT_VERSION, 3);
+assert.equal(legacyAuth.version, 3);
+assert.equal(legacyAuth.users[0].recordTimezone, DEFAULT_RECORD_TIMEZONE);
+assert.equal(legacyAuth.users[1].recordTimezone, DEFAULT_RECORD_TIMEZONE);
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
@@ -186,6 +201,7 @@ try {
   });
   assert.equal(registered.response.status, 201);
   assert.equal(registered.body.user.role, "owner");
+  assert.equal(registered.body.user.recordTimezone, DEFAULT_RECORD_TIMEZONE);
   const ownerSetCookie = registered.response.headers.get("set-cookie");
   assert.match(ownerSetCookie, /;\s*Secure(?:;|$)/i);
   const ownerCookie = ownerSetCookie.split(";")[0];
@@ -200,6 +216,30 @@ try {
   assert.equal(second.response.status, 201);
   assert.equal(second.body.user.role, "user");
   let secondCookie = second.response.headers.get("set-cookie").split(";")[0];
+  assert.equal(second.body.user.recordTimezone, DEFAULT_RECORD_TIMEZONE);
+  const changedRecordTimezone = await jsonRequest(`${base}/now/api/auth/timezone`, {
+    method: "PATCH",
+    headers: { cookie: secondCookie },
+    body: JSON.stringify({ timezone: "America/Los_Angeles" })
+  });
+  assert.equal(changedRecordTimezone.response.status, 200, JSON.stringify(changedRecordTimezone.body));
+  assert.equal(changedRecordTimezone.body.user.recordTimezone, "America/Los_Angeles");
+  const timezoneMe = await jsonRequest(`${base}/now/api/auth/me`, { headers: { cookie: secondCookie } });
+  assert.equal(timezoneMe.body.user.recordTimezone, "America/Los_Angeles");
+  const invalidRecordTimezone = await jsonRequest(`${base}/now/api/auth/timezone`, {
+    method: "PATCH",
+    headers: { cookie: secondCookie },
+    body: JSON.stringify({ timezone: "Mars/Olympus" })
+  });
+  assert.equal(invalidRecordTimezone.response.status, 400);
+  assert.equal(invalidRecordTimezone.body.code, "AUTH_TIMEZONE_INVALID");
+  assert.equal((await jsonRequest(`${base}/now/api/auth/me`, { headers: { cookie: secondCookie } })).body.user.recordTimezone, "America/Los_Angeles");
+  const anonymousRecordTimezone = await jsonRequest(`${base}/now/api/auth/timezone`, {
+    method: "PATCH",
+    body: JSON.stringify({ timezone: "UTC" })
+  });
+  assert.equal(anonymousRecordTimezone.response.status, 401);
+  assert.equal(anonymousRecordTimezone.body.code, "AUTH_REQUIRED");
   const secondState = await jsonRequest(`${base}/now/api/state`, { headers: { cookie: secondCookie } });
   assert.deepEqual(secondState.body.captures, []);
   assert.equal(secondState.body.commercialization, undefined);
@@ -556,7 +596,7 @@ try {
 
   const validAuthFile = await fs.readFile(path.join(dataDir, "auth.json"), "utf8");
   const validAuth = JSON.parse(validAuthFile);
-  assert.equal(validAuth.version, 2);
+  assert.equal(validAuth.version, AUTH_DOCUMENT_VERSION);
   assert.deepEqual(validAuth.users.map(user => user.role), ["owner", "user"]);
   assert.ok(validAuth.users.every(user => Number.isSafeInteger(user.sessionVersion)));
   assert.ok(validAuth.sessions.every(session => Number.isSafeInteger(session.sessionVersion)));
@@ -594,8 +634,8 @@ try {
   child = startApp();
   await waitForServer(base, child);
   const migratedNames = await fs.readdir(secondDir);
-  assert.ok(migratedNames.some(name => /store\.json\.v11-pre-v17.*\.bak$/.test(name)));
-  assert.ok(migratedNames.some(name => /llm-settings\.json\.v3-pre-v11.*\.bak$/.test(name)));
+  assert.ok(migratedNames.some(name => new RegExp(`store\\.json\\.v11-pre-v${STORE_VERSION}.*\\.bak$`).test(name)));
+  assert.ok(migratedNames.some(name => new RegExp(`llm-settings\\.json\\.v3-pre-v${LLM_SETTINGS_VERSION}.*\\.bak$`).test(name)));
   assert.ok(migratedNames.some(name => /ai-usage\.json\.v1-pre-v5.*\.bak$/.test(name)));
   for (const name of migratedNames.filter(name => name.endsWith(".bak"))) {
     assert.equal((await fs.stat(path.join(secondDir, name))).mode & 0o777, 0o600);
