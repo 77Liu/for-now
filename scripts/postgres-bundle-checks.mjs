@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import {
-  discoverJsonBundle, applyPostgresBundle, readPostgresBundle, initializePostgresSchema
+  discoverJsonBundle, applyPostgresBundle, readPostgresBundle, initializePostgresSchema,
+  RECORD_COMPRESSION_QUOTA_FILE
 } from "../src/shared/persistence/index.mjs";
 import { writeMigrationBundleFixture } from "./fixtures/migration-bundle.mjs";
 
@@ -90,13 +91,23 @@ export async function runBundleChecks({ admin, client, connect, temporary }) {
   await assert.rejects(applyPostgresBundle(client, newBundle), /Bundle target differs/);
   await applyPostgresBundle(client, newBundle, { expectedTargetSha256: bundle.sourceSha256 });
   assert.deepEqual(await read(client), exported);
+  const quotaWithExpenseAndReservation = {
+    days: [{
+      key: "2026-10-10", calls: 1, costMicros: 125_000,
+      reservations: [{ reservationId: "reservation-1", accountId: "bundle-a", taskId: "task-1", calls: 2, costMicros: 250_000 }]
+    }]
+  };
+  await admin.query("UPDATE for_now.site_ai_budget SET record_compression_quota = $1::jsonb WHERE id = true", [JSON.stringify(quotaWithExpenseAndReservation)]);
+  const exportedWithQuota = await read(client);
+  assert.deepEqual(exportedWithQuota.recordCompressionQuota, quotaWithExpenseAndReservation);
 
   // Build an independent database from relational output and copied binaries.
   const restoreDir = path.join(temporary, "bundle-restore");
   await fs.mkdir(restoreDir, { recursive: true, mode: 0o700 });
-  await fs.writeFile(path.join(restoreDir, "ai-budget.json"), JSON.stringify(exported.aiBudget), { mode: 0o600 });
-  await fs.writeFile(path.join(restoreDir, "auth.json"), JSON.stringify(exported.auth), { mode: 0o600 });
-  for (const row of exported.accounts) {
+  await fs.writeFile(path.join(restoreDir, "ai-budget.json"), JSON.stringify(exportedWithQuota.aiBudget), { mode: 0o600 });
+  await fs.writeFile(path.join(restoreDir, RECORD_COMPRESSION_QUOTA_FILE), JSON.stringify(exportedWithQuota.recordCompressionQuota), { mode: 0o600 });
+  await fs.writeFile(path.join(restoreDir, "auth.json"), JSON.stringify(exportedWithQuota.auth), { mode: 0o600 });
+  for (const row of exportedWithQuota.accounts) {
     const root = path.join(restoreDir, "users", row.accountId);
     await fs.mkdir(root, { recursive: true, mode: 0o700 });
     await fs.writeFile(path.join(root, "store.json"), JSON.stringify(row.store), { mode: 0o600 });
@@ -112,8 +123,29 @@ export async function runBundleChecks({ admin, client, connect, temporary }) {
   await restoreAdmin.query("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA for_now, for_now_auth TO migration_app");
   const restoreClient = await connect("migration_app", "bundle_restore");
   await applyPostgresBundle(restoreClient, await discoverJsonBundle(restoreDir));
-  assert.deepEqual(await read(restoreClient), exported);
-  return ["full bundle and AI budget atomic rollback", "auth/config/usage/cost/site-budget/attachment round-trip",
+  assert.deepEqual(await read(restoreClient), exportedWithQuota);
+
+  // Old bundles omit the quota file; they must not erase existing charges or active reservations.
+  const legacyDir = path.join(temporary, "bundle-legacy");
+  await fs.cp(restoreDir, legacyDir, { recursive: true });
+  await fs.rm(path.join(legacyDir, RECORD_COMPRESSION_QUOTA_FILE));
+  const legacyBundle = await discoverJsonBundle(legacyDir);
+  assert.equal(legacyBundle.recordCompressionQuotaPresent, false);
+  await admin.query("CREATE DATABASE bundle_legacy_quota");
+  const legacyAdmin = await connect("postgres", "bundle_legacy_quota");
+  await initializePostgresSchema(legacyAdmin);
+  await legacyAdmin.query("UPDATE for_now.site_ai_budget SET record_compression_quota = $1::jsonb WHERE id = true", [JSON.stringify(quotaWithExpenseAndReservation)]);
+  await legacyAdmin.query("GRANT USAGE ON SCHEMA for_now, for_now_auth TO migration_app");
+  await legacyAdmin.query("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA for_now, for_now_auth TO migration_app");
+  const legacyClient = await connect("migration_app", "bundle_legacy_quota");
+  await assert.rejects(applyPostgresBundle(legacyClient, legacyBundle), /refusing legacy bundle reset/);
+  assert.deepEqual((await legacyAdmin.query("SELECT record_compression_quota FROM for_now.site_ai_budget WHERE id = true")).rows[0].record_compression_quota, quotaWithExpenseAndReservation);
+  assert.equal((await legacyAdmin.query("SELECT count(*)::int AS n FROM for_now.accounts")).rows[0].n, 0);
+  await legacyClient.end();
+  await legacyAdmin.end();
+  await admin.query("DROP DATABASE bundle_legacy_quota");
+  return ["full bundle and AI budget atomic rollback", "auth/config/usage/cost/site-budget/quota/attachment round-trip",
+    "legacy bundle preserves existing quota expenses and reservations",
     "secret partition and auth schema grants", "bundle repeat corruption guard", "root AI budget source drift guard",
     "independent database restore"];
 }

@@ -7,7 +7,7 @@ import {
 } from "../src/shared/attachments/index.mjs";
 import { publicCapture } from "../src/modules/captures/index.mjs";
 import { publicKeepsake } from "../src/modules/keepsakes/index.mjs";
-import { ACCOUNT_DOCUMENT_FILES } from "../src/shared/persistence/index.mjs";
+import { ACCOUNT_DOCUMENT_FILES, validateRecordCompressionQuota } from "../src/shared/persistence/index.mjs";
 import { safeText } from "../src/shared/validation/index.mjs";
 
 const args = process.argv.slice(2);
@@ -55,6 +55,14 @@ try {
 }
 if (!objectValue(aiBudget)) throw new Error("Restored backup has no valid AI budget document");
 const aiBudgetSha256 = digest(aiBudget);
+const recordCompressionQuotaFile = path.join(root, "record-compression-quota.json");
+let recordCompressionQuota = null;
+try {
+  recordCompressionQuota = JSON.parse(await fs.readFile(recordCompressionQuotaFile, "utf8"));
+} catch (error) {
+  if (error?.code !== "ENOENT") throw new Error("Restored backup has an invalid record compression quota file");
+}
+if (recordCompressionQuota !== null) validateRecordCompressionQuota(recordCompressionQuota);
 
 let exportManifest = null;
 try {
@@ -70,6 +78,16 @@ if (exportManifest) {
     || exportManifest.aiBudget?.file !== "ai-budget.json"
     || !/^[a-f0-9]{64}$/.test(exportManifest.aiBudget?.sha256 || "")) {
     throw new Error("Restored relational export manifest is invalid");
+  }
+  if (exportManifest.recordCompressionQuota !== undefined) {
+    if (exportManifest.recordCompressionQuota.file !== "record-compression-quota.json"
+      || !/^[a-f0-9]{64}$/.test(exportManifest.recordCompressionQuota.sha256 || "")
+      || recordCompressionQuota === null
+      || exportManifest.recordCompressionQuota.sha256 !== digest(recordCompressionQuota)) {
+      throw new Error("Restored relational export quota hash does not match");
+    }
+  } else if (recordCompressionQuota !== null) {
+    throw new Error("Restored relational export quota is missing from its manifest");
   }
   if (exportManifest.aiBudget.sha256 !== aiBudgetSha256) {
     throw new Error("Restored relational export AI budget hash does not match");
