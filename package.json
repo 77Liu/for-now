@@ -1,9 +1,9 @@
 {
   "name": "personal-growth-tracker",
-  "version": "0.5.11",
+  "version": "0.5.12",
   "private": true,
   "release": {
-    "iosBuildNumber": 8
+    "iosBuildNumber": 9
   },
   "type": "module",
   "scripts": {
@@ -80,7 +80,7 @@
     "test:postgres:preflight": "node scripts/postgres-test-preflight.mjs",
     "test:postgres:stable": "node scripts/postgres-test-preflight.mjs --run",
     "test:postgres-preflight": "node scripts/postgres-test-preflight-regression.mjs",
-    "test:postgres": "node scripts/ai-budget-postgres-regression.mjs && node scripts/postgres-integration.mjs && node scripts/persistence-ledger-postgres-regression.mjs",
+    "test:postgres": "node scripts/ai-budget-postgres-regression.mjs && node scripts/postgres-integration.mjs && node scripts/persistence-ledger-postgres-regression.mjs && node scripts/postgres-record-compression-rollback-regression.mjs",
     "test:backend": "node scripts/system-test.mjs backend",
     "test:load": "node scripts/system-test.mjs load",
     "test:memory-soak": "node scripts/memory-soak-regression.mjs",
