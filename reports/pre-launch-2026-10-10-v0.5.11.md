@@ -1,13 +1,13 @@
 # V0.5.11 发布记录
 
-状态：候选准备中；尚未 push、tag、创建 Gitee Release 或部署。
+状态：已发布并部署；生产 30 分钟观察窗口进行中，G6/G7 尚未关闭。
 
 ## 发布对象
 
 - 产品线：Web/PWA。
 - 上一发行版：`v0.5.10+hotfix.1`，提交 `1189b0300ceaeaf04282561dab6e3ab1c14f741f`。
 - 基础候选：`release/v0.5.11`；已含冷启核心实现 `2a1d5493c3a2cbcc854f6b4725599b4198c91cca`、后续冷启相关回归修正及唯一发行说明工作树规则。版本元数据从 `package.json` 集中生成。
-- 目标 tag：`v0.5.11`；完整候选 SHA/tree 在发布元数据、发行正文和计划提交后补录。
+- 目标 tag：`v0.5.11`，指向候选 `5c839e432012090011043e5c16ab823724add2af`（tree `0c257b542d75331bbf13808467b5d67697947411`）。
 - 范围：新用户问答形成来源可追溯的冷启核心模型；既有用户显式补答；模型未就绪时其他个性化回答持久等待；回答来源引用由服务端核验；撤权、账户变化、过期生成结果使派生结果失效。
 - 非目标：iOS 制品构建/签名/分发；真实 provider 对引用提示的遵从性验收；生产数据上的模型生成；`.512` 日压缩生产扫描。
 
@@ -46,12 +46,13 @@
 
 - 生产数据采用 PostgreSQL；本版无数据库 DDL、存储格式或权限迁移。部署前取得并校验新鲜备份，记录可用的现成恢复依据。
 - 代码回滚目标：`v0.5.10+hotfix.1` / `1189b0300ceaeaf04282561dab6e3ab1c14f741f`。数据恢复与代码回滚分开；若候选意外改变数据或权限状态，先停止流量并按备份恢复，不通过只切代码假称数据已恢复。
-- 新鲜备份、Preview、生产、观察与 G6 证据待发布执行时追加。
+- 2026-10-10 11:16（Asia/Shanghai）生产备份归档 `for-now-20261010T031631Z.tar.gz`，约 95 MiB；校验和通过，归档属主/权限为 `for-now:for-now`/`0600`。隔离恢复演练通过：4 users、478 条记录、109 个附件引用、115 个本地附件，API 与附件读取均通过。PostgreSQL 数据库未做 DDL 或写入迁移。
+- Preview 于 2026-10-10 部署候选 SHA；公网 `/preview/readyz` 为 `ok=true`，版本 `5c839e432012`；`/preview/` 为 200 且含 `X-Robots-Tag: noindex`，快照 API 为 404，`for-now-preview.service` 为 active。
 
 ## G5 发布决定
 
-在冻结候选、备份完整性和适用恢复依据、Preview 冒烟证据补齐后，依据持续授权执行本记录绑定的唯一候选。若出现 P00/P0 数据或权限损害则暂停对应危险动作并恢复；可恢复的非核心问题记录并降级。生产冒烟不触发真实 provider 付费请求，除非该项已有明确预算与操作矩阵。
+G5 已完成：冻结候选、备份完整性/隔离恢复依据和 Preview 冒烟均通过。Gitee `main` 已推进到候选提交，annotated tag `v0.5.11` 已指向该提交；Gitee Release API 创建返回 HTTP 201，回读 tag/target SHA 一致，正文与本记录唯一发行说明逐字一致。生产部署使用独立 production fence（attempt `06ceeada14fb91629b5f03e188572ac7`），目标基线为 `1189b0300ceaeaf04282561dab6e3ab1c14f741f`；PostgreSQL runtime preflight、Prompt Catalog 检查、Nginx 配置检查通过，最终部署 SHA 为 `5c839e432012090011043e5c16ab823724add2af`。部署未触发真实 provider 付费请求。
 
 ## G6 / G7
 
-部署 SHA、Gitee tag/Release URL、Preview/生产冒烟、观察窗口和结论在发布后追加。G7 复盘记录执行失败、证据复用、责任与回流项；未实际完成的状态保持未关闭。
+Gitee tag：`https://gitee.com/Liu_772021/for-now/releases/tag/v0.5.11`。G6：生产公网 `/now/readyz` 返回候选 SHA，页面 200、版本 `0.5.11`、快照 API 404、服务 active；30 分钟观察进行中（当前 1/31 分钟样本通过、PID 未重启）。窗口结束后追加样本汇总和结论。G7 复盘随后记录；未实际完成的状态保持未关闭。
