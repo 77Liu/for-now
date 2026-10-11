@@ -1,176 +1,167 @@
-import {
-  isPendingAiTaskStatus,
-  WAITING_FOR_USER_MODEL_MESSAGE,
-  WAITING_FOR_USER_MODEL_STATUS
-} from "../shared/ai-task-status.mjs";
-
+import { isPendingAiTaskStatus, WAITING_FOR_USER_MODEL_MESSAGE, WAITING_FOR_USER_MODEL_STATUS } from "../shared/ai-task-status.mjs";
 const TASK_KINDS = new Set([
-  "thoughtDraft",
-  "thoughtPrompt",
-  "journalAssist",
-  "journalReflection",
-  "chat",
-  "analysis"
+    "thoughtDraft",
+    "thoughtPrompt",
+    "journalAssist",
+    "journalReflection",
+    "chat",
+    "analysis"
 ]);
-
-const TERMINAL_FAILURE_STATUSES = new Set([
-  "failed",
-  "stale",
-  "cancelled"
-]);
-
+const TERMINAL_FAILURE_STATUSES = new Set(["failed", "stale", "cancelled"]);
 const DEFAULT_POLL_INTERVAL_MS = 1800;
-const noop = () => {};
-
+const noop = () => { };
+function asRecord(value) {
+    return value !== null && typeof value === "object"
+        ? value
+        : null;
+}
 function taskFromResponse(response) {
-  const candidate = response?.data || response?.task || response;
-  if (!candidate || !TASK_KINDS.has(candidate.kind)) return null;
-  if (typeof candidate.id !== "string" || !candidate.id) return null;
-  if (typeof candidate.status !== "string") return null;
-  return candidate;
+    const responseRecord = asRecord(response);
+    const candidate = responseRecord?.data || responseRecord?.task || response;
+    const task = asRecord(candidate);
+    if (!task || !TASK_KINDS.has(task.kind))
+        return null;
+    if (typeof task.id !== "string" || !task.id)
+        return null;
+    if (typeof task.status !== "string")
+        return null;
+    return task;
 }
-
 function taskStatusMessage(task, operationLabel = "请求") {
-  if (task.status === WAITING_FOR_USER_MODEL_STATUS) {
-    return `${operationLabel}已保存，${WAITING_FOR_USER_MODEL_MESSAGE}`;
-  }
-  if (task.status === "queued") return `${operationLabel}已排队，等待处理…`;
-  if (task.status === "running") return `${operationLabel}正在处理中…`;
-  if (task.status === "cancelling") return `${operationLabel}正在停止…`;
-  if (task.status === "succeeded") return `${operationLabel}已完成，正在读取结果…`;
-  if (task.status === "failed") return `${operationLabel}失败：${task.error || "请稍后重试。"}`;
-  if (task.status === "stale") return `${operationLabel}所用内容已变化，请重新发起。`;
-  if (task.status === "cancelled") return `${operationLabel}已取消。`;
-  return `${operationLabel}状态：${task.status}`;
+    if (task.status === WAITING_FOR_USER_MODEL_STATUS) {
+        return `${operationLabel}已保存，${WAITING_FOR_USER_MODEL_MESSAGE}`;
+    }
+    if (task.status === "queued")
+        return `${operationLabel}已排队，等待处理…`;
+    if (task.status === "running")
+        return `${operationLabel}正在处理中…`;
+    if (task.status === "cancelling")
+        return `${operationLabel}正在停止…`;
+    if (task.status === "succeeded")
+        return `${operationLabel}已完成，正在读取结果…`;
+    if (task.status === "failed")
+        return `${operationLabel}失败：${task.error || "请稍后重试。"}`;
+    if (task.status === "stale")
+        return `${operationLabel}所用内容已变化，请重新发起。`;
+    if (task.status === "cancelled")
+        return `${operationLabel}已取消。`;
+    return `${operationLabel}状态：${task.status}`;
 }
-
 function taskError(task, operationLabel) {
-  const error = new Error(taskStatusMessage(task, operationLabel));
-  error.task = task;
-  error.taskStatus = task.status;
-  error.taskId = task.id;
-  return error;
+    const error = new Error(taskStatusMessage(task, operationLabel));
+    error.task = task;
+    error.taskStatus = task.status;
+    error.taskId = task.id;
+    return error;
 }
-
 function wait(milliseconds) {
-  return new Promise(resolve => setTimeout(resolve, milliseconds));
+    return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
-
+/** 此入口只接收同步结果；异步任务必须交给轮询器，不能伪装成已完成的响应。 */
 export function resolveSynchronousPersonalizedResponse(response) {
-  const task = taskFromResponse(response);
-  if (task) {
-    const error = taskError(task, "后台任务");
-    error.message = `${taskStatusMessage(task, "后台任务")}当前界面无法跟踪进度，请刷新后查看任务通知。`;
-    throw error;
-  }
-  return {
-    asynchronous: false,
-    task: null,
-    result: response?.data ?? response
-  };
-}
-
-function transientFailure(error) {
-  return error?.code === "NETWORK_ERROR"
-    || Number(error?.status) === 0
-    || Number(error?.status) >= 500;
-}
-
-export async function resolvePersonalizedAiResponse(response, {
-  request,
-  operationLabel = "请求",
-  expectedKind = "",
-  onTask = noop,
-  onStatus = noop,
-  isSessionCurrent = () => true,
-  pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
-  sleep = wait
-} = {}) {
-  if (typeof request !== "function") {
-    throw new TypeError("Resolving a personalized AI task requires request()");
-  }
-
-  let task = taskFromResponse(response);
-  if (!task) {
-    return resolveSynchronousPersonalizedResponse(response);
-  }
-  if (expectedKind && task.kind !== expectedKind) {
-    throw new Error(`${operationLabel}返回了不匹配的任务类型。`);
-  }
-
-  if (!isSessionCurrent()) {
-    return { asynchronous: true, abandoned: true, task, result: null };
-  }
-  onTask(task);
-  onStatus(taskStatusMessage(task, operationLabel), task);
-
-  while (isPendingAiTaskStatus(task.status)) {
-    await sleep(pollIntervalMs);
-    if (!isSessionCurrent()) {
-      return { asynchronous: true, abandoned: true, task, result: null };
-    }
-
-    let latest;
-    try {
-      latest = await request(`/api/ai-tasks/${encodeURIComponent(task.id)}`);
-    } catch (error) {
-      if (!transientFailure(error)) {
-        error.task ||= task;
-        error.taskId ||= task.id;
-        error.taskStatus ||= task.status;
+    const task = taskFromResponse(response);
+    if (task) {
+        const error = taskError(task, "后台任务");
+        error.message = `${taskStatusMessage(task, "后台任务")}当前界面无法跟踪进度，请刷新后查看任务通知。`;
         throw error;
-      }
-      if (!isSessionCurrent()) {
-        return { asynchronous: true, abandoned: true, task, result: null };
-      }
-      onStatus(`${operationLabel}状态暂时无法读取，稍后自动重试…`, task);
-      continue;
+    }
+    return {
+        asynchronous: false,
+        task: null,
+        result: asRecord(response)?.data ?? response
+    };
+}
+function transientFailure(error) {
+    const failure = asRecord(error);
+    return failure?.code === "NETWORK_ERROR"
+        || Number(failure?.status) === 0
+        || Number(failure?.status) >= 500;
+}
+function attachTaskContext(error, task) {
+    const failure = error;
+    failure.task ||= task;
+    failure.taskId ||= task.id;
+    failure.taskStatus ||= task.status;
+}
+/**
+ * 当 isSessionCurrent() 报告调用方上下文已失效时返回 abandoned，调用方必须丢弃旧结果；
+ * 仅网络临时失败会重试，终态任务和非瞬时错误会直接抛出。
+ */
+export async function resolvePersonalizedAiResponse(response, { request, operationLabel = "请求", expectedKind = "", onTask = noop, onStatus = noop, isSessionCurrent = () => true, pollIntervalMs = DEFAULT_POLL_INTERVAL_MS, sleep = wait } = {}) {
+    if (typeof request !== "function") {
+        throw new TypeError("Resolving a personalized AI task requires request()");
+    }
+    let task = taskFromResponse(response);
+    if (!task) {
+        return resolveSynchronousPersonalizedResponse(response);
+    }
+    if (expectedKind && task.kind !== expectedKind) {
+        throw new Error(`${operationLabel}返回了不匹配的任务类型。`);
     }
     if (!isSessionCurrent()) {
-      return { asynchronous: true, abandoned: true, task, result: null };
+        return { asynchronous: true, abandoned: true, task, result: null };
     }
-    task = taskFromResponse(latest) || latest;
     onTask(task);
     onStatus(taskStatusMessage(task, operationLabel), task);
-  }
-
-  if (TERMINAL_FAILURE_STATUSES.has(task.status)) {
-    throw taskError(task, operationLabel);
-  }
-  if (task.status !== "succeeded") {
-    throw taskError(task, operationLabel);
-  }
-
-  let resultResponse;
-  while (true) {
-    try {
-      resultResponse = await request(
-        `/api/ai-tasks/${encodeURIComponent(task.id)}/result`
-      );
-      break;
-    } catch (error) {
-      if (!transientFailure(error)) {
-        error.task ||= task;
-        error.taskId ||= task.id;
-        error.taskStatus ||= task.status;
-        throw error;
-      }
-      if (!isSessionCurrent()) {
-        return { asynchronous: true, abandoned: true, task, result: null };
-      }
-      onStatus(`${operationLabel}已完成，正在重试读取结果…`, task);
-      await sleep(pollIntervalMs);
+    while (isPendingAiTaskStatus(task.status)) {
+        await sleep(pollIntervalMs);
+        if (!isSessionCurrent()) {
+            return { asynchronous: true, abandoned: true, task, result: null };
+        }
+        let latest;
+        try {
+            latest = await request(`/api/ai-tasks/${encodeURIComponent(task.id)}`);
+        }
+        catch (error) {
+            if (!transientFailure(error)) {
+                attachTaskContext(error, task);
+                throw error;
+            }
+            if (!isSessionCurrent()) {
+                return { asynchronous: true, abandoned: true, task, result: null };
+            }
+            onStatus(`${operationLabel}状态暂时无法读取，稍后自动重试…`, task);
+            continue;
+        }
+        if (!isSessionCurrent()) {
+            return { asynchronous: true, abandoned: true, task, result: null };
+        }
+        task = taskFromResponse(latest) || latest;
+        onTask(task);
+        onStatus(taskStatusMessage(task, operationLabel), task);
     }
-  }
-  if (!isSessionCurrent()) {
-    return { asynchronous: true, abandoned: true, task, result: null };
-  }
-  const result = resultResponse?.result;
-  if (!result || typeof result !== "object") {
-    throw new Error(`${operationLabel}已完成，但结果暂时不可用。`);
-  }
-
-  return { asynchronous: true, task, result };
+    if (TERMINAL_FAILURE_STATUSES.has(task.status)) {
+        throw taskError(task, operationLabel);
+    }
+    if (task.status !== "succeeded") {
+        throw taskError(task, operationLabel);
+    }
+    let resultResponse;
+    while (true) {
+        try {
+            resultResponse = await request(`/api/ai-tasks/${encodeURIComponent(task.id)}/result`);
+            break;
+        }
+        catch (error) {
+            if (!transientFailure(error)) {
+                attachTaskContext(error, task);
+                throw error;
+            }
+            if (!isSessionCurrent()) {
+                return { asynchronous: true, abandoned: true, task, result: null };
+            }
+            onStatus(`${operationLabel}已完成，正在重试读取结果…`, task);
+            await sleep(pollIntervalMs);
+        }
+    }
+    if (!isSessionCurrent()) {
+        return { asynchronous: true, abandoned: true, task, result: null };
+    }
+    const result = asRecord(resultResponse)?.result;
+    const resultRecord = asRecord(result);
+    if (!resultRecord) {
+        throw new Error(`${operationLabel}已完成，但结果暂时不可用。`);
+    }
+    return { asynchronous: true, task, result: resultRecord };
 }
-
 export { taskStatusMessage };

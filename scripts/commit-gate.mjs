@@ -12,7 +12,7 @@ const PROTECTED_BRANCH = /^(?:main|master|production|release(?:\/|$)|hotfix(?:\/
 const TASK_BRANCH = /^(?:feat|feature|fix|test|docs)\//;
 const ALLOWED_COMMIT_TYPES = new Set(["feat", "fix", "test", "docs"]);
 const SECRET_ENV_KEY = /^(?:DATABASE_URL|AUTH_DATABASE_URL|AI_BUDGET_DATABASE_URL|PG_BACKUP_DATABASE_URL|PG_SCHEMA_DATABASE_URL|APP_URL|UPSTREAM_ORIGIN)$/;
-const SECRET_ENV_PREFIX = /^(?:OSS_|ALIYUN_|ALIBABA_CLOUD_|DEEPSEEK_|FEISHU_|VOLCENGINE_)/;
+const SECRET_ENV_PREFIX = /^(?:OSS_|MEDIA_|ALIYUN_|ALIBABA_CLOUD_|DEEPSEEK_|FEISHU_|VOLCENGINE_)/;
 
 const moduleScopes = new Map([
   ["actions", "actions"],
@@ -49,7 +49,16 @@ const frontendScopes = new Map([
 ]);
 
 const allFrontendScopes = [...new Set(frontendScopes.values())];
+const frontendRegressionPrefixes = [
+  "frontend-",
+  "mobile-platform-",
+  "ui-",
+  "home-chat-",
+  "context-source-",
+  "url-history-"
+];
 const regressionScopes = new Map([
+  ["frontend-actions-feature-regression.mjs", ["actions"]],
   ["capture-journal-regression.mjs", ["captures-journals"]],
   ["checkin-health-regression.mjs", ["records"]],
   ["frontend-contract-regression.mjs", allFrontendScopes],
@@ -61,21 +70,29 @@ const regressionScopes = new Map([
   ["frontend-owner-console-feature-regression.mjs", ["owner-console"]],
   ["frontend-quotes-feature-regression.mjs", ["library"]],
   ["frontend-review-insights-feature-regression.mjs", ["reviews-chat"]],
+  ["frontend-runtime-composition-regression.mjs", allFrontendScopes],
   ["frontend-shell-regression.mjs", allFrontendScopes],
   ["frontend-trash-feature-regression.mjs", ["trash-ui"]],
   ["g2-a-r2-regression.mjs", ["thoughts"]],
   ["g2-actions-regression.mjs", ["actions"]],
   ["g2-discovery-regression.mjs", ["discovery"]],
+  ["home-chat-citation-renderer-regression.mjs", ["home"]],
   ["keepsake-media-workflows-regression.mjs", ["keepsakes"]],
   ["keepsake-time-regression.mjs", ["keepsakes"]],
   ["library-regression.mjs", ["library"]],
   ["mobile-platform-regression.mjs", allFrontendScopes],
+  ["context-source-route-regression.mjs", ["basic-surfaces"]],
   ["personal-context-regression.mjs", ["onboarding"]],
   ["record-v1-regression.mjs", ["records"]],
   ["reviews-chat-regression.mjs", ["reviews-chat"]],
   ["thought-service-regression.mjs", ["thoughts"]],
   ["ui-regression.mjs", allFrontendScopes],
   ["url-history-regression.mjs", allFrontendScopes]
+]);
+const sharedFrontendRegressionScopes = new Map([
+  ["frontend-contract-regression.mjs", allFrontendScopes],
+  ["frontend-shell-regression.mjs", ["basic-surfaces"]],
+  ["url-history-regression.mjs", ["basic-surfaces"]]
 ]);
 
 function fail(message) {
@@ -143,6 +160,12 @@ function unique(values) {
   return [...new Set(values)];
 }
 
+function regressionSurface(name) {
+  return frontendRegressionPrefixes.some(prefix => name.startsWith(prefix))
+    ? "frontend"
+    : "backend";
+}
+
 function isDocumentation(file) {
   return (
     /^(?:README(?:-TODO)?|one-mistake-one-rule)\.md$/.test(file)
@@ -202,7 +225,7 @@ function classifyPath(file) {
   const regressionMatch = /^scripts\/([^/]+-regression\.mjs)$/.exec(file);
   if (regressionMatch && regressionScopes.has(regressionMatch[1])) {
     const name = regressionMatch[1];
-    const surface = /^(?:frontend|mobile-platform|ui)-/.test(name) ? "frontend" : "backend";
+    const surface = regressionSurface(name);
     return { kind: "test", scopes: regressionScopes.get(name), surface };
   }
 
@@ -330,6 +353,20 @@ function runNpmScript(candidate, script) {
   });
 }
 
+function runValidation(candidate, selection) {
+  if (!selection.startsWith("node:")) {
+    runNpmScript(candidate, selection);
+    return;
+  }
+  const script = selection.slice("node:".length);
+  process.stdout.write(`\n[commit-gate] node ${script}\n`);
+  command(process.execPath, [script], {
+    cwd: candidate,
+    env: isolatedEnvironment(process.env),
+    stdio: "inherit"
+  });
+}
+
 async function validateCandidate(root, tree, scripts) {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "for-now-commit-gate-"));
   const archive = path.join(temporary, "candidate.tar");
@@ -346,7 +383,7 @@ async function validateCandidate(root, tree, scripts) {
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
     }
-    for (const script of scripts) runNpmScript(candidate, script);
+    for (const script of scripts) runValidation(candidate, script);
   } finally {
     await fs.rm(temporary, { recursive: true, force: true });
   }
@@ -373,11 +410,12 @@ function selectValidation(classifications, subject) {
         fail(`${item.file} does not test the declared ${subject.scope} scope`);
       }
     }
-    const backend = tests.some(item => item.classification.surface === "backend");
-    const frontend = tests.some(item => item.classification.surface === "frontend");
     return {
       scope: subject.scope,
-      scripts: ["check", backend && frontend ? "test:system" : backend ? "test:backend" : "test:frontend"]
+      scripts: [
+        "check",
+        ...unique(tests.map(item => `node:${item.file}`))
+      ]
     };
   }
 
@@ -394,11 +432,33 @@ function selectValidation(classifications, subject) {
     if (!accepted) fail(`${item.file} does not test the staged ${scope} feature scope`);
   }
 
-  const backend = products.some(item => item.classification.surface === "backend");
-  const frontend = products.some(item => item.classification.surface === "frontend");
+  const surfaces = unique(products.map(item => item.classification.surface));
+  const selectedTests = unique(tests.map(item => item.file));
+  const selectedSurfaces = new Set(tests.map(item => item.classification.surface));
+  for (const [name, scopes] of regressionScopes) {
+    const surface = regressionSurface(name);
+    const sameScope = scopes.length === 1 && scopes[0] === scope;
+    const sharedFrontendScope = sharedFrontendRegressionScopes.get(name) || [];
+    if (
+      (sameScope && surfaces.includes(surface))
+      || (sharedFrontendScope.includes(scope) && surfaces.includes("frontend"))
+    ) {
+      const file = `scripts/${name}`;
+      selectedTests.push(file);
+      selectedSurfaces.add(surface);
+    }
+  }
+  const missingSurfaces = surfaces.filter(surface => !selectedSurfaces.has(surface));
+  const fallbacks = missingSurfaces.map(surface => (
+    surface === "frontend" ? "test:frontend" : "test:backend"
+  ));
   return {
     scope,
-    scripts: ["check", backend && frontend ? "test:system" : backend ? "test:backend" : "test:frontend"]
+    scripts: [
+      "check",
+      ...unique(selectedTests).map(file => `node:${file}`),
+      ...fallbacks
+    ]
   };
 }
 
