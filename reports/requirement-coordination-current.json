@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 16,
-  "updated_at": "2026-10-12T02:32:00+08:00",
+  "revision": 17,
+  "updated_at": "2026-10-12T02:38:00+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -343,6 +343,12 @@
       "at": "2026-10-12T02:32:00+08:00",
       "reason": "让协作运行时复用个人上下文的唯一来源解析器，避免未知区域修复产生第二份规则",
       "previous_snapshot": "reports/requirement-coordination-current.json@revision-15"
+    },
+    {
+      "revision": 17,
+      "at": "2026-10-12T02:38:00+08:00",
+      "reason": "让modelUnknown来源携带最小问题摘要，避免页面依赖整份个人模型快照才能显示上下文",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-16"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -456,7 +462,8 @@
       "public/frontend/features/keepsakes/presentation-markup.mjs",
       "public/frontend/features/keepsakes/presentation.mjs",
       "public/frontend/app/runtime/collaboration-runtime.mjs",
-      "public/frontend/features/personal-context/sources.mjs"
+      "public/frontend/features/personal-context/sources.mjs",
+      "src/app/task-context.mjs"
     ],
     "forbidden_write_set": [
       "main",
@@ -474,7 +481,7 @@
       "无法稳定复现状态分流；发现现有链路没有问答AI整理步骤；涉及生产数据或权限边界风险；差分扩展到通用调度平台或全站上下文重构；需要远程推送、tag、Release、部署或付费调用"
     ],
     "external_actions": "不推送、不tag、不Release、不部署、不手工付费调用；不恢复暂停的周期自动化",
-    "current_status": "P0状态分流已提交37646b4；小物图片节点复用已有实现61fe71a，账号刷新停机仍缺少可复现根因；未知区域已完成最小上下文展示并收敛重复来源解析，待专项验证。下一小版本仍须在启动前重新选定当时develop基线并锁定控制面。",
+    "current_status": "P0状态分流已提交37646b4；小物图片节点复用已有实现61fe71a，账号刷新停机仍缺少可复现根因；未知区域已完成来源摘要与最小上下文展示，并收敛重复来源解析，待专项验证。下一小版本仍须在启动前重新选定当时develop基线并锁定控制面。",
     "version_requirement_count": {
       "minimum": 3,
       "maximum": 10,
@@ -529,9 +536,10 @@
           "public/frontend/app/runtime/collaboration-runtime.mjs",
           "public/frontend/features/personal-context/sources.mjs",
           "src/app/task-context.mjs",
-          "本地差分：d26e77c（后续收敛重复解析）"
+          "本地差分：d26e77c（后续收敛重复解析）",
+          "src/app/task-context.mjs"
         ],
-        "decision": "补齐modelUnknown当前快照读取，并让协作运行时复用个人上下文的唯一来源解析器，展示问题、原因和对后续回答的影响；不把它伪装成可跳转的普通原记录。",
+        "decision": "补齐modelUnknown当前快照读取，并让协作运行时复用唯一来源解析器；服务端来源同时携带问题摘要，页面无需加载整份个人模型也能显示上下文。",
         "next": "验证个人上下文来源卡片能显示未知项上下文；若仍无法复现，再保留partial并停止扩展。"
       }
     ]
