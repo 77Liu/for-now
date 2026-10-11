@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 12,
-  "updated_at": "2026-10-12T02:11:32+08:00",
+  "revision": 13,
+  "updated_at": "2026-10-12T02:16:00+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -319,6 +319,12 @@
       "at": "2026-10-12T02:11:32+08:00",
       "reason": "按每个小版本启动前重新选定develop基线的规则，纠正v0.5.13.1四项范围与状态字段不一致，并记录P0本地提交状态",
       "previous_snapshot": "reports/requirement-coordination-current.json@revision-11"
+    },
+    {
+      "revision": 13,
+      "at": "2026-10-12T02:16:00+08:00",
+      "reason": "完成v0.5.13.1四项需求的静态证据分流：P0已提交、小物已有实现待验证、账号刷新与未知区域保留真实阻塞",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-12"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -445,7 +451,7 @@
       "无法稳定复现状态分流；发现现有链路没有问答AI整理步骤；涉及生产数据或权限边界风险；差分扩展到通用调度平台或全站上下文重构；需要远程推送、tag、Release、部署或付费调用"
     ],
     "external_actions": "不推送、不tag、不Release、不部署、不手工付费调用；不恢复暂停的周期自动化",
-    "current_status": "P0状态分流已完成本地实现并提交37646b4；尚未完成受影响验证与候选收口。账号刷新、小物媒体和未知区域上下文仍按最新证据逐项核对；下一小版本必须在启动前重新选定当时develop基线并锁定控制面。",
+    "current_status": "P0状态分流已完成本地实现并提交37646b4；小物图片节点复用已有实现61fe71a，尚未完成受影响验证；账号刷新停机缺少可复现根因，未知区域缺少唯一对象与上下文证据。下一小版本仍须在启动前重新选定当时develop基线并锁定控制面。",
     "version_requirement_count": {
       "minimum": 3,
       "maximum": 10,
@@ -456,6 +462,54 @@
       "recvxDhFQA8HmI",
       "recvxDhr1A4kkn",
       "recvxDgUdPyb2P"
+    ],
+    "requirement_statuses": [
+      {
+        "requirement_id": "reczz28MBW6Y6vCz",
+        "status": "本地实现已提交，待受影响验证",
+        "evidence": [
+          "37646b4",
+          "src/app/user-model.mjs",
+          "src/app/content/background.mjs",
+          "src/app/thought-workflows.mjs"
+        ],
+        "decision": "未提交补充问答走缺省模型上下文；已提交问答等待整理；目标变化阻止旧结果写回。",
+        "next": "只执行与该状态分流直接相关的验证和候选证据整理。"
+      },
+      {
+        "requirement_id": "recvxDhFQA8HmI",
+        "status": "阻塞：缺少可复现根因",
+        "evidence": [
+          "public/index.html",
+          "public/frontend/app/bootstrap.mjs",
+          "public/frontend/app/runtime/session-runtime.mjs",
+          "public/frontend/state/index.mjs"
+        ],
+        "decision": "当前静态链路未证明刷新会触发服务停机，不凭猜测改账号或服务生命周期。",
+        "next": "需要一次可脱敏的刷新失败复现、请求时序、服务进程/错误日志和账号边界证据；获得前不写修复。"
+      },
+      {
+        "requirement_id": "recvxDhr1A4kkn",
+        "status": "已有本地实现，待专项验证",
+        "evidence": [
+          "61fe71a",
+          "public/frontend/features/keepsakes/presentation-markup.mjs",
+          "public/frontend/features/keepsakes/presentation.mjs"
+        ],
+        "decision": "当前实现按媒体键复用已有图片节点，仅在标记变化时更新，未搬运旧重叠分支。",
+        "next": "只做图片闪烁、重复拉取和加载性能的受影响验证；若证据仍失败，再建立最小修复。"
+      },
+      {
+        "requirement_id": "recvxDgUdPyb2P",
+        "status": "阻塞：对象与上下文不足以定位",
+        "evidence": [
+          "src/app/user-model.mjs",
+          "scripts/user-model-claims-regression.mjs",
+          "scripts/public-state-regression.mjs"
+        ],
+        "decision": "现有代码只证明modelUnknown受权限过滤和投影管理，不能从需求文字推断用户看到的具体区域。",
+        "next": "需要对应页面/记录ID、接口响应或稳定复现后再决定入口说明或查看能力；未定位前不改展示。"
+      }
     ]
   },
   "version_plan": {
