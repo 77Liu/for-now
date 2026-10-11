@@ -9,7 +9,7 @@
   "branches": {
     "develop": "ebbde6fcf100432de8a599c771cbd8e774e043ad",
     "release/v0.5.12-clean": "4359648b41608429832e2ce4897bd12163a5d812",
-    "main": "b64068c93e112040cdfd3a0f4dc00e69be20bf0f"
+    "main": "9dc52af19dfff7b1b32b2accc8650daab9247081"
   },
   "archive_root": ".git/git-cleanup-archive-20261011-retry2",
   "worktree_manifest": ".git/git-cleanup-archive-20261011-retry2/worktree-archive-manifest.tsv",
@@ -86,6 +86,22 @@
   "notes": [
     "未提交差分和未跟踪文件均已保存并哈希。",
     "旧分支暂不删除；删除前需确认无新写入者并完成恢复清单。",
-    "所有新业务接入必须从新的 develop 选择性重建并重新验证。"
-  ]
+    "所有新业务接入必须从新的 develop 选择性重建并重新验证。",
+    "五棵已归档工作树在补丁、未跟踪文件和哈希确认后移除；目录删除不影响恢复引用。",
+    "本地 main 未推送，远程 main 不变；任何远程删除或推送需单独授权。"
+  ],
+  "removed_worktrees_after_archive": [
+    "/Users/bytedance/.codex/worktrees/keepsake-image-stability/个人成长追踪",
+    "/Users/bytedance/.codex/worktrees/refresh-stop/个人成长追踪",
+    "/Users/bytedance/.codex/worktrees/source-context-view/个人成长追踪",
+    "/Users/bytedance/.codex/worktrees/v0.5.13.1-keepsake-flicker",
+    "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/v0.5.9-integration"
+  ],
+  "root_main_dirty_stash": "24d163645e4d3aa4f76539025fd10b699392c30a",
+  "root_main_dirty_stash_archive_ref": "refs/archive/git-cleanup-20261011/root-main-dirty-stash",
+  "final_allowed_entries": {
+    "main": "9dc52af19dfff7b1b32b2accc8650daab9247081",
+    "release/v0.5.12-clean": "9dc52af19dfff7b1b32b2accc8650daab9247081",
+    "develop": "143af286082bf55ecb828db8dceac21cbaa93501"
+  }
 }
