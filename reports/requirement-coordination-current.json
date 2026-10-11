@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 18,
-  "updated_at": "2026-10-12T02:44:00+08:00",
+  "revision": 19,
+  "updated_at": "2026-10-12T02:49:00+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -355,6 +355,12 @@
       "at": "2026-10-12T02:44:00+08:00",
       "reason": "夜间窗口阶段性收口：记录当前develop HEAD、四项状态与每个后续版本启动前重新锁基线规则",
       "previous_snapshot": "reports/requirement-coordination-current.json@revision-17"
+    },
+    {
+      "revision": 19,
+      "at": "2026-10-12T02:49:00+08:00",
+      "reason": "记录夜间候选静态核对与未执行功能回归的真实边界，避免把语法检查冒称行为通过",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-18"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -548,7 +554,16 @@
         "decision": "补齐modelUnknown当前快照读取，并让协作运行时复用唯一来源解析器；服务端来源同时携带问题摘要，页面无需加载整份个人模型也能显示上下文。",
         "next": "验证个人上下文来源卡片能显示未知项上下文；若仍无法复现，再保留partial并停止扩展。"
       }
-    ]
+    ],
+    "verification": {
+      "static_checks": [
+        "已对P0及未知区域改动文件执行node --check",
+        "已解析唯一控制面JSON并核对四项候选、启动前锁基线规则和状态分流",
+        "已执行git diff --check，当前工作树无未提交差分"
+      ],
+      "functional_tests": "尚未执行；按当前夜间规则，先完成实现与写集收口，再只选择受影响专项，不运行system all、不重复无关预算/压缩/PG/发布测试。",
+      "remote_or_production": "未推送、未tag、未Release、未部署、未写生产、未手工触发付费调用"
+    }
   },
   "version_plan": {
     "minimum_requirements_per_version": 3,
