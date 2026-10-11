@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 13,
-  "updated_at": "2026-10-12T02:16:00+08:00",
+  "revision": 14,
+  "updated_at": "2026-10-12T02:20:00+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -325,6 +325,12 @@
       "at": "2026-10-12T02:16:00+08:00",
       "reason": "完成v0.5.13.1四项需求的静态证据分流：P0已提交、小物已有实现待验证、账号刷新与未知区域保留真实阻塞",
       "previous_snapshot": "reports/requirement-coordination-current.json@revision-12"
+    },
+    {
+      "revision": 14,
+      "at": "2026-10-12T02:20:00+08:00",
+      "reason": "补齐夜间候选实际允许写集，覆盖P0导出入口与小物现有呈现模块，继续禁止范围外写入",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-13"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -433,7 +439,10 @@
       "src/app/thought-workflows.mjs",
       "src/app/user-model.mjs",
       "src/app/prompt-context.mjs",
-      "受影响专项回归及必要中文文档"
+      "受影响专项回归及必要中文文档",
+      "src/app/index.mjs",
+      "public/frontend/features/keepsakes/presentation-markup.mjs",
+      "public/frontend/features/keepsakes/presentation.mjs"
     ],
     "forbidden_write_set": [
       "main",
