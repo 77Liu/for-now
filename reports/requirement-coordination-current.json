@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 10,
-  "updated_at": "2026-10-12T01:42:00+08:00",
+  "revision": 11,
+  "updated_at": "2026-10-12T02:02:00+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -433,7 +433,7 @@
       "无法稳定复现状态分流；发现现有链路没有问答AI整理步骤；涉及生产数据或权限边界风险；差分扩展到通用调度平台或全站上下文重构；需要远程推送、tag、Release、部署或付费调用"
     ],
     "external_actions": "不推送、不tag、不Release、不部署、不手工付费调用；不恢复暂停的周期自动化",
-    "current_status": "计划已固定，代码尚未修改；等待主控在develop上按状态矩阵执行",
+    "current_status": "P0状态分流实现已开始；尚未完成受影响验证与提交。当前v0.5.13.1基线已锁定，后续小版本必须在启动前重新选定基线并锁定控制面",
     "version_requirement_count": {
       "minimum": 3,
       "maximum": 10,
@@ -448,6 +448,18 @@
   "version_plan": {
     "minimum_requirements_per_version": 3,
     "maximum_requirements_per_version": 10,
+    "startup_lock_policy": {
+      "rule": "每个小版本结束后形成新状态；下一小版本启动前，主控必须重新读取需求池、确认真实未交付范围、从当时develop的HEAD选择唯一基线，并在本控制面锁定版本ID、需求ID、写集、分支和验收边界。",
+      "before_lock": [
+        "只允许保留候选主题、数量范围和待核对需求，不得把候选写成冻结范围。",
+        "不得提前创建该版本的feat/release分支或把历史版本基线当作新版本起点。"
+      ],
+      "after_lock": [
+        "控制面记录baseline_sha、version、requirement_ids、branch_plan、allowed_write_set、stop_conditions和验收边界。",
+        "锁定后普通开发只从该develop基线进入该版本feat分支；收口后再生成release候选。"
+      ],
+      "current_exception": "v0.5.13.1已在本轮启动时按develop基线锁定，继续按当前锁定执行；v0.5.13及后续版本仍未锁定。"
+    },
     "versions": [
       {
         "id": "v0.5.13.1",
