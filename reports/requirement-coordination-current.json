@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 3,
-  "updated_at": "2026-10-11T19:13:24.533432+08:00",
+  "revision": 5,
+  "updated_at": "2026-10-11T19:26:29.576017+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -12,20 +12,30 @@
     "effective_date": "2026-10-11",
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
-  "work_mode": "启动整理中；已取得 Owner 授权选择，需求池只读跟踪待执行",
-  "current_phase": "授权决策已登记，Git 本地整理待执行，自动生产未启用",
+  "work_mode": "启动准备；自动生产关闭；定时自动化未恢复",
+  "current_phase": "本地 Git 整理与需求池只读基线核验完成；生产启动条件待核验",
   "state": "not_ready_for_automatic_production",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
-    "develop": "本文件所在 develop 提交（以 git rev-parse HEAD 核验）",
+    "develop": "refs/heads/develop（以当前主控工作树 git rev-parse develop 核验）",
     "remote_main_ref": "origin/main",
     "remote_main_observed": "ebbde6fcf100432de8a599c771cbd8e774e043ad",
     "startup_manifest": "reports/git-archive/git-startup-20261011-manifest.json",
     "archive_namespace": "refs/archive/git-startup-20261011/heads",
     "worktree_count": 2,
     "remote_operations": "未执行",
-    "develop_current": "本文件所在 develop 提交（以 git rev-parse HEAD 核验）",
-    "develop_previous": "b9a5c924e4d15fd73bc5a8687f7bf0a91449d23e"
+    "release_v0_5_12_clean": "4359648b41608429832e2ce4897bd12163a5d812",
+    "retained_local_branches": [
+      "main",
+      "develop",
+      "release/v0.5.12-clean"
+    ],
+    "old_local_refs_removed": [
+      "feat/v0.5.13-save-sync",
+      "feat/v0.5.13.1-stability",
+      "release/v0.5.13",
+      "release/v0.5.13.1"
+    ]
   },
   "authorization_policy": {
     "policy_id": "release-authorization-policy",
@@ -45,16 +55,17 @@
       "生产预算、告警、灰度、暂停开关与执行器权限核验",
       "Owner 授权范围、有效期和回收条件登记"
     ],
-    "owner_pause_mode": "消息触发并由控制面留痕；恢复需 Owner 明确指令"
+    "owner_pause_mode": "消息触发并由控制面留痕；恢复需 Owner 明确指令",
+    "expiresAt": null,
+    "expiryMode": "until_revoked",
+    "revokedAt": null
   },
   "unknowns": [
     "远程平台分支保护与必需检查状态无法通过 Git 协议确认",
     "自动发布执行器、部署权限与回滚能力尚未完成无生产演练",
-    "生产告警、灰度、预算、暂停开关配置尚未形成可核验证据",
-    "release/v0.5.12-clean 当前指向本地 main 清理提交，不等于 v0.5.12 标签基线，需协调者复核",
-    "根目录 main 保留一个已归档的本地 .superpowers 未跟踪任务产物，归属已在启动归档中记录"
+    "生产告警、灰度、预算、暂停开关配置尚未形成可核验证据"
   ],
-  "next_action": "执行本地 Git 分支整理并进行一次只读需求池跟踪；启动闸门完成前不推送、不发布、不部署、不写生产",
+  "next_action": "完成远程保护和发布/回滚无生产演练；启动闸门完成前不推送、不发布、不部署、不写生产",
   "evidence": [
     "reports/git-archive/git-startup-20261011-manifest.json",
     "knowledge/development-lifecycle.md",
@@ -87,13 +98,91 @@
     "iteration": {
       "demand_tracking": "立即进行一次只读需求池跟踪",
       "round_one": "采用 v0.5.13.1 稳定性候选，需求核验后进入 SELECTED",
-      "round_two": "保留保存恢复/时间意图/通知候选，第一轮复盘后逐条复核"
+      "round_two": "保存恢复/时间意图/通知继续作为候选，启动前逐条核验是否未交付；不扩大或重复已交付范围"
     },
     "testing": {
       "matrix": "采用唯一测试影响矩阵，按改动域最小专项和横切触发条件选择",
-      "partial": "无 P0/P1 用户损害且责任人与补验条件已登记时允许进入自动链路",
+      "partial": "按16A：允许预览和候选；生产必须有无P0/P1用户损害的依据、责任人和补验条件。权限/数据故障不豁免，优先级标签不代替损害判断。",
       "failure_return": "按行为/范围/授权/部署问题返回对应生命周期节点"
     },
-    "startup_gate": "所有启动闸门完成前保持自动生产关闭"
-  }
+    "startup_gate": "所有启动闸门完成前保持自动生产关闭",
+    "answers": {
+      "1": "A",
+      "2": "A",
+      "3": "A",
+      "4": "A",
+      "5": "A",
+      "6": "A",
+      "7": "A",
+      "8": "A",
+      "9": "A",
+      "10": "C",
+      "11": "C",
+      "12": "A",
+      "13": "A",
+      "14": "A",
+      "15": "A",
+      "16": "A",
+      "17": "A",
+      "18": "A"
+    }
+  },
+  "requirement_observation": {
+    "observed_at": "2026-10-11T19:21:21.586748+08:00",
+    "tables": {
+      "demand": {
+        "table_id": "tblHW2FjQpyJlSck",
+        "count": 304,
+        "revision": 531,
+        "has_more": false
+      },
+      "version": {
+        "table_id": "tblGmYXwYXmaddqA",
+        "count": 35,
+        "revision": 34,
+        "has_more": false
+      },
+      "delivery": {
+        "table_id": "tblsidvvCyB8Ty9M",
+        "count": 100,
+        "revision": 135,
+        "has_more": false
+      }
+    },
+    "evidence": "reports/git-archive/requirement-readonly-20261011.json",
+    "delta_status": "本轮建立基线，未完成逐记录历史差分",
+    "online_writes": false
+  },
+  "iterations": [
+    {
+      "id": "v0.5.13.1",
+      "state": "SELECTED",
+      "scope": "账号刷新停止、小物闪烁/重复拉取与性能、测试收敛、TS及必要注释",
+      "requirement_ids": [
+        "recvxDhFQA8HmI",
+        "recvxDhr1A4kkn"
+      ],
+      "exclusions": [
+        "额外上下文展示问题尚未纳入",
+        "全站媒体重构"
+      ],
+      "next": "复核现有develop及归档实现、最新复现和影响矩阵，满足启动准备后进入READY"
+    },
+    {
+      "id": "v0.5.13",
+      "state": "INBOX",
+      "scope": "保存恢复、时间意图、通知候选",
+      "next": "启动前去除已交付内容，再冻结范围"
+    }
+  ],
+  "canonical_path": ".worktrees/develop/reports/requirement-coordination-current.json",
+  "history": [
+    {
+      "revision": 4,
+      "at": "2026-10-11T19:21:21.586748+08:00",
+      "reason": "Owner十八项选择、Git调整回执、完整只读需求基线、控制面共同根迁移",
+      "previous_snapshot": "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/develop/reports/git-archive/control-plane-before-root-migration-20261011.json"
+    }
+  ],
+  "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件"
 }

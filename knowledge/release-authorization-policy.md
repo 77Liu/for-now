@@ -4,7 +4,7 @@
 
 ## 放权原则
 
-Owner 授权的是可审计策略，不是把全部判断交给 Agent。策略必须绑定规则基线、允许的分支、环境、动作、预算、候选身份、观察指标、自动停止条件和失效时间。超出策略时自动停止并返回协调者，不得靠聊天中的“应该可以”继续。
+Owner 授权的是可审计策略，不是把全部判断交给 Agent。策略必须绑定规则基线、允许的分支、环境、动作、预算、候选身份、观察指标、自动停止条件和有效期模式（固定到期或持续至撤销）。超出策略时自动停止并返回协调者，不得靠聊天中的“应该可以”继续。
 
 三道边界始终存在，但由机器判定：
 
@@ -16,7 +16,7 @@ Owner 授权的是可审计策略，不是把全部判断交给 Agent。策略�
 
 | 等级 | 默认范围 | 自动动作 | 必须暂停的条件 |
 | --- | --- | --- | --- |
-| `L0` | 文档、测试、低风险内部工具、无生产数据变化 | 本地提交、push、tag、Release、预览部署；生产动作仅在策略明确包含时执行 | 规则文件、权限、依赖、生产配置或数据边界变化 |
+| `L0` | 文档、测试、低风险内部工具、无生产数据变化 | 本地提交、功能分支 push、候选 tag/Release、预览部署；不含生产动作 | 规则文件、权限、依赖、生产配置或数据边界变化 |
 | `L1` | 可回滚的普通产品功能，兼容契约不变 | 评审后自动合入、发布、canary、放量和异常回滚 | 共享 schema/API、认证、费用、外部供应商或数据迁移变化 |
 | `L2` | 共享契约、持久化、认证、媒体、第三方、预算、生产配置 | 自动构建、候选、预览和证据收集 | 生产写入、迁移、真实 provider、权限模型或 SLO 风险 |
 | `L3` | 破坏性迁移、删除、不可逆数据变化、重大权限/费用变化 | 只自动准备和核验，不自动执行生产写入 | 必须取得 Owner 针对本次动作的明确批准 |
@@ -46,7 +46,7 @@ riskLevel / allowedBranches / allowedEnvironments / allowedActions
 requiredReviewers / requiredChecks / impactDomains
 migrationClass / budgetLimit / canaryWindow / rolloutLimit
 rollbackTarget / haltConditions / ownerPauseSwitch
-effectiveFrom / expiresAt / revokedAt
+effectiveFrom / expiryMode / expiresAt / revokedAt
 ```
 
 策略与候选、attempt、运行对象绑定。修改策略、候选、依赖、配置、测试桩或目标环境会生成新的 attempt；不得沿用旧授权假定继续。
@@ -68,7 +68,11 @@ effectiveFrom / expiresAt / revokedAt
 3. 唯一协调控制面已初始化，且只有协调者可写；
 4. 测试影响矩阵已绑定当前候选，发布和回滚脚本通过最小演练；
 5. 生产凭据、预算、告警、canary 和 kill switch 已现场核验；
-6. Owner 批准本策略的风险等级、动作范围和失效时间。
+6. Owner 批准本策略的风险等级、动作范围及有效期模式；持续授权使用 expiresAt=null、expiryMode=until_revoked。
 
 在条件未满足时，可以继续本地开发、测试和文档整理，但不得把“策略已批准”写成“自动生产已启用”。
 
+
+## Partial 的授权边界
+
+Owner 选择 16A：PARTIAL 可进入预览和候选；生产前必须有无 P0/P1 用户损害的依据，并在控制面记录未验收项、责任人与补验条件。未验证不能当作没有损害；需求排期标签不代替实际损害判断。权限、数据隔离、不可恢复数据故障仍按对应风险等级阻断受影响动作。
