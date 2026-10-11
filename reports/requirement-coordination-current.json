@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；8小时夜间本地开发窗口；自动生产、远程写入和付费调用仍关闭",
-  "current_phase": "v0.5.13.1按三项需求作为当前夜间候选；P0先行，另外两项在同一develop串行收口，不拆并行工作树",
+  "current_phase": "v0.5.13.1按四项需求作为当前夜间候选；AI回答P0先行，其余稳定性问题在同一develop串行收口，不拆并行工作树",
   "state": "not_ready_for_automatic_production",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -257,7 +257,7 @@
         "额外上下文展示问题尚未纳入",
         "全站媒体重构"
       ],
-      "next": "先处理P0，再依次处理账号刷新与小物稳定性；三项均有复现、最小修复和受影响验证后才进入候选冻结",
+      "next": "先处理AI回答P0，再依次处理账号刷新、小物媒体和未知区域上下文可理解性；四项均有复现、最小修复和受影响验证后才进入候选冻结",
       "minimum_requirements": 3,
       "maximum_requirements": 10
     },
@@ -354,7 +354,7 @@
   "night_development": {
     "task_id": "p0-ai-answer-fallback-20261012",
     "requirement_id": "reczz28MBW6Y6vCz",
-    "title": "v0.5.13.1三项需求夜间候选：P0 AI回答fallback、账号刷新停止、小物稳定性/性能",
+    "title": "v0.5.13.1四项需求夜间候选：AI回答fallback、账号刷新停止、小物媒体稳定性、未知区域上下文可理解性",
     "owner": "主控",
     "implementer": "主控/主开发（当前根目录develop，单写）",
     "duration_hours": 8,
@@ -363,7 +363,7 @@
     "branch": "develop",
     "baseline": "2bf5dbd docs(git): 固化工作树边界与单一写入入口",
     "write_location": "/Users/bytedance/Documents/Codex/个人成长追踪",
-    "purpose": "当前8小时不是单需求开发，而是一个三需求小版本候选的串行收口窗口。P0先行；未提交补充问答允许缺省模型信息为空，已提交问答必须等待AI整理结果后入队，目标变化只使旧任务失效。其余两项按最新需求事实执行，不与P0写集重叠。",
+    "purpose": "当前8小时不是单需求开发，而是一个四需求小版本候选的串行收口窗口。AI回答P0先行；未提交补充问答允许缺省模型信息为空，已提交问答必须等待AI整理结果后入队，目标变化只使旧任务失效。其余三项按最新需求事实执行，不与P0写集重叠。",
     "state_matrix": [
       {
         "state": "未提交补充问答",
@@ -400,12 +400,17 @@
       {
         "id": "S3",
         "name": "小物稳定性与性能",
-        "output": "完成最新复现、最小修复和专项验证"
+        "output": "完成图片闪烁、重复拉取和加载性能的最新复现、最小修复和专项验证"
       },
       {
         "id": "S4",
+        "name": "未知区域上下文可理解性",
+        "output": "先确认对象类型、接口返回和权限过滤；有稳定复现才做最小说明/查看入口修复，无证据则记录阻塞"
+      },
+      {
+        "id": "S5",
         "name": "候选收口",
-        "output": "三项分别记录证据、回滚条件、partial边界；不执行远程发布"
+        "output": "四项分别记录证据、回滚条件、partial边界；不执行远程发布"
       }
     ],
     "allowed_write_set": [
@@ -437,12 +442,13 @@
     "version_requirement_count": {
       "minimum": 3,
       "maximum": 10,
-      "current": 3
+      "current": 4
     },
     "requirement_ids": [
       "reczz28MBW6Y6vCz",
       "recvxDhFQA8HmI",
-      "recvxDhr1A4kkn"
+      "recvxDhr1A4kkn",
+      "recvxDgUdPyb2P"
     ]
   },
   "version_plan": {
@@ -481,7 +487,7 @@
             "priority": "按需求池事实"
           }
         ],
-        "execution": "8小时夜间窗口内同一develop串行处理；P0先行，后两项不得覆盖P0写集"
+        "execution": "8小时夜间窗口内同一develop串行处理；AI回答P0先行，其余三项不得覆盖前项写集"
       },
       {
         "id": "v0.5.13",
