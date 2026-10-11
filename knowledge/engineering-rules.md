@@ -146,7 +146,7 @@ npm test
   记录调整依据。
 - 推荐 Conventional Commits：`feat:`、`fix:`、`perf:`、`refactor:`、`test:`、`docs:`、`build:`。
 - 主题行尽量不超过 72 个字符并表达具体结果；正文解释原因、取舍和不明显的影响，不写 `update file`、`fix bug` 等无信息内容。
-- Git 发布版本时必须附中文更新说明，详细写明用户可见变化、关键技术与数据变化、配置迁移、测试证据、已知限制和回滚方式；仅有英文提交标题不构成完整版本说明。内容分类和写法以 `knowledge/release-notes-rules.md` 为准，发布流程以 `knowledge/pre-launch-confirmation.md` 为准。
+- Git 发布版本时必须附中文更新说明，详细写明用户可见变化、关键技术与数据变化、配置迁移、测试证据、已知限制和回滚方式；仅有英文提交标题不构成完整版本说明。内容分类和写法以 `knowledge/release-notes-rules.md` 为准，发布流程以 `SOP/release-and-observation.md` 为准。
 - 每个 release/tag 的完整发行记录只维护一份权威文件，并指定唯一 writer；并行 Agent 只提供事实、证据或 review，不得另建同名副本或同时编辑该文件。Gitee Release 从该文件等价同步。
 - 每个推送到共享远端的 Git 标签都必须创建对应 Gitee Release；发行说明必须相对同一产品线的上一发行版，保留“新功能”“Bug 修复”“架构调整”三个核对栏目并按 `knowledge/release-notes-rules.md` 提供完整更新内容。三个栏目不可省略，无变化时明确写“无”。
 - 不为了追求“小步”把一个不可独立验证的改动机械拆成大量提交。

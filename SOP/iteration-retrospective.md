@@ -31,7 +31,7 @@
 
 - 需求收集与回流：`SOP/requirement-intake.md`
 - 工程和提交规则：`knowledge/engineering-rules.md`
-- 上线前双轮检查与发布门：`knowledge/pre-launch-confirmation.md`
+- 发布动作与观察门：`SOP/release-and-observation.md`
 - 详细上线检查项：`knowledge/development-release-checklist.md`
 - 当日重要变化：`knowledge/iteration-history.md`
 
@@ -422,7 +422,7 @@ git diff --name-status <start> <end>
 - 观察开始/结束、采样数、重启、内存、Swap、OOM 和告警。
 - 已知非阻断项及接受人。
 
-发布事实以 `knowledge/pre-launch-confirmation.md` 定义的状态为准。
+发布事实以 `SOP/release-and-observation.md` 定义的动作回执和控制面状态为准。
 
 ## 14. Step 8：撰写事实层
 

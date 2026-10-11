@@ -1,6 +1,6 @@
 # SOP 地图
 
-按任务选择一份主流程，需要时才读取专项。跨任务约束见 [PROJECT_RULES](../PROJECT_RULES.md)。小任务用同一任务卡承载全过程，不为阶段单独建报告。
+按任务选择一份主流程，需要时才读取专项。跨任务约束见 [PROJECT_RULES](../PROJECT_RULES.md)，当前迭代、候选、发布和运行状态只读[唯一协调控制面](../knowledge/coordination-control-plane.md)。小任务用同一任务卡承载全过程，不为阶段单独建报告。
 
 | 场景 | 流程 | 产出 |
 | --- | --- | --- |
@@ -17,6 +17,8 @@
 | UI 设计 | [UI/UX 优化](ui-ux-optimization.md) | 用户路径、状态和设计交接 |
 | 浏览器验收 | [HTTP 浏览器评审](http-browser-review.md) | 真实操作、持久化与视觉证据 |
 | iOS 专项 | [真机性能](ios-device-performance-testing.md) | 指定原生候选的性能证据 |
+
+测试选择的唯一规则是[测试影响矩阵](../knowledge/test-impact-matrix.md)；[系统测试](../knowledge/system-testing.md)只维护命令目录、实现说明和证据格式，不再另存一套选择状态或发布门槛。
 
 旧报告中的 G0–G7 仍可用于读历史：候选、冻结、规划、切片验证、候选审查、发布决定、上线观察、复盘。它们不要求重复建表、重复测试或独立审批。
 专项流程仅在任务触发时适用；Web 发布不默认等待原生专项。SOP 仍供人工进一步精简，修改时更新原文而非追加另一套全局门。

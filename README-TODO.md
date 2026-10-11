@@ -1,15 +1,14 @@
 # 状态来源地图
 
-本文件只路由状态，不维护第二份版本、需求或待办清单。
+当前任务、范围、候选、授权、发布和运行状态只有一份：共同仓库根目录的 `reports/requirement-coordination-current.json`，仅由当前协调者维护。完整字段、消费者边界和更新协议见 [唯一协调控制面协议](knowledge/coordination-control-plane.md)。本文件不保存状态值。
 
-| 事实 | 唯一维护位置 | 维护责任 |
-| --- | --- | --- |
-| 需求原文、需求验收、版本与交付关联 | 飞书需求池及对应版本/交付记录；离线快照见 reports/evidence/feishu-requirements-current/ | 需求管理；离线数据标明采集时间与范围 |
-| 未冻结候选与推荐排期 | [requirement-roadmap-current.json](reports/requirement-roadmap-current.json) | 需求管理；候选不等于冻结或发布 |
-| 收集批次、差分、分页覆盖和回写证据 | [requirement-delta-current.json](reports/requirement-delta-current.json) | 需求管理；完整扫描与定向更新分别保留来源 |
-| 冻结范围、实现验收、延期项 | 当前版本实施计划，路径从下项获取 | 主开发协调者 |
-| 活跃任务、负责人、基线、工作位置与证据入口 | [requirement-coordination-current.json](reports/requirement-coordination-current.json) | 唯一协调者；monitor 只唤醒或转交，不另养开发队列 |
-| 实际生产发布、回滚与观察 | 协调记录指向的原始发布/观察报告 | 发布执行者；报告是当时事实，实际运行版本需现场核对 |
-| 历史演进 | knowledge/iteration-history.md 与日期化 reports | 只追加重要事实，不继续维护“当前版本” |
+| 内容 | 维护位置与责任 |
+| --- | --- |
+| 当前运行决策与状态 | 唯一控制面；协调者单写 |
+| 需求原文、验收标准、反馈 | 飞书需求池；需求管理维护事实，提交建议与证据 |
+| 未冻结建议、采集差分、分页与回写回执 | 现有 roadmap/delta 记录；仅作输入证据，不另行决定实施队列 |
+| 方案、任务契约和验证计划 | 控制面指向的现有计划/任务卡；维护各自内容，不复制当前状态 |
+| 测试、审查、发布和运行观测 | 控制面引用的报告/机器产物；执行者记录有时间边界的证据 |
+| 历史 | 日期化 reports 与 iteration-history；只保留当时事实 |
 
-JSON 是上述本地结构化事实的维护文件；同名 Markdown 仅作入口，不手工抄写状态。旧快照和已完成批次保持历史身份，不能由脚本重放覆盖新状态。
+需求池、看板或聊天如需展示进度，只读引用控制面，或展示带来源 revision 和时间的单向投影；禁止自建状态来源。缺少控制面或事实冲突时由协调者恢复，不把历史快照重放为当前通过。
