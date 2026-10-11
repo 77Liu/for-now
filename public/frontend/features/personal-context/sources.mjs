@@ -3,7 +3,8 @@ const SOURCE_COLLECTIONS = Object.freeze({
   journal: "journals",
   thought: "thoughts",
   checkin: "checkins",
-  dailyRecord: "dailyRecords"
+  dailyRecord: "dailyRecords",
+  modelUnknown: "modelUnknowns"
 });
 
 export function currentContextSource(source, snapshot = {}) {
@@ -73,6 +74,16 @@ export function currentContextSource(source, snapshot = {}) {
     return {
       ...base,
       text: `情绪 ${item.mood} · 精力 ${item.energy} · 压力 ${item.stress} · 睡眠 ${item.sleep}`
+    };
+  }
+  if (type === "modelUnknown") {
+    return {
+      ...base,
+      text: [
+        item.question,
+        item.reason ? `原因：${item.reason}` : "",
+        item.impactOnNextAnswer ? `影响：${item.impactOnNextAnswer}` : ""
+      ].filter(Boolean).join("\n")
     };
   }
   return {
