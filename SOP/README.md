@@ -10,7 +10,7 @@
 | 多 Agent | [协作协议](multi-agent-orchestration.md) | 唯一调度、写边界、契约与接入顺序 |
 | 隔离与回收 | [工作树生命周期](worktree-lifecycle.md) | 少量活跃现场与可恢复归档 |
 | 集成 | [集成审查](integration-audit.md) | 实际集成候选与影响验证 |
-| 发布 | [发布与观察](release-and-observation.md) | 风险处置、发布决定与运行证据 |
+| 发布 | [发布与观察](release-and-observation.md) | 策略授权、风险处置、自动发布与运行证据 |
 | 生产异常 | [热修](hotfix.md) | 最小止损、修复与双向回流 |
 | 复盘 | [迭代复盘](iteration-retrospective.md) | 问题回流到原维护位置 |
 | 周期跟进 | [持续跟进](night-continuous-development.md) | 基于当前入口的差分推进 |
@@ -19,6 +19,7 @@
 | iOS 专项 | [真机性能](ios-device-performance-testing.md) | 指定原生候选的性能证据 |
 
 测试选择的唯一规则是[测试影响矩阵](../knowledge/test-impact-matrix.md)；[系统测试](../knowledge/system-testing.md)只维护命令目录、实现说明和证据格式，不再另存一套选择状态或发布门槛。
+[发布自动授权策略](../knowledge/release-authorization-policy.md)只维护风险等级和自动动作范围；执行回执仍归发布 SOP，当前状态仍归唯一控制面。
 
 旧报告中的 G0–G7 仍可用于读历史：候选、冻结、规划、切片验证、候选审查、发布决定、上线观察、复盘。它们不要求重复建表、重复测试或独立审批。
 专项流程仅在任务触发时适用；Web 发布不默认等待原生专项。SOP 仍供人工进一步精简，修改时更新原文而非追加另一套全局门。

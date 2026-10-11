@@ -10,10 +10,8 @@
 - 不适用的项目填写 `N/A`，并写明理由，不能直接跳过。
 - 每个结论应附测试结果、截图、日志样例、接口响应、文档或提交等可复核证据。
 - 清单确认的是“可上线”，不能替代代码审查、测试和部署后的验证。
-- `npm run commit:feat` 只允许门禁认可的低风险单域改动形成本地提交；自动提交不代表本清单通过，也不授权 push、tag、Release、部署或生产写入。
-- 夜间队列只有 `SOP/night-continuous-development.md` 规定的版本专属
-  `preview/vX.Y.Z` 推送与现有隔离 Preview 部署获得持续授权；正式 tag、
-  Gitee Release、`main` 和生产动作仍须逐次人工确认。
+- `npm run commit:feat` 只允许门禁认可的低风险单域改动形成本地提交；自动提交不代表本清单通过，push、tag、Release、部署和生产写入必须同时满足发布自动授权策略与控制面记录。
+- 夜间队列的动作仍受 `SOP/night-continuous-development.md` 和控制面限制；未记录有效自动授权策略时，只能执行其中明确允许的 Preview 动作。正式 tag、Gitee Release、`main` 和生产动作不得凭夜间队列自行推断授权。
 
 ## 基本信息
 
