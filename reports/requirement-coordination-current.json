@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 19,
-  "updated_at": "2026-10-12T02:49:00+08:00",
+  "revision": 20,
+  "updated_at": "2026-10-12T02:49:30+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -38,7 +38,7 @@
     ],
     "canonical_worktree": "/Users/bytedance/Documents/Codex/个人成长追踪",
     "canonical_worktree_branch": "develop",
-    "canonical_worktree_head": "32646d03d48b6aefaffeaf2d9dcaaa6113b0dab0",
+    "canonical_worktree_head": "2929ae0b97d51e7e21fc269b33696eb51a7b728c",
     "archived_worktree": {
       "path": "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/develop",
       "branch": "feat/v0.5.13.1-stability",
@@ -361,6 +361,12 @@
       "at": "2026-10-12T02:49:00+08:00",
       "reason": "记录夜间候选静态核对与未执行功能回归的真实边界，避免把语法检查冒称行为通过",
       "previous_snapshot": "reports/requirement-coordination-current.json@revision-18"
+    },
+    {
+      "revision": 20,
+      "at": "2026-10-12T02:49:30+08:00",
+      "reason": "记录夜间候选受影响专项验证结果、模块边界修正与账号刷新真实阻塞；保留每个后续版本启动前重新选定develop基线规则",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-19"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -493,7 +499,7 @@
       "无法稳定复现状态分流；发现现有链路没有问答AI整理步骤；涉及生产数据或权限边界风险；差分扩展到通用调度平台或全站上下文重构；需要远程推送、tag、Release、部署或付费调用"
     ],
     "external_actions": "不推送、不tag、不Release、不部署、不手工付费调用；不恢复暂停的周期自动化",
-    "current_status": "P0状态分流已提交37646b4；小物图片节点复用已有实现61fe71a，账号刷新停机仍缺少可复现根因；未知区域已完成来源摘要、唯一解析器复用和最小上下文展示，待专项验证。当前develop写集干净；下一小版本仍须在启动前重新选定当时develop基线并锁定控制面。",
+    "current_status": "P0状态分流已本地实现并通过核心模型就绪、后台门禁、思绪P00及个性化门禁回归；小物图片节点复用已有实现并通过专项回归；未知区域来源摘要与展示修复通过任务上下文、模块边界和个人语境专项；账号刷新停机仍缺少可复现根因，未做猜测性修复。当前develop已提交1c53411且工作树干净；本候选仍保留账号刷新阻塞，下一小版本必须在启动前重新选定当时develop基线并锁定控制面。",
     "version_requirement_count": {
       "minimum": 3,
       "maximum": 10,
@@ -508,15 +514,20 @@
     "requirement_statuses": [
       {
         "requirement_id": "reczz28MBW6Y6vCz",
-        "status": "本地实现已提交，待受影响验证",
+        "status": "本地实现及受影响验证通过",
         "evidence": [
           "37646b4",
+          "1c53411",
           "src/app/user-model.mjs",
           "src/app/content/background.mjs",
-          "src/app/thought-workflows.mjs"
+          "src/app/thought-workflows.mjs",
+          "node scripts/user-model-core-readiness-regression.mjs",
+          "node scripts/background-ai-model-gate-regression.mjs",
+          "node scripts/thought-workflows-p00-regression.mjs",
+          "node scripts/personalized-ai-model-gate-regression.mjs"
         ],
         "decision": "未提交补充问答走缺省模型上下文；已提交问答等待整理；目标变化阻止旧结果写回。",
-        "next": "只执行与该状态分流直接相关的验证和候选证据整理。"
+        "next": "保留在候选验收证据；不再重复无变化的核心门禁。"
       },
       {
         "requirement_id": "recvxDhFQA8HmI",
@@ -528,41 +539,113 @@
           "public/frontend/state/index.mjs"
         ],
         "decision": "当前静态链路未证明刷新会触发服务停机，不凭猜测改账号或服务生命周期。",
-        "next": "需要一次可脱敏的刷新失败复现、请求时序、服务进程/错误日志和账号边界证据；获得前不写修复。"
+        "next": "继续等待一次可脱敏刷新失败复现、请求时序、进程/错误日志和账号边界证据；在此之前不写猜测性修复。"
       },
       {
         "requirement_id": "recvxDhr1A4kkn",
-        "status": "已有本地实现，待专项验证",
+        "status": "已有本地实现及专项验证通过",
         "evidence": [
           "61fe71a",
           "public/frontend/features/keepsakes/presentation-markup.mjs",
-          "public/frontend/features/keepsakes/presentation.mjs"
+          "public/frontend/features/keepsakes/presentation.mjs",
+          "node scripts/frontend-keepsakes-feature-regression.mjs"
         ],
         "decision": "当前实现按媒体键复用已有图片节点，仅在标记变化时更新，未搬运旧重叠分支。",
-        "next": "只做图片闪烁、重复拉取和加载性能的受影响验证；若证据仍失败，再建立最小修复。"
+        "next": "保留图片节点复用、重复拉取和生命周期清理证据；不重复无变化专项。"
       },
       {
         "requirement_id": "recvxDgUdPyb2P",
-        "status": "最小展示修复已本地实现，待专项验证",
+        "status": "最小展示修复及专项验证通过",
         "evidence": [
           "public/frontend/app/runtime/collaboration-runtime.mjs",
           "public/frontend/features/personal-context/sources.mjs",
           "src/app/task-context.mjs",
-          "本地差分：d26e77c（后续收敛重复解析）",
-          "src/app/task-context.mjs"
+          "d26e77c",
+          "32646d0",
+          "1c53411",
+          "node scripts/task-context-selection-regression.mjs",
+          "node scripts/personal-context-regression.mjs",
+          "node scripts/collaboration-regression.mjs",
+          "npm run check:modules"
         ],
         "decision": "补齐modelUnknown当前快照读取，并让协作运行时复用唯一来源解析器；服务端来源同时携带问题摘要，页面无需加载整份个人模型也能显示上下文。",
-        "next": "验证个人上下文来源卡片能显示未知项上下文；若仍无法复现，再保留partial并停止扩展。"
+        "next": "保留未知项问题摘要和来源卡片边界证据；不扩展为全站上下文重构。"
       }
     ],
     "verification": {
       "static_checks": [
-        "已对P0及未知区域改动文件执行node --check",
-        "已解析唯一控制面JSON并核对四项候选、启动前锁基线规则和状态分流",
-        "已执行git diff --check，当前工作树无未提交差分"
+        "已对本轮P0、未知区域和回归夹具改动执行node --check",
+        "npm run check:modules 通过：117个模块、240条路由，无深层引入或循环",
+        "npm run typecheck:frontend 通过；npm run build:frontend 通过，产物留在受.gitignore保护的编译目录",
+        "已执行git diff --check"
       ],
-      "functional_tests": "尚未执行；按当前夜间规则，先完成实现与写集收口，再只选择受影响专项，不运行system all、不重复无关预算/压缩/PG/发布测试。",
-      "remote_or_production": "未推送、未tag、未Release、未部署、未写生产、未手工触发付费调用"
+      "functional_tests": "已执行受影响专项且均通过：\n- 核心模型就绪、后台AI门禁、思绪P00、个性化AI门禁；\n- 任务上下文选择、个人语境、协作；\n- 小物前端、前端应用生命周期、账号生命周期、前端壳层；\n- 工作上下文边界回归20项。\n未运行system all、预算/压缩/PG/发布矩阵，也未重复无变化专项。",
+      "remote_or_production": "未推送、未tag、未Release、未部署、未写生产、未手工触发付费调用",
+      "test_runs": [
+        {
+          "command": "node scripts/user-model-core-readiness-regression.mjs",
+          "result": "通过",
+          "scope": "核心模型就绪与空模型投影"
+        },
+        {
+          "command": "node scripts/background-ai-model-gate-regression.mjs",
+          "result": "通过",
+          "scope": "等待、取消、重启安全和一次性调度"
+        },
+        {
+          "command": "node scripts/thought-workflows-p00-regression.mjs",
+          "result": "通过",
+          "scope": "未提交补充时空模型上下文、引用和陈旧结果抑制"
+        },
+        {
+          "command": "node scripts/personalized-ai-model-gate-regression.mjs",
+          "result": "通过",
+          "scope": "已提交补充等待整理；撤权、超限、异步错误"
+        },
+        {
+          "command": "node scripts/task-context-selection-regression.mjs",
+          "result": "通过",
+          "scope": "上下文选材、收据失效和降级召回"
+        },
+        {
+          "command": "node scripts/frontend-keepsakes-feature-regression.mjs",
+          "result": "通过",
+          "scope": "图片节点复用、生命周期、重复上传补偿"
+        },
+        {
+          "command": "node scripts/frontend-application-regression.mjs",
+          "result": "通过",
+          "scope": "前端生命周期与清理"
+        },
+        {
+          "command": "node scripts/account-lifecycle-regression.mjs",
+          "result": "通过",
+          "scope": "账号初始化、恢复和启动遍历"
+        },
+        {
+          "command": "node scripts/frontend-shell-regression.mjs",
+          "result": "通过",
+          "scope": "前端壳层路由与特性生命周期"
+        },
+        {
+          "command": "node scripts/personal-context-regression.mjs && node scripts/collaboration-regression.mjs",
+          "result": "通过",
+          "scope": "个人语境与权限协作边界"
+        },
+        {
+          "command": "node scripts/working-context-source-boundaries-regression.mjs",
+          "result": "通过（20项）",
+          "scope": "上下文时间、来源、预算和注入边界"
+        },
+        {
+          "command": "npm run commit-gate-regression",
+          "result": "通过",
+          "scope": "提交门禁与候选隔离约束"
+        }
+      ],
+      "test_adjustments": [
+        "个性化AI门禁回归夹具改为“已提交一条补充但核心模型未整理”；完全未提交补充的fallback由思绪P00回归覆盖，未增加新的大回归。"
+      ]
     }
   },
   "version_plan": {
