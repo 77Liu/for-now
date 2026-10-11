@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 1,
-  "updated_at": "2026-10-11T18:10:26.702154+08:00",
+  "revision": 2,
+  "updated_at": "2026-10-11T18:11:56.101173+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "启动整理中",
-  "current_phase": "Git 起点已建立，唯一控制面初始化，自动生产未启用",
+  "current_phase": "Git 起点与启动就绪核验已记录，自动生产未启用",
   "state": "not_ready_for_automatic_production",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -23,7 +23,8 @@
     "startup_manifest": "reports/git-archive/git-startup-20261011-manifest.json",
     "archive_namespace": "refs/archive/git-startup-20261011/heads",
     "worktree_count": 2,
-    "remote_operations": "未执行"
+    "remote_operations": "未执行",
+    "develop_current": "e84be3799f7481044c773249783d473d44b791b3"
   },
   "authorization_policy": {
     "policy_id": "release-authorization-policy",
@@ -58,5 +59,11 @@
     "knowledge/release-authorization-policy.md",
     "SOP/release-and-observation.md",
     "reports/git-handoff/startup-readiness-2026-10-11.md"
-  ]
+  ],
+  "last_check": {
+    "remote_refs": "已通过 git ls-remote 只读核验",
+    "worktrees": "新 develop 工作树干净；根 main 未跟踪任务产物已归档",
+    "platform_protection": "Git 协议不可见，待平台证据",
+    "remote_write": "未执行"
+  }
 }
