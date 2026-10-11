@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 11,
-  "updated_at": "2026-10-12T02:02:00+08:00",
+  "revision": 12,
+  "updated_at": "2026-10-12T02:11:32+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -75,7 +75,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "按v0.5.13.1三项需求顺序执行：AI回答fallback、账号刷新停止、小物稳定性与性能；候选收口后再冻结v0.5.13.2与v0.5.13的各三项范围",
+  "next_action": "继续按v0.5.13.1四项需求串行收口：P0已完成本地实现并提交，随后核对账号刷新、小物媒体和未知区域上下文；每项仅在有真实复现与最小写集时推进，候选收口后再为下一小版本重新读取需求池、选择develop基线并锁定控制面。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -247,17 +247,18 @@
     {
       "id": "v0.5.13.1",
       "state": "SELECTED",
-      "scope": "AI回答补充提交状态fallback、账号刷新停止、小物图片闪烁/重复拉取与性能；测试收敛、TS及必要注释作为工程验收约束",
+      "scope": "AI回答补充提交状态fallback、账号刷新停止、小物图片闪烁/重复拉取与性能、未知区域上下文可理解性；测试收敛、TS及必要注释作为工程验收约束",
       "requirement_ids": [
         "reczz28MBW6Y6vCz",
         "recvxDhFQA8HmI",
-        "recvxDhr1A4kkn"
+        "recvxDhr1A4kkn",
+        "recvxDgUdPyb2P"
       ],
       "exclusions": [
         "额外上下文展示问题尚未纳入",
         "全站媒体重构"
       ],
-      "next": "先处理AI回答P0，再依次处理账号刷新、小物媒体和未知区域上下文可理解性；四项均有复现、最小修复和受影响验证后才进入候选冻结",
+      "next": "先处理AI回答P0（已完成本地实现并提交），再依次处理账号刷新、小物媒体和未知区域；四项均有复现、最小修复和受影响验证后才进入候选冻结",
       "minimum_requirements": 3,
       "maximum_requirements": 10
     },
@@ -312,6 +313,12 @@
       "at": "2026-10-12T01:42:00+08:00",
       "reason": "Owner要求每个小版本至少3项需求并规划2至3个小版本；将当前8小时窗口扩为v0.5.13.1三项串行候选，并建立下一小版本v0.5.13三项范围",
       "previous_snapshot": "reports/requirement-coordination-current.json@revision-9"
+    },
+    {
+      "revision": 12,
+      "at": "2026-10-12T02:11:32+08:00",
+      "reason": "按每个小版本启动前重新选定develop基线的规则，纠正v0.5.13.1四项范围与状态字段不一致，并记录P0本地提交状态",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-11"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -438,7 +445,7 @@
       "无法稳定复现状态分流；发现现有链路没有问答AI整理步骤；涉及生产数据或权限边界风险；差分扩展到通用调度平台或全站上下文重构；需要远程推送、tag、Release、部署或付费调用"
     ],
     "external_actions": "不推送、不tag、不Release、不部署、不手工付费调用；不恢复暂停的周期自动化",
-    "current_status": "P0状态分流实现已开始；尚未完成受影响验证与提交。当前v0.5.13.1基线已锁定，后续小版本必须在启动前重新选定基线并锁定控制面",
+    "current_status": "P0状态分流已完成本地实现并提交37646b4；尚未完成受影响验证与候选收口。账号刷新、小物媒体和未知区域上下文仍按最新证据逐项核对；下一小版本必须在启动前重新选定当时develop基线并锁定控制面。",
     "version_requirement_count": {
       "minimum": 3,
       "maximum": 10,
@@ -485,9 +492,15 @@
             "id": "recvxDhr1A4kkn",
             "name": "小物图片闪烁、重复拉取与媒体性能（以需求池最新标题为准）",
             "priority": "按需求池事实"
+          },
+          {
+            "id": "recvxDgUdPyb2P",
+            "name": "未知区域历史遗留与上下文查看入口（以需求池最新标题为准）",
+            "priority": "按需求池事实"
           }
         ],
-        "execution": "8小时夜间窗口内同一develop串行处理；AI回答P0先行，其余三项不得覆盖前项写集"
+        "execution": "8小时夜间窗口内同一develop串行处理；AI回答P0已先行完成本地实现，其余三项不得覆盖前项写集",
+        "requirement_count": 4
       },
       {
         "id": "v0.5.13",
