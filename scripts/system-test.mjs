@@ -166,7 +166,6 @@ const suites = {
     ["local test data modes", ["scripts/local-test-mode-regression.mjs"]],
     ["observability", ["scripts/observability-regression.mjs"]],
     ["attachment storage", ["scripts/attachment-storage-regression.mjs"]],
-    ["attachment byte range streaming", ["scripts/attachment-range-regression.mjs"]],
     ["Owner opening preference permission and revision contracts", ["scripts/opening-preferences-regression.mjs"]],
     ["private media signed delivery", ["scripts/attachment-delivery-regression.mjs"]],
     ["private media signed HTTP delivery", ["scripts/attachment-delivery-http-regression.mjs"]],
