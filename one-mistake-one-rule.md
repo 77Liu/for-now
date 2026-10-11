@@ -1,274 +1,44 @@
-# One Mistake → One Rule
-
-## 同日状态被后一次覆盖
-
-- 简要错误：时间线曾按日期保存单值，导致同日多次状态只剩最后一次。
-- 正确规则：所有日级状态、趋势和相关性计算必须先按自然日分组，同日多次提交逐项取均值；界面同时标明记录日数与提交次数。
-- 详细案例：见 `knowledge/metrics.md`。
-
-## 更新后整页重绘导致界面状态丢失
-
-- 简要错误：数据变更后统一调用全量 `load()`，导致已展开卡片、当前操作位置和临时界面状态被重置。
-- 正确规则：初始化可以全量渲染；写操作完成后只刷新受影响的最小 DOM。评论新增、回复和删除只能更新对应批注锚点、内存记录与评论面板，不得重绘思绪列表；其他操作也必须保留展开状态、滚动位置与输入上下文。
-- 详细案例：见 `knowledge/architecture.md`。
-
-## 共享 Codex 会话发生 active writer 冲突
-
-- 简要错误：本地服务复用同一个 Codex 线程，和正在运行的 Agent 争用线程写入权。
-- 正确规则：应用内模型调用使用独立的 DeepSeek API；不得复用当前开发 Agent 的线程或持久化 writer。
-- 详细案例：见 `knowledge/architecture.md`。
-
-## 追问上下文不完整
-
-- 简要错误：追问生成只拼接部分先前内容，可能遗漏原始资料、原回答或其他追问答对。
-- 正确规则：每次追问必须携带完整原始问题、初步想法、原始回答、所有已有追问及其回答，并用统一 SP/UP 框架区分稳定规则、个人语境、事实材料与当前任务。
-- 详细案例：见 `knowledge/prompt-architecture.md`。
-
-## 正文编辑使位置型批注失效
-
-- 简要错误：评论与划线只保存字符下标，正文前方插入或删除内容后会错位；选中文本被改写后则可能静默消失。
-- 正确规则：位置型数据必须同时保存原文、邻近上下文和原始位置。编辑时先按文本与上下文重定位；无法可靠定位时移入“评论漂流箱”，保留原始上下文及所有评论记录，禁止静默丢弃。
-- 详细案例：见 `knowledge/architecture.md`。
-
-## Markdown 源码与可见正文混用坐标
-
-- 简要错误：页面按渲染后的纯文本计算选区，服务端却用包含 `**`、列表符号等标记的 Markdown 源码校验，导致跨格式的有效划线被误判为正文变化。
-- 正确规则：Markdown 正文的选区、创建校验、锚点上下文和编辑重定位必须统一使用渲染后的可见纯文本坐标。
-- 详细案例：见 `knowledge/architecture.md`。
-
-## 新增内容面遗漏 Markdown 渲染
-
-- 简要错误：认知复盘曾直接写入 `<pre>`，导致模型返回的加粗、标题和分隔线以 Markdown 源码显示；保存后的模型思考等新增内容面也可能重复遗漏。
-- 正确规则：所有模型最终输出和明确支持 Markdown 的用户内容必须统一经过 `renderMarkdown` 与 `renderLatex`；折叠摘要使用 `plainPreview`，编辑框保留原始 Markdown。纯标签、来源、评论元数据和模型思考的流式增量可暂用纯文本，但流结束后必须切换为完整 Markdown 渲染。
-- 详细案例：见 `knowledge/architecture.md`。
-
-## 文件输入没有可见接收状态
-
-- 简要错误：书目截图只使用隐藏文件输入，选择后没有文件名或预览，也未监听粘贴与拖放，用户无法判断图片是否已进入识别流程。
-- 正确规则：图片输入必须统一处理选择、粘贴和拖放，接收后立即展示缩略图、文件信息与下一步按钮状态；提交前校验 MIME 类型和与服务端请求体上限匹配的文件大小。
-- 详细案例：见 `knowledge/architecture.md`。
-
-## await 后访问 event.currentTarget
-
-- 简要错误：异步表单处理器在 `await` 后调用 `event.currentTarget.reset()`；事件分发结束后 `currentTarget` 已被浏览器置为 `null`，导致数据虽已保存，但表单清空、列表刷新和成功提示全部中断。
-- 正确规则：异步事件处理器必须在第一个 `await` 前把表单、按钮和状态节点保存到局部变量；后续只使用这些稳定引用，不再读取 `event.currentTarget`。
-- 详细案例：见 `knowledge/architecture.md`。
-
-## UTC 日期被误当成本地自然日
-
-- 简要错误：页面和服务端使用 `toISOString().slice(0, 10)` 计算“今天”，导致本地时间 00:00–07:59 的记录仍归入前一天；部分环境还会把午夜显示成 24 点。
-- 正确规则：时间戳继续使用 UTC ISO 持久化，但“今天”、记录归属与日期筛选必须使用运行设备的本地自然日；24 小时制显示固定使用 `hourCycle: "h23"`，页面跨过午夜时自动更新“今天”。
-
-## 固定日期夹具读取真实墙上时钟
-
-- 简要错误：主回归使用固定历史日期夹具，却按运行当天计算近 7/30 日窗口；
-  测试在北京时间跨过午夜后从通过变为失败，局部固定统计日期又使 AI 用量
-  审计落入不同日期。
-- 正确规则：固定日期夹具必须注入统一且单调递增的测试时钟；业务时间、统计、
-  AI 审计、用量和预算使用同一来源。测试时钟仅在 `NODE_ENV=test` 生效，
-  生产配置即使出现同名键也必须忽略。
-- 详细案例：见 `scripts/regression.mjs`、
-  `scripts/runtime-infrastructure-regression.mjs` 与
-  `knowledge/system-testing.md`。
-
-## 创建时间被误用为发生时间
-
-- 简要错误：记录只保存可编辑日期，却用不可编辑的 `createdAt` 展示时分秒；思绪修改发生时间时还会覆盖创建时间，导致审计语义和时间线都失真。
-- 正确规则：事件型记录必须保存完整 `occurredAt`，`occurredOn` 只能由它按本地时区派生用于分组；`createdAt` 是不可变创建审计时间，任何业务时间编辑都不得覆盖它。
-- 详细案例：见 `knowledge/architecture.md`。
-
-## 后台模型任务锁住前台录入
-
-- 简要错误：记录保存后继续 `await` 自动回答，导致模型生成期间提交按钮一直禁用，用户无法继续记录。
-- 正确规则：保存成功即清空并解锁录入表单；自动回答独立在后台执行，只禁用其自身触发控件，完成后增量刷新对应记录。
-- 详细案例：见 `knowledge/architecture.md`。
-
-## 流式内容强制抢回滚动位置
-
-- 简要错误：每收到一个思考片段都无条件设置 `scrollTop = scrollHeight`，导致用户向上阅读时不断被拉回底部。
-- 正确规则：追加流式内容前判断用户是否贴近底部；只有贴近底部时才继续自动跟随，用户主动上滚后保持其阅读位置。
-- 详细案例：见 `knowledge/architecture.md`。
-
-## 思考过程耗尽最终回答额度
-
-- 简要错误：短写作辅助只配置了很小的 `max_tokens`，但场景开启了模型思考；DeepSeek 偶尔把额度全部用于 `reasoning_content`，导致最终 `content` 为空。
-- 正确规则：`max_tokens` 必须同时覆盖思考与正文；短输出场景也要预留推理预算。对可安全降级的辅助任务，若首轮只有思考而无正文，自动关闭思考重试一次。
-- 详细案例：见 `knowledge/prompt-architecture.md`。
-
-## 损坏数据被当成空库
-
-- 简要错误：JSON 读取失败曾统一返回默认值，使解析错误或权限错误后的下一次保存可能覆盖原数据。
-- 正确规则：仅文件不存在可初始化；解析、结构或 I/O 错误必须保留原文件、记录受控诊断并停止写入，不能向接口返回原始错误片段。
-- 详细案例：见 `knowledge/observability.md` 与 `scripts/observability-regression.mjs`。
-
-## 私有数据权限依赖默认 umask
-
-- 简要错误：账户目录、附件和迁移备份未显式设置权限，在不同系统 umask 下可能对同机其他用户可读。
-- 正确规则：私有数据目录固定 `0700`，数据、附件、备份和日志文件固定 `0600`；创建、启动迁移和跨机迁移都必须显式校正并自动化验证。
-- 详细案例：见 `knowledge/observability.md` 与 `scripts/auth-regression.mjs`。
-
-## 模型失败路径遗漏审计或泄露正文
-
-- 简要错误：null usage、无正文、截断及 SDK 异常未统一收敛，可能二次报错、误记成功，或把附带推理的 Error 输出到普通日志。
-- 正确规则：供应商响应按契约校验，缺失用量不估算；开始与终态按调用关联，部分输出只进私有审计，系统日志只保存机器码与栈位置。
-- 详细案例：见 `knowledge/observability.md` 与 `reports/release-readiness-2026-09-27.md`。
-
-## 异步结果覆盖已切换的编辑对象
-
-- 简要错误：请求等待或图片解码期间，用户修改输入、重置表单或切换小物，旧结果仍可能回填。
-- 正确规则：在每个异步边界后校验请求序号、目标和必要的账户/日期上下文；失效结果不得写入当前输入或画布。
-- 详细案例：见 `knowledge/architecture.md`。
-
-## 运行中任务在重启后被盲目重放
-
-- 简要错误：供应商已成功返回但任务终态尚未落盘时进程退出，若启动后直接重跑 `running` 任务，会重复调用和计费。
-- 正确规则：只有明确处于 `queued` 的任务可自动恢复；结果状态不确定的 `running` 任务必须转为可见失败并由用户确认重试，除非供应商调用本身已有可核对的幂等键。
-- 详细案例：见 `knowledge/architecture.md` 与 `knowledge/scalable-architecture-design.md`。
-
-## 全局刷新序号吞掉无关页面更新
-
-- 简要错误：多个数据域同时刷新时，后发请求使先发响应失效，但后发响应只渲染自己的数据域，导致其他页面 DOM 长期停留在旧状态。
-- 正确规则：全量状态请求可以只接受最新响应，但所有在途请求声明的待刷新数据域必须合并，由最终成功响应一次性完成对应增量渲染。
-- 详细案例：见 `knowledge/architecture.md`。
-
-## 不定高正文使用绝对定位气泡
-
-- 简要错误：把长度和换行数不固定的善言放进三个固定绝对坐标，短句看似正常，长句会越过自己的视觉范围并遮挡其他气泡。
-- 正确规则：不定高内容必须进入可参与文档流的网格或弹性槽位；回顾气泡正文限制为随机 3–5 行，短内容自然收缩，超出部分使用真实滚动位置和统一运动参数自动上下往返。用户介入滚动后暂停 5 秒，再先向下继续；不能由最长内容无限撑高模块。浮动动画只能在各自槽位内小幅移动，并用桌面与移动端矩形相交检测验证无重叠。
-- 详细案例：见 `knowledge/architecture.md`。
-
-## 未核对运行目录导致图册基于旧副本
-
-- 简要错误：旧会话的 cwd 是历史副本，直接读取其 README 和代码，导致架构、功能与实际 App 脱节。
-- 正确规则：涉及“当前系统”时，先核对正在运行服务的工作目录、界面与项目入口，再读当前源码；不得把会话 cwd 自动视为当前产品的事实来源。
-- 详细记录：见 `reports/product-visuals-260927-2045.md`。
-
-## 新账户数据未加载就解除私有界面
-
-- 简要错误：账户 B 登录成功后立即解除遮罩，但 B 的状态仍在请求中，页面会短暂显示账户 A 的旧内容；加载失败时可能持续暴露。
-- 正确规则：退出或切换账户时先锁屏、清空私有状态并中止旧会话请求；只有新账户数据和设置成功渲染后才能解除遮罩。
-- 详细案例：见 `knowledge/architecture.md` 与 `scripts/ui-regression.mjs`。
-
-## 恢复对象沿用删除前版本
-
-- 简要错误：整套思绪删除后恢复时保留原版本，使删除前启动的迟到 AI 结果重新通过版本校验并写入。
-- 正确规则：删除、恢复和会改变模型输入语义的状态转换必须推进不可回退的目标版本；迟到结果只能变为过期，不得因恢复旧快照重新获得写入资格。
-- 详细案例：见 `knowledge/architecture.md` 与 `scripts/regression.mjs`。
-
-## 永久清理先丢失附件重试依据
-
-- 简要错误：回收记录先从存储移除，附件删除随后失败，接口报错但附件已成为无法追踪、无法重试的孤儿。
-- 正确规则：永久清理必须在移除回收记录的同一次原子写中登记持久附件清理任务；附件删除保持幂等，失败保留任务并在定时器或重启后继续。云端迁移后的本地回退副本也属于清理范围，否则删除后仍可能被读取；持久附件不得作为临时文件绕过清单直接删除。
-- 详细案例：见 `knowledge/architecture.md`、`scripts/regression.mjs` 与 `scripts/attachment-storage-regression.mjs`、`scripts/attachment-upload-regression.mjs`。
-
-## 重试请求重复创建后台任务
-
-- 简要错误：失败任务的 `/retry` 每次生成随机幂等标识，并发点击会创建多个后继任务并重复调用供应商。
-- 正确规则：一个失败任务只能有一个直接重试后继；按 `retryOf` 原子查重并复用稳定请求标识。再次失败时只能重试最新后继任务。
-- 详细案例：见 `knowledge/architecture.md` 与 `scripts/regression.mjs`。
-
-## 恢复校验混用内部对象与公开投影
-
-- 简要错误：恢复演练直接比较持久层内部捕念与公开 API 捕念；内部
-  `speechCache` 会被 API 隐藏，候选 Store 迁移还会补齐新默认字段，导致记录
-  数量和 ID 一致时仍产生内容哈希误报。
-- 正确规则：恢复校验比较持久层与公开 API 时，必须先使用候选版本的迁移和
-  公开投影规则；每次 Store 版本或公开投影变化，都要用上一生产版本 fixture
-  执行候选恢复，分别覆盖私有字段移除和默认字段补齐。
-- 详细案例：见 `reports/v0.5.5-development-process-2026-10-04.md` 与
-  `scripts/restore-validation-regression.mjs`。
-
-## 媒体性能门缺少真实持久媒体路由
-
-- 简要错误：首屏性能门在不含历史录音的页面证明了点击前媒体传输为零，但
-  念起列表中的 `preload="metadata"` 仍会让真实 Chrome 提前下载完整音频。
-- 正确规则：每种可持久媒体必须至少选择一条真实挂载路由，用浏览器网络事件
-  断言用户触发前正文请求为零；音频还要验证点击后的 `206`、Range 和重渲染
-  不重复预载。DOM 属性或空媒体夹具不能替代该证据。
-- 详细案例：见 `reports/hotfix-v0.5.7-audio-on-demand-2026-10-05.md`、
-  `reports/v0.5.7-development-process-2026-10-05.md` 与
-  `scripts/ui-regression.mjs`。
-
-## 延迟页面把 mount 当成账户就绪
-
-- 简要错误：路由 feature 在应用 state port 之前挂载，首次直接打开该页面时
-  用空 owner 恢复草稿；认证完成后没有再次 hydrate，导致草稿不可见且新草稿
-  无法持久化。
-- 正确规则：依赖账户的 lazy feature 必须区分“页面已挂载”和“账户已就绪”；
-  state 首次 render 时核对实际 owner，owner 缺失或变化时重新 hydrate，并用
-  session ticket 拒绝旧账户迟到结果。
-- 详细案例：见 `public/frontend/features/health/controller.mjs` 与
-  `scripts/frontend-health-feature-regression.mjs`。
-
-## 迟到上传只拒收结果却遗留资源
-
-- 简要错误：页面离开后拒绝迟到上传结果，但没有回收已生成附件，也没有清除
-  草稿中的上传路径/幂等键，重入后会引用已删除附件或留下孤儿租约。
-- 正确规则：上传型异步任务失效时，必须只对本次新产生的路径执行一次补偿清理，
-  同步清空对应草稿的路径与请求标识并持久化；既有路径不得误删，账户变化后
-  不得借新账户身份清理旧账户资源。
-- 详细案例：见 `public/frontend/features/health/recognition.mjs` 与
-  `scripts/ui-regression.mjs`。
-
-## 把切片检查点误当成版本完成
-
-- 简要错误：完成并提交一个中间切片后即停止推进，没有先核对版本计划中的
-  剩余 DAG、候选门和发布关闭条件，容易让“F6 已完成”被误解为“V0.5.8
-  已完成”。
-- 正确规则：版本性任务在声明完成或结束执行前，必须逐项核对权威计划中的
-  完成定义与剩余节点，明确区分切片完成、本地候选完成和版本发布完成；只要
-  仍有已授权且无阻塞的下一节点，就继续执行，不得在中间检查点停下。
-- 详细案例：见 `reports/iteration-plan-v0.5.8-2026-10-05.md` 与
-  `reports/multi-agent-coordination-v0.5.8-03-04-2026-10-05.md`。
-
-## 夜间 Prompt 串成授权终点状态机
-
-- 简要错误：三条夜间 Prompt 分别限定为“当前版本开发 → Release →
-  发布后下一版本”，同时要求缺少发布授权时停止，导致当前候选完成但未获
-  生产授权时，Release 不能继续、下一版本也禁止启动，全部 Agent 无任务退出。
-- 正确规则：夜间三条 Prompt 必须是可从任意进度恢复的并行工作车道，而不是
-  互相排斥的阶段入口。权限不足只阻塞对应节点；隔离 Preview 使用窄范围持续
-  授权，生产仍逐次授权；上一版本等待发布时，已登记后续版本的本地规划、代码、
-  测试和提交继续在隔离工作树推进。
-- 详细案例：见 `SOP/night-continuous-development.md`。
-
-## 未登录壳进入已登录页面生命周期
-
-- 简要错误：入口拆分后，未登录冷启动仍执行已登录首页的媒体 reset 和私有
-  workspace 加载；媒体 manager 尚未初始化时触发空引用，Preview 注册旅程
-  因此失败。
-- 正确规则：每个依赖账户的 descriptor/controller 都必须显式声明会话门；
-  未登录壳不得读取私有业务数据。reset/dispose 必须允许资源尚未创建，并用
-  “全新未登录冷启动无异常、无私有 API 请求”的真实浏览器反例锁定。
-- 详细案例：见
-  `reports/v0.5.8-development-process-2026-10-07.md` 与
-  `scripts/ui-regression.mjs`。
-
-## 生产冒烟按按钮文案推断零费用
-
-- 简要错误：测试者没有主动点击“转写”或“生成”，就把保存动作视为无付费
-  副作用；实际带录音草稿的捕念提交会自动转写，思绪保存会自动创建回答任务。
-- 正确规则：真实环境旅程执行前必须建立“动作 → 持久写入 → 后台任务 →
-  供应商调用”副作用清单。没有费用授权时只执行已证明零外部调用的路径；意外
-  调用后立即停止写入，并从账本和任务记录核对状态、费用/账单缺口及残留数据。
-- 详细案例：见
-  `reports/v0.5.8-development-process-2026-10-07.md` 与
-  `knowledge/user-journey-testing.md`。
-
-## 回滚后陈旧部署命令复活失败候选
-
-- 简要错误：生产因 P1 回滚后，另一条没有感知最新决策的并发命令仍按相同
-  `main` SHA 执行部署，使已经判定失效的候选再次进入生产。
-- 正确规则：远端、部署、回滚和观察必须由一个发布负责人单写，并绑定
-  `releaseAttemptId` 或等价 fencing token。候选失效或回滚立即推进代次并
-  取消旧任务；每个外部副作用前都重新核对代次、候选状态和当前生产 SHA。
-- 详细案例：见
-  `reports/v0.5.8-development-process-2026-10-07.md` 与
-  `knowledge/pre-launch-confirmation.md`。
-
-
-## 会话清理重新查询已撤销的主账户节点
-
-- 简要错误：退出后权限层已移除主账户设置 DOM，草稿控制器仍从 document 重新查询状态节点，清理异常阻断下一账户启动。
-- 正确规则：挂载时保存需要清理的节点和资源引用；reset/dispose 必须允许节点已脱离文档，且异步结果不得重建旧会话状态。以“路由卸载后私有节点移除再 reset”和真实浏览器退出/重登录反例验证。
-- 详细案例：`scripts/frontend-opening-preferences-regression.mjs` 与 `scripts/ui-regression.mjs`。
+# 事故与规则索引
+
+原逐条规则已改为场景地图；对应领域文档/测试维护具体行为，不从事故数量推导额外硬门。跨场景合并仍可人工复审，[原始案例](/Users/bytedance/Documents/Codex/个人成长追踪/recyclebin/rules-before-20261011-004127/root/one-mistake-one-rule.md)保留作追溯；本轮完成路由整理，尚未逐案确认领域正文与测试已完整吸收，合并审查继续保留。
+
+| 事故或触发场景 | 责任文档/验证入口 |
+| --- | --- |
+| 同日状态被后一次覆盖 | [metrics.md](knowledge/metrics.md) |
+| 更新后整页重绘导致界面状态丢失 | [architecture.md](knowledge/architecture.md) |
+| 共享 Codex 会话发生 active writer 冲突 | [architecture.md](knowledge/architecture.md) |
+| 追问上下文不完整 | [prompt-architecture.md](knowledge/prompt-architecture.md) |
+| 正文编辑使位置型批注失效 | [architecture.md](knowledge/architecture.md) |
+| Markdown 源码与可见正文混用坐标 | [architecture.md](knowledge/architecture.md) |
+| 新增内容面遗漏 Markdown 渲染 | [architecture.md](knowledge/architecture.md) |
+| 文件输入没有可见接收状态 | [architecture.md](knowledge/architecture.md) |
+| await 后访问 event.currentTarget | [architecture.md](knowledge/architecture.md) |
+| UTC 日期被误当成本地自然日 | [architecture.md](knowledge/architecture.md) |
+| 固定日期夹具读取真实墙上时钟 | [regression.mjs](scripts/regression.mjs)、[runtime-infrastructure-regression.mjs](scripts/runtime-infrastructure-regression.mjs) |
+| 创建时间被误用为发生时间 | [architecture.md](knowledge/architecture.md) |
+| 后台模型任务锁住前台录入 | [architecture.md](knowledge/architecture.md) |
+| 流式内容强制抢回滚动位置 | [architecture.md](knowledge/architecture.md) |
+| 思考过程耗尽最终回答额度 | [prompt-architecture.md](knowledge/prompt-architecture.md) |
+| 损坏数据被当成空库 | [observability.md](knowledge/observability.md)、[observability-regression.mjs](scripts/observability-regression.mjs) |
+| 私有数据权限依赖默认 umask | [observability.md](knowledge/observability.md)、[auth-regression.mjs](scripts/auth-regression.mjs) |
+| 模型失败路径遗漏审计或泄露正文 | [observability.md](knowledge/observability.md)、[release-readiness-2026-09-27.md](reports/release-readiness-2026-09-27.md) |
+| 异步结果覆盖已切换的编辑对象 | [architecture.md](knowledge/architecture.md) |
+| 运行中任务在重启后被盲目重放 | [architecture.md](knowledge/architecture.md)、[scalable-architecture-design.md](knowledge/scalable-architecture-design.md) |
+| 全局刷新序号吞掉无关页面更新 | [architecture.md](knowledge/architecture.md) |
+| 不定高正文使用绝对定位气泡 | [architecture.md](knowledge/architecture.md) |
+| 未核对运行目录导致图册基于旧副本 | [product-visuals-260927-2045.md](reports/product-visuals-260927-2045.md) |
+| 新账户数据未加载就解除私有界面 | [architecture.md](knowledge/architecture.md)、[ui-regression.mjs](scripts/ui-regression.mjs) |
+| 恢复对象沿用删除前版本 | [architecture.md](knowledge/architecture.md)、[regression.mjs](scripts/regression.mjs) |
+| 永久清理先丢失附件重试依据 | [architecture.md](knowledge/architecture.md)、[regression.mjs](scripts/regression.mjs) |
+| 重试请求重复创建后台任务 | [architecture.md](knowledge/architecture.md)、[regression.mjs](scripts/regression.mjs) |
+| 恢复校验混用内部对象与公开投影 | [v0.5.5-development-process-2026-10-04.md](reports/v0.5.5-development-process-2026-10-04.md)、[restore-validation-regression.mjs](scripts/restore-validation-regression.mjs) |
+| 媒体性能门缺少真实持久媒体路由 | [hotfix-v0.5.7-audio-on-demand-2026-10-05.md](reports/hotfix-v0.5.7-audio-on-demand-2026-10-05.md)、[v0.5.7-development-process-2026-10-05.md](reports/v0.5.7-development-process-2026-10-05.md) |
+| 延迟页面把 mount 当成账户就绪 | [controller.mjs](public/frontend/features/health/controller.mjs)、[frontend-health-feature-regression.mjs](scripts/frontend-health-feature-regression.mjs) |
+| 迟到上传只拒收结果却遗留资源 | [recognition.mjs](public/frontend/features/health/recognition.mjs)、[ui-regression.mjs](scripts/ui-regression.mjs) |
+| 把切片检查点误当成版本完成 | [iteration-planning.md](SOP/iteration-planning.md) |
+| 夜间 Prompt 串成授权终点状态机 | [night-continuous-development.md](SOP/night-continuous-development.md) |
+| 未登录壳进入已登录页面生命周期 | [v0.5.8-development-process-2026-10-07.md](reports/v0.5.8-development-process-2026-10-07.md)、[ui-regression.mjs](scripts/ui-regression.mjs) |
+| 生产冒烟按按钮文案推断零费用 | [v0.5.8-development-process-2026-10-07.md](reports/v0.5.8-development-process-2026-10-07.md)、[user-journey-testing.md](knowledge/user-journey-testing.md) |
+| 回滚后陈旧部署命令复活失败候选 | [v0.5.8-development-process-2026-10-07.md](reports/v0.5.8-development-process-2026-10-07.md)、[pre-launch-confirmation.md](knowledge/pre-launch-confirmation.md) |
+| 会话清理重新查询已撤销的主账户节点 | [ui-regression.mjs](scripts/ui-regression.mjs) |
+| 归档验证遗漏运行依赖与脚本分派 | [iteration-plan-v0.5.9-2026-10-06.md](reports/iteration-plan-v0.5.9-2026-10-06.md) |

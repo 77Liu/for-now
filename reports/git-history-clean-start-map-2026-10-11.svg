@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#344054"/></marker>
+    <style>
+      .title{font:700 32px sans-serif;fill:#101828}.h{font:700 22px sans-serif;fill:#101828}.t{font:500 18px sans-serif;fill:#344054}.small{font:500 15px sans-serif;fill:#475467}.box{stroke-width:2;rx:16}.danger{fill:#fff1f3;stroke:#e11d48}.warn{fill:#fff8e7;stroke:#d97706}.ok{fill:#ecfdf3;stroke:#039855}.blue{fill:#eff8ff;stroke:#1570ef}.gray{fill:#f2f4f7;stroke:#98a2b3}.line{stroke:#344054;stroke-width:3;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1600" height="900" fill="#ffffff"/>
+  <text x="70" y="64" class="title">Git 历史与工作树大整理：现状 → 任务 → 合规起点</text>
+  <text x="70" y="98" class="small">目标：旧历史可审计，只有 main / release / develop 能成为新的工作起点</text>
+
+  <rect x="60" y="140" width="450" height="660" class="box danger"/>
+  <text x="90" y="185" class="h">1. 当前现状</text>
+  <text x="90" y="230" class="t">• 119 个本地分支</text>
+  <text x="90" y="265" class="t">• 6 棵登记工作树</text>
+  <text x="90" y="300" class="t">• main：ahead 47 / behind 103</text>
+  <text x="90" y="335" class="t">• 规则/SOP 在脏工作区</text>
+  <text x="90" y="370" class="t">• release/v0.5.12 仍有后续改动</text>
+  <text x="90" y="405" class="t">• 两条 Keepsake 线改同一组文件</text>
+  <text x="90" y="460" class="h">风险</text>
+  <text x="90" y="500" class="small">旧分支看起来仍像可继续开发</text>
+  <text x="90" y="530" class="small">未提交代码无法判断归属</text>
+  <text x="90" y="560" class="small">不同工作树读取不同规则快照</text>
+  <text x="90" y="590" class="small">新 Agent 可能选错基线</text>
+  <text x="90" y="660" class="small">原则：不删除、不 reset，先保存证据</text>
+
+  <rect x="570" y="140" width="460" height="660" class="box warn"/>
+  <text x="600" y="185" class="h">2. 整理任务 1 → 2 → 3</text>
+  <rect x="600" y="220" width="400" height="115" class="box blue"/>
+  <text x="625" y="258" class="h">任务 1：冻结与交接</text>
+  <text x="625" y="290" class="small">逐树记录 SHA、差分、写集、责任人</text>
+  <text x="625" y="315" class="small">保存 patch、未跟踪文件和哈希</text>
+  <path d="M800 335 L800 370" class="line"/>
+  <rect x="600" y="375" width="400" height="115" class="box blue"/>
+  <text x="625" y="413" class="h">任务 2：收敛历史引用</text>
+  <text x="625" y="445" class="small">建立 archive refs 和 manifest</text>
+  <text x="625" y="470" class="small">关闭旧工作树，删除本地旧开发分支</text>
+  <path d="M800 490 L800 525" class="line"/>
+  <rect x="600" y="530" width="400" height="115" class="box blue"/>
+  <text x="625" y="568" class="h">任务 3：建立新起点</text>
+  <text x="625" y="600" class="small">规则提交进入 develop</text>
+  <text x="625" y="625" class="small">准备 main、冻结 release、唯一 develop</text>
+  <path d="M800 645 L800 680" class="line"/>
+  <rect x="600" y="685" width="400" height="80" class="box gray"/>
+  <text x="625" y="720" class="h">验收：只读审查 GitGraph</text>
+  <text x="625" y="747" class="small">没有无主工作树、没有规则漂移</text>
+
+  <rect x="1090" y="140" width="450" height="660" class="box ok"/>
+  <text x="1120" y="185" class="h">3. 允许的干净起点</text>
+  <rect x="1120" y="230" width="385" height="100" class="box ok"/>
+  <text x="1145" y="270" class="h">main</text>
+  <text x="1145" y="302" class="small">已发布稳定代码；不直接开发</text>
+  <rect x="1120" y="370" width="385" height="100" class="box ok"/>
+  <text x="1145" y="410" class="h">release/*</text>
+  <text x="1145" y="442" class="small">从 develop 冻结；只做发布收口</text>
+  <rect x="1120" y="510" width="385" height="100" class="box ok"/>
+  <text x="1145" y="550" class="h">develop</text>
+  <text x="1145" y="582" class="small">下一阶段普通开发唯一基线</text>
+  <path d="M1080 280 L1040 280" class="line"/>
+  <path d="M1080 420 L1040 420" class="line"/>
+  <path d="M1080 560 L1040 560" class="line"/>
+  <text x="1120" y="680" class="h">旧历史</text>
+  <text x="1120" y="715" class="small">保留 archive ref 与交接证据</text>
+  <text x="1120" y="745" class="small">禁止修改、迁回、继续开发、作新基线</text>
+</svg>
