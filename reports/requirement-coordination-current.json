@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 8,
-  "updated_at": "2026-10-12T00:00:00+08:00",
+  "revision": 10,
+  "updated_at": "2026-10-12T01:42:00+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -12,8 +12,8 @@
     "effective_date": "2026-10-11",
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
-  "work_mode": "启动准备；自动生产关闭；定时自动化未恢复",
-  "current_phase": "三项启动闸门已完成只读核验；远程保护与当前生产预算/告警证据未通过，禁止创建第一轮分支",
+  "work_mode": "运行；8小时夜间本地开发窗口；自动生产、远程写入和付费调用仍关闭",
+  "current_phase": "v0.5.13.1按三项需求作为当前夜间候选；P0先行，另外两项在同一develop串行收口，不拆并行工作树",
   "state": "not_ready_for_automatic_production",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -75,7 +75,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "保持develop不创建第一轮分支；先由Owner补齐Gitee保护规则并提供可复核平台证据，再补生产预算/告警只读快照，三项均通过后才创建feat/v0.5.13.1-stability本地分支",
+  "next_action": "按v0.5.13.1三项需求顺序执行：AI回答fallback、账号刷新停止、小物稳定性与性能；候选收口后再冻结v0.5.13.2与v0.5.13的各三项范围",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -223,14 +223,33 @@
         "reczz28LdBiFjRim",
         "reczz28Ldk50E7Is"
       ]
+    },
+    "latest_controlled_write": {
+      "record_id": "reczz28MBW6Y6vCz",
+      "table_id": "tblHW2FjQpyJlSck",
+      "title": "AI任务/思绪回答在无核心用户模型或目标变化时无法生成",
+      "priority": "P0",
+      "status": "待规划",
+      "type": "bug",
+      "revision_after_write": 533,
+      "attachments": [
+        "ai-wait-notifications-20261012.jpg",
+        "ai-wait-detail-20261012.jpg"
+      ],
+      "related_records": [
+        "recvxypMygtAXp",
+        "recvxyhccy2eV8"
+      ],
+      "written_at": "2026-10-12T01:35:53+08:00"
     }
   },
   "iterations": [
     {
       "id": "v0.5.13.1",
       "state": "SELECTED",
-      "scope": "账号刷新停止、小物闪烁/重复拉取与性能、测试收敛、TS及必要注释",
+      "scope": "AI回答补充提交状态fallback、账号刷新停止、小物图片闪烁/重复拉取与性能；测试收敛、TS及必要注释作为工程验收约束",
       "requirement_ids": [
+        "reczz28MBW6Y6vCz",
         "recvxDhFQA8HmI",
         "recvxDhr1A4kkn"
       ],
@@ -238,13 +257,34 @@
         "额外上下文展示问题尚未纳入",
         "全站媒体重构"
       ],
-      "next": "复核现有develop及归档实现、最新复现和影响矩阵，满足启动准备后进入READY"
+      "next": "先处理P0，再依次处理账号刷新与小物稳定性；三项均有复现、最小修复和受影响验证后才进入候选冻结",
+      "minimum_requirements": 3,
+      "maximum_requirements": 10
     },
     {
       "id": "v0.5.13",
       "state": "INBOX",
-      "scope": "保存恢复、时间意图、通知候选",
-      "next": "启动前去除已交付内容，再冻结范围"
+      "scope": "保存状态与草稿恢复、时间意图与延迟任务、通知创建/读取/确认/失败恢复",
+      "next": "在v0.5.13.1候选收口后定向复核需求池，绑定至少3条真实未交付需求，再冻结范围",
+      "minimum_requirements": 3,
+      "maximum_requirements": 10,
+      "requirement_groups": [
+        {
+          "key": "save-recovery",
+          "name": "保存状态、草稿和恢复路径",
+          "requirement_id": "待需求池定向复核"
+        },
+        {
+          "key": "time-intent",
+          "name": "时间意图、延迟任务和生命周期切换",
+          "requirement_id": "待需求池定向复核"
+        },
+        {
+          "key": "notifications",
+          "name": "通知创建、读取、确认、失败与恢复",
+          "requirement_id": "待需求池定向复核"
+        }
+      ]
     }
   ],
   "canonical_path": "reports/requirement-coordination-current.json",
@@ -260,6 +300,18 @@
       "at": "2026-10-12T00:00:00+08:00",
       "reason": "纠正无并行写入时保留工作树及共享写集重叠；迁移唯一控制面到根目录 develop，归档并移除 feat/v0.5.13.1-stability 工作树",
       "previous_snapshot": "refs/archive/worktrees/feat-v0.5.13.1-stability:reports/requirement-coordination-current.json"
+    },
+    {
+      "revision": 9,
+      "at": "2026-10-12T01:35:53+08:00",
+      "reason": "按Owner新增P0缺陷建立8小时夜间本地开发窗口；明确未提交补充、已提交整理等待、目标变化三态分流及单一develop写入边界",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-8"
+    },
+    {
+      "revision": 10,
+      "at": "2026-10-12T01:42:00+08:00",
+      "reason": "Owner要求每个小版本至少3项需求并规划2至3个小版本；将当前8小时窗口扩为v0.5.13.1三项串行候选，并建立下一小版本v0.5.13三项范围",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-9"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -298,5 +350,150 @@
       "notable_mismatch": "deploy/for-now.env.example中的通用AI账户示例为每日¥14.4/200次、告警阈值¥36；它不是日压缩硬限，不能代替生产压缩配置核验"
     }
   },
-  "history_note": "本轮纠正工作树边界：无实际并行写入时不保留工作树；候选差分已留 archive ref，根目录 develop 为唯一活动写入点。"
+  "history_note": "本轮纠正工作树边界：无实际并行写入时不保留工作树；候选差分已留 archive ref，根目录 develop 为唯一活动写入点。",
+  "night_development": {
+    "task_id": "p0-ai-answer-fallback-20261012",
+    "requirement_id": "reczz28MBW6Y6vCz",
+    "title": "v0.5.13.1三项需求夜间候选：P0 AI回答fallback、账号刷新停止、小物稳定性/性能",
+    "owner": "主控",
+    "implementer": "主控/主开发（当前根目录develop，单写）",
+    "duration_hours": 8,
+    "window_start": "2026-10-12T01:35:53+08:00",
+    "window_end": "2026-10-12T09:35:53+08:00",
+    "branch": "develop",
+    "baseline": "2bf5dbd docs(git): 固化工作树边界与单一写入入口",
+    "write_location": "/Users/bytedance/Documents/Codex/个人成长追踪",
+    "purpose": "当前8小时不是单需求开发，而是一个三需求小版本候选的串行收口窗口。P0先行；未提交补充问答允许缺省模型信息为空，已提交问答必须等待AI整理结果后入队，目标变化只使旧任务失效。其余两项按最新需求事实执行，不与P0写集重叠。",
+    "state_matrix": [
+      {
+        "state": "未提交补充问答",
+        "decision": "不进入核心模型等待门；使用缺省模型信息为空的上下文拼装并继续队列/生成",
+        "user_visible": "不得显示等待核心用户模型就绪"
+      },
+      {
+        "state": "已提交补充问答且AI整理未完成",
+        "decision": "任务可持久化但保持等待；整理成功后再转queued并进入AI处理队列",
+        "user_visible": "显示等待整理结果，不能提前调用回答模型"
+      },
+      {
+        "state": "等待或生成期间目标变化",
+        "decision": "仅旧任务标记stale并阻止旧结果写回；新目标按自身状态重新走链路",
+        "user_visible": "明确提示目标已变化/结果未写入，不归因于核心模型未就绪"
+      }
+    ],
+    "stages": [
+      {
+        "id": "S0",
+        "name": "三项范围锁定",
+        "output": "核对三条需求的最新状态、复现、写集和依赖，不把已交付内容凑入版本"
+      },
+      {
+        "id": "S1",
+        "name": "P0状态分流",
+        "output": "区分未提交fallback、已提交整理等待、目标变化stale"
+      },
+      {
+        "id": "S2",
+        "name": "账号刷新稳定性",
+        "output": "完成最新复现、最小修复和专项验证"
+      },
+      {
+        "id": "S3",
+        "name": "小物稳定性与性能",
+        "output": "完成最新复现、最小修复和专项验证"
+      },
+      {
+        "id": "S4",
+        "name": "候选收口",
+        "output": "三项分别记录证据、回滚条件、partial边界；不执行远程发布"
+      }
+    ],
+    "allowed_write_set": [
+      "reports/requirement-coordination-current.json",
+      "src/app/background-ai.mjs",
+      "src/app/content/background.mjs",
+      "src/app/thought-workflows.mjs",
+      "src/app/user-model.mjs",
+      "src/app/prompt-context.mjs",
+      "受影响专项回归及必要中文文档"
+    ],
+    "forbidden_write_set": [
+      "main",
+      "release/*",
+      "preview/*",
+      "hotfix/*",
+      "docs/*",
+      "deploy/*",
+      "package-lock.json",
+      "生产配置",
+      "远程资源",
+      "未关联功能"
+    ],
+    "stop_conditions": [
+      "无法稳定复现状态分流；发现现有链路没有问答AI整理步骤；涉及生产数据或权限边界风险；差分扩展到通用调度平台或全站上下文重构；需要远程推送、tag、Release、部署或付费调用"
+    ],
+    "external_actions": "不推送、不tag、不Release、不部署、不手工付费调用；不恢复暂停的周期自动化",
+    "current_status": "计划已固定，代码尚未修改；等待主控在develop上按状态矩阵执行",
+    "version_requirement_count": {
+      "minimum": 3,
+      "maximum": 10,
+      "current": 3
+    },
+    "requirement_ids": [
+      "reczz28MBW6Y6vCz",
+      "recvxDhFQA8HmI",
+      "recvxDhr1A4kkn"
+    ]
+  },
+  "version_plan": {
+    "minimum_requirements_per_version": 3,
+    "maximum_requirements_per_version": 10,
+    "versions": [
+      {
+        "id": "v0.5.13.1",
+        "state": "CURRENT_NIGHT_CANDIDATE",
+        "requirements": [
+          {
+            "id": "reczz28MBW6Y6vCz",
+            "name": "AI任务/思绪回答在用户模型补充未提交、整理等待或目标变化时正确分流",
+            "priority": "P0"
+          },
+          {
+            "id": "recvxDhFQA8HmI",
+            "name": "账号刷新停止（以需求池最新标题为准）",
+            "priority": "按需求池事实"
+          },
+          {
+            "id": "recvxDhr1A4kkn",
+            "name": "小物图片闪烁、重复拉取与媒体性能（以需求池最新标题为准）",
+            "priority": "按需求池事实"
+          }
+        ],
+        "execution": "8小时夜间窗口内同一develop串行处理；P0先行，后两项不得覆盖P0写集"
+      },
+      {
+        "id": "v0.5.13",
+        "state": "NEXT_INBOX",
+        "requirements": [
+          {
+            "group": "save-recovery",
+            "name": "保存状态、草稿和恢复路径",
+            "id": "启动前绑定真实需求池记录"
+          },
+          {
+            "group": "time-intent",
+            "name": "时间意图、延迟任务和生命周期切换",
+            "id": "启动前绑定真实需求池记录"
+          },
+          {
+            "group": "notifications",
+            "name": "通知创建、读取、确认、失败与恢复",
+            "id": "启动前绑定真实需求池记录"
+          }
+        ],
+        "execution": "v0.5.13.1候选收口后，从最新develop建立短期分支；三项分别实现、分别验证、分别可回滚"
+      }
+    ],
+    "third_version": "暂不冻结；只有需求池定向复核得到至少3条真实未交付需求后才建立v0.5.13.2或v0.5.14候选"
+  }
 }
