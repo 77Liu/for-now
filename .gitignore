@@ -3,6 +3,28 @@ data/*
 node_modules/
 .DS_Store
 .secrets/
+
+# 本地工具与隔离工作现场，不作为项目源文件提交。
+.superpowers/
+.worktrees/
+
+# 编译、打包和覆盖率产物；源码与配置仍按规则提交。
+.build/
+dist/
+coverage/
+*.tsbuildinfo
+
+# 仅忽略明确标记为生成的报告。控制面、发布证据和审计记录仍由 reports/ 下的已跟踪文件维护。
+reports/generated/
+reports/local/
+reports/*.generated.*
+reports/**/*.generated.*
+
+# TS 运行候选由 build:runtime 组装；这些路径只保留本地/部署产物，不进入 Git。
+src/shared/observability/feishu.mjs
+src/shared/record-compression-config.mjs
+public/frontend/shared/personalized-ai-task.mjs
+
 deploy/*.local
 reports/keepsake-segmentation-preview/
 .xcode-home/
