@@ -1,6 +1,5 @@
 import { sessionSerial } from "../../session/index.mjs";
 import { publishDomains, replaceState, state } from "../../state/index.mjs";
-import { contextSourceView } from "../../features/personal-context/sources.mjs";
 
 export function createCollaborationRuntime({
   runtime,$,$$,ownerSurfaceVault,escapeHtml,plainPreview,renderMarkdown,
@@ -50,8 +49,42 @@ const createLatexAsset=(tagName,properties,kind)=>new Promise((resolve,reject)=>
   document.head.append(element)
 });
 const renderLatex=createLatexRenderer({createAsset:createLatexAsset,getKatex:()=>window.katex,resolveAssetUrl:appUrl});
+function currentContextSource(source){
+  const type=source?.resourceType,id=source?.resourceId,key=source?.location?.targetKey||"";
+  if(type==="onboarding"){
+    const onboarding=state.onboarding;
+    if(!onboarding||onboarding.status!=="completed")return{exists:false,text:""};
+    const base={exists:true,version:Number(source.version)||1,occurredAt:onboarding.updatedAt||""};
+    if(key==="understanding")return{...base,exists:Boolean(onboarding.understanding),text:onboarding.understanding||""};
+    if(key==="viewpoints")return{...base,text:[Object.keys(onboarding.answers||{}).length?`初始问卷 ${Object.keys(onboarding.answers||{}).length} 项`:"",onboarding.material||""].filter(Boolean).join(" · ")};
+    return{...base,text:[...Object.values(onboarding.profile||{}),...(onboarding.interests||[])].filter(Boolean).join(" · ")}
+  }
+  const collections={capture:"captures",journal:"journals",thought:"thoughts",checkin:"checkins",dailyRecord:"dailyRecords",modelUnknown:"modelUnknowns"};
+  const item=state[collections[type]]?.find(value=>value.id===id);
+  if(!item)return{exists:false,text:""};
+  const base={exists:true,version:Number(item.version)||1,occurredAt:item.occurredAt||item.createdAt||item.updatedAt||""};
+  if(type==="capture")return{...base,text:item.content||"图片或语音捕念"};
+  if(type==="journal")return{...base,text:`${item.title?`${item.title}：`:""}${item.content||""}`};
+  if(type==="thought")return{...base,text:item.content||item.modelDraft||""};
+  if(type==="checkin")return{...base,text:`情绪 ${item.mood} · 精力 ${item.energy} · 压力 ${item.stress} · 睡眠 ${item.sleep}`};
+  if(type==="modelUnknown")return{...base,text:item.question||item.text||"待澄清的问题"};
+  return{...base,text:item.description||item.exerciseType||`${item.type||"健康"}记录`}
+}
 function contextSourceButton(source){
-  const { location, live, matches, canOpen, copy } = contextSourceView(source, state);
+  const location=source?.location||{};
+  const live=source.excerpt
+    ?{exists:true,matches:true,text:source.excerpt}
+    :currentContextSource(source);
+  const matches=Boolean(source.excerpt)
+    ||live.exists
+      &&live.version===Number(source.version||1)
+      &&(source.resourceType!=="onboarding"||!source.occurredAt||live.occurredAt===source.occurredAt);
+  const canOpen=live.exists&&location.view&&location.view!=="personal-context";
+  const copy=!live.exists
+    ?"来源已删除或当前不可用"
+    :matches
+      ?live.text
+      :"来源当前版本已变化；旧摘录未保留";
   return `<article class="context-source-item${live.exists&&matches?"":" unavailable"}"><div><b>${escapeHtml(source.recordType||"记录")}</b><small>${escapeHtml(source.occurredOn||"时间未记")} · 版本 ${Number(source.version)||1}</small></div><p>${escapeHtml(plainPreview(copy))}</p>${canOpen?`<button class="subtle-action" type="button" data-context-source data-context-view="${escapeHtml(location.view)}" data-context-target="${escapeHtml(location.targetId||source.resourceId||"")}" data-context-root="${escapeHtml(location.rootId||"")}" data-context-key="${escapeHtml(location.targetKey||"")}" data-context-date="${escapeHtml(location.occurredOn||source.occurredOn||"")}" data-context-daily-type="${escapeHtml(location.dailyType||"")}">查看${matches?"原记录":"当前版本"}</button>`:""}</article>`
 }
 function contextReceiptMarkup(receipt, citations = [], citationStatus = "") {

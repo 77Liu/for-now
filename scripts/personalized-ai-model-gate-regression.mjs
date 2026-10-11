@@ -45,7 +45,16 @@ const generate = async work => {
 };
 const backgroundOperations = [];
 store = {
-  onboardingV2: normalizeOnboardingV2({ migration: { selectedFlow: "v2" } }, defaultOnboardingV2),
+  // 该回归验证“用户已提交补充但核心模型仍未整理”的等待边界；
+  // 完全没有补充时的空模型 fallback 由 thought-workflows-p00-regression 覆盖。
+  onboardingV2: normalizeOnboardingV2({
+    migration: { selectedFlow: "v2" },
+    session: {
+      answers: {
+        currentContext: { rawText: "已提交一条用户补充", contextAllowed: true, version: 1 }
+      }
+    }
+  }, defaultOnboardingV2),
   chats: [],
   journals: [{
     id: "journal-1",
