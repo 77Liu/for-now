@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 23,
-  "updated_at": "2026-10-12T02:53:59+08:00",
+  "revision": 24,
+  "updated_at": "2026-10-12T02:55:00+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -258,7 +258,7 @@
         "额外上下文展示问题尚未纳入",
         "全站媒体重构"
       ],
-      "next": "先处理AI回答P0（已完成本地实现并提交），再依次处理账号刷新、小物媒体和未知区域；四项均有复现、最小修复和受影响验证后才进入候选冻结",
+      "next": "AI回答P0、小物媒体和未知区域已有本地实现及受影响验证；账号刷新停机仍缺少可复现根因，候选不能写成四项全部完成。",
       "minimum_requirements": 3,
       "maximum_requirements": 10
     },
@@ -385,6 +385,12 @@
       "at": "2026-10-12T02:53:59+08:00",
       "reason": "补充小物媒体工作流专项证据；未扩大到迁移、生产或付费测试",
       "previous_snapshot": "reports/requirement-coordination-current.json@revision-22"
+    },
+    {
+      "revision": 24,
+      "at": "2026-10-12T02:55:00+08:00",
+      "reason": "最终审计修正未知区域解析器描述并明确账号刷新阻塞不等同候选完成",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-23"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -594,8 +600,8 @@
           "node scripts/collaboration-regression.mjs",
           "npm run check:modules"
         ],
-        "decision": "补齐modelUnknown当前快照读取，并让协作运行时复用唯一来源解析器；服务端来源同时携带问题摘要，页面无需加载整份个人模型也能显示上下文。",
-        "next": "保留未知项问题摘要和来源卡片边界证据；不扩展为全站上下文重构。"
+        "decision": "补齐modelUnknown当前快照读取；协作运行时在现有模块边界内保留来源解析入口，服务端来源同时携带问题摘要，页面无需加载整份个人模型也能显示上下文。",
+        "next": "保留未知项问题摘要、来源卡片和模块边界证据；不再宣称跨feature复用唯一解析器，不扩展为全站上下文重构。"
       }
     ],
     "verification": {
@@ -745,7 +751,7 @@
             "priority": "按需求池事实"
           }
         ],
-        "execution": "8小时夜间窗口内同一develop串行处理；AI回答P0已先行完成本地实现，其余三项不得覆盖前项写集",
+        "execution": "8小时夜间窗口内同一develop串行处理；AI回答P0、小物媒体和未知区域已完成本地实现及受影响验证，账号刷新保留真实阻塞，不做猜测修复。",
         "requirement_count": 4
       },
       {
