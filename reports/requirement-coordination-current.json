@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 5,
-  "updated_at": "2026-10-11T19:26:29.576017+08:00",
+  "revision": 6,
+  "updated_at": "2026-10-11T19:29:58.715988+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -65,7 +65,7 @@
     "自动发布执行器、部署权限与回滚能力尚未完成无生产演练",
     "生产告警、灰度、预算、暂停开关配置尚未形成可核验证据"
   ],
-  "next_action": "完成远程保护和发布/回滚无生产演练；启动闸门完成前不推送、不发布、不部署、不写生产",
+  "next_action": "在启动闸门未完成前，主控只审查 v0.5.13.1 三条稳定性需求的 READY 契约与测试影响，不自动纳入新 P1 微信读书候选，不推送、不发布、不部署。",
   "evidence": [
     "reports/git-archive/git-startup-20261011-manifest.json",
     "knowledge/development-lifecycle.md",
@@ -151,7 +151,66 @@
     },
     "evidence": "reports/git-archive/requirement-readonly-20261011.json",
     "delta_status": "本轮建立基线，未完成逐记录历史差分",
-    "online_writes": false
+    "online_writes": false,
+    "comparison": "相较已知心跳基线 2026-10-10 05:56:14 Asia/Shanghai（需求300/rev519、版本33/rev25、交付97/rev133），本轮以三表完整读取结果建立可比增量；未执行线上写入。",
+    "delta_from_known_baseline": {
+      "baseline_time": "2026-10-10T05:56:14+08:00",
+      "demand": {
+        "before_count": 300,
+        "before_revision": 519,
+        "after_count": 304,
+        "after_revision": 531,
+        "added_count": 4,
+        "added_ids": [
+          "recvxDgUdPyb2P",
+          "recvxDhr1A4kkn",
+          "recvxDhFQA8HmI",
+          "recvxEbC6GkMyY"
+        ]
+      },
+      "version": {
+        "before_count": 33,
+        "before_revision": 25,
+        "after_count": 35,
+        "after_revision": 34,
+        "added_count": 2,
+        "added_ids": [
+          "reczz28LUoWaznwB",
+          "reczz28Ldj20zuri"
+        ]
+      },
+      "delivery": {
+        "before_count": 97,
+        "before_revision": 133,
+        "after_count": 100,
+        "after_revision": 135,
+        "added_count": 3,
+        "added_ids": [
+          "reczz28LdBiFhcIh",
+          "reczz28LdBiFjRim",
+          "reczz28Ldk50E7Is"
+        ]
+      }
+    },
+    "new_records_summary": {
+      "first_round_stability": [
+        "recvxDgUdPyb2P",
+        "recvxDhr1A4kkn",
+        "recvxDhFQA8HmI"
+      ],
+      "new_p1_candidate": [
+        "recvxEbC6GkMyY"
+      ],
+      "new_versions": [
+        "reczz28LUoWaznwB",
+        "reczz28Ldj20zuri"
+      ],
+      "new_delivery": [
+        "reczz28LdBiFhcIh",
+        "reczz28LdBiFjRim",
+        "reczz28Ldk50E7Is"
+      ]
+    }
   },
   "iterations": [
     {
