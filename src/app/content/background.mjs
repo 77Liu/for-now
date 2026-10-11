@@ -15,7 +15,7 @@ import {
 } from "../../modules/thoughts/index.mjs";
 import { createAiTaskTargets } from "../ai-task-targets.mjs";
 import { createBackgroundAi } from "../background-ai.mjs";
-import { userModelCoreReadiness } from "../user-model.mjs";
+import { userModelRequiresCoreReady } from "../user-model.mjs";
 import { parseVerifiedAnswer } from "../answer-citations.mjs";
 
 const taskFailure = (message, statusCode, code) => Object.assign(
@@ -110,6 +110,7 @@ export function createContentBackground({
     now,
     targets: taskTargets,
     shouldWaitForModel: (store, input) => (
+      // 已提交的补充问答必须等整理结果；未提交时，思绪回答走缺省模型上下文。
       [
         "thoughtAnswer",
         "followUpAnswer",
@@ -121,7 +122,7 @@ export function createContentBackground({
         "chat",
         "analysis"
       ].includes(input?.kind)
-      && !userModelCoreReadiness(store).ready
+      && userModelRequiresCoreReady(store, input?.kind)
     ),
     inspectIntent: taskTargets.inspectIntent,
     generate: async (work, { signal, isCurrent } = {}) => {

@@ -144,6 +144,31 @@ export function userModelCoreReadiness(store) {
     : { ready: false, reason: "model_generation_pending" };
 }
 
+/**
+ * 只有用户实际提交过补充问答内容，核心模型整理才会成为回答任务的前置条件。
+ * 仅打开补交流程、没有提交任何回答时，回答可以使用缺省用户模型上下文继续执行。
+ */
+export function userModelSupplementSubmitted(store) {
+  const onboarding = normalizeOnboardingV2(store?.onboardingV2, store?.onboarding);
+  return onboarding.readiness !== "empty";
+}
+
+const CORE_MODEL_OPTIONAL_TASKS_WITHOUT_SUBMISSION = new Set([
+  "thoughtAnswer",
+  "followUpAnswer",
+  "thoughtDraft",
+  "thoughtPrompt"
+]);
+
+export function userModelRequiresCoreReady(store, taskKind = "thoughtAnswer") {
+  const readiness = userModelCoreReadiness(store);
+  // 仅允许能拼装空模型上下文的思绪任务在未提交补充问答时直接运行。
+  return !readiness.ready && (
+    userModelSupplementSubmitted(store)
+    || !CORE_MODEL_OPTIONAL_TASKS_WITHOUT_SUBMISSION.has(taskKind)
+  );
+}
+
 export function coreUserModelProjection(store) {
   if (!userModelCoreReadiness(store).ready) return null;
   const onboarding = normalizeOnboardingV2(store?.onboardingV2, store?.onboarding);
