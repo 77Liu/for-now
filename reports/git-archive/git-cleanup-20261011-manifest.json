@@ -88,7 +88,8 @@
     "旧分支暂不删除；删除前需确认无新写入者并完成恢复清单。",
     "所有新业务接入必须从新的 develop 选择性重建并重新验证。",
     "五棵已归档工作树在补丁、未跟踪文件和哈希确认后移除；目录删除不影响恢复引用。",
-    "本地 main 未推送，远程 main 不变；任何远程删除或推送需单独授权。"
+    "本地 main 未推送，远程 main 不变；任何远程删除或推送需单独授权。",
+    "根目录在首次收敛后重新出现的未跟踪证据已单独保存为 residual stash，未删除。"
   ],
   "removed_worktrees_after_archive": [
     "/Users/bytedance/.codex/worktrees/keepsake-image-stability/个人成长追踪",
@@ -103,5 +104,7 @@
     "main": "9dc52af19dfff7b1b32b2accc8650daab9247081",
     "release/v0.5.12-clean": "9dc52af19dfff7b1b32b2accc8650daab9247081",
     "develop": "143af286082bf55ecb828db8dceac21cbaa93501"
-  }
+  },
+  "root_main_residual_stash": "16fadc2d3df956ea1b15a60844f613468554abc8",
+  "root_main_residual_stash_archive_ref": "refs/archive/git-cleanup-20261011/root-main-residual-stash"
 }
