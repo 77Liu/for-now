@@ -38,7 +38,7 @@
     ],
     "canonical_worktree": "/Users/bytedance/Documents/Codex/个人成长追踪",
     "canonical_worktree_branch": "develop",
-    "canonical_worktree_head": "1c53411a5d3e80f1ebf376283d1ef81f6942a3cb",
+    "canonical_worktree_head": "1c5341149b5640dbef161263195b889d2f2a0aef",
     "archived_worktree": {
       "path": "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/develop",
       "branch": "feat/v0.5.13.1-stability",
