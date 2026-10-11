@@ -76,7 +76,9 @@ if [ ! -f "$release/.deploy-ready" ]; then
     exit 1
   fi
   release_guard chown -R for-now:for-now "$candidate"
-  release_guard sudo -u for-now /usr/local/bin/npm --prefix "$candidate" ci --omit=dev
+  release_guard sudo -u for-now /usr/local/bin/npm --prefix "$candidate" ci
+  release_guard sudo -u for-now /usr/local/bin/npm --prefix "$candidate" run build:runtime
+  release_guard sudo -u for-now /usr/local/bin/npm --prefix "$candidate" prune --omit=dev
   /usr/local/bin/node --check "$candidate/server.mjs"
   while IFS= read -r module_file; do
     /usr/local/bin/node --check "$module_file"

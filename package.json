@@ -18,6 +18,7 @@
     "check:prompts": "node scripts/prompt-catalog-regression.mjs",
     "typecheck:frontend": "tsc --noEmit -p tsconfig.frontend.json",
     "build:frontend": "tsc -p tsconfig.frontend.json",
+    "build:runtime": "npm run build:frontend && node scripts/prepare-generated-runtime.mjs",
     "test": "node scripts/regression.mjs",
     "test:entrypoints": "node scripts/entrypoint-boundary-regression.mjs && node scripts/frontend-feature-lifecycle-regression.mjs && node scripts/frontend-application-regression.mjs && node scripts/frontend-lazy-descriptor-regression.mjs && npm run test:f10-features",
     "test:store-normalization": "node scripts/store-normalization-regression.mjs",
