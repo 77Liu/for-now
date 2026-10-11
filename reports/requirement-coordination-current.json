@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 7,
-  "updated_at": "2026-10-11T20:09:48.598456+08:00",
+  "revision": 8,
+  "updated_at": "2026-10-12T00:00:00+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -22,20 +22,31 @@
     "remote_main_observed": "ebbde6fcf100432de8a599c771cbd8e774e043ad",
     "startup_manifest": "reports/git-archive/git-startup-20261011-manifest.json",
     "archive_namespace": "refs/archive/git-startup-20261011/heads",
-    "worktree_count": 2,
+    "worktree_count": 1,
     "remote_operations": "未执行",
     "release_v0_5_12_clean": "4359648b41608429832e2ce4897bd12163a5d812",
     "retained_local_branches": [
       "main",
       "develop",
-      "release/v0.5.12-clean"
+      "release/v0.5.12-clean",
+      "release/v0.5.13.1"
     ],
     "old_local_refs_removed": [
       "feat/v0.5.13-save-sync",
       "feat/v0.5.13.1-stability",
-      "release/v0.5.13",
-      "release/v0.5.13.1"
-    ]
+      "release/v0.5.13"
+    ],
+    "canonical_worktree": "/Users/bytedance/Documents/Codex/个人成长追踪",
+    "canonical_worktree_branch": "develop",
+    "canonical_worktree_head": "3cca060795290309943443c652a9dc415631e511",
+    "archived_worktree": {
+      "path": "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/develop",
+      "branch": "feat/v0.5.13.1-stability",
+      "head": "32505655cc00dd016309a14bc6093559bbdaef1e",
+      "archive_ref": "refs/archive/worktrees/feat-v0.5.13.1-stability",
+      "status": "已移除活动工作树；仅审计/恢复，禁止继续开发",
+      "handoff": "reports/git-handoff/feat_v0.5.13.1-stability-20261012.md"
+    }
   },
   "authorization_policy": {
     "policy_id": "release-authorization-policy",
@@ -236,13 +247,19 @@
       "next": "启动前去除已交付内容，再冻结范围"
     }
   ],
-  "canonical_path": ".worktrees/develop/reports/requirement-coordination-current.json",
+  "canonical_path": "reports/requirement-coordination-current.json",
   "history": [
     {
       "revision": 4,
       "at": "2026-10-11T19:21:21.586748+08:00",
       "reason": "Owner十八项选择、Git调整回执、完整只读需求基线、控制面共同根迁移",
       "previous_snapshot": "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/develop/reports/git-archive/control-plane-before-root-migration-20261011.json"
+    },
+    {
+      "revision": 8,
+      "at": "2026-10-12T00:00:00+08:00",
+      "reason": "纠正无并行写入时保留工作树及共享写集重叠；迁移唯一控制面到根目录 develop，归档并移除 feat/v0.5.13.1-stability 工作树",
+      "previous_snapshot": "refs/archive/worktrees/feat-v0.5.13.1-stability:reports/requirement-coordination-current.json"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -280,5 +297,6 @@
       "current_production_gap": "本轮没有生产主机的只读配置快照，无法独立证明当前/etc/for-now.env、定时器、Feishu告警端点和实时账本仍与硬限一致",
       "notable_mismatch": "deploy/for-now.env.example中的通用AI账户示例为每日¥14.4/200次、告警阈值¥36；它不是日压缩硬限，不能代替生产压缩配置核验"
     }
-  }
+  },
+  "history_note": "本轮纠正工作树边界：无实际并行写入时不保留工作树；候选差分已留 archive ref，根目录 develop 为唯一活动写入点。"
 }

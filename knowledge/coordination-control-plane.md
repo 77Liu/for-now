@@ -4,7 +4,7 @@
 
 ## 唯一入口与维护者
 
-项目唯一运行控制面固定在当前主控工作树的 `reports/requirement-coordination-current.json`，其工作树位置和修订号由控制面自身登记；本轮主控工作树为 `.worktrees/develop`。根目录 `main` 工作树不保留第二份状态文件，其他工作树也不得复制当前状态。JSON 是当前状态唯一正文，Markdown、README、需求池、候选报告和聊天均不是第二个状态源。
+项目唯一运行控制面固定在当前主控工作树的 `reports/requirement-coordination-current.json`，其工作树位置和修订号由控制面自身登记；当前主控工作树为仓库根目录的 `develop`。根目录 `main` 工作树不保留第二份状态文件，其他工作树也不得复制当前状态。JSON 是当前状态唯一正文，Markdown、README、需求池、候选报告和聊天均不是第二个状态源。
 
 控制面随主控工作树移动时，先在旧位置留下明确的历史快照，再更新 `canonical_path`；快照不得继续作为当前状态。提交审计材料时另存明确标记的历史快照。
 
