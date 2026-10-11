@@ -32,7 +32,7 @@
 20. 测试与 review 结论绑定实际候选和执行环境；未执行、失败、未知、partial 不得改写为通过。命令入口见 `package.json`，技术说明按需查 `knowledge/system-testing.md`。
 21. 提交单一目的、可审查；中文摘要描述结果，类型前缀可英文。自动任务提交使用 `npm run commit:task`；允许范围、规模及固定 tree 校验只由 `scripts/commit-gate.mjs` 定义，不另设文档数字门槛。
 22. 不满足自动提交适用范围时，由协调者按现有授权审查真实差分和验证结果后提交；不机械拆碎原子修改，也不为过门禁改写类型或隐藏失败。
-23. 分支、合并与工作树按 [协作协议](SOP/multi-agent-orchestration.md) 和 [工作树生命周期](SOP/worktree-lifecycle.md)；发布风险和最小闭环只由 [发布 SOP](SOP/release-and-observation.md) 定义。
+23. 分支、合并与工作树按 [协作协议](SOP/multi-agent-orchestration.md)、[工作树生命周期](SOP/worktree-lifecycle.md) 和 [远程分支规则](knowledge/remote-branch-policy.md)；发布风险和最小闭环只由 [发布 SOP](SOP/release-and-observation.md) 定义。现有远程引用不因规则落地而自动修改，远程命名与保护从下一次 `push` 起执行。
 24. 真实付费或生产操作按既有授权的目的地与预算执行；先识别自动副作用，不盲重试未知结果。当前任务明确“不开发”时，持续开发授权不扩大本次范围。
 
 ## 约束维护
