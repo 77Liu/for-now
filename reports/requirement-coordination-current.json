@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 2,
-  "updated_at": "2026-10-11T18:14:35.617954+08:00",
+  "revision": 3,
+  "updated_at": "2026-10-11T19:13:24.533432+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -12,8 +12,8 @@
     "effective_date": "2026-10-11",
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
-  "work_mode": "启动整理中",
-  "current_phase": "Git 起点与启动就绪核验已记录，自动生产未启用",
+  "work_mode": "启动整理中；已取得 Owner 授权选择，需求池只读跟踪待执行",
+  "current_phase": "授权决策已登记，Git 本地整理待执行，自动生产未启用",
   "state": "not_ready_for_automatic_production",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -29,8 +29,8 @@
   },
   "authorization_policy": {
     "policy_id": "release-authorization-policy",
-    "policy_revision": "1.0",
-    "policy_status": "已采纳，待启动前核验后登记",
+    "policy_revision": "1.1",
+    "policy_status": "Owner 已确认默认授权，待启动闸门和本地整理完成后按 attempt 登记",
     "levels": [
       "L0",
       "L1",
@@ -44,7 +44,8 @@
       "发布/回滚无生产演练",
       "生产预算、告警、灰度、暂停开关与执行器权限核验",
       "Owner 授权范围、有效期和回收条件登记"
-    ]
+    ],
+    "owner_pause_mode": "消息触发并由控制面留痕；恢复需 Owner 明确指令"
   },
   "unknowns": [
     "远程平台分支保护与必需检查状态无法通过 Git 协议确认",
@@ -53,7 +54,7 @@
     "release/v0.5.12-clean 当前指向本地 main 清理提交，不等于 v0.5.12 标签基线，需协调者复核",
     "根目录 main 保留一个已归档的本地 .superpowers 未跟踪任务产物，归属已在启动归档中记录"
   ],
-  "next_action": "完成远程保护只读核验、本地发布/回滚演练和候选测试矩阵绑定；未完成前不启用自动生产写入、不创建新业务功能分支",
+  "next_action": "执行本地 Git 分支整理并进行一次只读需求池跟踪；启动闸门完成前不推送、不发布、不部署、不写生产",
   "evidence": [
     "reports/git-archive/git-startup-20261011-manifest.json",
     "knowledge/development-lifecycle.md",
@@ -66,5 +67,33 @@
     "worktrees": "新 develop 工作树干净；根 main 未跟踪任务产物已归档",
     "platform_protection": "Git 协议不可见，待平台证据",
     "remote_write": "未执行"
+  },
+  "owner_decisions": {
+    "git": {
+      "remote_develop": "下一次受控 push 时创建 origin/develop",
+      "remote_protection": "Owner 提供平台只读证据后核验；无法核验则保持自动生产关闭",
+      "release_v0_5_12_clean": "本地调整到 v0.5.12 标签，旧指针保留 archive",
+      "old_local_refs": "归档后删除旧本地开发引用，远程引用不修改",
+      "superpowers_artifact": "保留归档，不自动迁入 develop"
+    },
+    "authorization": {
+      "L0": "文档/测试/内部工具；功能分支推送、候选 tag/Release、预览部署",
+      "L1": "普通可回滚功能通过门禁后自动合入、发布、canary、放量、回滚",
+      "L2": "自动构建/候选/预览/证据；生产写入需单独授权",
+      "L3": "只准备核验；每个生产动作单独明确批准",
+      "expiry": "持续有效直到 Owner 撤销；每次 attempt 仍现场核验",
+      "pause": "消息触发 + 控制面留痕；恢复需 Owner 明确指令"
+    },
+    "iteration": {
+      "demand_tracking": "立即进行一次只读需求池跟踪",
+      "round_one": "采用 v0.5.13.1 稳定性候选，需求核验后进入 SELECTED",
+      "round_two": "保留保存恢复/时间意图/通知候选，第一轮复盘后逐条复核"
+    },
+    "testing": {
+      "matrix": "采用唯一测试影响矩阵，按改动域最小专项和横切触发条件选择",
+      "partial": "无 P0/P1 用户损害且责任人与补验条件已登记时允许进入自动链路",
+      "failure_return": "按行为/范围/授权/部署问题返回对应生命周期节点"
+    },
+    "startup_gate": "所有启动闸门完成前保持自动生产关闭"
   }
 }
