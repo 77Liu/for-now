@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 22,
-  "updated_at": "2026-10-12T02:53:01+08:00",
+  "revision": 23,
+  "updated_at": "2026-10-12T02:53:59+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -379,6 +379,12 @@
       "at": "2026-10-12T02:53:01+08:00",
       "reason": "补充并发登录、同步协调和前端端口专项证据；刷新停机根因仍缺少真实复现",
       "previous_snapshot": "reports/requirement-coordination-current.json@revision-21"
+    },
+    {
+      "revision": 23,
+      "at": "2026-10-12T02:53:59+08:00",
+      "reason": "补充小物媒体工作流专项证据；未扩大到迁移、生产或付费测试",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-22"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -567,10 +573,11 @@
           "61fe71a",
           "public/frontend/features/keepsakes/presentation-markup.mjs",
           "public/frontend/features/keepsakes/presentation.mjs",
-          "node scripts/frontend-keepsakes-feature-regression.mjs"
+          "node scripts/frontend-keepsakes-feature-regression.mjs",
+          "node scripts/keepsake-media-workflows-regression.mjs"
         ],
         "decision": "当前实现按媒体键复用已有图片节点，仅在标记变化时更新，未搬运旧重叠分支。",
-        "next": "保留图片节点复用、重复拉取和生命周期清理证据；不重复无变化专项。"
+        "next": "保留前端节点复用、媒体工作流补偿和生命周期清理证据；不运行迁移或生产媒体测试，除非候选依赖发生变化。"
       },
       {
         "requirement_id": "recvxDgUdPyb2P",
@@ -685,6 +692,11 @@
           "command": "node scripts/frontend-app-ports-regression.mjs",
           "result": "通过",
           "scope": "前端应用端口生命周期"
+        },
+        {
+          "command": "node scripts/keepsake-media-workflows-regression.mjs",
+          "result": "通过",
+          "scope": "小物单源创建、补偿清理、衍生图替换和版本冲突"
         }
       ],
       "test_adjustments": [
