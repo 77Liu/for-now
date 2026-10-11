@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "revision": 2,
-  "updated_at": "2026-10-11T18:12:30+08:00",
+  "updated_at": "2026-10-11T18:13:51.873362+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -17,14 +17,14 @@
   "state": "not_ready_for_automatic_production",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
-    "develop": "fc899a2445374db241dff02d689b3dd5c18c8d25",
+    "develop": "71f928df19a42fc117a9fcfbd59b9be3550ec6e5",
     "remote_main_ref": "origin/main",
     "remote_main_observed": "ebbde6fcf100432de8a599c771cbd8e774e043ad",
     "startup_manifest": "reports/git-archive/git-startup-20261011-manifest.json",
     "archive_namespace": "refs/archive/git-startup-20261011/heads",
     "worktree_count": 2,
     "remote_operations": "未执行",
-    "develop_current": "a3316ef359c0ad5388a664f6610039ec6b3bdcbc"
+    "develop_current": "71f928df19a42fc117a9fcfbd59b9be3550ec6e5"
   },
   "authorization_policy": {
     "policy_id": "release-authorization-policy",
