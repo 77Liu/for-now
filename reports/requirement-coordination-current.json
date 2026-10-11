@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 17,
-  "updated_at": "2026-10-12T02:38:00+08:00",
+  "revision": 18,
+  "updated_at": "2026-10-12T02:44:00+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -38,7 +38,7 @@
     ],
     "canonical_worktree": "/Users/bytedance/Documents/Codex/个人成长追踪",
     "canonical_worktree_branch": "develop",
-    "canonical_worktree_head": "3cca060795290309943443c652a9dc415631e511",
+    "canonical_worktree_head": "32646d03d48b6aefaffeaf2d9dcaaa6113b0dab0",
     "archived_worktree": {
       "path": "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/develop",
       "branch": "feat/v0.5.13.1-stability",
@@ -349,6 +349,12 @@
       "at": "2026-10-12T02:38:00+08:00",
       "reason": "让modelUnknown来源携带最小问题摘要，避免页面依赖整份个人模型快照才能显示上下文",
       "previous_snapshot": "reports/requirement-coordination-current.json@revision-16"
+    },
+    {
+      "revision": 18,
+      "at": "2026-10-12T02:44:00+08:00",
+      "reason": "夜间窗口阶段性收口：记录当前develop HEAD、四项状态与每个后续版本启动前重新锁基线规则",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-17"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -481,7 +487,7 @@
       "无法稳定复现状态分流；发现现有链路没有问答AI整理步骤；涉及生产数据或权限边界风险；差分扩展到通用调度平台或全站上下文重构；需要远程推送、tag、Release、部署或付费调用"
     ],
     "external_actions": "不推送、不tag、不Release、不部署、不手工付费调用；不恢复暂停的周期自动化",
-    "current_status": "P0状态分流已提交37646b4；小物图片节点复用已有实现61fe71a，账号刷新停机仍缺少可复现根因；未知区域已完成来源摘要与最小上下文展示，并收敛重复来源解析，待专项验证。下一小版本仍须在启动前重新选定当时develop基线并锁定控制面。",
+    "current_status": "P0状态分流已提交37646b4；小物图片节点复用已有实现61fe71a，账号刷新停机仍缺少可复现根因；未知区域已完成来源摘要、唯一解析器复用和最小上下文展示，待专项验证。当前develop写集干净；下一小版本仍须在启动前重新选定当时develop基线并锁定控制面。",
     "version_requirement_count": {
       "minimum": 3,
       "maximum": 10,
