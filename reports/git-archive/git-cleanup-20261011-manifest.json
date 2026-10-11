@@ -232,5 +232,12 @@
     "v0.6.0-ui-integration",
     "wip/root-dirty-before-v0.4.0-owner-integration"
   ],
-  "deletion_list": "reports/git-archive/git-cleanup-20261011-deletion-list.json"
+  "deletion_list": "reports/git-archive/git-cleanup-20261011-deletion-list.json",
+  "initial_local_branch_count": 119,
+  "late_created_archived_branches": {
+    "docs/git-history-cleanup": "dbc6a13dd2cd038d58cb0f4e17c0e4848792cfbf"
+  },
+  "current_archive_head_ref_count": 120,
+  "current_local_branch_count": 3,
+  "deleted_local_branch_count": 118
 }
