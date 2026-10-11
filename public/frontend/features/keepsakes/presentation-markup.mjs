@@ -1,6 +1,39 @@
 import { keepsakeMediaSources } from "../keepsakes-media/index.mjs";
 import { keepsakeDerivativeLabel } from "./model.mjs";
 
+// 相同媒体源只更新周边文字，保留已有图片节点以避免重新解码造成闪烁。
+export function setKeepsakeMarkup(node, markup) {
+  if (!node || node.__keepsakeMarkup === markup) return false;
+  const document = node.ownerDocument;
+  if (document?.createElement && typeof node.replaceChildren === "function") {
+    const template = document.createElement("template");
+    template.innerHTML = markup;
+    const previousImages = new Map(
+      [...(node.querySelectorAll?.("img[data-keepsake-image-key]") || [])]
+        .map(image => [image.dataset.keepsakeImageKey, image])
+    );
+    for (const image of template.content.querySelectorAll(
+      "img[data-keepsake-image-key]"
+    )) {
+      const previous = previousImages.get(image.dataset.keepsakeImageKey);
+      if (previous && previous.getAttribute("src") === image.getAttribute("src")) {
+        image.replaceWith(previous);
+      }
+    }
+    node.replaceChildren(...template.content.childNodes);
+  } else {
+    node.innerHTML = markup;
+  }
+  node.__keepsakeMarkup = markup;
+  return true;
+}
+
+export function clearKeepsakeMarkup(node) {
+  if (!node || node.__keepsakeMarkup === "") return;
+  node.innerHTML = "";
+  node.__keepsakeMarkup = "";
+}
+
 export function createKeepsakeMarkup({ state, view } = {}) {
   const escape = value => view.escapeMarkup(value ?? "");
 
@@ -27,9 +60,11 @@ export function createKeepsakeMarkup({ state, view } = {}) {
       + `data-keepsake-media="${escape(item.id || imagePath)}" `
       + `style="--keepsake-background-opacity:${opacity}">`
       + (backgroundPath
-        ? `<img class="keepsake-image-background" src="${escape(view.appUrl(backgroundPath))}" alt="" loading="${loading}">`
+        ? `<img class="keepsake-image-background" data-keepsake-image-key="${escape(item.id || imagePath)}:background" `
+          + `src="${escape(view.appUrl(backgroundPath))}" alt="" loading="${loading}">`
         : "")
-      + `<img class="keepsake-image-cutout" src="${escape(view.appUrl(imagePath))}" `
+      + `<img class="keepsake-image-cutout" data-keepsake-image-key="${escape(item.id || imagePath)}:cutout" `
+      + `src="${escape(view.appUrl(imagePath))}" `
       + `alt="${escape(item.title)}" loading="${loading}"></span>`;
   }
 
