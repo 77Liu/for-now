@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "revision": 1,
+  "updated_at": "2026-10-11T18:10:26.702154+08:00",
+  "coordinator": {
+    "role": "主控",
+    "write_authority": "唯一协调者",
+    "state_owner": "主控维护本控制面，其他角色仅引用并回报"
+  },
+  "rule_baseline": {
+    "commit": "fc899a2445374db241dff02d689b3dd5c18c8d25",
+    "effective_date": "2026-10-11",
+    "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
+  },
+  "work_mode": "启动整理中",
+  "current_phase": "Git 起点已建立，唯一控制面初始化，自动生产未启用",
+  "state": "not_ready_for_automatic_production",
+  "git": {
+    "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
+    "develop": "fc899a2445374db241dff02d689b3dd5c18c8d25",
+    "remote_main_ref": "origin/main",
+    "remote_main_observed": "ebbde6fcf100432de8a599c771cbd8e774e043ad",
+    "startup_manifest": "reports/git-archive/git-startup-20261011-manifest.json",
+    "archive_namespace": "refs/archive/git-startup-20261011/heads",
+    "worktree_count": 2,
+    "remote_operations": "未执行"
+  },
+  "authorization_policy": {
+    "policy_id": "release-authorization-policy",
+    "policy_revision": "1.0",
+    "policy_status": "已采纳，待启动前核验后登记",
+    "levels": [
+      "L0",
+      "L1",
+      "L2",
+      "L3"
+    ],
+    "production_write_enabled": false,
+    "required_before_enable": [
+      "远程分支保护规则只读核验并记录",
+      "测试影响矩阵与当前候选绑定",
+      "发布/回滚无生产演练",
+      "生产预算、告警、灰度、暂停开关与执行器权限核验",
+      "Owner 授权范围、有效期和回收条件登记"
+    ]
+  },
+  "unknowns": [
+    "远程平台分支保护与必需检查状态无法通过 Git 协议确认",
+    "自动发布执行器、部署权限与回滚能力尚未完成无生产演练",
+    "生产告警、灰度、预算、暂停开关配置尚未形成可核验证据",
+    "release/v0.5.12-clean 当前指向本地 main 清理提交，不等于 v0.5.12 标签基线，需协调者复核",
+    "根目录 main 保留一个已归档的本地 .superpowers 未跟踪任务产物，归属已在启动归档中记录"
+  ],
+  "next_action": "完成远程保护只读核验、本地发布/回滚演练和候选测试矩阵绑定；未完成前不启用自动生产写入、不创建新业务功能分支",
+  "evidence": [
+    "reports/git-archive/git-startup-20261011-manifest.json",
+    "knowledge/development-lifecycle.md",
+    "knowledge/release-authorization-policy.md",
+    "SOP/release-and-observation.md",
+    "reports/git-handoff/startup-readiness-2026-10-11.md"
+  ]
+}
