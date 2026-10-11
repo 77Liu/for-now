@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 21,
-  "updated_at": "2026-10-12T02:51:43+08:00",
+  "revision": 22,
+  "updated_at": "2026-10-12T02:53:01+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -373,6 +373,12 @@
       "at": "2026-10-12T02:51:43+08:00",
       "reason": "补充账号刷新相关鉴权与startup投影专项证据；根因复现仍缺失，维持阻塞而不猜测修复",
       "previous_snapshot": "reports/requirement-coordination-current.json@revision-20"
+    },
+    {
+      "revision": 22,
+      "at": "2026-10-12T02:53:01+08:00",
+      "reason": "补充并发登录、同步协调和前端端口专项证据；刷新停机根因仍缺少真实复现",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-21"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -505,7 +511,7 @@
       "无法稳定复现状态分流；发现现有链路没有问答AI整理步骤；涉及生产数据或权限边界风险；差分扩展到通用调度平台或全站上下文重构；需要远程推送、tag、Release、部署或付费调用"
     ],
     "external_actions": "不推送、不tag、不Release、不部署、不手工付费调用；不恢复暂停的周期自动化",
-    "current_status": "P0状态分流、小物媒体稳定性和未知区域展示均已具备本地实现及受影响专项证据；账号刷新停机补充通过鉴权与startup投影专项，但仍没有能证明刷新触发停机的脱敏复现、请求时序和进程错误日志，继续保留真实阻塞，不写猜测性修复。当前develop工作树干净；下一小版本必须在启动前重新选定当时develop基线并锁定控制面。",
+    "current_status": "P0状态分流、小物媒体稳定性和未知区域展示均已具备本地实现及受影响专项证据；账号刷新相关鉴权、startup投影、并发登录、同步协调和前端端口专项均通过，但仍没有能证明刷新触发停机的脱敏复现、请求时序和进程错误日志，继续保留真实阻塞，不写猜测性修复。当前develop工作树干净；下一小版本必须在启动前重新选定当时develop基线并锁定控制面。",
     "version_requirement_count": {
       "minimum": 3,
       "maximum": 10,
@@ -546,7 +552,10 @@
           "src/app/server-lifecycle.mjs",
           "node scripts/account-lifecycle-regression.mjs",
           "node scripts/auth-regression.mjs",
-          "node scripts/startup-projection-regression.mjs"
+          "node scripts/startup-projection-regression.mjs",
+          "node scripts/auth-concurrency-regression.mjs",
+          "node scripts/sync-coordinator-regression.mjs",
+          "node scripts/frontend-app-ports-regression.mjs"
         ],
         "decision": "当前静态链路未证明刷新会触发服务停机，不凭猜测改账号或服务生命周期。",
         "next": "需要一次可脱敏刷新失败复现、请求时序、服务进程/错误日志和账号边界证据；鉴权与startup专项已通过，不据此冒称根因已修。"
@@ -589,7 +598,7 @@
         "npm run typecheck:frontend 通过；npm run build:frontend 通过，产物留在受.gitignore保护的编译目录",
         "已执行git diff --check"
       ],
-      "functional_tests": "已执行受影响专项且均通过：\n- 核心模型就绪、后台AI门禁、思绪P00、个性化AI门禁；\n- 任务上下文选择、个人语境、协作；\n- 小物前端、前端应用生命周期、账号生命周期、鉴权、startup投影、前端壳层；\n- 工作上下文边界回归20项。\n未运行system all、预算/压缩/PG/发布矩阵，也未重复无变化专项。",
+      "functional_tests": "已执行受影响专项且均通过：\n- 核心模型就绪、后台AI门禁、思绪P00、个性化AI门禁；\n- 任务上下文选择、个人语境、协作；\n- 小物前端、前端应用生命周期、账号生命周期、鉴权、鉴权并发、startup投影、同步协调、前端端口、前端壳层；\n- 工作上下文边界回归20项。\n未运行system all、预算/压缩/PG/发布矩阵，也未重复无变化专项。",
       "remote_or_production": "未推送、未tag、未Release、未部署、未写生产、未手工触发付费调用",
       "test_runs": [
         {
@@ -661,6 +670,21 @@
           "command": "node scripts/startup-projection-regression.mjs",
           "result": "通过",
           "scope": "today/review启动投影、字段排除和路由隔离"
+        },
+        {
+          "command": "node scripts/auth-concurrency-regression.mjs",
+          "result": "通过",
+          "scope": "登录失败限流原子性与密码变更会话竞态"
+        },
+        {
+          "command": "node scripts/sync-coordinator-regression.mjs",
+          "result": "通过",
+          "scope": "刷新、同步、恢复快照、旧会话拒绝和账户隔离"
+        },
+        {
+          "command": "node scripts/frontend-app-ports-regression.mjs",
+          "result": "通过",
+          "scope": "前端应用端口生命周期"
         }
       ],
       "test_adjustments": [
