@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 6,
-  "updated_at": "2026-10-11T19:29:58.715988+08:00",
+  "revision": 7,
+  "updated_at": "2026-10-11T20:09:48.598456+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "启动准备；自动生产关闭；定时自动化未恢复",
-  "current_phase": "本地 Git 整理与需求池只读基线核验完成；生产启动条件待核验",
+  "current_phase": "三项启动闸门已完成只读核验；远程保护与当前生产预算/告警证据未通过，禁止创建第一轮分支",
   "state": "not_ready_for_automatic_production",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -61,23 +61,25 @@
     "revokedAt": null
   },
   "unknowns": [
-    "远程平台分支保护与必需检查状态无法通过 Git 协议确认",
-    "自动发布执行器、部署权限与回滚能力尚未完成无生产演练",
-    "生产告警、灰度、预算、暂停开关配置尚未形成可核验证据"
+    "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
+    "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "在启动闸门未完成前，主控只审查 v0.5.13.1 三条稳定性需求的 READY 契约与测试影响，不自动纳入新 P1 微信读书候选，不推送、不发布、不部署。",
+  "next_action": "保持develop不创建第一轮分支；先由Owner补齐Gitee保护规则并提供可复核平台证据，再补生产预算/告警只读快照，三项均通过后才创建feat/v0.5.13.1-stability本地分支",
   "evidence": [
-    "reports/git-archive/git-startup-20261011-manifest.json",
+    "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
     "knowledge/release-authorization-policy.md",
-    "SOP/release-and-observation.md",
+    "reports/git-archive/git-startup-20261011-manifest.json",
+    "reports/git-archive/startup-gates-20261011.json",
     "reports/git-handoff/startup-readiness-2026-10-11.md"
   ],
   "last_check": {
-    "remote_refs": "已通过 git ls-remote 只读核验",
+    "remote_refs": "2026-10-11T12:07:35Z 已通过 git ls-remote --heads/tags 只读核验；无远程写入",
     "worktrees": "新 develop 工作树干净；根 main 未跟踪任务产物已归档",
-    "platform_protection": "Git 协议不可见，待平台证据",
-    "remote_write": "未执行"
+    "platform_protection": "Gitee UI只读核验：保护分支规则0条、保护标签不可用、推送限制未启用",
+    "remote_write": "未执行",
+    "release_rollback_rehearsal": "本地隔离模拟全部通过；无远端命令",
+    "budget_alerts": "本地护栏回归通过；当前生产配置与告警快照缺失，保持阻断"
   },
   "owner_decisions": {
     "git": {
@@ -243,5 +245,40 @@
       "previous_snapshot": "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/develop/reports/git-archive/control-plane-before-root-migration-20261011.json"
     }
   ],
-  "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件"
+  "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
+  "startup_gates": {
+    "checked_at": "2026-10-11T20:09:48.598456+08:00",
+    "all_passed": false,
+    "branch_creation": "blocked_until_all_gates_pass",
+    "remote_operations": "未执行推送、发布、部署或生产写入",
+    "remote_protection": {
+      "status": "BLOCKED",
+      "evidence": "reports/git-archive/startup-gates-20261011.json",
+      "observed": [
+        "Gitee 保护分支设置页未列出任何保护分支规则",
+        "Gitee 保护标签页明确提示当前仓库类型不可用",
+        "Gitee 推送规则页的推送邮箱、提交正则、单文件大小限制均未勾选",
+        "git ls-remote 只读结果未发现 origin/develop；远程仍保留多条历史任务分支"
+      ],
+      "required_before_branch": "由Owner在Gitee建立并可复核的main/develop/release/preview保护规则与必需检查，随后重新读取平台证据"
+    },
+    "release_rollback_rehearsal": {
+      "status": "PASS_LOCAL_ONLY",
+      "evidence": "reports/git-archive/startup-gates-20261011.json",
+      "commands": [
+        "scripts/release-fence-regression.mjs",
+        "scripts/deploy-regression.mjs",
+        "scripts/preview-deploy-regression.mjs"
+      ],
+      "result": "release fence、生产部署模拟、Preview部署与显式回滚/撤销/过期/竞态场景全部通过；无远端命令"
+    },
+    "budget_alerts": {
+      "status": "BLOCKED_CURRENT_PRODUCTION_EVIDENCE_MISSING",
+      "evidence": "reports/git-archive/startup-gates-20261011.json",
+      "local_result": "monitor-regression、AI预算控制/运行时、日压缩预算等待与调度观测回归通过",
+      "hard_limits": "日压缩每日¥1、单次¥0.25、每日4次、每轮最多回填1天由运行时校验覆盖",
+      "current_production_gap": "本轮没有生产主机的只读配置快照，无法独立证明当前/etc/for-now.env、定时器、Feishu告警端点和实时账本仍与硬限一致",
+      "notable_mismatch": "deploy/for-now.env.example中的通用AI账户示例为每日¥14.4/200次、告警阈值¥36；它不是日压缩硬限，不能代替生产压缩配置核验"
+    }
+  }
 }
