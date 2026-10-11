@@ -23,7 +23,7 @@
 ## 已完成的安全动作
 
 - 生产标签 `v0.5.12` 已核验：标签对象 `17cea8c`，实际提交 `4359648b41608429832e2ce4897bd12163a5d812`。
-- 119 个本地分支已创建 `refs/archive/git-cleanup-20261011/heads/*`；旧分支尚未删除。
+- 初始 119 个本地分支已创建 `refs/archive/git-cleanup-20261011/heads/*`；整理过程中创建的临时 `docs/git-history-cleanup` 也已补建 archive ref，因此当前 archive ref 共 120 条。现有本地仅保留 3 个允许入口，118 个旧入口已删除。
 - 根目录原脏现场的 stash 为 `24d163645e4d3aa4f76539025fd10b699392c30a`，恢复引用为 `refs/archive/git-cleanup-20261011/root-main-dirty-stash`。
 - 工作树归档清单 SHA-256：`807c6448e9a1166a64e48edd3555e802c2efd1bf6993bc3f0fc2a584b486ec1f`。
 - 当前只有根目录、整理分支和冻结发布线 3 棵工作树；整理分支和冻结线完成后将只保留根目录 `main` 与干净 `develop` 工作树。
