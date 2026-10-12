@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 111,
-  "updated_at": "2026-10-12T15:35:07.052Z",
+  "revision": 112,
+  "updated_at": "2026-10-12T15:45:55.755Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md及其引用的唯一正文；新增开发者自查与主控接入审查责任正文在SOP/multi-agent-orchestration.md#开发者自查与主控接入审查，功能开发/集成SOP引用，原有状态门及授权继续适用。"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "主控独立核对引用消费者，批准单脚本保留真实quote包含关系的脱敏修复；完成后再跑线上快照本地启动门。",
+  "current_phase": "引用关系脱敏修复已由主控独立代码审查并接入develop，固定新候选继续真实线上快照与隔离本机启动验证。",
   "state": "GLOBAL_STARTUP_GATE_EXECUTING",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发在原feat仅修启动门：不透明引用占位保留真实包含关系、补消费者目标枚举、安全语义差异诊断；自查后定向验证，主控独立审查接入。",
+  "next_action": "主开发只读采集生产脱敏快照，执行隔离本机PG真实启动、readyz、重启恢复与无付费核心冒烟；运行期间锁定HEAD/tree，不提交或部署。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -1660,6 +1660,12 @@
       "at": "2026-10-12T15:35:07.052Z",
       "reason": "Owner要求继续完成线上快照本地实际启动，主控审查后锁定保留真实包含关系的最小实现。",
       "previous_snapshot": "a0aafbb:reports/requirement-coordination-current.json@revision110"
+    },
+    {
+      "revision": 112,
+      "at": "2026-10-12T15:45:55.755Z",
+      "reason": "完成独立接入审查后立即续跑真实门，目标是生产脱敏状态下本地实际启动成功。",
+      "previous_snapshot": "3c32f1b:reports/requirement-coordination-current.json@revision111"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -2565,13 +2571,13 @@
       "related_contract": "历史补充recordCompression output ID对应singleton，需同一精确optional policy；daily实际markQueued在tasks.create/promote分支持久化前调用，继续严格要求实体。"
     },
     "pre_release_startup_gate": {
-      "status": "BLOCKED_TASK_SEMANTICS",
+      "status": "EXECUTING_AFTER_QUOTE_SEMANTICS_FIX",
       "source": "Owner本对话：本地合并启动检查及生产快照本地启动后再进release门",
       "scope": "本次重新发布前补齐最终累计候选实际runtime.start/监听/readyz/重启恢复，不能以projection专项代替",
       "snapshot": "生产只读一致性状态快照；服务器端脱敏，保留任务类型/状态与目标关系/singleton/schema，排除正文/原图/凭据，绑定采集时间/运行SHA/摘要",
       "environment": "隔离本机PG/临时数据目录，真实候选构建；无生产连接/网络provider/通知/定时付费",
       "proof": "固定候选tree+快照摘要+运行环境+实际启动/健康/恢复与核心无付费smoke回执",
-      "next": "主开发在原feat仅修启动门：不透明引用占位保留真实包含关系、补消费者目标枚举、安全语义差异诊断；自查后定向验证，主控独立审查接入。",
+      "next": "主开发只读采集生产脱敏快照，执行隔离本机PG真实启动、readyz、重启恢复与无付费核心冒烟；运行期间锁定HEAD/tree，不提交或部署。",
       "distinction": "每feat按受影响验证；最终develop候选必须基本整体启动，完整功能全量测试按矩阵去重执行，不每merge重复system all",
       "rule_source": "knowledge/test-impact-matrix.md#develop--release-有状态全局测试门",
       "rule_commit": "04befab",
@@ -2672,7 +2678,7 @@
         "verification": "主开发strict typecheck、build+self-test、diff检查通过，独立只读review通过；复用原任务状态及map/rebuild等价断言。",
         "integration": "fast-forward合入develop，保留feat，唯一根工作树；用户未跟踪证据未触碰。"
       },
-      "candidate_identity": "revision107提交后以Git完整HEAD/tree派发；运行期间锁定无漂移。",
+      "candidate_identity": "revision112控制面提交后以完整HEAD/tree固定并派发；真实门运行期间禁止漂移。",
       "mapping_comparison_review": {
         "source": "src/shared/persistence/postgres-objects.mjs的readPostgresStoreObjects无ORDER BY；verifyStoreObjects已有按canonicalJson完整行排序比较。",
         "problem": "启动门直接比较映射表数组顺序；数据库行顺序不是业务顺序，业务顺序由position/parentKey等字段承载。",
@@ -2707,6 +2713,13 @@
           "invariants": "row.content及payload相同正文同映射；quote字段专门映射；账户间文本缓存不得混用不同quote集合；匹配状态不强制覆盖。",
           "diagnostics": "仅已知kind/status/intentMatch及变化字段名与布尔/数字/null；未知枚举other，无ID/hash/原文。",
           "verification": "开发者先完整链自查；既有self-test混合quote矩阵及真实helper检查、strict typecheck/build/diff；主控实际代码审查后接入，不改业务mapper，不访问生产或扩大套件。"
+        },
+        "implementation_receipt": {
+          "code_sha": "cde2b84c08123119a7aa8061c2be8ca8214a1b3e",
+          "review": "主控亲自读取实际diff与annotationResourceSource/markdownText/inspectIntent、map/rebuild、任务hash与语义断言、隔离PG导入及真实启动消费者，确认未注入命中结果或削弱语义断言；编译后导入及fixture路由问题在接入前退回修正。",
+          "verification": "核验主开发实际命令exit0：strict typecheck、build、self-test、diff；独立复审GO为辅助输入，不代替主控代码审查。",
+          "integration": "ff接入develop，保留feat，唯一工作树，生成产物及原用户未跟踪证据未提交。",
+          "scope": "仅启动门脚本，无生产访问或业务代码修改。"
         }
       }
     }
