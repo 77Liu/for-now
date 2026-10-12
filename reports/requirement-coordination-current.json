@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 96,
-  "updated_at": "2026-10-12T13:40:49.600Z",
+  "revision": 97,
+  "updated_at": "2026-10-12T13:48:05.230Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/test-impact-matrix.md、SOP/integration-audit.md、SOP/release-and-observation.md；未改变其他风险授权正文"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "任务目标契约修复6e82425已合入develop；快照有状态全局门尚未实现/执行，先核对生产只读及候选inspection/副作用精确seam。",
+  "current_phase": "已锁定MTS快照启动门及最小运行时inspection/effect注入写集；本地实现先行，生产只读采集待工具审查。",
   "state": "BUILDING_DEPLOY_RECOVERY_FIX",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发只读补准确API/文件接入点与生产零写入依据；主控锁门的最小实现写集。旧生产健康、候选发布暂停于新门，不重复已通过专项。",
+  "next_action": "主开发按有限写集实现门，本地类型/构建与最小合成验证交接；审查后绑定候选/快照/隔离环境执行真实门。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -616,25 +616,37 @@
       "candidate_tree": "9dc58edd21eb42a6e0cfe30fe477faab3e4659ea",
       "integration_status": "本地六文件代码与既有控制面提交已快进合入develop；feat分支保留。未push/tag/release/deploy。",
       "active_task": {
-        "task_id": "v0513-state-startup-gate-seams-20261012",
+        "task_id": "v0513-state-startup-gate-implementation-20261012",
         "state": "DISPATCH_READY",
-        "mode": "只读精确接入方案",
+        "mode": "新规则最小执行门实现",
         "owner": "主控",
         "implementer": "主开发",
-        "baseline_sha": "6e824256b98fe8cb30e0d2bb0a592feefa06de4a",
-        "write_set": [],
-        "objective": "完成最小门设计中的实际公开接入点核对：候选真实task intent/prepare观察、生产只读一致性快照、全局启动副作用拦截、现有PG16cluster；给准确文件/API/所需窄点，方案可执行不复制任务规则。",
+        "baseline_sha": "6e824256b98fe8cb30e0d2bb0a592feefa06de4a（当前feat包含后续控制面文档）",
+        "feature_branch": "feat/v0.5.13-save-sync-validation",
+        "write_set": [
+          "scripts/release-state-startup-gate.mts（snapshot/verify，严格类型与中文恢复/隐私注释，不拆通用平台）",
+          "tsconfig.release-state-startup-gate.json（NodeNext strict，隔离输出.build/typescript/release-state-startup-gate）",
+          "package.json（仅该门typecheck/build/run三个命令，无依赖变更）",
+          "src/app/background-ai.mjs（仅复用私有handler inspector及意图比较的无IO观察入口，不复制算法）",
+          "src/app/content-runtime.mjs（仅必要的无IO任务registry观察接入，不改工作流语义）",
+          "src/app/server-runtime.mjs（仅程序化受限startupGate选项到foundation，正常生产默认路径不改变）",
+          "src/app/runtime-foundation.mjs（仅受限本机验证模式的dispatch/provider/外发/媒体副作用隔离与计数；不得跳过真实恢复/PG提交）"
+        ],
         "acceptance": [
-          "schema/ID伪名关系与intent匹配前后等价，不能全stale隐藏故障；无法等价则BLOCKED",
-          "生产snapshot绝不运行会写预算恢复/normalize/ensure的runtime.start/foundation初始化，只读事务证明；取得候选inspection使用无写纯seam",
-          "verify使用真实候选runtime.start和PG commit，side-effect guard只拦dispatch/provider/外发/媒体，不跳过recoverAtStartup。通过注入受限验证选项而非普通生产env隐藏开关，回执零外部调用",
-          "新增执行脚本MTS严格typecheck/build隔离，复用PG16preflight、已有持久化公开接口；不造Docker、通用脱敏/测试平台",
-          "只读交方案后主控锁最小实现写集，再开始实现；无全系统自动通过声称"
+          "优先通过真实createContentRuntime与纯内存只读repository/封闭media适配器初始化原handler registry，再backgroundAi.inspect现有intent逻辑；必须验证构造无IO。不要优先抽改五个owner文件/复制哈希规则。不能做到则报唯一实际seam，不越界。",
+          "snapshot只读pg.Client单事务REPEATABLE READ READ ONLY内循环set_config app.account_id/readPostgresStoreObjects及revision；auth若另库采集前后校验账户集合/revision，不声称跨库原子。无createRuntimeFoundation/AiRuntime生产初始化，不读附件字节。",
+          "服务器内存先脱敏，ID伪名全图对应；去除正文/图片/凭据，manifest记录前后任务状态/主子目标/生成类别/版本/hash匹配分类关系等价。仅调整脱敏文本引起的hash以保持源匹配/不匹配，无法等价则BLOCKED不造PASS。",
+          "verify起全新本机PG16集群/角色和temp dataDir，复用既有preflight/公开migration范式；确认所有DB loopback及路径/PID属于本次临时资源，不含生产连接字符串。",
+          "startupGate程序化仅验证器注入而非普通生产env隐藏开关，支持真实candidate runtime.start/监听/readyz/优雅停止/同库重启恢复/核心本地认证读取保存往返和任务通知smoke；无JSON/mock-only替代真实PG。",
+          "背景/清理/小物dispatch持有并计数，真实恢复提交保留；provider/webhook/媒体read失败封闭计数应为0，定时付费关闭。不为通过删任务、补目标或全部变stale。",
+          "新MTS strict类型检查/构建产物仅ignored.build；不新增测试文件或依赖/平台。门自带最小side-effect拒绝/恢复行为证据，正常环境原startup路径的受影响专项复用或仅必要验证。",
+          "本阶段先本地实现与小合成验证交接，禁止生产采集/上传/写入或重部署；主控审查固定工具后授权只读生产快照采集与本机真实门运行。"
         ],
         "forbidden": [
-          "文件写入/测试/生产写/部署",
-          "新增worktree/切分支/提交/删分支",
-          "复制用户正文/附件/凭据进快照/Git/聊天"
+          "修改task类型/工作流hash算法、schema/API、预算或迁移框架",
+          "抽改所有owner/通用快照/脱敏/沙箱平台、新JS文件、依赖变更",
+          "控制面/新worktree/删分支/remote生产部署/私密正文快照或日志",
+          "声称工具写完即门通过、沿用旧失败attempt发布"
         ]
       },
       "review_task": {
@@ -913,6 +925,29 @@
             "result": "PASS；独立review GO；主控复核历史通知无source task的nested fallback后单点修正，受影响专项PASS；JSDoc仅注释不重复专项"
           },
           "note": "未通过新的快照全局启动门，不新建release或生产部署。"
+        },
+        {
+          "task_id": "v0513-state-startup-gate-seams-20261012",
+          "state": "READ_ONLY_DESIGN_COMPLETED",
+          "mode": "只读精确接入方案",
+          "owner": "主控",
+          "implementer": "主开发",
+          "baseline_sha": "6e824256b98fe8cb30e0d2bb0a592feefa06de4a",
+          "write_set": [],
+          "objective": "完成最小门设计中的实际公开接入点核对：候选真实task intent/prepare观察、生产只读一致性快照、全局启动副作用拦截、现有PG16cluster；给准确文件/API/所需窄点，方案可执行不复制任务规则。",
+          "acceptance": [
+            "schema/ID伪名关系与intent匹配前后等价，不能全stale隐藏故障；无法等价则BLOCKED",
+            "生产snapshot绝不运行会写预算恢复/normalize/ensure的runtime.start/foundation初始化，只读事务证明；取得候选inspection使用无写纯seam",
+            "verify使用真实候选runtime.start和PG commit，side-effect guard只拦dispatch/provider/外发/媒体，不跳过recoverAtStartup。通过注入受限验证选项而非普通生产env隐藏开关，回执零外部调用",
+            "新增执行脚本MTS严格typecheck/build隔离，复用PG16preflight、已有持久化公开接口；不造Docker、通用脱敏/测试平台",
+            "只读交方案后主控锁最小实现写集，再开始实现；无全系统自动通过声称"
+          ],
+          "forbidden": [
+            "文件写入/测试/生产写/部署",
+            "新增worktree/切分支/提交/删分支",
+            "复制用户正文/附件/凭据进快照/Git/聊天"
+          ],
+          "receipt": "生产单client repeatable read snapshot；候选startup前恢复与PGcommit不可跳过；尚缺纯inspection与受限effect注入窄点。"
         }
       ],
       "candidate_fixed_at": "2026-10-12T11:07:07.193Z",
@@ -1425,6 +1460,12 @@
       "at": "2026-10-12T13:40:49.600Z",
       "reason": "四文件实际差分审查提交并接入develop，启动门从方案进入精确接入设计，未实现不标通过。",
       "previous_snapshot": "3e308ce:reports/requirement-coordination-current.json@revision95"
+    },
+    {
+      "revision": 97,
+      "at": "2026-10-12T13:48:05.230Z",
+      "reason": "只读精确接入方案完成；批准复用真实handler registry的纯观察与本机effect注入，避免全owner抽取/复制哈希规则。",
+      "previous_snapshot": "629279f:reports/requirement-coordination-current.json@revision96"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -2330,7 +2371,7 @@
       "related_contract": "历史补充recordCompression output ID对应singleton，需同一精确optional policy；daily实际markQueued在tasks.create/promote分支持久化前调用，继续严格要求实体。"
     },
     "pre_release_startup_gate": {
-      "status": "RULE_EFFECTIVE_EXECUTOR_NOT_IMPLEMENTED",
+      "status": "IMPLEMENTATION_AUTHORIZED_NOT_RUN",
       "source": "Owner本对话：本地合并启动检查及生产快照本地启动后再进release门",
       "scope": "本次重新发布前补齐最终累计候选实际runtime.start/监听/readyz/重启恢复，不能以projection专项代替",
       "snapshot": "生产只读一致性状态快照；服务器端脱敏，保留任务类型/状态与目标关系/singleton/schema，排除正文/原图/凭据，绑定采集时间/运行SHA/摘要",
