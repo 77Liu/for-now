@@ -66,13 +66,11 @@ function displayTime(value, formatter) {
 }
 
 function notificationMessage(notification, task, status) {
-  if (task?.kind === "captureTranscription" && status === "failed") {
-    const source = text(notification?.message);
-    const reason = /^[A-Z][A-Z0-9_]{3,}(?::|\b)/.test(source) || /\bupstream\b/i.test(source)
-      ? FAILED_TRANSCRIPTION_FALLBACK
-      : source || FAILED_TRANSCRIPTION_FALLBACK;
-    return reason.includes("原音") ? reason : `${reason}${/[。！？!?]$/.test(reason) ? "" : "。"}${RETAINED_AUDIO_MESSAGE}`;
-  }
+  if (status === "failed" && task?.kind === "captureTranscription")
+    return `${FAILED_TRANSCRIPTION_FALLBACK}${RETAINED_AUDIO_MESSAGE}`;
+  if (status === "failed") return "任务暂时失败。原记录仍保留，可复制脱敏错误日志后重试。";
+  if (status === "stale") return "目标内容已变化，旧结果未写入。请重新打开目标后再操作。";
+  if (status === "cancelled") return "任务已取消，原记录仍保留。";
   return text(notification?.message);
 }
 
@@ -143,9 +141,12 @@ export function notificationEntryMarkup(notification = {}, task = null, options 
   const markRead = state.unread
     ? `<button class="subtle-action" type="button" data-notification-read="${html(state.id)}" aria-label="${html(actionLabel("read", state.title))}">标为已读</button>`
     : "";
+  const copyLog = ["failed", "stale"].includes(state.status)
+    ? `<button class="subtle-action" type="button" data-notification-copy="${html(state.id)}">复制错误日志</button>`
+    : "";
   const time = state.datetime
     ? `<time datetime="${html(state.datetime)}">${html(state.timeLabel)}</time>`
     : "";
 
-  return `<article class="notification-entry${state.unread ? " unread" : ""}" data-status="${html(state.status)}"><div class="notification-entry-copy"><header><b>${html(state.title)}</b><span aria-label="状态：${html(state.statusLabel)}">${html(state.statusLabel)}</span>${time}</header><p>${html(state.message)}</p></div><div class="notification-entry-actions">${open}${retry}${markRead}</div></article>`;
+  return `<article class="notification-entry${state.unread ? " unread" : ""}" data-status="${html(state.status)}"><div class="notification-entry-copy"><header><b>${html(state.title)}</b><span aria-label="状态：${html(state.statusLabel)}">${html(state.statusLabel)}</span>${time}</header><p>${html(state.message)}</p></div><div class="notification-entry-actions">${open}${retry}${copyLog}${markRead}</div></article>`;
 }

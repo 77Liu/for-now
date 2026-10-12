@@ -79,6 +79,7 @@ class FakeElement {
   closest(selector) {
     if (this.kind === "all" && selector === NOTIFICATION_SELECTORS.readAll) return this;
     if (this.dataset.taskRetry !== undefined && selector === NOTIFICATION_SELECTORS.retry) return this;
+    if (this.dataset.notificationCopy !== undefined && selector === NOTIFICATION_SELECTORS.copy) return this;
     if (this.dataset.notificationOpen !== undefined && selector === NOTIFICATION_SELECTORS.open) return this;
     if (this.dataset.notificationRead !== undefined && selector === NOTIFICATION_SELECTORS.read) return this;
     if (
@@ -138,7 +139,9 @@ const task = () => ({
   id: "task-1",
   kind: "thoughtAnswer",
   targetId: "thought-1",
-  status: "failed"
+  status: "failed",
+  errorCode: "AI_TASK_FAILED",
+  error: "secret provider response"
 });
 const initialState = () => ({
   notifications: [notice()],
@@ -149,7 +152,7 @@ function ports(overrides = {}) {
   const state = initialState();
   return {
     request: async () => ({}),
-    loadNotifications: async () => true,
+    loadNotifications: async () => false,
     scheduleNotificationPoll() {},
     openTarget: async () => {},
     getSnapshot: () => state,
@@ -167,6 +170,28 @@ for (const name of Object.keys(ports())) {
     () => createNotificationsFeatureController({ ...ports(), [name]: null }),
     new RegExp(`requires ${name}`)
   );
+}
+
+{
+  const state = initialState();
+  state.notifications.push({ ...notice("late-notice"), readAt: "" });
+  const requests = [];
+  let loads = 0;
+  const root = new FakeRoot("mark-presented");
+  const controller = createNotificationsFeatureController(ports({
+    getSnapshot: () => state,
+    async loadNotifications() { loads += 1; return true; },
+    request(path) {
+      requests.push(path);
+      if (path.endsWith("/notice-1/read")) state.notifications.push(notice("arrived-after-display"));
+      return Promise.resolve({});
+    }
+  }));
+  controller.mount({ root });
+  await waitFor(() => loads === 2, "presented notices were not refreshed after read acknowledgements");
+  assert.deepEqual(requests, ["/api/notifications/notice-1/read", "/api/notifications/late-notice/read"]);
+  assert.doesNotMatch(requests.join("\n"), /arrived-after-display/);
+  controller.unmount();
 }
 
 {
@@ -247,7 +272,7 @@ for (const name of Object.keys(ports())) {
 
 {
   const state = initialState();
-  const requests = [], events = [], toasts = [];
+  const requests = [], events = [], toasts = [], copied = [];
   const retryGate = deferred();
   let loads = 0;
   const root = new FakeRoot("clicks");
@@ -268,10 +293,13 @@ for (const name of Object.keys(ports())) {
       assert.equal(openedNotice, state.notifications[0]);
     },
     getSnapshot: () => state,
+    async copyText(value) { copied.push(value); },
     showToast(message) { toasts.push(message); }
   }));
   controller.mount({ root });
   await waitFor(() => events.includes("schedule"), "click fixture did not mount");
+  assert.match(root.list.innerHTML, /复制错误日志/);
+  assert.doesNotMatch(root.list.innerHTML, /生成失败|secret provider response/);
   loads = 0;
   requests.length = 0;
   events.length = 0;
@@ -282,6 +310,10 @@ for (const name of Object.keys(ports())) {
   root.click({ notificationRead: "notice-1" });
   await waitFor(() => loads === 2, "single read did not refresh");
   assert.equal(requests.shift()[0], "/api/notifications/notice-1/read");
+  root.click({ notificationCopy: "notice-1" });
+  await waitFor(() => copied.length === 1, "sanitized diagnostic was not copied");
+  assert.match(copied[0], /AI_TASK_FAILED/);
+  assert.doesNotMatch(copied[0], /secret provider response|生成失败/);
   events.length = 0;
   root.click({
     notificationOpen: "thought-1",
@@ -296,7 +328,7 @@ for (const name of Object.keys(ports())) {
   assert.equal(requests.filter(([path]) => path.includes("/retry")).length, 1);
   assert.match(root.list.innerHTML, /aria-busy="true" disabled/);
   retryGate.resolve({});
-  await waitFor(() => toasts.length === 1, "retry did not settle");
+  await waitFor(() => loads === 3 && toasts.length === 2, "retry did not settle");
   assert.doesNotMatch(root.list.innerHTML, /aria-busy="true"/);
   controller.unmount();
 }

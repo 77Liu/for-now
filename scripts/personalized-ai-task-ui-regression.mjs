@@ -302,4 +302,66 @@ await submitChat();
 assert.equal(chatRequests.at(-1), uncertainRequestId,
   "retry after an uncertain response reuses the same idempotency key");
 
+const chainButton = { disabled: false, textContent: "保存" };
+const chainStatus = { textContent: "" };
+const chainQuestion = { value: "保留原始草稿" };
+const chainForm = {
+  dataset: {},
+  elements: { sourceCaptureId: { value: "" }, sourceCaptureVersion: { value: "" } },
+  querySelector: () => chainButton,
+  addEventListener(type, listener) { if (type === "submit") chainSubmit = listener; }
+};
+let chainSubmit = null;
+const chainRequests = [];
+let discardedChainUploads = 0;
+const chainElements = new Map();
+const chainElement = selector => {
+  if (selector === "#thought-prompt-button") return { addEventListener() {} };
+  if (selector === "#chain-form") return chainForm;
+  if (selector === "#chat-form") return { addEventListener() {} };
+  if (selector === "#chain-tags") return { value: "" };
+  if (selector === "#chain-answer") return { value: "" };
+  if (selector === "#chain-question") return chainQuestion;
+  if (selector === "#chain-idea") return { value: "" };
+  if (selector === "#chain-datetime") return {};
+  if (selector === "#chain-status") return chainStatus;
+  if (!chainElements.has(selector)) chainElements.set(selector, { value: "", addEventListener() {} });
+  return chainElements.get(selector);
+};
+const chainRuntime = {
+  currentUser: { id: "owner-a" }, sessionSerial: 1, chainDraftVersion: 0,
+  draftTags: [], answerDraft: "", answerReasoningDraft: "",
+  llmSettings: { automaticAnswers: { thoughtAnswer: false } }
+};
+installRecordSubmissionEvents({
+  runtime: chainRuntime,
+  $: chainElement,
+  requestV1: async (_url, options) => {
+    chainRequests.push(options.headers["idempotency-key"]);
+    throw Object.assign(new Error("provider secret and internal stack"), { code: "UNKNOWN_COMMIT" });
+  },
+  occurrenceFields: () => ({ timeMode: "now" }),
+  contentImagePaths: async () => ({ attachmentPaths: ["uploaded:attachment-1"], uploadedPaths: ["uploaded:attachment-1"] }),
+  imageRecordPayload: input => ({ content: input.content, attachmentPaths: input.attachmentPaths }),
+  captureRecordPayload: payload => payload,
+  discardContentImageUploads: async () => { discardedChainUploads += 1; },
+  chainRecordKind: () => "thought",
+  resetOccurrenceInput() {},
+  showToast() {},
+  syncChainRecordKind() {}
+});
+const submitChain = () => chainSubmit({ preventDefault() {}, currentTarget: chainForm });
+await submitChain();
+const unconfirmedRequestId = chainRequests.at(-1);
+assert.equal(chainQuestion.value, "保留原始草稿");
+assert.equal(chainForm.dataset.requestId, unconfirmedRequestId,
+  "an unconfirmed thought save retains its idempotency key");
+assert.match(chainStatus.textContent, /状态尚未确认.*内容仍保留/);
+assert.doesNotMatch(chainStatus.textContent, /provider secret|internal stack/);
+assert.equal(discardedChainUploads, 0,
+  "an unconfirmed thought save must retain uploaded attachments that the server may already reference");
+await submitChain();
+assert.equal(chainRequests.at(-1), unconfirmedRequestId,
+  "retry after an unconfirmed thought save reuses the same idempotency key");
+
 console.log("Personalized AI task UI checks passed: task retries, result recovery, session isolation, modal races and chat idempotency.");

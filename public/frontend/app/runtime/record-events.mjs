@@ -341,8 +341,8 @@ export function installRecordSubmissionEvents({
       closeHomeEditors();
       void refreshState(["thoughts", "review", "notifications"], {
         chainId: question?.id,
-      }).catch((error) =>
-        showToast(`记录已保存，但页面刷新失败：${error.message}`, "error"),
+      }).catch(() =>
+        showToast("思考已保存，但最新状态暂未刷新。重新进入页面即可读取。", "error"),
       );
       if (needsAnswer && question)
         void startBackgroundChainAnswer(question, result.task);
@@ -374,8 +374,16 @@ export function installRecordSubmissionEvents({
             : "思考已进入待同步队列",
         );
       } else {
-        await discardContentImageUploads("thoughtRoot", uploadedPaths);
-        $("#chain-status").textContent = error.message;
+        if (recordKind === "capture")
+          await discardContentImageUploads("thoughtRoot", uploadedPaths);
+        // 未确认的思考提交可能已落库；保留附件以支持同 requestId 恢复。
+        if (error?.syncStatus === "failed") {
+          $("#chain-status").textContent = "保存失败，内容仍保留。检查网络后可用原请求安全重试。";
+        } else if (error?.syncStatus === "conflict") {
+          $("#chain-status").textContent = "保存状态冲突，内容仍保留。请先重新读取思考列表，再决定是否重试。";
+        } else {
+          $("#chain-status").textContent = "提交状态尚未确认，内容仍保留。请先重新读取思考列表；重试会继续使用同一请求编号。";
+        }
       }
     } finally {
       button.disabled = false;

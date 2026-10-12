@@ -5,6 +5,7 @@ export const NOTIFICATION_SELECTORS = Object.freeze({
   readAll: "#notifications-read-all",
   read: "[data-notification-read]",
   open: "[data-notification-open]",
+  copy: "[data-notification-copy]",
   retry: "[data-task-retry]"
 });
 const DOMAINS = new Set(["notifications", "aiTasks", "notificationUnread"]);
@@ -24,13 +25,16 @@ function relevant(value) {
 export function createNotificationsFeatureController(deps = {}) {
   const {
     request, loadNotifications, scheduleNotificationPoll, openTarget,
-    getSnapshot, getLoadState, getUnreadCount, isSessionReady, formatDate, showToast
+    getSnapshot, getLoadState, getUnreadCount, isSessionReady, formatDate, showToast,
+    copyText
   } = deps;
   const ports = {
     request, loadNotifications, scheduleNotificationPoll, openTarget,
-    getSnapshot, getLoadState, getUnreadCount, isSessionReady, formatDate, showToast
+    getSnapshot, getLoadState, getUnreadCount, isSessionReady, formatDate, showToast,
+    copyText
   };
   for (const [name, value] of Object.entries(ports)) {
+    if (name === "copyText" && value === undefined) continue;
     if (typeof value !== "function") throw new TypeError(`Notifications feature controller requires ${name}`);
   }
   let activation = null, session = {}, retrying = [], readAllTicket = null, errorMessage = "";
@@ -85,29 +89,54 @@ export function createNotificationsFeatureController(deps = {}) {
   }
   function fail(candidate, error) {
     if (!active(candidate)) return false;
-    errorMessage = error?.message || "通知操作失败，请稍后重试";
+    errorMessage = "通知操作未完成，请重新读取后确认状态。";
     return paint(candidate);
+  }
+  async function markPresentedRead(candidate) {
+    if (!active(candidate) || !candidate.root.querySelector(NOTIFICATION_SELECTORS.list)) return;
+    const state = snapshot();
+    const ids = [...new Set((Array.isArray(state.notifications) ? state.notifications : [])
+      .filter(item => item?.id && !item.readAt)
+      .map(item => String(item.id)))];
+    if (!ids.length) return;
+    const results = await Promise.allSettled(ids.map(id => request(
+      `/api/notifications/${encodeURIComponent(id)}/read`,
+      { method: "PATCH", body: "{}" }
+    )));
+    if (!active(candidate)) return;
+    const succeeded = results.some(result => result.status === "fulfilled");
+    const failed = results.some(result => result.status === "rejected");
+    if (failed) errorMessage = "部分通知未能标为已读；未成功的通知仍保持未读。请重新读取后重试。";
+    if (succeeded) {
+      const refreshed = await loadNotifications();
+      if (!active(candidate)) return;
+      if (refreshed) errorMessage = failed
+        ? "部分通知未能标为已读；未成功的通知仍保持未读。请重新读取后重试。"
+        : "";
+    }
+    paint(candidate);
   }
   async function loadOnMount(candidate, { force = false } = {}) {
     if (!active(candidate) || !isSessionReady() || candidate.loading
       || (candidate.loaded && !force)) return false;
     candidate.loading = true;
-    let failure = null;
+    let failure = null, loaded = false;
     try {
-      await loadNotifications();
+      loaded = await loadNotifications();
     } catch (error) {
       failure = error;
     }
     candidate.loading = false;
     candidate.loaded = true;
     if (!active(candidate)) return false;
-    if (failure) errorMessage = failure?.message || "通知读取失败";
+    if (failure) errorMessage = "通知读取失败，任务结果仍保留。请检查网络后重新读取。";
     paint(candidate);
     try {
       scheduleNotificationPoll();
     } catch (error) {
       fail(candidate, error);
     }
+    if (!failure && loaded === true) await markPresentedRead(candidate);
     return !failure;
   }
   async function readAll(candidate) {
@@ -193,14 +222,44 @@ export function createNotificationsFeatureController(deps = {}) {
     const all = closest(candidate, event, NOTIFICATION_SELECTORS.readAll);
     const reload = closest(candidate, event, '[data-content-action="retry-notifications"]');
     const retryButton = closest(candidate, event, NOTIFICATION_SELECTORS.retry);
+    const copyButton = closest(candidate, event, NOTIFICATION_SELECTORS.copy);
     const open = closest(candidate, event, NOTIFICATION_SELECTORS.open);
     const read = closest(candidate, event, NOTIFICATION_SELECTORS.read);
-    if (!all && !reload && !retryButton && !open && !read) return;
+    if (!all && !reload && !retryButton && !copyButton && !open && !read) return;
     event.preventDefault?.();
     if (all) void readAll(candidate);
     else if (reload) void loadOnMount(candidate, { force: true });
     else if (retryButton) void retry(candidate, String(retryButton.dataset?.taskRetry || ""));
+    else if (copyButton) void copyDiagnostic(candidate, String(copyButton.dataset?.notificationCopy || ""));
     else void readOne(candidate, open || read, Boolean(open));
+  }
+  async function copyDiagnostic(candidate, notificationId) {
+    if (!active(candidate) || !notificationId) return;
+    const state = snapshot();
+    const notification = (state.notifications || []).find(item => String(item?.id) === notificationId);
+    const task = (state.aiTasks || []).find(item => item?.id === notification?.taskId);
+    if (!notification) return;
+    const cleanId = value => String(value || "").replace(/[^A-Za-z0-9:_-]/g, "").slice(0, 100);
+    const errorCode = /^[A-Z0-9_]{1,80}$/.test(String(task?.errorCode || ""))
+      ? task.errorCode
+      : "UNCLASSIFIED_FAILURE";
+    const diagnostic = JSON.stringify({
+      notificationId: cleanId(notification.id),
+      taskId: cleanId(task?.id),
+      kind: cleanId(task?.kind),
+      status: cleanId(task?.status || notification.status),
+      errorCode,
+      occurredAt: String(notification.updatedAt || notification.createdAt || "").slice(0, 40)
+    }, null, 2);
+    try {
+      if (typeof copyText === "function") await copyText(diagnostic);
+      else if (typeof globalThis.navigator?.clipboard?.writeText === "function") {
+        await globalThis.navigator.clipboard.writeText(diagnostic);
+      } else throw new Error("Clipboard unavailable");
+      if (active(candidate)) showToast("已复制脱敏错误日志");
+    } catch {
+      if (active(candidate)) showToast("复制失败，请重新读取通知后重试");
+    }
   }
   function detach(candidate) {
     if (activation !== candidate) return false;
