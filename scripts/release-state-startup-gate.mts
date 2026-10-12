@@ -83,12 +83,18 @@ const IDENTIFIER_KEYS = new Set([
 ]);
 const ATTACHMENT_PATH_FIELDS = new Set(["path", "attachmentPath", "asrAttachmentPath", "attachmentPaths"]);
 const TIMEZONE_KEYS = new Set(["timezone", "timeZone", "recordTimezone", "recordTimeZone"]);
+const SOURCE_TARGET_PREFIXES = new Set([
+  "annotation", "annotation-reply", "question", "followup-question", "followup-answer",
+  "idea", "answer", "record"
+]);
+const SOURCE_TARGET_LITERALS = new Set(["", "transcription"]);
 
 type RedactionContext = {
   key: Buffer;
   ids: Map<string, string>;
   paths: Map<string, string>;
   sourceKeys: Map<string, string>;
+  sourceTargetKeys: Map<string, string>;
   objectKeys: Map<string, string>;
   resourceKeys: Map<string, string>;
   singletonIds: Set<string>;
@@ -181,6 +187,7 @@ function createRedactionContext(mapping: StoreMapping, key: Buffer, inventory: J
     ids: new Map(),
     paths: new Map(),
     sourceKeys: new Map(),
+    sourceTargetKeys: new Map(),
     objectKeys: new Map(),
     resourceKeys: new Map(),
     singletonIds: new Set()
@@ -213,23 +220,42 @@ function createRedactionContext(mapping: StoreMapping, key: Buffer, inventory: J
       return null;
     }
   };
+  const redactSourceTargetKey = (value: string) => {
+    if (context.sourceTargetKeys.has(value)) return context.sourceTargetKeys.get(value)!;
+    if (SOURCE_TARGET_LITERALS.has(value)) {
+      context.sourceTargetKeys.set(value, value);
+      return value;
+    }
+    const separator = value.indexOf(":");
+    if (separator < 1 || separator === value.length - 1) {
+      fail("Snapshot source target key has an unsupported structure");
+    }
+    const prefix = value.slice(0, separator);
+    if (!SOURCE_TARGET_PREFIXES.has(prefix)) fail("Snapshot source target key has an unknown private value");
+    const result = `${prefix}:${redactId(value.slice(separator + 1))}`;
+    context.sourceTargetKeys.set(value, result);
+    return result;
+  };
   const redactSourceKey = (value: string) => {
     if (context.sourceKeys.has(value)) return context.sourceKeys.get(value)!;
     try {
       const parts = JSON.parse(value);
       if (!Array.isArray(parts) || parts.length !== 4 || parts.some(item => typeof item !== "string")
-        || !parts[0] || !parts[1] || JSON.stringify(parts) !== value) return value;
+        || !parts[0] || !parts[1] || JSON.stringify(parts) !== value) {
+        fail("Snapshot source key has an unsupported structure");
+      }
       const result = JSON.stringify([
         parts[0],
         redactId(parts[1]),
         parts[2] ? redactId(parts[2]) : "",
-        parts[3] ? redactStructuralKey(parts[3], context) : ""
+        parts[3] ? redactSourceTargetKey(parts[3]) : ""
       ]);
       context.sourceKeys.set(value, result);
       context.ids.set(value, result);
       return result;
-    } catch {
-      return value;
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("Snapshot ")) throw error;
+      fail("Snapshot source key cannot be parsed safely");
     }
   };
   const redactResourceKey = (value: string) => {
@@ -255,6 +281,7 @@ function createRedactionContext(mapping: StoreMapping, key: Buffer, inventory: J
       if (/^\/attachments\//u.test(value) || ATTACHMENT_PATH_FIELDS.has(field)) redactPath(value);
       else if (field === "sourceKey" || (field === "resourceId" && value.startsWith("["))) redactSourceKey(value);
       else if (field === "resourceKey") redactResourceKey(value);
+      else if (field === "targetKey") redactSourceTargetKey(value);
       else if (IDENTIFIER_KEYS.has(field) || /(?:^|[A-Z])(?:Id|ID)$/u.test(field)) redactId(value);
       return;
     }
@@ -314,7 +341,11 @@ function sanitizeMapping<T>(value: T, key: Buffer, context: RedactionContext, st
       if (!text) return text;
       return context.objectKeys.get(text) || fail("Snapshot ownership key has no redaction mapping");
     }
-    if (field === "targetKey") return text ? redactStructuralKey(text, context) : text;
+    if (field === "targetKey") {
+      if (!text) return text;
+      if (context.objectKeys.has(text)) return context.objectKeys.get(text)!;
+      return context.sourceTargetKeys.get(text) || fail("Snapshot target key has no redaction mapping");
+    }
     if (field === "resourceKey") return context.resourceKeys.get(text) || fail("Snapshot resource key has no redaction mapping");
     if (field === "valuePath" || field === "childFields") return text;
     if (field === "resourceId" && text.startsWith("[")) return context.sourceKeys.get(text) || fail("Snapshot composite resource ID has no redaction mapping");
@@ -1012,6 +1043,13 @@ async function selfTest(root: string) {
   const runtime = await createClosedInspector(root, "synthetic-account", counts, fixtureClock);
   const inspector = runtime.backgroundAi;
   const persistence = await importFromRoot<PersistenceApi>(root, "src/shared/persistence/index.mjs");
+  const persistenceMetadata = await importFromRoot<{
+    synchronizePersistenceMetadata(before: JsonRecord | null, after: JsonRecord, now: () => string, options: JsonRecord): JsonRecord;
+  }>(root, "src/shared/persistence/persistence-metadata.mjs");
+  const permissionSourceTargetKey = "question:thought-private-root";
+  const permissionSourceKey = JSON.stringify([
+    "thought", "thought-private-root", "thought-private-root", permissionSourceTargetKey
+  ]);
   const store: JsonRecord = {
     captures: [{ id: "capture-private-id", capturedAt: "2026-10-11T18:30:00.000Z", timezone: "Asia/Shanghai", attachmentPath: "/attachments/private-capture.m4a" }],
     thoughts: [
@@ -1020,7 +1058,7 @@ async function selfTest(root: string) {
         type: "question",
         content: "private question phrase",
         version: 1,
-        sourceRef: { type: "capture", id: "capture-private-id" },
+        sourceRef: { type: "capture", id: "capture-private-id", targetKey: "" },
         sourceCaptureId: "capture-private-id",
         sourceId: "capture-private-id",
         recordTimezone: "Asia/Shanghai",
@@ -1051,8 +1089,37 @@ async function selfTest(root: string) {
       requestedIntentSubtargetVersion: 1
     }],
     notifications: [{ id: "notification-private-id", taskId: "task-private-id", status: "waiting_for_user_model" }],
+    evidencePermissions: [{
+      schemaVersion: 1,
+      accountId: "synthetic-account",
+      sourceKey: permissionSourceKey,
+      contextAllowed: true,
+      learningAllowed: false,
+      revision: 1,
+      updatedAt: "2026-10-11T18:30:00.000Z"
+    }],
+    perceptionEvents: [{
+      schemaVersion: 1,
+      id: "event-private-id",
+      accountId: "synthetic-account",
+      kind: "created",
+      sourceRef: {
+        resourceType: "thought",
+        resourceId: "thought-private-root",
+        rootId: "thought-private-root",
+        targetKey: permissionSourceTargetKey,
+        version: 1
+      },
+      eventId: "event-private-id",
+      contentSha256: createHash("sha256").update("synthetic-event").digest("hex"),
+      permissionRevision: 1,
+      occurredAt: "2026-10-11T18:30:00.000Z",
+      recordedAt: "2026-10-11T18:30:00.000Z",
+      perceptionVersion: "synthetic-perception-v1"
+    }],
     onboardingV2: { version: 1, answer: "private singleton answer" }
   };
+  persistenceMetadata.synchronizePersistenceMetadata(null, store, () => fixtureClock.capturedAt, { force: true });
   const task = (store.aiTasks as JsonRecord[])[0];
   const initial = inspector.inspectRecoveryIntent(store, task);
   if (!initial.intent?.inputHash || !initial.target?.exists || !initial.target.subtargetExists) {
@@ -1093,10 +1160,25 @@ async function selfTest(root: string) {
   const redactedRoot = (redactedStore.thoughts as JsonRecord[]).find(item => item.type === "question")!;
   const redactedCapture = (redactedStore.captures as JsonRecord[])[0];
   const redactedAnswer = (redactedStore.thoughts as JsonRecord[]).find(item => item.type === "answer")!;
+  const redactedPermission = (redactedStore.evidencePermissions as JsonRecord[])[0];
+  const redactedPermissionSource = JSON.parse(String(redactedPermission.sourceKey)) as string[];
+  const redactedEvent = (redactedStore.perceptionEvents as JsonRecord[])[0];
+  const redactedEventSource = redactedEvent.sourceRef as JsonRecord;
+  const permissionLifecycle = (redactedMapping.lifecycles as JsonRecord[]).find(item => item.resourceType === "evidencePermission");
+  if (!permissionLifecycle
+    || permissionLifecycle.resourceId !== redactedPermission.sourceKey
+    || permissionLifecycle.resourceKey !== `evidencePermission:${redactedPermission.sourceKey}`
+    || redactedPermissionSource[3] !== `question:${redactedRoot.id}`
+    || redactedEventSource.targetKey !== `question:${redactedRoot.id}`
+    || redactedEventSource.resourceId !== redactedRoot.id
+    || redactedEventSource.rootId !== redactedRoot.id) {
+    fail("Evidence permission source tuple and lifecycle identities were not redacted consistently");
+  }
   const redactedInspection = redactedInspector.inspectRecoveryIntent(redactedStore, (redactedStore.aiTasks as JsonRecord[])[0]);
   if (redactedRoot.id !== redactedAnswer.relatedTo
     || redactedCapture.id !== redactedRoot.sourceCaptureId
     || redactedCapture.id !== (redactedRoot.sourceRef as JsonRecord).id
+    || (redactedRoot.sourceRef as JsonRecord).targetKey !== ""
     || redactedInspection.intentMatch !== "matched"
     || redactedInspection.target?.exists !== true
     || redactedInspection.target.subtargetExists !== true) {
@@ -1118,7 +1200,7 @@ async function selfTest(root: string) {
   assertSameTaskSemantics(sourceStates, afterStates);
   if (matchedAfter.intentMatch !== "matched") fail("Redacted task intent did not retain its original matching result");
   const secretText = JSON.stringify({ redactedStore, redactedMapping, redactedInventory });
-  if (["private question phrase", "private answer phrase", "private follow-up", "private singleton answer", "private-image", "private-capture", "private-storage-key", "private-file-hash"]
+  if (["private question phrase", "private answer phrase", "private follow-up", "private singleton answer", "private-image", "private-capture", "private-storage-key", "private-file-hash", "thought-private-root"]
     .some(secret => secretText.includes(secret))) fail("Synthetic redaction retained a private fixture value");
   try {
     await runtime.materializeAttachmentFiles?.([]);
