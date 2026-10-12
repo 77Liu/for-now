@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 95,
-  "updated_at": "2026-10-12T13:28:41.055Z",
+  "revision": 96,
+  "updated_at": "2026-10-12T13:40:49.600Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/test-impact-matrix.md、SOP/integration-audit.md、SOP/release-and-observation.md；未改变其他风险授权正文"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "生成型/实体依赖目标契约修复收口中；独审发现required子目标恢复遗漏，按同一四文件边界补齐后提交最终回执。旧生产健康，未再次部署。",
+  "current_phase": "任务目标契约修复6e82425已合入develop；快照有状态全局门尚未实现/执行，先核对生产只读及候选inspection/副作用精确seam。",
   "state": "BUILDING_DEPLOY_RECOVERY_FIX",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发已接收新规则继续当前四文件修复；交接后锁定并实现脱敏生产快照隔离PG全局启动门。规则已生效不等于门工具已实现，门通过前不冻结新release/部署。",
+  "next_action": "主开发只读补准确API/文件接入点与生产零写入依据；主控锁门的最小实现写集。旧生产健康、候选发布暂停于新门，不重复已通过专项。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -436,7 +436,7 @@
     },
     {
       "id": "v0.5.13",
-      "state": "BUILDING_DEPLOY_RECOVERY_FIX",
+      "state": "WAITING_GLOBAL_STARTUP_GATE",
       "scope": "保存状态/草稿与失败恢复；发生时间/补录意图；通知列表未读事实、脱敏诊断与恢复操作。仅实现六条锁定需求的未交付行为，不做全站状态或通知平台重构。",
       "requirement_ids": [
         "recvxm0eDZdJED",
@@ -612,42 +612,30 @@
       ],
       "followup_gap_audit": "已只读确认：手动补录模式未随思绪草稿恢复；保存成功后的AI队列错误仍露出原始error.message；通知复制失败无替代恢复；通知feature仍是MJS且未纳入类型/隔离构建。未读计数根因未复现，保留PARTIAL。",
       "execution": "复制失败提供只读可选择的脱敏JSON；通知controller/presentation业务源迁移为.mts，公开依赖/任务/通知/激活态有具体接口，无any和ts-ignore；.mjs只薄转发，生成物仅public/generated且忽略。前端类型检查、通知controller既有专项、模块检查通过。另通知展示专项在原转写文案预期处失败，迁移前同一实现已经与预期冲突，未修改或伪报PASS。",
-      "candidate_sha": "c524efffb493b8bc7a2a380b7c6db38a9b76a658",
-      "candidate_tree": "e896c69159e836a53f0b1ca4d6ef1ee4d26c48e7",
+      "candidate_sha": "6e824256b98fe8cb30e0d2bb0a592feefa06de4a",
+      "candidate_tree": "9dc58edd21eb42a6e0cfe30fe477faab3e4659ea",
       "integration_status": "本地六文件代码与既有控制面提交已快进合入develop；feat分支保留。未push/tag/release/deploy。",
       "active_task": {
-        "task_id": "v0513-startup-orphan-task-recovery-20261012",
-        "state": "REWORK_CONTRACT_APPROVED",
+        "task_id": "v0513-state-startup-gate-seams-20261012",
+        "state": "DISPATCH_READY",
+        "mode": "只读精确接入方案",
         "owner": "主控",
         "implementer": "主开发",
-        "mode": "实际启动失败最小修复",
-        "feature_branch": "feat/v0.5.13-save-sync-validation",
-        "baseline_sha": "c524efffb493b8bc7a2a380b7c6db38a9b76a658（当前feat额外协调文档保留）",
-        "write_set": [
-          "src/app/background-ai.mjs（仅resume/releaseWaiting既有目标恢复与重试顺序；剔除误判生成型任务）",
-          "src/shared/persistence/store-mapping.mjs（精确区分已证实无实体绑定生成型任务与要求已有实体任务的target required契约；保持账户/其他关系校验）",
-          "src/shared/persistence/index.mjs（仅必要公开导出同一目标契约判定，供恢复路径复用，禁止深导入）",
-          "scripts/background-ai-model-gate-regression.mjs（既有夹具验证等待晋级/启动提交真实mapStoreObjects，合法生成与绑定目标失效场景）"
+        "baseline_sha": "6e824256b98fe8cb30e0d2bb0a592feefa06de4a",
+        "write_set": [],
+        "objective": "完成最小门设计中的实际公开接入点核对：候选真实task intent/prepare观察、生产只读一致性快照、全局启动副作用拦截、现有PG16cluster；给准确文件/API/所需窄点，方案可执行不复制任务规则。",
+        "acceptance": [
+          "schema/ID伪名关系与intent匹配前后等价，不能全stale隐藏故障；无法等价则BLOCKED",
+          "生产snapshot绝不运行会写预算恢复/normalize/ensure的runtime.start/foundation初始化，只读事务证明；取得候选inspection使用无写纯seam",
+          "verify使用真实候选runtime.start和PG commit，side-effect guard只拦dispatch/provider/外发/媒体，不跳过recoverAtStartup。通过注入受限验证选项而非普通生产env隐藏开关，回执零外部调用",
+          "新增执行脚本MTS严格typecheck/build隔离，复用PG16preflight、已有持久化公开接口；不造Docker、通用脱敏/测试平台",
+          "只读交方案后主控锁最小实现写集，再开始实现；无全系统自动通过声称"
         ],
         "forbidden": [
-          "mapper全局放宽required target、删除/重定向用户任务、静默忽略异常/整账户恢复",
-          "其他功能、API/schema、预算/部署器通用改造、新JS文件",
-          "生产数据修补/私密正文读取、复用失效attempt重部署、编译产物提交",
-          "控制面、第二工作树、删分支、release/main业务写入"
-        ],
-        "acceptance": [
-          "按真实prepare/save契约精确建模：thoughtDraft/thoughtPrompt/journalAssist/chat/analysis均生成结果而不依赖主目标实体；生成型目标存在仍记录resolved relation，缺失不标stale。加上已批准historicalSupplement recordCompression，其余真实实体依赖任务/子目标/singleton继续required；不按binding字段空非空猜测。",
-          "精准目标判定在mapper公开导出供恢复复用，不用resourceType字符串复数化猜集合或双套漂移；不新增通用平台/文件，实际module依赖仅登记批准窄点。",
-          "running内部任务目标检查必须在重试之前，孤立绑定任务保留安全终态/通知，不自动重试或丢弃；有效生成任务正常晋级/排队且mapper成功。",
-          "保持mapper跨账户/非生成型主目标/子目标关系完整性，不吞任意prepare错误，不改规范化/API/schema、不删或重定向用户任务。",
-          "直接实现真实契约，随后仅既有后台专项/实际映射fixture及适用module检查；不跑全系统/付费/重部署。独审NO GO的旧设计不提交。",
-          "主控审查提交接入后新候选/attempt继续上线；旧生产健康，不修改生产数据。",
-          "仅recordCompression且payload.operation为现行HISTORICAL_SUPPLEMENT_OPERATION允许未解析日摘要主目标；daily仍required，既有markQueued顺序不改变。必要一条historical fixture与普通daily严格行为验证复用原测试。",
-          "当前候选所有已注册task kind按源契约一次分类收口；表驱动验证生成集合，不逐类型新增大型夹具或提出通用平台。chat/analysis源码prepare/save不依赖主target且结果后创建实体，属于同一启动失败闭环。",
-          "同一aiTaskTargetReference集中表达mapper实际required子目标；主目标存在但followUp/annotation/comment-image必需子目标缺失的queued任务恢复为安全终态，严格子目标映射不放宽。原专项一条追问代表场景，onboarding已有断言复用，无覆盖才补最小场景。",
-          "通知kind=aiTask不能作为关联任务真实kind；保留原followUps/annotations nested identity推断或taskId关联原task，正常追问通知relation targetKey保持既有语义，仅补原夹具必要关系断言。"
-        ],
-        "pending_contract_check": "已确认：historical补充生成输出到historicalUserSupplement singleton，不写recordCompressions；daily存在markQueued预创建且tasks.create/promoteWaiting/promoteBudgetWaiting调用，保持daily required。"
+          "文件写入/测试/生产写/部署",
+          "新增worktree/切分支/提交/删分支",
+          "复制用户正文/附件/凭据进快照/Git/聊天"
+        ]
       },
       "review_task": {
         "task_id": "v0513-notification-message-review-20261012",
@@ -879,6 +867,52 @@
             "result": "PASS；独立review GO",
             "note": "五文件补接；保留TS通知，账户2次独立限制未改。"
           }
+        },
+        {
+          "task_id": "v0513-startup-orphan-task-recovery-20261012",
+          "state": "IMPLEMENTED_REVIEWED_INTEGRATED_LOCAL",
+          "owner": "主控",
+          "implementer": "主开发",
+          "mode": "实际启动失败最小修复",
+          "feature_branch": "feat/v0.5.13-save-sync-validation",
+          "baseline_sha": "c524efffb493b8bc7a2a380b7c6db38a9b76a658（当前feat额外协调文档保留）",
+          "write_set": [
+            "src/app/background-ai.mjs（仅resume/releaseWaiting既有目标恢复与重试顺序；剔除误判生成型任务）",
+            "src/shared/persistence/store-mapping.mjs（精确区分已证实无实体绑定生成型任务与要求已有实体任务的target required契约；保持账户/其他关系校验）",
+            "src/shared/persistence/index.mjs（仅必要公开导出同一目标契约判定，供恢复路径复用，禁止深导入）",
+            "scripts/background-ai-model-gate-regression.mjs（既有夹具验证等待晋级/启动提交真实mapStoreObjects，合法生成与绑定目标失效场景）"
+          ],
+          "forbidden": [
+            "mapper全局放宽required target、删除/重定向用户任务、静默忽略异常/整账户恢复",
+            "其他功能、API/schema、预算/部署器通用改造、新JS文件",
+            "生产数据修补/私密正文读取、复用失效attempt重部署、编译产物提交",
+            "控制面、第二工作树、删分支、release/main业务写入"
+          ],
+          "acceptance": [
+            "按真实prepare/save契约精确建模：thoughtDraft/thoughtPrompt/journalAssist/chat/analysis均生成结果而不依赖主目标实体；生成型目标存在仍记录resolved relation，缺失不标stale。加上已批准historicalSupplement recordCompression，其余真实实体依赖任务/子目标/singleton继续required；不按binding字段空非空猜测。",
+            "精准目标判定在mapper公开导出供恢复复用，不用resourceType字符串复数化猜集合或双套漂移；不新增通用平台/文件，实际module依赖仅登记批准窄点。",
+            "running内部任务目标检查必须在重试之前，孤立绑定任务保留安全终态/通知，不自动重试或丢弃；有效生成任务正常晋级/排队且mapper成功。",
+            "保持mapper跨账户/非生成型主目标/子目标关系完整性，不吞任意prepare错误，不改规范化/API/schema、不删或重定向用户任务。",
+            "直接实现真实契约，随后仅既有后台专项/实际映射fixture及适用module检查；不跑全系统/付费/重部署。独审NO GO的旧设计不提交。",
+            "主控审查提交接入后新候选/attempt继续上线；旧生产健康，不修改生产数据。",
+            "仅recordCompression且payload.operation为现行HISTORICAL_SUPPLEMENT_OPERATION允许未解析日摘要主目标；daily仍required，既有markQueued顺序不改变。必要一条historical fixture与普通daily严格行为验证复用原测试。",
+            "当前候选所有已注册task kind按源契约一次分类收口；表驱动验证生成集合，不逐类型新增大型夹具或提出通用平台。chat/analysis源码prepare/save不依赖主target且结果后创建实体，属于同一启动失败闭环。",
+            "同一aiTaskTargetReference集中表达mapper实际required子目标；主目标存在但followUp/annotation/comment-image必需子目标缺失的queued任务恢复为安全终态，严格子目标映射不放宽。原专项一条追问代表场景，onboarding已有断言复用，无覆盖才补最小场景。",
+            "通知kind=aiTask不能作为关联任务真实kind；保留原followUps/annotations nested identity推断或taskId关联原task，正常追问通知relation targetKey保持既有语义，仅补原夹具必要关系断言。"
+          ],
+          "pending_contract_check": "已确认：historical补充生成输出到historicalUserSupplement singleton，不写recordCompressions；daily存在markQueued预创建且tasks.create/promoteWaiting/promoteBudgetWaiting调用，保持daily required。",
+          "implementation_commit": "6e824256b98fe8cb30e0d2bb0a592feefa06de4a",
+          "implementation_tree": "9dc58edd21eb42a6e0cfe30fe477faab3e4659ea",
+          "verification": {
+            "commands": [
+              "node scripts/background-ai-model-gate-regression.mjs",
+              "node scripts/persistence-regression.mjs",
+              "node scripts/module-boundary-regression.mjs",
+              "git diff --check"
+            ],
+            "result": "PASS；独立review GO；主控复核历史通知无source task的nested fallback后单点修正，受影响专项PASS；JSDoc仅注释不重复专项"
+          },
+          "note": "未通过新的快照全局启动门，不新建release或生产部署。"
         }
       ],
       "candidate_fixed_at": "2026-10-12T11:07:07.193Z",
@@ -1385,6 +1419,12 @@
       "at": "2026-10-12T13:28:41.055Z",
       "reason": "Owner明确固化发布链路；唯一矩阵正文与引用SOP于docs04befab合入develop即时生效，串行保存恢复主开发差分。",
       "previous_snapshot": "592df60:reports/requirement-coordination-current.json@revision94"
+    },
+    {
+      "revision": 96,
+      "at": "2026-10-12T13:40:49.600Z",
+      "reason": "四文件实际差分审查提交并接入develop，启动门从方案进入精确接入设计，未实现不标通过。",
+      "previous_snapshot": "3e308ce:reports/requirement-coordination-current.json@revision95"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
