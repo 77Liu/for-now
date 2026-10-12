@@ -384,10 +384,13 @@ runtime.syncController=createIncrementalSync({
   },
   onStatus:event=>void updateSyncHealth(event)
 });
-function notificationUnread(snapshot=state){
-  const items=snapshot.notifications||[];
-  const unreadCount=Number(snapshot.notificationUnread??runtime.notificationUnreadCount);
-  return unreadCount||items.filter(item=>!item.readAt&&["succeeded","failed","stale","cancelled"].includes(item.status)).length
+function notificationUnread(snapshot = state) {
+  const items = snapshot.notifications || [];
+  const hasAuthoritativeCount = snapshot.notificationUnread != null;
+  const unreadCount = Number(snapshot.notificationUnread ?? runtime.notificationUnreadCount);
+  if (hasAuthoritativeCount && unreadCount === 0) return 0;
+  return unreadCount || items.filter(item => !item.readAt
+    && ["succeeded", "failed", "stale", "cancelled"].includes(item.status)).length;
 }
 function renderNotificationSummary(){
   const unread=notificationUnread();

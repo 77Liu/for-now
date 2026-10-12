@@ -430,7 +430,7 @@ assert.equal(notificationUnread({
     { status: "running", readAt: "" },
     { status: "failed", readAt: "read" }
   ]
-}, 9), 1);
+}, 9), 0);
 assert.equal(syncHealthPresentation({ status: "disabled" }).copy, "增量同步已关闭，继续使用写后刷新");
 assert.equal(syncHealthPresentation({ status: "conflict", conflicts: 2 }).count, "2 冲突");
 assert.match(syncHealthPresentation({
