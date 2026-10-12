@@ -140,6 +140,12 @@ export function createCapturesFeatureController({
     getAudio: () => audio,
     getDraftTags: () => draftTags,
     getSearchQuery: () => searchQuery,
+    getGenerationRate: () => data.getSpeechGenerationRate?.(),
+    getPlayerScope: () => ({
+      accountId: String(data.getAccountId() || ""),
+      sessionId: data.getSessionSerial(),
+      pageToken: activation || session
+    }),
     isEditorOpen: () => editorOpen,
     isSubmitting: () => Boolean(submissionPromise)
   });
@@ -368,7 +374,7 @@ export function createCapturesFeatureController({
     if (!button) {
       const card = event.target.closest(".capture-item");
       if (!card?.classList.contains("is-expandable")) return false;
-      if (event.target.closest("a,input,textarea,select,.comment-anchor")) return false;
+      if (event.target.closest("a,input,textarea,select,audio,video,.capture-audio-record,.speech-asset-controls,.comment-anchor")) return false;
       if (!window.getSelection()?.isCollapsed) return false;
       return captureView.toggleCard(card);
     }
@@ -408,6 +414,10 @@ export function createCapturesFeatureController({
     if (button.dataset.captureExpand != null) {
       return captureView.toggleCard(button.closest(".capture-item"));
     }
+    if (button.matches("[data-capture-audio-retry]")) {
+      return captureView.retryAudio(button);
+    }
+    if (button.matches("[data-capture-speech-retry]")) return captureView.retryAudio(button);
     if (button.dataset.speechTextExpand != null) {
       const layer = button.closest("[data-speech-text-lines]");
       if (!layer?.classList.contains("is-collapsible")) return false;
@@ -495,6 +505,10 @@ export function createCapturesFeatureController({
         ?.querySelector("[data-speech-player]");
       if (player) player.playbackRate = normalizeTtsPlaybackRate(event.target.value);
     }
+    if (event.target.matches("[data-speech-generation-rate]")) {
+      const output = event.target.closest("label")?.querySelector("output");
+      if (output) output.textContent = `${(1 + Number(event.target.value) / 100).toFixed(2)}×`;
+    }
     draftStore.save(query("#capture-form"), draftTags, {
       editing: Boolean(query("#capture-id")?.value)
     });
@@ -505,6 +519,10 @@ export function createCapturesFeatureController({
       searchQuery = event.target.value;
       captureView.renderList();
       return;
+    }
+    if (event.target.matches("[data-speech-generation-rate]")) {
+      const output = event.target.closest("label")?.querySelector("output");
+      if (output) output.textContent = `${(1 + Number(event.target.value) / 100).toFixed(2)}×`;
     }
     if (event.target.closest("#capture-form")) {
       draftStore.save(query("#capture-form"), draftTags, {
@@ -635,6 +653,7 @@ export function createCapturesFeatureController({
       current.unlink();
       if (activation === current) activation = null;
       platform.audio.stopAll();
+      captureView.disposeAudio();
       return true;
     })().finally(() => {
       unmountPromise = null;

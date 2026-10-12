@@ -596,6 +596,12 @@ if (process.argv.includes("--timezone-case")) {
     sourceVersion: 4,
     regenerate: true
   });
+  assert.equal(speechSynthesisPayload({
+    sourceType: "capture",
+    sourceId: "capture-1",
+    sourceVersion: 2,
+    generationRate: 23.6
+  }).generationRate, 24);
   assert.deepEqual(speechPreviewPayload(" voice-a "), { voice: "voice-a" });
   assert.throws(() => speechSynthesisPayload({
     sourceType: "capture",

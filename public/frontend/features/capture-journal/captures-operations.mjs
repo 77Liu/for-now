@@ -306,7 +306,8 @@ export function createCaptureOperations({
       sourceType: "capture",
       sourceId,
       sourceVersion,
-      regenerate
+      regenerate,
+      generationRate: controls?.querySelector("[data-speech-generation-rate]")?.value
     });
     platform.audio.stopAll();
     button.disabled = true;

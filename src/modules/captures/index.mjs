@@ -26,6 +26,7 @@ const markReplay = result => (
 
 function idempotencyPayload(input, value) {
   const canonical = { ...value };
+  if (!safeText(input?.title, 120)) delete canonical.title;
   if (!hasOwn(input, "occurredAt")) delete canonical.occurredAt;
   if (!hasOwn(input, "occurredOn")) delete canonical.occurredOn;
   return canonical;
@@ -105,7 +106,7 @@ const unconfiguredTranscription = () => ({
   condenseErrorCode: ""
 });
 
-export function capturePayload(input, existing = null) {
+export function capturePayload(input, existing = null, { now = () => new Date() } = {}) {
   const merged = existing ? { ...existing, ...input } : input;
   const content = safeText(merged.content, 12000);
   const attachmentPaths = cleanAttachmentPaths(merged.attachmentPaths);
@@ -124,12 +125,19 @@ export function capturePayload(input, existing = null) {
   if (!content && !attachmentPaths.length && !audio) {
     return { error: existing ? "请保留文字、图片或语音" : "先写一点什么，或插入图片、录下语音" };
   }
-  const eventTime = eventTimeFields(input, existing);
+  const eventTime = eventTimeFields(input, existing, { now });
   if (!eventTime) return { error: "发生时间格式不正确" };
+  const suppliedTitle = hasOwn(input, "title")
+    ? safeText(input.title, 120)
+    : safeText(existing?.title, 120);
+  const title = suppliedTitle || (!existing && audio && !content && !attachmentPaths.length
+    ? `${eventTime.occurredOn} 录音`
+    : "");
   const audioChanged = audio?.attachmentPath !== existing?.audio?.attachmentPath;
   return {
     value: {
       ...eventTime,
+      ...(title ? { title } : {}),
       content,
       tags: tagsOf(merged.tags),
       attachmentPaths,
@@ -160,7 +168,7 @@ export function createCaptureRecords({
     },
 
     async create(input, { clientRequestId = "" } = {}) {
-      const parsed = capturePayload(input);
+      const parsed = capturePayload(input, null, { now });
       if (parsed.error) return parsed;
       const requestHash = clientRequestId ? requestDigest(idempotencyPayload(input, parsed.value)) : "";
       const create = (items, trashItems = [], useLegacyLookup = true) => {
@@ -207,7 +215,7 @@ export function createCaptureRecords({
         }
         const previousAudio = capture.audio ? structuredClone(capture.audio) : null;
         const previousTranscription = capture.transcription ? structuredClone(capture.transcription) : null;
-        const parsed = capturePayload(input, capture);
+        const parsed = capturePayload(input, capture, { now });
         if (parsed.error) return parsed;
         if (capture.content !== parsed.value.content) {
           reanchorAnnotations(capture, "content", capture.content, parsed.value.content);

@@ -2508,21 +2508,31 @@ try {
   await evaluate(`window.__failTranscriptionQueue=true;document.querySelector('[data-capture-id="capture-failed"] [data-capture-transcribe]').click();true`);
   assert.equal(await waitUntil(`document.querySelector("#toast").textContent==="语音转写排队暂时失败。原音已经保存。请稍后重试。"`),true);
   assert.deepEqual(await evaluate(`({enabled:!document.querySelector('[data-capture-id="capture-failed"] [data-capture-transcribe]').disabled,original:document.querySelector('[data-capture-id="capture-failed"] .capture-audio-playback-state').textContent,sentinel:document.body.textContent.includes("ASR_PROVIDER_PRIVATE_DETAIL")})`),{enabled:true,original:"原音可播放",sentinel:false});
+  assert.deepEqual(await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-failed"]'),player=card.querySelector('.capture-audio-source audio'),retry=card.querySelector('[data-capture-audio-retry]'),status=card.querySelector('[data-capture-audio-status]');const src=player.getAttribute('src');let loads=0;player.load=()=>{loads++};player.dispatchEvent(new Event('error'));const failure={visible:!retry.hidden,status:status.textContent};player.click();const collapsed=card.querySelector('.capture-item').classList.contains('is-expanded');retry.click();return{...failure,collapsedAfterPlayerClick:collapsed,retryHidden:retry.hidden,srcUnchanged:player.getAttribute('src')===src,loads,speechRequests:window.__speechRequests.length}})()`),{visible:true,status:"原音读取失败，原件仍保留。",collapsedAfterPlayerClick:false,retryHidden:false,srcUnchanged:true,loads:1,speechRequests:0});
+  assert.equal(await evaluate(`(() => {const player=document.querySelector('[data-capture-id="capture-failed"] .capture-audio-source audio');document.querySelector('#capture-search').value='';document.querySelector('#capture-search').dispatchEvent(new Event('input',{bubbles:true}));return document.querySelector('[data-capture-id="capture-failed"] .capture-audio-source audio')===player})()`),true,"capture list refresh reuses the same original audio element");
   await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-long"]'),rate=card.querySelector("[data-speech-playback-rate]"),player=card.querySelector("[data-speech-player]");rate.value="1.5";rate.dispatchEvent(new Event("change",{bubbles:true}));window.__rejectNextSpeechPlay=true;player.play().catch(()=>{});return true})()`);
   assert.equal(await waitUntil(`window.__speechPlays.length===1`),true);
   assert.deepEqual(await evaluate(`({rate:window.__speechPlays[0].rate,rejected:window.__speechPlays[0].rejected,requests:window.__speechRequests.length,network:window.__speechPlays[0].src.includes("/api/speech/audio?")})`),{rate:1.5,rejected:true,requests:0,network:true});
+  await evaluate(`(()=>{const card=document.querySelector('[data-capture-id="capture-long"]'),player=card.querySelector('[data-speech-player]');window.__speechRetryFetch=window.fetch;window.__speechRetryLoads=0;window.__speechRetryHeadCalls=0;window.fetch=(input,init={})=>init.method==="HEAD"&&String(input).includes("/api/speech/audio?")?(window.__speechRetryHeadCalls++,Promise.resolve({ok:false,status:410})):window.__speechRetryFetch(input,init);player.load=()=>{window.__speechRetryLoads++};player.dispatchEvent(new Event('error'));return true})()`);
+  assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-long"] .speech-asset-status').textContent.includes("朗读缓存已失效")`),true);
+  assert.deepEqual(await evaluate(`(()=>{const player=document.querySelector('[data-capture-id="capture-long"] [data-speech-player]');document.querySelector('#capture-search').dispatchEvent(new Event('input',{bubbles:true}));return{samePlayer:player===document.querySelector('[data-capture-id="capture-long"] [data-speech-player]'),headCalls:window.__speechRetryHeadCalls,status:document.querySelector('[data-capture-id="capture-long"] .speech-asset-status').textContent}})()`),{samePlayer:true,headCalls:1,status:"这条朗读缓存已失效；重新生成可创建新音频。"},"rerender restores cached failure state without another HEAD probe");
+  assert.deepEqual(await evaluate(`(()=>{const card=document.querySelector('[data-capture-id="capture-long"]'),retry=card.querySelector('[data-capture-speech-retry]'),before=window.__speechRequests.length;retry.click();return{retryVisible:!retry.hidden,requestsBefore:before}})()`),{retryVisible:true,requestsBefore:0});
+  assert.equal(await waitUntil(`window.__speechRetryLoads===1&&window.__speechRetryHeadCalls===2&&document.querySelector('[data-capture-id="capture-long"] .speech-asset-status').textContent.includes("朗读缓存已失效")`),true);
+  assert.deepEqual(await evaluate(`({syntheses:window.__speechRequests.length,loadCalls:window.__speechRetryLoads,headCalls:window.__speechRetryHeadCalls,retryDisabled:document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-retry]').disabled})`),{syntheses:0,loadCalls:1,headCalls:2,retryDisabled:false},"expired cache retry reads only; it does not call synthesis and remains retryable");
+  await evaluate(`window.fetch=window.__speechRetryFetch;true`);
   await evaluate(`document.querySelector('[data-capture-id="capture-long"] [data-speech-player]').play();true`);
-  assert.equal(await waitUntil(`window.__speechPlays.length===2`),true);
+  assert.equal(await waitUntil(`window.__speechPlays.length===3`),true);
   await evaluate(`window.__failSpeech=true;document.querySelector('[data-capture-id="capture-long"] [data-speech-synthesize]').click();true`);
   assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-long"] .speech-asset-status').textContent.includes("文字朗读生成暂时失败")`),true);
   assert.equal(await evaluate(`!document.body.textContent.includes("PROVIDER_TIMEOUT_DEEPSEEK")&&window.__speechRequests.length===0`),true);
-  await evaluate(`window.__delaySpeech=true;document.querySelector('[data-capture-id="capture-long"] [data-speech-synthesize]').click();true`);
+  await evaluate(`(()=>{const rate=document.querySelector('[data-capture-id="capture-long"] [data-speech-generation-rate]');rate.value='25';rate.dispatchEvent(new Event('input',{bubbles:true}));window.__delaySpeech=true;document.querySelector('[data-capture-id="capture-long"] [data-speech-synthesize]').click();return true})()`);
   assert.equal(await waitUntil(`typeof window.__releaseSpeech==="function"&&window.__speechRequests.length===1`),true);
   assert.deepEqual(await evaluate(`window.__speechRequests[0]`), {
     sourceType: "capture",
     sourceId: "capture-long",
     sourceVersion: 1,
-    regenerate: true
+    regenerate: true,
+    generationRate: 25
   });
   await evaluate(`document.querySelector('[data-capture-id="capture-long"] [data-capture-edit]').click();document.querySelector("#capture-form").requestSubmit();true`);
   assert.equal(await waitUntil(`window.__captures.find(item=>item.id==="capture-long").version===2&&document.querySelector("#capture-id").value===""`),true);
@@ -2530,14 +2540,14 @@ try {
   assert.equal(await waitUntil(`window.__apiRequests.filter(value=>value.startsWith("GET /api/v1/route-state")).length>1&&!document.querySelector('[data-capture-id="capture-long"] [data-speech-player]')&&document.querySelector('[data-capture-id="capture-long"] [data-speech-synthesize]').textContent==="生成"`),true);
   await evaluate(`document.querySelector('[data-capture-id="capture-long"] [data-speech-synthesize]').click();true`);
   assert.equal(await waitUntil(`window.__speechRequests.length===2&&document.querySelector('[data-capture-id="capture-long"] [data-speech-player]')`),true);
-  assert.deepEqual(await evaluate(`window.__speechRequests[1]`),{sourceType:"capture",sourceId:"capture-long",sourceVersion:2,regenerate:false},"playback rate and voice must not enter the synthesis request");
+  assert.deepEqual(await evaluate(`window.__speechRequests[1]`),{sourceType:"capture",sourceId:"capture-long",sourceVersion:2,regenerate:false,generationRate:-10},"playback rate and voice stay separate from the account-default synthesis rate");
   await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-long"]'),rate=card.querySelector("[data-speech-playback-rate]"),player=card.querySelector("[data-speech-player]");rate.value="2";rate.dispatchEvent(new Event("change",{bubbles:true}));player.play();window.__activeCaptureSpeechUrl=player.getAttribute("src");return true})()`);
-  assert.equal(await waitUntil(`window.__speechPlays.length===3`),true);
+  assert.equal(await waitUntil(`window.__speechPlays.length===4`),true);
   assert.deepEqual(await evaluate(`({rate:window.__speechPlays.at(-1).rate,requests:window.__speechRequests.length})`),{rate:2,requests:2});
   await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-speech-synthesize]').click();true`);
   assert.equal(await waitUntil(`window.__speechRequests.length===3&&document.querySelector('[data-capture-id="capture-1"] [data-speech-player]')`),true);
   await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-speech-player]').play();true`);
-  assert.equal(await waitUntil(`window.__speechPlays.length===4`),true);
+  assert.equal(await waitUntil(`window.__speechPlays.length===5`),true);
   assert.deepEqual(await evaluate(`(() => {const old=document.querySelector('[data-capture-id="capture-long"] [data-speech-player]'),next=document.querySelector('[data-capture-id="capture-1"] [data-speech-player]'),assetId=new URL(old.src).searchParams.get("id");return{oldPaused:old.paused,oldSourceRetained:old.getAttribute("src")===window.__activeCaptureSpeechUrl,newPaused:next.paused,oldPauseRecorded:window.__speechPauses.some(url=>url.includes("id="+assetId)),requests:window.__speechRequests.length}})()`),{oldPaused:true,oldSourceRetained:true,newPaused:false,oldPauseRecorded:true,requests:3},"starting another asset must pause the previous player without detaching either persisted source");
   assert.equal(await evaluate(`document.querySelector("#capture-editor").hidden&&document.querySelector("#capture-form").hidden&&document.querySelector("#capture-create-toggle").getAttribute("aria-expanded")==="false"`),true);
   await evaluate(`document.querySelector('[data-view="today"]').click();window.__failMicrophonePermission=true;document.querySelector("#home-record-voice").click();true`);
@@ -2637,7 +2647,8 @@ try {
   assert.equal(await waitUntil(`document.querySelector("#capture-audio-preview").hidden&&document.querySelector("#capture-audio-preview").getClientRects().length===0`),true);
   await evaluate(`document.querySelector("#capture-cancel").click();true`);
   assert.equal(await waitUntil(`!document.querySelector('[data-capture-id="capture-long"] [data-capture-expand]').hidden`), true);
-  assert.equal(await waitUntil(`!document.querySelector('[data-capture-id="capture-1"] [data-capture-expand]').hidden`), true);
+  assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-1"] [data-capture-expand]').hidden`), true,"short text remains uncollapsed when only external media controls exceed the old viewport");
+  assert.equal(await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-1"]'),viewport=card.querySelector('.capture-content-viewport'),controls=card.querySelector('.speech-asset-controls');return Boolean(controls)&&!viewport.contains(controls)&&controls.getClientRects().length>0})()`),true,"speech controls are visible outside the text fold");
   const captureCardLayout = await evaluate(`(() => {
     const card=document.querySelector('[data-capture-id="capture-long"]'),item=card.querySelector(".capture-item"),viewport=card.querySelector(".capture-content-viewport"),meta=card.querySelector(".capture-meta"),time=card.querySelector(".capture-entry-time"),tags=card.querySelector(".capture-top-tags"),actions=card.querySelector(".capture-actions"),buttons=[...actions.querySelectorAll("button")],lineHeight=parseFloat(getComputedStyle(viewport).lineHeight);
     const buttonRects=buttons.map(button=>button.getBoundingClientRect()),metaRect=meta.getBoundingClientRect(),timeRect=time.getBoundingClientRect(),itemRect=item.getBoundingClientRect();

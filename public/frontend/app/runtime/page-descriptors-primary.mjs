@@ -82,6 +82,7 @@ export function installPrimaryDescriptors(descriptors, ports) {
       page:viewName,
       data:{
         getSnapshot:()=>state,
+        getSpeechGenerationRate:()=>runtime.llmSettings.speech?.generationRate,
         getAccountId:()=>runtime.currentUser?.id||"",
         getSessionSerial:()=>sessionSerial,
         request,

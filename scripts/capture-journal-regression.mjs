@@ -32,6 +32,37 @@ assert.equal(captureAudioPayload({
   ...derivedAudio,
   asrAttachmentPath: "/attachments/foreign.wav"
 }).code, "INVALID_ASR_DERIVATIVE");
+const pureAudio = capturePayload({
+  audio: {
+    attachmentPath: derivedAudio.attachmentPath,
+    mimeType: derivedAudio.mimeType,
+    bytes: derivedAudio.bytes,
+    durationMs: derivedAudio.durationMs
+  },
+  occurredAt: "2026-10-03T00:00:00.000Z"
+}).value;
+assert.equal(pureAudio.title, `${pureAudio.occurredOn} 录音`);
+assert.equal(pureAudio.content, "", "the default title stays separate from user content");
+assert.equal(capturePayload({
+  title: "我的语音标题",
+  audio: {
+    attachmentPath: derivedAudio.attachmentPath,
+    mimeType: derivedAudio.mimeType,
+    bytes: derivedAudio.bytes,
+    durationMs: derivedAudio.durationMs
+  },
+  occurredAt: "2026-10-03T00:00:00.000Z"
+}).value.title, "我的语音标题");
+assert.equal(capturePayload({ audio: derivedAudio }, {
+  ...pureAudio,
+  title: undefined,
+  audio: derivedAudio
+}).value.title, undefined, "legacy audio captures are not backfilled during edits");
+assert.equal(capturePayload({ content: "更新转写" }, {
+  ...pureAudio,
+  title: "我的语音标题",
+  audio: derivedAudio
+}).value.title, "我的语音标题", "late transcription edits preserve user title");
 assert.deepEqual(
   capturePayload({ content: "编辑文字", audio: {
     attachmentPath: derivedAudio.attachmentPath,
@@ -189,6 +220,40 @@ const captures = createCaptureRecords({
   now,
   createId: () => `capture-${++idSequence}`
 });
+let audioReplayTime = "2026-10-12T08:00:00.000Z";
+const audioReplayCaptures = createCaptureRecords({
+  repository: captureRepository,
+  reanchorAnnotations,
+  now: () => audioReplayTime,
+  createId: () => `capture-audio-replay-${++idSequence}`
+});
+const audioReplayInput = { audio: {
+  attachmentPath: "/attachments/replay.m4a",
+  mimeType: "audio/mp4",
+  bytes: 2048,
+  durationMs: 1000
+} };
+const firstAudioReplay = await run("account-a", () => audioReplayCaptures.create(
+  audioReplayInput,
+  { clientRequestId: "pure-audio-cross-day-replay" }
+));
+audioReplayTime = "2026-10-13T08:01:00.000Z";
+const retriedAudioReplay = await run("account-a", () => audioReplayCaptures.create(
+  audioReplayInput,
+  { clientRequestId: "pure-audio-cross-day-replay" }
+));
+assert.equal(retriedAudioReplay.duplicate, true);
+assert.equal(retriedAudioReplay.value.id, firstAudioReplay.value.id);
+assert.equal(retriedAudioReplay.value.title, "2026-10-12 录音");
+assert.equal(retriedAudioReplay.value.occurredOn, "2026-10-12");
+await assert.rejects(
+  run("account-a", () => audioReplayCaptures.create(
+    { ...audioReplayInput, title: "用户指定标题" },
+    { clientRequestId: "pure-audio-cross-day-replay" }
+  )),
+  error => error.code === "IDEMPOTENCY_KEY_REUSED",
+  "an explicit user title remains part of the idempotency request"
+);
 const journals = createJournalRecords({
   repository: journalRepository,
   reanchorAnnotations,
@@ -391,6 +456,7 @@ response = await request("account-a", "POST", "/api/v1/captures", {
 assert.equal(response.status, 201);
 assert.equal(response.body.data.content, "");
 assert.equal(response.body.data.audio.attachmentPath, "/attachments/voice.m4a");
+assert.equal(response.body.data.title, `${response.body.data.occurredOn} 录音`);
 assert.deepEqual(response.body.data.transcription, {
   status: "unconfigured",
   provider: "",
