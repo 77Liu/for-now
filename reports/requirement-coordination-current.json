@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 174,
-  "updated_at": "2026-10-12T22:14:34.149Z",
+  "revision": 176,
+  "updated_at": "2026-10-12T22:26:58.329Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -19,8 +19,8 @@
   },
   "iteration": {
     "id": "v0.5.14",
-    "status": "IMPLEMENTING",
-    "phase": "音频三切片及API会话端口、手机语速标签经主控代码/视觉审查；准备接入develop固定候选",
+    "status": "LOCAL_VALIDATED_WAIT_OWNER",
+    "phase": "本轮音频实现已接入并通过本机UI、真实PG及隔离Linux启动门；发布与完整设备验收尚未执行",
     "started_by": {
       "iteration_id": "v0.5.13",
       "event_id": "v0.5.13-9d38aa2c-f745-46fd-91a3-f233bb08d048"
@@ -61,7 +61,87 @@
     "cumulative_predecessor": "git:cd8055356a190f87bf6346fa806ec0dee85f1711"
   },
   "active_tasks": [],
-  "candidate": null,
+  "candidate": {
+    "sha": "9e793e3e89dd9c8663f1326d9ee240daa8743955",
+    "tree": "61802d55eb6b718752aeec8b8f945947a0a2b06c",
+    "status": "LOCAL_VALIDATED_PARTIAL_ACCEPTANCE",
+    "release_frozen": false,
+    "quality_gate": {
+      "snapshot": "PASS",
+      "local_import": "PASS",
+      "runtime_start": "PASS",
+      "readyz": "PASS",
+      "restart_recovery": "PASS",
+      "core_smoke": "PASS",
+      "isolated_online": "PASS",
+      "module_check": "PASS",
+      "full_ui": "PASS",
+      "develop_integration": "PASS"
+    },
+    "required_gates": [
+      "snapshot",
+      "local_import",
+      "runtime_start",
+      "readyz",
+      "restart_recovery",
+      "core_smoke",
+      "isolated_online",
+      "module_check",
+      "full_ui",
+      "develop_integration"
+    ],
+    "test_matrix_ref": "knowledge/test-impact-matrix.md#候选级最小门",
+    "partial": [
+      "历史录音首尾缺失无原音/真机/真实ASR，根因UNKNOWN；已修已复现计时器归属并验证首尾块/快速停止/失败恢复，不补造缺失内容",
+      "真实provider、iOS/设备与生产新版本未验收",
+      "Linux仅启动状态门，不是完整build:runtime/前后端部署制品验收",
+      "早期UI两处失败根因UNKNOWN，失败保留；当前原预期及语速标签断言通过，不宣称长期稳定"
+    ],
+    "validation_subject": {
+      "application_sha": "9e793e3e89dd9c8663f1326d9ee240daa8743955",
+      "application_tree": "61802d55eb6b718752aeec8b8f945947a0a2b06c",
+      "snapshot": "reports/local/9e793e3e-startup-snapshot.json",
+      "snapshot_file_sha256": "ba7dc075aa2be5ec72d48416b5da7a5ceb44c4d9d3fdeecf774aea33fcf63c1c",
+      "snapshot_captured_at": "2026-10-12T22:19:06.848Z",
+      "global_receipt": "reports/local/9e793e3e-startup-gate-receipt.json",
+      "global_receipt_sha256": "fe336d249f846196e0651bb35cb6d7087274a52372efd89c1914edf67829c9f0",
+      "browser_fixture_sha256": "b8f7e6682d05d68c3bc8d7c44491bfad160a68a4d7d186c79d2b073b684def7f",
+      "global_scope": "真实本机PG16.14及Linux PG16.15的启动/readyz/重启/核心无付费冒烟；Linux临时包不含前端生成物，前端产物在本机UI验证。",
+      "package_version": "0.5.13：本轮仅实施/验证，尚未做0.5.14发布元数据冻结"
+    },
+    "requirement_acceptance": [
+      {
+        "id": "recvxyg5bmmnfW",
+        "status": "PARTIAL",
+        "result": "原音保留/最终块与计时器归属/恢复已本地验证；用户历史截断根因未确认"
+      },
+      {
+        "id": "reczz28KR6qDIujH",
+        "status": "LOCAL_PASS",
+        "result": "缓存加载状态与只读重试，不重新合成"
+      },
+      {
+        "id": "recvxlQ7sCzQHv",
+        "status": "LOCAL_PASS",
+        "result": "媒体操作不折叠父卡；长文仍可明确展开/收起"
+      },
+      {
+        "id": "recvxlQpmHOCuK",
+        "status": "LOCAL_PASS",
+        "result": "音频控件在正文折叠区外，390px控件和标签可见"
+      },
+      {
+        "id": "reczz28JnsUxxhsH",
+        "status": "LOCAL_PASS",
+        "result": "生成语速与播放倍速分别控制并可见"
+      },
+      {
+        "id": "recvxlQSwyzutq",
+        "status": "LOCAL_PASS",
+        "result": "新纯音频稳定默认标题；独立元数据、幂等跨日与迟到转写保留用户标题"
+      }
+    ]
+  },
   "authorization": {
     "source": "Owner最新夜间指令：v0.5.13通过后开启v0.5.14开发；v0.5.13上线与收尾等待人工信号",
     "allowed_actions": [
@@ -79,7 +159,7 @@
     "revoked": false
   },
   "blockers": [],
-  "next_action": "主控提交已审查切片并接入develop，按影响矩阵固定候选执行新的脱敏生产快照/隔离PG全局门；不发布。",
+  "next_action": "等待Owner新的v0.5.13发布/上线及正式收尾信号；v0.5.14实施与本地验证已完成，本轮不擅自发布。后续发布准备须固定版本元数据/完整前后端制品并保留原音、设备及真实provider的partial边界。",
   "runtime": {
     "sha": "3e94e2f29f5e131f2e98db3b4cb48659ba91fd79",
     "package_version": "0.5.13.1",
@@ -118,5 +198,6 @@
       "candidate_sha": "cd8055356a190f87bf6346fa806ec0dee85f1711",
       "authorization_sha256": "8da33c9c50bfb0e1a8b376c194f999e0feea54a635fd83d31b9d8eafbfd7c332"
     }
-  ]
+  ],
+  "display_summary": "v0.5.13本地冻结候选cd805等待Owner；v0.5.14音频六条已实施接入9e793e3，本机UI/PG及Linux启动门PASS，历史录音根因与完整发行制品/真机验收保留partial。未push/tag/Release/部署/生产写入。"
 }
