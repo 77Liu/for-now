@@ -114,6 +114,7 @@ const controller = createBackgroundResultsFeatureController({
     },
     async request(path) {
       requests.push(path);
+      events.push(`request:${path}`);
       const taskId = decodeURIComponent(path.split("/").at(-2));
       const value = results.get(taskId);
       return { result: value?.promise ? await value.promise : value };
@@ -239,14 +240,36 @@ const failedSync = controller.sync([accountBTask]);
 failedResult.reject(new Error("temporary result read failure"));
 assert.equal(await failedSync, false);
 assert.equal(controller.needsRetry(), true);
+assert.deepEqual(toasts.at(-1), [
+  "思绪原文已保存，后台回答结果暂未同步；可在通知中再次查看重试。",
+  "error"
+]);
 results.set(accountBTask.id, {
   id: "answer-b",
   type: "answer",
   relatedTo: "root-b",
   sourceTaskId: accountBTask.id
 });
-assert.equal(await controller.sync([accountBTask]), true, "new account must sync after reset");
+const requestsBeforeViewRetry = requests.length;
+events.length = 0;
+assert.equal(await controller.openTarget(accountBTask, {
+  resourceType: "thought",
+  targetId: "root-b"
+}), true, "viewing a completed thought answer retries its result read");
+assert.deepEqual(requests.slice(requestsBeforeViewRetry), [
+  "/api/ai-tasks/task-account-b/result"
+]);
+assert.ok(
+  events.indexOf("refresh:thoughts,notifications:root-b")
+    < events.indexOf("request:/api/ai-tasks/task-account-b/result"),
+  "the task result is retried after refreshing the thought chain"
+);
 assert.equal(controller.needsRetry(), false);
+assert.equal(snapshot.thoughts.filter(item => item.id === "root-b").length, 1);
+assert.equal(snapshot.thoughts.filter(item => item.id === "answer-b").length, 1);
+assert.equal(snapshot.thoughts.length, 2);
+assert.equal(nodes.get('[data-chain-id="root-b"]').scrolls, 1);
+nodes.get('[data-chain-id="root-b"]').scrolls = 0;
 
 events.length = 0;
 snapshot.thoughts.push({

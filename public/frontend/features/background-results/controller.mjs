@@ -194,7 +194,12 @@ export function createBackgroundResultsFeatureController({
       if (panel) panel.scrollTop = saved.commentScroll;
       view.scheduleAnnotationLayout();
     },
-    onError: error => view.showToast(`后台结果同步失败：${error.message}`, "error")
+    onError: (error, task) => view.showToast(
+      task?.kind === "thoughtAnswer"
+        ? "思绪原文已保存，后台回答结果暂未同步；可在通知中再次查看重试。"
+        : `后台结果同步失败：${error.message}`,
+      "error"
+    )
   });
 
   function scrollToTarget(target, value) {
@@ -228,6 +233,10 @@ export function createBackgroundResultsFeatureController({
         : {}
     );
     if (!current(operation)) return false;
+    if (task?.kind === "thoughtAnswer" && task.status === "succeeded" && task.resultId) {
+      await results.sync([task]);
+      if (!current(operation)) return false;
+    }
     const refreshedTarget = backgroundNavigationTarget(task, notification, data.getSnapshot());
     if (!refreshedTarget) return false;
     target = { ...refreshedTarget, ticket: operation };
