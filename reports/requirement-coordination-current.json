@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 33,
-  "updated_at": "2026-10-12T12:38:00+08:00",
+  "revision": 34,
+  "updated_at": "2026-10-12T12:49:07+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner已要求继续推进 v0.5.13.1 与 v0.5.13；当前仅本地串行开发，远程写入、发布、部署和付费调用仍关闭",
-  "current_phase": "v0.5.13.1仍为本地候选（5a095d46，账号刷新PARTIAL）；v0.5.13首批切片已在develop（6195479，控制面79aa2ca），rev538六条需求差距已只读核对，现按revision33授权在唯一develop根目录继续最小补缺与通知TS闭环。",
+  "current_phase": "v0.5.13.1仍为本地候选PARTIAL；v0.5.13首批切片已在develop，revision33差分已写但未审查/验证。revision34仅补充测试入口构建前置，避免干净checkout因缺少ignored public/generated产物而无法运行通知专项。",
   "state": "BUILDING_LOCAL_ONLY",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -82,7 +82,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发按revision33写集补齐思绪补录模式草稿恢复、后台回答排队失败脱敏/旧会话隔离、通知复制失败恢复，并将通知功能切片迁移到TS及隔离编译目录；主控随后审查真实差分并只运行受影响专项。不得扩大为后端/API/schema/全站重构；本地候选，不推送、不发布、不部署、不写生产。",
+  "next_action": "主开发按revision34只调整package.json中通知专项、F3、frontend和system命令的build:frontend前置后交接；主控审查差分，再运行typecheck/build与保存、通知、AI队列现有专项。任何测试失败保留原值；不推送、发布、部署或写生产。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -99,7 +99,7 @@
     "remote_write": "本轮未执行",
     "release_rollback_rehearsal": "本地隔离模拟全部通过；无远端命令",
     "budget_alerts": "本地护栏回归通过；当前生产配置与告警快照缺失，保持阻断",
-    "candidate_integration": "v0.5.13.1仍为5a095d46本地候选PARTIAL；v0.5.13首批代码6195479及控制面79aa2ca已在develop；revision33授权的后续差异尚未实现/验证。"
+    "candidate_integration": "v0.5.13.1仍为5a095d46本地候选PARTIAL；v0.5.13首批代码已接入develop，revision33实现已写未验证，revision34仅授权回归命令build前置；无远程/生产动作。"
   },
   "owner_decisions": {
     "git": {
@@ -321,7 +321,7 @@
         "public/frontend/features/notifications/controller.mts与presentation.mts（通知业务TS实现及必要中文注释）",
         "public/frontend/features/notifications/controller.mjs与presentation.mjs（仅透明转发到隔离编译产物）",
         "tsconfig.notifications.json（rootDir public/frontend，outDir public/generated）",
-        "package.json（仅build:frontend/typecheck:frontend串接通知TS编译，不改依赖）",
+        "package.json（仅build:frontend/typecheck:frontend及test:frontend-notifications、test:f3-features、test:frontend、test:system命令的TS构建前置；不改依赖）",
         "scripts/frontend-notifications-feature-regression.mjs（仅复用现有通知专项必要断言）",
         "scripts/frontend-shared-regression.mjs（仅复用现有时间草稿往返专项必要断言）",
         "scripts/personalized-ai-task-ui-regression.mjs（仅复用现有保存/AI队列状态专项必要断言）"
@@ -337,7 +337,7 @@
         "从旧归档分支搬运或直接合入旧v0.5.10交付"
       ],
       "acceptance_boundary": "每条需求先核对源记录的最新状态与已有交付证据；已完成项只记录并从实施范围剔除。保存失败与派生失败分流、未知写入保留草稿且不重复提交；时间intent/createdAt/occurredAt与新建/补录草稿规则一致；通知仅对已成功呈现范围标记已读，未加载/新到保持未读，重试/复制不泄露凭据或私密正文；账户隔离、幂等和失败恢复按真实改动验证。没有真实浏览器/移动端/provider/生产验收时标PARTIAL。",
-      "next": "按revision33授权完成已证实缺口和通知TS闭环；未复现的计数问题保持PARTIAL。",
+      "next": "完成通知TS依赖的测试构建前置；随后主控独立审查和执行最小影响验证。",
       "write_set_amendment": {
         "revision": 31,
         "at": "2026-10-12T12:08:35+08:00",
@@ -531,6 +531,12 @@
       "at": "2026-10-12T12:38:00+08:00",
       "reason": "六条v0.5.13需求只读差距审查完成；归档已接入的首批feature引用，修订唯一根目录develop写入状态，并为保存草稿模式、后台问答错误恢复、通知TS切片及构建入口登记最小补充写集。",
       "previous_snapshot": "reports/requirement-coordination-current.json@revision-32"
+    },
+    {
+      "revision": 34,
+      "at": "2026-10-12T12:49:07+08:00",
+      "reason": "只读差分审查确认通知TS运行时依赖.gitignore隔离的编译产物；为避免回归入口依赖偶然残留的本地生成文件，精确授权受影响测试入口先构建通知TS产物。",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-33"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -634,7 +640,7 @@
       "public/frontend/features/notifications/controller.mts与presentation.mts（通知业务TS实现及必要中文注释）",
       "public/frontend/features/notifications/controller.mjs与presentation.mjs（仅透明转发到隔离编译产物）",
       "tsconfig.notifications.json（rootDir public/frontend，outDir public/generated）",
-      "package.json（仅build:frontend/typecheck:frontend串接通知TS编译，不改依赖）",
+      "package.json（仅build:frontend/typecheck:frontend及test:frontend-notifications、test:f3-features、test:frontend、test:system命令的TS构建前置；不改依赖）",
       "scripts/frontend-notifications-feature-regression.mjs（仅复用现有通知专项必要断言）",
       "scripts/frontend-shared-regression.mjs（仅复用现有时间草稿往返专项必要断言）",
       "scripts/personalized-ai-task-ui-regression.mjs（仅复用现有保存/AI队列状态专项必要断言）"
@@ -877,7 +883,7 @@
       ]
     },
     "current_develop_code_baseline": "79aa2cab196daf98055f83f954e3f28ec48ff000",
-    "shared_write_scope_revision33": "revision33指定主开发为唯一代码写者，允许按本轮最小范围修改通知业务TS、既有运行时窄点及对应专项；package.json和新tsconfig.notifications.json由主开发按唯一串行写者职责仅改前端TS构建/类型检查入口。协调者仍独占本控制面；其他共享配置、公共契约和业务写者仍禁止。",
+    "shared_write_scope_revision33": "revision33指定主开发为唯一代码写者，允许按本轮最小范围修改通知业务TS、既有运行时窄点及对应专项；package.json和新tsconfig.notifications.json仅按唯一串行写者修改指定构建/类型检查入口。revision34进一步允许为使用这些产物的受影响测试命令加构建前置。协调者仍独占本控制面；其他共享配置、公共契约和业务写者仍禁止。",
     "gap_audit_revision32": {
       "at": "2026-10-12T12:38:00+08:00",
       "mode": "只读；未跑测试、未写代码",
@@ -914,6 +920,18 @@
         ],
         "shared_file_owner": "主开发是本revision唯一代码写者；package.json与新tsconfig.notifications.json只可由主开发串行修改。主控仍独占本控制面写权。",
         "acceptance": "通知feature核心实现真实位于.mts；typecheck和编译成功；生成.mjs只在ignored public/generated；源码旁不落编译输出、不提交generated。既有测试只增必要场景；中文注释说明公开入口及异步会话/恢复不变量。"
+      },
+      {
+        "revision": 34,
+        "at": "2026-10-12T12:49:07+08:00",
+        "reason": "只读检查确认controller.mjs与presentation.mjs透明转发到被.gitignore排除的public/generated；回归脚本和system-test会直接导入入口但现有包命令不保证先构建，干净checkout会因缺产物失败。",
+        "approved_paths": [
+          "package.json（仅test:frontend-notifications新增build前置；test:f3-features调用该聚焦入口；test:frontend与test:system在前端/全系统回归前先build:frontend；不改其他测试脚本和依赖）"
+        ],
+        "still_forbidden": [
+          "scripts/system-test.mjs、回归实现本身以外的测试选择/套件扩张、全量测试重构、依赖与锁文件变更"
+        ],
+        "acceptance": "受影响的包命令在没有旧public/generated产物的干净checkout可先构建再测试；generated仍被.gitignore忽略且不进Git；不增加回归项，不改system-test的测试清单。"
       }
     ],
     "known_previous_test_failure": {
@@ -1023,8 +1041,8 @@
           "followup_baseline_sha": "79aa2cab196daf98055f83f954e3f28ec48ff000"
         },
         "scope": "六条未交付需求的保存恢复、时间意图及通知状态/诊断闭环；先核对已有实现，已解决项剔除，不扩全站重构。",
-        "execution": "首批切片6195479已接入develop；revision33授权的最小后续差分待实现。仍是本地候选。",
-        "next": "只完成revision33写集；主控复核后运行对应专项，不推送/发布/部署。"
+        "execution": "首批切片6195479已接入develop；revision33实现差分已写未审查验证；revision34授权补测试入口构建前置。仍是本地候选。",
+        "next": "交接后主控审查并按影响矩阵做最小验证；不推送/发布/部署。"
       }
     ],
     "third_version": "暂不冻结；只有需求池定向复核得到至少3条真实未交付需求后才建立v0.5.13.2或v0.5.14候选"
