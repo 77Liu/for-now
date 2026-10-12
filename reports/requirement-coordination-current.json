@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 91,
-  "updated_at": "2026-10-12T13:05:21.742Z",
+  "revision": 92,
+  "updated_at": "2026-10-12T13:10:21.126Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "启动故障明确为无实体绑定生成型任务晋级queued与mapper目标required契约冲突；批准精准mapper/恢复共用契约修复，拦截误标stale旧设计。",
+  "current_phase": "生成型/实体依赖目标契约修复收口中；独审发现required子目标恢复遗漏，按同一四文件边界补齐后提交最终回执。旧生产健康，未再次部署。",
   "state": "BUILDING_DEPLOY_RECOVERY_FIX",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发在同feat按精确生成/绑定契约重做最小修复，后运行既有映射与恢复专项、独审；不提交NO GO旧设计。",
+  "next_action": "主开发补集中子目标判定，执行原专项必要场景及边界检查，交接差分/独审/执行证据；主控审查固定新候选。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -643,7 +643,8 @@
           "直接实现真实契约，随后仅既有后台专项/实际映射fixture及适用module检查；不跑全系统/付费/重部署。独审NO GO的旧设计不提交。",
           "主控审查提交接入后新候选/attempt继续上线；旧生产健康，不修改生产数据。",
           "仅recordCompression且payload.operation为现行HISTORICAL_SUPPLEMENT_OPERATION允许未解析日摘要主目标；daily仍required，既有markQueued顺序不改变。必要一条historical fixture与普通daily严格行为验证复用原测试。",
-          "当前候选所有已注册task kind按源契约一次分类收口；表驱动验证生成集合，不逐类型新增大型夹具或提出通用平台。chat/analysis源码prepare/save不依赖主target且结果后创建实体，属于同一启动失败闭环。"
+          "当前候选所有已注册task kind按源契约一次分类收口；表驱动验证生成集合，不逐类型新增大型夹具或提出通用平台。chat/analysis源码prepare/save不依赖主target且结果后创建实体，属于同一启动失败闭环。",
+          "同一aiTaskTargetReference集中表达mapper实际required子目标；主目标存在但followUp/annotation/comment-image必需子目标缺失的queued任务恢复为安全终态，严格子目标映射不放宽。原专项一条追问代表场景，onboarding已有断言复用，无覆盖才补最小场景。"
         ],
         "pending_contract_check": "已确认：historical补充生成输出到historicalUserSupplement singleton，不写recordCompressions；daily存在markQueued预创建且tasks.create/promoteWaiting/promoteBudgetWaiting调用，保持daily required。"
       },
@@ -1359,6 +1360,12 @@
       "at": "2026-10-12T13:05:21.742Z",
       "reason": "源码确认chat/analysis为同类结果生成任务，纳入精准optional集合保持其他实体关系严格，收口一次分类。",
       "previous_snapshot": "a537209:reports/requirement-coordination-current.json@revision90"
+    },
+    {
+      "revision": 92,
+      "at": "2026-10-12T13:10:21.126Z",
+      "reason": "独审发现queued必需子目标缺失仍可阻断启动，纳入同一目标契约窄点保持mapper严格。",
+      "previous_snapshot": "35b216f:reports/requirement-coordination-current.json@revision91"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
