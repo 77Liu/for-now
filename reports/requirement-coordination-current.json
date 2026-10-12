@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 44,
-  "updated_at": "2026-10-12T15:17:00+08:00",
+  "revision": 45,
+  "updated_at": "2026-10-12T15:20:42+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,11 +13,11 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner已要求继续推进 v0.5.13.1 与 v0.5.13；当前仅本地串行开发，远程写入、发布、部署和付费调用仍关闭",
-  "current_phase": "v0.5.13.1候选仍为本地PARTIAL；严重告警诊断与监控TypeScript迁移已接入develop，未推送/发布/部署。v0.5.13后台回答结果GET恢复已接入develop，既有专项通过。当前最小下一切片为保存并恢复思绪发生时间的手动/现在模式；只修模式状态丢失和既有UI回归中已确认过期的通知按钮顺序预期，不扩大测试或通知功能。",
+  "current_phase": "v0.5.13.1候选仍为本地PARTIAL；严重告警诊断与监控TS闭环已接入develop，未推送/发布/部署。v0.5.13发生时间草稿恢复实现已在feat分支未提交；共享专项、语法和diff检查通过。受影响UI验证指出通知卡片自动进入即读，真实动作按钮只有查看/重试/复制错误日志；现修正旧测试为断言自动已读，不改产品通知行为，再执行一次现有UI验证。",
   "state": "BUILDING_LOCAL_ONLY",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
-    "develop": "refs/heads/develop@8b07b544fd0494225925eb37f227cb11cacc25a7（后台回答结果恢复已集成；tree d406a177c78099639272092caaccd7bd580193c2；未远程发布）",
+    "develop": "refs/heads/develop@a3fcdaf1ca46d934b53ecc8d7e5d9eaed7b89371（发生时间草稿恢复切片基线；未远程发布）",
     "remote_main_ref": "origin/main",
     "remote_main_observed": "ebbde6fcf100432de8a599c771cbd8e774e043ad",
     "startup_manifest": "reports/git-archive/git-startup-20261011-manifest.json",
@@ -41,7 +41,7 @@
     ],
     "canonical_worktree": "/Users/bytedance/Documents/Codex/个人成长追踪",
     "canonical_worktree_branch": "develop",
-    "canonical_worktree_head": "8b07b544fd0494225925eb37f227cb11cacc25a7（当前唯一根目录工作树；后台回答结果恢复已本地集成，未部署）",
+    "canonical_worktree_head": "a3fcdaf1ca46d934b53ecc8d7e5d9eaed7b89371（唯一根目录工作树；当前在develop，功能差分仍未提交，不得提交到develop）",
     "archived_worktree": {
       "path": "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/develop",
       "branch": "feat/v0.5.13.1-stability",
@@ -85,7 +85,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发先将feat/v0.5.13-save-sync-validation快进到develop@17686c4，按revision44仅实现chain-form发生时间模式随草稿往返，并修正已知过期的单条通知按钮顺序预期以解锁现有UI场景；完成后只运行受影响的现有UI验证及必要静态检查。",
+  "next_action": "主开发在原feat分支先同步develop@a3fcdaf，只把既有失败通知UI用例与实际presented-read契约对齐：断言查看/重试/复制错误日志三按钮及呈现后readAt生效、无标记已读按钮；随后执行一次既有test:ui以到达时间模式恢复场景，记录全部结果。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -97,12 +97,12 @@
   ],
   "last_check": {
     "remote_refs": "2026-10-11T12:07:35Z 已通过 git ls-remote --heads/tags 只读核验；无远程写入",
-    "worktrees": "2026-10-12T15:17:00+08:00：仅根目录一个工作树，当前develop@17686c4；feat/v0.5.13-save-sync-validation保留在已集成P0结果恢复提交之后，下一次写入前先快进最新develop；无第二工作树。",
+    "worktrees": "2026-10-12T15:20:42+08:00：仅根目录一个工作树，当前develop@a3fcdaf；feat/v0.5.13-save-sync-validation保留并与当前develop同基线。三个未提交的获批功能文件暂留共享工作区；不另建工作树。",
     "platform_protection": "Gitee UI只读核验：保护分支规则0条、保护标签不可用、推送限制未启用",
     "remote_write": "本轮未执行",
     "release_rollback_rehearsal": "本地隔离模拟全部通过；无远端命令",
     "budget_alerts": "本地护栏回归通过；当前生产配置与告警快照缺失，保持阻断",
-    "candidate_integration": "严重告警脱敏诊断代码db3176d及监控TypeScript迁移b27e2c1位于develop历史；严格TS检查、隔离构建和监控专项通过，完整deploy-regression未留存最终退出码，不计PASS；未部署。来源念起冲突提示修复已接入。后台回答结果GET恢复提交89afb9a36e846939906dc6fdd20687eda0c943e9已fast-forward接入develop；tree 6ad0e6b0ad5863bb6da3e84d84c9d59ead06e330；既有background-results专项与git diff --check通过。本轮未重跑npm run test:ui；其既有通知标签预期失败仍保持PARTIAL。未推送、发布或部署。",
+    "candidate_integration": "监控TS源码及严重告警诊断已本地接入develop；未部署。后台回答结果GET恢复已接入develop并通过既有专项。发生时间模式随草稿恢复目前仅有feat分支未提交改动，frontend-shared、三个文件node --check与git diff --check通过。test:ui失败于通知卡片过期预期：presented-read在页面挂载时已标读，真实动作无标记已读按钮；尚未重跑，时间恢复场景未到达。未推送/发布/部署。",
     "alert_incident": {
       "alert_at": "2026-10-12T05:01:39.769Z",
       "recovered_at": "2026-10-12T05:06:39.868Z",
@@ -358,7 +358,7 @@
         "从旧归档分支搬运或直接合入旧v0.5.10交付"
       ],
       "acceptance_boundary": "每条需求先核对源记录的最新状态与已有交付证据；已完成项只记录并从实施范围剔除。保存失败与派生失败分流、未知写入保留草稿且不重复提交；时间intent/createdAt/occurredAt与新建/补录草稿规则一致；通知仅对已成功呈现范围标记已读，未加载/新到保持未读，重试/复制不泄露凭据或私密正文；账户隔离、幂等和失败恢复按真实改动验证。没有真实浏览器/移动端/provider/生产验收时标PARTIAL。",
-      "next": "revision44：在feat/v0.5.13-save-sync-validation上从最新develop继续，最小修复思绪表单发生时间模式随草稿保存/恢复；复用现有页面重载场景，并只将其之前已知过期的通知动作标签顺序预期对齐当前真实UI，随后运行该受影响UI验证。",
+      "next": "revision45补充：通知首次呈现即由现有markPresentedRead标读。将既有UI用例四按钮/手动读预期纠正为真实的查看、重试、复制错误日志及呈现已读状态；不改产品通知逻辑。随后只运行一次已有test:ui，验证发生时间草稿manual/now往返；如遇其他旧失败如实保留。",
       "write_set_amendment": {
         "revision": 31,
         "at": "2026-10-12T12:08:35+08:00",
@@ -423,6 +423,23 @@
           "branch": "feat/v0.5.13-save-sync-validation",
           "baseline": "develop@17686c48ec5c91c14b9edc8395b2bc91cb87f598；先在既有feat分支快进合入，不重写历史、不删除分支。",
           "acceptance": "chain-form的manual与now模式值均随既有session草稿保存，并在页面重载后恢复input.dataset.occurrenceMode、输入值、禁用/隐藏属性及分段按钮active/aria-pressed；不带模式的旧草稿保持当前默认行为。仅运行现有ui-regression受影响流程及必要静态检查；若仍在其他既有断言失败，保留准确失败并标PARTIAL。"
+        },
+        {
+          "revision": 45,
+          "at": "2026-10-12T15:20:42+08:00",
+          "supersedes_revision": 44,
+          "reason": "本轮UI回归实证显示失败通知卡片在首次呈现时已由markPresentedRead调用PATCH并刷新；真实按钮为查看/重试/复制错误日志三项。revision44误将标为已读也列入预期，且后续手动点击该按钮将成为下一处失败。只修正这一个既有测试场景以反映现行通知契约，确保验证继续到发生时间草稿恢复场景。",
+          "approved_paths": [
+            "scripts/ui-regression.mjs（仅当前notification-capture-failed既有用例：动作列表改为当前真实三项；将点击不存在的标为已读按钮改为断言presented-read已写readAt且卡片无标记已读按钮；保留触屏尺寸、无溢出、失败重试和后续所有现有断言）"
+          ],
+          "still_forbidden": [
+            "任何生产通知代码/用户行为变更、通知controller或接口更改",
+            "增删其他用例、放宽触屏/恢复断言、扩展测试清单",
+            "新增测试文件、重复大型回归、远程或生产操作"
+          ],
+          "branch": "feat/v0.5.13-save-sync-validation",
+          "baseline": "develop@a3fcdaf1ca46d934b53ecc8d7e5d9eaed7b89371；原feat分支已基于该commit，后续功能差分仍只提交到feat。",
+          "acceptance": "保留已有通知行为证据并与mounted自动标记已读契约一致；一次运行既有npm run test:ui，若完整命令仍在其他旧断言失败，准确记录位置；需要的发生时间恢复断言必须在该命令实际经过的场景中执行，未到达则标PARTIAL，不伪称通过。"
         }
       ],
       "followup_gap_audit": "已只读确认：手动补录模式未随思绪草稿恢复；保存成功后的AI队列错误仍露出原始error.message；通知复制失败无替代恢复；通知feature仍是MJS且未纳入类型/隔离构建。未读计数根因未复现，保留PARTIAL。",
@@ -649,6 +666,12 @@
       "at": "2026-10-12T15:17:00+08:00",
       "reason": "源码差距核对确认发生时间模式未纳入持久化草稿；锁定最小保存/恢复切片及解锁目标UI流程所需的一条既有按钮顺序预期修正。",
       "previous_snapshot": "reports/requirement-coordination-current.json@revision-43"
+    },
+    {
+      "revision": 45,
+      "at": "2026-10-12T15:20:42+08:00",
+      "reason": "首次受影响UI运行定位到presented-read触发后既有按钮预期过期；精确修订同一用例以断言真实通知行为并允许验证继续至时间草稿恢复。",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-44"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -783,7 +806,7 @@
       "只有截图或没有复现的未读数问题不据此宣称修复；先保留PARTIAL。"
     ],
     "external_actions": "无远端写、发布、部署、生产写或手工付费调用；不恢复已暂停自动化。",
-    "current_status": "BUILDING_LOCAL_ONLY；P0后台回答结果GET恢复已按revision41完成并集成，既有专项通过。revision44锁定发生时间手动/现在模式草稿恢复：现有场景明确检查持久化和重载后的按钮状态，源码当前只保存value不保存模式；精确写集为durable-form-drafts.mjs、kernel.mjs及既有ui-regression.mjs中一条过期按钮顺序预期。不创建工作树；未远程/生产操作。",
+    "current_status": "BUILDING_LOCAL_ONLY；revision44发生时间模式保存/恢复代码已在feat分支未提交，frontend-shared专项、三文件语法及diff check通过。test:ui在4065被已读通知按钮旧预期阻断；源码确认mount后markPresentedRead会PATCH并刷新。revision45仅授权将该既有UI用例改为断言真实自动已读与三项实际动作，并执行一次受影响UI流程。无生产或远程操作。",
     "version_requirement_count": {
       "minimum": 3,
       "maximum": 10,
@@ -1262,5 +1285,5 @@
     ],
     "third_version": "暂不冻结；只有需求池定向复核得到至少3条真实未交付需求后才建立v0.5.13.2或v0.5.14候选"
   },
-  "current_develop_code_baseline": "8b07b544fd0494225925eb37f227cb11cacc25a7"
+  "current_develop_code_baseline": "a3fcdaf1ca46d934b53ecc8d7e5d9eaed7b89371"
 }
