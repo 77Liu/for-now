@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 57,
-  "updated_at": "2026-10-12T16:21:52+08:00",
+  "revision": 58,
+  "updated_at": "2026-10-12T16:28:19+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -85,7 +85,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发只读追溯notification-entry:73原规则和源变更，主控据回执决定必要单点修复；真实浏览器目标仍未达到，保持PARTIAL，后续使用可到达场景的现有验证入口，不重复全套UI。",
+  "next_action": "主开发仅修正旧通知文案断言；主控继续独立本机模式浏览器验证时间草稿与首次保存，不触发AI。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -126,6 +126,23 @@
         "单独服务现有ui-regression的static/mockFetch夹具仍呈现opening-recovery，目标时间/复制场景未达到；浏览器未提供可定位错误的console回执。"
       ],
       "decision": "只记录环境/启动失败，不据此判断时间恢复或复制替代路径通过/失败；两次临时服务均已终止。"
+    },
+    "targeted_browser_time_recovery": {
+      "candidate_code_sha": "8d82e7d75564b90939793d5a9895b276f472a658",
+      "environment": "应用内浏览器；独立本机模式，JSON临时目录、无上游、日压缩关闭",
+      "result": "PASS（已执行范围）",
+      "observed": [
+        "未提交问答，点击先用起来可进入首页；初始新建时间模式为now。",
+        "填写问题并指定2026-09-26T08:15，刷新后问题/手动模式/日期恢复。",
+        "收起编辑、跳到所思再返回今日重新打开，问题/手动模式/日期仍保留。",
+        "切回now并刷新重新打开，mode=now且输入hidden=true、disabled=true；旧手动value仍隐藏存留，提交按mode处理。"
+      ],
+      "evidence": "reports/local/v0513-browser-20261012/manual-restored.png",
+      "partial": [
+        "首次保存与首页/详情一致性尚未执行",
+        "真实移动设备与跨日/离线/重新认证",
+        "通知复制失败真实浏览器交互"
+      ]
     }
   },
   "owner_decisions": {
@@ -519,101 +536,33 @@
       "candidate_tree": "9aefe2847445df89e681c5ea88304ac027b0da57",
       "integration_status": "主控只读审查后本地fast-forward接入develop@8d82e7d75564b90939793d5a9895b276f472a658，feat分支保留；真实浏览器/移动端/生产验收与旧文案失败仍PARTIAL。",
       "active_task": {
-        "task_id": "v0513-notification-copy-fallback-20261012",
-        "state": "IMPLEMENTED_REVIEWED_INTEGRATED_LOCAL",
+        "task_id": "v0513-notification-entry-alignment-20261012",
+        "state": "LOCKED_FOR_IMPLEMENTATION",
+        "owner": "主控",
+        "implementer": "主开发",
+        "baseline_sha": "2b738461a1b09db27f8285c3b13428ea15092493",
         "requirement_ids": [
           "recvxlYzZSlc2p"
         ],
-        "owner": "主控",
-        "implementer": "主开发（唯一代码写者）",
-        "baseline": {
-          "develop_sha": "c5376182bc5866730512af858659e585692e6361",
-          "develop_tree": "6413590f2eb2e3950b8620114f010e41515313a9",
-          "feature_branch": "feat/v0.5.13-save-sync-validation",
-          "feature_head": "b9c9307a968359bf07f2c051903ab59b3727ad55",
-          "feature_tree": "05d0f8f58bbd3a5583081745e785408d24c04a40"
-        },
         "write_set": [
-          "public/frontend/features/notifications/controller.mts",
-          "public/frontend/features/notifications/presentation.mts",
-          "public/frontend/features/notifications/controller.mjs（仅薄转发）",
-          "public/frontend/features/notifications/presentation.mjs（仅薄转发）",
-          "tsconfig.notifications.json",
-          "package.json（仅类型检查/构建/该既有专项脚本与build:runtime接线；不改依赖）",
-          "scripts/prepare-generated-runtime.mjs（仅为通知TS输出修正运行时相对导入）",
-          "scripts/frontend-notifications-feature-regression.mjs（仅扩展既有复制失败场景）"
+          "scripts/notification-entry-regression.mjs（仅原73行自定义message断言改为现行固定安全文案，不新增重复用例）"
         ],
         "forbidden": [
-          "reports/requirement-coordination-current.json",
-          "需求池/版本/交付表",
-          "package-lock.json与依赖变更",
-          ".gitignore",
-          "src/http/**",
-          "src/shared/**",
-          "schema/migrations",
-          "deploy/**",
-          "其他通知状态、未读/自动已读逻辑",
-          "新增测试文件与重复回归",
-          "远程push/tag/Release/deploy/生产写/手工付费调用"
+          "所有业务源码与构建文件",
+          "控制面",
+          "其他测试/新测试文件",
+          "远程/发布/部署/生产/付费操作",
+          "新增工作树或删除分支"
         ],
-        "build_output": "public/generated/**仅本地生成，已被.gitignore忽略，禁止暂存和提交",
         "acceptance": [
-          "从现有源码已证实的故障开始实现：剪贴板拒绝时当前只toast且没有可复制的替代内容；失败时向用户提供可读/可选择的脱敏诊断替代方式。",
-          "诊断字段严格沿用当前白名单，不回显task.error、通知私密正文、凭据或异常原文；会话切换/卸载后不向旧页面写入。",
-          "通知行为实现源用.mts；.mjs仅运行时薄转发；TS编译产物置于public/generated并在git中忽略。必要跨边界注释用中文说明隐私白名单与生命周期边界。",
-          "复用并扩展scripts/frontend-notifications-feature-regression.mjs现有copy场景，不新增测试文件或测试矩阵。",
-          "仅执行check:modules、通知TS类型检查/构建、生成路径准备、现有通知专项、git diff --check；build:runtime仅在通知模块确需验证完整构建接线时运行。",
-          "提交仅含批准写集和真实源代码/既有专项；先回报提交SHA/tree与实际验证，等待主控只读审查后本地接入develop。"
-        ],
-        "dispatch_evidence": {
-          "control_commit": "618d9352623b52077edb21ccbdf9b0de2e9b3d52",
-          "thread_id": "01a11afe-73d2-7013-91d5-cd473c4d7115",
-          "observed_turn_id": "01a12f23-b037-7710-afa1-490646274cc3",
-          "observed_status": "inProgress",
-          "note": "工具核对主开发正在活动实施，非仅凭任务锁判断运行。"
-        },
-        "receipt": {
-          "implementation_commit": "8d82e7d75564b90939793d5a9895b276f472a658",
-          "implementation_tree": "9aefe2847445df89e681c5ea88304ac027b0da57",
-          "reviewer": "主控",
-          "local_integration": "develop快进，无冲突；分支保留",
-          "verification": [
-            {
-              "command": "npm run typecheck:frontend",
-              "result": "PASS"
-            },
-            {
-              "command": "npm run test:frontend-notifications",
-              "result": "PASS",
-              "scope": "复制成功/失败替代选择/收起、脱敏、重试去重、会话切换及卸载后的迟到拒绝"
-            },
-            {
-              "command": "npm run check:modules",
-              "result": "PASS"
-            },
-            {
-              "command": "git diff --check",
-              "result": "PASS"
-            },
-            {
-              "command": "npm run test:notifications",
-              "result": "FAIL",
-              "location": "scripts/notification-entry-regression.mjs:73",
-              "reason": "现有转写专用固定安全文案与旧预期notification.message冲突；迁移前代码同一分支已固定该文案，未改变该行为。"
-            }
-          ],
-          "partial": [
-            "真实浏览器剪贴板拒绝交互",
-            "移动端表现",
-            "真实provider与生产"
-          ],
-          "generated_artifacts": "git ls-files public/generated .build无跟踪输出；新增文件只有.mts源码和tsconfig。",
-          "external_actions": "无push/tag/Release/deploy/生产写/付费调用"
-        }
+          "保留原失败，记录本次修正缘由；不恢复notification.message透传，不削弱脱敏检查。",
+          "编译源码/环境未变，复用已通过类型构建与通知controller专项；只执行node scripts/notification-entry-regression.mjs及diff检查。",
+          "交接差分及实际测试，由主控审查提交/接入。"
+        ]
       },
       "review_task": {
         "task_id": "v0513-notification-message-review-20261012",
-        "state": "READY_FOR_READONLY_REVIEW",
+        "state": "COMPLETED_REVIEWED",
         "implementer": "主开发",
         "mode": "只读审查",
         "baseline_sha": "07962cd",
@@ -622,7 +571,14 @@
           "recvxlYzZSlc2p"
         ],
         "write_set": [],
-        "objective": "追溯notification-entry-regression.mjs:73预期允许原notification.message覆盖转写固定文案的来源；与最新安全文案/通知诊断要求核对，裁定是旧断言失效还是用户可行动错误被隐藏。提出唯一最小修改位置，未获主控扩写前不得改文件或运行测试。"
+        "objective": "追溯notification-entry-regression.mjs:73预期允许原notification.message覆盖转写固定文案的来源；与最新安全文案/通知诊断要求核对，裁定是旧断言失效还是用户可行动错误被隐藏。提出唯一最小修改位置，未获主控扩写前不得改文件或运行测试。",
+        "decision": "旧断言与失败通知固定安全文案冲突，不恢复notification.message任意透传；仅修正原断言预期。",
+        "evidence": [
+          "94c8245原断言来源",
+          "99218ad已改安全文案与期望",
+          "6195479当前祖先保留固定文案而断言未同步",
+          "knowledge/ui-ux-v0.4.0.md安全状态与下一步规范"
+        ]
       }
     }
   ],
@@ -879,6 +835,12 @@
       "at": "2026-10-12T16:21:52+08:00",
       "reason": "保留两次目标浏览器未到达的实际环境证据，不误报功能验收；登记旧通知文案专项只读审查，允许写集为空。",
       "previous_snapshot": "07962cd:reports/requirement-coordination-current.json@revision56"
+    },
+    {
+      "revision": 58,
+      "at": "2026-10-12T16:28:19+08:00",
+      "reason": "只读审查确认旧通知断言冲突，唯一单点写集授权；真实本机浏览器已完成手动/now刷新与路由恢复，不把范围外验收改成PASS。",
+      "previous_snapshot": "2b73846:reports/requirement-coordination-current.json@revision57"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
