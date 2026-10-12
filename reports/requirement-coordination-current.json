@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 81,
-  "updated_at": "2026-10-12T12:35:37.278Z",
+  "revision": 82,
+  "updated_at": "2026-10-12T12:37:57.729Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "候选部署器已更新但旧文件副本未预先保存；应用未切换，先恢复精确旧执行器材料并核验回滚后部署。",
+  "current_phase": "精确旧执行器副本已恢复；新部署前备份已生成，校验归档后继续固定候选部署。",
   "state": "RELEASE_CANDIDATE_PUBLISHED",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发完成旧执行器精确哈希匹配恢复与完整attempt映射；失败报告真实影响，不无限扫描；应用部署仍未执行。",
+  "next_action": "主开发校验本次备份checksum及适用恢复材料，直接执行已授权固定SHA部署与观察；不重复备份或审查链。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -1298,6 +1298,12 @@
       "at": "2026-10-12T12:35:37.278Z",
       "reason": "准确记录部署器更新与备份先后偏差；保留未切换应用事实，补适用恢复材料后续作。",
       "previous_snapshot": "b2ad2ff:reports/requirement-coordination-current.json@revision80"
+    },
+    {
+      "revision": 82,
+      "at": "2026-10-12T12:37:57.729Z",
+      "reason": "补齐旧执行器精确副本及本次备份；保留--help误触发事实，继续最小核验与发布。",
+      "previous_snapshot": "63f2e07:reports/requirement-coordination-current.json@revision81"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -2088,7 +2094,7 @@
       "source": "主开发实际外部回执"
     },
     "executor_update": {
-      "status": "UPDATED_RECOVERING_EXACT_OLD_EXECUTOR_COPY",
+      "status": "EXACT_OLD_EXECUTOR_COPY_RECOVERED",
       "old_sha256_prefix": "1d31384e",
       "candidate_sha256_prefix": "8884b86d",
       "candidate_source": "c524eff:deploy/deploy.sh",
@@ -2103,7 +2109,31 @@
         "guard_state": "9cb197... approved/无execution lock",
         "recovery": "限定Git deploy脚本历史按旧完整SHA256恢复精确副本；核验后存远端回滚目录，再执行部署",
         "note": "不得写成更新前已有备份；两个此前not-found unit不虚构文件副本"
+      },
+      "recovered_copy": {
+        "git_source": "393599662dd5a40e24e93781079dfa6667ff44ed:deploy/deploy.sh",
+        "remote_path": "/root/for-now-config-backups/for-now-deploy.pre-v0.5.13-20261012",
+        "mode": "0600",
+        "hash": "旧执行器完整SHA256精确匹配，前缀1d31384e",
+        "sequence": "更新之后恢复原字节，非预先备份"
       }
+    },
+    "backup_receipt": {
+      "at": "2026-10-12T12:37:57.729Z",
+      "archive": "for-now-20261012T123630Z.tar.gz",
+      "bytes": 101617963,
+      "pg_accounts": 4,
+      "staged_attachments": 117,
+      "references": 111,
+      "checksum": "文件存在，实际匹配待主开发核验",
+      "success_marker": "已刷新",
+      "process": "已退出",
+      "health": {
+        "readyz": 200,
+        "state": "active"
+      },
+      "trigger_deviation": "主开发对不支持参数的backup脚本调用--help，实际触发一次真实备份；该次备份可作为部署前所需，不再重复",
+      "restore_note": "不据backup marker冒称恢复演练通过，适用恢复证据另核验"
     }
   }
 }
