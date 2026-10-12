@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 29,
-  "updated_at": "2026-10-12T12:03:20+08:00",
+  "revision": 32,
+  "updated_at": "2026-10-12T12:14:02+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -39,7 +39,7 @@
     ],
     "canonical_worktree": "/Users/bytedance/Documents/Codex/个人成长追踪",
     "canonical_worktree_branch": "feat/v0.5.13-save-sync",
-    "canonical_worktree_head": "5a095d46cb361704432c608fcfc10767ec947e1f",
+    "canonical_worktree_head": "b645f07ed961c0c6c7acaf9705beb5a2ed197bd6 (v0.5.13需求锁定的控制面快照；业务基线仍为5a095d46)",
     "archived_worktree": {
       "path": "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/develop",
       "branch": "feat/v0.5.13.1-stability",
@@ -315,9 +315,13 @@
         "public/frontend/features/capture-journal/**",
         "public/frontend/features/notifications/**",
         "public/frontend/app/runtime/durable-form-drafts.mjs（仅需求需要且局部）",
-        "与以上行为直接对应的现有专项回归脚本"
+        "与以上行为直接对应的现有专项回归脚本",
+        "public/frontend/app/runtime/record-events.mjs（仅chain-form提交状态处理局部）",
+        "scripts/personalized-ai-task-ui-regression.mjs（仅保存结果与失败分流的必要行为断言）",
+        "public/frontend/components/occurrence-control/index.mjs（仅新建#chain-datetime默认模式局部；其他表单维持现有selectedDate语义）",
+        "scripts/frontend-shared-regression.mjs（仅对应默认now行为断言）"
       ],
-      "shared_write_owner": "主控；src/http/**、src/shared/**、src/config/**、server entry/composition、public/frontend/app/runtime/** 的共享装配、schema/migrations、package/config/tsconfig/.gitignore、部署、需求控制面。发现必需变更时先停止并提交最小差分说明，不得自行越界。",
+      "shared_write_owner": "主控；revision31特批 record-events chain-form 局部，revision32另特批 occurrence-control 对新建#chain-datetime默认now的局部；其他控件、公共时间模型与shared API仍禁写。",
       "forbidden": [
         "reports/requirement-coordination-current.json",
         "需求池写入",
@@ -328,7 +332,40 @@
         "从旧归档分支搬运或直接合入旧v0.5.10交付"
       ],
       "acceptance_boundary": "每条需求先核对源记录的最新状态与已有交付证据；已完成项只记录并从实施范围剔除。保存失败与派生失败分流、未知写入保留草稿且不重复提交；时间intent/createdAt/occurredAt与新建/补录草稿规则一致；通知仅对已成功呈现范围标记已读，未加载/新到保持未读，重试/复制不泄露凭据或私密正文；账户隔离、幂等和失败恢复按真实改动验证。没有真实浏览器/移动端/provider/生产验收时标PARTIAL。",
-      "next": "主开发对六条记录核对已有代码和交付，按三个独立行为切片串行实现；共享契约需要越界时先交协调者裁定。"
+      "next": "保存及通知切片实施/专项通过；另批准仅对新建思绪的发生时间控件防止历史活动日期继承，日记/打卡等其他表单语义不变。",
+      "write_set_amendment": {
+        "revision": 31,
+        "at": "2026-10-12T12:08:35+08:00",
+        "reason": "主开发只读定位证明保存成功/同步失败分流位于共享运行时 record-events.mjs；为完成已锁定P0需求，批准唯一文件及必要既有专项的局部写入。",
+        "approved_paths": [
+          "public/frontend/app/runtime/record-events.mjs（仅chain-form提交状态处理局部）",
+          "scripts/personalized-ai-task-ui-regression.mjs（仅保存结果与失败分流的必要行为断言）"
+        ],
+        "rejected_or_still_forbidden": [
+          "该目录其他文件",
+          "src/http/**",
+          "src/shared/**",
+          "schema/migrations",
+          "全局装配与其他共享配置"
+        ]
+      },
+      "write_set_amendments": [
+        {
+          "revision": 32,
+          "at": "2026-10-12T12:14:02+08:00",
+          "reason": "源码核验确认空白发生时间控件把历史活动日自动变成manual，造成前次补录意图泄漏；仅批准组件对新建思绪默认now、保留显式手动/编辑既有值的局部调整及现有共享回归中的一条必要行为断言。",
+          "approved_paths": [
+            "public/frontend/components/occurrence-control/index.mjs（仅新建#chain-datetime默认模式局部；其他表单维持现有selectedDate语义）",
+            "scripts/frontend-shared-regression.mjs（仅对应默认now行为断言）"
+          ],
+          "still_forbidden": [
+            "public/frontend/time/**",
+            "src/shared/time/**",
+            "其他表单发生时间行为",
+            "全局日期状态与持久化/服务端schema"
+          ]
+        }
+      ]
     }
   ],
   "canonical_path": "reports/requirement-coordination-current.json",
@@ -464,6 +501,24 @@
       "at": "2026-10-12T12:03:20+08:00",
       "reason": "v0.5.13.1候选代码已接入develop；基于最新完整需求池快照锁定v0.5.13六条真实未发布需求、唯一功能分支、基线SHA/tree、写集/禁写集及失败回流边界。",
       "previous_snapshot": "reports/requirement-coordination-current.json@revision-28"
+    },
+    {
+      "revision": 30,
+      "at": "2026-10-12T12:04:06+08:00",
+      "reason": "在v0.5.13唯一功能分支提交协调者控制面快照；工作区代码基线保持develop 5a095d46，未创建第二工作树",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-29"
+    },
+    {
+      "revision": 31,
+      "at": "2026-10-12T12:08:35+08:00",
+      "reason": "按主开发只读依赖定位，精确扩大v0.5.13保存恢复写集至共享record-events提交状态局部和已有专项；未扩大其他共享代码权限",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-30"
+    },
+    {
+      "revision": 32,
+      "at": "2026-10-12T12:14:02+08:00",
+      "reason": "按代码现状证实空白思绪表单会继承历史activeDate并进入manual；精确批准新建思绪默认now的控件局部及现有专项断言，不变更其他表单/公共时间契约",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-31"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -564,7 +619,9 @@
       "public/frontend/features/capture-journal/**",
       "public/frontend/features/notifications/**",
       "public/frontend/app/runtime/durable-form-drafts.mjs（仅局部需求）",
-      "直接受影响的现有专项回归脚本"
+      "直接受影响的现有专项回归脚本",
+      "public/frontend/app/runtime/record-events.mjs（仅chain-form提交状态处理局部）",
+      "scripts/personalized-ai-task-ui-regression.mjs（仅必要行为断言）"
     ],
     "forbidden_write_set": [
       "reports/requirement-coordination-current.json",
@@ -780,7 +837,23 @@
       ]
     },
     "baseline_tree": "fbe240398fb0bc9fe2191369ec9c83a68895e53a",
-    "requirement_count": 6
+    "requirement_count": 6,
+    "共享文件扩大授权": "revision31仅批准 record-events.mjs 的 chain-form 提交状态分流局部及其现有专项；其他 public/frontend/app/runtime/**、src/http/**、schema、装配仍禁写。",
+    "v0.5.13时间边界特批": {
+      "revision": 32,
+      "at": "2026-10-12T12:14:02+08:00",
+      "reason": "源码核验确认空白发生时间控件把历史活动日自动变成manual，造成前次补录意图泄漏；仅批准组件对新建思绪默认now、保留显式手动/编辑既有值的局部调整及现有共享回归中的一条必要行为断言。",
+      "approved_paths": [
+        "public/frontend/components/occurrence-control/index.mjs（仅新建#chain-datetime默认模式局部；其他表单维持现有selectedDate语义）",
+        "scripts/frontend-shared-regression.mjs（仅对应默认now行为断言）"
+      ],
+      "still_forbidden": [
+        "public/frontend/time/**",
+        "src/shared/time/**",
+        "其他表单发生时间行为",
+        "全局日期状态与持久化/服务端schema"
+      ]
+    }
   },
   "version_plan": {
     "minimum_requirements_per_version": 3,
@@ -873,7 +946,11 @@
           "branch": "feat/v0.5.13-save-sync",
           "worktree": "/Users/bytedance/Documents/Codex/个人成长追踪",
           "parallel_write": false,
-          "remote_operations": false
+          "remote_operations": false,
+          "allowed_write_set": [
+            "public/frontend/components/occurrence-control/index.mjs（仅新建#chain-datetime默认模式局部；其他表单维持现有selectedDate语义）",
+            "scripts/frontend-shared-regression.mjs（仅对应默认now行为断言）"
+          ]
         },
         "scope": "六条未交付需求的保存恢复、时间意图及通知状态/诊断闭环；先核对已有实现，已解决项剔除，不扩全站重构。"
       }
