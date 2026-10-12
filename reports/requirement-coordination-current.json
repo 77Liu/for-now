@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 101,
-  "updated_at": "2026-10-12T14:42:16.503Z",
+  "revision": 102,
+  "updated_at": "2026-10-12T14:48:40.312Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/test-impact-matrix.md、SOP/integration-audit.md、SOP/release-and-observation.md；未改变其他风险授权正文"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "真实快照阻断已定位证据权限来源tuple第四项语义targetKey误解析；单MTS脚本窄点修复后新身份重采。",
+  "current_phase": "来源tuple单MTS修复审查提交并合入develop；重新固定新身份执行真实只读生产快照与本机门。",
   "state": "GLOBAL_STARTUP_GATE_EXECUTING",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发修正来源tuple/语义targetKey区分，保留引用图与意图等价断言；受影响工具自测通过后主控提交重发真实门。",
+  "next_action": "主开发立即按本控制面提交后的固定HEAD/tree重采并verify；主控不再追加提交漂移身份，失败精准回报。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -616,27 +616,27 @@
       "candidate_tree": "9dc58edd21eb42a6e0cfe30fe477faab3e4659ea",
       "integration_status": "本地六文件代码与既有控制面提交已快进合入develop；feat分支保留。未push/tag/release/deploy。",
       "active_task": {
-        "task_id": "v0513-startup-snapshot-source-tuple-fix-20261012",
+        "task_id": "v0513-production-snapshot-local-startup-run-02-20261012",
         "state": "DISPATCH_READY",
-        "mode": "实际脱敏形态单脚本修复",
+        "mode": "修复后生产只读快照与本机真实门",
         "owner": "主控",
         "implementer": "主开发",
-        "feature_branch": "feat/v0.5.13-save-sync-validation",
         "write_set": [
-          "scripts/release-state-startup-gate.mts（仅来源四字符串tuple、语义targetKey与关系keyOf的区分，现有self-test补必要真实形态）"
+          "服务器临时候选源/编译工具及0600脱敏快照",
+          "ignored本机脱敏快照/隔离PG/安全执行回执"
         ],
-        "objective": "evidencePermissions lifecycle resourceId为source tuple [resourceType,resourceId,rootId,targetKey]；第四项可为普通语义targetKey，误按JSONkeyOf解析使sourceKeys未登记。保持sourceKey与sourceRef.targetKey统一伪名引用及完整等价断言。",
+        "candidate_source": "本revision提交后的HEAD/tree固定；主控执行期间不再提交，旧e89e62a失败记录保持。",
         "acceptance": [
-          "按evidenceSourceKey/parseEvidenceSourceKey真实四元组规则处理，不将普通targetKey误作关系JSONkeyOf；结构关系keyOf仍严格解析。",
-          "语义targetKey如question:ID/annotation:ID按已存在真实source构造规则保留技术前缀/替换同一ID；静态transcription等语义保持，未知private值一致脱敏或BLOCKED，不把原文留存。",
-          "来源tuple、payload.sourceRef.targetKey、evidencePermission.sourceKey、lifecycle.resourceId及嵌套resourceKey对应一致；来源ID/关系图和intent等价不放宽，不丢对象。",
-          "现有self-test补真实evidencePermission四元组/普通targetKey/lifecycle场景，严格TS类型/构建/self-test/diff；不改映射/业务算法，不全量重测。",
-          "完成停写回执，由主控提交/固定新身份后重新采集；不自行生产访问/重采或部署。"
+          "同上次已证明PG_BACKUP只读role/单事务权限边界，精确新候选工具校验；不构造生产runtime，不写生产DB/配置，不读媒体",
+          "内存脱敏与原关系/意图等价断言必须执行；落盘前失败不给bundle、不修改断言/快照强过",
+          "仅下载0600脱敏bundle，当前完整HEAD/tree干净tracked与snapshot匹配后在新本机PG16实际startup/readyz/停/同库重启/核心无付费smoke",
+          "provider/通知/媒体外呼0、cleanup完整；给SHA/tree/快照hash/采集时刻/源运行SHA/PG版本/账户任务计数/各步骤回执",
+          "失败有界安全shape诊断，不无限重采，不部署；PASS仍需主控核对新release attempt"
         ],
         "forbidden": [
-          "其他源文件/控制面/规则写入",
-          "生产数据/应用/预算写入，放松断言或修改快照强过",
-          "新平台/工作树/删分支、用户ID/正文输出"
+          "源码/控制面修改、生产应用切换或数据库写入、原文/凭据输出",
+          "改fixture/状态丢任务以伪造PASS、重复付费、sourceDataUrl进入本机verify",
+          "新worktree/删分支/提交或自行发布"
         ]
       },
       "review_task": {
@@ -1024,6 +1024,40 @@
             "新worktree/删分支/用户数据与私钥输出"
           ],
           "receipt_source": "release_attempt.pre_release_startup_gate.execution_receipt"
+        },
+        {
+          "task_id": "v0513-startup-snapshot-source-tuple-fix-20261012",
+          "state": "IMPLEMENTED_REVIEWED_INTEGRATED_LOCAL",
+          "mode": "实际脱敏形态单脚本修复",
+          "owner": "主控",
+          "implementer": "主开发",
+          "feature_branch": "feat/v0.5.13-save-sync-validation",
+          "write_set": [
+            "scripts/release-state-startup-gate.mts（仅来源四字符串tuple、语义targetKey与关系keyOf的区分，现有self-test补必要真实形态）"
+          ],
+          "objective": "evidencePermissions lifecycle resourceId为source tuple [resourceType,resourceId,rootId,targetKey]；第四项可为普通语义targetKey，误按JSONkeyOf解析使sourceKeys未登记。保持sourceKey与sourceRef.targetKey统一伪名引用及完整等价断言。",
+          "acceptance": [
+            "按evidenceSourceKey/parseEvidenceSourceKey真实四元组规则处理，不将普通targetKey误作关系JSONkeyOf；结构关系keyOf仍严格解析。",
+            "语义targetKey如question:ID/annotation:ID按已存在真实source构造规则保留技术前缀/替换同一ID；静态transcription等语义保持，未知private值一致脱敏或BLOCKED，不把原文留存。",
+            "来源tuple、payload.sourceRef.targetKey、evidencePermission.sourceKey、lifecycle.resourceId及嵌套resourceKey对应一致；来源ID/关系图和intent等价不放宽，不丢对象。",
+            "现有self-test补真实evidencePermission四元组/普通targetKey/lifecycle场景，严格TS类型/构建/self-test/diff；不改映射/业务算法，不全量重测。",
+            "完成停写回执，由主控提交/固定新身份后重新采集；不自行生产访问/重采或部署。"
+          ],
+          "forbidden": [
+            "其他源文件/控制面/规则写入",
+            "生产数据/应用/预算写入，放松断言或修改快照强过",
+            "新平台/工作树/删分支、用户ID/正文输出"
+          ],
+          "implementation_commit": "d292ba5cc0490b2393434f5a6fffab156434487f",
+          "implementation_tree": "34976ebae1029ade5955e3004dfbd60e74c9e166",
+          "verification": {
+            "commands": [
+              "git diff --check",
+              "npm run typecheck:release-state-startup-gate",
+              "npm run test:release-state-startup-gate"
+            ],
+            "result": "PASS；独立只读review通过；主控差分核验无原文fallback，来源语义target与结构key分开，引用等价不削弱。"
+          }
         }
       ],
       "candidate_fixed_at": "2026-10-12T11:07:07.193Z",
@@ -1566,6 +1600,12 @@
       "at": "2026-10-12T14:42:16.503Z",
       "reason": "真实合法来源tuple形态定位完成，批准单脚本修复，不泛化复合ID或放松门。",
       "previous_snapshot": "17fd962:reports/requirement-coordination-current.json@revision100"
+    },
+    {
+      "revision": 102,
+      "at": "2026-10-12T14:48:40.312Z",
+      "reason": "实际来源tuple形态修复通过并提交接入，推进真实门第二次执行，旧失败不抹除。",
+      "previous_snapshot": "f6f0a8d:reports/requirement-coordination-current.json@revision101"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -2471,7 +2511,7 @@
       "related_contract": "历史补充recordCompression output ID对应singleton，需同一精确optional policy；daily实际markQueued在tasks.create/promote分支持久化前调用，继续严格要求实体。"
     },
     "pre_release_startup_gate": {
-      "status": "BLOCKED_REAL_SNAPSHOT_REDACTION_SHAPE",
+      "status": "REDACTION_FIXED_REEXECUTION_AUTHORIZED_NOT_PASSED",
       "source": "Owner本对话：本地合并启动检查及生产快照本地启动后再进release门",
       "scope": "本次重新发布前补齐最终累计候选实际runtime.start/监听/readyz/重启恢复，不能以projection专项代替",
       "snapshot": "生产只读一致性状态快照；服务器端脱敏，保留任务类型/状态与目标关系/singleton/schema，排除正文/原图/凭据，绑定采集时间/运行SHA/摘要",
