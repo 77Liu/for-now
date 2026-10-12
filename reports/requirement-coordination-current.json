@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 125,
-  "updated_at": "2026-10-12T17:25:48.595Z",
+  "revision": 130,
+  "updated_at": "2026-10-12T18:05:24.930Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -15,12 +15,12 @@
   },
   "work_mode": {
     "status": "RUNNING",
-    "scope": "恢复v0.5.13：修复快照脱敏与真实启动消费者契约，审查及有状态全局门通过后按既有授权发布；当前实现阶段禁止生产写入及手工付费"
+    "scope": "按Owner最新P00→P0→P1收口v0.5.13：先解决验证材料语义失真与启动阻塞，写集内连续开发，集中主控审查；P2不实施，P3规则要求删除但成果不删除"
   },
   "iteration": {
     "id": "v0.5.13",
     "status": "ACTIVE",
-    "phase": "主控实际代码契约审查通过，串行提交并固定下一启动候选"
+    "phase": "58a09eb启动初始化失败，主控定位语音缓存sourceType脱敏契约缺失并安排原feat修复"
   },
   "scope": {
     "description": "保存状态/草稿与失败恢复；发生时间/补录意图；通知列表未读事实、脱敏诊断与恢复操作。仅实现六条锁定需求的未交付行为，不做全站状态或通知平台重构。",
@@ -48,14 +48,13 @@
   },
   "active_tasks": [],
   "candidate": {
-    "sha": "ba20c81052c7049b02ef55a221d223e93c3c01e8",
-    "tree": "ba5dda5657653556d5172081069210d0b3b39c05",
+    "sha": "58a09eb68e75a5f044f969a58108b9cf60cffd65",
+    "tree": "93a3a4a442d2d66b98b505ce9dd69b64c4e060cf",
     "status": "STARTUP_GATE_FAILED",
     "release_frozen": false,
     "quality_gate": {
       "snapshot": "PASS",
       "local_import": "PASS",
-      "task_state_equivalence": "PASS",
       "runtime_start": "FAIL",
       "readyz": "NOT_RUN",
       "restart_recovery": "NOT_RUN",
@@ -64,42 +63,39 @@
   },
   "authorization": {
     "source": {
-      "at": "2026-10-12T10:50:30.512Z",
-      "source": "Owner本对话：四倍值接入当前0.5.13后，授权tag、release、push、上线。",
+      "source": "Owner最新指令：推进v0.5.13本地及线上隔离验证，达到可发布状态后启动v0.5.14；v0.5.13上线和收尾待人工信号",
       "version": "v0.5.13",
-      "condition": "四倍配置补接通过并固定累计候选；候选包含v0.5.13.1全部实现",
       "allowed_actions": [
-        "push",
-        "正式tag",
-        "Gitee Release",
-        "生产部署及部署必要配置写入",
-        "异常时恢复核验的运行对象"
+        "本地实现、审查、提交及合入develop",
+        "脱敏生产快照只读采集",
+        "隔离本地和隔离线上验证"
       ],
       "excluded": [
-        "改写既有远程tag/提交历史",
-        "无关迁移/删除业务数据",
-        "手工重复付费证明"
-      ],
-      "remote_protection": "Owner已明确跳过；本次不作为重复审批阻碍",
-      "release_policy": "候选质量、现场预算/告警/暂停/回滚条件仍核验；授权已覆盖不再逐次请求"
+        "push",
+        "tag",
+        "Release",
+        "生产部署与生产写入",
+        "v0.5.13正式收尾",
+        "手工重复付费调用"
+      ]
     },
     "expires_at": null,
-    "expiry_mode": "until_revoked",
+    "expiry_mode": "until_changed",
     "revoked": false,
     "execution_enabled": false,
-    "execution_condition": "有状态全局门通过、固定累计候选与当前现场恢复条件核验；当前只执行本地及只读采集动作"
+    "execution_condition": "发布与收尾等待Owner新的人工信号；当前推进验证"
   },
   "blockers": [
     {
-      "code": "GLOBAL_STARTUP_NOT_VERIFIED",
-      "status": "PENDING_VERIFICATION",
+      "code": "SNAPSHOT_SPEECH_CACHE_TYPE_LOST",
+      "status": "CONFIRMED",
       "owner": "主开发",
-      "impact": "修复专项通过不代替新固定候选的有状态全局门；通过前禁止release冻结或部署"
+      "impact": "快照脱敏使4条speechCache源类型不合法，normalizeStore删除元素并被持久化保护拒绝；需修复并重验真实门"
     }
   ],
   "next_action": {
     "owner": "主控",
-    "action": "提交已审查启动门修复及相关控制面事件，合回develop后登记完整候选SHA/tree并派实际快照门",
+    "action": "将已独立审查的语音缓存脱敏与相关规则修复提交在原feat并快进接入develop，随后固定新候选执行真实快照启动门",
     "status": "READY"
   },
   "runtime": {
@@ -146,11 +142,28 @@
       "event_id": "v0.5.13-1bea4caf-889a-4d75-8fbc-28a815bb521f",
       "source": "scripts/release-state-startup-gate.mts@sha256:a045085a30442d33f7cd2eb100147b6e3ec2f7751e20fc5d670b2f260e572b46",
       "status": "主控沿真实消费者与实际差分独立审查GO；严格TS及原有自测PASS；只补注释后复用有效行为结果"
+    },
+    {
+      "id": "snapshot-contract-fix-integrated",
+      "event_id": "v0.5.13-02ef69ff-e1d4-4d55-8fc1-f70185fc89ed",
+      "source": "git:58a09eb68e75a5f044f969a58108b9cf60cffd65",
+      "status": "已实际提交并快进合入develop；未发布，真实启动门尚未执行"
+    },
+    {
+      "id": "startup-gate-58a09eb-failure",
+      "event_id": "v0.5.13-94b48d08-36b8-43cd-814b-2b058f8289e4",
+      "source": "reports/local/v0513-startup-gate-current-receipt.json@sha256:7a351af641dce27d534a58fbf9c9f1d7c70d4fff5a9405b9cde18a0276cdee79",
+      "status": "快照/导入PASS，runtime启动FAIL；纠正先前阶段误报，后续门均NOT_RUN"
+    },
+    {
+      "id": "speech-cache-contract-reviewed",
+      "source": "scripts/release-state-startup-gate.mts@sha256:1359a0e5373484dcc813a98d42316e15b884dc1d0a70e19a038db370139bcdd6",
+      "status": "主控独立核对字段映射→重建→normalizePersistedDocument→normalizeSpeechCacheStore→runtime初始化链路；严格TS及原有自测PASS，复用未变行为结果；真实全局启动待新候选验证"
     }
   ],
   "records": {
     "events": "reports/iterations/v0.5.13/events.jsonl",
     "terminal": "reports/iterations/v0.5.13/terminal.json"
   },
-  "display_summary": "脱敏技术字段与来源引用修复已通过实际代码审查及专项，下一步固定新候选执行真实启动门。"
+  "display_summary": "v0.5.13受影响修复待主控接入；上一候选启动失败保留，发布及收尾等待人工信号。v0.5.14仅为后续候选规划。"
 }

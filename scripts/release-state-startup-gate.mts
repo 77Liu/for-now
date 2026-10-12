@@ -97,6 +97,10 @@ const IDENTIFIER_KEYS = new Set([
   "relatedTo", "sourceId", "sourceCaptureId", "supersedes", "resolvedBy", "habitId", "journalId"
 ]);
 const ATTACHMENT_PATH_FIELDS = new Set(["path", "attachmentPath", "asrAttachmentPath", "attachmentPaths"]);
+const SPEECH_CACHE_SOURCE_TYPES = new Set(["capture", "thoughtAnswer", "thoughtChain"]);
+const SAFE_DIAGNOSTIC_PATH_FIELDS = new Set([
+  "speechCache", "sourceVersions", "question", "conclusion", "answer", "sourceType", "sourceId", "id", "cacheKey"
+]);
 const TIMEZONE_KEYS = new Set(["timezone", "timeZone", "recordTimezone", "recordTimeZone"]);
 const SOURCE_TARGET_PREFIXES = new Set([
   "annotation", "annotation-reply", "question", "followup-question", "followup-answer",
@@ -597,6 +601,176 @@ function preserveTechnicalMetadata(
       }
     }
   }
+
+  // 只在 speechCache 的字段载荷内保留真实消费者识别的来源类型和身份引用。
+  const sourceSpeechCache = sourceMapping.fields.find(row => row.field === "speechCache");
+  const targetSpeechCache = sanitizedMapping.fields.find(row => row.field === "speechCache");
+  if (!sourceSpeechCache && !targetSpeechCache) return;
+  const sourceEntries = sourceSpeechCache?.payload;
+  const targetEntries = targetSpeechCache?.payload;
+  if (!sourceSpeechCache || !targetSpeechCache || !Array.isArray(sourceEntries) || !Array.isArray(targetEntries)) {
+    fail("Snapshot speechCache field shape changed during redaction; diagnostics=[{\"path\":\"speechCache\",\"sourceType\":\"array\",\"normalizedType\":\"missing-or-invalid\"}]");
+  }
+  if (sourceEntries.length !== targetEntries.length) {
+    fail(`Snapshot speechCache redaction changed array length; diagnostics=${JSON.stringify([
+      { path: "speechCache", sourceLength: sourceEntries.length, normalizedLength: targetEntries.length }
+    ])}`);
+  }
+  for (let index = 0; index < sourceEntries.length; index += 1) {
+    const sourceEntry = sourceEntries[index];
+    const targetEntry = targetEntries[index];
+    if (!sourceEntry || typeof sourceEntry !== "object" || Array.isArray(sourceEntry)
+      || !targetEntry || typeof targetEntry !== "object" || Array.isArray(targetEntry)) {
+      fail(`Snapshot speechCache entry shape changed during redaction; diagnostics=${JSON.stringify([
+        { path: "speechCache[*]", sourceType: "object", normalizedType: "missing-or-invalid" }
+      ])}`);
+    }
+    const source = sourceEntry as JsonRecord;
+    const target = targetEntry as JsonRecord;
+    if (typeof source.sourceType === "string" && SPEECH_CACHE_SOURCE_TYPES.has(source.sourceType)) {
+      target.sourceType = source.sourceType;
+    }
+    for (const field of ["id", "cacheKey"] as const) {
+      const value = source[field];
+      if (typeof value === "string" && value) target[field] = registerIdentifier(redactionContext, key, value);
+    }
+  }
+}
+
+function diagnosticContainerType(value: unknown): string {
+  if (Array.isArray(value)) return "array";
+  if (value === null) return "null";
+  if (typeof value === "object") return "object";
+  return typeof value;
+}
+
+function safeDiagnosticPath(segments: string[]): string {
+  return segments.map(segment => segment === "[*]" ? segment
+    : SAFE_DIAGNOSTIC_PATH_FIELDS.has(segment) ? segment : "<field>").join(".") || "$";
+}
+
+function normalizationFailureDiagnostics(source: unknown, normalized: unknown): JsonRecord[] {
+  const diagnostics: JsonRecord[] = [];
+  const visit = (before: unknown, after: unknown, segments: string[]) => {
+    if (diagnostics.length >= 24) return;
+    const beforeType = diagnosticContainerType(before);
+    const afterType = diagnosticContainerType(after);
+    const beforeContainer = beforeType === "array" || beforeType === "object";
+    const afterContainer = afterType === "array" || afterType === "object";
+    if (beforeType !== afterType && (beforeContainer || afterContainer)) {
+      diagnostics.push({
+        path: safeDiagnosticPath(segments), sourceType: beforeType, normalizedType: afterType,
+        ...(Array.isArray(before) ? { sourceLength: before.length } : {}),
+        ...(Array.isArray(after) ? { normalizedLength: after.length } : {})
+      });
+      return;
+    }
+    if (Array.isArray(before) && Array.isArray(after)) {
+      if (before.length > after.length) {
+        diagnostics.push({ path: safeDiagnosticPath(segments), sourceLength: before.length, normalizedLength: after.length });
+      }
+      for (let index = 0; index < Math.min(before.length, after.length); index += 1) visit(before[index], after[index], [...segments, "[*]"]);
+      return;
+    }
+    if (before && after && typeof before === "object" && typeof after === "object") {
+      const beforeRecord = before as Record<string, unknown>;
+      const afterRecord = after as Record<string, unknown>;
+      for (const key of Object.keys(beforeRecord)) {
+        if (!Object.hasOwn(afterRecord, key)) {
+          const value = beforeRecord[key];
+          const type = diagnosticContainerType(value);
+          if (type === "array" || type === "object") {
+            diagnostics.push({
+              path: safeDiagnosticPath([...segments, key]),
+              sourceType: type,
+              normalizedType: "missing",
+              ...(Array.isArray(value) ? { sourceLength: value.length, normalizedLength: 0 } : {})
+            });
+          }
+        } else {
+          visit(beforeRecord[key], afterRecord[key], [...segments, key]);
+        }
+        if (diagnostics.length >= 24) return;
+      }
+    }
+  };
+  visit(source, normalized, []);
+  return diagnostics;
+}
+
+function assertSpeechCacheState(source: JsonRecord, normalized: JsonRecord, canonicalJson: (value: unknown) => string): void {
+  const sourceEntries = Array.isArray(source.speechCache) ? source.speechCache : [];
+  const normalizedEntries = normalized.speechCache;
+  if (!Array.isArray(normalizedEntries)) {
+    fail(`Snapshot normalization changed speechCache state; diagnostics=${JSON.stringify([
+      { path: "speechCache", sourceLength: sourceEntries.length, normalizedType: diagnosticContainerType(normalizedEntries) }
+    ])}`);
+  }
+  const normalizedByIdentity = new Map(normalizedEntries.map(entry => {
+    const value = entry as JsonRecord;
+    const id = String(value.id || value.cacheKey || "");
+    const attachmentPath = value.attachmentPath || "";
+    return [canonicalJson([id, attachmentPath]), value] as const;
+  }));
+  for (const item of sourceEntries) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      fail(`Snapshot normalized a malformed speechCache entry; diagnostics=${JSON.stringify([
+        { path: "speechCache[*]", sourceType: diagnosticContainerType(item), normalizedType: "invalid-source-entry" }
+      ])}`);
+    }
+    const before = item as JsonRecord;
+    const expectedId = String(before.id || before.cacheKey || "");
+    const expectedCacheKey = String(before.cacheKey || expectedId);
+    const identity = canonicalJson([expectedId, before.attachmentPath || ""]);
+    const after = normalizedByIdentity.get(identity);
+    if (!after) {
+      fail(`Snapshot normalization changed speechCache identity; diagnostics=${JSON.stringify([
+        { path: "speechCache[*].identity", sourceLength: sourceEntries.length, normalizedLength: normalizedEntries.length }
+      ])}`);
+    }
+    const sourceVersions = before.sourceVersions || {};
+    const references: Array<[string, unknown, unknown]> = [
+      ["sourceType", before.sourceType, after?.sourceType],
+      ["sourceId", before.sourceId, after?.sourceId],
+      ["id", expectedId, after?.id],
+      ["cacheKey", expectedCacheKey, after?.cacheKey],
+      ["sourceVersions", sourceVersions, after?.sourceVersions || {}],
+      ["attachmentPath", before.attachmentPath || "", after?.attachmentPath || ""]
+    ];
+    if (Object.hasOwn(before, "sourceVersion") && before.sourceVersion !== undefined && before.sourceVersion !== null) {
+      references.push(["sourceVersion", before.sourceVersion, after?.sourceVersion]);
+    }
+    for (const [field, expected, actual] of references) {
+      if (canonicalJson(expected) !== canonicalJson(actual)) {
+        fail(`Snapshot normalization changed speechCache reference or state; diagnostics=${JSON.stringify([
+          { path: `speechCache[*].${field}`, sourceType: diagnosticContainerType(expected), normalizedType: diagnosticContainerType(actual) }
+        ])}`);
+      }
+    }
+  }
+}
+
+function assertPersistedStoreConsumerContract(
+  store: JsonRecord,
+  normalizeStore: (value: JsonRecord) => JsonRecord,
+  normalizePersistedDocument: (source: JsonRecord, normalize: (value: JsonRecord) => JsonRecord) => JsonRecord,
+  canonicalJson: (value: unknown) => string
+): void {
+  let normalized: JsonRecord;
+  try {
+    normalized = normalizePersistedDocument(store, normalizeStore);
+  } catch {
+    let diagnosticStore: JsonRecord | null = null;
+    try {
+      diagnosticStore = normalizeStore(structuredClone(store));
+    } catch {}
+    const diagnostics = diagnosticStore
+      ? normalizationFailureDiagnostics(store, diagnosticStore)
+      : [{ path: "$", sourceType: "object", normalizedType: "consumer-rejected" }];
+    fail(`Snapshot real persisted-store consumer rejected the sanitized store; diagnostics=${JSON.stringify(diagnostics)}`);
+  }
+  // 允许真实 normalizer 补默认值或归一化标量；这里只核对本次依赖的缓存契约。
+  assertSpeechCacheState(store, normalized, canonicalJson);
 }
 
 function registerIdentifier(context: RedactionContext, key: Buffer, value: string): string {
@@ -808,6 +982,10 @@ async function createSanitizedAccount(
   clock: InspectionClock
 ) {
   const persistence = await importFromRoot<PersistenceApi>(root, "src/shared/persistence/index.mjs");
+  const app = await importFromRoot<{ normalizeStore(value: JsonRecord): JsonRecord }>(root, "src/app/index.mjs");
+  const persistedNormalization = await importFromRoot<{
+    normalizePersistedDocument(source: JsonRecord, normalize: (value: JsonRecord) => JsonRecord): JsonRecord;
+  }>(root, "src/shared/persistence/normalization.mjs");
   const sourceStore = persistence.rebuildStoreObjects(sourceMapping);
   const sourceInspector = (await createClosedInspector(root, accountId, {}, clock)).backgroundAi;
   const beforeStates = taskStates(sourceStore, sourceInspector, redactionKey);
@@ -836,6 +1014,13 @@ async function createSanitizedAccount(
   preserveMatchingRequestedIntentHashes(sourceStore, beforeStates, sanitizedStore, redactedMapping, sanitizedInspector, redactionKey);
 
   const finalStore = persistence.rebuildStoreObjects(redactedMapping);
+  // 用真实持久化消费者验证脱敏后的完整重建值；验证结果只读，不写回待导出的数据。
+  assertPersistedStoreConsumerContract(
+    finalStore,
+    app.normalizeStore,
+    persistedNormalization.normalizePersistedDocument,
+    persistence.canonicalJson
+  );
   const afterStates = taskStates(finalStore, sanitizedInspector, redactionKey, true);
   assertSameTaskSemantics(beforeStates, afterStates);
   const rebuiltMapping = persistence.mapStoreObjects(redactedAccountId, finalStore);
@@ -1501,10 +1686,49 @@ async function selfTest(root: string) {
   }];
   const store: JsonRecord = {
     captures: [{ id: "capture-private-id", capturedAt: "2026-10-11T18:30:00.000Z", timezone: "Asia/Shanghai", attachmentPath: "/attachments/private-capture.m4a" }],
+    speechCache: [{
+      id: "speech-cache-capture",
+      cacheKey: "speech-cache-capture",
+      sourceType: "capture",
+      sourceId: "capture-private-id",
+      attachmentPath: "/attachments/speech-capture.mp3",
+      mimeType: "audio/mpeg",
+      bytes: 128,
+      createdAt: "2026-10-11T18:30:00.000Z",
+      expiresAt: "2026-11-10T18:30:00.000Z"
+    }, {
+      id: "speech-cache-answer-id",
+      cacheKey: "speech-cache-answer-key",
+      sourceType: "thoughtAnswer",
+      sourceId: "thought-private-answer",
+      sourceVersion: 1,
+      sourceVersions: {
+        question: { id: "thought-private-root", version: 1 },
+        answer: { id: "thought-private-answer", version: 1 }
+      },
+      attachmentPath: "/attachments/speech-answer.mp3",
+      mimeType: "audio/mpeg",
+      bytes: 256,
+      createdAt: "2026-10-11T18:30:00.000Z",
+      expiresAt: "2026-11-10T18:30:00.000Z"
+    }, {
+      id: "speech-cache-thought-chain",
+      cacheKey: "speech-cache-thought-chain",
+      sourceType: "thoughtChain",
+      sourceId: "thought-private-root",
+      sourceVersion: 1,
+      sourceVersions: { question: { id: "thought-private-root", version: 1 } },
+      attachmentPath: "/attachments/speech-thought-chain.mp3",
+      mimeType: "audio/mpeg",
+      bytes: 512,
+      createdAt: "2026-10-11T18:30:00.000Z",
+      expiresAt: "2026-11-10T18:30:00.000Z"
+    }],
     thoughts: [
       {
         id: "thought-private-root",
         type: "question",
+        sourceType: "capture",
         content: "**private question phrase** and overlapping question phrase",
         version: 1,
         sourceRef: { type: "capture", id: "capture-private-id", targetKey: "" },
@@ -1790,6 +2014,46 @@ async function selfTest(root: string) {
   const redactedMessageEventSource = (redactedStore.perceptionEvents as JsonRecord[])[1].sourceRef as JsonRecord;
   const redactedCompression = (redactedStore.recordCompressions as JsonRecord[])[0];
   const normalizedSnapshotStore = persistedNormalization.normalizePersistedDocument(redactedStore, app.normalizeStore);
+  const normalizedSpeechCache = normalizedSnapshotStore.speechCache as JsonRecord[];
+  const redactedSpeechCache = redactedStore.speechCache as JsonRecord[];
+  const normalizedAnswerCache = normalizedSpeechCache[1];
+  const normalizedChainCache = normalizedSpeechCache[2];
+  const normalizedAnswerSourceVersions = normalizedAnswerCache.sourceVersions as JsonRecord;
+  const normalizedAnswerQuestionVersion = normalizedAnswerSourceVersions.question as JsonRecord;
+  const normalizedAnswerAnswerVersion = normalizedAnswerSourceVersions.answer as JsonRecord;
+  const normalizedChainSourceVersions = normalizedChainCache.sourceVersions as JsonRecord;
+  const normalizedChainQuestionVersion = normalizedChainSourceVersions.question as JsonRecord;
+  if (normalizedSpeechCache.length !== redactedSpeechCache.length
+    || normalizedSpeechCache.map(entry => entry.sourceType).join(",") !== "capture,thoughtAnswer,thoughtChain"
+    || normalizedSpeechCache[0].sourceId !== (redactedStore.captures as JsonRecord[])[0].id
+    || normalizedSpeechCache[0].id !== normalizedSpeechCache[0].cacheKey
+    || normalizedAnswerCache.id === normalizedAnswerCache.cacheKey
+    || normalizedAnswerCache.sourceId !== (redactedStore.thoughts as JsonRecord[]).find(item => item.type === "answer")?.id
+    || normalizedAnswerQuestionVersion.id !== (redactedStore.thoughts as JsonRecord[]).find(item => item.type === "question")?.id
+    || normalizedAnswerAnswerVersion.id !== normalizedAnswerCache.sourceId
+    || normalizedChainCache.sourceId !== (redactedStore.thoughts as JsonRecord[]).find(item => item.type === "question")?.id
+    || normalizedChainQuestionVersion.id !== normalizedChainCache.sourceId) {
+    fail("Speech-cache redaction changed a supported source type, identity mapping, or source-version reference");
+  }
+  const unsupportedSpeechCache = structuredClone(redactedStore);
+  (unsupportedSpeechCache.speechCache as JsonRecord[])[0].sourceType = "unsupported-source-type";
+  let unsupportedSpeechCacheRejected = false;
+  try {
+    assertPersistedStoreConsumerContract(
+      unsupportedSpeechCache,
+      app.normalizeStore,
+      persistedNormalization.normalizePersistedDocument,
+      persistence.canonicalJson
+    );
+  } catch (error) {
+    if (!(error instanceof Error)
+      || !error.message.includes("\"path\":\"speechCache\"")
+      || !error.message.includes("\"sourceLength\":3")
+      || !error.message.includes("\"normalizedLength\":2")
+      || error.message.includes("unsupported-source-type")) throw error;
+    unsupportedSpeechCacheRejected = true;
+  }
+  if (!unsupportedSpeechCacheRejected) fail("Speech-cache normalization must reject unsupported source types without exposing values");
   const normalizedCompression = (normalizedSnapshotStore.recordCompressions as JsonRecord[])[0];
   const normalizedSupplement = normalizedSnapshotStore.historicalUserSupplement as JsonRecord;
   const normalizedSupplementTokens = (normalizedSupplement.tokenUsage as JsonRecord).tokens;
@@ -1932,8 +2196,10 @@ async function selfTest(root: string) {
   if (redactedRoot.recordTimezone !== "Asia/Shanghai"
     || redactedRoot.contextGeneratedAt !== "2026-10-11T18:30:00.000Z"
     || redactedRoot.inputAsOf !== "2026-10-11T18:30:00.000Z"
+    || typeof redactedRoot.sourceType !== "string"
+    || SPEECH_CACHE_SOURCE_TYPES.has(redactedRoot.sourceType)
     || !Object.hasOwn(redactedStore, "onboardingV2")) {
-    fail("Redaction changed timezone, technical timestamps, or singleton structure");
+    fail("Redaction changed timezone, technical timestamps, singleton structure, or globally preserved a user sourceType field");
   }
   const graphChecks = {
     thoughtRoot: rebuiltRedactedMapping.relations.some(item => item.relation === "thoughtRoot" && item.resolution === "live"),
