@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 45,
-  "updated_at": "2026-10-12T15:20:42+08:00",
+  "revision": 46,
+  "updated_at": "2026-10-12T15:23:40+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner已要求继续推进 v0.5.13.1 与 v0.5.13；当前仅本地串行开发，远程写入、发布、部署和付费调用仍关闭",
-  "current_phase": "v0.5.13.1候选仍为本地PARTIAL；严重告警诊断与监控TS闭环已接入develop，未推送/发布/部署。v0.5.13发生时间草稿恢复实现已在feat分支未提交；共享专项、语法和diff检查通过。受影响UI验证指出通知卡片自动进入即读，真实动作按钮只有查看/重试/复制错误日志；现修正旧测试为断言自动已读，不改产品通知行为，再执行一次现有UI验证。",
+  "current_phase": "v0.5.13.1候选仍为本地PARTIAL；严重告警诊断与监控TS闭环已接入develop，未推送/发布/部署。v0.5.13发生时间模式草稿恢复修改仍在原feat分支：frontend-shared与语法/diff检查通过，手动/现在模式定向内联smoke通过。一次npm run test:ui在较早capture展开断言2658失败，目标恢复场景未到达；保留浏览器验证PARTIAL，不再重复该整套。",
   "state": "BUILDING_LOCAL_ONLY",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -85,7 +85,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发在原feat分支先同步develop@a3fcdaf，只把既有失败通知UI用例与实际presented-read契约对齐：断言查看/重试/复制错误日志三按钮及呈现后readAt生效、无标记已读按钮；随后执行一次既有test:ui以到达时间模式恢复场景，记录全部结果。",
+  "next_action": "主控审查三个文件实际差分及 focused smoke，允许主开发在原feat分支提交后快进接入develop作为PARTIAL本地候选；不将未到达的浏览器重载场景写成通过。随后依据rev538剩余锁定需求选择另一个最小切片；不触发远程/生产动作。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -97,12 +97,12 @@
   ],
   "last_check": {
     "remote_refs": "2026-10-11T12:07:35Z 已通过 git ls-remote --heads/tags 只读核验；无远程写入",
-    "worktrees": "2026-10-12T15:20:42+08:00：仅根目录一个工作树，当前develop@a3fcdaf；feat/v0.5.13-save-sync-validation保留并与当前develop同基线。三个未提交的获批功能文件暂留共享工作区；不另建工作树。",
+    "worktrees": "2026-10-12T15:23:40+08:00：仅根目录一个工作树，当前develop@b1fa2d6；feat/v0.5.13-save-sync-validation保留且相同基线，三文件未提交差分仍在唯一工作区，无第二工作树。",
     "platform_protection": "Gitee UI只读核验：保护分支规则0条、保护标签不可用、推送限制未启用",
     "remote_write": "本轮未执行",
     "release_rollback_rehearsal": "本地隔离模拟全部通过；无远端命令",
     "budget_alerts": "本地护栏回归通过；当前生产配置与告警快照缺失，保持阻断",
-    "candidate_integration": "监控TS源码及严重告警诊断已本地接入develop；未部署。后台回答结果GET恢复已接入develop并通过既有专项。发生时间模式随草稿恢复目前仅有feat分支未提交改动，frontend-shared、三个文件node --check与git diff --check通过。test:ui失败于通知卡片过期预期：presented-read在页面挂载时已标读，真实动作无标记已读按钮；尚未重跑，时间恢复场景未到达。未推送/发布/部署。",
+    "candidate_integration": "P0后台回答结果GET恢复已接入develop并由既有专项通过。发生时间模式草稿恢复三文件差分在feat上；npm run test:frontend-shared、三个文件node --check、git diff --check通过；未提交。npm run test:ui本轮唯一一次在scripts/ui-regression.mjs:2658 capture展开断言失败；发生时间恢复场景4098–4108未到达，保持PARTIAL。不重复运行整套。临时内联smoke验证manual/now模式与值、输入隐藏/禁用及active/aria状态往返成功，无文件新增。远程/生产未操作。",
     "alert_incident": {
       "alert_at": "2026-10-12T05:01:39.769Z",
       "recovered_at": "2026-10-12T05:06:39.868Z",
@@ -358,7 +358,7 @@
         "从旧归档分支搬运或直接合入旧v0.5.10交付"
       ],
       "acceptance_boundary": "每条需求先核对源记录的最新状态与已有交付证据；已完成项只记录并从实施范围剔除。保存失败与派生失败分流、未知写入保留草稿且不重复提交；时间intent/createdAt/occurredAt与新建/补录草稿规则一致；通知仅对已成功呈现范围标记已读，未加载/新到保持未读，重试/复制不泄露凭据或私密正文；账户隔离、幂等和失败恢复按真实改动验证。没有真实浏览器/移动端/provider/生产验收时标PARTIAL。",
-      "next": "revision45补充：通知首次呈现即由现有markPresentedRead标读。将既有UI用例四按钮/手动读预期纠正为真实的查看、重试、复制错误日志及呈现已读状态；不改产品通知逻辑。随后只运行一次已有test:ui，验证发生时间草稿manual/now往返；如遇其他旧失败如实保留。",
+      "next": "revision46记录：发生时间模式保存/恢复的manual/now定向smoke通过，但现有UI整套在更早capture展开断言2658失败，目标浏览器重载断言未执行。不扩大为capture修复，不重复整套；主控审查后可将精确差分作为PARTIAL候选接入develop，继续其他独立锁定需求。",
       "write_set_amendment": {
         "revision": 31,
         "at": "2026-10-12T12:08:35+08:00",
@@ -440,6 +440,24 @@
           "branch": "feat/v0.5.13-save-sync-validation",
           "baseline": "develop@a3fcdaf1ca46d934b53ecc8d7e5d9eaed7b89371；原feat分支已基于该commit，后续功能差分仍只提交到feat。",
           "acceptance": "保留已有通知行为证据并与mounted自动标记已读契约一致；一次运行既有npm run test:ui，若完整命令仍在其他旧断言失败，准确记录位置；需要的发生时间恢复断言必须在该命令实际经过的场景中执行，未到达则标PARTIAL，不伪称通过。"
+        },
+        {
+          "revision": 46,
+          "at": "2026-10-12T15:23:40+08:00",
+          "supersedes_revision": 45,
+          "reason": "按revision45调整后的UI套件唯一一次运行在更早的capture展开行为断言2658失败，发生时间模式重载场景未到达。为避免把不相关场景扩大修复或反复跑全套，改用当前已有frontend-shared专项、语法/diff检查与一次不落盘内联mode往返smoke作为可复核本地候选证据；真实浏览器恢复仍partial。",
+          "approved_actions": [
+            "主控只读复核当前三文件精确差分与已通过的定向证据；复核通过后允许该feat提交并fast-forward接入develop，状态明确为PARTIAL候选。",
+            "记录test:ui失败在scripts/ui-regression.mjs:2658并保持；不再重跑全套，不修复capture扩展以绕过失败。"
+          ],
+          "still_forbidden": [
+            "宣称UI浏览器重载恢复已通过或把PARTIAL改为PASS",
+            "扩大到capture展开/通知产品行为，新增测试文件或额外全量回归",
+            "远程push/tag/release、部署、生产写入、手工付费调用"
+          ],
+          "branch": "feat/v0.5.13-save-sync-validation",
+          "baseline": "develop@b1fa2d6c889d29a7053fde34d5704cd319fd799b；当前feature已同步该控制面基线。",
+          "acceptance": "候选仅在主控复核差分且定向mode往返smoke真实成功后允许本地提交/集成；版本仍PARTIAL，后续获得可达目标场景的浏览器证据前不得用于发布验收。"
         }
       ],
       "followup_gap_audit": "已只读确认：手动补录模式未随思绪草稿恢复；保存成功后的AI队列错误仍露出原始error.message；通知复制失败无替代恢复；通知feature仍是MJS且未纳入类型/隔离构建。未读计数根因未复现，保留PARTIAL。",
@@ -672,6 +690,12 @@
       "at": "2026-10-12T15:20:42+08:00",
       "reason": "首次受影响UI运行定位到presented-read触发后既有按钮预期过期；精确修订同一用例以断言真实通知行为并允许验证继续至时间草稿恢复。",
       "previous_snapshot": "reports/requirement-coordination-current.json@revision-44"
+    },
+    {
+      "revision": 46,
+      "at": "2026-10-12T15:23:40+08:00",
+      "reason": "记录发生时间恢复定向smoke通过、单次UI验证在更早capture断言失败；明确候选可部分集成但不得伪称浏览器验收。",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-45"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -806,7 +830,7 @@
       "只有截图或没有复现的未读数问题不据此宣称修复；先保留PARTIAL。"
     ],
     "external_actions": "无远端写、发布、部署、生产写或手工付费调用；不恢复已暂停自动化。",
-    "current_status": "BUILDING_LOCAL_ONLY；revision44发生时间模式保存/恢复代码已在feat分支未提交，frontend-shared专项、三文件语法及diff check通过。test:ui在4065被已读通知按钮旧预期阻断；源码确认mount后markPresentedRead会PATCH并刷新。revision45仅授权将该既有UI用例改为断言真实自动已读与三项实际动作，并执行一次受影响UI流程。无生产或远程操作。",
+    "current_status": "BUILDING_LOCAL_ONLY；发生时间mode保存/恢复差分仍在feat分支未提交，仅三个授权文件。frontend-shared专项、三个文件语法、diff check及一次内联manual/now行为smoke通过。test:ui本轮唯一一次在较早capture展开断言2658失败，目标页面重载场景未到达，保留PARTIAL；不重复整套或扩散到capture行为修复。主控审查后可提交并本地集成，不释放/部署。",
     "version_requirement_count": {
       "minimum": 3,
       "maximum": 10,
