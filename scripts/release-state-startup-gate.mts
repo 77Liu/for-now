@@ -53,6 +53,11 @@ type PersistenceApi = {
   canonicalJson(value: unknown): string;
   storeContentSha256(value: unknown): string;
 };
+type PersistenceMetadataApi = {
+  preparePersistenceDocument(document: JsonRecord, now: () => string, options?: { force?: boolean }): JsonRecord;
+  synchronizePersistenceMetadata(before: JsonRecord | null, after: JsonRecord, now: () => string, options: JsonRecord): JsonRecord;
+  syncOperationFingerprint(context: JsonRecord): string;
+};
 type PgClient = {
   connect(): Promise<void>;
   end(): Promise<void>;
@@ -98,6 +103,18 @@ const IDENTIFIER_KEYS = new Set([
 ]);
 const ATTACHMENT_PATH_FIELDS = new Set(["path", "attachmentPath", "asrAttachmentPath", "attachmentPaths"]);
 const SPEECH_CACHE_SOURCE_TYPES = new Set(["capture", "thoughtAnswer", "thoughtChain"]);
+const SYNC_PUBLIC_DOMAINS = new Set([
+  "checkins", "dailyRecords", "captures", "journals", "journalDraft", "thoughts", "chats", "books",
+  "keepsakes", "quotes", "experiments", "analyses", "customMetrics", "aiTasks", "notifications",
+  "actions", "habits", "habitCheckins", "feedback", "validationLedger", "userClaims", "modelUnknowns",
+  "onboarding", "onboardingV2", "commercialization", "trash", "speechCache"
+]);
+const PERSISTENCE_RESOURCE_TYPES = new Set([
+  "checkin", "dailyRecord", "capture", "journal", "chat", "book", "keepsake", "quote", "experiment",
+  "analysis", "customMetric", "action", "habit", "habitCheckin", "feedback", "validationLedger",
+  "userClaim", "modelUnknown", "evidenceSource", "evidencePermission", "perceptionEvent", "thoughtRemark",
+  "thoughtFollowUp", "journalReflection", "bookNote", "annotation", "thoughtChain", "thoughtBlock", "journalDraft"
+]);
 const SAFE_DIAGNOSTIC_PATH_FIELDS = new Set([
   "speechCache", "sourceVersions", "question", "conclusion", "answer", "sourceType", "sourceId", "id", "cacheKey"
 ]);
@@ -332,9 +349,13 @@ function createRedactionContext(
     const result = value.split("/").map(segment => {
       const separator = segment.indexOf(":");
       if (separator < 1 || separator === segment.length - 1) fail("Snapshot resource key is not structurally valid");
+      const resourceType = segment.slice(0, separator);
       const resourceId = segment.slice(separator + 1);
       const mappedId = resourceId.startsWith("[") ? redactSourceKey(resourceId) : redactId(resourceId);
-      return `${segment.slice(0, separator + 1)}${mappedId}`;
+      const mappedType = PERSISTENCE_RESOURCE_TYPES.has(resourceType)
+        ? resourceType
+        : identityToken(key, "resource-type", resourceType);
+      return `${mappedType}:${mappedId}`;
     }).join("/");
     context.resourceKeys.set(value, result);
     return result;
@@ -637,6 +658,143 @@ function preserveTechnicalMetadata(
   }
 }
 
+function preservePersistenceMetadata(
+  sourceMapping: StoreMapping,
+  sanitizedMapping: StoreMapping,
+  redactionContext: RedactionContext,
+  key: Buffer
+): void {
+  const sourceField = sourceMapping.fields.find(row => row.field === "_persistence");
+  const targetField = sanitizedMapping.fields.find(row => row.field === "_persistence");
+  if (!sourceField && !targetField) {
+    if (sourceMapping.lifecycles.length || sourceMapping.idempotency.length
+      || sanitizedMapping.lifecycles.length || sanitizedMapping.idempotency.length) {
+      fail("Snapshot persistence records exist without their metadata field");
+    }
+    return;
+  }
+  if (!sourceField || !targetField || !sourceField.payload || !targetField.payload
+    || typeof sourceField.payload !== "object" || typeof targetField.payload !== "object") {
+    fail("Snapshot persistence metadata field shape changed during redaction");
+  }
+  const sourceMetadata = sourceField.payload as JsonRecord;
+  const targetMetadata = targetField.payload as JsonRecord;
+  const syncPresent = Object.hasOwn(sourceMetadata, "sync");
+  const sourceSync = syncPresent ? sourceMetadata.sync as JsonRecord : { cursor: 0, changes: [] };
+  if (!sourceSync || typeof sourceSync !== "object" || Array.isArray(sourceSync)
+    || !Array.isArray(sourceSync.changes)
+    || (Object.hasOwn(sourceSync, "operations") && !Array.isArray(sourceSync.operations))) {
+    fail("Snapshot persistence sync structure changed during redaction");
+  }
+  if (Object.hasOwn(sourceMetadata, "version")) targetMetadata.version = sourceMetadata.version;
+  const targetSync = targetMetadata.sync && typeof targetMetadata.sync === "object" && !Array.isArray(targetMetadata.sync)
+    ? targetMetadata.sync as JsonRecord
+    : {};
+  targetMetadata.sync = targetSync;
+  targetSync.cursor = sourceSync.cursor;
+  const mapId = (value: unknown, allowEmpty = false): string => {
+    if (typeof value !== "string" || (!allowEmpty && !value)) {
+      fail("Snapshot persistence identity violates its string contract");
+    }
+    if (!value) return "";
+    return redactionContext.ids.get(value) || registerIdentifier(redactionContext, key, value);
+  };
+  const sourceChanges = sourceSync.changes as JsonRecord[];
+  const sourceOperations = (sourceSync.operations || []) as JsonRecord[];
+  const targetChanges = Array.isArray(targetSync.changes) ? targetSync.changes as JsonRecord[] : [];
+  const targetOperations = Array.isArray(targetSync.operations) ? targetSync.operations as JsonRecord[] : [];
+  if (sourceChanges.length !== targetChanges.length || sourceOperations.length !== targetOperations.length) {
+    fail("Snapshot persistence sync records changed count during redaction");
+  }
+  targetSync.changes = targetChanges;
+  targetSync.operations = targetOperations;
+  const changeTypes = new Set(["create", "update", "delete", "reorder"]);
+  for (let index = 0; index < sourceChanges.length; index += 1) {
+    const source = sourceChanges[index] as JsonRecord;
+    const target = targetChanges[index] as JsonRecord;
+    if (!source || typeof source !== "object" || !target || typeof target !== "object"
+      || typeof source.changeType !== "string" || !changeTypes.has(source.changeType)
+      || typeof source.resourceId !== "string" || typeof source.operationId !== "string"
+      || typeof source.domain !== "string" || !source.domain) {
+      fail("Snapshot persistence sync change violates its persisted contract");
+    }
+    target.cursor = source.cursor;
+    target.domain = SYNC_PUBLIC_DOMAINS.has(source.domain)
+      ? source.domain
+      : identityToken(key, "sync-domain", source.domain);
+    target.resourceId = mapId(source.resourceId, true);
+    target.version = source.version;
+    target.changeType = source.changeType;
+    target.operationId = mapId(source.operationId, true);
+    if (typeof source.traceId === "string") target.traceId = mapId(source.traceId, true);
+    target.committedAt = source.committedAt;
+  }
+  const HTTP_METHODS = new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]);
+  for (let index = 0; index < sourceOperations.length; index += 1) {
+    const source = sourceOperations[index] as JsonRecord;
+    const target = targetOperations[index] as JsonRecord;
+    if (!source || typeof source !== "object" || !target || typeof target !== "object"
+      || typeof source.operationId !== "string" || !source.operationId
+      || typeof source.fingerprint !== "string" || !/^[a-f0-9]{64}$/u.test(source.fingerprint)
+      || typeof source.method !== "string" || !source.method
+      || typeof source.resource !== "string" || !source.resource) {
+      fail("Snapshot persistence sync operation violates its persisted fingerprint contract");
+    }
+    target.operationId = mapId(source.operationId);
+    // HMAC 保留 64 位摘要形态与快照内一致性，不泄露由原请求正文导出的摘要。
+    target.fingerprint = redactTechnicalDigest(key, source.fingerprint);
+    target.method = HTTP_METHODS.has(source.method.toUpperCase())
+      ? source.method.toUpperCase()
+      : identityToken(key, "sync-method", source.method);
+    target.resource = identityToken(key, "sync-resource", source.resource);
+    target.committedAt = source.committedAt;
+    target.firstCursor = source.firstCursor;
+    target.lastCursor = source.lastCursor;
+  }
+
+  if (sourceMapping.lifecycles.length !== sanitizedMapping.lifecycles.length
+    || sourceMapping.idempotency.length !== sanitizedMapping.idempotency.length) {
+    fail("Snapshot persistence metadata record counts changed during redaction");
+  }
+  for (let index = 0; index < sourceMapping.lifecycles.length; index += 1) {
+    const source = sourceMapping.lifecycles[index];
+    const target = sanitizedMapping.lifecycles[index];
+    if (!source.payload || !target.payload) fail("Snapshot lifecycle payload is missing during redaction");
+    const sourcePayload = source.payload as JsonRecord;
+    const targetPayload = target.payload as JsonRecord;
+    const mappedResourceKey = redactionContext.resourceKeys.get(String(sourcePayload.resourceKey || ""));
+    const mappedResourceId = mapId(sourcePayload.resourceId);
+    if (!mappedResourceKey || !mappedResourceId) fail("Snapshot lifecycle identity has no consistent redaction mapping");
+    for (const record of [target, targetPayload]) {
+      record.resourceKey = mappedResourceKey;
+      record.resourceType = PERSISTENCE_RESOURCE_TYPES.has(String(sourcePayload.resourceType || ""))
+        ? sourcePayload.resourceType
+        : identityToken(key, "resource-type", String(sourcePayload.resourceType || ""));
+      record.resourceId = mappedResourceId;
+      record.lifecycle = sourcePayload.lifecycle;
+      record.state = sourcePayload.state;
+      record.tombstone = sourcePayload.tombstone;
+      for (const field of ["createdAt", "updatedAt", "deletedAt", "restoredAt", "purgedAt"] as const) {
+        if (Object.hasOwn(sourcePayload, field)) record[field] = sourcePayload[field];
+      }
+      if (typeof sourcePayload.trashId === "string") record.trashId = mapId(sourcePayload.trashId, true);
+    }
+  }
+  for (let index = 0; index < sourceMapping.idempotency.length; index += 1) {
+    const source = sourceMapping.idempotency[index];
+    const target = sanitizedMapping.idempotency[index];
+    if (!source.payload || !target.payload) fail("Snapshot idempotency payload is missing during redaction");
+    const payload = target.payload as JsonRecord;
+    // 元数据载荷与关系列分别脱敏；这里恢复 map/rebuild 明确要求一致的字段。
+    target.scope = payload.scope;
+    target.key = payload.key;
+    target.requestHash = payload.requestHash;
+    target.response = structuredClone(payload.response);
+    target.createdAt = payload.createdAt;
+    target.expiresAt = payload.expiresAt;
+  }
+}
+
 function diagnosticContainerType(value: unknown): string {
   if (Array.isArray(value)) return "array";
   if (value === null) return "null";
@@ -754,7 +912,12 @@ function assertPersistedStoreConsumerContract(
   store: JsonRecord,
   normalizeStore: (value: JsonRecord) => JsonRecord,
   normalizePersistedDocument: (source: JsonRecord, normalize: (value: JsonRecord) => JsonRecord) => JsonRecord,
-  canonicalJson: (value: unknown) => string
+  preparePersistenceDocument: PersistenceMetadataApi["preparePersistenceDocument"],
+  mapStoreObjects: PersistenceApi["mapStoreObjects"],
+  rebuildStoreObjects: PersistenceApi["rebuildStoreObjects"],
+  accountId: string,
+  canonicalJson: (value: unknown) => string,
+  now: string
 ): void {
   let normalized: JsonRecord;
   try {
@@ -771,6 +934,42 @@ function assertPersistedStoreConsumerContract(
   }
   // 允许真实 normalizer 补默认值或归一化标量；这里只核对本次依赖的缓存契约。
   assertSpeechCacheState(store, normalized, canonicalJson);
+  const normalizedBefore = canonicalJson(normalized);
+  let prepared: JsonRecord;
+  try {
+    prepared = preparePersistenceDocument(structuredClone(normalized), () => now);
+  } catch {
+    fail("Snapshot real PostgreSQL persistence consumer rejected metadata after normalization; diagnostics=[{\"path\":\"_persistence\",\"sourceType\":\"object\",\"normalizedType\":\"consumer-rejected\"}]");
+  }
+  if (canonicalJson(normalized) !== normalizedBefore) {
+    fail("Snapshot persistence consumer mutated the normalized source instead of its validation clone");
+  }
+  const sourceMetadata = normalized._persistence as JsonRecord | undefined
+    || { lifecycles: [], idempotency: [], sync: { cursor: 0, changes: [], operations: [] } };
+  const preparedMetadata = prepared._persistence as JsonRecord | undefined;
+  if (!preparedMetadata) {
+    if (Array.isArray(normalized.trash)) fail("Prepared persistence document lost its metadata envelope");
+    return;
+  }
+  const sourceSync = (sourceMetadata.sync as JsonRecord | undefined)
+    || { changes: [], operations: [] };
+  const preparedSync = preparedMetadata.sync as JsonRecord;
+  const sourceChanges = sourceSync.changes || [];
+  const sourceOperations = sourceSync.operations || [];
+  const sourceIdempotency = sourceMetadata.idempotency || [];
+  if (canonicalJson(sourceChanges) !== canonicalJson(preparedSync.changes)
+    || canonicalJson(sourceOperations) !== canonicalJson(preparedSync.operations)
+    || canonicalJson(sourceIdempotency) !== canonicalJson(preparedMetadata.idempotency)) {
+    fail("Persistence preparation discarded existing sync or idempotency records");
+  }
+  const preparedLifecycleKeys = new Set((preparedMetadata.lifecycles as JsonRecord[]).map(item => item.resourceKey));
+  if ((sourceMetadata.lifecycles as JsonRecord[]).some(item => !preparedLifecycleKeys.has(item.resourceKey))) {
+    fail("Persistence preparation discarded an existing lifecycle identity");
+  }
+  const remapped = rebuildStoreObjects(mapStoreObjects(accountId, prepared));
+  if (canonicalJson(prepared) !== canonicalJson(remapped)) {
+    fail("Prepared persistence document changed across the actual store mapping round trip");
+  }
 }
 
 function registerIdentifier(context: RedactionContext, key: Buffer, value: string): string {
@@ -986,7 +1185,19 @@ async function createSanitizedAccount(
   const persistedNormalization = await importFromRoot<{
     normalizePersistedDocument(source: JsonRecord, normalize: (value: JsonRecord) => JsonRecord): JsonRecord;
   }>(root, "src/shared/persistence/normalization.mjs");
+  const persistenceMetadata = await importFromRoot<PersistenceMetadataApi>(root, "src/shared/persistence/persistence-metadata.mjs");
   const sourceStore = persistence.rebuildStoreObjects(sourceMapping);
+  assertPersistedStoreConsumerContract(
+    sourceStore,
+    app.normalizeStore,
+    persistedNormalization.normalizePersistedDocument,
+    persistenceMetadata.preparePersistenceDocument,
+    persistence.mapStoreObjects,
+    persistence.rebuildStoreObjects,
+    accountId,
+    persistence.canonicalJson,
+    clock.capturedAt
+  );
   const sourceInspector = (await createClosedInspector(root, accountId, {}, clock)).backgroundAi;
   const beforeStates = taskStates(sourceStore, sourceInspector, redactionKey);
   const content = await importFromRoot<{ markdownText(value: string): string }>(root, "src/shared/content/index.mjs");
@@ -996,6 +1207,7 @@ async function createSanitizedAccount(
   );
   const redactionContext = createRedactionContext(sourceMapping, redactionKey, content.markdownText, sourceInventory);
   const redactedMapping = sanitizeMapping(sourceMapping, redactionKey, redactionContext, stringMap);
+  const redactedAccountId = identityToken(redactionKey, "id", accountId);
   preserveTechnicalMetadata(
     sourceMapping,
     redactedMapping,
@@ -1003,8 +1215,8 @@ async function createSanitizedAccount(
     redactionKey,
     supplement.estimateHistoricalUserSupplementOutputTokens
   );
+  preservePersistenceMetadata(sourceMapping, redactedMapping, redactionContext, redactionKey);
   const redactedInventory = sanitizeMapping(sourceInventory, redactionKey, redactionContext, stringMap, true);
-  const redactedAccountId = identityToken(redactionKey, "id", accountId);
   const sanitizedStore = persistence.rebuildStoreObjects(redactedMapping);
   const sanitizedInspector = (await createClosedInspector(root, redactedAccountId, {}, clock)).backgroundAi;
 
@@ -1019,7 +1231,12 @@ async function createSanitizedAccount(
     finalStore,
     app.normalizeStore,
     persistedNormalization.normalizePersistedDocument,
-    persistence.canonicalJson
+    persistenceMetadata.preparePersistenceDocument,
+    persistence.mapStoreObjects,
+    persistence.rebuildStoreObjects,
+    redactedAccountId,
+    persistence.canonicalJson,
+    clock.capturedAt
   );
   const afterStates = taskStates(finalStore, sanitizedInspector, redactionKey, true);
   assertSameTaskSemantics(beforeStates, afterStates);
@@ -1642,8 +1859,8 @@ async function selfTest(root: string) {
     HISTORICAL_USER_SUPPLEMENT_TOKEN_BUDGET: number;
     estimateHistoricalUserSupplementOutputTokens: SupplementEstimator;
   }>(root, "src/modules/record-compressions/index.mjs");
-  const persistenceMetadata = await importFromRoot<{
-    synchronizePersistenceMetadata(before: JsonRecord | null, after: JsonRecord, now: () => string, options: JsonRecord): JsonRecord;
+  const persistenceMetadata = await importFromRoot<PersistenceMetadataApi & {
+    recordIdempotencyResponse(document: JsonRecord, request: JsonRecord, now: () => string): void;
   }>(root, "src/shared/persistence/persistence-metadata.mjs");
   const content = await importFromRoot<{ markdownText(value: string): string }>(root, "src/shared/content/index.mjs");
   const annotationResources = await importFromRoot<{
@@ -1917,6 +2134,32 @@ async function selfTest(root: string) {
     onboardingV2: { version: 1, answer: "private singleton answer" }
   };
   persistenceMetadata.synchronizePersistenceMetadata(null, store, () => fixtureClock.capturedAt, { force: true });
+  persistenceMetadata.recordIdempotencyResponse(store, {
+    scope: "synthetic-startup-gate",
+    key: "synthetic-idempotency-key",
+    requestHash: createHash("sha256").update("synthetic idempotency request").digest("hex"),
+    response: { accepted: true, resultId: "synthetic-idempotency-result" }
+  }, () => fixtureClock.capturedAt);
+  const metadataChangeBefore = structuredClone(store);
+  (store.onboardingV2 as JsonRecord).answer = "private singleton answer updated";
+  const syncContext: JsonRecord = {
+    operationId: "synthetic-sync-operation",
+    method: "PATCH",
+    resource: "/api/sync/synthetic",
+    contentType: "application/json",
+    ifMatch: "synthetic-version",
+    requestBodySha256: createHash("sha256").update("synthetic sync body").digest("hex")
+  };
+  syncContext.clientOperationFingerprint = persistenceMetadata.syncOperationFingerprint(syncContext);
+  persistenceMetadata.synchronizePersistenceMetadata(
+    metadataChangeBefore,
+    store,
+    () => fixtureClock.capturedAt,
+    {
+      force: true,
+      context: syncContext
+    }
+  );
   const task = (store.aiTasks as JsonRecord[])[0];
   const initial = inspector.inspectRecoveryIntent(store, task);
   if (!initial.intent?.inputHash || !initial.target?.exists || !initial.target.subtargetExists) {
@@ -1965,6 +2208,8 @@ async function selfTest(root: string) {
     hmacKey,
     compressionApi.estimateHistoricalUserSupplementOutputTokens
   );
+  const redactedAccountId = identityToken(hmacKey, "id", "synthetic-account");
+  preservePersistenceMetadata(sourceMapping, redactedMapping, redactionContext, hmacKey);
   const redactedInventory = sanitizeMapping(inventory, hmacKey, redactionContext, new Map(), true);
   const redactedAttachmentDigest = String(redactedInventory[0].sha256 || "");
   if (!/^[a-f0-9]{64}$/u.test(redactedAttachmentDigest) || redactedAttachmentDigest === sourceAttachmentDigest) {
@@ -1989,7 +2234,6 @@ async function selfTest(root: string) {
     positionDifferenceRejected = true;
   }
   if (!positionDifferenceRejected) fail("Mapping equivalence accepted a changed object position");
-  const redactedAccountId = identityToken(hmacKey, "id", "synthetic-account");
   let redactedStore: JsonRecord;
   try {
     redactedStore = persistence.rebuildStoreObjects(redactedMapping);
@@ -2013,7 +2257,122 @@ async function selfTest(root: string) {
   const redactedSourceRefs = (redactedStore.evidenceSources as JsonRecord[]).map(item => item.sourceRef as JsonRecord);
   const redactedMessageEventSource = (redactedStore.perceptionEvents as JsonRecord[])[1].sourceRef as JsonRecord;
   const redactedCompression = (redactedStore.recordCompressions as JsonRecord[])[0];
+  const consumerNow = fixtureClock.capturedAt;
+  assertPersistedStoreConsumerContract(
+    redactedStore,
+    app.normalizeStore,
+    persistedNormalization.normalizePersistedDocument,
+    persistenceMetadata.preparePersistenceDocument,
+    persistence.mapStoreObjects,
+    persistence.rebuildStoreObjects,
+    redactedAccountId,
+    persistence.canonicalJson,
+    consumerNow
+  );
   const normalizedSnapshotStore = persistedNormalization.normalizePersistedDocument(redactedStore, app.normalizeStore);
+  const normalizedMetadata = normalizedSnapshotStore._persistence as JsonRecord;
+  const normalizedSync = normalizedMetadata.sync as JsonRecord;
+  const fixtureOperations = normalizedSync.operations as JsonRecord[];
+  const fixtureChanges = normalizedSync.changes as JsonRecord[];
+  const linkedChange = fixtureChanges.find(change => change.operationId === fixtureOperations[0]?.operationId);
+  const sourceOperation = ((((sourceMapping.fields.find(row => row.field === "_persistence")?.payload as JsonRecord)
+    .sync as JsonRecord).operations as JsonRecord[])[0]);
+  const firstCursor = Number(fixtureOperations[0]?.firstCursor);
+  const lastCursor = Number(fixtureOperations[0]?.lastCursor);
+  const linkedCursor = Number(linkedChange?.cursor);
+  if (fixtureOperations.length !== 1 || !/^[a-f0-9]{64}$/u.test(String(fixtureOperations[0]?.fingerprint || ""))
+    || !linkedChange || !["create", "update", "delete", "reorder"].includes(String(linkedChange.changeType))
+    || linkedChange.domain !== "onboardingV2"
+    || fixtureOperations[0].method !== "PATCH"
+    || fixtureOperations[0].resource === "/api/sync/synthetic"
+    || fixtureOperations[0].fingerprint === sourceOperation.fingerprint
+    || !Number.isSafeInteger(firstCursor)
+    || !Number.isSafeInteger(lastCursor)
+    || firstCursor > linkedCursor
+    || lastCursor < linkedCursor) {
+    fail(`Synthetic sync metadata did not preserve a valid operation fingerprint and change identity link; diagnostics=${JSON.stringify({ operationCount: fixtureOperations.length, fingerprintType: typeof fixtureOperations[0]?.fingerprint, fingerprintLength: String(fixtureOperations[0]?.fingerprint || "").length, changeCount: fixtureChanges.length, linkedChange: Boolean(linkedChange), operationIdType: typeof fixtureOperations[0]?.operationId })}`);
+  }
+  const idempotencyRows = normalizedMetadata.idempotency as JsonRecord[];
+  if (idempotencyRows.length !== 1 || !Object.hasOwn(idempotencyRows[0], "response")
+    || String(idempotencyRows[0].key).includes("synthetic-idempotency-key")) {
+    fail("Synthetic idempotency metadata lost its response or retained its source identity");
+  }
+  const persistedRedactedMapping = persistence.mapStoreObjects(redactedAccountId, redactedStore);
+  for (let index = 0; index < sourceMapping.lifecycles.length; index += 1) {
+    const source = sourceMapping.lifecycles[index].payload as JsonRecord;
+    const target = persistedRedactedMapping.lifecycles[index];
+    const payload = target.payload as JsonRecord;
+    const expectedKey = redactionContext.resourceKeys.get(String(source.resourceKey));
+    const expectedId = redactionContext.ids.get(String(source.resourceId));
+    if (!expectedKey || !expectedId || target.resourceKey !== expectedKey || payload.resourceKey !== expectedKey
+      || target.resourceId !== expectedId || payload.resourceId !== expectedId
+      || target.resourceType !== payload.resourceType || target.state !== payload.state
+      || target.tombstone !== payload.tombstone || persistence.canonicalJson(target.history) !== persistence.canonicalJson(payload.history)) {
+      fail("Synthetic lifecycle redaction broke the persisted identity or payload relation");
+    }
+  }
+  for (const item of persistedRedactedMapping.idempotency) {
+    const payload = item.payload as JsonRecord;
+    if (item.scope !== payload.scope || item.key !== payload.key || item.requestHash !== payload.requestHash
+      || persistence.canonicalJson(item.response) !== persistence.canonicalJson(payload.response)
+      || item.createdAt !== payload.createdAt || item.expiresAt !== payload.expiresAt) {
+      fail("Synthetic idempotency redaction broke the persisted payload relation");
+    }
+  }
+  const sanitizePersistenceFixture = (sourceStore: JsonRecord): JsonRecord => {
+    const mapping = persistence.mapStoreObjects("synthetic-account", sourceStore);
+    const context = createRedactionContext(mapping, hmacKey, content.markdownText);
+    const target = sanitizeMapping(mapping, hmacKey, context);
+    preservePersistenceMetadata(mapping, target, context, hmacKey);
+    return persistence.rebuildStoreObjects(target);
+  };
+  const noMetadataRedacted = sanitizePersistenceFixture({ trash: [] });
+  if (Object.hasOwn(noMetadataRedacted, "_persistence")) {
+    fail("Redaction wrote consumer defaults back into a snapshot without persistence metadata");
+  }
+  assertPersistedStoreConsumerContract(
+    noMetadataRedacted,
+    app.normalizeStore,
+    persistedNormalization.normalizePersistedDocument,
+    persistenceMetadata.preparePersistenceDocument,
+    persistence.mapStoreObjects,
+    persistence.rebuildStoreObjects,
+    redactedAccountId,
+    persistence.canonicalJson,
+    fixtureClock.capturedAt
+  );
+  const legacyMetadataRedacted = sanitizePersistenceFixture({
+    trash: [],
+    _persistence: { lifecycles: [], idempotency: [], sync: { cursor: 0, changes: [] } }
+  });
+  assertPersistedStoreConsumerContract(
+    legacyMetadataRedacted,
+    app.normalizeStore,
+    persistedNormalization.normalizePersistedDocument,
+    persistenceMetadata.preparePersistenceDocument,
+    persistence.mapStoreObjects,
+    persistence.rebuildStoreObjects,
+    redactedAccountId,
+    persistence.canonicalJson,
+    fixtureClock.capturedAt
+  );
+  for (const [label, corrupt] of [
+    ["changeType", (metadata: JsonRecord) => { ((metadata.sync as JsonRecord).changes as JsonRecord[])[0].changeType = "private invalid value"; }],
+    ["fingerprint", (metadata: JsonRecord) => { ((metadata.sync as JsonRecord).operations as JsonRecord[])[0].fingerprint = "private invalid value"; }]
+  ] as Array<[string, (metadata: JsonRecord) => void]>) {
+    const invalidMapping = structuredClone(sourceMapping);
+    const metadataField = invalidMapping.fields.find(row => row.field === "_persistence");
+    corrupt(metadataField?.payload as JsonRecord);
+    const invalidContext = createRedactionContext(invalidMapping, hmacKey, content.markdownText);
+    const invalidTarget = sanitizeMapping(invalidMapping, hmacKey, invalidContext);
+    let rejected = false;
+    try {
+      preservePersistenceMetadata(invalidMapping, invalidTarget, invalidContext, hmacKey);
+    } catch {
+      rejected = true;
+    }
+    if (!rejected) fail(`Persistence redaction accepted invalid ${label} metadata`);
+  }
   const normalizedSpeechCache = normalizedSnapshotStore.speechCache as JsonRecord[];
   const redactedSpeechCache = redactedStore.speechCache as JsonRecord[];
   const normalizedAnswerCache = normalizedSpeechCache[1];
@@ -2043,7 +2402,12 @@ async function selfTest(root: string) {
       unsupportedSpeechCache,
       app.normalizeStore,
       persistedNormalization.normalizePersistedDocument,
-      persistence.canonicalJson
+      persistenceMetadata.preparePersistenceDocument,
+      persistence.mapStoreObjects,
+      persistence.rebuildStoreObjects,
+      redactedAccountId,
+      persistence.canonicalJson,
+      fixtureClock.capturedAt
     );
   } catch (error) {
     if (!(error instanceof Error)

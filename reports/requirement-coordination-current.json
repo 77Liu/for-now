@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 130,
-  "updated_at": "2026-10-12T18:05:24.930Z",
+  "revision": 134,
+  "updated_at": "2026-10-12T18:27:22.085Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -9,7 +9,7 @@
     "write_authority": "唯一维护者；必须经coordination:update入口更新"
   },
   "rule_baseline": {
-    "commit": "9e10d275904fb508f7ce15c1ad8bd566379b4b78",
+    "commit": "2bbab8298971dac306ef65b66627d607de783df2",
     "effective_date": "2026-10-13",
     "source": "PROJECT_RULES.md；knowledge/coordination-control-plane.md v2.0；knowledge/engineering-rules.md#35-源码与注释规范；SOP/requirement-intake.md v1.1"
   },
@@ -20,7 +20,7 @@
   "iteration": {
     "id": "v0.5.13",
     "status": "ACTIVE",
-    "phase": "58a09eb启动初始化失败，主控定位语音缓存sourceType脱敏契约缺失并安排原feat修复"
+    "phase": "真实首次runtime启动失败：脱敏同步元数据不满足preparePersistenceDocument契约；集中返修完整受影响消费者链"
   },
   "scope": {
     "description": "保存状态/草稿与失败恢复；发生时间/补录意图；通知列表未读事实、脱敏诊断与恢复操作。仅实现六条锁定需求的未交付行为，不做全站状态或通知平台重构。",
@@ -48,8 +48,8 @@
   },
   "active_tasks": [],
   "candidate": {
-    "sha": "58a09eb68e75a5f044f969a58108b9cf60cffd65",
-    "tree": "93a3a4a442d2d66b98b505ce9dd69b64c4e060cf",
+    "sha": "2bbab8298971dac306ef65b66627d607de783df2",
+    "tree": "b35de7f038a26a49a8c30ea3caa4921a90d9b214",
     "status": "STARTUP_GATE_FAILED",
     "release_frozen": false,
     "quality_gate": {
@@ -58,7 +58,8 @@
       "runtime_start": "FAIL",
       "readyz": "NOT_RUN",
       "restart_recovery": "NOT_RUN",
-      "core_smoke": "NOT_RUN"
+      "core_smoke": "NOT_RUN",
+      "isolated_online": "NOT_RUN"
     }
   },
   "authorization": {
@@ -87,15 +88,15 @@
   },
   "blockers": [
     {
-      "code": "SNAPSHOT_SPEECH_CACHE_TYPE_LOST",
-      "status": "CONFIRMED",
+      "code": "SANITIZED_SYNC_METADATA_CONTRACT",
+      "status": "FIXED_PENDING_REAL_GATE",
       "owner": "主开发",
-      "impact": "快照脱敏使4条speechCache源类型不合法，normalizeStore删除元素并被持久化保护拒绝；需修复并重验真实门"
+      "impact": "3/4脱敏账户被真实preparePersistenceDocument拒绝；sync.changes.changeType与sync.operations.fingerprint技术形态失真，不能冻结候选"
     }
   ],
   "next_action": {
     "owner": "主控",
-    "action": "将已独立审查的语音缓存脱敏与相关规则修复提交在原feat并快进接入develop，随后固定新候选执行真实快照启动门",
+    "action": "提交并接入已独立审查的完整持久化消费者修复，再固定新候选执行真实有状态门",
     "status": "READY"
   },
   "runtime": {
@@ -159,11 +160,26 @@
       "id": "speech-cache-contract-reviewed",
       "source": "scripts/release-state-startup-gate.mts@sha256:1359a0e5373484dcc813a98d42316e15b884dc1d0a70e19a038db370139bcdd6",
       "status": "主控独立核对字段映射→重建→normalizePersistedDocument→normalizeSpeechCacheStore→runtime初始化链路；严格TS及原有自测PASS，复用未变行为结果；真实全局启动待新候选验证"
+    },
+    {
+      "id": "speech-cache-contract-integrated",
+      "source": "git:2bbab8298971dac306ef65b66627d607de783df2",
+      "status": "原feat实际提交并快进接入develop；分支保留，无远程操作"
+    },
+    {
+      "id": "2bbab82-real-startup-failed",
+      "source": "reports/local/2bbab82-startup-snapshot.json",
+      "status": "快照sha256=598d3552641784568c37e582639091bd94bb869470cc0d22ff2be68b1f34016c；实际exec-74a0348e-2cb3-48a9-a119-c67901cd25fc exit1；preparePersistenceDocument拒绝同步元数据，主控重建四账户独立确认3FAIL/1PASS"
+    },
+    {
+      "id": "full-persistence-contract-reviewed",
+      "source": "scripts/release-state-startup-gate.mts@sha256:b15bd01c47c5b940de76460188dcd5bb04d5598dc6931993f8b99756692d742d",
+      "status": "主控独立核对完整源读取/脱敏/重建/规范化/prepare/map-rebuild/runtime初始化链；最终既有自测及运行构建PASS；历史原请求同请求重试保持PARTIAL"
     }
   ],
   "records": {
     "events": "reports/iterations/v0.5.13/events.jsonl",
     "terminal": "reports/iterations/v0.5.13/terminal.json"
   },
-  "display_summary": "v0.5.13受影响修复待主控接入；上一候选启动失败保留，发布及收尾等待人工信号。v0.5.14仅为后续候选规划。"
+  "display_summary": "2bbab82实际runtime启动FAIL；3个脱敏账户同步元数据契约失真已定位并返修。后续门NOT_RUN，发布与收尾等待人工信号。"
 }
