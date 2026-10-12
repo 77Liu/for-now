@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "revision": 109,
-  "updated_at": "2026-10-12T15:25:35.917Z",
+  "revision": 110,
+  "updated_at": "2026-10-12T15:27:23.234Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
     "state_owner": "主控维护本控制面，其他角色仅引用并回报"
   },
   "rule_baseline": {
-    "commit": "e16bb50e51c93fbe4532bc84c923854be759b101",
+    "commit": "4910a617a5bda58114f0a671266b453115a676a8",
     "effective_date": "2026-10-12",
     "source": "PROJECT_RULES.md及其引用的唯一正文；新增开发者自查与主控接入审查责任正文在SOP/multi-agent-orchestration.md#开发者自查与主控接入审查，功能开发/集成SOP引用，原有状态门及授权继续适用。"
   },
@@ -1648,6 +1648,12 @@
       "at": "2026-10-12T15:25:35.917Z",
       "reason": "Owner要求固化先自查、主控完整数据链接入审查；docs单目的提交e16bb50已合入develop并同步当前feat，立即生效。",
       "previous_snapshot": "cae3a81:reports/requirement-coordination-current.json@revision108"
+    },
+    {
+      "revision": 110,
+      "at": "2026-10-12T15:27:23.234Z",
+      "reason": "Owner强调主控必须独立质量评审，不仅听跨聊天回执；唯一正文已明确实际差分/依赖/消费者阅读和独立判断，docs4910a61已接入并立即生效。",
+      "previous_snapshot": "fa01289:reports/requirement-coordination-current.json@revision109"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
