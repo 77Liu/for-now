@@ -1,3 +1,7 @@
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { loadAppConfig } from "../config/index.mjs";
 import { isApplicationRoutePath } from "../../public/frontend/pages/index.mjs";
 import { createHttpApplication } from "../http/index.mjs";
 import { createRuntimeAccess } from "./runtime-access.mjs";
@@ -7,8 +11,43 @@ import { createServerLifecycle } from "./server-lifecycle.mjs";
 
 export function createServerRuntime({
   rootUrl,
-  processRef = process
+  processRef = process,
+  startupGate = null
 } = {}) {
+  // 启动门仅允许独立临时目录、测试模式和回环 PostgreSQL，避免把生产依赖接入验收进程。
+  if (startupGate) {
+    if (typeof startupGate.holdDispatch !== "function"
+      || typeof startupGate.observeEffect !== "function"
+      || typeof startupGate.tempRoot !== "string") {
+      throw new TypeError("Startup gate requires local effect guards and a temporary root");
+    }
+    const rootDir = path.dirname(fileURLToPath(rootUrl));
+    const config = loadAppConfig({ rootDir });
+    const temporaryRoot = path.resolve(startupGate.tempRoot);
+    const dataDir = path.resolve(config.dataDir);
+    const inside = (base, target) => {
+      const relative = path.relative(base, target);
+      return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+    };
+    const isLoopback = value => {
+      try {
+        const host = new URL(value).hostname.replace(/^\[|\]$/g, "").toLowerCase();
+        return ["127.0.0.1", "localhost", "::1", "::ffff:127.0.0.1"].includes(host);
+      } catch {
+        return false;
+      }
+    };
+    if (!inside(path.resolve(os.tmpdir()), temporaryRoot)
+      || !inside(temporaryRoot, dataDir)
+      || config.persistenceBackend !== "postgres"
+      || config.localTestMode
+      || config.upstreamOrigin
+      || processRef !== process
+      || process.env.NODE_ENV !== "test"
+      || ![config.databaseUrl, config.authDatabaseUrl, config.aiBudgetDatabaseUrl].every(isLoopback)) {
+      throw new Error("Startup gate only accepts an isolated temporary directory and loopback PostgreSQL in test mode");
+    }
+  }
   let lifecyclePromise;
 
   const lifecycle = () => {
@@ -17,7 +56,8 @@ export function createServerRuntime({
       const foundation = await createRuntimeFoundation({
         rootUrl,
         processRef,
-        accountAccess
+        accountAccess,
+        startupGate
       });
       const access = await createRuntimeAccess(foundation);
       Object.assign(accountAccess, {

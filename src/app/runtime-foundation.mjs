@@ -40,7 +40,8 @@ const ATTACHMENT_AUDIO_MAX_DURATION_MS = 10 * 60 * 1000;
 export async function createRuntimeFoundation({
   rootUrl,
   processRef = process,
-  accountAccess
+  accountAccess,
+  startupGate = null
 } = {}) {
   if (!rootUrl) throw new TypeError("Server runtime rootUrl is required");
   if (!accountAccess || typeof accountAccess !== "object") {
@@ -280,6 +281,7 @@ export async function createRuntimeFoundation({
     backgroundContextKey: () => requestStorage.getStore()?.dataDir || dataDir,
     workflowContextKey: () => storagePaths().storeFile,
     dispatchBackground: callback => {
+      if (startupGate) return startupGate.holdDispatch("background", callback);
       const context = { ...(requestStorage.getStore() || {}) };
       setImmediate(() => requestStorage.run(context, callback));
     },
@@ -296,6 +298,7 @@ export async function createRuntimeFoundation({
     logEvent,
     debugServerUrl: appConfig.debug.serverUrl,
     debugRunId: appConfig.debug.runId,
+    effectObserver: startupGate?.observeEffect || null,
     mediaOptions: {
       attachmentStorageConfig: appConfig.attachments,
       attachmentInventory: postgresRuntime?.attachments,
@@ -312,12 +315,14 @@ export async function createRuntimeFoundation({
       cleanupContextKey: () => storagePaths().storeFile,
       keepsakeContextKey: () => requestStorage.getStore()?.dataDir || dataDir,
       dispatchCleanup: (callback, delay) => {
+        if (startupGate) return startupGate.holdDispatch("cleanup", callback);
         const context = { ...(requestStorage.getStore() || {}) };
         const timer = setTimeout(() => requestStorage.run(context, callback), delay);
         timer.unref();
         return timer;
       },
       dispatchKeepsake: callback => {
+        if (startupGate) return startupGate.holdDispatch("keepsake", callback);
         const context = { ...(requestStorage.getStore() || {}) };
         setImmediate(() => requestStorage.run(context, callback));
       },

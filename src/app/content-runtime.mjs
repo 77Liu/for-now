@@ -44,7 +44,8 @@ export function createContentRuntime({
   debugServerUrl = "",
   debugRunId = "",
   debugFetch = fetch,
-  mediaFactory = createMediaRuntime
+  mediaFactory = createMediaRuntime,
+  effectObserver = null
 } = {}) {
   if (!repository?.read || !repository?.update || !repository?.executeIdempotent) {
     throw new TypeError("Content runtime repository is required");
@@ -63,6 +64,22 @@ export function createContentRuntime({
     [debugFetch, "debugFetch"],
     [mediaFactory, "mediaFactory"]
   ]) requiredFunction(value, name);
+  if (effectObserver !== null && typeof effectObserver !== "function") {
+    throw new TypeError("Content runtime effectObserver must be a function");
+  }
+
+  const observedRunDeepSeek = effectObserver
+    ? (...args) => {
+        effectObserver("provider", "deepseek");
+        return runDeepSeek(...args);
+      }
+    : runDeepSeek;
+  const observedDebugFetch = effectObserver
+    ? (...args) => {
+        effectObserver("outbound", "debug");
+        return debugFetch(...args);
+      }
+    : debugFetch;
 
   let backgroundAi;
   let mediaRuntime;
@@ -139,7 +156,7 @@ export function createContentRuntime({
     parseKeepsake: keepsakePayload,
     moveCollectionItemToTrash: foundation.trashMutations.moveCollectionItemToTrash,
     moveNestedItemToTrash: foundation.trashMutations.moveNestedItemToTrash,
-    runDeepSeek,
+    runDeepSeek: observedRunDeepSeek,
     now,
     today,
     createId,
@@ -147,8 +164,20 @@ export function createContentRuntime({
     logEvent,
     debugServerUrl,
     debugRunId,
-    debugFetch
+    debugFetch: observedDebugFetch
   });
+  if (effectObserver) {
+    mediaRuntime = new Proxy(mediaRuntime, {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver);
+        if (typeof value !== "function") return value;
+        return (...args) => {
+          effectObserver("media", String(property));
+          return value.apply(target, args);
+        };
+      }
+    });
+  }
   const background = createContentBackground({
     repository: contentRepository,
     annotationService: foundation.annotationService,
@@ -160,14 +189,14 @@ export function createContentRuntime({
     getAccountId,
     backgroundContextKey,
     dispatchBackground,
-    runDeepSeek,
+    runDeepSeek: observedRunDeepSeek,
     now,
     createId,
     hash,
     logEvent,
     debugServerUrl,
     debugRunId,
-    debugFetch
+    debugFetch: observedDebugFetch
   });
   backgroundAi = background.backgroundAi;
   const recordCompressionJobs = recordCompressionService.attach(backgroundAi);
@@ -182,7 +211,7 @@ export function createContentRuntime({
     records,
     backgroundAi,
     trashMutations: foundation.trashMutations,
-    runDeepSeek,
+    runDeepSeek: observedRunDeepSeek,
     getAccountId,
     materializeAttachmentFiles: mediaRuntime.materializeAttachmentFiles,
     workflowContextKey,
