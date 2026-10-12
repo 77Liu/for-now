@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 51,
-  "updated_at": "2026-10-12T15:38:00+08:00",
+  "revision": 52,
+  "updated_at": "2026-10-12T15:41:49+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -41,7 +41,7 @@
     ],
     "canonical_worktree": "/Users/bytedance/Documents/Codex/个人成长追踪",
     "canonical_worktree_branch": "feat/v0.5.13-save-sync-validation",
-    "canonical_worktree_head": "77a8793eaea9b6474b74afe334bced4caae5fa99（根目录唯一工作树；TS失败提示修复后状态点）",
+    "canonical_worktree_head": "ac0f741c0a88a1673a56016aa12221940477a04a（根目录唯一工作树；rev51状态点）",
     "archived_worktree": {
       "path": "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/develop",
       "branch": "feat/v0.5.13.1-stability",
@@ -85,7 +85,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主控只读核对P0日期需求reczz28K9ceTZDnd与相邻now/manual规则：检查已集成的发生时间草稿修复是否同时满足新建默认now、主动补录保留、取消重开和草稿恢复；不跑整套UI，若发现新缺口先锁最小写集。",
+  "next_action": "主控只读定位reczz28K9ceTZDnd对应的实际反馈记录与允许读取的时间字段，核对创建/发生/更新时间及首页/详情排序视图；在因果证据确认前，不以route重置现象代替根因，不扩写或关闭P0。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -97,7 +97,7 @@
   ],
   "last_check": {
     "remote_refs": "2026-10-11T12:07:35Z 已通过 git ls-remote --heads/tags 只读核验；无远程写入",
-    "worktrees": "2026-10-12T15:38:00+08:00：只有根目录工作树，当前feat/v0.5.13-save-sync-validation@77a8793；develop@c537618；没有第二工作树。",
+    "worktrees": "2026-10-12T15:41:49+08:00：只有根目录一个工作树，当前feat/v0.5.13-save-sync-validation@ac0f741；develop@c537618；无第二工作树。",
     "platform_protection": "Gitee UI只读核验：保护分支规则0条、保护标签不可用、推送限制未启用",
     "remote_write": "本轮未执行",
     "release_rollback_rehearsal": "本地隔离模拟全部通过；无远端命令",
@@ -851,7 +851,7 @@
       "只有截图或没有复现的未读数问题不据此宣称修复；先保留PARTIAL。"
     ],
     "external_actions": "无远端写、发布、部署、生产写或手工付费调用；不恢复已暂停自动化。",
-    "current_status": "BUILDING_LOCAL_ONLY；新运维监控源为.mts，编译输出隔离于ignored .build。发生时间mode恢复候选52cfa6e已接入develop，但一次test:ui在较早capture展开断言失败，目标浏览器路径未执行，保持PARTIAL。通知权威零值修复提交3cf9c3b并通过frontend-basic专项。通知报错泄漏已由TS提交77a8793修复：失败任务UI改固定提示、不展示task.error；typecheck:frontend、build:frontend、生成物整理及personalized-ai-task-ui-regression通过。当前feat候选77a8793eaea9b6474b74afe334bced4caae5fa99/tree 3ecae2632e062ce3203c10a0b39e089a43f8ab15，尚未合入develop。唯一根工作树，保留原未跟踪需求证据目录。无远程/生产/付费动作。",
+    "current_status": "BUILDING_LOCAL_ONLY；TS监控迁移与失败提示脱敏均已闭环；未读零值修复已提交且专项通过。时间源码审查：全新thought默认now，手动模式保留用户选值，home/详情默认按occurredAt展示；但反馈记录具体createdAt/occurredAt/occurredOn未核对，P0仍未根因确认。另发现home-runtime.renderDate会重置表单发生时间控件，普通路由返回不调用durable draft恢复，可能丢失未提交手动模式；尚未锁修复范围。三条时间需求不标完成；之前test:ui在2658早失败，目标场景未达，保持PARTIAL。唯一根工作树，无远程/生产/付费动作。",
     "version_requirement_count": {
       "minimum": 3,
       "maximum": 10,
@@ -1274,7 +1274,7 @@
         "branch": "feat/v0.5.13-save-sync-validation",
         "baseline": "77a8793eaea9b6474b74afe334bced4caae5fa99",
         "write_set": [],
-        "status": "主控只读核对日期语义和occurrence mode草稿修复；确认新缺口后才锁写集。"
+        "status": "只读核对原始反馈记录和时间来源；控制面rev52明确禁止据未验证假设开写。"
       }
     }
   },
