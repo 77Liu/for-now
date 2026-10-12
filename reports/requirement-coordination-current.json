@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 68,
-  "updated_at": "2026-10-12T10:49:22.166Z",
+  "revision": 69,
+  "updated_at": "2026-10-12T10:50:30.512Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -66,7 +66,7 @@
   "authorization_policy": {
     "policy_id": "release-authorization-policy",
     "policy_revision": "1.1",
-    "policy_status": "Owner 已确认默认授权，待启动闸门和本地整理完成后按 attempt 登记",
+    "policy_status": "本次v0.5.13已取得Owner明确上线授权；补接后按固定候选登记attempt并现场核验，不等于已执行",
     "levels": [
       "L0",
       "L1",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发在现有feat分支补齐四倍额度/回填配置闭环，保留现有TS通知；只做受影响验证后交主控提交。",
+  "next_action": "配置补接回执审查提交后，锁定v0.5.13发布attempt，主开发执行现场核验、push/候选部署/观察/正式tag与Release/main晋级；发现真实风险仅阻断对应动作。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -236,6 +236,26 @@
       "16": "A",
       "17": "A",
       "18": "A"
+    },
+    "current_release_authorization": {
+      "at": "2026-10-12T10:50:30.512Z",
+      "source": "Owner本对话：四倍值接入当前0.5.13后，授权tag、release、push、上线。",
+      "version": "v0.5.13",
+      "condition": "四倍配置补接通过并固定累计候选；候选包含v0.5.13.1全部实现",
+      "allowed_actions": [
+        "push",
+        "正式tag",
+        "Gitee Release",
+        "生产部署及部署必要配置写入",
+        "异常时恢复核验的运行对象"
+      ],
+      "excluded": [
+        "改写既有远程tag/提交历史",
+        "无关迁移/删除业务数据",
+        "手工重复付费证明"
+      ],
+      "remote_protection": "Owner已明确跳过；本次不作为重复审批阻碍",
+      "release_policy": "候选质量、现场预算/告警/暂停/回滚条件仍核验；授权已覆盖不再逐次请求"
     }
   },
   "requirement_observation": {
@@ -606,7 +626,8 @@
         "write_set": [
           "src/config/index.mjs（只统一既定四倍额度与回填读取/校验，不复制多套变量）",
           "deploy/for-now.env.example（仅确认对应配置/开关说明）",
-          "scripts/runtime-infrastructure-regression.mjs（复用必要配置边界用例，不扩测试矩阵）"
+          "scripts/runtime-infrastructure-regression.mjs（复用必要配置边界用例，不扩测试矩阵）",
+          "src/modules/record-compressions/contract.mjs（仅既定回填上限4及公共导出复用，禁止多套冲突常量）"
         ],
         "objective": "当前env示例4/1/16/4，但校验上限1/.25/4、回填截断2。接回Owner既定每日4元/单次1元/每日16次/每轮4日期，使有效env可实际启用。检查旧3e94e2f与当前通知TS接线，保留已有开始/完成费用通知，禁止盲cherry-pick旧MJS实现。若有其他实际硬上限阻挡先回报唯一最小扩写位置。",
         "forbidden": [
@@ -619,7 +640,8 @@
           "数值由env/env.example维护，规则与实现不出现多文件冲突；保留已授权硬上限语义",
           "通知现有TS实现保留；缺失实际链路先回报不越界",
           "完成后仅受影响配置专项及diff检查，复用未变通知/构建证据",
-          "主控提交集成后新候选继续包含c5376182祖先，旧固定SHA作为历史不抹除"
+          "主控提交集成后新候选继续包含c5376182祖先，旧固定SHA作为历史不抹除",
+          "scan自身仍以contract中的2截断，须最小调整该上限；配置读取复用唯一该上限，避免重复数字。"
         ]
       },
       "review_task": {
@@ -1155,6 +1177,12 @@
       "at": "2026-10-12T10:49:22.166Z",
       "reason": "Owner要求累计候选并补接截图旧四倍配置；实际发现env与代码拒绝条件冲突，解除本地冻结仅修该缺口。",
       "previous_snapshot": "6dc5d1e:reports/requirement-coordination-current.json@revision67"
+    },
+    {
+      "revision": 69,
+      "at": "2026-10-12T10:50:30.512Z",
+      "reason": "Owner授权累计v0.5.13补接四倍配置后push/tag/Release/上线；确认scan另有contract截断2，增加唯一窄点写集。",
+      "previous_snapshot": "008d99f:reports/requirement-coordination-current.json@revision68"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -1164,7 +1192,7 @@
     "branch_creation": "blocked_until_all_gates_pass",
     "remote_operations": "未执行推送、发布、部署或生产写入",
     "remote_protection": {
-      "status": "BLOCKED",
+      "status": "WAIVED_BY_OWNER_FOR_CURRENT_ATTEMPT",
       "evidence": "reports/git-archive/startup-gates-20261011.json",
       "observed": [
         "Gitee 保护分支设置页未列出任何保护分支规则",
@@ -1172,7 +1200,7 @@
         "Gitee 推送规则页的推送邮箱、提交正则、单文件大小限制均未勾选",
         "git ls-remote 只读结果未发现 origin/develop；远程仍保留多条历史任务分支"
       ],
-      "required_before_branch": "由Owner在Gitee建立并可复核的main/develop/release/preview保护规则与必需检查，随后重新读取平台证据"
+      "required_before_branch": "Owner已要求跳过远程保护；保存原观测，不再据旧BLOCKED阻断本次发布。"
     },
     "release_rollback_rehearsal": {
       "status": "PASS_LOCAL_ONLY",
