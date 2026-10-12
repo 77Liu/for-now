@@ -477,8 +477,11 @@ function graphShape(mapping: StoreMapping): JsonRecord {
 }
 
 function assertMappingRoundTrip(expected: StoreMapping, rebuilt: StoreMapping, canonicalJson: (value: unknown) => string) {
+  // PostgreSQL SELECT 没有 ORDER BY，比较完整行的排序多重集；重复计数及 position 等字段仍参与等价判断。
   for (const key of ["fields", "objects", "relations", "attachmentRefs", "lifecycles", "idempotency"] as const) {
-    if (canonicalJson(expected[key]) !== canonicalJson(rebuilt[key])) {
+    const expectedRows = expected[key].map(canonicalJson).sort();
+    const rebuiltRows = rebuilt[key].map(canonicalJson).sort();
+    if (canonicalJson(expectedRows) !== canonicalJson(rebuiltRows)) {
       if (key === "relations") {
         const relationShape = (rows: JsonRecord[]) => rows.map(row => ({
           relation: row.relation,
@@ -1193,6 +1196,22 @@ async function selfTest(root: string) {
   const redactionContext = createRedactionContext(sourceMapping, hmacKey, inventory);
   const redactedMapping = sanitizeMapping(sourceMapping, hmacKey, redactionContext);
   const redactedInventory = sanitizeMapping(inventory, hmacKey, redactionContext);
+  const databaseOrderVariant = structuredClone(redactedMapping);
+  for (const key of ["fields", "objects", "relations", "attachmentRefs", "lifecycles", "idempotency"] as const) {
+    databaseOrderVariant[key].reverse();
+  }
+  assertMappingRoundTrip(redactedMapping, databaseOrderVariant, persistence.canonicalJson);
+  const changedPositionVariant = structuredClone(redactedMapping);
+  if (!changedPositionVariant.objects.length) fail("Synthetic mapping has no object row for the position comparison");
+  changedPositionVariant.objects[0].position = Number(changedPositionVariant.objects[0].position) + 1;
+  let positionDifferenceRejected = false;
+  try {
+    assertMappingRoundTrip(redactedMapping, changedPositionVariant, persistence.canonicalJson);
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.includes("Redacted objects do not rebuild equivalently")) throw error;
+    positionDifferenceRejected = true;
+  }
+  if (!positionDifferenceRejected) fail("Mapping equivalence accepted a changed object position");
   const redactedAccountId = identityToken(hmacKey, "id", "synthetic-account");
   let redactedStore: JsonRecord;
   try {
