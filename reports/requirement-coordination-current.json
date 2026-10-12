@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 24,
-  "updated_at": "2026-10-12T02:55:00+08:00",
+  "revision": 25,
+  "updated_at": "2026-10-12T11:07:36+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -391,6 +391,12 @@
       "at": "2026-10-12T02:55:00+08:00",
       "reason": "最终审计修正未知区域解析器描述并明确账号刷新阻塞不等同候选完成",
       "previous_snapshot": "reports/requirement-coordination-current.json@revision-23"
+    },
+    {
+      "revision": 25,
+      "at": "2026-10-12T11:07:36+08:00",
+      "reason": "记录生产刷新现场复现未触发故障、历史PG连接获取超时证据及同步长轮询的最小本地降压修复",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-24"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -523,7 +529,7 @@
       "无法稳定复现状态分流；发现现有链路没有问答AI整理步骤；涉及生产数据或权限边界风险；差分扩展到通用调度平台或全站上下文重构；需要远程推送、tag、Release、部署或付费调用"
     ],
     "external_actions": "不推送、不tag、不Release、不部署、不手工付费调用；不恢复暂停的周期自动化",
-    "current_status": "P0状态分流、小物媒体稳定性和未知区域展示均已具备本地实现及受影响专项证据；账号刷新相关鉴权、startup投影、并发登录、同步协调和前端端口专项均通过，但仍没有能证明刷新触发停机的脱敏复现、请求时序和进程错误日志，继续保留真实阻塞，不写猜测性修复。当前develop工作树干净；下一小版本必须在启动前重新选定当时develop基线并锁定控制面。",
+    "current_status": "P0状态分流、小物媒体稳定性和未知区域展示已具备本地实现及受影响专项证据。账号刷新：已复核生产历史日志，2026-10-10 16:14:28与16:15:04两次同步请求在PostgreSQL数据池获取连接处失败并返回500；同窗未发现应用或平台服务重启。底层异常消息未保留，耗时表现与连接池等待超时相符但不能确认具体原因。2026-10-12 11:02左右对生产应用执行一次普通刷新，页面正常、刷新相关请求均为200，服务NRestarts均为0，未复现故障。源码发现同步长轮询每100毫秒重新读取一次完整账户快照；已在develop将其改为初始读取、等待窗口结束后最终读取，单个长轮询最多两次快照，并保留waitMs=0即时拉取。本地定向回归通过；该降压修复针对已观察到的连接获取失败风险，但历史底层原因未完全证实，修复尚未部署，不能写成生产问题已解决。",
     "version_requirement_count": {
       "minimum": 3,
       "maximum": 10,
@@ -555,12 +561,15 @@
       },
       {
         "requirement_id": "recvxDhFQA8HmI",
-        "status": "阻塞：缺少可复现根因",
+        "status": "本地最小降压修复及定向回归通过；生产刷新未复现，历史底层根因未完全证实，未部署",
         "evidence": [
+          "生产2026-10-10 16:14:28.591及16:15:04.274 /api/v1/sync返回500；堆栈落在postgres-runtime.mjs:239 dataPool.connect；底层异常消息未保留，同窗无服务重启事件",
+          "生产2026-10-12 11:02普通页面刷新：startup/auth/me/route-state及同步请求返回200；刷新前后应用与平台NRestarts=0；未复现故障",
           "public/index.html",
           "public/frontend/app/bootstrap.mjs",
           "public/frontend/app/runtime/session-runtime.mjs",
           "public/frontend/state/index.mjs",
+          "src/http/sync.mjs：长轮询从每100毫秒重读快照改为最多两次读取",
           "src/app/server-lifecycle.mjs",
           "node scripts/account-lifecycle-regression.mjs",
           "node scripts/auth-regression.mjs",
@@ -569,8 +578,8 @@
           "node scripts/sync-coordinator-regression.mjs",
           "node scripts/frontend-app-ports-regression.mjs"
         ],
-        "decision": "当前静态链路未证明刷新会触发服务停机，不凭猜测改账号或服务生命周期。",
-        "next": "需要一次可脱敏刷新失败复现、请求时序、服务进程/错误日志和账号边界证据；鉴权与startup专项已通过，不据此冒称根因已修。"
+        "decision": "历史证据确认同步读取期间PostgreSQL数据池获取连接失败；耗时表现疑似等待超时，但日志不足以确认具体底层原因。单次普通刷新未复现停机。减少长轮询重复快照读取是针对已观察连接争用风险的最小修复，不修改账号或服务生命周期。",
+        "next": "本地修复待随候选进一步集成；未获得单独部署授权前不推送或部署。部署后再用自然刷新与服务/请求日志观察验证，历史根因保持未完全证实。"
       },
       {
         "requirement_id": "recvxDhr1A4kkn",
@@ -611,7 +620,7 @@
         "npm run typecheck:frontend 通过；npm run build:frontend 通过，产物留在受.gitignore保护的编译目录",
         "已执行git diff --check"
       ],
-      "functional_tests": "已执行受影响专项且均通过：\n- 核心模型就绪、后台AI门禁、思绪P00、个性化AI门禁；\n- 任务上下文选择、个人语境、协作；\n- 小物前端、前端应用生命周期、账号生命周期、鉴权、鉴权并发、startup投影、同步协调、前端端口、前端壳层；\n- 工作上下文边界回归20项。\n未运行system all、预算/压缩/PG/发布矩阵，也未重复无变化专项。",
+      "functional_tests": "已执行受影响专项且均通过：\n- 核心模型就绪、后台AI门禁、思绪P00、个性化AI门禁；\n- 任务上下文选择、个人语境、协作；\n- 小物前端、前端应用生命周期、账号生命周期、鉴权、鉴权并发、startup投影、同步协调、前端端口、前端壳层；\n- 工作上下文边界回归20项；\n- 本次账号刷新修复后重跑同步协调回归，覆盖长轮询最多两次快照读取。\n未运行system all、预算/压缩/PG/发布矩阵，也未重复无变化专项。",
       "remote_or_production": "未推送、未tag、未Release、未部署、未写生产、未手工触发付费调用",
       "test_runs": [
         {
@@ -703,6 +712,11 @@
           "command": "node scripts/keepsake-media-workflows-regression.mjs",
           "result": "通过",
           "scope": "小物单源创建、补偿清理、衍生图替换和版本冲突"
+        },
+        {
+          "command": "node scripts/sync-coordinator-regression.mjs",
+          "result": "通过",
+          "scope": "账号刷新相关同步长轮询每请求只读取初始与最终快照"
         }
       ],
       "test_adjustments": [
@@ -751,7 +765,7 @@
             "priority": "按需求池事实"
           }
         ],
-        "execution": "8小时夜间窗口内同一develop串行处理；AI回答P0、小物媒体和未知区域已完成本地实现及受影响验证，账号刷新保留真实阻塞，不做猜测修复。",
+        "execution": "8小时夜间窗口内同一develop串行处理；AI回答P0、小物媒体和未知区域已完成本地实现及受影响验证；账号刷新针对已观察的PostgreSQL数据池连接获取失败风险降低长轮询读取次数，定向回归通过，生产刷新未复现且尚未部署。",
         "requirement_count": 4
       },
       {
