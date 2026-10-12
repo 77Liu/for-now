@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 59,
-  "updated_at": "2026-10-12T16:31:48+08:00",
+  "revision": 60,
+  "updated_at": "2026-10-12T16:39:28+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -85,7 +85,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发仅修正旧通知文案断言；主控继续独立本机模式浏览器验证时间草稿与首次保存，不触发AI。",
+  "next_action": "主开发最小补齐思绪保存账户/会话与新草稿保护；主控审查必要专项后接入并固定最终候选，再逐条核对六需求本地交付及剩余partial边界。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -151,6 +151,23 @@
         "真实移动设备、跨日/离线/重新认证",
         "通知复制失败真实浏览器交互"
       ]
+    },
+    "notification_browser": {
+      "candidate_code_sha": "8d82e7d75564b90939793d5a9895b276f472a658",
+      "environment": "独立本机模式临时JSON；复用终态failed fixture，无排队任务/AI调用",
+      "observed": [
+        "我的入口先显示1条未读；进入通知无需点查看即标readAt，返回我的未读徽标清空，失败通知保留。",
+        "页面不显示私密诊断哨兵；复制错误日志出现已复制脱敏错误日志toast。",
+        "自动化剪贴板readText读回为空，真实剪贴板内容未被证明；不得据toast判投递验收完成。"
+      ],
+      "persisted_read_at": "2026-10-12T08:33:25.602Z",
+      "evidence": "reports/local/v0513-browser-20261012/notification-copy.png",
+      "partial": [
+        "剪贴板实际交付与拒绝时真实浏览器替代操作",
+        "跨账户/并发新增真实浏览器验证"
+      ],
+      "ai_usage_entries": 0,
+      "temporary_server": "已终止，无后台测试进程"
     }
   },
   "owner_decisions": {
@@ -364,7 +381,7 @@
     },
     {
       "id": "v0.5.13",
-      "state": "CANDIDATE_LOCAL_PARTIAL",
+      "state": "BUILDING_LOCAL_ONLY",
       "scope": "保存状态/草稿与失败恢复；发生时间/补录意图；通知列表未读事实、脱敏诊断与恢复操作。仅实现六条锁定需求的未交付行为，不做全站状态或通知平台重构。",
       "requirement_ids": [
         "recvxm0eDZdJED",
@@ -544,35 +561,33 @@
       "candidate_tree": "9aefe2847445df89e681c5ea88304ac027b0da57",
       "integration_status": "主控只读审查后本地fast-forward接入develop@8d82e7d75564b90939793d5a9895b276f472a658，feat分支保留；真实浏览器/移动端/生产验收与旧文案失败仍PARTIAL。",
       "active_task": {
-        "task_id": "v0513-notification-entry-alignment-20261012",
-        "state": "RETURNED_FOR_TEST_ALIGNMENT",
+        "task_id": "v0513-chain-save-session-20261012",
+        "state": "LOCKED_FOR_IMPLEMENTATION",
         "owner": "主控",
         "implementer": "主开发",
-        "baseline_sha": "2b738461a1b09db27f8285c3b13428ea15092493",
+        "baseline_sha": "161dd89858ef9f87f9acb841859d028d80c98a1d",
+        "feature_branch": "feat/v0.5.13-save-sync-validation",
         "requirement_ids": [
-          "recvxlYzZSlc2p"
+          "recvxm0eDZdJED"
         ],
+        "source_finding": "record-events.mjs思绪submit未捕获账户/会话；contentImagePaths和requestV1之后直接更新state/清空form；catch/finally和refreshState.catch也写当前页面。apiClient虽拒绝旧会话，catch/finally仍缺守卫。",
         "write_set": [
-          "scripts/notification-entry-regression.mjs（保留73行安全文案修正；将原unsafeNotification/unsafeTask两处status设为succeeded，以普通通知正文验证原有HTML转义断言；删除只读取index转发文件的无效源码字符串检查及其专用fs/import URL声明）"
+          "public/frontend/app/runtime/record-events.mjs（仅chain-form提交的账户/会话、输入快照、迟到响应及清理保护）",
+          "scripts/personalized-ai-task-ui-regression.mjs（仅扩展既有思绪保存夹具，验证延迟提交/错误/账户切换/新草稿保持）"
         ],
         "forbidden": [
-          "所有业务源码与构建文件",
-          "控制面",
-          "其他测试/新测试文件",
-          "远程/发布/部署/生产/付费操作",
-          "新增工作树或删除分支"
+          "其他表单/通知/时间语义/共享API",
+          "新文件、构建与依赖",
+          "控制面、生产、远程、发布、付费调用",
+          "新工作树、删除分支、擅自集成develop"
         ],
         "acceptance": [
-          "保持失败通知固定安全文案和原脱敏断言；普通成功通知保留全部原长文转义/target/title/readAt断言，不新增用例。",
-          "只移除与实际presentation/helper无关的index文本浅层断言；不删除任何行为断言。",
-          "复用未变类型/构建/controller证据，只执行本专项及diff检查；不扩大测试或业务写集。"
-        ],
-        "prior_result": {
-          "command": "node scripts/notification-entry-regression.mjs",
-          "result": "FAIL",
-          "location": "scripts/notification-entry-regression.mjs:147",
-          "reason": "旧失败通知夹具仍要求展示任意长正文，与当前固定安全文案冲突；不改产品。"
-        }
+          "提交开始捕获账户/会话及提交输入；必要await后检查是否仍属原会话，旧会话禁止发起后续请求或写state/表单/状态/toast。",
+          "catch/finally以及refresh失败回调同样不得写新会话；同会话用户新编辑不能被旧成功响应清空，已保存事实仍按原id/请求收敛；未知提交保留原requestId语义。",
+          "不改发生时间算法或扩为通用状态重构；必要中文注释解释提交快照与恢复边界。",
+          "先直接最小实现，随后只运行既有personalized-ai-task-ui专项、修改文件语法与diff检查；没有签名/模块边界变化不重跑无关TS/全部check。",
+          "交接真实差分和结果，由主控审查提交/接入。"
+        ]
       },
       "review_task": {
         "task_id": "v0513-notification-message-review-20261012",
@@ -593,7 +608,51 @@
           "6195479当前祖先保留固定文案而断言未同步",
           "knowledge/ui-ux-v0.4.0.md安全状态与下一步规范"
         ]
-      }
+      },
+      "completed_task_receipts": [
+        {
+          "task_id": "v0513-notification-copy-fallback-20261012",
+          "receipt_snapshot": "07962cd:reports/requirement-coordination-current.json@revision56",
+          "implementation_commit": "8d82e7d75564b90939793d5a9895b276f472a658"
+        },
+        {
+          "task_id": "v0513-notification-entry-alignment-20261012",
+          "state": "IMPLEMENTED_REVIEWED",
+          "owner": "主控",
+          "implementer": "主开发",
+          "baseline_sha": "2b738461a1b09db27f8285c3b13428ea15092493",
+          "requirement_ids": [
+            "recvxlYzZSlc2p"
+          ],
+          "write_set": [
+            "scripts/notification-entry-regression.mjs（保留73行安全文案修正；将原unsafeNotification/unsafeTask两处status设为succeeded，以普通通知正文验证原有HTML转义断言；删除只读取index转发文件的无效源码字符串检查及其专用fs/import URL声明）"
+          ],
+          "forbidden": [
+            "所有业务源码与构建文件",
+            "控制面",
+            "其他测试/新测试文件",
+            "远程/发布/部署/生产/付费操作",
+            "新增工作树或删除分支"
+          ],
+          "acceptance": [
+            "保持失败通知固定安全文案和原脱敏断言；普通成功通知保留全部原长文转义/target/title/readAt断言，不新增用例。",
+            "只移除与实际presentation/helper无关的index文本浅层断言；不删除任何行为断言。",
+            "复用未变类型/构建/controller证据，只执行本专项及diff检查；不扩大测试或业务写集。"
+          ],
+          "prior_result": {
+            "command": "node scripts/notification-entry-regression.mjs",
+            "result": "FAIL",
+            "location": "scripts/notification-entry-regression.mjs:147",
+            "reason": "旧失败通知夹具仍要求展示任意长正文，与当前固定安全文案冲突；不改产品。"
+          },
+          "implementation_commit": "161dd89858ef9f87f9acb841859d028d80c98a1d",
+          "verification": {
+            "command": "node scripts/notification-entry-regression.mjs && git diff --check",
+            "result": "PASS",
+            "scope": "失败固定安全提示、转写语义/动作、重试去重、普通通知长文转义；无原行为断言删除"
+          }
+        }
+      ]
     }
   ],
   "canonical_path": "reports/requirement-coordination-current.json",
@@ -861,6 +920,12 @@
       "at": "2026-10-12T16:31:48+08:00",
       "reason": "浏览器首次保存/刷新详情与实际临时JSON时间一致且AI调用0；通知专项第二处同类旧正文夹具冲突，限定一文件对齐并移除无效源码文本断言。",
       "previous_snapshot": "1ab973e:reports/requirement-coordination-current.json@revision58"
+    },
+    {
+      "revision": 60,
+      "at": "2026-10-12T16:39:28+08:00",
+      "reason": "通知旧断言专项修正PASS并提交161dd89；记录真实浏览器通知未读收敛与剪贴板partial；源码审查发现chain保存跨会话/新编辑缺守卫，返回原需求实施节点。",
+      "previous_snapshot": "058f208:reports/requirement-coordination-current.json@revision59"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
