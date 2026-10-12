@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 80,
-  "updated_at": "2026-10-12T12:34:22.885Z",
+  "revision": 81,
+  "updated_at": "2026-10-12T12:35:37.278Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "release/v0.5.13候选已push并远端回读一致；必要旧部署器更新/回滚备份后部署c524eff，尚未正式tag/Release/main晋级。",
+  "current_phase": "候选部署器已更新但旧文件副本未预先保存；应用未切换，先恢复精确旧执行器材料并核验回滚后部署。",
   "state": "RELEASE_CANDIDATE_PUBLISHED",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发完成固定候选部署器必要升级和对应备份，核对attempt与实际回滚制品，部署c524eff并观察。",
+  "next_action": "主开发完成旧执行器精确哈希匹配恢复与完整attempt映射；失败报告真实影响，不无限扫描；应用部署仍未执行。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -1292,6 +1292,12 @@
       "at": "2026-10-12T12:34:22.885Z",
       "reason": "候选远端引用回执成立；记录必要部署器版本差异与更新范围，不改变批准代码候选。",
       "previous_snapshot": "c2686a4:reports/requirement-coordination-current.json@revision79"
+    },
+    {
+      "revision": 81,
+      "at": "2026-10-12T12:35:37.278Z",
+      "reason": "准确记录部署器更新与备份先后偏差；保留未切换应用事实，补适用恢复材料后续作。",
+      "previous_snapshot": "b2ad2ff:reports/requirement-coordination-current.json@revision80"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -2082,13 +2088,22 @@
       "source": "主开发实际外部回执"
     },
     "executor_update": {
-      "status": "NECESSARY_ENVIRONMENT_UPDATE",
+      "status": "UPDATED_RECOVERING_EXACT_OLD_EXECUTOR_COPY",
       "old_sha256_prefix": "1d31384e",
       "candidate_sha256_prefix": "8884b86d",
       "candidate_source": "c524eff:deploy/deploy.sh",
       "finding": "旧远端for-now-deploy缺少新host-metrics/journal-context服务与构建产物安装及对应启动/回滚；两个unit当前not-found",
       "guard": "候选安装脚本与guard SHA一致；上一attempt complete/无execution lock",
-      "action": "仅从已核验固定候选安装独立部署入口，先备份旧入口/状态，保留原代码SHA；完整执行器attempt映射待回执"
+      "action": "仅从已核验固定候选安装独立部署入口，先备份旧入口/状态，保留原代码SHA；完整执行器attempt映射待回执",
+      "sequence_deviation": {
+        "at": "2026-10-12T12:35:37.278Z",
+        "source": "主开发坦诚回执",
+        "fact": "installer在收到先保存旧执行器要求前已执行，只有旧SHA及unit not-found记录，未保留旧字节备份",
+        "application_state": "未运行for-now-deploy、未切换应用，旧active仍3e94e2f",
+        "guard_state": "9cb197... approved/无execution lock",
+        "recovery": "限定Git deploy脚本历史按旧完整SHA256恢复精确副本；核验后存远端回滚目录，再执行部署",
+        "note": "不得写成更新前已有备份；两个此前not-found unit不虚构文件副本"
+      }
     }
   }
 }
