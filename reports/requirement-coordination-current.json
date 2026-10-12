@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 36,
-  "updated_at": "2026-10-12T14:15:44+08:00",
+  "revision": 37,
+  "updated_at": "2026-10-12T14:42:34+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -17,7 +17,7 @@
   "state": "BUILDING_LOCAL_ONLY",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
-    "develop": "refs/heads/develop@db3176d858b665cc0021f84a311d306822da3e5e （当前业务代码tree 2793709fe8c81e37b390a0147760ba8b38aa7e7e；后续仅控制面元数据提交可推进分支SHA）",
+    "develop": "refs/heads/develop@b27e2c1ade8a7a4c17f2cc3803e739dfb1fe421b（当前业务代码tree d3a3d55bd690c24e707138580148bcbfb931424f；控制面元数据提交只推进分支SHA）",
     "remote_main_ref": "origin/main",
     "remote_main_observed": "ebbde6fcf100432de8a599c771cbd8e774e043ad",
     "startup_manifest": "reports/git-archive/git-startup-20261011-manifest.json",
@@ -40,7 +40,7 @@
     ],
     "canonical_worktree": "/Users/bytedance/Documents/Codex/个人成长追踪",
     "canonical_worktree_branch": "develop",
-    "canonical_worktree_head": "db3176d858b665cc0021f84a311d306822da3e5e （当前业务代码候选；控制面提交只记录事故和回执，不改变业务tree）",
+    "canonical_worktree_head": "b27e2c1ade8a7a4c17f2cc3803e739dfb1fe421b（严重告警监控脚本已迁入TS并集成；未部署）",
     "archived_worktree": {
       "path": "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/develop",
       "branch": "feat/v0.5.13.1-stability",
@@ -84,7 +84,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发按revision36执行现有UI重载场景的窄行为验证迁移；交还后主控审查差分，再运行check:modules、ui-regression和已受影响的通知/账号专项。保留已有专项结果，不跑system all；不推送、发布、部署或写生产。",
+  "next_action": "主控审查feat/v0.5.13-save-sync-validation上的5fa29a3差分及测试失败回执；先定位既有UI断言与通知入口断言的实际差异，再按需求边界决定最小修复和受影响验证。保留失败/partial，不跑system all、不推送、发布、部署或写生产。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -96,12 +96,12 @@
   ],
   "last_check": {
     "remote_refs": "2026-10-11T12:07:35Z 已通过 git ls-remote --heads/tags 只读核验；无远程写入",
-    "worktrees": "2026-10-12 14:15 +08：仅根目录工作树，当前develop；业务候选db3176d；feat/v0.5.13.1-critical-alert-context已fast-forward接入；本次只更新控制面元数据，无远程写入。",
+    "worktrees": "2026-10-12T14:42:34+08:00：仅根目录工作树，当前develop；严重告警TS闭环 b27e2c1 已本地fast-forward接入；无远程操作。",
     "platform_protection": "Gitee UI只读核验：保护分支规则0条、保护标签不可用、推送限制未启用",
     "remote_write": "本轮未执行",
     "release_rollback_rehearsal": "本地隔离模拟全部通过；无远端命令",
     "budget_alerts": "本地护栏回归通过；当前生产配置与告警快照缺失，保持阻断",
-    "candidate_integration": "严重告警诊断上下文切片 db3176d 已fast-forward接入develop；npm run test:monitor、npm run test:deploy、相关Node/Bash语法检查及git diff --check通过；生产未部署。v0.5.13原验证迁移仍按revision36待主开发执行。",
+    "candidate_integration": "严重告警诊断功能代码db3176d及TS迁移b27e2c1已本地接入develop。监控脚本已从scripts/*.mjs迁为*.mts；TypeScript输出隔离在.gitignore覆盖的.build/typescript/monitor/。typecheck:monitor、build:runtime、监控专项、Bash语法、生成文件语法与忽略规则检查通过。完整deploy-regression本轮已启动但未留存最终退出码，不计为PASS；改动范围内部署运行路径与编译产物一致性检查通过。生产未部署、未推送。v0.5.13保存/时间/通知差分仍待主控审查。",
     "alert_incident": {
       "alert_at": "2026-10-12T05:01:39.769Z",
       "recovered_at": "2026-10-12T05:06:39.868Z",
@@ -114,7 +114,7 @@
       "root_cause": "未知；当前证据支持短暂就绪检查失败，不能据此断定底层根因。",
       "awareness_gap": "Feishu告警为出站webhook；本对话没有接收该webhook的入站事件桥，因此不会自动感知。",
       "historical_metrics": "事发时10秒主机采样未运行，CPU和内存峰值不能事后恢复。",
-      "fix_status": "严重告警现将携带白名单日志摘要与采样可用时的近10秒CPU/内存峰值；本地已验证、尚未部署。"
+      "fix_status": "严重告警脱敏诊断与近10秒资源摘要代码已接入本地develop（b27e2c1）；两个新运维脚本使用TS源码，编译MJS只在被忽略的.build内，监控专项与构建通过；生产未部署。"
     }
   },
   "owner_decisions": {
@@ -705,7 +705,7 @@
       "只有截图或没有复现的未读数问题不据此宣称修复；先保留PARTIAL。"
     ],
     "external_actions": "无远端写、发布、部署、生产写或手工付费调用；不恢复已暂停自动化。",
-    "current_status": "BUILDING；v0.5.13首批差分6195479已接入develop，六条rev538源需求的只读差距审查确认保存派生回答错误恢复、手动时间模式草稿恢复、通知复制失败替代恢复仍有局部缺口；计数根因与真实浏览器/移动端仍partial。当前按revision33授权补缺及通知TS闭环。v0.5.13.1维持本地候选partial。",
+    "current_status": "BUILDING；v0.5.13首批差分6195479已接入develop，六条rev538源需求的只读差距审查确认保存派生回答错误恢复、手动时间模式草稿恢复、通知复制失败替代恢复仍有局部缺口；计数根因与真实浏览器/移动端仍partial。当前按revision33授权补缺及通知TS闭环。v0.5.13.1维持本地候选partial。 TS整改：严重告警两个新运维脚本已迁为.mts并隔离编译，提交b27e2c1已本地合入develop；build:runtime、typecheck:monitor和监控专项通过，未部署。保存/时间/通知测试迁移提交5fa29a3仍在feat分支待主控审查；test:ui在新增断言前的既有“来源念起已变化”等待失败，notification-entry既有断言与当前“原音已保留”fallback文案不一致，均保留原失败，未合入。",
     "version_requirement_count": {
       "minimum": 3,
       "maximum": 10,
@@ -982,6 +982,24 @@
           "scripts/prepare-generated-runtime.mjs、tsconfig.frontend.json、回归脚本、依赖/锁文件、生产配置、远程/发布操作"
         ],
         "acceptance": "干净构建先执行现有标准运行时装配，确保生成的共享前端入口和通知TS产物可加载；不增加测试项，不改测试清单，public/generated 继续被忽略且不进入Git。"
+      },
+      {
+        "revision": 37,
+        "at": "2026-10-12T14:42:34+08:00",
+        "reason": "Owner要求新建严重告警监控脚本必须使用TypeScript并立即闭环；需把生成MJS隔离在忽略目录，并同步构建、测试和部署运行路径。",
+        "approved_paths": [
+          "scripts/monitor-host-metrics.mts 与 scripts/monitor-journal-context.mts（运维监控实现与必要中文注释；删除同名MJS源码）",
+          "tsconfig.monitor.json（限定脚本输入，输出到 .build/typescript/monitor）",
+          "package.json 与 package-lock.json（仅加入该独立监控TS类型/构建入口和所需Node类型依赖）",
+          ".gitignore（明确禁止监控TS编译MJS进入Git）",
+          "deploy/for-now-host-metrics.service、deploy/deploy.sh、deploy/prepare-server.sh（只将运行源切换至隔离编译产物）",
+          "scripts/monitor-regression.mjs、scripts/deploy-regression.mjs（仅适配编译产物路径）"
+        ],
+        "forbidden": [
+          "任何远程push/tag/release、生产部署或生产写入；本轮未执行。",
+          "扩大到其他监控/应用脚本的TS迁移或无关测试重构。"
+        ],
+        "acceptance": "严格模式类型检查与运行时构建通过；专项监控验证通过；编译MJS仅在被.gitignore忽略的.build中；systemd/deploy路径一致；本地合入develop，远程和生产状态不变。"
       }
     ],
     "known_previous_test_failure": {
@@ -1096,5 +1114,6 @@
       }
     ],
     "third_version": "暂不冻结；只有需求池定向复核得到至少3条真实未交付需求后才建立v0.5.13.2或v0.5.14候选"
-  }
+  },
+  "current_develop_code_baseline": "b27e2c1ade8a7a4c17f2cc3803e739dfb1fe421b"
 }
