@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 37,
-  "updated_at": "2026-10-12T14:42:34+08:00",
+  "revision": 39,
+  "updated_at": "2026-10-12T14:54:00+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,11 +13,11 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner已要求继续推进 v0.5.13.1 与 v0.5.13；当前仅本地串行开发，远程写入、发布、部署和付费调用仍关闭",
-  "current_phase": "v0.5.13.1候选保持PARTIAL；严重告警诊断上下文切片 db3176d 已从 feat/v0.5.13.1-critical-alert-context fast-forward 接入 develop，monitor 与 deploy 定向回归通过；未推送、发布或部署。v0.5.13继续按revision36完成现有UI重载场景的窄验证迁移。",
+  "current_phase": "v0.5.13.1候选保持PARTIAL；严重告警诊断与TypeScript监控切片已本地合入develop，未推送/发布/部署。v0.5.13来源念起冲突提示修复提交5da75d2位于feat/v0.5.13-save-sync-validation，目标断言已通过；完整UI套件后续在通知按钮标签旧预期处失败，待主控接入审查。",
   "state": "BUILDING_LOCAL_ONLY",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
-    "develop": "refs/heads/develop@b27e2c1ade8a7a4c17f2cc3803e739dfb1fe421b（当前业务代码tree d3a3d55bd690c24e707138580148bcbfb931424f；控制面元数据提交只推进分支SHA）",
+    "develop": "refs/heads/develop@8ce1d3257d7d2bf387058b79f876d86d0159d734（当前业务代码tree d3a3d55bd690c24e707138580148bcbfb931424f；控制面元数据提交只推进分支SHA）",
     "remote_main_ref": "origin/main",
     "remote_main_observed": "ebbde6fcf100432de8a599c771cbd8e774e043ad",
     "startup_manifest": "reports/git-archive/git-startup-20261011-manifest.json",
@@ -40,7 +40,7 @@
     ],
     "canonical_worktree": "/Users/bytedance/Documents/Codex/个人成长追踪",
     "canonical_worktree_branch": "develop",
-    "canonical_worktree_head": "b27e2c1ade8a7a4c17f2cc3803e739dfb1fe421b（严重告警监控脚本已迁入TS并集成；未部署）",
+    "canonical_worktree_head": "8ce1d3257d7d2bf387058b79f876d86d0159d734（严重告警监控TypeScript切片已本地集成；未部署）",
     "archived_worktree": {
       "path": "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/develop",
       "branch": "feat/v0.5.13.1-stability",
@@ -84,7 +84,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主控审查feat/v0.5.13-save-sync-validation上的5fa29a3差分及测试失败回执；先定位既有UI断言与通知入口断言的实际差异，再按需求边界决定最小修复和受影响验证。保留失败/partial，不跑system all、不推送、发布、部署或写生产。",
+  "next_action": "主控审查 feat/v0.5.13-save-sync-validation 提交5da75d2：目标来源冲突提示断言已通过；整套npm run test:ui在更后续的通知按钮标签断言失败。保留失败事实，确认最小差分后决定串行合入develop。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -96,7 +96,7 @@
   ],
   "last_check": {
     "remote_refs": "2026-10-11T12:07:35Z 已通过 git ls-remote --heads/tags 只读核验；无远程写入",
-    "worktrees": "2026-10-12T14:42:34+08:00：仅根目录工作树，当前develop；严重告警TS闭环 b27e2c1 已本地fast-forward接入；无远程操作。",
+    "worktrees": "2026-10-12T14:52+08:00：唯一根目录工作树临时位于feat/v0.5.13-save-sync-validation，基于develop 8ce1d32的merge commit b07313f，无第二工作树；修复提交5da75d2已完成，待主控审查与接入。",
     "platform_protection": "Gitee UI只读核验：保护分支规则0条、保护标签不可用、推送限制未启用",
     "remote_write": "本轮未执行",
     "release_rollback_rehearsal": "本地隔离模拟全部通过；无远端命令",
@@ -575,6 +575,24 @@
       "at": "2026-10-12T13:03:17+08:00",
       "reason": "通知、账户切换及时间专项均通过；check:modules发现草稿往返测试违反app公开模块入口边界。为保留真实草稿恢复覆盖且不放宽模块规则，批准将该行为检查并入既有UI页面重载回归并移除测试对内部模块的直接导入。",
       "previous_snapshot": "reports/requirement-coordination-current.json@revision-34"
+    },
+    {
+      "revision": 38,
+      "at": "2026-10-12T14:49:18+08:00",
+      "reason": "核实并授权同一保存恢复功能分支修复来源版本冲突提示回归；保留现有断言与未验收边界。",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-37"
+    },
+    {
+      "revision": 39,
+      "at": "2026-10-12T14:50:29+08:00",
+      "reason": "仅补齐现有来源冲突UI场景的来源ID/版本夹具，使原有断言真实覆盖已授权的错误分支；不扩大测试。",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-38"
+    },
+    {
+      "revision": 39,
+      "at": "2026-10-12T14:54:00+08:00",
+      "reason": "记录来源冲突固定提示修复候选、目标断言通过及后续整套UI在通知按钮旧预期处失败；不把整套失败重标通过。",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-38"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -623,7 +641,7 @@
     "duration_hours": 8,
     "window_start": "2026-10-12T12:03:20+08:00",
     "window_end": "2026-10-12T20:02:27+08:00",
-    "branch": "develop",
+    "branch": "feat/v0.5.13-save-sync-validation",
     "baseline": "5a095d46cb361704432c608fcfc10767ec947e1f",
     "write_location": "/Users/bytedance/Documents/Codex/个人成长追踪",
     "purpose": "v0.5.13六条真实需求串行推进；没有并行写入，唯一写入位置为根目录develop，不创建或保留第二工作树。仅实现已核实未交付项；测试按唯一影响矩阵选择，不跑system all；不推送/发布/部署/写生产/手工付费。",
@@ -681,7 +699,9 @@
       "package.json（仅build:frontend/typecheck:frontend及test:frontend-notifications、test:f3-features、test:frontend、test:system命令的TS构建前置；不改依赖）",
       "scripts/frontend-notifications-feature-regression.mjs（仅复用现有通知专项必要断言）",
       "scripts/frontend-shared-regression.mjs（仅复用现有时间草稿往返专项必要断言）",
-      "scripts/personalized-ai-task-ui-regression.mjs（仅复用现有保存/AI队列状态专项必要断言）"
+      "scripts/personalized-ai-task-ui-regression.mjs（仅复用现有保存/AI队列状态专项必要断言）",
+      "public/frontend/app/runtime/record-events.mjs（仅思考提交携带 sourceCaptureId 且错误码为 PRECONDITION_FAILED 时显示固定安全中文提示；不回显任意异常文本，不改变草稿、附件与同步行为）",
+      "scripts/ui-regression.mjs（仅来源念起冲突既有场景，在提交前设置sourceCaptureId=capture-1与sourceCaptureVersion=2；保留现有断言，不增删测试）"
     ],
     "forbidden_write_set": [
       "reports/requirement-coordination-current.json",
@@ -705,7 +725,7 @@
       "只有截图或没有复现的未读数问题不据此宣称修复；先保留PARTIAL。"
     ],
     "external_actions": "无远端写、发布、部署、生产写或手工付费调用；不恢复已暂停自动化。",
-    "current_status": "BUILDING；v0.5.13首批差分6195479已接入develop，六条rev538源需求的只读差距审查确认保存派生回答错误恢复、手动时间模式草稿恢复、通知复制失败替代恢复仍有局部缺口；计数根因与真实浏览器/移动端仍partial。当前按revision33授权补缺及通知TS闭环。v0.5.13.1维持本地候选partial。 TS整改：严重告警两个新运维脚本已迁为.mts并隔离编译，提交b27e2c1已本地合入develop；build:runtime、typecheck:monitor和监控专项通过，未部署。保存/时间/通知测试迁移提交5fa29a3仍在feat分支待主控审查；test:ui在新增断言前的既有“来源念起已变化”等待失败，notification-entry既有断言与当前“原音已保留”fallback文案不一致，均保留原失败，未合入。",
+    "current_status": "BUILDING_LOCAL_ONLY；v0.5.13保存冲突修复提交5da75d2c4176c8a063dda8498284ff6897ad1b7a，tree 74c49fd3354e7d905cf39d3270c3fbc297c65036。目标来源冲突断言通过；npm run test:ui随后在scripts/ui-regression.mjs:4065因失败通知卡片实际含既有“复制错误日志”按钮而预期列表漏此按钮，整套命令FAIL，未修正或重跑。git diff --check通过。主控待审查/接入，未推送、发布、部署或写生产。",
     "version_requirement_count": {
       "minimum": 3,
       "maximum": 10,
@@ -896,6 +916,11 @@
           "command": "node scripts/sync-coordinator-regression.mjs",
           "result": "通过",
           "scope": "账号刷新相关同步长轮询每请求只读取初始与最终快照"
+        },
+        {
+          "command": "npm run test:ui",
+          "result": "FAIL（目标来源冲突断言已通过；后续在通知卡片按钮标签断言失败）",
+          "scope": "验证来源念起 PRECONDITION_FAILED 的固定提示；脚本随后于scripts/ui-regression.mjs:4065失败，实际通知卡片含“复制错误日志”，旧预期未列该按钮；保留失败，不计整套通过。"
         }
       ],
       "test_adjustments": [
@@ -1000,6 +1025,35 @@
           "扩大到其他监控/应用脚本的TS迁移或无关测试重构。"
         ],
         "acceptance": "严格模式类型检查与运行时构建通过；专项监控验证通过；编译MJS仅在被.gitignore忽略的.build中；systemd/deploy路径一致；本地合入develop，远程和生产状态不变。"
+      },
+      {
+        "revision": 38,
+        "at": "2026-10-12T14:49:18+08:00",
+        "reason": "复核确认保存冲突回归来自 6195479：带来源念起的思考提交收到 PRECONDITION_FAILED 后，同步协调器标记为 conflict，但界面仅显示泛化冲突提示，丢失来源已变化的操作指引。允许在原 feat/v0.5.13-save-sync-validation 上修复该既有行为；先合入 develop 当前基线，不改写历史。",
+        "approved_paths": [
+          "public/frontend/app/runtime/record-events.mjs（仅思考提交携带 sourceCaptureId 且错误码为 PRECONDITION_FAILED 时显示固定安全中文提示；不回显任意异常文本，不改变草稿、附件与同步行为）"
+        ],
+        "still_forbidden": [
+          "控制面以外的状态副本、需求池、远程 push/tag/release、部署或生产写入",
+          "新增或扩张回归套件、削弱既有断言、变更同步协议/API/schema或其它功能行为"
+        ],
+        "branch": "feat/v0.5.13-save-sync-validation",
+        "baseline": "8ce1d32（develop；已以非改写历史的 merge commit b07313f 接入该 feat 分支）",
+        "acceptance": "保留 scripts/ui-regression.mjs 现有来源版本冲突断言；只运行受影响 UI 回归与必要格式检查，记录真实结果和失败位置。不得推送、发布、部署或写生产。"
+      },
+      {
+        "revision": 39,
+        "at": "2026-10-12T14:50:29+08:00",
+        "reason": "UI来源冲突场景未提供sourceCaptureId与sourceCaptureVersion，却返回PRECONDITION_FAILED，无法验证来源冲突分支。为使既有断言对应真实场景，允许仅补齐该现有用例的两个夹具字段；不新增或删改断言。",
+        "approved_paths": [
+          "scripts/ui-regression.mjs（仅来源念起冲突既有场景，在提交前设置sourceCaptureId=capture-1与sourceCaptureVersion=2；保留现有断言，不增删测试）"
+        ],
+        "still_forbidden": [
+          "新增、扩张或删除/放宽其他回归断言；修改其它测试场景",
+          "修改需求池、远程push/tag/release、部署、生产写入或同步/API/schema契约"
+        ],
+        "branch": "feat/v0.5.13-save-sync-validation",
+        "acceptance": "修复代码恢复sourceCaptureId条件；夹具准确表达来源版本冲突。运行受影响UI验证；若更早的既有失败阻断目标断言，保留失败位置，不伪称该目标用例通过。"
       }
     ],
     "known_previous_test_failure": {
@@ -1008,7 +1062,13 @@
       "detail": "子场景production background core-model gate直接调用createContentBackground时未先安装Prompt catalog，抛出“Prompt catalog has not been installed”；正式runtime由src/app/runtime-foundation.mjs安装。除非本轮写集触及该夹具/提示词装配，不重跑或扩大修复。",
       "status": "保留原失败，不改写为通过；当前TS/保存通知差分未确认影响该夹具。"
     },
-    "candidate_tree_at_revision33": "782451bf72f0e7ad941414d085957b8b9fefdb72"
+    "candidate_tree_at_revision33": "782451bf72f0e7ad941414d085957b8b9fefdb72",
+    "feature_candidate": {
+      "branch": "feat/v0.5.13-save-sync-validation",
+      "commit": "5da75d2c4176c8a063dda8498284ff6897ad1b7a",
+      "tree": "74c49fd3354e7d905cf39d3270c3fbc297c65036",
+      "integration": "待主控审查；未合入develop"
+    }
   },
   "version_plan": {
     "minimum_requirements_per_version": 3,
@@ -1115,5 +1175,5 @@
     ],
     "third_version": "暂不冻结；只有需求池定向复核得到至少3条真实未交付需求后才建立v0.5.13.2或v0.5.14候选"
   },
-  "current_develop_code_baseline": "b27e2c1ade8a7a4c17f2cc3803e739dfb1fe421b"
+  "current_develop_code_baseline": "8ce1d3257d7d2bf387058b79f876d86d0159d734"
 }
