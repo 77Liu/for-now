@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 86,
-  "updated_at": "2026-10-12T12:51:19.203Z",
+  "revision": 87,
+  "updated_at": "2026-10-12T12:51:58.604Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "候选启动失败根因已定位为恢复孤立AI任务持久化一致性；返回同feat最小修复，旧生产健康。",
+  "current_phase": "精准栈确认目标映射不一致发生在启动恢复/等待任务晋级提交；目标删除尚未证明，限定resume及releaseWaiting实际契约修复。",
   "state": "BUILDING_DEPLOY_RECOVERY_FIX",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -624,7 +624,7 @@
         "feature_branch": "feat/v0.5.13-save-sync-validation",
         "baseline_sha": "c524efffb493b8bc7a2a380b7c6db38a9b76a658（当前feat额外协调文档保留）",
         "write_set": [
-          "src/app/background-ai.mjs（仅resume启动恢复中孤立目标的既有终态/通知处理，保持正常任务调度）",
+          "src/app/background-ai.mjs（仅resume及其调用releaseWaiting中的目标一致性/晋级恢复窄点，实际判定安全终态，保持有效任务调度）",
           "scripts/background-ai-model-gate-regression.mjs（现有本机夹具增加实际孤立任务恢复及映射持久化场景；如不适配先报现有替代位置，不新文件）"
         ],
         "forbidden": [
@@ -634,7 +634,7 @@
           "控制面、第二工作树、删分支、release/main业务写入"
         ],
         "acceptance": [
-          "直接按调用链完成最小恢复一致性处理；缺失目标任务保留可解释终态及安全通知，正常queued仍继续；running仍防重复付费恢复，不自动retry不存在目标。",
+          "先核对实际prepare/intent/promoteWaiting与mapper主目标契约；修复resume→releaseWaiting提交前的真实目标一致性缺口，保留任务安全终态/通知；不预设删除或泛化所有异常为stale。",
           "不把任意prepare异常等同目标缺失，不隐藏真实存储/权限错误，不全局削弱mapper。",
           "先实现后用既有纯本机专项验证恢复后的store可通过实际mapStoreObjects、未丢原始任务/无AI调用；只运行受影响验证。",
           "回执代码差分及证据，由主控审查提交/接入并固定新候选。之后在已有Owner授权下建立新attempt再上线，旧失败保持历史。"
@@ -1322,6 +1322,12 @@
       "at": "2026-10-12T12:51:19.203Z",
       "reason": "精准stderr异常定位监听前目标引用失败，解除猜测；批准恢复一致性窄点实施。",
       "previous_snapshot": "3c3193b:reports/requirement-coordination-current.json@revision85"
+    },
+    {
+      "revision": 87,
+      "at": "2026-10-12T12:51:58.604Z",
+      "reason": "独立只读复核校正“实际目标删除”推断，并补准releaseWaiting晋级位置，不放宽mapper。",
+      "previous_snapshot": "7437a40:reports/requirement-coordination-current.json@revision86"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -2221,7 +2227,8 @@
       ],
       "chain": "runtime.start→recoverAtStartup→recoverCurrentStorage→backgroundAi.resume→repository.update→mapStoreObjects(required queued/running target)；发生在listen/server.started之前",
       "conclusion": "恢复持久化时目标引用一致性失败是候选启动退出的直接原因；非PG连接/readiness延迟或unit cleanup",
-      "privacy": "未记录账户/task id/target id或用户正文；具体业务任务未查询"
+      "privacy": "未记录账户/task id/target id或用户正文；具体业务任务未查询",
+      "boundary_correction": "直接根因是启动恢复提交时queued/running主目标映射无法解析；栈359/457对应releaseWaiting晋级提交。不能据安全栈断言实际目标已删除、启动前已queued或某task类型；还可能目标标识/集合不匹配或晋级校验遗漏。"
     }
   }
 }
