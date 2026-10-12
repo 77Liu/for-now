@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 93,
-  "updated_at": "2026-10-12T13:13:22.204Z",
+  "revision": 94,
+  "updated_at": "2026-10-12T13:17:12.507Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -644,7 +644,8 @@
           "主控审查提交接入后新候选/attempt继续上线；旧生产健康，不修改生产数据。",
           "仅recordCompression且payload.operation为现行HISTORICAL_SUPPLEMENT_OPERATION允许未解析日摘要主目标；daily仍required，既有markQueued顺序不改变。必要一条historical fixture与普通daily严格行为验证复用原测试。",
           "当前候选所有已注册task kind按源契约一次分类收口；表驱动验证生成集合，不逐类型新增大型夹具或提出通用平台。chat/analysis源码prepare/save不依赖主target且结果后创建实体，属于同一启动失败闭环。",
-          "同一aiTaskTargetReference集中表达mapper实际required子目标；主目标存在但followUp/annotation/comment-image必需子目标缺失的queued任务恢复为安全终态，严格子目标映射不放宽。原专项一条追问代表场景，onboarding已有断言复用，无覆盖才补最小场景。"
+          "同一aiTaskTargetReference集中表达mapper实际required子目标；主目标存在但followUp/annotation/comment-image必需子目标缺失的queued任务恢复为安全终态，严格子目标映射不放宽。原专项一条追问代表场景，onboarding已有断言复用，无覆盖才补最小场景。",
+          "通知kind=aiTask不能作为关联任务真实kind；保留原followUps/annotations nested identity推断或taskId关联原task，正常追问通知relation targetKey保持既有语义，仅补原夹具必要关系断言。"
         ],
         "pending_contract_check": "已确认：historical补充生成输出到historicalUserSupplement singleton，不写recordCompressions；daily存在markQueued预创建且tasks.create/promoteWaiting/promoteBudgetWaiting调用，保持daily required。"
       },
@@ -1372,6 +1373,12 @@
       "at": "2026-10-12T13:13:22.204Z",
       "reason": "Owner要求补生产快照本机实际启动验证门，登记为本次重新发布前必需，尚未实现不伪自动通过。",
       "previous_snapshot": "18c5b4f:reports/requirement-coordination-current.json@revision92"
+    },
+    {
+      "revision": 94,
+      "at": "2026-10-12T13:17:12.507Z",
+      "reason": "独审发现统一helper误改追问通知关系，限定保留旧通知映射消费者语义，不扩功能。",
+      "previous_snapshot": "8ef5792:reports/requirement-coordination-current.json@revision93"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
