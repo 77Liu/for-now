@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 120,
-  "updated_at": "2026-10-12T16:42:15.661Z",
+  "revision": 125,
+  "updated_at": "2026-10-12T17:25:48.595Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -9,18 +9,18 @@
     "write_authority": "唯一维护者；必须经coordination:update入口更新"
   },
   "rule_baseline": {
-    "commit": "22c3ffef4a22da5baa5ceb69720a3213700d84a1",
+    "commit": "9e10d275904fb508f7ce15c1ad8bd566379b4b78",
     "effective_date": "2026-10-13",
-    "source": "PROJECT_RULES.md与knowledge/coordination-control-plane.md v2.0"
+    "source": "PROJECT_RULES.md；knowledge/coordination-control-plane.md v2.0；knowledge/engineering-rules.md#35-源码与注释规范；SOP/requirement-intake.md v1.1"
   },
   "work_mode": {
     "status": "RUNNING",
-    "scope": "继续0.5.13附件digest脱敏格式修复与生产只读快照本机启动；本阶段禁止发布/生产写/手动付费"
+    "scope": "恢复v0.5.13：修复快照脱敏与真实启动消费者契约，审查及有状态全局门通过后按既有授权发布；当前实现阶段禁止生产写入及手工付费"
   },
   "iteration": {
     "id": "v0.5.13",
     "status": "ACTIVE",
-    "phase": "已独立确认附件digest格式缺陷，返回同一feat修复"
+    "phase": "主控实际代码契约审查通过，串行提交并固定下一启动候选"
   },
   "scope": {
     "description": "保存状态/草稿与失败恢复；发生时间/补录意图；通知列表未读事实、脱敏诊断与恢复操作。仅实现六条锁定需求的未交付行为，不做全站状态或通知平台重构。",
@@ -46,30 +46,22 @@
       "手工重复付费证明"
     ]
   },
-  "active_tasks": [
-    {
-      "id": "v0513-snapshot-digest-format-20261013",
-      "owner": "主控",
-      "implementer_thread": "01a11afe-73d2-7013-91d5-cd473c4d7115",
-      "coordinator": "主控",
-      "mode": "单脚本实现",
-      "branch": "feat/v0.5.13-save-sync-validation",
-      "baseline_sha": "22c3ffef4a22da5baa5ceb69720a3213700d84a1",
-      "write_set": [
-        "scripts/release-state-startup-gate.mts（仅sha256保形脱敏及既有自测库存digest真实格式）"
-      ],
-      "forbidden": [
-        "控制面/事件写入",
-        "新文件/框架/无关业务代码",
-        "生产读取或写入",
-        "部署或付费",
-        "绕过或删减清单行/SQL约束/状态断言"
-      ],
-      "status": "REVIEWED_PENDING_COMMIT",
-      "acceptance": "保留117清单行语义；合法sha256采用键控HMAC纯64小写hex，不保留原hash且不追加正文token；null缺失状态保持；开发者先自查schema→脱敏→导入链，相关检查后由主控亲自审查。"
+  "active_tasks": [],
+  "candidate": {
+    "sha": "ba20c81052c7049b02ef55a221d223e93c3c01e8",
+    "tree": "ba5dda5657653556d5172081069210d0b3b39c05",
+    "status": "STARTUP_GATE_FAILED",
+    "release_frozen": false,
+    "quality_gate": {
+      "snapshot": "PASS",
+      "local_import": "PASS",
+      "task_state_equivalence": "PASS",
+      "runtime_start": "FAIL",
+      "readyz": "NOT_RUN",
+      "restart_recovery": "NOT_RUN",
+      "core_smoke": "NOT_RUN"
     }
-  ],
-  "candidate": null,
+  },
   "authorization": {
     "source": {
       "at": "2026-10-12T10:50:30.512Z",
@@ -99,20 +91,15 @@
   },
   "blockers": [
     {
-      "code": "SANITIZED_ATTACHMENT_DIGEST_FORMAT",
-      "status": "CONFIRMED",
+      "code": "GLOBAL_STARTUP_NOT_VERIFIED",
+      "status": "PENDING_VERIFICATION",
       "owner": "主开发",
-      "impact": "隔离PG导入附件清单失败，不能启动本机应用或冻结release",
-      "evidence": [
-        "src/shared/persistence/postgres-schema.sql:241",
-        "scripts/release-state-startup-gate.mts:428",
-        "reports/local/revision114-startup-gate-receipt.json"
-      ]
+      "impact": "修复专项通过不代替新固定候选的有状态全局门；通过前禁止release冻结或部署"
     }
   ],
   "next_action": {
     "owner": "主控",
-    "action": "提交摘要保形修复及对应控制面/事件，接入develop并固定新候选运行真实门",
+    "action": "提交已审查启动门修复及相关控制面事件，合回develop后登记完整候选SHA/tree并派实际快照门",
     "status": "READY"
   },
   "runtime": {
@@ -141,11 +128,29 @@
       "event_id": "v0.5.13-0fe0e4fe-2b17-438e-a823-1af50688078f",
       "source": "git:b44a90f6bb4c63f04eb6c6da2fce05bdd5d049a2",
       "status": "入口严格TS、隔离持久化/恢复/收口夹具、实际迁移与audit通过"
+    },
+    {
+      "id": "attachment-digest-fix",
+      "event_id": "v0.5.13-45768b89-7302-4d2b-965f-38db7be3fd3b",
+      "source": "git:ba20c81052c7049b02ef55a221d223e93c3c01e8",
+      "status": "已接入develop；实际全局启动尚未验证"
+    },
+    {
+      "id": "startup-gate-ba20-runtime-failure",
+      "event_id": "v0.5.13-ccb54700-631b-47b1-95f1-5b5ab47b8385",
+      "source": "reports/local/v0513-startup-gate-receipt.json",
+      "status": "快照与PG导入PASS；runtime启动FAIL，后续门NOT_RUN；原失败保留"
+    },
+    {
+      "id": "snapshot-consumer-contract-review",
+      "event_id": "v0.5.13-1bea4caf-889a-4d75-8fbc-28a815bb521f",
+      "source": "scripts/release-state-startup-gate.mts@sha256:a045085a30442d33f7cd2eb100147b6e3ec2f7751e20fc5d670b2f260e572b46",
+      "status": "主控沿真实消费者与实际差分独立审查GO；严格TS及原有自测PASS；只补注释后复用有效行为结果"
     }
   ],
   "records": {
     "events": "reports/iterations/v0.5.13/events.jsonl",
     "terminal": "reports/iterations/v0.5.13/terminal.json"
   },
-  "display_summary": "新版控制面只保留有效现状；快照已采集，本机导入失败、应用启动未执行。"
+  "display_summary": "脱敏技术字段与来源引用修复已通过实际代码审查及专项，下一步固定新候选执行真实启动门。"
 }

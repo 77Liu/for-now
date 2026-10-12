@@ -1,4 +1,10 @@
 #!/usr/bin/env node
+/**
+ * 采集脱敏生产状态，并验证隔离 PostgreSQL 下的启动、恢复与核心链路。
+ * 建立时间：2026-10-12
+ * 状态：active
+ * 边界：生产仅只读；脱敏保持账户与来源契约；本机验证禁止真实外部调用并清理临时资源。
+ */
 import { createHash, createHmac, randomBytes, scrypt as scryptCallback } from "node:crypto";
 import { execFile as execFileCallback } from "node:child_process";
 import { promises as fs } from "node:fs";
@@ -107,9 +113,12 @@ type RedactionContext = {
   objectKeys: Map<string, string>;
   resourceKeys: Map<string, string>;
   annotationQuoteTokens: Map<string, string>;
+  supplementStatementTokens: Map<string, string>;
   markdownText: (value: string) => string;
   singletonIds: Set<string>;
 };
+
+type SupplementEstimator = (records: unknown[]) => number;
 
 function fail(message: string): never {
   throw new Error(message);
@@ -192,6 +201,31 @@ function identityToken(key: Buffer, namespace: string, value: string): string {
   return `${namespace}_${createHmac("sha256", key).update(`${namespace}\0${value}`).digest("hex")}`;
 }
 
+function compactToken(
+  key: Buffer,
+  namespace: string,
+  value: string,
+  prefix: string,
+  suffix: string,
+  aliases: Map<string, string>,
+  initialHexLength: number
+): string {
+  const digest = createHmac("sha256", key).update(`${namespace}\0${value}`).digest("hex");
+  for (let hexLength = initialHexLength; hexLength <= digest.length; hexLength += 2) {
+    const bitCount = hexLength * 4;
+    const body = BigInt(`0x${digest.slice(0, hexLength)}`)
+      .toString(36)
+      .padStart(Math.ceil(bitCount / Math.log2(36)), "0");
+    const token = `${prefix}${body}${suffix}`;
+    const collision = [...aliases].some(([otherValue, otherToken]) => otherValue !== value && otherToken === token);
+    if (!collision) {
+      aliases.set(value, token);
+      return token;
+    }
+  }
+  fail("Snapshot compact redaction token collision could not be resolved");
+}
+
 function redactionAtom(key: Buffer, namespace: string, value: string, prefix: "Q" | "V"): string {
   return `${prefix}${createHmac("sha256", key).update(`${namespace}\0${value}`).digest("hex")}Z`;
 }
@@ -211,6 +245,7 @@ function createRedactionContext(
     objectKeys: new Map(),
     resourceKeys: new Map(),
     annotationQuoteTokens: new Map(),
+    supplementStatementTokens: new Map(),
     markdownText,
     singletonIds: new Set()
   };
@@ -307,7 +342,7 @@ function createRedactionContext(
     }
     if (!value || typeof value !== "object") {
       if (typeof value !== "string") return;
-      if (field === "quote" && value) {
+      if (field === "quote" && value && !context.annotationQuoteTokens.has(value)) {
         const token = redactionAtom(key, "annotation-quote", value, "Q");
         const existing = [...context.annotationQuoteTokens.entries()].find(([, mapped]) => mapped === token);
         if (existing && existing[0] !== value) fail("Snapshot quote redaction token collision");
@@ -325,6 +360,27 @@ function createRedactionContext(
     }
     for (const [name, child] of Object.entries(value)) register(child, name, [...objectPath, name]);
   };
+
+  // 历史引文与其来源正文共享短代号，来源ID短化时也复用同一个实体映射。
+  for (const row of mapping.objects) {
+    if (row.kind !== "historicalUserSupplement" || !row.payload || typeof row.payload !== "object") continue;
+    const supplement = row.payload as JsonRecord;
+    for (const record of Array.isArray(supplement.records) ? supplement.records as JsonRecord[] : []) {
+      const sourceId = record.source && (record.source as JsonRecord).sourceId;
+      if (typeof sourceId === "string" && !context.ids.has(sourceId)) {
+        const alias = compactToken(key, "supplement-source-id", sourceId, "i", "", context.ids, 8);
+        context.ids.set(sourceId, alias);
+      }
+      const exactQuote = record.exactQuote;
+      if (typeof exactQuote === "string" && exactQuote && !context.annotationQuoteTokens.has(exactQuote)) {
+        compactToken(key, "supplement-quote", exactQuote, "Q", "Z", context.annotationQuoteTokens, 16);
+      }
+      const statement = record.statement;
+      if (typeof statement === "string" && statement && !context.supplementStatementTokens.has(statement)) {
+        compactToken(key, "supplement-statement", statement, "V", "Z", context.supplementStatementTokens, 8);
+      }
+    }
+  }
 
   for (const row of mapping.objects) {
     const parts = typeof row.objectKey === "string" ? parseArrayKey(row.objectKey) : null;
@@ -380,13 +436,11 @@ function sanitizeMapping<T>(
   };
   const transform = (text: string, field: string, objectPath: string[]): string => {
     if (preserveTechnicalDigests && field === "sha256") {
-      if (!/^[a-f0-9]{64}$/u.test(text)) fail("Source attachment digest violates the PostgreSQL inventory contract");
-      // 技术摘要只做定长元数据脱敏，不能套用正文占位符或附加引文关系 token。
-      return createHmac("sha256", key).update(`attachment-inventory\0sha256\0${text}`).digest("hex");
+      return redactTechnicalDigest(key, text);
     }
     if (!text) return text;
     // 引文使用独立占位符，避免普通文本缓存或身份映射改变引用字段语义。
-    if (field === "quote" && context.annotationQuoteTokens.has(text)) {
+    if ((field === "quote" || field === "exactQuote") && context.annotationQuoteTokens.has(text)) {
       return context.annotationQuoteTokens.get(text)!;
     }
     if (field === "sourceKey") return context.sourceKeys.get(text) || fail("Snapshot source key has no redaction mapping");
@@ -452,6 +506,97 @@ function sanitizeMapping<T>(
     return item;
   };
   return visit(value, "", []) as T;
+}
+
+function redactTechnicalDigest(key: Buffer, value: unknown): string {
+  if (typeof value !== "string" || !/^[a-f0-9]{64}$/u.test(value)) {
+    fail("Source technical digest violates its lower-case SHA-256 contract");
+  }
+  return createHmac("sha256", key).update(`technical-digest\0${value}`).digest("hex");
+}
+
+/**
+ * 通用文本脱敏之后，仅恢复已知持久化对象的技术形态，不放开同名用户扩展字段。
+ * 摘要使用统一的带密钥映射保留相等关系；历史资料的估算 token 随脱敏文本重算，非计费回填。
+ */
+function preserveTechnicalMetadata(
+  sourceMapping: StoreMapping,
+  sanitizedMapping: StoreMapping,
+  redactionContext: RedactionContext,
+  key: Buffer,
+  estimateSupplementTokens: SupplementEstimator
+): void {
+  const preserveDigest = (source: JsonRecord, target: JsonRecord, field: string) => {
+    target[field] = redactTechnicalDigest(key, source[field]);
+  };
+  const preserveWindow = (source: JsonRecord, target: JsonRecord) => {
+    if (typeof source.start !== "string" || !Number.isFinite(Date.parse(source.start))
+      || typeof source.endExclusive !== "string" || !Number.isFinite(Date.parse(source.endExclusive))
+      || Date.parse(source.start) >= Date.parse(source.endExclusive)) {
+      fail("Source record-compression window violates its persisted envelope contract");
+    }
+    target.start = source.start;
+    target.endExclusive = source.endExclusive;
+    if (["complete", "partial"].includes(String(source.completeness))) target.completeness = source.completeness;
+  };
+
+  for (let index = 0; index < sourceMapping.objects.length; index += 1) {
+    const sourceRow = sourceMapping.objects[index];
+    const targetRow = sanitizedMapping.objects[index];
+    if (sourceRow.kind !== targetRow.kind || !sourceRow.payload || !targetRow.payload) {
+      fail("Snapshot object structure changed before technical metadata redaction");
+    }
+    const source = sourceRow.payload as JsonRecord;
+    const target = targetRow.payload as JsonRecord;
+    if (sourceRow.kind === "perceptionEvent") {
+      preserveDigest(source, target, "contentSha256");
+    } else if (sourceRow.kind === "evidenceSource") {
+      preserveDigest(source, target, "contentSha256");
+      if (Array.isArray(source.derivedFrom) && Array.isArray(target.derivedFrom)) {
+        const sourceDependencies = source.derivedFrom as unknown[];
+        const targetDependencies = target.derivedFrom as unknown[];
+        sourceDependencies.forEach((dependency, dependencyIndex) => {
+          const sourceDependency = dependency as JsonRecord;
+          const targetDependency = targetDependencies[dependencyIndex] as JsonRecord;
+          preserveDigest(sourceDependency, targetDependency, "contentSha256");
+        });
+      }
+    } else if (sourceRow.kind === "recordCompression") {
+      preserveDigest(source, target, "sourceManifestHash");
+      if (source.window && target.window) preserveWindow(source.window as JsonRecord, target.window as JsonRecord);
+      for (const field of ["sourceManifest", "sourceRefs"] as const) {
+        if (!Array.isArray(source[field]) || !Array.isArray(target[field])) continue;
+        const sourceEntries = source[field] as unknown[];
+        const targetEntries = target[field] as unknown[];
+        sourceEntries.forEach((item, itemIndex) => {
+          preserveDigest(item as JsonRecord, targetEntries[itemIndex] as JsonRecord, "sourceHash");
+        });
+      }
+    } else if (sourceRow.kind === "historicalUserSupplement") {
+      const sourceTokenUsage = source.tokenUsage as JsonRecord | undefined;
+      const targetTokenUsage = target.tokenUsage as JsonRecord | undefined;
+      if (sourceTokenUsage?.scope === "model_output" && targetTokenUsage) targetTokenUsage.scope = "model_output";
+      if (Array.isArray(target.records) && targetTokenUsage) {
+        for (let recordIndex = 0; recordIndex < target.records.length; recordIndex += 1) {
+          const sourceRecord = (source.records as JsonRecord[] | undefined)?.[recordIndex];
+          const targetRecord = target.records[recordIndex] as JsonRecord;
+          if (sourceRecord?.source && targetRecord.source) {
+            preserveDigest(sourceRecord.source as JsonRecord, targetRecord.source as JsonRecord, "sourceHash");
+          }
+          for (const field of ["statement", "exactQuote"] as const) {
+            const text = sourceRecord?.[field];
+            if (typeof text === "string") {
+              const aliases = field === "exactQuote"
+                ? redactionContext.annotationQuoteTokens
+                : redactionContext.supplementStatementTokens;
+              targetRecord[field] = aliases.get(text) || fail("Historical supplement text has no redaction alias");
+            }
+          }
+        }
+        targetTokenUsage.tokens = estimateSupplementTokens(target.records);
+      }
+    }
+  }
 }
 
 function registerIdentifier(context: RedactionContext, key: Buffer, value: string): string {
@@ -667,8 +812,19 @@ async function createSanitizedAccount(
   const sourceInspector = (await createClosedInspector(root, accountId, {}, clock)).backgroundAi;
   const beforeStates = taskStates(sourceStore, sourceInspector, redactionKey);
   const content = await importFromRoot<{ markdownText(value: string): string }>(root, "src/shared/content/index.mjs");
+  const supplement = await importFromRoot<{ estimateHistoricalUserSupplementOutputTokens: SupplementEstimator }>(
+    root,
+    "src/modules/record-compressions/index.mjs"
+  );
   const redactionContext = createRedactionContext(sourceMapping, redactionKey, content.markdownText, sourceInventory);
   const redactedMapping = sanitizeMapping(sourceMapping, redactionKey, redactionContext, stringMap);
+  preserveTechnicalMetadata(
+    sourceMapping,
+    redactedMapping,
+    redactionContext,
+    redactionKey,
+    supplement.estimateHistoricalUserSupplementOutputTokens
+  );
   const redactedInventory = sanitizeMapping(sourceInventory, redactionKey, redactionContext, stringMap, true);
   const redactedAccountId = identityToken(redactionKey, "id", accountId);
   const sanitizedStore = persistence.rebuildStoreObjects(redactedMapping);
@@ -1287,6 +1443,20 @@ async function selfTest(root: string) {
   const runtime = await createClosedInspector(root, "synthetic-account", counts, fixtureClock);
   const inspector = runtime.backgroundAi;
   const persistence = await importFromRoot<PersistenceApi>(root, "src/shared/persistence/index.mjs");
+  const app = await importFromRoot<{
+    normalizeStore(value: JsonRecord): JsonRecord;
+  }>(root, "src/app/index.mjs");
+  const persistedNormalization = await importFromRoot<{
+    normalizePersistedDocument(source: JsonRecord, normalize: (value: JsonRecord) => JsonRecord): JsonRecord;
+  }>(root, "src/shared/persistence/normalization.mjs");
+  const compressionApi = await importFromRoot<{
+    RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION: string;
+    RECORD_COMPRESSION_PROMPT_VERSION: string;
+    HISTORICAL_USER_SUPPLEMENT_SCHEMA_VERSION: string;
+    HISTORICAL_USER_SUPPLEMENT_RECORD_VERSION: number;
+    HISTORICAL_USER_SUPPLEMENT_TOKEN_BUDGET: number;
+    estimateHistoricalUserSupplementOutputTokens: SupplementEstimator;
+  }>(root, "src/modules/record-compressions/index.mjs");
   const persistenceMetadata = await importFromRoot<{
     synchronizePersistenceMetadata(before: JsonRecord | null, after: JsonRecord, now: () => string, options: JsonRecord): JsonRecord;
   }>(root, "src/shared/persistence/persistence-metadata.mjs");
@@ -1298,11 +1468,37 @@ async function selfTest(root: string) {
   const permissionSourceKey = JSON.stringify([
     "thought", "thought-private-root", "thought-private-root", permissionSourceTargetKey
   ]);
+  const dependencySourceKey = JSON.stringify([
+    "thought", "thought-private-answer", "thought-private-answer", "content"
+  ]);
   const messageSourceTargetKey = "message";
   const messageSourceKey = JSON.stringify(["chat", "chat-private-id", "", messageSourceTargetKey]);
   const noteTargetKey = "note:note-private-id";
   const reflectionTargetKey = "reflection:reflection-private-id";
   const transcriptionTargetKey = "transcription";
+  const sharedTechnicalDigest = createHash("sha256").update("shared technical source content").digest("hex");
+  const compressionManifestDigest = createHash("sha256").update("compression manifest").digest("hex");
+  const supplementRecords = [{
+    recordVersion: compressionApi.HISTORICAL_USER_SUPPLEMENT_RECORD_VERSION,
+    statement: "stable1",
+    exactQuote: "question",
+    source: {
+      localDate: "2026-10-11",
+      sourceId: "id-a",
+      sourceHash: sharedTechnicalDigest,
+      permissionRevision: 1
+    }
+  }, {
+    recordVersion: compressionApi.HISTORICAL_USER_SUPPLEMENT_RECORD_VERSION,
+    statement: "stable2",
+    exactQuote: "message",
+    source: {
+      localDate: "2026-10-11",
+      sourceId: "id-b",
+      sourceHash: sharedTechnicalDigest,
+      permissionRevision: 1
+    }
+  }];
   const store: JsonRecord = {
     captures: [{ id: "capture-private-id", capturedAt: "2026-10-11T18:30:00.000Z", timezone: "Asia/Shanghai", attachmentPath: "/attachments/private-capture.m4a" }],
     thoughts: [
@@ -1313,7 +1509,7 @@ async function selfTest(root: string) {
         version: 1,
         sourceRef: { type: "capture", id: "capture-private-id", targetKey: "" },
         sourceCaptureId: "capture-private-id",
-        sourceId: "capture-private-id",
+        sourceId: "id-a",
         recordTimezone: "Asia/Shanghai",
         contextGeneratedAt: "2026-10-11T18:30:00.000Z",
         inputAsOf: "2026-10-11T18:30:00.000Z",
@@ -1346,6 +1542,7 @@ async function selfTest(root: string) {
       id: "annotation-chat-private-id",
       message: "private chat message",
       answer: "**chat answer body**",
+      sourceId: "id-b",
       version: 1,
       annotations: [{ id: "chat-answer-annotation-id", targetKey: "answer", quote: "answer body", text: "private comment", version: 1 }]
     }],
@@ -1398,6 +1595,15 @@ async function selfTest(root: string) {
       schemaVersion: 1,
       id: `evidence-source-${index}`,
       accountId: "synthetic-account",
+      eventId: `evidence-event-${index}`,
+      origin: "user",
+      informationType: "user_fact",
+      contentSha256: sharedTechnicalDigest,
+      contentLength: 0,
+      span: null,
+      occurredAt: "2026-10-11T18:30:00.000Z",
+      recordedAt: "2026-10-11T18:30:00.000Z",
+      permissionRevision: 1,
       sourceRef: {
         resourceType,
         resourceId: resourceType === "chat" ? "chat-private-id" : `${resourceType}-private-id`,
@@ -1405,7 +1611,12 @@ async function selfTest(root: string) {
         targetKey: [messageSourceTargetKey, noteTargetKey, reflectionTargetKey, transcriptionTargetKey][index],
         version: 1
       },
-      derivedFrom: []
+      derivedFrom: index === 0 ? [{
+        sourceKey: dependencySourceKey,
+        version: 1,
+        contentSha256: sharedTechnicalDigest,
+        permissionRevision: 1
+      }] : []
     })),
     perceptionEvents: [{
       schemaVersion: 1,
@@ -1420,7 +1631,7 @@ async function selfTest(root: string) {
         version: 1
       },
       eventId: "event-private-id",
-      contentSha256: createHash("sha256").update("synthetic-event").digest("hex"),
+      contentSha256: sharedTechnicalDigest,
       permissionRevision: 1,
       occurredAt: "2026-10-11T18:30:00.000Z",
       recordedAt: "2026-10-11T18:30:00.000Z",
@@ -1444,6 +1655,41 @@ async function selfTest(root: string) {
       recordedAt: "2026-10-11T18:30:00.000Z",
       perceptionVersion: "synthetic-perception-v1"
     }],
+    recordCompressions: [{
+      id: "compression-private-id",
+      status: "ready",
+      schemaVersion: compressionApi.RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION,
+      promptVersion: compressionApi.RECORD_COMPRESSION_PROMPT_VERSION,
+      revision: 1,
+      localDate: "2026-10-11",
+      timezone: "Asia/Shanghai",
+      generatedAt: "2026-10-11T18:30:00.000Z",
+      sourceManifestHash: compressionManifestDigest,
+      sourceManifest: [{ sourceId: "manifest-source-private", recordId: "manifest-record-private", sourceHash: sharedTechnicalDigest }],
+      sourceRefs: [{ sourceId: "reference-source-private", recordId: "reference-record-private", sourceHash: sharedTechnicalDigest }],
+      window: {
+        localDate: "2026-10-11",
+        timezone: "Asia/Shanghai",
+        start: "2026-10-10T16:00:00.000Z",
+        endExclusive: "2026-10-11T16:00:00.000Z",
+        completeness: "complete"
+      },
+      daily: {},
+      thoughtsIdeas: {},
+      other: {},
+      metrics: [],
+      tokenUsage: { estimated: true, outputTokens: 1 }
+    }],
+    historicalUserSupplement: {
+      schemaVersion: compressionApi.HISTORICAL_USER_SUPPLEMENT_SCHEMA_VERSION,
+      records: supplementRecords,
+      coverage: { windowDays: 7, availableSources: 2, includedSources: 2, complete: true },
+      tokenUsage: {
+        estimated: true,
+        scope: "model_output",
+        tokens: compressionApi.estimateHistoricalUserSupplementOutputTokens(supplementRecords)
+      }
+    },
     onboardingV2: { version: 1, answer: "private singleton answer" }
   };
   persistenceMetadata.synchronizePersistenceMetadata(null, store, () => fixtureClock.capturedAt, { force: true });
@@ -1468,7 +1714,7 @@ async function selfTest(root: string) {
   const hmacKey = randomBytes(32);
   const sourceMapping = persistence.mapStoreObjects("synthetic-account", store);
   const sourceStates = taskStates(store, inspector, hmacKey);
-  const sourceAttachmentDigest = createHash("sha256").update("synthetic attachment bytes").digest("hex");
+  const sourceAttachmentDigest = sharedTechnicalDigest;
   const inventory: JsonRecord[] = [{
     path: "/attachments/private-image.png",
     storage: "local",
@@ -1488,6 +1734,13 @@ async function selfTest(root: string) {
   const repeatedValue = sanitizeMapping({ left: "shared synthetic source", right: "shared synthetic source" }, hmacKey, redactionContext);
   if (repeatedValue.left !== repeatedValue.right) fail("Repeated free-text values did not receive the same account-local redaction");
   const redactedMapping = sanitizeMapping(sourceMapping, hmacKey, redactionContext);
+  preserveTechnicalMetadata(
+    sourceMapping,
+    redactedMapping,
+    redactionContext,
+    hmacKey,
+    compressionApi.estimateHistoricalUserSupplementOutputTokens
+  );
   const redactedInventory = sanitizeMapping(inventory, hmacKey, redactionContext, new Map(), true);
   const redactedAttachmentDigest = String(redactedInventory[0].sha256 || "");
   if (!/^[a-f0-9]{64}$/u.test(redactedAttachmentDigest) || redactedAttachmentDigest === sourceAttachmentDigest) {
@@ -1535,6 +1788,62 @@ async function selfTest(root: string) {
   const redactedEventSource = redactedEvent.sourceRef as JsonRecord;
   const redactedSourceRefs = (redactedStore.evidenceSources as JsonRecord[]).map(item => item.sourceRef as JsonRecord);
   const redactedMessageEventSource = (redactedStore.perceptionEvents as JsonRecord[])[1].sourceRef as JsonRecord;
+  const redactedCompression = (redactedStore.recordCompressions as JsonRecord[])[0];
+  const normalizedSnapshotStore = persistedNormalization.normalizePersistedDocument(redactedStore, app.normalizeStore);
+  const normalizedCompression = (normalizedSnapshotStore.recordCompressions as JsonRecord[])[0];
+  const normalizedSupplement = normalizedSnapshotStore.historicalUserSupplement as JsonRecord;
+  const normalizedSupplementTokens = (normalizedSupplement.tokenUsage as JsonRecord).tokens;
+  const normalizedEventCount = (normalizedSnapshotStore.perceptionEvents as JsonRecord[]).length;
+  const normalizedEvidenceSourceCount = (normalizedSnapshotStore.evidenceSources as JsonRecord[]).length;
+  const sourceEvents = store.perceptionEvents as JsonRecord[];
+  const normalizedEvents = normalizedSnapshotStore.perceptionEvents as JsonRecord[];
+  const normalizedManifestSource = (normalizedCompression.sourceManifest as JsonRecord[])[0];
+  const normalizedReferenceSource = (normalizedCompression.sourceRefs as JsonRecord[])[0];
+  const normalizedDerivedDigest = (((normalizedSnapshotStore.evidenceSources as JsonRecord[])[0].derivedFrom as JsonRecord[])[0]).contentSha256;
+  if ((normalizedSnapshotStore.perceptionEvents as JsonRecord[]).length !== (redactedStore.perceptionEvents as JsonRecord[]).length
+    || normalizedEventCount !== 2
+    || normalizedEvidenceSourceCount !== 4
+    || !/^[a-f0-9]{64}$/u.test(String(normalizedDerivedDigest))
+    || !/^[a-f0-9]{64}$/u.test(String(redactedEvent.contentSha256))
+    || normalizedCompression.status !== "ready"
+    || normalizedCompression.sourceManifestHash !== redactedCompression.sourceManifestHash
+    || !/^[a-f0-9]{64}$/u.test(String(normalizedCompression.sourceManifestHash))
+    || normalizedCompression.sourceManifestHash === compressionManifestDigest
+    || (normalizedCompression.window as JsonRecord).start !== "2026-10-10T16:00:00.000Z"
+    || (normalizedCompression.window as JsonRecord).endExclusive !== "2026-10-11T16:00:00.000Z"
+    || (normalizedCompression.window as JsonRecord).completeness !== "complete"
+    || normalizedManifestSource.sourceHash !== redactedAttachmentDigest
+    || normalizedReferenceSource.sourceHash !== redactedAttachmentDigest
+    || (normalizedSupplement.records as JsonRecord[]).length !== 2
+    || (normalizedSupplement.tokenUsage as JsonRecord).scope !== "model_output"
+    || Number(normalizedSupplementTokens) > compressionApi.HISTORICAL_USER_SUPPLEMENT_TOKEN_BUDGET
+    || normalizedSupplementTokens !== compressionApi.estimateHistoricalUserSupplementOutputTokens(normalizedSupplement.records as JsonRecord[])) {
+    fail("Real persisted-store normalization discarded strict technical metadata or downgraded sanitized records");
+  }
+  const normalizedSupplementRecords = normalizedSupplement.records as JsonRecord[];
+  const normalizedThoughtSource = (normalizedSnapshotStore.thoughts as JsonRecord[]).find(item => item.type === "question")!;
+  const normalizedChatSource = (normalizedSnapshotStore.chats as JsonRecord[])[0];
+  if (!String(normalizedThoughtSource.content).includes(String(normalizedSupplementRecords[0].exactQuote))
+    || !String(normalizedChatSource.message).includes(String(normalizedSupplementRecords[1].exactQuote))
+    || normalizedThoughtSource.sourceId !== (normalizedSupplementRecords[0].source as JsonRecord).sourceId
+    || normalizedChatSource.sourceId !== (normalizedSupplementRecords[1].source as JsonRecord).sourceId) {
+    fail("Historical source IDs or exact-quote membership no longer match their sanitized source records");
+  }
+  const normalizedTechnicalDigest = String(normalizedReferenceSource.sourceHash);
+  if (normalizedTechnicalDigest !== redactedEvent.contentSha256
+    || normalizedTechnicalDigest !== redactedAttachmentDigest
+    || normalizedTechnicalDigest !== normalizedDerivedDigest
+    || !/^[a-f0-9]{64}$/u.test(normalizedTechnicalDigest)) {
+    fail("Equal source digests did not retain one equivalent lower-case SHA-256 redaction");
+  }
+  sourceEvents.forEach((sourceEvent, index) => {
+    const normalizedEvent = normalizedEvents[index];
+    if (!normalizedEvent
+      || !/^[a-f0-9]{64}$/u.test(String(normalizedEvent.contentSha256))
+      || normalizedEvent.contentSha256 === sourceEvent.contentSha256) {
+      fail("A perception-event digest was not independently redacted to its strict SHA-256 shape");
+    }
+  });
   const annotationSourceCases = [
     { resourceType: "thought", collection: "thoughts", targetKey: `question:${(store.thoughts as JsonRecord[])[0].id}` },
     { resourceType: "chat", collection: "chats", targetKey: "answer" },
@@ -1662,7 +1971,7 @@ async function selfTest(root: string) {
     "private content quote", "private content comment", "private message quote", "private message comment",
     "private note quote", "private note comment", "private reflection quote", "private reflection comment",
     "private transcription quote", "private transcription comment",
-    "private custom quote", "private custom comment"
+    "private custom quote", "private custom comment", "private chat message", "stable1", "stable2", "id-a", "id-b"
   ]
     .some(secret => secretText.includes(secret))) fail("Synthetic redaction retained a private fixture value");
   try {
