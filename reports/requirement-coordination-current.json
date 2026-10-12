@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 89,
-  "updated_at": "2026-10-12T13:03:12.920Z",
+  "revision": 90,
+  "updated_at": "2026-10-12T13:04:19.281Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -641,9 +641,10 @@
           "running内部任务目标检查必须在重试之前，孤立绑定任务保留安全终态/通知，不自动重试或丢弃；有效生成任务正常晋级/排队且mapper成功。",
           "保持mapper跨账户/非生成型主目标/子目标关系完整性，不吞任意prepare错误，不改规范化/API/schema、不删或重定向用户任务。",
           "直接实现真实契约，随后仅既有后台专项/实际映射fixture及适用module检查；不跑全系统/付费/重部署。独审NO GO的旧设计不提交。",
-          "主控审查提交接入后新候选/attempt继续上线；旧生产健康，不修改生产数据。"
+          "主控审查提交接入后新候选/attempt继续上线；旧生产健康，不修改生产数据。",
+          "仅recordCompression且payload.operation为现行HISTORICAL_SUPPLEMENT_OPERATION允许未解析日摘要主目标；daily仍required，既有markQueued顺序不改变。必要一条historical fixture与普通daily严格行为验证复用原测试。"
         ],
-        "pending_contract_check": "当前候选historical recordCompression target hus-...可能输出historicalUserSupplement singleton而不是recordCompressions实体；主开发只读确认实际prepare/save与mapper冲突再申请唯一operation范围，未确认前不盲上线。"
+        "pending_contract_check": "已确认：historical补充生成输出到historicalUserSupplement singleton，不写recordCompressions；daily存在markQueued预创建且tasks.create/promoteWaiting/promoteBudgetWaiting调用，保持daily required。"
       },
       "review_task": {
         "task_id": "v0513-notification-message-review-20261012",
@@ -1345,6 +1346,12 @@
       "at": "2026-10-12T13:03:12.920Z",
       "reason": "独审明确生成型binding不是实体依赖；修正精确kind策略，并按同类启动故障核对已有历史补充operation。",
       "previous_snapshot": "f57d13b:reports/requirement-coordination-current.json@revision88"
+    },
+    {
+      "revision": 90,
+      "at": "2026-10-12T13:04:19.281Z",
+      "reason": "源码验证同类历史补充输出契约，批准仅现行operation豁免；daily markQueued已存在，不泛化豁免。",
+      "previous_snapshot": "d29b136:reports/requirement-coordination-current.json@revision89"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -2246,7 +2253,8 @@
       "conclusion": "恢复持久化时目标引用一致性失败是候选启动退出的直接原因；非PG连接/readiness延迟或unit cleanup",
       "privacy": "未记录账户/task id/target id或用户正文；具体业务任务未查询",
       "boundary_correction": "直接根因是启动恢复提交时queued/running主目标映射无法解析；栈359/457对应releaseWaiting晋级提交。不能据安全栈断言实际目标已删除、启动前已queued或某task类型；还可能目标标识/集合不匹配或晋级校验遗漏。",
-      "contract_resolution": "任务规范化将thoughtDraft/thoughtPrompt与journalAssist设为已知资源类型，但无实体绑定的生成型任务targetId可为requestId；waiting落库允许，晋级queued后mapper一律required导致失败。合法生成目标不能按缺实体标stale。"
+      "contract_resolution": "任务规范化将thoughtDraft/thoughtPrompt与journalAssist设为已知资源类型，但无实体绑定的生成型任务targetId可为requestId；waiting落库允许，晋级queued后mapper一律required导致失败。合法生成目标不能按缺实体标stale。",
+      "related_contract": "历史补充recordCompression output ID对应singleton，需同一精确optional policy；daily实际markQueued在tasks.create/promote分支持久化前调用，继续严格要求实体。"
     }
   }
 }
