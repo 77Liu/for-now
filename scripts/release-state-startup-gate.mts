@@ -59,6 +59,15 @@ type StartupGatePort = {
   observeEffect(kind: string, operation: string): never;
   counts: Record<string, number>;
 };
+type LocalPostgresState = {
+  binDirectory: string;
+  cluster: string;
+  port: number;
+  password: string;
+  adminUrl: string;
+  url(user: string): string;
+  env: Record<string, string | undefined>;
+};
 
 const execFile = promisify(execFileCallback);
 const scrypt = promisify(scryptCallback);
@@ -786,7 +795,11 @@ async function freeTcpPort(): Promise<number> {
   return port;
 }
 
-async function startLocalPostgres(root: string, tempRoot: string) {
+async function startLocalPostgres(
+  root: string,
+  tempRoot: string,
+  onPrepared: (state: LocalPostgresState) => void
+): Promise<LocalPostgresState> {
   const binDirectory = await postgresBinDirectory(root);
   const cluster = path.join(tempRoot, "pg-cluster");
   const logFile = path.join(tempRoot, "postgres.log");
@@ -806,6 +819,11 @@ async function startLocalPostgres(root: string, tempRoot: string) {
   await fs.appendFile(path.join(cluster, "postgresql.conf"),
     `\nlisten_addresses = '127.0.0.1'\nport = ${port}\nunix_socket_directories = ''\n`);
   await fs.unlink(passwordFile);
+  const url = (user: string) => `postgresql://${user}:${password}@127.0.0.1:${port}/startup_gate`;
+  const adminUrl = `postgresql://postgres:${password}@127.0.0.1:${port}/postgres`;
+  const state = { binDirectory, cluster, port, password, adminUrl, url, env };
+  // 在 pg_ctl 创建独立 postmaster 前登记集群状态，保证启动后校验失败也能关闭。
+  onPrepared(state);
   await execFile(path.join(binDirectory, "pg_ctl"), ["-D", cluster, "-l", logFile, "-w", "-t", "20", "start"], {
     env, timeout: 30_000, maxBuffer: 1024 * 1024
   });
@@ -814,15 +832,36 @@ async function startLocalPostgres(root: string, tempRoot: string) {
   if (!Number.isInteger(pid) || pid <= 1) fail("Local PostgreSQL PID file is invalid");
   const command = await execFile("ps", ["-p", String(pid), "-o", "command="]);
   if (!command.stdout.includes(cluster)) fail("Local PostgreSQL PID is outside the isolated temporary cluster");
-  const url = (user: string) => `postgresql://${user}:${password}@127.0.0.1:${port}/startup_gate`;
-  const adminUrl = `postgresql://postgres:${password}@127.0.0.1:${port}/postgres`;
-  return { binDirectory, cluster, port, password, adminUrl, url };
+  return state;
 }
 
-async function stopLocalPostgres(pgState: { binDirectory: string; cluster: string }) {
+function processExitCode(error: unknown): number | null {
+  if (!error || typeof error !== "object" || !("code" in error)) return null;
+  return typeof error.code === "number" ? error.code : null;
+}
+
+async function localPostgresStopped(pgState: LocalPostgresState): Promise<boolean> {
+  try {
+    await execFile(path.join(pgState.binDirectory, "pg_ctl"), ["-D", pgState.cluster, "status"], {
+      env: pgState.env,
+      timeout: 30_000,
+      maxBuffer: 1024 * 1024
+    });
+    return false;
+  } catch (error) {
+    if (processExitCode(error) === 3) return true;
+    throw error;
+  }
+}
+
+async function stopLocalPostgres(pgState: LocalPostgresState): Promise<void> {
+  if (await localPostgresStopped(pgState)) return;
   await execFile(path.join(pgState.binDirectory, "pg_ctl"), ["-D", pgState.cluster, "-m", "fast", "-w", "-t", "20", "stop"], {
-    timeout: 30_000, maxBuffer: 1024 * 1024
-  }).catch(() => {});
+    env: pgState.env,
+    timeout: 30_000,
+    maxBuffer: 1024 * 1024
+  });
+  if (!(await localPostgresStopped(pgState))) fail("Local PostgreSQL remained running after pg_ctl stop");
 }
 
 async function initializeGateDatabase(root: string, pgState: Awaited<ReturnType<typeof startLocalPostgres>>, snapshotValue: JsonRecord) {
@@ -995,7 +1034,14 @@ async function readLocalTaskStates(root: string, url: string, accountIds: string
   }
 }
 
-async function startRuntime(root: string, tempRoot: string, urls: { data: string; auth: string; budget: string }, port: number, gate: StartupGatePort) {
+async function startRuntime(
+  root: string,
+  tempRoot: string,
+  urls: { data: string; auth: string; budget: string },
+  port: number,
+  gate: StartupGatePort,
+  cleanupFailures: string[]
+) {
   const restoreEnvironment = installGateEnvironment(tempRoot, urls, port, gate.counts);
   let runtime: { start(): Promise<{ port: number }>; ready(): Promise<void>; stop(): Promise<void> } | null = null;
   try {
@@ -1015,10 +1061,35 @@ async function startRuntime(root: string, tempRoot: string, urls: { data: string
     if (!ready.ok) fail(`Isolated runtime readyz failed (${ready.status})`);
     return { runtime, baseUrl, restoreEnvironment };
   } catch (error) {
-    await runtime?.stop().catch(() => {});
-    restoreEnvironment();
+    if (runtime) {
+      try {
+        await runtime.stop();
+      } catch (cleanupError) {
+        cleanupFailures.push(cleanupFailureLabel("runtime.stop after startup failure", cleanupError));
+      }
+    }
+    try {
+      restoreEnvironment();
+    } catch (cleanupError) {
+      cleanupFailures.push(cleanupFailureLabel("runtime environment restore after startup failure", cleanupError));
+    }
+    if (cleanupFailures.length) {
+      fail(`Isolated runtime startup failed (${errorKindLabel(error)}) and cleanup was incomplete: ${cleanupFailures.join(", ")}`);
+    }
     throw error;
   }
+}
+
+function cleanupFailureLabel(phase: string, error: unknown): string {
+  const errorName = error instanceof Error ? error.name : "UnknownError";
+  const exitCode = processExitCode(error);
+  return `${phase} (${errorName}${exitCode === null ? "" : `, exit ${exitCode}`})`;
+}
+
+function errorKindLabel(error: unknown): string {
+  const errorName = error instanceof Error ? error.name : "UnknownError";
+  const exitCode = processExitCode(error);
+  return `${errorName}${exitCode === null ? "" : `, exit ${exitCode}`}`;
 }
 
 async function verify(root: string, snapshotFile: string) {
@@ -1040,10 +1111,38 @@ async function verify(root: string, snapshotFile: string) {
   let pgState: Awaited<ReturnType<typeof startLocalPostgres>> | null = null;
   let runtimeInstance: { stop(): Promise<void> } | null = null;
   let restoreRuntimeEnvironment: (() => void) | null = null;
+  const cleanupFailures: string[] = [];
+  let operationFailure: unknown = null;
+  let operationFailurePhase = "local PostgreSQL startup";
+  let phase = operationFailurePhase;
+  let passReceipt: JsonRecord | null = null;
+  const stopActiveRuntime = async () => {
+    const runtimeToStop = runtimeInstance;
+    runtimeInstance = null;
+    if (runtimeToStop) {
+      try {
+        await runtimeToStop.stop();
+      } catch (error) {
+        cleanupFailures.push(cleanupFailureLabel("runtime.stop", error));
+      }
+    }
+    const restoreEnvironment = restoreRuntimeEnvironment;
+    restoreRuntimeEnvironment = null;
+    if (restoreEnvironment) {
+      try {
+        restoreEnvironment();
+      } catch (error) {
+        cleanupFailures.push(cleanupFailureLabel("runtime environment restore", error));
+      }
+    }
+  };
   try {
-    pgState = await startLocalPostgres(root, tempRoot);
+    phase = "local PostgreSQL startup";
+    pgState = await startLocalPostgres(root, tempRoot, prepared => { pgState = prepared; });
+    phase = "snapshot import";
     const imported = await initializeGateDatabase(root, pgState, snapshotValue);
     const accountIds = (snapshotValue.accounts as JsonRecord[]).map(account => String(account.accountId));
+    phase = "imported task-state equivalence";
     const importedStates = await readLocalTaskStates(root, pgState.url("runtime_data"), accountIds, timeBaseline);
     const expectedStates: JsonRecord[] = (snapshotValue.accounts as JsonRecord[]).flatMap(account =>
       (account.taskStates as JsonRecord[] || []).map(state => ({ ...state, accountId: String(account.accountId) }))
@@ -1071,51 +1170,59 @@ async function verify(root: string, snapshotFile: string) {
       auth: pgState.url("runtime_auth"),
       budget: pgState.url("runtime_budget")
     };
-    const first = await startRuntime(root, tempRoot, urls, testPort, gate);
+    phase = "first runtime startup";
+    const first = await startRuntime(root, tempRoot, urls, testPort, gate, cleanupFailures);
     runtimeInstance = first.runtime;
     restoreRuntimeEnvironment = first.restoreEnvironment;
+    phase = "first runtime recovery state";
     const firstStates = await readLocalTaskStates(root, urls.data, accountIds, timeBaseline);
-    await first.runtime.stop();
-    runtimeInstance = null;
-    first.restoreEnvironment();
-    restoreRuntimeEnvironment = null;
+    phase = "first runtime stop";
+    await stopActiveRuntime();
+    if (cleanupFailures.length) fail("First isolated runtime stop or environment restore failed");
 
     const secondPort = await freeTcpPort();
-    const second = await startRuntime(root, tempRoot, urls, secondPort, gate);
+    phase = "same-database runtime restart";
+    const second = await startRuntime(root, tempRoot, urls, secondPort, gate, cleanupFailures);
     runtimeInstance = second.runtime;
     restoreRuntimeEnvironment = second.restoreEnvironment;
+    phase = "restart recovery state comparison";
     const secondStates = await readLocalTaskStates(root, urls.data, accountIds, timeBaseline);
     if (JSON.stringify(firstStates) !== JSON.stringify(secondStates)) fail("Task recovery state changed on the second same-database restart");
 
     const firstAccount = (snapshotValue.accounts as JsonRecord[])[0];
     const credentials = imported.passwords.get(String(firstAccount.accountId));
     if (!credentials) fail("Synthetic local login credentials are missing");
+    phase = "authenticated login";
     const session = await login(second.baseUrl, credentials);
     const headers = { cookie: session.cookie, "content-type": "application/json" };
+    phase = "authenticated state read";
     const stateBefore = await fetchJson(`${second.baseUrl}/api/state`, { headers });
     if (!stateBefore.response.ok) fail(`Authenticated core read failed (${stateBefore.response.status})`);
     const marker = `startup-gate-${randomBytes(12).toString("hex")}`;
     const now = new Date().toISOString();
+    phase = "authenticated save round-trip";
     const save = await fetchJson(`${second.baseUrl}/api/thoughts`, {
       method: "POST",
       headers,
       body: JSON.stringify({ type: "question", content: marker, occurredAt: now, occurredOn: now.slice(0, 10) })
     });
     if (save.response.status !== 201) fail(`Authenticated save round-trip write failed (${save.response.status})`);
+    phase = "authenticated save persistence read";
     const stateAfter = await fetchJson(`${second.baseUrl}/api/state`, { headers });
     if (!stateAfter.response.ok || !stateAfter.body.includes(marker)) fail("Authenticated save/read round trip did not persist");
+    phase = "task and notification reads";
     const taskRead = await fetchJson(`${second.baseUrl}/api/ai-tasks`, { headers });
     const notificationRead = await fetchJson(`${second.baseUrl}/api/notifications`, { headers });
     if (!taskRead.response.ok || !notificationRead.response.ok) fail("Core task/notification read smoke failed");
-    await second.runtime.stop();
-    runtimeInstance = null;
-    second.restoreEnvironment();
-    restoreRuntimeEnvironment = null;
+    phase = "final runtime stop";
+    await stopActiveRuntime();
+    if (cleanupFailures.length) fail("Final isolated runtime stop or environment restore failed");
 
+    phase = "external side-effect audit";
     if (gateCounts.provider || gateCounts.outbound || gateCounts.media) {
       fail("A provider, outbound notification/debug request, or media method was attempted during the gate");
     }
-    process.stdout.write(JSON.stringify({
+    passReceipt = {
       status: "PASS",
       candidateSha: snapshotValue.candidateSha,
       candidateTree: snapshotValue.candidateTree,
@@ -1126,13 +1233,38 @@ async function verify(root: string, snapshotFile: string) {
       heldDispatches: gateCounts.dispatchHeld,
       forbiddenEffects: { provider: gateCounts.provider, outbound: gateCounts.outbound, media: gateCounts.media },
       evidence: ["runtime.start", "readyz", "same-postgres-stop-restart", "authenticated-state-read", "save-read-round-trip", "task-read", "notification-read"]
-    }) + "\n");
+    };
+  } catch (error) {
+    operationFailure = error;
+    operationFailurePhase = phase;
   } finally {
-    await runtimeInstance?.stop().catch(() => {});
-    restoreRuntimeEnvironment?.();
-    if (pgState) await stopLocalPostgres(pgState);
-    await fs.rm(tempRoot, { recursive: true, force: true });
+    await stopActiveRuntime();
+    if (pgState) {
+      try {
+        await stopLocalPostgres(pgState);
+      } catch (error) {
+        cleanupFailures.push(cleanupFailureLabel("local PostgreSQL stop/status", error));
+      }
+    }
+    if (!cleanupFailures.length) {
+      try {
+        await fs.rm(tempRoot, { recursive: true, force: true });
+      } catch (error) {
+        cleanupFailures.push(cleanupFailureLabel("temporary directory removal", error));
+      }
+    }
   }
+  if (operationFailure) {
+    if (cleanupFailures.length) {
+      fail(`Startup gate failed during ${operationFailurePhase} (${errorKindLabel(operationFailure)}) and cleanup was incomplete: ${cleanupFailures.join(", ")}; temporary directory retained at ${tempRoot}`);
+    }
+    throw operationFailure;
+  }
+  if (cleanupFailures.length) {
+    fail(`Startup gate cleanup failed: ${cleanupFailures.join(", ")}; temporary directory retained at ${tempRoot}`);
+  }
+  if (!passReceipt) fail("Startup gate completed without a pass receipt");
+  process.stdout.write(JSON.stringify(passReceipt) + "\n");
 }
 
 async function selfTest(root: string) {
