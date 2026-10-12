@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 56,
-  "updated_at": "2026-10-12T16:16:45+08:00",
+  "revision": 57,
+  "updated_at": "2026-10-12T16:21:52+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -85,7 +85,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "针对六条冻结需求做最后的行为证据审查：优先用可到达目标的本地浏览器确认手动时间草稿刷新/路由恢复和通知替代复制，不重跑整套UI；核对旧notification-entry:73文案断言的原规则来源后裁定其返回节点。生产/provider、账号刷新原始根因与媒体真实性能继续保留PARTIAL。",
+  "next_action": "主开发只读追溯notification-entry:73原规则和源变更，主控据回执决定必要单点修复；真实浏览器目标仍未达到，保持PARTIAL，后续使用可到达场景的现有验证入口，不重复全套UI。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -116,6 +116,16 @@
       "awareness_gap": "Feishu告警为出站webhook；本对话没有接收该webhook的入站事件桥，因此不会自动感知。",
       "historical_metrics": "事发时10秒主机采样未运行，CPU和内存峰值不能事后恢复。",
       "fix_status": "严重告警脱敏诊断与近10秒资源摘要代码已接入本地develop（b27e2c1）；两个新运维脚本使用TS源码，编译MJS只在被忽略的.build内，监控专项与构建通过；生产未部署。"
+    },
+    "targeted_browser_attempt": {
+      "candidate_code_sha": "8d82e7d75564b90939793d5a9895b276f472a658",
+      "environment": "Codex应用内浏览器，本机纯隔离/既有UI夹具；未运行全套UI、未生产写或调用AI",
+      "result": "NOT_REACHED",
+      "observations": [
+        "local-test-preview关闭上游后auth/me返回500：该模式按源码依赖上游认证；没有进入目标页面。",
+        "单独服务现有ui-regression的static/mockFetch夹具仍呈现opening-recovery，目标时间/复制场景未达到；浏览器未提供可定位错误的console回执。"
+      ],
+      "decision": "只记录环境/启动失败，不据此判断时间恢复或复制替代路径通过/失败；两次临时服务均已终止。"
     }
   },
   "owner_decisions": {
@@ -600,6 +610,19 @@
           "generated_artifacts": "git ls-files public/generated .build无跟踪输出；新增文件只有.mts源码和tsconfig。",
           "external_actions": "无push/tag/Release/deploy/生产写/付费调用"
         }
+      },
+      "review_task": {
+        "task_id": "v0513-notification-message-review-20261012",
+        "state": "READY_FOR_READONLY_REVIEW",
+        "implementer": "主开发",
+        "mode": "只读审查",
+        "baseline_sha": "07962cd",
+        "candidate_code_sha": "8d82e7d75564b90939793d5a9895b276f472a658",
+        "requirement_ids": [
+          "recvxlYzZSlc2p"
+        ],
+        "write_set": [],
+        "objective": "追溯notification-entry-regression.mjs:73预期允许原notification.message覆盖转写固定文案的来源；与最新安全文案/通知诊断要求核对，裁定是旧断言失效还是用户可行动错误被隐藏。提出唯一最小修改位置，未获主控扩写前不得改文件或运行测试。"
       }
     }
   ],
@@ -850,6 +873,12 @@
       "at": "2026-10-12T16:16:45+08:00",
       "reason": "主开发活动实施已核验；去除version_plan重复的陈旧候选状态，统一引用iterations；旧feature观察明确标为历史。无代码写集或生产授权变化。 主开发完成后主控审查提交8d82e7d，develop本地快进接入；保存旧notification-entry:73失败与浏览器partial。",
       "previous_snapshot": "618d935:reports/requirement-coordination-current.json@revision55"
+    },
+    {
+      "revision": 57,
+      "at": "2026-10-12T16:21:52+08:00",
+      "reason": "保留两次目标浏览器未到达的实际环境证据，不误报功能验收；登记旧通知文案专项只读审查，允许写集为空。",
+      "previous_snapshot": "07962cd:reports/requirement-coordination-current.json@revision56"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
