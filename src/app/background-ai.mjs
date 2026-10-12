@@ -10,6 +10,7 @@ import {
   RECORD_COMPRESSION_TASK_KIND
 } from "../modules/record-compressions/index.mjs";
 import { compactPersonalContextReceipt } from "./personal-context.mjs";
+import { aiTaskTargetReference } from "../shared/persistence/index.mjs";
 
 const INTERNAL_RECOVERY_LIMIT = 2;
 
@@ -129,6 +130,11 @@ export function createBackgroundAi({
       errorCode: "AI_TASK_STALE"
     });
     notify(store, task, "stale", message);
+  };
+  const taskHasRequiredTarget = (store, task) => {
+    const target = aiTaskTargetReference(store, task);
+    return (!target?.requiresExistingTarget || target.exists)
+      && (!target?.requiresExistingSubtarget || target.subtargetExists);
   };
   const cancelled = (store, task) => {
     targetFor(task).stale?.(store, task);
@@ -254,6 +260,7 @@ export function createBackgroundAi({
         && (!includeInternal || source.kind === RECORD_COMPRESSION_TASK_KIND)) {
         return { missing: true };
       }
+      if (source && !taskHasRequiredTarget(store, source)) return { missing: true };
       const retryInput = source && {
         kind: source.kind,
         resourceType: source.resourceType,
@@ -360,6 +367,10 @@ export function createBackgroundAi({
       const scheduled = [];
       for (const task of store.aiTasks) {
         if (task.status !== WAITING_FOR_USER_MODEL_STATUS) continue;
+        if (!taskHasRequiredTarget(store, task)) {
+          stale(store, task, "等待任务的目标当前不可用，任务已终止");
+          continue;
+        }
         const intent = inspectRequestedIntent(store, task);
         if (typeof inspectIntent === "function" && !requestedIntentMatches(task, intent)) {
           stale(store, task, "等待核心用户模型期间，目标已变化");
@@ -428,7 +439,7 @@ export function createBackgroundAi({
     retryInternal: id => retryTask(id, { includeInternal: true }),
     async resume() {
       const ids = await repository.update(store => {
-        const { queued, interrupted } = tasks.recover(store.aiTasks);
+        const { interrupted } = tasks.recover(store.aiTasks);
         const recovered = [];
         for (const task of interrupted) {
           targetFor(task).fail?.(store, task, { code: "TASK_INTERRUPTED" });
@@ -436,6 +447,7 @@ export function createBackgroundAi({
           const recoveryAttempt = Math.max(0, Math.round(Number(task.recoveryAttempt) || 0));
           if (isInternalTask(task)
             && task.kind !== RECORD_COMPRESSION_TASK_KIND
+            && taskHasRequiredTarget(store, task)
             && recoveryAttempt < INTERNAL_RECOVERY_LIMIT) {
             const retry = notifyCreated(
               store,
@@ -450,6 +462,15 @@ export function createBackgroundAi({
               recovered.push(retry.task.id);
             }
           }
+        }
+        const queued = [];
+        for (const task of store.aiTasks) {
+          if (task.status !== "queued") continue;
+          if (!taskHasRequiredTarget(store, task)) {
+            stale(store, task, "排队任务的目标当前不可用，任务已终止");
+            continue;
+          }
+          queued.push(task.id);
         }
         return [...queued, ...recovered];
       });

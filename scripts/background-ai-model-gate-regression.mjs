@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { createBackgroundAi } from "../src/app/index.mjs";
 import { createTaskLifecycle } from "../src/modules/tasks/index.mjs";
+import { mapStoreObjects } from "../src/shared/persistence/index.mjs";
 
 const digest = value => crypto.createHash("sha256").update(String(value)).digest("hex");
 const clone = value => structuredClone(value);
@@ -10,6 +11,10 @@ let tick = 0;
 const now = () => new Date(Date.UTC(2026, 9, 10, 0, 0, tick++)).toISOString();
 let store = {
   coreReady: false,
+  thoughts: [
+    { id: "question", type: "question", content: "original", version: 1 },
+    { id: "otherQuestion", type: "question", content: "other-original", version: 1 }
+  ],
   targetVersions: { question: 1, otherQuestion: 1, missing: 1 },
   targetContent: { question: "original", otherQuestion: "other-original" },
   aiTasks: [],
@@ -347,4 +352,358 @@ assert.equal(scheduled.length, 9, "extraction release schedules its waiting answ
 assert.ok(prepareCalls >= 7,
   "preparation happens only for promotable waiting tasks and execution paths that pass the readiness gate");
 
-console.log("Background AI model-gate checks passed: deferred context preparation, cancellable and restart-safe waiting, fresh promotion, one-time scheduling, and injected bypass policy.");
+const recoveryStore = {
+  coreReady: false,
+  thoughts: [{
+    id: "live-target",
+    type: "question",
+    content: "Existing thought",
+    version: 1,
+    followUps: [{ id: "live-follow-up", question: "Existing follow-up", version: 1 }]
+  }],
+  journals: [],
+  chats: [],
+  analyses: [],
+  onboardingV2: { id: "onboardingV2" },
+  recordCompressions: [{ id: "daily-target", status: "queued", version: 1 }],
+  aiTasks: [],
+  notifications: []
+};
+const recoveryIntent = {
+  inputVersion: 1,
+  subtargetVersion: 0,
+  inputHash: digest("recovery-target-v1")
+};
+const recoveryLifecycle = createTaskLifecycle({
+  createId: () => `recovery-task-${recoveryStore.aiTasks.length + 1}`,
+  now,
+  hash: digest
+});
+const waitingForMissingTarget = recoveryLifecycle.create(recoveryStore.aiTasks, {
+  kind: "thoughtAnswer",
+  targetId: "removed-target",
+  inputVersion: 1,
+  clientRequestId: "recovery-missing-target"
+}, () => null, { deferTargetInspection: true, requestedIntent: recoveryIntent });
+const waitingForLiveTarget = recoveryLifecycle.create(recoveryStore.aiTasks, {
+  kind: "thoughtAnswer",
+  targetId: "live-target",
+  inputVersion: 1,
+  clientRequestId: "recovery-live-target"
+}, () => null, { deferTargetInspection: true, requestedIntent: recoveryIntent });
+const queuedForLiveTarget = recoveryLifecycle.create(recoveryStore.aiTasks, {
+  kind: "thoughtAnswer",
+  targetId: "live-target",
+  clientRequestId: "recovery-existing-queued"
+}, () => ({
+  inputVersion: 1,
+  subtargetVersion: 0,
+  inputHash: recoveryIntent.inputHash
+}));
+assert.equal(waitingForMissingTarget.task.status, "waiting_for_user_model");
+assert.equal(waitingForLiveTarget.task.status, "waiting_for_user_model");
+assert.equal(queuedForLiveTarget.task.status, "queued");
+const queuedForMissingTarget = recoveryLifecycle.create(recoveryStore.aiTasks, {
+  kind: "thoughtAnswer",
+  targetId: "removed-target",
+  clientRequestId: "recovery-existing-orphaned-queue"
+}, () => ({
+  inputVersion: 1,
+  subtargetVersion: 0,
+  inputHash: recoveryIntent.inputHash
+}));
+const queuedForMissingSubtarget = recoveryLifecycle.create(recoveryStore.aiTasks, {
+  kind: "followUpAnswer",
+  targetId: "live-target",
+  subtargetId: "removed-follow-up",
+  clientRequestId: "recovery-existing-orphaned-follow-up"
+}, () => ({
+  inputVersion: 1,
+  subtargetVersion: 1,
+  inputHash: recoveryIntent.inputHash
+}));
+const queuedForLiveSubtarget = recoveryLifecycle.create(recoveryStore.aiTasks, {
+  kind: "followUpAnswer",
+  targetId: "live-target",
+  subtargetId: "live-follow-up",
+  clientRequestId: "recovery-live-follow-up"
+}, () => ({
+  inputVersion: 1,
+  subtargetVersion: 1,
+  inputHash: recoveryIntent.inputHash
+}));
+const runningForMissingTarget = recoveryLifecycle.create(recoveryStore.aiTasks, {
+  kind: "thoughtAnswer",
+  targetId: "removed-target",
+  clientRequestId: "recovery-interrupted-orphaned-task"
+}, () => ({
+  inputVersion: 1,
+  subtargetVersion: 0,
+  inputHash: recoveryIntent.inputHash
+}));
+recoveryLifecycle.claim(recoveryStore.aiTasks, runningForMissingTarget.task.id);
+assert.equal(queuedForMissingTarget.task.status, "queued");
+assert.equal(queuedForMissingSubtarget.task.status, "queued");
+assert.equal(queuedForLiveSubtarget.task.status, "queued");
+assert.equal(runningForMissingTarget.task.status, "running");
+
+const generatedTargetTasks = [
+  ["thoughtDraft", "legacy-draft:request-draft", {
+    question: "Draft question",
+    idea: "",
+    binding: { requestId: "request-draft", targetId: "", inputVersion: 0 }
+  }],
+  ["thoughtPrompt", "request-prompt", {
+    occurredOn: "2026-10-10",
+    binding: { requestId: "request-prompt", targetId: "", inputVersion: 0 }
+  }],
+  ["journalAssist", "request-journal", {
+    mode: "lead",
+    occurredOn: "2026-10-10",
+    title: "",
+    content: "",
+    binding: { requestId: "request-journal", targetId: "", inputVersion: 0 }
+  }],
+  ["chat", "", {
+    message: "A chat request",
+    occurredAt: "2026-10-10T00:00:00.000Z",
+    occurredOn: "2026-10-10",
+    eventTimeHash: "event-time-hash"
+  }],
+  ["analysis", "", { reason: "manual" }]
+].map(([kind, targetId, payload], index) => recoveryLifecycle.create(recoveryStore.aiTasks, {
+  kind,
+  targetId,
+  payload,
+  clientRequestId: `recovery-generated-target-${index + 1}`
+}, () => null, { deferTargetInspection: true, requestedIntent: recoveryIntent }));
+
+const historicalCompressionTask = {
+  id: "recovery-historical-compression",
+  kind: "recordCompression",
+  resourceType: "recordCompression",
+  targetId: "hus-generated-output",
+  subtargetId: "",
+  status: "queued",
+  payload: { operation: "historicalSupplement" },
+  internal: true,
+  createdAt: now(),
+  updatedAt: now(),
+  attempt: 0
+};
+const dailyCompressionTask = {
+  id: "recovery-daily-compression",
+  kind: "recordCompression",
+  resourceType: "recordCompression",
+  targetId: "daily-target",
+  subtargetId: "",
+  status: "queued",
+  payload: { operation: "daily" },
+  internal: true,
+  createdAt: now(),
+  updatedAt: now(),
+  attempt: 0
+};
+const onboardingTask = recoveryLifecycle.create(recoveryStore.aiTasks, {
+  kind: "onboardingClaimExtraction",
+  targetId: "onboardingV2",
+  clientRequestId: "recovery-onboarding"
+}, () => recoveryIntent).task;
+const runningInternalForMissingTarget = {
+  id: "recovery-interrupted-internal-task",
+  kind: "perceptionExtraction",
+  resourceType: "userClaim",
+  targetId: "missing-internal-target",
+  subtargetId: "",
+  status: "running",
+  payload: {},
+  internal: true,
+  createdAt: now(),
+  updatedAt: now(),
+  attempt: 1
+};
+recoveryStore.aiTasks.push(
+  historicalCompressionTask,
+  dailyCompressionTask,
+  runningInternalForMissingTarget
+);
+assert.ok(generatedTargetTasks.every(result => result.task.status === "waiting_for_user_model"),
+  "request-based generation tasks stay behind the core-model gate");
+
+const recoveryScheduled = [];
+const recoveryRepository = {
+  async read() {
+    return clone(recoveryStore);
+  },
+  async update(mutate) {
+    const draft = clone(recoveryStore);
+    const result = await mutate(draft);
+    mapStoreObjects("account-a", draft);
+    Object.assign(recoveryStore, draft);
+    return clone(result);
+  }
+};
+const recoveryBackground = createBackgroundAi({
+  repository: recoveryRepository,
+  tasks: recoveryLifecycle,
+  notifications: {
+    upsertTask(items, task, status, message) {
+      items.push({ id: `notification-${task.id}-${status}`, taskId: task.id, status, message });
+    }
+  },
+  targets: {
+    inspectIntent(_current, task) {
+      return {
+        inputVersion: task.requestedIntentInputVersion,
+        subtargetVersion: task.requestedIntentSubtargetVersion,
+        inputHash: task.requestedIntentInputHash
+      };
+    },
+    prepare(_current, task) {
+      return {
+        kind: task.kind,
+        targetId: task.targetId,
+        inputVersion: 1,
+        subtargetVersion: 0,
+        inputHash: recoveryIntent.inputHash
+      };
+    },
+    stale() {}
+  },
+  shouldWaitForModel: current => !current.coreReady,
+  generate: async () => {
+    throw new Error("Startup recovery must not call an AI provider");
+  },
+  dispatch: callback => recoveryScheduled.push(callback),
+  contextKey: () => "account-a",
+  onError: error => { throw error; }
+});
+
+recoveryStore.coreReady = true;
+await recoveryBackground.resume();
+assert.equal(recoveryStore.aiTasks.find(task => task.id === waitingForMissingTarget.task.id).status, "stale",
+  "startup recovery terminalizes a waiting task whose required persistence target is missing");
+assert.equal(recoveryStore.aiTasks.find(task => task.id === waitingForLiveTarget.task.id).status, "queued",
+  "startup recovery promotes a waiting task whose required target is present");
+assert.equal(recoveryStore.aiTasks.find(task => task.id === queuedForLiveTarget.task.id).status, "queued",
+  "startup recovery preserves an existing queued task with a valid target");
+assert.equal(recoveryStore.aiTasks.find(task => task.id === queuedForMissingTarget.task.id).status, "stale",
+  "startup recovery terminalizes an existing queued task whose required persistence target is missing");
+assert.equal(recoveryStore.aiTasks.find(task => task.id === queuedForMissingSubtarget.task.id).status, "stale",
+  "startup recovery terminalizes an existing queued task whose required subtarget is missing");
+assert.equal(recoveryStore.aiTasks.find(task => task.id === runningForMissingTarget.task.id).status, "failed",
+  "startup recovery marks an interrupted task failed without retrying its missing target");
+assert.equal(recoveryStore.aiTasks.find(task => task.id === runningInternalForMissingTarget.id).status, "failed",
+  "startup recovery leaves a missing-target internal task failed");
+assert.equal(recoveryStore.aiTasks.some(task => task.retryOf === runningInternalForMissingTarget.id), false,
+  "startup recovery does not retry an interrupted internal task whose required target is missing");
+assert.ok(generatedTargetTasks.every(result => (
+  recoveryStore.aiTasks.find(task => task.id === result.task.id).status === "queued"
+)), "target-generating tasks promote without requiring their future result entity");
+assert.equal(recoveryStore.aiTasks.length, 16, "recovery preserves every original task record");
+assert.ok(recoveryStore.notifications.some(item => item.taskId === waitingForMissingTarget.task.id
+  && item.status === "stale"), "terminalizing an orphan records its notification");
+assert.ok(recoveryStore.notifications.some(item => item.taskId === queuedForMissingTarget.task.id
+  && item.status === "stale"), "terminalizing a queued orphan records its notification");
+assert.ok(recoveryStore.notifications.some(item => item.taskId === queuedForMissingSubtarget.task.id
+  && item.status === "stale"), "terminalizing a missing subtarget records its notification");
+assert.equal(recoveryScheduled.length, 11,
+  "startup recovery schedules valid queued, promoted, and output-generating tasks");
+const recoveryFollowUpNotification = {
+  id: "recovery-live-follow-up-notification",
+  taskId: queuedForLiveSubtarget.task.id,
+  kind: "aiTask",
+  resourceType: "thought",
+  targetId: "live-target",
+  subtargetId: "live-follow-up",
+  createdAt: now(),
+  readAt: ""
+};
+recoveryStore.notifications.push(recoveryFollowUpNotification);
+const recoveryMapping = mapStoreObjects("account-a", recoveryStore);
+const activeTaskKeys = new Set(recoveryMapping.objects
+  .filter(item => item.collection === "aiTasks" && ["queued", "running"].includes(item.status))
+  .map(item => item.objectKey));
+const activeTaskKindsByKey = new Map(recoveryMapping.objects
+  .filter(item => item.collection === "aiTasks" && ["queued", "running"].includes(item.status))
+  .map(item => [item.objectKey, item.payload?.kind]));
+assert.equal(recoveryMapping.relations.some(relation => (
+  activeTaskKeys.has(relation.objectKey)
+  && relation.relation === "target"
+  && relation.targetKey === null
+  && !["thoughtDraft", "thoughtPrompt", "journalAssist", "chat", "analysis"]
+    .includes(activeTaskKindsByKey.get(relation.objectKey))
+  && !(activeTaskKindsByKey.get(relation.objectKey) === "recordCompression"
+    && recoveryStore.aiTasks.find(task => (
+      JSON.stringify(["aiTasks", task.id]) === relation.objectKey
+    ))?.payload?.operation === "historicalSupplement")
+)), false, "entity-dependent active tasks keep their required target links");
+for (const result of generatedTargetTasks) {
+  const task = recoveryStore.aiTasks.find(item => item.id === result.task.id);
+  const mapped = recoveryMapping.objects.find(item => item.collection === "aiTasks" && item.id === task.id);
+  const relation = recoveryMapping.relations.find(item => item.objectKey === mapped.objectKey && item.relation === "target");
+  assert.equal(relation?.targetKey || null, null,
+    `${task.kind} records an unresolved historical target without failing persistence`);
+}
+const dailyTask = recoveryStore.aiTasks.find(task => task.id === dailyCompressionTask.id);
+const dailyMapped = recoveryMapping.objects.find(item => item.collection === "aiTasks" && item.id === dailyTask.id);
+assert.ok(recoveryMapping.relations.some(relation => relation.objectKey === dailyMapped.objectKey
+  && relation.relation === "target" && relation.targetKey),
+"daily compression continues to resolve its pre-created record target");
+const mappedOnboardingTask = recoveryMapping.objects.find(item => (
+  item.collection === "aiTasks" && item.id === onboardingTask.id
+));
+assert.ok(recoveryMapping.relations.some(relation => relation.objectKey === mappedOnboardingTask.objectKey
+  && relation.relation === "target" && relation.targetKey),
+"onboarding extraction continues to resolve its singleton target");
+const mappedFollowUpNotification = recoveryMapping.objects.find(item => (
+  item.collection === "notifications" && item.id === "recovery-live-follow-up-notification"
+));
+assert.ok(recoveryMapping.relations.some(relation => (
+  relation.objectKey === mappedFollowUpNotification.objectKey
+  && relation.relation === "subtarget"
+  && relation.targetKey === JSON.stringify(["thoughts", "live-target", "followUps", "live-follow-up"])
+)), "follow-up notifications retain their resolved nested follow-up relation");
+const mappingWithoutFollowUpTask = mapStoreObjects("account-a", {
+  ...recoveryStore,
+  aiTasks: recoveryStore.aiTasks.filter(task => task.id !== queuedForLiveSubtarget.task.id),
+  notifications: [recoveryFollowUpNotification]
+});
+const notificationWithoutSourceTask = mappingWithoutFollowUpTask.objects.find(item => (
+  item.collection === "notifications" && item.id === recoveryFollowUpNotification.id
+));
+assert.ok(mappingWithoutFollowUpTask.relations.some(relation => (
+  relation.objectKey === notificationWithoutSourceTask.objectKey
+  && relation.relation === "subtarget"
+  && relation.targetKey === JSON.stringify(["thoughts", "live-target", "followUps", "live-follow-up"])
+)), "follow-up notifications retain their nested target when the source task is absent");
+assert.throws(() => mapStoreObjects("account-a", {
+  ...recoveryStore,
+  recordCompressions: [],
+  aiTasks: [{ ...dailyCompressionTask, id: "missing-daily-target-task", targetId: "missing-daily-target" }]
+}), /Unresolved target reference/, "daily compression still requires its prepared record target");
+assert.throws(() => mapStoreObjects("account-a", {
+  ...recoveryStore,
+  onboardingV2: null,
+  aiTasks: [{ ...onboardingTask, id: "missing-onboarding-target-task", status: "queued" }]
+}), /Unresolved target reference/, "onboarding extraction still requires its singleton target");
+const boundGeneratedTask = {
+  ...generatedTargetTasks[0].task,
+  id: "recovery-bound-generated-task",
+  targetId: "live-target",
+  status: "queued"
+};
+const boundGeneratedMapping = mapStoreObjects("account-a", {
+  ...recoveryStore,
+  aiTasks: [...recoveryStore.aiTasks, boundGeneratedTask]
+});
+const boundGeneratedObject = boundGeneratedMapping.objects.find(item => (
+  item.collection === "aiTasks" && item.id === boundGeneratedTask.id
+));
+assert.ok(boundGeneratedMapping.relations.some(relation => (
+  relation.objectKey === boundGeneratedObject.objectKey
+  && relation.relation === "target"
+  && relation.targetKey
+)), "a generated-task target relation resolves when its referenced entity exists");
+
+console.log("Background AI model-gate checks passed: deferred context preparation, cancellable and restart-safe waiting, fresh promotion, one-time scheduling, target-safe recovery, and injected bypass policy.");
