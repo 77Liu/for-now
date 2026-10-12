@@ -993,7 +993,7 @@ const mockFetch = `
       return json({ authenticated: false });
     }
     if (url === "/api/auth/login") {
-      const complete=()=>{window.__accountUser={id:"user-2",username:"second",role:window.__nextLoginRole,createdAt:"2026-09-27T00:00:00.000Z"};return json({authenticated:true,authRequired:true,user:window.__accountUser})};
+      const complete=()=>{const login=JSON.parse(init.body||"{}");window.__accountUser=login.username==="owner"?{id:"user-1",username:"owner",role:window.__nextLoginRole,createdAt:"2026-09-27T00:00:00.000Z"}:{id:"user-2",username:"second",role:window.__nextLoginRole,createdAt:"2026-09-27T00:00:00.000Z"};return json({authenticated:true,authRequired:true,user:window.__accountUser})};
       if(window.__delayLogin)return new Promise(resolve=>{window.__releaseLogin=()=>{window.__delayLogin=false;resolve(complete())}});
       return complete();
     }
@@ -4106,6 +4106,10 @@ try {
   await evaluate(`document.querySelector("#onboarding-v2-exit").click();true`);
   const onboardingPaused=await waitUntil(`document.querySelector("#onboarding-workspace").hidden&&window.__onboardingV2.session.status==="paused"`);
   assert.equal(onboardingPaused,true,JSON.stringify(await evaluate(`({hidden:document.querySelector("#onboarding-workspace").hidden,status:window.__onboardingV2.session.status,step:window.__onboardingV2.session.step,revision:window.__onboardingV2.session.revision,save:document.querySelector("#onboarding-v2-save-status").textContent,exitDisabled:document.querySelector("#onboarding-v2-exit").disabled,body:document.querySelector("#onboarding-v2-content").innerText.slice(0,120)})`)));
+  await evaluate(`window.__nextLoginRole="owner";document.querySelector("#logout-button").click();true`);
+  assert.equal(await waitUntil(`!document.querySelector("#auth-gate").hidden&&[...document.querySelectorAll(".auth-form input,.auth-form button,[data-auth-tab]")].every(item=>!item.disabled)`),true);
+  await evaluate(`(()=>{const form=document.querySelector("#login-form");form.elements.username.value="owner";form.elements.password.value="owner-password";form.requestSubmit();return true})()`);
+  assert.equal(await waitUntil(`document.querySelector("#auth-gate").hidden&&document.querySelector("#account-name").textContent==="owner"&&window.__accountUser.id==="user-1"`),true);
   await evaluate(`(()=>{const input=document.querySelector('#chain-form input[name="recordKind"][value="thought"]'),datetime=document.querySelector("#chain-datetime");input.checked=true;input.dispatchEvent(new Event("change",{bubbles:true}));datetime.closest("label").querySelector('[data-occurrence-mode="manual"]').click();datetime.value="2026-09-26T08:15";datetime.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
   await cdp.send("Page.reload",{ignoreCache:true});
   assert.equal(await waitUntil(`document.querySelector("#today-date-label")?.textContent.length>0&&!document.querySelector("#onboarding-workspace").hidden&&document.querySelector("#onboarding-v2-content h1")?.textContent.includes("先把这一点留下")&&document.querySelector("#chain-datetime")?.dataset.occurrenceMode==="manual"`),true);

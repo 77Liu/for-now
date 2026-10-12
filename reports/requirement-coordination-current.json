@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 154,
-  "updated_at": "2026-10-12T20:58:57.461Z",
+  "revision": 168,
+  "updated_at": "2026-10-12T21:55:33.335Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -19,11 +19,11 @@
   },
   "iteration": {
     "id": "v0.5.14",
-    "status": "CHECKPOINT_WAIT_BASELINE_REPAIR",
-    "phase": "A/B/C本地实现主控已审查，保存可恢复切片；基线module门缺口先返回v0.5.13修正",
+    "status": "IMPLEMENTING",
+    "phase": "恢复原音频切片，接收最新develop与修正夹具；收口只读HEAD请求的既有API入口",
     "started_by": {
       "iteration_id": "v0.5.13",
-      "event_id": "v0.5.13-f74880ff-cb75-4262-b66e-2f50e5b18744"
+      "event_id": "v0.5.13-9d38aa2c-f745-46fd-91a3-f233bb08d048"
     }
   },
   "scope": {
@@ -41,7 +41,7 @@
     "requirements_scope": "仅六条；全量306条本地快照仍stale",
     "baseline": {
       "branch": "develop",
-      "sha": "bd886de00e94c742ff11dc17486565a2a768f2a2"
+      "sha": "cd8055356a190f87bf6346fa806ec0dee85f1711"
     },
     "acceptance": {
       "recording": "区分录制/上传/转写；使用明确首尾标记及暂停/快速停止样例，不只凭时长；保留原音及失败恢复，无原音无法证实用户历史截断根因时保持UNKNOWN",
@@ -60,28 +60,32 @@
     ],
     "cumulative_predecessor": "git:e90520cadef9150f23ac029bef0e96a79616c3cb"
   },
-  "active_tasks": [],
-  "candidate": {
-    "sha": null,
-    "tree": null,
-    "status": "REVIEWED_CHECKPOINT_PENDING",
-    "release_frozen": false,
-    "quality_gate": {
-      "audio_capture_contract": "PASS",
-      "frontend_audio_scope": "PASS",
-      "title_idempotency": "PASS",
-      "type_and_build": "PASS",
-      "module_check": "FAIL",
-      "scoped_browser_capture": "PASS",
-      "full_ui": "FAIL",
-      "state_startup": "NOT_RUN"
-    },
-    "limits": [
-      "用户历史原音缺失根因UNKNOWN；真实录音设备/真实ASR/移动端未验收",
-      "Headless Chrome捕念行为使用合成fixture/替身接口；整套UI在onboarding组合断言失败，子条件UNKNOWN",
-      "尚未合develop或冻结v0.5.14release"
-    ]
-  },
+  "active_tasks": [
+    {
+      "id": "v0514-audio-api-port-and-integration",
+      "owner": "主开发",
+      "implementer_thread": "01a11afe-73d2-7013-91d5-cd473c4d7115",
+      "branch": "feat/v0.5.14-audio-completeness",
+      "baseline_sha": "cd8055356a190f87bf6346fa806ec0dee85f1711",
+      "write_set": [
+        "public/frontend/shared/capture-audio-lifecycle.mts：必须通过注入端口读取，不直接fetch",
+        "public/frontend/api/index.mjs：仅已有API客户端HEAD状态读取、会话绑定；必要公共接口JSDoc",
+        "public/frontend/features/capture-journal/captures-view.mjs及public/frontend/app/runtime/page-descriptors-primary.mjs：最小端口接入",
+        "既有API/捕念/页面音频/UI专项：只补空HEAD响应/status、实际端口/登录会话/媒体重试，保持业务预期",
+        "tsconfig.frontend.json已有编译登记；ignored产物/必要私密本地证据"
+      ],
+      "shared_owner": "主开发单写API/页面端口和生命周期，主控维护唯一控制面及接入",
+      "forbidden": [
+        "v0.5.13候选/release/push/tag/部署/正式收尾",
+        "当前控制面/events直接修改",
+        "放宽模块/API网络边界，新增第二个fetch入口",
+        "重做无变化A/C/预算/媒体/PG矩阵或通用平台",
+        "新角色/subagent/工作树/分支删除"
+      ],
+      "status": "DISPATCHED"
+    }
+  ],
+  "candidate": null,
   "authorization": {
     "source": "Owner最新夜间指令：v0.5.13通过后开启v0.5.14开发；v0.5.13上线与收尾等待人工信号",
     "allowed_actions": [
@@ -100,8 +104,8 @@
   },
   "blockers": [],
   "next_action": {
-    "owner": "主控",
-    "action": "提交v0.5.14可恢复检查点，然后从唯一入口恢复前版；回原v0.5.13 feat修module Reflect调用，必要门通过后再恢复v0.5.14",
+    "owner": "主开发",
+    "action": "移除音频TS中的独立fetch默认实现，以已有API客户端只读HEAD能力注入；完整自查真实API/session/资源消费者，受影响验证后交主控集成",
     "status": "PLANNED"
   },
   "runtime": {
@@ -110,7 +114,10 @@
     "observed_at": "2026-10-12T16:00:35.882Z",
     "active": true,
     "restarts": 0,
-    "boundary": "采集前后只读运行身份与状态一致；不把当时健康当永久实时状态"
+    "boundary": "本次只读service与readyz观察；短版本与此前fullSHA前缀相同，未重新核验完整制品或DB身份，不证明历史连续健康",
+    "readonly_observed_at": "2026-10-12T21:21:36.817282+00:00",
+    "readiness_version": "3e94e2f29f5e",
+    "pid": 940727
   },
   "evidence": [
     {
@@ -133,10 +140,10 @@
     {
       "iteration_id": "v0.5.13",
       "events": "reports/iterations/v0.5.13/events.jsonl",
-      "event_id": "v0.5.13-99a5e8b6-96a8-4373-b9f8-2c81088a525d",
-      "state_after_hash": "399256226a7dd96415767df60bd042a32a3f84d0a7c3c21145b7b2feee044267",
+      "event_id": "v0.5.13-2577c06a-6c47-42f6-8e1d-c4b5e1d49b95",
+      "state_after_hash": "c97373d35372b93952b2d4f9197b08637294367c982eca772013fd285d8522a4",
       "status": "READY_WAIT_OWNER",
-      "candidate_sha": "e90520cadef9150f23ac029bef0e96a79616c3cb",
+      "candidate_sha": "cd8055356a190f87bf6346fa806ec0dee85f1711",
       "authorization_sha256": "8da33c9c50bfb0e1a8b376c194f999e0feea54a635fd83d31b9d8eafbfd7c332"
     }
   ]
