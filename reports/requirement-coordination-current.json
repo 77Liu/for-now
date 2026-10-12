@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 134,
-  "updated_at": "2026-10-12T18:27:22.085Z",
+  "revision": 137,
+  "updated_at": "2026-10-12T18:42:46.522Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -9,7 +9,7 @@
     "write_authority": "唯一维护者；必须经coordination:update入口更新"
   },
   "rule_baseline": {
-    "commit": "2bbab8298971dac306ef65b66627d607de783df2",
+    "commit": "f8b0a1b2c08279ed56c111ec83f9addb9d4998cc",
     "effective_date": "2026-10-13",
     "source": "PROJECT_RULES.md；knowledge/coordination-control-plane.md v2.0；knowledge/engineering-rules.md#35-源码与注释规范；SOP/requirement-intake.md v1.1"
   },
@@ -20,7 +20,7 @@
   "iteration": {
     "id": "v0.5.13",
     "status": "ACTIVE",
-    "phase": "真实首次runtime启动失败：脱敏同步元数据不满足preparePersistenceDocument契约；集中返修完整受影响消费者链"
+    "phase": "完整持久化消费者通过，实际启动被空清理队列恢复调用的副作用分类误报阻塞"
   },
   "scope": {
     "description": "保存状态/草稿与失败恢复；发生时间/补录意图；通知列表未读事实、脱敏诊断与恢复操作。仅实现六条锁定需求的未交付行为，不做全站状态或通知平台重构。",
@@ -48,8 +48,8 @@
   },
   "active_tasks": [],
   "candidate": {
-    "sha": "2bbab8298971dac306ef65b66627d607de783df2",
-    "tree": "b35de7f038a26a49a8c30ea3caa4921a90d9b214",
+    "sha": "f8b0a1b2c08279ed56c111ec83f9addb9d4998cc",
+    "tree": "ebbd98e1dd346e48f4f9f5e1071cedde403c33de",
     "status": "STARTUP_GATE_FAILED",
     "release_frozen": false,
     "quality_gate": {
@@ -88,15 +88,15 @@
   },
   "blockers": [
     {
-      "code": "SANITIZED_SYNC_METADATA_CONTRACT",
+      "code": "EMPTY_CLEANUP_RESUME_HARNESS_FALSE_POSITIVE",
       "status": "FIXED_PENDING_REAL_GATE",
       "owner": "主开发",
-      "impact": "3/4脱敏账户被真实preparePersistenceDocument拒绝；sync.changes.changeType与sync.operations.fingerprint技术形态失真，不能冻结候选"
+      "impact": "4账户清理队列均为空，实际resume只读取后返回，验证器却将调用等同媒体副作用；需局部修复验证器后绑定新候选重验"
     }
   ],
   "next_action": {
     "owner": "主控",
-    "action": "提交并接入已独立审查的完整持久化消费者修复，再固定新候选执行真实有状态门",
+    "action": "提交已审查的空队列恢复分类修复，快进develop后固定新候选并采集新快照执行真实门",
     "status": "READY"
   },
   "runtime": {
@@ -175,11 +175,26 @@
       "id": "full-persistence-contract-reviewed",
       "source": "scripts/release-state-startup-gate.mts@sha256:b15bd01c47c5b940de76460188dcd5bb04d5598dc6931993f8b99756692d742d",
       "status": "主控独立核对完整源读取/脱敏/重建/规范化/prepare/map-rebuild/runtime初始化链；最终既有自测及运行构建PASS；历史原请求同请求重试保持PARTIAL"
+    },
+    {
+      "id": "full-persistence-fix-integrated",
+      "source": "git:f8b0a1b2c08279ed56c111ec83f9addb9d4998cc",
+      "status": "原feat已提交并快进develop，分支保留；原2bbab82失败证据只读保留；无远程动作"
+    },
+    {
+      "id": "f8b0a1b-stateful-gate-failed",
+      "source": "reports/local/f8b0a1b-startup-gate-receipt.json@sha256:85d4db9bb317eb9ea4ccb69a24a612ef5990500395150baaff92ad0ef9aa13b",
+      "status": "真实门FAIL，后续NOT_RUN；主控重建快照独立核对清理队列[0,0,0,0]并阅读resume实现确认分类误报；旧失败保留"
+    },
+    {
+      "id": "empty-cleanup-classification-reviewed",
+      "source": "scripts/release-state-startup-gate.mts@sha256:4b11016e8d859a0c96c1ea8072580bdcd1fc0f5dfdb0a534acf2a3e8f8513f00",
+      "status": "主控独立核对实际空队列resume及逐账户恢复调用；计数统一且按账户数核对；非空/非法映射与其他副作用仍拒绝；最终专项PASS"
     }
   ],
   "records": {
     "events": "reports/iterations/v0.5.13/events.jsonl",
     "terminal": "reports/iterations/v0.5.13/terminal.json"
   },
-  "display_summary": "2bbab82实际runtime启动FAIL；3个脱敏账户同步元数据契约失真已定位并返修。后续门NOT_RUN，发布与收尾等待人工信号。"
+  "display_summary": "f8b0a1b全局门首次启动FAIL：空附件清理恢复钩子被误当媒体副作用。真实元数据消费已越过原阻塞；后续门NOT_RUN，发布仍等待人工。"
 }

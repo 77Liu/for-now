@@ -67,7 +67,7 @@ type PgModule = { Client: new (options: { connectionString: string }) => PgClien
 type StartupGatePort = {
   tempRoot: string;
   holdDispatch(kind: string, callback: (...args: unknown[]) => unknown): null;
-  observeEffect(kind: string, operation: string): never;
+  observeEffect(kind: string, operation: string): void;
   counts: Record<string, number>;
 };
 type LocalPostgresState = {
@@ -1661,8 +1661,48 @@ function errorKindLabel(error: unknown): string {
   return `${errorName}${exitCode === null ? "" : `, exit ${exitCode}`}`;
 }
 
+async function snapshotHasNoPendingAttachmentCleanup(root: string, snapshotValue: JsonRecord): Promise<boolean> {
+  const accounts = snapshotValue.accounts;
+  if (!Array.isArray(accounts) || accounts.length === 0) return false;
+  const persistence = await importFromRoot<PersistenceApi>(root, "src/shared/persistence/index.mjs");
+  for (const account of accounts) {
+    if (!account || typeof account !== "object" || Array.isArray(account)) return false;
+    const accountValue = account as JsonRecord;
+    if (typeof accountValue.accountId !== "string" || !accountValue.accountId) return false;
+    const mappingValue = accountValue.mapping;
+    if (!mappingValue || typeof mappingValue !== "object" || Array.isArray(mappingValue)) return false;
+    const mapping = mappingValue as StoreMapping;
+    if (![mapping.fields, mapping.objects, mapping.relations, mapping.attachmentRefs, mapping.lifecycles, mapping.idempotency]
+      .every(Array.isArray)) return false;
+    if (!mapping.objects.every(row => row !== null
+      && typeof row === "object"
+      && typeof row.collection === "string"
+      && typeof row.kind === "string")) return false;
+
+    const rebuiltStore = persistence.rebuildStoreObjects(mapping);
+    if (!Array.isArray(rebuiltStore.attachmentCleanup)) return false;
+    const rebuiltMapping = persistence.mapStoreObjects(accountValue.accountId, rebuiltStore);
+    assertMappingRoundTrip(mapping, rebuiltMapping, persistence.canonicalJson);
+    if (rebuiltStore.attachmentCleanup.length > 0) return false;
+  }
+  return true;
+}
+
+function createStartupEffectObserver(snapshotProvesEmptyCleanupQueue: boolean, counts: Record<string, number>) {
+  return (kind: string, operation: string) => {
+    // 只放行真实的空队列恢复调用。快照结构不完整或队列非空时仍在函数执行前拒绝。
+    if (kind === "media" && operation === "resumeAttachmentCleanup" && snapshotProvesEmptyCleanupQueue) {
+      counts.emptyCleanupResumeCalls = (counts.emptyCleanupResumeCalls || 0) + 1;
+      return;
+    }
+    counts[kind] = (counts[kind] || 0) + 1;
+    throw new Error(`Startup gate blocked ${kind}:${operation}`);
+  };
+}
+
 async function verify(root: string, snapshotFile: string) {
   const snapshotValue = await loadSnapshot(root, snapshotFile);
+  const snapshotProvesEmptyCleanupQueue = await snapshotHasNoPendingAttachmentCleanup(root, snapshotValue);
   const timeBaseline = snapshotValue.timeBaseline as InspectionClock;
   if (!timeBaseline?.capturedAt || !timeBaseline.timezone || snapshotValue.capturedAt !== timeBaseline.capturedAt) {
     fail("Startup gate snapshot has no consistent semantic inspection time baseline");
@@ -1723,7 +1763,13 @@ async function verify(root: string, snapshotFile: string) {
       fail("Imported recovery task statuses, targets, or intent matches differ from the sanitized snapshot");
     }
     const testPort = await freeTcpPort();
-    const gateCounts: Record<string, number> = { dispatchHeld: 0, provider: 0, outbound: 0, media: 0 };
+    const gateCounts: Record<string, number> = {
+      dispatchHeld: 0,
+      provider: 0,
+      outbound: 0,
+      media: 0,
+      emptyCleanupResumeCalls: 0
+    };
     const gate: StartupGatePort = {
       tempRoot,
       counts: gateCounts,
@@ -1732,10 +1778,7 @@ async function verify(root: string, snapshotFile: string) {
         gateCounts[`dispatch_${kind}`] = (gateCounts[`dispatch_${kind}`] || 0) + 1;
         return null;
       },
-      observeEffect(kind: string, operation: string): never {
-        gateCounts[kind] = (gateCounts[kind] || 0) + 1;
-        throw new Error(`Startup gate blocked ${kind}:${operation}`);
-      }
+      observeEffect: createStartupEffectObserver(snapshotProvesEmptyCleanupQueue, gateCounts)
     };
     const urls = {
       data: pgState.url("runtime_data"),
@@ -1743,9 +1786,14 @@ async function verify(root: string, snapshotFile: string) {
       budget: pgState.url("runtime_budget")
     };
     phase = "first runtime startup";
+    const firstResumeCallsBeforeStart = gateCounts.emptyCleanupResumeCalls;
     const first = await startRuntime(root, tempRoot, urls, testPort, gate, cleanupFailures);
     runtimeInstance = first.runtime;
     restoreRuntimeEnvironment = first.restoreEnvironment;
+    const firstResumeCalls = gateCounts.emptyCleanupResumeCalls - firstResumeCallsBeforeStart;
+    if (firstResumeCalls !== accountIds.length) {
+      fail(`Expected one empty attachment-cleanup resume call per imported account during first startup; expected ${accountIds.length}, observed ${firstResumeCalls}`);
+    }
     phase = "first runtime recovery state";
     const firstStates = await readLocalTaskStates(root, urls.data, accountIds, timeBaseline);
     phase = "first runtime stop";
@@ -1754,9 +1802,14 @@ async function verify(root: string, snapshotFile: string) {
 
     const secondPort = await freeTcpPort();
     phase = "same-database runtime restart";
+    const secondResumeCallsBeforeStart = gateCounts.emptyCleanupResumeCalls;
     const second = await startRuntime(root, tempRoot, urls, secondPort, gate, cleanupFailures);
     runtimeInstance = second.runtime;
     restoreRuntimeEnvironment = second.restoreEnvironment;
+    const secondResumeCalls = gateCounts.emptyCleanupResumeCalls - secondResumeCallsBeforeStart;
+    if (secondResumeCalls !== accountIds.length) {
+      fail(`Expected one empty attachment-cleanup resume call per imported account during restart; expected ${accountIds.length}, observed ${secondResumeCalls}`);
+    }
     phase = "restart recovery state comparison";
     const secondStates = await readLocalTaskStates(root, urls.data, accountIds, timeBaseline);
     if (JSON.stringify(firstStates) !== JSON.stringify(secondStates)) fail("Task recovery state changed on the second same-database restart");
@@ -1794,6 +1847,10 @@ async function verify(root: string, snapshotFile: string) {
     if (gateCounts.provider || gateCounts.outbound || gateCounts.media) {
       fail("A provider, outbound notification/debug request, or media method was attempted during the gate");
     }
+    const expectedCleanupResumeCalls = accountIds.length * 2;
+    if (gateCounts.emptyCleanupResumeCalls !== expectedCleanupResumeCalls) {
+      fail(`Expected one verified empty attachment-cleanup resume call per imported account per startup; expected ${expectedCleanupResumeCalls}, observed ${gateCounts.emptyCleanupResumeCalls}`);
+    }
     passReceipt = {
       status: "PASS",
       candidateSha: snapshotValue.candidateSha,
@@ -1804,6 +1861,7 @@ async function verify(root: string, snapshotFile: string) {
       taskCount: firstStates.length,
       heldDispatches: gateCounts.dispatchHeld,
       forbiddenEffects: { provider: gateCounts.provider, outbound: gateCounts.outbound, media: gateCounts.media },
+      emptyCleanupResumeCallsPerStartup: [firstResumeCalls, secondResumeCalls],
       evidence: ["runtime.start", "readyz", "same-postgres-stop-restart", "authenticated-state-read", "save-read-round-trip", "task-read", "notification-read"]
     };
   } catch (error) {
@@ -2604,6 +2662,70 @@ async function selfTest(root: string) {
     "private custom quote", "private custom comment", "private chat message", "stable1", "stable2", "id-a", "id-b"
   ]
     .some(secret => secretText.includes(secret))) fail("Synthetic redaction retained a private fixture value");
+  const emptyCleanupStore = persistence.rebuildStoreObjects(persistence.mapStoreObjects("empty-cleanup-account", app.normalizeStore({})));
+  const emptyCleanupSnapshot = {
+    accounts: [{ accountId: "empty-cleanup-account", mapping: persistence.mapStoreObjects("empty-cleanup-account", emptyCleanupStore) }]
+  };
+  const emptyCleanupIsVerified = await snapshotHasNoPendingAttachmentCleanup(root, emptyCleanupSnapshot);
+  if (!emptyCleanupIsVerified) fail("A valid empty attachment-cleanup snapshot was not recognized");
+  const emptyCleanupCounts: Record<string, number> = {};
+  const emptyCleanupObserver = createStartupEffectObserver(emptyCleanupIsVerified, emptyCleanupCounts);
+  emptyCleanupObserver("media", "resumeAttachmentCleanup");
+  if (emptyCleanupCounts.emptyCleanupResumeCalls !== 1 || emptyCleanupCounts.media) {
+    fail("Verified empty attachment-cleanup recovery call was not classified separately");
+  }
+
+  const cleanupFunction = await importFromRoot<{
+    createAttachmentCleanup(options: JsonRecord): { resume(): Promise<unknown> };
+  }>(root, "src/app/attachment-cleanup.mjs");
+  const cleanupBranchCounts = { transactions: 0, commits: 0, removes: 0, results: 0, dispatches: 0 };
+  const emptyCleanupRuntime = cleanupFunction.createAttachmentCleanup({
+    repository: {
+      async transact(operation: (context: { document: JsonRecord; commit(): Promise<void> }) => Promise<unknown>) {
+        cleanupBranchCounts.transactions += 1;
+        return operation({ document: { attachmentCleanup: [] }, async commit() { cleanupBranchCounts.commits += 1; } });
+      }
+    },
+    async remove() { cleanupBranchCounts.removes += 1; },
+    now: () => "2026-10-13T00:00:00.000Z",
+    contextKey: () => "empty-cleanup-account",
+    dispatch() { cleanupBranchCounts.dispatches += 1; return null; },
+    onRetryFailure() {},
+    async onResult() { cleanupBranchCounts.results += 1; }
+  });
+  await emptyCleanupRuntime.resume();
+  if (cleanupBranchCounts.transactions !== 1
+    || cleanupBranchCounts.commits !== 0
+    || cleanupBranchCounts.removes !== 0
+    || cleanupBranchCounts.results !== 0
+    || cleanupBranchCounts.dispatches !== 0) {
+    fail("The real empty attachment-cleanup resume branch performed a write, removal, result callback, or dispatch");
+  }
+
+  const queuedCleanupStore = structuredClone(emptyCleanupStore);
+  queuedCleanupStore.attachmentCleanup = [{ path: "/attachments/pending" }];
+  const queuedCleanupSnapshot = {
+    accounts: [
+      { accountId: "empty-cleanup-account", mapping: persistence.mapStoreObjects("empty-cleanup-account", emptyCleanupStore) },
+      { accountId: "queued-cleanup-account", mapping: persistence.mapStoreObjects("queued-cleanup-account", queuedCleanupStore) }
+    ]
+  };
+  const queuedCleanupIsVerified = await snapshotHasNoPendingAttachmentCleanup(root, queuedCleanupSnapshot);
+  if (queuedCleanupIsVerified) fail("A non-empty attachment-cleanup queue was marked safe");
+  for (const [observer, kind, operation] of [
+    [emptyCleanupObserver, "media", "materializeAttachmentFiles"],
+    [emptyCleanupObserver, "provider", "deepseek"],
+    [emptyCleanupObserver, "outbound", "debug"],
+    [createStartupEffectObserver(queuedCleanupIsVerified, {}), "media", "resumeAttachmentCleanup"],
+    [createStartupEffectObserver(await snapshotHasNoPendingAttachmentCleanup(root, { accounts: [{ accountId: "malformed-account", mapping: {} }] }), {}), "media", "resumeAttachmentCleanup"]
+  ] as const) {
+    try {
+      observer(kind, operation);
+      fail(`Startup gate observer allowed ${kind}:${operation} without a verified empty cleanup queue`);
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes(`Startup gate blocked ${kind}:${operation}`)) throw error;
+    }
+  }
   try {
     await runtime.materializeAttachmentFiles?.([]);
     fail("Synthetic media guard did not reject an attempted media operation");
