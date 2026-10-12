@@ -9,6 +9,7 @@ import {
   recordCompressionAccountQueueAllowance,
   recordCompressionSlotQueueAllowance
 } from "../src/config/index.mjs";
+import { RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN } from "../src/modules/record-compressions/index.mjs";
 import { createObservability, pruneLogs } from "../src/shared/observability/index.mjs";
 import { createJsonHttp, createRequestHandler } from "../src/http/index.mjs";
 import { createAttachmentStorage } from "../src/shared/attachments/index.mjs";
@@ -112,29 +113,45 @@ assert.deepEqual(noticeEvents.filter(value => ["日压缩已启动", "日压缩�
 const compressionProduction = config({
   NODE_ENV: "production",
   RECORD_COMPRESSION_ENABLED: "1",
-  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "0.75",
-  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "0.25",
-  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "3",
-  RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN: "1"
-});
-assert.equal(compressionProduction.recordCompressionEnabled, true);
-assert.equal(compressionProduction.recordCompressionDailyBudgetCny, 0.75);
-assert.equal(compressionProduction.recordCompressionPerCallBudgetCny, 0.25);
-assert.equal(compressionProduction.recordCompressionDailyInvocationLimit, 3);
-assert.equal(compressionProduction.recordCompressionAccountDailyInvocationLimit, 2);
-assert.equal(compressionProduction.recordCompressionMaxBackfillDatesPerScan, 1);
-const overCapCompression = config({
-  NODE_ENV: "production",
-  RECORD_COMPRESSION_ENABLED: "1",
   RECORD_COMPRESSION_DAILY_BUDGET_CNY: "4",
   RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "1",
-  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "16"
+  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "16",
+  RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN: "4"
 });
-assert.equal(overCapCompression.recordCompressionEnabled, false,
-  "the requested x4 values must fail closed under the current hard caps");
-assert.equal(overCapCompression.recordCompressionDailyBudgetCny, 0);
-assert.equal(overCapCompression.recordCompressionPerCallBudgetCny, 0);
-assert.equal(overCapCompression.recordCompressionDailyInvocationLimit, 0);
+assert.equal(compressionProduction.recordCompressionEnabled, true);
+assert.equal(compressionProduction.recordCompressionDailyBudgetCny, 4);
+assert.equal(compressionProduction.recordCompressionPerCallBudgetCny, 1);
+assert.equal(compressionProduction.recordCompressionDailyInvocationLimit, 16);
+assert.equal(compressionProduction.recordCompressionAccountDailyInvocationLimit, 2);
+assert.equal(compressionProduction.recordCompressionMaxBackfillDatesPerScan, 4);
+assert.equal(RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN, 4,
+  "the scan hard cap and the configured value share one public constant");
+const overBackfillCap = config({
+  NODE_ENV: "production",
+  RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN: "5"
+});
+assert.equal(overBackfillCap.recordCompressionMaxBackfillDatesPerScan, 4,
+  "configuration cannot exceed the domain-owned backfill hard cap");
+const overCapCases = [
+  { RECORD_COMPRESSION_DAILY_BUDGET_CNY: "4.01" },
+  { RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "1.01" },
+  { RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "17" }
+];
+for (const override of overCapCases) {
+  const overCapCompression = config({
+    NODE_ENV: "production",
+    RECORD_COMPRESSION_ENABLED: "1",
+    RECORD_COMPRESSION_DAILY_BUDGET_CNY: "4",
+    RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "1",
+    RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "16",
+    ...override
+  });
+  assert.equal(overCapCompression.recordCompressionEnabled, false,
+    "values above the approved hard ceilings remain disabled");
+  assert.equal(overCapCompression.recordCompressionDailyBudgetCny, 0);
+  assert.equal(overCapCompression.recordCompressionPerCallBudgetCny, 0);
+  assert.equal(overCapCompression.recordCompressionDailyInvocationLimit, 0);
+}
 assert.equal(config({ PERIODIC_ANALYSIS_ENABLED: "0" }).periodicAnalysisEnabled, false);
 assert.equal(config({ PERIODIC_ANALYSIS_ENABLED: "1" }).periodicAnalysisEnabled, true);
 assert.equal(config({ PERIODIC_ANALYSIS_ENABLED: "yes" }).periodicAnalysisEnabled, false);

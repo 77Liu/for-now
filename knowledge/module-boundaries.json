@@ -713,7 +713,9 @@
       "type": "application",
       "root": "src/config",
       "publicEntry": "src/config/index.mjs",
-      "allowedDependencies": [],
+      "allowedDependencies": [
+        "domain.record-compressions"
+      ],
       "owns": {
         "data": [
           "environment parsing, startup mode validation and immutable runtime configuration"

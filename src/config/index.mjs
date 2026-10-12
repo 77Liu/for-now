@@ -1,9 +1,10 @@
 import path from "node:path";
+import { RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN } from "../modules/record-compressions/index.mjs";
 
 export const RECORD_COMPRESSION_ACCOUNT_DAILY_INVOCATION_LIMIT = 2;
-export const RECORD_COMPRESSION_MAX_DAILY_BUDGET_CNY = 1;
-export const RECORD_COMPRESSION_MAX_PER_CALL_BUDGET_CNY = 0.25;
-export const RECORD_COMPRESSION_MAX_DAILY_INVOCATION_LIMIT = 4;
+export const RECORD_COMPRESSION_MAX_DAILY_BUDGET_CNY = 4;
+export const RECORD_COMPRESSION_MAX_PER_CALL_BUDGET_CNY = 1;
+export const RECORD_COMPRESSION_MAX_DAILY_INVOCATION_LIMIT = 16;
 
 export function recordCompressionAccountQueueAllowance({
   dailyLimit = RECORD_COMPRESSION_ACCOUNT_DAILY_INVOCATION_LIMIT,
@@ -138,7 +139,10 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     recordCompressionAccountDailyInvocationLimit: RECORD_COMPRESSION_ACCOUNT_DAILY_INVOCATION_LIMIT,
     recordCompressionMaxBackfillDatesPerScan: Math.max(
       0,
-      Math.min(2, Math.floor(Number.isFinite(configuredBackfillDates) ? configuredBackfillDates : 1))
+      Math.min(
+        RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN,
+        Math.floor(Number.isFinite(configuredBackfillDates) ? configuredBackfillDates : 1)
+      )
     ),
     speechCacheSweepEnabled,
     runtimeMemorySampleIntervalMs: Math.max(50, Math.min(3_600_000, Number(env.RUNTIME_MEMORY_SAMPLE_INTERVAL_MS) || 60_000)),
