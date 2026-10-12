@@ -1,16 +1,16 @@
 {
   "schema_version": 1,
-  "revision": 108,
-  "updated_at": "2026-10-12T15:20:59.274Z",
+  "revision": 109,
+  "updated_at": "2026-10-12T15:25:35.917Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
     "state_owner": "主控维护本控制面，其他角色仅引用并回报"
   },
   "rule_baseline": {
-    "commit": "04befab",
+    "commit": "e16bb50e51c93fbe4532bc84c923854be759b101",
     "effective_date": "2026-10-12",
-    "source": "PROJECT_RULES.md、knowledge/test-impact-matrix.md、SOP/integration-audit.md、SOP/release-and-observation.md；未改变其他风险授权正文"
+    "source": "PROJECT_RULES.md及其引用的唯一正文；新增开发者自查与主控接入审查责任正文在SOP/multi-agent-orchestration.md#开发者自查与主控接入审查，功能开发/集成SOP引用，原有状态门及授权继续适用。"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
   "current_phase": "真实快照映射等价已通过，任务语义一致性仍阻断；先完整本地审查任务分类与脱敏链，不重试生产采集。",
@@ -1642,6 +1642,12 @@
       "at": "2026-10-12T15:20:59.274Z",
       "reason": "保存真实任务语义失败，映射等价通过与整体门失败分开，先静态审查再裁定必要诊断。",
       "previous_snapshot": "6f9ea47:reports/requirement-coordination-current.json@revision107"
+    },
+    {
+      "revision": 109,
+      "at": "2026-10-12T15:25:35.917Z",
+      "reason": "Owner要求固化先自查、主控完整数据链接入审查；docs单目的提交e16bb50已合入develop并同步当前feat，立即生效。",
+      "previous_snapshot": "cae3a81:reports/requirement-coordination-current.json@revision108"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -2673,7 +2679,13 @@
       "task_semantic_review": {
         "mode": "纯本地只读",
         "scope": "taskStates、实际inspectRecoveryIntent/所有handler、sanitizeMapping及matching hash保留链；不凭总括错误推断根因。",
-        "constraints": "无脚本/业务修改、无生产查询或重试；不放宽状态/目标/意图检查，不加逐值白名单；需要诊断时先给无ID/正文/hash的字段差异最小方案。"
+        "constraints": "无脚本/业务修改、无生产查询或重试；不放宽状态/目标/意图检查，不加逐值白名单；需要诊断时先给无ID/正文/hash的字段差异最小方案。",
+        "static_receipt": {
+          "source": "主开发纯本地只读源码追踪及合成布尔复现，主控实际核对ai-task-targets.mjs与sanitizeMapping。",
+          "confirmed_gap": "annotationShenji消费者要求source.includes(annotation.quote)；原文整段与引用片段分别整串HMAC不能保留子串关系，会改变可检查性。",
+          "limitation": "真实失败仅总括语义错误，尚未证明生产本轮恰为此任务或变化字段；不冒称生产根因已确定。",
+          "action": "先裁定能保留引用语义且无原文的最小方案；禁止忽略任务等价断言或强制matched；本次规则修改不扩大实现写集。"
+        }
       }
     }
   }
