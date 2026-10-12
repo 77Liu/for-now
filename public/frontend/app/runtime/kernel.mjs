@@ -164,7 +164,17 @@ const durableDrafts=createDurableFormDrafts({
   getOwner:()=>currentUser?.id||"",
   getDraftTags:()=>draftTags,
   setDraftTags:value=>{draftTags=value},
-  onRestore:()=>renderTagComposer()
+  onRestore: () => {
+    renderTagComposer();
+    const occurrenceInputs = $$("#chain-form input[data-occurrence-mode], #checkin-form input[data-occurrence-mode]");
+    occurrenceInputs.forEach(input => {
+      const mode = input.dataset.occurrenceMode;
+      if (!mode) return;
+      const value = input.value;
+      setOccurrenceMode(input, mode);
+      input.value = value;
+    });
+  }
 });
 const saveDurableDrafts=durableDrafts.save;
 const restoreDurableDrafts=durableDrafts.restore;
