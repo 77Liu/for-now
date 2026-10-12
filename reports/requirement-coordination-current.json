@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 90,
-  "updated_at": "2026-10-12T13:04:19.281Z",
+  "revision": 91,
+  "updated_at": "2026-10-12T13:05:21.742Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -636,13 +636,14 @@
           "控制面、第二工作树、删分支、release/main业务写入"
         ],
         "acceptance": [
-          "按真实prepare/save契约建模kind目标必需性：thoughtDraft/thoughtPrompt/journalAssist的binding仅结果回传及legacy sentinel，不因非空binding字段强制已有实体；生成型目标存在仍记录resolved relation，缺失不标stale。真实实体依赖任务、子目标与singleton校验保持。",
+          "按真实prepare/save契约精确建模：thoughtDraft/thoughtPrompt/journalAssist/chat/analysis均生成结果而不依赖主目标实体；生成型目标存在仍记录resolved relation，缺失不标stale。加上已批准historicalSupplement recordCompression，其余真实实体依赖任务/子目标/singleton继续required；不按binding字段空非空猜测。",
           "精准目标判定在mapper公开导出供恢复复用，不用resourceType字符串复数化猜集合或双套漂移；不新增通用平台/文件，实际module依赖仅登记批准窄点。",
           "running内部任务目标检查必须在重试之前，孤立绑定任务保留安全终态/通知，不自动重试或丢弃；有效生成任务正常晋级/排队且mapper成功。",
           "保持mapper跨账户/非生成型主目标/子目标关系完整性，不吞任意prepare错误，不改规范化/API/schema、不删或重定向用户任务。",
           "直接实现真实契约，随后仅既有后台专项/实际映射fixture及适用module检查；不跑全系统/付费/重部署。独审NO GO的旧设计不提交。",
           "主控审查提交接入后新候选/attempt继续上线；旧生产健康，不修改生产数据。",
-          "仅recordCompression且payload.operation为现行HISTORICAL_SUPPLEMENT_OPERATION允许未解析日摘要主目标；daily仍required，既有markQueued顺序不改变。必要一条historical fixture与普通daily严格行为验证复用原测试。"
+          "仅recordCompression且payload.operation为现行HISTORICAL_SUPPLEMENT_OPERATION允许未解析日摘要主目标；daily仍required，既有markQueued顺序不改变。必要一条historical fixture与普通daily严格行为验证复用原测试。",
+          "当前候选所有已注册task kind按源契约一次分类收口；表驱动验证生成集合，不逐类型新增大型夹具或提出通用平台。chat/analysis源码prepare/save不依赖主target且结果后创建实体，属于同一启动失败闭环。"
         ],
         "pending_contract_check": "已确认：historical补充生成输出到historicalUserSupplement singleton，不写recordCompressions；daily存在markQueued预创建且tasks.create/promoteWaiting/promoteBudgetWaiting调用，保持daily required。"
       },
@@ -1352,6 +1353,12 @@
       "at": "2026-10-12T13:04:19.281Z",
       "reason": "源码验证同类历史补充输出契约，批准仅现行operation豁免；daily markQueued已存在，不泛化豁免。",
       "previous_snapshot": "d29b136:reports/requirement-coordination-current.json@revision89"
+    },
+    {
+      "revision": 91,
+      "at": "2026-10-12T13:05:21.742Z",
+      "reason": "源码确认chat/analysis为同类结果生成任务，纳入精准optional集合保持其他实体关系严格，收口一次分类。",
+      "previous_snapshot": "a537209:reports/requirement-coordination-current.json@revision90"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
