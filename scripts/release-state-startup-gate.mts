@@ -87,7 +87,7 @@ const SOURCE_TARGET_PREFIXES = new Set([
   "annotation", "annotation-reply", "question", "followup-question", "followup-answer",
   "idea", "answer", "record", "note", "reflection"
 ]);
-const SOURCE_TARGET_LITERALS = new Set(["content", "message", "transcription"]);
+const SOURCE_TARGET_LITERALS = new Set(["content", "message", "transcription", "answer", "description"]);
 
 type RedactionContext = {
   key: Buffer;
@@ -97,6 +97,8 @@ type RedactionContext = {
   targetKeys: Map<string, string>;
   objectKeys: Map<string, string>;
   resourceKeys: Map<string, string>;
+  annotationQuoteTokens: Map<string, string>;
+  markdownText: (value: string) => string;
   singletonIds: Set<string>;
 };
 
@@ -181,7 +183,16 @@ function identityToken(key: Buffer, namespace: string, value: string): string {
   return `${namespace}_${createHmac("sha256", key).update(`${namespace}\0${value}`).digest("hex")}`;
 }
 
-function createRedactionContext(mapping: StoreMapping, key: Buffer, inventory: JsonRecord[] = []): RedactionContext {
+function redactionAtom(key: Buffer, namespace: string, value: string, prefix: "Q" | "V"): string {
+  return `${prefix}${createHmac("sha256", key).update(`${namespace}\0${value}`).digest("hex")}Z`;
+}
+
+function createRedactionContext(
+  mapping: StoreMapping,
+  key: Buffer,
+  markdownText: (value: string) => string,
+  inventory: JsonRecord[] = []
+): RedactionContext {
   const context: RedactionContext = {
     key,
     ids: new Map(),
@@ -190,6 +201,8 @@ function createRedactionContext(mapping: StoreMapping, key: Buffer, inventory: J
     targetKeys: new Map(),
     objectKeys: new Map(),
     resourceKeys: new Map(),
+    annotationQuoteTokens: new Map(),
+    markdownText,
     singletonIds: new Set()
   };
   const redactId = (value: string) => {
@@ -285,6 +298,12 @@ function createRedactionContext(mapping: StoreMapping, key: Buffer, inventory: J
     }
     if (!value || typeof value !== "object") {
       if (typeof value !== "string") return;
+      if (field === "quote" && value) {
+        const token = redactionAtom(key, "annotation-quote", value, "Q");
+        const existing = [...context.annotationQuoteTokens.entries()].find(([, mapped]) => mapped === token);
+        if (existing && existing[0] !== value) fail("Snapshot quote redaction token collision");
+        context.annotationQuoteTokens.set(value, token);
+      }
       if (/^\/attachments\//u.test(value) || ATTACHMENT_PATH_FIELDS.has(field)) redactPath(value);
       else if (field === "sourceKey" || (field === "resourceId" && value.startsWith("["))) redactSourceKey(value);
       else if (field === "resourceKey") redactResourceKey(value);
@@ -337,15 +356,30 @@ function createRedactionContext(mapping: StoreMapping, key: Buffer, inventory: J
 
 function sanitizeMapping<T>(value: T, key: Buffer, context: RedactionContext, stringMap = new Map<string, string>()): T {
   const referenceField = (field: string) => IDENTIFIER_KEYS.has(field) || /(?:^|[A-Z])(?:Id|ID)$/u.test(field);
+  const withQuoteRelations = (text: string, token: string): string => {
+    const normalizedText = context.markdownText(text);
+    const includedQuoteTokens = [...context.annotationQuoteTokens.entries()]
+      .filter(([quote]) => normalizedText.includes(quote))
+      .map(([, quoteToken]) => quoteToken);
+    return `${token}${includedQuoteTokens.join("")}`;
+  };
   const transform = (text: string, field: string, objectPath: string[]): string => {
     if (!text) return text;
+    // 引文使用独立占位符，避免普通文本缓存或身份映射改变引用字段语义。
+    if (field === "quote" && context.annotationQuoteTokens.has(text)) {
+      return context.annotationQuoteTokens.get(text)!;
+    }
     if (field === "sourceKey") return context.sourceKeys.get(text) || fail("Snapshot source key has no redaction mapping");
-    if (context.sourceKeys.has(text)) return context.sourceKeys.get(text)!;
+    if (context.sourceKeys.has(text)) {
+      const token = context.sourceKeys.get(text)!;
+      return referenceField(field) ? token : withQuoteRelations(text, token);
+    }
     if (field === "id" && context.singletonIds.has(text)) return text;
     if (field === "objectKey") {
       if (context.objectKeys.has(text)) return context.objectKeys.get(text)!;
-      if (!stringMap.has(text)) stringMap.set(text, identityToken(key, "value", text));
-      return stringMap.get(text)!;
+      const mapKey = `objectKey\0${text}`;
+      if (!stringMap.has(mapKey)) stringMap.set(mapKey, identityToken(key, "value", text));
+      return stringMap.get(mapKey)!;
     }
     if (field === "parentKey" || field === "ownerKey") {
       if (!text) return text;
@@ -362,7 +396,8 @@ function sanitizeMapping<T>(value: T, key: Buffer, context: RedactionContext, st
     if (field === "valuePath" || field === "childFields") return text;
     if (field === "resourceId" && text.startsWith("[")) return context.sourceKeys.get(text) || fail("Snapshot composite resource ID has no redaction mapping");
     if (context.paths.has(text) || ATTACHMENT_PATH_FIELDS.has(field) || /^\/attachments\//u.test(text)) {
-      return context.paths.get(text) || fail("Snapshot attachment path has no redaction mapping");
+      const token = context.paths.get(text) || fail("Snapshot attachment path has no redaction mapping");
+      return ATTACHMENT_PATH_FIELDS.has(field) || referenceField(field) ? token : withQuoteRelations(text, token);
     }
     if (ENUM_STRING_KEYS.has(field)) return text;
     if (TIMEZONE_KEYS.has(field)) {
@@ -372,14 +407,21 @@ function sanitizeMapping<T>(value: T, key: Buffer, context: RedactionContext, st
       } catch {}
     }
     if (isValidTemporalValue(field, text)) return text;
-    if (context.ids.has(text)) return context.ids.get(text)!;
+    if (context.ids.has(text)) {
+      const token = context.ids.get(text)!;
+      return referenceField(field) ? token : withQuoteRelations(text, token);
+    }
     if (referenceField(field)) return registerIdentifier(context, key, text);
     if (STRUCTURAL_TIME_KEYS.has(field)) {
       if (isValidTemporalValue(field, text)) return text;
     }
     if (/^(?:version|.*Version|attempt|position|bytes|count|statusCode|schemaVersion)$/u.test(field)) return text;
-    if (!stringMap.has(text)) stringMap.set(text, identityToken(key, "value", text));
-    return stringMap.get(text)!;
+    const mapKey = `value\0${text}`;
+    if (!stringMap.has(mapKey)) {
+      // 用不透明占位符保留真实 markdownText(source).includes(quote) 关系；不存原文，也不注入 inspector 资格结果。
+      stringMap.set(mapKey, withQuoteRelations(text, redactionAtom(key, "value", text, "V")));
+    }
+    return stringMap.get(mapKey)!;
   };
   const visit = (item: unknown, field: string, objectPath: string[]): unknown => {
     if (typeof item === "string") return transform(item, field, objectPath);
@@ -428,9 +470,65 @@ function taskStates(store: JsonRecord, inspector: RuntimeInspector, idKey: Buffe
   }).sort((left, right) => left.id.localeCompare(right.id));
 }
 
+const SAFE_TASK_KINDS = new Set([
+  "annotationShenji", "thoughtAnswer", "followUpAnswer", "thoughtDraft", "thoughtPrompt",
+  "journalAssist", "journalReflection", "chat", "analysis", "recordCompression",
+  "perceptionExtraction", "captureTranscription", "contentImageUnderstanding", "onboardingClaimExtraction"
+]);
+const SAFE_TASK_STATUSES = new Set([
+  "queued", "running", "succeeded", "failed", "stale", "cancelled", "cancelling",
+  "waiting_for_user_model", "waiting_for_budget"
+]);
+const SAFE_INTENT_MATCHES = new Set([
+  "matched", "uninspectable", "input-version-mismatch", "subtarget-version-mismatch", "input-hash-mismatch"
+]);
+const TASK_SEMANTIC_FIELDS = [
+  "kind", "status", "targetOptional", "requiresExistingTarget", "requiresExistingSubtarget",
+  "targetExists", "subtargetExists", "intentMatch", "intentInputVersion", "intentSubtargetVersion", "alreadyAnswered"
+] as const;
+
+function safeTaskEnum(field: "kind" | "status" | "intentMatch", value: unknown): string {
+  const allowed = field === "kind" ? SAFE_TASK_KINDS : field === "status" ? SAFE_TASK_STATUSES : SAFE_INTENT_MATCHES;
+  return typeof value === "string" && allowed.has(value) ? value : "other";
+}
+
+function safeTaskValue(field: typeof TASK_SEMANTIC_FIELDS[number], value: unknown): unknown {
+  if (field === "kind" || field === "status" || field === "intentMatch") return safeTaskEnum(field, value);
+  if (value === null || value === undefined || typeof value === "boolean") return value ?? null;
+  return typeof value === "number" && Number.isFinite(value) ? value : "other";
+}
+
 function assertSameTaskSemantics(before: JsonRecord[], after: JsonRecord[]) {
-  const serialize = (items: JsonRecord[]) => JSON.stringify(items);
-  if (serialize(before) !== serialize(after)) fail("Redaction changed task state, target classification, or effective intent match");
+  const afterById = new Map(after.map(item => [String(item.id || ""), item]));
+  const beforeIds = new Set(before.map(item => String(item.id || "")));
+  const differences: JsonRecord[] = [];
+  for (const source of before) {
+    const taskId = String(source.id || "");
+    const redacted = afterById.get(taskId);
+    if (!redacted) {
+      differences.push({ taskKind: safeTaskEnum("kind", source.kind), sourceStatus: safeTaskEnum("status", source.status), missing: "redacted" });
+      continue;
+    }
+    const changedFields = TASK_SEMANTIC_FIELDS.flatMap(field => Object.is(source[field], redacted[field]) ? [] : [{
+      field,
+      before: safeTaskValue(field, source[field]),
+      after: safeTaskValue(field, redacted[field])
+    }]);
+    if (changedFields.length) differences.push({
+      taskKind: safeTaskEnum("kind", source.kind),
+      sourceStatus: safeTaskEnum("status", source.status),
+      redactedStatus: safeTaskEnum("status", redacted.status),
+      changedFields
+    });
+  }
+  for (const redacted of after) {
+    if (!beforeIds.has(String(redacted.id || ""))) {
+      differences.push({ taskKind: safeTaskEnum("kind", redacted.kind), redactedStatus: safeTaskEnum("status", redacted.status), missing: "source" });
+    }
+  }
+  if (differences.length || before.length !== after.length) {
+    fail(`Redaction changed task state, target classification, or effective intent match; safeDiff=${JSON.stringify({ sourceCount: before.length, redactedCount: after.length, differences })}`);
+  }
 }
 
 function preserveMatchingRequestedIntentHashes(
@@ -548,7 +646,8 @@ async function createSanitizedAccount(
   const sourceStore = persistence.rebuildStoreObjects(sourceMapping);
   const sourceInspector = (await createClosedInspector(root, accountId, {}, clock)).backgroundAi;
   const beforeStates = taskStates(sourceStore, sourceInspector, redactionKey);
-  const redactionContext = createRedactionContext(sourceMapping, redactionKey, sourceInventory);
+  const content = await importFromRoot<{ markdownText(value: string): string }>(root, "src/shared/content/index.mjs");
+  const redactionContext = createRedactionContext(sourceMapping, redactionKey, content.markdownText, sourceInventory);
   const redactedMapping = sanitizeMapping(sourceMapping, redactionKey, redactionContext, stringMap);
   const redactedInventory = sanitizeMapping(sourceInventory, redactionKey, redactionContext, stringMap);
   const redactedAccountId = identityToken(redactionKey, "id", accountId);
@@ -591,7 +690,6 @@ async function snapshot(root: string, outputFile: string) {
   if (!firstAccountIds.length) fail("Source auth snapshot has no users to validate");
   const client = await pgClient(sourceDataUrl);
   const redactionKey = randomBytes(32);
-  const stringMap = new Map<string, string>();
   const accounts: JsonRecord[] = [];
   let serverVersion = "";
   let transactionSnapshot = "";
@@ -617,7 +715,7 @@ async function snapshot(root: string, outputFile: string) {
         inventory,
         Number(account.revision),
         redactionKey,
-        stringMap,
+        new Map<string, string>(),
         timeBaseline
       ));
     }
@@ -1046,6 +1144,10 @@ async function selfTest(root: string) {
   const persistenceMetadata = await importFromRoot<{
     synchronizePersistenceMetadata(before: JsonRecord | null, after: JsonRecord, now: () => string, options: JsonRecord): JsonRecord;
   }>(root, "src/shared/persistence/persistence-metadata.mjs");
+  const content = await importFromRoot<{ markdownText(value: string): string }>(root, "src/shared/content/index.mjs");
+  const annotationResources = await importFromRoot<{
+    annotationResourceSource(store: JsonRecord, resourceType: string, root: JsonRecord, targetKey: string): string;
+  }>(root, "src/app/annotation-resources.mjs");
   const permissionSourceTargetKey = "question:thought-private-root";
   const permissionSourceKey = JSON.stringify([
     "thought", "thought-private-root", "thought-private-root", permissionSourceTargetKey
@@ -1061,7 +1163,7 @@ async function selfTest(root: string) {
       {
         id: "thought-private-root",
         type: "question",
-        content: "private question phrase",
+        content: "**private question phrase** and overlapping question phrase",
         version: 1,
         sourceRef: { type: "capture", id: "capture-private-id", targetKey: "" },
         sourceCaptureId: "capture-private-id",
@@ -1076,7 +1178,12 @@ async function selfTest(root: string) {
           { id: "annotation-note-id", targetKey: "note:note-private-id", quote: "private note quote", text: "private note comment" },
           { id: "annotation-reflection-id", targetKey: "reflection:reflection-private-id", quote: "private reflection quote", text: "private reflection comment" },
           { id: "annotation-transcription-id", targetKey: "transcription", quote: "private transcription quote", text: "private transcription comment" },
-          { id: "annotation-custom-id", targetKey: "private-custom-target", quote: "private custom quote", text: "private custom comment" }
+          { id: "annotation-custom-id", targetKey: "private-custom-target", quote: "private custom quote", text: "private custom comment" },
+          { id: "annotation-overlap-id", targetKey: "question:thought-private-root", quote: "private question", text: "private comment", version: 1 },
+          { id: "annotation-contained-id", targetKey: "question:thought-private-root", quote: "question", text: "private comment", version: 1 },
+          { id: "annotation-overlap-long-id", targetKey: "question:thought-private-root", quote: "question phrase", text: "private comment", version: 1 },
+          { id: "annotation-drift-id", targetKey: "question:thought-private-root", quote: "drifted private quote", text: "private comment", version: 1 },
+          { id: "annotation-empty-quote-id", targetKey: "question:thought-private-root", quote: "", text: "private comment", version: 1 }
         ],
         followUps: [{ id: "followup-private-id", question: "private follow-up", version: 1 }]
       },
@@ -1089,6 +1196,19 @@ async function selfTest(root: string) {
         sourceId: "capture-private-id"
       }
     ],
+    chats: [{
+      id: "annotation-chat-private-id",
+      message: "private chat message",
+      answer: "**chat answer body**",
+      version: 1,
+      annotations: [{ id: "chat-answer-annotation-id", targetKey: "answer", quote: "answer body", text: "private comment", version: 1 }]
+    }],
+    books: [{
+      id: "book-private-id",
+      description: "Book **description details**",
+      version: 1,
+      annotations: [{ id: "book-description-annotation-id", targetKey: "description", quote: "description details", text: "private comment", version: 1 }]
+    }],
     aiTasks: [{
       id: "task-private-id",
       kind: "followUpAnswer",
@@ -1100,6 +1220,15 @@ async function selfTest(root: string) {
       subtargetVersion: 1,
       requestedIntentInputVersion: 1,
       requestedIntentSubtargetVersion: 1
+    }, {
+      id: "annotation-task-private-id",
+      kind: "annotationShenji",
+      resourceType: "thought",
+      targetId: "thought-private-root",
+      subtargetId: "annotation-overlap-id",
+      status: "waiting_for_user_model",
+      inputVersion: 1,
+      subtargetVersion: 1
     }],
     notifications: [{ id: "notification-private-id", taskId: "task-private-id", status: "waiting_for_user_model" }],
     evidencePermissions: [{
@@ -1182,6 +1311,14 @@ async function selfTest(root: string) {
   task.requestedIntentInputHash = initial.intent.inputHash;
   const sourceInspection = inspector.inspectRecoveryIntent(store, task);
   if (sourceInspection.intentMatch !== "matched") fail("Synthetic waiting intent should match before redaction");
+  const annotationTask = (store.aiTasks as JsonRecord[])[1];
+  const annotationInitial = inspector.inspectRecoveryIntent(store, annotationTask);
+  if (annotationInitial.intentMatch !== "matched" || !annotationInitial.intent?.inputHash) {
+    fail("Synthetic annotation intent should match through the real source inspector before redaction");
+  }
+  annotationTask.requestedIntentInputVersion = annotationInitial.intent.inputVersion ?? 0;
+  annotationTask.requestedIntentSubtargetVersion = annotationInitial.intent.subtargetVersion ?? 0;
+  annotationTask.requestedIntentInputHash = annotationInitial.intent.inputHash;
   const hmacKey = randomBytes(32);
   const sourceMapping = persistence.mapStoreObjects("synthetic-account", store);
   const sourceStates = taskStates(store, inspector, hmacKey);
@@ -1193,7 +1330,9 @@ async function selfTest(root: string) {
     sha256: "private-file-hash",
     state: "verified"
   }];
-  const redactionContext = createRedactionContext(sourceMapping, hmacKey, inventory);
+  const redactionContext = createRedactionContext(sourceMapping, hmacKey, content.markdownText, inventory);
+  const repeatedValue = sanitizeMapping({ left: "shared synthetic source", right: "shared synthetic source" }, hmacKey, redactionContext);
+  if (repeatedValue.left !== repeatedValue.right) fail("Repeated free-text values did not receive the same account-local redaction");
   const redactedMapping = sanitizeMapping(sourceMapping, hmacKey, redactionContext);
   const redactedInventory = sanitizeMapping(inventory, hmacKey, redactionContext);
   const databaseOrderVariant = structuredClone(redactedMapping);
@@ -1235,6 +1374,49 @@ async function selfTest(root: string) {
   const redactedEventSource = redactedEvent.sourceRef as JsonRecord;
   const redactedSourceRefs = (redactedStore.evidenceSources as JsonRecord[]).map(item => item.sourceRef as JsonRecord);
   const redactedMessageEventSource = (redactedStore.perceptionEvents as JsonRecord[])[1].sourceRef as JsonRecord;
+  const annotationSourceCases = [
+    { resourceType: "thought", collection: "thoughts", targetKey: `question:${(store.thoughts as JsonRecord[])[0].id}` },
+    { resourceType: "chat", collection: "chats", targetKey: "answer" },
+    { resourceType: "book", collection: "books", targetKey: "description" }
+  ];
+  const sourceTexts: Array<{ source: string; redactedSource: string }> = [];
+  const redactedQuotes = new Map<string, string>();
+  const allQuotes: string[] = [];
+  for (const sourceCase of annotationSourceCases) {
+    const sourceRoot = (store[sourceCase.collection] as JsonRecord[])[0];
+    const redactedRoot = (redactedStore[sourceCase.collection] as JsonRecord[])[0];
+    const source = annotationResources.annotationResourceSource(store, sourceCase.resourceType, sourceRoot, sourceCase.targetKey);
+    const sourceRouteAnnotations = sourceRoot.annotations as JsonRecord[];
+    const redactedRouteAnnotations = redactedRoot.annotations as JsonRecord[];
+    const sourceAnnotationIndex = sourceRouteAnnotations.findIndex(item => item.targetKey === sourceCase.targetKey);
+    if (sourceAnnotationIndex < 0) fail("Synthetic annotation source fixture is missing its requested target key");
+    const redactedTargetKey = String((redactedRouteAnnotations[sourceAnnotationIndex] || {}).targetKey || "");
+    if ((sourceCase.resourceType === "chat" || sourceCase.resourceType === "book")
+      && redactedTargetKey !== sourceCase.targetKey) {
+      fail("Supported chat/book annotation source literal changed during redaction");
+    }
+    const redactedSource = annotationResources.annotationResourceSource(redactedStore, sourceCase.resourceType, redactedRoot, redactedTargetKey);
+    sourceTexts.push({ source, redactedSource });
+    const sourceAnnotations = sourceRoot.annotations as JsonRecord[];
+    const redactedAnnotations = redactedRoot.annotations as JsonRecord[];
+    if (sourceAnnotations.length !== redactedAnnotations.length) fail("Synthetic annotation source lost an annotation during redaction");
+    for (let index = 0; index < sourceAnnotations.length; index += 1) {
+      const quote = String(sourceAnnotations[index].quote ?? "");
+      const redactedQuote = String(redactedAnnotations[index].quote ?? "");
+      if (redactedQuote && !/^[A-Za-z0-9]+$/u.test(redactedQuote)) fail("Synthetic quote placeholder contains Markdown syntax");
+      redactedQuotes.set(quote, redactedQuote);
+      allQuotes.push(quote);
+    }
+  }
+  for (const { source, redactedSource } of sourceTexts) {
+    if (content.markdownText(redactedSource) !== redactedSource) fail("Markdown processing changed a synthetic redacted source placeholder");
+    for (const quote of allQuotes) {
+      const redactedQuote = redactedQuotes.get(quote);
+      if (typeof redactedQuote !== "string" || source.includes(quote) !== redactedSource.includes(redactedQuote)) {
+        fail("Synthetic source/quote inclusion semantics changed after redaction");
+      }
+    }
+  }
   const permissionLifecycle = (redactedMapping.lifecycles as JsonRecord[]).find(item => (
     item.resourceType === "evidencePermission" && item.resourceId === redactedPermission.sourceKey
   ));
@@ -1263,11 +1445,16 @@ async function selfTest(root: string) {
     fail("Semantic source and ordinary payload target keys were not pseudonymized consistently");
   }
   const redactedInspection = redactedInspector.inspectRecoveryIntent(redactedStore, (redactedStore.aiTasks as JsonRecord[])[0]);
+  const redactedAnnotationInspection = redactedInspector.inspectRecoveryIntent(
+    redactedStore,
+    (redactedStore.aiTasks as JsonRecord[]).find(item => item.kind === "annotationShenji")!
+  );
   if (redactedRoot.id !== redactedAnswer.relatedTo
     || redactedCapture.id !== redactedRoot.sourceCaptureId
     || redactedCapture.id !== (redactedRoot.sourceRef as JsonRecord).id
     || (redactedRoot.sourceRef as JsonRecord).targetKey !== ""
     || redactedInspection.intentMatch !== "matched"
+    || redactedAnnotationInspection.intentMatch !== "matched"
     || redactedInspection.target?.exists !== true
     || redactedInspection.target.subtargetExists !== true) {
     fail("Redaction broke a shared source/reference identity or waiting-task target");
@@ -1278,20 +1465,36 @@ async function selfTest(root: string) {
     || !Object.hasOwn(redactedStore, "onboardingV2")) {
     fail("Redaction changed timezone, technical timestamps, or singleton structure");
   }
-  if (!rebuiltRedactedMapping.relations.some(item => item.relation === "thoughtRoot" && item.resolution === "live")
-    || !rebuiltRedactedMapping.relations.some(item => item.relation === "source" && item.resolution === "live")
-    || !rebuiltRedactedMapping.relations.some(item => item.targetKey === null && item.resolution === "historical")
-    || !rebuiltRedactedMapping.relations.some(item => typeof item.targetKey === "string" && Array.isArray(JSON.parse(item.targetKey)))
-    || !rebuiltRedactedMapping.attachmentRefs.length) {
-    fail("Rebuilt relationship graph lost a root/source edge or attachment reference");
+  const graphChecks = {
+    thoughtRoot: rebuiltRedactedMapping.relations.some(item => item.relation === "thoughtRoot" && item.resolution === "live"),
+    source: rebuiltRedactedMapping.relations.some(item => item.relation === "source" && item.resolution === "live"),
+    historical: rebuiltRedactedMapping.relations.some(item => item.targetKey === null && item.resolution === "historical"),
+    compositeTarget: rebuiltRedactedMapping.relations.some(item => typeof item.targetKey === "string" && Array.isArray(JSON.parse(item.targetKey))),
+    attachmentRefs: rebuiltRedactedMapping.attachmentRefs.length > 0
+  };
+  if (Object.values(graphChecks).some(value => !value)) {
+    fail(`Rebuilt relationship graph lost a root/source edge or attachment reference; checks=${JSON.stringify(graphChecks)}`);
   }
   const matchedAfter = redactedInspector.inspectRecoveryIntent(redactedStore, (redactedStore.aiTasks as JsonRecord[])[0]);
   const afterStates = taskStates(redactedStore, redactedInspector, hmacKey, true);
   assertSameTaskSemantics(sourceStates, afterStates);
+  const diagnosticProbe = structuredClone(afterStates);
+  diagnosticProbe[0].targetExists = !diagnosticProbe[0].targetExists;
+  try {
+    assertSameTaskSemantics(afterStates, diagnosticProbe);
+    fail("Task semantic diagnostic probe did not detect a changed safe field");
+  } catch (error) {
+    if (!(error instanceof Error)
+      || !error.message.includes("targetExists")
+      || ["task-private-id", "annotation-task-private-id", "inputHash", "private question phrase"].some(secret => error.message.includes(secret))) {
+      throw error;
+    }
+  }
   if (matchedAfter.intentMatch !== "matched") fail("Redacted task intent did not retain its original matching result");
   const secretText = JSON.stringify({ redactedStore, redactedMapping, redactedInventory });
   if ([
-    "private question phrase", "private answer phrase", "private follow-up", "private singleton answer",
+    "private question phrase", "private question", "private answer phrase", "private follow-up", "private singleton answer",
+    "chat answer body", "description details", "drifted private quote", "private comment",
     "private-image", "private-capture", "private-storage-key", "private-file-hash", "thought-private-root",
     "chat-private-id", "note-private-id", "reflection-private-id", "private-custom-target",
     "private content quote", "private content comment", "private message quote", "private message comment",
