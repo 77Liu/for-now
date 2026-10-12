@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 87,
-  "updated_at": "2026-10-12T12:51:58.604Z",
+  "revision": 88,
+  "updated_at": "2026-10-12T13:02:11.511Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "精准栈确认目标映射不一致发生在启动恢复/等待任务晋级提交；目标删除尚未证明，限定resume及releaseWaiting实际契约修复。",
+  "current_phase": "启动故障明确为无实体绑定生成型任务晋级queued与mapper目标required契约冲突；批准精准mapper/恢复共用契约修复，拦截误标stale旧设计。",
   "state": "BUILDING_DEPLOY_RECOVERY_FIX",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发按限定resume写集修复真实缺失目标恢复，不改mapper/删任务；随后本机必要行为验证和固定新候选/attempt。",
+  "next_action": "主开发在同feat按精确生成/绑定契约重做最小修复，后运行既有映射与恢复专项、独审；不提交NO GO旧设计。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -617,15 +617,17 @@
       "integration_status": "本地六文件代码与既有控制面提交已快进合入develop；feat分支保留。未push/tag/release/deploy。",
       "active_task": {
         "task_id": "v0513-startup-orphan-task-recovery-20261012",
-        "state": "DISPATCH_READY",
+        "state": "REWORK_CONTRACT_APPROVED",
         "owner": "主控",
         "implementer": "主开发",
         "mode": "实际启动失败最小修复",
         "feature_branch": "feat/v0.5.13-save-sync-validation",
         "baseline_sha": "c524efffb493b8bc7a2a380b7c6db38a9b76a658（当前feat额外协调文档保留）",
         "write_set": [
-          "src/app/background-ai.mjs（仅resume及其调用releaseWaiting中的目标一致性/晋级恢复窄点，实际判定安全终态，保持有效任务调度）",
-          "scripts/background-ai-model-gate-regression.mjs（现有本机夹具增加实际孤立任务恢复及映射持久化场景；如不适配先报现有替代位置，不新文件）"
+          "src/app/background-ai.mjs（仅resume/releaseWaiting既有目标恢复与重试顺序；剔除误判生成型任务）",
+          "src/shared/persistence/store-mapping.mjs（精确区分已证实无实体绑定生成型任务与要求已有实体任务的target required契约；保持账户/其他关系校验）",
+          "src/shared/persistence/index.mjs（仅必要公开导出同一目标契约判定，供恢复路径复用，禁止深导入）",
+          "scripts/background-ai-model-gate-regression.mjs（既有夹具验证等待晋级/启动提交真实mapStoreObjects，合法生成与绑定目标失效场景）"
         ],
         "forbidden": [
           "mapper全局放宽required target、删除/重定向用户任务、静默忽略异常/整账户恢复",
@@ -634,10 +636,12 @@
           "控制面、第二工作树、删分支、release/main业务写入"
         ],
         "acceptance": [
-          "先核对实际prepare/intent/promoteWaiting与mapper主目标契约；修复resume→releaseWaiting提交前的真实目标一致性缺口，保留任务安全终态/通知；不预设删除或泛化所有异常为stale。",
-          "不把任意prepare异常等同目标缺失，不隐藏真实存储/权限错误，不全局削弱mapper。",
-          "先实现后用既有纯本机专项验证恢复后的store可通过实际mapStoreObjects、未丢原始任务/无AI调用；只运行受影响验证。",
-          "回执代码差分及证据，由主控审查提交/接入并固定新候选。之后在已有Owner授权下建立新attempt再上线，旧失败保持历史。"
+          "仅thoughtDraft/thoughtPrompt/未绑定journalAssist等已实际证实生成型场景允许未产生实体，不笼统豁免全部queued/running。具体绑定语义按任务工作流真实字段判定；entity-bound任务仍required。",
+          "优先将精确目标契约判定定义在mapper公开导出并由后台恢复复用，避免两个实现漂移；不新增通用平台/文件。若引入实际module依赖需先报告唯一JSON行。",
+          "running内部任务目标检查必须在重试之前，孤立绑定任务保留安全终态/通知，不自动重试或丢弃；有效生成任务正常晋级/排队且mapper成功。",
+          "保持mapper跨账户/非生成型主目标/子目标关系完整性，不吞任意prepare错误，不改规范化/API/schema、不删或重定向用户任务。",
+          "直接实现真实契约，随后仅既有后台专项/实际映射fixture及适用module检查；不跑全系统/付费/重部署。独审NO GO的旧设计不提交。",
+          "主控审查提交接入后新候选/attempt继续上线；旧生产健康，不修改生产数据。"
         ]
       },
       "review_task": {
@@ -1328,6 +1332,12 @@
       "at": "2026-10-12T12:51:58.604Z",
       "reason": "独立只读复核校正“实际目标删除”推断，并补准releaseWaiting晋级位置，不放宽mapper。",
       "previous_snapshot": "7437a40:reports/requirement-coordination-current.json@revision86"
+    },
+    {
+      "revision": 88,
+      "at": "2026-10-12T13:02:11.511Z",
+      "reason": "独审发现合法生成任务误判，批准精确required契约而非全局放宽，保持实体绑定校验与重试顺序。",
+      "previous_snapshot": "7a07383:reports/requirement-coordination-current.json@revision87"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -2228,7 +2238,8 @@
       "chain": "runtime.start→recoverAtStartup→recoverCurrentStorage→backgroundAi.resume→repository.update→mapStoreObjects(required queued/running target)；发生在listen/server.started之前",
       "conclusion": "恢复持久化时目标引用一致性失败是候选启动退出的直接原因；非PG连接/readiness延迟或unit cleanup",
       "privacy": "未记录账户/task id/target id或用户正文；具体业务任务未查询",
-      "boundary_correction": "直接根因是启动恢复提交时queued/running主目标映射无法解析；栈359/457对应releaseWaiting晋级提交。不能据安全栈断言实际目标已删除、启动前已queued或某task类型；还可能目标标识/集合不匹配或晋级校验遗漏。"
+      "boundary_correction": "直接根因是启动恢复提交时queued/running主目标映射无法解析；栈359/457对应releaseWaiting晋级提交。不能据安全栈断言实际目标已删除、启动前已queued或某task类型；还可能目标标识/集合不匹配或晋级校验遗漏。",
+      "contract_resolution": "任务规范化将thoughtDraft/thoughtPrompt与journalAssist设为已知资源类型，但无实体绑定的生成型任务targetId可为requestId；waiting落库允许，晋级queued后mapper一律required导致失败。合法生成目标不能按缺实体标stale。"
     }
   }
 }
