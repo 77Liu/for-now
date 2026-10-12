@@ -932,6 +932,18 @@
           "scripts/system-test.mjs、回归实现本身以外的测试选择/套件扩张、全量测试重构、依赖与锁文件变更"
         ],
         "acceptance": "受影响的包命令在没有旧public/generated产物的干净checkout可先构建再测试；generated仍被.gitignore忽略且不进Git；不增加回归项，不改system-test的测试清单。"
+      },
+      {
+        "revision": 35,
+        "at": "2026-10-12T13:00:00+08:00",
+        "reason": "运行专项入口发现 build:frontend 只完成 TS 编译，通知回归导入的既有个性化任务产物仍需标准运行时装配脚本改写共享模块路径；以 build:runtime 才能从干净 checkout 得到可加载运行产物。",
+        "approved_paths": [
+          "package.json（仅 test:frontend-notifications、test:frontend、test:system 改用 npm run build:runtime 作为前置；test:f3-features 继续通过聚焦入口复用；不改其他命令、回归清单或依赖）"
+        ],
+        "still_forbidden": [
+          "scripts/prepare-generated-runtime.mjs、tsconfig.frontend.json、回归脚本、依赖/锁文件、生产配置、远程/发布操作"
+        ],
+        "acceptance": "干净构建先执行现有标准运行时装配，确保生成的共享前端入口和通知TS产物可加载；不增加测试项，不改测试清单，public/generated 继续被忽略且不进入Git。"
       }
     ],
     "known_previous_test_failure": {
