@@ -1,7 +1,7 @@
 # 集成审计与候选验收 SOP
 
 - SOP 编号：`SOP-DEV-004`
-- 版本：`1.0`
+- 版本：`1.1`
 - 状态：生效
 - 对应阶段：集成审计与验收
 - 进入门禁：相关切片均通过 `G3`
@@ -82,18 +82,13 @@
 [`multi-agent-orchestration.md`](multi-agent-orchestration.md) 执行；集成
 负责人只接收绑定完整 SHA/tree、测试和未覆盖项的交付。
 
-### 步骤 3：运行里程碑系统门
+### 步骤 3：运行 develop → release 有状态全局测试门
 
-按 [`knowledge/system-testing.md`](../knowledge/system-testing.md) 执行：
+按唯一正文 [`knowledge/test-impact-matrix.md`](../knowledge/test-impact-matrix.md#develop--release-有状态全局测试门) 执行：集成后的局部证据保留，固定候选构建后，在脱敏生产快照和隔离本机 PostgreSQL 下完成完整启动、readyz、重启恢复及核心冒烟。具体范围、隔离、证据失效与失败返回只由矩阵维护，不在本 SOP 另列全量命令。
 
-- 影响矩阵命中的专项；
-- `npm run test:system`；
-- 涉及数据库时的 PostgreSQL stable 门；
-- 适用的 Journey Daily、浏览器、恢复、真机或外部服务验证；
-- 安全、依赖和制品检查。
+实际执行命令和工具实现以 `package.json` 及受控实现为准。没有完整服务启动或快照验证回执时，不能把专项、构建或投影检查改记为全局通过，不能冻结 release。尚未实现的门记录 NOT_RUN/BLOCKED，先完成实现及验证。
 
-每个结果绑定当前集成 SHA/tree、环境、命令和产物。测试过程中改动行为代码后，
-旧结果失效并从受影响层级重跑。
+每项结果绑定候选、快照和环境。仅因阶段变化不重跑有效专项；修改相关行为后重新验证受影响层级。
 
 ### 步骤 4：独立审计
 

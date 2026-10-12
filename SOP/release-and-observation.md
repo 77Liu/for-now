@@ -1,6 +1,6 @@
 # 发布与观察 SOP
 
-版本：1.2；生效日期：2026-10-11。本文是发布动作、授权核对、故障续做和关闭的唯一流程正文。风险等级与自动生产动作以[发布自动授权策略](../knowledge/release-authorization-policy.md)为准；适用检查项见 [上线清单](../knowledge/development-release-checklist.md)，分支角色见 [Git 规则](../knowledge/remote-branch-policy.md)。当前状态只由协调者写入[唯一控制面](../knowledge/coordination-control-plane.md)。
+版本：1.3；生效日期：2026-10-12。本文是发布动作、授权核对、故障续做和关闭的唯一流程正文。风险等级与自动生产动作以[发布自动授权策略](../knowledge/release-authorization-policy.md)为准；适用检查项见 [上线清单](../knowledge/development-release-checklist.md)，分支角色见 [Git 规则](../knowledge/remote-branch-policy.md)。当前状态只由协调者写入[唯一控制面](../knowledge/coordination-control-plane.md)。
 
 ## 职责与执行边界
 
@@ -15,10 +15,12 @@
 
 `verify → freeze → authorize → publish → deploy → observe → close`
 
+`verify` 和 `freeze` 之间必须完成[测试影响矩阵的有状态全局测试门](../knowledge/test-impact-matrix.md#develop--release-有状态全局测试门)。该门从 develop 的固定候选、脱敏生产快照及本机隔离 PostgreSQL 验证开始；通过后才允许冻结 release。其正文、范围及证据复用只在矩阵维护。
+
 | 动作 | 输入及必须成立的条件 | 结果回执与状态责任 |
 | --- | --- | --- |
 | `verify` | 确定范围、完整 commit/tree、测试选择依据、已有证据和真实缺口；只补受影响验证及审查 | 执行者提交验证/审查证据，协调者判定通过、退回或未完成；不触发外部写入 |
-| `freeze` | verify 所绑定的代码/依赖/配置/环境没有漂移；制品来源与摘要可追溯 | 协调者固定候选 ID、SHA/tree、制品/配置引用及 release 引用；引用名不替代身份 |
+| `freeze` | 有状态全局测试门已通过；verify 所绑定的代码/依赖/配置/环境没有漂移，制品与快照摘要可追溯 | 协调者固定候选 ID、SHA/tree、制品/配置引用及 release 引用；引用名不替代身份 |
 | `authorize` | Owner 决定的原始引用及覆盖的环境、动作、数据范围、预算、窗口/失效条件、回滚权限均可核对 | 协调者判断本 attempt 是否已在授权内；测试通过不产生权限；超范围只暂停对应动作 |
 | `publish` | 已授权且候选与远端目标一致；审查和保护要求满足 | 推送指定候选引用；需要时创建不可变 RC 标签和候选发行记录；保存远端 SHA、对象 ID/URL，不提前写正式 main |
 | `deploy` | 指定制品和目标环境，实际运行基线已核对；适用备份/恢复、兼容性、开关和回滚条件有效 | 部署固定对象，执行对应冒烟，回传实际运行 SHA/摘要及变更回执；进程启动不等于用户任务成功 |
