@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 83,
-  "updated_at": "2026-10-12T12:40:00.418Z",
+  "revision": 84,
+  "updated_at": "2026-10-12T12:41:50.835Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,8 +13,8 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "固定候选部署Health check failed，回滚执行器报告恢复不健康；停止新部署，优先有界读取实际运行/服务/日志，按现有授权最小恢复。",
-  "state": "DEPLOY_FAILED_RECOVERY_VERIFYING",
+  "current_phase": "旧生产3e94e2f现场恢复健康已确认；新候选c524eff部署失败，主开发只读定位失败窗口根因，未正式发布。",
+  "state": "OLD_PRODUCTION_RESTORED_CANDIDATE_FAILED",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
     "develop": "refs/heads/develop",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发立即只读核对实际应用链接SHA/服务/readyz/脱敏启动日志/env回滚及attempt phase；有依据后在既有授权内最小恢复旧生产，不盲重部署。",
+  "next_action": "主开发读取失败窗口脱敏日志，区分候选启动原因和回滚unit处理问题；真实缺陷返回同feat最小修复/必要验证，固定新候选及新attempt后再部署。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -436,7 +436,7 @@
     },
     {
       "id": "v0.5.13",
-      "state": "DEPLOY_FAILED_RECOVERY_VERIFYING",
+      "state": "CANDIDATE_DEPLOY_FAILED",
       "scope": "保存状态/草稿与失败恢复；发生时间/补录意图；通知列表未读事实、脱敏诊断与恢复操作。仅实现六条锁定需求的未交付行为，不做全站状态或通知平台重构。",
       "requirement_ids": [
         "recvxm0eDZdJED",
@@ -1310,6 +1310,12 @@
       "at": "2026-10-12T12:40:00.418Z",
       "reason": "实际部署与恢复健康检查失败，优先现场状态及应用恢复；不抹除失败或循环重试。",
       "previous_snapshot": "bd2d653:reports/requirement-coordination-current.json@revision82"
+    },
+    {
+      "revision": 84,
+      "at": "2026-10-12T12:41:50.835Z",
+      "reason": "现场确认旧版恢复健康，覆盖执行器中间不健康报告；保留部署失败与失效attempt，禁止盲重试。",
+      "previous_snapshot": "65e8400:reports/requirement-coordination-current.json@revision83"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -1927,7 +1933,7 @@
   "release_attempt": {
     "id": "v0513-production-20261012-01",
     "version": "v0.5.13",
-    "state": "DEPLOY_FAILED_RECOVERY_UNCONFIRMED",
+    "state": "FAILED_OLD_RUNTIME_RESTORED",
     "candidate_sha": "c524efffb493b8bc7a2a380b7c6db38a9b76a658",
     "candidate_tree": "e896c69159e836a53f0b1ca4d6ef1ee4d26c48e7",
     "authorization_source": "owner_decisions.current_release_authorization",
@@ -2152,6 +2158,33 @@
       "exit_code": 1,
       "actual_state": "运行SHA/健康/回滚phase尚待只读核对；不据报错猜测已停机或已恢复",
       "actions": "已停止写入/重试；无正式tag/Release/main晋级回执"
+    },
+    "recovery_receipt": {
+      "at": "2026-10-12T12:41:50.835Z",
+      "sha": "3e94e2f29f5e131f2e98db3b4cb48659ba91fd79",
+      "package_version": "0.5.13.1",
+      "health": {
+        "state": "active/running",
+        "readyz": 200,
+        "restarts": 0,
+        "exec_main_status": 0
+      },
+      "env_mode": "0600",
+      "secret_present": true,
+      "webhook_present": true,
+      "old_notification_flag": 1,
+      "new_notification_flag": 1,
+      "compression_env": "4/1/16/4",
+      "temporary_rollback_directory": false,
+      "fence": {
+        "rollback_attempt": "81f4f4a4f9b198b87ef24eaefc07b67e",
+        "candidate": "旧3e94e2f",
+        "baseline": "c524eff",
+        "action": "rollback",
+        "phase": "invalidated"
+      },
+      "conclusion": "旧生产现场恢复已确认；候选尝试失效，不能复用原批准attempt直接重部署",
+      "source": "主开发部署后只读实际状态回执"
     }
   }
 }
