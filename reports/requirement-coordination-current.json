@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 53,
-  "updated_at": "2026-10-12T15:44:19+08:00",
+  "revision": 54,
+  "updated_at": "2026-10-12T15:46:00+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -41,7 +41,7 @@
     ],
     "canonical_worktree": "/Users/bytedance/Documents/Codex/个人成长追踪",
     "canonical_worktree_branch": "feat/v0.5.13-save-sync-validation",
-    "canonical_worktree_head": "9c65dd68f7bc5125969dfbc6a4200b12cd039b5c（根目录唯一工作树；rev52控制面状态点）",
+    "canonical_worktree_head": "b4222d97d057c19e6efd5205344a05d305ae19ea（根目录唯一工作树；路由时间修复候选，行为partial）",
     "archived_worktree": {
       "path": "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/develop",
       "branch": "feat/v0.5.13.1-stability",
@@ -85,7 +85,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发仅修复普通路由重绘不应重置#chain-datetime手动草稿：从renderDate通用重绘中移除该输入的无条件reset；首次安装/成功提交/明确取消等现有显式重置仍保留。修改后做影响范围检查和最小验证；不声称已确认用户实际过去日期根因。",
+  "next_action": "主控只读审查发生时间次要入口需求reczz28K9ceTaiW4：确认桌面/移动布局的实际入口文本、可见性和触屏尺寸是否已有有效实现；不跑全站UI或新增测试。另P0日期反馈仍待正确Feishu个人身份后核对，不能据源代码或本次部分修复关闭。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -97,12 +97,12 @@
   ],
   "last_check": {
     "remote_refs": "2026-10-11T12:07:35Z 已通过 git ls-remote --heads/tags 只读核验；无远程写入",
-    "worktrees": "2026-10-12T15:44:19+08:00：仅根目录工作树，feat/v0.5.13-save-sync-validation@9c65dd6；develop@c537618；无并行工作树。",
+    "worktrees": "2026-10-12T15:46:00+08:00：仅根目录一个工作树，feat/v0.5.13-save-sync-validation@b4222d9；develop@c537618；无第二工作树。",
     "platform_protection": "Gitee UI只读核验：保护分支规则0条、保护标签不可用、推送限制未启用",
     "remote_write": "本轮未执行",
     "release_rollback_rehearsal": "本地隔离模拟全部通过；无远端命令",
     "budget_alerts": "本地护栏回归通过；当前生产配置与告警快照缺失，保持阻断",
-    "candidate_integration": "未读零值修复3cf9c3b与失败task.error界面脱敏77a8793均仅在本地feat候选；前者frontend-basic专项通过；后者frontend typecheck/build、prepare-generated-runtime和personalized-ai-task-ui专项通过。未合入develop、未推送/发布/部署。",
+    "candidate_integration": "3cf9c3b未读零值、77a8793失败任务提示脱敏均各自局部专项通过；b4222d9路由时间保持只过语法/diff，新增UI断言未执行；三者均尚未合入develop。无远程操作。",
     "alert_incident": {
       "alert_at": "2026-10-12T05:01:39.769Z",
       "recovered_at": "2026-10-12T05:06:39.868Z",
@@ -853,7 +853,7 @@
       "只有截图或没有复现的未读数问题不据此宣称修复；先保留PARTIAL。"
     ],
     "external_actions": "无远端写、发布、部署、生产写或手工付费调用；不恢复已暂停自动化。",
-    "current_status": "BUILDING_LOCAL_ONLY；TS监控源码与失败提示脱敏已完成；通知零值修复3cf9c3b与task.error提示修复77a8793均在feat候选且对应专项通过。时间源码核对确认：全新thought默认now且手动值保存语义存在，但P0原反馈记录尚未核对。另已定位独立真实缺口：home-runtime.renderDate对#chain-datetime每次路由渲染无条件reset；改动将只保留该字段现状，显式提交/取消reset不变。rev53锁定一个运行时文件和既有UI场景断言。Feishu当前身份OpenID与本机配置不符，未读原始用户记录；P0因果仍未确认。无远端/生产/付费操作。",
+    "current_status": "BUILDING_LOCAL_ONLY；已提交未读零值3cf9c3b、失败task.error界面脱敏77a8793。路由重绘manual日期丢失由b4222d9修复：仅renderDate不再reset #chain-datetime，提交/取消显式reset保留；修改文件语法与diff检查通过。新加的既有UI场景断言未运行；全UI前次在2658 capture断言提前失败，因此此切片行为验证PARTIAL、未合入develop。P0实际日期记录仍因飞书身份不匹配不能读取；当前验证身份OpenID与个人账号技能配置不符，未发起记录读取或其他账号切换。无远端/生产/付费操作。",
     "version_requirement_count": {
       "minimum": 3,
       "maximum": 10,
@@ -1264,22 +1264,19 @@
     "candidate_tree_at_revision33": "782451bf72f0e7ad941414d085957b8b9fefdb72",
     "feature_candidate": {
       "branch": "feat/v0.5.13-save-sync-validation",
-      "commit": "77a8793eaea9b6474b74afe334bced4caae5fa99",
-      "tree": "3ecae2632e062ce3203c10a0b39e089a43f8ab15",
-      "integration": "尚未合入develop；包含未读零值修复及失败task.error界面脱敏两个已验证本地切片。",
+      "commit": "b4222d97d057c19e6efd5205344a05d305ae19ea",
+      "tree": "8c0a21a3bae16dac0a33ab4fa566373f36424531",
+      "integration": "未合入develop；当前feat候选含多个已通过局部专项切片，路由手动时间保持切片因浏览器目标未执行仍PARTIAL。",
       "next_scope": {
-        "requirement_id": "reczz28K9ceTa0pY",
+        "requirement_id": "reczz28K9ceTaiW4",
         "related_ids": [
           "reczz28K9ceTZDnd",
-          "reczz28K9ceTaiW4"
+          "reczz28K9ceTa0pY"
         ],
         "branch": "feat/v0.5.13-save-sync-validation",
-        "baseline": "9c65dd68f7bc5125969dfbc6a4200b12cd039b5c",
-        "write_set": [
-          "public/frontend/app/runtime/home-runtime.mjs（仅renderDate通用重绘不reset #chain-datetime；保留显式初始化/提交/取消reset）",
-          "scripts/ui-regression.mjs（仅既有occurred-mode用例加入route离开/返回保留manual模式和值的断言）"
-        ],
-        "status": "已冻结；仅修复源码已确认的路由重绘重置，不推断P0实际反馈根因。"
+        "baseline": "b4222d97d057c19e6efd5205344a05d305ae19ea",
+        "write_set": [],
+        "status": "主控只读核对时间入口桌面/移动源码；P0反馈需正确Feishu身份独立核验。"
       }
     }
   },
