@@ -363,7 +363,13 @@ function createRedactionContext(
   return context;
 }
 
-function sanitizeMapping<T>(value: T, key: Buffer, context: RedactionContext, stringMap = new Map<string, string>()): T {
+function sanitizeMapping<T>(
+  value: T,
+  key: Buffer,
+  context: RedactionContext,
+  stringMap = new Map<string, string>(),
+  preserveTechnicalDigests = false
+): T {
   const referenceField = (field: string) => IDENTIFIER_KEYS.has(field) || /(?:^|[A-Z])(?:Id|ID)$/u.test(field);
   const withQuoteRelations = (text: string, token: string): string => {
     const normalizedText = context.markdownText(text);
@@ -373,6 +379,11 @@ function sanitizeMapping<T>(value: T, key: Buffer, context: RedactionContext, st
     return `${token}${includedQuoteTokens.join("")}`;
   };
   const transform = (text: string, field: string, objectPath: string[]): string => {
+    if (preserveTechnicalDigests && field === "sha256") {
+      if (!/^[a-f0-9]{64}$/u.test(text)) fail("Source attachment digest violates the PostgreSQL inventory contract");
+      // 技术摘要只做定长元数据脱敏，不能套用正文占位符或附加引文关系 token。
+      return createHmac("sha256", key).update(`attachment-inventory\0sha256\0${text}`).digest("hex");
+    }
     if (!text) return text;
     // 引文使用独立占位符，避免普通文本缓存或身份映射改变引用字段语义。
     if (field === "quote" && context.annotationQuoteTokens.has(text)) {
@@ -658,7 +669,7 @@ async function createSanitizedAccount(
   const content = await importFromRoot<{ markdownText(value: string): string }>(root, "src/shared/content/index.mjs");
   const redactionContext = createRedactionContext(sourceMapping, redactionKey, content.markdownText, sourceInventory);
   const redactedMapping = sanitizeMapping(sourceMapping, redactionKey, redactionContext, stringMap);
-  const redactedInventory = sanitizeMapping(sourceInventory, redactionKey, redactionContext, stringMap);
+  const redactedInventory = sanitizeMapping(sourceInventory, redactionKey, redactionContext, stringMap, true);
   const redactedAccountId = identityToken(redactionKey, "id", accountId);
   const sanitizedStore = persistence.rebuildStoreObjects(redactedMapping);
   const sanitizedInspector = (await createClosedInspector(root, redactedAccountId, {}, clock)).backgroundAi;
@@ -1457,19 +1468,34 @@ async function selfTest(root: string) {
   const hmacKey = randomBytes(32);
   const sourceMapping = persistence.mapStoreObjects("synthetic-account", store);
   const sourceStates = taskStates(store, inspector, hmacKey);
+  const sourceAttachmentDigest = createHash("sha256").update("synthetic attachment bytes").digest("hex");
   const inventory: JsonRecord[] = [{
     path: "/attachments/private-image.png",
     storage: "local",
     objectKey: "private-storage-key",
     bytes: 4096,
-    sha256: "private-file-hash",
+    sha256: sourceAttachmentDigest,
     state: "verified"
+  }, {
+    path: "/attachments/removed-image.png",
+    storage: "local",
+    objectKey: "removed-storage-key",
+    bytes: null,
+    sha256: null,
+    state: "missing_cleanup"
   }];
   const redactionContext = createRedactionContext(sourceMapping, hmacKey, content.markdownText, inventory);
   const repeatedValue = sanitizeMapping({ left: "shared synthetic source", right: "shared synthetic source" }, hmacKey, redactionContext);
   if (repeatedValue.left !== repeatedValue.right) fail("Repeated free-text values did not receive the same account-local redaction");
   const redactedMapping = sanitizeMapping(sourceMapping, hmacKey, redactionContext);
-  const redactedInventory = sanitizeMapping(inventory, hmacKey, redactionContext);
+  const redactedInventory = sanitizeMapping(inventory, hmacKey, redactionContext, new Map(), true);
+  const redactedAttachmentDigest = String(redactedInventory[0].sha256 || "");
+  if (!/^[a-f0-9]{64}$/u.test(redactedAttachmentDigest) || redactedAttachmentDigest === sourceAttachmentDigest) {
+    fail("Synthetic attachment digest was not redacted to a distinct lower-case SHA-256 value");
+  }
+  if (redactedInventory[1].sha256 !== null || redactedInventory[1].state !== "missing_cleanup") {
+    fail("Synthetic missing-cleanup inventory null values changed during redaction");
+  }
   const databaseOrderVariant = structuredClone(redactedMapping);
   for (const key of ["fields", "objects", "relations", "attachmentRefs", "lifecycles", "idempotency"] as const) {
     databaseOrderVariant[key].reverse();
@@ -1627,10 +1653,11 @@ async function selfTest(root: string) {
   }
   if (matchedAfter.intentMatch !== "matched") fail("Redacted task intent did not retain its original matching result");
   const secretText = JSON.stringify({ redactedStore, redactedMapping, redactedInventory });
+  if (secretText.includes(sourceAttachmentDigest)) fail("Synthetic redaction retained the source attachment digest");
   if ([
     "private question phrase", "private question", "private answer phrase", "private follow-up", "private singleton answer",
     "chat answer body", "description details", "drifted private quote", "private comment",
-    "private-image", "private-capture", "private-storage-key", "private-file-hash", "thought-private-root",
+    "private-image", "private-capture", "private-storage-key", "thought-private-root",
     "chat-private-id", "note-private-id", "reflection-private-id", "private-custom-target",
     "private content quote", "private content comment", "private message quote", "private message comment",
     "private note quote", "private note comment", "private reflection quote", "private reflection comment",

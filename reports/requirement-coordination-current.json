@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 117,
-  "updated_at": "2026-10-12T16:31:41.684Z",
+  "revision": 120,
+  "updated_at": "2026-10-12T16:42:15.661Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -9,18 +9,18 @@
     "write_authority": "唯一维护者；必须经coordination:update入口更新"
   },
   "rule_baseline": {
-    "commit": "d3b3042cb7216a6fe602a0873ccee64de0e2889b",
+    "commit": "22c3ffef4a22da5baa5ceb69720a3213700d84a1",
     "effective_date": "2026-10-13",
     "source": "PROJECT_RULES.md与knowledge/coordination-control-plane.md v2.0"
   },
   "work_mode": {
     "status": "RUNNING",
-    "scope": "继续0.5.13，只执行本地代码修复与只读快照验证；生产写/发布仍等待质量门"
+    "scope": "继续0.5.13附件digest脱敏格式修复与生产只读快照本机启动；本阶段禁止发布/生产写/手动付费"
   },
   "iteration": {
     "id": "v0.5.13",
     "status": "ACTIVE",
-    "phase": "新控制面已迁移并核对；0.5.13本机启动门仍因附件digest格式阻断"
+    "phase": "已独立确认附件digest格式缺陷，返回同一feat修复"
   },
   "scope": {
     "description": "保存状态/草稿与失败恢复；发生时间/补录意图；通知列表未读事实、脱敏诊断与恢复操作。仅实现六条锁定需求的未交付行为，不做全站状态或通知平台重构。",
@@ -46,22 +46,30 @@
       "手工重复付费证明"
     ]
   },
-  "active_tasks": [],
-  "candidate": {
-    "sha": "739dd1b8ed073f9d601a033a82e6e3455ff02c09",
-    "tree": "00928c2e40c9da405d6cad6c2669a58ee85a5764",
-    "status": "STARTUP_GATE_IMPORT_BLOCKED",
-    "release_frozen": false,
-    "quality_gate": {
-      "snapshot": "PASS",
-      "local_import": "FAIL",
-      "runtime_start": "NOT_RUN",
-      "readyz": "NOT_RUN",
-      "restart_recovery": "NOT_RUN",
-      "core_smoke": "NOT_RUN"
-    },
-    "source": "事件:v0.5.13-d57b041b-ab0a-4aea-b17e-9a424b2e3f61"
-  },
+  "active_tasks": [
+    {
+      "id": "v0513-snapshot-digest-format-20261013",
+      "owner": "主控",
+      "implementer_thread": "01a11afe-73d2-7013-91d5-cd473c4d7115",
+      "coordinator": "主控",
+      "mode": "单脚本实现",
+      "branch": "feat/v0.5.13-save-sync-validation",
+      "baseline_sha": "22c3ffef4a22da5baa5ceb69720a3213700d84a1",
+      "write_set": [
+        "scripts/release-state-startup-gate.mts（仅sha256保形脱敏及既有自测库存digest真实格式）"
+      ],
+      "forbidden": [
+        "控制面/事件写入",
+        "新文件/框架/无关业务代码",
+        "生产读取或写入",
+        "部署或付费",
+        "绕过或删减清单行/SQL约束/状态断言"
+      ],
+      "status": "REVIEWED_PENDING_COMMIT",
+      "acceptance": "保留117清单行语义；合法sha256采用键控HMAC纯64小写hex，不保留原hash且不追加正文token；null缺失状态保持；开发者先自查schema→脱敏→导入链，相关检查后由主控亲自审查。"
+    }
+  ],
+  "candidate": null,
   "authorization": {
     "source": {
       "at": "2026-10-12T10:50:30.512Z",
@@ -104,7 +112,7 @@
   ],
   "next_action": {
     "owner": "主控",
-    "action": "按新协议派发单脚本附件sha256保形修复，再完成线上脱敏快照本机实际启动",
+    "action": "提交摘要保形修复及对应控制面/事件，接入develop并固定新候选运行真实门",
     "status": "READY"
   },
   "runtime": {
