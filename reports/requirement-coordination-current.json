@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 112,
-  "updated_at": "2026-10-12T15:45:55.755Z",
+  "revision": 113,
+  "updated_at": "2026-10-12T15:49:59.971Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md及其引用的唯一正文；新增开发者自查与主控接入审查责任正文在SOP/multi-agent-orchestration.md#开发者自查与主控接入审查，功能开发/集成SOP引用，原有状态门及授权继续适用。"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "引用关系脱敏修复已由主控独立代码审查并接入develop，固定新候选继续真实线上快照与隔离本机启动验证。",
+  "current_phase": "执行前审查发现隔离PG清理缺口；真实采集未开始，限定修正生命周期后再固定候选。",
   "state": "GLOBAL_STARTUP_GATE_EXECUTING",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发只读采集生产脱敏快照，执行隔离本机PG真实启动、readyz、重启恢复与无付费核心冒烟；运行期间锁定HEAD/tree，不提交或部署。",
+  "next_action": "主开发单脚本修复PG启动前登记、停止失败不吞掉、清理后才输出PASS；同时复用已核验服务器内PG_BACKUP私密注入入口，不需Owner新凭据。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -1666,6 +1666,12 @@
       "at": "2026-10-12T15:45:55.755Z",
       "reason": "完成独立接入审查后立即续跑真实门，目标是生产脱敏状态下本地实际启动成功。",
       "previous_snapshot": "3c32f1b:reports/requirement-coordination-current.json@revision111"
+    },
+    {
+      "revision": 113,
+      "at": "2026-10-12T15:49:59.971Z",
+      "reason": "具体清理契约问题在真实运行前被发现并退回单脚本修正；不凭只读角色本机缺失误报需要Owner。",
+      "previous_snapshot": "f04375e:reports/requirement-coordination-current.json@revision112"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -2571,13 +2577,13 @@
       "related_contract": "历史补充recordCompression output ID对应singleton，需同一精确optional policy；daily实际markQueued在tasks.create/promote分支持久化前调用，继续严格要求实体。"
     },
     "pre_release_startup_gate": {
-      "status": "EXECUTING_AFTER_QUOTE_SEMANTICS_FIX",
+      "status": "BLOCKED_LOCAL_CLEANUP_CONTRACT",
       "source": "Owner本对话：本地合并启动检查及生产快照本地启动后再进release门",
       "scope": "本次重新发布前补齐最终累计候选实际runtime.start/监听/readyz/重启恢复，不能以projection专项代替",
       "snapshot": "生产只读一致性状态快照；服务器端脱敏，保留任务类型/状态与目标关系/singleton/schema，排除正文/原图/凭据，绑定采集时间/运行SHA/摘要",
       "environment": "隔离本机PG/临时数据目录，真实候选构建；无生产连接/网络provider/通知/定时付费",
       "proof": "固定候选tree+快照摘要+运行环境+实际启动/健康/恢复与核心无付费smoke回执",
-      "next": "主开发只读采集生产脱敏快照，执行隔离本机PG真实启动、readyz、重启恢复与无付费核心冒烟；运行期间锁定HEAD/tree，不提交或部署。",
+      "next": "主开发单脚本修复PG启动前登记、停止失败不吞掉、清理后才输出PASS；同时复用已核验服务器内PG_BACKUP私密注入入口，不需Owner新凭据。",
       "distinction": "每feat按受影响验证；最终develop候选必须基本整体启动，完整功能全量测试按矩阵去重执行，不每merge重复system all",
       "rule_source": "knowledge/test-impact-matrix.md#develop--release-有状态全局测试门",
       "rule_commit": "04befab",
@@ -2647,6 +2653,17 @@
           "production_writes": false,
           "external_effects": 0,
           "cleanup": "本轮远端临时目录已移除，未下载bundle，本地tracked clean，既有未跟踪证据保留。"
+        },
+        {
+          "at": "2026-10-12T15:49:59.971Z",
+          "candidate_sha": "f04375ead1d5e9f0b00958636337d05f9bab56da",
+          "candidate_tree": "d37118d54f37d0e22d40833eabb9b9e41b18416a",
+          "stage": "实际采集前核对",
+          "failure": "执行者误以为本机必须注入来源URL；独审发现stopLocalPostgres吞停止失败，主控确认且PASS先于finally输出。",
+          "production_reads": false,
+          "local_pg_started": false,
+          "bundle_created": false,
+          "production_writes": false
         }
       ],
       "target_key_census": {
@@ -2721,6 +2738,15 @@
           "integration": "ff接入develop，保留feat，唯一工作树，生成产物及原用户未跟踪证据未提交。",
           "scope": "仅启动门脚本，无生产访问或业务代码修改。"
         }
+      },
+      "cleanup_fix_scope": {
+        "write_set": [
+          "scripts/release-state-startup-gate.mts"
+        ],
+        "confirmed_by_coordinator": "主控读取startLocalPostgres/stopLocalPostgres/verify实际代码，停止错误被catch忽略、启动函数返回前失败pgState缺失、PASS输出早于最终清理。",
+        "implementation": "发起pg_ctl start前登记隔离cluster状态；停止失败必须报告并保留目录，不吞失败；最终成功结果仅在服务/PG停止及临时目录清理成功后输出。",
+        "source_access": "沿用生产服务器既有env PG_BACKUP只读注入，不用本机schema/owner入口，不输出值，不要求Owner新token。",
+        "verification": "编辑后自查生命周期；strict typecheck/build+self-test/diff，实际PG停止清理由后续真实门核验，不扩通用框架。"
       }
     }
   }
