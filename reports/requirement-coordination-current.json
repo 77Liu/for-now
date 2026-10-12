@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 84,
-  "updated_at": "2026-10-12T12:41:50.835Z",
+  "revision": 85,
+  "updated_at": "2026-10-12T12:47:51.754Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "旧生产3e94e2f现场恢复健康已确认；新候选c524eff部署失败，主开发只读定位失败窗口根因，未正式发布。",
+  "current_phase": "旧生产稳定，回滚unit报错已证实非根因；只读定位候选监听前exit1窗口非结构化异常。",
   "state": "OLD_PRODUCTION_RESTORED_CANDIDATE_FAILED",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发读取失败窗口脱敏日志，区分候选启动原因和回滚unit处理问题；真实缺陷返回同feat最小修复/必要验证，固定新候选及新attempt后再部署。",
+  "next_action": "主开发精确窗口私密收集stdout/stderr并给脱敏异常类/stack文件行，依据真实失败返回feat最小修复；不测试找根因或盲重部署。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -1316,6 +1316,12 @@
       "at": "2026-10-12T12:41:50.835Z",
       "reason": "现场确认旧版恢复健康，覆盖执行器中间不健康报告；保留部署失败与失效attempt，禁止盲重试。",
       "previous_snapshot": "65e8400:reports/requirement-coordination-current.json@revision83"
+    },
+    {
+      "revision": 85,
+      "at": "2026-10-12T12:47:51.754Z",
+      "reason": "备份checksum通过；纠正not-found推断，要求定位实际启动exit1后再确定修复写集。",
+      "previous_snapshot": "6d94662:reports/requirement-coordination-current.json@revision84"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -2137,7 +2143,7 @@
       "pg_accounts": 4,
       "staged_attachments": 117,
       "references": 111,
-      "checksum": "文件存在，实际匹配待主开发核验",
+      "checksum": "sha256sum -c PASS（主开发实际核验）",
       "success_marker": "已刷新",
       "process": "已退出",
       "health": {
@@ -2185,6 +2191,15 @@
       },
       "conclusion": "旧生产现场恢复已确认；候选尝试失效，不能复用原批准attempt直接重部署",
       "source": "主开发部署后只读实际状态回执"
+    },
+    "failure_review": {
+      "at": "2026-10-12T12:47:51.754Z",
+      "availability": "旧3e94e2f active/running、Result success、readyz200、exit0、NRestarts0，无恢复写入必要",
+      "candidate_window": "12:38:52Z候选预算恢复event；无候选server.started/结构化错误；systemd两次exit1，12:39:20Z旧版server.started",
+      "rollback_correction": "rollback set +e下not-found disable/stop并未提前退出，随后还原symlink并restart/readyz；不能把unit cleanup报错当根因。",
+      "root_cause": "未证实，generic Health check failed只表示门失败。PG/启动/延迟不作结论。",
+      "diagnostic_gap": "此前筛安全错误码/priority<=3未得到证据；还需精确窗口非结构化stdout/stderr异常和栈，Node stderr可能以info收录。",
+      "proposed_readyz_logging": "暂不批准，先排查监听前exit1实际来源；不因猜测增日志/测试或重部署。"
     }
   }
 }
