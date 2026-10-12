@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 69,
-  "updated_at": "2026-10-12T10:50:30.512Z",
+  "revision": 70,
+  "updated_at": "2026-10-12T10:52:09.571Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -627,7 +627,8 @@
           "src/config/index.mjs（只统一既定四倍额度与回填读取/校验，不复制多套变量）",
           "deploy/for-now.env.example（仅确认对应配置/开关说明）",
           "scripts/runtime-infrastructure-regression.mjs（复用必要配置边界用例，不扩测试矩阵）",
-          "src/modules/record-compressions/contract.mjs（仅既定回填上限4及公共导出复用，禁止多套冲突常量）"
+          "src/modules/record-compressions/contract.mjs（仅既定回填上限4及公共导出复用，禁止多套冲突常量）",
+          "knowledge/module-boundaries.json（只登记config到domain.record-compressions实际公共常量依赖，不放宽其他边界）"
         ],
         "objective": "当前env示例4/1/16/4，但校验上限1/.25/4、回填截断2。接回Owner既定每日4元/单次1元/每日16次/每轮4日期，使有效env可实际启用。检查旧3e94e2f与当前通知TS接线，保留已有开始/完成费用通知，禁止盲cherry-pick旧MJS实现。若有其他实际硬上限阻挡先回报唯一最小扩写位置。",
         "forbidden": [
@@ -1183,6 +1184,12 @@
       "at": "2026-10-12T10:50:30.512Z",
       "reason": "Owner授权累计v0.5.13补接四倍配置后push/tag/Release/上线；确认scan另有contract截断2，增加唯一窄点写集。",
       "previous_snapshot": "008d99f:reports/requirement-coordination-current.json@revision68"
+    },
+    {
+      "revision": 70,
+      "at": "2026-10-12T10:52:09.571Z",
+      "reason": "唯一回填常量复用需要登记config实际依赖，批准唯一边界行并补模块检查。",
+      "previous_snapshot": "1b2d6ab:reports/requirement-coordination-current.json@revision69"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
