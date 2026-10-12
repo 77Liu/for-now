@@ -1542,7 +1542,7 @@ function installGateEnvironment(tempRoot: string, urls: { data: string; auth: st
     FEISHU_ALERT_WEBHOOK: "",
     FEISHU_ALERT_SECRET: "",
     DEEPSEEK_API_KEY: "",
-    ATTACHMENT_STORAGE_MODE: "local"
+    ATTACHMENT_STORAGE: "local"
   });
   globalThis.fetch = async (input, init) => {
     const target = new URL(input instanceof Request ? input.url : input.toString());
@@ -1688,11 +1688,42 @@ async function snapshotHasNoPendingAttachmentCleanup(root: string, snapshotValue
   return true;
 }
 
-function createStartupEffectObserver(snapshotProvesEmptyCleanupQueue: boolean, counts: Record<string, number>) {
+function usesOnlyIsolatedPostgres(urls: { data: string; auth: string; budget: string }, port: number): boolean {
+  const expected = [
+    { value: urls.data, user: "runtime_data" },
+    { value: urls.auth, user: "runtime_auth" },
+    { value: urls.budget, user: "runtime_budget" }
+  ];
+  return expected.every(({ value, user }) => {
+    try {
+      const parsed = new URL(value);
+      return parsed.protocol === "postgresql:"
+        && parsed.hostname === "127.0.0.1"
+        && Number(parsed.port) === port
+        && parsed.pathname === "/startup_gate"
+        && decodeURIComponent(parsed.username) === user
+        && !parsed.search
+        && !parsed.hash;
+    } catch {
+      return false;
+    }
+  });
+}
+
+function createStartupEffectObserver(
+  snapshotProvesEmptyCleanupQueue: boolean,
+  isolatedPostgresOnly: boolean,
+  counts: Record<string, number>
+) {
   return (kind: string, operation: string) => {
     // 只放行真实的空队列恢复调用。快照结构不完整或队列非空时仍在函数执行前拒绝。
     if (kind === "media" && operation === "resumeAttachmentCleanup" && snapshotProvesEmptyCleanupQueue) {
       counts.emptyCleanupResumeCalls = (counts.emptyCleanupResumeCalls || 0) + 1;
+      return;
+    }
+    // 仅在本门强制绑定 loopback 临时 PostgreSQL、且local attachment配置生效时放行账户级清单读取。
+    if (kind === "media" && operation === "listAttachmentInventory" && isolatedPostgresOnly) {
+      counts.postgresAttachmentInventoryReads = (counts.postgresAttachmentInventoryReads || 0) + 1;
       return;
     }
     counts[kind] = (counts[kind] || 0) + 1;
@@ -1728,6 +1759,7 @@ async function verify(root: string, snapshotFile: string) {
   let operationFailurePhase = "local PostgreSQL startup";
   let phase = operationFailurePhase;
   let passReceipt: JsonRecord | null = null;
+  let inventoryReadsDuringSave = 0;
   const stopActiveRuntime = async () => {
     const runtimeToStop = runtimeInstance;
     runtimeInstance = null;
@@ -1763,12 +1795,21 @@ async function verify(root: string, snapshotFile: string) {
       fail("Imported recovery task statuses, targets, or intent matches differ from the sanitized snapshot");
     }
     const testPort = await freeTcpPort();
+    const urls = {
+      data: pgState.url("runtime_data"),
+      auth: pgState.url("runtime_auth"),
+      budget: pgState.url("runtime_budget")
+    };
+    if (!usesOnlyIsolatedPostgres(urls, pgState.port)) {
+      fail("Core attachment-inventory reads require the three isolated loopback PostgreSQL databases");
+    }
     const gateCounts: Record<string, number> = {
       dispatchHeld: 0,
       provider: 0,
       outbound: 0,
       media: 0,
-      emptyCleanupResumeCalls: 0
+      emptyCleanupResumeCalls: 0,
+      postgresAttachmentInventoryReads: 0
     };
     const gate: StartupGatePort = {
       tempRoot,
@@ -1778,12 +1819,7 @@ async function verify(root: string, snapshotFile: string) {
         gateCounts[`dispatch_${kind}`] = (gateCounts[`dispatch_${kind}`] || 0) + 1;
         return null;
       },
-      observeEffect: createStartupEffectObserver(snapshotProvesEmptyCleanupQueue, gateCounts)
-    };
-    const urls = {
-      data: pgState.url("runtime_data"),
-      auth: pgState.url("runtime_auth"),
-      budget: pgState.url("runtime_budget")
+      observeEffect: createStartupEffectObserver(snapshotProvesEmptyCleanupQueue, true, gateCounts)
     };
     phase = "first runtime startup";
     const firstResumeCallsBeforeStart = gateCounts.emptyCleanupResumeCalls;
@@ -1826,12 +1862,17 @@ async function verify(root: string, snapshotFile: string) {
     const marker = `startup-gate-${randomBytes(12).toString("hex")}`;
     const now = new Date().toISOString();
     phase = "authenticated save round-trip";
+    const inventoryReadsBeforeSave = gateCounts.postgresAttachmentInventoryReads;
     const save = await fetchJson(`${second.baseUrl}/api/thoughts`, {
       method: "POST",
       headers,
       body: JSON.stringify({ type: "question", content: marker, occurredAt: now, occurredOn: now.slice(0, 10) })
     });
     if (save.response.status !== 201) fail(`Authenticated save round-trip write failed (${save.response.status})`);
+    inventoryReadsDuringSave = gateCounts.postgresAttachmentInventoryReads - inventoryReadsBeforeSave;
+    if (inventoryReadsDuringSave <= 0) {
+      fail("Authenticated save did not perform an account-scoped PostgreSQL attachment-inventory read");
+    }
     phase = "authenticated save persistence read";
     const stateAfter = await fetchJson(`${second.baseUrl}/api/state`, { headers });
     if (!stateAfter.response.ok || !stateAfter.body.includes(marker)) fail("Authenticated save/read round trip did not persist");
@@ -1862,6 +1903,8 @@ async function verify(root: string, snapshotFile: string) {
       heldDispatches: gateCounts.dispatchHeld,
       forbiddenEffects: { provider: gateCounts.provider, outbound: gateCounts.outbound, media: gateCounts.media },
       emptyCleanupResumeCallsPerStartup: [firstResumeCalls, secondResumeCalls],
+      postgresAttachmentInventoryReads: gateCounts.postgresAttachmentInventoryReads,
+      postgresAttachmentInventoryReadsDuringSave: inventoryReadsDuringSave,
       evidence: ["runtime.start", "readyz", "same-postgres-stop-restart", "authenticated-state-read", "save-read-round-trip", "task-read", "notification-read"]
     };
   } catch (error) {
@@ -2669,7 +2712,7 @@ async function selfTest(root: string) {
   const emptyCleanupIsVerified = await snapshotHasNoPendingAttachmentCleanup(root, emptyCleanupSnapshot);
   if (!emptyCleanupIsVerified) fail("A valid empty attachment-cleanup snapshot was not recognized");
   const emptyCleanupCounts: Record<string, number> = {};
-  const emptyCleanupObserver = createStartupEffectObserver(emptyCleanupIsVerified, emptyCleanupCounts);
+  const emptyCleanupObserver = createStartupEffectObserver(emptyCleanupIsVerified, true, emptyCleanupCounts);
   emptyCleanupObserver("media", "resumeAttachmentCleanup");
   if (emptyCleanupCounts.emptyCleanupResumeCalls !== 1 || emptyCleanupCounts.media) {
     fail("Verified empty attachment-cleanup recovery call was not classified separately");
@@ -2712,16 +2755,34 @@ async function selfTest(root: string) {
   };
   const queuedCleanupIsVerified = await snapshotHasNoPendingAttachmentCleanup(root, queuedCleanupSnapshot);
   if (queuedCleanupIsVerified) fail("A non-empty attachment-cleanup queue was marked safe");
+  const inventoryReadCounts: Record<string, number> = {};
+  createStartupEffectObserver(queuedCleanupIsVerified, true, inventoryReadCounts)("media", "listAttachmentInventory");
+  if (inventoryReadCounts.postgresAttachmentInventoryReads !== 1 || inventoryReadCounts.media) {
+    fail("The isolated PostgreSQL attachment-inventory read was not classified separately");
+  }
+  const isolatedGateUrls = {
+    data: "postgresql://runtime_data:secret@127.0.0.1:54321/startup_gate",
+    auth: "postgresql://runtime_auth:secret@127.0.0.1:54321/startup_gate",
+    budget: "postgresql://runtime_budget:secret@127.0.0.1:54321/startup_gate"
+  };
+  if (!usesOnlyIsolatedPostgres(isolatedGateUrls, 54321)
+    || usesOnlyIsolatedPostgres({ ...isolatedGateUrls, data: "postgresql://runtime_data:secret@db.example:54321/startup_gate" }, 54321)
+    || usesOnlyIsolatedPostgres({ ...isolatedGateUrls, budget: "postgresql://runtime_budget:secret@127.0.0.1:54322/startup_gate" }, 54321)) {
+    fail("Attachment-inventory read boundary did not require all three expected loopback PostgreSQL databases");
+  }
+  const nonPostgresInventoryCounts: Record<string, number> = {};
   for (const [observer, kind, operation] of [
     [emptyCleanupObserver, "media", "materializeAttachmentFiles"],
     [emptyCleanupObserver, "provider", "deepseek"],
     [emptyCleanupObserver, "outbound", "debug"],
-    [createStartupEffectObserver(queuedCleanupIsVerified, {}), "media", "resumeAttachmentCleanup"],
-    [createStartupEffectObserver(await snapshotHasNoPendingAttachmentCleanup(root, { accounts: [{ accountId: "malformed-account", mapping: {} }] }), {}), "media", "resumeAttachmentCleanup"]
+    [createStartupEffectObserver(emptyCleanupIsVerified, false, nonPostgresInventoryCounts), "media", "listAttachmentInventory"],
+    [createStartupEffectObserver(false, true, {}), "media", "resumeAttachmentCleanup"],
+    [createStartupEffectObserver(queuedCleanupIsVerified, true, {}), "media", "resumeAttachmentCleanup"],
+    [createStartupEffectObserver(await snapshotHasNoPendingAttachmentCleanup(root, { accounts: [{ accountId: "malformed-account", mapping: {} }] }), true, {}), "media", "resumeAttachmentCleanup"]
   ] as const) {
     try {
       observer(kind, operation);
-      fail(`Startup gate observer allowed ${kind}:${operation} without a verified empty cleanup queue`);
+      fail(`Startup gate observer allowed ${kind}:${operation} without its required operation-specific boundary`);
     } catch (error) {
       if (!(error instanceof Error) || !error.message.includes(`Startup gate blocked ${kind}:${operation}`)) throw error;
     }

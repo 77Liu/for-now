@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 137,
-  "updated_at": "2026-10-12T18:42:46.522Z",
+  "revision": 140,
+  "updated_at": "2026-10-12T18:55:03.949Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -20,7 +20,7 @@
   "iteration": {
     "id": "v0.5.13",
     "status": "ACTIVE",
-    "phase": "完整持久化消费者通过，实际启动被空清理队列恢复调用的副作用分类误报阻塞"
+    "phase": "0262018真实启动/readyz/重启/认证读取通过；保存被隔离PG附件清单只读调用的验证器分类误报阻塞"
   },
   "scope": {
     "description": "保存状态/草稿与失败恢复；发生时间/补录意图；通知列表未读事实、脱敏诊断与恢复操作。仅实现六条锁定需求的未交付行为，不做全站状态或通知平台重构。",
@@ -48,17 +48,17 @@
   },
   "active_tasks": [],
   "candidate": {
-    "sha": "f8b0a1b2c08279ed56c111ec83f9addb9d4998cc",
-    "tree": "ebbd98e1dd346e48f4f9f5e1071cedde403c33de",
-    "status": "STARTUP_GATE_FAILED",
+    "sha": "026201849a5ef204138336bb1d1db94a0aeb918b",
+    "tree": "b3ae09197ffa8973196d32535a5b5a47f8c05c82",
+    "status": "CORE_SMOKE_FAILED",
     "release_frozen": false,
     "quality_gate": {
       "snapshot": "PASS",
       "local_import": "PASS",
-      "runtime_start": "FAIL",
-      "readyz": "NOT_RUN",
-      "restart_recovery": "NOT_RUN",
-      "core_smoke": "NOT_RUN",
+      "runtime_start": "PASS",
+      "readyz": "PASS",
+      "restart_recovery": "PASS",
+      "core_smoke": "FAIL",
       "isolated_online": "NOT_RUN"
     }
   },
@@ -88,15 +88,15 @@
   },
   "blockers": [
     {
-      "code": "EMPTY_CLEANUP_RESUME_HARNESS_FALSE_POSITIVE",
+      "code": "LOCAL_PG_ATTACHMENT_INVENTORY_READ_FALSE_POSITIVE",
       "status": "FIXED_PENDING_REAL_GATE",
       "owner": "主开发",
-      "impact": "4账户清理队列均为空，实际resume只读取后返回，验证器却将调用等同媒体副作用；需局部修复验证器后绑定新候选重验"
+      "impact": "保存所有权校验调用实际隔离PG账户SELECT，但observer将listAttachmentInventory读操作当媒体副作用，导致HTTP500"
     }
   ],
   "next_action": {
     "owner": "主控",
-    "action": "提交已审查的空队列恢复分类修复，快进develop后固定新候选并采集新快照执行真实门",
+    "action": "接入经独立审查的隔离PG清单只读分类修复，固定新候选执行完整保存往返门",
     "status": "READY"
   },
   "runtime": {
@@ -190,11 +190,16 @@
       "id": "empty-cleanup-classification-reviewed",
       "source": "scripts/release-state-startup-gate.mts@sha256:4b11016e8d859a0c96c1ea8072580bdcd1fc0f5dfdb0a534acf2a3e8f8513f00",
       "status": "主控独立核对实际空队列resume及逐账户恢复调用；计数统一且按账户数核对；非空/非法映射与其他副作用仍拒绝；最终专项PASS"
+    },
+    {
+      "id": "0262018-runtime-and-read-pass-save-failed",
+      "source": "reports/local/0262018-startup-snapshot.json@sha256:22fa69deefaff607a670f1f5553eb7fe7096d09836ecd7d31745f4cefa781f97",
+      "status": "实际启动/readyz/同库重启/登录/读取PASS，空恢复4+4；POST保存500为media:listAttachmentInventory拦截，主控核对真实隔离PG SELECT；任务通知NOT_RUN"
     }
   ],
   "records": {
     "events": "reports/iterations/v0.5.13/events.jsonl",
     "terminal": "reports/iterations/v0.5.13/terminal.json"
   },
-  "display_summary": "f8b0a1b全局门首次启动FAIL：空附件清理恢复钩子被误当媒体副作用。真实元数据消费已越过原阻塞；后续门NOT_RUN，发布仍等待人工。"
+  "display_summary": "0262018启动/readyz/重启/认证读取PASS；保存FAIL为隔离PG清单纯读取误报。核心冒烟尚未全过，发布及收尾仍等人工。"
 }
