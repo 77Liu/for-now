@@ -60,6 +60,8 @@ class FakeElement {
     this._innerHTML = "";
     this._textContent = "";
     this._disabled = false;
+    this.focused = false;
+    this.selected = false;
   }
   get innerHTML() { return this._innerHTML; }
   set innerHTML(value) {
@@ -80,6 +82,10 @@ class FakeElement {
     if (this.kind === "all" && selector === NOTIFICATION_SELECTORS.readAll) return this;
     if (this.dataset.taskRetry !== undefined && selector === NOTIFICATION_SELECTORS.retry) return this;
     if (this.dataset.notificationCopy !== undefined && selector === NOTIFICATION_SELECTORS.copy) return this;
+    if (this.dataset.notificationCopyFallbackSelect !== undefined
+      && selector === NOTIFICATION_SELECTORS.fallbackSelect) return this;
+    if (this.dataset.notificationCopyFallbackDismiss !== undefined
+      && selector === NOTIFICATION_SELECTORS.fallbackDismiss) return this;
     if (this.dataset.notificationOpen !== undefined && selector === NOTIFICATION_SELECTORS.open) return this;
     if (this.dataset.notificationRead !== undefined && selector === NOTIFICATION_SELECTORS.read) return this;
     if (
@@ -88,6 +94,8 @@ class FakeElement {
     ) return this;
     return null;
   }
+  focus() { this.focused = true; }
+  select() { this.selected = true; }
 }
 
 class FakeRoot {
@@ -105,6 +113,15 @@ class FakeRoot {
       [NOTIFICATION_SELECTORS.status]: this.status,
       [NOTIFICATION_SELECTORS.readAll]: this.readAll
     }[selector] || null;
+  }
+  querySelectorAll(selector) {
+    if (selector !== "[data-notification-copy-fallback]") return [];
+    const fallback = this.list.innerHTML.match(/data-notification-copy-fallback="([^"]+)"/);
+    if (!fallback) return [];
+    this.fallbackTextarea ||= new FakeElement(this, "fallback-textarea", {
+      notificationCopyFallback: fallback[1]
+    });
+    return [this.fallbackTextarea];
   }
   addEventListener(type, listener) {
     const listeners = this.listeners.get(type) || new Set();
@@ -274,6 +291,7 @@ for (const name of Object.keys(ports())) {
   const state = initialState();
   const requests = [], events = [], toasts = [], copied = [];
   const retryGate = deferred();
+  let copyHandler = async value => { copied.push(value); };
   let loads = 0;
   const root = new FakeRoot("clicks");
   const controller = createNotificationsFeatureController(ports({
@@ -293,7 +311,7 @@ for (const name of Object.keys(ports())) {
       assert.equal(openedNotice, state.notifications[0]);
     },
     getSnapshot: () => state,
-    async copyText(value) { copied.push(value); },
+    copyText(value) { return copyHandler(value); },
     showToast(message) { toasts.push(message); }
   }));
   controller.mount({ root });
@@ -314,6 +332,28 @@ for (const name of Object.keys(ports())) {
   await waitFor(() => copied.length === 1, "sanitized diagnostic was not copied");
   assert.match(copied[0], /AI_TASK_FAILED/);
   assert.doesNotMatch(copied[0], /secret provider response|生成失败/);
+
+  copyHandler = async value => {
+    copied.push(value);
+    throw new Error("secret provider response and private body");
+  };
+  root.click({ notificationCopy: "notice-1" });
+  await waitFor(
+    () => root.list.innerHTML.includes('data-notification-copy-fallback="notice-1"'),
+    "clipboard rejection did not render the selectable sanitized fallback"
+  );
+  const fallbackMarkup = root.list.innerHTML;
+  assert.match(fallbackMarkup, /<textarea readonly data-notification-copy-fallback="notice-1" aria-label="脱敏错误日志，可手动选择复制">/);
+  assert.match(fallbackMarkup, /<button[^>]*data-notification-copy-fallback-select="notice-1"[^>]*>选择日志<\/button>/);
+  assert.match(fallbackMarkup, /<button[^>]*data-notification-copy-fallback-dismiss="notice-1"[^>]*>收起<\/button>/);
+  assert.match(fallbackMarkup, /&quot;errorCode&quot;: &quot;AI_TASK_FAILED&quot;/);
+  assert.doesNotMatch(fallbackMarkup, /secret provider response|生成失败|private body/);
+  root.click({ notificationCopyFallbackSelect: "notice-1" });
+  assert.equal(root.fallbackTextarea?.focused, true, "fallback selection should focus the readable textarea");
+  assert.equal(root.fallbackTextarea?.selected, true, "fallback selection should select the sanitized text");
+  root.click({ notificationCopyFallbackDismiss: "notice-1" });
+  assert.doesNotMatch(root.list.innerHTML, /data-notification-copy-fallback=/);
+
   events.length = 0;
   root.click({
     notificationOpen: "thought-1",
@@ -328,9 +368,52 @@ for (const name of Object.keys(ports())) {
   assert.equal(requests.filter(([path]) => path.includes("/retry")).length, 1);
   assert.match(root.list.innerHTML, /aria-busy="true" disabled/);
   retryGate.resolve({});
-  await waitFor(() => loads === 3 && toasts.length === 2, "retry did not settle");
+  await waitFor(() => loads === 3 && toasts.includes("任务已重新排队"), "retry did not settle");
   assert.doesNotMatch(root.list.innerHTML, /aria-busy="true"/);
   controller.unmount();
+}
+
+{
+  const sessionGate = deferred();
+  const unmountGate = deferred();
+  let copyAttempts = 0;
+  let schedules = 0;
+  const toasts = [];
+  const oldRoot = new FakeRoot("copy-session-a");
+  const newRoot = new FakeRoot("copy-session-b");
+  const controller = createNotificationsFeatureController(ports({
+    copyText(value) {
+      copyAttempts += 1;
+      assert.match(value, /"notificationId": "notice-1"/);
+      return copyAttempts === 1 ? sessionGate.promise : unmountGate.promise;
+    },
+    scheduleNotificationPoll() { schedules += 1; },
+    showToast(message) { toasts.push(message); }
+  }));
+  controller.mount({ root: oldRoot });
+  oldRoot.click({ notificationCopy: "notice-1" });
+  const writesBeforeSessionReset = oldRoot.writes;
+  controller.resetSession();
+  const writesAfterSessionReset = oldRoot.writes;
+  assert.ok(writesAfterSessionReset > writesBeforeSessionReset, "session reset should clear the previous page");
+  controller.mount({ root: newRoot });
+  await waitFor(() => schedules === 1, "new session page did not finish mounting");
+  const newRootWrites = newRoot.writes;
+  sessionGate.reject(new Error("private body"));
+  await flush();
+  await flush();
+  assert.equal(oldRoot.writes, writesAfterSessionReset, "late clipboard rejection must not write to the previous session page");
+  assert.equal(newRoot.writes, newRootWrites, "late clipboard rejection must not write to the new session page");
+  assert.deepEqual(toasts, [], "late clipboard rejection must not show a stale-session toast");
+
+  newRoot.click({ notificationCopy: "notice-1" });
+  controller.unmount();
+  const writesAfterUnmount = newRoot.writes;
+  unmountGate.reject(new Error("secret provider response"));
+  await flush();
+  await flush();
+  assert.equal(newRoot.writes, writesAfterUnmount, "late clipboard rejection must not write after unmount");
+  assert.deepEqual(toasts, [], "late clipboard rejection must not show a toast after unmount");
 }
 
 {
