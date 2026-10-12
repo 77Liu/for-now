@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 98,
-  "updated_at": "2026-10-12T14:15:40.795Z",
+  "revision": 99,
+  "updated_at": "2026-10-12T14:28:41.677Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,8 +13,8 @@
     "source": "PROJECT_RULES.md、knowledge/test-impact-matrix.md、SOP/integration-audit.md、SOP/release-and-observation.md；未改变其他风险授权正文"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "主控已接续门工具审查，发现时钟/结构性脱敏实际缺口，返回同脚本窄点；无需Owner操作。",
-  "state": "BUILDING_DEPLOY_RECOVERY_FIX",
+  "current_phase": "门工具9b4c937已提交并集成，生产只读脱敏快照与本机真实PG启动门执行已授权；未通过不新freeze/deploy。",
+  "state": "GLOBAL_STARTUP_GATE_EXECUTING",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
     "develop": "refs/heads/develop",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发修正采集时钟、结构字段和统一伪名图对应及真实关系等价，回执后主控提交并执行真实只读生产快照及隔离PG启动门。",
+  "next_action": "主开发固定此文档提交后的HEAD/tree，服务器只读采集脱敏快照，再本机真实启动门；主控期间不追加提交避免身份漂移，失败精准回报。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -436,7 +436,7 @@
     },
     {
       "id": "v0.5.13",
-      "state": "WAITING_GLOBAL_STARTUP_GATE",
+      "state": "GLOBAL_STARTUP_GATE_EXECUTING",
       "scope": "保存状态/草稿与失败恢复；发生时间/补录意图；通知列表未读事实、脱敏诊断与恢复操作。仅实现六条锁定需求的未交付行为，不做全站状态或通知平台重构。",
       "requirement_ids": [
         "recvxm0eDZdJED",
@@ -616,48 +616,31 @@
       "candidate_tree": "9dc58edd21eb42a6e0cfe30fe477faab3e4659ea",
       "integration_status": "本地六文件代码与既有控制面提交已快进合入develop；feat分支保留。未push/tag/release/deploy。",
       "active_task": {
-        "task_id": "v0513-state-startup-gate-implementation-20261012",
-        "state": "RETURNED_FOR_CONCRETE_REVIEW_FIX",
-        "mode": "新规则最小执行门实现",
+        "task_id": "v0513-production-snapshot-local-startup-run-20261012",
+        "state": "DISPATCH_READY",
         "owner": "主控",
         "implementer": "主开发",
-        "baseline_sha": "6e824256b98fe8cb30e0d2bb0a592feefa06de4a（当前feat包含后续控制面文档）",
-        "feature_branch": "feat/v0.5.13-save-sync-validation",
+        "mode": "已审查工具的生产只读采集与本机真实门执行",
         "write_set": [
-          "scripts/release-state-startup-gate.mts（snapshot/verify，严格类型与中文恢复/隐私注释，不拆通用平台）",
-          "tsconfig.release-state-startup-gate.json（NodeNext strict，隔离输出.build/typescript/release-state-startup-gate）",
-          "package.json（仅该门typecheck/build/run三个命令，无依赖变更）",
-          "src/app/background-ai.mjs（仅复用私有handler inspector及意图比较的无IO观察入口，不复制算法）",
-          "src/app/content-runtime.mjs（仅必要的无IO任务registry观察接入，不改工作流语义）",
-          "src/app/server-runtime.mjs（仅程序化受限startupGate选项到foundation，正常生产默认路径不改变）",
-          "src/app/runtime-foundation.mjs（仅受限本机验证模式的dispatch/provider/外发/媒体副作用隔离与计数；不得跳过真实恢复/PG提交）"
+          "ignored服务器临时候选工具目录及0600脱敏快照/回执",
+          "ignored本机脱敏快照/隔离临时PG数据/脱敏门回执"
         ],
+        "candidate_source": "本revision提交后，执行前git rev-parse HEAD及HEAD^{tree}固定；该HEAD仅在9b4c937上追加本控制面文档。执行期主控不再提交造成身份漂移。",
+        "authorization": "Owner要求生产状态快照本地启动门；既有生产运维授权只读采集范围，不含本次代码部署/应用切换",
         "acceptance": [
-          "优先通过真实createContentRuntime与纯内存只读repository/封闭media适配器初始化原handler registry，再backgroundAi.inspect现有intent逻辑；必须验证构造无IO。不要优先抽改五个owner文件/复制哈希规则。不能做到则报唯一实际seam，不越界。",
-          "snapshot只读pg.Client单事务REPEATABLE READ READ ONLY内循环set_config app.account_id/readPostgresStoreObjects及revision；auth若另库采集前后校验账户集合/revision，不声称跨库原子。无createRuntimeFoundation/AiRuntime生产初始化，不读附件字节。",
-          "服务器内存先脱敏，ID伪名全图对应；去除正文/图片/凭据，manifest记录前后任务状态/主子目标/生成类别/版本/hash匹配分类关系等价。仅调整脱敏文本引起的hash以保持源匹配/不匹配，无法等价则BLOCKED不造PASS。",
-          "verify起全新本机PG16集群/角色和temp dataDir，复用既有preflight/公开migration范式；确认所有DB loopback及路径/PID属于本次临时资源，不含生产连接字符串。",
-          "startupGate程序化仅验证器注入而非普通生产env隐藏开关，支持真实candidate runtime.start/监听/readyz/优雅停止/同库重启恢复/核心本地认证读取保存往返和任务通知smoke；无JSON/mock-only替代真实PG。",
-          "背景/清理/小物dispatch持有并计数，真实恢复提交保留；provider/webhook/媒体read失败封闭计数应为0，定时付费关闭。不为通过删任务、补目标或全部变stale。",
-          "新MTS strict类型检查/构建产物仅ignored.build；不新增测试文件或依赖/平台。门自带最小side-effect拒绝/恢复行为证据，正常环境原startup路径的受影响专项复用或仅必要验证。",
-          "本阶段先本地实现与小合成验证交接，禁止生产采集/上传/写入或重部署；主控审查固定工具后授权只读生产快照采集与本机真实门运行。"
+          "在服务器临时目录放精确候选源/编译工具，核验来源SHA/tree/摘要；不构造生产应用runtime，不改生产配置/数据库/schema/执行器，不读取媒体字节。",
+          "source data/auth PG URL仅私密env/受保护文件，snapshot单只读一致性事务，先服务器内存脱敏，只下载0600脱敏bundle及安全manifest；无原始正文/凭据进本机回归。",
+          "快照分类前后及实际映射等价断言必须真实执行；失败BLOCKED/FAIL保留，不改数据/断言来通过。",
+          "verify在固定当前完整SHA/tree干净tracked工作区进行；仅新隔离PG16/临时dataDir，外部provider/通知/媒体调用0，实际runtime.start/readyz/停/同库重启及核心认证读保存往返/任务通知smoke。",
+          "结果回执包括候选SHA/tree、快照摘要/采集时间/源运行版本、PG版本、账户/任务计数、各步骤结果、副作用计数、临时资源关闭。",
+          "执行失败立即给安全错误类别/本机必要位置，不重部署、不无限重复capture；环境阻碍或工具真实缺陷返回精准修复写集。",
+          "门PASS后仍须主控核对及建立新release attempt，禁止复用旧失效批准或直接上线。"
         ],
         "forbidden": [
-          "修改task类型/工作流hash算法、schema/API、预算或迁移框架",
-          "抽改所有owner/通用快照/脱敏/沙箱平台、新JS文件、依赖变更",
-          "控制面/新worktree/删分支/remote生产部署/私密正文快照或日志",
-          "声称工具写完即门通过、沿用旧失败attempt发布"
-        ],
-        "handoff": {
-          "status": "七文件实现已交，未提交；类型/构建/self-test/PG预检/server专项通过，真实门NOT_RUN",
-          "review_findings": [
-            "createClosedInspector真实路径硬编码2026-10-12/timestamp0，须manifest采集时钟；实际runtime仍真实启动",
-            "timezone/contextGeneratedAt/inputAsOf等技术语义可能被脱敏token化",
-            "实体id与relatedTo/sourceId等引用使用不同命名空间，JSON keyOf结构整串HMAC可能破坏重建关系",
-            "行数/关系类别计数不足以证明payload重建真实边等价"
-          ],
-          "decision": "同七文件内定点修复；一次受影响TS/self-test/diff检查；不重做未影响server专项，待主控提交实际快照采集"
-        }
+          "修改源码/测试/矩阵/控制面、snapshot或断言伪造通过",
+          "生产应用切换/部署/数据库写入/schema迁移/通知发送/真实付费任务",
+          "新worktree/删分支/用户数据与私钥输出"
+        ]
       },
       "review_task": {
         "task_id": "v0513-notification-message-review-20261012",
@@ -958,6 +941,64 @@
             "复制用户正文/附件/凭据进快照/Git/聊天"
           ],
           "receipt": "生产单client repeatable read snapshot；候选startup前恢复与PGcommit不可跳过；尚缺纯inspection与受限effect注入窄点。"
+        },
+        {
+          "task_id": "v0513-state-startup-gate-implementation-20261012",
+          "state": "IMPLEMENTED_REVIEWED_INTEGRATED_LOCAL",
+          "mode": "新规则最小执行门实现",
+          "owner": "主控",
+          "implementer": "主开发",
+          "baseline_sha": "6e824256b98fe8cb30e0d2bb0a592feefa06de4a（当前feat包含后续控制面文档）",
+          "feature_branch": "feat/v0.5.13-save-sync-validation",
+          "write_set": [
+            "scripts/release-state-startup-gate.mts（snapshot/verify，严格类型与中文恢复/隐私注释，不拆通用平台）",
+            "tsconfig.release-state-startup-gate.json（NodeNext strict，隔离输出.build/typescript/release-state-startup-gate）",
+            "package.json（仅该门typecheck/build/run三个命令，无依赖变更）",
+            "src/app/background-ai.mjs（仅复用私有handler inspector及意图比较的无IO观察入口，不复制算法）",
+            "src/app/content-runtime.mjs（仅必要的无IO任务registry观察接入，不改工作流语义）",
+            "src/app/server-runtime.mjs（仅程序化受限startupGate选项到foundation，正常生产默认路径不改变）",
+            "src/app/runtime-foundation.mjs（仅受限本机验证模式的dispatch/provider/外发/媒体副作用隔离与计数；不得跳过真实恢复/PG提交）"
+          ],
+          "acceptance": [
+            "优先通过真实createContentRuntime与纯内存只读repository/封闭media适配器初始化原handler registry，再backgroundAi.inspect现有intent逻辑；必须验证构造无IO。不要优先抽改五个owner文件/复制哈希规则。不能做到则报唯一实际seam，不越界。",
+            "snapshot只读pg.Client单事务REPEATABLE READ READ ONLY内循环set_config app.account_id/readPostgresStoreObjects及revision；auth若另库采集前后校验账户集合/revision，不声称跨库原子。无createRuntimeFoundation/AiRuntime生产初始化，不读附件字节。",
+            "服务器内存先脱敏，ID伪名全图对应；去除正文/图片/凭据，manifest记录前后任务状态/主子目标/生成类别/版本/hash匹配分类关系等价。仅调整脱敏文本引起的hash以保持源匹配/不匹配，无法等价则BLOCKED不造PASS。",
+            "verify起全新本机PG16集群/角色和temp dataDir，复用既有preflight/公开migration范式；确认所有DB loopback及路径/PID属于本次临时资源，不含生产连接字符串。",
+            "startupGate程序化仅验证器注入而非普通生产env隐藏开关，支持真实candidate runtime.start/监听/readyz/优雅停止/同库重启恢复/核心本地认证读取保存往返和任务通知smoke；无JSON/mock-only替代真实PG。",
+            "背景/清理/小物dispatch持有并计数，真实恢复提交保留；provider/webhook/媒体read失败封闭计数应为0，定时付费关闭。不为通过删任务、补目标或全部变stale。",
+            "新MTS strict类型检查/构建产物仅ignored.build；不新增测试文件或依赖/平台。门自带最小side-effect拒绝/恢复行为证据，正常环境原startup路径的受影响专项复用或仅必要验证。",
+            "本阶段先本地实现与小合成验证交接，禁止生产采集/上传/写入或重部署；主控审查固定工具后授权只读生产快照采集与本机真实门运行。"
+          ],
+          "forbidden": [
+            "修改task类型/工作流hash算法、schema/API、预算或迁移框架",
+            "抽改所有owner/通用快照/脱敏/沙箱平台、新JS文件、依赖变更",
+            "控制面/新worktree/删分支/remote生产部署/私密正文快照或日志",
+            "声称工具写完即门通过、沿用旧失败attempt发布"
+          ],
+          "handoff": {
+            "status": "七文件实现已交，未提交；类型/构建/self-test/PG预检/server专项通过，真实门NOT_RUN",
+            "review_findings": [
+              "createClosedInspector真实路径硬编码2026-10-12/timestamp0，须manifest采集时钟；实际runtime仍真实启动",
+              "timezone/contextGeneratedAt/inputAsOf等技术语义可能被脱敏token化",
+              "实体id与relatedTo/sourceId等引用使用不同命名空间，JSON keyOf结构整串HMAC可能破坏重建关系",
+              "行数/关系类别计数不足以证明payload重建真实边等价"
+            ],
+            "decision": "同七文件内定点修复；一次受影响TS/self-test/diff检查；不重做未影响server专项，待主控提交实际快照采集"
+          },
+          "implementation_commit": "9b4c9379ce76fbc4158edf1249aba36dce37dad7",
+          "implementation_tree": "021397cc25ac8be0bf36c2ebe8fbd85cf1d6f526",
+          "verification": {
+            "result": "PASS（工具本地验证，非真实快照门）",
+            "commands": [
+              "typecheck:release-state-startup-gate",
+              "build:release-state-startup-gate",
+              "合成self-test（包含关联ID/子目标/singleton/附件状态/时区/日期）",
+              "server-runtime与startup专项（原实现受影响路径）",
+              "PG16.14预检",
+              "git diff --check"
+            ],
+            "review": "主控实际差分核验时钟、纯handler inspection、副作用隔离和引用图脱敏；具体缺口已修，未重复未影响专项。"
+          }
         }
       ],
       "candidate_fixed_at": "2026-10-12T11:07:07.193Z",
@@ -1482,6 +1523,12 @@
       "at": "2026-10-12T14:15:40.795Z",
       "reason": "Owner指出主控交接停顿；实际审查已推进并定位具体门实现缺口，不停在等待、不伪门通过。",
       "previous_snapshot": "2cbdf13:reports/requirement-coordination-current.json@revision97"
+    },
+    {
+      "revision": 99,
+      "at": "2026-10-12T14:28:41.677Z",
+      "reason": "工具实际修正审查提交接入，推进真实只读生产快照采集及本机完整启动门，不停在交接。",
+      "previous_snapshot": "29996b4:reports/requirement-coordination-current.json@revision98"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -2387,7 +2434,7 @@
       "related_contract": "历史补充recordCompression output ID对应singleton，需同一精确optional policy；daily实际markQueued在tasks.create/promote分支持久化前调用，继续严格要求实体。"
     },
     "pre_release_startup_gate": {
-      "status": "IMPLEMENTATION_AUTHORIZED_NOT_RUN",
+      "status": "TOOL_REVIEWED_REAL_SNAPSHOT_RUN_AUTHORIZED_NOT_PASSED",
       "source": "Owner本对话：本地合并启动检查及生产快照本地启动后再进release门",
       "scope": "本次重新发布前补齐最终累计候选实际runtime.start/监听/readyz/重启恢复，不能以projection专项代替",
       "snapshot": "生产只读一致性状态快照；服务器端脱敏，保留任务类型/状态与目标关系/singleton/schema，排除正文/原图/凭据，绑定采集时间/运行SHA/摘要",
