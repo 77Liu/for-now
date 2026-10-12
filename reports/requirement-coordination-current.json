@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 104,
-  "updated_at": "2026-10-12T14:59:35.173Z",
+  "revision": 105,
+  "updated_at": "2026-10-12T15:07:29.213Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/test-impact-matrix.md、SOP/integration-audit.md、SOP/release-and-observation.md；未改变其他风险授权正文"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "一次结构census证实同名targetKey多个上下文；批准单脚本context-aware修复，不再生产逐值查找。",
+  "current_phase": "主控已审查、提交并接入目标键上下文修复；锁定最终候选，重启真实脱敏快照与隔离PG启动门。",
   "state": "GLOBAL_STARTUP_GATE_EXECUTING",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发修正register/transform的上下文分类，既有混合形态self-test及等价断言通过后主控提交并重派真实门。",
+  "next_action": "主开发按本次提交后固定HEAD/tree只读采集脱敏快照并执行隔离PG真实启动、readyz、重启恢复、核心冒烟；期间不写源码或控制面，不部署。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -1618,6 +1618,12 @@
       "at": "2026-10-12T14:59:35.173Z",
       "reason": "合法targetKey上下文分类证据充分，停止数据逐值探测，批准真正上下文区分修复而非白名单碰运气。",
       "previous_snapshot": "43105ef:reports/requirement-coordination-current.json@revision103"
+    },
+    {
+      "revision": 105,
+      "at": "2026-10-12T15:07:29.213Z",
+      "reason": "主控完成实际接入，直接续跑真实有状态门，不再停在等待自己审查。",
+      "previous_snapshot": "ae8f4c0:reports/requirement-coordination-current.json@revision104"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -2523,13 +2529,13 @@
       "related_contract": "历史补充recordCompression output ID对应singleton，需同一精确optional policy；daily实际markQueued在tasks.create/promote分支持久化前调用，继续严格要求实体。"
     },
     "pre_release_startup_gate": {
-      "status": "BLOCKED_TARGET_KEY_CONTEXT_CLASSIFICATION",
+      "status": "EXECUTING_AFTER_TARGET_CONTEXT_FIX",
       "source": "Owner本对话：本地合并启动检查及生产快照本地启动后再进release门",
       "scope": "本次重新发布前补齐最终累计候选实际runtime.start/监听/readyz/重启恢复，不能以projection专项代替",
       "snapshot": "生产只读一致性状态快照；服务器端脱敏，保留任务类型/状态与目标关系/singleton/schema，排除正文/原图/凭据，绑定采集时间/运行SHA/摘要",
       "environment": "隔离本机PG/临时数据目录，真实候选构建；无生产连接/网络provider/通知/定时付费",
       "proof": "固定候选tree+快照摘要+运行环境+实际启动/健康/恢复与核心无付费smoke回执",
-      "next": "主开发先完成当前四文件修复交接，并给复用既有export/PG入口的最小可执行方案；主控随后锁定实现写集和唯一矩阵/SOP规则，未实现不冒称已有自动门",
+      "next": "主开发按本次提交后固定HEAD/tree只读采集脱敏快照并执行隔离PG真实启动、readyz、重启恢复、核心冒烟；期间不写源码或控制面，不部署。",
       "distinction": "每feat按受影响验证；最终develop候选必须基本整体启动，完整功能全量测试按矩阵去重执行，不每merge重复system all",
       "rule_source": "knowledge/test-impact-matrix.md#develop--release-有状态全局测试门",
       "rule_commit": "04befab",
@@ -2592,7 +2598,18 @@
         "mapping_relations": "JSON-keyOf len2/4/6以及未解析null；不能作普通source语义",
         "limitation": "collector数组[*]被标custom，不能从回执细分数组路径；不复跑生产census，使用技术对象context与源码契约修复",
         "privacy": "仅结构聚合，无ID/正文/值，未落文件；真实字段值未知不作推断"
-      }
+      },
+      "target_context_fix_receipt": {
+        "at": "2026-10-12T15:07:29.213Z",
+        "code_sha": "060565842022d777e344ad2e1548ad2e47fd5a38",
+        "paths": [
+          "scripts/release-state-startup-gate.mts"
+        ],
+        "review": "主控实际差分审查通过；source tuple/sourceRef与普通语义目标一致脱敏，relations目标仅按objectKeys，技术枚举保留、未知私有值HMAC，无原文兜底。",
+        "verification": "主开发strict typecheck、build+self-test、diff检查通过，独立只读review通过；复用原任务状态及map/rebuild等价断言。",
+        "integration": "fast-forward合入develop，保留feat，唯一根工作树；用户未跟踪证据未触碰。"
+      },
+      "candidate_identity": "revision105控制面提交后以git rev-parse HEAD和HEAD^{tree}固定并派发；运行期间禁止提交导致身份漂移。"
     }
   }
 }
