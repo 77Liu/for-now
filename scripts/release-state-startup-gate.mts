@@ -1098,8 +1098,11 @@ async function verify(root: string, snapshotFile: string) {
   if (!timeBaseline?.capturedAt || !timeBaseline.timezone || snapshotValue.capturedAt !== timeBaseline.capturedAt) {
     fail("Startup gate snapshot has no consistent semantic inspection time baseline");
   }
-  const changedTrackedFiles = (await execFile("git", ["diff", "--name-only", "HEAD"], { cwd: root })).stdout.trim();
-  if (changedTrackedFiles) fail("Startup verification requires a clean tracked candidate matching the recorded tree");
+  // 控制面及正式版本记录按协议及时落盘、随相关提交保存；它们不是运行代码候选。
+  const changedTrackedFiles = (await execFile("git", ["diff", "--name-only", "HEAD"], { cwd: root })).stdout
+    .split("\n").filter(Boolean).filter(file => file !== "reports/requirement-coordination-current.json"
+      && !/^reports\/iterations\/[A-Za-z0-9._-]+\/(events\.jsonl|terminal\.json)$/u.test(file));
+  if (changedTrackedFiles.length) fail("Startup verification requires a clean tracked code candidate matching the recorded tree");
   await execFile("git", ["ls-files", "--error-unmatch", "scripts/release-state-startup-gate.mts", "tsconfig.release-state-startup-gate.json"], { cwd: root });
   const gitSha = (await execFile("git", ["rev-parse", "HEAD"], { cwd: root })).stdout.trim();
   const gitTree = (await execFile("git", ["rev-parse", "HEAD^{tree}"], { cwd: root })).stdout.trim();

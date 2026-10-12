@@ -149,7 +149,11 @@
     "test:record-compressions": "node scripts/system-test.mjs record-compressions",
     "typecheck:notifications": "tsc --noEmit -p tsconfig.notifications.json",
     "build:notifications": "tsc -p tsconfig.notifications.json",
-    "test:frontend-notifications": "npm run build:frontend && node scripts/prepare-generated-runtime.mjs && node scripts/frontend-notifications-feature-regression.mjs"
+    "test:frontend-notifications": "npm run build:frontend && node scripts/prepare-generated-runtime.mjs && node scripts/frontend-notifications-feature-regression.mjs",
+    "typecheck:control-plane": "tsc --noEmit -p tsconfig.control-plane.json",
+    "build:control-plane": "tsc -p tsconfig.control-plane.json",
+    "coordination:update": "npm run build:control-plane --silent && node .build/typescript/control-plane/control-plane-update.mjs",
+    "test:control-plane": "npm run coordination:update -- self-test"
   },
   "dependencies": {
     "@alicloud/credentials": "2.4.7",

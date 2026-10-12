@@ -22,6 +22,15 @@ reports/local/
 reports/*.generated.*
 reports/**/*.generated.*
 
+# 正式版本事件与收口归档必须可跟踪；运行锁和原子写临时文件不入库。
+!reports/iterations/
+!reports/iterations/*/
+!reports/iterations/*/events.jsonl
+!reports/iterations/*/terminal.json
+reports/iterations/.control-plane.lock
+reports/requirement-coordination-current.json.tmp.*
+reports/iterations/*/terminal.json.tmp.*
+
 # TS 运行候选由 build:runtime 组装；这些路径只保留本地/部署产物，不进入 Git。
 src/shared/record-compression-config.mjs
 public/generated/

@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "types": ["node"],
+    "skipLibCheck": true,
+    "rootDir": "scripts",
+    "outDir": ".build/typescript/control-plane",
+    "noEmitOnError": true
+  },
+  "files": ["scripts/control-plane-update.mts"]
+}
