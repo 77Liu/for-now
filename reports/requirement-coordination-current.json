@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 97,
-  "updated_at": "2026-10-12T13:48:05.230Z",
+  "revision": 98,
+  "updated_at": "2026-10-12T14:15:40.795Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/test-impact-matrix.md、SOP/integration-audit.md、SOP/release-and-observation.md；未改变其他风险授权正文"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "已锁定MTS快照启动门及最小运行时inspection/effect注入写集；本地实现先行，生产只读采集待工具审查。",
+  "current_phase": "主控已接续门工具审查，发现时钟/结构性脱敏实际缺口，返回同脚本窄点；无需Owner操作。",
   "state": "BUILDING_DEPLOY_RECOVERY_FIX",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发按有限写集实现门，本地类型/构建与最小合成验证交接；审查后绑定候选/快照/隔离环境执行真实门。",
+  "next_action": "主开发修正采集时钟、结构字段和统一伪名图对应及真实关系等价，回执后主控提交并执行真实只读生产快照及隔离PG启动门。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -617,7 +617,7 @@
       "integration_status": "本地六文件代码与既有控制面提交已快进合入develop；feat分支保留。未push/tag/release/deploy。",
       "active_task": {
         "task_id": "v0513-state-startup-gate-implementation-20261012",
-        "state": "DISPATCH_READY",
+        "state": "RETURNED_FOR_CONCRETE_REVIEW_FIX",
         "mode": "新规则最小执行门实现",
         "owner": "主控",
         "implementer": "主开发",
@@ -647,7 +647,17 @@
           "抽改所有owner/通用快照/脱敏/沙箱平台、新JS文件、依赖变更",
           "控制面/新worktree/删分支/remote生产部署/私密正文快照或日志",
           "声称工具写完即门通过、沿用旧失败attempt发布"
-        ]
+        ],
+        "handoff": {
+          "status": "七文件实现已交，未提交；类型/构建/self-test/PG预检/server专项通过，真实门NOT_RUN",
+          "review_findings": [
+            "createClosedInspector真实路径硬编码2026-10-12/timestamp0，须manifest采集时钟；实际runtime仍真实启动",
+            "timezone/contextGeneratedAt/inputAsOf等技术语义可能被脱敏token化",
+            "实体id与relatedTo/sourceId等引用使用不同命名空间，JSON keyOf结构整串HMAC可能破坏重建关系",
+            "行数/关系类别计数不足以证明payload重建真实边等价"
+          ],
+          "decision": "同七文件内定点修复；一次受影响TS/self-test/diff检查；不重做未影响server专项，待主控提交实际快照采集"
+        }
       },
       "review_task": {
         "task_id": "v0513-notification-message-review-20261012",
@@ -1466,6 +1476,12 @@
       "at": "2026-10-12T13:48:05.230Z",
       "reason": "只读精确接入方案完成；批准复用真实handler registry的纯观察与本机effect注入，避免全owner抽取/复制哈希规则。",
       "previous_snapshot": "629279f:reports/requirement-coordination-current.json@revision96"
+    },
+    {
+      "revision": 98,
+      "at": "2026-10-12T14:15:40.795Z",
+      "reason": "Owner指出主控交接停顿；实际审查已推进并定位具体门实现缺口，不停在等待、不伪门通过。",
+      "previous_snapshot": "2cbdf13:reports/requirement-coordination-current.json@revision97"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
