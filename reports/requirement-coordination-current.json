@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 52,
-  "updated_at": "2026-10-12T15:41:49+08:00",
+  "revision": 53,
+  "updated_at": "2026-10-12T15:44:19+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -41,7 +41,7 @@
     ],
     "canonical_worktree": "/Users/bytedance/Documents/Codex/个人成长追踪",
     "canonical_worktree_branch": "feat/v0.5.13-save-sync-validation",
-    "canonical_worktree_head": "ac0f741c0a88a1673a56016aa12221940477a04a（根目录唯一工作树；rev51状态点）",
+    "canonical_worktree_head": "9c65dd68f7bc5125969dfbc6a4200b12cd039b5c（根目录唯一工作树；rev52控制面状态点）",
     "archived_worktree": {
       "path": "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/develop",
       "branch": "feat/v0.5.13.1-stability",
@@ -85,7 +85,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主控只读定位reczz28K9ceTZDnd对应的实际反馈记录与允许读取的时间字段，核对创建/发生/更新时间及首页/详情排序视图；在因果证据确认前，不以route重置现象代替根因，不扩写或关闭P0。",
+  "next_action": "主开发仅修复普通路由重绘不应重置#chain-datetime手动草稿：从renderDate通用重绘中移除该输入的无条件reset；首次安装/成功提交/明确取消等现有显式重置仍保留。修改后做影响范围检查和最小验证；不声称已确认用户实际过去日期根因。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -97,7 +97,7 @@
   ],
   "last_check": {
     "remote_refs": "2026-10-11T12:07:35Z 已通过 git ls-remote --heads/tags 只读核验；无远程写入",
-    "worktrees": "2026-10-12T15:41:49+08:00：只有根目录一个工作树，当前feat/v0.5.13-save-sync-validation@ac0f741；develop@c537618；无第二工作树。",
+    "worktrees": "2026-10-12T15:44:19+08:00：仅根目录工作树，feat/v0.5.13-save-sync-validation@9c65dd6；develop@c537618；无并行工作树。",
     "platform_protection": "Gitee UI只读核验：保护分支规则0条、保护标签不可用、推送限制未启用",
     "remote_write": "本轮未执行",
     "release_rollback_rehearsal": "本地隔离模拟全部通过；无远端命令",
@@ -828,7 +828,9 @@
       "public/frontend/features/mine-shell/presentation.mjs（同一权威未读数零语义；只修改现有计数投影）",
       "scripts/frontend-basic-surfaces-feature-regression.mjs（仅将现有显式零断言改为0，不新增测试文件或重复场景）",
       "public/frontend/shared/personalized-ai-task.mts（仅失败状态改为固定安全中文提示，不显示task.error原文）",
-      "scripts/personalized-ai-task-ui-regression.mjs（仅将原有失败场景断言改为安全提示且不包含原始错误文本；不新增测试）"
+      "scripts/personalized-ai-task-ui-regression.mjs（仅将原有失败场景断言改为安全提示且不包含原始错误文本；不新增测试）",
+      "public/frontend/app/runtime/home-runtime.mjs（仅renderDate通用重绘时不再无条件重置#chain-datetime；保持新建首次初始化及显式提交/取消重置路径不变）",
+      "scripts/ui-regression.mjs（仅在既有occurrence mode场景加入一次离开/返回路由后manual模式和值仍保留的断言；不加新测试文件，不改其他UI断言）"
     ],
     "forbidden_write_set": [
       "需求池",
@@ -851,7 +853,7 @@
       "只有截图或没有复现的未读数问题不据此宣称修复；先保留PARTIAL。"
     ],
     "external_actions": "无远端写、发布、部署、生产写或手工付费调用；不恢复已暂停自动化。",
-    "current_status": "BUILDING_LOCAL_ONLY；TS监控迁移与失败提示脱敏均已闭环；未读零值修复已提交且专项通过。时间源码审查：全新thought默认now，手动模式保留用户选值，home/详情默认按occurredAt展示；但反馈记录具体createdAt/occurredAt/occurredOn未核对，P0仍未根因确认。另发现home-runtime.renderDate会重置表单发生时间控件，普通路由返回不调用durable draft恢复，可能丢失未提交手动模式；尚未锁修复范围。三条时间需求不标完成；之前test:ui在2658早失败，目标场景未达，保持PARTIAL。唯一根工作树，无远程/生产/付费动作。",
+    "current_status": "BUILDING_LOCAL_ONLY；TS监控源码与失败提示脱敏已完成；通知零值修复3cf9c3b与task.error提示修复77a8793均在feat候选且对应专项通过。时间源码核对确认：全新thought默认now且手动值保存语义存在，但P0原反馈记录尚未核对。另已定位独立真实缺口：home-runtime.renderDate对#chain-datetime每次路由渲染无条件reset；改动将只保留该字段现状，显式提交/取消reset不变。rev53锁定一个运行时文件和既有UI场景断言。Feishu当前身份OpenID与本机配置不符，未读原始用户记录；P0因果仍未确认。无远端/生产/付费操作。",
     "version_requirement_count": {
       "minimum": 3,
       "maximum": 10,
@@ -1266,15 +1268,18 @@
       "tree": "3ecae2632e062ce3203c10a0b39e089a43f8ab15",
       "integration": "尚未合入develop；包含未读零值修复及失败task.error界面脱敏两个已验证本地切片。",
       "next_scope": {
-        "requirement_id": "reczz28K9ceTZDnd",
+        "requirement_id": "reczz28K9ceTa0pY",
         "related_ids": [
-          "reczz28K9ceTa0pY",
+          "reczz28K9ceTZDnd",
           "reczz28K9ceTaiW4"
         ],
         "branch": "feat/v0.5.13-save-sync-validation",
-        "baseline": "77a8793eaea9b6474b74afe334bced4caae5fa99",
-        "write_set": [],
-        "status": "只读核对原始反馈记录和时间来源；控制面rev52明确禁止据未验证假设开写。"
+        "baseline": "9c65dd68f7bc5125969dfbc6a4200b12cd039b5c",
+        "write_set": [
+          "public/frontend/app/runtime/home-runtime.mjs（仅renderDate通用重绘不reset #chain-datetime；保留显式初始化/提交/取消reset）",
+          "scripts/ui-regression.mjs（仅既有occurred-mode用例加入route离开/返回保留manual模式和值的断言）"
+        ],
+        "status": "已冻结；仅修复源码已确认的路由重绘重置，不推断P0实际反馈根因。"
       }
     }
   },
