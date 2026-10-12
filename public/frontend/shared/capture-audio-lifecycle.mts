@@ -19,7 +19,7 @@ type PlayerEntry = {
 
 type HeadResponse = { ok: boolean; status: number };
 type CaptureAudioLifecycleOptions = {
-  fetchHead?: (url: string) => Promise<HeadResponse>;
+  headStatus: (url: string) => Promise<HeadResponse>;
 };
 
 function sameScope(left: CaptureAudioScope | null, right: CaptureAudioScope): boolean {
@@ -63,9 +63,10 @@ function isSpeechPlayer(player: HTMLAudioElement): boolean {
 }
 
 /** 创建页面会话内的播放器生命周期管理器。 @since unreleased */
-export function createCaptureAudioLifecycle({
-  fetchHead = url => fetch(url, { method: "HEAD", credentials: "same-origin" })
-}: CaptureAudioLifecycleOptions = {}) {
+export function createCaptureAudioLifecycle({ headStatus }: CaptureAudioLifecycleOptions) {
+  if (typeof headStatus !== "function") {
+    throw new TypeError("Capture audio lifecycle requires a headStatus port");
+  }
   let activeScope: CaptureAudioScope | null = null;
   let retained = new Map<string, PlayerEntry>();
   let observed = new WeakSet<HTMLAudioElement>();
@@ -103,7 +104,7 @@ export function createCaptureAudioLifecycle({
     }
     showFailure(player, "已生成的朗读读取失败；可重试读取，不会重新合成。");
     if (!scope) return;
-    void fetchHead(player.src).then(response => {
+    void headStatus(player.src).then(response => {
       if (!current(scope) || !player.isConnected || !failed.has(player)) return;
       if (response.status === 401 || response.status === 403) {
         showFailure(player, "登录状态已失效，请重新登录后读取朗读缓存。");
@@ -191,7 +192,7 @@ export function createCaptureAudioLifecycle({
       const target = statusTarget(player);
       if (isSpeechPlayer(player)) {
         if (target.status) target.status.textContent = "正在检查并读取已有朗读缓存…";
-        const statusRequest = fetchHead(player.src);
+        const statusRequest = headStatus(player.src);
         try {
           player.load();
           const playback = player.play();

@@ -75,6 +75,12 @@ export function createApiClient({ baseUrl, session, apiOrigin = "", onAuthRequir
         requestId: response.headers.get("x-request-id") || ""
       };
     },
+    /** 通过当前 API 会话只读请求资源状态，不解析 HEAD 响应正文。 @since unreleased */
+    async requestHeadStatus(url, options = {}) {
+      const ticket = session.capture();
+      const response = await start(url, { ...options, method: "HEAD" }, ticket);
+      return { ok: response.ok, status: response.status };
+    },
     async readBlob(url) {
       const ticket = session.capture(), response = await start(url, {}, ticket);
       if (!response.ok) {

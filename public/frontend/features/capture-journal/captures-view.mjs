@@ -15,6 +15,7 @@ export function createCapturesView({
   platform,
   getRoot,
   getAudio,
+  requestHeadStatus,
   getDraftTags,
   getSearchQuery,
   getGenerationRate = () => undefined,
@@ -23,7 +24,7 @@ export function createCapturesView({
   isSubmitting
 } = {}) {
   const expandedKeys = new Set();
-  const audioLifecycle = createCaptureAudioLifecycle();
+  const audioLifecycle = createCaptureAudioLifecycle({ headStatus: requestHeadStatus });
   const query = selector => getRoot()?.querySelector(selector) || null;
   const queryAll = selector => [...(getRoot()?.querySelectorAll(selector) || [])];
 
