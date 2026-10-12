@@ -73,7 +73,7 @@ function taskStatusMessage(task: AiTask, operationLabel = "请求"): string {
   if (task.status === "running") return `${operationLabel}正在处理中…`;
   if (task.status === "cancelling") return `${operationLabel}正在停止…`;
   if (task.status === "succeeded") return `${operationLabel}已完成，正在读取结果…`;
-  if (task.status === "failed") return `${operationLabel}失败：${task.error || "请稍后重试。"}`;
+  if (task.status === "failed") return "任务失败，请查看通知中的脱敏错误日志后重试";
   if (task.status === "stale") return `${operationLabel}所用内容已变化，请重新发起。`;
   if (task.status === "cancelled") return `${operationLabel}已取消。`;
   return `${operationLabel}状态：${task.status}`;

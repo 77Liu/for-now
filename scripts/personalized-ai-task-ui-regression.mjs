@@ -101,7 +101,8 @@ await assert.rejects(
   }, { request: async () => assert.fail("terminal failure must not poll") }),
   error => error.taskId === "task-failed"
     && error.taskStatus === "failed"
-    && error.message.includes("模型暂时不可用")
+    && error.message.includes("任务失败，请查看通知中的脱敏错误日志后重试")
+    && !error.message.includes("模型暂时不可用")
 );
 
 let polledAfterSessionChange = false;
