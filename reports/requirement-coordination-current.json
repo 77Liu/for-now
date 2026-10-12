@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 76,
-  "updated_at": "2026-10-12T11:37:35.978Z",
+  "revision": 77,
+  "updated_at": "2026-10-12T11:38:27.584Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "主开发使用未暴露新key执行一次SSH只读true认证退出0，访问恢复已确认；继续私密签名目标匹配、原子配置及发布准备。",
+  "current_phase": "生产基线3e94e2f/包0.5.13.1现场已确认；Secret当前存在但通知开关空。主开发执行原子配置与健康核验后继续累计v0.5.13发布。",
   "state": "RELEASE_PREFLIGHT",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发不输出值核验机器人Webhook匹配，原子补生产Secret及通知开关并健康验证，随后发布累计候选。",
+  "next_action": "带0600备份原子补通知开关与指定Secret，重启核验；锁定实际运行对象3e94e2f为回滚基线，不以旧标签猜测。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -1268,6 +1268,12 @@
       "at": "2026-10-12T11:37:35.978Z",
       "reason": "新key单次实际认证成功，解除SSH阻碍；通知生产配置仍待核验，不提前宣称上线。",
       "previous_snapshot": "0458f85:reports/requirement-coordination-current.json@revision75"
+    },
+    {
+      "revision": 77,
+      "at": "2026-10-12T11:38:27.584Z",
+      "reason": "接收恢复后的真实运行/配置回执，校准生产版本及Secret现状，待启用通知及继续发布。",
+      "previous_snapshot": "16e7341:reports/requirement-coordination-current.json@revision76"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -1977,14 +1983,42 @@
       }
     },
     "notification_recovery": {
-      "status": "EXISTING_SECRET_SAVED_LOCALLY_PENDING_PRODUCTION",
+      "status": "PRIVATE_FILE_VALIDATED_WEBHOOK_MATCHED_PENDING_ATOMIC_ENABLE",
       "bot": "forNow guardian",
       "signature_enabled": true,
       "bot_enabled": true,
       "private_file": ".secrets/for-now-feishu-alert.json",
       "mode": "0600、ignored，不进Git",
       "note": "只读取已有签名，未重置机器人；生产Secret尚待SSH恢复后私密设置。",
-      "next": "新key验证成功后原子补生产Secret/开关；值不输出、原环境配置保留回滚"
+      "next": "新key验证成功后原子补生产Secret/开关；值不输出、原环境配置保留回滚",
+      "private_checks": "0600、JSON有效、字段齐全、gitignored；生产Webhook私密stdin比较MATCH，不显示内容"
+    },
+    "confirmed_production_baseline": {
+      "at": "2026-10-12T11:38:27.584Z",
+      "sha": "3e94e2f29f5e131f2e98db3b4cb48659ba91fd79",
+      "package_version": "0.5.13.1",
+      "app_version_prefix": "3e94e2f29f5e",
+      "source": "主开发恢复SSH后只读实际release路径与package/env；目录非Git工作树",
+      "health": {
+        "readyz": 200,
+        "state": "active/running",
+        "restarts": 0
+      },
+      "env_mode": "0600",
+      "compression": {
+        "enabled": true,
+        "daily_budget_cny": 4,
+        "per_call_budget_cny": 1,
+        "daily_invocations": 16,
+        "backfill_dates": 4
+      },
+      "notification": {
+        "secret_present": true,
+        "webhook_present": true,
+        "webhook_matches_private_file": true,
+        "enabled_setting": "空，待原子配置为1"
+      },
+      "correction": "此前v0.5.12描述为旧回执/文档，不作为当前回滚版本；以此完整运行SHA/实际制品路径核验回滚。"
     }
   }
 }
