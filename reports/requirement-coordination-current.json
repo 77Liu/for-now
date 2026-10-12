@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 32,
-  "updated_at": "2026-10-12T12:14:02+08:00",
+  "revision": 33,
+  "updated_at": "2026-10-12T12:38:00+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,11 +13,11 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner已要求继续推进 v0.5.13.1 与 v0.5.13；当前仅本地串行开发，远程写入、发布、部署和付费调用仍关闭",
-  "current_phase": "v0.5.13.1 本地候选已接入 develop（5a095d46，未发布，账号刷新仍PARTIAL）；v0.5.13 已由主开发在 feat/v0.5.13-save-sync 开始单写，基线锁定为 develop 5a095d46，6 条需求、3 组行为。",
+  "current_phase": "v0.5.13.1仍为本地候选（5a095d46，账号刷新PARTIAL）；v0.5.13首批切片已在develop（6195479，控制面79aa2ca），rev538六条需求差距已只读核对，现按revision33授权在唯一develop根目录继续最小补缺与通知TS闭环。",
   "state": "BUILDING_LOCAL_ONLY",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
-    "develop": "refs/heads/develop@5a095d46cb361704432c608fcfc10767ec947e1f",
+    "develop": "refs/heads/develop@79aa2cab196daf98055f83f954e3f28ec48ff000（当前业务代码tree 782451bf72f0e7ad941414d085957b8b9fefdb72；后续仅控制面元数据提交可推进分支SHA）",
     "remote_main_ref": "origin/main",
     "remote_main_observed": "ebbde6fcf100432de8a599c771cbd8e774e043ad",
     "startup_manifest": "reports/git-archive/git-startup-20261011-manifest.json",
@@ -29,8 +29,7 @@
       "main",
       "develop",
       "release/v0.5.12-clean",
-      "release/v0.5.13.1",
-      "feat/v0.5.13-save-sync"
+      "release/v0.5.13.1"
     ],
     "old_local_refs_removed": [
       "feat/v0.5.13-save-sync",
@@ -38,8 +37,8 @@
       "release/v0.5.13"
     ],
     "canonical_worktree": "/Users/bytedance/Documents/Codex/个人成长追踪",
-    "canonical_worktree_branch": "feat/v0.5.13-save-sync",
-    "canonical_worktree_head": "b645f07ed961c0c6c7acaf9705beb5a2ed197bd6 (v0.5.13需求锁定的控制面快照；业务基线仍为5a095d46)",
+    "canonical_worktree_branch": "develop",
+    "canonical_worktree_head": "79aa2cab196daf98055f83f954e3f28ec48ff000（当前业务代码候选；控制面revision33仅登记授权和回执，不改变业务tree）",
     "archived_worktree": {
       "path": "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/develop",
       "branch": "feat/v0.5.13.1-stability",
@@ -47,7 +46,14 @@
       "archive_ref": "refs/archive/worktrees/feat-v0.5.13.1-stability",
       "status": "已移除活动工作树；仅审计/恢复，禁止继续开发",
       "handoff": "reports/git-handoff/feat_v0.5.13.1-stability-20261012.md"
-    }
+    },
+    "archived_iteration_refs": [
+      {
+        "ref": "refs/archive/iterations/v0.5.13-save-sync-20261012",
+        "sha": "79aa2cab196daf98055f83f954e3f28ec48ff000",
+        "reason": "首批切片已fast-forward接入develop；归档并删除同SHA的feature分支，避免保留重复开发入口"
+      }
+    ]
   },
   "authorization_policy": {
     "policy_id": "release-authorization-policy",
@@ -76,7 +82,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发先逐条核对六条需求的当前代码/交付证据，再实现未完成项；不扩共享契约。主控维护唯一控制面、复核差分并串行接回develop。任何外部生产、远程发布动作均不在当前轮。",
+  "next_action": "主开发按revision33写集补齐思绪补录模式草稿恢复、后台回答排队失败脱敏/旧会话隔离、通知复制失败恢复，并将通知功能切片迁移到TS及隔离编译目录；主控随后审查真实差分并只运行受影响专项。不得扩大为后端/API/schema/全站重构；本地候选，不推送、不发布、不部署、不写生产。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -88,12 +94,12 @@
   ],
   "last_check": {
     "remote_refs": "2026-10-11T12:07:35Z 已通过 git ls-remote --heads/tags 只读核验；无远程写入",
-    "worktrees": "唯一根目录工作区；当前 feat/v0.5.13-save-sync，从 develop 5a095d46cb361704432c608fcfc10767ec947e1f 切出；无第二工作树、无并行代码写入",
+    "worktrees": "2026-10-12 12:34 +08：仅根目录工作树；当前develop，HEAD 79aa2cab；没有并行写入。feat/v0.5.13-save-sync已归档到refs/archive/iterations/v0.5.13-save-sync-20261012并删除本地开发引用。",
     "platform_protection": "Gitee UI只读核验：保护分支规则0条、保护标签不可用、推送限制未启用",
     "remote_write": "本轮未执行",
     "release_rollback_rehearsal": "本地隔离模拟全部通过；无远端命令",
     "budget_alerts": "本地护栏回归通过；当前生产配置与告警快照缺失，保持阻断",
-    "candidate_integration": "v0.5.13.1 候选代码已 fast-forward 接入 develop：5a095d46cb361704432c608fcfc10767ec947e1f，tree fbe240398fb0bc9fe2191369ec9c83a68895e53a；仅本地候选，账号刷新生产根因与部署验证仍 PARTIAL"
+    "candidate_integration": "v0.5.13.1仍为5a095d46本地候选PARTIAL；v0.5.13首批代码6195479及控制面79aa2ca已在develop；revision33授权的后续差异尚未实现/验证。"
   },
   "owner_decisions": {
     "git": {
@@ -287,10 +293,12 @@
       "baseline_tree": "fbe240398fb0bc9fe2191369ec9c83a68895e53a",
       "branch_plan": {
         "source_branch": "develop",
-        "branch": "feat/v0.5.13-save-sync",
+        "branch": "develop（唯一根目录单写；首批feature差分已接入并归档）",
         "worktree": "/Users/bytedance/Documents/Codex/个人成长追踪",
         "parallel_write": false,
-        "remote_operations": false
+        "remote_operations": false,
+        "followup_baseline_sha": "79aa2cab196daf98055f83f954e3f28ec48ff000",
+        "initial_slice_commit": "6195479（已接入develop）"
       },
       "groups": {
         "save-recovery": [
@@ -307,19 +315,16 @@
         ]
       },
       "allowed_write_set": [
-        "src/modules/thoughts/**",
-        "src/modules/journals/**",
-        "src/modules/captures/**",
-        "src/modules/notifications/**",
-        "public/frontend/features/thoughts/**",
-        "public/frontend/features/capture-journal/**",
-        "public/frontend/features/notifications/**",
-        "public/frontend/app/runtime/durable-form-drafts.mjs（仅需求需要且局部）",
-        "与以上行为直接对应的现有专项回归脚本",
-        "public/frontend/app/runtime/record-events.mjs（仅chain-form提交状态处理局部）",
-        "scripts/personalized-ai-task-ui-regression.mjs（仅保存结果与失败分流的必要行为断言）",
-        "public/frontend/components/occurrence-control/index.mjs（仅新建#chain-datetime默认模式局部；其他表单维持现有selectedDate语义）",
-        "scripts/frontend-shared-regression.mjs（仅对应默认now行为断言）"
+        "public/frontend/app/runtime/durable-form-drafts.mjs（仅#chain-datetime手动/now模式随草稿保存恢复）",
+        "public/frontend/app/runtime/kernel.mjs（仅startBackgroundChainAnswer错误脱敏、恢复状态与旧会话结果保护）",
+        "public/frontend/app/runtime/record-events.mjs（仅chain-form账号/会话快照与迟到响应保护）",
+        "public/frontend/features/notifications/controller.mts与presentation.mts（通知业务TS实现及必要中文注释）",
+        "public/frontend/features/notifications/controller.mjs与presentation.mjs（仅透明转发到隔离编译产物）",
+        "tsconfig.notifications.json（rootDir public/frontend，outDir public/generated）",
+        "package.json（仅build:frontend/typecheck:frontend串接通知TS编译，不改依赖）",
+        "scripts/frontend-notifications-feature-regression.mjs（仅复用现有通知专项必要断言）",
+        "scripts/frontend-shared-regression.mjs（仅复用现有时间草稿往返专项必要断言）",
+        "scripts/personalized-ai-task-ui-regression.mjs（仅复用现有保存/AI队列状态专项必要断言）"
       ],
       "shared_write_owner": "主控；revision31特批 record-events chain-form 局部，revision32另特批 occurrence-control 对新建#chain-datetime默认now的局部；其他控件、公共时间模型与shared API仍禁写。",
       "forbidden": [
@@ -332,7 +337,7 @@
         "从旧归档分支搬运或直接合入旧v0.5.10交付"
       ],
       "acceptance_boundary": "每条需求先核对源记录的最新状态与已有交付证据；已完成项只记录并从实施范围剔除。保存失败与派生失败分流、未知写入保留草稿且不重复提交；时间intent/createdAt/occurredAt与新建/补录草稿规则一致；通知仅对已成功呈现范围标记已读，未加载/新到保持未读，重试/复制不泄露凭据或私密正文；账户隔离、幂等和失败恢复按真实改动验证。没有真实浏览器/移动端/provider/生产验收时标PARTIAL。",
-      "next": "保存及通知切片实施/专项通过；另批准仅对新建思绪的发生时间控件防止历史活动日期继承，日记/打卡等其他表单语义不变。",
+      "next": "按revision33授权完成已证实缺口和通知TS闭环；未复现的计数问题保持PARTIAL。",
       "write_set_amendment": {
         "revision": 31,
         "at": "2026-10-12T12:08:35+08:00",
@@ -365,7 +370,8 @@
             "全局日期状态与持久化/服务端schema"
           ]
         }
-      ]
+      ],
+      "followup_gap_audit": "已只读确认：手动补录模式未随思绪草稿恢复；保存成功后的AI队列错误仍露出原始error.message；通知复制失败无替代恢复；通知feature仍是MJS且未纳入类型/隔离构建。未读计数根因未复现，保留PARTIAL。"
     }
   ],
   "canonical_path": "reports/requirement-coordination-current.json",
@@ -519,6 +525,12 @@
       "at": "2026-10-12T12:14:02+08:00",
       "reason": "按代码现状证实空白思绪表单会继承历史activeDate并进入manual；精确批准新建思绪默认now的控件局部及现有专项断言，不变更其他表单/公共时间契约",
       "previous_snapshot": "reports/requirement-coordination-current.json@revision-31"
+    },
+    {
+      "revision": 33,
+      "at": "2026-10-12T12:38:00+08:00",
+      "reason": "六条v0.5.13需求只读差距审查完成；归档已接入的首批feature引用，修订唯一根目录develop写入状态，并为保存草稿模式、后台问答错误恢复、通知TS切片及构建入口登记最小补充写集。",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-32"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -557,7 +569,7 @@
       "notable_mismatch": "deploy/for-now.env.example中的通用AI账户示例为每日¥14.4/200次、告警阈值¥36；它不是日压缩硬限，不能代替生产压缩配置核验"
     }
   },
-  "history_note": "本轮纠正工作树边界：无实际并行写入时不保留工作树；候选差分已留 archive ref，根目录 develop 为唯一活动写入点。",
+  "history_note": "本轮无并行写；单写者使用唯一根目录develop。首批v0.5.13切片已接入并归档feature引用；revision33只扩精确写集，明确实现缺口及TS通知闭环，编译产物不入Git。",
   "night_development": {
     "task_id": "v0513-save-sync-20261012",
     "requirement_id": "recvxm0eDZdJED",
@@ -567,10 +579,10 @@
     "duration_hours": 8,
     "window_start": "2026-10-12T12:03:20+08:00",
     "window_end": "2026-10-12T20:02:27+08:00",
-    "branch": "feat/v0.5.13-save-sync",
+    "branch": "develop",
     "baseline": "5a095d46cb361704432c608fcfc10767ec947e1f",
     "write_location": "/Users/bytedance/Documents/Codex/个人成长追踪",
-    "purpose": "三组共六条真实需求，从develop当前SHA启动；单根工作区、无并行写，不新建工作树。先核实需求状态/已有交付，再只实现未完成行为。遵守测试影响矩阵，复用现有专项，不跑system all；不推送/发布/部署/写生产/手工付费。",
+    "purpose": "v0.5.13六条真实需求串行推进；没有并行写入，唯一写入位置为根目录develop，不创建或保留第二工作树。仅实现已核实未交付项；测试按唯一影响矩阵选择，不跑system all；不推送/发布/部署/写生产/手工付费。",
     "state_matrix": [
       {
         "state": "未提交补充问答",
@@ -605,23 +617,27 @@
         "output": "未读呈现语义、脱敏诊断及失败恢复，账户隔离按影响验证。"
       },
       {
+        "id": "S2b",
+        "name": "最小差距补齐与通知TS闭环",
+        "output": "仅按revision33已授权写集修复草稿/会话/错误恢复缺口；通知业务逻辑迁移至TS并输出到被.gitignore保护的public/generated；原有专项复用。"
+      },
+      {
         "id": "S3",
         "name": "集成与验收",
         "output": "只跑测试影响矩阵命令；记录candidate SHA/tree、PASS/PARTIAL/BLOCKED和返回节点。"
       }
     ],
     "allowed_write_set": [
-      "src/modules/thoughts/**",
-      "src/modules/journals/**",
-      "src/modules/captures/**",
-      "src/modules/notifications/**",
-      "public/frontend/features/thoughts/**",
-      "public/frontend/features/capture-journal/**",
-      "public/frontend/features/notifications/**",
-      "public/frontend/app/runtime/durable-form-drafts.mjs（仅局部需求）",
-      "直接受影响的现有专项回归脚本",
-      "public/frontend/app/runtime/record-events.mjs（仅chain-form提交状态处理局部）",
-      "scripts/personalized-ai-task-ui-regression.mjs（仅必要行为断言）"
+      "public/frontend/app/runtime/durable-form-drafts.mjs（仅#chain-datetime手动/now模式随草稿保存恢复）",
+      "public/frontend/app/runtime/kernel.mjs（仅startBackgroundChainAnswer错误脱敏、恢复状态与旧会话结果保护）",
+      "public/frontend/app/runtime/record-events.mjs（仅chain-form账号/会话快照与迟到响应保护）",
+      "public/frontend/features/notifications/controller.mts与presentation.mts（通知业务TS实现及必要中文注释）",
+      "public/frontend/features/notifications/controller.mjs与presentation.mjs（仅透明转发到隔离编译产物）",
+      "tsconfig.notifications.json（rootDir public/frontend，outDir public/generated）",
+      "package.json（仅build:frontend/typecheck:frontend串接通知TS编译，不改依赖）",
+      "scripts/frontend-notifications-feature-regression.mjs（仅复用现有通知专项必要断言）",
+      "scripts/frontend-shared-regression.mjs（仅复用现有时间草稿往返专项必要断言）",
+      "scripts/personalized-ai-task-ui-regression.mjs（仅复用现有保存/AI队列状态专项必要断言）"
     ],
     "forbidden_write_set": [
       "reports/requirement-coordination-current.json",
@@ -629,17 +645,23 @@
       "src/http/**",
       "src/shared/**",
       "src/config/**",
-      "共享装配、数据库schema/migrations、package.json/lock、tsconfig、.gitignore、deploy/、main/release/preview/hotfix/docs、远端资源、生产数据与付费接口"
+      "共享装配、数据库schema/migrations、package.json/lock、tsconfig、.gitignore、deploy/、main/release/preview/hotfix/docs、远端资源、生产数据与付费接口",
+      "tsconfig.frontend.json、package-lock.json及其他依赖/锁文件",
+      "其他公共运行时、src/http/**、src/shared/**、schema/migrations、服务端通知持久化契约、全站状态/通知重构",
+      "新增大型/重复回归脚本、public/generated/**（只允许本地生成；不得纳入Git）"
     ],
     "stop_conditions": [
       "发现需求已完成或源状态与快照有实质变化时，暂停该ID并回报主控调整范围",
       "需要修改共享契约、HTTP、schema、全局状态/装配或公共配置时停止并提交最小影响说明",
       "现有专项无法表达关键不变量时先解释缺口，避免复制测试；不改弱断言来求通过",
       "不能复现的行为不凭猜测扩大实现",
-      "任何生产/远程/付费动作均不在本轮授权"
+      "任何生产/远程/付费动作均不在本轮授权",
+      "若持久化通知、任务API、schema或公共契约修改是满足错误通知需求的必要条件，停止该子项并报告最小契约缺口，不越界实现。",
+      "TypeScript源无法在隔离outDir内编译且不允许改现有构建入口时，报告失败与最小调整方案；不在源码旁生成MJS或提交编译产物。",
+      "只有截图或没有复现的未读数问题不据此宣称修复；先保留PARTIAL。"
     ],
     "external_actions": "无远端写、发布、部署、生产写或手工付费调用；不恢复已暂停自动化。",
-    "current_status": "BUILDING；六条需求由2026-10-12 11:56完整池快照绑定，账号刷新仍在v0.5.13.1本地候选partial内，不重复纳入或冒称发布。",
+    "current_status": "BUILDING；v0.5.13首批差分6195479已接入develop，六条rev538源需求的只读差距审查确认保存派生回答错误恢复、手动时间模式草稿恢复、通知复制失败替代恢复仍有局部缺口；计数根因与真实浏览器/移动端仍partial。当前按revision33授权补缺及通知TS闭环。v0.5.13.1维持本地候选partial。",
     "version_requirement_count": {
       "minimum": 3,
       "maximum": 10,
@@ -838,7 +860,7 @@
     },
     "baseline_tree": "fbe240398fb0bc9fe2191369ec9c83a68895e53a",
     "requirement_count": 6,
-    "共享文件扩大授权": "revision31仅批准 record-events.mjs 的 chain-form 提交状态分流局部及其现有专项；其他 public/frontend/app/runtime/**、src/http/**、schema、装配仍禁写。",
+    "共享文件扩大授权": "revision31批准record-events chain-form局部；revision32批准新建思绪默认now局部；revision33仅批准本控制面write_set_amendments[2]列明的运行时、通知TS和构建入口。协调者仍为唯一控制面写者，其余共享代码/配置仍禁写。",
     "v0.5.13时间边界特批": {
       "revision": 32,
       "at": "2026-10-12T12:14:02+08:00",
@@ -853,7 +875,54 @@
         "其他表单发生时间行为",
         "全局日期状态与持久化/服务端schema"
       ]
-    }
+    },
+    "current_develop_code_baseline": "79aa2cab196daf98055f83f954e3f28ec48ff000",
+    "shared_write_scope_revision33": "revision33指定主开发为唯一代码写者，允许按本轮最小范围修改通知业务TS、既有运行时窄点及对应专项；package.json和新tsconfig.notifications.json由主开发按唯一串行写者职责仅改前端TS构建/类型检查入口。协调者仍独占本控制面；其他共享配置、公共契约和业务写者仍禁止。",
+    "gap_audit_revision32": {
+      "at": "2026-10-12T12:38:00+08:00",
+      "mode": "只读；未跑测试、未写代码",
+      "source_thread_id": "01a11afe-73d2-7013-91d5-cd473c4d7115",
+      "summary": [
+        "保存：POST幂等、未知结果保留草稿已存在；保存成功后派生回答入队失败仍在kernel中呈现原始error.message，且未见可恢复通知链。",
+        "时间：新建思绪默认now已修；durable-form-drafts只存字段值，未存occurrenceMode，恢复旧补录草稿可能以now模式提交。",
+        "通知：呈现快照已读/失败保留逻辑存在；复制剪贴板失败只有toast，没有备用恢复路径。未读计数截图不能证明根因或修复。",
+        "TS：通知业务逻辑位于.mjs，现有TS配置只编译shared目录，尚未完成通知feature的TS与构建闭环。",
+        "账户：旧账号请求迟到后修改新会话/表单的边界需限于chain-form和后台回答结果核对。"
+      ],
+      "decision": "只授权可在前端现有边界内完成的最小修复；如要求持久化通知必须改后端公共契约，停止该部分并保持PARTIAL。主开发通过唯一根目录develop写入；无需第二工作树。"
+    },
+    "write_set_amendments": [
+      {
+        "revision": 33,
+        "at": "2026-10-12T12:38:00+08:00",
+        "reason": "只读差距审查确认保存、时间和通知切片存在可定位缺口；前端通知实现仍是MJS，未满足PROJECT_RULES第16条的TS渐进迁移要求。限定补齐已确定用户行为并建立首个可构建/可类型检查的通知TS切片。",
+        "approved_paths": [
+          "public/frontend/app/runtime/durable-form-drafts.mjs（仅#chain-datetime手动/now模式随草稿保存恢复）",
+          "public/frontend/app/runtime/kernel.mjs（仅startBackgroundChainAnswer错误脱敏/恢复状态/会话结果保护）",
+          "public/frontend/app/runtime/record-events.mjs（仅chain-form提交后的账号/会话快照与迟到响应保护）",
+          "public/frontend/features/notifications/controller.mts与presentation.mts（通知业务逻辑及必要中文注释）",
+          "public/frontend/features/notifications/controller.mjs与presentation.mjs（仅导出隔离编译产物的透明加载器）",
+          "tsconfig.notifications.json（rootDir public/frontend，outDir public/generated）",
+          "package.json（只将通知TS配置并入现有build:frontend/typecheck:frontend命令，不改依赖）",
+          "scripts/frontend-notifications-feature-regression.mjs、scripts/frontend-shared-regression.mjs、scripts/personalized-ai-task-ui-regression.mjs（仅已有测试入口中相应行为断言）"
+        ],
+        "still_forbidden": [
+          "reports/requirement-coordination-current.json、需求池、所有远程/生产/发布操作",
+          "src/http/**、src/shared/**、src/modules/**、schema/migrations、服务端通知持久化/API契约",
+          "tsconfig.frontend.json、package-lock.json、其他依赖/构建/部署配置、.gitignore",
+          "public/generated/**进入Git、全站状态或通知重构、无复现的未读计数“修复”"
+        ],
+        "shared_file_owner": "主开发是本revision唯一代码写者；package.json与新tsconfig.notifications.json只可由主开发串行修改。主控仍独占本控制面写权。",
+        "acceptance": "通知feature核心实现真实位于.mts；typecheck和编译成功；生成.mjs只在ignored public/generated；源码旁不落编译输出、不提交generated。既有测试只增必要场景；中文注释说明公开入口及异步会话/恢复不变量。"
+      }
+    ],
+    "known_previous_test_failure": {
+      "command": "npm run test:journeys:smoke",
+      "result": "FAIL（既有测试夹具问题，非本次修改行为）",
+      "detail": "子场景production background core-model gate直接调用createContentBackground时未先安装Prompt catalog，抛出“Prompt catalog has not been installed”；正式runtime由src/app/runtime-foundation.mjs安装。除非本轮写集触及该夹具/提示词装配，不重跑或扩大修复。",
+      "status": "保留原失败，不改写为通过；当前TS/保存通知差分未确认影响该夹具。"
+    },
+    "candidate_tree_at_revision33": "782451bf72f0e7ad941414d085957b8b9fefdb72"
   },
   "version_plan": {
     "minimum_requirements_per_version": 3,
@@ -943,16 +1012,19 @@
         "baseline_tree": "fbe240398fb0bc9fe2191369ec9c83a68895e53a",
         "branch_plan": {
           "source_branch": "develop",
-          "branch": "feat/v0.5.13-save-sync",
+          "branch": "develop（唯一根目录单写；无并行时不建工作树）",
           "worktree": "/Users/bytedance/Documents/Codex/个人成长追踪",
           "parallel_write": false,
           "remote_operations": false,
           "allowed_write_set": [
             "public/frontend/components/occurrence-control/index.mjs（仅新建#chain-datetime默认模式局部；其他表单维持现有selectedDate语义）",
             "scripts/frontend-shared-regression.mjs（仅对应默认now行为断言）"
-          ]
+          ],
+          "followup_baseline_sha": "79aa2cab196daf98055f83f954e3f28ec48ff000"
         },
-        "scope": "六条未交付需求的保存恢复、时间意图及通知状态/诊断闭环；先核对已有实现，已解决项剔除，不扩全站重构。"
+        "scope": "六条未交付需求的保存恢复、时间意图及通知状态/诊断闭环；先核对已有实现，已解决项剔除，不扩全站重构。",
+        "execution": "首批切片6195479已接入develop；revision33授权的最小后续差分待实现。仍是本地候选。",
+        "next": "只完成revision33写集；主控复核后运行对应专项，不推送/发布/部署。"
       }
     ],
     "third_version": "暂不冻结；只有需求池定向复核得到至少3条真实未交付需求后才建立v0.5.13.2或v0.5.14候选"
