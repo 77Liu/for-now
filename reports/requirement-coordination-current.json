@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 71,
-  "updated_at": "2026-10-12T10:57:08.631Z",
+  "revision": 72,
+  "updated_at": "2026-10-12T11:04:11.635Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,8 +13,8 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "四倍额度补接已提交d98762c并保持c5376182祖先；进入累计v0.5.13单版本发布准备与现场核验。",
-  "state": "RELEASE_PREPARING",
+  "current_phase": "v0.5.13发布前现场核验发现通知Secret缺失及SSH认证失联；尚无本次发布写入回执，暂停生产动作，保留本地准备。",
+  "state": "RELEASE_ENVIRONMENT_BLOCKED",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
     "develop": "refs/heads/develop",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发按本次attempt执行生产现场核验及发布链路；如修改必要版本元数据先回传新候选身份，不做无关开发。",
+  "next_action": "主开发只读厘清SSH最后成功/首次失败、实际远端密钥动作和其他已授权恢复入口；保留本地版本元数据与发布说明准备。通知Secret从既有私密来源核验，无可用来源再请Owner提供设置入口。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -436,7 +436,7 @@
     },
     {
       "id": "v0.5.13",
-      "state": "RELEASE_PREPARING",
+      "state": "RELEASE_ENVIRONMENT_BLOCKED",
       "scope": "保存状态/草稿与失败恢复；发生时间/补录意图；通知列表未读事实、脱敏诊断与恢复操作。仅实现六条锁定需求的未交付行为，不做全站状态或通知平台重构。",
       "requirement_ids": [
         "recvxm0eDZdJED",
@@ -617,7 +617,7 @@
       "integration_status": "本地六文件代码与既有控制面提交已快进合入develop；feat分支保留。未push/tag/release/deploy。",
       "active_task": {
         "task_id": "v0513-production-release-20261012",
-        "state": "DISPATCH_READY",
+        "state": "BLOCKED_PRODUCTION_ACTIONS_LOCAL_PREPARATION_ALLOWED",
         "owner": "主控",
         "implementer": "主开发",
         "mode": "Owner授权发布执行",
@@ -1238,6 +1238,12 @@
       "at": "2026-10-12T10:57:08.631Z",
       "reason": "四倍配置专项/边界/独审通过并提交；按Owner明确授权启动累计v0.5.13发布attempt。",
       "previous_snapshot": "390d9c8:reports/requirement-coordination-current.json@revision70"
+    },
+    {
+      "revision": 72,
+      "at": "2026-10-12T11:04:11.635Z",
+      "reason": "生产预算已核验四倍实际值；通知签名缺失、密钥轮换后部署入口失联，实际阻断对应发布动作，保留旧运行事实不伪实时健康。",
+      "previous_snapshot": "55ca953:reports/requirement-coordination-current.json@revision71"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -1855,7 +1861,7 @@
   "release_attempt": {
     "id": "v0513-production-20261012-01",
     "version": "v0.5.13",
-    "state": "PREPARING",
+    "state": "BLOCKED_DEPLOY_ACCESS_AND_NOTIFICATIONS",
     "candidate_sha": "d98762c4d8de5612b998bb71ed6a71fd8810e17d",
     "candidate_tree": "663d41df97e04732418e9402aaeb4f4d52a8c9c8",
     "authorization_source": "owner_decisions.current_release_authorization",
@@ -1868,6 +1874,43 @@
       "费用突破批准限制",
       "健康/错误/重启异常、回滚不可执行"
     ],
-    "partial_source": "iterations[id=v0.5.13]及iterations[id=v0.5.13.1]"
+    "partial_source": "iterations[id=v0.5.13]及iterations[id=v0.5.13.1]",
+    "preflight_receipt": {
+      "at": "2026-10-12T11:04:11.635Z",
+      "source_thread": "01a11afe-73d2-7013-91d5-cd473c4d7115",
+      "observed_runtime": {
+        "version": "v0.5.12",
+        "sha_prefix": "3e94e2f",
+        "note": "与旧文档tag基线不同，需以最后现场运行身份和完整SHA证据核验，不以tag猜测实际回滚对象。"
+      },
+      "last_successful_observation": {
+        "readiness": 200,
+        "process": "Active",
+        "restarts": 0,
+        "note": "SSH失联后的实时状态未确认"
+      },
+      "compression": {
+        "enabled": true,
+        "daily_budget_cny": 4,
+        "per_call_budget_cny": 1,
+        "daily_invocations": 16,
+        "backfill_dates": 4,
+        "ledger_calls": 3,
+        "ledger_spent_cny": 0.00724,
+        "reserved_cny": 0
+      },
+      "notifications": {
+        "webhook_present": true,
+        "secret_present": false,
+        "runtime_enabled": false
+      },
+      "operations": {
+        "monitor_timer": "active/enabled",
+        "backup_timer": "active/enabled",
+        "last_backup_service_success": "03:25 Asia/Shanghai（主开发回执，完整日期及备份对象待核验）"
+      },
+      "access_issue": "主开发尝试密钥轮换后SSH拒绝；authorized_keys和旧key撤销状态未知。禁止新轮换/撤销及未知结果重复写入，先获取脱敏执行回执和可用恢复入口。",
+      "release_actions": "主开发报告尚未push/tag/Release/deploy；等待具体回执确认"
+    }
   }
 }
