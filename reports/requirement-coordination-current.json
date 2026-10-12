@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 46,
-  "updated_at": "2026-10-12T15:23:40+08:00",
+  "revision": 47,
+  "updated_at": "2026-10-12T15:24:56+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,11 +13,11 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner已要求继续推进 v0.5.13.1 与 v0.5.13；当前仅本地串行开发，远程写入、发布、部署和付费调用仍关闭",
-  "current_phase": "v0.5.13.1候选仍为本地PARTIAL；严重告警诊断与监控TS闭环已接入develop，未推送/发布/部署。v0.5.13发生时间模式草稿恢复修改仍在原feat分支：frontend-shared与语法/diff检查通过，手动/现在模式定向内联smoke通过。一次npm run test:ui在较早capture展开断言2658失败，目标恢复场景未到达；保留浏览器验证PARTIAL，不再重复该整套。",
+  "current_phase": "v0.5.13.1候选仍本地PARTIAL；严重告警诊断及监控TS闭环已接入develop，未推送/发布/部署。v0.5.13发生时间模式随草稿恢复提交52cfa6e已接入develop，tree 9a7f0273506e。frontend-shared、静态检查与manual/now往返内联smoke通过；test:ui单次运行在更早capture展开断言2658失败，目标浏览器重载场景未执行，保持PARTIAL。",
   "state": "BUILDING_LOCAL_ONLY",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
-    "develop": "refs/heads/develop@a3fcdaf1ca46d934b53ecc8d7e5d9eaed7b89371（发生时间草稿恢复切片基线；未远程发布）",
+    "develop": "refs/heads/develop@52cfa6eb3eb8fa3de4c7c624ac609e57a168dc25（发生时间草稿恢复候选已接入；浏览器验收PARTIAL；未远程发布）",
     "remote_main_ref": "origin/main",
     "remote_main_observed": "ebbde6fcf100432de8a599c771cbd8e774e043ad",
     "startup_manifest": "reports/git-archive/git-startup-20261011-manifest.json",
@@ -41,7 +41,7 @@
     ],
     "canonical_worktree": "/Users/bytedance/Documents/Codex/个人成长追踪",
     "canonical_worktree_branch": "develop",
-    "canonical_worktree_head": "a3fcdaf1ca46d934b53ecc8d7e5d9eaed7b89371（唯一根目录工作树；当前在develop，功能差分仍未提交，不得提交到develop）",
+    "canonical_worktree_head": "52cfa6eb3eb8fa3de4c7c624ac609e57a168dc25（根目录唯一工作树；本地候选，未部署）",
     "archived_worktree": {
       "path": "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/develop",
       "branch": "feat/v0.5.13.1-stability",
@@ -85,7 +85,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主控审查三个文件实际差分及 focused smoke，允许主开发在原feat分支提交后快进接入develop作为PARTIAL本地候选；不将未到达的浏览器重载场景写成通过。随后依据rev538剩余锁定需求选择另一个最小切片；不触发远程/生产动作。",
+  "next_action": "主控基于rev538定向审查结论只读核对未读数需求recvxyqUrj2xlc：确认显式权威未读数为0是否被本地列表fallback覆盖及现有专项覆盖；仅在源码差异确认后锁定最小修复写集。暂不扩展markPresentedRead的可见范围行为。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -97,12 +97,12 @@
   ],
   "last_check": {
     "remote_refs": "2026-10-11T12:07:35Z 已通过 git ls-remote --heads/tags 只读核验；无远程写入",
-    "worktrees": "2026-10-12T15:23:40+08:00：仅根目录一个工作树，当前develop@b1fa2d6；feat/v0.5.13-save-sync-validation保留且相同基线，三文件未提交差分仍在唯一工作区，无第二工作树。",
+    "worktrees": "2026-10-12T15:24:56+08:00：仅根目录一个工作树，当前develop@52cfa6e；feat/v0.5.13-save-sync-validation保留并与develop同SHA；无第二工作树。",
     "platform_protection": "Gitee UI只读核验：保护分支规则0条、保护标签不可用、推送限制未启用",
     "remote_write": "本轮未执行",
     "release_rollback_rehearsal": "本地隔离模拟全部通过；无远端命令",
     "budget_alerts": "本地护栏回归通过；当前生产配置与告警快照缺失，保持阻断",
-    "candidate_integration": "P0后台回答结果GET恢复已接入develop并由既有专项通过。发生时间模式草稿恢复三文件差分在feat上；npm run test:frontend-shared、三个文件node --check、git diff --check通过；未提交。npm run test:ui本轮唯一一次在scripts/ui-regression.mjs:2658 capture展开断言失败；发生时间恢复场景4098–4108未到达，保持PARTIAL。不重复运行整套。临时内联smoke验证manual/now模式与值、输入隐藏/禁用及active/aria状态往返成功，无文件新增。远程/生产未操作。",
+    "candidate_integration": "监控脚本源码为.mts、隔离编译目录被gitignore；严重告警诊断和TS闭环在本地develop，完整deploy-regression未计PASS，未部署。P0后台结果GET恢复和发生时间模式草稿恢复均已本地集成。时间模式提交52cfa6eb3eb8fa3de4c7c624ac609e57a168dc25 tree 9a7f0273506eed199e1413f6b6851542e21dd33f；frontend-shared、语法/diff检查、内联manual/now意图往返smoke通过。npm run test:ui仅一次，失败于scripts/ui-regression.mjs:2658的较早capture展开断言，occurredMode重载场景未到达；保持PARTIAL，不重跑全套。未推送、发布或部署。",
     "alert_incident": {
       "alert_at": "2026-10-12T05:01:39.769Z",
       "recovered_at": "2026-10-12T05:06:39.868Z",
@@ -358,7 +358,7 @@
         "从旧归档分支搬运或直接合入旧v0.5.10交付"
       ],
       "acceptance_boundary": "每条需求先核对源记录的最新状态与已有交付证据；已完成项只记录并从实施范围剔除。保存失败与派生失败分流、未知写入保留草稿且不重复提交；时间intent/createdAt/occurredAt与新建/补录草稿规则一致；通知仅对已成功呈现范围标记已读，未加载/新到保持未读，重试/复制不泄露凭据或私密正文；账户隔离、幂等和失败恢复按真实改动验证。没有真实浏览器/移动端/provider/生产验收时标PARTIAL。",
-      "next": "revision46记录：发生时间模式保存/恢复的manual/now定向smoke通过，但现有UI整套在更早capture展开断言2658失败，目标浏览器重载断言未执行。不扩大为capture修复，不重复整套；主控审查后可将精确差分作为PARTIAL候选接入develop，继续其他独立锁定需求。",
+      "next": "主控先只读核对rev538未读数需求recvxyqUrj2xlc对应数据投影和现有basic-surfaces专项；若显式0被fallback覆盖，锁定一个精确数据入口与现有回归写集；不扩大至通知自动已读范围或增加测试文件。",
       "write_set_amendment": {
         "revision": 31,
         "at": "2026-10-12T12:08:35+08:00",
@@ -461,10 +461,10 @@
         }
       ],
       "followup_gap_audit": "已只读确认：手动补录模式未随思绪草稿恢复；保存成功后的AI队列错误仍露出原始error.message；通知复制失败无替代恢复；通知feature仍是MJS且未纳入类型/隔离构建。未读计数根因未复现，保留PARTIAL。",
-      "execution": "首批保存/时间/通知切片6195479已接入develop；来源念起冲突提示及页面重载用例接入develop@5f6cb9d，目标断言通过，整套UI后续通知按钮旧预期失败保留PARTIAL。P0后台回答结果GET恢复提交89afb9a36e846939906dc6fdd20687eda0c943e9已fast-forward接入develop，tree 6ad0e6b0ad5863bb6da3e84d84c9d59ead06e330；既有专项与diff check通过。未推送、发布或部署。",
-      "candidate_sha": "89afb9a36e846939906dc6fdd20687eda0c943e9",
-      "candidate_tree": "6ad0e6b0ad5863bb6da3e84d84c9d59ead06e330",
-      "integration_status": "P0结果恢复已本地fast-forward接入develop；feat分支保留；候选仍PARTIAL，未远程发布或部署"
+      "execution": "P0后台结果GET恢复已接入develop并通过既有专项。发生时间mode随草稿保存/恢复提交52cfa6eb3eb8fa3de4c7c624ac609e57a168dc25已接入develop，tree 9a7f0273506eed199e1413f6b6851542e21dd33f；frontend-shared、语法/diff及manual/now定向内联smoke通过。一次UI整套失败于更早capture展开断言2658，目标浏览器重载断言未到达，候选保持PARTIAL；未远程发布或部署。",
+      "candidate_sha": "52cfa6eb3eb8fa3de4c7c624ac609e57a168dc25",
+      "candidate_tree": "9a7f0273506eed199e1413f6b6851542e21dd33f",
+      "integration_status": "已本地fast-forward接入develop；feature分支保留；浏览器重载验收未到达，候选PARTIAL"
     }
   ],
   "canonical_path": "reports/requirement-coordination-current.json",
@@ -696,6 +696,12 @@
       "at": "2026-10-12T15:23:40+08:00",
       "reason": "记录发生时间恢复定向smoke通过、单次UI验证在更早capture断言失败；明确候选可部分集成但不得伪称浏览器验收。",
       "previous_snapshot": "reports/requirement-coordination-current.json@revision-45"
+    },
+    {
+      "revision": 47,
+      "at": "2026-10-12T15:24:56+08:00",
+      "reason": "主控审查并本地接入发生时间模式草稿恢复切片；如实记录共享/定向smoke通过与整套UI更早失败，候选保持PARTIAL。",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-46"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -830,7 +836,7 @@
       "只有截图或没有复现的未读数问题不据此宣称修复；先保留PARTIAL。"
     ],
     "external_actions": "无远端写、发布、部署、生产写或手工付费调用；不恢复已暂停自动化。",
-    "current_status": "BUILDING_LOCAL_ONLY；发生时间mode保存/恢复差分仍在feat分支未提交，仅三个授权文件。frontend-shared专项、三个文件语法、diff check及一次内联manual/now行为smoke通过。test:ui本轮唯一一次在较早capture展开断言2658失败，目标页面重载场景未到达，保留PARTIAL；不重复整套或扩散到capture行为修复。主控审查后可提交并本地集成，不释放/部署。",
+    "current_status": "BUILDING_LOCAL_ONLY；发生时间mode持久化/恢复以52cfa6e本地集成develop，tree 9a7f0273506eed199e1413f6b6851542e21dd33f。frontend-shared、node --check、diff check和不落盘manual/now定向smoke通过；单次test:ui在2658既有capture展开断言失败，目标浏览器场景未执行，保持PARTIAL。下一步主控只读核验未读数零值fallback缺口，再锁定必要切片。无远程/生产操作。",
     "version_requirement_count": {
       "minimum": 3,
       "maximum": 10,
@@ -1309,5 +1315,5 @@
     ],
     "third_version": "暂不冻结；只有需求池定向复核得到至少3条真实未交付需求后才建立v0.5.13.2或v0.5.14候选"
   },
-  "current_develop_code_baseline": "a3fcdaf1ca46d934b53ecc8d7e5d9eaed7b89371"
+  "current_develop_code_baseline": "52cfa6eb3eb8fa3de4c7c624ac609e57a168dc25"
 }
