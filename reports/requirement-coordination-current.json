@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 159,
-  "updated_at": "2026-10-12T21:06:25.199Z",
+  "revision": 164,
+  "updated_at": "2026-10-12T21:43:24.362Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -19,8 +19,8 @@
   },
   "iteration": {
     "id": "v0.5.13",
-    "status": "REPAIRING_ENGINEERING_GATE",
-    "phase": "纠正遗漏module门的ready判断；保持生产动作与正式收尾待人工",
+    "status": "VALIDATING_FIXED_CANDIDATE",
+    "phase": "新工程修正已接入develop，250a4a4准备本地有状态与隔离线上验证",
     "started_by": {
       "iteration_id": "v0.5.14",
       "event_id": "v0.5.14-d8677092-b404-4379-93cf-f7f84035f59d"
@@ -52,9 +52,9 @@
   },
   "active_tasks": [],
   "candidate": {
-    "sha": "e90520cadef9150f23ac029bef0e96a79616c3cb",
-    "tree": "0ec5c710e65cd30dcb29d29c03713206d5149d20",
-    "status": "REWORK_REQUIRED",
+    "sha": "250a4a469b1cd0c5956b0141775da9fc5ceab8c5",
+    "tree": "4ca447678973dad9f0267b330c4c582e2441041f",
+    "status": "VALIDATED_WAIT_FIXTURE_COMMIT",
     "release_frozen": false,
     "quality_gate": {
       "snapshot": "PASS",
@@ -64,7 +64,8 @@
       "restart_recovery": "PASS",
       "core_smoke": "PASS",
       "isolated_online": "PASS",
-      "module_check": "FAIL"
+      "module_check": "PASS",
+      "full_ui": "PASS"
     },
     "release_reference": {
       "name": "release/v0.5.13",
@@ -78,9 +79,27 @@
       "restart_recovery",
       "core_smoke",
       "isolated_online",
-      "module_check"
+      "module_check",
+      "full_ui"
     ],
-    "test_matrix_ref": "knowledge/test-impact-matrix.md#候选级最小门"
+    "test_matrix_ref": "knowledge/test-impact-matrix.md#候选级最小门",
+    "validation_subject": {
+      "application_sha": "250a4a469b1cd0c5956b0141775da9fc5ceab8c5",
+      "input_manifest_sha256": "e8f6aea214fdfeb3ab231ed4a42f7df6dd45f16a7464f386437ebc0479c6ae60",
+      "input_count": 1020,
+      "excludes": [
+        "reports运行记录",
+        "scripts/ui-regression.mjs本地夹具"
+      ],
+      "browser_fixture_sha256": "99003398bfd2f79ce8d624081e0a41e59b73677b55e437d2dca6c38a104c2934",
+      "global_receipt": "reports/local/250a4a4-startup-gate-receipt.json",
+      "global_receipt_sha256": "397430875cdf43b7ed83c664a2abc817afdb39edb0b38fe05ab9724b3279aaf0",
+      "limits": [
+        "PG/Linux门实际运行对象为250a4a4，不改写其命令/回执候选身份",
+        "真实provider/iOS/移动端与生产新版本验收仍PARTIAL",
+        "生产DB身份仅验证后连续两次一致，前后对照未执行"
+      ]
+    }
   },
   "authorization": {
     "source": {
@@ -109,7 +128,7 @@
   "blockers": [],
   "next_action": {
     "owner": "主控",
-    "action": "提交已亲审的两处启动边界修正接入develop，固定新v0.5.13候选后执行本地有状态全局与隔离Linux验证",
+    "action": "提交唯一UI夹具身份修正接入develop，比较应用输入等价后更换本地release候选；发布/正式收尾仍待人工，随后恢复v0.5.14",
     "status": "PLANNED"
   },
   "runtime": {
@@ -118,7 +137,10 @@
     "observed_at": "2026-10-12T16:00:35.882Z",
     "active": true,
     "restarts": 0,
-    "boundary": "采集前后只读运行身份与状态一致；不把当时健康当永久实时状态"
+    "boundary": "本次只读service与readyz观察；短版本与此前fullSHA前缀相同，未重新核验完整制品或DB身份，不证明历史连续健康",
+    "readonly_observed_at": "2026-10-12T21:21:36.817282+00:00",
+    "readiness_version": "3e94e2f29f5e",
+    "pid": 940727
   },
   "evidence": [
     {
@@ -224,6 +246,18 @@
       "event_id": "v0.5.13-ce53c1c5-e776-4751-b6bd-2fad7026e54e",
       "source": "scripts/control-plane-update.mts；knowledge/coordination-control-plane.md v2.1",
       "status": "主控亲自审查转出、分段锚点、held恢复、close消费者与授权边界；复用最终实际类型检查/内部往返夹具PASS"
+    },
+    {
+      "id": "current-candidate-ui-failure",
+      "event_id": "v0.5.13-46fad2e3-34d2-4663-b7b2-04933fb4fdcc",
+      "source": "主控临时诊断副本0b9e13874e07e1bc4c3754ef000b9caadc307d9dce977d5405ab7b8ae92d9079；实际exec d5fcc6/session26795 exit1",
+      "status": "250a4a4真实Chrome本地替身旅程FAIL@4100；初次诊断放在后续now断言，子条件未输出，已纠正临时诊断定位；仓库与原预期未改"
+    },
+    {
+      "id": "v0513-250a-stateful-and-ui-result",
+      "event_id": "v0.5.13-a9efcf6e-7056-4fd6-a5b5-af09f9497e21",
+      "source": "reports/local/250a4a4-startup-gate-receipt.json#397430875cdf43b7ed83c664a2abc817afdb39edb0b38fe05ab9724b3279aaf0；UI exec-8c4f9558-078a-4c07-950b-c44739c7bcf0",
+      "status": "主控核对真实本地PASS、隔离Linux journal PASS及修正夹具后的完整Chrome UI PASS；初始失败与限制保留"
     }
   ],
   "records": {
