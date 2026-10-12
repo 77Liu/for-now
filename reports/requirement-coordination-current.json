@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 100,
-  "updated_at": "2026-10-12T14:38:25.240Z",
+  "revision": 101,
+  "updated_at": "2026-10-12T14:42:16.503Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/test-impact-matrix.md、SOP/integration-audit.md、SOP/release-and-observation.md；未改变其他风险授权正文"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "真实只读生产快照在复合resourceId脱敏形态处安全阻断，未落bundle/未跑本机verify；按字段结构概要定位后单脚本修复。",
+  "current_phase": "真实快照阻断已定位证据权限来源tuple第四项语义targetKey误解析；单MTS脚本窄点修复后新身份重采。",
   "state": "GLOBAL_STARTUP_GATE_EXECUTING",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发仅一次生产readonly结构诊断或复用已有安全形态，报collection/kind/字段路径/数组长度与元素类型及候选生成源码，不发实际ID/正文。确认合法结构后锁定脚本窄点修复；不放宽等价性断言。",
+  "next_action": "主开发修正来源tuple/语义targetKey区分，保留引用图与意图等价断言；受影响工具自测通过后主控提交重发真实门。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -616,30 +616,27 @@
       "candidate_tree": "9dc58edd21eb42a6e0cfe30fe477faab3e4659ea",
       "integration_status": "本地六文件代码与既有控制面提交已快进合入develop；feat分支保留。未push/tag/release/deploy。",
       "active_task": {
-        "task_id": "v0513-production-snapshot-local-startup-run-20261012",
-        "state": "BLOCKED_REDACTION_SHAPE_READ_ONLY_DIAGNOSIS",
+        "task_id": "v0513-startup-snapshot-source-tuple-fix-20261012",
+        "state": "DISPATCH_READY",
+        "mode": "实际脱敏形态单脚本修复",
         "owner": "主控",
         "implementer": "主开发",
-        "mode": "已审查工具的生产只读采集与本机真实门执行",
+        "feature_branch": "feat/v0.5.13-save-sync-validation",
         "write_set": [
-          "ignored服务器临时候选工具目录及0600脱敏快照/回执",
-          "ignored本机脱敏快照/隔离临时PG数据/脱敏门回执"
+          "scripts/release-state-startup-gate.mts（仅来源四字符串tuple、语义targetKey与关系keyOf的区分，现有self-test补必要真实形态）"
         ],
-        "candidate_source": "本revision提交后，执行前git rev-parse HEAD及HEAD^{tree}固定；该HEAD仅在9b4c937上追加本控制面文档。执行期主控不再提交造成身份漂移。",
-        "authorization": "Owner要求生产状态快照本地启动门；既有生产运维授权只读采集范围，不含本次代码部署/应用切换",
+        "objective": "evidencePermissions lifecycle resourceId为source tuple [resourceType,resourceId,rootId,targetKey]；第四项可为普通语义targetKey，误按JSONkeyOf解析使sourceKeys未登记。保持sourceKey与sourceRef.targetKey统一伪名引用及完整等价断言。",
         "acceptance": [
-          "在服务器临时目录放精确候选源/编译工具，核验来源SHA/tree/摘要；不构造生产应用runtime，不改生产配置/数据库/schema/执行器，不读取媒体字节。",
-          "source data/auth PG URL仅私密env/受保护文件，snapshot单只读一致性事务，先服务器内存脱敏，只下载0600脱敏bundle及安全manifest；无原始正文/凭据进本机回归。",
-          "快照分类前后及实际映射等价断言必须真实执行；失败BLOCKED/FAIL保留，不改数据/断言来通过。",
-          "verify在固定当前完整SHA/tree干净tracked工作区进行；仅新隔离PG16/临时dataDir，外部provider/通知/媒体调用0，实际runtime.start/readyz/停/同库重启及核心认证读保存往返/任务通知smoke。",
-          "结果回执包括候选SHA/tree、快照摘要/采集时间/源运行版本、PG版本、账户/任务计数、各步骤结果、副作用计数、临时资源关闭。",
-          "执行失败立即给安全错误类别/本机必要位置，不重部署、不无限重复capture；环境阻碍或工具真实缺陷返回精准修复写集。",
-          "门PASS后仍须主控核对及建立新release attempt，禁止复用旧失效批准或直接上线。"
+          "按evidenceSourceKey/parseEvidenceSourceKey真实四元组规则处理，不将普通targetKey误作关系JSONkeyOf；结构关系keyOf仍严格解析。",
+          "语义targetKey如question:ID/annotation:ID按已存在真实source构造规则保留技术前缀/替换同一ID；静态transcription等语义保持，未知private值一致脱敏或BLOCKED，不把原文留存。",
+          "来源tuple、payload.sourceRef.targetKey、evidencePermission.sourceKey、lifecycle.resourceId及嵌套resourceKey对应一致；来源ID/关系图和intent等价不放宽，不丢对象。",
+          "现有self-test补真实evidencePermission四元组/普通targetKey/lifecycle场景，严格TS类型/构建/self-test/diff；不改映射/业务算法，不全量重测。",
+          "完成停写回执，由主控提交/固定新身份后重新采集；不自行生产访问/重采或部署。"
         ],
         "forbidden": [
-          "修改源码/测试/矩阵/控制面、snapshot或断言伪造通过",
-          "生产应用切换/部署/数据库写入/schema迁移/通知发送/真实付费任务",
-          "新worktree/删分支/用户数据与私钥输出"
+          "其他源文件/控制面/规则写入",
+          "生产数据/应用/预算写入，放松断言或修改快照强过",
+          "新平台/工作树/删分支、用户ID/正文输出"
         ]
       },
       "review_task": {
@@ -999,6 +996,34 @@
             ],
             "review": "主控实际差分核验时钟、纯handler inspection、副作用隔离和引用图脱敏；具体缺口已修，未重复未影响专项。"
           }
+        },
+        {
+          "task_id": "v0513-production-snapshot-local-startup-run-20261012",
+          "state": "EXECUTED_BLOCKED_REDACTION",
+          "owner": "主控",
+          "implementer": "主开发",
+          "mode": "已审查工具的生产只读采集与本机真实门执行",
+          "write_set": [
+            "ignored服务器临时候选工具目录及0600脱敏快照/回执",
+            "ignored本机脱敏快照/隔离临时PG数据/脱敏门回执"
+          ],
+          "candidate_source": "本revision提交后，执行前git rev-parse HEAD及HEAD^{tree}固定；该HEAD仅在9b4c937上追加本控制面文档。执行期主控不再提交造成身份漂移。",
+          "authorization": "Owner要求生产状态快照本地启动门；既有生产运维授权只读采集范围，不含本次代码部署/应用切换",
+          "acceptance": [
+            "在服务器临时目录放精确候选源/编译工具，核验来源SHA/tree/摘要；不构造生产应用runtime，不改生产配置/数据库/schema/执行器，不读取媒体字节。",
+            "source data/auth PG URL仅私密env/受保护文件，snapshot单只读一致性事务，先服务器内存脱敏，只下载0600脱敏bundle及安全manifest；无原始正文/凭据进本机回归。",
+            "快照分类前后及实际映射等价断言必须真实执行；失败BLOCKED/FAIL保留，不改数据/断言来通过。",
+            "verify在固定当前完整SHA/tree干净tracked工作区进行；仅新隔离PG16/临时dataDir，外部provider/通知/媒体调用0，实际runtime.start/readyz/停/同库重启及核心认证读保存往返/任务通知smoke。",
+            "结果回执包括候选SHA/tree、快照摘要/采集时间/源运行版本、PG版本、账户/任务计数、各步骤结果、副作用计数、临时资源关闭。",
+            "执行失败立即给安全错误类别/本机必要位置，不重部署、不无限重复capture；环境阻碍或工具真实缺陷返回精准修复写集。",
+            "门PASS后仍须主控核对及建立新release attempt，禁止复用旧失效批准或直接上线。"
+          ],
+          "forbidden": [
+            "修改源码/测试/矩阵/控制面、snapshot或断言伪造通过",
+            "生产应用切换/部署/数据库写入/schema迁移/通知发送/真实付费任务",
+            "新worktree/删分支/用户数据与私钥输出"
+          ],
+          "receipt_source": "release_attempt.pre_release_startup_gate.execution_receipt"
         }
       ],
       "candidate_fixed_at": "2026-10-12T11:07:07.193Z",
@@ -1535,6 +1560,12 @@
       "at": "2026-10-12T14:38:25.240Z",
       "reason": "真实门执行得到安全脱敏阻断，保存确切失败及资源清理证据，开始有限形态定位，不伪全局通过。",
       "previous_snapshot": "e89e62a:reports/requirement-coordination-current.json@revision99"
+    },
+    {
+      "revision": 101,
+      "at": "2026-10-12T14:42:16.503Z",
+      "reason": "真实合法来源tuple形态定位完成，批准单脚本修复，不泛化复合ID或放松门。",
+      "previous_snapshot": "17fd962:reports/requirement-coordination-current.json@revision100"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -2465,6 +2496,14 @@
         "production_writes": false,
         "external_effects": false,
         "cleanup": "远端临时候选目录及本机候选包均清理，无SSH隧道/快照子进程，未起本机PG"
+      },
+      "structure_diagnosis": {
+        "resourceType": "evidencePermission",
+        "collection": "evidencePermissions",
+        "rows": 64,
+        "shape": "四元素JSON字符串数组，均string，source tuple；第四项不是JSON keyOf",
+        "source": "evidence.mjs:115-125；perception.mjs:432-439/754-763；persistence-metadata.mjs:55-57；mapper:50-66",
+        "correction": "此前other标签是白名单漏evidencePermission，不是未知业务kind；沿用安全形态定位，本回执无新生产访问"
       }
     }
   }
