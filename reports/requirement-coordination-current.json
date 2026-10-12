@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 92,
-  "updated_at": "2026-10-12T13:10:21.126Z",
+  "revision": 93,
+  "updated_at": "2026-10-12T13:13:22.204Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发补集中子目标判定，执行原专项必要场景及边界检查，交接差分/独审/执行证据；主控审查固定新候选。",
+  "next_action": "先完成当前精准任务目标契约修复；再实现脱敏生产快照本地完整启动门，本次通过后才重新进入release，禁止直接重部署。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -1366,6 +1366,12 @@
       "at": "2026-10-12T13:10:21.126Z",
       "reason": "独审发现queued必需子目标缺失仍可阻断启动，纳入同一目标契约窄点保持mapper严格。",
       "previous_snapshot": "35b216f:reports/requirement-coordination-current.json@revision91"
+    },
+    {
+      "revision": 93,
+      "at": "2026-10-12T13:13:22.204Z",
+      "reason": "Owner要求补生产快照本机实际启动验证门，登记为本次重新发布前必需，尚未实现不伪自动通过。",
+      "previous_snapshot": "18c5b4f:reports/requirement-coordination-current.json@revision92"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -2269,6 +2275,16 @@
       "boundary_correction": "直接根因是启动恢复提交时queued/running主目标映射无法解析；栈359/457对应releaseWaiting晋级提交。不能据安全栈断言实际目标已删除、启动前已queued或某task类型；还可能目标标识/集合不匹配或晋级校验遗漏。",
       "contract_resolution": "任务规范化将thoughtDraft/thoughtPrompt与journalAssist设为已知资源类型，但无实体绑定的生成型任务targetId可为requestId；waiting落库允许，晋级queued后mapper一律required导致失败。合法生成目标不能按缺实体标stale。",
       "related_contract": "历史补充recordCompression output ID对应singleton，需同一精确optional policy；daily实际markQueued在tasks.create/promote分支持久化前调用，继续严格要求实体。"
+    },
+    "pre_release_startup_gate": {
+      "status": "REQUIRED_NOT_IMPLEMENTED",
+      "source": "Owner本对话：本地合并启动检查及生产快照本地启动后再进release门",
+      "scope": "本次重新发布前补齐最终累计候选实际runtime.start/监听/readyz/重启恢复，不能以projection专项代替",
+      "snapshot": "生产只读一致性状态快照；服务器端脱敏，保留任务类型/状态与目标关系/singleton/schema，排除正文/原图/凭据，绑定采集时间/运行SHA/摘要",
+      "environment": "隔离本机PG/临时数据目录，真实候选构建；无生产连接/网络provider/通知/定时付费",
+      "proof": "固定候选tree+快照摘要+运行环境+实际启动/健康/恢复与核心无付费smoke回执",
+      "next": "主开发先完成当前四文件修复交接，并给复用既有export/PG入口的最小可执行方案；主控随后锁定实现写集和唯一矩阵/SOP规则，未实现不冒称已有自动门",
+      "distinction": "每feat按受影响验证；最终develop候选必须基本整体启动，完整功能全量测试按矩阵去重执行，不每merge重复system all"
     }
   }
 }
