@@ -379,6 +379,14 @@ export function installRecordSubmissionEvents({
         // 未确认的思考提交可能已落库；保留附件以支持同 requestId 恢复。
         if (error?.syncStatus === "failed") {
           $("#chain-status").textContent = "保存失败，内容仍保留。检查网络后可用原请求安全重试。";
+        } else if (
+          recordKind === "thought" &&
+          sourceCaptureId &&
+          error?.syncStatus === "conflict" &&
+          error?.code === "PRECONDITION_FAILED"
+        ) {
+          $("#chain-status").textContent =
+            "来源念起已变化，请重新打开后再提交。当前内容仍保留。";
         } else if (error?.syncStatus === "conflict") {
           $("#chain-status").textContent = "保存状态冲突，内容仍保留。请先重新读取思考列表，再决定是否重试。";
         } else {
