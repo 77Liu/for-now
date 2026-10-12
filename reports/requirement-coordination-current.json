@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 78,
-  "updated_at": "2026-10-12T11:40:52.089Z",
+  "revision": 79,
+  "updated_at": "2026-10-12T11:41:29.175Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "生产通知配置已原子更新并重启健康；旧制品3e94e2f与当前候选通知字段不同，先校准探针契约再部署新候选验证，未宣布通知真实投递通过。",
+  "current_phase": "旧版实际通知配置已启用，早先缺失结论为探针契约误判；新候选配置已准备，继续累计v0.5.13发布。",
   "state": "RELEASE_PREFLIGHT",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发只读确认旧/新通知字段差异；若无真实阻碍继续候选发布，部署后以新运行身份核验通知配置与健康。",
+  "next_action": "主开发继续发布，不再让已澄清的旧版探针误判阻塞；部署新候选后核验运行SHA、实际配置与观测。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -1280,6 +1280,12 @@
       "at": "2026-10-12T11:40:52.089Z",
       "reason": "接收生产配置/重启回执，识别旧制品与新探针字段差异，避免无依据重复写入。",
       "previous_snapshot": "4662a1f:reports/requirement-coordination-current.json@revision77"
+    },
+    {
+      "revision": 79,
+      "at": "2026-10-12T11:41:29.175Z",
+      "reason": "原始回滚备份确认旧通知flag/Secret/Webhook存在，校正误判而非伪造历史，继续发布。",
+      "previous_snapshot": "7339b28:reports/requirement-coordination-current.json@revision78"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -2018,6 +2024,17 @@
         "candidate_config": "当前候选使用recordCompressionNotificationsEnabled、env RECORD_COMPRESSION_NOTIFICATIONS_ENABLED、feishuAlertWebhook/Secret及TS通知",
         "conclusion": "旧制品探针读取新字段会得到undefined/false，不能推断进程env缺失；需按实际制品契约验证，不重复重启或配置。",
         "source": "主控git show3e94e2f相应config/runtime只读验证"
+      },
+      "actual_state_correction": {
+        "at": "2026-10-12T11:41:29.175Z",
+        "source": "主开发只读复核实际3e94e2f代码及原始0600配置回滚备份",
+        "old_env_flag": "RECORD_COMPRESSION_FEISHU_NOTIFICATIONS=1",
+        "old_secret_present": true,
+        "old_webhook_present": true,
+        "old_config_state": "已启用（配置事实）；真实投递仍无当前验收证据",
+        "current_env": "旧flag=1保留，新RECORD_COMPRESSION_NOTIFICATIONS_ENABLED=1已准备",
+        "incorrect_prior_claim": "早先Secret缺失/通知关闭来自错误契约探针，不是当时已被证明的实际配置缺失；历史误判保留并明确覆盖。",
+        "next": "按新候选实际字段部署后核验，不再配置/重启旧版"
       }
     },
     "confirmed_production_baseline": {
