@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 79,
-  "updated_at": "2026-10-12T11:41:29.175Z",
+  "revision": 80,
+  "updated_at": "2026-10-12T12:34:22.885Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,8 +13,8 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "旧版实际通知配置已启用，早先缺失结论为探针契约误判；新候选配置已准备，继续累计v0.5.13发布。",
-  "state": "RELEASE_PREFLIGHT",
+  "current_phase": "release/v0.5.13候选已push并远端回读一致；必要旧部署器更新/回滚备份后部署c524eff，尚未正式tag/Release/main晋级。",
+  "state": "RELEASE_CANDIDATE_PUBLISHED",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
     "develop": "refs/heads/develop",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发继续发布，不再让已澄清的旧版探针误判阻塞；部署新候选后核验运行SHA、实际配置与观测。",
+  "next_action": "主开发完成固定候选部署器必要升级和对应备份，核对attempt与实际回滚制品，部署c524eff并观察。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -436,7 +436,7 @@
     },
     {
       "id": "v0.5.13",
-      "state": "RELEASE_PREFLIGHT",
+      "state": "RELEASE_CANDIDATE_PUBLISHED",
       "scope": "保存状态/草稿与失败恢复；发生时间/补录意图；通知列表未读事实、脱敏诊断与恢复操作。仅实现六条锁定需求的未交付行为，不做全站状态或通知平台重构。",
       "requirement_ids": [
         "recvxm0eDZdJED",
@@ -1286,6 +1286,12 @@
       "at": "2026-10-12T11:41:29.175Z",
       "reason": "原始回滚备份确认旧通知flag/Secret/Webhook存在，校正误判而非伪造历史，继续发布。",
       "previous_snapshot": "7339b28:reports/requirement-coordination-current.json@revision78"
+    },
+    {
+      "revision": 80,
+      "at": "2026-10-12T12:34:22.885Z",
+      "reason": "候选远端引用回执成立；记录必要部署器版本差异与更新范围，不改变批准代码候选。",
+      "previous_snapshot": "c2686a4:reports/requirement-coordination-current.json@revision79"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -1903,7 +1909,7 @@
   "release_attempt": {
     "id": "v0513-production-20261012-01",
     "version": "v0.5.13",
-    "state": "PREFLIGHT_ACCESS_RESTORED",
+    "state": "CANDIDATE_PUSHED_DEPLOY_PREPARING",
     "candidate_sha": "c524efffb493b8bc7a2a380b7c6db38a9b76a658",
     "candidate_tree": "e896c69159e836a53f0b1ca4d6ef1ee4d26c48e7",
     "authorization_source": "owner_decisions.current_release_authorization",
@@ -2063,6 +2069,26 @@
         "enabled_setting": "空，待原子配置为1"
       },
       "correction": "此前v0.5.12描述为旧回执/文档，不作为当前回滚版本；以此完整运行SHA/实际制品路径核验回滚。"
+    },
+    "publish_receipt": {
+      "at": "2026-10-12T12:34:22.885Z",
+      "remote_ref": "refs/heads/release/v0.5.13",
+      "sha": "c524efffb493b8bc7a2a380b7c6db38a9b76a658",
+      "verified": "push及随后ls-remote相同SHA",
+      "main_pushed": false,
+      "develop_pushed": false,
+      "tag_created": false,
+      "formal_release_created": false,
+      "source": "主开发实际外部回执"
+    },
+    "executor_update": {
+      "status": "NECESSARY_ENVIRONMENT_UPDATE",
+      "old_sha256_prefix": "1d31384e",
+      "candidate_sha256_prefix": "8884b86d",
+      "candidate_source": "c524eff:deploy/deploy.sh",
+      "finding": "旧远端for-now-deploy缺少新host-metrics/journal-context服务与构建产物安装及对应启动/回滚；两个unit当前not-found",
+      "guard": "候选安装脚本与guard SHA一致；上一attempt complete/无execution lock",
+      "action": "仅从已核验固定候选安装独立部署入口，先备份旧入口/状态，保留原代码SHA；完整执行器attempt映射待回执"
     }
   }
 }
