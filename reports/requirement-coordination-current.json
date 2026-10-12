@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 64,
-  "updated_at": "2026-10-12T17:27:25.415+08:00",
+  "revision": 66,
+  "updated_at": "2026-10-12T09:58:23.262Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,11 +13,11 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner已要求继续推进 v0.5.13.1 与 v0.5.13；当前仅本地串行开发，远程写入、发布、部署和付费调用仍关闭",
-  "current_phase": "v0.5.13.1固定候选及生产PARTIAL边界读取iterations[id=v0.5.13.1]；v0.5.13已收口通知TS/复制替代、未读零值、安全提示、时间草稿与chain保存会话/新草稿保护，本地候选4fbc259/tree97197a7；需要最后六需求证据审查，保留真实provider/移动端/生产与剪贴板验收partial。",
-  "state": "BUILDING_LOCAL_ONLY",
+  "current_phase": "两版本本地切片已接入develop；v0.5.13入队恢复最后缺口已提交029783d，正在收口固定候选交接。外部partial保持真实，不代表已发布。",
+  "state": "CANDIDATE_LOCAL_PARTIAL",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
-    "develop": "refs/heads/develop@4fbc259eaaee0bd9eaeacc8c0445f46a0e1dec06",
+    "develop": "refs/heads/develop@029783d2759a63b20e663562d5be8d7f35b6c321",
     "remote_main_ref": "origin/main",
     "remote_main_observed": "ebbde6fcf100432de8a599c771cbd8e774e043ad",
     "startup_manifest": "reports/git-archive/git-startup-20261011-manifest.json",
@@ -85,7 +85,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发立即实施两个思绪入队入口的安全提示与未知同键确认，主控监督精确写集并审查接入。",
+  "next_action": "主开发只读汇总两版本固定候选交接：需求到实现/现有证据/未验收边界，不再重复测试或改代码；主控据回执裁定本地候选节点。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -396,7 +396,7 @@
     },
     {
       "id": "v0.5.13",
-      "state": "BUILDING_LOCAL_ONLY",
+      "state": "CANDIDATE_LOCAL_PARTIAL",
       "scope": "保存状态/草稿与失败恢复；发生时间/补录意图；通知列表未读事实、脱敏诊断与恢复操作。仅实现六条锁定需求的未交付行为，不做全站状态或通知平台重构。",
       "requirement_ids": [
         "recvxm0eDZdJED",
@@ -468,7 +468,7 @@
         "从旧归档分支搬运或直接合入旧v0.5.10交付"
       ],
       "acceptance_boundary": "每条需求先核对源记录的最新状态与已有交付证据；已完成项只记录并从实施范围剔除。保存失败与派生失败分流、未知写入保留草稿且不重复提交；时间intent/createdAt/occurredAt与新建/补录草稿规则一致；通知仅对已成功呈现范围标记已读，未加载/新到保持未读，重试/复制不泄露凭据或私密正文；账户隔离、幂等和失败恢复按真实改动验证。没有真实浏览器/移动端/provider/生产验收时标PARTIAL。",
-      "next": "针对六条冻结需求做最后的行为证据审查：优先用可到达目标的本地浏览器确认手动时间草稿刷新/路由恢复和通知替代复制，不重跑整套UI；核对旧notification-entry:73文案断言的原规则来源后裁定其返回节点。生产/provider、账号刷新原始根因与媒体真实性能继续保留PARTIAL。",
+      "next": "主开发只读汇总两版本固定候选交接：需求到实现/现有证据/未验收边界，不再重复测试或改代码；主控据回执裁定本地候选节点。",
       "write_set_amendment": {
         "revision": 31,
         "at": "2026-10-12T12:08:35+08:00",
@@ -572,43 +572,31 @@
       ],
       "followup_gap_audit": "已只读确认：手动补录模式未随思绪草稿恢复；保存成功后的AI队列错误仍露出原始error.message；通知复制失败无替代恢复；通知feature仍是MJS且未纳入类型/隔离构建。未读计数根因未复现，保留PARTIAL。",
       "execution": "复制失败提供只读可选择的脱敏JSON；通知controller/presentation业务源迁移为.mts，公开依赖/任务/通知/激活态有具体接口，无any和ts-ignore；.mjs只薄转发，生成物仅public/generated且忽略。前端类型检查、通知controller既有专项、模块检查通过。另通知展示专项在原转写文案预期处失败，迁移前同一实现已经与预期冲突，未修改或伪报PASS。",
-      "candidate_sha": "4fbc259eaaee0bd9eaeacc8c0445f46a0e1dec06",
-      "candidate_tree": "97197a7f557dc1d52d485dc8ff4b261ec59d6ffc",
-      "integration_status": "主控审查后develop本地fast-forward至4fbc259eaaee0bd9eaeacc8c0445f46a0e1dec06；保留feat分支，唯一工作树。候选仍PARTIAL，未发布/部署。",
+      "candidate_sha": "029783d2759a63b20e663562d5be8d7f35b6c321",
+      "candidate_tree": "e01f869e72226a4d0117b6629166acd0930635cb",
+      "integration_status": "本地六文件代码与既有控制面提交已快进合入develop；feat分支保留。未push/tag/release/deploy。",
       "active_task": {
-        "task_id": "v0513-thought-queue-recovery-20261012",
-        "mode": "实现",
-        "state": "LOCKED_FOR_IMPLEMENTATION",
+        "task_id": "v0513-fixed-candidate-handoff-20261012",
+        "mode": "只读交接",
+        "state": "DISPATCH_READY",
         "owner": "主控",
         "implementer": "主开发",
-        "baseline_sha": "4fbc259eaaee0bd9eaeacc8c0445f46a0e1dec06",
+        "baseline_sha": "029783d2759a63b20e663562d5be8d7f35b6c321",
         "requirement_ids": [
           "recvxm0eDZdJED",
-          "recvxlYzZSlc2p"
+          "reczz28K9ceTZDnd",
+          "reczz28K9ceTa0pY",
+          "reczz28K9ceTaiW4",
+          "recvxlYzZSlc2p",
+          "recvxyqUrj2xlc"
         ],
-        "write_set": [
-          "public/frontend/shared/personalized-ai-task.mts（最小类型化thoughtAnswer入队结果/未确认尝试共享边界）",
-          "public/frontend/app/runtime/kernel.mjs（仅startBackgroundChainAnswer接入与安全反馈/会话保护）",
-          "public/frontend/features/thoughts/operations.mjs（仅startBackgroundAnswer接入）",
-          "scripts/personalized-ai-task-ui-regression.mjs（既有任务状态夹具，明确拒绝/不确定同键/排队后刷新失败）",
-          "scripts/frontend-thoughts-feature-regression.mjs（两个消费者必要行为）",
-          "knowledge/module-boundaries.json（仅当前已登记TS模块的真实thoughts依赖，若缺失；不放宽边界检查）"
-        ],
+        "write_set": [],
+        "objective": "复用已完成六需求审查与修正回执，给出两版本固定候选SHA/tree、逐需求实现及适用证据、未验收项、回滚边界和是否仍有具体本地实现缺口。不重跑测试、不新增报告、不扩大审计，不将外部partial误作本地失败或已通过。",
         "forbidden": [
-          "后台/API/schema/provider/预算/部署",
-          "通用草稿格式/状态平台/其他功能",
-          "新JS业务文件、编译产物提交、依赖变更",
-          "控制面与线上池",
-          "新工作树、删分支、远端/生产/付费操作"
-        ],
-        "acceptance": [
-          "共用边界在现有.mts公开模块，用实际类型/中文注释及既有隔离编译入口，不建通用任务平台。",
-          "未知POST保留相同payload和clientRequestId，两个入口共用该尝试；可用现有会话存储账户/目标ID/版本/请求ID元数据，不存私密正文。确认后明确重答才换key。",
-          "public GET任务不含clientRequestId，不能按非唯一kind/target/version猜测旧任务为本次确认；用同键同payload POST的既有去重取得权威返回。",
-          "已返回task后通知刷新失败保持已排队及task返回，不重POST；明确拒绝与响应未知给固定安全恢复文案，不回显原错误。",
-          "已有task复用通知查看/result GET；无task用既有重新回答入口确认同次排队，不造虚假通知。旧会话不写当前UI。",
-          "只跑受影响frontend类型/构建/生成准备、现有personalized和thoughts专项；新增实际模块依赖时check:modules；不跑全系统/外部付费。",
-          "回执真实差分/验证，由主控提交接入。"
+          "任何文件写入、提交或分支操作",
+          "全池扫描/线上写入",
+          "远程/生产/付费调用",
+          "新增工作树与删分支"
         ]
       },
       "review_task": {
@@ -730,9 +718,79 @@
             ],
             "receipt_turn": "01a12f59-7a9e-74a1-a8d0-747bcbb4bd4f"
           }
+        },
+        {
+          "task_id": "v0513-thought-queue-recovery-20261012",
+          "mode": "实现",
+          "state": "IMPLEMENTED_REVIEWED_INTEGRATED_LOCAL",
+          "owner": "主控",
+          "implementer": "主开发",
+          "baseline_sha": "4fbc259eaaee0bd9eaeacc8c0445f46a0e1dec06",
+          "requirement_ids": [
+            "recvxm0eDZdJED",
+            "recvxlYzZSlc2p"
+          ],
+          "write_set": [
+            "public/frontend/shared/personalized-ai-task.mts（最小类型化thoughtAnswer入队结果/未确认尝试共享边界）",
+            "public/frontend/app/runtime/kernel.mjs（仅startBackgroundChainAnswer接入与安全反馈/会话保护）",
+            "public/frontend/features/thoughts/operations.mjs（仅startBackgroundAnswer接入）",
+            "scripts/personalized-ai-task-ui-regression.mjs（既有任务状态夹具，明确拒绝/不确定同键/排队后刷新失败）",
+            "scripts/frontend-thoughts-feature-regression.mjs（两个消费者必要行为）",
+            "knowledge/module-boundaries.json（仅当前已登记TS模块的真实thoughts依赖，若缺失；不放宽边界检查）"
+          ],
+          "forbidden": [
+            "后台/API/schema/provider/预算/部署",
+            "通用草稿格式/状态平台/其他功能",
+            "新JS业务文件、编译产物提交、依赖变更",
+            "控制面与线上池",
+            "新工作树、删分支、远端/生产/付费操作"
+          ],
+          "acceptance": [
+            "共用边界在现有.mts公开模块，用实际类型/中文注释及既有隔离编译入口，不建通用任务平台。",
+            "未知POST保留相同payload和clientRequestId，两个入口共用该尝试；可用现有会话存储账户/目标ID/版本/请求ID元数据，不存私密正文。确认后明确重答才换key。",
+            "public GET任务不含clientRequestId，不能按非唯一kind/target/version猜测旧任务为本次确认；用同键同payload POST的既有去重取得权威返回。",
+            "已返回task后通知刷新失败保持已排队及task返回，不重POST；明确拒绝与响应未知给固定安全恢复文案，不回显原错误。",
+            "已有task复用通知查看/result GET；无task用既有重新回答入口确认同次排队，不造虚假通知。旧会话不写当前UI。",
+            "只跑受影响frontend类型/构建/生成准备、现有personalized和thoughts专项；新增实际模块依赖时check:modules；不跑全系统/外部付费。",
+            "回执真实差分/验证，由主控提交接入。"
+          ],
+          "handoff": {
+            "status": "六个批准文件未提交，首轮专项通过",
+            "review_findings": [
+              "同键恢复已完成/失败/等待任务仍提示已排队，必须按真实状态反馈。",
+              "storage.getItem抛错时已确认尝试未完成内存resolved标记，明确新答可能复用旧key。",
+              "只读夹具返回单个request而非owner recordKey映射，未真实验证load恢复路径。"
+            ],
+            "decision": "同写集收口；依赖未变复用模块证据，实际修改类型/构建及两专项再验证。"
+          },
+          "implementation_commit": "029783d2759a63b20e663562d5be8d7f35b6c321",
+          "implementation_tree": "e01f869e72226a4d0117b6629166acd0930635cb",
+          "verification": {
+            "result": "PASS（执行范围）",
+            "commands": [
+              "npm run build:frontend",
+              "node scripts/prepare-generated-runtime.mjs",
+              "node scripts/personalized-ai-task-ui-regression.mjs",
+              "node scripts/frontend-thoughts-feature-regression.mjs",
+              "git diff --check"
+            ],
+            "module_evidence": "117模块/240路由通过；依赖登记未再变更，复用本任务证据",
+            "receipt_turn": "01a12f80-8a67-74c2-a408-cec6abca21ed",
+            "review": "独立只读review GO；主控核对六文件实际差分后提交",
+            "resolved": [
+              "返回任务按真实等待/处理中/成功/失败状态呈现",
+              "已确认任务不因通知刷新失败被称未入队",
+              "响应未知同键同payload确认，账户/目标/版本隔离",
+              "存储失败仍解决当前页内存标记；不存用户正文"
+            ],
+            "partial": [
+              "真实网络故障与跨账户浏览器旅程",
+              "真实provider、移动端与生产"
+            ]
+          }
         }
       ],
-      "candidate_fixed_at": "2026-10-12T17:10:14+08:00",
+      "candidate_fixed_at": "2026-10-12T09:58:23.262Z",
       "final_review_task": {
         "task_id": "v0513-six-requirement-evidence-review-20261012",
         "mode": "只读审查",
@@ -1050,6 +1108,18 @@
       "at": "2026-10-12T17:27:25.415+08:00",
       "reason": "采纳服务端同键去重契约，禁止按非唯一字段猜测确认；锁定既有TS边界与两个UI入口最小写集。",
       "previous_snapshot": "2d62004:reports/requirement-coordination-current.json@revision63"
+    },
+    {
+      "revision": 65,
+      "at": "2026-10-12T17:46:25.608+08:00",
+      "reason": "首轮六文件回执已收；主控发现两处实际语义/恢复缺口及无效夹具，返回同一任务收口，不扩通用平台。",
+      "previous_snapshot": "1e4b918:reports/requirement-coordination-current.json@revision64"
+    },
+    {
+      "revision": 66,
+      "at": "2026-10-12T09:58:23.262Z",
+      "reason": "Owner要求继续；主开发已完成待主控接入，六文件实际修正已审查提交并合入develop，启动固定候选只读交接。",
+      "previous_snapshot": "1e4b918:reports/requirement-coordination-current.json@revision64；revision65审查过程保留于本次回执"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
