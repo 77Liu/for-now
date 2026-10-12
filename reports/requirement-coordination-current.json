@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 85,
-  "updated_at": "2026-10-12T12:47:51.754Z",
+  "revision": 86,
+  "updated_at": "2026-10-12T12:51:19.203Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,8 +13,8 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "旧生产稳定，回滚unit报错已证实非根因；只读定位候选监听前exit1窗口非结构化异常。",
-  "state": "OLD_PRODUCTION_RESTORED_CANDIDATE_FAILED",
+  "current_phase": "候选启动失败根因已定位为恢复孤立AI任务持久化一致性；返回同feat最小修复，旧生产健康。",
+  "state": "BUILDING_DEPLOY_RECOVERY_FIX",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
     "develop": "refs/heads/develop",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发精确窗口私密收集stdout/stderr并给脱敏异常类/stack文件行，依据真实失败返回feat最小修复；不测试找根因或盲重部署。",
+  "next_action": "主开发按限定resume写集修复真实缺失目标恢复，不改mapper/删任务；随后本机必要行为验证和固定新候选/attempt。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -436,7 +436,7 @@
     },
     {
       "id": "v0.5.13",
-      "state": "CANDIDATE_DEPLOY_FAILED",
+      "state": "BUILDING_DEPLOY_RECOVERY_FIX",
       "scope": "保存状态/草稿与失败恢复；发生时间/补录意图；通知列表未读事实、脱敏诊断与恢复操作。仅实现六条锁定需求的未交付行为，不做全站状态或通知平台重构。",
       "requirement_ids": [
         "recvxm0eDZdJED",
@@ -616,34 +616,28 @@
       "candidate_tree": "e896c69159e836a53f0b1ca4d6ef1ee4d26c48e7",
       "integration_status": "本地六文件代码与既有控制面提交已快进合入develop；feat分支保留。未push/tag/release/deploy。",
       "active_task": {
-        "task_id": "v0513-production-release-20261012",
-        "state": "RECOVERY_VERIFYING_THEN_RELEASE",
+        "task_id": "v0513-startup-orphan-task-recovery-20261012",
+        "state": "DISPATCH_READY",
         "owner": "主控",
         "implementer": "主开发",
-        "mode": "Owner授权发布执行",
-        "baseline_sha": "d98762c4d8de5612b998bb71ed6a71fd8810e17d",
+        "mode": "实际启动失败最小修复",
+        "feature_branch": "feat/v0.5.13-save-sync-validation",
+        "baseline_sha": "c524efffb493b8bc7a2a380b7c6db38a9b76a658（当前feat额外协调文档保留）",
         "write_set": [
-          "必要版本元数据与唯一中文发布说明（仍在当前feat完成，提交后冻结准确候选）",
-          "release/v0.5.13固定候选引用；授权远程push/tag/Release/main正式晋级",
-          "已有生产运维入口中部署必要配置（4/1/16/4、压缩与通知启用，秘密不入日志）",
-          "脱敏发布/部署/观察回执（ignored本地证据；不写控制面）"
+          "src/app/background-ai.mjs（仅resume启动恢复中孤立目标的既有终态/通知处理，保持正常任务调度）",
+          "scripts/background-ai-model-gate-regression.mjs（现有本机夹具增加实际孤立任务恢复及映射持久化场景；如不适配先报现有替代位置，不新文件）"
         ],
         "forbidden": [
-          "无关业务代码、新平台、无关迁移或删除用户数据",
-          "修改/移动既有远程tag及历史提交",
-          "第二写者/新工作树/删分支",
-          "手工重复付费调用证明日压缩"
+          "mapper全局放宽required target、删除/重定向用户任务、静默忽略异常/整账户恢复",
+          "其他功能、API/schema、预算/部署器通用改造、新JS文件",
+          "生产数据修补/私密正文读取、复用失效attempt重部署、编译产物提交",
+          "控制面、第二工作树、删分支、release/main业务写入"
         ],
         "acceptance": [
-          "先核验生产实际运行SHA、预算账本、通知配置/定时器/暂停与回滚对象；已有部署回执先查询去重。",
-          "远程保护Owner豁免；部分真实设备/provider验收保持partial。实际权限/数据损害不豁免，发现真实风险仅停止受影响动作并回报。",
-          "如版本元数据必须更新，仅当前feat最小修改、中文注释/发布说明，给新SHA/tree；复用未影响专项，不重开全门。",
-          "候选累计包含v0.5.13.1；不另行部署前版或覆盖旧release/v0.5.13.1引用。",
-          "按verify/freeze/authorize/publish/deploy/observe/close执行，未知外部结果先查询，不盲重试。",
-          "固定运行对象观察30分钟与现行关键健康/错误/重启/资源/费用指标；真实任务成功另记，不以健康冒充产品验收。",
-          "正式不可变v0.5.13 tag/Release与运行SHA一致；main仅在正式晋级后推进，develop回流保留feat。",
-          "已有发布/回滚最小演练证据复用；现场预算/告警/备份适用证据缺失由现有运维入口补齐，不再问已授权问题。",
-          "回传每个外部节点实际事实和证据，本主控独占状态更新。"
+          "直接按调用链完成最小恢复一致性处理；缺失目标任务保留可解释终态及安全通知，正常queued仍继续；running仍防重复付费恢复，不自动retry不存在目标。",
+          "不把任意prepare异常等同目标缺失，不隐藏真实存储/权限错误，不全局削弱mapper。",
+          "先实现后用既有纯本机专项验证恢复后的store可通过实际mapStoreObjects、未丢原始任务/无AI调用；只运行受影响验证。",
+          "回执代码差分及证据，由主控审查提交/接入并固定新候选。之后在已有Owner授权下建立新attempt再上线，旧失败保持历史。"
         ]
       },
       "review_task": {
@@ -1322,6 +1316,12 @@
       "at": "2026-10-12T12:47:51.754Z",
       "reason": "备份checksum通过；纠正not-found推断，要求定位实际启动exit1后再确定修复写集。",
       "previous_snapshot": "6d94662:reports/requirement-coordination-current.json@revision84"
+    },
+    {
+      "revision": 86,
+      "at": "2026-10-12T12:51:19.203Z",
+      "reason": "精准stderr异常定位监听前目标引用失败，解除猜测；批准恢复一致性窄点实施。",
+      "previous_snapshot": "3c3193b:reports/requirement-coordination-current.json@revision85"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -1939,7 +1939,7 @@
   "release_attempt": {
     "id": "v0513-production-20261012-01",
     "version": "v0.5.13",
-    "state": "FAILED_OLD_RUNTIME_RESTORED",
+    "state": "FAILED_ROOT_CAUSE_IDENTIFIED",
     "candidate_sha": "c524efffb493b8bc7a2a380b7c6db38a9b76a658",
     "candidate_tree": "e896c69159e836a53f0b1ca4d6ef1ee4d26c48e7",
     "authorization_source": "owner_decisions.current_release_authorization",
@@ -2200,6 +2200,28 @@
       "root_cause": "未证实，generic Health check failed只表示门失败。PG/启动/延迟不作结论。",
       "diagnostic_gap": "此前筛安全错误码/priority<=3未得到证据；还需精确窗口非结构化stdout/stderr异常和栈，Node stderr可能以info收录。",
       "proposed_readyz_logging": "暂不批准，先排查监听前exit1实际来源；不因猜测增日志/测试或重部署。"
+    },
+    "root_cause": {
+      "source": "主开发精确窗口0600私密journal与静态调用链",
+      "journal_private_path": ".secrets/for-now-startup-journal-20261012T123840Z-123925Z.jsonl",
+      "times_utc": [
+        "12:38:47.432Z",
+        "12:39:00.541Z"
+      ],
+      "error_class": "Error",
+      "safe_message": "Unresolved target reference",
+      "priority": 6,
+      "exit_status": 1,
+      "frames": [
+        "store-mapping.mjs:241/325",
+        "postgres-runtime.mjs:293/341",
+        "perception.mjs:899",
+        "background-ai.mjs:359/457",
+        "account-lifecycle.mjs:61"
+      ],
+      "chain": "runtime.start→recoverAtStartup→recoverCurrentStorage→backgroundAi.resume→repository.update→mapStoreObjects(required queued/running target)；发生在listen/server.started之前",
+      "conclusion": "恢复持久化时目标引用一致性失败是候选启动退出的直接原因；非PG连接/readiness延迟或unit cleanup",
+      "privacy": "未记录账户/task id/target id或用户正文；具体业务任务未查询"
     }
   }
 }
