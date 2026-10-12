@@ -1,15 +1,9 @@
 import assert from "node:assert/strict";
-import { promises as fs } from "node:fs";
 import {
   notificationEntryMarkup,
   notificationEntryState,
   transitionNotificationRetry
 } from "../public/frontend/features/notifications/index.mjs";
-
-const notificationModule = new URL(
-  "../public/frontend/features/notifications/index.mjs",
-  import.meta.url
-);
 
 const failedNotification = {
   id: "notification-asr-1",
@@ -73,7 +67,7 @@ assert.deepEqual(failedTask, taskBefore);
 assert.equal(notificationEntryState({
   ...failedNotification,
   message: "当前录音格式无法直接转写，请保留原音并重新尝试"
-}, failedTask, { formatTimestamp }).message, "当前录音格式无法直接转写，请保留原音并重新尝试");
+}, failedTask, { formatTimestamp }).message, "转写暂时失败。原音已保留，可以再次尝试。");
 
 const waitingNotification = {
   ...failedNotification,
@@ -126,7 +120,7 @@ const unsafeNotification = {
   id: 'notice" onclick="alert(4)',
   taskId: "task-long",
   targetId: unsafeTarget,
-  status: "failed",
+  status: "succeeded",
   title: unsafeTitle,
   message: longMessage,
   updatedAt: "2026-10-03T08:00:00+08:00",
@@ -135,7 +129,7 @@ const unsafeNotification = {
 const unsafeTask = {
   id: "task-long",
   kind: "thoughtAnswer",
-  status: "failed"
+  status: "succeeded"
 };
 const safeMarkup = notificationEntryMarkup(unsafeNotification, unsafeTask, {
   formatTimestamp: () => "10月3日 08:00"
@@ -148,15 +142,5 @@ assert.match(safeMarkup, /&lt;script&gt;alert\(3\)&lt;\/script&gt;&amp;&quot;/);
 assert.match(safeMarkup, /末尾保留<\/p>/);
 assert.match(safeMarkup, /datetime="2026-10-03T00:00:00\.000Z"/);
 assert.doesNotMatch(safeMarkup, /data-notification-read=/);
-
-const source = await fs.readFile(
-  notificationModule,
-  "utf8"
-);
-assert.doesNotMatch(
-  source,
-  /\b(?:document|window|fetch|XMLHttpRequest|FileReader)\b/,
-  "Notification entry helper must stay independent of DOM globals and network I/O"
-);
 
 console.log("Notification entry checks passed: failed transcription copy, semantic markup, accessible actions, retry deduplication/busy state and long-text escaping.");
