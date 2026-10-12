@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 147,
-  "updated_at": "2026-10-12T20:13:26.450Z",
+  "revision": 159,
+  "updated_at": "2026-10-12T21:06:25.199Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -9,18 +9,22 @@
     "write_authority": "唯一维护者；必须经coordination:update入口更新"
   },
   "rule_baseline": {
-    "commit": "f8b0a1b2c08279ed56c111ec83f9addb9d4998cc",
+    "commit": "bd886de00e94c742ff11dc17486565a2a768f2a2",
     "effective_date": "2026-10-13",
-    "source": "PROJECT_RULES.md；knowledge/coordination-control-plane.md v2.0；knowledge/engineering-rules.md#35-源码与注释规范；SOP/requirement-intake.md v1.1"
+    "source": "PROJECT_RULES.md；knowledge/coordination-control-plane.md v2.1；knowledge/engineering-rules.md#35-源码与注释规范；SOP/requirement-intake.md v1.1"
   },
   "work_mode": {
     "status": "RUNNING",
-    "scope": "按Owner最新P00→P0→P1收口v0.5.13：先解决验证材料语义失真与启动阻塞，写集内连续开发，集中主控审查；P2不实施，P3规则要求删除但成果不删除"
+    "scope": "夜间持续协作：v0.5.13已达到可发布状态，发布与正式收尾待人工；从最新develop启动v0.5.14录音完整性与音频体验，主控/主开发连续协作"
   },
   "iteration": {
     "id": "v0.5.13",
-    "status": "READY_WAIT_OWNER",
-    "phase": "v0.5.13候选本地引用已冻结，发布及收口等待人工；准备下一版本的控制面衔接"
+    "status": "REPAIRING_ENGINEERING_GATE",
+    "phase": "纠正遗漏module门的ready判断；保持生产动作与正式收尾待人工",
+    "started_by": {
+      "iteration_id": "v0.5.14",
+      "event_id": "v0.5.14-d8677092-b404-4379-93cf-f7f84035f59d"
+    }
   },
   "scope": {
     "description": "保存状态/草稿与失败恢复；发生时间/补录意图；通知列表未读事实、脱敏诊断与恢复操作。仅实现六条锁定需求的未交付行为，不做全站状态或通知平台重构。",
@@ -50,8 +54,8 @@
   "candidate": {
     "sha": "e90520cadef9150f23ac029bef0e96a79616c3cb",
     "tree": "0ec5c710e65cd30dcb29d29c03713206d5149d20",
-    "status": "READY_FOR_RELEASE_WAIT_OWNER",
-    "release_frozen": true,
+    "status": "REWORK_REQUIRED",
+    "release_frozen": false,
     "quality_gate": {
       "snapshot": "PASS",
       "local_import": "PASS",
@@ -59,11 +63,12 @@
       "readyz": "PASS",
       "restart_recovery": "PASS",
       "core_smoke": "PASS",
-      "isolated_online": "PASS"
+      "isolated_online": "PASS",
+      "module_check": "FAIL"
     },
     "release_reference": {
       "name": "release/v0.5.13",
-      "status": "LOCAL_FROZEN"
+      "status": "HOLD_NO_PUBLISH"
     },
     "required_gates": [
       "snapshot",
@@ -72,7 +77,8 @@
       "readyz",
       "restart_recovery",
       "core_smoke",
-      "isolated_online"
+      "isolated_online",
+      "module_check"
     ],
     "test_matrix_ref": "knowledge/test-impact-matrix.md#候选级最小门"
   },
@@ -103,7 +109,7 @@
   "blockers": [],
   "next_action": {
     "owner": "主控",
-    "action": "提交已审查的控制面衔接修正，接入develop；冻结应用release保持e90520c，随后按新基线启动v0.5.14",
+    "action": "提交已亲审的两处启动边界修正接入develop，固定新v0.5.13候选后执行本地有状态全局与隔离Linux验证",
     "status": "PLANNED"
   },
   "runtime": {
@@ -224,5 +230,16 @@
     "events": "reports/iterations/v0.5.13/events.jsonl",
     "terminal": "reports/iterations/v0.5.13/terminal.json"
   },
-  "display_summary": "v0.5.13 e90520c本地+隔离Linux/PG有状态门完整PASS，已决定冻结候选；发布与收尾待人工，准备v0.5.14最新事实核对。"
+  "display_summary": "v0.5.13 e90520c本地+隔离Linux/PG有状态门完整PASS，已决定冻结候选；发布与收尾待人工，准备v0.5.14最新事实核对。",
+  "held_iterations": [
+    {
+      "iteration_id": "v0.5.14",
+      "events": "reports/iterations/v0.5.14/events.jsonl",
+      "event_id": "v0.5.14-f1706d73-89a5-4489-a75e-aa06c19fc3f4",
+      "state_after_hash": "58e215a0b89f674becd04d56875b1211eb77625e029047b6e7a4da83625963e9",
+      "status": "CHECKPOINT_WAIT_BASELINE_REPAIR",
+      "candidate_sha": "651c1703a841eae547e3a85384f611d8c32f18d1",
+      "authorization_sha256": "ed938e2d4085a2c87d2fef9c1376e2af4f9952a5cf89b0b3e750428815ac2b52"
+    }
+  ]
 }

@@ -167,9 +167,10 @@ export function createContentRuntime({
     debugFetch: observedDebugFetch
   });
   if (effectObserver) {
+    // 启动门通过代理记录媒体端口的实际调用，方法仍绑定原端口对象。
     mediaRuntime = new Proxy(mediaRuntime, {
-      get(target, property, receiver) {
-        const value = Reflect.get(target, property, receiver);
+      get(target, property) {
+        const value = target[property];
         if (typeof value !== "function") return value;
         return (...args) => {
           effectObserver("media", String(property));

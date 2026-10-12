@@ -43,7 +43,7 @@ export function createServerRuntime({
       || config.localTestMode
       || config.upstreamOrigin
       || processRef !== process
-      || process.env.NODE_ENV !== "test"
+      || config.attachments.testMode !== true
       || ![config.databaseUrl, config.authDatabaseUrl, config.aiBudgetDatabaseUrl].every(isLoopback)) {
       throw new Error("Startup gate only accepts an isolated temporary directory and loopback PostgreSQL in test mode");
     }
