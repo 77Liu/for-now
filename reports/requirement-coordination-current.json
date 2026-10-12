@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 72,
-  "updated_at": "2026-10-12T11:04:11.635Z",
+  "revision": 73,
+  "updated_at": "2026-10-12T11:07:07.193Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "v0.5.13发布前现场核验发现通知Secret缺失及SSH认证失联；尚无本次发布写入回执，暂停生产动作，保留本地准备。",
+  "current_phase": "累计v0.5.13代码/版本说明已本地收口；待Owner提供独立控制台与飞书设置入口恢复SSH和通知签名，再续当前发布attempt。",
   "state": "RELEASE_ENVIRONMENT_BLOCKED",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发只读厘清SSH最后成功/首次失败、实际远端密钥动作和其他已授权恢复入口；保留本地版本元数据与发布说明准备。通知Secret从既有私密来源核验，无可用来源再请Owner提供设置入口。",
+  "next_action": "等待Owner答复恢复入口；不继续生产写入/轮换/重试SSH。已完成本地说明/元数据，不重复测试或开发。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -612,8 +612,8 @@
       ],
       "followup_gap_audit": "已只读确认：手动补录模式未随思绪草稿恢复；保存成功后的AI队列错误仍露出原始error.message；通知复制失败无替代恢复；通知feature仍是MJS且未纳入类型/隔离构建。未读计数根因未复现，保留PARTIAL。",
       "execution": "复制失败提供只读可选择的脱敏JSON；通知controller/presentation业务源迁移为.mts，公开依赖/任务/通知/激活态有具体接口，无any和ts-ignore；.mjs只薄转发，生成物仅public/generated且忽略。前端类型检查、通知controller既有专项、模块检查通过。另通知展示专项在原转写文案预期处失败，迁移前同一实现已经与预期冲突，未修改或伪报PASS。",
-      "candidate_sha": "d98762c4d8de5612b998bb71ed6a71fd8810e17d",
-      "candidate_tree": "663d41df97e04732418e9402aaeb4f4d52a8c9c8",
+      "candidate_sha": "c524efffb493b8bc7a2a380b7c6db38a9b76a658",
+      "candidate_tree": "e896c69159e836a53f0b1ca4d6ef1ee4d26c48e7",
       "integration_status": "本地六文件代码与既有控制面提交已快进合入develop；feat分支保留。未push/tag/release/deploy。",
       "active_task": {
         "task_id": "v0513-production-release-20261012",
@@ -878,7 +878,7 @@
           }
         }
       ],
-      "candidate_fixed_at": "2026-10-12T10:57:08.631Z",
+      "candidate_fixed_at": "2026-10-12T11:07:07.193Z",
       "final_review_task": {
         "task_id": "v0513-six-requirement-evidence-review-20261012",
         "mode": "只读审查",
@@ -1244,6 +1244,12 @@
       "at": "2026-10-12T11:04:11.635Z",
       "reason": "生产预算已核验四倍实际值；通知签名缺失、密钥轮换后部署入口失联，实际阻断对应发布动作，保留旧运行事实不伪实时健康。",
       "previous_snapshot": "55ca953:reports/requirement-coordination-current.json@revision71"
+    },
+    {
+      "revision": 73,
+      "at": "2026-10-12T11:07:07.193Z",
+      "reason": "接收21273bd版本元数据、修正候选发行说明；准确记录访问事故远端公钥变更及所需独立入口。",
+      "previous_snapshot": "d07dd6b:reports/requirement-coordination-current.json@revision72"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -1862,8 +1868,8 @@
     "id": "v0513-production-20261012-01",
     "version": "v0.5.13",
     "state": "BLOCKED_DEPLOY_ACCESS_AND_NOTIFICATIONS",
-    "candidate_sha": "d98762c4d8de5612b998bb71ed6a71fd8810e17d",
-    "candidate_tree": "663d41df97e04732418e9402aaeb4f4d52a8c9c8",
+    "candidate_sha": "c524efffb493b8bc7a2a380b7c6db38a9b76a658",
+    "candidate_tree": "e896c69159e836a53f0b1ca4d6ef1ee4d26c48e7",
     "authorization_source": "owner_decisions.current_release_authorization",
     "risk_level": "L2（配置/媒体/第三方；本次Owner明确授权生产动作）",
     "remote_protection": "Owner已豁免",
@@ -1911,6 +1917,26 @@
       },
       "access_issue": "主开发尝试密钥轮换后SSH拒绝；authorized_keys和旧key撤销状态未知。禁止新轮换/撤销及未知结果重复写入，先获取脱敏执行回执和可用恢复入口。",
       "release_actions": "主开发报告尚未push/tag/Release/deploy；等待具体回执确认"
+    },
+    "metadata_receipt": {
+      "implementation_sha": "21273bd4fae8a57281f0dc860c4ebcb7bfe96559",
+      "description": "仅包版本0.5.13、锁文件顶层版本、模板中文注释及唯一发行说明；版本校验/diff/独审GO，无依赖更改。",
+      "prose_correction_sha": "c524efffb493b8bc7a2a380b7c6db38a9b76a658",
+      "release_note": "reports/release-v0.5.13-2026-10-12.md",
+      "integrated": "21273bd已合入develop；c524eff仅修说明日期及浏览器证据范围，不重跑未影响代码测试。"
+    },
+    "access_incident": {
+      "source_thread": "01a11afe-73d2-7013-91d5-cd473c4d7115",
+      "exposure_location": "主开发任务工具输出误打印旧deployment私钥；未进Git，未复制给主控",
+      "remote_change": "唯一确认变更为向/root/.ssh/authorized_keys追加新公钥；旧公钥删除未执行",
+      "last_authentication_result": "旧、新及另一既有钥匙曾成功认证，后均在SSH公钥认证阶段被拒；TCP非失败原因",
+      "timing": "主开发只能估计2026-10-12 19:00–19:03 Asia/Shanghai，精确时刻无法从返回日志重建，不作精确证据",
+      "current_status": "访问/远端授权状态未知，无继续SSH/轮换/生产写入",
+      "pending_owner_inputs": [
+        "独立云控制台终端恢复入口",
+        "飞书机器人签名设置入口或Owner私密配置"
+      ],
+      "instruction": "禁止重复试钥匙或撤销；已有发布授权保留，恢复后从现场核验接续而非重做全部开发。"
     }
   }
 }
