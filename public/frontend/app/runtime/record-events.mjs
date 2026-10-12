@@ -212,29 +212,102 @@ export function installRecordSubmissionEvents({
     const recordKind = chainRecordKind();
     const requestId = form.dataset.requestId || crypto.randomUUID();
     const temporaryId = `pending:${requestId}`;
+    const owner = runtime.currentUser?.id;
+    const session = runtime.sessionSerial;
     const answer = $("#chain-answer").value;
+    const questionText = $("#chain-question").value;
+    const idea = $("#chain-idea").value;
+    const draftTagText = $("#chain-tags").value;
+    const modelDraft = runtime.answerDraft;
+    const modelReasoning = runtime.answerReasoningDraft;
+    const tags = [...runtime.draftTags];
+    const timeInput = $("#chain-datetime");
+    const timeMode = timeInput.dataset.occurrenceMode || "";
+    const manualTimeValue = timeInput.value || "";
+    const activeDate = runtime.activeDate;
+    const chainDraftVersion = runtime.chainDraftVersion;
+    const draftId = form.dataset.draftId;
+    const submittedImageDraftItems = { value: null };
+    const currentImageDraftItems = () =>
+      runtime.contentImageDraftManager?.snapshot?.("thoughtRoot")?.items ?? null;
+    const imageDraftMatches = (expected) => {
+      if (expected === null) return true;
+      const current = currentImageDraftItems();
+      return Array.isArray(current) && current.length === expected.length &&
+        current.every((item, index) => {
+          const before = expected[index];
+          return item.file === before.file && item.path === before.path &&
+            item.uploadedPath === before.uploadedPath &&
+            item.uploadRequestId === before.uploadRequestId &&
+            item.preview === before.preview;
+        });
+    };
     const sourceCaptureId = form.elements.sourceCaptureId.value;
     const sourceCaptureVersion =
       Number(form.elements.sourceCaptureVersion.value) || 0;
+    // 保存提交快照：旧响应只清理仍与提交时一致的草稿，未确认请求则保留原 requestId 供安全重试。
+    const isCurrentSession = () =>
+      owner === runtime.currentUser?.id && session === runtime.sessionSerial;
+    const isUnchangedDraftWithoutImages = () =>
+      isCurrentSession() &&
+      form.dataset.requestId === requestId &&
+      chainRecordKind() === recordKind &&
+      runtime.activeDate === activeDate &&
+      runtime.chainDraftVersion === chainDraftVersion &&
+      form.dataset.draftId === draftId &&
+      $("#chain-question").value === questionText &&
+      $("#chain-idea").value === idea &&
+      $("#chain-tags").value === draftTagText &&
+      $("#chain-answer").value === answer &&
+      (timeInput.dataset.occurrenceMode || "") === timeMode &&
+      timeInput.value === manualTimeValue &&
+      runtime.answerDraft === modelDraft &&
+      runtime.answerReasoningDraft === modelReasoning &&
+      JSON.stringify(runtime.draftTags) === JSON.stringify(tags) &&
+      form.elements.sourceCaptureId.value === sourceCaptureId &&
+      (Number(form.elements.sourceCaptureVersion.value) || 0) ===
+        sourceCaptureVersion;
+    const isUnchangedDraft = () =>
+      isUnchangedDraftWithoutImages() &&
+      imageDraftMatches(submittedImageDraftItems.value);
+    const clearSubmittedDraft = async () => {
+      if (!isUnchangedDraft()) return false;
+      await clearSubmittedContentImageDraft("thoughtRoot");
+      if (!isUnchangedDraftWithoutImages() || !imageDraftMatches([])) return false;
+      runtime.chainDraftVersion += 1;
+      form.reset();
+      clearDurableDraft("chain-form");
+      resetOccurrenceInput($("#chain-datetime"));
+      runtime.draftTags = [];
+      renderTagComposer();
+      runtime.answerDraft = "";
+      runtime.answerReasoningDraft = "";
+      delete form.dataset.requestId;
+      delete form.dataset.draftId;
+      return true;
+    };
     let uploadedPaths = [];
+    let eventTime;
     form.dataset.requestId = requestId;
     button.disabled = true;
     button.textContent = "正在保存…";
     $("#chain-status").textContent =
       recordKind === "capture" ? "正在收进念起…" : "正在保存整套思考…";
     try {
+      eventTime = occurrenceFields(timeInput);
       const submission = await contentImagePaths("thoughtRoot");
+      if (!isCurrentSession()) return;
       uploadedPaths = submission.uploadedPaths;
-      const eventTime = occurrenceFields($("#chain-datetime"));
+      submittedImageDraftItems.value = currentImageDraftItems();
       const original = imageRecordPayload({
-        content: $("#chain-question").value,
+        content: questionText,
         attachmentPaths: submission.attachmentPaths,
       });
       if (recordKind === "capture") {
         const payload = {
           ...eventTime,
           ...captureRecordPayload(original),
-          tags: runtime.draftTags,
+          tags,
         };
         const result = (
           await requestV1(
@@ -247,29 +320,25 @@ export function installRecordSubmissionEvents({
             {
               domains: ["captures"],
               projection: { kind: "capture.create", temporaryId, payload },
-              onQueued: (record) => applyPendingProjection(record),
+              onQueued: (record) => {
+                if (isCurrentSession()) applyPendingProjection(record);
+              },
             },
           )
         ).data;
+        if (!isCurrentSession()) return;
         state.captures = (state.captures || []).map((item) =>
           item.id === temporaryId ? result : item,
         );
         publishDomains(new Set(["captures"]));
-        await clearSubmittedContentImageDraft("thoughtRoot");
-        runtime.chainDraftVersion += 1;
-        form.reset();
-        clearDurableDraft("chain-form");
-        resetOccurrenceInput($("#chain-datetime"));
-        runtime.draftTags = [];
-        renderTagComposer();
-        runtime.answerDraft = "";
-        runtime.answerReasoningDraft = "";
-        delete form.dataset.requestId;
-        delete form.dataset.draftId;
-        $("#chain-status").textContent = "已收进念起。";
-        closeHomeEditors();
-        void refreshState("captures").catch((error) =>
-          showToast(`念起已保存，但页面刷新失败：${error.message}`, "error"),
+        const cleared = await clearSubmittedDraft();
+        if (!isCurrentSession()) return;
+        if (cleared) {
+          $("#chain-status").textContent = "已收进念起。";
+          closeHomeEditors();
+        }
+        void refreshState("captures").catch(() =>
+          isCurrentSession() && showToast("念起已保存，但页面刷新失败。重新进入页面即可读取。", "error"),
         );
         showToast("已收进念起");
         return;
@@ -283,11 +352,11 @@ export function installRecordSubmissionEvents({
         ...eventTime,
         question: original.content,
         attachmentPaths: original.attachmentPaths,
-        idea: $("#chain-idea").value,
+        idea,
         answer,
-        modelDraft: runtime.answerDraft,
-        modelReasoning: runtime.answerReasoningDraft,
-        tags: runtime.draftTags,
+        modelDraft,
+        modelReasoning,
+        tags,
         generateAnswer: needsAnswer,
         ...(sourceCaptureId
           ? {
@@ -310,10 +379,13 @@ export function installRecordSubmissionEvents({
           {
             domains: ["thoughts", "aiTasks", "notifications"],
             projection: { kind: "thought.chain.create", temporaryId, payload },
-            onQueued: (record) => applyPendingProjection(record),
+            onQueued: (record) => {
+              if (isCurrentSession()) applyPendingProjection(record);
+            },
           },
         )
       ).data;
+      if (!isCurrentSession()) return;
       const question = result.items.find((item) => item.type === "question");
       state.thoughts = [
         ...result.items,
@@ -322,26 +394,19 @@ export function installRecordSubmissionEvents({
         ),
       ];
       publishDomains(new Set(["thoughts"]));
-      await clearSubmittedContentImageDraft("thoughtRoot");
-      runtime.chainDraftVersion += 1;
-      form.reset();
-      clearDurableDraft("chain-form");
-      resetOccurrenceInput($("#chain-datetime"));
-      runtime.draftTags = [];
-      renderTagComposer();
-      runtime.answerDraft = "";
-      runtime.answerReasoningDraft = "";
-      delete form.dataset.requestId;
-      delete form.dataset.draftId;
-      $("#chain-status").textContent = needsAnswer
-        ? "思考已保存，后台生成一条图文合并回答。"
-        : answer.trim()
-          ? "已保存为一套完整思考。"
-          : "思考已保存，未自动调用 AI。";
-      closeHomeEditors();
+      const cleared = await clearSubmittedDraft();
+      if (!isCurrentSession()) return;
+      if (cleared) {
+        $("#chain-status").textContent = needsAnswer
+          ? "思考已保存，后台生成一条图文合并回答。"
+          : answer.trim()
+            ? "已保存为一套完整思考。"
+            : "思考已保存，未自动调用 AI。";
+        closeHomeEditors();
+      }
       void refreshState(["thoughts", "review", "notifications"], {
         chainId: question?.id,
-      }).catch(() =>
+      }).catch(() => isCurrentSession() &&
         showToast("思考已保存，但最新状态暂未刷新。重新进入页面即可读取。", "error"),
       );
       if (needsAnswer && question)
@@ -350,32 +415,27 @@ export function installRecordSubmissionEvents({
         needsAnswer ? "思考已保存，可继续记录" : "整套思考已保存，不会重复记录",
       );
     } catch (error) {
+      if (!isCurrentSession()) return;
       if (error.syncStatus === "pending") {
         // 待同步队列接管附件后清空表单；其他失败才回收本次上传资源。
-        await clearSubmittedContentImageDraft("thoughtRoot");
-        runtime.chainDraftVersion += 1;
-        form.reset();
-        clearDurableDraft("chain-form");
-        resetOccurrenceInput($("#chain-datetime"));
-        runtime.draftTags = [];
-        renderTagComposer();
-        runtime.answerDraft = "";
-        runtime.answerReasoningDraft = "";
-        delete form.dataset.requestId;
-        delete form.dataset.draftId;
+        const cleared = await clearSubmittedDraft();
+        if (!isCurrentSession()) return;
         $("#chain-status").textContent =
           recordKind === "capture"
             ? "念起已留存，网络恢复后自动同步。"
             : "思考已留存，网络恢复后自动同步。";
-        closeHomeEditors();
+        if (cleared) {
+          closeHomeEditors();
+        }
         showToast(
           recordKind === "capture"
             ? "念起已进入待同步队列"
             : "思考已进入待同步队列",
         );
       } else {
-        if (recordKind === "capture")
+        if (recordKind === "capture" && isCurrentSession())
           await discardContentImageUploads("thoughtRoot", uploadedPaths);
+        if (!isCurrentSession()) return;
         // 未确认的思考提交可能已落库；保留附件以支持同 requestId 恢复。
         if (error?.syncStatus === "failed") {
           $("#chain-status").textContent = "保存失败，内容仍保留。检查网络后可用原请求安全重试。";
@@ -394,8 +454,10 @@ export function installRecordSubmissionEvents({
         }
       }
     } finally {
-      button.disabled = false;
-      syncChainRecordKind();
+      if (isCurrentSession()) {
+        button.disabled = false;
+        syncChainRecordKind();
+      }
     }
   });
 

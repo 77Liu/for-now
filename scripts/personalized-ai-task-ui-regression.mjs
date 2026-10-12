@@ -306,25 +306,45 @@ assert.equal(chatRequests.at(-1), uncertainRequestId,
 const chainButton = { disabled: false, textContent: "保存" };
 const chainStatus = { textContent: "" };
 const chainQuestion = { value: "保留原始草稿" };
+const chainIdea = { value: "" };
+const chainAnswer = { value: "" };
+const chainTags = { value: "" };
+const chainDateTime = { value: "2026-10-12T09:30", dataset: { occurrenceMode: "manual" } };
 const chainForm = {
   dataset: {},
   elements: { sourceCaptureId: { value: "" }, sourceCaptureVersion: { value: "" } },
   querySelector: () => chainButton,
+  reset() {
+    chainQuestion.value = "";
+    chainIdea.value = "";
+    chainAnswer.value = "";
+    chainDateTime.value = "";
+  },
   addEventListener(type, listener) { if (type === "submit") chainSubmit = listener; }
 };
 let chainSubmit = null;
 const chainRequests = [];
 let discardedChainUploads = 0;
+const chainPublished = [];
+const chainToasts = [];
+const chainImageDraftItems = [];
+let chainImagePaths = async () => ({ attachmentPaths: ["uploaded:attachment-1"], uploadedPaths: ["uploaded:attachment-1"] });
+let chainRequestHandler = async (_url, options) => {
+  chainRequests.push(options.headers["idempotency-key"]);
+  throw Object.assign(new Error("provider secret and internal stack"), { code: "UNKNOWN_COMMIT" });
+};
+let chainClearImageHandler = async () => {};
+let chainRefreshHandler = async () => {};
 const chainElements = new Map();
 const chainElement = selector => {
   if (selector === "#thought-prompt-button") return { addEventListener() {} };
   if (selector === "#chain-form") return chainForm;
   if (selector === "#chat-form") return { addEventListener() {} };
-  if (selector === "#chain-tags") return { value: "" };
-  if (selector === "#chain-answer") return { value: "" };
+  if (selector === "#chain-tags") return chainTags;
+  if (selector === "#chain-answer") return chainAnswer;
   if (selector === "#chain-question") return chainQuestion;
-  if (selector === "#chain-idea") return { value: "" };
-  if (selector === "#chain-datetime") return {};
+  if (selector === "#chain-idea") return chainIdea;
+  if (selector === "#chain-datetime") return chainDateTime;
   if (selector === "#chain-status") return chainStatus;
   if (!chainElements.has(selector)) chainElements.set(selector, { value: "", addEventListener() {} });
   return chainElements.get(selector);
@@ -332,23 +352,38 @@ const chainElement = selector => {
 const chainRuntime = {
   currentUser: { id: "owner-a" }, sessionSerial: 1, chainDraftVersion: 0,
   draftTags: [], answerDraft: "", answerReasoningDraft: "",
+  contentImageDraftManager: { snapshot: () => ({ items: [...chainImageDraftItems] }) },
   llmSettings: { automaticAnswers: { thoughtAnswer: false } }
 };
 installRecordSubmissionEvents({
   runtime: chainRuntime,
   $: chainElement,
-  requestV1: async (_url, options) => {
-    chainRequests.push(options.headers["idempotency-key"]);
-    throw Object.assign(new Error("provider secret and internal stack"), { code: "UNKNOWN_COMMIT" });
+  requestV1: (...args) => chainRequestHandler(...args),
+  occurrenceFields: input => {
+    if (input.value === "invalid") throw new Error("请手动指定发生时间");
+    return { timeMode: input.value || "now" };
   },
-  occurrenceFields: () => ({ timeMode: "now" }),
-  contentImagePaths: async () => ({ attachmentPaths: ["uploaded:attachment-1"], uploadedPaths: ["uploaded:attachment-1"] }),
+  contentImagePaths: (...args) => chainImagePaths(...args),
   imageRecordPayload: input => ({ content: input.content, attachmentPaths: input.attachmentPaths }),
   captureRecordPayload: payload => payload,
   discardContentImageUploads: async () => { discardedChainUploads += 1; },
+  clearSubmittedContentImageDraft: (...args) => chainClearImageHandler(...args),
+  clearDurableDraft() {},
+  applyPendingProjection(record) { chainPublished.push(["queued", record]); },
+  publishDomains(domains) { chainPublished.push([...domains]); },
+  refreshState: (...args) => chainRefreshHandler(...args),
+  renderTagComposer() {},
+  closeHomeEditors() {},
+  startBackgroundChainAnswer() {},
+  commitDraftTags() {
+    const tag = chainTags.value.trim();
+    if (!tag) return;
+    chainRuntime.draftTags.push(tag);
+    chainTags.value = "";
+  },
   chainRecordKind: () => "thought",
   resetOccurrenceInput() {},
-  showToast() {},
+  showToast(...args) { chainToasts.push(args); },
   syncChainRecordKind() {}
 });
 const submitChain = () => chainSubmit({ preventDefault() {}, currentTarget: chainForm });
@@ -364,5 +399,166 @@ assert.equal(discardedChainUploads, 0,
 await submitChain();
 assert.equal(chainRequests.at(-1), unconfirmedRequestId,
   "retry after an unconfirmed thought save reuses the same idempotency key");
+
+chainDateTime.value = "invalid";
+chainForm.dataset.requestId = "invalid-time";
+const requestsBeforeInvalidTime = chainRequests.length;
+await submitChain();
+assert.equal(chainRequests.length, requestsBeforeInvalidTime,
+  "invalid manual time is validated before any save request is sent");
+assert.equal(chainButton.disabled, false,
+  "invalid manual time is handled by the submit catch and restores the button");
+assert.match(chainStatus.textContent, /状态尚未确认/);
+chainDateTime.value = "2026-10-12T09:30";
+
+const staleImageGate = deferred();
+chainImagePaths = () => staleImageGate.promise;
+let staleSessionRequestCount = 0;
+chainRequestHandler = async () => { staleSessionRequestCount += 1; };
+chainQuestion.value = "会话切换前的内容";
+chainForm.dataset.requestId = "stale-before-request";
+const staleImageSubmission = submitChain();
+const statusAtSessionSwitch = chainStatus.textContent;
+chainRuntime.sessionSerial += 1;
+staleImageGate.resolve({ attachmentPaths: [], uploadedPaths: [] });
+await staleImageSubmission;
+assert.equal(staleSessionRequestCount, 0,
+  "a session switch during image preparation prevents the follow-up save request");
+assert.equal(chainStatus.textContent, statusAtSessionSwitch,
+  "a stale submission does not write status after image preparation resolves");
+chainRuntime.sessionSerial = 1;
+chainButton.disabled = false;
+
+const staleSaveGate = deferred();
+const staleRequestStarted = deferred();
+chainImagePaths = async () => ({ attachmentPaths: [], uploadedPaths: [] });
+chainRequestHandler = async (_url, options, coordination) => {
+  chainRequests.push(options.headers["idempotency-key"]);
+  staleSaveGate.resolveRequest = () => coordination.onQueued({ id: "stale-pending" });
+  staleRequestStarted.resolve();
+  return staleSaveGate.promise;
+};
+chainQuestion.value = "等待保存的内容";
+chainForm.dataset.requestId = "stale-during-request";
+const publishedBeforeStaleSave = chainPublished.length;
+const toastsBeforeStaleSave = chainToasts.length;
+const staleSaveSubmission = submitChain();
+await staleRequestStarted.promise;
+chainRuntime.sessionSerial += 1;
+staleSaveGate.resolveRequest();
+staleSaveGate.resolve({ data: { items: [{ id: "stale-record", type: "question" }] } });
+await staleSaveSubmission;
+assert.equal(chainPublished.length, publishedBeforeStaleSave,
+  "a stale queued callback and late response do not publish to the new session");
+assert.equal(chainToasts.length, toastsBeforeStaleSave,
+  "a stale response does not show a toast in the new session");
+chainRuntime.sessionSerial = 1;
+chainButton.disabled = false;
+
+const invalidTimeEditGate = deferred();
+const invalidTimeEditStarted = deferred();
+chainRequestHandler = async () => {
+  invalidTimeEditStarted.resolve();
+  return invalidTimeEditGate.promise;
+};
+chainDateTime.value = "2026-10-12T10:00";
+chainForm.dataset.requestId = "invalid-time-edited-during-save";
+const publishesBeforeInvalidTimeEdit = chainPublished.length;
+const invalidTimeEditSubmission = submitChain();
+await invalidTimeEditStarted.promise;
+chainDateTime.value = "invalid";
+invalidTimeEditGate.resolve({ data: { items: [{ id: "saved-despite-invalid-edit", type: "question" }] } });
+await invalidTimeEditSubmission;
+assert.ok(chainPublished.length > publishesBeforeInvalidTimeEdit,
+  "an invalid date edit after a successful response does not turn the save into an unknown failure");
+assert.doesNotMatch(chainStatus.textContent, /状态尚未确认/);
+chainDateTime.value = "2026-10-12T09:30";
+
+const saveGate = deferred();
+let submittedPayload;
+chainRequestHandler = async (_url, options) => {
+  chainRequests.push(options.headers["idempotency-key"]);
+  submittedPayload = JSON.parse(options.body);
+  return saveGate.promise;
+};
+chainQuestion.value = "提交时的问题";
+chainIdea.value = "提交时的想法";
+chainAnswer.value = "提交时的回答";
+chainDateTime.value = "2026-10-12T09:30";
+chainRuntime.draftTags = ["提交时标签"];
+chainForm.dataset.requestId = "same-session-edit";
+let clearedNewDraftImage = false;
+chainClearImageHandler = async () => { clearedNewDraftImage = true; };
+const editedSaveSubmission = submitChain();
+await Promise.resolve();
+chainQuestion.value = "保存期间新写的问题";
+chainIdea.value = "保存期间新写的想法";
+chainDateTime.value = "2026-10-12T10:15";
+chainRuntime.draftTags = ["保存期间新标签"];
+delete chainForm.dataset.requestId;
+saveGate.resolve({ data: { items: [{ id: "saved-original", type: "question" }] } });
+await editedSaveSubmission;
+assert.equal(submittedPayload.question, "提交时的问题");
+assert.equal(submittedPayload.idea, "提交时的想法");
+assert.deepEqual(submittedPayload.tags, ["提交时标签"]);
+assert.equal(submittedPayload.timeMode, "2026-10-12T09:30");
+assert.equal(chainQuestion.value, "保存期间新写的问题",
+  "a successful old save does not reset a newer same-session question");
+assert.equal(chainIdea.value, "保存期间新写的想法");
+assert.equal(chainDateTime.value, "2026-10-12T10:15");
+assert.deepEqual(chainRuntime.draftTags, ["保存期间新标签"]);
+assert.equal(clearedNewDraftImage, false,
+  "a successful old save does not clear attachments belonging to a newer draft");
+
+chainImageDraftItems.push({
+  file: { name: "submitted-image.png" },
+  path: "images/submitted-image.png",
+  uploadedPath: "images/submitted-image.png",
+  uploadRequestId: "image-request-1",
+  preview: "blob:submitted-image"
+});
+const imageRemovalGate = deferred();
+const imageRemovalStarted = deferred();
+chainRequestHandler = async () => {
+  imageRemovalStarted.resolve();
+  return imageRemovalGate.promise;
+};
+chainQuestion.value = "带图的思考";
+chainTags.value = "";
+chainDateTime.value = "2026-10-12T10:45";
+chainForm.dataset.requestId = "image-removal-race";
+let clearedRemovedImageDraft = false;
+chainClearImageHandler = async () => { clearedRemovedImageDraft = true; };
+const imageRemovalSubmission = submitChain();
+await imageRemovalStarted.promise;
+chainImageDraftItems.splice(0, 1);
+chainTags.value = "未提交的新标签";
+imageRemovalGate.resolve({ data: { items: [{ id: "image-race-saved", type: "question" }] } });
+await imageRemovalSubmission;
+assert.equal(clearedRemovedImageDraft, false,
+  "a late save does not clear the current image draft after an image is removed");
+assert.equal(chainTags.value, "未提交的新标签",
+  "a late save does not reset an uncommitted tag typed during the request");
+
+const refreshGate = deferred();
+chainRequestHandler = async () => ({
+  data: { items: [{ id: "refresh-late-record", type: "question" }] }
+});
+chainRefreshHandler = () => refreshGate.promise;
+chainQuestion.value = "触发延迟刷新的问题";
+chainIdea.value = "";
+chainAnswer.value = "";
+chainDateTime.value = "2026-10-12T11:00";
+chainRuntime.draftTags = [];
+chainForm.dataset.requestId = "late-refresh";
+await submitChain();
+const toastsBeforeRefreshFailure = chainToasts.length;
+chainRuntime.sessionSerial += 1;
+refreshGate.resolve(Promise.reject(new Error("late refresh rejection")));
+await Promise.resolve();
+await Promise.resolve();
+assert.equal(chainToasts.length, toastsBeforeRefreshFailure,
+  "a delayed refresh failure after a session switch does not show a stale toast");
+chainRuntime.sessionSerial = 1;
 
 console.log("Personalized AI task UI checks passed: task retries, result recovery, session isolation, modal races and chat idempotency.");
