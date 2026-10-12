@@ -84,8 +84,12 @@ try {
     await fs.cp(path.join(root, "prompts"), path.join(dir, "archive/prompts"), { recursive: true });
     await fs.cp(path.join(root, "public"), path.join(dir, "archive/public"), { recursive: true });
     for (const file of ["server.mjs", "package.json", "package-lock.json"]) await fs.copyFile(path.join(root, file), path.join(dir, "archive", file));
-    for (const file of ["monitor-health.mjs", "monitor-host-metrics.mjs", "monitor-journal-context.mjs", "validate-restored-data.mjs", "oss-attachment-smoke.mjs", "aliyun-segmentation-smoke.mjs", "postgres-runtime-preflight.mjs", "prompt-catalog-regression.mjs"]) {
+    for (const file of ["monitor-health.mjs", "monitor-host-metrics.mts", "monitor-journal-context.mts", "validate-restored-data.mjs", "oss-attachment-smoke.mjs", "aliyun-segmentation-smoke.mjs", "postgres-runtime-preflight.mjs", "prompt-catalog-regression.mjs"]) {
       await fs.copyFile(path.join(root, "scripts", file), path.join(dir, "archive/scripts", file));
+    }
+    await fs.mkdir(path.join(dir, "archive/.build/typescript/monitor"), { recursive: true });
+    for (const file of ["monitor-host-metrics.mjs", "monitor-journal-context.mjs"]) {
+      await fs.copyFile(path.join(root, ".build/typescript/monitor", file), path.join(dir, "archive/.build/typescript/monitor", file));
     }
     if (scenario === "exploration") await fs.writeFile(path.join(dir, "archive/public/explore-unexpected.txt"), "local exploration only\n");
     if(scenario !== "first_install_health") await fs.symlink(previous, path.join(base, "app"));

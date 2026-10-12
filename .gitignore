@@ -10,6 +10,8 @@ node_modules/
 
 # 编译、打包和覆盖率产物；源码与配置仍按规则提交。
 .build/
+# 运维 TS 的 .mjs 仅供本机/部署运行，严禁作为源码提交。
+.build/typescript/monitor/
 dist/
 coverage/
 *.tsbuildinfo

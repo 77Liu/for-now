@@ -12,8 +12,8 @@ import {
   sendFeishu,
   validateFeishuWebhook
 } from "./monitor-health.mjs";
-import { sampleHostMetricsOnce } from "./monitor-host-metrics.mjs";
-import { summarizePlatformJournal } from "./monitor-journal-context.mjs";
+import { sampleHostMetricsOnce } from "../.build/typescript/monitor/monitor-host-metrics.mjs";
+import { summarizePlatformJournal } from "../.build/typescript/monitor/monitor-journal-context.mjs";
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "growth-monitor-"));
 const dataDir = path.join(root, "data"), logsDir = path.join(dataDir, "logs"), backupDir = path.join(root, "backups");

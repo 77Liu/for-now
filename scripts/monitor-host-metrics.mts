@@ -8,10 +8,25 @@ const SAMPLE_INTERVAL_MS = 1000;
 const HISTORY_SIZE = 30;
 const METRICS_FILE = process.env.MONITOR_HOST_METRICS_FILE || "/var/lib/for-now-monitor/host-metrics.json";
 const CPU_COUNT = Math.max(1, os.availableParallelism?.() || os.cpus().length || 1);
-let previousHostCpu = null;
-let previousServices = new Map();
+type CpuCounters = { total: number; idle: number };
+type MemoryMetrics = { memoryTotalBytes: number; memoryUsedBytes: number; memoryPercent: number };
+type ServiceMetrics = { cpuPercent: number | null; memoryBytes: number };
+type HostMetricSample = {
+  sampledAt: string;
+  cpuPercent: number | null;
+  memoryTotalBytes?: number;
+  memoryUsedBytes?: number;
+  memoryPercent?: number;
+  load1: number | null;
+  services: Record<string, ServiceMetrics>;
+};
+type CpuSampleState = { sampledAt: number; usageUsec: number };
+type TextFileReader = (filePath: string, encoding: "utf8") => Promise<string>;
 
-function parseCpuCounters(text) {
+let previousHostCpu: CpuCounters | null = null;
+const previousServices = new Map<string, CpuSampleState>();
+
+function parseCpuCounters(text: string): CpuCounters | null {
   const line = String(text).split("\n").find(value => value.startsWith("cpu "));
   if (!line) return null;
   const values = line.trim().split(/\s+/).slice(1).map(Number);
@@ -20,7 +35,7 @@ function parseCpuCounters(text) {
   return { total: values.slice(0, 8).reduce((sum, value) => sum + value, 0), idle: values[3] + (values[4] || 0) };
 }
 
-function cpuPercent(previous, current) {
+function cpuPercent(previous: CpuCounters | null, current: CpuCounters | null): number | null {
   if (!previous || !current) return null;
   const total = current.total - previous.total;
   const idle = current.idle - previous.idle;
@@ -28,8 +43,8 @@ function cpuPercent(previous, current) {
   return Math.round(Math.min(100, Math.max(0, (total - idle) / total * 100)) * 10) / 10;
 }
 
-function parseMemory(text) {
-  const values = Object.fromEntries(String(text).split("\n").flatMap(line => {
+function parseMemory(text: string): MemoryMetrics | null {
+  const values: Record<string, number> = Object.fromEntries(String(text).split("\n").flatMap(line => {
     const match = /^(MemTotal|MemAvailable):\s+(\d+)\s+kB$/.exec(line);
     return match ? [[match[1], Number(match[2]) * 1024]] : [];
   }));
@@ -42,7 +57,7 @@ function parseMemory(text) {
   };
 }
 
-async function cgroupSample(unit, sampledAt) {
+async function cgroupSample(unit: string, sampledAt: number): Promise<ServiceMetrics | null> {
   const root = path.join("/sys/fs/cgroup/system.slice", unit);
   try {
     const [memoryText, cpuText] = await Promise.all([
@@ -70,7 +85,13 @@ async function cgroupSample(unit, sampledAt) {
   }
 }
 
-async function collectSample({ readFile = fs.readFile, now = () => Date.now() } = {}) {
+async function collectSample({
+  readFile = fs.readFile,
+  now = () => Date.now()
+}: {
+  readFile?: TextFileReader;
+  now?: () => number;
+} = {}): Promise<HostMetricSample> {
   const sampledAt = now();
   const [cpuText, memoryText, loadText] = await Promise.all([
     readFile("/proc/stat", "utf8"),
@@ -80,7 +101,7 @@ async function collectSample({ readFile = fs.readFile, now = () => Date.now() } 
   const counters = parseCpuCounters(cpuText);
   const memory = parseMemory(memoryText);
   const load1 = Number(loadText.trim().split(/\s+/)[0]);
-  const services = {};
+  const services: Record<string, ServiceMetrics> = {};
   for (const unit of ["for-now.service", "for-now-platform.service"]) {
     const value = await cgroupSample(unit, sampledAt);
     if (value) services[unit] = value;
@@ -96,11 +117,11 @@ async function collectSample({ readFile = fs.readFile, now = () => Date.now() } 
   return result;
 }
 
-async function writeSample(sample, metricsFile = METRICS_FILE) {
-  let previous = [];
+async function writeSample(sample: HostMetricSample, metricsFile = METRICS_FILE): Promise<void> {
+  let previous: HostMetricSample[] = [];
   try {
-    const state = JSON.parse(await fs.readFile(metricsFile, "utf8"));
-    if (state.schemaVersion === 1 && Array.isArray(state.samples)) previous = state.samples;
+    const state = JSON.parse(await fs.readFile(metricsFile, "utf8")) as { schemaVersion?: unknown; samples?: unknown };
+    if (state.schemaVersion === 1 && Array.isArray(state.samples)) previous = state.samples as HostMetricSample[];
   } catch {}
   const samples = [...previous, sample].slice(-HISTORY_SIZE);
   await fs.mkdir(path.dirname(metricsFile), { recursive: true, mode: 0o700 });
@@ -118,8 +139,19 @@ async function writeSample(sample, metricsFile = METRICS_FILE) {
   }
 }
 
-/** 主机采样只保留最近 30 秒的资源摘要，不记录进程参数或用户数据。 */
-export async function sampleHostMetricsOnce({ metricsFile = METRICS_FILE, readFile = fs.readFile, now = () => Date.now() } = {}) {
+/**
+ * 采集一次主机与指定服务的资源摘要，并仅保留最近 30 秒的采样结果。
+ * @param options 临时文件路径和可注入时钟/文件读取器，供部署环境和专项测试复用。
+ */
+export async function sampleHostMetricsOnce({
+  metricsFile = METRICS_FILE,
+  readFile = fs.readFile,
+  now = () => Date.now()
+}: {
+  metricsFile?: string;
+  readFile?: TextFileReader;
+  now?: () => number;
+} = {}): Promise<HostMetricSample> {
   const sample = await collectSample({ readFile, now });
   await writeSample(sample, metricsFile);
   return sample;
@@ -135,7 +167,10 @@ async function runSampler() {
     try {
       await sampleHostMetricsOnce();
     } catch (error) {
-      const code = /^[A-Z0-9_]{1,80}$/.test(error?.code || "") ? error.code : "HOST_METRICS_SAMPLE_FAILED";
+      const candidateCode = error && typeof error === "object" && "code" in error ? error.code : undefined;
+      const code = typeof candidateCode === "string" && /^[A-Z0-9_]{1,80}$/.test(candidateCode)
+        ? candidateCode
+        : "HOST_METRICS_SAMPLE_FAILED";
       process.stderr.write(`${JSON.stringify({ event: "host_metrics.sample_failed", code })}\n`);
     }
     if (running) await new Promise(resolve => setTimeout(resolve, Math.max(50, SAMPLE_INTERVAL_MS - (Date.now() - startedAt))));
