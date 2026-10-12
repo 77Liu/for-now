@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 140,
-  "updated_at": "2026-10-12T18:55:03.949Z",
+  "revision": 147,
+  "updated_at": "2026-10-12T20:13:26.450Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -19,8 +19,8 @@
   },
   "iteration": {
     "id": "v0.5.13",
-    "status": "ACTIVE",
-    "phase": "0262018真实启动/readyz/重启/认证读取通过；保存被隔离PG附件清单只读调用的验证器分类误报阻塞"
+    "status": "READY_WAIT_OWNER",
+    "phase": "v0.5.13候选本地引用已冻结，发布及收口等待人工；准备下一版本的控制面衔接"
   },
   "scope": {
     "description": "保存状态/草稿与失败恢复；发生时间/补录意图；通知列表未读事实、脱敏诊断与恢复操作。仅实现六条锁定需求的未交付行为，不做全站状态或通知平台重构。",
@@ -48,19 +48,33 @@
   },
   "active_tasks": [],
   "candidate": {
-    "sha": "026201849a5ef204138336bb1d1db94a0aeb918b",
-    "tree": "b3ae09197ffa8973196d32535a5b5a47f8c05c82",
-    "status": "CORE_SMOKE_FAILED",
-    "release_frozen": false,
+    "sha": "e90520cadef9150f23ac029bef0e96a79616c3cb",
+    "tree": "0ec5c710e65cd30dcb29d29c03713206d5149d20",
+    "status": "READY_FOR_RELEASE_WAIT_OWNER",
+    "release_frozen": true,
     "quality_gate": {
       "snapshot": "PASS",
       "local_import": "PASS",
       "runtime_start": "PASS",
       "readyz": "PASS",
       "restart_recovery": "PASS",
-      "core_smoke": "FAIL",
-      "isolated_online": "NOT_RUN"
-    }
+      "core_smoke": "PASS",
+      "isolated_online": "PASS"
+    },
+    "release_reference": {
+      "name": "release/v0.5.13",
+      "status": "LOCAL_FROZEN"
+    },
+    "required_gates": [
+      "snapshot",
+      "local_import",
+      "runtime_start",
+      "readyz",
+      "restart_recovery",
+      "core_smoke",
+      "isolated_online"
+    ],
+    "test_matrix_ref": "knowledge/test-impact-matrix.md#候选级最小门"
   },
   "authorization": {
     "source": {
@@ -86,18 +100,11 @@
     "execution_enabled": false,
     "execution_condition": "发布与收尾等待Owner新的人工信号；当前推进验证"
   },
-  "blockers": [
-    {
-      "code": "LOCAL_PG_ATTACHMENT_INVENTORY_READ_FALSE_POSITIVE",
-      "status": "FIXED_PENDING_REAL_GATE",
-      "owner": "主开发",
-      "impact": "保存所有权校验调用实际隔离PG账户SELECT，但observer将listAttachmentInventory读操作当媒体副作用，导致HTTP500"
-    }
-  ],
+  "blockers": [],
   "next_action": {
     "owner": "主控",
-    "action": "接入经独立审查的隔离PG清单只读分类修复，固定新候选执行完整保存往返门",
-    "status": "READY"
+    "action": "提交已审查的控制面衔接修正，接入develop；冻结应用release保持e90520c，随后按新基线启动v0.5.14",
+    "status": "PLANNED"
   },
   "runtime": {
     "sha": "3e94e2f29f5e131f2e98db3b4cb48659ba91fd79",
@@ -195,11 +202,27 @@
       "id": "0262018-runtime-and-read-pass-save-failed",
       "source": "reports/local/0262018-startup-snapshot.json@sha256:22fa69deefaff607a670f1f5553eb7fe7096d09836ecd7d31745f4cefa781f97",
       "status": "实际启动/readyz/同库重启/登录/读取PASS，空恢复4+4；POST保存500为media:listAttachmentInventory拦截，主控核对真实隔离PG SELECT；任务通知NOT_RUN"
+    },
+    {
+      "id": "e90520c-local-stateful-gate-pass",
+      "source": "reports/local/e90520c-startup-gate-receipt.json@sha256:5cdf0a7318f4edc45e4a34ba1c1f5cdd00522a5647e882b68f7aad6d02b766d3",
+      "status": "主控核对实际verify exit0及全阶段PASS，4账户84任务；空恢复4/4、PG清单读取1、heldDispatches8、provider/outbound/media0；API门不冒称验证前端生成物/真实provider"
+    },
+    {
+      "id": "e90520c-isolated-linux-gate-pass",
+      "source": "reports/local/e90520c-linux-gate-receipt.json@sha256:9ea8401b127e187189dafbc9917272557079e45e38988de5bc52f357c9388c55",
+      "status": "主控核对实际systemd-run verify exec-9e1930ea exit0、Result=success及最终回执；同SHA/tree/快照、Linux PG16.15，4账户84任务，全部启动/重启/认证保存/任务通知PASS；副作用0；不代表前端、真实provider或生产新候选验收"
+    },
+    {
+      "id": "held-iteration-return-review",
+      "event_id": "v0.5.13-ce53c1c5-e776-4751-b6bd-2fad7026e54e",
+      "source": "scripts/control-plane-update.mts；knowledge/coordination-control-plane.md v2.1",
+      "status": "主控亲自审查转出、分段锚点、held恢复、close消费者与授权边界；复用最终实际类型检查/内部往返夹具PASS"
     }
   ],
   "records": {
     "events": "reports/iterations/v0.5.13/events.jsonl",
     "terminal": "reports/iterations/v0.5.13/terminal.json"
   },
-  "display_summary": "0262018启动/readyz/重启/认证读取PASS；保存FAIL为隔离PG清单纯读取误报。核心冒烟尚未全过，发布及收尾仍等人工。"
+  "display_summary": "v0.5.13 e90520c本地+隔离Linux/PG有状态门完整PASS，已决定冻结候选；发布与收尾待人工，准备v0.5.14最新事实核对。"
 }
