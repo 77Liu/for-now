@@ -235,7 +235,7 @@ function renderDate(){
   $$('[data-active-date]').forEach(input=>input.value=runtime.activeDate);
   installOccurrenceControls();
   if(!$("#quote-id")?.value)resetOccurrenceInput($("#quote-datetime"));
-  for(const input of[$("#chain-datetime"),$("#checkin-datetime"),$("#chat-datetime")]){
+  for(const input of[$("#checkin-datetime"),$("#chat-datetime")]){
     resetOccurrenceInput(input);
   }
   $$('[data-daily-form]').forEach(form=>{

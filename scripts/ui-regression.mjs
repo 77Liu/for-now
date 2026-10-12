@@ -4101,6 +4101,10 @@ try {
   assert.deepEqual(await evaluate(`([...document.querySelectorAll('#chain-form input[name="recordKind"]')].map(input=>({value:input.value,checked:input.checked})))`),[{value:"capture",checked:false},{value:"thought",checked:true}]);
   assert.deepEqual(await evaluate(`(()=>{const input=document.querySelector("#chain-datetime"),buttons=input.closest("label").querySelectorAll("[data-occurrence-mode]");return{value:input.value,mode:input.dataset.occurrenceMode,disabled:input.disabled,hidden:input.hidden,manualActive:buttons[1].classList.contains("active"),manualPressed:buttons[1].getAttribute("aria-pressed"),nowActive:buttons[0].classList.contains("active")}})()`),{value:"2026-09-26T08:15",mode:"manual",disabled:false,hidden:false,manualActive:true,manualPressed:"true",nowActive:false});
   assert.equal(await evaluate(`JSON.parse(sessionStorage.getItem("cike:session-drafts:user-1")).forms.find(item=>item.key==="form:0").fields.find(item=>item.key==="id:chain-datetime").occurrenceMode`),"manual");
+  await evaluate(`document.querySelector('[data-view="thoughts"]').click();true`);
+  await waitUntil(`document.querySelector("#view-thoughts").classList.contains("active")`);
+  await evaluate(`document.querySelector('[data-view="today"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-today").classList.contains("active")&&document.querySelector("#chain-datetime").dataset.occurrenceMode==="manual"&&document.querySelector("#chain-datetime").value==="2026-09-26T08:15"`),true);
   await evaluate(`(()=>{const input=document.querySelector("#chain-datetime");input.closest("label").querySelector('[data-occurrence-mode="now"]').click();input.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
   await cdp.send("Page.reload",{ignoreCache:true});
   assert.equal(await waitUntil(`document.querySelector("#today-date-label")?.textContent.length>0&&!document.querySelector("#onboarding-workspace").hidden&&document.querySelector("#onboarding-v2-content h1")?.textContent.includes("先把这一点留下")&&document.querySelector("#chain-datetime")?.dataset.occurrenceMode==="now"`),true);
