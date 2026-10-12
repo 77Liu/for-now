@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 34,
-  "updated_at": "2026-10-12T12:49:07+08:00",
+  "revision": 35,
+  "updated_at": "2026-10-12T13:03:17+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner已要求继续推进 v0.5.13.1 与 v0.5.13；当前仅本地串行开发，远程写入、发布、部署和付费调用仍关闭",
-  "current_phase": "v0.5.13.1仍为本地候选PARTIAL；v0.5.13首批切片已在develop，revision33差分已写但未审查/验证。revision34仅补充测试入口构建前置，避免干净checkout因缺少ignored public/generated产物而无法运行通知专项。",
+  "current_phase": "v0.5.13.1维持本地候选PARTIAL；v0.5.13代码差分已完成第一轮定向验证：通知TS构建与专项通过、AI任务/账户切换专项通过；check:modules因新增草稿测试深层导入违反模块边界而失败。已批准将该往返断言移入现有UI浏览器重载场景并删除深层导入后重验。",
   "state": "BUILDING_LOCAL_ONLY",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -82,7 +82,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发按revision34只调整package.json中通知专项、F3、frontend和system命令的build:frontend前置后交接；主控审查差分，再运行typecheck/build与保存、通知、AI队列现有专项。任何测试失败保留原值；不推送、发布、部署或写生产。",
+  "next_action": "主开发按revision36执行现有UI重载场景的窄行为验证迁移；交还后主控审查差分，再运行check:modules、ui-regression和已受影响的通知/账号专项。保留已有专项结果，不跑system all；不推送、发布、部署或写生产。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -94,12 +94,12 @@
   ],
   "last_check": {
     "remote_refs": "2026-10-11T12:07:35Z 已通过 git ls-remote --heads/tags 只读核验；无远程写入",
-    "worktrees": "2026-10-12 12:34 +08：仅根目录工作树；当前develop，HEAD 79aa2cab；没有并行写入。feat/v0.5.13-save-sync已归档到refs/archive/iterations/v0.5.13-save-sync-20261012并删除本地开发引用。",
+    "worktrees": "2026-10-12 13:03 +08：仅根目录工作树；当前develop，HEAD 84f022e；没有并行写入或第二工作树。",
     "platform_protection": "Gitee UI只读核验：保护分支规则0条、保护标签不可用、推送限制未启用",
     "remote_write": "本轮未执行",
     "release_rollback_rehearsal": "本地隔离模拟全部通过；无远端命令",
     "budget_alerts": "本地护栏回归通过；当前生产配置与告警快照缺失，保持阻断",
-    "candidate_integration": "v0.5.13.1仍为5a095d46本地候选PARTIAL；v0.5.13首批代码已接入develop，revision33实现已写未验证，revision34仅授权回归命令build前置；无远程/生产动作。"
+    "candidate_integration": "v0.5.13.1仍为5a095d46本地候选PARTIAL；v0.5.13六需求首批代码在develop，通知TS构建及专项、AI任务与账号切换专项通过，时区专项通过；npm run check:modules因新增测试深层导入内部草稿模块而失败，已批准将同一行为断言移至现有UI重载流程并移除深层导入；未推送、发布、部署或写生产。"
   },
   "owner_decisions": {
     "git": {
@@ -324,7 +324,8 @@
         "package.json（仅build:frontend/typecheck:frontend及test:frontend-notifications、test:f3-features、test:frontend、test:system命令的TS构建前置；不改依赖）",
         "scripts/frontend-notifications-feature-regression.mjs（仅复用现有通知专项必要断言）",
         "scripts/frontend-shared-regression.mjs（仅复用现有时间草稿往返专项必要断言）",
-        "scripts/personalized-ai-task-ui-regression.mjs（仅复用现有保存/AI队列状态专项必要断言）"
+        "scripts/personalized-ai-task-ui-regression.mjs（仅复用现有保存/AI队列状态专项必要断言）",
+        "scripts/ui-regression.mjs（仅扩展现有chain-form页面重载场景，验证发生时间模式和草稿往返）"
       ],
       "shared_write_owner": "主控；revision31特批 record-events chain-form 局部，revision32另特批 occurrence-control 对新建#chain-datetime默认now的局部；其他控件、公共时间模型与shared API仍禁写。",
       "forbidden": [
@@ -337,7 +338,7 @@
         "从旧归档分支搬运或直接合入旧v0.5.10交付"
       ],
       "acceptance_boundary": "每条需求先核对源记录的最新状态与已有交付证据；已完成项只记录并从实施范围剔除。保存失败与派生失败分流、未知写入保留草稿且不重复提交；时间intent/createdAt/occurredAt与新建/补录草稿规则一致；通知仅对已成功呈现范围标记已读，未加载/新到保持未读，重试/复制不泄露凭据或私密正文；账户隔离、幂等和失败恢复按真实改动验证。没有真实浏览器/移动端/provider/生产验收时标PARTIAL。",
-      "next": "完成通知TS依赖的测试构建前置；随后主控独立审查和执行最小影响验证。",
+      "next": "按revision35将草稿模式往返行为验证放入已有页面重载测试，删除内部模块深层导入；随后主控执行模块边界与影响验证。",
       "write_set_amendment": {
         "revision": 31,
         "at": "2026-10-12T12:08:35+08:00",
@@ -369,6 +370,21 @@
             "其他表单发生时间行为",
             "全局日期状态与持久化/服务端schema"
           ]
+        },
+        {
+          "revision": 36,
+          "at": "2026-10-12T13:03:17+08:00",
+          "reason": "npm run check:modules明确拒绝测试脚本深层导入frontend.app内部durable-form-drafts.mjs。为维持边界且验证用户可观察的刷新恢复，改用已有ui-regression应用重载场景承载同一必要断言。",
+          "approved_paths": [
+            "scripts/frontend-shared-regression.mjs（仅移除本轮新增的durable-form-drafts内部导入与对应单元夹具；保留原有时间控件测试）",
+            "scripts/ui-regression.mjs（仅在现有首页chain-form重载场景验证manual/now模式及日期值、控件可用性/隐藏状态和按钮状态恢复）"
+          ],
+          "still_forbidden": [
+            "scripts/check-modules.mjs及knowledge/module-boundaries.json（不得放宽或绕过模块边界）",
+            "其他UI流程、共享时间契约或后端schema",
+            "其他测试清单、依赖与远程/发布/生产操作"
+          ],
+          "acceptance": "check:modules通过；原有frontend-shared-regression保持时间控件默认模式测试；现有UI reload流程只新增一个真实表单往返行为场景，不引入app内部深层导入或新测试文件。"
         }
       ],
       "followup_gap_audit": "已只读确认：手动补录模式未随思绪草稿恢复；保存成功后的AI队列错误仍露出原始error.message；通知复制失败无替代恢复；通知feature仍是MJS且未纳入类型/隔离构建。未读计数根因未复现，保留PARTIAL。"
@@ -537,6 +553,12 @@
       "at": "2026-10-12T12:49:07+08:00",
       "reason": "只读差分审查确认通知TS运行时依赖.gitignore隔离的编译产物；为避免回归入口依赖偶然残留的本地生成文件，精确授权受影响测试入口先构建通知TS产物。",
       "previous_snapshot": "reports/requirement-coordination-current.json@revision-33"
+    },
+    {
+      "revision": 35,
+      "at": "2026-10-12T13:03:17+08:00",
+      "reason": "通知、账户切换及时间专项均通过；check:modules发现草稿往返测试违反app公开模块入口边界。为保留真实草稿恢复覆盖且不放宽模块规则，批准将该行为检查并入既有UI页面重载回归并移除测试对内部模块的直接导入。",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-34"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
