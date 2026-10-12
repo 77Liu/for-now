@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import {
+  enqueueThoughtAnswer,
+  thoughtAnswerTaskMessage,
+  thoughtAnswerTaskStatusKind,
   resolvePersonalizedAiResponse,
-  resolveSynchronousPersonalizedResponse
+  resolveSynchronousPersonalizedResponse,
+  THOUGHT_ANSWER_NOTIFICATIONS_STALE_MESSAGE,
+  THOUGHT_ANSWER_REJECTED_MESSAGE,
+  THOUGHT_ANSWER_UNKNOWN_MESSAGE
 } from "../public/generated/personalized-ai-task.mjs";
 import { createPersonalizedTaskRuntime } from "../public/frontend/app/runtime/personalized-task-runtime.mjs";
 import { createAnswerModalRuntime } from "../public/frontend/app/runtime/answer-modal-runtime.mjs";
@@ -12,6 +18,374 @@ const deferred = () => {
   const promise = new Promise(done => { resolve = done; });
   return { promise, resolve };
 };
+
+function createSessionStorage() {
+  const values = new Map();
+  return {
+    getItem(key) { return values.get(key) ?? null; },
+    setItem(key, value) { values.set(key, value); },
+    removeItem(key) { values.delete(key); },
+    values
+  };
+}
+
+const attemptStorage = createSessionStorage();
+let requestIdSerial = 0;
+const attemptRequestBodies = [];
+const thoughtAnswerRequestOptions = {
+  ownerId: "owner-thought-answer",
+  targetId: "question-uncertain",
+  inputVersion: 4,
+  createRequestId: () => `thought-answer-${++requestIdSerial}`,
+  storage: attemptStorage
+};
+const uncertainEnqueue = await enqueueThoughtAnswer({
+  ...thoughtAnswerRequestOptions,
+  request: async (_path, options) => {
+    attemptRequestBodies.push(options.body);
+    throw Object.assign(new Error("secret network detail"), {
+      code: "NETWORK_ERROR",
+      status: 0
+    });
+  }
+});
+assert.deepEqual(uncertainEnqueue, { kind: "unknown" });
+assert.equal(THOUGHT_ANSWER_UNKNOWN_MESSAGE.includes("secret network detail"), false);
+const persistedAttempt = [...attemptStorage.values.values()].join("");
+assert.match(persistedAttempt, /question-uncertain/);
+assert.match(persistedAttempt, /thought-answer-1/);
+assert.doesNotMatch(persistedAttempt, /thought text|secret network detail/i,
+  "only account, target, version and request ID metadata may be retained");
+
+let refreshedAfterQueue = false;
+const recoveredEnqueue = await enqueueThoughtAnswer({
+  ...thoughtAnswerRequestOptions,
+  request: async (_path, options) => {
+    attemptRequestBodies.push(options.body);
+    return {
+      id: "task-uncertain-recovered",
+      kind: "thoughtAnswer",
+      targetId: "question-uncertain",
+      inputVersion: 4,
+      status: "queued"
+    };
+  },
+  refreshNotifications: async () => {
+    refreshedAfterQueue = true;
+    throw new Error("secret notification detail");
+  }
+});
+assert.equal(attemptRequestBodies[0], attemptRequestBodies[1],
+  "an uncertain POST is confirmed with the exact same payload and clientRequestId");
+assert.equal(attemptRequestBodies[1], JSON.stringify({
+  kind: "thoughtAnswer",
+  targetId: "question-uncertain",
+  inputVersion: 4,
+  clientRequestId: "thought-answer-1"
+}), "recovered requests send only the four validated contract fields in their stable order");
+assert.equal(recoveredEnqueue.kind, "queued");
+assert.equal(recoveredEnqueue.kind === "queued" && recoveredEnqueue.task.id, "task-uncertain-recovered");
+assert.equal(recoveredEnqueue.kind === "queued" && recoveredEnqueue.notificationsRefreshed, false,
+  "notification refresh failure does not turn an accepted task into an enqueue failure");
+assert.equal(refreshedAfterQueue, true);
+assert.equal(THOUGHT_ANSWER_NOTIFICATIONS_STALE_MESSAGE.includes("secret"), false);
+assert.equal(attemptStorage.values.size, 0, "a confirmed task clears its pending attempt metadata");
+
+let subsequentRequestId = "";
+const explicitRetry = await enqueueThoughtAnswer({
+  ...thoughtAnswerRequestOptions,
+  request: async (_path, options) => {
+    subsequentRequestId = JSON.parse(options.body).clientRequestId;
+    throw Object.assign(new Error("private server detail"), { status: 409, code: "VERSION_CONFLICT" });
+  }
+});
+assert.deepEqual(explicitRetry, { kind: "rejected" });
+assert.equal(subsequentRequestId, "thought-answer-2",
+  "a confirmed task clears the old attempt so a deliberate later request receives a fresh key");
+assert.equal(THOUGHT_ANSWER_REJECTED_MESSAGE.includes("private server detail"), false);
+assert.equal(attemptStorage.values.size, 0, "an explicit HTTP rejection clears its attempt metadata");
+
+let readFailureRequestSerial = 0;
+const readFailureBodies = [];
+const readFailureStorage = {
+  getItem() {
+    throw new Error("storage read denied");
+  },
+  setItem() {},
+  removeItem() {}
+};
+const readFailureOptions = {
+  ownerId: "owner-storage-read-failure",
+  targetId: "question-storage-read-failure",
+  inputVersion: 1,
+  storage: readFailureStorage,
+  createRequestId: () => `read-failure-${++readFailureRequestSerial}`
+};
+await enqueueThoughtAnswer({
+  ...readFailureOptions,
+  request: async (_path, options) => {
+    readFailureBodies.push(options.body);
+    throw Object.assign(new Error("rejected"), { status: 409 });
+  }
+});
+await enqueueThoughtAnswer({
+  ...readFailureOptions,
+  request: async (_path, options) => {
+    readFailureBodies.push(options.body);
+    throw Object.assign(new Error("uncertain"), { status: 0 });
+  }
+});
+assert.equal(JSON.parse(readFailureBodies[0]).clientRequestId, "read-failure-1");
+assert.equal(JSON.parse(readFailureBodies[1]).clientRequestId, "read-failure-2",
+  "a failed storage read still marks an explicitly rejected attempt resolved in memory");
+
+const waitingThoughtAnswer = {
+  id: "task-waiting-model",
+  kind: "thoughtAnswer",
+  targetId: "question-waiting-model",
+  inputVersion: 1,
+  status: "waiting_for_user_model"
+};
+const succeededThoughtAnswer = {
+  ...waitingThoughtAnswer,
+  id: "task-succeeded",
+  status: "succeeded"
+};
+assert.match(thoughtAnswerTaskMessage(waitingThoughtAnswer), /等待核心用户模型就绪/);
+assert.match(thoughtAnswerTaskMessage(succeededThoughtAnswer), /回答已完成/);
+assert.match(thoughtAnswerTaskMessage({ ...succeededThoughtAnswer, status: "unknown" }), /状态暂不可识别/);
+assert.equal(thoughtAnswerTaskStatusKind(waitingThoughtAnswer), "working");
+assert.equal(thoughtAnswerTaskStatusKind(succeededThoughtAnswer), "success");
+assert.equal(thoughtAnswerTaskStatusKind({ ...succeededThoughtAnswer, status: "failed" }), "error");
+assert.equal(thoughtAnswerTaskStatusKind({ ...succeededThoughtAnswer, status: "unknown" }), "error");
+
+let otherAccountRequestId = "";
+const otherAccountEnqueue = await enqueueThoughtAnswer({
+  ...thoughtAnswerRequestOptions,
+  ownerId: "owner-other",
+  request: async (_path, options) => {
+    otherAccountRequestId = JSON.parse(options.body).clientRequestId;
+    throw Object.assign(new Error("connection closed"), { status: 0 });
+  }
+});
+assert.deepEqual(otherAccountEnqueue, { kind: "unknown" });
+assert.equal(otherAccountRequestId, "thought-answer-3",
+  "pending request identifiers are isolated by account");
+
+const tombstoneValues = new Map();
+const tombstoneStorage = {
+  getItem(key) { return tombstoneValues.get(key) ?? null; },
+  setItem(key, value) { tombstoneValues.set(key, value); },
+  removeItem() { throw new Error("storage removal unavailable"); }
+};
+let tombstoneRequestSerial = 0;
+const tombstoneOptions = {
+  ownerId: "owner-tombstone",
+  targetId: "question-tombstone",
+  inputVersion: 2,
+  storage: tombstoneStorage,
+  createRequestId: () => `tombstone-${++tombstoneRequestSerial}`
+};
+await enqueueThoughtAnswer({
+  ...tombstoneOptions,
+  request: async () => { throw Object.assign(new Error("offline"), { status: 0 }); }
+});
+await enqueueThoughtAnswer({
+  ...tombstoneOptions,
+  request: async () => ({
+    id: "task-tombstone",
+    kind: "thoughtAnswer",
+    targetId: "question-tombstone",
+    inputVersion: 2,
+    status: "queued"
+  })
+});
+let requestAfterTombstone = "";
+await enqueueThoughtAnswer({
+  ...tombstoneOptions,
+  request: async (_path, options) => {
+    requestAfterTombstone = JSON.parse(options.body).clientRequestId;
+    throw Object.assign(new Error("offline"), { status: 0 });
+  }
+});
+assert.equal(requestAfterTombstone, "tombstone-2",
+  "a failed session-storage removal leaves a tombstone that prevents reuse of a resolved key");
+
+const concurrentStorage = createSessionStorage();
+let concurrentRequestSerial = 0;
+let concurrentRequestIndex = 0;
+const concurrentBodies = [];
+const concurrentResponses = [deferred(), deferred()];
+const concurrentOptions = {
+  ownerId: "owner-concurrent",
+  targetId: "question-concurrent",
+  inputVersion: 6,
+  storage: concurrentStorage,
+  createRequestId: () => `concurrent-${++concurrentRequestSerial}`
+};
+const concurrentRequest = (_path, options) => {
+  concurrentBodies.push(options.body);
+  return concurrentResponses[concurrentRequestIndex++].promise;
+};
+const concurrentA = enqueueThoughtAnswer({ ...concurrentOptions, request: concurrentRequest });
+const concurrentB = enqueueThoughtAnswer({ ...concurrentOptions, request: concurrentRequest });
+assert.equal(concurrentBodies[0], concurrentBodies[1],
+  "simultaneous entry points share one pending request key");
+concurrentResponses[0].resolve({
+  id: "task-concurrent-a",
+  kind: "thoughtAnswer",
+  targetId: "question-concurrent",
+  inputVersion: 6,
+  status: "queued"
+});
+await concurrentA;
+const secondGeneration = await enqueueThoughtAnswer({
+  ...concurrentOptions,
+  request: async (_path, options) => {
+    concurrentBodies.push(options.body);
+    throw Object.assign(new Error("uncertain key two"), { status: 0 });
+  }
+});
+assert.deepEqual(secondGeneration, { kind: "unknown" });
+concurrentResponses[1].resolve({
+  id: "task-concurrent-b",
+  kind: "thoughtAnswer",
+  targetId: "question-concurrent",
+  inputVersion: 6,
+  status: "queued"
+});
+await concurrentB;
+let retainedRequestId = "";
+await enqueueThoughtAnswer({
+  ...concurrentOptions,
+  request: async (_path, options) => {
+    retainedRequestId = JSON.parse(options.body).clientRequestId;
+    throw Object.assign(new Error("still uncertain"), { status: 0 });
+  }
+});
+assert.equal(retainedRequestId, "concurrent-2",
+  "a late duplicate success cannot clear the newer unknown request's idempotency key");
+
+const readOnlyRecord = JSON.stringify({
+  kind: "thoughtAnswer",
+  targetId: "question-read-only",
+  inputVersion: 3,
+  clientRequestId: "read-only-old"
+});
+const readOnlyStorageKey = "cike:thought-answer-enqueue:owner-read-only:question-read-only:3";
+let readOnlyStorageReads = 0;
+const readOnlyStorageReadKeys = [];
+const readOnlyStorage = {
+  getItem(key) {
+    assert.equal(key, readOnlyStorageKey);
+    readOnlyStorageReads += 1;
+    readOnlyStorageReadKeys.push(key);
+    return readOnlyRecord;
+  },
+  setItem() { throw new Error("storage is read-only"); },
+  removeItem() { throw new Error("storage is read-only"); }
+};
+let readOnlyRequestSerial = 0;
+let nextReadOnlyRequestId = "";
+const readOnlyOptions = {
+  ownerId: "owner-read-only",
+  targetId: "question-read-only",
+  inputVersion: 3,
+  storage: readOnlyStorage,
+  createRequestId: () => `read-only-${++readOnlyRequestSerial}`
+};
+const readOnlyRejection = await enqueueThoughtAnswer({
+  ...readOnlyOptions,
+  request: async () => { throw Object.assign(new Error("rejected"), { status: 409 }); }
+});
+assert.deepEqual(readOnlyRejection, { kind: "rejected" });
+assert.equal(readOnlyStorageReads, 2,
+  "cold recovery loads and then identity-checks the owner/target/version storage record");
+assert.deepEqual(readOnlyStorageReadKeys, [readOnlyStorageKey, readOnlyStorageKey]);
+await enqueueThoughtAnswer({
+  ...readOnlyOptions,
+  request: async (_path, options) => {
+    nextReadOnlyRequestId = JSON.parse(options.body).clientRequestId;
+    throw Object.assign(new Error("unknown"), { status: 0 });
+  }
+});
+assert.equal(nextReadOnlyRequestId, "read-only-1",
+  "an in-memory resolved marker prevents reloading an old key when storage cannot be changed");
+await enqueueThoughtAnswer({
+  ...readOnlyOptions,
+  request: async (_path, options) => {
+    assert.equal(JSON.parse(options.body).clientRequestId, "read-only-1",
+      "same-page retries retain the new key when session storage is unavailable");
+    throw Object.assign(new Error("unknown"), { status: 0 });
+  }
+});
+await enqueueThoughtAnswer({
+  ...readOnlyOptions,
+  request: async (_path, options) => {
+    assert.equal(JSON.parse(options.body).clientRequestId, "read-only-1");
+    return {
+      id: "task-read-only",
+      kind: "thoughtAnswer",
+      targetId: "question-read-only",
+      inputVersion: 3,
+      status: "queued"
+    };
+  }
+});
+let requestAfterReadOnlySuccess = "";
+await enqueueThoughtAnswer({
+  ...readOnlyOptions,
+  request: async (_path, options) => {
+    requestAfterReadOnlySuccess = JSON.parse(options.body).clientRequestId;
+    throw Object.assign(new Error("new unknown"), { status: 0 });
+  }
+});
+assert.equal(requestAfterReadOnlySuccess, "read-only-2",
+  "the in-memory attempt is authoritative when read-only storage still contains an older key");
+
+const versionStorage = createSessionStorage();
+let versionRequestSerial = 0;
+const versionOneResponse = deferred();
+let versionTwoRequestId = "";
+const versionOptions = {
+  ownerId: "owner-version-race",
+  targetId: "question-version-race",
+  storage: versionStorage,
+  createRequestId: () => `version-race-${++versionRequestSerial}`
+};
+const versionOneRequest = enqueueThoughtAnswer({
+  ...versionOptions,
+  inputVersion: 1,
+  request: async () => versionOneResponse.promise
+});
+const versionTwoUnknown = await enqueueThoughtAnswer({
+  ...versionOptions,
+  inputVersion: 2,
+  request: async (_path, options) => {
+    versionTwoRequestId = JSON.parse(options.body).clientRequestId;
+    throw Object.assign(new Error("version two uncertain"), { status: 0 });
+  }
+});
+assert.deepEqual(versionTwoUnknown, { kind: "unknown" });
+versionOneResponse.resolve({
+  id: "task-version-one",
+  kind: "thoughtAnswer",
+  targetId: "question-version-race",
+  inputVersion: 1,
+  status: "queued"
+});
+await versionOneRequest;
+let versionTwoRetryRequestId = "";
+await enqueueThoughtAnswer({
+  ...versionOptions,
+  inputVersion: 2,
+  request: async (_path, options) => {
+    versionTwoRetryRequestId = JSON.parse(options.body).clientRequestId;
+    throw Object.assign(new Error("version two still uncertain"), { status: 0 });
+  }
+});
+assert.equal(versionTwoRetryRequestId, versionTwoRequestId,
+  "a delayed success for an older target version cannot replace a newer version's pending key");
 
 const syncResponse = { data: { id: "chat-saved", answer: "同步回答" }, meta: {} };
 const synchronous = await resolvePersonalizedAiResponse(syncResponse, {

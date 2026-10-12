@@ -1892,7 +1892,8 @@
         "frontend.time",
         "frontend.feature.thoughts-model",
         "frontend.feature.thoughts-presentation",
-        "frontend.ai-task-status"
+        "frontend.ai-task-status",
+        "frontend.personalized-ai-task"
       ],
       "owns": {
         "data": [

@@ -23,6 +23,13 @@ import { createSessionRuntime } from "./session-runtime.mjs";
 import { installGlobalEvents } from "./global-events.mjs";
 import { createContentMediaRuntime } from "./content-media-runtime.mjs";
 import { createCollaborationRuntime } from "./collaboration-runtime.mjs";
+import {
+  enqueueThoughtAnswer,
+  thoughtAnswerOutcomeMessage,
+  thoughtAnswerTaskStatusKind,
+  THOUGHT_ANSWER_REJECTED_MESSAGE,
+  THOUGHT_ANSWER_UNKNOWN_MESSAGE
+} from "../../../generated/personalized-ai-task.mjs";
 
 const appEntryUrl=new URL("../../../app.js",import.meta.url);
 const applicationBasePath=new URL(".",appEntryUrl).pathname.replace(/\/$/,"")||"/";
@@ -357,11 +364,46 @@ const answerModalRuntime=createAnswerModalRuntime({
 });
 const {close:closeAnswerModal,run:runAnswerInModal}=answerModalRuntime;
 async function startBackgroundChainAnswer(question,existingTask=null){
-  try{
-    const task=existingTask||await request("/api/ai-tasks",{method:"POST",body:JSON.stringify({kind:"thoughtAnswer",targetId:question.id,inputVersion:question.version||1,clientRequestId:crypto.randomUUID()})});
-    if(!state.aiTasks.some(item=>item.id===task.id))state.aiTasks.unshift(task);
-    setAnswerStatus(question.id,"回答已进入后台队列。","working");showToast("回答已在后台排队");await refreshState("notifications");scheduleNotificationPoll();return task
-  }catch(error){setAnswerStatus(question.id,`回答未能排队：${error.message}`,"error");showToast("回答未能进入后台队列","error");throw error}
+  const owner=currentUser?.id||"",session=sessionSerial;
+  const isCurrent=()=>owner===(currentUser?.id||"")&&session===sessionSerial;
+  let task=existingTask,notificationsRefreshed=true;
+  if(!task){
+    const outcome=await enqueueThoughtAnswer({
+      ownerId:owner,
+      targetId:question.id,
+      inputVersion:question.version||1,
+      createRequestId:()=>crypto.randomUUID(),
+      request,
+      refreshNotifications:()=>refreshState("notifications"),
+      isCurrent
+    });
+    if(!isCurrent())return false;
+    if(outcome.kind==="rejected"){
+      setAnswerStatus(question.id,THOUGHT_ANSWER_REJECTED_MESSAGE,"error");
+      showToast("回答未能进入后台队列","error");
+      return false;
+    }
+    if(outcome.kind==="unknown"){
+      setAnswerStatus(question.id,THOUGHT_ANSWER_UNKNOWN_MESSAGE,"error");
+      showToast(THOUGHT_ANSWER_UNKNOWN_MESSAGE,"error");
+      return false;
+    }
+    task=outcome.task;
+    notificationsRefreshed=outcome.notificationsRefreshed;
+  }
+  if(!isCurrent())return false;
+  if(!state.aiTasks.some(item=>item.id===task.id))state.aiTasks.unshift(task);
+  if(existingTask){
+    try{await refreshState("notifications")}catch{notificationsRefreshed=false}
+  }
+  if(!isCurrent())return task;
+  scheduleNotificationPoll();
+  const status=thoughtAnswerOutcomeMessage(task,notificationsRefreshed);
+  const statusKind=thoughtAnswerTaskStatusKind(task);
+  setAnswerStatus(question.id,status,statusKind);
+  showToast(status,
+    notificationsRefreshed?statusKind:"error");
+  return task;
 }
 async function ensureLocalTestViewScope(view){
   const scope=LOCAL_TEST_VIEW_SCOPES[view];

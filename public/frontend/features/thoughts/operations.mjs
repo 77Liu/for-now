@@ -1,6 +1,13 @@
 import { imageRecordPayload } from "../../media/index.mjs";
 import { toLocalDateTimeInput } from "../../time/index.mjs";
 import { isWaitingForUserModelTask, pendingAiTaskMessage } from "../../shared/ai-task-status.mjs";
+import {
+  enqueueThoughtAnswer,
+  thoughtAnswerOutcomeMessage,
+  thoughtAnswerTaskStatusKind,
+  THOUGHT_ANSWER_REJECTED_MESSAGE,
+  THOUGHT_ANSWER_UNKNOWN_MESSAGE
+} from "../../../generated/personalized-ai-task.mjs";
 
 const noop = () => {};
 const routeIdentity = route => JSON.stringify([
@@ -45,32 +52,35 @@ export function createThoughtOperations({
 
   async function startBackgroundAnswer(question) {
     const ticket = createTicket();
-    try {
-      const task = await data.request("/api/ai-tasks", {
-        method: "POST",
-        body: JSON.stringify({
-          kind: "thoughtAnswer",
-          targetId: question.id,
-          inputVersion: question.version || 1,
-          clientRequestId: platform.createRequestId()
-        })
-      });
-      if (!isCurrent(ticket)) return false;
-      if (!snapshot().aiTasks.some(item => item.id === task.id)) snapshot().aiTasks.unshift(task);
-      setAnswerStatus(question.id, pendingAiTaskMessage(task, "回答已进入后台队列。"));
-      viewPort.showToast(isWaitingForUserModelTask(task)
-        ? "回答等待核心用户模型就绪"
-        : "回答已在后台排队");
-      await data.refresh("notifications");
-      if (isCurrent(ticket)) crossDomain.scheduleNotificationPoll();
-      return task;
-    } catch (error) {
-      if (isCurrent(ticket)) {
-        setAnswerStatus(question.id, `回答未能排队：${error.message}`, "error");
-        viewPort.showToast("回答未能进入后台队列", "error");
-      }
-      throw error;
+    const outcome = await enqueueThoughtAnswer({
+      ownerId: ticket.owner,
+      targetId: question.id,
+      inputVersion: question.version || 1,
+      createRequestId: platform.createRequestId,
+      request: (path, options) => data.request(path, options),
+      refreshNotifications: () => data.refresh("notifications"),
+      isCurrent: () => isCurrent(ticket)
+    });
+    if (!isCurrent(ticket)) return false;
+    if (outcome.kind === "rejected") {
+      setAnswerStatus(question.id, THOUGHT_ANSWER_REJECTED_MESSAGE, "error");
+      viewPort.showToast(THOUGHT_ANSWER_REJECTED_MESSAGE, "error");
+      return false;
     }
+    if (outcome.kind === "unknown") {
+      setAnswerStatus(question.id, THOUGHT_ANSWER_UNKNOWN_MESSAGE, "error");
+      viewPort.showToast(THOUGHT_ANSWER_UNKNOWN_MESSAGE, "error");
+      return false;
+    }
+    const { task, notificationsRefreshed } = outcome;
+    if (!snapshot().aiTasks.some(item => item.id === task.id)) snapshot().aiTasks.unshift(task);
+    const status = thoughtAnswerOutcomeMessage(task, notificationsRefreshed);
+    const statusKind = thoughtAnswerTaskStatusKind(task);
+    setAnswerStatus(question.id, status, statusKind);
+    crossDomain.scheduleNotificationPoll();
+    viewPort.showToast(status,
+      notificationsRefreshed ? statusKind : "error");
+    return task;
   }
 
   function reconcileRoute() {
