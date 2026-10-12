@@ -85,8 +85,8 @@ if [ ! -f "$release/.deploy-ready" ]; then
   done < <(/usr/bin/find "$candidate/src" "$candidate/public/frontend" -type f -name '*.mjs')
   /usr/local/bin/node --check "$candidate/public/app.js"
   /usr/local/bin/node --check "$candidate/scripts/monitor-health.mjs"
-  /usr/local/bin/node --check "$candidate/scripts/monitor-journal-context.mjs"
-  /usr/local/bin/node --check "$candidate/scripts/monitor-host-metrics.mjs"
+  /usr/local/bin/node --check "$candidate/.build/typescript/monitor/monitor-journal-context.mjs"
+  /usr/local/bin/node --check "$candidate/.build/typescript/monitor/monitor-host-metrics.mjs"
   /usr/local/bin/node --check "$candidate/scripts/validate-restored-data.mjs"
   /usr/local/bin/node --check "$candidate/scripts/oss-attachment-smoke.mjs"
   /usr/local/bin/node --check "$candidate/scripts/aliyun-segmentation-smoke.mjs"
@@ -224,7 +224,7 @@ release_guard install -o root -g root -m 0644 "$release/deploy/for-now-monitor.s
 release_guard install -d -o root -g for-now -m 0750 /var/lib/for-now-monitor-journal
 release_guard install -d -o root -g root -m 0755 /usr/local/lib/for-now
 release_guard install -o root -g root -m 0644 "$release/deploy/for-now-monitor-journal-context.service" /etc/systemd/system/for-now-monitor-journal-context.service
-release_guard install -o root -g root -m 0644 "$release/scripts/monitor-journal-context.mjs" /usr/local/lib/for-now/monitor-journal-context.mjs
+release_guard install -o root -g root -m 0644 "$release/.build/typescript/monitor/monitor-journal-context.mjs" /usr/local/lib/for-now/monitor-journal-context.mjs
 release_guard install -o root -g root -m 0644 "$release/deploy/for-now-monitor.timer" /etc/systemd/system/for-now-monitor.timer
 release_guard install -o root -g root -m 0644 "$release/deploy/for-now-host-metrics.service" /etc/systemd/system/for-now-host-metrics.service
 release_guard install -o root -g root -m 0755 "$release/deploy/backup-to-oss.sh" /usr/local/sbin/for-now-backup

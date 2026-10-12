@@ -20,7 +20,9 @@
     "build:frontend": "tsc -p tsconfig.frontend.json",
     "typecheck:backend": "tsc --noEmit -p tsconfig.backend.json",
     "build:backend": "tsc -p tsconfig.backend.json",
-    "build:runtime": "npm run build:frontend && npm run build:backend && node scripts/prepare-generated-runtime.mjs",
+    "typecheck:monitor": "tsc --noEmit -p tsconfig.monitor.json",
+    "build:monitor": "tsc -p tsconfig.monitor.json",
+    "build:runtime": "npm run build:frontend && npm run build:backend && npm run build:monitor && node scripts/prepare-generated-runtime.mjs",
     "test": "node scripts/regression.mjs",
     "test:entrypoints": "node scripts/entrypoint-boundary-regression.mjs && node scripts/frontend-feature-lifecycle-regression.mjs && node scripts/frontend-application-regression.mjs && node scripts/frontend-lazy-descriptor-regression.mjs && npm run test:f10-features",
     "test:store-normalization": "node scripts/store-normalization-regression.mjs",
@@ -109,7 +111,7 @@
     "test:fontconfig": "node scripts/fontconfig-cache-regression.mjs",
     "test:third-party": "node scripts/third-party-live-smoke.mjs",
     "test:backup": "node scripts/backup-regression.mjs",
-    "test:deploy": "node scripts/deploy-regression.mjs",
+    "test:deploy": "npm run build:monitor && node scripts/deploy-regression.mjs",
     "test:media-deploy": "node scripts/media-config-regression.mjs && node scripts/media-transfer-regression.mjs",
     "test:deploy:preview": "node scripts/preview-deploy-regression.mjs",
     "test:storage": "node scripts/attachment-storage-regression.mjs",
@@ -120,7 +122,7 @@
     "test:oss": "node scripts/oss-attachment-smoke.mjs",
     "test:aliyun": "node scripts/aliyun-segmentation-smoke.mjs",
     "test:boundaries": "node scripts/boundaries-regression.mjs",
-    "test:monitor": "node scripts/monitor-regression.mjs",
+    "test:monitor": "npm run build:monitor && node scripts/monitor-regression.mjs",
     "test:restore": "node scripts/restore-validation-regression.mjs",
     "test:commit-gate": "node scripts/commit-gate-regression.mjs",
     "commit:feat": "node scripts/commit-gate.mjs",
@@ -158,6 +160,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "8.4.3",
+    "@types/node": "^20.19.43",
     "typescript": "7.0.2"
   }
 }

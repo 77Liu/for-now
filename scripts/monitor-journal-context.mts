@@ -12,33 +12,56 @@ const JOURNAL_UNIT = "for-now-platform.service";
 const OUTPUT_DIR = "/var/lib/for-now-monitor-journal";
 const OUTPUT_FILE = `${OUTPUT_DIR}/platform-context.json`;
 const SAFE_FIELD = /^[A-Za-z0-9_.:-]{1,80}$/;
+type JournalRecord = Record<string, unknown>;
+type JournalEvent = Record<string, unknown>;
+type JournalSummary = {
+  timestamp: string;
+  source: "platform-journal";
+  event: string;
+  module: string;
+  level?: string;
+  status?: number;
+  durationMs?: number;
+  errorCode?: string;
+  error?: string;
+};
+type JournalSnapshot = {
+  schemaVersion: 1;
+  available: boolean;
+  generatedAt: string;
+  entries: JournalSummary[];
+  errorCode?: string;
+};
+type JournalQuery = (args: string[]) => Promise<{ stdout: string }>;
 const PRIORITY_LEVEL = new Map([
   ["0", "emergency"], ["1", "alert"], ["2", "critical"], ["3", "error"],
   ["4", "warning"], ["5", "notice"], ["6", "info"], ["7", "debug"]
 ]);
 
-function safeField(value) {
+function safeField(value: unknown): string {
   return typeof value === "string" && SAFE_FIELD.test(value) ? value : "";
 }
 
-function parseMessage(value) {
+function parseMessage(value: unknown): JournalEvent {
   if (typeof value !== "string") return {};
   try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as JournalEvent
+      : {};
   } catch {
     return {};
   }
 }
 
-function timestampFromJournal(value) {
+function timestampFromJournal(value: unknown): string {
   const micros = Number(value);
   return Number.isSafeInteger(micros) && micros > 0
     ? new Date(Math.floor(micros / 1000)).toISOString()
     : "";
 }
 
-function summarizeJournalRecord(record, sinceMs, untilMs) {
+function summarizeJournalRecord(record: JournalRecord, sinceMs: number, untilMs: number): JournalSummary | null {
   const timestamp = timestampFromJournal(record.__REALTIME_TIMESTAMP);
   const time = Date.parse(timestamp);
   if (!Number.isFinite(time) || time < sinceMs || time > untilMs) return null;
@@ -53,10 +76,12 @@ function summarizeJournalRecord(record, sinceMs, untilMs) {
         : message.startsWith("Started ")
           ? "systemd.service.started"
           : "";
-  const error = event.error && typeof event.error === "object" ? event.error : {};
+  const error = event.error && typeof event.error === "object" && !Array.isArray(event.error)
+    ? event.error as JournalEvent
+    : {};
   const status = Number(event.statusCode || event.httpStatus);
   const duration = Number(event.durationMs);
-  const summary = {
+  const summary: JournalSummary = {
     timestamp,
     source: "platform-journal",
     event: safeField(event.event) || systemdEvent || "journal.event",
@@ -73,35 +98,49 @@ function summarizeJournalRecord(record, sinceMs, untilMs) {
   return summary;
 }
 
-/** 只查询固定中台 unit，并将 journal 内容投影成不含原始消息的白名单摘要。 */
-export function summarizePlatformJournal(text, { now = Date.now(), lookbackMs = LOOKBACK_MS } = {}) {
+/**
+ * 只查询固定中台 unit，并将 journal 内容投影成不含原始消息的白名单摘要。
+ * @param text journalctl 的 JSON 行输出。
+ * @param options 参考时刻与查询窗口；默认只接受最近 10 分钟。
+ */
+export function summarizePlatformJournal(
+  text: string,
+  { now = Date.now(), lookbackMs = LOOKBACK_MS }: { now?: number; lookbackMs?: number } = {}
+): JournalSummary[] {
   const sinceMs = now - lookbackMs;
   const entries = [];
   for (const line of String(text).split("\n")) {
     if (!line) continue;
     try {
-      const summary = summarizeJournalRecord(JSON.parse(line), sinceMs, now);
+      const summary = summarizeJournalRecord(JSON.parse(line) as JournalRecord, sinceMs, now);
       if (summary) entries.push(summary);
     } catch {}
   }
   return entries.sort((left, right) => left.timestamp.localeCompare(right.timestamp)).slice(-MAX_ENTRIES);
 }
 
-/** 以 root 读取固定 unit 的 journal，但只落盘脱敏后的 10 分钟快照。 */
+/**
+ * 以 root 读取固定 unit 的 journal，但只落盘脱敏后的 10 分钟快照。
+ * @param options 注入时钟、输出位置和固定命令的执行器，便于无 root 权限测试。
+ */
 export async function collectPlatformJournalContext({
   now = () => Date.now(),
   outputFile = OUTPUT_FILE,
-  queryJournal = async args => execFile("/usr/bin/journalctl", args, {
+  queryJournal = async (args: string[]) => execFile("/usr/bin/journalctl", args, {
     encoding: "utf8",
     timeout: 4000,
     maxBuffer: 512 * 1024,
     env: { PATH: "/usr/bin:/bin", LC_ALL: "C" }
   })
-} = {}) {
+}: {
+  now?: () => number;
+  outputFile?: string;
+  queryJournal?: JournalQuery;
+} = {}): Promise<JournalSnapshot> {
   const endedAt = now();
   const since = new Date(endedAt - LOOKBACK_MS).toISOString();
   const until = new Date(endedAt).toISOString();
-  let snapshot;
+  let snapshot: JournalSnapshot;
   try {
     const result = await queryJournal([
       `--unit=${JOURNAL_UNIT}`,
@@ -118,11 +157,14 @@ export async function collectPlatformJournalContext({
       entries: summarizePlatformJournal(result.stdout, { now: endedAt })
     };
   } catch (error) {
+    const candidateCode = error && typeof error === "object" && "code" in error ? error.code : undefined;
     snapshot = {
       schemaVersion: 1,
       available: false,
       generatedAt: new Date(endedAt).toISOString(),
-      errorCode: /^[A-Z0-9_]{1,80}$/.test(error?.code || "") ? error.code : "JOURNAL_QUERY_FAILED",
+      errorCode: typeof candidateCode === "string" && /^[A-Z0-9_]{1,80}$/.test(candidateCode)
+        ? candidateCode
+        : "JOURNAL_QUERY_FAILED",
       entries: []
     };
   }
