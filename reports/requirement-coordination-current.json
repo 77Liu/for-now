@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 110,
-  "updated_at": "2026-10-12T15:27:23.234Z",
+  "revision": 111,
+  "updated_at": "2026-10-12T15:35:07.052Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md及其引用的唯一正文；新增开发者自查与主控接入审查责任正文在SOP/multi-agent-orchestration.md#开发者自查与主控接入审查，功能开发/集成SOP引用，原有状态门及授权继续适用。"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "真实快照映射等价已通过，任务语义一致性仍阻断；先完整本地审查任务分类与脱敏链，不重试生产采集。",
+  "current_phase": "主控独立核对引用消费者，批准单脚本保留真实quote包含关系的脱敏修复；完成后再跑线上快照本地启动门。",
   "state": "GLOBAL_STARTUP_GATE_EXECUTING",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发纯本地只读核对所有任务handler及脱敏后的目标/版本/已回答/意图匹配链，给确切复现或最小安全差异诊断方案；主控再锁定修复写集。",
+  "next_action": "主开发在原feat仅修启动门：不透明引用占位保留真实包含关系、补消费者目标枚举、安全语义差异诊断；自查后定向验证，主控独立审查接入。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -1654,6 +1654,12 @@
       "at": "2026-10-12T15:27:23.234Z",
       "reason": "Owner强调主控必须独立质量评审，不仅听跨聊天回执；唯一正文已明确实际差分/依赖/消费者阅读和独立判断，docs4910a61已接入并立即生效。",
       "previous_snapshot": "fa01289:reports/requirement-coordination-current.json@revision109"
+    },
+    {
+      "revision": 111,
+      "at": "2026-10-12T15:35:07.052Z",
+      "reason": "Owner要求继续完成线上快照本地实际启动，主控审查后锁定保留真实包含关系的最小实现。",
+      "previous_snapshot": "a0aafbb:reports/requirement-coordination-current.json@revision110"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -2565,7 +2571,7 @@
       "snapshot": "生产只读一致性状态快照；服务器端脱敏，保留任务类型/状态与目标关系/singleton/schema，排除正文/原图/凭据，绑定采集时间/运行SHA/摘要",
       "environment": "隔离本机PG/临时数据目录，真实候选构建；无生产连接/网络provider/通知/定时付费",
       "proof": "固定候选tree+快照摘要+运行环境+实际启动/健康/恢复与核心无付费smoke回执",
-      "next": "主开发纯本地只读核对所有任务handler及脱敏后的目标/版本/已回答/意图匹配链，给确切复现或最小安全差异诊断方案；主控再锁定修复写集。",
+      "next": "主开发在原feat仅修启动门：不透明引用占位保留真实包含关系、补消费者目标枚举、安全语义差异诊断；自查后定向验证，主控独立审查接入。",
       "distinction": "每feat按受影响验证；最终develop候选必须基本整体启动，完整功能全量测试按矩阵去重执行，不每merge重复system all",
       "rule_source": "knowledge/test-impact-matrix.md#develop--release-有状态全局测试门",
       "rule_commit": "04befab",
@@ -2691,6 +2697,16 @@
           "confirmed_gap": "annotationShenji消费者要求source.includes(annotation.quote)；原文整段与引用片段分别整串HMAC不能保留子串关系，会改变可检查性。",
           "limitation": "真实失败仅总括语义错误，尚未证明生产本轮恰为此任务或变化字段；不冒称生产根因已确定。",
           "action": "先裁定能保留引用语义且无原文的最小方案；禁止忽略任务等价断言或强制matched；本次规则修改不扩大实现写集。"
+        },
+        "approved_implementation": {
+          "write_set": [
+            "scripts/release-state-startup-gate.mts"
+          ],
+          "consumers": "主控实际读取annotation-resources.mjs全部来源路由、shared/content/markdownText、ai-task-targets.includes资格判断及启动门读/脱敏/重建/意图链。",
+          "algorithm": "账户内非空quote使用纯字母数字键控HMAC atom；普通文本使用自身atom并附加其实际markdownText包含的quote atom，空/漂移关系保持；原consumer仍执行includes与权限/版本/状态判断。",
+          "invariants": "row.content及payload相同正文同映射；quote字段专门映射；账户间文本缓存不得混用不同quote集合；匹配状态不强制覆盖。",
+          "diagnostics": "仅已知kind/status/intentMatch及变化字段名与布尔/数字/null；未知枚举other，无ID/hash/原文。",
+          "verification": "开发者先完整链自查；既有self-test混合quote矩阵及真实helper检查、strict typecheck/build/diff；主控实际代码审查后接入，不改业务mapper，不访问生产或扩大套件。"
         }
       }
     }
