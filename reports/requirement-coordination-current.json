@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 70,
-  "updated_at": "2026-10-12T10:52:09.571Z",
+  "revision": 71,
+  "updated_at": "2026-10-12T10:57:08.631Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -12,9 +12,9 @@
     "effective_date": "2026-10-11",
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
-  "work_mode": "运行；Owner已要求继续推进 v0.5.13.1 与 v0.5.13；当前仅本地串行开发，远程写入、发布、部署和付费调用仍关闭",
-  "current_phase": "Owner明确v0.5.13累计包含v0.5.13.1；Git祖先关系已确认。发现旧3e94e2f四倍额度未完整迁入，新env示例与旧代码校验冲突，限定补接后重新固定候选。",
-  "state": "BUILDING_LOCAL_ONLY",
+  "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
+  "current_phase": "四倍额度补接已提交d98762c并保持c5376182祖先；进入累计v0.5.13单版本发布准备与现场核验。",
+  "state": "RELEASE_PREPARING",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
     "develop": "refs/heads/develop",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "配置补接回执审查提交后，锁定v0.5.13发布attempt，主开发执行现场核验、push/候选部署/观察/正式tag与Release/main晋级；发现真实风险仅阻断对应动作。",
+  "next_action": "主开发按本次attempt执行生产现场核验及发布链路；如修改必要版本元数据先回传新候选身份，不做无关开发。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -436,7 +436,7 @@
     },
     {
       "id": "v0.5.13",
-      "state": "BUILDING_LOCAL_ONLY",
+      "state": "RELEASE_PREPARING",
       "scope": "保存状态/草稿与失败恢复；发生时间/补录意图；通知列表未读事实、脱敏诊断与恢复操作。仅实现六条锁定需求的未交付行为，不做全站状态或通知平台重构。",
       "requirement_ids": [
         "recvxm0eDZdJED",
@@ -612,37 +612,38 @@
       ],
       "followup_gap_audit": "已只读确认：手动补录模式未随思绪草稿恢复；保存成功后的AI队列错误仍露出原始error.message；通知复制失败无替代恢复；通知feature仍是MJS且未纳入类型/隔离构建。未读计数根因未复现，保留PARTIAL。",
       "execution": "复制失败提供只读可选择的脱敏JSON；通知controller/presentation业务源迁移为.mts，公开依赖/任务/通知/激活态有具体接口，无any和ts-ignore；.mjs只薄转发，生成物仅public/generated且忽略。前端类型检查、通知controller既有专项、模块检查通过。另通知展示专项在原转写文案预期处失败，迁移前同一实现已经与预期冲突，未修改或伪报PASS。",
-      "candidate_sha": "029783d2759a63b20e663562d5be8d7f35b6c321",
-      "candidate_tree": "e01f869e72226a4d0117b6629166acd0930635cb",
+      "candidate_sha": "d98762c4d8de5612b998bb71ed6a71fd8810e17d",
+      "candidate_tree": "663d41df97e04732418e9402aaeb4f4d52a8c9c8",
       "integration_status": "本地六文件代码与既有控制面提交已快进合入develop；feat分支保留。未push/tag/release/deploy。",
       "active_task": {
-        "task_id": "v0513-compression-config-carryover-20261012",
+        "task_id": "v0513-production-release-20261012",
         "state": "DISPATCH_READY",
         "owner": "主控",
         "implementer": "主开发",
-        "mode": "最小补接",
-        "baseline_sha": "6dc5d1e",
-        "feature_branch": "feat/v0.5.13-save-sync-validation",
+        "mode": "Owner授权发布执行",
+        "baseline_sha": "d98762c4d8de5612b998bb71ed6a71fd8810e17d",
         "write_set": [
-          "src/config/index.mjs（只统一既定四倍额度与回填读取/校验，不复制多套变量）",
-          "deploy/for-now.env.example（仅确认对应配置/开关说明）",
-          "scripts/runtime-infrastructure-regression.mjs（复用必要配置边界用例，不扩测试矩阵）",
-          "src/modules/record-compressions/contract.mjs（仅既定回填上限4及公共导出复用，禁止多套冲突常量）",
-          "knowledge/module-boundaries.json（只登记config到domain.record-compressions实际公共常量依赖，不放宽其他边界）"
+          "必要版本元数据与唯一中文发布说明（仍在当前feat完成，提交后冻结准确候选）",
+          "release/v0.5.13固定候选引用；授权远程push/tag/Release/main正式晋级",
+          "已有生产运维入口中部署必要配置（4/1/16/4、压缩与通知启用，秘密不入日志）",
+          "脱敏发布/部署/观察回执（ignored本地证据；不写控制面）"
         ],
-        "objective": "当前env示例4/1/16/4，但校验上限1/.25/4、回填截断2。接回Owner既定每日4元/单次1元/每日16次/每轮4日期，使有效env可实际启用。检查旧3e94e2f与当前通知TS接线，保留已有开始/完成费用通知，禁止盲cherry-pick旧MJS实现。若有其他实际硬上限阻挡先回报唯一最小扩写位置。",
         "forbidden": [
-          "控制面/需求池写入",
-          "其他业务/通知重构、新JS文件、新工作树、删分支",
-          "远程push/tag/release/生产部署/配置写入/付费调用"
+          "无关业务代码、新平台、无关迁移或删除用户数据",
+          "修改/移动既有远程tag及历史提交",
+          "第二写者/新工作树/删分支",
+          "手工重复付费调用证明日压缩"
         ],
         "acceptance": [
-          "合法四倍env启用且回填4生效；超既定限额拒绝仍有效",
-          "数值由env/env.example维护，规则与实现不出现多文件冲突；保留已授权硬上限语义",
-          "通知现有TS实现保留；缺失实际链路先回报不越界",
-          "完成后仅受影响配置专项及diff检查，复用未变通知/构建证据",
-          "主控提交集成后新候选继续包含c5376182祖先，旧固定SHA作为历史不抹除",
-          "scan自身仍以contract中的2截断，须最小调整该上限；配置读取复用唯一该上限，避免重复数字。"
+          "先核验生产实际运行SHA、预算账本、通知配置/定时器/暂停与回滚对象；已有部署回执先查询去重。",
+          "远程保护Owner豁免；部分真实设备/provider验收保持partial。实际权限/数据损害不豁免，发现真实风险仅停止受影响动作并回报。",
+          "如版本元数据必须更新，仅当前feat最小修改、中文注释/发布说明，给新SHA/tree；复用未影响专项，不重开全门。",
+          "候选累计包含v0.5.13.1；不另行部署前版或覆盖旧release/v0.5.13.1引用。",
+          "按verify/freeze/authorize/publish/deploy/observe/close执行，未知外部结果先查询，不盲重试。",
+          "固定运行对象观察30分钟与现行关键健康/错误/重启/资源/费用指标；真实任务成功另记，不以健康冒充产品验收。",
+          "正式不可变v0.5.13 tag/Release与运行SHA一致；main仅在正式晋级后推进，develop回流保留feat。",
+          "已有发布/回滚最小演练证据复用；现场预算/告警/备份适用证据缺失由现有运维入口补齐，不再问已授权问题。",
+          "回传每个外部节点实际事实和证据，本主控独占状态更新。"
         ]
       },
       "review_task": {
@@ -834,9 +835,50 @@
               "真实provider、移动端与生产"
             ]
           }
+        },
+        {
+          "task_id": "v0513-compression-config-carryover-20261012",
+          "state": "IMPLEMENTED_REVIEWED",
+          "owner": "主控",
+          "implementer": "主开发",
+          "mode": "最小补接",
+          "baseline_sha": "6dc5d1e",
+          "feature_branch": "feat/v0.5.13-save-sync-validation",
+          "write_set": [
+            "src/config/index.mjs（只统一既定四倍额度与回填读取/校验，不复制多套变量）",
+            "deploy/for-now.env.example（仅确认对应配置/开关说明）",
+            "scripts/runtime-infrastructure-regression.mjs（复用必要配置边界用例，不扩测试矩阵）",
+            "src/modules/record-compressions/contract.mjs（仅既定回填上限4及公共导出复用，禁止多套冲突常量）",
+            "knowledge/module-boundaries.json（只登记config到domain.record-compressions实际公共常量依赖，不放宽其他边界）"
+          ],
+          "objective": "当前env示例4/1/16/4，但校验上限1/.25/4、回填截断2。接回Owner既定每日4元/单次1元/每日16次/每轮4日期，使有效env可实际启用。检查旧3e94e2f与当前通知TS接线，保留已有开始/完成费用通知，禁止盲cherry-pick旧MJS实现。若有其他实际硬上限阻挡先回报唯一最小扩写位置。",
+          "forbidden": [
+            "控制面/需求池写入",
+            "其他业务/通知重构、新JS文件、新工作树、删分支",
+            "远程push/tag/release/生产部署/配置写入/付费调用"
+          ],
+          "acceptance": [
+            "合法四倍env启用且回填4生效；超既定限额拒绝仍有效",
+            "数值由env/env.example维护，规则与实现不出现多文件冲突；保留已授权硬上限语义",
+            "通知现有TS实现保留；缺失实际链路先回报不越界",
+            "完成后仅受影响配置专项及diff检查，复用未变通知/构建证据",
+            "主控提交集成后新候选继续包含c5376182祖先，旧固定SHA作为历史不抹除",
+            "scan自身仍以contract中的2截断，须最小调整该上限；配置读取复用唯一该上限，避免重复数字。"
+          ],
+          "implementation_commit": "d98762c4d8de5612b998bb71ed6a71fd8810e17d",
+          "implementation_tree": "663d41df97e04732418e9402aaeb4f4d52a8c9c8",
+          "verification": {
+            "commands": [
+              "node scripts/runtime-infrastructure-regression.mjs",
+              "npm run check:modules",
+              "git diff --check"
+            ],
+            "result": "PASS；独立review GO",
+            "note": "五文件补接；保留TS通知，账户2次独立限制未改。"
+          }
         }
       ],
-      "candidate_fixed_at": "2026-10-12T09:58:23.262Z",
+      "candidate_fixed_at": "2026-10-12T10:57:08.631Z",
       "final_review_task": {
         "task_id": "v0513-six-requirement-evidence-review-20261012",
         "mode": "只读审查",
@@ -1190,6 +1232,12 @@
       "at": "2026-10-12T10:52:09.571Z",
       "reason": "唯一回填常量复用需要登记config实际依赖，批准唯一边界行并补模块检查。",
       "previous_snapshot": "1b2d6ab:reports/requirement-coordination-current.json@revision69"
+    },
+    {
+      "revision": 71,
+      "at": "2026-10-12T10:57:08.631Z",
+      "reason": "四倍配置专项/边界/独审通过并提交；按Owner明确授权启动累计v0.5.13发布attempt。",
+      "previous_snapshot": "390d9c8:reports/requirement-coordination-current.json@revision70"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -1803,5 +1851,23 @@
     ],
     "third_version": "暂不冻结；只有需求池定向复核得到至少3条真实未交付需求后才建立v0.5.13.2或v0.5.14候选"
   },
-  "develop_code_baseline_source": "git.develop"
+  "develop_code_baseline_source": "git.develop",
+  "release_attempt": {
+    "id": "v0513-production-20261012-01",
+    "version": "v0.5.13",
+    "state": "PREPARING",
+    "candidate_sha": "d98762c4d8de5612b998bb71ed6a71fd8810e17d",
+    "candidate_tree": "663d41df97e04732418e9402aaeb4f4d52a8c9c8",
+    "authorization_source": "owner_decisions.current_release_authorization",
+    "risk_level": "L2（配置/媒体/第三方；本次Owner明确授权生产动作）",
+    "remote_protection": "Owner已豁免",
+    "expiryMode": "until_revoked",
+    "halt_conditions": [
+      "权限/跨账户数据泄漏",
+      "持久化失败或不可恢复数据风险",
+      "费用突破批准限制",
+      "健康/错误/重启异常、回滚不可执行"
+    ],
+    "partial_source": "iterations[id=v0.5.13]及iterations[id=v0.5.13.1]"
+  }
 }
