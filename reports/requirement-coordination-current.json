@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 88,
-  "updated_at": "2026-10-12T13:02:11.511Z",
+  "revision": 89,
+  "updated_at": "2026-10-12T13:03:12.920Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -636,13 +636,14 @@
           "控制面、第二工作树、删分支、release/main业务写入"
         ],
         "acceptance": [
-          "仅thoughtDraft/thoughtPrompt/未绑定journalAssist等已实际证实生成型场景允许未产生实体，不笼统豁免全部queued/running。具体绑定语义按任务工作流真实字段判定；entity-bound任务仍required。",
-          "优先将精确目标契约判定定义在mapper公开导出并由后台恢复复用，避免两个实现漂移；不新增通用平台/文件。若引入实际module依赖需先报告唯一JSON行。",
+          "按真实prepare/save契约建模kind目标必需性：thoughtDraft/thoughtPrompt/journalAssist的binding仅结果回传及legacy sentinel，不因非空binding字段强制已有实体；生成型目标存在仍记录resolved relation，缺失不标stale。真实实体依赖任务、子目标与singleton校验保持。",
+          "精准目标判定在mapper公开导出供恢复复用，不用resourceType字符串复数化猜集合或双套漂移；不新增通用平台/文件，实际module依赖仅登记批准窄点。",
           "running内部任务目标检查必须在重试之前，孤立绑定任务保留安全终态/通知，不自动重试或丢弃；有效生成任务正常晋级/排队且mapper成功。",
           "保持mapper跨账户/非生成型主目标/子目标关系完整性，不吞任意prepare错误，不改规范化/API/schema、不删或重定向用户任务。",
           "直接实现真实契约，随后仅既有后台专项/实际映射fixture及适用module检查；不跑全系统/付费/重部署。独审NO GO的旧设计不提交。",
           "主控审查提交接入后新候选/attempt继续上线；旧生产健康，不修改生产数据。"
-        ]
+        ],
+        "pending_contract_check": "当前候选historical recordCompression target hus-...可能输出historicalUserSupplement singleton而不是recordCompressions实体；主开发只读确认实际prepare/save与mapper冲突再申请唯一operation范围，未确认前不盲上线。"
       },
       "review_task": {
         "task_id": "v0513-notification-message-review-20261012",
@@ -1338,6 +1339,12 @@
       "at": "2026-10-12T13:02:11.511Z",
       "reason": "独审发现合法生成任务误判，批准精确required契约而非全局放宽，保持实体绑定校验与重试顺序。",
       "previous_snapshot": "7a07383:reports/requirement-coordination-current.json@revision87"
+    },
+    {
+      "revision": 89,
+      "at": "2026-10-12T13:03:12.920Z",
+      "reason": "独审明确生成型binding不是实体依赖；修正精确kind策略，并按同类启动故障核对已有历史补充operation。",
+      "previous_snapshot": "f57d13b:reports/requirement-coordination-current.json@revision88"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
