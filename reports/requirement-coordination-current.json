@@ -1,16 +1,16 @@
 {
   "schema_version": 1,
-  "revision": 94,
-  "updated_at": "2026-10-12T13:17:12.507Z",
+  "revision": 95,
+  "updated_at": "2026-10-12T13:28:41.055Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
     "state_owner": "主控维护本控制面，其他角色仅引用并回报"
   },
   "rule_baseline": {
-    "commit": "fc899a2445374db241dff02d689b3dd5c18c8d25",
-    "effective_date": "2026-10-11",
-    "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
+    "commit": "04befab",
+    "effective_date": "2026-10-12",
+    "source": "PROJECT_RULES.md、knowledge/test-impact-matrix.md、SOP/integration-audit.md、SOP/release-and-observation.md；未改变其他风险授权正文"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
   "current_phase": "生成型/实体依赖目标契约修复收口中；独审发现required子目标恢复遗漏，按同一四文件边界补齐后提交最终回执。旧生产健康，未再次部署。",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "先完成当前精准任务目标契约修复；再实现脱敏生产快照本地完整启动门，本次通过后才重新进入release，禁止直接重部署。",
+  "next_action": "主开发已接收新规则继续当前四文件修复；交接后锁定并实现脱敏生产快照隔离PG全局启动门。规则已生效不等于门工具已实现，门通过前不冻结新release/部署。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -1379,6 +1379,12 @@
       "at": "2026-10-12T13:17:12.507Z",
       "reason": "独审发现统一helper误改追问通知关系，限定保留旧通知映射消费者语义，不扩功能。",
       "previous_snapshot": "8ef5792:reports/requirement-coordination-current.json@revision93"
+    },
+    {
+      "revision": 95,
+      "at": "2026-10-12T13:28:41.055Z",
+      "reason": "Owner明确固化发布链路；唯一矩阵正文与引用SOP于docs04befab合入develop即时生效，串行保存恢复主开发差分。",
+      "previous_snapshot": "592df60:reports/requirement-coordination-current.json@revision94"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -2284,14 +2290,17 @@
       "related_contract": "历史补充recordCompression output ID对应singleton，需同一精确optional policy；daily实际markQueued在tasks.create/promote分支持久化前调用，继续严格要求实体。"
     },
     "pre_release_startup_gate": {
-      "status": "REQUIRED_NOT_IMPLEMENTED",
+      "status": "RULE_EFFECTIVE_EXECUTOR_NOT_IMPLEMENTED",
       "source": "Owner本对话：本地合并启动检查及生产快照本地启动后再进release门",
       "scope": "本次重新发布前补齐最终累计候选实际runtime.start/监听/readyz/重启恢复，不能以projection专项代替",
       "snapshot": "生产只读一致性状态快照；服务器端脱敏，保留任务类型/状态与目标关系/singleton/schema，排除正文/原图/凭据，绑定采集时间/运行SHA/摘要",
       "environment": "隔离本机PG/临时数据目录，真实候选构建；无生产连接/网络provider/通知/定时付费",
       "proof": "固定候选tree+快照摘要+运行环境+实际启动/健康/恢复与核心无付费smoke回执",
       "next": "主开发先完成当前四文件修复交接，并给复用既有export/PG入口的最小可执行方案；主控随后锁定实现写集和唯一矩阵/SOP规则，未实现不冒称已有自动门",
-      "distinction": "每feat按受影响验证；最终develop候选必须基本整体启动，完整功能全量测试按矩阵去重执行，不每merge重复system all"
+      "distinction": "每feat按受影响验证；最终develop候选必须基本整体启动，完整功能全量测试按矩阵去重执行，不每merge重复system all",
+      "rule_source": "knowledge/test-impact-matrix.md#develop--release-有状态全局测试门",
+      "rule_commit": "04befab",
+      "rule_integration": "docs/release-state-startup-gate仅文档提交已合入develop，当前feat快进接收；四文件未提交源差分精确stash后恢复，用户未跟踪证据保持原样，无新工作树。"
     }
   }
 }
