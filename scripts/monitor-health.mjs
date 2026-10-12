@@ -10,6 +10,11 @@ import pg from "pg";
 const execFile = promisify(execFileCallback);
 const DAY_MS = 86400000;
 const MIB = 1024 * 1024;
+const ALERT_LOG_LOOKBACK_MS = 10 * 60 * 1000;
+const ALERT_METRIC_LOOKBACK_MS = 10 * 1000;
+const ALERT_LOG_LIMIT = 10;
+const ALERT_CONTEXT_MAX_BYTES = 64 * 1024;
+const PLATFORM_JOURNAL_CONTEXT_FILE = "/var/lib/for-now-monitor-journal/platform-context.json";
 const RUNTIME_HANDLE_CATEGORIES = new Set([
   "childProcess", "fileWatcher", "messagePort", "other", "server",
   "signal", "socket", "stream", "timer", "tlsSocket"
@@ -128,6 +133,214 @@ export async function latestRuntimeMemorySample(dataDir) {
     }
   } catch {}
   return null;
+}
+
+function utcDaysBetween(startMs, endMs) {
+  const days = new Set();
+  for (let time = startMs; time <= endMs; time = Date.parse(`${new Date(time).toISOString().slice(0, 10)}T00:00:00.000Z`) + DAY_MS) {
+    days.add(new Date(time).toISOString().slice(0, 10));
+  }
+  return [...days];
+}
+
+async function readRecentJsonLines(file, sinceMs, untilMs) {
+  let handle;
+  try {
+    handle = await fs.open(file, "r");
+    const { size } = await handle.stat();
+    if (!size) return [];
+    const bytes = Math.min(size, ALERT_CONTEXT_MAX_BYTES);
+    const buffer = Buffer.alloc(bytes);
+    await handle.read(buffer, 0, bytes, size - bytes);
+    let text = buffer.toString("utf8");
+    if (size > bytes) {
+      const boundary = text.indexOf("\n");
+      text = boundary >= 0 ? text.slice(boundary + 1) : "";
+    }
+    const entries = [];
+    for (const line of text.split("\n")) {
+      try {
+        const entry = JSON.parse(line);
+        const timestamp = Date.parse(entry.timestamp || "");
+        if (Number.isFinite(timestamp) && timestamp >= sinceMs && timestamp <= untilMs) entries.push(entry);
+      } catch {}
+    }
+    return entries;
+  } catch {
+    return [];
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+}
+
+async function operationLogFiles(dataDir, days, sinceMs) {
+  const names = days.map(day => `operation-${day}.ndjson`);
+  const files = names.map(name => path.join(dataDir, "logs", name));
+  let users = [];
+  try { users = await fs.readdir(path.join(dataDir, "users"), { withFileTypes: true }); } catch {}
+  const accounts = users.filter(entry => entry.isDirectory());
+  const queue = accounts.flatMap(account => names.map(name => path.join(dataDir, "users", account.name, "logs", name)));
+  const candidates = [...files, ...queue];
+  const recent = [];
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(16, candidates.length) }, async () => {
+    while (cursor < candidates.length) {
+      const file = candidates[cursor++];
+      try {
+        const info = await fs.stat(file);
+        if (info.isFile() && info.mtimeMs >= sinceMs - 60_000) recent.push(file);
+      } catch {}
+    }
+  });
+  await Promise.all(workers);
+  return recent;
+}
+
+function safeKey(value, maxLength = 80) {
+  const text = String(value || "");
+  return /^[A-Za-z0-9_.:-]+$/.test(text) ? text.slice(0, maxLength) : "";
+}
+
+function safeTraceId(value) {
+  const text = safeKey(value, 128);
+  return text ? text.slice(-12) : "";
+}
+
+function logSummary(entry, kind) {
+  const result = {
+    at: String(entry.timestamp || "").slice(11, 19),
+    event: safeKey(entry.event, 80) || "unknown",
+    module: safeKey(entry.module, 40),
+    source: kind === "operation" ? "operation" : (entry.source === "platform-journal" ? "platform-journal" : "application")
+  };
+  const traceId = safeTraceId(entry.traceId);
+  if (traceId) result.trace = traceId;
+  if (kind === "system") {
+    const level = safeKey(entry.level, 12);
+    if (level) result.level = level;
+    const status = Number(entry.statusCode || entry.httpStatus);
+    if (Number.isFinite(status) && status > 0) result.status = status;
+    const duration = Number(entry.durationMs);
+    if (Number.isFinite(duration) && duration >= 0) result.durationMs = Math.round(duration);
+    const errorCode = safeKey(entry.error?.code || entry.errorCode, 80);
+    if (errorCode) result.errorCode = errorCode;
+    const errorName = safeKey(entry.error?.name, 40);
+    if (errorName) result.error = errorName;
+  } else {
+    const method = safeKey(entry.method, 12);
+    if (method) result.method = method;
+    const resourceType = safeKey(entry.resourceType, 40);
+    if (resourceType) result.resource = resourceType;
+    const status = Number(entry.statusCode || entry.httpStatus);
+    if (Number.isFinite(status) && status > 0) result.status = status;
+    const duration = Number(entry.durationMs);
+    if (Number.isFinite(duration) && duration >= 0) result.durationMs = Math.round(duration);
+    const outcome = safeKey(entry.result, 20);
+    if (outcome) result.result = outcome;
+    const errorCode = safeKey(entry.errorCode, 80);
+    if (errorCode) result.errorCode = errorCode;
+    const changeCount = Number(entry.changeCount || (Array.isArray(entry.changes) ? entry.changes.length : 0));
+    if (Number.isFinite(changeCount) && changeCount > 0) result.changes = Math.min(999, Math.floor(changeCount));
+  }
+  return result;
+}
+
+/**
+ * 严重告警仅携带近期日志的白名单字段；账户、资源 ID、路由参数和正文均不外发。
+ */
+export async function recentAlertLogContext(dataDir, timestamp, {
+  journalContextFile = process.env.MONITOR_PLATFORM_JOURNAL_CONTEXT_FILE || PLATFORM_JOURNAL_CONTEXT_FILE
+} = {}) {
+  const endMs = Date.parse(timestamp);
+  if (!Number.isFinite(endMs)) return { system: [], operation: [], platformJournalAvailable: false };
+  const sinceMs = endMs - ALERT_LOG_LOOKBACK_MS;
+  const days = utcDaysBetween(sinceMs, endMs);
+  const systemFiles = days.map(day => path.join(dataDir, "logs", `system-${day}.ndjson`));
+  const operationFiles = await operationLogFiles(dataDir, days, sinceMs);
+  const [systemGroups, operationGroups, journalSnapshot] = await Promise.all([
+    Promise.all(systemFiles.map(file => readRecentJsonLines(file, sinceMs, endMs))),
+    Promise.all(operationFiles.map(file => readRecentJsonLines(file, sinceMs, endMs))),
+    fs.readFile(journalContextFile, "utf8").then(JSON.parse).catch(() => null)
+  ]);
+  const journalGeneratedAt = Date.parse(journalSnapshot?.generatedAt || "");
+  const platformJournalAvailable = journalSnapshot?.schemaVersion === 1 && journalSnapshot.available === true
+    && Number.isFinite(journalGeneratedAt) && journalGeneratedAt <= endMs + 30_000 && journalGeneratedAt >= endMs - 120_000;
+  const platformEntries = platformJournalAvailable && Array.isArray(journalSnapshot.entries)
+    ? journalSnapshot.entries.filter(entry => {
+      const time = Date.parse(entry.timestamp || "");
+      return Number.isFinite(time) && time >= sinceMs && time <= endMs;
+    })
+    : [];
+  const severityRank = entry => ({ emergency: 0, alert: 1, critical: 2, error: 3, warning: 4, notice: 5, info: 6, debug: 7 }[entry.level] ?? 8);
+  const system = [...systemGroups.flat(), ...platformEntries]
+    .filter(entry => entry.event !== "runtime.memory_sample")
+    .sort((left, right) => severityRank(left) - severityRank(right) || Date.parse(right.timestamp) - Date.parse(left.timestamp))
+    .slice(0, ALERT_LOG_LIMIT)
+    .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp))
+    .map(entry => logSummary(entry, "system"));
+  const operation = operationGroups.flat()
+    .sort((left, right) => String(left.timestamp).localeCompare(String(right.timestamp)))
+    .slice(-ALERT_LOG_LIMIT)
+    .map(entry => logSummary(entry, "operation"));
+  return { system, operation, platformJournalAvailable };
+}
+
+/**
+ * 汇总告警检查时刻前 10 秒的主机采样；覆盖不足时明确报告，不伪称峰值。
+ */
+export async function recentHostMetricPeaks(metricsFile, timestamp) {
+  const endMs = Date.parse(timestamp);
+  if (!Number.isFinite(endMs)) return { available: false, reason: "无效时间" };
+  let state;
+  try { state = JSON.parse(await fs.readFile(metricsFile, "utf8")); } catch {
+    return { available: false, reason: "采样文件缺失或不可读" };
+  }
+  const samples = (Array.isArray(state.samples) ? state.samples : []).filter(sample => {
+    const sampledAt = Date.parse(sample.sampledAt || "");
+    return Number.isFinite(sampledAt) && sampledAt >= endMs - ALERT_METRIC_LOOKBACK_MS && sampledAt <= endMs;
+  });
+  const cpu = samples.map(sample => Number(sample.cpuPercent)).filter(Number.isFinite);
+  const memory = samples.filter(sample => Number.isFinite(Number(sample.memoryUsedBytes))
+    && Number.isFinite(Number(sample.memoryTotalBytes)) && Number(sample.memoryTotalBytes) > 0);
+  const expectedSamples = Math.floor(ALERT_METRIC_LOOKBACK_MS / 1000);
+  if (samples.length < 8 || cpu.length < 8 || memory.length < 8) {
+    return { available: false, sampleCount: samples.length, expectedSamples, reason: "近 10 秒有效采样不足" };
+  }
+  const peakMemory = memory.reduce((peak, sample) => Number(sample.memoryUsedBytes) > Number(peak.memoryUsedBytes) ? sample : peak);
+  const servicePeak = (name, field) => {
+    const values = samples.map(sample => Number(sample.services?.[name]?.[field])).filter(Number.isFinite);
+    return values.length >= 8 ? Math.max(...values) : null;
+  };
+  return {
+    available: true,
+    sampleCount: samples.length,
+    expectedSamples,
+    cpuPercent: Math.round(Math.max(...cpu) * 10) / 10,
+    memoryUsedBytes: Number(peakMemory.memoryUsedBytes),
+    memoryTotalBytes: Number(peakMemory.memoryTotalBytes),
+    memoryPercent: Math.round(Number(peakMemory.memoryUsedBytes) / Number(peakMemory.memoryTotalBytes) * 1000) / 10,
+    mainServiceMemoryBytes: servicePeak("for-now.service", "memoryBytes"),
+    mainServiceCpuPercent: servicePeak("for-now.service", "cpuPercent"),
+    platformServiceMemoryBytes: servicePeak("for-now-platform.service", "memoryBytes"),
+    platformServiceCpuPercent: servicePeak("for-now-platform.service", "cpuPercent")
+  };
+}
+
+function formatAlertContext(logs, metrics) {
+  const lines = ["诊断上下文（只含脱敏关键字段）", "系统日志（近10分钟，最多10条；含应用日志及中台 journal 摘要）："];
+  lines.push(...(logs.system.length ? logs.system.map(entry => `- ${JSON.stringify(entry)}`) : ["- 无可用记录"]));
+  if (!logs.platformJournalAvailable) lines.push("中台 journal 摘要：不可用（快照缺失、过期或读取失败）");
+  lines.push("操作日志（近10分钟，最多10条）：");
+  lines.push(...(logs.operation.length ? logs.operation.map(entry => `- ${JSON.stringify(entry)}`) : ["- 无可用记录"]));
+  if (!metrics.available) {
+    lines.push(`主机指标（检查前10秒）：不可用（${metrics.reason}，样本 ${metrics.sampleCount || 0}/${metrics.expectedSamples || 10}）`);
+  } else {
+    const toMiB = bytes => bytes == null ? "不可用" : `${Math.round(bytes / MIB)} MiB`;
+    const toPercent = value => value == null ? "不可用" : `${Math.round(value * 10) / 10}%`;
+    lines.push(`主机指标（检查前10秒峰值，${metrics.sampleCount}/${metrics.expectedSamples}样本）：CPU ${metrics.cpuPercent}%，内存 ${metrics.memoryPercent}%（${toMiB(metrics.memoryUsedBytes)}/${toMiB(metrics.memoryTotalBytes)}）`);
+    lines.push(`服务 CPU/内存峰值：主应用 ${toPercent(metrics.mainServiceCpuPercent)}/${toMiB(metrics.mainServiceMemoryBytes)}，中台 ${toPercent(metrics.platformServiceCpuPercent)}/${toMiB(metrics.platformServiceMemoryBytes)}`);
+  }
+  return lines.join("\n").slice(0, 6000);
 }
 
 async function jsonUsageDocuments(dataDir) {
@@ -340,7 +553,16 @@ export async function runMonitor() {
   if ((health.issues.length && (changed || repeated)) || (!health.issues.length && previous.fingerprint)) {
     const heading = health.issues.length ? `[个人成长追踪] ${health.issues.some(item => item.severity === "critical") ? "严重告警" : "告警"}` : "[个人成长追踪] 已恢复";
     const lines = health.issues.length ? health.issues.map(item => `- ${item.text}`) : ["- 服务、资源、备份和 AI 指标已恢复到阈值内"];
-    await sendFeishu(`${heading}\n主机：${health.host}\n时间：${health.checkedAt}\n${lines.join("\n")}`);
+    let alert = `${heading}\n主机：${health.host}\n时间：${health.checkedAt}\n${lines.join("\n")}`;
+    if (health.issues.some(item => item.severity === "critical")) {
+      const metricsFile = process.env.MONITOR_HOST_METRICS_FILE || "/var/lib/for-now-monitor/host-metrics.json";
+      const [logs, metrics] = await Promise.all([
+        recentAlertLogContext(process.env.DATA_DIR || "/srv/for-now/data", health.checkedAt),
+        recentHostMetricPeaks(metricsFile, health.checkedAt)
+      ]);
+      alert += `\n${formatAlertContext(logs, metrics)}`;
+    }
+    await sendFeishu(alert);
     previous.sentAt = Date.now();
   }
   await fs.mkdir(path.dirname(stateFile), { recursive: true, mode: 0o700 });

@@ -2,6 +2,8 @@
 Description=Check For Now health and send Feishu alerts
 After=network-online.target
 Wants=network-online.target
+Wants=for-now-monitor-journal-context.service
+After=for-now-monitor-journal-context.service
 
 [Service]
 Type=oneshot

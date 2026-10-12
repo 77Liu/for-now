@@ -1,0 +1,23 @@
+[Unit]
+Description=Sample bounded host metrics for For Now alerts
+After=local-fs.target
+
+[Service]
+Type=simple
+User=for-now
+Group=for-now
+WorkingDirectory=/opt/for-now/app
+ExecStart=/usr/local/bin/node scripts/monitor-host-metrics.mjs
+Restart=always
+RestartSec=1
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/for-now-monitor
+StateDirectory=for-now-monitor
+StateDirectoryMode=0700
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

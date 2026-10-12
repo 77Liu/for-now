@@ -7,10 +7,13 @@ import {
   collectHealth,
   dailyAiUsage,
   latestRuntimeMemorySample,
+  recentHostMetricPeaks,
   runMonitor,
   sendFeishu,
   validateFeishuWebhook
 } from "./monitor-health.mjs";
+import { sampleHostMetricsOnce } from "./monitor-host-metrics.mjs";
+import { summarizePlatformJournal } from "./monitor-journal-context.mjs";
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "growth-monitor-"));
 const dataDir = path.join(root, "data"), logsDir = path.join(dataDir, "logs"), backupDir = path.join(root, "backups");
@@ -78,6 +81,8 @@ try {
     MONITOR_READY_URL: `${base}/readyz`,
     MONITOR_PLATFORM_READY_URL: `${base}/readyz`,
     MONITOR_STATE_FILE: stateFile,
+    MONITOR_HOST_METRICS_FILE: path.join(root, "host-metrics.json"),
+    MONITOR_PLATFORM_JOURNAL_CONTEXT_FILE: path.join(root, "platform-journal-context.json"),
     FEISHU_ALERT_WEBHOOK: "https://open.feishu.cn/open-apis/bot/v2/hook/test-hook",
     FEISHU_ALERT_SECRET: "test-secret",
     ALERT_DISK_WARNING_PERCENT: "0",
@@ -90,6 +95,68 @@ try {
     ALERT_RUNTIME_RSS_RECOVERY_MIB: "360",
     ALERT_REPEAT_MINUTES: "60"
   });
+  const contextNow = Date.now();
+  const day = new Date(contextNow).toISOString().slice(0, 10);
+  const journalSummary = summarizePlatformJournal(JSON.stringify({
+    __REALTIME_TIMESTAMP: String((contextNow - 500) * 1000),
+    PRIORITY: "3",
+    MESSAGE: JSON.stringify({
+      event: "request.failed", module: "readiness", level: "error", statusCode: 500,
+      error: { code: "PLATFORM_NOT_READY", name: "Error", message: "PRIVATE_JOURNAL_MESSAGE" },
+      userId: "PRIVATE_JOURNAL_USER"
+    })
+  }), { now: contextNow });
+  assert.equal(journalSummary.length, 1);
+  assert.equal(journalSummary[0].event, "request.failed");
+  assert.equal(journalSummary[0].status, 500);
+  assert.equal(journalSummary[0].errorCode, "PLATFORM_NOT_READY");
+  assert.doesNotMatch(JSON.stringify(journalSummary), /PRIVATE_JOURNAL/);
+  await fs.writeFile(process.env.MONITOR_PLATFORM_JOURNAL_CONTEXT_FILE, JSON.stringify({
+    schemaVersion: 1,
+    available: true,
+    generatedAt: new Date(contextNow).toISOString(),
+    entries: journalSummary
+  }));
+  const contextSystemLog = path.join(logsDir, `system-${day}.ndjson`);
+  const contextOperationLog = path.join(logsDir, `operation-${day}.ndjson`);
+  const contextUserOperationLog = path.join(dataDir, "users", "private-account", "logs", `operation-${day}.ndjson`);
+  await fs.mkdir(path.dirname(contextUserOperationLog), { recursive: true });
+  await fs.writeFile(contextSystemLog, Array.from({ length: 10 }, (_, index) => JSON.stringify({
+    timestamp: new Date(contextNow - 9000 + index * 800).toISOString(),
+    event: index === 9 ? "storage.connection_failed" : "request.failed",
+    module: index === 9 ? "storage" : "request",
+    level: "error",
+    traceId: `trace-${index}-private`,
+    statusCode: 503,
+    durationMs: 120,
+    error: { code: "STORAGE_UNAVAILABLE", name: "Error", message: "PRIVATE_SYSTEM_BODY", stack: ["at storage.mjs:42:3"] },
+    userId: "PRIVATE_USER_ID",
+    requestBody: "PRIVATE_REQUEST_BODY"
+  })).join("\n"));
+  await fs.writeFile(contextOperationLog, Array.from({ length: 5 }, (_, index) => JSON.stringify({
+    timestamp: new Date(contextNow - 8000 + index * 500).toISOString(), event: "request.completed", module: "request",
+    traceId: `operation-${index}`, method: "POST", route: "/api/v1/records/PRIVATE_RESOURCE_ID",
+    resourceType: "records", resourceId: "PRIVATE_RESOURCE_ID", statusCode: 503, durationMs: 90,
+    result: "failed", errorCode: "STORAGE_UNAVAILABLE", userId: "PRIVATE_USER_ID", body: "PRIVATE_OPERATION_BODY"
+  })).join("\n"));
+  await fs.writeFile(contextUserOperationLog, Array.from({ length: 5 }, (_, index) => JSON.stringify({
+    timestamp: new Date(contextNow - 6000 + index * 500).toISOString(), event: "request.completed", module: "request",
+    traceId: `account-operation-${index}`, method: "PUT", resourceType: "thoughts", resourceId: "PRIVATE_ACCOUNT_RESOURCE",
+    statusCode: 503, durationMs: 110, result: "failed", errorCode: "STORAGE_UNAVAILABLE", userId: "PRIVATE_ACCOUNT"
+  })).join("\n"));
+  await fs.writeFile(process.env.MONITOR_HOST_METRICS_FILE, JSON.stringify({
+    schemaVersion: 1,
+    samples: Array.from({ length: 10 }, (_, index) => ({
+      sampledAt: new Date(contextNow - 9000 + index * 1000).toISOString(),
+      cpuPercent: 70 + index,
+      memoryTotalBytes: 8 * 1024 * MIB,
+      memoryUsedBytes: (4 + index / 10) * 1024 * MIB,
+      services: {
+        "for-now.service": { cpuPercent: 12, memoryBytes: 500 * MIB },
+        "for-now-platform.service": { cpuPercent: 4, memoryBytes: 250 * MIB }
+      }
+    }))
+  }));
   assert.deepEqual(await dailyAiUsage(dataDir, now), {
     calls: 3,
     costUsd: 6,
@@ -106,6 +173,21 @@ try {
   assert.equal(messages[0].msg_type, "text");
   assert.match(messages[0].content.text, /严重告警/);
   assert.match(messages[0].content.text, /AI 估算费用 ¥45\.7000（阈值 ¥36\.00）/);
+  assert.match(messages[0].content.text, /系统日志（近10分钟，最多10条；含应用日志及中台 journal 摘要）/);
+  assert.match(messages[0].content.text, /storage\.connection_failed/);
+  assert.match(messages[0].content.text, /platform-journal/);
+  assert.match(messages[0].content.text, /PLATFORM_NOT_READY/);
+  assert.match(messages[0].content.text, /操作日志（近10分钟，最多10条）/);
+  const systemSection = messages[0].content.text.split("系统日志（近10分钟，最多10条；含应用日志及中台 journal 摘要）：\n")[1].split("\n操作日志")[0];
+  const operationSection = messages[0].content.text.split("操作日志（近10分钟，最多10条）：\n")[1].split("\n主机指标")[0];
+  assert.equal(systemSection.split("\n").filter(line => line.startsWith("- ")).length, 10);
+  assert.equal(operationSection.split("\n").filter(line => line.startsWith("- ")).length, 10);
+  assert.match(messages[0].content.text, /主机指标（检查前10秒峰值，10\/10样本）：CPU 79%/);
+  assert.match(messages[0].content.text, /内存 61\.3%/);
+  assert.match(messages[0].content.text, /主应用 12%\/500 MiB/);
+  assert.doesNotMatch(messages[0].content.text, /PRIVATE_USER_ID|PRIVATE_RESOURCE_ID|PRIVATE_ACCOUNT|PRIVATE_.*BODY/);
+  const unavailableMetrics = await recentHostMetricPeaks(path.join(root, "not-installed.json"), new Date().toISOString());
+  assert.equal(unavailableMetrics.available, false);
   assert.ok(messages[0].timestamp && messages[0].sign);
   await runMonitor();
   process.exitCode = 0;
@@ -181,6 +263,25 @@ try {
   await runMonitor();
   assert.equal(messages.length, 4);
   assert.match(messages[3].content.text, /已恢复/);
+  const samplerFile = path.join(root, "sampler-state", "host-metrics.json");
+  for (let index = 0; index < 32; index += 1) {
+    await sampleHostMetricsOnce({
+      metricsFile: samplerFile,
+      now: () => contextNow + index * 1000,
+      readFile: async file => {
+        if (file === "/proc/stat") return `cpu ${1000 + index * 50} 0 ${100 + index * 10} ${1000 + index * 40} 0 0 0 0 ${index * 1000} ${index * 500}\n`;
+        if (file === "/proc/meminfo") return "MemTotal:       8388608 kB\nMemAvailable:   4194304 kB\n";
+        if (file === "/proc/loadavg") return "0.50 0.40 0.30 1/100 123\n";
+        throw Object.assign(new Error("unavailable"), { code: "ENOENT" });
+      }
+    });
+  }
+  const samplerState = JSON.parse(await fs.readFile(samplerFile, "utf8"));
+  assert.equal(samplerState.samples.length, 30);
+  assert.equal(samplerState.samples.at(-1).cpuPercent, 60);
+  assert.equal(samplerState.samples.at(-1).memoryPercent, 50);
+  assert.equal((await fs.stat(samplerFile)).mode & 0o777, 0o600);
+  assert.equal((await fs.stat(path.dirname(samplerFile))).mode & 0o777, 0o700);
   console.log("Monitor checks passed: service, disk, stale backup, consecutive AI failures, daily cost, runtime RSS hysteresis, Feishu signing, deduplication and recovery.");
 } finally {
   globalThis.fetch = nativeFetch;

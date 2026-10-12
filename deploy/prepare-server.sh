@@ -15,6 +15,8 @@ install -d -o for-now -g for-now -m 0750 /opt/for-now /opt/for-now/releases
 install -d -o for-now -g for-now -m 0700 /srv/for-now/data /home/for-now/.ssh
 install -d -o root -g root -m 0700 /var/backups/for-now
 install -d -o for-now -g for-now -m 0700 /var/lib/for-now-monitor
+install -d -o root -g for-now -m 0750 /var/lib/for-now-monitor-journal
+install -d -o root -g root -m 0755 /usr/local/lib/for-now
 install -d -o root -g root -m 0755 /var/www/app-portal /var/www/letsencrypt /etc/nginx/snippets
 
 if [ ! -f /home/for-now/.ssh/gitee_deploy ]; then
@@ -25,7 +27,10 @@ install -o root -g root -m 0644 "$script_dir/for-now.service" /etc/systemd/syste
 install -o root -g root -m 0644 "$script_dir/for-now-backup.service" /etc/systemd/system/for-now-backup.service
 install -o root -g root -m 0644 "$script_dir/for-now-backup.timer" /etc/systemd/system/for-now-backup.timer
 install -o root -g root -m 0644 "$script_dir/for-now-monitor.service" /etc/systemd/system/for-now-monitor.service
+install -o root -g root -m 0644 "$script_dir/for-now-monitor-journal-context.service" /etc/systemd/system/for-now-monitor-journal-context.service
+install -o root -g root -m 0644 "$script_dir/../scripts/monitor-journal-context.mjs" /usr/local/lib/for-now/monitor-journal-context.mjs
 install -o root -g root -m 0644 "$script_dir/for-now-monitor.timer" /etc/systemd/system/for-now-monitor.timer
+install -o root -g root -m 0644 "$script_dir/for-now-host-metrics.service" /etc/systemd/system/for-now-host-metrics.service
 install -o root -g root -m 0755 "$script_dir/deploy.sh" /usr/local/sbin/for-now-deploy
 install -o root -g root -m 0755 "$script_dir/backup-to-oss.sh" /usr/local/sbin/for-now-backup
 install -o root -g root -m 0755 "$script_dir/restore-drill.sh" /usr/local/sbin/for-now-restore-drill

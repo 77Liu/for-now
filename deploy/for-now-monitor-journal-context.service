@@ -1,0 +1,19 @@
+[Unit]
+Description=Export sanitized For Now platform journal context for health alerts
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=root
+Group=for-now
+WorkingDirectory=/
+ExecStart=/usr/local/bin/node /usr/local/lib/for-now/monitor-journal-context.mjs
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateNetwork=true
+RestrictAddressFamilies=AF_UNIX
+InaccessiblePaths=/etc/for-now.env /etc/for-now-platform.env /etc/ssh /etc/letsencrypt /root /srv/for-now /srv/for-now-platform /opt/for-now /opt/for-now-platform /var/lib/for-now /var/lib/for-now-monitor
+ReadWritePaths=/var/lib/for-now-monitor-journal
+UMask=0007
