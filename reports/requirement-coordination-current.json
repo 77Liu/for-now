@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 67,
-  "updated_at": "2026-10-12T10:04:05.065Z",
+  "revision": 68,
+  "updated_at": "2026-10-12T10:49:22.166Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,8 +13,8 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner已要求继续推进 v0.5.13.1 与 v0.5.13；当前仅本地串行开发，远程写入、发布、部署和付费调用仍关闭",
-  "current_phase": "v0.5.13.1与v0.5.13本地固定候选交接已完成，无发现待修本地实现缺口；真实生产/provider/移动端与指定旅程仍partial，未发布。",
-  "state": "CANDIDATE_LOCAL_PARTIAL",
+  "current_phase": "Owner明确v0.5.13累计包含v0.5.13.1；Git祖先关系已确认。发现旧3e94e2f四倍额度未完整迁入，新env示例与旧代码校验冲突，限定补接后重新固定候选。",
+  "state": "BUILDING_LOCAL_ONLY",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
     "develop": "refs/heads/develop",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "进入发布准备边界：按当前授权策略与控制面检查尚未满足的执行条件；不得把本地候选冻结当作远端或生产授权，不为外部partial重复无影响测试。",
+  "next_action": "主开发在现有feat分支补齐四倍额度/回填配置闭环，保留现有TS通知；只做受影响验证后交主控提交。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -416,7 +416,7 @@
     },
     {
       "id": "v0.5.13",
-      "state": "CANDIDATE_LOCAL_PARTIAL",
+      "state": "BUILDING_LOCAL_ONLY",
       "scope": "保存状态/草稿与失败恢复；发生时间/补录意图；通知列表未读事实、脱敏诊断与恢复操作。仅实现六条锁定需求的未交付行为，不做全站状态或通知平台重构。",
       "requirement_ids": [
         "recvxm0eDZdJED",
@@ -488,7 +488,7 @@
         "从旧归档分支搬运或直接合入旧v0.5.10交付"
       ],
       "acceptance_boundary": "每条需求先核对源记录的最新状态与已有交付证据；已完成项只记录并从实施范围剔除。保存失败与派生失败分流、未知写入保留草稿且不重复提交；时间intent/createdAt/occurredAt与新建/补录草稿规则一致；通知仅对已成功呈现范围标记已读，未加载/新到保持未读，重试/复制不泄露凭据或私密正文；账户隔离、幂等和失败恢复按真实改动验证。没有真实浏览器/移动端/provider/生产验收时标PARTIAL。",
-      "next": "进入发布准备边界：按当前授权策略与控制面检查尚未满足的执行条件；不得把本地候选冻结当作远端或生产授权，不为外部partial重复无影响测试。",
+      "next": "主开发在现有feat分支补齐四倍额度/回填配置闭环，保留现有TS通知；只做受影响验证后交主控提交。",
       "write_set_amendment": {
         "revision": 31,
         "at": "2026-10-12T12:08:35+08:00",
@@ -596,48 +596,31 @@
       "candidate_tree": "e01f869e72226a4d0117b6629166acd0930635cb",
       "integration_status": "本地六文件代码与既有控制面提交已快进合入develop；feat分支保留。未push/tag/release/deploy。",
       "active_task": {
-        "task_id": "v0513-fixed-candidate-handoff-20261012",
-        "mode": "只读交接",
-        "state": "COMPLETED_READ_ONLY",
+        "task_id": "v0513-compression-config-carryover-20261012",
+        "state": "DISPATCH_READY",
         "owner": "主控",
         "implementer": "主开发",
-        "baseline_sha": "029783d2759a63b20e663562d5be8d7f35b6c321",
-        "requirement_ids": [
-          "recvxm0eDZdJED",
-          "reczz28K9ceTZDnd",
-          "reczz28K9ceTa0pY",
-          "reczz28K9ceTaiW4",
-          "recvxlYzZSlc2p",
-          "recvxyqUrj2xlc"
+        "mode": "最小补接",
+        "baseline_sha": "6dc5d1e",
+        "feature_branch": "feat/v0.5.13-save-sync-validation",
+        "write_set": [
+          "src/config/index.mjs（只统一既定四倍额度与回填读取/校验，不复制多套变量）",
+          "deploy/for-now.env.example（仅确认对应配置/开关说明）",
+          "scripts/runtime-infrastructure-regression.mjs（复用必要配置边界用例，不扩测试矩阵）"
         ],
-        "write_set": [],
-        "objective": "复用已完成六需求审查与修正回执，给出两版本固定候选SHA/tree、逐需求实现及适用证据、未验收项、回滚边界和是否仍有具体本地实现缺口。不重跑测试、不新增报告、不扩大审计，不将外部partial误作本地失败或已通过。",
+        "objective": "当前env示例4/1/16/4，但校验上限1/.25/4、回填截断2。接回Owner既定每日4元/单次1元/每日16次/每轮4日期，使有效env可实际启用。检查旧3e94e2f与当前通知TS接线，保留已有开始/完成费用通知，禁止盲cherry-pick旧MJS实现。若有其他实际硬上限阻挡先回报唯一最小扩写位置。",
         "forbidden": [
-          "任何文件写入、提交或分支操作",
-          "全池扫描/线上写入",
-          "远程/生产/付费调用",
-          "新增工作树与删分支"
+          "控制面/需求池写入",
+          "其他业务/通知重构、新JS文件、新工作树、删分支",
+          "远程push/tag/release/生产部署/配置写入/付费调用"
         ],
-        "receipt": {
-          "at": "2026-10-12T10:04:05.065Z",
-          "source_thread": "01a11afe-73d2-7013-91d5-cd473c4d7115",
-          "result": "两版Git对象、冻结范围和独立只读review一致；无发现029783d之后待修本地代码缺口",
-          "verification": "仅只读交接；未重跑测试、未写代码或做生产/远程操作",
-          "evidence_corrections": [
-            "旧UI全套在line2658未到达目标不等于没有reload证据：last_check.targeted_browser_time_recovery已有8d82e7d本机真实刷新/路由恢复；这些相关时间实现未被后续入队修正改变，可复用，但不冒称029全旅程验收。",
-            "notification-entry旧预期失败已由161dd898修正并专项PASS；历史FAIL保留，不能写成当前未解决失败。"
-          ],
-          "partial": [
-            "真实网络和跨账户浏览器故障旅程",
-            "真实provider/生产/移动端",
-            "剪贴板实际交付及拒绝替代真实操作",
-            "原反馈具体记录追溯、跨日/离线/重新认证、未读计数生产根因"
-          ],
-          "rollback_boundary": {
-            "code_sha": "c5376182bc5866730512af858659e585692e6361",
-            "note": "回到前轮代码候选可撤去本轮增量；需保留现行规则及控制面，非直接生产reset，逐需求撤回需审阅交错提交依赖。"
-          }
-        }
+        "acceptance": [
+          "合法四倍env启用且回填4生效；超既定限额拒绝仍有效",
+          "数值由env/env.example维护，规则与实现不出现多文件冲突；保留已授权硬上限语义",
+          "通知现有TS实现保留；缺失实际链路先回报不越界",
+          "完成后仅受影响配置专项及diff检查，复用未变通知/构建证据",
+          "主控提交集成后新候选继续包含c5376182祖先，旧固定SHA作为历史不抹除"
+        ]
       },
       "review_task": {
         "task_id": "v0513-notification-message-review-20261012",
@@ -1166,6 +1149,12 @@
       "at": "2026-10-12T10:04:05.065Z",
       "reason": "固定候选交接完成；保持两版本地partial冻结、校准Git引用语义及两处证据表述。",
       "previous_snapshot": "236231046d4b4b1a41b96dcf7154ad3056e42dfa:reports/requirement-coordination-current.json@revision66"
+    },
+    {
+      "revision": 68,
+      "at": "2026-10-12T10:49:22.166Z",
+      "reason": "Owner要求累计候选并补接截图旧四倍配置；实际发现env与代码拒绝条件冲突，解除本地冻结仅修该缺口。",
+      "previous_snapshot": "6dc5d1e:reports/requirement-coordination-current.json@revision67"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
