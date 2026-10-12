@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 63,
-  "updated_at": "2026-10-12T17:18:58+08:00",
+  "revision": 64,
+  "updated_at": "2026-10-12T17:27:25.415+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -85,7 +85,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发给出两条思绪入队入口的最小安全/恢复契约与写集建议；主控立即裁定并派发实施。其他旧证据未受影响不重测，原反馈/provider/移动/生产保持partial。",
+  "next_action": "主开发立即实施两个思绪入队入口的安全提示与未知同键确认，主控监督精确写集并审查接入。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -576,9 +576,9 @@
       "candidate_tree": "97197a7f557dc1d52d485dc8ff4b261ec59d6ffc",
       "integration_status": "主控审查后develop本地fast-forward至4fbc259eaaee0bd9eaeacc8c0445f46a0e1dec06；保留feat分支，唯一工作树。候选仍PARTIAL，未发布/部署。",
       "active_task": {
-        "task_id": "v0513-thought-queue-recovery-design-20261012",
-        "mode": "只读定位与最小实现契约",
-        "state": "READY_FOR_REVIEW",
+        "task_id": "v0513-thought-queue-recovery-20261012",
+        "mode": "实现",
+        "state": "LOCKED_FOR_IMPLEMENTATION",
         "owner": "主控",
         "implementer": "主开发",
         "baseline_sha": "4fbc259eaaee0bd9eaeacc8c0445f46a0e1dec06",
@@ -586,9 +586,30 @@
           "recvxm0eDZdJED",
           "recvxlYzZSlc2p"
         ],
-        "write_set": [],
-        "objective": "核对kernel自动入队与thoughts operations重答两条真实入口；给出固定安全提示、已排队后刷新失败分流、未确认POST稳定clientRequestId及既有恢复入口的最小方案。先核对实际服务端去重、公开task字段与现有前端模块/TS构建，不扩平台，不以返回原始正文恢复错误解释。",
-        "deliverable": "精确允许文件建议、调用契约、既有测试承载点；已知任务只读GET/查看恢复，不重复创建；确无任务的可恢复重答区分未确认提交。"
+        "write_set": [
+          "public/frontend/shared/personalized-ai-task.mts（最小类型化thoughtAnswer入队结果/未确认尝试共享边界）",
+          "public/frontend/app/runtime/kernel.mjs（仅startBackgroundChainAnswer接入与安全反馈/会话保护）",
+          "public/frontend/features/thoughts/operations.mjs（仅startBackgroundAnswer接入）",
+          "scripts/personalized-ai-task-ui-regression.mjs（既有任务状态夹具，明确拒绝/不确定同键/排队后刷新失败）",
+          "scripts/frontend-thoughts-feature-regression.mjs（两个消费者必要行为）",
+          "knowledge/module-boundaries.json（仅当前已登记TS模块的真实thoughts依赖，若缺失；不放宽边界检查）"
+        ],
+        "forbidden": [
+          "后台/API/schema/provider/预算/部署",
+          "通用草稿格式/状态平台/其他功能",
+          "新JS业务文件、编译产物提交、依赖变更",
+          "控制面与线上池",
+          "新工作树、删分支、远端/生产/付费操作"
+        ],
+        "acceptance": [
+          "共用边界在现有.mts公开模块，用实际类型/中文注释及既有隔离编译入口，不建通用任务平台。",
+          "未知POST保留相同payload和clientRequestId，两个入口共用该尝试；可用现有会话存储账户/目标ID/版本/请求ID元数据，不存私密正文。确认后明确重答才换key。",
+          "public GET任务不含clientRequestId，不能按非唯一kind/target/version猜测旧任务为本次确认；用同键同payload POST的既有去重取得权威返回。",
+          "已返回task后通知刷新失败保持已排队及task返回，不重POST；明确拒绝与响应未知给固定安全恢复文案，不回显原错误。",
+          "已有task复用通知查看/result GET；无task用既有重新回答入口确认同次排队，不造虚假通知。旧会话不写当前UI。",
+          "只跑受影响frontend类型/构建/生成准备、现有personalized和thoughts专项；新增实际模块依赖时check:modules；不跑全系统/外部付费。",
+          "回执真实差分/验证，由主控提交接入。"
+        ]
       },
       "review_task": {
         "task_id": "v0513-notification-message-review-20261012",
@@ -1023,6 +1044,12 @@
       "at": "2026-10-12T17:18:58+08:00",
       "reason": "六需求固定候选只读审查完成，源码确认入队失败正文回显及刷新失败阶段混同，返回对应需求最小实现设计；其余补验不伪PASS。",
       "previous_snapshot": "c58f182:reports/requirement-coordination-current.json@revision62"
+    },
+    {
+      "revision": 64,
+      "at": "2026-10-12T17:27:25.415+08:00",
+      "reason": "采纳服务端同键去重契约，禁止按非唯一字段猜测确认；锁定既有TS边界与两个UI入口最小写集。",
+      "previous_snapshot": "2d62004:reports/requirement-coordination-current.json@revision63"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
