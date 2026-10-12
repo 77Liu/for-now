@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 102,
-  "updated_at": "2026-10-12T14:48:40.312Z",
+  "revision": 103,
+  "updated_at": "2026-10-12T14:55:06.027Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/test-impact-matrix.md、SOP/integration-audit.md、SOP/release-and-observation.md；未改变其他风险授权正文"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "来源tuple单MTS修复审查提交并合入develop；重新固定新身份执行真实只读生产快照与本机门。",
+  "current_phase": "第二次真实snapshot因全同名targetKey错误归类source语义阻断；批准一次全形态安全路径census定位不同契约，不再逐值碰白名单。",
   "state": "GLOBAL_STARTUP_GATE_EXECUTING",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发立即按本控制面提交后的固定HEAD/tree重采并verify；主控不再追加提交漂移身份，失败精准回报。",
+  "next_action": "主开发仅PG_BACKUP只读聚合targetKey对象/路径/形态/计数，不发值；明确sourceRef与普通payload/关系字段区分后锁单脚本path-aware修复，保留等价断言。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -617,7 +617,7 @@
       "integration_status": "本地六文件代码与既有控制面提交已快进合入develop；feat分支保留。未push/tag/release/deploy。",
       "active_task": {
         "task_id": "v0513-production-snapshot-local-startup-run-02-20261012",
-        "state": "DISPATCH_READY",
+        "state": "BLOCKED_READ_ONLY_TARGET_KEY_CENSUS",
         "mode": "修复后生产只读快照与本机真实门",
         "owner": "主控",
         "implementer": "主开发",
@@ -1606,6 +1606,12 @@
       "at": "2026-10-12T14:48:40.312Z",
       "reason": "实际来源tuple形态修复通过并提交接入，推进真实门第二次执行，旧失败不抹除。",
       "previous_snapshot": "f6f0a8d:reports/requirement-coordination-current.json@revision101"
+    },
+    {
+      "revision": 103,
+      "at": "2026-10-12T14:55:06.027Z",
+      "reason": "真实门再次在落盘前安全阻断，字段context假设尚未证实，改为一次安全全形态分类而非反复capture。",
+      "previous_snapshot": "5f252d6:reports/requirement-coordination-current.json@revision102"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -2511,7 +2517,7 @@
       "related_contract": "历史补充recordCompression output ID对应singleton，需同一精确optional policy；daily实际markQueued在tasks.create/promote分支持久化前调用，继续严格要求实体。"
     },
     "pre_release_startup_gate": {
-      "status": "REDACTION_FIXED_REEXECUTION_AUTHORIZED_NOT_PASSED",
+      "status": "BLOCKED_TARGET_KEY_CONTEXT_CLASSIFICATION",
       "source": "Owner本对话：本地合并启动检查及生产快照本地启动后再进release门",
       "scope": "本次重新发布前补齐最终累计候选实际runtime.start/监听/readyz/重启恢复，不能以projection专项代替",
       "snapshot": "生产只读一致性状态快照；服务器端脱敏，保留任务类型/状态与目标关系/singleton/schema，排除正文/原图/凭据，绑定采集时间/运行SHA/摘要",
@@ -2544,7 +2550,24 @@
         "shape": "四元素JSON字符串数组，均string，source tuple；第四项不是JSON keyOf",
         "source": "evidence.mjs:115-125；perception.mjs:432-439/754-763；persistence-metadata.mjs:55-57；mapper:50-66",
         "correction": "此前other标签是白名单漏evidencePermission，不是未知业务kind；沿用安全形态定位，本回执无新生产访问"
-      }
+      },
+      "execution_receipts": [
+        {
+          "at": "2026-10-12T14:55:06.027Z",
+          "candidate_sha": "5f252d6cc1bd60e020458508e9ccb7965bc4c0f4",
+          "candidate_tree": "8b45be1deff88e596de27ad76b92b77fbc6d92b3",
+          "stage": "source snapshot内存脱敏",
+          "failure": "Snapshot source target key has an unsupported structure",
+          "location": "createRedactionContext.redactSourceTargetKey / register field===targetKey",
+          "root_cause_status": "未定位字段路径；不能断言其为sourceRef或source tuple语义",
+          "bundle_created": false,
+          "local_verify_run": false,
+          "local_pg_started": false,
+          "production_writes": false,
+          "external_effects": 0,
+          "cleanup": "事务rollback、远端临时目录清理，无原文落盘/下载"
+        }
+      ]
     }
   }
 }
