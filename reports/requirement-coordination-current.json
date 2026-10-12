@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 103,
-  "updated_at": "2026-10-12T14:55:06.027Z",
+  "revision": 104,
+  "updated_at": "2026-10-12T14:59:35.173Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/test-impact-matrix.md、SOP/integration-audit.md、SOP/release-and-observation.md；未改变其他风险授权正文"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "第二次真实snapshot因全同名targetKey错误归类source语义阻断；批准一次全形态安全路径census定位不同契约，不再逐值碰白名单。",
+  "current_phase": "一次结构census证实同名targetKey多个上下文；批准单脚本context-aware修复，不再生产逐值查找。",
   "state": "GLOBAL_STARTUP_GATE_EXECUTING",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发仅PG_BACKUP只读聚合targetKey对象/路径/形态/计数，不发值；明确sourceRef与普通payload/关系字段区分后锁单脚本path-aware修复，保留等价断言。",
+  "next_action": "主开发修正register/transform的上下文分类，既有混合形态self-test及等价断言通过后主控提交并重派真实门。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -616,27 +616,27 @@
       "candidate_tree": "9dc58edd21eb42a6e0cfe30fe477faab3e4659ea",
       "integration_status": "本地六文件代码与既有控制面提交已快进合入develop；feat分支保留。未push/tag/release/deploy。",
       "active_task": {
-        "task_id": "v0513-production-snapshot-local-startup-run-02-20261012",
-        "state": "BLOCKED_READ_ONLY_TARGET_KEY_CENSUS",
-        "mode": "修复后生产只读快照与本机真实门",
+        "task_id": "v0513-startup-snapshot-target-context-fix-20261012",
+        "state": "DISPATCH_READY",
+        "mode": "单脚本按真实字段上下文脱敏修复",
         "owner": "主控",
         "implementer": "主开发",
+        "feature_branch": "feat/v0.5.13-save-sync-validation",
         "write_set": [
-          "服务器临时候选源/编译工具及0600脱敏快照",
-          "ignored本机脱敏快照/隔离PG/安全执行回执"
+          "scripts/release-state-startup-gate.mts（仅注册/转换携带对象父路径或显式上下文，分离source tuple/sourceRef、普通payload targetKey、关系keyOf；现有self-test混合真实形态）"
         ],
-        "candidate_source": "本revision提交后的HEAD/tree固定；主控执行期间不再提交，旧e89e62a失败记录保持。",
+        "objective": "消除全同名targetKey判source语义的实际错误；按候选结构契约保持对应引用与隐私，不靠继续单值加白名单。",
         "acceptance": [
-          "同上次已证明PG_BACKUP只读role/单事务权限边界，精确新候选工具校验；不构造生产runtime，不写生产DB/配置，不读媒体",
-          "内存脱敏与原关系/意图等价断言必须执行；落盘前失败不给bundle、不修改断言/快照强过",
-          "仅下载0600脱敏bundle，当前完整HEAD/tree干净tracked与snapshot匹配后在新本机PG16实际startup/readyz/停/同库重启/核心无付费smoke",
-          "provider/通知/媒体外呼0、cleanup完整；给SHA/tree/快照hash/采集时刻/源运行SHA/PG版本/账户任务计数/各步骤回执",
-          "失败有界安全shape诊断，不无限重采，不部署；PASS仍需主控核对新release attempt"
+          "来源四元组/明确sourceRef targetKey才使用来源语义判定；mapping relation targetKey按真实keyOf，nullable unresolved保持；普通annotation/payload targetKey不套source-only限制。",
+          "候选源码明确技术literal content/message/transcription/空值及note/reflection/question等前缀引用可保留技术语义和统一伪名ID；普通未知private targetKey一致HMAC、不原文回退，无法保证语义等价仍BLOCKED。",
+          "全对象context路径不输出用户自定义字段名/值；无新通用schema/脱敏平台，不复制业务/hash规则。",
+          "source tuple、sourceRef、普通payload、关系keyOf同场景self-test证明真实map/rebuild对应、intent/状态前后等价；现有断言不削弱，不增大独立测试矩阵。",
+          "仅受影响strict typecheck/build/self-test/diff检查，完成停写由主控提交新身份，再真实snapshot/verify。"
         ],
         "forbidden": [
-          "源码/控制面修改、生产应用切换或数据库写入、原文/凭据输出",
-          "改fixture/状态丢任务以伪造PASS、重复付费、sourceDataUrl进入本机verify",
-          "新worktree/删分支/提交或自行发布"
+          "再次生产census/采集、数据库/应用写入、原ID/值输出",
+          "改其他源/控制面/mapper、弱化断言或删状态强过",
+          "新工作树/删分支/新平台/自行提交部署"
         ]
       },
       "review_task": {
@@ -1612,6 +1612,12 @@
       "at": "2026-10-12T14:55:06.027Z",
       "reason": "真实门再次在落盘前安全阻断，字段context假设尚未证实，改为一次安全全形态分类而非反复capture。",
       "previous_snapshot": "5f252d6:reports/requirement-coordination-current.json@revision102"
+    },
+    {
+      "revision": 104,
+      "at": "2026-10-12T14:59:35.173Z",
+      "reason": "合法targetKey上下文分类证据充分，停止数据逐值探测，批准真正上下文区分修复而非白名单碰运气。",
+      "previous_snapshot": "43105ef:reports/requirement-coordination-current.json@revision103"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -2567,7 +2573,26 @@
           "external_effects": 0,
           "cleanup": "事务rollback、远端临时目录清理，无原文落盘/下载"
         }
-      ]
+      ],
+      "target_key_census": {
+        "read_only": true,
+        "accounts": 4,
+        "object_rows": 835,
+        "relation_rows": 611,
+        "evidence_source_tuples": 64,
+        "source_tuple_target_shapes": {
+          "empty": 6,
+          "prefixed_id": 58
+        },
+        "perception_source_target_shapes": {
+          "empty": 7,
+          "prefixed_id": 64
+        },
+        "ordinary_payload": "thought/analysis存在other-literal与prefix:id，非全为sourceRef；另有custom-prefix一组",
+        "mapping_relations": "JSON-keyOf len2/4/6以及未解析null；不能作普通source语义",
+        "limitation": "collector数组[*]被标custom，不能从回执细分数组路径；不复跑生产census，使用技术对象context与源码契约修复",
+        "privacy": "仅结构聚合，无ID/正文/值，未落文件；真实字段值未知不作推断"
+      }
     }
   }
 }
