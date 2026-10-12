@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 40,
-  "updated_at": "2026-10-12T14:55:34+08:00",
+  "revision": 41,
+  "updated_at": "2026-10-12T15:06:28+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -84,7 +84,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "继续v0.5.13剩余锁定需求：先按当前需求/代码证据核实保存恢复与通知TS切片的未交付边界，再由主控为下一独立feat切片锁定写集；不重复已验证行为，不重跑整套UI，不推送、发布、部署或写生产。",
+  "next_action": "主开发在既有feat/v0.5.13-save-sync-validation上合入develop@2443d04后，实现P0后台回答结果同步失败的定向GET恢复入口；复用原专项，仅验证失败后再次查看恢复、不会重建thought/AI任务。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -599,6 +599,12 @@
       "at": "2026-10-12T14:55:34+08:00",
       "reason": "主控审查并接入来源念起冲突提示最小修复；记录目标断言通过、整套UI后续失败与当前develop候选SHA/tree，保留feature分支引用。",
       "previous_snapshot": "reports/requirement-coordination-current.json@revision-39"
+    },
+    {
+      "revision": 41,
+      "at": "2026-10-12T15:06:28+08:00",
+      "reason": "复核P0后台回答结果同步失败实际调用链，锁定只读恢复入口和安全失败说明的最小写集。",
+      "previous_snapshot": "reports/requirement-coordination-current.json@revision-40"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -647,7 +653,7 @@
     "duration_hours": 8,
     "window_start": "2026-10-12T12:03:20+08:00",
     "window_end": "2026-10-12T20:02:27+08:00",
-    "branch": "develop",
+    "branch": "feat/v0.5.13-save-sync-validation",
     "baseline": "5a095d46cb361704432c608fcfc10767ec947e1f",
     "write_location": "/Users/bytedance/Documents/Codex/个人成长追踪",
     "purpose": "v0.5.13六条真实需求串行推进；没有并行写入，唯一写入位置为根目录develop，不创建或保留第二工作树。仅实现已核实未交付项；测试按唯一影响矩阵选择，不跑system all；不推送/发布/部署/写生产/手工付费。",
@@ -707,7 +713,9 @@
       "scripts/frontend-shared-regression.mjs（仅复用现有时间草稿往返专项必要断言）",
       "scripts/personalized-ai-task-ui-regression.mjs（仅复用现有保存/AI队列状态专项必要断言）",
       "public/frontend/app/runtime/record-events.mjs（仅思考提交携带 sourceCaptureId 且错误码为 PRECONDITION_FAILED 时显示固定安全中文提示；不回显任意异常文本，不改变草稿、附件与同步行为）",
-      "scripts/ui-regression.mjs（仅来源念起冲突既有场景，在提交前设置sourceCaptureId=capture-1与sourceCaptureVersion=2；保留现有断言，不增删测试）"
+      "scripts/ui-regression.mjs（仅来源念起冲突既有场景，在提交前设置sourceCaptureId=capture-1与sourceCaptureVersion=2；保留现有断言，不增删测试）",
+      "public/frontend/features/background-results/controller.mjs（仅点击已成功thoughtAnswer通知的查看入口时，在thought详情刷新后重试对应task结果GET；该结果同步失败显示固定安全文案，明确原思绪已保存并可从通知再次查看；不发起AI POST/重排任务，不改变其他任务类型）",
+      "scripts/frontend-background-results-feature-regression.mjs（仅在既有任务结果恢复场景复用通知查看入口，验证结果GET重试、失败文案、成功只合并一次且不新建思绪/AI任务；不新增测试文件）"
     ],
     "forbidden_write_set": [
       "reports/requirement-coordination-current.json",
@@ -731,7 +739,7 @@
       "只有截图或没有复现的未读数问题不据此宣称修复；先保留PARTIAL。"
     ],
     "external_actions": "无远端写、发布、部署、生产写或手工付费调用；不恢复已暂停自动化。",
-    "current_status": "BUILDING_LOCAL_ONLY；来源念起冲突修复候选5da75d2及控制面同步merge 5f6cb9d已fast-forward接入develop，业务tree a6ee721d4b6a78dba36dc0c4ae7b392511e2123f。目标冲突提示断言通过；npm run test:ui后续于scripts/ui-regression.mjs:4065因通知卡片按钮旧预期失败，保留失败，未重跑；diff check通过。功能分支feat/v0.5.13-save-sync-validation保留，不执行branch -d。未推送、发布、部署或写生产。下一步核对当前版本剩余未交付需求并按单写入流程锁定下一切片。",
+    "current_status": "BUILDING_LOCAL_ONLY；来源冲突提示候选已接入develop@5f6cb9d，目标断言通过，整套UI随后在旧通知按钮标签预期处失败并保留。需求管理相对rev538定向回读六条ID/关联记录无变化，无新验收或发布证据。只读源码已确认recvxm0eDZdJED的实际缺口：已成功落库的thoughtAnswer在结果GET失败后，仅短暂toast且通知仍标成功；既有查看入口刷新thought链但不重试该task结果读取，错误会回显原文。revision41限定复用查看入口做精确GET重试及安全提示，不触发新AI或新thought。唯一开发分支feat/v0.5.13-save-sync-validation，需接入develop@2443d04；未远程/生产操作。",
     "version_requirement_count": {
       "minimum": 3,
       "maximum": 10,
@@ -1060,6 +1068,23 @@
         ],
         "branch": "feat/v0.5.13-save-sync-validation",
         "acceptance": "修复代码恢复sourceCaptureId条件；夹具准确表达来源版本冲突。运行受影响UI验证；若更早的既有失败阻断目标断言，保留失败位置，不伪称该目标用例通过。"
+      },
+      {
+        "revision": 41,
+        "at": "2026-10-12T15:06:28+08:00",
+        "reason": "需求管理按rev538基线定向回读六条锁定需求，无字段变化、无新交付验收证据。主开发只读源码确认P0 recvxm0eDZdJED的真实阶段：原文与回答已成功落库、task=succeeded 后，GET /api/ai-tasks/:id/result 失败只显示短暂toast；通知仍标已完成，既有“查看”刷新thought链但不重试该结果读取，技术错误也被原样回显。授权复用既有查看入口，仅恢复该已成功任务的结果读取，不重新生成AI或创建思绪。",
+        "approved_paths": [
+          "public/frontend/features/background-results/controller.mjs（仅点击已成功thoughtAnswer通知的查看入口时，在thought详情刷新后重试对应task结果GET；该结果同步失败显示固定安全文案，明确原思绪已保存并可从通知再次查看；不发起AI POST/重排任务，不改变其他任务类型）",
+          "scripts/frontend-background-results-feature-regression.mjs（仅在既有任务结果恢复场景复用通知查看入口，验证结果GET重试、失败文案、成功只合并一次且不新建思绪/AI任务；不新增测试文件）"
+        ],
+        "still_forbidden": [
+          "src/http/**、src/shared/**、schema/migrations、服务端API/持久化契约、notifications controller或其他任务类型",
+          "新增通知平台/队列、改写需求池、扩张测试套件、改动无关现有断言",
+          "远程push/tag/release、部署、生产写入、手工付费调用"
+        ],
+        "branch": "feat/v0.5.13-save-sync-validation",
+        "baseline": "develop@2443d04eec5b0dc155af63a8f75e0792d6e5d24e；该功能分支须先合入此最新develop控制面提交，保留历史；根目录唯一工作树，不新建工作树。",
+        "acceptance": "查看已成功thoughtAnswer通知只重试GET结果；原文保存提示真实；失败保留通知且提供再次查看恢复入口；成功后结果按sourceTaskId只合并一次；不调用新AI任务POST、不重复创建thought。只跑现有background-results专项与必要diff检查。"
       }
     ],
     "known_previous_test_failure": {
@@ -1073,7 +1098,17 @@
       "branch": "feat/v0.5.13-save-sync-validation",
       "commit": "5da75d2c4176c8a063dda8498284ff6897ad1b7a",
       "tree": "74c49fd3354e7d905cf39d3270c3fbc297c65036",
-      "integration": "已fast-forward接入develop@5f6cb9d8f6d82e60db2966201d83916acdcf4b0b；保留feat/v0.5.13-save-sync-validation引用；目标来源冲突断言通过，整套UI后续FAIL保持记录"
+      "integration": "已fast-forward接入develop@5f6cb9d8f6d82e60db2966201d83916acdcf4b0b；保留feat/v0.5.13-save-sync-validation引用；目标来源冲突断言通过，整套UI后续FAIL保持记录",
+      "next_scope": {
+        "requirement_id": "recvxm0eDZdJED",
+        "branch": "feat/v0.5.13-save-sync-validation",
+        "baseline": "2443d04eec5b0dc155af63a8f75e0792d6e5d24e",
+        "write_set": [
+          "public/frontend/features/background-results/controller.mjs（仅点击已成功thoughtAnswer通知的查看入口时，在thought详情刷新后重试对应task结果GET；该结果同步失败显示固定安全文案，明确原思绪已保存并可从通知再次查看；不发起AI POST/重排任务，不改变其他任务类型）",
+          "scripts/frontend-background-results-feature-regression.mjs（仅在既有任务结果恢复场景复用通知查看入口，验证结果GET重试、失败文案、成功只合并一次且不新建思绪/AI任务；不新增测试文件）"
+        ],
+        "status": "已冻结待主开发实现"
+      }
     }
   },
   "version_plan": {
