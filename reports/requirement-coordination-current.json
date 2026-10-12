@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 66,
-  "updated_at": "2026-10-12T09:58:23.262Z",
+  "revision": 67,
+  "updated_at": "2026-10-12T10:04:05.065Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,11 +13,11 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner已要求继续推进 v0.5.13.1 与 v0.5.13；当前仅本地串行开发，远程写入、发布、部署和付费调用仍关闭",
-  "current_phase": "两版本本地切片已接入develop；v0.5.13入队恢复最后缺口已提交029783d，正在收口固定候选交接。外部partial保持真实，不代表已发布。",
+  "current_phase": "v0.5.13.1与v0.5.13本地固定候选交接已完成，无发现待修本地实现缺口；真实生产/provider/移动端与指定旅程仍partial，未发布。",
   "state": "CANDIDATE_LOCAL_PARTIAL",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
-    "develop": "refs/heads/develop@029783d2759a63b20e663562d5be8d7f35b6c321",
+    "develop": "refs/heads/develop",
     "remote_main_ref": "origin/main",
     "remote_main_observed": "ebbde6fcf100432de8a599c771cbd8e774e043ad",
     "startup_manifest": "reports/git-archive/git-startup-20261011-manifest.json",
@@ -41,7 +41,7 @@
     ],
     "canonical_worktree": "/Users/bytedance/Documents/Codex/个人成长追踪",
     "canonical_worktree_branch": "feat/v0.5.13-save-sync-validation",
-    "canonical_worktree_head": "4fbc259eaaee0bd9eaeacc8c0445f46a0e1dec06（本观察在revision62控制面提交之前；后续仅元数据文档差分）",
+    "canonical_worktree_head": "236231046d4b4b1a41b96dcf7154ad3056e42dfa（revision67文档提交前观测，当前HEAD以Git为准）",
     "archived_worktree": {
       "path": "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/develop",
       "branch": "feat/v0.5.13.1-stability",
@@ -56,7 +56,12 @@
         "sha": "79aa2cab196daf98055f83f954e3f28ec48ff000",
         "reason": "首批切片已fast-forward接入develop；归档并删除同SHA的feature分支，避免保留重复开发入口"
       }
-    ]
+    ],
+    "develop_observation": {
+      "sha": "236231046d4b4b1a41b96dcf7154ad3056e42dfa",
+      "at": "2026-10-12T10:04:05.065Z",
+      "note": "本控制面文档提交前观测；当前HEAD以git rev-parse develop为准，固定代码候选以iterations为准，避免文档提交导致自引用SHA失效。"
+    }
   },
   "authorization_policy": {
     "policy_id": "release-authorization-policy",
@@ -85,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发只读汇总两版本固定候选交接：需求到实现/现有证据/未验收边界，不再重复测试或改代码；主控据回执裁定本地候选节点。",
+  "next_action": "进入发布准备边界：按当前授权策略与控制面检查尚未满足的执行条件；不得把本地候选冻结当作远端或生产授权，不为外部partial重复无影响测试。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -392,6 +397,21 @@
         "production_tag_found": false,
         "production_deploy_evidence": false,
         "reason": "只有本地候选树与既有远程候选分支引用；生产故障复现、真实provider和设备/告警链路未完成。不得据本地PASS宣称发布或部署。"
+      },
+      "fixed_candidate_handoff": {
+        "code_sha": "c5376182bc5866730512af858659e585692e6361",
+        "tree": "6413590f2eb2e3950b8620114f010e41515313a9",
+        "result": "未发现具体本地实现缺口；可本地冻结，非整需求验收或发布",
+        "partial": [
+          "账号刷新现场复现及底层根因未证实",
+          "真实provider、生产及告警真实投递",
+          "真实设备小物性能",
+          "sharp Darwin arm64签名阻断媒体迁移专项"
+        ],
+        "rollback_boundary": {
+          "previous_production_sha": "4359648b41608429832e2ce4897bd12163a5d812",
+          "note": "仅本地代码边界；未做生产回滚演练，禁止以reset混杂历史代替依赖审查"
+        }
       }
     },
     {
@@ -468,7 +488,7 @@
         "从旧归档分支搬运或直接合入旧v0.5.10交付"
       ],
       "acceptance_boundary": "每条需求先核对源记录的最新状态与已有交付证据；已完成项只记录并从实施范围剔除。保存失败与派生失败分流、未知写入保留草稿且不重复提交；时间intent/createdAt/occurredAt与新建/补录草稿规则一致；通知仅对已成功呈现范围标记已读，未加载/新到保持未读，重试/复制不泄露凭据或私密正文；账户隔离、幂等和失败恢复按真实改动验证。没有真实浏览器/移动端/provider/生产验收时标PARTIAL。",
-      "next": "主开发只读汇总两版本固定候选交接：需求到实现/现有证据/未验收边界，不再重复测试或改代码；主控据回执裁定本地候选节点。",
+      "next": "进入发布准备边界：按当前授权策略与控制面检查尚未满足的执行条件；不得把本地候选冻结当作远端或生产授权，不为外部partial重复无影响测试。",
       "write_set_amendment": {
         "revision": 31,
         "at": "2026-10-12T12:08:35+08:00",
@@ -578,7 +598,7 @@
       "active_task": {
         "task_id": "v0513-fixed-candidate-handoff-20261012",
         "mode": "只读交接",
-        "state": "DISPATCH_READY",
+        "state": "COMPLETED_READ_ONLY",
         "owner": "主控",
         "implementer": "主开发",
         "baseline_sha": "029783d2759a63b20e663562d5be8d7f35b6c321",
@@ -597,7 +617,27 @@
           "全池扫描/线上写入",
           "远程/生产/付费调用",
           "新增工作树与删分支"
-        ]
+        ],
+        "receipt": {
+          "at": "2026-10-12T10:04:05.065Z",
+          "source_thread": "01a11afe-73d2-7013-91d5-cd473c4d7115",
+          "result": "两版Git对象、冻结范围和独立只读review一致；无发现029783d之后待修本地代码缺口",
+          "verification": "仅只读交接；未重跑测试、未写代码或做生产/远程操作",
+          "evidence_corrections": [
+            "旧UI全套在line2658未到达目标不等于没有reload证据：last_check.targeted_browser_time_recovery已有8d82e7d本机真实刷新/路由恢复；这些相关时间实现未被后续入队修正改变，可复用，但不冒称029全旅程验收。",
+            "notification-entry旧预期失败已由161dd898修正并专项PASS；历史FAIL保留，不能写成当前未解决失败。"
+          ],
+          "partial": [
+            "真实网络和跨账户浏览器故障旅程",
+            "真实provider/生产/移动端",
+            "剪贴板实际交付及拒绝替代真实操作",
+            "原反馈具体记录追溯、跨日/离线/重新认证、未读计数生产根因"
+          ],
+          "rollback_boundary": {
+            "code_sha": "c5376182bc5866730512af858659e585692e6361",
+            "note": "回到前轮代码候选可撤去本轮增量；需保留现行规则及控制面，非直接生产reset，逐需求撤回需审阅交错提交依赖。"
+          }
+        }
       },
       "review_task": {
         "task_id": "v0513-notification-message-review-20261012",
@@ -1120,6 +1160,12 @@
       "at": "2026-10-12T09:58:23.262Z",
       "reason": "Owner要求继续；主开发已完成待主控接入，六文件实际修正已审查提交并合入develop，启动固定候选只读交接。",
       "previous_snapshot": "1e4b918:reports/requirement-coordination-current.json@revision64；revision65审查过程保留于本次回执"
+    },
+    {
+      "revision": 67,
+      "at": "2026-10-12T10:04:05.065Z",
+      "reason": "固定候选交接完成；保持两版本地partial冻结、校准Git引用语义及两处证据表述。",
+      "previous_snapshot": "236231046d4b4b1a41b96dcf7154ad3056e42dfa:reports/requirement-coordination-current.json@revision66"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
