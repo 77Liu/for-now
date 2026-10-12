@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 47,
-  "updated_at": "2026-10-12T15:24:56+08:00",
+  "revision": 48,
+  "updated_at": "2026-10-12T15:28:00+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -85,7 +85,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主控基于rev538定向审查结论只读核对未读数需求recvxyqUrj2xlc：确认显式权威未读数为0是否被本地列表fallback覆盖及现有专项覆盖；仅在源码差异确认后锁定最小修复写集。暂不扩展markPresentedRead的可见范围行为。",
+  "next_action": "主控已确认recvxyqUrj2xlc权威未读数零值被两个前端入口按假值覆盖；主开发仅修正data-runtime与mine-shell的明确零语义，并把frontend-basic现有断言改为0。不得改markPresentedRead、服务端契约或扩展通知行为；通过现有受影响专项后继续下一既定切片。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -796,6 +796,11 @@
         "id": "S3",
         "name": "集成与验收",
         "output": "只跑测试影响矩阵命令；记录candidate SHA/tree、PASS/PARTIAL/BLOCKED和返回节点。"
+      },
+      {
+        "id": "S2c",
+        "name": "权威未读零值一致性",
+        "output": "修复两条现有前端投影对显式零值的错误fallback，并更新一个既有断言；不触及进入即读范围或服务端契约。"
       }
     ],
     "allowed_write_set": [
@@ -812,10 +817,13 @@
       "public/frontend/app/runtime/record-events.mjs（仅思考提交携带 sourceCaptureId 且错误码为 PRECONDITION_FAILED 时显示固定安全中文提示；不回显任意异常文本，不改变草稿、附件与同步行为）",
       "scripts/ui-regression.mjs（仅来源念起冲突既有场景，在提交前设置sourceCaptureId=capture-1与sourceCaptureVersion=2；保留现有断言，不增删测试）",
       "public/frontend/features/background-results/controller.mjs（仅点击已成功thoughtAnswer通知的查看入口时，在thought详情刷新后重试对应task结果GET；该结果同步失败显示固定安全文案，明确原思绪已保存并可从通知再次查看；不发起AI POST/重排任务，不改变其他任务类型）",
-      "scripts/frontend-background-results-feature-regression.mjs（仅在既有任务结果恢复场景复用通知查看入口，验证结果GET重试、失败文案、成功只合并一次且不新建思绪/AI任务；不新增测试文件）"
+      "scripts/frontend-background-results-feature-regression.mjs（仅在既有任务结果恢复场景复用通知查看入口，验证结果GET重试、失败文案、成功只合并一次且不新建思绪/AI任务；不新增测试文件）",
+      "reports/requirement-coordination-current.json（仅主控维护本唯一控制面状态与锁；其他角色禁止写）",
+      "public/frontend/app/runtime/data-runtime.mjs（仅权威notificationUnread显式0不再回退到本地通知列表；字段缺失时保留既有fallback）",
+      "public/frontend/features/mine-shell/presentation.mjs（同一权威未读数零语义；只修改现有计数投影）",
+      "scripts/frontend-basic-surfaces-feature-regression.mjs（仅将现有显式零断言改为0，不新增测试文件或重复场景）"
     ],
     "forbidden_write_set": [
-      "reports/requirement-coordination-current.json",
       "需求池",
       "src/http/**",
       "src/shared/**",
@@ -836,7 +844,7 @@
       "只有截图或没有复现的未读数问题不据此宣称修复；先保留PARTIAL。"
     ],
     "external_actions": "无远端写、发布、部署、生产写或手工付费调用；不恢复已暂停自动化。",
-    "current_status": "BUILDING_LOCAL_ONLY；发生时间mode持久化/恢复以52cfa6e本地集成develop，tree 9a7f0273506eed199e1413f6b6851542e21dd33f。frontend-shared、node --check、diff check和不落盘manual/now定向smoke通过；单次test:ui在2658既有capture展开断言失败，目标浏览器场景未执行，保持PARTIAL。下一步主控只读核验未读数零值fallback缺口，再锁定必要切片。无远程/生产操作。",
+    "current_status": "BUILDING_LOCAL_ONLY；TS规范闭环已完成并提交b27e2c1：新监控业务源为.mts，编译产物在被忽略的.build/typescript/monitor，未跟踪任何生成.mjs。发生时间mode草稿恢复已集成，相关源专项通过；一次test:ui在2658既有capture展开断言失败，目标场景未执行，保持PARTIAL。现已确认通知需求recvxyqUrj2xlc的显式权威未读数0会被data-runtime与mine-shell两处本地列表fallback覆盖；本rev锁定最小修复写集。不得扩展markPresentedRead或服务端契约。仅本地，禁止远程/生产/付费动作。",
     "version_requirement_count": {
       "minimum": 3,
       "maximum": 10,
@@ -921,6 +929,18 @@
         ],
         "decision": "补齐modelUnknown当前快照读取；协作运行时在现有模块边界内保留来源解析入口，服务端来源同时携带问题摘要，页面无需加载整份个人模型也能显示上下文。",
         "next": "保留未知项问题摘要、来源卡片和模块边界证据；不再宣称跨feature复用唯一解析器，不扩展为全站上下文重构。"
+      },
+      {
+        "requirement_id": "recvxyqUrj2xlc",
+        "status": "源码核对确认显式权威未读数0被两处前端fallback覆盖；锁定最小修复，未实现/未验证",
+        "evidence": [
+          "src/modules/notifications/index.mjs:7及src/app/public-state.mjs:83提供权威计数",
+          "public/frontend/app/runtime/data-runtime.mjs:387-390对0使用||回退本地通知列表",
+          "public/frontend/features/mine-shell/presentation.mjs:27-31同样对0回退",
+          "scripts/frontend-basic-surfaces-feature-regression.mjs:426-433现有断言将显式0判成1"
+        ],
+        "decision": "保持显式notificationUnread=0为权威值；仅字段缺失时使用既有fallback。只修两处前端投影与一条已有断言。",
+        "next": "主开发在当前feat分支实施，主控审查后运行唯一受影响专项并记录结果。"
       }
     ],
     "verification": {
