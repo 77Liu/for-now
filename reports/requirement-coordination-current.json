@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 113,
-  "updated_at": "2026-10-12T15:49:59.971Z",
+  "revision": 114,
+  "updated_at": "2026-10-12T15:57:21.723Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md及其引用的唯一正文；新增开发者自查与主控接入审查责任正文在SOP/multi-agent-orchestration.md#开发者自查与主控接入审查，功能开发/集成SOP引用，原有状态门及授权继续适用。"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "执行前审查发现隔离PG清理缺口；真实采集未开始，限定修正生命周期后再固定候选。",
+  "current_phase": "PG生命周期修复已由主控独立审查接入，服务器只读入口已复核，继续固定候选真实快照与隔离本地启动。",
   "state": "GLOBAL_STARTUP_GATE_EXECUTING",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发单脚本修复PG启动前登记、停止失败不吞掉、清理后才输出PASS；同时复用已核验服务器内PG_BACKUP私密注入入口，不需Owner新凭据。",
+  "next_action": "主开发按新完整HEAD/tree在服务器私密stage注入既有PG_BACKUP只读来源、内存脱敏后下载bundle，在本机隔离PG16启动/readyz/重启恢复与smoke；无生产写/发布。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -1672,6 +1672,12 @@
       "at": "2026-10-12T15:49:59.971Z",
       "reason": "具体清理契约问题在真实运行前被发现并退回单脚本修正；不凭只读角色本机缺失误报需要Owner。",
       "previous_snapshot": "f04375e:reports/requirement-coordination-current.json@revision112"
+    },
+    {
+      "revision": 114,
+      "at": "2026-10-12T15:57:21.723Z",
+      "reason": "清理契约修复实际接入后立即续跑真实门，来源入口已恢复无需Owner新凭据。",
+      "previous_snapshot": "590854c:reports/requirement-coordination-current.json@revision113"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -2577,13 +2583,13 @@
       "related_contract": "历史补充recordCompression output ID对应singleton，需同一精确optional policy；daily实际markQueued在tasks.create/promote分支持久化前调用，继续严格要求实体。"
     },
     "pre_release_startup_gate": {
-      "status": "BLOCKED_LOCAL_CLEANUP_CONTRACT",
+      "status": "EXECUTING_AFTER_CLEANUP_FIX",
       "source": "Owner本对话：本地合并启动检查及生产快照本地启动后再进release门",
       "scope": "本次重新发布前补齐最终累计候选实际runtime.start/监听/readyz/重启恢复，不能以projection专项代替",
       "snapshot": "生产只读一致性状态快照；服务器端脱敏，保留任务类型/状态与目标关系/singleton/schema，排除正文/原图/凭据，绑定采集时间/运行SHA/摘要",
       "environment": "隔离本机PG/临时数据目录，真实候选构建；无生产连接/网络provider/通知/定时付费",
       "proof": "固定候选tree+快照摘要+运行环境+实际启动/健康/恢复与核心无付费smoke回执",
-      "next": "主开发单脚本修复PG启动前登记、停止失败不吞掉、清理后才输出PASS；同时复用已核验服务器内PG_BACKUP私密注入入口，不需Owner新凭据。",
+      "next": "主开发按新完整HEAD/tree在服务器私密stage注入既有PG_BACKUP只读来源、内存脱敏后下载bundle，在本机隔离PG16启动/readyz/重启恢复与smoke；无生产写/发布。",
       "distinction": "每feat按受影响验证；最终develop候选必须基本整体启动，完整功能全量测试按矩阵去重执行，不每merge重复system all",
       "rule_source": "knowledge/test-impact-matrix.md#develop--release-有状态全局测试门",
       "rule_commit": "04befab",
@@ -2695,7 +2701,7 @@
         "verification": "主开发strict typecheck、build+self-test、diff检查通过，独立只读review通过；复用原任务状态及map/rebuild等价断言。",
         "integration": "fast-forward合入develop，保留feat，唯一根工作树；用户未跟踪证据未触碰。"
       },
-      "candidate_identity": "revision112控制面提交后以完整HEAD/tree固定并派发；真实门运行期间禁止漂移。",
+      "candidate_identity": "revision114提交后完整HEAD/tree派发；执行期间不提交或切分支。",
       "mapping_comparison_review": {
         "source": "src/shared/persistence/postgres-objects.mjs的readPostgresStoreObjects无ORDER BY；verifyStoreObjects已有按canonicalJson完整行排序比较。",
         "problem": "启动门直接比较映射表数组顺序；数据库行顺序不是业务顺序，业务顺序由position/parentKey等字段承载。",
@@ -2746,7 +2752,14 @@
         "confirmed_by_coordinator": "主控读取startLocalPostgres/stopLocalPostgres/verify实际代码，停止错误被catch忽略、启动函数返回前失败pgState缺失、PASS输出早于最终清理。",
         "implementation": "发起pg_ctl start前登记隔离cluster状态；停止失败必须报告并保留目录，不吞失败；最终成功结果仅在服务/PG停止及临时目录清理成功后输出。",
         "source_access": "沿用生产服务器既有env PG_BACKUP只读注入，不用本机schema/owner入口，不输出值，不要求Owner新token。",
-        "verification": "编辑后自查生命周期；strict typecheck/build+self-test/diff，实际PG停止清理由后续真实门核验，不扩通用框架。"
+        "verification": "编辑后自查生命周期；strict typecheck/build+self-test/diff，实际PG停止清理由后续真实门核验，不扩通用框架。",
+        "receipt": {
+          "code_sha": "8fd4272961a32f4597da264c7e9f6ce573ea1d9a",
+          "review": "主控亲自读完整生命周期差分，核对预登记handle、pg_ctl status3、停止核验、runtime/环境/PG清理边界、PASS输出顺序；独审为辅助输入。",
+          "verification": "核验实际typecheck/build/self-test/diff命令exit0，未运行真实PG或生产；实际清理仍待真实门回执。",
+          "source_method": "沿用服务器新mktemp私密stage、固定git archive与编译脚本、现有node_modules、bash stdin set+x source受保护env、env-i仅私密注入PG_BACKUP到data/auth，凭据不本机落盘/不输出。",
+          "handoff_correction": "执行者回执误写HEAD仍f04375e；主控实际Git核对当时为590854c（仅控制面提交），未发生分支切换；当前新执行身份另固定，不能沿用旧SHA。"
+        }
       }
     }
   }
