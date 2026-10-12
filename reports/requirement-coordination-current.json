@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 106,
-  "updated_at": "2026-10-12T15:15:23.332Z",
+  "revision": 107,
+  "updated_at": "2026-10-12T15:17:34.047Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/test-impact-matrix.md、SOP/integration-audit.md、SOP/release-and-observation.md；未改变其他风险授权正文"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "真实快照对象等价比较失败；主控定位PG无序结果与内存遍历顺序被误作语义差异，批准单脚本修复比较契约。",
+  "current_phase": "完整行多重集比较修复已审查接入develop，继续真实脱敏快照与隔离PG启动验证。",
   "state": "GLOBAL_STARTUP_GATE_EXECUTING",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发只改启动门全行多重集比较及既有自测，保留位置/内容/身份/重复计数；主控审查接入后再运行真实门。",
+  "next_action": "固定revision107提交后HEAD/tree，主开发重跑真实门；不提交源码或控制面、不部署、不手动付费。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -1630,6 +1630,12 @@
       "at": "2026-10-12T15:15:23.332Z",
       "reason": "保存第三次真实门失败并修正数据库映射比较顺序契约，不做生产重试或忽略真实差异。",
       "previous_snapshot": "ae65924:reports/requirement-coordination-current.json@revision105"
+    },
+    {
+      "revision": 107,
+      "at": "2026-10-12T15:17:34.047Z",
+      "reason": "主控接入PG行顺序修复并立即继续真实有状态门。",
+      "previous_snapshot": "48f31ed:reports/requirement-coordination-current.json@revision106"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -2535,13 +2541,13 @@
       "related_contract": "历史补充recordCompression output ID对应singleton，需同一精确optional policy；daily实际markQueued在tasks.create/promote分支持久化前调用，继续严格要求实体。"
     },
     "pre_release_startup_gate": {
-      "status": "BLOCKED_MAPPING_EQUIVALENCE",
+      "status": "EXECUTING_AFTER_ROW_ORDER_FIX",
       "source": "Owner本对话：本地合并启动检查及生产快照本地启动后再进release门",
       "scope": "本次重新发布前补齐最终累计候选实际runtime.start/监听/readyz/重启恢复，不能以projection专项代替",
       "snapshot": "生产只读一致性状态快照；服务器端脱敏，保留任务类型/状态与目标关系/singleton/schema，排除正文/原图/凭据，绑定采集时间/运行SHA/摘要",
       "environment": "隔离本机PG/临时数据目录，真实候选构建；无生产连接/网络provider/通知/定时付费",
       "proof": "固定候选tree+快照摘要+运行环境+实际启动/健康/恢复与核心无付费smoke回执",
-      "next": "主开发只改启动门全行多重集比较及既有自测，保留位置/内容/身份/重复计数；主控审查接入后再运行真实门。",
+      "next": "固定revision107提交后HEAD/tree，主开发重跑真实门；不提交源码或控制面、不部署、不手动付费。",
       "distinction": "每feat按受影响验证；最终develop候选必须基本整体启动，完整功能全量测试按矩阵去重执行，不每merge重复system all",
       "rule_source": "knowledge/test-impact-matrix.md#develop--release-有状态全局测试门",
       "rule_commit": "04befab",
@@ -2628,7 +2634,7 @@
         "verification": "主开发strict typecheck、build+self-test、diff检查通过，独立只读review通过；复用原任务状态及map/rebuild等价断言。",
         "integration": "fast-forward合入develop，保留feat，唯一根工作树；用户未跟踪证据未触碰。"
       },
-      "candidate_identity": "revision105控制面提交后以git rev-parse HEAD和HEAD^{tree}固定并派发；运行期间禁止提交导致身份漂移。",
+      "candidate_identity": "revision107提交后以Git完整HEAD/tree派发；运行期间锁定无漂移。",
       "mapping_comparison_review": {
         "source": "src/shared/persistence/postgres-objects.mjs的readPostgresStoreObjects无ORDER BY；verifyStoreObjects已有按canonicalJson完整行排序比较。",
         "problem": "启动门直接比较映射表数组顺序；数据库行顺序不是业务顺序，业务顺序由position/parentKey等字段承载。",
@@ -2636,7 +2642,13 @@
           "scripts/release-state-startup-gate.mts"
         ],
         "required_invariant": "按完整行canonicalJson排序比较多重集，保留所有字段与重复数量；真实字段、位置、身份或内容差异仍阻断。",
-        "verification": "只strict typecheck/build/self-test/diff；既有自测增加SQL行排列等价和真实语义差异拒绝。禁止新生产census、业务mapper修改或断言降级。"
+        "verification": "只strict typecheck/build/self-test/diff；既有自测增加SQL行排列等价和真实语义差异拒绝。禁止新生产census、业务mapper修改或断言降级。",
+        "receipt": {
+          "code_sha": "a798b5c2635f8c569fefa38532757615d00881fc",
+          "review": "主控实际差分审查及独立只读review通过；完整行排序多重集比较，未删字段或忽略位置。",
+          "verification": "strict typecheck/build/self-test/diff通过；六组行逆序等价、position差异必须拒绝。",
+          "integration": "ff合入develop、保留feat、唯一工作树，原未跟踪证据未触碰。"
+        }
       }
     }
   }
