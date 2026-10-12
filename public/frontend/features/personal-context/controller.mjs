@@ -4,7 +4,7 @@ import {
   renderPersonalContextSurface,
   scrubPersonalContextSurface
 } from "./presentation.mjs";
-import { resolveSynchronousPersonalizedResponse } from "../../shared/personalized-ai-task.mjs";
+import { resolveSynchronousPersonalizedResponse } from "../../../generated/personalized-ai-task.mjs";
 
 export const PERSONAL_CONTEXT_ENDPOINT = "/api/v1/personal-context";
 export const EVIDENCE_PERMISSIONS_ENDPOINT = "/api/v1/user-model/evidence-permissions";

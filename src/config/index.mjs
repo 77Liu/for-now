@@ -90,6 +90,10 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     && Number.isSafeInteger(configuredInvocationLimit)
     && configuredInvocationLimit <= RECORD_COMPRESSION_MAX_DAILY_INVOCATION_LIMIT;
   const configuredBackfillDates = Number(env.RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN);
+  const recordCompressionNotificationsEnabled = env.RECORD_COMPRESSION_NOTIFICATIONS_ENABLED === "1"
+    && canonicalProduction
+    && Boolean(String(env.FEISHU_ALERT_WEBHOOK || "").trim())
+    && Boolean(String(env.FEISHU_ALERT_SECRET || "").trim());
   const platformServiceTokenHash = String(env.PLATFORM_SERVICE_TOKEN_HASH || "").toLowerCase();
   if (platformServiceTokenHash && !/^[a-f0-9]{64}$/.test(platformServiceTokenHash)) {
     throw new Error("PLATFORM_SERVICE_TOKEN_HASH must be a 64-character SHA-256 digest");
@@ -125,6 +129,9 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     testCurrentDate,
     periodicAnalysisEnabled: env.PERIODIC_ANALYSIS_ENABLED === "1",
     recordCompressionEnabled,
+    recordCompressionNotificationsEnabled,
+    feishuAlertWebhook: String(env.FEISHU_ALERT_WEBHOOK || "").trim(),
+    feishuAlertSecret: String(env.FEISHU_ALERT_SECRET || ""),
     recordCompressionDailyBudgetCny: recordCompressionEnabled ? recordCompressionDailyBudgetCny : 0,
     recordCompressionPerCallBudgetCny: recordCompressionEnabled ? recordCompressionPerCallBudgetCny : 0,
     recordCompressionDailyInvocationLimit: recordCompressionEnabled ? configuredInvocationLimit : 0,

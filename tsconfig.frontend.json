@@ -7,7 +7,7 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "rootDir": "public/frontend/shared",
-    "outDir": ".build/typescript/frontend",
+    "outDir": "public/generated",
     "noEmitOnError": true
   },
   "files": [

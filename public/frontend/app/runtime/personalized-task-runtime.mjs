@@ -1,4 +1,4 @@
-import { resolvePersonalizedAiResponse } from "../../shared/personalized-ai-task.mjs";
+import { resolvePersonalizedAiResponse } from "../../../generated/personalized-ai-task.mjs";
 
 export function createPersonalizedTaskRuntime({
   runtime,

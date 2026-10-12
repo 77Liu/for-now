@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   resolvePersonalizedAiResponse,
   resolveSynchronousPersonalizedResponse
-} from "../public/frontend/shared/personalized-ai-task.mjs";
+} from "../public/generated/personalized-ai-task.mjs";
 import { createPersonalizedTaskRuntime } from "../public/frontend/app/runtime/personalized-task-runtime.mjs";
 import { createAnswerModalRuntime } from "../public/frontend/app/runtime/answer-modal-runtime.mjs";
 import { installRecordSubmissionEvents } from "../public/frontend/app/runtime/record-events.mjs";

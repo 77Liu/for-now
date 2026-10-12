@@ -21,9 +21,8 @@ reports/*.generated.*
 reports/**/*.generated.*
 
 # TS 运行候选由 build:runtime 组装；这些路径只保留本地/部署产物，不进入 Git。
-src/shared/observability/feishu.mjs
 src/shared/record-compression-config.mjs
-public/frontend/shared/personalized-ai-task.mjs
+public/generated/
 
 deploy/*.local
 reports/keepsake-segmentation-preview/

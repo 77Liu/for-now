@@ -47,7 +47,7 @@ const SHELL_ASSETS = [
   "frontend/opening/index.mjs",
   "frontend/opening/rain-engine.mjs",
   "frontend/shared/ai-task-status.mjs",
-  "frontend/shared/personalized-ai-task.mjs",
+  "generated/personalized-ai-task.mjs",
   "frontend/content/index.mjs",
   "frontend/components/tag-multiselect/index.mjs",
   "frontend/features/actions/controller.mjs",

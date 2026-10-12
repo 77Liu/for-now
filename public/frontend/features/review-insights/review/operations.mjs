@@ -1,5 +1,5 @@
 import { sanitizeAnalysisRecord } from "./model.mjs";
-import { resolveSynchronousPersonalizedResponse } from "../../../shared/personalized-ai-task.mjs";
+import { resolveSynchronousPersonalizedResponse } from "../../../../generated/personalized-ai-task.mjs";
 
 const noop = () => {};
 

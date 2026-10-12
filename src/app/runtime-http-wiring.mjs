@@ -64,15 +64,32 @@ const countMetric = value => Number.isSafeInteger(value) ? Math.max(0, value) : 
 export function createRecordCompressionScanObserver({
   logEvent,
   requestStorage,
+  notify,
   now = () => Date.now()
 } = {}) {
   if (typeof logEvent !== "function") throw new TypeError("压缩扫描观测需要 logEvent");
   const emit = (...args) => requestStorage?.run
     ? requestStorage.run({ secrets: [] }, () => logEvent(...args))
     : logEvent(...args);
+  const send = async (title, lines) => {
+    if (typeof notify !== "function") return;
+    try {
+      await notify({ title, lines });
+    } catch (error) {
+      await emit("system", "record_compression.notification_failed", {
+        level: "warn",
+        error: errorMetadata(error)
+      });
+    }
+  };
   return async function observe(scan) {
     const startedAt = now();
     await emit("system", "record_compression.scan_started", { level: "info" });
+    await send("日压缩已启动", [`时间（上海）：${new Intl.DateTimeFormat("zh-CN", {
+      timeZone: DEFAULT_RECORD_TIMEZONE,
+      dateStyle: "medium",
+      timeStyle: "medium"
+    }).format(new Date(startedAt))}`]);
     try {
       const { result, metrics = {} } = await scan();
       const counts = {
@@ -95,6 +112,19 @@ export function createRecordCompressionScanObserver({
         level: "info",
         ...counts
       });
+      const summary = result || {};
+      await send("日压缩已完成", [
+        `排队：${countMetric(summary.queuedCount ?? summary.queued)}`,
+        `等待预算：${countMetric(summary.waitingBudgetCount)}`,
+        `跳过：${countMetric(summary.skippedCount ?? summary.skipped)}`,
+        `耗时：${counts.durationMs}ms`
+      ]);
+      await send("日压缩成本记录", [
+        `已记录费用：¥${Number.isFinite(summary.knownSpentCny) ? summary.knownSpentCny.toFixed(4) : "未知"}`,
+        `已预留预算：¥${Number.isFinite(summary.reservedCny) ? summary.reservedCny.toFixed(4) : "未知"}`,
+        `已知调用：${countMetric(summary.knownCalls)}`,
+        `预留调用：${countMetric(summary.reservedCalls)}`
+      ]);
       return result;
     } catch (error) {
       await emit("system", "record_compression.scan_failed", {
@@ -102,6 +132,7 @@ export function createRecordCompressionScanObserver({
         failureCount: 1,
         error: errorMetadata(error)
       });
+      await send("日压缩执行失败", ["请查看服务端观测日志。"]);
       throw error;
     }
   };
@@ -239,7 +270,17 @@ export function createRuntimeHttpWiring({
   const runRecordCompressionSlot = createRetryableSlotRunner();
   const observeRecordCompressionScan = createRecordCompressionScanObserver({
     logEvent,
-    requestStorage
+    requestStorage,
+    notify: appConfig.recordCompressionNotificationsEnabled
+      && appConfig.feishuAlertWebhook
+      ? async message => {
+        const { createFeishuNotifier } = await import("../../.build/typescript/backend/feishu.mjs");
+        return createFeishuNotifier({
+          webhook: appConfig.feishuAlertWebhook,
+          secret: appConfig.feishuAlertSecret
+        })(message);
+      }
+      : undefined
   });
   async function runRecordCompressionScheduler() {
     if (!appConfig.recordCompressionEnabled) return { disabled: true };

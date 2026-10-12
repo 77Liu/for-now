@@ -2393,8 +2393,8 @@
     {
       "id": "frontend.personalized-ai-task",
       "type": "shared",
-      "root": "public/frontend/shared/personalized-ai-task.mjs",
-      "publicEntry": "public/frontend/shared/personalized-ai-task.mjs",
+      "root": "public/generated/personalized-ai-task.mjs",
+      "publicEntry": "public/generated/personalized-ai-task.mjs",
       "allowedDependencies": [
         "frontend.ai-task-status"
       ],
