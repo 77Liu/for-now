@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 77,
-  "updated_at": "2026-10-12T11:38:27.584Z",
+  "revision": 78,
+  "updated_at": "2026-10-12T11:40:52.089Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,7 +13,7 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "生产基线3e94e2f/包0.5.13.1现场已确认；Secret当前存在但通知开关空。主开发执行原子配置与健康核验后继续累计v0.5.13发布。",
+  "current_phase": "生产通知配置已原子更新并重启健康；旧制品3e94e2f与当前候选通知字段不同，先校准探针契约再部署新候选验证，未宣布通知真实投递通过。",
   "state": "RELEASE_PREFLIGHT",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "带0600备份原子补通知开关与指定Secret，重启核验；锁定实际运行对象3e94e2f为回滚基线，不以旧标签猜测。",
+  "next_action": "主开发只读确认旧/新通知字段差异；若无真实阻碍继续候选发布，部署后以新运行身份核验通知配置与健康。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -1274,6 +1274,12 @@
       "at": "2026-10-12T11:38:27.584Z",
       "reason": "接收恢复后的真实运行/配置回执，校准生产版本及Secret现状，待启用通知及继续发布。",
       "previous_snapshot": "16e7341:reports/requirement-coordination-current.json@revision76"
+    },
+    {
+      "revision": 78,
+      "at": "2026-10-12T11:40:52.089Z",
+      "reason": "接收生产配置/重启回执，识别旧制品与新探针字段差异，避免无依据重复写入。",
+      "previous_snapshot": "4662a1f:reports/requirement-coordination-current.json@revision77"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -1991,7 +1997,28 @@
       "mode": "0600、ignored，不进Git",
       "note": "只读取已有签名，未重置机器人；生产Secret尚待SSH恢复后私密设置。",
       "next": "新key验证成功后原子补生产Secret/开关；值不输出、原环境配置保留回滚",
-      "private_checks": "0600、JSON有效、字段齐全、gitignored；生产Webhook私密stdin比较MATCH，不显示内容"
+      "private_checks": "0600、JSON有效、字段齐全、gitignored；生产Webhook私密stdin比较MATCH，不显示内容",
+      "atomic_config_receipt": {
+        "at": "2026-10-12T11:40:52.089Z",
+        "backup": "/root/for-now-config-backups/for-now.env.20261012T113812Z.bak",
+        "backup_mode": "0600",
+        "environment_file": "物理行75、无字面量\\n、目标三项各一行",
+        "process_env": "目标三项均存在（仅布尔）",
+        "restart_health": {
+          "readyz": 200,
+          "state": "active/running",
+          "restarts": 0
+        },
+        "running_sha": "3e94e2f29f5e131f2e98db3b4cb48659ba91fd79",
+        "compression_env": "4/1/16/4",
+        "notification_enabled": "未最终证实；当前只读核对旧版契约后部署新候选核验"
+      },
+      "probe_contract_check": {
+        "old_config": "3e94e2f使用recordCompressionFeishuNotifications、env RECORD_COMPRESSION_FEISHU_NOTIFICATIONS，不公开feishuAlertWebhook/Secret；runtime接notifyFeishu/sendFeishu",
+        "candidate_config": "当前候选使用recordCompressionNotificationsEnabled、env RECORD_COMPRESSION_NOTIFICATIONS_ENABLED、feishuAlertWebhook/Secret及TS通知",
+        "conclusion": "旧制品探针读取新字段会得到undefined/false，不能推断进程env缺失；需按实际制品契约验证，不重复重启或配置。",
+        "source": "主控git show3e94e2f相应config/runtime只读验证"
+      }
     },
     "confirmed_production_baseline": {
       "at": "2026-10-12T11:38:27.584Z",
