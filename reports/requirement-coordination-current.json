@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 62,
-  "updated_at": "2026-10-12T17:10:14+08:00",
+  "revision": 63,
+  "updated_at": "2026-10-12T17:18:58+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -85,7 +85,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发只读审查六需求固定候选的实际实现/证据/partial；主控据回执收口最终控制面或返回具体实现，禁止重复无影响测试和远端/生产动作。",
+  "next_action": "主开发给出两条思绪入队入口的最小安全/恢复契约与写集建议；主控立即裁定并派发实施。其他旧证据未受影响不重测，原反馈/provider/移动/生产保持partial。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -396,7 +396,7 @@
     },
     {
       "id": "v0.5.13",
-      "state": "CANDIDATE_LOCAL_PARTIAL",
+      "state": "BUILDING_LOCAL_ONLY",
       "scope": "保存状态/草稿与失败恢复；发生时间/补录意图；通知列表未读事实、脱敏诊断与恢复操作。仅实现六条锁定需求的未交付行为，不做全站状态或通知平台重构。",
       "requirement_ids": [
         "recvxm0eDZdJED",
@@ -576,61 +576,19 @@
       "candidate_tree": "97197a7f557dc1d52d485dc8ff4b261ec59d6ffc",
       "integration_status": "主控审查后develop本地fast-forward至4fbc259eaaee0bd9eaeacc8c0445f46a0e1dec06；保留feat分支，唯一工作树。候选仍PARTIAL，未发布/部署。",
       "active_task": {
-        "task_id": "v0513-chain-save-session-20261012",
-        "state": "IMPLEMENTED_REVIEWED_INTEGRATED_LOCAL",
+        "task_id": "v0513-thought-queue-recovery-design-20261012",
+        "mode": "只读定位与最小实现契约",
+        "state": "READY_FOR_REVIEW",
         "owner": "主控",
         "implementer": "主开发",
-        "baseline_sha": "161dd89858ef9f87f9acb841859d028d80c98a1d",
-        "feature_branch": "feat/v0.5.13-save-sync-validation",
+        "baseline_sha": "4fbc259eaaee0bd9eaeacc8c0445f46a0e1dec06",
         "requirement_ids": [
-          "recvxm0eDZdJED"
+          "recvxm0eDZdJED",
+          "recvxlYzZSlc2p"
         ],
-        "source_finding": "record-events.mjs思绪submit未捕获账户/会话；contentImagePaths和requestV1之后直接更新state/清空form；catch/finally和refreshState.catch也写当前页面。apiClient虽拒绝旧会话，catch/finally仍缺守卫。",
-        "write_set": [
-          "public/frontend/app/runtime/record-events.mjs（仅chain-form提交的账户/会话、输入快照、迟到响应及清理保护）",
-          "scripts/personalized-ai-task-ui-regression.mjs（仅扩展既有思绪保存夹具，验证延迟提交/错误/账户切换/新草稿保持）"
-        ],
-        "forbidden": [
-          "其他表单/通知/时间语义/共享API",
-          "新文件、构建与依赖",
-          "控制面、生产、远程、发布、付费调用",
-          "新工作树、删除分支、擅自集成develop"
-        ],
-        "acceptance": [
-          "提交开始捕获账户/会话及提交输入；必要await后检查是否仍属原会话，旧会话禁止发起后续请求或写state/表单/状态/toast。",
-          "catch/finally以及refresh失败回调同样不得写新会话；同会话用户新编辑不能被旧成功响应清空，已保存事实仍按原id/请求收敛；未知提交保留原requestId语义。",
-          "不改发生时间算法或扩为通用状态重构；必要中文注释解释提交快照与恢复边界。",
-          "先直接最小实现，随后只运行既有personalized-ai-task-ui专项、修改文件语法与diff检查；没有签名/模块边界变化不重跑无关TS/全部check。",
-          "交接真实差分和结果，由主控审查提交/接入。",
-          "发生时间校验仍在提交try内、首个await前；草稿一致性比较不得因当前无效日期抛错；已确认保存不会被新草稿校验错误改称未知。"
-        ],
-        "handoff": {
-          "turn_id": "01a12f44-54ef-75c2-ac9e-ab7eab70f5a0",
-          "status": "completed，未提交两文件；非运行中等待",
-          "checks": "修改两文件语法、既有personalized-ai-task-ui专项、diff检查通过",
-          "review_findings": [
-            "提交发生时间校验移到try外，无效日期可能绕过恢复反馈。",
-            "草稿一致性再次调用发生时间校验，期间编辑无效日期可能把已确认保存误报为未知。",
-            "capture局部刷新失败提示仍插入error.message，应使用固定安全文案。"
-          ],
-          "decision": "同一两文件写集返回主开发最小修正；保留已完成实现，不重建任务或工作树。"
-        },
-        "implementation_commit": "4fbc259eaaee0bd9eaeacc8c0445f46a0e1dec06",
-        "implementation_tree": "97197a7f557dc1d52d485dc8ff4b261ec59d6ffc",
-        "verification": {
-          "command": "两文件node --check；node scripts/personalized-ai-task-ui-regression.mjs；git diff --check",
-          "result": "PASS",
-          "covered": [
-            "未知提交保留草稿/附件与幂等编号",
-            "图片准备期间会话切换不继续保存",
-            "迟到成功/排队回调不写新会话",
-            "同会话新问题/时间/标签/图片不被旧响应清空",
-            "无效初始日期进入原错误恢复",
-            "新草稿无效日期不改变已确认成功事实",
-            "延迟刷新失败不向新会话toast"
-          ],
-          "receipt_turn": "01a12f59-7a9e-74a1-a8d0-747bcbb4bd4f"
-        }
+        "write_set": [],
+        "objective": "核对kernel自动入队与thoughts operations重答两条真实入口；给出固定安全提示、已排队后刷新失败分流、未确认POST稳定clientRequestId及既有恢复入口的最小方案。先核对实际服务端去重、公开task字段与现有前端模块/TS构建，不扩平台，不以返回原始正文恢复错误解释。",
+        "deliverable": "精确允许文件建议、调用契约、既有测试承载点；已知任务只读GET/查看恢复，不重复创建；确无任务的可恢复重答区分未确认提交。"
       },
       "review_task": {
         "task_id": "v0513-notification-message-review-20261012",
@@ -694,13 +652,70 @@
             "result": "PASS",
             "scope": "失败固定安全提示、转写语义/动作、重试去重、普通通知长文转义；无原行为断言删除"
           }
+        },
+        {
+          "task_id": "v0513-chain-save-session-20261012",
+          "state": "IMPLEMENTED_REVIEWED_INTEGRATED_LOCAL",
+          "owner": "主控",
+          "implementer": "主开发",
+          "baseline_sha": "161dd89858ef9f87f9acb841859d028d80c98a1d",
+          "feature_branch": "feat/v0.5.13-save-sync-validation",
+          "requirement_ids": [
+            "recvxm0eDZdJED"
+          ],
+          "source_finding": "record-events.mjs思绪submit未捕获账户/会话；contentImagePaths和requestV1之后直接更新state/清空form；catch/finally和refreshState.catch也写当前页面。apiClient虽拒绝旧会话，catch/finally仍缺守卫。",
+          "write_set": [
+            "public/frontend/app/runtime/record-events.mjs（仅chain-form提交的账户/会话、输入快照、迟到响应及清理保护）",
+            "scripts/personalized-ai-task-ui-regression.mjs（仅扩展既有思绪保存夹具，验证延迟提交/错误/账户切换/新草稿保持）"
+          ],
+          "forbidden": [
+            "其他表单/通知/时间语义/共享API",
+            "新文件、构建与依赖",
+            "控制面、生产、远程、发布、付费调用",
+            "新工作树、删除分支、擅自集成develop"
+          ],
+          "acceptance": [
+            "提交开始捕获账户/会话及提交输入；必要await后检查是否仍属原会话，旧会话禁止发起后续请求或写state/表单/状态/toast。",
+            "catch/finally以及refresh失败回调同样不得写新会话；同会话用户新编辑不能被旧成功响应清空，已保存事实仍按原id/请求收敛；未知提交保留原requestId语义。",
+            "不改发生时间算法或扩为通用状态重构；必要中文注释解释提交快照与恢复边界。",
+            "先直接最小实现，随后只运行既有personalized-ai-task-ui专项、修改文件语法与diff检查；没有签名/模块边界变化不重跑无关TS/全部check。",
+            "交接真实差分和结果，由主控审查提交/接入。",
+            "发生时间校验仍在提交try内、首个await前；草稿一致性比较不得因当前无效日期抛错；已确认保存不会被新草稿校验错误改称未知。"
+          ],
+          "handoff": {
+            "turn_id": "01a12f44-54ef-75c2-ac9e-ab7eab70f5a0",
+            "status": "completed，未提交两文件；非运行中等待",
+            "checks": "修改两文件语法、既有personalized-ai-task-ui专项、diff检查通过",
+            "review_findings": [
+              "提交发生时间校验移到try外，无效日期可能绕过恢复反馈。",
+              "草稿一致性再次调用发生时间校验，期间编辑无效日期可能把已确认保存误报为未知。",
+              "capture局部刷新失败提示仍插入error.message，应使用固定安全文案。"
+            ],
+            "decision": "同一两文件写集返回主开发最小修正；保留已完成实现，不重建任务或工作树。"
+          },
+          "implementation_commit": "4fbc259eaaee0bd9eaeacc8c0445f46a0e1dec06",
+          "implementation_tree": "97197a7f557dc1d52d485dc8ff4b261ec59d6ffc",
+          "verification": {
+            "command": "两文件node --check；node scripts/personalized-ai-task-ui-regression.mjs；git diff --check",
+            "result": "PASS",
+            "covered": [
+              "未知提交保留草稿/附件与幂等编号",
+              "图片准备期间会话切换不继续保存",
+              "迟到成功/排队回调不写新会话",
+              "同会话新问题/时间/标签/图片不被旧响应清空",
+              "无效初始日期进入原错误恢复",
+              "新草稿无效日期不改变已确认成功事实",
+              "延迟刷新失败不向新会话toast"
+            ],
+            "receipt_turn": "01a12f59-7a9e-74a1-a8d0-747bcbb4bd4f"
+          }
         }
       ],
       "candidate_fixed_at": "2026-10-12T17:10:14+08:00",
       "final_review_task": {
         "task_id": "v0513-six-requirement-evidence-review-20261012",
         "mode": "只读审查",
-        "state": "READY_FOR_REVIEW",
+        "state": "COMPLETED_WITH_IMPLEMENTATION_GAP",
         "implementer": "主开发",
         "candidate_sha": "4fbc259eaaee0bd9eaeacc8c0445f46a0e1dec06",
         "candidate_tree": "97197a7f557dc1d52d485dc8ff4b261ec59d6ffc",
@@ -713,7 +728,9 @@
           "recvxyqUrj2xlc"
         ],
         "write_set": [],
-        "objective": "逐条核对六条需求当前最小实现、实际专项与浏览器证据及未验收边界；给出仍需代码动作的真实缺口，区分外部partial与实现缺口。不要仅以测试绿或源码存在判整条验收。"
+        "objective": "逐条核对六条需求当前最小实现、实际专项与浏览器证据及未验收边界；给出仍需代码动作的真实缺口，区分外部partial与实现缺口。不要仅以测试绿或源码存在判整条验收。",
+        "receipt_turn": "01a12f60-7e33-70b0-b663-7bb22debcbc0",
+        "finding": "kernel.mjs:startBackgroundChainAnswer入队失败回显error.message，且将已排队后通知刷新失败混同未排队；thoughts/operations.mjs同类入队错误回显。其余六需求保留精确浏览器/生产/原反馈追溯partial。"
       }
     }
   ],
@@ -1000,6 +1017,12 @@
       "at": "2026-10-12T17:10:14+08:00",
       "reason": "主开发完成收口修正，主控审查提交4fbc259并本地接入；新地址浏览器正常保存/清空路径通过，固定候选交六需求最终只读审查。",
       "previous_snapshot": "revision61（同一控制面，未单独提交的审查返回修订）"
+    },
+    {
+      "revision": 63,
+      "at": "2026-10-12T17:18:58+08:00",
+      "reason": "六需求固定候选只读审查完成，源码确认入队失败正文回显及刷新失败阶段混同，返回对应需求最小实现设计；其余补验不伪PASS。",
+      "previous_snapshot": "c58f182:reports/requirement-coordination-current.json@revision62"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
