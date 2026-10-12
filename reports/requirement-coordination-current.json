@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 50,
-  "updated_at": "2026-10-12T15:34:00+08:00",
+  "revision": 51,
+  "updated_at": "2026-10-12T15:38:00+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -41,7 +41,7 @@
     ],
     "canonical_worktree": "/Users/bytedance/Documents/Codex/个人成长追踪",
     "canonical_worktree_branch": "feat/v0.5.13-save-sync-validation",
-    "canonical_worktree_head": "5c43ab22c09d03eacb057b30e25754e795a33d14（根目录唯一工作树；控制面rev49状态点；工作继续于feat分支）",
+    "canonical_worktree_head": "77a8793eaea9b6474b74afe334bced4caae5fa99（根目录唯一工作树；TS失败提示修复后状态点）",
     "archived_worktree": {
       "path": "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/develop",
       "branch": "feat/v0.5.13.1-stability",
@@ -85,7 +85,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主控已确认recvxlYzZSlc2p链路的页面泄漏：personalized-ai-task.mts把task.error原文拼入失败状态。主开发仅改为固定安全中文提示，引导查看通知中的脱敏错误日志；同步修改现有同一失败场景断言，不新增测试。之后按TS影响矩阵运行最小必要验证。",
+  "next_action": "主控只读核对P0日期需求reczz28K9ceTZDnd与相邻now/manual规则：检查已集成的发生时间草稿修复是否同时满足新建默认now、主动补录保留、取消重开和草稿恢复；不跑整套UI，若发现新缺口先锁最小写集。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -97,12 +97,12 @@
   ],
   "last_check": {
     "remote_refs": "2026-10-11T12:07:35Z 已通过 git ls-remote --heads/tags 只读核验；无远程写入",
-    "worktrees": "2026-10-12T15:34:00+08:00：仅根目录一个工作树，feat/v0.5.13-save-sync-validation；develop@c5376182bc5866730512af858659e585692e6361；无第二工作树。",
+    "worktrees": "2026-10-12T15:38:00+08:00：只有根目录工作树，当前feat/v0.5.13-save-sync-validation@77a8793；develop@c537618；没有第二工作树。",
     "platform_protection": "Gitee UI只读核验：保护分支规则0条、保护标签不可用、推送限制未启用",
     "remote_write": "本轮未执行",
     "release_rollback_rehearsal": "本地隔离模拟全部通过；无远端命令",
     "budget_alerts": "本地护栏回归通过；当前生产配置与告警快照缺失，保持阻断",
-    "candidate_integration": "通知未读数权威零值修复已提交3cf9c3b（tree 757f5de6ab7ecf62f147305a615eba735d701c45），仍为本地feat候选，尚未合入develop。node scripts/frontend-basic-surfaces-feature-regression.mjs通过；diff check通过。未推送、发布、部署或写生产。",
+    "candidate_integration": "未读零值修复3cf9c3b与失败task.error界面脱敏77a8793均仅在本地feat候选；前者frontend-basic专项通过；后者frontend typecheck/build、prepare-generated-runtime和personalized-ai-task-ui专项通过。未合入develop、未推送/发布/部署。",
     "alert_incident": {
       "alert_at": "2026-10-12T05:01:39.769Z",
       "recovered_at": "2026-10-12T05:06:39.868Z",
@@ -851,7 +851,7 @@
       "只有截图或没有复现的未读数问题不据此宣称修复；先保留PARTIAL。"
     ],
     "external_actions": "无远端写、发布、部署、生产写或手工付费调用；不恢复已暂停自动化。",
-    "current_status": "BUILDING_LOCAL_ONLY；监控TS闭环已提交b27e2c1，源为.mts、生成物仅在被忽略的.build。未读零值修复已提交3cf9c3b并通过唯一frontend-basic专项。继续只读审查错误日志需求时，发现personalized-ai-task.mts第76行把task.error原文拼入用户可见失败状态；通知卡片另有通用安全文案，复制JSON仅含脱敏通知/task ID、kind、status、errorCode、时间。当前rev锁定前端TS提示与一个已有失败断言，不改服务端错误契约或通知API。无远程/生产/付费操作。",
+    "current_status": "BUILDING_LOCAL_ONLY；新运维监控源为.mts，编译输出隔离于ignored .build。发生时间mode恢复候选52cfa6e已接入develop，但一次test:ui在较早capture展开断言失败，目标浏览器路径未执行，保持PARTIAL。通知权威零值修复提交3cf9c3b并通过frontend-basic专项。通知报错泄漏已由TS提交77a8793修复：失败任务UI改固定提示、不展示task.error；typecheck:frontend、build:frontend、生成物整理及personalized-ai-task-ui-regression通过。当前feat候选77a8793eaea9b6474b74afe334bced4caae5fa99/tree 3ecae2632e062ce3203c10a0b39e089a43f8ab15，尚未合入develop。唯一根工作树，保留原未跟踪需求证据目录。无远程/生产/付费动作。",
     "version_requirement_count": {
       "minimum": 3,
       "maximum": 10,
@@ -951,14 +951,15 @@
       },
       {
         "requirement_id": "recvxlYzZSlc2p",
-        "status": "源码核对确认AI任务失败状态直接渲染task.error原文；通知已有通用文案与脱敏诊断复制，界面泄漏待修",
+        "status": "失败任务页面原始错误泄漏已修复并通过TS构建与既有专项；本地feat候选，未发布",
         "evidence": [
-          "public/frontend/shared/personalized-ai-task.mts:76将task.error拼入失败提示",
-          "public/frontend/features/notifications/presentation.mjs:71对失败任务使用通用文案",
-          "public/frontend/features/notifications/controller.mjs:246-253复制仅含脱敏ID、类型、状态、错误码和时间；现有专项断言检查不含provider原文"
+          "源码personalized-ai-task.mts原第76行将task.error拼入用户可见失败提示；改为固定安全文案。",
+          "通知卡片已有通用失败文案；复制诊断仅含脱敏ID、kind、status、errorCode和时间。",
+          "提交77a8793eaea9b6474b74afe334bced4caae5fa99；typecheck:frontend、build:frontend及node scripts/prepare-generated-runtime.mjs通过。",
+          "第一次直接运行专项因编译输出import路径未整理、未到测试断言；标准生成物整理后node scripts/personalized-ai-task-ui-regression.mjs通过。"
         ],
-        "decision": "固定失败页面提示为“任务失败，请查看通知中的脱敏错误日志后重试”；不显示原始错误，不改API/服务端数据。",
-        "next": "主开发只改TS提示和同一既有失败断言；按影响矩阵完成类型检查、构建及一个必要的既有专项。"
+        "decision": "用户界面不再渲染task.error；固定引导查看通知内脱敏错误日志。不改服务端/API和通知行为。",
+        "next": "保留在本地候选；仍未做远程/生产验证。"
       }
     ],
     "verification": {
@@ -1075,6 +1076,31 @@
           "command": "node scripts/frontend-basic-surfaces-feature-regression.mjs",
           "result": "通过",
           "scope": "唯一受影响的现有前端专项；显式权威未读数为0时不再被本地通知列表覆盖。"
+        },
+        {
+          "command": "npm run typecheck:frontend",
+          "result": "通过",
+          "scope": "TS失败提示修改类型检查"
+        },
+        {
+          "command": "npm run build:frontend",
+          "result": "通过",
+          "scope": "构建personalized-ai-task.mts"
+        },
+        {
+          "command": "node scripts/prepare-generated-runtime.mjs",
+          "result": "通过",
+          "scope": "只整理本地忽略生成物的运行模块路径"
+        },
+        {
+          "command": "node scripts/personalized-ai-task-ui-regression.mjs（生成物整理前）",
+          "result": "未进入断言；生成模块仍引用编译前路径",
+          "scope": "随后运行既有生成物整理步骤解决"
+        },
+        {
+          "command": "node scripts/personalized-ai-task-ui-regression.mjs（生成物整理后）",
+          "result": "通过",
+          "scope": "失败任务安全文案、任务轮询、结果恢复、会话隔离和模态竞态"
         }
       ],
       "test_adjustments": [
@@ -1236,18 +1262,19 @@
     "candidate_tree_at_revision33": "782451bf72f0e7ad941414d085957b8b9fefdb72",
     "feature_candidate": {
       "branch": "feat/v0.5.13-save-sync-validation",
-      "commit": "5c43ab22c09d03eacb057b30e25754e795a33d14",
-      "tree": "a17c98c668aaa1aedf953a3baeca36ed5992860b",
-      "integration": "尚未合入develop；已包含未读零值修复3cf9c3b及rev49控制面状态，继续本地feat候选。",
+      "commit": "77a8793eaea9b6474b74afe334bced4caae5fa99",
+      "tree": "3ecae2632e062ce3203c10a0b39e089a43f8ab15",
+      "integration": "尚未合入develop；包含未读零值修复及失败task.error界面脱敏两个已验证本地切片。",
       "next_scope": {
-        "requirement_id": "recvxlYzZSlc2p",
-        "branch": "feat/v0.5.13-save-sync-validation",
-        "baseline": "5c43ab22c09d03eacb057b30e25754e795a33d14",
-        "write_set": [
-          "public/frontend/shared/personalized-ai-task.mts（失败状态不展示task.error原文，改为固定安全中文提示，引导查看通知中的脱敏日志）",
-          "scripts/personalized-ai-task-ui-regression.mjs（只更新现有失败场景断言，确保安全提示且不含原始错误文本）"
+        "requirement_id": "reczz28K9ceTZDnd",
+        "related_ids": [
+          "reczz28K9ceTa0pY",
+          "reczz28K9ceTaiW4"
         ],
-        "status": "已冻结；主开发实现后只运行影响矩阵中必要的TS检查、构建和一个现有专项。"
+        "branch": "feat/v0.5.13-save-sync-validation",
+        "baseline": "77a8793eaea9b6474b74afe334bced4caae5fa99",
+        "write_set": [],
+        "status": "主控只读核对日期语义和occurrence mode草稿修复；确认新缺口后才锁写集。"
       }
     }
   },
