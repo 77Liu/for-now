@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 49,
-  "updated_at": "2026-10-12T15:30:00+08:00",
+  "revision": 50,
+  "updated_at": "2026-10-12T15:34:00+08:00",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -41,7 +41,7 @@
     ],
     "canonical_worktree": "/Users/bytedance/Documents/Codex/个人成长追踪",
     "canonical_worktree_branch": "feat/v0.5.13-save-sync-validation",
-    "canonical_worktree_head": "3cf9c3b7e4f223a191a2f65cef547bd8ebeecfe5（根目录唯一工作树；含本地未读零修复；未部署）",
+    "canonical_worktree_head": "5c43ab22c09d03eacb057b30e25754e795a33d14（根目录唯一工作树；控制面rev49状态点；工作继续于feat分支）",
     "archived_worktree": {
       "path": "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/develop",
       "branch": "feat/v0.5.13.1-stability",
@@ -85,7 +85,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主控只读核对需求recvxlYzZSlc2p（错误日志通过通知复制）的已实现入口与验收边界；确认缺口和最小现有写集后才锁下一切片。不要再跑已通过的未读零专项；不推送、发布、部署或写生产。",
+  "next_action": "主控已确认recvxlYzZSlc2p链路的页面泄漏：personalized-ai-task.mts把task.error原文拼入失败状态。主开发仅改为固定安全中文提示，引导查看通知中的脱敏错误日志；同步修改现有同一失败场景断言，不新增测试。之后按TS影响矩阵运行最小必要验证。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -97,7 +97,7 @@
   ],
   "last_check": {
     "remote_refs": "2026-10-11T12:07:35Z 已通过 git ls-remote --heads/tags 只读核验；无远程写入",
-    "worktrees": "2026-10-12T15:30:00+08:00：仅根目录一个工作树，当前feat/v0.5.13-save-sync-validation@3cf9c3b7；develop仍停在c537618；无第二工作树。",
+    "worktrees": "2026-10-12T15:34:00+08:00：仅根目录一个工作树，feat/v0.5.13-save-sync-validation；develop@c5376182bc5866730512af858659e585692e6361；无第二工作树。",
     "platform_protection": "Gitee UI只读核验：保护分支规则0条、保护标签不可用、推送限制未启用",
     "remote_write": "本轮未执行",
     "release_rollback_rehearsal": "本地隔离模拟全部通过；无远端命令",
@@ -801,6 +801,11 @@
         "id": "S2c",
         "name": "权威未读零值一致性",
         "output": "修复两条现有前端投影对显式零值的错误fallback，并更新一个既有断言；不触及进入即读范围或服务端契约。"
+      },
+      {
+        "id": "S2d",
+        "name": "失败信息界面脱敏",
+        "output": "失败任务页面不渲染task.error原文，只提示查看通知内脱敏日志并重试；复用原有失败状态专项。"
       }
     ],
     "allowed_write_set": [
@@ -821,7 +826,9 @@
       "reports/requirement-coordination-current.json（仅主控维护本唯一控制面状态与锁；其他角色禁止写）",
       "public/frontend/app/runtime/data-runtime.mjs（仅权威notificationUnread显式0不再回退到本地通知列表；字段缺失时保留既有fallback）",
       "public/frontend/features/mine-shell/presentation.mjs（同一权威未读数零语义；只修改现有计数投影）",
-      "scripts/frontend-basic-surfaces-feature-regression.mjs（仅将现有显式零断言改为0，不新增测试文件或重复场景）"
+      "scripts/frontend-basic-surfaces-feature-regression.mjs（仅将现有显式零断言改为0，不新增测试文件或重复场景）",
+      "public/frontend/shared/personalized-ai-task.mts（仅失败状态改为固定安全中文提示，不显示task.error原文）",
+      "scripts/personalized-ai-task-ui-regression.mjs（仅将原有失败场景断言改为安全提示且不包含原始错误文本；不新增测试）"
     ],
     "forbidden_write_set": [
       "需求池",
@@ -844,7 +851,7 @@
       "只有截图或没有复现的未读数问题不据此宣称修复；先保留PARTIAL。"
     ],
     "external_actions": "无远端写、发布、部署、生产写或手工付费调用；不恢复已暂停自动化。",
-    "current_status": "BUILDING_LOCAL_ONLY；监控TS闭环已提交b27e2c1：新监控源码为.mts，生成MJS仅在.gitignore保护的.build/typescript/monitor。发生时间mode草稿恢复候选52cfa6e已集成develop，frontend-shared及定向smoke通过；test:ui在scripts/ui-regression.mjs:2658提前失败，目标浏览器场景未到达，保持PARTIAL。未读零值修复由主控核对后提交3cf9c3b，唯一受影响frontend-basic专项通过；当前feat候选tree 757f5de6ab7ecf62f147305a615eba735d701c45，尚未合入develop。唯一根工作树，存在原有未跟踪需求证据目录，不处理。仅本地，不远程写/生产写/付费。",
+    "current_status": "BUILDING_LOCAL_ONLY；监控TS闭环已提交b27e2c1，源为.mts、生成物仅在被忽略的.build。未读零值修复已提交3cf9c3b并通过唯一frontend-basic专项。继续只读审查错误日志需求时，发现personalized-ai-task.mts第76行把task.error原文拼入用户可见失败状态；通知卡片另有通用安全文案，复制JSON仅含脱敏通知/task ID、kind、status、errorCode、时间。当前rev锁定前端TS提示与一个已有失败断言，不改服务端错误契约或通知API。无远程/生产/付费操作。",
     "version_requirement_count": {
       "minimum": 3,
       "maximum": 10,
@@ -941,6 +948,17 @@
         ],
         "decision": "未读数零值一致性修复按最小范围完成；不改进入即读标记逻辑、服务端计数或其他通知行为。",
         "next": "候选保持在feat分支；由主控在本轮集成阶段统筹接入develop。"
+      },
+      {
+        "requirement_id": "recvxlYzZSlc2p",
+        "status": "源码核对确认AI任务失败状态直接渲染task.error原文；通知已有通用文案与脱敏诊断复制，界面泄漏待修",
+        "evidence": [
+          "public/frontend/shared/personalized-ai-task.mts:76将task.error拼入失败提示",
+          "public/frontend/features/notifications/presentation.mjs:71对失败任务使用通用文案",
+          "public/frontend/features/notifications/controller.mjs:246-253复制仅含脱敏ID、类型、状态、错误码和时间；现有专项断言检查不含provider原文"
+        ],
+        "decision": "固定失败页面提示为“任务失败，请查看通知中的脱敏错误日志后重试”；不显示原始错误，不改API/服务端数据。",
+        "next": "主开发只改TS提示和同一既有失败断言；按影响矩阵完成类型检查、构建及一个必要的既有专项。"
       }
     ],
     "verification": {
@@ -1218,15 +1236,18 @@
     "candidate_tree_at_revision33": "782451bf72f0e7ad941414d085957b8b9fefdb72",
     "feature_candidate": {
       "branch": "feat/v0.5.13-save-sync-validation",
-      "commit": "3cf9c3b7e4f223a191a2f65cef547bd8ebeecfe5",
-      "tree": "757f5de6ab7ecf62f147305a615eba735d701c45",
-      "integration": "尚未合入develop；本轮feat候选保留，当前包含已审查并通过未读零值专项的本地修复。",
+      "commit": "5c43ab22c09d03eacb057b30e25754e795a33d14",
+      "tree": "a17c98c668aaa1aedf953a3baeca36ed5992860b",
+      "integration": "尚未合入develop；已包含未读零值修复3cf9c3b及rev49控制面状态，继续本地feat候选。",
       "next_scope": {
         "requirement_id": "recvxlYzZSlc2p",
         "branch": "feat/v0.5.13-save-sync-validation",
-        "baseline": "3cf9c3b7e4f223a191a2f65cef547bd8ebeecfe5",
-        "write_set": [],
-        "status": "主控只读核对错误日志通知链路；确认源码缺口后再冻结写集。"
+        "baseline": "5c43ab22c09d03eacb057b30e25754e795a33d14",
+        "write_set": [
+          "public/frontend/shared/personalized-ai-task.mts（失败状态不展示task.error原文，改为固定安全中文提示，引导查看通知中的脱敏日志）",
+          "scripts/personalized-ai-task-ui-regression.mjs（只更新现有失败场景断言，确保安全提示且不含原始错误文本）"
+        ],
+        "status": "已冻结；主开发实现后只运行影响矩阵中必要的TS检查、构建和一个现有专项。"
       }
     }
   },
