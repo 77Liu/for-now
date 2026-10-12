@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "revision": 75,
-  "updated_at": "2026-10-12T11:36:12.025Z",
+  "revision": 76,
+  "updated_at": "2026-10-12T11:37:35.978Z",
   "coordinator": {
     "role": "主控",
     "write_authority": "唯一协调者",
@@ -13,8 +13,8 @@
     "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
   },
   "work_mode": "运行；Owner授权累计v0.5.13补接后push/tag/Release/上线。主控独占控制面，主开发独占发布执行；不扩大到无关开发、数据删除或迁移。",
-  "current_phase": "Owner确认授权文件换行修复完成；主开发一次未暴露key验证，成功后私密补签名并继续当前发布attempt。",
-  "state": "RELEASE_ACCESS_VERIFYING",
+  "current_phase": "主开发使用未暴露新key执行一次SSH只读true认证退出0，访问恢复已确认；继续私密签名目标匹配、原子配置及发布准备。",
+  "state": "RELEASE_PREFLIGHT",
   "git": {
     "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
     "develop": "refs/heads/develop",
@@ -90,7 +90,7 @@
     "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
     "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
   ],
-  "next_action": "主开发执行一次新key认证及签名配置核验，成功继续累计v0.5.13发布；失败仅阻断对应动作回报，不轮换/盲重试。",
+  "next_action": "主开发不输出值核验机器人Webhook匹配，原子补生产Secret及通知开关并健康验证，随后发布累计候选。",
   "evidence": [
     "SOP/release-and-observation.md",
     "knowledge/development-lifecycle.md",
@@ -436,7 +436,7 @@
     },
     {
       "id": "v0.5.13",
-      "state": "RELEASE_ACCESS_VERIFYING",
+      "state": "RELEASE_PREFLIGHT",
       "scope": "保存状态/草稿与失败恢复；发生时间/补录意图；通知列表未读事实、脱敏诊断与恢复操作。仅实现六条锁定需求的未交付行为，不做全站状态或通知平台重构。",
       "requirement_ids": [
         "recvxm0eDZdJED",
@@ -1262,6 +1262,12 @@
       "at": "2026-10-12T11:36:12.025Z",
       "reason": "Owner确认完成手工换行修复，恢复验证及已授权发布执行已派发。",
       "previous_snapshot": "2ff6ef0:reports/requirement-coordination-current.json@revision74"
+    },
+    {
+      "revision": 76,
+      "at": "2026-10-12T11:37:35.978Z",
+      "reason": "新key单次实际认证成功，解除SSH阻碍；通知生产配置仍待核验，不提前宣称上线。",
+      "previous_snapshot": "0458f85:reports/requirement-coordination-current.json@revision75"
     }
   ],
   "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
@@ -1879,7 +1885,7 @@
   "release_attempt": {
     "id": "v0513-production-20261012-01",
     "version": "v0.5.13",
-    "state": "VERIFYING_RECOVERY",
+    "state": "PREFLIGHT_ACCESS_RESTORED",
     "candidate_sha": "c524efffb493b8bc7a2a380b7c6db38a9b76a658",
     "candidate_tree": "e896c69159e836a53f0b1ca4d6ef1ee4d26c48e7",
     "authorization_source": "owner_decisions.current_release_authorization",
@@ -1960,6 +1966,14 @@
         "at": "2026-10-12T11:36:12.025Z",
         "source": "Owner本对话回复完成",
         "verification": "尚待主开发一次新key实际认证，不据人工作业确认冒称连接已恢复"
+      },
+      "new_key_verification": {
+        "at": "2026-10-12T11:37:35.978Z",
+        "result": "PASS",
+        "operation": "单次SSH只读true命令",
+        "exit_code": 0,
+        "source": "主开发当前turn 01a12fe6-1975-70d3-9d40-780efa5fdf56的实际执行回执/状态",
+        "note": "未用暴露旧key作为部署凭据；旧key撤销仍需替代入口确认后的最小独立处理。"
       }
     },
     "notification_recovery": {
