@@ -473,7 +473,6 @@ function sanitizeMapping<T>(
       const token = context.sourceKeys.get(text)!;
       return referenceField(field) ? token : withQuoteRelations(text, token);
     }
-    if (field === "id" && context.singletonIds.has(text)) return text;
     if (field === "objectKey") {
       if (context.objectKeys.has(text)) return context.objectKeys.get(text)!;
       const mapKey = `objectKey\0${text}`;
@@ -526,7 +525,21 @@ function sanitizeMapping<T>(
     if (typeof item === "string") return transform(item, field, objectPath);
     if (Array.isArray(item)) return item.map(value => visit(value, field, [...objectPath, "[*]"]));
     if (item && typeof item === "object") {
-      return Object.fromEntries(Object.entries(item).map(([name, child]) => [name, visit(child, name, [...objectPath, name])]));
+      const row = item as JsonRecord;
+      const singletonObject = objectPath.length === 2 && objectPath[0] === "objects" && objectPath[1] === "[*]"
+        && row.id === row.field && row.collection === row.field
+        && typeof row.id === "string" && context.singletonIds.has(row.id)
+        && row.objectKey === JSON.stringify([row.id]);
+      const singletonRelation = objectPath.length === 2 && objectPath[0] === "relations" && objectPath[1] === "[*]"
+        && row.resolution === "live" && typeof row.targetId === "string"
+        && context.singletonIds.has(row.targetId) && row.targetCollection === row.targetId
+        && row.targetKey === JSON.stringify([row.targetId])
+        && context.objectKeys.has(String(row.targetKey));
+      // 仅保留已登记单例对象及其真实解析关系的结构身份，同名普通实体仍脱敏。
+      return Object.fromEntries(Object.entries(row).map(([name, child]) => [name,
+        (name === "id" && singletonObject) || (name === "targetId" && singletonRelation)
+          ? child : visit(child, name, [...objectPath, name])
+      ]));
     }
     return item;
   };
@@ -573,7 +586,17 @@ function preserveTechnicalMetadata(
     }
     const source = sourceRow.payload as JsonRecord;
     const target = targetRow.payload as JsonRecord;
-    if (sourceRow.kind === "perceptionEvent") {
+    if (sourceRow.kind === "userClaim" && Array.isArray(source.evidence) && Array.isArray(target.evidence)) {
+      // 此判别决定真实 mapper 的单例证据关系，不是任意同名扩展字段。
+      source.evidence.forEach((item, evidenceIndex) => {
+        if (item && typeof item === "object"
+          && (item as JsonRecord).sourceType === "onboardingV2Answer") {
+          const targetEvidence = (target.evidence as JsonRecord[])[evidenceIndex];
+          if (!targetEvidence) fail("Snapshot user-claim evidence shape changed during redaction");
+          targetEvidence.sourceType = "onboardingV2Answer";
+        }
+      });
+    } else if (sourceRow.kind === "perceptionEvent") {
       preserveDigest(source, target, "contentSha256");
     } else if (sourceRow.kind === "evidenceSource") {
       preserveDigest(source, target, "contentSha256");
@@ -2803,6 +2826,50 @@ async function selfTest(root: string) {
   counts.media = 0;
   counts.dispatch = 0;
   if (Object.values(counts).some(value => value !== 0)) fail("Inspector construction performed an external or repository effect");
+  // 真实 mapper 会把问答任务和证据关系指向结构单例；普通同名实体不是单例。
+  const singletonStore: JsonRecord = {
+    onboardingV2: { session: { id: "onboarding-v2", revision: 1 } },
+    thoughts: [{ id: "onboardingV2", type: "question", content: "onboardingV2", version: 1 }],
+    aiTasks: [{ id: "singleton-task", kind: "onboardingClaimExtraction",
+      resourceType: "onboardingV2", targetId: "onboarding-v2", status: "failed" },
+    { id: "ordinary-task", kind: "thoughtAnswer", resourceType: "thought",
+      targetId: "onboardingV2", status: "failed" }],
+    userClaims: [{ id: "singleton-claim", evidence: [{ sourceType: "onboardingV2Answer" }],
+      extension: { sourceType: "onboardingV2Answer", targetId: "onboardingV2" } }]
+  };
+  const singletonMapping = persistence.mapStoreObjects("synthetic-singleton-account", singletonStore);
+  const singletonContext = createRedactionContext(singletonMapping, hmacKey, content.markdownText);
+  const sanitizedSingleton = sanitizeMapping(singletonMapping, hmacKey, singletonContext);
+  preserveTechnicalMetadata(singletonMapping, sanitizedSingleton, singletonContext, hmacKey,
+    compressionApi.estimateHistoricalUserSupplementOutputTokens);
+  const singletonRebuilt = persistence.rebuildStoreObjects(sanitizedSingleton);
+  const singletonAccount = String(sanitizedSingleton.fields[0].accountId);
+  assertMappingRoundTrip(sanitizedSingleton,
+    persistence.mapStoreObjects(singletonAccount, singletonRebuilt), persistence.canonicalJson);
+  const singletonRelations = sanitizedSingleton.relations.filter(row => row.targetCollection === "onboardingV2");
+  if (singletonRelations.length !== 2
+    || !singletonRelations.some(row => row.relation === "target")
+    || !singletonRelations.some(row => row.relation === "evidence:0")
+    || singletonRelations.some(row => row.targetId !== "onboardingV2"
+      || row.targetKey !== JSON.stringify(["onboardingV2"]))) {
+    fail("Resolved singleton task and evidence relations lost structural target identity");
+  }
+  const ordinaryRelation = sanitizedSingleton.relations.find(row => row.targetCollection === "thoughts");
+  const ordinaryThought = (singletonRebuilt.thoughts as JsonRecord[])[0];
+  if (!ordinaryRelation || ordinaryRelation.targetId === "onboardingV2"
+    || ordinaryThought.id === "onboardingV2" || ordinaryThought.content === "onboardingV2") {
+    fail("Same-name ordinary entity, relation or free text escaped redaction");
+  }
+  const claimExtension = ((singletonRebuilt.userClaims as JsonRecord[])[0].extension as JsonRecord);
+  if (claimExtension.sourceType === "onboardingV2Answer" || claimExtension.targetId === "onboardingV2") {
+    fail("Same-name user extension escaped scoped technical metadata redaction");
+  }
+  const falseSingletonRelation = { relations: [{ relation: "target", resolution: "historical",
+    targetCollection: "onboardingV2", targetId: "onboardingV2", targetKey: null }] };
+  const sanitizedHistorical = sanitizeMapping(falseSingletonRelation, hmacKey, singletonContext);
+  if (sanitizedHistorical.relations[0].targetId === "onboardingV2") {
+    fail("Unresolved same-name relation incorrectly retained singleton identity");
+  }
   process.stdout.write("Startup gate synthetic checks passed: construction is inert, task classifications survive redaction, and media/dispatch effects are blocked.\n");
 }
 
