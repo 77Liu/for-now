@@ -1,4 +1,4 @@
-import { createAiGenerator } from "../src/modules/ai/generation.mjs";
+import { createAiGenerator } from "../src/modules/ai/index.mjs";
 import { createDeepSeekTransport } from "../src/infrastructure/ai-providers/index.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";

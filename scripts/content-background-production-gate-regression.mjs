@@ -1,9 +1,8 @@
 import "./prompt-test-setup.mjs";
 import { normalizeOnboardingV2 } from "../src/modules/onboarding/index.mjs";
-import { prepareUserModelExtraction } from "../src/app/user-model.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { createContentBackground } from "../src/app/index.mjs";
+import { createContentBackground, prepareUserModelExtraction } from "../src/app/index.mjs";
 import { createThoughtTaskTarget } from "../src/modules/thoughts/index.mjs";
 
 const hash = value => crypto.createHash("sha256").update(String(value)).digest("hex");

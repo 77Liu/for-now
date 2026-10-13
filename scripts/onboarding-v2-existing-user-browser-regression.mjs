@@ -1,5 +1,5 @@
 import "./prompt-test-setup.mjs";
-import { userModelCoreReadiness } from "../src/app/user-model.mjs";
+import { userModelCoreReadiness } from "../src/app/index.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
