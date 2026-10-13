@@ -1,3 +1,5 @@
+import "./prompt-test-setup.mjs";
+import { userModelCoreReadiness } from "../src/app/user-model.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
@@ -105,7 +107,11 @@ const port = await freePort();
 const providerPort = await freePort();
 let providerCalls = 0;
 let providerError = "";
+let releaseFallback;
+const fallbackBarrier = new Promise(resolve => { releaseFallback = resolve; });
+let answerProviderCalls = 0;
 const providerMessageSequence = [];
+const providerThinking = [];
 const provider = http.createServer(async (request, response) => {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
@@ -114,6 +120,14 @@ const provider = http.createServer(async (request, response) => {
     assert.equal(request.method, "POST");
     assert.equal(request.url, "/chat/completions");
     assert.ok(Array.isArray(input.messages), "provider request must include a messages array");
+    if (!input.messages.some(message => String(message.content).includes("<permitted_sources>"))) {
+      answerProviderCalls += 1;
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ model: "synthetic-local-model",
+        choices: [{ finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({ answer: "这是等待整理完成后的合成回答。", citations: [] }) } }],
+        usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 } }));
+      return;
+    }
     providerMessageSequence.push(structuredClone(input.messages));
     const serializedMessages = JSON.stringify(input.messages);
     for (const marker of [MARKERS.a, MARKERS.b, OLD_PROFILE_MARKER, OLD_UNDERSTANDING_MARKER]) {
@@ -132,6 +146,7 @@ const provider = http.createServer(async (request, response) => {
     );
     const permittedAnswer = sources.find(source => source.id === "currentContext");
     providerCalls += 1;
+    providerThinking.push(input.thinking.type);
     const content = JSON.stringify({
       claims: [{
         domain: "context",
@@ -142,11 +157,14 @@ const provider = http.createServer(async (request, response) => {
       }],
       unknowns: []
     });
+    if (providerCalls === 2) await fallbackBarrier;
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify({
       id: "synthetic-local-provider-response",
       model: "synthetic-local-model",
-      choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content } }],
+      choices: [{ index: 0, finish_reason: providerCalls === 1 ? "length" : "stop",
+        message: { role: "assistant", content: providerCalls === 1 ? "" : content,
+          reasoning_content: providerCalls === 1 ? "思".repeat(6809) : "" } }],
       usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 }
     }));
   } catch (error) {
@@ -184,6 +202,7 @@ child.stderr.on("data", chunk => { appErrors += chunk.toString("utf8"); });
 let chrome;
 let cdp;
 let chromeProfileDir = "";
+let checksPassed = false;
 
 try {
   await waitForServer(base, child);
@@ -282,6 +301,14 @@ try {
     throw new Error(`等待浏览器状态超时：${label}; ${await evaluate(`JSON.stringify({url:location.href,authHidden:document.querySelector('#auth-gate')?.hidden,authStatus:document.querySelector('#auth-status')?.textContent,activeView:document.querySelector('.view.active')?.id,panelHidden:document.querySelector('#onboarding-workspace')?.hidden,step:document.querySelector('#onboarding-v2-content')?.textContent.slice(0,180)})`)}`);
   };
   const click = async selector => {
+    await waitUntil(`(() => {
+      const element=document.querySelector(${JSON.stringify(selector)});
+      if(!element||element.hidden||element.disabled)return false;
+      element.scrollIntoView({block:'center',behavior:'instant'});
+      const rect=element.getBoundingClientRect();
+      const hit=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);
+      return Boolean(hit&&(hit===element||element.contains(hit)));
+    })()`, `等待路由切换后可点击：${selector}`);
     const point = await evaluate(`(() => {
       const element=document.querySelector(${JSON.stringify(selector)});
       if(!element||element.hidden||element.disabled)throw new Error('不可点击：'+${JSON.stringify(selector)});
@@ -425,12 +452,31 @@ try {
   const extractionStart = cdp.events.length;
   await click('[data-onboarding-action="extract"]');
   const extractionResponse = await waitForResponse("/api/v1/onboarding-v2/extractions", extractionStart, "POST");
-  assert.equal(extractionResponse.params.response.status, 202);
+  assert.equal(extractionResponse.params.response.status, 200, "提交事务已创建整理，此请求复用同源任务");
   const extractionResponseBody = await cdp.send("Network.getResponseBody", { requestId: extractionResponse.params.requestId });
   const extractionTaskId = JSON.parse(extractionResponseBody.body).data.id;
   assert.ok(extractionTaskId);
-  await waitUntil(`document.querySelector('[data-claim-id]')!==null`, "本地 mock 生成候选 claim", 300);
-  assert.equal(providerCalls, 1, "提取必须经过单次 loopback provider mock");
+  await waitUntil(`document.querySelector('#onboarding-workspace').hidden&&document.querySelector('#view-today').classList.contains('active')`, "提交后直接进入今日", 300);
+  const question = await jsonRequest(`${base}/app/api/thoughts`, {
+    cookie: accountA.cookie, method: "POST",
+    body: { type: "question", content: "如何安排今天的合成任务？", occurredAt: new Date().toISOString() }
+  });
+  assert.equal(question.response.status, 201, JSON.stringify(question.value));
+  const answerQueued = await jsonRequest(`${base}/app/api/ai-tasks`, {
+    cookie: accountA.cookie, method: "POST",
+    body: { kind: "thoughtAnswer", targetId: question.value.id, inputVersion: question.value.version,
+      clientRequestId: "synthetic-wait-core-answer" }
+  });
+  assert.equal(answerQueued.response.status, 202, JSON.stringify(answerQueued.value));
+  assert.equal(answerQueued.value.status, "waiting_for_user_model");
+  assert.equal(answerProviderCalls, 0);
+  releaseFallback();
+  await click('.nav-button[data-view="mine"]');
+  await click('[data-view="personal-context"]');
+  await click("#onboarding-v2-reopen");
+  await waitUntil(`!document.querySelector('#onboarding-workspace').hidden&&document.querySelector('[data-claim-id]')!==null`, "回看后台整理的候选", 300);
+  assert.equal(providerCalls, 2, "空答后仅允许一次关闭思考降级");
+  assert.deepEqual(providerThinking, ["enabled", "disabled"]);
   const pendingModelA = await jsonRequest(`${base}/app/api/v1/user-model`, { cookie: accountA.cookie });
   const pendingClaim = pendingModelA.value.data.claims.find(claim => claim.statement === CLAIM_STATEMENT);
   assert.ok(pendingClaim, "提取候选必须持久化后显示在确认 UI");
@@ -456,10 +502,23 @@ try {
   assert.equal(completedFinalSessionA.value.data.session.answers.recentObstacles.structuredValue[0].text, "最近需要处理隔离测试中的合成问题。");
   assert.equal(completedFinalSessionA.value.data.session.answers.dailyRhythm.rawText, "工作日安排相对紧凑。");
   assert.equal(completedFinalSessionA.value.data.session.collaboration.additionalBoundary, "请先说明关键判断，再给一个可执行步骤。");
+  await waitUntil(`document.querySelector('#onboarding-workspace').hidden&&document.querySelector('#view-today').classList.contains('active')`, "确认后仍直接回今日");
+  const readyStoreA = JSON.parse(await fs.readFile(storeAPath, "utf8"));
+  assert.equal(userModelCoreReadiness(readyStoreA).ready, true, "完成状态保存不能使抽取失效");
   const extractionTask = await jsonRequest(`${base}/app/api/v1/onboarding-v2/extractions/${extractionTaskId}`, { cookie: accountA.cookie });
   assert.equal(extractionTask.value.data.task.status, "succeeded", JSON.stringify(extractionTask.value.data));
-  assert.equal(providerCalls, 1);
-  assert.equal(providerMessageSequence.length, 1);
+  assert.equal(providerCalls, 2);
+  assert.equal(providerMessageSequence.length, 2);
+  let answered;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    answered = await jsonRequest(`${base}/app/api/ai-tasks/${answerQueued.value.id}/result`, { cookie: accountA.cookie });
+    if (answered.response.status === 200) break;
+    await sleep(50);
+  }
+  assert.equal(answered.response.status, 200, JSON.stringify(answered.value));
+  assert.equal(answered.value.result.sourceTaskId, answerQueued.value.id);
+  assert.equal(answered.value.result.relatedTo, question.value.id);
+  assert.equal(answerProviderCalls, 1);
   const fullProviderMessages = JSON.stringify(providerMessageSequence);
   for (const marker of [MARKERS.a, MARKERS.b, OLD_PROFILE_MARKER, OLD_UNDERSTANDING_MARKER]) {
     assert.ok(!fullProviderMessages.includes(marker), `captured provider sequence must exclude ${marker}`);
@@ -515,12 +574,16 @@ try {
 
   const summary = {
     status: "passed",
+    appUrl,
+    isolation: { dataDir, providerOrigin: `http://127.0.0.1:${providerPort}`, upstream: "disabled" },
     scope: "synthetic local HTTP + real Chrome UI + loopback-only provider mock; no production data/provider",
     checks: [
       "existing account login with pre-seeded history",
       "explicit supplement entry has no server mutation before answers",
       "unsaved answer stays client-side; PATCH 200 confirms save before refresh recovery",
       "saved answer source is linked to onboardingV2/currentContext",
+      "提交持久化后立即进入今日，在途抽取期间回答等待；整理结束自动恢复且结果绑定原问题",
+      "HTTP200 length且content为空、reasoning6809字符时仅关闭thinking降级一次",
       "explicit extraction submit reaches the loopback mock with only the five synthetic onboarding answers",
       "provider messages match the five permitted sourceId/text pairs and exclude preseeded history/profile markers",
       "extracted claim remains candidate until explicit UI confirmation, then persists active with source task and answer span",
@@ -532,12 +595,21 @@ try {
   };
   await fs.writeFile(path.join(artifactDir, "onboarding-v2-existing-user-browser.json"), `${JSON.stringify(summary, null, 2)}\n`);
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+  checksPassed = true;
 } catch (error) {
   process.stderr.write(`${error.stack || error}\n`);
   if (providerError) process.stderr.write(`loopback provider error: ${providerError}\n`);
   if (appErrors) process.stderr.write(`isolated-app stderr tail: ${appErrors.slice(-4000)}\n`);
   throw error;
 } finally {
+  if (checksPassed && process.env.E2E_KEEP_SERVER === "1") {
+    process.stdout.write(`本机复核服务保留：${appUrl}；合成账户 synthetic_a / ${PASSWORD}；Ctrl-C 清理。\n`);
+    await new Promise(resolve => {
+      process.once("SIGINT", resolve);
+      process.once("SIGTERM", resolve);
+    });
+  }
+  releaseFallback();
   cdp?.socket.close();
   if (provider.listening) await new Promise(resolve => provider.close(resolve));
   if (chrome) {

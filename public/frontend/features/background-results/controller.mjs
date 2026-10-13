@@ -1,3 +1,4 @@
+import { createResultRecovery, isUnavailableResult } from "../../../generated/features/background-results/recovery.mjs";
 import {
   backgroundResultFromSnapshot,
   backgroundTaskTarget,
@@ -28,19 +29,19 @@ export function createBackgroundResultController({
   }
   let epoch = 0;
   const applied = new Set();
-  const failed = new Set();
+  const recovery = createResultRecovery();
   const inFlight = new Set();
 
   async function applyTask(task, generation) {
     const target = backgroundTaskTarget(task);
     if (!target) return false;
     const fingerprint = `${task.id}:${task.resultId}`;
-    if (applied.has(fingerprint) || inFlight.has(fingerprint)) return false;
+    if (applied.has(fingerprint) || inFlight.has(fingerprint) || !recovery.canAttempt(fingerprint)) return false;
     inFlight.add(fingerprint);
     try {
       const result = await loadResult(task, target);
       if (generation !== epoch) return false;
-      if (result == null) throw new Error("Background task result is not available");
+      if (result == null) throw Object.assign(new Error("后台结果当前不可用"), { status: 410 });
       const viewState = captureViewState(target);
       let resultApplied;
       try {
@@ -48,18 +49,20 @@ export function createBackgroundResultController({
       } finally {
         if (generation === epoch) restoreViewState(viewState, target);
       }
-      if (generation !== epoch || resultApplied === false) return false;
+      if (generation !== epoch) return false;
+      if (resultApplied === false) {
+        throw Object.assign(new Error("目标尚未载入，请在通知中打开后重试"), { code: "RESULT_TARGET_NOT_LOADED" });
+      }
       applied.add(fingerprint);
-      failed.delete(fingerprint);
+      recovery.forget(fingerprint);
       return true;
     } catch (error) {
       if (generation === epoch) {
-        failed.add(fingerprint);
-        onError(error, task, target);
+        if (recovery.fail(fingerprint, error)) onError(error, task, target);
       }
       return false;
     } finally {
-      inFlight.delete(fingerprint);
+      if (generation === epoch) inFlight.delete(fingerprint);
     }
   }
 
@@ -78,15 +81,13 @@ export function createBackgroundResultController({
       for (const fingerprint of applied) {
         if (fingerprint.startsWith(prefix)) applied.delete(fingerprint);
       }
-      for (const fingerprint of failed) {
-        if (fingerprint.startsWith(prefix)) failed.delete(fingerprint);
-      }
+      recovery.forgetTask(taskId);
     },
-    needsRetry: () => failed.size > 0,
+    needsRetry: () => recovery.needsRetry(),
     reset() {
       epoch += 1;
       applied.clear();
-      failed.clear();
+      recovery.reset();
       inFlight.clear();
     }
   });
@@ -195,9 +196,11 @@ export function createBackgroundResultsFeatureController({
       view.scheduleAnnotationLayout();
     },
     onError: (error, task) => view.showToast(
-      task?.kind === "thoughtAnswer"
-        ? "思绪原文已保存，后台回答结果暂未同步；可在通知中再次查看重试。"
-        : `后台结果同步失败：${error.message}`,
+      isUnavailableResult(error)
+        ? "这条后台结果已不可用，可回到原记录查看或重新回答。"
+        : task?.kind === "thoughtAnswer"
+          ? "后台回答暂未同步，可在通知中打开后重试。"
+          : `后台结果同步失败：${error.message}`,
       "error"
     )
   });
@@ -234,6 +237,7 @@ export function createBackgroundResultsFeatureController({
     );
     if (!current(operation)) return false;
     if (task?.kind === "thoughtAnswer" && task.status === "succeeded" && task.resultId) {
+      results.forget(task.id);
       await results.sync([task]);
       if (!current(operation)) return false;
     }

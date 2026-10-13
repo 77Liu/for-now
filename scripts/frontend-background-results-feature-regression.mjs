@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   backgroundNavigationTarget,
   backgroundTargetSelector,
+  createBackgroundResultController,
   createBackgroundResultsFeatureController
 } from "../public/frontend/features/background-results/index.mjs";
 
@@ -241,7 +242,7 @@ failedResult.reject(new Error("temporary result read failure"));
 assert.equal(await failedSync, false);
 assert.equal(controller.needsRetry(), true);
 assert.deepEqual(toasts.at(-1), [
-  "思绪原文已保存，后台回答结果暂未同步；可在通知中再次查看重试。",
+  "后台回答暂未同步，可在通知中打开后重试。",
   "error"
 ]);
 results.set(accountBTask.id, {
@@ -330,5 +331,40 @@ assert.equal(await latestOpen, true);
 targetSwitchGate.resolve();
 assert.equal(await staleOpen, false);
 assert.equal(annotationOpens, 1, "a late previous target must not replace the latest location");
+
+
+// 旧结果终态在其它任务持续通知刷新时也只自动请求/提示一次。
+for (const status of [404, 410, 503]) {
+  let calls = 0;
+  let notices = 0;
+  const sync = createBackgroundResultController({
+    loadResult: async () => {
+      calls += 1;
+      throw Object.assign(new Error("synthetic"), { status });
+    },
+    applyResult: () => true,
+    onError: () => { notices += 1; }
+  });
+  for (let round = 0; round < 12; round += 1) await sync.sync([answerTask]);
+  assert.equal(calls, status === 503 ? 3 : 1);
+  assert.equal(notices, 1);
+  assert.equal(sync.needsRetry(), false);
+  sync.forget(answerTask.id);
+  await sync.sync([answerTask]);
+  assert.equal(calls, status === 503 ? 4 : 2, "手动允许一次新恢复周期");
+  sync.reset();
+  await sync.sync([answerTask]);
+  assert.equal(notices, 3, "账户切换清除旧任务恢复状态");
+}
+let partialCalls = 0;
+let targetLoaded = false;
+const partial = createBackgroundResultController({
+  loadResult: async () => { partialCalls += 1; return { id: answerTask.resultId }; },
+  applyResult: () => targetLoaded
+});
+await partial.sync([answerTask]);
+targetLoaded = true;
+assert.equal(await partial.sync([answerTask]), true);
+assert.equal(partialCalls, 2, "局部快照暂缺目标时重新获取当前结果，不推断删除或缓存旧结果");
 
 console.log("Frontend background results checks passed: idempotent merge, account reset, late-result isolation and cross-content location.");

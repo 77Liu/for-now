@@ -350,4 +350,39 @@ assert.equal(
   true
 );
 
+
+// 完成问答与抽取创建同事务可见；事务提交后才允许调度。
+let atomicStore = { onboardingV2: structuredClone(defaultOnboardingV2), aiTasks: [] };
+let committed = false;
+let scheduledAfterCommit = false;
+const atomicService = createOnboardingV2Service({
+  repository: {
+    async read() { return structuredClone(atomicStore); },
+    async executeIdempotent(_request, mutate) {
+      const draft = structuredClone(atomicStore);
+      const result = mutate(draft);
+      assert.equal(draft.onboardingV2.session.status, "completed");
+      assert.equal(draft.aiTasks.length, 1, "completed不可先于整理任务落盘");
+      atomicStore = draft;
+      committed = true;
+      return structuredClone(result);
+    }
+  },
+  onCompleted(store, session) {
+    assert.equal(committed, false);
+    const task = { id: "atomic-extraction", status: "queued", inputVersion: session.session.revision };
+    store.aiTasks.push(task);
+    return { task };
+  },
+  async afterCompleted(result) {
+    assert.equal(committed, true);
+    assert.equal(result.task.id, "atomic-extraction");
+    scheduledAfterCommit = true;
+  }
+});
+await atomicService.patch({ status: "completed", step: "firstAction" }, {
+  expectedVersion: 1, clientRequestId: "atomic-complete"
+});
+assert.equal(scheduledAfterCommit, true);
+
 console.log("Onboarding v2 session contracts passed: stable five-question schema, partial recovery, skip-all completion, answer versions, ETag conflicts, idempotency and account isolation.");

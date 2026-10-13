@@ -368,6 +368,7 @@ function firstActionMarkup() {
       <button class="primary-button" type="button" data-onboarding-action="first-question"><span aria-hidden="true">＋</span><b>提一个真实问题</b><small>从一件正在发生的事开始</small></button>
       <button class="quiet-button" type="button" data-onboarding-action="first-record"><span aria-hidden="true">◇</span><b>留一条记录</b><small>先保存此刻，不要求完整</small></button>
     </div>
+    <button class="quiet-button" type="button" data-onboarding-action="first-today">进入首页（今日）</button>
     <button class="subtle-action" type="button" data-onboarding-action="review">回看与修改原文</button>`;
 }
 
@@ -475,10 +476,18 @@ export function createOnboardingV2Controller({
     }
     render();
   };
+  /** 离开问答视图；仅在保存成功或已完成页面的显式动作后调用。 @since unreleased */
+  const enterFirstAction = action => {
+    showFirstAction = false;
+    forceVisible = false;
+    dismissed = true;
+    render();
+    return onFirstAction(action);
+  };
   const startExtraction = async ({ retry = false } = {}) => {
     extractionError = "";
-    const synced = await saveCurrent("review", { status: "draft", full: true });
-    if (!synced && draft?.pendingSync) {
+    const synced = await saveCurrent("firstAction", { status: "completed", full: true });
+    if (!synced) {
       extractionError = "原文仍在等待同步；同步完成后再整理，或直接按原文开始使用。";
       uiStep = "candidates";
       forceVisible = true;
@@ -486,10 +495,14 @@ export function createOnboardingV2Controller({
     }
     saving = true;
     uiStep = "candidates";
-    forceVisible = true;
     extractionTask = null;
     userModel = null;
-    render();
+    if (retry) {
+      forceVisible = true;
+      render();
+    } else {
+      enterFirstAction("today");
+    }
     try {
       const revision = Number(serverState?.session?.revision) || 0;
       const result = await requestV1("/api/v1/onboarding-v2/extractions", {
@@ -520,6 +533,7 @@ export function createOnboardingV2Controller({
     } catch (error) {
       extractionError = error.message || "原文已保留，可以直接开始使用或稍后重试。";
       status("原文已保存 · 整理未完成");
+      if (!retry) toast("原文已保存，整理暂未启动；可在个人概要中回看并重试。", "error");
     } finally {
       saving = false;
       render();
@@ -957,7 +971,9 @@ export function createOnboardingV2Controller({
     if (action === "retry-extraction") return startExtraction({ retry: true });
     if (action === "cancel-extraction") return cancelExtraction();
     if (action === "complete") {
-      return saveCurrent("firstAction", { status: "completed", full: true, firstAction: true });
+      const synced = await saveCurrent("firstAction", { status: "completed", full: true });
+      if (synced) enterFirstAction("today");
+      return;
     }
     if (action === "review") {
       showFirstAction = false;
@@ -965,12 +981,8 @@ export function createOnboardingV2Controller({
       uiStep = "review";
       return render();
     }
-    if (action === "first-question" || action === "first-record") {
-      showFirstAction = false;
-      forceVisible = false;
-      dismissed = true;
-      render();
-      return onFirstAction(action === "first-question" ? "question" : "record");
+    if (["first-question", "first-record", "first-today"].includes(action)) {
+      return enterFirstAction(action.slice("first-".length));
     }
     if (action === "legacy") {
       legacyMode = true;
@@ -1100,8 +1112,11 @@ export function createOnboardingV2Controller({
       showFirstAction = false;
       legacyMode = false;
       visibleQuestionBaseline = null;
-      draft = onboardingV2DraftFromState(serverState, { owner: owner() });
-      uiStep = needsCoreModelTopUp(serverState) ? "q1" : "review";
+      const unsynced = draft?.localDirty || draft?.pendingSync;
+      if (!unsynced) draft = onboardingV2DraftFromState(serverState, { owner: owner() });
+      uiStep = unsynced ? draft.step
+        : extractionTask ? "candidates"
+          : needsCoreModelTopUp(serverState) ? "q1" : "review";
       draft.step = uiStep;
       render();
       panel()?.scrollIntoView({ behavior: "smooth", block: "start" });

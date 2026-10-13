@@ -202,7 +202,7 @@ export function createBackgroundAi({
       const result = work.contextReceipt && generated && typeof generated === "object" && !Array.isArray(generated)
         ? { ...generated, contextReceipt: compactPersonalContextReceipt(work.contextReceipt) }
         : generated;
-      const extractionSucceeded = await repository.update(value => {
+      await repository.update(value => {
         const currentTask = value.aiTasks.find(item => item.id === taskId);
         if (!currentTask) return false;
         if (["cancelled", "cancelling"].includes(currentTask.status)) {
@@ -220,15 +220,7 @@ export function createBackgroundAi({
         if (work.contextFingerprint) currentTask.contextFingerprint = work.contextFingerprint;
         tasks.complete(currentTask, "succeeded", { resultId });
         notify(value, currentTask, "succeeded");
-        return currentTask.kind === "onboardingClaimExtraction";
       });
-      if (extractionSucceeded) {
-        try {
-          await releaseWaiting();
-        } catch (releaseError) {
-          try { onError(taskId, releaseError); } catch {}
-        }
-      }
     } catch (error) {
       await repository.update(store => {
         const task = store.aiTasks.find(item => item.id === taskId);
@@ -251,6 +243,17 @@ export function createBackgroundAi({
     } finally {
       controllers.delete(key);
       running.delete(key);
+      // 所有抽取终态都重新评估队列；门禁自行判定最新合法来源是否仍在途。
+      try {
+        const store = await repository.read();
+        const task = store.aiTasks.find(item => item.id === taskId);
+        if (task?.kind === "onboardingClaimExtraction"
+          && ["succeeded", "failed", "cancelled", "stale"].includes(task.status)) {
+          await releaseWaiting();
+        }
+      } catch (releaseError) {
+        try { onError(taskId, releaseError); } catch {}
+      }
     }
   }
 
@@ -385,7 +388,7 @@ export function createBackgroundAi({
         const work = prepareTarget(store, task);
         const promoted = tasks.promoteWaiting(store.aiTasks, task.id, work, intent);
         if (promoted.queued) {
-          notify(store, task, "queued", "核心用户模型已就绪，任务已进入后台队列");
+          notify(store, task, "queued", "前置整理已结束，任务已进入后台队列");
           scheduled.push(task.id);
         } else if (promoted.stale) {
           delete task.contextGeneratedAt;
@@ -451,6 +454,7 @@ export function createBackgroundAi({
       });
       const controller = controllers.get(`${contextKey()}:${taskId}`);
       controller?.abort();
+      if (value?.kind === "onboardingClaimExtraction") await releaseWaiting();
       return value;
     },
     enqueue: input => enqueueTask(input),

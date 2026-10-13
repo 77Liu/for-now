@@ -150,7 +150,8 @@ const controller = createOnboardingV2Controller({
     put: async value => { persistedDraft = structuredClone(value); },
     delete: async () => {}
   },
-  owner: () => "account-a"
+  owner: () => "account-a",
+  onFirstAction: action => firstActions.push(action)
 });
 await controller.hydrate({ schema: {}, state: serverState });
 const conflictState = controller.getState();
@@ -383,6 +384,9 @@ for (const [selector, element] of Object.entries({
   "#onboarding-v2-save-status": { textContent: "" }
 })) uiElements.set(selector, element);
 const uiRequests = [];
+const firstActions = [];
+let releaseExtraction;
+const extractionResponse = new Promise(resolve => { releaseExtraction = resolve; });
 const uiController = createOnboardingV2Controller({
   query: selector => uiElements.get(selector) || null,
   requestV1: async (path, options = {}) => {
@@ -391,12 +395,11 @@ const uiController = createOnboardingV2Controller({
       readyUiState.session = {
         ...readyUiState.session,
         revision: readyUiState.session.revision + 1,
-        status: "draft",
-        step: "review"
+        ...JSON.parse(options.body)
       };
       return { data: structuredClone(readyUiState) };
     }
-    if (path === "/api/v1/onboarding-v2/extractions") return { data: { status: "ready" } };
+    if (path === "/api/v1/onboarding-v2/extractions") return extractionResponse;
     if (path === "/api/v1/user-model") {
       return { data: { schemaVersion: 1, claims: [], answers: [], unknowns: [] } };
     }
@@ -408,7 +411,8 @@ const uiController = createOnboardingV2Controller({
     async put() {},
     async delete() {}
   },
-  owner: () => "account-a"
+  owner: () => "account-a",
+  onFirstAction: action => firstActions.push(action)
 });
 const previousDocument = globalThis.document;
 globalThis.document = { querySelectorAll: () => [] };
@@ -427,6 +431,10 @@ try {
     }
   });
   await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(firstActions, ["today"], "整理请求仍未返回时已经进入今日");
+  assert.equal(fakeRoot.hidden, true, "不能显示阻塞整理中间页");
+  releaseExtraction({ data: { status: "ready" } });
+  await new Promise(resolve => setTimeout(resolve, 0));
   assert.deepEqual(uiRequests, [
     ["/api/v1/onboarding-v2/session", "PATCH"],
     ["/api/v1/onboarding-v2/extractions", "POST"],
@@ -439,8 +447,9 @@ try {
     answers: [],
     unknowns: []
   });
-  assert.match(fakeContent.innerHTML, /没有获准用于后续回答的内容，因此核心模型按未知状态就绪/);
-  assert.match(fakeContent.innerHTML, /核心模型摘要状态已刷新/);
+  assert.deepEqual(firstActions, ["today"], "提交直接进入今日");
+  assert.equal(fakeRoot.hidden, true);
+  assert.equal(readyUiState.session.status, "completed");
   assert.equal(uiElements.get("#onboarding-v2-save-status").textContent, "没有获准内容 · 核心模型按未知就绪");
 } finally {
   if (previousDocument === undefined) delete globalThis.document;

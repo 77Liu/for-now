@@ -154,6 +154,7 @@ export function createContentBackground({
           systemPrompt: work.systemPrompt || systemPrompt(),
           captureReasoning: work.captureReasoning !== false,
           json: work.json === true,
+          retryWithoutThinking: work.retryWithoutThinking,
           maxTokens: work.maxTokens || 16000,
           auditPrompt: work.auditPrompt !== false,
           contextReceipt: work.contextReceipt || null,
