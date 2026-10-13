@@ -1,3 +1,4 @@
+import { installChatSubmission } from "../public/generated/app/runtime/chat-submission.mjs";
 import assert from "node:assert/strict";
 import {
   enqueueThoughtAnswer,
@@ -624,6 +625,41 @@ newRequest.resolve("new");
 await newModalRun;
 assert.equal(modal.hidden, false);
 assert.equal(modal.dataset.busy, "false");
+
+// 聊天边界：未确认请求保持完整载荷，编辑后新编号，旧catch/finally不碰新会话。
+{
+  const listeners={};
+  const button={disabled:false}, input={value:"first"}, date={value:"stable-date",dataset:{occurrenceMode:"now"}}, status={textContent:""};
+  const form={dataset:{},querySelector:()=>button,addEventListener:(type,listener)=>{listeners[type]=listener}};
+  const runtime={currentUser:{id:"chat-owner-a"},sessionSerial:1};
+  const requests=[],toasts=[];let clock=0, handler;
+  const query=selector=>({"#chat-form":form,"#chat-input":input,"#chat-datetime":date,"#chat-status":status})[selector];
+  handler=async()=>{throw Object.assign(new Error("uncertain"),{code:"NETWORK_ERROR"})};
+  installChatSubmission({runtime,$:query,occurrenceFields:()=>({occurredAt:`time-${++clock}`,occurredOn:"synthetic-day"}),resetOccurrenceInput:()=>{},
+    requestV1:async(path,options)=>{requests.push(options);return handler(JSON.parse(options.body))},
+    resolvePersonalizedTask:async response=>({result:response}),refreshState:async()=>true,showToast:(...args)=>toasts.push(args)});
+  const submit=()=>listeners.submit({preventDefault(){},currentTarget:form});
+  await submit();const uncertainId=requests.at(-1).headers["idempotency-key"],originalBody=requests.at(-1).body;
+  handler=async payload=>payload;await submit();
+  assert.equal(requests.at(-1).headers["idempotency-key"],uncertainId);
+  assert.equal(requests.at(-1).body,originalBody,"now模式安全重试不能重新计算请求载荷");
+  input.value="to-edit";handler=async()=>{throw new Error("uncertain")};await submit();
+  const priorId=requests.at(-1).headers["idempotency-key"];
+  input.value="edited";await submit();assert.notEqual(requests.at(-1).headers["idempotency-key"],priorId);
+  const oldGate=deferred(),newGate=deferred();
+  let rejectOld;oldGate.promise=new Promise((resolve,reject)=>{rejectOld=reject});
+  listeners.reset();input.value="old-account";handler=async()=>oldGate.promise;
+  const old=submit();await Promise.resolve();
+  runtime.currentUser={id:"chat-owner-b"};runtime.sessionSerial+=1;listeners.reset();
+  input.value="new-account";handler=async payload=>{newGate.payload=payload;return newGate.promise};
+  const newer=submit();await Promise.resolve();const newKey=form.dataset.requestId;
+  status.textContent="new session status";
+  rejectOld(Object.assign(new Error("old error"),{taskId:"old-task"}));await old;
+  assert.equal(form.dataset.requestId,newKey);assert.equal(status.textContent,"new session status");assert.equal(button.disabled,true);
+  input.value="later edit";newGate.resolve(newGate.payload);await newer;
+  assert.equal(input.value,"later edit");assert.equal(button.disabled,false);
+  assert.match(status.textContent,/后来修改.*保留/);
+}
 
 const chatForm = {
   dataset: {},

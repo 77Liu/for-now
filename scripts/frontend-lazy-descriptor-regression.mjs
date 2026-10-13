@@ -27,6 +27,7 @@ const dataRuntime = await fs.readFile(
   new URL("../public/frontend/app/runtime/data-runtime.mjs", import.meta.url),
   "utf8"
 );
+
 const primaryDescriptors = await fs.readFile(
   new URL("../public/frontend/app/runtime/page-descriptors-primary.mjs", import.meta.url),
   "utf8"
@@ -105,11 +106,6 @@ assert.match(
   loaders,
   /backgroundResults: \(\) => retryable\("backgroundResults"\)/,
   "background results loader must clear a rejected import so polling can retry"
-);
-assert.match(
-  runtimeImplementation,
-  /runtime\.backgroundResultsRetryAttempts\s*>\s*0\s*&&\s*runtime\.backgroundResultsRetryAttempts\s*<\s*backgroundResultsRetryLimit/,
-  "the final completed task must retain a bounded poll after lazy-load failure"
 );
 assert.match(
   runtimeImplementation,

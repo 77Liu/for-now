@@ -50,6 +50,7 @@ const SHELL_ASSETS = [
   "generated/personalized-ai-task.mjs",
   "generated/features/onboarding-v2/navigation.mjs",
   "generated/app/runtime/notification-runtime.mjs",
+  "generated/app/runtime/chat-submission.mjs",
   "frontend/content/index.mjs",
   "frontend/components/tag-multiselect/index.mjs",
   "frontend/features/actions/controller.mjs",
@@ -144,7 +145,8 @@ const LAZY_MODULE_PATHS = [
   "/generated/features/background-results/",
   "/generated/features/personal-context/",
   "/generated/features/notifications/",
-  "/generated/capture-audio-lifecycle.mjs"
+  "/generated/capture-audio-lifecycle.mjs",
+  "/generated/test-support/"
 ];
 
 const isNetworkOnly = url => NETWORK_ONLY_PATHS.some(segment => url.pathname.includes(segment));

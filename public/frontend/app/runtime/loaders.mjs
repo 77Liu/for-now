@@ -70,3 +70,30 @@ export function createRuntimeFeatureLoaders({
     trash: () => retryable("trash")
   });
 }
+
+// 仅模拟配置下加载测试适配器；正常运行只连接无副作用的接口。
+/** 条件连接独立测试适配器；非模拟模式不加载，旧会话的迟到加载不发起请求。 @since unreleased */
+export function createTestSupportBridge(ports) {
+  let adapter=null, loading=null, epoch=0;
+  return {
+    async ensureView(view) {
+      if(ports.getControl()?.mode!=="simulation")return true;
+      const owner=ports.getOwner(), session=ports.getSession(), generation=epoch;
+      const current=()=>owner===ports.getOwner()&&session===ports.getSession()
+        &&generation===epoch&&ports.getControl()?.mode==="simulation";
+      try {
+        if(!adapter){
+          loading||=import("../../../generated/test-support/view-scope.mjs")
+            .then(module=>adapter=module.createViewScopeSupport(ports)).finally(()=>{loading=null});
+          await loading
+        }
+        if(!current())return false;
+        return adapter.ensureView(view)
+      } catch(error) {
+        if(current())ports.fail(error);
+        return false
+      }
+    },
+    reset(){epoch+=1;adapter?.reset()}
+  }
+}
