@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 176,
-  "updated_at": "2026-10-12T22:26:58.329Z",
+  "revision": 191,
+  "updated_at": "2026-10-13T02:57:39.676Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -15,19 +15,19 @@
   },
   "work_mode": {
     "status": "RUNNING",
-    "scope": "夜间持续协作：v0.5.13已达到可发布状态，发布与正式收尾待人工；从最新develop启动v0.5.14录音完整性与音频体验，主控/主开发连续协作"
+    "scope": "Owner要求恢复v0.5.14，纳入六项新反馈并保留六条音频；v0.5.13已发布但main未晋级，历史授权不扩展到v0.5.14发布"
   },
   "iteration": {
     "id": "v0.5.14",
-    "status": "LOCAL_VALIDATED_WAIT_OWNER",
-    "phase": "本轮音频实现已接入并通过本机UI、真实PG及隔离Linux启动门；发布与完整设备验收尚未执行",
+    "status": "SCOPE_REOPENED",
+    "phase": "Owner追加六项生产反馈，保留原六条音频，先登记再修复",
     "started_by": {
       "iteration_id": "v0.5.13",
-      "event_id": "v0.5.13-9d38aa2c-f745-46fd-91a3-f233bb08d048"
+      "event_id": "v0.5.13-8b14bb6d-5580-4e7e-a2ea-10750c49e32b"
     }
   },
   "scope": {
-    "description": "录音完整性与音频使用体验；仅六条最新定向核对的未交付行为，复用一套音频生命周期与控件",
+    "description": "v0.5.14保留录音完整性与音频体验六条，追加冷启导航/整理空答/直达今日/核心模型等待/后台结果反复同步错误五项，以及日压缩调度失败",
     "requirement_ids": [
       "recvxyg5bmmnfW",
       "reczz28KR6qDIujH",
@@ -55,95 +55,68 @@
       "全站媒体格式改造",
       "重复合成立项",
       "历史默认标题批量回填",
-      "真实付费调用",
-      "v0.5.13上线与正式收尾"
+      "真实付费调用"
     ],
-    "cumulative_predecessor": "git:cd8055356a190f87bf6346fa806ec0dee85f1711"
-  },
-  "active_tasks": [],
-  "candidate": {
-    "sha": "9e793e3e89dd9c8663f1326d9ee240daa8743955",
-    "tree": "61802d55eb6b718752aeec8b8f945947a0a2b06c",
-    "status": "LOCAL_VALIDATED_PARTIAL_ACCEPTANCE",
-    "release_frozen": false,
-    "quality_gate": {
-      "snapshot": "PASS",
-      "local_import": "PASS",
-      "runtime_start": "PASS",
-      "readyz": "PASS",
-      "restart_recovery": "PASS",
-      "core_smoke": "PASS",
-      "isolated_online": "PASS",
-      "module_check": "PASS",
-      "full_ui": "PASS",
-      "develop_integration": "PASS"
-    },
-    "required_gates": [
-      "snapshot",
-      "local_import",
-      "runtime_start",
-      "readyz",
-      "restart_recovery",
-      "core_smoke",
-      "isolated_online",
-      "module_check",
-      "full_ui",
-      "develop_integration"
-    ],
-    "test_matrix_ref": "knowledge/test-impact-matrix.md#候选级最小门",
-    "partial": [
-      "历史录音首尾缺失无原音/真机/真实ASR，根因UNKNOWN；已修已复现计时器归属并验证首尾块/快速停止/失败恢复，不补造缺失内容",
-      "真实provider、iOS/设备与生产新版本未验收",
-      "Linux仅启动状态门，不是完整build:runtime/前后端部署制品验收",
-      "早期UI两处失败根因UNKNOWN，失败保留；当前原预期及语速标签断言通过，不宣称长期稳定"
-    ],
-    "validation_subject": {
-      "application_sha": "9e793e3e89dd9c8663f1326d9ee240daa8743955",
-      "application_tree": "61802d55eb6b718752aeec8b8f945947a0a2b06c",
-      "snapshot": "reports/local/9e793e3e-startup-snapshot.json",
-      "snapshot_file_sha256": "ba7dc075aa2be5ec72d48416b5da7a5ceb44c4d9d3fdeecf774aea33fcf63c1c",
-      "snapshot_captured_at": "2026-10-12T22:19:06.848Z",
-      "global_receipt": "reports/local/9e793e3e-startup-gate-receipt.json",
-      "global_receipt_sha256": "fe336d249f846196e0651bb35cb6d7087274a52372efd89c1914edf67829c9f0",
-      "browser_fixture_sha256": "b8f7e6682d05d68c3bc8d7c44491bfad160a68a4d7d186c79d2b073b684def7f",
-      "global_scope": "真实本机PG16.14及Linux PG16.15的启动/readyz/重启/核心无付费冒烟；Linux临时包不含前端生成物，前端产物在本机UI验证。",
-      "package_version": "0.5.13：本轮仅实施/验证，尚未做0.5.14发布元数据冻结"
-    },
-    "requirement_acceptance": [
+    "cumulative_predecessor": "git:cd8055356a190f87bf6346fa806ec0dee85f1711",
+    "pending_intake": [
       {
-        "id": "recvxyg5bmmnfW",
-        "status": "PARTIAL",
-        "result": "原音保留/最终块与计时器归属/恢复已本地验证；用户历史截断根因未确认"
+        "key": "onboarding-navigation",
+        "image": 1,
+        "acceptance": "提交或整理中不滞留冗余中间页，直接进入今日，原文与后台状态保留"
       },
       {
-        "id": "reczz28KR6qDIujH",
-        "status": "LOCAL_PASS",
-        "result": "缓存加载状态与只读重试，不重新合成"
+        "key": "onboarding-empty-answer",
+        "image": 2,
+        "acceptance": "追到真实DeepSeek请求、响应解析、整理任务和模型消费链，修复空答失败并可恢复，不能只隐藏错误"
       },
       {
-        "id": "recvxlQ7sCzQHv",
-        "status": "LOCAL_PASS",
-        "result": "媒体操作不折叠父卡；长文仍可明确展开/收起"
+        "key": "onboarding-home-entry",
+        "image": 3,
+        "acceptance": "结束页底部提供直接进入首页（今日），导航确实完成"
       },
       {
-        "id": "recvxlQpmHOCuK",
-        "status": "LOCAL_PASS",
-        "result": "音频控件在正文折叠区外，390px控件和标签可见"
+        "key": "core-model-terminal-recovery",
+        "image": 4,
+        "acceptance": "整理失败/取消等终态不得永久阻塞回答与重新回答；提交处理在途按优先级等待，未提交不等待"
       },
       {
-        "id": "reczz28JnsUxxhsH",
-        "status": "LOCAL_PASS",
-        "result": "生成语速与播放倍速分别控制并可见"
+        "key": "background-result-sync",
+        "image": 5,
+        "acceptance": "端到端复现重复同步错误，区分原文保存、回答任务、结果不存在和暂时同步失败，停止无意义循环并保留合理重试"
       },
       {
-        "id": "recvxlQSwyzutq",
-        "status": "LOCAL_PASS",
-        "result": "新纯音频稳定默认标题；独立元数据、幂等跨日与迟到转写保留用户标题"
+        "key": "compression-schedule-failure",
+        "acceptance": "核查10月12日18:05和10月13日06:00失败、30秒重复开始、原始错误、摘要持久化、重试去重和实际费用；先完成前五项再实现，保留4/1/16/4生产配置、不手工重复付费"
       }
+    ],
+    "implementation_order": [
+      "六项定向入池并核对ID",
+      "五项冷启/回答完整链修复",
+      "日压缩调度失败修复",
+      "与音频主线集成后按影响验证"
     ]
   },
+  "active_tasks": [
+    {
+      "id": "v0514-six-feedback-intake",
+      "owner": "需求管理",
+      "implementer_thread": "01a11c04-bee4-7cb1-9515-aafb56ad54d4",
+      "status": "DISPATCHED",
+      "write_set": [
+        "飞书需求池六项定向查重与追加来源、验收；按主控范围关联v0.5.14，保留原六条音频"
+      ],
+      "forbidden": [
+        "全池重复扫描",
+        "控制面/事件/代码写入",
+        "将实现或验收标完成",
+        "部分查询覆盖完整快照",
+        "上传截图中无关私密正文"
+      ]
+    }
+  ],
+  "candidate": null,
   "authorization": {
-    "source": "Owner最新夜间指令：v0.5.13通过后开启v0.5.14开发；v0.5.13上线与收尾等待人工信号",
+    "source": "Owner最新明确指令：五项用户问题先入池全部进入v0.5.14，另追加日压缩失败在五项之后修复，音频主线保留；沿原本地实施及线上只读权限",
     "allowed_actions": [
       "本地需求核对、实现、自查、主控审查、验证、提交及合入develop",
       "线上只读观察与隔离验证"
@@ -159,17 +132,16 @@
     "revoked": false
   },
   "blockers": [],
-  "next_action": "等待Owner新的v0.5.13发布/上线及正式收尾信号；v0.5.14实施与本地验证已完成，本轮不擅自发布。后续发布准备须固定版本元数据/完整前后端制品并保留原音、设备及真实provider的partial边界。",
+  "next_action": "需求管理先完成六项定向查重登记并回读；主控保存当前成果、核对同一feat基线后交主开发连续实现",
   "runtime": {
-    "sha": "3e94e2f29f5e131f2e98db3b4cb48659ba91fd79",
-    "package_version": "0.5.13.1",
-    "observed_at": "2026-10-12T16:00:35.882Z",
+    "sha": "a901c8507094528e48992802b102911086331043",
+    "package_version": "0.5.13",
+    "observed_at": "2026-10-13T02:41:30Z",
     "active": true,
     "restarts": 0,
-    "boundary": "本次只读service与readyz观察；短版本与此前fullSHA前缀相同，未重新核验完整制品或DB身份，不证明历史连续健康",
-    "readonly_observed_at": "2026-10-12T21:21:36.817282+00:00",
-    "readiness_version": "3e94e2f29f5e",
-    "pid": 940727
+    "pid": 956069,
+    "readiness_version": "a901c8507094",
+    "boundary": "主控再次独立SSH核对a901/active/PID956069/restart0/readyz；结合18轮服务器监控及真实缺口限定技术收口，不替代产品验收"
   },
   "evidence": [
     {
@@ -182,6 +154,12 @@
       "event_id": "v0.5.14-fa41ea1e-b9c0-47bb-9258-85185bb93b19",
       "source": "本轮实际差分、主开发定向命令及主控完整链审查",
       "status": "本地切片GO；module基线FAIL、整套UI FAIL/子条件未知；不记发布验收"
+    },
+    {
+      "id": "v0514-audio-prior-local-evidence",
+      "event_id": "v0.5.14-14bd62a8-f346-45ce-8b8a-f5938eb7f83f",
+      "source": "reports/iterations/v0.5.14/events.jsonl",
+      "status": "原音频六项本地验证及partial仅适用9e793e3e；新增六项尚未实现或验证，未受影响证据可复用"
     }
   ],
   "records": {
@@ -192,12 +170,12 @@
     {
       "iteration_id": "v0.5.13",
       "events": "reports/iterations/v0.5.13/events.jsonl",
-      "event_id": "v0.5.13-2577c06a-6c47-42f6-8e1d-c4b5e1d49b95",
-      "state_after_hash": "c97373d35372b93952b2d4f9197b08637294367c982eca772013fd285d8522a4",
-      "status": "READY_WAIT_OWNER",
-      "candidate_sha": "cd8055356a190f87bf6346fa806ec0dee85f1711",
-      "authorization_sha256": "8da33c9c50bfb0e1a8b376c194f999e0feea54a635fd83d31b9d8eafbfd7c332"
+      "event_id": "v0.5.13-8ab22aa2-71a2-4303-a142-fbfc7486c7e1",
+      "state_after_hash": "ce044167731c1385abb2ae9e0ea6ebbd909b0fc03c79b9b81cd32f35b51f79da",
+      "status": "PUBLISHED_MAIN_PENDING",
+      "candidate_sha": "a901c8507094528e48992802b102911086331043",
+      "authorization_sha256": "e9287a6a34d8468ad8d78e4b45673e30ed9874e8bf7bb99f659c20fd6d194e7b"
     }
   ],
-  "display_summary": "v0.5.13本地冻结候选cd805等待Owner；v0.5.14音频六条已实施接入9e793e3，本机UI/PG及Linux启动门PASS，历史录音根因与完整发行制品/真机验收保留partial。未push/tag/Release/部署/生产写入。"
+  "display_summary": "v0.5.14恢复：六项新增反馈正在定向入池，原六条音频保留；候选待重新固定"
 }
