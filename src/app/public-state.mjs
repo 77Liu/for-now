@@ -70,6 +70,7 @@ export function createPublicStateProjection({
       trash,
       attachmentCleanup: _attachmentCleanup,
       speechCache: _speechCache,
+      importanceScores: _importanceScores,
       evidenceSources: _evidenceSources,
       evidencePermissions: _evidencePermissions,
       perceptionEvents: _perceptionEvents,

@@ -11,17 +11,18 @@ const escape = (value: unknown) => String(value ?? "").replace(/[&<>"']/g,
  * 提供目录只证明材料已发送，不证明模型因果依赖，也不增加实际脚注数量。
  * @since unreleased
  */
-export function providedReferenceMarkup(references: unknown, receipt?: { providedCount?: number; coreModelProvided?: boolean; trendBudgetLevel?: string; evidenceBudgetLevel?: string; truncatedSources?: number }): string {
+export function providedReferenceMarkup(references: unknown, receipt?: { providedCount?: number; coreModelProvided?: boolean; trendBudgetLevel?: string; evidenceBudgetLevel?: string; truncatedSources?: number; selectionLimit?: { reason?: string; requestedCount?: number; providedHistoricalCount?: number } }): string {
   if (!Array.isArray(references)) return "";
   const modelNote = receipt?.coreModelProvided ? "<p>你的专属用户模型已携带。</p>" : "";
   const budgetNote = receipt?.trendBudgetLevel === "warn" || receipt?.evidenceBudgetLevel === "warn"
     ? "<p>内部上下文预算已触发 WARN；合法材料仍在预算范围内发送。</p>" : "";
   const excerptNote = receipt?.truncatedSources
     ? `<p>${receipt.truncatedSources} 条原文提供了有界连续摘录。</p>` : "";
+  const selectionNote = receipt?.selectionLimit ? `<p>为保留核心与当前材料，本次因请求容量限制提供了 ${Number(receipt.selectionLimit.providedHistoricalCount) || 0} 条背景参考。</p>` : "";
   const items = references.map(item => (
     `<li>${escape(item?.recordType || "原记录")} · 版本 ${Number(item?.version) || 0}</li>`
   )).join("");
   return `<details class="provided-references"><summary>提供给模型的参考（${receipt?.providedCount ?? references.length}）</summary>`
-    + `<p>这些材料已提供给模型；回答实际引用以逐字核验结果为准。</p>${modelNote}${budgetNote}${excerptNote}`
+    + `<p>这些材料已提供给模型；回答实际引用以逐字核验结果为准。</p>${modelNote}${budgetNote}${excerptNote}${selectionNote}`
     + `<ul>${items}</ul></details>`;
 }

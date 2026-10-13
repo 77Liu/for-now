@@ -1,3 +1,4 @@
+import { IMPORTANCE_BATCH_SIZE } from "../../../.build/typescript/backend/shared/ai-context/index.mjs";
 export const personalContextPaths = {
   "/personal-context": {
     get: {
@@ -25,6 +26,38 @@ export const personalContextPaths = {
     }
   }
 };
+
+for (const [action, summary] of [["read", "查询当前来源的重要性缓存与评分任务状态"],
+  ["score", "按需登记小批次重要性评分"], ["correct", "纠正当前来源的重要性分数"]]) {
+  personalContextPaths[`/importance/${action}`] = {
+    post: {
+      operationId: `importance${action[0].toUpperCase()}${action.slice(1)}`,
+      summary,
+      ...(action === "score" ? { parameters: [{ $ref: "#/components/parameters/IdempotencyKey" }] } : {}),
+      requestBody: {
+        required: true,
+        content: { "application/json": { schema: action === "correct" ? {
+          type: "object", required: ["sourceRef", "score"], additionalProperties: false,
+          properties: { sourceRef: { $ref: "#/components/schemas/EvidenceSourceRef" },
+            score: { type: "number", minimum: 0, maximum: 100 } }
+        } : {
+          type: "object", required: ["sourceRefs"], additionalProperties: false,
+          properties: { sourceRefs: { type: "array", minItems: 1, maxItems: IMPORTANCE_BATCH_SIZE,
+            items: { $ref: "#/components/schemas/EvidenceSourceRef" } } }
+        } } }
+      },
+      responses: {
+        [action === "score" ? "202" : "200"]: {
+          description: action === "score" ? "返回任务或当前缓存；评分不阻塞回答" : "返回当前账户的合法来源评分信息",
+          content: { "application/json": { schema: { $ref: "#/components/schemas/SuccessEnvelope" } } }
+        },
+        "400": { $ref: "#/components/responses/BadRequest" },
+        "401": { $ref: "#/components/responses/Unauthorized" },
+        "409": { $ref: "#/components/responses/Conflict" }
+      }
+    }
+  };
+}
 
 export const personalContextComponents = {
   schemas: {

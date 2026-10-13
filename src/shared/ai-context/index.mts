@@ -8,3 +8,10 @@ export { compileReferenceRequest, decodeReferenceAnswer } from "./reference-alia
 export type { CitationSource, ReferenceRequest } from "./reference-aliases.mjs";
 export { readInternalBudgets, estimateInternalTokens, boundedReferenceEvidence } from "./internal-budgets.mjs";
 export type { InternalBudgets } from "./internal-budgets.mjs";
+export { IMPORTANCE_SCORING_VERSION, isImportanceScore, importanceScoreFor, importanceWeight, weightedImportanceOrder, parseImportanceScores } from "./importance.mjs";
+export type { ImportanceMaterial, ImportanceScore, ImportanceModelChoice } from "./importance.mjs";
+export { createImportanceService, IMPORTANCE_BATCH_SIZE } from "./importance-runtime.mjs";
+export type { ImportanceSourceRef } from "./importance-runtime.mjs";
+export { createImportanceHttp } from "./importance-http.mjs";
+export { createImportanceSelectionPlan, applyImportanceSelectionPlan, RELATED_REFERENCE_SHARE_MAX } from "./importance-selection.mjs";
+export type { ImportanceSelectionPlan, SelectionMaterial } from "./importance-selection.mjs";

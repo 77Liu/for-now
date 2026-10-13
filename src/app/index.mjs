@@ -80,6 +80,10 @@ export {
   contextDerivedOutputAllowed,
   taskContextSourceMaterial,
   thoughtTaskCurrentMaterial,
+  supplementalImportanceContext,
+  supplementalImportanceReceiptMatches,
+  legalImportanceMaterial,
+  legalImportanceSources,
   workingContextProjection,
   workingContextReceiptFingerprint,
   workingContextReceiptMatches

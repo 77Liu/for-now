@@ -129,6 +129,7 @@ export function createContentWorkflows({
   materializeAttachmentFiles,
   workflowContextKey,
   getRecentTrend = () => null,
+  getImportanceModelSnapshot = () => null,
   now,
   today,
   currentTime,
@@ -152,6 +153,7 @@ export function createContentWorkflows({
     coreModelReadiness: userModelCoreReadiness,
     getAccountId,
     getRecentTrend,
+    getImportanceModelSnapshot,
     materializeAttachmentFiles,
     contextKey: workflowContextKey,
     now
@@ -165,6 +167,8 @@ export function createContentWorkflows({
     createId,
     coreModelReadiness: userModelCoreReadiness,
     getRecentTrend,
+    getImportanceModelSnapshot,
+    getAccountId,
     currentTime,
     contextKey: workflowContextKey,
     today
@@ -180,6 +184,7 @@ export function createContentWorkflows({
     contextKey: workflowContextKey,
     getAccountId,
     getRecentTrend,
+    getImportanceModelSnapshot,
     currentTime,
     createId
   });

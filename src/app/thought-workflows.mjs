@@ -42,6 +42,7 @@ export function createThoughtWorkflows({
   getAccountId = () => "local",
   coreModelReadiness = () => ({ ready: true }),
   getRecentTrend = () => null,
+  getImportanceModelSnapshot = () => null,
   materializeAttachmentFiles = async () => [],
   contextKey,
   now = () => new Date().toISOString()
@@ -115,6 +116,7 @@ export function createThoughtWorkflows({
     return {
       accountId: getAccountId(),
       scene: "thoughtAnswer",
+      importanceChoice: getImportanceModelSnapshot(),
       generatedAt,
       coreUserModel,
       recentTrend,
@@ -498,7 +500,7 @@ export function createThoughtWorkflows({
             const contextOptions = answerContextOptions(store, question);
             const workingContext = workingContextProjection(
               store,
-              contextOptions
+              { ...contextOptions, selectionSeed: hash(JSON.stringify([clientRequestId, contextOptions.coreUserModel])) }
             );
             const imagePaths = workingContext.attachmentPaths.length
               ? await materializeAttachmentFiles(workingContext.attachmentPaths)
@@ -528,7 +530,7 @@ export function createThoughtWorkflows({
                   ...(workingContext.citationSources || []),
                   ...(contextOptions.recentTrend?.historicalUserSupplementCitationSources || []),
                   ...(contextOptions.recentTrend?.citationSources || [])
-                ]), JSON.stringify([getAccountId(), workingContext.receipt]));
+                ]), JSON.stringify([getAccountId(), workingContext.receipt]), workingContext.receipt);
               const generated = await generate(referenceRequest.prompt, {
                 scene: "thoughtAnswer",
                 json: true,

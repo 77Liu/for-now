@@ -27,7 +27,8 @@ export interface ReferenceRequest {
   sources: CitationSource[];
   receipt: { schemaVersion: number; binding: string; aliasMapSha256: string; promptSha256: string;
     promptBytes: number; promptByteLimit: number; unit: string; providedCount: number; coreModelProvided: boolean; trendTokens: number; evidenceTokens: number;
-    trendBudgetLevel: string; evidenceBudgetLevel: string; truncatedSources: number };
+    trendBudgetLevel: string; evidenceBudgetLevel: string; truncatedSources: number;
+    selectionLimit?: { reason: string; requestedCount: number; providedHistoricalCount: number } };
 }
 const object = (value: unknown): value is Record<string, unknown> => Boolean(value)
   && typeof value === "object" && !Array.isArray(value);
@@ -266,6 +267,8 @@ export function compileReferenceRequest(prompt: string, sources: CitationSource[
   const digest = (value: string) => crypto.createHash("sha256").update(value).digest("hex");
   const requestBinding = digest(binding + "\0" + compiledPrompt);
   const retained = entries.filter(entry => entry.sentText.length);
+  const partialSourceCount = retained.filter(entry => entry.originals.some(source =>
+    (source.textSpans || [source.text]).some(span => !entry.sentText.some(sent => sent.includes(span))))).length;
   const layerValues = (key: string) => transformed.filter(object).map(value => value[key]).filter(object);
   const trendTokens = layerValues("trendBudget").reduce((sum, layer) => sum + Number(layer.estimatedTokens || 0), 0);
   const evidenceTokens = layerValues("referenceEvidenceBudget").reduce((sum, layer) => sum + Number(layer.estimatedTokens || 0), 0);
@@ -284,8 +287,8 @@ export function compileReferenceRequest(prompt: string, sources: CitationSource[
       coreModelProvided: transformed.some(value => object(value) && object(value.coreUserModel)),
       trendTokens, evidenceTokens,
       trendBudgetLevel: trendTokens > budgets.trendWarn || groups.some(group => group.trendClipped) ? "warn" : "ok",
-      evidenceBudgetLevel: evidenceTokens > budgets.evidenceWarn || layerValues("referenceEvidenceBudget").some(layer => Number(layer.truncatedSources) > 0) ? "warn" : "ok",
-      truncatedSources: layerValues("referenceEvidenceBudget").reduce((sum, layer) => sum + Number(layer.truncatedSources || 0), 0)
+      evidenceBudgetLevel: evidenceTokens > budgets.evidenceWarn || partialSourceCount > 0 ? "warn" : "ok",
+      truncatedSources: partialSourceCount
     }
   };
 }

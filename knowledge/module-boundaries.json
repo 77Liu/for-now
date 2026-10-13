@@ -2728,7 +2728,8 @@
         "shared.core-model-gate",
         "shared.validation",
         "shared.observability",
-        "shared.speech"
+        "shared.speech",
+        "shared.ai-context"
       ],
       "owns": {
         "data": [
@@ -2947,13 +2948,19 @@
       "allowedDependencies": [],
       "owns": {
         "data": [
-          "请求内真实来源映射、连续片段引用核验与内部预算配置/估算"
+          "请求内真实来源映射、连续片段引用核验与内部预算配置/估算",
+          "来源版本与模型绑定的重要性缓存、无原文冻结选材计划与按需小批次评分适配"
         ],
-        "routes": []
+        "routes": [
+          "POST /api/v1/importance/read",
+          "POST /api/v1/importance/score",
+          "POST /api/v1/importance/correct"
+        ]
       },
       "tests": [
         "scripts/answer-citations-regression.mjs",
-        "scripts/task-context-selection-regression.mjs"
+        "scripts/task-context-selection-regression.mjs",
+        "scripts/importance-scoring-regression.mts"
       ],
       "status": "active"
     }

@@ -1,3 +1,4 @@
+import { supplementalImportanceContext, supplementalImportanceReceiptMatches } from "./task-context.mjs";
 import crypto from "node:crypto";
 import { chatHistory, chatMessage } from "../modules/chats/index.mjs";
 import { reflectionEvidence, reflectionPrompt } from "../modules/reviews/index.mjs";
@@ -56,11 +57,23 @@ export function createReviewChatWorkflows({
   hash,
   coreModelReadiness = () => ({ ready: true }),
   getRecentTrend = () => null,
+  getImportanceModelSnapshot = () => null,
   contextKey = () => "local",
   getAccountId = contextKey,
   currentTime = () => Date.now(),
   createId = () => crypto.randomUUID()
 }) {
+  const answerContextReceiptMatches = (store, receipt) => personalContextReceiptMatches(store, receipt)
+    && supplementalImportanceReceiptMatches(store, receipt?.importanceReferences, getAccountId());
+  const addImportance = (store, context, text, seed, frozenPlan = null) => {
+    const supplemental = supplementalImportanceContext(store, { accountId: getAccountId(), text, seed,
+      choice: getImportanceModelSnapshot(), frozenPlan, purpose: context.receipt.permissionPurpose || "context" });
+    if (!supplemental) return false;
+    context.prompt = [context.prompt, supplemental.prompt].filter(Boolean).join("\n\n");
+    context.receipt = { ...context.receipt, importanceReferences: supplemental.receipt };
+    context.importanceSources = supplemental.sources;
+    return true;
+  };
   if (!repository
     || typeof repository.read !== "function"
     || typeof repository.update !== "function") {
@@ -233,6 +246,8 @@ export function createReviewChatWorkflows({
         const generatedAt = taskContextAsOf(task);
         const trend = trendSnapshot(store, generatedAt);
         const personalContext = personalContextProjection(store);
+        if (!addImportance(store, personalContext, payload.message,
+          hash(JSON.stringify([task.clientRequestId || task.id, coreModel.fingerprint])), task.importanceSelectionPlan || null)) return null;
         const history = chatHistorySnapshot(store);
         const contextReceipt = {
           ...personalContext.receipt,
@@ -251,12 +266,13 @@ export function createReviewChatWorkflows({
           scene: "chat",
           json: true,
           citationsEnabled: true,
-          citationSources: answerCitationSources(coreModel.model, trendCitationSources(trend.trend)),
+          citationSources: answerCitationSources(coreModel.model, [...trendCitationSources(trend.trend), ...(personalContext.importanceSources || [])]),
           systemPrompt: citationSystemPrompt(systemPrompt()),
           history: history.history,
           contextReceipt,
           contextFingerprint: hash(JSON.stringify({
             receipt: personalContextReceiptFingerprint(personalContext.receipt),
+            importanceReferences: personalContext.receipt.importanceReferences || null,
             history: history.fingerprint,
             coreModel: coreModel.fingerprint,
             trend: trend?.fingerprint || ""
@@ -275,6 +291,8 @@ export function createReviewChatWorkflows({
         const trend = trendSnapshot(store, generatedAt);
         const { personalContext, evidence, evidenceHash } = analysisSnapshot(store);
         const citationEvidence = analysisSources(evidence);
+        if (!addImportance(store, personalContext, JSON.stringify(citationEvidence.reflectionData),
+          hash(JSON.stringify([task.clientRequestId || task.id, coreModel.fingerprint])), task.importanceSelectionPlan || null)) return null;
         if (!evidence.evidenceCount) {
           return {
             kind: task.kind,
@@ -302,7 +320,7 @@ export function createReviewChatWorkflows({
           citationsEnabled: true,
           citationSources: answerCitationSources(coreModel.model, [
             ...trendCitationSources(trend.trend),
-            ...citationEvidence.sources
+            ...citationEvidence.sources, ...(personalContext.importanceSources || [])
           ]),
           systemPrompt: citationSystemPrompt(
             renderPrompt("orchestration.role.periodicSynthesis"),
@@ -312,6 +330,7 @@ export function createReviewChatWorkflows({
           evidenceHash,
           contextFingerprint: hash(JSON.stringify({
             receipt: personalContextReceiptFingerprint(personalContext.receipt),
+            importanceReferences: personalContext.receipt.importanceReferences || null,
             evidenceHash,
             coreModel: coreModel.fingerprint,
             trend: trend?.fingerprint || ""
@@ -331,7 +350,7 @@ export function createReviewChatWorkflows({
       });
       if (task.kind === "chat") {
         const generatedReceipt = result?.contextReceipt;
-        if (!personalContextReceiptMatches(document, generatedReceipt)) {
+        if (!answerContextReceiptMatches(document, generatedReceipt)) {
           throw stalePersonalizedChat();
         }
         assertChatHistoryCurrent(
@@ -509,7 +528,7 @@ export function createReviewChatWorkflows({
       store,
       generated.contextReceipt?.permissionPurpose || "learning"
     );
-    if (!personalContextReceiptMatches(store, generated.contextReceipt)
+    if (!answerContextReceiptMatches(store, generated.contextReceipt)
       || snapshot.evidenceHash !== generated.evidenceHash) {
       throw Object.assign(new Error("个人语境已变化，本次复盘未写入"), {
         code: "STALE_PERSONAL_CONTEXT",
@@ -611,6 +630,7 @@ export function createReviewChatWorkflows({
         const generatedAt = new Date(currentTime()).toISOString();
         const trend = trendSnapshot(store, generatedAt);
         const personalContext = personalContextProjection(store);
+        addImportance(store, personalContext, message, hash(JSON.stringify([clientRequestId, coreModel.fingerprint])));
         const history = chatHistorySnapshot(store);
         const contextReceipt = {
           ...personalContext.receipt,
@@ -619,7 +639,7 @@ export function createReviewChatWorkflows({
         };
         const referenceRequest = prepareReferenceRequest(userPrompt({
           context: stableContext(coreModel, trend.trend, personalContext.prompt), task: message
-        }), answerCitationSources(coreModel.model, trendCitationSources(trend.trend)),
+        }), answerCitationSources(coreModel.model, [...trendCitationSources(trend.trend), ...(personalContext.importanceSources || [])]),
         JSON.stringify([getAccountId(), clientRequestId, contextReceipt]));
         const result = await generate(referenceRequest.prompt, {
           scene: "chat",
@@ -631,7 +651,7 @@ export function createReviewChatWorkflows({
         });
         const current = await repository.read();
         assertCoreModelCurrent(current, coreModel);
-        if (!personalContextReceiptMatches(current, contextReceipt)) {
+        if (!answerContextReceiptMatches(current, contextReceipt)) {
           throw stalePersonalizedChat();
         }
         assertChatHistoryCurrent(
@@ -663,7 +683,7 @@ export function createReviewChatWorkflows({
         assertCoreModelCurrent(current, {
           fingerprint: generated.coreModelFingerprint
         });
-        if (!personalContextReceiptMatches(current, generated.contextReceipt)) {
+        if (!answerContextReceiptMatches(current, generated.contextReceipt)) {
           throw stalePersonalizedChat();
         }
         assertChatHistoryCurrent(
@@ -682,7 +702,7 @@ export function createReviewChatWorkflows({
         if (typeof chats.saveInStore === "function") {
           return repository.update(document => {
             assertCoreModelCurrent(document, { fingerprint: generated.coreModelFingerprint });
-            if (!personalContextReceiptMatches(document, generated.contextReceipt)) {
+            if (!answerContextReceiptMatches(document, generated.contextReceipt)) {
               throw stalePersonalizedChat();
             }
             assertChatHistoryCurrent(
@@ -701,7 +721,7 @@ export function createReviewChatWorkflows({
             assertCoreModelCurrent(document, {
               fingerprint: generated.coreModelFingerprint
             });
-            if (!personalContextReceiptMatches(document, generated.contextReceipt)) {
+            if (!answerContextReceiptMatches(document, generated.contextReceipt)) {
               throw stalePersonalizedChat();
             }
             assertChatHistoryCurrent(
@@ -744,11 +764,13 @@ export function createReviewChatWorkflows({
           throw new Error("先留下一条状态、健康、捕念、日记或思绪记录，再开始认知复盘");
         }
         const citationEvidence = analysisSources(evidence);
+        addImportance(store, personalContext, JSON.stringify(citationEvidence.reflectionData),
+          hash(JSON.stringify([clientRequestId, coreModel.fingerprint])));
         const referenceRequest = prepareReferenceRequest(reflectionPrompt({
           personalContext: stableContext(coreModel, trend.trend, personalContext.prompt),
           reflectionData: citationEvidence.reflectionData, evidenceLevel: evidence.evidenceLevel
         }), answerCitationSources(coreModel.model, [
-          ...trendCitationSources(trend.trend), ...citationEvidence.sources
+          ...trendCitationSources(trend.trend), ...citationEvidence.sources, ...(personalContext.importanceSources || [])
         ]), JSON.stringify([getAccountId(), clientRequestId, personalContext.receipt, evidenceHash]));
         const result = await generate(referenceRequest.prompt, {
           scene: "analysis",

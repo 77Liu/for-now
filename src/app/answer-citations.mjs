@@ -116,8 +116,16 @@ export function parseVerifiedAnswer(raw, availableSources = []) {
  * 按当前 work/账户绑定编译模型引用；服务端仍保留真实来源与已发送原文目录。
  * @since unreleased
  */
-export function prepareReferenceRequest(prompt, sources, binding) {
-  return compileReferenceRequest(prompt, sources, binding);
+export function prepareReferenceRequest(prompt, sources, binding, contextReceipt = null) {
+  const request = compileReferenceRequest(prompt, sources, binding);
+  const plan = contextReceipt?.importanceSelectionPlan || contextReceipt?.importanceReferences?.plan;
+  if (plan?.limitReason) {
+    request.receipt.selectionLimit = { reason: plan.limitReason,
+      requestedCount: plan.requestedCount ?? plan.sources.length,
+      providedHistoricalCount: request.entries.filter(entry => entry.sentText.length
+        && entry.originals.some(source => source.citationId.startsWith("context:raw:"))).length };
+  }
+  return request;
 }
 
 /**

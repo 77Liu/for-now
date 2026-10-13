@@ -26,11 +26,21 @@ export function createAiTaskTargets({
   contentAttachments = null,
   perception = null,
   recordCompressionTarget = null,
+  importanceTarget = null,
+  getImportanceModelSnapshot = () => null,
   getRecentTrend = () => null,
   getAccountId = () => "local",
   hash,
   now = () => new Date().toISOString()
 }) {
+  const projectTaskContext = (store, options) => {
+    try {
+      return workingContextProjection(store, options);
+    } catch (error) {
+      if (error?.code === "STALE_PERSONAL_CONTEXT") return null;
+      throw error;
+    }
+  };
   function answerCitationSources(workingContext, coreUserModel) {
     return compileCitationSources(coreUserModel, workingContext.citationSources || []);
   }
@@ -106,6 +116,7 @@ export function createAiTaskTargets({
         ? item.contextReceipt.evidenceChecks
         : []
     ));
+    const previousRawSourceChecks = validPreviousItems.flatMap(item => item.contextReceipt?.rawSourceChecks || []);
     const previousPermissionChecks = validPreviousItems.flatMap(item => item.contextReceipt?.permissionChecks || []);
     const previousLegacyDependencies = validPreviousItems.flatMap(item => contextDerivedLegacyDependencies(store, item));
     const baseRootContext = resourceType === "thought"
@@ -178,6 +189,7 @@ export function createAiTaskTargets({
       occurredAt: root.occurredAt || root.createdAt,
       sourceRef: targetSourceRef,
       evidenceChecks: modelTarget ? target.contextReceipt?.evidenceChecks || [] : [],
+      rawSourceChecks: modelTarget ? target.contextReceipt?.rawSourceChecks || [] : [],
       permissionChecks: modelTarget ? target.contextReceipt?.permissionChecks || [] : [],
       legacyDependencies: modelTarget ? contextDerivedLegacyDependencies(store, target) : []
     }, {
@@ -193,6 +205,7 @@ export function createAiTaskTargets({
       contextAllowed: annotation.contextAllowed !== false,
       validation: "version",
       evidenceChecks: previousEvidenceChecks,
+      rawSourceChecks: previousRawSourceChecks,
       permissionChecks: previousPermissionChecks,
       legacyDependencies: previousLegacyDependencies,
       occurredAt: annotation.createdAt || root.occurredAt || root.createdAt,
@@ -213,9 +226,12 @@ export function createAiTaskTargets({
       }
     }];
     const coreUserModel = coreUserModelProjection(store);
-    const workingContext = workingContextProjection(store, {
+    const workingContext = projectTaskContext(store, {
       accountId,
       scene: "annotationShenji",
+      importanceChoice: getImportanceModelSnapshot(),
+      frozenSelectionPlan: task.importanceSelectionPlan || null,
+      selectionSeed: hash(JSON.stringify([task.clientRequestId || task.id, coreUserModel])),
       task: {
         kind: "annotationShenji",
         text: message || annotation.text || annotation.quote || "回应当前批注",
@@ -249,6 +265,7 @@ export function createAiTaskTargets({
         }
       })
     });
+    if (!workingContext) return null;
     const contextFingerprint = workingContextReceiptFingerprint(workingContext.receipt);
     const inputHash = hash(JSON.stringify({
       resourceType, targetId: task.targetId, annotationId: annotation.id, targetKey: annotation.targetKey,
@@ -321,6 +338,10 @@ export function createAiTaskTargets({
   }
 
   function inspectIntent(store, task) {
+    if (task.kind === "importanceScoring") {
+      const work = importanceTarget?.prepare(store, task);
+      return work ? { inputHash: work.inputHash, inputVersion: 1, subtargetVersion: 0 } : false;
+    }
     if (["thoughtAnswer", "followUpAnswer"].includes(task?.kind)) {
       const inspected = thoughts.inspect(store.thoughts, task);
       if (!inspected) return false;
@@ -394,6 +415,7 @@ export function createAiTaskTargets({
   return {
     inspectIntent,
     result(store, task) {
+      if (task.kind === "importanceScoring") return importanceTarget?.result(store, task) || null;
       if (task.kind === "perceptionExtraction") {
         return perception?.result(store, task) || null;
       }
@@ -419,6 +441,7 @@ export function createAiTaskTargets({
       return annotations.taskResult(annotationResource(store, task.resourceType, task.targetId), task);
     },
     prepare(store, task) {
+      if (task.kind === "importanceScoring") return importanceTarget?.prepare(store, task) || null;
       if (task.kind === "perceptionExtraction") {
         return perception?.prepare(store, task) || null;
       }
@@ -437,9 +460,12 @@ export function createAiTaskTargets({
       const coreUserModel = coreUserModelProjection(store);
       const generatedAt = task.contextGeneratedAt || task.createdAt || now();
       const recentTrend = getRecentTrend(store, generatedAt);
-      const workingContext = workingContextProjection(store, {
+      const workingContext = projectTaskContext(store, {
         accountId,
         scene: task.kind,
+        importanceChoice: getImportanceModelSnapshot(),
+        frozenSelectionPlan: task.importanceSelectionPlan || null,
+        selectionSeed: hash(JSON.stringify([task.clientRequestId || task.id, coreUserModel])),
         task: {
           kind: task.kind,
           text: task.kind === "followUpAnswer"
@@ -462,6 +488,7 @@ export function createAiTaskTargets({
           referenceEvidence: recentTrend?.citationSources || []
         })
       });
+      if (!workingContext) return null;
       const contextFingerprint = workingContextReceiptFingerprint(workingContext.receipt);
       if (task.kind === "thoughtAnswer") {
         const attachmentPaths = workingContext.attachmentPaths;
@@ -515,6 +542,7 @@ export function createAiTaskTargets({
       };
     },
     save(store, work, task, result) {
+      if (task.kind === "importanceScoring") return importanceTarget?.save(store, work, task, result) || null;
       if (task.kind === RECORD_COMPRESSION_TASK_KIND) {
         return recordCompressionTarget?.save(store, work, task, result) || null;
       }

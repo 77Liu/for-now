@@ -89,6 +89,7 @@ const store = {
   commercialization: {
     assumptions: { privateRevenue: 999 }
   },
+  importanceScores: [{ sourceKey: "private-scoring-cache", score: 70 }],
   evidenceSources: [{ id: "private-evidence", accountId: "member" }],
   evidencePermissions: [{ sourceKey: "[\"capture\",\"capture\",\"\",\"\"]", accountId: "member" }],
   perceptionEvents: [{ id: "private-perception-event", accountId: "member" }],
@@ -125,6 +126,7 @@ assert.equal(Object.hasOwn(ownerState, "commercialization"), false);
 assert.equal(Object.hasOwn(ownerState, "trash"), false);
 assert.equal(Object.hasOwn(ownerState, "attachmentCleanup"), false);
 assert.equal(Object.hasOwn(ownerState, "speechCache"), false);
+assert.equal(Object.hasOwn(ownerState, "importanceScores"), false);
 assert.equal(Object.hasOwn(ownerState, "evidenceSources"), false);
 assert.equal(Object.hasOwn(ownerState, "evidencePermissions"), false);
 assert.equal(Object.hasOwn(ownerState, "perceptionEvents"), false);
@@ -165,6 +167,7 @@ const memberState = projectPublicState(store);
 assert.equal(memberState.ownerExtension.visible, true);
 assert.equal(Object.hasOwn(memberState, "userClaims"), false);
 assert.equal(Object.hasOwn(memberState, "modelUnknowns"), false);
+assert.equal(Object.hasOwn(memberState, "importanceScores"), false);
 assert.equal(JSON.stringify(memberState).includes("MODEL_DETAIL_MARKER"), false);
 assert.equal(JSON.stringify(memberState).includes("UNKNOWN_DETAIL_MARKER"), false);
 const privateContextOverview = withoutOwnerMetadata({

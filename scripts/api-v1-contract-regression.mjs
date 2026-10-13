@@ -11,6 +11,10 @@ import { syncOperationFingerprint } from "../public/frontend/sync/index.mjs";
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 let providerCalls = 0;
+let releaseExtraction = () => {};
+let extractionStarted = Promise.resolve();
+let markExtractionStarted = () => {};
+let heldExtraction = null;
 
 async function freePort() {
   const server = http.createServer();
@@ -26,7 +30,12 @@ function modelProvider() {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     const input = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-    const content = input.response_format?.type === "json_object"
+    const isExtraction = input.messages.some(message => String(message.content).includes("<permitted_sources>"));
+    if (isExtraction && heldExtraction) {
+      markExtractionStarted();
+      await heldExtraction;
+    }
+    const content = isExtraction ? JSON.stringify({ claims: [], unknowns: [] }) : input.response_format?.type === "json_object"
       ? JSON.stringify({ answer: "v1 回答", citations: [] })
       : "核心判断：v1 回答";
     const usage = { prompt_tokens: 10, completion_tokens: 4, completion_tokens_details: { reasoning_tokens: 1 } };
@@ -745,33 +754,74 @@ try {
   const legacyState = await request("/api/state", { cookie: owner });
   assert.equal(legacyState.body.thoughts.find(item => item.id === firstId).content, "v1 已更新");
 
-  const answerTask = await request(`/api/v1/thought-chains/${firstId}/answers`, {
+  const draftSession = await request("/api/v1/onboarding-v2/session", { cookie: owner });
+  assert.equal(draftSession.body.data.session.status, "paused");
+  const callsBeforeDraftAnswer = providerCalls;
+  const draftAnswer = await request(`/api/v1/thought-chains/${firstId}/answers`, {
     method: "POST", cookie: owner, headers: { "idempotency-key": "answer-contract-1" }, body: {}
+  });
+  assert.equal(draftAnswer.response.status, 201);
+  assert.equal(draftAnswer.body.data.content, "v1 回答");
+  assert.equal(draftAnswer.body.data.relatedTo, firstId);
+  assert.equal(providerCalls, callsBeforeDraftAnswer + 1, "unsubmitted questions do not wait for an extraction that does not exist");
+  const draftReplay = await request(`/api/v1/thought-chains/${firstId}/answers`, {
+    method: "POST", cookie: owner, headers: { "idempotency-key": "answer-contract-1" }, body: {}
+  });
+  // Foreground respondModel retains its declared 201; identical result and no second call prove replay.
+  assert.equal(draftReplay.response.status, 201);
+  assert.equal(draftReplay.body.data.id, draftAnswer.body.data.id);
+  assert.equal(providerCalls, callsBeforeDraftAnswer + 1, "draft-state answers retain idempotency");
+  const submitSchema = await request("/api/v1/onboarding-v2/schema", { cookie: owner });
+  extractionStarted = new Promise(resolve => { markExtractionStarted = resolve; });
+  heldExtraction = new Promise(resolve => { releaseExtraction = resolve; });
+  const submitted = await request("/api/v1/onboarding-v2/session", {
+    method: "PATCH", cookie: owner, headers: { "if-match": draftSession.response.headers.get("etag"),
+      "idempotency-key": "answer-contract-real-submit" },
+    body: { selectedFlow: "v2", status: "completed",
+      answers: Object.fromEntries(submitSchema.body.data.questions.filter(question => question.questionId !== "collaboration")
+        .map(question => [question.questionId, { rawText: `完整提交合成问答 ${question.questionId}`, contextAllowed: true,
+          ...(question.kind === "list" ? { structuredValue: [{ text: "合成条目", horizon: "unknown" }] } : {}) }])),
+      collaboration: { answerDisposition: "declined", contextAllowed: false } }
+  });
+  assert.equal(submitted.response.status, 200, JSON.stringify(submitted.body));
+  const submittedExtraction = await request("/api/v1/onboarding-v2/extractions", {
+    method: "POST", cookie: owner, headers: { "idempotency-key": "answer-contract-held-extraction" },
+    body: { sourceRevision: submitted.body.data.session.revision }
+  });
+  assert.ok([200, 202].includes(submittedExtraction.response.status), JSON.stringify(submittedExtraction.body));
+  assert.equal(submittedExtraction.body.data.kind, "onboardingClaimExtraction");
+  assert.ok(["queued", "running"].includes(submittedExtraction.body.data.status));
+  await Promise.race([extractionStarted, delay(5000).then(() => { throw new Error("real extraction did not reach held provider"); })]);
+  const heldCalls = providerCalls;
+  const answerTask = await request(`/api/v1/thought-chains/${firstId}/answers`, {
+    method: "POST", cookie: owner, headers: { "idempotency-key": "answer-contract-while-extracting" }, body: {}
   });
   assert.equal(answerTask.response.status, 202);
   assert.equal(answerTask.body.data.kind, "thoughtAnswer");
-  assert.equal(answerTask.body.data.targetId, firstId);
   assert.equal(answerTask.body.data.status, "waiting_for_user_model");
-  assert.equal(answerTask.body.error, null);
-  const persistedWaitingTask = await request(`/api/ai-tasks/${answerTask.body.data.id}`, { cookie: owner });
-  assert.equal(persistedWaitingTask.response.status, 200);
-  assert.equal(persistedWaitingTask.body.status, "waiting_for_user_model");
   const duplicateAnswerTask = await request(`/api/v1/thought-chains/${firstId}/answers`, {
-    method: "POST", cookie: owner, headers: { "idempotency-key": "answer-contract-1" }, body: {}
+    method: "POST", cookie: owner, headers: { "idempotency-key": "answer-contract-while-extracting" }, body: {}
   });
   assert.equal(duplicateAnswerTask.response.status, 200);
   assert.equal(duplicateAnswerTask.body.data.id, answerTask.body.data.id);
-  assert.equal(duplicateAnswerTask.body.data.status, "waiting_for_user_model");
-  const legacyWaitingAnswerTask = await request(`/api/thoughts/${firstId}/answer`, {
+  const legacyWaitingAnswerTask = await request(`/api/thoughts/${secondId}/answer`, {
     method: "POST", cookie: owner, body: { clientRequestId: "legacy-answer-contract-waiting" }
   });
   assert.equal(legacyWaitingAnswerTask.response.status, 202);
-  assert.equal(legacyWaitingAnswerTask.body.kind, "thoughtAnswer");
-  assert.equal(legacyWaitingAnswerTask.body.targetId, firstId);
   assert.equal(legacyWaitingAnswerTask.body.status, "waiting_for_user_model");
-  const persistedLegacyWaitingTask = await request(`/api/ai-tasks/${legacyWaitingAnswerTask.body.id}`, { cookie: owner });
-  assert.equal(persistedLegacyWaitingTask.response.status, 200);
-  assert.equal(persistedLegacyWaitingTask.body.status, "waiting_for_user_model");
+  assert.equal(legacyWaitingAnswerTask.body.targetId, secondId);
+  assert.equal(providerCalls, heldCalls, "waiting answers do not call the provider before extraction settles");
+  releaseExtraction();
+  heldExtraction = null;
+  for (const id of [answerTask.body.data.id, legacyWaitingAnswerTask.body.id]) {
+    let completed;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      completed = await request(`/api/ai-tasks/${id}`, { cookie: owner });
+      if (completed.body.status === "succeeded") break;
+      await delay(25);
+    }
+    assert.equal(completed.body.status, "succeeded", JSON.stringify(completed.body));
+  }
   const crossTarget = await request(`/api/v1/thought-chains/${secondId}/answers`, {
     method: "POST", cookie: owner, headers: { "idempotency-key": "answer-contract-1" }, body: {}
   });

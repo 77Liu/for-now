@@ -15,7 +15,8 @@ const TASK_KINDS = new Set([
   "captureTranscription",
   "onboardingClaimExtraction",
   "perceptionExtraction",
-  "recordCompression"
+  "recordCompression",
+  "importanceScoring"
 ]);
 export { WAITING_FOR_USER_MODEL_STATUS };
 export const PERSONALIZED_TASK_INTENT_BYTE_BUDGET = 32_000;
@@ -136,7 +137,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
         ? "journal"
       : kind === "chat" ? "chat"
       : kind === "analysis" ? "analysis"
-      : ["annotationShenji", "contentImageUnderstanding", "perceptionExtraction", "recordCompression"].includes(kind)
+      : ["annotationShenji", "contentImageUnderstanding", "perceptionExtraction", "recordCompression", "importanceScoring"].includes(kind)
         ? safeText(input.resourceType, 40)
         : "thought";
     const binding = {
@@ -227,7 +228,18 @@ export function createTaskLifecycle({ createId, now, hash }) {
               }
               return payload;
             })()
-        : {};
+        : kind === "importanceScoring"
+          ? {
+              sourceRefs: Array.isArray(input.payload?.sourceRefs) ? input.payload.sourceRefs.slice(0, 9).map(ref => ({
+                resourceType: safeText(ref?.resourceType, 40), resourceId: safeText(ref?.resourceId, 100),
+                rootId: safeText(ref?.rootId, 100), targetKey: safeText(ref?.targetKey, 200),
+                version: Number(ref?.version)
+              })) : [],
+              model: safeText(input.payload?.model, 100),
+              effort: safeText(input.payload?.effort, 20),
+              fingerprint: safeText(input.payload?.fingerprint, 64)
+            }
+          : {};
     const requestedInputVersion = Number(input.inputVersion) > 0 ? Math.round(Number(input.inputVersion)) : 0;
     const requestedSubtargetVersion = Number(input.subtargetVersion) > 0 ? Math.round(Number(input.subtargetVersion)) : 0;
     return { kind, resourceType, targetId, subtargetId, clientRequestId, payload, requestedInputVersion, requestedSubtargetVersion };
@@ -296,11 +308,11 @@ export function createTaskLifecycle({ createId, now, hash }) {
       const reusable = taskForInput(
         tasks,
         { kind, targetId, inputHash: work.inputHash },
-        REUSABLE_EXTRACTION_STATUSES
+        kind === "importanceScoring" ? ACTIVE_TASK_STATUSES : REUSABLE_EXTRACTION_STATUSES
       );
       if (reusable) return { task: reusable, duplicate: true };
     }
-    if (!deferTargetInspection && kind === "perceptionExtraction") {
+    if (!deferTargetInspection && ["perceptionExtraction", "importanceScoring"].includes(kind)) {
       const existing = taskForInput(
         tasks,
         { kind, targetId, inputHash: work.inputHash },
@@ -330,11 +342,13 @@ export function createTaskLifecycle({ createId, now, hash }) {
         requestedIntentInputHash: String(requestedIntent.inputHash ?? "")
       } : {}),
       payload, clientRequestId, requestHash: inputRequestHash,
+      ...((work?.contextReceipt?.importanceSelectionPlan || work?.contextReceipt?.importanceReferences?.plan)
+        ? { importanceSelectionPlan: structuredClone(work.contextReceipt.importanceSelectionPlan || work.contextReceipt.importanceReferences?.plan) } : {}),
       status: deferTargetInspection
         ? WAITING_FOR_USER_MODEL_STATUS
         : waitingBudget ? WAITING_FOR_BUDGET_STATUS : "queued",
       createdAt, updatedAt: createdAt, attempt: 0,
-      ...(["perceptionExtraction", "recordCompression"].includes(kind) ? { internal: true } : {})
+      ...(["perceptionExtraction", "recordCompression", "importanceScoring"].includes(kind) ? { internal: true } : {})
     };
     tasks.unshift(task);
     if (!waitingBudget) work?.markQueued?.(task);
@@ -378,6 +392,9 @@ export function createTaskLifecycle({ createId, now, hash }) {
     task.errorCode = "";
     if (!Object.hasOwn(task, "requestedInputHash")) {
       task.requestedInputHash = work.inputHash || "";
+    }
+    if ((work.contextReceipt?.importanceSelectionPlan || work.contextReceipt?.importanceReferences?.plan) && !task.importanceSelectionPlan) {
+      task.importanceSelectionPlan = structuredClone(work.contextReceipt.importanceSelectionPlan || work.contextReceipt.importanceReferences?.plan);
     }
     work.markQueued?.(task);
     return { task, queued: true };
@@ -460,8 +477,15 @@ export function createTaskLifecycle({ createId, now, hash }) {
       const created = create(tasks, {
         kind: previous.kind, resourceType: previous.resourceType, targetId: previous.targetId, subtargetId: previous.subtargetId,
         payload: previous.payload, clientRequestId: `retry:${previous.id}`
-      }, inspectTarget, options);
-      if (created.task) created.task.retryOf = previous.id;
+      }, candidate => inspectTarget({ ...candidate,
+        ...(previous.importanceSelectionPlan ? { importanceSelectionPlan: structuredClone(previous.importanceSelectionPlan) } : {})
+      }), options);
+      if (created.task) {
+        created.task.retryOf = previous.id;
+        if (previous.importanceSelectionPlan && !created.task.importanceSelectionPlan) {
+          created.task.importanceSelectionPlan = structuredClone(previous.importanceSelectionPlan);
+        }
+      }
       return created;
     },
     claim(tasks, id) {

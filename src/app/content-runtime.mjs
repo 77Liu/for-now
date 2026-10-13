@@ -1,3 +1,6 @@
+import { promptText, renderPrompt } from "../shared/prompts/index.mjs";
+import { createImportanceService } from "../../.build/typescript/backend/shared/ai-context/index.mjs";
+import { legalImportanceMaterial } from "./task-context.mjs";
 import crypto from "node:crypto";
 import { createContentAttachmentService } from "../modules/content-attachments/index.mjs";
 import { keepsakePayload } from "../modules/keepsakes/index.mjs";
@@ -32,6 +35,8 @@ export function createContentRuntime({
   dispatchBackground,
   runDeepSeek,
   readAiUsage = async () => ({ entries: [] }),
+  getImportanceModelChoice = async () => null,
+  getImportanceModelSnapshot = () => null,
   recordCompressionDailyBudgetCny = 0,
   recordCompressionPerCallBudgetCny = 0,
   recordCompressionMaxBackfillDatesPerScan = 1,
@@ -181,12 +186,25 @@ export function createContentRuntime({
       }
     });
   }
+  const prepareImportanceContext = async () => {
+    try {
+      return await getImportanceModelChoice();
+    } catch {
+      return null;
+    }
+  };
+  const importanceService = createImportanceService({ repository: contentRepository,
+    resolve: (store, sourceRef) => legalImportanceMaterial(store, sourceRef, getAccountId()),
+    modelChoice: getImportanceModelChoice, currentChoice: getImportanceModelSnapshot, hash, now, promptText, renderPrompt });
   const background = createContentBackground({
     repository: contentRepository,
     annotationService: foundation.annotationService,
     contentAttachments: contentAttachmentService,
     perception: perceptionRuntime,
     recordCompressionTarget: recordCompressionService.target,
+    importanceTarget: importanceService.target,
+    getImportanceModelSnapshot,
+    prepareImportanceContext,
     getRecentTrend,
     mediaRuntime,
     getAccountId,
@@ -202,6 +220,7 @@ export function createContentRuntime({
     debugFetch: observedDebugFetch
   });
   backgroundAi = background.backgroundAi;
+  importanceService.attach(backgroundAi);
   const recordCompressionJobs = recordCompressionService.attach(backgroundAi);
   const perception = createPerceptionService({
     repository: contentRepository,
@@ -219,6 +238,7 @@ export function createContentRuntime({
     materializeAttachmentFiles: mediaRuntime.materializeAttachmentFiles,
     workflowContextKey,
     getRecentTrend,
+    getImportanceModelSnapshot,
     now,
     today,
     currentTime,
@@ -246,6 +266,9 @@ export function createContentRuntime({
      */
     observeRecordCompressionTasks: observer => recordCompressionService.observeSettlements(observer),
     contentAttachmentService,
+    importanceService,
+    getImportanceModelSnapshot,
+    prepareImportanceContext,
     perception,
     updateSourceStore: operation => contentRepository.update(operation),
     trashCommands

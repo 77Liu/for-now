@@ -282,7 +282,7 @@ try {
     diaryLead: "lite", diaryStructure: "mid", diaryTopic: "high", diaryReflection: "ultra",
     annotationShenji: "high", analysis: "ultra", bookRecognition: "mid", healthRecognition: "mid",
     contentImageUnderstanding: "mid", capturePolish: "mid", onboardingClaimExtraction: "mid",
-    perceptionExtraction: "lite", recordCompression: "lite"
+    perceptionExtraction: "lite", recordCompression: "lite", importanceScoring: "lite"
   });
   assert.equal(migratedSettings.sceneEfforts.thoughtAnswer, "max");
   assert.equal(migratedSettings.sceneEfforts.diaryLead, "none");

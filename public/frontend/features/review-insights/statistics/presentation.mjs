@@ -24,6 +24,7 @@ const SCENE_LABELS = Object.freeze({
   contentImageUnderstanding: "内容图片理解",
   capturePolish: "语音整理",
   recordCompression: "日记录压缩",
+  importanceScoring: "材料重要性评分",
   lite: "连接测试",
   mid: "连接测试",
   high: "连接测试",

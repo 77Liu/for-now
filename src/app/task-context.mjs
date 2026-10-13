@@ -1,4 +1,5 @@
-import { readInternalBudgets } from "../../.build/typescript/backend/shared/ai-context/index.mjs";
+import { describeDailyRecord } from "../modules/health/index.mjs";
+import { readInternalBudgets, estimateInternalTokens, createImportanceSelectionPlan, applyImportanceSelectionPlan, RELATED_REFERENCE_SHARE_MAX } from "../../.build/typescript/backend/shared/ai-context/index.mjs";
 import crypto from "node:crypto";
 import {
   EVIDENCE_ERROR_CODES,
@@ -175,7 +176,8 @@ function normalizedLegacyDependencies(store, values) {
   const unique = new Map();
   for (const value of values) {
     const compact = compactPersonalContextReceipt(value);
-    if (!legacyDependenciesValid([compact])) {
+    if (!supplementalImportanceReceiptMatches(store, compact?.importanceReferences)
+      || !legacyDependenciesValid([compact])) {
       fail("Legacy context dependency cannot be converted", "CURRENT_MATERIAL_LEGACY_INVALID");
     }
     const fingerprint = personalContextReceiptFingerprint(compact);
@@ -198,7 +200,8 @@ function normalizedLegacyDependencies(store, values) {
 
 function legacyDependenciesMatch(store, values) {
   if (!legacyDependenciesValid(values)) return false;
-  try { return values.every(receipt => personalContextReceiptMatches(store, receipt)); }
+  try { return values.every(receipt => supplementalImportanceReceiptMatches(store, receipt.importanceReferences)
+    && personalContextReceiptMatches(store, receipt)); }
   catch { return false; }
 }
 
@@ -254,6 +257,9 @@ function normalizedCurrentMaterial(values, accountId, store, task) {
     if (!evaluateStoredEvidenceChecks(store, evidenceChecks, { accountId }).usable) {
       fail("Working context current evidence changed", "CURRENT_MATERIAL_EVIDENCE_STALE");
     }
+    if (!rawSourceChecksMatch(store, value.rawSourceChecks ?? [], accountId)) {
+      fail("Working context original source dependency changed", "CURRENT_MATERIAL_EVIDENCE_STALE");
+    }
     const legacyDependencies = normalizedLegacyDependencies(store, value.legacyDependencies ?? []);
     const authorization = explicitCurrentRequest(value, task) ? "current-request" : "source-permission";
     const permission = taskContextSourcePermission(store, value.sourceRef, accountId);
@@ -292,6 +298,7 @@ function normalizedCurrentMaterial(values, accountId, store, task) {
         ? value.validation
         : "content",
       evidenceChecks,
+      rawSourceChecks: list(value.rawSourceChecks).map(check => ({ ...check })),
       authorization,
       permissionRevision: permission.permissionRevision,
       permissionChecks: permissionChecks.map(check => ({ ...check })),
@@ -377,7 +384,7 @@ function sourceRecord(store, sourceRef, indexes = null) {
 function targetText({ item, root }, sourceRef) {
   if (sourceRef.resourceType === "userClaim") return String(item.statement || "");
   if (sourceRef.resourceType === "modelUnknown") return String(item.question || "");
-  if (sourceRef.resourceType === "checkin") {
+  if (sourceRef.resourceType === "checkin" && ["", "content"].includes(sourceRef.targetKey || "")) {
     return JSON.stringify({
       mood: item.mood,
       energy: item.energy,
@@ -388,7 +395,7 @@ function targetText({ item, root }, sourceRef) {
       notes: item.notes || {}
     });
   }
-  if (sourceRef.resourceType === "dailyRecord") {
+  if (sourceRef.resourceType === "dailyRecord" && ["", "content"].includes(sourceRef.targetKey || "")) {
     return JSON.stringify(Object.fromEntries(
       Object.entries(item)
         .filter(([key]) => ![
@@ -464,6 +471,208 @@ export function taskContextSourceMaterial(store, sourceRef, indexes = null) {
       : recordVersion(located.item.version),
     contentSha256: digest(text)
   };
+}
+
+/**
+ * 解析重要性评分/补齐选材的合法原始材料，先执行账户许可与当前版本门。
+ * 混合追问只允许用户问题字段；AI答案、转写及派生模型不能成为原话随机池。
+ * @since unreleased
+ */
+export function legalImportanceMaterial(store, sourceRef, accountId, purpose = "context") {
+  if (!sourceRef || typeof sourceRef !== "object"
+    || ["userClaim", "modelUnknown", "analysis"].includes(sourceRef.resourceType)) return null;
+  if (!sourceIdentity(sourceRef) || !Number.isSafeInteger(sourceRef.version) || sourceRef.version < 1) return null;
+  const located = sourceRecord(store, sourceRef);
+  if (!located) return null;
+  let canonicalTarget = "";
+  if (located.item === located.root) {
+    if (["book", "quote"].includes(sourceRef.resourceType)) return null;
+    canonicalTarget = sourceRef.resourceType === "thought" ? `${located.item.type}:${located.item.id}`
+      : sourceRef.resourceType === "chat" ? "message" : "";
+    if (![canonicalTarget, "", "content"].includes(String(sourceRef.targetKey || ""))) return null;
+    if (sourceRef.resourceType === "chat" && sourceRef.targetKey !== "message") return null;
+  } else {
+    for (const [field, prefix] of [["remarks", "remark"], ["followUps", "followup-question"],
+      ["reflections", "reflection"], ["notes", "note"], ["annotations", "annotation"], ["annotationDrift", "annotation"]]) {
+      if (list(located.root[field]).some(item => item.id === located.item.id)) canonicalTarget = `${prefix}:${located.item.id}`;
+    }
+    if (!canonicalTarget && [...list(located.root.annotations), ...list(located.root.annotationDrift)]
+      .some(annotation => list(annotation.replies).some(item => item.id === located.item.id))) {
+      canonicalTarget = `annotation-reply:${located.item.id}`;
+    }
+    if (!canonicalTarget || sourceRef.targetKey !== canonicalTarget) return null;
+  }
+  sourceRef = { ...sourceRef, rootId: located.item === located.root && !["thought", "chat"].includes(sourceRef.resourceType)
+    ? "" : located.root.id, targetKey: canonicalTarget };
+  let permission;
+  try { permission = taskContextSourcePermission(store, sourceRef, accountId); }
+  catch { return null; }
+  if (purpose !== "learning" && permission?.contextAllowed !== true) return null;
+  if (purpose === "learning") {
+    const permissions = list(store?.evidencePermissions).filter(item => item?.sourceKey === sourceIdentity(sourceRef));
+    const permission = permissions.length === 1 ? normalizeEvidencePermission(permissions[0]) : null;
+    if (!permission || permission.accountId !== accountId || !permission.learningAllowed) return null;
+    if (located?.item?.learningAllowed === false) return null;
+  }
+  if (!located || located.item?.deletedAt || located.root?.deletedAt
+    || located.item?.disposition === "discarded" || located.root?.disposition === "discarded"
+    || located.item?.contextAllowed === false || located.root?.contextAllowed === false
+    || located.item?.allowInContext === false || located.root?.allowInContext === false
+    || [located.item, located.root].some(item => item?.accountId && item.accountId !== accountId)) return null;
+  const targetKey = String(sourceRef.targetKey || "");
+  if (sourceRef.resourceType === "thought" && (located.item?.type === "answer"
+    || /^(?:answer|followup-answer)(?::|$)/.test(targetKey))) return null;
+  if (sourceRef.resourceType === "chat" && targetKey !== "message") return null;
+  const userQuestion = sourceRef.resourceType === "thought"
+    && String(sourceRef.targetKey).startsWith("followup-question:");
+  if (!userQuestion && (["ai", "system"].includes(located.item?.authorType)
+    || /^(?:deepseek|codex|openai|model|ai|system)(?:$|[-_:])/i.test(String(located.item?.origin || ""))
+    || Boolean(located.item?.modelDraft || located.item?.sourceTaskId || located.item?.contextReceipt))) return null;
+  if (sourceRef.resourceType === "capture" && sourceRef.targetKey === "transcription") return null;
+  if (["third_party", "quoted_external", "external"].includes(located.item?.origin)) return null;
+  let text = "";
+  let informationType = "user_viewpoint";
+  let origin = "user";
+  if (located.item !== located.root) {
+    if (targetKey.startsWith("note:") && located.item.type !== "thought") return null;
+    text = targetKey.startsWith("followup-question:") ? located.item.question || ""
+      : /^(?:remark|annotation|annotation-reply):/.test(targetKey) ? located.item.text || ""
+        : located.item.content || "";
+  } else if (sourceRef.resourceType === "chat") text = located.item.message || "";
+  else if (["capture", "journal", "thought"].includes(sourceRef.resourceType)) text = located.item.content || "";
+  else if (sourceRef.resourceType === "keepsake") text = located.item.note || "";
+  else if (sourceRef.resourceType === "dailyRecord") {
+    origin = "measured";
+    informationType = "measured_fact";
+    const numeric = Object.fromEntries(Object.entries(located.item).filter(([key, value]) =>
+      ["type", "bedtime", "wakeTime", "measuredAt", "startedAt"].includes(key)
+      || (key !== "version" && typeof value === "number" && Number.isFinite(value))));
+    if (!Object.keys(numeric).some(key => key !== "type")) return null;
+    text = describeDailyRecord({ ...numeric, adjustedWeight: null, trendAnalysis: "", description: "", recognitionDescription: "" });
+  } else if (sourceRef.resourceType === "checkin") {
+    informationType = "user_fact";
+    text = JSON.stringify({ mood: located.item.mood, energy: located.item.energy,
+      stress: located.item.stress, sleep: located.item.sleep, factors: located.item.factors,
+      custom: located.item.custom, notes: located.item.notes });
+  } else {
+    // 这些领域的用户输入字段单独读取，不拼接 answer、modelDraft 或其他派生字段。
+    const fields = {
+      action: ["description", "title"], habit: ["description", "title"],
+      habitCheckin: ["note"], feedback: ["content", "message", "description"],
+      experiment: ["hypothesis"], customMetric: ["description", "name"],
+      validationLedger: ["description", "title"]
+    }[sourceRef.resourceType] || [];
+    text = fields.map(field => located.item[field]).find(value => typeof value === "string" && value.trim()) || "";
+    informationType = sourceRef.resourceType === "habitCheckin" ? "user_fact" : "user_viewpoint";
+  }
+  text = String(text).trim();
+  if (!text || recordVersion(located.item.version) !== sourceRef.version) return null;
+  const material = { version: sourceRef.version, text, contentSha256: digest(text) };
+  return {
+    accountId, sourceKey: sourceIdentity(sourceRef), version: material.version,
+    permissionRevision: permission.permissionRevision,
+    origin, informationType,
+    recordType: located.item !== located.root ? "用户批注或思考"
+      : { dailyRecord: "生理测量记录", checkin: "用户状态自述", capture: "用户原始文字",
+        journal: "用户日记", thought: "用户思绪", chat: "用户对话", keepsake: "用户小物说明",
+        action: "用户行动计划", habit: "用户习惯计划", experiment: "用户假设", feedback: "用户反馈" }[sourceRef.resourceType] || "用户自述",
+    contentSha256: material.contentSha256, text: material.text,
+    favorite: Boolean(located.item?.favorite && located.item.favorite !== "none") || located.item?.starred === true,
+    feedback: Boolean(located.item?.completionFeedback),
+    explicitImportance: Number.isFinite(located.item?.importance) ? located.item.importance : undefined
+  };
+}
+
+/**
+ * 不依赖感知任务完成的用户原始来源池；子项以真实坐标单独计数。
+ * @since unreleased
+ */
+export function legalImportanceSources(store, accountId, purpose = "context") {
+  const result = [];
+  const add = (resourceType, root, item, targetKey) => {
+    if (!item?.id || !root?.id) return;
+    const sourceRef = { resourceType, resourceId: item.id, rootId: item === root && !["thought", "chat"].includes(resourceType) ? "" : root.id,
+      targetKey: item === root && !["thought", "chat"].includes(resourceType) ? "" : targetKey, version: recordVersion(item.version) };
+    const material = legalImportanceMaterial(store, sourceRef, accountId, purpose);
+    if (!material?.text.trim()) return;
+    result.push({ ...material, sourceRef, occurredAt: item.occurredAt || root.occurredAt || item.createdAt || "",
+      recordedAt: item.createdAt || root.createdAt || "",
+      permissionRevision: taskContextSourcePermission(store, sourceRef, accountId).permissionRevision });
+  };
+  for (const resourceType of ["capture", "journal", "thought", "chat", "quote", "keepsake", "book", "checkin", "dailyRecord",
+    "action", "habit", "habitCheckin", "feedback", "experiment", "customMetric", "validationLedger"]) {
+    for (const root of list(store?.[SOURCE_COLLECTIONS[resourceType]])) {
+      if (resourceType === "thought") {
+        if (["question", "idea", "record"].includes(root.type)) add(resourceType, root, root, `${root.type}:${root.id}`);
+        for (const remark of list(root.remarks)) add(resourceType, root, remark, `remark:${remark.id}`);
+        for (const followUp of list(root.followUps)) add(resourceType, root, followUp, `followup-question:${followUp.id}`);
+      } else if (resourceType === "chat") add(resourceType, root, root, "message");
+      else if (!["book", "quote"].includes(resourceType)) add(resourceType, root, root, "content");
+      if (resourceType === "book") {
+        for (const note of list(root.notes)) add(resourceType, root, note, `note:${note.id}`);
+      }
+      if (resourceType === "journal") {
+        for (const reflection of list(root.reflections)) add(resourceType, root, reflection, `reflection:${reflection.id}`);
+      }
+      for (const annotation of [...list(root.annotations), ...list(root.annotationDrift)]) {
+        add(resourceType, root, annotation, `annotation:${annotation.id}`);
+        for (const reply of list(annotation.replies)) add(resourceType, root, reply, `annotation-reply:${reply.id}`);
+      }
+    }
+  }
+  return [...new Map(result.map(item => [item.sourceKey, item])).values()];
+}
+
+/**
+ * 个性化对话、复盘、日记回望共用的补齐证据层；核心与当前任务由各入口保留。
+ * @since unreleased
+ */
+export function supplementalImportanceContext(store, { accountId, text, seed, choice = null,
+  frozenPlan = null, excludeSourceRefs = [], purpose = "context" } = {}) {
+  const excluded = new Set(excludeSourceRefs.map(ref => legalImportanceMaterial(store, ref, accountId, purpose)?.sourceKey || sourceIdentity(ref)));
+  const terms = searchTerms(text);
+  const materials = legalImportanceSources(store, accountId, purpose).filter(item => !excluded.has(item.sourceKey))
+    .map(item => ({ ...item, relevanceScore: relevanceScore(terms, item, text) }));
+  const plan = frozenPlan || createImportanceSelectionPlan(materials, store.importanceScores || [], {
+    seed, model: choice?.model || "unconfigured-rule-fallback", effort: choice?.effort || "unknown"
+  });
+  const selected = applyImportanceSelectionPlan(materials, plan);
+  if (!selected) {
+    if (frozenPlan) return null;
+    fail("Reference excerpts exceed their budget", "WORKING_CONTEXT_REFERENCE_BUDGET_EXCEEDED");
+  }
+  const sources = selected.map(item => ({
+    citationId: `importance:${digest(item.sourceKey)}`, text: item.text,
+    source: publicSource({ ...item, id: `raw:${digest(item.sourceKey)}`, channel: "history" })
+  }));
+  const payload = { referenceEvidence: sources.map(item => ({ citationId: item.citationId, text: item.text,
+    origin: item.source.origin, informationType: item.source.informationType,
+    selectionReason: plan.sources.find(row => `importance:${digest(row.sourceKey)}` === item.citationId)?.related
+      ? "task-relevant" : "importance-supplement" })) };
+  return {
+    prompt: '<reference_context_data format="application/json">' + JSON.stringify(payload)
+      .replaceAll("<", "\\u003c").replaceAll(">", "\\u003e") + '</reference_context_data>',
+    sources,
+    receipt: { accountId, plan, purpose,
+      rawSourceChecks: selected.map(item => ({ sourceKey: item.sourceKey, version: item.version, contentSha256: item.contentSha256 })),
+      permissionChecks: selected.map(item => ({ sourceKey: item.sourceKey, permissionRevision: item.permissionRevision })) }
+  };
+}
+
+/** 校验补齐来源的当前版本/hash与权限；评分缓存变化不使固定计划失效。
+ * @since unreleased
+ */
+export function supplementalImportanceReceiptMatches(store, receipt, accountId = receipt?.accountId) {
+  if (!receipt) return true;
+  if (!permissionChecksValid(receipt.permissionChecks)) return false;
+  return receipt.accountId === accountId && rawSourceChecksMatch(store, receipt.rawSourceChecks, accountId, receipt.purpose)
+    && receipt.rawSourceChecks.every(check => receipt.permissionChecks.some(permission => permission.sourceKey === check.sourceKey))
+    && (receipt.purpose === "learning" ? receipt.permissionChecks.every(check => {
+      const values = list(store?.evidencePermissions).filter(item => item?.sourceKey === check.sourceKey);
+      const permission = values.length === 1 ? normalizeEvidencePermission(values[0]) : null;
+      return permission?.accountId === accountId && permission.learningAllowed
+        && permission.revision === check.permissionRevision;
+    }) : permissionChecksMatch(store, receipt.permissionChecks, accountId));
 }
 
 function historicalCandidates(store, accountId, evidenceValues) {
@@ -588,7 +797,7 @@ function publicSource(material) {
       occurredOn: material.occurredAt?.slice(0, 10) || ""
     },
     ...(isModelUnknown ? { excerpt: material.text } : {}),
-    ...(material.channel === "history" ? {
+    ...(material.channel === "history" && material.evidenceCheck ? {
       evidenceId: material.evidenceId,
       evidenceFingerprint: material.evidenceCheck.evidenceFingerprint
     } : {})
@@ -652,7 +861,8 @@ function selectionReceipt({
   historyRetrieval,
   notice,
   prompt,
-  promptContract
+  promptContract,
+  importanceSelectionPlan = null
 }) {
   const selected = [
     ...currentMaterial.map(item => ({
@@ -664,7 +874,7 @@ function selectionReceipt({
       id: item.id,
       evidenceId: item.evidenceId,
       channel: "history",
-      reason: "task-relevant"
+      reason: item.selectionReason || "task-relevant"
     }))
   ];
   const sources = [
@@ -677,7 +887,7 @@ function selectionReceipt({
   for (const check of [
     ...currentMaterial.flatMap(item => item.evidenceChecks),
     ...selectedHistory.map(item => item.evidenceCheck)
-  ]) {
+  ].filter(Boolean)) {
     evidenceChecks.set(`${check.purpose}\u0000${check.evidenceId}`, check);
   }
   const receipt = {
@@ -728,12 +938,23 @@ function selectionReceipt({
     excludedSetSha256: digest(JSON.stringify(excluded)),
     excluded: excluded.slice(0, WORKING_CONTEXT_RECEIPT_ITEM_LIMIT),
     evidenceChecks: [...evidenceChecks.values()],
-    permissionChecks: [...new Map(currentMaterial.flatMap(item => [
+    permissionChecks: [...new Map([...currentMaterial.flatMap(item => [
       { sourceKey: item.sourceKey, permissionRevision: item.permissionRevision },
       ...item.permissionChecks
-    ]).map(check => [check.sourceKey, check])).values()],
+    ]), ...selectedHistory.filter(item => item.rawSource).map(item => ({
+      sourceKey: item.sourceKey, permissionRevision: item.permissionRevision
+    }))].map(check => [check.sourceKey, check])).values()],
     legacyDependencies: normalizedLegacyDependencies(store,
       currentMaterial.flatMap(item => item.legacyDependencies)),
+    ...(importanceSelectionPlan ? { importanceSelectionPlan } : {}),
+    ...(importanceSelectionPlan || currentMaterial.some(item => item.rawSourceChecks.length) ? {
+      rawSourceChecks: [...new Map([
+        ...currentMaterial.flatMap(item => item.rawSourceChecks),
+        ...selectedHistory.filter(item => item.rawSource).map(item => ({
+          sourceKey: item.sourceKey, version: item.sourceRef.version, contentSha256: item.contentSha256
+        }))
+      ].map(check => [check.sourceKey, check])).values()]
+    } : {}),
     promptSha256: digest(prompt),
     promptContract: promptContract ? structuredClone(promptContract) : null,
     timeWindow: {
@@ -782,7 +1003,10 @@ export function workingContextProjection(store, {
   tokenLimit = WORKING_CONTEXT_PROMPT_BYTE_BUDGET,
   maxHistorical = 8,
   retrieveHistorical = source => source?.evidenceSources,
-  compilePrompt = null
+  compilePrompt = null,
+  importanceChoice = null,
+  frozenSelectionPlan = null,
+  selectionSeed = ""
 } = {}) {
   const accountId = safeText(inputAccountId, 100);
   const scene = safeText(inputScene, 40);
@@ -810,7 +1034,7 @@ export function workingContextProjection(store, {
     task,
     currentMaterial,
     [],
-    degradedNotice,
+    "",
     generatedAt
   );
   if (Buffer.byteLength(currentCompiled.prompt, "utf8") > tokenLimit) {
@@ -837,7 +1061,67 @@ export function workingContextProjection(store, {
   const excluded = [];
   const selectedHistory = [];
   let rankedCandidates = [];
-  if (status === "complete") {
+  let importanceSelectionPlan = null;
+  const useImportance = Boolean(compilePrompt) && ["thoughtAnswer", "followUpAnswer", "annotationShenji"].includes(scene);
+  if (useImportance) {
+    const currentKeys = new Set(currentMaterial.map(item => item.sourceKey));
+    const queryTerms = searchTerms(queryText);
+    const raw = legalImportanceSources(store, accountId).filter(item => !currentKeys.has(item.sourceKey)).map(item => ({
+      ...item, originalText: item.text, id: `raw:${digest(item.sourceKey)}`, rawSource: true, reasons: [],
+      relevanceScore: relevanceScore(queryTerms, item, task.text, task.eventId)
+    }));
+    rankedCandidates = raw;
+    if (status === "degraded" && raw.length) notice = "感知证据暂不可用，本次背景选材使用获准的用户原始记录。";
+    const model = importanceChoice?.model || "unconfigured-rule-fallback";
+    importanceSelectionPlan = frozenSelectionPlan || createImportanceSelectionPlan(raw, store.importanceScores || [], {
+      seed: selectionSeed || digest(JSON.stringify([accountId, task, generatedAt, model])), model, effort: importanceChoice?.effort || "unknown",
+      count: Math.max(0, readInternalBudgets().minimumReferences - currentKeys.size)
+    });
+    const applied = applyImportanceSelectionPlan(raw, importanceSelectionPlan);
+    if (!applied) fail("Frozen reference selection sources changed", "STALE_PERSONAL_CONTEXT");
+    const reasonFor = candidate => importanceSelectionPlan.sources.find(item => item.sourceKey === candidate.sourceKey)?.related
+      ? "task-relevant" : "importance-supplement";
+    const renderCandidates = values => compiledPrompt(compilePrompt, task, currentMaterial,
+      values.map(candidate => ({ ...candidate, selectionReason: reasonFor(candidate) })), notice, generatedAt);
+    const fits = values => Buffer.byteLength(renderCandidates(values).prompt, "utf8") <= tokenLimit;
+    if (!fits([]) && notice) notice = "";
+    if (!fits([])) fail("Required material exceeds the working-context budget", "CURRENT_MATERIAL_BUDGET_EXCEEDED");
+    let bounded = applied;
+    if (!fits(bounded)) {
+      const minimumLength = value => [...value.text][0]?.length || 0;
+      const atFraction = fraction => bounded.map(value => ({ ...value,
+        text: value.text.slice(0, Math.max(minimumLength(value), Math.floor(value.text.length * fraction))) }));
+      // 先尝试给所有来源留下一个完整字符；连目录结构都放不下时才减少可选来源。
+      while (bounded.length && !fits(atFraction(0))) bounded = bounded.slice(0, -1);
+      let low = 0;
+      let high = 1;
+      for (let attempt = 0; attempt < 32; attempt += 1) {
+        const middle = (low + high) / 2;
+        if (fits(atFraction(middle))) low = middle;
+        else high = middle;
+      }
+      bounded = atFraction(low);
+      const isRelated = value => importanceSelectionPlan.sources.find(row => row.sourceKey === value.sourceKey)?.related === true;
+      const sampledTokens = bounded.filter(value => !isRelated(value)).reduce((sum, value) => sum + estimateInternalTokens(value.text), 0);
+      let relatedTokensLeft = Math.floor(sampledTokens * RELATED_REFERENCE_SHARE_MAX / (1 - RELATED_REFERENCE_SHARE_MAX));
+      bounded = bounded.flatMap(value => {
+        if (!isRelated(value)) return [value];
+        let length = value.text.length;
+        while (length > 0 && estimateInternalTokens(value.text.slice(0, length)) > relatedTokensLeft) length -= 1;
+        if (!length) return [];
+        const text = value.text.slice(0, length);
+        relatedTokensLeft -= estimateInternalTokens(text);
+        return [{ ...value, text }];
+      });
+      const lengths = new Map(bounded.map(value => [value.sourceKey, value.text.length]));
+      importanceSelectionPlan = { ...importanceSelectionPlan,
+        requestedCount: importanceSelectionPlan.sources.length,
+        limitReason: "overall_byte_budget",
+        sources: importanceSelectionPlan.sources.filter(value => lengths.has(value.sourceKey))
+          .map(value => ({ ...value, characters: lengths.get(value.sourceKey) })) };
+    }
+    selectedHistory.push(...bounded.map(candidate => ({ ...candidate, selectionReason: reasonFor(candidate) })));
+  } else if (status === "complete") {
     const queryTerms = searchTerms(queryText);
     const currentSourceKeys = new Set(currentMaterial.map(item => item.sourceKey));
     const unresolvedDeicticEvent = hasDeicticEvent && !task.eventId;
@@ -905,7 +1189,8 @@ export function workingContextProjection(store, {
     historyRetrieval,
     notice,
     prompt: compiled.prompt,
-    promptContract: compiled.promptContract
+    promptContract: compiled.promptContract,
+    importanceSelectionPlan
   });
   return {
     prompt: compiled.prompt,
@@ -919,11 +1204,28 @@ export function workingContextProjection(store, {
       })),
       ...selectedHistory.map(item => ({
         citationId: `context:${item.id}`,
-        text: item.text,
+        text: item.originalText || item.text,
         source: publicSource({ ...item, channel: "history" })
       }))
     ]
   };
+}
+
+function rawSourceChecksValid(checks) {
+  return Array.isArray(checks) && checks.length <= WORKING_CONTEXT_RECEIPT_ITEM_LIMIT
+    && new Set(checks.map(check => check?.sourceKey)).size === checks.length
+    && checks.every(check => parseEvidenceSourceKey(check?.sourceKey)
+      && Number.isSafeInteger(check.version) && check.version > 0 && validDigest(check.contentSha256));
+}
+
+function rawSourceChecksMatch(store, checks, accountId, purpose = "context") {
+  if (!rawSourceChecksValid(checks)) return false;
+  return checks.every(check => {
+    const sourceRef = parseEvidenceSourceKey(check?.sourceKey);
+    if (!sourceRef || !Number.isSafeInteger(check.version) || !validDigest(check.contentSha256)) return false;
+    const material = legalImportanceMaterial(store, { ...sourceRef, version: check.version }, accountId, purpose);
+    return material?.contentSha256 === check.contentSha256;
+  });
 }
 
 export function workingContextReceiptFingerprint(receipt) {
@@ -947,6 +1249,7 @@ export function workingContextReceiptFingerprint(receipt) {
     || !receipt.currentMaterial.length
     || !Array.isArray(receipt.selected)
     || !Array.isArray(receipt.evidenceChecks)
+    || !rawSourceChecksValid(receipt.rawSourceChecks || [])
     || !permissionChecksValid(receipt.permissionChecks)
     || !legacyDependenciesValid(receipt.legacyDependencies)
     || !receipt.tokenBudget
@@ -997,6 +1300,7 @@ export function workingContextReceiptFingerprint(receipt) {
     ))
     || receipt.selected.some(item => (
       item?.channel === "history" && !evidenceIds.has(item.evidenceId)
+        && !(receipt.rawSourceChecks || []).some(check => item.id === `raw:${digest(check.sourceKey)}`)
     ))) {
     return "";
   }
@@ -1013,6 +1317,8 @@ export function workingContextReceiptFingerprint(receipt) {
     evidenceChecks: receipt.evidenceChecks,
     permissionChecks: receipt.permissionChecks,
     legacyDependencies: receipt.legacyDependencies,
+    ...(receipt.importanceSelectionPlan ? { importanceSelectionPlan: receipt.importanceSelectionPlan } : {}),
+    ...(receipt.rawSourceChecks ? { rawSourceChecks: receipt.rawSourceChecks } : {}),
     promptSha256: receipt.promptSha256,
     ...(promptContract != null ? { promptContract } : {}),
     timeWindow: receipt.timeWindow,
@@ -1028,7 +1334,8 @@ export function workingContextReceiptMatches(store, receipt, options = {}) {
     return workingContextReceiptFingerprint(workingContextProjection(store, {
       ...options,
       generatedAt: receipt.generatedAt,
-      tokenLimit: receipt.tokenBudget?.limit
+      tokenLimit: receipt.tokenBudget?.limit,
+      frozenSelectionPlan: receipt.importanceSelectionPlan || null
     }).receipt) === expected;
   } catch {
     return false;
@@ -1064,6 +1371,7 @@ export function contextDerivedOutputAllowed(store, item, accountId, expectedTask
   const receipt = item?.contextReceipt;
   if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) return false;
   if (receipt.schemaVersion !== 2) {
+    if (!supplementalImportanceReceiptMatches(store, receipt.importanceReferences, accountId)) return false;
     try { contextDerivedLegacyDependencies(store, item); return true; }
     catch { return false; }
   }
@@ -1092,6 +1400,7 @@ export function contextDerivedOutputAllowed(store, item, accountId, expectedTask
   if (!contextFingerprint
     || receipt.accountBindingSha256 !== digest(accountId)
     || !permissionChecksMatch(store, receipt.permissionChecks, accountId)
+    || !rawSourceChecksMatch(store, receipt.rawSourceChecks || [], accountId)
     || !legacyDependenciesMatch(store, receipt.legacyDependencies)
     || !Array.isArray(receipt.currentMaterial)
     || !receipt.currentMaterial.every(snapshot => (
@@ -1115,6 +1424,7 @@ export function thoughtTaskCurrentMaterial(store, root, {
     settledVersionDelta = 0,
     contextAllowed = item?.contextAllowed !== false && item?.disposition !== "discarded",
     evidenceChecks = [],
+    rawSourceChecks = [],
     permissionChecks = [],
     legacyDependencies = [],
     authorization = "source-permission"
@@ -1139,6 +1449,7 @@ export function thoughtTaskCurrentMaterial(store, root, {
       contextAllowed,
       validation,
       evidenceChecks,
+      rawSourceChecks,
       permissionChecks,
       legacyDependencies,
       authorization,
@@ -1180,6 +1491,7 @@ export function thoughtTaskCurrentMaterial(store, root, {
     add(item, `${item.type}:${item.id}`, item.content || item.modelDraft, recordType, {
       contextAllowed: allowed,
       evidenceChecks: modelOutput ? list(item.contextReceipt?.evidenceChecks) : [],
+      rawSourceChecks: modelOutput ? list(item.contextReceipt?.rawSourceChecks) : [],
       permissionChecks: modelOutput ? list(item.contextReceipt?.permissionChecks) : [],
       legacyDependencies: modelOutput ? contextDerivedLegacyDependencies(store, item) : []
     });
@@ -1224,7 +1536,8 @@ export function thoughtTaskCurrentMaterial(store, root, {
             settledVersionDelta: item.id === currentFollowUpId ? 1 : 0,
             contextAllowed: allowed,
             evidenceChecks: modelOutput ? list(item.contextReceipt?.evidenceChecks) : [],
-            permissionChecks: modelOutput ? list(item.contextReceipt?.permissionChecks) : [],
+            rawSourceChecks: modelOutput ? list(item.contextReceipt?.rawSourceChecks) : [],
+      permissionChecks: modelOutput ? list(item.contextReceipt?.permissionChecks) : [],
             legacyDependencies: modelOutput ? contextDerivedLegacyDependencies(store, item) : []
           }
         );
@@ -1250,6 +1563,7 @@ export function thoughtTaskCurrentMaterial(store, root, {
       {
         validation: "version",
         evidenceChecks: validTurns.flatMap(turn => list(turn.contextReceipt?.evidenceChecks)),
+        rawSourceChecks: validTurns.flatMap(turn => list(turn.contextReceipt?.rawSourceChecks)),
         permissionChecks: validTurns.flatMap(turn => list(turn.contextReceipt?.permissionChecks)),
         legacyDependencies: validTurns.flatMap(turn => contextDerivedLegacyDependencies(store, turn))
       }
