@@ -645,9 +645,15 @@ function applySessionPatch(store, patch, expectedVersion, at) {
   return { value: next };
 }
 
+/**
+ * 创建五问会话服务；onCompleted 在保存事务内创建/复用整理任务，抛错会回滚。
+ * afterCompleted 仅在提交后调度任务；调度失败仍保留已落盘状态，重放或启动恢复可继续。
+ */
 export function createOnboardingV2Service({
   repository,
-  now = () => new Date().toISOString()
+  now = () => new Date().toISOString(),
+  onCompleted = () => null,
+  afterCompleted = async () => {}
 }) {
   if (!repository || typeof repository.read !== "function" || typeof repository.executeIdempotent !== "function") {
     throw new TypeError("Onboarding v2 requires a readable, idempotent repository");
@@ -665,11 +671,21 @@ export function createOnboardingV2Service({
       if (parsed.fields) return { invalid: true, fields: parsed.fields };
       const requestHash = requestDigest({ expectedVersion, patch: parsed.value });
       try {
-        return await repository.executeIdempotent({
+        const result = await repository.executeIdempotent({
           scope: "onboarding-v2.session.patch",
           key: clientRequestId,
           requestHash
-        }, store => applySessionPatch(store, parsed.value, expectedVersion, now()));
+        }, store => {
+          const patched = applySessionPatch(store, parsed.value, expectedVersion, now());
+          // 完成状态和抽取任务同事务落盘，避免回答在两次请求之间绕过等待。
+          if (patched.value?.session.status === "completed") {
+            const extraction = onCompleted(store, patched.value);
+            return extraction ? { ...patched, extraction } : patched;
+          }
+          return patched;
+        });
+        if (result.value?.session.status === "completed") await afterCompleted(result.extraction);
+        return result;
       } catch (error) {
         if (error?.code === "IDEMPOTENCY_KEY_REUSED") {
           return { conflict: true, code: error.code };

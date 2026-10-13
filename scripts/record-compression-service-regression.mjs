@@ -1,3 +1,5 @@
+import { createAiGenerator } from "../src/modules/ai/generation.mjs";
+import { createDeepSeekTransport } from "../src/infrastructure/ai-providers/index.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import "./prompt-test-setup.mjs";
@@ -95,6 +97,36 @@ const repository = {
   }
 };
 
+// 使用真实transport/generator的返回契约，避免mock总返回对象掩盖纯字符串响应。
+const providerAudits = [];
+const generator = createAiGenerator({
+  readSettings: async () => ({ apiKey: "synthetic-no-network-key" }),
+  getContext: () => ({ user: { id: "account-a" }, secrets: [] }),
+  reserveAttempt: async () => ({ release() {}, commit() {} }),
+  gate: { acquire: async () => () => {} },
+  audit: {
+    text: value => value,
+    message: value => value,
+    start: async () => {},
+    recordDeepSeekAttempt: async entry => { providerAudits.push(entry); }
+  },
+  provider: createDeepSeekTransport({
+    endpoint: "https://synthetic.invalid/chat/completions",
+    fetchImpl: async (_url, options) => {
+      const request = JSON.parse(options.body);
+      assert.equal(request.response_format.type, "json_object");
+      const content = request.messages.some(message => String(message.content)
+        .includes("historical-user-supplement-output.v1"))
+        ? JSON.stringify({ schemaVersion: "historical-user-supplement-output.v1", candidates: [] })
+        : emptyCompressionOutput();
+      return new Response(JSON.stringify({
+        choices: [{ finish_reason: "stop", message: { content, reasoning_content: "合成思考，不应保存" } }],
+        usage: { prompt_tokens: 10, completion_tokens: 10 }
+      }));
+    }
+  })
+});
+
 const runtime = createContentRuntime({
   repository,
   trashRetentionDays: 30,
@@ -115,16 +147,16 @@ const runtime = createContentRuntime({
         const request = {
           prompt,
           signal: options.signal,
-          resolve: () => resolve({ content: emptyCompressionOutput() })
+          resolve: () => resolve(emptyCompressionOutput())
         };
         pendingCompressionCalls.push(request);
         if (options.signal?.aborted) abort();
         else options.signal?.addEventListener("abort", abort, { once: true });
       });
     }
-    return {
-      content: emptyCompressionOutput()
-    };
+    const result = await generator(prompt, options);
+    assert.equal(typeof result, "string", "captureReasoning:false必须沿真实generator返回字符串");
+    return result;
   },
   async readAiUsage() { return { entries: [] }; },
   recordCompressionDailyBudgetCny: 1,
@@ -168,6 +200,9 @@ assert.equal(typeof calls[0].isCurrent, "function",
 assert.equal(firstTask.status, "succeeded");
 const firstSummary = store.recordCompressions.find(item => item.id === firstTask.payload.recordId);
 assert.equal(firstSummary.status, "ready");
+assert.equal(Boolean(firstSummary.generatedAt), true);
+assert.equal(providerAudits[0].audit.status, "success");
+assert.equal(JSON.stringify(firstSummary).includes("合成思考"), false);
 assert.equal(firstSummary.sourceManifest.length, 1);
 assert.equal(firstSummary.tokenUsage.outputTokens <= 900, true);
 

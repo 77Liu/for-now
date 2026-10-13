@@ -1,3 +1,5 @@
+import { createAiGenerator } from "../src/modules/ai/generation.mjs";
+import { createDeepSeekTransport } from "../src/infrastructure/ai-providers/index.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import "./prompt-test-setup.mjs";
@@ -113,6 +115,76 @@ const parsePromptInput = prompt => {
   return JSON.parse(prompt.slice(marker + 3).trim());
 };
 
+// 合成供应商仅负责JSON内容；真实transport/generator负责响应解析和返回形态。
+async function syntheticCompletion(prompt, options) {
+  if (options.maxTokens === HISTORICAL_USER_SUPPLEMENT_TOKEN_BUDGET) {
+    const input = parsePromptInput(prompt);
+    assert.deepEqual(Object.keys(input), ["schemaVersion", "userSources"]);
+    assert.ok(input.userSources.length > 0);
+    assert.ok(input.userSources.every(source => (
+      Object.keys(source).sort().join(",") === "localDate,sourceId,text"
+    )));
+    assert.equal(JSON.stringify(input).includes("AI_ONLY_MARKER"), false);
+    assert.equal(JSON.stringify(input).includes("DAILY_AI_SUMMARY_MARKER"), false);
+    assert.equal(JSON.stringify(input).includes("sourceManifest"), false);
+    assert.equal(JSON.stringify(input).includes("metrics"), false);
+    assert.equal(prompt.includes("部分覆盖"), true);
+    const crossTimezoneSource = input.userSources.find(item => (
+      item.text.includes("CROSS_TZ_MARKER")
+    ));
+    assert.equal(crossTimezoneSource?.localDate, "2026-10-09",
+      "historical input must use the account timezone when an event crosses the Shanghai date boundary");
+    const source = input.userSources.find(item => item.localDate === "2026-10-10")
+      || input.userSources[0];
+    return {
+      content: JSON.stringify({
+        schemaVersion: HISTORICAL_USER_SUPPLEMENT_OUTPUT_SCHEMA_VERSION,
+        candidates: [{
+          statement: "先拆成小步骤。",
+          exactQuote: [...source.text].slice(0, 9).join(""),
+          sourceId: source.sourceId
+        }]
+      })
+    };
+  }
+  return {
+    content: JSON.stringify({
+      schemaVersion: RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION,
+      daily: { observations: [], metricKeys: [], missing: [] },
+      thoughtsIdeas: { focus: [], changes: [], openQuestions: [] },
+      other: { themes: [], collectedQuotes: [] },
+      aiReference: [],
+      stableUserCandidates: [],
+      conflicts: [],
+      warnings: []
+    })
+  };
+}
+const generatorAudits = [];
+const generator = createAiGenerator({
+  readSettings: async () => ({ apiKey: "synthetic-no-network-key" }),
+  getContext: () => ({ user: { id: "account-a" }, secrets: [] }),
+  reserveAttempt: async () => ({ release() {}, commit() {} }),
+  gate: { acquire: async () => () => {} },
+  audit: {
+    text: value => value,
+    message: value => value,
+    start: async () => {},
+    recordDeepSeekAttempt: async entry => { generatorAudits.push(entry); }
+  },
+  provider: createDeepSeekTransport({
+    endpoint: "https://synthetic.invalid/chat/completions",
+    fetchImpl: async (_url, options) => {
+      const request = JSON.parse(options.body);
+      const result = await syntheticCompletion(request.messages.at(-1).content, { maxTokens: request.max_tokens });
+      return new Response(JSON.stringify({
+        choices: [{ finish_reason: "stop", message: { ...result, reasoning_content: "合成思考，不应保存" } }],
+        usage: { prompt_tokens: 10, completion_tokens: 10 }
+      }));
+    }
+  })
+});
+
 const runtime = createContentRuntime({
   repository,
   trashRetentionDays: 30,
@@ -124,48 +196,9 @@ const runtime = createContentRuntime({
   dispatchBackground: callback => scheduled.push(callback),
   async runDeepSeek(prompt, options) {
     calls.push({ prompt, options });
-    if (options.maxTokens === HISTORICAL_USER_SUPPLEMENT_TOKEN_BUDGET) {
-      const input = parsePromptInput(prompt);
-      assert.deepEqual(Object.keys(input), ["schemaVersion", "userSources"]);
-      assert.ok(input.userSources.length > 0);
-      assert.ok(input.userSources.every(source => (
-        Object.keys(source).sort().join(",") === "localDate,sourceId,text"
-      )));
-      assert.equal(JSON.stringify(input).includes("AI_ONLY_MARKER"), false);
-      assert.equal(JSON.stringify(input).includes("DAILY_AI_SUMMARY_MARKER"), false);
-      assert.equal(JSON.stringify(input).includes("sourceManifest"), false);
-      assert.equal(JSON.stringify(input).includes("metrics"), false);
-      assert.equal(prompt.includes("部分覆盖"), true);
-      const crossTimezoneSource = input.userSources.find(item => (
-        item.text.includes("CROSS_TZ_MARKER")
-      ));
-      assert.equal(crossTimezoneSource?.localDate, "2026-10-09",
-        "historical input must use the account timezone when an event crosses the Shanghai date boundary");
-      const source = input.userSources.find(item => item.localDate === "2026-10-10")
-        || input.userSources[0];
-      return {
-        content: JSON.stringify({
-          schemaVersion: HISTORICAL_USER_SUPPLEMENT_OUTPUT_SCHEMA_VERSION,
-          candidates: [{
-            statement: "先拆成小步骤。",
-            exactQuote: [...source.text].slice(0, 9).join(""),
-            sourceId: source.sourceId
-          }]
-        })
-      };
-    }
-    return {
-      content: JSON.stringify({
-        schemaVersion: RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION,
-        daily: { observations: [], metricKeys: [], missing: [] },
-        thoughtsIdeas: { focus: [], changes: [], openQuestions: [] },
-        other: { themes: [], collectedQuotes: [] },
-        aiReference: [],
-        stableUserCandidates: [],
-        conflicts: [],
-        warnings: []
-      })
-    };
+    const result = await generator(prompt, options);
+    assert.equal(typeof result, "string", "历史补充也必须消费真实generator的纯字符串返回");
+    return result;
   },
   async readAiUsage() {
     return {
@@ -220,6 +253,9 @@ assert.equal(whileReserved.queuedCount, 0,
 
 for (const task of tasks) await runtime.backgroundAi.run(task.id);
 assert.equal(calls.length, 2);
+assert.equal(generatorAudits.length, 2);
+assert.equal(generatorAudits.every(entry => entry.audit.status === "success"), true);
+assert.equal(JSON.stringify(store.historicalUserSupplement).includes("合成思考"), false);
 assert.equal(calls[0].options.maxTokens, 900);
 assert.equal(calls[1].options.maxTokens, HISTORICAL_USER_SUPPLEMENT_TOKEN_BUDGET);
 assert.equal(calls[1].options.scene, RECORD_COMPRESSION_TASK_KIND);

@@ -195,6 +195,8 @@ assert.equal(runningReplay.duplicate, true);
 assert.equal(runningReplay.task.id, created.task.id);
 assert.equal(store.aiTasks.length, 1);
 assert.equal(scheduled.length, 1);
+store.onboardingV2.session.revision += 1;
+store.onboardingV2.session.step = "firstAction";
 releaseGeneration();
 generationBarrier = null;
 generationStarted = null;
@@ -212,7 +214,7 @@ assert.equal(result.result.unknowns.length, 1);
 assert.equal((await extractions.get(created.task.id)).task.status, "succeeded");
 const refreshedExtractions = createUserModelExtractionService({ repository, backgroundAi });
 const succeededReplay = await refreshedExtractions.enqueue({
-  sourceRevision: 1,
+  sourceRevision: 2,
   clientRequestId: "extract-succeeded-refresh"
 });
 assert.equal(succeededReplay.duplicate, true);
