@@ -505,7 +505,7 @@
         "data": [
           "DeepSeek HTTP/SSE transport, response validation and image encoding",
           "Aliyun segmentation SDK, async polling, PNG download and safe error projection",
-          "Volcengine V4 signing, OCR/document parsing, TTS and private streaming ASR transports"
+          "Volcengine V4 signing, OCR/document parsing, TTS, whole-file HTTP ASR and explicit opt-in streaming ASR transports"
         ],
         "routes": []
       },
@@ -713,7 +713,9 @@
       "type": "application",
       "root": "src/config",
       "publicEntry": "src/config/index.mjs",
-      "allowedDependencies": [],
+      "allowedDependencies": [
+        "domain.record-compressions"
+      ],
       "owns": {
         "data": [
           "environment parsing, startup mode validation and immutable runtime configuration"
@@ -1892,7 +1894,8 @@
         "frontend.time",
         "frontend.feature.thoughts-model",
         "frontend.feature.thoughts-presentation",
-        "frontend.ai-task-status"
+        "frontend.ai-task-status",
+        "frontend.personalized-ai-task"
       ],
       "owns": {
         "data": [
@@ -2393,8 +2396,8 @@
     {
       "id": "frontend.personalized-ai-task",
       "type": "shared",
-      "root": "public/frontend/shared/personalized-ai-task.mjs",
-      "publicEntry": "public/frontend/shared/personalized-ai-task.mjs",
+      "root": "public/generated/personalized-ai-task.mjs",
+      "publicEntry": "public/generated/personalized-ai-task.mjs",
       "allowedDependencies": [
         "frontend.ai-task-status"
       ],
@@ -2531,7 +2534,8 @@
       "root": "public/frontend/app/runtime/record-events.mjs",
       "publicEntry": "public/frontend/app/runtime/record-events.mjs",
       "allowedDependencies": [
-        "frontend.state"
+        "frontend.state",
+        "frontend.app.chat-submission"
       ],
       "owns": {
         "data": [
@@ -2541,6 +2545,59 @@
       },
       "tests": [
         "scripts/personalized-ai-task-ui-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "frontend.app.loaders",
+      "type": "application",
+      "root": "public/frontend/app/runtime/loaders.mjs",
+      "publicEntry": "public/frontend/app/runtime/loaders.mjs",
+      "allowedDependencies": [
+        "frontend.test-support"
+      ],
+      "owns": {
+        "data": [
+          "lazy feature loading and conditional test-support lifecycle bridge"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/frontend-runtime-composition-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "frontend.app.chat-submission",
+      "type": "application",
+      "root": "public/generated/app/runtime/chat-submission.mjs",
+      "publicEntry": "public/generated/app/runtime/chat-submission.mjs",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "account/session-scoped chat submission and durable request identity"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/personalized-ai-task-ui-regression.mjs"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "frontend.test-support",
+      "type": "application",
+      "root": "public/generated/test-support/view-scope.mjs",
+      "publicEntry": "public/generated/test-support/view-scope.mjs",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "simulation-only scope hydration and pending panel ownership"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/frontend-runtime-composition-regression.mjs"
       ],
       "status": "active"
     },
@@ -2594,7 +2651,9 @@
         "frontend.personalized-ai-task",
         "frontend.app.data-runtime",
         "frontend.app.answer-modal-runtime",
-        "frontend.app.record-events"
+        "frontend.app.record-events",
+        "frontend.app.personalized-task-runtime",
+        "frontend.app.loaders"
       ],
       "owns": {
         "data": [

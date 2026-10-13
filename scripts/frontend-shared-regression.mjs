@@ -58,6 +58,7 @@ import {
 import {
   applyKeepsakeImageCandidates,
 } from "../public/frontend/features/index.mjs";
+import { createOccurrenceControls } from "../public/frontend/components/occurrence-control/index.mjs";
 import {
   WEIGHT_BATCH_MAX_ITEMS,
   applyWeightBatchRecognition,
@@ -387,6 +388,41 @@ if (process.argv.includes("--timezone-case")) {
   });
   assert.throws(() => occurrenceSubmission({ mode: "manual", manualValue: "" }), /手动指定发生时间/);
   assert.throws(() => occurrenceSubmission({ mode: "manual", manualValue: "2026-02-31T07:06:05" }), /手动指定发生时间/);
+
+  const makeOccurrenceInput = id => {
+    const host = {
+      controls: null,
+      querySelector(selector) { return selector === ".occurrence-mode" ? this.controls : null; },
+      querySelectorAll() { return []; },
+      insertBefore(controls) { this.controls = controls; }
+    };
+    return { id, value: "", dataset: {}, closest: () => host, focus() {} };
+  };
+  const occurrenceControls = createOccurrenceControls({
+    document: { createElement: () => ({ setAttribute() {}, addEventListener() {} }) },
+    getActiveDate: () => "2026-09-20"
+  });
+  const newThoughtInput = makeOccurrenceInput("chain-datetime");
+  occurrenceControls.install(newThoughtInput);
+  assert.equal(newThoughtInput.dataset.occurrenceMode, "now",
+    "a new thought form defaults to now instead of inheriting the historical active date");
+  occurrenceControls.reset(newThoughtInput);
+  assert.equal(newThoughtInput.dataset.occurrenceMode, "now",
+    "resetting a new thought form restores now mode");
+  occurrenceControls.setMode(newThoughtInput, "manual");
+  assert.equal(newThoughtInput.dataset.occurrenceMode, "manual",
+    "users can explicitly choose a manual time for a new thought");
+  const editedThoughtInput = makeOccurrenceInput("chain-datetime");
+  occurrenceControls.install(editedThoughtInput, {
+    existing: { occurredAt: "2026-09-28T16:04:03.000Z" }
+  });
+  assert.equal(editedThoughtInput.dataset.occurrenceMode, "manual",
+    "editing a saved thought preserves its occurrence time");
+  const journalInput = makeOccurrenceInput("journal-date");
+  occurrenceControls.install(journalInput);
+  assert.equal(journalInput.dataset.occurrenceMode, "manual",
+    "other forms keep the active historical date as their default");
+  assert.match(journalInput.value, /^2026-09-20T/);
   assert.equal(entryKeyIntent({ key: "Enter" }, { inputKind: "tag" }), "commit-tag");
   assert.equal(entryKeyIntent({ key: "," }, { inputKind: "tag" }), "commit-tag");
   assert.equal(entryKeyIntent({ key: "Enter", metaKey: true }, { inputKind: "multiline" }), "submit");
@@ -560,6 +596,12 @@ if (process.argv.includes("--timezone-case")) {
     sourceVersion: 4,
     regenerate: true
   });
+  assert.equal(speechSynthesisPayload({
+    sourceType: "capture",
+    sourceId: "capture-1",
+    sourceVersion: 2,
+    generationRate: 23.6
+  }).generationRate, 24);
   assert.deepEqual(speechPreviewPayload(" voice-a "), { voice: "voice-a" });
   assert.throws(() => speechSynthesisPayload({
     sourceType: "capture",

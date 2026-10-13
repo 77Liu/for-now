@@ -2,7 +2,7 @@
 
 本文档是本项目版本更新说明的内容结构、分类口径和写作要求的单一事实来源。它适用于版本发布记录、Gitee Release、版本周报、发布会材料和项目复盘。
 
-发布阶段、人工闸门和证据要求以 `knowledge/pre-launch-confirmation.md` 为准；逐项检查以 `knowledge/development-release-checklist.md` 为准。
+发布阶段、授权核对和证据要求以 `SOP/release-and-observation.md` 为准；逐项检查以 `knowledge/development-release-checklist.md` 为准。
 
 ## 1. 目标
 

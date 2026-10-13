@@ -59,13 +59,15 @@ function currentContextSource(source){
     if(key==="viewpoints")return{...base,text:[Object.keys(onboarding.answers||{}).length?`初始问卷 ${Object.keys(onboarding.answers||{}).length} 项`:"",onboarding.material||""].filter(Boolean).join(" · ")};
     return{...base,text:[...Object.values(onboarding.profile||{}),...(onboarding.interests||[])].filter(Boolean).join(" · ")}
   }
-  const collections={capture:"captures",journal:"journals",thought:"thoughts",checkin:"checkins",dailyRecord:"dailyRecords"},item=state[collections[type]]?.find(value=>value.id===id);
+  const collections={capture:"captures",journal:"journals",thought:"thoughts",checkin:"checkins",dailyRecord:"dailyRecords",modelUnknown:"modelUnknowns"};
+  const item=state[collections[type]]?.find(value=>value.id===id);
   if(!item)return{exists:false,text:""};
   const base={exists:true,version:Number(item.version)||1,occurredAt:item.occurredAt||item.createdAt||item.updatedAt||""};
   if(type==="capture")return{...base,text:item.content||"图片或语音捕念"};
   if(type==="journal")return{...base,text:`${item.title?`${item.title}：`:""}${item.content||""}`};
   if(type==="thought")return{...base,text:item.content||item.modelDraft||""};
   if(type==="checkin")return{...base,text:`情绪 ${item.mood} · 精力 ${item.energy} · 压力 ${item.stress} · 睡眠 ${item.sleep}`};
+  if(type==="modelUnknown")return{...base,text:item.question||item.text||"待澄清的问题"};
   return{...base,text:item.description||item.exerciseType||`${item.type||"健康"}记录`}
 }
 function contextSourceButton(source){

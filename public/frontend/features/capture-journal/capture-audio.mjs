@@ -341,6 +341,7 @@ export function createCaptureAudioDraft({
         ? new MediaRecorderConstructor(stream, { mimeType })
         : new MediaRecorderConstructor(stream);
       let resolveStop;
+      let recordingTimer = 0;
       const stopPromise = new Promise(resolve => { resolveStop = resolve; });
       Object.assign(value, {
         stream,
@@ -358,8 +359,10 @@ export function createCaptureAudioDraft({
       });
       recorder.addEventListener("stop", async () => {
         try {
-          clearTimer(value.timer);
-          value.timer = 0;
+          clearTimer(recordingTimer);
+          if (value.timer === recordingTimer) {
+            value.timer = 0;
+          }
           stopTracks(stream);
           if (!sameIntent(ticket) || serial !== recordingSerial) return;
           const durationMs = Math.min(
@@ -393,13 +396,15 @@ export function createCaptureAudioDraft({
         }
       }, { once: true });
       recorder.start(1000);
-      value.timer = setTimer(() => {
+      recordingTimer = setTimer(() => {
+        if (serial !== recordingSerial) return;
         const paused = value.recorder?.state === "paused";
         const elapsed = now() - value.startedAt - value.pausedTotal
           - (paused ? now() - value.pausedAt : 0);
         if (elapsed >= AUDIO_MAX_DURATION_MS) void stop();
         else emit();
       }, 250);
+      value.timer = recordingTimer;
       emit();
       return true;
     } catch (error) {

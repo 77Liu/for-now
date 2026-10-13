@@ -858,9 +858,11 @@ retrying.stop();
 
 let speechSyncFixture = null;
 let speechProjectionCalls = 0;
+let speechSnapshotReads = 0;
 const speechSyncHttp = createSyncHttp({
   repository: {
     async readSyncSnapshot() {
+      speechSnapshotReads += 1;
       return structuredClone(speechSyncFixture);
     }
   },
@@ -869,12 +871,12 @@ const speechSyncHttp = createSyncHttp({
     return { speech: structuredClone(document.publicSpeech) };
   }
 });
-async function readSpeechSync(cursor) {
+async function readSpeechSync(cursor, waitMs = 0) {
   let response = null;
   await speechSyncHttp.handleV1(
     { method: "GET" },
     {},
-    new URL(`http://local.test/api/v1/sync?cursor=${cursor}`),
+    new URL(`http://local.test/api/v1/sync?cursor=${cursor}&waitMs=${waitMs}`),
     {
       success(_res, status, data) {
         response = { status, data };
@@ -944,5 +946,10 @@ for (const scenario of [{
   assert.equal(Object.hasOwn(response.data.snapshot, "speechCache"), false);
 }
 assert.equal(speechProjectionCalls, 3, "speech sync snapshots must reuse the public state projection");
+
+const readsBeforeLongPoll = speechSnapshotReads;
+const longPollResponse = await readSpeechSync(3, 1500);
+assert.equal(longPollResponse.status, 200);
+assert.equal(speechSnapshotReads - readsBeforeLongPoll, 2, "long polling must read one initial and one final snapshot");
 
 console.log("Sync coordinator contracts passed: durable-first writes, stable keys, resource serialization, parallel resources, deterministic health metrics, recovery resnapshots, disabled-to-enabled gray recovery, stale-session rejection, cross-tab invalidation, incremental cursors, retry/failure classification, audit minimization and account isolation.");

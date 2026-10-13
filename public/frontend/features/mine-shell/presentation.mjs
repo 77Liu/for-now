@@ -25,10 +25,12 @@ const terminalNotification = item => (
 );
 
 export function notificationUnread(snapshot = {}, fallback = 0) {
-  return Number(snapshot?.notificationUnread ?? fallback)
-    || (Array.isArray(snapshot?.notifications)
-      ? snapshot.notifications.filter(terminalNotification).length
-      : 0);
+  const hasAuthoritativeCount = snapshot?.notificationUnread != null;
+  const unreadCount = Number(snapshot?.notificationUnread ?? fallback);
+  if (hasAuthoritativeCount && unreadCount === 0) return 0;
+  return unreadCount || (Array.isArray(snapshot?.notifications)
+    ? snapshot.notifications.filter(terminalNotification).length
+    : 0);
 }
 
 export function syncHealthPresentation(value = {}) {

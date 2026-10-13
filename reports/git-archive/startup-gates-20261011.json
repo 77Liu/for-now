@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "checked_at": "2026-10-11T20:09:48.598456+08:00",
+  "repository": "Liu_772021/for-now",
+  "remote": "git@gitee.com:Liu_772021/for-now.git",
+  "remote_operations": false,
+  "token": {
+    "used": false,
+    "reason": "已有登录态可读取Gitee设置页；本轮无需令牌",
+    "policy": "不在聊天中传递全权限令牌；如后续API只读核验需要，使用最小只读权限"
+  },
+  "remote_refs": {
+    "command": "git ls-remote --heads origin; git ls-remote --tags origin refs/tags/v0.5.12*",
+    "develop_present": false,
+    "observed_heads": [
+      "refs/heads/codex/v0.5.10-save-recovery",
+      "refs/heads/codex/v0.5.10-time-intent",
+      "refs/heads/feat/v0.5.5-comment-voice",
+      "refs/heads/feat/v0.5.7-performance",
+      "refs/heads/feat/v0.5.8-p00-p0",
+      "refs/heads/feat/v0.6.0-experience-polish",
+      "refs/heads/main",
+      "refs/heads/platform/main",
+      "refs/heads/preview/v0.5.0",
+      "refs/heads/preview/v0.5.1",
+      "refs/heads/preview/v0.5.10",
+      "refs/heads/preview/v0.5.10-hotfix.1",
+      "refs/heads/preview/v0.5.11",
+      "refs/heads/preview/v0.5.12",
+      "refs/heads/preview/v0.5.2",
+      "refs/heads/preview/v0.5.3",
+      "refs/heads/preview/v0.5.4",
+      "refs/heads/preview/v0.5.5",
+      "refs/heads/preview/v0.5.6",
+      "refs/heads/preview/v0.5.7",
+      "refs/heads/preview/v0.5.8",
+      "refs/heads/preview/v0.5.9",
+      "refs/heads/preview/v0.6.0",
+      "refs/heads/release/v0.5.5-production-closeout"
+    ],
+    "v0_5_12_tag_present": true
+  },
+  "gitee_readonly_observation": {
+    "branch_protection": {
+      "url": "https://gitee.com/Liu_772021/for-now/branches/setting",
+      "status": "无规则",
+      "details": "页面未列出保护分支规则"
+    },
+    "tag_protection": {
+      "url": "https://gitee.com/Liu_772021/for-now/tag_rules",
+      "status": "不可用",
+      "details": "页面提示仅企业版仓库可使用保护标签"
+    },
+    "push_rules": {
+      "url": "https://gitee.com/Liu_772021/for-now/push_config",
+      "status": "未启用",
+      "details": "推送邮箱、提交正则、单文件大小限制均未勾选"
+    }
+  },
+  "gates": {
+    "remote_protection": {
+      "status": "BLOCKED",
+      "reason": "平台侧没有保护规则，不能证明下一次push会受保护"
+    },
+    "release_rollback_rehearsal": {
+      "status": "PASS_LOCAL_ONLY",
+      "commands": [
+        "release-fence-regression.mjs",
+        "deploy-regression.mjs",
+        "preview-deploy-regression.mjs"
+      ],
+      "result": "全部通过；无远端命令、无部署"
+    },
+    "budget_alerts": {
+      "status": "BLOCKED_CURRENT_PRODUCTION_EVIDENCE_MISSING",
+      "local_tests": [
+        "monitor-regression.mjs",
+        "ai-budget-control-version-regression.mjs",
+        "ai-budget-regression.mjs",
+        "ai-budget-runtime-regression.mjs",
+        "record-compression-budget-wait-regression.mjs",
+        "record-compression-observability-regression.mjs"
+      ],
+      "hard_limits": {
+        "daily_cny": 1,
+        "per_call_cny": 0.25,
+        "daily_calls": 4,
+        "backfill_dates_per_scan": 1
+      },
+      "gap": "缺当前生产主机配置/定时器/告警端点/账本只读快照；历史v0.5.12发布报告不作为本轮实时证据",
+      "example_conflict": "deploy/for-now.env.example通用AI账户示例为14.4元/200次与告警36元，不能替代日压缩硬限"
+    }
+  },
+  "decision": "DO_NOT_CREATE_FEAT_BRANCH",
+  "required_actions": [
+    "在Gitee配置并保留可复核的保护分支规则/必需检查",
+    "取得生产主机预算、告警、定时器和暂停开关的当前只读快照",
+    "再次核验三项闸门后才从develop创建feat/v0.5.13.1-stability"
+  ]
+}

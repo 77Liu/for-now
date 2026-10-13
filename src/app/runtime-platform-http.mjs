@@ -24,7 +24,7 @@ import {
 } from "../modules/onboarding/index.mjs";
 import { createUserModelService } from "../modules/user-model/index.mjs";
 import { isOwner } from "../modules/auth/index.mjs";
-import { userModelEvidenceCurrent } from "./user-model.mjs";
+import { prepareUserModelExtraction, userModelEvidenceCurrent } from "./user-model.mjs";
 
 export function createRuntimePlatformHttp({
   appConfig,
@@ -135,7 +135,33 @@ export function createRuntimePlatformHttp({
   const onboardingV2Http = createOnboardingV2Http({
     onboardingV2: createOnboardingV2Service({
       repository: storeRepository,
-      now
+      now,
+      onCompleted(store, onboarding) {
+        const prepared = prepareUserModelExtraction(store);
+        if (prepared.empty) return { ready: true };
+        if (!prepared.value) {
+          throw Object.assign(new Error("原文暂不能整理，请检查内容长度后重试"), {
+            statusCode: 422, code: "CLAIM_EXTRACTION_SOURCE_INVALID"
+          });
+        }
+        const created = backgroundAi.createInStore(store, {
+          kind: "onboardingClaimExtraction",
+          resourceType: "onboardingV2",
+          targetId: "onboarding-v2",
+          inputVersion: onboarding.session.revision,
+          clientRequestId: `onboarding-complete:${onboarding.session.revision}`
+        });
+        if (!created.task) {
+          throw Object.assign(new Error("整理任务未创建，请重试提交"), {
+            statusCode: 409, code: "CLAIM_EXTRACTION_ENQUEUE_FAILED"
+          });
+        }
+        return created;
+      },
+      async afterCompleted(extraction) {
+        if (extraction?.task?.status === "queued") backgroundAi.schedule(extraction.task.id);
+        await backgroundAi.releaseWaiting();
+      }
     }),
     extractions: userModelExtractions,
     bodyJson

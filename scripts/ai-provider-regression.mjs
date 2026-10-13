@@ -117,6 +117,26 @@ assert.equal(new Set(accounts.get("retry").entries.map(entry => entry.callGroupI
 assert.equal(new Set(accounts.get("retry").entries.map(entry => entry.callId)).size, 2);
 assert.equal(active, 0);
 
+// 精确复现已观察到的空答响应形态：HTTP 200、length、仅思考正文。
+let extractionAttempts = 0;
+responseFactory = () => {
+  const first = extractionAttempts++ === 0;
+  return new Response(JSON.stringify({
+    model: "deepseek-flash", usage,
+    choices: [{ message: {
+      content: first ? "" : '{"claims":[],"unknowns":[]}',
+      reasoning_content: first ? "思".repeat(6809) : ""
+    }, finish_reason: first ? "length" : "stop" }]
+  }));
+};
+assert.equal(await run("extraction-retry", () => generate("合成五问原文", {
+  scene: "onboardingClaimExtraction", json: true, maxTokens: 4000, retryWithoutThinking: true
+})), '{"claims":[],"unknowns":[]}');
+assert.equal(extractionAttempts, 2);
+assert.deepEqual(transportCalls.slice(-2).map(call => call.body.thinking.type), ["enabled", "disabled"]);
+assert.deepEqual(accounts.get("extraction-retry").entries.map(entry => entry.status), ["failed", "success"]);
+assert.equal(accounts.get("extraction-retry").entries.every(entry => entry.maxAttempts === 2), true);
+
 let compressionGateHeld = false, compressionGateAcquisitions = 0, compressionGateReleases = 0;
 const compressionGate = {
   async acquire() {

@@ -12,8 +12,8 @@
 
 生命周期、门禁和状态以 `knowledge/development-lifecycle.md` 为准。本 SOP
 只定义制作计划的方法，不复制具体版本事实。当前需求状态以飞书 Base“需求池”
-为准，工程执行状态以 `README-TODO.md` 为准；发布流程和检查项分别以
-`knowledge/pre-launch-confirmation.md` 与 `knowledge/development-release-checklist.md`
+为准，工程执行状态以[唯一协调控制面](../knowledge/coordination-control-plane.md)为准；发布流程和检查项分别以
+`SOP/release-and-observation.md` 与 `knowledge/development-release-checklist.md`
 为准，旅程和分层测试以
 `knowledge/user-journey-testing.md`、`knowledge/user-journey-matrix.json`
 与 `knowledge/system-testing.md` 为准。
@@ -64,7 +64,7 @@
 ### 3.2 工程与生产
 
 - `README.md`
-- `README-TODO.md`
+- `knowledge/coordination-control-plane.md`
 - `PROJECT_RULES.md`
 - `knowledge/development-lifecycle.md`
 - `knowledge/engineering-rules.md`
@@ -72,7 +72,7 @@
 - `knowledge/system-testing.md`
 - `knowledge/user-journey-testing.md`
 - `knowledge/user-journey-matrix.json`
-- `knowledge/pre-launch-confirmation.md`
+- `SOP/release-and-observation.md`
 - `knowledge/development-release-checklist.md`
 - `knowledge/iteration-history.md`
 - 当前分支、工作树、未提交变更、标签、远端主线和生产运行提交。
@@ -95,7 +95,7 @@
 1. `reports/iteration-plan-vX.Y.Z-YYYY-MM-DD.md`
 2. 飞书“需求池”中的版本、优先级、需求状态、验收标准、阻塞原因和证据
 3. 飞书“研发交付记录”中的计划交付项及其关联需求
-4. `README-TODO.md` 中的工程执行状态
+4. 唯一协调控制面中的工程执行状态
 5. 一张覆盖全部阶段的 Mermaid 总流程图
 6. 任务编号、分支策略、依赖、负责人、验收、测试和计划时间
 7. 计划完成条件及发布关闭条件
@@ -432,7 +432,7 @@ Prompt/部署版本、调试资产、生成制品、生产配置存在性、延�
 | 证据 | 命令、报告、截图、提交、Release 或观察记录 |
 
 共享契约、认证、持久化、附件、AI、迁移和部署变化必须扩大测试范围。最终
-发布候选按 `knowledge/pre-launch-confirmation.md` 执行两轮检查。
+发布候选按 `SOP/release-and-observation.md` 执行动作契约和影响矩阵。
 
 计划必须把验证分成三个不同节点：
 
@@ -608,7 +608,7 @@ flowchart TD
 2. 研发交付记录：交付项、类型、关联需求、计划日期和完成条件。
    还应在交付范围或验收中记录旅程 ID、旅程状态、验证层级、
    预计规模、拆分结论、硬前置、并行波次、汇合点、检查点和人工补验。
-3. `README-TODO.md`：当前工程状态和阻塞。
+3. 唯一协调控制面：当前工程状态和阻塞。
 4. 迭代计划：目标、排期、流程和完成条件。
 5. `knowledge/iteration-history.md`：已经实际发生的重要变化。
 

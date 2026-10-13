@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "rootDir": "public/frontend",
+    "outDir": "public/generated",
+    "noEmitOnError": true
+  },
+  "files": [
+    "public/frontend/shared/ai-task-status.d.mts",
+    "public/frontend/features/notifications/controller.mts",
+    "public/frontend/features/notifications/presentation.mts"
+  ]
+}

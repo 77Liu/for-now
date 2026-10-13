@@ -184,6 +184,8 @@ const mockFetch = `
     }
   };
   window.__speechRequests = [];
+  window.__speechHeadRequests = [];
+  window.__speechHeadStatus = 200;
   window.__speechPreviewRequests = [];
   window.__speechStaticPreviewRequests = [];
   window.__speechPlays = [];
@@ -993,7 +995,7 @@ const mockFetch = `
       return json({ authenticated: false });
     }
     if (url === "/api/auth/login") {
-      const complete=()=>{window.__accountUser={id:"user-2",username:"second",role:window.__nextLoginRole,createdAt:"2026-09-27T00:00:00.000Z"};return json({authenticated:true,authRequired:true,user:window.__accountUser})};
+      const complete=()=>{const login=JSON.parse(init.body||"{}");window.__accountUser=login.username==="owner"?{id:"user-1",username:"owner",role:window.__nextLoginRole,createdAt:"2026-09-27T00:00:00.000Z"}:{id:"user-2",username:"second",role:window.__nextLoginRole,createdAt:"2026-09-27T00:00:00.000Z"};return json({authenticated:true,authRequired:true,user:window.__accountUser})};
       if(window.__delayLogin)return new Promise(resolve=>{window.__releaseLogin=()=>{window.__delayLogin=false;resolve(complete())}});
       return complete();
     }
@@ -1177,6 +1179,10 @@ const mockFetch = `
     if (url === "/assets/audio/voice-previews/zh_male_shaonianzixin_uranus_bigtts.mp3") {
       window.__speechStaticPreviewRequests.push(url);
       return Promise.resolve(new Response(new Uint8Array([0x49,0x44,0x33]),{headers:{"content-type":"audio/mpeg"}}))
+    }
+    if (String(url).includes("/api/speech/audio?") && init.method === "HEAD") {
+      window.__speechHeadRequests.push({ url, method: init.method, hasBody: init.body !== undefined });
+      return Promise.resolve(new Response(null, { status: window.__speechHeadStatus }));
     }
     if (url.startsWith("/api/speech/audio?") && (!init.method || init.method === "GET")) {
       return Promise.resolve(new Response(new Uint8Array([0x49,0x44,0x33]),{headers:{"content-type":"audio/mpeg"}}))
@@ -2322,7 +2328,11 @@ try {
   assert.deepEqual(await evaluate(`(() => {const f=document.querySelector('[data-daily-form="exercise"]');return ["exerciseType","activeCalories","totalCalories","averageHeartRate","maximumHeartRate","aerobicSeconds","anaerobicSeconds","extremeSeconds","distanceKm","occurredAt","description","recognitionDescription"].map(key=>f.elements[key].value)})()`),["力量训练","184","231","111","137","00:00:00","","","","2026-09-23T17:12:34","识别前已写的感受","力量训练期间心率多次升降，后段回落；不估计曲线逐点数值。"]);
   await evaluate(`document.querySelector('[data-daily-form="exercise"] [name="description"]').value="今天后半程有些吃力";true`);
   await evaluate(`document.querySelector('[data-daily-form="exercise"]').requestSubmit();true`);
-  assert.equal(await waitUntil(`window.__dailySaves===3&&document.querySelector('[data-daily-record-id="daily-3"]')`),true);
+  assert.equal(
+    await waitUntil(`window.__dailySaves===3&&document.querySelector('[data-daily-record-id="daily-3"]')`),
+    true,
+    JSON.stringify(await evaluate(`(()=>{const form=document.querySelector('[data-daily-form="exercise"]'),record=document.querySelector('[data-daily-record-id="daily-3"]');return{dailySaves:window.__dailySaves,form:{exists:Boolean(form),hidden:form?.hidden??null,valid:form?.checkValidity()??null,status:form?.querySelector(".status")?.textContent||"",submitDisabled:form?.querySelector('[type="submit"]')?.disabled??null,fields:form?[...form.elements].filter(field=>field.name).map(field=>({name:field.name,value:field.value,disabled:field.disabled,valid:field.validity?.valid??null,validationMessage:field.validationMessage||""})):[]},activeView:document.querySelector(".view.active")?.id||"",dailyInert:document.querySelector("#view-daily")?.inert??null,daily3Exists:Boolean(record)}})()`))
+  );
   assert.equal(await evaluate(`(() => {const item=window.__dailyRecords.find(item=>item.id==="daily-3"),card=document.querySelector('[data-daily-record-id="daily-3"]'),user=card.querySelector(".exercise-description.user"),derived=card.querySelector(".exercise-description.derived"),legacy=document.querySelector('[data-daily-record-id="exercise-legacy"]');return item.durationSeconds===1987&&item.aerobicSeconds===0&&item.anaerobicSeconds===null&&item.attachmentPaths[0]==="/attachments/exercise.png"&&card.querySelectorAll(".daily-attachments [data-image-viewer-path]").length===1&&item.description==="今天后半程有些吃力"&&item.recognitionDescription.includes("心率多次升降")&&user.querySelector("small").textContent==="记下感受"&&user.querySelector("p").textContent==="今天后半程有些吃力"&&derived.querySelector("small").textContent==="AI 解析描述"&&derived.querySelector("p").textContent.includes("心率多次升降")&&legacy.querySelector(".exercise-description.user").textContent.includes("旧记录里的轻松感受")&&!legacy.querySelector(".exercise-description.derived")&&card.textContent.includes("力量训练")&&card.textContent.includes("00:33:07")&&card.textContent.includes("活动热量")&&card.textContent.includes("总热量")})()`),true);
   assert.equal(await evaluate(`document.querySelector("#daily-record-chart svg")?.getAttribute("aria-label")==="最近运动时长趋势"`),true);
   await evaluate(`document.querySelector('[data-daily-edit="daily-3"]').click();true`);
@@ -2508,21 +2518,30 @@ try {
   await evaluate(`window.__failTranscriptionQueue=true;document.querySelector('[data-capture-id="capture-failed"] [data-capture-transcribe]').click();true`);
   assert.equal(await waitUntil(`document.querySelector("#toast").textContent==="语音转写排队暂时失败。原音已经保存。请稍后重试。"`),true);
   assert.deepEqual(await evaluate(`({enabled:!document.querySelector('[data-capture-id="capture-failed"] [data-capture-transcribe]').disabled,original:document.querySelector('[data-capture-id="capture-failed"] .capture-audio-playback-state').textContent,sentinel:document.body.textContent.includes("ASR_PROVIDER_PRIVATE_DETAIL")})`),{enabled:true,original:"原音可播放",sentinel:false});
+  assert.deepEqual(await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-failed"]'),player=card.querySelector('.capture-audio-source audio'),retry=card.querySelector('[data-capture-audio-retry]'),status=card.querySelector('[data-capture-audio-status]');const src=player.getAttribute('src');let loads=0;player.load=()=>{loads++};player.dispatchEvent(new Event('error'));const failure={visible:!retry.hidden,status:status.textContent};player.click();const collapsed=card.querySelector('.capture-item').classList.contains('is-expanded');retry.click();return{...failure,collapsedAfterPlayerClick:collapsed,retryHidden:retry.hidden,srcUnchanged:player.getAttribute('src')===src,loads,speechRequests:window.__speechRequests.length}})()`),{visible:true,status:"原音读取失败，原件仍保留。",collapsedAfterPlayerClick:false,retryHidden:false,srcUnchanged:true,loads:1,speechRequests:0});
+  assert.equal(await evaluate(`(() => {const player=document.querySelector('[data-capture-id="capture-failed"] .capture-audio-source audio');document.querySelector('#capture-search').value='';document.querySelector('#capture-search').dispatchEvent(new Event('input',{bubbles:true}));return document.querySelector('[data-capture-id="capture-failed"] .capture-audio-source audio')===player})()`),true,"capture list refresh reuses the same original audio element");
   await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-long"]'),rate=card.querySelector("[data-speech-playback-rate]"),player=card.querySelector("[data-speech-player]");rate.value="1.5";rate.dispatchEvent(new Event("change",{bubbles:true}));window.__rejectNextSpeechPlay=true;player.play().catch(()=>{});return true})()`);
   assert.equal(await waitUntil(`window.__speechPlays.length===1`),true);
   assert.deepEqual(await evaluate(`({rate:window.__speechPlays[0].rate,rejected:window.__speechPlays[0].rejected,requests:window.__speechRequests.length,network:window.__speechPlays[0].src.includes("/api/speech/audio?")})`),{rate:1.5,rejected:true,requests:0,network:true});
+  await evaluate(`(()=>{const card=document.querySelector('[data-capture-id="capture-long"]'),player=card.querySelector('[data-speech-player]');window.__speechHeadStatus=410;window.__speechRetryLoads=0;window.__speechRetryHeadStart=window.__speechHeadRequests.length;player.load=()=>{window.__speechRetryLoads++};player.dispatchEvent(new Event('error'));return true})()`);
+  assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-long"] .speech-asset-status').textContent.includes("朗读缓存已失效")`),true);
+  assert.deepEqual(await evaluate(`(()=>{const player=document.querySelector('[data-capture-id="capture-long"] [data-speech-player]');document.querySelector('#capture-search').dispatchEvent(new Event('input',{bubbles:true}));return{samePlayer:player===document.querySelector('[data-capture-id="capture-long"] [data-speech-player]'),headCalls:window.__speechHeadRequests.length-window.__speechRetryHeadStart,status:document.querySelector('[data-capture-id="capture-long"] .speech-asset-status').textContent}})()`),{samePlayer:true,headCalls:1,status:"这条朗读缓存已失效；重新生成可创建新音频。"},"rerender restores cached failure state without another HEAD probe");
+  assert.deepEqual(await evaluate(`(()=>{const card=document.querySelector('[data-capture-id="capture-long"]'),retry=card.querySelector('[data-capture-speech-retry]'),before=window.__speechRequests.length;retry.click();return{retryVisible:!retry.hidden,requestsBefore:before}})()`),{retryVisible:true,requestsBefore:0});
+  assert.equal(await waitUntil(`window.__speechRetryLoads===1&&window.__speechHeadRequests.length-window.__speechRetryHeadStart===2&&document.querySelector('[data-capture-id="capture-long"] .speech-asset-status').textContent.includes("朗读缓存已失效")`),true);
+  assert.deepEqual(await evaluate(`({syntheses:window.__speechRequests.length,loadCalls:window.__speechRetryLoads,headCalls:window.__speechHeadRequests.length-window.__speechRetryHeadStart,headRequests:window.__speechHeadRequests.slice(window.__speechRetryHeadStart).map(({url,method,hasBody})=>({audioResource:url.includes("/api/speech/audio?id=asset-capture-long-v1"),method,hasBody})),retryDisabled:document.querySelector('[data-capture-id="capture-long"] [data-capture-speech-retry]').disabled})`),{syntheses:0,loadCalls:1,headCalls:2,headRequests:[{audioResource:true,method:"HEAD",hasBody:false},{audioResource:true,method:"HEAD",hasBody:false}],retryDisabled:false},"expired cache retry reads only; it does not call synthesis and remains retryable");
   await evaluate(`document.querySelector('[data-capture-id="capture-long"] [data-speech-player]').play();true`);
-  assert.equal(await waitUntil(`window.__speechPlays.length===2`),true);
+  assert.equal(await waitUntil(`window.__speechPlays.length===3`),true);
   await evaluate(`window.__failSpeech=true;document.querySelector('[data-capture-id="capture-long"] [data-speech-synthesize]').click();true`);
   assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-long"] .speech-asset-status').textContent.includes("文字朗读生成暂时失败")`),true);
   assert.equal(await evaluate(`!document.body.textContent.includes("PROVIDER_TIMEOUT_DEEPSEEK")&&window.__speechRequests.length===0`),true);
-  await evaluate(`window.__delaySpeech=true;document.querySelector('[data-capture-id="capture-long"] [data-speech-synthesize]').click();true`);
+  await evaluate(`(()=>{const rate=document.querySelector('[data-capture-id="capture-long"] [data-speech-generation-rate]');rate.value='25';rate.dispatchEvent(new Event('input',{bubbles:true}));window.__delaySpeech=true;document.querySelector('[data-capture-id="capture-long"] [data-speech-synthesize]').click();return true})()`);
   assert.equal(await waitUntil(`typeof window.__releaseSpeech==="function"&&window.__speechRequests.length===1`),true);
   assert.deepEqual(await evaluate(`window.__speechRequests[0]`), {
     sourceType: "capture",
     sourceId: "capture-long",
     sourceVersion: 1,
-    regenerate: true
+    regenerate: true,
+    generationRate: 25
   });
   await evaluate(`document.querySelector('[data-capture-id="capture-long"] [data-capture-edit]').click();document.querySelector("#capture-form").requestSubmit();true`);
   assert.equal(await waitUntil(`window.__captures.find(item=>item.id==="capture-long").version===2&&document.querySelector("#capture-id").value===""`),true);
@@ -2530,14 +2549,14 @@ try {
   assert.equal(await waitUntil(`window.__apiRequests.filter(value=>value.startsWith("GET /api/v1/route-state")).length>1&&!document.querySelector('[data-capture-id="capture-long"] [data-speech-player]')&&document.querySelector('[data-capture-id="capture-long"] [data-speech-synthesize]').textContent==="生成"`),true);
   await evaluate(`document.querySelector('[data-capture-id="capture-long"] [data-speech-synthesize]').click();true`);
   assert.equal(await waitUntil(`window.__speechRequests.length===2&&document.querySelector('[data-capture-id="capture-long"] [data-speech-player]')`),true);
-  assert.deepEqual(await evaluate(`window.__speechRequests[1]`),{sourceType:"capture",sourceId:"capture-long",sourceVersion:2,regenerate:false},"playback rate and voice must not enter the synthesis request");
+  assert.deepEqual(await evaluate(`window.__speechRequests[1]`),{sourceType:"capture",sourceId:"capture-long",sourceVersion:2,regenerate:false,generationRate:-10},"playback rate and voice stay separate from the account-default synthesis rate");
   await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-long"]'),rate=card.querySelector("[data-speech-playback-rate]"),player=card.querySelector("[data-speech-player]");rate.value="2";rate.dispatchEvent(new Event("change",{bubbles:true}));player.play();window.__activeCaptureSpeechUrl=player.getAttribute("src");return true})()`);
-  assert.equal(await waitUntil(`window.__speechPlays.length===3`),true);
+  assert.equal(await waitUntil(`window.__speechPlays.length===4`),true);
   assert.deepEqual(await evaluate(`({rate:window.__speechPlays.at(-1).rate,requests:window.__speechRequests.length})`),{rate:2,requests:2});
   await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-speech-synthesize]').click();true`);
   assert.equal(await waitUntil(`window.__speechRequests.length===3&&document.querySelector('[data-capture-id="capture-1"] [data-speech-player]')`),true);
   await evaluate(`document.querySelector('[data-capture-id="capture-1"] [data-speech-player]').play();true`);
-  assert.equal(await waitUntil(`window.__speechPlays.length===4`),true);
+  assert.equal(await waitUntil(`window.__speechPlays.length===5`),true);
   assert.deepEqual(await evaluate(`(() => {const old=document.querySelector('[data-capture-id="capture-long"] [data-speech-player]'),next=document.querySelector('[data-capture-id="capture-1"] [data-speech-player]'),assetId=new URL(old.src).searchParams.get("id");return{oldPaused:old.paused,oldSourceRetained:old.getAttribute("src")===window.__activeCaptureSpeechUrl,newPaused:next.paused,oldPauseRecorded:window.__speechPauses.some(url=>url.includes("id="+assetId)),requests:window.__speechRequests.length}})()`),{oldPaused:true,oldSourceRetained:true,newPaused:false,oldPauseRecorded:true,requests:3},"starting another asset must pause the previous player without detaching either persisted source");
   assert.equal(await evaluate(`document.querySelector("#capture-editor").hidden&&document.querySelector("#capture-form").hidden&&document.querySelector("#capture-create-toggle").getAttribute("aria-expanded")==="false"`),true);
   await evaluate(`document.querySelector('[data-view="today"]').click();window.__failMicrophonePermission=true;document.querySelector("#home-record-voice").click();true`);
@@ -2637,7 +2656,8 @@ try {
   assert.equal(await waitUntil(`document.querySelector("#capture-audio-preview").hidden&&document.querySelector("#capture-audio-preview").getClientRects().length===0`),true);
   await evaluate(`document.querySelector("#capture-cancel").click();true`);
   assert.equal(await waitUntil(`!document.querySelector('[data-capture-id="capture-long"] [data-capture-expand]').hidden`), true);
-  assert.equal(await waitUntil(`!document.querySelector('[data-capture-id="capture-1"] [data-capture-expand]').hidden`), true);
+  assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-1"] [data-capture-expand]').hidden`), true,"short text remains uncollapsed when only external media controls exceed the old viewport");
+  assert.equal(await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-1"]'),viewport=card.querySelector('.capture-content-viewport'),controls=card.querySelector('.speech-asset-controls');return Boolean(controls)&&!viewport.contains(controls)&&controls.getClientRects().length>0})()`),true,"speech controls are visible outside the text fold");
   const captureCardLayout = await evaluate(`(() => {
     const card=document.querySelector('[data-capture-id="capture-long"]'),item=card.querySelector(".capture-item"),viewport=card.querySelector(".capture-content-viewport"),meta=card.querySelector(".capture-meta"),time=card.querySelector(".capture-entry-time"),tags=card.querySelector(".capture-top-tags"),actions=card.querySelector(".capture-actions"),buttons=[...actions.querySelectorAll("button")],lineHeight=parseFloat(getComputedStyle(viewport).lineHeight);
     const buttonRects=buttons.map(button=>button.getBoundingClientRect()),metaRect=meta.getBoundingClientRect(),timeRect=time.getBoundingClientRect(),itemRect=item.getBoundingClientRect();
@@ -2655,7 +2675,11 @@ try {
   assert.deepEqual(captureCardLayout, { capped: true, timeInMeta: true, metaAboveCard: true, actionRows: true, actionsCompact: true, actionsRightAligned: true, actionsFloatRight: true, tagsInMeta: true });
   const collapsedCaptureHeight = await evaluate(`document.querySelector('[data-capture-id="capture-long"] .capture-content-viewport').clientHeight`);
   await evaluate(`window.getSelection()?.removeAllRanges(); document.querySelector('[data-capture-id="capture-long"] .capture-item').click(); true`);
-  assert.equal(await waitUntil(`(() => { const card=document.querySelector('[data-capture-id="capture-long"]'),item=card.querySelector(".capture-item"),viewport=card.querySelector(".capture-content-viewport"),button=card.querySelector("[data-capture-expand]"); return viewport.clientHeight>${collapsedCaptureHeight}&&item.classList.contains("is-expanded")&&button.getAttribute("aria-expanded")==="true"&&button.textContent.trim()==="⌄"; })()`), true);
+  assert.equal(
+    await waitUntil(`(() => { const card=document.querySelector('[data-capture-id="capture-long"]'),item=card.querySelector(".capture-item"),viewport=card.querySelector(".capture-content-viewport"),button=card.querySelector("[data-capture-expand]"); return viewport.clientHeight>${collapsedCaptureHeight}&&item.classList.contains("is-expanded")&&button.getAttribute("aria-expanded")==="true"&&button.textContent.trim()==="⌄"; })()`),
+    true,
+    JSON.stringify(await evaluate(`(()=>{const card=document.querySelector('[data-capture-id="capture-long"]'),item=card?.querySelector(".capture-item"),viewport=card?.querySelector(".capture-content-viewport"),button=card?.querySelector("[data-capture-expand]"),captures=document.querySelector("#view-captures");return{cardClass:card?.className||"",itemClass:item?.className||"",viewportClass:viewport?.className||"",collapsedCaptureHeight:${collapsedCaptureHeight},clientHeight:viewport?.clientHeight??null,scrollHeight:viewport?.scrollHeight??null,buttonHidden:button?.hidden??null,buttonAriaExpanded:button?.getAttribute("aria-expanded")??null,buttonText:button?.textContent.trim()??null,selectionIsCollapsed:window.getSelection()?.isCollapsed??null,activeView:document.querySelector(".view.active")?.id||"",capturesInert:captures?.inert??null,capturesClass:captures?.className||""}})()`))
+  );
   await evaluate(`(()=>{const input=document.querySelector("#capture-search");input.value="职业规划";input.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
   assert.equal(await waitUntil(`document.querySelector('[data-capture-id="capture-long"] .capture-item')?.classList.contains("is-expanded")`),true,"capture expansion survives a feed refresh");
   await evaluate(`(()=>{const input=document.querySelector("#capture-search");input.value="";input.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
@@ -2749,6 +2773,10 @@ try {
   await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-1"]'),expand=card.querySelector("[data-capture-expand]");if(!expand.hidden&&!card.querySelector(".capture-item").classList.contains("is-expanded"))expand.click();card.scrollIntoView({block:"center"});return true})()`);
   await sleep(100);
   assert.deepEqual(await evaluate(`(() => {const card=document.querySelector('[data-capture-id="capture-1"]'),player=card.querySelector("[data-speech-player]"),actions=card.querySelector(".speech-asset-actions"),cardRect=card.getBoundingClientRect(),playerRect=player.getBoundingClientRect(),actionsRect=actions.getBoundingClientRect();return{controls:player.controls,visible:playerRect.height>0,actionsVisible:actionsRect.height>0&&actionsRect.top>=cardRect.top&&actionsRect.bottom<=cardRect.bottom+1,inside:playerRect.left>=cardRect.left&&playerRect.right<=cardRect.right+1&&actionsRect.right<=cardRect.right+1,noVoice:Boolean(card.querySelector("[data-capture-voice]")),buttons:actions.querySelectorAll("button").length,noOverflow:document.documentElement.scrollWidth<=innerWidth}})()`),{controls:true,visible:true,actionsVisible:true,inside:true,noVoice:false,buttons:1,noOverflow:true});
+  assert.deepEqual(await evaluate(`(()=>{const actions=document.querySelector('[data-capture-id="capture-1"] .capture-speech-actions.speech-asset-actions'),controlRect=actions.getBoundingClientRect(),labels=Object.fromEntries([...actions.querySelectorAll("label")].map(label=>{const span=label.querySelector("span"),rect=span.getBoundingClientRect(),labelRect=label.getBoundingClientRect(),style=getComputedStyle(span);return[span.textContent.trim(),{visible:style.display!=="none"&&rect.width>0&&rect.height>0,inside:rect.left>=controlRect.left-1&&rect.right<=controlRect.right+1&&rect.right<=innerWidth,notClipped:span.scrollWidth<=span.clientWidth+1&&span.scrollHeight<=span.clientHeight+1&&label.scrollWidth<=label.clientWidth+1}]}));return labels})()`),{
+    "播放倍速":{visible:true,inside:true,notClipped:true},
+    "生成语速":{visible:true,inside:true,notClipped:true}
+  },"capture mobile speech labels distinguish playback speed from generation speed without clipping");
   const captureMobileScreenshot = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await fs.writeFile("/tmp/growth-captures-mobile.png", Buffer.from(captureMobileScreenshot.data, "base64"));
   await evaluate(`window.__stoppedSpeechPlayer=document.querySelector('[data-capture-id="capture-1"] [data-speech-player]');window.__stoppedSpeechUrl=window.__stoppedSpeechPlayer.getAttribute("src");window.__stoppedSpeechPlayer.play();window.dispatchEvent(new Event("pagehide"));true`);
@@ -3491,7 +3519,7 @@ try {
     throw new Error(await evaluate(`JSON.stringify({captureSaves:window.__captureSaves,expected:${captureSavesBeforeKindChoice+1},kind:document.querySelector("#chain-form").elements.recordKind.value,question:document.querySelector("#chain-question").value,status:document.querySelector("#chain-status").textContent,toast:document.querySelector("#toast").textContent,buttonDisabled:document.querySelector("#chain-submit").disabled})`))
   }
   assert.deepEqual(await evaluate(`(()=>{const payload=window.__capturePayloads.at(-1),form=document.querySelector("#chain-form");return{content:payload.content,hasIdea:Object.hasOwn(payload,"idea"),kind:form.elements.recordKind.value,title:document.querySelector("#home-thought-title").textContent,chooserHidden:document.querySelector(".thought-record-kind").hidden}})()`),{content:"从思考入口保存的一条念起",hasIdea:false,kind:"thought",title:"记录思考",chooserHidden:false});
-  await evaluate(`document.querySelector("#home-open-thought").click();document.querySelector("#chain-question").value="不应残留的冲突思考";window.__conflictThoughtCreate=true;document.querySelector("#chain-form").requestSubmit();true`);
+  await evaluate(`(()=>{document.querySelector("#home-open-thought").click();const form=document.querySelector("#chain-form");form.elements.sourceCaptureId.value="capture-1";form.elements.sourceCaptureVersion.value="2";document.querySelector("#chain-question").value="不应残留的冲突思考";window.__conflictThoughtCreate=true;form.requestSubmit();return true})()`);
   assert.equal(await waitUntil(`document.querySelector("#chain-status").textContent.includes("来源念起已变化")&&!document.querySelector('#chain-form [type="submit"]').disabled`),true);
   assert.deepEqual(await evaluate(`({stored:window.__thoughts.some(item=>item.content==="不应残留的冲突思考"),pending:[...document.querySelectorAll("[data-chain-id]")].some(item=>item.dataset.chainId.startsWith("pending:")),visible:[...document.querySelectorAll(".question-preview")].some(item=>item.textContent.includes("不应残留的冲突思考"))})`),{stored:false,pending:false,visible:false});
   const imageDiscardsBeforePendingThought=await evaluate(`window.__imageDiscards.length`),thoughtSavesBeforePending=await evaluate(`window.__thoughtSaves`);
@@ -4062,7 +4090,7 @@ try {
   await evaluate(`window.__notifications.unshift({id:"notification-capture-failed",taskId:"task-capture-failed",resourceType:"capture",targetId:"capture-failed",kind:"aiTask",status:"failed",title:"语音转写",message:"火山语音识别暂时不可用，请稍后重试",createdAt:"2026-10-03T06:05:29.000Z",updatedAt:"2026-10-03T06:05:31.000Z",readAt:""});window.__delayTaskRetry=true;document.querySelector('[data-view="mine"]').click();document.querySelector("#view-mine [data-view='notifications']").click();true`);
   assert.equal(await waitUntil(`document.querySelector('.notification-entry[data-status="failed"]')`),true);
   assert.deepEqual(await evaluate(`(()=>{const back=document.querySelector("#view-notifications .mine-back").getBoundingClientRect(),readAll=document.querySelector("#notifications-read-all").getBoundingClientRect();return{backWidth:back.width>=44,backHeight:back.height>=44,readAllWidth:readAll.width>=44,readAllHeight:readAll.height>=44,noOverflow:document.documentElement.scrollWidth<=innerWidth}})()`),{backWidth:true,backHeight:true,readAllWidth:true,readAllHeight:true,noOverflow:true});
-  assert.deepEqual(await evaluate(`(()=>{const card=document.querySelector('.notification-entry[data-status="failed"]'),buttons=[...card.querySelectorAll("button")],time=card.querySelector("time");return{text:card.textContent.includes("语音转写")&&card.textContent.includes("失败")&&card.textContent.includes("原音已保留"),labels:buttons.map(item=>item.textContent),touch:buttons.every(item=>item.getBoundingClientRect().height>=44&&item.getBoundingClientRect().width>=44),datetime:Boolean(time?.dateTime),noOverflow:card.getBoundingClientRect().right<=innerWidth}})()`),{text:true,labels:["查看","重试","标为已读"],touch:true,datetime:true,noOverflow:true});
+  assert.deepEqual(await evaluate(`(()=>{const card=document.querySelector('.notification-entry[data-status="failed"]'),buttons=[...card.querySelectorAll("button")],time=card.querySelector("time");return{text:card.textContent.includes("语音转写")&&card.textContent.includes("失败")&&card.textContent.includes("原音已保留"),labels:buttons.map(item=>item.textContent),touch:buttons.every(item=>item.getBoundingClientRect().height>=44&&item.getBoundingClientRect().width>=44),datetime:Boolean(time?.dateTime),noOverflow:card.getBoundingClientRect().right<=innerWidth}})()`),{text:true,labels:["查看","重试","复制错误日志"],touch:true,datetime:true,noOverflow:true});
   await fs.writeFile("/tmp/growth-notification-failed-mobile.png",Buffer.from((await cdp.send("Page.captureScreenshot",{format:"png",captureBeyondViewport:false})).data,"base64"));
   await evaluate(`document.querySelector('.notification-entry[data-status="failed"] [data-task-retry]').click();true`);
   assert.equal(await waitUntil(`document.querySelector('[data-task-retry][aria-busy="true"]')?.textContent==="正在重试"`),true);
@@ -4070,8 +4098,8 @@ try {
   assert.equal(await evaluate(`window.__taskRetries`),1);
   await evaluate(`window.__releaseTaskRetry();true`);
   assert.equal(await waitUntil(`window.__aiTasks.some(item=>item.retryOf==="task-capture-failed")&&!document.querySelector('[data-task-retry][aria-busy="true"]')`),true);
-  await evaluate(`document.querySelector('[data-notification-read="notification-capture-failed"]').click();true`);
-  assert.equal(await waitUntil(`!document.querySelector('[data-notification-read="notification-capture-failed"]')`),true);
+  assert.equal(await waitUntil(`Boolean(window.__notifications.find(item=>item.id==="notification-capture-failed")?.readAt)`),true);
+  assert.equal(await evaluate(`!document.querySelector('.notification-entry[data-status="failed"] [data-notification-read="notification-capture-failed"]')`),true);
   await cdp.send("Emulation.setDeviceMetricsOverride",{width:1100,height:820,deviceScaleFactor:1,mobile:false});
   await evaluate(`document.querySelector('[data-section="today"]').click();true`);
   assert.deepEqual(await evaluate(`({memories:document.querySelectorAll(".home-v02-memory").length,empty:document.querySelector(".home-v02-empty")?.textContent,moodPoints:document.querySelectorAll("#home-mood-sparkline circle").length,keepsake:document.querySelector("#home-keepsake").textContent.includes("留存一件小物"),noOverflow:document.documentElement.scrollWidth<=innerWidth})`),{memories:0,empty:"留下第一条思考，往后在这里重逢。",moodPoints:0,keepsake:true,noOverflow:true});
@@ -4095,10 +4123,25 @@ try {
   await evaluate(`document.querySelector("#onboarding-v2-exit").click();true`);
   const onboardingPaused=await waitUntil(`document.querySelector("#onboarding-workspace").hidden&&window.__onboardingV2.session.status==="paused"`);
   assert.equal(onboardingPaused,true,JSON.stringify(await evaluate(`({hidden:document.querySelector("#onboarding-workspace").hidden,status:window.__onboardingV2.session.status,step:window.__onboardingV2.session.step,revision:window.__onboardingV2.session.revision,save:document.querySelector("#onboarding-v2-save-status").textContent,exitDisabled:document.querySelector("#onboarding-v2-exit").disabled,body:document.querySelector("#onboarding-v2-content").innerText.slice(0,120)})`)));
-  await evaluate(`(()=>{const input=document.querySelector('#chain-form input[name="recordKind"][value="thought"]');input.checked=true;input.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
+  await evaluate(`window.__nextLoginRole="owner";document.querySelector("#logout-button").click();true`);
+  assert.equal(await waitUntil(`!document.querySelector("#auth-gate").hidden&&[...document.querySelectorAll(".auth-form input,.auth-form button,[data-auth-tab]")].every(item=>!item.disabled)`),true);
+  await evaluate(`(()=>{const form=document.querySelector("#login-form");form.elements.username.value="owner";form.elements.password.value="owner-password";form.requestSubmit();return true})()`);
+  assert.equal(await waitUntil(`document.querySelector("#auth-gate").hidden&&document.querySelector("#account-name").textContent==="owner"&&window.__accountUser.id==="user-1"`),true);
+  await evaluate(`(()=>{const input=document.querySelector('#chain-form input[name="recordKind"][value="thought"]'),datetime=document.querySelector("#chain-datetime");input.checked=true;input.dispatchEvent(new Event("change",{bubbles:true}));datetime.closest("label").querySelector('[data-occurrence-mode="manual"]').click();datetime.value="2026-09-26T08:15";datetime.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
   await cdp.send("Page.reload",{ignoreCache:true});
-  assert.equal(await waitUntil(`document.querySelector("#today-date-label")?.textContent.length>0&&!document.querySelector("#onboarding-workspace").hidden&&document.querySelector("#onboarding-v2-content h1")?.textContent.includes("先把这一点留下")`),true);
+  assert.equal(await waitUntil(`document.querySelector("#today-date-label")?.textContent.length>0&&!document.querySelector("#onboarding-workspace").hidden&&document.querySelector("#onboarding-v2-content h1")?.textContent.includes("先把这一点留下")&&document.querySelector("#chain-datetime")?.dataset.occurrenceMode==="manual"`),true);
   assert.deepEqual(await evaluate(`([...document.querySelectorAll('#chain-form input[name="recordKind"]')].map(input=>({value:input.value,checked:input.checked})))`),[{value:"capture",checked:false},{value:"thought",checked:true}]);
+  assert.deepEqual(await evaluate(`(()=>{const input=document.querySelector("#chain-datetime"),buttons=input.closest("label").querySelectorAll("[data-occurrence-mode]");return{value:input.value,mode:input.dataset.occurrenceMode,disabled:input.disabled,hidden:input.hidden,manualActive:buttons[1].classList.contains("active"),manualPressed:buttons[1].getAttribute("aria-pressed"),nowActive:buttons[0].classList.contains("active")}})()`),{value:"2026-09-26T08:15",mode:"manual",disabled:false,hidden:false,manualActive:true,manualPressed:"true",nowActive:false});
+  assert.equal(await evaluate(`JSON.parse(sessionStorage.getItem("cike:session-drafts:user-1")).forms.find(item=>item.key==="form:0").fields.find(item=>item.key==="id:chain-datetime").occurrenceMode`),"manual");
+  await evaluate(`document.querySelector('[data-view="thoughts"]').click();true`);
+  await waitUntil(`document.querySelector("#view-thoughts").classList.contains("active")`);
+  await evaluate(`document.querySelector('[data-view="today"]').click();true`);
+  assert.equal(await waitUntil(`document.querySelector("#view-today").classList.contains("active")&&document.querySelector("#chain-datetime").dataset.occurrenceMode==="manual"&&document.querySelector("#chain-datetime").value==="2026-09-26T08:15"`),true);
+  await evaluate(`(()=>{const input=document.querySelector("#chain-datetime");input.closest("label").querySelector('[data-occurrence-mode="now"]').click();input.dispatchEvent(new Event("change",{bubbles:true}));return true})()`);
+  await cdp.send("Page.reload",{ignoreCache:true});
+  assert.equal(await waitUntil(`document.querySelector("#today-date-label")?.textContent.length>0&&!document.querySelector("#onboarding-workspace").hidden&&document.querySelector("#onboarding-v2-content h1")?.textContent.includes("先把这一点留下")&&document.querySelector("#chain-datetime")?.dataset.occurrenceMode==="now"`),true);
+  assert.deepEqual(await evaluate(`(()=>{const input=document.querySelector("#chain-datetime"),buttons=input.closest("label").querySelectorAll("[data-occurrence-mode]");return{value:input.value,mode:input.dataset.occurrenceMode,disabled:input.disabled,hidden:input.hidden,nowActive:buttons[0].classList.contains("active"),nowPressed:buttons[0].getAttribute("aria-pressed"),manualActive:buttons[1].classList.contains("active")}})()`),{value:"2026-09-26T08:15",mode:"now",disabled:true,hidden:true,nowActive:true,nowPressed:"true",manualActive:false});
+  assert.equal(await evaluate(`JSON.parse(sessionStorage.getItem("cike:session-drafts:user-1")).forms.find(item=>item.key==="form:0").fields.find(item=>item.key==="id:chain-datetime").occurrenceMode`),"now");
   await evaluate(`document.querySelector('[data-onboarding-action="resume"]').click();true`);
   assert.equal(await waitUntil(`document.querySelector('[data-onboarding-answer="currentContext"]')?.value.includes("一边学习一边实习")&&!document.querySelector('[data-onboarding-answer="currentContext"]').disabled`),true);
   await evaluate(`document.querySelector('[data-onboarding-action="next"]').click();true`);

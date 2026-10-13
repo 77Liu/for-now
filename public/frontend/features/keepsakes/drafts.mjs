@@ -43,6 +43,7 @@ export function createKeepsakeDrafts({
   let persistTimer = 0;
   let hydrated = false;
   const writeBarriers = new Map();
+  const previewUrlsByItem = new Map();
   const nowMilliseconds = () => {
     const value = platform.now();
     const numeric = Number(value);
@@ -82,15 +83,40 @@ export function createKeepsakeDrafts({
   }
 
   function revokePreviews() {
-    for (const url of batch.previewUrls) platform.objectUrls.revokeObjectURL(url);
+    for (const { url } of previewUrlsByItem.values()) {
+      platform.objectUrls.revokeObjectURL(url);
+    }
+    previewUrlsByItem.clear();
     batch.previewUrls = [];
   }
 
+  function prunePreviewUrls() {
+    const activeItems = new Set(batch.items);
+    const activeUrls = new Set();
+    for (const [item, cached] of previewUrlsByItem) {
+      if (activeItems.has(item) && cached.file === item.file) {
+        activeUrls.add(cached.url);
+        continue;
+      }
+      platform.objectUrls.revokeObjectURL(cached.url);
+      previewUrlsByItem.delete(item);
+    }
+    batch.previewUrls = batch.previewUrls.filter(url => activeUrls.has(url));
+  }
+
   function previewUrls() {
-    revokePreviews();
-    batch.previewUrls = batch.items.map(item => (
-      platform.objectUrls.createObjectURL(item.file)
-    ));
+    prunePreviewUrls();
+    batch.previewUrls = batch.items.map(item => {
+      let cached = previewUrlsByItem.get(item);
+      if (!cached || cached.file !== item.file) {
+        cached = {
+          file: item.file,
+          url: platform.objectUrls.createObjectURL(item.file)
+        };
+        previewUrlsByItem.set(item, cached);
+      }
+      return cached.url;
+    });
     return [...batch.previewUrls];
   }
 
@@ -183,7 +209,13 @@ export function createKeepsakeDrafts({
     }
     batch.owner = normalizedOwner;
     const candidate = ticket();
-    const stored = await store.get(normalizedOwner, KEEPSAKE_BATCH_DRAFT_KEY);
+    let stored;
+    try {
+      stored = await store.get(normalizedOwner, KEEPSAKE_BATCH_DRAFT_KEY);
+    } catch (error) {
+      if (isCurrent(candidate) && batch.owner === normalizedOwner) onChange();
+      throw error;
+    }
     if (!isCurrent(candidate) || batch.owner !== normalizedOwner) return false;
     hydrated = true;
     if (!stored?.items?.length) {
@@ -237,7 +269,7 @@ export function createKeepsakeDrafts({
     batch.activeIndex = wasActive
       ? nextKeepsakeBatchIndex(batch.items, numericIndex)
       : Math.max(0, previousIndex - (numericIndex < previousIndex ? 1 : 0));
-    revokePreviews();
+    prunePreviewUrls();
     onChange();
     return { item, wasActive };
   }

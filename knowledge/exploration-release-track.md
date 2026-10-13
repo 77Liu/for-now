@@ -55,4 +55,4 @@
 4. 示例内容及其“探索样例”标识。
 5. 面向试用的「重点关注功能清单」。
 
-阶段报告位于 `reports/exploration/p1-focus.md`、`p2-focus.md` 和 `p3-focus.md`。表中“已验证”仅表示探索原型通过本地验收，不改变 `README-TODO.md` 中生产主线任务状态。
+阶段报告位于 `reports/exploration/p1-focus.md`、`p2-focus.md` 和 `p3-focus.md`。表中“已验证”仅表示探索原型通过本地验收，不改变唯一协调控制面中的生产主线任务状态。

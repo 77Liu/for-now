@@ -22,7 +22,10 @@ function captureForms(forms, document) {
         : null,
       focused: field === active,
       selectionStart: typeof field.selectionStart === "number" ? field.selectionStart : null,
-      selectionEnd: typeof field.selectionEnd === "number" ? field.selectionEnd : null
+      selectionEnd: typeof field.selectionEnd === "number" ? field.selectionEnd : null,
+      ...(field.dataset?.occurrenceMode
+        ? { occurrenceMode: field.dataset.occurrenceMode }
+        : {})
     }))
   }));
 }
@@ -43,6 +46,9 @@ function restoreForms(forms, drafts) {
       if (!saved) continue;
       if (saved.checked !== null) field.checked = saved.checked;
       else field.value = saved.value;
+      if (field.dataset && ["now", "manual"].includes(saved.occurrenceMode)) {
+        field.dataset.occurrenceMode = saved.occurrenceMode;
+      }
       if (saved.focused) {
         focusedField = field;
         selectionStart = saved.selectionStart;

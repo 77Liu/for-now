@@ -1,3 +1,9 @@
+/**
+ * 从当前有效压缩记录构建历史与七天趋势上下文，并校验来源及序列化限额。
+ * 建立时间：未知
+ * 状态：active
+ * 边界：完整统计供显示与聚合；模型上下文仅投影预算内且仍可引用的来源。
+ */
 import {
   buildHistoricalUserSupplementInput,
   buildRecordCompressionInput,
@@ -135,8 +141,10 @@ function inputForDate(store, {
   timezone,
   asOf,
   hash,
-  maxTextChars
+  maxTextChars,
+  startDate = ""
 }) {
+  if (startDate && localDate < startDate) return null;
   return buildRecordCompressionInput(store, {
     accountId,
     localDate,
@@ -159,15 +167,17 @@ function historicalSupplementInputFrom(store, {
   maxTextChars,
   windowStart,
   windowEnd,
-  batchIndex = 0
+  batchIndex = 0,
+  startDate = ""
 }) {
   const endDate = validLocalDate(windowEnd)
     ? windowEnd
     : dateKeyInTimezone(asOf, timezone);
-  const startDate = validLocalDate(windowStart)
+  const requestedStart = validLocalDate(windowStart)
     ? windowStart
     : dateKeyOffset(endDate, -(RECORD_COMPRESSION_WINDOW_DAYS - 1));
-  const localDates = localDateRange(startDate, endDate);
+  const boundedStart = startDate && requestedStart < startDate ? startDate : requestedStart;
+  const localDates = localDateRange(boundedStart, endDate);
   if (!localDates.length || !Number.isSafeInteger(batchIndex) || batchIndex < 0) {
     throw new TypeError("历史稳定表达窗口无效");
   }
@@ -263,7 +273,7 @@ function historicalSupplementInputFrom(store, {
       sourceHash: source.sourceHash,
       permissionRevision: source.permissionRevision
     })).sort((left, right) => left.sourceId.localeCompare(right.sourceId)),
-    window: { start: startDate, end: endDate },
+    window: { start: boundedStart, end: endDate },
     batchIndex,
     input: built.input,
     coverage: built.coverage
@@ -274,7 +284,7 @@ function historicalSupplementInputFrom(store, {
     sourceMetadata,
     sourceManifestHash,
     coverage: built.coverage,
-    windowStart: startDate,
+    windowStart: boundedStart,
     windowEnd: endDate,
     batchIndex,
     allSourceIds: allSources.map(source => source.sourceId),
@@ -329,7 +339,7 @@ function permittedHistoricalTextDates(store, options) {
   });
 }
 
-function historicalTaskRange(task, timezone) {
+function historicalTaskRange(task, timezone, startDate = "") {
   const payload = task?.payload || {};
   const windowEnd = validLocalDate(payload.windowEnd)
     ? payload.windowEnd
@@ -338,6 +348,7 @@ function historicalTaskRange(task, timezone) {
   const windowStart = validLocalDate(payload.windowStart)
     ? payload.windowStart
     : dateKeyOffset(windowEnd, -(RECORD_COMPRESSION_WINDOW_DAYS - 1));
+  if (startDate && windowStart < startDate) return null;
   const dates = localDateRange(windowStart, windowEnd);
   if (!dates.length) return null;
   return { windowStart, windowEnd, timezone };
@@ -346,7 +357,8 @@ function historicalTaskRange(task, timezone) {
 function historicalCoverageAfterSave(store, currentTask, options) {
   const today = dateKeyInTimezone(options.asOf, options.timezone);
   const recentRange = {
-    windowStart: dateKeyOffset(today, -(RECORD_COMPRESSION_WINDOW_DAYS - 1)),
+    windowStart: options.startDate && dateKeyOffset(today, -(RECORD_COMPRESSION_WINDOW_DAYS - 1)) < options.startDate
+      ? options.startDate : dateKeyOffset(today, -(RECORD_COMPRESSION_WINDOW_DAYS - 1)),
     windowEnd: today,
     timezone: options.timezone
   };
@@ -362,11 +374,11 @@ function historicalCoverageAfterSave(store, currentTask, options) {
   ));
   const ranges = new Map([[JSON.stringify([recentRange.windowStart, recentRange.windowEnd]), recentRange]]);
   for (const task of taskRows) {
-    const range = historicalTaskRange(task, options.timezone);
+    const range = historicalTaskRange(task, options.timezone, options.startDate);
     if (range) ranges.set(JSON.stringify([range.windowStart, range.windowEnd]), range);
   }
   const succeeded = (snapshot, range, batchIndex) => taskRows.some(task => {
-    const taskRange = historicalTaskRange(task, options.timezone);
+    const taskRange = historicalTaskRange(task, options.timezone, options.startDate);
     const current = task.id === currentTask?.id;
     return taskRange?.windowStart === range.windowStart
       && taskRange?.windowEnd === range.windowEnd
@@ -448,6 +460,11 @@ function historicalCoverageAfterSave(store, currentTask, options) {
 }
 
 function historicalSupplementContextFrom(store, options) {
+  if (options.startDate && dateKeyInTimezone(options.asOf, options.timezone) < options.startDate) {
+    return { payload: { scope: "historical_user_supplement", records: [], invalidatedCount: 0,
+      coverage: { windowDays: 0, availableSources: 0, includedSources: 0, complete: false } },
+      citationSources: [], fingerprint: options.hash(JSON.stringify(["before-start-date", options.startDate])), input: null };
+  }
   const recentSnapshot = historicalSupplementInputFrom(store, options);
   const storedRecordDates = list(store?.historicalUserSupplement?.records)
     .map(record => record?.source?.localDate);
@@ -497,7 +514,9 @@ function historicalSupplementContextFrom(store, options) {
   return {
     payload: {
       scope: "historical_user_supplement",
-      coverage: structuredClone(store?.historicalUserSupplement?.coverage || recentSnapshot.coverage),
+      coverage: options.startDate
+        ? historicalCoverageAfterSave(store, null, options)
+        : structuredClone(store?.historicalUserSupplement?.coverage || recentSnapshot.coverage),
       records,
       invalidatedCount: validated.invalidated.length
     },
@@ -568,14 +587,31 @@ function fitTrendAiReferences(references) {
   return { rows: fitted, truncated };
 }
 
+function pruneTrendSources(payload) {
+  const sourceIds = new Set(list(payload.days).flatMap(day => [
+    ...list(day.daily), ...list(day.thoughts), ...list(day.themes)
+  ]).flatMap(row => list(row.sourceIds)));
+  const citationIds = new Set([
+    ...list(payload.userFacts), ...list(payload.userSubjective), ...list(payload.metrics)
+  ].flatMap(row => list(row.citations)));
+  payload.sources = list(payload.sources).filter(source => (
+    sourceIds.has(source.sourceId) || citationIds.has(source.citationId)
+  ));
+  if (payload.metricsCoverage) {
+    payload.metricsCoverage.included = payload.metrics.length;
+    payload.metricsCoverage.truncated = payload.metrics.length < payload.metricsCoverage.available;
+  }
+}
+
 function contextTrendFrom(store, {
   accountId,
   timezone,
   asOf,
   hash,
-  maxTextChars
+  maxTextChars,
+  startDate = ""
 }) {
-  const localDates = sevenLocalDatesForTimezone(timezone, asOf);
+  const localDates = sevenLocalDatesForTimezone(timezone, asOf).filter(date => !startDate || date >= startDate);
   const currentInputs = new Map();
   const summaries = [];
   for (const localDate of localDates) {
@@ -604,7 +640,8 @@ function contextTrendFrom(store, {
     daily: narrativeRows(day.summary, "daily", "observations"),
     thoughts: [
       ...narrativeRows(day.summary, "thoughtsIdeas", "focus", 1),
-      ...narrativeRows(day.summary, "thoughtsIdeas", "changes", 1)
+      ...narrativeRows(day.summary, "thoughtsIdeas", "changes", 1),
+      ...narrativeRows(day.summary, "thoughtsIdeas", "openQuestions", 1)
     ],
     themes: narrativeRows(day.summary, "other", "themes", 1)
   }));
@@ -617,6 +654,7 @@ function contextTrendFrom(store, {
       narrativeRows(summary, "daily", "observations"),
       narrativeRows(summary, "thoughtsIdeas", "focus", 1),
       narrativeRows(summary, "thoughtsIdeas", "changes", 1),
+      narrativeRows(summary, "thoughtsIdeas", "openQuestions", 1),
       narrativeRows(summary, "other", "themes", 1)
     ]) {
       for (const row of rows) for (const sourceId of row.sourceIds) referencedSourceIds.add(sourceId);
@@ -685,12 +723,14 @@ function contextTrendFrom(store, {
     availableDays: trend.coverage.summaryDays,
     missingDates: trend.coverage.missingDates,
     days: dayRows,
+    metricsCoverage: { available: trend.metrics.length, included: 0, truncated: false },
     metrics: metricRows.map(({ sourceIds = [], ...metric }) => ({
       ...metric,
       citations: []
     })),
     aiReferences: [],
     aiReferencesTruncated: false,
+    contextTruncated: false,
     sources
   };
   const fittedAiReferences = fitTrendAiReferences(trend.aiReferences);
@@ -707,7 +747,10 @@ function contextTrendFrom(store, {
     citations: [...new Set(sourceIds.flatMap(sourceId => (
       citationsBySource.get(sourceId) || []
     )))].slice(0, 8)
-  }));
+  })).filter(metric => metric.citations.length > 0);
+  payload.contextTruncated = payload.metrics.length < trend.metrics.length;
+  const retainReferencedSources = () => pruneTrendSources(payload);
+  retainReferencedSources();
   const exceedsTrendBudget = () => {
     const serialized = JSON.stringify(payload);
     return serialized.length > RECORD_COMPRESSION_TREND_CONTEXT_CHARACTER_BUDGET
@@ -715,38 +758,30 @@ function contextTrendFrom(store, {
       || estimateRecordCompressionTokens(payload) > RECORD_COMPRESSION_TREND_CONTEXT_TOKEN_BUDGET;
   };
   while (exceedsTrendBudget()) {
+    payload.contextTruncated = true;
     if (payload.aiReferences.length) {
       payload.aiReferences.pop();
       payload.aiReferencesTruncated = true;
-      continue;
+    } else if (payload.metrics.length) {
+      // 完整统计仍保存并供显示；优先裁模型统计投影，避免挤掉
+      // 所有可核验来源的用户日正文。
+      payload.metrics.pop();
+    } else {
+      const lastDay = payload.days.at(-1);
+      if (!lastDay) break;
+      if (lastDay.themes.length) lastDay.themes.pop();
+      else if (lastDay.thoughts.length) lastDay.thoughts.pop();
+      else if (lastDay.daily.length) lastDay.daily.pop();
+      else payload.days.pop();
     }
-    const lastDay = payload.days.at(-1);
-    if (!lastDay) {
-      if (payload.metrics.length) payload.metrics.pop();
-      else break;
-      continue;
-    }
-    if (lastDay.themes.length) lastDay.themes.pop();
-    else if (lastDay.thoughts.length) lastDay.thoughts.pop();
-    else if (lastDay.daily.length) lastDay.daily.pop();
-    else {
-      payload.days.pop();
-      continue;
-    }
-    const allowed = new Set(payload.days.flatMap(day => [
-      ...day.daily,
-      ...day.thoughts,
-      ...day.themes
-    ]).flatMap(row => row.sourceIds));
-    payload.sources = payload.sources.filter(source => allowed.has(source.sourceId));
+    retainReferencedSources();
   }
-  const retainedMetricCount = payload.metrics.length;
-  payload.metrics = metricRows.slice(0, retainedMetricCount).map(({ sourceIds = [], ...metric }) => ({
+  const retainedCitationIds = new Set(payload.sources.map(source => source.citationId));
+  payload.metrics = payload.metrics.map(metric => ({
     ...metric,
-    citations: [...new Set(sourceIds.flatMap(sourceId => (
-      citationsBySource.get(sourceId) || []
-    )))].filter(citationId => payload.sources.some(source => source.citationId === citationId)).slice(0, 8)
-  }));
+    citations: metric.citations.filter(citationId => retainedCitationIds.has(citationId))
+  })).filter(metric => metric.citations.length > 0);
+  retainReferencedSources();
   const citationIds = new Set(payload.sources.map(source => source.citationId));
   return {
     timezone,
@@ -783,6 +818,7 @@ function separateTrendContext(store, trendResult, {
     ]) {
       for (const row of rows) {
         const sourceIds = list(row.sourceIds).filter(sourceId => sourceById.has(sourceId));
+        if (sourceIds.length !== list(row.sourceIds).length) payload.contextTruncated = true;
         if (!sourceIds.length || !row.text) continue;
         const item = {
           localDate: day.localDate,
@@ -875,7 +911,9 @@ function separateTrendContext(store, trendResult, {
     userSubjective: payload.userSubjective,
     collectedQuotes: payload.collectedQuotes
   }) > userTrendBudget;
+  pruneTrendSources(payload);
   while (userTrendTooLarge()) {
+    payload.contextTruncated = true;
     if (payload.collectedQuotes.length) {
       payload.collectedQuotes.pop();
     } else if (payload.userSubjective.length) {
@@ -883,20 +921,23 @@ function separateTrendContext(store, trendResult, {
     } else if (payload.userFacts.length) {
       payload.userFacts.pop();
     } else break;
+    pruneTrendSources(payload);
   }
   while (trendTooLarge()) {
+    payload.contextTruncated = true;
     if (payload.aiReferences.length) {
       payload.aiReferences.pop();
       payload.aiReferencesTruncated = true;
+    } else if (payload.metrics.length) {
+      payload.metrics.pop();
     } else if (payload.collectedQuotes.length) {
       payload.collectedQuotes.pop();
     } else if (payload.userSubjective.length) {
       payload.userSubjective.pop();
     } else if (payload.userFacts.length) {
       payload.userFacts.pop();
-    } else if (payload.metrics.length) {
-      payload.metrics.pop();
     } else break;
+    pruneTrendSources(payload);
   }
 
   const usedCitationIds = new Set([

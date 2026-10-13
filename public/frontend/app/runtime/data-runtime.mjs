@@ -1,3 +1,4 @@
+import { createNotificationRuntime } from "../../../generated/app/runtime/notification-runtime.mjs";
 import { sessionScope, sessionSerial } from "../../session/index.mjs";
 import { mergeStateSnapshot, publishDomains, state } from "../../state/index.mjs";
 import { localDateKey } from "../../time/index.mjs";
@@ -384,61 +385,19 @@ runtime.syncController=createIncrementalSync({
   },
   onStatus:event=>void updateSyncHealth(event)
 });
-function notificationUnread(snapshot=state){
-  const items=snapshot.notifications||[];
-  const unreadCount=Number(snapshot.notificationUnread??runtime.notificationUnreadCount);
-  return unreadCount||items.filter(item=>!item.readAt&&["succeeded","failed","stale","cancelled"].includes(item.status)).length
-}
-function renderNotificationSummary(){
-  const unread=notificationUnread();
-  $("#notification-dot").hidden=!unread;
-}
-function publishNotificationState(){
-  renderNotificationSummary();
-  runtime.runtimeFeatureRegistry?.notifyState(state,new Set(["notifications","aiTasks","notificationUnread"]))
-}
-function scheduleNotificationPoll(){
-  clearTimeout(runtime.notificationTimer);
-  const active=(state.aiTasks||[])
-    .some(task=>isPendingAiTaskStatus(task.status));
-  const retrying=runtime.backgroundResultsRetryAttempts>0
-    &&runtime.backgroundResultsRetryAttempts<backgroundResultsRetryLimit;
-  if(!active&&!retrying)return;
-  runtime.notificationTimer=setTimeout(async()=>{
-    try{
-      await loadNotifications()
-    }finally{
-      scheduleNotificationPoll()
-    }
-  },1800);
-}
-async function loadNotifications(){
-  const owner=runtime.currentUser?.id,session=sessionSerial;
-  runtime.notificationsLoadState="loading";
-  publishNotificationState();
-  try{
-    const [notifications,tasks]=await Promise.all([
-      request("/api/notifications"),
-      request("/api/ai-tasks")
-    ]);
-    if(owner!==runtime.currentUser?.id||session!==sessionSerial)return false;
-
-    state.notifications=notifications.items||[];
-    state.aiTasks=tasks.items||[];
-    runtime.notificationUnreadCount=Number(notifications.unread)||0;
-    state.notificationUnread=runtime.notificationUnreadCount;
-    runtime.notificationsLoadState="ready";
-    publishNotificationState();
-    await syncBackgroundTaskResults(state.aiTasks,owner,session);
-    return true
-  }catch(error){
-    if(owner===runtime.currentUser?.id&&session===sessionSerial){
-      runtime.notificationsLoadState="failure";
-      publishNotificationState()
-    }
-    return false
-  }
-}
+const {
+  notificationUnread, renderNotificationSummary, publishNotificationState,
+  scheduleNotificationPoll, readNotificationSnapshot, loadNotifications
+}=createNotificationRuntime({
+  runtime,
+  getSnapshot:()=>state,
+  getSessionSerial:()=>sessionSerial,
+  request,
+  syncResults:syncBackgroundTaskResults,
+  setUnreadDot:unread=>{$("#notification-dot").hidden=!unread},
+  retryLimit:backgroundResultsRetryLimit,
+  isPendingTask:isPendingAiTaskStatus
+});
 async function openAiTaskTarget(task,notification){
   const owner=runtime.currentUser?.id,session=sessionSerial;
   try{
@@ -454,7 +413,15 @@ async function openAiTaskTarget(task,notification){
     return false
   }
 }
-const refreshState=(domains,options={})=>refreshCoordinator.refresh(domains,{...options,patchOnly:options.patchOnly===true});
+const refreshState=async(domains,options={})=>{
+  const requested=typeof domains==="string"?[domains]:Array.from(domains||[]);
+  if(!requested.includes("notifications"))return refreshCoordinator.refresh(domains,{...options,patchOnly:options.patchOnly===true});
+  const others=requested.filter(domain=>domain!=="notifications");
+  if(others.length&&(await refreshCoordinator.refresh(others,{...options,patchOnly:options.patchOnly===true}))===false)return false;
+  // 通知任务有独立HTTP读取；当前路由快照成功不代表通知读取成功。
+  // 结果接入由显式恢复或轮询完成，此处不重复同步同一结果。
+  return readNotificationSnapshot(false)
+};
 const resolvePersonalizedTask=createPersonalizedTaskRuntime({
   runtime,
   request,

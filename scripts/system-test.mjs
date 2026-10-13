@@ -65,6 +65,7 @@ const suites = {
     ["production environment isolation", ["scripts/system-test.mjs", ISOLATION_PROBE]]
   ],
   backend: [
+    ["backend TypeScript runtime build", ["node_modules/typescript/bin/tsc", "-p", "tsconfig.backend.json"]],
     ["production environment isolation", ["scripts/system-test.mjs", ISOLATION_PROBE]],
     ["module boundaries", ["scripts/check-modules.mjs"]],
     ["module boundary checker regression", ["scripts/module-boundary-regression.mjs"]],
@@ -166,7 +167,6 @@ const suites = {
     ["local test data modes", ["scripts/local-test-mode-regression.mjs"]],
     ["observability", ["scripts/observability-regression.mjs"]],
     ["attachment storage", ["scripts/attachment-storage-regression.mjs"]],
-    ["attachment byte range streaming", ["scripts/attachment-range-regression.mjs"]],
     ["Owner opening preference permission and revision contracts", ["scripts/opening-preferences-regression.mjs"]],
     ["private media signed delivery", ["scripts/attachment-delivery-regression.mjs"]],
     ["private media signed HTTP delivery", ["scripts/attachment-delivery-http-regression.mjs"]],

@@ -4,7 +4,8 @@ import "./prompt-test-setup.mjs";
 import {
   coreUserModelProjection,
   prepareUserModelExtraction,
-  userModelCoreReadiness
+  userModelCoreReadiness,
+  userModelRequiresCoreReady
 } from "../src/app/index.mjs";
 import { defaultOnboardingV2, normalizeOnboardingV2 } from "../src/modules/onboarding/index.mjs";
 import { normalizeUserClaim } from "../src/modules/user-model/index.mjs";
@@ -50,7 +51,7 @@ const incomplete = completeOnboarding();
 delete incomplete.session.answers.recentObstacles;
 assert.equal(userModelCoreReadiness({ onboardingV2: incomplete }).reason, "answers_incomplete");
 
-assert.equal(userModelCoreReadiness(base).reason, "model_generation_pending");
+assert.equal(userModelCoreReadiness(base).reason, "model_generation_not_started");
 const prepared = prepareUserModelExtraction(base, { sourceRevision: base.onboardingV2.session.revision });
 assert.ok(prepared.value);
 const succeededTask = {
@@ -174,5 +175,19 @@ const permissionCurrentStore = {
 };
 assert.equal(userModelCoreReadiness(permissionCurrentStore).ready, true);
 assert.deepEqual(coreUserModelProjection(permissionCurrentStore).claims, []);
+
+
+// 导航不能使同一来源失配，新的在途/失败任务不能被旧成功掩盖。
+const navigated = structuredClone(readyStore);
+navigated.onboardingV2.session.revision += 1;
+assert.equal(userModelCoreReadiness(navigated).ready, true);
+for (const status of ["queued", "running", "failed", "cancelled", "stale"]) {
+  const current = structuredClone(navigated);
+  current.aiTasks.unshift({ ...succeededTask, id: `latest-${status}`, status });
+  assert.equal(userModelCoreReadiness(current).ready, false);
+  assert.equal(userModelRequiresCoreReady(current), ["queued", "running"].includes(status));
+  assert.equal(coreUserModelProjection(current), null, "终态恢复不冒充核心模型成功");
+}
+assert.equal(userModelRequiresCoreReady(base), false, "没有真实在途任务不得永久等待");
 
 console.log("User model core readiness regression passed.");

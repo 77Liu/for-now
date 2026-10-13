@@ -7,7 +7,10 @@ import {
   speechAssetForSource,
   speechAudioPath,
   speechSourceIdentity,
-  TTS_PLAYBACK_RATES
+  TTS_PLAYBACK_RATES,
+  TTS_GENERATION_RATE_MIN,
+  TTS_GENERATION_RATE_MAX,
+  normalizeTtsGenerationRate
 } from "../../media/index.mjs";
 import {
   eventDate,
@@ -35,6 +38,7 @@ function requireFunction(value, name) {
 
 export function createThoughtPresentation({
   getSnapshot,
+  getGenerationRate = () => undefined,
   appUrl,
   contextReceiptMarkup,
   contentImagesMarkup
@@ -57,26 +61,30 @@ export function createThoughtPresentation({
     label
   }) {
     const snapshot = getSnapshot();
-    if (
-      !snapshot.speech?.configured
-      || !speechSourceIdentity(sourceType, sourceId, sourceVersion)
-    ) return "";
-    const asset = speechAssetForSource(snapshot.speech.assets, {
+    if (!speechSourceIdentity(sourceType, sourceId, sourceVersion)) return "";
+    const asset = speechAssetForSource(snapshot.speech?.assets, {
       sourceType,
       sourceId,
       sourceVersion
     });
     const path = speechAudioPath(asset);
     const sourceLabel = String(label || "文字朗读");
-    const voiceLabel = (snapshot.speech.voices || [])
+    const voiceLabel = (snapshot.speech?.voices || [])
       .find(item => item.id === asset?.voice)?.label || "";
     const rateOptions = TTS_PLAYBACK_RATES
       .map(rate => `<option value="${rate}" ${rate === 1 ? "selected" : ""}>${rate.toFixed(1)}×</option>`)
       .join("");
     const player = asset && path
-      ? `<div class="capture-speech-player speech-asset-player"><audio controls preload="none" src="${escapeHtml(appUrl(path))}" data-speech-player="${escapeHtml(asset.id)}" aria-label="${escapeHtml(`${sourceLabel}播放器`)}"></audio><span>${escapeHtml(voiceLabel ? `${sourceLabel} · ${voiceLabel}` : sourceLabel)}</span></div>`
+      ? `<div class="capture-speech-player speech-asset-player"><audio controls preload="none" src="${escapeHtml(appUrl(path))}" data-speech-player="${escapeHtml(asset.id)}" aria-label="${escapeHtml(`${sourceLabel}播放器`)}"></audio><span>${escapeHtml(voiceLabel ? `${sourceLabel} · ${voiceLabel}` : sourceLabel)}</span><button type="button" class="subtle-action" data-capture-speech-retry hidden>重试读取朗读</button></div>`
       : "";
-    return `<section class="speech-asset-controls" data-speech-source-type="${escapeHtml(sourceType)}" data-speech-source-id="${escapeHtml(sourceId)}" data-speech-source-version="${Number(sourceVersion) || 1}">${player}<div class="capture-speech-actions speech-asset-actions"><button type="button" data-speech-synthesize data-speech-regenerate="${asset ? "true" : "false"}" aria-label="${escapeHtml(`${asset ? "重新生成" : "生成"}${sourceLabel}`)}">${asset ? "重新生成" : "生成"}</button><label><span>播放倍速</span><select data-speech-playback-rate aria-label="${escapeHtml(`${sourceLabel}播放倍速`)}">${rateOptions}</select></label></div><p class="speech-asset-status" role="status" aria-live="polite"></p></section>`;
+    if (!player && !snapshot.speech?.configured) return "";
+    const generationRate = normalizeTtsGenerationRate(asset?.generationRate ?? getGenerationRate());
+    const generator = snapshot.speech?.configured
+      ? `<button type="button" data-speech-synthesize data-speech-regenerate="${asset ? "true" : "false"}" aria-label="${escapeHtml(`${asset ? "重新生成" : "生成"}${sourceLabel}`)}">${asset ? "重新生成" : "生成"}</button>` : "";
+    const generationControl = snapshot.speech?.configured
+      ? `<label><span>生成语速</span><input type="range" min="${TTS_GENERATION_RATE_MIN}" max="${TTS_GENERATION_RATE_MAX}" value="${generationRate}" data-speech-generation-rate aria-label="${escapeHtml(`${sourceLabel}生成语速`)}"><output>${(1 + generationRate / 100).toFixed(2)}×</output></label>`
+      : `<span>生成语速 ${(1 + generationRate / 100).toFixed(2)}×</span>`;
+    return `<section class="speech-asset-controls" data-speech-source-type="${escapeHtml(sourceType)}" data-speech-source-id="${escapeHtml(sourceId)}" data-speech-source-version="${Number(sourceVersion) || 1}">${player}<div class="capture-speech-actions speech-asset-actions">${generator}${player ? `<label><span>播放倍速</span><select data-speech-playback-rate aria-label="${escapeHtml(`${sourceLabel}播放倍速`)}">${rateOptions}</select></label>` : ""}${generationControl}</div><p class="speech-asset-status" role="status" aria-live="polite"></p></section>`;
   }
 
   function contentBlock(item, question, {

@@ -1,3 +1,5 @@
+import { isPendingAiTaskStatus } from "../public/frontend/shared/ai-task-status.mjs";
+import { createNotificationRuntime } from "../public/generated/app/runtime/notification-runtime.mjs";
 import assert from "node:assert/strict";
 import {
   createNotificationsFeatureController,
@@ -10,14 +12,22 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 
 {
   const runtime = {};
+  const reads = [];
+  let targetLoaded = true;
+  let notificationFails = false;
+  let automaticSyncs = 0;
   const data = createDataRuntime({
     runtime,
-    apiClient: {},
+    apiClient: { request: async path => {
+      reads.push(path);
+      if (notificationFails) throw Object.assign(new Error("synthetic read"), { status: 503 });
+      return path === "/api/notifications" ? { items: [], unread: 0 } : { items: [] };
+    } },
     syncStore: {},
     createRequestCoordinator: () => ({}),
-    createRefreshCoordinator: () => ({}),
+    createRefreshCoordinator: () => ({ refresh: async () => targetLoaded }),
     createIncrementalSync: () => ({}),
-    $: () => null,
+    $: () => ({ hidden: false }),
     getActionsCoordinator: () => ({}),
     renderStateChart() {},
     renderHomeMood() {},
@@ -25,7 +35,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
     clearRouteLoadFailure() {},
     renderVisibleRoute() {},
     renderRouteLoadFailure() {},
-    syncBackgroundTaskResults: async () => {},
+    syncBackgroundTaskResults: async () => { automaticSyncs += 1; },
     ensureBackgroundResultsController: () => ({}),
     backgroundResultsRetryLimit: 3
   });
@@ -52,6 +62,48 @@ async function waitFor(predicate, message) {
   assert.fail(message);
 }
 
+// 最后一个任务已完成时，仍只为未用尽的结果读取重试登记真实轮询timer。
+{
+  const originalSet=globalThis.setTimeout,originalClear=globalThis.clearTimeout;
+  const timers=new Set();
+  globalThis.setTimeout=(callback,delay,...args)=>{const timer=originalSet(callback,delay,...args);timers.add(timer);return timer};
+  globalThis.clearTimeout=timer=>{timers.delete(timer);originalClear(timer)};
+  const runtime={currentUser:{id:"poll-owner"},backgroundResultsRetryAttempts:0};
+  const notifications=createNotificationRuntime({runtime,getSnapshot:()=>({aiTasks:[{id:"completed",status:"succeeded"}]}),
+    getSessionSerial:()=>1,request:async()=>({items:[]}),syncResults:async()=>{},setUnreadDot:()=>{},retryLimit:3,isPendingTask:isPendingAiTaskStatus});
+  try {
+    for(const attempts of [0,1,2,3]){
+      runtime.backgroundResultsRetryAttempts=attempts;notifications.scheduleNotificationPoll();
+      assert.equal(timers.size,attempts===1||attempts===2?1:0,`completed任务attempts=${attempts}的实际轮询登记`);
+    }
+  } finally {
+    for(const timer of timers)originalClear(timer);
+    globalThis.setTimeout=originalSet;globalThis.clearTimeout=originalClear;
+  }
+}
+
+// 账户切换后的迟到通知不得写入新快照或结果同步。
+{
+  const pending = deferred();
+  const runtime = { currentUser: { id: "account-a" } };
+  let serial = 1;
+  const state = { aiTasks: [], notifications: [] };
+  let syncs = 0;
+  const notifications = createNotificationRuntime({
+    runtime, getSnapshot: () => state, getSessionSerial: () => serial,
+    request: async () => pending.promise,
+    syncResults: async () => { syncs += 1; },
+    setUnreadDot: () => {}, retryLimit: 3, isPendingTask: status => ["queued", "running", "waiting_for_user_model"].includes(status)
+  });
+  const read = notifications.loadNotifications();
+  runtime.currentUser = { id: "account-b" };
+  serial += 1;
+  pending.resolve({ items: [{ id: "old-task", status: "succeeded" }], unread: 1 });
+  assert.equal(await read, false);
+  assert.deepEqual(state, { aiTasks: [], notifications: [] });
+  assert.equal(syncs, 0);
+}
+
 class FakeElement {
   constructor(root, kind = "", dataset = {}) {
     this.root = root;
@@ -60,6 +112,8 @@ class FakeElement {
     this._innerHTML = "";
     this._textContent = "";
     this._disabled = false;
+    this.focused = false;
+    this.selected = false;
   }
   get innerHTML() { return this._innerHTML; }
   set innerHTML(value) {
@@ -79,6 +133,12 @@ class FakeElement {
   closest(selector) {
     if (this.kind === "all" && selector === NOTIFICATION_SELECTORS.readAll) return this;
     if (this.dataset.taskRetry !== undefined && selector === NOTIFICATION_SELECTORS.retry) return this;
+    if (this.dataset.resultReread !== undefined && selector === "[data-result-reread]") return this;
+    if (this.dataset.notificationCopy !== undefined && selector === NOTIFICATION_SELECTORS.copy) return this;
+    if (this.dataset.notificationCopyFallbackSelect !== undefined
+      && selector === NOTIFICATION_SELECTORS.fallbackSelect) return this;
+    if (this.dataset.notificationCopyFallbackDismiss !== undefined
+      && selector === NOTIFICATION_SELECTORS.fallbackDismiss) return this;
     if (this.dataset.notificationOpen !== undefined && selector === NOTIFICATION_SELECTORS.open) return this;
     if (this.dataset.notificationRead !== undefined && selector === NOTIFICATION_SELECTORS.read) return this;
     if (
@@ -87,6 +147,8 @@ class FakeElement {
     ) return this;
     return null;
   }
+  focus() { this.focused = true; }
+  select() { this.selected = true; }
 }
 
 class FakeRoot {
@@ -104,6 +166,15 @@ class FakeRoot {
       [NOTIFICATION_SELECTORS.status]: this.status,
       [NOTIFICATION_SELECTORS.readAll]: this.readAll
     }[selector] || null;
+  }
+  querySelectorAll(selector) {
+    if (selector !== "[data-notification-copy-fallback]") return [];
+    const fallback = this.list.innerHTML.match(/data-notification-copy-fallback="([^"]+)"/);
+    if (!fallback) return [];
+    this.fallbackTextarea ||= new FakeElement(this, "fallback-textarea", {
+      notificationCopyFallback: fallback[1]
+    });
+    return [this.fallbackTextarea];
   }
   addEventListener(type, listener) {
     const listeners = this.listeners.get(type) || new Set();
@@ -138,7 +209,9 @@ const task = () => ({
   id: "task-1",
   kind: "thoughtAnswer",
   targetId: "thought-1",
-  status: "failed"
+  status: "failed",
+  errorCode: "AI_TASK_FAILED",
+  error: "secret provider response"
 });
 const initialState = () => ({
   notifications: [notice()],
@@ -149,7 +222,7 @@ function ports(overrides = {}) {
   const state = initialState();
   return {
     request: async () => ({}),
-    loadNotifications: async () => true,
+    loadNotifications: async () => false,
     scheduleNotificationPoll() {},
     openTarget: async () => {},
     getSnapshot: () => state,
@@ -167,6 +240,28 @@ for (const name of Object.keys(ports())) {
     () => createNotificationsFeatureController({ ...ports(), [name]: null }),
     new RegExp(`requires ${name}`)
   );
+}
+
+{
+  const state = initialState();
+  state.notifications.push({ ...notice("late-notice"), readAt: "" });
+  const requests = [];
+  let loads = 0;
+  const root = new FakeRoot("mark-presented");
+  const controller = createNotificationsFeatureController(ports({
+    getSnapshot: () => state,
+    async loadNotifications() { loads += 1; return true; },
+    request(path) {
+      requests.push(path);
+      if (path.endsWith("/notice-1/read")) state.notifications.push(notice("arrived-after-display"));
+      return Promise.resolve({});
+    }
+  }));
+  controller.mount({ root });
+  await waitFor(() => loads === 2, "presented notices were not refreshed after read acknowledgements");
+  assert.deepEqual(requests, ["/api/notifications/notice-1/read", "/api/notifications/late-notice/read"]);
+  assert.doesNotMatch(requests.join("\n"), /arrived-after-display/);
+  controller.unmount();
 }
 
 {
@@ -211,6 +306,7 @@ for (const name of Object.keys(ports())) {
   loadState = "failure";
   assert.equal(controller.render({ snapshot: state, changedDomains: ["aiTasks"] }), true);
   assert.match(root.status.textContent, /任务进度暂未更新/);
+  assert.match(root.list.innerHTML, /data-content-action="retry-notifications"/, "已有旧通知时仍有真实读取恢复入口");
   state = { notifications: [], aiTasks: [], notificationUnread: 0 };
   assert.equal(controller.render({ snapshot: state }), true);
   assert.match(root.list.innerHTML, /暂时无法读取通知/);
@@ -247,8 +343,9 @@ for (const name of Object.keys(ports())) {
 
 {
   const state = initialState();
-  const requests = [], events = [], toasts = [];
+  const requests = [], events = [], toasts = [], copied = [];
   const retryGate = deferred();
+  let copyHandler = async value => { copied.push(value); };
   let loads = 0;
   const root = new FakeRoot("clicks");
   const controller = createNotificationsFeatureController(ports({
@@ -268,10 +365,13 @@ for (const name of Object.keys(ports())) {
       assert.equal(openedNotice, state.notifications[0]);
     },
     getSnapshot: () => state,
+    copyText(value) { return copyHandler(value); },
     showToast(message) { toasts.push(message); }
   }));
   controller.mount({ root });
   await waitFor(() => events.includes("schedule"), "click fixture did not mount");
+  assert.match(root.list.innerHTML, /复制错误日志/);
+  assert.doesNotMatch(root.list.innerHTML, /生成失败|secret provider response/);
   loads = 0;
   requests.length = 0;
   events.length = 0;
@@ -282,6 +382,32 @@ for (const name of Object.keys(ports())) {
   root.click({ notificationRead: "notice-1" });
   await waitFor(() => loads === 2, "single read did not refresh");
   assert.equal(requests.shift()[0], "/api/notifications/notice-1/read");
+  root.click({ notificationCopy: "notice-1" });
+  await waitFor(() => copied.length === 1, "sanitized diagnostic was not copied");
+  assert.match(copied[0], /AI_TASK_FAILED/);
+  assert.doesNotMatch(copied[0], /secret provider response|生成失败/);
+
+  copyHandler = async value => {
+    copied.push(value);
+    throw new Error("secret provider response and private body");
+  };
+  root.click({ notificationCopy: "notice-1" });
+  await waitFor(
+    () => root.list.innerHTML.includes('data-notification-copy-fallback="notice-1"'),
+    "clipboard rejection did not render the selectable sanitized fallback"
+  );
+  const fallbackMarkup = root.list.innerHTML;
+  assert.match(fallbackMarkup, /<textarea readonly data-notification-copy-fallback="notice-1" aria-label="脱敏错误日志，可手动选择复制">/);
+  assert.match(fallbackMarkup, /<button[^>]*data-notification-copy-fallback-select="notice-1"[^>]*>选择日志<\/button>/);
+  assert.match(fallbackMarkup, /<button[^>]*data-notification-copy-fallback-dismiss="notice-1"[^>]*>收起<\/button>/);
+  assert.match(fallbackMarkup, /&quot;errorCode&quot;: &quot;AI_TASK_FAILED&quot;/);
+  assert.doesNotMatch(fallbackMarkup, /secret provider response|生成失败|private body/);
+  root.click({ notificationCopyFallbackSelect: "notice-1" });
+  assert.equal(root.fallbackTextarea?.focused, true, "fallback selection should focus the readable textarea");
+  assert.equal(root.fallbackTextarea?.selected, true, "fallback selection should select the sanitized text");
+  root.click({ notificationCopyFallbackDismiss: "notice-1" });
+  assert.doesNotMatch(root.list.innerHTML, /data-notification-copy-fallback=/);
+
   events.length = 0;
   root.click({
     notificationOpen: "thought-1",
@@ -291,14 +417,65 @@ for (const name of Object.keys(ports())) {
   await waitFor(() => events.includes("open"), "open target was not called");
   assert.deepEqual(events.slice(0, 2), ["/api/notifications/notice-1/read", "open"]);
 
+  const requestsBeforeReread = requests.length;
+  state.aiTasks[0].status = "succeeded";
+  events.length = 0;
+  root.click({ resultReread: "task-1", notificationId: "notice-1" });
+  await waitFor(() => events.includes("open"), "成功任务只读恢复必须可执行");
+  assert.equal(requests.length, requestsBeforeReread, "重新读取不标已读也不POST生成");
+  assert.deepEqual(events, ["open"]);
+  state.aiTasks[0].status = "failed";
   root.click({ taskRetry: "task-1" });
   root.click({ taskRetry: "task-1" });
   assert.equal(requests.filter(([path]) => path.includes("/retry")).length, 1);
   assert.match(root.list.innerHTML, /aria-busy="true" disabled/);
   retryGate.resolve({});
-  await waitFor(() => toasts.length === 1, "retry did not settle");
+  await waitFor(() => loads === 3 && toasts.includes("任务已重新排队"), "retry did not settle");
   assert.doesNotMatch(root.list.innerHTML, /aria-busy="true"/);
   controller.unmount();
+}
+
+{
+  const sessionGate = deferred();
+  const unmountGate = deferred();
+  let copyAttempts = 0;
+  let schedules = 0;
+  const toasts = [];
+  const oldRoot = new FakeRoot("copy-session-a");
+  const newRoot = new FakeRoot("copy-session-b");
+  const controller = createNotificationsFeatureController(ports({
+    copyText(value) {
+      copyAttempts += 1;
+      assert.match(value, /"notificationId": "notice-1"/);
+      return copyAttempts === 1 ? sessionGate.promise : unmountGate.promise;
+    },
+    scheduleNotificationPoll() { schedules += 1; },
+    showToast(message) { toasts.push(message); }
+  }));
+  controller.mount({ root: oldRoot });
+  oldRoot.click({ notificationCopy: "notice-1" });
+  const writesBeforeSessionReset = oldRoot.writes;
+  controller.resetSession();
+  const writesAfterSessionReset = oldRoot.writes;
+  assert.ok(writesAfterSessionReset > writesBeforeSessionReset, "session reset should clear the previous page");
+  controller.mount({ root: newRoot });
+  await waitFor(() => schedules === 1, "new session page did not finish mounting");
+  const newRootWrites = newRoot.writes;
+  sessionGate.reject(new Error("private body"));
+  await flush();
+  await flush();
+  assert.equal(oldRoot.writes, writesAfterSessionReset, "late clipboard rejection must not write to the previous session page");
+  assert.equal(newRoot.writes, newRootWrites, "late clipboard rejection must not write to the new session page");
+  assert.deepEqual(toasts, [], "late clipboard rejection must not show a stale-session toast");
+
+  newRoot.click({ notificationCopy: "notice-1" });
+  controller.unmount();
+  const writesAfterUnmount = newRoot.writes;
+  unmountGate.reject(new Error("secret provider response"));
+  await flush();
+  await flush();
+  assert.equal(newRoot.writes, writesAfterUnmount, "late clipboard rejection must not write after unmount");
+  assert.deepEqual(toasts, [], "late clipboard rejection must not show a toast after unmount");
 }
 
 {

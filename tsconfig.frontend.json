@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "rootDir": "public/frontend/shared",
+    "outDir": "public/generated",
+    "noEmitOnError": true
+  },
+  "files": [
+    "public/frontend/shared/ai-task-status.d.mts",
+    "public/frontend/shared/personalized-ai-task.mts",
+    "public/frontend/shared/capture-audio-lifecycle.mts"
+  ]
+}

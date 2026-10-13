@@ -1,5 +1,8 @@
 import { escapeHtml, plainPreview, renderMarkdown } from "../../content/index.mjs";
 import {
+  normalizeTtsGenerationRate,
+  TTS_GENERATION_RATE_MAX,
+  TTS_GENERATION_RATE_MIN,
   TTS_PLAYBACK_RATES,
   captureAudioPresentation,
   speechAssetForSource,
@@ -51,8 +54,7 @@ export const formatBytes = value => {
 };
 
 function speechAssetControlsMarkup({ snapshot, appUrl, sourceId, sourceVersion, label }) {
-  if (!snapshot.speech?.configured
-    || !speechSourceIdentity("capture", sourceId, sourceVersion)) return "";
+  if (!speechSourceIdentity("capture", sourceId, sourceVersion)) return "";
   const asset = speechAssetForSource(snapshot.speech.assets, {
     sourceType: "capture",
     sourceId,
@@ -65,10 +67,20 @@ function speechAssetControlsMarkup({ snapshot, appUrl, sourceId, sourceVersion, 
   const rateOptions = TTS_PLAYBACK_RATES.map(rate => (
     `<option value="${rate}" ${rate === 1 ? "selected" : ""}>${rate.toFixed(1)}×</option>`
   )).join("");
+  const generationRate = normalizeTtsGenerationRate(
+    asset?.generationRate ?? snapshot.settings?.speech?.generationRate
+  );
   const player = asset && path
-    ? `<div class="capture-speech-player speech-asset-player"><audio controls preload="none" src="${escapeHtml(appUrl(path))}" data-speech-player="${escapeHtml(asset.id)}" aria-label="${escapeHtml(`${sourceLabel}播放器`)}"></audio><span>${escapeHtml(voiceLabel ? `${sourceLabel} · ${voiceLabel}` : sourceLabel)}</span></div>`
+    ? `<div class="capture-speech-player speech-asset-player"><audio controls preload="none" src="${escapeHtml(appUrl(path))}" data-speech-player="${escapeHtml(asset.id)}" aria-label="${escapeHtml(`${sourceLabel}播放器`)}"></audio><span>${escapeHtml(voiceLabel ? `${sourceLabel} · ${voiceLabel}` : sourceLabel)}</span><button type="button" class="subtle-action" data-capture-speech-retry hidden>重试读取朗读</button></div>`
     : "";
-  return `<section class="speech-asset-controls" data-speech-source-type="capture" data-speech-source-id="${escapeHtml(sourceId)}" data-speech-source-version="${Number(sourceVersion) || 1}">${player}<div class="capture-speech-actions speech-asset-actions"><button type="button" data-speech-synthesize data-speech-regenerate="${asset ? "true" : "false"}" aria-label="${escapeHtml(`${asset ? "重新生成" : "生成"}${sourceLabel}`)}">${asset ? "重新生成" : "生成"}</button><label><span>播放倍速</span><select data-speech-playback-rate aria-label="${escapeHtml(`${sourceLabel}播放倍速`)}">${rateOptions}</select></label></div><p class="speech-asset-status" role="status" aria-live="polite"></p></section>`;
+  if (!player && !snapshot.speech?.configured) return "";
+  const generator = snapshot.speech?.configured
+    ? `<button type="button" data-speech-synthesize data-speech-regenerate="${asset ? "true" : "false"}" aria-label="${escapeHtml(`${asset ? "重新生成" : "生成"}${sourceLabel}`)}">${asset ? "重新生成" : "生成"}</button>`
+    : "";
+  const generationControl = snapshot.speech?.configured
+    ? `<label><span>生成语速</span><input type="range" min="${TTS_GENERATION_RATE_MIN}" max="${TTS_GENERATION_RATE_MAX}" step="1" value="${generationRate}" data-speech-generation-rate aria-label="${escapeHtml(`${sourceLabel}生成语速`)}"><output>${(1 + generationRate / 100).toFixed(2)}×</output></label>`
+    : asset ? `<span class="speech-generation-rate-readonly">生成语速 ${(1 + generationRate / 100).toFixed(2)}×</span>` : "";
+  return `<section class="speech-asset-controls" data-speech-source-type="capture" data-speech-source-id="${escapeHtml(sourceId)}" data-speech-source-version="${Number(sourceVersion) || 1}">${player}<div class="capture-speech-actions speech-asset-actions">${generator}${player ? `<label><span>播放倍速</span><select data-speech-playback-rate aria-label="${escapeHtml(`${sourceLabel}播放倍速`)}">${rateOptions}</select></label>` : ""}${generationControl}</div><p class="speech-asset-status" role="status" aria-live="polite"></p></section>`;
 }
 
 function derivedTranscription(label, text, lines, kind) {
@@ -83,7 +95,7 @@ function captureAudioMarkup(item, snapshot, appUrl) {
     || transcription?.polishedText
     || transcription?.rawText
     || plainPreview(item.content || "");
-  if (!audio && !speech) return "";
+  if (!audio && !speech) return { text: "", controls: "" };
   const presentation = captureAudioPresentation(item, snapshot.speech, snapshot.aiTasks);
   const layers = [
     transcription?.rawText
@@ -108,9 +120,15 @@ function captureAudioMarkup(item, snapshot, appUrl) {
     label: "捕念文字朗读"
   }) : "";
   const original = audio
-    ? `<div class="capture-audio-source" data-capture-audio-key="${escapeHtml(presentation.audioKey)}"><audio controls preload="none" src="${escapeHtml(appUrl(audio.attachmentPath))}" aria-label="捕念原始录音播放器"></audio><span>${formatAudioDuration(audio.durationMs)} · <b class="capture-audio-playback-state">${escapeHtml(presentation.audioStatus)}</b></span></div>`
+    ? `<div class="capture-audio-source" data-capture-audio-key="${escapeHtml(presentation.audioKey)}"><audio controls preload="none" src="${escapeHtml(appUrl(audio.attachmentPath))}" aria-label="捕念原始录音播放器"></audio><span>${formatAudioDuration(audio.durationMs)} · <b class="capture-audio-playback-state" data-capture-audio-status>${escapeHtml(presentation.audioStatus)}</b> <button type="button" class="subtle-action" data-capture-audio-retry hidden>重试读取</button></span></div>`
     : "";
-  return `<section class="capture-audio-record" data-capture-audio-key="${escapeHtml(presentation.audioKey)}" data-transcription-task-id="${escapeHtml(presentation.transcriptionTaskId)}">${original}${layers}${transcriptionState}${speechControls}</section>`;
+  const controls = original || transcriptionState || speechControls
+    ? `<section class="capture-audio-record" data-capture-audio-key="${escapeHtml(presentation.audioKey)}" data-transcription-task-id="${escapeHtml(presentation.transcriptionTaskId)}">${original}${transcriptionState}${speechControls}</section>`
+    : "";
+  return {
+    text: layers,
+    controls
+  };
 }
 
 export function captureCardMarkup({
@@ -127,10 +145,11 @@ export function captureCardMarkup({
     && value.sourceRef.id === item.id
   ));
   const syncing = item._sync?.status;
+  const audio = captureAudioMarkup(item, snapshot, appUrl);
   const actions = syncing
     ? `<span class="capture-sync-state ${escapeHtml(syncing)}">${syncing === "pending" ? "待同步" : "正在同步"}</span>`
     : `${promotedRoot ? `<button type="button" class="capture-promoted-link" data-capture-thought="${escapeHtml(promotedRoot.id)}">已展为思考</button>` : `<button type="button" data-capture-promote="${escapeHtml(item.id)}">展开成思考</button>`}<div class="capture-actions-row"><button type="button" data-capture-edit="${escapeHtml(item.id)}">编辑</button><button type="button" class="danger" data-capture-delete="${escapeHtml(item.id)}" aria-label="删除这条捕念">删除</button></div>`;
-  return `<article class="capture-timeline-entry${syncing ? " is-syncing" : ""}" data-capture-id="${escapeHtml(item.id)}"><div class="timeline-date capture-date">${showDate ? escapeHtml(eventDate(item)) : ""}</div><header class="capture-meta"><span class="capture-top-tags">${tags}</span><time class="capture-entry-time">${formatTime(eventTimestamp(item))}</time></header><div class="capture-item" data-expand-key="capture:${escapeHtml(item.id)}"><div class="capture-copy"><div class="capture-content-viewport"><div class="record-actions capture-actions">${actions}</div>${item.content ? `<div class="markdown-content">${renderMarkdown(item.content)}</div>` : ""}${contentImagesMarkup(item, "capture")}${captureAudioMarkup(item, snapshot, appUrl)}</div></div><button class="capture-expand" type="button" data-capture-expand aria-expanded="false" aria-label="展开捕念" hidden>⌄</button></div></article>`;
+  return `<article class="capture-timeline-entry${syncing ? " is-syncing" : ""}" data-capture-id="${escapeHtml(item.id)}"><div class="timeline-date capture-date">${showDate ? escapeHtml(eventDate(item)) : ""}</div><header class="capture-meta"><span class="capture-top-tags">${tags}</span><time class="capture-entry-time">${formatTime(eventTimestamp(item))}</time></header><div class="capture-item" data-expand-key="capture:${escapeHtml(item.id)}"><div class="capture-copy"><div class="capture-content-viewport"><div class="record-actions capture-actions">${actions}</div>${item.title ? `<h3 class="capture-title">${escapeHtml(item.title)}</h3>` : ""}${item.content ? `<div class="markdown-content">${renderMarkdown(item.content)}</div>` : ""}${contentImagesMarkup(item, "capture")}${audio.text}</div>${audio.controls}</div><button class="capture-expand" type="button" data-capture-expand aria-expanded="false" aria-label="展开捕念" hidden>⌄</button></div></article>`;
 }
 
 function reflectionMarkup(item, reflection, index, contextReceiptMarkup) {

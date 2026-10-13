@@ -113,6 +113,7 @@ export function createAsrWorkflows({
     const preparedAudio = await prepareCaptureAsrAudio(work, signal);
     const audio = preparedAudio.audio;
     const audioMimeType = preparedAudio.mimeType;
+    const asrAction = speechProvider.asrAction || "flashAsr";
     const asrStageId = "speech-recognition";
     const polishStageId = "deepseek-polish";
     const condenseStageId = "deepseek-condense";
@@ -124,7 +125,7 @@ export function createAsrWorkflows({
           provider: "volcengine",
           service: "speech",
           scene: "speechRecognition",
-          action: "streamingAsr",
+          action: asrAction,
           unitType: "audioMillisecond",
           units: audioMaxDurationMs
         }, asrStageId),
@@ -145,7 +146,7 @@ export function createAsrWorkflows({
           provider: "volcengine",
           service: "speech",
           scene: "speechRecognition",
-          action: "streamingAsr",
+          action: asrAction,
           request: { audioBytes: audio.length, mimeType: audioMimeType },
           modality: "audio",
           unitType: "audioMillisecond",
@@ -153,7 +154,8 @@ export function createAsrWorkflows({
         }, () => speechProvider.transcribe({
           audio,
           mimeType: audioMimeType,
-          signal
+          signal,
+          maxDurationMs: audioMaxDurationMs
         }), result => {
           const durationMs = Math.min(
             audioMaxDurationMs,

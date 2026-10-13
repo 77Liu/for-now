@@ -1,0 +1,602 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-10-11T00:00:00+08:00",
+  "preserved_local_branches": [
+    "main",
+    "develop",
+    "release/v0.5.12-clean"
+  ],
+  "delete_local_branches": [
+    {
+      "branch": "archive/exploration-feature-atlas-20260930",
+      "sha": "207dbd9fdee6130fa4678deb9b6b5553c3de8170",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/archive/exploration-feature-atlas-20260930"
+    },
+    {
+      "branch": "archive/v0.2.0-exploration-20260930",
+      "sha": "53720d777281d7db590cd7e1b8a5aa030b392a44",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/archive/v0.2.0-exploration-20260930"
+    },
+    {
+      "branch": "archive/v0.2.0-r3-a-20260930",
+      "sha": "bf6ac5df0e26fdb006c5c3459d3442f8808614b4",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/archive/v0.2.0-r3-a-20260930"
+    },
+    {
+      "branch": "archive/v0.2.0-r3-b-20260930",
+      "sha": "3a0271bad048722207f6e367e913fb3688428e80",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/archive/v0.2.0-r3-b-20260930"
+    },
+    {
+      "branch": "archive/v0.2.0-r3-c-20260930",
+      "sha": "4f282cf7966a448acec8577f7f8bec0a80aa521c",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/archive/v0.2.0-r3-c-20260930"
+    },
+    {
+      "branch": "archive/v0.2.0-r3-d-20260930",
+      "sha": "9e1dd4c78393fa8d8b78d2ae331d989bff7edb78",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/archive/v0.2.0-r3-d-20260930"
+    },
+    {
+      "branch": "archive/v0.3.0-ios-package-20261001",
+      "sha": "d6291b4fa68a140efa75719a60fbd828fdeef001",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/archive/v0.3.0-ios-package-20261001"
+    },
+    {
+      "branch": "archive/v0.4.0-g2-capability-20261007",
+      "sha": "07d77ba6fe0a514ae0686595272144861d229174",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/archive/v0.4.0-g2-capability-20261007"
+    },
+    {
+      "branch": "archive/v0.4.0-plan-20261001",
+      "sha": "b158b08872840255f4f14769b8ba57d1731df6e3",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/archive/v0.4.0-plan-20261001"
+    },
+    {
+      "branch": "archive/v0.5.0-integration-20261007",
+      "sha": "9a2c5e4b44528dda41c9d34a6f4bf30aa1530636",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/archive/v0.5.0-integration-20261007"
+    },
+    {
+      "branch": "archive/v0.5.9-plan-assets-20261007",
+      "sha": "7cdecfb0346736b4542a18c3f47d35086ca5922e",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/archive/v0.5.9-plan-assets-20261007"
+    },
+    {
+      "branch": "checkpoint/v0.2.0-g2-20260930",
+      "sha": "70b5644ef265440b9f5f4e69868647544f6deff2",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/checkpoint/v0.2.0-g2-20260930"
+    },
+    {
+      "branch": "chore/f6-governance-sop",
+      "sha": "739c63a5f617972a93cb005b5c93eb54d8522ea3",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/chore/f6-governance-sop"
+    },
+    {
+      "branch": "codex/v0.5.10-ai-answer-failure",
+      "sha": "52ead7a9c9ff171e5cee3d873cb69b137c10d079",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/codex/v0.5.10-ai-answer-failure"
+    },
+    {
+      "branch": "codex/v0.5.10-minimum",
+      "sha": "6228f34e09004b8eb7659d7e55c18c6276772229",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/codex/v0.5.10-minimum"
+    },
+    {
+      "branch": "codex/v0.5.10-save-recovery",
+      "sha": "b7c72990585549cc7140b505b256807b16526b2a",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/codex/v0.5.10-save-recovery"
+    },
+    {
+      "branch": "codex/v0.5.10-time-intent",
+      "sha": "25bb29da40364681df5524ac9d961249394dcfeb",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/codex/v0.5.10-time-intent"
+    },
+    {
+      "branch": "codex/v0.5.11-core-p00",
+      "sha": "2a1d5493c3a2cbcc854f6b4725599b4198c91cca",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/codex/v0.5.11-core-p00"
+    },
+    {
+      "branch": "codex/v0.5.12-source-context-view",
+      "sha": "de2d46d94cffbf73b9a2acd432f916b422cee8f3",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/codex/v0.5.12-source-context-view"
+    },
+    {
+      "branch": "codex/v0510-createdrefs-home",
+      "sha": "b7c72990585549cc7140b505b256807b16526b2a",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/codex/v0510-createdrefs-home"
+    },
+    {
+      "branch": "codex/v0510-owner-origin",
+      "sha": "f6cafeecadcb6055e9557aaa93fe2eb36c36b2f2",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/codex/v0510-owner-origin"
+    },
+    {
+      "branch": "docs/git-history-cleanup",
+      "sha": "dbc6a13dd2cd038d58cb0f4e17c0e4848792cfbf",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/docs/git-history-cleanup"
+    },
+    {
+      "branch": "docs/night-continuous-development-sop",
+      "sha": "7664cd93c2e2e099e489fe47ffac63f81d95b9da",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/docs/night-continuous-development-sop"
+    },
+    {
+      "branch": "docs/sop-main-integration",
+      "sha": "f9fb5b64dae7353edc733561fc90a55d6453ed58",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/docs/sop-main-integration"
+    },
+    {
+      "branch": "docs/v0.5.8-entrypoint-decomposition",
+      "sha": "6b4d2edbcca15eb1beec8b16371f8f384f423213",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/docs/v0.5.8-entrypoint-decomposition"
+    },
+    {
+      "branch": "docs/v0.5.8-status-20261005",
+      "sha": "21108a07cc490476d9fec22db2e6319fb76e7c2f",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/docs/v0.5.8-status-20261005"
+    },
+    {
+      "branch": "explore/nightly-base-20260928",
+      "sha": "d61f4574b2c54715dd2ee0fb101b6eb3eeb8f53f",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/explore/nightly-base-20260928"
+    },
+    {
+      "branch": "explore/nightly-p1-20260928",
+      "sha": "ca3033354bc318c17b1c4bac4d531c5ae9bc847d",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/explore/nightly-p1-20260928"
+    },
+    {
+      "branch": "explore/nightly-p2-20260928",
+      "sha": "235aca2d8f5965b07bbb2c74f5d0b5371155a136",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/explore/nightly-p2-20260928"
+    },
+    {
+      "branch": "explore/nightly-p3-20260928",
+      "sha": "d33a53e7f173b8af9898b854e3ef415171d9db8b",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/explore/nightly-p3-20260928"
+    },
+    {
+      "branch": "feat/v0.5.0-defer-assets",
+      "sha": "989fbddf14294cdf02a10448807f08e4f1d1a608",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.0-defer-assets"
+    },
+    {
+      "branch": "feat/v0.5.0-fast-shell",
+      "sha": "7e3ffaa516e179d091ae816f2ad025e64461e1a9",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.0-fast-shell"
+    },
+    {
+      "branch": "feat/v0.5.0-memory-observability",
+      "sha": "d88c7bd1cb27302f3ab4b57e0e5749f27be5e171",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.0-memory-observability"
+    },
+    {
+      "branch": "feat/v0.5.0-preview-deploy",
+      "sha": "2dad294b07c00c8081538a58365f750f74a3076b",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.0-preview-deploy"
+    },
+    {
+      "branch": "feat/v0.5.0-runtime-split",
+      "sha": "55e5e80621544275504989412870d5d49337757d",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.0-runtime-split"
+    },
+    {
+      "branch": "feat/v0.5.12-record-compression-p0",
+      "sha": "9c405ffe0e3bca2b0e87ffcca8e9d5210a0a2bf8",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.12-record-compression-p0"
+    },
+    {
+      "branch": "feat/v0.5.13.1-keepsake-flicker",
+      "sha": "ebbde6fcf100432de8a599c771cbd8e774e043ad",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.13.1-keepsake-flicker"
+    },
+    {
+      "branch": "feat/v0.5.2-notification-ui",
+      "sha": "c41fe2ea2c25df1bfcd0b00b58b59fbb9e1d6ced",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.2-notification-ui"
+    },
+    {
+      "branch": "feat/v0.5.5-comment-voice",
+      "sha": "505ac901edd100310590ca07c7d45108277f0178",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.5-comment-voice"
+    },
+    {
+      "branch": "feat/v0.5.5-comments",
+      "sha": "c029385f4c86351e7b85792340f312d1650a21d8",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.5-comments"
+    },
+    {
+      "branch": "feat/v0.5.5-settings-prompts",
+      "sha": "c275b44ad6bdf17ac85833fa08678bd9a4323955",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.5-settings-prompts"
+    },
+    {
+      "branch": "feat/v0.5.5-speech-backend",
+      "sha": "37965576140a9e5504196042b79a1460f0bc8cd6",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.5-speech-backend"
+    },
+    {
+      "branch": "feat/v0.5.5-speech-frontend",
+      "sha": "25bb9d7c964fcf13a94785c13cfa4d64c4d38e95",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.5-speech-frontend"
+    },
+    {
+      "branch": "feat/v0.5.6-r8",
+      "sha": "9c2450e1868dea78bd7e9db9560115c49d38913a",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.6-r8"
+    },
+    {
+      "branch": "feat/v0.5.7-dashboard-projection",
+      "sha": "625d632ccd0036f03a4eff1cba8218166efb030b",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.7-dashboard-projection"
+    },
+    {
+      "branch": "feat/v0.5.7-keepsake-media",
+      "sha": "0e4604fb1fb04f589126bb613c4dcfbd619820ad",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.7-keepsake-media"
+    },
+    {
+      "branch": "feat/v0.5.7-media-range",
+      "sha": "98294ad07f5529b749cdd48b5841adcd1dca7b29",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.7-media-range"
+    },
+    {
+      "branch": "feat/v0.5.7-performance",
+      "sha": "1e8b9f8716faed0bef34d47fd1e537f939433ea6",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.7-performance"
+    },
+    {
+      "branch": "feat/v0.5.7-performance-gate",
+      "sha": "158c634060cfbc80db4b22c991f59c9c2388a036",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.7-performance-gate"
+    },
+    {
+      "branch": "feat/v0.5.7-tag-component",
+      "sha": "7b6b091b69684cf27135fef182f0c3d484218f1e",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.7-tag-component"
+    },
+    {
+      "branch": "feat/v0.5.7-thought-chain-tts",
+      "sha": "c5ab01e2e4ff4dcaacc30fc5c82ce961583c4535",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.7-thought-chain-tts"
+    },
+    {
+      "branch": "feat/v0.5.7-thought-projection",
+      "sha": "241f98ac3a78af21db06387f06ada04afc803008",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.7-thought-projection"
+    },
+    {
+      "branch": "feat/v0.5.8-b3-ai-runtime",
+      "sha": "1f93e3b10f323aee6404e0da5659067fecbc251c",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.8-b3-ai-runtime"
+    },
+    {
+      "branch": "feat/v0.5.8-b4-media",
+      "sha": "3d313e0948da230143139d00fae4f0fbd4a7b4cb",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.8-b4-media"
+    },
+    {
+      "branch": "feat/v0.5.8-f2-actions",
+      "sha": "57811159f5d0fdc57dfc2d490fe36af9a82e1078",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.8-f2-actions"
+    },
+    {
+      "branch": "feat/v0.5.8-f56-sa",
+      "sha": "24565c4fd94611120ba38514a6b3c708e3ae2aeb",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.8-f56-sa"
+    },
+    {
+      "branch": "feat/v0.5.8-f56-si",
+      "sha": "d399d3b33e59d671437ae2a159c35c6b19c2fb48",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.8-f56-si"
+    },
+    {
+      "branch": "feat/v0.5.8-f7-books",
+      "sha": "87c9a0c654886e33bbbe515fcb831086c0275738",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.8-f7-books"
+    },
+    {
+      "branch": "feat/v0.5.8-f7-review",
+      "sha": "218bc9c1539263bc9d893a7bca5b405b8433764c",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.8-f7-review"
+    },
+    {
+      "branch": "feat/v0.5.8-f8-keepsakes",
+      "sha": "ba23e128868cf4b7540d15cdc0c884ab238b3b65",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.8-f8-keepsakes"
+    },
+    {
+      "branch": "feat/v0.5.8-f9-account",
+      "sha": "a4576d7db7ff66dae5627ce264b7f1c531b45da7",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.8-f9-account"
+    },
+    {
+      "branch": "feat/v0.5.8-f9-basic",
+      "sha": "143aeaa2ddb700af4ccb8c1e678c3d217b4fca5e",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.8-f9-basic"
+    },
+    {
+      "branch": "feat/v0.5.8-f9-owner",
+      "sha": "76995cf3ededb1e46dedc1a1c9db6eaddf6049fc",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.8-f9-owner"
+    },
+    {
+      "branch": "feat/v0.5.8-f9-trash",
+      "sha": "c59791e1cd5fea742e8a74229f90ef6cb5ab1314",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.8-f9-trash"
+    },
+    {
+      "branch": "feat/v0.5.8-opening-engine",
+      "sha": "fe3801e16f2bdde9e482efe36e252b25189a959b",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.8-opening-engine"
+    },
+    {
+      "branch": "feat/v0.5.8-p00-p0",
+      "sha": "1bab107bd69eaa97c6c0aabcb550f86baf870107",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.8-p00-p0"
+    },
+    {
+      "branch": "feat/v0.5.9-image-rotation",
+      "sha": "0d4f393850f36bc16dbb6781cea248d3361a014f",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.9-image-rotation"
+    },
+    {
+      "branch": "feat/v0.5.9-integration",
+      "sha": "ba3e29dbe7ca0a0671e7ab69becddc88512ae84a",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.5.9-integration"
+    },
+    {
+      "branch": "feat/v0.6.0-experience-polish",
+      "sha": "260e94eae213c240c35ba250dd90b1bbe7a38477",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.6.0-experience-polish"
+    },
+    {
+      "branch": "feat/v0.6.0-keepsake-placement",
+      "sha": "32eae755f2f29a76680a8caab8a79d110fbcc82a",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.6.0-keepsake-placement"
+    },
+    {
+      "branch": "feat/v0.6.0-r2-core",
+      "sha": "446faab33e0de1713e89e84c7192710a4beacfd1",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.6.0-r2-core"
+    },
+    {
+      "branch": "feat/v0.6.0-r2-thoughts",
+      "sha": "bc3f27e5e5ca94b3ee1179b5ac607cdf3abc0b35",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feat/v0.6.0-r2-thoughts"
+    },
+    {
+      "branch": "feature/v020-g2-a-search",
+      "sha": "d33a53e7f173b8af9898b854e3ef415171d9db8b",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feature/v020-g2-a-search"
+    },
+    {
+      "branch": "feature/v020-g2-b-attachments",
+      "sha": "d33a53e7f173b8af9898b854e3ef415171d9db8b",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feature/v020-g2-b-attachments"
+    },
+    {
+      "branch": "feature/v020-g2-c-actions",
+      "sha": "d33a53e7f173b8af9898b854e3ef415171d9db8b",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feature/v020-g2-c-actions"
+    },
+    {
+      "branch": "feature/v020-g2-d-feedback",
+      "sha": "d33a53e7f173b8af9898b854e3ef415171d9db8b",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/feature/v020-g2-d-feedback"
+    },
+    {
+      "branch": "fix/v0.5.0-backup-ready",
+      "sha": "2d7bae6cd022e1d45041f67ca104410cb6063d26",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/fix/v0.5.0-backup-ready"
+    },
+    {
+      "branch": "fix/v0.5.0-bootstrap-local-mode",
+      "sha": "74353e621d44fc53b47ee87f86fa250b88f78896",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/fix/v0.5.0-bootstrap-local-mode"
+    },
+    {
+      "branch": "fix/v0.5.0-extraction-idempotency",
+      "sha": "d43cc132a1c4ccd47438fe093859ac32d4e52254",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/fix/v0.5.0-extraction-idempotency"
+    },
+    {
+      "branch": "fix/v0.5.0-followup-safe-area",
+      "sha": "ec467d1b792b656ef684902a1e959fbd99bfecd3",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/fix/v0.5.0-followup-safe-area"
+    },
+    {
+      "branch": "fix/v0.5.0-followup-state",
+      "sha": "b2da2be9af627343a6ae334181ee859834d9eb06",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/fix/v0.5.0-followup-state"
+    },
+    {
+      "branch": "fix/v0.5.0-fontconfig-cache",
+      "sha": "6ede46eb5a8426f27623039e6efd70d8deeec5c1",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/fix/v0.5.0-fontconfig-cache"
+    },
+    {
+      "branch": "fix/v0.5.0-fontconfig-test-node",
+      "sha": "dceb61b1eb35205215292dd0bf8653f0e7a99389",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/fix/v0.5.0-fontconfig-test-node"
+    },
+    {
+      "branch": "fix/v0.5.0-mobile-a11y",
+      "sha": "26f9e017b83f86e42f4f0aa6fc4129c5384a0249",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/fix/v0.5.0-mobile-a11y"
+    },
+    {
+      "branch": "fix/v0.5.0-operation-fingerprint",
+      "sha": "74984836a035015a00f7b3635558ba52b1569994",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/fix/v0.5.0-operation-fingerprint"
+    },
+    {
+      "branch": "fix/v0.5.0-tts-player",
+      "sha": "da3b442adfad3f310a16b41e63f792a52d6eb640",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/fix/v0.5.0-tts-player"
+    },
+    {
+      "branch": "fix/v0.5.0-tts-voice-validation",
+      "sha": "a1a45cff55d4301da84aec98125dd59f496beff4",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/fix/v0.5.0-tts-voice-validation"
+    },
+    {
+      "branch": "fix/v0.5.4-four-user-audit",
+      "sha": "1eb0fe5242860f94806a05185333ab20a791f201",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/fix/v0.5.4-four-user-audit"
+    },
+    {
+      "branch": "fix/v0.5.5-final-review",
+      "sha": "f3bc04bb36759fc7f27aa372ffc503dd876af873",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/fix/v0.5.5-final-review"
+    },
+    {
+      "branch": "fix/v0.5.8-budget-unknown-settlement",
+      "sha": "e6fed8055b70fc2481ef41e25acfdfb2ef69b868",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/fix/v0.5.8-budget-unknown-settlement"
+    },
+    {
+      "branch": "hotfix/account-refresh-stop",
+      "sha": "4359648b41608429832e2ce4897bd12163a5d812",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/hotfix/account-refresh-stop"
+    },
+    {
+      "branch": "hotfix/keepsake-image-stability",
+      "sha": "4359648b41608429832e2ce4897bd12163a5d812",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/hotfix/keepsake-image-stability"
+    },
+    {
+      "branch": "hotfix/thought-answer-task-20260928",
+      "sha": "54a6326f14ca7e6614939ee1db377c05fd4ddf7c",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/hotfix/thought-answer-task-20260928"
+    },
+    {
+      "branch": "hotfix/v0.5.2-asr-p00",
+      "sha": "febb58bbad049e952b0d18435db46427cbf7b08d",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/hotfix/v0.5.2-asr-p00"
+    },
+    {
+      "branch": "hotfix/v0.5.3-uiux-auth",
+      "sha": "0386c22fc95a7ab89631aa562bb193b4a8ea07c6",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/hotfix/v0.5.3-uiux-auth"
+    },
+    {
+      "branch": "platform/main",
+      "sha": "d157537f7f4cec1e306494298c49a2d35f7fa984",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/platform/main"
+    },
+    {
+      "branch": "refactor/v020-b1-backend",
+      "sha": "d33a53e7f173b8af9898b854e3ef415171d9db8b",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/refactor/v020-b1-backend"
+    },
+    {
+      "branch": "refactor/v020-b2-frontend-shared",
+      "sha": "d33a53e7f173b8af9898b854e3ef415171d9db8b",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/refactor/v020-b2-frontend-shared"
+    },
+    {
+      "branch": "refactor/v020-b3-contract-tests",
+      "sha": "d33a53e7f173b8af9898b854e3ef415171d9db8b",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/refactor/v020-b3-contract-tests"
+    },
+    {
+      "branch": "release/p00-p0-commercial-system-20260928",
+      "sha": "4a8146088f903ec6aa14d3a9cbd9ade9c810d0ac",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/release/p00-p0-commercial-system-20260928"
+    },
+    {
+      "branch": "release/v0.2.0-20260930",
+      "sha": "653e53f147754e29afd35e46f3a2f369101875fd",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/release/v0.2.0-20260930"
+    },
+    {
+      "branch": "release/v0.5.11",
+      "sha": "fb72e71451bfb76d98914e006f39d71704f3bf06",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/release/v0.5.11"
+    },
+    {
+      "branch": "release/v0.5.12",
+      "sha": "5c790083047b59defdbbc37c9b994cd8e85ec4f8",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/release/v0.5.12"
+    },
+    {
+      "branch": "release/v0.5.5-production-closeout",
+      "sha": "668b6f7830fec09fba1189af822bed40f2957401",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/release/v0.5.5-production-closeout"
+    },
+    {
+      "branch": "test/v0.5.11-auth-fixture",
+      "sha": "18b52387847a04b0dabddbc2b8b2e73c608a763f",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/test/v0.5.11-auth-fixture"
+    },
+    {
+      "branch": "v0.4.0-ai-budget",
+      "sha": "d0917fa67ff8f51ee26334085cfffbdb7a75763d",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/v0.4.0-ai-budget"
+    },
+    {
+      "branch": "v0.4.0-ai-budget-integration",
+      "sha": "24b4ecf54e51ced1afdfeb9ab2bdd69c23b93237",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/v0.4.0-ai-budget-integration"
+    },
+    {
+      "branch": "v0.4.0-ai-budget-persistence",
+      "sha": "cd5db7ce71360786d873267f9bbc7f490cd819b6",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/v0.4.0-ai-budget-persistence"
+    },
+    {
+      "branch": "v0.4.0-ai-budget-runtime-core",
+      "sha": "f2563e49b032b8cc44d61c059e120cd2114ab48e",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/v0.4.0-ai-budget-runtime-core"
+    },
+    {
+      "branch": "v0.4.0-g2-capability",
+      "sha": "82ca060e5f2fd1f441a77eaf09c7c26c241c443c",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/v0.4.0-g2-capability"
+    },
+    {
+      "branch": "v0.4.0-ios-performance-harness",
+      "sha": "4609b3a7cf7e2c05472c1ee28a52c5bfd5310629",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/v0.4.0-ios-performance-harness"
+    },
+    {
+      "branch": "v0.4.0-owner-budget-http",
+      "sha": "c4a34ec74bf1ffa2ae677492e9dc8d5e527be831",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/v0.4.0-owner-budget-http"
+    },
+    {
+      "branch": "v0.4.0-owner-decisions-pricing",
+      "sha": "f316a11fdae9c387708e33b03dcff80839656f0e",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/v0.4.0-owner-decisions-pricing"
+    },
+    {
+      "branch": "v0.4.0-tts-sweep",
+      "sha": "2cc3be93d21ebc4159260b1c1820ddfec7eaf0a3",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/v0.4.0-tts-sweep"
+    },
+    {
+      "branch": "v0.4.0-url-history",
+      "sha": "1fcf7cc373a690d09fcecee04844af753ae41bc3",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/v0.4.0-url-history"
+    },
+    {
+      "branch": "v0.5.0-integration",
+      "sha": "03dd369d00d094ff6febcda557eac7f670f5de4a",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/v0.5.0-integration"
+    },
+    {
+      "branch": "v0.6.0-ui-integration",
+      "sha": "5525907e7f5f166695cc2c5719c9ed363e53a2ce",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/v0.6.0-ui-integration"
+    },
+    {
+      "branch": "wip/root-dirty-before-v0.4.0-owner-integration",
+      "sha": "ff15ea412a3f6070297bd756ae62decea847a135",
+      "archive_ref": "refs/archive/git-cleanup-20261011/heads/wip/root-dirty-before-v0.4.0-owner-integration"
+    }
+  ],
+  "remote_deletion": "not requested; no remote refs changed"
+}

@@ -17,7 +17,10 @@ import {
 import { compileWorkingContextPrompt } from "./prompt-context.mjs";
 import { assertCoreModelReady } from "../shared/core-model-gate.mjs";
 import { answerCitationSources, parseVerifiedAnswer } from "./answer-citations.mjs";
-import { coreUserModelProjection } from "./user-model.mjs";
+import {
+  coreUserModelProjection,
+  userModelRequiresCoreReady
+} from "./user-model.mjs";
 import {
   thoughtTaskCurrentMaterial,
   workingContextProjection,
@@ -51,6 +54,7 @@ export function createThoughtWorkflows({
     .replace(/\u2028/g, "\\u2028")
     .replace(/\u2029/g, "\\u2029");
   const coreUserModelContext = model => {
+    if (!model) return "";
     return `<core_user_model fingerprint="${model.fingerprint}">\n${escapedPromptJson(model)}\n</core_user_model>`;
   };
   const serializedContextSection = (name, value) => {
@@ -65,17 +69,17 @@ export function createThoughtWorkflows({
   ].filter(Boolean).join("\n\n");
   const trendFingerprint = trend => String(trend?.fingerprint || "");
   const currentCoreModel = store => {
-    const model = coreUserModelProjection(store);
-    if (!model) throw failure("核心用户模型尚未就绪", "CORE_MODEL_NOT_READY", 409);
-    return model;
+    return coreUserModelProjection(store);
   };
   const assertContextCurrent = (store, modelFingerprint, receipt = null) => {
-    assertCoreModelReady(coreModelReadiness(store));
     const currentModel = coreUserModelProjection(store);
-    if (!currentModel || currentModel.fingerprint !== modelFingerprint
+    if ((currentModel?.fingerprint || "") !== modelFingerprint
       || (receipt && !personalContextReceiptMatches(store, receipt))) {
       throw failure("个人语境已变化，本次结果未提供", "STALE_PERSONAL_CONTEXT", 409);
     }
+  };
+  const assertThoughtModelReady = store => {
+    if (userModelRequiresCoreReady(store)) assertCoreModelReady(coreModelReadiness(store));
   };
   const replayBufferedDeltas = (onDelta, deltas) => {
     if (!onDelta) return;
@@ -195,7 +199,7 @@ export function createThoughtWorkflows({
   }));
   const queueColdTask = async (kind, targetId, payload, clientRequestId) => {
     const store = await repository.read();
-    if (coreModelReadiness(store)?.ready !== false) return null;
+    if (!userModelRequiresCoreReady(store)) return null;
     return backgroundAi.enqueue({
       kind,
       targetId,
@@ -230,7 +234,7 @@ export function createThoughtWorkflows({
             ...thoughtDraftInput(payload.question, payload.idea)
           }),
           contextFingerprint: hash(JSON.stringify({
-            coreUserModelFingerprint: coreUserModel.fingerprint,
+            coreUserModelFingerprint: coreUserModel?.fingerprint || "",
             recentTrendFingerprint: trendFingerprint(recentTrend),
             receipt: personalContextReceiptFingerprint(personalContext.receipt),
             prompt: context
@@ -258,7 +262,7 @@ export function createThoughtWorkflows({
           inputHash: thoughtIntentHash(task),
           prompt: thoughtStarterPrompt(payload.occurredOn, { ...context, text: contextText }),
           contextFingerprint: hash(JSON.stringify({
-            coreUserModelFingerprint: coreUserModel.fingerprint,
+            coreUserModelFingerprint: coreUserModel?.fingerprint || "",
             thoughtContextFingerprint: context.contextFingerprint,
             recentTrendFingerprint: trendFingerprint(recentTrend)
           })),
@@ -317,7 +321,7 @@ export function createThoughtWorkflows({
     },
     async queueAnswerIfCold({ id, clientRequestId }) {
       const store = await repository.read();
-      if (coreModelReadiness(store)?.ready !== false) return null;
+      if (!userModelRequiresCoreReady(store, "thoughtAnswer")) return null;
       return backgroundAi.enqueue({
         kind: "thoughtAnswer",
         targetId: id,
@@ -390,7 +394,7 @@ export function createThoughtWorkflows({
 
     async createDraft({ question, idea, requestId, targetId, inputVersion, onDelta }) {
       const store = await repository.read();
-      assertCoreModelReady(coreModelReadiness(store));
+      assertThoughtModelReady(store);
       const coreUserModel = currentCoreModel(store);
       const generatedAt = now();
       const recentTrend = getRecentTrend(store, generatedAt);
@@ -406,7 +410,7 @@ export function createThoughtWorkflows({
         onDelta: onDelta ? event => deltas.push(event) : null
       });
       const latestStore = await repository.read();
-      assertContextCurrent(latestStore, coreUserModel.fingerprint, personalContext.receipt);
+      assertContextCurrent(latestStore, coreUserModel?.fingerprint || "", personalContext.receipt);
       if (trendFingerprint(getRecentTrend(latestStore, generatedAt)) !== trendFingerprint(recentTrend)) {
         throw failure("个人趋势已变化，本次结果未提供", "STALE_PERSONAL_CONTEXT", 409);
       }
@@ -422,7 +426,7 @@ export function createThoughtWorkflows({
 
     async createStarter({ eventTime, binding, onDelta }) {
       const store = await repository.read();
-      assertCoreModelReady(coreModelReadiness(store));
+      assertThoughtModelReady(store);
       const coreUserModel = currentCoreModel(store);
       const generatedAt = now();
       const recentTrend = getRecentTrend(store, generatedAt);
@@ -442,7 +446,7 @@ export function createThoughtWorkflows({
         onDelta: onDelta ? event => deltas.push(event) : null
       });
       const latestStore = await repository.read();
-      assertContextCurrent(latestStore, coreUserModel.fingerprint);
+      assertContextCurrent(latestStore, coreUserModel?.fingerprint || "");
       const latestContext = thoughtPromptContext(latestStore, eventTime.occurredOn);
       if (latestContext.contextFingerprint !== context.contextFingerprint
         || trendFingerprint(getRecentTrend(latestStore, generatedAt)) !== trendFingerprint(recentTrend)) {
@@ -476,7 +480,7 @@ export function createThoughtWorkflows({
             if (persisted !== undefined) return persisted.value || persisted;
           }
           const generateAndSave = async (store, save) => {
-            assertCoreModelReady(coreModelReadiness(store));
+            assertThoughtModelReady(store);
             const duplicate = store.thoughts.find(item => item.type === "answer" && item.clientRequestId === clientRequestId);
             if (duplicate) {
               if (duplicate.relatedTo !== id) {

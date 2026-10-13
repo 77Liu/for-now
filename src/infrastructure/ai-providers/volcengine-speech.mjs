@@ -1,9 +1,22 @@
+/**
+ * 火山语音合成与识别的传输、音频转换及协议处理。
+ * 建立时间：未知
+ * 状态：active
+ * 边界：默认整文件HTTP；流式暂不用，仅显式启用；失败不付费回退，原音不覆盖。
+ * @partial 仅ASR分支，TTS不属于本标记范围。
+ * @partialScope 整文件ASR逐字保真/真机覆盖尚未完整验收；流式基建保留暂不用。
+ * @partialVersion v0.5.14。
+ * @partialReason 整文件识别已有真实保存恢复证据；保留流式未作为当前默认验收链。
+ * @partialAuthorization Owner本聊天2026-10-14注释6授权保留并显式标注。
+ * @partialUsage 默认file；streaming仅保留显式配置入口，不自动回退，不随提交启用。
+ */
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { gzipSync, gunzipSync } from "node:zlib";
+import { setTimeout as delay } from "node:timers/promises";
 import WebSocket from "ws";
 import { normalizeTtsGenerationRate, TTS_GENERATION_RATE_DEFAULT } from "../../shared/speech/index.mjs";
 import { safeText } from "../../shared/validation/index.mjs";
@@ -20,7 +33,7 @@ const ASR_STREAM_RESOURCE_ID = "volc.seedasr.sauc.duration";
 const MAX_TTS_TEXT_LENGTH = 5000;
 const MAX_TTS_AUDIO_BYTES = 24 * 1024 * 1024;
 const MAX_ASR_STREAM_AUDIO_BYTES = 24 * 1024 * 1024;
-const ASR_CHUNK_BYTES = 256 * 1024;
+const ASR_PACKET_DURATION_MS = 200;
 const SUCCESS_CODES = new Set([0, 1000, 20000000]);
 const SUPPORTED_ASR_MIME_TYPES = Object.freeze(["audio/mp4", "audio/mpeg", "audio/ogg", "audio/wav"]);
 const TTS_SAMPLE_TEXT = "此刻，听见自己的想法，也看见正在发生的生活。";
@@ -65,7 +78,7 @@ function publicSpeechError(error, service) {
     providerCode: safeText(error?.code, 120)
   });
   if (/SPEECH_NOT_CONFIGURED/.test(details)) return failure("火山语音服务尚未配置，请联系管理员", "SPEECH_NOT_CONFIGURED", 503);
-  if (/ASR_UNSUPPORTED_AUDIO_FORMAT/.test(details)) return error;
+  if (/ASR_UNSUPPORTED_AUDIO_FORMAT/.test(details) || /^ASR_FILE_/.test(error?.code || "")) return error;
   if (/resource.*not granted/i.test(details)) return projected(`火山${service}资源尚未开通或未授权给当前 API Key`, "SPEECH_RESOURCE_NOT_GRANTED", 503);
   if (/AbortError|timeout|timed out/i.test(details)) return projected(`火山${service}响应超时，请稍后重试`, "SPEECH_TIMEOUT", 504);
   if (/401|403|50400|unauthor|forbidden|authentication|invalid.*key/i.test(details)) {
@@ -178,16 +191,17 @@ function measuredAsrDurationMs(result) {
   }, 0);
 }
 
-async function transcodeM4aForStreaming({
+async function transcodeForStreaming({
   audio,
   mimeType,
   signal,
   ffmpegPath = "/usr/bin/ffmpeg",
   timeoutMs = 90_000
 }) {
-  if (mimeType !== "audio/mp4") return { audio, mimeType };
+  const inputExtension = { "audio/mp4": "m4a", "audio/mpeg": "mp3", "audio/ogg": "ogg" }[mimeType];
+  if (!inputExtension) return { audio, mimeType };
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "for-now-asr-"));
-  const inputFile = path.join(directory, "input.m4a");
+  const inputFile = path.join(directory, `input.${inputExtension}`);
   try {
     await fs.writeFile(inputFile, audio, { flag: "wx", mode: 0o600 });
     const converted = await new Promise((resolve, reject) => {
@@ -270,6 +284,45 @@ async function transcodeM4aForStreaming({
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }
+}
+
+/** 读取既有PCM WAV的实际码率；ffmpeg管道中的未知data长度取实际剩余字节。 */
+function streamingWavPlan(audio, mimeType) {
+  const invalid = () => failure("录音转换结果不是有效的 PCM WAV，请保留原音后重试", "ASR_TRANSCODE_INVALID", 422);
+  if (mimeType !== "audio/wav" || audio.length < 12
+    || audio.toString("ascii", 0, 4) !== "RIFF" || audio.toString("ascii", 8, 12) !== "WAVE") throw invalid();
+  let pcm = null;
+  for (let offset = 12; offset + 8 <= audio.length;) {
+    const kind = audio.toString("ascii", offset, offset + 4);
+    const size = audio.readUInt32LE(offset + 4);
+    const start = offset + 8;
+    if (kind === "data") {
+      if (!pcm) throw invalid();
+      const dataBytes = size === 0xffffffff ? audio.length - start : size;
+      if (!dataBytes || start + dataBytes > audio.length || dataBytes % pcm.blockAlign) throw invalid();
+      return {
+        ...pcm,
+        dataOffset: start,
+        dataEnd: start + dataBytes,
+        packetBytes: Math.floor(pcm.rate * ASR_PACKET_DURATION_MS / 1000) * pcm.blockAlign,
+        durationMs: Math.ceil(dataBytes / pcm.byteRate * 1000)
+      };
+    }
+    if (start + size > audio.length) throw invalid();
+    if (kind === "fmt ") {
+      if (size < 16 || audio.readUInt16LE(start) !== 1) throw invalid();
+      const channels = audio.readUInt16LE(start + 2);
+      const rate = audio.readUInt32LE(start + 4);
+      const byteRate = audio.readUInt32LE(start + 8);
+      const blockAlign = audio.readUInt16LE(start + 12);
+      const bits = audio.readUInt16LE(start + 14);
+      if (channels !== 1 || bits !== 16 || rate !== 16000
+        || blockAlign !== channels * bits / 8 || byteRate !== rate * blockAlign) throw invalid();
+      pcm = { rate, bits, channel: channels, byteRate, blockAlign };
+    }
+    offset = start + size + (size % 2);
+  }
+  throw invalid();
 }
 
 function protocolHeader(messageType, flags, serialization, compression) {
@@ -377,25 +430,43 @@ function sendWebSocket(socket, data) {
   });
 }
 
+/**
+ * 创建语音传输，默认整文件HTTP；流式仅显式选用，不自动回退。
+ * HTTP沿用单次请求超时；流式额外包含发送时长，TTS超时不变。
+ * 调用方保留原音，传输只发送16kHz/16bit/单声道PCM WAV；取消后停止发包。
+ * transcribe接受调用方现有maxDurationMs，在连接provider前校验解码数据时长。
+ * @param {object} options 凭据、现有端点及可替换的网络/转换/等待端口。
+ * @returns {object} 语音合成、录音识别与音频准备能力。
+ * @partial 仅ASR分支，TTS不属于本标记范围。
+ * @partialScope 整文件ASR逐字保真/真机覆盖尚未完整验收；流式基建保留暂不用。
+ * @partialVersion v0.5.14。
+ * @partialReason 整文件识别已有真实保存恢复证据；保留流式未作为当前默认验收链。
+ * @partialAuthorization Owner本聊天2026-10-14注释6授权保留并显式标注。
+ * @partialUsage 默认file；streaming仅保留显式配置入口，不自动回退，不随提交启用。
+ */
 export function createVolcengineSpeechTransport({
   apiKey = "",
   defaultVoice = VOLCENGINE_TTS_VOICES[0].id,
   ttsEndpoint = DEFAULT_TTS_ENDPOINT,
   ttsSubmitEndpoint = DEFAULT_TTS_SUBMIT_ENDPOINT,
   ttsQueryEndpoint = DEFAULT_TTS_QUERY_ENDPOINT,
+  asrMode = "file",
+  asrFileEndpoint,
   asrStreamEndpoint = DEFAULT_ASR_STREAM_ENDPOINT,
   asrSubmitEndpoint = DEFAULT_ASR_SUBMIT_ENDPOINT,
   asrQueryEndpoint = DEFAULT_ASR_QUERY_ENDPOINT,
   fetchImpl = fetch,
   WebSocketImpl = WebSocket,
-  sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)),
+  sleep = (milliseconds, signal) => delay(milliseconds, undefined, { signal }),
   ffmpegPath = "/usr/bin/ffmpeg",
   timeoutMs = 90_000,
-  prepareStreamingAudio = options => transcodeM4aForStreaming({ ...options, ffmpegPath, timeoutMs }),
+  prepareStreamingAudio = options => transcodeForStreaming({ ...options, ffmpegPath, timeoutMs }),
   debugServerUrl = "",
   debugSessionId = "speech-transcription-unavailable",
   debugRunId = "pre-fix"
 } = {}) {
+  if (!["file", "streaming"].includes(asrMode)) throw failure("语音识别模式无效", "INVALID_ASR_MODE", 400);
+  const asrAction = asrMode === "file" ? "flashAsr" : "streamingAsr";
   const configured = Boolean(apiKey);
   const selectedDefaultVoice = VOICE_IDS.has(defaultVoice) ? defaultVoice : VOLCENGINE_TTS_VOICES[0].id;
   const requireConfiguration = () => {
@@ -582,12 +653,13 @@ export function createVolcengineSpeechTransport({
     }
   }
 
-  async function transcribe({ audio, mimeType, signal } = {}) {
+  async function transcribe({ audio, mimeType, signal, maxDurationMs } = {}) {
     requireConfiguration();
     if (!Buffer.isBuffer(audio) || !audio.length) throw failure("音频内容为空", "INVALID_ASR_AUDIO", 400);
     if (!asrAudioParameters(mimeType)) {
       throw failure("当前 WebM 原件不能直接转写，请在支持 M4A、Ogg 或 WAV 的设备上重新录制", "ASR_UNSUPPORTED_AUDIO_FORMAT", 422);
     }
+    if (signal?.aborted) throw Object.assign(new Error("语音识别已取消"), { name: "AbortError" });
     const sourceAudio = audio;
     const sourceMimeType = mimeType;
     const prepared = await prepareStreamingAudio({ audio, mimeType, signal });
@@ -597,12 +669,40 @@ export function createVolcengineSpeechTransport({
     if (!Buffer.isBuffer(audio) || !audio.length || !format) {
       throw failure("录音转换结果无效，请保留原音后重试", "ASR_TRANSCODE_INVALID", 422);
     }
+    if (audio.length > MAX_ASR_STREAM_AUDIO_BYTES) throw failure("录音超过转写上限", "ASR_TRANSCODE_TOO_LARGE", 413);
+    if (signal?.aborted) throw Object.assign(new Error("语音识别已取消"), { name: "AbortError" });
+    const plan = streamingWavPlan(audio, mimeType);
+    if (maxDurationMs !== undefined && (!Number.isFinite(maxDurationMs) || maxDurationMs <= 0)) {
+      throw failure("语音识别时长上限无效", "INVALID_ASR_DURATION_LIMIT", 400);
+    }
+    if (maxDurationMs !== undefined && plan.durationMs > maxDurationMs) {
+      throw failure("实际录音时长超过转写上限，请保留原音", "ASR_AUDIO_TOO_LONG", 413);
+    }
+    if (asrMode === "file") {
+      try {
+        const { createVolcengineFileAsrTransport } = await import("../../../.build/typescript/backend/infrastructure/ai-providers/volcengine-file-asr.mjs");
+        const fileAsr = createVolcengineFileAsrTransport({ apiKey, endpoint: asrFileEndpoint, fetchImpl, timeoutMs });
+        // ffmpeg pipe WAV使用未知容器长度；整文件HTTP使用独立内存副本补齐真实长度。
+        const fileAudio = Buffer.from(audio);
+        fileAudio.writeUInt32LE(fileAudio.length - 8, 4);
+        fileAudio.writeUInt32LE(plan.dataEnd - plan.dataOffset, plan.dataOffset - 4);
+        return await fileAsr({ audio: fileAudio, signal, maxDurationMs });
+      } catch (error) {
+        if (error?.name === "AbortError" && signal?.aborted) throw error;
+        throw publicSpeechError(error, "语音识别");
+      }
+    }
+    // 流式基础设施暂不作为默认；仅通过统一模式配置显式启用，不自动付费回退。
+    const streamTimeoutMs = plan.durationMs + timeoutMs;
     const requestId = crypto.randomUUID();
     // #region debug-point B-C:audio-container
     (()=>{if(!debugServerUrl)return;fetch(debugServerUrl,{method:"POST",body:JSON.stringify({sessionId:debugSessionId,runId:debugRunId,hypothesisId:"B-C",location:"volcengine-speech.mjs:transcribe",msg:"[DEBUG] ASR audio envelope",data:{sourceMimeType:String(sourceMimeType||""),sourceBytes:sourceAudio.length,sourceMagic:sourceAudio.subarray(0,16).toString("hex"),mimeType:String(mimeType||""),bytes:audio.length,magic:audio.subarray(0,16).toString("hex"),format:format.format,codec:format.codec,sha256Prefix:crypto.createHash("sha256").update(sourceAudio).digest("hex").slice(0,16)},ts:Date.now(),traceId:requestId})}).catch(()=>{})})();
     // #endregion
     return new Promise((resolve, reject) => {
       let settled = false;
+      let finalSent = false;
+      const pacing = new AbortController();
+      const inactive = () => settled || signal?.aborted;
       let rawText = "";
       let providerRequestId = requestId;
       let durationMs = 0;
@@ -610,6 +710,7 @@ export function createVolcengineSpeechTransport({
       const finish = (error, result) => {
         if (settled) return;
         settled = true;
+        pacing.abort();
         clearTimeout(timer);
         signal?.removeEventListener("abort", abort);
         if (socket.readyState === WebSocketImpl.OPEN || socket.readyState === WebSocketImpl.CONNECTING) {
@@ -618,7 +719,7 @@ export function createVolcengineSpeechTransport({
         // #region debug-point A-D-E:finish
         (()=>{if(!debugServerUrl)return;fetch(debugServerUrl,{method:"POST",body:JSON.stringify({sessionId:debugSessionId,runId:debugRunId,hypothesisId:"A-D-E",location:"volcengine-speech.mjs:finish",msg:"[DEBUG] ASR finished",data:{stage,ok:!error,errorName:safeText(error?.name,120),errorCode:safeText(error?.code,120),errorMessage:safeText(error?.message,500),privateMessage:safeText(error?.privateMessage,500),httpStatus:Number(error?.httpStatus)||0,providerRequestId:safeText(error?.providerRequestId||result?.providerRequestId,200)},ts:Date.now(),traceId:requestId})}).catch(()=>{})})();
         // #endregion
-        if (error) reject(publicSpeechError(error, "语音识别"));
+        if (error) reject(error.name === "AbortError" && signal?.aborted ? error : publicSpeechError(error, "语音识别"));
         else resolve(result);
       };
       const socket = new WebSocketImpl(asrStreamEndpoint, {
@@ -634,12 +735,12 @@ export function createVolcengineSpeechTransport({
         }
       });
       const timer = setTimeout(() => {
-        try { socket.terminate(); } catch {}
         finish(failure("火山语音识别响应超时", "SPEECH_TIMEOUT", 504));
-      }, timeoutMs);
-      const abort = () => {
         try { socket.terminate(); } catch {}
+      }, streamTimeoutMs);
+      const abort = () => {
         finish(Object.assign(new Error("语音识别已取消"), { name: "AbortError" }));
+        try { socket.terminate(); } catch {}
       };
       if (signal?.aborted) return abort();
       signal?.addEventListener("abort", abort, { once: true });
@@ -664,6 +765,7 @@ export function createVolcengineSpeechTransport({
         if (!settled) finish(failure("火山语音识别连接意外中断", "ASR_CONNECTION_CLOSED"));
       });
       socket.on("message", data => {
+        if (inactive()) return;
         try {
           stage = "provider-frame";
           const frame = parseAsrServerFrame(data);
@@ -671,6 +773,10 @@ export function createVolcengineSpeechTransport({
           (()=>{if(!debugServerUrl)return;fetch(debugServerUrl,{method:"POST",body:JSON.stringify({sessionId:debugSessionId,runId:debugRunId,hypothesisId:"A-D",location:"volcengine-speech.mjs:message",msg:"[DEBUG] ASR provider frame",data:{messageType:frame.messageType,flags:frame.flags,errorCode:Number(frame.errorCode)||0,final:Boolean(frame.final),errorPayload:frame.messageType===MESSAGE_ERROR?safeText(frame.payload.toString("utf8"),500):""},ts:Date.now(),traceId:requestId})}).catch(()=>{})})();
           // #endregion
           const payload = parseAsrPayload(frame, requestId);
+          const measuredDuration = Number(payload?.audio_info?.duration);
+          if (Number.isFinite(measuredDuration) && measuredDuration > 0) {
+            durationMs = Math.max(durationMs, Math.round(measuredDuration));
+          }
           const result = payload?.result;
           if (result && typeof result === "object") {
             rawText = safeText(result.text, 120_000) || rawText;
@@ -678,6 +784,7 @@ export function createVolcengineSpeechTransport({
             durationMs = Math.max(durationMs, measuredAsrDurationMs(result));
           }
           if (frame.final) {
+            if (!finalSent) throw failure("语音识别在音频发送完成前结束，请保留原音后重试", "ASR_EARLY_FINAL");
             if (!rawText) throw failure("火山语音识别没有返回文字", "EMPTY_ASR_TEXT");
             finish(null, {
               provider: "volcengine-seedasr-2.0",
@@ -690,28 +797,60 @@ export function createVolcengineSpeechTransport({
           finish(error);
         }
       });
-      socket.on("open", async () => {
+      socket.once("open", async () => {
         try {
+          if (inactive()) return;
           stage = "sending";
-          // #region debug-point A-B-D-E:socket-open
-          (()=>{if(!debugServerUrl)return;fetch(debugServerUrl,{method:"POST",body:JSON.stringify({sessionId:debugSessionId,runId:debugRunId,hypothesisId:"A-B-D-E",location:"volcengine-speech.mjs:open",msg:"[DEBUG] ASR socket opened",data:{endpointPath:new URL(asrStreamEndpoint).pathname,resourceId:ASR_STREAM_RESOURCE_ID,format:format.format,codec:format.codec,audioBytes:audio.length,chunks:Math.ceil(audio.length/ASR_CHUNK_BYTES)},ts:Date.now(),traceId:requestId})}).catch(()=>{})})();
-          // #endregion
+          if (debugServerUrl) {
+            fetch(debugServerUrl, {
+              method: "POST",
+              body: JSON.stringify({
+                sessionId: debugSessionId,
+                runId: debugRunId,
+                hypothesisId: "A-B-D-E",
+                location: "volcengine-speech.mjs:open",
+                msg: "[DEBUG] ASR socket opened",
+                data: {
+                  endpointPath: new URL(asrStreamEndpoint).pathname,
+                  resourceId: ASR_STREAM_RESOURCE_ID,
+                  format: format.format,
+                  codec: format.codec,
+                  audioBytes: audio.length,
+                  chunks: Math.ceil((plan.dataEnd - plan.dataOffset) / plan.packetBytes)
+                },
+                ts: Date.now(),
+                traceId: requestId
+              })
+            }).catch(() => {});
+          }
           await sendWebSocket(socket, createAsrFullRequest({
             user: { uid: "for-now" },
-            audio: { ...format },
+            audio: { ...format, rate: plan.rate, bits: plan.bits, channel: plan.channel },
             request: {
               model_name: "bigmodel",
               enable_nonstream: true,
               enable_itn: true,
               enable_punc: true,
               enable_ddc: false,
-              show_utterances: true
+              show_utterances: true,
+              result_type: "full"
             }
           }));
-          for (let offset = 0; offset < audio.length; offset += ASR_CHUNK_BYTES) {
-            await sendWebSocket(socket, createAsrAudioRequest(audio.subarray(offset, offset + ASR_CHUNK_BYTES)));
+          if (inactive()) return;
+          for (let offset = plan.dataOffset; offset < plan.dataEnd; offset += plan.packetBytes) {
+            if (inactive()) return;
+            const end = Math.min(offset + plan.packetBytes, plan.dataEnd);
+            // 首包带原WAV头；末包保留容器尾部，不裁切PCM尾音或覆盖原件。
+            const packetStart = offset === plan.dataOffset ? 0 : offset;
+            const packetEnd = end === plan.dataEnd ? audio.length : end;
+            await sendWebSocket(socket, createAsrAudioRequest(audio.subarray(packetStart, packetEnd)));
+            if (inactive()) return;
+            await sleep((end - offset) / plan.byteRate * 1000, pacing.signal);
+            if (inactive()) return;
           }
-          await sleep(500);
+          if (inactive() || finalSent) return;
+          finalSent = true;
+          stage = "awaiting-final";
           await sendWebSocket(socket, createAsrAudioRequest(Buffer.alloc(0), { final: true }));
         } catch (error) {
           finish(error);
@@ -722,6 +861,8 @@ export function createVolcengineSpeechTransport({
 
   return {
     configured,
+    asrMode,
+    asrAction,
     defaultVoice: selectedDefaultVoice,
     voices: VOLCENGINE_TTS_VOICES,
     supportedAsrMimeTypes: SUPPORTED_ASR_MIME_TYPES,

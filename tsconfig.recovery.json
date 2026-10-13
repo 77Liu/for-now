@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "rootDir": "public/frontend",
+    "outDir": "public/generated",
+    "noEmitOnError": true
+  },
+  "files": [
+    "public/frontend/features/background-results/recovery.mts",
+    "public/frontend/features/onboarding-v2/navigation.mts",
+    "public/frontend/features/personal-context/conclusion-state.mts",
+    "public/frontend/app/runtime/notification-runtime.mts",
+    "public/frontend/app/runtime/chat-submission.mts"
+  ]
+}

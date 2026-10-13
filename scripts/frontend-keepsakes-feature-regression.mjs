@@ -268,6 +268,102 @@ const rootEvents = [
   "dragenter", "dragover", "dragleave", "drop",
   "pointerdown", "pointermove", "pointerup", "pointercancel", "pointerleave", "load"
 ];
+
+{
+  const state = createKeepsakeFeatureState();
+  const created = [];
+  const revoked = [];
+  let serial = 0;
+  const drafts = createKeepsakeDrafts({
+    state,
+    store: {
+      async get() { return null; },
+      async put() {},
+      async delete() {}
+    },
+    data: {
+      getAccountId: () => "account-a",
+      getSessionSerial: () => 1
+    },
+    platform: {
+      createFile: (blob, name, options) => ({ blob, name, ...options }),
+      now: () => "2026-10-06T08:00:00.000Z",
+      setTimer: () => 1,
+      clearTimer() {},
+      objectUrls: {
+        createObjectURL(file) {
+          const url = `blob:${file.name}-${++serial}`;
+          created.push(url);
+          return url;
+        },
+        revokeObjectURL(url) { revoked.push(url); }
+      }
+    }
+  });
+  const first = { itemId: "first", file: new Blob(["first"], { type: "image/png" }) };
+  const second = { itemId: "second", file: new Blob(["second"], { type: "image/png" }) };
+  drafts.append([first, second]);
+  const initial = drafts.previewUrls();
+  assert.deepEqual(drafts.previewUrls(), initial,
+    "重复刷新必须复用每件小物的预览 URL");
+  assert.equal(created.length, 2);
+  assert.deepEqual(revoked, []);
+  drafts.select(1);
+  assert.deepEqual(drafts.previewUrls(), initial,
+    "切换当前小物不能重建其他图片的预览 URL");
+  drafts.remove(0);
+  assert.deepEqual(revoked, [initial[0]],
+    "移除小物只释放被移除图片的预览 URL");
+  second.file = new Blob(["replacement"], { type: "image/png" });
+  const replacement = drafts.previewUrls();
+  assert.notEqual(replacement[0], initial[1],
+    "图片文件变化时必须创建新的预览 URL");
+  assert.deepEqual(revoked, [initial[0], initial[1]],
+    "替换图片必须释放旧预览 URL");
+  drafts.revokePreviews();
+  assert.deepEqual(revoked, [initial[0], initial[1], replacement[0]],
+    "卸载时必须释放当前预览 URL");
+}
+
+{
+  const state = createKeepsakeFeatureState();
+  let failRestore = false;
+  let changeCount = 0;
+  const drafts = createKeepsakeDrafts({
+    state,
+    store: {
+      async get() {
+        if (failRestore) throw new Error("synthetic draft read failure");
+        return null;
+      },
+      async put() {},
+      async delete() {}
+    },
+    data: {
+      getAccountId: () => "account-a",
+      getSessionSerial: () => 1
+    },
+    onChange: () => { changeCount += 1; },
+    platform: {
+      createFile: (blob, name, options) => ({ blob, name, ...options }),
+      now: () => "2026-10-06T08:00:00.000Z",
+      setTimer: () => 1,
+      clearTimer() {},
+      objectUrls: {
+        createObjectURL: () => "blob:unused",
+        revokeObjectURL() {}
+      }
+    }
+  });
+  await drafts.restore("account-a");
+  failRestore = true;
+  const changesBeforeFailure = changeCount;
+  await assert.rejects(drafts.restore("account-a"), /synthetic draft read failure/);
+  assert.equal(changeCount, changesBeforeFailure + 1,
+    "草稿读取失败仍应通知界面已清空旧状态");
+  assert.equal(state.batch.items.length, 0);
+}
+
 {
   const harness = createRuntimeHarness();
   const root = new FakeRoot();

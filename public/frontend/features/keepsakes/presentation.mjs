@@ -10,7 +10,7 @@ import {
   sortedKeepsakes,
   uniqueKeepsakeTags
 } from "./model.mjs";
-import { createKeepsakeMarkup } from "./presentation-markup.mjs";
+import { clearKeepsakeMarkup, createKeepsakeMarkup, setKeepsakeMarkup } from "./presentation-markup.mjs";
 function requireFunctions(group, values) {
   for (const [name, value] of Object.entries(values)) {
     if (typeof value !== "function") {
@@ -122,17 +122,18 @@ export function createKeepsakePresentation({
     if (count) count.textContent = state.batch.items.length
       ? `${state.batch.items.length} 件`
       : "";
-    list.innerHTML = state.batch.items.map((item, index) => (
+    setKeepsakeMarkup(list, state.batch.items.map((item, index) => (
       `<article class="keepsake-batch-item${index === state.batch.activeIndex ? " active" : ""}`
       + `${item.status === "failed" ? " failed" : ""}"><button class="keepsake-batch-select" `
       + `type="button" data-keepsake-batch-select="${index}" `
-      + `aria-pressed="${index === state.batch.activeIndex}"><img src="${escape(urls[index])}" alt="">`
+      + `aria-pressed="${index === state.batch.activeIndex}"><img `
+      + `data-keepsake-image-key="${escape(item.itemId)}" src="${escape(urls[index])}" alt="">`
       + `<span><b>${escape(item.title || item.file?.name || `小物 ${index + 1}`)}</b>`
       + `<small>${escape(keepsakeBatchStatus(item, index, state.batch.activeIndex))}</small></span>`
       + `</button><button class="keepsake-batch-remove" type="button" `
       + `data-keepsake-batch-remove="${index}" aria-label="取消第 ${index + 1} 件小物" `
       + `${item.status === "saving" ? "disabled" : ""}>×</button></article>`
-    )).join("");
+    )).join(""));
     const upload = query("#keepsake-upload-box");
     const editor = query("#keepsake-editor");
     if (upload) upload.hidden = Boolean(state.batch.items.length);
@@ -432,16 +433,16 @@ export function createKeepsakePresentation({
       if (pagination) pagination.hidden = true;
       if (detail) {
         detail.dataset.keepsakeId = detailItem.id;
-        detail.innerHTML = detailMarkup(detailItem);
+        setKeepsakeMarkup(detail, detailMarkup(detailItem));
       }
       scheduleLayout();
       return true;
     }
-    if (detail) detail.innerHTML = "";
+    if (detail) clearKeepsakeMarkup(detail);
     const visible = filtered.slice(0, state.visibleCount);
     const grid = query("#keepsake-grid");
     if (grid) {
-      grid.innerHTML = filtered.length
+      setKeepsakeMarkup(grid, filtered.length
         ? visible.map((item, index) => cardMarkup(item, index < 4 ? "eager" : "lazy")).join("")
         : allItems.length
           ? view.feedSearchEmpty("小物")
@@ -449,7 +450,7 @@ export function createKeepsakePresentation({
               title: "还没有小物",
               body: "从一张照片开始，名称和轮廓之后都可以修改。",
               action: { command: "new-keepsake", label: "收第一件小物" }
-            });
+            }));
     }
     if (pagination) {
       pagination.hidden = !filtered.length || visible.length >= filtered.length;
@@ -466,7 +467,7 @@ export function createKeepsakePresentation({
     drafts.revokePreviews();
     for (const selector of ["#keepsake-grid", "#keepsake-detail", "#keepsake-batch-list"]) {
       const node = query(selector);
-      if (node) node.innerHTML = "";
+      if (node) clearKeepsakeMarkup(node);
     }
     const section = query("#keepsake-batch");
     if (section) section.hidden = true;

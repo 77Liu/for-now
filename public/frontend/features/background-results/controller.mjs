@@ -1,3 +1,4 @@
+import { createResultRecovery, isUnavailableResult } from "../../../generated/features/background-results/recovery.mjs";
 import {
   backgroundResultFromSnapshot,
   backgroundTaskTarget,
@@ -28,19 +29,20 @@ export function createBackgroundResultController({
   }
   let epoch = 0;
   const applied = new Set();
-  const failed = new Set();
+  const deferredResults = new Map();
+  const recovery = createResultRecovery();
   const inFlight = new Set();
 
   async function applyTask(task, generation) {
     const target = backgroundTaskTarget(task);
     if (!target) return false;
     const fingerprint = `${task.id}:${task.resultId}`;
-    if (applied.has(fingerprint) || inFlight.has(fingerprint)) return false;
+    if (applied.has(fingerprint) || inFlight.has(fingerprint) || !recovery.canAttempt(fingerprint)) return false;
     inFlight.add(fingerprint);
     try {
-      const result = await loadResult(task, target);
+      const result = deferredResults.get(fingerprint) || await loadResult(task, target);
       if (generation !== epoch) return false;
-      if (result == null) throw new Error("Background task result is not available");
+      if (result == null) throw Object.assign(new Error("后台结果当前不可用"), { status: 410 });
       const viewState = captureViewState(target);
       let resultApplied;
       try {
@@ -48,18 +50,26 @@ export function createBackgroundResultController({
       } finally {
         if (generation === epoch) restoreViewState(viewState, target);
       }
-      if (generation !== epoch || resultApplied === false) return false;
+      if (generation !== epoch) return false;
+      if (resultApplied?.deferred === true) {
+        deferredResults.set(fingerprint, result);
+        recovery.forget(fingerprint);
+        return false;
+      }
+      if (resultApplied === false) {
+        throw Object.assign(new Error("后台结果与目标身份不一致，未接入当前记录"), { code: "RESULT_TARGET_MISMATCH" });
+      }
+      deferredResults.delete(fingerprint);
       applied.add(fingerprint);
-      failed.delete(fingerprint);
+      recovery.forget(fingerprint);
       return true;
     } catch (error) {
       if (generation === epoch) {
-        failed.add(fingerprint);
-        onError(error, task, target);
+        if (recovery.fail(fingerprint, error)) onError(error, task, target);
       }
       return false;
     } finally {
-      inFlight.delete(fingerprint);
+      if (generation === epoch) inFlight.delete(fingerprint);
     }
   }
 
@@ -78,15 +88,17 @@ export function createBackgroundResultController({
       for (const fingerprint of applied) {
         if (fingerprint.startsWith(prefix)) applied.delete(fingerprint);
       }
-      for (const fingerprint of failed) {
-        if (fingerprint.startsWith(prefix)) failed.delete(fingerprint);
+      for (const fingerprint of deferredResults.keys()) {
+        if (fingerprint.startsWith(prefix)) deferredResults.delete(fingerprint);
       }
+      recovery.forgetTask(taskId);
     },
-    needsRetry: () => failed.size > 0,
+    needsRetry: () => recovery.needsRetry(),
     reset() {
       epoch += 1;
       applied.clear();
-      failed.clear();
+      deferredResults.clear();
+      recovery.reset();
       inFlight.clear();
     }
   });
@@ -178,9 +190,11 @@ export function createBackgroundResultsFeatureController({
       const snapshot = data.getSnapshot();
       if (backgroundResultFromSnapshot(snapshot, task)) return true;
       const merged = mergeBackgroundTaskResult(snapshot, task, result);
+      if (merged.deferred) return { deferred: true };
       if (!merged.changed) return false;
       data.replaceSnapshot(merged.value);
-      return refreshAppliedTarget(task, target);
+      refreshAppliedTarget(task, target);
+      return true;
     },
     captureViewState: () => ({
       x: platform.window.scrollX,
@@ -194,7 +208,14 @@ export function createBackgroundResultsFeatureController({
       if (panel) panel.scrollTop = saved.commentScroll;
       view.scheduleAnnotationLayout();
     },
-    onError: error => view.showToast(`后台结果同步失败：${error.message}`, "error")
+    onError: (error, task) => view.showToast(
+      isUnavailableResult(error)
+        ? "这条后台结果或目标已不可用。可尝试查看记录；重新读取不会重新生成。"
+        : task?.kind === "thoughtAnswer"
+          ? "后台回答暂未同步，可在通知中打开后重试。"
+          : `后台结果同步失败：${error.message}`,
+      "error"
+    )
   });
 
   function scrollToTarget(target, value) {
@@ -218,7 +239,7 @@ export function createBackgroundResultsFeatureController({
     if (!target) return false;
     if (target.resourceType === "thought") navigation.openThoughtDetail(target.rootId);
     else navigation.switchView(target.view);
-    await data.refresh(
+    const loaded = await data.refresh(
       [target.domain, "notifications"],
       target.resourceType === "thought"
         ? {
@@ -228,6 +249,15 @@ export function createBackgroundResultsFeatureController({
         : {}
     );
     if (!current(operation)) return false;
+    if (loaded === false) {
+      view.showToast("目标或通知暂未读取成功，可在通知页重新读取。", "error");
+      return false;
+    }
+    if (backgroundTaskTarget(task)) {
+      results.forget(task.id);
+      await results.sync([task]);
+      if (!current(operation)) return false;
+    }
     const refreshedTarget = backgroundNavigationTarget(task, notification, data.getSnapshot());
     if (!refreshedTarget) return false;
     target = { ...refreshedTarget, ticket: operation };

@@ -84,6 +84,15 @@ fetchHandler = async (url, options) => {
 };
 assert.equal((await client.requestBlob("/api/speech/preview", { method: "POST", body: '{"voice":"voice-a"}' })).size, 3);
 
+fetchHandler = async (url, options) => {
+  assert.equal(url, "/now/api/speech/audio?id=asset-1");
+  assert.equal(options.method, "HEAD");
+  assert.equal(options.body, undefined);
+  assert.equal(options.signal.aborted, false);
+  return new Response(null, { status: 410 });
+};
+assert.deepEqual(await client.requestHeadStatus("/api/speech/audio?id=asset-1"), { ok: false, status: 410 });
+
 let foregroundAttempts = 0;
 client.markForeground();
 fetchHandler = async () => {
@@ -121,6 +130,16 @@ fetchHandler = () => pending.promise;
 request = client.readBlob("/attachments/private.png");
 rotateSession();
 pending.resolve(new Response("private"));
+await assert.rejects(request, { name: "AbortError" });
+
+pending = deferred();
+fetchHandler = (_url, options) => {
+  assert.equal(options.method, "HEAD");
+  return pending.promise;
+};
+request = client.requestHeadStatus("/api/speech/audio?id=old-session");
+rotateSession();
+pending.resolve(new Response(null, { status: 200 }));
 await assert.rejects(request, { name: "AbortError" });
 
 const streamResponse = chunks => new Response(new ReadableStream({

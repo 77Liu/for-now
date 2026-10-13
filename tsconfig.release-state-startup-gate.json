@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["node"],
+    "rootDir": "scripts",
+    "outDir": ".build/typescript/release-state-startup-gate",
+    "noEmitOnError": true
+  },
+  "files": ["scripts/release-state-startup-gate.mts"]
+}

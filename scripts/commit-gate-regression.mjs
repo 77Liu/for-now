@@ -30,6 +30,10 @@ function git(directory, args, options = {}) {
 async function makeRepository(name, { failingCheck = false, delayedCheck = false } = {}) {
   const directory = path.join(temporary, name);
   await fs.mkdir(path.join(directory, "src/modules/actions"), { recursive: true });
+  await fs.mkdir(path.join(directory, "public/frontend/features/actions"), { recursive: true });
+  await fs.mkdir(path.join(directory, "public/frontend/features/keepsakes"), { recursive: true });
+  await fs.mkdir(path.join(directory, "public/frontend/features/home"), { recursive: true });
+  await fs.mkdir(path.join(directory, "public/frontend/features/personal-context"), { recursive: true });
   await fs.mkdir(path.join(directory, "scripts"), { recursive: true });
   await fs.mkdir(path.join(directory, "reports"), { recursive: true });
   const checkSource = [
@@ -44,6 +48,31 @@ async function makeRepository(name, { failingCheck = false, delayedCheck = false
   await fs.writeFile(path.join(directory, "check.mjs"), `${checkSource}\n`);
   await fs.writeFile(path.join(directory, "outside.txt"), "base\n");
   await fs.writeFile(path.join(directory, "src/modules/actions/index.mjs"), "export const value = 1;\n");
+  for (const name of [
+    "frontend-actions-feature-regression.mjs",
+    "frontend-basic-surfaces-feature-regression.mjs",
+    "frontend-contract-regression.mjs",
+    "context-source-route-regression.mjs",
+    "frontend-keepsakes-feature-regression.mjs",
+    "frontend-shell-regression.mjs",
+    "g2-actions-regression.mjs",
+    "home-chat-citation-renderer-regression.mjs",
+    "mobile-platform-regression.mjs",
+    "ui-regression.mjs",
+    "url-history-regression.mjs"
+  ]) {
+    const source = name === "g2-actions-regression.mjs"
+      ? [
+          'import assert from "node:assert/strict";',
+          'assert.equal(process.env.MEDIA_CDN_AUTH_KEY, undefined);',
+          `process.stdout.write("ran:${name}\\n");`
+        ].join("\n")
+      : `process.stdout.write("ran:${name}\\n");`;
+    await fs.writeFile(
+      path.join(directory, "scripts", name),
+      `${source}\n`
+    );
+  }
   await fs.copyFile(gateSource, path.join(directory, "scripts/commit-gate.mjs"));
   await fs.writeFile(path.join(directory, "package.json"), JSON.stringify({
     name: `commit-gate-${name}`,
@@ -51,9 +80,9 @@ async function makeRepository(name, { failingCheck = false, delayedCheck = false
     type: "module",
     scripts: {
       check: "node check.mjs",
-      "test:backend": "node -e \"process.exit(0)\"",
-      "test:frontend": "node -e \"process.exit(0)\"",
-      "test:system": "node -e \"process.exit(0)\""
+      "test:backend": "node -e \"console.log('broad-backend')\"",
+      "test:frontend": "node -e \"console.log('broad-frontend')\"",
+      "test:system": "node -e \"console.log('broad-system')\""
     }
   }, null, 2) + "\n");
   git(directory, ["init", "-b", "main"]);
@@ -105,13 +134,17 @@ try {
     git(directory, ["add", "src/modules/actions/index.mjs"]);
     const before = git(directory, ["rev-parse", "HEAD"]).stdout.trim();
     const stagedTree = git(directory, ["write-tree"]).stdout.trim();
-    const result = invokeGate(directory, "feat(actions): update local action behavior");
+    const result = invokeGate(directory, "feat(actions): update local action behavior", [], {
+      env: { ...process.env, MEDIA_CDN_AUTH_KEY: "poisoned-media-key" }
+    });
     assert.equal(result.status, 0, result.stderr);
     const after = git(directory, ["rev-parse", "HEAD"]).stdout.trim();
     assert.notEqual(after, before);
     assert.equal(git(directory, ["rev-parse", "HEAD^{tree}"]).stdout.trim(), stagedTree);
     assert.match(git(directory, ["show", "-s", "--format=%B", "HEAD"]).stdout, /Commit-Type: feat/);
     assert.match(git(directory, ["show", "-s", "--format=%B", "HEAD"]).stdout, /Commit-Gate: local-task-v2/);
+    assert.match(result.stdout, /ran:g2-actions-regression\.mjs/);
+    assert.doesNotMatch(result.stdout, /broad-(?:backend|frontend|system)/);
     assert.equal(git(directory, ["show", "HEAD:outside.txt"]).stdout, "base\n");
     assert.equal(git(directory, ["status", "--short"]).stdout, " M outside.txt\n");
   }
@@ -129,11 +162,65 @@ try {
   {
     const directory = await makeRepository("test-only");
     git(directory, ["switch", "-c", "test/records"]);
-    await fs.writeFile(path.join(directory, "scripts/checkin-health-regression.mjs"), "export const covered = true;\n");
-    git(directory, ["add", "scripts/checkin-health-regression.mjs"]);
-    const result = invokeGate(directory, "test(records): cover record regression");
+    await fs.appendFile(path.join(directory, "scripts/frontend-actions-feature-regression.mjs"), "// frontend case changed\n");
+    await fs.appendFile(path.join(directory, "scripts/g2-actions-regression.mjs"), "// backend case changed\n");
+    git(directory, ["add", "scripts/frontend-actions-feature-regression.mjs", "scripts/g2-actions-regression.mjs"]);
+    const result = invokeGate(directory, "test(actions): cover action regressions");
     assert.equal(result.status, 0, result.stderr);
     assert.match(git(directory, ["show", "-s", "--format=%B", "HEAD"]).stdout, /Commit-Type: test/);
+    assert.match(result.stdout, /ran:frontend-actions-feature-regression\.mjs/);
+    assert.match(result.stdout, /ran:g2-actions-regression\.mjs/);
+    assert.doesNotMatch(result.stdout, /broad-(?:backend|frontend|system)/);
+  }
+
+  {
+    const directory = await makeRepository("mixed-actions");
+    git(directory, ["switch", "-c", "feature/mixed-actions"]);
+    await fs.writeFile(path.join(directory, "src/modules/actions/index.mjs"), "export const value = 2;\n");
+    await fs.writeFile(path.join(directory, "public/frontend/features/actions/index.mjs"), "export const value = 2;\n");
+    git(directory, ["add", "src/modules/actions/index.mjs", "public/frontend/features/actions/index.mjs"]);
+    const result = invokeGate(directory, "feat(actions): update action behavior");
+    assert.equal(result.status, 0, result.stderr);
+    for (const name of [
+      "g2-actions-regression.mjs",
+      "frontend-actions-feature-regression.mjs",
+      "frontend-contract-regression.mjs"
+    ]) {
+      assert.match(result.stdout, new RegExp(`ran:${name.replaceAll(".", "\\.")}`));
+      assert.equal(result.stdout.split(`ran:${name}`).length - 1, 1, `${name} should run once`);
+    }
+    assert.doesNotMatch(result.stdout, /broad-(?:backend|frontend|system)/);
+  }
+
+  {
+    const directory = await makeRepository("home-feature");
+    git(directory, ["switch", "-c", "feature/home"]);
+    await fs.writeFile(path.join(directory, "public/frontend/features/home/index.mjs"), "export const value = 2;\n");
+    git(directory, ["add", "public/frontend/features/home/index.mjs"]);
+    const result = invokeGate(directory, "feat(home): update home behavior");
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /ran:home-chat-citation-renderer-regression\.mjs/);
+    assert.doesNotMatch(result.stdout, /broad-(?:backend|frontend|system)/);
+  }
+
+  {
+    const directory = await makeRepository("context-source-feature");
+    git(directory, ["switch", "-c", "feature/context-source"]);
+    await fs.writeFile(path.join(directory, "public/frontend/features/personal-context/index.mjs"), "export const value = 2;\n");
+    git(directory, ["add", "public/frontend/features/personal-context/index.mjs"]);
+    const result = invokeGate(directory, "feat(basic-surfaces): preserve source navigation");
+    assert.equal(result.status, 0, result.stderr);
+    for (const name of [
+      "frontend-basic-surfaces-feature-regression.mjs",
+      "context-source-route-regression.mjs",
+      "frontend-contract-regression.mjs",
+      "frontend-shell-regression.mjs",
+      "url-history-regression.mjs"
+    ]) {
+      assert.match(result.stdout, new RegExp(`ran:${name.replaceAll(".", "\\.")}`));
+      assert.equal(result.stdout.split(`ran:${name}`).length - 1, 1, `${name} should run once`);
+    }
+    assert.doesNotMatch(result.stdout, /mobile-platform-regression|ui-regression|broad-(?:backend|frontend|system)/);
   }
 
   {

@@ -8,7 +8,7 @@
 本 SOP 只定义夜间队列的生成、授权路由和持续调度。需求范围、工程实现、
 多 Agent 调度、测试和生产发布分别以当前迭代计划、
 `knowledge/engineering-rules.md`、`SOP/multi-agent-orchestration.md`、
-`knowledge/system-testing.md` 和 `knowledge/pre-launch-confirmation.md`
+`knowledge/system-testing.md` 和 `SOP/release-and-observation.md`
 为准。
 
 ## 1. 核心原则
@@ -68,7 +68,7 @@ Preview 持续授权只在以下条件全部满足时有效：
 - `PROJECT_RULES.md`、`README.md`、`one-mistake-one-rule.md`
 - `SOP/README.md`、本 SOP、多 Agent、迭代规划和发布规则
 - 当前及后续版本迭代计划、唯一调度报告、发布/复盘报告
-- `README-TODO.md`、版本历史和机器模块登记
+- 唯一协调控制面、版本历史和机器模块登记
 - 可用时读取 Base 需求、交付与版本表；不可用时登记外部回填缺口
 
 至少核对：
