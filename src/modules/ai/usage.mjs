@@ -49,6 +49,11 @@ export function resolveOfficialProviderPricing({
     rate = pricing.services.seedAsr2Streaming.price;
     divisor = 3_600_000;
     resolvedUnitType = "audioMillisecond";
+  } else if (provider === "volcengine" && service === "speech" && action === "flashAsr") {
+    pricing = OFFICIAL_PROVIDER_PRICING.volcengineFlashAsr;
+    rate = pricing.services.flashAsr.price;
+    divisor = 3_600_000;
+    resolvedUnitType = "audioMillisecond";
   } else if (provider === "volcengine" && service === "speech" && action === "fileAsr") {
     pricing = OFFICIAL_PROVIDER_PRICING.volcengineSpeech;
     rate = pricing.services.seedAsr2File.price;

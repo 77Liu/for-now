@@ -6,11 +6,15 @@
     "strict": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "rootDir": "src/shared/observability",
+    "rootDir": "src",
     "outDir": ".build/typescript/backend",
-    "noEmitOnError": true
+    "noEmitOnError": true,
+    "types": [
+      "node"
+    ]
   },
   "files": [
-    "src/shared/observability/feishu.mts"
+    "src/shared/observability/feishu.mts",
+    "src/infrastructure/ai-providers/volcengine-file-asr.mts"
   ]
 }

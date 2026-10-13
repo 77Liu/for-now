@@ -505,7 +505,7 @@
         "data": [
           "DeepSeek HTTP/SSE transport, response validation and image encoding",
           "Aliyun segmentation SDK, async polling, PNG download and safe error projection",
-          "Volcengine V4 signing, OCR/document parsing, TTS and private streaming ASR transports"
+          "Volcengine V4 signing, OCR/document parsing, TTS, whole-file HTTP ASR and explicit opt-in streaming ASR transports"
         ],
         "routes": []
       },
