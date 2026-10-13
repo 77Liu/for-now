@@ -1,3 +1,9 @@
+/**
+ * 日压缩输入、保存封装与消费者预算契约。
+ * 建立时间：2026-10-10
+ * 状态：active
+ * 边界：模型摘要预算与完整程序统计、实际趋势上下文预算分别计量。
+ */
 import { DEFAULT_RECORD_TIMEZONE } from "../../shared/time/index.mjs";
 
 export const RECORD_COMPRESSION_INPUT_SCHEMA_VERSION = "record-compression-input.v1";
@@ -6,6 +12,7 @@ export const RECORD_COMPRESSION_PROMPT_VERSION = "daily-record-compression.v1";
 export const RECORD_COMPRESSION_TASK_KIND = "recordCompression";
 export { DEFAULT_RECORD_TIMEZONE };
 export const RECORD_COMPRESSION_WINDOW_DAYS = 7;
+// 模型摘要投影（含 JSON 与引用）的上限；不包含程序 window/coverage/metrics。
 export const RECORD_COMPRESSION_OUTPUT_TOKEN_BUDGET = 900;
 export const RECORD_COMPRESSION_INPUT_TEXT_BUDGET = 12_000;
 export const RECORD_COMPRESSION_INPUT_JSON_BUDGET_BYTES = 256_000;
@@ -26,6 +33,10 @@ export const RECORD_COMPRESSION_OUTPUT_BUDGETS = Object.freeze({
   stableCandidateTokens: 120
 });
 
+/**
+ * 校验持久摘要封装；兼容无 scope 的旧预算记录，拒绝未知预算语义。
+ * model_summary 的 outputTokens 不能替代实际趋势上下文的序列化限额。
+ */
 export function isRecordCompressionRecordEnvelope(value, { ready = false } = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   if (typeof value.id !== "string" || !value.id.trim()) return false;
@@ -59,6 +70,10 @@ export function isRecordCompressionRecordEnvelope(value, { ready = false } = {})
       || value.tokenUsage?.estimated !== true
       || !Number.isSafeInteger(value.revision)
       || value.revision < 1) return false;
+    if (value.tokenUsage.scope !== undefined && value.tokenUsage.scope !== "model_summary") return false;
+    if (value.tokenUsage.scope === "model_summary"
+      && (!Number.isSafeInteger(value.tokenUsage.serverStatisticsTokens)
+        || value.tokenUsage.serverStatisticsTokens < 0)) return false;
     const outputTokens = Number(value.tokenUsage?.outputTokens);
     if (!Number.isSafeInteger(outputTokens)
       || outputTokens < 0
