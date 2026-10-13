@@ -123,6 +123,9 @@ export function createNotificationsFeatureController(deps: NotificationsControll
               action: '<button class="quiet-button content-state-action" type="button" data-view="mine">返回我的</button>'
             });
     }
+    if (list && loadState === "failure" && notifications.length) {
+      list.innerHTML += '<button class="quiet-button content-state-action" type="button" data-content-action="retry-notifications">重新读取通知</button>';
+    }
     const status = candidate.root.querySelector(NOTIFICATION_SELECTORS.status);
     if (status) status.textContent = errorMessage || (
       loadState === "failure" && notifications.length
@@ -228,6 +231,19 @@ export function createNotificationsFeatureController(deps: NotificationsControll
       if (current(ticket)) fail(candidate, error);
     }
   }
+  // 成功任务的恢复只读取既有结果，不标已读、不重新排队生成。
+  async function rereadResult(candidate: Candidate, element: HTMLElement): Promise<void> {
+    const ticket = { activation: candidate, session };
+    const state = snapshot();
+    const task = (state.aiTasks || []).find(item => item?.id === element.dataset.resultReread);
+    const notification = (state.notifications || []).find(item => item?.id === element.dataset.notificationId);
+    if (!task || task.status !== "succeeded" || !current(ticket)) return;
+    try {
+      await openTarget(task, notification);
+    } catch (error) {
+      if (current(ticket)) fail(candidate, error);
+    }
+  }
   async function retry(candidate: Candidate, taskId: string): Promise<void> {
     let next;
     try {
@@ -269,15 +285,17 @@ export function createNotificationsFeatureController(deps: NotificationsControll
     const all = closest(candidate, event, NOTIFICATION_SELECTORS.readAll);
     const reload = closest(candidate, event, '[data-content-action="retry-notifications"]');
     const retryButton = closest(candidate, event, NOTIFICATION_SELECTORS.retry);
+    const reread = closest(candidate, event, "[data-result-reread]");
     const copyButton = closest(candidate, event, NOTIFICATION_SELECTORS.copy);
     const fallbackSelect = closest(candidate, event, NOTIFICATION_SELECTORS.fallbackSelect);
     const fallbackDismiss = closest(candidate, event, NOTIFICATION_SELECTORS.fallbackDismiss);
     const open = closest(candidate, event, NOTIFICATION_SELECTORS.open);
     const read = closest(candidate, event, NOTIFICATION_SELECTORS.read);
-    if (!all && !reload && !retryButton && !copyButton && !fallbackSelect && !fallbackDismiss && !open && !read) return;
+    if (!all && !reload && !retryButton && !reread && !copyButton && !fallbackSelect && !fallbackDismiss && !open && !read) return;
     event.preventDefault?.();
     if (all) void readAll(candidate);
     else if (reload) void loadOnMount(candidate, { force: true });
+    else if (reread) void rereadResult(candidate, reread);
     else if (retryButton) void retry(candidate, String(retryButton.dataset?.taskRetry || ""));
     else if (copyButton) void copyDiagnostic(candidate, String(copyButton.dataset?.notificationCopy || ""));
     else if (fallbackSelect) selectFallback(candidate, String(fallbackSelect.dataset?.notificationCopyFallbackSelect || ""));

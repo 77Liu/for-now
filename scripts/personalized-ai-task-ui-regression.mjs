@@ -87,6 +87,16 @@ assert.equal(recoveredEnqueue.kind, "queued");
 assert.equal(recoveredEnqueue.kind === "queued" && recoveredEnqueue.task.id, "task-uncertain-recovered");
 assert.equal(recoveredEnqueue.kind === "queued" && recoveredEnqueue.notificationsRefreshed, false,
   "notification refresh failure does not turn an accepted task into an enqueue failure");
+const falseRefresh = await enqueueThoughtAnswer({
+  ...thoughtAnswerRequestOptions,
+  targetId: "question-notification-false",
+  createRequestId: () => "notification-false-check",
+  request: async () => ({ id: "registered-notification-false", kind: "thoughtAnswer",
+    targetId: "question-notification-false", inputVersion: 4, status: "queued" }),
+  refreshNotifications: async () => false
+});
+assert.equal(falseRefresh.kind, "queued");
+assert.equal(falseRefresh.notificationsRefreshed, false, "返回false的真实读取不能被谎报为成功");
 assert.equal(refreshedAfterQueue, true);
 assert.equal(THOUGHT_ANSWER_NOTIFICATIONS_STALE_MESSAGE.includes("secret"), false);
 assert.equal(attemptStorage.values.size, 0, "a confirmed task clears its pending attempt metadata");

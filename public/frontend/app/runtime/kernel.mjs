@@ -394,15 +394,14 @@ async function startBackgroundChainAnswer(question,existingTask=null){
   if(!isCurrent())return false;
   if(!state.aiTasks.some(item=>item.id===task.id))state.aiTasks.unshift(task);
   if(existingTask){
-    try{await refreshState("notifications")}catch{notificationsRefreshed=false}
+    try{notificationsRefreshed=(await refreshState("notifications"))!==false}catch{notificationsRefreshed=false}
   }
   if(!isCurrent())return task;
   scheduleNotificationPoll();
   const status=thoughtAnswerOutcomeMessage(task,notificationsRefreshed);
   const statusKind=thoughtAnswerTaskStatusKind(task);
   setAnswerStatus(question.id,status,statusKind);
-  showToast(status,
-    notificationsRefreshed?statusKind:"error");
+  showToast(status,statusKind);
   return task;
 }
 async function ensureLocalTestViewScope(view){

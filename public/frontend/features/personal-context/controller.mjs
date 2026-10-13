@@ -1,3 +1,4 @@
+import { createConclusionViewState } from "../../../generated/features/personal-context/conclusion-state.mjs";
 import { openContextSource } from "./navigation.mjs";
 import {
   PERSONAL_CONTEXT_SELECTORS,
@@ -66,6 +67,7 @@ export function createPersonalContextFeatureController({
   const writes = new Map();
   const claimDrafts = new Map();
   const sessionRoots = new Set();
+  const conclusionState = createConclusionViewState();
 
   const isCurrent = candidate => Boolean(
     candidate
@@ -107,6 +109,7 @@ export function createPersonalContextFeatureController({
 
   const paint = candidate => {
     if (!isActive(candidate)) return false;
+    conclusionState.beforePaint(candidate.root);
     const rendered = renderPersonalContextSurface({
       root: candidate.root,
       data: contextData,
@@ -118,6 +121,7 @@ export function createPersonalContextFeatureController({
       formatDate: view.formatDate
     });
     restoreClaimDrafts(candidate.root);
+    conclusionState.afterPaint(candidate.root);
     return rendered;
   };
 
@@ -670,6 +674,7 @@ export function createPersonalContextFeatureController({
     synthesisRequestId = "";
     writes.clear();
     claimDrafts.clear();
+    conclusionState.reset();
     for (const root of sessionRoots) scrubPersonalContextSurface(root);
     sessionRoots.clear();
   };

@@ -3,7 +3,8 @@ import {
   backgroundNavigationTarget,
   backgroundTargetSelector,
   createBackgroundResultController,
-  createBackgroundResultsFeatureController
+  createBackgroundResultsFeatureController,
+  mergeBackgroundTaskResult
 } from "../public/frontend/features/background-results/index.mjs";
 
 function deferred() {
@@ -105,6 +106,7 @@ const window = {
 };
 let annotationOpens = 0;
 let refreshGate = null;
+let refreshSucceeded = true;
 const controller = createBackgroundResultsFeatureController({
   data: {
     getSnapshot: () => snapshot,
@@ -123,7 +125,7 @@ const controller = createBackgroundResultsFeatureController({
     async refresh(domains, options) {
       events.push(`refresh:${domains.join(",")}:${options.chainId || ""}`);
       if (refreshGate) await refreshGate.promise;
-      return true;
+      return refreshSucceeded;
     },
     publish(domains) {
       events.push(`publish:${domains.join(",")}`);
@@ -309,8 +311,9 @@ assert.equal(await controller.openTarget(bookAnnotationTask), true);
 assert.deepEqual(events.slice(0, 3), [
   "view:books",
   "refresh:books,notifications:",
-  "annotation:book:book-1:annotation-1"
+  "request:/api/ai-tasks/task-book/result"
 ]);
+assert.ok(events.includes("annotation:book:book-1:annotation-1"));
 assert.equal(annotationOpens, 1);
 assert.equal(nodes.get('[data-comment-card="annotation-1"]').scrolls, 1);
 
@@ -332,6 +335,14 @@ targetSwitchGate.resolve();
 assert.equal(await staleOpen, false);
 assert.equal(annotationOpens, 1, "a late previous target must not replace the latest location");
 
+
+// 手动读取目标失败不能冒称定位成功，也不继续接入/请求结果。
+refreshSucceeded = false;
+const beforeFailedOpen = requests.length;
+assert.equal(await controller.openTarget(answerTask), false);
+assert.equal(requests.length, beforeFailedOpen);
+assert.match(toasts.at(-1)[0], /目标或通知暂未读取成功/);
+refreshSucceeded = true;
 
 // 旧结果终态在其它任务持续通知刷新时也只自动请求/提示一次。
 for (const status of [404, 410, 503]) {
@@ -366,5 +377,59 @@ await partial.sync([answerTask]);
 targetLoaded = true;
 assert.equal(await partial.sync([answerTask]), true);
 assert.equal(partialCalls, 2, "局部快照暂缺目标时重新获取当前结果，不推断删除或缓存旧结果");
+
+// 局部目标未加载不等于同步故障：只读一次，后续域加载接入同一结果。
+const validResult = {
+  id: answerTask.resultId, type: "answer", relatedTo: answerTask.targetId,
+  sourceTaskId: answerTask.id, content: "已持久化的合成回答"
+};
+let pagedSnapshot = { thoughts: [] };
+let deferredReads = 0;
+let deferredErrors = 0;
+const deferredSync = createBackgroundResultController({
+  loadResult: async () => { deferredReads += 1; return validResult; },
+  applyResult: ({ task, result }) => {
+    const merged = mergeBackgroundTaskResult(pagedSnapshot, task, result);
+    if (merged.deferred) return { deferred: true };
+    if (!merged.changed) return false;
+    pagedSnapshot = merged.value;
+    return true;
+  },
+  onError: () => { deferredErrors += 1; }
+});
+for (let i = 0; i < 8; i += 1) assert.equal(await deferredSync.sync([answerTask]), false);
+assert.equal(deferredReads, 1);
+assert.equal(deferredErrors, 0);
+assert.deepEqual(pagedSnapshot.thoughts, []);
+pagedSnapshot.thoughts = [{ id: answerTask.targetId, type: "question" }];
+assert.equal(await deferredSync.sync([answerTask]), true);
+assert.equal(deferredReads, 1, "域加载后接入已读取的同身份结果，不重复GET");
+assert.equal(pagedSnapshot.thoughts.filter(item => item.id === answerTask.resultId).length, 1);
+assert.equal(mergeBackgroundTaskResult({}, answerTask, { ...validResult, id: "wrong-id" }).deferred, undefined);
+assert.equal(mergeBackgroundTaskResult({}, answerTask, { ...validResult, relatedTo: "other-root" }).deferred, undefined);
+const audioTask = { id: "audio-task", kind: "captureTranscription", status: "succeeded", targetId: "capture", resultId: "capture" };
+const audioResult = { id: "capture", transcription: { status: "ready" }, audio: { attachmentPath: "new-path" } };
+assert.equal(mergeBackgroundTaskResult({ captures: [] }, audioTask, audioResult).deferred, true);
+assert.equal(mergeBackgroundTaskResult({ captures: [{ id: "capture", audio: { attachmentPath: "old-path" } }] }, audioTask, audioResult).deferred, undefined);
+deferredSync.reset();
+pagedSnapshot = { thoughts: [] };
+await deferredSync.sync([answerTask]);
+assert.equal(deferredReads, 2, "账户重置不复用前账户缓存");
+
+let transientFirst = true;
+const transportThenDeferred = createBackgroundResultController({
+  loadResult: async () => {
+    if (transientFirst) {
+      transientFirst = false;
+      throw Object.assign(new Error("synthetic transient"), { status: 503 });
+    }
+    return validResult;
+  },
+  applyResult: () => ({ deferred: true })
+});
+await transportThenDeferred.sync([answerTask]);
+assert.equal(transportThenDeferred.needsRetry(), true);
+await transportThenDeferred.sync([answerTask]);
+assert.equal(transportThenDeferred.needsRetry(), false, "合法结果已读不能残留传输重试账");
 
 console.log("Frontend background results checks passed: idempotent merge, account reset, late-result isolation and cross-content location.");

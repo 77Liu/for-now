@@ -335,7 +335,7 @@ export function renderPersonalContextSurface({
       const evidence = item?.sourceIds
         ?.map(id => sourceById.get(id))
         .filter(Boolean) || [];
-      return `<details class="personal-context-conclusion" data-context-type="${
+      return `<details class="personal-context-conclusion" data-context-conclusion-id="${escapeMarkup(item?.id || "")}" data-context-type="${
         escapeMarkup(item?.informationType || "")
       }"><summary><div><span>${
         escapeMarkup(item?.informationTypeLabel || "")
