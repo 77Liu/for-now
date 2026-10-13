@@ -139,6 +139,15 @@ type RedactionContext = {
   singletonIds: Set<string>;
 };
 
+type OnboardingV2Api = {
+  onboardingV2Schema: { steps: string[]; statuses: string[]; questions: Array<{
+    questionId: string; horizons?: string[]; answerDispositions?: Array<{ value: string }>;
+    axes?: Record<string, { values: string[] }>;
+  }> };
+  normalizeOnboardingV2(value: unknown, legacy?: unknown): JsonRecord;
+  onboardingV2ContextEntries(value: unknown): JsonRecord[];
+};
+
 type SupplementEstimator = (records: unknown[]) => number;
 
 function fail(message: string): never {
@@ -459,7 +468,7 @@ function sanitizeMapping<T>(
       .map(([, quoteToken]) => quoteToken);
     return `${token}${includedQuoteTokens.join("")}`;
   };
-  const transform = (text: string, field: string, objectPath: string[]): string => {
+  const transform = (text: string, field: string, objectPath: string[], onboardingPayload: boolean): string => {
     if (preserveTechnicalDigests && field === "sha256") {
       return redactTechnicalDigest(key, text);
     }
@@ -497,7 +506,7 @@ function sanitizeMapping<T>(
       const token = context.paths.get(text) || fail("Snapshot attachment path has no redaction mapping");
       return ATTACHMENT_PATH_FIELDS.has(field) || referenceField(field) ? token : withQuoteRelations(text, token);
     }
-    if (ENUM_STRING_KEYS.has(field)) return text;
+    if (!onboardingPayload && ENUM_STRING_KEYS.has(field)) return text;
     if (TIMEZONE_KEYS.has(field)) {
       try {
         new Intl.DateTimeFormat("en", { timeZone: text });
@@ -521,9 +530,9 @@ function sanitizeMapping<T>(
     }
     return stringMap.get(mapKey)!;
   };
-  const visit = (item: unknown, field: string, objectPath: string[]): unknown => {
-    if (typeof item === "string") return transform(item, field, objectPath);
-    if (Array.isArray(item)) return item.map(value => visit(value, field, [...objectPath, "[*]"]));
+  const visit = (item: unknown, field: string, objectPath: string[], onboardingPayload = false): unknown => {
+    if (typeof item === "string") return transform(item, field, objectPath, onboardingPayload);
+    if (Array.isArray(item)) return item.map(value => visit(value, field, [...objectPath, "[*]"], onboardingPayload));
     if (item && typeof item === "object") {
       const row = item as JsonRecord;
       const singletonObject = objectPath.length === 2 && objectPath[0] === "objects" && objectPath[1] === "[*]"
@@ -538,12 +547,265 @@ function sanitizeMapping<T>(
       // 仅保留已登记单例对象及其真实解析关系的结构身份，同名普通实体仍脱敏。
       return Object.fromEntries(Object.entries(row).map(([name, child]) => [name,
         (name === "id" && singletonObject) || (name === "targetId" && singletonRelation)
-          ? child : visit(child, name, [...objectPath, name])
+          ? child : visit(child, name, [...objectPath, name], onboardingPayload
+            || (singletonObject && row.kind === "onboardingV2" && row.id === "onboardingV2" && name === "payload"))
       ]));
     }
     return item;
   };
   return visit(value, "", []) as T;
+}
+
+/** 按真实v2单例及精确消费者路径保留固定技术值，不豁免任意同名扩展。 */
+function onboardingTechnicalRules(api: OnboardingV2Api): Map<string, Set<string>> {
+  const rules = new Map<string, Set<string>>();
+  const add = (path: string, values: string[]) => rules.set(path, new Set(values));
+  add("session.id", ["onboarding-v2"]);
+  add("session.status", api.onboardingV2Schema.statuses);
+  add("session.step", api.onboardingV2Schema.steps);
+  add("readiness", ["empty", "partial", "usable"]);
+  add("migration.selectedFlow", ["undecided", "legacy", "v2"]);
+  add("migration.entryPolicy", ["choose", "already_onboarded", "v2"]);
+  add("migration.legacy.status", ["pending", "completed", "dismissed"]);
+  add("migration.legacy.modelSummaryType", ["", "model_summary"]);
+  add("migration.legacy.resourceType", ["onboarding"]);
+  add("migration.legacy.resourceId", ["onboarding"]);
+  for (const question of api.onboardingV2Schema.questions) {
+    const prefix = question.questionId === "collaboration" ? "session.collaboration" : `session.answers.${question.questionId}`;
+    if (question.questionId !== "collaboration") add(`${prefix}.questionId`, [question.questionId]);
+    if (question.answerDispositions) add(`${prefix}.answerDisposition`, question.answerDispositions.map(item => item.value));
+    if (question.horizons) add(`${prefix}.structuredValue.[*].horizon`, question.horizons);
+    for (const [axis, definition] of Object.entries(question.axes || {})) {
+      add(`${prefix}.${axis}.value`, definition.values);
+      add(`${prefix}.${axis}.source`, ["user", "system_default"]);
+    }
+  }
+  return rules;
+}
+
+function isOnboardingSingleton(row: JsonRecord): boolean {
+  return row.kind === "onboardingV2" && row.id === "onboardingV2" && row.collection === "onboardingV2"
+    && row.field === "onboardingV2" && row.parentKey === null && row.objectKey === JSON.stringify(["onboardingV2"]);
+}
+
+function visitOnboardingValues(value: unknown, callback: (path: string, concrete: string[], value: unknown) => void,
+  concrete: string[] = [], pattern: string[] = []): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => visitOnboardingValues(item, callback, [...concrete, String(index)], [...pattern, "[*]"]));
+  } else if (value && typeof value === "object") {
+    for (const [key, item] of Object.entries(value)) visitOnboardingValues(item, callback, [...concrete, key], [...pattern, key]);
+  } else callback(pattern.join("."), concrete, value);
+}
+
+function preserveOnboardingTechnicalMetadata(source: StoreMapping, target: StoreMapping, api: OnboardingV2Api, key: Buffer): void {
+  const rules = onboardingTechnicalRules(api);
+  source.objects.forEach((row, index) => {
+    if (!isOnboardingSingleton(row)) return;
+    const next = target.objects[index];
+    if (!next || !isOnboardingSingleton(next)) fail("Onboarding singleton mapping identity changed");
+    visitOnboardingValues(row.payload, (pattern, concrete, value) => {
+      if (typeof value !== "string") return;
+      const technical = rules.get(pattern)?.has(value);
+      const sourceText = /^(?:session\.answers\.(?:currentContext|dailyRhythm)\.rawText|session\.answers\.(?:desiredChanges|recentObstacles)\.structuredValue\.\[\*\]\.(?:text|horizonText)|session\.collaboration\.additionalBoundary)$/u.test(pattern);
+      if (!technical && !sourceText) return;
+      let parent = next.payload as JsonRecord;
+      for (const part of concrete.slice(0, -1)) {
+        if (!parent || typeof parent[part] !== "object" || parent[part] === null) fail("Onboarding technical path changed during redaction");
+        parent = parent[part] as JsonRecord;
+      }
+      if (technical) parent[concrete.at(-1)!] = value;
+      else {
+        // 只替换真实五问正文，保持UTF-16长度以保留有效span；同名扩展不进入该路径。
+        const digest = createHmac("sha256", key).update(`onboarding-text\0${value}`).digest("hex");
+        let alias = digest.repeat(Math.ceil(value.length / digest.length)).slice(0, value.length);
+        if (alias && alias === value) alias = (alias[0] === "a" ? "b" : "a") + alias.slice(1);
+        parent[concrete.at(-1)!] = alias;
+      }
+    });
+  });
+}
+
+/** 恢复五问固定身份；复合权限身份只更新真实行及其结构引用。 */
+function preserveOnboardingReferences(source: StoreMapping, target: StoreMapping, api: OnboardingV2Api): void {
+  const questions = new Set(api.onboardingV2Schema.questions.map(item => item.questionId));
+  const ownership = new Map<string, string>();
+  source.objects.forEach((row, index) => {
+    const original = row.payload as JsonRecord, nextRow = target.objects[index], next = nextRow.payload as JsonRecord;
+    if (row.kind === "aiTask" && original.kind === "onboardingClaimExtraction"
+      && original.resourceType === "onboardingV2" && original.targetId === "onboarding-v2") {
+      // 真实抽取消费者只使用顶层targetId；payload.targetId属于其他任务协议，不予豁免。
+      next.targetId = "onboarding-v2";
+    }
+    if (row.kind === "userClaim" && Array.isArray(original.evidence) && Array.isArray(next.evidence)) {
+      original.evidence.forEach((item, evidenceIndex) => {
+        const evidence = item as JsonRecord;
+        if (evidence?.sourceType === "onboardingV2Answer" && questions.has(String(evidence.sourceId))) {
+          (next.evidence as JsonRecord[])[evidenceIndex].sourceId = evidence.sourceId;
+        }
+      });
+    }
+    if (row.kind !== "evidencePermission" || typeof original.sourceKey !== "string") return;
+    let parts: string[] | null = null;
+    try {
+      const parsed: unknown = JSON.parse(original.sourceKey);
+      if (Array.isArray(parsed) && parsed.every(item => typeof item === "string")) parts = parsed;
+    } catch {}
+    if (!parts || parts.length !== 4 || parts[0] !== "onboardingV2" || !questions.has(parts[1])
+      || parts[2] !== "" || parts[3] !== `answer:${parts[1]}`) return;
+    const oldKey = String(nextRow.objectKey);
+    next.sourceKey = original.sourceKey;
+    nextRow.id = original.sourceKey;
+    nextRow.objectKey = JSON.stringify(["evidencePermissions", original.sourceKey]);
+    ownership.set(oldKey, String(nextRow.objectKey));
+    source.lifecycles.forEach((lifecycle, lifecycleIndex) => {
+      if (lifecycle.resourceType !== "evidencePermission" || lifecycle.resourceId !== original.sourceKey) return;
+      const nextLifecycle = target.lifecycles[lifecycleIndex];
+      nextLifecycle.resourceId = original.sourceKey;
+      if (lifecycle.resourceKey === `evidencePermission:${original.sourceKey}`) nextLifecycle.resourceKey = lifecycle.resourceKey;
+    });
+  });
+  for (const row of [...target.objects, ...target.relations, ...target.attachmentRefs]) {
+    for (const field of ["parentKey", "ownerKey", "targetKey"]) {
+      const replacement = ownership.get(String(row[field]));
+      if (replacement) row[field] = replacement;
+    }
+  }
+}
+
+/** 比较源、重建及真实normalizer的技术投影；不得将回退默认值写回后制造通过。 */
+function assertOnboardingTechnicalSemantics(source: JsonRecord, target: JsonRecord, api: OnboardingV2Api,
+  canonicalJson: (value: unknown) => string): void {
+  const rules = onboardingTechnicalRules(api);
+  const projection = (value: unknown): JsonRecord => {
+    const result: JsonRecord = {};
+    visitOnboardingValues(value, (pattern, concrete, item) => {
+      const values = rules.get(pattern);
+      if (!values) return;
+      const label = concrete.join(".");
+      if (typeof item !== "string" || !values.has(item)) fail(`Unsupported onboarding technical value at ${label}`);
+      result[label] = item;
+    });
+    return result;
+  };
+  const before = projection(source.onboardingV2), after = projection(target.onboardingV2);
+  if (canonicalJson(before) !== canonicalJson(after)) fail("Snapshot onboardingV2 technical values changed during redaction/rebuild");
+  const normalizedBefore = projection(api.normalizeOnboardingV2(source.onboardingV2, source.onboarding));
+  const normalizedAfter = projection(api.normalizeOnboardingV2(target.onboardingV2, target.onboarding));
+  for (const [field, value] of Object.entries(before)) {
+    if (normalizedBefore[field] !== value || normalizedAfter[field] !== value) {
+      fail(`Snapshot onboardingV2 consumer changed technical value at ${field}`);
+    }
+  }
+  if (canonicalJson(normalizedBefore) !== canonicalJson(normalizedAfter)) fail("Snapshot onboardingV2 normalized technical semantics changed");
+}
+
+type OnboardingModelApi = {
+  prepareUserModelExtraction(store: JsonRecord): { value?: JsonRecord };
+  userModelCoreReadiness(store: JsonRecord): JsonRecord;
+  userModelEvidenceCurrent(store: JsonRecord, evidence: JsonRecord): boolean;
+};
+
+async function loadOnboardingModelApi(root: string): Promise<OnboardingModelApi> {
+  const catalog = await importFromRoot<{ loadPromptCatalog(options: { rootDir: string }): Promise<JsonRecord> }>(
+    root, "src/infrastructure/prompt-catalog/index.mjs");
+  const prompts = await importFromRoot<{ installPromptCatalog(value: JsonRecord): unknown }>(root, "src/shared/prompts/index.mjs");
+  prompts.installPromptCatalog(await catalog.loadPromptCatalog({ rootDir: root }));
+  return importFromRoot<OnboardingModelApi>(root, "src/app/index.mjs");
+}
+
+/** 只重算源消费者已确认匹配/有效的正文派生引用，不激活陈旧关系。 */
+function preserveOnboardingDerivedReferences(source: JsonRecord, target: JsonRecord, mapping: StoreMapping,
+  api: OnboardingV2Api, model: OnboardingModelApi): void {
+  const originalWork = model.prepareUserModelExtraction(source).value;
+  const redactedWork = model.prepareUserModelExtraction(target).value;
+  const tasks = Array.isArray(source.aiTasks) ? source.aiTasks as JsonRecord[] : [];
+  const nextTasks = Array.isArray(target.aiTasks) ? target.aiTasks as JsonRecord[] : [];
+  tasks.forEach((task, index) => {
+    if (task.kind !== "onboardingClaimExtraction" || task.resourceType !== "onboardingV2"
+      || task.targetId !== "onboarding-v2" || !originalWork?.inputHash) return;
+    const next = nextTasks[index];
+    if (!next) fail("Snapshot onboarding task disappeared");
+    for (const field of ["inputHash", "requestedInputHash", "requestedIntentInputHash"]) {
+      if (task[field] !== originalWork.inputHash) continue;
+      if (!redactedWork?.inputHash) fail("Snapshot onboarding matched source lost prepared input");
+      next[field] = redactedWork.inputHash;
+    }
+    const row = mapping.objects.find(item => item.kind === "aiTask" && item.id === next.id);
+    if (!row) fail("Snapshot onboarding task mapping disappeared");
+    row.payload = structuredClone(next);
+  });
+  const entries = api.onboardingV2ContextEntries(target.onboardingV2);
+  const sourceEntries = api.onboardingV2ContextEntries(source.onboardingV2);
+  const claims = Array.isArray(source.userClaims) ? source.userClaims as JsonRecord[] : [];
+  const nextClaims = Array.isArray(target.userClaims) ? target.userClaims as JsonRecord[] : [];
+  claims.forEach((claim, claimIndex) => {
+    const originalEvidence = Array.isArray(claim.evidence) ? claim.evidence as JsonRecord[] : [];
+    originalEvidence.forEach((evidence, evidenceIndex) => {
+      if (evidence?.sourceType !== "onboardingV2Answer" || !model.userModelEvidenceCurrent(source, evidence)) return;
+      const nextClaim = nextClaims[claimIndex];
+      const next = (nextClaim?.evidence as JsonRecord[] | undefined)?.[evidenceIndex];
+      const entry = entries.find(item => item.id === evidence.sourceId);
+      const originalEntry = sourceEntries.find(item => item.id === evidence.sourceId);
+      if (!next || !entry || !originalEntry || String(entry.text).length !== String(originalEntry.text).length) {
+        fail("Snapshot current onboarding evidence lost source UTF-16 length");
+      }
+      next.contentSha256 = createHash("sha256").update(String(entry.text)).digest("hex");
+      const row = mapping.objects.find(item => item.kind === "userClaim" && item.id === nextClaim.id);
+      if (!row) fail("Snapshot onboarding claim mapping disappeared");
+      row.payload = structuredClone(nextClaim);
+    });
+  });
+}
+
+/** 正文派生哈希/区间不会靠默认值掩盖：真实消费者结论发生变化就阻止快照。 */
+function assertOnboardingModelConsumers(source: JsonRecord, target: JsonRecord, api: OnboardingV2Api,
+  model: OnboardingModelApi, canonicalJson: (value: unknown) => string): void {
+  const sourceEntries = api.onboardingV2ContextEntries(source.onboardingV2);
+  const targetEntries = api.onboardingV2ContextEntries(target.onboardingV2);
+  const identities = (entries: JsonRecord[]) => entries.map(({ id, version, text }) => ({ id, version, utf16Length: String(text).length }));
+  if (canonicalJson(identities(sourceEntries)) !== canonicalJson(identities(targetEntries))) {
+    fail("Snapshot onboarding context-entry identities changed");
+  }
+  const originalWork = model.prepareUserModelExtraction(source).value;
+  const redactedWork = model.prepareUserModelExtraction(target).value;
+  const sourceIds = (work: JsonRecord | undefined) => Array.isArray(work?.sources)
+    ? (work.sources as JsonRecord[]).map(item => ({ id: item.id, version: item.version })) : null;
+  if (canonicalJson(sourceIds(originalWork)) !== canonicalJson(sourceIds(redactedWork))) {
+    fail("Snapshot onboarding permitted source identities changed");
+  }
+  const tasks = Array.isArray(source.aiTasks) ? source.aiTasks as JsonRecord[] : [];
+  const nextTasks = Array.isArray(target.aiTasks) ? target.aiTasks as JsonRecord[] : [];
+  tasks.forEach((task, index) => {
+    if (task.kind !== "onboardingClaimExtraction" || task.resourceType !== "onboardingV2" || task.targetId !== "onboarding-v2") return;
+    const next = nextTasks[index];
+    if (!next || next.targetId !== task.targetId) fail("Snapshot onboarding fixed task target changed");
+    for (const field of ["inputHash", "requestedInputHash", "requestedIntentInputHash"]) {
+      if (!Object.hasOwn(task, field)) continue;
+      const before = Boolean(originalWork?.inputHash && task[field] === originalWork.inputHash);
+      const after = Boolean(redactedWork?.inputHash && next[field] === redactedWork.inputHash);
+      if (before !== after) fail(`Snapshot onboarding task source match changed at ${field}`);
+    }
+  });
+  const readiness = (store: JsonRecord) => {
+    const { taskId: _taskId, ...result } = model.userModelCoreReadiness(store);
+    return result;
+  };
+  if (canonicalJson(readiness(source)) !== canonicalJson(readiness(target))) {
+    fail("Snapshot onboarding core readiness changed; inspect source-derived task hashes and permissions");
+  }
+  const claims = Array.isArray(source.userClaims) ? source.userClaims as JsonRecord[] : [];
+  const targetClaims = Array.isArray(target.userClaims) ? target.userClaims as JsonRecord[] : [];
+  claims.forEach((claim, claimIndex) => {
+    const evidence = Array.isArray(claim.evidence) ? claim.evidence as JsonRecord[] : [];
+    evidence.forEach((item, evidenceIndex) => {
+      if (item?.sourceType !== "onboardingV2Answer") return;
+      const next = (targetClaims[claimIndex]?.evidence as JsonRecord[] | undefined)?.[evidenceIndex];
+      if (!next || item.sourceId !== next.sourceId
+        || model.userModelEvidenceCurrent(source, item) !== model.userModelEvidenceCurrent(target, next)) {
+        fail(`Snapshot onboarding evidence consumer changed at userClaims.${claimIndex}.evidence.${evidenceIndex}; inspect source content hashes and spans`);
+      }
+    });
+  });
 }
 
 function redactTechnicalDigest(key: Buffer, value: unknown): string {
@@ -1221,6 +1483,7 @@ async function createSanitizedAccount(
     persistence.canonicalJson,
     clock.capturedAt
   );
+  const onboardingModel = await loadOnboardingModelApi(root);
   const sourceInspector = (await createClosedInspector(root, accountId, {}, clock)).backgroundAi;
   const beforeStates = taskStates(sourceStore, sourceInspector, redactionKey);
   const content = await importFromRoot<{ markdownText(value: string): string }>(root, "src/shared/content/index.mjs");
@@ -1230,6 +1493,8 @@ async function createSanitizedAccount(
   );
   const redactionContext = createRedactionContext(sourceMapping, redactionKey, content.markdownText, sourceInventory);
   const redactedMapping = sanitizeMapping(sourceMapping, redactionKey, redactionContext, stringMap);
+  const onboardingApi = await importFromRoot<OnboardingV2Api>(root, "src/modules/onboarding/index.mjs");
+  preserveOnboardingTechnicalMetadata(sourceMapping, redactedMapping, onboardingApi, redactionKey);
   const redactedAccountId = identityToken(redactionKey, "id", accountId);
   preserveTechnicalMetadata(
     sourceMapping,
@@ -1239,8 +1504,11 @@ async function createSanitizedAccount(
     supplement.estimateHistoricalUserSupplementOutputTokens
   );
   preservePersistenceMetadata(sourceMapping, redactedMapping, redactionContext, redactionKey);
+  preserveOnboardingReferences(sourceMapping, redactedMapping, onboardingApi);
   const redactedInventory = sanitizeMapping(sourceInventory, redactionKey, redactionContext, stringMap, true);
   const sanitizedStore = persistence.rebuildStoreObjects(redactedMapping);
+  assertOnboardingTechnicalSemantics(sourceStore, sanitizedStore, onboardingApi, persistence.canonicalJson);
+  preserveOnboardingDerivedReferences(sourceStore, sanitizedStore, redactedMapping, onboardingApi, onboardingModel);
   const sanitizedInspector = (await createClosedInspector(root, redactedAccountId, {}, clock)).backgroundAi;
 
   // 仅在真实映射关系已等价重建后，按原始匹配结论更新脱敏正文派生的候选 hash。
@@ -1249,6 +1517,8 @@ async function createSanitizedAccount(
   preserveMatchingRequestedIntentHashes(sourceStore, beforeStates, sanitizedStore, redactedMapping, sanitizedInspector, redactionKey);
 
   const finalStore = persistence.rebuildStoreObjects(redactedMapping);
+  assertOnboardingTechnicalSemantics(sourceStore, finalStore, onboardingApi, persistence.canonicalJson);
+  assertOnboardingModelConsumers(sourceStore, finalStore, onboardingApi, onboardingModel, persistence.canonicalJson);
   // 用真实持久化消费者验证脱敏后的完整重建值；验证结果只读，不写回待导出的数据。
   assertPersistedStoreConsumerContract(
     finalStore,
@@ -2870,6 +3140,179 @@ async function selfTest(root: string) {
   if (sanitizedHistorical.relations[0].targetId === "onboardingV2") {
     fail("Unresolved same-name relation incorrectly retained singleton identity");
   }
+  // 完整五问链使用真实schema/normalizer与mapper，不以默认回退替代源状态。
+  const onboardingApi = await importFromRoot<OnboardingV2Api>(root, "src/modules/onboarding/index.mjs");
+  const onboardingModel = await loadOnboardingModelApi(root);
+  const technicalStore: JsonRecord = {
+    onboardingV2: onboardingApi.normalizeOnboardingV2({
+      session: { id: "onboarding-v2", status: "completed", step: "candidates", revision: 3,
+        answers: {
+          currentContext: { rawText: "v2", version: 1 },
+          desiredChanges: { structuredValue: [{ text: "usable", horizon: "6m" }], version: 1 },
+          recentObstacles: { answerDisposition: "unknown", version: 1 },
+          dailyRhythm: { answerDisposition: "declined", version: 1 }
+        },
+        collaboration: {
+          responseLength: { value: "expanded", source: "user" },
+          suggestionMode: { value: "reasonFirst", source: "user" },
+          challengeStyle: { value: "direct", source: "user" }
+        }
+      }, migration: { selectedFlow: "v2" }
+    }),
+    aiTasks: [{ id: "v2-task", kind: "onboardingClaimExtraction", resourceType: "onboardingV2",
+      targetId: "onboarding-v2", status: "failed", payload: { targetId: "onboarding-v2" } }],
+    userClaims: [{ id: "v2-claim", evidence: [{ sourceType: "onboardingV2Answer", sourceId: "dailyRhythm" }],
+      extension: { sourceId: "dailyRhythm", targetId: "onboarding-v2" } }],
+    evidencePermissions: [{ schemaVersion: 1, accountId: "v2-account",
+      sourceKey: JSON.stringify(["onboardingV2", "currentContext", "", "answer:currentContext"]),
+      revision: 1, contextAllowed: false, learningAllowed: false, updatedAt: fixtureClock.capturedAt,
+      extension: { sourceId: "currentContext" } }]
+  };
+  (technicalStore.onboardingV2 as JsonRecord).extension = { step: "candidates", status: "completed", source: "user", readiness: "usable" };
+  Object.assign(technicalStore, persistenceMetadata.preparePersistenceDocument(technicalStore, () => fixtureClock.capturedAt));
+  const redactV2 = (store: JsonRecord, repair = true) => {
+    const mapping = persistence.mapStoreObjects("v2-account", store);
+    const context = createRedactionContext(mapping, hmacKey, content.markdownText);
+    const sanitized = sanitizeMapping(mapping, hmacKey, context);
+    preserveTechnicalMetadata(mapping, sanitized, context, hmacKey, compressionApi.estimateHistoricalUserSupplementOutputTokens);
+    preservePersistenceMetadata(mapping, sanitized, context, hmacKey);
+    if (repair) {
+      preserveOnboardingTechnicalMetadata(mapping, sanitized, onboardingApi, hmacKey);
+      preserveOnboardingReferences(mapping, sanitized, onboardingApi);
+    }
+    const rebuilt = persistence.rebuildStoreObjects(sanitized);
+    if (repair) preserveOnboardingDerivedReferences(store, rebuilt, sanitized, onboardingApi, onboardingModel);
+    assertMappingRoundTrip(sanitized,
+      persistence.mapStoreObjects(String(sanitized.fields[0].accountId), rebuilt), persistence.canonicalJson);
+    return rebuilt;
+  };
+  const expectOnboardingFailure = (operation: () => void, fragment: string) => {
+    try { operation(); } catch (error) {
+      if (error instanceof Error && error.message.includes(fragment)) return;
+      throw error;
+    }
+    fail("Onboarding self-test accepted a changed consumer contract");
+  };
+  expectOnboardingFailure(() => assertOnboardingTechnicalSemantics(technicalStore, redactV2(technicalStore, false),
+    onboardingApi, persistence.canonicalJson), "Unsupported onboarding technical value");
+  const repairedV2 = redactV2(technicalStore);
+  assertOnboardingTechnicalSemantics(technicalStore, repairedV2, onboardingApi, persistence.canonicalJson);
+  assertOnboardingModelConsumers(technicalStore, repairedV2, onboardingApi, onboardingModel, persistence.canonicalJson);
+  const repairedSession = (repairedV2.onboardingV2 as JsonRecord).session as JsonRecord;
+  const repairedAnswers = repairedSession.answers as Record<string, JsonRecord>;
+  const repairedExtension = (repairedV2.onboardingV2 as JsonRecord).extension as JsonRecord;
+  if (repairedAnswers.currentContext.rawText === "v2"
+    || (repairedAnswers.desiredChanges.structuredValue as JsonRecord[])[0].text === "usable"
+    || Object.values(repairedExtension).some(value => ["candidates", "completed", "user", "usable"].includes(String(value)))
+    || ((repairedV2.aiTasks as JsonRecord[])[0].payload as JsonRecord).targetId === "onboarding-v2"
+    || ((repairedV2.userClaims as JsonRecord[])[0].extension as JsonRecord).sourceId === "dailyRhythm"
+    || ((repairedV2.evidencePermissions as JsonRecord[])[0].extension as JsonRecord).sourceId === "currentContext") {
+    fail("Fixed onboarding identities escaped into user text, extensions or unrelated task payload");
+  }
+  for (const step of onboardingApi.onboardingV2Schema.steps) {
+    const variant = structuredClone(technicalStore);
+    ((variant.onboardingV2 as JsonRecord).session as JsonRecord).step = step;
+    assertOnboardingTechnicalSemantics(variant, redactV2(variant), onboardingApi, persistence.canonicalJson);
+  }
+  for (const question of onboardingApi.onboardingV2Schema.questions) {
+    for (const [axis, definition] of Object.entries(question.axes || {})) {
+      for (const value of definition.values) {
+        const variant = structuredClone(technicalStore);
+        const session = (variant.onboardingV2 as JsonRecord).session as JsonRecord;
+        (session.collaboration as JsonRecord)[axis] = { value, source: "user" };
+        assertOnboardingTechnicalSemantics(variant, redactV2(variant), onboardingApi, persistence.canonicalJson);
+      }
+    }
+    for (const horizon of question.horizons || []) {
+      const variant = structuredClone(technicalStore);
+      const session = (variant.onboardingV2 as JsonRecord).session as JsonRecord;
+      const answer = (session.answers as Record<string, JsonRecord>)[question.questionId];
+      answer.structuredValue = [{ text: "private horizon goal", horizon, ...(horizon === "custom" ? { horizonText: "自己选择😀" } : {}) }];
+      assertOnboardingTechnicalSemantics(variant, redactV2(variant), onboardingApi, persistence.canonicalJson);
+      assertOnboardingModelConsumers(variant, redactV2(variant), onboardingApi, onboardingModel, persistence.canonicalJson);
+    }
+  }
+  for (const selectedFlow of ["undecided", "legacy", "v2"]) {
+    const variant = structuredClone(technicalStore);
+    variant.onboarding = { status: "completed", answers: {}, understanding: "private legacy model" };
+    variant.onboardingV2 = onboardingApi.normalizeOnboardingV2({ migration: { selectedFlow } }, variant.onboarding);
+    const rebuilt = redactV2(variant);
+    assertOnboardingTechnicalSemantics(variant, rebuilt, onboardingApi, persistence.canonicalJson);
+    assertOnboardingModelConsumers(variant, rebuilt, onboardingApi, onboardingModel, persistence.canonicalJson);
+  }
+  const invalidV2 = structuredClone(technicalStore);
+  ((invalidV2.onboardingV2 as JsonRecord).session as JsonRecord).step = "private-unsupported-step";
+  expectOnboardingFailure(() => assertOnboardingTechnicalSemantics(invalidV2, redactV2(invalidV2),
+    onboardingApi, persistence.canonicalJson), "Unsupported onboarding technical value at session.step");
+  const inconsistentV2 = structuredClone(technicalStore);
+  (inconsistentV2.onboardingV2 as JsonRecord).readiness = "empty";
+  expectOnboardingFailure(() => assertOnboardingTechnicalSemantics(inconsistentV2, redactV2(inconsistentV2),
+    onboardingApi, persistence.canonicalJson), "consumer changed technical value at readiness");
+  // 真实正文派生任务哈希与引文有效性必须显式暴露失真，不通过normalize制造PASS。
+  const matchedV2 = structuredClone(technicalStore);
+  (matchedV2.aiTasks as JsonRecord[])[0].inputHash = onboardingModel.prepareUserModelExtraction(matchedV2).value?.inputHash;
+  const matchedRebuilt = redactV2(matchedV2);
+  assertOnboardingModelConsumers(matchedV2, matchedRebuilt, onboardingApi, onboardingModel, persistence.canonicalJson);
+  (matchedRebuilt.aiTasks as JsonRecord[])[0].inputHash = "deliberately-broken";
+  expectOnboardingFailure(() => assertOnboardingModelConsumers(matchedV2, matchedRebuilt,
+    onboardingApi, onboardingModel, persistence.canonicalJson), "task source match changed at inputHash");
+  const evidencedV2 = structuredClone(technicalStore);
+  const entry = onboardingApi.onboardingV2ContextEntries(evidencedV2.onboardingV2).find(item => item.id === "dailyRhythm")!;
+  const evidence = ((evidencedV2.userClaims as JsonRecord[])[0].evidence as JsonRecord[])[0];
+  evidence.sourceVersion = entry.version;
+  evidence.contentSha256 = createHash("sha256").update(String(entry.text)).digest("hex");
+  evidence.span = [0, 1];
+  if (!onboardingModel.userModelEvidenceCurrent(evidencedV2, evidence)) fail("Synthetic onboarding evidence is not current at source");
+  const evidencedRebuilt = redactV2(evidencedV2);
+  assertOnboardingModelConsumers(evidencedV2, evidencedRebuilt, onboardingApi, onboardingModel, persistence.canonicalJson);
+  ((evidencedRebuilt.userClaims as JsonRecord[])[0].evidence as JsonRecord[])[0].span = [0, 99999];
+  expectOnboardingFailure(() => assertOnboardingModelConsumers(evidencedV2, evidencedRebuilt,
+    onboardingApi, onboardingModel, persistence.canonicalJson), "evidence consumer changed");
+  const unicodeV2 = structuredClone(technicalStore);
+  const unicodeState = unicodeV2.onboardingV2 as JsonRecord;
+  const unicodeSession = unicodeState.session as JsonRecord;
+  (unicodeSession.answers as Record<string, JsonRecord>).dailyRhythm = {
+    questionId: "dailyRhythm", rawText: "长文本😀".repeat(35), version: 2, contextAllowed: true
+  };
+  unicodeV2.onboardingV2 = onboardingApi.normalizeOnboardingV2(unicodeState);
+  const unicodeEntry = onboardingApi.onboardingV2ContextEntries(unicodeV2.onboardingV2).find(item => item.id === "dailyRhythm")!;
+  const unicodeEvidence = ((unicodeV2.userClaims as JsonRecord[])[0].evidence as JsonRecord[])[0];
+  unicodeEvidence.sourceVersion = unicodeEntry.version;
+  unicodeEvidence.contentSha256 = createHash("sha256").update(String(unicodeEntry.text)).digest("hex");
+  unicodeEvidence.span = [2, String(unicodeEntry.text).length];
+  const sourceHash = onboardingModel.prepareUserModelExtraction(unicodeV2).value!.inputHash;
+  const unicodeTask = (unicodeV2.aiTasks as JsonRecord[])[0];
+  unicodeTask.inputHash = sourceHash;
+  unicodeTask.requestedInputHash = sourceHash;
+  unicodeTask.requestedIntentInputHash = sourceHash;
+  const unicodeRebuilt = redactV2(unicodeV2);
+  assertOnboardingTechnicalSemantics(unicodeV2, unicodeRebuilt, onboardingApi, persistence.canonicalJson);
+  assertOnboardingModelConsumers(unicodeV2, unicodeRebuilt, onboardingApi, onboardingModel, persistence.canonicalJson);
+  const v2Inspector = (await createClosedInspector(root, "v2-account", {}, fixtureClock)).backgroundAi;
+  assertSameTaskSemantics(taskStates(unicodeV2, v2Inspector, hmacKey),
+    taskStates(unicodeRebuilt, v2Inspector, hmacKey, true));
+  const rebuiltEvidence = ((unicodeRebuilt.userClaims as JsonRecord[])[0].evidence as JsonRecord[])[0];
+  if (persistence.canonicalJson(unicodeEvidence.span) !== persistence.canonicalJson(rebuiltEvidence.span)
+    || rebuiltEvidence.contentSha256 === unicodeEvidence.contentSha256) fail("Unicode evidence span or source digest was not faithfully redacted");
+  for (const status of ["queued", "running", "succeeded", "failed", "cancelled", "stale"]) {
+    const variant = structuredClone(unicodeV2);
+    (variant.aiTasks as JsonRecord[])[0].status = status;
+    assertOnboardingModelConsumers(variant, redactV2(variant), onboardingApi, onboardingModel, persistence.canonicalJson);
+  }
+  const staleV2 = structuredClone(unicodeV2);
+  const staleTask = (staleV2.aiTasks as JsonRecord[])[0];
+  for (const field of ["inputHash", "requestedInputHash", "requestedIntentInputHash"]) staleTask[field] = "0".repeat(64);
+  const staleEvidence = ((staleV2.userClaims as JsonRecord[])[0].evidence as JsonRecord[])[0];
+  staleEvidence.contentSha256 = "0".repeat(64);
+  const staleRebuilt = redactV2(staleV2);
+  assertOnboardingModelConsumers(staleV2, staleRebuilt, onboardingApi, onboardingModel, persistence.canonicalJson);
+  if (onboardingModel.userModelEvidenceCurrent(staleRebuilt,
+    ((staleRebuilt.userClaims as JsonRecord[])[0].evidence as JsonRecord[])[0])) {
+    fail("Stale onboarding evidence was incorrectly reactivated");
+  }
+  const invalidSpanV2 = structuredClone(unicodeV2);
+  ((invalidSpanV2.userClaims as JsonRecord[])[0].evidence as JsonRecord[])[0].span = [0, 99999];
+  assertOnboardingModelConsumers(invalidSpanV2, redactV2(invalidSpanV2), onboardingApi, onboardingModel, persistence.canonicalJson);
   process.stdout.write("Startup gate synthetic checks passed: construction is inert, task classifications survive redaction, and media/dispatch effects are blocked.\n");
 }
 

@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 240,
-  "updated_at": "2026-10-13T11:36:22.048Z",
+  "revision": 244,
+  "updated_at": "2026-10-13T12:09:31.284Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -9,7 +9,7 @@
     "write_authority": "唯一维护者；必须经coordination:update入口更新"
   },
   "rule_baseline": {
-    "commit": "0774ca234035c93d6668e50fa666b2ef8b82992f",
+    "commit": "66190502a2c9b59f413809582ab65d02aa706b10",
     "effective_date": "2026-10-13",
     "source": "PROJECT_RULES.md及其唯一正文引用；控制面协议2.2、每版本¥4共享测试许可"
   },
@@ -20,7 +20,7 @@
   "iteration": {
     "id": "v0.5.14",
     "status": "IMPLEMENTING",
-    "phase": "控制面增量协议、kernel职责分离、转写定位和历史压缩闭环",
+    "phase": "历史ASR分包修复与历史日摘要回填；待本机端到端及最终全局门",
     "started_by": {
       "iteration_id": "v0.5.13",
       "event_id": "v0.5.13-8b14bb6d-5580-4e7e-a2ea-10750c49e32b"
@@ -48,8 +48,8 @@
     "requirements_scope": "定向回读；完整采集快照仍stale，未冒充全池最新",
     "baseline": {
       "branch": "develop",
-      "sha": "95caf2dbffd2443d40932519bf64f8d908dfadb8",
-      "selection": "Owner新范围后在保留feat串行实施；最终重新固定候选"
+      "sha": "66190502a2c9b59f413809582ab65d02aa706b10",
+      "selection": "当前已接入前端职责切片；同一保留feat串行继续本次范围，最终重新固定候选"
     },
     "acceptance": {
       "recording": "Owner确认历史原音完整、转写遗漏，优先核对ASR输入/返回/保存展示；合成首中尾真实ASR只证明样例，不代替历史badcase",
@@ -67,10 +67,8 @@
     ],
     "cumulative_predecessor": "git:cd8055356a190f87bf6346fa806ec0dee85f1711",
     "implementation_order": [
-      "控制面增量协议与授权规则",
-      "kernel职责分离",
-      "转写链路定位与本机iOS交互",
-      "历史日摘要回填及真实本机压缩到回答闭环",
+      "历史ASR分包修复及原音验收",
+      "历史日摘要回填与真实本机PG压缩到回答闭环",
       "重新固定候选及必要有状态全局门"
     ],
     "feedback_acceptance": [
@@ -127,7 +125,7 @@
   "active_tasks": [],
   "candidate": null,
   "authorization": {
-    "source": "Owner本轮控制面规则与八项注释；既有for_now_backup账户权限持续有效",
+    "source": "Owner本轮控制面规则与八项注释；既有for_now_backup账户权限持续有效；Owner本轮再次明确额度内费用无需申请，并授权已定位shenji原音向火山ASR复现",
     "allowed_actions": [
       "本地需求核对、实现、自查、主控审查、验证、提交及合入develop",
       "线上只读观察与隔离验证",
@@ -153,7 +151,7 @@
       "version": "v0.5.14",
       "limit_cny": 4,
       "shared_paid_apis": true,
-      "committed_or_reserved_cny": 0.007753993055555556,
+      "committed_or_reserved_cny": 0.07419434083333333,
       "cost_basis": "公开单价估算，非供应商最终账单",
       "ledger_ref": "reports/local/v0514-paid-acceptance-current.json",
       "expiry_mode": "until_revoked"
@@ -161,17 +159,17 @@
   },
   "blockers": [
     {
-      "id": "snapshot-onboarding-semantics",
+      "id": "historical-asr-packet-timing",
       "status": "CONFIRMED",
-      "reason": "现有快照onboardingV2的step/selectedFlow/readiness固定值被HMAC替换，真实normalize消费者会回退默认值；不能用于真实冷启/压缩闭环语义验收",
+      "reason": "同一历史原音/同async模型，8.192秒突发包识别116字，200ms按节奏分包识别176字，恢复1.662秒起首段及中段；正式传输修复未接入",
       "affected_actions": [
-        "真实冷启/压缩本机闭环",
-        "最终新候选快照门"
+        "历史ASR验收",
+        "v0.5.14发布"
       ],
-      "evidence_ref": "scripts/release-state-startup-gate.mts及reports/local/v0514-startup-snapshot-current.json"
+      "evidence_ref": "reports/local/v0514-asr-historical-current.json"
     }
   ],
-  "next_action": "提交接入已审查前端职责切片；串行派发快照冷启技术枚举精确保真修复；主控核对已定位历史原音。",
+  "next_action": "提交已审查且真实采集通过的快照修复并接入develop；串行派发ASR发送分包/生命周期/时长计量修复，之后历史压缩回填及本机闭环。",
   "runtime": {
     "sha": "a901c8507094528e48992802b102911086331043",
     "package_version": "0.5.13",
@@ -243,7 +241,7 @@
     },
     {
       "id": "kernel-boundary",
-      "candidate_sha": "0774ca2+本切片待提交差分",
+      "candidate_sha": "d526f6c",
       "conclusion": "主控独立审查真实表单/任务登记/会话/测试适配器消费者，TS构建与模块检查PASS；kernel482行",
       "limitations": [
         "仅职责切片及相关自测；新候选全局门另行执行"
@@ -252,6 +250,30 @@
         "public/frontend/app/runtime/kernel.mjs",
         "public/test-support/view-scope.mts",
         "public/frontend/app/runtime/chat-submission.mts"
+      ]
+    },
+    {
+      "id": "historical-asr-reproduction",
+      "candidate_sha": "6619050（ASR未改）",
+      "conclusion": "确认分包节奏缺陷：同音同模型200ms分包恢复首段及中段；正式代码待修复",
+      "limitations": [
+        "临时传输对照不等于已接入修复；整段模式存在重叠，未采用；保持原音与失败历史"
+      ],
+      "refs": [
+        "reports/local/v0514-asr-historical-current.json"
+      ]
+    },
+    {
+      "id": "snapshot-onboarding-semantics",
+      "candidate_sha": "6619050+启动门脚本ed6087cb（待提交）",
+      "conclusion": "主控沿完整源/脱敏/重建/normalize/就绪/证据消费者审查；真实4账户生产采集保真PASS",
+      "limitations": [
+        "仅快照语义与采集；最终新候选全局启动/恢复门仍待执行",
+        "旧任务失败原因未改写，非通用全模型引文重写"
+      ],
+      "refs": [
+        "scripts/release-state-startup-gate.mts",
+        "reports/local/v0514-startup-snapshot-current.json#cf3ca5d1eba9f5b11ea80d1cf90ebae956f21d7b77a2fb8c5e2c18a29380b3dd"
       ]
     }
   ],
