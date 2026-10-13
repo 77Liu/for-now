@@ -3,10 +3,25 @@
  * 建立时间：2026-10-13
  * 状态：active
  * 边界：不分包、不轮询、不自动重试或回退；取消/失败不得返回成功正文。
+ * @partial 验收未全部完成，单次请求和保存恢复已有实际成功证据。
+ * @partialScope 逐字准确率、广泛口音/噪声样本及真机录音链尚未完整验收。
+ * @partialVersion v0.5.14未发布候选。
+ * @partialReason 历史原音与首尾样例已核对，但无完整人工逐字真值和全面设备样本。
+ * @partialAuthorization Owner本聊天2026-10-14注释6授权保留并显式标注。
+ * @partialUsage 本地默认整文件HTTP可用；不代表生产已切换或转写逐字保真已通过。
  */
 import { randomUUID } from "node:crypto";
 
-/** 官方极速版整文件单请求端点，不使用WS分包或submit/query轮询。 @since unreleased */
+/**
+ * 官方极速版整文件单请求端点，不使用WS分包或submit/query轮询。
+ * @partial 验收未全部完成，单次请求和保存恢复已有实际成功证据。
+ * @partialScope 逐字准确率、广泛口音/噪声样本及真机录音链尚未完整验收。
+ * @partialVersion v0.5.14未发布候选。
+ * @partialReason 历史原音与首尾样例已核对，但无完整人工逐字真值和全面设备样本。
+ * @partialAuthorization Owner本聊天2026-10-14注释6授权保留并显式标注。
+ * @partialUsage 本地默认整文件HTTP可用；不代表生产已切换或转写逐字保真已通过。
+ * @since unreleased
+ */
 export const DEFAULT_VOLCENGINE_FILE_ASR_ENDPOINT = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash";
 const RESOURCE_ID = "volc.bigasr.auc_turbo";
 
@@ -32,6 +47,12 @@ const cancelled = () => Object.assign(new Error("语音识别已取消"), { name
  * @param options 凭据、官方端点覆盖及本次请求的有界超时，不改变其他语音请求。
  * @returns 一次请求完整Base64音频的识别函数；返回完整文字、分句和provider实测毫秒。
  * @throws 请求失败、空答或计量字段无效时拒绝；用户取消保留AbortError。
+ * @partial 验收未全部完成，单次请求和保存恢复已有实际成功证据。
+ * @partialScope 逐字准确率、广泛口音/噪声样本及真机录音链尚未完整验收。
+ * @partialVersion v0.5.14未发布候选。
+ * @partialReason 历史原音与首尾样例已核对，但无完整人工逐字真值和全面设备样本。
+ * @partialAuthorization Owner本聊天2026-10-14注释6授权保留并显式标注。
+ * @partialUsage 本地默认整文件HTTP可用；不代表生产已切换或转写逐字保真已通过。
  * @since unreleased
  */
 export function createVolcengineFileAsrTransport({

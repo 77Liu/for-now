@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 270,
-  "updated_at": "2026-10-13T17:14:51.990Z",
+  "revision": 272,
+  "updated_at": "2026-10-13T17:44:57.497Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -9,13 +9,13 @@
     "write_authority": "唯一维护者；必须经coordination:update入口更新"
   },
   "rule_baseline": {
-    "commit": "2cab2e",
+    "commit": "60a500",
     "effective_date": "2026-10-14",
-    "source": "PROJECT_RULES.md及其唯一正文引用；控制面协议2.3本次更新起生效；现有每版本¥4共享测试许可保持"
+    "source": "PROJECT_RULES.md及其唯一正文引用；控制面协议2.3、源码partial提交治理与每版本¥4共享测试许可"
   },
   "work_mode": {
     "status": "ACTIVE",
-    "scope": "落实Owner本次控制面规则与更新入口调整；v0.5.14业务候选保持待发布信号，不开展生产动作"
+    "scope": "维护当前v0.5.14候选与控制面；等待Owner发布信号"
   },
   "iteration": {
     "id": "v0.5.14",
@@ -133,7 +133,8 @@
       "线上只读观察与隔离验证",
       "Owner明确授权现有for_now_backup账户全部现有权限，含生产状态读取、本机快照落盘及隔离PG验证；按任务需要直接执行，不逐次申请",
       "每版本上线前所有付费API共享人民币4元测试额度，阈值内持续授权；超过4元先报告申请",
-      "Owner本轮明确授权已有脱敏生产状态切片上下文发送当前应用DeepSeek API，用于本机日压缩/恢复/冷启/新回答闭环；费用计入版本共享4元，额度内必要测试不重复申请。"
+      "Owner本轮明确授权已有脱敏生产状态切片上下文发送当前应用DeepSeek API，用于本机日压缩/恢复/冷启/新回答闭环；费用计入版本共享4元，额度内必要测试不重复申请。",
+      "Owner2026-10-14注释6授权本切片保留并提交明确标注范围/版本/原因的partial ASR源码；仅注释治理，不自动启用流式或发布生产"
     ],
     "excluded": [
       "push/tag/Release/生产上线",
@@ -161,7 +162,7 @@
     }
   },
   "blockers": [],
-  "next_action": "等待Owner针对v0.5.14发布动作的明确指令；不开始新版本/推送/标记/Release/部署/线上测试。授权范围内的后续动作沿当前候选与证据执行，不重做未变化验证。",
+  "next_action": "等待Owner针对v0.5.14发布动作的明确指令；不开始新版本/推送/标记/Release/部署/线上测试。下一版本新增候选只在飞书需求池管理，启动前重新选基线并冻结范围；不重做未变化验证。",
   "runtime": {
     "sha": "a901c8",
     "package_version": "0.5.13",
@@ -214,7 +215,8 @@
       "candidate_sha": "ce4f58",
       "conclusion": "整文件HTTP识别、实际转写任务保存及PG重启恢复通过",
       "limitations": [
-        "逐字保真仍partial；原音润色/凝练未真实调用；真机采集与生产切换未验收"
+        "逐字保真仍partial；原音润色/凝练未真实调用；真机采集与生产切换未验收",
+        "文件头及公共接口已标注partial范围、v0.5.14候选、原因与Owner授权；流式默认暂不用，本轮仅注释，复用原行为验收"
       ],
       "refs": [
         "src/infrastructure/ai-providers/volcengine-file-asr.mts",
@@ -240,7 +242,7 @@
       "candidate_sha": "9c7a8e",
       "conclusion": "日摘要回填的日期下界、预算准入、去重及终态保存专项通过",
       "limitations": [
-        "只证明本地回填边界，不代表生产全历史已生成；历史用户补充整理尚无单独真实生成成功回执"
+        "只证明本地回填边界，不代表生产全历史已生成；历史用户补充整理尚无单独真实生成成功回执，Owner本轮明确低优保留"
       ],
       "refs": [
         "git:d627fd",

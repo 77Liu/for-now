@@ -3,6 +3,12 @@
  * 建立时间：未知
  * 状态：active
  * 边界：默认整文件HTTP；流式暂不用，仅显式启用；失败不付费回退，原音不覆盖。
+ * @partial 仅ASR分支，TTS不属于本标记范围。
+ * @partialScope 整文件ASR逐字保真/真机覆盖尚未完整验收；流式基建保留暂不用。
+ * @partialVersion v0.5.14未发布候选。
+ * @partialReason 整文件识别已有真实保存恢复证据；保留流式未作为当前默认验收链。
+ * @partialAuthorization Owner本聊天2026-10-14注释6授权保留并显式标注。
+ * @partialUsage 默认file；streaming仅保留显式配置入口，不自动回退，不随提交启用。
  */
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
@@ -431,6 +437,12 @@ function sendWebSocket(socket, data) {
  * transcribe接受调用方现有maxDurationMs，在连接provider前校验解码数据时长。
  * @param {object} options 凭据、现有端点及可替换的网络/转换/等待端口。
  * @returns {object} 语音合成、录音识别与音频准备能力。
+ * @partial 仅ASR分支，TTS不属于本标记范围。
+ * @partialScope 整文件ASR逐字保真/真机覆盖尚未完整验收；流式基建保留暂不用。
+ * @partialVersion v0.5.14未发布候选。
+ * @partialReason 整文件识别已有真实保存恢复证据；保留流式未作为当前默认验收链。
+ * @partialAuthorization Owner本聊天2026-10-14注释6授权保留并显式标注。
+ * @partialUsage 默认file；streaming仅保留显式配置入口，不自动回退，不随提交启用。
  */
 export function createVolcengineSpeechTransport({
   apiKey = "",
