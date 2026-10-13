@@ -66,7 +66,7 @@ function isSpeechPlayer(player: HTMLAudioElement): boolean {
   return Boolean(player.closest(".capture-speech-player"));
 }
 
-/** 创建页面会话内的播放器生命周期管理器。 @since unreleased */
+/** 创建页面会话内的播放器生命周期管理器。 @since v0.5.14 */
 export function createCaptureAudioLifecycle({ headStatus }: CaptureAudioLifecycleOptions) {
   if (typeof headStatus !== "function") {
     throw new TypeError("Capture audio lifecycle requires a headStatus port");
@@ -147,7 +147,7 @@ export function createCaptureAudioLifecycle({ headStatus }: CaptureAudioLifecycl
   };
 
   return Object.freeze({
-    /** 为一次列表替换暂存当前页面、账户和资源的播放器节点。 @since unreleased */
+    /** 为一次列表替换暂存当前页面、账户和资源的播放器节点。 @since v0.5.14 */
     beforeRender(root: ParentNode, scope: CaptureAudioScope): void {
       if (activeScope && !sameScope(activeScope, scope)) dispose(root);
       activeScope = scope;
@@ -159,7 +159,7 @@ export function createCaptureAudioLifecycle({ headStatus }: CaptureAudioLifecycl
         });
     },
 
-    /** 在新 DOM 上恢复同资源播放器并绑定指向当前状态节点的监听器。 @since unreleased */
+    /** 在新 DOM 上恢复同资源播放器并绑定指向当前状态节点的监听器。 @since v0.5.14 */
     afterRender(root: ParentNode, scope: CaptureAudioScope): void {
       if (!current(scope)) return;
       const used = new Set<HTMLAudioElement>();
@@ -190,7 +190,7 @@ export function createCaptureAudioLifecycle({ headStatus }: CaptureAudioLifecycl
       retained.clear();
     },
 
-    /** 对原音或已有朗读缓存执行只读重试，不会上传或合成音频。 @since unreleased */
+    /** 对原音或已有朗读缓存执行只读重试，不会上传或合成音频。 @since v0.5.14 */
     async retry(button: HTMLButtonElement): Promise<boolean> {
       const player = button.closest(".capture-audio-source, .capture-speech-player")
         ?.querySelector("audio");
@@ -260,7 +260,7 @@ export function createCaptureAudioLifecycle({ headStatus }: CaptureAudioLifecycl
       }
     },
 
-    /** 结束页面或登录会话并释放所有保留播放器与旧状态归属。 @since unreleased */
+    /** 结束页面或登录会话并释放所有保留播放器与旧状态归属。 @since v0.5.14 */
     dispose
   });
 }

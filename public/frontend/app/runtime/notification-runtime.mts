@@ -35,7 +35,7 @@ type Dependencies = {
 /**
  * 组合现有通知职责。readNotificationSnapshot(false)只读取，loadNotifications保留轮询接入。
  * 失败和迟到会话返回false，不以旧列表冒充本次读取成功。
- * @since unreleased
+ * @since v0.5.14
  */
 export function createNotificationRuntime({
   runtime, getSnapshot, getSessionSerial, request, syncResults, setUnreadDot, retryLimit, isPendingTask

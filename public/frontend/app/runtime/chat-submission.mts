@@ -17,7 +17,7 @@ type Ports = {
   showToast(message: string, kind: string): void;
 };
 
-/** 绑定原聊天入口；未确认请求按相同输入复用完整载荷，终态或修改输入开启新请求。 @since unreleased */
+/** 绑定原聊天入口；未确认请求按相同输入复用完整载荷，终态或修改输入开启新请求。 @since v0.5.14 */
 export function installChatSubmission(ports: Ports): void {
   const { runtime, $ } = ports;
   const form = $("#chat-form") as HTMLFormElement;

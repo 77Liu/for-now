@@ -9,7 +9,7 @@ interface NavigationPorts {
   openRecord(): void;
 }
 
-/** 显式区分今日与记录动作，未知动作不触发导航。 @since unreleased */
+/** 显式区分今日与记录动作，未知动作不触发导航。 @since v0.5.14 */
 export function navigateAfterOnboarding(action: string, ports: NavigationPorts): void {
   if (action === "today" || action === "question") {
     ports.showToday();

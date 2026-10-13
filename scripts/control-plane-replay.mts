@@ -3,7 +3,7 @@
  * 建立时间：2026-10-13；状态：active。
  * 边界：旧事件原样读取；新格式以必要检查点或已校验状态为基线，不推断缺失值。
  */
-/** 首个格式3事件启用六位记录与稳定ID差量；旧格式2仍按原契约读取。 @since unreleased */
+/** 首个格式3事件启用六位记录与稳定ID差量；旧格式2仍按原契约读取。 @since v0.5.14 */
 export const CONTROL_EVENT_FORMAT = 3;
 
 type Row = Record<string, unknown>;
@@ -20,7 +20,7 @@ const stableValue = (value: unknown): unknown => Array.isArray(value) ? value.ma
 const equal = (a: unknown, b: unknown): boolean => JSON.stringify(stableValue(a)) === JSON.stringify(stableValue(b));
 const cell = (present: boolean, value?: unknown): Cell => present ? { present: true, value } : { present: false };
 
-/** 项目记录的哈希缩为六位；协议必需的认证、签名及锁文件字段保持原值。 @since unreleased */
+/** 项目记录的哈希缩为六位；协议必需的认证、签名及锁文件字段保持原值。 @since v0.5.14 */
 export function shortRecordHashes<T>(value: T): T {
   const visit = (item: unknown, key = "", hashes = false): unknown => {
     if (/^(?:signature|sign|token|secret|password|integrity|protocol_fields)$/iu.test(key)) return structuredClone(item);
@@ -53,7 +53,7 @@ function stableIdKey(...arrays: unknown[][]): string | null {
   return null;
 }
 
-/** 稳定ID集合按身份生成内容差量；顺序单独记录，缺失与null保持不同语义。 @since unreleased */
+/** 稳定ID集合按身份生成内容差量；顺序单独记录，缺失与null保持不同语义。 @since v0.5.14 */
 export function stateChanges(before: Row, after: Row): Array<Change | ItemChange | OrderChange> {
   const changes: Array<Change | ItemChange | OrderChange> = [];
   function diff(path: Segment[], left: Cell, right: Cell): void {
@@ -106,7 +106,7 @@ export function stateChanges(before: Row, after: Row): Array<Change | ItemChange
   return changes;
 }
 
-/** 严格核对前值并恢复身份与顺序；format=2按原位置契约回放旧事件。 @since unreleased */
+/** 严格核对前值并恢复身份与顺序；format=2按原位置契约回放旧事件。 @since v0.5.14 */
 export function replayChanges(before: Row, value: unknown, format = CONTROL_EVENT_FORMAT): Row {
   if (!Array.isArray(value)) throw new Error("差量changes须为数组");
   const next = structuredClone(before);
@@ -187,7 +187,7 @@ export function replayChanges(before: Row, value: unknown, format = CONTROL_EVEN
   return next;
 }
 
-/** 仅供已验证的读取消费者使用；重建状态不成为新事件的可序列化全量字段。 @since unreleased */
+/** 仅供已验证的读取消费者使用；重建状态不成为新事件的可序列化全量字段。 @since v0.5.14 */
 export function materializeEvent(event: Row, state: Row): void {
   Object.defineProperty(event, "state_after", { value: state, enumerable: false, configurable: true });
 }

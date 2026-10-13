@@ -7,13 +7,13 @@ type SyncError = { status?: number; code?: string };
 type Failure = { attempts: number; terminal: boolean };
 const AUTOMATIC_ATTEMPT_LIMIT = 3;
 
-/** 结果接口明确不存在时停止自动请求，不推断原文是否还在。 @since unreleased */
+/** 结果接口明确不存在时停止自动请求，不推断原文是否还在。 @since v0.5.14 */
 export function isUnavailableResult(error: SyncError | null): boolean {
   return error?.status === 404 || error?.status === 410
     || error?.code === "TASK_RESULT_UNAVAILABLE";
 }
 
-/** 创建当前账户会话的恢复账；手动重试和退出账户由调用方显式清除。 @since unreleased */
+/** 创建当前账户会话的恢复账；手动重试和退出账户由调用方显式清除。 @since v0.5.14 */
 export function createResultRecovery() {
   const failures = new Map<string, Failure>();
   return {

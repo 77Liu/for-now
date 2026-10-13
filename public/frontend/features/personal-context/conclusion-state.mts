@@ -6,7 +6,7 @@
 const SELECTOR = "details[data-context-conclusion-id]";
 type Position = { window: Window; x: number; id: string; top: number };
 
-/** 创建结论视图状态；在同步重绘前后使用，reset 不保留旧账户状态。 @since unreleased */
+/** 创建结论视图状态；在同步重绘前后使用，reset 不保留旧账户状态。 @since v0.5.14 */
 export function createConclusionViewState() {
   const expanded = new Map<string, boolean>();
   let position: Position | null = null;

@@ -5,7 +5,7 @@
  * 边界：默认整文件HTTP；流式暂不用，仅显式启用；失败不付费回退，原音不覆盖。
  * @partial 仅ASR分支，TTS不属于本标记范围。
  * @partialScope 整文件ASR逐字保真/真机覆盖尚未完整验收；流式基建保留暂不用。
- * @partialVersion v0.5.14未发布候选。
+ * @partialVersion v0.5.14。
  * @partialReason 整文件识别已有真实保存恢复证据；保留流式未作为当前默认验收链。
  * @partialAuthorization Owner本聊天2026-10-14注释6授权保留并显式标注。
  * @partialUsage 默认file；streaming仅保留显式配置入口，不自动回退，不随提交启用。
@@ -439,7 +439,7 @@ function sendWebSocket(socket, data) {
  * @returns {object} 语音合成、录音识别与音频准备能力。
  * @partial 仅ASR分支，TTS不属于本标记范围。
  * @partialScope 整文件ASR逐字保真/真机覆盖尚未完整验收；流式基建保留暂不用。
- * @partialVersion v0.5.14未发布候选。
+ * @partialVersion v0.5.14。
  * @partialReason 整文件识别已有真实保存恢复证据；保留流式未作为当前默认验收链。
  * @partialAuthorization Owner本聊天2026-10-14注释6授权保留并显式标注。
  * @partialUsage 默认file；streaming仅保留显式配置入口，不自动回退，不随提交启用。

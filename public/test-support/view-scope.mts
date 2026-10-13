@@ -27,7 +27,7 @@ const VIEW_SCOPES: Readonly<Record<string, string>> = Object.freeze({
   export: "export", trash: "trash"
 });
 
-/** 加载尚未进入本机会话的合成数据；同scope在途请求复用，reset使旧结果失效。 @since unreleased */
+/** 加载尚未进入本机会话的合成数据；同scope在途请求复用，reset使旧结果失效。 @since v0.5.14 */
 export function createViewScopeSupport(ports: Ports) {
   const pending = new Map<string, { work: Promise<boolean>; panel: Panel }>();
   let epoch = 0;
