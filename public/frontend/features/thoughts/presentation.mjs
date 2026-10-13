@@ -114,7 +114,8 @@ export function createThoughtPresentation({
     const answerEvidence = contextReceiptMarkup(
       item.contextReceipt,
       item.citations,
-      item.citationStatus
+      item.citationStatus,
+      item.providedReferences
     );
     return `<article class="thought-content-block ${ai ? "ai" : ""} ${current ? "current-conclusion" : ""}" data-thought-kind="${escapeHtml(item.type)}" data-thought-block-id="${escapeHtml(item.id)}"><header><div><span class="thought-identity-icon" aria-hidden="true">${identities[item.type] || "·"}</span><b>${labels[item.type] || "内容"}</b>${current ? "<small>当前</small>" : ""}</div><time>${formatDate(eventTimestamp(item))}</time></header>${answerEvidence}${thoughtBlockBody(item.content || item.modelDraft || "", `thought:${question.id}:block:${item.id}`)}${contentImagesMarkup(item, "thoughtBlock")}${speech}${item.modelDraft && item.editedFromModel ? `<small class="edit-signal">${item.content ? "由 AI 草稿修改后保留" : "未保留 AI 草稿"}</small>` : ""}<footer><span></span><div><button class="subtle-action" type="button" data-thought-block-edit="${escapeHtml(item.id)}" data-root-id="${escapeHtml(question.id)}">编辑</button><button class="subtle-action danger" type="button" data-thought-block-delete="${escapeHtml(item.id)}" data-root-id="${escapeHtml(question.id)}">删除</button></div></footer></article>`;
   }
@@ -127,7 +128,7 @@ export function createThoughtPresentation({
       followUp.id
     );
     const answerMarkup = followUp.answer
-      ? `<div class="model-answer-content">${contextReceiptMarkup(followUp.contextReceipt, followUp.citations, followUp.citationStatus)}<div class="markdown-content">${renderMarkdown(followUp.answer)}</div></div>`
+      ? `<div class="model-answer-content">${contextReceiptMarkup(followUp.contextReceipt, followUp.citations, followUp.citationStatus, followUp.providedReferences)}<div class="markdown-content">${renderMarkdown(followUp.answer)}</div></div>`
       : `<form class="manual-followup-answer" data-followup-manual-answer="${escapeHtml(followUp.id)}" data-root-id="${escapeHtml(question.id)}" data-version="${followUp.version || 1}">
           <textarea rows="3" placeholder="直接写下回答…" aria-label="追问回答" required></textarea>
           <div>

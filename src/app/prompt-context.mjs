@@ -1,3 +1,4 @@
+import { boundedReferenceEvidence } from "../../.build/typescript/backend/shared/ai-context/index.mjs";
 import {
   optionalPromptText,
   promptCatalogMetadata,
@@ -132,6 +133,7 @@ export function compileWorkingContextPrompt({
   coreUserModel = null,
   historicalUserSupplement = null,
   recentTrend = null,
+  referenceEvidence = [],
   serializationOrder = WORKING_CONTEXT_SERIALIZATION_ORDER.POLICY_V1,
   generatedAt = "",
   notice = "",
@@ -201,6 +203,10 @@ export function compileWorkingContextPrompt({
     ...(recentTrend && typeof recentTrend === "object" && !Array.isArray(recentTrend) ? {
       sevenDayTrend: structuredClone(recentTrend)
     } : {}),
+    ...(referenceEvidence.length ? { referenceEvidence: boundedReferenceEvidence(list(referenceEvidence).map(source => ({
+      citationId: source.citationId, text: source.text,
+      origin: source.source?.origin || "user", informationType: source.source?.informationType || "user_original"
+    }))) } : {}),
     relevantEpisodes: history.filter(item => (
       !["userClaim", "modelUnknown"].includes(item.resourceType)
     )),

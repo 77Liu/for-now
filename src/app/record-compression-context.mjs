@@ -1,3 +1,4 @@
+import { readInternalBudgets } from "../../.build/typescript/backend/shared/ai-context/index.mjs";
 /**
  * 从当前有效压缩记录构建历史与七天趋势上下文，并校验来源及序列化限额。
  * 建立时间：未知
@@ -679,8 +680,8 @@ function contextTrendFrom(store, {
       const text = textForCitation(source);
       if (!text) continue;
       const citationId = `trend:${localDate}:${sourceId}`;
-      const promptText = text.slice(0, 360);
-      sources.push({ citationId, sourceId, localDate, text: promptText });
+      const promptText = text.slice(0, readInternalBudgets().sourceCharacterMax);
+      sources.push({ citationId, sourceId, localDate });
       displaySources.push({
         sourceId,
         localDate,
@@ -860,12 +861,11 @@ function separateTrendContext(store, trendResult, {
         const text = textForCitation(source);
         if (!text) continue;
         const citationId = `trend-quote:${localDate}:${sourceId}`;
-        const promptText = text.slice(0, 360);
+        const promptText = text.slice(0, readInternalBudgets().sourceCharacterMax);
         quoteSources.push({
           citationId,
           sourceId,
           localDate,
-          text: promptText,
           origin: "quoted_external",
           label: "外部引文/用户收藏，不代表用户观点"
         });

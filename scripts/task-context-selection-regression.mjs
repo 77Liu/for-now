@@ -1,3 +1,5 @@
+import { createEmptyStore, compileWorkingContextPrompt } from "../src/app/index.mjs";
+import { prepareReferenceRequest, verifyReferenceAnswer } from "../src/app/index.mjs";
 import assert from "node:assert/strict";
 import "./prompt-test-setup.mjs";
 import crypto from "node:crypto";
@@ -1464,3 +1466,47 @@ console.log(
   + `event deduplication, degraded retrieval, receipt invalidation and 16-fixture selection replay `
   + `(relevance ${replayRelevant}/${replaySelected}, semantic misses ${replayMissing.length}).`
 );
+
+// 真实编译入口先裁可选大证据，再比较必需材料字节限额；不靠小夹具避开顺序问题。
+const bigStore = createEmptyStore();
+const currentQuestion = { id: "short-current-question", type: "question", content: "简短问题",
+  authorType: "user", origin: "manual", version: 1, createdAt: generatedAt };
+bigStore.thoughts.push(currentQuestion);
+const bigDirectory = [];
+for (let index = 0; index < 10; index += 1) {
+  const id = `large-reference-${index}-` + "v".repeat(64);
+  const body = (`合法合成来源 ${index} 的连续原文。`).repeat(700).slice(0, 8000);
+  bigStore.thoughts.push({ id, type: "question", content: body, version: 1,
+    authorType: "user", origin: "manual", createdAt: generatedAt });
+  const sourceRef = { resourceType: "thought", resourceId: id, rootId: id,
+    targetKey: `question:${id}`, version: 1 };
+  const material = taskContextSourceMaterial(bigStore, sourceRef);
+  assert.ok(material);
+  bigDirectory.push({ citationId: `trend:${id}:${sourceRef.targetKey}`, text: material.text,
+    source: { ...sourceRef, origin: "user", contentSha256: material.contentSha256,
+      location: { view: "thoughts", targetId: id, rootId: id, targetKey: sourceRef.targetKey } } });
+}
+assert.ok(Buffer.byteLength(JSON.stringify(bigDirectory), "utf8") > 32000);
+const bigStoreBefore = JSON.stringify(bigStore);
+const bigCompiled = workingContextProjection(bigStore, {
+  accountId, scene: "thoughtAnswer", task: { kind: "thoughtAnswer", text: currentQuestion.content, targetId: currentQuestion.id },
+  currentMaterial: thoughtTaskCurrentMaterial(bigStore, currentQuestion, { accountId }), generatedAt,
+  retrieveHistorical: () => [],
+  compilePrompt: sections => compileWorkingContextPrompt({ ...sections,
+    scene: "thoughtAnswer", referenceEvidence: bigDirectory })
+});
+assert.ok(Buffer.byteLength(bigCompiled.prompt, "utf8") <= 32000);
+const bigReferenceRequest = prepareReferenceRequest(bigCompiled.prompt,
+  [...bigCompiled.citationSources, ...bigDirectory], JSON.stringify([accountId, bigCompiled.receipt]));
+assert.equal(bigReferenceRequest.receipt.providedCount, 11);
+assert.ok(bigReferenceRequest.receipt.promptBytes <= bigReferenceRequest.receipt.promptByteLimit);
+assert.equal(JSON.stringify(bigStore), bigStoreBefore, "budget projections leave original records intact");
+const finalPayload = JSON.parse(bigReferenceRequest.prompt.match(/>([\s\S]*)<\//)[1]);
+assert.ok(finalPayload.referenceEvidenceBudget.estimatedTokens <= 5000);
+assert.ok(finalPayload.referenceEvidenceBudget.truncatedSources >= 0);
+const excerptCitations = bigReferenceRequest.entries.slice(1, 9).map(entry => ({
+  citationId: entry.alias, exactQuote: entry.sentText[0].slice(0, 8)
+}));
+const evidenceAnswer = verifyReferenceAnswer(JSON.stringify({ answer: "有界合成回答", citations: excerptCitations }), bigReferenceRequest);
+assert.equal(evidenceAnswer.providedReferences.length, 11);
+assert.equal(evidenceAnswer.citations.length, 8, "provided reference count is independent of the final footnote cap");

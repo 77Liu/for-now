@@ -152,6 +152,13 @@ const analyses = Array.from({ length: 30 }, (_, index) => ({
   }],
   privateBlob: large
 }));
+const referenceReceiptFixture = { schemaVersion: 1, binding: "b".repeat(64),
+  aliasMapSha256: "a".repeat(64), promptSha256: "c".repeat(64), promptBytes: 1234,
+  promptByteLimit: 32000, unit: "UTF-8 bytes", providedCount: 10, coreModelProvided: true };
+analyses[0].contextReceipt = { referenceRequest: referenceReceiptFixture };
+analyses[0].providedReferences = [{ citationId: "provided-record", resourceType: "thought", resourceId: "record-1", version: 2, recordType: "用户原文" }];
+analyses[0].annotations[0].shenji[0].contextReceipt = { referenceRequest: referenceReceiptFixture };
+analyses[0].annotations[0].shenji[0].providedReferences = analyses[0].providedReferences;
 const clusters = Array.from({ length: 30 }, (_, clusterIndex) => ({
   theme: `Cluster ${clusterIndex}-${large}`,
   count: 50,
@@ -404,6 +411,11 @@ const reviewText = JSON.stringify(review);
 assert.equal(review.checkins.length, ROUTE_STATE_LIMITS.review.checkins);
 assert.equal(review.analyses.length, ROUTE_STATE_LIMITS.review.analyses);
 assert.equal(review.analyses[0].contentTruncated, true);
+assert.deepEqual(review.analyses[0].contextReceipt.referenceRequest, referenceReceiptFixture);
+assert.deepEqual(review.analyses[0].providedReferences, analyses[0].providedReferences);
+assert.deepEqual(review.analyses[0].annotations[0].shenji[0].providedReferences, analyses[0].providedReferences);
+assert.deepEqual(review.analyses[0].annotations[0].shenji[0].contextReceipt.referenceRequest, referenceReceiptFixture);
+assert.equal("providedReferences" in review.analyses[1], false, "legacy records have no invented new catalog");
 assert.equal(review.analysisPage.total, analyses.length);
 assert.equal(review.analysisPage.nextId, "analysis-7");
 assert.equal(review.experiments.length, ROUTE_STATE_LIMITS.review.experiments);

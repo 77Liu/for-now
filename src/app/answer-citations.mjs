@@ -1,3 +1,4 @@
+import { compileReferenceRequest, decodeReferenceAnswer } from "../../.build/typescript/backend/shared/ai-context/index.mjs";
 import { safeText } from "../shared/validation/index.mjs";
 
 const objectValue = value => value && typeof value === "object" && !Array.isArray(value);
@@ -8,7 +9,10 @@ export function answerCitationSources(coreUserModel, additionalSources = []) {
     if (typeof citationId !== "string" || !citationId || typeof text !== "string" || !text) return;
     const existing = sourcesById.get(citationId);
     if (existing) {
-      if (!existing.text.includes(text)) existing.text += `\n${text}`;
+      if (!existing.text.includes(text)) {
+        existing.textSpans ||= [existing.text];
+        existing.textSpans.push(text);
+      }
       return;
     }
     sourcesById.set(citationId, {
@@ -17,13 +21,13 @@ export function answerCitationSources(coreUserModel, additionalSources = []) {
       source: {
         id: citationId,
         resourceType: metadata.resourceType || "onboardingV2",
-        resourceId: metadata.sourceId || "",
+        resourceId: metadata.resourceId || metadata.sourceId || "",
         recordType: metadata.recordType || "核心用户模型证据",
-        origin: "user",
+        origin: metadata.origin || "user",
         informationType: metadata.informationType || "user_viewpoint",
         version: metadata.version || 0,
-        contentSha256: "",
-        location: {
+        contentSha256: metadata.contentSha256 || metadata.sourceHash || "",
+        location: metadata.location && objectValue(metadata.location) ? structuredClone(metadata.location) : {
           view: "personal-context",
           targetId: metadata.sourceId || "",
           rootId: "",
@@ -85,7 +89,8 @@ export function parseVerifiedAnswer(raw, availableSources = []) {
       || typeof candidate.exactQuote !== "string") return [];
     const source = byId.get(candidate.citationId);
     const exactQuote = candidate.exactQuote;
-    if (!source || !exactQuote || exactQuote.length > 1000 || !source.text.includes(exactQuote)) return [];
+    if (!source || !exactQuote || exactQuote.length > 1000
+      || !(source.textSpans || [source.text]).some(span => span.includes(exactQuote))) return [];
     const key = `${candidate.citationId}\u0000${exactQuote}`;
     if (seen.has(key)) return [];
     seen.add(key);
@@ -104,5 +109,35 @@ export function parseVerifiedAnswer(raw, availableSources = []) {
     content: safeText(document.answer, 120_000),
     citations,
     citationStatus: citations.length ? "matched" : "none"
+  };
+}
+
+/**
+ * 按当前 work/账户绑定编译模型引用；服务端仍保留真实来源与已发送原文目录。
+ * @since unreleased
+ */
+export function prepareReferenceRequest(prompt, sources, binding) {
+  return compileReferenceRequest(prompt, sources, binding);
+}
+
+/**
+ * 解码本请求引用后复用逐字核验；未知别名不使合法回答整链失败。
+ * 提供的参考只保存身份和标签，不在公开结果重复用户模型或原文详情。
+ * @since unreleased
+ */
+export function verifyReferenceAnswer(raw, request) {
+  const decoded = decodeReferenceAnswer(raw, request);
+  const verified = parseVerifiedAnswer(decoded.raw, request.sources);
+  return {
+    ...verified,
+    rejectedReferences: decoded.rejected,
+    referenceReceipt: structuredClone(request.receipt),
+    providedReferences: request.sources.map(item => ({
+      citationId: item.citationId,
+      resourceType: item.source?.resourceType || "",
+      resourceId: item.source?.resourceId || "",
+      version: item.source?.version || 0,
+      recordType: item.source?.recordType || ""
+    }))
   };
 }

@@ -6,7 +6,7 @@ export function sendStreamEvent(res, value) {
   if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify(value)}\n\n`);
 }
 
-export function createJsonHttp({ getContext, maxBodyBytes }) {
+export function createJsonHttp({ getContext, maxBodyBytes, projectResponse = value => value }) {
   return {
     sendJson(res, status, value) {
       const context = getContext();
@@ -15,7 +15,7 @@ export function createJsonHttp({ getContext, maxBodyBytes }) {
         if (status >= 400) context.errorCode ||= String(value?.code ?? "").trim().slice(0, 100) || `HTTP_${status}`;
       }
       res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
-      res.end(JSON.stringify(value));
+      res.end(JSON.stringify(projectResponse(value)));
     },
     async bodyJson(req, maxBytes = maxBodyBytes) {
       const chunks = [];

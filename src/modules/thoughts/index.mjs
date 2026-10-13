@@ -331,6 +331,8 @@ export function createThoughtTaskTarget({ createId, now, stripThoughtAnswerLead 
           ...(result.reasoningContent ? { reasoningContent: result.reasoningContent } : {}),
           ...(result.contextReceipt ? { contextReceipt: structuredClone(result.contextReceipt) } : {}),
           ...(Array.isArray(result.citations) ? { citations: structuredClone(result.citations) } : {}),
+          ...(Array.isArray(result.providedReferences) ? { providedReferences: structuredClone(result.providedReferences) } : {}),
+          ...(Array.isArray(result.rejectedReferences) ? { rejectedReferences: structuredClone(result.rejectedReferences) } : {}),
           ...(result.citationStatus ? { citationStatus: result.citationStatus } : {})
         };
         thoughts.unshift(answer);
@@ -352,6 +354,8 @@ export function createThoughtTaskTarget({ createId, now, stripThoughtAnswerLead 
       if (result.contextReceipt) current.contextReceipt = structuredClone(result.contextReceipt);
       if (Array.isArray(result.citations)) current.citations = structuredClone(result.citations);
       if (result.citationStatus) current.citationStatus = result.citationStatus;
+      if (Array.isArray(result.providedReferences)) current.providedReferences = structuredClone(result.providedReferences);
+      if (Array.isArray(result.rejectedReferences)) current.rejectedReferences = structuredClone(result.rejectedReferences);
       root.version = normalizedVersion(root.version) + 1; root.updatedAt = now();
       return current.id;
     }

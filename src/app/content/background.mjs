@@ -16,7 +16,7 @@ import {
 import { createAiTaskTargets } from "../ai-task-targets.mjs";
 import { createBackgroundAi } from "../background-ai.mjs";
 import { userModelRequiresCoreReady } from "../user-model.mjs";
-import { parseVerifiedAnswer } from "../answer-citations.mjs";
+import { prepareReferenceRequest, verifyReferenceAnswer } from "../answer-citations.mjs";
 
 const taskFailure = (message, statusCode, code) => Object.assign(
   new Error(message),
@@ -149,7 +149,11 @@ export function createContentBackground({
             code: "AI_TASK_STALE"
           });
         }
-        const generated = await runDeepSeek(work.prompt, {
+        const referenceRequest = work.citationsEnabled ? prepareReferenceRequest(
+          work.prompt, work.citationSources || [],
+          JSON.stringify([getAccountId(), work.scene, work.inputHash, work.contextReceipt])
+        ) : null;
+        const generated = await runDeepSeek(referenceRequest?.prompt || work.prompt, {
           scene: work.scene,
           systemPrompt: work.systemPrompt || systemPrompt(),
           captureReasoning: work.captureReasoning !== false,
@@ -157,7 +161,9 @@ export function createContentBackground({
           retryWithoutThinking: work.retryWithoutThinking,
           maxTokens: work.maxTokens || 16000,
           auditPrompt: work.auditPrompt !== false,
-          contextReceipt: work.contextReceipt || null,
+          contextReceipt: referenceRequest
+            ? { ...work.contextReceipt, referenceRequest: referenceRequest.receipt }
+            : work.contextReceipt || null,
           imagePaths,
           isCurrent,
           signal
@@ -170,7 +176,7 @@ export function createContentBackground({
           });
         }
         const verifiedAnswer = work.citationsEnabled
-          ? parseVerifiedAnswer(result.content, work.citationSources)
+          ? verifyReferenceAnswer(result.content, referenceRequest)
           : null;
         return {
           ...result,
