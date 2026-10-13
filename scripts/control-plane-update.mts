@@ -9,6 +9,7 @@ import path from "node:path";
 import os from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import assert from "node:assert/strict";
+import { CONTROL_EVENT_FORMAT, stateChanges, replayChanges, materializeEvent } from "./control-plane-replay.mjs";
 
 type ObjectValue = Record<string, unknown>;
 const CURRENT = "reports/requirement-coordination-current.json";
@@ -110,10 +111,38 @@ async function readEvents(file: string): Promise<ObjectValue[]> {
   return rows;
 }
 function verifyChain(events: ObjectValue[], anchor: ObjectValue | null = null): void {
+  let base = anchor ? object(anchor.state_after, "交接锚点状态") : null;
   for (const [index, event] of events.entries()) {
-    const after = object(event.state_after, "事件状态");
+    let after: ObjectValue;
+    const checkpoint = event.event_format === CONTROL_EVENT_FORMAT && event.type === "control_checkpoint";
+    if (event.event_format === undefined) after = object(event.state_after, "事件状态");
+    else if (event.event_format === CONTROL_EVENT_FORMAT) {
+      const allowed = new Set(["event_format", "id", "iteration_id", "type", "phase", "reason", "evidence", "details",
+        "recorded_at", "occurred_at", "actor", "request_hash", "state_before_revision", "state_before_hash",
+        "action_before_hash", "action_after_hash", "state_after_hash", "changes", "checkpoint_state", "trigger_event_id",
+        "chain_anchor", "terminal"]);
+      if (Object.keys(event).some(key => !allowed.has(key)) || !["plan", "decision", "result"].includes(String(event.phase))) {
+        throw new Error("新事件字段或阶段无效");
+      }
+      if (Object.prototype.propertyIsEnumerable.call(event, "state_after")) throw new Error("新事件禁止全量state_after");
+      if (checkpoint) {
+        after = object(event.checkpoint_state, "恢复检查点状态");
+        if (event.phase !== "result" || event.changes !== undefined || event.terminal !== undefined
+          || event.state_before_hash !== digest(after) || event.action_before_hash !== digest(actionState(after))
+          || Number(event.state_before_revision) !== Number(after.revision)
+          || !String(event.trigger_event_id).startsWith(`${event.iteration_id}-`)) throw new Error("恢复检查点契约无效");
+        if (base && digest(base) === digest(after)) throw new Error("无需重复完整恢复检查点");
+      } else {
+        if (event.checkpoint_state !== undefined || !base) throw new Error("差量事件缺少合法回放基线");
+        if (digest(base) !== event.state_before_hash || Number(base.revision) !== Number(event.state_before_revision)) {
+          throw new Error("差量事件前状态摘要不一致");
+        }
+        after = replayChanges(base, event.changes);
+      }
+      materializeEvent(event, after);
+    } else throw new Error("未知事件格式");
     if (digest(after) !== event.state_after_hash || digest(actionState(after)) !== event.action_after_hash
-      || Number(after.revision) !== Number(event.state_before_revision) + 1) throw new Error("事件状态摘要或修订损坏");
+      || Number(after.revision) !== Number(event.state_before_revision) + (checkpoint ? 0 : 1)) throw new Error("事件状态摘要或修订损坏");
     const previous = events[index - 1];
     if (previous && (event.action_before_hash !== previous.action_after_hash
       || Number(event.state_before_revision) < Number(object(previous.state_after, "前一事件状态").revision))) {
@@ -127,6 +156,7 @@ function verifyChain(events: ObjectValue[], anchor: ObjectValue | null = null): 
         throw new Error("跨版本事件锚点不一致，先恢复现场");
       }
     }
+    base = after;
     if (event.terminal && (event.type !== "iteration_closed" || event.phase !== "result")) throw new Error("非收口事件不能创建快照");
     if (["iteration_handoff", "held_iteration_restored"].includes(String(event.type))) {
       const details = object(event.details, "版本交接详情");
@@ -144,8 +174,12 @@ function verifyChain(events: ObjectValue[], anchor: ObjectValue | null = null): 
 
 async function eventFileAnchor(root: string, version: string, events: ObjectValue[], seen = new Set<string>()): Promise<ObjectValue | null> {
   if (!events.length) return null;
-  const firstState = object(events[0].state_after, "版本首事件状态");
   if (events[0].iteration_id !== version) throw new Error("事件文件首事件版本不一致");
+  if (events[0].chain_anchor !== undefined) {
+    const marker = object(events[0].chain_anchor, "首事件恢复锚点");
+    return iterationAnchor(root, { id: version, started_by: { iteration_id: marker.iteration_id, event_id: marker.event_id } }, seen);
+  }
+  const firstState = object(events[0].event_format === CONTROL_EVENT_FORMAT ? events[0].checkpoint_state : events[0].state_after, "版本首事件状态");
   if (firstState.iteration === null) return null;
   const iteration = object(firstState.iteration, "版本首事件迭代");
   if (iteration.id !== version) return null;
@@ -297,6 +331,7 @@ function closureSnapshot(request: ObjectValue, current: ObjectValue, events: Obj
     if (item.event_ids.some(id => !ids.has(id))) throw new Error("收口引用了不存在的事件");
   }
   const archived = structuredClone(current);
+  delete archived.display_summary;
   archived.revision = Number(current.revision) + 1;
   archived.updated_at = now;
   archived.iteration = { ...object(current.iteration, "收口迭代"), status: closure.status };
@@ -304,6 +339,32 @@ function closureSnapshot(request: ObjectValue, current: ObjectValue, events: Obj
   return { schema_version: 1, closed_at: now, control_plane: archived, result: closure };
 }
 
+/** 只在缺少精确回放基线时保存恢复检查点；它不推进控制面修订。 */
+async function ensureCheckpoint(file: string, current: ObjectValue, baseline: ObjectValue | null,
+  version: string, eventId: string, requestHash: string, now: string, chainAnchor?: ObjectValue): Promise<boolean> {
+  if (baseline && digest(baseline) === digest(current)) return false;
+  const checkpoint = {
+    event_format: CONTROL_EVENT_FORMAT, id: `${version}-checkpoint-${eventId}`, iteration_id: version,
+    type: "control_checkpoint", phase: "result", recorded_at: now, occurred_at: now,
+    reason: baseline ? "历史无事件元数据修订的精确恢复基线" : "首个差量事件的必要恢复基线",
+    evidence: ["control-plane:replay-baseline"], trigger_event_id: eventId, request_hash: requestHash,
+    state_before_revision: current.revision, state_before_hash: digest(current),
+    action_before_hash: digest(actionState(current)), action_after_hash: digest(actionState(current)),
+    state_after_hash: digest(current), checkpoint_state: current,
+    ...(chainAnchor ? { chain_anchor: chainAnchor } : {})
+  };
+  await appendEvent(file, checkpoint);
+  return true;
+}
+
+function eventInput(input: ObjectValue): ObjectValue {
+  const { id, type, phase, reason, evidence, occurred_at } = input;
+  const details = ["iteration_handoff", "held_iteration_restored"].includes(String(type))
+    ? object(input.details, "版本转移详情") : null;
+  return { id, type, phase, reason, evidence, ...(occurred_at !== undefined ? { occurred_at } : {}),
+    ...(details ? { details: Object.fromEntries(Object.entries(details).filter(([key]) =>
+      ["target_iteration_id", "held_event_id", "held_state_after_hash"].includes(key))) } : {}) };
+}
 /** 协调者声明身份、预期修订与完整状态一起提交；先持久化事件，再替换当前状态。 */
 async function update(root: string, request: ObjectValue, mode: "apply" | "close" | "handoff" = "apply"): Promise<ObjectValue> {
   const close = mode === "close";
@@ -332,7 +393,8 @@ async function update(root: string, request: ObjectValue, mode: "apply" | "close
     } else if (currentIteration && currentIteration.id !== requestedVersion) {
       throw new Error("先收口当前版本，不能覆盖活动迭代");
     }
-    const desired = object(request.state, "新当前状态");
+    const desired = { ...object(request.state, "新当前状态") };
+    delete desired.display_summary;
     validateState(desired, root);
     if (!close && object(desired.iteration, "目标迭代").id !== requestedVersion) throw new Error("更新版本不一致");
     if (mode !== "handoff" && canonical(desired.held_iterations ?? []) !== canonical(current.held_iterations ?? [])) {
@@ -352,12 +414,15 @@ async function update(root: string, request: ObjectValue, mode: "apply" | "close
     await verifyHeldIterations(root, current);
     const inputEvent = request.event === undefined ? null : object(request.event, "事件输入");
     if (inputEvent) for (const key of Object.keys(inputEvent)) if (!EVENT_KEYS.has(key)) throw new Error(`事件禁止内部字段：${key}`);
+    if (inputEvent?.type === "control_checkpoint") throw new Error("control_checkpoint是入口保留类型");
     if (mode === "handoff" && (!inputEvent || inputEvent.type !== "iteration_handoff" || inputEvent.phase !== "decision")) {
       throw new Error("版本交接须使用decision阶段的iteration_handoff事件");
     }
     if (mode !== "handoff" && inputEvent?.type === "iteration_handoff") throw new Error("版本交接必须使用handoff动作");
     const requestHash = digest(request);
     const existing = inputEvent && events.find(event => event.id === inputEvent.id);
+    const pendingCheckpoint = inputEvent && events.find(event => event.trigger_event_id === inputEvent.id);
+    if (pendingCheckpoint && pendingCheckpoint.request_hash !== requestHash) throw new Error("同事件ID的请求不同，拒绝重试");
     if (existing) {
       if (existing.request_hash !== requestHash) throw new Error("同事件ID的请求不同，拒绝重试");
       if (existing.terminal) await saveTerminal(path.join(dir, "terminal.json"), object(existing.terminal, "收口快照"));
@@ -444,8 +509,7 @@ async function update(root: string, request: ObjectValue, mode: "apply" | "close
     const next: ObjectValue = { ...target, revision: Number(current.revision) + 1, updated_at: now };
     if (!inputEvent) {
       if (close || digest(actionState(current)) !== digest(actionState(next))) throw new Error("行动状态变化必须提供事件");
-      await atomicJson(currentFile, next);
-      return { status: "wording_only", revision: next.revision };
+      return { status: "unchanged", revision: current.revision };
     }
     const id = text(inputEvent.id, "事件ID");
     if (!id.startsWith(`${version}-`) || !/^[A-Za-z0-9._-]+$/u.test(id)) throw new Error("事件ID须以所属版本为前缀且不可含路径");
@@ -460,13 +524,21 @@ async function update(root: string, request: ObjectValue, mode: "apply" | "close
     if (close && (next.iteration !== null || next.scope !== null || next.candidate !== null || (next.active_tasks as unknown[]).length)) {
       throw new Error("收口后当前状态须清空旧范围、候选、活动任务和迭代");
     }
+    const chainAnchor = !matchesLatest && activeAnchor ? {
+      iteration_id: object(currentIteration!.started_by, "版本转移来源").iteration_id,
+      event_id: object(currentIteration!.started_by, "版本转移来源").event_id
+    } : undefined;
+    const changes = stateChanges(current, next);
+    if (digest(replayChanges(current, changes)) !== digest(next)) throw new Error("差量不能精确恢复新状态");
+    const checkpointWritten = await ensureCheckpoint(file, current,
+      matchesLatest ? object(latest!.state_after, "最新回放状态") : activeAnchor ? object(activeAnchor.state_after, "回放锚点") : null,
+      version, id, requestHash, now, chainAnchor);
     const event = {
-      ...inputEvent, iteration_id: version, recorded_at: now, occurred_at: inputEvent.occurred_at ?? now,
+      ...eventInput(inputEvent), event_format: CONTROL_EVENT_FORMAT, iteration_id: version, recorded_at: now, occurred_at: inputEvent.occurred_at ?? now,
       actor, request_hash: requestHash, state_before_hash: digest(current), state_before_revision: current.revision,
       action_before_hash: digest(actionState(current)), action_after_hash: digest(actionState(next)),
-      state_after_hash: digest(next), state_after: next,
-      ...(!matchesLatest && activeAnchor ? { chain_anchor: { iteration_id: object(currentIteration!.started_by, "版本转移来源").iteration_id,
-        event_id: object(currentIteration!.started_by, "版本转移来源").event_id } } : {}),
+      state_after_hash: digest(next), changes,
+      ...(!checkpointWritten && chainAnchor ? { chain_anchor: chainAnchor } : {}),
       ...(terminal ? { terminal } : {})
     };
     // 事件失败不得推进状态；事件成功而状态失败，使用同ID请求重放此已持久化结果。
@@ -512,8 +584,11 @@ async function restoreHeld(root: string, request: ObjectValue): Promise<ObjectVa
     const dir = directory(root, sourceVersion);
     const file = path.join(dir, "events.jsonl");
     const events = await readEvents(file);
+    await verifyVersionEvents(root, sourceVersion, events);
     const eventId = text(inputEvent.id, "事件ID");
     const existing = events.find(event => event.id === eventId);
+    const pendingCheckpoint = events.find(event => event.trigger_event_id === eventId);
+    if (pendingCheckpoint && pendingCheckpoint.request_hash !== requestHash) throw new Error("同事件ID的请求不同，拒绝重试");
     if (existing) {
       if (existing.request_hash !== requestHash) throw new Error("同事件ID的请求不同，拒绝重试");
       if (digest(current) === existing.state_before_hash) {
@@ -537,6 +612,7 @@ async function restoreHeld(root: string, request: ObjectValue): Promise<ObjectVa
     await verifyHeldIterations(root, current);
     const heldOwner = /^reports\/iterations\/([A-Za-z0-9][A-Za-z0-9._-]{0,79})\/events\.jsonl$/u.exec(String(reference.events))![1];
     const heldEvents = await readEvents(path.join(directory(root, versionName(heldOwner)), "events.jsonl"));
+    await verifyVersionEvents(root, versionName(heldOwner), heldEvents);
     const heldEvent = heldEvents.find(event => event.id === reference.event_id)!;
     const heldState = object(heldEvent.state_after, "未收口版本完整状态");
     if (details.held_state_after_hash !== reference.state_after_hash
@@ -593,6 +669,7 @@ async function restoreHeld(root: string, request: ObjectValue): Promise<ObjectVa
       };
       next.held_iterations = [...priorHeld, outgoing];
     }
+    delete next.display_summary;
     validateState(next, root);
     const targetDir = directory(root, targetVersion);
     try {
@@ -601,15 +678,22 @@ async function restoreHeld(root: string, request: ObjectValue): Promise<ObjectVa
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
+    const chainAnchor = currentIteration?.started_by && outgoingSnapshot?.id !== events.at(-1)?.id ? {
+      iteration_id: object(currentIteration.started_by, "当前版本转移来源").iteration_id,
+      event_id: object(currentIteration.started_by, "当前版本转移来源").event_id
+    } : undefined;
+    const latestState = events.at(-1)?.state_after;
+    const baseline = latestState && digest(actionState(object(latestState, "恢复来源状态"))) === digest(actionState(current))
+      ? object(latestState, "恢复来源状态") : outgoingSnapshot ? object(outgoingSnapshot.state_after, "恢复来源锚点") : null;
+    const changes = stateChanges(current, next);
+    if (digest(replayChanges(current, changes)) !== digest(next)) throw new Error("差量不能精确恢复新状态");
+    const checkpointWritten = await ensureCheckpoint(file, current, baseline, sourceVersion, eventId, requestHash, now, chainAnchor);
     const transition = {
-      ...inputEvent, iteration_id: sourceVersion, recorded_at: now, occurred_at: inputEvent.occurred_at ?? now,
+      ...eventInput(inputEvent), event_format: CONTROL_EVENT_FORMAT, iteration_id: sourceVersion, recorded_at: now, occurred_at: inputEvent.occurred_at ?? now,
       actor, request_hash: requestHash, state_before_hash: digest(current), state_before_revision: current.revision,
       action_before_hash: digest(actionState(current)), action_after_hash: digest(actionState(next)),
-      state_after_hash: digest(next), state_after: next,
-      ...(currentIteration?.started_by && outgoingSnapshot?.id !== events.at(-1)?.id ? { chain_anchor: {
-        iteration_id: object(currentIteration.started_by, "当前版本转移来源").iteration_id,
-        event_id: object(currentIteration.started_by, "当前版本转移来源").event_id
-      } } : {})
+      state_after_hash: digest(next), changes,
+      ...(!checkpointWritten && chainAnchor ? { chain_anchor: chainAnchor } : {})
     };
     await appendEvent(file, transition);
     await atomicJson(currentFile, next);
@@ -647,6 +731,11 @@ async function audit(root: string): Promise<ObjectValue> {
   return { status: "PASS", revision: current.revision, events: events.length, limitation: "只核对结构与持久化一致性，不证明证据真实或全部语义覆盖" };
 }
 
+// 夹具分别检查业务事件与必要基线检查点，不把检查点伪装成业务更新。
+async function testEvents(file: string): Promise<ObjectValue[]> {
+  return (await readEvents(file)).filter(event => event.type !== "control_checkpoint");
+}
+
 async function selfTest(): Promise<void> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "control-plane-update-"));
   try {
@@ -663,7 +752,16 @@ async function selfTest(): Promise<void> {
     await assert.rejects(update(root, { ...request, event: { ...request.event, terminal: {} } }), /禁止内部字段/u);
     await update(root, request);
     const eventsFile = path.join(directory(root, "fixture"), "events.jsonl");
-    assert.equal((await readEvents(eventsFile)).length, 1);
+    assert.equal((await testEvents(eventsFile)).length, 1);
+    await assert.rejects(update(root, { ...request, expected_revision: 2, event: { ...request.event, id: "fixture-injected-checkpoint", type: "control_checkpoint" } }), /保留类型/u);
+    const firstRawEvents = await readEvents(eventsFile);
+    assert.equal(firstRawEvents.length, 2, "仅首次缺基线时生成独立检查点");
+    assert.equal(firstRawEvents[0].type, "control_checkpoint");
+    assert.ok(firstRawEvents[0].checkpoint_state);
+    assert.equal(firstRawEvents[1].event_format, 2);
+    assert.equal(Object.hasOwn(firstRawEvents[1], "state_after"), false);
+    assert.equal(Object.hasOwn(firstRawEvents[1], "checkpoint_state"), false);
+    assert.ok(Array.isArray(firstRawEvents[1].changes));
     assert.equal((await update(root, request)).status, "deduplicated");
     const goodCurrent = await readJson(path.join(root, CURRENT));
     await atomicJson(path.join(root, CURRENT), { ...goodCurrent, revision: 99, scope: { fork: true } });
@@ -673,7 +771,7 @@ async function selfTest(): Promise<void> {
     // 模拟事件成功、状态尚未保存的崩溃窗口；重放不增加事件。
     await atomicJson(path.join(root, CURRENT), state);
     assert.equal((await update(root, request)).status, "recovered");
-    assert.equal((await readEvents(eventsFile)).length, 1);
+    assert.equal((await testEvents(eventsFile)).length, 1);
     const current = await readJson(path.join(root, CURRENT));
     const closedState = { ...current, iteration: null, scope: null, candidate: null, active_tasks: [], records: { events: null, terminal: null } };
     const closeRequest = { actor: "coordinator", expected_revision: 2, iteration_id: "fixture", state: closedState,
@@ -683,8 +781,60 @@ async function selfTest(): Promise<void> {
     closeRequest.closure.checks = Object.fromEntries(CHECKS.map(key => [key, { status: "not_applicable", reason: "隔离夹具", evidence: [], event_ids: [] }]));
     await update(root, closeRequest, "close");
     assert.equal((await update(root, closeRequest, "close")).status, "deduplicated");
-    assert.equal((await readEvents(eventsFile)).length, 2);
+    assert.equal((await testEvents(eventsFile)).length, 2);
     assert.equal((await fs.stat(path.join(directory(root, "fixture"), "terminal.json"))).mode & 0o222, 0);
+
+    const beforeValue = { a: null, list: [{ old: "value" }, 2], missing: { inner: true } };
+    const afterValue = { a: { new: [1, null] }, list: [{ next: "value" }], absentBefore: null };
+    const diff = stateChanges(beforeValue, afterValue);
+    assert.deepEqual(replayChanges(beforeValue, diff), afterValue);
+    assert.deepEqual(beforeValue, { a: null, list: [{ old: "value" }, 2], missing: { inner: true } });
+    assert.throws(() => replayChanges(beforeValue, [{ path: ["__proto__"], before: { present: false }, after: { present: true, value: {} } }]), /路径无效/u);
+    assert.throws(() => replayChanges(beforeValue, [{ path: ["a"], before: { present: false }, after: { present: true, value: 1 } }]), /前值不一致/u);
+    assert.throws(() => replayChanges({}, [{ path: ["hidden"], before: { present: false }, after: { present: true, value: { whole: "state" } } }]), /按叶子/u);
+    assert.throws(() => replayChanges({}, [{ path: ["x"], before: { present: false, value: null }, after: { present: true, value: 1 } }]), /缺失语义/u);
+
+    const legacyRoot = path.join(root, "legacy");
+    await fs.mkdir(directory(legacyRoot, "fixture"), { recursive: true });
+    const legacyBefore = { ...state, canonical_path: path.join(legacyRoot, CURRENT), display_summary: "旧手工摘要" };
+    const legacyAfter = { ...legacyBefore, revision: 2, updated_at: "2026-10-13T00:00:00Z", scope: { legacy: true } };
+    const legacyFile = path.join(directory(legacyRoot, "fixture"), "events.jsonl");
+    const legacy = { id: "fixture-legacy", iteration_id: "fixture", type: "scope_changed", phase: "decision",
+      state_before_revision: 1, state_before_hash: digest(legacyBefore), state_after_hash: digest(legacyAfter),
+      action_before_hash: digest(actionState(legacyBefore)), action_after_hash: digest(actionState(legacyAfter)), state_after: legacyAfter };
+    await appendEvent(legacyFile, legacy);
+    const originalBytes = await fs.readFile(legacyFile);
+    await atomicJson(path.join(legacyRoot, CURRENT), legacyAfter);
+    const compatibleRequest = { actor: "coordinator", expected_revision: 2, iteration_id: "fixture",
+      state: { ...legacyAfter, scope: { legacy: true, delta: null }, display_summary: "新的手工摘要应移除" },
+      event: { id: "fixture-new-format", type: "scope_changed", phase: "decision", reason: "新格式生效", evidence: ["fixture"] } };
+    await update(legacyRoot, compatibleRequest);
+    assert.deepEqual((await fs.readFile(legacyFile)).subarray(0, originalBytes.length), originalBytes);
+    const mixedEvents = await readEvents(legacyFile);
+    assert.equal(mixedEvents.length, 2, "旧全量状态可直接作为新差量基线，不多造检查点");
+    assert.equal(mixedEvents[0].event_format, undefined, "旧事件不要求新字段");
+    assert.equal(mixedEvents[1].event_format, 2);
+    assert.equal(Object.hasOwn(await readJson(path.join(legacyRoot, CURRENT)), "display_summary"), false);
+    assert.equal((await audit(legacyRoot)).status, "PASS");
+    await atomicJson(path.join(legacyRoot, CURRENT), legacyAfter);
+    assert.equal((await update(legacyRoot, compatibleRequest)).status, "recovered");
+    const mixedBytes = await fs.readFile(legacyFile);
+    const corrupt = await readEvents(legacyFile);
+    (object((corrupt[1].changes as ObjectValue[])[0].after, "篡改差量")).value = "tampered";
+    await fs.writeFile(legacyFile, corrupt.map(event => JSON.stringify(event)).join("\n") + "\n");
+    await assert.rejects(audit(legacyRoot), /摘要|差量/u);
+    await fs.writeFile(legacyFile, mixedBytes);
+    const metadataOnly = await readJson(path.join(legacyRoot, CURRENT));
+    assert.equal((await update(legacyRoot, { actor: "coordinator", expected_revision: metadataOnly.revision, iteration_id: "fixture", state: metadataOnly })).status, "unchanged");
+    assert.deepEqual(await readJson(path.join(legacyRoot, CURRENT)), metadataOnly);
+    // 只模拟旧入口曾允许的无事件元数据修订，不让新入口制造这种基线缺口。
+    const afterMetadata = { ...metadataOnly, revision: Number(metadataOnly.revision) + 1, updated_at: new Date().toISOString() };
+    await atomicJson(path.join(legacyRoot, CURRENT), afterMetadata);
+    await update(legacyRoot, { actor: "coordinator", expected_revision: afterMetadata.revision, iteration_id: "fixture",
+      state: { ...afterMetadata, scope: { metadataBridge: true } },
+      event: { id: "fixture-after-wording", type: "scope_changed", phase: "decision", reason: "无事件元数据之后", evidence: ["fixture"] } });
+    assert.equal((await readEvents(legacyFile)).filter(event => event.type === "control_checkpoint").length, 1);
+    assert.equal((await audit(legacyRoot)).status, "PASS");
 
     const directCloseRoot = path.join(root, "direct-close");
     const directVersion = "direct-close";
@@ -757,11 +907,56 @@ async function selfTest(): Promise<void> {
       };
       return { sourceVersion, targetVersion, sourceState, handoffRequest };
     };
+    const checkpointRoot = path.join(root, "checkpoint-window");
+    await fs.mkdir(directory(checkpointRoot, "fixture"), { recursive: true });
+    const checkpointState = { ...state, canonical_path: path.join(checkpointRoot, CURRENT) };
+    await atomicJson(path.join(checkpointRoot, CURRENT), checkpointState);
+    const checkpointRequest = { ...request, state: { ...checkpointState, scope: { changed: true } } };
+    const checkpointFile = path.join(directory(checkpointRoot, "fixture"), "events.jsonl");
+    await ensureCheckpoint(checkpointFile, checkpointState, null, "fixture", request.event.id, digest(checkpointRequest), new Date().toISOString());
+    await assert.rejects(update(checkpointRoot, { ...checkpointRequest, event: { ...request.event, reason: "换请求" } }), /请求不同/u);
+    assert.equal((await update(checkpointRoot, checkpointRequest)).status, "updated");
+    assert.equal((await readEvents(checkpointFile)).length, 2, "仅检查点落盘后重试不重复生成基线");
+    assert.equal((await audit(checkpointRoot)).status, "PASS");
+    const beforeInvalid = await fs.readFile(checkpointFile);
+    const latestValid = await readJson(path.join(checkpointRoot, CURRENT));
+    await assert.rejects(update(checkpointRoot, { actor: "coordinator", expected_revision: latestValid.revision, iteration_id: "fixture",
+      state: { ...latestValid, scope: JSON.parse('{"__proto__":{"unexpected":true}}') },
+      event: { id: "fixture-invalid-path", type: "scope_changed", phase: "decision", reason: "非法差量路径", evidence: ["fixture"] } }), /路径无效/u);
+    assert.deepEqual(await fs.readFile(checkpointFile), beforeInvalid, "无法回放的请求不得先落检查点或事件");
+
+    const oldHandoffRoot = path.join(root, "legacy-handoff");
+    const oldHandoff = await prepareHandoff(oldHandoffRoot);
+    const oldFile = path.join(directory(oldHandoffRoot, oldHandoff.sourceVersion), "events.jsonl");
+    const oldRows = await readEvents(oldFile);
+    await verifyVersionEvents(oldHandoffRoot, oldHandoff.sourceVersion, oldRows);
+    const oldReady = oldRows.find(event => event.type === "candidate_frozen")!;
+    const { event_format, changes, ...oldMetadata } = oldReady;
+    await fs.writeFile(oldFile, JSON.stringify({ ...oldMetadata, state_after: oldReady.state_after }) + "\n");
+    const oldPrefix = await fs.readFile(oldFile);
+    await update(oldHandoffRoot, oldHandoff.handoffRequest, "handoff");
+    assert.deepEqual((await fs.readFile(oldFile)).subarray(0, oldPrefix.length), oldPrefix);
+    assert.equal((await audit(oldHandoffRoot)).status, "PASS", "旧全量来源与新差量交接可跨版本审计");
+
+    const revokedRoot = path.join(root, "no-authorization-revival");
+    const revoked = await prepareHandoff(revokedRoot);
+    await update(revokedRoot, { actor: "coordinator", expected_revision: revoked.sourceState.revision, iteration_id: revoked.sourceVersion,
+      state: { ...revoked.sourceState, authorization: { execution_enabled: true, grant: "old-only" } },
+      event: { id: `${revoked.sourceVersion}-old-grant`, type: "authorization_changed", phase: "decision", reason: "历史授权夹具", evidence: ["fixture"] } });
+    const granted = await readJson(path.join(revokedRoot, CURRENT));
+    await update(revokedRoot, { ...revoked.handoffRequest, expected_revision: granted.revision }, "handoff");
+    const withoutGrant = await readJson(path.join(revokedRoot, CURRENT));
+    const oldGrantReference = (withoutGrant.held_iterations as ObjectValue[])[0];
+    await assert.rejects(restoreHeld(revokedRoot, { actor: "coordinator", expected_revision: withoutGrant.revision,
+      from_iteration_id: revoked.targetVersion, iteration_id: revoked.sourceVersion,
+      event: { id: `${revoked.targetVersion}-cannot-revive`, type: "held_iteration_restored", phase: "decision", reason: "拒绝恢复已不在当前授权的权限", evidence: ["fixture"],
+        details: { target_iteration_id: revoked.sourceVersion, held_event_id: oldGrantReference.event_id, held_state_after_hash: oldGrantReference.state_after_hash } } }), /不得重新授予权限/u);
+
     const handoffRoot = path.join(root, "handoff");
     const handoff = await prepareHandoff(handoffRoot);
     assert.equal((await update(handoffRoot, handoff.handoffRequest, "handoff")).status, "updated");
     const sourceEventsFile = path.join(directory(handoffRoot, handoff.sourceVersion), "events.jsonl");
-    const sourceEvents = await readEvents(sourceEventsFile);
+    const sourceEvents = await testEvents(sourceEventsFile);
     assert.equal(sourceEvents.length, 2);
     const handoffEvent = sourceEvents.at(-1)!;
     assert.equal(handoffEvent.iteration_id, handoff.sourceVersion);
@@ -781,7 +976,7 @@ async function selfTest(): Promise<void> {
     assert.equal((await audit(handoffRoot)).status, "PASS");
     await atomicJson(path.join(handoffRoot, CURRENT), handoff.sourceState);
     assert.equal((await update(handoffRoot, handoff.handoffRequest, "handoff")).status, "recovered");
-    assert.equal((await readEvents(sourceEventsFile)).length, 2);
+    assert.equal((await testEvents(sourceEventsFile)).length, 2);
     assert.equal((await update(handoffRoot, handoff.handoffRequest, "handoff")).status, "deduplicated");
     targetState = await readJson(path.join(handoffRoot, CURRENT));
     const droppedHeldRequest = {
@@ -810,7 +1005,30 @@ async function selfTest(): Promise<void> {
       ...restore13Request,
       event: { ...restore13Request.event, details: { ...restore13Request.event.details, held_event_id: "missing" } }
     }), /不在当前未收口版本引用中/u);
+    const restoreWindowRoot = path.join(root, "restore-checkpoint-window");
+    const restoreWindow = await prepareHandoff(restoreWindowRoot);
+    await update(restoreWindowRoot, restoreWindow.handoffRequest, "handoff");
+    const windowBefore = await readJson(path.join(restoreWindowRoot, CURRENT));
+    const windowMetadata: ObjectValue = { ...windowBefore, revision: Number(windowBefore.revision) + 1, updated_at: new Date().toISOString() };
+    await atomicJson(path.join(restoreWindowRoot, CURRENT), windowMetadata);
+    const windowHeld = (windowMetadata.held_iterations as ObjectValue[])[0];
+    const windowRequest = { actor: "coordinator", expected_revision: windowMetadata.revision,
+      from_iteration_id: restoreWindow.targetVersion, iteration_id: restoreWindow.sourceVersion,
+      event: { id: `${restoreWindow.targetVersion}-window-restore`, type: "held_iteration_restored", phase: "decision",
+        reason: "恢复中断夹具", evidence: ["fixture"], details: { target_iteration_id: restoreWindow.sourceVersion,
+          held_event_id: windowHeld.event_id, held_state_after_hash: windowHeld.state_after_hash } } };
+    const windowAnchor = (await iterationAnchor(restoreWindowRoot, object(windowMetadata.iteration, "夹具当前版本")))!;
+    const windowFile = path.join(directory(restoreWindowRoot, restoreWindow.targetVersion), "events.jsonl");
+    await ensureCheckpoint(windowFile, windowMetadata, object(windowAnchor.state_after, "窗口基线"), restoreWindow.targetVersion,
+      windowRequest.event.id, digest(windowRequest), new Date().toISOString(), object(windowMetadata.iteration, "夹具当前版本").started_by as ObjectValue);
+    await assert.rejects(restoreHeld(restoreWindowRoot, { ...windowRequest, event: { ...windowRequest.event, reason: "同ID换请求" } }), /请求不同/u);
+    assert.equal((await restoreHeld(restoreWindowRoot, windowRequest)).status, "restored");
+    assert.equal((await readEvents(windowFile)).length, 2);
+    assert.equal((await audit(restoreWindowRoot)).status, "PASS");
+
     assert.equal((await restoreHeld(handoffRoot, restore13Request)).status, "restored");
+    await atomicJson(path.join(handoffRoot, CURRENT), beforeRestore);
+    assert.equal((await restoreHeld(handoffRoot, restore13Request)).status, "recovered");
     assert.equal((await restoreHeld(handoffRoot, restore13Request)).status, "deduplicated");
     let restored13 = await readJson(path.join(handoffRoot, CURRENT));
     assert.equal(object(restored13.iteration, "恢复的前版").id, handoff.sourceVersion);
@@ -867,9 +1085,9 @@ async function selfTest(): Promise<void> {
       const rejected = await prepareHandoff(rejectedRoot, options);
       await assert.rejects(update(rejectedRoot, rejected.handoffRequest, "handoff"), expected);
       assert.equal(object((await readJson(path.join(rejectedRoot, CURRENT))).iteration, "拒绝夹具迭代").id, rejected.sourceVersion);
-      assert.equal((await readEvents(path.join(directory(rejectedRoot, rejected.sourceVersion), "events.jsonl"))).length, 1);
+      assert.equal((await testEvents(path.join(directory(rejectedRoot, rejected.sourceVersion), "events.jsonl"))).length, 1);
     }
-    console.log("更新入口夹具通过：事件持久化/恢复/去重、直接收口、动态候选门、版本交接与held往返恢复、分段哈希锚点。");
+    console.log("更新入口夹具通过：旧全量/新差量混合回放、缺失值与篡改拒绝、事件/检查点中断恢复、幂等、跨版本held往返及授权不复活。");
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 }
 
