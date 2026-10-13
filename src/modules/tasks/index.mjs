@@ -396,6 +396,22 @@ export function createTaskLifecycle({ createId, now, hash }) {
     return { task, queued: true };
   }
 
+  /**
+   * 仅将当前来源仍匹配的运行中日压缩任务移回预算等待，保留原身份与失败历史。
+   * 调用方必须先确认provider尚未执行且预算已安全释放。
+   * @since unreleased
+   */
+  function waitForBudget(tasks, id, work, errorCode = "") {
+    const task = tasks.find(item => item.id === id);
+    if (!task || task.kind !== "recordCompression" || task.status !== "running") return { missing: true };
+    if (!taskInputMatches(task, work)) return { task, stale: true };
+    task.status = WAITING_FOR_BUDGET_STATUS;
+    task.updatedAt = now();
+    task.error = "额度不足，等待预算恢复后重新校验";
+    task.errorCode = safeText(errorCode, 100);
+    return { task, waiting: true };
+  }
+
   function complete(task, status, {
     resultId = task.resultId || "",
     error = "",
@@ -419,6 +435,7 @@ export function createTaskLifecycle({ createId, now, hash }) {
     complete,
     promoteWaiting,
     promoteBudgetWaiting,
+    waitForBudget,
     waitForUserModel(tasks, id) {
       const task = tasks.find(item => item.id === id);
       if (!task || task.status !== "queued") return null;

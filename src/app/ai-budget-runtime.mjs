@@ -3,6 +3,19 @@ import { OFFICIAL_PROVIDER_PRICING } from "../modules/ai/index.mjs";
 const MICROS_PER_CNY = 1_000_000;
 const DEEPSEEK_SERVICE = "chat-completions";
 
+// 仅这些额度拒绝可等待；未知价格、格式、reservation冲突及结算错误不在此列。
+const ADMISSION_QUOTA_CODES = new Set([
+  "AI_DAILY_CALL_LIMIT", "AI_DAILY_COST_LIMIT", "AI_SITE_DAILY_COST_LIMIT",
+  "AI_SITE_MONTHLY_COST_LIMIT", "AI_SITE_DAILY_UNKNOWN_COST_LIMIT", "AI_RECORD_COMPRESSION_DAILY_LIMIT"
+]);
+const admissionFailure = (error, beforeProvider) => {
+  if (error && typeof error === "object") {
+    delete error.budgetAdmissionRejected;
+    if (beforeProvider && ADMISSION_QUOTA_CODES.has(error.code)) error.budgetAdmissionRejected = true;
+  }
+  return error;
+};
+
 const requiredText = (value, field) => {
   const normalized = String(value ?? "").trim();
   if (!normalized) throw new TypeError(`AI budget runtime ${field} is required`);
@@ -104,7 +117,13 @@ export function createAiBudgetRuntime({ budget, onRecoveryError = () => {} }) {
     if (typeof execute !== "function") {
       throw new TypeError("AI budget runtime execute callback is required");
     }
-    const reserved = await budget.reserveTask(plan);
+    let reserved;
+    try {
+      reserved = await budget.reserveTask(plan);
+    } catch (error) {
+      // 最初准入拒绝尚未进入执行回调，不可能启动provider。
+      throw admissionFailure(error, true);
+    }
     const reservation = reserved?.reservation;
     if (!reservation?.id || !Array.isArray(reservation.stages)) {
       throw new TypeError("AI budget runtime received an invalid reservation");
@@ -171,7 +190,7 @@ export function createAiBudgetRuntime({ budget, onRecoveryError = () => {} }) {
         });
       } catch (releaseError) {
         if (executionError) throw combinedFailure(executionError, releaseError, "release");
-        throw releaseError;
+        throw admissionFailure(releaseError, false);
       }
     } else {
       const settlementStages = [...started].map(stageId => ({
@@ -187,11 +206,12 @@ export function createAiBudgetRuntime({ budget, onRecoveryError = () => {} }) {
         });
       } catch (settlementError) {
         if (executionError) throw combinedFailure(executionError, settlementError, "settlement");
-        throw settlementError;
+        throw admissionFailure(settlementError, false);
       }
     }
 
-    if (executionError) throw executionError;
+    // 无stage启动且release成功才可等待；已开始/结果未知均不得标记可重跑。
+    if (executionError) throw admissionFailure(executionError, started.size === 0);
     return value;
   }
 

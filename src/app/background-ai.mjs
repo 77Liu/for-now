@@ -162,6 +162,7 @@ export function createBackgroundAi({
     running.add(key);
     const controller = new AbortController();
     controllers.set(key, controller);
+    let executed = false;
     try {
       const claimed = await repository.update(store => {
         const task = store.aiTasks.find(item => item.id === taskId);
@@ -176,6 +177,10 @@ export function createBackgroundAi({
           if (waiting) notify(store, waiting, WAITING_FOR_USER_MODEL_STATUS, "等待核心用户模型就绪");
           return false;
         }
+        if (task.kind === RECORD_COMPRESSION_TASK_KIND && !taskInputsCurrent(store, task)) {
+          stale(store, task, "日压缩已完成、越界或来源已变化，未调用模型");
+          return false;
+        }
         const claimedTask = tasks.claim(store.aiTasks, taskId);
         if (!claimedTask) return false;
         targetFor(claimedTask).started?.(store, claimedTask);
@@ -183,6 +188,7 @@ export function createBackgroundAi({
         return true;
       });
       if (!claimed) return;
+      executed = true;
       const store = await repository.read(), task = store.aiTasks.find(item => item.id === taskId);
       const work = task && prepareTarget(store, task);
       if (!task || !taskInputMatches(task, work)) {
@@ -231,6 +237,12 @@ export function createBackgroundAi({
             && !taskInputsCurrent(store, task))) {
           stale(store, task, "目标已变化，未调用外部模型");
         }
+        else if (task.kind === RECORD_COMPRESSION_TASK_KIND && error?.budgetAdmissionRejected === true) {
+          const work = prepareTarget(store, task);
+          const waiting = tasks.waitForBudget(store.aiTasks, task.id, work, error.code);
+          if (waiting.waiting) targetFor(task).waitingBudget?.(store, task);
+          else if (waiting.stale) stale(store, task, "预算等待前来源或权限已变化");
+        }
         else {
           targetFor(task).fail?.(store, task, error);
           tasks.complete(task, "failed", {
@@ -247,6 +259,9 @@ export function createBackgroundAi({
       try {
         const store = await repository.read();
         const task = store.aiTasks.find(item => item.id === taskId);
+        if (executed && task && ["succeeded", "failed", "cancelled", "stale"].includes(task.status)) {
+          await targetFor(task).settled?.(task);
+        }
         if (task?.kind === "onboardingClaimExtraction"
           && ["succeeded", "failed", "cancelled", "stale"].includes(task.status)) {
           await releaseWaiting();
@@ -336,9 +351,9 @@ export function createBackgroundAi({
           && (!operation || task.payload?.operation === operation)
           && (!localDate || task.payload?.localDate === localDate))
         .sort((left, right) => (
-          String(left.payload?.localDate || left.payload?.windowStart || "")
-            .localeCompare(String(right.payload?.localDate || right.payload?.windowStart || ""))
-          || String(left.payload?.windowStart || "").localeCompare(String(right.payload?.windowStart || ""))
+          String(right.payload?.localDate || right.payload?.windowEnd || "")
+            .localeCompare(String(left.payload?.localDate || left.payload?.windowEnd || ""))
+          || String(right.payload?.windowStart || "").localeCompare(String(left.payload?.windowStart || ""))
           || String(left.createdAt).localeCompare(String(right.createdAt))
         ));
       for (const task of waiting) {
@@ -348,6 +363,11 @@ export function createBackgroundAi({
           invalidatedCount += 1;
           continue;
         }
+        if (store.aiTasks.some(other => other.id !== task.id && other.kind === task.kind
+          && ["queued", "running"].includes(other.status)
+          && other.payload?.operation === task.payload?.operation
+          && other.payload?.timezone === task.payload?.timezone
+          && other.payload?.sourceManifestHash === task.payload?.sourceManifestHash)) continue;
         if (scheduled.length >= promotionLimit) continue;
         const promoted = tasks.promoteBudgetWaiting(store.aiTasks, task.id, work);
         if (promoted.queued) {

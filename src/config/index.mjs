@@ -137,6 +137,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     recordCompressionPerCallBudgetCny: recordCompressionEnabled ? recordCompressionPerCallBudgetCny : 0,
     recordCompressionDailyInvocationLimit: recordCompressionEnabled ? configuredInvocationLimit : 0,
     recordCompressionAccountDailyInvocationLimit: RECORD_COMPRESSION_ACCOUNT_DAILY_INVOCATION_LIMIT,
+    recordCompressionStartDate: String(env.RECORD_COMPRESSION_START_DATE ?? "").trim() || "2026-09-25",
     recordCompressionMaxBackfillDatesPerScan: Math.max(
       0,
       Math.min(
