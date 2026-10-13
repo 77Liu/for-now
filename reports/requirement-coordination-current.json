@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 222,
-  "updated_at": "2026-10-13T07:28:43.649Z",
+  "revision": 225,
+  "updated_at": "2026-10-13T07:38:58.766Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -20,7 +20,7 @@
   "iteration": {
     "id": "v0.5.14",
     "status": "IN_PROGRESS",
-    "phase": "核心反馈切片主控独立审查通过，等待本地接入develop；版本元数据与最终有状态门未执行",
+    "phase": "版本元数据/PWA主控审查通过；待本地接入后固定最终候选及新快照PG门",
     "started_by": {
       "iteration_id": "v0.5.13",
       "event_id": "v0.5.13-8b14bb6d-5580-4e7e-a2ea-10750c49e32b"
@@ -122,12 +122,12 @@
   },
   "active_tasks": [],
   "candidate": {
-    "status": "CORE_FEEDBACK_REVIEWED_WAIT_INTEGRATION",
+    "status": "FINAL_METADATA_REVIEWED_WAIT_INTEGRATION",
     "branch": "feat/v0.5.14-audio-completeness",
-    "sha": "d3f8b37b201adaa2c3bfe8b1120ca41781dcec38",
-    "tree": "26830d5e4b2f83e97814e1e908f7bf37267a5f0a",
+    "sha": "7d1520ab302bfe008bf97d5776a4a2e9f3345024",
+    "tree": "5c337c52b68d6206777ac29dfb4c09f2506bccf7",
     "release_branch": null,
-    "package_version": "0.5.13",
+    "package_version": "0.5.14",
     "partial": [
       "真实provider与iOS/设备未验收",
       "自然06:00/18:05成功生成及费用回执待部署后验证",
@@ -163,7 +163,7 @@
     "revoked": false
   },
   "blockers": [],
-  "next_action": "主控本地合入develop并运行通知/结果实际集成专项，随后同一feat准备0.5.14元数据，最终固定候选后只读生产快照及隔离PG门；不进行外部发布",
+  "next_action": "主控合入develop核对同代码对象及版本一致，再派发固定候选生产只读快照/隔离PG启动门；无外部发布",
   "runtime": {
     "sha": "a901c8507094528e48992802b102911086331043",
     "package_version": "0.5.13",
@@ -299,6 +299,22 @@
         "thread:01a11afe-73d2-7013-91d5-cd473c4d7115/exec-88d94041-bde2-468b-94e5-b4d7de58907e"
       ],
       "boundary": "合成回环provider/本机浏览器，非生产恢复、真机或真实DeepSeek验收；主开发最后回执前上下文模型容量中断，已持久化交接被主控独立核对，不作为实现丢失；仍未整版冻结"
+    },
+    {
+      "id": "v0514-core-integration",
+      "source": "git:acd4f6da9ed4d4fc97ced11ab5eb905ec8fe1b7c",
+      "status": "无冲突本地合并；与d3f8b37差异仅2个主控记录文件，实际develop通知/结果专项均PASS",
+      "boundary": "非发布冻结，无外部写入；本轮所有业务已进入develop但元数据仍0.5.13"
+    },
+    {
+      "id": "v0514-metadata-pwa-reviewed",
+      "source": "git:7d1520ab302bfe008bf97d5776a4a2e9f3345024",
+      "status": "主控亲读四元数据版本/ios10与SW真实静态、懒加载导入图；6文件逐hash及暂存tree相等；现有metadata与PWA检查PASS，74cached modules，保留初次闭包缺失FAIL；仅2启动生成模块precache、4原lazy生成边界cache-on-use",
+      "details": [
+        "thread:01a11afe-73d2-7013-91d5-cd473c4d7115/exec-bce62313-f4e0-4c4f-8187-b6d143fef1da",
+        "reports/release-v0.5.14-2026-10-13.md"
+      ],
+      "boundary": "编译产物不入Git，无API/schema/预算变更，63905合成服务清理；未整版启动门/发布"
     }
   ],
   "records": {
