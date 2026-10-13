@@ -149,7 +149,7 @@ export function createContentBackground({
             code: "AI_TASK_STALE"
           });
         }
-        const result = await runDeepSeek(work.prompt, {
+        const generated = await runDeepSeek(work.prompt, {
           scene: work.scene,
           systemPrompt: work.systemPrompt || systemPrompt(),
           captureReasoning: work.captureReasoning !== false,
@@ -162,6 +162,8 @@ export function createContentBackground({
           isCurrent,
           signal
         });
+        // 不采集思考内容时生成器返回纯文本；任务保存统一消费 content 字段。
+        const result = typeof generated === "string" ? { content: generated } : generated;
         if (work.citationsEnabled && typeof isCurrent === "function" && !await isCurrent()) {
           throw Object.assign(new Error("目标或来源已变化，回答未写入"), {
             code: "AI_TASK_STALE"

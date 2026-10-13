@@ -10,6 +10,7 @@ const hash = value => crypto.createHash("sha256").update(String(value)).digest("
 const clone = value => structuredClone(value);
 let id = 0;
 let modelCalls = 0;
+let providerFails = true;
 const scheduled = [];
 let store = {
   aiTasks: [],
@@ -56,7 +57,8 @@ const background = createContentBackground({
   dispatchBackground: callback => scheduled.push(callback),
   runDeepSeek: async () => {
     modelCalls += 1;
-    throw Object.assign(new Error("合成最终空答"), { code: "EMPTY_DEEPSEEK_CONTENT" });
+    if (providerFails) throw Object.assign(new Error("合成最终空答"), { code: "EMPTY_DEEPSEEK_CONTENT" });
+    return { content: JSON.stringify({ answer: "合成回答", citations: [] }), reasoningContent: "合成推理" };
   },
   now,
   createId: () => `id-${++id}`,
@@ -113,5 +115,13 @@ assert.equal(next.task.status, "waiting_for_user_model", "旧失败不能绕过�
 await background.backgroundAi.cancelPersisted("core-cancel");
 assert.equal(store.aiTasks.find(task => task.id === next.task.id).status, "queued");
 assert.equal(store.aiTasks.find(task => task.id === "core-cancel").status, "cancelled");
+
+providerFails = false;
+await background.backgroundAi.run(next.task.id);
+const answerResult = await background.backgroundAi.getResult(next.task.id);
+assert.equal(answerResult.task.status, "succeeded");
+assert.equal(answerResult.result.content, "合成回答");
+assert.equal(answerResult.result.reasoningContent, "合成推理", "对象响应的思考内容仍原样传给已有消费者");
+assert.deepEqual(answerResult.result.citations, [], "引用验证后的字段仍保留");
 
 console.log("Production background assembly keeps personalized answer tasks waiting without preparing a prompt or calling the provider, and rejects missing targets.");
