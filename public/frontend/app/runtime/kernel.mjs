@@ -23,13 +23,7 @@ import { createSessionRuntime } from "./session-runtime.mjs";
 import { installGlobalEvents } from "./global-events.mjs";
 import { createContentMediaRuntime } from "./content-media-runtime.mjs";
 import { createCollaborationRuntime } from "./collaboration-runtime.mjs";
-import {
-  enqueueThoughtAnswer,
-  thoughtAnswerOutcomeMessage,
-  thoughtAnswerTaskStatusKind,
-  THOUGHT_ANSWER_REJECTED_MESSAGE,
-  THOUGHT_ANSWER_UNKNOWN_MESSAGE
-} from "../../../generated/personalized-ai-task.mjs";
+import { createBackgroundThoughtAnswerRuntime } from "./personalized-task-runtime.mjs";
 
 const appEntryUrl=new URL("../../../app.js",import.meta.url);
 const applicationBasePath=new URL(".",appEntryUrl).pathname.replace(/\/$/,"")||"/";
@@ -63,8 +57,9 @@ const mediaDraftStore=createIndexedDbMediaDraftStore();
 const onboardingDraftStore=createIndexedDbMediaDraftStore({databaseName:"cike-onboarding-v2-drafts"});
 const pageAudioCoordinator=createPageAudioCoordinator();
 const BACKGROUND_RESULTS_RETRY_LIMIT=3;
-const LOCAL_TEST_VIEW_SCOPES=Object.freeze({today:"today",daily:"daily",captures:"captures",books:"books",quotes:"quotes",keepsakes:"keepsakes",journals:"journals",thoughts:"thoughts",discovery:"discovery",together:"together",review:"review",statistics:"statistics","ai-cost":"statistics",commercialization:"statistics","personal-context":"personal-context",feedback:"feedback",export:"export",trash:"trash"});
-const localTestScopeLoads=new Map();
+let injectedTestSupport=null;
+const testSupport={ensureView:view=>injectedTestSupport?.ensureView(view)||Promise.resolve(true)};
+const localTestScopeLoads={clear:()=>injectedTestSupport?.reset()};
 const baseMetrics=BASE_CHECKIN_METRICS;
 const defaultLlmProfiles={lite:{model:"deepseek-flash",effort:"none"},mid:{model:"deepseek-flash",effort:"high"},high:{model:"deepseek-v4-pro",effort:"high"},ultra:{model:"deepseek-v4-pro",effort:"max"}};
 const defaultLlmScenarios={thoughtPrompt:"lite",thoughtDraft:"high",thoughtAnswer:"ultra",followUpAnswer:"ultra",chat:"high",diaryLead:"lite",diaryStructure:"mid",diaryTopic:"high",diaryReflection:"ultra",annotationShenji:"high",analysis:"ultra",bookRecognition:"mid",healthRecognition:"mid",contentImageUnderstanding:"mid",capturePolish:"mid",recordCompression:"lite"};
@@ -363,68 +358,11 @@ const answerModalRuntime=createAnswerModalRuntime({
   resolvePersonalizedTask
 });
 const {close:closeAnswerModal,run:runAnswerInModal}=answerModalRuntime;
-async function startBackgroundChainAnswer(question,existingTask=null){
-  const owner=currentUser?.id||"",session=sessionSerial;
-  const isCurrent=()=>owner===(currentUser?.id||"")&&session===sessionSerial;
-  let task=existingTask,notificationsRefreshed=true;
-  if(!task){
-    const outcome=await enqueueThoughtAnswer({
-      ownerId:owner,
-      targetId:question.id,
-      inputVersion:question.version||1,
-      createRequestId:()=>crypto.randomUUID(),
-      request,
-      refreshNotifications:()=>refreshState("notifications"),
-      isCurrent
-    });
-    if(!isCurrent())return false;
-    if(outcome.kind==="rejected"){
-      setAnswerStatus(question.id,THOUGHT_ANSWER_REJECTED_MESSAGE,"error");
-      showToast("回答未能进入后台队列","error");
-      return false;
-    }
-    if(outcome.kind==="unknown"){
-      setAnswerStatus(question.id,THOUGHT_ANSWER_UNKNOWN_MESSAGE,"error");
-      showToast(THOUGHT_ANSWER_UNKNOWN_MESSAGE,"error");
-      return false;
-    }
-    task=outcome.task;
-    notificationsRefreshed=outcome.notificationsRefreshed;
-  }
-  if(!isCurrent())return false;
-  if(!state.aiTasks.some(item=>item.id===task.id))state.aiTasks.unshift(task);
-  if(existingTask){
-    try{notificationsRefreshed=(await refreshState("notifications"))!==false}catch{notificationsRefreshed=false}
-  }
-  if(!isCurrent())return task;
-  scheduleNotificationPoll();
-  const status=thoughtAnswerOutcomeMessage(task,notificationsRefreshed);
-  const statusKind=thoughtAnswerTaskStatusKind(task);
-  setAnswerStatus(question.id,status,statusKind);
-  showToast(status,statusKind);
-  return task;
-}
-async function ensureLocalTestViewScope(view){
-  const scope=LOCAL_TEST_VIEW_SCOPES[view];
-  if(!scope||localTestConfig?.mode!=="simulation"||localTestConfig.loadedScopes?.includes(scope))return true;
-  if(localTestScopeLoads.has(scope))return localTestScopeLoads.get(scope);
-  const owner=currentUser?.id,session=sessionSerial,panel=$(`#view-${view}`);
-  panel?.setAttribute("aria-busy","true");
-  const pending=(async()=>{
-    try{
-      const result=await request("/api/local-test-mode/hydrate",{method:"POST",body:JSON.stringify({scope})});
-      if(owner!==currentUser?.id||session!==sessionSerial||localTestConfig?.mode!=="simulation")return false;
-      localTestConfig=result.control;replaceState(result.state);runtimeStatePort?.replace(state,Object.keys(result.state||{}),{source:"local-test-hydrate"});notificationUnreadCount=Number(state.notificationUnread)||0;loadedRouteKey=routeDataKey(pageRouter?.currentRoute());renderOnboarding();renderVisibleRoute();return true
-    }catch(error){
-      if(owner===currentUser?.id&&session===sessionSerial)showToast(`当前页面记录读取失败：${error.message}`,"error");
-      return false
-    }finally{
-      panel?.removeAttribute("aria-busy");localTestScopeLoads.delete(scope)
-    }
-  })();
-  localTestScopeLoads.set(scope,pending);
-  return pending
-}
+const startBackgroundChainAnswer=createBackgroundThoughtAnswerRuntime({
+  runtime:runtimeState,getSessionSerial:()=>sessionSerial,getTasks:()=>state.aiTasks,
+  request,refreshState,scheduleNotificationPoll,setAnswerStatus,showToast
+});
+const ensureLocalTestViewScope=view=>testSupport.ensureView(view);
 async function withFeatureScope(view,operation){
   if(!await ensureLocalTestViewScope(view))throw new Error("当前页面记录读取失败，请稍后重试");
   return operation()
@@ -448,11 +386,12 @@ const readAudioDraftDuration=blob=>new Promise((resolve,reject)=>{
   const done=value=>{URL.revokeObjectURL(source);audio.removeAttribute("src");audio.load();value instanceof Error?reject(value):resolve(value)};
   audio.preload="metadata";audio.addEventListener("loadedmetadata",()=>Number.isFinite(audio.duration)&&audio.duration>0?done(Math.round(audio.duration*1000)):done(new Error("无法读取音频时长")),{once:true});audio.addEventListener("error",()=>done(new Error("无法读取音频时长")),{once:true});audio.src=source
 });
-const globalEvents=installGlobalEvents({runtime:runtimeState,$,$$,actionsCoordinator,localTestViewScopes:LOCAL_TEST_VIEW_SCOPES,ensureLocalTestViewScope,restorePendingProjections,createPageRouter,applicationBasePath,applyApplicationRoute,hasCapability,showPermissionPage,renderHomeMemories,openHomeMemory,openHomeEditor,closeHomeEditors,renderDate,renderSliders,publishDomains,renderStateChart,renderHomeMood,renderChat,showToast,pageAudioCoordinator,claimPageAudio,stopPageAudio,normalizeTtsPlaybackRate,requestV1,refreshState,applyPendingProjection,contentImageDraft,renderContentImageEditor,setContentImageFiles,queueContentImageUnderstanding,metricConfig,metricValue,splitTags,clearDurableDraft,saveDurableDrafts,durableDraftForms,resetOccurrenceInput,occurrenceFields,occurrenceKeyboardSubmit,entryKeyIntent,imageRecordPayload,captureRecordPayload,contentImagePaths,clearSubmittedContentImageDraft,discardContentImageUploads,llmProfile,runAnswerInModal,requestStream,startBackgroundChainAnswer,request,resolvePersonalizedTask,quoteTagPickerConfig,quoteTagPickerElements,updateQuoteTagPicker,renderQuoteTagPicker,quoteTagsForSubmission,quoteTagCandidates,closeSelectionQuoteModal,collectOnboardingAnswers,renderOnboardingQuestions,onboardingPayload,onboardingV2Controller,load,localDateKey,apiClient,setAuthTab,setAuthBusy,authRequest,restartApplicationForUser,showAuthGate,mediaDraftStore,state,sessionSerial,persistedDateTimeInput,escapeHtml,presentError,openThoughtDetail,openContextReceiptSource,loadRouteState,renderTagComposer,commitDraftTags,chainRecordKind,syncChainRecordKind,resetContentImageEditor,closeAnswerModal,openImageViewer,closeImageViewer,moveImageViewer,trapHomeEditorFocus,handleTagMultiSelectKey});
+const globalEvents=installGlobalEvents({runtime:runtimeState,$,$$,actionsCoordinator,testSupport,restorePendingProjections,createPageRouter,applicationBasePath,applyApplicationRoute,hasCapability,showPermissionPage,renderHomeMemories,openHomeMemory,openHomeEditor,closeHomeEditors,renderDate,renderSliders,publishDomains,renderStateChart,renderHomeMood,renderChat,showToast,pageAudioCoordinator,claimPageAudio,stopPageAudio,normalizeTtsPlaybackRate,requestV1,refreshState,applyPendingProjection,contentImageDraft,renderContentImageEditor,setContentImageFiles,queueContentImageUnderstanding,metricConfig,metricValue,splitTags,clearDurableDraft,saveDurableDrafts,durableDraftForms,resetOccurrenceInput,occurrenceFields,occurrenceKeyboardSubmit,entryKeyIntent,imageRecordPayload,captureRecordPayload,contentImagePaths,clearSubmittedContentImageDraft,discardContentImageUploads,llmProfile,runAnswerInModal,requestStream,startBackgroundChainAnswer,request,resolvePersonalizedTask,quoteTagPickerConfig,quoteTagPickerElements,updateQuoteTagPicker,renderQuoteTagPicker,quoteTagsForSubmission,quoteTagCandidates,closeSelectionQuoteModal,collectOnboardingAnswers,renderOnboardingQuestions,onboardingPayload,onboardingV2Controller,load,localDateKey,apiClient,setAuthTab,setAuthBusy,authRequest,restartApplicationForUser,showAuthGate,mediaDraftStore,state,sessionSerial,persistedDateTimeInput,escapeHtml,presentError,openThoughtDetail,openContextReceiptSource,loadRouteState,renderTagComposer,commitDraftTags,chainRecordKind,syncChainRecordKind,resetContentImageEditor,closeAnswerModal,openImageViewer,closeImageViewer,moveImageViewer,trapHomeEditorFocus,handleTagMultiSelectKey});
 ({pageRouter,switchView,restoreView}=globalEvents);
 const {openCaptureFeature,openLibraryFeature,openQuoteFeature,openKeepsakeFeature,openDiscoveryItem,openCheckinEditor,logout}=globalEvents;
 export async function createRuntimeComposition(initial = null, {
   opening = null,
+  createTestSupport = null,
   featureModules,
   expectedViews = []
 } = {}) {
@@ -472,6 +411,16 @@ export async function createRuntimeComposition(initial = null, {
   const mediaReady=initializeContentImageDraftManager();
   const portFactories=await portFactoriesRequest;
   const {statePort,syncPort,shellPort,sessionPort}=createRuntimeApplicationPorts(portFactories);
+  injectedTestSupport=createTestSupport?.({
+    getControl:()=>runtimeState.localTestConfig,getOwner:()=>currentUser?.id,getSession:()=>sessionSerial,
+    getPanel:view=>$(`#view-${view}`),request,
+    setControl:value=>{localTestConfig=value},replaceSnapshot:replaceState,
+    publishSnapshot:(snapshot,source)=>runtimeStatePort?.replace(state,Object.keys(snapshot),{source}),
+    setUnreadCount:value=>{notificationUnreadCount=value},
+    markRouteLoaded:()=>{loadedRouteKey=routeDataKey(pageRouter?.currentRoute())},
+    render:()=>{renderOnboarding();renderVisibleRoute()},
+    fail:error=>showToast(`当前页面记录读取失败：${error.message}`,"error")
+  })||null;
   const descriptors=createPageFeatureDescriptors({
     runtime:runtimeState,runtimeFeatureLoaders,$,actionsCoordinator,showToast,
     request,resolvePersonalizedTask,featureRequestV1,featureListAllV1,mediaDraftStore,requestCoordinator,

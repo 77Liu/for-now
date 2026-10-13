@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 234,
-  "updated_at": "2026-10-13T10:35:18.073Z",
+  "revision": 240,
+  "updated_at": "2026-10-13T11:36:22.048Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -9,9 +9,9 @@
     "write_authority": "唯一维护者；必须经coordination:update入口更新"
   },
   "rule_baseline": {
-    "commit": "bd886de00e94c742ff11dc17486565a2a768f2a2",
+    "commit": "0774ca234035c93d6668e50fa666b2ef8b82992f",
     "effective_date": "2026-10-13",
-    "source": "PROJECT_RULES.md；knowledge/coordination-control-plane.md v2.1；knowledge/engineering-rules.md#35-源码与注释规范；SOP/requirement-intake.md v1.1"
+    "source": "PROJECT_RULES.md及其唯一正文引用；控制面协议2.2、每版本¥4共享测试许可"
   },
   "work_mode": {
     "status": "ACTIVE",
@@ -63,8 +63,7 @@
       "防息屏",
       "全站媒体格式改造",
       "重复合成立项",
-      "历史默认标题批量回填",
-      "真实付费调用"
+      "历史默认标题批量回填"
     ],
     "cumulative_predecessor": "git:cd8055356a190f87bf6346fa806ec0dee85f1711",
     "implementation_order": [
@@ -122,34 +121,10 @@
     "asr_badcase_fact": {
       "source": "Owner本轮注释2；需求recvxyg5bmmnfW定向rev546",
       "fact": "原音回放完整，转写内容遗漏",
-      "historical_record_link": "缺记录ID/完整发生日期；附件仅21:17:32、约56秒"
+      "historical_record_link": "Owner已确认shenji、2026-10-08 21:17:32 Asia/Shanghai；主控只读定位唯一匹配原音56.984秒；关联存于本机私密回执"
     }
   },
-  "active_tasks": [
-    {
-      "id": "v0514-kernel-boundary",
-      "owner": "01a11afe-73d2-7013-91d5-cd473c4d7115",
-      "mode": "implementation",
-      "branch": "feat/v0.5.14-audio-completeness",
-      "write_set": [
-        "public/frontend/app/runtime/kernel.mjs",
-        "public/frontend/app/runtime/personalized-task-runtime.mjs",
-        "public/frontend/app/runtime.mjs（仅测试支持注入接线）",
-        "public/test-support/**.mts（仅本机测试适配器）",
-        "必要TS构建入口、SW生成模块闭包",
-        "scripts/frontend-runtime-composition-regression.mjs",
-        "既有相关生命周期/局部测试回归"
-      ],
-      "forbidden": [
-        "控制面、events/terminal",
-        "Markdown规则",
-        "生产/远程动作",
-        "压缩/ASR实现",
-        "其他业务重构"
-      ],
-      "acceptance": "kernel仅装配接线，回答登记回归真实模块，测试数据加载移出业务；新源码TS/注释/产物隔离；完整现有消费者兼容及必要专项"
-    }
-  ],
+  "active_tasks": [],
   "candidate": null,
   "authorization": {
     "source": "Owner本轮控制面规则与八项注释；既有for_now_backup账户权限持续有效",
@@ -186,17 +161,17 @@
   },
   "blockers": [
     {
-      "id": "kernel-responsibility",
-      "status": "OPEN",
-      "reason": "kernel尚含回答登记与local-test数据加载，当前533>500；按Owner要求分离后验证"
-    },
-    {
-      "id": "historical-asr-association",
-      "status": "WAIT_INFORMATION",
-      "reason": "历史附件未含记录ID/日期，已向Owner询问；不阻塞其他ready工作"
+      "id": "snapshot-onboarding-semantics",
+      "status": "CONFIRMED",
+      "reason": "现有快照onboardingV2的step/selectedFlow/readiness固定值被HMAC替换，真实normalize消费者会回退默认值；不能用于真实冷启/压缩闭环语义验收",
+      "affected_actions": [
+        "真实冷启/压缩本机闭环",
+        "最终新候选快照门"
+      ],
+      "evidence_ref": "scripts/release-state-startup-gate.mts及reports/local/v0514-startup-snapshot-current.json"
     }
   ],
-  "next_action": "主开发串行分离kernel职责和测试数据适配；主控独立审查，继续本机模拟器音频操作核验；随后压缩回填及真实本机闭环。",
+  "next_action": "提交接入已审查前端职责切片；串行派发快照冷启技术枚举精确保真修复；主控核对已定位历史原音。",
   "runtime": {
     "sha": "a901c8507094528e48992802b102911086331043",
     "package_version": "0.5.13",
@@ -252,6 +227,31 @@
       ],
       "refs": [
         "git:7d1520ab302bfe008bf97d5776a4a2e9f3345024"
+      ]
+    },
+    {
+      "id": "control-protocol-v2",
+      "candidate_sha": "0774ca234035c93d6668e50fa666b2ef8b82992f",
+      "conclusion": "主控独立代码审查、实际增量迁移和真实旧链audit PASS",
+      "limitations": [
+        "结构回放/恢复不自动证明事件证据语义；旧事件未改写"
+      ],
+      "refs": [
+        "git:6dcddf2",
+        "reports/iterations/v0.5.14/events.jsonl#v0.5.14-delta-format-activation-20261013"
+      ]
+    },
+    {
+      "id": "kernel-boundary",
+      "candidate_sha": "0774ca2+本切片待提交差分",
+      "conclusion": "主控独立审查真实表单/任务登记/会话/测试适配器消费者，TS构建与模块检查PASS；kernel482行",
+      "limitations": [
+        "仅职责切片及相关自测；新候选全局门另行执行"
+      ],
+      "refs": [
+        "public/frontend/app/runtime/kernel.mjs",
+        "public/test-support/view-scope.mts",
+        "public/frontend/app/runtime/chat-submission.mts"
       ]
     }
   ],

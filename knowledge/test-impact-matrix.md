@@ -1,6 +1,6 @@
 # 测试影响矩阵
 
-版本：1.1；生效日期：2026-10-12。本文是“改了什么就验证什么”的唯一选择正文。它决定受影响行为、最小专项和何时补上层验证；具体命令实现、fixture 和证据格式仍见 [`system-testing.md`](system-testing.md) 与 `package.json`。
+版本：1.2；生效日期：2026-10-13。本文是“改了什么就验证什么”的唯一选择正文。它决定受影响行为、最小专项和何时补上层验证；具体命令实现、fixture 和证据格式仍见 [`system-testing.md`](system-testing.md) 与 `package.json`。
 
 ## 维护边界
 

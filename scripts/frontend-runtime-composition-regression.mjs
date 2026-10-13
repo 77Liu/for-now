@@ -1,3 +1,6 @@
+import { createTestSupportBridge } from "../public/frontend/app/runtime/loaders.mjs";
+import { createViewScopeSupport } from "../public/generated/test-support/view-scope.mjs";
+import { createBackgroundThoughtAnswerRuntime } from "../public/frontend/app/runtime/personalized-task-runtime.mjs";
 import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -56,6 +59,65 @@ const runtimeModules = [
   "public/frontend/app/runtime/startup-timing.mjs",
   "public/frontend/app/runtime/thought-draft-tag-composer.mjs"
 ];
+// 使用真实动态产物路径连接适配器；非模拟配置不进入加载/会话分支。
+{
+  let mode="disabled", activations=0;
+  const bridge=createTestSupportBridge({getControl:()=>({mode}),
+    getOwner:()=>{activations+=1;return "adapter-owner"},getSession:()=>1,
+    fail:error=>{throw error}});
+  assert.equal(await bridge.ensureView("mine"),true);
+  assert.equal(activations,0);
+  mode="simulation";
+  assert.equal(await bridge.ensureView("mine"),true,"真实生成适配器路径必须能加载");
+  assert.equal(activations>0,true);
+  bridge.reset();
+}
+// 隔离测试支持：非模拟模式无请求，在途复用，重置后的迟到结果不影响新任务。
+{
+  let owner="account-a", serial=1, control={ mode:"disabled", loadedScopes:[] }, calls=0;
+  const waiting=[], effects=[], panel={busy:false,setAttribute(){this.busy=true},removeAttribute(){this.busy=false}};
+  const support=createViewScopeSupport({
+    getControl:()=>control,getOwner:()=>owner,getSession:()=>serial,getPanel:()=>panel,
+    request:()=>{calls+=1;return new Promise(resolve=>waiting.push(resolve))},
+    setControl:value=>{control=value;effects.push("control")},replaceSnapshot:()=>effects.push("replace"),
+    publishSnapshot:(_,source)=>effects.push(source),setUnreadCount:value=>effects.push(value),
+    markRouteLoaded:()=>effects.push("route"),render:()=>effects.push("render"),fail:()=>effects.push("failure")
+  });
+  assert.equal(await support.ensureView("captures"),true);
+  assert.equal(calls,0);
+  control={mode:"simulation",loadedScopes:[]};
+  const old=support.ensureView("captures");
+  assert.equal(support.ensureView("captures"),old);
+  await Promise.resolve();assert.equal(calls,1);
+  owner="account-b";serial+=1;support.reset();assert.equal(panel.busy,false);
+  const next=support.ensureView("captures");await Promise.resolve();assert.equal(calls,2);
+  waiting[0]({control:{mode:"simulation",loadedScopes:["captures"]},state:{notificationUnread:7}});
+  assert.equal(await old,false);assert.equal(panel.busy,true);assert.deepEqual(effects,[]);
+  waiting[1]({control:{mode:"simulation",loadedScopes:["captures"]},state:{notificationUnread:3}});
+  assert.equal(await next,true);assert.equal(panel.busy,false);
+  assert.deepEqual(effects,["control","replace","local-test-hydrate",3,"route","render"]);
+  await support.ensureView("captures");await support.ensureView("mine");assert.equal(calls,2);
+}
+// 记录端响应已有任务只接入；通知失败和会话失效不得重复POST或更新新账户界面。
+{
+  const runtime={currentUser:{id:"record-owner-a"}};let serial=1,posts=0,refreshes=0,polls=0;
+  const tasks=[],messages=[];
+  const task={id:"record-existing",kind:"thoughtAnswer",targetId:"record-root",inputVersion:1,status:"queued"};
+  const start=createBackgroundThoughtAnswerRuntime({runtime,getSessionSerial:()=>serial,getTasks:()=>tasks,
+    request:async()=>{posts+=1;return task},refreshState:async()=>{refreshes+=1;return false},
+    scheduleNotificationPoll:()=>polls+=1,setAnswerStatus:(...args)=>messages.push(args),showToast:()=>{},createRequestId:()=>"record-stable-key"});
+  assert.equal(await start({id:"record-root",version:1},task),task);
+  assert.equal(posts,0);assert.equal(tasks.length,1);assert.equal(refreshes,1);assert.equal(polls,1);
+  assert.match(messages[0][1],/通知暂未读取成功/);
+  assert.equal(await start({id:"record-root",version:1}),task);assert.equal(posts,1);assert.equal(tasks.length,1);
+  const late=createBackgroundThoughtAnswerRuntime({runtime,getSessionSerial:()=>serial,getTasks:()=>tasks,
+    request:async()=>{runtime.currentUser={id:"record-owner-b"};serial+=1;return task},refreshState:async()=>true,
+    scheduleNotificationPoll:()=>{throw new Error("late poll")},setAnswerStatus:()=>{throw new Error("late UI")},showToast:()=>{throw new Error("late toast")},createRequestId:()=>"record-late-key"});
+  assert.equal(await late({id:"record-root",version:1}),false);
+}
+const kernelSource=await read("public/frontend/app/runtime/kernel.mjs");
+assert.doesNotMatch(kernelSource,/LOCAL_TEST_VIEW_SCOPES|api\/local-test-mode\/hydrate|enqueueThoughtAnswer/);
+assert.match(kernelSource,/createBackgroundThoughtAnswerRuntime/);
 for (const modulePath of runtimeModules) {
   const source = await read(modulePath);
   assert.ok(lines(source) <= 500, `${modulePath} exceeds the 500-line owner limit`);

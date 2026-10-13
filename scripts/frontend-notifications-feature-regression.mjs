@@ -1,3 +1,4 @@
+import { isPendingAiTaskStatus } from "../public/frontend/shared/ai-task-status.mjs";
 import { createNotificationRuntime } from "../public/generated/app/runtime/notification-runtime.mjs";
 import assert from "node:assert/strict";
 import {
@@ -59,6 +60,26 @@ async function waitFor(predicate, message) {
     await flush();
   }
   assert.fail(message);
+}
+
+// 最后一个任务已完成时，仍只为未用尽的结果读取重试登记真实轮询timer。
+{
+  const originalSet=globalThis.setTimeout,originalClear=globalThis.clearTimeout;
+  const timers=new Set();
+  globalThis.setTimeout=(callback,delay,...args)=>{const timer=originalSet(callback,delay,...args);timers.add(timer);return timer};
+  globalThis.clearTimeout=timer=>{timers.delete(timer);originalClear(timer)};
+  const runtime={currentUser:{id:"poll-owner"},backgroundResultsRetryAttempts:0};
+  const notifications=createNotificationRuntime({runtime,getSnapshot:()=>({aiTasks:[{id:"completed",status:"succeeded"}]}),
+    getSessionSerial:()=>1,request:async()=>({items:[]}),syncResults:async()=>{},setUnreadDot:()=>{},retryLimit:3,isPendingTask:isPendingAiTaskStatus});
+  try {
+    for(const attempts of [0,1,2,3]){
+      runtime.backgroundResultsRetryAttempts=attempts;notifications.scheduleNotificationPoll();
+      assert.equal(timers.size,attempts===1||attempts===2?1:0,`completed任务attempts=${attempts}的实际轮询登记`);
+    }
+  } finally {
+    for(const timer of timers)originalClear(timer);
+    globalThis.setTimeout=originalSet;globalThis.clearTimeout=originalClear;
+  }
 }
 
 // 账户切换后的迟到通知不得写入新快照或结果同步。

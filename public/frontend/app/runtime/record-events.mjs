@@ -1,3 +1,4 @@
+import { installChatSubmission } from "../../../generated/app/runtime/chat-submission.mjs";
 import { state } from "../../state/index.mjs";
 
 /** 绑定记录、思考和聊天表单事件；注入的请求端口必须使用当前会话状态。 */
@@ -461,81 +462,6 @@ export function installRecordSubmissionEvents({
     }
   });
 
-  $("#chat-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const button = form.querySelector("button");
-    const requestId = form.dataset.requestId || crypto.randomUUID();
-    const payload = {
-      ...occurrenceFields($("#chat-datetime")),
-      message: $("#chat-input").value,
-    };
-    form.dataset.requestId = requestId;
-    button.disabled = true;
-    $("#chat-status").textContent = "正在结合你已保存的记录…";
-    try {
-      const owner = runtime.currentUser?.id;
-      const session = runtime.sessionSerial;
-      const initialResponse = await requestV1(
-        "/api/v1/chats",
-        {
-          method: "POST",
-          headers: { "idempotency-key": requestId },
-          body: JSON.stringify(payload),
-        },
-        { domains: ["chats"] },
-      );
-      const settled = await resolvePersonalizedTask(initialResponse, {
-        operationLabel: "对话回答",
-        expectedKind: "chat",
-        onStatus: (message) => {
-          if (
-            owner === runtime.currentUser?.id &&
-            session === runtime.sessionSerial
-          )
-            $("#chat-status").textContent = message;
-        },
-      });
-      if (settled.abandoned) return;
-      if (
-        owner !== runtime.currentUser?.id ||
-        session !== runtime.sessionSerial
-      )
-        return;
-      const saved = settled.result;
-      if (
-        saved.message !== payload.message ||
-        saved.occurredAt !== payload.occurredAt ||
-        saved.occurredOn !== payload.occurredOn
-      ) {
-        throw new Error("后台对话结果与本次问题不匹配，输入已保留。");
-      }
-      const unchanged =
-        JSON.stringify({
-          ...occurrenceFields($("#chat-datetime")),
-          message: $("#chat-input").value,
-        }) === JSON.stringify(payload);
-      delete form.dataset.requestId;
-      if (unchanged) {
-        $("#chat-input").value = "";
-        resetOccurrenceInput($("#chat-datetime"));
-      }
-      void refreshState("chat").catch((error) =>
-        showToast(`回答已保存，但页面刷新失败：${error.message}`, "error"),
-      );
-      $("#chat-status").textContent = unchanged
-        ? "回答已生成并保存。"
-        : "回答已生成；你后来修改的输入已保留。";
-    } catch (error) {
-      if (error.taskId) {
-        delete form.dataset.requestId;
-      }
-      $("#chat-status").textContent =
-        error.syncStatus === "pending"
-          ? "问题已留存，网络恢复后自动处理。"
-          : error.message;
-    } finally {
-      button.disabled = false;
-    }
-  });
+  installChatSubmission({runtime,$,requestV1,resolvePersonalizedTask,occurrenceFields,
+    resetOccurrenceInput,refreshState,showToast});
 }
