@@ -90,7 +90,7 @@ const noop = () => {};
 const pendingThoughtAnswerRequests = new Map<string, PendingThoughtAnswerRequest>();
 export const THOUGHT_ANSWER_REJECTED_MESSAGE = "思绪已保存，但回答未能排队。请刷新思绪后重试。";
 export const THOUGHT_ANSWER_UNKNOWN_MESSAGE = "思绪已保存，回答排队状态尚未确认。再次发起会安全确认同一请求。";
-export const THOUGHT_ANSWER_NOTIFICATIONS_STALE_MESSAGE = "通知状态暂未刷新；稍后可在通知中查看。";
+export const THOUGHT_ANSWER_NOTIFICATIONS_STALE_MESSAGE = "通知暂未读取成功；任务已登记，可到通知页重新读取。";
 
 export function thoughtAnswerTaskMessage(task: ThoughtAnswerTask): string {
   switch (task.status) {
@@ -310,8 +310,7 @@ export async function enqueueThoughtAnswer({
   let notificationsRefreshed = !refreshNotifications;
   if (refreshNotifications && isCurrent()) {
     try {
-      await refreshNotifications();
-      notificationsRefreshed = true;
+      notificationsRefreshed = (await refreshNotifications()) !== false;
     } catch {
       notificationsRefreshed = false;
     }

@@ -12,6 +12,8 @@
   },
   "files": [
     "public/frontend/features/background-results/recovery.mts",
-    "public/frontend/features/onboarding-v2/navigation.mts"
+    "public/frontend/features/onboarding-v2/navigation.mts",
+    "public/frontend/features/personal-context/conclusion-state.mts",
+    "public/frontend/app/runtime/notification-runtime.mts"
   ]
 }

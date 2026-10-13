@@ -1,3 +1,4 @@
+import { createNotificationRuntime } from "../public/generated/app/runtime/notification-runtime.mjs";
 import assert from "node:assert/strict";
 import {
   createNotificationsFeatureController,
@@ -10,14 +11,22 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 
 {
   const runtime = {};
+  const reads = [];
+  let targetLoaded = true;
+  let notificationFails = false;
+  let automaticSyncs = 0;
   const data = createDataRuntime({
     runtime,
-    apiClient: {},
+    apiClient: { request: async path => {
+      reads.push(path);
+      if (notificationFails) throw Object.assign(new Error("synthetic read"), { status: 503 });
+      return path === "/api/notifications" ? { items: [], unread: 0 } : { items: [] };
+    } },
     syncStore: {},
     createRequestCoordinator: () => ({}),
-    createRefreshCoordinator: () => ({}),
+    createRefreshCoordinator: () => ({ refresh: async () => targetLoaded }),
     createIncrementalSync: () => ({}),
-    $: () => null,
+    $: () => ({ hidden: false }),
     getActionsCoordinator: () => ({}),
     renderStateChart() {},
     renderHomeMood() {},
@@ -25,7 +34,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
     clearRouteLoadFailure() {},
     renderVisibleRoute() {},
     renderRouteLoadFailure() {},
-    syncBackgroundTaskResults: async () => {},
+    syncBackgroundTaskResults: async () => { automaticSyncs += 1; },
     ensureBackgroundResultsController: () => ({}),
     backgroundResultsRetryLimit: 3
   });
@@ -50,6 +59,28 @@ async function waitFor(predicate, message) {
     await flush();
   }
   assert.fail(message);
+}
+
+// 账户切换后的迟到通知不得写入新快照或结果同步。
+{
+  const pending = deferred();
+  const runtime = { currentUser: { id: "account-a" } };
+  let serial = 1;
+  const state = { aiTasks: [], notifications: [] };
+  let syncs = 0;
+  const notifications = createNotificationRuntime({
+    runtime, getSnapshot: () => state, getSessionSerial: () => serial,
+    request: async () => pending.promise,
+    syncResults: async () => { syncs += 1; },
+    setUnreadDot: () => {}, retryLimit: 3, isPendingTask: status => ["queued", "running", "waiting_for_user_model"].includes(status)
+  });
+  const read = notifications.loadNotifications();
+  runtime.currentUser = { id: "account-b" };
+  serial += 1;
+  pending.resolve({ items: [{ id: "old-task", status: "succeeded" }], unread: 1 });
+  assert.equal(await read, false);
+  assert.deepEqual(state, { aiTasks: [], notifications: [] });
+  assert.equal(syncs, 0);
 }
 
 class FakeElement {
@@ -81,6 +112,7 @@ class FakeElement {
   closest(selector) {
     if (this.kind === "all" && selector === NOTIFICATION_SELECTORS.readAll) return this;
     if (this.dataset.taskRetry !== undefined && selector === NOTIFICATION_SELECTORS.retry) return this;
+    if (this.dataset.resultReread !== undefined && selector === "[data-result-reread]") return this;
     if (this.dataset.notificationCopy !== undefined && selector === NOTIFICATION_SELECTORS.copy) return this;
     if (this.dataset.notificationCopyFallbackSelect !== undefined
       && selector === NOTIFICATION_SELECTORS.fallbackSelect) return this;
@@ -253,6 +285,7 @@ for (const name of Object.keys(ports())) {
   loadState = "failure";
   assert.equal(controller.render({ snapshot: state, changedDomains: ["aiTasks"] }), true);
   assert.match(root.status.textContent, /任务进度暂未更新/);
+  assert.match(root.list.innerHTML, /data-content-action="retry-notifications"/, "已有旧通知时仍有真实读取恢复入口");
   state = { notifications: [], aiTasks: [], notificationUnread: 0 };
   assert.equal(controller.render({ snapshot: state }), true);
   assert.match(root.list.innerHTML, /暂时无法读取通知/);
@@ -363,6 +396,14 @@ for (const name of Object.keys(ports())) {
   await waitFor(() => events.includes("open"), "open target was not called");
   assert.deepEqual(events.slice(0, 2), ["/api/notifications/notice-1/read", "open"]);
 
+  const requestsBeforeReread = requests.length;
+  state.aiTasks[0].status = "succeeded";
+  events.length = 0;
+  root.click({ resultReread: "task-1", notificationId: "notice-1" });
+  await waitFor(() => events.includes("open"), "成功任务只读恢复必须可执行");
+  assert.equal(requests.length, requestsBeforeReread, "重新读取不标已读也不POST生成");
+  assert.deepEqual(events, ["open"]);
+  state.aiTasks[0].status = "failed";
   root.click({ taskRetry: "task-1" });
   root.click({ taskRetry: "task-1" });
   assert.equal(requests.filter(([path]) => path.includes("/retry")).length, 1);

@@ -162,6 +162,9 @@ export function notificationEntryMarkup(notification: NotificationSummary = {}, 
   const open = state.canOpen
     ? `<button class="subtle-action" type="button" data-notification-open="${html(state.targetId)}" data-notification-task="${html(state.taskId)}" data-notification-id="${html(state.id)}" aria-label="${html(actionLabel("open", state.title))}">查看</button>`
     : "";
+  const reread = state.canOpen && task?.status === "succeeded"
+    ? `<button class="subtle-action" type="button" data-result-reread="${html(state.taskId)}" data-notification-id="${html(state.id)}">重新读取</button>`
+    : "";
   const retry = state.canRetry
     ? `<button class="subtle-action" type="button" data-task-retry="${html(state.taskId)}" aria-label="${html(actionLabel(state.retryBusy ? "retrying" : "retry", state.title))}"${state.retryBusy ? ' aria-busy="true" disabled' : ""}>${state.retryBusy ? "正在重试" : "重试"}</button>`
     : "";
@@ -178,5 +181,5 @@ export function notificationEntryMarkup(notification: NotificationSummary = {}, 
     ? `<time datetime="${html(state.datetime)}">${html(state.timeLabel)}</time>`
     : "";
 
-  return `<article class="notification-entry${state.unread ? " unread" : ""}" data-status="${html(state.status)}"><div class="notification-entry-copy"><header><b>${html(state.title)}</b><span aria-label="状态：${html(state.statusLabel)}">${html(state.statusLabel)}</span>${time}</header><p>${html(state.message)}</p></div><div class="notification-entry-actions">${open}${retry}${copyLog}${markRead}</div>${fallback}</article>`;
+  return `<article class="notification-entry${state.unread ? " unread" : ""}" data-status="${html(state.status)}"><div class="notification-entry-copy"><header><b>${html(state.title)}</b><span aria-label="状态：${html(state.statusLabel)}">${html(state.statusLabel)}</span>${time}</header><p>${html(state.message)}</p></div><div class="notification-entry-actions">${open}${reread}${retry}${copyLog}${markRead}</div>${fallback}</article>`;
 }

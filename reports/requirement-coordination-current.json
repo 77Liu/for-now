@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 191,
-  "updated_at": "2026-10-13T02:57:39.676Z",
+  "revision": 222,
+  "updated_at": "2026-10-13T07:28:43.649Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -19,29 +19,38 @@
   },
   "iteration": {
     "id": "v0.5.14",
-    "status": "SCOPE_REOPENED",
-    "phase": "Owner追加六项生产反馈，保留原六条音频，先登记再修复",
+    "status": "IN_PROGRESS",
+    "phase": "核心反馈切片主控独立审查通过，等待本地接入develop；版本元数据与最终有状态门未执行",
     "started_by": {
       "iteration_id": "v0.5.13",
       "event_id": "v0.5.13-8b14bb6d-5580-4e7e-a2ea-10750c49e32b"
     }
   },
   "scope": {
-    "description": "v0.5.14保留录音完整性与音频体验六条，追加冷启导航/整理空答/直达今日/核心模型等待/后台结果反复同步错误五项，以及日压缩调度失败",
+    "description": "v0.5.14保留音频六条、冷启/回答五项及日压缩失败，追加模型卡片自动收缩；冷启整理正常成功为首要验收，同步提示两种表现按同链复现裁定，不重复立项",
     "requirement_ids": [
       "recvxyg5bmmnfW",
       "reczz28KR6qDIujH",
       "recvxlQ7sCzQHv",
       "recvxlQpmHOCuK",
       "reczz28JnsUxxhsH",
-      "recvxlQSwyzutq"
+      "recvxlQSwyzutq",
+      "reczz28MjrsGGWKJ",
+      "reczz28MjrsGEQDV",
+      "reczz28MjrsGGCEL",
+      "reczz28MBW6Y6vCz",
+      "recvxm0eDZdJED",
+      "reczz28JPbOch6n9",
+      "reczz28MmxlBTKgV"
     ],
-    "requirements_verified_at": "2026-10-12T19:31:43Z",
-    "requirements_revision": 538,
-    "requirements_scope": "仅六条；全量306条本地快照仍stale",
+    "requirements_verified_at": "2026-10-13T06:03:17Z",
+    "requirements_revision": 545,
+    "requirements_scope": "原12条定向事实保留；最新三条定向回读rev545，新增模型卡片自动收缩，共13条；两种同步现象在同需求分别验收，未冒称同根因；完整快照仍stale",
     "baseline": {
       "branch": "develop",
-      "sha": "cd8055356a190f87bf6346fa806ec0dee85f1711"
+      "sha": "882f96dba851b4738f28e46268b5b7de70afef70",
+      "implementation_branch": "feat/v0.5.14-audio-completeness",
+      "working_directory": "/Users/bytedance/Documents/Codex/个人成长追踪"
     },
     "acceptance": {
       "recording": "区分录制/上传/转写；使用明确首尾标记及暂停/快速停止样例，不只凭时长；保留原音及失败恢复，无原音无法证实用户历史截断根因时保持UNKNOWN",
@@ -58,65 +67,87 @@
       "真实付费调用"
     ],
     "cumulative_predecessor": "git:cd8055356a190f87bf6346fa806ec0dee85f1711",
-    "pending_intake": [
+    "implementation_order": [
+      "当前音频切片完成自查/最小验证并交接",
+      "新反馈去重入池，主控锁定冷启/模型卡片/同步完整链写集",
+      "先复现并修复模型卡片折叠、冷启正常成功及结果同步误报/真失败",
+      "主控独立审查后串行集成",
+      "最终版本元数据及有状态验证，先达到可发布，禁止外部发布"
+    ],
+    "feedback_acceptance": [
       {
         "key": "onboarding-navigation",
         "image": 1,
-        "acceptance": "提交或整理中不滞留冗余中间页，直接进入今日，原文与后台状态保留"
+        "acceptance": "提交或整理中不滞留冗余中间页，直接进入今日，原文与后台状态保留",
+        "requirement_id": "reczz28MjrsGGWKJ"
       },
       {
         "key": "onboarding-empty-answer",
         "image": 2,
-        "acceptance": "追到真实DeepSeek请求、响应解析、整理任务和模型消费链，修复空答失败并可恢复，不能只隐藏错误"
+        "acceptance": "先确保合法冷启回答经真实整理链可生成并保存可消费的用户模型；正常成功是主验收，空答/超时等异常才进入有界降级与可恢复失败，不能仅隐藏错误或用原话绕过成功验收",
+        "requirement_id": "reczz28MjrsGEQDV"
       },
       {
         "key": "onboarding-home-entry",
         "image": 3,
-        "acceptance": "结束页底部提供直接进入首页（今日），导航确实完成"
+        "acceptance": "结束页底部提供直接进入首页（今日），导航确实完成",
+        "requirement_id": "reczz28MjrsGGCEL"
       },
       {
         "key": "core-model-terminal-recovery",
         "image": 4,
-        "acceptance": "整理失败/取消等终态不得永久阻塞回答与重新回答；提交处理在途按优先级等待，未提交不等待"
+        "acceptance": "整理失败/取消等终态不得永久阻塞回答与重新回答；提交处理在途按优先级等待，未提交不等待",
+        "requirement_id": "reczz28MBW6Y6vCz"
       },
       {
         "key": "background-result-sync",
         "image": 5,
-        "acceptance": "端到端复现重复同步错误，区分原文保存、回答任务、结果不存在和暂时同步失败，停止无意义循环并保留合理重试"
+        "acceptance": "先复现提交已登记但同步失败提示及反复闪烁两种反馈，沿原文保存→任务状态→结果读取→结果接入→通知查看追踪；判定真实失败或误报，修正根因及重试归属，提供实际恢复入口；分别验收，不能只减toast次数",
+        "requirement_id": "recvxm0eDZdJED"
       },
       {
         "key": "compression-schedule-failure",
-        "acceptance": "核查10月12日18:05和10月13日06:00失败、30秒重复开始、原始错误、摘要持久化、重试去重和实际费用；先完成前五项再实现，保留4/1/16/4生产配置、不手工重复付费"
+        "acceptance": "核查10月12日18:05和10月13日06:00失败、30秒重复开始、原始错误、摘要持久化、重试去重和实际费用；先完成前五项再实现，保留4/1/16/4生产配置、不手工重复付费",
+        "requirement_id": "reczz28JPbOch6n9"
+      },
+      {
+        "key": "user-model-card-auto-collapse",
+        "requirement_id": "reczz28MmxlBTKgV",
+        "acceptance": "模型事实/观点/摘要卡片展开后不被约一秒周期刷新自动折叠；保持展开身份、阅读位置与账户隔离，明确收起仍有效",
+        "source": "Owner2026-10-13 13:48截图及实际反馈"
       }
     ],
-    "implementation_order": [
-      "六项定向入池并核对ID",
-      "五项冷启/回答完整链修复",
-      "日压缩调度失败修复",
-      "与音频主线集成后按影响验证"
-    ]
+    "version_record_id": "reczz28MjrpXHbRP",
+    "version_table_revision": 38
   },
-  "active_tasks": [
-    {
-      "id": "v0514-six-feedback-intake",
-      "owner": "需求管理",
-      "implementer_thread": "01a11c04-bee4-7cb1-9515-aafb56ad54d4",
-      "status": "DISPATCHED",
-      "write_set": [
-        "飞书需求池六项定向查重与追加来源、验收；按主控范围关联v0.5.14，保留原六条音频"
-      ],
-      "forbidden": [
-        "全池重复扫描",
-        "控制面/事件/代码写入",
-        "将实现或验收标完成",
-        "部分查询覆盖完整快照",
-        "上传截图中无关私密正文"
+  "active_tasks": [],
+  "candidate": {
+    "status": "CORE_FEEDBACK_REVIEWED_WAIT_INTEGRATION",
+    "branch": "feat/v0.5.14-audio-completeness",
+    "sha": "d3f8b37b201adaa2c3bfe8b1120ca41781dcec38",
+    "tree": "26830d5e4b2f83e97814e1e908f7bf37267a5f0a",
+    "release_branch": null,
+    "package_version": "0.5.13",
+    "partial": [
+      "真实provider与iOS/设备未验收",
+      "自然06:00/18:05成功生成及费用回执待部署后验证",
+      "历史同源failed/stale保持终态，不自动付费重放",
+      "frontend-runtime-composition既有kernel超限FAIL保留，本轮仅必要消费者改动；data-runtime新增超限已修"
+    ],
+    "engineering_deviation": {
+      "check": "frontend-runtime-composition",
+      "status": "FAIL",
+      "cause": "kernel当前533行超过500行；生产及原候选为534行，本轮仅真实登记/通知提示消费者改动",
+      "review": "亲读完整消费者链及最终diff；data-runtime本轮新增508超限已按通知职责TS提取到463；阈值未改、代码未压行",
+      "disposition": "保留kernel既有超限工程债务，不记该专项PASS；不扩成无需求kernel重构；实际行为专项和新边界构建通过",
+      "evidence": [
+        "git:d3f8b37:public/frontend/app/runtime/kernel.mjs",
+        "thread:01a11afe-73d2-7013-91d5-cd473c4d7115/exec-034ba5d9-c46e-4d37-8315-5db9edeea55a"
       ]
     }
-  ],
-  "candidate": null,
+  },
   "authorization": {
-    "source": "Owner最新明确指令：五项用户问题先入池全部进入v0.5.14，另追加日压缩失败在五项之后修复，音频主线保留；沿原本地实施及线上只读权限",
+    "source": "Owner2026-10-13最新：按计划推进v0.5.14，主控独立审查，先达到可发布；暂不push/tag/Release/上线，原手工付费限制保留",
     "allowed_actions": [
       "本地需求核对、实现、自查、主控审查、验证、提交及合入develop",
       "线上只读观察与隔离验证"
@@ -132,7 +163,7 @@
     "revoked": false
   },
   "blockers": [],
-  "next_action": "需求管理先完成六项定向查重登记并回读；主控保存当前成果、核对同一feat基线后交主开发连续实现",
+  "next_action": "主控本地合入develop并运行通知/结果实际集成专项，随后同一feat准备0.5.14元数据，最终固定候选后只读生产快照及隔离PG门；不进行外部发布",
   "runtime": {
     "sha": "a901c8507094528e48992802b102911086331043",
     "package_version": "0.5.13",
@@ -159,7 +190,115 @@
       "id": "v0514-audio-prior-local-evidence",
       "event_id": "v0.5.14-14bd62a8-f346-45ce-8b8a-f5938eb7f83f",
       "source": "reports/iterations/v0.5.14/events.jsonl",
-      "status": "原音频六项本地验证及partial仅适用9e793e3e；新增六项尚未实现或验证，未受影响证据可复用"
+      "status": "原音频六项本地证据绑定9e793e3e，主控核对该提交为当前祖先；新增修复未改音频源，未受影响证据复用；原设备/真实音频partial保留"
+    },
+    {
+      "id": "v0514-six-feedback-intake-result",
+      "source": "thread:01a11c04-bee4-7cb1-9515-aafb56ad54d4/exec-2deb00c9-22c7-4ba3-9ce2-b73964726d2a",
+      "status": "主控核对创建及逐字段回读工具：需求rev542、版本rev38，三新增三复用追加，六音频仅计划关联，未标完成；初次相等字段差集断言失败后校正核验口径，无重写业务记录制造通过"
+    },
+    {
+      "id": "v0514-onboarding-empty-production-audit",
+      "source": "tool:exec/0a39aa；生产2026-10-13T01:55:17.449Z精确callGroup关联只读审计",
+      "status": "实际HTTP200，finishReason=length，contentCharacters=0，reasoningCharacters=6809；deepseek-flash/high/thinking enabled/max_tokens4000/json_object；attempt1/maxAttempts1/retryScheduled=false；不暴露原文，未调用模型",
+      "boundary": "证明该次抽取因长度结束且无正文及缺少降级，不断言所有截图或调度失败同根因"
+    },
+    {
+      "id": "v0514-onboarding-reviewed-local",
+      "source": "git:3bd364f4f8cb5a919556c8da996a1eb3959b4979",
+      "status": "主控独立审查前端提交→事务持久化/任务去重→生成器→终态释放→结果消费，必要专项及真实HTTP+Chrome PASS，IAB亲自回看/提交直达今日/重新回答完成",
+      "details": [
+        "reports/local/v0514-onboarding-today.jpg",
+        "/tmp/v0514-onboarding-recovery/onboarding-v2-existing-user-browser.json",
+        "thread:01a11afe-73d2-7013-91d5-cd473c4d7115/exec-6332192a-532f-4b1c-9884-7d5e8970ecc1"
+      ],
+      "boundary": "本机合成provider；真实供应商/生产/iOS未验收；frontend-runtime-composition被未改动kernel534>500基线阻断，保留FAIL；未跑整版有状态门"
+    },
+    {
+      "id": "v0514-compression-cause",
+      "source": "tool:exec/75b709；src/modules/ai/generation.mjs:221；src/app/content/background.mjs；src/app/record-compressions.mjs",
+      "status": "真实3次provider成功但任务均RECORD_COMPRESSION_OUTPUT_INVALID/版本无效；2账户11摘要占位均failed/invalidated且无generatedAt；主控静态确认captureReasoning=false返回string在对象展开中丢失content",
+      "boundary": "旧scan_failed的Unresolved target由6e82425已修；现确认另一消费契约缺陷，未手工运行付费"
+    },
+    {
+      "id": "v0514-compression-reviewed-local",
+      "source": "git:a575f40e99bc83f3657ee59dfe603fd70b5559fb",
+      "status": "主控亲读生成器→background→daily/historical save与消费：统一string为content且保留对象字段；未改schema/parser/预算；5项专项及语法/diff检查通过",
+      "details": [
+        "tool:exec/7582cc：生产三次响应正确schema及8键",
+        "thread:01a11afe-73d2-7013-91d5-cd473c4d7115/exec-7e967ee4-8ad0-492a-8fb8-38f8c43e1e12：差分哈希及5专项实执行回执"
+      ],
+      "boundary": "合成fetch无真实付费；生产未部署，不代表自然窗口摘要已恢复"
+    },
+    {
+      "id": "v0514-final-integration",
+      "source": "git:d4eba02a62a3f788f8d772d0cb191680c3399a1b",
+      "status": "4处测试改用已存在公开模块入口，主控核对同实现/无业务变更；check:modules PASS（117模块/240路由），3专项PASS，browser同函数身份及语法PASS；构建/前端类型检查有效证据复用",
+      "boundary": "整版有状态门尚未执行，未freeze；frontend-runtime-composition未改kernel534>500的独立基线FAIL仍保留"
+    },
+    {
+      "id": "v0514-snapshot-repair-reviewed",
+      "source": "git:34da36c",
+      "status": "主控亲读mapper固定单例→按行精确脱敏→完整rebuild/remap；实际对象和live解析关系才保留结构ID，userClaim证据判别限具体位置；普通同名对象/正文/扩展仍脱敏。编译/既有selftest通过，完整关系断言未改",
+      "boundary": "仅修验证材料；新生产快照/PG门仍待执行，d4eba02失败不改写"
+    },
+    {
+      "id": "v0514-stateful-global-pass",
+      "source": "reports/local/v0514-startup-gate-receipt.json",
+      "sha256": "acc3f8d314776ecbe13e1ae1e916649f34b3097a9f4bd060ad86d0590a3be0de",
+      "status": "主控独立核对原始verify exit0/PASS、快照内置与传输hash及完整SHA/tree：4账户89任务，启动/readyz/同PG重启/认证读/保存往返/任务通知读通过；provider/outbound/media全0，临时PG清理完成",
+      "details": [
+        "tool:exec/2e2cd3",
+        "tool:exec/bd3243",
+        "tool:exec/7af427"
+      ],
+      "boundary": "生产PG16.15→本机16.14；真实provider/iOS/自然压缩仍partial；先前d4eba02脱敏失败在receipt.priorCaptureFailure保留；未改生产运行SHA"
+    },
+    {
+      "id": "v0514-thought-speech-gap",
+      "source": "public/frontend/features/thoughts/presentation.mjs:speechControlsMarkup；public/frontend/features/thoughts/speech.mjs:synthesize",
+      "status": "主控静态确认：无音频仍显示播放倍速、缺生成语速、configured=false隐藏已有asset；原六项音频需求中未覆盖的真实消费者",
+      "boundary": "同一负责人串行最小修复，不扩全站媒体架构"
+    },
+    {
+      "id": "v0514-capture-title-ui-gap",
+      "source": "public/index.html:capture-form；public/frontend/features/capture-journal/captures.mjs:editCapture；captures-operations.mjs:submit",
+      "status": "主控确认服务端支持title，但真实表单无标题输入，编辑与提交未接title；API验收不能证明用户可自定义标题"
+    },
+    {
+      "id": "v0514-prior-gate-applicability",
+      "source": "reports/local/v0514-startup-gate-receipt.json",
+      "status": "原PASS仅绑定a22e5f5；当前新增音频/标题行为及后续版本元数据变化后需绑定最终候选重新执行有状态全局门，不重复未受影响专项"
+    },
+    {
+      "id": "v0514-latest-feedback-intake",
+      "source": "thread:01a11c04-bee4-7cb1-9515-aafb56ad54d4/exec-c20ae6d2-a03f-4eed-94f0-83fa1a547e04",
+      "status": "主控亲读实际定向创建/更新/回读命令与逐字段断言exit0：新增卡片reczz28MmxlBTKgV，冷启/同步仅追加验收两格，需求rev545、1页has_more=false；私人模型正文未复制，完整快照未覆盖",
+      "boundary": "范围计划，不记实现/用户验收/发布；旧同步需求历史已发布字段未当新反馈已发布"
+    },
+    {
+      "id": "v0514-audio-close-reviewed-integrated",
+      "source": "git:bf1c98aa6030fbabe14874fa2557cbb47b2ce1a1",
+      "status": "主控亲读13文件完整差分/调用方，核对工作区与暂存对象逐文件hash、固定tree相等，IAB真实播放/选2倍/重绘及标题保存刷新通过；授权范围内代提交并无冲突合develop a0c65d0，同tree；集成思绪专项PASS",
+      "details": [
+        "reports/local/v0514-acceptance-current.json#sha256:f86c16da5f9028f8c638100d281f2257ab9d9bde0fc7d00ac8caa15209603135",
+        "reports/local/v0514-root-audio-review.jpg",
+        "reports/local/v0514-root-title-review.jpg",
+        "tool:exec/1703e7"
+      ],
+      "boundary": "回环TTS/ASR替身；真实麦克风/真机/原生拖动及补充键盘脚本FAIL未知保留；非正式发行；服务/临时数据已清理，分支保留且唯一工作目录"
+    },
+    {
+      "id": "v0514-core-feedback-reviewed",
+      "source": "git:d3f8b37b201adaa2c3bfe8b1120ca41781dcec38",
+      "status": "主控亲读17文件生产者/真实消费者及公开端口；正常冷启非空模型持久化/确认/回答HTTP消费、卡片阅读、分页结果接入、通知503与410恢复本地PASS；工作区与暂存17文件逐hash及固定tree一致，按已授权本地手动提交",
+      "details": [
+        "reports/local/v0514-core-feedback-current.json#sha256:cc1440d9302e36e9561c33c9de2ab9e82ee413ecc226b0e1981439ac1e0c623a",
+        "reports/local/v0514-root-core-review.jpg",
+        "reports/local/v0514-root-result-review.jpg",
+        "thread:01a11afe-73d2-7013-91d5-cd473c4d7115/exec-88d94041-bde2-468b-94e5-b4d7de58907e"
+      ],
+      "boundary": "合成回环provider/本机浏览器，非生产恢复、真机或真实DeepSeek验收；主开发最后回执前上下文模型容量中断，已持久化交接被主控独立核对，不作为实现丢失；仍未整版冻结"
     }
   ],
   "records": {
@@ -177,5 +316,5 @@
       "authorization_sha256": "e9287a6a34d8468ad8d78e4b45673e30ed9874e8bf7bb99f659c20fd6d194e7b"
     }
   ],
-  "display_summary": "v0.5.14恢复：六项新增反馈正在定向入池，原六条音频保留；候选待重新固定"
+  "display_summary": "v0.5.14十二项范围保留；六项新反馈修复已接入develop a22e5f5，生产状态快照本机PG全局门PASS；未发布，生产仍v0.5.13"
 }

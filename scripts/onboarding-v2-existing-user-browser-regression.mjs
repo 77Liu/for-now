@@ -105,11 +105,16 @@ const artifactDir = process.env.E2E_ARTIFACT_DIR
 await fs.mkdir(artifactDir, { recursive: true });
 const port = await freePort();
 const providerPort = await freePort();
+// 正常整理是主验收；历史空正文故障可显式选择，不改变生产生成策略。
+const extractionScenario = process.env.E2E_EXTRACTION_SCENARIO || "normal";
+assert.ok(["normal", "empty-length"].includes(extractionScenario));
+const expectedExtractionCalls = extractionScenario === "normal" ? 1 : 2;
 let providerCalls = 0;
 let providerError = "";
 let releaseFallback;
 const fallbackBarrier = new Promise(resolve => { releaseFallback = resolve; });
 let answerProviderCalls = 0;
+const consumedCoreModels = [];
 const providerMessageSequence = [];
 const providerThinking = [];
 const provider = http.createServer(async (request, response) => {
@@ -122,6 +127,14 @@ const provider = http.createServer(async (request, response) => {
     assert.ok(Array.isArray(input.messages), "provider request must include a messages array");
     if (!input.messages.some(message => String(message.content).includes("<permitted_sources>"))) {
       answerProviderCalls += 1;
+      const envelope = input.messages.map(message => String(message.content))
+        .map(message => /<working_context_data format="application\/json">([\s\S]*?)<\/working_context_data>/.exec(message))
+        .find(Boolean);
+      assert.ok(envelope, "回答必须通过真实结构上下文生产者");
+      const core = JSON.parse(envelope[1]).coreUserModel;
+      assert.ok(core?.fingerprint && core.answers.length > 0, "正常整理后不可使用空模型代替成功");
+      consumedCoreModels.push({ fingerprint: core.fingerprint, claims: core.claims,
+        sourceIds: core.answers.map(answer => answer.sourceId) });
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ model: "synthetic-local-model",
         choices: [{ finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({ answer: "这是等待整理完成后的合成回答。", citations: [] }) } }],
@@ -157,14 +170,15 @@ const provider = http.createServer(async (request, response) => {
       }],
       unknowns: []
     });
-    if (providerCalls === 2) await fallbackBarrier;
+    if (providerCalls === expectedExtractionCalls) await fallbackBarrier;
+    const emptyResponse = extractionScenario === "empty-length" && providerCalls === 1;
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify({
       id: "synthetic-local-provider-response",
       model: "synthetic-local-model",
-      choices: [{ index: 0, finish_reason: providerCalls === 1 ? "length" : "stop",
-        message: { role: "assistant", content: providerCalls === 1 ? "" : content,
-          reasoning_content: providerCalls === 1 ? "思".repeat(6809) : "" } }],
+      choices: [{ index: 0, finish_reason: emptyResponse ? "length" : "stop",
+        message: { role: "assistant", content: emptyResponse ? "" : content,
+          reasoning_content: emptyResponse ? "思".repeat(6809) : "" } }],
       usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 }
     }));
   } catch (error) {
@@ -475,8 +489,8 @@ try {
   await click('[data-view="personal-context"]');
   await click("#onboarding-v2-reopen");
   await waitUntil(`!document.querySelector('#onboarding-workspace').hidden&&document.querySelector('[data-claim-id]')!==null`, "回看后台整理的候选", 300);
-  assert.equal(providerCalls, 2, "空答后仅允许一次关闭思考降级");
-  assert.deepEqual(providerThinking, ["enabled", "disabled"]);
+  assert.equal(providerCalls, expectedExtractionCalls, "正常成功一次；故障场景仅一次降级");
+  assert.deepEqual(providerThinking, extractionScenario === "normal" ? ["enabled"] : ["enabled", "disabled"]);
   const pendingModelA = await jsonRequest(`${base}/app/api/v1/user-model`, { cookie: accountA.cookie });
   const pendingClaim = pendingModelA.value.data.claims.find(claim => claim.statement === CLAIM_STATEMENT);
   assert.ok(pendingClaim, "提取候选必须持久化后显示在确认 UI");
@@ -507,8 +521,8 @@ try {
   assert.equal(userModelCoreReadiness(readyStoreA).ready, true, "完成状态保存不能使抽取失效");
   const extractionTask = await jsonRequest(`${base}/app/api/v1/onboarding-v2/extractions/${extractionTaskId}`, { cookie: accountA.cookie });
   assert.equal(extractionTask.value.data.task.status, "succeeded", JSON.stringify(extractionTask.value.data));
-  assert.equal(providerCalls, 2);
-  assert.equal(providerMessageSequence.length, 2);
+  assert.equal(providerCalls, expectedExtractionCalls);
+  assert.equal(providerMessageSequence.length, expectedExtractionCalls);
   let answered;
   for (let attempt = 0; attempt < 100; attempt += 1) {
     answered = await jsonRequest(`${base}/app/api/ai-tasks/${answerQueued.value.id}/result`, { cookie: accountA.cookie });
@@ -519,6 +533,28 @@ try {
   assert.equal(answered.value.result.sourceTaskId, answerQueued.value.id);
   assert.equal(answered.value.result.relatedTo, question.value.id);
   assert.equal(answerProviderCalls, 1);
+  const consumerQuestion = await jsonRequest(`${base}/app/api/thoughts`, {
+    cookie: accountA.cookie, method: "POST",
+    body: { type: "question", content: "确认资料后，如何安排下一步？", occurredAt: new Date().toISOString() }
+  });
+  const consumerTask = await jsonRequest(`${base}/app/api/ai-tasks`, {
+    cookie: accountA.cookie, method: "POST",
+    body: { kind: "thoughtAnswer", targetId: consumerQuestion.value.id,
+      inputVersion: consumerQuestion.value.version, clientRequestId: "synthetic-confirmed-core-consumer" }
+  });
+  assert.equal(consumerTask.response.status, 202);
+  let consumerResult;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    consumerResult = await jsonRequest(`${base}/app/api/ai-tasks/${consumerTask.value.id}/result`, { cookie: accountA.cookie });
+    if (consumerResult.response.status === 200) break;
+    await sleep(50);
+  }
+  assert.equal(consumerResult.response.status, 200, JSON.stringify(consumerResult.value));
+  assert.equal(consumerResult.value.result.sourceTaskId, consumerTask.value.id);
+  assert.equal(answerProviderCalls, 2);
+  assert.ok(consumedCoreModels.at(-1).claims.some(claim => claim.statement === CLAIM_STATEMENT
+    && claim.evidence.some(evidence => evidence.sourceId === "currentContext" && evidence.exactQuote === ANSWER)),
+  "用户确认后的模型及精确来源必须实际进入生成器HTTP消费");
   const fullProviderMessages = JSON.stringify(providerMessageSequence);
   for (const marker of [MARKERS.a, MARKERS.b, OLD_PROFILE_MARKER, OLD_UNDERSTANDING_MARKER]) {
     assert.ok(!fullProviderMessages.includes(marker), `captured provider sequence must exclude ${marker}`);
@@ -574,6 +610,17 @@ try {
 
   const summary = {
     status: "passed",
+    extractionScenario,
+    extractionTaskId,
+    answerTaskId: answerQueued.value.id,
+    confirmedClaimId: pendingClaim.id,
+    confirmedModelConsumerTaskId: consumerTask.value.id,
+    consumedCoreModels: consumedCoreModels.map(core => ({
+      fingerprint: core.fingerprint, claimCount: core.claims.length, sourceIds: core.sourceIds
+    })),
+    providerCalls,
+    providerThinking,
+    coreReadiness: userModelCoreReadiness(readyStoreA),
     appUrl,
     isolation: { dataDir, providerOrigin: `http://127.0.0.1:${providerPort}`, upstream: "disabled" },
     scope: "synthetic local HTTP + real Chrome UI + loopback-only provider mock; no production data/provider",
@@ -583,7 +630,9 @@ try {
       "unsaved answer stays client-side; PATCH 200 confirms save before refresh recovery",
       "saved answer source is linked to onboardingV2/currentContext",
       "提交持久化后立即进入今日，在途抽取期间回答等待；整理结束自动恢复且结果绑定原问题",
-      "HTTP200 length且content为空、reasoning6809字符时仅关闭thinking降级一次",
+      extractionScenario === "normal"
+        ? "正常HTTP200非空合法结构一次成功；不触发关闭thinking降级"
+        : "HTTP200 length且content为空、reasoning6809字符时仅关闭thinking降级一次",
       "explicit extraction submit reaches the loopback mock with only the five synthetic onboarding answers",
       "provider messages match the five permitted sourceId/text pairs and exclude preseeded history/profile markers",
       "extracted claim remains candidate until explicit UI confirmation, then persists active with source task and answer span",

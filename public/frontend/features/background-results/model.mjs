@@ -124,7 +124,7 @@ function mergeThoughtAnswer(snapshot, task, result) {
   }
   const thoughts = Array.isArray(snapshot?.thoughts) ? snapshot.thoughts : [];
   if (!thoughts.some(item => item?.id === task.targetId && item.type === "question")) {
-    return { value: snapshot, changed: false };
+    return { value: snapshot, changed: false, deferred: true };
   }
   return {
     value: { ...snapshot, thoughts: upsert(thoughts, { ...result }, task.id) },
@@ -155,7 +155,7 @@ function mergeFollowUpAnswer(snapshot, task, result) {
     value: { ...snapshot, thoughts: nextThoughts },
     changed: true,
     target: backgroundTaskTarget(task)
-  } : { value: snapshot, changed: false };
+  } : { value: snapshot, changed: false, deferred: true };
 }
 
 function mergeCaptureTranscription(snapshot, task, result) {
@@ -164,8 +164,9 @@ function mergeCaptureTranscription(snapshot, task, result) {
   }
   const captures = Array.isArray(snapshot?.captures) ? snapshot.captures : [];
   const current = captures.find(item => item?.id === task.targetId);
-  if (!current
-    || !current.audio?.attachmentPath
+  if (!result.audio?.attachmentPath) return { value: snapshot, changed: false };
+  if (!current) return { value: snapshot, changed: false, deferred: true };
+  if (!current.audio?.attachmentPath
     || current.audio.attachmentPath !== result.audio?.attachmentPath) {
     return { value: snapshot, changed: false };
   }
@@ -183,7 +184,8 @@ function mergeAnnotationReply(snapshot, task, result) {
   if (!matchesTaskResult(task, result)) return { value: snapshot, changed: false };
   const collection = task.resourceType === "thought" ? "thoughts" : RESOURCE_COLLECTIONS[task.resourceType];
   const records = collection && Array.isArray(snapshot?.[collection]) ? snapshot[collection] : null;
-  if (!records) return { value: snapshot, changed: false };
+  if (!collection) return { value: snapshot, changed: false };
+  if (!records) return { value: snapshot, changed: false, deferred: true };
   let changed = false;
   const nextRecords = records.map(record => {
     const isTarget = task.resourceType === "thought"
@@ -207,7 +209,7 @@ function mergeAnnotationReply(snapshot, task, result) {
     value: { ...snapshot, [collection]: nextRecords },
     changed: true,
     target: backgroundTaskTarget(task)
-  } : { value: snapshot, changed: false };
+  } : { value: snapshot, changed: false, deferred: true };
 }
 
 function withUnderstanding(resource, task, result) {
@@ -223,7 +225,7 @@ function mergeContentImageUnderstanding(snapshot, task, result) {
   const targetType = text(task.contentTargetType), targetId = text(task.contentTargetId);
   if (targetType === "capture") {
     const captures = Array.isArray(snapshot?.captures) ? snapshot.captures : [];
-    if (!captures.some(item => item?.id === targetId)) return { value: snapshot, changed: false };
+    if (!captures.some(item => item?.id === targetId)) return { value: snapshot, changed: false, deferred: true };
     return {
       value: { ...snapshot, captures: captures.map(item => item.id === targetId ? withUnderstanding(item, task, result) : item) },
       changed: true,
@@ -233,7 +235,7 @@ function mergeContentImageUnderstanding(snapshot, task, result) {
   if (targetType === "thoughtRoot" || targetType === "thoughtBlock") {
     const thoughts = Array.isArray(snapshot?.thoughts) ? snapshot.thoughts : [];
     const matched = thoughts.find(item => item?.id === targetId && (targetType === "thoughtRoot" ? item.type === "question" : item.type !== "question"));
-    if (!matched) return { value: snapshot, changed: false };
+    if (!matched) return { value: snapshot, changed: false, deferred: true };
     return {
       value: {
         ...snapshot,
@@ -252,7 +254,8 @@ function mergeContentImageUnderstanding(snapshot, task, result) {
   if (targetType !== "comment") return { value: snapshot, changed: false };
   const collection = task.resourceType === "thought" ? "thoughts" : RESOURCE_COLLECTIONS[task.resourceType];
   const records = collection && Array.isArray(snapshot?.[collection]) ? snapshot[collection] : null;
-  if (!records) return { value: snapshot, changed: false };
+  if (!collection) return { value: snapshot, changed: false };
+  if (!records) return { value: snapshot, changed: false, deferred: true };
   let changed = false;
   const nextRecords = records.map(record => {
     if (record?.id !== task.targetId) return record;
@@ -271,9 +274,10 @@ function mergeContentImageUnderstanding(snapshot, task, result) {
     value: { ...snapshot, [collection]: nextRecords },
     changed: true,
     target: backgroundTaskTarget(task)
-  } : { value: snapshot, changed: false };
+  } : { value: snapshot, changed: false, deferred: true };
 }
 
+/** 接入已持久化结果；合法结果仅缺局部目标时 deferred，不声明快照已变化。 */
 export function mergeBackgroundTaskResult(snapshot, task, result) {
   if (!backgroundTaskTarget(task)) return { value: snapshot, changed: false };
   if (task.kind === "thoughtAnswer") return mergeThoughtAnswer(snapshot, task, result);

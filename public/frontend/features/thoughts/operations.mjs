@@ -78,8 +78,7 @@ export function createThoughtOperations({
     const statusKind = thoughtAnswerTaskStatusKind(task);
     setAnswerStatus(question.id, status, statusKind);
     crossDomain.scheduleNotificationPoll();
-    viewPort.showToast(status,
-      notificationsRefreshed ? statusKind : "error");
+    viewPort.showToast(status, statusKind);
     return task;
   }
 
