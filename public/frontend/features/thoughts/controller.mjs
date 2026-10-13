@@ -1,3 +1,4 @@
+import { createCaptureAudioLifecycle } from "../../../generated/capture-audio-lifecycle.mjs";
 import { normalizeTtsPlaybackRate } from "../../media/index.mjs";
 import { isPendingAiTaskStatus } from "../../shared/ai-task-status.mjs";
 import { createThoughtOperations } from "./operations.mjs";
@@ -50,6 +51,7 @@ export function createThoughtsFeatureController({
     request: data.request,
     requestV1: data.requestV1,
     requestBlob: data.requestBlob,
+    requestHeadStatus: data.requestHeadStatus,
     refresh: data.refresh,
     applyPendingProjection: data.applyPendingProjection
   });
@@ -111,8 +113,17 @@ export function createThoughtsFeatureController({
   }
 
   const { document, window } = platform;
+  const audioLifecycle = createCaptureAudioLifecycle({
+    headStatus: data.requestHeadStatus
+  });
+  const audioScope = () => activation ? {
+    accountId: String(data.getAccountId() || ""),
+    sessionId: data.getSessionSerial(),
+    pageToken: activation
+  } : null;
   const presentation = createThoughtPresentation({
     getSnapshot: data.getSnapshot,
+    getGenerationRate: () => data.getSpeechGenerationRate?.(),
     appUrl: viewPort.appUrl,
     contextReceiptMarkup: viewPort.contextReceiptMarkup,
     contentImagesMarkup: media.contentImagesMarkup
@@ -130,7 +141,9 @@ export function createThoughtsFeatureController({
     getComputedStyle: platform.getComputedStyle,
     escapeSelector: platform.escapeSelector,
     document,
-    presentation
+    presentation,
+    audioLifecycle,
+    audioScope
   });
 
   let activation = null;
@@ -220,6 +233,7 @@ export function createThoughtsFeatureController({
     }
     const button = closest(event, "button");
     if (!button) return;
+    if (button.matches("[data-capture-speech-retry]")) return audioLifecycle.retry(button);
     if (button.matches("[data-thought-block-expand]")) {
       thoughtView.toggleExpanded(button);
     } else if (button.dataset.thoughtList != null) {
@@ -298,6 +312,11 @@ export function createThoughtsFeatureController({
   }
 
   function handleInput(event) {
+    if (event.target?.matches?.("[data-speech-generation-rate]")) {
+      const output = event.target.closest("label")?.querySelector("output");
+      if (output) output.textContent = (1 + Number(event.target.value) / 100).toFixed(2) + "×";
+      return;
+    }
     if (!event.target?.matches?.("[data-feed-search='thoughts']")) return;
     thoughtView.setQuery(event.target.value);
     if (data.isFullRouteStateLoaded()) {
@@ -342,6 +361,7 @@ export function createThoughtsFeatureController({
     current.unlink();
     platform.clearTimer(searchTimer);
     searchTimer = 0;
+    audioLifecycle.dispose(current.root);
     platform.audio.stopAll();
     await current.disposeDelegate();
     return true;

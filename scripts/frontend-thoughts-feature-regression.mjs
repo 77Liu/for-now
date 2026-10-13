@@ -226,6 +226,16 @@ const thoughtButton = {
   disabled: false,
   matches: () => false
 };
+// 未配置合成不应隐藏既有缓存；没有缓存则不显示空播放器或播放倍速。
+const configuredBefore = snapshot.speech.configured;
+snapshot.speech.configured = false;
+const cachedOnlyMarkup = presentation.cardsMarkup([oldChain], "occurred", { detail: true });
+assert.match(cachedOnlyMarkup, /data-speech-player="asset-1"/);
+assert.doesNotMatch(cachedOnlyMarkup, /data-speech-synthesize/);
+snapshot.speech.assets = [];
+assert.doesNotMatch(presentation.cardsMarkup([oldChain], "occurred", { detail: true }), /data-speech-player|data-speech-playback-rate/);
+snapshot.speech.configured = configuredBefore;
+snapshot.speech.assets = [{ id: "asset-1", sourceType: "thoughtAnswer", sourceId: "answer-ai", sourceVersion: 1, voice: "voice-1" }];
 const thoughtController = createThoughtsFeatureController({
   delegate: {
     mount: async () => () => {},
@@ -255,6 +265,7 @@ const thoughtController = createThoughtsFeatureController({
     },
     requestV1: async () => ({}),
     requestBlob: async () => new Blob(),
+    requestHeadStatus: async () => ({ ok: true, status: 200 }),
     refresh: async () => { throw new Error("private refresh detail"); },
     applyPendingProjection() {}
   },

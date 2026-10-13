@@ -113,12 +113,14 @@ const concurrentDuplicate = await background.enqueue({
 assert.equal(concurrentDuplicate.duplicate, true);
 assert.equal(concurrentDuplicate.task.id, first.task.id);
 assert.equal(store.aiTasks.filter(task => task.targetId === "capture-a").length, 1);
+store.captures[0].title = "转写期间的用户标题";
 store.captures[0].content = "转写期间修改了文字，但语音原件未变化";
 store.captures[0].version = 2;
 await background.run(first.task.id);
 assert.deepEqual(generatedTaskIds, [first.task.id]);
 assert.equal(store.aiTasks[0].status, "succeeded");
 assert.equal(store.captures[0].transcription.status, "ready");
+assert.equal(store.captures[0].title, "转写期间的用户标题");
 assert.equal(store.captures[0].transcription.rawText, "这是原始转写。");
 assert.equal(store.captures[0].transcription.polishedText, "这是整理后的转写。");
 assert.equal(store.captures[0].transcription.condensedText, "这是凝练稿。");

@@ -106,6 +106,10 @@ const unconfiguredTranscription = () => ({
   condenseErrorCode: ""
 });
 
+/**
+ * 构造念起保存值：新纯音频留空使用日期标题；编辑显式空 title 清除，未提供则保留。
+ * 转写只更新转写字段，不负责生成或覆盖用户标题；历史记录不据此回填。
+ */
 export function capturePayload(input, existing = null, { now = () => new Date() } = {}) {
   const merged = existing ? { ...existing, ...input } : input;
   const content = safeText(merged.content, 12000);
@@ -137,7 +141,7 @@ export function capturePayload(input, existing = null, { now = () => new Date() 
   return {
     value: {
       ...eventTime,
-      ...(title ? { title } : {}),
+      ...(title || hasOwn(input, "title") ? { title } : {}),
       content,
       tags: tagsOf(merged.tags),
       attachmentPaths,

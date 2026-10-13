@@ -1,5 +1,5 @@
 /**
- * 捕念列表中原音与缓存朗读播放器的保留、失败恢复及会话清理。
+ * 念起原音与念起、思绪缓存朗读播放器的保留、失败恢复及会话清理。
  * 建立时间：2026-10-13
  * 状态：active
  * 边界：只在同账户、同登录会话、同页面激活和同资源内复用；朗读重试只探测并读取既有缓存。
@@ -31,11 +31,15 @@ function sameScope(left: CaptureAudioScope | null, right: CaptureAudioScope): bo
 
 function playerKey(player: HTMLAudioElement): string {
   const captureId = player.closest<HTMLElement>("[data-capture-id]")?.dataset.captureId;
-  if (!captureId) return "";
   const original = player.closest<HTMLElement>(".capture-audio-source");
-  if (original) return `${captureId}:original:${original.dataset.captureAudioKey || ""}`;
+  if (captureId && original) return `${captureId}:original:${original.dataset.captureAudioKey || ""}`;
   const speech = player.closest(".capture-speech-player");
-  return speech ? `${captureId}:speech:${player.dataset.speechPlayer || ""}` : "";
+  if (captureId && speech) return `${captureId}:speech:${player.dataset.speechPlayer || ""}`;
+  const source = player.closest<HTMLElement>(".speech-asset-controls");
+  const type = source?.dataset.speechSourceType;
+  const id = source?.dataset.speechSourceId;
+  return speech && ["thoughtChain", "thoughtAnswer"].includes(type || "") && id
+    ? `thought:${type}:${id}:${player.dataset.speechPlayer || ""}` : "";
 }
 
 function statusTarget(player: HTMLAudioElement): { status: HTMLElement | null; retry: HTMLButtonElement | null } {
@@ -170,6 +174,9 @@ export function createCaptureAudioLifecycle({ headStatus }: CaptureAudioLifecycl
           if (player !== next) next.replaceWith(player);
           if (entry && player === entry.player) used.add(player);
           observe(player, scope);
+          const rate = player.closest(".speech-asset-controls")
+            ?.querySelector<HTMLSelectElement>("[data-speech-playback-rate]");
+          if (rate) rate.value = String(player.playbackRate);
           if (failed.has(player)) {
             const message = failureMessages.get(player);
             if (message) show(player, message, true);
@@ -227,7 +234,8 @@ export function createCaptureAudioLifecycle({ headStatus }: CaptureAudioLifecycl
           return false;
         }
         if (!current(scope) || !player.isConnected) return false;
-        if (target.status) target.status.textContent = "正在重新读取已生成的朗读…";
+        // canplay/playing 可能先于 HEAD 返回，不覆盖已确认的就绪状态。
+        if (target.status && failed.has(player)) target.status.textContent = "正在重新读取已生成的朗读…";
         return true;
       } else if (target.status) {
         target.status.textContent = "正在重试读取，原始录音仍保留。";
