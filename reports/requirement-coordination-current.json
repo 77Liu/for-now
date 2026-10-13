@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 244,
-  "updated_at": "2026-10-13T12:09:31.284Z",
+  "revision": 248,
+  "updated_at": "2026-10-13T13:02:29.410Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -9,7 +9,7 @@
     "write_authority": "唯一维护者；必须经coordination:update入口更新"
   },
   "rule_baseline": {
-    "commit": "66190502a2c9b59f413809582ab65d02aa706b10",
+    "commit": "0c7b847544e0d7cae4763474e9826019b2b6a949",
     "effective_date": "2026-10-13",
     "source": "PROJECT_RULES.md及其唯一正文引用；控制面协议2.2、每版本¥4共享测试许可"
   },
@@ -20,7 +20,7 @@
   "iteration": {
     "id": "v0.5.14",
     "status": "IMPLEMENTING",
-    "phase": "历史ASR分包修复与历史日摘要回填；待本机端到端及最终全局门",
+    "phase": "整文件HTTP ASR审查及本机保存恢复通过，准备本地接入",
     "started_by": {
       "iteration_id": "v0.5.13",
       "event_id": "v0.5.13-8b14bb6d-5580-4e7e-a2ea-10750c49e32b"
@@ -48,11 +48,11 @@
     "requirements_scope": "定向回读；完整采集快照仍stale，未冒充全池最新",
     "baseline": {
       "branch": "develop",
-      "sha": "66190502a2c9b59f413809582ab65d02aa706b10",
+      "sha": "0c7b847544e0d7cae4763474e9826019b2b6a949",
       "selection": "当前已接入前端职责切片；同一保留feat串行继续本次范围，最终重新固定候选"
     },
     "acceptance": {
-      "recording": "Owner确认历史原音完整、转写遗漏，优先核对ASR输入/返回/保存展示；合成首中尾真实ASR只证明样例，不代替历史badcase",
+      "recording": "Owner确认原音完整、转写遗漏；新增要求保留流式基建暂不用，非流式整文件HTTP实际通且质量高后切换；不得以WS nostream分包代替整文件HTTP或用字数增加伪称完整。",
       "playback": "加载/失败/重试复用已有资源；播放暂停拖动倍速不折叠父卡；有音频完整控件、无音频无空壳；生成速度与播放倍速分开；小屏大字体、账户/页面切换清理归属",
       "title": "仅新纯音频空标题生成稳定默认标题，保存为独立元数据而非伪造用户正文；用户标题及迟到转写并发不覆盖；补录日期/幂等/账户隔离；不回填历史",
       "historical_compression": "旧失败任务保持终态；合法原文预算内向前新建日摘要回填任务，终点2026-09-25；本机生产状态切片经真实压缩、持久化、恢复、新思绪回答上下文消费闭环"
@@ -67,7 +67,7 @@
     ],
     "cumulative_predecessor": "git:cd8055356a190f87bf6346fa806ec0dee85f1711",
     "implementation_order": [
-      "历史ASR分包修复及原音验收",
+      "HTTP整文件ASR默认接入及历史原音保存恢复验收",
       "历史日摘要回填与真实本机PG压缩到回答闭环",
       "重新固定候选及必要有状态全局门"
     ],
@@ -122,7 +122,32 @@
       "historical_record_link": "Owner已确认shenji、2026-10-08 21:17:32 Asia/Shanghai；主控只读定位唯一匹配原音56.984秒；关联存于本机私密回执"
     }
   },
-  "active_tasks": [],
+  "active_tasks": [
+    {
+      "id": "v0514-file-asr-default",
+      "owner": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
+      "mode": "coordinator_integration",
+      "branch": "feat/v0.5.14-audio-completeness",
+      "baseline": "0c7b847544e0d7cae4763474e9826019b2b6a949",
+      "write_set": [
+        "src/infrastructure/ai-providers/volcengine-speech.mjs（保留流式入口及原差分）",
+        "src/infrastructure/ai-providers/volcengine-file-asr.mts（整文件HTTP新边界）",
+        "src/app/media/asr.mjs（动作、预算、真实时长及结果映射）",
+        "src/config/index.mjs、deploy/for-now.env.example（唯一ASR模式/官方端点配置）",
+        "src/modules/ai/usage.mjs、src/modules/ai/provider-pricing.mjs、scripts/update-provider-pricing.mjs（实际flash服务计价）",
+        "tsconfig.backend.json、现有module registry/build入口（新TS构建产物隔离）",
+        "既有provider/media/capture/pricing专项（只补受影响行为）"
+      ],
+      "forbidden": [
+        "控制面/events/terminal",
+        "规则Markdown",
+        "生产/远程/真实付费调用",
+        "压缩/前端实现",
+        "全站媒体格式重构"
+      ],
+      "acceptance": "HTTP一次提交完整PCM，单次返回文字/分句/时长/requestId；保留流式基础设施明确暂不用且不自动付费回退；真实时长上限、取消/错误/原音/账户归属不变；flash预算和实际计量匹配4.5元/小时官方后付费项，非旧fileAsr0.8；新增TS和中文必要注释；主控独立审查后实际PG保存恢复验收"
+    }
+  ],
   "candidate": null,
   "authorization": {
     "source": "Owner本轮控制面规则与八项注释；既有for_now_backup账户权限持续有效；Owner本轮再次明确额度内费用无需申请，并授权已定位shenji原音向火山ASR复现",
@@ -151,7 +176,7 @@
       "version": "v0.5.14",
       "limit_cny": 4,
       "shared_paid_apis": true,
-      "committed_or_reserved_cny": 0.07419434083333333,
+      "committed_or_reserved_cny": 0.44392559083333333,
       "cost_basis": "公开单价估算，非供应商最终账单",
       "ledger_ref": "reports/local/v0514-paid-acceptance-current.json",
       "expiry_mode": "until_revoked"
@@ -159,17 +184,16 @@
   },
   "blockers": [
     {
-      "id": "historical-asr-packet-timing",
+      "id": "snapshot-capture-audio-mime",
       "status": "CONFIRMED",
-      "reason": "同一历史原音/同async模型，8.192秒突发包识别116字，200ms按节奏分包识别176字，恢复1.662秒起首段及中段；正式传输修复未接入",
+      "reason": "真实生产切片captures.audio.mimeType被通用脱敏HMAC；captureAudioPayload拒绝INVALID_AUDIO_ATTACHMENT。与HTTP ASR本身无关，需在最终有状态全局门前保留真实固定媒体格式并重采集。",
       "affected_actions": [
-        "历史ASR验收",
-        "v0.5.14发布"
+        "v0.5.14最终有状态全局门"
       ],
-      "evidence_ref": "reports/local/v0514-asr-historical-current.json"
+      "evidence_ref": "reports/local/v0514-asr-save-loop-current.json#sourceAudioMetadata"
     }
   ],
-  "next_action": "提交已审查且真实采集通过的快照修复并接入develop；串行派发ASR发送分包/生命周期/时长计量修复，之后历史压缩回填及本机闭环。",
+  "next_action": "主控提交并接入已独审HTTP整文件ASR；随后给主开发最小快照媒体格式保真任务，再继续历史压缩闭环及最终候选门。",
   "runtime": {
     "sha": "a901c8507094528e48992802b102911086331043",
     "package_version": "0.5.13",
@@ -203,17 +227,6 @@
       "refs": [
         "git:d3f8b37b201adaa2c3bfe8b1120ca41781dcec38",
         "reports/local/v0514-core-feedback-current.json"
-      ]
-    },
-    {
-      "id": "asr-real-synthetic",
-      "candidate_sha": "95caf2dbffd2443d40932519bf64f8d908dfadb8",
-      "conclusion": "27.914秒合成样例真实ASR首中尾PASS",
-      "limitations": [
-        "不是历史badcase或麦克风验收；费用为公开单价估算"
-      ],
-      "refs": [
-        "reports/local/v0514-asr-live-current.json"
       ]
     },
     {
@@ -253,19 +266,8 @@
       ]
     },
     {
-      "id": "historical-asr-reproduction",
-      "candidate_sha": "6619050（ASR未改）",
-      "conclusion": "确认分包节奏缺陷：同音同模型200ms分包恢复首段及中段；正式代码待修复",
-      "limitations": [
-        "临时传输对照不等于已接入修复；整段模式存在重叠，未采用；保持原音与失败历史"
-      ],
-      "refs": [
-        "reports/local/v0514-asr-historical-current.json"
-      ]
-    },
-    {
       "id": "snapshot-onboarding-semantics",
-      "candidate_sha": "6619050+启动门脚本ed6087cb（待提交）",
+      "candidate_sha": "87ca776（校验工具）/6619050（采集业务候选）",
       "conclusion": "主控沿完整源/脱敏/重建/normalize/就绪/证据消费者审查；真实4账户生产采集保真PASS",
       "limitations": [
         "仅快照语义与采集；最终新候选全局启动/恢复门仍待执行",
@@ -274,6 +276,38 @@
       "refs": [
         "scripts/release-state-startup-gate.mts",
         "reports/local/v0514-startup-snapshot-current.json#cf3ca5d1eba9f5b11ea80d1cf90ebae956f21d7b77a2fb8c5e2c18a29380b3dd"
+      ]
+    },
+    {
+      "id": "file-asr-trial",
+      "candidate_sha": "0c7b847（独立临时HTTP验收）",
+      "conclusion": "历史55.785秒原音单POST约2.844秒返回164字及7分句，首末句与节奏修正流式一致；27.914秒合成首中尾三标记全部通过",
+      "limitations": [
+        "正式应用尚未接入；中间文字与流式不同，逐字保真不可由字数或时间戳证明",
+        "使用volc.bigasr.auc_turbo，官方后付费4.5元/小时；账户账单待核对，保留两次预留额"
+      ],
+      "refs": [
+        "reports/local/v0514-asr-flash-local.json",
+        "reports/local/v0514-asr-flash-markers-local.json",
+        "https://www.volcengine.com/docs/6561/1631584?lang=zh",
+        "https://docs.volcengine.com/docs/DoubaoVoice/Billinginstructions-21?lang=zh"
+      ]
+    },
+    {
+      "id": "file-asr-default-closed-loop",
+      "candidate_sha": "0c7b847 + 回执5文件固定sourceHashes（接入前）",
+      "conclusion": "主控独立核对实际配置/转换/返回/预算/计量/保存契约；M4A实际FFmpeg→HTTP单POST→任务保存→隔离PG重启/重连恢复PASS；旧失败/原音不改；必要专项与干净构建PASS",
+      "limitations": [
+        "逐字保真未全面验收；真实原音DeepSeek润色/凝练未调用",
+        "回执保留第一次验收脚本读已关闭pool的失败；无付费恢复核验完成",
+        "测试中音频MIME采用已授权真实原记录，脱敏快照MIME失真仍阻塞最终全局门",
+        "生产未切换，当前仍v0.5.13"
+      ],
+      "refs": [
+        "src/infrastructure/ai-providers/volcengine-file-asr.mts",
+        "src/infrastructure/ai-providers/volcengine-speech.mjs",
+        "reports/local/v0514-asr-save-loop-current.json",
+        "reports/local/v0514-asr-flash-markers-local.json"
       ]
     }
   ],

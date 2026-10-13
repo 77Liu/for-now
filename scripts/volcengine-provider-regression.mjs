@@ -5,6 +5,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { gzipSync, gunzipSync } from "node:zlib";
+import { loadAppConfig } from "../src/config/index.mjs";
 import {
   canonicalQuery,
   createAsrAudioRequest,
@@ -98,6 +99,26 @@ await assert.rejects(createVolcengineVisionTransport().recognizeText({ data: Buf
   statusCode: 503
 });
 
+/** 构造带实际PCM参数的合成WAV，验证音频字节与发送时间，不含用户原音。 */
+function wavFixture({ durationMs = 450, rate = 16000, channel = 1, unknownDataLength = false } = {}) {
+  const blockAlign = channel * 2;
+  const data = Buffer.alloc(Math.round(rate * durationMs / 1000) * blockAlign, 0x35);
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0);
+  header.writeUInt32LE(unknownDataLength ? 0xffffffff : data.length + 36, 4);
+  header.write("WAVEfmt ", 8);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(channel, 22);
+  header.writeUInt32LE(rate, 24);
+  header.writeUInt32LE(rate * blockAlign, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(16, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(unknownDataLength ? 0xffffffff : data.length, 40);
+  return Buffer.concat([header, data]);
+}
+
 function serverFrame(payload, { final = true } = {}) {
   const compressed = gzipSync(Buffer.from(JSON.stringify(payload)));
   const sequence = Buffer.allocUnsafe(4);
@@ -184,7 +205,7 @@ MockWebSocket.instances = [];
 
 const speechCalls = [];
 const ttsAudio = Buffer.from([0x49, 0x44, 0x33, 0x04]);
-const speech = createVolcengineSpeechTransport({
+const speech = createVolcengineSpeechTransport({ asrMode: "streaming",
   apiKey: "speech-secret",
   WebSocketImpl: MockWebSocket,
   sleep: async () => {},
@@ -244,7 +265,7 @@ assert.deepEqual(await speech.queryRecording({ taskId: "asr-file-task" }), {
   rawText: "文件识别结果",
   utterances: []
 });
-assert.deepEqual(await speech.transcribe({ audio: Buffer.from("RIFF....WAVE"), mimeType: "audio/wav" }), {
+assert.deepEqual(await speech.transcribe({ audio: wavFixture(), mimeType: "audio/wav" }), {
   provider: "volcengine-seedasr-2.0",
   rawText: "今天想把重要的事情先做完。",
   providerRequestId: "asr-log-id",
@@ -252,8 +273,236 @@ assert.deepEqual(await speech.transcribe({ audio: Buffer.from("RIFF....WAVE"), m
 });
 assert.equal(MockWebSocket.instances[0].options.headers["X-Api-Key"], "speech-secret");
 assert.equal(MockWebSocket.instances[0].options.headers["X-Api-Resource-Id"], "volc.seedasr.sauc.duration");
+// 使用虚拟等待检查时序，同时逐字节核对原WAV、尾音与唯一终包。
+const packetSleeps = [];
+let packetClock = 0;
+class PacedWebSocket extends MockWebSocket {
+  send(data, options, callback) {
+    (this.sendTimes ||= []).push(packetClock);
+    super.send(data, options, callback);
+  }
+}
+const pacedInput = wavFixture({ durationMs: 450, unknownDataLength: true });
+const pacedSpeech = createVolcengineSpeechTransport({ asrMode: "streaming",
+  apiKey: "speech-secret", WebSocketImpl: PacedWebSocket,
+  sleep: async milliseconds => {
+    packetSleeps.push(milliseconds);
+    packetClock += milliseconds;
+  }
+});
+await pacedSpeech.transcribe({ audio: pacedInput, mimeType: "audio/wav" });
+const pacedSocket = MockWebSocket.instances.at(-1);
+const audioFrames = pacedSocket.sent.filter(frame => (frame[1] >> 4) === 2);
+assert.deepEqual(packetSleeps, [200, 200, 50]);
+assert.deepEqual(pacedSocket.sendTimes, [0, 0, 200, 400, 450]);
+assert.deepEqual(Buffer.concat(audioFrames.map(frame => gunzipSync(frame.subarray(8)))), pacedInput);
+assert.equal(audioFrames.filter(frame => (frame[1] & 0xf) === 2).length, 1);
+assert.equal(gunzipSync(audioFrames.at(-1).subarray(8)).length, 0);
+const pacedPayload = JSON.parse(gunzipSync(pacedSocket.sent[0].subarray(8)));
+assert.deepEqual(pacedPayload.audio, { format: "wav", codec: "raw", rate: 16000, bits: 16, channel: 1 });
+assert.equal(pacedPayload.request.result_type, "full");
+
+// 中间帧不能提前结算；最终全量正文、provider实测总时长都必须返回。
+const completeText = "合成验收文本。".repeat(500);
+class FinalResultWebSocket extends MockWebSocket {
+  send(data, _options, callback) {
+    this.sent.push(Buffer.from(data));
+    callback();
+    queueMicrotask(() => this.emit("message", serverFrame({
+      code: 0, audio_info: { duration: 450 },
+      result: {
+        text: (data[1] & 0xf) === 2 ? completeText : "中间片段",
+        utterances: [{ start_time: 20, end_time: 300 }]
+      }
+    }, { final: (data[1] & 0xf) === 2 })));
+  }
+}
+const finalResult = await createVolcengineSpeechTransport({ asrMode: "streaming",
+  apiKey: "speech-secret", WebSocketImpl: FinalResultWebSocket, sleep: async () => {}
+}).transcribe({ audio: wavFixture(), mimeType: "audio/wav" });
+assert.equal(finalResult.rawText, completeText);
+assert.equal(finalResult.durationMs, 450);
+
+// 取消可能发生在send回调或等待中；完成态之后不允许多发音频或尾包。
+for (const cancelStage of ["before-prepare", "full-request", "audio-send", "pacing"]) {
+  const controller = new AbortController();
+  let prepareCalls = 0;
+  class CancelWebSocket extends MockWebSocket {
+    send(data, options, callback) {
+      super.send(data, options, callback);
+      if ((cancelStage === "full-request" && (data[1] >> 4) === 1)
+        || (cancelStage === "audio-send" && (data[1] >> 4) === 2)) controller.abort();
+    }
+  }
+  const beforeInstances = MockWebSocket.instances.length;
+  if (cancelStage === "before-prepare") controller.abort();
+  const operation = createVolcengineSpeechTransport({ asrMode: "streaming",
+    apiKey: "speech-secret", WebSocketImpl: CancelWebSocket,
+    prepareStreamingAudio: async value => { prepareCalls += 1; return value; },
+    sleep: async () => { if (cancelStage === "pacing") controller.abort(); }
+  }).transcribe({ audio: wavFixture(), mimeType: "audio/wav", signal: controller.signal });
+  await assert.rejects(operation, { name: "AbortError" });
+  await new Promise(resolve => setImmediate(resolve));
+  if (cancelStage === "before-prepare") {
+    assert.equal(prepareCalls, 0);
+    assert.equal(MockWebSocket.instances.length, beforeInstances);
+  } else {
+    const socket = MockWebSocket.instances.at(-1);
+    assert.equal(socket.sent.length, cancelStage === "full-request" ? 1 : 2);
+    assert.equal(socket.sent.some(frame => (frame[1] & 0xf) === 2), false);
+  }
+}
+
+// provider在全部音频/终包前提前结束，不能把中间片段当完整成功。
+class EarlyFinalWebSocket extends MockWebSocket {
+  send(data, _options, callback) {
+    this.sent.push(Buffer.from(data));
+    callback();
+    queueMicrotask(() => this.emit("message", serverFrame({ code: 0, result: { text: "提前结果" } })));
+  }
+}
+await assert.rejects(createVolcengineSpeechTransport({ asrMode: "streaming",
+  apiKey: "speech-secret", WebSocketImpl: EarlyFinalWebSocket, sleep: async () => {}
+}).transcribe({ audio: wavFixture(), mimeType: "audio/wav" }), { code: "ASR_EARLY_FINAL" });
+assert.equal(MockWebSocket.instances.at(-1).sent.length, 1);
+
+// 默认有取消能力的等待也必须被立即清理；同步close不能覆盖取消归属。
+const defaultPacingAbort = new AbortController();
+class AbortDuringDefaultWait extends MockWebSocket {
+  send(data, options, callback) {
+    super.send(data, options, callback);
+    if ((data[1] >> 4) === 2) setImmediate(() => defaultPacingAbort.abort());
+  }
+  close() {
+    this.readyState = MockWebSocket.CLOSED;
+    this.emit("close");
+  }
+}
+await assert.rejects(createVolcengineSpeechTransport({ asrMode: "streaming",
+  apiKey: "speech-secret", WebSocketImpl: AbortDuringDefaultWait
+}).transcribe({ audio: wavFixture(), mimeType: "audio/wav", signal: defaultPacingAbort.signal }), { name: "AbortError" });
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(MockWebSocket.instances.at(-1).sent.length, 2);
+
+class NeverFinalWebSocket extends MockWebSocket {
+  send(data, _options, callback) {
+    this.sent.push(Buffer.from(data));
+    callback();
+  }
+}
+await assert.rejects(createVolcengineSpeechTransport({ asrMode: "streaming",
+  apiKey: "speech-secret", WebSocketImpl: NeverFinalWebSocket, timeoutMs: 20, sleep: async () => {}
+}).transcribe({ audio: wavFixture({ durationMs: 2 }), mimeType: "audio/wav" }), { code: "SPEECH_TIMEOUT", statusCode: 504 });
+assert.equal(MockWebSocket.instances.at(-1).sent.filter(frame => (frame[1] & 0xf) === 2).length, 1);
+const invalidWave = wavFixture();
+invalidWave.writeUInt16LE(3, 20);
+const beforeInvalidWave = MockWebSocket.instances.length;
+await assert.rejects(speech.transcribe({ audio: invalidWave, mimeType: "audio/wav" }), { code: "ASR_TRANSCODE_INVALID" });
+assert.equal(MockWebSocket.instances.length, beforeInvalidWave);
+assert.equal(invalidWave.readUInt16LE(20), 3, "unsupported PCM original remains unchanged");
+
+for (const variant of [{ rate: 8000 }, { rate: 48000 }, { channel: 2 }]) {
+  const source = wavFixture(variant);
+  const sourceBefore = Buffer.from(source);
+  await assert.rejects(speech.transcribe({ audio: source, mimeType: "audio/wav" }), { code: "ASR_TRANSCODE_INVALID" });
+  assert.deepEqual(source, sourceBefore);
+}
+const beforeTooLong = MockWebSocket.instances.length;
+await assert.rejects(speech.transcribe({
+  audio: wavFixture({ durationMs: 600002 }), mimeType: "audio/wav", maxDurationMs: 600000
+}), { code: "ASR_AUDIO_TOO_LONG", statusCode: 413 });
+assert.equal(MockWebSocket.instances.length, beforeTooLong, "real PCM duration must be rejected before paid provider connection");
+
+// 10分钟音频的3,000个200ms包可用虚拟等待验证；专用ASR计时器包含发送时长。
+const originalSetTimeout = globalThis.setTimeout;
+const timerDurations = [];
+let longPacingMs = 0;
+try {
+  globalThis.setTimeout = (callback, milliseconds, ...args) => {
+    timerDurations.push(milliseconds);
+    return originalSetTimeout(callback, milliseconds, ...args);
+  };
+  await createVolcengineSpeechTransport({ asrMode: "streaming",
+    apiKey: "speech-secret", WebSocketImpl: MockWebSocket, timeoutMs: 90000,
+    sleep: async milliseconds => { longPacingMs += milliseconds; }
+  }).transcribe({ audio: wavFixture({ durationMs: 600000 }), mimeType: "audio/wav", maxDurationMs: 600000 });
+} finally {
+  globalThis.setTimeout = originalSetTimeout;
+}
+assert.equal(longPacingMs, 600000);
+assert.ok(timerDurations.includes(690000));
+assert.equal(MockWebSocket.instances.at(-1).sent.length, 3002);
+
+// 默认是整文件HTTP：一次Base64提交、最终形态、计量与原件保护。
+const fileCalls = [];
+const fileInput = wavFixture({ unknownDataLength: true });
+const fileOriginal = Buffer.from(fileInput);
+const fileSocketCount = MockWebSocket.instances.length;
+const fileResponse = { audio_info: { duration: 450 }, result: { text: completeText, utterances: [{ text: completeText, start_time: 0, end_time: 450 }] } };
+const successHeaders = { "x-api-status-code": "20000000", "x-tt-logid": "flash-log" };
+const fileSpeech = createVolcengineSpeechTransport({
+  apiKey: "speech-secret", WebSocketImpl: MockWebSocket,
+  fetchImpl: async (url, options) => {
+    fileCalls.push({ url, options, body: JSON.parse(options.body) });
+    return jsonResponse(fileResponse, 200, successHeaders);
+  }
+});
+const fileResult = await fileSpeech.transcribe({ audio: fileInput, mimeType: "audio/wav", maxDurationMs: 600000 });
+assert.equal(fileSpeech.asrMode, "file");
+assert.equal(fileSpeech.asrAction, "flashAsr");
+assert.equal(speech.asrMode, "streaming");
+assert.equal(speech.asrAction, "streamingAsr");
+assert.equal(fileCalls.length, 1);
+assert.equal(MockWebSocket.instances.length, fileSocketCount);
+assert.equal(fileCalls[0].url, "https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash");
+assert.equal(fileCalls[0].options.headers["X-Api-Resource-Id"], "volc.bigasr.auc_turbo");
+assert.equal(fileCalls[0].options.headers["X-Api-Sequence"], "-1");
+assert.match(fileCalls[0].options.headers["X-Api-Request-Id"], /^[a-f0-9-]{36}$/);
+const postedWav = Buffer.from(fileCalls[0].body.audio.data, "base64");
+assert.equal(postedWav.readUInt32LE(4), postedWav.length - 8);
+assert.equal(postedWav.readUInt32LE(40), postedWav.length - 44);
+assert.deepEqual(postedWav.subarray(44), fileInput.subarray(44));
+assert.deepEqual(fileInput, fileOriginal);
+assert.equal(fileResult.rawText, completeText);
+assert.equal(fileResult.durationMs, 450);
+assert.equal(fileResult.providerRequestId, "flash-log");
+assert.deepEqual(fileResult.utterances, fileResponse.result.utterances);
+const appSpeechConfig = loadAppConfig({ rootDir: path.resolve("."), env: { NODE_ENV: "test" } }).speech;
+assert.equal(appSpeechConfig.asrMode, "file");
+assert.equal(loadAppConfig({ rootDir: path.resolve("."), env: { NODE_ENV: "test", VOLCENGINE_ASR_MODE: "streaming" } }).speech.asrMode, "streaming");
+assert.throws(() => createVolcengineSpeechTransport({ asrMode: "nostream" }), { code: "INVALID_ASR_MODE" });
+for (const [makeResponse, expectedCode] of [
+  [() => jsonResponse({ audio_info: { duration: 450 }, result: { text: "", utterances: [] } }, 200, successHeaders), "ASR_FILE_EMPTY_TEXT"],
+  [() => jsonResponse({ result: { text: "没有计量", utterances: [] } }, 200, successHeaders), "ASR_FILE_INVALID_RESPONSE"],
+  [() => new Response("not JSON", { status: 200, headers: successHeaders }), "ASR_FILE_INVALID_RESPONSE"],
+  [() => jsonResponse(fileResponse, 200, { ...successHeaders, "x-api-status-code": "45000001" }), "SPEECH_UNAVAILABLE"],
+  [() => jsonResponse({}, 403, { ...successHeaders, "x-api-status-code": "403" }), "SPEECH_AUTH_FAILED"]
+]) {
+  let calls = 0;
+  await assert.rejects(createVolcengineSpeechTransport({
+    apiKey: "speech-secret", WebSocketImpl: MockWebSocket,
+    fetchImpl: async () => { calls += 1; return makeResponse(); }
+  }).transcribe({ audio: wavFixture(), mimeType: "audio/wav" }), error => {
+    assert.equal(error.code, expectedCode);
+    assert.equal(error.providerRequestId, "flash-log");
+    return true;
+  });
+  assert.equal(calls, 1, "failure must not retry or fall back to another paid transport");
+  assert.equal(MockWebSocket.instances.length, fileSocketCount);
+}
+const fileAbort = new AbortController();
+await assert.rejects(createVolcengineSpeechTransport({
+  apiKey: "speech-secret", fetchImpl: async () => { fileAbort.abort(); return jsonResponse(fileResponse, 200, successHeaders); }
+}).transcribe({ audio: wavFixture(), mimeType: "audio/wav", signal: fileAbort.signal }), { name: "AbortError" });
+await assert.rejects(createVolcengineSpeechTransport({
+  apiKey: "speech-secret", timeoutMs: 20,
+  fetchImpl: async (_url, { signal }) => new Promise((_resolve, reject) => {
+    signal.addEventListener("abort", () => reject(Object.assign(new Error("cancelled fetch"), { name: "AbortError" })), { once: true });
+  })
+}).transcribe({ audio: wavFixture(), mimeType: "audio/wav" }), { code: "SPEECH_TIMEOUT", statusCode: 504 });
+
 let m4aConversions = 0;
-const m4aSpeech = createVolcengineSpeechTransport({
+const m4aSpeech = createVolcengineSpeechTransport({ asrMode: "streaming",
   apiKey: "speech-secret",
   WebSocketImpl: MockWebSocket,
   sleep: async () => {},
@@ -261,7 +510,7 @@ const m4aSpeech = createVolcengineSpeechTransport({
     m4aConversions += 1;
     assert.equal(mimeType, "audio/mp4");
     assert.equal(audio.toString("ascii", 4, 8), "ftyp");
-    return { audio: Buffer.from("RIFF....WAVE"), mimeType: "audio/wav" };
+    return { audio: wavFixture(), mimeType: "audio/wav" };
   }
 });
 assert.deepEqual(await m4aSpeech.transcribe({
@@ -277,14 +526,17 @@ assert.equal(m4aConversions, 1);
 const transcodeFixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "for-now-ffmpeg-test-"));
 const fakeFfmpeg = path.join(transcodeFixtureDir, "ffmpeg");
 const slowFfmpeg = path.join(transcodeFixtureDir, "slow-ffmpeg");
-await fs.writeFile(fakeFfmpeg, "#!/bin/sh\nprintf 'RIFF'\nhead -c 60 /dev/zero\n", { mode: 0o700 });
+const transcodeWav = wavFixture({ unknownDataLength: true });
+const transcodeWavPath = path.join(transcodeFixtureDir, "output.wav");
+await fs.writeFile(transcodeWavPath, transcodeWav);
+await fs.writeFile(fakeFfmpeg, `#!/bin/sh\ncat '${transcodeWavPath}'\n`, { mode: 0o700 });
 await fs.writeFile(slowFfmpeg, "#!/bin/sh\nsleep 1\n", { mode: 0o700 });
 // Prepare the generated executable before measuring the transport's own timeout.
 const fixtureOutput = await new Promise((resolve, reject) => {
   execFile(fakeFfmpeg, [], { timeout: 5_000, encoding: "buffer" }, (error, stdout) => error ? reject(error) : resolve(stdout));
 });
-assert.deepEqual(fixtureOutput, Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(60)]));
-assert.equal((await createVolcengineSpeechTransport({
+assert.deepEqual(fixtureOutput, transcodeWav);
+assert.equal((await createVolcengineSpeechTransport({ asrMode: "streaming",
   apiKey: "speech-secret",
   WebSocketImpl: MockWebSocket,
   sleep: async () => {},
@@ -294,7 +546,7 @@ assert.equal((await createVolcengineSpeechTransport({
   audio: Buffer.from("\0\0\0\u001cftypM4A "),
   mimeType: "audio/mp4"
 })).rawText, "今天想把重要的事情先做完。");
-await assert.rejects(createVolcengineSpeechTransport({
+await assert.rejects(createVolcengineSpeechTransport({ asrMode: "streaming",
   apiKey: "speech-secret",
   WebSocketImpl: MockWebSocket,
   ffmpegPath: path.join(transcodeFixtureDir, "missing-ffmpeg"),
@@ -306,7 +558,7 @@ await assert.rejects(createVolcengineSpeechTransport({
   code: "ASR_TRANSCODE_UNAVAILABLE",
   statusCode: 503
 });
-await assert.rejects(createVolcengineSpeechTransport({
+await assert.rejects(createVolcengineSpeechTransport({ asrMode: "streaming",
   apiKey: "speech-secret",
   WebSocketImpl: MockWebSocket,
   ffmpegPath: slowFfmpeg,
@@ -318,6 +570,13 @@ await assert.rejects(createVolcengineSpeechTransport({
   code: "ASR_TRANSCODE_TIMEOUT",
   statusCode: 504
 });
+for (const mimeType of ["audio/mpeg", "audio/ogg"]) {
+  const converted = await createVolcengineSpeechTransport({ asrMode: "streaming",
+    apiKey: "speech-secret", ffmpegPath: fakeFfmpeg, timeoutMs: 1000
+  }).prepareAsrAudio({ audio: Buffer.from("compressed synthetic input"), mimeType });
+  assert.equal(converted.mimeType, "audio/wav");
+  assert.deepEqual(converted.audio, transcodeWav);
+}
 await fs.rm(transcodeFixtureDir, { recursive: true, force: true });
 class ErrorWebSocket extends MockWebSocket {
   send(data, _options, callback) {
@@ -331,11 +590,11 @@ class ErrorWebSocket extends MockWebSocket {
     }
   }
 }
-await assert.rejects(createVolcengineSpeechTransport({
+await assert.rejects(createVolcengineSpeechTransport({ asrMode: "streaming",
   apiKey: "speech-secret",
   WebSocketImpl: ErrorWebSocket,
   sleep: async () => {}
-}).transcribe({ audio: Buffer.from("RIFF....WAVE"), mimeType: "audio/wav" }), error => {
+}).transcribe({ audio: wavFixture(), mimeType: "audio/wav" }), error => {
   assert.equal(error.code, "ASR_UNSUPPORTED_AUDIO_FORMAT");
   assert.equal(error.statusCode, 422);
   assert.equal(error.providerCode, "45000151");
@@ -350,7 +609,7 @@ await assert.rejects(createVolcengineSpeechTransport().synthesize({ text: "测�
   code: "SPEECH_NOT_CONFIGURED",
   statusCode: 503
 });
-await assert.rejects(createVolcengineSpeechTransport({
+await assert.rejects(createVolcengineSpeechTransport({ asrMode: "streaming",
   apiKey: "speech-secret",
   fetchImpl: async () => jsonResponse({
     header: { code: 45000030, message: "[resource_id=seed-tts-2.0] requested resource not granted" }

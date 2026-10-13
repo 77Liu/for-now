@@ -192,6 +192,8 @@ export function loadAppConfig({ rootDir, env = process.env }) {
       ttsEndpoint: String(env.VOLCENGINE_TTS_ENDPOINT || "https://openspeech.bytedance.com/api/v3/tts/unidirectional").trim(),
       ttsSubmitEndpoint: String(env.VOLCENGINE_TTS_SUBMIT_ENDPOINT || "https://openspeech.bytedance.com/api/v3/tts/submit").trim(),
       ttsQueryEndpoint: String(env.VOLCENGINE_TTS_QUERY_ENDPOINT || "https://openspeech.bytedance.com/api/v3/tts/query").trim(),
+      asrMode: String(env.VOLCENGINE_ASR_MODE || "file").trim(),
+      asrFileEndpoint: String(env.VOLCENGINE_ASR_FILE_ENDPOINT || "").trim() || undefined,
       asrStreamEndpoint: String(env.VOLCENGINE_ASR_STREAM_ENDPOINT || "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async").trim(),
       asrSubmitEndpoint: String(env.VOLCENGINE_ASR_SUBMIT_ENDPOINT || "https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit").trim(),
       asrQueryEndpoint: String(env.VOLCENGINE_ASR_QUERY_ENDPOINT || "https://openspeech.bytedance.com/api/v3/auc/bigmodel/query").trim()

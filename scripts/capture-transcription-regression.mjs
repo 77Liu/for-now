@@ -19,6 +19,7 @@ assert.equal(activeTaskForInput([{
 let tick = 0;
 const now = () => `2026-10-01T00:00:${String(++tick).padStart(2, "0")}.000Z`;
 const hash = value => crypto.createHash("sha256").update(value).digest("hex");
+const fullAsrText = "完整转写不得丢失开头、中段和尾句。".repeat(500);
 const audio = {
   attachmentPath: "/attachments/voice.m4a",
   mimeType: "audio/mp4",
@@ -86,7 +87,7 @@ const background = createBackgroundAi({
     }
     return {
       provider: "volcengine-seedasr-2.0",
-      rawText: "这是原始转写。",
+      rawText: fullAsrText,
       polishedText: "这是整理后的转写。",
       condensedText: "这是凝练稿。",
       condenseErrorCode: "",
@@ -121,7 +122,7 @@ assert.deepEqual(generatedTaskIds, [first.task.id]);
 assert.equal(store.aiTasks[0].status, "succeeded");
 assert.equal(store.captures[0].transcription.status, "ready");
 assert.equal(store.captures[0].title, "转写期间的用户标题");
-assert.equal(store.captures[0].transcription.rawText, "这是原始转写。");
+assert.equal(store.captures[0].transcription.rawText, fullAsrText);
 assert.equal(store.captures[0].transcription.polishedText, "这是整理后的转写。");
 assert.equal(store.captures[0].transcription.condensedText, "这是凝练稿。");
 assert.equal(store.captures[0].transcription.condenseErrorCode, "");

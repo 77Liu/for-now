@@ -274,7 +274,7 @@ export function createRuntimeHttpWiring({
     notify: appConfig.recordCompressionNotificationsEnabled
       && appConfig.feishuAlertWebhook
       ? async message => {
-        const { createFeishuNotifier } = await import("../../.build/typescript/backend/feishu.mjs");
+        const { createFeishuNotifier } = await import("../../.build/typescript/backend/shared/observability/feishu.mjs");
         return createFeishuNotifier({
           webhook: appConfig.feishuAlertWebhook,
           secret: appConfig.feishuAlertSecret
