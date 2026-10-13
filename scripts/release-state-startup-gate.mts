@@ -148,6 +148,10 @@ type OnboardingV2Api = {
   onboardingV2ContextEntries(value: unknown): JsonRecord[];
 };
 
+type CaptureAudioApi = {
+  captureAudioPayload(value: unknown): { value?: JsonRecord | null; code?: string; error?: string };
+};
+
 type SupplementEstimator = (records: unknown[]) => number;
 
 function fail(message: string): never {
@@ -258,6 +262,12 @@ function compactToken(
 
 function redactionAtom(key: Buffer, namespace: string, value: string, prefix: "Q" | "V"): string {
   return `${prefix}${createHmac("sha256", key).update(`${namespace}\0${value}`).digest("hex")}Z`;
+}
+
+/** 仅实际captures集合的顶层对象，不包含trash或用户扩展中的同名audio。 */
+function isCaptureMappingRow(row: JsonRecord): boolean {
+  return row.kind === "capture" && row.collection === "captures" && row.field === "captures"
+    && row.parentKey === null && typeof row.id === "string" && row.objectKey === JSON.stringify(["captures", row.id]);
 }
 
 function createRedactionContext(
@@ -394,6 +404,34 @@ function createRedactionContext(
     }
     for (const [name, child] of Object.entries(value)) register(child, name, [...objectPath, name]);
   };
+
+  // 在统一路径/对象键注册前登记真实capture路径，保留派生物后缀及有效性。
+  for (const row of mapping.objects) {
+    if (!isCaptureMappingRow(row)) continue;
+    const audio = (row.payload as JsonRecord)?.audio;
+    if (!audio || typeof audio !== "object" || Array.isArray(audio)) continue;
+    for (const field of ["attachmentPath", "asrAttachmentPath"]) {
+      const value = (audio as JsonRecord)[field];
+      if (typeof value !== "string" || !value) continue;
+      const trimmed = value.trim();
+      const valid = field === "attachmentPath"
+        ? /^\/attachments\/[\w.-]+\.(?:m4a|mp4|webm|ogg|wav)$/iu.test(trimmed)
+        : /^\/attachments\/[\w.-]+\.asr\.wav$/iu.test(trimmed);
+      if (valid && trimmed.length <= 300) {
+        if (field === "attachmentPath" && context.paths.has(value)) continue;
+        const prefix = trimmed.slice(0, "/attachments/".length);
+        const extension = path.extname(trimmed);
+        const derivative = field === "asrAttachmentPath" ? trimmed.slice(-8, -4) : "";
+        const stem = path.basename(trimmed).slice(0, -extension.length - derivative.length);
+        const leading = value.slice(0, value.length - value.trimStart().length);
+        const trailing = value.slice(value.trimEnd().length);
+        context.paths.set(value, `${leading}${prefix}${identityToken(key, "path", stem)}${derivative}${extension}${trailing}`);
+      } else if (!/^\/attachments\/[\w.-]+$/u.test(value)) {
+        // 原来不是mapper附件引用的坏路径仍保持非法，不因脱敏变成有效文件名。
+        context.paths.set(value, identityToken(key, "invalid-capture-audio-path", value));
+      }
+    }
+  }
 
   // 历史引文与其来源正文共享短代号，来源ID短化时也复用同一个实体映射。
   for (const row of mapping.objects) {
@@ -848,7 +886,23 @@ function preserveTechnicalMetadata(
     }
     const source = sourceRow.payload as JsonRecord;
     const target = targetRow.payload as JsonRecord;
-    if (sourceRow.kind === "userClaim" && Array.isArray(source.evidence) && Array.isArray(target.evidence)) {
+    if (isCaptureMappingRow(sourceRow) && source.audio && typeof source.audio === "object" && !Array.isArray(source.audio)) {
+      const sourceAudio = source.audio as JsonRecord;
+      if (!target.audio || typeof target.audio !== "object" || Array.isArray(target.audio)) fail("Snapshot capture audio structure changed");
+      const targetAudio = target.audio as JsonRecord;
+      for (const [field, values] of [
+        ["mimeType", ["audio/mp4", "audio/webm", "audio/ogg", "audio/wav"]],
+        ["asrMimeType", ["audio/wav"]]
+      ] as const) {
+        const value = sourceAudio[field];
+        if (typeof value === "string" && (values as readonly string[]).includes(value.trim().toLowerCase())) targetAudio[field] = value;
+      }
+      // 真实公开消费者接受数字字符串；保留原值，不纠正坏范围或改变计量单位。
+      for (const field of ["bytes", "durationMs", "asrBytes"]) {
+        const value = sourceAudio[field];
+        if (typeof value === "string" && Number.isFinite(Number(value))) targetAudio[field] = value;
+      }
+    } else if (sourceRow.kind === "userClaim" && Array.isArray(source.evidence) && Array.isArray(target.evidence)) {
       // 此判别决定真实 mapper 的单例证据关系，不是任意同名扩展字段。
       source.evidence.forEach((item, evidenceIndex) => {
         if (item && typeof item === "object"
@@ -1193,6 +1247,42 @@ function assertSpeechCacheState(source: JsonRecord, normalized: JsonRecord, cano
   }
 }
 
+/** 对比原/重建/normalize后的实际音频消费者，不写回合法化后的默认值。 */
+function assertCaptureAudioSemantics(source: JsonRecord, target: JsonRecord, context: RedactionContext,
+  captures: CaptureAudioApi, normalizeStore: (value: JsonRecord) => JsonRecord,
+  normalizePersistedDocument: (source: JsonRecord, normalize: (value: JsonRecord) => JsonRecord) => JsonRecord,
+  canonicalJson: (value: unknown) => string): void {
+  const projection = (store: JsonRecord, remap: boolean) => {
+    const items = Array.isArray(store.captures) ? store.captures as JsonRecord[] : [];
+    return items.map(item => {
+      const result = captures.captureAudioPayload(item.audio);
+      const id = remap ? context.ids.get(String(item.id)) : item.id;
+      if (result.code) return { id, code: result.code };
+      if (result.value == null) return { id, value: null };
+      const value = structuredClone(result.value);
+      if (remap) {
+        for (const field of ["attachmentPath", "asrAttachmentPath"]) {
+          if (!Object.hasOwn(value, field)) continue;
+          const originalPath = String((item.audio as JsonRecord)[field]);
+          const alias = context.paths.get(originalPath);
+          if (!alias) fail("Snapshot capture audio reference lacks a redaction alias");
+          value[field] = alias.trim();
+        }
+      }
+      return { id, value };
+    });
+  };
+  const before = canonicalJson(projection(source, true));
+  const after = canonicalJson(projection(target, false));
+  if (before !== after) fail("Snapshot capture audio consumer changed format, units, derivative, reference or invalidity");
+  const normalizedSource = normalizePersistedDocument(structuredClone(source), normalizeStore);
+  const normalizedTarget = normalizePersistedDocument(structuredClone(target), normalizeStore);
+  if (before !== canonicalJson(projection(normalizedSource, true))
+    || after !== canonicalJson(projection(normalizedTarget, false))) {
+    fail("Snapshot capture audio normalization changed its real consumer contract");
+  }
+}
+
 function assertPersistedStoreConsumerContract(
   store: JsonRecord,
   normalizeStore: (value: JsonRecord) => JsonRecord,
@@ -1472,6 +1562,7 @@ async function createSanitizedAccount(
   }>(root, "src/shared/persistence/normalization.mjs");
   const persistenceMetadata = await importFromRoot<PersistenceMetadataApi>(root, "src/shared/persistence/persistence-metadata.mjs");
   const sourceStore = persistence.rebuildStoreObjects(sourceMapping);
+  const captures = await importFromRoot<CaptureAudioApi>(root, "src/modules/captures/index.mjs");
   assertPersistedStoreConsumerContract(
     sourceStore,
     app.normalizeStore,
@@ -1507,6 +1598,8 @@ async function createSanitizedAccount(
   preserveOnboardingReferences(sourceMapping, redactedMapping, onboardingApi);
   const redactedInventory = sanitizeMapping(sourceInventory, redactionKey, redactionContext, stringMap, true);
   const sanitizedStore = persistence.rebuildStoreObjects(redactedMapping);
+  assertCaptureAudioSemantics(sourceStore, sanitizedStore, redactionContext, captures,
+    app.normalizeStore, persistedNormalization.normalizePersistedDocument, persistence.canonicalJson);
   assertOnboardingTechnicalSemantics(sourceStore, sanitizedStore, onboardingApi, persistence.canonicalJson);
   preserveOnboardingDerivedReferences(sourceStore, sanitizedStore, redactedMapping, onboardingApi, onboardingModel);
   const sanitizedInspector = (await createClosedInspector(root, redactedAccountId, {}, clock)).backgroundAi;
@@ -1517,6 +1610,8 @@ async function createSanitizedAccount(
   preserveMatchingRequestedIntentHashes(sourceStore, beforeStates, sanitizedStore, redactedMapping, sanitizedInspector, redactionKey);
 
   const finalStore = persistence.rebuildStoreObjects(redactedMapping);
+  assertCaptureAudioSemantics(sourceStore, finalStore, redactionContext, captures,
+    app.normalizeStore, persistedNormalization.normalizePersistedDocument, persistence.canonicalJson);
   assertOnboardingTechnicalSemantics(sourceStore, finalStore, onboardingApi, persistence.canonicalJson);
   assertOnboardingModelConsumers(sourceStore, finalStore, onboardingApi, onboardingModel, persistence.canonicalJson);
   // 用真实持久化消费者验证脱敏后的完整重建值；验证结果只读，不写回待导出的数据。
@@ -1547,6 +1642,43 @@ async function createSanitizedAccount(
   };
 }
 
+type SourceAccountSlice = {
+  accountId: string;
+  mapping: StoreMapping;
+  inventory: JsonRecord[];
+  revision: number;
+};
+
+/** 源事务只做一致性读取；关闭连接后才允许在进程内脱敏、重建及运行消费者。 */
+async function readSourceAccountSlices(client: PgClient, accountIds: string[],
+  readMapping: PersistenceApi["readPostgresStoreObjects"]): Promise<{
+    serverVersion: string; transactionSnapshot: string; slices: SourceAccountSlice[];
+  }> {
+  const slices: SourceAccountSlice[] = [];
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    const database = (await client.query("SELECT current_database() AS name, current_setting('server_version') AS version, txid_current_snapshot()::text AS snapshot")).rows[0];
+    for (const accountId of accountIds) {
+      await client.query("SELECT set_config('app.account_id', $1, true)", [accountId]);
+      const account = (await client.query("SELECT revision FROM for_now.accounts WHERE account_id = $1", [accountId])).rows[0];
+      if (!account) fail("Auth account has no business account row; snapshot is inconsistent");
+      const mapping = await readMapping(client, accountId);
+      const inventory = (await client.query(`
+        SELECT path, storage, object_key AS "objectKey", bytes::float8 AS bytes, sha256, state
+        FROM for_now.attachment_inventory WHERE account_id = $1 ORDER BY path
+      `, [accountId])).rows;
+      slices.push({ accountId, mapping, inventory, revision: Number(account.revision) });
+    }
+    await client.query("COMMIT");
+    return { serverVersion: String(database.version || ""), transactionSnapshot: String(database.snapshot || ""), slices };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    await client.end();
+  }
+}
+
 async function snapshot(root: string, outputFile: string) {
   const timeBaseline = createInspectionClock();
   const sourceDataUrl = process.env.STARTUP_GATE_SOURCE_DATABASE_URL || "";
@@ -1559,43 +1691,19 @@ async function snapshot(root: string, outputFile: string) {
   }
   const firstAccountIds = await readSourceAccountIds(root, sourceAuthUrl);
   if (!firstAccountIds.length) fail("Source auth snapshot has no users to validate");
+  const sourcePersistence = await importFromRoot<PersistenceApi>(root, "src/shared/persistence/index.mjs");
   const client = await pgClient(sourceDataUrl);
+  const { serverVersion, transactionSnapshot, slices } = await readSourceAccountSlices(
+    client, firstAccountIds, sourcePersistence.readPostgresStoreObjects
+  );
+  // 原切片只留进程内存。昂贵的本机检查不占生产只读事务或源连接。
   const redactionKey = randomBytes(32);
   const accounts: JsonRecord[] = [];
-  let serverVersion = "";
-  let transactionSnapshot = "";
-  try {
-    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-    const database = (await client.query("SELECT current_database() AS name, current_setting('server_version') AS version, txid_current_snapshot()::text AS snapshot")).rows[0];
-    serverVersion = String(database.version || "");
-    transactionSnapshot = String(database.snapshot || "");
-    for (const sourceAccountId of firstAccountIds) {
-      await client.query("SELECT set_config('app.account_id', $1, true)", [sourceAccountId]);
-      const account = (await client.query("SELECT revision FROM for_now.accounts WHERE account_id = $1", [sourceAccountId])).rows[0];
-      if (!account) fail("Auth account has no business account row; snapshot is inconsistent");
-      const sourceMapping = await (await importFromRoot<PersistenceApi>(root, "src/shared/persistence/index.mjs"))
-        .readPostgresStoreObjects(client, sourceAccountId);
-      const inventory = (await client.query(`
-        SELECT path, storage, object_key AS "objectKey", bytes::float8 AS bytes, sha256, state
-        FROM for_now.attachment_inventory WHERE account_id = $1 ORDER BY path
-      `, [sourceAccountId])).rows;
-      accounts.push(await createSanitizedAccount(
-        root,
-        sourceAccountId,
-        sourceMapping,
-        inventory,
-        Number(account.revision),
-        redactionKey,
-        new Map<string, string>(),
-        timeBaseline
-      ));
-    }
-    await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK").catch(() => {});
-    throw error;
-  } finally {
-    await client.end();
+  for (const source of slices) {
+    accounts.push(await createSanitizedAccount(
+      root, source.accountId, source.mapping, source.inventory, source.revision,
+      redactionKey, new Map<string, string>(), timeBaseline
+    ));
   }
   const finalAccountIds = await readSourceAccountIds(root, sourceAuthUrl);
   if (JSON.stringify(firstAccountIds) !== JSON.stringify(finalAccountIds)) {
@@ -3313,6 +3421,166 @@ async function selfTest(root: string) {
   const invalidSpanV2 = structuredClone(unicodeV2);
   ((invalidSpanV2.userClaims as JsonRecord[])[0].evidence as JsonRecord[])[0].span = [0, 99999];
   assertOnboardingModelConsumers(invalidSpanV2, redactV2(invalidSpanV2), onboardingApi, onboardingModel, persistence.canonicalJson);
+  // 真实capture audio经mapper→脱敏→重建→normalizer→公开消费者，不触碰任意扩展。
+  const captureApi = await importFromRoot<CaptureAudioApi>(root, "src/modules/captures/index.mjs");
+  const captureAudioStore: JsonRecord = {
+    captures: [{ id: "capture-audio-private", version: 1, content: "audio/mp4", audio: {
+      attachmentPath: "/attachments/private-voice.m4a", mimeType: "audio/mp4", bytes: 4096, durationMs: 1250,
+      asrAttachmentPath: "/attachments/private-voice.asr.wav", asrMimeType: "audio/wav", asrBytes: 40044,
+      extension: { mimeType: "audio/mp4", asrMimeType: "audio/wav", durationMs: "1250" }
+    }, extension: { audio: { mimeType: "audio/mp4", asrMimeType: "audio/wav" } } }],
+    thoughts: [{ id: "same-name-extension", type: "question", version: 1, content: "audio/mp4", audio: { mimeType: "audio/mp4" } }]
+  };
+  const redactCaptureAudio = (original: JsonRecord, repair = true) => {
+    const mapping = persistence.mapStoreObjects("audio-fixture-account", original);
+    const context = createRedactionContext(mapping, hmacKey, content.markdownText);
+    const sanitized = sanitizeMapping(mapping, hmacKey, context);
+    if (repair) preserveTechnicalMetadata(mapping, sanitized, context, hmacKey,
+      compressionApi.estimateHistoricalUserSupplementOutputTokens);
+    const rebuilt = persistence.rebuildStoreObjects(sanitized);
+    assertMappingRoundTrip(sanitized,
+      persistence.mapStoreObjects(String(sanitized.fields[0].accountId), rebuilt), persistence.canonicalJson);
+    if (repair) assertCaptureAudioSemantics(original, rebuilt, context, captureApi,
+      app.normalizeStore, persistedNormalization.normalizePersistedDocument, persistence.canonicalJson);
+    return { rebuilt, context };
+  };
+  const unfixedAudio = redactCaptureAudio(captureAudioStore, false);
+  if (captureApi.captureAudioPayload(((unfixedAudio.rebuilt.captures as JsonRecord[])[0]).audio).code !== "INVALID_AUDIO_ATTACHMENT") {
+    fail("Synthetic capture did not reproduce MIME redaction invalidity");
+  }
+  expectOnboardingFailure(() => assertCaptureAudioSemantics(captureAudioStore, unfixedAudio.rebuilt,
+    unfixedAudio.context, captureApi, app.normalizeStore, persistedNormalization.normalizePersistedDocument,
+    persistence.canonicalJson), "capture audio consumer changed");
+  const fixedAudio = redactCaptureAudio(captureAudioStore).rebuilt;
+  const fixedCapture = (fixedAudio.captures as JsonRecord[])[0];
+  const fixedPayload = fixedCapture.audio as JsonRecord;
+  if (fixedPayload.mimeType !== "audio/mp4" || fixedPayload.asrMimeType !== "audio/wav"
+    || fixedPayload.bytes !== 4096 || fixedPayload.durationMs !== 1250 || fixedPayload.asrBytes !== 40044
+    || fixedPayload.asrAttachmentPath !== String(fixedPayload.attachmentPath).replace(/\.m4a$/u, ".asr.wav")) {
+    fail("Capture audio units or source/derivative path relationship changed");
+  }
+  if (fixedCapture.content === "audio/mp4"
+    || (fixedPayload.extension as JsonRecord).mimeType === "audio/mp4"
+    || (((fixedCapture.extension as JsonRecord).audio as JsonRecord).mimeType === "audio/mp4")
+    || (((fixedAudio.thoughts as JsonRecord[])[0].audio as JsonRecord).mimeType === "audio/mp4")) {
+    fail("Same-name user text or extensions escaped capture audio redaction scope");
+  }
+  for (const [extension, mimeType] of [["m4a", "audio/mp4"], ["mp4", "audio/mp4"],
+    ["webm", "audio/webm"], ["ogg", "audio/ogg"], ["wav", "audio/wav"]]) {
+    const variant = structuredClone(captureAudioStore);
+    (variant.captures as JsonRecord[])[0].audio = { attachmentPath: `/attachments/synthetic.${extension}`, mimeType, bytes: "1024", durationMs: "1250" };
+    redactCaptureAudio(variant);
+  }
+  const paddedAudio = structuredClone(captureAudioStore);
+  (paddedAudio.captures as JsonRecord[])[0].audio = {
+    attachmentPath: " /ATTACHMENTS/synthetic.M4A ", mimeType: " AUDIO/MP4 ", bytes: "4096", durationMs: "1250",
+    asrAttachmentPath: " /ATTACHMENTS/synthetic.ASR.WAV ", asrMimeType: " AUDIO/WAV ", asrBytes: "40044"
+  };
+  redactCaptureAudio(paddedAudio);
+  const sharedDerivative = structuredClone(captureAudioStore);
+  (sharedDerivative.captures as JsonRecord[]).push({ id: "derivative-as-source", version: 1,
+    audio: { attachmentPath: "/attachments/private-voice.asr.wav", mimeType: "audio/wav", bytes: 40044, durationMs: 1250 } });
+  redactCaptureAudio(sharedDerivative);
+  (sharedDerivative.captures as JsonRecord[]).reverse();
+  redactCaptureAudio(sharedDerivative);
+  for (const patch of [
+    { mimeType: "private unsupported format" }, { bytes: 0 }, { durationMs: 600001 },
+    { attachmentPath: "/attachments/private voice.m4a" }, { attachmentPath: "/attachments/private-voice.png" },
+    { asrMimeType: "audio/mp4" }, { asrBytes: 0 }, { asrAttachmentPath: "/attachments/private-voice.wav" }
+  ]) {
+    const variant = structuredClone(captureAudioStore);
+    Object.assign((variant.captures as JsonRecord[])[0].audio as JsonRecord, patch);
+    const originalResult = captureApi.captureAudioPayload((variant.captures as JsonRecord[])[0].audio);
+    if (!originalResult.code) fail("Synthetic invalid capture audio unexpectedly accepted at source");
+    const redacted = redactCaptureAudio(variant).rebuilt;
+    if (captureApi.captureAudioPayload((redacted.captures as JsonRecord[])[0].audio).code !== originalResult.code) {
+      fail("Invalid capture audio was repaired or changed its failure classification during redaction");
+    }
+  }
+  const invalidNumericDerivative = structuredClone(captureAudioStore);
+  (invalidNumericDerivative.captures as JsonRecord[])[0].audio = {
+    attachmentPath: "/attachments/private-voice.m4a", mimeType: "audio/mp4", bytes: 4096, durationMs: 1250, asrBytes: "0"
+  };
+  redactCaptureAudio(invalidNumericDerivative);
+  const missingAudio = structuredClone(captureAudioStore);
+  delete (missingAudio.captures as JsonRecord[])[0].audio;
+  redactCaptureAudio(missingAudio);
+  const corruptedAudio = structuredClone(fixedAudio);
+  ((corruptedAudio.captures as JsonRecord[])[0].audio as JsonRecord).durationMs = 1234;
+  expectOnboardingFailure(() => assertCaptureAudioSemantics(captureAudioStore, corruptedAudio,
+    redactCaptureAudio(captureAudioStore).context, captureApi, app.normalizeStore,
+    persistedNormalization.normalizePersistedDocument, persistence.canonicalJson), "capture audio consumer changed");
+  // 四账号只读源事务须先完整读取、COMMIT并等待end，再进行本机处理。
+  const fixtureAccountIds = ["slice-a", "slice-b", "slice-c", "slice-d"];
+  const makeSourceClient = (failQuery = "") => {
+    const trace: string[] = [];
+    let selected = "";
+    let closed = false;
+    const client: PgClient = {
+      async connect() {
+        fail("Slice collector must receive an already-connected source client");
+      },
+      async query(sql, values) {
+        if (closed) fail("Synthetic source query ran after close");
+        if (sql.startsWith("BEGIN")) { trace.push("begin-readonly"); return { rows: [] }; }
+        if (sql.includes("txid_current_snapshot")) return { rows: [{ version: "16.15", snapshot: "1:2:", name: "synthetic" }] };
+        if (sql.includes("set_config")) { selected = String(values?.[0]); trace.push(`select:${selected}`); return { rows: [] }; }
+        if (sql.includes("SELECT revision")) {
+          trace.push(`revision:${selected}`);
+          return { rows: [{ revision: "7" }] };
+        }
+        if (sql.includes("attachment_inventory")) {
+          trace.push(`inventory:${selected}`);
+          if (failQuery === "inventory") throw new Error("Synthetic source inventory read failed");
+          return { rows: [] };
+        }
+        trace.push(sql);
+        if (sql === failQuery) throw new Error("Synthetic source commit failed");
+        return { rows: [] };
+      },
+      async end() {
+        await Promise.resolve();
+        closed = true;
+        trace.push("end-complete");
+      }
+    };
+    const readMapping: PersistenceApi["readPostgresStoreObjects"] = async (activeClient, accountId) => {
+      if (activeClient !== client || selected !== accountId || closed) fail("Source account mapping read crossed RLS identity or closed connection");
+      trace.push(`mapping:${accountId}`);
+      return persistence.mapStoreObjects(accountId, { captures: [] });
+    };
+    return { client, readMapping, trace, isClosed: () => closed };
+  };
+  const sourceFixture = makeSourceClient();
+  const collected = await readSourceAccountSlices(sourceFixture.client, fixtureAccountIds, sourceFixture.readMapping);
+  if (!sourceFixture.isClosed() || collected.slices.length !== 4 || collected.serverVersion !== "16.15"
+    || collected.transactionSnapshot !== "1:2:" || collected.slices.some((slice, index) => (
+      slice.accountId !== fixtureAccountIds[index] || slice.revision !== 7
+    ))) fail("Source slice collector changed account/revision/snapshot identity or returned before connection close");
+  for (const slice of collected.slices) {
+    if (!sourceFixture.isClosed()) fail("Local sanitization began inside the source transaction");
+    sourceFixture.trace.push(`local-sanitize:${slice.accountId}`);
+    await Promise.resolve();
+  }
+  const commitIndex = sourceFixture.trace.indexOf("COMMIT");
+  const closeIndex = sourceFixture.trace.indexOf("end-complete");
+  if (commitIndex < 0 || closeIndex <= commitIndex
+    || sourceFixture.trace.slice(commitIndex + 1, closeIndex).length
+    || sourceFixture.trace.slice(0, commitIndex).filter(step => step.startsWith("inventory:")).length !== 4
+    || sourceFixture.trace.slice(0, closeIndex).some(step => step.startsWith("local-sanitize:"))) {
+    fail("Source read/COMMIT/close/local processing order changed");
+  }
+  for (const failQuery of ["inventory", "COMMIT"]) {
+    const rejected = makeSourceClient(failQuery);
+    let failed = false;
+    try { await readSourceAccountSlices(rejected.client, fixtureAccountIds, rejected.readMapping); }
+    catch (error) {
+      if (!(error instanceof Error) || !error.message.startsWith("Synthetic source")) throw error;
+      failed = true;
+    }
+    if (!failed || !rejected.isClosed() || rejected.trace.at(-1) !== "end-complete"
+      || !rejected.trace.includes("ROLLBACK")) fail("Failed source read or commit did not rollback and close before returning failure");
+  }
   process.stdout.write("Startup gate synthetic checks passed: construction is inert, task classifications survive redaction, and media/dispatch effects are blocked.\n");
 }
 
