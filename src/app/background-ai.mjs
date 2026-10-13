@@ -25,6 +25,7 @@ export function createBackgroundAi({
   now = () => new Date().toISOString(),
   onError,
   shouldWaitForModel = () => false,
+  beforePrepare = async () => {},
   inspectIntent = targets?.inspectIntent
 }) {
   const internalKinds = new Set(["perceptionExtraction", RECORD_COMPRESSION_TASK_KIND]);
@@ -145,7 +146,8 @@ export function createBackgroundAi({
     });
     notify(store, task, "cancelled", task.error);
   };
-  const currentWork = async (taskId, expectedWork) => {
+  const currentWork = async (taskId, expectedWork, kind) => {
+    await beforePrepare({ kind });
     const store = await repository.read();
     const task = store.aiTasks.find(item => item.id === taskId);
     if (!task || task.status !== "running") return null;
@@ -164,6 +166,8 @@ export function createBackgroundAi({
     controllers.set(key, controller);
     let executed = false;
     try {
+      const initial = await repository.read();
+      await beforePrepare(initial.aiTasks.find(item => item.id === taskId));
       const claimed = await repository.update(store => {
         const task = store.aiTasks.find(item => item.id === taskId);
         if (!task || task.status !== "queued") return false;
@@ -203,7 +207,7 @@ export function createBackgroundAi({
       }
       const generated = await generate(work, {
         signal: controller.signal,
-        isCurrent: async () => Boolean(await currentWork(taskId, work))
+        isCurrent: async () => Boolean(await currentWork(taskId, work, task.kind))
       });
       const result = work.contextReceipt && generated && typeof generated === "object" && !Array.isArray(generated)
         ? { ...generated, contextReceipt: { ...compactPersonalContextReceipt(work.contextReceipt),
@@ -305,6 +309,7 @@ export function createBackgroundAi({
   }
 
   async function enqueueTask(input, { internal = false, waitingBudget = false } = {}) {
+    await beforePrepare(input);
     const kind = String(input?.kind ?? "").trim();
     if (internal ? kind !== RECORD_COMPRESSION_TASK_KIND : internalKinds.has(kind)) {
       return { unsupported: true };
@@ -485,6 +490,7 @@ export function createBackgroundAi({
     retry: id => retryTask(id),
     retryInternal: id => retryTask(id, { includeInternal: true }),
     async resume() {
+      await beforePrepare({ kind: "importanceScoring" });
       const ids = await repository.update(store => {
         const { interrupted } = tasks.recover(store.aiTasks);
         const recovered = [];

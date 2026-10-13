@@ -258,6 +258,8 @@ function receiptProjection(receipt) {
     "schemaVersion", "binding", "aliasMapSha256", "promptSha256", "promptBytes", "promptByteLimit", "unit", "providedCount", "coreModelProvided", "trendTokens", "evidenceTokens",
     "trendBudgetLevel", "evidenceBudgetLevel", "truncatedSources"
   ]);
+  const selectionLimit = scalarFields(receipt.referenceRequest?.selectionLimit, ["reason", "requestedCount", "providedHistoricalCount"]);
+  if (Object.keys(selectionLimit).length) referenceRequest.selectionLimit = selectionLimit;
   const sources = list(receipt.sources).slice(0, ROUTE_STATE_LIMITS.review.receiptSources).map(source => ({
     ...scalarFields(source, [
       "resourceType",

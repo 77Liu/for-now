@@ -86,6 +86,7 @@ function materialPayload(item, temporalScope = "", includeCitationId = false) {
     recordType: String(item?.recordType || item?.informationType || ""),
     origin: String(item?.origin || "user"),
     informationType: String(item?.informationType || "user_viewpoint"),
+    ...(item?.selectionReason ? { selectionReason: item.selectionReason } : {}),
     occurredAt: String(item?.occurredAt || ""),
     ...(temporalScope ? { temporalScope } : {}),
     text: String(item?.text || ""),

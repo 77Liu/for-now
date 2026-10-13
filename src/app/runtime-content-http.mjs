@@ -1,3 +1,4 @@
+import { createImportanceHttp } from "../../.build/typescript/backend/shared/ai-context/index.mjs";
 import {
   createActionsHttp,
   createCaptureJournalHttp,
@@ -251,6 +252,7 @@ export function createRuntimeContentHttp({
   });
 
   return {
+    importanceHttp: createImportanceHttp(contentRuntime.importanceService, bodyJson),
     thoughtHttp,
     checkinHttp,
     healthRecordHttp,

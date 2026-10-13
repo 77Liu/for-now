@@ -1,3 +1,4 @@
+import { llmSettingsForScene } from "../modules/ai/index.mjs";
 import crypto from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -272,6 +273,18 @@ export async function createRuntimeFoundation({
     createId,
     hash
   });
+  const importanceSnapshots = new WeakMap();
+  const localImportanceScope = {};
+  const importanceScope = () => requestStorage.getStore() || localImportanceScope;
+  const refreshImportanceModelChoice = async () => {
+    const scope = importanceScope();
+    importanceSnapshots.delete(scope);
+    const settings = llmSettingsForScene(await aiRuntime.readModelRuntimeSettings(), "importanceScoring");
+    const snapshot = { model: settings.model, effort: settings.effort,
+      source: "effective-model-runtime-reader", accountId: requestStorage.getStore()?.user?.id || "local" };
+    importanceSnapshots.set(scope, snapshot);
+    return snapshot;
+  };
   const contentRuntime = createContentRuntime({
     repository: storeRepository,
     trashRetentionDays: TRASH_RETENTION_DAYS,
@@ -286,6 +299,11 @@ export async function createRuntimeFoundation({
       setImmediate(() => requestStorage.run(context, callback));
     },
     runDeepSeek: aiRuntime.runDeepSeek,
+    getImportanceModelChoice: refreshImportanceModelChoice,
+    getImportanceModelSnapshot: () => {
+      const snapshot = importanceSnapshots.get(importanceScope());
+      return snapshot?.accountId === (requestStorage.getStore()?.user?.id || "local") ? snapshot : null;
+    },
     readAiUsage: aiRuntime.readAiUsage,
     recordCompressionDailyBudgetCny: appConfig.recordCompressionDailyBudgetCny,
     recordCompressionPerCallBudgetCny: appConfig.recordCompressionPerCallBudgetCny,

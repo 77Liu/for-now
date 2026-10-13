@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "activeVersion": "2026.10.14.1",
+  "activeVersion": "2026.10.14.2",
   "versions": [
     {
       "version": "2026.09.29.1",
@@ -91,6 +91,11 @@
       "version": "2026.10.14.1",
       "file": "2026.10.14.1.json",
       "sha256": "6a5bdfa36b3110aec568f024267a9e093015f971f51de0914b40b585cdff6a3c"
+    },
+    {
+      "version": "2026.10.14.2",
+      "file": "2026.10.14.2.json",
+      "sha256": "1d693c7e5ccf7db817bece53a560dce793bf4cd508920c97cc3d1bf3f4777d13"
     }
   ],
   "promptIntroducedIn": {
@@ -112,7 +117,9 @@
     "recordCompression.task.daily": "2026.10.10.2",
     "orchestration.context.sevenDayTrend": "2026.10.10.4",
     "recordCompression.system.historicalSupplement": "2026.10.10.4",
-    "recordCompression.task.historicalSupplement": "2026.10.10.4"
+    "recordCompression.task.historicalSupplement": "2026.10.10.4",
+    "importance.system.score": "2026.10.14.2",
+    "importance.task.score": "2026.10.14.2"
   },
   "promptVariables": {
     "ai.identity.named": [
@@ -242,6 +249,10 @@
     "recordCompression.system.historicalSupplement": [],
     "recordCompression.task.historicalSupplement": [
       "input"
+    ],
+    "importance.system.score": [],
+    "importance.task.score": [
+      "input"
     ]
   },
   "requiredPromptIds": [
@@ -323,7 +334,9 @@
     "recordCompression.task.daily",
     "orchestration.context.sevenDayTrend",
     "recordCompression.system.historicalSupplement",
-    "recordCompression.task.historicalSupplement"
+    "recordCompression.task.historicalSupplement",
+    "importance.system.score",
+    "importance.task.score"
   ],
   "rolePromptIds": {
     "perception": "orchestration.role.perception",

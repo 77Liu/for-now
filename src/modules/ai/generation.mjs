@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { safeText, safeIso } from "../../shared/validation/index.mjs";
 import { redact } from "../../shared/observability/index.mjs";
 import { promptCatalogMetadata } from "../../shared/prompts/index.mjs";
-import { llmSettingsForScene } from "./settings.mjs";
+import { llmSettingsForScene, LLM_MODELS, LLM_EFFORTS } from "./settings.mjs";
 import { systemPrompt, systemPromptForScene } from "./prompts.mjs";
 
 function aiErrorDetails(error, httpStatus = 0) {
@@ -60,6 +60,7 @@ export function createAiGenerator({
     imagePaths = null,
     history = [],
     settingsOverride = null,
+    modelOverride = null,
     scene = "thoughtAnswer",
     json = false,
     systemPrompt: requestedSystemPrompt = "",
@@ -76,6 +77,15 @@ export function createAiGenerator({
     budgetStageIds = null
   } = {}) {
     const settings = llmSettingsForScene(settingsOverride || await readSettings(), scene);
+    if (modelOverride !== null) {
+      if (scene !== "importanceScoring" || !LLM_MODELS.includes(modelOverride.model)
+        || !LLM_EFFORTS.includes(modelOverride.effort)) {
+        throw Object.assign(new Error("重要性模型选择无效"), { code: "IMPORTANCE_MODEL_INVALID" });
+      }
+      if (settings.model !== modelOverride.model || settings.effort !== modelOverride.effort) {
+        throw Object.assign(new Error("有效重要性模型配置已变化"), { code: "AI_TASK_STALE" });
+      }
+    }
     if (!settings.apiKey) throw new Error("尚未配置 DeepSeek API 密钥，请先到“设置”中填写并保存");
     const effectiveSystemPrompt = systemPromptForScene(requestedSystemPrompt || systemPrompt(), scene, settings);
     const promptCatalog = promptCatalogMetadata();
@@ -140,6 +150,13 @@ export function createAiGenerator({
               throw Object.assign(new Error("AI task inputs changed while waiting for provider capacity"), {
                 code: "AI_TASK_STALE"
               });
+            }
+            if (modelOverride !== null) {
+              const effective = llmSettingsForScene(await readSettings(), scene);
+              if (effective.model !== modelOverride.model || effective.effort !== modelOverride.effort) {
+                throw Object.assign(new Error("等待容量期间有效重要性模型配置已变化"), { code: "AI_TASK_STALE" });
+              }
+              settings.apiKey = effective.apiKey;
             }
             const effort = efforts[attempt], createdAt = now(), startedMs = Date.now();
             const callId = createId();

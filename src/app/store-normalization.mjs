@@ -1,3 +1,4 @@
+import { isImportanceScore } from "../../.build/typescript/backend/shared/ai-context/index.mjs";
 import {
   normalizeOnboarding,
   normalizeOnboardingV2
@@ -338,6 +339,10 @@ export function createStoreNormalizer({
     const previousVersion = Number(source.version || 1);
     const hasOnboardingV2 = Object.hasOwn(source || {}, "onboardingV2");
     const store = { ...clone(emptyStore), ...source, version: STORE_VERSION };
+    if (source.importanceScores !== undefined && (!Array.isArray(source.importanceScores)
+      || !source.importanceScores.every(isImportanceScore))) {
+      throw storageInvalid("Store importanceScores contains invalid score bindings");
+    }
     try {
       store.historicalUserSupplement = normalizeHistoricalUserSupplement(store.historicalUserSupplement);
     } catch (error) {

@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 294,
-  "updated_at": "2026-10-13T20:56:18.288Z",
+  "revision": 299,
+  "updated_at": "2026-10-13T23:58:28.162Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -20,7 +20,7 @@
   "iteration": {
     "id": "v0.5.15",
     "status": "IMPLEMENTING",
-    "phase": "共享契约已裁定，唯一feat已从develop37a0b9创建；主开发串行A→B→C→D实施"
+    "phase": "A已本地整合，唯一feat同步最新develop24a88c；继续B→C→D串行实现，最终有状态全局门尚未执行"
   },
   "scope": {
     "description": "上下文选材与短引用、业务短ID、增量摘要和内部预算可恢复性；仅以下8条的本版新增行为，不重做既有已发布内容",
@@ -125,8 +125,8 @@
       "id": "v0515-main-implementation",
       "owner": "主开发",
       "thread_id": "01a11afe-73d2-7013-91d5-cd473c4d7115",
-      "status": "WAITING_INTEGRATION",
-      "base_commit": "37a0b9",
+      "status": "ASSIGNED",
+      "base_commit": "24a88c",
       "branch": "feat/v0.5.15-context-reliability",
       "write_set": [
         "src/app/{task-context,prompt-context,ai-task-targets,answer-citations,content/background,runtime-foundation,record-compression-context,record-compressions,background-ai,ai-budget-runtime}.mjs及其真实调用方",
@@ -148,20 +148,32 @@
       "shared_owner": "主开发为唯一业务及共享入口写者；主控仅控制面和需求事实，接入审查不与开发并行改源码",
       "handoff": "各完整切片自查与受影响验证后集中交接，主控亲自读差分/消费者才合入develop；不得自行切develop提交",
       "review_gate": {
-        "status": "GO_FOR_LOCAL_INTEGRATION",
+        "status": "B_GO_LOCAL_INTEGRATION",
         "object": {
           "kind": "index_tree",
-          "tree": "37d725",
-          "base_commit": "37a0b9",
-          "branch": "feat/v0.5.15-context-reliability"
+          "tree": "36d538",
+          "base_commit": "24a88c"
         },
-        "conclusion": "主控独立审查完整A差分及跨块返修；证据/趋势整请求统一限额，连续片段和core/current保留；最小反例由7262降为4998，2来源/2截断，允许本地提交和整合。",
+        "conclusion": "主控独立核对700f0d到36d538实际返修及评分、准备/发送、来源、选材、引用映射、保存/DTO消费者。配置身份与发送前有效配置核验、可选材料按总字节余量收敛、真实来源性质及当前日记排除已关闭；完整API真实两种问答生命周期门通过。",
+        "limitations": [
+          "仅B切片本地接入审查；尚无本版本真实提供商闭环或PG重启验证",
+          "C短业务ID/离线原子映射、D半开增量/活动失败替代及最终有状态门未完成"
+        ],
         "refs": [
-          "src/shared/ai-context/reference-aliases.mts",
-          "scripts/answer-citations-regression.mjs",
-          "scripts/task-context-selection-regression.mjs"
+          "src/shared/ai-context/importance.mts",
+          "src/shared/ai-context/importance-runtime.mts",
+          "src/shared/ai-context/importance-selection.mts",
+          "src/app/task-context.mjs",
+          "src/app/background-ai.mjs",
+          "src/modules/ai/generation.mjs",
+          "src/app/capture-journal-workflows.mjs",
+          "src/app/answer-citations.mjs",
+          "src/app/startup-projections.mjs",
+          "scripts/api-v1-contract-regression.mjs",
+          "scripts/importance-scoring-regression.mts"
         ]
-      }
+      },
+      "current_slice": "B：重要性评分与至少10条合法参考选材"
     }
   ],
   "candidate": null,
@@ -202,7 +214,7 @@
     }
   },
   "blockers": [],
-  "next_action": "主控在当前feat按已授权人工审查路径提交A与相关控制面/events，串行合入develop；然后回同一feat继续B重要性选材，再C→D，不推送或发布。",
+  "next_action": "主控将固定B切片本地提交并整合develop；确认整合结果后同步同一feat最新基线，主开发串行C短业务ID/原子映射，再D增量时段和活动失败替代。未授权远程或生产写入。",
   "runtime": {
     "version": "v0.5.14",
     "sha": "a4d2ec",
@@ -217,14 +229,29 @@
     "limitations": [
       "自然06:00/18:05新版生成未验收；旧生产窗口失败不改写",
       "真机录音/逐字保真未完整验收"
-    ]
+    ],
+    "last_natural_compression_observation": {
+      "version": "0.5.14",
+      "application_commit": "a4d2ec",
+      "window_start": "2026-10-13T22:00:00Z",
+      "checked_at": "2026-10-13T22:03:58.851Z",
+      "succeeded_tasks": 3,
+      "window_calls": 3,
+      "recorded_cost_cny": 0.00735372,
+      "waiting_budget_tasks": 16,
+      "historical_failed_tasks": 16,
+      "refs": [
+        "reports/local/v0515-production-natural-window-current.json"
+      ]
+    }
   },
   "evidence": [
     {
       "id": "production-compression-window",
       "conclusion": "该次自然窗口生成失败，扫描通知错误地显示为生成完成",
       "limitations": [
-        "生产旧版故障仍影响当前使用；本地候选日摘要与历史补充均已通过，新版生产未验收，不能改写该旧窗口失败或关闭未被线上替代的旧任务"
+        "该旧窗口原失败记录保持；v0.5.14本轮自然窗口3任务已生成成功，见当前自然窗口证据",
+        "旧失败活动记录仍未被有效替代/关闭；仍影响通知及历史回填，由v0.5.15的D处理，不改写原失败为通过"
       ],
       "refs": [
         "reports/local/v0514-production-compression-window-current.json"
@@ -276,15 +303,14 @@
     {
       "id": "v0515-A-independent-review",
       "object": {
-        "kind": "index_tree",
-        "tree": "37d725",
-        "base_commit": "37a0b9"
+        "kind": "implementation_commit",
+        "commit": "5b91d2"
       },
-      "conclusion": "固定A完整差分独立审查通过，跨块预算真实反例已关闭（7262→4998估算token，2参考/2截断）。所需连续片段、真实回执、DTO/角色边界及趋势证据链已核对；允许本地集成，不代表整个版本完成。",
+      "conclusion": "主控独立审查A及跨块返修后本地提交5b91d2，无冲突整合为develop24a88c且tree完全相同；develop局部引用专项通过。证据整请求反例已关闭，2参考/2截断保持，原失败留事件审计。",
       "limitations": [
-        "A尚待本地提交与develop整合",
+        "仅A切片实现/本地集成，不代表整个版本候选冻结",
         "没有本切片真实模型、实际PG重启或浏览器验收",
-        "B重要性选材、C短业务ID/离线冲突、D增量时段与活动失败替代尚未实现"
+        "C短业务ID/离线冲突、D增量时段与活动失败替代尚未实现；A不代表完整版本验收"
       ],
       "refs": [
         "src/shared/ai-context/reference-aliases.mts",
@@ -292,6 +318,50 @@
         "src/app/content/background.mjs",
         "src/app/startup-projections.mjs",
         "src/app/runtime-access.mjs"
+      ]
+    },
+    {
+      "id": "production-v0514-natural-window",
+      "object": {
+        "kind": "production_observation",
+        "version": "v0.5.14",
+        "commit": "a4d2ec",
+        "observed_at": "2026-10-13T22:03:58.851Z"
+      },
+      "conclusion": "06:00自然窗口3个真实任务成功，摘要已保存；3条调用的应用账本已记录金额合计¥0.00735372，未知费用调用0。日期覆盖10月12日（两账户）及9月27日（一账户）。本轮只读，无手工触发。",
+      "limitations": [
+        "仅证明这3个任务的生成/保存/应用账本记录，不代表第三方账单核销、通知送达或生产新回答消费已验收",
+        "当前v0.5.14仍按日期摘要/回填，不是v0.5.15计划的上海半开增量窗口",
+        "16个等待预算和16个原失败仍存在；新版D替代/失效策略未交付，不能把旧失败写成通过或全历史补齐"
+      ],
+      "refs": [
+        "reports/local/v0515-production-natural-window-current.json"
+      ]
+    },
+    {
+      "id": "v0515-B-independent-review",
+      "object": {
+        "kind": "index_tree",
+        "tree": "36d538",
+        "base_commit": "24a88c"
+      },
+      "conclusion": "主控独立核对700f0d到36d538实际返修及评分、准备/发送、来源、选材、引用映射、保存/DTO消费者。配置身份与发送前有效配置核验、可选材料按总字节余量收敛、真实来源性质及当前日记排除已关闭；完整API真实两种问答生命周期门通过。",
+      "limitations": [
+        "仅B切片本地接入审查；尚无本版本真实提供商闭环或PG重启验证",
+        "C短业务ID/离线原子映射、D半开增量/活动失败替代及最终有状态门未完成"
+      ],
+      "refs": [
+        "src/shared/ai-context/importance.mts",
+        "src/shared/ai-context/importance-runtime.mts",
+        "src/shared/ai-context/importance-selection.mts",
+        "src/app/task-context.mjs",
+        "src/app/background-ai.mjs",
+        "src/modules/ai/generation.mjs",
+        "src/app/capture-journal-workflows.mjs",
+        "src/app/answer-citations.mjs",
+        "src/app/startup-projections.mjs",
+        "scripts/api-v1-contract-regression.mjs",
+        "scripts/importance-scoring-regression.mts"
       ]
     }
   ],

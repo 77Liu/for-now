@@ -267,7 +267,12 @@ export function createRuntimeHttpWiring({
   const apiV1 = createApiV1Http({
     sendJson,
     getContext: () => requestStorage.getStore(),
-    openApi: openApiV1
+    openApi: openApiV1,
+    beforeHandle: async (req, url) => {
+      if (["POST", "PATCH"].includes(req.method) && /^\/api\/v1\/(?:ai-tasks|thought-chains|journals|chats|analyses|annotations|importance)(?:\/|$)/.test(url.pathname)) {
+        await contentRuntime.prepareImportanceContext();
+      }
+    }
   });
   const onboardingV2Handler = async (req, res, url, v1) => {
     const handled = await platformHttp.onboardingV2Http.handleV1(req, res, url, v1);
@@ -550,6 +555,7 @@ export function createRuntimeHttpWiring({
     startup: startupHttp.handleV1,
     sync: syncHttp.handleV1,
     personalContext: personalContextHttp.handleV1,
+    importance: contentHttp.importanceHttp.handleV1,
     aiBudget: platformHttp.aiBudgetHttp.handleV1,
     onboardingV2: onboardingV2Handler,
     userModel: platformHttp.userModelHttp.handleV1,
@@ -589,6 +595,11 @@ export function createRuntimeHttpWiring({
   }
 
   const legacyApi = createLegacyApi({
+    beforeHandle: async (req, url) => {
+      if (["POST", "PATCH"].includes(req.method) && /^\/api\/(?:ai-tasks|thoughts|journals|chat|analysis|annotations)(?:\/|$)/.test(url.pathname)) {
+        await contentRuntime.prepareImportanceContext();
+      }
+    },
     beforeStateHandlers: [
       reviewsChatHttp.handle,
       contentHttp.captureJournalHttp.handle,

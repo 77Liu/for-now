@@ -39,7 +39,8 @@ export const DEFAULT_LLM_SCENARIOS = Object.freeze({
   healthRecognition: "mid",
   contentImageUnderstanding: "mid",
   capturePolish: "mid",
-  recordCompression: "lite"
+  recordCompression: "lite",
+  importanceScoring: "lite"
 });
 export const DEFAULT_SCENE_EFFORTS = Object.freeze({
   ...Object.fromEntries(Object.entries(DEFAULT_LLM_SCENARIOS)

@@ -18,7 +18,7 @@ import {
   recordStatistics,
   statisticsRange
 } from "../src/modules/statistics/index.mjs";
-import { createReviewChatWorkflows } from "../src/app/index.mjs";
+import { createReviewChatWorkflows, prepareReferenceRequest } from "../src/app/index.mjs";
 import {
   createApiV1Http,
   createReviewsChatHttp,
@@ -1401,4 +1401,31 @@ for (const file of sourceFiles) {
   assert.doesNotMatch(source, /\bnode:fs\b|\bstore\.json\b|\bai-usage\.json\b/, `${file} must not depend on concrete data files`);
 }
 
+// 实际同步与后台消费者使用同一补齐计划；学习许可保持原复盘口径。
+const referenceFixture = structuredClone(stores.get("account-a"));
+referenceFixture.captures = Array.from({ length: 12 }, (_, index) => ({ id: `reference-capture-${index}`,
+  content: `合成可学习原文 ${index}。` + "甲".repeat(1000), authorType: "user", version: 1, createdAt: timestamp }));
+referenceFixture.evidencePermissions = referenceFixture.captures.map(item => ({ schemaVersion: 1,
+  accountId: "reference-account", sourceKey: JSON.stringify(["capture", item.id, "", ""]),
+  contextAllowed: true, learningAllowed: true, revision: 1, updatedAt: timestamp }));
+referenceFixture.chats = [];
+referenceFixture.analyses = [];
+stores.set("reference-account", referenceFixture);
+await run("reference-account", () => workflows.answerChat({ message: "合成参考问题", clientRequestId: "reference-chat", eventTime }));
+assert.ok(generationCalls.at(-1).options.contextReceipt.referenceRequest.providedCount >= 10);
+await run("reference-account", () => workflows.runAnalysis({ clientRequestId: "reference-analysis" }));
+assert.ok(generationCalls.at(-1).options.contextReceipt.referenceRequest.providedCount >= 10);
+await run("reference-account", async () => {
+  const source = stores.get("reference-account");
+  for (const kind of ["chat", "analysis"]) {
+    const task = { kind, id: `reference-task-${kind}`, clientRequestId: `reference-bg-${kind}`,
+      payload: kind === "chat" ? { message: "后台合成问题", ...eventTime } : {}, createdAt: timestamp };
+    const work = workflows.personalizedTaskHandler.prepare(source, task);
+    assert.ok(work.contextReceipt.importanceReferences.plan.sources.length >= 10);
+    assert.ok(prepareReferenceRequest(work.prompt, work.citationSources, `fixture-${kind}`).receipt.providedCount >= 10);
+    task.importanceSelectionPlan = structuredClone(work.contextReceipt.importanceReferences.plan);
+    const retry = workflows.personalizedTaskHandler.prepare(source, task);
+    assert.equal(retry.prompt, work.prompt);
+  }
+});
 console.log("Reviews/chat checks passed: legacy parity, persistent replay/conflict/purge, transaction-free AI generation, account isolation, statistics, v1 contracts and OpenAPI.");

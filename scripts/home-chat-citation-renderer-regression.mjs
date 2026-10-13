@@ -20,3 +20,6 @@ assert.match(providedMarkup, /你的专属用户模型已携带/);
 assert.match(providedMarkup, /WARN/);
 assert.doesNotMatch(providedMarkup, /PRIVATE_ID_NOT_RENDERED|<script>/);
 process.stdout.write("Home chat verified citation wiring regression passed.\n");
+
+const limitedMarkup = providedReferenceMarkup([], { providedCount: 0, selectionLimit: { reason: "overall_byte_budget", requestedCount: 9, providedHistoricalCount: 0 } });
+assert.match(limitedMarkup, /因请求容量限制提供了 0 条背景参考/);

@@ -74,6 +74,9 @@ export function createContentBackground({
   contentAttachments,
   perception,
   recordCompressionTarget = null,
+  importanceTarget = null,
+  getImportanceModelSnapshot = () => null,
+  prepareImportanceContext = async () => null,
   getRecentTrend = () => null,
   mediaRuntime,
   getAccountId,
@@ -98,6 +101,8 @@ export function createContentBackground({
     contentAttachments,
     perception,
     recordCompressionTarget,
+    importanceTarget,
+    getImportanceModelSnapshot,
     getRecentTrend,
     getAccountId,
     hash,
@@ -109,6 +114,11 @@ export function createContentBackground({
     notifications: createNotificationService({ createId, now }),
     now,
     targets: taskTargets,
+    beforePrepare: async input => {
+      if (["importanceScoring", "thoughtAnswer", "followUpAnswer", "annotationShenji", "chat", "analysis", "journalReflection"].includes(input?.kind)) {
+        await prepareImportanceContext();
+      }
+    },
     shouldWaitForModel: (store, input) => (
       // 已提交的补充问答必须等整理结果；未提交时，思绪回答走缺省模型上下文。
       [
@@ -120,7 +130,8 @@ export function createContentBackground({
         "journalAssist",
         "journalReflection",
         "chat",
-        "analysis"
+        "analysis",
+        "importanceScoring"
       ].includes(input?.kind)
       && userModelRequiresCoreReady(store, input?.kind)
     ),
@@ -151,10 +162,11 @@ export function createContentBackground({
         }
         const referenceRequest = work.citationsEnabled ? prepareReferenceRequest(
           work.prompt, work.citationSources || [],
-          JSON.stringify([getAccountId(), work.scene, work.inputHash, work.contextReceipt])
+          JSON.stringify([getAccountId(), work.scene, work.inputHash, work.contextReceipt]), work.contextReceipt
         ) : null;
         const generated = await runDeepSeek(referenceRequest?.prompt || work.prompt, {
           scene: work.scene,
+          modelOverride: work.modelOverride || null,
           systemPrompt: work.systemPrompt || systemPrompt(),
           captureReasoning: work.captureReasoning !== false,
           json: work.json === true,

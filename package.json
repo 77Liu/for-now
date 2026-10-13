@@ -153,7 +153,8 @@
     "typecheck:control-plane": "tsc --noEmit -p tsconfig.control-plane.json",
     "build:control-plane": "tsc -p tsconfig.control-plane.json",
     "coordination:update": "npm run build:control-plane --silent && node .build/typescript/control-plane/control-plane-update.mjs",
-    "test:control-plane": "npm run coordination:update -- self-test"
+    "test:control-plane": "npm run coordination:update -- self-test",
+    "test:importance": "npm run build:backend --silent && tsc -p tsconfig.importance-regression.json && node .build/typescript/importance-regression/scripts/importance-scoring-regression.mjs"
   },
   "dependencies": {
     "@alicloud/credentials": "2.4.7",

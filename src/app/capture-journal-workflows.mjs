@@ -1,3 +1,4 @@
+import { supplementalImportanceContext, supplementalImportanceReceiptMatches } from "./task-context.mjs";
 import crypto from "node:crypto";
 import {
   compactPersonalContextReceipt,
@@ -96,11 +97,28 @@ export function createCaptureJournalWorkflows({
   createId = () => crypto.randomUUID(),
   coreModelReadiness = () => ({ ready: true }),
   getRecentTrend = () => null,
+  getImportanceModelSnapshot = () => null,
+  getAccountId = () => "local",
   currentTime = () => Date.now(),
   contextKey = () => "",
   today = () => localDateKey()
 }) {
   const activeReflections = new Map();
+  const reflectionContextReceiptMatches = (store, receipt) => personalContextReceiptMatches(store, receipt)
+    && supplementalImportanceReceiptMatches(store, receipt?.importanceReferences, getAccountId());
+  const addImportance = (store, context, journal, seed, frozenPlan = null) => {
+    const supplemental = supplementalImportanceContext(store, {
+      accountId: getAccountId(), text: journal.content || "日记回望", seed,
+      choice: getImportanceModelSnapshot(), frozenPlan,
+      excludeSourceRefs: [{ resourceType: "journal", resourceId: journal.id, rootId: "",
+        targetKey: "", version: recordVersion(journal.version) }]
+    });
+    if (!supplemental) return false;
+    context.prompt = [context.prompt, supplemental.prompt].filter(Boolean).join("\n\n");
+    context.receipt = { ...context.receipt, importanceReferences: supplemental.receipt };
+    context.importanceSources = supplemental.sources;
+    return true;
+  };
   const coreModelSnapshot = store => {
     if (!coreModelReadiness(store)?.ready) return null;
     const projected = coreUserModelProjection(store);
@@ -214,7 +232,7 @@ export function createCaptureJournalWorkflows({
   };
   const assertAssistContextCurrent = (store, expected) => {
     assertCoreModelCurrent(store, expected.coreModel);
-    if (!personalContextReceiptMatches(store, expected.personalContext.receipt)
+    if (!reflectionContextReceiptMatches(store, expected.personalContext.receipt)
       || hash(diaryActivityContext(store, expected.occurredOn)) !== expected.activityFingerprint) {
       throw staleJournalContext();
     }
@@ -273,6 +291,7 @@ export function createCaptureJournalWorkflows({
           prompt,
           contextFingerprint: hash(JSON.stringify({
             receipt: personalContextReceiptFingerprint(personalContext.receipt),
+            importanceReferences: personalContext.receipt.importanceReferences || null,
             prompt: personalContext.prompt,
             activityContext,
             coreModel: coreModel.fingerprint
@@ -297,6 +316,8 @@ export function createCaptureJournalWorkflows({
         if (!coreModel) return null;
         const trend = trendFor(store, taskContextAsOf(task));
         const personalContext = personalContextProjection(store);
+        if (!addImportance(store, personalContext, journal,
+          hash(JSON.stringify([task.clientRequestId || task.id, coreModel.fingerprint])), task.importanceSelectionPlan || null)) return null;
         const currentJournal = journalCitationSource(journal);
         const citationContext = '<reference_context_data format="application/json">' + JSON.stringify({
           currentMaterial: { citationId: currentJournal.citationId, text: currentJournal.text }
@@ -316,12 +337,13 @@ export function createCaptureJournalWorkflows({
           citationsEnabled: true,
           citationSources: answerCitationSources(coreModel.model, [
             ...trendCitationSources(trend),
-            currentJournal
+            currentJournal, ...(personalContext.importanceSources || [])
           ]),
           systemPrompt: citationSystemPrompt(diarySystemPrompt()),
           contextReceipt: personalContext.receipt,
           contextFingerprint: hash(JSON.stringify({
             receipt: personalContextReceiptFingerprint(personalContext.receipt),
+            importanceReferences: personalContext.receipt.importanceReferences || null,
             coreModel: coreModel.fingerprint,
             trend: trend?.fingerprint || ""
           })),
@@ -495,6 +517,7 @@ export function createCaptureJournalWorkflows({
           target
         };
         const currentJournal = journalCitationSource(journal);
+        addImportance(store, personalContext, journal, hash(JSON.stringify([clientRequestId, coreModel.fingerprint])));
         const citationContext = '<reference_context_data format="application/json">' + JSON.stringify({
           currentMaterial: { citationId: currentJournal.citationId, text: currentJournal.text }
         }).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e") + '</reference_context_data>';
@@ -502,7 +525,7 @@ export function createCaptureJournalWorkflows({
         const referenceRequest = prepareReferenceRequest(userPrompt({
           context: stableContext(coreModel, trend.trend, [personalContext.prompt, citationContext]
             .filter(Boolean).join("\n\n")), ...journalReflectionInput(journal, { materialInContext: true })
-        }), answerCitationSources(coreModel.model, [...trendCitationSources(trend.trend), currentJournal]),
+        }), answerCitationSources(coreModel.model, [...trendCitationSources(trend.trend), currentJournal, ...(personalContext.importanceSources || [])]),
         JSON.stringify([contextKey(), id, personalContext.receipt, sourceUpdatedAt]));
         const result = await generate(referenceRequest.prompt, {
           scene: "diaryReflection",
@@ -514,7 +537,7 @@ export function createCaptureJournalWorkflows({
         });
         const currentStore = await repository.read();
         assertCoreModelCurrent(currentStore, coreModel);
-        if (!personalContextReceiptMatches(currentStore, personalContext.receipt)) {
+        if (!reflectionContextReceiptMatches(currentStore, personalContext.receipt)) {
           throw failure("个人语境已变化，本次回望未写入", "STALE_PERSONAL_CONTEXT", 409);
         }
         assertJournalTargetCurrent(currentStore, { targetId: id }, target);
@@ -522,7 +545,7 @@ export function createCaptureJournalWorkflows({
         const verified = verifyReferenceAnswer(result.content, referenceRequest);
         const validateFreshness = document => {
           assertCoreModelCurrent(document, freshness.coreModel);
-          if (!personalContextReceiptMatches(document, freshness.personalContext.receipt)) {
+          if (!reflectionContextReceiptMatches(document, freshness.personalContext.receipt)) {
             throw failure("个人语境已变化，本次回望未写入", "STALE_PERSONAL_CONTEXT", 409);
           }
           assertJournalTargetCurrent(document, { targetId: id }, freshness.target);
