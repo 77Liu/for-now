@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 277,
-  "updated_at": "2026-10-13T18:25:28.544Z",
+  "revision": 285,
+  "updated_at": "2026-10-13T18:58:56.900Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -15,135 +15,12 @@
   },
   "work_mode": {
     "status": "ACTIVE",
-    "scope": "维护当前v0.5.14候选与控制面；等待Owner发布信号"
+    "scope": "完成v0.5.14正式收口与复盘回流，再按最新develop基线启动v0.5.15夜间开发"
   },
-  "iteration": {
-    "id": "v0.5.14",
-    "status": "RELEASE_REVIEW",
-    "phase": "主控完成2cab2e后差分审查及生产基线核对，发布注释与发行说明已纠正；准备固定最终候选",
-    "started_by": {
-      "iteration_id": "v0.5.13",
-      "event_id": "v0.5.13-8b14bb6d-5580-4e7e-a2ea-10750c49e32b"
-    }
-  },
-  "scope": {
-    "description": "v0.5.14保留音频六条、冷启/回答五项及日压缩失败，追加模型卡片自动收缩；冷启整理正常成功为首要验收，同步提示两种表现按同链复现裁定，不重复立项",
-    "requirement_ids": [
-      "recvxyg5bmmnfW",
-      "reczz28KR6qDIujH",
-      "recvxlQ7sCzQHv",
-      "recvxlQpmHOCuK",
-      "reczz28JnsUxxhsH",
-      "recvxlQSwyzutq",
-      "reczz28MjrsGGWKJ",
-      "reczz28MjrsGEQDV",
-      "reczz28MjrsGGCEL",
-      "reczz28MBW6Y6vCz",
-      "recvxm0eDZdJED",
-      "reczz28JPbOch6n9",
-      "reczz28MmxlBTKgV"
-    ],
-    "requirements_verified_at": "2026-10-13T06:03:17Z",
-    "requirements_revision": 546,
-    "requirements_scope": "定向回读；完整采集快照仍stale，未冒充全池最新",
-    "baseline": {
-      "branch": "develop",
-      "sha": "2cab2e",
-      "selection": "当前v0.5.14已验证业务候选，规则入口修订独立核验，不重跑未受影响的业务验证。"
-    },
-    "acceptance": {
-      "recording": "Owner确认原音完整、转写遗漏；新增要求保留流式基建暂不用，非流式整文件HTTP实际通且质量高后切换；不得以WS nostream分包代替整文件HTTP或用字数增加伪称完整。",
-      "playback": "加载/失败/重试复用已有资源；播放暂停拖动倍速不折叠父卡；有音频完整控件、无音频无空壳；生成速度与播放倍速分开；小屏大字体、账户/页面切换清理归属",
-      "title": "仅新纯音频空标题生成稳定默认标题，保存为独立元数据而非伪造用户正文；用户标题及迟到转写并发不覆盖；补录日期/幂等/账户隔离；不回填历史",
-      "historical_compression": "旧失败任务保持终态；合法原文预算内向前新建日摘要回填任务，终点2026-09-25；本机生产状态切片经真实压缩、持久化、恢复、新思绪回答上下文消费闭环"
-    },
-    "exclusions": [
-      "多段追加录音",
-      "录音期间切换念起/思绪",
-      "防息屏",
-      "全站媒体格式改造",
-      "重复合成立项",
-      "历史默认标题批量回填"
-    ],
-    "cumulative_predecessor": "git:cd8055",
-    "feedback_acceptance": [
-      {
-        "key": "onboarding-navigation",
-        "image": 1,
-        "acceptance": "提交或整理中不滞留冗余中间页，直接进入今日，原文与后台状态保留",
-        "requirement_id": "reczz28MjrsGGWKJ"
-      },
-      {
-        "key": "onboarding-empty-answer",
-        "image": 2,
-        "acceptance": "先确保合法冷启回答经真实整理链可生成并保存可消费的用户模型；正常成功是主验收，空答/超时等异常才进入有界降级与可恢复失败，不能仅隐藏错误或用原话绕过成功验收",
-        "requirement_id": "reczz28MjrsGEQDV"
-      },
-      {
-        "key": "onboarding-home-entry",
-        "image": 3,
-        "acceptance": "结束页底部提供直接进入首页（今日），导航确实完成",
-        "requirement_id": "reczz28MjrsGGCEL"
-      },
-      {
-        "key": "core-model-terminal-recovery",
-        "image": 4,
-        "acceptance": "整理失败/取消等终态不得永久阻塞回答与重新回答；提交处理在途按优先级等待，未提交不等待",
-        "requirement_id": "reczz28MBW6Y6vCz"
-      },
-      {
-        "key": "background-result-sync",
-        "image": 5,
-        "acceptance": "先复现提交已登记但同步失败提示及反复闪烁两种反馈，沿原文保存→任务状态→结果读取→结果接入→通知查看追踪；判定真实失败或误报，修正根因及重试归属，提供实际恢复入口；分别验收，不能只减toast次数",
-        "requirement_id": "recvxm0eDZdJED"
-      },
-      {
-        "key": "compression-schedule-failure",
-        "acceptance": "核查10月12日18:05和10月13日06:00失败、30秒重复开始、原始错误、摘要持久化、重试去重和实际费用；先完成前五项再实现，保留4/1/16/4生产配置、不手工重复付费",
-        "requirement_id": "reczz28JPbOch6n9"
-      },
-      {
-        "key": "user-model-card-auto-collapse",
-        "requirement_id": "reczz28MmxlBTKgV",
-        "acceptance": "模型事实/观点/摘要卡片展开后不被约一秒周期刷新自动折叠；保持展开身份、阅读位置与账户隔离，明确收起仍有效",
-        "source": "Owner2026-10-13 13:48截图及实际反馈"
-      }
-    ],
-    "version_record_id": "reczz28MjrpXHbRP",
-    "version_table_revision": 38,
-    "asr_badcase_fact": {
-      "source": "Owner本轮注释2；需求recvxyg5bmmnfW定向rev546",
-      "fact": "原音回放完整，转写内容遗漏",
-      "historical_record_link": "Owner已确认shenji、2026-10-08 21:17:32 Asia/Shanghai；主控只读定位唯一匹配原音56.984秒；关联存于本机私密回执"
-    }
-  },
-  "active_tasks": [
-    {
-      "id": "v0514-release-finalization",
-      "owner": "主控",
-      "branch": "feat/v0.5.14-release-finalization",
-      "write_set": [
-        "本版首次发布接口注释",
-        "reports/release-v0.5.14-2026-10-13.md",
-        "控制面及版本事件（仅主控唯一入口）"
-      ],
-      "forbidden": [
-        "业务逻辑扩展",
-        "历史事件改写",
-        "旧分支删除",
-        "重复工作树"
-      ],
-      "status": "REVIEWED"
-    }
-  ],
-  "candidate": {
-    "version": "v0.5.14",
-    "sha": "2cab2e",
-    "tree": "b83894",
-    "branch": "develop",
-    "status": "READY_FOR_RELEASE_DECISION",
-    "boundary": "现HEAD业务执行逻辑与2cab2e一致；发布前核对最新状态启动门及元数据，真机/逐字保真partial保持"
-  },
+  "iteration": null,
+  "scope": null,
+  "active_tasks": [],
+  "candidate": null,
   "authorization": {
     "source": "Owner本聊天最新明确指令：审查当前HEAD通过后，授权v0.5.14 release/tag/push/上线；原有共享4元验收费用许可持续有效。",
     "allowed_actions": [
@@ -153,7 +30,8 @@
       "每版本上线前所有付费API共享人民币4元测试额度，阈值内持续授权；超过4元先报告申请",
       "Owner本轮明确授权已有脱敏生产状态切片上下文发送当前应用DeepSeek API，用于本机日压缩/恢复/冷启/新回答闭环；费用计入版本共享4元，额度内必要测试不重复申请。",
       "Owner2026-10-14注释6授权本切片保留并提交明确标注范围/版本/原因的partial ASR源码；仅注释治理，不自动启用流式或发布生产",
-      "独立审查通过后执行v0.5.14候选推送、生产部署与必要配置、观察、正式tag/Release及main晋级；失败时按既有回滚方案恢复上一生产基线"
+      "独立审查通过后执行v0.5.14候选推送、生产部署与必要配置、观察、正式tag/Release及main晋级；失败时按既有回滚方案恢复上一生产基线",
+      "Owner最新授权：完成0.5.14复盘回流后，按新基线和新控制面继续0.5.15夜间开发；该版本正式上线需适用授权另行核对"
     ],
     "excluded": [
       "v0.5.13正式收尾",
@@ -181,110 +59,24 @@
     }
   },
   "blockers": [],
-  "next_action": "完成当前HEAD差分与发布注释/回执审查，更新最新生产快照并通过隔离PG启动门后冻结release，按本次授权部署与观察。",
+  "next_action": "v0.5.14技术发布与收口完成，按Owner最新授权定向核对v0.5.15需求，选定最新develop基线与唯一feat写集后继续夜间开发；不提前冻结未经核对的范围。",
   "runtime": {
-    "sha": "a901c8",
-    "package_version": "0.5.13",
-    "observed_at": "2026-10-14发布前实际SSH核验",
+    "version": "v0.5.14",
+    "sha": "a4d2ec",
     "active": true,
+    "main_pid": 983502,
     "restarts": 0,
-    "pid": 956069,
-    "boundary": "生产v0.5.13的既有观测，时点以observed_at为准；不表示即时运行状态或v0.5.14已上线，产品验收仍有有效限制",
-    "version": "v0.5.13",
-    "main_pid": 956069,
-    "readyz": "PASS"
+    "readyz": "PASS",
+    "deployed_at": "2026-10-14T02:32:44+08:00",
+    "attempt_id": "c9b15eced461e6335f86e0fb5bebebf8",
+    "rollback_sha": "a901c8",
+    "evidence": "reports/local/v0514-deploy-current.json",
+    "limitations": [
+      "自然06:00/18:05新版生成未验收；旧生产窗口失败不改写",
+      "真机录音/逐字保真未完整验收"
+    ]
   },
   "evidence": [
-    {
-      "id": "unaffected-audio",
-      "candidate_sha": "2cab2e",
-      "conclusion": "当前候选iPhone SE3 Simulator27 Safari播放/暂停/真实拖动/2倍速/小屏XCTest PASS；既有音频/标题专项有效",
-      "limitations": [
-        "非真机麦克风、原生Capacitor与所有设备兼容验收；原音识别另有实际证据"
-      ],
-      "refs": [
-        "reports/local/v0514-ios-simulator-current.json",
-        "/tmp/v0514-acceptance-live/simulator-audio-current-candidate.xcresult",
-        "reports/local/v0514-acceptance-current.json"
-      ]
-    },
-    {
-      "id": "publication-metadata",
-      "candidate_sha": "2bac8e",
-      "conclusion": "0.5.14元数据及原SW生成模块闭包PASS",
-      "limitations": [
-        "现构建/模块闭包通过；未实施远程发布或生产配置核验。"
-      ],
-      "refs": [
-        "git:7d1520"
-      ]
-    },
-    {
-      "id": "kernel-boundary",
-      "candidate_sha": "d526f6",
-      "conclusion": "后台回答登记、聊天提交与模拟测试数据装载职责拆分已接入，相关类型/构建/模块验证通过",
-      "limitations": [
-        "kernel仍保留状态及部分协调逻辑，尚非纯装配；真机/原生录音不在该切片验收范围"
-      ],
-      "refs": [
-        "public/frontend/app/runtime/kernel.mjs",
-        "public/test-support/view-scope.mts",
-        "public/frontend/app/runtime/chat-submission.mts"
-      ]
-    },
-    {
-      "id": "file-asr-default-closed-loop",
-      "candidate_sha": "ce4f58",
-      "conclusion": "整文件HTTP识别、实际转写任务保存及PG重启恢复通过",
-      "limitations": [
-        "逐字保真仍partial；原音润色/凝练未真实调用；真机采集与生产切换未验收",
-        "文件头及公共接口已标注partial范围、v0.5.14候选、原因与Owner授权；流式默认暂不用，本轮仅注释，复用原行为验收"
-      ],
-      "refs": [
-        "src/infrastructure/ai-providers/volcengine-file-asr.mts",
-        "src/infrastructure/ai-providers/volcengine-speech.mjs",
-        "reports/local/v0514-asr-save-loop-current.json",
-        "reports/local/v0514-asr-flash-markers-local.json"
-      ]
-    },
-    {
-      "id": "snapshot-real-consumers",
-      "candidate_sha": "2cab2e",
-      "conclusion": "生产状态切片的持久化读取、脱敏重建及公开消费者契约核验通过",
-      "limitations": [
-        "不修正原业务坏状态；实际启动与重启恢复结论见全局门回执"
-      ],
-      "refs": [
-        "scripts/release-state-startup-gate.mts",
-        "reports/local/v0514-startup-snapshot-current.json"
-      ]
-    },
-    {
-      "id": "compression-review",
-      "candidate_sha": "9c7a8e",
-      "conclusion": "日摘要回填的日期下界、预算准入、去重及终态保存专项通过",
-      "limitations": [
-        "只证明本地回填边界，不代表生产全历史已生成；历史补充的本地真实闭环见独立回执"
-      ],
-      "refs": [
-        "git:d627fd",
-        "src/app/record-compressions.mjs",
-        "src/app/ai-budget-runtime.mjs",
-        "src/app/background-ai.mjs"
-      ]
-    },
-    {
-      "id": "stateful-global-gate",
-      "candidate_sha": "2cab2e",
-      "conclusion": "当前业务候选在生产状态切片下本地启动、就绪、PG重启恢复及核心读写通过",
-      "limitations": [
-        "不替代真机及生产验收；真实模型闭环见对应回执"
-      ],
-      "refs": [
-        "reports/local/v0514-startup-gate-current.json",
-        "reports/local/v0514-startup-snapshot-current.json"
-      ]
-    },
     {
       "id": "production-compression-window",
       "conclusion": "该次自然窗口生成失败，扫描通知错误地显示为生成完成",
@@ -302,75 +94,46 @@
       }
     },
     {
-      "id": "real-compression-core-loop",
-      "candidate_sha": "2cab2e",
-      "conclusion": "日摘要生成、保存、重启恢复及新思绪回答实际消费和引用闭环通过",
-      "limitations": [
-        "本地脱敏状态切片验收，生产新版未验证；仅覆盖两天日摘要，其他五天缺失，非全历史补齐",
-        "原始失败保留在原回执与事件中；历史补充已完成独立补验，不在本回执中混记"
-      ],
-      "refs": [
-        "reports/local/v0514-compression-loop-current.json",
-        "reports/local/v0514-paid-acceptance-current.json",
-        "/var/folders/6x/hs0vvfbd63j8mjj9dnqj1vlc0000gn/T/v0514-compression-loop-1bSLO7/acceptance-failure.json"
-      ]
-    },
-    {
-      "id": "control-protocol-v3",
+      "id": "production-v0514-observation",
       "object": {
-        "kind": "source_slice",
-        "files": [
-          {
-            "path": "scripts/control-plane-update.mts",
-            "hash": "039cd6"
-          },
-          {
-            "path": "scripts/control-plane-replay.mts",
-            "hash": "d327fb"
-          }
-        ]
+        "kind": "production",
+        "version": "v0.5.14",
+        "commit": "a4d2ec"
       },
-      "conclusion": "最终源码的格式3专项及真实混合链audit通过；六位核对、稳定ID增删修改/独立顺序、旧格式及中断恢复有效",
+      "conclusion": "11/11样本、10分14秒，readyz与活动目录一致，PID983502稳定、重启0、应用错误0、监控问题0；生产已登录浏览器首页/概要/展开保持通过",
       "limitations": [
-        "仅证明记录与恢复契约，不自动证明外部证据真实或防止所有漏记"
+        "限定运行与读取观察，不代表长期SLO、真机录音或新版自然06:00/18:05生成成功；旧失败保持原始记录"
       ],
       "refs": [
-        "scripts/control-plane-update.mts#self-test",
-        "knowledge/coordination-control-plane.md",
-        "reports/iterations/v0.5.14/events.jsonl#v0.5.14-control-record-policy-20261014"
+        "reports/local/v0514-production-observation-current.json",
+        "reports/local/v0514-production-browser-current.json",
+        "reports/local/v0514-deploy-current.json"
       ]
     },
     {
-      "id": "real-historical-supplement-loop",
-      "candidate_sha": "cf984c",
-      "conclusion": "本机真实历史补充非空生成、PG保存重启恢复及实际新回答请求携带成功；回答实际采用偏好并核验原始引用",
-      "limitations": [
-        "脱敏生产切片加合成偏好；仅本机单场景真实验收，非生产启用或全历史效果/长期质量验收"
-      ],
-      "refs": [
-        "reports/local/v0514-historical-supplement-loop-current.json"
-      ]
-    },
-    {
-      "id": "head-independent-review",
+      "id": "formal-v0514-publication",
       "object": {
-        "kind": "commit_range",
-        "base": "2cab2e",
-        "head": "cf984c"
+        "kind": "git_refs",
+        "tag": "v0.5.14",
+        "release_branch": "release/v0.5.14",
+        "application_commit": "a4d2ec",
+        "main_commit": "548223"
       },
-      "conclusion": "业务执行逻辑无变更；控制面更新/回放真实消费者审查与既有专项有效；本次新增源码差分仅首次发布注释，类型检查通过，元数据一致",
+      "conclusion": "Gitee正式Release创建成功；PR!3现有审查/测试通过并合并，main包含已发布候选且tree完全相同；13条需求发布事实回流，均保留待验收",
       "limitations": [
-        "逐字保真、真机采集及新版生产自然窗口仍partial"
+        "main为平台合并提交，应用/tag继续精确a4d2ec；未移动tag或重复部署；旧v0.5.13收口锚点保留，不改历史"
       ],
       "refs": [
-        "git:2cab2e..cf984c",
-        "reports/release-v0.5.14-2026-10-13.md"
+        "https://gitee.com/Liu_772021/for-now/releases/tag/v0.5.14",
+        "https://gitee.com/Liu_772021/for-now/pulls/3",
+        "reports/local/v0514-requirements-return-current.json",
+        "reports/local/v0514-release-proof.png"
       ]
     }
   ],
   "records": {
-    "events": "reports/iterations/v0.5.14/events.jsonl",
-    "terminal": "reports/iterations/v0.5.14/terminal.json"
+    "events": null,
+    "terminal": null
   },
   "held_iterations": [
     {
