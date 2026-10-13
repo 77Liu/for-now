@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 217,
-  "updated_at": "2026-10-13T06:44:41.310Z",
+  "revision": 222,
+  "updated_at": "2026-10-13T07:28:43.649Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -20,7 +20,7 @@
   "iteration": {
     "id": "v0.5.14",
     "status": "IN_PROGRESS",
-    "phase": "音频已集成；主开发同一feat串行复现并修复模型卡片/正常冷启/结果同步链，主控独立审查",
+    "phase": "核心反馈切片主控独立审查通过，等待本地接入develop；版本元数据与最终有状态门未执行",
     "started_by": {
       "iteration_id": "v0.5.13",
       "event_id": "v0.5.13-8b14bb6d-5580-4e7e-a2ea-10750c49e32b"
@@ -120,86 +120,29 @@
     "version_record_id": "reczz28MjrpXHbRP",
     "version_table_revision": 38
   },
-  "active_tasks": [
-    {
-      "id": "v0514-core-feedback-close",
-      "owner_thread": "01a11afe-73d2-7013-91d5-cd473c4d7115",
-      "mode": "先复现/自查，再最小实现与验证",
-      "branch": "feat/v0.5.14-audio-completeness",
-      "baseline_sha": "a0c65d05ce38a5c0f2d1bd6b2602589fd9740e45",
-      "working_directory": "/Users/bytedance/Documents/Codex/个人成长追踪",
-      "allowed_write": [
-        "public/frontend/features/personal-context/controller.mjs",
-        "public/frontend/features/personal-context/presentation.mjs",
-        "public/frontend/features/personal-context/*.mts（必要展开状态边界）",
-        "public/frontend/features/background-results/controller.mjs",
-        "public/frontend/features/background-results/model.mjs",
-        "public/frontend/features/background-results/locator.mjs",
-        "public/frontend/features/background-results/recovery.mts",
-        "public/frontend/features/notifications/controller.mts",
-        "public/frontend/features/notifications/presentation.mts",
-        "public/frontend/features/onboarding-v2/index.mjs",
-        "public/frontend/features/onboarding-v2/navigation.mts",
-        "public/frontend/app/runtime/collaboration-runtime.mjs（必要结果恢复端口）",
-        "public/frontend/app/runtime/data-runtime.mjs（必要结果恢复端口）",
-        "public/frontend/app/runtime/home-runtime.mjs（必要冷启成功入口）",
-        "public/frontend/app/runtime/page-descriptors-account.mjs（必要端口）",
-        "src/app/user-model.mjs",
-        "src/app/background-ai.mjs",
-        "src/app/ai-task-targets.mjs",
-        "src/app/content/background.mjs",
-        "src/app/runtime-platform-http.mjs（既有冷启/任务HTTP链）",
-        "src/modules/ai/generation.mjs",
-        "src/modules/ai/settings.mjs",
-        "src/infrastructure/ai-providers/deepseek.mjs（只实际故障连带）",
-        "tsconfig.recovery.json（仅新增TS源files项）",
-        "scripts/personal-context-regression.mjs",
-        "scripts/frontend-background-results-feature-regression.mjs",
-        "scripts/onboarding-v2-existing-user-browser-regression.mjs",
-        "scripts/onboarding-v2-frontend-regression.mjs",
-        "scripts/user-model-extraction-regression.mjs",
-        "scripts/user-model-core-readiness-regression.mjs",
-        "scripts/personalized-ai-model-gate-regression.mjs",
-        "scripts/ai-provider-regression.mjs",
-        "已存在必要通知专项脚本",
-        "reports/local/v0514-core-feedback-current.json（单份忽略回执）"
-      ],
-      "forbidden_write": [
-        "控制面/版本事件",
-        "package/lock/部署/.gitignore/远程引用",
-        "已接入音频模块（有真实连带缺陷先回报）",
-        "kernel拆分或阈值修改",
-        "新规则正文/报告链/全站状态或调度平台",
-        "生产写/手工付费/推送/tag/Release/上线"
-      ],
-      "shared_file_owner": "本切片允许实现/端口/TS files项由主开发唯一串行写，主控独占控制面并只读审查；公共API/schema/全局默认策略改变先给实际调用方及最小契约由主控裁定",
-      "acceptance": "先实际复现卡片周期重绘收缩及两种同步反馈，区别当前生产.13与本地.14；冷启先正常合法问答→真实生成器/HTTP→解析/任务持久化→核心模型消费成功，再覆盖空答/取消/失败恢复；不会以原文/空模型fallback冒充整理成功。结果已接入而页面未加载不得误报同步失败；真正读取失败须有实际恢复入口，404/410历史失效不得声称原文仍存在或自动付费重造；正常新任务、不在当前页/分页、临时503、永久410分别验证。展开状态以稳定conclusion ID保存，保持阅读位置、明确关闭有效、账户会话切换清空。只用合成输入和回环provider、线上只读审计；未真实供应商成功不冒称。",
-      "handoff": "提交/固定对象、实际前后复现、完整链自查、必要专项及真实HTTP浏览器结果，失败与partial保留；可复核本地服务入口，未经主控审查不合develop。最终全局门等核心修复和版本元数据全部完成后执行一次，不重复音频已关闭验证。"
-    }
-  ],
+  "active_tasks": [],
   "candidate": {
-    "status": "CORE_FEEDBACK_IMPLEMENTATION_IN_PROGRESS",
-    "branch": "develop",
-    "sha": "a0c65d05ce38a5c0f2d1bd6b2602589fd9740e45",
-    "tree": "87a81ae4f0fe516ea2398da9d03010c067c75c22",
+    "status": "CORE_FEEDBACK_REVIEWED_WAIT_INTEGRATION",
+    "branch": "feat/v0.5.14-audio-completeness",
+    "sha": "d3f8b37b201adaa2c3bfe8b1120ca41781dcec38",
+    "tree": "26830d5e4b2f83e97814e1e908f7bf37267a5f0a",
     "release_branch": null,
     "package_version": "0.5.13",
     "partial": [
       "真实provider与iOS/设备未验收",
       "自然06:00/18:05成功生成及费用回执待部署后验证",
       "历史同源failed/stale保持终态，不自动付费重放",
-      "frontend-runtime-composition未改kernel534>500既有FAIL；未声称全部历史UI测试通过"
+      "frontend-runtime-composition既有kernel超限FAIL保留，本轮仅必要消费者改动；data-runtime新增超限已修"
     ],
     "engineering_deviation": {
       "check": "frontend-runtime-composition",
       "status": "FAIL",
-      "cause": "public/frontend/app/runtime/kernel.mjs 534行超过500行限制",
-      "review": "主控核对生产v0.5.13 a901c850与当前a22e5f5均为534行；本轮未改该文件，未确认与12项范围相关的行为缺陷",
-      "disposition": "保留既有失败，不放宽阈值、不压缩代码凑行数、不扩展为本轮无需求的入口重构；不作为本轮新增功能验收PASS",
+      "cause": "kernel当前533行超过500行；生产及原候选为534行，本轮仅真实登记/通知提示消费者改动",
+      "review": "亲读完整消费者链及最终diff；data-runtime本轮新增508超限已按通知职责TS提取到463；阈值未改、代码未压行",
+      "disposition": "保留kernel既有超限工程债务，不记该专项PASS；不扩成无需求kernel重构；实际行为专项和新边界构建通过",
       "evidence": [
-        "git:a901c850:public/frontend/app/runtime/kernel.mjs",
-        "git:a22e5f5:public/frontend/app/runtime/kernel.mjs",
-        "scripts/frontend-runtime-composition-regression.mjs"
+        "git:d3f8b37:public/frontend/app/runtime/kernel.mjs",
+        "thread:01a11afe-73d2-7013-91d5-cd473c4d7115/exec-034ba5d9-c46e-4d37-8315-5db9edeea55a"
       ]
     }
   },
@@ -220,7 +163,7 @@
     "revoked": false
   },
   "blockers": [],
-  "next_action": "主开发接收a0c65d0到同一feat，先复现后实现核心反馈；主控亲读完整链并实际浏览器复核后裁定接入，暂不冻结或发布",
+  "next_action": "主控本地合入develop并运行通知/结果实际集成专项，随后同一feat准备0.5.14元数据，最终固定候选后只读生产快照及隔离PG门；不进行外部发布",
   "runtime": {
     "sha": "a901c8507094528e48992802b102911086331043",
     "package_version": "0.5.13",
@@ -344,6 +287,18 @@
         "tool:exec/1703e7"
       ],
       "boundary": "回环TTS/ASR替身；真实麦克风/真机/原生拖动及补充键盘脚本FAIL未知保留；非正式发行；服务/临时数据已清理，分支保留且唯一工作目录"
+    },
+    {
+      "id": "v0514-core-feedback-reviewed",
+      "source": "git:d3f8b37b201adaa2c3bfe8b1120ca41781dcec38",
+      "status": "主控亲读17文件生产者/真实消费者及公开端口；正常冷启非空模型持久化/确认/回答HTTP消费、卡片阅读、分页结果接入、通知503与410恢复本地PASS；工作区与暂存17文件逐hash及固定tree一致，按已授权本地手动提交",
+      "details": [
+        "reports/local/v0514-core-feedback-current.json#sha256:cc1440d9302e36e9561c33c9de2ab9e82ee413ecc226b0e1981439ac1e0c623a",
+        "reports/local/v0514-root-core-review.jpg",
+        "reports/local/v0514-root-result-review.jpg",
+        "thread:01a11afe-73d2-7013-91d5-cd473c4d7115/exec-88d94041-bde2-468b-94e5-b4d7de58907e"
+      ],
+      "boundary": "合成回环provider/本机浏览器，非生产恢复、真机或真实DeepSeek验收；主开发最后回执前上下文模型容量中断，已持久化交接被主控独立核对，不作为实现丢失；仍未整版冻结"
     }
   ],
   "records": {
