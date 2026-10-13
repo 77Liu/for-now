@@ -4,6 +4,7 @@
  * 状态：active
  * 边界：模型摘要预算与完整程序统计、实际趋势上下文预算分别计量。
  */
+import { readInternalBudgets } from "../../../.build/typescript/backend/shared/ai-context/index.mjs";
 import { DEFAULT_RECORD_TIMEZONE } from "../../shared/time/index.mjs";
 
 export const RECORD_COMPRESSION_INPUT_SCHEMA_VERSION = "record-compression-input.v1";
@@ -13,16 +14,18 @@ export const RECORD_COMPRESSION_TASK_KIND = "recordCompression";
 export { DEFAULT_RECORD_TIMEZONE };
 export const RECORD_COMPRESSION_WINDOW_DAYS = 7;
 // 模型摘要投影（含 JSON 与引用）的上限；不包含程序 window/coverage/metrics。
-export const RECORD_COMPRESSION_OUTPUT_TOKEN_BUDGET = 900;
+export const RECORD_COMPRESSION_OUTPUT_WARN_TOKEN_BUDGET = readInternalBudgets().dailySummaryWarn;
+export const RECORD_COMPRESSION_OUTPUT_TOKEN_BUDGET = readInternalBudgets().dailySummaryHard;
 export const RECORD_COMPRESSION_INPUT_TEXT_BUDGET = 12_000;
 export const RECORD_COMPRESSION_INPUT_JSON_BUDGET_BYTES = 256_000;
 export const RECORD_COMPRESSION_MAX_SOURCE_ITEMS = 96;
 export const RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN = 4;
 export const RECORD_COMPRESSION_MAX_BUDGET_WAITING_TASKS_PER_ACCOUNT = 8;
-export const RECORD_COMPRESSION_TREND_CONTEXT_TOKEN_BUDGET = 4_900;
+export const RECORD_COMPRESSION_TREND_CONTEXT_TOKEN_BUDGET = readInternalBudgets().trendHard;
 export const RECORD_COMPRESSION_TREND_CONTEXT_CHARACTER_BUDGET = 4_200;
 export const RECORD_COMPRESSION_OUTPUT_BUDGETS = Object.freeze({
   totalTokens: RECORD_COMPRESSION_OUTPUT_TOKEN_BUDGET,
+  warnTokens: RECORD_COMPRESSION_OUTPUT_WARN_TOKEN_BUDGET,
   userTrendTokens: 700,
   dailyTokens: 245,
   thoughtsIdeasTokens: 315,

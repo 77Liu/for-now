@@ -1,4 +1,5 @@
 import path from "node:path";
+import { readInternalBudgets } from "../../.build/typescript/backend/shared/ai-context/index.mjs";
 import { RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN } from "../modules/record-compressions/index.mjs";
 
 export const RECORD_COMPRESSION_ACCOUNT_DAILY_INVOCATION_LIMIT = 2;
@@ -112,6 +113,7 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     aiDailyCostCny = converted === 0 ? null : Math.max(0.01, converted);
   }
   return Object.freeze({
+    internalBudgets: readInternalBudgets(env),
     dataDir: env.DATA_DIR ? path.resolve(env.DATA_DIR) : path.join(rootDir, "data"),
     port: Number(env.PORT || 4173),
     version: env.APP_VERSION || "development",

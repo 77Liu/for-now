@@ -1,6 +1,6 @@
 export { createAnnotationCommands } from "./annotation-resources.mjs";
 export { createAiTaskTargets } from "./ai-task-targets.mjs";
-export { answerCitationSources, parseVerifiedAnswer } from "./answer-citations.mjs";
+export { answerCitationSources, parseVerifiedAnswer, prepareReferenceRequest, verifyReferenceAnswer } from "./answer-citations.mjs";
 export {
   createAiBudgetRuntime,
   deepSeekBudgetStages,
@@ -121,7 +121,8 @@ export {
 export {
   createPublicStateProjection,
   storeForUser,
-  withoutOwnerMetadata
+  withoutOwnerMetadata,
+  withoutReferenceOwnerMetadata
 } from "./public-state.mjs";
 export { createAccountLifecycle } from "./account-lifecycle.mjs";
 export {

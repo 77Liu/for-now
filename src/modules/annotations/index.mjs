@@ -152,6 +152,8 @@ export function createAnnotationService({ createId, now }) {
           ...(result.reasoningContent ? { reasoningContent: result.reasoningContent } : {}),
           ...(result.contextReceipt ? { contextReceipt: structuredClone(result.contextReceipt) } : {}),
           ...(Array.isArray(result.citations) ? { citations: structuredClone(result.citations) } : {}),
+          ...(Array.isArray(result.providedReferences) ? { providedReferences: structuredClone(result.providedReferences) } : {}),
+          ...(Array.isArray(result.rejectedReferences) ? { rejectedReferences: structuredClone(result.rejectedReferences) } : {}),
           ...(result.citationStatus ? { citationStatus: result.citationStatus } : {})
         };
         annotation.shenji ||= [];

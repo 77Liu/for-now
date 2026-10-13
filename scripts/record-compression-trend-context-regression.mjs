@@ -44,7 +44,7 @@ for (const localDate of localDates) {
     id: questionId,
     type: "question",
     content: localDate === localDates.at(-1)
-      ? `${"可发送的趋势来源前缀。".repeat(40)}${unsentTailPhrase}`
+      ? `${"可发送的趋势来源前缀。".repeat(1200)}${unsentTailPhrase}`
       : `用户当天的合成记录 ${localDate}。`,
     authorType: "user",
     origin: "manual",
@@ -180,14 +180,14 @@ assert.ok(trend.citationSources.filter(source => source.source.informationType !
 for (const promptSource of trend.payload.sources) {
   const citationSource = trend.citationSources.find(source => source.citationId === promptSource.citationId);
   assert.ok(citationSource, `missing citation source ${promptSource.citationId}`);
-  assert.equal(citationSource.text, promptSource.text,
-    "citation validation text must equal the exact source text included in the prompt payload");
+  assert.equal("text" in promptSource, false, "trend identities do not duplicate raw evidence bodies");
+  assert.ok(citationSource.text.length > 0, "separate evidence directory retains legal original text");
 }
 for (const promptSource of trend.payload.collectedQuotes) {
   const citationSource = trend.citationSources.find(source => source.citationId === promptSource.citationId);
   assert.ok(citationSource, `missing quote citation source ${promptSource.citationId}`);
-  assert.equal(citationSource.text, promptSource.text,
-    "quote citation validation text must equal the exact quote text included in the prompt payload");
+  assert.equal("text" in promptSource, false, "raw quotations belong to the separate evidence layer");
+  assert.ok(citationSource.text.length > 0);
 }
 assert.equal(JSON.stringify(trend.payload).includes(unsentTailPhrase), false,
   "the unique tail phrase must be absent from the model prompt payload");

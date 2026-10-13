@@ -240,7 +240,7 @@ export function createAnnotationView({
     const { id: targetId } = parseAnnotationRootKey(ui.activeRootKey);
     const pending = model.pendingTask("annotationShenji", targetId, annotation.id);
     const assistant = (annotation.shenji || []).map(item => (
-      `<div class="shenji-turn">${item.message ? `<div class="shenji-user"><span>@你</span><div class="markdown-content">${renderMarkdown(item.message)}</div></div>` : ""}<div class="shenji-answer markdown-content"><span class="shenji-label">@神鸡</span>${renderMarkdown(item.answer)}</div>${contextReceiptMarkup(item.contextReceipt, item.citations, item.citationStatus)}<small>${formatDate(item.createdAt)}</small></div>`
+      `<div class="shenji-turn">${item.message ? `<div class="shenji-user"><span>@你</span><div class="markdown-content">${renderMarkdown(item.message)}</div></div>` : ""}<div class="shenji-answer markdown-content"><span class="shenji-label">@神鸡</span>${renderMarkdown(item.answer)}</div>${contextReceiptMarkup(item.contextReceipt, item.citations, item.citationStatus, item.providedReferences)}<small>${formatDate(item.createdAt)}</small></div>`
     )).join("");
     const images = contentImagesMarkup(annotation, "comment");
     const replyMarkup = mark ? "" : `
@@ -282,7 +282,7 @@ export function createAnnotationView({
       `<div class="comment-reply"><p>${escapeHtml(item.text)}</p><small>${formatDate(item.createdAt)}</small></div>`
     )).join("");
     const assistant = (annotation.shenji || []).map(item => (
-      `<div class="shenji-turn">${item.message ? `<div class="shenji-user"><span>@你</span><div class="markdown-content">${renderMarkdown(item.message)}</div></div>` : ""}<div class="shenji-answer markdown-content"><span class="shenji-label">@神鸡</span>${renderMarkdown(item.answer)}</div>${contextReceiptMarkup(item.contextReceipt, item.citations, item.citationStatus)}</div>`
+      `<div class="shenji-turn">${item.message ? `<div class="shenji-user"><span>@你</span><div class="markdown-content">${renderMarkdown(item.message)}</div></div>` : ""}<div class="shenji-answer markdown-content"><span class="shenji-label">@神鸡</span>${renderMarkdown(item.answer)}</div>${contextReceiptMarkup(item.contextReceipt, item.citations, item.citationStatus, item.providedReferences)}</div>`
     )).join("");
     return `<article class="drift-card" data-drift-card="${annotation.id}"><div class="drift-meta"><span>${annotation.kind === "highlight" ? "失效划线" : "失效评论"}</span><small>${escapeHtml(annotation.driftReason || "原文已变化")}</small></div><div class="drift-context"><span>${escapeHtml(context.before)}</span><mark>${escapeHtml(context.focus || annotation.quote)}</mark><span>${escapeHtml(context.after)}</span></div>${annotation.text ? `<p>${escapeHtml(annotation.text)}</p>` : ""}${replies}${assistant}<button type="button" class="comment-delete" data-drift-delete="${annotation.id}">删除漂流记录</button></article>`;
   }

@@ -155,7 +155,7 @@ export function captureCardMarkup({
 function reflectionMarkup(item, reflection, index, contextReceiptMarkup) {
   const stale = reflection.sourceUpdatedAt
     && reflection.sourceUpdatedAt !== (item.updatedAt || item.createdAt);
-  return `<details class="journal-reflection" data-reflection-id="${escapeHtml(reflection.id)}" ${index === 0 ? "open" : ""}><summary><span>助手回望${index ? ` ${item.reflections.length - index}` : ""}</span><small>${stale ? "基于修改前版本 · " : ""}${formatDate(reflection.createdAt)}</small></summary><div class="model-answer-content">${contextReceiptMarkup(reflection.contextReceipt, reflection.citations, reflection.citationStatus)}<div class="markdown-content">${renderMarkdown(reflection.content)}</div></div></details>`;
+  return `<details class="journal-reflection" data-reflection-id="${escapeHtml(reflection.id)}" ${index === 0 ? "open" : ""}><summary><span>助手回望${index ? ` ${item.reflections.length - index}` : ""}</span><small>${stale ? "基于修改前版本 · " : ""}${formatDate(reflection.createdAt)}</small></summary><div class="model-answer-content">${contextReceiptMarkup(reflection.contextReceipt, reflection.citations, reflection.citationStatus, reflection.providedReferences)}<div class="markdown-content">${renderMarkdown(reflection.content)}</div></div></details>`;
 }
 
 export function journalCardMarkup({ item, contextReceiptMarkup }) {

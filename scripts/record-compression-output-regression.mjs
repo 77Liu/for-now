@@ -100,10 +100,7 @@ assert.equal(JSON.stringify(summary.sourceManifest).includes("长期希望做决
 assert.equal(summary.tokenUsage.estimated, true);
 assert.match(summary.tokenUsage.method, /^conservative-/);
 assert.ok(summary.tokenUsage.outputTokens <= RECORD_COMPRESSION_OUTPUT_BUDGETS.totalTokens);
-assert.ok(summary.tokenUsage.moduleTokens.daily <= RECORD_COMPRESSION_OUTPUT_BUDGETS.dailyTokens);
-assert.ok(summary.tokenUsage.moduleTokens.thoughtsIdeas <= RECORD_COMPRESSION_OUTPUT_BUDGETS.thoughtsIdeasTokens);
-assert.ok(summary.tokenUsage.moduleTokens.other <= RECORD_COMPRESSION_OUTPUT_BUDGETS.otherTokens);
-assert.ok(summary.tokenUsage.moduleTokens.aiReference <= RECORD_COMPRESSION_OUTPUT_BUDGETS.aiReferenceTokens);
+assert.equal(summary.tokenUsage.budgetLevel, "ok");
 assert.ok(summary.tokenUsage.stableCandidatesTokens <= RECORD_COMPRESSION_OUTPUT_BUDGETS.stableCandidateTokens);
 assert.ok(summary.stableUserCandidates.length <= RECORD_COMPRESSION_OUTPUT_BUDGETS.stableCandidateItems);
 
@@ -143,21 +140,29 @@ const oversizedOutput = {
     sourceIds: ["U4"]
   }))
 };
-const boundedSummary = parseRecordCompressionOutput(oversizedOutput, {
+assert.throws(() => parseRecordCompressionOutput(oversizedOutput, {
+  input: oversizedInput, id: "over-hard-limit", generatedAt: "2026-10-10T08:02:00.000Z"
+}), { code: "RECORD_COMPRESSION_OUTPUT_BUDGET_EXCEEDED" });
+const warnOutput = {
+  ...rawOutput,
+  thoughtsIdeas: { focus: Array.from({ length: 4 }, () => ({ text: "合法摘要。".repeat(40), sourceIds: ["U2"] })),
+    changes: [], openQuestions: [] },
+  stableUserCandidates: oversizedOutput.stableUserCandidates
+};
+const boundedSummary = parseRecordCompressionOutput(warnOutput, {
   input: oversizedInput,
   id: "compression-budgeted",
   generatedAt: "2026-10-10T08:02:00.000Z"
 });
 assert.ok(boundedSummary.tokenUsage.outputTokens <= RECORD_COMPRESSION_OUTPUT_BUDGETS.totalTokens);
-assert.ok(boundedSummary.tokenUsage.moduleTokens.daily <= RECORD_COMPRESSION_OUTPUT_BUDGETS.dailyTokens);
-assert.ok(boundedSummary.tokenUsage.moduleTokens.thoughtsIdeas <= RECORD_COMPRESSION_OUTPUT_BUDGETS.thoughtsIdeasTokens);
-assert.ok(boundedSummary.tokenUsage.moduleTokens.other <= RECORD_COMPRESSION_OUTPUT_BUDGETS.otherTokens);
-assert.ok(boundedSummary.tokenUsage.moduleTokens.aiReference <= RECORD_COMPRESSION_OUTPUT_BUDGETS.aiReferenceTokens);
 assert.ok(boundedSummary.tokenUsage.stableCandidatesTokens <= RECORD_COMPRESSION_OUTPUT_BUDGETS.stableCandidateTokens);
 assert.ok(boundedSummary.stableUserCandidates.length <= RECORD_COMPRESSION_OUTPUT_BUDGETS.stableCandidateItems);
 assert.equal(boundedSummary.tokenUsage.truncated, true);
 assert.ok(boundedSummary.warnings.some(value => value.includes("预算裁剪")));
-assert.ok(JSON.stringify(boundedSummary).length < JSON.stringify(oversizedOutput).length);
+assert.ok(boundedSummary.tokenUsage.outputTokens > RECORD_COMPRESSION_OUTPUT_BUDGETS.warnTokens);
+assert.equal(boundedSummary.tokenUsage.budgetLevel, "warn");
+assert.deepEqual(boundedSummary.thoughtsIdeas.focus, warnOutput.thoughtsIdeas.focus,
+  "legal WARN-range summaries remain complete rather than being silently cropped to the first threshold");
 assert.ok(estimateRecordCompressionTokens(boundedSummary.stableUserCandidates) <= RECORD_COMPRESSION_OUTPUT_BUDGETS.stableCandidateTokens);
 
 const modelProjection = value => ({
@@ -180,7 +185,7 @@ const replaceSourceId = value => {
 };
 const statisticalInput = replaceSourceId({
   ...input,
-  metrics: Array.from({ length: 11 }, (_, index) => ({
+  metrics: Array.from({ length: 48 }, (_, index) => ({
     ...input.metrics[0], metric: `measurement_${index}`, sourceIds: ["U1"]
   }))
 });

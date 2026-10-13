@@ -85,6 +85,8 @@ export function createChatRecords({
       message: parsed.value,
       answer: String(input.answer ?? ""),
       ...(Array.isArray(input.citations) ? { citations: clone(input.citations) } : {}),
+      ...(Array.isArray(input.providedReferences) ? { providedReferences: clone(input.providedReferences) } : {}),
+      ...(Array.isArray(input.rejectedReferences) ? { rejectedReferences: clone(input.rejectedReferences) } : {}),
       ...(input.citationStatus ? { citationStatus: safeText(input.citationStatus, 20) } : {}),
       annotations: [],
       annotationDrift: [],

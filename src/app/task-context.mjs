@@ -1,3 +1,4 @@
+import { readInternalBudgets } from "../../.build/typescript/backend/shared/ai-context/index.mjs";
 import crypto from "node:crypto";
 import {
   EVIDENCE_ERROR_CODES,
@@ -16,7 +17,7 @@ import {
 } from "./personal-context.mjs";
 
 export const WORKING_CONTEXT_VERSION = "2026.10.09.1";
-export const WORKING_CONTEXT_PROMPT_BYTE_BUDGET = 32_000;
+export const WORKING_CONTEXT_PROMPT_BYTE_BUDGET = readInternalBudgets().promptByteHard;
 export const WORKING_CONTEXT_TOKEN_BUDGET = WORKING_CONTEXT_PROMPT_BYTE_BUDGET;
 export const WORKING_CONTEXT_RECEIPT_ITEM_LIMIT = 100;
 export const WORKING_CONTEXT_RECEIPT_BYTE_LIMIT = 192 * 1024;
@@ -744,7 +745,8 @@ function selectionReceipt({
       estimatedUsed: used,
       remaining: Math.max(0, tokenLimit - used),
       estimation: "utf8-byte-upper-bound-v1",
-      scope: "compiled-user-prompt"
+      scope: "compiled-user-prompt",
+      unit: "UTF-8 bytes"
     },
     sourceCount: sources.length,
     sources,

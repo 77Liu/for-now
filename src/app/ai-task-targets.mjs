@@ -1,3 +1,4 @@
+import { answerCitationSources as compileCitationSources } from "./answer-citations.mjs";
 import { safeText, recordVersion } from "../shared/validation/index.mjs";
 import { renderPrompt } from "../shared/prompts/index.mjs";
 import { annotationExcerpt, shenjiSystemPrompt } from "../modules/annotations/index.mjs";
@@ -31,34 +32,7 @@ export function createAiTaskTargets({
   now = () => new Date().toISOString()
 }) {
   function answerCitationSources(workingContext, coreUserModel) {
-    const sources = [...(workingContext.citationSources || [])];
-    const coreSources = (coreUserModel?.answers || []).map(answer => ({
-      citationId: answer.citationId,
-      text: answer.text,
-      source: {
-        id: answer.citationId,
-        resourceType: "onboardingV2",
-        resourceId: answer.sourceId,
-        recordType: answer.title,
-        origin: "user",
-        informationType: answer.informationType,
-        version: answer.sourceVersion,
-        contentSha256: "",
-        location: {
-          view: "personal-context",
-          targetId: answer.sourceId,
-          rootId: "",
-          targetKey: `answer:${answer.sourceId}`,
-          occurredOn: ""
-        }
-      }
-    }));
-    return [...coreSources, ...sources].filter(item => (
-      typeof item.citationId === "string"
-      && item.citationId
-      && typeof item.text === "string"
-      && item.text
-    ));
+    return compileCitationSources(coreUserModel, workingContext.citationSources || []);
   }
 
   function captureTranscriptionWork(store, task) {
@@ -484,7 +458,8 @@ export function createAiTaskTargets({
           scene: task.kind,
           coreUserModel,
           historicalUserSupplement: recentTrend?.historicalUserSupplement || null,
-          recentTrend: recentTrend?.payload || null
+          recentTrend: recentTrend?.payload || null,
+          referenceEvidence: recentTrend?.citationSources || []
         })
       });
       const contextFingerprint = workingContextReceiptFingerprint(workingContext.receipt);

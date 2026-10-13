@@ -26,11 +26,12 @@ export function journalAssistPrompt(activityContext, { mode, title, content }) {
   });
 }
 
-export function journalReflectionInput(journal) {
+/** 原文已进入结构化 currentMaterial 时，不再在旧 chain 文本重复同一正文。 */
+export function journalReflectionInput(journal, { materialInContext = false } = {}) {
   return {
     chain: renderPrompt("journal.reflection.context", {
       occurredOn: journal.occurredOn, title: journal.title || "（无标题）",
-      content: journal.content, tags: journal.tags.join("、") || "（无）"
+      content: materialInContext ? "原文见 currentMaterial" : journal.content, tags: journal.tags.join("、") || "（无）"
     }),
     task: promptText("journal.task.reflection")
   };

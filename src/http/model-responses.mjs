@@ -1,7 +1,7 @@
 import { errorMetadata, redact } from "../shared/observability/index.mjs";
 import { wantsEventStream, sendStreamEvent } from "./json.mjs";
 
-export function createModelResponseHttp({ getContext, logEvent, sendJson }) {
+export function createModelResponseHttp({ getContext, logEvent, sendJson, projectResponse = value => value }) {
   return async function respond(req, res, {
     run,
     status = 200,
@@ -21,7 +21,7 @@ export function createModelResponseHttp({ getContext, logEvent, sendJson }) {
     });
     sendStreamEvent(res, { type: "phase", phase: "context" });
     try {
-      sendStreamEvent(res, { type: "done", result: formatResult(await run(event => sendStreamEvent(res, event))) });
+      sendStreamEvent(res, { type: "done", result: projectResponse(formatResult(await run(event => sendStreamEvent(res, event)))) });
     } catch (error) {
       const context = getContext();
       if (context) {

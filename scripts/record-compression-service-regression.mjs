@@ -13,7 +13,8 @@ import {
 } from "../src/app/index.mjs";
 import {
   RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION,
-  RECORD_COMPRESSION_TASK_KIND
+  RECORD_COMPRESSION_TASK_KIND,
+  RECORD_COMPRESSION_OUTPUT_BUDGETS
 } from "../src/modules/record-compressions/index.mjs";
 
 const rotationAccounts = [{ id: "account-a" }, { id: "account-b" }, { id: "account-c" }];
@@ -193,7 +194,7 @@ await runtime.backgroundAi.run(firstTask.id);
 assert.equal(calls.length, 1);
 assert.equal(calls[0].scene, RECORD_COMPRESSION_TASK_KIND);
 assert.equal(calls[0].json, true);
-assert.equal(calls[0].maxTokens, 900);
+assert.equal(calls[0].maxTokens, RECORD_COMPRESSION_OUTPUT_BUDGETS.totalTokens);
 assert.equal(calls[0].captureReasoning, false);
 assert.equal(typeof calls[0].isCurrent, "function",
   "content background must pass the exact task-current callback through to the provider wrapper");

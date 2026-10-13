@@ -3,7 +3,7 @@ import { chatHistory, chatMessage } from "../modules/chats/index.mjs";
 import { reflectionEvidence, reflectionPrompt } from "../modules/reviews/index.mjs";
 import { systemPrompt, userPrompt } from "../modules/ai/index.mjs";
 import { promptText, renderPrompt } from "../shared/prompts/index.mjs";
-import { answerCitationSources, parseVerifiedAnswer } from "./answer-citations.mjs";
+import { answerCitationSources, prepareReferenceRequest, verifyReferenceAnswer } from "./answer-citations.mjs";
 import { assertCoreModelReady } from "../shared/core-model-gate.mjs";
 import { evidenceSourceKey, normalizeEvidencePermission } from "../modules/user-model/index.mjs";
 import { recordVersion } from "../shared/validation/index.mjs";
@@ -116,7 +116,7 @@ export function createReviewChatWorkflows({
       }))
     };
   };
-  const coreContextPayload = (snapshot, trend) => JSON.stringify({
+  const coreContextPayload = (snapshot, trend) => '<reference_context_data format="application/json">' + JSON.stringify({
     coreUserModel: {
       fingerprint: snapshot.model.fingerprint,
       claims: list(snapshot.model.claims),
@@ -127,9 +127,11 @@ export function createReviewChatWorkflows({
       ? { historicalUserSupplement: trend.historicalUserSupplement }
       : {}),
     ...(trend?.payload && typeof trend.payload === "object"
-      ? { sevenDayTrend: trend.payload }
+      ? { sevenDayTrend: trend.payload,
+        referenceEvidence: list(trend.citationSources).map(source => ({ citationId: source.citationId, text: source.text,
+      origin: source.source?.origin || "user", informationType: source.source?.informationType || "user_original" })) }
       : {})
-  });
+  }).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e") + '</reference_context_data>';
   const stableContext = (snapshot, trend, dynamicContext = "") => [
     coreContextPayload(snapshot, trend),
     String(dynamicContext || "")
@@ -352,10 +354,13 @@ export function createReviewChatWorkflows({
           answer: result.content,
           ...(Array.isArray(result.citations) ? {
             citations: result.citations,
-            citationStatus: result.citationStatus
+            citationStatus: result.citationStatus,
+          providedReferences: result.providedReferences,
+          rejectedReferences: result.rejectedReferences
           } : {}),
           reasoningContent: result.reasoningContent,
-          contextReceipt: compactPersonalContextReceipt(generatedReceipt)
+          contextReceipt: { ...compactPersonalContextReceipt(generatedReceipt),
+            ...(result.referenceReceipt ? { referenceRequest: result.referenceReceipt } : {}) }
         }, { clientRequestId: task.clientRequestId, requestHash });
         if (saved.conflict) throw idempotencyConflict();
         if (saved.error) throw new Error(saved.error);
@@ -366,7 +371,9 @@ export function createReviewChatWorkflows({
         content: result.content,
         ...(Array.isArray(result.citations) ? {
           citations: result.citations,
-          citationStatus: result.citationStatus
+          citationStatus: result.citationStatus,
+          providedReferences: result.providedReferences,
+          rejectedReferences: result.rejectedReferences
         } : {}),
         reasoningContent: result.reasoningContent,
         contextReceipt: work.contextReceipt,
@@ -379,7 +386,8 @@ export function createReviewChatWorkflows({
       const requestHash = hash(JSON.stringify({ reason: generated.reason }));
       const saved = reviews.saveAnalysisInStore(document, {
         ...generated,
-        contextReceipt: compactPersonalContextReceipt(work.contextReceipt)
+        contextReceipt: { ...compactPersonalContextReceipt(work.contextReceipt),
+          ...(result.referenceReceipt ? { referenceRequest: result.referenceReceipt } : {}) }
       }, { clientRequestId: task.clientRequestId, requestHash });
       if (saved.conflict) throw idempotencyConflict();
       if (saved.error) throw new Error(saved.error);
@@ -445,7 +453,9 @@ export function createReviewChatWorkflows({
               resourceType: ["question", "answer"].includes(item.type) ? "thought" : "action",
               resourceId: String(item.id),
               recordType: String(item.type || "思绪记录"),
-              version: recordVersion(item.version)
+              version: recordVersion(item.version),
+              location: { view: "thoughts", targetId: item.relatedTo || item.id,
+                rootId: item.relatedTo || item.id, targetKey: `${item.type || "record"}:${item.id}` }
             }
           });
         }
@@ -460,7 +470,9 @@ export function createReviewChatWorkflows({
                 resourceType: "thought",
                 resourceId: String(item.id),
                 recordType: "思绪追问与回答",
-                version: recordVersion(followUp.version || item.version)
+                version: recordVersion(followUp.version || item.version),
+              location: { view: "thoughts", targetId: item.id, rootId: item.id,
+                targetKey: `followup-question:${followUp.id || followUpIndex}` }
               }
             });
           }
@@ -605,16 +617,17 @@ export function createReviewChatWorkflows({
           chatHistoryFingerprint: history.fingerprint,
           chatHistoryPermissionRevisions: history.permissionRevisions
         };
-        const result = await generate(userPrompt({
-          context: stableContext(coreModel, trend.trend, personalContext.prompt),
-          task: message
-        }), {
+        const referenceRequest = prepareReferenceRequest(userPrompt({
+          context: stableContext(coreModel, trend.trend, personalContext.prompt), task: message
+        }), answerCitationSources(coreModel.model, trendCitationSources(trend.trend)),
+        JSON.stringify([getAccountId(), clientRequestId, contextReceipt]));
+        const result = await generate(referenceRequest.prompt, {
           scene: "chat",
           history: history.history,
           json: true,
           systemPrompt: citationSystemPrompt(systemPrompt()),
           captureReasoning: true,
-          contextReceipt
+          contextReceipt: { ...contextReceipt, referenceRequest: referenceRequest.receipt }
         });
         const current = await repository.read();
         assertCoreModelCurrent(current, coreModel);
@@ -627,20 +640,19 @@ export function createReviewChatWorkflows({
           contextReceipt.chatHistoryPermissionRevisions
         );
         assertTrendCurrent(current, generatedAt, trend.fingerprint);
-        const verified = parseVerifiedAnswer(result.content, answerCitationSources(
-          coreModel.model,
-          trendCitationSources(trend.trend)
-        ));
+        const verified = verifyReferenceAnswer(result.content, referenceRequest);
         return {
           message,
           eventTime,
           answer: verified.content,
           ...(verified.citations ? {
             citations: verified.citations,
-            citationStatus: verified.citationStatus
+            citationStatus: verified.citationStatus,
+            providedReferences: verified.providedReferences,
+            rejectedReferences: verified.rejectedReferences
           } : {}),
           reasoningContent: result.reasoningContent,
-          contextReceipt,
+          contextReceipt: { ...contextReceipt, referenceRequest: verified.referenceReceipt },
           coreModelFingerprint: coreModel.fingerprint,
           trendGeneratedAt: generatedAt,
           trendFingerprint: trend.fingerprint
@@ -732,11 +744,13 @@ export function createReviewChatWorkflows({
           throw new Error("先留下一条状态、健康、捕念、日记或思绪记录，再开始认知复盘");
         }
         const citationEvidence = analysisSources(evidence);
-        const result = await generate(reflectionPrompt({
+        const referenceRequest = prepareReferenceRequest(reflectionPrompt({
           personalContext: stableContext(coreModel, trend.trend, personalContext.prompt),
-          reflectionData: citationEvidence.reflectionData,
-          evidenceLevel: evidence.evidenceLevel
-        }), {
+          reflectionData: citationEvidence.reflectionData, evidenceLevel: evidence.evidenceLevel
+        }), answerCitationSources(coreModel.model, [
+          ...trendCitationSources(trend.trend), ...citationEvidence.sources
+        ]), JSON.stringify([getAccountId(), clientRequestId, personalContext.receipt, evidenceHash]));
+        const result = await generate(referenceRequest.prompt, {
           scene: "analysis",
           json: true,
           systemPrompt: citationSystemPrompt(
@@ -744,7 +758,7 @@ export function createReviewChatWorkflows({
             "reflectionData 中明确标记的 citationId 对应本轮获准的思绪、追问、回答或行动反馈原文。"
           ),
           captureReasoning: true,
-          contextReceipt: personalContext.receipt
+          contextReceipt: { ...personalContext.receipt, referenceRequest: referenceRequest.receipt }
         });
         const freshness = {
           reason,
@@ -755,19 +769,18 @@ export function createReviewChatWorkflows({
           trendFingerprint: trend.fingerprint
         };
         assertAnalysisCurrent(await repository.read(), freshness);
-        const verified = parseVerifiedAnswer(result.content, answerCitationSources(coreModel.model, [
-          ...trendCitationSources(trend.trend),
-          ...citationEvidence.sources
-        ]));
+        const verified = verifyReferenceAnswer(result.content, referenceRequest);
         return {
           reason,
           content: verified.content,
           ...(verified.citations ? {
             citations: verified.citations,
-            citationStatus: verified.citationStatus
+            citationStatus: verified.citationStatus,
+            providedReferences: verified.providedReferences,
+            rejectedReferences: verified.rejectedReferences
           } : {}),
           reasoningContent: result.reasoningContent,
-          contextReceipt: personalContext.receipt,
+          contextReceipt: { ...personalContext.receipt, referenceRequest: verified.referenceReceipt },
           evidenceHash,
           coreModelFingerprint: coreModel.fingerprint,
           trendGeneratedAt: generatedAt,

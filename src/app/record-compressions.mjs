@@ -175,7 +175,20 @@ export function createRecordCompressionService({
         return;
       }
       const known = entries.filter(entry => entry.costKnown === true && Number.isFinite(entry.costCny));
+      let summaryBudget = {};
+      if (task.payload?.operation !== HISTORICAL_SUPPLEMENT_OPERATION && task.status === "succeeded") {
+        try {
+          const summary = list((await repository.read()).recordCompressions).find(item => item.id === task.resultId);
+          if (summary?.tokenUsage?.scope === "model_summary") summaryBudget = {
+            summaryBudgetLevel: summary.tokenUsage.budgetLevel || "ok",
+            summaryTokens: summary.tokenUsage.outputTokens,
+            summaryWarnTokens: summary.tokenUsage.warnTokens,
+            summaryHardTokens: summary.tokenUsage.hardTokens
+          };
+        } catch { summaryBudget = { summaryBudgetReadFailed: true }; }
+      }
       await settlementObserver({
+        ...summaryBudget,
         status: task.status, operation: task.payload?.operation || DAILY_OPERATION,
         localDate: task.payload?.localDate, taskId: task.id, errorCode: task.errorCode || "",
         knownSpentCny: known.reduce((sum, entry) => sum + entry.costCny, 0),

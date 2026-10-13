@@ -427,7 +427,8 @@
       "publicEntry": "src/modules/record-compressions/index.mjs",
       "allowedDependencies": [
         "shared.time",
-        "shared.validation"
+        "shared.validation",
+        "shared.ai-context"
       ],
       "owns": {
         "data": [
@@ -714,7 +715,8 @@
       "root": "src/config",
       "publicEntry": "src/config/index.mjs",
       "allowedDependencies": [
-        "domain.record-compressions"
+        "domain.record-compressions",
+        "shared.ai-context"
       ],
       "owns": {
         "data": [
@@ -795,7 +797,8 @@
         "shared.concurrency",
         "shared.persistence",
         "shared.observability",
-        "frontend.pages"
+        "frontend.pages",
+        "shared.ai-context"
       ],
       "owns": {
         "data": [
@@ -2933,6 +2936,24 @@
         "scripts/api-v1-contract-regression.mjs",
         "scripts/auth-regression.mjs",
         "scripts/postgres-runtime-checks.mjs"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "shared.ai-context",
+      "type": "shared",
+      "root": "src/shared/ai-context",
+      "publicEntry": "src/shared/ai-context/index.mts",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "请求内真实来源映射、连续片段引用核验与内部预算配置/估算"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/answer-citations-regression.mjs",
+        "scripts/task-context-selection-regression.mjs"
       ],
       "status": "active"
     }

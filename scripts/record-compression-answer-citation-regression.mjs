@@ -124,9 +124,21 @@ function createHarness() {
     assert.equal(options.json, true, `${options.scene} must request JSON when it consumes trends`);
     assert.match(options.systemPrompt, /citationId/,
       `${options.scene} must receive the answer citation contract`);
-    const currentJournalId = prompt.match(/"citationId":"(current-journal:[^"]+)"/)?.[1];
+    const data = [...prompt.matchAll(/<(?:working_context_data|reference_context_data) format="application\/json">([\s\S]*?)<\/(?:working_context_data|reference_context_data)>/g)]
+      .map(match => JSON.parse(match[1]));
+    const aliasForText = (value, text) => {
+      if (Array.isArray(value)) return value.map(item => aliasForText(item, text)).find(Boolean);
+      if (!value || typeof value !== "object") return null;
+      if (/^r[1-9]\d*$/.test(value.citationId || "") && Object.entries(value).some(([key, item]) => (
+        ["text", "content", "exactQuote"].includes(key) && typeof item === "string" && item.includes(text)
+      ))) return value.citationId;
+      return Object.values(value).map(item => aliasForText(item, text)).find(Boolean);
+    };
+    const trendAlias = aliasForText(data, trendSource.text);
+    assert.ok(trendAlias, "actual supplied trend evidence has a request-local alias");
+    const currentJournalId = aliasForText(data, "回来后心情轻松一些");
     const citations = [{
-      citationId: trendSource.citationId,
+      citationId: trendAlias,
       exactQuote: trendSource.text
     }, {
       citationId: aiReferenceId,
@@ -140,10 +152,10 @@ function createHarness() {
       });
     }
     if (options.scene === "analysis") {
-      assert.match(prompt, /analysis:question:analysis-thought:2/,
-        "analysis evidence must expose its source citation ID in the prompt");
+      assert.doesNotMatch(prompt, /analysis:question:analysis-thought:2/,
+        "long analysis source IDs stay server-side");
       citations.push({
-        citationId: "analysis:question:analysis-thought:2",
+        citationId: aliasForText(data, thought.content),
         exactQuote: thought.content
       });
     }

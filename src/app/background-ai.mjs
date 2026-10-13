@@ -206,7 +206,8 @@ export function createBackgroundAi({
         isCurrent: async () => Boolean(await currentWork(taskId, work))
       });
       const result = work.contextReceipt && generated && typeof generated === "object" && !Array.isArray(generated)
-        ? { ...generated, contextReceipt: compactPersonalContextReceipt(work.contextReceipt) }
+        ? { ...generated, contextReceipt: { ...compactPersonalContextReceipt(work.contextReceipt),
+          ...(generated.referenceReceipt ? { referenceRequest: structuredClone(generated.referenceReceipt) } : {}) } }
         : generated;
       await repository.update(value => {
         const currentTask = value.aiTasks.find(item => item.id === taskId);

@@ -253,7 +253,11 @@ function reviewCheckins(values, currentDate, metricIds) {
 
 function receiptProjection(receipt) {
   if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) return null;
-  const tokenBudget = scalarFields(receipt.tokenBudget, ["limit", "estimatedUsed", "remaining", "estimation"]);
+  const tokenBudget = scalarFields(receipt.tokenBudget, ["limit", "estimatedUsed", "remaining", "estimation", "unit"]);
+  const referenceRequest = scalarFields(receipt.referenceRequest, [
+    "schemaVersion", "binding", "aliasMapSha256", "promptSha256", "promptBytes", "promptByteLimit", "unit", "providedCount", "coreModelProvided", "trendTokens", "evidenceTokens",
+    "trendBudgetLevel", "evidenceBudgetLevel", "truncatedSources"
+  ]);
   const sources = list(receipt.sources).slice(0, ROUTE_STATE_LIMITS.review.receiptSources).map(source => ({
     ...scalarFields(source, [
       "resourceType",
@@ -275,11 +279,12 @@ function receiptProjection(receipt) {
       ])
     } : {})
   }));
-  if (!sources.length && !Object.keys(tokenBudget).length) return null;
+  if (!sources.length && !Object.keys(tokenBudget).length && !Object.keys(referenceRequest).length) return null;
   return {
     ...scalarFields(receipt, ["version"]),
     ...(Object.keys(tokenBudget).length ? { tokenBudget } : {}),
-    ...(sources.length ? { sources } : {})
+    ...(sources.length ? { sources } : {}),
+    ...(Object.keys(referenceRequest).length ? { referenceRequest } : {})
   };
 }
 
@@ -290,10 +295,24 @@ function annotationReplyProjection(reply) {
   };
 }
 
+function referenceProjection(value) {
+  return {
+    ...(Array.isArray(value?.providedReferences) ? {
+      providedReferences: value.providedReferences.map(source => scalarFields(source, [
+        "citationId", "resourceType", "resourceId", "version", "recordType"
+      ]))
+    } : {}),
+    ...(Number.isSafeInteger(value?.providedReferenceCount) ? { providedReferenceCount: value.providedReferenceCount } : {}),
+    ...(Array.isArray(value?.citations) ? { citations: clone(value.citations) } : {}),
+    ...(value?.citationStatus ? { citationStatus: value.citationStatus } : {})
+  };
+}
+
 function annotationExchangeProjection(exchange) {
   const receipt = receiptProjection(exchange?.contextReceipt);
   return {
     ...scalarFields(exchange, ["id", "createdAt", "sourceTaskId", "clientRequestId"]),
+    ...referenceProjection(exchange),
     message: boundedText(exchange?.message, 6000),
     answer: boundedText(exchange?.answer, 6000),
     ...(receipt ? { contextReceipt: receipt } : {})
@@ -354,6 +373,7 @@ function analysisProjection(item) {
       "reviewedAt",
       "reviewDisposition"
     ]),
+    ...referenceProjection(item),
     content: content.slice(0, limits.analysisContentChars),
     ...(content.length > limits.analysisContentChars ? { contentTruncated: true } : {}),
     annotations: list(item?.annotations).slice(0, limits.annotationsPerAnalysis).map(annotationProjection),
