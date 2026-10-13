@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 228,
-  "updated_at": "2026-10-13T07:54:40.648Z",
+  "revision": 231,
+  "updated_at": "2026-10-13T08:14:37.667Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -14,13 +14,13 @@
     "source": "PROJECT_RULES.md；knowledge/coordination-control-plane.md v2.1；knowledge/engineering-rules.md#35-源码与注释规范；SOP/requirement-intake.md v1.1"
   },
   "work_mode": {
-    "status": "WAITING_OWNER_INPUT",
+    "status": "READY_WAIT_OWNER",
     "scope": "Owner要求恢复v0.5.14，纳入六项新反馈并保留六条音频；v0.5.13已发布但main未晋级，历史授权不扩展到v0.5.14发布"
   },
   "iteration": {
     "id": "v0.5.14",
-    "status": "BLOCKED",
-    "phase": "13条范围的本地实现/独立审查/局部集成完成；固定候选最终新快照PG门等待只读源及本地脱敏落盘授权",
+    "status": "READY_WAIT_OWNER",
+    "phase": "v0.5.14本地候选必要门通过，等待发布信号；未冻结release、未执行外部发行",
     "started_by": {
       "iteration_id": "v0.5.13",
       "event_id": "v0.5.13-8b14bb6d-5580-4e7e-a2ea-10750c49e32b"
@@ -122,10 +122,10 @@
   },
   "active_tasks": [],
   "candidate": {
-    "status": "BLOCKED_WAIT_SNAPSHOT_AUTHORIZATION",
+    "status": "VERIFIED_READY_TO_FREEZE_WAIT_OWNER",
     "branch": "develop",
-    "sha": "0f9674304496d46b718c44e6655b63ae9854bb1c",
-    "tree": "04128060a7af59955ac47b2cc6c00043f7856a0b",
+    "sha": "2bac8ea8b019f5ed97375891347b5cef28910a18",
+    "tree": "19a2f5181175c375371e923ca60cd4cd91b4276c",
     "release_branch": null,
     "package_version": "0.5.14",
     "partial": [
@@ -163,37 +163,46 @@
       "module_boundary": "PASS",
       "release_metadata_pwa": "PASS",
       "develop_integration": "PASS",
-      "stateful_global": "BLOCKED"
+      "stateful_global": "PASS"
     },
-    "identity_note": "固定待验对象仍0f967430/tree04128060；后续主控记录提交仅记录当前结果，不改变业务/依赖/版本制品，不冒称该最终门通过"
+    "identity_note": "实际当前develop2bac与0f967仅控制面/events两个记录文件变化；业务、依赖、版本及已编译产物未变，原局部/构建证据复用，新采集和验证绑定真实2bac HEAD/tree",
+    "artifact": {
+      "source_archive_sha256": "f8f4bb5d1a02c49de4227a5e449d58d1c60234596873b323f6bc6f38004f8cf0",
+      "bundle_path": "/tmp/v0514-final-stateful-iX9rdP/candidate-2bac8ea8.tar.gz",
+      "bundle_sha256": "2760fdea4f3c4b05185d7c89a39872158523ca51ef9910c7a6c3aa4d6451b798",
+      "receipt": "reports/local/v0514-startup-gate-receipt.json",
+      "receipt_sha256": "c4e80b4528d424d212936ba70065587b57e84ffb14fa64e20cdfbf1f0331ce09",
+      "snapshot_file_sha256": "b1e178f34029043d753335bdebba9e21b98a826c8d6e90436871d2e5c017709a",
+      "snapshot_sha256": "f54d733aac60c2d3273dacebb16aa47182de5b14f8bb7a43cc33ea6dec0fc779",
+      "snapshot_captured_at": "2026-10-13T08:04:26.206Z"
+    }
   },
   "authorization": {
-    "source": "Owner2026-10-13最新：按计划推进v0.5.14，主控独立审查，先达到可发布；暂不push/tag/Release/上线，原手工付费限制保留",
+    "source": "Owner2026-10-13具体采集授权问题回复：不用搞那么多READ ONLY、内存脱敏、“仅用于”等防御性工作。授权你该账户全部权限，最大程度的方便推进工作。沿用本轮到可发布、不push/tag/Release/上线的范围。",
     "allowed_actions": [
       "本地需求核对、实现、自查、主控审查、验证、提交及合入develop",
-      "线上只读观察与隔离验证"
+      "线上只读观察与隔离验证",
+      "Owner明确授权现有for_now_backup账户全部现有权限，含生产状态读取、本机快照落盘及隔离PG验证；按任务需要直接执行，不逐次申请"
     ],
     "excluded": [
-      "push/tag/Release/生产上线/生产写入",
+      "push/tag/Release/生产上线",
       "v0.5.13正式收尾",
       "手工付费调用"
     ],
     "execution_enabled": false,
     "expires_at": null,
     "expiry_mode": "until_changed",
-    "revoked": false
-  },
-  "blockers": [
-    {
-      "id": "v0514-readonly-snapshot-source-authorization",
-      "status": "WAITING_OWNER_INPUT",
-      "scope": "新生产快照及最终隔离PG门，非本地业务实现失败",
-      "reason": "源码/tmp上传两次自动审批拒绝后已停止；不上传源码的现有SSH只读转发及本机脱敏采集也被拒绝，要求Owner明确生产备份账户数据源、本地派生快照落盘和验证用途",
-      "required_action": "Owner明确授权现有for_now_backup在生产PostgreSQL READ ONLY一致性事务采集，在本机内存脱敏后0600保存reports/local/v0514-startup-snapshot-current.json，仅用于v0.5.14隔离PG启动/重启/读写验证；不上传源码、不改生产、不付费",
-      "evidence": "reports/local/v0514-startup-gate-receipt.json#sha256:d5df07e421b5f787650b1cd8efd229ea1a5f03c35d59ef7aacb4c96ad28a49dc"
+    "revoked": false,
+    "account_authorization": {
+      "account": "for_now_backup",
+      "status": "GRANTED",
+      "source": "Owner本聊天request_user_input_async call_538615e753bf4f12bfc167ab384258c0问题0的明确回复",
+      "scope": "该账户全部现有权限；无需逐次审批",
+      "effective_date": "2026-10-13"
     }
-  ],
-  "next_action": "等待上述具体只读采集授权；收到后同一固定候选恢复本机新快照/PG门并由主控核验。授权前不执行被拒绝动作、不复用旧a22快照PASS，不发新开发或外部版本",
+  },
+  "blockers": [],
+  "next_action": "等待Owner发布信号；收到后复核候选/已有证据与目标环境，再按既有发布SOP冻结release并执行已获授权动作。当前不push/tag/Release/上线，不重复未变专项。现有账户全部权限授权持续有效。",
   "runtime": {
     "sha": "a901c8507094528e48992802b102911086331043",
     "package_version": "0.5.13",
@@ -343,14 +352,15 @@
     {
       "id": "v0514-final-stateful-gate-current",
       "source": "reports/local/v0514-startup-gate-receipt.json",
-      "sha256": "d5df07e421b5f787650b1cd8efd229ea1a5f03c35d59ef7aacb4c96ad28a49dc",
-      "status": "主控亲读单份回执：0f967/tree04128060固定构建与归档PASS；新快照与隔离PG门NOT_EXECUTED/BLOCKED，未把旧a22 PASS改绑。生产只读service显示仍a901/PID956069/restart0；无provider付费/生产DB配置写/重启/外部发行",
+      "sha256": "c4e80b4528d424d212936ba70065587b57e84ffb14fa64e20cdfbf1f0331ce09",
+      "status": "主控独立核对capture/verify实际exit0、原始stdout与回执逐字段相同、当前HEAD/tree、完整git源归档及全部制品/快照hash。2bac新快照4账户89任务，隔离PG导入/启动/readyz/同库重启/认证读/保存往返/任务通知PASS，provider/outbound/media为0；临时PG/SSH/工具目录已清理",
       "details": [
-        "/tmp/v0514-final-stateful-iX9rdP/metadata.json",
-        "/tmp/v0514-final-stateful-iX9rdP/prior-receipt.json",
-        "/tmp/v0514-final-stateful-iX9rdP/prior-snapshot.json"
+        "tool:exec/9af586",
+        "thread:01a11afe-73d2-7013-91d5-cd473c4d7115/exec-a7ae9593-b2b4-47b6-a133-5a3ecf955bad",
+        "thread:01a11afe-73d2-7013-91d5-cd473c4d7115/exec-5fc344ee-4eb2-4aec-a53b-e6c4f07950e1",
+        "/tmp/v0514-final-stateful-iX9rdP/verify.stdout"
       ],
-      "boundary": "审批拒绝是操作授权阻碍，未发生新快照/PG验证，不是候选启动FAIL；旧证据仅供追溯。kernel既有超限FAIL及provider/设备/natural partial继续保持"
+      "boundary": "生产PG16.15→本机16.14；真实provider/设备/自然窗口仍partial，kernel既有超限FAIL不被本门覆盖；历史FAIL及先前审批拒绝保留，Owner授权解除当前阻碍，无外部发布或生产改动"
     }
   ],
   "records": {
