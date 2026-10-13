@@ -119,6 +119,7 @@ export function createCaptureOperations({
       stage = "validation";
       if (audioResult && !audio.isCurrentSubmission(audioResult)) throw abortFailure();
       const payload = publicValidation(() => ({
+        title: query("#capture-title")?.value || "",
         ...view.occurrenceFields(query("#capture-date")),
         ...captureRecordPayload({
           content: query("#capture-content").value,
@@ -306,7 +307,8 @@ export function createCaptureOperations({
       sourceType: "capture",
       sourceId,
       sourceVersion,
-      regenerate
+      regenerate,
+      generationRate: controls?.querySelector("[data-speech-generation-rate]")?.value
     });
     platform.audio.stopAll();
     button.disabled = true;

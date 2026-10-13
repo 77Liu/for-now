@@ -3,7 +3,8 @@ import {
   parseRecordCompressionOutput,
   RECORD_COMPRESSION_PROMPT_VERSION,
   RECORD_COMPRESSION_OUTPUT_BUDGETS,
-  estimateRecordCompressionTokens
+  estimateRecordCompressionTokens,
+  isRecordCompressionRecordEnvelope
 } from "../src/modules/record-compressions/index.mjs";
 
 const input = {
@@ -158,6 +159,69 @@ assert.equal(boundedSummary.tokenUsage.truncated, true);
 assert.ok(boundedSummary.warnings.some(value => value.includes("预算裁剪")));
 assert.ok(JSON.stringify(boundedSummary).length < JSON.stringify(oversizedOutput).length);
 assert.ok(estimateRecordCompressionTokens(boundedSummary.stableUserCandidates) <= RECORD_COMPRESSION_OUTPUT_BUDGETS.stableCandidateTokens);
+
+const modelProjection = value => ({
+  schemaVersion: value.schemaVersion,
+  daily: value.daily,
+  thoughtsIdeas: value.thoughtsIdeas,
+  other: value.other,
+  aiReference: value.aiReference,
+  conflicts: value.conflicts,
+  warnings: value.warnings
+});
+const longSourceId = "thought:thought:" + "a".repeat(64) + ":question:" + "b".repeat(64);
+const replaceSourceId = value => {
+  if (value === "U1") return longSourceId;
+  if (Array.isArray(value)) return value.map(replaceSourceId);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, replaceSourceId(item)]));
+  }
+  return value;
+};
+const statisticalInput = replaceSourceId({
+  ...input,
+  metrics: Array.from({ length: 11 }, (_, index) => ({
+    ...input.metrics[0], metric: `measurement_${index}`, sourceIds: ["U1"]
+  }))
+});
+const statisticalOutput = replaceSourceId({
+  ...rawOutput,
+  daily: { ...rawOutput.daily, metricKeys: statisticalInput.metrics.map(item => item.metric) }
+});
+const statisticalSummary = parseRecordCompressionOutput(statisticalOutput, {
+  input: statisticalInput, id: "statistics-with-long-ids", generatedAt: "2026-10-10T08:02:00.000Z"
+});
+assert.ok(estimateRecordCompressionTokens({
+  window: statisticalInput.window, coverage: statisticalInput.coverage, metrics: statisticalInput.metrics
+}) > RECORD_COMPRESSION_OUTPUT_BUDGETS.totalTokens, "fixed statistics reproduce the impossible old budget");
+assert.deepEqual(statisticalSummary.metrics, statisticalInput.metrics, "all server measurements remain exact");
+assert.deepEqual(statisticalSummary.coverage, statisticalInput.coverage);
+assert.equal(statisticalSummary.tokenUsage.scope, "model_summary");
+assert.equal(statisticalSummary.tokenUsage.outputTokens, estimateRecordCompressionTokens(modelProjection(statisticalSummary)));
+assert.equal(statisticalSummary.tokenUsage.serverStatisticsTokens, estimateRecordCompressionTokens({
+  window: statisticalSummary.window, coverage: statisticalSummary.coverage, metrics: statisticalSummary.metrics
+}));
+assert.ok(statisticalSummary.tokenUsage.outputTokens <= RECORD_COMPRESSION_OUTPUT_BUDGETS.totalTokens);
+assert.ok(statisticalSummary.daily.observations.length + statisticalSummary.thoughtsIdeas.focus.length > 0,
+  "fitting must preserve usable source-bound content rather than only pass an empty summary");
+const persistedSummary = JSON.parse(JSON.stringify({
+  ...statisticalSummary, localDate: statisticalInput.window.localDate, sourceRefs: []
+}));
+assert.deepEqual(persistedSummary.metrics, statisticalInput.metrics);
+assert.equal(isRecordCompressionRecordEnvelope(persistedSummary, { ready: true }), true);
+assert.equal(isRecordCompressionRecordEnvelope({
+  ...persistedSummary, tokenUsage: { ...persistedSummary.tokenUsage, scope: "unknown" }
+}, { ready: true }), false);
+assert.equal(isRecordCompressionRecordEnvelope({
+  ...persistedSummary, tokenUsage: { ...persistedSummary.tokenUsage, serverStatisticsTokens: undefined }
+}, { ready: true }), false);
+const legacyUsage = { ...persistedSummary.tokenUsage };
+delete legacyUsage.scope;
+delete legacyUsage.serverStatisticsTokens;
+assert.equal(isRecordCompressionRecordEnvelope({ ...persistedSummary, tokenUsage: legacyUsage }, { ready: true }), true);
+assert.equal(isRecordCompressionRecordEnvelope({
+  ...persistedSummary, tokenUsage: { ...legacyUsage, outputTokens: RECORD_COMPRESSION_OUTPUT_BUDGETS.totalTokens + 1 }
+}, { ready: true }), false);
 
 assert.throws(() => parseRecordCompressionOutput("not json", { input }), /不是有效 JSON/);
 assert.throws(() => parseRecordCompressionOutput("{}", { input }), /版本无效/);

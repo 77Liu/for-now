@@ -323,4 +323,42 @@ assert.deepEqual(retryEstimate.map(stage => ({
   )), false);
 }
 
+// 仅证明未启动provider的已知额度拒绝才带等待标记。
+for (const code of ["AI_DAILY_CALL_LIMIT", "AI_RECORD_COMPRESSION_DAILY_LIMIT", "AI_SITE_DAILY_COST_LIMIT"]) {
+  const error = Object.assign(new Error("quota admission"), { code });
+  const budget = createBudgetDouble({ reserveError: error });
+  let executed = false;
+  await assert.rejects(createAiBudgetRuntime({ budget }).executeTask(plan(`admission-${code}`), async () => { executed = true; }), caught => {
+    assert.equal(caught.budgetAdmissionRejected, true);
+    return true;
+  });
+  assert.equal(executed, false);
+  assert.deepEqual(budget.calls.map(call => call.type), ["reserve"]);
+}
+for (const code of ["AI_BUDGET_RESERVATION_CONFLICT", "AI_RECORD_COMPRESSION_COST_UNKNOWN", "INVALID_PLAN"]) {
+  const error = Object.assign(new Error("not quota"), { code });
+  await assert.rejects(createAiBudgetRuntime({ budget: createBudgetDouble({ reserveError: error }) })
+    .executeTask(plan(`nonquota-${code}`), async () => {}), caught => {
+      assert.equal(caught.budgetAdmissionRejected, undefined);
+      return true;
+    });
+}
+const preStageBudget = createBudgetDouble();
+await assert.rejects(createAiBudgetRuntime({ budget: preStageBudget }).executeTask(plan("quota-before-stage"), async () => {
+  throw Object.assign(new Error("generation reserveAttempt quota"), { code: "AI_DAILY_CALL_LIMIT" });
+}), error => { assert.equal(error.budgetAdmissionRejected, true); return true; });
+assert.deepEqual(preStageBudget.calls.map(call => call.type), ["reserve", "release"]);
+const paidStageBudget = createBudgetDouble();
+await assert.rejects(createAiBudgetRuntime({ budget: paidStageBudget }).executeTask(plan("quota-after-stage"), async ({ runStage }) => {
+  await runStage("deepseek-attempt-1", async () => {
+    throw Object.assign(new Error("paid/unknown result"), { code: "AI_DAILY_CALL_LIMIT", budgetAdmissionRejected: true });
+  });
+}), error => { assert.equal(error.budgetAdmissionRejected, undefined); return true; });
+assert.deepEqual(paidStageBudget.calls.map(call => call.type), ["reserve", "start", "settle"]);
+const failedReleaseBudget = createBudgetDouble();
+failedReleaseBudget.releaseTask = async () => { throw new Error("release failed"); };
+await assert.rejects(createAiBudgetRuntime({ budget: failedReleaseBudget }).executeTask(plan("quota-release-failed"), async () => {
+  throw Object.assign(new Error("quota before IO"), { code: "AI_DAILY_CALL_LIMIT" });
+}), error => { assert.ok(error instanceof AggregateError); assert.equal(error.budgetAdmissionRejected, undefined); return true; });
+
 console.log("AI budget runtime regression passed: peak estimates, execution lifecycle, retries, actual usage costs, settlement safety and startup recovery.");

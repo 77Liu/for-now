@@ -118,16 +118,18 @@ const quotes = {
   create: async () => ({}),
   update: async () => ({})
 };
+const fullAsrText = "完整的合成转写内容。".repeat(500);
 const speechProvider = {
   configured: true,
   supportedAsrMimeTypes: ["audio/mp4", "audio/ogg", "audio/wav"],
   async prepareAsrAudio() {
     return { audio: wav, mimeType: "audio/wav" };
   },
-  async transcribe() {
+  async transcribe(options) {
+    assert.equal(options.maxDurationMs, 600000, "pass the existing application duration budget to the transport");
     return {
       provider: "speech-double",
-      rawText: "原始转写",
+      rawText: fullAsrText,
       providerRequestId: "speech-request",
       durationMs: 1234
     };
@@ -239,12 +241,10 @@ function createHarness({ visionConfigured }) {
     }),
     currentBudgetAccountId: accountId,
     async meteredProviderCall(details, invoke, summarize, budgetContext) {
-      providerCalls.push({
-        details: clone(details),
-        budgetContext: clone(budgetContext)
-      });
+      const call = { details: clone(details), budgetContext: clone(budgetContext) };
+      providerCalls.push(call);
       const result = await invoke();
-      summarize?.(result);
+      call.summary = summarize?.(result);
       return result;
     },
     runDeepSeek,
@@ -520,10 +520,16 @@ try {
       polishedText: transcription.polishedText,
       condensedText: transcription.condensedText
     }, {
-      rawText: "原始转写",
+      rawText: fullAsrText,
       polishedText: "润色转写",
       condensedText: "精简转写"
     });
+    const asrCall = configured.providerCalls.at(-1);
+    assert.equal(asrCall.details.action, "flashAsr");
+    assert.equal(asrCall.details.units, 600000, "reserve the existing maximum recording duration");
+    assert.deepEqual(asrCall.summary, {
+      providerRequestId: "speech-request", unitType: "audioMillisecond", units: 1234
+    }, "bill the measured provider duration and preserve its request identity");
     assert.deepEqual(
       configured.budgetPlans.at(-1).stages.map(stage => [
         stage.id,

@@ -158,7 +158,9 @@ export function createSpeechHttp({
       throw failure("朗读来源版本无效", "INVALID_SPEECH_SOURCE_VERSION", 400);
     }
     const speechSettings = (await readSettings())?.speech || {};
-    const generationRate = normalizeTtsGenerationRate(speechSettings.generationRate);
+    const generationRate = normalizeTtsGenerationRate(
+      Object.hasOwn(input, "generationRate") ? input.generationRate : speechSettings.generationRate
+    );
     const voice = resolveConfiguredTtsVoice(speechSettings.defaultVoice, speech);
     const result = cache
       ? await cache.synthesize({

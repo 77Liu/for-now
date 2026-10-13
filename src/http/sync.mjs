@@ -76,13 +76,12 @@ export function createSyncHttp({ repository, publicState }) {
   }
 
   async function snapshotAfter(after, waitMs) {
-    const deadline = Date.now() + waitMs;
-    while (true) {
-      const snapshot = await repository.readSyncSnapshot();
-      const sync = snapshot.metadata.sync;
-      if (sync.cursor > after || Date.now() >= deadline) return snapshot;
-      await pause(Math.min(100, Math.max(1, deadline - Date.now())));
-    }
+    const snapshot = await repository.readSyncSnapshot();
+    if (snapshot.metadata.sync.cursor > after || waitMs === 0) return snapshot;
+
+    // 长轮询等待期间不反复占用数据库连接；写入后的即时拉取仍使用 waitMs=0。
+    await pause(waitMs);
+    return repository.readSyncSnapshot();
   }
 
   async function handleV1(req, res, url, v1) {

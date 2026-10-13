@@ -1,3 +1,5 @@
+import { createAiGenerator } from "../src/modules/ai/index.mjs";
+import { createDeepSeekTransport } from "../src/infrastructure/ai-providers/index.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import "./prompt-test-setup.mjs";
@@ -95,6 +97,36 @@ const repository = {
   }
 };
 
+// 使用真实transport/generator的返回契约，避免mock总返回对象掩盖纯字符串响应。
+const providerAudits = [];
+const generator = createAiGenerator({
+  readSettings: async () => ({ apiKey: "synthetic-no-network-key" }),
+  getContext: () => ({ user: { id: "account-a" }, secrets: [] }),
+  reserveAttempt: async () => ({ release() {}, commit() {} }),
+  gate: { acquire: async () => () => {} },
+  audit: {
+    text: value => value,
+    message: value => value,
+    start: async () => {},
+    recordDeepSeekAttempt: async entry => { providerAudits.push(entry); }
+  },
+  provider: createDeepSeekTransport({
+    endpoint: "https://synthetic.invalid/chat/completions",
+    fetchImpl: async (_url, options) => {
+      const request = JSON.parse(options.body);
+      assert.equal(request.response_format.type, "json_object");
+      const content = request.messages.some(message => String(message.content)
+        .includes("historical-user-supplement-output.v1"))
+        ? JSON.stringify({ schemaVersion: "historical-user-supplement-output.v1", candidates: [] })
+        : emptyCompressionOutput();
+      return new Response(JSON.stringify({
+        choices: [{ finish_reason: "stop", message: { content, reasoning_content: "合成思考，不应保存" } }],
+        usage: { prompt_tokens: 10, completion_tokens: 10 }
+      }));
+    }
+  })
+});
+
 const runtime = createContentRuntime({
   repository,
   trashRetentionDays: 30,
@@ -115,16 +147,16 @@ const runtime = createContentRuntime({
         const request = {
           prompt,
           signal: options.signal,
-          resolve: () => resolve({ content: emptyCompressionOutput() })
+          resolve: () => resolve(emptyCompressionOutput())
         };
         pendingCompressionCalls.push(request);
         if (options.signal?.aborted) abort();
         else options.signal?.addEventListener("abort", abort, { once: true });
       });
     }
-    return {
-      content: emptyCompressionOutput()
-    };
+    const result = await generator(prompt, options);
+    assert.equal(typeof result, "string", "captureReasoning:false必须沿真实generator返回字符串");
+    return result;
   },
   async readAiUsage() { return { entries: [] }; },
   recordCompressionDailyBudgetCny: 1,
@@ -168,6 +200,9 @@ assert.equal(typeof calls[0].isCurrent, "function",
 assert.equal(firstTask.status, "succeeded");
 const firstSummary = store.recordCompressions.find(item => item.id === firstTask.payload.recordId);
 assert.equal(firstSummary.status, "ready");
+assert.equal(Boolean(firstSummary.generatedAt), true);
+assert.equal(providerAudits[0].audit.status, "success");
+assert.equal(JSON.stringify(firstSummary).includes("合成思考"), false);
 assert.equal(firstSummary.sourceManifest.length, 1);
 assert.equal(firstSummary.tokenUsage.outputTokens <= 900, true);
 
@@ -546,18 +581,18 @@ const firstHistoryBatch = await runtime.runRecordCompressionScan({
   asOf: now(), slot: "backfill", backfillDates: 2, maxQueued: 1
 });
 assert.equal(firstHistoryBatch.queuedCount, 1);
-assert.deepEqual(datesForTasks(firstHistoryBatch.taskIds), ["2026-10-04"],
-  "first-run history must begin with the oldest missing dates in the seven-day window");
+assert.deepEqual(datesForTasks(firstHistoryBatch.taskIds), ["2026-10-08"],
+  "first-run history must begin with the newest missing date in the seven-day window");
 const secondHistoryBatch = await runtime.runRecordCompressionScan({
   asOf: now(), slot: "backfill", backfillDates: 2, maxQueued: 1
 });
 assert.equal(secondHistoryBatch.queuedCount, 1);
-assert.deepEqual(datesForTasks(secondHistoryBatch.taskIds), ["2026-10-05"]);
+assert.deepEqual(datesForTasks(secondHistoryBatch.taskIds), ["2026-10-07"]);
 const thirdHistoryBatch = await runtime.runRecordCompressionScan({
   asOf: now(), slot: "backfill", backfillDates: 2, maxQueued: 2
 });
 assert.equal(thirdHistoryBatch.queuedCount, 2);
-assert.deepEqual(datesForTasks(thirdHistoryBatch.taskIds), ["2026-10-06", "2026-10-07"]);
+assert.deepEqual(datesForTasks(thirdHistoryBatch.taskIds), ["2026-10-06", "2026-10-05"]);
 const accountBudgetCap = await runtime.runRecordCompressionScan({
   asOf: now(), slot: "backfill", backfillDates: 2, maxQueued: 1
 });
@@ -575,7 +610,7 @@ const finalHistoryBatch = await runtime.runRecordCompressionScan({
   asOf: now(), slot: "backfill", backfillDates: 2, maxQueued: 1
 });
 assert.equal(finalHistoryBatch.queuedCount, 1);
-assert.deepEqual(datesForTasks(finalHistoryBatch.taskIds), ["2026-10-08"]);
+assert.deepEqual(datesForTasks(finalHistoryBatch.taskIds), ["2026-10-04"]);
 await runTasks(finalHistoryBatch.taskIds);
 
 const sevenDayDates = Array.from({ length: 7 }, (_, index) => `2026-10-${String(index + 4).padStart(2, "0")}`);
@@ -656,14 +691,14 @@ const olderDailyFirst = await runtime.runRecordCompressionScan({
   asOf: now(), slot: "backfill", backfillDates: 1, maxQueued: 1
 });
 assert.equal(olderDailyFirst.queuedCount, 1);
-assert.deepEqual(datesForTasks(olderDailyFirst.taskIds), ["2026-09-01"],
-  "daily backfill progresses to the oldest eligible source beyond the recent seven-day window");
+assert.deepEqual(datesForTasks(olderDailyFirst.taskIds), ["2026-09-30"],
+  "daily backfill progresses to the newest eligible source beyond the recent seven-day window");
 await runTasks(olderDailyFirst.taskIds);
 const olderDailySecond = await runtime.runRecordCompressionScan({
   asOf: now(), slot: "backfill", backfillDates: 1, maxQueued: 1
 });
 assert.equal(olderDailySecond.queuedCount, 1);
-assert.deepEqual(datesForTasks(olderDailySecond.taskIds), ["2026-09-30"],
+assert.deepEqual(datesForTasks(olderDailySecond.taskIds), ["2026-09-01"],
   "later bounded scans continue to another older source date without repeating completed dates");
 await runTasks(olderDailySecond.taskIds);
 

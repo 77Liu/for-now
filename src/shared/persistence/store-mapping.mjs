@@ -28,6 +28,13 @@ const CHILD_KINDS = {
   replies: "annotationReply", shenji: "annotationExchange"
 };
 const RESOURCE_COLLECTIONS = Object.fromEntries(Object.entries(COLLECTIONS).map(([key, value]) => [value, key]));
+const OPTIONAL_AI_TASK_TARGET_KINDS = new Set([
+  "thoughtDraft",
+  "thoughtPrompt",
+  "journalAssist",
+  "chat",
+  "analysis"
+]);
 const PERSISTENCE_FIELD = "_persistence";
 const own = (object, key) => Object.hasOwn(object, key);
 const objectValue = value => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -81,6 +88,71 @@ export function canonicalJson(value) {
 }
 
 export const storeContentSha256 = store => crypto.createHash("sha256").update(canonicalJson(store)).digest("hex");
+
+/**
+ * 生成型任务的目标可只是结果标识，允许实体暂不存在；实体型主/子目标仍需存在。
+ * 通知通过 taskId 还原任务语义，嵌套目标另保留 mapper 的既有 identity fallback。
+ * required 仅描述活动状态下的持久化约束，不替代恢复时独立检查 requiresExisting*。
+ */
+export function aiTaskTargetReference(store, task) {
+  const sourceTask = task?.kind === "aiTask"
+    ? store?.aiTasks?.find(item => item?.id === task.taskId)
+    : null;
+  const taskKind = sourceTask?.kind || task?.kind;
+  const taskPayload = sourceTask?.payload || task?.payload;
+  if (task?.kind === "onboardingClaimExtraction") {
+    return {
+      collection: "onboardingV2",
+      id: "onboardingV2",
+      targetKey: keyOf(["onboardingV2"]),
+      targetOptional: false,
+      requiresExistingTarget: true,
+      requiresExistingSubtarget: false,
+      required: ["queued", "running"].includes(task.status),
+      exists: Boolean(store?.onboardingV2 && typeof store.onboardingV2 === "object"),
+      subtargetExists: true
+    };
+  }
+
+  const collection = own(RESOURCE_COLLECTIONS, task?.resourceType)
+    ? RESOURCE_COLLECTIONS[task.resourceType]
+    : (["thoughtAnswer", "followUpAnswer"].includes(taskKind) ? "thoughts" : "");
+  if (!collection) return null;
+
+  const id = String(task.targetId ?? sourceTask?.targetId ?? "");
+  const targetKey = keyOf([collection, id]);
+  const optionalHistoricalCompression = taskKind === "recordCompression"
+    && taskPayload?.operation === "historicalSupplement";
+  const targetOptional = OPTIONAL_AI_TASK_TARGET_KINDS.has(taskKind) || optionalHistoricalCompression;
+  const targetItems = Array.isArray(store?.[collection]) ? store[collection] : [];
+  const targetItem = targetItems.find(item => (
+    collection === "attachmentCleanup" ? item?.path === id : item?.id === id
+  ));
+  const targetExists = Boolean(targetItem);
+  const subtargetField = taskKind === "followUpAnswer" ? "followUps" : "annotations";
+  const requiresExistingSubtarget = ["followUpAnswer", "annotationShenji"].includes(taskKind)
+    || (taskKind === "contentImageUnderstanding" && taskPayload?.targetType === "comment");
+  const subtargetId = String(task.subtargetId ?? sourceTask?.subtargetId ?? "");
+  const subtargetExists = !requiresExistingSubtarget || (
+    Array.isArray(targetItem?.[subtargetField])
+    && targetItem[subtargetField].some(item => item?.id === subtargetId)
+  );
+
+  return {
+    collection,
+    id,
+    targetKey,
+    targetOptional,
+    requiresExistingTarget: !targetOptional,
+    requiresExistingSubtarget,
+    required: ["queued", "running"].includes(sourceTask?.status || task.status) && !targetOptional,
+    exists: targetExists,
+    subtargetId,
+    subtargetField,
+    subtargetTargetKey: keyOf([collection, id, subtargetField, subtargetId]),
+    subtargetExists
+  };
+}
 
 export function mapStoreObjects(accountId, store) {
   // Reject values that JSON/JSONB would silently change.
@@ -314,22 +386,32 @@ export function mapStoreObjects(accountId, store) {
     if (row.kind === "journalDraft" && item.journalId) link(row, "journal", "journals", item.journalId, true);
     if (row.kind === "notification") link(row, "task", "aiTasks", item.taskId);
     if (row.kind === "aiTask" || row.kind === "notification") {
-      if (item.kind === "onboardingClaimExtraction") {
-        const required = row.kind === "aiTask" && ["queued", "running"].includes(item.status);
-        link(row, "target", "onboardingV2", "onboardingV2", required, keyOf(["onboardingV2"]));
-      }
-      const collection = own(RESOURCE_COLLECTIONS, item.resourceType) ? RESOURCE_COLLECTIONS[item.resourceType]
-        : (["thoughtAnswer", "followUpAnswer"].includes(item.kind) ? "thoughts" : "");
-      if (collection) {
-        const required = row.kind === "aiTask" && ["queued", "running"].includes(item.status);
-        link(row, "target", collection, item.targetId, required);
+      const targetReference = aiTaskTargetReference(store, item);
+      if (targetReference) {
+        const required = row.kind === "aiTask" && targetReference.required;
+        link(
+          row,
+          "target",
+          targetReference.collection,
+          targetReference.id,
+          required,
+          targetReference.targetKey
+        );
+        const collection = targetReference.collection;
         const childField = item.kind === "followUpAnswer" || (row.kind === "notification" && identities.has(keyOf([collection, item.targetId, "followUps", item.subtargetId])))
           ? "followUps" : "annotations";
-        const requiresSubtarget = required && (
-          ["followUpAnswer", "annotationShenji"].includes(item.kind)
-          || (item.kind === "contentImageUnderstanding" && item.payload?.targetType === "comment")
+        const subtargetTargetKey = row.kind === "notification"
+          ? keyOf([collection, item.targetId, childField, item.subtargetId])
+          : targetReference.subtargetTargetKey;
+        const requiresSubtarget = required && targetReference.requiresExistingSubtarget;
+        link(
+          row,
+          "subtarget",
+          collection,
+          targetReference.subtargetId,
+          requiresSubtarget,
+          subtargetTargetKey
         );
-        link(row, "subtarget", collection, item.subtargetId, requiresSubtarget, keyOf([collection, item.targetId, childField, item.subtargetId]));
         const resultKey = item.kind === "followUpAnswer" ? keyOf([collection, item.targetId, "followUps", item.resultId])
           : item.kind === "annotationShenji" ? keyOf([collection, item.targetId, "annotations", item.subtargetId, "shenji", item.resultId])
             : keyOf([collection, item.resultId]);

@@ -203,6 +203,7 @@ export const captureJournalComponents = Object.freeze({
       ],
       properties: {
         ...eventTimeProperties,
+        title: { type: "string", maxLength: 120 },
         content: { type: "string", maxLength: 12000 },
         attachmentPaths: { type: "array", maxItems: 2, uniqueItems: true, items: { $ref: "#/components/schemas/ContentAttachmentPath" } },
         audio: { anyOf: [{ $ref: "#/components/schemas/CaptureAudio" }, { type: "null" }] },
@@ -214,6 +215,7 @@ export const captureJournalComponents = Object.freeze({
       type: "object",
       properties: {
         ...eventTimeProperties,
+        title: { type: "string", maxLength: 120 },
         content: { type: "string", maxLength: 12000 },
         attachmentPaths: { type: "array", maxItems: 2, uniqueItems: true, items: { $ref: "#/components/schemas/ContentAttachmentPath" } },
         audio: { anyOf: [{ $ref: "#/components/schemas/CaptureAudio" }, { type: "null" }] },
@@ -226,6 +228,7 @@ export const captureJournalComponents = Object.freeze({
       required: ["id", "createdAt", "occurredAt", "occurredOn", "content", "tags", "version"],
       properties: {
         ...eventTimeProperties,
+        title: { type: "string", maxLength: 120 },
         content: { type: "string", maxLength: 12000 },
         attachmentPaths: { type: "array", maxItems: 2, uniqueItems: true, items: { $ref: "#/components/schemas/ContentAttachmentPath" } },
         audio: { anyOf: [{ $ref: "#/components/schemas/CaptureAudio" }, { type: "null" }] },

@@ -76,13 +76,17 @@ if [ ! -f "$release/.deploy-ready" ]; then
     exit 1
   fi
   release_guard chown -R for-now:for-now "$candidate"
-  release_guard sudo -u for-now /usr/local/bin/npm --prefix "$candidate" ci --omit=dev
+  release_guard sudo -u for-now /usr/local/bin/npm --prefix "$candidate" ci
+  release_guard sudo -u for-now /usr/local/bin/npm --prefix "$candidate" run build:runtime
+  release_guard sudo -u for-now /usr/local/bin/npm --prefix "$candidate" prune --omit=dev
   /usr/local/bin/node --check "$candidate/server.mjs"
   while IFS= read -r module_file; do
     /usr/local/bin/node --check "$module_file"
   done < <(/usr/bin/find "$candidate/src" "$candidate/public/frontend" -type f -name '*.mjs')
   /usr/local/bin/node --check "$candidate/public/app.js"
   /usr/local/bin/node --check "$candidate/scripts/monitor-health.mjs"
+  /usr/local/bin/node --check "$candidate/.build/typescript/monitor/monitor-journal-context.mjs"
+  /usr/local/bin/node --check "$candidate/.build/typescript/monitor/monitor-host-metrics.mjs"
   /usr/local/bin/node --check "$candidate/scripts/validate-restored-data.mjs"
   /usr/local/bin/node --check "$candidate/scripts/oss-attachment-smoke.mjs"
   /usr/local/bin/node --check "$candidate/scripts/aliyun-segmentation-smoke.mjs"
@@ -148,7 +152,10 @@ managed_files=(
   /etc/systemd/system/for-now-backup.service
   /etc/systemd/system/for-now-backup.timer
   /etc/systemd/system/for-now-monitor.service
+  /etc/systemd/system/for-now-monitor-journal-context.service
   /etc/systemd/system/for-now-monitor.timer
+  /etc/systemd/system/for-now-host-metrics.service
+  /usr/local/lib/for-now/monitor-journal-context.mjs
   /usr/local/sbin/for-now-backup
   /usr/local/sbin/for-now-restore-drill
   /usr/local/sbin/for-now-migrate-attachments
@@ -164,6 +171,10 @@ done
 switched=0
 monitor_was_enabled=0
 if systemctl is-enabled --quiet for-now-monitor.timer 2>/dev/null; then monitor_was_enabled=1; fi
+host_metrics_was_enabled=0
+host_metrics_was_active=0
+if systemctl is-enabled --quiet for-now-host-metrics.service 2>/dev/null; then host_metrics_was_enabled=1; fi
+if systemctl is-active --quiet for-now-host-metrics.service 2>/dev/null; then host_metrics_was_active=1; fi
 rollback() {
   status=$?
   trap - EXIT
@@ -176,6 +187,10 @@ rollback() {
   release_guard systemctl daemon-reload
   if [ "$monitor_was_enabled" -eq 1 ]; then release_guard systemctl enable --now for-now-monitor.timer
   else release_guard systemctl disable --now for-now-monitor.timer; fi
+  if [ "$host_metrics_was_enabled" -eq 1 ]; then release_guard systemctl enable for-now-host-metrics.service
+  else release_guard systemctl disable for-now-host-metrics.service; fi
+  if [ "$host_metrics_was_active" -eq 1 ]; then release_guard systemctl restart for-now-host-metrics.service
+  else release_guard systemctl stop for-now-host-metrics.service; fi
   if [ "$switched" -eq 1 ]; then
     if [ -n "$previous" ] && [ -d "$previous" ]; then
       release_guard ln -sfn "$previous" "$base/.app-rollback"
@@ -206,7 +221,12 @@ release_guard install -o root -g root -m 0644 "$release/deploy/for-now.service" 
 release_guard install -o root -g root -m 0644 "$release/deploy/for-now-backup.service" /etc/systemd/system/for-now-backup.service
 release_guard install -o root -g root -m 0644 "$release/deploy/for-now-backup.timer" /etc/systemd/system/for-now-backup.timer
 release_guard install -o root -g root -m 0644 "$release/deploy/for-now-monitor.service" /etc/systemd/system/for-now-monitor.service
+release_guard install -d -o root -g for-now -m 0750 /var/lib/for-now-monitor-journal
+release_guard install -d -o root -g root -m 0755 /usr/local/lib/for-now
+release_guard install -o root -g root -m 0644 "$release/deploy/for-now-monitor-journal-context.service" /etc/systemd/system/for-now-monitor-journal-context.service
+release_guard install -o root -g root -m 0644 "$release/.build/typescript/monitor/monitor-journal-context.mjs" /usr/local/lib/for-now/monitor-journal-context.mjs
 release_guard install -o root -g root -m 0644 "$release/deploy/for-now-monitor.timer" /etc/systemd/system/for-now-monitor.timer
+release_guard install -o root -g root -m 0644 "$release/deploy/for-now-host-metrics.service" /etc/systemd/system/for-now-host-metrics.service
 release_guard install -o root -g root -m 0755 "$release/deploy/backup-to-oss.sh" /usr/local/sbin/for-now-backup
 release_guard install -o root -g root -m 0755 "$release/deploy/restore-drill.sh" /usr/local/sbin/for-now-restore-drill
 release_guard install -o root -g root -m 0755 "$release/deploy/migrate-attachments-to-oss.sh" /usr/local/sbin/for-now-migrate-attachments
@@ -237,6 +257,7 @@ for attempt in $(seq 1 30); do
   if curl -fsS http://127.0.0.1:4173/readyz >/dev/null 2>&1; then
     release_guard systemctl reload nginx
     release_guard systemctl enable --now for-now-monitor.timer
+    release_guard systemctl enable --now for-now-host-metrics.service
     trap release_fence_cleanup EXIT
     rm -rf "$rollback_dir"
     # Keep both the active release and the immediate rollback target.

@@ -1,3 +1,4 @@
+import { navigateAfterOnboarding } from "../../../generated/features/onboarding-v2/navigation.mjs";
 import { publishDomains, state } from "../../state/index.mjs";
 import { createHomeChatRenderer } from "./home-chat-renderer.mjs";
 import { createHomeCheckinRenderer } from "./home-checkin-renderer.mjs";
@@ -220,14 +221,11 @@ const onboardingV2Controller=createOnboardingV2Controller({
   owner:()=>runtime.currentUser?.id||"",
   updateState:value=>{state.onboardingV2=value},
   onLegacy:renderLegacyOnboarding,
-  onFirstAction:action=>{
-    if(action==="question"){
-      switchView("today");
-      $("#home-open-thought").click()
-    }else{
-      void openCaptureFeature("openComposer")
-    }
-  },
+  onFirstAction: action => navigateAfterOnboarding(action, {
+    showToday: () => switchView("today"),
+    openQuestion: () => $("#home-open-thought").click(),
+    openRecord: () => { void openCaptureFeature("openComposer"); }
+  }),
   toast:showToast
 });
 function renderOnboarding(){onboardingV2Controller.render()}
@@ -235,7 +233,7 @@ function renderDate(){
   $$('[data-active-date]').forEach(input=>input.value=runtime.activeDate);
   installOccurrenceControls();
   if(!$("#quote-id")?.value)resetOccurrenceInput($("#quote-datetime"));
-  for(const input of[$("#chain-datetime"),$("#checkin-datetime"),$("#chat-datetime")]){
+  for(const input of[$("#checkin-datetime"),$("#chat-datetime")]){
     resetOccurrenceInput(input);
   }
   $$('[data-daily-form]').forEach(form=>{

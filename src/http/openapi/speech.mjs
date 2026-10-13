@@ -169,6 +169,7 @@ export const speechComponents = Object.freeze({
           description: "来源版本；thoughtChain 使用根问题当前版本，所选内容块版本由服务端绑定。"
         },
         regenerate: { type: "boolean", default: false },
+        generationRate: { type: "integer", minimum: -50, maximum: 100 },
         captureId: {
           type: "string",
           minLength: 1,

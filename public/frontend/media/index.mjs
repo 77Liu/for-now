@@ -83,7 +83,13 @@ export function speechAudioPath(asset = {}) {
   return `/api/speech/audio?${query}`;
 }
 
-export function speechSynthesisPayload({ sourceType, sourceId, sourceVersion, regenerate = false } = {}) {
+export function speechSynthesisPayload({
+  sourceType,
+  sourceId,
+  sourceVersion,
+  regenerate = false,
+  generationRate
+} = {}) {
   if (!speechSourceIdentity(sourceType, sourceId, sourceVersion)) {
     throw new Error("语音来源无效");
   }
@@ -91,7 +97,8 @@ export function speechSynthesisPayload({ sourceType, sourceId, sourceVersion, re
     sourceType: String(sourceType),
     sourceId: String(sourceId),
     sourceVersion: Math.max(1, Math.round(Number(sourceVersion))),
-    regenerate: regenerate === true
+    regenerate: regenerate === true,
+    ...(generationRate == null ? {} : { generationRate: normalizeTtsGenerationRate(generationRate) })
   };
 }
 

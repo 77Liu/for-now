@@ -9,6 +9,7 @@ import {
 } from "../src/app/index.mjs";
 import {
   buildRecordCompressionInput,
+  deriveSevenDayTrend,
   estimateRecordCompressionTokens,
   parseRecordCompressionOutput,
   RECORD_COMPRESSION_OUTPUT_BUDGETS,
@@ -211,4 +212,59 @@ assert.ok(JSON.stringify(trend.payload).length <= RECORD_COMPRESSION_TREND_CONTE
 assert.ok(Buffer.byteLength(JSON.stringify(trend.payload), "utf8")
   <= RECORD_COMPRESSION_TREND_CONTEXT_CHARACTER_BUDGET * 3);
 
+// 模拟完整程序统计与长来源身份挤占上下文；模型仍须消费真实思绪及其原文引用。
+const pressureStore = createEmptyStore();
+const pressureDate = localDates.at(-1);
+const pressureQuestionId = "pressure-question-" + "q".repeat(64);
+pressureStore.thoughts.push({
+  id: pressureQuestionId, type: "question", content: "合成原文：我希望晚间安排一次散步。",
+  authorType: "user", origin: "manual", version: 1,
+  occurredAt: `${pressureDate}T08:00:00.000Z`, occurredOn: pressureDate
+});
+for (let index = 0; index < 4; index += 1) {
+  pressureStore.dailyRecords.push({
+    id: `pressure-weight-${index}-` + "w".repeat(64), type: "weight", authorType: "user",
+    version: 1, occurredAt: `${pressureDate}T08:00:00.000Z`, occurredOn: pressureDate,
+    description: "合成测量说明。".repeat(70),
+    measuredWeight: 60 + index, bmi: 20, bodyFatMass: 12, bodyFatPercent: 20,
+    bodyWaterMass: 35, bodyWaterPercent: 58, proteinMass: 10, proteinPercent: 17,
+    muscleMass: 40, musclePercent: 66, visceralFatLevel: 2
+  });
+}
+const pressureInput = buildRecordCompressionInput(pressureStore, {
+  accountId: "account-a", localDate: pressureDate, timezone: DEFAULT_RECORD_TIMEZONE,
+  asOf, hash, promptVersion: RECORD_COMPRESSION_PROMPT_VERSION, sourcePermission: () => true
+});
+const pressureSource = pressureInput.userSources.find(source => source.recordId === pressureQuestionId);
+const pressureSummary = parseRecordCompressionOutput({
+  schemaVersion: RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION,
+  thoughtsIdeas: { openQuestions: [{ text: "希望安排晚间散步。", sourceIds: [pressureSource.sourceId] }] }
+}, { input: pressureInput, id: "pressure-summary", generatedAt: asOf });
+Object.assign(pressureSummary, { localDate: pressureDate, sourceRefs: pressureInput.sourceManifest });
+pressureStore.recordCompressions.push(pressureSummary);
+const pressureStoreBefore = JSON.stringify(pressureStore);
+const completeTrend = deriveSevenDayTrend({
+  summaries: [pressureSummary], localDates: [pressureDate], timezone: DEFAULT_RECORD_TIMEZONE,
+  promptVersion: RECORD_COMPRESSION_PROMPT_VERSION, asOf
+});
+assert.equal(completeTrend.metrics.length, pressureInput.metrics.length);
+assert.deepEqual(pressureSummary.metrics, pressureInput.metrics);
+const pressureTrend = currentRecordCompressionTrend(pressureStore, {
+  accountId: "account-a", timezone: DEFAULT_RECORD_TIMEZONE, asOf, hash
+});
+assert.equal(JSON.stringify(pressureStore), pressureStoreBefore, "prompt fitting cannot mutate saved statistics or originals");
+assert.equal(pressureTrend.displayDays.at(-1).summary.metrics.length, pressureInput.metrics.length);
+assert.ok(pressureTrend.payload.userSubjective.some(row => row.sourceIds.includes(pressureSource.sourceId)),
+  "openQuestions must reach the actual thought-context consumer under statistical pressure");
+assert.ok(pressureTrend.citationSources.some(source => source.text === pressureStore.thoughts[0].content));
+assert.equal(pressureTrend.payload.metricsCoverage.available, pressureInput.metrics.length);
+assert.equal(pressureTrend.payload.metricsCoverage.included, pressureTrend.payload.metrics.length);
+assert.equal(pressureTrend.payload.metricsCoverage.truncated, true);
+assert.equal(pressureTrend.payload.contextTruncated, true);
+for (const metric of pressureTrend.payload.metrics) {
+  assert.ok(metric.citations.length > 0, "prompt statistics require retained source citations");
+  assert.ok(metric.citations.every(id => pressureTrend.citationSources.some(source => source.citationId === id)));
+}
+assert.ok(estimateRecordCompressionTokens(pressureTrend.payload) <= RECORD_COMPRESSION_TREND_CONTEXT_TOKEN_BUDGET);
+assert.ok(JSON.stringify(pressureTrend.payload).length <= RECORD_COMPRESSION_TREND_CONTEXT_CHARACTER_BUDGET);
 console.log("Record-compression trend context source separation and AI-reference regression passed.");

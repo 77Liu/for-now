@@ -52,6 +52,8 @@ export {
   createUserModelExtractionService,
   prepareUserModelExtraction,
   userModelCoreReadiness,
+  userModelRequiresCoreReady,
+  userModelSupplementSubmitted,
   userModelEvidenceCurrent,
   userModelProjection
 } from "./user-model.mjs";

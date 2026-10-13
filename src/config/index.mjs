@@ -1,9 +1,10 @@
 import path from "node:path";
+import { RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN } from "../modules/record-compressions/index.mjs";
 
 export const RECORD_COMPRESSION_ACCOUNT_DAILY_INVOCATION_LIMIT = 2;
-export const RECORD_COMPRESSION_MAX_DAILY_BUDGET_CNY = 1;
-export const RECORD_COMPRESSION_MAX_PER_CALL_BUDGET_CNY = 0.25;
-export const RECORD_COMPRESSION_MAX_DAILY_INVOCATION_LIMIT = 4;
+export const RECORD_COMPRESSION_MAX_DAILY_BUDGET_CNY = 4;
+export const RECORD_COMPRESSION_MAX_PER_CALL_BUDGET_CNY = 1;
+export const RECORD_COMPRESSION_MAX_DAILY_INVOCATION_LIMIT = 16;
 
 export function recordCompressionAccountQueueAllowance({
   dailyLimit = RECORD_COMPRESSION_ACCOUNT_DAILY_INVOCATION_LIMIT,
@@ -90,6 +91,10 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     && Number.isSafeInteger(configuredInvocationLimit)
     && configuredInvocationLimit <= RECORD_COMPRESSION_MAX_DAILY_INVOCATION_LIMIT;
   const configuredBackfillDates = Number(env.RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN);
+  const recordCompressionNotificationsEnabled = env.RECORD_COMPRESSION_NOTIFICATIONS_ENABLED === "1"
+    && canonicalProduction
+    && Boolean(String(env.FEISHU_ALERT_WEBHOOK || "").trim())
+    && Boolean(String(env.FEISHU_ALERT_SECRET || "").trim());
   const platformServiceTokenHash = String(env.PLATFORM_SERVICE_TOKEN_HASH || "").toLowerCase();
   if (platformServiceTokenHash && !/^[a-f0-9]{64}$/.test(platformServiceTokenHash)) {
     throw new Error("PLATFORM_SERVICE_TOKEN_HASH must be a 64-character SHA-256 digest");
@@ -125,13 +130,20 @@ export function loadAppConfig({ rootDir, env = process.env }) {
     testCurrentDate,
     periodicAnalysisEnabled: env.PERIODIC_ANALYSIS_ENABLED === "1",
     recordCompressionEnabled,
+    recordCompressionNotificationsEnabled,
+    feishuAlertWebhook: String(env.FEISHU_ALERT_WEBHOOK || "").trim(),
+    feishuAlertSecret: String(env.FEISHU_ALERT_SECRET || ""),
     recordCompressionDailyBudgetCny: recordCompressionEnabled ? recordCompressionDailyBudgetCny : 0,
     recordCompressionPerCallBudgetCny: recordCompressionEnabled ? recordCompressionPerCallBudgetCny : 0,
     recordCompressionDailyInvocationLimit: recordCompressionEnabled ? configuredInvocationLimit : 0,
     recordCompressionAccountDailyInvocationLimit: RECORD_COMPRESSION_ACCOUNT_DAILY_INVOCATION_LIMIT,
+    recordCompressionStartDate: String(env.RECORD_COMPRESSION_START_DATE ?? "").trim() || "2026-09-25",
     recordCompressionMaxBackfillDatesPerScan: Math.max(
       0,
-      Math.min(2, Math.floor(Number.isFinite(configuredBackfillDates) ? configuredBackfillDates : 1))
+      Math.min(
+        RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN,
+        Math.floor(Number.isFinite(configuredBackfillDates) ? configuredBackfillDates : 1)
+      )
     ),
     speechCacheSweepEnabled,
     runtimeMemorySampleIntervalMs: Math.max(50, Math.min(3_600_000, Number(env.RUNTIME_MEMORY_SAMPLE_INTERVAL_MS) || 60_000)),
@@ -181,6 +193,8 @@ export function loadAppConfig({ rootDir, env = process.env }) {
       ttsEndpoint: String(env.VOLCENGINE_TTS_ENDPOINT || "https://openspeech.bytedance.com/api/v3/tts/unidirectional").trim(),
       ttsSubmitEndpoint: String(env.VOLCENGINE_TTS_SUBMIT_ENDPOINT || "https://openspeech.bytedance.com/api/v3/tts/submit").trim(),
       ttsQueryEndpoint: String(env.VOLCENGINE_TTS_QUERY_ENDPOINT || "https://openspeech.bytedance.com/api/v3/tts/query").trim(),
+      asrMode: String(env.VOLCENGINE_ASR_MODE || "file").trim(),
+      asrFileEndpoint: String(env.VOLCENGINE_ASR_FILE_ENDPOINT || "").trim() || undefined,
       asrStreamEndpoint: String(env.VOLCENGINE_ASR_STREAM_ENDPOINT || "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async").trim(),
       asrSubmitEndpoint: String(env.VOLCENGINE_ASR_SUBMIT_ENDPOINT || "https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit").trim(),
       asrQueryEndpoint: String(env.VOLCENGINE_ASR_QUERY_ENDPOINT || "https://openspeech.bytedance.com/api/v3/auc/bigmodel/query").trim()

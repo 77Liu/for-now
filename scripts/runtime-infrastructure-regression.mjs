@@ -9,10 +9,14 @@ import {
   recordCompressionAccountQueueAllowance,
   recordCompressionSlotQueueAllowance
 } from "../src/config/index.mjs";
+import { RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN } from "../src/modules/record-compressions/index.mjs";
 import { createObservability, pruneLogs } from "../src/shared/observability/index.mjs";
 import { createJsonHttp, createRequestHandler } from "../src/http/index.mjs";
 import { createAttachmentStorage } from "../src/shared/attachments/index.mjs";
-import { createRetryableSlotRunner } from "../src/app/index.mjs";
+import {
+  createRecordCompressionScanObserver,
+  createRetryableSlotRunner
+} from "../src/app/index.mjs";
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "growth-infrastructure-"));
 const config = env => loadAppConfig({ rootDir: root, env });
@@ -57,6 +61,7 @@ assert.equal(config({ LOCAL_TEST_MODE: "1", LOCAL_TEST_RESET_ON_START: "1" }).lo
 assert.equal(config({ LOCAL_TEST_RESET_ON_START: "1" }).localTestResetOnStart, false);
 assert.equal(defaults.periodicAnalysisEnabled, false);
 assert.equal(defaults.recordCompressionEnabled, false);
+assert.equal(defaults.recordCompressionNotificationsEnabled, false);
 assert.equal(defaults.recordCompressionDailyBudgetCny, 0);
 assert.equal(defaults.recordCompressionDailyInvocationLimit, 0);
 assert.equal(defaults.recordCompressionAccountDailyInvocationLimit, 2);
@@ -88,98 +93,65 @@ assert.deepEqual(await runSlot(slotKey, async () => {
 }), { skipped: "outside-slot" },
 "only a successfully completed scheduler round marks its slot");
 assert.equal(slotAttempts, 2);
+const noticeEvents = [];
+const observedScan = createRecordCompressionScanObserver({
+  logEvent: async (_scope, event) => noticeEvents.push(event),
+  notify: async message => noticeEvents.push(message.title),
+  now: (() => {
+    let tick = 100;
+    return () => tick += 20;
+  })()
+});
+const scanResult = await observedScan(async () => ({
+  result: { queuedCount: 2, knownSpentCny: 0.2, reservedCny: 0.5, knownCalls: 1, reservedCalls: 2 },
+  metrics: { candidateCount: 3, queuedCount: 2 }
+}));
+assert.equal(scanResult.queuedCount, 2);
+assert.deepEqual(noticeEvents.filter(value => ["日压缩已启动", "日压缩已完成", "日压缩成本记录"].includes(value)), [
+  "日压缩已启动", "日压缩已完成", "日压缩成本记录"
+]);
 const compressionProduction = config({
   NODE_ENV: "production",
   RECORD_COMPRESSION_ENABLED: "1",
-  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "0.75",
-  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "0.25",
-  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "3",
-  RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN: "1"
+  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "4",
+  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "1",
+  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "16",
+  RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN: "4"
 });
 assert.equal(compressionProduction.recordCompressionEnabled, true);
-assert.equal(compressionProduction.recordCompressionDailyBudgetCny, 0.75);
-assert.equal(compressionProduction.recordCompressionPerCallBudgetCny, 0.25);
-assert.equal(compressionProduction.recordCompressionDailyInvocationLimit, 3);
+assert.equal(compressionProduction.recordCompressionDailyBudgetCny, 4);
+assert.equal(compressionProduction.recordCompressionPerCallBudgetCny, 1);
+assert.equal(compressionProduction.recordCompressionDailyInvocationLimit, 16);
 assert.equal(compressionProduction.recordCompressionAccountDailyInvocationLimit, 2);
-assert.equal(compressionProduction.recordCompressionMaxBackfillDatesPerScan, 1);
-assert.equal(config({
-  RECORD_COMPRESSION_ENABLED: "1",
-  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "10",
-  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "1"
-}).recordCompressionEnabled, false);
-assert.equal(config({
+assert.equal(compressionProduction.recordCompressionMaxBackfillDatesPerScan, 4);
+assert.equal(RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN, 4,
+  "the scan hard cap and the configured value share one public constant");
+const overBackfillCap = config({
   NODE_ENV: "production",
-  RECORD_COMPRESSION_ENABLED: "1",
-  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "10",
-  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "1"
-}).recordCompressionEnabled, false, "daily invocation limit must be explicitly frozen");
-assert.equal(config({
-  NODE_ENV: "production",
-  RECORD_COMPRESSION_ENABLED: "1",
-  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "10",
-  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "48"
-}).recordCompressionEnabled, false, "per-call budget must be explicitly configured");
-assert.equal(config({
-  NODE_ENV: "production",
-  RECORD_COMPRESSION_ENABLED: "1",
-  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "1",
-  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "48"
-}).recordCompressionEnabled, false, "daily budget must be explicitly configured");
-assert.equal(config({
-  NODE_ENV: "production",
-  RECORD_COMPRESSION_ENABLED: "1",
-  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "10",
-  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "1",
-  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "2.5"
-}).recordCompressionEnabled, false, "daily invocation limit must be a positive integer");
-assert.equal(config({
-  NODE_ENV: "production",
-  RECORD_COMPRESSION_ENABLED: "1",
-  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "10",
-  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "1",
-  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "0"
-}).recordCompressionEnabled, false, "daily invocation limit must be positive");
-assert.equal(config({
-  NODE_ENV: "production",
-  RECORD_COMPRESSION_ENABLED: "1",
-  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "1",
-  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "0.25",
-  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "4"
-}).recordCompressionEnabled, true);
-assert.equal(config({
-  NODE_ENV: "production",
-  RECORD_COMPRESSION_ENABLED: "1",
-  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "10",
-  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "11"
-}).recordCompressionEnabled, false);
-assert.equal(config({
-  NODE_ENV: "production",
-  RECORD_COMPRESSION_ENABLED: "1",
-  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "1.01",
-  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "0.25",
-  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "4"
-}).recordCompressionEnabled, false, "daily compression budget must stay within its hard cap");
-assert.equal(config({
-  NODE_ENV: "production",
-  RECORD_COMPRESSION_ENABLED: "1",
-  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "1",
-  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "0.251",
-  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "4"
-}).recordCompressionEnabled, false, "per-call compression budget must stay within its hard cap");
-assert.equal(config({
-  NODE_ENV: "production",
-  RECORD_COMPRESSION_ENABLED: "1",
-  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "1",
-  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "0.25",
-  RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "5"
-}).recordCompressionEnabled, false, "daily compression calls must stay within their hard cap");
-assert.equal(config({
-  NODE_ENV: "test",
-  LOCAL_TEST_MODE: "1",
-  RECORD_COMPRESSION_ENABLED: "1",
-  RECORD_COMPRESSION_DAILY_BUDGET_CNY: "10",
-  RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "1"
-}).recordCompressionEnabled, false);
+  RECORD_COMPRESSION_MAX_BACKFILL_DATES_PER_SCAN: "5"
+});
+assert.equal(overBackfillCap.recordCompressionMaxBackfillDatesPerScan, 4,
+  "configuration cannot exceed the domain-owned backfill hard cap");
+const overCapCases = [
+  { RECORD_COMPRESSION_DAILY_BUDGET_CNY: "4.01" },
+  { RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "1.01" },
+  { RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "17" }
+];
+for (const override of overCapCases) {
+  const overCapCompression = config({
+    NODE_ENV: "production",
+    RECORD_COMPRESSION_ENABLED: "1",
+    RECORD_COMPRESSION_DAILY_BUDGET_CNY: "4",
+    RECORD_COMPRESSION_PER_CALL_BUDGET_CNY: "1",
+    RECORD_COMPRESSION_DAILY_INVOCATION_LIMIT: "16",
+    ...override
+  });
+  assert.equal(overCapCompression.recordCompressionEnabled, false,
+    "values above the approved hard ceilings remain disabled");
+  assert.equal(overCapCompression.recordCompressionDailyBudgetCny, 0);
+  assert.equal(overCapCompression.recordCompressionPerCallBudgetCny, 0);
+  assert.equal(overCapCompression.recordCompressionDailyInvocationLimit, 0);
+}
 assert.equal(config({ PERIODIC_ANALYSIS_ENABLED: "0" }).periodicAnalysisEnabled, false);
 assert.equal(config({ PERIODIC_ANALYSIS_ENABLED: "1" }).periodicAnalysisEnabled, true);
 assert.equal(config({ PERIODIC_ANALYSIS_ENABLED: "yes" }).periodicAnalysisEnabled, false);

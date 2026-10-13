@@ -69,7 +69,7 @@ export function createOccurrenceControls({
       });
     }
     const draft = createOccurrenceDraft({
-      selectedDate: getActiveDate(),
+      selectedDate: input.id === "chain-datetime" && !existing ? "" : getActiveDate(),
       existing,
       now: new Date()
     });

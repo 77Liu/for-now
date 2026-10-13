@@ -82,10 +82,12 @@ export function installPrimaryDescriptors(descriptors, ports) {
       page:viewName,
       data:{
         getSnapshot:()=>state,
+        getSpeechGenerationRate:()=>runtime.llmSettings.speech?.generationRate,
         getAccountId:()=>runtime.currentUser?.id||"",
         getSessionSerial:()=>sessionSerial,
         request,
         requestV1:(url,options,coordination)=>featureRequestV1(viewName,url,options,coordination),
+        requestHeadStatus:(url,options)=>apiClient.requestHeadStatus(url,options),
         requestStream,
         resolvePersonalizedTask,
         requestBlob:(url,options,config)=>apiClient.requestBlob(url,options,config),

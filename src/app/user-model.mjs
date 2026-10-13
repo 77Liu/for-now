@@ -112,6 +112,14 @@ function onboardingQuestionAnswered(onboarding, questionId) {
   ));
 }
 
+/** 按当前获准来源选择最新任务；会话导航版本不参与内容身份。 */
+function currentModelExtraction(store, inputHash) {
+  return (Array.isArray(store?.aiTasks) ? store.aiTasks : [])
+    .filter(task => task?.kind === "onboardingClaimExtraction"
+      && task.targetId === "onboarding-v2" && task.inputHash === inputHash)
+    .sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || "")))[0];
+}
+
 export function userModelCoreReadiness(store) {
   const onboarding = normalizeOnboardingV2(store?.onboardingV2, store?.onboarding);
   if (onboarding.migration.selectedFlow !== "v2"
@@ -132,16 +140,45 @@ export function userModelCoreReadiness(store) {
       ? { ready: true, reason: "no_permitted_model_sources" }
       : { ready: false, reason: prepared.versionConflict ? "source_changed" : "model_unavailable" };
   }
-  const task = (Array.isArray(store?.aiTasks) ? store.aiTasks : []).find(item => (
-    item?.kind === "onboardingClaimExtraction"
-      && item.status === "succeeded"
-      && item.targetId === "onboarding-v2"
-      && item.inputVersion === onboarding.session.revision
-      && item.inputHash === prepared.value.inputHash
-  ));
-  return task
-    ? { ready: true, reason: "current_extraction_succeeded", taskId: task.id }
-    : { ready: false, reason: "model_generation_pending" };
+  const task = currentModelExtraction(store, prepared.value.inputHash);
+  if (task?.status === "succeeded") {
+    return { ready: true, reason: "current_extraction_succeeded", taskId: task.id };
+  }
+  return {
+    ready: false,
+    reason: task && ["failed", "cancelled", "stale"].includes(task.status)
+      ? "model_generation_failed" : task ? "model_generation_pending" : "model_generation_not_started",
+    ...(task ? { taskId: task.id, taskStatus: task.status } : {})
+  };
+}
+
+/**
+ * 只有用户实际提交过补充问答内容，核心模型整理才会成为回答任务的前置条件。
+ * 仅打开补交流程、没有提交任何回答时，回答可以使用缺省用户模型上下文继续执行。
+ */
+export function userModelSupplementSubmitted(store) {
+  const onboarding = normalizeOnboardingV2(store?.onboardingV2, store?.onboarding);
+  return onboarding.readiness !== "empty";
+}
+
+const CORE_MODEL_OPTIONAL_TASKS_WITHOUT_SUBMISSION = new Set([
+  "thoughtAnswer",
+  "followUpAnswer",
+  "thoughtDraft",
+  "thoughtPrompt"
+]);
+
+export function userModelRequiresCoreReady(store, taskKind = "thoughtAnswer") {
+  const readiness = userModelCoreReadiness(store);
+  if (readiness.ready) return false;
+  const prepared = prepareUserModelExtraction(store);
+  const task = prepared.value && currentModelExtraction(store, prepared.value.inputHash);
+  // 失败不等于就绪：保留失败状态，回答改用缺省上下文；当前新任务在途仍等待。
+  if (task && ["failed", "cancelled", "stale"].includes(task.status)) return false;
+  if (CORE_MODEL_OPTIONAL_TASKS_WITHOUT_SUBMISSION.has(taskKind)) {
+    return Boolean(task && ["queued", "running"].includes(task.status));
+  }
+  return true;
 }
 
 export function coreUserModelProjection(store) {
@@ -230,6 +267,7 @@ export function prepareUserModelExtraction(store, { sourceRevision = 0 } = {}) {
       }),
       scene: "onboardingClaimExtraction",
       json: true,
+      retryWithoutThinking: true,
       auditPrompt: false,
       maxTokens: 4000,
       sources

@@ -1,6 +1,6 @@
 import { eventTimestamp, formatTime } from "../../time/index.mjs";
 import { journalCardMarkup, matchesFeedSearch } from "./presentation.mjs";
-import { resolveSynchronousPersonalizedResponse } from "../../shared/personalized-ai-task.mjs";
+import { resolveSynchronousPersonalizedResponse } from "../../../generated/personalized-ai-task.mjs";
 import { isPendingAiTaskStatus } from "../../shared/ai-task-status.mjs";
 
 const noop = () => {};

@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "rootDir": "public",
+    "outDir": "public/generated",
+    "noEmitOnError": true
+  },
+  "files": ["public/test-support/view-scope.mts"]
+}

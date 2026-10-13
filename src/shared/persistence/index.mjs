@@ -11,7 +11,13 @@ export {
   initializePostgresSchema,
   migrateJsonStoresToPostgres
 } from "./postgres-migration.mjs";
-export { canonicalJson, mapStoreObjects, rebuildStoreObjects, storeContentSha256 } from "./store-mapping.mjs";
+export {
+  aiTaskTargetReference,
+  canonicalJson,
+  mapStoreObjects,
+  rebuildStoreObjects,
+  storeContentSha256
+} from "./store-mapping.mjs";
 export {
   clearStoreObjects,
   readPostgresStoreObjects,

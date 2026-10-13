@@ -62,6 +62,18 @@ export const OFFICIAL_PROVIDER_PRICING = Object.freeze({
       }
     }
   },
+  "volcengineFlashAsr": {
+    "source": "https://docs.volcengine.com/docs/DoubaoVoice/Billinginstructions-21?lang=zh",
+    "checkedAt": "2026-10-13",
+    "currency": "CNY",
+    "services": {
+      "flashAsr": {
+        "label": "大模型录音文件识别（极速版）",
+        "price": 4.5,
+        "unit": "audio_hour"
+      }
+    }
+  },
   "volcengineVision": {
     "sources": {
       "ocr": "https://www.volcengine.com/docs/86081/1660260",

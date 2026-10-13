@@ -1,284 +1,149 @@
 {
-  "schema_version": 1,
-  "revision": 7,
-  "updated_at": "2026-10-11T20:09:48.598456+08:00",
+  "schema_version": 3,
+  "revision": 285,
+  "updated_at": "2026-10-13T18:58:56.900Z",
+  "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
+    "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
     "role": "主控",
-    "write_authority": "唯一协调者",
-    "state_owner": "主控维护本控制面，其他角色仅引用并回报"
+    "write_authority": "唯一维护者；必须经coordination:update入口更新"
   },
   "rule_baseline": {
-    "commit": "fc899a2445374db241dff02d689b3dd5c18c8d25",
-    "effective_date": "2026-10-11",
-    "source": "PROJECT_RULES.md、knowledge/development-lifecycle.md、knowledge/release-authorization-policy.md"
+    "commit": "cf984c",
+    "effective_date": "2026-10-14",
+    "source": "PROJECT_RULES.md及其唯一正文引用；控制面协议2.3、源码partial提交治理与每版本¥4共享测试许可"
   },
-  "work_mode": "启动准备；自动生产关闭；定时自动化未恢复",
-  "current_phase": "三项启动闸门已完成只读核验；远程保护与当前生产预算/告警证据未通过，禁止创建第一轮分支",
-  "state": "not_ready_for_automatic_production",
-  "git": {
-    "main": "9e02fb1a3f00c61ab4c6e4e86fafdf0f6541434c",
-    "develop": "refs/heads/develop（以当前主控工作树 git rev-parse develop 核验）",
-    "remote_main_ref": "origin/main",
-    "remote_main_observed": "ebbde6fcf100432de8a599c771cbd8e774e043ad",
-    "startup_manifest": "reports/git-archive/git-startup-20261011-manifest.json",
-    "archive_namespace": "refs/archive/git-startup-20261011/heads",
-    "worktree_count": 2,
-    "remote_operations": "未执行",
-    "release_v0_5_12_clean": "4359648b41608429832e2ce4897bd12163a5d812",
-    "retained_local_branches": [
-      "main",
-      "develop",
-      "release/v0.5.12-clean"
+  "work_mode": {
+    "status": "ACTIVE",
+    "scope": "完成v0.5.14正式收口与复盘回流，再按最新develop基线启动v0.5.15夜间开发"
+  },
+  "iteration": null,
+  "scope": null,
+  "active_tasks": [],
+  "candidate": null,
+  "authorization": {
+    "source": "Owner本聊天最新明确指令：审查当前HEAD通过后，授权v0.5.14 release/tag/push/上线；原有共享4元验收费用许可持续有效。",
+    "allowed_actions": [
+      "本地需求核对、实现、自查、主控审查、验证、提交及合入develop",
+      "线上只读观察与隔离验证",
+      "Owner明确授权现有for_now_backup账户全部现有权限，含生产状态读取、本机快照落盘及隔离PG验证；按任务需要直接执行，不逐次申请",
+      "每版本上线前所有付费API共享人民币4元测试额度，阈值内持续授权；超过4元先报告申请",
+      "Owner本轮明确授权已有脱敏生产状态切片上下文发送当前应用DeepSeek API，用于本机日压缩/恢复/冷启/新回答闭环；费用计入版本共享4元，额度内必要测试不重复申请。",
+      "Owner2026-10-14注释6授权本切片保留并提交明确标注范围/版本/原因的partial ASR源码；仅注释治理，不自动启用流式或发布生产",
+      "独立审查通过后执行v0.5.14候选推送、生产部署与必要配置、观察、正式tag/Release及main晋级；失败时按既有回滚方案恢复上一生产基线",
+      "Owner最新授权：完成0.5.14复盘回流后，按新基线和新控制面继续0.5.15夜间开发；该版本正式上线需适用授权另行核对"
     ],
-    "old_local_refs_removed": [
-      "feat/v0.5.13-save-sync",
-      "feat/v0.5.13.1-stability",
-      "release/v0.5.13",
-      "release/v0.5.13.1"
+    "excluded": [
+      "v0.5.13正式收尾",
+      "不相关范围的生产写入或远程历史改写"
+    ],
+    "execution_enabled": true,
+    "expires_at": null,
+    "expiry_mode": "until_changed",
+    "revoked": false,
+    "account_authorization": {
+      "account": "for_now_backup",
+      "status": "GRANTED",
+      "source": "Owner本聊天request_user_input_async call_538615e753bf4f12bfc167ab384258c0问题0的明确回复",
+      "scope": "该账户全部现有权限；无需逐次审批",
+      "effective_date": "2026-10-13"
+    },
+    "test_budget": {
+      "version": "v0.5.14",
+      "limit_cny": 4,
+      "shared_paid_apis": true,
+      "committed_or_reserved_cny": 0.5319678708333334,
+      "cost_basis": "公开单价估算，非供应商最终账单",
+      "ledger_ref": "reports/local/v0514-paid-acceptance-current.json",
+      "expiry_mode": "until_revoked"
+    }
+  },
+  "blockers": [],
+  "next_action": "v0.5.14技术发布与收口完成，按Owner最新授权定向核对v0.5.15需求，选定最新develop基线与唯一feat写集后继续夜间开发；不提前冻结未经核对的范围。",
+  "runtime": {
+    "version": "v0.5.14",
+    "sha": "a4d2ec",
+    "active": true,
+    "main_pid": 983502,
+    "restarts": 0,
+    "readyz": "PASS",
+    "deployed_at": "2026-10-14T02:32:44+08:00",
+    "attempt_id": "c9b15eced461e6335f86e0fb5bebebf8",
+    "rollback_sha": "a901c8",
+    "evidence": "reports/local/v0514-deploy-current.json",
+    "limitations": [
+      "自然06:00/18:05新版生成未验收；旧生产窗口失败不改写",
+      "真机录音/逐字保真未完整验收"
     ]
   },
-  "authorization_policy": {
-    "policy_id": "release-authorization-policy",
-    "policy_revision": "1.1",
-    "policy_status": "Owner 已确认默认授权，待启动闸门和本地整理完成后按 attempt 登记",
-    "levels": [
-      "L0",
-      "L1",
-      "L2",
-      "L3"
-    ],
-    "production_write_enabled": false,
-    "required_before_enable": [
-      "远程分支保护规则只读核验并记录",
-      "测试影响矩阵与当前候选绑定",
-      "发布/回滚无生产演练",
-      "生产预算、告警、灰度、暂停开关与执行器权限核验",
-      "Owner 授权范围、有效期和回收条件登记"
-    ],
-    "owner_pause_mode": "消息触发并由控制面留痕；恢复需 Owner 明确指令",
-    "expiresAt": null,
-    "expiryMode": "until_revoked",
-    "revokedAt": null
-  },
-  "unknowns": [
-    "Gitee当前没有可复核的保护分支规则；保护标签在当前仓库类型不可用，推送限制未启用",
-    "生产主机当前预算/告警/定时器/暂停开关的只读快照缺失，不能把历史v0.5.12报告当成本轮实时证据"
-  ],
-  "next_action": "保持develop不创建第一轮分支；先由Owner补齐Gitee保护规则并提供可复核平台证据，再补生产预算/告警只读快照，三项均通过后才创建feat/v0.5.13.1-stability本地分支",
   "evidence": [
-    "SOP/release-and-observation.md",
-    "knowledge/development-lifecycle.md",
-    "knowledge/release-authorization-policy.md",
-    "reports/git-archive/git-startup-20261011-manifest.json",
-    "reports/git-archive/startup-gates-20261011.json",
-    "reports/git-handoff/startup-readiness-2026-10-11.md"
-  ],
-  "last_check": {
-    "remote_refs": "2026-10-11T12:07:35Z 已通过 git ls-remote --heads/tags 只读核验；无远程写入",
-    "worktrees": "新 develop 工作树干净；根 main 未跟踪任务产物已归档",
-    "platform_protection": "Gitee UI只读核验：保护分支规则0条、保护标签不可用、推送限制未启用",
-    "remote_write": "未执行",
-    "release_rollback_rehearsal": "本地隔离模拟全部通过；无远端命令",
-    "budget_alerts": "本地护栏回归通过；当前生产配置与告警快照缺失，保持阻断"
-  },
-  "owner_decisions": {
-    "git": {
-      "remote_develop": "下一次受控 push 时创建 origin/develop",
-      "remote_protection": "Owner 提供平台只读证据后核验；无法核验则保持自动生产关闭",
-      "release_v0_5_12_clean": "本地调整到 v0.5.12 标签，旧指针保留 archive",
-      "old_local_refs": "归档后删除旧本地开发引用，远程引用不修改",
-      "superpowers_artifact": "保留归档，不自动迁入 develop"
-    },
-    "authorization": {
-      "L0": "文档/测试/内部工具；功能分支推送、候选 tag/Release、预览部署",
-      "L1": "普通可回滚功能通过门禁后自动合入、发布、canary、放量、回滚",
-      "L2": "自动构建/候选/预览/证据；生产写入需单独授权",
-      "L3": "只准备核验；每个生产动作单独明确批准",
-      "expiry": "持续有效直到 Owner 撤销；每次 attempt 仍现场核验",
-      "pause": "消息触发 + 控制面留痕；恢复需 Owner 明确指令"
-    },
-    "iteration": {
-      "demand_tracking": "立即进行一次只读需求池跟踪",
-      "round_one": "采用 v0.5.13.1 稳定性候选，需求核验后进入 SELECTED",
-      "round_two": "保存恢复/时间意图/通知继续作为候选，启动前逐条核验是否未交付；不扩大或重复已交付范围"
-    },
-    "testing": {
-      "matrix": "采用唯一测试影响矩阵，按改动域最小专项和横切触发条件选择",
-      "partial": "按16A：允许预览和候选；生产必须有无P0/P1用户损害的依据、责任人和补验条件。权限/数据故障不豁免，优先级标签不代替损害判断。",
-      "failure_return": "按行为/范围/授权/部署问题返回对应生命周期节点"
-    },
-    "startup_gate": "所有启动闸门完成前保持自动生产关闭",
-    "answers": {
-      "1": "A",
-      "2": "A",
-      "3": "A",
-      "4": "A",
-      "5": "A",
-      "6": "A",
-      "7": "A",
-      "8": "A",
-      "9": "A",
-      "10": "C",
-      "11": "C",
-      "12": "A",
-      "13": "A",
-      "14": "A",
-      "15": "A",
-      "16": "A",
-      "17": "A",
-      "18": "A"
-    }
-  },
-  "requirement_observation": {
-    "observed_at": "2026-10-11T19:21:21.586748+08:00",
-    "tables": {
-      "demand": {
-        "table_id": "tblHW2FjQpyJlSck",
-        "count": 304,
-        "revision": 531,
-        "has_more": false
-      },
-      "version": {
-        "table_id": "tblGmYXwYXmaddqA",
-        "count": 35,
-        "revision": 34,
-        "has_more": false
-      },
-      "delivery": {
-        "table_id": "tblsidvvCyB8Ty9M",
-        "count": 100,
-        "revision": 135,
-        "has_more": false
+    {
+      "id": "production-compression-window",
+      "conclusion": "该次自然窗口生成失败，扫描通知错误地显示为生成完成",
+      "limitations": [
+        "生产旧版故障仍影响当前使用；本地候选日摘要与历史补充均已通过，新版生产未验收，不能改写该旧窗口失败或关闭未被线上替代的旧任务"
+      ],
+      "refs": [
+        "reports/local/v0514-production-compression-window-current.json"
+      ],
+      "object": {
+        "kind": "production_observation",
+        "version": "v0.5.13",
+        "commit": "a901c8",
+        "observed_at": "2026-10-13T10:05:00Z"
       }
     },
-    "evidence": "reports/git-archive/requirement-readonly-20261011.json",
-    "delta_status": "本轮建立基线，未完成逐记录历史差分",
-    "online_writes": false,
-    "comparison": "相较已知心跳基线 2026-10-10 05:56:14 Asia/Shanghai（需求300/rev519、版本33/rev25、交付97/rev133），本轮以三表完整读取结果建立可比增量；未执行线上写入。",
-    "delta_from_known_baseline": {
-      "baseline_time": "2026-10-10T05:56:14+08:00",
-      "demand": {
-        "before_count": 300,
-        "before_revision": 519,
-        "after_count": 304,
-        "after_revision": 531,
-        "added_count": 4,
-        "added_ids": [
-          "recvxDgUdPyb2P",
-          "recvxDhr1A4kkn",
-          "recvxDhFQA8HmI",
-          "recvxEbC6GkMyY"
-        ]
+    {
+      "id": "production-v0514-observation",
+      "object": {
+        "kind": "production",
+        "version": "v0.5.14",
+        "commit": "a4d2ec"
       },
-      "version": {
-        "before_count": 33,
-        "before_revision": 25,
-        "after_count": 35,
-        "after_revision": 34,
-        "added_count": 2,
-        "added_ids": [
-          "reczz28LUoWaznwB",
-          "reczz28Ldj20zuri"
-        ]
-      },
-      "delivery": {
-        "before_count": 97,
-        "before_revision": 133,
-        "after_count": 100,
-        "after_revision": 135,
-        "added_count": 3,
-        "added_ids": [
-          "reczz28LdBiFhcIh",
-          "reczz28LdBiFjRim",
-          "reczz28Ldk50E7Is"
-        ]
-      }
+      "conclusion": "11/11样本、10分14秒，readyz与活动目录一致，PID983502稳定、重启0、应用错误0、监控问题0；生产已登录浏览器首页/概要/展开保持通过",
+      "limitations": [
+        "限定运行与读取观察，不代表长期SLO、真机录音或新版自然06:00/18:05生成成功；旧失败保持原始记录"
+      ],
+      "refs": [
+        "reports/local/v0514-production-observation-current.json",
+        "reports/local/v0514-production-browser-current.json",
+        "reports/local/v0514-deploy-current.json"
+      ]
     },
-    "new_records_summary": {
-      "first_round_stability": [
-        "recvxDgUdPyb2P",
-        "recvxDhr1A4kkn",
-        "recvxDhFQA8HmI"
+    {
+      "id": "formal-v0514-publication",
+      "object": {
+        "kind": "git_refs",
+        "tag": "v0.5.14",
+        "release_branch": "release/v0.5.14",
+        "application_commit": "a4d2ec",
+        "main_commit": "548223"
+      },
+      "conclusion": "Gitee正式Release创建成功；PR!3现有审查/测试通过并合并，main包含已发布候选且tree完全相同；13条需求发布事实回流，均保留待验收",
+      "limitations": [
+        "main为平台合并提交，应用/tag继续精确a4d2ec；未移动tag或重复部署；旧v0.5.13收口锚点保留，不改历史"
       ],
-      "new_p1_candidate": [
-        "recvxEbC6GkMyY"
-      ],
-      "new_versions": [
-        "reczz28LUoWaznwB",
-        "reczz28Ldj20zuri"
-      ],
-      "new_delivery": [
-        "reczz28LdBiFhcIh",
-        "reczz28LdBiFjRim",
-        "reczz28Ldk50E7Is"
+      "refs": [
+        "https://gitee.com/Liu_772021/for-now/releases/tag/v0.5.14",
+        "https://gitee.com/Liu_772021/for-now/pulls/3",
+        "reports/local/v0514-requirements-return-current.json",
+        "reports/local/v0514-release-proof.png"
       ]
     }
+  ],
+  "records": {
+    "events": null,
+    "terminal": null
   },
-  "iterations": [
+  "held_iterations": [
     {
-      "id": "v0.5.13.1",
-      "state": "SELECTED",
-      "scope": "账号刷新停止、小物闪烁/重复拉取与性能、测试收敛、TS及必要注释",
-      "requirement_ids": [
-        "recvxDhFQA8HmI",
-        "recvxDhr1A4kkn"
-      ],
-      "exclusions": [
-        "额外上下文展示问题尚未纳入",
-        "全站媒体重构"
-      ],
-      "next": "复核现有develop及归档实现、最新复现和影响矩阵，满足启动准备后进入READY"
-    },
-    {
-      "id": "v0.5.13",
-      "state": "INBOX",
-      "scope": "保存恢复、时间意图、通知候选",
-      "next": "启动前去除已交付内容，再冻结范围"
+      "iteration_id": "v0.5.13",
+      "events": "reports/iterations/v0.5.13/events.jsonl",
+      "event_id": "v0.5.13-8ab22aa2-71a2-4303-a142-fbfc7486c7e1",
+      "state_after_hash": "ce0441",
+      "status": "PUBLISHED_MAIN_PENDING",
+      "candidate_sha": "a901c8",
+      "authorization_sha256": "e9287a"
     }
-  ],
-  "canonical_path": ".worktrees/develop/reports/requirement-coordination-current.json",
-  "history": [
-    {
-      "revision": 4,
-      "at": "2026-10-11T19:21:21.586748+08:00",
-      "reason": "Owner十八项选择、Git调整回执、完整只读需求基线、控制面共同根迁移",
-      "previous_snapshot": "/Users/bytedance/Documents/Codex/个人成长追踪/.worktrees/develop/reports/git-archive/control-plane-before-root-migration-20261011.json"
-    }
-  ],
-  "control_plane_scope": "当前主控工作树；根 main 工作树不保存第二份状态文件",
-  "startup_gates": {
-    "checked_at": "2026-10-11T20:09:48.598456+08:00",
-    "all_passed": false,
-    "branch_creation": "blocked_until_all_gates_pass",
-    "remote_operations": "未执行推送、发布、部署或生产写入",
-    "remote_protection": {
-      "status": "BLOCKED",
-      "evidence": "reports/git-archive/startup-gates-20261011.json",
-      "observed": [
-        "Gitee 保护分支设置页未列出任何保护分支规则",
-        "Gitee 保护标签页明确提示当前仓库类型不可用",
-        "Gitee 推送规则页的推送邮箱、提交正则、单文件大小限制均未勾选",
-        "git ls-remote 只读结果未发现 origin/develop；远程仍保留多条历史任务分支"
-      ],
-      "required_before_branch": "由Owner在Gitee建立并可复核的main/develop/release/preview保护规则与必需检查，随后重新读取平台证据"
-    },
-    "release_rollback_rehearsal": {
-      "status": "PASS_LOCAL_ONLY",
-      "evidence": "reports/git-archive/startup-gates-20261011.json",
-      "commands": [
-        "scripts/release-fence-regression.mjs",
-        "scripts/deploy-regression.mjs",
-        "scripts/preview-deploy-regression.mjs"
-      ],
-      "result": "release fence、生产部署模拟、Preview部署与显式回滚/撤销/过期/竞态场景全部通过；无远端命令"
-    },
-    "budget_alerts": {
-      "status": "BLOCKED_CURRENT_PRODUCTION_EVIDENCE_MISSING",
-      "evidence": "reports/git-archive/startup-gates-20261011.json",
-      "local_result": "monitor-regression、AI预算控制/运行时、日压缩预算等待与调度观测回归通过",
-      "hard_limits": "日压缩每日¥1、单次¥0.25、每日4次、每轮最多回填1天由运行时校验覆盖",
-      "current_production_gap": "本轮没有生产主机的只读配置快照，无法独立证明当前/etc/for-now.env、定时器、Feishu告警端点和实时账本仍与硬限一致",
-      "notable_mismatch": "deploy/for-now.env.example中的通用AI账户示例为每日¥14.4/200次、告警阈值¥36；它不是日压缩硬限，不能代替生产压缩配置核验"
-    }
-  }
+  ]
 }

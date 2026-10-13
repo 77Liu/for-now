@@ -336,10 +336,14 @@ export function createAiTaskTargets({
   }
 
   function onboardingClaimExtractionWork(store, task) {
+    // 新提交仍校验会话并发版本；持久任务按来源哈希验证内容及权限。
+    const persisted = Boolean(task.id && task.inputHash);
     const prepared = prepareUserModelExtraction(store, {
-      sourceRevision: task.inputVersion || task.requestedInputVersion
+      sourceRevision: persisted ? 0 : task.inputVersion || task.requestedInputVersion
     });
-    return prepared.value || null;
+    if (!prepared.value) return null;
+    if (persisted && prepared.value.inputHash !== task.inputHash) return null;
+    return persisted ? { ...prepared.value, inputVersion: task.inputVersion } : prepared.value;
   }
 
   function inspectIntent(store, task) {

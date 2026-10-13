@@ -10,6 +10,7 @@ import {
   RECORD_COMPRESSION_TASK_KIND
 } from "../modules/record-compressions/index.mjs";
 import { compactPersonalContextReceipt } from "./personal-context.mjs";
+import { aiTaskTargetReference } from "../shared/persistence/index.mjs";
 
 const INTERNAL_RECOVERY_LIMIT = 2;
 
@@ -81,11 +82,11 @@ export function createBackgroundAi({
       task.requestedInputHash = work.inputHash || "";
     }
   };
-  const requestedIntentMatches = (task, intent) => {
+  const requestedIntentMatchState = (task, intent) => {
     const hasIntent = Object.hasOwn(task, "requestedIntentInputVersion")
       || Object.hasOwn(task, "requestedIntentSubtargetVersion")
       || Object.hasOwn(task, "requestedIntentInputHash");
-    if (!intent || typeof intent !== "object") return false;
+    if (!intent || typeof intent !== "object") return "uninspectable";
     const expectedInputVersion = hasIntent && Object.hasOwn(task, "requestedIntentInputVersion")
       ? task.requestedIntentInputVersion
       : task.requestedInputVersion;
@@ -96,12 +97,13 @@ export function createBackgroundAi({
       || Object.hasOwn(task, "requestedInputVersion");
     const hasSubtargetVersion = (hasIntent && Object.hasOwn(task, "requestedIntentSubtargetVersion"))
       || Object.hasOwn(task, "requestedSubtargetVersion");
-    if (hasInputVersion && Math.max(0, Number(intent.inputVersion) || 0) !== expectedInputVersion) return false;
-    if (hasSubtargetVersion && Math.max(0, Number(intent.subtargetVersion) || 0) !== expectedSubtargetVersion) return false;
+    if (hasInputVersion && Math.max(0, Number(intent.inputVersion) || 0) !== expectedInputVersion) return "input-version-mismatch";
+    if (hasSubtargetVersion && Math.max(0, Number(intent.subtargetVersion) || 0) !== expectedSubtargetVersion) return "subtarget-version-mismatch";
     if (hasIntent && Object.hasOwn(task, "requestedIntentInputHash")
-      && String(intent.inputHash ?? "") !== task.requestedIntentInputHash) return false;
-    return true;
+      && String(intent.inputHash ?? "") !== task.requestedIntentInputHash) return "input-hash-mismatch";
+    return "matched";
   };
+  const requestedIntentMatches = (task, intent) => requestedIntentMatchState(task, intent) === "matched";
   const createInStore = (store, input = {}, { waitingBudget = false } = {}) => {
     if (waitingBudget) {
       const existing = store.aiTasks.find(task => task.clientRequestId === input?.clientRequestId);
@@ -130,6 +132,11 @@ export function createBackgroundAi({
     });
     notify(store, task, "stale", message);
   };
+  const taskHasRequiredTarget = (store, task) => {
+    const target = aiTaskTargetReference(store, task);
+    return (!target?.requiresExistingTarget || target.exists)
+      && (!target?.requiresExistingSubtarget || target.subtargetExists);
+  };
   const cancelled = (store, task) => {
     targetFor(task).stale?.(store, task);
     tasks.complete(task, "cancelled", {
@@ -155,6 +162,7 @@ export function createBackgroundAi({
     running.add(key);
     const controller = new AbortController();
     controllers.set(key, controller);
+    let executed = false;
     try {
       const claimed = await repository.update(store => {
         const task = store.aiTasks.find(item => item.id === taskId);
@@ -169,6 +177,10 @@ export function createBackgroundAi({
           if (waiting) notify(store, waiting, WAITING_FOR_USER_MODEL_STATUS, "等待核心用户模型就绪");
           return false;
         }
+        if (task.kind === RECORD_COMPRESSION_TASK_KIND && !taskInputsCurrent(store, task)) {
+          stale(store, task, "日压缩已完成、越界或来源已变化，未调用模型");
+          return false;
+        }
         const claimedTask = tasks.claim(store.aiTasks, taskId);
         if (!claimedTask) return false;
         targetFor(claimedTask).started?.(store, claimedTask);
@@ -176,6 +188,7 @@ export function createBackgroundAi({
         return true;
       });
       if (!claimed) return;
+      executed = true;
       const store = await repository.read(), task = store.aiTasks.find(item => item.id === taskId);
       const work = task && prepareTarget(store, task);
       if (!task || !taskInputMatches(task, work)) {
@@ -195,7 +208,7 @@ export function createBackgroundAi({
       const result = work.contextReceipt && generated && typeof generated === "object" && !Array.isArray(generated)
         ? { ...generated, contextReceipt: compactPersonalContextReceipt(work.contextReceipt) }
         : generated;
-      const extractionSucceeded = await repository.update(value => {
+      await repository.update(value => {
         const currentTask = value.aiTasks.find(item => item.id === taskId);
         if (!currentTask) return false;
         if (["cancelled", "cancelling"].includes(currentTask.status)) {
@@ -213,15 +226,7 @@ export function createBackgroundAi({
         if (work.contextFingerprint) currentTask.contextFingerprint = work.contextFingerprint;
         tasks.complete(currentTask, "succeeded", { resultId });
         notify(value, currentTask, "succeeded");
-        return currentTask.kind === "onboardingClaimExtraction";
       });
-      if (extractionSucceeded) {
-        try {
-          await releaseWaiting();
-        } catch (releaseError) {
-          try { onError(taskId, releaseError); } catch {}
-        }
-      }
     } catch (error) {
       await repository.update(store => {
         const task = store.aiTasks.find(item => item.id === taskId);
@@ -231,6 +236,12 @@ export function createBackgroundAi({
           || (error?.code === "AI_TASK_CANCELLED"
             && !taskInputsCurrent(store, task))) {
           stale(store, task, "目标已变化，未调用外部模型");
+        }
+        else if (task.kind === RECORD_COMPRESSION_TASK_KIND && error?.budgetAdmissionRejected === true) {
+          const work = prepareTarget(store, task);
+          const waiting = tasks.waitForBudget(store.aiTasks, task.id, work, error.code);
+          if (waiting.waiting) targetFor(task).waitingBudget?.(store, task);
+          else if (waiting.stale) stale(store, task, "预算等待前来源或权限已变化");
         }
         else {
           targetFor(task).fail?.(store, task, error);
@@ -244,6 +255,20 @@ export function createBackgroundAi({
     } finally {
       controllers.delete(key);
       running.delete(key);
+      // 所有抽取终态都重新评估队列；门禁自行判定最新合法来源是否仍在途。
+      try {
+        const store = await repository.read();
+        const task = store.aiTasks.find(item => item.id === taskId);
+        if (executed && task && ["succeeded", "failed", "cancelled", "stale"].includes(task.status)) {
+          await targetFor(task).settled?.(task);
+        }
+        if (task?.kind === "onboardingClaimExtraction"
+          && ["succeeded", "failed", "cancelled", "stale"].includes(task.status)) {
+          await releaseWaiting();
+        }
+      } catch (releaseError) {
+        try { onError(taskId, releaseError); } catch {}
+      }
     }
   }
 
@@ -254,6 +279,7 @@ export function createBackgroundAi({
         && (!includeInternal || source.kind === RECORD_COMPRESSION_TASK_KIND)) {
         return { missing: true };
       }
+      if (source && !taskHasRequiredTarget(store, source)) return { missing: true };
       const retryInput = source && {
         kind: source.kind,
         resourceType: source.resourceType,
@@ -325,9 +351,9 @@ export function createBackgroundAi({
           && (!operation || task.payload?.operation === operation)
           && (!localDate || task.payload?.localDate === localDate))
         .sort((left, right) => (
-          String(left.payload?.localDate || left.payload?.windowStart || "")
-            .localeCompare(String(right.payload?.localDate || right.payload?.windowStart || ""))
-          || String(left.payload?.windowStart || "").localeCompare(String(right.payload?.windowStart || ""))
+          String(right.payload?.localDate || right.payload?.windowEnd || "")
+            .localeCompare(String(left.payload?.localDate || left.payload?.windowEnd || ""))
+          || String(right.payload?.windowStart || "").localeCompare(String(left.payload?.windowStart || ""))
           || String(left.createdAt).localeCompare(String(right.createdAt))
         ));
       for (const task of waiting) {
@@ -337,6 +363,11 @@ export function createBackgroundAi({
           invalidatedCount += 1;
           continue;
         }
+        if (store.aiTasks.some(other => other.id !== task.id && other.kind === task.kind
+          && ["queued", "running"].includes(other.status)
+          && other.payload?.operation === task.payload?.operation
+          && other.payload?.timezone === task.payload?.timezone
+          && other.payload?.sourceManifestHash === task.payload?.sourceManifestHash)) continue;
         if (scheduled.length >= promotionLimit) continue;
         const promoted = tasks.promoteBudgetWaiting(store.aiTasks, task.id, work);
         if (promoted.queued) {
@@ -360,6 +391,10 @@ export function createBackgroundAi({
       const scheduled = [];
       for (const task of store.aiTasks) {
         if (task.status !== WAITING_FOR_USER_MODEL_STATUS) continue;
+        if (!taskHasRequiredTarget(store, task)) {
+          stale(store, task, "等待任务的目标当前不可用，任务已终止");
+          continue;
+        }
         const intent = inspectRequestedIntent(store, task);
         if (typeof inspectIntent === "function" && !requestedIntentMatches(task, intent)) {
           stale(store, task, "等待核心用户模型期间，目标已变化");
@@ -373,7 +408,7 @@ export function createBackgroundAi({
         const work = prepareTarget(store, task);
         const promoted = tasks.promoteWaiting(store.aiTasks, task.id, work, intent);
         if (promoted.queued) {
-          notify(store, task, "queued", "核心用户模型已就绪，任务已进入后台队列");
+          notify(store, task, "queued", "前置整理已结束，任务已进入后台队列");
           scheduled.push(task.id);
         } else if (promoted.stale) {
           delete task.contextGeneratedAt;
@@ -398,6 +433,27 @@ export function createBackgroundAi({
       taskHandlers.set(kind, handler);
       return true;
     },
+    /** 只读观察任务恢复目标与候选意图，不读写仓库，也不触发调度或生成。 */
+    inspectRecoveryIntent(store, task) {
+      const target = aiTaskTargetReference(store, task);
+      const intent = inspectRequestedIntent(store, task);
+      return {
+        target: target && {
+          targetOptional: target.targetOptional,
+          requiresExistingTarget: target.requiresExistingTarget,
+          requiresExistingSubtarget: target.requiresExistingSubtarget,
+          exists: target.exists,
+          subtargetExists: target.subtargetExists
+        },
+        intent: intent && {
+          inputVersion: intent.inputVersion,
+          subtargetVersion: intent.subtargetVersion,
+          alreadyAnswered: intent.alreadyAnswered === true,
+          inputHash: intent.inputHash
+        },
+        intentMatch: requestedIntentMatchState(task, intent)
+      };
+    },
     createInStore,
     schedule,
     run,
@@ -418,6 +474,7 @@ export function createBackgroundAi({
       });
       const controller = controllers.get(`${contextKey()}:${taskId}`);
       controller?.abort();
+      if (value?.kind === "onboardingClaimExtraction") await releaseWaiting();
       return value;
     },
     enqueue: input => enqueueTask(input),
@@ -428,7 +485,7 @@ export function createBackgroundAi({
     retryInternal: id => retryTask(id, { includeInternal: true }),
     async resume() {
       const ids = await repository.update(store => {
-        const { queued, interrupted } = tasks.recover(store.aiTasks);
+        const { interrupted } = tasks.recover(store.aiTasks);
         const recovered = [];
         for (const task of interrupted) {
           targetFor(task).fail?.(store, task, { code: "TASK_INTERRUPTED" });
@@ -436,6 +493,7 @@ export function createBackgroundAi({
           const recoveryAttempt = Math.max(0, Math.round(Number(task.recoveryAttempt) || 0));
           if (isInternalTask(task)
             && task.kind !== RECORD_COMPRESSION_TASK_KIND
+            && taskHasRequiredTarget(store, task)
             && recoveryAttempt < INTERNAL_RECOVERY_LIMIT) {
             const retry = notifyCreated(
               store,
@@ -450,6 +508,15 @@ export function createBackgroundAi({
               recovered.push(retry.task.id);
             }
           }
+        }
+        const queued = [];
+        for (const task of store.aiTasks) {
+          if (task.status !== "queued") continue;
+          if (!taskHasRequiredTarget(store, task)) {
+            stale(store, task, "排队任务的目标当前不可用，任务已终止");
+            continue;
+          }
+          queued.push(task.id);
         }
         return [...queued, ...recovered];
       });

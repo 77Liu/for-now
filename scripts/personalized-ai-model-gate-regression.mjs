@@ -45,7 +45,16 @@ const generate = async work => {
 };
 const backgroundOperations = [];
 store = {
-  onboardingV2: normalizeOnboardingV2({ migration: { selectedFlow: "v2" } }, defaultOnboardingV2),
+  // 该回归验证“用户已提交补充但核心模型仍未整理”的等待边界；
+  // 完全没有补充时的空模型 fallback 由 thought-workflows-p00-regression 覆盖。
+  onboardingV2: normalizeOnboardingV2({
+    migration: { selectedFlow: "v2" },
+    session: {
+      answers: {
+        currentContext: { rawText: "已提交一条用户补充", contextAllowed: true, version: 1 }
+      }
+    }
+  }, defaultOnboardingV2),
   chats: [],
   journals: [{
     id: "journal-1",
@@ -72,6 +81,10 @@ store = {
   aiTasks: [],
   notifications: []
 };
+const initialExtraction = prepareUserModelExtraction(store).value;
+store.aiTasks.push({ id: "core-in-flight", kind: "onboardingClaimExtraction",
+  targetId: "onboarding-v2", status: "running", inputVersion: initialExtraction.inputVersion,
+  inputHash: initialExtraction.inputHash });
 const repository = {
   async read() {
     return structuredClone(store);
@@ -358,10 +371,10 @@ for (const [index, request] of requests.entries()) {
 
 assert.equal(providerCalls, 0, "cold-start requests must not call the provider");
 assert.equal(prepareCalls, 0, "cold-start requests must not compile prompts or current context");
-assert.equal(store.aiTasks.length, requests.length - 1,
+assert.equal(store.aiTasks.length, requests.length,
   "same-version cold reflection requests share one durable task");
-assert.equal(store.aiTasks.every(task => task.status === WAITING_FOR_USER_MODEL_STATUS), true);
-assert.equal(store.aiTasks.every(task => !Object.hasOwn(task.payload, "prompt")), true);
+assert.equal(store.aiTasks.filter(task => task.id !== "core-in-flight").every(task => task.status === WAITING_FOR_USER_MODEL_STATUS), true);
+assert.equal(store.aiTasks.filter(task => task.id !== "core-in-flight").every(task => !Object.hasOwn(task.payload, "prompt")), true);
 assert.equal(store.journals[0].reflections.length, 0, "cold-start reflection must not write a partial record");
 assert.deepEqual(new Set(returnedTasks.map(task => task.kind)), new Set([
   "thoughtDraft",

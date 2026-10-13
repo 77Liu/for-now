@@ -40,7 +40,10 @@ const successfulScenarios = new Set(["success", "media_success"]);
 const files = [
   "/etc/for-now.env", "/etc/systemd/system/for-now.service", "/etc/systemd/system/for-now-backup.service",
   "/etc/systemd/system/for-now-backup.timer", "/etc/systemd/system/for-now-monitor.service",
-  "/etc/systemd/system/for-now-monitor.timer", "/usr/local/sbin/for-now-backup", "/usr/local/sbin/for-now-restore-drill",
+  "/etc/systemd/system/for-now-monitor.timer", "/etc/systemd/system/for-now-host-metrics.service",
+  "/etc/systemd/system/for-now-monitor-journal-context.service",
+  "/usr/local/lib/for-now/monitor-journal-context.mjs",
+  "/usr/local/sbin/for-now-backup", "/usr/local/sbin/for-now-restore-drill",
   "/usr/local/sbin/for-now-migrate-attachments",
   "/var/www/app-portal/index.html", "/etc/nginx/snippets/for-now.conf",
   "/etc/nginx/snippets/acme-challenge.conf", "/etc/nginx/sites-available/dysf"
@@ -81,8 +84,12 @@ try {
     await fs.cp(path.join(root, "prompts"), path.join(dir, "archive/prompts"), { recursive: true });
     await fs.cp(path.join(root, "public"), path.join(dir, "archive/public"), { recursive: true });
     for (const file of ["server.mjs", "package.json", "package-lock.json"]) await fs.copyFile(path.join(root, file), path.join(dir, "archive", file));
-    for (const file of ["monitor-health.mjs", "validate-restored-data.mjs", "oss-attachment-smoke.mjs", "aliyun-segmentation-smoke.mjs", "postgres-runtime-preflight.mjs", "prompt-catalog-regression.mjs"]) {
+    for (const file of ["monitor-health.mjs", "monitor-host-metrics.mts", "monitor-journal-context.mts", "validate-restored-data.mjs", "oss-attachment-smoke.mjs", "aliyun-segmentation-smoke.mjs", "postgres-runtime-preflight.mjs", "prompt-catalog-regression.mjs"]) {
       await fs.copyFile(path.join(root, "scripts", file), path.join(dir, "archive/scripts", file));
+    }
+    await fs.mkdir(path.join(dir, "archive/.build/typescript/monitor"), { recursive: true });
+    for (const file of ["monitor-host-metrics.mjs", "monitor-journal-context.mjs"]) {
+      await fs.copyFile(path.join(root, ".build/typescript/monitor", file), path.join(dir, "archive/.build/typescript/monitor", file));
     }
     if (scenario === "exploration") await fs.writeFile(path.join(dir, "archive/public/explore-unexpected.txt"), "local exploration only\n");
     if(scenario !== "first_install_health") await fs.symlink(previous, path.join(base, "app"));
@@ -161,7 +168,10 @@ if(name==="curl"&&isNew&&["health","first_install_health","media_health"].includ
 if(name==="nginx"&&scenario==="nginx")process.exit(1);
 if(name==="mv")fs.renameSync(args.at(-2),args.at(-1));
 if(name==="readlink")console.log(current);
-if(name==="install"){const src=args.at(-2),dst=args.at(-1);fs.copyFileSync(src,dst)}
+if(name==="install"){
+ if(args.includes("-d")){fs.mkdirSync(path.join(dir,args.at(-1).replace(/^\\/+/,"")),{recursive:true,mode:0o750})}
+ else {const src=args.at(-2),dst=args.at(-1);fs.copyFileSync(src,dst)}
+}
 if(name==="sed"){const file=args.at(-1),version=args[1].split("APP_VERSION=")[2].slice(0,-1);fs.writeFileSync(file,fs.readFileSync(file,"utf8").replace(/^APP_VERSION=.*$/m,"APP_VERSION="+version))}
 `, { mode: 0o755 });
     for (const command of ["sudo", "id", "git", "chown", "systemctl", "curl", "nginx", "install", "sleep", "find", "mv", "readlink", "runuser", "sed"]) {
@@ -275,13 +285,14 @@ if(name==="sed"){const file=args.at(-1),version=args[1].split("APP_VERSION=")[2]
       assert.match(result.stderr, /Old worker cannot roll back/);
     }
     if (succeeded) {
+      const npmCountBeforeReuse = (await fs.readFile(path.join(dir, "commands.log"), "utf8")).match(/^npm /gm)?.length || 0;
       const runAgain = nonce => spawnSync("/bin/bash", [scriptFile], { env: { ...process.env, PATH: `${bin}:/usr/bin:/bin`, DEPLOY_FIXTURE: dir, DEPLOY_SCENARIO: scenario,
         RELEASE_ATTEMPT_ID: nonce.attemptId, RELEASE_CANDIDATE_SHA: nonce.candidateSha }, encoding: "utf8", timeout: 180000 });
       const stale = runAgain(approval);
       assert.equal(stale.status, 1); assert.match(stale.stderr, /RELEASE_FENCE_REJECTED/);
       const fresh = issueReleaseFenceFixture(releaseFence, { target: "production", candidateSha: commit, baselineSha: commit });
       assert.equal(runAgain(fresh).status, 0);
-      assert.equal((await fs.readFile(path.join(dir, "commands.log"), "utf8")).match(/^npm /gm)?.length, 1, "fresh same SHA must reuse completed release");
+      assert.equal((await fs.readFile(path.join(dir, "commands.log"), "utf8")).match(/^npm /gm)?.length || 0, npmCountBeforeReuse, "fresh same SHA must not rebuild the completed release");
     }
     await assert.rejects(fs.access(path.join(releaseFence.directory, "production.json.execution")), { code: "ENOENT" });
     assert.equal(await fs.readFile(path.join(previous, "active-sentinel"), "utf8"), "unchanged\n");

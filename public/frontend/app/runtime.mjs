@@ -1,3 +1,4 @@
+import { createTestSupportBridge } from "./runtime/loaders.mjs";
 import { createFeatureRegistry } from "../feature-registry/index.mjs";
 import * as checkinsFeature from "../features/checkins/index.mjs";
 import { viewSections } from "../pages/index.mjs";
@@ -32,6 +33,7 @@ export async function startApplication(initial = null, { opening = null } = {}) 
   const { createRuntimeComposition } = await runtimeModuleRequest;
   const composition = await createRuntimeComposition(initial, {
     opening,
+    createTestSupport:createTestSupportBridge,
     featureModules,
     expectedViews: Object.keys(viewSections)
   });

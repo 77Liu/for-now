@@ -47,7 +47,10 @@ const SHELL_ASSETS = [
   "frontend/opening/index.mjs",
   "frontend/opening/rain-engine.mjs",
   "frontend/shared/ai-task-status.mjs",
-  "frontend/shared/personalized-ai-task.mjs",
+  "generated/personalized-ai-task.mjs",
+  "generated/features/onboarding-v2/navigation.mjs",
+  "generated/app/runtime/notification-runtime.mjs",
+  "generated/app/runtime/chat-submission.mjs",
   "frontend/content/index.mjs",
   "frontend/components/tag-multiselect/index.mjs",
   "frontend/features/actions/controller.mjs",
@@ -138,7 +141,12 @@ const LAZY_MODULE_PATHS = [
   "/frontend/features/review-insights/",
   "/frontend/features/thought-discovery/",
   "/frontend/features/thoughts/",
-  "/frontend/features/trash/"
+  "/frontend/features/trash/",
+  "/generated/features/background-results/",
+  "/generated/features/personal-context/",
+  "/generated/features/notifications/",
+  "/generated/capture-audio-lifecycle.mjs",
+  "/generated/test-support/"
 ];
 
 const isNetworkOnly = url => NETWORK_ONLY_PATHS.some(segment => url.pathname.includes(segment));

@@ -333,14 +333,16 @@ assert.equal(normalizeAiUsage({
   }]
 }).entries[0].scene, "keepsakeSegmentation");
 
-let speechAuditDetails = null, synthesizedText = "", speechStatus = 0;
+let speechAuditDetails = null, synthesizedText = "", synthesizedRate = null, speechStatus = 0;
+let speechInput = { text: "  测试朗读  ", sourceVersion: 1 };
 const speechHttp = createSpeechHttp({
   speech: {
     configured: true,
     defaultVoice: "voice-a",
     voices: [{ id: "voice-a", sampleText: "试听" }],
-    async synthesize({ text }) {
+    async synthesize({ text, generationRate }) {
       synthesizedText = text;
+      synthesizedRate = generationRate;
       return { audio: Buffer.from("audio"), mimeType: "audio/mpeg", voice: "voice-a" };
     }
   },
@@ -349,7 +351,8 @@ const speechHttp = createSpeechHttp({
     speechAuditDetails = details;
     return invoke();
   },
-  bodyJson: async () => ({ text: "  测试朗读  ", sourceVersion: 1 }),
+  bodyJson: async () => speechInput,
+  readSettings: async () => ({ speech: { generationRate: 15 } }),
   sendJson: () => {}
 });
 await speechHttp.handle(
@@ -364,6 +367,14 @@ assert.equal(speechStatus, 200);
 assert.equal(synthesizedText, "测试朗读");
 assert.equal(speechAuditDetails.requestChars, 4);
 assert.equal(speechAuditDetails.units, 4);
+assert.equal(synthesizedRate, 15, "omitted rate uses the account setting");
+speechInput = { text: "覆盖速率", sourceVersion: 1, generationRate: 125 };
+await speechHttp.handle(
+  { method: "POST", headers: {} },
+  { writeHead(status) { speechStatus = status; }, end() {} },
+  new URL("http://local/api/speech/synthesize")
+);
+assert.equal(synthesizedRate, 100, "per-request rate uses the existing range normalization");
 
 const directory = await fs.mkdtemp(path.join(os.tmpdir(), "growth-ai-domain-"));
 const context = new AsyncLocalStorage();

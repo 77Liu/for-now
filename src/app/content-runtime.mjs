@@ -35,6 +35,7 @@ export function createContentRuntime({
   recordCompressionDailyBudgetCny = 0,
   recordCompressionPerCallBudgetCny = 0,
   recordCompressionMaxBackfillDatesPerScan = 1,
+  recordCompressionStartDate = "",
   now = () => new Date().toISOString(),
   today,
   currentTime = () => Date.now(),
@@ -44,7 +45,8 @@ export function createContentRuntime({
   debugServerUrl = "",
   debugRunId = "",
   debugFetch = fetch,
-  mediaFactory = createMediaRuntime
+  mediaFactory = createMediaRuntime,
+  effectObserver = null
 } = {}) {
   if (!repository?.read || !repository?.update || !repository?.executeIdempotent) {
     throw new TypeError("Content runtime repository is required");
@@ -63,6 +65,22 @@ export function createContentRuntime({
     [debugFetch, "debugFetch"],
     [mediaFactory, "mediaFactory"]
   ]) requiredFunction(value, name);
+  if (effectObserver !== null && typeof effectObserver !== "function") {
+    throw new TypeError("Content runtime effectObserver must be a function");
+  }
+
+  const observedRunDeepSeek = effectObserver
+    ? (...args) => {
+        effectObserver("provider", "deepseek");
+        return runDeepSeek(...args);
+      }
+    : runDeepSeek;
+  const observedDebugFetch = effectObserver
+    ? (...args) => {
+        effectObserver("outbound", "debug");
+        return debugFetch(...args);
+      }
+    : debugFetch;
 
   let backgroundAi;
   let mediaRuntime;
@@ -82,7 +100,8 @@ export function createContentRuntime({
     readAiUsage,
     dailyBudgetCny: recordCompressionDailyBudgetCny,
     perCallBudgetCny: recordCompressionPerCallBudgetCny,
-    maxBackfillDatesPerScan: recordCompressionMaxBackfillDatesPerScan
+    maxBackfillDatesPerScan: recordCompressionMaxBackfillDatesPerScan,
+    startDate: recordCompressionStartDate
   });
   const getRecentTrend = (store, asOf) => (
     recordCompressionService.getCurrentTrend(store, asOf)
@@ -139,7 +158,7 @@ export function createContentRuntime({
     parseKeepsake: keepsakePayload,
     moveCollectionItemToTrash: foundation.trashMutations.moveCollectionItemToTrash,
     moveNestedItemToTrash: foundation.trashMutations.moveNestedItemToTrash,
-    runDeepSeek,
+    runDeepSeek: observedRunDeepSeek,
     now,
     today,
     createId,
@@ -147,8 +166,21 @@ export function createContentRuntime({
     logEvent,
     debugServerUrl,
     debugRunId,
-    debugFetch
+    debugFetch: observedDebugFetch
   });
+  if (effectObserver) {
+    // 启动门通过代理记录媒体端口的实际调用，方法仍绑定原端口对象。
+    mediaRuntime = new Proxy(mediaRuntime, {
+      get(target, property) {
+        const value = target[property];
+        if (typeof value !== "function") return value;
+        return (...args) => {
+          effectObserver("media", String(property));
+          return value.apply(target, args);
+        };
+      }
+    });
+  }
   const background = createContentBackground({
     repository: contentRepository,
     annotationService: foundation.annotationService,
@@ -160,14 +192,14 @@ export function createContentRuntime({
     getAccountId,
     backgroundContextKey,
     dispatchBackground,
-    runDeepSeek,
+    runDeepSeek: observedRunDeepSeek,
     now,
     createId,
     hash,
     logEvent,
     debugServerUrl,
     debugRunId,
-    debugFetch
+    debugFetch: observedDebugFetch
   });
   backgroundAi = background.backgroundAi;
   const recordCompressionJobs = recordCompressionService.attach(backgroundAi);
@@ -182,7 +214,7 @@ export function createContentRuntime({
     records,
     backgroundAi,
     trashMutations: foundation.trashMutations,
-    runDeepSeek,
+    runDeepSeek: observedRunDeepSeek,
     getAccountId,
     materializeAttachmentFiles: mediaRuntime.materializeAttachmentFiles,
     workflowContextKey,
@@ -208,6 +240,11 @@ export function createContentRuntime({
     ...background,
     ...workflows,
     runRecordCompressionScan: options => recordCompressionJobs.scan(options),
+    /**
+     * 注册或替换日压缩真实终态观察器；持久化后调用，通知错误不改任务状态。
+     * @since unreleased
+     */
+    observeRecordCompressionTasks: observer => recordCompressionService.observeSettlements(observer),
     contentAttachmentService,
     perception,
     updateSourceStore: operation => contentRepository.update(operation),

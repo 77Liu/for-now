@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 export const PRICING_SOURCES = Object.freeze({
   deepseek: "https://api-docs.deepseek.com/zh-cn/quick_start/pricing",
   volcengineSpeech: "https://docs.volcengine.com/docs/6561/1359370?lang=zh",
+  volcengineFlashAsr: "https://docs.volcengine.com/docs/DoubaoVoice/Billinginstructions-21?lang=zh",
   volcengineOcr: "https://www.volcengine.com/docs/86081/1660260",
   volcengineDocument: "https://www.volcengine.com/docs/86081/1804813",
   aliyunSegmentation: "https://help.aliyun.com/zh/viapi/product-overview/billing-is-introduced-1",
@@ -107,6 +108,18 @@ export function parseVolcengineSpeechPricing(source) {
   };
 }
 
+/** 只解析极速版后付费行，资源包优惠或其他文件识别价格不得替代该资源。 */
+export function parseVolcengineFlashAsrPricing(source) {
+  const scope = requireScope(normalizeOfficialPage(source), "按调用后付费", "", "火山极速版后付费表");
+  const match = scope.match(/大模型录音文件识别（极速版）[\s|]*推理服务-API调用[\s|]*([0-9]+(?:\.[0-9]+)?)\s*元\s*[/／]\s*小时/u);
+  return {
+    currency: "CNY",
+    services: {
+      flashAsr: { label: "大模型录音文件识别（极速版）", price: finitePrice(match?.[1], "火山极速版后付费价格"), unit: "audio_hour" }
+    }
+  };
+}
+
 export function parseVolcengineOcrPricing(source) {
   const text = normalizeOfficialPage(source);
   const scope = requireScope(text, "OCRNormal", "", "火山 OCRNormal 价格");
@@ -194,6 +207,7 @@ export function buildPricingSnapshot(pages, retrievedAt = new Date().toISOString
     retrievedAt,
     deepseek: { source: PRICING_SOURCES.deepseek, checkedAt, ...deepseek },
     volcengineSpeech: { source: PRICING_SOURCES.volcengineSpeech, checkedAt, ...volcengineSpeech },
+    volcengineFlashAsr: { source: PRICING_SOURCES.volcengineFlashAsr, checkedAt, ...parseVolcengineFlashAsrPricing(pages.volcengineFlashAsr) },
     volcengineVision: {
       sources: { ocr: PRICING_SOURCES.volcengineOcr, document: PRICING_SOURCES.volcengineDocument },
       checkedAt,
@@ -212,11 +226,12 @@ export function validatePricingSnapshot(snapshot) {
       model.peak.cacheHit, model.peak.cacheMiss, model.peak.output
     ]),
     ...Object.values(snapshot.volcengineSpeech.services).map(item => item.price),
+    ...Object.values(snapshot.volcengineFlashAsr?.services || {}).map(item => item.price),
     ...Object.values(snapshot.volcengineVision.services).map(item => item.price),
     ...Object.values(snapshot.aliyunSegmentation.services).map(item => item.price),
     ...Object.values(snapshot.aliyunOss.services).map(item => item.price)
   ];
-  if (prices.length !== 20 || prices.some(price => !Number.isFinite(price) || price <= 0)) {
+  if (prices.length !== 21 || prices.some(price => !Number.isFinite(price) || price <= 0)) {
     throw new Error("官方价格快照字段不完整，拒绝写入");
   }
   return snapshot;

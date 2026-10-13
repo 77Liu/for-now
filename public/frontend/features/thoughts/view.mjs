@@ -25,7 +25,9 @@ export function createThoughtView({
   getComputedStyle,
   escapeSelector,
   document,
-  presentation
+  presentation,
+  audioLifecycle,
+  audioScope = () => null
 } = {}) {
   for (const [name, value] of Object.entries({
     getSnapshot,
@@ -297,9 +299,13 @@ export function createThoughtView({
   function render(extraOpen = {}) {
     if (!surface || !route) return false;
     const snapshot = getSnapshot();
-    return route.view === "together"
+    const scope = audioScope();
+    if (scope) audioLifecycle.beforeRender(surface, scope);
+    const rendered = route.view === "together"
       ? renderTogether(snapshot, extraOpen)
       : renderThoughtPage(snapshot, extraOpen);
+    if (scope) audioLifecycle.afterRender(surface, scope);
+    return rendered;
   }
 
   function updateRoute(nextRoute, result = null) {
@@ -378,7 +384,10 @@ export function createThoughtView({
       template.innerHTML = presentation.card(chain, false, sortMode, { detail }).trim();
       const next = template.content.querySelector(".chain-record");
       if (!next) continue;
+      const scope = audioScope();
+      if (scope) audioLifecycle.beforeRender(current, scope);
       current.replaceWith(next);
+      if (scope) audioLifecycle.afterRender(next, scope);
       next.open = rootOpen;
       next.querySelectorAll("[data-followup-id]").forEach(item => {
         item.open = openFollowUps.has(item.dataset.followupId);
@@ -415,6 +424,7 @@ export function createThoughtView({
     syncOverflow,
     toggleExpanded,
     clear() {
+      audioLifecycle?.dispose(surface);
       expandedContent.clear();
       queryOne("#all-thoughts")?.replaceChildren();
       queryOne("#today-thoughts")?.replaceChildren();

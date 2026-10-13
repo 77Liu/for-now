@@ -77,6 +77,17 @@ const provider = http.createServer(async (request, response) => {
       data: Buffer.from([0x49, 0x44, 0x33, 0x04, 0x00, 0x00]).toString("base64")
     }, { "x-tt-logid": "tts-server-test" });
   }
+  if (url.pathname === "/asr-flash") {
+    const source = Buffer.from(JSON.parse(raw).audio.data, "base64");
+    assert.equal(request.headers["x-api-resource-id"], "volc.bigasr.auc_turbo");
+    assert.equal(request.headers["x-api-sequence"], "-1");
+    assert.equal(source.readUInt32LE(4), source.length - 8);
+    assert.equal(source.readUInt32LE(40), source.length - 44);
+    return json(response, {
+      audio_info: { duration: 1250 },
+      result: { text: "这是语音识别原文。", utterances: [{ text: "这是语音识别原文。", start_time: 0, end_time: 1250 }] }
+    }, { "x-api-status-code": "20000000", "x-tt-logid": "flash-server-test" });
+  }
   if (url.pathname === "/visual") {
     const action = url.searchParams.get("Action");
     return json(response, action === "OCRNormal"
@@ -146,6 +157,7 @@ const app = spawn(process.execPath, ["server.mjs"], {
     DEEPSEEK_API_URL: `http://127.0.0.1:${provider.address().port}/deepseek`,
     VOLCENGINE_SPEECH_API_KEY: "speech-test-key",
     VOLCENGINE_TTS_ENDPOINT: `http://127.0.0.1:${provider.address().port}/tts`,
+    VOLCENGINE_ASR_FILE_ENDPOINT: `http://127.0.0.1:${provider.address().port}/asr-flash`,
     VOLCENGINE_ASR_STREAM_ENDPOINT: `ws://127.0.0.1:${websocketServer.address().port}/asr`,
     VOLCENGINE_ACCESS_KEY_ID: "visual-test-ak",
     VOLCENGINE_SECRET_ACCESS_KEY: "visual-test-sk",
@@ -483,12 +495,19 @@ try {
   assert.equal(typeof JSON.parse(structuredCall.raw).messages.at(-1).content, "string");
   assert.match(JSON.parse(structuredCall.raw).messages.at(-1).content, /OCR TEST 2026/);
 
-  const wav = Buffer.concat([
-    Buffer.from("RIFF"),
-    Buffer.alloc(4),
-    Buffer.from("WAVE"),
-    Buffer.alloc(128)
-  ]);
+  const wav = Buffer.alloc(44 + 16000 * 2 * 1.25);
+  wav.write("RIFF");
+  wav.writeUInt32LE(wav.length - 8, 4);
+  wav.write("WAVEfmt ", 8);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(16000, 24);
+  wav.writeUInt32LE(32000, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write("data", 36);
+  wav.writeUInt32LE(wav.length - 44, 40);
   const uploaded = await (await fetch(`${base}/api/audio/upload`, {
     method: "POST",
     headers: { "content-type": "application/json", "idempotency-key": "volcengine-audio-upload" },
@@ -511,7 +530,8 @@ try {
   assert.equal(capture.transcription.polishedText, "这是整理后的转写。");
   assert.equal(capture.transcription.condensedText, "这是凝练后的转写。");
   assert.equal(capture.transcription.condenseErrorCode, "");
-  assert.equal(asrConnections, 1);
+  assert.equal(asrConnections, 0, "default whole-file HTTP never starts streaming fallback");
+  assert.equal(providerCalls.filter(call => call.pathname === "/asr-flash").length, 1);
   const usage = JSON.parse(await fs.readFile(path.join(dataDir, "ai-usage.json"), "utf8"));
   assert.equal(usage.version, 5);
   assert.equal(usage.entries.filter(item => item.provider === "volcengine" && item.scene === "speechSynthesis" && item.unitType === "character").length, 4);
@@ -521,6 +541,10 @@ try {
     && item.scene === "speechRecognition"
     && item.unitType === "audioMillisecond"
     && item.units === 1250
+    && item.action === "flashAsr"
+    && Math.abs(item.costCny - 1250 * 4.5 / 3600000) < 1e-12
+    && item.providerRequestId === "flash-server-test"
+    && item.costSource.includes("Billinginstructions-21")
   )));
   assert.ok(usage.entries.some(item => item.provider === "volcengine" && item.scene === "visionOcr" && item.unitType === "call"));
   assert.ok(usage.entries.some(item => item.provider === "volcengine" && item.scene === "documentParsing" && item.unitType === "page"));

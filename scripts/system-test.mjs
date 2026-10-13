@@ -65,6 +65,7 @@ const suites = {
     ["production environment isolation", ["scripts/system-test.mjs", ISOLATION_PROBE]]
   ],
   backend: [
+    ["backend TypeScript runtime build", ["node_modules/typescript/bin/tsc", "-p", "tsconfig.backend.json"]],
     ["production environment isolation", ["scripts/system-test.mjs", ISOLATION_PROBE]],
     ["module boundaries", ["scripts/check-modules.mjs"]],
     ["module boundary checker regression", ["scripts/module-boundary-regression.mjs"]],

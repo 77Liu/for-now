@@ -201,7 +201,7 @@ const store = readyStore();
 const model = coreUserModelProjection(store);
 const prompts = [];
 const coldStore = readyStore();
-coldStore.aiTasks = [];
+coldStore.aiTasks = [{ ...coldStore.aiTasks[0], status: "running" }];
 assert.equal(userModelCoreReadiness(coldStore).ready, false);
 let coldProviderCalls = 0;
 const coldWorkflow = workflowFor(coldStore, async () => {

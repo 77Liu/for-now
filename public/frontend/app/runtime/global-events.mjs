@@ -1,5 +1,6 @@
 import { sessionSerial } from "../../session/index.mjs";
 import { publishDomains, state } from "../../state/index.mjs";
+import { viewSections } from "../../pages/index.mjs";
 import { installAuthEvents } from "./auth-events.mjs";
 import { installOnboardingEvents } from "./onboarding-events.mjs";
 import { installCheckinEditEvent, installCheckinSubmissionEvent } from "./checkin-events.mjs";
@@ -7,7 +8,7 @@ import { installRecordSubmissionEvents } from "./record-events.mjs";
 import { installQuoteSubmissionEvent } from "./quote-events.mjs";
 
 export function installGlobalEvents({
-  runtime,$,$$,actionsCoordinator,localTestViewScopes,ensureLocalTestViewScope,
+  runtime,$,$$,actionsCoordinator,testSupport,
   restorePendingProjections,createPageRouter,applicationBasePath,
   applyApplicationRoute,hasCapability,showPermissionPage,renderHomeMemories,
   openHomeMemory,openHomeEditor,closeHomeEditors,renderDate,renderSliders,
@@ -41,20 +42,15 @@ const pageEffects = {
     }
   }
 };
-const lazyPageEffects = new Proxy(pageEffects, {
-  get(target, view) {
-    const effect = target[view];
-    if (typeof view !== "string" || !localTestViewScopes[view]) return effect;
-
-    return () => {
-      void ensureLocalTestViewScope(view).then(async ready => {
-        if (!ready) return;
-        if (typeof effect === "function") await effect();
-        await restorePendingProjections();
-      });
-    };
+const lazyPageEffects = Object.fromEntries(Object.keys(viewSections).map(view=>[
+  view,()=>{
+    void testSupport.ensureView(view).then(async ready=>{
+      if(!ready)return;
+      if(typeof pageEffects[view]==="function")await pageEffects[view]();
+      await restorePendingProjections()
+    })
   }
-});
+]));
 const pageRouter=createPageRouter({query:$,queryAll:$$,effects:lazyPageEffects,basePath:applicationBasePath,onRouteStart:applyApplicationRoute,canAccessView:(_,capability)=>hasCapability(capability),onDenied:showPermissionPage});
 const {switchView,restoreView}=pageRouter;
 installOnboardingEvents({

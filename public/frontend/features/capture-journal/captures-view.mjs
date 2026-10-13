@@ -1,4 +1,5 @@
 import { eventDate, eventTimestamp } from "../../time/index.mjs";
+import { createCaptureAudioLifecycle } from "../../../generated/capture-audio-lifecycle.mjs";
 import {
   captureCardMarkup,
   formatAudioDuration,
@@ -14,12 +15,16 @@ export function createCapturesView({
   platform,
   getRoot,
   getAudio,
+  requestHeadStatus,
   getDraftTags,
   getSearchQuery,
+  getGenerationRate = () => undefined,
+  getPlayerScope,
   isEditorOpen,
   isSubmitting
 } = {}) {
   const expandedKeys = new Set();
+  const audioLifecycle = createCaptureAudioLifecycle({ headStatus: requestHeadStatus });
   const query = selector => getRoot()?.querySelector(selector) || null;
   const queryAll = selector => [...(getRoot()?.querySelectorAll(selector) || [])];
 
@@ -166,11 +171,16 @@ export function createCapturesView({
   function renderList() {
     if (!getRoot()) return false;
     const snapshot = data.getSnapshot();
+    const presentationSnapshot = {
+      ...snapshot,
+      settings: { speech: { generationRate: getGenerationRate() } }
+    };
     const allItems = [...(snapshot.captures || [])]
       .sort((left, right) => eventTimestamp(right).localeCompare(eventTimestamp(left)));
     const searchQuery = getSearchQuery();
     const items = allItems.filter(item => matchesFeedSearch(
       searchQuery,
+      item.title,
       item.content,
       item.tags,
       item.transcription?.rawText,
@@ -195,11 +205,13 @@ export function createCapturesView({
     );
     const list = query("#capture-list");
     if (!list) return false;
+    const scope = getPlayerScope();
+    audioLifecycle.beforeRender(list, scope);
     list.innerHTML = items.length
       ? items.map((item, index) => captureCardMarkup({
         item,
         showDate: index === 0 || eventDate(item) !== eventDate(items[index - 1]),
-        snapshot,
+        snapshot: presentationSnapshot,
         appUrl: view.appUrl,
         contentImagesMarkup: media.contentImagesMarkup
       })).join("")
@@ -213,10 +225,11 @@ export function createCapturesView({
           body: "刚开始为空很正常。文字、图片或录音都可以单独留下。",
           action: { command: "new-capture", label: "留下第一条" }
         });
+    audioLifecycle.afterRender(list, scope);
     for (const item of items.filter(value => !value._sync)) {
       annotations.markTarget(
         list.querySelector(
-          `[data-capture-id="${platform.escapeSelector(item.id)}"] .capture-copy .markdown-content`
+          `[data-capture-id="${platform.escapeSelector(item.id)}"] .capture-content-viewport > .markdown-content`
         ),
         annotations.rootKey("capture", item.id),
         "content"
@@ -261,11 +274,14 @@ export function createCapturesView({
     renderTags,
     renderList,
     render,
+    retryAudio: button => audioLifecycle.retry(button),
+    disposeAudio: () => audioLifecycle.dispose(getRoot()),
     syncSpeechOverflow,
     syncOverflow,
     toggleCard,
     resetSession() {
       expandedKeys.clear();
+      audioLifecycle.dispose(getRoot());
     }
   });
 }

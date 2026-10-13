@@ -64,15 +64,32 @@ const countMetric = value => Number.isSafeInteger(value) ? Math.max(0, value) : 
 export function createRecordCompressionScanObserver({
   logEvent,
   requestStorage,
+  notify,
   now = () => Date.now()
 } = {}) {
   if (typeof logEvent !== "function") throw new TypeError("压缩扫描观测需要 logEvent");
   const emit = (...args) => requestStorage?.run
     ? requestStorage.run({ secrets: [] }, () => logEvent(...args))
     : logEvent(...args);
-  return async function observe(scan) {
+  const send = async (title, lines) => {
+    if (typeof notify !== "function") return;
+    try {
+      await notify({ title, lines });
+    } catch (error) {
+      await emit("system", "record_compression.notification_failed", {
+        level: "warn",
+        error: errorMetadata(error)
+      });
+    }
+  };
+  const observe = async function observe(scan) {
     const startedAt = now();
     await emit("system", "record_compression.scan_started", { level: "info" });
+    await send("日压缩已启动", [`时间（上海）：${new Intl.DateTimeFormat("zh-CN", {
+      timeZone: DEFAULT_RECORD_TIMEZONE,
+      dateStyle: "medium",
+      timeStyle: "medium"
+    }).format(new Date(startedAt))}`]);
     try {
       const { result, metrics = {} } = await scan();
       const counts = {
@@ -95,6 +112,20 @@ export function createRecordCompressionScanObserver({
         level: "info",
         ...counts
       });
+      const summary = result || {};
+      await send("日压缩扫描登记完成", [
+        `排队：${countMetric(summary.queuedCount ?? summary.queued)}`,
+        `等待预算：${countMetric(summary.waitingBudgetCount)}`,
+        `跳过：${countMetric(summary.skippedCount ?? summary.skipped)}`,
+        `耗时：${counts.durationMs}ms`
+      ]);
+      await send("日压缩扫描费用快照", [
+        `扫描时已记录费用：¥${Number.isFinite(summary.knownSpentCny) ? summary.knownSpentCny.toFixed(4) : "未知"}`,
+        `扫描时已预留预算：¥${Number.isFinite(summary.reservedCny) ? summary.reservedCny.toFixed(4) : "未知"}`,
+        `已知调用：${countMetric(summary.knownCalls)}；预留调用：${countMetric(summary.reservedCalls)}`,
+        countMetric(summary.queuedCount ?? summary.queued) || countMetric(summary.waitingBudgetCount)
+          ? "任务待执行，生成结果与更新费用以真实终态通知为准。" : "本轮无生成任务。"
+      ]);
       return result;
     } catch (error) {
       await emit("system", "record_compression.scan_failed", {
@@ -102,9 +133,24 @@ export function createRecordCompressionScanObserver({
         failureCount: 1,
         error: errorMetadata(error)
       });
+      await send("日压缩扫描失败", ["请查看服务端观测日志。"]);
       throw error;
     }
   };
+  // 此回调只在真实任务终态持久化后触发，费用来自完成后的实际usage读取。
+  observe.settled = async outcome => {
+    await emit("system", "record_compression.task_finished", { level: outcome.status === "succeeded" ? "info" : "warn", ...outcome });
+    const label = outcome.operation === "historicalSupplement" ? "历史补充" : "日摘要";
+    const phase = outcome.status === "succeeded" ? "生成完成" : outcome.status === "failed" ? "生成失败" : "生成未完成";
+    await send(`${label}${phase}`, [
+      `日期：${outcome.localDate || "未知"}`,
+      `状态：${outcome.status}`,
+      `该账户当日日压缩已记录费用：¥${Number.isFinite(outcome.knownSpentCny) ? outcome.knownSpentCny.toFixed(4) : "未知"}`,
+      outcome.costReadFailed ? "当日费用记录读取失败，调用次数未知；已保存的任务终态不变。"
+        : `该账户当日调用：${countMetric(outcome.knownCalls)}；费用未知调用：${countMetric(outcome.unknownCostCalls)}`
+    ]);
+  };
+  return observe;
 }
 
 export function createRuntimeHttpWiring({
@@ -146,7 +192,8 @@ export function createRuntimeHttpWiring({
     projectPersonalContext,
     maybeRunPeriodicAnalysis,
     runSpeechCacheSweep,
-    runRecordCompressionScan
+    runRecordCompressionScan,
+    observeRecordCompressionTasks
   } = contentRuntime;
   const {
     sendJson,
@@ -239,8 +286,20 @@ export function createRuntimeHttpWiring({
   const runRecordCompressionSlot = createRetryableSlotRunner();
   const observeRecordCompressionScan = createRecordCompressionScanObserver({
     logEvent,
-    requestStorage
+    requestStorage,
+    notify: appConfig.recordCompressionNotificationsEnabled
+      && appConfig.feishuAlertWebhook
+      ? async message => {
+        const { createFeishuNotifier } = await import("../../.build/typescript/backend/shared/observability/feishu.mjs");
+        return createFeishuNotifier({
+          webhook: appConfig.feishuAlertWebhook,
+          secret: appConfig.feishuAlertSecret
+        })(message);
+      }
+      : undefined
   });
+  observeRecordCompressionTasks?.(observeRecordCompressionScan.settled);
+
   async function runRecordCompressionScheduler() {
     if (!appConfig.recordCompressionEnabled) return { disabled: true };
     const timestamp = now();

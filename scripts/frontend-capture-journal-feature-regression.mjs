@@ -25,6 +25,7 @@ assert.equal(matchesFeedSearch("不存在", ["标题", "正文"]), false);
 const captureMarkup = captureCardMarkup({
   item: {
     id: "capture-1",
+    title: "独立录音标题",
     content: "正文",
     tags: ["记录"],
     occurredAt: "2026-10-06T08:00:00.000Z",
@@ -59,6 +60,48 @@ assert.match(captureMarkup, /data-capture-transcribe="capture-1"/);
 assert.match(captureMarkup, /原始转写/);
 assert.match(captureMarkup, /AI 整理稿/);
 assert.match(captureMarkup, /data-speech-source-version="2"/);
+assert.match(captureMarkup, /data-capture-audio-retry/);
+assert.doesNotMatch(captureMarkup, /data-speech-playback-rate/, "do not show playback-rate controls before a speech asset exists");
+assert.match(captureMarkup, /<h3 class="capture-title">/, "capture title is rendered as separate metadata");
+
+const generatedSpeechMarkup = captureCardMarkup({
+  item: { id: "capture-speech", content: "可朗读内容", occurredAt: "2026-10-06T08:00:00.000Z", version: 1 },
+  snapshot: {
+    thoughts: [], aiTasks: [],
+    speech: { configured: true, supportedAsrMimeTypes: [], voices: [], assets: [{
+      id: "speech-asset-1", sourceType: "capture", sourceId: "capture-speech", sourceVersion: 1,
+      voice: "voice-a", generationRate: 35, mimeType: "audio/mpeg", bytes: 10
+    }] }
+  },
+  appUrl: value => `/now${value}`,
+  contentImagesMarkup: () => ""
+});
+assert.match(generatedSpeechMarkup, /data-speech-playback-rate/, "playback speed appears with an existing playable speech asset");
+assert.match(generatedSpeechMarkup, /value="35" data-speech-generation-rate/);
+
+const cachedSpeechWithoutProvider = captureCardMarkup({
+  item: { id: "capture-cached", content: "仍可朗读", occurredAt: "2026-10-06T08:00:00.000Z", version: 1 },
+  snapshot: {
+    thoughts: [], aiTasks: [],
+    speech: { configured: false, voices: [], assets: [{
+      id: "speech-asset-cached", sourceType: "capture", sourceId: "capture-cached", sourceVersion: 1,
+      voice: "voice-a", generationRate: -10, mimeType: "audio/mpeg", bytes: 10
+    }] }
+  },
+  appUrl: value => `/now${value}`,
+  contentImagesMarkup: () => ""
+});
+assert.match(cachedSpeechWithoutProvider, /data-speech-player="speech-asset-cached"/);
+assert.match(cachedSpeechWithoutProvider, /data-capture-speech-retry/);
+assert.doesNotMatch(cachedSpeechWithoutProvider, /data-speech-synthesize/);
+
+const unavailableSpeechMarkup = captureCardMarkup({
+  item: { id: "capture-unconfigured", content: "只有文字", occurredAt: "2026-10-06T08:00:00.000Z", version: 1 },
+  snapshot: { thoughts: [], aiTasks: [], speech: { configured: false, assets: [] } },
+  appUrl: value => `/now${value}`,
+  contentImagesMarkup: () => ""
+});
+assert.doesNotMatch(unavailableSpeechMarkup, /speech-asset-controls|data-speech-player/);
 
 const journalMarkup = journalCardMarkup({
   item: {
@@ -390,6 +433,76 @@ assert.ok(clearedTimers.includes(9));
 assert.equal(recorderAudio.snapshot().preview, "blob:recorder-1");
 await recorderAudio.clear();
 assert.deepEqual(recorderUrls.revoked, ["blob:recorder-1"]);
+
+const raceRecorders = [];
+const raceTimers = new Map();
+const raceClearedTimers = [];
+let raceTimerId = 0;
+let raceNow = 3000;
+class RacingMediaRecorder extends EventTarget {
+  constructor(stream, options) {
+    super();
+    this.stream = stream;
+    this.mimeType = options?.mimeType || "audio/webm";
+    this.state = "inactive";
+    raceRecorders.push(this);
+  }
+
+  start() { this.state = "recording"; }
+
+  stop() { this.state = "inactive"; }
+
+  flushStop() {
+    const data = new Event("dataavailable");
+    Object.defineProperty(data, "data", { value: new Blob(["race-final"], { type: this.mimeType }) });
+    this.dispatchEvent(data);
+    this.dispatchEvent(new Event("stop"));
+  }
+}
+const racingAudio = createCaptureAudioDraft({
+  store: createMemoryMediaDraftStore(),
+  getAccountId: () => "recording-race-account",
+  isEditing: () => false,
+  presentError: error => ({ message: error.message }),
+  encodeAudio: async () => "data:audio/webm;base64,dGVzdA==",
+  readDuration: async () => 1200,
+  request: async () => ({ discarded: [] }),
+  mediaDevices: { async getUserMedia() { return { getTracks: () => [{ stop() {} }] }; } },
+  MediaRecorderConstructor: RacingMediaRecorder,
+  objectUrls: recorderUrls,
+  createId: () => "recording-race-request",
+  now: () => raceNow,
+  setTimer(callback) {
+    const id = ++raceTimerId;
+    raceTimers.set(id, callback);
+    return id;
+  },
+  clearTimer(id) {
+    raceClearedTimers.push(id);
+    raceTimers.delete(id);
+  },
+  confirmReplace: () => true
+});
+assert.equal(await racingAudio.start(), true);
+const firstRaceStop = racingAudio.stop();
+raceNow = 4000;
+assert.equal(await racingAudio.start(), true, "a new recording may start while stop awaits its final dataavailable event");
+const secondRecordingTimer = 2;
+const staleTimerTick = raceTimers.get(1);
+raceRecorders[0].flushStop();
+await firstRaceStop;
+assert.ok(raceTimers.has(secondRecordingTimer), "a stale stop callback must not clear the new recording timer");
+assert.equal(racingAudio.snapshot().active, true, "the new recording remains active after the old stop event");
+assert.ok(!raceClearedTimers.includes(secondRecordingTimer), "the old stop callback must not claim the new timer");
+assert.ok(raceClearedTimers.includes(1), "the stale recording must still clear its own timer");
+staleTimerTick();
+assert.equal(racingAudio.snapshot().active, true, "a stale timer tick cannot stop or mutate the replacement recording");
+raceNow = 5200;
+const secondRaceStop = racingAudio.stop();
+raceRecorders[1].flushStop();
+await secondRaceStop;
+assert.equal(racingAudio.snapshot().blob.size, new Blob(["race-final"]).size, "only the current recording's final chunk is retained");
+assert.ok(raceClearedTimers.includes(secondRecordingTimer), "the current stop clears its own timer");
 
 let delayedRecorder = null;
 class DelayedMediaRecorder extends EventTarget {

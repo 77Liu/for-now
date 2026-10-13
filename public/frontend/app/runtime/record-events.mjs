@@ -1,3 +1,4 @@
+import { installChatSubmission } from "../../../generated/app/runtime/chat-submission.mjs";
 import { state } from "../../state/index.mjs";
 
 /** 绑定记录、思考和聊天表单事件；注入的请求端口必须使用当前会话状态。 */
@@ -212,29 +213,102 @@ export function installRecordSubmissionEvents({
     const recordKind = chainRecordKind();
     const requestId = form.dataset.requestId || crypto.randomUUID();
     const temporaryId = `pending:${requestId}`;
+    const owner = runtime.currentUser?.id;
+    const session = runtime.sessionSerial;
     const answer = $("#chain-answer").value;
+    const questionText = $("#chain-question").value;
+    const idea = $("#chain-idea").value;
+    const draftTagText = $("#chain-tags").value;
+    const modelDraft = runtime.answerDraft;
+    const modelReasoning = runtime.answerReasoningDraft;
+    const tags = [...runtime.draftTags];
+    const timeInput = $("#chain-datetime");
+    const timeMode = timeInput.dataset.occurrenceMode || "";
+    const manualTimeValue = timeInput.value || "";
+    const activeDate = runtime.activeDate;
+    const chainDraftVersion = runtime.chainDraftVersion;
+    const draftId = form.dataset.draftId;
+    const submittedImageDraftItems = { value: null };
+    const currentImageDraftItems = () =>
+      runtime.contentImageDraftManager?.snapshot?.("thoughtRoot")?.items ?? null;
+    const imageDraftMatches = (expected) => {
+      if (expected === null) return true;
+      const current = currentImageDraftItems();
+      return Array.isArray(current) && current.length === expected.length &&
+        current.every((item, index) => {
+          const before = expected[index];
+          return item.file === before.file && item.path === before.path &&
+            item.uploadedPath === before.uploadedPath &&
+            item.uploadRequestId === before.uploadRequestId &&
+            item.preview === before.preview;
+        });
+    };
     const sourceCaptureId = form.elements.sourceCaptureId.value;
     const sourceCaptureVersion =
       Number(form.elements.sourceCaptureVersion.value) || 0;
+    // 保存提交快照：旧响应只清理仍与提交时一致的草稿，未确认请求则保留原 requestId 供安全重试。
+    const isCurrentSession = () =>
+      owner === runtime.currentUser?.id && session === runtime.sessionSerial;
+    const isUnchangedDraftWithoutImages = () =>
+      isCurrentSession() &&
+      form.dataset.requestId === requestId &&
+      chainRecordKind() === recordKind &&
+      runtime.activeDate === activeDate &&
+      runtime.chainDraftVersion === chainDraftVersion &&
+      form.dataset.draftId === draftId &&
+      $("#chain-question").value === questionText &&
+      $("#chain-idea").value === idea &&
+      $("#chain-tags").value === draftTagText &&
+      $("#chain-answer").value === answer &&
+      (timeInput.dataset.occurrenceMode || "") === timeMode &&
+      timeInput.value === manualTimeValue &&
+      runtime.answerDraft === modelDraft &&
+      runtime.answerReasoningDraft === modelReasoning &&
+      JSON.stringify(runtime.draftTags) === JSON.stringify(tags) &&
+      form.elements.sourceCaptureId.value === sourceCaptureId &&
+      (Number(form.elements.sourceCaptureVersion.value) || 0) ===
+        sourceCaptureVersion;
+    const isUnchangedDraft = () =>
+      isUnchangedDraftWithoutImages() &&
+      imageDraftMatches(submittedImageDraftItems.value);
+    const clearSubmittedDraft = async () => {
+      if (!isUnchangedDraft()) return false;
+      await clearSubmittedContentImageDraft("thoughtRoot");
+      if (!isUnchangedDraftWithoutImages() || !imageDraftMatches([])) return false;
+      runtime.chainDraftVersion += 1;
+      form.reset();
+      clearDurableDraft("chain-form");
+      resetOccurrenceInput($("#chain-datetime"));
+      runtime.draftTags = [];
+      renderTagComposer();
+      runtime.answerDraft = "";
+      runtime.answerReasoningDraft = "";
+      delete form.dataset.requestId;
+      delete form.dataset.draftId;
+      return true;
+    };
     let uploadedPaths = [];
+    let eventTime;
     form.dataset.requestId = requestId;
     button.disabled = true;
     button.textContent = "正在保存…";
     $("#chain-status").textContent =
       recordKind === "capture" ? "正在收进念起…" : "正在保存整套思考…";
     try {
+      eventTime = occurrenceFields(timeInput);
       const submission = await contentImagePaths("thoughtRoot");
+      if (!isCurrentSession()) return;
       uploadedPaths = submission.uploadedPaths;
-      const eventTime = occurrenceFields($("#chain-datetime"));
+      submittedImageDraftItems.value = currentImageDraftItems();
       const original = imageRecordPayload({
-        content: $("#chain-question").value,
+        content: questionText,
         attachmentPaths: submission.attachmentPaths,
       });
       if (recordKind === "capture") {
         const payload = {
           ...eventTime,
           ...captureRecordPayload(original),
-          tags: runtime.draftTags,
+          tags,
         };
         const result = (
           await requestV1(
@@ -247,29 +321,25 @@ export function installRecordSubmissionEvents({
             {
               domains: ["captures"],
               projection: { kind: "capture.create", temporaryId, payload },
-              onQueued: (record) => applyPendingProjection(record),
+              onQueued: (record) => {
+                if (isCurrentSession()) applyPendingProjection(record);
+              },
             },
           )
         ).data;
+        if (!isCurrentSession()) return;
         state.captures = (state.captures || []).map((item) =>
           item.id === temporaryId ? result : item,
         );
         publishDomains(new Set(["captures"]));
-        await clearSubmittedContentImageDraft("thoughtRoot");
-        runtime.chainDraftVersion += 1;
-        form.reset();
-        clearDurableDraft("chain-form");
-        resetOccurrenceInput($("#chain-datetime"));
-        runtime.draftTags = [];
-        renderTagComposer();
-        runtime.answerDraft = "";
-        runtime.answerReasoningDraft = "";
-        delete form.dataset.requestId;
-        delete form.dataset.draftId;
-        $("#chain-status").textContent = "已收进念起。";
-        closeHomeEditors();
-        void refreshState("captures").catch((error) =>
-          showToast(`念起已保存，但页面刷新失败：${error.message}`, "error"),
+        const cleared = await clearSubmittedDraft();
+        if (!isCurrentSession()) return;
+        if (cleared) {
+          $("#chain-status").textContent = "已收进念起。";
+          closeHomeEditors();
+        }
+        void refreshState("captures").catch(() =>
+          isCurrentSession() && showToast("念起已保存，但页面刷新失败。重新进入页面即可读取。", "error"),
         );
         showToast("已收进念起");
         return;
@@ -283,11 +353,11 @@ export function installRecordSubmissionEvents({
         ...eventTime,
         question: original.content,
         attachmentPaths: original.attachmentPaths,
-        idea: $("#chain-idea").value,
+        idea,
         answer,
-        modelDraft: runtime.answerDraft,
-        modelReasoning: runtime.answerReasoningDraft,
-        tags: runtime.draftTags,
+        modelDraft,
+        modelReasoning,
+        tags,
         generateAnswer: needsAnswer,
         ...(sourceCaptureId
           ? {
@@ -310,10 +380,13 @@ export function installRecordSubmissionEvents({
           {
             domains: ["thoughts", "aiTasks", "notifications"],
             projection: { kind: "thought.chain.create", temporaryId, payload },
-            onQueued: (record) => applyPendingProjection(record),
+            onQueued: (record) => {
+              if (isCurrentSession()) applyPendingProjection(record);
+            },
           },
         )
       ).data;
+      if (!isCurrentSession()) return;
       const question = result.items.find((item) => item.type === "question");
       state.thoughts = [
         ...result.items,
@@ -322,27 +395,20 @@ export function installRecordSubmissionEvents({
         ),
       ];
       publishDomains(new Set(["thoughts"]));
-      await clearSubmittedContentImageDraft("thoughtRoot");
-      runtime.chainDraftVersion += 1;
-      form.reset();
-      clearDurableDraft("chain-form");
-      resetOccurrenceInput($("#chain-datetime"));
-      runtime.draftTags = [];
-      renderTagComposer();
-      runtime.answerDraft = "";
-      runtime.answerReasoningDraft = "";
-      delete form.dataset.requestId;
-      delete form.dataset.draftId;
-      $("#chain-status").textContent = needsAnswer
-        ? "思考已保存，后台生成一条图文合并回答。"
-        : answer.trim()
-          ? "已保存为一套完整思考。"
-          : "思考已保存，未自动调用 AI。";
-      closeHomeEditors();
+      const cleared = await clearSubmittedDraft();
+      if (!isCurrentSession()) return;
+      if (cleared) {
+        $("#chain-status").textContent = needsAnswer
+          ? "思考已保存，后台生成一条图文合并回答。"
+          : answer.trim()
+            ? "已保存为一套完整思考。"
+            : "思考已保存，未自动调用 AI。";
+        closeHomeEditors();
+      }
       void refreshState(["thoughts", "review", "notifications"], {
         chainId: question?.id,
-      }).catch((error) =>
-        showToast(`记录已保存，但页面刷新失败：${error.message}`, "error"),
+      }).catch(() => isCurrentSession() &&
+        showToast("思考已保存，但最新状态暂未刷新。重新进入页面即可读取。", "error"),
       );
       if (needsAnswer && question)
         void startBackgroundChainAnswer(question, result.task);
@@ -350,114 +416,52 @@ export function installRecordSubmissionEvents({
         needsAnswer ? "思考已保存，可继续记录" : "整套思考已保存，不会重复记录",
       );
     } catch (error) {
+      if (!isCurrentSession()) return;
       if (error.syncStatus === "pending") {
         // 待同步队列接管附件后清空表单；其他失败才回收本次上传资源。
-        await clearSubmittedContentImageDraft("thoughtRoot");
-        runtime.chainDraftVersion += 1;
-        form.reset();
-        clearDurableDraft("chain-form");
-        resetOccurrenceInput($("#chain-datetime"));
-        runtime.draftTags = [];
-        renderTagComposer();
-        runtime.answerDraft = "";
-        runtime.answerReasoningDraft = "";
-        delete form.dataset.requestId;
-        delete form.dataset.draftId;
+        const cleared = await clearSubmittedDraft();
+        if (!isCurrentSession()) return;
         $("#chain-status").textContent =
           recordKind === "capture"
             ? "念起已留存，网络恢复后自动同步。"
             : "思考已留存，网络恢复后自动同步。";
-        closeHomeEditors();
+        if (cleared) {
+          closeHomeEditors();
+        }
         showToast(
           recordKind === "capture"
             ? "念起已进入待同步队列"
             : "思考已进入待同步队列",
         );
       } else {
-        await discardContentImageUploads("thoughtRoot", uploadedPaths);
-        $("#chain-status").textContent = error.message;
+        if (recordKind === "capture" && isCurrentSession())
+          await discardContentImageUploads("thoughtRoot", uploadedPaths);
+        if (!isCurrentSession()) return;
+        // 未确认的思考提交可能已落库；保留附件以支持同 requestId 恢复。
+        if (error?.syncStatus === "failed") {
+          $("#chain-status").textContent = "保存失败，内容仍保留。检查网络后可用原请求安全重试。";
+        } else if (
+          recordKind === "thought" &&
+          sourceCaptureId &&
+          error?.syncStatus === "conflict" &&
+          error?.code === "PRECONDITION_FAILED"
+        ) {
+          $("#chain-status").textContent =
+            "来源念起已变化，请重新打开后再提交。当前内容仍保留。";
+        } else if (error?.syncStatus === "conflict") {
+          $("#chain-status").textContent = "保存状态冲突，内容仍保留。请先重新读取思考列表，再决定是否重试。";
+        } else {
+          $("#chain-status").textContent = "提交状态尚未确认，内容仍保留。请先重新读取思考列表；重试会继续使用同一请求编号。";
+        }
       }
     } finally {
-      button.disabled = false;
-      syncChainRecordKind();
+      if (isCurrentSession()) {
+        button.disabled = false;
+        syncChainRecordKind();
+      }
     }
   });
 
-  $("#chat-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const button = form.querySelector("button");
-    const requestId = form.dataset.requestId || crypto.randomUUID();
-    const payload = {
-      ...occurrenceFields($("#chat-datetime")),
-      message: $("#chat-input").value,
-    };
-    form.dataset.requestId = requestId;
-    button.disabled = true;
-    $("#chat-status").textContent = "正在结合你已保存的记录…";
-    try {
-      const owner = runtime.currentUser?.id;
-      const session = runtime.sessionSerial;
-      const initialResponse = await requestV1(
-        "/api/v1/chats",
-        {
-          method: "POST",
-          headers: { "idempotency-key": requestId },
-          body: JSON.stringify(payload),
-        },
-        { domains: ["chats"] },
-      );
-      const settled = await resolvePersonalizedTask(initialResponse, {
-        operationLabel: "对话回答",
-        expectedKind: "chat",
-        onStatus: (message) => {
-          if (
-            owner === runtime.currentUser?.id &&
-            session === runtime.sessionSerial
-          )
-            $("#chat-status").textContent = message;
-        },
-      });
-      if (settled.abandoned) return;
-      if (
-        owner !== runtime.currentUser?.id ||
-        session !== runtime.sessionSerial
-      )
-        return;
-      const saved = settled.result;
-      if (
-        saved.message !== payload.message ||
-        saved.occurredAt !== payload.occurredAt ||
-        saved.occurredOn !== payload.occurredOn
-      ) {
-        throw new Error("后台对话结果与本次问题不匹配，输入已保留。");
-      }
-      const unchanged =
-        JSON.stringify({
-          ...occurrenceFields($("#chat-datetime")),
-          message: $("#chat-input").value,
-        }) === JSON.stringify(payload);
-      delete form.dataset.requestId;
-      if (unchanged) {
-        $("#chat-input").value = "";
-        resetOccurrenceInput($("#chat-datetime"));
-      }
-      void refreshState("chat").catch((error) =>
-        showToast(`回答已保存，但页面刷新失败：${error.message}`, "error"),
-      );
-      $("#chat-status").textContent = unchanged
-        ? "回答已生成并保存。"
-        : "回答已生成；你后来修改的输入已保留。";
-    } catch (error) {
-      if (error.taskId) {
-        delete form.dataset.requestId;
-      }
-      $("#chat-status").textContent =
-        error.syncStatus === "pending"
-          ? "问题已留存，网络恢复后自动处理。"
-          : error.message;
-    } finally {
-      button.disabled = false;
-    }
-  });
+  installChatSubmission({runtime,$,requestV1,resolvePersonalizedTask,occurrenceFields,
+    resetOccurrenceInput,refreshState,showToast});
 }

@@ -564,12 +564,15 @@ function relevanceScore(queryTerms, candidate, taskText, taskEventId = "") {
 }
 
 function publicSource(material) {
+  const isModelUnknown = material.sourceRef.resourceType === "modelUnknown";
   return {
     id: material.id,
     channel: material.channel,
     resourceType: material.sourceRef.resourceType,
     resourceId: material.sourceRef.resourceId,
-    recordType: material.recordType || material.informationType || "历史证据",
+    recordType: isModelUnknown
+      ? "待澄清的问题"
+      : material.recordType || material.informationType || "历史证据",
     origin: material.origin || "user",
     informationType: material.informationType || "user_viewpoint",
     occurredAt: material.occurredAt,
@@ -583,6 +586,7 @@ function publicSource(material) {
       targetKey: material.sourceRef.targetKey,
       occurredOn: material.occurredAt?.slice(0, 10) || ""
     },
+    ...(isModelUnknown ? { excerpt: material.text } : {}),
     ...(material.channel === "history" ? {
       evidenceId: material.evidenceId,
       evidenceFingerprint: material.evidenceCheck.evidenceFingerprint
