@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 257,
-  "updated_at": "2026-10-13T15:43:17.840Z",
+  "revision": 264,
+  "updated_at": "2026-10-13T16:25:09.459Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -9,7 +9,7 @@
     "write_authority": "唯一维护者；必须经coordination:update入口更新"
   },
   "rule_baseline": {
-    "commit": "caf72e98513e765e69064a422145eaa150004801",
+    "commit": "9c7a8e8bbe17eade08936c8c2530a8bfbb977b8a",
     "effective_date": "2026-10-13",
     "source": "PROJECT_RULES.md及其唯一正文引用；控制面协议2.2、每版本¥4共享测试许可"
   },
@@ -20,7 +20,7 @@
   "iteration": {
     "id": "v0.5.14",
     "status": "IMPLEMENTING",
-    "phase": "已独审日压缩切片本地接入，随后不出站全局门；真实模型待数据出站授权",
+    "phase": "真实本机压缩/冷启/回答闭环PASS，接入并执行最终候选全局门",
     "started_by": {
       "iteration_id": "v0.5.13",
       "event_id": "v0.5.13-8b14bb6d-5580-4e7e-a2ea-10750c49e32b"
@@ -48,8 +48,8 @@
     "requirements_scope": "定向回读；完整采集快照仍stale，未冒充全池最新",
     "baseline": {
       "branch": "develop",
-      "sha": "caf72e98513e765e69064a422145eaa150004801",
-      "selection": "整文件ASR与快照媒体/读取修复已接入；同一feat串行完成历史压缩及正式候选门。"
+      "sha": "9c7a8e8bbe17eade08936c8c2530a8bfbb977b8a",
+      "selection": "本地日压缩有界回填已独审接入；本候选执行生产切片无出站全局门。"
     },
     "acceptance": {
       "recording": "Owner确认原音完整、转写遗漏；新增要求保留流式基建暂不用，非流式整文件HTTP实际通且质量高后切换；不得以WS nostream分包代替整文件HTTP或用字数增加伪称完整。",
@@ -124,30 +124,38 @@
   },
   "active_tasks": [
     {
-      "id": "v0514-local-real-closure",
+      "id": "v0514-real-compression-closure",
       "owner": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
       "mode": "acceptance",
       "branch": "feat/v0.5.14-audio-completeness",
-      "baseline": "caf72e98513e765e69064a422145eaa150004801",
+      "baseline": "9c7a8e8bbe17eade08936c8c2530a8bfbb977b8a",
       "write_set": [
-        "唯一控制面/events（仅主控经入口）",
-        "本机忽略的回执/临时验收脚本/隔离PG"
+        "唯一控制面/events经指定入口",
+        "本机忽略回执与私密隔离验收材料"
       ],
       "forbidden": [
-        "生产测试/修改、远程push/tag/Release/部署",
-        "主开发已冻结业务14文件，除具体返修决定不得继续写入"
+        "已冻结源码/配置文件，返修需具体决定",
+        "prod/remote/新工作树/自动重试付费"
       ],
-      "acceptance": "真实本机日压缩保存与PG重启、新思绪消费者；冷启整理正常成功、原始引文与AI非事实边界；最后固定候选有状态全局门"
+      "acceptance": "真实正常压缩到保存/PG重启/冷启非空整理/新思绪引用和独立AI参考边界，计入版本4元"
     }
   ],
-  "candidate": null,
+  "candidate": {
+    "version": "v0.5.14",
+    "sha": "9c7a8e8bbe17eade08936c8c2530a8bfbb977b8a",
+    "tree": "26667be47af60cc1a5a2fad1e34f633ae3581936",
+    "status": "LOCAL_VALIDATING_SOURCE_HASHES",
+    "branch": "develop",
+    "boundary": "仅本地固定对象；不代表release冻结或生产发布许可"
+  },
   "authorization": {
-    "source": "Owner本轮控制面规则与八项注释；既有for_now_backup账户权限持续有效；Owner本轮再次明确额度内费用无需申请，并授权已定位shenji原音向火山ASR复现",
+    "source": "Owner本轮控制面规则与八项注释；既有for_now_backup账户权限持续有效；Owner本轮再次明确额度内费用无需申请，并授权已定位shenji原音向火山ASR复现；本轮call_83a8bf3e15b8456c95697e40e004b8ef回复明确DeepSeek脱敏切片出站及阈值内持续费用许可",
     "allowed_actions": [
       "本地需求核对、实现、自查、主控审查、验证、提交及合入develop",
       "线上只读观察与隔离验证",
       "Owner明确授权现有for_now_backup账户全部现有权限，含生产状态读取、本机快照落盘及隔离PG验证；按任务需要直接执行，不逐次申请",
-      "每版本上线前所有付费API共享人民币4元测试额度，阈值内持续授权；超过4元先报告申请"
+      "每版本上线前所有付费API共享人民币4元测试额度，阈值内持续授权；超过4元先报告申请",
+      "Owner本轮明确授权已有脱敏生产状态切片上下文发送当前应用DeepSeek API，用于本机日压缩/恢复/冷启/新回答闭环；费用计入版本共享4元，额度内必要测试不重复申请。"
     ],
     "excluded": [
       "push/tag/Release/生产上线",
@@ -168,24 +176,14 @@
       "version": "v0.5.14",
       "limit_cny": 4,
       "shared_paid_apis": true,
-      "committed_or_reserved_cny": 0.44392559083333333,
+      "committed_or_reserved_cny": 0.5018408108333334,
       "cost_basis": "公开单价估算，非供应商最终账单",
       "ledger_ref": "reports/local/v0514-paid-acceptance-current.json",
       "expiry_mode": "until_revoked"
     }
   },
-  "blockers": [
-    {
-      "id": "deepseek-snapshot-outbound-consent",
-      "status": "AWAITING_OWNER",
-      "reason": "自动审批拒绝将生产切片衍生上下文发送当前DeepSeek，虽本机/4元费用授权已明确，具体数据出站授权尚不明确；已给Owner脱敏切片或纯合成选项。",
-      "affected_actions": [
-        "生产状态切片真实DeepSeek压缩/冷启/新思绪闭环"
-      ],
-      "evidence_ref": "本聊天compression-loop --live的自动审批拒绝及本轮授权问题"
-    }
-  ],
-  "next_action": "提交/合入已独审切片；固定本地候选，重新采集生产快照并执行不出站有状态全局门；收到Owner数据出站选项后执行真实模型闭环。",
+  "blockers": [],
+  "next_action": "主控提交并接入8文件返修与有效事件；固定最终候选，构建/绑定快照/隔离PG全局门后达到本地可发布状态，保持不push/tag/Release/上线。",
   "runtime": {
     "sha": "a901c8507094528e48992802b102911086331043",
     "package_version": "0.5.13",
@@ -207,18 +205,6 @@
       "refs": [
         "git:bf1c98aa6030fbabe14874fa2557cbb47b2ce1a1",
         "reports/local/v0514-acceptance-current.json"
-      ]
-    },
-    {
-      "id": "core-normal-flow",
-      "candidate_sha": "2bac8ea8b019f5ed97375891347b5cef28910a18",
-      "conclusion": "合成供应商下冷启/通知/分页结果消费者PASS",
-      "limitations": [
-        "真实DeepSeek待本轮验收；kernel变更后重查受影响消费者"
-      ],
-      "refs": [
-        "git:d3f8b37b201adaa2c3bfe8b1120ca41781dcec38",
-        "reports/local/v0514-core-feedback-current.json"
       ]
     },
     {
@@ -287,16 +273,16 @@
     },
     {
       "id": "compression-review",
-      "candidate_sha": "caf72e98 + 本轮14文件sourceHashes",
+      "candidate_sha": "9c7a8e8bbe17eade08936c8c2530a8bfbb977b8a",
       "conclusion": "主控沿真实日期/身份/准备/预算准入/终态保存/趋势与通知链独立审查通过；主开发必要专项与模块检查通过",
       "limitations": [
         "真实付费闭环及最终候选有状态全局门尚未执行"
       ],
       "refs": [
+        "git:d627fd38",
         "src/app/record-compressions.mjs",
         "src/app/ai-budget-runtime.mjs",
-        "src/app/background-ai.mjs",
-        "主开发受影响专项实际回执（本聊天独立回读）"
+        "src/app/background-ai.mjs"
       ],
       "source_hashes": {
         "deploy/for-now.env.example": "089afb3c1246e02fa9f81712a0bdf4b5f38e8a0787148f974c992ad6ec90c444",
@@ -314,6 +300,77 @@
         "src/config/index.mjs": "95ec107f0b9bf1f523bd2f89d30009b169e21d920db428e44654a235c12849c9",
         "src/modules/tasks/index.mjs": "b4d3eff5fd4bc5edaaff85e1f1ee53d36e02caac01b9aae8ba95ab7bf846a329"
       }
+    },
+    {
+      "id": "stateful-global-gate",
+      "candidate_sha": "9c7a8e8bbe17eade08936c8c2530a8bfbb977b8a",
+      "conclusion": "固定候选+最新4账户生产脱敏快照，真实启动/readyz/PG停止重启/核心读写/任务通知读取PASS；外部供应商/通知/媒体调用0",
+      "limitations": [
+        "不替代真实模型、真机或生产验收；控制面/规则元数据变化不重跑未变业务"
+      ],
+      "refs": [
+        "reports/local/v0514-startup-gate-current.json",
+        "reports/local/v0514-startup-snapshot-current.json#213c10a16ed40bc02b94a192cc2cdcb8a4442985a3138fc09826a434ff75aeea"
+      ]
+    },
+    {
+      "id": "production-compression-window",
+      "candidate_sha": "生产a901c850 v0.5.13",
+      "conclusion": "2026-10-13 18:05三实际执行任务均failed、全账户ready摘要0；扫描完成通知误作生成完成",
+      "limitations": [
+        "只读技术结果/原始错误码；不触发生产测试。对应原因需结合实际审计而非推测。"
+      ],
+      "refs": [
+        "reports/local/v0514-production-compression-window-current.json"
+      ]
+    },
+    {
+      "id": "compression-budget-rework",
+      "candidate_sha": "9c7a8e8b + 冻结8文件sourceHashes",
+      "conclusion": "主控独审模型计量/完整统计/旧scope兼容/双阶段实际上下文引用及仅一条紧凑prompt；原失败PG完整work/store/hash严格相等的离线回放与必要专项PASS",
+      "limitations": [
+        "真实新prompt/运行保存恢复/冷启/回答未完成，不能用离线PASS替代；无原文引用统计只保留完整存储/显示，模型投影明确partial。"
+      ],
+      "source_hashes": {
+        "prompts/manifest.json": "4d5891b4da07300aa8ce4432898584da982a5eb1c7880db724a345c54979a331",
+        "scripts/prompt-catalog-regression.mjs": "02406c7ce11c50d9c2222b19d3e82b89699308ce32465a293f5e9e9fb7da3d80",
+        "scripts/record-compression-output-regression.mjs": "8d701204aaf70bb37b98b0d459660232024ad725593616e16c8925307305c2a5",
+        "scripts/record-compression-trend-context-regression.mjs": "ebf4c522bb10d777c90db22b1f8059b80b10c9c9a16e7e039ee1ed09bf4f7aa3",
+        "src/app/record-compression-context.mjs": "6b3e0333d42eaf4c13fd36c60a8b569899d1bfcf2a21b0554ee27bc8aef96bd2",
+        "src/modules/record-compressions/contract.mjs": "be9fb1e2af06a3f80e883c91567fda396506f9abf1bedbf509da3c50680633a9",
+        "src/modules/record-compressions/output.mjs": "62cd85c380b185c26e417453825e17300aed4e68b001e29b859e317a52f687d8",
+        "prompts/versions/2026.10.14.1.json": "6a5bdfa36b3110aec568f024267a9e093015f971f51de0914b40b585cdff6a3c"
+      },
+      "refs": [
+        "/tmp/v0514-compression-output-actual-offline.mjs",
+        "src/modules/record-compressions/output.mjs",
+        "src/app/record-compression-context.mjs",
+        "prompts/versions/2026.10.14.1.json"
+      ]
+    },
+    {
+      "id": "real-compression-core-loop",
+      "candidate_sha": "9c7a8e8b + 8个冻结文件（随后接入同hash候选）",
+      "conclusion": "真实DeepSeek两日摘要正常生成保存，PG实际停止重启恢复一致；17旧失败不改、压缩不写用户模型；真实冷启整理9候选，新思绪实际消费2日趋势/1独立AI参考、核验2原始引用，执行后费用通知PASS",
+      "limitations": [
+        "本机生产脱敏结构+合成事实，未生产触发；两日有摘要，其余五日missing，非全历史补齐；真机麦克风/iOS native及原音逐字精度仍partial",
+        "保留最初应用预算FAIL和验收脚本428/端口错误；恢复复用两次成功压缩未重复付费。"
+      ],
+      "source_hashes": {
+        "prompts/manifest.json": "4d5891b4da07300aa8ce4432898584da982a5eb1c7880db724a345c54979a331",
+        "scripts/prompt-catalog-regression.mjs": "02406c7ce11c50d9c2222b19d3e82b89699308ce32465a293f5e9e9fb7da3d80",
+        "scripts/record-compression-output-regression.mjs": "8d701204aaf70bb37b98b0d459660232024ad725593616e16c8925307305c2a5",
+        "scripts/record-compression-trend-context-regression.mjs": "ebf4c522bb10d777c90db22b1f8059b80b10c9c9a16e7e039ee1ed09bf4f7aa3",
+        "src/app/record-compression-context.mjs": "6b3e0333d42eaf4c13fd36c60a8b569899d1bfcf2a21b0554ee27bc8aef96bd2",
+        "src/modules/record-compressions/contract.mjs": "be9fb1e2af06a3f80e883c91567fda396506f9abf1bedbf509da3c50680633a9",
+        "src/modules/record-compressions/output.mjs": "62cd85c380b185c26e417453825e17300aed4e68b001e29b859e317a52f687d8",
+        "prompts/versions/2026.10.14.1.json": "6a5bdfa36b3110aec568f024267a9e093015f971f51de0914b40b585cdff6a3c"
+      },
+      "refs": [
+        "reports/local/v0514-compression-loop-current.json",
+        "reports/local/v0514-paid-acceptance-current.json",
+        "/var/folders/6x/hs0vvfbd63j8mjj9dnqj1vlc0000gn/T/v0514-compression-loop-1bSLO7/acceptance-failure.json"
+      ]
     }
   ],
   "records": {

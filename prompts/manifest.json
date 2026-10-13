@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "activeVersion": "2026.10.10.4",
+  "activeVersion": "2026.10.14.1",
   "versions": [
     {
       "version": "2026.09.29.1",
@@ -86,6 +86,11 @@
       "version": "2026.10.10.4",
       "file": "2026.10.10.4.json",
       "sha256": "1c4a5bba9bc0033946401985e7deaab3adab621d8986d9859b9d75d0388ef494"
+    },
+    {
+      "version": "2026.10.14.1",
+      "file": "2026.10.14.1.json",
+      "sha256": "6a5bdfa36b3110aec568f024267a9e093015f971f51de0914b40b585cdff6a3c"
     }
   ],
   "promptIntroducedIn": {

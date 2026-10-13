@@ -1,3 +1,9 @@
+/**
+ * 校验日压缩派生摘要、来源引用与模型摘要预算，完整保留程序统计。
+ * 建立时间：2026-10-10
+ * 状态：active
+ * 边界：摘要预算不包含程序统计；实际回答上下文由消费者另行限制。
+ */
 import { safeText } from "../../shared/validation/index.mjs";
 import {
   RECORD_COMPRESSION_OUTPUT_BUDGETS,
@@ -21,11 +27,6 @@ const sourceMap = values => new Map(list(values)
   .map(item => [item.sourceId, item]));
 const warningText = value => safeText(value, 240);
 const jsonClone = value => structuredClone(value);
-
-const EMPTY_DAILY = Object.freeze({ observations: [], metricKeys: [], missing: [] });
-const EMPTY_THOUGHTS_IDEAS = Object.freeze({ focus: [], changes: [], openQuestions: [] });
-const EMPTY_OTHER = Object.freeze({ themes: [], collectedQuotes: [] });
-const EMPTY_METADATA = Object.freeze({ conflicts: [], warnings: [] });
 
 /**
  * A conservative, deterministic estimate for a JSON payload. ASCII alphanumeric
@@ -309,7 +310,7 @@ function fitUserSections(sections, userBudget) {
     const spec = specs.find(item => item.key === key);
     const result = fitRowsToBudget(
       sections[key],
-      quotas[key] + slack,
+      Math.min(RECORD_COMPRESSION_OUTPUT_BUDGETS[`${key}Tokens`], quotas[key] + slack),
       spec.paths,
       { truncatablePaths: spec.truncatablePaths }
     );
@@ -323,124 +324,75 @@ function fitUserSections(sections, userBudget) {
   return { fitted, used, truncated };
 }
 
-function emptyBudgetFacingPayload({ schemaVersion, window, coverage, metrics }) {
-  return {
+// 模型摘要投影独立使用摘要预算；统计与来源完整保存，
+// 下游消费者仍按实际序列化的上下文重新限额。
+function buildBudgetedContent({
+  schemaVersion, window, coverage, metrics, daily, thoughtsIdeas, other,
+  aiReferences, conflicts, warnings
+}) {
+  const userBudget = RECORD_COMPRESSION_OUTPUT_BUDGETS.userTrendTokens
+    - RECORD_COMPRESSION_OUTPUT_BUDGETS.aiReferenceTokens;
+  const user = fitUserSections({ daily, thoughtsIdeas, other }, userBudget);
+  const ai = fitRowsToBudget(
+    { items: aiReferences },
+    RECORD_COMPRESSION_OUTPUT_BUDGETS.aiReferenceTokens,
+    [["items"]],
+    { truncatablePaths: [["items"]] }
+  );
+  const metadata = fitRowsToBudget(
+    { conflicts, warnings },
+    RECORD_COMPRESSION_OUTPUT_BUDGETS.metadataTokens,
+    [["warnings"], ["conflicts"]],
+    { truncatablePaths: [["warnings"], ["conflicts"]] }
+  );
+  const modelPayload = {
     schemaVersion,
-    window,
-    daily: jsonClone(EMPTY_DAILY),
-    thoughtsIdeas: jsonClone(EMPTY_THOUGHTS_IDEAS),
-    other: jsonClone(EMPTY_OTHER),
-    aiReference: [],
-    conflicts: [],
+    ...user.fitted,
+    aiReference: ai.value.items,
+    conflicts: metadata.value.conflicts,
+    warnings: metadata.value.warnings
+  };
+  const paths = [
+    ["warnings"], ["conflicts"],
+    ["thoughtsIdeas", "focus"], ["thoughtsIdeas", "changes"],
+    ["thoughtsIdeas", "openQuestions"],
+    ["daily", "observations"], ["daily", "missing"], ["daily", "metricKeys"],
+    ["other", "themes"], ["other", "collectedQuotes"], ["aiReference"]
+  ];
+  // 绝对 JSON 计量包含全部引用 ID 和元数据。连引用本身都放不下的
+  // 派生行会被省略，原文与完整统计仍保存；有限遍历即可收敛。
+  const fitted = fitRowsToBudget(modelPayload, RECORD_COMPRESSION_OUTPUT_BUDGETS.totalTokens, paths, {
+    truncatablePaths: paths.filter(path => path.join(".") !== "daily.metricKeys"),
+    absolute: true,
+    measureTextOnly: false
+  });
+  const payload = fitted.value;
+  if (fitted.usedTokens > RECORD_COMPRESSION_OUTPUT_BUDGETS.totalTokens) {
+    throw Object.assign(new Error("日压缩摘要结构超过服务端token预算"), {
+      code: "RECORD_COMPRESSION_OUTPUT_BUDGET_EXCEEDED"
+    });
+  }
+  return {
+    ...payload,
     coverage,
     metrics,
-    warnings: []
-  };
-}
-
-function buildBudgetedContent({
-  schemaVersion,
-  window,
-  coverage,
-  metrics,
-  daily,
-  thoughtsIdeas,
-  other,
-  aiReferences,
-  conflicts,
-  warnings
-}) {
-  const emptyPayload = emptyBudgetFacingPayload({ schemaVersion, window, coverage, metrics });
-  const fixedTokens = estimateRecordCompressionTokens(emptyPayload);
-  const remaining = RECORD_COMPRESSION_OUTPUT_BUDGETS.totalTokens - fixedTokens;
-  if (remaining < 0) {
-    throw Object.assign(new Error(`日压缩服务端统计信息超过${RECORD_COMPRESSION_OUTPUT_BUDGETS.totalTokens}-token预算`), {
-      code: "RECORD_COMPRESSION_OUTPUT_BUDGET_EXCEEDED"
-    });
-  }
-
-  const metadataBudget = Math.min(
-    RECORD_COMPRESSION_OUTPUT_BUDGETS.metadataTokens,
-    remaining
-  );
-  let bodyBudget = Math.min(
-    RECORD_COMPRESSION_OUTPUT_BUDGETS.userTrendTokens,
-    Math.max(0, remaining - metadataBudget)
-  );
-  let userContentTruncated = false;
-  let aiContentTruncated = false;
-  let fittedContent;
-
-  for (let pass = 0; pass < 5; pass += 1) {
-    const aiBudget = Math.min(RECORD_COMPRESSION_OUTPUT_BUDGETS.aiReferenceTokens, bodyBudget);
-    const userBudget = Math.max(0, Math.min(665, bodyBudget - aiBudget));
-    const user = fitUserSections({ daily, thoughtsIdeas, other }, userBudget);
-    const ai = fitRowsToBudget(
-      { items: aiReferences },
-      aiBudget,
-      [["items"]],
-      { truncatablePaths: [["items"]] }
-    );
-    const metadata = fitRowsToBudget(
-      { conflicts, warnings },
-      metadataBudget,
-      [["warnings"], ["conflicts"]],
-      { truncatablePaths: [["warnings"], ["conflicts"]] }
-    );
-    const payload = {
-      schemaVersion,
-      window,
-      ...user.fitted,
-      aiReference: ai.value.items,
-      conflicts: metadata.value.conflicts,
-      coverage,
-      metrics,
-      warnings: metadata.value.warnings
-    };
-    const outputTokens = estimateRecordCompressionTokens(payload);
-    fittedContent = {
-      ...user.fitted,
-      aiReference: ai.value.items,
-      conflicts: metadata.value.conflicts,
-      coverage,
-      metrics,
-      warnings: metadata.value.warnings,
-      tokenUsage: {
-        estimated: true,
-        method: "conservative-ascii-runs-unicode-v1",
-        outputTokens,
-        moduleTokens: {
-          daily: user.used.daily,
-          thoughtsIdeas: user.used.thoughtsIdeas,
-          other: user.used.other,
-          aiReference: ai.usedTokens,
-          metadata: metadata.usedTokens
-        },
-        stableCandidatesTokens: 0
+    tokenUsage: {
+      estimated: true,
+      method: "conservative-ascii-runs-unicode-v1",
+      scope: "model_summary",
+      outputTokens: fitted.usedTokens,
+      serverStatisticsTokens: estimateRecordCompressionTokens({ window, coverage, metrics }),
+      moduleTokens: {
+        daily: estimateTextBudgetTokens(payload.daily),
+        thoughtsIdeas: estimateTextBudgetTokens(payload.thoughtsIdeas),
+        other: estimateTextBudgetTokens(payload.other),
+        aiReference: estimateTextBudgetTokens(payload.aiReference),
+        metadata: estimateTextBudgetTokens({ conflicts: payload.conflicts, warnings: payload.warnings })
       },
-      truncated: Object.values(user.truncated).some(Boolean)
-        || ai.truncated
-        || metadata.truncated
-    };
-    userContentTruncated = Object.values(user.truncated).some(Boolean);
-    aiContentTruncated = ai.truncated;
-
-    if (outputTokens <= RECORD_COMPRESSION_OUTPUT_BUDGETS.totalTokens) break;
-    bodyBudget = Math.max(0, bodyBudget - (outputTokens - RECORD_COMPRESSION_OUTPUT_BUDGETS.totalTokens) - 1);
-    fittedContent.truncated = true;
-  }
-
-  if (!fittedContent
-    || fittedContent.tokenUsage.outputTokens > RECORD_COMPRESSION_OUTPUT_BUDGETS.totalTokens) {
-    throw Object.assign(new Error(`日压缩摘要无法满足${RECORD_COMPRESSION_OUTPUT_BUDGETS.totalTokens}-token服务端预算`), {
-      code: "RECORD_COMPRESSION_OUTPUT_BUDGET_EXCEEDED"
-    });
-  }
-
-  return {
-    ...fittedContent,
-    userContentTruncated,
-    aiContentTruncated
+      stableCandidatesTokens: 0
+    },
+    truncated: Object.values(user.truncated).some(Boolean)
+      || ai.truncated || metadata.truncated || fitted.truncated
   };
 }
 
@@ -455,6 +407,11 @@ function validInput(input) {
     && /^[a-f0-9]{64}$/.test(input.sourceManifestHash);
 }
 
+/**
+ * 将模型 JSON 转为可保存的来源绑定摘要；程序统计来自输入，不能被模型覆盖。
+ * outputTokens 仅计 model_summary 投影，稳定候选单独计量；不表示存储或回答上下文大小。
+ * 输入/JSON/版本无效时抛出对应校验错误；保守预算会裁剪派生正文并标记 truncated。
+ */
 export function parseRecordCompressionOutput(value, {
   input,
   id,
