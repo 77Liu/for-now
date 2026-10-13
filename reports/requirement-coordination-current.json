@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 225,
-  "updated_at": "2026-10-13T07:38:58.766Z",
+  "revision": 228,
+  "updated_at": "2026-10-13T07:54:40.648Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -14,13 +14,13 @@
     "source": "PROJECT_RULES.md；knowledge/coordination-control-plane.md v2.1；knowledge/engineering-rules.md#35-源码与注释规范；SOP/requirement-intake.md v1.1"
   },
   "work_mode": {
-    "status": "RUNNING",
+    "status": "WAITING_OWNER_INPUT",
     "scope": "Owner要求恢复v0.5.14，纳入六项新反馈并保留六条音频；v0.5.13已发布但main未晋级，历史授权不扩展到v0.5.14发布"
   },
   "iteration": {
     "id": "v0.5.14",
-    "status": "IN_PROGRESS",
-    "phase": "版本元数据/PWA主控审查通过；待本地接入后固定最终候选及新快照PG门",
+    "status": "BLOCKED",
+    "phase": "13条范围的本地实现/独立审查/局部集成完成；固定候选最终新快照PG门等待只读源及本地脱敏落盘授权",
     "started_by": {
       "iteration_id": "v0.5.13",
       "event_id": "v0.5.13-8b14bb6d-5580-4e7e-a2ea-10750c49e32b"
@@ -122,10 +122,10 @@
   },
   "active_tasks": [],
   "candidate": {
-    "status": "FINAL_METADATA_REVIEWED_WAIT_INTEGRATION",
-    "branch": "feat/v0.5.14-audio-completeness",
-    "sha": "7d1520ab302bfe008bf97d5776a4a2e9f3345024",
-    "tree": "5c337c52b68d6206777ac29dfb4c09f2506bccf7",
+    "status": "BLOCKED_WAIT_SNAPSHOT_AUTHORIZATION",
+    "branch": "develop",
+    "sha": "0f9674304496d46b718c44e6655b63ae9854bb1c",
+    "tree": "04128060a7af59955ac47b2cc6c00043f7856a0b",
     "release_branch": null,
     "package_version": "0.5.14",
     "partial": [
@@ -144,7 +144,28 @@
         "git:d3f8b37:public/frontend/app/runtime/kernel.mjs",
         "thread:01a11afe-73d2-7013-91d5-cd473c4d7115/exec-034ba5d9-c46e-4d37-8315-5db9edeea55a"
       ]
-    }
+    },
+    "release_frozen": false,
+    "test_matrix_ref": "knowledge/test-impact-matrix.md#develop--release-有状态全局测试门",
+    "required_gates": [
+      "independent_contract_review",
+      "impacted_behavior",
+      "typescript_build",
+      "module_boundary",
+      "release_metadata_pwa",
+      "develop_integration",
+      "stateful_global"
+    ],
+    "quality_gate": {
+      "independent_contract_review": "PASS",
+      "impacted_behavior": "PASS",
+      "typescript_build": "PASS",
+      "module_boundary": "PASS",
+      "release_metadata_pwa": "PASS",
+      "develop_integration": "PASS",
+      "stateful_global": "BLOCKED"
+    },
+    "identity_note": "固定待验对象仍0f967430/tree04128060；后续主控记录提交仅记录当前结果，不改变业务/依赖/版本制品，不冒称该最终门通过"
   },
   "authorization": {
     "source": "Owner2026-10-13最新：按计划推进v0.5.14，主控独立审查，先达到可发布；暂不push/tag/Release/上线，原手工付费限制保留",
@@ -162,8 +183,17 @@
     "expiry_mode": "until_changed",
     "revoked": false
   },
-  "blockers": [],
-  "next_action": "主控合入develop核对同代码对象及版本一致，再派发固定候选生产只读快照/隔离PG启动门；无外部发布",
+  "blockers": [
+    {
+      "id": "v0514-readonly-snapshot-source-authorization",
+      "status": "WAITING_OWNER_INPUT",
+      "scope": "新生产快照及最终隔离PG门，非本地业务实现失败",
+      "reason": "源码/tmp上传两次自动审批拒绝后已停止；不上传源码的现有SSH只读转发及本机脱敏采集也被拒绝，要求Owner明确生产备份账户数据源、本地派生快照落盘和验证用途",
+      "required_action": "Owner明确授权现有for_now_backup在生产PostgreSQL READ ONLY一致性事务采集，在本机内存脱敏后0600保存reports/local/v0514-startup-snapshot-current.json，仅用于v0.5.14隔离PG启动/重启/读写验证；不上传源码、不改生产、不付费",
+      "evidence": "reports/local/v0514-startup-gate-receipt.json#sha256:d5df07e421b5f787650b1cd8efd229ea1a5f03c35d59ef7aacb4c96ad28a49dc"
+    }
+  ],
+  "next_action": "等待上述具体只读采集授权；收到后同一固定候选恢复本机新快照/PG门并由主控核验。授权前不执行被拒绝动作、不复用旧a22快照PASS，不发新开发或外部版本",
   "runtime": {
     "sha": "a901c8507094528e48992802b102911086331043",
     "package_version": "0.5.13",
@@ -243,18 +273,6 @@
       "boundary": "仅修验证材料；新生产快照/PG门仍待执行，d4eba02失败不改写"
     },
     {
-      "id": "v0514-stateful-global-pass",
-      "source": "reports/local/v0514-startup-gate-receipt.json",
-      "sha256": "acc3f8d314776ecbe13e1ae1e916649f34b3097a9f4bd060ad86d0590a3be0de",
-      "status": "主控独立核对原始verify exit0/PASS、快照内置与传输hash及完整SHA/tree：4账户89任务，启动/readyz/同PG重启/认证读/保存往返/任务通知读通过；provider/outbound/media全0，临时PG清理完成",
-      "details": [
-        "tool:exec/2e2cd3",
-        "tool:exec/bd3243",
-        "tool:exec/7af427"
-      ],
-      "boundary": "生产PG16.15→本机16.14；真实provider/iOS/自然压缩仍partial；先前d4eba02脱敏失败在receipt.priorCaptureFailure保留；未改生产运行SHA"
-    },
-    {
       "id": "v0514-thought-speech-gap",
       "source": "public/frontend/features/thoughts/presentation.mjs:speechControlsMarkup；public/frontend/features/thoughts/speech.mjs:synthesize",
       "status": "主控静态确认：无音频仍显示播放倍速、缺生成语速、configured=false隐藏已有asset；原六项音频需求中未覆盖的真实消费者",
@@ -315,6 +333,24 @@
         "reports/release-v0.5.14-2026-10-13.md"
       ],
       "boundary": "编译产物不入Git，无API/schema/预算变更，63905合成服务清理；未整版启动门/发布"
+    },
+    {
+      "id": "v0514-final-metadata-integration",
+      "source": "git:0f9674304496d46b718c44e6655b63ae9854bb1c",
+      "status": "无冲突合入；与7d1520a业务/版本/PWA对象一致，仅2个主控记录差异；develop发行元数据0.5.14一致",
+      "boundary": "全局有状态门尚待新候选执行，不复用a22e5f5旧PASS放行"
+    },
+    {
+      "id": "v0514-final-stateful-gate-current",
+      "source": "reports/local/v0514-startup-gate-receipt.json",
+      "sha256": "d5df07e421b5f787650b1cd8efd229ea1a5f03c35d59ef7aacb4c96ad28a49dc",
+      "status": "主控亲读单份回执：0f967/tree04128060固定构建与归档PASS；新快照与隔离PG门NOT_EXECUTED/BLOCKED，未把旧a22 PASS改绑。生产只读service显示仍a901/PID956069/restart0；无provider付费/生产DB配置写/重启/外部发行",
+      "details": [
+        "/tmp/v0514-final-stateful-iX9rdP/metadata.json",
+        "/tmp/v0514-final-stateful-iX9rdP/prior-receipt.json",
+        "/tmp/v0514-final-stateful-iX9rdP/prior-snapshot.json"
+      ],
+      "boundary": "审批拒绝是操作授权阻碍，未发生新快照/PG验证，不是候选启动FAIL；旧证据仅供追溯。kernel既有超限FAIL及provider/设备/natural partial继续保持"
     }
   ],
   "records": {
