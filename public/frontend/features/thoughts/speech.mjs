@@ -50,7 +50,8 @@ export function createThoughtSpeech({
         sourceType,
         sourceId,
         sourceVersion,
-        regenerate
+        regenerate,
+        generationRate: controls?.querySelector("[data-speech-generation-rate]")?.value
       });
       const ticket = createTicket();
       audio.stopAll();

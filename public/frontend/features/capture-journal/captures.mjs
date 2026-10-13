@@ -332,6 +332,7 @@ export function createCapturesFeatureController({
     editorTrigger = { element: trigger, captureId: item.id };
     editorOpen = true;
     query("#capture-id").value = item.id;
+    if (query("#capture-title")) query("#capture-title").value = item.title || "";
     query("#capture-content").value = item.content;
     const resetImages = media.resetEditor("capture", item.attachmentPaths || [], {
       forget: false,

@@ -36,6 +36,8 @@ export function installInsightsDescriptors(descriptors, ports) {
         request,
         requestV1:(url,options,coordination)=>featureRequestV1(view,url,options,coordination),
         requestBlob:(url,options,config)=>apiClient.requestBlob(url,options,config),
+        requestHeadStatus:(url,options)=>apiClient.requestHeadStatus(url,options),
+        getSpeechGenerationRate:()=>runtime.llmSettings.speech?.generationRate,
         refresh:(domains,options)=>refreshState(domains,options),
         applyPendingProjection
       },
