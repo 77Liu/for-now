@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 252,
-  "updated_at": "2026-10-13T13:30:47.124Z",
+  "revision": 257,
+  "updated_at": "2026-10-13T15:43:17.840Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -9,7 +9,7 @@
     "write_authority": "唯一维护者；必须经coordination:update入口更新"
   },
   "rule_baseline": {
-    "commit": "ce4f5873e90c7d2a20040fb814ff4d371dace6c0",
+    "commit": "caf72e98513e765e69064a422145eaa150004801",
     "effective_date": "2026-10-13",
     "source": "PROJECT_RULES.md及其唯一正文引用；控制面协议2.2、每版本¥4共享测试许可"
   },
@@ -20,7 +20,7 @@
   "iteration": {
     "id": "v0.5.14",
     "status": "IMPLEMENTING",
-    "phase": "真实冷启/音频快照语义已核验；准备历史日摘要回填闭环",
+    "phase": "已独审日压缩切片本地接入，随后不出站全局门；真实模型待数据出站授权",
     "started_by": {
       "iteration_id": "v0.5.13",
       "event_id": "v0.5.13-8b14bb6d-5580-4e7e-a2ea-10750c49e32b"
@@ -48,8 +48,8 @@
     "requirements_scope": "定向回读；完整采集快照仍stale，未冒充全池最新",
     "baseline": {
       "branch": "develop",
-      "sha": "ce4f5873e90c7d2a20040fb814ff4d371dace6c0",
-      "selection": "已接入整文件HTTP ASR默认链路；保留同一feat串行收口本轮。"
+      "sha": "caf72e98513e765e69064a422145eaa150004801",
+      "selection": "整文件ASR与快照媒体/读取修复已接入；同一feat串行完成历史压缩及正式候选门。"
     },
     "acceptance": {
       "recording": "Owner确认原音完整、转写遗漏；新增要求保留流式基建暂不用，非流式整文件HTTP实际通且质量高后切换；不得以WS nostream分包代替整文件HTTP或用字数增加伪称完整。",
@@ -124,21 +124,20 @@
   },
   "active_tasks": [
     {
-      "id": "v0514-snapshot-audio-mime",
+      "id": "v0514-local-real-closure",
       "owner": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
-      "mode": "coordinator_integration",
+      "mode": "acceptance",
       "branch": "feat/v0.5.14-audio-completeness",
-      "baseline": "ce4f5873e90c7d2a20040fb814ff4d371dace6c0",
+      "baseline": "caf72e98513e765e69064a422145eaa150004801",
       "write_set": [
-        "scripts/release-state-startup-gate.mts（真实capture audio固定媒体格式及既有self-test/消费者一致性）"
+        "唯一控制面/events（仅主控经入口）",
+        "本机忽略的回执/临时验收脚本/隔离PG"
       ],
       "forbidden": [
-        "业务ASR/前端/压缩/共享配置",
-        "控制面/events/terminal/规则",
-        "远程/生产写入/付费",
-        "修改旧snapshot/回执以制造通过"
+        "生产测试/修改、远程push/tag/Release/部署",
+        "主开发已冻结业务14文件，除具体返修决定不得继续写入"
       ],
-      "acceptance": "源mapping→脱敏→重建→normalize→实际captureAudioPayload结果一致：合法音频保持格式、字节、实际时长、派生物与路径引用；原来非法仍非法。只精确保留实际capture.audio技术值，不对任意同名mimeType/raw文本豁免。旧原音/失败/源数据不改；自查真实消费者后既有self-test/类型构建通过，主控新采集再回读。 同一采集入口在一致性事务中只做数据库读取，全部源切片在内存取得后COMMIT，再执行脱敏/真实消费者核验；失败不覆盖当前完整快照，不延长生产timeout或反复keepalive。"
+      "acceptance": "真实本机日压缩保存与PG重启、新思绪消费者；冷启整理正常成功、原始引文与AI非事实边界；最后固定候选有状态全局门"
     }
   ],
   "candidate": null,
@@ -175,8 +174,18 @@
       "expiry_mode": "until_revoked"
     }
   },
-  "blockers": [],
-  "next_action": "主控提交并接入已审查的快照音频语义及读取事务修复；随后派发向2026-09-25历史回填、旧失败放弃与本机压缩到回答闭环。",
+  "blockers": [
+    {
+      "id": "deepseek-snapshot-outbound-consent",
+      "status": "AWAITING_OWNER",
+      "reason": "自动审批拒绝将生产切片衍生上下文发送当前DeepSeek，虽本机/4元费用授权已明确，具体数据出站授权尚不明确；已给Owner脱敏切片或纯合成选项。",
+      "affected_actions": [
+        "生产状态切片真实DeepSeek压缩/冷启/新思绪闭环"
+      ],
+      "evidence_ref": "本聊天compression-loop --live的自动审批拒绝及本轮授权问题"
+    }
+  ],
+  "next_action": "提交/合入已独审切片；固定本地候选，重新采集生产快照并执行不出站有状态全局门；收到Owner数据出站选项后执行真实模型闭环。",
   "runtime": {
     "sha": "a901c8507094528e48992802b102911086331043",
     "package_version": "0.5.13",
@@ -249,28 +258,11 @@
       ]
     },
     {
-      "id": "file-asr-trial",
-      "candidate_sha": "0c7b847（独立临时HTTP验收）",
-      "conclusion": "历史55.785秒原音单POST约2.844秒返回164字及7分句，首末句与节奏修正流式一致；27.914秒合成首中尾三标记全部通过",
-      "limitations": [
-        "正式应用尚未接入；中间文字与流式不同，逐字保真不可由字数或时间戳证明",
-        "使用volc.bigasr.auc_turbo，官方后付费4.5元/小时；账户账单待核对，保留两次预留额"
-      ],
-      "refs": [
-        "reports/local/v0514-asr-flash-local.json",
-        "reports/local/v0514-asr-flash-markers-local.json",
-        "https://www.volcengine.com/docs/6561/1631584?lang=zh",
-        "https://docs.volcengine.com/docs/DoubaoVoice/Billinginstructions-21?lang=zh"
-      ]
-    },
-    {
       "id": "file-asr-default-closed-loop",
       "candidate_sha": "ce4f5873e90c7d2a20040fb814ff4d371dace6c0",
       "conclusion": "主控独立核对实际配置/转换/返回/预算/计量/保存契约；M4A实际FFmpeg→HTTP单POST→任务保存→隔离PG重启/重连恢复PASS；旧失败/原音不改；必要专项与干净构建PASS",
       "limitations": [
         "逐字保真未全面验收；真实原音DeepSeek润色/凝练未调用",
-        "回执保留第一次验收脚本读已关闭pool的失败；无付费恢复核验完成",
-        "测试中音频MIME采用已授权真实原记录，脱敏快照MIME失真仍阻塞最终全局门",
         "生产未切换，当前仍v0.5.13"
       ],
       "refs": [
@@ -292,6 +284,36 @@
         "scripts/release-state-startup-gate.mts",
         "reports/local/v0514-startup-snapshot-current.json#7d5f6ede559c3b5ef509b0d255ea38eef980a16284db6475031c4cd0c1df4c2c"
       ]
+    },
+    {
+      "id": "compression-review",
+      "candidate_sha": "caf72e98 + 本轮14文件sourceHashes",
+      "conclusion": "主控沿真实日期/身份/准备/预算准入/终态保存/趋势与通知链独立审查通过；主开发必要专项与模块检查通过",
+      "limitations": [
+        "真实付费闭环及最终候选有状态全局门尚未执行"
+      ],
+      "refs": [
+        "src/app/record-compressions.mjs",
+        "src/app/ai-budget-runtime.mjs",
+        "src/app/background-ai.mjs",
+        "主开发受影响专项实际回执（本聊天独立回读）"
+      ],
+      "source_hashes": {
+        "deploy/for-now.env.example": "089afb3c1246e02fa9f81712a0bdf4b5f38e8a0787148f974c992ad6ec90c444",
+        "scripts/ai-budget-runtime-regression.mjs": "ef6f83e8e8f256ea799ac5a80cd9e25a4e39b8ca211c2af55aa53c4b70e96f3a",
+        "scripts/record-compression-budget-wait-regression.mjs": "f0c748340423376e696016ae17b051f2e7449ef664976d7542ef3275d4c3816e",
+        "scripts/record-compression-observability-regression.mjs": "9916ca32ce65ace72ed4b9b41cf227867fe0a65dbe0482c7f1ae2804f599611c",
+        "scripts/record-compression-service-regression.mjs": "e1bbe6f9f9d1fffb6158a120d68b6818a4b6b6a6ff2b88c4aa8b97794666a40d",
+        "src/app/ai-budget-runtime.mjs": "b3970671b478eba68db460c4a5a6fc19bcb9b7c99193bfa84437b6471f740367",
+        "src/app/background-ai.mjs": "3ac16f4ea09e681bb29bf1e5cbb1ea354703e71fd6fb76c5155acf48b35b65b2",
+        "src/app/content-runtime.mjs": "eb2256bbdd464d9a8222d2bb92f26e97f8e630f7c39d09a01ae9ea9d7f119c25",
+        "src/app/record-compression-context.mjs": "8afcb32c5d26cf5f881802b87d017173ebcbee4aa9092885c9d20c008defc5df",
+        "src/app/record-compressions.mjs": "a26158c0ac2cd789811be73aeec1ed062138811e993ba7405cd588a51308c378",
+        "src/app/runtime-foundation.mjs": "6218dbc81f453b7d9402beb5b58c7ad48db96799487dffcc6553e92f1e1d2bd8",
+        "src/app/runtime-http-wiring.mjs": "178d9407bed3ecb670d9f2231d02452cd5208e929cb6c005770d94b7dc2a35e9",
+        "src/config/index.mjs": "95ec107f0b9bf1f523bd2f89d30009b169e21d920db428e44654a235c12849c9",
+        "src/modules/tasks/index.mjs": "b4d3eff5fd4bc5edaaff85e1f1ee53d36e02caac01b9aae8ba95ab7bf846a329"
+      }
     }
   ],
   "records": {

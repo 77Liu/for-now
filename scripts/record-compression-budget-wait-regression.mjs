@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import "./prompt-test-setup.mjs";
-import { createContentRuntime, createEmptyStore, DEFAULT_RECORD_TIMEZONE } from "../src/app/index.mjs";
+import { createContentRuntime, createEmptyStore, createRecordCompressionService, createAiBudgetRuntime, DEFAULT_RECORD_TIMEZONE } from "../src/app/index.mjs";
 import { recordCompressionAccountQueueAllowance } from "../src/config/index.mjs";
 import {
   RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION,
@@ -57,7 +57,11 @@ function addSource(store, id = "budget-wait-source", date = asOf.slice(0, 10)) {
 function createRuntime({
   timezone = DEFAULT_RECORD_TIMEZONE,
   usageEntries = [],
-  clockAsOf = asOf
+  clockAsOf = asOf,
+  startDate = "",
+  failProvider = false,
+  measuredCost,
+  denyAdmission = () => false
 } = {}) {
   const getClockAsOf = () => typeof clockAsOf === "function" ? clockAsOf() : clockAsOf;
   return createContentRuntime({
@@ -70,7 +74,20 @@ function createRuntime({
     workflowContextKey: () => "account-a",
     dispatchBackground: callback => scheduled.push(callback),
     async runDeepSeek(_prompt, options) {
+      if (denyAdmission()) {
+        const admission = createAiBudgetRuntime({ budget: {
+          async read() { return {}; },
+          async reserveTask() { throw Object.assign(new Error("合成真实准入额度拒绝"), { code: "AI_DAILY_CALL_LIMIT" }); },
+          async startStage() { throw new Error("provider stage must not start"); },
+          async releaseTask() {},
+          async settleTask() {}
+        } });
+        await admission.executeTask({}, async () => { throw new Error("provider execute must not run"); });
+      }
       providerCalls.push(options);
+      if (Number.isFinite(measuredCost)) usageEntries.push({ scene: RECORD_COMPRESSION_TASK_KIND,
+        createdAt: getClockAsOf(), costKnown: true, costCny: measuredCost });
+      if (failProvider) throw Object.assign(new Error("合成摘要失败"), { code: "SYNTHETIC_MODEL_FAILURE" });
       return { content: JSON.stringify({
         schemaVersion: RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION,
         daily: { observations: [], metricKeys: [], missing: [] },
@@ -83,6 +100,7 @@ function createRuntime({
     recordCompressionDailyBudgetCny: 1,
     recordCompressionPerCallBudgetCny: 0.25,
     recordCompressionMaxBackfillDatesPerScan: 0,
+    recordCompressionStartDate: startDate,
     now: getClockAsOf,
     today: () => getClockAsOf().slice(0, 10),
     currentTime: () => Date.parse(getClockAsOf()),
@@ -202,10 +220,12 @@ const boundedWaitScan = await boundedWaitRuntime.runRecordCompressionScan({
   backfillDates: 2,
   maxQueued: 0
 });
-assert.equal(boundedWaitScan.waitingBudgetCount, 8);
-assert.equal(persistedWaits().length, 8, "durable waiting remains bounded at the declared per-account cap");
-assert.ok(boundedWaitScan.skippedBudgetWaitCount > 0,
-  "scheduler result must report candidates skipped after the bounded wait queue fills");
+assert.equal(boundedWaitScan.backfillRegisteredCount, 2);
+assert.equal(boundedWaitScan.waitingBudgetCount, 3);
+assert.equal(persistedWaits().length, 3, "two daily waits plus one historical supplement obey the per-scan registration bound");
+assert.deepEqual(boundedWaitScan.waitingBudgetTaskIds.map(id => currentStore.aiTasks.find(task => task.id === id))
+  .filter(task => task.payload.operation === "daily").map(task => task.payload.localDate),
+  ["2026-10-10", "2026-10-09"], "new budget waits start at the newest missing dates");
 assertDiagnosticsMatchStore(boundedWaitScan);
 assert.equal(providerCalls.length, 0);
 
@@ -272,5 +292,122 @@ assert.equal(currentStore.aiTasks.filter(task => task.kind === RECORD_COMPRESSIO
   && task.status === "queued").length, 2,
 "daily compression and historical supplement must both use the Shanghai budget day");
 assert.equal(providerCalls.length, 0);
+
+// 同源旧失败仅创建一个受控新代际，真实tasks规范下身份不截断，失败后不每轮重试。
+currentStore = createEmptyStore();
+addSource(currentStore, "repair-source", "2026-10-10");
+const terminalEvents = [];
+const repairRuntime = createRuntime({ failProvider: true, measuredCost: 0.1 });
+repairRuntime.observeRecordCompressionTasks(async event => terminalEvents.push(event));
+const firstAttempt = await repairRuntime.runRecordCompressionScan({ asOf, slot: "backfill", backfillDates: 1, maxQueued: 1 });
+const originalTask = currentStore.aiTasks.find(task => firstAttempt.taskIds.includes(task.id) && task.payload.operation === "daily");
+await repairRuntime.backgroundAi.run(originalTask.id);
+assert.equal(originalTask.status, "failed");
+const originalTaskJson = JSON.stringify(originalTask);
+const originalSummary = currentStore.recordCompressions.find(item => item.id === originalTask.payload.recordId);
+const originalSummaryJson = JSON.stringify(originalSummary);
+const repairAttempt = await repairRuntime.runRecordCompressionScan({ asOf, slot: "backfill", backfillDates: 1, maxQueued: 1 });
+const repairedTask = currentStore.aiTasks.find(task => repairAttempt.taskIds.includes(task.id) && task.payload.operation === "daily");
+assert.ok(repairedTask);
+assert.notEqual(repairedTask.id, originalTask.id);
+assert.notEqual(repairedTask.payload.recordId, originalTask.payload.recordId);
+assert.ok(repairedTask.clientRequestId.startsWith("record-compression-repair-v1:"));
+assert.ok(repairedTask.clientRequestId.length <= 100);
+await repairRuntime.backgroundAi.run(repairedTask.id);
+assert.equal(repairedTask.status, "failed");
+assert.equal(JSON.stringify(originalTask), originalTaskJson);
+assert.equal(JSON.stringify(originalSummary), originalSummaryJson);
+assert.deepEqual(terminalEvents.map(event => [event.status, event.knownSpentCny]), [["failed", 0.1], ["failed", 0.2]]);
+await repairRuntime.backgroundAi.run(repairedTask.id);
+assert.equal(terminalEvents.length, 2, "replaying an already-terminal task does not announce generation again");
+const callsAfterRepair = providerCalls.length;
+const tasksAfterRepair = currentStore.aiTasks.length;
+for (let scan = 0; scan < 3; scan += 1) {
+  const stopped = await repairRuntime.runRecordCompressionScan({ asOf, slot: "backfill", backfillDates: 1, maxQueued: 1 });
+  assert.equal(stopped.taskIds.filter(id => currentStore.aiTasks.find(task => task.id === id)?.payload.operation === "daily").length, 0);
+  assert.equal(stopped.backfillRegisteredCount, 0);
+}
+assert.equal(currentStore.aiTasks.length, tasksAfterRepair);
+assert.equal(providerCalls.length, callsAfterRepair);
+
+// 生日起点为注入配置：25日包含、24日排除，等待登记与prepare/恢复遵循同一边界。
+currentStore = createEmptyStore();
+const unboundedRuntime = createRuntime();
+// 构造合法旧24日等待身份，经实际原service生成，而非修正失败行或伪造inputHash。
+currentStore = createEmptyStore();
+addSource(currentStore, "outside-floor", "2026-09-24");
+const oldFloorScan = await unboundedRuntime.runRecordCompressionScan({ asOf, slot: "backfill", backfillDates: 1, maxQueued: 0 });
+const oldFloorTask = currentStore.aiTasks.find(task => task.payload.operation === "daily" && oldFloorScan.waitingBudgetTaskIds.includes(task.id));
+for (const date of ["2026-09-25", "2026-09-26", "2026-09-27", "2026-09-28", "2026-09-29"]) addSource(currentStore, `floor-${date}`, date);
+const scopedRuntime = createRuntime({ startDate: "2026-09-25" });
+const scopedScan = await scopedRuntime.runRecordCompressionScan({ asOf, slot: "backfill", backfillDates: 4, maxQueued: 0 });
+assert.equal(oldFloorTask.status, "stale");
+assert.equal(scopedScan.backfillRegisteredCount, 4);
+assert.deepEqual(scopedScan.waitingBudgetTaskIds.map(id => currentStore.aiTasks.find(task => task.id === id))
+  .filter(task => task.payload.operation === "daily").map(task => task.payload.localDate), ["2026-09-29", "2026-09-28", "2026-09-27", "2026-09-26"]);
+assert.ok(currentStore.aiTasks.filter(task => task.status === WAITING_FOR_BUDGET_STATUS && task.payload.operation === "historicalSupplement")
+  .every(task => task.payload.windowStart >= "2026-09-25"));
+for (const task of currentStore.aiTasks.filter(task => task.status === WAITING_FOR_BUDGET_STATUS)) await scopedRuntime.backgroundAi.run(task.id);
+assert.equal(providerCalls.length, callsAfterRepair, "waiting tasks never dispatch themselves");
+const promotedFloor = await scopedRuntime.runRecordCompressionScan({ asOf, slot: "backfill", backfillDates: 4, maxQueued: 4 });
+assert.deepEqual(promotedFloor.taskIds.map(id => currentStore.aiTasks.find(task => task.id === id)?.payload.localDate),
+  ["2026-09-29", "2026-09-28", "2026-09-27", "2026-09-26"]);
+for (const id of promotedFloor.taskIds) await scopedRuntime.backgroundAi.run(id);
+const includeBirthday = await scopedRuntime.runRecordCompressionScan({ asOf, slot: "backfill", backfillDates: 1, maxQueued: 1 });
+assert.ok(includeBirthday.taskIds.some(id => currentStore.aiTasks.find(task => task.id === id)?.payload.localDate === "2026-09-25"));
+assert.ok(!includeBirthday.taskIds.some(id => currentStore.aiTasks.find(task => task.id === id)?.payload.localDate < "2026-09-25"));
+
+const boundedService = createRecordCompressionService({ repository, getAccountId: () => "account-a",
+  now: () => asOf, hash, startDate: "2026-09-25" });
+assert.equal(boundedService.buildInput(currentStore, "2026-09-24"), null);
+assert.equal(boundedService.target.prepare(currentStore, oldFloorTask), null);
+assert.deepEqual(boundedService.getCurrentTrend(currentStore, "2026-09-25T08:00:00.000Z").localDates, ["2026-09-25"]);
+assert.deepEqual(boundedService.getCurrentTrend(currentStore, "2026-09-24T08:00:00.000Z").localDates, []);
+
+// 扫描后发生的实际预算准入拒绝进入同身份等待，恢复只重新校验该任务。
+currentStore = createEmptyStore();
+addSource(currentStore, "admission-source");
+let denyQuota = true;
+const admissionRuntime = createRuntime({ denyAdmission: () => denyQuota });
+const admissionScan = await admissionRuntime.runRecordCompressionScan({ asOf, slot: "backfill", backfillDates: 1, maxQueued: 1 });
+const admissionTask = currentStore.aiTasks.find(task => admissionScan.taskIds.includes(task.id) && task.payload.operation === "daily");
+const beforeAdmissionCalls = providerCalls.length;
+await admissionRuntime.backgroundAi.run(admissionTask.id);
+assert.equal(admissionTask.status, WAITING_FOR_BUDGET_STATUS);
+assert.equal(admissionTask.errorCode, "AI_DAILY_CALL_LIMIT");
+assert.equal(providerCalls.length, beforeAdmissionCalls);
+assert.equal(currentStore.recordCompressions.find(summary => summary.id === admissionTask.payload.recordId).status, "queued");
+denyQuota = false;
+const resumedAdmission = await admissionRuntime.runRecordCompressionScan({ asOf, slot: "backfill", backfillDates: 1, maxQueued: 1 });
+assert.equal(resumedAdmission.taskIds[0], admissionTask.id);
+let failedNotifications = 0;
+admissionRuntime.observeRecordCompressionTasks(async () => { failedNotifications += 1; throw new Error("notify unavailable"); });
+await admissionRuntime.backgroundAi.run(admissionTask.id);
+assert.equal(admissionTask.status, "succeeded");
+assert.equal(failedNotifications, 1);
+assert.equal(providerCalls.length, beforeAdmissionCalls + 1);
+
+// 观察器失败不能将已存ready变成failed或触发新代际重跑。
+const terminalTaskCount = currentStore.aiTasks.length;
+await admissionRuntime.backgroundAi.run(admissionTask.id);
+assert.equal(admissionTask.status, "succeeded");
+assert.equal(currentStore.aiTasks.length, terminalTaskCount);
+
+assert.equal(failedNotifications, 1);
+const retainedReady = currentStore.recordCompressions.find(summary => summary.id === admissionTask.payload.recordId);
+const retainedReadyJson = JSON.stringify(retainedReady);
+const obsoleteQueued = { ...structuredClone(admissionTask), id: "obsolete-ready-duplicate", clientRequestId: "obsolete-ready-duplicate", status: "queued" };
+currentStore.aiTasks.push(obsoleteQueued);
+const callsBeforeObsolete = providerCalls.length;
+await admissionRuntime.backgroundAi.run(obsoleteQueued.id);
+assert.equal(obsoleteQueued.status, "stale");
+assert.equal(providerCalls.length, callsBeforeObsolete);
+assert.equal(JSON.stringify(retainedReady), retainedReadyJson, "retiring a duplicate queued task must not downgrade or delete a valid ready summary");
+currentStore = createEmptyStore();
+addSource(currentStore, "ai-only-source");
+Object.assign(currentStore.thoughts[0], { origin: "ai_generated", authorType: "ai" });
+const aiOnlyScan = await createRuntime().runRecordCompressionScan({ asOf, slot: "backfill", backfillDates: 4, maxQueued: 4 });
+assert.equal(aiOnlyScan.queuedCount, 0);
+assert.equal(aiOnlyScan.waitingBudgetCount, 0);
 
 console.log("Record-compression durable budget-wait, recovery, bounds and diagnostics regression passed.");

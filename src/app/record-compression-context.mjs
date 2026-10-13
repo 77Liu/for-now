@@ -135,8 +135,10 @@ function inputForDate(store, {
   timezone,
   asOf,
   hash,
-  maxTextChars
+  maxTextChars,
+  startDate = ""
 }) {
+  if (startDate && localDate < startDate) return null;
   return buildRecordCompressionInput(store, {
     accountId,
     localDate,
@@ -159,15 +161,17 @@ function historicalSupplementInputFrom(store, {
   maxTextChars,
   windowStart,
   windowEnd,
-  batchIndex = 0
+  batchIndex = 0,
+  startDate = ""
 }) {
   const endDate = validLocalDate(windowEnd)
     ? windowEnd
     : dateKeyInTimezone(asOf, timezone);
-  const startDate = validLocalDate(windowStart)
+  const requestedStart = validLocalDate(windowStart)
     ? windowStart
     : dateKeyOffset(endDate, -(RECORD_COMPRESSION_WINDOW_DAYS - 1));
-  const localDates = localDateRange(startDate, endDate);
+  const boundedStart = startDate && requestedStart < startDate ? startDate : requestedStart;
+  const localDates = localDateRange(boundedStart, endDate);
   if (!localDates.length || !Number.isSafeInteger(batchIndex) || batchIndex < 0) {
     throw new TypeError("历史稳定表达窗口无效");
   }
@@ -263,7 +267,7 @@ function historicalSupplementInputFrom(store, {
       sourceHash: source.sourceHash,
       permissionRevision: source.permissionRevision
     })).sort((left, right) => left.sourceId.localeCompare(right.sourceId)),
-    window: { start: startDate, end: endDate },
+    window: { start: boundedStart, end: endDate },
     batchIndex,
     input: built.input,
     coverage: built.coverage
@@ -274,7 +278,7 @@ function historicalSupplementInputFrom(store, {
     sourceMetadata,
     sourceManifestHash,
     coverage: built.coverage,
-    windowStart: startDate,
+    windowStart: boundedStart,
     windowEnd: endDate,
     batchIndex,
     allSourceIds: allSources.map(source => source.sourceId),
@@ -329,7 +333,7 @@ function permittedHistoricalTextDates(store, options) {
   });
 }
 
-function historicalTaskRange(task, timezone) {
+function historicalTaskRange(task, timezone, startDate = "") {
   const payload = task?.payload || {};
   const windowEnd = validLocalDate(payload.windowEnd)
     ? payload.windowEnd
@@ -338,6 +342,7 @@ function historicalTaskRange(task, timezone) {
   const windowStart = validLocalDate(payload.windowStart)
     ? payload.windowStart
     : dateKeyOffset(windowEnd, -(RECORD_COMPRESSION_WINDOW_DAYS - 1));
+  if (startDate && windowStart < startDate) return null;
   const dates = localDateRange(windowStart, windowEnd);
   if (!dates.length) return null;
   return { windowStart, windowEnd, timezone };
@@ -346,7 +351,8 @@ function historicalTaskRange(task, timezone) {
 function historicalCoverageAfterSave(store, currentTask, options) {
   const today = dateKeyInTimezone(options.asOf, options.timezone);
   const recentRange = {
-    windowStart: dateKeyOffset(today, -(RECORD_COMPRESSION_WINDOW_DAYS - 1)),
+    windowStart: options.startDate && dateKeyOffset(today, -(RECORD_COMPRESSION_WINDOW_DAYS - 1)) < options.startDate
+      ? options.startDate : dateKeyOffset(today, -(RECORD_COMPRESSION_WINDOW_DAYS - 1)),
     windowEnd: today,
     timezone: options.timezone
   };
@@ -362,11 +368,11 @@ function historicalCoverageAfterSave(store, currentTask, options) {
   ));
   const ranges = new Map([[JSON.stringify([recentRange.windowStart, recentRange.windowEnd]), recentRange]]);
   for (const task of taskRows) {
-    const range = historicalTaskRange(task, options.timezone);
+    const range = historicalTaskRange(task, options.timezone, options.startDate);
     if (range) ranges.set(JSON.stringify([range.windowStart, range.windowEnd]), range);
   }
   const succeeded = (snapshot, range, batchIndex) => taskRows.some(task => {
-    const taskRange = historicalTaskRange(task, options.timezone);
+    const taskRange = historicalTaskRange(task, options.timezone, options.startDate);
     const current = task.id === currentTask?.id;
     return taskRange?.windowStart === range.windowStart
       && taskRange?.windowEnd === range.windowEnd
@@ -448,6 +454,11 @@ function historicalCoverageAfterSave(store, currentTask, options) {
 }
 
 function historicalSupplementContextFrom(store, options) {
+  if (options.startDate && dateKeyInTimezone(options.asOf, options.timezone) < options.startDate) {
+    return { payload: { scope: "historical_user_supplement", records: [], invalidatedCount: 0,
+      coverage: { windowDays: 0, availableSources: 0, includedSources: 0, complete: false } },
+      citationSources: [], fingerprint: options.hash(JSON.stringify(["before-start-date", options.startDate])), input: null };
+  }
   const recentSnapshot = historicalSupplementInputFrom(store, options);
   const storedRecordDates = list(store?.historicalUserSupplement?.records)
     .map(record => record?.source?.localDate);
@@ -497,7 +508,9 @@ function historicalSupplementContextFrom(store, options) {
   return {
     payload: {
       scope: "historical_user_supplement",
-      coverage: structuredClone(store?.historicalUserSupplement?.coverage || recentSnapshot.coverage),
+      coverage: options.startDate
+        ? historicalCoverageAfterSave(store, null, options)
+        : structuredClone(store?.historicalUserSupplement?.coverage || recentSnapshot.coverage),
       records,
       invalidatedCount: validated.invalidated.length
     },
@@ -573,9 +586,10 @@ function contextTrendFrom(store, {
   timezone,
   asOf,
   hash,
-  maxTextChars
+  maxTextChars,
+  startDate = ""
 }) {
-  const localDates = sevenLocalDatesForTimezone(timezone, asOf);
+  const localDates = sevenLocalDatesForTimezone(timezone, asOf).filter(date => !startDate || date >= startDate);
   const currentInputs = new Map();
   const summaries = [];
   for (const localDate of localDates) {

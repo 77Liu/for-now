@@ -35,6 +35,7 @@ export function createContentRuntime({
   recordCompressionDailyBudgetCny = 0,
   recordCompressionPerCallBudgetCny = 0,
   recordCompressionMaxBackfillDatesPerScan = 1,
+  recordCompressionStartDate = "",
   now = () => new Date().toISOString(),
   today,
   currentTime = () => Date.now(),
@@ -99,7 +100,8 @@ export function createContentRuntime({
     readAiUsage,
     dailyBudgetCny: recordCompressionDailyBudgetCny,
     perCallBudgetCny: recordCompressionPerCallBudgetCny,
-    maxBackfillDatesPerScan: recordCompressionMaxBackfillDatesPerScan
+    maxBackfillDatesPerScan: recordCompressionMaxBackfillDatesPerScan,
+    startDate: recordCompressionStartDate
   });
   const getRecentTrend = (store, asOf) => (
     recordCompressionService.getCurrentTrend(store, asOf)
@@ -238,6 +240,11 @@ export function createContentRuntime({
     ...background,
     ...workflows,
     runRecordCompressionScan: options => recordCompressionJobs.scan(options),
+    /**
+     * 注册或替换日压缩真实终态观察器；持久化后调用，通知错误不改任务状态。
+     * @since unreleased
+     */
+    observeRecordCompressionTasks: observer => recordCompressionService.observeSettlements(observer),
     contentAttachmentService,
     perception,
     updateSourceStore: operation => contentRepository.update(operation),

@@ -581,18 +581,18 @@ const firstHistoryBatch = await runtime.runRecordCompressionScan({
   asOf: now(), slot: "backfill", backfillDates: 2, maxQueued: 1
 });
 assert.equal(firstHistoryBatch.queuedCount, 1);
-assert.deepEqual(datesForTasks(firstHistoryBatch.taskIds), ["2026-10-04"],
-  "first-run history must begin with the oldest missing dates in the seven-day window");
+assert.deepEqual(datesForTasks(firstHistoryBatch.taskIds), ["2026-10-08"],
+  "first-run history must begin with the newest missing date in the seven-day window");
 const secondHistoryBatch = await runtime.runRecordCompressionScan({
   asOf: now(), slot: "backfill", backfillDates: 2, maxQueued: 1
 });
 assert.equal(secondHistoryBatch.queuedCount, 1);
-assert.deepEqual(datesForTasks(secondHistoryBatch.taskIds), ["2026-10-05"]);
+assert.deepEqual(datesForTasks(secondHistoryBatch.taskIds), ["2026-10-07"]);
 const thirdHistoryBatch = await runtime.runRecordCompressionScan({
   asOf: now(), slot: "backfill", backfillDates: 2, maxQueued: 2
 });
 assert.equal(thirdHistoryBatch.queuedCount, 2);
-assert.deepEqual(datesForTasks(thirdHistoryBatch.taskIds), ["2026-10-06", "2026-10-07"]);
+assert.deepEqual(datesForTasks(thirdHistoryBatch.taskIds), ["2026-10-06", "2026-10-05"]);
 const accountBudgetCap = await runtime.runRecordCompressionScan({
   asOf: now(), slot: "backfill", backfillDates: 2, maxQueued: 1
 });
@@ -610,7 +610,7 @@ const finalHistoryBatch = await runtime.runRecordCompressionScan({
   asOf: now(), slot: "backfill", backfillDates: 2, maxQueued: 1
 });
 assert.equal(finalHistoryBatch.queuedCount, 1);
-assert.deepEqual(datesForTasks(finalHistoryBatch.taskIds), ["2026-10-08"]);
+assert.deepEqual(datesForTasks(finalHistoryBatch.taskIds), ["2026-10-04"]);
 await runTasks(finalHistoryBatch.taskIds);
 
 const sevenDayDates = Array.from({ length: 7 }, (_, index) => `2026-10-${String(index + 4).padStart(2, "0")}`);
@@ -691,14 +691,14 @@ const olderDailyFirst = await runtime.runRecordCompressionScan({
   asOf: now(), slot: "backfill", backfillDates: 1, maxQueued: 1
 });
 assert.equal(olderDailyFirst.queuedCount, 1);
-assert.deepEqual(datesForTasks(olderDailyFirst.taskIds), ["2026-09-01"],
-  "daily backfill progresses to the oldest eligible source beyond the recent seven-day window");
+assert.deepEqual(datesForTasks(olderDailyFirst.taskIds), ["2026-09-30"],
+  "daily backfill progresses to the newest eligible source beyond the recent seven-day window");
 await runTasks(olderDailyFirst.taskIds);
 const olderDailySecond = await runtime.runRecordCompressionScan({
   asOf: now(), slot: "backfill", backfillDates: 1, maxQueued: 1
 });
 assert.equal(olderDailySecond.queuedCount, 1);
-assert.deepEqual(datesForTasks(olderDailySecond.taskIds), ["2026-09-30"],
+assert.deepEqual(datesForTasks(olderDailySecond.taskIds), ["2026-09-01"],
   "later bounded scans continue to another older source date without repeating completed dates");
 await runTasks(olderDailySecond.taskIds);
 
