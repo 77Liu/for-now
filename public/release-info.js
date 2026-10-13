@@ -1,7 +1,7 @@
 globalThis.CIKE_RELEASE_INFO = Object.freeze({
-  appVersion: "0.5.12",
-  releaseVersion: "0.5.12",
-  cacheVersion: "cike-shell-0.5.12"
+  appVersion: "0.5.13",
+  releaseVersion: "0.5.13",
+  cacheVersion: "cike-shell-0.5.13"
 });
 
 if (typeof document !== "undefined") {
