@@ -684,10 +684,10 @@ export function createThoughtService({
     },
 
     addRemark({ id, text }) {
-      const remark = { id: createId(), text, createdAt: now(), version: 1 };
       return repository.update(store => {
         const item = store.thoughts.find(value => value.id === id);
         if (!item) return { missing: true };
+        const remark = { id: createId(), text, createdAt: now(), version: 1 };
         item.remarks.push(remark);
         touchRoot(item);
         return { value: remark };

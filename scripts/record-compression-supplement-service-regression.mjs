@@ -21,6 +21,7 @@ import {
   HISTORICAL_USER_SUPPLEMENT_PROMPT_VERSION,
   HISTORICAL_USER_SUPPLEMENT_TOKEN_BUDGET,
   RECORD_COMPRESSION_OUTPUT_SCHEMA_VERSION,
+  RECORD_COMPRESSION_OUTPUT_TOKEN_BUDGET,
   RECORD_COMPRESSION_TASK_KIND
 } from "../src/modules/record-compressions/index.mjs";
 import { recordCompressionAccountQueueAllowance } from "../src/config/index.mjs";
@@ -256,7 +257,7 @@ assert.equal(calls.length, 2);
 assert.equal(generatorAudits.length, 2);
 assert.equal(generatorAudits.every(entry => entry.audit.status === "success"), true);
 assert.equal(JSON.stringify(store.historicalUserSupplement).includes("合成思考"), false);
-assert.equal(calls[0].options.maxTokens, 900);
+assert.equal(calls[0].options.maxTokens, RECORD_COMPRESSION_OUTPUT_TOKEN_BUDGET);
 assert.equal(calls[1].options.maxTokens, HISTORICAL_USER_SUPPLEMENT_TOKEN_BUDGET);
 assert.equal(calls[1].options.scene, RECORD_COMPRESSION_TASK_KIND);
 assert.equal(tasks[1].status, "succeeded", JSON.stringify({ errorCode: tasks[1].errorCode, error: tasks[1].error, result: tasks[1].result }));

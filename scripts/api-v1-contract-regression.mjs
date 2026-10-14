@@ -605,13 +605,25 @@ try {
     sourceRef: { type: "capture", id: sourceCaptureId, version: 1 }
   };
   const first = await request("/api/v1/thought-chains", {
-    method: "POST", cookie: owner, headers: { "idempotency-key": "chain-contract-1" }, body: firstInput
+    method: "POST", cookie: owner, headers: {
+      "idempotency-key": "chain-contract-1", "x-client-operation-id": "chain-contract-1",
+      "x-client-provisional-id": "AAAAAAAAAAAAAAAA",
+      "x-client-operation-fingerprint": await syncOperationFingerprint({ method: "POST", url: "/api/v1/thought-chains",
+        headers: { "content-type": "application/json" }, body: JSON.stringify(firstInput) })
+    }, body: firstInput
   });
   assert.equal(first.response.status, 201);
   assert.equal(first.body.error, null);
   assert.equal(first.body.meta.traceId, first.response.headers.get("x-request-id"));
   assert.equal(first.response.headers.get("etag"), "\"1\"");
   const firstRoot = first.body.data.items.find(item => item.type === "question"), firstId = firstRoot.id;
+  assert.match(firstId, /^[A-Za-z0-9_-]{16}$/);
+  assert.ok(first.body.data.items.every(item => /^[A-Za-z0-9_-]{16}$/.test(item.id)));
+  assert.equal(first.body.meta.operation.businessIdMapping.canonicalId, firstId);
+  const mappingRecovery = await request(`/api/v1/sync/operations/chain-contract-1?fingerprint=${await syncOperationFingerprint({
+    method: "POST", url: "/api/v1/thought-chains", headers: { "content-type": "application/json" }, body: JSON.stringify(firstInput)
+  })}`, { cookie: owner });
+  assert.equal(mappingRecovery.body.data.businessIdMapping.canonicalId, firstId);
   assert.deepEqual(firstRoot.sourceRef, { type: "capture", id: sourceCaptureId, version: 1 });
   const ownerContext = await request("/api/v1/personal-context", { cookie: owner });
   assert.equal(ownerContext.response.status, 200);
@@ -630,10 +642,16 @@ try {
   assert.ok(otherContext.body.data.recordCompressionTrend.days.every(day => day.status === "missing"));
 
   const replay = await request("/api/v1/thought-chains", {
-    method: "POST", cookie: owner, headers: { "idempotency-key": "chain-contract-1" }, body: firstInput
+    method: "POST", cookie: owner, headers: {
+      "idempotency-key": "chain-contract-1", "x-client-operation-id": "chain-contract-1",
+      "x-client-provisional-id": "AAAAAAAAAAAAAAAA",
+      "x-client-operation-fingerprint": await syncOperationFingerprint({ method: "POST", url: "/api/v1/thought-chains",
+        headers: { "content-type": "application/json" }, body: JSON.stringify(firstInput) })
+    }, body: firstInput
   });
   assert.equal(replay.response.status, 200);
   assert.equal(replay.body.data.items.find(item => item.type === "question").id, firstId);
+  assert.deepEqual(replay.body.meta.operation.businessIdMapping, first.body.meta.operation.businessIdMapping);
   const reused = await request("/api/v1/thought-chains", {
     method: "POST", cookie: owner, headers: { "idempotency-key": "chain-contract-1" },
     body: { ...firstInput, question: "不允许覆盖" }

@@ -13,6 +13,7 @@ import { DEFAULT_RECORD_TIMEZONE } from "../modules/record-compressions/index.mj
 import { installPromptCatalog } from "../shared/prompts/index.mjs";
 import {
   createJsonStoreRepository,
+  createBusinessId,
   createPostgresRuntime,
   checkPersistenceMarker,
   hasJsonData,
@@ -265,12 +266,12 @@ export async function createRuntimeFoundation({
     repository: storeRepository,
     now,
     today,
-    createId
+    createId: createBusinessId
   });
   const feedbackService = createFeedbackService({
     repository: storeRepository,
     now,
-    createId,
+    createId: createBusinessId,
     hash
   });
   const importanceSnapshots = new WeakMap();
@@ -286,6 +287,7 @@ export async function createRuntimeFoundation({
     return snapshot;
   };
   const contentRuntime = createContentRuntime({
+    createBusinessId,
     repository: storeRepository,
     trashRetentionDays: TRASH_RETENTION_DAYS,
     getAccountId: () => requestStorage.getStore()?.user?.id || "local",
@@ -417,7 +419,7 @@ export async function createRuntimeFoundation({
       uploadImageBytes: ATTACHMENT_UPLOAD_IMAGE_MAX_BYTES
     }),
     clock: { now, today },
-    identifiers: { createId, hash, requestBinding },
+    identifiers: { createId, createBusinessId, hash, requestBinding },
     observability: { requestStorage, logEvent, auditChanges, runtimeMemorySampler },
     persistence: {
       postgresRuntime,

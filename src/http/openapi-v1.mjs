@@ -12,6 +12,7 @@ import { userModelOpenApiFragment } from "./openapi/user-model.mjs";
 import { aiBudgetOpenApiFragment } from "./openapi/ai-budget.mjs";
 import { speechOpenApiFragment } from "./openapi/speech.mjs";
 import { startupOpenApiFragment } from "./openapi/startup.mjs";
+import { isBusinessCreationPath } from "../../.build/typescript/backend/shared/business-identifiers/index.mjs";
 
 export const openApiV1 = Object.freeze({
   openapi: "3.1.0",
@@ -46,6 +47,9 @@ export const openApiV1 = Object.freeze({
     },
     parameters: {
       IdempotencyKey: { name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", maxLength: 100 } },
+      ClientProvisionalId: { name: "X-Client-Provisional-Id", in: "header", required: false,
+        description: "创建操作临时业务身份；需同时提供不可变客户端操作 ID 和请求指纹。提交与恢复回执返回正式映射。",
+        schema: { type: "string", pattern: "^[A-Za-z0-9_-]{16}$" } },
       IfMatch: { name: "If-Match", in: "header", required: true, schema: { type: "string", example: "\"3\"" } },
       Cursor: { name: "cursor", in: "query", required: false, schema: { type: "string" } },
       Limit: { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100, default: 20 } },
@@ -156,3 +160,10 @@ export const openApiV1 = Object.freeze({
   },
   security: [{ cookieAuth: [] }]
 });
+
+// 创建路径和浏览器/服务端校验共用同一策略，避免逐领域维护头部清单。
+for (const [pathname, pathItem] of Object.entries(openApiV1.paths)) {
+  if (pathItem.post && isBusinessCreationPath("POST", `/api/v1${pathname}`)) {
+    pathItem.post.parameters = [...(pathItem.post.parameters || []), { $ref: "#/components/parameters/ClientProvisionalId" }];
+  }
+}

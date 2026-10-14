@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { bindBusinessIdResponse, withBusinessIdTransaction } from "../../../.build/typescript/backend/shared/persistence/business-identifiers.mjs";
 import pg from "pg";
 import { canonicalJson, mapStoreObjects, rebuildStoreObjects } from "./store-mapping.mjs";
 import { clearStoreObjects, readPostgresStoreObjects, storeSqlMapping, writeStoreObjects } from "./postgres-objects.mjs";
@@ -316,16 +317,23 @@ export async function createPostgresRuntime({
           return result.rows[0].revision;
         });
         revision = next;
+        const context = getContext();
+        if (context?.clientOperationId) context.operationCommitted = true;
         const previous = before;
         before = structuredClone(document);
         await onCommit(publicPersistenceDocument(previous), publicPersistenceDocument(document));
       };
-      return operation({ document, commit });
+      return withBusinessIdTransaction(document, () => operation({ document, commit }));
     });
     const executeIdempotent = (request, operation, { onReplay = value => value } = {}) => transact(async ({ document, commit }) => {
       const replay = findIdempotencyResponse(document, request, now);
-      if (replay !== undefined) return structuredClone(onReplay(structuredClone(replay)));
-      const response = await operation(document);
+      if (replay !== undefined) {
+        const context = getContext() || {};
+        const result = bindBusinessIdResponse(onReplay(structuredClone(replay)), context);
+        context.operationCommitted = true;
+        return structuredClone(result);
+      }
+      const response = bindBusinessIdResponse(await operation(document), getContext() || {});
       recordIdempotencyResponse(document, { ...request, response }, now);
       await commit();
       return structuredClone(response);
@@ -337,7 +345,7 @@ export async function createPostgresRuntime({
       ))),
       transact,
       update: mutator => transact(async ({ document, commit }) => {
-        const result = await mutator(document);
+        const result = bindBusinessIdResponse(await mutator(document), getContext() || {});
         await commit();
         await result?.[afterCommit]?.();
         return result;

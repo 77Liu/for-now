@@ -248,10 +248,11 @@ export function createTaskLifecycle({ createId, now, hash }) {
   function create(tasks, input, inspectTarget, {
     deferTargetInspection = false,
     requestedIntent = null,
-    waitingBudget = false
+    waitingBudget = false,
+    allocateIdentity = null
   } = {}) {
     const normalized = normalizeRequest(input);
-    const { kind, resourceType, targetId, subtargetId, clientRequestId, payload, requestedInputVersion, requestedSubtargetVersion } = normalized;
+    let { kind, resourceType, targetId, subtargetId, clientRequestId, payload, requestedInputVersion, requestedSubtargetVersion } = normalized;
     if (!TASK_KINDS.has(kind)) return { unsupported: true };
     if (waitingBudget && kind !== "recordCompression") return { unsupported: true };
     if (!clientRequestId) return { invalid: true };
@@ -265,6 +266,11 @@ export function createTaskLifecycle({ createId, now, hash }) {
     const inputRequestHash = requestHash(normalized);
     const duplicate = tasks.find(item => item.clientRequestId === clientRequestId);
     if (duplicate) return duplicate.requestHash === inputRequestHash ? { task: duplicate, duplicate: true } : { conflict: true };
+    const allocatedIdentity = allocateIdentity?.(normalized);
+    if (allocatedIdentity) {
+      targetId = normalized.targetId = allocatedIdentity;
+      payload.recordId = allocatedIdentity;
+    }
     if (deferTargetInspection && (
       (["thoughtAnswer", "followUpAnswer", "annotationShenji", "journalReflection"].includes(kind) && !targetId)
       || (kind === "followUpAnswer" && !subtargetId)

@@ -121,7 +121,8 @@ export function createBackgroundAi({
       store.aiTasks,
       input,
       task => prepareTarget(store, task),
-      { deferTargetInspection: waiting, requestedIntent, waitingBudget }
+      { deferTargetInspection: waiting, requestedIntent, waitingBudget,
+        allocateIdentity: task => targetFor(task).allocateIdentity?.(store, task) }
     ));
   };
   const schedule = taskId => dispatch(() => void run(taskId).catch(error => onError(taskId, error)));

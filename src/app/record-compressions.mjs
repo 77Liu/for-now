@@ -162,6 +162,10 @@ export function createRecordCompressionService({
   };
 
   const target = {
+    // 生命周期只在新任务账户事务内调用；请求哈希仍使用稳定窗口身份。
+    allocateIdentity() {
+      return createId();
+    },
     async settled(task) {
       const budgetDay = dateKeyInTimezone(now(), DEFAULT_RECORD_TIMEZONE);
       let entries;

@@ -238,6 +238,11 @@ function validSyncOperation(entry) {
     && typeof entry.resource === "string"
     && entry.resource
     && typeof entry.committedAt === "string"
+    && (!entry.businessIdMapping || (objectValue(entry.businessIdMapping)
+      && typeof entry.businessIdMapping.accountId === "string"
+      && entry.businessIdMapping.operationId === entry.operationId
+      && /^[A-Za-z0-9_-]{16}$/.test(entry.businessIdMapping.provisionalId)
+      && /^[A-Za-z0-9_-]{16}$/.test(entry.businessIdMapping.canonicalId)))
     && Number.isSafeInteger(entry.firstCursor)
     && entry.firstCursor >= 0
     && Number.isSafeInteger(entry.lastCursor)
@@ -371,7 +376,8 @@ function appendSyncChanges(metadata, before, after, at, context = {}) {
     resource: String(context.resource || context.route || "").slice(0, 500),
     committedAt: at,
     firstCursor,
-    lastCursor: metadata.sync.cursor
+    lastCursor: metadata.sync.cursor,
+    ...(context.businessIdMapping ? { businessIdMapping: structuredClone(context.businessIdMapping) } : {})
   });
   metadata.sync.operations = metadata.sync.operations.slice(-SYNC_OPERATION_LIMIT);
 }

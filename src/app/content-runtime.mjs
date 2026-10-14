@@ -45,6 +45,7 @@ export function createContentRuntime({
   today,
   currentTime = () => Date.now(),
   createId = () => crypto.randomUUID(),
+  createBusinessId = createId,
   hash = value => crypto.createHash("sha256").update(String(value)).digest("hex"),
   logEvent,
   debugServerUrl = "",
@@ -65,6 +66,7 @@ export function createContentRuntime({
     [runDeepSeek, "runDeepSeek"],
     [today, "today"],
     [createId, "createId"],
+    [createBusinessId, "createBusinessId"],
     [hash, "hash"],
     [logEvent, "logEvent"],
     [debugFetch, "debugFetch"],
@@ -91,7 +93,7 @@ export function createContentRuntime({
   let mediaRuntime;
   const perceptionRuntime = createPerceptionRuntime({
     getAccountId,
-    createId,
+    createId: createBusinessId,
     now,
     hash
   });
@@ -100,7 +102,7 @@ export function createContentRuntime({
     getAccountId,
     getTimezone,
     now,
-    createId,
+    createId: createBusinessId,
     hash,
     readAiUsage,
     dailyBudgetCny: recordCompressionDailyBudgetCny,
@@ -128,7 +130,7 @@ export function createContentRuntime({
     getAccountId,
     cancelTask: taskId => backgroundAi?.cancel(taskId) || false,
     now,
-    createId,
+    createId: createBusinessId,
     hash
   });
   const contentAttachmentService = createContentAttachmentService({
@@ -144,7 +146,7 @@ export function createContentRuntime({
       enqueueContentImageUnderstanding(backgroundAi, work)
     ),
     now,
-    createId
+    createId: createBusinessId
   });
   const records = createContentRecords({
     repository,
@@ -153,7 +155,7 @@ export function createContentRuntime({
     contentAttachments: contentAttachmentService,
     getCursorScope,
     now,
-    createId
+    createId: createBusinessId
   });
   mediaRuntime = mediaFactory({
     ...mediaOptions,
@@ -197,6 +199,7 @@ export function createContentRuntime({
     resolve: (store, sourceRef) => legalImportanceMaterial(store, sourceRef, getAccountId()),
     modelChoice: getImportanceModelChoice, currentChoice: getImportanceModelSnapshot, hash, now, promptText, renderPrompt });
   const background = createContentBackground({
+    createBusinessId,
     repository: contentRepository,
     annotationService: foundation.annotationService,
     contentAttachments: contentAttachmentService,

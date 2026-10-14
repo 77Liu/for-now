@@ -7,6 +7,8 @@ import {
   synchronizePersistenceMetadata
 } from "./persistence-metadata.mjs";
 
+import { bindBusinessIdResponse, withBusinessIdTransaction } from "../../../.build/typescript/backend/shared/persistence/business-identifiers.mjs";
+
 const queues = new Map();
 
 export function createJsonStoreRepository({
@@ -42,14 +44,16 @@ export function createJsonStoreRepository({
     const commit = async () => {
       synchronizePersistenceMetadata(before, document, now, { context: getContext() || {} });
       await writeDocument(file, document);
+      const context = getContext();
+      if (context?.clientOperationId) context.operationCommitted = true;
       await onCommit(publicPersistenceDocument(before), publicPersistenceDocument(document));
       before = clone(document);
     };
-    return operation({ document, file, commit });
+    return withBusinessIdTransaction(document, () => operation({ document, file, commit }));
   });
 
   const update = mutator => transact(async ({ document, commit }) => {
-    const result = await mutator(document);
+    const result = bindBusinessIdResponse(await mutator(document), getContext() || {});
     await commit();
     await result?.[afterCommit]?.();
     return result;
@@ -65,8 +69,13 @@ export function createJsonStoreRepository({
 
   const executeIdempotent = (request, operation, { onReplay = value => value } = {}) => transact(async ({ document, commit }) => {
     const replay = findIdempotencyResponse(document, request, now);
-    if (replay !== undefined) return clone(onReplay(clone(replay)));
-    const response = await operation(document);
+    if (replay !== undefined) {
+      const context = getContext() || {};
+      const result = bindBusinessIdResponse(onReplay(clone(replay)), context);
+      context.operationCommitted = true;
+      return clone(result);
+    }
+    const response = bindBusinessIdResponse(await operation(document), getContext() || {});
     recordIdempotencyResponse(document, { ...request, response }, now);
     await commit();
     return clone(response);
