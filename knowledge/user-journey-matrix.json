@@ -432,7 +432,7 @@
         {"script": "scripts/record-compression-answer-citation-regression.mjs", "anchor": "answer citations are verified, AI-reference IDs are excluded, and plain-text journal assistance receives no trend"},
         {"script": "scripts/record-compression-service-regression.mjs", "anchor": "stale-input fence and seven-day trend integration regression passed"},
         {"script": "scripts/record-compression-user-view-regression.mjs", "anchor": "Seven-day daily summaries, permission-filtered source provenance, real coverage dates, missing dates and session scrubbing regression passed."},
-        {"script": "scripts/home-chat-citation-renderer-regression.mjs", "anchor": "home chat must pass verified citation data"},
+        {"script": "scripts/home-chat-citation-renderer-regression.mjs", "anchor": "home chat must pass verified citations and the separate provided-reference catalog to the existing renderer"},
         {"script": "scripts/frontend-review-insights-feature-regression.mjs", "anchor": "已匹配原文引用（1）"},
         {"script": "scripts/ui-regression.mjs", "anchor": "answerCitation:true"},
         {"script": "scripts/runtime-infrastructure-regression.mjs", "anchor": "defaults.recordCompressionEnabled, false"}
