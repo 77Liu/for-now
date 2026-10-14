@@ -3167,6 +3167,7 @@
         "domain.tasks",
         "domain.notifications",
         "domain.auth",
+        "shared.ai-context",
         "http",
         "domain.health",
         "domain.checkins",
@@ -3178,6 +3179,7 @@
       "path": "public/frontend/app/runtime.mjs",
       "allowedImports": [
         "./application.mjs",
+        "./runtime/loaders.mjs",
         "./runtime/kernel.mjs",
         "../feature-registry/index.mjs",
         "../pages/index.mjs",

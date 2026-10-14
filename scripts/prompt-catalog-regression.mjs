@@ -19,10 +19,10 @@ const citationCapabilityIndex = manifest.versions.findIndex(item => (
 assert.ok(citationCapabilityIndex >= 0);
 assert.ok(citationCapabilityIndex <= manifest.versions.findIndex(item => item.version === current.version));
 assert.equal(current.capabilities.sevenDayTrendContext, "2026.10.10.4");
-const previousCatalog = await loadPromptCatalog({ rootDir: root, requestedVersion: "2026.10.14.2" });
+const previousCatalog = await loadPromptCatalog({ rootDir: root, requestedVersion: "2026.10.14.3" });
 assert.deepEqual(Object.keys(current.prompts), Object.keys(previousCatalog.prompts));
 const changedPromptIds = Object.keys(current.prompts).filter(id => current.prompts[id] !== previousCatalog.prompts[id]);
-assert.deepEqual(changedPromptIds, ["recordCompression.task.daily"], "只更新增量日压缩的唯一正文，其他业务提示词保持原文");
+assert.deepEqual(changedPromptIds, ["onboarding.claims.extract"], "只更新候选来源定位契约，其他业务提示词保持原文");
 assert.match(current.prompts["recordCompression.task.daily"], /endExclusive（不含）/);
 assert.match(current.prompts["recordCompression.task.daily"], /limits\.outputTokens/);
 assert.match(current.prompts["recordCompression.task.daily"], /合计最多 3 条/);
@@ -32,6 +32,7 @@ assert.equal(Object.keys(current.rolePromptIds).length, 6);
 assert.match(promptText("ai.system.core"), /结论先行/);
 assert.match(renderPrompt("keepsake.image.candidates", { existingTags: "[\"展览\"]" }), /最多 3 个/);
 assert.match(promptText("onboarding.claims.extract"), /最多 20 条候选/);
+assert.match(promptText("onboarding.claims.extract"), /exactQuote/);
 for (const id of [
   "orchestration.role.perception",
   "orchestration.role.modelUpdate",

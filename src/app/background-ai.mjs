@@ -498,7 +498,6 @@ export function createBackgroundAi({
       await beforePrepare({ kind: "importanceScoring" });
       const ids = await repository.update(store => {
         const { interrupted } = tasks.recover(store.aiTasks);
-        const recovered = [];
         for (const task of interrupted) {
           targetFor(task).fail?.(store, task, { code: "TASK_INTERRUPTED" });
           notify(store, task, "failed", task.error);
@@ -518,7 +517,6 @@ export function createBackgroundAi({
             );
             if (!retry.duplicate && retry.task?.status === "queued") {
               retry.task.recoveryAttempt = recoveryAttempt + 1;
-              recovered.push(retry.task.id);
             }
           }
         }
@@ -531,7 +529,7 @@ export function createBackgroundAi({
           }
           queued.push(task.id);
         }
-        return [...queued, ...recovered];
+        return queued;
       });
       for (const id of ids) schedule(id);
       await releaseWaiting();

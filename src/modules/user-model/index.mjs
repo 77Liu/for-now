@@ -193,16 +193,37 @@ export function parseClaimExtractionOutput(raw, {
       throw Object.assign(new Error("候选 claim 字段无效"), { code: "CLAIM_EXTRACTION_INVALID" });
     }
     const evidence = candidate.evidence.map(reference => {
-      if (!keysMatch(reference, ["sourceId", "span"])
+      if (!keysMatch(reference, ["sourceId", "span", "exactQuote"], ["sourceId", "span"])
         || typeof reference.sourceId !== "string"
         || !Array.isArray(reference.span)
         || reference.span.length !== 2
-        || !reference.span.every(Number.isInteger)) {
+        || !reference.span.every(Number.isInteger)
+        || (reference.exactQuote !== undefined
+          && (typeof reference.exactQuote !== "string"
+            || !reference.exactQuote.trim()
+            || reference.exactQuote.length > CLAIM_EXTRACTION_MAX_CHARS))) {
         throw Object.assign(new Error("候选来源范围无效"), { code: "CLAIM_EXTRACTION_INVALID" });
       }
       const source = sourceById.get(reference.sourceId);
-      const [start, end] = reference.span;
-      if (!source || start < 0 || end <= start || end > source.text.length || !source.text.slice(start, end).trim()) {
+      let [start, end] = reference.span;
+      const spanValid = Boolean(source)
+        && start >= 0
+        && end > start
+        && end <= source.text.length
+        && Boolean(source.text.slice(start, end).trim());
+      const exactQuote = reference.exactQuote || "";
+      if (source && exactQuote && (!spanValid || source.text.slice(start, end) !== exactQuote)) {
+        const matchedStart = source.text.indexOf(exactQuote);
+        const uniqueMatch = matchedStart >= 0
+          && source.text.indexOf(exactQuote, matchedStart + 1) < 0;
+        if (uniqueMatch) {
+          start = matchedStart;
+          end = matchedStart + exactQuote.length;
+        }
+      }
+      if (!source || start < 0 || end <= start || end > source.text.length
+        || !source.text.slice(start, end).trim()
+        || (exactQuote && source.text.slice(start, end) !== exactQuote)) {
         throw Object.assign(new Error("候选来源无法定位到当前原文"), { code: "CLAIM_EXTRACTION_INVALID" });
       }
       return {
