@@ -1094,6 +1094,7 @@ const openApiDocument = {
   components: {
     parameters: {
       IdempotencyKey: { name: "Idempotency-Key", in: "header", required: true },
+      ClientProvisionalId: { name: "X-Client-Provisional-Id", in: "header", required: false },
       IfMatch: { name: "If-Match", in: "header", required: true },
       Cursor: { name: "cursor", in: "query" },
       Limit: { name: "limit", in: "query" },
@@ -1102,6 +1103,9 @@ const openApiDocument = {
     schemas: {
       SuccessEnvelope: { type: "object" },
       TrashReference: { type: "object" },
+      OccurrenceTimestamp: { type: "string" },
+      OccurrenceDate: { type: "string" },
+      EventTimePrecision: { type: "string" },
       ...libraryComponents.schemas
     },
     responses: {

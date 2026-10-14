@@ -419,6 +419,14 @@ function targetText({ item, root }, sourceRef) {
         || ""
     );
   }
+  if (sourceRef.resourceType === "capture"
+    && (!targetKey || targetKey === "content")
+    && item.audio
+    && !String(item.content || "").trim()
+    && !list(item.attachmentPaths).length
+    && item.title === `${item.occurredOn} 录音`) {
+    return "";
+  }
   if (!targetKey || targetKey === "content") {
     return [
       item.title,

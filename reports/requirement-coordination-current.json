@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 316,
-  "updated_at": "2026-10-14T15:01:43.126Z",
+  "revision": 320,
+  "updated_at": "2026-10-14T15:41:09.693Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -20,7 +20,7 @@
   "iteration": {
     "id": "v0.5.15",
     "status": "VALIDATING",
-    "phase": "真实API span 根因与后台恢复重复调度已返修并接入本地develop 4bd85c6；受影响门PASS，准备新候选状态门"
+    "phase": "release级测试审计发现3处旧断言/夹具漂移及1处系统默认录音标题被误作用户来源；已返修，等待新提交与重新冻结"
   },
   "scope": {
     "description": "上下文选材与短引用、业务短ID、增量摘要和内部预算可恢复性；仅以下8条的本版新增行为，不重做既有已发布内容",
@@ -133,7 +133,7 @@
       "owner": "主开发",
       "thread_id": "01a11afe-73d2-7013-91d5-cd473c4d7115",
       "status": "HANDOFF_COMPLETE",
-      "base_commit": "4bd85c",
+      "base_commit": "41d866",
       "branch": "feat/v0.5.15-context-reliability",
       "write_set": [
         "src/app/{task-context,prompt-context,ai-task-targets,answer-citations,content/background,runtime-foundation,record-compression-context,record-compressions,background-ai,ai-budget-runtime}.mjs及其真实调用方",
@@ -155,48 +155,55 @@
       "shared_owner": "主开发为唯一业务及共享入口写者；主控仅控制面和需求事实，接入审查不与开发并行改源码",
       "handoff": "各完整切片自查与受影响验证后集中交接，主控亲自读差分/消费者才合入develop；不得自行切develop提交",
       "review_gate": {
-        "status": "VALIDATION_REWORK_INTEGRATED",
+        "status": "FINAL_CANDIDATE_VALIDATED",
         "object": {
-          "kind": "implementation_commit",
-          "commit": "4bd85c"
+          "kind": "git_commit",
+          "commit": "41d866"
         },
-        "conclusion": "真实DeepSeek合成五问复现模型span不稳定；唯一逐字quote恢复后任务成功并持久8条候选。后台恢复重复调度、importance路由所有权与runtime loaders入口登记同时关闭；全局check及受影响套件通过。",
+        "conclusion": "41d8667新鲜四账户102任务状态门PASS；真实合成候选提取、重要性评分和短引用回答PASS；累计已知费用¥0.07908511536。",
         "limitations": [
-          "4bd85c6新鲜生产快照状态门尚未执行",
-          "未授权远程发布"
+          "未授权push/tag/Release/部署或生产测试",
+          "长期98%与设备验收不外推通过"
         ]
       },
-      "current_slice": "主控固定返修候选并重跑新鲜生产快照状态门"
+      "current_slice": "本地验证完成，等待Owner发布决定"
     }
   ],
   "candidate": {
     "version": "v0.5.15",
     "object": {
       "kind": "git_commit",
-      "commit": "4bd85c"
+      "commit": "41d866"
     },
-    "status": "FIX_INTEGRATED_STATE_GATE_PENDING",
+    "status": "RELEASE_GATE_REWORK_PENDING_FREEZE",
     "evidence": [
-      "reports/release-v0.5.15-2026-10-14.md",
-      "reports/local/v0515-paid-acceptance-current.json",
       "npm:check",
-      "npm:test:user-model",
+      "npm:test:importance",
       "npm:test:personalized-ai-model-gate",
-      "npm:test:importance"
+      "npm:test:user-model",
+      "reports/local/v0515-compression-loop-current.json",
+      "reports/local/v0515-paid-acceptance-current.json",
+      "reports/local/v0515-real-ai-current.json",
+      "reports/local/v0515-real-claim-current.json",
+      "reports/local/v0515-startup-gate-current.json",
+      "reports/local/v0515-startup-snapshot-current.json",
+      "reports/release-v0.5.15-2026-10-14.md"
     ],
     "limitations": [
-      "新候选4bd85c6尚未重跑新鲜生产快照隔离有状态门",
-      "长期98%和未完成设备验收不外推通过"
+      "41d8667之后存在测试契约修正与task-context运行时返修，原候选不再是最终验证对象",
+      "release级旅程已运行至冻结回放源校验，需提交后刷新候选tree再重跑",
+      "未授权部署或其他生产写入"
     ]
   },
   "authorization": {
     "source": "Owner最新明确指令：继续0.5.14复盘回流后开始0.5.15夜间开发，无人工停止尽可能在授权范围推进；既有每版本4元必要验收许可持续有效。",
     "allowed_actions": [
+      "Owner本轮条件授权：线上日压缩无回答消费记录时，允许对现有授权账户执行一次生产模拟思绪提交→真实回答验证；只限本次，完成后停止，不授权部署或其他生产写入",
       "v0.5.15本地需求核对、设计、实现、自查、主控独立审查、必要验证、提交及feat合入develop",
       "定向需求池事实维护及控制面唯一入口更新",
-      "现有生产只读采集与隔离PG验证",
+      "必要本机AI重要性评分验收沿既有模型通道与版本共用4元额度，调用前由主控保守预留；合成或已授权脱敏材料，不自动全库调用",
       "每版本所有必要付费验收API共用人民币4元，额度内无需申请，失败/重试/预留累计",
-      "必要本机AI重要性评分验收沿既有模型通道与版本共用4元额度，调用前由主控保守预留；合成或已授权脱敏材料，不自动全库调用"
+      "现有生产只读采集与隔离PG验证"
     ],
     "excluded": [
       "v0.5.15正式push/tag/Release/生产上线或生产测试",
@@ -219,14 +226,32 @@
       "version": "v0.5.15",
       "limit_cny": 4,
       "shared_paid_apis": true,
-      "committed_or_reserved_cny": 0.04393321536,
+      "committed_or_reserved_cny": 0.07908511536,
       "ledger_ref": "reports/local/v0515-paid-acceptance-current.json",
-      "cost_basis": "7次已完成DeepSeek调用的已知费用累计¥0.04393321536；3项未使用预留已释放，供应商最终账单以外部结算为准",
+      "cost_basis": "11次已完成DeepSeek调用的已知费用累计¥0.07908511536；4项未使用预留已释放，无活动预留；供应商最终账单以外部结算为准",
       "expiry_mode": "until_revoked"
     }
   },
-  "blockers": [],
-  "next_action": "为4bd85c6采集新鲜只读生产快照并执行隔离PG启动/重启恢复/认证读写/任务通知门；通过后核对真实模型闭环适用性并固定最终候选，不触发生产测试或远程发布。",
+  "blockers": [
+    {
+      "id": "v0515-release-gate-rework",
+      "status": "confirmed",
+      "object": {
+        "kind": "working_tree",
+        "base_commit": "41d866"
+      },
+      "reason": "核心/Release套件暴露日期精度、压缩通知、OpenAPI聚合夹具漂移，以及系统默认录音标题进入用户来源的真实缺陷；工作树修复尚未提交和重冻结",
+      "evidence": [
+        "npm:test",
+        "npm:test:journeys:release",
+        "scripts/regression.mjs",
+        "scripts/runtime-infrastructure-regression.mjs",
+        "scripts/library-regression.mjs",
+        "src/app/task-context.mjs"
+      ]
+    }
+  ],
+  "next_action": "审查并提交测试契约修正与默认录音标题来源边界，刷新develop候选/冻结回放源；重跑check、核心回归、task-context、release旅程和新候选有状态门。",
   "runtime": {
     "version": "v0.5.14",
     "sha": "a4d2ec",
@@ -435,6 +460,25 @@
         "reports/local/v0515-paid-acceptance-current.json",
         "reports/release-v0.5.15-2026-10-14.md",
         "git_commit:4bd85c6"
+      ]
+    },
+    {
+      "id": "v0515-final-candidate-validation",
+      "object": {
+        "kind": "git_commit",
+        "commit": "41d866"
+      },
+      "conclusion": "新鲜只读生产快照绑定41d8667/tree525c43，隔离PG16.14四账户102任务启动、readyz、同库重启、认证读取、保存往返、任务通知读取PASS，外部副作用0。真实合成候选提取5条并安全恢复1处span；重要性评分2/2；真实回答2条逐字引用全部匹配、拒绝0。",
+      "limitations": [
+        "真实调用仅使用合成原文",
+        "长期SLO、完整设备验收与生产新版本未执行"
+      ],
+      "refs": [
+        "reports/local/v0515-startup-gate-current.json",
+        "reports/local/v0515-real-claim-current.json",
+        "reports/local/v0515-real-ai-current.json",
+        "reports/local/v0515-paid-acceptance-current.json",
+        "git_commit:41d8667"
       ]
     }
   ],

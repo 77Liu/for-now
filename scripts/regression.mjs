@@ -241,12 +241,16 @@ try {
   assert.equal(modelRequests.length, 0);
   assert.equal(Object.hasOwn(migrated, "bookDraft"), false);
   assert.equal(migrated.checkins[0].occurredOn, "2026-09-27");
-  assert.equal(migrated.checkins[0].occurredAt, "2026-09-26T16:56:18.237Z");
+  assert.equal(migrated.checkins[0].occurredAt, "");
+  assert.equal(migrated.checkins[0].eventTimePrecision, "date");
   assert.equal(migrated.thoughts[0].occurredOn, "2026-09-27");
-  assert.equal(migrated.thoughts[0].occurredAt, "2026-09-26T16:56:18.237Z");
+  assert.equal(migrated.thoughts[0].occurredAt, "");
+  assert.equal(migrated.thoughts[0].eventTimePrecision, "date");
   assert.equal(migrated.books[0].notes[0].type, "record");
   assert.equal(migrated.books[0].notes[0].favorite, "none");
-  assert.equal(migrated.books[0].notes[0].occurredOn, "2026-09-26");
+  assert.equal(migrated.books[0].notes[0].occurredAt, "");
+  assert.equal(migrated.books[0].notes[0].occurredOn, "");
+  assert.equal(migrated.books[0].notes[0].eventTimePrecision, "unknown");
   assert.equal(migrated.books[0].readingStartedOn, "");
   assert.equal(migrated.books[0].readingFinishedOn, "");
   assert.deepEqual({

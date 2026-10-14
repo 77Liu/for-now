@@ -107,8 +107,8 @@ const scanResult = await observedScan(async () => ({
   metrics: { candidateCount: 3, queuedCount: 2 }
 }));
 assert.equal(scanResult.queuedCount, 2);
-assert.deepEqual(noticeEvents.filter(value => ["日压缩已启动", "日压缩已完成", "日压缩成本记录"].includes(value)), [
-  "日压缩已启动", "日压缩已完成", "日压缩成本记录"
+assert.deepEqual(noticeEvents.filter(value => ["日压缩已启动", "日压缩扫描登记完成", "日压缩扫描费用快照"].includes(value)), [
+  "日压缩已启动", "日压缩扫描登记完成", "日压缩扫描费用快照"
 ]);
 const compressionProduction = config({
   NODE_ENV: "production",
