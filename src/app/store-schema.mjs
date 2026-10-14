@@ -105,6 +105,7 @@ export const emptyStore = {
   userClaims: [],
   modelUnknowns: [],
   importanceScores: [],
+  importanceJobs: [],
   evidenceSources: [],
   evidencePermissions: [],
   perceptionEvents: [],

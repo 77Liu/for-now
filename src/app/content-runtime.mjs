@@ -1,6 +1,6 @@
 import { promptText, renderPrompt } from "../shared/prompts/index.mjs";
 import { createImportanceService } from "../../.build/typescript/backend/shared/ai-context/index.mjs";
-import { legalImportanceMaterial } from "./task-context.mjs";
+import { legalImportanceMaterial, legalImportanceSources } from "./task-context.mjs";
 import crypto from "node:crypto";
 import { createContentAttachmentService } from "../modules/content-attachments/index.mjs";
 import { keepsakePayload } from "../modules/keepsakes/index.mjs";
@@ -196,6 +196,7 @@ export function createContentRuntime({
     }
   };
   const importanceService = createImportanceService({ repository: contentRepository,
+    accountId: getAccountId, createBusinessId, list: store => legalImportanceSources(store, getAccountId()),
     resolve: (store, sourceRef) => legalImportanceMaterial(store, sourceRef, getAccountId()),
     modelChoice: getImportanceModelChoice, currentChoice: getImportanceModelSnapshot, hash, now, promptText, renderPrompt });
   const background = createContentBackground({
@@ -224,6 +225,11 @@ export function createContentRuntime({
   });
   backgroundAi = background.backgroundAi;
   importanceService.attach(backgroundAi);
+  const resumeBackground = backgroundAi.resume.bind(backgroundAi);
+  backgroundAi.resume = async () => {
+    await resumeBackground();
+    await importanceService.batches?.pump();
+  };
   const recordCompressionJobs = recordCompressionService.attach(backgroundAi);
   const perception = createPerceptionService({
     repository: contentRepository,

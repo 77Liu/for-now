@@ -595,9 +595,10 @@ export function legalImportanceSources(store, accountId, purpose = "context") {
       targetKey: item === root && !["thought", "chat"].includes(resourceType) ? "" : targetKey, version: recordVersion(item.version) };
     const material = legalImportanceMaterial(store, sourceRef, accountId, purpose);
     if (!material?.text.trim()) return;
-    result.push({ ...material, sourceRef, occurredAt: ["date", "unknown"].includes(item.eventTimePrecision || root.eventTimePrecision)
-      ? "" : item.occurredAt || root.occurredAt || item.createdAt || "",
-      recordedAt: item.createdAt || root.createdAt || "",
+    result.push({ ...material, sourceRef, occurredAt: ["date", "unknown"].includes(item.eventTimePrecision)
+      ? "" : (targetKey.startsWith("followup-question:") ? item.questionOccurredAt : item.occurredAt) || "",
+      occurredOn: item.occurredOn || (item === root ? root.occurredOn : "") || "",
+      recordedAt: item.createdAt || "",
       permissionRevision: taskContextSourcePermission(store, sourceRef, accountId).permissionRevision });
   };
   for (const resourceType of ["capture", "journal", "thought", "chat", "quote", "keepsake", "book", "checkin", "dailyRecord",

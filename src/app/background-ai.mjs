@@ -214,6 +214,7 @@ export function createBackgroundAi({
         ? { ...generated, contextReceipt: { ...compactPersonalContextReceipt(work.contextReceipt),
           ...(generated.referenceReceipt ? { referenceRequest: structuredClone(generated.referenceReceipt) } : {}) } }
         : generated;
+      if (task.kind === "importanceScoring") await beforePrepare({ kind: task.kind });
       await repository.update(value => {
         const currentTask = value.aiTasks.find(item => item.id === taskId);
         if (!currentTask) return false;
@@ -221,7 +222,9 @@ export function createBackgroundAi({
           cancelled(value, currentTask);
           return false;
         }
-        const currentWork = prepareTarget(value, currentTask);
+        const resultTarget = targetFor(currentTask);
+        const currentWork = resultTarget.prepareResult
+          ? resultTarget.prepareResult(value, currentTask) : prepareTarget(value, currentTask);
         const contextChanged = work.contextFingerprint
           && work.contextFingerprint !== currentWork?.contextFingerprint;
         if (!taskInputMatches(task, currentWork) || contextChanged) {
@@ -265,7 +268,7 @@ export function createBackgroundAi({
       try {
         const store = await repository.read();
         const task = store.aiTasks.find(item => item.id === taskId);
-        if (executed && task && ["succeeded", "failed", "cancelled", "stale"].includes(task.status)) {
+        if ((executed || task?.kind === "importanceScoring") && task && ["succeeded", "failed", "cancelled", "stale"].includes(task.status)) {
           await targetFor(task).settled?.(task);
         }
         if (task?.kind === "onboardingClaimExtraction"
@@ -502,6 +505,7 @@ export function createBackgroundAi({
           const recoveryAttempt = Math.max(0, Math.round(Number(task.recoveryAttempt) || 0));
           if (isInternalTask(task)
             && task.kind !== RECORD_COMPRESSION_TASK_KIND
+            && !(task.kind === "importanceScoring" && task.clientRequestId?.startsWith("importance-range:"))
             && taskHasRequiredTarget(store, task)
             && recoveryAttempt < INTERNAL_RECOVERY_LIMIT) {
             const retry = notifyCreated(

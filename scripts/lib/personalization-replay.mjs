@@ -204,6 +204,8 @@ function newReplayState(fixture, fixtureIndex, { taskEventId = "" } = {}) {
   const allowedCurrentIds = new Set(replayCurrentMaterials(fixture).map(material => material.id));
   const currentMaterial = [];
   const evidenceToMaterialId = new Map();
+  const sourceToMaterialId = new Map();
+  const sourceKeyToMaterialId = new Map();
   const sourceTextByMaterialId = new Map();
   for (const [materialIndex, material] of list(fixture.materials).entries()) {
     if (material.channel === "current") {
@@ -345,12 +347,16 @@ function newReplayState(fixture, fixtureIndex, { taskEventId = "" } = {}) {
     if (!event) throw new Error(`Replay perception event is invalid: ${material.id}`);
     store.perceptionEvents.push(event);
     evidenceToMaterialId.set(evidenceId, material.id);
+    sourceToMaterialId.set(JSON.stringify([evidenceSourceKey(sourceRef), sourceRef.version]), material.id);
+    sourceKeyToMaterialId.set(evidenceSourceKey(sourceRef), material.id);
     sourceTextByMaterialId.set(material.id, source.text);
   }
   return {
     store,
     currentMaterial,
     evidenceToMaterialId,
+    sourceToMaterialId,
+    sourceKeyToMaterialId,
     sourceTextByMaterialId
   };
 }
@@ -504,9 +510,17 @@ export function createNewReplayAdapter({
           scene: "thoughtAnswer"
         })
       });
+      const historyMaterialId = selected => {
+        if (selected.evidenceId) return replay.evidenceToMaterialId.get(selected.evidenceId);
+        const source = projection.receipt.sources.find(item => item.id === selected.id);
+        if (!source) return undefined;
+        const ref = { resourceType: source.resourceType, resourceId: source.resourceId,
+          rootId: source.location?.rootId || "", targetKey: source.location?.targetKey || "", version: source.version };
+        return replay.sourceToMaterialId.get(JSON.stringify([evidenceSourceKey(ref), ref.version]));
+      };
       const selectedSourceIds = projection.receipt.selected.map(selected => (
         selected.channel === "history"
-          ? replay.evidenceToMaterialId.get(selected.evidenceId)
+          ? historyMaterialId(selected)
           : selected.id
       ));
       if (selectedSourceIds.some(sourceId => !sourceId)) {
@@ -528,7 +542,8 @@ export function createNewReplayAdapter({
           historyRetrievalStatus: projection.receipt.historyRetrieval?.status || "",
           promptContract: structuredClone(projection.receipt.promptContract),
           candidateScores: projection.receipt.candidates.map(candidate => ({
-            sourceId: replay.evidenceToMaterialId.get(candidate.evidenceId) || "",
+            sourceId: replay.evidenceToMaterialId.get(candidate.evidenceId)
+              || replay.sourceKeyToMaterialId.get(candidate.sourceKey) || "",
             score: candidate.relevanceScore
           })),
           sourceFingerprintSha256: fingerprint(projection.receipt.sources.map(source => ({

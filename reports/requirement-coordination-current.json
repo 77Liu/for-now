@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "revision": 307,
-  "updated_at": "2026-10-14T03:11:28.228Z",
+  "revision": 310,
+  "updated_at": "2026-10-14T03:48:47.720Z",
   "canonical_path": "/Users/bytedance/Documents/Codex/个人成长追踪/reports/requirement-coordination-current.json",
   "coordinator": {
     "thread_id": "01a11c47-8a46-7d31-9b38-1e5ff0eeac29",
@@ -20,7 +20,7 @@
   "iteration": {
     "id": "v0.5.15",
     "status": "IMPLEMENTING",
-    "phase": "A/B/C已本地整合，唯一feat691907；D继续实现，之后补齐Owner新确认的重要性批量追溯/补打，再最终有状态门"
+    "phase": "A/B/C/D已本地整合，唯一feat f4bb23；补齐重要性持久批量追溯/补打与来源映射，再最终有状态门"
   },
   "scope": {
     "description": "上下文选材与短引用、业务短ID、增量摘要和内部预算可恢复性；仅以下8条的本版新增行为，不重做既有已发布内容",
@@ -133,7 +133,7 @@
       "owner": "主开发",
       "thread_id": "01a11afe-73d2-7013-91d5-cd473c4d7115",
       "status": "REVIEW_ACCEPTED",
-      "base_commit": "691907",
+      "base_commit": "f4bb23",
       "branch": "feat/v0.5.15-context-reliability",
       "write_set": [
         "src/app/{task-context,prompt-context,ai-task-targets,answer-citations,content/background,runtime-foundation,record-compression-context,record-compressions,background-ai,ai-budget-runtime}.mjs及其真实调用方",
@@ -155,23 +155,23 @@
       "shared_owner": "主开发为唯一业务及共享入口写者；主控仅控制面和需求事实，接入审查不与开发并行改源码",
       "handoff": "各完整切片自查与受影响验证后集中交接，主控亲自读差分/消费者才合入develop；不得自行切develop提交",
       "review_gate": {
-        "status": "D_ACCEPTED_FOR_INTEGRATION",
+        "status": "IMPORTANCE_BATCH_ACCEPTED",
         "object": {
           "kind": "git_tree",
-          "tree": "a4b078",
-          "base_commit": "691907"
+          "tree": "8fefca",
+          "base_commit": "f4bb23"
         },
-        "conclusion": "D接入GO，非整个版本可发布",
-        "limitations": [
-          "working-context-source-boundaries基线来源映射缺口仍未关闭",
-          "重要性持久分批/历史追溯/补打尚未实现",
-          "最终候选新鲜生产快照隔离启动及真实提供商验收未执行"
-        ],
+        "conclusion": "重要性持久批量切片接入GO，不代表全版可发布",
         "evidence": [
-          "reports/local/v0515-d-acceptance-current.json"
+          "reports/local/v0515-importance-batch-acceptance-current.json"
+        ],
+        "limitations": [
+          "合成提供商验证不能替代必要真实提供商验收",
+          "最终候选与新鲜生产状态的隔离有状态全局门尚未完成",
+          "长期98%可用率无观察证据"
         ]
       },
-      "current_slice": "D：上海半开增量摘要与有效替代旧失败"
+      "current_slice": "B补充：重要性持久批量、历史追溯、补打与真实来源映射闭环"
     }
   ],
   "candidate": null,
@@ -211,22 +211,8 @@
       "expiry_mode": "until_revoked"
     }
   },
-  "blockers": [
-    {
-      "id": "v0515-source-replay-mapping",
-      "status": "unresolved",
-      "object": {
-        "kind": "git_commit",
-        "commit": "691907"
-      },
-      "reason": "冻结计划初始化出现unmapped source；当前保留为全版验收缺口，待真实receipt映射链核对",
-      "evidence": [
-        "scripts/lib/personalization-replay.mjs:createNewReplayAdapter",
-        "scripts/working-context-source-boundaries-regression.mjs"
-      ]
-    }
-  ],
-  "next_action": "主控将D本地提交并整合develop，保留同一feat；再派发重要性持久批量/历史追溯/补打及来源映射缺口修复。",
+  "blockers": [],
+  "next_action": "主控本地提交并整合重要性批量切片；固定v0.5.15最终业务候选后，执行预算内真实API闭环及新鲜生产状态隔离启动/恢复核心门，不执行远程发布。",
   "runtime": {
     "version": "v0.5.14",
     "sha": "a4d2ec",

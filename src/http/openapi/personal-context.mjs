@@ -28,7 +28,7 @@ export const personalContextPaths = {
 };
 
 for (const [action, summary] of [["read", "查询当前来源的重要性缓存与评分任务状态"],
-  ["score", "按需登记小批次重要性评分"], ["correct", "纠正当前来源的重要性分数"]]) {
+  ["score", "显式范围分批评分、暂停与断点补打"], ["correct", "纠正当前来源的重要性分数"]]) {
   personalContextPaths[`/importance/${action}`] = {
     post: {
       operationId: `importance${action[0].toUpperCase()}${action.slice(1)}`,
@@ -41,8 +41,17 @@ for (const [action, summary] of [["read", "查询当前来源的重要性缓存�
           properties: { sourceRef: { $ref: "#/components/schemas/EvidenceSourceRef" },
             score: { type: "number", minimum: 0, maximum: 100 } }
         } : {
-          type: "object", required: ["sourceRefs"], additionalProperties: false,
-          properties: { sourceRefs: { type: "array", minItems: 1, maxItems: IMPORTANCE_BATCH_SIZE,
+          type: "object", additionalProperties: false,
+          anyOf: [{ required: ["sourceRefs"] }, { required: ["jobId"] },
+            ...(action === "score" ? [{ required: ["range", "maxCalls"] }] : [])],
+          properties: { jobId: { type: "string", minLength: 1 },
+            ...(action === "score" ? { action: { type: "string", enum: ["pause", "resume"] },
+              maxCalls: { type: "integer", minimum: 1, maximum: 100 },
+              range: { type: "object", required: ["from", "to"], additionalProperties: false,
+                properties: { dateBasis: { type: "string", enum: ["recorded", "occurred"], default: "recorded",
+                  description: "创建时冻结合法来源坐标；恢复核验当前版本/权限但不扩大来源范围。Asia/Shanghai 日期闭区间；recorded 按录入日期（默认），occurred 按发生日期，包括迟到补录和仅日期记录；无对应日期的来源不纳入范围" },
+                  from: { type: "string", format: "date" }, to: { type: "string", format: "date" } } } } : {}),
+            sourceRefs: { type: "array", minItems: 1, maxItems: IMPORTANCE_BATCH_SIZE,
             items: { $ref: "#/components/schemas/EvidenceSourceRef" } } }
         } } }
       },
@@ -277,7 +286,9 @@ export const personalContextComponents = {
         timeWindow: {
           type: "object",
           required: ["from", "to"],
-          properties: { from: { type: "string" }, to: { type: "string" } }
+          properties: { dateBasis: { type: "string", enum: ["recorded", "occurred"], default: "recorded",
+                  description: "创建时冻结合法来源坐标；恢复核验当前版本/权限但不扩大来源范围。Asia/Shanghai 日期闭区间；recorded 按录入日期（默认），occurred 按发生日期，包括迟到补录和仅日期记录；无对应日期的来源不纳入范围" },
+                  from: { type: "string" }, to: { type: "string" } }
         },
         tokenBudget: {
           type: "object",
