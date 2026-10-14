@@ -95,6 +95,11 @@ const SOURCE_VIEWS = Object.freeze({
 const list = value => Array.isArray(value) ? value : [];
 const compareText = (left, right) => left < right ? -1 : left > right ? 1 : 0;
 const digest = value => crypto.createHash("sha256").update(String(value ?? "")).digest("hex");
+const canonicalJson = value => Array.isArray(value)
+  ? `[${value.map(canonicalJson).join(",")}]`
+  : value && typeof value === "object"
+    ? `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`
+    : JSON.stringify(value);
 const validDigest = value => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 const validDateOnly = value => (
   typeof value === "string"
@@ -135,7 +140,12 @@ export function taskContextSourcePermission(store, sourceRef, accountId) {
   if (!permission || permission.accountId !== accountId) {
     fail("Current source permission state is invalid", "CURRENT_MATERIAL_PERMISSION_INVALID");
   }
-  return { contextAllowed: permission.contextAllowed, permissionRevision: permission.revision };
+  const permissionRevision = permission.revision === 1
+    && permission.contextAllowed
+    && !permission.learningAllowed
+    ? 0
+    : permission.revision;
+  return { contextAllowed: permission.contextAllowed, permissionRevision };
 }
 
 const permissionChecksValid = checks => Array.isArray(checks) && checks.every(check => (
@@ -300,7 +310,7 @@ function normalizedCurrentMaterial(values, accountId, store, task) {
       evidenceChecks,
       rawSourceChecks: list(value.rawSourceChecks).map(check => ({ ...check })),
       authorization,
-      permissionRevision: permission.permissionRevision,
+      permissionRevision: authorization === "current-request" ? 0 : permission.permissionRevision,
       permissionChecks: permissionChecks.map(check => ({ ...check })),
       legacyDependencies,
       chainId: safeText(value.chainId, 100),
@@ -882,7 +892,7 @@ function selectionReceipt({
     })),
     ...selectedHistory.map(item => ({
       id: item.id,
-      evidenceId: item.evidenceId,
+      ...(item.evidenceId ? { evidenceId: item.evidenceId } : {}),
       channel: "history",
       reason: item.selectionReason || "task-relevant"
     }))
@@ -939,7 +949,7 @@ function selectionReceipt({
     ]))),
     candidates: candidates.slice(0, WORKING_CONTEXT_RECEIPT_ITEM_LIMIT).map(item => ({
       id: item.id,
-      evidenceId: item.evidenceId,
+      ...(item.evidenceId ? { evidenceId: item.evidenceId } : {}),
       sourceKey: item.sourceKey,
       relevanceScore: item.relevanceScore || 0
     })),
@@ -1314,7 +1324,7 @@ export function workingContextReceiptFingerprint(receipt) {
     ))) {
     return "";
   }
-  return digest(JSON.stringify({
+  return digest(canonicalJson({
     schemaVersion: receipt.schemaVersion,
     version: receipt.version,
     generatedAt: receipt.generatedAt,

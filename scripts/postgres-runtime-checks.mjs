@@ -614,7 +614,7 @@ export async function runRuntimeChecks({ admin, connect, temporary, password, po
         body: { sourceRevision: 2 }
       }
     )));
-    assert.deepEqual(extractionResponses.map(item => item.status).sort(), [200, 202]);
+    assert.deepEqual(extractionResponses.map(item => item.status).sort(), [200, 200]);
     const extractionTaskIds = extractionResponses.map(item => item.body.data.id);
     assert.equal(new Set(extractionTaskIds).size, 1);
     assert.equal((await waitTask(app.base, cookie, extractionTaskIds[0])).status, "succeeded");

@@ -14,7 +14,8 @@ const { createImportanceService, importanceScoreFor, importanceWeight, parseImpo
   weightedImportanceOrder, createImportanceHttp, createImportanceSelectionPlan, applyImportanceSelectionPlan, estimateInternalTokens }
   = await import(fromRoot(".build/typescript/backend/shared/ai-context/index.mjs")) as typeof import("../src/shared/ai-context/index.mjs");
 const { legalImportanceMaterial, legalImportanceSources, createEmptyStore, thoughtTaskCurrentMaterial, workingContextProjection,
-  workingContextReceiptMatches, compileWorkingContextPrompt, prepareReferenceRequest, createStoreNormalizer, supplementalImportanceContext } = await import(fromRoot("src/app/index.mjs"));
+  workingContextReceiptFingerprint, workingContextReceiptMatches, compileWorkingContextPrompt, prepareReferenceRequest,
+  createStoreNormalizer, supplementalImportanceContext } = await import(fromRoot("src/app/index.mjs"));
 const { evidenceSourceKey } = await import(fromRoot("src/modules/user-model/index.mjs"));
 const { createTaskLifecycle } = await import(fromRoot("src/modules/tasks/index.mjs"));
 const { mapStoreObjects, rebuildStoreObjects } = await import(fromRoot("src/shared/persistence/index.mjs"));
@@ -182,6 +183,23 @@ const contextOptions = {
 };
 const projected = workingContextProjection(selectionStore, contextOptions);
 const sent = prepareReferenceRequest(projected.prompt, projected.citationSources, "fixture-binding");
+assert.deepEqual(
+  JSON.parse(JSON.stringify(projected.receipt)),
+  projected.receipt,
+  "importance working-context receipts must round-trip through JSON without loss"
+);
+const reorderedReceipt = structuredClone(projected.receipt);
+reorderedReceipt.importanceSelectionPlan = Object.fromEntries(
+  Object.entries(reorderedReceipt.importanceSelectionPlan).reverse()
+);
+reorderedReceipt.importanceSelectionPlan.sources = reorderedReceipt.importanceSelectionPlan.sources.map(
+  (source: Record<string, unknown>) => Object.fromEntries(Object.entries(source).reverse())
+);
+assert.equal(
+  workingContextReceiptFingerprint(reorderedReceipt),
+  workingContextReceiptFingerprint(projected.receipt),
+  "working-context fingerprints ignore JSON object key order"
+);
 assert.equal(sent.receipt.providedCount, 10, "ten distinct actual source excerpts reach the model prompt");
 assert.equal(projected.receipt.rawSourceChecks.length, 9);
 assert.ok(workingContextReceiptMatches(selectionStore, projected.receipt, contextOptions));

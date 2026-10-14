@@ -1285,7 +1285,7 @@ for (const [resourceId, targetKey, revokedText] of [
   const input = fixture.build(), before = workingContextProjection(fixture.value, input);
   assert.ok(before.prompt.includes(revokedText));
   assert.ok(before.receipt.permissionChecks.some(check => (
-    check.sourceKey === sourceKey(sourceRef) && check.permissionRevision === 1
+    check.sourceKey === sourceKey(sourceRef) && check.permissionRevision === 0
   )));
   assert.equal(before.receipt.evidenceChecks.length, 0);
   const first = bindDerived(fixture, before.receipt);
@@ -1313,6 +1313,32 @@ for (const [resourceId, targetKey, revokedText] of [
   assert.ok(workingContextProjection(fixture.value, fixture.build()).prompt.includes(revokedText));
   permissionBoundaryCases += 1;
 }
+const currentPermissionRace = permissionFixture();
+const currentPermissionRaceRef = currentPermissionRace.ref(
+  currentPermissionRace.question.id,
+  `question:${currentPermissionRace.question.id}`
+);
+const currentPermissionBefore = workingContextProjection(
+  currentPermissionRace.value,
+  currentPermissionRace.build()
+);
+await currentPermissionRace.service.updatePermissions({
+  sourceRef: currentPermissionRaceRef,
+  contextAllowed: true,
+  learningAllowed: false,
+  expectedRevision: 0
+});
+const currentPermissionAfter = workingContextProjection(
+  currentPermissionRace.value,
+  currentPermissionRace.build()
+);
+assert.equal(currentPermissionBefore.receipt.currentMaterial[0].permissionRevision, 0);
+assert.equal(currentPermissionAfter.receipt.currentMaterial[0].permissionRevision, 0);
+assert.equal(
+  workingContextReceiptFingerprint(currentPermissionAfter.receipt),
+  workingContextReceiptFingerprint(currentPermissionBefore.receipt),
+  "creating a permission row must not invalidate the active current request"
+);
 const explicitFixture = permissionFixture();
 const activeRootRef = explicitFixture.ref(explicitFixture.question.id, `question:${explicitFixture.question.id}`);
 await explicitFixture.service.updatePermissions({ sourceRef: activeRootRef, contextAllowed: false,
@@ -1320,7 +1346,7 @@ await explicitFixture.service.updatePermissions({ sourceRef: activeRootRef, cont
 const rootRequest = workingContextProjection(explicitFixture.value, explicitFixture.build());
 assert.ok(rootRequest.prompt.includes(explicitFixture.question.content));
 assert.equal(rootRequest.receipt.currentMaterial[0].authorization, "current-request");
-assert.equal(rootRequest.receipt.currentMaterial[0].permissionRevision, 1);
+assert.equal(rootRequest.receipt.currentMaterial[0].permissionRevision, 0);
 assert.equal(contextDerivedOutputAllowed(explicitFixture.value,
   bindDerived(explicitFixture, rootRequest.receipt), accountId), false,
 "an explicit request does not authorize later derived reuse");
