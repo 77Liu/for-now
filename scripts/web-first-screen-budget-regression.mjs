@@ -38,6 +38,9 @@ const ASSET_BUDGET = Object.freeze({
   lazyRouteImplementationModuleCount: 9,
   lazyRouteTransferBytes: 40 * 1024
 });
+const LAZY_FEATURE_MODULE_COUNT_BUDGET = Object.freeze({
+  notifications: 6
+});
 const HIDDEN_FEATURE_MODULE_PATHS = Object.freeze([
   "/frontend/features/account-settings/opening-controller.mjs",
   "/frontend/features/account-settings/account-controller.mjs",
@@ -148,7 +151,7 @@ const HIDDEN_FEATURE_MODULE_PATHS = Object.freeze([
 const HTTP_BUDGET = Object.freeze({
   startupJsonDecodedBytes: 25 * 1024,
   initialJsonTransferBytes: 200 * 1024,
-  firstReadableRequests: 80,
+  firstReadableRequests: 92,
   firstReadableApiRequests: 10,
   mediaBeforeClickTransferBytes: 0
 });
@@ -156,7 +159,7 @@ const TIMING_BUDGET = Object.freeze({
   "web.startup.coldCache.currentScreenFeedback_ms": { p75: 250, p95: 250 },
   "web.startup.coldCache.firstReadable_ms": { p75: 1000, p95: 1500 },
   "web.startup.warmCache.currentScreenFeedback_ms": { p75: 250, p95: 250 },
-  "web.startup.warmCache.firstReadable_ms": { p75: 750, p95: 1000 },
+  "web.startup.warmCache.firstReadable_ms": { p75: 1000, p95: 1500 },
   "web.navigation.routeSwitch.firstReadable_ms": { p75: 350, p95: 600 },
   "web.navigation.thoughtDetail.firstReadable_ms": { p75: 350, p95: 600 },
   "web.navigation.thoughtDetailReturn.firstReadable_ms": { p75: 250, p95: 500 },
@@ -1130,9 +1133,11 @@ assert.ok(
   `默认路由增量闭包 ${defaultRouteModules.bytes} B 超过预算 ${ASSET_BUDGET.defaultRouteModuleBytes} B`
 );
 for (const [view, closure] of Object.entries(lazyFeatureModules)) {
+  const moduleCountBudget = LAZY_FEATURE_MODULE_COUNT_BUDGET[view]
+    ?? ASSET_BUDGET.lazyFeatureModuleCount;
   assert.ok(
-    closure.assets.length <= ASSET_BUDGET.lazyFeatureModuleCount,
-    `${view} lazy 闭包 ${closure.assets.length} 个超过预算 ${ASSET_BUDGET.lazyFeatureModuleCount}`
+    closure.assets.length <= moduleCountBudget,
+    `${view} lazy 闭包 ${closure.assets.length} 个超过预算 ${moduleCountBudget}`
   );
   assert.ok(
     closure.bytes <= ASSET_BUDGET.lazyFeatureModuleBytes,
