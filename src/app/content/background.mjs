@@ -85,6 +85,7 @@ export function createContentBackground({
   runDeepSeek,
   now,
   createId,
+  createBusinessId = createId,
   hash,
   logEvent,
   debugServerUrl,
@@ -92,8 +93,9 @@ export function createContentBackground({
   debugFetch
 }) {
   const taskTargets = createAiTaskTargets({
+    createBusinessId,
     thoughts: createThoughtTaskTarget({
-      createId,
+      createId: createBusinessId,
       now,
       stripThoughtAnswerLead
     }),
@@ -110,8 +112,8 @@ export function createContentBackground({
   });
   const backgroundAi = createBackgroundAi({
     repository,
-    tasks: createTaskLifecycle({ createId, now, hash }),
-    notifications: createNotificationService({ createId, now }),
+    tasks: createTaskLifecycle({ createId: createBusinessId, now, hash }),
+    notifications: createNotificationService({ createId: createBusinessId, now }),
     now,
     targets: taskTargets,
     beforePrepare: async input => {

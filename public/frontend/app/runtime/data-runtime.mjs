@@ -1,4 +1,5 @@
 import { createNotificationRuntime } from "../../../generated/app/runtime/notification-runtime.mjs";
+import { BUSINESS_ID_BYTES, encodeBusinessId, isBusinessId } from "../../../generated/business-identifiers.mjs";
 import { sessionScope, sessionSerial } from "../../session/index.mjs";
 import { mergeStateSnapshot, publishDomains, state } from "../../state/index.mjs";
 import { localDateKey } from "../../time/index.mjs";
@@ -102,7 +103,7 @@ function restorePendingProjection(snapshot,operationId){
   }
   if(snapshot.kind==="thought.chain.create"){
     const prefix=`${snapshot.temporaryId}:`,previousLength=(state.thoughts||[]).length;
-    state.thoughts=(state.thoughts||[]).filter(item=>!String(item.id).startsWith(prefix)||item._sync?.operationId!==operationId);
+    state.thoughts=(state.thoughts||[]).filter(item=>(item.id!==snapshot.temporaryId&&!String(item.id).startsWith(prefix))||item._sync?.operationId!==operationId);
     if(state.thoughts.length===previousLength)return false;
     publishDomains(new Set(["thoughts"]));return true
   }
@@ -165,11 +166,16 @@ async function requestV1(url,options={},coordination={}){
   let result,operationId="";
   if(["GET","HEAD"].includes(method))result=await request(url,options);
   else{
+    if(method==="POST"&&coordination.projection?.temporaryId&&!isBusinessId(coordination.projection.temporaryId)){
+      coordination.projection.temporaryId=encodeBusinessId(crypto.getRandomValues(new Uint8Array(BUSINESS_ID_BYTES)));
+    }
     const snapshot=typeof coordination.captureProjection==="function"
       ?coordination.captureProjection()
       :pendingProjectionSnapshot(coordination.projection),onQueued=coordination.onQueued;
     try{
       result=await requestCoordinator.request({
+        allocateBusinessId:true,
+        provisionalId:isBusinessId(coordination.projection?.temporaryId)?coordination.projection.temporaryId:"",
         owner:runtime.currentUser?.id,url,options,domains:syncDomainsFor(url),...coordination,
         onQueued:record=>{operationId=record.operationId;return onQueued?.(record)}
       });
@@ -311,8 +317,8 @@ function applyPendingProjection(record){
     publishDomains(new Set(["books"]));return true
   }
   if(projection.kind==="thought.chain.create"){
-    if((state.thoughts||[]).some(item=>item.clientRequestId===record.operationId||String(item.id).startsWith(`${projection.temporaryId}:`)))return false;
-    const occurredAt=projection.payload.occurredAt||record.createdAt,rootId=`${projection.temporaryId}:root`,items=[{
+    if((state.thoughts||[]).some(item=>item.clientRequestId===record.operationId||item.id===projection.temporaryId||String(item.id).startsWith(`${projection.temporaryId}:`)))return false;
+    const occurredAt=projection.payload.occurredAt||record.createdAt,rootId=isBusinessId(projection.temporaryId)?projection.temporaryId:`${projection.temporaryId}:root`,items=[{
       id:rootId,type:"question",content:projection.payload.question||"",attachmentPaths:projection.payload.attachmentPaths||[],
       tags:projection.payload.tags||[],authorType:"user",occurredAt,createdAt:record.createdAt,version:1,_sync:sync,
       ...(projection.payload.sourceRef?{sourceRef:projection.payload.sourceRef}:{})

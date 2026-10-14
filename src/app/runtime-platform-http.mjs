@@ -38,7 +38,7 @@ export function createRuntimePlatformHttp({
   access
 }) {
   const { now } = clock;
-  const { createId, requestBinding } = identifiers;
+  const { createId, createBusinessId = createId, requestBinding } = identifiers;
   const { requestStorage, logEvent } = observability;
   const { storeRepository, updateStore } = persistence;
   const {
@@ -170,7 +170,7 @@ export function createRuntimePlatformHttp({
     userModel: createUserModelService({
       repository: storeRepository,
       isEvidenceCurrent: userModelEvidenceCurrent,
-      createId,
+      createId: createBusinessId,
       now
     }),
     permissions: contentRuntime.perception,

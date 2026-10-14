@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import pg from "pg";
 import {
   createPostgresRuntime,
+  createBusinessId,
   initializePostgresSchema
 } from "../src/shared/persistence/index.mjs";
 
@@ -35,16 +36,23 @@ if (process.argv[2] === WORKER_FLAG) {
     getAccountId: () => process.env.TEST_ACCOUNT_ID
   });
   try {
-    const repository = runtime.createStoreRepository({ normalize: value => value, emptyDocument: emptyStore() });
+    const context = { user: { id: process.env.TEST_ACCOUNT_ID }, clientOperationId: "short-id-operation",
+      clientProvisionalId: "AAAAAAAAAAAAAAAA", method: "POST", resource: "/api/v1/captures",
+      contentType: "application/json", ifMatch: "", requestBodySha256: crypto.createHash("sha256").update("{}").digest("hex") };
+    context.clientOperationFingerprint = crypto.createHash("sha256").update(JSON.stringify({
+      method: context.method, resource: context.resource, contentType: context.contentType,
+      ifMatch: context.ifMatch, requestBodySha256: context.requestBodySha256
+    })).digest("hex");
+    const repository = runtime.createStoreRepository({ normalize: value => value, emptyDocument: emptyStore(), getContext: () => context });
     const response = await repository.executeIdempotent({
       scope: "captures.create",
       key: "cross-process-key",
       requestHash: "cross-process-request"
     }, async store => {
       await new Promise(resolve => setTimeout(resolve, 100));
-      const body = { id: `created-by-${process.pid}`, content: "single execution" };
+      const body = { id: createBusinessId(), content: "single execution" };
       store.captures.push(body);
-      return { statusCode: 201, body };
+      return { statusCode: 201, value: body };
     });
     process.stdout.write(`${JSON.stringify(response)}\n`);
   } finally {
@@ -155,10 +163,13 @@ try {
   };
   const responses = await Promise.all([childResponse(workerEnvironment), childResponse(workerEnvironment)]);
   assert.deepEqual(responses[0], responses[1]);
+  assert.match(responses[0].value.id, /^[A-Za-z0-9_-]{16}$/);
+  assert.equal(responses[0].businessIdMapping.canonicalId, responses[0].value.id);
 
   runtime = await createPostgresRuntime(runtimeOptions);
   repository = runtime.createStoreRepository({ normalize: value => value, emptyDocument: emptyStore() });
   assert.equal((await repository.read()).captures.length, 1);
+  assert.deepEqual((await repository.readPersistenceMetadata()).sync.operations[0].businessIdMapping, responses[0].businessIdMapping);
   const replay = await repository.executeIdempotent({
     scope: "captures.create",
     key: "cross-process-key",

@@ -22,6 +22,7 @@ import {
 
 export function createAiTaskTargets({
   thoughts,
+  createBusinessId,
   annotations,
   contentAttachments = null,
   perception = null,
@@ -598,6 +599,7 @@ export function createAiTaskTargets({
           return task.id;
         }
         const extracted = parseClaimExtractionOutput(result.content, {
+          ...(createBusinessId ? { createId: createBusinessId } : {}),
           sources: work.sources,
           sourceTaskId: task.id,
           now

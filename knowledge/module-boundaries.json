@@ -1155,16 +1155,21 @@
       "type": "shared",
       "root": "public/frontend/sync",
       "publicEntry": "public/frontend/sync/index.mjs",
-      "allowedDependencies": [],
+      "allowedDependencies": [
+        "shared.business-identifiers",
+        "frontend.business-id-remap"
+      ],
       "owns": {
         "data": [
           "account-scoped durable mutation log, resource request coordination, retry classification and committed operation audit",
-          "cross-tab invalidation, incremental cursor polling, pending projection recovery and client sync metrics"
+          "cross-tab invalidation, incremental cursor polling, pending projection recovery and client sync metrics",
+          "显式创建操作依赖的业务映射、ACK 与待同步队列原子更新"
         ],
         "routes": []
       },
       "tests": [
-        "scripts/sync-coordinator-regression.mjs"
+        "scripts/sync-coordinator-regression.mjs",
+        "scripts/business-identifiers-regression.mts"
       ],
       "status": "active"
     },
@@ -2790,7 +2795,9 @@
       "type": "shared",
       "root": "src/shared/persistence",
       "publicEntry": "src/shared/persistence/index.mjs",
-      "allowedDependencies": [],
+      "allowedDependencies": [
+        "shared.business-identifiers"
+      ],
       "owns": {
         "data": [
           "JSON/PostgreSQL repository contract, runtime transactions and account isolation",
@@ -2798,7 +2805,8 @@
           "PostgreSQL identity/config/usage mapping, atomic registration, attachment inventory and recovery",
           "evidence/event/permission object identity, relation mapping and round-trip preservation",
           "Atomic migration, runtime overwrite protection, offline relational export",
-          "account-scoped monotonic change cursor and bounded incremental sync ledger"
+          "account-scoped monotonic change cursor and bounded incremental sync ledger",
+          "账户事务内业务短 ID 分配、跨领域占用检查及持久幂等映射回执"
         ],
         "routes": []
       },
@@ -2809,7 +2817,9 @@
         "scripts/onboarding-v2-regression.mjs",
         "scripts/document-migration-regression.mjs",
         "scripts/postgres-integration.mjs",
-        "scripts/postgres-runtime-checks.mjs"
+        "scripts/postgres-runtime-checks.mjs",
+        "scripts/business-identifiers-regression.mts",
+        "scripts/persistence-ledger-postgres-regression.mjs"
       ],
       "status": "active"
     },
@@ -2961,6 +2971,40 @@
         "scripts/answer-citations-regression.mjs",
         "scripts/task-context-selection-regression.mjs",
         "scripts/importance-scoring-regression.mts"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "shared.business-identifiers",
+      "type": "shared",
+      "root": "src/shared/business-identifiers",
+      "publicEntry": "src/shared/business-identifiers/index.mts",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "新业务身份 12 随机字节/16 字符格式及 8 次碰撞尝试策略；浏览器产物来自同一源码"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/business-identifiers-regression.mts"
+      ],
+      "status": "active"
+    },
+    {
+      "id": "frontend.business-id-remap",
+      "type": "shared",
+      "root": "public/frontend/shared/business-id-remap.mts",
+      "publicEntry": "public/frontend/shared/business-id-remap.mts",
+      "allowedDependencies": [],
+      "owns": {
+        "data": [
+          "显式业务引用字段和路径段映射；保留正文与协议身份"
+        ],
+        "routes": []
+      },
+      "tests": [
+        "scripts/business-identifiers-regression.mts"
       ],
       "status": "active"
     }

@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "rootDir": ".",
+    "outDir": ".build/typescript/business-identifiers-regression",
+    "noEmitOnError": true
+  },
+  "files": ["scripts/business-identifiers-regression.mts", "scripts/business-identifiers-browser-regression.mts"]
+}
