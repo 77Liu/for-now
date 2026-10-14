@@ -523,6 +523,10 @@ export function createBackgroundAi({
         const queued = [];
         for (const task of store.aiTasks) {
           if (task.status !== "queued") continue;
+          if (!task.inputHash && task.kind !== RECORD_COMPRESSION_TASK_KIND) {
+            stale(store, task, "旧排队任务缺少可验证输入绑定，未调用模型");
+            continue;
+          }
           if (!taskHasRequiredTarget(store, task)) {
             stale(store, task, "排队任务的目标当前不可用，任务已终止");
             continue;
